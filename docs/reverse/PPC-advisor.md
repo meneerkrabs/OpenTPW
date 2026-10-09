@@ -651,7 +651,7 @@ playback results. No original 351/610-record corpus is embedded and no computed
 score function is invented. Synthetic descriptor IDs and response IDs in tests
 are deliberately outside the original tables.
 
-The combined project now runs 46 C# checks: the original 21 LIP checks and 25
+The combined project now runs 52 C# checks: the original 21 LIP checks and 31
 queue/history checks. The original LIP driver and its clock/audio boundaries
 remain unchanged. The score helper provides separate operations:
 
@@ -677,6 +677,38 @@ clock/audio/geometry bridges remain external dependencies. In particular,
 caller, not inferred from cached score or availability of a PCM sample. The
 helper's stale-selection and descriptor/count validation are its own input
 boundaries, not additional claimed original gameplay rules.
+
+### Playback completion retains the native selected variant
+
+The native controller retains its chosen variant in `r29` across the external
+score/playback wrapper and saves that value at app `0x8a3c`. The response wrapper
+can resolve an out-of-range requested variant to the first response at
+`0xb8c8`/`0xb904`; that lookup does not replace the requested variant saved in
+history. The pure helper now retains its begin-time selection for this purpose.
+Completion validates slot, advice identity (including the cached score and
+controls in that immutable record), requested variant and resolved response ID.
+A changed tuple is rejected before state changes, leaving the authentic attempt
+completable. Successful completion writes history from the retained tuple.
+
+The callback ordering contract is explicit: select, begin/consume, invoke the
+external wrapper, then complete with the unchanged selection and the clocks
+observed after its return. The existing freed-slot test exercises admission
+inside that callback interval. The one-outstanding-attempt validation belongs
+to this helper API; the reviewed native path does not establish a general
+reentrancy or threading rule. Callers must serialize that sequence. The value
+selection is not a unique attempt receipt: deliberately reusing the same advice
+instance and identical tuple in a later attempt is indistinguishable from an
+old value. A future asynchronous bridge needs an explicit attempt identity if
+it permits delayed callbacks crossing attempts.
+
+Six additional regression cases cover variant 0 changed to 2, response ID,
+slot, cloned or changed advice (message, cached score and overrides), duplicate
+completion, and a stale callback after the slot/message has been reused by a
+new advice instance. Every rejected active-attempt callback leaves history and
+reservation clocks intact and permits authentic completion. All previous 46
+cases remain, including native callback ordering and preservation of an
+out-of-range requested variant in history. The changed-variant test failed
+against the preceding implementation before the tuple validation was added.
 
 ### Boundary facts pinned before modelling
 

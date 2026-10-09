@@ -18,6 +18,13 @@ static class ScoreQueueTests
 			throw new InvalidOperationException( $"Expected {expected}; actual {actual}." );
 	}
 
+	private static void InvalidAttempt( Action action )
+	{
+		try { action(); }
+		catch ( InvalidOperationException ) { return; }
+		throw new InvalidOperationException( "Expected a rejected playback attempt." );
+	}
+
 	private static void True( bool value ) => Equal( true, value );
 	private static void False( bool value ) => Equal( false, value );
 	private static OriginalAdvisorPendingAdvice Advice( int offset, int score,
@@ -60,6 +67,12 @@ static class ScoreQueueTests
 			(nameof( OnceHistoryDoesNotPurgePreviouslyAdmittedRecords ), OnceHistoryDoesNotPurgePreviouslyAdmittedRecords),
 			(nameof( CompletionUsesExplicitPostAttemptClocks ), CompletionUsesExplicitPostAttemptClocks),
 			(nameof( WrappingPlaybackReservationIsPreserved ), WrappingPlaybackReservationIsPreserved),
+			(nameof( ModifiedVariantCannotRewriteHistory ), ModifiedVariantCannotRewriteHistory),
+			(nameof( ModifiedResponseCannotComplete ), ModifiedResponseCannotComplete),
+			(nameof( ModifiedSlotCannotComplete ), ModifiedSlotCannotComplete),
+			(nameof( ModifiedAdviceCannotComplete ), ModifiedAdviceCannotComplete),
+			(nameof( DuplicateCompletionCannotRewriteHistory ), DuplicateCompletionCannotRewriteHistory),
+			(nameof( StaleCompletionCannotConsumeCurrentAttempt ), StaleCompletionCannotConsumeCurrentAttempt),
 			(nameof( EmptySelectionCannotComplete ), EmptySelectionCannotComplete),
 			(nameof( UnknownDescriptorsAndStaleCompletionsFail ), UnknownDescriptorsAndStaleCompletionsFail),
 		};
@@ -307,6 +320,84 @@ static class ScoreQueueTests
 		Equal( 999u, queue.LastActionDuration );
 		True( queue.IsBusy( 1998 ) );
 		False( queue.IsBusy( 1999 ) );
+	}
+
+	private static void RejectMutationAndFinishOriginal(
+		Func<OriginalAdvisorResponseSelection, OriginalAdvisorResponseSelection> mutate )
+	{
+		var queue = Queue();
+		queue.Enqueue( Advice( 0, 30 ), 100, true );
+		var selection = Selected( queue );
+		Equal( 0, selection.Variant );
+		queue.BeginPlaybackAttempt( selection );
+		InvalidAttempt( () => queue.CompletePlaybackAttempt( mutate( selection ), true, 9000, 999, 999 ) );
+		Equal( OriginalAdvisorMessageHistory.Empty, queue.GetHistory( FirstMessage ) );
+		Equal( 0u, queue.LastActionStarted );
+		Equal( 0u, queue.LastActionDuration );
+		// A rejected callback must leave the authentic in-flight tuple completable.
+		queue.CompletePlaybackAttempt( selection, true, 1000, 100, 50 );
+		Equal( new OriginalAdvisorMessageHistory( 100, 0, true, 0 ), queue.GetHistory( FirstMessage ) );
+		Equal( 1000u, queue.LastActionStarted );
+		Equal( 1050u, queue.LastActionDuration );
+	}
+
+	private static void ModifiedVariantCannotRewriteHistory() =>
+		RejectMutationAndFinishOriginal( selection => selection with { Variant = 2 } );
+
+	private static void ModifiedResponseCannotComplete() =>
+		RejectMutationAndFinishOriginal( selection => selection with { ResponseId = selection.ResponseId + 2 } );
+
+	private static void ModifiedSlotCannotComplete() =>
+		RejectMutationAndFinishOriginal( selection => selection with { Slot = selection.Slot + 1 } );
+
+	private static void ModifiedAdviceCannotComplete()
+	{
+		// Identity matters even when a replacement advice record has identical values.
+		RejectMutationAndFinishOriginal( selection => selection with { Advice = selection.Advice with { } } );
+		RejectMutationAndFinishOriginal( selection => selection with
+		{
+			Advice = selection.Advice with { MessageId = FirstMessage + 1 },
+		} );
+		RejectMutationAndFinishOriginal( selection => selection with
+		{
+			Advice = selection.Advice with { Score = 1000 },
+		} );
+		RejectMutationAndFinishOriginal( selection => selection with
+		{
+			Advice = selection.Advice with { ResponseVariantOverride = 2 },
+		} );
+		RejectMutationAndFinishOriginal( selection => selection with
+		{
+			Advice = selection.Advice with { OverrideOnlyOnce = true },
+		} );
+	}
+
+	private static void DuplicateCompletionCannotRewriteHistory()
+	{
+		var queue = Queue();
+		queue.Enqueue( Advice( 0, 30 ), 100, true );
+		var selection = Selected( queue );
+		Complete( queue, selection, true, 1000, 100, 50 );
+		InvalidAttempt( () => queue.CompletePlaybackAttempt( selection, true, 9000, 999, 999 ) );
+		Equal( new OriginalAdvisorMessageHistory( 100, 0, true, 0 ), queue.GetHistory( FirstMessage ) );
+		Equal( 1000u, queue.LastActionStarted );
+		Equal( 1050u, queue.LastActionDuration );
+	}
+
+	private static void StaleCompletionCannotConsumeCurrentAttempt()
+	{
+		var queue = Queue();
+		queue.Enqueue( Advice( 0, 30 ), 100, true );
+		var previous = Selected( queue );
+		Complete( queue, previous, false, 1000, 100, 0 );
+		// Reuse the slot and message, but admit a distinct pending advice record.
+		queue.Enqueue( Advice( 0, 30 ), 100, true );
+		var current = Selected( queue );
+		queue.BeginPlaybackAttempt( current );
+		InvalidAttempt( () => queue.CompletePlaybackAttempt( previous, true, 9000, 999, 999 ) );
+		Equal( OriginalAdvisorMessageHistory.Empty, queue.GetHistory( FirstMessage ) );
+		queue.CompletePlaybackAttempt( current, true, 1000, 100, 50 );
+		Equal( new OriginalAdvisorMessageHistory( 100, 0, true, 0 ), queue.GetHistory( FirstMessage ) );
 	}
 
 	private static void EmptySelectionCannotComplete()

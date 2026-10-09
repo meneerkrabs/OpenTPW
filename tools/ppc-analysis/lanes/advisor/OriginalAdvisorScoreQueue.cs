@@ -155,7 +155,12 @@ public sealed class OriginalAdvisorScoreQueue
 		return new( best, advice, variant, unchecked(descriptor.FirstResponseId + playbackVariant) );
 	}
 
-	/// <summary>Consume before invoking the external original score/playback wrapper.</summary>
+	/// <summary>
+	/// Consume before invoking the external original score/playback wrapper. Callers
+	/// serialize begin, wrapper callback and completion, retaining the selected tuple.
+	/// The one-outstanding-attempt guard is a helper contract, not a recovered native
+	/// reentrancy or threading rule; this value API does not mint attempt identities.
+	/// </summary>
 	public void BeginPlaybackAttempt( OriginalAdvisorResponseSelection selection )
 	{
 		if ( playbackAttempt.HasValue || (uint)selection.Slot >= Capacity || slots[selection.Slot] == null ||
@@ -166,7 +171,8 @@ public sealed class OriginalAdvisorScoreQueue
 	}
 
 	/// <summary>
-	/// Complete the already-consumed attempt. Only successful external playback saves
+	/// Complete the already-consumed attempt with its unchanged selection tuple.
+	/// Rejected completion preserves the outstanding attempt. Only successful playback saves
 	/// current game tick/variant and reserves returned span plus 1000 clock units.
 	/// playbackSucceeded includes caller response lookup, appropriate score-wrapper
 	/// revalidation and dispatcher result; no producers are fabricated here.
@@ -176,16 +182,18 @@ public sealed class OriginalAdvisorScoreQueue
 		uint returnedPlaybackSpan )
 	{
 		if ( playbackAttempt is not { } pending || pending.Slot != selection.Slot ||
+			pending.Variant != selection.Variant || pending.ResponseId != selection.ResponseId ||
 			!ReferenceEquals( pending.Advice, selection.Advice ) )
-			throw new InvalidOperationException( "The supplied playback attempt has not begun or already completed." );
+			throw new InvalidOperationException( "Supply the unchanged selection tuple for the outstanding playback attempt." );
 		playbackAttempt = null;
 		if ( !playbackSucceeded )
 			return;
-		var old = GetHistory( selection.Advice.MessageId );
-		history[selection.Advice.MessageId] = old with
+		var old = GetHistory( pending.Advice.MessageId );
+		history[pending.Advice.MessageId] = old with
 		{
 			SavedGameTick = liveGameTickAfterAttempt,
-			PreviousVariant = selection.Variant,
+			// App 0x8a3c retains the chosen r29 across the external wrapper.
+			PreviousVariant = pending.Variant,
 			HasBeenPlayed = true,
 		};
 		LastActionStarted = unscaledClockAfterAttempt;

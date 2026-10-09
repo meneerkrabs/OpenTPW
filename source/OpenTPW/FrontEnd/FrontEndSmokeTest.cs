@@ -80,6 +80,53 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		} );
 		Wait( "keyboard previous island", 3 );
 		Do( "jungle selected", () => Require( flow.Menu!.Selected.Level == "jungle", "left key returns to the jungle island" ) );
+		// Original-style online screens (docs/ONLINE.md): Go Online, then each screen, captured offline.
+		Do( "go online", () => Click( flow.Menu!.Main, "goOnline" ) );
+		Wait( "online world opens", 3 );
+		Do( "online world renders", () =>
+		{
+			Require( flow.Menu!.Stack.Top?.Name == "onlineWorld", "Go Online opens the online world" );
+			VerifyText( CaptureFrame( "online-world.png" ), OnlineStrings.Ui( OnlineStrings.OnlineWorld, "Online world" ), "online world title" );
+			Click( flow.Menu.Stack.Top!, "login" );
+		} );
+		Wait( "login opens", 3 );
+		Do( "login typing", () =>
+		{
+			Require( flow.Menu!.Stack.Top?.Name == "onlineLogin", "the login button opens the login dialog" );
+			flow.InjectedInput = UiInput.Type( "Alice" );
+		} );
+		Wait( "login renders", 3 );
+		Do( "login capture", () =>
+		{
+			var field = flow.Menu!.Stack.Top!.Find( "name" ) as UiTextField;
+			Require( field != null && field.Text == "Alice", "typing reaches the focused login name field" );
+			VerifyText( CaptureFrame( "online-login.png" ), OnlineStrings.Ui( OnlineStrings.LoginName, "Login name" ), "login name label" );
+		} );
+		var onlineShots = new (string Name, Action<UI.OnlineScreens> Show, string Screen)[]
+		{
+			("online-find-parks.png", screens => screens.ShowFindParks(), "findParks"),
+			("online-send-postcard.png", screens => screens.ShowSendPostcard(), "sendPostcard"),
+			("online-outbox.png", screens => screens.ShowOutbox(), "outbox"),
+			("online-inbox.png", screens => screens.ShowInbox(), "inbox"),
+			("online-chat.png", screens => screens.ShowChat(), "chat"),
+			("online-import.png", screens => screens.ShowImport(), "import"),
+		};
+		foreach ( var shot in onlineShots )
+		{
+			Do( $"open {shot.Screen}", () => shot.Show( new UI.OnlineScreens( flow.Menu!.Stack, flow.Strings, Context.Models, new UI.OnlineHost { Session = flow.Online } ) ) );
+			Wait( $"{shot.Screen} renders", 3 );
+			Do( $"{shot.Screen} capture", () =>
+			{
+				Require( flow.Menu!.Stack.Top?.Name == shot.Screen, $"{shot.Screen} opens" );
+				CaptureFrame( shot.Name );
+				flow.Menu.Stack.Pop();
+			} );
+		}
+		Do( "leave online", () =>
+		{
+			while ( flow.Menu!.Stack.Screens.Count > 1 )
+				flow.Menu.Stack.Pop();
+		} );
 		Do( "open options", () => Click( flow.Menu!.Main, "options" ) );
 		Wait( "options open", 3 );
 		Do( "options render", () =>

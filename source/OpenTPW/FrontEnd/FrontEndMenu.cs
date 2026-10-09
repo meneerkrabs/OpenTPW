@@ -20,6 +20,8 @@ public sealed class FrontEndActions
 	/// <summary>Called when the selected island changes (moves the lobby camera).</summary>
 	public Action<LobbyIslandInfo> IslandSelected { get; init; } = _ => { };
 	public Func<IReadOnlyList<ParkLoadEntry>> LoadEntries { get; init; } = () => Array.Empty<ParkLoadEntry>();
+	/// <summary>Opens the online screens on the menu's stack (Go Online, UITEXT 1); null hides the button.</summary>
+	public Action<UiScreenStack>? GoOnline { get; init; }
 }
 
 /// <summary>
@@ -95,13 +97,15 @@ public sealed class FrontEndMenu
 
 		var menu = new (string Id, UIStrings Label, Action Clicked)[]
 		{
+			("goOnline", UIStrings.GoOnline, () => actions.GoOnline?.Invoke( Stack )),
 			("load", UIStrings.Load, ShowLoad),
 			("options", UIStrings.Options, ShowOptions),
 			("quit", UIStrings.QuitGame, ShowQuit),
 		};
-		for ( var index = 0; index < menu.Length; index++ )
+		var shown = actions.GoOnline == null ? menu.Where( entry => entry.Id != "goOnline" ).ToArray() : menu;
+		for ( var index = 0; index < shown.Length; index++ )
 		{
-			var entry = menu[index];
+			var entry = shown[index];
 			screen.Add( new UiButton
 			{
 				Id = entry.Id,

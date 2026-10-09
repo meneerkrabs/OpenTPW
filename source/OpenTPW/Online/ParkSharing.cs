@@ -27,7 +27,7 @@ public static class ParkSharing
 	}
 
 	/// <summary>Exports the live level (used by the in-game panel).</summary>
-	public static ParkPackage ExportLevel( Level level, string parkName, string author )
+	public static ParkPackage ExportLevel( Level level, string parkName, string author, string description = "" )
 	{
 		if ( level.IsReadOnlyVisit )
 			throw new InvalidOperationException( "A visited park cannot be exported as the visitor's own park." );
@@ -35,7 +35,7 @@ public static class ParkSharing
 		MapFile? map = level.OriginalPark?.Map;
 		Func<float, float, (int X, int Y)?>? rideCell = level.OriginalPark == null ? null : ( x, y ) =>
 			OriginalParkPlacement.TryGetCell( level.OriginalPark.Heightfield, x, y, out var cx, out var cy ) ? (cx, cy) : null;
-		return CreatePackage( snapshot, parkName, "", author, map, rideCell );
+		return CreatePackage( snapshot, parkName, description, author, map, rideCell );
 	}
 
 	/// <summary>

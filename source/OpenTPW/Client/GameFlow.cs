@@ -19,6 +19,8 @@ internal sealed class GameFlow : IDisposable
 	private Action? pending;
 	private LobbyDefinition? lobbyDefinition;
 	private (int Requested, int Fitted)? reportedUiScale;
+	private OnlineSession? onlineSession;
+	private UI.ChatOverlay? chatOverlay;
 
 	public GameFlow()
 	{
@@ -70,6 +72,7 @@ internal sealed class GameFlow : IDisposable
 			CreateOptions = CreateOptions,
 			IslandSelected = island => LobbyCameraMode.Target = Lobby!.Target( island ),
 			LoadEntries = FindLoadEntries,
+			GoOnline = ShowOnline,
 		} );
 		Menu.SelectIsland( 0 );
 		if ( selectLevel != null )
@@ -149,6 +152,7 @@ internal sealed class GameFlow : IDisposable
 			Quit = Quit,
 			CreateOptions = CreateOptions,
 			CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, Strings, FindLoadEntries(), entry => Queue( () => LoadPark( entry ) ) ),
+			GoOnline = ShowOnline,
 		} );
 		return level;
 	}
@@ -252,8 +256,37 @@ internal sealed class GameFlow : IDisposable
 		overlayRenderer.Draw( global::Global.Render.CommandList, Context.Batch, target.Width, target.Height );
 	}
 
+	// ---- Online ------------------------------------------------------------------------------
+
+	/// <summary>The online extension's session, created on the first Go Online and kept across parks.</summary>
+	public OnlineSession Online
+	{
+		get
+		{
+			if ( onlineSession == null )
+			{
+				onlineSession = new OnlineSession( OnlineFolders ?? global::OpenTPW.OnlineFolders.FromEnvironment() );
+				chatOverlay = new UI.ChatOverlay( onlineSession );
+				global::Global.Render.OnOverlayRender += chatOverlay.Draw;
+			}
+			return onlineSession;
+		}
+	}
+
+	/// <summary>Go Online: the original-style online screens on <paramref name="stack"/> (docs/ONLINE.md).</summary>
+	public void ShowOnline( UiScreenStack stack ) => new UI.OnlineScreens( stack, Strings, Context.Models, new UI.OnlineHost
+	{
+		Session = Online,
+		Level = () => Level,
+		Visit = visit => Queue( () => StartLevel( visit.Level, original: !visit.IsSandbox, developerPanels: false, visit: visit ) ),
+	} ).ShowWorld();
+
 	public void Dispose()
 	{
+		if ( chatOverlay != null )
+			global::Global.Render.OnOverlayRender -= chatOverlay.Draw;
+		chatOverlay?.Dispose();
+		onlineSession?.Dispose();
 		global::Global.Render.OnOverlayRender -= RenderOverlay;
 		Level?.DetachOverlay();
 		Level?.TextOverlay?.Dispose();

@@ -1,0 +1,39 @@
+name: Apply official patch to private copy
+on:
+  workflow_dispatch:
+    inputs:
+      language:
+        description: Official patch language ID (English or American)
+        type: choice
+        options: ['2057', '1033']
+        default: '2057'
+permissions:
+  contents: read
+concurrency:
+  group: official-private-patch
+  cancel-in-progress: false
+jobs:
+  patch:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Apply original patch engine and encrypt result
+        shell: pwsh
+        env:
+          DOWNLOAD_URL: ${{ secrets.DOWNLOAD_URL }}
+          DOWNLOAD_TOKEN: ${{ secrets.DOWNLOAD_TOKEN }}
+          DOWNLOAD_SHA256: ${{ secrets.DOWNLOAD_SHA256 }}
+          PATCH_RESULT_KEY: ${{ secrets.PATCH_RESULT_KEY }}
+          PATCH_LANGUAGE: ${{ inputs.language }}
+        run: ./scripts/patch/Invoke-OfficialPatch.ps1
+      - name: Upload metadata and encrypted data
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: official-patch-result
+          path: ${{ runner.temp }}/tpw-patch-output/*
+          if-no-files-found: error
+          retention-days: 1

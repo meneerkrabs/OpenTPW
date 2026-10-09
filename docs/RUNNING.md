@@ -34,8 +34,9 @@ The default start is the original-style front end (3D lobby; pick an island and
 enter the park, or Load/Options/Quit Game) with the in-game HUD; see UI.md.
 `--sandbox` opens the former default jungle sandbox with its ImGui developer panel.
 
-The installation directory must contain `data` or `Data`. `OPENTPW_GAME_PATH`
-can replace `--game-path`. `DOTNET` selects a particular SDK executable.
+Without `--game-path`, OpenTPW finds the game itself or opens a setup window to
+choose the folder once (SETUP.md); `--setup` opens it again. The folder must contain
+`data` or `Data`. `OPENTPW_GAME_PATH` can replace `--game-path`. `DOTNET` selects a particular SDK executable.
 `OPENTPW_RUNTIME` selects an explicit runtime identifier.
 Native dependencies must match the selected process architecture.
 Engine content is copied beside the executable; shader files/includes resolve

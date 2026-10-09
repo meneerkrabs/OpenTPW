@@ -36,16 +36,17 @@ internal static class Game
 			Console.WriteLine( "Read-only container decoding only: original park payload semantics and gameplay import remain unverified." );
 			return;
 		}
-		var gamePath = Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" );
 		var pathIndex = Array.IndexOf( args, "--game-path" );
+		string? commandLinePath = null;
 		if ( pathIndex >= 0 )
 		{
 			if ( pathIndex + 1 >= args.Length || args[pathIndex + 1].StartsWith( "--" ) )
 				throw new ArgumentException( "--game-path requires the original game's installation directory." );
-			gamePath = args[pathIndex + 1];
+			commandLinePath = args[pathIndex + 1];
 		}
-		if ( !string.IsNullOrWhiteSpace( gamePath ) )
-			Settings.Default.GamePath = Path.GetFullPath( gamePath );
+		if ( ResolveGameFolder( args, commandLinePath ) is not { } resolvedArgs )
+			return;
+		args = resolvedArgs;
 
 		//
 		// Check if the game data directory exists
@@ -131,13 +132,10 @@ internal static class Game
 			return;
 
 		//
-		// Check if the save data directory exists (create if not)
+		// Save data beside the game files, or in the user configuration directory when the game
+		// folder is read-only (a mounted CD; docs/SETUP.md)
 		//
-		if ( !Path.Exists( $"{Settings.Default.GamePath}/save/" ) )
-			Directory.CreateDirectory( $"{Settings.Default.GamePath}/save/" );
-
-		// Register save data directory
-		SaveFileSystem = new BaseFileSystem( $"{Settings.Default.GamePath}/save/" );
+		SaveFileSystem = new BaseFileSystem( GetSaveDirectory() );
 
 		//
 		// Custom OpenTPW cache directory (mainly for editor-related stuff)
@@ -219,6 +217,74 @@ internal static class Game
 		}
 		else
 			Render.Run();
+	}
+
+	/// <summary>
+	/// Finds the game folder (and the saved CD), or asks for it in the setup wizard (docs/SETUP.md).
+	/// Null when the player closes the wizard without choosing one.
+	/// </summary>
+	private static string[]? ResolveGameFolder( string[] args, string? commandLinePath )
+	{
+		var setupPath = SetupSettings.GetDefaultPath();
+		var saved = SetupSettings.Load( setupPath );
+		var resolved = args.Contains( "--setup" ) ? null
+			: GamePathResolution.Resolve( commandLinePath, Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" ), saved, Settings.Default.GamePath, InstallationFinder.GetCandidates );
+		if ( resolved == null )
+		{
+			if ( !GamePathResolution.IsInteractive( args ) )
+				throw new DirectoryNotFoundException( "Theme Park World data not found. Use --game-path or OPENTPW_GAME_PATH, or start OpenTPW without arguments to choose the folder in the setup window." );
+			var chosen = SetupWizard.Run( saved, InstallationFinder.GetCandidates() );
+			if ( chosen == null )
+			{
+				Log.Trace( "Setup closed without choosing a game folder." );
+				return null;
+			}
+			saved = new SetupSettings( chosen.GamePath, chosen.CdPath );
+			TrySave( saved, setupPath );
+			resolved = (chosen.GamePath, GamePathSource.Wizard);
+		}
+		else if ( resolved.Value.Source is GamePathSource.Legacy or GamePathSource.Detected )
+		{
+			saved = saved with { GamePath = resolved.Value.Path };
+			TrySave( saved, setupPath );
+		}
+		Settings.Default.GamePath = resolved.Value.Path;
+		Log.Trace( $"Game folder: {resolved.Value.Path} ({resolved.Value.Source})." );
+
+		// The saved CD stands in for --cd-data, unless the folder came from a developer override or a CD is given.
+		if ( resolved.Value.Source is not (GamePathSource.CommandLine or GamePathSource.Environment) && saved.CdPath != null && Directory.Exists( saved.CdPath )
+			&& !args.Contains( "--cd-data" ) && string.IsNullOrWhiteSpace( Environment.GetEnvironmentVariable( "OPENTPW_CD_DATA" ) ) )
+			args = [.. args, "--cd-data", saved.CdPath];
+		return args;
+	}
+
+	private static void TrySave( SetupSettings settings, string path )
+	{
+		try
+		{
+			settings.Save( path );
+		}
+		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException )
+		{
+			Log.Warning( $"Could not store the game folder in {path} ({exception.Message}); setup will ask again next time." );
+		}
+	}
+
+	private static string GetSaveDirectory()
+	{
+		var beside = Path.Combine( Settings.Default.GamePath, "save" );
+		try
+		{
+			Directory.CreateDirectory( beside );
+			return beside + Path.DirectorySeparatorChar;
+		}
+		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException )
+		{
+			var fallback = Path.Combine( Path.GetDirectoryName( SetupSettings.GetDefaultPath() )!, "save" );
+			Directory.CreateDirectory( fallback );
+			Log.Warning( $"The game folder is read-only ({exception.Message}); saves go to {fallback}." );
+			return fallback + Path.DirectorySeparatorChar;
+		}
 	}
 
 	private static string? GetOption( string[] args, string name, string description )

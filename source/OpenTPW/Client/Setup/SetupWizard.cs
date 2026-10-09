@@ -8,13 +8,14 @@ namespace OpenTPW;
 /// <summary>
 /// First-run setup (docs/SETUP.md): a small window that asks for the original game files before
 /// any of them can be read, so it draws with ImGui instead of the game's own fonts. Pages: welcome
-/// (with folders found automatically), game folder, optional CD for music and movies, done.
+/// (with folders found automatically), game folder, done. Everything else, such as the CD for music
+/// and movies, is set later in the original-style Options > Game files screen.
 /// </summary>
 internal sealed class SetupWizard : IDisposable
 {
 	public sealed record Result( string GamePath, string? CdPath );
 
-	private enum Page { Welcome, GameFolder, Cd, Done }
+	private enum Page { Welcome, GameFolder, Done }
 
 	private readonly Window window;
 	private readonly GraphicsDevice device;
@@ -25,9 +26,8 @@ internal sealed class SetupWizard : IDisposable
 
 	private Page page;
 	private string gamePath;
-	private string cdPath;
+	private readonly string? savedCd;
 	private InstallationReport? gameReport;
-	private InstallationReport? cdReport;
 	private Task<string?>? picker;
 	private Action<string>? pickerTarget;
 	private string? dropped;
@@ -38,11 +38,9 @@ internal sealed class SetupWizard : IDisposable
 	{
 		this.detected = detected;
 		gamePath = saved.GamePath ?? detected.FirstOrDefault()?.Path ?? "";
-		cdPath = saved.CdPath ?? "";
+		savedCd = saved.CdPath;
 		if ( gamePath.Length > 0 )
 			gameReport = GameInstallation.Inspect( gamePath );
-		if ( cdPath.Length > 0 )
-			cdReport = GameInstallation.Inspect( cdPath );
 
 		window = new Window( 760, 560, "OpenTPW setup" );
 		window.SdlWindow.DragDrop += drop => dropped = drop.File;
@@ -125,13 +123,8 @@ internal sealed class SetupWizard : IDisposable
 		{
 			// A dropped file means its folder.
 			var folder = Directory.Exists( dropped ) ? dropped : Path.GetDirectoryName( dropped ) ?? dropped;
-			if ( page == Page.Cd )
-				SetCdPath( folder );
-			else
-			{
-				SetGamePath( folder );
-				page = Page.GameFolder;
-			}
+			SetGamePath( folder );
+			page = Page.GameFolder;
 			dropped = null;
 		}
 	}
@@ -145,7 +138,6 @@ internal sealed class SetupWizard : IDisposable
 		{
 			case Page.Welcome: DrawWelcome(); break;
 			case Page.GameFolder: DrawGameFolder(); break;
-			case Page.Cd: DrawCd(); break;
 			case Page.Done: DrawDone(); break;
 		}
 		ImGui.End();
@@ -185,38 +177,19 @@ internal sealed class SetupWizard : IDisposable
 		ImGui.Spacing();
 		FolderField( "##game", ref gamePath, SetGamePath );
 		Report( gameReport );
-		Footer( canGoBack: true, nextLabel: "Next", canGoNext: gameReport is { IsUsable: true }, next: () => page = Page.Cd, back: () => page = Page.Welcome );
-	}
-
-	private void DrawCd()
-	{
-		Heading( "Music and movies (optional)" );
-		ImGui.TextWrapped( "The CD holds the park music and the movies. If your game folder lacks them, choose the CD drive or a copy of the CD; you can skip this step." );
-		ImGui.Spacing();
-		FolderField( "##cd", ref cdPath, SetCdPath );
-		if ( cdReport != null )
-		{
-			if ( cdReport.DataDirectory != null )
-				Good( "This looks like the Theme Park World CD." );
-			else
-				Bad( "No Data folder found here." );
-		}
-		Footer( canGoBack: true, nextLabel: cdPath.Length == 0 ? "Skip" : "Next", canGoNext: cdPath.Length == 0 || cdReport?.DataDirectory != null,
-			next: () => page = Page.Done, back: () => page = Page.GameFolder );
+		Footer( canGoBack: true, nextLabel: "Next", canGoNext: gameReport is { IsUsable: true }, next: () => page = Page.Done, back: () => page = Page.Welcome );
 	}
 
 	private void DrawDone()
 	{
 		Heading( "Ready" );
 		ImGui.TextWrapped( $"Game files: {gameReport?.Path}" );
-		if ( cdPath.Length > 0 )
-			ImGui.TextWrapped( $"CD: {cdReport?.Path}" );
 		if ( gameReport is { Languages.Count: > 0 } )
 			ImGui.TextWrapped( $"Languages: {string.Join( ", ", gameReport.Languages )}" );
 		ImGui.Spacing();
-		ImGui.TextWrapped( "OpenTPW remembers these folders. Start it with --setup to change them later." );
+		ImGui.TextWrapped( "OpenTPW remembers this folder. Change it, or add the CD for music and movies, later in Options > Game files." );
 		Footer( canGoBack: true, nextLabel: "Start OpenTPW", canGoNext: true,
-			next: () => result = new Result( gameReport!.Path, cdPath.Length > 0 ? cdReport?.Path : null ), back: () => page = Page.Cd );
+			next: () => result = new Result( gameReport!.Path, savedCd ), back: () => page = Page.GameFolder );
 	}
 
 	private void FolderField( string id, ref string path, Action<string> set )
@@ -245,12 +218,6 @@ internal sealed class SetupWizard : IDisposable
 		// Picking the Data folder is corrected to its parent; show the folder that will be used.
 		if ( gameReport is { IsUsable: true } && gameReport.Path != path )
 			gamePath = gameReport.Path;
-	}
-
-	private void SetCdPath( string path )
-	{
-		cdPath = path;
-		cdReport = path.Trim().Length > 0 ? GameInstallation.Inspect( path ) : null;
 	}
 
 	private static void Report( InstallationReport? report )

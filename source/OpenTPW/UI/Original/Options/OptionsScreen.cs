@@ -233,6 +233,15 @@ public static class OptionsScreen
 			Bounds = new UiRect( window.X + 120, window.Bottom - 190, 420, 104 ),
 			Anchor = UiAnchor.Center
 		} );
+		// [EXT:SETUP] Game files (game folder and CD) between Back and OK
+		screen.Add( new UiButton
+		{
+			Id = "gameFiles",
+			Text = () => strings.Extra( OpenTpwText.GameFiles ),
+			Clicked = () => stack.Push( GameFilesScreen.Create( stack, strings ) ),
+			Bounds = new UiRect( window.X + 580, window.Bottom - 190, 420, 104 ),
+			Anchor = UiAnchor.Center
+		} );
 		screen.Back = Cancel;
 		screen.Focus( screen.FocusableElements.First() );
 		return screen;

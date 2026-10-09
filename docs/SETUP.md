@@ -44,14 +44,21 @@ warns, without refusing, when:
 
 Pages: welcome (with the folders detection found, each with a **Use** button), game
 folder (typed path, **Browse…** and drag-and-drop onto the window, with live results
-of the inspection), an optional CD for music and movies (stored and passed to the game
-as `--cd-data` unless that option or `OPENTPW_CD_DATA` is given), and a summary.
-Closing the window or choosing **Quit** exits without saving.
+of the inspection), and a summary. Closing the window or choosing **Quit** exits without
+saving. The window draws with ImGui because no original art or font is readable before
+the game folder is known; it asks only for that folder.
 
-**Browse…** uses the platform's own dialog: `osascript` (`choose folder`) on macOS,
-`zenity` or `kdialog` on Linux, and the Windows `IFileOpenDialog` folder picker. The
-window has no game fonts yet, so it draws with ImGui. Start OpenTPW with `--setup` to
-open it again and change the folders.
+## Changing the folders in game
+
+**Options > Game files** is an original-style screen (BF4 fonts, original window and
+button art, labels in the six supported languages) that shows the game folder and the
+optional CD for music and movies, changes either with the platform's folder dialog and
+removes the CD. The CD is stored in `setup.json` and passed to the game as `--cd-data`
+unless that option or `OPENTPW_CD_DATA` is given. The game reads its data at start-up, so
+changes apply after a restart. `--setup` still opens the first-run window.
+
+The folder dialog is the platform's own: `osascript` (`choose folder`) on macOS,
+`zenity` or `kdialog` on Linux, and the Windows `IFileOpenDialog` folder picker.
 
 Tool and test modes never open the window: `--smoke-test`, `--validate-assets`,
 `--inspect-model`, `--inspect-rides`, `--headless`, `--export-park` and

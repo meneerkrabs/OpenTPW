@@ -127,6 +127,15 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			while ( flow.Menu!.Stack.Screens.Count > 1 )
 				flow.Menu.Stack.Pop();
 		} );
+		// Options > Game files with a throw-away setup.json.
+		Do( "open game files", () => flow.Menu!.Stack.Push( GameFilesScreen.Create( flow.Menu.Stack, flow.Strings, Path.Combine( temporaryDirectory, SetupSettings.FileName ) ) ) );
+		Wait( "game files renders", 3 );
+		Do( "game files capture", () =>
+		{
+			Require( flow.Menu!.Stack.Top?.Name == "gameFiles", "game files screen opens" );
+			VerifyText( CaptureFrame( "game-files.png" ), flow.Strings.Extra( OpenTpwText.GameFolder ), "game folder label" );
+			flow.Menu.Stack.Pop();
+		} );
 		Do( "open options", () => Click( flow.Menu!.Main, "options" ) );
 		Wait( "options open", 3 );
 		Do( "options render", () =>

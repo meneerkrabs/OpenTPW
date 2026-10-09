@@ -19,15 +19,17 @@ python3 -I tools/ppc-analysis/lanes/review/reloc_audit.py /Users/sander/server/g
 python3 -I tools/ppc-analysis/lanes/review/round2_evidence.py /Users/sander/server/game-assets/mac-feral/bin \
   --mac-hfs /Users/sander/server/game-assets/mac-feral/hfs.img \
   --pc-speech /Users/sander/server/game-assets/theme-park-world/Data/global/Speech
+python3 -I tools/ppc-analysis/lanes/review/round3_evidence.py /Users/sander/server/game-assets/mac-feral/bin
 OPENTPW_PPC_BIN_ROOT=/Users/sander/server/game-assets/mac-feral/bin \
   python3 -I -m unittest discover -s tools/ppc-analysis/lanes/review -p 'test_*.py'
 ```
 
 `round2_evidence.py` (section 4 onwards) uses the same pinned `Binary` and
 fails closed in the same way. Its optional asset check prints only sizes,
-SHA-256 values and image offsets. With the binary variable set, all 28 lane
-tests run, with no skips. Without it, 27 run and the original-file witness
-skips.
+SHA-256 values and image offsets. `round3_evidence.py` (section 12 onwards)
+additionally pins `engine_shared.data` and `ltms_shared.data`. With the binary
+variable set, all 43 lane tests run, with no skips. Without it, 41 pass and the
+two original-file witnesses skip.
 
 `review_evidence.py` exits non-zero if any identity, relocation, glue stub,
 operand or constant differs from the reviewed value. Unlike
@@ -489,3 +491,211 @@ remain unresolved.
 - **Integration:** keep every item above tagged Mac-static. The PC
   `TP.ICD` was not inspected, and the PEF repeat-relocation path remains
   untested because the corpus has no instances.
+
+# Round 3: shared-reader and source fixes, formats and scenarios
+
+Reviewed commits: clock `3b9b322`, `068a076`, `dd903c6`, `3995687`,
+`dafbdb1`, `a5263bb`; economy `7b63c41`, `ab3c74d`; rides `15313d2`,
+`b3d14f9`; guests `5e6e346`, `00a6393`; advisor `3acb53d`, `3ae2dd9`; UI
+`8c70ff5`, `67e7d93`; formats `b0935b4`; scenarios `b8602bd`. Uncommitted
+Phase 3 files in the advisor, economy, formats (`source/` model files) and UI
+trees are **not** reviewed here. Source commits were exported with
+`git archive` into scratch directories for building, so no lane tree was
+touched. New address claims are pinned by `round3_evidence.py`, with synthetic
+regressions in `test_round3.py`.
+
+Runs: every lane's Python suite passes at its HEAD with the Mac paths set
+(clock 21, economy 8, guests 11, rides 15, advisor 26, UI 24 with private corpus
+paths and no skips, formats 24, scenarios 11). The shared toolkit at clock HEAD
+passes 31 tests. .NET: economy/save filter 42 pass and 0 skip
+(`OPENTPW_GAME_PATH` set), ride VM filter 34 pass. Standalone helpers: clock 33,
+guests 18, advisor 21. No helper project restores packages. The clock one
+clears all NuGet sources, and the rides one references only
+`source/OpenTPW.Files`. The rides PC witness JSON files contain counts and
+SHA-256 digests only.
+
+## 12. Shared toolkit fixes (clock lane, root-owned files)
+
+**Boundary:** `pef.py`, `test_pef.py`, `timer_evidence.py` and
+`test_timer_evidence.py` are shared toolkit files. The lane brief forbids
+child edits to them. The content is accepted below, but root must take
+ownership and merge them as one unit before any lane that imports them.
+
+- **PEF repeat (`068a076`): accepted.** Apple's Mac OS Runtime Architectures
+  (RTArch-98) states that both repeat forms repeat "the preceding blockCount
+  relocation blocks". It defines relocation blocks as 2-byte units, prohibits
+  nesting, and stores SmRepeat counts −1 and LgRepeat's repeatCount as the
+  actual value. The reader now selects a block window and rejects split
+  instructions and nesting. Round-1 wording already said the spec counts
+  2-byte chunks, so the fix aligns the reader with that and no review claim is
+  reversed. Independent checks:
+  - Main's unpatched reader and the fixed reader both reproduce all 16
+    relocation digests in `relocation_baseline.json`.
+  - The new `test_pef.py` fails against main's reader (8 failures, 5 errors),
+    so the regressions discriminate.
+  - Residual: whether the original instructions run once plus repeatCount
+    more times is not settled by the text or by the corpus. The corpus still
+    contains no repeats.
+- **Glue (`3995687`): accepted.** The six-word encodings were checked by hand
+  (`mtctr r0` = `0x7C0903A6`, `bctr` = `0x4E800420`). An independent
+  byte-pattern scan finds exactly **2,209** standard stubs in 16 containers,
+  equal to the lane count.
+
+## 13. Source fixes
+
+- **Save loans (`ab3c74d`): parser accepted.** The parser now reads eight
+  32-bit words and a 28-byte bank prefix, matching round 1. Lender is a field,
+  not the record index. The formats lane shows that the Mac HFS
+  `Easymode.TPWI` is byte-identical to the PC fixture (`6d89303d…`), so the Mac
+  serializer field order applies to this exact file.
+  **Medium, need-more-evidence:** for APR > 0, `OriginalEconomyImport` still
+  requires `MonthlyRepayment == LoanMath.MonthlyRepayment(...)`, an OpenTPW
+  annuity approximation (`[APPROX:ECON-006]`). For 10,000 at 10 % over 24
+  months the round-1 Mac reading gives **458** and the annuity **461**. An
+  original positive-APR save would therefore throw "differs from LoanInfo"
+  rather than "no loan table". That is not a regression, but positive-APR
+  import is still not supported. The cross-check test builds its expected
+  value with the same `LoanMath` call, so it is self-consistent rather than
+  evidence. Recommendation: compare repayments only at 0 % APR, or report a
+  mismatch for APR > 0 without failing, until a PC positive-APR fixture
+  exists.
+- **VM (`b3d14f9`): accepted except one low item.**
+  - COPY: a literal destination exits at `0xaf604` without fetching the
+    source. The next dispatch requires opcode tag `0x80`
+    (`0xaf5a4–0xaf5b0`). RSE operand kinds are tagged
+    `0x00/0x10/0x20/0x40`, so a parsed source operand can never pass, and the
+    immediate `Abort` (PC −10000) is equivalent. COPY sets the accumulator.
+  - DIV/MOD zero → 0 was re-confirmed in round 2.
+  - **Low: RAND negative bounds.** `0xb0804–0xb0820` computes
+    `labs(x − trunc(x/(b+1))·(b+1))` with `x = gen >> 1` and `b = extsh(raw)`.
+    Because the remainder uses `divw`/`mullw`/`subf`, **b = −1 returns x
+    (0…2³¹−1)** whatever `divw` yields. This corrects round 2's "undefined".
+    For b ≤ −2 the result is 0…(−b−2). OpenTPW throws on any negative bound.
+    The corpus has none (56 RAND, all non-negative literals; lane test), so
+    only mods are affected. Implement the defined Mac result or keep the
+    throw labelled as an unqualified domain.
+
+## 14. Formats lane (`b0935b4`, new)
+
+Witness exits 0 on the pinned containers. `corpus_check.py` gives
+byte-identical output on the PC baseline and Patch 2.
+
+- **MD2 gating: accepted.** `r27 = flags & 1` at `0x3f9f0` and `flags & 2` at
+  `0x3fcec`. The loader import has exactly two direct callers, `0x58f04`
+  (flags 0) and `0x99ad8` (6 or 2), so mask `0x1` is never set and major-207
+  meshes return DeadMesh. **Low:** the doc's "bit 1"/"bit 2" means masks
+  `0x1`/`0x2` (LSB-0 bits 0/1). Restate the gates and trailer/option "bits"
+  as masks before register or code use.
+- **TPWS trailing delimiters: accepted.** `0x11cc28` calls the World writer
+  (`0x105d3c`). Only then does `0x11cc58/0x11cc60` build `0x57524C44` (WRLD),
+  which `LbFile_Write` stores swapped as `DLRW`. This contradicts
+  `docs/TPWS-PAYLOAD.md`'s section attribution. Economy `ab3c74d` also edits
+  that file; the bank prefix and loan table are inside the World block under
+  either reading. Merge economy first, then rewrite the section table in one
+  root change.
+- **BF4 blend: accepted (Mac).** `0x88888889` comes from
+  `addis 5,0,-30583; addi 27,5,-30583`. Then `mulhwu`, `>>3`, add and a byte
+  truncate (`0xb574–0xb584`) give 255 → 17 at full coverage for C < D, and
+  `floor(n(C−D)/15)` for C ≥ D. The PC render path is unknown.
+- **MTR absent from the Mac build: accepted (bounded).** An independent scan
+  of 8.1 MB of section data finds no `AF 15 59 2E` in either byte order and no
+  `.mtr`. The same scan does find `.mov` 9 times.
+- **Other claims: accepted as Mac facts, not re-derived.** These are the
+  30 ticks/s animation clock (consistent with round 2), MAP ignored words and
+  axes, cell schema 84/94, easing scale, key search and Bézier. The doc keeps
+  PC equivalence open.
+
+## 15. Scenarios lane (`b8602bd`, new)
+
+Witness (374 checks) and tests pass. Strengths: the GameType 0/1/2 table,
+strict `>` ticket predicates, keys not consumed, only researcher staff produce
+points, and challenge activation.
+
+- **Offsets: accepted, with independent confirmation.** I ran economy's
+  descriptor walker (`schema.fields`, table `data:0x34d10`) independently. It
+  yields Visitors…RecentVisitorMonths at 1872–1896, CoasterHeight…
+  MinCellsCovered at 1900–1916, `DaysUntilFirstChallenge` 1928 and
+  `ResearcherConstsPerGrade.ResearchAbility` 1052 (stride 12). So the
+  big-park ticket reading **MinCellsCovered (1916)** is layout-proven, not
+  only "medium-high".
+- **Medium: research threshold index.** The same walk puts
+  `ResearchTech[0].PercentageForThisTech` at **+1276**: descriptor 165 inside
+  array 164–166, stride 4, capacity 10, with a trailing count word. The
+  opening loop reads `balance+1280+4g` (`0xf1670–0xf167c`), so the threshold
+  for opening g+1 is **`ResearchTech[g+1]`**. The percentage uses `divwu` and
+  the compare is `cmplw`, both unsigned. With the shipped `0,0,80,85,85`,
+  group 1 opens at 0 %, group 2 at 80 %, group 3 at 85 % and group 4 at 85 %.
+  A same-index reading (`threshold[g] = ResearchTech[g]`) would open group 2
+  immediately. ECON-016 must use g+1. Opening group 5 depends on
+  `ResearchTech[5]`'s parser default, which is unverified.
+- **Low-medium: ticket counter.** `world+0x1E0000−22772` is `mGameTick`, the
+  field incremented at `0x1053a0` (round 1). It is not only "zeroed at world
+  init": save loading restores it (formats: 755 in Easymode). The `== 4` test
+  at `0x1053a8` reads `world+0x1E0000−22728`, a world-state field, not
+  GameType (`data:0x53d98`). Do not merge these "modes".
+- **Calendar dependency: resolved from round 1.** `calendar+0x1c`
+  = 15000 (`mFunnySecsPerRealSec`), so a game day is 23.04 ticks, a 30-day
+  month 691.2 ticks, and `DaysUntilFirstChallenge` 540 ≈ 12,442 ticks. The
+  ticket check every 100 ticks runs about every 4.34 game days (24.8 s at
+  Mac speed 1.0). This holds only if no `.sam` or save overrides `+0x1c`,
+  which has not been traced.
+- **Low: happiness ticket wording.** The witness proves only that the second
+  test calls the same statistic as Local 1 (`0xc3684`) against
+  `AtLeastThisManyHappyPeople` (1884). "People in park" is inferred from
+  Local 1's field name, and the doc itself lists `0xc3684` semantics as not
+  established. Phrase it as "same statistic as Local 1".
+
+## 16. Other lanes, delta since round 2
+
+- **Clock:** accepted. My round-2 additions are absorbed: the exclusion gates
+  `0x52e44&8`/`0x52e40&1`, the cap dropping park turns, and `mGameTick` at
+  `0x1053a0`. The widget clock is raw milliseconds through the unsigned
+  divider. Zero time-slice behaviour stays open (conservative).
+- **Economy `7b63c41`:** accepted. The unsigned `(M·N−P)/N` wrap is
+  documented (119,304,646). The descriptor-to-runtime proof is the anchor
+  used in section 15.
+- **Guests `00a6393`:** accepted. `QueueTerm` is
+  `100 − divwu(queue·100, 4·max(cap,1))`, matching round 2. It is isolated,
+  with no production wiring. **Boundary:** it edits `docs/GUESTS.md`
+  (outside the lane).
+- **Advisor `3acb53d`, `3ae2dd9`; UI `8c70ff5`, `67e7d93`:** suites pass. No
+  new contradiction was found in what was spot-checked. Their newer
+  uncommitted files are tentative.
+- **Test hygiene (low):** `OPENTPW_MAC_APP` names a *file* in rides but a
+  directory elsewhere. Setting it to the bin directory makes two rides tests
+  error.
+
+## 17. Round-3 classification and integration order
+
+| Item | Status | Severity |
+| --- | --- | --- |
+| PEF repeat block fix, glue validation, relocation baseline | Accepted; out-of-lane files | Boundary |
+| Save parser 8-word loans + 7-word bank | Accepted | — |
+| Importer APR > 0 repayment equality vs annuity | Need more evidence; self-consistent test | Medium |
+| VM COPY abort, DIV/MOD 0, raw RAND bound | Accepted (Mac) | — |
+| VM negative RAND bound throws | Rejected as stated; Mac result defined, corpus-unreachable | Low |
+| MD2 gating, TPWS trailing tags, BF4 blend, MTR absence | Accepted (Mac) | — |
+| Formats "bit n" notation | Restate as masks | Low |
+| Scenarios ticket/challenge offsets incl. MinCellsCovered | Accepted, layout-proven | — |
+| Scenarios research threshold = `ResearchTech[g+1]`, unsigned | Correction | Medium |
+| Ticket counter = `mGameTick` (save-restored); state 4 ≠ GameType | Correction | Low-medium |
+| Calendar multiplier for park age | Resolved via round 1 (override untraced) | — |
+| Happiness ticket "people in park" | Overstated | Low |
+| Any PC/Patch 2 runtime equivalence | Needs evidence | — |
+
+Recommended safe order (root):
+
+1. Shared toolkit as one unit: `068a076` → `dd903c6` → `3995687`.
+2. Clock lane files (`3b9b322`, `dafbdb1`, `a5263bb`).
+3. Rides `51425bd` → `15313d2` → `b3d14f9`, with the RAND-negative note
+   recorded.
+4. Economy `14dff87` → `7b63c41` → `ab3c74d`, then an importer follow-up
+   for APR > 0.
+5. Formats `b0935b4` (lane-only), then one root change to
+   `TPWS-PAYLOAD.md`/`SavePayloadLayout` for trailing tags, after step 4.
+6. Scenarios `b8602bd`, with register updates using the section 15
+   corrections.
+7. Guests, advisor and UI lane commits (independent).
+
+Uncommitted source edits (formats `ModelAnimation*`, economy loan rules) need
+their own commit and review round before integration.

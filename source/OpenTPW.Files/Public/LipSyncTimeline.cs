@@ -50,7 +50,8 @@ public sealed class LipSyncTimeline
 	/// </summary>
 	public bool IsTalking( long microseconds )
 	{
-		// [APPROX:ADVISOR-013] µs unit and "talking from 0, toggle per mark" inferred from decoded audio (31 dB talking/silent contrast, fit peaks at 1 µs/unit) — evidence needed: original runtime LIP consumer (binary or trace)
+		// [BIN:STP-PPC:0x10007434 advisor update] marks are read in order until -1, divided by 1000 (µs to the ms speech clock) and each one flips the talking flag
+		// [APPROX:ADVISOR-013] talking from time 0 (inferred from decoded audio, 31 dB talking/silent contrast) — evidence needed: the talking flag's value when speech starts
 		if ( microseconds < 0 || Marks.Count == 0 )
 			return false;
 		var low = 0;

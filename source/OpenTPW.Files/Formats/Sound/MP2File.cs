@@ -19,24 +19,29 @@ public sealed class MP2File : ArchiveFile
 	public int BitsPerSample { get; set; }
 
 	public SoundTypes SoundType { get; set; }
-	public int Samples { get; set; }
 
-	public MP2File( int header, string name, byte[] soundData, int sampleRate, int bitsPerSample, int soundType, int samples, byte[] data )
+	/// <summary>
+	/// Raw 32-bit value at entry offset +32. Not proven to be a sample count: it is about
+	/// twice the frame-derived sample count for mono entries and about four times for stereo,
+	/// but with no exact relation, so it is kept unconverted.
+	/// </summary>
+	public int RawSampleField { get; set; }
+
+	public MP2File( int header, string name, byte[] soundData, int sampleRate, int bitsPerSample, int soundType, int rawSampleField, byte[] data )
 	{
 		Header = header;
 		Name = name;
 		SoundData = soundData;
-		SampleRate = 22050;
-		BitsPerSample = 16;
+		SampleRate = sampleRate;
+		BitsPerSample = bitsPerSample;
 		SoundType = (SoundTypes)soundType;
-		Samples = samples;
+		RawSampleField = rawSampleField;
 		Data = data;
 	}
 
 	/// <summary>
 	/// The MPEG frame stream after the entry header. <see cref="Header"/> (the first
-	/// header word) gives its offset; <see cref="SoundData"/> is read at a fixed offset
-	/// that does not match the 40-byte headers in the original speech banks.
+	/// header word, 40 in every shipped entry) gives its offset.
 	/// </summary>
 	public byte[] FrameData => Data[Math.Min( Header, Data.Length )..];
 

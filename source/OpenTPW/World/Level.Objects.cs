@@ -167,7 +167,7 @@ public partial class Level
 	/// <summary>Cells covered by the prototype Totem (its 6×8-unit model centred on its position).</summary>
 	private bool IsReservedByPrototype( int x, int y ) => PlacedRide != null && PrototypeCovers( PlacedRide.Position, x, y );
 
-	// [APPROX:RIDES-020] Sandbox Totem blocks cells whose centres lie within its 6×8-unit model box — evidence needed: none for gameplay (prototype only; to be replaced by anchor placement)
+	// [EXT:developer-prototype] Sandbox Totem blocks cells whose centres lie within its 6×8-unit model box (no original counterpart)
 	private bool PrototypeCovers( Vector3 position, int x, int y )
 	{
 		var origin = Objects.Grid.Origin;
@@ -248,7 +248,7 @@ public partial class Level
 			return;
 		var purchase = Park.Economy.TryBuild( PrototypeRide.InfoId, out var bought );
 		prototypeBought = purchase == ParkEconomy.PurchaseResult.Ok;
-		// [APPROX:RIDES-029] When the economy refuses the Totem (e.g. Research.Group 4 not yet researched), the developer prototype is registered uncharged — evidence needed: none for gameplay (developer tool; players build through PlaceObject)
+		// [EXT:developer-prototype] When the economy refuses the Totem (e.g. Research.Group 4 not yet researched), the developer prototype is registered uncharged (no original counterpart)
 		var state = prototypeBought ? bought! : Park.Economy.RegisterExisting( PrototypeRide.InfoId );
 		prototypeInstance = state.Id;
 		Park.Guests?.Link( ride.Visitors.AttractionId, state.Id );

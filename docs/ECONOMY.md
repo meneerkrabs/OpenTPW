@@ -238,7 +238,6 @@ site, is listed in `Economy/EconomyApproximations.cs` and is logged once at star
 | ECON-004 | `Economy/ParkCalendar.cs:11` | Fast x2 and Fastest x4 speeds (only pause is evidenced) | original speed controls, if any |
 | ECON-005 | `Economy/ParkLedger.cs:53` | challenge prizes and scrap sales are other income; build, upgrade, goods, prizes, land are other costs; loans received are not money in | captured financial screen after these transactions |
 | ECON-006 | `Economy/ParkLedger.cs:121` | APR > 0 repayment is an annuity at APR/12 per month, rounded down; interest accrues monthly on the balance | standard-mode save or capture with an outstanding loan |
-| ECON-007 | `Economy/ParkEconomy.cs:266` | a repaid loan offer becomes available again | capture of the loan screen after repayment |
 | ECON-008 | `Economy/ParkStaff.cs:50` | 100 training points per grade (from Online_Standard.sam comments "costs 1000 to get up to grade 1") | capture of a training run |
 | ECON-009 | `Economy/ParkStaff.cs:112` | candidate grade = average + 2 when "great", else average +-1 | hiring pool captures (grade distribution) |
 | ECON-010 | `Economy/ParkStaff.cs:64` | TimeBetweenStaffUpdates/StaffTimeoutTime are seconds at normal speed | capture of pool refresh timing |
@@ -263,7 +262,6 @@ site, is listed in `Economy/EconomyApproximations.cs` and is logged once at star
 | ECON-029 | `Economy/ParkEconomy.cs:438` | golden tickets are spent when buying items with GoldenTicketCost | capture of ticket count after such a purchase |
 | ECON-030 | `Economy/ParkEconomy.cs:110` | the simulation stops once bankrupt | capture of the bankrupt state |
 | ECON-031 | `Economy/ParkEconomyRuntime.cs:33` | imported parks are opened on load (open state not decoded) | park-open flag in the save |
-| ECON-032 | `Economy/ParkEconomyRuntime.cs:46` | the prototype ride is registered uncharged | replace with a real catalogue purchase (rides slice) |
 | ECON-033 | `Economy/ParkEconomy.cs:304` | golden tickets are checked at each month end | capture of the award timing |
 | ECON-034 | `Economy/ParkObjectives.cs:113` | challenge type meanings come from Challenges.sam comments (shop types by ShopType/SpecialIngredient) | challenge captures per type |
 | ECON-035 | `Economy/ParkObjectives.cs:153` | offers wait for accept/decline; follow-ups are offered right after completion; failed challenges count as finished | challenge flow captures |

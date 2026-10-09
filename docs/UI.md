@@ -296,7 +296,6 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-030 | `UI/Original/Options/GameOptions.cs:16` | volumes in 0..10 steps, default 8; popup help default on | capture/registry defaults of the original options |
 | UI-031 | `Hud/ParkHud.cs:350` | one placement per menu selection; Level.PlaceObject owns purchase/guest linkage and its removal handler owns scrap credits | original build-tool continuation |
 | UI-032 | `UI/Original/UiWidgets.cs:179`, `Hud/ParkHud.cs:590` | longer labels fall back to the small font; catalogue names greedily wrap in their slots | captures of translated original screens |
-| UI-033 | `Hud/HudStubs.cs:130` | test-only Totem catalogue falls back to price 3,250 when Totem.sam cannot be read; the game uses ObjectCatalog | none if the data is present |
 
 Data-backed (tagged `[DATA]`): the 2048×1536 canvas and authored rectangles of
 placed models (`ui.wad` roots/bounds), button state frames and texture order, V

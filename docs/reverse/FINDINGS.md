@@ -1,7 +1,8 @@
 # Classic Mac PowerPC evidence
 
 2026-10-09. Static metadata inspection only; the original program was not run.
-The local Feral corpus is `/Users/sander/server/game-assets/mac-feral/bin`.
+The Feral corpus is referred to below as `$FERAL_BIN` (the directory holding the
+extracted `.data` files, with `libraries/` below it).
 Original `.data`, `.bin`, disk images, expanded sections and disassembly stay
 outside this repository.
 
@@ -11,9 +12,9 @@ From the repository root, with Python 3 and no third-party packages:
 
 ```sh
 python3 -m unittest discover -s tools/ppc-analysis -p 'test_*.py' -v
-python3 tools/ppc-analysis/inventory.py /Users/sander/server/game-assets/mac-feral/bin/*.data /Users/sander/server/game-assets/mac-feral/bin/libraries/*.data
-python3 tools/ppc-analysis/inventory.py --symbols UTimer /Users/sander/server/game-assets/mac-feral/bin/*.data /Users/sander/server/game-assets/mac-feral/bin/libraries/*.data
-python3 tools/ppc-analysis/inventory.py --symbols LbTime_GetClock /Users/sander/server/game-assets/mac-feral/bin/*.data /Users/sander/server/game-assets/mac-feral/bin/libraries/*.data
+python3 tools/ppc-analysis/inventory.py $FERAL_BIN/*.data $FERAL_BIN/libraries/*.data
+python3 tools/ppc-analysis/inventory.py --symbols UTimer $FERAL_BIN/*.data $FERAL_BIN/libraries/*.data
+python3 tools/ppc-analysis/inventory.py --symbols LbTime_GetClock $FERAL_BIN/*.data $FERAL_BIN/libraries/*.data
 ```
 
 The JSON inventory sorts input paths and keys and contains file identities,
@@ -107,7 +108,7 @@ interfaces and verify conversion constants against an original runtime capture.
 Run the dependency-free, identity-pinned operand verifier:
 
 ```sh
-python3 tools/ppc-analysis/timer_evidence.py /Users/sander/server/game-assets/mac-feral/bin
+python3 tools/ppc-analysis/timer_evidence.py $FERAL_BIN
 python3 -m unittest discover -s tools/ppc-analysis -p 'test_*.py' -v
 ```
 

@@ -1111,7 +1111,146 @@ All 48 lane Python checks pass with the selected fixtures. Ten new cases cover
 record order, ignored cache words, bank-before-sample resolution, duplicate
 truncated names, invalid ordinals/paths/quality suffixes, context-specific IDs
 and actual native/PC/Mac operands and mappings. Confidence is high for these
-identities and bounds. Event element selection, random weighting, parameter
-semantics, exact filename quality/root policy, environmental priority and audio
+identities and bounds. Phase 9 below recovers selected element weighting and
+parameter consumers. Exact filename quality/root policy, environmental priority and audio
 output scheduling remain unimplemented dependencies; no PCM-clock LIP bridge
 or original runtime parity is inferred.
+
+## Phase 9: loaded weights, selection state and sound parameters
+
+`sound_selection_evidence.py` adds identity-pinned operands and bounded pure
+selection algebra. It accepts a seed snapshot, explicit descriptors and
+parameter values. It does not advance shared random state or schedule output.
+All addresses below are code section 0 or explicitly named data section 1 in
+the same identified Mac sound PEF used above, with TOC `0x8000`.
+
+### Disk weights are not always runtime weights
+
+`IsSFXHeaderValid` reads header word +16 at `0x15e60`; zero sets streamer byte
++60 to one at `0x15e70–0x15e7c`. `RegisterSFXData` repeats that conversion at
+`0x15f98–0x15fac`. `ReadEvents` (`0x165b0`) then visits the loaded 42-byte
+event array. With that flag set, `0x16654–0x16660` replaces event word +30
+with `(currentStored - previousStored) mod 2^32`, initially previous zero.
+With the flag clear it retains the stored word. Child event references are
+linked afterward, so branch selection also sees the converted weights.
+
+The supplied PC tree contains 31 SFX catalogs: 26 request this differencing,
+while the four level music catalogs and global speech catalog do not. All
+four selected Mac UI/ride catalogs request differencing and remain
+byte-identical to their selected PC copies. For Fantasy catalog 145,
+stored values 10922, 21844, 32766, 43688, 54610 and 65532 become six weights
+of 10922. For Jungle catalog 204, five cumulative values become five weights
+of 13107. Directly summing the serialized cumulative values would change
+the native selection behavior.
+
+### Base and branching selection consumers
+
+| Consumer | Native operands and behavior |
+| --- | --- |
+| `CAudioPlaceHolder::ChooseRandomSound`, `0xff40` | Event count at sound +4, array +8, stride 42. Sum loaded event words +30 in unsigned 32-bit arithmetic; choose first sum **greater than or equal to** candidate high 16 bits (`0xffb8–0xffc4`). Exhaustion selects the first event at `0x10130`, preserving previous-index history and skipping parameter-selector refresh. |
+| `CAudioPlaceHolder::ChooseRandomSample`, `0xfcb4` | Sample count is event word +0 low 16 bits, array +8, stride 16. Choose first sample threshold word +4 **greater than or equal to** candidate high 16 bits (`0xfd10–0xfd18`). Exhaustion returns null (`0xfd9c`), without history update. The sample threshold is not differenced by the event-weight conversion. |
+| Base singletons | A count of one selects the first array entry directly. It bypasses random arithmetic, previous-index storage and, for events, parameter-selector refresh. Sample count zero returns null. The helper refuses an empty event array instead of modelling the native first-pointer fallback as a valid record. |
+| Base anti-repeat | Only when the boolean is enabled and count is **greater than two**, equality with signed-byte history increments the selected index and takes unsigned modulo count. Event history is object byte +80 (`0x10010`, `0x10058`); sample history is +81 (`0xfd44`, `0xfd88`). This is a next-entry substitution, not another random draw. |
+| `CPlaceHolderBranchingSentence::AssignSoundToNextBranch`, `0x192f0` | The current event's linked-child array is at +38, count +4, stride 8. Link bytes +6/+7 are inclusive low/high bounds for the supplied unsigned branch parameter (`0x19364–0x19378`). Sum the eligible linked events' loaded weights +30, take the full candidate modulo that total, then choose first eligible cumulative sum >= remainder (`0x1939c–0x19418`). |
+| `CPlaceHolderOneShotBranchingSentenceElement::ChooseRandomSound`, `0x18028` | Reads the parent parameter byte from parameter structure +4, filters the same inclusive link ranges (`0x180c0–0x180d4`) and weights the linked events (`0x180e0`, `0x1815c`). It updates both its own and the parent's selected event pointer. |
+
+These are selected class consumers, not a claim that every EVENT uses the base
+class. Linear sentences, shuffles, droppable conversion and class selection
+require their own dispatch evidence. A zero eligible weight sum reaches an
+unsigned division dependency in the native branch; the pure helper reports
+that unsupported input instead of inventing a fallback. Base index models
+are bounded to at most 127 choices because native index temporaries/history
+are signed bytes. That is a helper boundary, not a proven native rejection.
+Zero weights/thresholds can select on a zero draw because equality is accepted.
+
+### Random-state ownership boundary
+
+All nine direct TOC address constructions for sound data `0xc2e4` occur at
+`0xf404`, `0xf548`, `0xf764`, `0xf988`, `0xfce0`, `0xff80`, `0x118c8`,
+`0x180f8` and `0x1939c`. The selected draw blocks read this shared sound-module
+word and calculate
+
+```
+candidate = (seed * 1664525 + 1013904223) mod 2^32
+```
+
+The base event/sample choices use its high 16 bits. Volume, pitch and branch
+choices use the full unsigned candidate modulo their range/weight span.
+The draw blocks do not store the successor back into shared state. One pitch
+fill variant spills the unchanged seed to its stack; that is not advancement.
+
+Initializer `0x118b4` calls imported `LbTime_GetClock` at `0x118c0` and stores
+its return into that word at `0x118cc`; the static constructor list calls it
+at `0x3c`. Thus this selected RNG state belongs to the sound module and its
+initial value comes from the clock, separately from the game's advisor-mouth
+random call. Data relocation slot `0x348` also points to the seed word;
+its indirect use has not been recovered. The witnesses establish direct
+consumers and initializer, not a complete absence of indirect writers or an
+original runtime sequence. Do not turn these pure functions into an advancing
+per-draw RNG without finding a native state writer.
+
+### Volume, pitch and parameter codes
+
+| Packed event field | Proven selected consumer |
+| --- | --- |
+| +12/+13, unsigned bytes | Volume range, `GetRandomVolume` at `0xf32c`. Reversed bounds are swapped in the loaded event. With no matching parameter: `low + candidate % (high-low)`, or low for equal bounds. The high endpoint is excluded for a nonzero span. Missing event returns 100. |
+| +14/+15, signed bytes | Pitch-index range, `GetRandomPitch` at `0xf45c`; explicit sign extensions `0xf48c`, `0xf490`. Same swap/range rule, with missing event returning zero. Stored byte 232 means −24. |
+| +22/+26, unsigned shorts | External parameter selector codes. Normal base event selection loads them then truncates into parameter structure byte +1/+2 (`0x100d8–0x100ec`), resetting +3 to zero. These codes are not volume/pitch values or globally established EventMap names. |
+| +24/+28, unsigned shorts | Destination masks. `GetParameterValue`, `0xf2e0`, first tests +24 against requested bit and returns parameter byte +5; otherwise +28 can return +6. First matching mask wins. Volume requests bit 1 at `0xf3bc`; pitch requests bit 2 at `0xf4fc`. The sentence-element override `0x187fc` reads those value bytes from its parent. |
+
+`UpdateParameter` (`0xe9c0`) truncates incoming code and value to bytes and
+updates **all** matching slots among four selector/value pairs. A match in
+slot zero alone does not request dependent recomputation. Other matches call
+the dependent-update virtual slot unless object flag `0x4000` inhibits it
+(`0xea94–0xeaac`). No inferred speed/distance label is attached to codes 19/20.
+
+When the requested parameter exists, volume/pitch use
+`low + floor(((span * parameter) mod 2^32) / 100)`. At parameter 100 this
+includes the high endpoint, unlike the random range. Values are byte-sized
+on the proved storage path but are not clamped to 100 by these consumers.
+`UpdateParameterDepandants` (`0xead4`) requires an active handle and manager;
+it passes volume to `TbSoundSampleInfo::SetVolume` at `0xeb54→0x9400` and
+pitch to `SetPitch` at `0xeb6c→0x9428`. Flag `0x400` inhibits its volume
+recalculation. Sample-info setters store volume word +28, pitch word +36,
+and the distinct `SetFrequency(float)` API stores float +32 at `0x943c`.
+
+The exported `TbSoundSystemModule::ConvertPitchIndexToFrequency` (`0xbbf8`)
+has a zero special case of 1.0. Its positive branch adds one to the index,
+divides by float 96 and calls MathLib `pow(2, exponent)`; its negative branch
+uses `(1-index)/96` and returns the reciprocal. The mathematical ratios are
+therefore `2^((index+1)/96)` for positive indices and
+`2^((index-1)/96)` for negative indices. Constants are data +0x668 (float
+96), +0x670 (double 2) and +0x678 (float 1). This API evidence does not
+establish every mixer call site, absolute sample frequency, MathLib bit-exact
+rounding, or audio-device output parity. The pure expression test is an
+algebra check, not an original device test.
+
+### Selected corpus and verification
+
+| Corpus | Sounds / events | Sample choices / child links | Variable volume / pitch ranges | Multi-sample arrays ending below 65535 |
+| --- | ---: | ---: | ---: | ---: |
+| Supplied PC baseline, 31 catalogs | 1,267 / 1,595 | 3,631 / 3,306 | 180 / 238 | 201 |
+| Selected Mac copies, 4 catalogs | 336 / 400 | 1,105 / 277 | 31 / 46 | 73 |
+
+These last-column arrays have a concrete possible high-draw exhaustion
+dependency in the selected sample chooser; no fallback or normalization is
+invented. Both supplied sets have zero nonmonotone sample-threshold arrays.
+Fantasy 145 uses volume 17–85, pitch indices −24–36 and selector
+19 with mask 3, so the same external byte can interpolate both ranges.
+Jungle 204 has those ranges with selector 20/mask 3. Global UI 31 remains
+volume 100 and pitch zero. Catalog context and IDs retain the identities
+from phase 8; these parameter codes do not supply new event names.
+
+```sh
+python3 tools/ppc-analysis/lanes/advisor/sound_selection_evidence.py /Users/sander/server/game-assets/mac-feral/bin --pc-data /Users/sander/server/game-assets/theme-park-world/Data --mac-data /tmp/ppc-advisor-mac-Data > /tmp/advisor-sound-selection.json
+OPENTPW_PPC_BIN_ROOT=/Users/sander/server/game-assets/mac-feral/bin OPENTPW_PC_DATA=/Users/sander/server/game-assets/theme-park-world/Data OPENTPW_MAC_DATA=/tmp/ppc-advisor-mac-Data python3 -m unittest discover -s tools/ppc-analysis/lanes/advisor -p 'test_*.py' -v
+```
+
+All 67 advisor Python cases pass with the supplied binary/PC/Mac fixtures,
+with zero skips. The 19 new cases cover loader differencing/wrap, threshold and weight equality,
+exhaustion, singleton bypasses, anti-repeat, inclusive branches, zero-divisor
+dependencies, signed pitch, reversed bounds, random/parameter endpoints,
+byte truncation/masks, frequency algebra, native operands and private PC/Mac
+metadata. Confidence is high for the selected static consumers and supplied
+record interpretations. Indirect RNG writers, complete class dispatch,
+parameter producers, scheduling and device behavior remain separate handoffs.

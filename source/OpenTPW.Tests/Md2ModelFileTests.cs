@@ -27,7 +27,7 @@ public class Md2ModelFileTests
 	private const int DummyTable = 0x264;
 	private const int FileLength = 0x2BC;
 
-	private static byte[] CreateGeometry()
+	internal static byte[] CreateGeometry()
 	{
 		var data = new byte[FileLength];
 		WriteHeader( data, 221, 203 );
@@ -178,7 +178,7 @@ public class Md2ModelFileTests
 	}
 
 	[TestMethod]
-	public void DecodesAnimationContainerAsOpaqueTrailer()
+	public void DecodesEmptyAnimationContainerTrailer()
 	{
 		var model = Read( CreateAnimation() );
 		Assert.AreEqual( ModelFileKind.Animation, model.Kind );
@@ -188,6 +188,8 @@ public class Md2ModelFileTests
 		Assert.AreEqual( 0xC0, model.Animation!.Offset );
 		Assert.AreEqual( 18, model.Animation.Words.Count );
 		Assert.AreEqual( 430u, model.Animation.Words[2] );
+		Assert.AreEqual( 430, model.Clip!.Duration );
+		Assert.AreEqual( 0, model.Clip.Tracks.Count );
 	}
 
 	[TestMethod]

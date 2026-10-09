@@ -38,6 +38,8 @@ public partial class ModelFile : BaseFormat
 	/// <summary>Opaque block pointer at 0x6C (only observed in terrain base models); 0 when absent.</summary>
 	public uint UnknownBlockOffset { get; private set; }
 	public ModelAnimationTrailer? Animation { get; private set; }
+	/// <summary>Decoded position/rotation/scale tracks of an animation member.</summary>
+	public ModelAnimation? Clip { get; private set; }
 	public List<Mesh> Meshes { get; private set; } = new();
 
 	public ModelFile( Stream stream )
@@ -191,6 +193,7 @@ public partial class ModelFile : BaseFormat
 				throw new InvalidDataException( $"MD2 animation trailer word {index} points outside the payload." );
 		}
 		Animation = new ModelAnimationTrailer( (int)trailer, words );
+		Clip = ModelAnimation.Decode( data, (int)trailer, words );
 	}
 
 	private void ParseGeometry( byte[] data, uint[] offsets )

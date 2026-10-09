@@ -19,6 +19,7 @@ public class Md2CorpusTests
 			.Where( file => file.EndsWith( ".wad", StringComparison.OrdinalIgnoreCase ) ).ToArray();
 		Assert.AreEqual( 312, wads.Length );
 		int members = 0, geometry = 0, animation = 0;
+		long tracks = 0, trsTracks = 0, undecodedTracks = 0, bezierTracks = 0, linearTracks = 0, positionKeys = 0, rotationKeys = 0, easedKeys = 0, scaleKeys = 0;
 		long meshes = 0, nodes = 0, faces = 0, corners = 0, positions = 0, materials = 0, untextured = 0, textureSlots = 0, multiFrame = 0, extra = 0, attributes = 0;
 		var unsupported = new List<string>();
 		var failures = new List<string>();
@@ -35,6 +36,18 @@ public class Md2CorpusTests
 					if ( model.Kind == ModelFileKind.Animation )
 					{
 						animation++;
+						foreach ( var track in model.Clip!.Tracks )
+						{
+							tracks++;
+							trsTracks += track.Position != null || track.Rotations.Count > 0 || track.Scales.Count > 0 ? 1 : 0;
+							undecodedTracks += track.HasUndecodedPayload ? 1 : 0;
+							bezierTracks += track.Position?.IsBezier == true ? 1 : 0;
+							linearTracks += track.Position?.IsBezier == false ? 1 : 0;
+							positionKeys += track.Position?.Times.Count ?? 0;
+							rotationKeys += track.Rotations.Count;
+							easedKeys += track.Rotations.Count( key => key.Ease >= 0 );
+							scaleKeys += track.Scales.Count;
+						}
 						continue;
 					}
 					geometry++;
@@ -81,6 +94,136 @@ public class Md2CorpusTests
 		Assert.AreEqual( 124, multiFrame );
 		Assert.AreEqual( 27, extra );
 		Assert.AreEqual( 2452, attributes );
+		Assert.AreEqual( 6549, tracks );
+		Assert.AreEqual( 3475, trsTracks );
+		Assert.AreEqual( 4082, undecodedTracks );
+		Assert.AreEqual( 785, bezierTracks );
+		Assert.AreEqual( 431, linearTracks );
+		Assert.AreEqual( 8703, positionKeys );
+		Assert.AreEqual( 26233, rotationKeys );
+		Assert.AreEqual( 12451, easedKeys );
+		Assert.AreEqual( 2832, scaleKeys );
+	}
+
+	/// <summary>
+	/// Animations bind to the geometry member whose name is the longest proper prefix of theirs
+	/// (header counts are not reliable: spider animations repeat Pspider's 19-node header but
+	/// target spider.MD2's 65 nodes). Sampled at 9 ticks with parent-relative composition, base
+	/// mesh positions stay within the base header bounds widened by one extent for 1,237 of
+	/// 1,275 animations (1,172 when matrices are treated as absolute), matching Python.
+	/// </summary>
+	[TestMethod]
+	public void EveryNamePairedAnimationPlaysAgainstItsBaseModel()
+	{
+		var dataPath = OriginalDataPath();
+		int paired = 0, unpaired = 0, outOfRange = 0, bounded = 0;
+		foreach ( var wad in Directory.EnumerateFiles( dataPath, "*", SearchOption.AllDirectories ).Where( file => file.EndsWith( ".wad", StringComparison.OrdinalIgnoreCase ) ) )
+		{
+			using var archive = new WadArchive( wad );
+			var models = new List<(string Directory, string Name, ModelFile Model)>();
+			foreach ( var (name, file) in Md2Members( archive.Root, "" ) )
+			{
+				try
+				{
+					models.Add( (Path.GetDirectoryName( name ) ?? "", Path.GetFileNameWithoutExtension( name ).ToLowerInvariant(), new ModelFile( new MemoryStream( file.GetData() ) )) );
+				}
+				catch ( NotSupportedException )
+				{
+				}
+				finally
+				{
+					file.Free();
+				}
+			}
+			foreach ( var clip in models.Where( entry => entry.Model.Kind == ModelFileKind.Animation ) )
+			{
+				var bases = models.Where( entry => entry.Model.Kind == ModelFileKind.Geometry && entry.Directory == clip.Directory
+					&& clip.Name.Length > entry.Name.Length && clip.Name.StartsWith( entry.Name, StringComparison.Ordinal ) ).ToArray();
+				if ( bases.Length == 0 )
+				{
+					unpaired++;
+					continue;
+				}
+				var model = bases.MaxBy( entry => entry.Name.Length ).Model;
+				ModelAnimationPlayer player;
+				try
+				{
+					player = new ModelAnimationPlayer( model, clip.Model.Clip!, 30 );
+				}
+				catch ( InvalidDataException )
+				{
+					outOfRange++;
+					continue;
+				}
+				paired++;
+				bounded += StaysBounded( model, player ) ? 1 : 0;
+			}
+		}
+		Assert.AreEqual( 1275, paired );
+		Assert.AreEqual( 2, unpaired );
+		Assert.AreEqual( 1, outOfRange );
+		Assert.AreEqual( 1237, bounded );
+	}
+
+	private static bool StaysBounded( ModelFile model, ModelAnimationPlayer player )
+	{
+		var extent = Math.Max( model.BoundsMax.X - model.BoundsMin.X, Math.Max( model.BoundsMax.Y - model.BoundsMin.Y, model.BoundsMax.Z - model.BoundsMin.Z ) );
+		var min = new System.Numerics.Vector3( model.BoundsMin.X, model.BoundsMin.Y, model.BoundsMin.Z ) - new System.Numerics.Vector3( extent );
+		var max = new System.Numerics.Vector3( model.BoundsMax.X, model.BoundsMax.Y, model.BoundsMax.Z ) + new System.Numerics.Vector3( extent );
+		var world = new System.Numerics.Matrix4x4[model.Nodes.Count];
+		player.Loop = false;
+		for ( var step = 0; step <= 8; step++ )
+		{
+			player.SetTick( player.Animation.Duration * step / 8f );
+			player.ComputeWorldTransforms( world );
+			foreach ( var mesh in model.Meshes )
+			{
+				var stride = Math.Max( 1, mesh.Positions.Length / 8 );
+				for ( var index = 0; index < mesh.Positions.Length; index += stride )
+				{
+					var position = mesh.Positions[index];
+					var point = System.Numerics.Vector3.Transform( new System.Numerics.Vector3( position.X, position.Y, position.Z ), world[mesh.NodeIndex] );
+					if ( point != System.Numerics.Vector3.Clamp( point, min, max ) )
+						return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	[TestMethod]
+	public void OriginalTotemAnimationSamplesMatchIndependentDecode()
+	{
+		var model = new ModelFile( new MemoryStream( ReadMember( "levels/jungle/rides/totem.wad", "totem.MD2" ) ) );
+		var clip = new ModelFile( new MemoryStream( ReadMember( "levels/jungle/rides/totem.wad", "totemm1.MD2" ) ) ).Clip!;
+		Assert.AreEqual( 430, clip.Duration );
+		CollectionAssert.AreEqual( new[] { "tp_cart", "tp_cog", "tp_cog01" }, clip.Tracks.Select( track => model.Nodes[track.NodeIndex].Name ).ToArray() );
+		var cart = clip.Tracks[0];
+		Assert.IsTrue( cart.Position!.IsBezier );
+		Assert.AreEqual( 25, cart.Position.Points.Count );
+		CollectionAssert.AreEqual( new uint[] { 0, 177, 185, 211, 214, 257, 280, 380, 430 }, cart.Position.Times.ToArray() );
+		Assert.AreEqual( 0, System.Numerics.Vector3.Distance( model.Nodes[2].Transform.Translation, cart.SampleTranslation( 0 )!.Value ), 1e-5 ); // starts at the rest pose
+		// Expected values from a separate Python decoder over the raw bytes.
+		foreach ( var (tick, height) in new[] { (50f, 8.412308f), (88.5f, 24.917468f), (177f, 47.565502f), (181f, 46.635943f), (235.5f, 6.341847f), (300f, -33.524913f), (430f, -2.404270f) } )
+			Assert.AreEqual( height, cart.SampleTranslation( tick )!.Value.Y, 1e-4, $"tick {tick}" );
+		var cog = clip.Tracks[1];
+		Assert.AreEqual( 11, cog.Rotations.Count );
+		Assert.AreEqual( 3, cog.EaseCurves.Count );
+		foreach ( var (tick, y, w) in new[] { (50f, 0.9555728f, -0.2947551f), (88.5f, -0.1675061f, -0.9858710f), (181f, 0.5440980f, 0.8390217f), (300f, 0.7829279f, -0.6221125f) } )
+		{
+			var rotation = cog.SampleRotation( tick )!.Value;
+			Assert.AreEqual( y, rotation.Y, 1e-4, $"tick {tick}" );
+			Assert.AreEqual( w, rotation.W, 1e-4, $"tick {tick}" );
+		}
+		Assert.AreEqual( -clip.Tracks[1].SampleRotation( 50 )!.Value.Y, clip.Tracks[2].SampleRotation( 50 )!.Value.Y, 1e-6 );
+
+		// Cart children (seat dummies) follow the animated cart because matrices are parent-relative.
+		var player = new ModelAnimationPlayer( model, clip, 30 );
+		var world = new System.Numerics.Matrix4x4[model.Nodes.Count];
+		player.SetTick( 177 );
+		player.ComputeWorldTransforms( world );
+		var head = model.Nodes.Single( node => node.Name == "Head01" );
+		Assert.AreEqual( 47.565502f + head.Transform.Translation.Y, world[head.Index].Translation.Y, 1e-3 );
 	}
 
 	[DataTestMethod]

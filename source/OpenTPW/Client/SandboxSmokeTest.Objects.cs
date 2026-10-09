@@ -63,6 +63,17 @@ internal sealed partial class SandboxSmokeTest
 			.Concat( level.PlacedRide != null ? new[] { PrototypeRide.InfoId } : Array.Empty<int>() ).Distinct().ToArray();
 		Require( level.Objects.Objects.All( item => item.Script?.State != RideVMState.Faulted ), "original object scripts run without faults" );
 		Require( moving.Length >= 3, $"at least three different original objects animate (moving: {string.Join( ", ", moving )})" );
+		if ( level.Guests != null )
+		{
+			// Guests use the imported Easymode attractions through their own scripts, entering at the shape's entrance cell.
+			var used = level.Objects.Objects.Where( item => item.Visitors.BoardedTotal > 0 ).ToArray();
+			Log.Trace( $"Guests used original objects: {string.Join( ", ", used.Select( item => $"{item.Entry.DisplayName} ({item.Visitors.BoardedTotal} boarded, {item.Visitors.ReleasedTotal} released)" ) )}; {level.Guests.Attractions.Count} attractions registered." );
+			if ( level.OriginalPark?.Save != null )
+			{
+				var imported = level.OriginalPark.Save.PlacedObjects.Select( item => item.Record.InfoId ).ToHashSet();
+				Require( used.Select( item => item.Entry.InfoId ).Where( imported.Contains ).Distinct().Count() >= 2, "guests ride at least two different imported original objects" );
+			}
+		}
 		Log.Trace( $"Original objects animating between frames: {string.Join( ", ", moving.Select( id => level.Objects.Catalog.Find( id )?.DisplayName ?? PrototypeRide.DisplayName ) )}." );
 	}
 }

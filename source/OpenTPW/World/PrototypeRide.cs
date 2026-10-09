@@ -46,6 +46,9 @@ public sealed class PrototypeRide : OriginalObject
 	/// <summary>True while ANIM_Main variant 0 (totemm1.MD2, the cart cycle) plays on the main channel.</summary>
 	public bool IsPlayingMainAnimation => Runtime.Animator.IsChannelPlaying( OriginalObjectEffects.MainChannel )
 		&& string.Equals( Runtime.Animator.GetClip( OriginalObjectEffects.MainChannel ), Path.GetFileNameWithoutExtension( AnimationName ), StringComparison.OrdinalIgnoreCase );
+	/// <summary>Length of the create clip (ANIM_Create, totemc) that Totem.RSE waits for before its passenger loop.</summary>
+	public double CreateAnimationMilliseconds => Entry.ResolveAnimation( 0, 0 ) is { } file && ObjectAssets.LoadModel( Entry.FileSystem, file.Path ).Clip is { } clip
+		? clip.Duration / ObjectAnimator.TicksPerSecond * 1000.0 : 0;
 	/// <summary>Current tick of the main animation channel (0 when nothing played yet).</summary>
 	public float AnimationTick => Runtime.Animator.GetTick( OriginalObjectEffects.MainChannel );
 

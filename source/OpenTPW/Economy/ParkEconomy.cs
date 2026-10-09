@@ -341,19 +341,24 @@ public sealed class ParkEconomy : IParkEconomy
 	public int LitterItems => (int)(LitterScaled / LitterScale);
 
 	/// <summary>
-	/// Park rating 0–100 (UITEXT 155). The original formula is unknown; this <b>approximation</b> averages
-	/// visitor happiness (weight 2), attractions (sum of <c>Info.AttractionValue</c> of open items / 3,
-	/// capped at 100) and cleanliness (100 minus litter items).
+	/// Park rating 0–100 (UITEXT 155): a sum of capped counts of guests, attractions and staff. It does
+	/// not use guest happiness, litter or whether an attraction is open.
 	/// </summary>
+	// [BIN:STP-PPC:0x100C7B24 park rating] min(guests in park, 1000) × 20 / 1000; attractions of sub-kind 0 × 3 / 2 up to 20; sub-kinds 1 and 2 × 2 up to 10 each; sub-kind 3 up to 10; sub-kind 0 at upgrade level 2 or more up to 10; each of the five staff types up to 4
 	public int ParkRating
 	{
 		get
 		{
-			var attractions = Math.Min( 100, objects.Values.Where( item => item.IsOpen && !item.IsBrokenDown )
-				.Sum( item => Catalog.TryGet( item.InfoId, out var info ) ? info.AttractionValue : 0 ) / 3 );
-			var cleanliness = Math.Max( 0, 100 - LitterItems );
-			// [APPROX:ECON-027] park rating = (2 x happiness + attractions/3 + cleanliness) / 4 — evidence needed: park rating formula (binary/captures)
-			return Math.Clamp( (2 * guestStatistics.AverageHappiness + attractions + cleanliness) / 4, 0, 100 );
+			var guests = Math.Min( guestStatistics.PeopleInPark, 1000 ) * 20 / 1000;
+			// [APPROX:ECON-027] the record sub-kinds 0–3 are rides, shops, sideshows and features, and every hired staff member counts — evidence needed: the record field at +0x4C behind sub-kind +0x7A8 and the staff byte +3 tested by FUN_100C4064
+			int Count( ParkObjectKind kind, int minimumLevel = 0 ) => objects.Values.Count( item => item.Kind == kind && item.Level >= minimumLevel );
+			var attractions = Math.Min( Count( ParkObjectKind.Ride ) * 3 / 2, 20 )
+				+ Math.Min( Count( ParkObjectKind.Shop ) * 2, 10 )
+				+ Math.Min( Count( ParkObjectKind.Sideshow ) * 2, 10 )
+				+ Math.Min( Count( ParkObjectKind.Feature ), 10 )
+				+ Math.Min( Count( ParkObjectKind.Ride, 2 ), 10 );
+			var staff = Enum.GetValues<StaffType>().Sum( type => Math.Min( Staff.Members.Count( member => member.Type == type ), 4 ) );
+			return guests + attractions + staff;
 		}
 	}
 

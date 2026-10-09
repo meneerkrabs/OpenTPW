@@ -34,7 +34,7 @@ public static class EconomyApproximations
 		("ECON-024", "a repair restores state of repair to 100", "capture after a repair"),
 		("ECON-025", "scrap value basis = catalogue cost of all levels up to the current one", "capture of scrap value"),
 		("ECON-026", "park value = sum of scrap values", "capture of the park value screen"),
-		("ECON-027", "park rating = (2 x happiness + attractions/3 + cleanliness) / 4", "park rating formula (binary/captures)"),
+		("ECON-027", "the record sub-kinds 0–3 are rides, shops, sideshows and features, and every hired staff member counts", "the record field at +0x4C behind sub-kind +0x7A8 and the staff byte +3 tested by FUN_100C4064"),
 		("ECON-028", "purchases need a balance covering the cost", "capture of building with too little money"),
 		("ECON-029", "golden tickets are spent when buying items with GoldenTicketCost", "capture of ticket count after such a purchase"),
 		("ECON-030", "the simulation stops once bankrupt", "capture of the bankrupt state"),

@@ -133,8 +133,7 @@ effects), `PeepTypes[0–7]` (excitement, starting cash, boredom), `Arrival.*` (
 between arrivals, fixed rate, new-park bonus, points per visitor), `RegionFX[0–7]` (entertainer,
 clean/dirty toilet, vomit, guard, camera, stink bomb, fireworks), `Seasons[]`/`Weather*`,
 `Info.AttractionValue`/`NewAttractionDecayTime`/`Attraction[n].NewBonus`, `UsageInfo.*` effects,
-`WaitingTimes.*`, `MapInfo.*`, `FixedItemInfo.*`. OpenTPW uses `Info.AttractionValue` only in the
-approximated park rating.
+`WaitingTimes.*`, `MapInfo.*`, `FixedItemInfo.*`. The park rating does not use `Info.AttractionValue`.
 
 ## Original save evidence (Easymode.TPWI)
 
@@ -176,7 +175,7 @@ not in the data; the save contains no staff names. The previously suspected `i64
 | Challenges | Definitions, level list, timings, prizes, follow-ups | Type semantics from comments; explicit accept/decline; types 14, 22, 23, 26, 32+ unmeasured |
 | Golden tickets | All thresholds | Monthly check; tickets spent on purchases |
 | Keys/progression | Keys per theme, theme order (THEMENAMES; ascending key cost); +1 per 3 earned golden tickets; spending tickets preserves keys (manual p. 28) | Start with 1 key; keys persist when entering themes |
-| Park rating | — | (2 × happiness + attractions + cleanliness) / 4 |
+| Park rating | — (traced: Mac binary 0x100C7B24) | Capped counts: guests in park × 20 / 1000 (max 20), rides × 1.5 (max 20), shops and sideshows × 2 (max 10 each), features (max 10), rides at upgrade level 2 (max 10), each staff type (max 4); the sub-kind to object-kind mapping is approximate |
 
 Determinism: one SplitMix64 state drives candidates and sideshow draws; time advances in whole ticks;
 tests compare saves before/after load and after identical continuations byte for byte.
@@ -253,7 +252,7 @@ site, is listed in `Economy/EconomyApproximations.cs` and is logged once at star
 | ECON-024 | `Economy/ParkEconomy.cs:160` | a repair restores state of repair to 100 | capture after a repair |
 | ECON-025 | `Economy/ParkEconomy.cs:329` | scrap value basis = catalogue cost of all levels up to the current one | capture of scrap value |
 | ECON-026 | `Economy/ParkEconomy.cs:337` | park value = sum of scrap values | capture of the park value screen |
-| ECON-027 | `Economy/ParkEconomy.cs:354` | park rating = (2 x happiness + attractions/3 + cleanliness) / 4 | park rating formula (binary/captures) |
+| ECON-027 | `Economy/ParkEconomy.cs:353` | the record sub-kinds 0–3 are rides, shops, sideshows and features, and every hired staff member counts | the record field at +0x4C behind sub-kind +0x7A8 and the staff byte +3 tested by FUN_100C4064 |
 | ECON-028 | `Economy/ParkEconomy.cs:434` | purchases need a balance covering the cost | capture of building with too little money |
 | ECON-029 | `Economy/ParkEconomy.cs:438` | golden tickets are spent when buying items with GoldenTicketCost | capture of ticket count after such a purchase |
 | ECON-030 | `Economy/ParkEconomy.cs:110` | the simulation stops once bankrupt | capture of the bankrupt state |
@@ -277,6 +276,6 @@ site, is listed in `Economy/EconomyApproximations.cs` and is logged once at star
 - Day length, month lengths and the calendar start; original game speeds.
 - Repayment formula with interest; whether loans can be retaken; whether building is allowed in the red.
 - `BaseCostPerStaff`/`CostPerQualityLevel`, `Research.StartingWorkLoad`, researcher `WorkDuration`.
-- Park rating, park value and the scrap basis; how golden keys are earned.
+- Park value and the scrap basis; how golden keys are earned.
 - The money block before the loan table (87,987 / 87,787 / −12,013), the extra words around the
   challenge table (`09 00 0b 00`, floats 100.0) and the last loan-record word.

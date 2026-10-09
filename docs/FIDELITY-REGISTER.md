@@ -14,7 +14,7 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **134 unresolved unique APPROX IDs**, 149 APPROX occurrences, 56 EXT occurrences, 62 DATA occurrences and 12 BIN occurrences.
+Current inventory: **134 unresolved unique APPROX IDs**, 149 APPROX occurrences, 56 EXT occurrences, 62 DATA occurrences and 13 BIN occurrences.
 
 Of these, 128 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
@@ -87,7 +87,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-024 | Original-fidelity area (scope unadjudicated) | a repair restores state of repair to 100 | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:34` |
 | ECON-025 | Original-fidelity area (scope unadjudicated) | scrap value basis = catalogue cost of all levels up to the current one | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:35` |
 | ECON-026 | Original-fidelity area (scope unadjudicated) | park value = sum of scrap values | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:36` |
-| ECON-027 | Original-fidelity area (scope unadjudicated) | park rating = (2 x happiness + attractions/3 + cleanliness) / 4 | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:37` |
+| ECON-027 | Original-fidelity area (scope unadjudicated) | the record sub-kinds 0–3 are rides, shops, sideshows and features, and every hired staff member counts | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:37` |
 | ECON-028 | Original-fidelity area (scope unadjudicated) | purchases need a balance covering the cost | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:38` |
 | ECON-029 | Original-fidelity area (scope unadjudicated) | golden tickets are spent when buying items with GoldenTicketCost | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:39` |
 | ECON-030 | Original-fidelity area (scope unadjudicated) | the simulation stops once bankrupt | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:40` |
@@ -227,9 +227,9 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-024 | `source/OpenTPW/Economy/ParkEconomy.cs:161` | [APPROX:ECON-024] a repair restores state of repair to 100 — evidence needed: capture after a repair |
 | ECON-025 | `source/OpenTPW/Economy/ParkEconomy.cs:330` | [APPROX:ECON-025] scrap value basis = catalogue cost of all levels up to the current one — evidence needed: capture of scrap value |
 | ECON-026 | `source/OpenTPW/Economy/ParkEconomy.cs:338` | [APPROX:ECON-026] park value = sum of scrap values — evidence needed: capture of the park value screen |
-| ECON-027 | `source/OpenTPW/Economy/ParkEconomy.cs:355` | [APPROX:ECON-027] park rating = (2 x happiness + attractions/3 + cleanliness) / 4 — evidence needed: park rating formula (binary/captures) |
-| ECON-028 | `source/OpenTPW/Economy/ParkEconomy.cs:434` | [APPROX:ECON-028] purchases need a balance covering the cost — evidence needed: capture of building with too little money |
-| ECON-029 | `source/OpenTPW/Economy/ParkEconomy.cs:438` | [APPROX:ECON-029] golden tickets are spent when buying items with GoldenTicketCost — evidence needed: capture of ticket count after such a purchase |
+| ECON-027 | `source/OpenTPW/Economy/ParkEconomy.cs:353` | [APPROX:ECON-027] the record sub-kinds 0–3 are rides, shops, sideshows and features, and every hired staff member counts — evidence needed: the record field at +0x4C behind sub-kind +0x7A8 and the staff byte +3 tested by FUN_100C4064 |
+| ECON-028 | `source/OpenTPW/Economy/ParkEconomy.cs:439` | [APPROX:ECON-028] purchases need a balance covering the cost — evidence needed: capture of building with too little money |
+| ECON-029 | `source/OpenTPW/Economy/ParkEconomy.cs:443` | [APPROX:ECON-029] golden tickets are spent when buying items with GoldenTicketCost — evidence needed: capture of ticket count after such a purchase |
 | ECON-030 | `source/OpenTPW/Economy/ParkEconomy.cs:111` | [APPROX:ECON-030] the simulation stops once bankrupt — evidence needed: capture of the bankrupt state |
 | ECON-031 | `source/OpenTPW/Economy/ParkEconomyRuntime.cs:33` | [APPROX:ECON-031] imported parks are opened on load (open state not decoded) — evidence needed: park-open flag in the save |
 | ECON-033 | `source/OpenTPW/Economy/ParkEconomy.cs:305` | [APPROX:ECON-033] golden tickets are checked at each month end — evidence needed: capture of the award timing |
@@ -458,6 +458,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | --- | --- | --- |
 | STP-PPC:0x10007434 advisor update | `source/OpenTPW.Files/Public/LipSyncTimeline.cs:53` | [BIN:STP-PPC:0x10007434 advisor update] marks are read in order until -1, divided by 1000 (µs to the ms speech clock) and each one flips the talking flag |
 | STP-PPC:0x10007434 advisor update | `source/OpenTPW/World/Advisor.cs:315` | [BIN:STP-PPC:0x10007434 advisor update] silent or no LIP data: node 1; talking: when the speech clock (ms) passes the next-change time, node = rand() % 5 + 1 and the next change is 100 ms later |
+| STP-PPC:0x100C7B24 park rating | `source/OpenTPW/Economy/ParkEconomy.cs:347` | [BIN:STP-PPC:0x100C7B24 park rating] min(guests in park, 1000) × 20 / 1000; attractions of sub-kind 0 × 3 / 2 up to 20; sub-kinds 1 and 2 × 2 up to 10 each; sub-kind 3 up to 10; sub-kind 0 at upgrade level 2 or more up to 10; each of the five staff types up to 4 |
 | STP-PPC:0x100CC21C loan instalment | `source/OpenTPW/Economy/ParkEconomy.cs:267` | [BIN:STP-PPC:0x100CC21C loan instalment] a fully repaid loan clears its bought flag; 0x100CC9E8 then offers it again when the credit test passes |
 | STP-PPC:0x100F0EF0 research cursor | `source/OpenTPW/Economy/ParkResearch.cs:108` | [BIN:STP-PPC:0x100F0EF0 research cursor] each category researches the first item in table order whose group is open and which is not yet researched; cost is never compared |
 | STP-PPC:0x1010474C world setup | `source/OpenTPW/Economy/BalanceSettings.cs:177` | [BIN:STP-PPC:0x1010474C world setup] game type 0/2 load levels/Standard.sam then &lt;theme&gt;/Standard.sam; type 2 (Instant Action) adds &lt;theme&gt;/Easy_Standard.sam and only logs when it is missing |
@@ -466,5 +467,5 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | STP-PPC:0x10137600 player save setup | `source/OpenTPW/World/Original/OriginalPark.cs:51` | [BIN:STP-PPC:0x10137600 player save setup] the level's easymode park is copied into a player's saves only for Instant Action players (0x1013741C passes the mode flag) |
 | STP-PPC:0x10154AA0 loans window | `source/OpenTPW/Economy/ParkEconomy.cs:84` | [BIN:STP-PPC:0x10154AA0 loans window] the Available Loans window only opens outside game type 2 (Instant Action) |
 | STP-PPC:0x1015D220 new-player dialog | `source/OpenTPW/Economy/ParkEconomyContracts.cs:7` | [BIN:STP-PPC:0x1015D220 new-player dialog] radio 0x70D "Instant Action" / 0x70E "Full Simulation"; 0x1013741C stores the choice as profile mEasyModeUser and 0x1013781C turns it into game type 2 (Instant Action) or 0 |
-| STP-PPC:0x10165A0C upgrade list | `source/OpenTPW/Economy/ParkEconomy.cs:509` | [BIN:STP-PPC:0x10165A0C upgrade list] game type 2 (Instant Action) lists no upgrades and shows UITEXT 27 instead |
-| STP-PPC:0x10166F1C upgrade purchase | `source/OpenTPW/Economy/ParkEconomy.cs:522` | [BIN:STP-PPC:0x10166F1C upgrade purchase] only the bank balance is checked; the upgrade is queued (0x100DF928) and waits for a mechanic, with or without mechanics on the staff |
+| STP-PPC:0x10165A0C upgrade list | `source/OpenTPW/Economy/ParkEconomy.cs:514` | [BIN:STP-PPC:0x10165A0C upgrade list] game type 2 (Instant Action) lists no upgrades and shows UITEXT 27 instead |
+| STP-PPC:0x10166F1C upgrade purchase | `source/OpenTPW/Economy/ParkEconomy.cs:527` | [BIN:STP-PPC:0x10166F1C upgrade purchase] only the bank balance is checked; the upgrade is queued (0x100DF928) and waits for a mechanic, with or without mechanics on the staff |

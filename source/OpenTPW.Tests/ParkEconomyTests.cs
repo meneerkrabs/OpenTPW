@@ -363,6 +363,50 @@ public class ParkEconomyTests
 		Assert.AreEqual( 1, ride.Level );
 	}
 
+	private sealed class FixedGuests( int inPark ) : IParkGuestStatistics
+	{
+		public int PeopleInPark => inPark;
+		public int AverageHappiness => 0;
+		public int CountHappierThan( int happiness ) => 0;
+		public int KidsWithBalloonsPercent => 0;
+		public int KidsWithCostumesPercent => 0;
+	}
+
+	[TestMethod]
+	public void ParkRatingSumsCappedCountsOfGuestsAttractionsAndStaff()
+	{
+		var park = EconomyTestData.Park( initialCash: 1000000 );
+		Assert.AreEqual( 0, park.ParkRating );
+		park.GuestStatistics = new FixedGuests( 749 );
+		Assert.AreEqual( 14, park.ParkRating, "749 × 20 / 1000" );
+		park.GuestStatistics = new FixedGuests( 5000 );
+		Assert.AreEqual( 20, park.ParkRating, "guests are capped at 1000" );
+		park.GuestStatistics = NoGuestStatistics.Instance;
+
+		park.TryBuild( 1100, out var ride );
+		Assert.AreEqual( 1, park.ParkRating, "one ride × 3 / 2" );
+		ride!.IsOpen = false;
+		Assert.AreEqual( 1, park.ParkRating, "closed attractions count too" );
+		park.TryBuild( 1203, out _ );
+		park.TryBuild( 1303, out _ );
+		park.TryBuild( 1402, out _ );
+		Assert.AreEqual( 1 + 2 + 2 + 1, park.ParkRating );
+		ride.Level = 2;
+		Assert.AreEqual( 7, park.ParkRating, "a ride at upgrade level 2 adds one" );
+		for ( var i = 0; i < 20; i++ )
+			park.TryBuild( 1203, out _ );
+		Assert.AreEqual( 7 - 2 + 10, park.ParkRating, "shops are capped at 10" );
+
+		for ( var i = 0; i < 6; i++ )
+		{
+			var candidate = park.Staff.Candidates.FirstOrDefault( item => item.Type == StaffType.Handyman );
+			if ( candidate != null )
+				park.Hire( candidate.Id );
+		}
+		var handymen = park.Staff.Members.Count( member => member.Type == StaffType.Handyman );
+		Assert.AreEqual( 15 + Math.Min( handymen, 4 ), park.ParkRating, "each staff type is capped at 4" );
+	}
+
 	[TestMethod]
 	public void HandymenCleanLitter()
 	{

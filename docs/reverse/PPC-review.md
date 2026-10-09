@@ -21,6 +21,10 @@ python3 -I tools/ppc-analysis/lanes/review/round2_evidence.py /Users/sander/serv
   --pc-speech /Users/sander/server/game-assets/theme-park-world/Data/global/Speech
 python3 -I tools/ppc-analysis/lanes/review/round3_evidence.py /Users/sander/server/game-assets/mac-feral/bin
 python3 -I tools/ppc-analysis/lanes/review/round4_evidence.py /Users/sander/server/game-assets/mac-feral/bin
+python3 -I tools/ppc-analysis/lanes/review/round5_evidence.py /Users/sander/server/game-assets/mac-feral/bin \
+  --pc-data /Users/sander/server/game-assets/theme-park-world/Data \
+  --pc-data /Users/sander/server/game-assets/theme-park-world-patch2/Data \
+  --rides-root /Users/sander/server/opentpw-worktrees/ppc-rides
 OPENTPW_PPC_BIN_ROOT=/Users/sander/server/game-assets/mac-feral/bin \
   python3 -I -m unittest discover -s tools/ppc-analysis/lanes/review -p 'test_*.py'
 ```
@@ -29,9 +33,12 @@ OPENTPW_PPC_BIN_ROOT=/Users/sander/server/game-assets/mac-feral/bin \
 fails closed in the same way. Its optional asset check prints only sizes,
 SHA-256 values and image offsets. `round3_evidence.py` (section 12 onwards)
 additionally pins `engine_shared.data` and `ltms_shared.data`; `round4_evidence.py`
-(section 18 onwards) reuses those pins. With the binary variable set, all 65 lane
-tests run, with no skips. Without it, 62 pass and the three original-file
-witnesses skip.
+(section 18 onwards) reuses those pins, and `round5_evidence.py` (section 24
+onwards) adds `sound_shared.data`. Its optional `--pc-data` check reads LoanInfo
+numbers from the install at run time, and `--rides-root` compares a rides
+checkout's dispatch table with that lane's contract JSON. With the binary
+variable set, all 84 lane tests run, with no skips. Without it, 80 pass and the
+four original-file witnesses skip.
 
 `review_evidence.py` exits non-zero if any identity, relocation, glue stub,
 operand or constant differs from the reviewed value. Unlike
@@ -907,3 +914,241 @@ runtime wiring (`ObjectAnimator`, `ObjectRenderParts`, `OriginalObject`,
 `ObjectVertexAnimationTests`). Scenarios has uncommitted `progression_evidence.py`
 and `contract/`. The formats wiring must answer the section 20 cursor
 precondition before integration.
+
+## 24. Root `main` `99fa14a` and the staged economy tree: verified
+
+- **Clock merge.** `99fa14a` merges `126ee3e…c72c01f` onto `1441ead`. Its
+  `tools/` tree is byte-identical to the `bbc89e5` tree I accepted in section
+  18 (`git diff bbc89e5 99fa14a -- tools/` is empty). The extra docs are the
+  clock lane's reviews of rides (`c2a0930`) and formats (`c72c01f`). My own
+  results below agree with both. The FMA cancellation example there is
+  independently reproduced with exact rationals: one binary32 rounding of
+  `3·f32(0.1) + f32(−0.3)` gives −2⁻²⁷, and separate roundings give 0.
+- **Staged economy.** The root index (tree `bcbdfd2`) equals `99fa14a` plus
+  exactly `6a69e3f..c7bedf1`; the two diffs are identical apart from index
+  lines. `974f546` (park-rating rules) is **not** staged and not reviewed here.
+- **`c7bedf1` resolves my round-3/4 importer objection.** Amount, APR, term and
+  lender must still match exactly. A 0 % APR repayment must equal integer
+  `amount / months`, and positive-APR repayments are kept and marked
+  `[APPROX:ECON-006] … unverified` without comparing them to any formula. The
+  regression uses a fixed 458 against the annuity's 461, so it does not depend
+  on `LoanMath`.
+- **The locator still admits real positive-APR tables.** `IsLoanRecord`
+  requires `M·N ≥ P − N` and `M·N ≤ 4P`. All 48 shipped offers (24 per
+  install, 32 with positive APR) pass with both the Mac formula and the
+  annuity. The largest total/amount is 1.409. Mod-only, low: a 100 % APR,
+  600-month offer exceeds 4× and would make the locator miss the table.
+- **Low.** A negative APR (mod) takes the "positive-APR unverified" message.
+  `RepaymentPeriodInMonths 0` with 0 % APR throws `DivideByZeroException`. The
+  previous code threw `ArgumentOutOfRangeException` from `LoanMath`, and
+  neither is caught by `ParkEconomyRuntime`.
+- **Low (link).** Staged `docs/ECONOMY.md:177` links `reverse/PPC-review.md`,
+  which root does not have until this lane is integrated. Merge this lane's
+  docs with or before economy, or cite the commit instead.
+- **Validation on a `/private/tmp` snapshot of the staged tree:**
+  - .NET suites filtered to Economy/SaveEconomy/Loan: 49 pass, 0 skipped.
+  - Economy standalone harness: 15/15 groups (5,437 assertions).
+  - Clock standalone: 35/35.
+  - Python: 31 shared, 21 clock and 8 economy tests.
+  - This lane's 84 tests also pass against root's newer `pef.py`, and the
+    branch merges into `main` without conflicts.
+
+## 25. Rides `722fe4c` (controller dispatch): accepted
+
+- **Table.** `round5_evidence.py --rides-root` parses every
+  `(Opcode.F, ids) => CommandBehavior.X` arm and compares it with my mapping
+  of `controller-contracts.json` (accumulator class × parameter class). All 39
+  roles are equal. This covers preserve/resolved, preserve/ignored and
+  result/ignored (including BUMP5 host field +40), plus required variable
+  input/output, optional output and original input (BUMP13/14). COAST7 is a
+  no-op with no controller call.
+- **Semantics checked in source:**
+  - A non-literal command or an unreviewed ID faults. This is explicit policy.
+  - Required-variable gates return before the effect and leave flags alone.
+  - An optional output with a literal destination still sets flags: the
+    `Operand.Value` setter discards writes to non-variables.
+  - OriginalInput sets flags from the value read **before** the effect.
+  - `TryEffect` detects an unsupported effect from an increase in the
+    per-opcode `RecordUnimplementedEffect` counter.
+  - Production routes every TOUR/BUMP/COAST call to
+    `UnimplementedRideScriptEffects`, via `OriginalObjectEffects` and
+    `VisitorRideScriptEffects` (neither handles them). Production queries
+    therefore keep their prior flags and outputs instead of taking a fake 0.
+- **Reproduced (`/private/tmp` snapshots, cached packages only):**
+
+  | Run | Result |
+  | --- | --- |
+  | Before (`b7df1a0`) | 34 pass. Report SHA-256 `c9c303d5…`, which equals the clock lane's pinned `b3d14f9` report |
+  | After, baseline | 41 pass. Default 23,768,180 instructions, 216 running / 47 waiting. Chaos 17,065,708, 202 / 61 |
+  | After, Patch 2 corpus | 3 pass. Default 23,768,063, chaos 17,062,282 |
+
+  These are exactly the commit's numbers. In the default run, unimplemented
+  BUMP calls fall from 749,680 to 718,044 and COAST calls from 678,504 to
+  542,808. Preserving flags changes branch paths even under the
+  production-equivalent effects, although the final states stay the same.
+- **Qualifier (low).** Preserving prior flags on an unsupported query is
+  itself host policy. The next branch then follows unrelated earlier flags,
+  which is no more original than the old zero. The docs say so; keep it out
+  of any fidelity claim.
+- **Independence.** `b7df1a0` (standalone animation helper, docs/tools only,
+  no `source/` change) is **not reviewed**. `722fe4c` applies cleanly onto
+  `b3d14f9` without it, so root can take the dispatch fix alone.
+
+## 26. UI `864f82d` (root-name binder): accepted with one qualification
+
+- **Hash.** `0x1709b8`: h = 0; for each nonzero byte, `extsb`, `xor`, then
+  `mullw` by r4. The registration at `0x17387c/0x173880` passes `li r4,47`.
+  Independently, `b_buy` → 557179197 and byte 0xFF → −47. A reading with
+  unsigned bytes differs.
+- **Shadow exclusion.** At `0x13c164–0x13c194` the loader calls the imported
+  `strcmp(entry+32, "w_small_shadow.md2")`. Equal returns null **before**
+  registration, so the code is real. **Qualification (medium-low):**
+  - `entry+32` is the name copied out of the directory enumeration (callers
+    `0x13c464/0x13c650`; enumerator `0x1221d8/0x121a0c/0x122364`).
+  - The PC `ui.wad` and the Mac `ui.wad` (the UI lane's HFS copy in `/tmp`)
+    both store **`w_small_shadow.MD2`**, while `strcmp` is case-sensitive.
+    The exclusion fires only if the enumerator lowercases names, which is
+    untraced.
+  - The Mac directory lists `w_small_shadow` before `shadow1`; PC lists
+    `shadow1` first. If the exclusion never fires and the registry keeps the
+    first duplicate, the Mac would bind `wshadow1` to `w_small_shadow`.
+  - The C# result (`shadow1`) holds if the exclusion fires, or with PC order
+    and first-wins. The doc's "resolves to `strcmp` and its matching branch
+    returns" should add "name canonicalisation untraced".
+- **No-break check (throwaway dump test, `/tmp` only).** All 278 assets: 79
+  have filename ≠ root, but no filename equals another asset's root.
+  `Get(filename)` returns the same asset for all 278, and no filenames differ
+  only by case. The only shared root is `wshadow1` (`shadow1` and
+  `w_small_shadow`). Patch 2 `ui.wad` is byte-identical. Existing filename
+  requests therefore bind as before. 66 UI-filtered tests pass, 0 skipped.
+- **Low.** `bindingFailure` is sticky. A single duplicate root among ordinary
+  assets, for example a mod adding a file with an existing root, makes every
+  `Get` throw `UiModelBindingException`, which `Get` deliberately does not
+  catch. Shipped data has none. Because mods are a supported extension,
+  surface this at load rather than on the first draw.
+
+## 27. Advisor `a479cff` and audio `58538df`: accepted
+
+- **`a479cff` (completion tuple).**
+  - Native `0x89f4` passes `r29` (variant) as r5 to wrapper `0xba54`.
+    `0x8a00/0x8a04` skip everything on a zero return, `0x8a10` reserves span
+    + 1000, and `0x8a3c` stores `r29` at history +228 (`0x8a4c` sets +232).
+  - A scan of `0x89e4–0x8a3c` finds no write to r29.
+  - The helper now rejects any changed slot, advice, variant or response ID
+    before changing state, and stores the begin-time tuple. 52 helper checks
+    and 27 Python tests pass at `a479cff`.
+- **`58538df` (Layer I), checked against ISO 11172-3:**
+  - The 4-bit allocation (15 rejected) and the intensity bound
+    `(ext+1)·4` with shared allocation and per-channel scalefactors are
+    correct.
+  - Samples use `alloc+1` bits and `(code+1−2ⁿ)·2^(2−sf/3)/(2ⁿ⁺¹−1)`. The
+    frame size is `(12·br/fs + pad)·4`, with MPEG-1 rates doubled.
+  - The Layer II refactor keeps the `(ch·3+idx)·32` slice offsets.
+- **Tables are independent of the host libm.** All 882 factors at
+  `sound_shared` (SHA-256 `7132c2f1…`; base from `addi r27,r2,−21128` at
+  `0x2d2c`) equal the double-then-float formula, and the SF63 column is 0.0.
+  Every double sits at least **65,552** binary64 ulps from a binary32 rounding
+  midpoint, so differences between platform `pow` implementations cannot
+  change any table entry.
+- **Policy and limits.**
+  - SF63 (original mutes) and Layer I de-emphasis are rejected. CRC is skipped.
+  - `MP2File.SampleRate` (hardcoded 22050) has no production consumer;
+    `SpeechAudioPlayer` uses the decoded `Mp2Audio.SampleRate`.
+  - 89 focused MPEG/LIP/advisor tests pass with the private fixtures and 0
+    skipped. These include the whole Layer I UI bank, the error clip against
+    its independent reference and the Layer II speech bank. As requested, the
+    roughly 10-minute FFmpeg corpus comparison was not rerun.
+
+## 28. Guests `00a6393` (temporary history): blocked, HIGH
+
+I confirmed the clock lane's `24f5456` finding with my own decode:
+
+- **Used history (+480..+486).** Each match divides and then branches to the
+  join at `0xe9978`, so only the first match counts.
+- **Temporary history (+488..+494).** Each `bc 4,2` skips only its own
+  division and there is no branch to the join. Every match divides
+  cumulatively by 5, 4, 3 and 2.
+- **Divisions.** The magic constants `0x66666667 >> 1` and `0x55555556`, and
+  `srawi` + `addze`, all truncate toward zero. This is checked on 5,000+
+  int32 values including both extremes.
+- **Counterexample.** Score 600, ID 7, used `[0,0,0,0]`, temporary
+  `[7,7,7,7]`: native 5, helper 120.
+- **Why tests didn't catch it.** Both readings agree whenever temporary IDs
+  are unique, so a narrower domain would need proof from the writer. Simpler
+  fix: apply every match in the temporary array. The 28 guest tests pass but
+  do not exercise this.
+
+## 29. Formats `11c1003` and its uncommitted repair: hold
+
+- **Allocation objection.** The `c72c01f` HIGH objection still applies to
+  committed `2439695`/`11c1003`.
+- **Tentative review of the uncommitted repair.** Every table is checked
+  (`Probe`) and charged against a budget of 4 × payload before its array
+  exists. Keys × vertices is a `long`, and the group table is checked before
+  `groups` is allocated. The design is right. After commit, re-review it with
+  tests for the u16 × u16 product near 2³² and for reused spans exceeding the
+  budget.
+- **Wiring vs my round-4 cursor objection.**
+  - Clip bind `0xa594c–0xa5a38` selects `lis 128` (0x00800000) when header
+    flag 0x4 is set and `lis 244` (0x00F40000) otherwise. It then applies
+    `not r5,r26` and `and`, so the cursor/static flag is cleared at every
+    rebind.
+  - A fresh search from key 0 is therefore native-equivalent for
+    non-decreasing time since the bind.
+  - At a loop wrap the docs now explicitly *assume* a rebind. This is
+    accepted as a documented precondition and stays medium until the loop
+    policy is traced.
+- **Question (low).** `meshByNode` keeps only the last mesh per node. If a
+  node owns several meshes, only one gets the vertex track; check the corpus.
+- **Not reviewed:** the render-buffer path (`Model.cs`, `ObjectRenderParts`).
+
+## 30. TPI `f81313a` / `7f2a6b2`: metadata accepted; trim the artifact
+
+- **Content.** The JSON holds hashes, counts, member paths and per-key value
+  hashes, with no raw bytes or string dumps. It keeps COS metadata-only, SHPI
+  header alignment and the music-bank directory/payload conflict as bounded
+  observations, and claims no engine equivalence.
+- **Size.** `full-evidence.json` is 2,745,817 bytes (79k lines) and fully
+  regenerable with the README command. Commit a compact summary instead (per
+  inventory/intersection counts plus a manifest SHA-256) and regenerate the
+  full file to `/tmp` or a CI artifact.
+- **Staleness.** It also pins `opcodeSourceHashes` of the VM handler files.
+  `Visitors.cs` changes with rides `722fe4c`, so that hash goes stale. Nothing
+  tests it, and TOUR/BUMP/COAST stay "Hooked".
+- **Not reviewed:** uncommitted `pal8.py`.
+
+## 31. Round-5 classification and integration order
+
+| Item | Status | Severity / owner |
+| --- | --- | --- |
+| Root `99fa14a` clock + toolkit | Verified (tools = reviewed tree) | — |
+| Staged economy `…c7bedf1` | Accepted; importer objection resolved | Low: link, mod edges / economy |
+| Rides `722fe4c` dispatch | Accepted (39/39, reports reproduced) | Low: preserve-flags is policy / rides |
+| UI `864f82d` binder | Accepted; no existing binding changes | Medium-low: shadow canonicalisation wording; low: sticky failure / UI |
+| Advisor `a479cff` tuple | Accepted (native r29) | — |
+| Audio `58538df` Layer I | Accepted (ISO + 882 factors, libm-independent) | SF63/CRC/de-emphasis are policy |
+| Guests `00a6393` history | **Blocked** | HIGH / guests |
+| Formats `11c1003` | **Hold** until repair committed and re-reviewed | HIGH (allocation) / formats |
+| Formats loop wrap = rebind | Documented assumption | Medium / formats |
+| TPI `f81313a`/`7f2a6b2` | Accepted as metadata | Low: 2.7 MB artifact / TPI |
+| Rides `b7df1a0`, economy `974f546`, scenarios `b093ee3` | Not reviewed this round | — |
+| Any PC/Patch 2 runtime equivalence | Needs evidence | — |
+
+Merge order from current root:
+
+1. Commit the staged economy (`6a69e3f..c7bedf1`) together with this lane
+   (`ppc-review-lane`, docs/tools only), so that the ECONOMY.md link resolves.
+2. Rides `722fe4c` (cherry-pick onto `b3d14f9` without `b7df1a0`, or take
+   `b7df1a0` only after it is reviewed). `b3d14f9` itself is still unmerged:
+   `51425bd` → `15313d2` → `b3d14f9` first.
+3. Advisor `3ae2dd9` → `8b256a3` → `58538df` → `a479cff`. The helpers are
+   standalone, and the Layer I decoder is production.
+4. UI `643f132` → `864f82d`, after rewording the shadow claim (no code change
+   is needed for shipped data).
+5. Formats `b0935b4` → `2439695` → `11c1003` → allocation-repair commit,
+   only after that commit is re-reviewed.
+6. Guests after the temporary-history fix.
+7. TPI docs/tools, preferably with the compact artifact.
+
+Scenarios' uncommitted `GameFlow.cs`/`ParkEconomy.cs` edits, formats'
+uncommitted repair and TPI's `pal8.py` are tentative and outside this verdict.

@@ -393,3 +393,32 @@ NaN/infinity from the finite arithmetic model. Run the second witness with:
 ```
 python3 tools/ppc-analysis/lanes/clock/clock_edges.py /path/to/mac-feral/bin
 ```
+
+## PEF relocation-reader qualification
+
+The phase-three reader fix is specification-backed. Apple's PEF glossary defines
+relocation blocks as two-byte portions; repeat instructions count those blocks
+and cannot nest. [Apple Mac OS Runtime Architectures, printed pp. 8-32, 8-34 and GL-6](https://developer.apple.com/library/archive/documentation/mac/pdf/MacOS_RT_Architectures.pdf)
+The prior implementation counted decoded instructions, which incorrectly widened
+a repeat when a preceding instruction occupied two blocks. The corrected reader
+tracks instruction starts separately from block offsets. It rejects split-instruction
+repeat spans conservatively; that restriction is a reader limitation, not a
+separately established prohibition in the specification.
+
+Nine added synthetic reader tests reproduce the pre-fix multiword failure and
+cover mixed widths, state carry, the maximum block window, nesting, malformed
+spans, count conventions and execution limits. The toolkit's 25 tests and this
+lane's 21 tests pass. A pre-fix snapshot and the corrected reader produce identical
+normalized metadata for all **38,072 relocations in 16 identified containers**.
+The complete map comparison includes section, offset, target kind/index and
+stored addend, hashed as deterministic JSON. The saved baseline contains only
+identities, counts and metadata digests. It preserves no original binary contents.
+
+```
+python3 tools/ppc-analysis/lanes/clock/relocation_corpus.py /path/to/mac-feral/bin
+python3 -m unittest discover -s tools/ppc-analysis -p 'test_*.py'
+```
+
+This change qualifies the evidence reader; it makes no gameplay or Windows
+fidelity change. Original runtime execution and deliberately overlapping
+relocation instruction streams remain outside verification.

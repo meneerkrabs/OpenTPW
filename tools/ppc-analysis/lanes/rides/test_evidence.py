@@ -7,6 +7,8 @@ from types import SimpleNamespace
 import unittest
 
 import evidence
+import contracts
+import controller_native
 
 
 class RideEvidenceTests(unittest.TestCase):
@@ -70,6 +72,21 @@ class RideEvidenceTests(unittest.TestCase):
         self.assertEqual(len(result["animation_binding"]), 12)
         self.assertGreaterEqual(result["checked_instruction_count"], 50)
         self.assertEqual(len(result["controller_case_addresses"]["COAST"]), 9)
+
+    @unittest.skipUnless(os.environ.get("OPENTPW_MAC_APP"), "set OPENTPW_MAC_APP for native controller witnesses")
+    def test_original_controller_contracts(self):
+        path = Path(os.environ["OPENTPW_MAC_APP"])
+        result = contracts.inspect(path)
+        coast = {c["raw_command"]: c for c in result["commands"] if c["family"] == "COAST"}
+        self.assertEqual(coast[2]["direct_controller_calls"], [0x3dd14])
+        self.assertEqual(coast[3]["direct_controller_calls"], [0x3dd5c])
+        self.assertEqual(coast[6]["direct_controller_calls"], [0x3df24])
+        self.assertEqual(coast[7]["direct_controller_calls"], [])
+        self.assertEqual(coast[4]["accumulator"], "preserve")
+        layout = controller_native.inspect(path)
+        self.assertEqual(layout["tour"]["allocation_bytes"], layout["tour"]["header_bytes"]
+                         + layout["tour"]["record_stride"] * layout["tour"]["record_count"])
+        self.assertGreaterEqual(layout["checked_instruction_count"], 60)
 
 
 if __name__ == "__main__":

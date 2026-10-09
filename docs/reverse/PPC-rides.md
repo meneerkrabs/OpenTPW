@@ -39,10 +39,11 @@ identities. Debug-name relocations independently bind the selected opcode
 numbers to the native names rather than relying on the OpenTPW enum alone.
 
 Checked-in metadata: `tools/ppc-analysis/lanes/rides/mac-witness.json`,
-`pc-baseline-witness.json`, and `pc-patch2-witness.json`. Seven Python tests pass,
+`pc-baseline-witness.json`, and `pc-patch2-witness.json`. Fifteen Python tests pass,
 including the identified original-file witness and synthetic failures for
 wrong identity, absent/import relocations, invalid switch targets, wrong
-instruction kinds, and signed/absolute linked branches. Both C# corpus runs
+instruction kinds, signed/absolute linked branches, native controller contracts,
+and pure math. Both C# corpus runs
 reuse the repository's WAD/RSE readers and add no packages: baseline **308
 scripts / 11,915 instructions**; verified Patch 2 **308 / 11,913**. The two
 removed Jelly FLUSHANIM instructions explain this difference. Existing reader
@@ -156,8 +157,9 @@ Raw command IDs in all 308 baseline scripts: TOUR 76 uses across IDs
 1,2,3,4,5,6,7,8,9,10,11,12,13,14,16,17; COAST 144 across all IDs 1..8.
 The verified Patch 2 command histograms are identical. `ScriptDefs.Bumper`
 contains disparate values such as 47/54/115 and cannot be used directly as
-the raw RSE command enum. `ScriptDefs.Coaster` also differs from the recovered
-COAST command numbering; use the pinned switch and corpus, not those names.
+the raw RSE command enum. `ScriptDefs.Coaster` matches IDs 1..6 and 8; its ID 7
+is a consumed-operand no-op in this Mac bridge. The contracts below verify
+every label by its native index.
 
 Selected command behavior, confidence high for direction/arithmetic and
 medium for the descriptive controller role:
@@ -168,7 +170,7 @@ medium for the descriptive controller role:
 | TOUR 2 | Calls `0x66550` with script+156, consuming but ignoring the parameter slot. |
 | TOUR 3 / 4 | 3 accepts a **variable** visitor input and calls `0x66a64`, sets accumulator. 4 calls `0x66784`, writes output visitor to a variable and accumulator. Literal destination/input is not equivalent. |
 | TOUR 8 | Resolves parameter, multiplies by **1000** at `0xb6288`, calls `0x66bcc`. Unit/meaning must be reconciled with CLOCK and duration schema. |
-| TOUR 10 / 11 / 17 | Calls `0x672e0` / `0x67360` / `0x67314`, sets accumulator; consumes but ignores parameter slot. |
+| TOUR 10 / 11 / 15 | Calls `0x672e0` / `0x67360` / `0x67314`, sets accumulator; consumes but ignores parameter slot. |
 | TOUR 16 | Calls `0x6745c`, writes output to variable and accumulator. |
 | BUMP 4 | Calls vehicle creation/launch routine `0x242d8`. Consumes but ignores parameter slot. |
 | BUMP 5 | Copies host object+40 directly to the branch accumulator; consumes but ignores parameter. |
@@ -179,10 +181,11 @@ medium for the descriptive controller role:
 | BUMP 16 | Calls `0x25638(controller, 1)`, sets accumulator. |
 | COAST 8 | Creates/looks up controller via `0x3dafc`, stores script+224, applies script speed through `0x3de68`. Parameter is consumed but ignored. |
 | COAST 1 | Resolves visitor input, calls `0x3dbc0`. Passenger queues and available slots live in the coaster controller. |
-| COAST 3 / 4 | Calls `0x3dd14` / `0x3dd5c`, writes accumulator and optional variable output. 3 queries remaining queue admission room; 4 extracts a departing visitor. |
-| COAST 5 | Resolves input and calls `0x3ddfc`, which translates states 0,1,2 into controller flags 16,32,64. |
-| COAST 6 | Resolves input and calls close/open controller routine `0x3dec8`; conditions depend on existing flags. |
-| COAST 7 | Resolves capacity input and calls `0x3df24`, which clamps against global/config/controller limits before updating. Full downstream conversion remains unresolved. |
+| COAST 2 / 3 | Calls `0x3dd14` / `0x3dd5c`, writes accumulator and optional variable output. 2 queries remaining queue admission room; 3 extracts a departing visitor. |
+| COAST 4 | Resolves input and calls `0x3ddfc`, which translates states 0,1,2 into controller flags 16,32,64. |
+| COAST 5 | Resolves input and calls close/open controller routine `0x3dec8`; conditions depend on existing flags. |
+| COAST 6 | Resolves capacity input and calls `0x3df24`, which clamps against global/config/controller limits before updating. |
+| COAST 7 | Consumes but ignores parameter; no controller call or branch-accumulator store. |
 
 The vehicle-launch routine `0x242d8` checks controller active vehicle count
 (+92) against configured limit (+100), absolute cap **64**, and phase (+80)
@@ -284,3 +287,173 @@ effects, calendar, reverb/music, and particles. Visitor hooks implemented in
 the current runtime must still be qualified against native paths. Locating
 native entry points for some of these does not implement the remaining
 effects or justify claiming original-fidelity completion.
+
+## Controller contracts and math witnesses
+
+Additional reproductions, using the same SHA-qualified executable:
+
+```sh
+python3 tools/ppc-analysis/lanes/rides/contracts.py /Users/sander/server/game-assets/mac-feral/bin/SimThemePark.data
+python3 tools/ppc-analysis/lanes/rides/controller_native.py /Users/sander/server/game-assets/mac-feral/bin/SimThemePark.data
+```
+
+`controller-contracts.json` records all **39 non-default native commands**.
+The verifier obtains each case directly from its switch index, verifies every
+direct non-diagnostic call, and verifies whether the case explicitly stores
+the script branch accumulator. `controller-native.json` additionally pins
+the passenger/layout/arithmetic fields below. `controller_math.py` contains
+seven pure, renderer-independent witnesses; these are not gameplay systems.
+
+Every bridge consumes a raw command word and a parameter slot. First operands
+are literal command IDs in every PC corpus call. A generic resolved command
+variable is not established by native evidence. Parameter contracts distinguish
+required-variable input/output, optional-variable output, resolved input
+(signed16 literal or int32 variable), and consumed-but-ignored operands.
+For required-variable cases, a literal operand skips the operation and does
+not obtain the result. Optional-output queries still set the accumulator with
+a literal destination. The JSON records the individual contracts.
+
+**Preserve accumulator:** COAST 1,4,5,6,7,8; BUMP 3,6,7,8,9,10,17;
+TOUR 1,2,5,8,9,12,14,17,18. Other valid commands explicitly store their query,
+admission, original duration input, or host-field result. Thus the current
+VM's unconditional `SetFlags(Effect(...))` for all controller calls changes
+native branch behavior. The contract describes explicit bridge stores under
+valid host/controller preconditions; it does not certify every indirect
+callback or invalid controller handle.
+
+COAST 0, BUMP 0/15, and TOUR 0/6/7/13 select their default diagnostic cases.
+Larger commands take a diagnostic path. Invalid script reads set the native
+negative PC sentinel; invalid object handles and initialization gates require
+the host preconditions and are not uniformly safe native operations. A future
+OpenTPW controller may reject these states safely, but should document that
+as its own policy. The native diagnostic helper has not been qualified for
+every fatal/nonfatal setting.
+
+Representative **PC code-word** callsites from the new corpus metadata:
+
+| Family / archive member | Command at word | Parameter / following operation |
+|---|---|---|
+| COAST / Fantasy `b_drip.wad/B_DRIP.RSE` | 1 at 53 | Variable index0 `VAR_LETMEON`; followed by COPY |
+| same | 2 at 44 | Literal0; followed by BRANCH_Z; query works without a writable destination |
+| same | 3 at 35 | Variable index1 `VAR_LETMEOFF`; followed by BRANCH_Z |
+| same | 6 at 22 | Variable index2 `VAR_CAPACITY` |
+| same | 7 at 28 | Variable index8 `VAR_WORN`; native Mac bridge consumes it without implementing a controller change |
+| BUMP / Fantasy `bbugs.wad/bbugs.RSE` | 1 at 94 | Variable index0 `VAR_LETMEON` |
+| same | 2 at 210 | Variable index1 `VAR_LETMEOFF`; followed by BRANCH_Z |
+| same | 4 at 47 | Literal0; followed by BRANCH_Z; creation can fail |
+| same | 12 at 100 | Literal0; followed by ADD; boarding-group transfer |
+| TOUR / Fantasy `twetours.wad/twetours.RSE` | 3 at 191 | Variable index15 `VAR_PEEPID` |
+| same | 4 at 119 | Variable index13 `VAR_TEMP`; followed by BRANCH_Z |
+| same | 8 at 210 | Variable index3 `VAR_DURATION` |
+| same | 16 at 42 | Variable index9 `VAR_RUNNING`; followed by TEST |
+| TOUR / Hallow `tourride.wad/TourRide.RSE` | 17 at 26 | Literal2048; direct setter `0x67404` writes controller+32 |
+
+The corpus metadata pins each representative's member SHA, word position,
+operand kind/value/name and next opcode, plus kind counts across all uses.
+For the common root layouts it additionally confirms array indices
+0/1/2/3/5/8/9 as LETMEON/LETMEOFF/CAPACITY/DURATION/ONRIDE/WORN/RUNNING.
+It reports −1 for missing names in child/event scripts, so this is explicitly
+not a universal header layout. Fantasy B_DRIP SHA is
+`38dc4c86eedfeb45cf24be3570274724dcdef528928282b4f3a8f3682eed4230`;
+Fantasy twetours SHA is
+`30668366a55afd08016b702a007c1ca48c84fabe358b3e129b51c2005ba6cbbb`.
+These independently corroborate the GUESTS lane's host array-index0 admission
+protocol and the ECONOMY lane's array-index5 occupancy reads.
+
+### Boarding, departure, and occupancy
+
+BUMP controllers are indexed in 208-byte records; individual vehicle records
+have stride172. The passenger links contain visitor ID at +0, controller
+handle at +4, engine node at +8 and next link at +16. Link-size20 is a working
+layout inference from these fields; allocation/serialization linkage must
+still establish its complete schema.
+
+BUMP1 (`0x251a8`) requires a valid controller with nonzero phase and a free
+passenger link, takes a link from the global free list and **prepends** it to
+controller+196, returning1; failure returns0. BUMP2 (`0x25294`) pops
+controller+200, returns the visitor ID, and returns the link to the free list;
+an empty list returns0. BUMP12 (`0x23fe8`) finds an active vehicle belonging
+to the controller with an empty passenger head, transfers **the pending group**
+from controller+196 into vehicle+48, clears the pending head, updates flags,
+and starts loading actions. It is not an inert validity query.
+
+During unloading (`0x254c8`), vehicle links move to controller+200 and the
+controller passenger count +96 decreases per moved link; engine node cleanup
+is separate. Vehicle count +92 decreases when the vehicle is retired
+(`0x25738`), independently of passenger count. Therefore capacity, cars,
+passengers, seat/engine-node occupancy, and script ONRIDE must remain distinct
+quantities. `VAR_RUNNING` from BUMP11 is a vehicle count, not a passenger count.
+Full boarding-count increments, host guest attribution, cost/income callbacks,
+and per-type node grouping still require their complete paths.
+
+COAST keeps separate ring structures at controller+176 and +208. In the first
+ring, +0 is allocated ring capacity, +4 the storage pointer, +8 the configured
+admission limit, +12 queued count, +16 held/reserved count, +20 read cursor,
+and +24 write cursor. `0x3dbc0` admits a visitor only while queued+held is less
+than allocated ring capacity. `0x3dd14` returns
+`min(global_admission_limit, configured_limit - queued - held)`.
+The read/write cursor arithmetic wraps at allocated capacity. The departing
+ring's `0x3dd5c` checks its logical boundary and count before returning a
+visitor; zero indicates no departure. The meaning of its +28 boundary and
+the transfer of held counts between cars still need recovery.
+
+Tour allocation `0x63b60` is **4652 bytes = header92 + 20×record228**. Record
+state is +128, signed occupancy +140, guest-ID array +144, engine model handle
++192, and grouping divisor +220. The observed array space is48 bytes before
+the model field, consistent with12 visitor slots, but slot-capacity validation
+has not been recovered. Admission `0x66a64` searches state1 records with
+nonnegative occupancy, writes a visitor into the next slot, increments the
+record count and total controller occupancy (+72), and returns1. Normal
+departure `0x66784` consumes negative occupancy toward zero and decrements
+the total, reading slots in reverse boarding order (−3 yields slots2,1,0).
+Signed occupancy is therefore a loading/unloading state encoding,
+not a direct signed visitor ID. Force-departure `0x668e8` handles either sign.
+Node grouping uses `occupancy % grouping + 1`; grouping0 bypasses binding.
+This arithmetic does not prove that grouping equals logical seat capacity.
+
+### Capacity and path math, with conditional schemas
+
+COAST6 (`0x3df24`) takes the minimum of the request, global limit, controller
+definition+792, and first train definition+8, then rebuilds if the result
+differs from controller+240. The train builder `0x3ea74` uses train records128
+bytes and car records96 bytes. Front/rear cars whose type differs from the
+center type are excluded from rider capacity; eligible cars receive
+`remaining_passengers / remaining_eligible_cars`, using unsigned truncation,
+with leftovers passed to later cars. Per-car rider allowance is stored at
+car+68. Consequently10 riders across3 eligible cars produces **3,3,4**, not
+4,3,3. `distribute_capacity` verifies conservation and this remainder order.
+It does not impose a one-rider-per-car rule; passenger mesh/seat-node sharing
+must be recovered separately.
+
+`0x3ebe8` positions cars around the train's selected center. It selects front,
+middle or end spacing from definition+28/+32/+36 based on logical car index,
+adds spacings while moving left, subtracts while moving right, stores distance
+at car+56 and divides by controller track length (+172) into car+60. Native
+operations are single precision. The helper preserves rounding at every step.
+Adjacent native schema labels name `fFrontCarSpacing`, `fStdCarSpacing`, and
+`fEndCarSpacing`; their loader-to-structure assignments still need complete
+schema linkage. The current PC WAD SAM probe records69 numeric
+`Bumper.WhichTrackType` entries and their member identities; it finds no
+numeric train-spacing, TrackInfo, or Direction keys under the probed names.
+It does not establish that those values are absent from other formats,
+shared defaults, or the native runtime.
+
+The TOUR create call converts an engine-node angle field(+16) into
+`trunc(input*4096/360)` with a signed reciprocal constant; constructor+64 then
+stores `1024 - converted_angle`. The heading helper checks this arithmetic
+over inputs0..359, including0→1024,90→0,180→−1024,270→−2048. Calling the
+source value degrees or equating it to **TrackInfo.Direction** is still a
+conditional schema interpretation. The corpus SAM probe seeks numeric
+TrackInfo/Direction fields and reports observed keys, rather than inventing
+their positions or cardinal enum values. Full track spline/path codecs,
+direction-axis convention, station orientation, motion integration, collision,
+banking, and controller state machine remain implementation dependencies.
+
+The RSE zero-divisor helper is bounded to opcodes49/50: conditional branches
+`0xb0c94` and `0xb0d14` are independently verified to reach their zero-result
+arms. Signed division truncates toward zero; remainder follows the dividend's
+sign. Signed minimum divided by−1 is excluded because native overflow behavior
+is not qualified here. Controller modulo and floating-point geometry divisions
+do not inherit the RSE zero-result rule. Pure helpers reject empty rings,
+zero track length and unsupported input domains as evidence-tool policy,
+not recovered original input checks.

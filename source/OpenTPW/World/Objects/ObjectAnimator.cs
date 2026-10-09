@@ -8,7 +8,7 @@ namespace OpenTPW;
 /// (<see cref="OriginalObjectEffects"/> uses one main channel for TRIGANIM/WAITANIM/LOOPANIM/... and the
 /// <c>_CH</c> opcodes' channel numbers; <c>UsageInfo.NumSimultAnims</c> allows up to 4). When several playing clips animate the same node, the
 /// most recently started one wins; a finished clip holds its last pose until its channel is replaced or
-/// flushed. Channel mixing, holding and the tick rate are OpenTPW choices (docs/OBJECTS.md).
+/// flushed. Channel mixing, holding and runtime clock binding remain qualified (docs/OBJECTS.md).
 /// Clip time follows the original channel clock (0xa6484/0xa6398/0xa67d8 in the Feral Mac build): a clip
 /// starts at a whole millisecond of this animator's clock, its frame is <c>rate × elapsed ms / 1000</c> in
 /// single precision (the original's rate is the constant 30, <see cref="DefaultTicksPerSecond"/>; other rates
@@ -21,8 +21,9 @@ namespace OpenTPW;
 /// </summary>
 public sealed class ObjectAnimator
 {
-	/// <summary>Sandbox choice shared with the Totem prototype; the original tick rate is not verified. Default for new animators.</summary>
-	// [APPROX:RIDES-001] Animation clips play at 30 ticks/s — evidence needed: original tick rate (binary or timed capture of a ride cycle)
+	/// <summary>Default rate shared with the Totem; 30 is proved for the Feral Mac channel formula, while Windows and runtime clock selection remain unverified.</summary>
+	// [BIN:STP-PPC:0x100A70B4 channel frame arithmetic] the Feral Mac formula multiplies elapsed milliseconds by 30 and divides by 1000 before channel speed.
+	// [APPROX:RIDES-001] Mac channel rate 30 is proved; Windows rate and selection/binding of the native scaled or unscaled channel clock remain unverified.
 	public const float DefaultTicksPerSecond = 30f;
 
 	private sealed class Channel

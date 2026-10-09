@@ -14,7 +14,7 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **129 unresolved unique APPROX IDs**, 144 APPROX occurrences, 58 EXT occurrences, 62 DATA occurrences and 29 BIN occurrences.
+Current inventory: **129 unresolved unique APPROX IDs**, 144 APPROX occurrences, 58 EXT occurrences, 62 DATA occurrences and 30 BIN occurrences.
 
 Of these, 123 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
@@ -105,7 +105,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ONLINE-004 | OpenTPW online extension | Buddy response strings 111–113 mean online, offline and removed. | Localized variants or the original response-code table. | `docs/ONLINE.md:158` |
 | ONLINE-005 | OpenTPW online extension | Chat command semantics follow command words, response strings and weachatr.dll export names; say/emote/shout reach a room, wshout/ushout all rooms; hearing has no positional effect; blackmark creates a moderation report. | Original chat server behavior, including command reach, hearing range and blackmark handling. | `docs/ONLINE.md:159` |
 | ONLINE-006 | OpenTPW online extension | A visitor already inside a park must leave it before visiting another, inferred from CHAT_COMMANDS string 127. | Original park-visit transition behavior or an original chat/runtime trace. | `docs/ONLINE.md:160` |
-| RIDES-001 | Original-fidelity area (scope unadjudicated) | animation clips play at 30 ticks/s | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:11` |
+| RIDES-001 | Original-fidelity area (scope unadjudicated) | Mac channel rate 30 is proved; Windows rate and native scaled/unscaled clock selection remain unverified | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:11` |
 | RIDES-002 | Original-fidelity area (scope unadjudicated) | most recently started channel wins a node | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:12` |
 | RIDES-003 | Original-fidelity area (scope unadjudicated) | finished clips hold their last pose | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:13` |
 | RIDES-004 | Original-fidelity area (scope unadjudicated) | re-issued LOOPANIM continues the running loop | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:14` |
@@ -183,12 +183,12 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ADVISOR-012 | `source/OpenTPW/Client/SpeechAudioPlayer.cs:62` | [APPROX:ADVISOR-012] Mono speech duplicated to both channels — evidence needed: original speech output channel layout/panning |
 | ADVISOR-013 | `source/OpenTPW.Files/Public/LipSyncTimeline.cs:54` | [APPROX:ADVISOR-013] talking from time 0 (inferred from decoded audio, 31 dB talking/silent contrast) — evidence needed: the talking flag's value when speech starts |
 | ADVISOR-014 | `source/OpenTPW.Files/Formats/Sound/Mp2Decoder.cs:49` | [APPROX:ADVISOR-014] Values read from the locally installed ffmpeg's data table; checked against the standard's |
-| COMPAT-001 | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:19` | [APPROX:COMPAT-001] 512x256 canvas (two 256x256 halves) — evidence needed: original DIB size or a sign texture capture. |
+| COMPAT-001 | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:19` | [APPROX:COMPAT-001] Legacy 512x256 canvas; native DIB/mask and final 128x128 destinations require integration and platform pixel verification. |
 | COMPAT-002 | `source/OpenTPW.Files/Formats/Font/SignTextLayout.cs:128` | [APPROX:COMPAT-002] centre and shrink-to-fit with a margin — evidence needed: original text placement / long-name captures. |
-| COMPAT-003 | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:26` | [APPROX:COMPAT-003] the line is drawn opaque in the block's RGB; the fourth colour byte, the difference between modes 1 and 2, the fill bitmaps and the slot effect words are not applied — evidence needed: the Bitmap::colourblt body (engine library) and the effect routines 0x100AAA64/0x100AAC54/0x100AB128 |
+| COMPAT-003 | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:26` | [APPROX:COMPAT-003] stored paint RGB is drawn opaque; alpha, modes 1/2, fills and material/mask effects are not applied — evidence needed: integration of the proved native surface/compositing path and original-platform pixel verification |
 | COMPAT-004 | `source/OpenTPW/World/Original/OriginalGateSign.cs:19` | [APPROX:COMPAT-004] flat board colour; the .sgn board image (wavelet) is read but not decoded or composed — evidence needed: the Bitmap::load_wavelet decoder and the board blit. |
-| COMPAT-005 | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:69` | [APPROX:COMPAT-005] the horizontal-scale field is not applied — evidence needed: binary use of the field. |
-| COMPAT-006 | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:68` | [APPROX:COMPAT-006] no pair kerning (GDI TextOut default) — evidence needed: binary text-output call site. |
+| COMPAT-005 | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:72` | [APPROX:COMPAT-005] the horizontal-scale field is not applied — evidence needed: binary use of the field. |
+| COMPAT-006 | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:71` | [APPROX:COMPAT-006] no pair kerning (GDI TextOut default) — evidence needed: binary text-output call site. |
 | COMPAT-006 | `source/OpenTPW.Files/Formats/Font/SignTextLayout.cs:18` | [APPROX:COMPAT-006]). Characters without a glyph |
 | COMPAT-007 | `source/OpenTPW/World/Original/OriginalGateSign.cs:45` | [APPROX:COMPAT-007] theme name as park name until a save supplies one — evidence needed: save park-name field and a capture. |
 | COMPAT-008 | `source/OpenTPW/World/Original/OriginalGateSign.cs:21` | [APPROX:COMPAT-008] depth offset for the sign faces — evidence needed: none once the full gate model draws its runtime textures. |
@@ -240,13 +240,13 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ONLINE-004 | `source/OpenTPW.Online/Chat/ChatCommands.cs:42` | [APPROX:ONLINE-004] 111-113 are all "Your buddy " (English suffix strings are empty); online/offline/removed |
 | ONLINE-005 | `source/OpenTPW.Server/ChatHub.cs:24` | [APPROX:ONLINE-005] Command semantics are inferred from the command words, response strings and |
 | ONLINE-006 | `source/OpenTPW.Server/ChatHub.cs:390` | [APPROX:ONLINE-006] A visitor inside a park must leave it first (CHAT_COMMANDS 127) — evidence needed. |
-| RIDES-001 | `source/OpenTPW/World/Objects/ObjectAnimator.cs:15` | [APPROX:RIDES-001] Animation clips play at 30 ticks/s — evidence needed: original tick rate (binary or timed capture of a ride cycle) |
-| RIDES-002 | `source/OpenTPW/World/Objects/ObjectAnimator.cs:126` | [APPROX:RIDES-002] When several channels animate a node, the most recently started clip wins — evidence needed: original channel mixing (binary or capture of a multi-channel sideshow/Totem) |
-| RIDES-003 | `source/OpenTPW/World/Objects/ObjectAnimator.cs:117` | [APPROX:RIDES-003] A finished non-looping clip holds its last pose until replaced/flushed — evidence needed: capture after a TRIGANIM clip ends |
-| RIDES-004 | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:178` | [APPROX:RIDES-004] Re-issued LOOPANIM of the running loop continues instead of restarting — evidence needed: capture of the Belly Bounce idle loop |
-| RIDES-005 | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:226` | [APPROX:RIDES-005] Plain animation opcodes use a channel separate from the _CH channels — evidence needed: binary or sideshow capture (TRIGANIM_CH ... 0 next to LOOPANIM) |
-| RIDES-006 | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:250` | [APPROX:RIDES-006] GETANIM_CH returns 1 while the channel plays, else 0 — evidence needed: binary semantics of GETANIM_CH |
-| RIDES-007 | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:240` | [APPROX:RIDES-007] TRIGANIMSPEED plays at normal speed; its 4th operand (e.g. 4000) is ignored — evidence needed: binary semantics of TRIGANIMSPEED |
+| RIDES-001 | `source/OpenTPW/World/Objects/ObjectAnimator.cs:26` | [APPROX:RIDES-001] Mac channel rate 30 is proved; Windows rate and selection/binding of the native scaled or unscaled channel clock remain unverified. |
+| RIDES-002 | `source/OpenTPW/World/Objects/ObjectAnimator.cs:257` | [APPROX:RIDES-002] When several channels animate a node, the most recently started clip wins — evidence needed: original channel mixing (binary or capture of a multi-channel sideshow/Totem) |
+| RIDES-003 | `source/OpenTPW/World/Objects/ObjectAnimator.cs:199` | [APPROX:RIDES-003] A finished non-looping clip holds its last pose until replaced/flushed — evidence needed: capture after a TRIGANIM clip ends |
+| RIDES-004 | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:179` | [APPROX:RIDES-004] Re-issued LOOPANIM of the running loop continues instead of restarting — evidence needed: capture of the Belly Bounce idle loop |
+| RIDES-005 | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:227` | [APPROX:RIDES-005] Plain animation opcodes use a channel separate from the _CH channels — evidence needed: binary or sideshow capture (TRIGANIM_CH ... 0 next to LOOPANIM) |
+| RIDES-006 | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:251` | [APPROX:RIDES-006] GETANIM_CH returns 1 while the channel plays, else 0 — evidence needed: binary semantics of GETANIM_CH |
+| RIDES-007 | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:241` | [APPROX:RIDES-007] TRIGANIMSPEED plays at normal speed; its 4th operand (e.g. 4000) is ignored — evidence needed: binary semantics of TRIGANIMSPEED |
 | RIDES-008 | `source/OpenTPW/World/Objects/ObjectAnimations.cs:28` | [APPROX:RIDES-008] ANIM_* → suffix letter and variant v → number v+1 (derived from file names and scripts, no counterexample) — evidence needed: binary confirmation of the member lookup |
 | RIDES-009 | `source/OpenTPW/World/Objects/ObjectCatalog.cs:381` | [APPROX:RIDES-009] Shared (non-Info.Id) .sam files sit between the category defaults and the object file — evidence needed: which base file the binary's object loader is given |
 | RIDES-010 | `source/OpenTPW/World/Objects/ObjectCatalog.cs:458` | [APPROX:RIDES-010] OBJECT_NAMES index bound by English name equality within the theme block — evidence needed: binary name-index table |
@@ -255,13 +255,13 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | RIDES-013 | `source/OpenTPW/World/Objects/ObjectShape.cs:103` | [APPROX:RIDES-013] Rotation 180 and non-square rotated footprints follow the rigid rotation verified for 0/90/270 squares — evidence needed: a save with such objects |
 | RIDES-014 | `source/OpenTPW/World/Objects/ParkObjects.cs:151` | [APPROX:RIDES-014] Object base height = mean ground height of its footprint cells (.hmp ground deformation not decoded) — evidence needed: .hmp format, captures on slopes |
 | RIDES-015 | `source/OpenTPW/World/Objects/ParkObjects.cs:188` | [APPROX:RIDES-015] Imported objects start open (saved ride state not decoded); built objects open too — evidence needed: TPWS ride-state fields, original build behaviour |
-| RIDES-016 | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:43` | [DATA:&lt;object&gt;.sam:Upgrades[0].InitDuration] [APPROX:RIDES-016] written raw; unit per Info.DurationUnit unverified — evidence needed: binary conversion of InitDuration |
+| RIDES-016 | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:44` | [DATA:&lt;object&gt;.sam:Upgrades[0].InitDuration] [APPROX:RIDES-016] written raw; unit per Info.DurationUnit unverified — evidence needed: binary conversion of InitDuration |
 | RIDES-017 | `source/OpenTPW/World/Objects/ObjectCatalog.cs:124` | [APPROX:RIDES-017] Buildable = WhichUIType 0–3, not fixed/tool/upgrade (DATA:Info.WhichUIType comment "4 = Not to be shown in UI") — evidence needed: original build-menu contents |
 | RIDES-018 | `source/OpenTPW/World/Objects/ParkObjects.cs:105` | [APPROX:RIDES-018] Build rules = footprint inside grid + MAP/save terrain rules + no overlap; no slope, path or land rule; Level.PlaceObject enforces economy purchases — evidence needed: original build checks (binary/captures) |
 | RIDES-019 | `source/OpenTPW/World/Objects/ParkObjects.cs:207` | [APPROX:RIDES-019] Levels without a save get Gates, Lights and Bus (the fixed items Easymode records) — evidence needed: original fixed-item spawning per level |
 | RIDES-021 | `source/OpenTPW/World/Level.Objects.cs:92` | [APPROX:RIDES-021] Built footprint is centred on the clicked cell; the cursor ray hits the Z = 0 plane — evidence needed: original build cursor behaviour |
 | RIDES-022 | `source/OpenTPW/World/Objects/ObjectAssets.cs:119` | [APPROX:RIDES-022] Texture search: archive textures, gtexture, theme sharetex (stexture/ssharete low-detail sets unused) — evidence needed: binary texture lookup order |
-| RIDES-023 | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:114` | [APPROX:RIDES-023] A completed cycle = VAR_RUNNING 1 → 0 — evidence needed: original ride-cycle/income accounting |
+| RIDES-023 | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:115` | [APPROX:RIDES-023] A completed cycle = VAR_RUNNING 1 → 0 — evidence needed: original ride-cycle/income accounting |
 | RIDES-024 | `source/OpenTPW/World/Objects/ObjectCatalog.cs:277` | [APPROX:RIDES-024] Bonus archives merge into the theme catalog; an Info.Id collision skips the bonus entry — evidence needed: original behaviour with dropped-in WADs |
 | RIDES-025 | `source/OpenTPW/World/Objects/ObjectCatalog.cs:552` | [APPROX:RIDES-025] Bonus name: selected language file, then English, then .sam Info.Name — evidence needed: original lookup of bonus name files |
 | RIDES-026 | `source/OpenTPW/World/Objects/OriginalObject.cs:12` | [APPROX:RIDES-026] Engine units: 1 MD2 unit = 0.2 (presentation scale shared with the terrain; no game rule) — evidence needed: none (engine convention) |
@@ -382,18 +382,18 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | Label | Location | Source comment context |
 | --- | --- | --- |
 | *.sam:TEXTURE_FILTERING 0 Point, 1 Bilinear, 2 Trilinear, 3 Anisotropic; MIPMAP | `source/OpenTPW/Compat/GraphicsSettings.cs:202` | Renderer mapping. Filtering and mipmaps follow the legend ([DATA:*.sam:TEXTURE_FILTERING 0 Point, 1 Bilinear, 2 Trilinear, 3 Anisotropic; MIPMAP]); the anisotropy degree for value 3 and the view |
-| *.sgn:LOGFONT lfHeight | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:67` | [DATA:*.sgn:LOGFONT lfHeight] em height; [DATA:*.sgn:slot offset] cell top (TA_TOP reading is inferred from the values). |
-| *.sgn:slot font file / LOGFONT face | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:56` | [DATA:*.sgn:slot font file / LOGFONT face] |
-| *.sgn:slot offset | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:67` | [DATA:*.sgn:LOGFONT lfHeight] em height; [DATA:*.sgn:slot offset] cell top (TA_TOP reading is inferred from the values). |
+| *.sgn:LOGFONT lfHeight | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:70` | [DATA:*.sgn:LOGFONT lfHeight] em height; [DATA:*.sgn:slot offset] cell top (TA_TOP reading is inferred from the values). |
+| *.sgn:slot font file / LOGFONT face | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:59` | [DATA:*.sgn:slot font file / LOGFONT face] |
+| *.sgn:slot offset | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:70` | [DATA:*.sgn:LOGFONT lfHeight] em height; [DATA:*.sgn:slot offset] cell top (TA_TOP reading is inferred from the values). |
 | &lt;fixed item&gt;.MD2:park-space coordinates | `source/OpenTPW/World/Objects/ParkObjects.cs:135` | [DATA:Easymode.TPWI:SYSG X/Y/rotation] [DATA:&lt;fixed item&gt;.MD2:park-space coordinates] |
 | &lt;object&gt;.sam:Info.DontApplyOffset | `source/OpenTPW/World/Objects/ObjectCatalog.cs:119` | [DATA:&lt;object&gt;.sam:Info.DontApplyOffset] |
 | &lt;object&gt;.sam:Info.Id | `source/OpenTPW/World/Objects/ObjectCatalog.cs:56` | [DATA:&lt;object&gt;.sam:Info.Id] [DATA:&lt;object&gt;.sam:Info.Name] |
 | &lt;object&gt;.sam:Info.Name | `source/OpenTPW/World/Objects/ObjectCatalog.cs:56` | [DATA:&lt;object&gt;.sam:Info.Id] [DATA:&lt;object&gt;.sam:Info.Name] |
 | &lt;object&gt;.sam:Info.Shape | `source/OpenTPW/World/Objects/ObjectCatalog.cs:392` | [DATA:&lt;object&gt;.sam:Info.Shape] |
 | &lt;object&gt;.sam:Upgrades[0].CostOfUpgrade | `source/OpenTPW/World/Objects/ObjectCatalog.cs:130` | [DATA:&lt;object&gt;.sam:Upgrades[0].CostOfUpgrade] |
-| &lt;object&gt;.sam:Upgrades[0].InitCapacity | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:41` | [DATA:&lt;object&gt;.sam:Upgrades[0].InitCapacity] |
-| &lt;object&gt;.sam:Upgrades[0].InitDuration | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:43` | [DATA:&lt;object&gt;.sam:Upgrades[0].InitDuration] [APPROX:RIDES-016] written raw; unit per Info.DurationUnit unverified — evidence needed: binary conversion of InitDuration |
-| &lt;object&gt;.sam:UsageInfo.ProvidesRelief/HungerEffect/ThirstEffect/InitPricePerUse/ExcitementLevel, Info.AttractionValue | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:137` | [DATA:&lt;object&gt;.sam:UsageInfo.ProvidesRelief/HungerEffect/ThirstEffect/InitPricePerUse/ExcitementLevel, Info.AttractionValue] |
+| &lt;object&gt;.sam:Upgrades[0].InitCapacity | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:42` | [DATA:&lt;object&gt;.sam:Upgrades[0].InitCapacity] |
+| &lt;object&gt;.sam:Upgrades[0].InitDuration | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:44` | [DATA:&lt;object&gt;.sam:Upgrades[0].InitDuration] [APPROX:RIDES-016] written raw; unit per Info.DurationUnit unverified — evidence needed: binary conversion of InitDuration |
+| &lt;object&gt;.sam:UsageInfo.ProvidesRelief/HungerEffect/ThirstEffect/InitPricePerUse/ExcitementLevel, Info.AttractionValue | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:138` | [DATA:&lt;object&gt;.sam:UsageInfo.ProvidesRelief/HungerEffect/ThirstEffect/InitPricePerUse/ExcitementLevel, Info.AttractionValue] |
 | Advisor.MD2:mesh names "Mouth - Normal", "Mouth - Aah", "Mouth - Eee", "Mouth - Ooh", "Mouth - Sss" | `source/OpenTPW/World/Advisor.cs:23` | [DATA:Advisor.MD2:mesh names "Mouth - Normal", "Mouth - Aah", "Mouth - Eee", "Mouth - Ooh", "Mouth - Sss"] |
 | Advisor/Advisor.sam:StaffHireMechanics1.PoorerStateThan | `source/OpenTPW/Economy/ParkEconomy.cs:23` | [DATA:Advisor/Advisor.sam:StaffHireMechanics1.PoorerStateThan] |
 | CHAT_COMMANDS.str:134-151 | `source/OpenTPW.Online/Chat/ChatCommands.cs:117` | ([DATA:CHAT_COMMANDS.str:134-151] — 18 responses for the 19 mood commands; Think has none). |
@@ -450,6 +450,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | --- | --- | --- |
 | STP-PPC:0x10007434 advisor update | `source/OpenTPW.Files/Public/LipSyncTimeline.cs:53` | [BIN:STP-PPC:0x10007434 advisor update] marks are read in order until -1, divided by 1000 (µs to the ms speech clock) and each one flips the talking flag |
 | STP-PPC:0x10007434 advisor update | `source/OpenTPW/World/Advisor.cs:315` | [BIN:STP-PPC:0x10007434 advisor update] silent or no LIP data: node 1; talking: when the speech clock (ms) passes the next-change time, node = rand() % 5 + 1 and the next change is 100 ms later |
+| STP-PPC:0x100A70B4 channel frame arithmetic | `source/OpenTPW/World/Objects/ObjectAnimator.cs:25` | [BIN:STP-PPC:0x100A70B4 channel frame arithmetic] the Feral Mac formula multiplies elapsed milliseconds by 30 and divides by 1000 before channel speed. |
 | STP-PPC:0x100ABF14 sign compositor | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:25` | [BIN:STP-PPC:0x100ABF14 sign compositor] each line is colour-blitted with its colour block's bytes (+0x430..+0x432 for the first line, +0x444..+0x446 for the second) only when its colour mode is 1 or 2 |
 | STP-PPC:0x100C7B24 park rating | `source/OpenTPW/Economy/ParkEconomy.cs:383` | [BIN:STP-PPC:0x100C7B24 park rating] min(guests in park, 1000) × 20 / 1000; attractions of sub-kind 0 × 3 / 2 up to 20; sub-kinds 1 and 2 × 2 up to 10 each; sub-kind 3 up to 10; sub-kind 0 at upgrade level 2 or more up to 10; each of the five staff types up to 4 |
 | STP-PPC:0x100CBF50 bank deposit | `source/OpenTPW/Economy/ParkLedger.cs:60` | [BIN:STP-PPC:0x100CBF50 bank deposit] every credit raises the bank's mProfitThisYear (+0x124) and every debit (0x100CBFDC) lowers it; a loan deposit (0x100CC904) adds and removes its amount, and an instalment (0x100CC21C) nets to minus its interest share |

@@ -8,7 +8,7 @@ public static class RidesApproximations
 {
 	public static readonly IReadOnlyList<(string Id, string Rule)> Entries = new[]
 	{
-		("RIDES-001", "animation clips play at 30 ticks/s"),
+		("RIDES-001", "Mac channel rate 30 is proved; Windows rate and native scaled/unscaled clock selection remain unverified"),
 		("RIDES-002", "most recently started channel wins a node"),
 		("RIDES-003", "finished clips hold their last pose"),
 		("RIDES-004", "re-issued LOOPANIM continues the running loop"),

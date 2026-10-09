@@ -198,6 +198,17 @@ TOC slot `0x1624`, indexed by integer `(need+4)/5` only when object flag bit
 integer `sum(weight*match)/sum(active_weights)`. This lane does not establish
 protection against zero denominator or out-of-range metadata.
 
+Both numerator products/additions and denominator additions retain the low
+32 bits. The queue match is not clamped after `100 - queuePercent`: a near
+queue count 9 and raw object `+60` value 1 produces match −125 as register
+bits `4294967171`. With distance match 100 and only active weights distance 1
+and queue 2, the wrapped numerator is `4294967146`; `DIVWU` by 3 yields
+`1431655715`. Treating that as a negative signed score or clamping the queue
+match to zero changes the original arithmetic. Later history divisions use
+signed interpretation. Candidate selection and plausible metadata domains
+must therefore be reviewed before treating a normalized quotient as a usable
+gameplay score.
+
 Subsequent multipliers handle new rides, indoor rides in rain, gold-ticket
 rides, and expensive rides. Two history arrays hold four object IDs each:
 matching positions penalize the score by dividing by 5, 4, 3, or 2, with
@@ -386,6 +397,33 @@ remains unresolved. The waiting counter `0xc3758` traverses both ticket-booth
 cell lists, counts category-1 things in state 3, then stores/returns the
 current value through `0xc9020/0xc9018`. These helpers are a tracked-value
 setter and immediate getter, not evidence of historical smoothing.
+
+## Phase 3: isolated implementation and synthetic regressions
+
+`tools/ppc-analysis/lanes/guests/rules/GuestOriginalRules.cs` implements bounded
+arithmetic as an evidence helper outside the production project. Existing
+guest/attraction types cannot provide the original history arrays, numeric
+shop effects, flags, or register-weight bindings. It is deliberately not
+called by `GuestSimulation` and is not a complete attraction scoring pipeline.
+No recovered lookup table or original asset is embedded; interpreted tables
+are caller-supplied spans and regression tables are synthetic.
+
+The helper covers requested four-position queue groups, distance divisor 450,
+near/far queue-weight gates, byte excitement matches, nonlinear needs table
+addressing, seven-term normalized base scores, signed history divisions,
+shop effect subtraction, and hunger-band ride illness. Tests preserve the
+overfull-queue unsigned quotient and low-32-bit overflow, including the later
+signed reinterpretation. Unsupported zero/wrapped-zero denominators, invalid
+layouts, nonfinite needs, and inputs outside the supported domain fail closed;
+these rejections do not claim to reproduce original invalid-input behavior.
+No need growth cadence or original score multiplier is fabricated.
+
+Validation: dependency-free .NET 8 console regressions pass **18/18**, Release
+build reports zero warnings/errors, and the original-input Python witness
+suite remains **11/11, zero skips**. Run instructions and per-method binary
+anchors are in `rules/README.md`. Parent review must resolve metadata domains,
+raw signed/unsigned edge behavior, lookup acquisition, full score stages,
+caller units, and production test shape before integration or tag resolution.
 
 ## Untagged assumptions and integration handoffs
 

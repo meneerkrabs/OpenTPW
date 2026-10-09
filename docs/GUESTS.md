@@ -119,8 +119,9 @@ ticket booth, entering the park, walking around, going to a ride, queueing,
 boarding, waiting to board, exiting a ride, "Using: ", leaving the park, waiting
 to go home, …). `GuestThought` and `GuestState` use these indices as their values,
 so the UI can show the original strings directly. The `KIDSTATES` order is also
-the state machine below. `TP.ICD` is not readable as plain strings (no `Peep`/
-`Kid` strings found), so no executable constants were recovered.
+the state machine below. No executable constants were recovered from the
+Windows `TP.ICD` string search. Separate static evidence from the identified
+Feral Mac PowerPC application is recorded in [PPC-guests](reverse/PPC-guests.md).
 
 ## Simulation
 
@@ -159,6 +160,22 @@ home (21) → removed.
 | Queue length | 4 × capacity (`QueueWaitTimeConstant` not understood) |
 | Queue positions | 3 abreast, 0.28 cells apart, back along the entrance cell's first link (real queue cells are not walked yet) |
 | No exit lane | guests vanish (original ejection not modelled) |
+
+An isolated [GuestOriginalRules helper](../tools/ppc-analysis/lanes/guests/rules/README.md)
+and 18 synthetic regression cases preserve selected Feral arithmetic: four
+positions per queue cell, normalized base score, distance divisor 450,
+nonlinear need lookups, two ride histories, shop effect subtraction, and
+hunger-dependent ride illness. The helper remains outside the production
+project because current guest/attraction types lack the required metadata and
+history bindings. It supplies no growth rate or timing rule.
+
+The original score uses low-32-bit products/additions followed by unsigned
+division. An overfull queue can yield a very large positive quotient; the
+helper preserves that result and documents the later signed history division.
+Zero divisors and invalid metadata domains remain unsupported, with explicit
+rejection. Full scoring, candidate selection, queue geometry, source-table
+loading, and simulation integration need independent review. The choices in
+the approximation table above still describe the running OpenTPW simulation.
 
 ## Money
 

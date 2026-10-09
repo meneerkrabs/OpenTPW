@@ -27,7 +27,7 @@ public sealed class PrototypeRide : OriginalObject
 	/// <summary>Original running cycle: cart lift/drop plus counter-rotating cogs (430 ticks), ANIM_Main variant 0.</summary>
 	internal const string AnimationName = "totemm1.MD2";
 	/// <summary>Sandbox choice; the original animation tick rate is not verified.</summary>
-	public const float AnimationTicksPerSecond = ObjectAnimator.TicksPerSecond;
+	public const float AnimationTicksPerSecond = ObjectAnimator.DefaultTicksPerSecond;
 
 	private readonly int carriageNode;
 
@@ -48,7 +48,7 @@ public sealed class PrototypeRide : OriginalObject
 		&& string.Equals( Runtime.Animator.GetClip( OriginalObjectEffects.MainChannel ), Path.GetFileNameWithoutExtension( AnimationName ), StringComparison.OrdinalIgnoreCase );
 	/// <summary>Length of the create clip (ANIM_Create, totemc) that Totem.RSE waits for before its passenger loop.</summary>
 	public double CreateAnimationMilliseconds => Entry.ResolveAnimation( 0, 0 ) is { } file && ObjectAssets.LoadModel( Entry.FileSystem, file.Path ).Clip is { } clip
-		? clip.Duration / ObjectAnimator.TicksPerSecond * 1000.0 : 0;
+		? clip.Duration / Runtime.Animator.TicksPerSecond * 1000.0 : 0;
 	/// <summary>Current tick of the main animation channel (0 when nothing played yet).</summary>
 	public float AnimationTick => Runtime.Animator.GetTick( OriginalObjectEffects.MainChannel );
 

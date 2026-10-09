@@ -59,6 +59,9 @@ SPANS = {
     'calendar_events': (0xe3f0c, 0xe41cc, '61f181fd326964e7a7eb753d2a7faef24364b09c8886b0204abe5986b20d53ea'),
     'calendar_message_types': (0xe47f8, 0xe4810, 'de00cb6476fc7b59ef8af432f3f1748e4291889c2f231ad5d71f0393b19fdeef'),
     'wear_amount': (0xde904, 0xdebf0, 'e0db3b0fa70a893f0d91c1d92431da1761ac59b53b53038f63c1dc43f396350e'),
+    'rating_visitors': (0xc3684, 0xc3758, '8f3f3214ea9fed1c702e11d155d207f834a9c47292643d9dd8b6f24cf16a3567'),
+    'rating_objects': (0xc5864, 0xc5968, 'b4a9f5584fa7fc8586ccca42e1ca6e25f454ba5e0b8b3be0ff54d128bce078f1'),
+    'rating_staff': (0xc4064, 0xc41a4, 'e2acf06807e7ff2a26cea76d998e0286ba0b2540d5518215e051dafaa3da0f91'),
 }
 
 
@@ -78,6 +81,16 @@ def xform(c: pef.PEFContainer, offset: int, opcode: int, operation: int, regs: t
     word = pef._u32(c.code.data, offset)
     require((word >> 26, word >> 1 & 1023), (opcode, operation), f'operation at {offset:#x}')
     require((word >> 21 & 31, word >> 16 & 31, word >> 11 & 31), regs, f'operands at {offset:#x}')
+
+
+def below_cap_branch(c: pef.PEFContainer, offset: int, cap_target: int):
+    word = pef._u32(c.code.data, offset)
+    require((word >> 26, word >> 21 & 31, word >> 16 & 31, word & 3),
+            (16, 4, 0, 0), f'branch on not-less-than at {offset:#x}')
+    displacement = word & 0xfffc
+    if displacement & 0x8000:
+        displacement -= 0x10000
+    require(offset + displacement, cap_target, 'rating cap branch target')
 
 
 def monthly_payment(principal: int, apr: int, months: int) -> int:
@@ -216,6 +229,45 @@ def inspect(root: Path) -> dict:
     require(call_target(c, 0xc17b8), 0xc7b24, 'rating history writer')
     require(call_target(c, 0xcba00), 0x116740, 'bank subscribes to year event')
     require(call_target(c, 0xfac04), 0xcc120, 'actor dispatcher bank handler')
+    rating_sources = {}
+    # name, comparison, register, limit, branch, cap store, cap register/value,
+    # provider call/entry, selector. Caps are direct operands, not SAM data.
+    for name, cmp_at, reg, limit, branch, cap_at, cap_reg, cap_value, call, provider, selector in [
+        ('visitors', 0xc7bec, 19, 1000, 0xc7bf0, 0xc7c00, 3, 1000, 0xc7bf8, 0xc3684, None),
+        ('rides', 0xc7ce8, 0, 20, 0xc7cec, 0xc7d10, 25, 20, 0xc7cfc, 0xc5864, (0, 0)),
+        ('shops', 0xc7dc8, 0, 10, 0xc7dcc, 0xc7de8, 20, 10, 0xc7ddc, 0xc5864, (1, 0)),
+        ('sideshows', 0xc7ea0, 0, 10, 0xc7ea4, 0xc7ec0, 21, 10, 0xc7eb4, 0xc5864, (2, 0)),
+        ('features', 0xc7f74, 19, 10, 0xc7f78, 0xc7f94, 22, 10, 0xc7f88, 0xc5864, (3, 0)),
+        ('upgraded_rides', 0xc8054, 19, 10, 0xc8058, 0xc8074, 24, 10, 0xc8068, 0xc5864, (0, 2)),
+        ('handymen', 0xc817c, 19, 4, 0xc8180, 0xc8198, 28, 4, 0xc818c, 0xc4064, (5,)),
+        ('mechanics', 0xc82a0, 19, 4, 0xc82a4, 0xc82bc, 27, 4, 0xc82b0, 0xc4064, (4,)),
+        ('entertainers', 0xc83c4, 19, 4, 0xc83c8, 0xc83e0, 23, 4, 0xc83d4, 0xc4064, (6,)),
+        ('guards', 0xc84e8, 19, 4, 0xc84ec, 0xc8504, 19, 4, 0xc84f8, 0xc4064, (7,)),
+        ('researchers', 0xc860c, 17, 4, 0xc8610, 0xc8624, 3, 4, 0xc861c, 0xc4064, (8,)),
+    ]:
+        require(d_fields(c, cmp_at, 11), (0, reg, limit), 'signed rating threshold comparison')
+        below_cap_branch(c, branch, cap_at)
+        require(d_fields(c, cap_at, 14), (cap_reg, 0, cap_value), 'rating literal cap')
+        require(call_target(c, call), provider, 'rating below-cap recount provider')
+        if selector:
+            at = call - 4 * len(selector)
+            for index, value in enumerate(selector):
+                require(d_fields(c, at + 4 * index, 14), (4 + index, 0, value), 'rating provider selector')
+        rating_sources[name] = {'signed_compare_offset': cmp_at, 'cap_branch_offset': branch,
+                                'cap_target': cap_at, 'provider_call': call, 'provider': provider,
+                                'selector': selector, 'cap_operand': cap_value}
+    require(d_fields(c, 0xc7c04, 7), (0, 3, 20), 'visitor low-word multiplication after population cap')
+    require(d_fields(c, 0xc7cdc, 7), (0, 19, 3), 'ride low-word multiplication before /2')
+    xform(c, 0xc7ce0, 31, 824, (0, 0, 1))
+    xform(c, 0xc7ce4, 31, 202, (0, 0, 0))
+    for offset, opcode, operation, registers in [
+        (0xf4220, 63, 18, (0, 1, 0)),  # double percentage /100
+        (0xf4228, 59, 20, (1, 1, 2)),  # single-rounded grade conversion
+        (0xf422c, 63, 21, (0, 1, 0)),  # double addition
+        (0xf4230, 63, 12, (0, 0, 0)),  # round combined grade/fraction to single
+        (0xf4234, 59, 25, (1, 3, 0)),  # single multiplication by20
+    ]:
+        xform(c, offset, opcode, operation, registers)
     main_slot = 0x8000 + d_fields(c, 0x19954, 32)[2]
     ride_slot = 0x8000 + d_fields(c, 0x119fec, 32)[2]
     relocs = c.relocs[c.data_section.index]
@@ -277,6 +329,8 @@ def inspect(root: Path) -> dict:
             'calendar_event_types': {'day': 11, 'month': 12, 'year': 13},
             'rating_current_control': 44450, 'rating_label_control': 44451,
             'rating_label_uitext_index': 190, 'rating_history_offset': 0x213b0,
+            'rating_component_sources': rating_sources,
+            'staff_skill_operation_order': 'double percentage/100; f32 grade; double sum; f32 round; f32 multiply by20; u32 saturation',
             'mac_formula': 'trunc_u32(P * (1 + APR/100) ** (months/24) / months)',
             'payoff_formula': 'monthly_payment * (term - months_repaid)',
             'wage_formula': 'BaseWage[grade] * PayMultiplier[type]',

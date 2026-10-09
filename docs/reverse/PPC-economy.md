@@ -20,7 +20,7 @@ python3 -m unittest discover -s tools/ppc-analysis -p 'test_*.py' -v
 ```
 
 The verifier uses the validated `pef.py` loader and timer witness helpers. It
-checks file identities, 35 application and two macdoze function-region hashes,
+checks file identities, 38 application and two macdoze function-region hashes,
 selected operands, branch targets, constants and import relocations. Output
 is interpreted metadata. These are bounded static witnesses, not formal
 decompilation proofs. Tests contain synthetic fixtures and independently
@@ -442,13 +442,14 @@ a captured original screen or proof of Windows executable arithmetic.
 Let `V` be visitors currently in the park, `R/S/A/F` the eligible placed
 ride/shop/sideshow/feature counts, `U` rides at upgrade level >=2, and
 `H/M/E/G/Q` the eligible handyman/mechanic/entertainer/guard/researcher counts.
-The integer park rating at `0xc7b24` is:
+For stable eligible counts without low-word multiplication overflow, the
+integer park rating at `0xc7b24` is:
 
 `floor(min(V,1000)/50) + min(floor(3R/2),20) + min(2S,10) + min(2A,10)`
 
 `+ min(F,10) + min(U,10) + min(H,4)+min(M,4)+min(E,4)+min(G,4)+min(Q,4)`.
 
-The maximum is 100. Arithmetic witnesses are visitor scaling
+The maximum on that domain is 100. Arithmetic witnesses are visitor scaling
 `0xc7bec–0xc7c24`, ride scaling `0xc7cdc–0xc7d10`, category components
 `0xc7dc4–0xc8074`, staff components `0xc817c–0xc8624`, and final sum
 `0xc8628–0xc864c`. Counters use object/actor categories and subtype filters:
@@ -657,3 +658,79 @@ BigInteger cross-check. For the 100,000/36 zero-APR example the first monthly
 profit change is −119,304,646; after 36 isolated calls without a year reset,
 the wrapped profit field is +40 and cash retains 28. These are arithmetic model results,
 not original runtime captures or realistic accounting conventions.
+
+## Standalone rating and staff-skill contract
+
+`OriginalParkRatingRules.cs` extends the same dependency-free console
+project; it has no production references and reads no original tables.
+Every count must be supplied by a caller with separately qualified selection
+logic. There are no SAM setting reads in `0xc7b24`: its scales and caps are
+literal operands. Arbitrarily substituting configuration/percentage scales
+would describe a different rule set and is not part of this contract.
+
+The native routine first counts inline to select the cap branch, then
+**recounts through a provider only below the cap**. `RatingCountPass` keeps
+those two observations explicit. `CalculateStableSnapshot` is a convenience
+that expressly assumes both counts agree; it is not evidence that every
+production statistic or traversal already supplies the right value.
+
+| Caller-supplied component input | Native selection / below-cap provider | Provider call | Cap-check operation |
+| --- | --- | --- | --- |
+| Visitors | actor type 1, predicate `0xe6c6c != 0`; `0xc3684` repeats it | `0xc7bf8` | signed population <1000; cap population, then low-word ×20 and signed /1000 |
+| Rides | actor type 3, catalogue category 0; `0xc5864(0,0)` | `0xc7cfc` | low-word ×3, signed /2, compare <20 |
+| Shops | actor type 3, catalogue category 1; `0xc5864(1,0)` | `0xc7ddc` | low-word ×2, compare <10 |
+| Sideshows | actor type 3, catalogue category 2; `0xc5864(2,0)` | `0xc7eb4` | low-word ×2, compare <10 |
+| Features | actor type 3, catalogue category 3; `0xc5864(3,0)` | `0xc7f88` | count <10 |
+| Upgraded rides | actor type 3, catalogue category 0, upgrade byte >=2; `0xc5864(0,2)` | `0xc8068` | count <10 |
+| Handymen | native type 5, subtype 0; `0xc4064(5)` | `0xc818c` | count <4 |
+| Mechanics | native type 4, subtype 0; `0xc4064(4)` | `0xc82b0` | count <4 |
+| Entertainers | native type 6, subtype 0; `0xc4064(6)` | `0xc83d4` | count <4 |
+| Guards | native type 7, subtype 0; `0xc4064(7)` | `0xc84f8` | count <4 |
+| Researchers | native type 8, subtype 0; `0xc4064(8)` | `0xc861c` | count <4 |
+
+The second provider argument is a minimum upgrade bound applied only to
+native category 0. These native numeric selectors are pinned evidence;
+equating them with existing OpenTPW count properties is **not** established
+by this helper. It neither traverses the current world nor filters objects,
+candidates or staff itself.
+
+`evidence.py` now checks all eleven signed comparisons, cap branches,
+literal caps, linked provider targets and selector operands. It also pins
+the provider regions `[0xc3684,0xc3758)`, `[0xc5864,0xc5968)` and
+`[0xc4064,0xc41a4)`, alongside the previously pinned composite/UI regions.
+Synthetic branch tests reject wrong conditions and targets. No original
+instructions are executed or copied into the repository.
+
+All component calculations preserve low-word products and signed truncation
+toward zero. Ride multiplication precedes division and cap checking. The
+recount result is not capped again; final addition follows the original
+order, with visitors last, and has no final [0,100] normalization. Synthetic
+inconsistent passes can therefore exceed 100, and very large/raw negative
+count words can produce signed overflow results. Tests cover those operands
+to distinguish operation ordering; they do not claim such counts occur in
+the original game.
+
+`OriginalStaffSkill.Calculate` follows code `0xf41dc` precisely on the host's
+default floating mode: byte percentage at staff +488 is divided by double
+100; the signed grade word at +484 is rounded to f32; the double sum is
+rounded to f32; then single-precision multiplication by 20 precedes the
+reviewed saturating unsigned truncation helper. The operand verifier checks
+`0xf4220` double divide, `0xf4228` single grade conversion, `0xf422c`
+double add, `0xf4230` single rounding and `0xf4234` single multiplication.
+Neither grade nor percentage is normalized/clamped to the ordinary range.
+For example grade 4/percentage 0 returns 80, and grade 4/byte 255 returns 131.
+
+The all-f32 rewrite loses the native operation order: the synthetic
+grade −1/percentage 105 case yields 0 with early single division, whereas
+the inspected double-fraction/late-rounding order yields 1. That input is
+not asserted reachable. The reviewed grade 0..5 and full byte domain has
+1,536 checked combinations, matching integer `floor((100×grade+pct)/5)`.
+Original rounding state, production field bindings and PC equivalence remain
+separate qualifications.
+
+The combined Release/Debug runner now has 25 groups and 11,183 assertions.
+Rating cases include zero and isolated components, truncation, threshold
+ordering, caps, pass disagreement, low-word overflow and 2,048 bounded
+BigInteger reference comparisons. Staff cases cover raw bytes, lack of
+percentage normalization, f32 order and the reviewed bounded domain. The
+production rating and staff calculations remain unwired and unchanged.

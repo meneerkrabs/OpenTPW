@@ -27,6 +27,7 @@ internal static class OriginalLoanRulesTests
 		Run( "undefined native division is explicit", UnqualifiedDivision );
 		Run( "zero-term guarded transitions are conditional", ZeroTermGuards );
 		Run( "bounded BigInteger operand cross-check", IntegerCrossCheck );
+		OriginalParkRatingRulesTests.RunAll( Run );
 		Console.WriteLine( $"{groups - failures}/{groups} groups passed; {assertions} assertions; {failures} failures." );
 		return failures == 0 ? 0 : 1;
 	}
@@ -49,11 +50,11 @@ internal static class OriginalLoanRulesTests
 		}
 	}
 
-	private static void Equal<T>( T expected, T actual )
+	internal static void Equal<T>( T expected, T actual, string? reason = null )
 	{
 		assertions++;
 		if ( !EqualityComparer<T>.Default.Equals( expected, actual ) )
-			throw new InvalidOperationException( $"expected {expected}, got {actual}" );
+			throw new InvalidOperationException( $"{reason ?? "Value mismatch"}: expected {expected}, got {actual}" );
 	}
 
 	private static void Saturation()

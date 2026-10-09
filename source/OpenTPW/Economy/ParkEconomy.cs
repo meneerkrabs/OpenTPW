@@ -71,6 +71,9 @@ public sealed class ParkEconomy : IParkEconomy
 	public int MonthsInRed { get; private set; }
 	public long LitterScaled { get; private set; }
 	public int TicketsSpent { get; private set; }
+	private readonly HashSet<int> ticketItems = new();
+	/// <summary>Objects bought with golden tickets; further copies are paid in cash.</summary>
+	public IReadOnlyCollection<int> TicketItems => ticketItems;
 	public int NextObjectId { get; private set; } = 1;
 	public IReadOnlyCollection<ParkObjectState> Objects => objects.Values;
 	public IReadOnlyList<LoanAccount> Loans => loans;
@@ -104,38 +107,60 @@ public sealed class ParkEconomy : IParkEconomy
 	/// <summary>One fixed 60 Hz frame tick: advances the park by <see cref="Speed"/> ticks (0 when paused).</summary>
 	public void AdvanceFixedTick() => Advance( (int)Speed );
 
-	/// <summary>Advances the simulation by <paramref name="ticks"/> park ticks, running hourly, daily and monthly updates at their boundaries.</summary>
+	/// <summary>Advances the simulation by <paramref name="ticks"/> fixed ticks. Each new park turn runs the turn work and the hourly, daily and monthly updates for the calendar boundaries it crosses.</summary>
 	public void Advance( long ticks )
 	{
 		ArgumentOutOfRangeException.ThrowIfNegative( ticks );
 		// [APPROX:ECON-030] the simulation stops once bankrupt — evidence needed: capture of the bankrupt state
 		for ( long step = 0; step < ticks && !IsBankrupt; step++ )
 		{
+			var previousTurn = ParkCalendar.Turn( Tick );
 			Tick++;
-			// [BIN:STP-PPC:0x100D67F0 world update] the golden-ticket check (0x100D31D0) runs when the world tick counter is a multiple of 100, and only in Full Simulation (game type 0)
-			// [APPROX:ECON-033] one park tick stands for one original world update — evidence needed: the world-update rate against OpenTPW's fixed tick
-			if ( Tick % GoldenTicketCheckInterval == 0 && Mode == ParkGameMode.FullSimulation )
-				CheckGoldenTickets();
-			if ( Tick % ParkCalendar.TicksPerHour == 0 )
-				UpdateHour();
-			if ( Tick % ParkCalendar.TicksPerDay != 0 )
-				continue;
-			var day = ParkCalendar.DayIndex( Tick );
-			EndDay( day - 1 );
-			if ( day % ParkCalendar.DaysPerMonth == 0 )
-				EndMonth( day / ParkCalendar.DaysPerMonth );
+			var turn = ParkCalendar.Turn( Tick );
+			if ( turn != previousTurn )
+				AdvanceTurn( previousTurn, turn );
 		}
 	}
 
+	/// <summary>The golden-ticket check runs every 100 park turns.</summary>
 	public const int GoldenTicketCheckInterval = 100;
+	/// <summary>Staff job time is kept in tenths of a park-clock hour.</summary>
+	public const int BusyTicksPerHour = 10;
+
+	public long Turn => ParkCalendar.Turn( Tick );
+
+	private void AdvanceTurn( long previousTurn, long turn )
+	{
+		// [BIN:STP-PPC:0x100D67F0 world update] the golden-ticket check (0x100D31D0) runs when the turn counter is a multiple of 100, and only in Full Simulation (game type 0)
+		if ( turn % GoldenTicketCheckInterval == 0 && Mode == ParkGameMode.FullSimulation )
+			CheckGoldenTickets();
+		// [BIN:STP-PPC:0x100E3F0C calendar update] day, month and year events fire when the extracted date fields change
+		var before = ParkCalendar.Epoch.AddSeconds( previousTurn * ParkCalendar.SecondsPerTurn );
+		var now = ParkCalendar.Epoch.AddSeconds( turn * ParkCalendar.SecondsPerTurn );
+		var hourBefore = previousTurn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerHour;
+		for ( var hour = hourBefore + 1; hour <= turn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerHour && !IsBankrupt; hour++ )
+			UpdateHour();
+		var dayBefore = previousTurn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerDay;
+		var day = turn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerDay;
+		for ( var ended = dayBefore; ended < day && !IsBankrupt; ended++ )
+			EndDay( ended );
+		if ( now.Month != before.Month || now.Year != before.Year )
+			EndMonth( (now.Year - ParkCalendar.Epoch.Year) * ParkCalendar.MonthsPerYear + now.Month - 1 );
+		if ( now.Year != before.Year )
+			Ledger.StartYear();
+	}
 
 	private void CheckGoldenTickets()
 	{
-		foreach ( var ticket in Objectives.CheckGoldenTickets( Counters, guestStatistics, Research, Ledger.History, monthlyAdmissions ) )
+		foreach ( var ticket in Objectives.CheckGoldenTickets( Counters, guestStatistics, Research, Ledger.ProfitThisYear, monthlyAdmissions ) )
 			Raise( ParkEventKind.GoldenTicketWon, (int)ticket, 0, 0, ticket.ToString() );
 	}
 
-	public void AdvanceDays( int days ) => Advance( (long)days * ParkCalendar.TicksPerDay );
+	/// <summary>Advances to the start of the calendar day <paramref name="days"/> days after the current one.</summary>
+	public void AdvanceDays( int days ) => Advance( Math.Max( 0, ParkCalendar.TickAtDay( ParkCalendar.DayIndex( Tick ) + days ) - Tick ) );
+
+	/// <summary>Advances to the start of the calendar month <paramref name="months"/> months after the current one.</summary>
+	public void AdvanceMonths( int months ) => Advance( Math.Max( 0, ParkCalendar.TickAtMonth( ParkCalendar.MonthIndex( Tick ) + months ) - Tick ) );
 
 	private void UpdateHour()
 	{
@@ -144,7 +169,7 @@ public sealed class ParkEconomy : IParkEconomy
 		{
 			if ( member.BusyTicks == 0 )
 				continue;
-			member.BusyTicks = Math.Max( 0, member.BusyTicks - ParkCalendar.TicksPerHour );
+			member.BusyTicks = Math.Max( 0, member.BusyTicks - BusyTicksPerHour );
 			if ( member.BusyTicks == 0 )
 				FinishJob( member );
 		}
@@ -199,7 +224,7 @@ public sealed class ParkEconomy : IParkEconomy
 			var hours = (long)role.WorkDuration[mechanic.Grade];
 			if ( job.PendingLevel > job.Level && Catalog.TryGet( job.InfoId, out var info ) && job.PendingLevel < info.Upgrades.Count )
 				hours *= Math.Max( 1, info.Upgrades[job.PendingLevel].DurationOfUpgrade );
-			mechanic.BusyTicks = Math.Max( 1, hours ) * ParkCalendar.TicksPerHour;
+			mechanic.BusyTicks = Math.Max( 1, hours ) * BusyTicksPerHour;
 			mechanic.AssignedInstanceId = job.Id;
 			mechanic.State = StaffState.Working;
 			job.MechanicId = mechanic.Id;
@@ -272,6 +297,7 @@ public sealed class ParkEconomy : IParkEconomy
 		{
 			var (account, paid) = LoanMath.Pay( loans[index] );
 			Post( LedgerCategory.LoanPayments, paid );
+			Ledger.ChargeLoanInterest( LoanMath.InstalmentInterest( account.MonthlyRepayment, account.Months, account.OriginalAmount ) );
 			Raise( ParkEventKind.LoanPayment, paid, 0, account.OfferIndex );
 			if ( account.MonthsRemaining == 0 || account.RemainingBalance <= 0 )
 			{
@@ -337,9 +363,9 @@ public sealed class ParkEconomy : IParkEconomy
 		if ( !Catalog.TryGet( item.InfoId, out var info ) || info.Upgrades.Count == 0 )
 			return 0;
 		var level = Math.Min( item.Level, info.Upgrades.Count - 1 );
-		// [APPROX:ECON-025] scrap value basis = catalogue cost of all levels up to the current one — evidence needed: capture of scrap value
+		// [APPROX:ECON-025] scrap value basis = catalogue cost of all levels up to the current one; a scrap year is 365 park-clock days — evidence needed: capture of scrap value
 		var basis = info.Upgrades.Take( level + 1 ).Sum( upgrade => upgrade.CostOfUpgrade );
-		var year = (int)Math.Min( 3, (Tick - item.BuiltTick) / ((long)ParkCalendar.DaysPerYear * ParkCalendar.TicksPerDay) );
+		var year = (int)Math.Min( 3, (ParkCalendar.Seconds( Tick ) - ParkCalendar.Seconds( item.BuiltTick )) / (365 * ParkCalendar.SecondsPerDay) );
 		var percent = info.Upgrades[level].ScrapValuePercentByYear.Count > year ? info.Upgrades[level].ScrapValuePercentByYear[year] : 0;
 		return basis * percent / 100;
 	}
@@ -444,18 +470,23 @@ public sealed class ParkEconomy : IParkEconomy
 			return PurchaseResult.NotResearched;
 		if ( info.Kind == ParkObjectKind.Upgrade && !objects.Values.Any( item => item.InfoId == info.AddOnTargetId ) )
 			return PurchaseResult.MissingTargetRide;
-		if ( Settings.CanSpendTickets && info.GoldenTicketCost > GoldenTicketsAvailable )
+		// [BIN:STP-PPC:0x100DA874 object purchase] an object with a GoldenTicketCost (+0xC4) above 0 that the park has not yet bought with tickets costs that many tickets (0x100D3000; allowed when cost <= earned - spent) and no cash; it joins the owned set, and later copies and ticket-free objects take the cash path
+		var payWithTickets = Settings.CanSpendTickets && info.GoldenTicketCost > 0 && !ticketItems.Contains( infoId );
+		if ( payWithTickets && info.GoldenTicketCost > GoldenTicketsAvailable )
 			return PurchaseResult.NotEnoughGoldenTickets;
 		// [APPROX:ECON-028] purchases need a balance covering the cost — evidence needed: capture of building with too little money
-		if ( info.PurchaseCost > Balance )
+		if ( !payWithTickets && info.PurchaseCost > Balance )
 			return PurchaseResult.NotEnoughMoney;
-		if ( Settings.CanSpendTickets )
-			// [APPROX:ECON-029] golden tickets are spent when buying items with GoldenTicketCost — evidence needed: capture of ticket count after such a purchase
+		var cost = payWithTickets ? 0 : info.PurchaseCost;
+		if ( payWithTickets )
+		{
 			TicketsSpent += info.GoldenTicketCost;
-		Post( LedgerCategory.OtherCosts, info.PurchaseCost );
+			ticketItems.Add( infoId );
+		}
+		Post( LedgerCategory.OtherCosts, cost );
 		built = AddObject( info, imported: false );
-		built.TotalSpent = info.PurchaseCost;
-		Raise( ParkEventKind.ObjectBuilt, info.PurchaseCost, built.Id, infoId, info.Name );
+		built.TotalSpent = cost;
+		Raise( ParkEventKind.ObjectBuilt, cost, built.Id, infoId, info.Name );
 		return PurchaseResult.Ok;
 	}
 
@@ -716,6 +747,13 @@ public sealed class ParkEconomy : IParkEconomy
 	// ---------------------------------------------------------------- save support
 
 	internal IReadOnlyCollection<int> TakenOffers => takenOffers;
+
+	internal void RestoreTicketItems( IEnumerable<int> items )
+	{
+		ticketItems.Clear();
+		foreach ( var item in items )
+			ticketItems.Add( item );
+	}
 
 	internal void RestoreState( long tick, GameSpeed speed, bool open, int fee, bool bankrupt, int monthsInRed, long litter, int ticketsSpent, int nextObjectId,
 		long droppedAdmissions, IEnumerable<ParkObjectState> restoredObjects, IEnumerable<LoanAccount> restoredLoans, IEnumerable<int> restoredOffers, IEnumerable<long> restoredAdmissions )

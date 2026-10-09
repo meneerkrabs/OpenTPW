@@ -50,7 +50,7 @@ and report the file that supplied each value.
 | `UsageInfo.InitChanceOfLoosing` | 70–75 | Sideshow chance of losing (UITEXT 49 "Chance of winning") | data |
 | `UsageInfo.InitPrizeValue` | 25 (one file) | Prize value | unused |
 | `UsageInfo.RipOffOK` | 100 / 250 | "%premium peeps willing to pay above 'average win'" | unused (guests slice) |
-| `UsageInfo.GoldenTicketCost` | 0–5 (10 objects) | Golden tickets needed to buy (UIHELPTEXT 152) | data (tickets are spent: approx) |
+| `UsageInfo.GoldenTicketCost` | 0–5 (10 objects) | Golden tickets needed to buy (UIHELPTEXT 152) | data; traced: the first copy costs tickets and no cash, later copies cost cash (0x100DA874) |
 | `UsageInfo.ShopType`, `UsageInfo.SpecialIngredient` | 1–6; 0–4 | Shop kind (jungle: 1 gift, 2 burger/fries/ice cream, 3 restaurant, 4 drinks, 5 costume, 6 balloon); ingredient "0 none, 1 Fat, 2 Salt, 3 Ice, 4 Sugar" (`INGREDIENT.str`) | data (challenge sales) |
 | `UsageInfo.LitterEffect` | 0–50 | "How much litter to add" per purchase | approx (1/100 item) |
 | `PeepInfo.ExcitementToCostDivisor`, `MinimumEntryFee`, `Cheap/Average/ExpensivePriceMultiplier` | 4 (fantasy/space 5); 20; 0.75/1.25/2.0 (easy 1.5/2.5) | Visitors' entry-fee judgement | exposed (`BalanceSettings.EntryFee`) for guests |
@@ -182,7 +182,7 @@ mismatches; original-data tests check the typed PC fixture.
 
 | Area | Original-data-driven | Approximation |
 | --- | --- | --- |
-| Clock | Days, months, years, hours exist (challenge days, monthly wages/loans, yearly scrap, `Clock.RSE` HOUR) | 1 day = 240 fixed ticks (4 s at normal speed), 30-day months, 12 months; speeds Fast ×2/Fastest ×4 are OpenTPW additions (only pause is evidenced) |
+| Clock | Days, months, years, hours exist (challenge days, monthly wages/loans, yearly scrap, `Clock.RSE` HOUR) | Traced (Mac binary): one park turn per 248 ms, date = 2000-01-01 + turn × 3750 s through the civil calendar (a day is 23.04 turns, about 5.7 s), day/month/year events on date changes; approximate: sampling turns from the 60 Hz clock, the Gregorian script system; speeds Fast ×2/Fastest ×4 are OpenTPW additions (only pause is evidenced) |
 | Ledger | Categories from UITEXT 164–169/356–360; integer dollars | Challenge prizes and scrap sales as "other income"; build, upgrade, goods, prizes and land as "other costs"; training as staff costs |
 | Gate/shops/sideshows | Entrance fee, shop price and cost of goods, sideshow price/prize/chance of losing | Purchase requires money ≥ cost; litter per sale |
 | Construction | Purchase, upgrade and cell costs; research gate; golden-ticket cost | Scrap value basis = catalogue cost up to the current level; park value = sum of scrap values |
@@ -192,7 +192,7 @@ mismatches; original-data tests check the typed PC fixture.
 | Maintenance | Wear rates, upgrade durations, worn threshold 25 | Wear per open day, repair restores 100 |
 | Research | Items, categories, groups, costs, effort, ability, thresholds | Points per day, group opening rule, info-id research order, automatic Instant Action rate |
 | Challenges | Definitions, level list, timings, prizes, follow-ups | Type semantics from comments; explicit accept/decline; types 14, 22, 23, 26, 32+ unmeasured |
-| Golden tickets | All thresholds | Checked every 100 world updates in Full Simulation only (traced); one park tick per world update is approximate; tickets spent on purchases |
+| Golden tickets | All thresholds | Checked every 100 park turns in Full Simulation only; the profit ticket reads the year's running profit (`mProfitThisYear`, reset each calendar year); the first copy of a ticket object costs tickets, not cash (all traced) |
 | Keys/progression | Keys per theme, theme order (THEMENAMES; ascending key cost); +1 per 3 earned golden tickets; spending tickets preserves keys (manual p. 28) | Start with 1 key; keys persist when entering themes |
 | Park rating | — (traced: Mac binary 0x100C7B24) | Capped counts: guests in park × 20 / 1000 (max 20), rides × 1.5 (max 20), shops and sideshows × 2 (max 10 each), features (max 10), rides at upgrade level 2 (max 10), each staff type (max 4); the sub-kind to object-kind mapping is approximate |
 
@@ -227,7 +227,7 @@ tests compare saves before/after load and after identical continuations byte for
 
 ## Save format
 
-`ParkSaveFile`: JSON, `"Format": "opentpw-park"`, `"Version": 1`. Stores theme, difficulty and mode
+`ParkSaveFile`: JSON, `"Format": "opentpw-park"`, `"Version": 2` (version 1 used the earlier 30-day calendar and is rejected). Stores theme, difficulty and mode
 (not the balance values, which are reloaded from the original files), tick, speed, RNG state, park
 open/fee/bankruptcy/litter/tickets, ledger with current totals and up to 144 closed months, objects
 with prices, levels, repair and statistics, loans, staff and candidates, training budgets, research
@@ -246,52 +246,47 @@ site, is listed in `Economy/EconomyApproximations.cs` and is logged once at star
 
 | Id | Site | Current value / rule | Evidence needed |
 | --- | --- | --- | --- |
-| ECON-001 | `Economy/ParkCalendar.cs:33` | one game day = 240 fixed ticks (4 s at normal speed) | capture of the original clock against wall time |
-| ECON-002 | `Economy/ParkCalendar.cs:38` | every month has 30 days, 12 months per year | original calendar (binary or captured date display) |
-| ECON-003 | `Economy/ParkCalendar.cs:35` | 24 hours per day (Clock.RSE only shows HOUR is used mod 12) | original HOUR range (binary or Clock.RSE trace) |
+| ECON-001 | `Economy/ParkCalendar.cs:38` | OpenTPW's fixed 60 Hz clock is sampled into 248 ms turns (14.88 ticks per turn), without the original's catch-up cap and scheduler phases | runtime turn timing under load and speed changes |
+| ECON-002 | `Economy/ParkCalendar.cs:59` | the Mac OS date conversion (LongSecondsToDate, reached through 0x101C5C4C) uses the default Gregorian calendar | the script system of an original run |
 | ECON-004 | `Economy/ParkCalendar.cs:11` | Fast x2 and Fastest x4 speeds (only pause is evidenced) | original speed controls, if any |
 | ECON-005 | `Economy/ParkLedger.cs:54` | challenge prizes and scrap sales are other income; build, upgrade, goods, prizes, land are other costs; profit leaves out loans received | the per-category ledger routines and the annual profit field |
-| ECON-006 | `Economy/ParkLedger.cs:121` | APR > 0 repayment is an annuity at APR/12 per month, rounded down; interest accrues monthly on the balance | standard-mode save or capture with an outstanding loan |
-| ECON-007 | `Economy/ParkEconomy.cs` | Repaid loan offers reopen without the traced original credit-eligibility gate | Implement the credit predicate and qualify its cross-edition behavior |
+| ECON-006 | `Economy/ParkLedger.cs:148` | APR > 0 repayment is an annuity at APR/12 per month, rounded down; interest accrues monthly on the balance | standard-mode save or capture with an outstanding loan |
+| ECON-007 | `Economy/ParkEconomy.cs:306` | repaid loan offers reopen without the original credit-eligibility gate | implement the traced credit predicate and qualify its cross-edition behavior |
 | ECON-008 | `Economy/ParkStaff.cs:50` | 100 training points per grade (from Online_Standard.sam comments "costs 1000 to get up to grade 1") | capture of a training run |
-| ECON-009 | `Economy/ParkStaff.cs:142` | candidate grade = average + 2 when "great", else average +-1 | hiring pool captures (grade distribution) |
+| ECON-009 | `Economy/ParkStaff.cs:145` | candidate grade = average + 2 when "great", else average +-1 | hiring pool captures (grade distribution) |
 | ECON-010 | `Economy/ParkStaff.cs:64` | TimeBetweenStaffUpdates/StaffTimeoutTime are seconds at normal speed | capture of pool refresh timing |
-| ECON-012 | `Economy/ParkStaff.cs:119` | hiring is free; BaseCostPerStaff/CostPerQualityLevel unused | capture of the balance before/after hiring |
-| ECON-013 | `Economy/ParkStaff.cs:139` | training budget is spent evenly over a role at month end | capture of training budget effects |
+| ECON-012 | `Economy/ParkStaff.cs:152` | hiring is free; BaseCostPerStaff/CostPerQualityLevel unused | capture of the balance before/after hiring |
+| ECON-013 | `Economy/ParkStaff.cs:172` | training budget is spent evenly over a role at month end | capture of training budget effects |
 | ECON-014 | `Economy/ParkStaff.cs:24` | staff start at happiness 100 and it never changes (no strikes) | staff happiness rules (binary/captures) |
-| ECON-015 | `Economy/ParkResearch.cs:131` | each researcher adds ResearchAbility points per game day, split by effort | capture of research progress over time |
-| ECON-016 | `Economy/ParkResearch.cs:100` | group g opens when PercentageForThisTech % of group g-1 of the same category is researched | capture of new research groups appearing |
+| ECON-015 | `Economy/ParkResearch.cs:130` | each researcher adds ResearchAbility points per game day, split by effort | capture of research progress over time |
+| ECON-016 | `Economy/ParkResearch.cs:98` | group g opens when PercentageForThisTech % of group g-1 of the same category is researched | capture of new research groups appearing |
 | ECON-017 | `Economy/ParkResearch.cs:109` | the research table is in info-id order and the player cannot step the cursor to another item | the table fill order (FUN_100c9064) and the next/previous control |
 | ECON-018 | `Economy/ParkResearch.cs:41` | ride upgrade levels and add-on objects form the "upgrade" research category | research lab capture |
-| ECON-019 | `Economy/ParkResearch.cs:136` | Instant Action research runs at one grade-2 researcher without staff | Instant Action capture |
+| ECON-019 | `Economy/ParkResearch.cs:135` | Instant Action research runs at one grade-2 researcher without staff | Instant Action capture |
 | ECON-020 | `Economy/ParkEconomy.cs:28` | a sale drops LitterEffect/100 litter items | capture of litter after sales |
-| ECON-021 | `Economy/ParkEconomy.cs:185` | a repair takes WorkDuration game hours (x DurationOfUpgrade for upgrades); mechanics are dispatched instantly | capture of repair duration per grade |
-| ECON-022 | `Economy/ParkEconomy.cs:203` | a handyman removes one litter item per WorkDuration game minutes, park-wide | capture of cleaning speed |
-| ECON-023 | `Economy/ParkEconomy.cs:217` | an open ride loses WearRate state of repair per game day; breakdown at 0 | capture of state of repair over time |
-| ECON-024 | `Economy/ParkEconomy.cs:160` | a repair restores state of repair to 100 | capture after a repair |
-| ECON-025 | `Economy/ParkEconomy.cs:329` | scrap value basis = catalogue cost of all levels up to the current one | capture of scrap value |
-| ECON-026 | `Economy/ParkEconomy.cs:337` | park value = sum of scrap values | capture of the park value screen |
-| ECON-027 | `Economy/ParkEconomy.cs:353` | the record sub-kinds 0–3 are rides, shops, sideshows and features, and every hired staff member counts | the record field at +0x4C behind sub-kind +0x7A8 and the staff byte +3 tested by FUN_100C4064 |
-| ECON-028 | `Economy/ParkEconomy.cs:434` | purchases need a balance covering the cost | capture of building with too little money |
-| ECON-029 | `Economy/ParkEconomy.cs:438` | golden tickets are spent when buying items with GoldenTicketCost | capture of ticket count after such a purchase |
-| ECON-030 | `Economy/ParkEconomy.cs:110` | the simulation stops once bankrupt | capture of the bankrupt state |
+| ECON-021 | `Economy/ParkEconomy.cs:223` | a repair takes WorkDuration game hours (x DurationOfUpgrade for upgrades); mechanics are dispatched instantly | capture of repair duration per grade |
+| ECON-022 | `Economy/ParkEconomy.cs:241` | a handyman removes one litter item per WorkDuration game minutes, park-wide | capture of cleaning speed |
+| ECON-023 | `Economy/ParkEconomy.cs:255` | an open ride loses WearRate state of repair per game day; breakdown at 0 | capture of state of repair over time |
+| ECON-024 | `Economy/ParkEconomy.cs:198` | a repair restores state of repair to 100 | capture after a repair |
+| ECON-025 | `Economy/ParkEconomy.cs:366` | scrap value basis = catalogue cost of all levels up to the current one; a scrap year is 365 park-clock days | capture of scrap value |
+| ECON-026 | `Economy/ParkEconomy.cs:374` | park value = sum of scrap values | capture of the park value screen |
+| ECON-027 | `Economy/ParkEconomy.cs:389` | the record sub-kinds 0–3 are rides, shops, sideshows and features, and every hired staff member counts | the record field at +0x4C behind sub-kind +0x7A8 and the staff byte +3 tested by FUN_100C4064 |
+| ECON-028 | `Economy/ParkEconomy.cs:477` | purchases need a balance covering the cost | capture of building with too little money |
+| ECON-030 | `Economy/ParkEconomy.cs:114` | the simulation stops once bankrupt | capture of the bankrupt state |
 | ECON-031 | `Economy/ParkEconomyRuntime.cs:33` | imported parks are opened on load (open state not decoded) | park-open flag in the save |
-| ECON-033 | `Economy/ParkEconomy.cs:116` | one park tick stands for one original world update | the world-update rate against OpenTPW's fixed tick |
 | ECON-034 | `Economy/ParkObjectives.cs:113` | challenge type meanings come from Challenges.sam comments (shop types by ShopType/SpecialIngredient) | challenge captures per type |
 | ECON-035 | `Economy/ParkObjectives.cs:153` | offers wait for accept/decline; follow-ups are offered right after completion; failed challenges count as finished | challenge flow captures |
 | ECON-036 | `Economy/ParkObjectives.cs:149` | build challenges with TargetVal 0 need one item; type 28 needs level 3 | challenge captures |
-| ECON-038 | `Economy/ParkObjectives.cs:281` | big park uses MinCellsOwned, cameras use MinCellsCovered | golden ticket award captures |
-| ECON-039 | `Economy/ParkObjectives.cs:262` | profit year = profit of the last 12 closed months | golden ticket award capture |
+| ECON-038 | `Economy/ParkObjectives.cs:280` | big park uses MinCellsOwned, cameras use MinCellsCovered | golden ticket award captures |
+| ECON-039 | `Economy/ParkObjectives.cs:262` | the profit ticket compares the running yearly profit (mProfitThisYear) with ProfitYear directly; the original (0x10013FDC) scales the threshold by a per-objective factor not yet tied to that key | the caller of 0x10013FDC and its factor |
 | ECON-040 | `Economy/ParkObjectives.cs:318` | players start with 1 golden key and keys are not consumed by entering themes | initial lobby and repeated theme-entry captures |
 | ECON-041 | `Economy/EconomyObjectCatalog.cs:93` | features-directory objects with Research.Category != 3 are fixed (non-buyable) items | buy-menu capture |
-| ECON-042 | `Economy/EconomyObjectCatalog.cs:111` | sideshow InitCostOfGoods is the cost of a prize paid per win | sideshow panel capture |
-| ECON-043 | `Economy/BalanceSettings.cs:173` | monthly wage = BaseWage[grade] x PayMultiplier[type] | staff list capture with grades |
 | ECON-044 | `Economy/GuestEconomyBridge.cs:60` | balloon/costume percentages are 0 (guests carry no items yet) | guests slice item state |
 | ECON-045 | `Files/Formats/Save/SaveEconomyRecords.cs:91` | loan/challenge record locators use plausibility bounds (one fixture) | a second TPWS/TPWI fixture |
 
 ## Open questions
 
-- Day length, month lengths and the calendar start; original game speeds.
+- Original game speeds and runtime turn timing (the turn length, calendar start and civil months are traced).
 - Repayment formula with interest; whether loans can be retaken; whether building is allowed in the red.
 - `BaseCostPerStaff`/`CostPerQualityLevel`, `Research.StartingWorkLoad`, researcher `WorkDuration`.
 - Park value and the scrap basis; how golden keys are earned.

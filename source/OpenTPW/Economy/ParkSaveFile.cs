@@ -15,7 +15,8 @@ namespace OpenTPW;
 public static class ParkSaveFile
 {
 	public const string FormatName = "opentpw-park";
-	public const int CurrentVersion = 1;
+	/// <summary>Version 2: the clock follows the original's 248 ms turns and civil calendar, so version 1 tick counts and month indices no longer match.</summary>
+	public const int CurrentVersion = 2;
 	public const int MaximumFileSize = 16 * 1024 * 1024;
 
 	private static readonly JsonSerializerOptions Options = new()
@@ -42,6 +43,8 @@ public static class ParkSaveFile
 		public required int MonthsInRed { get; init; }
 		public required long LitterScaled { get; init; }
 		public required int TicketsSpent { get; init; }
+		/// <summary>Info ids bought with golden tickets (absent in older saves: none).</summary>
+		public List<int> TicketItems { get; init; } = new();
 		public required int NextObjectId { get; init; }
 		public required long DroppedAdmissions { get; init; }
 		public required LedgerData Ledger { get; init; }
@@ -62,6 +65,8 @@ public static class ParkSaveFile
 		public required long MonthIndex { get; init; }
 		public required Dictionary<LedgerCategory, long> CurrentTotals { get; init; }
 		public required List<MonthData> History { get; init; }
+		/// <summary>The year's running profit (absent in saves written before it was kept: 0).</summary>
+		public long ProfitThisYear { get; init; }
 	}
 
 	public sealed class MonthData
@@ -153,6 +158,7 @@ public static class ParkSaveFile
 			MonthsInRed = park.MonthsInRed,
 			LitterScaled = park.LitterScaled,
 			TicketsSpent = park.TicketsSpent,
+			TicketItems = park.TicketItems.Order().ToList(),
 			NextObjectId = park.NextObjectId,
 			DroppedAdmissions = park.DroppedAdmissions,
 			Ledger = new LedgerData
@@ -161,6 +167,7 @@ public static class ParkSaveFile
 				OpeningBalance = park.Ledger.CurrentOpeningBalance,
 				MonthIndex = park.Ledger.CurrentMonthIndex,
 				CurrentTotals = new Dictionary<LedgerCategory, long>( park.Ledger.CurrentTotals ),
+				ProfitThisYear = park.Ledger.ProfitThisYear,
 				History = park.Ledger.History.Select( month => new MonthData
 				{
 					MonthIndex = month.MonthIndex,
@@ -300,6 +307,8 @@ public static class ParkSaveFile
 		park.Random.Restore( data.RandomState );
 		park.Ledger.Restore( data.Ledger.Balance, data.Ledger.OpeningBalance, data.Ledger.MonthIndex, data.Ledger.CurrentTotals,
 			data.Ledger.History.Select( month => new LedgerMonth( month.MonthIndex, month.Totals, month.OpeningBalance, month.ClosingBalance, month.ParkRating, month.ParkValue ) ) );
+		park.Ledger.RestoreProfitThisYear( data.Ledger.ProfitThisYear );
+		park.RestoreTicketItems( data.TicketItems );
 		park.RestoreState( data.Tick, data.Speed, data.ParkOpen, data.EntranceFee, data.Bankrupt, data.MonthsInRed, data.LitterScaled, data.TicketsSpent, data.NextObjectId, data.DroppedAdmissions,
 			data.Objects.Select( item => new ParkObjectState
 			{

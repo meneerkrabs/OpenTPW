@@ -92,7 +92,7 @@ public class ParkEconomyOriginalDataTests
 			for ( var hire = 0; hire < 3; hire++ )
 			{
 				while ( !park.Staff.Candidates.Any( candidate => candidate.Type == StaffType.Researcher ) )
-					park.Advance( ParkCalendar.TicksPerHour );
+					park.Advance( ParkCalendar.TicksForHours( 1 ) );
 				EconomyTestData.HireBest( park, StaffType.Researcher );
 			}
 			park.OpenPark();
@@ -100,7 +100,7 @@ public class ParkEconomyOriginalDataTests
 			{
 				for ( var visitor = 0; visitor < 1000; visitor++ )
 					park.TryAdmitVisitor( 100, out _ );
-				park.AdvanceDays( 30 );
+				park.AdvanceMonths( 1 );
 			}
 			Assert.IsTrue( park.Research.IsAllResearched, $"{theme}: all research done by year {park.Date.Year}" );
 			Console.WriteLine( $"{theme}: {park.Research.Items.Count} research items done in year {park.Date.Year} with three researchers, balance {park.Balance}." );
@@ -151,7 +151,7 @@ public class ParkEconomyOriginalDataTests
 		var repaired = 0;
 		economy.EventRaised += item => repaired += item.Kind == ParkEventKind.RideRepaired ? 1 : 0;
 		var mechanic = EconomyTestData.HireBest( economy, StaffType.Mechanic );
-		economy.AdvanceDays( 30 );
+		economy.AdvanceMonths( 1 );
 		Assert.AreEqual( new ParkDate( 1, 2, 1, 0 ), economy.Date );
 		Assert.AreEqual( 100000 - economy.Settings.GetMonthlyWage( StaffType.Mechanic, mechanic.Grade ), economy.Balance );
 		var bouncy = economy.Objects.Single( item => item.InfoId == 1100 );

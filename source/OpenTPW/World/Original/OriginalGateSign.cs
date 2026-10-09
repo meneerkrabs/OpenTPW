@@ -16,7 +16,7 @@ public sealed class OriginalGateSign : Entity
 	/// <summary>Theme order of THEMENAMES.str: Lost Kingdom, Halloween World, Wonder Land, Space Zone.</summary>
 	public static readonly IReadOnlyList<string> ThemeLevels = new[] { "jungle", "hallow", "fantasy", "space" };
 	/// <summary>Opaque dark board behind the text (approximation: the .sgn background blocks are not decoded).</summary>
-	// [APPROX:COMPAT-004] flat board colour; the .sgn pixel blocks are not decoded — evidence needed: decoding of the .sgn remainder.
+	// [APPROX:COMPAT-004] flat board colour; the .sgn board image (wavelet) is read but not decoded or composed — evidence needed: the Bitmap::load_wavelet decoder and the board blit.
 	public static readonly (byte R, byte G, byte B, byte A) Background = (38, 28, 18, 255);
 	// [APPROX:COMPAT-008] depth offset for the sign faces — evidence needed: none once the full gate model draws its runtime textures.
 	private const float SurfaceOffset = 0.05f;

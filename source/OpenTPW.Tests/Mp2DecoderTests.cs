@@ -318,7 +318,7 @@ public class Mp2DecoderTests
 		Assert.AreEqual( 15349.65, Math.Sqrt( mono.Samples.Average( sample => (double)sample * sample ) ), 0.5 );
 
 		var mpeg1Bank = new SdtArchive( Path.Combine( DataDirectory(), "global", "sound", "RideHD.sdt" ) );
-		var mpeg1 = Mp2Decoder.Decode( mpeg1Bank.soundFiles.Single( file => file.Name == "tp_riderepaired.mp2" ).FrameData );
+		var mpeg1 = Mp2Decoder.Decode( mpeg1Bank.soundFiles.Single( file => file.Name == "tp_riderepaired" ).FrameData );
 		Assert.AreEqual( 44100, mpeg1.SampleRate );
 		Assert.AreEqual( 117, mpeg1.FrameCount );
 		Assert.AreEqual( 44928, mpeg1.Samples.Length );

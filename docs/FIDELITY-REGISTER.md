@@ -194,7 +194,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ADVISOR-011 | `source/OpenTPW/Client/SpeechAudioPlayer.cs:31` | [APPROX:ADVISOR-011] Wall clock when no audio device opened — evidence needed: original behaviour without sound hardware |
 | ADVISOR-012 | `source/OpenTPW/Client/SpeechAudioPlayer.cs:62` | [APPROX:ADVISOR-012] Mono speech duplicated to both channels — evidence needed: original speech output channel layout/panning |
 | ADVISOR-013 | `source/OpenTPW.Files/Public/LipSyncTimeline.cs:53` | [APPROX:ADVISOR-013] µs unit and "talking from 0, toggle per mark" inferred from decoded audio (31 dB talking/silent contrast, fit peaks at 1 µs/unit) — evidence needed: original runtime LIP consumer (binary or trace) |
-| ADVISOR-014 | `source/OpenTPW.Files/Formats/Sound/Mp2Decoder.cs:49` | [APPROX:ADVISOR-014] Values read from the locally installed ffmpeg's data table; checked against the standard's |
+| ADVISOR-014 | `source/OpenTPW.Files/Formats/Sound/Mp2Decoder.cs:55` | [APPROX:ADVISOR-014] Values read from the locally installed ffmpeg's data table; checked against the standard's |
 | COMPAT-001 | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:19` | [APPROX:COMPAT-001] 512x256 canvas (two 256x256 halves) — evidence needed: original DIB size or a sign texture capture. |
 | COMPAT-002 | `source/OpenTPW.Files/Formats/Font/SignTextLayout.cs:128` | [APPROX:COMPAT-002] centre and shrink-to-fit with a margin — evidence needed: original text placement / long-name captures. |
 | COMPAT-003 | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:27` | [APPROX:COMPAT-003] parameters 2..4 = RGB — evidence needed: binary use of the slot floats or a capture. |
@@ -436,7 +436,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | low.sam/med.sam/high.sam | `source/OpenTPW.Tests/CompatibilityTests.cs:122` | [DATA:low.sam/med.sam/high.sam] in file order (TEXTUREQUALITY .. LOBBYOBJECTS). |
 | low.sam/med.sam/high.sam:comment legend | `source/OpenTPW/Compat/GraphicsSettings.cs:21` | ([DATA:low.sam/med.sam/high.sam:comment legend]). |
 | low/med/high.sam:TEXTUREFILTERING, MIPMAP | `source/OpenTPW/Render/Assets/Material.cs:60` | World textures follow the graphics preset ([DATA:low/med/high.sam:TEXTUREFILTERING, MIPMAP]); see docs/COMPATIBILITY.md. |
-| speechHD.SDT/MusicHD.sdt:all Layer II frames fit this table to ≤23 spare bits | `source/OpenTPW.Files/Formats/Sound/Mp2Decoder.cs:38` | [DATA:speechHD.SDT/MusicHD.sdt:all Layer II frames fit this table to ≤23 spare bits] |
+| speechHD.SDT/MusicHD.sdt:all Layer II frames fit this table to ≤23 spare bits | `source/OpenTPW.Files/Formats/Sound/Mp2Decoder.cs:44` | [DATA:speechHD.SDT/MusicHD.sdt:all Layer II frames fit this table to ≤23 spare bits] |
 | speechHD.SDT:entry word 0 = header size (40) | `source/OpenTPW/World/Advisor.cs:214` | [DATA:speechHD.SDT:entry word 0 = header size (40)] |
 | ui.wad:button UVs v 0.42..1 vs art in the top 58% | `source/OpenTPW/UI/Original/UiModel.cs:117` | [DATA:ui.wad:button UVs v 0.42..1 vs art in the top 58%] V flipped as in the 3D shaders |
 | ui.wad:f_chat.MD2,w_map.MD2 bounds | `source/OpenTPW/UI/Original/UiCanvas.cs:24` | [DATA:ui.wad:f_chat.MD2,w_map.MD2 bounds] full-screen UI frames span 2048×1536 |

@@ -72,7 +72,7 @@ are not known (no runtime trace; `strings tp.exe` has no `lip`/`phon`/`viseme`).
 
 The speech banks are MPEG-2 (LSF) Layer II, 22,050 Hz mono, 48 kbps (640 of 641
 global entries; `z_error` is Layer I). Music banks are LSF Layer II stereo; 2,642
-sound-effect entries are Layer I (not decoded). `Mp2Decoder`
+sound-effect entries are Layer I (decoded since October 2026, see below). `Mp2Decoder`
 (`source/OpenTPW.Files/Formats/Sound/Mp2Decoder.cs`) is a clean-room LSF Layer II
 decoder written from the ISO/IEC 11172-3/13818-3 process. Its synthesis window is
 the 257 standard Table 3-B.3 coefficients as multiples of 2⁻¹⁶ (values taken from the
@@ -83,11 +83,32 @@ payload to within 23 spare bits, unlike the tested alternatives.
 
 Verification: all 965 corpus Layer II streams that ffmpeg also decodes (speech and
 stereo music; same-name duplicates and 1-frame clips ffmpeg rejects excluded) decode to the same length as ffmpeg's `mp2` decoder with a maximum difference of
-**1 LSB** (≈81 dB SNR on speech). MPEG-1, joint stereo, free format, Layer I/III and
-MPEG-2.5 are rejected (no TPW Layer II stream uses them, so their tables would be
-unverified); CRC words are skipped, not checked. `MP2File.FrameData` slices the
+**1 LSB** (≈81 dB SNR on speech). For Layer II, MPEG-1 and joint stereo are rejected
+(no TPW Layer II stream uses them, so their tables would be unverified); free format,
+Layer III and MPEG-2.5 are rejected for every layer; CRC words are skipped, not checked. `MP2File.FrameData` slices the
 entry at its header-size word; the legacy `SoundData` offset does not fit the
 40-byte speech headers.
+
+## Sound-effect decoding (Layer I)
+
+`Mp2Decoder` also decodes MPEG audio Layer I (384 samples per frame), the format of the
+sound-effect entries and of speech `z_error`. Layer I has a single allocation scheme
+for MPEG-1 and MPEG-2 (LSF), so both versions, all sample rates and all four modes
+(including intensity stereo above the mode-extension bound) are accepted; only the
+bitrate and sample-rate tables differ between versions. A 4-bit allocation per subband
+gives `nb = allocation + 1` bits per sample (allocation 15 is rejected as forbidden);
+requantization and synthesis are shared with Layer II.
+
+Verification without the original files: 73 generated Layer I streams (MPEG-1 and
+MPEG-2, every sample rate, every mode with random mode extensions, low/mid/high
+bitrates, with and without CRC, random allocations, scalefactors, samples and
+ancillary bits) decode to the same length as ffmpeg's `mp1` decoder with a maximum
+difference of **1 LSB**. `Mp2DecoderTests` pins one such stream against ffmpeg values
+and covers silence, DC, intensity-stereo scaling, frame sizes and padding.
+`OriginalLayerOneSoundEffectsDecode` decodes every Layer I entry of every `.SDT`
+bank below `OPENTPW_GAME_PATH`; it has not yet been run against the corpus, so the
+MPEG version, sample rates and modes of the original sound effects are still unconfirmed,
+and nothing plays them in-game yet (no sound-effect triggers or mixer).
 
 ## Advisor runtime slice
 
@@ -173,11 +194,11 @@ table fit). The smoke-test thresholds are test-harness checks, not game rules.
 | ADVISOR-011 | `source/OpenTPW/Client/SpeechAudioPlayer.cs:31` | Wall clock drives the mouth without an audio device | Original behaviour without sound hardware |
 | ADVISOR-012 | `source/OpenTPW/Client/SpeechAudioPlayer.cs:62` | Mono speech duplicated to both stereo channels | Original speech channel layout/panning |
 | ADVISOR-013 | `source/OpenTPW.Files/Public/LipSyncTimeline.cs:53` | Marks = µs; talking from 0, toggle per mark (inferred from audio, see above) | Original runtime LIP consumer (binary or trace) |
-| ADVISOR-014 | `source/OpenTPW.Files/Formats/Sound/Mp2Decoder.cs:49` | Synthesis-window values read from ffmpeg's data table; two values checked against ISO, corpus ≤1 LSB | Full comparison with the published ISO/IEC 11172-3 Table 3-B.3 |
+| ADVISOR-014 | `source/OpenTPW.Files/Formats/Sound/Mp2Decoder.cs:55` | Synthesis-window values read from ffmpeg's data table; two values checked against ISO, corpus ≤1 LSB | Full comparison with the published ISO/IEC 11172-3 Table 3-B.3 |
 
 ## Remaining gates
 
 Original-runtime observation of the mouth shape choice while talking, global vs
 level LIP selection, advisor triggers/placement/animation and A/V latency. The undecoded
-`Advisorm*` track payloads (vertex animation/visibility) for idle/talk poses and mouth shapes. Layer I decoding for
-sound effects and `z_error`. Capture comparison before claiming original fidelity.
+`Advisorm*` track payloads (vertex animation/visibility) for idle/talk poses and mouth shapes. A corpus run of the Layer I
+decoder (sound effects and `z_error`) and in-game sound-effect playback. Capture comparison before claiming original fidelity.

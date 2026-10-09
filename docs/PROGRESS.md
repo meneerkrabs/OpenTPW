@@ -359,3 +359,17 @@ Terrein/save-slice (9 oktober 2026, worktree `terrain`):
 - Niet: bezoekers (alleen `IRideVisitorBridge`), geluid/EVENT/particles,
   coaster/kart/tour-controllers, vertex-animatie, originele bouwregels en kosten.
   Details: [OBJECTS.md](OBJECTS.md).
+
+## SDT-geluidseffecten: MPEG Layer I-decoder (9 oktober 2026)
+
+- `Mp2Decoder` decodeert nu ook MPEG audio Layer I (MPEG-1 en MPEG-2/LSF, alle
+  samplerates, mono/stereo/dual/intensity-stereo, CRC overgeslagen), het formaat
+  van de geluidseffecten en speech `z_error`. Layer II-restricties zijn ongewijzigd.
+- Verificatie zonder originele bestanden: 73 gegenereerde Layer I-streams zijn even
+  lang als en wijken maximaal 1 LSB af van ffmpeg's `mp1`-decoder. Eenheidstests voor
+  stilte, DC, intensity-stereo, framegrootte/padding, verboden allocatie en een
+  tegen ffmpeg vastgepinde stream.
+- Tests: zonder assets 592 geslaagd / 198 overgeslagen; 0 mislukt.
+- Open: `OriginalLayerOneSoundEffectsDecode` met `OPENTPW_GAME_PATH` draaien
+  (MPEG-versie/samplerates van de originele effecten nog onbevestigd); geluidseffecten
+  worden nog nergens in het spel afgespeeld. Details: [LIPS.md](LIPS.md).

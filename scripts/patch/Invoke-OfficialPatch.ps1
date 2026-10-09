@@ -58,6 +58,11 @@ try {
     $installation = Join-Path $bundle 'installation'
     $original = Join-Path $bundle 'original-binary/tp.exe'
     if (!(Test-Path $original -PathType Leaf) -or !(Test-Path (Join-Path $installation 'Data') -PathType Container)) { throw 'Installation or original executable is absent.' }
+    $report.phase = 'source-prerequisites'
+    # These two common-patch delta records need old root DLLs, not only Data/.
+    # Hashes are the exact originals from the supported EuroAmer CD edition.
+    Assert-Hash (Join-Path $installation 'weachatr.dll') 'b034b1b492e566e170d4aa0d1671b8652308fe5b701a61f434964101ca14bbe8'
+    Assert-Hash (Join-Path $installation 'weauploadr.dll') '5d18f3d7ee96b56fb1dcffa509dc3f6366086b9d735246d2820daa786e74412d'
     $working = Join-Path $private 'working'
     Copy-Item -LiteralPath $installation -Destination $working -Recurse
     Copy-Item -LiteralPath $original -Destination (Join-Path $working 'tp.exe') -Force

@@ -91,3 +91,50 @@ Metadata records only numeric callback ID/count pairs and the first unsupported
 ID. Its sanitizer accepts the fixed numeric/status output format, never the
 native callback strings or data. Actual patch success remains unverified until
 all three native stages and file/output checks pass.
+
+## Common-patch original prerequisites
+
+Windows run 37947788411 completed the English patch with engine result 0,
+then stopped the common patch with result 15 after 20 file-start and 19
+file-complete notifications. Its input omitted original root DLLs. The common
+patch has 21 targets; its 20th and 21st records are deltas requiring these exact
+original files in `installation/`:
+
+| Original ISO root file | Old bytes → patched bytes | Original SHA256 |
+|---|---|---|
+| `weachatr.dll` | 84,992 → 96,256 | `b034b1b492e566e170d4aa0d1671b8652308fe5b701a61f434964101ca14bbe8` |
+| `weauploadr.dll` | 70,144 → 70,144 | `5d18f3d7ee96b56fb1dcffa509dc3f6366086b9d735246d2820daa786e74412d` |
+
+Both old records have date 1999-10-19; preserve the CD file timestamps during
+extraction/copying. The script checks these hashes before applying any stage.
+The first missing delta file and the exact callback counts explain this failure;
+no missing-file-ignore mode or old-file substitution is used.
+
+All common-patch targets, in native record order:
+
+1. `data/_Resolution.sam` (add)
+2. `data/ui/cursors/c_crosshair.ani` (add)
+3. `data/ui/cursors/Ccar.tga` (add)
+4. `data/ui/cursors/Ccro.tga` (add)
+5. `clcd16.dll` (replacement/add)
+6. `clcd32.dll` (replacement/add)
+7. `clokspl.exe` (replacement/add)
+8. `dplayerx.dll` (replacement/add)
+9. `drvmgt.dll` (replacement/add)
+10. `data/high.sam` (delta, 2,122 → 2,123 bytes)
+11. `data/med.sam` (delta, 2,123 → 2,126 bytes)
+12. `QMixer.dll` (replacement/add)
+13. `readme.txt` (replacement/add)
+14. `safemode.bat` (replacement/add)
+15. `safemode.tcf` (replacement/add)
+16. `secdrv.sys` (replacement/add)
+17. `TP.EXE` (replacement/add)
+18. `TP.ICD` (replacement/add)
+19. `UNINST.dll` (replacement/add)
+20. `weachatr.dll` (delta)
+21. `weauploadr.dll` (delta)
+
+The two Data deltas already completed in this run. The other root records contain
+complete replacement payloads and do not require old DLL bytes. Patch record
+metadata provides old sizes/timestamps and its own native checksums, not SHA256;
+the SHA256 values above were computed directly from the original ISO files.

@@ -10,21 +10,26 @@ public sealed record Mp2Audio( int SampleRate, int Channels, short[] Samples, in
 }
 
 /// <summary>
-/// Clean-room MPEG-2 (LSF) Audio Layer II decoder for the raw frame streams stored in TPW
-/// <c>.SDT</c> sound banks (see docs/LIPS.md). Implemented from the published
-/// ISO/IEC 11172-3 / 13818-3 decoding process: allocation, scalefactor selection,
-/// sample requantization and the 32-band polyphase synthesis filterbank. Only the mono and
-/// stereo modes observed in TPW data are accepted. MPEG-1 (no TPW stream uses it, so its
-/// allocation tables are unverified), joint stereo, free format, Layer I/III and MPEG-2.5
-/// are rejected; a CRC word is skipped, not verified.
+/// Clean-room MPEG audio decoder for the raw frame streams stored in TPW <c>.SDT</c> sound
+/// banks (see docs/LIPS.md): MPEG-2 (LSF) Layer II, MPEG-2 (LSF) Layer I and MPEG-1 Layer I.
+/// Implemented from the published ISO/IEC 11172-3 / 13818-3 decoding process: allocation,
+/// scalefactor selection, sample requantization and the 32-band polyphase synthesis filterbank.
+/// Only the mono and stereo modes observed in TPW data are accepted. MPEG-1 Layer II (no TPW
+/// stream uses it, so its allocation tables are not implemented), joint stereo, free format,
+/// Layer III and MPEG-2.5 are rejected; a CRC word is skipped, not verified.
 /// </summary>
 public static class Mp2Decoder
 {
 	public const int MaximumInputBytes = 16 * 1024 * 1024;
 	public const int SamplesPerFrame = 1152;
+	public const int LayerOneSamplesPerFrame = 384;
 
-	private static readonly int[] Mpeg2Bitrates = { 0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160 };
+	private static readonly int[] Mpeg2Layer2Bitrates = { 0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160 };
+	private static readonly int[] Mpeg2Layer1Bitrates = { 0, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256 };
+	private static readonly int[] Mpeg1Layer1Bitrates = { 0, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448 };
+	private static readonly int[] Mpeg1Layer2Bitrates = { 0, 32, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384 };
 	private static readonly int[] Mpeg2SampleRates = { 22050, 24000, 16000 };
+	private static readonly int[] Mpeg1SampleRates = { 44100, 48000, 32000 };
 
 	// Quantization classes (ISO/IEC 11172-3 Table 3-B.4): levels and whether three
 	// samples share one grouped codeword. Class 0 means "no allocation".
@@ -33,8 +38,9 @@ public static class Mp2Decoder
 
 	// MPEG-2 LSF allocation (ISO/IEC 13818-3 Layer II): (subband count, nbal bits, class
 	// per allocation code). The 7-level entry in the first row was confirmed by the TPW
-	// corpus: every frame of the 1,089 Layer II streams consumes its payload to within
-	// 23 spare bits, which no tested alternative row achieves.
+	// corpus: every frame of the 1,089 Layer II streams under Data/ (644 mono, 445 stereo; all MPEG-2 LSF,
+	// identical in the CD tree and the installed copy) consumes its payload to within 23 spare bits,
+	// which no tested alternative row achieves.
 	// [DATA:speechHD.SDT/MusicHD.sdt:all Layer II frames fit this table to ≤23 spare bits]
 	private static readonly (int Count, int Bits, int[] Classes)[] AllocationTable =
 	{
@@ -103,14 +109,14 @@ public static class Mp2Decoder
 		var synthesis = new[] { new Synthesis(), new Synthesis() };
 		var offset = 0;
 		var frames = 0;
-		int sampleRate = 0, channels = 0;
+		int sampleRate = 0, channels = 0, layer = 0;
 		while ( data.Length - offset >= 4 )
 		{
 			var header = Header.Parse( data[offset..] );
 			if ( frames == 0 )
-				(sampleRate, channels) = (header.SampleRate, header.Channels);
-			else if ( header.SampleRate != sampleRate || header.Channels != channels )
-				throw new NotSupportedException( $"MP2 frame {frames} changes sample rate or channel count." );
+				(sampleRate, channels, layer) = (header.SampleRate, header.Channels, header.Layer);
+			else if ( header.SampleRate != sampleRate || header.Channels != channels || header.Layer != layer )
+				throw new NotSupportedException( $"MP2 frame {frames} changes sample rate, channel count or layer." );
 			if ( header.FrameBytes > data.Length - offset )
 				break;
 			DecodeFrame( header, data.Slice( offset, header.FrameBytes ), synthesis, output );
@@ -122,7 +128,7 @@ public static class Mp2Decoder
 		return new Mp2Audio( sampleRate, channels, output.ToArray(), frames, data.Length - offset );
 	}
 
-	private readonly record struct Header( bool Crc, int SampleRate, int Mode, int FrameBytes )
+	private readonly record struct Header( bool Crc, int Layer, bool Mpeg1, int SampleRate, int Mode, int FrameBytes )
 	{
 		public int Channels => Mode == 3 ? 1 : 2;
 
@@ -135,24 +141,36 @@ public static class Mp2Decoder
 			var layer = (int)(word >> 17) & 3;
 			if ( version == 1 )
 				throw new InvalidDataException( "MP2 frame uses the reserved MPEG version." );
-			if ( version != 2 )
-				throw new NotSupportedException( "Only MPEG-2 (LSF) audio is supported." );
-			if ( layer != 2 )
-				throw new NotSupportedException( $"MPEG audio layer {4 - layer} is not supported; only Layer II." );
+			if ( version == 0 )
+				throw new NotSupportedException( "MPEG-2.5 audio is not supported." );
+			if ( layer == 0 )
+				throw new InvalidDataException( "MP2 frame header uses the reserved layer." );
+			if ( layer == 1 )
+				throw new NotSupportedException( "MPEG audio Layer III is not supported; only Layers I and II." );
+			var mpeg1 = version == 3;
+			var layerOne = layer == 3;
 			var bitrateIndex = (int)(word >> 12) & 15;
 			var rateIndex = (int)(word >> 10) & 3;
 			if ( bitrateIndex == 0 )
 				throw new NotSupportedException( "Free-format MPEG audio is not supported." );
 			if ( bitrateIndex == 15 || rateIndex == 3 )
 				throw new InvalidDataException( "MP2 frame header uses a reserved bitrate or sample rate." );
-			var bitrate = Mpeg2Bitrates[bitrateIndex];
-			var sampleRate = Mpeg2SampleRates[rateIndex];
+			var bitrates = layerOne
+				? (mpeg1 ? Mpeg1Layer1Bitrates : Mpeg2Layer1Bitrates)
+				: (mpeg1 ? Mpeg1Layer2Bitrates : Mpeg2Layer2Bitrates);
+			var bitrate = bitrates[bitrateIndex];
+			var sampleRate = (mpeg1 ? Mpeg1SampleRates : Mpeg2SampleRates)[rateIndex];
 			var mode = (int)(word >> 6) & 3;
 			if ( mode == 1 )
 				throw new NotSupportedException( "Joint-stereo MPEG audio is not supported." );
+			if ( mpeg1 && !layerOne )
+				throw new NotSupportedException( "MPEG-1 Layer II allocation tables are not implemented; no TPW stream uses them." );
 			var padding = (int)(word >> 9) & 1;
-			var frameBytes = 144 * bitrate * 1000 / sampleRate + padding;
-			return new Header( (word & 0x10000) == 0, sampleRate, mode, frameBytes );
+			// Layer I slots are 4 bytes and hold 12 subband samples per subband; Layer II frames are 144 bytes per 1152 samples.
+			var frameBytes = layerOne
+				? (12 * bitrate * 1000 / sampleRate + padding) * 4
+				: 144 * bitrate * 1000 / sampleRate + padding;
+			return new Header( (word & 0x10000) == 0, layerOne ? 1 : 2, mpeg1, sampleRate, mode, frameBytes );
 		}
 	}
 
@@ -214,6 +232,11 @@ public static class Mp2Decoder
 
 	private static void DecodeFrame( Header header, ReadOnlySpan<byte> frame, Synthesis[] synthesis, List<short> output )
 	{
+		if ( header.Layer == 1 )
+		{
+			DecodeLayerOneFrame( header, frame, synthesis, output );
+			return;
+		}
 		var bits = new Bits( frame, header.Crc ? 48 : 32 );
 		var channels = header.Channels;
 
@@ -303,6 +326,62 @@ public static class Mp2Decoder
 		}
 		if ( output.Count - frameStart != SamplesPerFrame * channels )
 			throw new InvalidOperationException( "MP2 frame produced an unexpected sample count." );
+	}
+
+	// Layer I (ISO/IEC 11172-3 2.4.3.2): 32 subbands, 4-bit allocation per subband and channel,
+	// one 6-bit scalefactor per allocated subband, then 12 blocks of one sample per allocated
+	// subband and channel. An n-bit code u is requantized to (2u + 2 - 2^n) / (2^n - 1) times the scalefactor,
+	// a midtread quantizer whose middle code 2^(n-1) - 1 maps to exactly 0. Matches ffmpeg within 1 LSB on three TPW entries.
+	// TPW corpus under Data/ (CD tree and installed copy alike): 2,650 Layer I entries, of which 2,641 are
+	// MPEG-2 LSF mono, 4 are MPEG-2 LSF stereo and 5 are MPEG-1 mono at 44.1 kHz.
+	private static void DecodeLayerOneFrame( Header header, ReadOnlySpan<byte> frame, Synthesis[] synthesis, List<short> output )
+	{
+		var bits = new Bits( frame, header.Crc ? 48 : 32 );
+		var channels = header.Channels;
+
+		var widths = new int[2, 32];
+		for ( var subband = 0; subband < 32; subband++ )
+			for ( var channel = 0; channel < channels; channel++ )
+			{
+				var allocation = bits.Read( 4 );
+				if ( allocation == 15 )
+					throw new InvalidDataException( "MP2 Layer I allocation 15 is reserved." );
+				widths[channel, subband] = allocation == 0 ? 0 : allocation + 1;
+			}
+
+		var factors = new float[2, 32];
+		for ( var subband = 0; subband < 32; subband++ )
+			for ( var channel = 0; channel < channels; channel++ )
+				if ( widths[channel, subband] != 0 )
+					factors[channel, subband] = ScaleFactors[ReadFactor( ref bits )];
+
+		Span<float> samples = stackalloc float[2 * 32];
+		Span<float> pcm = stackalloc float[32];
+		var frameStart = output.Count;
+		for ( var block = 0; block < 12; block++ )
+		{
+			samples.Clear();
+			for ( var subband = 0; subband < 32; subband++ )
+				for ( var channel = 0; channel < channels; channel++ )
+				{
+					var width = widths[channel, subband];
+					if ( width == 0 )
+						continue;
+					var code = bits.Read( width );
+					samples[channel * 32 + subband] = (2 * code + 2 - (1 << width)) / (float)((1 << width) - 1) * factors[channel, subband];
+				}
+			var slotStart = output.Count;
+			for ( var sample = 0; sample < 32 * channels; sample++ )
+				output.Add( 0 );
+			for ( var channel = 0; channel < channels; channel++ )
+			{
+				synthesis[channel].Run( samples.Slice( channel * 32, 32 ), pcm );
+				for ( var sample = 0; sample < 32; sample++ )
+					output[slotStart + sample * channels + channel] = (short)Math.Clamp( MathF.Round( pcm[sample] * 32768f ), short.MinValue, short.MaxValue );
+			}
+		}
+		if ( output.Count - frameStart != LayerOneSamplesPerFrame * channels )
+			throw new InvalidOperationException( "MP2 Layer I frame produced an unexpected sample count." );
 	}
 
 	private static int ReadFactor( ref Bits bits )

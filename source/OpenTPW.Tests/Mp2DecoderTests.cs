@@ -100,6 +100,78 @@ public class Mp2DecoderTests
 		Assert.IsTrue( steady.All( sample => Math.Abs( sample - 2.0 / 3.0 * 32768 ) <= 2 ) );
 	}
 
+	// MPEG audio Layer I frame (no CRC, no padding): the header is followed by 32 subbands of
+	// 4-bit allocations and whatever body the test writes. 96 kbit/s at 22,050 Hz is 208 bytes.
+	private const int LayerOneFrameBytes22k = 208;
+
+	private static byte[] LayerOneFrame( Action<BitWriter>? body = null, int frameBytes = LayerOneFrameBytes22k )
+	{
+		var writer = new BitWriter();
+		WriteHeader( writer, bitrateIndex: 6, mode: 3, layerBits: 3, versionBits: 2 );
+		body?.Invoke( writer );
+		return writer.ToFrame( frameBytes );
+	}
+
+	[TestMethod]
+	public void DecodesSilentLayerOneFrame()
+	{
+		var frame = LayerOneFrame( writer =>
+		{
+			for ( var subband = 0; subband < 32; subband++ )
+				writer.Write( 0, 4 );
+		} );
+		var audio = Mp2Decoder.Decode( frame );
+		Assert.AreEqual( 22050, audio.SampleRate );
+		Assert.AreEqual( 1, audio.Channels );
+		Assert.AreEqual( 1, audio.FrameCount );
+		Assert.AreEqual( 384, audio.Samples.Length );
+		Assert.AreEqual( 0, audio.TrailingBytes );
+		Assert.IsTrue( audio.Samples.All( sample => sample == 0 ) );
+	}
+
+	[TestMethod]
+	public void DecodesAllocatedLayerOneSubbandDeterministically()
+	{
+		// Subband 0 gets allocation 1 (2-bit samples), scalefactor index 3 (= 1.0) and code 2 in
+		// every block. The Layer I requantization gives (2 * 2 + 2 - 4) / 3 = 2/3 of a unit,
+		// a constant input to subband 0, which the synthesis filterbank turns into DC with unit gain.
+		static void Body( BitWriter writer )
+		{
+			for ( var subband = 0; subband < 32; subband++ )
+				writer.Write( subband == 0 ? 1 : 0, 4 );
+			writer.Write( 3, 6 );
+			for ( var block = 0; block < 12; block++ )
+				writer.Write( 2, 2 );
+		}
+		var audio = Mp2Decoder.Decode( LayerOneFrame( Body ).Concat( LayerOneFrame( Body ) ).ToArray() );
+		Assert.AreEqual( 2 * 384, audio.Samples.Length );
+		// The 512-sample synthesis window is full after 16 blocks; check the steady output from there on.
+		var steady = audio.Samples.Skip( 512 ).ToArray();
+		Assert.IsTrue( steady.All( sample => Math.Abs( sample - 2.0 / 3.0 * 32768 ) <= 2 ) );
+	}
+
+	[TestMethod]
+	public void RejectsReservedLayerOneAllocation()
+	{
+		var frame = LayerOneFrame( writer => writer.Write( 15, 4 ) );
+		Assert.ThrowsException<InvalidDataException>( () => Mp2Decoder.Decode( frame ) );
+	}
+
+	[TestMethod]
+	public void ParsesMpeg1LayerOneHeader()
+	{
+		// MPEG-1 Layer I, 64 kbit/s at 44,100 Hz: (12 * 64000 / 44100) * 4 = 68 bytes, 384 samples.
+		var writer = new BitWriter();
+		WriteHeader( writer, bitrateIndex: 2, mode: 3, layerBits: 3, versionBits: 3 );
+		var frame = writer.ToFrame( 68 );
+		var audio = Mp2Decoder.Decode( frame.Concat( frame ).ToArray() );
+		Assert.AreEqual( 44100, audio.SampleRate );
+		Assert.AreEqual( 1, audio.Channels );
+		Assert.AreEqual( 2, audio.FrameCount );
+		Assert.AreEqual( 0, audio.TrailingBytes );
+		Assert.AreEqual( 2 * 384, audio.Samples.Length );
+	}
+
 	[TestMethod]
 	public void ReportsTrailingPartialFrame()
 	{
@@ -134,8 +206,8 @@ public class Mp2DecoderTests
 	[DataTestMethod]
 	[DataRow( 3, 2, 6, "MPEG-1" )]
 	[DataRow( 0, 2, 6, "MPEG-2.5" )]
-	[DataRow( 2, 3, 6, "Layer I" )]
 	[DataRow( 2, 1, 6, "Layer III" )]
+	[DataRow( 3, 2, 6, "MPEG-1 Layer II" )]
 	[DataRow( 2, 2, 0, "free format" )]
 	public void RejectsUnsupportedStreams( int versionBits, int layerBits, int bitrateIndex, string description )
 	{
@@ -189,6 +261,82 @@ public class Mp2DecoderTests
 		Assert.AreEqual( 5355.33, rms, 0.5 );
 	}
 
+	[TestMethod]
+	public void OriginalGameBanksDecodeEveryLayerOneEntry()
+	{
+		var layerOne = 0;
+		var stereo = 0;
+		var mpeg1 = 0;
+		var failures = new List<string>();
+		foreach ( var path in Directory.EnumerateFiles( DataDirectory(), "*", SearchOption.AllDirectories ).Where( file => file.EndsWith( ".sdt", StringComparison.OrdinalIgnoreCase ) ) )
+		{
+			var bank = new SdtArchive( path );
+			foreach ( var clip in bank.soundFiles )
+			{
+				var frame = clip.FrameData;
+				if ( frame.Length < 2 || (frame[1] & 0x06) != 0x06 )
+					continue;
+				layerOne++;
+				var isMpeg1 = (frame[1] & 0x18) == 0x18;
+				if ( isMpeg1 )
+					mpeg1++;
+				try
+				{
+					var audio = Mp2Decoder.Decode( frame );
+					if ( audio.Channels == 2 )
+						stereo++;
+					var expectedRate = isMpeg1 ? 44100 : 22050;
+					if ( audio.SampleRate != expectedRate || audio.Samples.Length != audio.FrameCount * 384 * audio.Channels || audio.TrailingBytes > 1 )
+						failures.Add( $"{Path.GetFileName( path )}/{clip.Name}: rate {audio.SampleRate}, {audio.FrameCount} frames, {audio.Samples.Length} samples, {audio.TrailingBytes} trailing bytes" );
+				}
+				catch ( Exception exception )
+				{
+					failures.Add( $"{Path.GetFileName( path )}/{clip.Name}: {exception.Message}" );
+				}
+			}
+		}
+		CollectionAssert.AreEqual( Array.Empty<string>(), failures );
+		// Data/ holds 2,641 MPEG-2 LSF mono, 4 MPEG-2 LSF stereo and 5 MPEG-1 mono Layer I entries (the same in the CD tree).
+		Assert.AreEqual( 2650, layerOne );
+		Assert.AreEqual( 4, stereo );
+		Assert.AreEqual( 5, mpeg1 );
+	}
+
+	[TestMethod]
+	public void OriginalLayerOneClipsMatchPinnedDecode()
+	{
+		// Reference values come from ffmpeg's mp3 decoder run offline on the same frame bytes
+		// (-f mp3 -f s16le); its PCM differs from this decoder's by at most 1 LSB on each clip.
+		var speech = OpenSpeechBank().soundFiles.Single( file => file.Name == "z_error.mp2" );
+		var mono = Mp2Decoder.Decode( speech.FrameData );
+		Assert.AreEqual( 22050, mono.SampleRate );
+		Assert.AreEqual( 1, mono.Channels );
+		Assert.AreEqual( 25, mono.FrameCount );
+		Assert.AreEqual( 9600, mono.Samples.Length );
+		foreach ( var (index, expected) in new[] { (1000, -28351), (3200, 15217), (6400, 12830) } )
+			Assert.IsTrue( Math.Abs( mono.Samples[index] - expected ) <= 1, $"sample {index}: {mono.Samples[index]}" );
+		Assert.AreEqual( 15349.65, Math.Sqrt( mono.Samples.Average( sample => (double)sample * sample ) ), 0.5 );
+
+		var mpeg1Bank = new SdtArchive( Path.Combine( DataDirectory(), "global", "sound", "RideHD.sdt" ) );
+		var mpeg1 = Mp2Decoder.Decode( mpeg1Bank.soundFiles.Single( file => file.Name == "tp_riderepaired.mp2" ).FrameData );
+		Assert.AreEqual( 44100, mpeg1.SampleRate );
+		Assert.AreEqual( 117, mpeg1.FrameCount );
+		Assert.AreEqual( 44928, mpeg1.Samples.Length );
+		foreach ( var (index, expected) in new[] { (1000, -8342), (14976, 522), (29952, 66) } )
+			Assert.IsTrue( Math.Abs( mpeg1.Samples[index] - expected ) <= 1, $"sample {index}: {mpeg1.Samples[index]}" );
+		Assert.AreEqual( 4832.75, Math.Sqrt( mpeg1.Samples.Average( sample => (double)sample * sample ) ), 0.5 );
+
+		var stereoBank = new SdtArchive( Path.Combine( DataDirectory(), "levels", "jungle", "Sound", "RideHD.sdt" ) );
+		var stereo = Mp2Decoder.Decode( stereoBank.soundFiles.Single( file => file.Name == "lion1.mp2" ).FrameData );
+		Assert.AreEqual( 22050, stereo.SampleRate );
+		Assert.AreEqual( 2, stereo.Channels );
+		Assert.AreEqual( 33, stereo.FrameCount );
+		Assert.AreEqual( 25344, stereo.Samples.Length );
+		foreach ( var (index, expected) in new[] { (1000, -225), (8448, 103), (16896, 24553) } )
+			Assert.IsTrue( Math.Abs( stereo.Samples[index] - expected ) <= 1, $"sample {index}: {stereo.Samples[index]}" );
+		Assert.AreEqual( 9655.80, Math.Sqrt( stereo.Samples.Average( sample => (double)sample * sample ) ), 0.5 );
+	}
+
 	internal static SdtArchive OpenSpeechBank()
 	{
 		var path = Path.Combine( SpeechDirectory(), "speechHD.SDT" );
@@ -199,10 +347,14 @@ public class Mp2DecoderTests
 
 	internal static string SpeechDirectory()
 	{
+		return Path.Combine( DataDirectory(), "global", "Speech" );
+	}
+
+	internal static string DataDirectory()
+	{
 		var gamePath = Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" );
 		if ( string.IsNullOrWhiteSpace( gamePath ) || !Directory.Exists( gamePath ) )
-			Assert.Inconclusive( "Set OPENTPW_GAME_PATH for the original speech bank." );
-		var dataPath = Directory.EnumerateDirectories( gamePath! ).FirstOrDefault( directory => string.Equals( Path.GetFileName( directory ), "data", StringComparison.OrdinalIgnoreCase ) ) ?? gamePath!;
-		return Path.Combine( dataPath, "global", "Speech" );
+			Assert.Inconclusive( "Set OPENTPW_GAME_PATH for the original game data." );
+		return Directory.EnumerateDirectories( gamePath! ).FirstOrDefault( directory => string.Equals( Path.GetFileName( directory ), "data", StringComparison.OrdinalIgnoreCase ) ) ?? gamePath!;
 	}
 }

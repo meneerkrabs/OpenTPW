@@ -144,6 +144,63 @@ def inspect(root: Path) -> dict:
         timer.require((rel.kind, rel.target, rel.addend), ('section', 0, target),
                       'callback state dispatch code target')
         dispatch[str(state)] = hex(target)
+    lifecycle = {}
+    for at, op, expected, meaning in [
+        (0xb27b0, 36, (4, 5, 8), 'manager next script ID starts1'),
+        (0xb2cb0, 32, (3, 27, 12), 'script loader reads list cardinality'),
+        (0xb2cbc, 14, (3, 3, 1), 'script loader increments list cardinality'),
+        (0xb2cc0, 36, (3, 27, 12), 'script loader stores list cardinality'),
+        (0xb2cc4, 32, (3, 27, 16), 'script loader reads prior head'),
+        (0xb2cc8, 36, (3, 31, 0), 'new script next points to prior head'),
+        (0xb2cdc, 36, (31, 3, 4), 'prior head previous points to new script'),
+        (0xb2ce0, 36, (31, 4, 0), 'new script becomes manager head'),
+        (0xb3174, 32, (11, 27, 8), 'script loader reads manager next ID'),
+        (0xb3180, 14, (10, 11, 1), 'script ID allocator increments word'),
+        (0xb3184, 36, (10, 27, 8), 'script ID allocator stored independently of phase'),
+        (0xb3188, 36, (11, 31, 8), 'new script ID assigned manager old allocator value'),
+        (0xb38c8, 14, (0, 0, 20), 'saved manager header has20bytes'),
+        (0xb3914, 32, (0, 21, 4), 'manager writer copies pass counter'),
+        (0xb3928, 36, (0, 1, 568), 'manager writer stores copied pass word'),
+        (0xb392c, 32, (6, 21, 8), 'manager writer copies next script ID'),
+        (0xb3934, 36, (6, 1, 572), 'manager writer stores copied allocator word'),
+        (0xb494c, 32, (11, 26, 4), 'manager reader restores pass counter before byte swap'),
+        (0xb4960, 32, (9, 26, 8), 'manager reader restores next ID before byte swap'),
+        (0xb4974, 36, (8, 26, 8), 'manager reader stores byte-swapped next ID'),
+        (0x11b390, 11, (0, 29, 1), 'lifecycle first optional action selector comparison'),
+        (0x11b3cc, 11, (0, 29, 1), 'lifecycle reset action selector comparison'),
+    ]:
+        d(at, op, expected, meaning)
+    condition(0x11b3d0, (12, 2, 0x11b3dc), 'selector1 skips reset lifecycle call')
+    call(0x11b3d8, 0x11b4f4, 'selector other than1 reaches reset request lifecycle')
+    # Validate the actual word-reversal operations, not just their source fields.
+    for at, expected, meaning in [
+        (0xb495c, (31, 11, 0, 8, 662), 'manager reader pass counter byte-reversed store'),
+    ]:
+        word = evidence.word_at(app.code.data, at)
+        fields = (word >> 26, word >> 21 & 31, word >> 16 & 31,
+                  word >> 11 & 31, word >> 1 & 1023)
+        timer.require(fields, expected, meaning)
+        lifecycle[hex(at)] = {'meaning': meaning, 'fields': list(fields)}
+    for at, expected in [(0xb4964, (9, 8, 8, 8, 15)),
+                         (0xb4968, (9, 8, 24, 0, 7)),
+                         (0xb496c, (9, 8, 24, 16, 23)),
+                         (0xb4970, (9, 8, 8, 24, 31))]:
+        word = evidence.word_at(app.code.data, at)
+        timer.require(word >> 26, 21 if at == 0xb4964 else 20, 'allocator word byte swap operation')
+        fields = (word >> 21 & 31, word >> 16 & 31, word >> 11 & 31,
+                  word >> 6 & 31, word >> 1 & 31)
+        timer.require(fields, expected, 'allocator word byte swap fields')
+        lifecycle[hex(at)] = {'meaning': 'allocator word byte swap', 'fields': list(fields)}
+    lifecycle_hashes = {}
+    for start, end, expected in [
+        (0xb3174, 0xb318c, 'a8eed2ea9d986ae02522bb6a9b4ab618b1b028bcbf8b23f24bbcad1096059e69'),
+        (0xb2cb0, 0xb2ce4, 'a8f530d4b7f138fadb994310a831378a52f2557efc56baa2f11ff4d0b5f80937'),
+        (0xb492c, 0xb4978, '0cdab9a7e64accbb9ad5e76815495d581fb7e75c16a4ce642ea130e4d346c9f8'),
+        (0x11b390, 0x11b3dc, '41888215c650e11db9d46826bd8b3f9ccad60d2a656294d5e4b35f47a0cd784e'),
+    ]:
+        actual = hashlib.sha256(app.code.data[start:end]).hexdigest()
+        timer.require(actual, expected, 'script lifecycle code region hash')
+        lifecycle_hashes[f'{start:#x}..{end:#x}'] = actual
     # These RSE opcodes use a different time domain from the virtual park date.
     date_dispatch = app.relocs[1][0x2f58]
     wall_fields = {}
@@ -213,6 +270,7 @@ def inspect(root: Path) -> dict:
             'callback_state_dispatch': dispatch, 'animation_unsigned_bias': bias,
             'host_civil_opcodes': wall_fields, 'c_runtime_identity': clib_identity,
             'c_runtime_region_sha256': runtime_hashes, 'c_runtime_time_epoch_offset': 126144000,
+            'script_lifecycle': lifecycle, 'script_lifecycle_region_sha256': lifecycle_hashes,
             'findings': ['World state4 skips regular thing iteration after world tick increment; common calendar update remains.',
                          'Callback state4 is a transition to5; callback state10 enters the scheduler.',
                          'Manager initialization state gates phase; empty initialized list does not stop phase.',

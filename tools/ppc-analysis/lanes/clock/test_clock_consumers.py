@@ -53,6 +53,7 @@ class ConsumerTests(unittest.TestCase):
         self.assertEqual({'4': '0x1c1378', '10': '0x1c2264'}, result['callback_state_dispatch'])
         self.assertEqual(8, len(result['region_sha256']))
         self.assertEqual(4, len(result['c_runtime_region_sha256']))
+        self.assertEqual(4, len(result['script_lifecycle_region_sha256']))
         self.assertEqual('tm_year', result['host_civil_opcodes']['97']['field'])
         self.assertEqual('tm_hour', result['host_civil_opcodes']['100']['field'])
 

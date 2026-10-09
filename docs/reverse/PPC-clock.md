@@ -754,3 +754,82 @@ bounded application hashes and four C runtime hashes; full six-instruction
 import-glue validation for both RSE time imports and the OS host-clock import.
 Synthetic examples qualify finite arithmetic only. No original instructions
 were executed and no game source or original bytes were added.
+
+### Script creation and reload phase follow-up
+
+The script loader `0xb2ba0` maintains a manager-owned list count at `+12`
+(`0xb2cb0..0xb2cc0`), separate from initialized state `+0` and pass `+4`.
+New script `+0` points to the former head, former head `+4` points back to the
+new script when nonnull, and manager `+16` becomes the new script
+(`0xb2cc4..0xb2ce0`). Normal traversal therefore starts in reverse creation
+order; sorting live VMs by attraction ID would change that order.
+
+The next-script-ID word is manager `+8`, initialized to 1 at `0xb27b0`.
+The loader reads it at `0xb3174`, increments and writes it at `0xb3180..0xb3184`,
+and writes the prior value into new script `+8` at `0xb3188`. There is no
+attraction/guest-ID lookup in this assignment. Manager pass `+4`, script ID
+`+8`, and outer scheduler substep phase are three separate counters. Loader
+creation does not itself establish an elapsed-clock origin for GETTIME.
+A scan of aligned direct linked calls finds interpreter `0xaf534` only at
+manager `0xb28f0`; indirect execution paths are not ruled out by that scan.
+In particular, the live `RideVM.Child.Advance` recursion cannot be justified
+as native manager ordering solely from the parent/child relationship.
+
+Manager state writer `0xb3868` writes a 20-byte header size at `0xb38c8` and
+copies initialized/pass/allocator/count/head words at `0xb390c..0xb3940`.
+Reader `0xb4824` invokes manager initialization at `0xb48a4`, then restores
+these words from the state block. Its pass-counter byte-reversed store is
+`0xb495c`; the allocator word is separately reversed and stored at
+`0xb4960..0xb4974`. The saved phase and next ID therefore override fresh
+initialization on this reader path. The five-word header includes a list
+reference requiring subsequent reconstruction; this is **not** a complete
+production save framing or pointer-restoration recipe. Actual original-save
+script records and matching load order remain the necessary integration proof.
+
+The scheduler reset-request routine `0x11b4f4` has a direct caller at
+`0x11b3d8`. This caller skips that routine when its saved argument in `r29`
+is **1** (`0x11b3cc..0x11b3d0`). Consequently the reset cannot be assumed for
+every transition through this caller. The argument's named load/restore mode
+and indirect callers remain unresolved; no unconditional long-session signed
+timestamp recovery was established. The new witness pins the selector's
+comparison, BO/BI/target, reset call, four lifecycle hashes, ID assignment and
+actual manager-header byte-swap fields. The clock suite remains **30/30** with
+local identified inputs enabled.
+
+The identified PC Jungle `Easymode.TPWI` contains one matching manager-header
+candidate in its decoded payload at offset **1595542**. Container SHA-256 is
+`6d89303d098900364bf5e80b236b64bd85976fb947e9e4609d088547f430b39a`;
+1,608,309-byte decoded payload SHA-256 is
+`a3c9a28252c37ad49a8eb78e4a0c5e1d5229d01548fa35801db67015d2589173`.
+The `RSSE` marker is followed by length20 and these interpreted header fields:
+
+| Header member | Fixture value | Mac field correspondence |
+| --- | ---: | --- |
+| Initialized word | 1 | manager `+0` |
+| Pass counter | 6055 | manager `+4` |
+| Next script ID | 16 | manager `+8` |
+| List cardinality | 14 | manager `+12` |
+| Opaque head reference | 80650884 | manager `+16`; subsequent list reconstruction required |
+
+The three independent counts are present in a real save. The economy lane's
+world-prefix tick755 must not be substituted for manager phase6055; this pair
+does not establish the number of earlier drops or excluded callbacks. The
+candidate agrees with the pinned Mac header layout, while its preceding framing,
+serialized script-record boundaries and reference reconstruction remain
+unqualified. It provides asset-structure corroboration, not proof of PC runtime
+cadence or a generally usable save importer. Save inspection is bounded and
+identity-pinned; output contains interpreted metadata only.
+
+```sh
+python3 tools/ppc-analysis/lanes/clock/save_phase_evidence.py /path/to/Data/levels/jungle/Easymode.TPWI
+OPENTPW_PPC_BIN_ROOT=/path/to/mac-feral/bin OPENTPW_PPC_SAVE_PATH=/path/to/Easymode.TPWI python3 -m unittest discover -s tools/ppc-analysis/lanes/clock -p 'test_*.py' -v
+```
+
+Validation for this follow-up: **35/35** clock Python tests with both original
+fixtures enabled, no skips; malformed/truncated synthetic headers; four
+additional native lifecycle hashes; Python compilation and whitespace checks.
+A complete production connection is specifically blocked on save-list framing
+and reconstruction, the lifecycle selector's named meaning, indirect clock
+configuration paths, and target-platform qualification of signed timestamp
+crossings. Those gaps require separate source/caller or runtime evidence; this
+lane introduces no guessed recovery or save migration.

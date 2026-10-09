@@ -32,6 +32,9 @@ online service restoration remains separately scoped.
 Detailed missing/partial format work is tracked in [FORMAT-BACKLOG.md](FORMAT-BACKLOG.md).
 BF4 CPU decoding is implemented for the selected English corpus; font/UI integration,
 visual fidelity and three-platform graphics qualification remain unverified.
+MD2, MAP, RSE, TPWI-payload markers, LIP, MTR and TGQ now have bounded CPU readers
+verified against original files (see FORMAT-BACKLOG.md); none is integrated as an
+original gameplay/presentation feature, so their game-feature rows stay unchanged.
 
 Optional presentation extension (requested October 9, 2026): configurable world
 upscaling, design in [UPSCALING-DESIGN.md](UPSCALING-DESIGN.md). Implementation:

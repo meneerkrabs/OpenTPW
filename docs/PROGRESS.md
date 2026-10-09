@@ -131,6 +131,30 @@ worden niet als volledige game- of platformkwalificatie geïnterpreteerd.
 - Upstream formaatnotities zijn via de GitHub-docsbron teruggevonden. MTR/LIPS
   blijven TODO; MAP-notitie gaat over sound maps, niet bewezen terreinrecords.
 
+Parallelle formaat-slice (7 formaten, geïsoleerde worktrees, 9 oktober 2026):
+
+- MD2: `ModelFile` herschreven als begrensde lezer; 2.116 van 2.118 corpusmembers
+  parsen (838 geometrie, 1.278 animatiecontainers met opaque payload), 2
+  versie-207.201-bestanden expliciet geweigerd. Animatietracks niet gedecodeerd.
+  Ongebruikte stub `OpenTPW.Files/Public/ModelFile.cs` verwijderd.
+- MAP: TP2M-terreinkaarten (128×128 cellen, 5 gepinde fixtures); 64
+  sound-catalog-`.map`-bestanden onderscheiden en geweigerd. Celbetekenis onbekend.
+- RSE: `RideScriptFile` + statische analyse; alle 308 scripts parsen, 84 gebruikte
+  opcodes, geen onbekende. De VM dekt 25 daarvan; originele scripts draaien nog niet.
+  Bestaand defect genoteerd: `RideVM` laat zijn variabelenlijst leeg.
+- TPWS/TPWI: 17 unieke sectiemarkers in de enige fixture gelokaliseerd; inhoud opaque.
+  Er staat geen ander TPWI/TPWS-bestand op de ISO.
+- LIPS: gevonden als `.LIP` (639 in `lips.wad` + 4 levelbestanden); strikte lezer,
+  eenheid (waarschijnlijk µs) onbevestigd.
+- MTR: alleen 11 ISO-bestanden (`Meshes/<taal>/*.mtr`); structurele lezer,
+  betekenis en gebruik door de game onbekend. Tests via `OPENTPW_MTR_PATH`.
+- TQI/TGQ: alle negen films; container en EA ADPCM-audio (bit-exact t.o.v. een
+  externe referentie) en TQI-video (≈55 dB, niet bit-exact). Geen afspelen.
+
+Verificatie na integratie: native assets + shaders **403 passed, 0 skipped**;
+zonder assets 339 passed, 64 skipped; Release-solution 0 errors; Metal
+smoke-test 150 frames geslaagd. Windows/Linux GPU niet gekwalificeerd.
+
 GitHub CI van snapshot `5f23094`: macOS en Ubuntu build/CPU-tests slagen;
 Windows had één assert-fout door `UnauthorizedAccessException` in plaats van
 `IOException` bij vervangen van een directory. De test onderscheidt nu het

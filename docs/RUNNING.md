@@ -62,6 +62,10 @@ writes are needed. Prints entry/sample counts and encoding inventory; decoding
 errors exit nonzero. This does not integrate original fonts into the game UI.
 See BF4-FONTS.md for supported encodings, limits and private fixture evidence.
 
+Private format tests use `OPENTPW_GAME_PATH`. MTR fixtures exist only on the
+ISO; extract its `*/Meshes/*/*.mtr` files to a folder outside git and set
+`OPENTPW_MTR_PATH` to it to run the MTR fixture tests (see MTR.md).
+
 ## Read-only original container inspection
 
 ```sh

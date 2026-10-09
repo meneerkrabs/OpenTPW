@@ -183,3 +183,10 @@ original) and imports the Easymode park; Full Simulation loads neither. The
 loans/upgrades rules and the layer order cite these functions with
 `[BIN:STP-PPC:…]` labels. `RIDES-009` keeps only the open question of where shared
 non-`Info.Id` `.sam` files sit in the object layer order.
+
+### User interface map
+
+[UI-MAP.md](UI-MAP.md) describes 97 screens, their controls and 570 candidate rules,
+drafted by subagents from the 242 UI functions and checked mechanically against the
+cited functions (control ids, UITEXT indices, game-type tests). It is a lead list:
+only rules that are traced and reviewed may carry a `[BIN:STP-PPC:…]` label.

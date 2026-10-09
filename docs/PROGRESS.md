@@ -195,6 +195,7 @@ Terrein/save-slice (9 oktober 2026, worktree `terrain`):
   479 passed, 10 skipped (opt-in MTR/native-shadertests); zonder assets 397 passed,
   92 skipped. Metal smoke-test geslaagd voor sandbox (script, animatie, tekst,
   save/load) en `--load-original-level jungle`/`fantasy`.
+
 ## Talen (9 oktober 2026)
 
 - Alle vijf meegeleverde talen (Engels, Deens, Frans, Duits, Zweeds) decoderen:

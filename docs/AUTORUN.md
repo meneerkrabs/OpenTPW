@@ -95,7 +95,7 @@ centred on black), `AutorunLauncher` (when to show it) in `source/OpenTPW/Client
   a click on an unavailable button does nothing, Tab draws the focus rectangle, a click on Play starts the
   normal front-end smoke test.
 
-Not verified against a capture of the original: the focus rectangle's dot phase (`UI-033`) and that
+Not verified against a capture of the original: the focus rectangle's dot phase (`UI-040`) and that
 bright buttons keep their pure-black background rectangle (the launcher copies it as it is; the backdrop's
 black is (4,4,4)).
 

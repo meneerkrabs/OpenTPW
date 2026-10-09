@@ -157,7 +157,7 @@ internal sealed class AutorunView
 	}
 
 	// DrawFocusRect XORs a 1-pixel dotted frame (every second pixel) onto the button's client rectangle shrunk by 2 pixels.
-	// [APPROX:UI-033] the exact dot phase of GDI's focus rectangle brush is not known; dots are the pixels with even x + y, inverted.
+	// [APPROX:UI-040] the exact dot phase of GDI's focus rectangle brush is not known; dots are the pixels with even x + y, inverted.
 	private void DrawFocusRectangle( AutorunButton button )
 	{
 		var left = button.X + 2;

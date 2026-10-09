@@ -159,9 +159,10 @@ Bij Rosetta moeten processarchitectuur én iedere geladen native library overeen
 M7 vereist echte arm64-kwalificatie zonder Rosetta.
 
 Leg SDK-versie, restore-inputs en reproduceercommando's vast voor M0. .NET 8-support
-eindigt op 10 november 2026 volgens Microsoft. Vóór releasekwalificatie is een expliciet
-supported-runtime-besluit vereist; dit is geen toestemming voor een dependency-/SDK-
-upgrade. NativeAOT blijft een afzonderlijke, optionele kwalificatie.
+eindigt op 10 november 2026 volgens Microsoft. Besluit van de projecteigenaar (9 oktober
+2026): over naar .NET 10 (LTS tot 14 november 2028), SDK 10.0.401 in `global.json`;
+NuGet-pakketten blijven ongewijzigd en zijn geen onderdeel van dit besluit. NativeAOT
+blijft een afzonderlijke, optionele kwalificatie.
 
 ## Uitvoeringsfasen en harde gates
 

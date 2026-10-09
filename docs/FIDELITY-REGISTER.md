@@ -14,9 +14,9 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **141 unresolved unique APPROX IDs**, 156 APPROX occurrences, 39 EXT occurrences, 62 DATA occurrences and 7 BIN occurrences.
+Current inventory: **140 unresolved unique APPROX IDs**, 155 APPROX occurrences, 39 EXT occurrences, 62 DATA occurrences and 9 BIN occurrences.
 
-Of these, 135 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
+Of these, 134 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
 CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.
 
@@ -26,7 +26,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | --- | ---: | ---: |
 | ADVISOR | 14 | 14 |
 | COMPAT | 13 | 14 |
-| ECON | 46 | 46 |
+| ECON | 45 | 45 |
 | ONLINE | 6 | 6 |
 | RIDES | 29 | 29 |
 | UI | 33 | 47 |
@@ -47,7 +47,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ADVISOR-010 | Original-fidelity area (scope unadjudicated) | lip-sync clock = PCM consumed from the SDL queue (leads output by up to one device buffer) | See source annotation/runtime register | `source/OpenTPW/World/Advisor.cs:45` |
 | ADVISOR-011 | Original-fidelity area (scope unadjudicated) | wall clock drives the mouth when no audio device opens | See source annotation/runtime register | `source/OpenTPW/World/Advisor.cs:46` |
 | ADVISOR-012 | Original-fidelity area (scope unadjudicated) | mono speech duplicated to both stereo channels | See source annotation/runtime register | `source/OpenTPW/World/Advisor.cs:47` |
-| ADVISOR-013 | Original-fidelity area (scope unadjudicated) | LIP marks are microseconds, talking from 0 and toggling per mark (inferred from audio) | See source annotation/runtime register | `source/OpenTPW/World/Advisor.cs:48` |
+| ADVISOR-013 | Original-fidelity area (scope unadjudicated) | the mouth is talking from time 0 (the unit and per-mark toggle are traced) | See source annotation/runtime register | `source/OpenTPW/World/Advisor.cs:48` |
 | ADVISOR-014 | Original-fidelity area (scope unadjudicated) | MP2 synthesis window values read from ffmpeg's table, checked against two ISO values and ≤1 LSB corpus output | See source annotation/runtime register | `source/OpenTPW/World/Advisor.cs:49` |
 | COMPAT-001 | Original-fidelity area (scope unadjudicated) | Sign text | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:15` |
 | COMPAT-002 | Original-fidelity area (scope unadjudicated) | Sign text | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:16` |
@@ -68,46 +68,45 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-004 | Original-fidelity area (scope unadjudicated) | Fast x2 and Fastest x4 speeds (only pause is evidenced) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:15` |
 | ECON-005 | Original-fidelity area (scope unadjudicated) | challenge prizes and scrap sales are other income; build, upgrade, goods, prizes, land are other costs; loans received are not money in | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:16` |
 | ECON-006 | Original-fidelity area (scope unadjudicated) | APR &gt; 0 repayment is an annuity at APR/12 per month, rounded down; interest accrues monthly on the balance | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:17` |
-| ECON-007 | Original-fidelity area (scope unadjudicated) | a repaid loan offer becomes available again | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:18` |
-| ECON-008 | Original-fidelity area (scope unadjudicated) | 100 training points per grade (from Online_Standard.sam comments \\"costs 1000 to get up to grade 1\\") | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:19` |
-| ECON-009 | Original-fidelity area (scope unadjudicated) | candidate grade = average + 2 when \\"great\\", else average +-1 | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:20` |
-| ECON-010 | Original-fidelity area (scope unadjudicated) | TimeBetweenStaffUpdates/StaffTimeoutTime are seconds at normal speed | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:21` |
-| ECON-011 | Original-fidelity area (scope unadjudicated) | each pool slot above the minimum is filled with 50 % chance per update | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:22` |
-| ECON-012 | Original-fidelity area (scope unadjudicated) | hiring is free; BaseCostPerStaff/CostPerQualityLevel unused | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:23` |
-| ECON-013 | Original-fidelity area (scope unadjudicated) | training budget is spent evenly over a role at month end | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:24` |
-| ECON-014 | Original-fidelity area (scope unadjudicated) | staff start at happiness 100 and it never changes (no strikes) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:25` |
-| ECON-015 | Original-fidelity area (scope unadjudicated) | each researcher adds ResearchAbility points per game day, split by effort | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:26` |
-| ECON-016 | Original-fidelity area (scope unadjudicated) | group g opens when PercentageForThisTech % of group g-1 of the same category is researched | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:27` |
-| ECON-017 | Original-fidelity area (scope unadjudicated) | items are researched cheapest first within open groups | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:28` |
-| ECON-018 | Original-fidelity area (scope unadjudicated) | ride upgrade levels and add-on objects form the \\"upgrade\\" research category | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:29` |
-| ECON-019 | Original-fidelity area (scope unadjudicated) | Instant Action research runs at one grade-2 researcher without staff | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:30` |
-| ECON-020 | Original-fidelity area (scope unadjudicated) | a sale drops LitterEffect/100 litter items | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:31` |
-| ECON-021 | Original-fidelity area (scope unadjudicated) | a repair takes WorkDuration game hours (x DurationOfUpgrade for upgrades); mechanics are dispatched instantly | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:32` |
-| ECON-022 | Original-fidelity area (scope unadjudicated) | a handyman removes one litter item per WorkDuration game minutes, park-wide | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:33` |
-| ECON-023 | Original-fidelity area (scope unadjudicated) | an open ride loses WearRate state of repair per game day; breakdown at 0 | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:34` |
-| ECON-024 | Original-fidelity area (scope unadjudicated) | a repair restores state of repair to 100 | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:35` |
-| ECON-025 | Original-fidelity area (scope unadjudicated) | scrap value basis = catalogue cost of all levels up to the current one | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:36` |
-| ECON-026 | Original-fidelity area (scope unadjudicated) | park value = sum of scrap values | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:37` |
-| ECON-027 | Original-fidelity area (scope unadjudicated) | park rating = (2 x happiness + attractions/3 + cleanliness) / 4 | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:38` |
-| ECON-028 | Original-fidelity area (scope unadjudicated) | purchases need a balance covering the cost | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:39` |
-| ECON-029 | Original-fidelity area (scope unadjudicated) | golden tickets are spent when buying items with GoldenTicketCost | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:40` |
-| ECON-030 | Original-fidelity area (scope unadjudicated) | the simulation stops once bankrupt | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:41` |
-| ECON-031 | Original-fidelity area (scope unadjudicated) | imported parks are opened on load (open state not decoded) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:42` |
-| ECON-032 | Original-fidelity area (scope unadjudicated) | the prototype ride is registered uncharged | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:43` |
-| ECON-033 | Original-fidelity area (scope unadjudicated) | golden tickets are checked at each month end | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:44` |
-| ECON-034 | Original-fidelity area (scope unadjudicated) | challenge type meanings come from Challenges.sam comments (shop types by ShopType/SpecialIngredient) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:45` |
-| ECON-035 | Original-fidelity area (scope unadjudicated) | offers wait for accept/decline; follow-ups are offered right after completion; failed challenges count as finished | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:46` |
-| ECON-036 | Original-fidelity area (scope unadjudicated) | build challenges with TargetVal 0 need one item; type 28 needs level 3 | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:47` |
-| ECON-037 | Original-fidelity area (scope unadjudicated) | staff skill % = grade x 25 + training points / 4 | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:48` |
-| ECON-038 | Original-fidelity area (scope unadjudicated) | big park uses MinCellsOwned, cameras use MinCellsCovered | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:49` |
-| ECON-039 | Original-fidelity area (scope unadjudicated) | profit year = profit of the last 12 closed months | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:50` |
-| ECON-040 | Original-fidelity area (scope unadjudicated) | players start with 1 golden key and keys are not consumed by entering themes | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:51` |
-| ECON-041 | Original-fidelity area (scope unadjudicated) | features-directory objects with Research.Category != 3 are fixed (non-buyable) items | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:52` |
-| ECON-042 | Original-fidelity area (scope unadjudicated) | sideshow InitCostOfGoods is the cost of a prize paid per win | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:53` |
-| ECON-043 | Original-fidelity area (scope unadjudicated) | monthly wage = BaseWage[grade] x PayMultiplier[type] | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:54` |
-| ECON-044 | Original-fidelity area (scope unadjudicated) | balloon/costume percentages are 0 (guests carry no items yet) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:55` |
-| ECON-045 | Original-fidelity area (scope unadjudicated) | loan/challenge record locators use plausibility bounds (one fixture) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:56` |
-| ECON-046 | Original-fidelity area (scope unadjudicated) | upgrades need at least one employed mechanic to be bought | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:57` |
+| ECON-008 | Original-fidelity area (scope unadjudicated) | 100 training points per grade (from Online_Standard.sam comments \\"costs 1000 to get up to grade 1\\") | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:18` |
+| ECON-009 | Original-fidelity area (scope unadjudicated) | candidate grade = average + 2 when \\"great\\", else average +-1 | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:19` |
+| ECON-010 | Original-fidelity area (scope unadjudicated) | TimeBetweenStaffUpdates/StaffTimeoutTime are seconds at normal speed | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:20` |
+| ECON-011 | Original-fidelity area (scope unadjudicated) | each pool slot above the minimum is filled with 50 % chance per update | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:21` |
+| ECON-012 | Original-fidelity area (scope unadjudicated) | hiring is free; BaseCostPerStaff/CostPerQualityLevel unused | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:22` |
+| ECON-013 | Original-fidelity area (scope unadjudicated) | training budget is spent evenly over a role at month end | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:23` |
+| ECON-014 | Original-fidelity area (scope unadjudicated) | staff start at happiness 100 and it never changes (no strikes) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:24` |
+| ECON-015 | Original-fidelity area (scope unadjudicated) | each researcher adds ResearchAbility points per game day, split by effort | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:25` |
+| ECON-016 | Original-fidelity area (scope unadjudicated) | group g opens when PercentageForThisTech % of group g-1 of the same category is researched | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:26` |
+| ECON-017 | Original-fidelity area (scope unadjudicated) | items are researched cheapest first within open groups | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:27` |
+| ECON-018 | Original-fidelity area (scope unadjudicated) | ride upgrade levels and add-on objects form the \\"upgrade\\" research category | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:28` |
+| ECON-019 | Original-fidelity area (scope unadjudicated) | Instant Action research runs at one grade-2 researcher without staff | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:29` |
+| ECON-020 | Original-fidelity area (scope unadjudicated) | a sale drops LitterEffect/100 litter items | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:30` |
+| ECON-021 | Original-fidelity area (scope unadjudicated) | a repair takes WorkDuration game hours (x DurationOfUpgrade for upgrades); mechanics are dispatched instantly | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:31` |
+| ECON-022 | Original-fidelity area (scope unadjudicated) | a handyman removes one litter item per WorkDuration game minutes, park-wide | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:32` |
+| ECON-023 | Original-fidelity area (scope unadjudicated) | an open ride loses WearRate state of repair per game day; breakdown at 0 | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:33` |
+| ECON-024 | Original-fidelity area (scope unadjudicated) | a repair restores state of repair to 100 | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:34` |
+| ECON-025 | Original-fidelity area (scope unadjudicated) | scrap value basis = catalogue cost of all levels up to the current one | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:35` |
+| ECON-026 | Original-fidelity area (scope unadjudicated) | park value = sum of scrap values | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:36` |
+| ECON-027 | Original-fidelity area (scope unadjudicated) | park rating = (2 x happiness + attractions/3 + cleanliness) / 4 | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:37` |
+| ECON-028 | Original-fidelity area (scope unadjudicated) | purchases need a balance covering the cost | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:38` |
+| ECON-029 | Original-fidelity area (scope unadjudicated) | golden tickets are spent when buying items with GoldenTicketCost | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:39` |
+| ECON-030 | Original-fidelity area (scope unadjudicated) | the simulation stops once bankrupt | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:40` |
+| ECON-031 | Original-fidelity area (scope unadjudicated) | imported parks are opened on load (open state not decoded) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:41` |
+| ECON-032 | Original-fidelity area (scope unadjudicated) | the prototype ride is registered uncharged | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:42` |
+| ECON-033 | Original-fidelity area (scope unadjudicated) | golden tickets are checked at each month end | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:43` |
+| ECON-034 | Original-fidelity area (scope unadjudicated) | challenge type meanings come from Challenges.sam comments (shop types by ShopType/SpecialIngredient) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:44` |
+| ECON-035 | Original-fidelity area (scope unadjudicated) | offers wait for accept/decline; follow-ups are offered right after completion; failed challenges count as finished | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:45` |
+| ECON-036 | Original-fidelity area (scope unadjudicated) | build challenges with TargetVal 0 need one item; type 28 needs level 3 | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:46` |
+| ECON-037 | Original-fidelity area (scope unadjudicated) | staff skill % = grade x 25 + training points / 4 | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:47` |
+| ECON-038 | Original-fidelity area (scope unadjudicated) | big park uses MinCellsOwned, cameras use MinCellsCovered | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:48` |
+| ECON-039 | Original-fidelity area (scope unadjudicated) | profit year = profit of the last 12 closed months | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:49` |
+| ECON-040 | Original-fidelity area (scope unadjudicated) | players start with 1 golden key and keys are not consumed by entering themes | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:50` |
+| ECON-041 | Original-fidelity area (scope unadjudicated) | features-directory objects with Research.Category != 3 are fixed (non-buyable) items | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:51` |
+| ECON-042 | Original-fidelity area (scope unadjudicated) | sideshow InitCostOfGoods is the cost of a prize paid per win | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:52` |
+| ECON-043 | Original-fidelity area (scope unadjudicated) | monthly wage = BaseWage[grade] x PayMultiplier[type] | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:53` |
+| ECON-044 | Original-fidelity area (scope unadjudicated) | balloon/costume percentages are 0 (guests carry no items yet) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:54` |
+| ECON-045 | Original-fidelity area (scope unadjudicated) | loan/challenge record locators use plausibility bounds (one fixture) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:55` |
+| ECON-046 | Original-fidelity area (scope unadjudicated) | upgrades need at least one employed mechanic to be bought | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:56` |
 | ONLINE-001 | OpenTPW online extension | Word filtering uses case-insensitive substring matches in space-padded text; entry spaces act as boundaries; allowed substrings exempt matches; hit characters except spaces become asterisks. | Original word-filter code or observed original filtering behavior; the source comment says the encrypted TP.ICD implementation is unreadable. | `docs/ONLINE.md:121` |
 | ONLINE-002 | OpenTPW online extension | A leading slash introduces a chat command; other text means say. | Original chat input syntax, which is not documented in the available data. | `docs/ONLINE.md:122` |
 | ONLINE-003 | OpenTPW online extension | Response strings 102 and 110 mean failure to add an ignored player and a buddy respectively, based on nearby string blocks. | Original response-code table. | `docs/ONLINE.md:123` |
@@ -193,7 +192,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ADVISOR-010 | `source/OpenTPW/Client/SpeechAudioPlayer.cs:34` | [APPROX:ADVISOR-010] Lip-sync clock = frames SDL took from its queue; leads the speaker by up to one device buffer (≈46 ms) — evidence needed: original A/V sync source and latency measurement |
 | ADVISOR-011 | `source/OpenTPW/Client/SpeechAudioPlayer.cs:31` | [APPROX:ADVISOR-011] Wall clock when no audio device opened — evidence needed: original behaviour without sound hardware |
 | ADVISOR-012 | `source/OpenTPW/Client/SpeechAudioPlayer.cs:62` | [APPROX:ADVISOR-012] Mono speech duplicated to both channels — evidence needed: original speech output channel layout/panning |
-| ADVISOR-013 | `source/OpenTPW.Files/Public/LipSyncTimeline.cs:53` | [APPROX:ADVISOR-013] µs unit and "talking from 0, toggle per mark" inferred from decoded audio (31 dB talking/silent contrast, fit peaks at 1 µs/unit) — evidence needed: original runtime LIP consumer (binary or trace) |
+| ADVISOR-013 | `source/OpenTPW.Files/Public/LipSyncTimeline.cs:54` | [APPROX:ADVISOR-013] talking from time 0 (inferred from decoded audio, 31 dB talking/silent contrast) — evidence needed: the talking flag's value when speech starts |
 | ADVISOR-014 | `source/OpenTPW.Files/Formats/Sound/Mp2Decoder.cs:55` | [APPROX:ADVISOR-014] Values read from the locally installed ffmpeg's data table; checked against the standard's |
 | COMPAT-001 | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:19` | [APPROX:COMPAT-001] 512x256 canvas (two 256x256 halves) — evidence needed: original DIB size or a sign texture capture. |
 | COMPAT-002 | `source/OpenTPW.Files/Formats/Font/SignTextLayout.cs:128` | [APPROX:COMPAT-002] centre and shrink-to-fit with a margin — evidence needed: original text placement / long-name captures. |
@@ -215,7 +214,6 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-004 | `source/OpenTPW/Economy/ParkCalendar.cs:11` | [APPROX:ECON-004] Fast x2 and Fastest x4 speeds (only pause is evidenced) — evidence needed: original speed controls, if any |
 | ECON-005 | `source/OpenTPW/Economy/ParkLedger.cs:53` | [APPROX:ECON-005] challenge prizes and scrap sales are other income; build, upgrade, goods, prizes, land are other costs; loans received are not money in — evidence needed: captured financial screen after these transactions |
 | ECON-006 | `source/OpenTPW/Economy/ParkLedger.cs:121` | [APPROX:ECON-006] APR &gt; 0 repayment is an annuity at APR/12 per month, rounded down; interest accrues monthly on the balance — evidence needed: standard-mode save or capture with an outstanding loan |
-| ECON-007 | `source/OpenTPW/Economy/ParkEconomy.cs:267` | [APPROX:ECON-007] a repaid loan offer becomes available again — evidence needed: capture of the loan screen after repayment |
 | ECON-008 | `source/OpenTPW/Economy/ParkStaff.cs:50` | [APPROX:ECON-008] 100 training points per grade (from Online_Standard.sam comments "costs 1000 to get up to grade 1") — evidence needed: capture of a training run |
 | ECON-009 | `source/OpenTPW/Economy/ParkStaff.cs:112` | [APPROX:ECON-009] candidate grade = average + 2 when "great", else average +-1 — evidence needed: hiring pool captures (grade distribution) |
 | ECON-010 | `source/OpenTPW/Economy/ParkStaff.cs:64` | [APPROX:ECON-010] TimeBetweenStaffUpdates/StaffTimeoutTime are seconds at normal speed — evidence needed: capture of pool refresh timing |
@@ -453,6 +451,8 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 
 | Label | Location | Source comment context |
 | --- | --- | --- |
+| STP-PPC:0x10007434 advisor update | `source/OpenTPW.Files/Public/LipSyncTimeline.cs:53` | [BIN:STP-PPC:0x10007434 advisor update] marks are read in order until -1, divided by 1000 (µs to the ms speech clock) and each one flips the talking flag |
+| STP-PPC:0x100CC21C loan instalment | `source/OpenTPW/Economy/ParkEconomy.cs:267` | [BIN:STP-PPC:0x100CC21C loan instalment] a fully repaid loan clears its bought flag; 0x100CC9E8 then offers it again when the credit test passes |
 | STP-PPC:0x1010474C world setup | `source/OpenTPW/Economy/BalanceSettings.cs:177` | [BIN:STP-PPC:0x1010474C world setup] game type 0/2 load levels/Standard.sam then &lt;theme&gt;/Standard.sam; type 2 (Instant Action) adds &lt;theme&gt;/Easy_Standard.sam and only logs when it is missing |
 | STP-PPC:0x10119328 object loader | `source/OpenTPW/World/Objects/ObjectCatalog.cs:387` | [BIN:STP-PPC:0x10119328 object loader] In Instant Action (game type 2) Easy_&lt;object file&gt; is layered after the object file when it exists; Online_ files belong to the online game type and are not loaded offline |
 | STP-PPC:0x10128B60 profile key count | `source/OpenTPW/Economy/ParkObjectives.cs:317` | [BIN:STP-PPC:0x10128B60 profile key count] keys = mExtraKeys + (earned global, per-theme and secret tickets) / 3, truncated; spent tickets are not subtracted |

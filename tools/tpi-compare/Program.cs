@@ -384,6 +384,43 @@ static object StructuralUnknown( byte[] data )
 		var offsets = new List<uint>();
 		if ( count <= 4096 && tableEnd <= data.Length )
 			for ( var i = 0; i < count; i++ ) offsets.Add( U32( data, 16 + i * 8 + 4 ) );
+		var entryHeaders = new List<object>();
+		foreach ( var offset in offsets )
+		{
+			if ( offset > data.Length - 16 ) continue;
+			var at = (int)offset;
+			var next = offsets.Where( x => x > offset ).DefaultIfEmpty( (uint)data.Length ).Min();
+			var size24 = data[at + 1] | data[at + 2] << 8 | data[at + 3] << 16;
+			object? attachmentHeader = null;
+			if ( size24 >= 16 && offset + size24 <= next - 16 )
+			{
+				var attachAt = at + size24;
+				attachmentHeader = new
+				{
+					offset = attachAt,
+					formatByte = data[attachAt],
+					blockLength24 = data[attachAt + 1] | data[attachAt + 2] << 8 | data[attachAt + 3] << 16,
+					width16 = BinaryPrimitives.ReadUInt16LittleEndian( data.AsSpan( attachAt + 4 ) ),
+					height16 = BinaryPrimitives.ReadUInt16LittleEndian( data.AsSpan( attachAt + 6 ) ),
+					remainingBytes = next - (uint)attachAt,
+					sourceHeaderSha256 = Hash( data.AsSpan( attachAt, 16 ) )
+				};
+			}
+			entryHeaders.Add( new
+			{
+				offset,
+				endBoundary = next,
+				formatByte = data[at],
+				formatMasked = data[at] & 127,
+				blockLength24 = size24,
+				refpackPrefix = data[at] >= 128 && next >= offset + 18 && data[at + 16] == 0x10 && data[at + 17] == 0xfb,
+				width16 = BinaryPrimitives.ReadUInt16LittleEndian( data.AsSpan( at + 4 ) ),
+				height16 = BinaryPrimitives.ReadUInt16LittleEndian( data.AsSpan( at + 6 ) ),
+				sourceHeaderSha256 = Hash( data.AsSpan( at, 16 ) ),
+				availablePayloadBytes = next - offset - 16,
+				attachmentHeader
+			} );
+		}
 		directoryCandidate = new
 		{
 			declaredLengthAt4 = U32( data, 4 ),
@@ -392,6 +429,8 @@ static object StructuralUnknown( byte[] data )
 			offsetsInsideFile = offsets.Count == count && offsets.All( x => x >= tableEnd && x < data.Length ),
 			distinctOffsets = offsets.Distinct().Count(),
 			directoryTagHash = Hash( data.AsSpan( 12, 4 ) )
+			,
+			entryHeaders
 		};
 	}
 	return new

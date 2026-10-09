@@ -141,6 +141,101 @@ Metadata and reproducible probes: [tools/tpi-compare](../tools/tpi-compare/READM
 outside Git. The result records actual reader calls, their failures, and sample
 limits separately; file extensions alone are not evidence of compatibility.
 
+## Metadata prototypes for remaining format questions
+
+The [format evidence](../tools/tpi-compare/format-evidence.json) and
+`format_questions.py` retain hashes, offsets, dimensions, and record-boundary
+observations. They do not decode images/audio/coasters or change production
+loaders. The prototype contracts follow constraints checked against the real
+corpus; unsupported meanings remain explicit.
+
+### SHPI bitmap and palette headers
+
+No publisher-authored EA specification was located. A primary implementation
+by the format researcher provides an independently documented old-shape
+16-byte entry header and format IDs:
+[EA Graphics Manager, pinned entry implementation](https://github.com/bartlomiejduda/EA-Graphics-Manager/blob/dce358bc1d34102ea2c72b74210b6ca627a46cc4/src/EA_Image/dir_entry.py),
+[palette entry implementation](https://github.com/bartlomiejduda/EA-Graphics-Manager/blob/dce358bc1d34102ea2c72b74210b6ca627a46cc4/src/EA_Image/attachments/palette_entry.py).
+This is original implementer evidence, not an official EA specification; no
+external decoder/dependency or implementation was installed or copied.
+
+All 7,283 TPI entries agree with that layout: a one-byte format, three-byte
+block length, and two-byte width/height in the sixteen-byte header. Format
+byte 123 occurs 547 times; byte 251 occurs 6,736 times. Both mask to 123,
+documented as indexed eight-bit imagery. Every byte-251 entry's payload
+starts with the observed RefPack prefix; none of the byte-123 entries does.
+All 547 uncompressed entries have block length exactly `16 + width*height`.
+This supports header/size classification without decoding palette indices.
+
+The next header at the image block-length boundary has palette-type
+candidates: 4,308 entries use type 36, 2,974 type 42, and one type 45.
+The primary implementation describes these as 24-bit, 32-bit, and 16-bit
+palette families respectively. Dimensions/count candidates and block lengths
+are recorded; alignment, trailing attachments, color ordering, transparency,
+and rendered pixel correctness remain unqualified. The unique type-45 example
+is water `snowtrac.wad!stexture/icewall1.fsh`, SHA-256
+`1a3ecb2f79537ad8d23091fa049e64d98c40ea8aff746ef258a48359f02f6dd0`.
+Do not infer a complete FSH decoder from these metadata constraints.
+
+### COS body grouping and original controller boundaries
+
+All eighty coaster files yield sixteen exact body SHA-256 groups after
+excluding offsets 0..131, with five language files per group. The four-byte
+first word is 2; offsets 4..131 form a fixed 128-byte header region, whose
+contents are hashed rather than dumped. Words at offsets 128 and 132 are
+zero in the observed corpus. This establishes a useful metadata comparison
+boundary and language-independent body equality. It does not establish text
+encoding, a serialized track schema, record counts/strides, or thumbnail data.
+
+The rides lane separately proves Mac **memory** contracts: coaster train
+records are 128 bytes and car records 96 bytes; car +68 is rider allowance,
++56/+60 are offset/normalized offset floats, and controller +172 is track
+length. Train spacing floats are selected from +28/+32/+36. Those proofs
+anchor functions `0x3ea74`, `0x3ebe8`, and `0x3ee10`, but no COS load/save
+linkage was recovered. These memory strides are therefore not used as COS
+file-record strides. TPI's parsed SAM corpus also lacks TrackInfo/Direction
+keys that could establish that linkage. The metadata prototype stops at
+magic, size, bounded header hashing, and body grouping.
+
+### Music-bank directory/data conflict
+
+Valid indexed prefixes retain the standard forty-byte header: all 103 Arabian
+and 101 Water prefix records end exactly at the next declared directory
+offset. No alternate prefix record layout is needed to explain those records.
+The tail scanner requires a forty-byte header, bounded positive payload, and
+plausible bounded name; it stores only name/header hashes and boundaries.
+
+Water's tail contains fifteen candidates with fourteen exact end→next-header
+links. The first is at file offset 27,419,825, 7,065 bytes after the first bad
+directory offset; later differences vary. This is coherent off-directory
+record evidence, not a justified automatic offset repair.
+
+Arabian's tail contains 270 candidates and 268 chain links. More decisively,
+247 candidate headers and **246 complete header+audio blocks** are byte-identical
+to indexed entries in the original global `speechHD.SDT`. The metadata pins
+both file identities, each matched speech index/offset, music offset, and
+complete-block SHA-256. This proves directory/payload disagreement inside the
+music bytes and distinguishes the failure from merely a new header layout.
+It does not settle whether the source or extraction caused the disagreement.
+Existing `unshield t` completed 1,566 cabinet-file tests with exit code zero;
+that result is not silently promoted to an independent CRC/source-correctness
+proof. Both production SDT warnings and loader behavior remain unchanged.
+
+### Asset build label and verification
+
+The extracted retail `Data/Ver.txt` is eighteen bytes, SHA-256
+`337d2b461e38d69fa7390397feb325038f80bfa3bcba49e6950e7aeb58dc0897`,
+and carries asset build label `Beta_21`. This is a packaged data label, not a
+numeric product version or proof of the wrapped executable's engine release.
+It supplements the earlier readme/resource-version limits.
+
+Metadata prototype verification adds three Python cases: language-independent
+COS bodies, bounded/hashed SDT headers, and exact whole-block comparison
+without decoding. All fourteen Python tests and thirteen C# cases pass.
+No original arrays, audio/image payloads, names from binary string blobs,
+new dependencies, runtime execution, DRM/fix usage, or gameplay decoder is
+introduced.
+
 ## Sources and identity boundaries
 
 The authorized input was `THEME_PARK_INC_OrigineelCD.zip`, SHA-256

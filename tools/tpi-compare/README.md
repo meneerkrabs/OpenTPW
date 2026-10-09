@@ -77,3 +77,19 @@ hashes, standard-settings key/value-hash differences, and training/direction key
 searches. `--readme` can additionally consume a metadata-only readme report.
 Enum/handler status is a static source declaration audit, not VM execution or a
 claim that Hooked effects are implemented for TPI.
+
+## Remaining-format metadata
+
+After producing an updated full retail report with the current C# tool:
+
+```sh
+python3 tools/tpi-compare/format_questions.py --cos-root /Users/sander/server/game-assets/theme-park-inc/cd/THEME_PARK/CoasterData --sdt /Users/sander/server/game-assets/theme-park-inc/retail/Data/levels/arabian/Music/MusicHD.sdt /Users/sander/server/game-assets/theme-park-inc/retail/Data/levels/water/Music/MusicHD.sdt --shpi-report /tmp/tpi-full-retail.json --speech /Users/sander/server/game-assets/theme-park-inc/retail/Data/global/Speech/speechHD.SDT --output tools/tpi-compare/format-evidence.json
+```
+
+The prototype enforces corpus-checked COS bounds, hashes the observed 128-byte
+header region and body, classifies SHPI entry/attachment header observations,
+and inspects SDT boundary candidates. It compares complete speech blocks by
+SHA-256 without decoding audio. No binary string names or payload arrays are
+stored; candidate semantics and recovery/repair remain outside the prototype.
+Primary format-implementation references and controller memory/file distinctions
+are documented in TPI-COMPARISON.

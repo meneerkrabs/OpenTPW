@@ -483,3 +483,69 @@ The same helper independently checks `0x127d14` as binary64 fused multiply-add
 with delta and scale as multiplicands and the prior double accumulator as the
 addend. The contract's `Math.FusedMultiplyAdd` and cancellation regression match
 this operation. Native nondefault FP state remains unqualified.
+
+## Independent VM source review: `b3d14f9`
+
+Reviewed exact source `b3d14f99480ee3338237b0830ae8987f8aed7e61` against
+`15313d26a892d72a153ad15298ae2a199c7f21fa`, the pinned Mac interpreter, and the
+independent review `d0e5c75` (`PPC-review.md`, rounds 2/3). **Verdict: conditional
+acceptance of the three bounded primitive changes. No blocking objection for
+the supplied baseline/Patch 2 corpus.** This is not full VM/runtime parity.
+
+| Changed path | Native proof and source assessment |
+| --- | --- |
+| Variable-destination COPY updates flags | Case `0xaf5f0`: source is fetched only after variable-kind acceptance; store `0xaf638` copies the written variable into script+72. The source handler reads the source before writing the destination, then derives Sign/Zero from the result. Aliasing source/destination remains correct. Accepted for the validated operand domain. |
+| Literal-destination COPY maps to PC −10000 / Faulted | `0xaf604` returns before fetching the source; the next dispatch at `0xaf5a4–0xaf5b0` rejects its non-opcode tag and stores −10000 at `0xb234c–0xb2350`. Parsed operand tags are 0x00/0x10/0x20/0x40, so the VM can abort directly. Its `Faulted` enum/message and immediate diagnostic timing are explicit host policy, not recovered native states or slice timing. The prior accumulator is preserved. Accepted as that mapping, not a claim about child/lifecycle cleanup. |
+| Zero DIV/MOD results | Zero arms `0xb0ca8` / `0xb0d30` store 0 to the branch accumulator, then optionally the variable destination. Source writes 0 and sets Zero even for a literal destination. Accepted. Native fetches/resolves its operands before the zero check; source resolves divisor first and skips dividend access in the zero arm. Current validated operand getters are pure, so this changes no valid observed result; malformed operands and concurrent host mutation are not qualified by this equivalence. |
+| Signed arithmetic overflow | Ordinary signed division/remainder match truncation toward zero and the dividend's remainder sign. Source's `Int32.MinValue / -1 → Int32.MinValue` and remainder 0 remain named implementation policy. Neither the static native `divw` path nor the new synthetic test establishes that overflow result as original behavior. |
+| RAND raw signed bound | `0xb07f8` sign-extends the raw word; the path never resolves a tagged variable. Source's `(short)maxValue.Raw` matches that fetch rule and sets flags from its result. For nonnegative bounds, inclusive range is accepted; `System.Random`, seed interpretation and per-VM stream ownership remain host policy. |
+
+**Low, nonblocking corpus-bound caveat:** source still faults on negative raw
+RAND bounds. The later independent review refines this domain: for `b <= -2`,
+`0xb0804–0xb0820` gives `abs(x − trunc(x/(b+1))*(b+1))` in 0..−b−2; for b = −1,
+the divisor's zero makes its multiplied quotient contribution zero, so the
+result is x regardless of the undefined quotient. Thus this negative-bound fault
+is a host-domain restriction, not the defined Mac result. The source documentation
+already calls it VM safety policy; retain that boundary or implement a separately
+qualified replacement. No supplied corpus RAND uses this domain.
+
+### Focused before/after validation
+
+The review materialized both exact Git revisions in temporary directories and
+restored only already-cached packages from the local package directory. Neither
+peer nor root source was edited. On macOS, canonical `/private/tmp` paths were
+required so NuGet's restore graph retained project references; the initial
+`/tmp` alias build failure was an artifact-path issue, not a source defect.
+Only `RideVMTests` and `RideVMCorpusTests` ran; no codec suite or original
+executable ran.
+
+| Source revision / inputs | Focused result |
+| --- | --- |
+| Before `15313d2`, baseline | 21 passed, 0 skipped |
+| Target `b3d14f9`, baseline | 34 passed, 0 skipped |
+| Before `15313d2`, verified Patch 2 corpus | 2 passed, 0 skipped |
+| Target `b3d14f9`, verified Patch 2 corpus | 3 passed, 0 skipped |
+
+The new inventory gate confirms **1,243 variable COPY destinations** and **56
+nonnegative literal RAND bounds** in each corpus. The fixed Totem trace passes
+before and after. The full default/chaos VM report is byte-identical between the
+source revisions for each version:
+
+| Asset set | Default / chaos executed instructions | Report SHA-256 before and after |
+| --- | --- | --- |
+| Baseline | 23,776,799 / 17,200,190 | `c9c303d56de1cce967176aa5661c6a9d6e4df080b7fe5ffb42cc11308c82b8ca` |
+| Verified Patch 2 | 23,776,682 / 17,196,764 | `f4916c715e72ce66c3c02039ccee9b60ee9a3f6d3558cabe2c10679381864af8` |
+
+Both reports finish with default Running=216/Waiting=47 and chaos
+Running=199/Waiting=64. They compare executed counts, hook counts, final root
+states and reached/spawned coverage; they are not complete variable-state hashes
+or original-game traces. COPY's accumulator semantics intentionally change, but
+no corpus control/effect-count change was observed under these tested host
+configurations. Malformed COPY, negative/raw-variable RAND and divide overflow
+are covered by synthetic domain checks, not by original corpus reachability.
+
+The corpus runs retain the port's assumed 60 Hz per-VM clocks. This primitive
+commit does not implement the original shared clock, 31 ms scheduler, eight-ID
+phasing, WAIT speed/first-yield rules, CRIT_UNLOCK yield, or native resource/lifecycle
+behavior. Successful runs do not resolve those existing differences, or qualify
+Mac primitive behavior for the Windows baseline or Patch 2 executable.

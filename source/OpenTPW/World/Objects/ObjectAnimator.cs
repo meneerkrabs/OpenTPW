@@ -10,8 +10,9 @@ namespace OpenTPW;
 /// most recently started one wins; a finished clip holds its last pose until its channel is replaced or
 /// flushed. Channel mixing, holding and the tick rate are OpenTPW choices (docs/OBJECTS.md).
 /// Clip time follows the original channel clock (0xa6484/0xa6398/0xa67d8 in the Feral Mac build): a clip
-/// starts at a whole millisecond of this animator's clock, its frame is <c>30 × elapsed ms / 1000</c> in
-/// single precision, and a looping clip replays only once that frame is strictly past the duration,
+/// starts at a whole millisecond of this animator's clock, its frame is <c>rate × elapsed ms / 1000</c> in
+/// single precision (the original's rate is the constant 30, <see cref="DefaultTicksPerSecond"/>; other rates
+/// are an OpenTPW extension), and a looping clip replays only once that frame is strictly past the duration,
 /// restarting from the carry capped at the duration and truncated to whole milliseconds (one replay per
 /// <see cref="Advance"/>). This is the normal object update (0xa7960 with r4 ≠ 0), whose replay rebinds
 /// the clip; the object-list update (0x4d354, r4 = 0) replays without a bind and is not supported.
@@ -20,9 +21,9 @@ namespace OpenTPW;
 /// </summary>
 public sealed class ObjectAnimator
 {
-	/// <summary>Sandbox choice shared with the Totem prototype; the original tick rate is not verified.</summary>
+	/// <summary>Sandbox choice shared with the Totem prototype; the original tick rate is not verified. Default for new animators.</summary>
 	// [APPROX:RIDES-001] Animation clips play at 30 ticks/s — evidence needed: original tick rate (binary or timed capture of a ride cycle)
-	public const float TicksPerSecond = 30f;
+	public const float DefaultTicksPerSecond = 30f;
 
 	private sealed class Channel
 	{
@@ -52,17 +53,24 @@ public sealed class ObjectAnimator
 	private long serial;
 	private double clockMilliseconds;
 
+	/// <summary>Clip ticks per second used by every channel this animator plays.</summary>
+	public float TicksPerSecond { get; }
+
 	/// <param name="model">The object's geometry model, shared and never written.</param>
+	/// <param name="ticksPerSecond">Clip ticks per second of every channel; the original's clock uses 30.</param>
 	/// <param name="keepsPoseOnClipChange">
 	/// True for fixed items (<c>Info.DontApplyOffset</c>): a mesh keeps its last vertex pose when its track
 	/// ends instead of showing its stored positions, unless the model has header flag 0x4.
 	/// </param>
-	public ObjectAnimator( ModelFile model, bool keepsPoseOnClipChange = false )
+	public ObjectAnimator( ModelFile model, float ticksPerSecond = DefaultTicksPerSecond, bool keepsPoseOnClipChange = false )
 	{
 		ArgumentNullException.ThrowIfNull( model );
 		if ( model.Kind != ModelFileKind.Geometry )
 			throw new ArgumentException( "Animations play against a geometry model.", nameof( model ) );
+		if ( !float.IsFinite( ticksPerSecond ) || ticksPerSecond <= 0 )
+			throw new ArgumentOutOfRangeException( nameof( ticksPerSecond ) );
 		this.model = model;
+		TicksPerSecond = ticksPerSecond;
 		this.keepsPoseOnClipChange = keepsPoseOnClipChange && (model.HeaderFlags & ModelFile.RelativeAnimationFlag) == 0;
 		rest = ModelAnimationPlayer.ComputeRestTransforms( model );
 		world = (Matrix4x4[])rest.Clone();
@@ -202,8 +210,11 @@ public sealed class ObjectAnimator
 	/// </summary>
 	private long NowMilliseconds => (long)Math.Floor( clockMilliseconds + 1e-6 );
 
-	/// <summary>0xa6484 at speed 1.0: <c>30 × (now − start) / 1000</c>, each step in single precision.</summary>
-	private static float GetFrame( long milliseconds )
+	/// <summary>
+	/// 0xa6484 at speed 1.0: <c>30 × (now − start) / 1000</c>, each step in single precision, with this
+	/// animator's rate in place of the constant 30.
+	/// </summary>
+	private float GetFrame( long milliseconds )
 	{
 		var elapsed = (float)milliseconds;
 		var ticks = TicksPerSecond * elapsed;
@@ -212,9 +223,10 @@ public sealed class ObjectAnimator
 
 	/// <summary>
 	/// 0xa67d8 → 0xa6398 at speed 1.0: the carry past the end, capped at the duration, becomes
-	/// <c>1000 × carry / 30</c> milliseconds truncated by the unsigned conversion 0x1c3fbc.
+	/// <c>1000 × carry / 30</c> milliseconds truncated by the unsigned conversion 0x1c3fbc, with this
+	/// animator's rate in place of the constant 30.
 	/// </summary>
-	private static long GetCarryMilliseconds( float carry, float duration )
+	private long GetCarryMilliseconds( float carry, float duration )
 	{
 		if ( carry > duration )
 			carry = duration;

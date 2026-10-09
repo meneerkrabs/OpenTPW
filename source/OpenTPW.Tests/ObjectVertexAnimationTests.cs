@@ -99,36 +99,125 @@ public class ObjectVertexAnimationTests
 	}
 
 	/// <summary>
-	/// The bind's copy-back gate (0xa5894): an ordinary object shows its stored mesh once its track ends, a fixed
-	/// item (object flag 0x00100000 without 0x8) keeps the last pose.
+	/// The bind's copy-back gate (0xa5894) after a clip completes naturally: a finished clip holds its last
+	/// pose on every object; replacing it with a clip that has only matrix tracks shows an ordinary object's
+	/// stored mesh, while a fixed item (object flag 0x00100000 without 0x8) keeps the last pose.
 	/// </summary>
 	[TestMethod]
 	public void FixedItemsKeepTheirLastVertexPoseWhenTheClipEnds()
 	{
 		var model = new ModelFile( new MemoryStream( Md2ModelFileTests.CreateGeometry() ) );
 		var clip = new ModelFile( new MemoryStream( Md2VertexAnimationTests.CreateAnimation( 0, 30 ) ) ).Clip!;
-		var expected = new NVector3[model.Meshes[0].Positions.Length];
-		clip.Tracks.Single().VertexAnimation!.ApplyPose( 15, expected );
+		var matrixOnly = new ModelFile( new MemoryStream( Md2AnimationTests.CreateAnimation() ) ).Clip!;
+		Assert.IsTrue( matrixOnly.Tracks.All( track => track.NodeIndex != model.Meshes[0].NodeIndex && track.VertexAnimation == null ) );
+		var last = new NVector3[model.Meshes[0].Positions.Length];
+		clip.Tracks.Single().VertexAnimation!.ApplyPose( 30, last );
 
 		var fixedItem = new ObjectAnimator( model, keepsPoseOnClipChange: true );
 		var ordinary = new ObjectAnimator( model );
-		foreach ( var animator in new[] { fixedItem, ordinary } )
+		var versions = new int[2];
+		var animators = new[] { fixedItem, ordinary };
+		for ( var index = 0; index < animators.Length; index++ )
 		{
-			animator.Play( 0, clip, "synth", loop: true );
-			animator.Advance( 0.5 );
-			CollectionAssert.AreEqual( expected, animator.GetVertexPositions( 0 )!.ToArray() );
+			var animator = animators[index];
+			animator.Play( 0, clip, "synth", loop: false );
+			animator.Advance( 1.0 );
+			Assert.IsTrue( animator.IsChannelPlaying( 0 ) );
+			versions[index] = animator.GetVertexVersion( 0 );
+			animator.Advance( 0.001 );
+			Assert.IsFalse( animator.IsChannelPlaying( 0 ), "completed without Stop" );
+			Assert.AreEqual( 30f, animator.GetTick( 0 ) );
+			CollectionAssert.AreEqual( last, animator.GetVertexPositions( 0 )!.ToArray(), "a finished clip holds its last pose" );
+			Assert.AreEqual( versions[index], animator.GetVertexVersion( 0 ), "no upload while the last key holds" );
 		}
-		var version = fixedItem.GetVertexVersion( 0 );
-		fixedItem.Stop( 0 );
-		ordinary.Stop( 0 );
-		CollectionAssert.AreEqual( expected, fixedItem.GetVertexPositions( 0 )!.ToArray() );
-		Assert.AreEqual( version, fixedItem.GetVertexVersion( 0 ), "no upload for a kept pose" );
-		Assert.IsNull( ordinary.GetVertexPositions( 0 ) );
 
-		// A new clip resamples the kept mesh.
+		// The next clip animates matrices only, so the mesh loses its vertex track.
+		foreach ( var animator in animators )
+		{
+			animator.Play( 0, matrixOnly, "matrices", loop: true );
+			animator.Advance( 0.5 );
+			Assert.AreEqual( 15f, animator.GetTick( 0 ) );
+		}
+		CollectionAssert.AreEqual( last, fixedItem.GetVertexPositions( 0 )!.ToArray() );
+		Assert.AreEqual( versions[0], fixedItem.GetVertexVersion( 0 ), "no upload for a kept pose" );
+		Assert.IsNull( ordinary.GetVertexPositions( 0 ) );
+		Assert.AreNotEqual( versions[1], ordinary.GetVertexVersion( 0 ), "the stored mesh is uploaded again" );
+		fixedItem.StopAll();
+		CollectionAssert.AreEqual( last, fixedItem.GetVertexPositions( 0 )!.ToArray(), "flushing keeps it too" );
+
+		// A new vertex clip resamples the kept mesh.
 		fixedItem.Play( 0, clip, "synth", loop: true );
 		Assert.AreEqual( 0f, fixedItem.GetTick( 0 ) );
-		Assert.AreNotEqual( version, fixedItem.GetVertexVersion( 0 ) );
+		Assert.AreNotEqual( versions[0], fixedItem.GetVertexVersion( 0 ) );
+	}
+
+	/// <summary>
+	/// A 15 ticks/s animator, an OpenTPW extension (the original's channel clock is the constant 30): the
+	/// endpoint, the strict past-the-end test, the capped whole-millisecond carry and the fixed-item pose all
+	/// use the instance rate, so the same milliseconds give half the 30 ticks/s frames.
+	/// </summary>
+	[TestMethod]
+	public void ACustomRateDrivesTheEndpointCarryAndFixedPose()
+	{
+		var model = new ModelFile( new MemoryStream( Md2ModelFileTests.CreateGeometry() ) );
+		var thirty = new ModelFile( new MemoryStream( Md2VertexAnimationTests.CreateAnimation( 0, 30 ) ) ).Clip!;
+		var ten = new ModelFile( new MemoryStream( Md2VertexAnimationTests.CreateAnimation( 0, 10 ) ) ).Clip!;
+		var matrixOnly = new ModelFile( new MemoryStream( Md2AnimationTests.CreateAnimation() ) ).Clip!;
+		NVector3[] PoseAt( ModelAnimation clip, float tick )
+		{
+			var positions = new NVector3[model.Meshes[0].Positions.Length];
+			clip.Tracks.Single().VertexAnimation!.ApplyPose( tick, positions );
+			return positions;
+		}
+
+		Assert.AreEqual( 30f, ObjectAnimator.DefaultTicksPerSecond );
+		var original = new ObjectAnimator( model );
+		var half = new ObjectAnimator( model, 15 );
+		Assert.AreEqual( 15f, half.TicksPerSecond );
+		Assert.AreEqual( 1.0, original.Play( 0, thirty, "synth", loop: true ), 1e-9 );
+		Assert.AreEqual( 2.0, half.Play( 0, thirty, "synth", loop: true ), 1e-9 );
+		original.Advance( 1.0 );
+		half.Advance( 1.0 );
+		Assert.AreEqual( (30f, 15f), (original.GetTick( 0 ), half.GetTick( 0 )) );
+
+		// 2000 ms is the endpoint, not past it; 100 ms more replays from the 1.5-tick carry, which is
+		// 1000 × 1.5 / 15 = 100 ms (the 30 ticks/s formula would give 50 ms).
+		half.Advance( 1.0 );
+		Assert.AreEqual( 30f, half.GetTick( 0 ) );
+		CollectionAssert.AreEqual( PoseAt( thirty, 30 ), half.GetVertexPositions( 0 )!.ToArray() );
+		half.Advance( 0.1 );
+		Assert.AreEqual( 1.5f, half.GetTick( 0 ) );
+		CollectionAssert.AreEqual( PoseAt( thirty, 1.5f ), half.GetVertexPositions( 0 )!.ToArray() );
+
+		// One update far past the end replays once from the carry capped at the duration (2000 ms).
+		half = new ObjectAnimator( model, 15 );
+		half.Play( 0, thirty, "synth", loop: true );
+		half.Advance( 5.0 );
+		Assert.AreEqual( 30f, half.GetTick( 0 ) );
+		half.Advance( 0.1 );
+		Assert.AreEqual( 1.5f, half.GetTick( 0 ) );
+
+		// 10 ticks are 666.7 ms at 15 ticks/s: at 667 ms the 0.005-tick carry truncates to 0 ms.
+		half = new ObjectAnimator( model, 15 );
+		half.Play( 0, ten, "synth", loop: true );
+		half.Advance( 0.667 );
+		Assert.AreEqual( 0f, half.GetTick( 0 ) );
+		half.Advance( 0.666 );
+		Assert.AreEqual( 15f * 666f / 1000f, half.GetTick( 0 ) );
+
+		// A fixed item at 15 ticks/s finishes only past 2000 ms and keeps that pose through a matrix-only clip.
+		var fixedItem = new ObjectAnimator( model, 15, keepsPoseOnClipChange: true );
+		fixedItem.Play( 0, thirty, "synth", loop: false );
+		fixedItem.Advance( 2.0 );
+		Assert.IsTrue( fixedItem.IsChannelPlaying( 0 ) );
+		fixedItem.Advance( 0.001 );
+		Assert.IsFalse( fixedItem.IsChannelPlaying( 0 ) );
+		var version = fixedItem.GetVertexVersion( 0 );
+		fixedItem.Play( 0, matrixOnly, "matrices", loop: false );
+		fixedItem.Advance( 1.0 );
+		Assert.AreEqual( 15f, fixedItem.GetTick( 0 ) );
+		CollectionAssert.AreEqual( PoseAt( thirty, 30 ), fixedItem.GetVertexPositions( 0 )!.ToArray() );
+		Assert.AreEqual( version, fixedItem.GetVertexVersion( 0 ) );
 	}
 
 	/// <summary>A vertex track drives one mesh record, so two meshes on one node are rejected, not half-animated.</summary>
@@ -273,7 +362,7 @@ public class ObjectVertexAnimationCorpusTests
 					if ( tracks.Length == 0 )
 						continue;
 					clips++;
-					var animator = new ObjectAnimator( model, entry.IsFixedItem );
+					var animator = new ObjectAnimator( model, keepsPoseOnClipChange: entry.IsFixedItem );
 					animator.Play( 0, clip, animation.Name, false );
 					limitations += animator.VertexLimitations.Count;
 					limitedClips += animator.VertexLimitations.Count > 0 ? 1 : 0;
@@ -284,7 +373,7 @@ public class ObjectVertexAnimationCorpusTests
 					for ( var step = 0; step <= 3; step++ )
 					{
 						if ( step > 0 )
-							animator.Advance( clip.Duration / 3.0 / ObjectAnimator.TicksPerSecond );
+							animator.Advance( clip.Duration / 3.0 / animator.TicksPerSecond );
 						foreach ( var track in supported )
 						{
 							var mesh = model.Meshes.FindIndex( candidate => candidate.NodeIndex == track.NodeIndex );

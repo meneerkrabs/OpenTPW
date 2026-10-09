@@ -58,6 +58,42 @@ public class SignFileTests
 		return data.ToArray();
 	}
 
+	internal static byte[] CreateNativeMetadataSign( params (int Style, string Face, string File, int Scale, int OffsetY, int Height)[] slots )
+	{
+		var paintBytes = slots.Count( slot => slot.Style != 0 ) * 20;
+		var data = new byte[SignFile.NativeMetadataBytes + paintBytes + 2 * (12 + 16)];
+		BinaryPrimitives.WriteUInt32LittleEndian( data, 101 );
+
+		for ( var i = 0; i < slots.Length; i++ )
+		{
+			var offset = SignFile.HeaderBytes + i * SignFile.SlotBytes;
+			var slot = slots[i];
+			BinaryPrimitives.WriteInt32LittleEndian( data.AsSpan( 9 + i * 4 ), slot.Style );
+			Encoding.Latin1.GetBytes( slot.Face ).CopyTo( data, offset );
+			Encoding.Latin1.GetBytes( slot.File ).CopyTo( data, offset + 64 );
+			BinaryPrimitives.WriteInt32LittleEndian( data.AsSpan( offset + 324 ), slot.Scale );
+			BinaryPrimitives.WriteInt32LittleEndian( data.AsSpan( offset + 328 ), slot.OffsetY );
+			BinaryPrimitives.WriteInt32LittleEndian( data.AsSpan( offset + 332 ), slot.Height );
+			BinaryPrimitives.WriteInt32LittleEndian( data.AsSpan( offset + 348 ), 400 );
+			data[offset + 355] = 1;
+			data[offset + 356] = 4;
+			data[offset + 358] = 4;
+			Encoding.Latin1.GetBytes( slot.Face ).CopyTo( data, offset + 360 );
+			BinaryPrimitives.WriteSingleLittleEndian( data.AsSpan( offset + 404 ), 0.5f );
+			BinaryPrimitives.WriteSingleLittleEndian( data.AsSpan( offset + 408 ), 1.0f );
+			BinaryPrimitives.WriteSingleLittleEndian( data.AsSpan( offset + 412 ), 2.0f );
+		}
+		var bitmapOffset = SignFile.NativeMetadataBytes + paintBytes;
+		for ( var i = 0; i < 2; i++ )
+		{
+			BinaryPrimitives.WriteUInt32LittleEndian( data.AsSpan( bitmapOffset ), 2 );
+			BinaryPrimitives.WriteUInt32LittleEndian( data.AsSpan( bitmapOffset + 4 ), 2 );
+			BinaryPrimitives.WriteUInt32LittleEndian( data.AsSpan( bitmapOffset + 8 ), 4 );
+			bitmapOffset += 28;
+		}
+		return data;
+	}
+
 	[TestMethod]
 	public void ReadsHeaderTextSlotsColourBlocksAndBitmaps()
 	{
@@ -91,10 +127,103 @@ public class SignFileTests
 		var mismatch = CreateSign( (1, "Haunt AOE", "HAUNTAOE.TTF", 100, 0, -100), (2, "Haunt AOE", "HAUNTAOE.TTF", 100, 128, -90) );
 		mismatch[SignFile.HeaderBytes + 360] = (byte)'X';
 		Assert.ThrowsException<InvalidDataException>( () => new SignFile( mismatch ) );
-		Assert.ThrowsException<InvalidDataException>( () => new SignFile( valid.Concat( new byte[] { 0 } ).ToArray() ), "trailing bytes" );
+		CollectionAssert.AreEqual( new byte[] { 0 }, new SignFile( valid.Concat( new byte[] { 0 } ).ToArray() ).UnparsedTail, "unsupported trailing bytes remain explicit" );
 		Assert.ThrowsException<InvalidDataException>( () => new SignFile( valid[..^1] ), "truncated bitmap" );
 		var notTtf = CreateSign( (1, "Haunt AOE", "HAUNTAOE.FON", 100, 0, -100), (2, "Haunt AOE", "HAUNTAOE.TTF", 100, 128, -90) );
 		Assert.ThrowsException<InvalidDataException>( () => new SignFile( notTtf ) );
+	}
+
+	[TestMethod]
+	public void NativeStylesPaintsAndEffectWordsDoNotCrossSlotBoundaries()
+	{
+		var data = CreateNativeMetadataSign( (2, "Test", "TEST____.TTF", 100, 0, -100), (1, "Test", "TEST____.TTF", 100, 128, -90) );
+		BinaryPrimitives.WriteInt32LittleEndian( data.AsSpan( 445 ), 31 );
+		BinaryPrimitives.WriteInt32LittleEndian( data.AsSpan( 449 ), 47 );
+		BinaryPrimitives.WriteInt32LittleEndian( data.AsSpan( 881 ), 59 );
+		BinaryPrimitives.WriteInt32LittleEndian( data.AsSpan( 885 ), 61 );
+		data[889] = 11; data[890] = 22; data[891] = 33; data[892] = 44;
+		BinaryPrimitives.WriteInt32LittleEndian( data.AsSpan( 901 ), -7 );
+		BinaryPrimitives.WriteInt32LittleEndian( data.AsSpan( 905 ), 9 );
+		BinaryPrimitives.WriteSingleLittleEndian( data.AsSpan( 433 ), 3.5f );
+		var sign = new SignFile( data );
+		Assert.AreEqual( (2u, 31, 47), (sign.Effects[0].Style, sign.Effects[0].StoredExtent, sign.Effects[0].StoredOrigin) );
+		Assert.AreEqual( (1u, 59, 61), (sign.Effects[1].Style, sign.Effects[1].StoredExtent, sign.Effects[1].StoredOrigin) );
+		Assert.AreEqual( 47u, sign.Slots[0].Effects[10], "raw effect origin is preserved independently of header style" );
+		Assert.AreEqual( new SignPaint( 11, 22, 33, 44, 0, 0, -7, 9 ), sign.Paints[0] );
+		Assert.AreEqual( new SignMaterialCoefficients( 0.5f, 1, 2, 3.5f ), sign.Effects[0].Material );
+		Assert.AreEqual( ((byte)11, (byte)22, (byte)33), SignCanvas.SlotColor( sign, 0 ), "opaque presentation uses stored paint RGB, never the material coefficients" );
+		Assert.AreEqual( (929, 2, 2, 4, 16), (sign.SourceImages[0].FileOffset, sign.SourceImages[0].Width, sign.SourceImages[0].Height, sign.SourceImages[0].BytesPerPixel, sign.SourceImages[0].Payload.Length) );
+	}
+
+	[TestMethod]
+	public void UnsupportedStylesAndWaveletPayloadRemainExplicitAndOpaque()
+	{
+		var data = CreateNativeMetadataSign( (7, "Test", "TEST____.TTF", 100, 0, -100), (0, "Test", "TEST____.TTF", 100, 128, -90) );
+		var extra = new byte[data.Length + 17];
+		data.CopyTo( extra, 0 );
+		extra[8] = 1;
+		BinaryPrimitives.WriteUInt32LittleEndian( extra.AsSpan( data.Length ), 3 );
+		BinaryPrimitives.WriteUInt32LittleEndian( extra.AsSpan( data.Length + 4 ), 2 );
+		BinaryPrimitives.WriteUInt32LittleEndian( extra.AsSpan( data.Length + 8 ), 4 );
+		new byte[] { 1, 3, 5, 7, 9 }.CopyTo( extra, data.Length + 12 );
+		var sign = new SignFile( extra );
+		Assert.AreEqual( 7u, sign.Effects[0].Style );
+		Assert.IsNull( sign.Paints[1] );
+		Assert.IsTrue( sign.ExtraImage!.IsWavelet );
+		CollectionAssert.AreEqual( new byte[] { 1, 3, 5, 7, 9 }, sign.ExtraImage.Payload );
+		CollectionAssert.AreEqual( extra.AsSpan( data.Length ).ToArray(), sign.BoardWavelet, "the compatible wavelet view retains descriptor and payload" );
+		Assert.IsNull( SignCanvas.SlotColor( sign, 0 ), "unknown style metadata must not become a supported tint" );
+		Assert.IsTrue( sign.Diagnostics.Any( message => message.Contains( "style 7" ) ) );
+		Assert.IsTrue( sign.Diagnostics.Any( message => message.Contains( "wavelet" ) ) );
+	}
+
+	[TestMethod]
+	public void RejectsMissingOrExcessiveBitmapPayloadsAndPreservesTrailingData()
+	{
+		var data = CreateNativeMetadataSign( (0, "Test", "TEST____.TTF", 100, 0, -100), (0, "Test", "TEST____.TTF", 100, 128, -90) );
+		Assert.ThrowsException<InvalidDataException>( () => new SignFile( data[..^1] ) );
+		foreach ( var dimension in new uint[] { 0, uint.MaxValue, SignFile.MaximumFileBytes } )
+		{
+			var oversized = (byte[])data.Clone();
+			BinaryPrimitives.WriteUInt32LittleEndian( oversized.AsSpan( 889 ), dimension );
+			Assert.ThrowsException<InvalidDataException>( () => new SignFile( oversized ) );
+		}
+		var sign = new SignFile( data.Concat( new byte[] { 17, 19 } ).ToArray() );
+		CollectionAssert.AreEqual( new byte[] { 17, 19 }, sign.UnparsedTail );
+		Assert.IsTrue( sign.Diagnostics.Single().Contains( "trailing" ) );
+	}
+
+	[TestMethod]
+	public void Version100ExtraImageUsesRawProductSizeAndStreamRemainsOpen()
+	{
+		var data = CreateNativeMetadataSign( (0, "Test", "TEST____.TTF", 100, 0, -100), (0, "Test", "TEST____.TTF", 100, 128, -90) );
+		var extra = new byte[data.Length + 12 + 8];
+		data.CopyTo( extra, 0 );
+		BinaryPrimitives.WriteUInt32LittleEndian( extra, 100 );
+		extra[8] = 1;
+		BinaryPrimitives.WriteUInt32LittleEndian( extra.AsSpan( data.Length ), 2 );
+		BinaryPrimitives.WriteUInt32LittleEndian( extra.AsSpan( data.Length + 4 ), 1 );
+		BinaryPrimitives.WriteUInt32LittleEndian( extra.AsSpan( data.Length + 8 ), 4 );
+		using var stream = new MemoryStream( extra );
+		var sign = new SignFile( stream );
+		Assert.IsFalse( sign.ExtraImage!.IsWavelet );
+		Assert.AreEqual( 8, sign.ExtraImage.Payload.Length );
+		Assert.AreEqual( 0, sign.Diagnostics.Count );
+		Assert.IsTrue( stream.CanRead );
+	}
+
+	[TestMethod]
+	public void NonfiniteMaterialsAndUnsupportedPixelSizesArePreservedWithDiagnostics()
+	{
+		var data = CreateNativeMetadataSign( (0, "Test", "TEST____.TTF", 100, 0, -100), (0, "Test", "TEST____.TTF", 100, 128, -90) );
+		BinaryPrimitives.WriteSingleLittleEndian( data.AsSpan( 421 ), float.NaN );
+		BinaryPrimitives.WriteUInt32LittleEndian( data.AsSpan( data.Length - 20 ), 1 );
+		var sign = new SignFile( data[..^12] );
+		Assert.IsTrue( float.IsNaN( sign.Effects[0].Material.Base ) );
+		Assert.AreEqual( (1, 4), (sign.SourceImages[1].BytesPerPixel, sign.SourceImages[1].Payload.Length) );
+		Assert.IsTrue( sign.Diagnostics.Any( message => message.Contains( "non-finite" ) ) );
+		Assert.IsTrue( sign.Diagnostics.Any( message => message.Contains( "1-byte pixels" ) ) );
+		Assert.ThrowsException<InvalidDataException>( () => new SignFile( new byte[SignFile.MaximumFileBytes + 1] ) );
 	}
 
 	[TestMethod]
@@ -116,8 +245,9 @@ public class SignFileTests
 		var diagnostics = new List<string>();
 		var canvas = SignCanvas.Compose( sign, library, new[] { "AA", "A" }, (0, 0, 0, 255), diagnostics );
 		Assert.AreEqual( SignCanvas.Width * SignCanvas.Height * 4, canvas.Length );
-		Assert.AreEqual( 1, diagnostics.Count );
-		StringAssert.Contains( diagnostics[0], "GONE____.TTF" );
+		Assert.AreEqual( 2, diagnostics.Count );
+		StringAssert.Contains( diagnostics[0], "COMPAT-003" );
+		StringAssert.Contains( diagnostics[1], "GONE____.TTF" );
 		var (left, right) = SignCanvas.SplitHalves( canvas );
 		Assert.AreEqual( SignCanvas.HalfWidth * SignCanvas.Height * 4, left.Length );
 		// "AA" (2 x 100 px) is centred: it spans both halves, and the second slot's line is absent.

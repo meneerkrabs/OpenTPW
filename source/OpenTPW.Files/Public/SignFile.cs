@@ -27,86 +27,173 @@ public sealed record SignTextSlot( string FaceName, string FontFileName, int Hor
 	public int EmHeightPixels => LogFont.Height < 0 ? -LogFont.Height : LogFont.Height;
 }
 
+/// <summary>Shared channel coefficients consumed by the native relief effect; names describe its arithmetic.</summary>
+public readonly record struct SignMaterialCoefficients( float Base, float Diffuse, float WhiteSpecular, float SpecularExponent );
+
+/// <summary>Native 44-byte effect record. Stored extent/origin are overwritten from measured text bounds at runtime.</summary>
+public sealed record SignEffect( uint Style, uint MaskWord, IReadOnlyList<float> Parameters, int StoredExtent, int StoredOrigin )
+{
+	public SignMaterialCoefficients Material => new( Parameters[2], Parameters[3], Parameters[4], Parameters[5] );
+}
+
+/// <summary>Optional native 20-byte paint record. Four color bytes precede mask-shaping values; no renderer is implied.</summary>
+public sealed record SignPaint( byte R, byte G, byte B, byte A, int MaskWord, float MaskParameter, int OffsetX, int OffsetY );
+
 /// <summary>A text line's colour block: four bytes (red, green, blue, and a fourth value the compositor passes first to its colour blit) and four raw words.</summary>
 public sealed record SignColourBlock( byte R, byte G, byte B, byte Fourth, IReadOnlyList<uint> Words );
 
-/// <summary>An uncompressed bitmap as <c>Bitmap::load</c> reads it: u32 width, u32 height, u32 bytes per pixel, then the pixels.</summary>
-public sealed record SignBitmap( int Width, int Height, int BytesPerPixel, byte[] Pixels );
+/// <summary>Native bitmap descriptor and untouched payload. Wavelet payloads remain opaque and are never decompressed here.</summary>
+public sealed record SignBitmap( int Width, int Height, int BytesPerPixel, byte[] Pixels )
+{
+	public int FileOffset { get; init; }
+	public bool IsWavelet { get; init; }
+	public byte[] Payload => Pixels;
+}
 
 /// <summary>
-/// Read-only reader for the original sign description files (<c>*.sgn</c>, 84 members in the
-/// gates/sign1 feature WADs, ride WADs and <c>lobby.wad</c>; see docs/COMPATIBILITY.md). The layout
-/// follows the Mac loader 0x100ABA40 (little-endian; the Mac swaps every word): u32 version (100 or
-/// 101), u32 flag, u8 board flag, u32 colour mode of each line (0, 1 or 2), the two
-/// <see cref="SignTextSlot"/> records, for each line with a non-zero colour mode a 20-byte
-/// <see cref="SignColourBlock"/>, two <see cref="SignBitmap"/>s, and when the board flag is set a board
-/// image (a plain bitmap in version 100, a wavelet stream otherwise, kept raw in <see cref="BoardWavelet"/>).
-/// All 88 signs of the Mac data parse to their exact length.
+/// Bounded metadata reader for original signs. The native layout is a 17-byte header, two
+/// 392-byte font / 44-byte effect pairs, optional 20-byte paint records for nonzero styles,
+/// two source bitmaps, and an optional raw (version 100) or wavelet (101) image.
+/// See docs/reverse/PPC-ui.md for identified native consumers. Font and paint APIs keep the corrected 17-byte layout.
 /// </summary>
 public sealed class SignFile
 {
+	// Corrected font-correction offsets; font fields do not include a preceding style word.
 	public const int HeaderBytes = 17;
 	public const int SlotBytes = 436;
 	public const int SlotCount = 2;
-	public const int ColourBlockBytes = 20;
+	public const int NativeHeaderBytes = HeaderBytes;
+	public const int FontRecordBytes = 392;
+	public const int EffectRecordBytes = 44;
+	public const int NativeMetadataBytes = NativeHeaderBytes + SlotCount * (FontRecordBytes + EffectRecordBytes);
 	public const int MaximumFileBytes = 4 * 1024 * 1024;
 	public const int MaximumBitmapSide = 4096;
+	public const int ColourBlockBytes = 20;
 
 	public uint Version { get; }
 	public uint HeaderFlag { get; }
-	public byte BoardFlag { get; }
+	public byte ExtraImageFlag { get; }
+	public byte BoardFlag => ExtraImageFlag;
 	public IReadOnlyList<uint> ColourModes { get; }
-	public IReadOnlyList<SignTextSlot> Slots { get; }
 	public IReadOnlyList<SignColourBlock?> ColourBlocks { get; }
-	public IReadOnlyList<SignBitmap> Fills { get; }
-	public SignBitmap? Board { get; }
+	public IReadOnlyList<SignBitmap> Fills => SourceImages;
+	public SignBitmap? Board => ExtraImage is { IsWavelet: false } ? ExtraImage : null;
 	public byte[]? BoardWavelet { get; }
+	/// <summary>Legacy name for the first native effect style; this is not a record count.</summary>
+	public uint HeaderCount { get; }
+	public IReadOnlyList<SignTextSlot> Slots { get; }
+	public byte[] Remainder { get; }
+	public IReadOnlyList<SignEffect> Effects { get; }
+	public IReadOnlyList<SignPaint?> Paints { get; }
+	public IReadOnlyList<SignBitmap> SourceImages { get; }
+	public SignBitmap? ExtraImage { get; }
+	public byte[] UnparsedTail { get; }
+	public IReadOnlyList<string> Diagnostics { get; }
 
 	public SignFile( byte[] data )
 	{
 		ArgumentNullException.ThrowIfNull( data );
 		if ( data.Length > MaximumFileBytes )
 			throw new InvalidDataException( "Sign file exceeds the size limit." );
-		if ( data.Length < HeaderBytes + SlotCount * SlotBytes )
-			throw new InvalidDataException( $"Sign file is {data.Length} bytes; the header and two text slots need {HeaderBytes + SlotCount * SlotBytes}." );
+		RequireSpan( data, 0, NativeMetadataBytes );
 		Version = U32( data, 0 );
 		if ( Version is not (100 or 101) )
 			throw new InvalidDataException( $"Unknown sign file version {Version} (100 and 101 are known)." );
 		HeaderFlag = U32( data, 4 );
-		BoardFlag = data[8];
-		ColourModes = new[] { U32( data, 9 ), U32( data, 13 ) };
+		ExtraImageFlag = data[8];
+		HeaderCount = U32( data, 9 );
+		ColourModes = Array.AsReadOnly( new[] { U32( data, 9 ), U32( data, 13 ) } );
 		var slots = new List<SignTextSlot>();
 		for ( var i = 0; i < SlotCount; i++ )
 			slots.Add( ReadSlot( data, HeaderBytes + i * SlotBytes, i ) );
 		Slots = slots;
-		var position = HeaderBytes + SlotCount * SlotBytes;
-		var blocks = new SignColourBlock?[SlotCount];
+		Remainder = data.AsSpan( NativeMetadataBytes ).ToArray();
+		var effects = new List<SignEffect>();
+		var paints = new List<SignPaint?>();
+		var blocks = new List<SignColourBlock?>();
+		var diagnostics = new List<string>();
 		for ( var i = 0; i < SlotCount; i++ )
 		{
-			if ( ColourModes[i] == 0 )
-				continue;
-			Require( data, position, ColourBlockBytes, $"colour block {i}" );
-			blocks[i] = new SignColourBlock( data[position], data[position + 1], data[position + 2], data[position + 3],
-				new[] { U32( data, position + 4 ), U32( data, position + 8 ), U32( data, position + 12 ), U32( data, position + 16 ) } );
-			position += ColourBlockBytes;
+			var offset = NativeHeaderBytes + i * (FontRecordBytes + EffectRecordBytes) + FontRecordBytes;
+			var style = U32( data, 9 + i * 4 );
+			var parameters = new float[8];
+			for ( var j = 0; j < parameters.Length; j++ )
+				parameters[j] = BinaryPrimitives.ReadSingleLittleEndian( data.AsSpan( offset + 4 + j * 4, 4 ) );
+			effects.Add( new SignEffect( style, U32( data, offset ), Array.AsReadOnly( parameters ), I32( data, offset + 36 ), I32( data, offset + 40 ) ) );
+			if ( style > 2 )
+				diagnostics.Add( $"Sign effect {i}: style {style} is unsupported; metadata and payload are preserved." );
+			if ( parameters.Any( value => !float.IsFinite( value ) ) )
+				diagnostics.Add( $"Sign effect {i}: non-finite parameters are preserved and cannot be rendered." );
 		}
-		ColourBlocks = blocks;
-		Fills = new[] { ReadBitmap( data, ref position, "first fill bitmap" ), ReadBitmap( data, ref position, "second fill bitmap" ) };
-		if ( BoardFlag != 0 )
+		Effects = effects.AsReadOnly();
+		var position = NativeMetadataBytes;
+		foreach ( var effect in effects )
 		{
-			if ( Version == 100 )
-				Board = ReadBitmap( data, ref position, "board bitmap" );
-			else
+			if ( effect.Style == 0 )
 			{
-				BoardWavelet = data.AsSpan( position ).ToArray();
-				position = data.Length;
+				paints.Add( null );
+				blocks.Add( null );
+				continue;
 			}
+			RequireSpan( data, position, 20 );
+			paints.Add( new SignPaint( data[position], data[position + 1], data[position + 2], data[position + 3],
+				I32( data, position + 4 ), BinaryPrimitives.ReadSingleLittleEndian( data.AsSpan( position + 8, 4 ) ), I32( data, position + 12 ), I32( data, position + 16 ) ) );
+			blocks.Add( new SignColourBlock( data[position], data[position + 1], data[position + 2], data[position + 3],
+				Array.AsReadOnly( new[] { U32( data, position + 4 ), U32( data, position + 8 ), U32( data, position + 12 ), U32( data, position + 16 ) } ) ) );
+			if ( !float.IsFinite( paints[^1]!.MaskParameter ) )
+				diagnostics.Add( $"Sign paint at {position}: non-finite mask parameter is preserved and cannot be rendered." );
+			position += 20;
 		}
-		if ( position != data.Length )
-			throw new InvalidDataException( $"Sign file has {data.Length - position} bytes after its last block." );
+		Paints = paints.AsReadOnly();
+		ColourBlocks = blocks.AsReadOnly();
+		var images = new List<SignBitmap>();
+		for ( var i = 0; i < SlotCount; i++ )
+			images.Add( ReadBitmap( data, ref position, false, diagnostics ) );
+		SourceImages = images.AsReadOnly();
+		if ( ExtraImageFlag != 0 )
+		{
+			var boardOffset = position;
+			ExtraImage = ReadBitmap( data, ref position, Version == 101, diagnostics );
+			if ( ExtraImage.IsWavelet ) BoardWavelet = data.AsSpan( boardOffset, position - boardOffset ).ToArray();
+		}
+		UnparsedTail = data.AsSpan( position ).ToArray();
+		if ( UnparsedTail.Length != 0 )
+			diagnostics.Add( $"Sign has {UnparsedTail.Length} unparsed trailing bytes; preserved without interpretation." );
+		Diagnostics = diagnostics.AsReadOnly();
 	}
 
 	public SignFile( Stream stream ) : this( ReadAll( stream ) ) { }
+
+	private static SignBitmap ReadBitmap( byte[] data, ref int position, bool wavelet, List<string> diagnostics )
+	{
+		RequireSpan( data, position, 12 );
+		var offset = position;
+		var width = U32( data, position );
+		var height = U32( data, position + 4 );
+		var bytesPerPixel = U32( data, position + 8 );
+		// Bound all factors before multiplication, including unsupported formats.
+		if ( width == 0 || height == 0 || bytesPerPixel == 0 || width > MaximumBitmapSide || height > MaximumBitmapSide || bytesPerPixel > MaximumFileBytes
+			|| (ulong)width * height > (ulong)MaximumFileBytes / bytesPerPixel )
+			throw new InvalidDataException( $"Sign bitmap at {position} has invalid or excessive dimensions." );
+		position += 12;
+		var length = wavelet ? data.Length - position : (int)((ulong)width * height * bytesPerPixel);
+		if ( length == 0 )
+			throw new InvalidDataException( "Sign bitmap payload is missing." );
+		RequireSpan( data, position, length );
+		var payload = data.AsSpan( position, length ).ToArray();
+		position += length;
+		if ( wavelet )
+			diagnostics.Add( $"Sign bitmap at {offset}: wavelet payload is preserved; decoding is unsupported." );
+		else if ( bytesPerPixel != 4 )
+			diagnostics.Add( $"Sign bitmap at {offset}: {bytesPerPixel}-byte pixels are preserved; color interpretation is unsupported." );
+		return new SignBitmap( (int)width, (int)height, (int)bytesPerPixel, payload ) { FileOffset = offset, IsWavelet = wavelet };
+	}
+
+	private static void RequireSpan( byte[] data, int offset, int length )
+	{
+		if ( offset < 0 || length < 0 || offset > data.Length - length )
+			throw new InvalidDataException( $"Sign record at {offset} requires {length} bytes; file has {data.Length}." );
+	}
 
 	private static SignTextSlot ReadSlot( byte[] data, int offset, int index )
 	{
@@ -125,27 +212,6 @@ public sealed class SignFile
 		for ( var i = 0; i < effects.Length; i++ )
 			effects[i] = U32( data, offset + 392 + i * 4 );
 		return new SignTextSlot( faceName, fileName, I32( data, offset + 324 ), I32( data, offset + 328 ), logFont, effects );
-	}
-
-	private static SignBitmap ReadBitmap( byte[] data, ref int position, string what )
-	{
-		Require( data, position, 12, what );
-		var width = U32( data, position );
-		var height = U32( data, position + 4 );
-		var bytes = U32( data, position + 8 );
-		if ( width > MaximumBitmapSide || height > MaximumBitmapSide || bytes > 4 )
-			throw new InvalidDataException( $"Sign {what} is {width}x{height} with {bytes} bytes per pixel." );
-		var length = (int)(width * height * bytes);
-		Require( data, position + 12, length, what );
-		var bitmap = new SignBitmap( (int)width, (int)height, (int)bytes, data.AsSpan( position + 12, length ).ToArray() );
-		position += 12 + length;
-		return bitmap;
-	}
-
-	private static void Require( byte[] data, int position, int length, string what )
-	{
-		if ( position < 0 || length < 0 || position > data.Length - length )
-			throw new InvalidDataException( $"Sign file ends inside its {what}." );
 	}
 
 	private static byte[] ReadAll( Stream stream )

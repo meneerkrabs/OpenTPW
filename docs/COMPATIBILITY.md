@@ -48,19 +48,20 @@ Formats and evidence:
   kern); `TrueTypeRasterizer` flattens quadratic contours (implied on-curve points,
   composite glyphs) and fills with non-zero winding and coverage anti-aliasing.
 - `*.sgn` (84 members: gates and sign1 features, ride WADs, `lobby.wad`), read by
-  `SignFile` in the order of the Mac loader `0x100ABA40` (little-endian): u32 version
-  (100/101), u32, u8 board flag, u32 colour mode of line 1 and of line 2 (0, 1 or 2), then
-  two 436-byte text slots: 64-byte face name, 260-byte TTF file name, two i32 (85..141, and a
-  vertical offset), a Win32 `LOGFONTA` (height, width, weight, charset 1, OUT_TT_PRECIS,
-  ANTIALIASED_QUALITY, face name equal to the slot's), then 11 words of effect parameters.
-  For each line with a non-zero colour mode a 20-byte colour block follows (red, green,
-  blue, a fourth byte, four words), then two bitmaps in `Bitmap::load` form (u32 width,
-  height, bytes per pixel, pixels; `16, 128, 4` in every shipped sign) and, when the board
-  flag is set, the board image (a plain bitmap in version 100, a wavelet stream otherwise;
-  every shipped sign with a board is version 101). All 88 signs of the Mac data parse to
-  their exact length. The compositor `0x100ABF14` colours a line only when its mode is 1
-  or 2. An earlier reading put a 13-byte header before 436-byte slots, which shifted every
-  slot by one word and took the floats in the effect block for a colour.
+  `SignFile`: the identified Mac reader proves a 17-byte packed header (version,
+  flag, extra-image byte, two style selectors), then two 392-byte font / 44-byte
+  effect pairs. Fonts store a 64-byte face, 260-byte TTF name, two i32 fields and
+  60-byte `LOGFONTA`. Effects store a mask word, eight floats and two stored bounds
+  words; the native compositor overwrites those bounds from measured text. Float
+  parameters 2..4 are shared base, diffuse and white-specular coefficients, not RGB.
+  Nonzero selectors add 20-byte paint records. Two native bitmap headers store
+  width, height and bytes per pixel; all 84 files have two 16x128x4 source images
+  (8,192 bytes each). The 23 extra images are version-101 wavelet payloads, kept
+  opaque. Unknown styles and image formats are preserved with diagnostics; invalid
+  spans and excessive allocation products are rejected. Corrected 17-byte font offsets and the existing paint API remain compatible
+  with hash-keyed corrections; raw effect words remain available. Use
+  `Effects`, `Paints` and `SourceImages` for native metadata. See
+  [the native sign evidence](reverse/PPC-ui.md#native-sign-records-and-surface-inputs).
 - Sign models have texture slots `sign1` (left half) and `sign2` (right half); the shared
   `sign1.wct`/`sign2.wct` are 128x128 placeholders reading "SIGN1"/"SIGN2", i.e. the game
   renders these textures at runtime. The binary imports `CreateFontIndirectA`,
@@ -190,9 +191,9 @@ against loose files: `OPENTPW_TPWFNT_PATH=<tpwfnt folder>`.
 
 | Id | Area | Assumption | Evidence needed |
 | --- | --- | --- | --- |
-| COMPAT-001 | Sign text | Canvas 512x256 texels (two 256x256 halves for sign1/sign2); original texture size unknown | binary DIB size or a sign texture capture |
+| COMPAT-001 | Sign text | Legacy 512x256 canvas (two 256x256 halves); native path has a 512x512 text DIB, 256x256 masks and two 128x128 destinations | integrate native surface composition and final split/pack with proven UV orientation |
 | COMPAT-002 | Sign text | Lines centred horizontally and shrunk to fit the width minus 8 texels | original placement / captures of long names |
-| COMPAT-003 | Sign text | Lines drawn opaque in their colour block's RGB (traced); fourth colour byte, modes 1/2, fill bitmaps and effect words not applied | `Bitmap::colourblt` body and the effect routines |
+| COMPAT-003 | Sign text | Stored paint RGB drawn opaque as presentation; fourth colour byte, modes 1/2, fill bitmaps and material/mask effects not applied | integrate the proved native surface/compositing path and verify original-platform pixels |
 | COMPAT-004 | Sign text | Flat dark board behind gate text; the board image (wavelet) is read but not decoded or composed | `Bitmap::load_wavelet` and the board blit |
 | COMPAT-005 | Sign text | The 85..141 slot field (read as horizontal scale) is not applied | binary use of the field |
 | COMPAT-006 | Sign text | No pair kerning (GDI TextOut default) | binary text-output call site |
@@ -211,8 +212,8 @@ this slice (e.g. the fog formula in `test.shader`) are not listed here.
 
 ## Not done
 
-- Sign texture size, text placement, colour and the `.sgn` pixel/image blocks are not
-  decoded; which `OBJECT_NAMES` pair belongs to which ride is unknown, so ride signs are
+- Native sign destination dimensions and source-image metadata are established,
+  but original text coverage, final color and image/layer compositing are not implemented; which `OBJECT_NAMES` pair belongs to which ride is unknown, so ride signs are
   not drawn yet (API ready for the rides slice).
 - Most detail options have no renderer feature to drive (table above).
 - The overlay does not merge directory listings; `GameLanguage` keeps its own language overlay.

@@ -329,9 +329,41 @@ public class GuestTests
 		simulation.MoneySpent += ( _, amount, attraction ) => spent += attraction == 0 ? amount : 0;
 		Run( simulation, Array.Empty<ScriptedAttraction>(), 20 * 60 );
 		Assert.IsTrue( simulation.Admissions > 0 );
-		Assert.AreEqual( simulation.Admissions * 20, simulation.Revenue );
-		Assert.AreEqual( simulation.Revenue, spent );
+		Assert.AreEqual( simulation.Admissions * 20, spent );
 		Assert.IsTrue( simulation.Guests.Any( guest => guest.State == GuestState.WalkingAround && simulation.Grid.IsWalkable( guest.Cell.X, guest.Cell.Y ) ) );
+	}
+
+	[TestMethod]
+	public void GuestsPayThroughTheParkEconomy()
+	{
+		var economy = EconomyTestData.Park();
+		var simulation = new GuestSimulation( CreateCross(), CreateSettings(), 11 );
+		var bridge = new GuestEconomyBridge( () => economy, simulation );
+		simulation.Payments = bridge;
+		var spent = 0L;
+		simulation.MoneySpent += ( _, amount, _ ) => spent += amount;
+		Run( simulation, Array.Empty<ScriptedAttraction>(), 20 * 60 );
+		Assert.AreEqual( 0, simulation.Admissions, "the economy's park is closed" );
+		Assert.IsTrue( simulation.Departed > 0 || simulation.Guests.All( guest => !simulation.IsInPark( guest ) ) );
+
+		economy.OpenPark();
+		economy.SetEntranceFee( 35 );
+		Assert.AreEqual( 35, simulation.AdmissionFee, "single source: the economy's entrance fee" );
+		var drinks = CreateShop( 2, (0, 5), satisfies: GuestNeeds.Thirst );
+		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, economy.TryBuild( 1203, out var shop ) );
+		bridge.Link( drinks.Bridge.AttractionId, shop!.Id );
+		simulation.Register( drinks.Bridge );
+		var thirsty = simulation.SpawnInPark( 19, 5 );
+		thirsty.Thirst = 120;
+		Run( simulation, new[] { drinks }, 60 * 60 );
+		Assert.IsTrue( simulation.Admissions > 0 );
+		Assert.AreEqual( simulation.Admissions * 35, economy.Ledger.CurrentTotals[LedgerCategory.GateTakings] );
+		Assert.AreEqual( simulation.Admissions, economy.Counters[ParkCounters.Admissions] );
+		Assert.IsTrue( shop.CustomersThisMonth > 0 );
+		Assert.AreEqual( shop.CustomersThisMonth * 30, economy.Ledger.CurrentTotals[LedgerCategory.ShopTakings] );
+		Assert.AreEqual( economy.Ledger.CurrentTotals[LedgerCategory.GateTakings] + economy.Ledger.CurrentTotals[LedgerCategory.ShopTakings], spent );
+		Assert.AreEqual( simulation.GetStatistics().InPark, bridge.PeopleInPark );
+		Assert.IsTrue( bridge.CountHappierThan( 0 ) == bridge.PeopleInPark );
 	}
 
 	[TestMethod]

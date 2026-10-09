@@ -7,6 +7,8 @@ public sealed class PrototypeRide : Entity
 	public const float FootprintRadius = 5f;
 	public const float ModelScale = 0.2f;
 	public const string DisplayName = "Inca Totem (prototype)";
+	/// <summary>Info.Id of the original Inca Totem (checked against Totem.sam on load).</summary>
+	public const int InfoId = 1110;
 	internal const string ArchivePath = "/levels/jungle/rides/totem";
 	internal const string CarriageMeshName = "tp_cart";
 	internal const string ScriptPath = ArchivePath + "/Totem.RSE";

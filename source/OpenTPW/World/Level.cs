@@ -18,6 +18,8 @@ public class Level
 	/// <summary>Imported original level data; null for the generic sandbox.</summary>
 	public OriginalPark? OriginalPark { get; private set; }
 	public OriginalTerrain? OriginalTerrain { get; private set; }
+	/// <summary>Park management simulation (money, clock, staff, research); original levels only for now.</summary>
+	public ParkEconomyRuntime? Park { get; private set; }
 	private bool wasMouseDown;
 	private readonly FixedStepClock simulationClock = new();
 	/// <summary>Park visitors (imported original levels only; docs/GUESTS.md).</summary>
@@ -31,7 +33,10 @@ public class Level
 		Global = new SettingsFile( $"/levels/{levelName}/global.sam" );
 		Current = this;
 		if ( loadOriginalLevel )
+		{
 			OriginalPark = OriginalPark.Load( levelName );
+			Park = ParkEconomyRuntime.ForOriginalLevel( OriginalPark );
+		}
 
 		SetupEntities();
 		SetupHud();
@@ -68,7 +73,11 @@ public class Level
 		}
 		Camera.SetCameraMode<ParkCameraMode>();
 		if ( OriginalPark != null )
+		{
 			SetupGuests( OriginalPark );
+			if ( Park != null && Guests != null )
+				Park.AttachGuests( Guests );
+		}
 	}
 
 	private void SetupGuests( OriginalPark park )
@@ -114,6 +123,7 @@ public class Level
 		ride.Visitors.ExitCell = entrance.Value;
 		ride.Visitors.HasCells = true;
 		Guests.Register( ride.Visitors );
+		Park?.LinkAttraction( ride.Visitors, PrototypeRide.InfoId );
 		Log.Trace( $"{ride.Name}: guests queue and exit at path cell {entrance.Value} (nearest path cell; the prototype has no catalog entrance)." );
 	}
 
@@ -169,6 +179,7 @@ public class Level
 		{
 			Guests?.Tick( deltaTime );
 			PlacedRide?.Simulate( deltaTime );
+			Park?.FixedTick();
 		} );
 		foreach ( var entity in Entity.All.ToArray() )
 			entity.Update();
@@ -200,7 +211,10 @@ public class Level
 	{
 		PlacedRide?.Delete();
 		if ( PlacedRide != null )
+		{
 			Guests?.Unregister( PlacedRide.Visitors );
+			Park?.UnlinkAttraction( PlacedRide.Visitors );
+		}
 		PlacedRide = null;
 		IsPlacing = false;
 	}

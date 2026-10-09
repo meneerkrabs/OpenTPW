@@ -168,13 +168,46 @@ internal sealed class SandboxSmokeTest : IDisposable
 			displayChangesDone = StepDisplayChanges();
 		if ( step >= 90 && displayChangesDone && !completed )
 		{
+			if ( level.Park != null )
+				VerifyParkEconomy( level.Park, level.Guests );
 			Device.WaitForIdle();
 			completed = true;
 			Log.Trace( level.OriginalPark == null
 				? $"Native sandbox smoke test passed: {frame} frames, original ride and RSE script, script-triggered motion, original animation readback, close, remove, isolated save/load, BF4 text and GPU readback; {displaySummary}."
-				: $"Native original-level smoke test passed: {frame} frames, {level.OriginalPark.LevelName} terrain/import, MAP/save build rules, original ride and RSE script, guests boarding/riding/released by Totem.RSE, guest sprite readback, animation readback, close, remove, BF4 text and GPU readback; {displaySummary}." );
+				: $"Native original-level smoke test passed: {frame} frames, {level.OriginalPark.LevelName} terrain/import, MAP/save build rules, original ride and RSE script, guests boarding/riding/released by Totem.RSE, guest sprite readback, animation readback, close, remove, BF4 text, park economy and GPU readback; {displaySummary}." );
 			Render.Window.SdlWindow.Close();
 		}
+	}
+
+	/// <summary>Checks the park clock/money on the fixed clock, a month-end wage payment and a park save round trip.</summary>
+	private static void VerifyParkEconomy( ParkEconomyRuntime park, GuestSimulation? guests )
+	{
+		var economy = park.Economy;
+		Require( economy.Tick > 0, "park clock advances on the fixed simulation clock" );
+		if ( guests != null )
+		{
+			long Booked( LedgerCategory category ) => economy.Ledger.CurrentTotals.GetValueOrDefault( category ) + economy.Ledger.History.Sum( month => month[category] );
+			var gate = Booked( LedgerCategory.GateTakings );
+			Require( guests.Payments == park.Guests && economy.Counters[ParkCounters.Admissions] == guests.Admissions, "every guest admission goes through the park economy" );
+			Require( guests.Admissions == 0 || gate > 0, "admission revenue enters the ledger" );
+			Log.Trace( $"Park economy guests: {guests.Admissions} admissions at ${economy.EntranceFee}: gate takings ${gate}, shop ${Booked( LedgerCategory.ShopTakings )}, sideshow ${Booked( LedgerCategory.SideshowTakings )}; "
+				+ $"{guests.GetStatistics().InPark} in park, rating {economy.ParkRating}, balance ${economy.Balance}." );
+		}
+		var startDate = economy.Date;
+		var startBalance = economy.Balance;
+		var candidate = economy.Staff.Candidates.FirstOrDefault( item => item.Type == StaffType.Mechanic );
+		Require( candidate != null, "staff pool offers a mechanic" );
+		var mechanic = economy.Hire( candidate!.Id );
+		var wage = economy.Staff.MonthlyWage( mechanic );
+		var monthEnd = (ParkCalendar.MonthIndex( economy.Tick ) + 1) * ParkCalendar.DaysPerMonth * ParkCalendar.TicksPerDay;
+		economy.Advance( monthEnd - economy.Tick );
+		Require( economy.Tick == monthEnd && economy.Date.Day == 1 && economy.Balance == startBalance - wage, "month-end wages leave the bank account" );
+		var path = SaveFileSystem.GetAbsolutePath( "opentpw-park.json" );
+		var before = ParkSaveFile.Serialize( economy );
+		park.Save( path );
+		park.Load( path );
+		Require( ParkSaveFile.Serialize( park.Economy ) == before, "park save/load round trip" );
+		Log.Trace( $"Park economy smoke: {startDate} -> {park.Economy.Date}; balance ${startBalance} -> ${park.Economy.Balance} after ${wage} mechanic wages; save/load round trip identical." );
 	}
 
 	/// <summary>

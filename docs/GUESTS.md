@@ -87,7 +87,7 @@ is not applied (difficulty selection does not exist yet). Used values:
 | `PeepInfo.ToiletDesparate` | Toilet level that hurts happiness |
 | `PeepInfo.DecisionVar{Dist,Queue,Excitement,Thirst,Hunger,Toilet,Illness}Weight` | Attraction score weights |
 | `Arrival.MinPeople`, `TimeBetweenArrivals`, `FixedRate` | Bus arrivals (units: see approximations) |
-| `BankAccountInfo.InitialAdmissionFee` | Admission paid at the ticket booth |
+| `BankAccountInfo.InitialAdmissionFee` | Admission paid at the ticket booth (standalone only; with the park economy attached its entrance fee applies, see Money below) |
 | `FixedItemInfo.{BusStop,CrossingBSSide,CrossingParkSide,TicketBooth,Entrance}{A,B}Pos{X,Y}` | Arrival/leaving lanes A and B (the entrance cells are the first InitialPath cells, docs/MAP.md) |
 
 Not used yet: `ExcitementToCostDivisor`, `MinimumEntryFee`, price multipliers and
@@ -159,6 +159,17 @@ home (21) → removed.
 | Queue length | 4 × capacity (`QueueWaitTimeConstant` not understood) |
 | Queue positions | 3 abreast, 0.28 cells apart, back along the entrance cell's first link (real queue cells are not walked yet) |
 | No exit lane | guests vanish (original ejection not modelled) |
+
+## Money
+
+`GuestSimulation` keeps only the guests' purses, an admissions count and the `MoneySpent` event.
+In original levels `Level` attaches the park economy (`ParkEconomyRuntime.AttachGuests`,
+docs/ECONOMY.md): `GuestSimulation.Payments` (`IGuestPayments`, implemented by
+`GuestEconomyBridge`) charges admission through `ParkEconomy.TryAdmitVisitor` — the economy's
+entrance fee and open/closed state decide, and refused guests turn back at the booth — shop and
+sideshow visits through `TryBuy`/`PlaySideshow`, and ride visits are counted with
+`RecordRideUse`. The bridge also supplies `IParkGuestStatistics` (people in park, happiness).
+Without `Payments` (unit tests) the `.sam` fee and `IRideVisitorBridge.Price` apply and nothing is booked.
 
 ## Visitor bridge and RSE visitor opcodes
 

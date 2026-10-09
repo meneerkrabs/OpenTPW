@@ -170,7 +170,7 @@ public sealed class BalanceSettings
 	/// The product is inferred from the key names (both are "pay" factors, one per grade and one per
 	/// role); the original formula is unverified.
 	/// </summary>
-	// [APPROX:ECON-043] monthly wage = BaseWage[grade] x PayMultiplier[type] — evidence needed: staff list capture with grades
+	// [BIN:STP-PPC:0x100F46BC staff wage] monthly wage = PerGradeStaffConsts[grade].BaseWage (balance +748, stride 16) × PerTypeStaffConsts[type].PayMultiplier (+832, stride 4), unscaled
 	public long GetMonthlyWage( StaffType type, int grade ) => (long)BaseWage[Math.Clamp( grade, 0, GradeCount - 1 )] * this[type].PayMultiplier;
 
 	/// <summary>Original layer order for a theme: global Standard, theme Standard, then the theme's Easy_Standard in easy mode.</summary>

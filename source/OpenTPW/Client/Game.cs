@@ -191,7 +191,11 @@ internal static class Game
 		var startsFrontEnd = visit == null && originalLevelIndex < 0 && !args.Contains( "--advisor-say" ) && !args.Contains( "--sandbox" ) && (!smoke || args.Contains( "--front-end" ));
 		// [EXT:autorun] The CD's launcher window comes first when its Autorun folder is available (docs/AUTORUN.md).
 		var autorun = startsFrontEnd && capturePath == null ? CreateAutorun( args, bonusSettings, dataDirectory ) : null;
-		if ( autorun == null )
+		// The original plays its start-up movies before the front end on every start (docs/TGQ-MOVIES.md); after
+		// the launcher's Play when it is shown. Smoke tests and --no-intro / OPENTPW_NO_INTRO go straight to the front end.
+		var playIntro = startsFrontEnd && !smoke && capturePath == null && !args.Contains( "--no-intro" ) && string.IsNullOrEmpty( Environment.GetEnvironmentVariable( "OPENTPW_NO_INTRO" ) );
+		Func<IDisposable>? startIntro = playIntro ? () => StartIntro( flow, args, dataDirectory ) : null;
+		if ( autorun == null && !playIntro )
 		{
 			Render.OnUpdate += flow.Update;
 			Render.OnRender += flow.Render;
@@ -205,7 +209,13 @@ internal static class Game
 		{
 			if ( autorun != null )
 			{
-				RunAutorun( flow, autorun, smoke );
+				RunAutorun( flow, autorun, smoke, startIntro );
+				return;
+			}
+			if ( startIntro != null )
+			{
+				using var intro = startIntro();
+				Render.Run();
 				return;
 			}
 			flow.ShowFrontEnd();
@@ -270,9 +280,28 @@ internal static class Game
 	/// Shows the CD launcher, then (on Play) the front end. The hand-over runs after the frame so the front end's first
 	/// update precedes its first draw; Exit has already closed the window.
 	/// </summary>
-	private static void RunAutorun( GameFlow flow, AutorunScreen autorun, bool smoke )
+	/// <summary>Starts the start-up movies (docs/TGQ-MOVIES.md); the front end follows when they end. Dispose after the loop.</summary>
+	private static IDisposable StartIntro( GameFlow flow, string[] args, string dataDirectory )
+	{
+		var intro = new IntroSequence( dataDirectory, IntroPlaylist.For( DateTime.Now ), !args.Contains( "--mute" ), GameOptions.Gain( GameOptions.Current.MovieVolume ) );
+		Render.OnUpdate += intro.Update;
+		Render.OnRender += intro.Draw;
+		intro.Completed += () =>
+		{
+			Render.OnUpdate -= intro.Update;
+			Render.OnRender -= intro.Draw;
+			Render.OnUpdate += flow.Update;
+			Render.OnRender += flow.Render;
+			flow.DiscardHeldInput();
+			flow.ShowFrontEnd();
+		};
+		return intro;
+	}
+
+	private static void RunAutorun( GameFlow flow, AutorunScreen autorun, bool smoke, Func<IDisposable>? startIntro )
 	{
 		using var screen = autorun;
+		IDisposable? intro = null;
 		FrontEndSmokeTest? frontEndSmokeTest = null;
 		AutorunSmokeTest? autorunSmokeTest = null;
 		Action? handOver = null;
@@ -286,6 +315,11 @@ internal static class Game
 			if ( screen.Result != AutorunResult.Play )
 				return;
 			Render.WorldScalingAllowed = true;
+			if ( startIntro != null )
+			{
+				intro = startIntro();
+				return;
+			}
 			Render.OnUpdate += flow.Update;
 			Render.OnRender += flow.Render;
 			flow.ShowFrontEnd();
@@ -318,6 +352,7 @@ internal static class Game
 		}
 		finally
 		{
+			intro?.Dispose();
 			autorunSmokeTest?.Dispose();
 			frontEndSmokeTest?.Dispose();
 		}

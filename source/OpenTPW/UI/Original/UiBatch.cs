@@ -11,6 +11,8 @@ public sealed record UiTexture( string? ImagePath, FontAtlas? Atlas )
 {
 	public static readonly UiTexture Solid = new( null, null );
 	public static UiTexture Image( string path ) => new( path, null );
+	/// <summary>An image file on the host file system, e.g. a local art override.</summary>
+	public static UiTexture HostImage( string path ) => new( UiImages.HostPrefix + path, null );
 	public static UiTexture Font( FontAtlas atlas ) => new( null, atlas );
 }
 

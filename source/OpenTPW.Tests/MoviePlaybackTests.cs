@@ -286,6 +286,16 @@ public class MoviePlaybackTests
 		Assert.AreEqual( (x, y, width, height), MoviePresenter.Fit( 320, 352, targetWidth, targetHeight ) );
 	}
 
+	[DataTestMethod]
+	[DataRow( 640, 480, 0, 64, 640, 352 )]
+	[DataRow( 1280, 720, 0, 8, 1280, 704 )]
+	[DataRow( 1280, 960, 0, 128, 1280, 704 )]
+	public void FitUsesTheOriginalsStretchedDisplayRectangle( int targetWidth, int targetHeight, int x, int y, int width, int height )
+	{
+		// A 4:3 screen shows the movie in 640 x 352 centred vertically, as the original's movie box does.
+		Assert.AreEqual( (x, y, width, height), MoviePresenter.Fit( 320, 352, targetWidth, targetHeight, MoviePresenter.OriginalDisplayAspect ) );
+	}
+
 	[TestMethod]
 	public void LibraryResolvesNamesCaseInsensitivelyInsideMovies()
 	{

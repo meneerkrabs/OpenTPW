@@ -55,6 +55,14 @@ Without `--language-data`, the CD folder (`--cd-data`, `OPENTPW_CD_DATA`, or the
 under Options → Game files) serves as the language overlay when it holds more languages than
 the installed game, so its languages appear in the options' language list.
 
+Two editions of `UITEXT.str` exist. The installed game examined here has 473 entries; the European
+CD's languages (its English included) and the Mac version have 474, with an extra message at entry
+207 ("You cannot load this park, as it uses new rides which you have not yet downloaded") that moves
+every later entry up by one. OpenTPW numbers UI strings by the 473-entry edition (`UIStrings`), so
+`GameLanguage.LoadStrings` drops entry 207 from a 474-entry UITEXT; without that, every string from
+207 on (Game Options, the option labels, Yes/No, the resolutions, …) showed its neighbour's text.
+The other 20 tables agree between the editions; `CHAT_COMMANDS.str` only appends six entries.
+
 The overlay is read-only and is never copied into the game folder or the
 repository. Files missing from the overlay fall back to the installed data.
 

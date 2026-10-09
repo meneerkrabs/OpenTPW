@@ -156,7 +156,13 @@ bash scripts/run.sh --game-path '/path/to/Theme Park World' --play-movie bf --sm
 ```
 
 Plays `Data/Movies/<name>.tgq` with SDL2 audio (`--mute` disables it); a key
-press or click skips. `--headless` simulates decoding and the audio clock
+press or click skips.
+
+A normal start (the front end, no `--smoke-test`) first plays the original's
+start-up movies: `bf`, then a trailer chosen by the day of the month, at the
+Movie volume of Game Options. Esc, Space or a mouse button skips. Use
+`--no-intro` (or set `OPENTPW_NO_INTRO=1`) to go straight to the front end;
+smoke tests never play the movies. Missing movies (no `--cd-data`) are skipped. `--headless` simulates decoding and the audio clock
 without a window or device. `--smoke-test` plays 60 frames with audio off and
 checks GPU readback against the CPU frame. See TGQ-MOVIES.md.
 

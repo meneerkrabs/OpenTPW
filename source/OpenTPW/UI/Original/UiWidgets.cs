@@ -144,7 +144,7 @@ public sealed class UiContext
 		foreach ( var part in frame.Parts )
 		{
 			var path = part.TextureName.Length == 0 ? null : ResolveTexture( part.TextureName );
-			var texture = path == null ? UiTexture.Solid : UiTexture.Image( path );
+			var texture = path == null ? UiTexture.Solid : UiTexture.Image( part.Transparent ? path + UiImages.BlackKeySuffix : path );
 			UiVertex Convert( int index )
 			{
 				var vertex = part.Vertices[index];
@@ -224,9 +224,21 @@ public sealed class UiModelImage : UiElement
 	public string Model { get; set; } = "";
 	public Func<int> Frame { get; set; } = () => 0;
 	public RgbaByte? Tint { get; set; }
+	/// <summary>Name of a local art override (<see cref="UiArtOverrides"/>) drawn instead of the model when present.</summary>
+	public string? ArtOverride { get; set; }
 
 	public override void Draw( UiContext context, bool focused, bool pressed )
 	{
+		if ( ArtOverride != null && UiArtOverrides.Find( ArtOverride ) is { } art )
+		{
+			// Fit inside the model's box, keeping the image's aspect ratio.
+			var rect = ScreenRect( context.Canvas );
+			var scale = Math.Min( rect.Width / art.Width, rect.Height / art.Height );
+			var size = new NVector2( art.Width * scale, art.Height * scale );
+			context.Batch.AddQuad( UiTexture.HostImage( art.Path ), new UiRect( rect.X + (rect.Width - size.X) / 2, rect.Y + (rect.Height - size.Y) / 2, size.X, size.Y ),
+				NVector2.Zero, NVector2.One, Tint ?? RgbaByte.White );
+			return;
+		}
 		if ( !context.DrawModel( Model, Frame(), ScreenRect( context.Canvas ), Tint ) )
 			context.Batch.AddRectangle( ScreenRect( context.Canvas ), UiColors.HelpBackground );
 	}
@@ -254,7 +266,7 @@ public sealed class UiButton : UiElement
 	public const int DisabledFrame = 1;
 	public const int HighlightFrame = 2;
 	public const int DownFrame = 5;
-	/// <summary>Transparent share of each purple_button half (16 of 64 texture rows).</summary>
+	/// <summary>Share of each purple_button half outside its bar (16 of 64 texture rows); the bar is centred in the button.</summary>
 	public const float PurpleBarGap = 0.25f;
 
 	public string? Model { get; set; }
@@ -285,22 +297,49 @@ public sealed class UiButton : UiElement
 				context.DrawFittedText( Font( context.Fonts ), Text(), rect, focused ? UiColors.Highlight : UiColors.Text, Align );
 			return;
 		}
-		// [APPROX:UI-008] purple_button halves for normal/focused — evidence needed: capture of the original front-end buttons
+		// [APPROX:UI-008] purple_button as a mirrored end cap, upper half normal, lower half focused/pressed — evidence needed: capture of the original front-end buttons
 		var art = context.ResolveTexture( "purple_button" );
-		// The bar covers three quarters of each half of the purple_button art: the top of the upper (normal) half and
-		// the bottom of the lower half, so the lower state also reads as pressed. Text stays inside the bar.
 		var bar = rect;
 		if ( art != null )
 		{
-			var lower = focused || pressed || Selected?.Invoke() == true;
-			context.Batch.AddQuad( UiTexture.Image( art ), rect, new NVector2( 0, lower ? 0.5f : 0 ), new NVector2( 1, lower ? 1f : 0.5f ), Enabled ? RgbaByte.White : new RgbaByte( 160, 160, 160, 255 ) );
-			bar = new UiRect( rect.X, rect.Y + (lower ? rect.Height * PurpleBarGap : 0), rect.Width, rect.Height * (1 - PurpleBarGap) );
+			var lit = focused || pressed || Selected?.Invoke() == true;
+			bar = new UiRect( rect.X, rect.Y + rect.Height * PurpleBarGap / 2, rect.Width, rect.Height * (1 - PurpleBarGap) );
+			DrawPurpleBar( context, UiTexture.Image( art ), bar, lit, Enabled ? RgbaByte.White : new RgbaByte( 160, 160, 160, 255 ) );
 		}
 		else
 			context.Batch.AddRectangle( rect, focused ? UiColors.Highlight : UiColors.HelpBackground );
 		// Margins keep the label off the bar's rim and rounded ends.
 		var inner = new UiRect( bar.X + bar.Height * 0.5f, bar.Y + bar.Height * 0.05f, bar.Width - bar.Height, bar.Height * 0.9f );
 		context.DrawFittedText( Font( context.Fonts ), Text?.Invoke() ?? "", inner, !Enabled ? UiColors.Disabled : focused ? UiColors.Highlight : UiColors.Text, Align );
+	}
+
+	/// <summary>
+	/// Each half of the purple_button texture is one end of a button: a bar in 48 of its 64 rows with a rounded
+	/// end (left in the upper, normal half; right in the lower, lit half) and a cut end. A whole button is that
+	/// piece and its mirror image: rounded caps at their own aspect, the body stretched to meet in the middle.
+	/// The outermost texture columns at both ends are edges and stay out of the caps and the seam.
+	/// </summary>
+	private static void DrawPurpleBar( UiContext context, UiTexture texture, UiRect bar, bool lit, RgbaByte tint )
+	{
+		// The outermost column of the rounded end is a translucent grey edge that would show as a line.
+		const float EdgeU = 1.5f / 128, CapU = 0.25f, CutU = 0.96f;
+		// The bar's first row is a faint rim that also runs over the rounded corners; start below it, and stay half a
+		// texel inside so linear filtering does not pull in the neighbouring rows.
+		var (v0, v1) = lit ? (81.5f / 128, 127.5f / 128) : (1.5f / 128, 47.5f / 128);
+		// Texture u measured from the rounded end of the piece.
+		float U( float fromRound ) => lit ? 1 - fromRound : fromRound;
+		var cap = Math.Min( bar.Height * CapU * 128 / 48, bar.Width / 2 );
+		var middle = bar.X + bar.Width / 2;
+		var capEnd = cap < bar.Width / 2 ? CapU : CapU * (bar.Width / 2) / cap;
+		void Quad( float left, float right, float uLeft, float uRight )
+		{
+			if ( right > left )
+				context.Batch.AddQuad( texture, new UiRect( left, bar.Y, right - left, bar.Height ), new NVector2( uLeft, v0 ), new NVector2( uRight, v1 ), tint );
+		}
+		Quad( bar.X, bar.X + cap, U( EdgeU ), U( capEnd ) );
+		Quad( bar.X + cap, middle, U( CapU ), U( CutU ) );
+		Quad( middle, bar.Right - cap, U( CutU ), U( CapU ) );
+		Quad( bar.Right - cap, bar.Right, U( capEnd ), U( EdgeU ) );
 	}
 }
 

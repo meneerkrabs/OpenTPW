@@ -6,7 +6,17 @@ namespace OpenTPW;
 /// </summary>
 public readonly record struct TextLayoutGlyph( char Character, int X, int Y, FontAtlasGlyph Glyph );
 
-public sealed record TextLayoutResult( IReadOnlyList<TextLayoutGlyph> Glyphs, int Width, int Height, int LineCount, IReadOnlyList<char> MissingCharacters );
+public sealed record TextLayoutResult( IReadOnlyList<TextLayoutGlyph> Glyphs, int Width, int Height, int LineCount, IReadOnlyList<char> MissingCharacters )
+{
+	/// <summary>Left edge of the drawn pixels (glyph bitmaps); 0 when nothing is drawn.</summary>
+	public int InkLeft { get; } = Glyphs.Count == 0 ? 0 : Glyphs.Min( glyph => glyph.X );
+	/// <summary>Top edge of the drawn pixels; 0 when nothing is drawn.</summary>
+	public int InkTop { get; } = Glyphs.Count == 0 ? 0 : Glyphs.Min( glyph => glyph.Y );
+	/// <summary>Right edge (exclusive) of the drawn pixels; 0 when nothing is drawn.</summary>
+	public int InkRight { get; } = Glyphs.Count == 0 ? 0 : Glyphs.Max( glyph => glyph.X + glyph.Glyph.Width );
+	/// <summary>Bottom edge (exclusive) of the drawn pixels; 0 when nothing is drawn.</summary>
+	public int InkBottom { get; } = Glyphs.Count == 0 ? 0 : Glyphs.Max( glyph => glyph.Y + glyph.Glyph.Height );
+}
 
 /// <summary>
 /// Pixel layout with original BF4 metrics: the pen advances by each record's advance, bitmaps are

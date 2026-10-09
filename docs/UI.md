@@ -146,11 +146,18 @@ screens, options), `FrontEnd/`, `Hud/`, `World/Lobby/LobbyScene.cs`,
 
 ### Button text fitting
 
-Button labels shrink to fit their button (`UiTextFit`, `[EXT:fit-button-text]`): the role's font first,
-then smaller sizes of the same BF4 family (`MENUBIG` → `MENUMED` → `MENUSMALL`, `TITLE…`, `SESH…`,
-`GAME12AA` → `GAME10AA` → `GAME8AA`, `GAMEBOLD12` → `GAMEBOLD10`), then a lower whole text scale so the
-glyphs stay pixel-exact, and only then two lines in the smallest size. Long translations therefore
-stay inside the purple buttons instead of running over their ends.
+Button labels shrink to fit their button (`UiTextFit`, `[EXT:fit-button-text]`). The candidates are the
+role's font and the smaller sizes of the same BF4 family (`MENUBIG` → `MENUMED` → `MENUSMALL`, `TITLE…`,
+`SESH…`, `GAME12AA` → `GAME10AA` → `GAME8AA`, `GAMEBOLD12` → `GAMEBOLD10`), each at every whole text
+scale up to the current one so glyphs stay pixel-exact; the largest that fits wins. Only when none fits
+is the label wrapped in the smallest size.
+
+Fitting uses the drawn pixels, not the BF4 line box: glyph offsets put ink above and below the line box,
+so a label measured by its line box could hang out of the button. Horizontally the label's own ink is
+centred; vertically the font's letter box (capitals, ascenders, descenders) is centred, so neighbouring
+buttons share a baseline. On the `purple_button` art the label is fitted inside the visible bar, which
+covers three quarters of each texture half (the top of the normal half, the bottom of the pressed half),
+with a margin off the rim and the rounded ends.
 
 ### Options (Game Options, 314)
 

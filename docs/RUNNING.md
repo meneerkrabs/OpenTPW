@@ -107,7 +107,9 @@ sideshows and toilets (and the Totem), use them through their scripts and leave
 
 Official bonus objects (`_name_N.wad`) are read from an extracted bonus directory
 with `--bonus-data <dir>` (or `OPENTPW_BONUS_DATA`); they join the build panel and
-the private tests (OBJECTS.md). Nothing is copied into the game data.
+the private tests (OBJECTS.md). Nothing is copied into the game data. Without a flag,
+the folder saved in Options > Game files is used, or the copy imported there into
+`<config>/bonus` (SETUP.md), so the flag is only needed for a one-off directory.
 `--smoke-test` also works with this flag (captures `native-smoke-original-*.png`;
 the smoke also checks that guests fill and leave the Totem and ride imported objects).
 

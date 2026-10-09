@@ -3,7 +3,7 @@ using OpenTPW.UI.Original;
 
 namespace OpenTPW.Tests;
 
-/// <summary>Button text fitting: family sizes first, then a lower whole scale, then wrapping.</summary>
+/// <summary>Button text fitting: the largest family size and whole scale that fits, then wrapping.</summary>
 [TestClass]
 public class UiTextFitTests
 {
@@ -25,5 +25,10 @@ public class UiTextFitTests
 
 	[TestMethod]
 	public void HeightCountsToo() =>
-		Assert.AreEqual( new UiTextFit.Choice( 1, 1, false ), UiTextFit.Choose( 2, new[] { (50, 40), (50, 30) }, 200, 40 ) );
+		Assert.AreEqual( new UiTextFit.Choice( 0, 1, false ), UiTextFit.Choose( 2, new[] { (50, 40), (50, 30) }, 200, 40 ) );
+
+	[TestMethod]
+	public void PrefersTheLargerFontAtALowerScaleOverTheSmallestAtThatScale() =>
+		Assert.AreEqual( new UiTextFit.Choice( 0, 1, false ), UiTextFit.Choose( 2, new[] { (156, 39), (123, 30) }, 320, 58 ),
+			"a 39-pixel font at scale 1 beats the 30-pixel font at scale 1" );
 }

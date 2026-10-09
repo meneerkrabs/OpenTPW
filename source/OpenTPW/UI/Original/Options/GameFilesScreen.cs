@@ -1,8 +1,9 @@
 namespace OpenTPW.UI.Original;
 
 /// <summary>
-/// Game files (docs/SETUP.md): the game folder and the optional CD for music and movies, changed
-/// with the platform's folder dialog and stored in setup.json. The game reads its data at start-up,
+/// Game files (docs/SETUP.md): the game folder, the optional CD for music and movies, and the optional
+/// official bonus content (a folder or a .zip, imported into the configuration directory). Changed with the
+/// platform's folder dialog (or a typed path) and stored in setup.json. The game reads its data at start-up,
 /// so a change applies after a restart. Reached from the options screen; the first-run setup
 /// window only asks for the game folder, because before that no original art or font exists.
 /// </summary>
@@ -19,6 +20,11 @@ public static class GameFilesScreen
 		var saved = SetupSettings.Load( settingsPath );
 		var gamePath = saved.GamePath ?? Settings.Default.GamePath;
 		var cdPath = saved.CdPath;
+		// The bonus folder shown is the one the game would use: the saved choice, else the imported copy in the configuration directory.
+		var configDirectory = Path.GetDirectoryName( Path.GetFullPath( settingsPath ) )!;
+		string? bonusShown = null;
+		void RefreshBonus() => bonusShown = BonusContent.ResolveRoot( null, null, saved.BonusPath, configDirectory )?.Path;
+		RefreshBonus();
 		var status = "";
 		Task<InstallationDiscoveryResult>? picker = null;
 		Task<InstallationDiscoveryResult>? inspection = null;
@@ -28,7 +34,7 @@ public static class GameFilesScreen
 
 		var screen = new UiScreen( "gameFiles" );
 		screen.Removed = () => { lifetime.Cancel(); lifetime.Dispose(); };
-		var window = UiDialogs.CenteredWindow( 1500, 1060 );
+		var window = UiDialogs.CenteredWindow( 1500, 1420 );
 		UiDialogs.AddWindow( screen, window, "w_med", () => strings.Extra( OpenTpwText.GameFiles ) );
 
 		void Store( SetupSettings settings )
@@ -37,6 +43,7 @@ public static class GameFilesScreen
 			{
 				settings.Save( settingsPath );
 				saved = settings;
+				RefreshBonus();
 				status = strings.Extra( OpenTpwText.RestartToApply );
 			}
 			catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException )
@@ -65,6 +72,28 @@ public static class GameFilesScreen
 			cdPath = report.Path;
 			Store( saved with { CdPath = report.Path } );
 		} );
+
+		void SetBonus( string path )
+		{
+			var chosen = Path.GetFullPath( path );
+			var imported = Path.Combine( configDirectory, BonusContent.FolderName );
+			try
+			{
+				// A folder already inside the configuration bonus folder is used as it is; a zip or any other folder is imported first.
+				var inside = chosen == imported || chosen.StartsWith( imported + Path.DirectorySeparatorChar, StringComparison.Ordinal );
+				var count = inside ? BonusContent.Validate( imported ) : BonusContent.Import( chosen, configDirectory );
+				if ( count == 0 )
+				{
+					status = strings.Extra( OpenTpwText.BonusNotFound );
+					return;
+				}
+				Store( saved with { BonusPath = imported } );
+			}
+			catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException or InvalidDataException )
+			{
+				status = exception.Message;
+			}
+		}
 
 		void Browse( Action<string> target, string? initial )
 		{
@@ -101,9 +130,17 @@ public static class GameFilesScreen
 		var removeCd = screen.Add( new UiButton { Id = "cdRemove", Text = () => strings.Extra( OpenTpwText.RemoveFolder ),
 			Clicked = () => { cdPath = null; Store( saved with { CdPath = null } ); },
 			Bounds = new UiRect( x + 460, window.Y + 696, 420, 104 ), Anchor = UiAnchor.Center } );
-		screen.Add( new UiLabel { Id = "status", Text = () => status, Font = fonts => fonts.Small, Wrap = true, Bounds = new UiRect( x, window.Bottom - 290, width, 100 ), Anchor = UiAnchor.Center } );
+		var changeBonus = AddFolder( "bonus", OpenTpwText.BonusFolder, () => bonusShown ?? strings.Extra( OpenTpwText.NoFolder ), window.Y + 840, () => Browse( SetBonus, bonusShown ) );
+		var typeBonus = screen.Add( new UiButton { Id = "bonusType", Text = () => strings.Extra( OpenTpwText.EnterFolderPath ),
+			Clicked = () => stack.Push( PathEntry( stack, strings, bonusShown, SetBonus ) ),
+			Bounds = new UiRect( x + 920, window.Y + 1036, 240, 104 ), Anchor = UiAnchor.Center } );
+		// Remove stores an empty path, so the imported copy is not used either; the files stay where they are.
+		var removeBonus = screen.Add( new UiButton { Id = "bonusRemove", Text = () => strings.Extra( OpenTpwText.RemoveFolder ),
+			Clicked = () => Store( saved with { BonusPath = "" } ),
+			Bounds = new UiRect( x + 460, window.Y + 1036, 420, 104 ), Anchor = UiAnchor.Center } );
+		screen.Add( new UiLabel { Id = "status", Text = () => status, Font = fonts => fonts.Small, Wrap = true, Bounds = new UiRect( x, window.Bottom - 270, width, 100 ), Anchor = UiAnchor.Center } );
 		screen.Add( new UiButton { Id = "back", Text = () => strings.Extra( OpenTpwText.Back ), Clicked = stack.Pop,
-			Bounds = new UiRect( x, window.Bottom - 180, 420, 104 ), Anchor = UiAnchor.Center } );
+			Bounds = new UiRect( x, window.Bottom - 150, 420, 104 ), Anchor = UiAnchor.Center } );
 		screen.Back = stack.Pop;
 		screen.Updating += _ =>
 		{
@@ -123,9 +160,10 @@ public static class GameFilesScreen
 				inspection = null;
 				inspected = null;
 			}
-			changeGame.Enabled = changeCd.Enabled = picker == null && inspection == null;
-			typeGame.Enabled = typeCd.Enabled = inspection == null;
+			changeGame.Enabled = changeCd.Enabled = changeBonus.Enabled = picker == null && inspection == null;
+			typeGame.Enabled = typeCd.Enabled = typeBonus.Enabled = inspection == null;
 			removeCd.Enabled = cdPath != null && picker == null && inspection == null;
+			removeBonus.Enabled = bonusShown != null && picker == null && inspection == null;
 		};
 		screen.Focus( changeGame );
 		return screen;

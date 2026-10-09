@@ -87,7 +87,7 @@ internal sealed class GameFlow : IDisposable
 		Graphics = IGraphicsSettings.Instance,
 		TexturePackAvailable = TexturePack.IsInstalled(),
 		Options = GameOptions.Current,
-		Languages = GameLanguage.FindLanguages( GameLanguage.Current.BaseDataDirectory, GameLanguage.Current.OverlayDataDirectory ),
+		Languages = GameLanguage.Choosable(),
 		CurrentLanguage = GameLanguage.Current.Name,
 		SaveOptions = () => { if ( PersistSettings ) GameOptions.Current.Save( OptionsPath ); },
 		SaveLanguage = language =>

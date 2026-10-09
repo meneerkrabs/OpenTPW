@@ -77,6 +77,11 @@ internal static class Game
 			?? Environment.GetEnvironmentVariable( "OPENTPW_LANGUAGE" ) ?? Settings.Default.Language;
 		var languageData = GetOption( args, "--language-data", "a directory with the original CD's language data" )
 			?? Environment.GetEnvironmentVariable( "OPENTPW_LANGUAGE_DATA" ) ?? Settings.Default.LanguageDataPath;
+		// The CD chosen in Game files (or --cd-data) also holds the other shipped languages: without separate
+		// language data, offer those too.
+		if ( string.IsNullOrWhiteSpace( languageData ) && CdLanguageOverlay( args, dataDirectory ) is { } cdLanguages )
+			languageData = cdLanguages;
+		GameLanguage.AvailableOverlay = string.IsNullOrWhiteSpace( languageData ) ? null : languageData;
 		if ( !string.IsNullOrWhiteSpace( language ) || !string.IsNullOrWhiteSpace( languageData ) )
 			GameLanguage.Current = GameLanguage.Resolve( dataDirectory, language, languageData );
 		else
@@ -90,12 +95,15 @@ internal static class Game
 		// Compatibility: --cd-data overlay, media diagnostics, profile/fixes, graphics preset (docs/COMPATIBILITY.md)
 		CompatibilityStartup.Initialize( args, dataDirectory );
 
-		// Official bonus objects (docs/OBJECTS.md): --bonus-data, else OPENTPW_BONUS_DATA.
-		var bonusData = GetOption( args, "--bonus-data", "the extracted official bonus content directory" );
-		if ( bonusData != null )
-			ObjectCatalog.BonusDataRoot = bonusData;
-		if ( ObjectCatalog.BonusDataRoot != null )
-			Log.Trace( $"Bonus content: {ObjectCatalog.BonusDataRoot}" );
+		// Official bonus objects (docs/OBJECTS.md): --bonus-data, else OPENTPW_BONUS_DATA, else the saved bonus folder, else <config>/bonus.
+		var bonusSettings = SetupSettings.Load( SetupSettings.GetDefaultPath() );
+		var bonusRoot = BonusContent.ResolveRoot( GetOption( args, "--bonus-data", "the extracted official bonus content directory" ),
+			Environment.GetEnvironmentVariable( "OPENTPW_BONUS_DATA" ), bonusSettings.BonusPath, Path.GetDirectoryName( DisplaySettings.GetDefaultPath() )! );
+		if ( bonusRoot is { } bonus )
+		{
+			ObjectCatalog.BonusDataRoot = bonus.Path;
+			Log.Trace( $"Bonus content: {bonus.Path} ({bonus.Source})." );
+		}
 		var modelIndex = Array.IndexOf( args, "--inspect-model" );
 		if ( modelIndex >= 0 )
 		{
@@ -278,7 +286,7 @@ internal static class Game
 				Log.Trace( "Setup closed without choosing a game folder." );
 				return null;
 			}
-			saved = new SetupSettings( chosen.GamePath, chosen.CdPath );
+			saved = saved with { GamePath = chosen.GamePath, CdPath = chosen.CdPath };
 			TrySave( saved, setupPath );
 			resolved = (chosen.GamePath, GamePathSource.Wizard);
 		}
@@ -341,6 +349,22 @@ internal static class Game
 		Log.Trace( $"Done: {manifest.Textures} textures at {manifest.Scale}x. Turn on Enhanced textures in Game Options (or set EnhancedTextures in graphics.json)." );
 		if ( !string.Equals( Path.GetFullPath( packDirectory ), Path.GetFullPath( TexturePack.DefaultPackDirectory() ), StringComparison.Ordinal ) )
 			Log.Warning( $"The game only loads the pack at {TexturePack.DefaultPackDirectory()}; use this one with OPENTPW_TEXTURE_PACK={Path.Combine( packDirectory, TexturePack.TexturesDirectoryName )}." );
+	}
+
+	/// <summary>The --cd-data / OPENTPW_CD_DATA folder when it adds languages to the installation, else null.</summary>
+	private static string? CdLanguageOverlay( string[] args, string dataDirectory )
+	{
+		var cd = GetOption( args, "--cd-data", "the original CD's folder" ) ?? Environment.GetEnvironmentVariable( "OPENTPW_CD_DATA" );
+		if ( string.IsNullOrWhiteSpace( cd ) || !Directory.Exists( cd ) )
+			return null;
+		try
+		{
+			return GameLanguage.FindLanguages( dataDirectory, cd ).Count > GameLanguage.FindLanguages( dataDirectory, null ).Count ? cd : null;
+		}
+		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException )
+		{
+			return null;
+		}
 	}
 
 	private static string? GetOption( string[] args, string name, string description )

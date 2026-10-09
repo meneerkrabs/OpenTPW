@@ -79,6 +79,9 @@ public sealed class UiContext
 	/// <summary>
 	/// Draws single-line text that fits <paramref name="rect"/>: the given font, else a smaller size of its family,
 	/// else a smaller whole text scale (glyphs stay pixel-exact), else wrapped in the smallest size (UiTextFit).
+	/// Fitting and placement use the drawn pixels, not the line box: BF4 glyph offsets put ink above and below
+	/// the line box. Horizontally the text's own ink is aligned; vertically the font's letter box (capitals,
+	/// ascenders and descenders) is centred, so labels on neighbouring buttons share a baseline.
 	/// </summary>
 	public void DrawFittedText( FontAtlas font, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Center, bool shadow = true )
 	{
@@ -86,9 +89,48 @@ public sealed class UiContext
 			return;
 		var candidates = new List<FontAtlas> { font };
 		candidates.AddRange( Fonts.Smaller( font ) );
-		var sizes = candidates.Select( candidate => { var layout = Layout( candidate, text ); return (layout.Width, layout.Height); } ).ToArray();
-		var fit = UiTextFit.Choose( Canvas.TextScale, sizes, rect.Width, rect.Height );
-		DrawText( candidates[fit.Index], text, rect, color, align, fit.Wrap, shadow, fit.Scale );
+		var boxes = candidates.Select( candidate => InkBox( candidate, text, shadow ) ).ToArray();
+		var fit = UiTextFit.Choose( Canvas.TextScale, boxes.Select( box => (box.Right - box.Left, box.Bottom - box.Top) ).ToArray(), rect.Width, rect.Height );
+		if ( fit.Wrap )
+		{
+			DrawText( candidates[fit.Index], text, rect, color, align, true, shadow );
+			return;
+		}
+		var chosen = candidates[fit.Index];
+		var box = boxes[fit.Index];
+		var scale = fit.Scale;
+		var width = (box.Right - box.Left) * scale;
+		var x = align switch
+		{
+			UiAlign.Center => rect.X + (rect.Width - width) / 2,
+			UiAlign.Right => rect.Right - width,
+			_ => rect.X
+		} - box.Left * scale;
+		var y = rect.Y + (rect.Height - (box.Bottom - box.Top) * scale) / 2 - box.Top * scale;
+		var layout = Layout( chosen, text );
+		var ix = (int)MathF.Round( x );
+		var iy = (int)MathF.Round( y );
+		if ( shadow )
+			Batch.AddText( chosen, layout, ix + scale, iy + scale, UiColors.Shadow, scale );
+		Batch.AddText( chosen, layout, ix, iy, color, scale, text );
+	}
+
+	private readonly Dictionary<FontAtlas, (int Top, int Bottom)> letterBoxes = new();
+
+	/// <summary>Unscaled box of <paramref name="text"/>'s drawn pixels, widened vertically to the font's letter box and by the drop shadow.</summary>
+	private (int Left, int Top, int Right, int Bottom) InkBox( FontAtlas font, string text, bool shadow )
+	{
+		if ( !letterBoxes.TryGetValue( font, out var letters ) )
+		{
+			var reference = TextLayout.Create( font, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789" );
+			letters = reference.Glyphs.Count == 0 ? (0, font.LineHeight) : (reference.InkTop, reference.InkBottom);
+			letterBoxes[font] = letters;
+		}
+		var layout = Layout( font, text );
+		var extra = shadow ? 1 : 0;
+		if ( layout.Glyphs.Count == 0 )
+			return (0, letters.Top, layout.Width + extra, letters.Bottom + extra);
+		return (layout.InkLeft, Math.Min( layout.InkTop, letters.Top ), layout.InkRight + extra, Math.Max( layout.InkBottom, letters.Bottom ) + extra);
 	}
 
 	/// <summary>Draws a model frame stretched so its bounds fill <paramref name="rect"/>.</summary>
@@ -212,6 +254,8 @@ public sealed class UiButton : UiElement
 	public const int DisabledFrame = 1;
 	public const int HighlightFrame = 2;
 	public const int DownFrame = 5;
+	/// <summary>Transparent share of each purple_button half (16 of 64 texture rows).</summary>
+	public const float PurpleBarGap = 0.25f;
 
 	public string? Model { get; set; }
 	public Func<string>? Text { get; set; }
@@ -243,14 +287,19 @@ public sealed class UiButton : UiElement
 		}
 		// [APPROX:UI-008] purple_button halves for normal/focused — evidence needed: capture of the original front-end buttons
 		var art = context.ResolveTexture( "purple_button" );
+		// The bar covers three quarters of each half of the purple_button art: the top of the upper (normal) half and
+		// the bottom of the lower half, so the lower state also reads as pressed. Text stays inside the bar.
+		var bar = rect;
 		if ( art != null )
 		{
 			var lower = focused || pressed || Selected?.Invoke() == true;
 			context.Batch.AddQuad( UiTexture.Image( art ), rect, new NVector2( 0, lower ? 0.5f : 0 ), new NVector2( 1, lower ? 1f : 0.5f ), Enabled ? RgbaByte.White : new RgbaByte( 160, 160, 160, 255 ) );
+			bar = new UiRect( rect.X, rect.Y + (lower ? rect.Height * PurpleBarGap : 0), rect.Width, rect.Height * (1 - PurpleBarGap) );
 		}
 		else
 			context.Batch.AddRectangle( rect, focused ? UiColors.Highlight : UiColors.HelpBackground );
-		var inner = new UiRect( rect.X + rect.Height * 0.4f, rect.Y, rect.Width - rect.Height * 0.8f, rect.Height );
+		// Margins keep the label off the bar's rim and rounded ends.
+		var inner = new UiRect( bar.X + bar.Height * 0.5f, bar.Y + bar.Height * 0.05f, bar.Width - bar.Height, bar.Height * 0.9f );
 		context.DrawFittedText( Font( context.Fonts ), Text?.Invoke() ?? "", inner, !Enabled ? UiColors.Disabled : focused ? UiColors.Highlight : UiColors.Text, Align );
 	}
 }

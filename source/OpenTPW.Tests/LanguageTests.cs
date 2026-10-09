@@ -74,6 +74,31 @@ public class LanguageTests
 	}
 
 	[TestMethod]
+	public void TheChosenCdStaysChoosableWhenTheInstalledLanguageIsSelected()
+	{
+		CreateLanguage( "Data", "English" );
+		CreateLanguage( Path.Combine( "cd", "Danish", "data" ), "danish", "xyz" );
+		CreateLanguage( Path.Combine( "cd", "German", "data" ), "German", "zyx" );
+		var overlay = Path.Combine( root, "cd" );
+		var previous = (GameLanguage.IsSelected ? GameLanguage.Current : null, GameLanguage.AvailableOverlay);
+		try
+		{
+			GameLanguage.Current = GameLanguage.Resolve( Path.Combine( root, "Data" ), null, overlay );
+			Assert.IsNull( GameLanguage.Current.OverlayDataDirectory, "English comes from the installation" );
+			GameLanguage.AvailableOverlay = overlay;
+			CollectionAssert.AreEqual( new[] { "English", "Danish", "German" }, GameLanguage.Choosable().ToArray(), "the CD's languages stay on offer" );
+			GameLanguage.AvailableOverlay = null;
+			CollectionAssert.AreEqual( new[] { "English" }, GameLanguage.Choosable().ToArray() );
+		}
+		finally
+		{
+			if ( previous.Item1 != null )
+				GameLanguage.Current = previous.Item1;
+			GameLanguage.AvailableOverlay = previous.AvailableOverlay;
+		}
+	}
+
+	[TestMethod]
 	public void CdStyleOverlayRootProvidesEveryLanguage()
 	{
 		CreateLanguage( "Data", "English" );

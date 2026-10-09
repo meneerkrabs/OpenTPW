@@ -49,6 +49,8 @@ public enum OpenTpwText
 	NoFolder,
 	RestartToApply,
 	FolderNotUsable,
+	BonusFolder,
+	BonusNotFound,
 }
 
 public static class SupplementaryStrings
@@ -124,6 +126,14 @@ public static class SupplementaryStrings
 			"Ce dossier ne contient pas de données de Theme Park World.",
 			"Dieser Ordner enthält keine Theme Park World-Daten.",
 			"Den här mappen innehåller inga Theme Park World-data." },
+		[OpenTpwText.BonusFolder] = new[] { "Bonus content:", "Bonusindhold:", "Bonusinhoud:", "Contenu bonus :", "Bonusinhalte:", "Bonusinnehåll:" },
+		[OpenTpwText.BonusNotFound] = new[] {
+			"No bonus content was found in this folder or zip file.",
+			"Der blev ikke fundet noget bonusindhold i denne mappe eller zip-fil.",
+			"Er is geen bonusinhoud gevonden in deze map of zip-bestand.",
+			"Aucun contenu bonus n'a été trouvé dans ce dossier ou fichier zip.",
+			"In diesem Ordner oder dieser ZIP-Datei wurden keine Bonusinhalte gefunden.",
+			"Inget bonusinnehåll hittades i den här mappen eller zip-filen." },
 		[OpenTpwText.NotAvailable] = new[] { "Not available yet", "Endnu ikke tilgængelig", "Nog niet beschikbaar", "Pas encore disponible", "Noch nicht verfügbar", "Inte tillgänglig ännu" },
 		[OpenTpwText.OnlyOnePrototypeRide] = new[] {
 			"Only one ride can be placed in this build",

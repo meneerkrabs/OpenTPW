@@ -140,12 +140,26 @@ cycle), not traced. All other Totem effects (channel animations
 `totemm2…10`, sounds, objects, screams, reverb, visitors) are unimplemented.
 With no visitors, an opened Totem waits 10 s, moves once, and repeats.
 
+## Visitors
+
+The visitor opcodes (HUSH, WALKON, HOP, WALKOFF, WALKGET, LIMBO, UNLIMBO,
+FORCEUNLIMBO, INLIMBO, LIMBOSPACE, BOUNCE, UNBOUNCE, FORCEUNBOUNCE, BOUNCING,
+ADDHEAD, DELHEAD) and the `VAR_LETMEON`/`VAR_LETMEOFF` host protocol are
+implemented against real guests by `RideVisitorBridge` (an `IRideScriptEffects`
+layer; `VisitorRideScriptEffects` wraps any other effects). The sandbox Totem uses
+it: with guests nearby its script fills at ≈3.3 s and unloads through
+HOP/WALKOFF/WALKGET. Semantics are inferred from the corpus, see
+[GUESTS.md](GUESTS.md). The default `UnimplementedRideScriptEffects` still returns
+0 for scripts without a bridge.
+
 ## Not original behaviour yet
 
 - Slice scheduling (one slice per 60 Hz tick, budget = header time slice),
   millisecond units, and CRIT_LOCK semantics are inferred, not traced.
-- No visitor simulation: every visitor opcode returns 0, so scripts never
-  board, unload, limbo, bounce or walk anyone.
+- Visitor opcodes work only where a `RideVisitorBridge` is attached (the Totem);
+  walks along ride nodes are instantaneous, riders are not drawn, and
+  TOUR/BUMP/COAST guest handling and WALKST_FLOAT/WALKFLOATSTAT/WALKFLOATSTOP
+  are unimplemented.
 - No animation playback or durations (default 0 ms) except the Totem's
   ANIM_Main, no sounds/EVENT mapping,
   no objects/particles, no ride-type controllers (TOUR/BUMP/COAST), no park

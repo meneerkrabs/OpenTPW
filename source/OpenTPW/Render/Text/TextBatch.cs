@@ -5,9 +5,14 @@ namespace OpenTPW;
 /// <summary>
 /// A screen-space quad in framebuffer pixels (origin top-left). <see cref="Atlas"/> is null for a
 /// solid rectangle; otherwise the quad samples <see cref="Width"/> × <see cref="Height"/> atlas
-/// texels at <see cref="AtlasX"/>/<see cref="AtlasY"/> one-to-one.
+/// texels at <see cref="AtlasX"/>/<see cref="AtlasY"/>, each texel covering
+/// <see cref="Scale"/> × <see cref="Scale"/> pixels (integer UI scale keeps BF4 text pixel-exact).
 /// </summary>
-internal readonly record struct TextQuad( FontAtlas? Atlas, int X, int Y, int Width, int Height, int AtlasX, int AtlasY, RgbaByte Color );
+internal readonly record struct TextQuad( FontAtlas? Atlas, int X, int Y, int Width, int Height, int AtlasX, int AtlasY, RgbaByte Color, int Scale = 1 )
+{
+	public int PixelWidth => Width * Scale;
+	public int PixelHeight => Height * Scale;
+}
 
 /// <summary>
 /// CPU list of text/rectangle quads in draw order. <see cref="TextRenderer"/> draws it on the GPU;
@@ -27,10 +32,12 @@ internal sealed class TextBatch
 			quads.Add( new TextQuad( null, x, y, width, height, 0, 0, color ) );
 	}
 
-	public void AddText( FontAtlas atlas, TextLayoutResult layout, int x, int y, RgbaByte color )
+	/// <summary>Adds laid-out text at pixel position <paramref name="x"/>/<paramref name="y"/>, magnified by an integer <paramref name="scale"/>.</summary>
+	public void AddText( FontAtlas atlas, TextLayoutResult layout, int x, int y, RgbaByte color, int scale = 1 )
 	{
+		ArgumentOutOfRangeException.ThrowIfLessThan( scale, 1 );
 		foreach ( var glyph in layout.Glyphs )
-			quads.Add( new TextQuad( atlas, x + glyph.X, y + glyph.Y, glyph.Glyph.Width, glyph.Glyph.Height, glyph.Glyph.X, glyph.Glyph.Y, color ) );
+			quads.Add( new TextQuad( atlas, x + glyph.X * scale, y + glyph.Y * scale, glyph.Glyph.Width, glyph.Glyph.Height, glyph.Glyph.X, glyph.Glyph.Y, color, scale ) );
 	}
 
 	/// <summary>
@@ -45,11 +52,12 @@ internal sealed class TextBatch
 			throw new ArgumentException( "Image size does not match its dimensions.", nameof( bgra ) );
 		foreach ( var quad in quads )
 		{
-			for ( var row = Math.Max( 0, -quad.Y ); row < quad.Height && quad.Y + row < height; row++ )
+			var scale = Math.Max( 1, quad.Scale );
+			for ( var row = Math.Max( 0, -quad.Y ); row < quad.PixelHeight && quad.Y + row < height; row++ )
 			{
-				for ( var column = Math.Max( 0, -quad.X ); column < quad.Width && quad.X + column < width; column++ )
+				for ( var column = Math.Max( 0, -quad.X ); column < quad.PixelWidth && quad.X + column < width; column++ )
 				{
-					var coverage = quad.Atlas == null ? 255 : quad.Atlas.Alpha[(quad.AtlasY + row) * quad.Atlas.Width + quad.AtlasX + column];
+					var coverage = quad.Atlas == null ? 255 : quad.Atlas.Alpha[(quad.AtlasY + row / scale) * quad.Atlas.Width + quad.AtlasX + column / scale];
 					var alpha = quad.Color.A / 255f * (coverage / 255f);
 					var pixel = ((quad.Y + row) * width + quad.X + column) * 4;
 					bgra[pixel] = Blend( quad.Color.B, bgra[pixel], alpha );

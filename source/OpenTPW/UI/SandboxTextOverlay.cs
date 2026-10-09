@@ -37,34 +37,40 @@ internal sealed class SandboxTextOverlay : IDisposable
 		labels = TextLayout.Create( labelFont, string.Join( "\n",
 			uiText[(int)UIStrings.Excitement], uiText[(int)UIStrings.Reliability], uiText[(int)UIStrings.StateOfRepair], uiText[(int)UIStrings.RemainingLife] ) );
 		note = TextLayout.Create( labelFont, uiText[(int)UIStrings.NoUpgrades] );
-		renderer = new TextRenderer( Render.MultisampledFramebuffer.OutputDescription );
+		renderer = new TextRenderer( Render.OutputDescription );
 		var missing = heading.MissingCharacters.Concat( labels.MissingCharacters ).Concat( note.MissingCharacters ).ToArray();
 		if ( missing.Length > 0 )
 			Log.Warning( $"BF4 text overlay is missing {missing.Length} glyph(s); fallback glyphs are drawn." );
 	}
 
 	/// <summary>
-	/// Rebuilds the batch for a framebuffer width, anchored to the top-right corner.
+	/// Rebuilds the batch for an output framebuffer width, anchored to the top-right corner. Margins,
+	/// padding and glyphs are multiplied by the integer UI <paramref name="scale"/>.
 	/// </summary>
-	public void Build( int framebufferWidth )
+	public void Build( int framebufferWidth, int scale = 1 )
 	{
 		var contentWidth = Math.Max( heading.Width, Math.Max( labels.Width, note.Width ) );
-		var width = contentWidth + Padding * 2;
-		var height = heading.Height + labels.Height + labelFont.LineHeight + note.Height + Padding * 2;
-		var x = Math.Max( 0, framebufferWidth - width - Margin );
-		var y = Margin;
+		var width = (contentWidth + Padding * 2) * scale;
+		var height = (heading.Height + labels.Height + labelFont.LineHeight + note.Height + Padding * 2) * scale;
+		var x = Math.Max( 0, framebufferWidth - width - Margin * scale );
+		var y = Margin * scale;
+		var padding = Padding * scale;
 		Bounds = (x, y, width, height);
+		Scale = scale;
 		Batch.Clear();
 		Batch.AddRectangle( x, y, width, height, BackgroundColor );
-		Batch.AddText( headingFont, heading, x + Padding, y + Padding, HeadingColor );
-		Batch.AddText( labelFont, labels, x + Padding, y + Padding + heading.Height, LabelColor );
-		Batch.AddText( labelFont, note, x + Padding, y + Padding + heading.Height + labels.Height + labelFont.LineHeight, LabelColor );
+		Batch.AddText( headingFont, heading, x + padding, y + padding, HeadingColor, scale );
+		Batch.AddText( labelFont, labels, x + padding, y + padding + heading.Height * scale, LabelColor, scale );
+		Batch.AddText( labelFont, note, x + padding, y + padding + (heading.Height + labels.Height + labelFont.LineHeight) * scale, LabelColor, scale );
 	}
 
+	public int Scale { get; private set; } = 1;
+
+	/// <summary>Draws into the renderer's overlay pass (output size, after the world blit).</summary>
 	public void Draw()
 	{
-		var framebuffer = Render.MultisampledFramebuffer;
-		Build( (int)framebuffer.Width );
+		var framebuffer = Render.OverlayFramebuffer;
+		Build( (int)framebuffer.Width, Screen.UiScale );
 		renderer.Draw( Render.CommandList, Batch, framebuffer.Width, framebuffer.Height );
 	}
 

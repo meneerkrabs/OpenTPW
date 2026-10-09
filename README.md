@@ -53,7 +53,9 @@ vertex animation unverified); MAP reads the 128×128 TP2M terrain grids
 opcodes handled, 51 of them through an unimplemented-effect hook; the sandbox
 Totem runs its original script); the Jungle TPWI payload's cell grid and placed
 objects are imported read-only into an original level view
-(`--load-original-level`; money, guests and other sections opaque); `.LIP` marks
+(`--load-original-level`; money, guests and other sections opaque), with simulated guests
+drawn with the original kid sprites arriving, walking paths and riding the Totem
+through its script (approximated rules, [GUESTS](docs/GUESTS.md)); `.LIP` marks
 are microsecond talking/silence toggles, inferred from the decoded speech audio. They
 drive the original advisor's mouth with SDL audio via `--advisor-say N`; the original
 mouth-shape choice is unknown. ISO-only `.MTR` files decode as topology and matrices
@@ -68,8 +70,8 @@ close to, not bit-identical with, an external reference, without playback. Evide
 The BF4 CPU decoder handles four-bit, RLE and monochrome glyphs and is tested
 against the 33 original fonts of each shipped language. A GPU glyph atlas draws original
 strings in a sandbox panel (Metal readback-verified, English and German); original UI screens and
-visual fidelity are still pending, so BF4 stays partial. Strings decode in all five
-shipped languages (English, Danish, French, German, Swedish) with each language's
+visual fidelity are still pending, so BF4 stays partial. Strings decode in all six
+verified languages (English, Danish, Dutch, French, German, Swedish) with each language's
 own character table; `--language` selects one and `--language-data` reads the
 others from the extracted original CD (see [languages](docs/LANGUAGES.md)). See
 [BF4 evidence](docs/BF4-FONTS.md), [format backlog](docs/FORMAT-BACKLOG.md),

@@ -16,7 +16,8 @@ namespace OpenTPW;
 public sealed class GameLanguage
 {
 	public const string DefaultLanguage = "English";
-	public static readonly IReadOnlyList<string> ShippedLanguages = new[] { "English", "Danish", "French", "German", "Swedish" };
+	/// <summary>Languages with verified original data: the European CD (English, Danish, French, German, Swedish) and the Benelux CD (Dutch).</summary>
+	public static readonly IReadOnlyList<string> ShippedLanguages = new[] { "English", "Danish", "Dutch", "French", "German", "Swedish" };
 
 	private static GameLanguage? current;
 	private readonly string[] searchDirectories;

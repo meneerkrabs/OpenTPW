@@ -1,8 +1,71 @@
 # Optionele upscaling — ontwerp
 
-Toegevoegd op verzoek op 9 oktober 2026. Status: **gepland, niet geïmplementeerd**.
-Dit is een optionele presentatieverbetering, geen vervanging voor volledige offline
-gameplay of originele graphics-fidelity. Geen nieuwe dependency is goedgekeurd.
+Toegevoegd op verzoek op 9 oktober 2026. Status: **M6-U1 geïmplementeerd en op
+macOS arm64/Metal gesmoketest; Windows/D3D11 en Linux/Vulkan ongetest** (zie
+"Implementatiestatus" hieronder). Dit is een optionele presentatieverbetering, geen
+vervanging voor volledige offline gameplay of originele graphics-fidelity. Geen
+nieuwe dependency is toegevoegd.
+
+## Implementatiestatus (9 oktober 2026)
+
+Geïmplementeerd (M6-U1):
+
+- `DisplaySettings` (`source/OpenTPW/Client/Display/`): venstergrootte (logische
+  eenheden), `Windowed`/`Borderless`/`Exclusive`, `Native`/`Linear`/`Nearest`,
+  renderschaal (presets 77/67/59/50, custom 50–100) en UI-schaal. JSON in
+  `~/.config/OpenTPW/display.json` (Windows `%APPDATA%\OpenTPW`, of
+  `OPENTPW_CONFIG_DIR`); nooit in saves. Ontbrekende velden = Native-defaults;
+  ongeldige waarden vallen terug met diagnostiek; onbekende methodenamen worden
+  niet stil op een ander algoritme gemapt.
+- `RenderScaling.Compute`: interne grootte = afronding van output × schaal per
+  dimensie, minimaal 1 pixel, begrensd op de device-texturelimiet (aspect behouden,
+  met reden). Native = 100% en de bestaande blit; minimaliseren pauzeert zonder
+  nulgrote allocaties. Allocatiefout op geschaalde grootte valt terug op native met
+  reden; native-fout is een harde fout.
+- Renderer: wereld (4x MSAA blijft aparte instelling) op interne grootte → resolve →
+  blit met Linear- of Point-sampler naar de swapchain op drawable-pixels → BF4-UI
+  en ImGui op outputgrootte. Camera-aspect volgt de output. Wijzigingen (resize,
+  fullscreen, DPI, schaal) worden op een framegrens na `WaitForIdle` toegepast; alle
+  eigen kleur-/diepte-/resolve-/capturetextures, framebuffers en resource-sets worden
+  gedisposed (eerder lekten de MSAA-kleur- en dieptetexture bij resize).
+- HiDPI: venster met `SDL_WINDOW_ALLOW_HIGHDPI`; drawable via
+  `SDL_GetWindowSizeInPixels` (fallback Metal/Vulkan-drawable, dan venstergrootte).
+  Input, picking en `Panel`-layout blijven in logische eenheden; ImGui krijgt
+  `DisplayFramebufferScale`. Renderschaal is nooit een muisschaalfactor.
+- UI-schaalbeleid: alleen gehele factoren, zodat point-sampled BF4-tekst
+  pixel-exact blijft. Automatisch = grootste geheel getal waarbij 1280×720 in de
+  outputpixels past (1 t/m 2559×1439, 2 vanaf 2560×1440/Retina, 3 bij 4K).
+  ImGui (debug-UI) schaalt niet mee.
+- Films renderen altijd op outputgrootte (geen 3D-wereld; fallbackreden gelogd).
+- Diagnostiek: log en ImGui-sectie "Display" tonen methode, gevraagde/effectieve
+  schaal, interne/outputgrootte en fallbackreden. `OpenTPW.IDisplaySettings` is de
+  UI-agnostische API voor het in-game Options-scherm, inclusief bevestigen of na
+  N seconden terugzetten (UIStrings 401/402).
+- Tests: CPU-tests voor presets, afronding (≤ 0,5 interne pixel per as), clamps,
+  devicelimiet, fallbacks, nulgrootte, DPI-conversie, picking bij 1x/2x/3x en
+  77/50%, UI-schaal, JSON/CLI/bestand-roundtrip en de bevestigingsflow. Native
+  smoketest leest nu óók de uiteindelijke output ná schaling en BF4-UI terug
+  (ImGui uitgesloten), controleert target-/outputgroottes, exacte BF4-tekst, picking
+  van de Totem-cel en een cel ernaast, en wisselt runtime schaal/methode/venstergrootte,
+  een onbevestigde wijziging met timeout en een fullscreen-toggle zonder groei van
+  eigen GPU-resources.
+
+Nog niet gedaan / niet bewezen:
+
+- Echte Retina-hardware: getest is alleen een 1x-scherm met de testvariabele
+  `OPENTPW_TEST_PIXEL_SCALE=2` (drawable 2× groter dan het venster). De
+  `CAMetalLayer.contentsScale` van Veldrid blijft 1; scherpte op een echt
+  Retina-scherm is onbevestigd.
+- Exclusive fullscreen is geïmplementeerd via `SDL_SetWindowDisplayMode`, maar
+  experimenteel en niet gesmoketest (wijzigt de displaymodus); onbeschikbaar → borderless
+  met reden.
+- Windows/D3D11 en Linux/Vulkan: niet uitgevoerd. `app.manifest` declareert geen
+  DPI-awareness, dus Windows schaalt het venster bij >100% als bitmap; per-monitor
+  DPI (manifest + SDL-hint) is een aparte, op Windows te verifiëren stap.
+- Legacy `Panel`/`RootPanel`-HUD (in parkmodus leeg) tekent nog in de wereldpass.
+- Geen GPU-timing/performancemeting per schaal; geen performanceclaim.
+- Geen capture-vergelijking native versus geschaald voor first-person/transparantie.
+- M6-U2 (EASU/RCAS), temporal upscaling en dynamische resolutie blijven uitgesteld.
 
 ## Doel en instellingen
 

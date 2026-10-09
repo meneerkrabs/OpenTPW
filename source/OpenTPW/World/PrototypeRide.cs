@@ -7,6 +7,8 @@ public sealed class PrototypeRide : Entity
 	public const float FootprintRadius = 5f;
 	public const float ModelScale = 0.2f;
 	public const string DisplayName = "Inca Totem (prototype)";
+	/// <summary>Info.Id of the original Inca Totem (checked against Totem.sam on load).</summary>
+	public const int InfoId = 1110;
 	internal const string ArchivePath = "/levels/jungle/rides/totem";
 	internal const string CarriageMeshName = "tp_cart";
 	internal const string ScriptPath = ArchivePath + "/Totem.RSE";
@@ -30,6 +32,7 @@ public sealed class PrototypeRide : Entity
 	private readonly Matrix4x4[] nodeTransforms = Array.Empty<Matrix4x4>();
 	private readonly int carriageNode;
 	private bool deleted;
+	private static int nextAttractionId = 1;
 
 	/// <summary>The ride is open: the original script sees VAR_RIDECLOSED = 0.</summary>
 	public bool IsOpen => script[RideVariables.VAR_RIDECLOSED] == 0;
@@ -46,6 +49,9 @@ public sealed class PrototypeRide : Entity
 	/// <summary>The original Totem.RSE, driven by the fixed simulation tick.</summary>
 	public RideVM Script => script;
 
+	/// <summary>Visitor side of Totem.RSE: queue, LETMEON/LETMEOFF host protocol and visitor opcodes (docs/GUESTS.md).</summary>
+	public RideVisitorBridge Visitors { get; } = null!;
+
 	public PrototypeRide( Vector3 position )
 	{
 		try
@@ -59,12 +65,15 @@ public sealed class PrototypeRide : Entity
 			if ( settings["Info.Id"] != "1110" )
 				throw new InvalidDataException( "The ride settings do not identify the original Inca Totem." );
 			Name = DisplayName;
+			Visitors = new RideVisitorBridge( nextAttractionId++, DisplayName, RideVisitorKind.Ride,
+				ParseSetting( settings, "Upgrades[0].InitCapacity" ), ParseSetting( settings, "UsageInfo.ExcitementLevel" ), ParseSetting( settings, "Info.AttractionValue" ) );
 			using ( var scriptStream = FileSystem.OpenRead( ScriptPath ) )
 				script = new RideVM( scriptStream, new RideVMOptions { Effects = new TotemEffects( this ), SourceName = ScriptPath } );
 			// Upgrades[0].InitCapacity is the only capacity the .sam gives for a new ride. VAR_DURATION has no
 			// source yet and stays 0, which Totem.RSE treats as a single ride cycle per run.
 			script[RideVariables.VAR_CAPACITY] = int.Parse( settings["Upgrades[0].InitCapacity"], System.Globalization.CultureInfo.InvariantCulture );
 			script[RideVariables.VAR_RIDECLOSED] = 1;
+			Visitors.Attach( script, () => !deleted && script[RideVariables.VAR_RIDECLOSED] == 0 );
 			var modelFile = new ModelFile( $"{ArchivePath}/totem.MD2" );
 			var carriage = modelFile.Meshes.FirstOrDefault( mesh => IsCarriage( mesh.Name ) )
 				?? throw new InvalidDataException( "The original Totem model does not contain its tp_cart carriage mesh." );
@@ -133,6 +142,7 @@ public sealed class PrototypeRide : Entity
 	{
 		if ( deleted )
 			return;
+		Visitors.HostStep();
 		script.Advance( deltaTime );
 		motion.Update( deltaTime );
 		if ( motion.IsRunning && motion.ElapsedSeconds >= motion.CycleDuration )
@@ -177,6 +187,7 @@ public sealed class PrototypeRide : Entity
 	protected override void OnDelete()
 	{
 		deleted = true;
+		Visitors?.ReleaseAll();
 		script?.Stop();
 		motion.Stop();
 		foreach ( var child in children )
@@ -197,7 +208,7 @@ public sealed class PrototypeRide : Entity
 	/// <summary>
 	/// Routes Totem.RSE effects. Only ANIM_Main is connected: it plays the original totemm1.MD2 clip once
 	/// (430 ticks at <see cref="AnimationTicksPerSecond"/>) and reports its length in milliseconds.
-	/// Everything else (sounds, objects, visitors, channel animations) is an unimplemented effect.
+	/// Visitor opcodes go to <see cref="Visitors"/>. Everything else (sounds, objects, channel animations) is an unimplemented effect.
 	/// </summary>
 	private sealed class TotemEffects : IRideScriptEffects
 	{
@@ -207,6 +218,8 @@ public sealed class PrototypeRide : Entity
 
 		public int Perform( RideEffectCall call )
 		{
+			if ( ride.Visitors.TryPerform( call, out var visitorResult ) )
+				return visitorResult;
 			if ( call.Opcode is Opcode.TRIGANIM or Opcode.WAITANIM or Opcode.TRIGWAITANIM && call.Argument( 0 ) == MainAnimation )
 			{
 				ride.motion.Stop();
@@ -216,6 +229,9 @@ public sealed class PrototypeRide : Entity
 			return UnimplementedRideScriptEffects.Instance.Perform( call );
 		}
 	}
+
+	private static int ParseSetting( SettingsFile settings, string key ) =>
+		int.TryParse( settings[key], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var value ) ? value : 0;
 
 	internal static bool IsCarriage( string meshName ) => string.Equals( meshName.TrimEnd( '\0' ), CarriageMeshName, StringComparison.OrdinalIgnoreCase );
 

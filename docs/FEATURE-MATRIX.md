@@ -41,8 +41,13 @@ with data-grounded build rules (MAP.md, TPWS-PAYLOAD.md); that is not an origina
 gameplay feature, so the game-feature rows stay unchanged.
 
 Optional presentation extension (requested October 9, 2026): configurable world
-upscaling, design in [UPSCALING-DESIGN.md](UPSCALING-DESIGN.md). Implementation:
-`missing`; macOS/Windows/Linux: `unverified`; original VM: `not-applicable`
+upscaling, design in [UPSCALING-DESIGN.md](UPSCALING-DESIGN.md), together with
+high/arbitrary resolutions, HiDPI drawables, borderless/exclusive fullscreen and an
+integer BF4 UI scale. Implementation: `partial` (M6-U1 Native/Linear/Nearest with
+presets/custom scale; vendor/temporal methods and dynamic resolution deferred);
+macOS: `partial` (Metal smoke at 1280x720, 1920x1080 borderless, 2560x1440 via the
+test pixel scale and 50% Linear/Nearest; real Retina hardware and exclusive fullscreen
+unverified); Windows/Linux: `unverified` (not run); original VM: `not-applicable`
 (presentation only). Native remains the default and fidelity baseline. Offered
 portable modes require platform qualification; optional vendor/temporal experiments
 are not mandatory original-game requirements or permission to add dependencies.
@@ -70,12 +75,12 @@ adjudicate ongoing implementation or invent test results.
 | Park map, paths, entrances and construction rules | M2/M3 | unassessed | unverified | unverified | unverified | unverified | Original constraints and reference traces |
 | Fixed-tick simulation and RNG/replay | M2 | unassessed | unverified | unverified | unverified | unverified | Proposed contract; no determinism claim |
 | Versioned saves and original read-only import | M2 | unassessed | unverified | unverified | unverified | unverified | Full state, safe writes, import evidence |
-| Visitors, needs, routing and queues | M3 | unassessed | unverified | unverified | unverified | unverified | Stability plus original-behavior comparisons |
-| Economy, shops, toilets and staffing | M3/M5 | unassessed | unverified | unverified | unverified | unverified | Reference values/events, not invented rules |
+| Visitors, needs, routing and queues | M3 | approximated | prototype-pass | unverified | unverified | approximated | [GUESTS.md](GUESTS.md): sprites/.sam/strings original, rates and formulas approximated; RSE visitor opcodes inferred from the corpus. macOS: native smoke in all four themes (Metal, arm64). Needs original-behavior comparisons |
+| Economy, shops, toilets and staffing | M3/M5 | approximated | prototype-pass | unverified | unverified | not-applicable | `docs/ECONOMY.md`: settings-driven ledger, prices, loans, bankruptcy, staff wages/training, versioned park saves; formulas without original reference are labelled approximations; staff behaviour and guest spending wired to the guests slice. Evidence: `ParkEconomyTests`, `ParkEconomyOriginalDataTests`, native `--load-original-level` smoke (all four themes), macOS arm64 |
 | Every required fixed ride and original scripts | M4 | unassessed | unverified | unverified | unverified | unverified | Per-ride/per-opcode inventory and traces |
 | Coaster construction, ride behavior and rating | M4 | unassessed | unverified | unverified | unverified | unverified | All required types and constraints |
 | Four worlds and every offline scenario/unlock | M5 | unassessed | unverified | unverified | unverified | unverified | Per-world/scenario executable acceptance |
-| Research, adviser, breakdowns and decoration effects | M5 | unassessed | unverified | unverified | unverified | unverified | Original progression/event evidence |
+| Research, adviser, breakdowns and decoration effects | M5 | unassessed | unverified | unverified | unverified | unverified | Original progression/event evidence; research, wear/repair, challenges and golden tickets are approximated in `docs/ECONOMY.md` (adviser and decoration effects missing) |
 | UI, localization, fonts and shortcuts | M6 | unassessed | unverified | unverified | unverified | unverified | Selected-locale inventory and reference captures |
 | Audio, music, video and first-person/ride cameras | M6 | unassessed | unverified | unverified | unverified | unverified | Decoder/runtime evidence and reference comparisons |
 | Native dependencies, packaging and long sessions | M7 | unassessed | unverified | unverified | unverified | not-applicable | Platform qualification, not VM semantics |

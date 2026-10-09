@@ -6,6 +6,7 @@ public sealed class ParkLayout
 {
 	private readonly Level level;
 	private string errorMessage = "";
+	private readonly DisplaySettingsPanel displayPanel = new();
 
 	public ParkLayout( Level level )
 	{
@@ -74,6 +75,7 @@ public sealed class ParkLayout
 			else if ( level.LastActionMessage.Length > 0 )
 				ImGui.TextWrapped( level.LastActionMessage );
 			ImGui.Separator();
+			displayPanel.Draw();
 			ImGui.TextWrapped( "WASD: pan | right drag: pan | wheel: zoom | Q/E: rotate | F1: editor" );
 		}
 		ImGui.End();

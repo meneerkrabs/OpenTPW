@@ -30,8 +30,8 @@ bash scripts/run.sh --game-path '/path/to/Theme Park World' --language German --
 ```
 
 Text uses English when installed, otherwise the installed language.
-`--language` (or `OPENTPW_LANGUAGE`) picks English, Danish, French, German or
-Swedish. Non-English languages other than the installed one come from the
+`--language` (or `OPENTPW_LANGUAGE`) picks English, Danish, Dutch, French, German
+or Swedish (Dutch comes from the Benelux CD). Non-English languages other than the installed one come from the
 original CD: extract its `<Lang>/data` and `<Lang>/Meshes` folders outside the
 repository and pass the extraction folder (or one `<Lang>/data` folder) with
 `--language-data` (or `OPENTPW_LANGUAGE_DATA`). Nothing is copied into the game
@@ -51,7 +51,7 @@ OPENTPW_GAME_PATH='/path/to/Theme Park World' dotnet test source/OpenTPW.Tests/O
 ```
 
 Set `OPENTPW_LANGUAGE_DATA` to the extracted CD language folders to also run the
-Danish/French/German/Swedish string and font tests (LANGUAGES.md).
+Danish/Dutch/French/German/Swedish string and font tests (LANGUAGES.md).
 Asset-dependent tests are inconclusive when original files are unavailable; CPU
 tests do not require them. An asset-test skip is not a compatibility pass.
 The workflow builds/tests all three host OSes, but does not qualify GPU rendering
@@ -80,7 +80,11 @@ path texture) and 11 placed objects (orange footprints, named in the HUD by .sam
 holes and the imported paths/objects allow (see MAP.md). Sandbox save/load is
 disabled in this mode and no original file is written. Money, time, guests, staff,
 object models and path styles are not imported. Other themes load without a save.
-`--smoke-test` also works with this flag (captures `native-smoke-original-*.png`).
+Guests are simulated from scratch: kids arrive at the bus stops, pay at the ticket
+booth, walk the paths, queue for and ride an open Totem and leave
+([GUESTS.md](GUESTS.md)).
+`--smoke-test` also works with this flag (captures `native-smoke-original-*.png`;
+the smoke also checks that guests fill and leave the Totem and appear in readback).
 
 ## Read-only BF4 font inspection
 
@@ -123,6 +127,32 @@ press or click skips. `--headless` simulates decoding and the audio clock
 without a window or device. `--smoke-test` plays 60 frames with audio off and
 checks GPU readback against the CPU frame. See TGQ-MOVIES.md.
 
+## Display, resolution and upscaling
+
+```sh
+bash scripts/run.sh --game-path '/path/to/Theme Park World' --resolution 2560x1440
+bash scripts/run.sh --game-path '/path/to/Theme Park World' --fullscreen --upscale linear --render-scale 67
+```
+
+| Option | Effect |
+| --- | --- |
+| `--resolution WxH` | Windowed size in logical units (any size, e.g. 3440x1440); on HiDPI/Retina the drawable is larger and rendering uses its real pixels. macOS may shrink windows larger than the desktop. |
+| `--windowed`, `--fullscreen`, `--fullscreen-exclusive` | Window mode. `--fullscreen` is borderless at the desktop mode; exclusive switches the display mode to `--resolution` (experimental; falls back to borderless with a reason if the display does not list that mode). |
+| `--upscale native\|linear\|nearest` | How the 3D world reaches the output. Native (default) renders the world at output size. Linear/Nearest render it smaller and scale it up; Nearest is a deliberate retro look. |
+| `--render-scale <50-100>` | World size as a percentage of each output dimension (presets 77, 67, 59, 50; 50% is a quarter of the pixels). Without `--upscale` it selects Linear. Out-of-range values fall back to Native with a warning. |
+| `--ui-scale auto\|N` | Integer scale of the BF4 text UI (auto: 2 from 2560x1440, 3 at 4K). |
+| `--save-display-settings` | Also stores these values as the user's display settings. |
+
+Alt+Enter or F11 toggles fullscreen at runtime; the ImGui park panel has a Display
+section with the same options and the diagnostics (method, requested/effective scale,
+internal and output size, fallback reason). Settings live in `~/.config/OpenTPW/display.json`
+(`%APPDATA%\OpenTPW\display.json` on Windows; override the directory with
+`OPENTPW_CONFIG_DIR`), never in saves. Malformed command-line values are errors; an invalid
+settings file falls back to defaults with a warning. Only the 3D world is scaled: BF4 text,
+ImGui and movies render at output size, and 4x MSAA stays on independently. The Options
+screen can use the `OpenTPW.IDisplaySettings` API (including a keep-or-revert timeout).
+Status and limits: UPSCALING-DESIGN.md.
+
 ## Native integration smoke test
 
 ```sh
@@ -130,7 +160,7 @@ bash scripts/run.sh --game-path '/path/to/Theme Park World' --smoke-test
 OPENTPW_NATIVE_SHADER_TESTS=1 OPENTPW_GAME_PATH='/path/to/Theme Park World' dotnet test source/OpenTPW.Tests/OpenTPW.Tests.csproj -r osx-arm64
 ```
 
-The smoke test runs 150 rendered frames, places the original Totem, waits for
+The smoke test runs at least 150 rendered frames, places the original Totem, waits for
 its script to trigger the original `totemm1.MD2` animation, requires two
 readbacks to show changed node poses and pixels, checks close/reset, removes/replaces the ride and exercises
 save/load in an isolated temporary directory. It exits nonzero on failure or
@@ -139,6 +169,15 @@ writes `artifacts/native-smoke-park.png` and `artifacts/native-smoke-terrain.png
 relative to the current directory. The BF4 text panel (original fonts and strings
 in the selected language; add `--language German --language-data <dir>` to check
 another one) must match its CPU composite in readback; its crop is `artifacts/native-smoke-text.png`.
+The smoke test ignores the user display settings (defaults plus command-line options)
+and also reads back the final output after world scaling and the BF4 UI
+(`artifacts/native-smoke-output.png`): it checks swapchain, world-target and output
+sizes, exact BF4 text at the active UI scale, that picking returns the Totem cell and a
+neighbouring cell, and runtime render-scale, window-size, unconfirmed-revert and
+fullscreen-toggle changes without growing GPU resources. Combine it with the display
+options, e.g. `--render-scale 50 --upscale linear`; `OPENTPW_TEST_PIXEL_SCALE=2` (test only)
+doubles the drawable to exercise the HiDPI path on a 1x display (1280x720 window ->
+2560x1440 output).
 These captures omit the ImGui UI and remain ignored;
 they are not proof of interactive UI correctness or original-game visual fidelity.
 The nine native shader tests verify MSL/HLSL/GLSL material and text binding names without

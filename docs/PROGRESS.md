@@ -88,9 +88,23 @@ met instelbare wereldresolutie eerst, UI op outputresolutie. Simulatie/save/repl
 blijven onaangeraakt. Vendor-/temporal-upscaling en dynamische resolutie pas na
 afzonderlijk capability-, licentie-, input- en performancebewijs.
 
-Dit is alleen een ontwerpwijziging, geen nieuwe rendererfunctie of test-pass.
 Save-/maponderzoek blijft de eerstvolgende gameplay-gate; upscaling verplaatst
-dit kritieke pad niet. Eerdere build-/smoke-evidence betreft de bestaande renderer.
+dit kritieke pad niet.
+
+Implementatie M6-U1 + hoge resoluties (9 oktober 2026, worktree `display`):
+willekeurige venstergroottes (`--resolution`), borderless/exclusive fullscreen
+(`--fullscreen`, `--fullscreen-exclusive`, Alt+Enter/F11), HiDPI-drawables, Native/
+Linear/Nearest met presets 77/67/59/50 en custom 50–100 (`--upscale`, `--render-scale`),
+geheeltallige BF4-UI-schaal, gebruikersinstellingen in `display.json`, ImGui-sectie
+"Display" en de UI-agnostische `OpenTPW.IDisplaySettings`-API (met bevestigen/terugzetten).
+Alleen de 3D-wereld schaalt; BF4-tekst, ImGui en films renderen op outputgrootte.
+Bewijs (alleen macOS arm64/Metal, 1x-scherm 1920×1080): CPU-tests voor grootte,
+afronding, fallbacks, DPI, picking en configuratie; native smoke voor sandbox en
+`--load-original-level jungle` op 1280×720, 1920×1080 borderless (67%), 2560×1440
+output via `OPENTPW_TEST_PIXEL_SCALE=2` met 50% Linear (wereld 1280×720, UI-schaal 2,
+BF4-tekst exact, picking correct) en runtime schaal-/venster-/fullscreenwissels.
+Niet bewezen: echte Retina, exclusive fullscreen, Windows/Linux-GPU, performance.
+Zie `docs/UPSCALING-DESIGN.md`.
 
 ## Geleverde savecontainer-slice
 
@@ -156,6 +170,15 @@ Parallelle formaat-slice (7 formaten, geïsoleerde worktrees, 9 oktober 2026):
   Alle 263 startbare scripts + 44 kinderen draaien 60 s zonder fouten; de
   sandbox-Totem draait `Totem.RSE`, dat bepaalt wanneer de originele
   `totemm1.MD2`-animatie start. Slicing, milliseconden en CRIT_LOCK zijn afgeleid, niet getraced.
+- Bezoekers (benaderd, [GUESTS.md](GUESTS.md)): kinderen zijn originele sprites
+  (`esprites.wad`, ESP/FPC/TPC gedecodeerd, 8 sets × 175 frames, 5 richtingen +
+  spiegeling). Fixed-tick, geseede simulatie: aankomst via bushalte en kassa
+  (`FixedItemInfo`), entree, padzoeken met flow fields over de save-verbindingsbits,
+  behoeften, keuze met de `.sam` DecisionVar-gewichten, wachtrij en de
+  LETMEON/LETMEOFF-hostprotocol + bezoekersopcodes via `RideVisitorBridge`; de
+  Totem vult zich met echte bezoekers (start ≈3,3 s i.p.v. 11,3 s) en laat ze via
+  HOP/WALKOFF/WALKGET weer uitstappen. Snelheden, behoeftetempo's, aankomsteenheid
+  en scoreformule zijn eigen benaderingen. 600 bezoekers ≈0,06 ms per tick.
 - TPWS/TPWI: 17 unieke sectiemarkers in de enige fixture gelokaliseerd; inhoud opaque.
   Er staat geen ander TPWI/TPWS-bestand op de ISO.
 - LIPS: gevonden als `.LIP` (639 in `lips.wad` + 4 levelbestanden); strikte lezer,
@@ -221,3 +244,28 @@ Terrein/save-slice (9 oktober 2026, worktree `terrain`):
 - Open: geen originele menu-/UI-schermen, geen taalwissel tijdens het spel,
   `UniToMB.dat` (tekstinvoer) ongelezen, andere edities niet onderzocht. Zie
   [LANGUAGES.md](LANGUAGES.md).
+
+## Parkeconomie (9 oktober 2026, worktree `economy`)
+
+- Gelaagde `.sam`-instellingen (`levels/Standard.sam` → thema-`Standard.sam` → `Easy_Standard.sam`;
+  categorie- → object- → `Easy_`-objectbestanden) met bronvermelding per waarde. Inventaris van alle
+  economie-, personeel-, research- en doelinstellingen met betekenis en gebruik in
+  [ECONOMY.md](ECONOMY.md).
+- `ParkEconomy`: deterministische parkklok (dag = 240 vaste ticks, 30-dagenmaanden: benadering),
+  pauze/snelheden, grootboek met de originele UI-categorieën, entreeprijs, winkel- en
+  sideshowprijzen, bouw-, upgrade-, cel- en grondkosten, schrootwaarde, leningen (LOANNAMES),
+  faillissement na zes maanden rood (TAG_SYSTEM-teksten), personeelspool, lonen
+  (BaseWage × PayMultiplier), training, monteurs/schoonmakers (benaderd), research, uitdagingen,
+  golden tickets en sleutels. Benaderingen staan per regel gedocumenteerd.
+- Easymode.TPWI: leningtabel (8 × 32 bytes; aflossing floor(bedrag/maanden) = 0 % rente, dus
+  `Easy_Standard.sam`) en uitdagingslijst (8 × 45 bytes = jungle `ChallengesInThisLevel`) gevonden en
+  gecontroleerd. 87.987 / −12.013 blijft onverklaard (oneven, terwijl alle bouwkosten veelvouden van 5
+  zijn); het saldo start daarom op `InitialCash`.
+- Eigen geversioneerd parksaveformaat (JSON, atomisch, strikt gevalideerd) met klok, RNG, geld,
+  personeel, research en doelen; roundtrip en identieke voortzetting na laden getest.
+- `--load-original-level <thema>`: economie loopt mee op de vaste klok en logt datum/saldo per
+  speldag; de smoketest betaalt een maand loon en doet een parksave-roundtrip (alle vier thema's
+  geslaagd, macOS arm64 Metal). Volledige suite: zonder assets 427 passed / 122 skipped; met
+  `OPENTPW_GAME_PATH` 519 / 30; plus taaldata 539 / 10; 0 failed.
+- Open: bezoekersuitgaven, personeelsgedrag/stakingen, adviseur, HUD-schermen (andere slices), en
+  originele formules voor dagduur, rente, parkwaardering en sleutels.

@@ -134,7 +134,7 @@ internal static class Game
 		//
 		// Init renderer
 		//
-		Render = new();
+		Render = DisplayStartup.CreateRenderer( args );
 		if ( movieName != null )
 		{
 			MovieCommands.Play( dataDirectory, movieName, !args.Contains( "--mute" ), args.Contains( "--smoke-test" ) );

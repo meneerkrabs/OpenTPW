@@ -161,11 +161,13 @@ script-VM-like values. They match the SYSG list but are not decoded.
 
 ## Money (observed, not imported)
 
-The tail region holds an `i64` 100,000 at 1,411,394, equal to `Easy_Standard.sam`
-`BankAccountInfo.InitialCash` (but also `LoanInfo[0].LoanAmount`), next to `i32`
-87,987 and −12,013 (87,987 − 100,000). This looks like a balance ledger, but the
-spending could not be reconciled (the placed objects' `CostOfUpgrade` values sum to
-4,450; path/land costs are not in the level files), so no money field is imported.
+The `i64` 100,000 at 1,411,394 is the first record of the **loan-offer table** (8 × 32 bytes,
+amounts/terms of `LoanInfo[0–7]`, repayments floor(amount/months) = 0 % APR, i.e.
+`Easy_Standard.sam`); the **challenge list** (8 × 45 bytes at 1,410,409) equals jungle
+`ChallengesInThisLevel`. Both are located by `SaveEconomyRecords` and cross-checked in
+docs/ECONOMY.md. The words just before the loan table (`25, 87987, 1, 87787, −12013, 0`) look like
+balance values (87,987 = 100,000 − 12,013) but are not reconciled with the build costs (placed
+objects 4,450; every data cost is a multiple of 5 while 12,013 is odd), so no balance is imported.
 
 ## Importer (`OriginalParkImport`)
 
@@ -175,7 +177,7 @@ the SYSG records (rejecting any placed footprint outside the map or not occupied
 in the grid). Output: path cells, placed objects with footprints, fixed items, and
 unresolved records. `OriginalPark.Load` adds `base.MD2`/heightfield and resolves
 every Info.Id through the level's object `.sam` files (unknown ids are an error).
-**Not imported:** money, date/time, guests, staff, research, ride/shop state,
+**Not imported:** money (see ECONOMY.md for the loan and challenge tables), date/time, guests, staff, research, ride/shop state,
 prices, the extension data, path styles, queues and object models.
 
 ## Marker reader (`SavePayloadLayout`)

@@ -51,6 +51,10 @@ an error listing the available languages. The startup log prints the choice, e.g
 - one `<Lang>/data` folder (`<dir>/Language/<Name>`); its sibling `Meshes/<Name>`
   is used for banners when present.
 
+Without `--language-data`, the CD folder (`--cd-data`, `OPENTPW_CD_DATA`, or the CD chosen
+under Options → Game files) serves as the language overlay when it holds more languages than
+the installed game, so its languages appear in the options' language list.
+
 The overlay is read-only and is never copied into the game folder or the
 repository. Files missing from the overlay fall back to the installed data.
 

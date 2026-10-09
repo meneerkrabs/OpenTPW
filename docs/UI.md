@@ -195,15 +195,28 @@ mixes them), Advisor (the advisor speaks only from `--advisor-say`), Tutorial,
 Confirmations, RMB cancel, Rotation and Scroll. Options files from older versions get the
 defaults (all on, 90 degs, pushscroll).
 
+All option labels of a page are drawn in one common size (`UiLabelGroup`, UI-039): of the
+label font's family sizes and the whole text scales up to the current one, the largest
+whose letter box stays within 65 % of the label rectangle height (the original's label
+cap height is about half of it) and at which the widest text each label can show (all
+values of its row, in the current language) fits its rectangle; if every fitting size is
+taller the smallest fitting one is used. Because the widest variants count, the size does
+not change while a value changes. The title keeps its own font.
+
 The "OpenTPW" button (purple text button left of the OK panel, `[EXT:opentpw-page]`) opens a
-separate page in the OpenTPW window style (`w_med`, option rows) with everything the original
-did not have: window mode (windowed / borderless / exclusive "Full screen"), upscaling
-(Native/Linear/Nearest), render scale (Native, presets 77/67/59/50 %, others labelled with
-the original " Custom"), interface scale (Automatic or 1x-8x), enhanced textures, language,
-the effective internal/output size with fallback reason, and the Game files button. It edits
-the same pending state: its Back/Escape returns to the original page with the edits still
-pending, and OK on the original page applies both pages; Cancel/Escape there discards
-everything.
+second page built from the same original pieces: an `f_screen` page titled "OpenTPW"
+(title font and position of 120020) with `f_optpanel` bars in two columns (left x 57..690, right
+x 1331..1964, rows at y 167/323/479, the authored right column's panel size and pitch),
+each with a dark label in the shared size and a `b_on2` cycle button: window mode (windowed /
+borderless / exclusive "Full screen"), upscaling (Native/Linear/Nearest), render scale (Native,
+presets 77/67/59/50 %, others labelled with the original " Custom"), interface scale (Automatic
+or 1x-8x), enhanced textures and language. Clicking the button or wheel up/Right cycles
+forward, wheel down/Left backward, both wrapping. The effective internal/output size and
+fallback reason are small dark text below the rows. Game files is a purple button where the
+main page has its OpenTPW button, and Back is the `b_okay` button in the OK place on the
+`!f_plain` panel (Escape and right click also go back). It edits the same pending state: Back
+returns to the original page with the edits still pending, and OK on the original page applies
+both pages; Cancel/Escape there discards everything.
 
 OK saves `save/opentpw-options.json`. Size/window-mode changes use
 `ApplyWithConfirmation` (15 s) with the original UITEXT 400 question showing the display's
@@ -385,6 +398,7 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-036 | `UI/Original/UiWidgets.cs` | options slider: ball centre moves linearly over the track for value index 0..steps-1; click/drag sets the nearest step | capture of the original slider ends or binary slider code |
 | UI-037 | `UI/Original/UiText.cs` | option bar label colour (16,16,48), no drop shadow | exact label colour from a capture or the font palette |
 | UI-038 | `UI/Original/Options/OptionsScreen.cs` | 3D card rendering, videocard and audio quality drawn fixed and disabled (OpenTPW has no software renderer, card choice or audio quality) | none for the game path |
+| UI-039 | `UI/Original/UiWidgets.cs` | option labels of a page share one font and scale: largest size within 65 % of the label height at which every label's widest value fits | capture of the original option labels in several languages |
 
 Data-backed (tagged `[DATA]`): the 2048×1536 canvas and authored rectangles of
 placed models (`ui.wad` roots/bounds), button state frames and texture order, V

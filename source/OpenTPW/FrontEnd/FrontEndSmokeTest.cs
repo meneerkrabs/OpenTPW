@@ -167,7 +167,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		{
 			Require( flow.Menu!.Stack.Top?.Name == "openTpwOptions", "the OpenTPW button opens its page" );
 			var capture = CaptureFrame( "options-opentpw.png" );
-			VerifyText( capture, flow.Strings.Extra( OpenTpwText.Upscaling ), "OpenTPW upscaling row" );
+			VerifyText( capture, ((UiLabel)flow.Menu.Stack.Top.Find( "upscalingLabel" )!).Text(), "OpenTPW upscaling row" );
 			if ( Context.Canvas.TextScale < flow.Display.EffectiveUiScale )
 				VerifyText( capture, ((UiLabel)flow.Menu.Stack.Top.Find( "effective" )!).Text(), "effective output and interface-scale fallback" );
 			flow.InjectedInput = UiInput.Key( UiKeys.Back );

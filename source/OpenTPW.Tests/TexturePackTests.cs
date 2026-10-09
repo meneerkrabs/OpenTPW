@@ -236,27 +236,28 @@ public class TexturePackTests
 			Graphics = withGraphics ? graphics : null, TexturePackAvailable = available
 		};
 
-		UiOptionRow Row( UiScreenStack stack, UiScreen main )
+		(UiButton Button, Func<string> Value) Row( UiScreenStack stack, UiScreen main )
 		{
 			main.Find( "openTpw" )!.Activate();
-			return (UiOptionRow)stack.Top!.Find( "enhancedTextures" )!;
+			var page = stack.Top!;
+			return ((UiButton)page.Find( "enhancedTextures" )!, () => ((UiLabel)page.Find( "enhancedTexturesLabel" )!).Text()["Enhanced textures:".Length..]);
 		}
 
 		var stack = new UiScreenStack();
 		var screen = OptionsScreen.Create( stack, strings, Services( false ), () => { } );
 		stack.Push( screen );
-		var row = Row( stack, screen );
-		Assert.AreEqual( " No pack built", row.Value() );
-		row.Adjust( 1 );
-		Assert.AreEqual( " No pack built", row.Value(), "nothing to turn on without a pack" );
+		var (row, value) = Row( stack, screen );
+		Assert.AreEqual( " No pack built", value() );
+		row.Activate();
+		Assert.AreEqual( " No pack built", value(), "nothing to turn on without a pack" );
 
 		stack = new UiScreenStack();
 		screen = OptionsScreen.Create( stack, strings, Services( true ), () => { } );
 		stack.Push( screen );
-		row = Row( stack, screen );
-		Assert.AreEqual( strings[UIStrings.No], row.Value() );
-		row.Adjust( 1 );
-		Assert.AreEqual( strings[UIStrings.Yes], row.Value() );
+		(row, value) = Row( stack, screen );
+		Assert.AreEqual( strings[UIStrings.No], value() );
+		row.Activate();
+		Assert.AreEqual( strings[UIStrings.Yes], value() );
 		stack.Pop();
 		Assert.IsFalse( graphics.Current.EnhancedTextures, "nothing applied before OK" );
 		screen.Find( "ok" )!.Activate();
@@ -280,7 +281,7 @@ public class TexturePackTests
 			Graphics = graphics, TexturePackAvailable = true
 		}, () => closed++ );
 		combined.Push( screen );
-		Row( combined, screen ).Adjust( 1 );
+		Row( combined, screen ).Button.Activate();
 		combined.Pop();
 		((UiSlider)screen.Find( "resolution" )!).Adjust( 1 );
 		screen.Find( "ok" )!.Activate();

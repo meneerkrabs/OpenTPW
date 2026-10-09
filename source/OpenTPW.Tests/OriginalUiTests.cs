@@ -459,11 +459,11 @@ public class OriginalUiTests
 		main.Find( "openTpw" )!.Activate();
 		Assert.AreEqual( "openTpwOptions", stack.Top!.Name );
 		var page = stack.Top;
-		Assert.AreEqual( "Upscaling:", ((UiOptionRow)page.Find( "upscaling" )!).Label() );
-		((UiOptionRow)page.Find( "upscaling" )!).Adjust( 1 );
-		((UiOptionRow)page.Find( "renderScale" )!).Adjust( 1 );
-		((UiOptionRow)page.Find( "uiScale" )!).Adjust( 1 );
-		Assert.AreEqual( "ui339 70%", ((UiOptionRow)page.Find( "renderScale" )!).Value() );
+		Assert.AreEqual( "Upscaling: Native", ((UiLabel)page.Find( "upscalingLabel" )!).Text() );
+		((UiButton)page.Find( "upscaling" )!).Activate();
+		((UiButton)page.Find( "renderScale" )!).Adjust( 1 );
+		((UiButton)page.Find( "uiScale" )!).Adjust( 1 );
+		Assert.AreEqual( "Render scale:ui339 70%", ((UiLabel)page.Find( "renderScaleLabel" )!).Text() );
 		Assert.AreEqual( 0, display.Applies, "nothing applied before OK" );
 		stack.Update( context, UiInput.Key( UiKeys.Back ) );
 		Assert.AreSame( main, stack.Top, "Back returns to the original page" );
@@ -493,14 +493,14 @@ public class OriginalUiTests
 		// "Yes" keeps; the display's own timeout also leads to UITEXT 401. Window mode lives on the OpenTPW page.
 		main = Open();
 		main.Find( "openTpw" )!.Activate();
-		((UiOptionRow)stack.Top!.Find( "windowMode" )!).Adjust( 1 );
+		((UiButton)stack.Top!.Find( "windowMode" )!).Activate();
 		stack.Update( context, UiInput.Key( UiKeys.Back ) );
 		main.Find( "ok" )!.Activate();
 		stack.Update( context, UiInput.Key( UiKeys.Accept ) );
 		Assert.AreEqual( (WindowMode.Borderless, false), (display.Current.Mode, display.IsConfirmationPending) );
 		main = Open();
 		main.Find( "openTpw" )!.Activate();
-		((UiOptionRow)stack.Top!.Find( "windowMode" )!).Adjust( -1 );
+		((UiButton)stack.Top!.Find( "windowMode" )!).Adjust( -1 );
 		stack.Update( context, UiInput.Key( UiKeys.Back ) );
 		main.Find( "ok" )!.Activate();
 		display.ExpireConfirmation();
@@ -512,14 +512,40 @@ public class OriginalUiTests
 		// Language: stored for the next start, original RESTART GAME message (UITEXT 402).
 		main = Open();
 		main.Find( "openTpw" )!.Activate();
-		var row = (UiOptionRow)stack.Top!.Find( "language" )!;
+		var row = (UiButton)stack.Top!.Find( "language" )!;
 		row.Adjust( -1 );
-		Assert.AreEqual( " Nederlands", row.Value() );
+		Assert.AreEqual( "Language: Nederlands", ((UiLabel)stack.Top!.Find( "languageLabel" )!).Text() );
 		stack.Update( context, UiInput.Key( UiKeys.Back ) );
 		main.Find( "ok" )!.Activate();
 		CollectionAssert.AreEqual( new[] { "Dutch" }, languages );
 		Assert.AreEqual( "restart", stack.Top!.Name );
 		Assert.AreEqual( "ui402", ((UiLabel)stack.Top.Find( "message" )!).Text(), "original RESTART GAME message" );
+	}
+
+	[TestMethod]
+	public void OpenTpwPageButtonsCycleBothWaysWithWrapAndShareOneLabelGroup()
+	{
+		Assert.AreEqual( 1, OptionsScreen.CycleWrap( new[] { 1, 2, 3 }, 3, 1 ) );
+		Assert.AreEqual( 3, OptionsScreen.CycleWrap( new[] { 1, 2, 3 }, 1, -1 ) );
+		var context = FakeContext();
+		var stack = new UiScreenStack();
+		var main = OptionsScreen.Create( stack, FakeStrings(), OptionsServicesFor( new GameOptions(), new StubDisplaySettings() ), () => { } );
+		stack.Push( main );
+		main.Find( "openTpw" )!.Activate();
+		var page = stack.Top!;
+		var mode = (UiLabel)page.Find( "windowModeLabel" )!;
+		var button = (UiButton)page.Find( "windowMode" )!;
+		Assert.AreEqual( "Window mode: Windowed", mode.Text() );
+		var center = button.ScreenRect( context.Canvas ).Center;
+		stack.Update( context, new UiInput( center, false, false, false, false, UiKeys.None, 1 ) );
+		Assert.AreEqual( "Window mode: Borderless", mode.Text(), "wheel up cycles forward" );
+		stack.Update( context, new UiInput( center, false, false, false, false, UiKeys.None, -1 ) );
+		stack.Update( context, new UiInput( center, false, false, false, false, UiKeys.None, -1 ) );
+		Assert.AreEqual( "Window mode: Full screen", mode.Text(), "wheel down cycles back and wraps" );
+		stack.Update( context, UiInput.Click( center ) );
+		Assert.AreEqual( "Window mode: Windowed", mode.Text(), "a click cycles forward and wraps" );
+		Assert.IsTrue( page.Elements.OfType<UiLabel>().Where( label => label.Id.EndsWith( "Label" ) ).All( label => label.Group != null && label.Shadow == false ), "dark labels without shadow in one group" );
+		Assert.AreSame( ((UiLabel)page.Find( "languageLabel" )!).Group, mode.Group );
 	}
 
 	[TestMethod]

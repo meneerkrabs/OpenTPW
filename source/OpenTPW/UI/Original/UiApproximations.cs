@@ -45,6 +45,7 @@ public static class UiApproximations
 		("UI-036", "options slider: ball centre moves linearly over the track for value index 0..steps-1; click/drag sets the nearest step", "capture of the original slider ends or binary slider code"),
 		("UI-037", "option bar label colour (16,16,48), no drop shadow", "exact label colour from a capture or the font palette"),
 		("UI-038", "3D card rendering, videocard and audio quality are drawn fixed and disabled (OpenTPW has no software renderer, card choice or audio quality)", "none for the game path; the original lets the player change them"),
+		("UI-039", "option labels of a page share one font and scale: largest size within 65 % of the label height at which every label's widest value fits", "capture of the original option labels in several languages"),
 	};
 
 	private static bool logged;

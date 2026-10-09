@@ -96,9 +96,15 @@ public sealed class UiContext
 			DrawText( candidates[fit.Index], text, rect, color, align, true, shadow );
 			return;
 		}
-		var chosen = candidates[fit.Index];
-		var box = boxes[fit.Index];
-		var scale = fit.Scale;
+		DrawTextAt( candidates[fit.Index], fit.Scale, text, rect, color, align, shadow );
+	}
+
+	/// <summary>Draws single-line text in <paramref name="chosen"/> at whole text scale <paramref name="scale"/>, placed like <see cref="DrawFittedText"/> (ink aligned horizontally, letter box centred vertically).</summary>
+	public void DrawTextAt( FontAtlas chosen, int scale, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Left, bool shadow = true )
+	{
+		if ( string.IsNullOrEmpty( text ) )
+			return;
+		var box = InkBox( chosen, text, shadow );
 		var width = (box.Right - box.Left) * scale;
 		var x = align switch
 		{
@@ -113,6 +119,59 @@ public sealed class UiContext
 		if ( shadow )
 			Batch.AddText( chosen, layout, ix + scale, iy + scale, UiColors.Shadow, scale );
 		Batch.AddText( chosen, layout, ix, iy, color, scale, text );
+	}
+
+	/// <summary>
+	/// One font and whole text scale for every label of <paramref name="group"/>: of the group font's family sizes and the
+	/// scales up to the current one, the largest whose letter box stays within <see cref="UiLabelGroup.TargetHeight"/> of the
+	/// shortest label rectangle while every variant text of every label fits its own rectangle; when all fitting sizes are
+	/// taller than that, the smallest fitting one; when nothing fits, the smallest font at scale 1.
+	/// </summary>
+	// [APPROX:UI-039] uniform option label size: largest family size within 0.65 of the label height at which all labels (and the widest value of each) fit — evidence needed: capture of the original option labels in several languages
+	public (FontAtlas Font, int Scale) ChooseUniform( UiLabelGroup group )
+	{
+		var members = group.Members.Where( label => label.Visible ).ToList();
+		var candidates = new List<FontAtlas> { group.Font( Fonts ) };
+		candidates.AddRange( Fonts.Smaller( candidates[0] ) );
+		if ( members.Count == 0 )
+			return (candidates[0], Canvas.TextScale);
+		var rects = members.Select( label => label.ScreenRect( Canvas ) ).ToList();
+		var limit = rects.Min( rect => rect.Height ) * UiLabelGroup.TargetHeight;
+		var texts = members.Select( label => label.Variants?.Invoke().ToList() ?? new List<string> { label.Text() } ).ToList();
+		(FontAtlas Font, int Scale)? best = null;
+		var bestHeight = -1;
+		(FontAtlas Font, int Scale)? smallest = null;
+		var smallestHeight = int.MaxValue;
+		foreach ( var candidate in candidates )
+		{
+			for ( var scale = Math.Max( 1, Canvas.TextScale ); scale >= 1; scale-- )
+			{
+				var fits = true;
+				var height = 0;
+				for ( var index = 0; index < members.Count && fits; index++ )
+				{
+					foreach ( var text in texts[index] )
+					{
+						var box = InkBox( candidate, text, members[index].Shadow );
+						height = Math.Max( height, (box.Bottom - box.Top) * scale );
+						fits &= (box.Right - box.Left) * scale <= rects[index].Width && (box.Bottom - box.Top) * scale <= rects[index].Height;
+					}
+				}
+				if ( !fits )
+					continue;
+				if ( height <= limit && height > bestHeight )
+				{
+					best = (candidate, scale);
+					bestHeight = height;
+				}
+				if ( height < smallestHeight )
+				{
+					smallest = (candidate, scale);
+					smallestHeight = height;
+				}
+			}
+		}
+		return best ?? smallest ?? (candidates[^1], 1);
 	}
 
 	private readonly Dictionary<FontAtlas, (int Top, int Bottom)> letterBoxes = new();
@@ -197,6 +256,15 @@ public abstract class UiElement
 	public virtual void Adjust( int direction ) { }
 }
 
+/// <summary>Labels that are drawn in one common size (the option labels of a page).</summary>
+public sealed class UiLabelGroup
+{
+	/// <summary>Share of the label rectangle's height the letter box (capitals, ascenders, descenders) should not exceed.</summary>
+	public const float TargetHeight = 0.65f;
+	public List<UiLabel> Members { get; } = new();
+	public Func<UiFonts, FontAtlas> Font { get; set; } = fonts => fonts.Label;
+}
+
 public sealed class UiLabel : UiElement
 {
 	public Func<string> Text { get; set; } = () => "";
@@ -208,12 +276,22 @@ public sealed class UiLabel : UiElement
 	public bool Shadow { get; set; } = true;
 	/// <summary>Fit the single line into the rectangle (smaller font, smaller scale) instead of the small-font fallback.</summary>
 	public bool Fit { get; set; }
+	/// <summary>Labels of one group share a single font and scale (<see cref="UiContext.ChooseUniform"/>).</summary>
+	public UiLabelGroup? Group { get; set; }
+	/// <summary>Every text this label can show (so a group's size does not change while values change); null = just <see cref="Text"/>.</summary>
+	public Func<IEnumerable<string>>? Variants { get; set; }
 
 	public override void Draw( UiContext context, bool focused, bool pressed )
 	{
 		var rect = ScreenRect( context.Canvas );
 		var font = Font( context.Fonts );
 		var text = Text();
+		if ( Group != null )
+		{
+			var (groupFont, scale) = context.ChooseUniform( Group );
+			context.DrawTextAt( groupFont, scale, text, rect, Color, Align, Shadow );
+			return;
+		}
 		if ( Fit && !Wrap )
 		{
 			context.DrawFittedText( font, text, rect, Color, Align, Shadow );

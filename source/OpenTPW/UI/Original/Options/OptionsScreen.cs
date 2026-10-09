@@ -113,6 +113,81 @@ public static class OptionsScreen
 		_ => " " + strings.Extra( OpenTpwText.EnhancedQuality )
 	};
 
+	/// <summary>Adds the original page pieces (panels, dark labels in one shared size, toggles, sliders) to a screen.</summary>
+	private sealed class PageBuilder
+	{
+		private readonly UiScreen screen;
+		public PageBuilder( UiScreen screen ) => this.screen = screen;
+		public UiLabelGroup Group { get; } = new();
+
+		public static UiRect Rect( float left, float top, float right, float bottom ) => new( left, top, right - left, bottom - top );
+
+		public void Frame( Func<string> title )
+		{
+			// [DATA:ui.wad:f_screen] the full-screen frame with the tiled wave background
+			screen.Add( new UiModelImage { Id = "window", Model = "f_screen", Bounds = new UiRect( 0, 0, 2048, 1536 ), Anchor = UiAnchor.Center } );
+			screen.Add( new UiLabel
+			{
+				Id = "title",
+				Text = title,
+				Font = fonts => fonts.Title,
+				Color = UiColors.Title,
+				Align = UiAlign.Center,
+				Fit = true,
+				// [DATA:options table 0x4b0dc:120020] title text rectangle
+				Bounds = new UiRect( 788, 46, 472, 80 ),
+				Anchor = UiAnchor.Center
+			} );
+		}
+
+		public void Panel( string id, string model, UiRect rect ) =>
+			screen.Add( new UiModelImage { Id = id + "Panel", Model = model, Bounds = rect, Anchor = UiAnchor.Center } );
+
+		public void Label( string id, UiRect rect, Func<string> text, Func<IEnumerable<string>>? variants = null )
+		{
+			var label = screen.Add( new UiLabel
+			{
+				Id = id + "Label",
+				Text = text,
+				Variants = variants,
+				Font = fonts => fonts.Label,
+				Color = UiColors.OptionText,
+				Shadow = false,
+				Group = Group,
+				Bounds = rect,
+				Anchor = UiAnchor.Center
+			} );
+			Group.Members.Add( label );
+		}
+
+		// b_on: normal/hilite frames show ON, the down frame OFF; b_on2 is a plain press button
+		public UiButton Toggle( string id, string model, UiRect rect, Func<bool> isOn, Action toggled, bool enabled = true, Action<int>? adjusted = null ) => screen.Add( new UiButton
+		{
+			Id = id,
+			Model = model,
+			Selected = model == "b_on" ? () => !isOn() : null,
+			Clicked = toggled,
+			Adjusted = adjusted,
+			Enabled = enabled,
+			Bounds = rect,
+			Anchor = UiAnchor.Center
+		} );
+
+		public void Slider( string id, UiRect track, UiRect hit, UiRect knob, Func<int> steps, Func<int> value, Action<int> changed, bool enabled = true ) => screen.Add( new UiSlider
+		{
+			Id = id,
+			Track = track,
+			KnobSize = new System.Numerics.Vector2( knob.Width, knob.Height ),
+			KnobTop = knob.Y,
+			Steps = steps,
+			Value = value,
+			Changed = changed,
+			Enabled = enabled,
+			Bounds = hit,
+			Anchor = UiAnchor.Center
+		} );
+	}
+
 	private static bool SameSize( Point2 a, Point2 b ) => a.X == b.X && a.Y == b.Y;
 
 	public static UiScreen Create( UiScreenStack stack, UiStringTable strings, OptionsServices services, Action closed )
@@ -129,59 +204,13 @@ public static class OptionsScreen
 		};
 		var snapshot = options.Clone();
 		var screen = new UiScreen( "options" );
-		// [DATA:ui.wad:f_screen] the full-screen frame with the tiled wave background
-		screen.Add( new UiModelImage { Id = "window", Model = "f_screen", Bounds = new UiRect( 0, 0, 2048, 1536 ), Anchor = UiAnchor.Center } );
-		screen.Add( new UiLabel
-		{
-			Id = "title",
-			Text = () => strings[UIStrings.GameOptions],
-			Font = fonts => fonts.Title,
-			Color = UiColors.Title,
-			Align = UiAlign.Center,
-			Fit = true,
-			// [DATA:options table 0x4b0dc:120020] title text rectangle
-			Bounds = new UiRect( 788, 46, 472, 80 ),
-			Anchor = UiAnchor.Center
-		} );
-
-		static UiRect Rect( float left, float top, float right, float bottom ) => new( left, top, right - left, bottom - top );
-		void Panel( string id, string model, UiRect rect ) =>
-			screen.Add( new UiModelImage { Id = id + "Panel", Model = model, Bounds = rect, Anchor = UiAnchor.Center } );
-		void Label( string id, UiRect rect, Func<string> text ) => screen.Add( new UiLabel
-		{
-			Id = id + "Label",
-			Text = text,
-			Font = fonts => fonts.Label,
-			Color = UiColors.OptionText,
-			Shadow = false,
-			Fit = true,
-			Bounds = rect,
-			Anchor = UiAnchor.Center
-		} );
-		// b_on: normal/hilite frames show ON, the down frame OFF; b_on2 is a plain press button
-		void Toggle( string id, string model, UiRect rect, Func<bool> isOn, Action toggled, bool enabled = true ) => screen.Add( new UiButton
-		{
-			Id = id,
-			Model = model,
-			Selected = model == "b_on" ? () => !isOn() : null,
-			Clicked = toggled,
-			Enabled = enabled,
-			Bounds = rect,
-			Anchor = UiAnchor.Center
-		} );
-		void Slider( string id, UiRect track, UiRect hit, UiRect knob, Func<int> steps, Func<int> value, Action<int> changed, bool enabled = true ) => screen.Add( new UiSlider
-		{
-			Id = id,
-			Track = track,
-			KnobSize = new System.Numerics.Vector2( knob.Width, knob.Height ),
-			KnobTop = knob.Y,
-			Steps = steps,
-			Value = value,
-			Changed = changed,
-			Enabled = enabled,
-			Bounds = hit,
-			Anchor = UiAnchor.Center
-		} );
+		var page = new PageBuilder( screen );
+		page.Frame( () => strings[UIStrings.GameOptions] );
+		static UiRect Rect( float left, float top, float right, float bottom ) => PageBuilder.Rect( left, top, right, bottom );
+		void Panel( string id, string model, UiRect rect ) => page.Panel( id, model, rect );
+		void Label( string id, UiRect rect, Func<string> text, Func<IEnumerable<string>>? variants = null ) => page.Label( id, rect, text, variants );
+		void Toggle( string id, string model, UiRect rect, Func<bool> isOn, Action toggled, bool enabled = true ) => page.Toggle( id, model, rect, isOn, toggled, enabled );
+		void Slider( string id, UiRect track, UiRect hit, UiRect knob, Func<int> steps, Func<int> value, Action<int> changed, bool enabled = true ) => page.Slider( id, track, hit, knob, steps, value, changed, enabled );
 		static string Percent( int volume ) => $" {volume * 10} %";
 
 		// [DATA:options table 0x4b0dc] control rectangles of the original page; meanings from the supplied PC capture
@@ -196,10 +225,10 @@ public static class OptionsScreen
 
 		// Slider rows (f_optpanel3): every row has the same offsets from its panel top.
 		void SliderRow( string id, string model, float top, float panelLeft, float panelRight, float panelBottom, float labelTop, float labelBottom, float trackTop, float trackBottom,
-			float hitTop, float hitBottom, float knobTop, float knobBottom, Func<string> label, Func<int> steps, Func<int> value, Action<int> changed, bool enabled = true )
+			float hitTop, float hitBottom, float knobTop, float knobBottom, Func<string> label, Func<int> steps, Func<int> value, Action<int> changed, bool enabled = true, Func<IEnumerable<string>>? variants = null )
 		{
 			Panel( id, model, Rect( panelLeft, top, panelRight, panelBottom ) );
-			Label( id, Rect( 117, labelTop, 706, labelBottom ), label );
+			Label( id, Rect( 117, labelTop, 706, labelBottom ), label, variants );
 			Slider( id, Rect( 990, trackTop, 1248, trackBottom ), Rect( 962, hitTop, 1281, hitBottom ), Rect( 1023, knobTop, 1090, knobBottom ), steps, value, changed, enabled );
 		}
 		Func<IReadOnlyList<Point2>> sizes = () => display.GetResolutions( state.Display.Mode );
@@ -212,13 +241,13 @@ public static class OptionsScreen
 				var list = sizes();
 				if ( index >= 0 && index < list.Count )
 					state.Display = state.Display with { Width = list[index].X, Height = list[index].Y };
-			}, true );
+			}, true, () => sizes().Select( size => strings[UIStrings.ScreenResolution] + ResolutionLabel( strings, size ) ) );
 		var steps = graphics == null ? Array.Empty<GraphicsPreset>() : QualitySteps( graphics );
 		SliderRow( "quality", "f_optpanel3", 479, 57, 1289, 628, 532, 576, 518, 589, 487, 623, 520, 588,
 			() => strings[UIStrings.GraphicsQuality] + QualityLabel( strings, state.Preset ),
 			() => steps.Count,
 			() => Math.Max( 0, steps.ToList().IndexOf( state.Preset ) ),
-			index => state.Preset = steps[index], steps.Count > 1 );
+			index => state.Preset = steps[index], steps.Count > 1, () => steps.Select( preset => strings[UIStrings.GraphicsQuality] + QualityLabel( strings, preset ) ).Append( strings[UIStrings.GraphicsQuality] + QualityLabel( strings, state.Preset ) ) );
 		SliderRow( "audio", "f_optpanel3", 638, 57, 1289, 787, 691, 735, 677, 748, 646, 782, 679, 747,
 			() => strings[UIStrings.AudioQuality] + Percent( GameOptions.MaximumVolume ),
 			() => GameOptions.MaximumVolume + 1, () => GameOptions.MaximumVolume, _ => { }, false );
@@ -228,7 +257,7 @@ public static class OptionsScreen
 			float hitTop, float hitBottom, float knobTop, float knobBottom, float labelTop, float labelBottom, Func<int> get, Action<int> set, Func<bool> isOn, Action<bool> setOn )
 		{
 			SliderRow( id, "f_optpanel2", panelTop, 52, 1289, panelBottom, labelTop, labelBottom, trackTop, trackBottom, hitTop, hitBottom, knobTop, knobBottom,
-				() => strings[text] + Percent( get() ), () => GameOptions.MaximumVolume + 1, get, set );
+				() => strings[text] + Percent( get() ), () => GameOptions.MaximumVolume + 1, get, set, true, () => new[] { strings[text] + Percent( GameOptions.MaximumVolume ) } );
 			Toggle( id + "On", "b_on", Rect( 801, toggleTop, 945, toggleBottom ), isOn, () => setOn( !isOn() ) );
 		}
 		VolumeRow( "effects", UIStrings.SoundEffectsVolume, 838, 988, 862, 964, 877, 948, 845, 981, 880, 947, 891, 936,
@@ -245,7 +274,7 @@ public static class OptionsScreen
 		void OnRow( string id, UIStrings text, float top, float bottom, float labelTop, float labelBottom, float toggleTop, float toggleBottom, Func<bool> get, Action<bool> set )
 		{
 			Panel( id, "f_optpanel", Rect( 1331, top, 1964, bottom ) );
-			Label( id, Rect( 1401, labelTop, 1701, labelBottom ), () => strings[text] + OnOff( get() ) );
+			Label( id, Rect( 1401, labelTop, 1701, labelBottom ), () => strings[text] + OnOff( get() ), () => new[] { strings[text] + OnOff( true ), strings[text] + OnOff( false ) } );
 			Toggle( id, "b_on", Rect( 1786, toggleTop, 1930, toggleBottom ), get, () => set( !get() ) );
 		}
 		OnRow( "advisor", UIStrings.Advisor, 167, 316, 215, 260, 190, 292, () => options.Advisor, on => options.Advisor = on );
@@ -254,10 +283,12 @@ public static class OptionsScreen
 		OnRow( "confirmations", UIStrings.Confirmations, 681, 830, 732, 777, 705, 807, () => options.Confirmations, on => options.Confirmations = on );
 		OnRow( "rmbCancel", UIStrings.RmbCancel, 837, 986, 888, 932, 861, 963, () => options.RmbCancel, on => options.RmbCancel = on );
 		Panel( "rotation", "f_optpanel", Rect( 1331, 994, 1964, 1143 ) );
-		Label( "rotation", Rect( 1401, 1044, 1701, 1089 ), () => strings[UIStrings.Rotation] + strings[options.Rotation == RotationMode.Smooth ? UIStrings.Smooth : UIStrings.Rotation90Degs] );
+		Label( "rotation", Rect( 1401, 1044, 1701, 1089 ), () => strings[UIStrings.Rotation] + strings[options.Rotation == RotationMode.Smooth ? UIStrings.Smooth : UIStrings.Rotation90Degs],
+			() => new[] { strings[UIStrings.Rotation] + strings[UIStrings.Smooth], strings[UIStrings.Rotation] + strings[UIStrings.Rotation90Degs] } );
 		Toggle( "rotation", "b_on2", Rect( 1807, 1017, 1910, 1119 ), () => true, () => options.Rotation = options.Rotation == RotationMode.Smooth ? RotationMode.Ninety : RotationMode.Smooth );
 		Panel( "scroll", "f_optpanel", Rect( 1331, 1150, 1964, 1299 ) );
-		Label( "scroll", Rect( 1401, 1200, 1701, 1245 ), () => strings[UIStrings.Scroll] + strings[options.Scroll == ScrollMode.Pushscroll ? UIStrings.Pushscroll : UIStrings.RightButton] );
+		Label( "scroll", Rect( 1401, 1200, 1701, 1245 ), () => strings[UIStrings.Scroll] + strings[options.Scroll == ScrollMode.Pushscroll ? UIStrings.Pushscroll : UIStrings.RightButton],
+			() => new[] { strings[UIStrings.Scroll] + strings[UIStrings.Pushscroll], strings[UIStrings.Scroll] + strings[UIStrings.RightButton] } );
 		Toggle( "scroll", "b_on2", Rect( 1807, 1173, 1910, 1276 ), () => true, () => options.Scroll = options.Scroll == ScrollMode.Pushscroll ? ScrollMode.RightButton : ScrollMode.Pushscroll );
 
 		void Cancel()
@@ -320,60 +351,85 @@ public static class OptionsScreen
 		return screen;
 	}
 
+	/// <summary>Next value of <paramref name="values"/> after <paramref name="current"/> in <paramref name="direction"/>, wrapping around.</summary>
+	public static T CycleWrap<T>( IReadOnlyList<T> values, T current, int direction )
+	{
+		if ( values.Count == 0 )
+			return current;
+		var index = -1;
+		for ( var candidate = 0; candidate < values.Count; candidate++ )
+		{
+			if ( EqualityComparer<T>.Default.Equals( values[candidate], current ) )
+				index = candidate;
+		}
+		return index < 0 ? values[0] : values[((index + direction) % values.Count + values.Count) % values.Count];
+	}
+
 	/// <summary>
-	/// The OpenTPW page ([EXT:opentpw-page]): everything OpenTPW adds to the original options, in its own
-	/// w_med window with option rows. It edits the shared pending state; Back (or Escape) returns to the
-	/// original page with the edits still pending, and OK there applies them.
+	/// The OpenTPW page ([EXT:opentpw-page]): everything OpenTPW adds to the original options, built from the
+	/// original pieces like the main page: an <c>f_screen</c> page whose <c>f_optpanel</c> bars carry dark labels
+	/// in one shared size and a <c>b_on2</c> button that cycles the value (click or wheel up/Right forward, wheel
+	/// down/Left back, both wrapping). It edits the shared pending state; Back (the <c>b_okay</c> button or Escape)
+	/// returns to the original page with the edits still pending, and OK there applies them.
 	/// </summary>
 	private static UiScreen CreateOpenTpwPage( UiScreenStack stack, UiStringTable strings, OptionsServices services, OptionsState state )
 	{
 		var display = services.Display;
 		var graphics = services.Graphics;
 		var screen = new UiScreen( "openTpwOptions" );
-		var window = UiDialogs.CenteredWindow( 1760, 1200 );
-		UiDialogs.AddWindow( screen, window, "w_med", () => strings.Extra( OpenTpwText.OpenTpwPage ) );
+		var page = new PageBuilder( screen );
+		page.Frame( () => strings.Extra( OpenTpwText.OpenTpwPage ) );
+		static UiRect Rect( float left, float top, float right, float bottom ) => PageBuilder.Rect( left, top, right, bottom );
 
-		var rowTop = window.Y + 150;
+		// Two columns with the authored right column's panel size and pitch (x 1331..1964; the left column starts at 57).
 		var rowIndex = 0;
-		void Row( string id, Func<string> label, Func<string> value, Action<int> changed )
+		void Row( string id, Func<string> text, Func<IEnumerable<string>> variants, Action<int> change )
 		{
-			screen.Add( new UiOptionRow
-			{
-				Id = id,
-				Label = label,
-				Value = value,
-				Changed = changed,
-				Bounds = new UiRect( window.X + 90, rowTop + rowIndex++ * RowPitch, window.Width - 330, 76 ),
-				Anchor = UiAnchor.Center
-			} );
+			var column = rowIndex / 3;
+			var left = column == 0 ? 57f : 1331f;
+			var top = 167f + rowIndex % 3 * 156f;
+			rowIndex++;
+			page.Panel( id, "f_optpanel", Rect( left, top, left + 633, top + 149 ) );
+			page.Label( id, Rect( left + 70, top + 50, left + 370, top + 95 ), text, variants );
+			page.Toggle( id, "b_on2", Rect( left + 476, top + 23, left + 579, top + 125 ), () => true, () => change( 1 ), true, change );
 		}
 		// [EXT:display] window mode, upscaling, render scale and interface scale rows are OpenTPW extensions
-		Row( "windowMode", () => strings.Extra( OpenTpwText.WindowMode ), () => WindowModeLabel( strings, state.Display.Mode ),
-			direction => state.Display = state.Display with { Mode = Cycle( Enum.GetValues<WindowMode>(), state.Display.Mode, direction ) } );
-		Row( "upscaling", () => strings.Extra( OpenTpwText.Upscaling ), () => UpscaleLabel( strings, state.Display.Upscale ), direction =>
-		{
-			var mode = Cycle( Enum.GetValues<UpscaleMode>(), state.Display.Upscale, direction );
-			var percent = mode == UpscaleMode.Native ? 100 : state.Display.RenderScale >= 100 ? RenderScaling.DefaultPreset : state.Display.RenderScale;
-			state.Display = state.Display with { Upscale = mode, RenderScale = percent };
-		} );
-		Row( "renderScale", () => strings.Extra( OpenTpwText.RenderScale ), () => RenderScaleLabel( strings, display, state.Display.Upscale == UpscaleMode.Native ? 100 : state.Display.RenderScale ), direction =>
-		{
-			var steps = RenderScaleSteps.Where( step => step >= display.MinimumRenderScale && step <= display.MaximumRenderScale ).ToArray();
-			var percent = Cycle( steps, steps.Contains( state.Display.RenderScale ) ? state.Display.RenderScale : 100, -direction );
-			state.Display = state.Display with { RenderScale = percent, Upscale = percent >= 100 ? UpscaleMode.Native : state.Display.Upscale == UpscaleMode.Native ? UpscaleMode.Linear : state.Display.Upscale };
-		} );
-		Row( "uiScale", () => strings.Extra( OpenTpwText.UiScale ), () => UiScaleLabel( strings, state.Display.UiScale ),
-			direction => state.Display = state.Display with { UiScale = Math.Clamp( state.Display.UiScale + direction, 0, display.MaximumUiScale ) } );
+		string Prefix( OpenTpwText key ) => strings.Extra( key );
+		var renderSteps = RenderScaleSteps.Where( step => step >= display.MinimumRenderScale && step <= display.MaximumRenderScale ).ToArray();
+		Row( "windowMode", () => Prefix( OpenTpwText.WindowMode ) + WindowModeLabel( strings, state.Display.Mode ),
+			() => Enum.GetValues<WindowMode>().Select( mode => Prefix( OpenTpwText.WindowMode ) + WindowModeLabel( strings, mode ) ),
+			direction => state.Display = state.Display with { Mode = CycleWrap( Enum.GetValues<WindowMode>(), state.Display.Mode, direction ) } );
+		Row( "upscaling", () => Prefix( OpenTpwText.Upscaling ) + UpscaleLabel( strings, state.Display.Upscale ),
+			() => Enum.GetValues<UpscaleMode>().Select( mode => Prefix( OpenTpwText.Upscaling ) + UpscaleLabel( strings, mode ) ),
+			direction =>
+			{
+				var mode = CycleWrap( Enum.GetValues<UpscaleMode>(), state.Display.Upscale, direction );
+				var percent = mode == UpscaleMode.Native ? 100 : state.Display.RenderScale >= 100 ? RenderScaling.DefaultPreset : state.Display.RenderScale;
+				state.Display = state.Display with { Upscale = mode, RenderScale = percent };
+			} );
+		Row( "renderScale", () => Prefix( OpenTpwText.RenderScale ) + RenderScaleLabel( strings, display, state.Display.Upscale == UpscaleMode.Native ? 100 : state.Display.RenderScale ),
+			() => renderSteps.Select( step => Prefix( OpenTpwText.RenderScale ) + RenderScaleLabel( strings, display, step ) ),
+			direction =>
+			{
+				var percent = CycleWrap( renderSteps, renderSteps.Contains( state.Display.RenderScale ) ? state.Display.RenderScale : 100, -direction );
+				state.Display = state.Display with { RenderScale = percent, Upscale = percent >= 100 ? UpscaleMode.Native : state.Display.Upscale == UpscaleMode.Native ? UpscaleMode.Linear : state.Display.Upscale };
+			} );
+		Row( "uiScale", () => Prefix( OpenTpwText.UiScale ) + UiScaleLabel( strings, state.Display.UiScale ),
+			() => Enumerable.Range( 0, display.MaximumUiScale + 1 ).Select( scale => Prefix( OpenTpwText.UiScale ) + UiScaleLabel( strings, scale ) ),
+			direction => state.Display = state.Display with { UiScale = ((state.Display.UiScale + direction) % (display.MaximumUiScale + 1) + display.MaximumUiScale + 1) % (display.MaximumUiScale + 1) } );
 		// [EXT:texture-pack] optional locally built upscaled textures; off unless a pack exists and the player turns it on
+		string Textures() => services.TexturePackAvailable || state.EnhancedTextures ? strings[state.EnhancedTextures ? UIStrings.Yes : UIStrings.No] : " " + strings.Extra( OpenTpwText.TexturePackMissing );
 		if ( graphics != null )
-			Row( "enhancedTextures", () => strings.Extra( OpenTpwText.EnhancedTextures ),
-				() => services.TexturePackAvailable || state.EnhancedTextures ? strings[state.EnhancedTextures ? UIStrings.Yes : UIStrings.No] : " " + strings.Extra( OpenTpwText.TexturePackMissing ),
+			Row( "enhancedTextures", () => Prefix( OpenTpwText.EnhancedTextures ) + Textures(),
+				() => new[] { Prefix( OpenTpwText.EnhancedTextures ) + strings[UIStrings.Yes], Prefix( OpenTpwText.EnhancedTextures ) + strings[UIStrings.No], Prefix( OpenTpwText.EnhancedTextures ) + " " + strings.Extra( OpenTpwText.TexturePackMissing ) },
 				_ => { if ( services.TexturePackAvailable || state.EnhancedTextures ) state.EnhancedTextures = !state.EnhancedTextures; } );
 		// [EXT:language] language row (original installs had one language; OpenTPW reads CD overlays)
-		Row( "language", () => strings.Extra( OpenTpwText.Language ),
-			() => " " + (SupplementaryStrings.LanguageNames.TryGetValue( state.Language, out var name ) ? name : state.Language),
-			direction => state.Language = Cycle( services.Languages, state.Language, direction ) );
+		string LanguageName( string language ) => " " + (SupplementaryStrings.LanguageNames.TryGetValue( language, out var name ) ? name : language);
+		Row( "language", () => Prefix( OpenTpwText.Language ) + LanguageName( state.Language ),
+			() => services.Languages.Select( language => Prefix( OpenTpwText.Language ) + LanguageName( language ) ),
+			direction => state.Language = CycleWrap( services.Languages, state.Language, direction ) );
 
+		// Effective size and fallback reason as small dark text in the free area below the rows.
 		screen.Add( new UiLabel
 		{
 			Id = "effective",
@@ -388,30 +444,25 @@ public static class OptionsScreen
 				return reason == null ? line : line + "\n" + string.Format( strings.Extra( OpenTpwText.Fallback ), reason );
 			},
 			Font = fonts => fonts.Small,
+			Color = UiColors.OptionText,
+			Shadow = false,
 			Wrap = true,
-			Bounds = new UiRect( window.X + 120, rowTop + rowIndex * RowPitch + 4, window.Width - 600, 100 ),
+			Bounds = Rect( 57, 700, 1964, 900 ),
 			Anchor = UiAnchor.Center
 		} );
 
 		void Back() => stack.Pop();
-		screen.Add( new UiButton
-		{
-			Id = "back",
-			Text = () => strings.Extra( OpenTpwText.Back ),
-			Help = strings.Help( 2 ),
-			Clicked = Back,
-			Bounds = new UiRect( window.X + 120, window.Bottom - 190, 420, 104 ),
-			Anchor = UiAnchor.Center
-		} );
-		// [EXT:SETUP] Game files (game folder and CD)
+		// [EXT:SETUP] Game files (game folder and CD), where the main page has its OpenTPW button
 		screen.Add( new UiButton
 		{
 			Id = "gameFiles",
 			Text = () => strings.Extra( OpenTpwText.GameFiles ),
 			Clicked = () => stack.Push( GameFilesScreen.Create( stack, strings ) ),
-			Bounds = new UiRect( window.X + 580, window.Bottom - 190, 420, 104 ),
+			Bounds = Rect( 1331, 1330, 1730, 1434 ),
 			Anchor = UiAnchor.Center
 		} );
+		screen.Add( new UiModelImage { Id = "buttonsPanel", Model = "!f_plain", Bounds = Rect( 1742, 1321, 1947, 1443 ), Anchor = UiAnchor.Center } );
+		screen.Add( new UiButton { Id = "back", Model = "b_okay", Help = strings.Help( 2 ), Clicked = Back, Bounds = Rect( 1763, 1340, 1846, 1424 ), Anchor = UiAnchor.Center } );
 		screen.Back = Back;
 		screen.Focus( screen.FocusableElements.First() );
 		return screen;

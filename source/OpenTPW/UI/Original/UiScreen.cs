@@ -83,7 +83,7 @@ public class UiScreen
 				Click( canvas, hit, input.Mouse );
 			pressed = null;
 		}
-		if ( hit is UiOptionRow or UiSlider && input.Wheel != 0 )
+		if ( (hit is UiOptionRow or UiSlider || hit is UiButton { Adjusted: not null }) && input.Wheel != 0 )
 			hit.Adjust( input.Wheel > 0 ? 1 : -1 );
 		if ( hit is UiScrollList wheelList && input.Wheel != 0 )
 			wheelList.Scroll( input.Wheel > 0 ? -1 : 1 );

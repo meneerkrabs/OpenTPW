@@ -152,7 +152,11 @@ public class PortableFileSystemTests
 		Assert.IsTrue( fileSystem.FileExists( @"data\global\speech\speechhd.sdt" ) );
 		Assert.IsTrue( fileSystem.DirectoryExists( "DATA/Global/SPEECH" ) );
 		Assert.AreEqual( 4L, fileSystem.GetSize( "data/global/speech/speechhd.sdt" ) );
-		CollectionAssert.AreEqual( new[] { Path.Combine( directory, "speechHD.SDT" ) }, fileSystem.GetFiles( "data/global/speech" ) );
+		// Case-insensitive hosts (macOS, Windows) keep the requested directory spelling because the
+		// path already resolves; only case-sensitive hosts rewrite it to the on-disk spelling.
+		var listed = fileSystem.GetFiles( "data/global/speech" );
+		Assert.AreEqual( 1, listed.Length );
+		Assert.IsTrue( string.Equals( Path.Combine( directory, "speechHD.SDT" ), listed[0], HostIsCaseSensitive() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase ), listed[0] );
 		if ( !HostIsCaseSensitive() )
 			return;
 		Assert.AreEqual( Path.Combine( directory, "speechHD.SDT" ), fileSystem.GetAbsolutePath( "data/global/speech/speechhd.sdt" ) );

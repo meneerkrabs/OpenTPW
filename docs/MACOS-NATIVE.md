@@ -13,6 +13,9 @@ Clang/Xcode command-line tools available on PATH:
 ./scripts/build-macos-native.sh
 ```
 
+The script is a wrapper around `scripts/build-native.py`, which also builds SDL2 and the
+Windows/Linux arm64 libraries for release builds (RELEASES.md).
+
 The script fetches source into the external sibling cache
 `../tooling/veldrid-spirv` (for this checkout,
 `/Users/sander/server/tooling/veldrid-spirv`). Override it with
@@ -47,6 +50,13 @@ and macOS 11.0, with an `@rpath` install name. Binary contents can vary with the
 installed compiler/SDK; the source revisions and architecture are pinned.
 
 ## Other existing native libraries
+
+Homebrew's `sdl2` formula is now **sdl2-compat**: an SDL2-ABI shim that loads SDL3 at
+startup from beside itself (`@loader_path/libSDL3.dylib`) or the default search path,
+which does not include `/opt/homebrew/lib`. Without SDL3 next to the app it aborts with
+"Failed loading SDL3 library." The osx-arm64 build therefore also copies
+`/opt/homebrew/lib/libSDL3.0.dylib` as `libSDL3.dylib` when it exists (override with
+`SDL3NativePath`). With a real SDL2 the extra file is unused.
 
 `/opt/homebrew/lib/libSDL2.dylib` is the existing arm64 SDL2 library on this
 machine (2.32.10). It is not the native binary bundled in Veldrid.SDL2 4.8.0;

@@ -26,16 +26,33 @@
 		<Content Include="$(NuGetPackageRoot)imgui.net/1.87.2/runtimes/osx-universal/native/libcimgui.dylib" Link="libcimgui.dylib" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
 	</ItemGroup>
 
-	<PropertyGroup Condition="'$(RuntimeIdentifier)' == 'osx-arm64'">
-		<SDL2NativePath Condition="'$(SDL2NativePath)' == ''">/opt/homebrew/lib/libSDL2.dylib</SDL2NativePath>
+	<!-- Native libraries the pinned packages do not ship for this runtime, built by scripts/build-native.py (docs/RELEASES.md) -->
+	<PropertyGroup>
+		<NativeRuntimeDirectory>$(MSBuildThisFileDirectory)../../native/$(RuntimeIdentifier)/</NativeRuntimeDirectory>
 	</PropertyGroup>
-	<ItemGroup Condition="'$(RuntimeIdentifier)' == 'osx-arm64'">
-		<Content Include="../../native/osx-arm64/libveldrid-spirv.dylib" Link="libveldrid-spirv.dylib" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-		<Content Include="$(SDL2NativePath)" Link="libsdl2.dylib" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+	<ItemGroup Condition="'$(RuntimeIdentifier)' != '' And Exists('$(NativeRuntimeDirectory)')">
+		<Content Include="$(NativeRuntimeDirectory)*" Exclude="$(NativeRuntimeDirectory).*" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
 	</ItemGroup>
-	<Target Name="ValidateMacOSArm64Libraries" BeforeTargets="Build" Condition="'$(RuntimeIdentifier)' == 'osx-arm64'">
-		<Error Condition="!Exists('../../native/osx-arm64/libveldrid-spirv.dylib')" Text="Build the existing SPIR-V dependency first with scripts/build-macos-native.sh." />
-		<Error Condition="!Exists('$(SDL2NativePath)')" Text="Set SDL2NativePath to an existing arm64 SDL2 dylib. See docs/MACOS-NATIVE.md." />
+
+	<!-- Local arm64 macOS builds without a built SDL2 fall back to Homebrew's -->
+	<PropertyGroup Condition="'$(RuntimeIdentifier)' == 'osx-arm64' And !Exists('$(NativeRuntimeDirectory)libsdl2.dylib')">
+		<SDL2NativePath Condition="'$(SDL2NativePath)' == ''">/opt/homebrew/lib/libSDL2.dylib</SDL2NativePath>
+		<!-- Homebrew's sdl2 is now sdl2-compat, which loads SDL3 from beside itself at startup -->
+		<SDL3NativePath Condition="'$(SDL3NativePath)' == '' And Exists('/opt/homebrew/lib/libSDL3.0.dylib')">/opt/homebrew/lib/libSDL3.0.dylib</SDL3NativePath>
+	</PropertyGroup>
+	<ItemGroup Condition="'$(RuntimeIdentifier)' == 'osx-arm64' And '$(SDL2NativePath)' != '' And !Exists('$(NativeRuntimeDirectory)libsdl2.dylib')">
+		<Content Include="$(SDL2NativePath)" Link="libsdl2.dylib" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+		<Content Include="$(SDL3NativePath)" Condition="'$(SDL3NativePath)' != '' And Exists('$(SDL3NativePath)')" Link="libSDL3.dylib" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+	</ItemGroup>
+
+	<Target Name="ValidateNativeLibraries" BeforeTargets="Build" Condition="'$(RuntimeIdentifier)' == 'osx-arm64' Or '$(RuntimeIdentifier)' == 'win-arm64' Or '$(RuntimeIdentifier)' == 'linux-arm64'">
+		<PropertyGroup>
+			<NativeBuildHint>Build it with: python3 scripts/build-native.py --rid $(RuntimeIdentifier) (see docs/RELEASES.md).</NativeBuildHint>
+		</PropertyGroup>
+		<Error Condition="'$(RuntimeIdentifier)' == 'osx-arm64' And !Exists('$(NativeRuntimeDirectory)libveldrid-spirv.dylib')" Text="native/osx-arm64/libveldrid-spirv.dylib is missing. $(NativeBuildHint)" />
+		<Error Condition="'$(RuntimeIdentifier)' == 'osx-arm64' And !Exists('$(NativeRuntimeDirectory)libsdl2.dylib') And !Exists('$(SDL2NativePath)')" Text="No arm64 SDL2: build native/osx-arm64/libsdl2.dylib or set SDL2NativePath (docs/MACOS-NATIVE.md). $(NativeBuildHint)" />
+		<Error Condition="'$(RuntimeIdentifier)' == 'win-arm64' And (!Exists('$(NativeRuntimeDirectory)libveldrid-spirv.dll') Or !Exists('$(NativeRuntimeDirectory)cimgui.dll') Or !Exists('$(NativeRuntimeDirectory)SDL2.dll'))" Text="native/win-arm64 needs libveldrid-spirv.dll, cimgui.dll and SDL2.dll. $(NativeBuildHint)" />
+		<Error Condition="'$(RuntimeIdentifier)' == 'linux-arm64' And (!Exists('$(NativeRuntimeDirectory)libveldrid-spirv.so') Or !Exists('$(NativeRuntimeDirectory)libcimgui.so'))" Text="native/linux-arm64 needs libveldrid-spirv.so and libcimgui.so. $(NativeBuildHint)" />
 	</Target>
 
 	<ItemGroup>

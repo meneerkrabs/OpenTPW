@@ -473,7 +473,7 @@ public sealed class ParkHud
 		}
 		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or NotSupportedException or InvalidOperationException )
 		{
-			Log.Warning( $"Preview icon for {item.Id} unavailable: {exception.Message}" );
+			Log?.Warning( $"Preview icon for {item.Id} unavailable: {exception.Message}" );
 			icon = null;
 		}
 		icons[item.Id] = icon;

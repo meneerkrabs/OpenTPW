@@ -42,7 +42,7 @@ public sealed class LobbyDefinition
 		foreach ( var theme in ThemeFiles )
 		{
 			try { definition.ParseTheme( theme, FileSystem.ReadAllText( $"/lobby/{theme}.txt" ) ); }
-			catch ( Exception exception ) when ( exception is IOException or InvalidOperationException ) { Log.Warning( $"Lobby island {theme}: {exception.Message}" ); }
+			catch ( Exception exception ) when ( exception is IOException or InvalidOperationException ) { Log?.Warning( $"Lobby island {theme}: {exception.Message}" ); }
 		}
 		return definition;
 	}

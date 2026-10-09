@@ -121,7 +121,7 @@ internal sealed class UiRenderer : IDisposable
 			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or NotSupportedException or ArgumentException or InvalidOperationException )
 			{
 				failedImages.Add( texture.ImagePath );
-				Log.Warning( $"UI image {texture.ImagePath} could not be loaded: {exception.Message}" );
+				Log?.Warning( $"UI image {texture.ImagePath} could not be loaded: {exception.Message}" );
 				return null;
 			}
 		}

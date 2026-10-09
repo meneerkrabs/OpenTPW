@@ -20,7 +20,7 @@ public sealed class UiModels
 		try { model = load( name ); }
 		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or NotSupportedException or InvalidOperationException or ArgumentException )
 		{
-			Log.Warning( $"Original UI model {name} unavailable: {exception.Message}" );
+			Log?.Warning( $"Original UI model {name} unavailable: {exception.Message}" );
 			model = null;
 		}
 		models[name] = model;

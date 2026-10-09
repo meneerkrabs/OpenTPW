@@ -27,7 +27,7 @@ public sealed class StubParkStatus : IHudParkStatus
 		}
 		catch ( Exception exception ) when ( exception is IOException or InvalidOperationException or ArgumentException )
 		{
-			Log.Warning( $"Starting cash for {levelName} unavailable ({exception.Message}); using {DefaultInitialCash}." );
+			Log?.Warning( $"Starting cash for {levelName} unavailable ({exception.Message}); using {DefaultInitialCash}." );
 		}
 		return new StubParkStatus( cash );
 	}
@@ -86,7 +86,7 @@ public sealed class TotemBuildCatalog : IBuildCatalog
 		}
 		catch ( Exception exception ) when ( exception is IOException or InvalidOperationException or ArgumentException )
 		{
-			Log.Warning( $"Totem catalog data unavailable: {exception.Message}" );
+			Log?.Warning( $"Totem catalog data unavailable: {exception.Message}" );
 		}
 		totem = new BuildItem( ItemId, category, ObjectNameIndex, cost, $"{archive}/Ptotem.MD2",
 			new[] { $"{archive}/textures", $"/levels/{levelName}/sharetex", $"/levels/{levelName}/ssharete", $"{archive}/stexture" } );

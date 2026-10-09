@@ -38,7 +38,7 @@ public sealed class GameOptions
 		}
 		catch ( Exception exception ) when ( exception is JsonException or IOException or UnauthorizedAccessException )
 		{
-			Log.Warning( $"Options file {path} ignored: {exception.Message}" );
+			Log?.Warning( $"Options file {path} ignored: {exception.Message}" );
 			return new GameOptions();
 		}
 	}

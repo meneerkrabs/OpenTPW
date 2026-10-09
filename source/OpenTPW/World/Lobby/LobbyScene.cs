@@ -68,7 +68,7 @@ public sealed class LobbyScene : Entity
 		}
 		catch ( Exception exception ) when ( exception is IOException or InvalidOperationException )
 		{
-			Log.Warning( $"Lobby model {name}: {exception.Message}" );
+			Log?.Warning( $"Lobby model {name}: {exception.Message}" );
 			return null;
 		}
 	}

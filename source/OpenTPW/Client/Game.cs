@@ -22,6 +22,14 @@ internal static class Game
 			Console.WriteLine( "Read-only CPU font decoding: nibble samples 0–15; game UI integration and original visual fidelity remain unverified." );
 			return;
 		}
+		var ps2Index = Array.IndexOf( args, "--export-ps2" );
+		if ( ps2Index >= 0 )
+		{
+			if ( ps2Index + 2 >= args.Length || args[ps2Index + 1].StartsWith( "--" ) || args[ps2Index + 2].StartsWith( "--" ) )
+				throw new ArgumentException( "--export-ps2 requires the PS2 disc's DATA directory and an output directory (docs/PS2.md)." );
+			Ps2Export.Run( args[ps2Index + 1], args[ps2Index + 2] );
+			return;
+		}
 		var saveIndex = Array.IndexOf( args, "--inspect-save" );
 		if ( saveIndex >= 0 )
 		{

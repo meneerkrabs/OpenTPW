@@ -1,11 +1,12 @@
 # LIPS: advisor lip-sync marks
 
-October 9, 2026. Status: strict `.LIP` reader; mark unit and toggle meaning
-**inferred from the decoded speech audio** (not from the original runtime);
-`--advisor-say N` renders the original advisor model with a LIP-driven
-talking/closed mouth synced to SDL audio playback. The mouth **shape** the original
-picks while talking, the advisor's animation/pose and its in-game triggers are not
-known. No original data is in the repository.
+October 9, 2026. Status: strict `.LIP` reader and selected MPEG Layer I/II decoder.
+Mac static evidence establishes signed mark conversion, a pause-aware unscaled
+millisecond clock, loaded-LIP talking state, strict deadlines, one toggle per
+update and random mouth selection. The bounded original-clock helper is tested;
+`--advisor-say N` still renders a manual SDL-synchronized presentation with its
+own timeline. Automatic triggers, animation/pose, geometry and audio-device
+integration remain incomplete. No original data is in the repository.
 
 ## Where the data is
 
@@ -62,11 +63,40 @@ in C# by `LipSyncTimelineTests` with the new decoder):
 - Fit: the last mark lies inside the clip for 637/638 decodable English global clips
   (exception: `sp_478`, 1.05×; its byte-identical space-level copy fits the
   space speech). Danish `sp_127`/`sp_427` overrun by 3 %/0.3 %.
+- Second check (`LipSyncTimelineTests.OriginalLastMarkFitsSpeechDurationInMicroseconds`,
+  October 9, 2026): last mark divided by the decoded MP2 duration over the 638 English
+  global clips. Median 0.974, shortest talking clip 0.039 (`sp_019`), longest 1.051 (`sp_478`,
+  the only overrun). One clip (`sp_146`) has a single 0 mark and ratio 0. A millisecond or
+  1/1000 unit would put the median near 1000 or 0.001, so the data supports microseconds.
+  The ratio is not 1.0 exactly, so the marks are not an exact end-of-clip value.
 
 Each level `sp_001.LIP` is byte-identical to one global member: fantasy = `sp_473`,
-hallow = `sp_476`, jungle = `sp_479`, space = `sp_478`. How the original chooses
-between global and level copies, and how it maps talking to the five mouth meshes,
-are not known (no runtime trace; `strings tp.exe` has no `lip`/`phon`/`viseme`).
+hallow = `sp_476`, jungle = `sp_479`, space = `sp_478`. The later Mac static
+consumer trace selects global or level speech from response bank flags and
+chooses `random % 5 + 1` among the five mouth nodes after a strict 100 ms
+deadline while talking, including the normal mouth. The current manual runtime
+uses global speech and Aah/Normal presentation. Cross-edition behavior,
+geometry and device-clock integration remain unverified; audio correlation
+alone does not establish mouth-shape selection.
+
+## Original-binary evidence
+
+The Mac build's main program (`SimThemePark` data fork, SHA-256
+`04809cd4ccee5433c7fb0b7c93d32f6a7aa629c1849181c0b7906415e5e295f5`), contains the LIP path
+template `:Speech:lips:sp_%03d.lip` at offset 1917026, next to the string `ResponseID %d`
+(1917012); the archive name `lips.wad` at 2007032; the mouth mesh name table
+`mouth - normal`, `- aah`, `- eee`, `- ooh`, `- sss` (lowercase) from offset 1996907; and the
+log string `Advisor sample is %d ms long` at 1917066. These were found by a read-only
+`python3 -I` scan of the file. That initial string inventory established paths
+and mouth names without their consumer behavior. The later relocation and
+control-flow witnesses in [PPC-advisor.md](reverse/PPC-advisor.md) establish
+signed marks divided by 1000, the pause-aware unscaled millisecond clock,
+loaded-LIP talking state, strict one-toggle-per-update behavior, response bank
+selection and random choice among all five mouth nodes. The standalone helper
+preserves those rules with explicit clock/random inputs. ADVISOR-001 and
+ADVISOR-009 remain runtime-integration limitations: the manual presentation
+still selects Aah and global speech rather than the recovered original policy.
+Geometry, cross-edition equivalence and device timing remain separate gates.
 
 ## Speech audio decoding
 
@@ -89,8 +119,8 @@ Layer I accepts MPEG-1/2 mono, stereo, dual-channel and intensity joint stereo.
 Free format, Layer III and MPEG-2.5 remain unsupported. CRC words are skipped,
 not checked; Layer I nonzero de-emphasis is unsupported. Undefined scalefactor
 63, forbidden Layer I allocation 15 and reserved header values are rejected. `MP2File.FrameData` slices the
-entry at its header-size word; the legacy `SoundData` offset does not fit the
-40-byte speech headers.
+entry at its header-size word; `SoundFile` now reads the validated 40-byte
+packed container fields and aligns `SoundData` to that declared offset.
 
 
 ### Layer I decoding and verification (follow-up)
@@ -144,6 +174,15 @@ occurs in the 3,253,907 parsed private Layer I scalefactors. CRC verification an
 de-emphasis remain separate codec work; original runtime/device equivalence is
 not claimed by independent PCM agreement.
 
+The parallel .NET 10 branch independently added Layer I coverage, including a
+pinned generated stream, intensity stereo, CRC/frame sizes and a full-bank
+fixture test. Those tests are retained for the merged decoder. Its earlier
+report covered 73 generated streams and all 2,650 Mac-edition physical entries
+within 1 LSB over 63,043,584 samples; that report belongs to the earlier
+implementation. The selected merged implementation retains the combined factor
+arithmetic pinned to all 882 original Mac factors and the separately recorded
+56,410,752-sample corpus comparison above.
+
 ## Advisor runtime slice
 
 `--advisor-say N` (1–637) takes `global/Speech/speechHD.SDT` and `lips.wad` from the
@@ -191,7 +230,7 @@ stay open; short nonseekable reads work). `LipSyncTimeline` applies the inferred
 `TalkingIntervals`.
 
 Tests: `LipSyncFileTests` (12 synthetic + 5 private corpus), `LipSyncTimelineTests`
-(5 synthetic + 1 corpus loudness test), `Mp2DecoderTests` (12 synthetic incl. a unit-DC-gain
+(5 synthetic + 2 corpus tests: loudness, last mark vs duration), `Mp2DecoderTests` (13 synthetic incl. a unit-DC-gain
 check of the window/matrixing + 2 corpus: all 640 Layer II speech clips decode;
 `sp_001` samples and RMS match the external decoder ±1), `AdvisorTests` (private test for the German overlay bank needs `OPENTPW_LANGUAGE_DATA`; 9 synthetic
 incl. the 60 Hz mouth-change frames 134/169/244 for `sp_001` and the speech clock on a
@@ -199,8 +238,10 @@ simulated audio output, plus 3 private tests: model orientation/co-located mouth
 `Advisorm*` clip, and loading `sp_001` through the game file system).
 Private tests are inconclusive without `OPENTPW_GAME_PATH`. `Layer1DecoderTests`
 adds 27 generated cases and two private checks (`z_error` reference values and
-all 32 global UI-bank entries). With the supplied private root, the combined
-Layer I/Layer II/LIP filter has 49 passes and no skips.
+all 32 global UI-bank entries). Before remote integration, the combined Layer I/Layer II/LIP filter passed
+49 cases without skips. The merge retains those tests, the parallel branch
+codec tests and the fourteen compressed-entry metadata cases; current
+verification totals are recorded in [PROGRESS.md](PROGRESS.md).
 
 ## Search method (location)
 
@@ -230,8 +271,8 @@ table fit). The smoke-test thresholds are test-harness checks, not game rules.
 | ADVISOR-010 | `source/OpenTPW/Client/SpeechAudioPlayer.cs:34` | Lip-sync clock = PCM consumed from the SDL queue (leads speaker by ≤ one 1,024-frame buffer, ≈46 ms) | Original A/V sync source; latency measurement |
 | ADVISOR-011 | `source/OpenTPW/Client/SpeechAudioPlayer.cs:31` | Wall clock drives the mouth without an audio device | Original behaviour without sound hardware |
 | ADVISOR-012 | `source/OpenTPW/Client/SpeechAudioPlayer.cs:62` | Mono speech duplicated to both stereo channels | Original speech channel layout/panning |
-| ADVISOR-013 | `source/OpenTPW.Files/Public/LipSyncTimeline.cs:53` | Marks = µs; talking from 0, toggle per mark (inferred from audio, see above) | Original runtime LIP consumer (binary or trace) |
-| ADVISOR-014 | `source/OpenTPW.Files/Formats/Sound/Mp2Decoder.cs:49` | Synthesis-window values read from ffmpeg's data table; two values checked against ISO, corpus ≤1 LSB | Full comparison with the published ISO/IEC 11172-3 Table 3-B.3 |
+| ADVISOR-013 | `source/OpenTPW.Files/Public/LipSyncTimeline.cs:54` | Talking from time 0 (unit and per-mark toggle traced: STP-PPC 0x10007434) | Original runtime LIP consumer (binary or trace) |
+| ADVISOR-014 | `source/OpenTPW.Files/Formats/Sound/Mp2Decoder.cs:55` | Synthesis-window values read from ffmpeg's data table; two values checked against ISO, corpus ≤1 LSB | Full comparison with the published ISO/IEC 11172-3 Table 3-B.3 |
 
 ## Remaining gates
 

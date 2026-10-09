@@ -23,7 +23,7 @@ public static class UiApproximations
 		("UI-012", "hover focuses, release activates, arrows/Enter/Escape navigate, P pauses, right click backs out of modal screens", "binary: input handling; KEYBOARD.str meaning"),
 		("UI-013", "window sizes and inner layout of options, game mode, load, pause and message dialogs", "captures of original dialogs"),
 		("UI-014", "positions inside the lobby panel (island name, prev/enter/next), logo/title placement, right-hand Load/Options/Quit column", "capture of the original lobby screen"),
-		("UI-015", "front-end flow without player profiles; Game Mode is asked when entering a park; both modes play the same", "binary/manual: original player and mode flow"),
+		("UI-015", "front-end flow without player profiles; Game Mode is asked when entering a park instead of once per player", "player profiles: the original stores the mode per player (STP-PPC 0x1015D220/0x1013741C)"),
 		("UI-016", "lobby ISLAND angle = island yaw in degrees, height = camera target height", "binary: lobby script interpretation or capture"),
 		("UI-017", "lobby camera: SPINSPEED read as radians per 0.1 s, vertical field of view 60, 3/s glide between islands, ISLANDFOV unused", "binary or capture of the lobby camera"),
 		("UI-018", "lobby sky drawn as a flat SKYCOLOUR backdrop; flying meshes, rain, lightning, animations not drawn", "binary/capture of the lobby"),
@@ -41,7 +41,6 @@ public static class UiApproximations
 		("UI-030", "volumes in 0..10 steps, default 8; popup help default on", "capture/registry defaults of the original options"),
 		("UI-031", "one placement per menu selection; Level.PlaceObject owns purchase/guest linkage and its removal handler owns scrap credits", "original build-tool continuation"),
 		("UI-032", "longer labels fall back to the small font; catalogue names greedily wrap in their slots", "captures of translated original screens"),
-		("UI-033", "test-only Totem catalogue falls back to price 3,250 when Totem.sam cannot be read; the game uses ObjectCatalog", "none if the data is present"),
 	};
 
 	private static bool logged;

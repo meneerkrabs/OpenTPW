@@ -1,15 +1,20 @@
-# MTR: ISO-only mesh companion files
+# MTR: mesh companion files on the install media
 
 October 9, 2026. Status: strict reader; the table is **decoded as mesh topology that is
 fully redundant with the paired banner `.MD2`** and the floats as nine 4×4 matrices
 (two equal the MD2 node matrix), verified for all 11 files. MTR is not a material format,
-adds no geometry the MD2 lacks and is not rendered. There is no evidence the installed
-game loads it. No original data is in the repository.
+adds no geometry the MD2 lacks and is not rendered. Static searches found no evidence the
+game opens it, so it is treated as unused unless contrary evidence appears. No original data
+is in the repository.
 
 ## Where the data is
 
-No `.mtr` exists in the installed `Data` tree, and none exists as a WAD member. The only copies are
-11 loose files on the retail `TPWORLD.ISO`, next to localized "banner" meshes:
+No `.mtr` exists in the installed `Data` tree, and none exists as a WAD member. The copies are
+11 loose files on the PC install CD (`<Lang>/Meshes/<Lang>/` at the disc root),
+and the same 11 files are on the retail `TPWORLD.ISO`, next to localized "banner" meshes.
+The paths below are relative to the disc root. The media copies were re-hashed
+for this table (11 of 11 files, 9 distinct SHA-256 values, all match); the ISO listing was
+not re-run in this pass:
 
 | ISO path | Bytes | SHA-256 |
 | --- | --- | --- |
@@ -25,7 +30,9 @@ No `.mtr` exists in the installed `Data` tree, and none exists as a WAD member. 
 
 That is 9 distinct files. French has no MTR. English has no `paused.mtr`, although `paused.MD2` exists.
 The English ISO `Meshes/English/*.MD2` files are byte-identical to the installed
-`Data/Language/English/*.MD2`. The installer appears to copy the MD2 files but not the MTR files.
+`Data/Language/English/*.MD2`. The installed `Data` tree therefore holds the MD2 banners but no
+MTR files, while the install media carries both. This is an absence from the installed tree,
+not from the media, so it does not by itself show the MTR files are exporter leftovers.
 
 ## Layout (observed in all 11)
 
@@ -89,11 +96,15 @@ raise `NotSupportedException`. Input is capped at 1 MiB. Caller-owned streams st
 and short nonseekable reads work. The upstream "Material" label is not adopted in the API.
 
 Tests (`MtrFileTests`): 27 synthetic tests (3 for topology/matrices). The private test `OriginalIsoMtrFilesMatchPinnedStructure`
-(needs `OPENTPW_MTR_PATH` = directory of ISO-extracted `.mtr`) pins hash, name, table
-count and sum, and footer, and checks both relations. `OriginalIsoMtrTopologyAndMatricesMatchPairedMd2`
+(needs `OPENTPW_MTR_PATH` = directory of `.mtr` files, ISO-extracted or a copy of the PC CD, read in place) pins hash, name, table
+count and sum, and footer, and checks both relations. `OriginalMediaCarriesElevenMtrCopiesOfNineDistinctFiles`
+(same variable) requires exactly 11 `.mtr` files whose SHA-256 set is the 9 pinned values.
+`OriginalIsoMtrTopologyAndMatricesMatchPairedMd2`
 checks every table entry and `M0`/`M1`/`M4`/`M8` against the sibling `.MD2`
-(11/11 files). Two tests check the MD2 `0x3E` value against `OPENTPW_GAME_PATH`. 31/31 pass with both variables set;
-otherwise 4 are inconclusive.
+(11/11 files). Two tests check the MD2 `0x3E` value against `OPENTPW_GAME_PATH`.
+Run in this pass with `OPENTPW_MTR_PATH` set to a copy of the PC CD: 30 pass, 2 inconclusive
+(`OPENTPW_GAME_PATH` unset; no installed `Data` tree was readable here). With no variables: 27 pass,
+5 inconclusive. The `OPENTPW_GAME_PATH` pair was last run at 31/31 with both variables set, before the new test was added.
 
 ## Search method
 
@@ -103,10 +114,42 @@ otherwise 4 are inconclusive.
   MD2): the magic `AF15592E` is not found anywhere in any member or loose file. No
   member or data file contains `.mtr`.
 - `7z l TPWORLD.ISO` (2,989 entries) found the 11 files above. They were extracted only to /tmp.
-- `strings tp.exe`: no `mtr`/`material` strings (packed launcher; `TP.ICD` not inspected).
+- `strings tp.exe`: no `mtr`/`material` strings (packed launcher).
+
+### Does the game open MTR? Static negative evidence
+
+Re-run on the read-only inputs (no binary was executed; the byte counts are raw, not decoded):
+
+```
+grep -aic '\.mtr' SimThemePark.data libraries/*.data TP.ICD      # case-insensitive literal
+python3 -I -c "import sys;d=open(sys.argv[1],'rb').read();print(d.lower().count(b'.mtr'),d.count(bytes.fromhex('af15592e')),d.count(bytes.fromhex('2e5915af')))" FILE
+```
+
+The second form counts `.mtr` (case-insensitive), the MTR magic in little-endian (`AF 15 59 2E`)
+and in byte-reversed order (`2E 59 15 AF`).
+
+| Input | Identity (SHA-256, prefix) | `.mtr` | magic LE / BE |
+| --- | --- | --- | --- |
+| Mac `SimThemePark.data` | `04809cd4ccee5433…` | 0 | 0 / 0 |
+| Mac `libraries/*.data` (15 files) | identities in `docs/reverse/FINDINGS.md` | 0 each | 0 / 0 each |
+| PC `TP.ICD` | `8565135229aeed90…` (3,693,101 bytes) | 0 | 0 / 0 |
+| Theme Park Inc `Game.exe` (a different, later game; context only) | `77ea0c41410aad7c…` | 0 | 0 / 0 |
+
+Scope and limits. The Mac set is 16 PowerPC PEF containers. The PC `TP.ICD` is weak evidence:
+its code and `.data` are encrypted, so only the plain `.rdata`/`.rsrc` sections can contain a literal.
+A literal search misses names built at runtime from a non-literal table, concatenated strings, or
+values stored compressed or RefPack-wrapped. The WAD scan above covers WAD members only.
+The Mac file-extension list around `SimThemePark.data` offset ≈2,006,300 (`.fpc .ffn … .TPWS .TPWI .LAYS *.md2 *.ESP`)
+has no `.mtr` (checked in an earlier pass, not re-run here).
+
+**Conclusion:** no evidence of use; MTR is treated as unused unless contrary evidence appears.
+This is not proof of non-use: a loader that builds names from a non-literal table, or the
+encrypted PC code, is outside what these searches can see.
 
 ## Remaining gates
 
-Determine whether the shipped game ever opens MTR files (runtime file-access observation);
-the installer does not copy them, which suggests exporter leftovers. Find out what `s`/`M7`
-mean if a runtime use turns up. Banner rendering belongs to the MD2 renderer and needs no MTR data.
+- Whether the game ever opens MTR at all: closed as "no evidence of use" by the static search
+  above. Reopen only if a runtime file-access observation or a decoded PC loader shows a read.
+- What `s` and `M7` mean: without a runtime consumer they stay raw and unresolved. No further work is planned.
+
+Banner rendering belongs to the MD2 renderer and needs no MTR data.

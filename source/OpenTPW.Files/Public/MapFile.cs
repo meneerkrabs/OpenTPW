@@ -81,6 +81,18 @@ public sealed class MapFile : BaseFormat
 	/// <summary>Verified attribute bits at game cell (x, y); unverified bits are masked out.</summary>
 	public MapCellFlags GetFlagsAt( int x, int y ) => (MapCellFlags)GetCellAt( x, y ) & MapCellFlags.AllVerified;
 
+	/// <summary>Game cells whose raw value has every bit of <paramref name="mask"/> set, in x-major order. Unmasked, for inspecting unverified bits.</summary>
+	public IEnumerable<(int X, int Y, byte Raw)> EnumerateCellsWithRawBits( byte mask )
+	{
+		for ( var x = 0; x < Height; x++ )
+			for ( var y = 0; y < Width; y++ )
+			{
+				var raw = Cells[x * Width + y];
+				if ( (raw & mask) == mask )
+					yield return (x, y, raw);
+			}
+	}
+
 	protected override void ReadFromStream( Stream stream )
 	{
 		ArgumentNullException.ThrowIfNull( stream );

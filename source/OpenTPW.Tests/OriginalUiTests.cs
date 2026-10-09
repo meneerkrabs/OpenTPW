@@ -88,6 +88,17 @@ public class OriginalUiTests
 	}
 
 	[TestMethod]
+	public void RetinaCanvasMatchesAOneTimesCanvasOfTheSameLogicalSize()
+	{
+		var retina = new UiCanvas( 2432, 1368, 2, PixelDensity: 2 );
+		var standard = new UiCanvas( 1216, 684, 1 );
+		Assert.AreEqual( 2, retina.TextScale, "below 1280x720 points a Retina window keeps 2x text" );
+		Assert.AreEqual( standard.FontTier, retina.FontTier );
+		Assert.AreEqual( standard.LogicalScale, retina.LogicalScale, 1e-6f );
+		Assert.AreEqual( 1, new UiCanvas( 2432, 1368, 2 ).TextScale, "without the density the pixel-only fit still applies" );
+	}
+
+	[TestMethod]
 	public void HiDpiOutputsKeepTheLayoutProportionAndDoubleTheText()
 	{
 		var logical = new UiCanvas( 1280, 720, 1 );

@@ -20,7 +20,7 @@ public enum UiAnchor
 /// output (at least 1), preserving pixel-exact glyphs. Font tier uses the resulting logical size.
 /// Anchoring and tier choice are OpenTPW policy.
 /// </summary>
-public readonly record struct UiCanvas( int Width, int Height, int UiScale = 1 )
+public readonly record struct UiCanvas( int Width, int Height, int UiScale = 1, int PixelDensity = 1 )
 {
 	// [DATA:ui.wad:f_chat.MD2,w_map.MD2 bounds] full-screen UI frames span 2048×1536
 	public const float VirtualWidth = 2048;
@@ -30,8 +30,8 @@ public readonly record struct UiCanvas( int Width, int Height, int UiScale = 1 )
 	public float Scale => Math.Max( 0.05f, Math.Min( Width / VirtualWidth, Height / VirtualHeight ) );
 
 	/// <summary>Integer BF4 scale, limited to the existing display reference layout's fit.</summary>
-	// [EXT:interface-scale-fit] Above 1×, limit forced text scales to UiScaling's existing reference-layout fit.
-	public int TextScale => Math.Min( Math.Max( 1, UiScale ), UiScaling.Automatic( new Point2( Width, Height ) ) );
+	// [EXT:interface-scale-fit] Above 1×, limit forced text scales to UiScaling's reference-layout fit (HiDPI-aware via PixelDensity).
+	public int TextScale => Math.Min( Math.Max( 1, UiScale ), UiScaling.Automatic( new Point2( Width, Height ), PixelDensity ) );
 
 	/// <summary>Virtual-to-logical scale (pixels per virtual unit ÷ UI scale).</summary>
 	public float LogicalScale => Scale / TextScale;

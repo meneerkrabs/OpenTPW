@@ -131,6 +131,68 @@ public class PortableFileSystemTests
 		Assert.ThrowsException<ArgumentException>( () => fileSystem.GetAbsolutePath( Path.Combine( root, "..", "outside.txt" ) ) );
 	}
 
+	private bool HostIsCaseSensitive()
+	{
+		var probe = Path.Combine( root, "case-probe" );
+		File.WriteAllText( probe, "" );
+		var sensitive = !File.Exists( Path.Combine( root, "CASE-PROBE" ) );
+		File.Delete( probe );
+		return sensitive;
+	}
+
+	[TestMethod]
+	public void MixedCaseRequestsResolveToTheOnDiskSpelling()
+	{
+		// Install spelling Data/global/Speech, requested as the CD spelling data/global/speech.
+		var directory = Path.Combine( root, "Data", "global", "Speech" );
+		Directory.CreateDirectory( directory );
+		File.WriteAllText( Path.Combine( directory, "speechHD.SDT" ), "bank" );
+
+		Assert.AreEqual( "bank", fileSystem.ReadAllText( "/data/GLOBAL/speech/SPEECHhd.sdt" ) );
+		Assert.IsTrue( fileSystem.FileExists( @"data\global\speech\speechhd.sdt" ) );
+		Assert.IsTrue( fileSystem.DirectoryExists( "DATA/Global/SPEECH" ) );
+		Assert.AreEqual( 4L, fileSystem.GetSize( "data/global/speech/speechhd.sdt" ) );
+		// Case-insensitive hosts (macOS, Windows) keep the requested directory spelling because the
+		// path already resolves; only case-sensitive hosts rewrite it to the on-disk spelling.
+		var listed = fileSystem.GetFiles( "data/global/speech" );
+		Assert.AreEqual( 1, listed.Length );
+		Assert.IsTrue( string.Equals( Path.Combine( directory, "speechHD.SDT" ), listed[0], HostIsCaseSensitive() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase ), listed[0] );
+		if ( !HostIsCaseSensitive() )
+			return;
+		Assert.AreEqual( Path.Combine( directory, "speechHD.SDT" ), fileSystem.GetAbsolutePath( "data/global/speech/speechhd.sdt" ) );
+		// The first missing segment and everything after it keep the requested spelling.
+		Assert.AreEqual( Path.Combine( root, "Data", "global", "New", "file.TXT" ), fileSystem.GetAbsolutePath( "DATA/Global/New/file.TXT" ) );
+		using ( var stream = fileSystem.OpenWrite( "data/global/speech/new.txt" ) )
+			stream.WriteByte( 1 );
+		Assert.IsTrue( File.Exists( Path.Combine( directory, "new.txt" ) ) );
+	}
+
+	[TestMethod]
+	public void ExactSpellingWinsOverCaseInsensitiveMatches()
+	{
+		if ( !HostIsCaseSensitive() )
+			Assert.Inconclusive( "Needs a case-sensitive file system." );
+		Directory.CreateDirectory( Path.Combine( root, "Sound" ) );
+		Directory.CreateDirectory( Path.Combine( root, "sound" ) );
+		File.WriteAllText( Path.Combine( root, "Sound", "a.txt" ), "upper" );
+		File.WriteAllText( Path.Combine( root, "sound", "a.txt" ), "lower" );
+		Assert.AreEqual( "upper", fileSystem.ReadAllText( "Sound/A.TXT" ) );
+		Assert.AreEqual( "lower", fileSystem.ReadAllText( "sound/A.TXT" ) );
+		// Neither spelling matches exactly: the ordinal-first on-disk entry is used.
+		Assert.AreEqual( "upper", fileSystem.ReadAllText( "SOUND/a.txt" ) );
+	}
+
+	[TestMethod]
+	public void ArchivesBelowMixedCaseDirectoriesResolve()
+	{
+		var directory = Path.Combine( root, "Levels", "Jungle" );
+		Directory.CreateDirectory( directory );
+		File.WriteAllText( Path.Combine( directory, "terrain.WAD" ), "archive contents" );
+		fileSystem.RegisterArchiveHandler<PortableArchive>( ".wad" );
+		Assert.AreEqual( "archive contents", fileSystem.ReadAllText( "/levels/jungle/terrain/nested/file.txt" ) );
+		Assert.IsTrue( fileSystem.IsArchive( "levels/jungle/TERRAIN/nested/file.txt" ) );
+	}
+
 	[DataTestMethod]
 	[DataRow( ".wad", ".WAD" )]
 	[DataRow( ".WAD", ".wad" )]

@@ -112,13 +112,14 @@ license/distribution constraints and actual results. No dependency change is imp
 | Runtime surface | Known risk / required evidence | macOS | Windows | Linux |
 | --- | --- | --- | --- | --- |
 | NAudio/Media Foundation/WaveOut | Existing Windows-audio path; explicit optional failure versus later portable audio | unverified | unverified | unverified |
-| SDL2 window/input | Native loading, window creation, resize, focus and UI-owned input | unverified | unverified | unverified |
-| SPIR-V/shader translation | Native compiler architecture, backend-specific shader output and real render | unverified | unverified | unverified |
+| SDL2 window/input | Native loading, window creation, resize, focus and UI-owned input | unverified | unverified | prototype-pass (x64, Xvfb + llvmpipe: sandbox and front-end smoke tests pass with original Mac-edition data, including scripted mouse/keyboard navigation and window/fullscreen changes; real input devices and desktops unverified) |
+| SPIR-V/shader translation | Native compiler architecture, backend-specific shader output and real render | unverified | unverified | prototype-pass (x64: native shader tests; GPU readback of original models, animations and BF4 text in the smoke tests) |
 | ImGui/fonts/editor | Native binding/font load, editor toggle and launch without unsupported-path crash | unverified | unverified | unverified |
-| Process and all native transitives | Consistent architecture; Rosetta only interim; final macOS arm64 without Rosetta | unverified | unverified | unverified |
-| .NET toolchain | Pinned reproduction inputs and supported-runtime decision before release | unverified | unverified | unverified |
+| Process and all native transitives | Consistent architecture; Rosetta only interim; final macOS arm64 without Rosetta | unverified | unverified | prototype-pass (linux-x64 self-contained publish starts; needs system libSDL2/libvulkan); blocked for linux-arm64 (no libveldrid-spirv/libcimgui in the packages) |
+| .NET toolchain | Pinned reproduction inputs and supported-runtime decision before release | unverified | unverified | prototype-pass (x64: .NET 10.0.401 build, full test suite and front-end smoke test) |
 
-.NET 8 support ends November 10, 2026 according to
+Runtime decision (October 9, 2026, by the project owner): .NET 10 (LTS, supported until
+November 14, 2028) replaces .NET 8, whose support ends November 10, 2026 according to
 [Microsoft's support policy](https://dotnet.microsoft.com/en-us/platform/support/policy/dotnet-core).
-Record the release-runtime decision before M7; do not silently upgrade.
+NuGet package versions are unchanged by this switch.
 Runtime Windows-audio context: [NAudio v2.2.1](https://github.com/naudio/NAudio/tree/v2.2.1).

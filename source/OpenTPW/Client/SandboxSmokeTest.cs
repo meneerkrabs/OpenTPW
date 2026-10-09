@@ -371,7 +371,7 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 		Require( world.Width == scaling.InternalSize.X && world.Height == scaling.InternalSize.Y && Render.MultisampledFramebuffer.Width == world.Width, "world target has the internal size" );
 		var output = Render.OutputCaptureTexture!;
 		Require( output.Width == metrics.PixelSize.X && output.Height == metrics.PixelSize.Y, "output capture has the output size" );
-		Require( Screen.UiScale == UiScaling.Resolve( settings.UiScale, metrics.PixelSize ), "UI scale follows the output size" );
+		Require( Screen.UiScale == UiScaling.Resolve( settings.UiScale, metrics.PixelSize, metrics.IntegerPixelDensity ), "UI scale follows the output size and pixel density" );
 		displaySummary = $"output {metrics}, world {world.Width}x{world.Height} ({scaling.Mode} {scaling.EffectivePercent}%), UI scale {Screen.UiScale}";
 		Log.Trace( $"Display readback: {displaySummary}; swapchain {swapchain.Width}x{swapchain.Height}; {Render.OwnedTargetResourceCount} owned target resources." );
 	}

@@ -828,10 +828,14 @@ values and truncated complete-frame payloads are rejected. CRC words are skipped
 not verified. Undefined SF63 mutes in the identified Mac table but is rejected
 by this strict reader; none of 3,253,907 private parsed scale indices is 63.
 The actual original device half-rate, mixing, channel routing, full bank scheduling
-and event-to-sound dispatch remain independent runtime dependencies. Legacy
-`MP2File.SampleRate` metadata remains hardcoded at 22,050; codec callers must use
-`Mp2Audio.SampleRate` from the actual MPEG header (notably for the five 44,100-Hz
-Layer I entries). This change does not claim those bridges are solved.
+and event-to-sound dispatch remain independent runtime dependencies. The merged
+SDT reader now reads the unsigned packed rate, byte-sized bit depth/type, raw
+sample field and original entry names at their proven 40-byte offsets.
+`MP2File` also obtains sample rate/channels from a complete supported first
+MPEG frame through the existing decoder parser, preserving supplied container
+hints for unsupported or invalid headers. Playback callers use decoded
+`Mp2Audio` format metadata. These corrections do not claim the remaining
+runtime bridges are solved.
 
 
 Final codec validation: 49 focused MPEG/LIP tests pass with zero skips on the

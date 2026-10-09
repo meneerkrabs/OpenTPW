@@ -317,6 +317,22 @@ public class MtrFileTests
 		}
 	}
 
+	[TestMethod]
+	public void OriginalMediaCarriesElevenMtrCopiesOfNineDistinctFiles()
+	{
+		var directory = Environment.GetEnvironmentVariable( "OPENTPW_MTR_PATH" );
+		if ( string.IsNullOrWhiteSpace( directory ) || !Directory.Exists( directory ) )
+			Assert.Inconclusive( "Set OPENTPW_MTR_PATH to a copy of the PC install CD (read in place, nothing is copied)." );
+		var hashes = Directory.EnumerateFiles( directory!, "*", SearchOption.AllDirectories )
+			.Where( file => Path.GetExtension( file ).Equals( ".mtr", StringComparison.OrdinalIgnoreCase ) )
+			.Select( file => Convert.ToHexString( SHA256.HashData( File.ReadAllBytes( file ) ) ) )
+			.ToArray();
+		if ( hashes.Length == 0 )
+			Assert.Inconclusive( "OPENTPW_MTR_PATH contains no .mtr files." );
+		Assert.AreEqual( 11, hashes.Length, "Expected exactly 11 .mtr copies." );
+		CollectionAssert.AreEquivalent( Pins.Keys.ToArray(), hashes.Distinct().ToArray(), "Expected exactly the 9 pinned distinct files." );
+	}
+
 	[DataTestMethod]
 	[DataRow( "bankrupt", 411 )]
 	[DataRow( "congrats", 682 )]

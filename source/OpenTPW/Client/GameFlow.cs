@@ -117,8 +117,8 @@ internal sealed class GameFlow : IDisposable
 	public void StartPark( string levelName, GameMode mode )
 	{
 		Mode = mode;
-		StartLevel( levelName, original: true, developerPanels: false );
-		Log.Trace( $"Started {levelName} in {mode} mode from the front end (both modes currently play the same)." );
+		StartLevel( levelName, original: true, developerPanels: false, gameMode: mode == GameMode.InstantAction ? ParkGameMode.InstantAction : ParkGameMode.FullSimulation );
+		Log.Trace( $"Started {levelName} in {mode} mode from the front end." );
 	}
 
 	public void LoadPark( ParkLoadEntry entry )
@@ -129,14 +129,15 @@ internal sealed class GameFlow : IDisposable
 			Level!.LoadSandbox();
 		}
 		else
-			StartLevel( entry.Level, original: true, developerPanels: false );
+			StartLevel( entry.Level, original: true, developerPanels: false,
+				gameMode: Mode == GameMode.InstantAction ? ParkGameMode.InstantAction : ParkGameMode.FullSimulation );
 	}
 
 	/// <summary>Creates a level with the original HUD. CLI paths keep the developer panels.</summary>
-	public Level StartLevel( string levelName, bool original, bool developerPanels, ParkVisitInfo? visit = null )
+	public Level StartLevel( string levelName, bool original, bool developerPanels, ParkVisitInfo? visit = null, ParkGameMode? gameMode = null )
 	{
 		TearDown();
-		var level = new Level( levelName, loadOriginalLevel: original, visit: visit, onlineFolders: OnlineFolders ) { ShowDeveloperPanels = developerPanels };
+		var level = new Level( levelName, loadOriginalLevel: original, visit: visit, onlineFolders: OnlineFolders, gameMode: gameMode ) { ShowDeveloperPanels = developerPanels };
 		Level = level;
 		// Money, calendar, speed and purchases come from the park economy of original levels (Level.Park,
 		// looked up on every access so loading a park save is followed); the generic sandbox has none.
@@ -174,7 +175,7 @@ internal sealed class GameFlow : IDisposable
 	private UiCanvas CurrentCanvas()
 	{
 		var pixels = Screen.PixelSize;
-		var canvas = new UiCanvas( Math.Max( 1, pixels.X ), Math.Max( 1, pixels.Y ), Math.Max( 1, Display.EffectiveUiScale ) );
+		var canvas = new UiCanvas( Math.Max( 1, pixels.X ), Math.Max( 1, pixels.Y ), Math.Max( 1, Display.EffectiveUiScale ), Screen.PixelDensity );
 		var scales = (canvas.UiScale, canvas.TextScale);
 		if ( reportedUiScale != scales && canvas.TextScale < canvas.UiScale )
 			Log.Warning( $"Interface scale {canvas.UiScale}x falls back to {canvas.TextScale}x: {canvas.Width}x{canvas.Height} drawable pixels cannot fit the {UiScaling.ReferenceWidth}x{UiScaling.ReferenceHeight} reference layout at the requested scale." );

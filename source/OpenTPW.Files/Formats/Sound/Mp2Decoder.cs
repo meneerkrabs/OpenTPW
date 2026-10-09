@@ -125,6 +125,30 @@ public static partial class Mp2Decoder
 		return new Mp2Audio( sampleRate, channels, output.ToArray(), frames, data.Length - offset );
 	}
 
+	/// <summary>
+	/// Read format metadata using the decode header rules without decoding PCM.
+	/// Require a complete first frame; unsupported or damaged entries can still be
+	/// listed by an archive reader and will be rejected separately during Decode.
+	/// </summary>
+	internal static bool TryReadFrameFormat( ReadOnlySpan<byte> data, out int sampleRate, out int channels )
+	{
+		sampleRate = channels = 0;
+		if ( data.Length < 4 )
+			return false;
+		try
+		{
+			var header = Header.Parse( data );
+			if ( header.FrameBytes > data.Length )
+				return false;
+			(sampleRate, channels) = (header.SampleRate, header.Channels);
+			return true;
+		}
+		catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException )
+		{
+			return false;
+		}
+	}
+
 	private readonly record struct Header( bool Crc, int SampleRate, int Mode, int ModeExtension, int Layer, int FrameBytes )
 	{
 		public int Channels => Mode == 3 ? 1 : 2;

@@ -9,6 +9,9 @@ public class Program
 	{
 		try
 		{
+			if ( InstallationDiscovery.RunChild( args ) is { } childExitCode )
+				return childExitCode;
+			LinuxNativeLibraries.Register();
 			Game.Run( args );
 			return 0;
 		}

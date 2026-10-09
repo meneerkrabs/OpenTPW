@@ -285,6 +285,23 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			Require( flow.Level == null && flow.Menu != null && flow.Lobby != null, "Exit To Lobby returns to the front end" );
 			Require( flow.Menu!.Selected.Level == "jungle", "lobby returns to the island of the park" );
 			CaptureFrame( "frontend-return.png" );
+			flow.StartPark( "jungle", GameMode.InstantAction );
+		} );
+		Wait( "instant action starts", 3 );
+		Do( "instant action mode before lobby", () =>
+		{
+			Require( flow.Mode == GameMode.InstantAction && flow.Level!.Park!.Economy.Mode == ParkGameMode.InstantAction,
+				"selected Instant Action reaches the park economy" );
+			flow.ShowFrontEnd( "jungle" );
+		} );
+		Wait( "instant action returns to lobby", 3 );
+		Do( "reload original park in selected mode", () => flow.LoadPark( new ParkLoadEntry( "jungle", 0, false ) ) );
+		Wait( "instant action reloads", 3 );
+		Do( "loaded mode and balance layers", () =>
+		{
+			Require( flow.Mode == GameMode.InstantAction && flow.Level!.Park!.Economy.Mode == ParkGameMode.InstantAction
+				&& flow.Level.Park.Economy.Settings.IsEasy && flow.Level.Park.Economy.Balance == 100000,
+				"return-to-lobby/load preserves Instant Action and Easy balance layers" );
 			var park = OriginalPark.Load( "jungle" );
 			var snapshot = ParkSnapshotBuilder.FromOriginal( park, null );
 			readOnlyVisit = ParkSharing.PrepareVisit( ParkSharing.CreatePackage( snapshot, "HUD read-only smoke", "", "OpenTPW", park.Map ) );
@@ -323,7 +340,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			CaptureFrame( "read-only-visit.png" );
 			Device.WaitForIdle();
 			completed = true;
-			Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name} at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames, lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, two distinct catalogue objects bought exactly once through the park economy, info arm, economy pause, sale, overlap refusal, open/close, pause menu, exit to lobby, read-only visit build/open/delete/save guards." );
+			Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name} at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames, lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, two distinct catalogue objects bought exactly once through the park economy, info arm, economy pause, sale, overlap refusal, open/close, pause menu, exit to lobby, Instant Action return/load mode and balance-layer regression, read-only visit build/open/delete/save guards." );
 			GameFlow.Quit();
 		} );
 	}

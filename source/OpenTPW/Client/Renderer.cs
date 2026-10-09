@@ -329,7 +329,7 @@ public partial class Renderer : IDisplaySettings
 		var pixels = Window.PixelSize;
 		Metrics = new DisplayMetrics( logical, pixels );
 		Screen.UpdateFrom( logical, pixels );
-		Screen.UiScale = UiScaling.Resolve( DisplaySettings.UiScale, pixels );
+		Screen.UiScale = UiScaling.Resolve( DisplaySettings.UiScale, pixels, Metrics.IntegerPixelDensity );
 		var scaling = RenderScaling.Compute( pixels, DisplaySettings.Upscale, DisplaySettings.RenderScale, maximumTextureSize, worldScalingAllowed );
 		if ( scaling.IsPaused )
 		{
@@ -542,6 +542,13 @@ public partial class Renderer : IDisplaySettings
 
 	private void CreateGraphicsDevice()
 	{
+		Device = CreateDevice( Window );
+		Log.Trace( $"Graphics backend: {Device.BackendType}; process: {System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}" );
+	}
+
+	/// <summary>Metal on macOS, Direct3D 11 on Windows, Vulkan elsewhere, with readable errors when the platform cannot start one.</summary>
+	internal static GraphicsDevice CreateDevice( Window window )
+	{
 		var options = new GraphicsDeviceOptions()
 		{
 			PreferStandardClipSpaceYDirection = true,
@@ -552,15 +559,30 @@ public partial class Renderer : IDisplaySettings
 			HasMainSwapchain = true
 		};
 
-		var swapchainSource = Veldrid.StartupUtilities.VeldridStartup.GetSwapchainSource( Window.SdlWindow );
-		var pixels = Window.PixelSize;
+		SwapchainSource swapchainSource;
+		try
+		{
+			swapchainSource = Veldrid.StartupUtilities.VeldridStartup.GetSwapchainSource( window.SdlWindow );
+		}
+		catch ( PlatformNotSupportedException exception ) when ( OperatingSystem.IsLinux() )
+		{
+			throw new PlatformNotSupportedException( "SDL opened no X11 or Wayland window (is DISPLAY or WAYLAND_DISPLAY set?). Headless runs need a virtual display such as xvfb-run.", exception );
+		}
+		var pixels = window.PixelSize;
 		var description = new SwapchainDescription( swapchainSource, (uint)Math.Max( 1, pixels.X ), (uint)Math.Max( 1, pixels.Y ), options.SwapchainDepthFormat, options.SyncToVerticalBlank, options.SwapchainSrgbFormat );
-		Device = OperatingSystem.IsMacOS()
-			? GraphicsDevice.CreateMetal( options, description )
-			: OperatingSystem.IsWindows()
-				? GraphicsDevice.CreateD3D11( options, description )
-				: GraphicsDevice.CreateVulkan( options, description );
-		Log.Trace( $"Graphics backend: {Device.BackendType}; process: {System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}" );
+		try
+		{
+			return OperatingSystem.IsMacOS()
+				? GraphicsDevice.CreateMetal( options, description )
+				: OperatingSystem.IsWindows()
+					? GraphicsDevice.CreateD3D11( options, description )
+					: GraphicsDevice.CreateVulkan( options, description );
+		}
+		catch ( Exception exception ) when ( OperatingSystem.IsLinux() && exception is TypeInitializationException { TypeName: "Vulkan.VulkanNative" } or VeldridException )
+		{
+			// No loader (libvulkan.so.1) or no installed driver/ICD (no VK_KHR_surface).
+			throw new PlatformNotSupportedException( $"Vulkan could not be started ({exception.Message}). Install the Vulkan loader and a driver, e.g. libvulkan1 and mesa-vulkan-drivers.", exception );
+		}
 	}
 
 	/// <summary>Window resize/fullscreen/DPI events: remembered and applied at the next frame boundary.</summary>

@@ -45,7 +45,7 @@ internal sealed class Advisor : IDisposable
 		("ADVISOR-010", "lip-sync clock = PCM consumed from the SDL queue (leads output by up to one device buffer)"),
 		("ADVISOR-011", "wall clock drives the mouth when no audio device opens"),
 		("ADVISOR-012", "mono speech duplicated to both stereo channels"),
-		("ADVISOR-013", "LIP marks are microseconds, talking from 0 and toggling per mark (inferred from audio)"),
+		("ADVISOR-013", "the mouth is talking from time 0 (the unit and per-mark toggle are traced)"),
 		("ADVISOR-014", "MP2 synthesis window values read from ffmpeg's table, checked against two ISO values and ≤1 LSB corpus output"),
 	};
 

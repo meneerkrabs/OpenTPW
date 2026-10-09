@@ -5,11 +5,24 @@ Original legally obtained game assets are required and must not be committed.
 
 ## macOS / Linux
 
-Install the pinned .NET 8 SDK. Apple Silicon uses native arm64 with Metal when
+Install the pinned .NET 10 SDK (`global.json`). Apple Silicon uses native arm64 with Metal when
 the matching libraries are available; see MACOS-NATIVE.md for reproduction.
 The launcher falls back to an Intel/Rosetta bootstrap when those files are absent.
 Linux currently uses Vulkan and needs a working Vulkan driver. Windows uses
 Direct3D 11. Windows/Linux GPU execution is not yet locally qualified.
+
+Linux (x64) needs the system packages for SDL2, the Vulkan loader and a Vulkan
+driver (Debian/Ubuntu: `libsdl2-2.0-0 libvulkan1 mesa-vulkan-drivers`) and an X11
+or Wayland session; the NuGet packages bring `libveldrid-spirv.so` and
+`libcimgui.so` but no SDL2. Without a GPU, Mesa's llvmpipe software Vulkan works,
+and `xvfb-run -a bash scripts/run.sh …` provides a virtual display for headless
+smoke tests. Missing display or Vulkan driver ends with a named error instead of a
+.NET loader exception. Game data may use any letter case (`data`, `Data`, `DATA`
+from a mounted CD, `Speech`/`speech`): paths are matched to the on-disk spelling.
+linux-arm64 is blocked: the packages ship no arm64 `libveldrid-spirv`/`libcimgui`.
+Shader hot reload shares one file watcher per shader file, because every Linux
+watcher holds an inotify instance (default limit 128 per user); if the limit is
+still reached, hot reload is disabled with a warning instead of stopping the game.
 
 ```sh
 bash scripts/run.sh --game-path '/path/to/Theme Park World'
@@ -21,8 +34,9 @@ The default start is the original-style front end (3D lobby; pick an island and
 enter the park, or Load/Options/Quit Game) with the in-game HUD; see UI.md.
 `--sandbox` opens the former default jungle sandbox with its ImGui developer panel.
 
-The installation directory must contain `data` or `Data`. `OPENTPW_GAME_PATH`
-can replace `--game-path`. `DOTNET` selects a particular SDK executable.
+Without `--game-path`, OpenTPW finds the game itself or opens a setup window to
+choose the folder once (SETUP.md); `--setup` opens it again. The folder must contain
+`data` or `Data`. `OPENTPW_GAME_PATH` can replace `--game-path`. `DOTNET` selects a particular SDK executable.
 `OPENTPW_RUNTIME` selects an explicit runtime identifier.
 Native dependencies must match the selected process architecture.
 Engine content is copied beside the executable; shader files/includes resolve
@@ -151,7 +165,7 @@ bash scripts/run.sh --game-path '/path/to/Theme Park World' --fullscreen --upsca
 | `--windowed`, `--fullscreen`, `--fullscreen-exclusive` | Window mode. `--fullscreen` is borderless at the desktop mode; exclusive switches the display mode to `--resolution` (experimental; falls back to borderless with a reason if the display does not list that mode). |
 | `--upscale native\|linear\|nearest` | How the 3D world reaches the output. Native (default) renders the world at output size. Linear/Nearest render it smaller and scale it up; Nearest is a deliberate retro look. |
 | `--render-scale <50-100>` | World size as a percentage of each output dimension (presets 77, 67, 59, 50; 50% is a quarter of the pixels). Without `--upscale` it selects Linear. Out-of-range values fall back to Native with a warning. |
-| `--ui-scale auto\|N` | Integer scale of the BF4 text UI (auto: 2 from 2560x1440, 3 at 4K). |
+| `--ui-scale auto\|N` | Integer scale of the BF4 text UI (auto: 2 from 2560x1440, 3 at 4K; on HiDPI/Retina at least the pixel density, so 2 on Retina). |
 | `--save-display-settings` | Also stores these values as the user's display settings. |
 
 Alt+Enter or F11 toggles fullscreen at runtime; the ImGui park panel has a Display
@@ -221,7 +235,7 @@ dotnet publish source/OpenTPW/OpenTPW.csproj -c Release -r win-x64 --self-contai
 dotnet publish source/OpenTPW/OpenTPW.csproj -c Release -r linux-x64 --self-contained false -o artifacts/publish/linux-x64
 ```
 
-These packages require a matching .NET 8 runtime and legally obtained external
+These packages require a matching .NET 10 runtime and legally obtained external
 game assets. Build the arm64 dependency before publishing that RID. Successful
 cross-publication is not successful execution on the target platform.
 Current verification and remaining release blockers are recorded in PROGRESS.md.

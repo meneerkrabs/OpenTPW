@@ -391,7 +391,7 @@ ring, +0 is allocated ring capacity, +4 the storage pointer, +8 the configured
 admission limit, +12 queued count, +16 held/reserved count, +20 read cursor,
 and +24 write cursor. `0x3dbc0` admits a visitor only while queued+held is less
 than allocated ring capacity. `0x3dd14` returns
-`min(global_admission_limit, configured_limit - queued - held)`.
+`max(global_admission_minimum, configured_limit - queued - held)`.
 The read/write cursor arithmetic wraps at allocated capacity. The departing
 ring's `0x3dd5c` checks its logical boundary and count before returning a
 visitor; zero indicates no departure. The meaning of its +28 boundary and
@@ -413,8 +413,9 @@ This arithmetic does not prove that grouping equals logical seat capacity.
 
 ### Capacity and path math, with conditional schemas
 
-COAST6 (`0x3df24`) takes the minimum of the request, global limit, controller
-definition+792, and first train definition+8, then rebuilds if the result
+COAST6 (`0x3df24`) first takes the maximum of request and global minimum,
+then the minimum with controller definition+792 and first train definition+8.
+It rebuilds if the result
 differs from controller+240. The train builder `0x3ea74` uses train records128
 bytes and car records96 bytes. Front/rear cars whose type differs from the
 center type are excluded from rider capacity; eligible cars receive
@@ -517,3 +518,10 @@ The actual speed calls are Fantasy4000, Hallow2000, Jungle4000 and Space1800
 in their gates scripts, with exact word offsets and script SHA in the metadata.
 These are PC asset corroborations; no original game was executed and no
 Windows runtime or full animation fidelity is claimed.
+
+
+Integration note: independent rides review corrected the capacity comparators
+above. The native admission room is floored by the global minimum; request
+selection first applies that minimum and then the two capacity caps. The older
+standalone controller helper in this merge predates that correction; its update
+remains a separate reviewed lane commit and is not a production runtime bridge.

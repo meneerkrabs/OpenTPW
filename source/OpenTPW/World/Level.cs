@@ -47,7 +47,7 @@ public partial class Level : IDisposable
 	public bool IsReadOnlyVisit => Visit != null;
 	private OnlinePanel? onlinePanel;
 
-	public Level( string levelName, bool loadOriginalLevel = false, ParkVisitInfo? visit = null, OnlineFolders? onlineFolders = null )
+	public Level( string levelName, bool loadOriginalLevel = false, ParkVisitInfo? visit = null, OnlineFolders? onlineFolders = null, ParkGameMode? gameMode = null )
 	{
 		if ( visit != null && visit.Level != levelName )
 			throw new ArgumentException( "The visit level must match the loaded level.", nameof( visit ) );
@@ -57,9 +57,9 @@ public partial class Level : IDisposable
 		Current = this;
 		if ( visit != null ? !visit.IsSandbox : loadOriginalLevel )
 		{
-			OriginalPark = OriginalPark.Load( levelName );
+			OriginalPark = OriginalPark.Load( levelName, includeEasymodePark: gameMode != ParkGameMode.FullSimulation );
 			if ( !IsReadOnlyVisit )
-				Park = ParkEconomyRuntime.ForOriginalLevel( OriginalPark );
+				Park = ParkEconomyRuntime.ForOriginalLevel( OriginalPark, gameMode );
 		}
 
 		SetupEntities();

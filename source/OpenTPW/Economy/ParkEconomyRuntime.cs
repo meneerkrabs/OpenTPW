@@ -43,7 +43,7 @@ public sealed class ParkEconomyRuntime
 			Log.Trace( $"Park economy: {attraction.Name} (Info.Id {infoId}) is not in the {Economy.Settings.Theme} catalogue; its visits are not booked." );
 			return null;
 		}
-		// [APPROX:ECON-032] the prototype ride is registered uncharged — evidence needed: replace with a real catalogue purchase (rides slice)
+		// [EXT:developer-prototype] the developer prototype ride is registered uncharged (no original counterpart)
 		var state = Economy.RegisterExisting( infoId );
 		Guests?.Link( attraction.AttractionId, state.Id );
 		return state;
@@ -60,12 +60,14 @@ public sealed class ParkEconomyRuntime
 	/// <summary>Latest status line, e.g. for a debug overlay.</summary>
 	public string Status => $"{Economy.Date}: balance ${Economy.Balance}, {Economy.Staff.Members.Count} staff, rating {Economy.ParkRating}, speed {Economy.Speed}";
 
-	public static ParkEconomyRuntime ForOriginalLevel( OriginalPark park )
+	/// <param name="mode">The player's game mode; Instant Action loads the Easy_ balance layers. Null (developer
+	/// command line) keeps the earlier choice: easy balance when the level ships an Easymode park and Easy_ layer.</param>
+	public static ParkEconomyRuntime ForOriginalLevel( OriginalPark park, ParkGameMode? mode = null )
 	{
 		ArgumentNullException.ThrowIfNull( park );
 		EconomyApproximations.LogOnce();
-		var easy = park.Save != null && BalanceSettings.HasEasyLayer( park.LevelName );
-		var economy = ParkEconomy.CreateForTheme( park.LevelName, easy );
+		var easy = mode.HasValue ? mode == ParkGameMode.InstantAction : park.Save != null && BalanceSettings.HasEasyLayer( park.LevelName );
+		var economy = ParkEconomy.CreateForTheme( park.LevelName, easy, mode ?? ParkGameMode.FullSimulation );
 		var import = park.Save != null ? OriginalEconomyImport.Apply( economy, park ) : null;
 		Log.Trace( $"Park economy: {park.LevelName} {(easy ? "easy" : "standard")} balance from {string.Join( ", ", economy.Settings.Standard.Sources )}; "
 			+ $"cash ${economy.Balance}, entrance fee ${economy.EntranceFee}, {economy.Catalog.Objects.Count} catalogue objects, {economy.Research.Items.Count} research items." );

@@ -44,28 +44,28 @@ public sealed class RideScriptInventory
 	public string Format()
 	{
 		var builder = new StringBuilder();
-		builder.AppendLine( $"files={FileCount} words={CodeWordCount} instructions={InstructionCount} distinct-opcodes={OpcodeHistogram.Count}" );
-		builder.AppendLine( "operand kinds: " + string.Join( ", ", OperandKindCounts.Select( x => $"{x.Key}={x.Value}" ) ) );
-		builder.AppendLine( "opcode count operands signatures handler" );
+		builder.Append( $"files={FileCount} words={CodeWordCount} instructions={InstructionCount} distinct-opcodes={OpcodeHistogram.Count}" ).Append( '\n' );
+		builder.Append( "operand kinds: " + string.Join( ", ", OperandKindCounts.Select( x => $"{x.Key}={x.Value}" ) ) ).Append( '\n' );
+		builder.Append( "opcode count operands signatures handler" ).Append( '\n' );
 		foreach ( var (opcode, count) in OpcodeHistogram )
 		{
 			var signatures = string.Join( " ", OperandSignatures[opcode].Select( x => $"{(x.Key.Length == 0 ? "-" : x.Key)}={x.Value}" ) );
 			var handler = RideScriptAnalysis.ImplementedOpcodes.Contains( (Opcode)opcode ) ? "yes" : "no";
-			builder.AppendLine( $"{opcode,3} {RideScriptAnalysis.GetOpcodeName( opcode ),-16} {count,5} {string.Join( "/", ObservedOperandCounts[opcode] ),3} {signatures} {handler}" );
+			builder.Append( $"{opcode,3} {RideScriptAnalysis.GetOpcodeName( opcode ),-16} {count,5} {string.Join( "/", ObservedOperandCounts[opcode] ),3} {signatures} {handler}" ).Append( '\n' );
 		}
-		builder.AppendLine( "unknown opcodes: " + (UnknownOpcodes.Count == 0 ? "none" : string.Join( ", ", UnknownOpcodes.Select( x => $"{x.Key}={x.Value}" ) )) );
-		builder.AppendLine( "operand count mismatches: " + (OperandCountMismatches.Count == 0 ? "none" : string.Join( "; ", OperandCountMismatches )) );
-		builder.AppendLine( "used without VM handler: " + string.Join( " ", UsedWithoutHandler.Select( RideScriptAnalysis.GetOpcodeName ) ) );
-		builder.AppendLine( "VM handler without corpus use: " + string.Join( " ", HandlerWithoutCorpusUse ) );
-		builder.AppendLine( "named but unused: " + string.Join( " ", NamedButUnused ) );
-		builder.AppendLine( "final opcodes: " + string.Join( ", ", FinalOpcodes.Select( x => $"{RideScriptAnalysis.GetOpcodeName( x.Key )}={x.Value}" ) ) );
-		builder.AppendLine( "time slices: " + string.Join( ", ", TimeSliceValues.Select( x => $"{x.Key}={x.Value}" ) ) );
+		builder.Append( "unknown opcodes: " + (UnknownOpcodes.Count == 0 ? "none" : string.Join( ", ", UnknownOpcodes.Select( x => $"{x.Key}={x.Value}" ) )) ).Append( '\n' );
+		builder.Append( "operand count mismatches: " + (OperandCountMismatches.Count == 0 ? "none" : string.Join( "; ", OperandCountMismatches )) ).Append( '\n' );
+		builder.Append( "used without VM handler: " + string.Join( " ", UsedWithoutHandler.Select( RideScriptAnalysis.GetOpcodeName ) ) ).Append( '\n' );
+		builder.Append( "VM handler without corpus use: " + string.Join( " ", HandlerWithoutCorpusUse ) ).Append( '\n' );
+		builder.Append( "named but unused: " + string.Join( " ", NamedButUnused ) ).Append( '\n' );
+		builder.Append( "final opcodes: " + string.Join( ", ", FinalOpcodes.Select( x => $"{RideScriptAnalysis.GetOpcodeName( x.Key )}={x.Value}" ) ) ).Append( '\n' );
+		builder.Append( "time slices: " + string.Join( ", ", TimeSliceValues.Select( x => $"{x.Key}={x.Value}" ) ) ).Append( '\n' );
 		foreach ( var (opcode, strings) in StringReferences )
-			builder.AppendLine( $"strings via {RideScriptAnalysis.GetOpcodeName( opcode )}: {strings.Count} distinct, {strings.Values.Sum()} refs: " + string.Join( " | ", strings.Keys ) );
-		builder.AppendLine( $"EVENT operand tuples: {EventOperands.Count} distinct" );
+			builder.Append( $"strings via {RideScriptAnalysis.GetOpcodeName( opcode )}: {strings.Count} distinct, {strings.Values.Sum()} refs: " + string.Join( " | ", strings.Keys ) ).Append( '\n' );
+		builder.Append( $"EVENT operand tuples: {EventOperands.Count} distinct" ).Append( '\n' );
 		foreach ( var (tuple, count) in EventOperands.OrderByDescending( x => x.Value ).ThenBy( x => x.Key, StringComparer.Ordinal ) )
-			builder.AppendLine( $"  {tuple} x{count}" );
-		builder.AppendLine( $"variable names: {VariableNames.Count} distinct" );
+			builder.Append( $"  {tuple} x{count}" ).Append( '\n' );
+		builder.Append( $"variable names: {VariableNames.Count} distinct" ).Append( '\n' );
 		return builder.ToString();
 	}
 }
@@ -148,11 +148,11 @@ public static class RideScriptAnalysis
 	{
 		var targets = script.Instructions.SelectMany( x => x.Operands ).Where( x => x.Kind == RideScriptOperandKind.Branch ).Select( x => (int)x.Value ).ToHashSet();
 		var builder = new StringBuilder();
-		builder.AppendLine( $"; variables={script.VariableCount} stack={script.StackSize} timeslice={script.TimeSlice} limbo={script.LimboSize} bounce={script.BounceSize} walk={script.WalkSize}" );
+		builder.Append( $"; variables={script.VariableCount} stack={script.StackSize} timeslice={script.TimeSlice} limbo={script.LimboSize} bounce={script.BounceSize} walk={script.WalkSize}" ).Append( '\n' );
 		foreach ( var instruction in script.Instructions )
 		{
 			if ( targets.Contains( instruction.WordOffset ) )
-				builder.AppendLine( $".label_{instruction.WordOffset}" );
+				builder.Append( $".label_{instruction.WordOffset}" ).Append( '\n' );
 			builder.Append( '\t' ).Append( GetOpcodeName( instruction.Opcode ) );
 			foreach ( var operand in instruction.Operands )
 			{
@@ -164,7 +164,7 @@ public static class RideScriptAnalysis
 					_ => operand.Value >= 0x8000 ? $"0x{operand.Value:X4}" : operand.Value.ToString()
 				} );
 			}
-			builder.AppendLine();
+			builder.Append( '\n' );
 		}
 		return builder.ToString();
 	}

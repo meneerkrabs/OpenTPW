@@ -85,8 +85,12 @@ log string `Advisor sample is %d ms long` at 1917066. These were found by a read
 `python3 -I` scan of the file. They show that the runtime builds LIP paths from a clip
 number and has the five mouth names, but they do not give the unit or the talking
 toggle. The strings alone do not show whether `sp_%03d.lip` is level-relative or global,
-so ADVISOR-009 stays open. The mouth-name table does not show which shape is used while
-talking, so ADVISOR-001 stays open.
+so ADVISOR-009 stays open. The later Ghidra trace (reverse/APPROX-TRACE.md) shows the
+shape choice: while talking, the advisor update (`0x10007434`) picks mouth node
+`rand() % 5 + 1` whenever more than 100 ms of speech time have passed since the last
+pick, and shows node 1 while silent. OpenTPW does the same (`AdvisorMouth`). Which mesh
+each node id is goes through an unrecovered jump table; OpenTPW assumes the order of
+the name table above (node 1 = Normal), which ADVISOR-001 now covers.
 
 ## Speech audio decoding
 
@@ -144,8 +148,8 @@ selected language (`GameLanguage.ResolveDataFile`, overlay first; e.g. `--langua
 park scene: `global/advisor.wad/Advisor.MD2` is drawn in a bottom-left viewport
 with its own camera. The model has five co-located mouth meshes (`Mouth - Normal`,
 `- Aah`, `- Eee`, `- Ooh`, `- Sss`, textures `Mouth1a`–`e`) and `ShutEye` blink meshes.
-Talking shows `Mouth - Aah`, silence `Mouth - Normal`. Using only `Aah` is a
-presentation choice: LIP data carries no shape. Body, head, eyes, antennae and hands are
+Silence shows `Mouth - Normal`; talking shows one of the five mouths, picked at
+random every 100 ms as in the original (the LIP data carries no shape). Body, head, eyes, antennae and hands are
 shown; the seven hats, spatula, bow tie and blink meshes are hidden. All nodes are
 composed through the shared MD2 hierarchy code (`ModelAnimationPlayer.ComputeRestTransforms`);
 with the root `Position Dummy` the model is Y-up facing −Z. Triangle corner order is
@@ -206,7 +210,7 @@ table fit). The smoke-test thresholds are test-harness checks, not game rules.
 
 | ID | Site | Current value / rule | Evidence needed |
 | --- | --- | --- | --- |
-| ADVISOR-001 | `source/OpenTPW/World/Advisor.cs:25` | Talking always shows `Mouth - Aah`; Eee/Ooh/Sss unused | Decoded `Advisorm13` mouth-track payloads or a capture of the talking advisor |
+| ADVISOR-001 | `source/OpenTPW/World/Advisor.cs:25` | Mouth nodes 1–5 are Normal, Aah, Eee, Ooh, Sss in that order (the random 100 ms choice itself is traced) | The node-lookup jump table at `0x1019B3DC` or the MD2 node ids |
 | ADVISOR-002 | `source/OpenTPW/World/Advisor.cs:30` | Visible: body, head, eyes, antennae, hands; hats, spatula, bow tie, ShutEye hidden | Original node-visibility rules (dummy attributes 0x401/0x411, Advisorm* tracks) or captures per advisor role |
 | ADVISOR-003 | `source/OpenTPW/World/Advisor.cs:74` | Bottom-left square viewport, ⅓ of the short logical screen side (min 64 logical px), 16 logical px margin; mapped to the world target for render scale/HiDPI | Original placement/size captures per resolution |
 | ADVISOR-004 | `source/OpenTPW/World/Advisor.cs:58` | Camera at z = −70 facing +Z, 40° FOV, near 1 / far 500 | Original advisor camera/projection (binary or capture) |

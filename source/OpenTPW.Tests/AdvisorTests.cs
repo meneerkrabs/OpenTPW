@@ -25,11 +25,27 @@ public class AdvisorTests
 	public void MouthFollowsTimelineAndDefaultsClosed()
 	{
 		var timeline = new LipSyncTimeline( new uint[] { 2226893, 2812380, 4058820 } );
-		Assert.AreEqual( Advisor.TalkingMouth, Advisor.MouthFor( timeline, TimeSpan.Zero ) );
-		Assert.AreEqual( Advisor.ClosedMouth, Advisor.MouthFor( timeline, TimeSpan.FromSeconds( 2.5 ) ) );
-		Assert.AreEqual( Advisor.TalkingMouth, Advisor.MouthFor( timeline, TimeSpan.FromSeconds( 3 ) ) );
-		Assert.AreEqual( Advisor.ClosedMouth, Advisor.MouthFor( timeline, TimeSpan.FromSeconds( 4.1 ) ) );
-		Assert.AreEqual( Advisor.ClosedMouth, Advisor.MouthFor( null, TimeSpan.Zero ) );
+		Assert.IsTrue( Advisor.IsTalking( timeline, TimeSpan.Zero ) );
+		Assert.IsFalse( Advisor.IsTalking( timeline, TimeSpan.FromSeconds( 2.5 ) ) );
+		Assert.IsTrue( Advisor.IsTalking( timeline, TimeSpan.FromSeconds( 3 ) ) );
+		Assert.IsFalse( Advisor.IsTalking( timeline, TimeSpan.FromSeconds( 4.1 ) ) );
+		Assert.IsFalse( Advisor.IsTalking( null, TimeSpan.Zero ) );
+	}
+
+	[TestMethod]
+	public void TalkingPicksARandomMouthEvery100Milliseconds()
+	{
+		var mouth = new AdvisorMouth( new Random( 7 ) );
+		Assert.AreEqual( Advisor.ClosedMouth, mouth.Update( false, 0 ) );
+		var first = mouth.Update( true, 1 );
+		CollectionAssert.Contains( Advisor.Mouths, first );
+		Assert.AreEqual( first, mouth.Update( true, 50 ), "no new pick within 100 ms" );
+		Assert.AreEqual( first, mouth.Update( true, 101 ), "the next pick needs more than 100 ms" );
+		var picks = new System.Collections.Generic.HashSet<string>();
+		for ( var time = 102; time < 20000; time += 16 )
+			picks.Add( mouth.Update( true, time ) );
+		CollectionAssert.AreEquivalent( Advisor.Mouths, picks.ToArray(), "all five mouths are used while talking" );
+		Assert.AreEqual( Advisor.ClosedMouth, mouth.Update( false, 20000 ) );
 	}
 
 	[TestMethod]
@@ -37,7 +53,7 @@ public class AdvisorTests
 	{
 		// 60 Hz sampling of sp_001: open 0–2.227 s, closed to 2.812 s, open to 4.059 s.
 		var timeline = new LipSyncTimeline( new uint[] { 2226893, 2812380, 4058820 } );
-		var frames = Enumerable.Range( 0, 270 ).Select( frame => Advisor.MouthFor( timeline, TimeSpan.FromSeconds( frame / 60.0 ) ) ).ToArray();
+		var frames = Enumerable.Range( 0, 270 ).Select( frame => Advisor.IsTalking( timeline, TimeSpan.FromSeconds( frame / 60.0 ) ) ).ToArray();
 		var changes = Enumerable.Range( 1, frames.Length - 1 ).Where( frame => frames[frame] != frames[frame - 1] ).ToArray();
 		CollectionAssert.AreEqual( new[] { 134, 169, 244 }, changes );
 	}
@@ -127,7 +143,7 @@ public class AdvisorTests
 		var mouth = Bounds( Advisor.ClosedMouth );
 		Assert.IsTrue( antenna.Min.Y > head.Min.Y && body.Max.Y < head.Min.Y + 1, "Y is up after composing the node hierarchy" );
 		Assert.IsTrue( eye.Max.Z < head.Min.Z && mouth.Min.Z < head.Min.Z, "the face is on the −Z side, towards the overlay camera" );
-		foreach ( var name in new[] { Advisor.TalkingMouth, "Mouth - Eee", "Mouth - Ooh", "Mouth - Sss" } )
+		foreach ( var name in Advisor.Mouths.Skip( 1 ) )
 		{
 			var other = Bounds( name );
 			Assert.IsTrue( NumericVector.Distance( mouth.Min, other.Min ) < 1e-3f && NumericVector.Distance( mouth.Max, other.Max ) < 1e-3f, name );

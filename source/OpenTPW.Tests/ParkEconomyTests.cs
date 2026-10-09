@@ -87,7 +87,7 @@ public class ParkEconomyTests
 		ledger.Post( LedgerCategory.LoanPayments, 400 );
 		Assert.AreEqual( 1000 + 200 + 50 - 300 - 25 + 10000 - 400, ledger.Balance );
 		var month = ledger.CloseMonth( 1, 40, 1234 );
-		Assert.AreEqual( 250, month.MoneyIn );
+		Assert.AreEqual( 10250, month.MoneyIn, "loans received are money in" );
 		Assert.AreEqual( 725, month.MoneyOut );
 		Assert.AreEqual( -475, month.Profit );
 		Assert.AreEqual( 1000, month.OpeningBalance );
@@ -126,7 +126,7 @@ public class ParkEconomyTests
 		Assert.AreEqual( 0, park.Loans.Count );
 		Assert.AreEqual( 18000 - LoanMath.TotalPayable( 18000, 20, 24 ), park.Balance );
 		Assert.AreEqual( LoanMath.TotalPayable( 18000, 20, 24 ), park.Ledger.History.Sum( month => month[LedgerCategory.LoanPayments] ) );
-		Assert.AreEqual( 0, park.Ledger.History.Sum( month => month.MoneyIn ) );
+		Assert.AreEqual( 18000, park.Ledger.History.Sum( month => month.MoneyIn ), "the loan is money in" );
 		Assert.IsTrue( park.AvailableLoans.Any( offer => offer.Index == 2 ) );
 
 		var early = EconomyTestData.Park( initialCash: 5000 );

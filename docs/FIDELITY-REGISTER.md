@@ -14,7 +14,7 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **135 unresolved unique APPROX IDs**, 150 APPROX occurrences, 56 EXT occurrences, 62 DATA occurrences and 14 BIN occurrences.
+Current inventory: **135 unresolved unique APPROX IDs**, 150 APPROX occurrences, 56 EXT occurrences, 62 DATA occurrences and 15 BIN occurrences.
 
 Of these, 129 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
@@ -66,7 +66,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-002 | Original-fidelity area (scope unadjudicated) | every month has 30 days, 12 months per year | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:13` |
 | ECON-003 | Original-fidelity area (scope unadjudicated) | 24 hours per day (Clock.RSE only shows HOUR is used mod 12) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:14` |
 | ECON-004 | Original-fidelity area (scope unadjudicated) | Fast x2 and Fastest x4 speeds (only pause is evidenced) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:15` |
-| ECON-005 | Original-fidelity area (scope unadjudicated) | challenge prizes and scrap sales are other income; build, upgrade, goods, prizes, land are other costs; loans received are not money in | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:16` |
+| ECON-005 | Original-fidelity area (scope unadjudicated) | challenge prizes and scrap sales are other income; build, upgrade, goods, prizes, land are other costs; profit leaves out loans received | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:16` |
 | ECON-006 | Original-fidelity area (scope unadjudicated) | APR &gt; 0 repayment is an annuity at APR/12 per month, rounded down; interest accrues monthly on the balance | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:17` |
 | ECON-007 | Original-fidelity area (scope unadjudicated) | repaid loan offers reopen without the original credit-eligibility gate | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:18` |
 | ECON-008 | Original-fidelity area (scope unadjudicated) | 100 training points per grade (from Online_Standard.sam comments \\"costs 1000 to get up to grade 1\\") | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:19` |
@@ -207,8 +207,8 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-002 | `source/OpenTPW/Economy/ParkCalendar.cs:38` | [APPROX:ECON-002] every month has 30 days, 12 months per year — evidence needed: original calendar (binary or captured date display) |
 | ECON-003 | `source/OpenTPW/Economy/ParkCalendar.cs:35` | [APPROX:ECON-003] 24 hours per day (Clock.RSE only shows HOUR is used mod 12) — evidence needed: original HOUR range (binary or Clock.RSE trace) |
 | ECON-004 | `source/OpenTPW/Economy/ParkCalendar.cs:11` | [APPROX:ECON-004] Fast x2 and Fastest x4 speeds (only pause is evidenced) — evidence needed: original speed controls, if any |
-| ECON-005 | `source/OpenTPW/Economy/ParkLedger.cs:53` | [APPROX:ECON-005] challenge prizes and scrap sales are other income; build, upgrade, goods, prizes, land are other costs; loans received are not money in — evidence needed: captured financial screen after these transactions |
-| ECON-006 | `source/OpenTPW/Economy/ParkLedger.cs:121` | [APPROX:ECON-006] APR &gt; 0 repayment is an annuity at APR/12 per month, rounded down; interest accrues monthly on the balance — evidence needed: standard-mode save or capture with an outstanding loan |
+| ECON-005 | `source/OpenTPW/Economy/ParkLedger.cs:54` | [APPROX:ECON-005] challenge prizes and scrap sales are other income; build, upgrade, goods, prizes, land are other costs; profit leaves out loans received — evidence needed: the per-category ledger routines and the annual profit field |
+| ECON-006 | `source/OpenTPW/Economy/ParkLedger.cs:122` | [APPROX:ECON-006] APR &gt; 0 repayment is an annuity at APR/12 per month, rounded down; interest accrues monthly on the balance — evidence needed: standard-mode save or capture with an outstanding loan |
 | ECON-007 | `source/OpenTPW/Economy/ParkEconomy.cs:280` | [APPROX:ECON-007] reopening has no original credit-eligibility gate — evidence needed: implement the traced credit predicate and qualify its cross-edition behavior |
 | ECON-008 | `source/OpenTPW/Economy/ParkStaff.cs:50` | [APPROX:ECON-008] 100 training points per grade (from Online_Standard.sam comments "costs 1000 to get up to grade 1") — evidence needed: capture of a training run |
 | ECON-009 | `source/OpenTPW/Economy/ParkStaff.cs:112` | [APPROX:ECON-009] candidate grade = average + 2 when "great", else average +-1 — evidence needed: hiring pool captures (grade distribution) |
@@ -438,7 +438,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | global/advisor.wad:Advisor.MD2 | `source/OpenTPW/World/Advisor.cs:18` | [DATA:global/advisor.wad:Advisor.MD2] |
 | levels/&lt;level&gt;/global.sam:ParkName.GateObjectId | `source/OpenTPW/World/Original/OriginalGateSign.cs:64` | [DATA:levels/&lt;level&gt;/global.sam:ParkName.GateObjectId] |
 | levels/Standard.sam:BankAccountInfo.* (layered) | `source/OpenTPW/Economy/BalanceSettings.cs:72` | [DATA:levels/Standard.sam:BankAccountInfo.* (layered)] |
-| levels/jungle/Easymode.TPWI:loan table repayments = floor(amount/months) at 0 % APR | `source/OpenTPW/Economy/ParkLedger.cs:119` | [DATA:levels/jungle/Easymode.TPWI:loan table repayments = floor(amount/months) at 0 % APR] |
+| levels/jungle/Easymode.TPWI:loan table repayments = floor(amount/months) at 0 % APR | `source/OpenTPW/Economy/ParkLedger.cs:120` | [DATA:levels/jungle/Easymode.TPWI:loan table repayments = floor(amount/months) at 0 % APR] |
 | levels/space/rides/megacost.wad/megacost.sgn:slot 1 = "EggIt Italic"/EGGII___.TTF, not in fonts.wad | `source/OpenTPW.Files/Public/DataCorrections.cs:18` | [EXT:COMPAT-FIX sign-font-substitution] [DATA:levels/space/rides/megacost.wad/megacost.sgn:slot 1 = "EggIt Italic"/EGGII___.TTF, not in fonts.wad] |
 | lobby.wad:&lt;theme&gt;.txt ISLAND/SKYCOLOUR/FLYINGMESH/RAINY/LIGHTNING | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:79` | [DATA:lobby.wad:&lt;theme&gt;.txt ISLAND/SKYCOLOUR/FLYINGMESH/RAINY/LIGHTNING] [APPROX:UI-016] angle = yaw, height = camera target height — evidence needed: binary/capture |
 | lobby.wad:&lt;theme&gt;.txt SKYCOLOUR | `source/OpenTPW/Client/GameFlow.cs:240` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
@@ -462,6 +462,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | STP-PPC:0x10007434 advisor update | `source/OpenTPW/World/Advisor.cs:315` | [BIN:STP-PPC:0x10007434 advisor update] silent or no LIP data: node 1; talking: when the speech clock (ms) passes the next-change time, node = rand() % 5 + 1 and the next change is 100 ms later |
 | STP-PPC:0x100C7B24 park rating | `source/OpenTPW/Economy/ParkEconomy.cs:357` | [BIN:STP-PPC:0x100C7B24 park rating] min(guests in park, 1000) × 20 / 1000; attractions of sub-kind 0 × 3 / 2 up to 20; sub-kinds 1 and 2 × 2 up to 10 each; sub-kind 3 up to 10; sub-kind 0 at upgrade level 2 or more up to 10; each of the five staff types up to 4 |
 | STP-PPC:0x100CC21C loan instalment | `source/OpenTPW/Economy/ParkEconomy.cs:279` | [BIN:STP-PPC:0x100CC21C loan instalment] a fully repaid loan clears its bought flag; 0x100CC9E8 then offers it again when the credit test passes |
+| STP-PPC:0x100CC904 loan deposit | `source/OpenTPW/Economy/ParkLedger.cs:24` | [BIN:STP-PPC:0x100CC904 loan deposit] loan proceeds are added to the "Money in" accumulator (+0x1FC90, graph toggle 0x12279 "Money in") like every other credit; instalments go to the money-out accumulator (+0x1F5A0) |
 | STP-PPC:0x100D67F0 world update | `source/OpenTPW/Economy/ParkEconomy.cs:115` | [BIN:STP-PPC:0x100D67F0 world update] the golden-ticket check (0x100D31D0) runs when the world tick counter is a multiple of 100, and only in Full Simulation (game type 0) |
 | STP-PPC:0x100F0EF0 research cursor | `source/OpenTPW/Economy/ParkResearch.cs:108` | [BIN:STP-PPC:0x100F0EF0 research cursor] each category researches the first item in table order whose group is open and which is not yet researched; cost is never compared |
 | STP-PPC:0x1010474C world setup | `source/OpenTPW/Economy/BalanceSettings.cs:177` | [BIN:STP-PPC:0x1010474C world setup] game type 0/2 load levels/Standard.sam then &lt;theme&gt;/Standard.sam; type 2 (Instant Action) adds &lt;theme&gt;/Easy_Standard.sam and only logs when it is missing |

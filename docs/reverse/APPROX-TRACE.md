@@ -333,3 +333,30 @@ One Haiku per statically answerable approximation (78) followed its triage plan;
 | UI-032 | partially_confirmed | refuted → partially_confirmed | — | The original's text layout wraps greedily within the control width. The TbTextFormatter layout (LayoutLines) fills each line and, on overflow, breaks at the last break opportunity before the overflowing character (a space or a line break character), or after the overflowing character when the word has no break opportunity. Text controls take their font from a per-control style index stored in the control (byte at +0xe0), and the draw and measure callbacks do not compare the text width against th |
 
 Not found in round 3: ADVISOR-002, ADVISOR-003, ADVISOR-004, ADVISOR-005, COMPAT-007, COMPAT-008, ECON-004, ECON-025, ECON-030, ECON-041, ONLINE-002, RIDES-010, RIDES-011, RIDES-012, RIDES-016, RIDES-021, UI-001, UI-003, UI-004, UI-008, UI-009, UI-010, UI-011, UI-014, UI-016, UI-020, UI-021, UI-025, UI-029.
+
+## Review while implementing (main session)
+
+While implementing the traced rules, the main session re-read the cited code and
+found two corrections.
+
+- **ECON-026 label.** The round-3 text says the graph's "Park value" toggle selects
+  series +0x1FC90. UI-MAP.md (control ids and texts checked) gives a different mapping:
+  0x12277 "Bank balance" is bit 0x01 (series +0x1F100), 0x1227B "Park value" is bit 0x02
+  (+0x1F350), and 0x12279 "Money in" is bit 0x04 (+0x1FC90). The graph functions
+  `0x1014FE1C`, `0x1014FF74` and `0x101500CC` read the series in that bit order. So
+  +0x1FC90 is Money in, which confirms ECON-005 (loan proceeds are money in).
+- **Park value formula.** The monthly roll-over `0x100C163C` pushes `FUN_100C1D4C(world, 0)`
+  into the Park value series +0x1F350. That function does not sum scrap values. It
+  adds fixed points per map cell over all 128 × 128 cells that lack flag 0x40 (eight
+  cell predicates worth 1, 3, 5, 1, 1, 10, 2 and 50). For every object that passes
+  `0x100DFE20`, it adds the per-level record value at +0x1B8 + level × 0x40 for levels 0
+  up to the current one, times the low byte of the state-of-repair float at +0x40, divided
+  by 100. The eight cell predicates (`0x10085174` to `0x10085418`) and the record field
+  are not mapped yet, so ECON-026 stays open.
+- **Park rating (ECON-027).** `0x100C7B24` evaluates each term as a `min(count, cap)`
+  macro: the inlined loop and the following call (`0x100C3684`, `0x100C5864`, `0x100C4064`)
+  are the same count evaluated twice. The terms are guests in the park × 20 / 1000 (count
+  capped at 1000), sub-kind 0 × 3 / 2 (cap 20), sub-kinds 1 and 2 × 2 (cap 10 each),
+  sub-kind 3 (cap 10), sub-kind 0 at upgrade level ≥ 2 (cap 10) and thing types 4–8 with
+  byte +3 = 0 (cap 4 each); the maximum is 100. Sub-kind is record +0x7A8, copied from
+  record +0x4C by `0x10118BBC`.

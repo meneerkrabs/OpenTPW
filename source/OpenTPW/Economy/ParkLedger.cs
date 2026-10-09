@@ -4,7 +4,7 @@ namespace OpenTPW;
 /// Money categories of the original financial screens: "Money in" = gate/shop/sideshow takings
 /// (UITEXT 164–167), "Money out" = staff costs (169), other costs (358) and loan payments (359).
 /// <see cref="OtherIncome"/> (challenge prizes, scrap sales) and <see cref="LoanReceived"/> have no
-/// original label; loans received change the balance but are not counted as money in.
+/// original label. Loans received count as money in but not as profit.
 /// </summary>
 public enum LedgerCategory
 {
@@ -21,9 +21,10 @@ public enum LedgerCategory
 /// <summary>Totals of one closed month (or the open current month).</summary>
 public sealed record LedgerMonth( long MonthIndex, IReadOnlyDictionary<LedgerCategory, long> Totals, long OpeningBalance, long ClosingBalance, int ParkRating, long ParkValue )
 {
-	public long MoneyIn => Sum( LedgerCategory.GateTakings, LedgerCategory.ShopTakings, LedgerCategory.SideshowTakings, LedgerCategory.OtherIncome );
+	// [BIN:STP-PPC:0x100CC904 loan deposit] loan proceeds are added to the "Money in" accumulator (+0x1FC90, graph toggle 0x12279 "Money in") like every other credit; instalments go to the money-out accumulator (+0x1F5A0)
+	public long MoneyIn => Sum( LedgerCategory.GateTakings, LedgerCategory.ShopTakings, LedgerCategory.SideshowTakings, LedgerCategory.OtherIncome, LedgerCategory.LoanReceived );
 	public long MoneyOut => Sum( LedgerCategory.StaffCosts, LedgerCategory.OtherCosts, LedgerCategory.LoanPayments );
-	public long Profit => MoneyIn - MoneyOut;
+	public long Profit => MoneyIn - this[LedgerCategory.LoanReceived] - MoneyOut;
 	public long this[LedgerCategory category] => Totals.TryGetValue( category, out var value ) ? value : 0;
 	private long Sum( params LedgerCategory[] categories ) => categories.Sum( category => this[category] );
 }
@@ -50,7 +51,7 @@ public sealed class ParkLedger
 	public IReadOnlyList<LedgerMonth> History => history;
 	public IReadOnlyDictionary<LedgerCategory, long> CurrentTotals => current;
 
-	// [APPROX:ECON-005] challenge prizes and scrap sales are other income; build, upgrade, goods, prizes, land are other costs; loans received are not money in — evidence needed: captured financial screen after these transactions
+	// [APPROX:ECON-005] challenge prizes and scrap sales are other income; build, upgrade, goods, prizes, land are other costs; profit leaves out loans received — evidence needed: the per-category ledger routines and the annual profit field
 	public static bool IsIncome( LedgerCategory category ) => category is LedgerCategory.GateTakings or LedgerCategory.ShopTakings or LedgerCategory.SideshowTakings or LedgerCategory.OtherIncome or LedgerCategory.LoanReceived;
 
 	public void Post( LedgerCategory category, long amount )

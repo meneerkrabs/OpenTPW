@@ -250,7 +250,7 @@ site, is listed in `Economy/EconomyApproximations.cs` and is logged once at star
 | ECON-002 | `Economy/ParkCalendar.cs:38` | every month has 30 days, 12 months per year | original calendar (binary or captured date display) |
 | ECON-003 | `Economy/ParkCalendar.cs:35` | 24 hours per day (Clock.RSE only shows HOUR is used mod 12) | original HOUR range (binary or Clock.RSE trace) |
 | ECON-004 | `Economy/ParkCalendar.cs:11` | Fast x2 and Fastest x4 speeds (only pause is evidenced) | original speed controls, if any |
-| ECON-005 | `Economy/ParkLedger.cs:53` | challenge prizes and scrap sales are other income; build, upgrade, goods, prizes, land are other costs; loans received are not money in | captured financial screen after these transactions |
+| ECON-005 | `Economy/ParkLedger.cs:54` | challenge prizes and scrap sales are other income; build, upgrade, goods, prizes, land are other costs; profit leaves out loans received | the per-category ledger routines and the annual profit field |
 | ECON-006 | `Economy/ParkLedger.cs:121` | APR > 0 repayment is an annuity at APR/12 per month, rounded down; interest accrues monthly on the balance | standard-mode save or capture with an outstanding loan |
 | ECON-007 | `Economy/ParkEconomy.cs` | Repaid loan offers reopen without the traced original credit-eligibility gate | Implement the credit predicate and qualify its cross-edition behavior |
 | ECON-008 | `Economy/ParkStaff.cs:50` | 100 training points per grade (from Online_Standard.sam comments "costs 1000 to get up to grade 1") | capture of a training run |

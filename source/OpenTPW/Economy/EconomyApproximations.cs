@@ -13,7 +13,7 @@ public static class EconomyApproximations
 		("ECON-002", "every month has 30 days, 12 months per year", "original calendar (binary or captured date display)"),
 		("ECON-003", "24 hours per day (Clock.RSE only shows HOUR is used mod 12)", "original HOUR range (binary or Clock.RSE trace)"),
 		("ECON-004", "Fast x2 and Fastest x4 speeds (only pause is evidenced)", "original speed controls, if any"),
-		("ECON-005", "challenge prizes and scrap sales are other income; build, upgrade, goods, prizes, land are other costs; loans received are not money in", "captured financial screen after these transactions"),
+		("ECON-005", "challenge prizes and scrap sales are other income; build, upgrade, goods, prizes, land are other costs; profit leaves out loans received", "the per-category ledger routines and the annual profit field"),
 		("ECON-006", "APR > 0 repayment is an annuity at APR/12 per month, rounded down; interest accrues monthly on the balance", "standard-mode save or capture with an outstanding loan"),
 		("ECON-007", "repaid loan offers reopen without the original credit-eligibility gate", "implement the traced credit predicate and qualify its cross-edition behavior"),
 		("ECON-008", "100 training points per grade (from Online_Standard.sam comments \"costs 1000 to get up to grade 1\")", "capture of a training run"),

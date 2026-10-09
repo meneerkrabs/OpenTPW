@@ -15,6 +15,10 @@ public sealed class OptionsServices
 	public Action<string> SaveLanguage { get; init; } = _ => { };
 	/// <summary>Time to confirm a window size/mode change before it is reverted.</summary>
 	public TimeSpan ConfirmTimeout { get; init; } = TimeSpan.FromSeconds( 15 );
+	/// <summary>Graphics settings (enhanced textures row); null hides the row.</summary>
+	public IGraphicsSettings? Graphics { get; init; }
+	/// <summary>True when a usable local texture pack exists (docs/TEXTURE-PACKS.md).</summary>
+	public bool TexturePackAvailable { get; init; }
 }
 
 /// <summary>
@@ -28,6 +32,9 @@ public sealed class OptionsServices
 public static class OptionsScreen
 {
 	// [EXT:upscaling] render-scale steps (presets 77/67/59/50 from the display slice plus 5% steps)
+	/// <summary>Vertical distance between option rows (virtual units).</summary>
+	public const int RowPitch = 80;
+
 	public static readonly int[] RenderScaleSteps = { 100, 95, 90, 85, 80, 77, 75, 70, 67, 65, 60, 59, 55, 50 };
 
 	private static readonly (int Width, int Height, UIStrings Label)[] OriginalResolutionLabels =
@@ -88,8 +95,10 @@ public static class OptionsScreen
 		var options = services.Options;
 		var language = services.CurrentLanguage;
 		var pending = display.Current;
+		var graphics = services.Graphics;
+		var enhancedTextures = graphics?.Current.EnhancedTextures ?? false;
 		var screen = new UiScreen( "options" );
-		// [APPROX:UI-013] options window size, row pitch 84, OK/Back placement — evidence needed: capture of the original options screen
+		// [APPROX:UI-013] options window size, row pitch 80, OK/Back placement — evidence needed: capture of the original options screen
 		var window = UiDialogs.CenteredWindow( 1760, 1380 );
 		UiDialogs.AddWindow( screen, window, "w_med", () => strings[UIStrings.GameOptions] );
 
@@ -103,7 +112,7 @@ public static class OptionsScreen
 				Label = label,
 				Value = value,
 				Changed = changed,
-				Bounds = new UiRect( window.X + 90, rowTop + rowIndex++ * 84, window.Width - 330, 76 ),
+				Bounds = new UiRect( window.X + 90, rowTop + rowIndex++ * RowPitch, window.Width - 330, 76 ),
 				Anchor = UiAnchor.Center
 			} );
 		}
@@ -135,6 +144,11 @@ public static class OptionsScreen
 		} );
 		Row( "uiScale", () => strings.Extra( OpenTpwText.UiScale ), () => UiScaleLabel( strings, pending.UiScale ),
 			direction => pending = pending with { UiScale = Math.Clamp( pending.UiScale + direction, 0, display.MaximumUiScale ) } );
+		// [EXT:texture-pack] optional locally built upscaled textures; off unless a pack exists and the player turns it on
+		if ( graphics != null )
+			Row( "enhancedTextures", () => strings.Extra( OpenTpwText.EnhancedTextures ),
+				() => services.TexturePackAvailable || enhancedTextures ? strings[enhancedTextures ? UIStrings.Yes : UIStrings.No] : " " + strings.Extra( OpenTpwText.TexturePackMissing ),
+				_ => { if ( services.TexturePackAvailable || enhancedTextures ) enhancedTextures = !enhancedTextures; } );
 		Row( "effects", () => strings[UIStrings.SoundEffectsVolume], () => Volume( options.SoundEffectsVolume ), direction => options.SoundEffectsVolume = Step( options.SoundEffectsVolume, direction ) );
 		Row( "music", () => strings[UIStrings.MusicVolume], () => Volume( options.MusicVolume ), direction => options.MusicVolume = Step( options.MusicVolume, direction ) );
 		Row( "speech", () => strings[UIStrings.SpeechVolume], () => Volume( options.SpeechVolume ), direction => options.SpeechVolume = Step( options.SpeechVolume, direction ) );
@@ -152,7 +166,7 @@ public static class OptionsScreen
 			{
 				var effective = display.Effective;
 				var line = string.Format( strings.Extra( OpenTpwText.EffectiveSize ), effective.InternalSize.X, effective.InternalSize.Y, effective.OutputSize.X, effective.OutputSize.Y );
-				var canvas = new UiCanvas( effective.OutputSize.X, effective.OutputSize.Y, display.EffectiveUiScale );
+				var canvas = new UiCanvas( effective.OutputSize.X, effective.OutputSize.Y, display.EffectiveUiScale, Screen.PixelDensity );
 				if ( canvas.TextScale < canvas.UiScale )
 					line += "\n" + string.Format( strings.Extra( OpenTpwText.Fallback ), $"{strings.Extra( OpenTpwText.UiScale )} {canvas.UiScale}x -> {canvas.TextScale}x" );
 				var reason = effective.FallbackReason ?? display.Diagnostics.LastOrDefault();
@@ -160,7 +174,7 @@ public static class OptionsScreen
 			},
 			Font = fonts => fonts.Small,
 			Wrap = true,
-			Bounds = new UiRect( window.X + 120, rowTop + rowIndex * 84 + 4, window.Width - 600, 100 ),
+			Bounds = new UiRect( window.X + 120, rowTop + rowIndex * RowPitch + 4, window.Width - 600, 100 ),
 			Anchor = UiAnchor.Center
 		} );
 
@@ -177,21 +191,29 @@ public static class OptionsScreen
 			var languageChanged = !string.Equals( language, services.CurrentLanguage, StringComparison.OrdinalIgnoreCase );
 			if ( languageChanged )
 				services.SaveLanguage( language );
+			var texturesChanged = graphics != null && enhancedTextures != graphics.Current.EnhancedTextures;
+			if ( texturesChanged )
+				graphics!.Apply( graphics.Current with { EnhancedTextures = enhancedTextures } );
 			var current = display.Current;
 			var needsConfirmation = pending.Width != current.Width || pending.Height != current.Height || pending.Mode != current.Mode;
+			// Language and texture changes need a restart; tell the player after any display confirmation.
+			void Finish()
+			{
+				if ( languageChanged || texturesChanged )
+					stack.Push( UiDialogs.Message( "restart", () => strings[UIStrings.RestartGame], (() => strings.Extra( OpenTpwText.Back ), () => { stack.Pop(); closed(); }) ) );
+				else
+					closed();
+			}
 			stack.Pop();
 			if ( needsConfirmation )
 			{
 				display.ApplyWithConfirmation( pending, services.ConfirmTimeout );
-				stack.Push( ConfirmDisplay( stack, strings, display, closed ) );
+				stack.Push( ConfirmDisplay( stack, strings, display, Finish ) );
 				return;
 			}
 			if ( pending != current )
 				display.Apply( pending );
-			if ( languageChanged )
-				stack.Push( UiDialogs.Message( "restart", () => strings[UIStrings.RestartGame], (() => strings.Extra( OpenTpwText.Back ), () => { stack.Pop(); closed(); }) ) );
-			else
-				closed();
+			Finish();
 		}
 		screen.Add( new UiButton
 		{
@@ -209,6 +231,15 @@ public static class OptionsScreen
 			Help = strings.Help( 2 ),
 			Clicked = Cancel,
 			Bounds = new UiRect( window.X + 120, window.Bottom - 190, 420, 104 ),
+			Anchor = UiAnchor.Center
+		} );
+		// [EXT:SETUP] Game files (game folder and CD) between Back and OK
+		screen.Add( new UiButton
+		{
+			Id = "gameFiles",
+			Text = () => strings.Extra( OpenTpwText.GameFiles ),
+			Clicked = () => stack.Push( GameFilesScreen.Create( stack, strings ) ),
+			Bounds = new UiRect( window.X + 580, window.Bottom - 190, 420, 104 ),
 			Anchor = UiAnchor.Center
 		} );
 		screen.Back = Cancel;

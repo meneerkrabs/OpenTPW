@@ -70,6 +70,12 @@ public partial class Texture : Asset
 	/// </summary>
 	private void UpdateFromWct( string path, TextureFlags flags )
 	{
+		if ( TexturePack.Find( path ) is { } replacement )
+		{
+			UpdateFromStb( replacement, flags );
+			return;
+		}
+
 		var textureFileData = new TextureFile( path ).Data;
 
 		CreateTexture( path, textureFileData.Data, (uint)textureFileData.Width, (uint)textureFileData.Height, flags );

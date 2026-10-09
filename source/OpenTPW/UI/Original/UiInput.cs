@@ -14,18 +14,23 @@ public enum UiKeys
 	Right = 8,
 	Accept = 16,
 	Back = 32,
-	Pause = 64
+	Pause = 64,
+	/// <summary>Tab: next text field.</summary>
+	Tab = 128,
+	/// <summary>Set with <see cref="Accept"/> when it came from Space, which a text field types instead.</summary>
+	Space = 256
 }
 
 /// <summary>
 /// One frame of UI input in framebuffer pixels. Built from <see cref="Input"/> at runtime and
 /// constructed directly by tests and the smoke test.
 /// </summary>
-public readonly record struct UiInput( NVector2 Mouse, bool LeftDown, bool LeftPressed, bool LeftReleased, bool RightPressed, UiKeys Pressed, float Wheel = 0 )
+public readonly record struct UiInput( NVector2 Mouse, bool LeftDown, bool LeftPressed, bool LeftReleased, bool RightPressed, UiKeys Pressed, float Wheel = 0, string Text = "", int Backspaces = 0 )
 {
 	public static UiInput Idle( NVector2 mouse ) => new( mouse, false, false, false, false, UiKeys.None );
 	public static UiInput Click( NVector2 mouse ) => new( mouse, false, false, true, false, UiKeys.None );
 	public static UiInput Key( UiKeys keys ) => new( new NVector2( -1, -1 ), false, false, false, false, keys );
+	public static UiInput Type( string text, int backspaces = 0 ) => new( new NVector2( -1, -1 ), false, false, false, false, UiKeys.None, 0, text, backspaces );
 	public bool Has( UiKeys key ) => (Pressed & key) != 0;
 }
 
@@ -53,12 +58,14 @@ public sealed class UiInputSource
 		Map( Key.Right, UiKeys.Right );
 		Map( Key.Enter, UiKeys.Accept );
 		Map( Key.KeypadEnter, UiKeys.Accept );
-		Map( Key.Space, UiKeys.Accept );
+		Map( Key.Space, UiKeys.Accept | UiKeys.Space );
+		Map( Key.Tab, UiKeys.Tab );
 		Map( Key.Escape, UiKeys.Back );
 		Map( Key.P, UiKeys.Pause );
 		previousKeys = keys;
 		var input = new UiInput( new NVector2( mouse.Position.X * framebufferPerWindowX, mouse.Position.Y * framebufferPerWindowY ),
-			mouse.Left, mouse.Left && !wasLeft, !mouse.Left && wasLeft, mouse.Right && !wasRight, pressed, mouse.Wheel );
+			mouse.Left, mouse.Left && !wasLeft, !mouse.Left && wasLeft, mouse.Right && !wasRight, pressed, mouse.Wheel,
+			Input.Typed, Input.KeyPresses.Count( key => key == Key.BackSpace ) );
 		wasLeft = mouse.Left;
 		wasRight = mouse.Right;
 		return input;

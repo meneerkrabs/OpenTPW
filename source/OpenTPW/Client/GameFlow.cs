@@ -19,6 +19,8 @@ internal sealed class GameFlow : IDisposable
 	private Action? pending;
 	private LobbyDefinition? lobbyDefinition;
 	private (int Requested, int Fitted)? reportedUiScale;
+	private OnlineSession? onlineSession;
+	private UI.ChatOverlay? chatOverlay;
 
 	public GameFlow()
 	{
@@ -70,6 +72,7 @@ internal sealed class GameFlow : IDisposable
 			CreateOptions = CreateOptions,
 			IslandSelected = island => LobbyCameraMode.Target = Lobby!.Target( island ),
 			LoadEntries = FindLoadEntries,
+			GoOnline = ShowOnline,
 		} );
 		Menu.SelectIsland( 0 );
 		if ( selectLevel != null )
@@ -81,6 +84,8 @@ internal sealed class GameFlow : IDisposable
 	public UiScreen CreateOptions( UiScreenStack stack, Action closed ) => OptionsScreen.Create( stack, Strings, new OptionsServices
 	{
 		Display = Display,
+		Graphics = IGraphicsSettings.Instance,
+		TexturePackAvailable = TexturePack.IsInstalled(),
 		Options = GameOptions.Current,
 		Languages = GameLanguage.FindLanguages( GameLanguage.Current.BaseDataDirectory, GameLanguage.Current.OverlayDataDirectory ),
 		CurrentLanguage = GameLanguage.Current.Name,
@@ -147,6 +152,7 @@ internal sealed class GameFlow : IDisposable
 			Quit = Quit,
 			CreateOptions = CreateOptions,
 			CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, Strings, FindLoadEntries(), entry => Queue( () => LoadPark( entry ) ) ),
+			GoOnline = ShowOnline,
 		} );
 		return level;
 	}
@@ -174,7 +180,7 @@ internal sealed class GameFlow : IDisposable
 	private UiCanvas CurrentCanvas()
 	{
 		var pixels = Screen.PixelSize;
-		var canvas = new UiCanvas( Math.Max( 1, pixels.X ), Math.Max( 1, pixels.Y ), Math.Max( 1, Display.EffectiveUiScale ) );
+		var canvas = new UiCanvas( Math.Max( 1, pixels.X ), Math.Max( 1, pixels.Y ), Math.Max( 1, Display.EffectiveUiScale ), Screen.PixelDensity );
 		var scales = (canvas.UiScale, canvas.TextScale);
 		if ( reportedUiScale != scales && canvas.TextScale < canvas.UiScale )
 			Log.Warning( $"Interface scale {canvas.UiScale}x falls back to {canvas.TextScale}x: {canvas.Width}x{canvas.Height} drawable pixels cannot fit the {UiScaling.ReferenceWidth}x{UiScaling.ReferenceHeight} reference layout at the requested scale." );
@@ -199,6 +205,8 @@ internal sealed class GameFlow : IDisposable
 		var logical = Screen.Size;
 		var input = InjectedInput ?? inputSource.Poll( Context.Canvas.Width / (float)Math.Max( 1, logical.X ), Context.Canvas.Height / (float)Math.Max( 1, logical.Y ) );
 		InjectedInput = null;
+		Input.TextEntryActive = false;
+		onlineSession?.Pump();
 		var imguiMouse = ImGuiNET.ImGui.GetIO().WantCaptureMouse;
 		if ( imguiMouse )
 			input = input with { LeftPressed = false, LeftReleased = false, RightPressed = false, Wheel = 0 };
@@ -250,8 +258,37 @@ internal sealed class GameFlow : IDisposable
 		overlayRenderer.Draw( global::Global.Render.CommandList, Context.Batch, target.Width, target.Height );
 	}
 
+	// ---- Online ------------------------------------------------------------------------------
+
+	/// <summary>The online extension's session, created on the first Go Online and kept across parks.</summary>
+	public OnlineSession Online
+	{
+		get
+		{
+			if ( onlineSession == null )
+			{
+				onlineSession = new OnlineSession( OnlineFolders ?? global::OpenTPW.OnlineFolders.FromEnvironment() );
+				chatOverlay = new UI.ChatOverlay( onlineSession );
+				global::Global.Render.OnOverlayRender += chatOverlay.Draw;
+			}
+			return onlineSession;
+		}
+	}
+
+	/// <summary>Go Online: the original-style online screens on <paramref name="stack"/> (docs/ONLINE.md).</summary>
+	public void ShowOnline( UiScreenStack stack ) => new UI.OnlineScreens( stack, Strings, Context.Models, new UI.OnlineHost
+	{
+		Session = Online,
+		Level = () => Level,
+		Visit = visit => Queue( () => StartLevel( visit.Level, original: !visit.IsSandbox, developerPanels: false, visit: visit ) ),
+	} ).ShowWorld();
+
 	public void Dispose()
 	{
+		if ( chatOverlay != null )
+			global::Global.Render.OnOverlayRender -= chatOverlay.Draw;
+		chatOverlay?.Dispose();
+		onlineSession?.Dispose();
 		global::Global.Render.OnOverlayRender -= RenderOverlay;
 		Level?.DetachOverlay();
 		Level?.TextOverlay?.Dispose();

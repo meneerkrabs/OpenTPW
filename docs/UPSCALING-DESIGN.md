@@ -34,7 +34,10 @@ Implemented (M6-U1):
   `DisplayFramebufferScale`. Render scale is never a mouse scale factor.
 - UI scale policy: integer factors only, so point-sampled BF4 text stays pixel-exact.
   Automatic = largest integer at which 1280×720 fits in the output pixels (1 to
-  2559×1439, 2 from 2560×1440/Retina, 3 at 4K). ImGui (debug UI) does not scale.
+  2559×1439, 2 from 2560×1440, 3 at 4K), and on HiDPI outputs at least the integer
+  pixel density × the same fit in logical units. A Retina window of 1216×684 points
+  therefore uses 2 (it used 1, halving the physical text size), matching a 1× window of
+  the same logical size. ImGui (debug UI) does not scale.
 - Movies always render at output size (no 3D world; fallback reason logged).
 - Diagnostics: the log and the ImGui "Display" section show method, requested/effective
   scale, internal/output size and fallback reason. `OpenTPW.IDisplaySettings` is the
@@ -48,12 +51,25 @@ Implemented (M6-U1):
   neighboring cell, and switches runtime scale/method/window size, an unconfirmed
   change with timeout and a fullscreen toggle without growth of own GPU resources.
 
+Real Retina hardware (October 9, 2026, MacBook Pro, built-in Liquid Retina XDR,
+3024×1964, Metal): the Native smoke test passes with a 1280×720-point window drawn at
+2560×1440 pixels via `SDL_GetWindowSizeInPixels`, exact BF4 text (maximum channel
+difference 0), Totem and neighbouring-cell picking, borderless fullscreen at
+3024×1898 pixels and back, and no growth of owned GPU resources. The smoke test also
+passes with `--upscale linear --render-scale 67`, `--upscale linear --render-scale 50`
+and `--upscale nearest --render-scale 50`. A visual comparison of the outputs showed
+Native clearly sharpest; Linear 67% is slightly soft, Linear 50% visibly blurred and
+Nearest 50% blocky (as intended). On this hardware Native is the recommended setting;
+upscaling is for GPUs that cannot hold the frame rate at native size. One run failed
+at the runtime-resize step after the window was enlarged externally (zoomed or tiled
+by macOS during the test); a rerun passed.
+
+Higher-resolution textures are a separate, optional feature: [TEXTURE-PACKS.md](TEXTURE-PACKS.md).
+
 Not done / not proven:
 
-- Real Retina hardware: only a 1x screen with the test variable
-  `OPENTPW_TEST_PIXEL_SCALE=2` (drawable 2× the window size) has been tested. Veldrid's
-  `CAMetalLayer.contentsScale` stays 1; sharpness on a real Retina screen is
-  unconfirmed.
+- On-screen sharpness on Retina was judged by eye only; Veldrid's
+  `CAMetalLayer.contentsScale` stays 1 and is not inspected by a test.
 - Exclusive fullscreen is implemented via `SDL_SetWindowDisplayMode`, but is
   experimental and not smoke-tested (it changes the display mode); unavailable →
   borderless with a reason.

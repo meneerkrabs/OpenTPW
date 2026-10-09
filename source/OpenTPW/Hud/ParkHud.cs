@@ -13,6 +13,8 @@ public sealed class HudHost
 	public Func<UiScreenStack, Action, UiScreen>? CreateOptions { get; init; }
 	/// <summary>Creates the load screen.</summary>
 	public Func<UiScreenStack, UiScreen>? CreateLoad { get; init; }
+	/// <summary>Opens the online screens (Go Online, UITEXT 1); null hides the entry.</summary>
+	public Action<UiScreenStack>? GoOnline { get; init; }
 }
 
 /// <summary>
@@ -397,10 +399,13 @@ public sealed class ParkHud
 			(UIStrings.Save, SavePark),
 			(UIStrings.Load, () => { if ( host.CreateLoad != null ) Stack.Push( host.CreateLoad( Stack ) ); }),
 			(UIStrings.Options, () => { if ( host.CreateOptions != null ) Stack.Push( host.CreateOptions( Stack, () => { } ) ); }),
+			(UIStrings.GoOnline, () => host.GoOnline?.Invoke( Stack )),
 			(UIStrings.ExitToLobby, host.ExitToLobby),
 			(UIStrings.QuitGame, () => Stack.Push( UiDialogs.Message( "confirmQuit", () => strings[UIStrings.ConfirmQuit],
 				(() => strings.Value( UIStrings.Yes ), host.Quit), (() => strings.Value( UIStrings.No ), Stack.Pop) ) )),
 		};
+		if ( host.GoOnline == null )
+			entries.RemoveAll( entry => entry.Label == UIStrings.GoOnline );
 		for ( var index = 0; index < entries.Count; index++ )
 		{
 			var entry = entries[index];

@@ -63,8 +63,12 @@ public class UiScreen
 		var canvas = context.Canvas;
 		var hit = HitTest( canvas, input.Mouse );
 		context.HoverHelp = hit?.Help;
-		if ( hit != null && (input.LeftPressed || input.LeftReleased || hit != Focused) && input.Mouse.X >= 0 )
+		// A text field keeps the keyboard focus while the mouse merely passes over other elements.
+		var typing = Focused is UiTextField { Visible: true, Enabled: true };
+		if ( hit != null && (input.LeftPressed || input.LeftReleased || hit != Focused && !typing) && input.Mouse.X >= 0 )
 			Focused = hit;
+		if ( input.LeftPressed && hit == null && typing && input.Mouse.X >= 0 )
+			Focused = null;
 		var consumed = hit != null;
 		if ( input.LeftPressed )
 			pressed = hit;
@@ -76,6 +80,21 @@ public class UiScreen
 		}
 		if ( hit is UiOptionRow wheelRow && input.Wheel != 0 )
 			wheelRow.Adjust( input.Wheel > 0 ? 1 : -1 );
+		if ( hit is UiScrollList wheelList && input.Wheel != 0 )
+			wheelList.Scroll( input.Wheel > 0 ? -1 : 1 );
+		if ( input.Has( UiKeys.Tab ) )
+			MoveFocus( 1, element => element is UiTextField );
+		if ( Focused is UiTextField field && field.Visible && field.Enabled )
+		{
+			Input.TextEntryActive = true;
+			field.Type( input.Text, input.Backspaces );
+			if ( input.Has( UiKeys.Accept ) && !input.Has( UiKeys.Space ) )
+				field.Activate();
+			if ( input.Has( UiKeys.Back ) || (input.RightPressed && Modal) )
+				Back?.Invoke();
+			// Typed keys belong to the field, not to navigation or to the park below.
+			return true;
+		}
 		if ( input.Has( UiKeys.Down ) )
 			MoveFocus( 1 );
 		if ( input.Has( UiKeys.Up ) )
@@ -99,6 +118,18 @@ public class UiScreen
 
 	private static void Click( UiCanvas canvas, UiElement element, NVector2 point )
 	{
+		// Clicking a text field only gives it the focus; Enter submits it.
+		if ( element is UiTextField )
+			return;
+		if ( element is UiScrollList list )
+		{
+			var index = list.RowAt( canvas, point );
+			if ( index >= 0 && index == list.Selected )
+				list.Activate();
+			else if ( index >= 0 )
+				list.Select( index );
+			return;
+		}
 		if ( element is UiOptionRow row )
 		{
 			var (left, right) = row.ArrowRects( canvas );
@@ -108,9 +139,9 @@ public class UiScreen
 		element.Activate();
 	}
 
-	public void MoveFocus( int direction )
+	public void MoveFocus( int direction, Func<UiElement, bool>? filter = null )
 	{
-		var focusable = FocusableElements.ToList();
+		var focusable = FocusableElements.Where( element => filter == null || filter( element ) ).ToList();
 		if ( focusable.Count == 0 )
 			return;
 		var index = Focused == null ? (direction > 0 ? -1 : 0) : focusable.IndexOf( Focused );

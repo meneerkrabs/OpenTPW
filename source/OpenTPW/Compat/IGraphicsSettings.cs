@@ -40,6 +40,7 @@ public sealed class GraphicsSettingsService : IGraphicsSettings
 	private readonly string? path;
 	private readonly Func<CompatibilityFlags> flags;
 	private readonly RenderQuality startupQuality;
+	private readonly bool startupEnhancedTextures;
 
 	/// <param name="readOriginal">Opens an original preset file by data-relative path (e.g. <c>/high.sam</c>); null when missing.</param>
 	/// <param name="path">Where to persist; null never writes (smoke tests).</param>
@@ -70,6 +71,7 @@ public sealed class GraphicsSettingsService : IGraphicsSettings
 		if ( Current.Preset is not GraphicsPreset.Custom && !originals.ContainsKey( Current.Preset == GraphicsPreset.Enhanced ? GraphicsPreset.High : Current.Preset ) )
 			diagnostics.Add( $"Graphics preset {Current.Preset} needs original data that is missing; the renderer keeps its built-in settings." );
 		startupQuality = Effective;
+		startupEnhancedTextures = Current.EnhancedTextures;
 	}
 
 	public GraphicsSettings Current { get; private set; }
@@ -124,7 +126,8 @@ public sealed class GraphicsSettingsService : IGraphicsSettings
 		get
 		{
 			var now = Effective;
-			return now.Filter != startupQuality.Filter || now.MaxAnisotropy != startupQuality.MaxAnisotropy || now.Mipmaps != startupQuality.Mipmaps;
+			return now.Filter != startupQuality.Filter || now.MaxAnisotropy != startupQuality.MaxAnisotropy || now.Mipmaps != startupQuality.Mipmaps
+				|| Current.EnhancedTextures != startupEnhancedTextures;
 		}
 	}
 

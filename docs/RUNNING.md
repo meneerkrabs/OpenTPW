@@ -34,8 +34,9 @@ The default start is the original-style front end (3D lobby; pick an island and
 enter the park, or Load/Options/Quit Game) with the in-game HUD; see UI.md.
 `--sandbox` opens the former default jungle sandbox with its ImGui developer panel.
 
-The installation directory must contain `data` or `Data`. `OPENTPW_GAME_PATH`
-can replace `--game-path`. `DOTNET` selects a particular SDK executable.
+Without `--game-path`, OpenTPW finds the game itself or opens a setup window to
+choose the folder once (SETUP.md); `--setup` opens it again. The folder must contain
+`data` or `Data`. `OPENTPW_GAME_PATH` can replace `--game-path`. `DOTNET` selects a particular SDK executable.
 `OPENTPW_RUNTIME` selects an explicit runtime identifier.
 Native dependencies must match the selected process architecture.
 Engine content is copied beside the executable; shader files/includes resolve
@@ -164,8 +165,11 @@ bash scripts/run.sh --game-path '/path/to/Theme Park World' --fullscreen --upsca
 | `--windowed`, `--fullscreen`, `--fullscreen-exclusive` | Window mode. `--fullscreen` is borderless at the desktop mode; exclusive switches the display mode to `--resolution` (experimental; falls back to borderless with a reason if the display does not list that mode). |
 | `--upscale native\|linear\|nearest` | How the 3D world reaches the output. Native (default) renders the world at output size. Linear/Nearest render it smaller and scale it up; Nearest is a deliberate retro look. |
 | `--render-scale <50-100>` | World size as a percentage of each output dimension (presets 77, 67, 59, 50; 50% is a quarter of the pixels). Without `--upscale` it selects Linear. Out-of-range values fall back to Native with a warning. |
-| `--ui-scale auto\|N` | Integer scale of the BF4 text UI (auto: 2 from 2560x1440, 3 at 4K). |
+| `--ui-scale auto\|N` | Integer scale of the BF4 text UI (auto: 2 from 2560x1440, 3 at 4K; on HiDPI/Retina at least the pixel density, so 2 on Retina). |
 | `--save-display-settings` | Also stores these values as the user's display settings. |
+| `--export-ps2 <ps2 DATA dir> <out dir>` | Lists the PS2 version's archives and exports its textures as PNG for viewing (PS2.md). |
+| `--capture-world <file.png>` | After `--capture-frames N` frames (default 240) writes the 3D world without interface at its render size and exits; for screenshots and comparisons. |
+| `--build-texture-pack --upscaler <path>` | Builds the optional enhanced texture pack from the installation with a player-supplied Real-ESRGAN executable (TEXTURE-PACKS.md); then turn on Game Options → Enhanced textures. |
 
 Alt+Enter or F11 toggles fullscreen at runtime; the ImGui park panel has a Display
 section with the same options and the diagnostics (method, requested/effective scale,

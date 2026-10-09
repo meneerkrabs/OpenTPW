@@ -7,6 +7,12 @@ public static partial class Input
 {
 	public static MouseInfo Mouse { get; internal set; } = new();
 	public static KeyboardInfo Keyboard { get; internal set; } = new();
+	/// <summary>Characters typed this frame (keyboard layout and IME applied by SDL).</summary>
+	public static string Typed { get; private set; } = "";
+	/// <summary>Key presses this frame including auto-repeat, in order (for text editing keys).</summary>
+	public static IReadOnlyList<Key> KeyPresses { get; private set; } = Array.Empty<Key>();
+	/// <summary>Set by the UI while a text field has the focus: the park camera and hotkeys ignore the keyboard.</summary>
+	public static bool TextEntryActive { get; set; }
 
 	public static float Forward { get; set; }
 	public static float Right { get; set; }
@@ -98,6 +104,8 @@ public static partial class Input
 		};
 
 		Mouse = mouseInfo;
+		Typed = new string( inputSnapshot.KeyCharPresses.ToArray() );
+		KeyPresses = inputSnapshot.KeyEvents.Where( keyEvent => keyEvent.Down ).Select( keyEvent => keyEvent.Key ).ToArray();
 
 		Right = 0;
 		Forward = 0;
@@ -114,13 +122,13 @@ public static partial class Input
 
 		bool IsKeyPressed( Key k ) => Keyboard.KeysDown.Contains( k );
 
-		if ( IsKeyPressed( Key.A ) )
+		if ( IsKeyPressed( Key.A ) && !TextEntryActive )
 			Right -= 1;
-		if ( IsKeyPressed( Key.D ) )
+		if ( IsKeyPressed( Key.D ) && !TextEntryActive )
 			Right += 1;
-		if ( IsKeyPressed( Key.W ) )
+		if ( IsKeyPressed( Key.W ) && !TextEntryActive )
 			Forward += 1;
-		if ( IsKeyPressed( Key.S ) )
+		if ( IsKeyPressed( Key.S ) && !TextEntryActive )
 			Forward -= 1;
 		
 		LastKeysDown = [.. KeysDown];
@@ -128,7 +136,7 @@ public static partial class Input
 
 		foreach ( var (button, vkeys) in Bindings )
 		{
-			bool isPressed = true;
+			bool isPressed = !TextEntryActive;
 
 			foreach ( var vkey in vkeys )
 			{

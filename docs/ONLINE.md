@@ -3,14 +3,47 @@
 OpenTPW provides an opt-in, self-hostable service for shared parks, postcards and chat.
 It does not connect to the original Theme Park World service and is not a reconstruction
 of its network protocol. No service address is configured and no network request occurs
-until the player selects a server and an action in the Online panel.
+until the player selects a server and an action in the online screens.
 
-The game panel supports account registration/login, park export/publish/search/download,
-voting, local postcard composition, sending the outbox, fetching the inbox, and chat.
-Chat commands use the selected original `CHAT_COMMANDS.str` words; original text is
-used where verified and supplementary labels cover the six supported languages.
-Online panels use ImGui; their original appearance has not been reproduced. Chat lines
-use the local `GAME8AA.bf4` font.
+The online screens support account registration/login, park export/publish/search/download,
+voting, read-only visits, local postcard composition, sending the outbox, fetching the
+inbox, and chat. Chat commands use the selected original `CHAT_COMMANDS.str` words;
+original text is used where verified and supplementary labels cover the six supported
+languages. Chat lines use the local `GAME8AA.bf4` font.
+
+## Screens
+
+Players open the online screens with **Go Online** (UITEXT 1), which OpenTPW adds to the
+lobby menu and the pause menu. They are drawn in the original UI style (`OnlineScreens`):
+original `ui.wad` window, list, button and field art, BF4 fonts, keyboard and mouse
+navigation, and new text fields and scroll lists (`UiTextField`, `UiScrollList`). Their
+contents follow the original online screens mapped from the Mac binary in
+[reverse/UI-MAP.md](reverse/UI-MAP.md):
+
+| Screen | Original counterpart (UI-MAP) | Original art |
+| --- | --- | --- |
+| Online World | Secondary menu, Go Online | `w_big`, `i_mail` (authored place) |
+| Online Login | Online login dialog: name and password, 16 characters each, Enter moves from name to password and submits | `w_med`, `b_login`, `f_text1` fields |
+| Find Parks | Find Parks dialog and Park details (creator, visits, votes, visited/voted) | `list_findprks`, `b_vote` |
+| Publish Park | Publish Park dialog: park name and description | `w_med` |
+| Send Postcard | Send Postcard dialog | `w_med` |
+| Unsent Postcards | Unsent Postcards (outbox) screen | `list_outbox`, `b_sendall` |
+| Inbox | (OpenTPW) | `list_outbox` |
+| Chat | Chat screen | `list_msgs` |
+| Import file | (OpenTPW) | `w_med` |
+
+The original files place several of these models on screen (`f_profile`, `b_login`,
+`list_findprks`, `list_outbox`, `list_msgs`, `b_vote`, `i_mail`), but the original
+composition of each screen and the place of code-positioned controls are not decoded:
+the Mac code builds each dialog from a template it looks up at run time
+(`0x10184b48` for the login dialog) and only then finds its controls by id. The windows
+therefore use OpenTPW layouts ([EXT:ONLINE-UI]); the server address field and the
+Inbox and Import screens have no original counterpart. Visits start directly from Find
+Parks or Import file instead of needing `--visit-park` and a restart.
+
+The ImGui Online panel remains as a developer tool in `--sandbox` and other developer
+starts. The front-end smoke test walks the screens and captures
+`native-smoke-<language>-online-*.png`.
 
 ## Local files and visits
 
@@ -106,7 +139,8 @@ The package/protocol/server code owns tags 001–059. The game adapters own:
 | 063 | Supplementary translated labels |
 | 064 | Chat line formatting |
 | 065 | BF4 chat overlay layout, colours and line count |
-| 066 | ImGui Online panel and restart-based visits |
+| 066 | ImGui Online panel (developer starts only; players use the original-style screens) |
+| UI | Original-style online screens: window composition, places of code-positioned controls, text field art and caret, server address field, Inbox and Import screens |
 
 ## Approximation register
 

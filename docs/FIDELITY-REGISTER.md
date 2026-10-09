@@ -14,7 +14,7 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **135 unresolved unique APPROX IDs**, 150 APPROX occurrences, 44 EXT occurrences, 62 DATA occurrences and 9 BIN occurrences.
+Current inventory: **135 unresolved unique APPROX IDs**, 150 APPROX occurrences, 56 EXT occurrences, 62 DATA occurrences and 9 BIN occurrences.
 
 Of these, 129 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
@@ -106,12 +106,12 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-044 | Original-fidelity area (scope unadjudicated) | balloon/costume percentages are 0 (guests carry no items yet) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:53` |
 | ECON-045 | Original-fidelity area (scope unadjudicated) | loan/challenge record locators use plausibility bounds (one fixture) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:54` |
 | ECON-046 | Original-fidelity area (scope unadjudicated) | upgrades need at least one employed mechanic to be bought | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:55` |
-| ONLINE-001 | OpenTPW online extension | Word filtering uses case-insensitive substring matches in space-padded text; entry spaces act as boundaries; allowed substrings exempt matches; hit characters except spaces become asterisks. | Original word-filter code or observed original filtering behavior; the source comment says the encrypted TP.ICD implementation is unreadable. | `docs/ONLINE.md:121` |
-| ONLINE-002 | OpenTPW online extension | A leading slash introduces a chat command; other text means say. | Original chat input syntax, which is not documented in the available data. | `docs/ONLINE.md:122` |
-| ONLINE-003 | OpenTPW online extension | Response strings 102 and 110 mean failure to add an ignored player and a buddy respectively, based on nearby string blocks. | Original response-code table. | `docs/ONLINE.md:123` |
-| ONLINE-004 | OpenTPW online extension | Buddy response strings 111–113 mean online, offline and removed. | Localized variants or the original response-code table. | `docs/ONLINE.md:124` |
-| ONLINE-005 | OpenTPW online extension | Chat command semantics follow command words, response strings and weachatr.dll export names; say/emote/shout reach a room, wshout/ushout all rooms; hearing has no positional effect; blackmark creates a moderation report. | Original chat server behavior, including command reach, hearing range and blackmark handling. | `docs/ONLINE.md:125` |
-| ONLINE-006 | OpenTPW online extension | A visitor already inside a park must leave it before visiting another, inferred from CHAT_COMMANDS string 127. | Original park-visit transition behavior or an original chat/runtime trace. | `docs/ONLINE.md:126` |
+| ONLINE-001 | OpenTPW online extension | Word filtering uses case-insensitive substring matches in space-padded text; entry spaces act as boundaries; allowed substrings exempt matches; hit characters except spaces become asterisks. | Original word-filter code or observed original filtering behavior; the source comment says the encrypted TP.ICD implementation is unreadable. | `docs/ONLINE.md:155` |
+| ONLINE-002 | OpenTPW online extension | A leading slash introduces a chat command; other text means say. | Original chat input syntax, which is not documented in the available data. | `docs/ONLINE.md:156` |
+| ONLINE-003 | OpenTPW online extension | Response strings 102 and 110 mean failure to add an ignored player and a buddy respectively, based on nearby string blocks. | Original response-code table. | `docs/ONLINE.md:157` |
+| ONLINE-004 | OpenTPW online extension | Buddy response strings 111–113 mean online, offline and removed. | Localized variants or the original response-code table. | `docs/ONLINE.md:158` |
+| ONLINE-005 | OpenTPW online extension | Chat command semantics follow command words, response strings and weachatr.dll export names; say/emote/shout reach a room, wshout/ushout all rooms; hearing has no positional effect; blackmark creates a moderation report. | Original chat server behavior, including command reach, hearing range and blackmark handling. | `docs/ONLINE.md:159` |
+| ONLINE-006 | OpenTPW online extension | A visitor already inside a park must leave it before visiting another, inferred from CHAT_COMMANDS string 127. | Original park-visit transition behavior or an original chat/runtime trace. | `docs/ONLINE.md:160` |
 | RIDES-001 | Original-fidelity area (scope unadjudicated) | animation clips play at 30 ticks/s | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:11` |
 | RIDES-002 | Original-fidelity area (scope unadjudicated) | most recently started channel wins a node | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:12` |
 | RIDES-003 | Original-fidelity area (scope unadjudicated) | finished clips hold their last pose | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:13` |
@@ -285,46 +285,46 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-003 | `source/OpenTPW/UI/Original/UiModel.cs:60` | [APPROX:UI-003] state frames use the root pose (child translation dropped) — evidence needed: binary UI model drawing code |
 | UI-004 | `source/OpenTPW/UI/Original/UiModel.cs:124` | [APPROX:UI-004] back-to-front by Z per texture group — evidence needed: binary or capture of overlapping UI parts |
 | UI-005 | `source/OpenTPW/UI/Original/UiImages.cs:34` | [APPROX:UI-005] pink key + neighbour colour bleed for linear filtering — evidence needed: capture of UI edges at other resolutions |
-| UI-006 | `source/OpenTPW/UI/Original/UiText.cs:102` | [APPROX:UI-006] all UI text/backdrop colours — evidence needed: captures of original screens |
+| UI-006 | `source/OpenTPW/UI/Original/UiText.cs:144` | [APPROX:UI-006] all UI text/backdrop colours — evidence needed: captures of original screens |
 | UI-007 | `source/OpenTPW/UI/Original/UiWidgets.cs:96` | [APPROX:UI-007] drop shadow one text pixel down-right — evidence needed: captures of original screens |
-| UI-008 | `source/OpenTPW/UI/Original/UiWidgets.cs:252` | [APPROX:UI-008] purple_button halves for normal/focused — evidence needed: capture of the original front-end buttons |
-| UI-009 | `source/OpenTPW/UI/Original/UiWidgets.cs:290` | [APPROX:UI-009] option-row arrow/value positions — evidence needed: capture of the original options screen |
-| UI-010 | `source/OpenTPW/UI/Original/UiScreen.cs:174` | [APPROX:UI-010] popup help placement/backdrop — evidence needed: capture of original popup help |
-| UI-011 | `source/OpenTPW/UI/Original/UiScreen.cs:164` | [APPROX:UI-011] modal screens dim the screens below — evidence needed: captures of original dialogs |
-| UI-012 | `source/OpenTPW/UI/Original/UiInput.cs:49` | [APPROX:UI-012] key map (arrows, Enter, Escape, P) — evidence needed: binary key handling / KEYBOARD.str |
+| UI-008 | `source/OpenTPW/UI/Original/UiWidgets.cs:267` | [APPROX:UI-008] purple_button halves for normal/focused — evidence needed: capture of the original front-end buttons |
+| UI-009 | `source/OpenTPW/UI/Original/UiWidgets.cs:305` | [APPROX:UI-009] option-row arrow/value positions — evidence needed: capture of the original options screen |
+| UI-010 | `source/OpenTPW/UI/Original/UiScreen.cs:205` | [APPROX:UI-010] popup help placement/backdrop — evidence needed: capture of original popup help |
+| UI-011 | `source/OpenTPW/UI/Original/UiScreen.cs:195` | [APPROX:UI-011] modal screens dim the screens below — evidence needed: captures of original dialogs |
+| UI-012 | `source/OpenTPW/UI/Original/UiInput.cs:54` | [APPROX:UI-012] key map (arrows, Enter, Escape, P) — evidence needed: binary key handling / KEYBOARD.str |
 | UI-012 | `source/OpenTPW/UI/Original/UiScreen.cs:59` | [APPROX:UI-012] hover focus, activate on release, keyboard navigation, right click backs out — evidence needed: binary input handling |
-| UI-013 | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:92` | [APPROX:UI-013] options window size, row pitch 84, OK/Back placement — evidence needed: capture of the original options screen |
+| UI-013 | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:101` | [APPROX:UI-013] options window size, row pitch 80, OK/Back placement — evidence needed: capture of the original options screen |
 | UI-013 | `source/OpenTPW/UI/Original/UiDialogs.cs:9` | [APPROX:UI-013] dialog window sizes and inner layout — evidence needed: captures of original dialogs |
-| UI-014 | `source/OpenTPW/FrontEnd/FrontEndMenu.cs:76` | [APPROX:UI-014] island name and prev/enter/next button positions in the lobby panel — evidence needed: capture of the original lobby |
-| UI-014 | `source/OpenTPW/FrontEnd/FrontEndMenu.cs:92` | [APPROX:UI-014] logo/title placement and the right-hand Load/Options/Quit column — evidence needed: capture of the original lobby |
-| UI-015 | `source/OpenTPW/FrontEnd/FrontEndMenu.cs:120` | [APPROX:UI-015] Game Mode asked when entering a park (no player profiles); the original asks once when a player is created and stores it in the profile — evidence needed: player profiles |
+| UI-014 | `source/OpenTPW/FrontEnd/FrontEndMenu.cs:78` | [APPROX:UI-014] island name and prev/enter/next button positions in the lobby panel — evidence needed: capture of the original lobby |
+| UI-014 | `source/OpenTPW/FrontEnd/FrontEndMenu.cs:94` | [APPROX:UI-014] logo/title placement and the right-hand Load/Options/Quit column — evidence needed: capture of the original lobby |
+| UI-015 | `source/OpenTPW/FrontEnd/FrontEndMenu.cs:124` | [APPROX:UI-015] Game Mode asked when entering a park (no player profiles); the original asks once when a player is created and stores it in the profile — evidence needed: player profiles |
 | UI-016 | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:79` | [DATA:lobby.wad:&lt;theme&gt;.txt ISLAND/SKYCOLOUR/FLYINGMESH/RAINY/LIGHTNING] [APPROX:UI-016] angle = yaw, height = camera target height — evidence needed: binary/capture |
 | UI-017 | `source/OpenTPW/World/LobbyCameraMode.cs:25` | [APPROX:UI-017] SPINSPEED as radians per 0.1 s, FOV 60, 3/s glide — evidence needed: binary or capture of the lobby camera |
-| UI-018 | `source/OpenTPW/Client/GameFlow.cs:229` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
+| UI-018 | `source/OpenTPW/Client/GameFlow.cs:237` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
 | UI-018 | `source/OpenTPW/World/Lobby/LobbyScene.cs:14` | [APPROX:UI-018] flying meshes, rain, lightning and island/gate animations are not drawn — evidence needed: binary/capture of the lobby |
 | UI-019 | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:92` | [APPROX:UI-019] fallback position when lobby.txt lacks ISLANDCAMERAPOSITION — evidence needed: none if lobby.txt is complete |
-| UI-020 | `source/OpenTPW/Hud/ParkHud.cs:119` | [APPROX:UI-020] panel button positions (the models share one authored centre) — evidence needed: capture of the original HUD |
-| UI-021 | `source/OpenTPW/Hud/ParkHud.cs:80` | [DATA:UITEXT.str:448,449] currency prefix; [APPROX:UI-021] ","-grouped digits — evidence needed: locale number format of the original |
-| UI-021 | `source/OpenTPW/Hud/ParkHud.cs:115` | [APPROX:UI-021] date/money text positions and fonts — evidence needed: capture of the original HUD |
+| UI-020 | `source/OpenTPW/Hud/ParkHud.cs:121` | [APPROX:UI-020] panel button positions (the models share one authored centre) — evidence needed: capture of the original HUD |
+| UI-021 | `source/OpenTPW/Hud/ParkHud.cs:82` | [DATA:UITEXT.str:448,449] currency prefix; [APPROX:UI-021] ","-grouped digits — evidence needed: locale number format of the original |
+| UI-021 | `source/OpenTPW/Hud/ParkHud.cs:117` | [APPROX:UI-021] date/money text positions and fonts — evidence needed: capture of the original HUD |
 | UI-022 | `source/OpenTPW/Hud/HudStubs.cs:47` | [APPROX:UI-022] without an economy only pause stops the rides; faster speeds run at normal speed |
 | UI-022 | `source/OpenTPW/Hud/HudStubs.cs:88` | [APPROX:UI-022] faster speeds only speed up the park clock/economy, not rides or guests — evidence needed: original speed controls |
-| UI-022 | `source/OpenTPW/Hud/ParkHud.cs:126` | [APPROX:UI-022] speed buttons and multipliers — evidence needed: binary game speed options |
+| UI-022 | `source/OpenTPW/Hud/ParkHud.cs:128` | [APPROX:UI-022] speed buttons and multipliers — evidence needed: binary game speed options |
 | UI-023 | `source/OpenTPW/Hud/HudStubs.cs:9` | [APPROX:UI-023] test-only calendar (2 s/day, 30-day months) — not used by the game |
 | UI-024 | `source/OpenTPW/Hud/HudStubs.cs:108` | [APPROX:UI-024] Catalogue pages sort by Info.Id; original build-menu order is not verified. |
-| UI-024 | `source/OpenTPW/Hud/ParkHud.cs:144` | [APPROX:UI-024] layout inside the build arm — evidence needed: capture of the original build arm |
-| UI-024 | `source/OpenTPW/Hud/ParkHud.cs:171` | [APPROX:UI-024] Three-slot pages and arrow positions are OpenTPW layout, not original menu evidence. |
-| UI-024 | `source/OpenTPW/Hud/ParkHud.cs:207` | [APPROX:UI-024] layout inside the info arm; [APPROX:UI-029] b_door down = closed, b_erase = delete — evidence needed: capture of the ride panel |
-| UI-024 | `source/OpenTPW/Hud/ParkHud.cs:581` | [APPROX:UI-024] Keep each translated name and price inside its slot; previews use the remaining height. |
-| UI-025 | `source/OpenTPW/Hud/ParkHud.cs:28` | [APPROX:UI-025] message area: 3 messages, 8 s — evidence needed: binary/capture of the message system |
-| UI-026 | `source/OpenTPW/Hud/ParkHud.cs:586` | [APPROX:UI-026] icon turn speed 0.8 rad/s — evidence needed: capture of the original build menu |
+| UI-024 | `source/OpenTPW/Hud/ParkHud.cs:146` | [APPROX:UI-024] layout inside the build arm — evidence needed: capture of the original build arm |
+| UI-024 | `source/OpenTPW/Hud/ParkHud.cs:173` | [APPROX:UI-024] Three-slot pages and arrow positions are OpenTPW layout, not original menu evidence. |
+| UI-024 | `source/OpenTPW/Hud/ParkHud.cs:209` | [APPROX:UI-024] layout inside the info arm; [APPROX:UI-029] b_door down = closed, b_erase = delete — evidence needed: capture of the ride panel |
+| UI-024 | `source/OpenTPW/Hud/ParkHud.cs:586` | [APPROX:UI-024] Keep each translated name and price inside its slot; previews use the remaining height. |
+| UI-025 | `source/OpenTPW/Hud/ParkHud.cs:30` | [APPROX:UI-025] message area: 3 messages, 8 s — evidence needed: binary/capture of the message system |
+| UI-026 | `source/OpenTPW/Hud/ParkHud.cs:591` | [APPROX:UI-026] icon turn speed 0.8 rad/s — evidence needed: capture of the original build menu |
 | UI-026 | `source/OpenTPW/Hud/PreviewIcon.cs:14` | [APPROX:UI-026] orthographic CPU projection, 30° tilt, painter sorting — evidence needed: capture of the original build menu |
-| UI-027 | `source/OpenTPW/Hud/ParkHud.cs:481` | [APPROX:UI-027] Select by occupied grid cell; original cursor picking is not verified. |
-| UI-028 | `source/OpenTPW/Hud/ParkHud.cs:283` | [APPROX:UI-028] authored excitement as a percentage; unknown simulation statistics stay unavailable. |
-| UI-029 | `source/OpenTPW/Hud/ParkHud.cs:207` | [APPROX:UI-024] layout inside the info arm; [APPROX:UI-029] b_door down = closed, b_erase = delete — evidence needed: capture of the ride panel |
+| UI-027 | `source/OpenTPW/Hud/ParkHud.cs:486` | [APPROX:UI-027] Select by occupied grid cell; original cursor picking is not verified. |
+| UI-028 | `source/OpenTPW/Hud/ParkHud.cs:285` | [APPROX:UI-028] authored excitement as a percentage; unknown simulation statistics stay unavailable. |
+| UI-029 | `source/OpenTPW/Hud/ParkHud.cs:209` | [APPROX:UI-024] layout inside the info arm; [APPROX:UI-029] b_door down = closed, b_erase = delete — evidence needed: capture of the ride panel |
 | UI-030 | `source/OpenTPW/UI/Original/Options/GameOptions.cs:16` | [APPROX:UI-030] 0..10 volume steps, default 8, popup help on — evidence needed: original options defaults |
-| UI-031 | `source/OpenTPW/Hud/ParkHud.cs:350` | [APPROX:UI-031] one placement per menu selection; Level owns purchase/sale — evidence needed: original build-tool continuation |
-| UI-032 | `source/OpenTPW/Hud/ParkHud.cs:590` | [APPROX:UI-032] Wrap translated catalogue names within their slot at the integer text scale. |
-| UI-032 | `source/OpenTPW/UI/Original/UiWidgets.cs:179` | [APPROX:UI-032] small-font fallback and greedy wrap for long labels — evidence needed: captures of translated original screens |
+| UI-031 | `source/OpenTPW/Hud/ParkHud.cs:352` | [APPROX:UI-031] one placement per menu selection; Level owns purchase/sale — evidence needed: original build-tool continuation |
+| UI-032 | `source/OpenTPW/Hud/ParkHud.cs:595` | [APPROX:UI-032] Wrap translated catalogue names within their slot at the integer text scale. |
+| UI-032 | `source/OpenTPW/UI/Original/UiWidgets.cs:194` | [APPROX:UI-032] small-font fallback and greedy wrap for long labels — evidence needed: captures of translated original screens |
 
 ## Extension sites
 
@@ -364,16 +364,28 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ONLINE-064 | `source/OpenTPW/Online/OnlineSession.cs:25` | [EXT:ONLINE-064] Line layouts ("name: text", "name *emote*") are OpenTPW choices; the original chat panel layout is unknown. |
 | ONLINE-065 | `source/OpenTPW/Online/ChatOverlay.cs:7` | [EXT:ONLINE-065] Font choice, position (bottom-left), colours and line count are OpenTPW choices; |
 | ONLINE-066 | `source/OpenTPW/Online/OnlinePanel.cs:6` | &lt;summary&gt;[EXT:ONLINE-066] Opt-in ImGui panel; original online panel layout is not reproduced.&lt;/summary&gt; |
+| ONLINE-UI | `source/OpenTPW/Online/OnlineScreens.cs:25` | [EXT:ONLINE-UI] native online screens; composition of the original screens and the place of code-positioned controls are OpenTPW's |
+| ONLINE-UI | `source/OpenTPW/Online/OnlineScreens.cs:102` | [EXT:ONLINE-UI] the server address is an OpenTPW field; the original service address was built in |
+| ONLINE-UI | `source/OpenTPW/UI/Original/UiTextWidgets.cs:46` | [EXT:ONLINE-UI] text field art and caret are OpenTPW's; the original field template is not decoded |
+| SETUP | `source/OpenTPW/UI/Original/Options/GameFilesScreen.cs:9` | [EXT:SETUP] OpenTPW setting; the original installer chose one folder and never changed it in game |
+| SETUP | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:236` | [EXT:SETUP] Game files (game folder and CD) between Back and OK |
 | developer-prototype | `source/OpenTPW/Economy/ParkEconomyRuntime.cs:46` | [EXT:developer-prototype] the developer prototype ride is registered uncharged (no original counterpart) |
 | developer-prototype | `source/OpenTPW/World/Level.Objects.cs:170` | [EXT:developer-prototype] Sandbox Totem blocks cells whose centres lie within its 6×8-unit model box (no original counterpart) |
 | developer-prototype | `source/OpenTPW/World/Level.Objects.cs:251` | [EXT:developer-prototype] When the economy refuses the Totem (e.g. Research.Group 4 not yet researched), the developer prototype is registered uncharged (no original counterpart) |
 | developer-prototype | `source/OpenTPW/World/PrototypeRide.cs:13` | [EXT:developer-prototype] Sandbox Totem bounds check uses a 5-unit radius around its centre (no original counterpart) |
-| display | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:121` | [EXT:display] window mode, upscaling, render scale and interface scale rows are OpenTPW extensions |
-| interface-scale-fit | `source/OpenTPW/UI/Original/UiCanvas.cs:33` | [EXT:interface-scale-fit] Above 1×, limit forced text scales to UiScaling's existing reference-layout fit. |
-| language | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:143` | [EXT:language] language row (original installs had one language; OpenTPW reads CD overlays) |
+| display | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:130` | [EXT:display] window mode, upscaling, render scale and interface scale rows are OpenTPW extensions |
+| fit-button-text | `source/OpenTPW/UI/Original/UiTextFit.cs:9` | [EXT:fit-button-text] button labels shrink to fit; the original sized its fixed strings per language by hand |
+| interface-scale-fit | `source/OpenTPW/UI/Original/UiCanvas.cs:33` | [EXT:interface-scale-fit] Above 1×, limit forced text scales to UiScaling's reference-layout fit (HiDPI-aware via PixelDensity). |
+| language | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:157` | [EXT:language] language row (original installs had one language; OpenTPW reads CD overlays) |
+| ps2-data | `source/OpenTPW/Client/Ps2Export.cs:13` | [EXT:ps2-data] viewing aid for the PS2 version's data, not original behaviour |
 | strings | `source/OpenTPW/UI/Original/SupplementaryStrings.cs:10` | [EXT:strings] OpenTPW supplementary labels (display/upscaling/language rows and OpenTPW messages), not original data |
 | test-stub | `source/OpenTPW/Hud/HudStubs.cs:130` | [EXT:test-stub] price shown when Totem.sam cannot be read (the economy catalogue price is used when a park economy runs) |
-| upscaling | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:30` | [EXT:upscaling] render-scale steps (presets 77/67/59/50 from the display slice plus 5% steps) |
+| texture-pack | `source/OpenTPW/Compat/GraphicsSettings.cs:256` | &lt;summary&gt;[EXT:texture-pack] Use the locally built upscaled texture pack (docs/TEXTURE-PACKS.md); off = original textures. Applies at the next start.&lt;/summary&gt; |
+| texture-pack | `source/OpenTPW/Render/Assets/TexturePack.cs:13` | [EXT:texture-pack] Upscaled replacement textures are an OpenTPW presentation option, not original behaviour. |
+| texture-pack | `source/OpenTPW/Render/Assets/TexturePackBuilder.cs:63` | [EXT:texture-pack] Builder for the optional local upscaled texture pack; original files are only read. |
+| texture-pack | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:147` | [EXT:texture-pack] optional locally built upscaled textures; off unless a pack exists and the player turns it on |
+| upscaling | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:34` | [EXT:upscaling] render-scale steps (presets 77/67/59/50 from the display slice plus 5% steps) |
+| world-capture | `source/OpenTPW/Client/WorldCapture.cs:13` | [EXT:world-capture] developer/screenshot command, not original behaviour |
 
 ## Data provenance sites
 
@@ -418,8 +430,8 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | Totem.sam:Info.Shape | `source/OpenTPW/World/PrototypeRide.cs:74` | [DATA:Totem.sam:Info.Shape] 3×4 cells = 30×40 MD2 units, centred |
 | Totem.sam:Upgrades[0].CostOfUpgrade | `source/OpenTPW/Hud/HudStubs.cs:143` | [DATA:Totem.sam:Upgrades[0].CostOfUpgrade] (FallbackCost only when the file is missing) |
 | Totem.sam:UsageInfo.ExcitementLevel | `source/OpenTPW/Hud/HudStubs.cs:147` | [DATA:Totem.sam:UsageInfo.ExcitementLevel] overrides [DATA:Rides.sam:UsageInfo.ExcitementLevel] |
-| UITEXT.str:318,340-346 | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:113` | [DATA:UITEXT.str:318,340-346] original row label and resolution labels |
-| UITEXT.str:448,449 | `source/OpenTPW/Hud/ParkHud.cs:80` | [DATA:UITEXT.str:448,449] currency prefix; [APPROX:UI-021] ","-grouped digits — evidence needed: locale number format of the original |
+| UITEXT.str:318,340-346 | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:122` | [DATA:UITEXT.str:318,340-346] original row label and resolution labels |
+| UITEXT.str:448,449 | `source/OpenTPW/Hud/ParkHud.cs:82` | [DATA:UITEXT.str:448,449] currency prefix; [APPROX:UI-021] ","-grouped digits — evidence needed: locale number format of the original |
 | global/Speech/lips.wad | `source/OpenTPW/World/Advisor.cs:20` | [DATA:global/Speech/speechHD.SDT] [DATA:global/Speech/lips.wad] |
 | global/Speech/lips.wad:members sp_001–sp_637 | `source/OpenTPW/World/Advisor.cs:27` | [DATA:global/Speech/lips.wad:members sp_001–sp_637] |
 | global/Speech/speechHD.SDT | `source/OpenTPW/World/Advisor.cs:20` | [DATA:global/Speech/speechHD.SDT] [DATA:global/Speech/lips.wad] |
@@ -429,7 +441,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | levels/jungle/Easymode.TPWI:loan table repayments = floor(amount/months) at 0 % APR | `source/OpenTPW/Economy/ParkLedger.cs:119` | [DATA:levels/jungle/Easymode.TPWI:loan table repayments = floor(amount/months) at 0 % APR] |
 | levels/space/rides/megacost.wad/megacost.sgn:slot 1 = "EggIt Italic"/EGGII___.TTF, not in fonts.wad | `source/OpenTPW.Files/Public/DataCorrections.cs:18` | [EXT:COMPAT-FIX sign-font-substitution] [DATA:levels/space/rides/megacost.wad/megacost.sgn:slot 1 = "EggIt Italic"/EGGII___.TTF, not in fonts.wad] |
 | lobby.wad:&lt;theme&gt;.txt ISLAND/SKYCOLOUR/FLYINGMESH/RAINY/LIGHTNING | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:79` | [DATA:lobby.wad:&lt;theme&gt;.txt ISLAND/SKYCOLOUR/FLYINGMESH/RAINY/LIGHTNING] [APPROX:UI-016] angle = yaw, height = camera target height — evidence needed: binary/capture |
-| lobby.wad:&lt;theme&gt;.txt SKYCOLOUR | `source/OpenTPW/Client/GameFlow.cs:229` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
+| lobby.wad:&lt;theme&gt;.txt SKYCOLOUR | `source/OpenTPW/Client/GameFlow.cs:237` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
 | lobby.wad:lobby.txt ISLANDFOV/SPINSPEED/SPINRADIUS/VERTICALOFFSET | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:31` | [DATA:lobby.wad:lobby.txt ISLANDFOV/SPINSPEED/SPINRADIUS/VERTICALOFFSET] defaults equal the shipped values |
 | low.sam/med.sam/high.sam | `source/OpenTPW.Tests/CompatibilityTests.cs:122` | [DATA:low.sam/med.sam/high.sam] in file order (TEXTUREQUALITY .. LOBBYOBJECTS). |
 | low.sam/med.sam/high.sam:comment legend | `source/OpenTPW/Compat/GraphicsSettings.cs:21` | ([DATA:low.sam/med.sam/high.sam:comment legend]). |
@@ -439,8 +451,8 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | theme-park-world_win_manual_europe_en_ii5.pdf:PDF-page-15/printed-page-28; SHA256=c96eb25f3dc13f7f0824bbf03f9bbeb3bb94e9f4756d4d8dfa09ac71732b0668 | `source/OpenTPW/Economy/ParkObjectives.cs:316` | [DATA:theme-park-world_win_manual_europe_en_ii5.pdf:PDF-page-15/printed-page-28; SHA256=c96eb25f3dc13f7f0824bbf03f9bbeb3bb94e9f4756d4d8dfa09ac71732b0668] |
 | ui.wad:button UVs v 0.42..1 vs art in the top 58% | `source/OpenTPW/UI/Original/UiModel.cs:117` | [DATA:ui.wad:button UVs v 0.42..1 vs art in the top 58%] V flipped as in the 3D shaders |
 | ui.wad:f_chat.MD2,w_map.MD2 bounds | `source/OpenTPW/UI/Original/UiCanvas.cs:25` | [DATA:ui.wad:f_chat.MD2,w_map.MD2 bounds] full-screen UI frames span 2048×1536 |
-| ui.wad:islandlobby.MD2,f_lobbutbg.MD2 root/bounds | `source/OpenTPW/FrontEnd/FrontEndMenu.cs:73` | [DATA:ui.wad:islandlobby.MD2,f_lobbutbg.MD2 root/bounds] authored panel rectangles |
-| ui.wad:mainpanel,gauge,date,panel MD2 roots | `source/OpenTPW/Hud/ParkHud.cs:111` | [DATA:ui.wad:mainpanel,gauge,date,panel MD2 roots] authored HUD rectangles |
+| ui.wad:islandlobby.MD2,f_lobbutbg.MD2 root/bounds | `source/OpenTPW/FrontEnd/FrontEndMenu.cs:75` | [DATA:ui.wad:islandlobby.MD2,f_lobbutbg.MD2 root/bounds] authored panel rectangles |
+| ui.wad:mainpanel,gauge,date,panel MD2 roots | `source/OpenTPW/Hud/ParkHud.cs:113` | [DATA:ui.wad:mainpanel,gauge,date,panel MD2 roots] authored HUD rectangles |
 
 ## Binary evidence sites
 

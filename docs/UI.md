@@ -3,9 +3,10 @@
 October 9, 2026. Status: an original-style front end (3D lobby + menus), in-game HUD,
 options screen and pause menu are implemented with original UI models, textures, BF4
 fonts and string tables, and run by default. They are **approximations** of the
-original screens: the original layout code is inside the encrypted executable
-(`TP.ICD` has no readable strings), so only what the data files show is
-original; everything else below is marked as an OpenTPW choice. No original
+original screens. Windows `TP.ICD` remains encrypted, but static analysis of
+the identified Feral Mac executable now supplies original layout tables,
+widget allocation and model binding evidence (see [PPC UI findings](reverse/PPC-ui.md)).
+Most screen/controller/rendering choices below remain OpenTPW approximations. No original
 captures were compared, so visual fidelity is **not verified**.
 
 ## Inventory
@@ -23,8 +24,31 @@ All counts from read-only listings of the installed English data.
 | level `rides/<ride>.wad` | `P<name>.MD2` preview model (Rides.sam `Info.PreviewAnimType "m"`, `PreviewAnimNum 1`) | build-menu icons |
 | `Rides.sam` | `Info.WhichUIType` 0 rides, 1 shops, 2 sideshows, 3 features | build categories |
 
-No `.sam` or text layout files for screens exist; there is no UI layout data
-outside the models themselves.
+No loose `.sam` or text layout files for these screens were found. The Mac
+executable contains embedded layout command tables; 55 identified tables have
+been decoded as metadata, independently of the currently authored screens.
+
+### Original drawing model registry
+
+`UiModels` now resolves original drawing keys from each decoded model's actual
+root-node name: signed-byte XOR followed by multiplication by 47, modulo 2^32.
+Root names retain case and spaces. For example, `mainpanel.MD2` binds `base`,
+`panel.MD2` binds `pan_money`, and `f_optpanel2.MD2` binds `optpanel2`. The filename
+is an explicit presentation asset alias, not an original drawing key.
+
+The 278-model corpus has 277 ordinary bindings: both `shadow1.MD2` and
+`w_small_shadow.MD2` store `wshadow1`. The original loader has an exclusion for
+`w_small_shadow.md2`, compared with case-sensitive `strcmp`; whether its input
+was lowercased first remains untraced. The selected-corpus registry applies that
+specific exclusion, and the asset stays available through explicit lookup. Other duplicate
+root hashes fail with both conflicting assets named; filename aliases also fail
+when ambiguous instead of selecting whichever member appears first. Existing
+widgets can still request unambiguous filename aliases, so this change does not
+rewrite screen layouts or alter custom resolutions, upscaling or interface scale.
+
+Verification: a differing-filename/root regression failed before the fix; eight
+binder cases plus the all-278-model corpus test now pass. The complete UI suite
+passes 56 tests with zero skips. Original visual fidelity remains unverified.
 
 ### The UI model coordinate space (resolves the MD2-MODELS.md open question)
 

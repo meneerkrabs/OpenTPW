@@ -119,19 +119,22 @@ public class ParkEconomyOriginalDataTests
 		UseOriginalData();
 		var payload = ReadEasymode();
 		var records = SaveEconomyRecords.Parse( payload );
-		Assert.AreEqual( 1411394, records.Loans[0].Offset );
-		CollectionAssert.AreEqual( new long[] { 100000, 50000, 25000, 10000, 18000, 30000, 80000, 65000 }, records.Loans.Select( loan => loan.Amount ).ToArray() );
+		Assert.AreEqual( 1411390, records.Loans[0].Offset );
+		CollectionAssert.AreEqual( new[] { 100000, 50000, 25000, 10000, 18000, 30000, 80000, 65000 }, records.Loans.Select( loan => loan.Amount ).ToArray() );
 		CollectionAssert.AreEqual( new[] { 2777, 1388, 694, 277, 750, 1000, 1666, 2166 }, records.Loans.Select( loan => loan.MonthlyRepayment ).ToArray() );
+		CollectionAssert.AreEqual( new[] { false, false, false, true, false, false, false, false }, records.Loans.Select( loan => loan.Available ).ToArray() );
+		CollectionAssert.AreEqual( Enumerable.Range( 0, 8 ).ToArray(), records.Loans.Select( loan => loan.LenderNameIndex ).ToArray() );
+		Assert.IsTrue( records.Loans.All( loan => loan.AprPercent == 0 && !loan.Bought && loan.MonthsRepaid == 0 ) );
 		Assert.AreEqual( 1410409, records.Challenges[0].Offset );
 		CollectionAssert.AreEqual( new[] { 3, 9, 13, 15, 5, 18, 19, 20 }, records.Challenges.Select( challenge => challenge.Type ).ToArray() );
-		CollectionAssert.AreEqual( new[] { 25, 87987, 0, 1, 87787, 0, -12013, 0 }, records.WordsBeforeLoans.ToArray() );
+		Assert.AreEqual( new SaveBankRecord( 1411362, 25, 87987, 0, true, 87787, 0, -12013 ), records.Bank );
 
 		var easy = new ParkEconomy( BalanceSettings.Load( "jungle", true ), EconomyObjectCatalog.Load( "jungle", true ), ParkGameMode.FullSimulation, 1 );
 		var park = OriginalPark.Load( "jungle" );
 		var import = OriginalEconomyImport.Apply( easy, park );
 		Assert.AreEqual( 11, import.ImportedObjects );
 		Assert.AreEqual( 3, import.ImportedFixedItems );
-		Assert.AreEqual( 100000, easy.Balance, "balance stays InitialCash; the save's candidate balance is not imported" );
+		Assert.AreEqual( 100000, easy.Balance, "balance import remains outside this record-decoding correction" );
 		Assert.AreEqual( 4450, easy.Objects.Where( item => item.Kind != ParkObjectKind.FixedItem ).Sum( item => easy.Catalog.TryGet( item.InfoId, out var info ) ? info.PurchaseCost : 0 ) );
 		Assert.IsTrue( easy.Objects.All( item => item.Imported ) );
 

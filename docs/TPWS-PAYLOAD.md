@@ -161,13 +161,20 @@ script-VM-like values. They match the SYSG list but are not decoded.
 
 ## Money (observed, not imported)
 
-The `i64` 100,000 at 1,411,394 is the first record of the **loan-offer table** (8 × 32 bytes,
-amounts/terms of `LoanInfo[0–7]`, repayments floor(amount/months) = 0 % APR, i.e.
-`Easy_Standard.sam`); the **challenge list** (8 × 45 bytes at 1,410,409) equals jungle
-`ChallengesInThisLevel`. Both are located by `SaveEconomyRecords` and cross-checked in
-docs/ECONOMY.md. The words just before the loan table (`25, 87987, 1, 87787, −12013, 0`) look like
-balance values (87,987 = 100,000 − 12,013) but are not reconciled with the build costs (placed
-objects 4,450; every data cost is a multiple of 5 while 12,013 is odd), so no balance is imported.
+The **loan-offer table** starts at 1,411,390 with eight 32-byte records, each containing
+available flag, 32-bit amount, APR, months, monthly repayment, bought flag, months repaid and
+lender name index. The amount at 1,411,394 is 100,000; its following word is APR 0, not the
+upper half of an i64 amount. Lenders need not equal record order. Repayments equal
+floor(amount/months), matching `Easy_Standard.sam`; the **challenge list** (eight 45-byte records
+at 1,410,409) equals jungle `ChallengesInThisLevel`. Both are located heuristically by
+`SaveEconomyRecords` and cross-checked against settings in docs/ECONOMY.md (ECON-045 remains).
+
+Named Mac serializer fields and the actual PC fixture identify the preceding 28-byte bank
+block at 1,411,362: admission fee 25, balance 87,987, batch balance 0, withdrawals enabled,
+last balance 87,787, entered-red tick 0 and annual profit −12,013. The fields are decoded and
+reported; money and active loans are not restored into the simulation by this parser correction.
+The PC fixture SHA-256 is `6d89303d098900364bf5e80b236b64bd85976fb947e9e4609d088547f430b39a`;
+the spending history is still unknown.
 
 ## Importer (`OriginalParkImport`)
 

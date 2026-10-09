@@ -253,7 +253,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-042 | `source/OpenTPW/Economy/EconomyObjectCatalog.cs:111` | [APPROX:ECON-042] sideshow InitCostOfGoods is the cost of a prize paid per win — evidence needed: sideshow panel capture |
 | ECON-043 | `source/OpenTPW/Economy/BalanceSettings.cs:173` | [APPROX:ECON-043] monthly wage = BaseWage[grade] x PayMultiplier[type] — evidence needed: staff list capture with grades |
 | ECON-044 | `source/OpenTPW/Economy/GuestEconomyBridge.cs:60` | [APPROX:ECON-044] balloon/costume percentages are 0 (guests carry no items yet) — evidence needed: guests slice item state |
-| ECON-045 | `source/OpenTPW.Files/Formats/Save/SaveEconomyRecords.cs:91` | [APPROX:ECON-045] loan/challenge record locators use plausibility bounds (one fixture) — evidence needed: a second TPWS/TPWI fixture |
+| ECON-045 | `source/OpenTPW.Files/Formats/Save/SaveEconomyRecords.cs:105` | [APPROX:ECON-045] loan/challenge record locators use plausibility bounds (one fixture) — evidence needed: a second TPWS/TPWI fixture |
 | ECON-046 | `source/OpenTPW/Economy/ParkEconomy.cs:528` | [APPROX:ECON-046] upgrades need at least one employed mechanic to be bought — evidence needed: capture (TAG_SYSTEM 151 suggests it) |
 | ONLINE-001 | `source/OpenTPW.Online/Moderation/WordFilter.cs:86` | [APPROX:ONLINE-001] Matching rule — evidence needed: the original filter code is not |
 | ONLINE-002 | `source/OpenTPW.Online/Chat/ChatCommands.cs:180` | [APPROX:ONLINE-002] A line starting with '/' is a command, anything else is "say" — evidence |
@@ -293,13 +293,13 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-001 | `source/OpenTPW/UI/Original/UiCanvas.cs:47` | [APPROX:UI-001] anchors keep the authored distance to the nearest edge on non-4:3 outputs — evidence needed: original widescreen behaviour / design decision |
 | UI-002 | `source/OpenTPW/UI/Original/UiCanvas.cs:43` | [APPROX:UI-002] font tier thresholds 0.36 / 0.6 of logical scale — evidence needed: binary font selection per screen mode |
 | UI-002 | `source/OpenTPW/UI/Original/UiText.cs:57` | [APPROX:UI-002] which shipped font serves which role per tier — evidence needed: binary font use / captures |
-| UI-003 | `source/OpenTPW/UI/Original/UiModel.cs:60` | [APPROX:UI-003] state frames use the root pose (child translation dropped) — evidence needed: binary UI model drawing code |
-| UI-004 | `source/OpenTPW/UI/Original/UiModel.cs:124` | [APPROX:UI-004] back-to-front by Z per texture group — evidence needed: binary or capture of overlapping UI parts |
+| UI-003 | `source/OpenTPW/UI/Original/UiModel.cs:67` | [APPROX:UI-003] state frames use the root pose (child translation dropped) — evidence needed: binary UI model drawing code |
+| UI-004 | `source/OpenTPW/UI/Original/UiModel.cs:137` | [APPROX:UI-004] back-to-front by Z per texture group — evidence needed: binary or capture of overlapping UI parts |
 | UI-005 | `source/OpenTPW/UI/Original/UiImages.cs:34` | [APPROX:UI-005] pink key + neighbour colour bleed for linear filtering — evidence needed: capture of UI edges at other resolutions |
 | UI-006 | `source/OpenTPW/UI/Original/UiText.cs:102` | [APPROX:UI-006] all UI text/backdrop colours — evidence needed: captures of original screens |
-| UI-007 | `source/OpenTPW/UI/Original/UiWidgets.cs:96` | [APPROX:UI-007] drop shadow one text pixel down-right — evidence needed: captures of original screens |
-| UI-008 | `source/OpenTPW/UI/Original/UiWidgets.cs:252` | [APPROX:UI-008] purple_button halves for normal/focused — evidence needed: capture of the original front-end buttons |
-| UI-009 | `source/OpenTPW/UI/Original/UiWidgets.cs:290` | [APPROX:UI-009] option-row arrow/value positions — evidence needed: capture of the original options screen |
+| UI-007 | `source/OpenTPW/UI/Original/UiWidgets.cs:73` | [APPROX:UI-007] drop shadow one text pixel down-right — evidence needed: captures of original screens |
+| UI-008 | `source/OpenTPW/UI/Original/UiWidgets.cs:229` | [APPROX:UI-008] purple_button halves for normal/focused — evidence needed: capture of the original front-end buttons |
+| UI-009 | `source/OpenTPW/UI/Original/UiWidgets.cs:267` | [APPROX:UI-009] option-row arrow/value positions — evidence needed: capture of the original options screen |
 | UI-010 | `source/OpenTPW/UI/Original/UiScreen.cs:174` | [APPROX:UI-010] popup help placement/backdrop — evidence needed: capture of original popup help |
 | UI-011 | `source/OpenTPW/UI/Original/UiScreen.cs:164` | [APPROX:UI-011] modal screens dim the screens below — evidence needed: captures of original dialogs |
 | UI-012 | `source/OpenTPW/UI/Original/UiInput.cs:49` | [APPROX:UI-012] key map (arrows, Enter, Escape, P) — evidence needed: binary key handling / KEYBOARD.str |
@@ -335,7 +335,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-030 | `source/OpenTPW/UI/Original/Options/GameOptions.cs:16` | [APPROX:UI-030] 0..10 volume steps, default 8, popup help on — evidence needed: original options defaults |
 | UI-031 | `source/OpenTPW/Hud/ParkHud.cs:350` | [APPROX:UI-031] one placement per menu selection; Level owns purchase/sale — evidence needed: original build-tool continuation |
 | UI-032 | `source/OpenTPW/Hud/ParkHud.cs:590` | [APPROX:UI-032] Wrap translated catalogue names within their slot at the integer text scale. |
-| UI-032 | `source/OpenTPW/UI/Original/UiWidgets.cs:179` | [APPROX:UI-032] small-font fallback and greedy wrap for long labels — evidence needed: captures of translated original screens |
+| UI-032 | `source/OpenTPW/UI/Original/UiWidgets.cs:156` | [APPROX:UI-032] small-font fallback and greedy wrap for long labels — evidence needed: captures of translated original screens |
 | UI-033 | `source/OpenTPW/Hud/HudStubs.cs:130` | [APPROX:UI-033] price shown when Totem.sam cannot be read (the economy catalogue price is used when a park economy runs) |
 
 ## Extension sites
@@ -444,7 +444,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | speechHD.SDT/MusicHD.sdt:all Layer II frames fit this table to ≤23 spare bits | `source/OpenTPW.Files/Formats/Sound/Mp2Decoder.cs:38` | [DATA:speechHD.SDT/MusicHD.sdt:all Layer II frames fit this table to ≤23 spare bits] |
 | speechHD.SDT:entry word 0 = header size (40) | `source/OpenTPW/World/Advisor.cs:214` | [DATA:speechHD.SDT:entry word 0 = header size (40)] |
 | theme-park-world_win_manual_europe_en_ii5.pdf:PDF-page-15/printed-page-28; SHA256=c96eb25f3dc13f7f0824bbf03f9bbeb3bb94e9f4756d4d8dfa09ac71732b0668 | `source/OpenTPW/Economy/ParkObjectives.cs:316` | [DATA:theme-park-world_win_manual_europe_en_ii5.pdf:PDF-page-15/printed-page-28; SHA256=c96eb25f3dc13f7f0824bbf03f9bbeb3bb94e9f4756d4d8dfa09ac71732b0668] |
-| ui.wad:button UVs v 0.42..1 vs art in the top 58% | `source/OpenTPW/UI/Original/UiModel.cs:117` | [DATA:ui.wad:button UVs v 0.42..1 vs art in the top 58%] V flipped as in the 3D shaders |
+| ui.wad:button UVs v 0.42..1 vs art in the top 58% | `source/OpenTPW/UI/Original/UiModel.cs:130` | [DATA:ui.wad:button UVs v 0.42..1 vs art in the top 58%] V flipped as in the 3D shaders |
 | ui.wad:f_chat.MD2,w_map.MD2 bounds | `source/OpenTPW/UI/Original/UiCanvas.cs:25` | [DATA:ui.wad:f_chat.MD2,w_map.MD2 bounds] full-screen UI frames span 2048×1536 |
 | ui.wad:islandlobby.MD2,f_lobbutbg.MD2 root/bounds | `source/OpenTPW/FrontEnd/FrontEndMenu.cs:76` | [DATA:ui.wad:islandlobby.MD2,f_lobbutbg.MD2 root/bounds] authored panel rectangles |
 | ui.wad:mainpanel,gauge,date,panel MD2 roots | `source/OpenTPW/Hud/ParkHud.cs:111` | [DATA:ui.wad:mainpanel,gauge,date,panel MD2 roots] authored HUD rectangles |

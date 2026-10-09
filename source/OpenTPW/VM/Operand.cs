@@ -28,8 +28,9 @@ public sealed class Operand
 	/// <summary>
 	/// Variables read the VM's 32-bit variable; literals are sign-extended 16-bit values
 	/// (0xFFFF is the corpus's only literal ≥ 0x8000 and is used as -1 by count-down loops such as
-	/// <c>ADD VAR_COUNT 0xFFFF; BRANCH_PV</c>). Writes to anything but a variable are discarded:
-	/// the corpus uses a literal 0 destination when only the flags are wanted (<c>MOD 0 VAR_CAPACITY 9; BRANCH_Z</c>).
+	/// <c>ADD VAR_COUNT 0xFFFF; BRANCH_PV</c>). This accessor discards writes to anything but a variable;
+	/// handlers can enforce stricter rules (COPY aborts for a non-variable destination).
+	/// The corpus uses a literal 0 destination when only the flags are wanted (<c>MOD 0 VAR_CAPACITY 9; BRANCH_Z</c>).
 	/// </summary>
 	public int Value
 	{

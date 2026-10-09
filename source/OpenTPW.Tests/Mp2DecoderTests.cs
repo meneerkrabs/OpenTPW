@@ -134,7 +134,6 @@ public class Mp2DecoderTests
 	[DataTestMethod]
 	[DataRow( 3, 2, 6, "MPEG-1" )]
 	[DataRow( 0, 2, 6, "MPEG-2.5" )]
-	[DataRow( 2, 3, 6, "Layer I" )]
 	[DataRow( 2, 1, 6, "Layer III" )]
 	[DataRow( 2, 2, 0, "free format" )]
 	public void RejectsUnsupportedStreams( int versionBits, int layerBits, int bitrateIndex, string description )

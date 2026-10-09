@@ -53,7 +53,27 @@ internal static class ShaderCompiler
 		return (vertexSpirv.SpirvBytes, fragmentSpirv.SpirvBytes, compilationResult.Reflection);
 	}
 
+	private static readonly Dictionary<(string Path, DateTime Modified, GraphicsBackend Backend), ShaderInfo> compiled = new();
+
+	/// <summary>
+	/// Compiles a shader once per file version and backend. Every <see cref="Material"/> creates its own
+	/// <see cref="Shader"/>, so scenes with many original object meshes would otherwise recompile the
+	/// same GLSL for each mesh; the Veldrid shader objects are never disposed and can be shared.
+	/// </summary>
 	public static ShaderInfo CompileShader( string path )
+	{
+		var key = (Path.GetFullPath( path ), File.GetLastWriteTimeUtc( path ), Device.ResourceFactory.BackendType);
+		lock ( compiled )
+		{
+			if ( compiled.TryGetValue( key, out var cached ) )
+				return cached;
+			var info = CompileShaderUncached( path );
+			compiled[key] = info;
+			return info;
+		}
+	}
+
+	private static ShaderInfo CompileShaderUncached( string path )
 	{
 		var program = CompileProgram( path, GetCrossCompileTarget() );
 		var shaders = Device.ResourceFactory.CreateFromSpirv(

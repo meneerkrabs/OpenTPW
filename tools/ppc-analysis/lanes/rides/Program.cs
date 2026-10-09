@@ -13,6 +13,7 @@ var scripts = new List<object>();
 var commands = new SortedDictionary<int, SortedDictionary<int, int>>();
 var observations = new SortedDictionary<string, List<ControllerUse>>(StringComparer.Ordinal);
 var trackSettings = new List<object>();
+var boardingAttributes = new List<object>();
 var motionSettingNames = new[] { "fAccelerationPerHeight", "fUphillAccelModifier", "fDownhillAccelModifier", "fWinchSpeed",
     "fMinSpeed", "fMaxSpeedAtMinSetting", "fMaxSpeedAtMaxSetting", "fFrictionMultiplier", "fGravityX", "fGravityY", "fGravityZ", "fForceMultiplier" };
 var animationCounts = new SortedDictionary<int, int>();
@@ -34,7 +35,8 @@ foreach (var archive in Directory.GetFiles(levelRoot, "*.wad", SearchOption.AllD
             else if (item is ArchiveFile setting && member.EndsWith(".sam", StringComparison.OrdinalIgnoreCase))
             {
                 var data = setting.GetData();
-                var values = new SAMParser(Encoding.ASCII.GetString(data)).Parse()
+                var parsedSettings = new SAMParser(Encoding.ASCII.GetString(data)).Parse();
+                var values = parsedSettings
                     .Where(e => e.Key.StartsWith("TrackInfo.", StringComparison.OrdinalIgnoreCase)
                         || e.Key.EndsWith(".Direction", StringComparison.OrdinalIgnoreCase)
                         || e.Key.EndsWith(".WhichTrackType", StringComparison.OrdinalIgnoreCase)
@@ -51,6 +53,29 @@ foreach (var archive in Directory.GetFiles(levelRoot, "*.wad", SearchOption.AllD
                     .Select(e => new { key = e.Key, value = double.Parse(e.Value, CultureInfo.InvariantCulture) }).ToArray();
                 if (values.Length > 0) trackSettings.Add(new { path = Path.GetRelativePath(root, archive).Replace('\\', '/') + "/" + member,
                     sha256 = Hash(data), values });
+                if (member.Equals("coaster.sam", StringComparison.OrdinalIgnoreCase))
+                    foreach (var meshSetting in parsedSettings.Where(e => e.Key.Contains("asCarTypes", StringComparison.OrdinalIgnoreCase)
+                        && e.Key.EndsWith(".pcMeshFilename", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        var modelName = Path.GetFileName(meshSetting.Value.Trim('"').Replace('\\', '/'));
+                        if (!rootMembers.TryGetValue(modelName, out var modelMember)
+                            && !rootMembers.TryGetValue(modelName + ".MD2", out modelMember))
+                        {
+                            boardingAttributes.Add(new { path = Path.GetRelativePath(root, archive).Replace('\\', '/') + "/" + member,
+                                sha256 = Hash(data), key = meshSetting.Key, inputStem = modelName,
+                                qualification = "unresolved model member; shared-path/filename policy unqualified" });
+                            continue;
+                        }
+                        var modelData = modelMember.GetData();
+                        var model = new ModelFile(new MemoryStream(modelData));
+                        if (model.Kind != ModelFileKind.Geometry) throw new InvalidDataException("Coaster model must be geometry.");
+                        boardingAttributes.Add(new { path = Path.GetRelativePath(root, archive).Replace('\\', '/') + "/" + member,
+                            sha256 = Hash(data), key = meshSetting.Key, inputStem = modelName, modelMember = modelMember.Name, modelSha256 = Hash(modelData),
+                            attributeCount = model.DummyAttributes.Count,
+                            selectedAttributeIndices = model.DummyAttributes.Select((attribute, index) => (attribute, index))
+                                .Where(pair => (pair.attribute.Type & 128) != 0).Select(pair => pair.index).ToArray(),
+                            qualification = "decoded PC dummy-attribute metadata; native runtime loader/hierarchy linkage unproved" });
+                    }
             }
             else if (item is ArchiveFile file && member.EndsWith(".rse", StringComparison.OrdinalIgnoreCase))
             {
@@ -139,7 +164,7 @@ File.WriteAllText(args[1], JsonSerializer.Serialize(new { schema = 1, scope = "P
     commandObservations = observations.Select(pair => new { commandKey = pair.Key, count = pair.Value.Count,
         operandKinds = pair.Value.GroupBy(v => v.ParameterKind).OrderBy(g => g.Key, StringComparer.Ordinal)
             .Select(g => new { kind = g.Key, count = g.Count() }).ToArray(),
-        representative = pair.Value[0] }).ToArray(), trackSettings, animationOpcodeCounts = animationCounts,
+        representative = pair.Value[0] }).ToArray(), trackSettings, boardingAttributes, animationOpcodeCounts = animationCounts,
     animationSpeedCalls, totemBindings },
     new JsonSerializerOptions { WriteIndented = true }));
 Console.WriteLine($"Parsed {count} scripts, {instructions} instructions; wrote metadata only.");

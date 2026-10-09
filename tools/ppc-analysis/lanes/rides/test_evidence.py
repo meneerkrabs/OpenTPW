@@ -11,6 +11,7 @@ import contracts
 import controller_native
 import animation_evidence
 import motion_evidence
+import seat_evidence
 
 
 class RideEvidenceTests(unittest.TestCase):
@@ -36,6 +37,18 @@ class RideEvidenceTests(unittest.TestCase):
         self.assertEqual(result["tour_unload"]["raw_command"], 14)
         self.assertEqual(result["sound_output"]["record"], "train, not car")
         self.assertGreaterEqual(result["checked_instruction_count"], 150)
+
+    @unittest.skipUnless(os.environ.get("OPENTPW_MAC_APP"), "set OPENTPW_MAC_APP for boarding socket witness")
+    def test_original_boarding_socket_producer(self):
+        result = seat_evidence.inspect(Path(os.environ["OPENTPW_MAC_APP"]))
+        self.assertEqual(result["producer"]["attribute_mask"], 128)
+        self.assertEqual(result["producer"]["runtime_attribute_stride"], 20)
+        self.assertEqual(result["producer"]["raw_index_array_field"], 44)
+        self.assertEqual(result["passenger_buffers"]["original_fields"], [32, 36])
+        self.assertEqual(result["binding"]["attach"], 0x19b56c)
+        self.assertEqual(result["capacity"]["per_train_socket_count"], 760)
+        self.assertEqual(result["capacity"]["fleet_socket_count"], 792)
+        self.assertGreaterEqual(result["checked_instruction_count"], 80)
 
     def fixture(self, code=b"\0" * 16, relocations=None):
         return SimpleNamespace(code=SimpleNamespace(index=0, data=bytearray(code)),

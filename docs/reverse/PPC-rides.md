@@ -636,8 +636,9 @@ count, then scans/wraps candidates until car+52<car+68. FIFO guest removal
 therefore does not imply sequential car allocation. This RNG proof is scoped
 to this boarding helper, not RSE RAND or the entire game's randomness.
 The host attachment call obtains a physical node from carDefinition+44
-indexed by existing rider count, with model handle from car+12. The node-array
-construction, ownership callback and paired-seat mapping remain unresolved.
+indexed by existing rider count, with model handle from car+12. Full attribute/
+hierarchy association, ownership callback and paired-seat mapping remain
+unresolved; the producer is traced in the following section.
 
 TOUR raw14 reaches`0x66dc0`. Nonzero input sets controller+0 from+4 and+56=1.
 Zero input returns unchanged when controller+52==3; otherwise it sets+0=1,
@@ -658,3 +659,67 @@ axis/enum, type4 binding, COS caller/load/save linkage, spline/sample creation,
 station and release boundaries, seat-node mapping, and full adaptive motion.
 Absence from a SAM search does not prove absence from another format, defaults
 or native runtime. No production motion/controller code changed in this slice.
+
+## Boarding socket producer and per-train capacity
+
+`seat_evidence.py`/`seat-native.json` add83 pinned fields/calls on the same Mac
+identity. Model setup`0x303a8` receives a52-byte car definition, loads its model
+handle into+12, calls`0x19b354` with flag0x80, and stores its result at+48.
+It allocates count*4 bytes at+44 and populates them through`0x19b300` with
+one-based matching ordinals1..count. Zero count instead leaves+44 zero.
+
+The queried model data is a **20-byte attribute table**, not the160/88-byte
+hierarchy node table. Its runtime count is a halfword at modelDefinition+72;
+pointer+124 supplies the records. `0x19b354` counts records whose first word
+intersects the input mask. `0x19b300` returns the zero-based **raw attribute
+index** when its incremented match count equals the requested ordinal, or−1
+if no match exists. Bit0x80 is proved by this producer and subsequent boarding
+use, not an assumed generic enum or attribute ordinal equaling nodeID.
+
+Setup`0x308f8` selects front/centre/rear car definitions at coasterDefinition
++764/+768/+772. For each configured car up to+756, it sums selected role+48
+into per-train socket total+760. The first car uses front even for a one-car
+train; the last uses rear when it is not also first; others use centre.
+Final setup`0x311d0` multiplies this total by maximum trains+744 and stores
+fleet socket total+792 at`0x3129c`, closing the source of two recovered
+capacity-setter bounds. Int32 multiplication overflow and invalid configured
+car counts remain unqualified.
+
+Train allocation`0x37968` reserves separate passenger-ID buffers for each car,
+each sized by carDefinition+48. Car+32/+36 are initial pointers; +40/+44 are
+active pointers. The shared cursor advances by count*4 for **each** buffer.
+Two buffers do not establish two people per socket or a paired-seat transform.
+Boarding obtains the attribute index from carDefinition+44[car+52], passing
+it, the model instance and supplied guest ID to`0x19b56c` at`0x3e420`.
+Unloading calls`0x19b680` at`0x3e298`.
+
+Attach`0x19b56c` indexes a dynamic20-byte record through model instance+40,
+sets record flag2, increments the attachment count and stores a created child
+handle at record+12. Detach`0x19b680` decrements the count, clears that flag,
+releases the child and stores−1 at+12. Visitor-ID resolution and created-child
+visual ownership/lifetime continue through other host functions and are not
+implemented here. Equal static/runtime strides do not prove the PC loader or
+hierarchy/transform association.
+
+The corpus tool reuses `ModelFile.DummyAttributes`, without codec changes,
+to resolve14 declared `asCarTypes[].pcMeshFilename` bindings in12 coaster SAM
+members to existing same-archive exact/stem.MD2 members. That search rule is
+metadata-tool policy; shared native path/case behavior remains unqualified.
+Model/SAM hashes, attribute counts and selected raw indices are metadata only.
+
+| PC model binding | flag0x80 matches |
+| --- | ---: |
+| Fantasy b_drip / candy_c | 2 / 4 |
+| Fantasy cat_co head / body / tail | 0 / 4 / 0 |
+| Hallow c_hade / c_scat / coasta | 6 / 3 / 4 |
+| Jungle coaster1 / coaster3 / minecart | 6 / 2 / 6 |
+| Space megacost / moonshot / shocker | 4 / 3 / 6 |
+
+The50 matches across14 model definitions are not a park/fleet passenger total.
+Noncontiguous selections such as caterbody1,2,3,5 and coasta0,1,3,4 show why
+filtered ordinal differs from raw index. All selected indices/counts match
+verified Patch2; coasta/cart and minecart/cart model hashes change, as do
+their SAM hashes. These findings corroborate input-side flag selection while
+retaining the native-runtime loader as an exact dependency. Twenty Python
+cases and both308-script corpus scans pass. Production admission, seat
+binding and controller motion remain unimplemented by these evidence tools.

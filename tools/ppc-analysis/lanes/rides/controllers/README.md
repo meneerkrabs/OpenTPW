@@ -77,3 +77,14 @@ order. TOUR14 parameter0 changes positive occupancy into negative occupancy
 for type1 entries unless controller+52==3, connecting the already qualified
 reverse departure-slot arithmetic to an actual transition. Neither observation
 is a complete controller/admission implementation.
+
+`seat-native.json` additionally pins the producer that filters20-byte runtime
+model attribute records by mask0x80 into carDefinition+44, one-based matching
+ordinal to raw index; +48 is the count. These are attribute indices, not
+hierarchy node IDs. The corpus tool reuses the existing PC model reader to
+record14 declared model bindings and selected attribute indices, unchanged
+between baseline and verified Patch2 despite two changed model identities.
+Per-train capacity+760 sums front/centre/rear role counts, then fleet capacity
++792 multiplies by maximum trains. Two passenger-ID buffers per car remain
+separate from two-person seating. Native/file loader linkage, transforms and
+host visual ownership remain unsupported by this reference project.

@@ -246,13 +246,33 @@ internal static class Game
 	{
 		var setupPath = SetupSettings.GetDefaultPath();
 		var saved = SetupSettings.Load( setupPath );
+		InstallationDiscoveryResult? discovery = null;
 		var resolved = args.Contains( "--setup" ) ? null
-			: GamePathResolution.Resolve( commandLinePath, Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" ), saved, Settings.Default.GamePath, InstallationFinder.GetCandidates );
+			: GamePathResolution.Resolve( commandLinePath, Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" ), new( null, null ), null, () => Array.Empty<string>() );
+		if ( resolved == null && !args.Contains( "--setup" ) )
+		{
+			foreach ( var (path, source) in new[] { (saved.GamePath, GamePathSource.Saved), (Settings.Default.GamePath, GamePathSource.Legacy) } )
+			{
+				if ( string.IsNullOrWhiteSpace( path ) ) continue;
+				var inspected = InstallationDiscovery.InspectAsync( path ).GetAwaiter().GetResult();
+				if ( inspected.Reports.FirstOrDefault() is { IsUsable: true } report )
+				{
+					resolved = (report.Path, source);
+					break;
+				}
+			}
+			if ( resolved == null )
+			{
+				discovery = InstallationDiscovery.SearchAsync().GetAwaiter().GetResult();
+				if ( discovery.Reports.FirstOrDefault() is { IsUsable: true } report )
+					resolved = (report.Path, GamePathSource.Detected);
+			}
+		}
 		if ( resolved == null )
 		{
 			if ( !GamePathResolution.IsInteractive( args ) )
 				throw new DirectoryNotFoundException( "Theme Park World data not found. Use --game-path or OPENTPW_GAME_PATH, or start OpenTPW without arguments to choose the folder in the setup window." );
-			var chosen = SetupWizard.Run( saved, InstallationFinder.GetCandidates() );
+			var chosen = SetupWizard.Run( saved, discovery );
 			if ( chosen == null )
 			{
 				Log.Trace( "Setup closed without choosing a game folder." );
@@ -271,7 +291,7 @@ internal static class Game
 		Log.Trace( $"Game folder: {resolved.Value.Path} ({resolved.Value.Source})." );
 
 		// The saved CD stands in for --cd-data, unless the folder came from a developer override or a CD is given.
-		if ( resolved.Value.Source is not (GamePathSource.CommandLine or GamePathSource.Environment) && saved.CdPath != null && Directory.Exists( saved.CdPath )
+		if ( resolved.Value.Source is not (GamePathSource.CommandLine or GamePathSource.Environment) && saved.CdPath != null && InstallationDiscovery.InspectAsync( saved.CdPath ).GetAwaiter().GetResult().Reports.FirstOrDefault()?.DataDirectory != null
 			&& !args.Contains( "--cd-data" ) && string.IsNullOrWhiteSpace( Environment.GetEnvironmentVariable( "OPENTPW_CD_DATA" ) ) )
 			args = [.. args, "--cd-data", saved.CdPath];
 		return args;

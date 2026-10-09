@@ -695,18 +695,18 @@ public class ParkEconomyTests
 	{
 		var payload = Enumerable.Repeat( (byte)0xCD, 4096 ).ToArray();
 		void Int( int offset, int value ) => BitConverter.GetBytes( value ).CopyTo( payload, offset );
-		var words = new[] { 25, 87987, 0, 1, 87787, 0, -12013, 0 };
-		for ( var index = 0; index < 8; index++ )
+		var words = new[] { 25, 87987, 0, 1, 87787, 0, -12013 };
+		for ( var index = 0; index < words.Length; index++ )
 			Int( 1000 + index * 4, words[index] );
 		var loans = new[] { (100000, 36), (50000, 36), (25000, 36), (18000, 24) };
 		for ( var index = 0; index < loans.Length; index++ )
 		{
-			var offset = 1032 + index * 32;
+			var offset = 1028 + index * 32;
 			Array.Clear( payload, offset, 32 );
-			Int( offset, loans[index].Item1 );
-			Int( offset + 8, loans[index].Item2 );
-			Int( offset + 12, loans[index].Item1 / loans[index].Item2 );
-			Int( offset + 24, index );
+			Int( offset + 4, loans[index].Item1 );
+			Int( offset + 12, loans[index].Item2 );
+			Int( offset + 16, loans[index].Item1 / loans[index].Item2 );
+			Int( offset + 28, index );
 		}
 		var challenges = new[] { (3, 60, 30, 0, 5000, 0, true), (18, 60, 1, 1180, 7500, 20, true), (20, 180, 200, 1180, 30000, 0, false) };
 		for ( var index = 0; index < challenges.Length; index++ )
@@ -724,8 +724,8 @@ public class ParkEconomyTests
 		}
 		var records = SaveEconomyRecords.Parse( payload );
 		Assert.AreEqual( 4, records.Loans.Count );
-		Assert.AreEqual( new SaveLoanRecord( 1064, 1, 50000, 36, 1388, 0, 0, 0 ), records.Loans[1] );
-		CollectionAssert.AreEqual( words, records.WordsBeforeLoans.ToArray() );
+		Assert.AreEqual( new SaveLoanRecord( 1060, 1, false, 50000, 0, 36, 1388, false, 0, 1 ), records.Loans[1] );
+		Assert.AreEqual( new SaveBankRecord( 1000, 25, 87987, 0, true, 87787, 0, -12013 ), records.Bank );
 		Assert.AreEqual( 3, records.Challenges.Count );
 		Assert.AreEqual( new SaveChallengeRecord( 2046, 18, 60, 1, 1180, 0, 7500, 20, true ), records.Challenges[1] );
 		Assert.IsFalse( records.Challenges[2].Independent );
@@ -734,7 +734,7 @@ public class ParkEconomyTests
 		Array.Copy( payload, 2001, duplicate, 3000, 90 );
 		Assert.ThrowsException<InvalidDataException>( () => SaveEconomyRecords.Parse( duplicate ) );
 		var missing = payload.ToArray();
-		Array.Fill( missing, (byte)0xCD, 1032, 128 );
+		Array.Fill( missing, (byte)0xCD, 1028, 128 );
 		Assert.ThrowsException<InvalidDataException>( () => SaveEconomyRecords.Parse( missing ) );
 
 		var settings = EconomyTestData.Settings( apr: 0 );

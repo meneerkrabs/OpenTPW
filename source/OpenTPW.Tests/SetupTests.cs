@@ -97,6 +97,21 @@ public class SetupTests
 	}
 
 	[TestMethod]
+	public void KnownUnsupportedSimCoasterIdentityIsRejectedWithoutAnEditionAllowlist()
+	{
+		var tpiRoot = Environment.GetEnvironmentVariable( "OPENTPW_TPI_GAME_PATH" );
+		if ( string.IsNullOrWhiteSpace( tpiRoot ) || !Directory.Exists( tpiRoot ) )
+			Assert.Inconclusive( "Set OPENTPW_TPI_GAME_PATH for the identified Sim Coaster retail fixture." );
+		var report = InstallationDiscovery.InspectAsync( tpiRoot! ).GetAwaiter().GetResult().Reports.Single();
+		Assert.IsFalse( report.IsUsable );
+		Assert.IsTrue( report.Problems.Any( problem => problem.Contains( "Sim Coaster retail edition" ) ) );
+		// Unknown edits are not classified as TPI by their folder tree alone.
+		var unknown = CreateGame( "modified" );
+		File.WriteAllText( Path.Combine( unknown, "Data", "levels", "Standard.sam" ), "modified settings" );
+		Assert.IsTrue( GameInstallation.Inspect( unknown ).IsUsable );
+	}
+
+	[TestMethod]
 	public void DataFolderSpellingDoesNotMatter()
 	{
 		Assert.IsTrue( GameInstallation.Inspect( CreateGame( "cd-mount", dataSpelling: "DATA" ) ).IsUsable );
@@ -141,7 +156,7 @@ public class SetupTests
 	{
 		Assert.IsTrue( GamePathResolution.IsInteractive( Array.Empty<string>() ) );
 		Assert.IsTrue( GamePathResolution.IsInteractive( new[] { "--sandbox" } ) );
-		foreach ( var tool in new[] { "--smoke-test", "--validate-assets", "--inspect-model", "--headless", "--export-park", "--import-park" } )
+		foreach ( var tool in new[] { "--smoke-test", "--validate-assets", "--inspect-model", "--headless", "--build-texture-pack", "--capture-world", "--export-park", "--import-park" } )
 			Assert.IsFalse( GamePathResolution.IsInteractive( new[] { tool } ), tool );
 	}
 }

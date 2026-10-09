@@ -73,7 +73,7 @@ public sealed class RideVM
 	public RideVMState State { get; private set; } = RideVMState.Running;
 	public string? FaultMessage { get; private set; }
 
-	/// <summary>Index of the next instruction to execute.</summary>
+	/// <summary>Index of the next instruction to execute, or -10000 after a native diagnostic abort.</summary>
 	public int ProgramCounter { get; private set; }
 	public IReadOnlyList<Instruction> Instructions => instructions;
 	public int[] Variables { get; }
@@ -228,6 +228,17 @@ public sealed class RideVM
 		Log?.Warning( $"RSE '{ScriptName}' ({SourceName}) faulted: {message}" );
 	}
 
+	/// <summary>
+	/// Maps a native negative-PC diagnostic stop onto the VM's fault state.
+	/// A non-variable COPY leaves its source word to the next native dispatch;
+	/// that invalid opcode tag produces PC -10000. Parsed instructions abort directly.
+	/// </summary>
+	internal void Abort( string message )
+	{
+		ProgramCounter = -10000;
+		Fault( message );
+	}
+
 	/// <summary>Stops this script and its children and removes them from the world.</summary>
 	public void Stop()
 	{
@@ -292,6 +303,15 @@ public sealed class RideVM
 	internal double AnimationsEndMilliseconds => animationsEndMilliseconds;
 
 	internal int Effect( Opcode opcode, Operand[] operands ) => Effects.Perform( new RideEffectCall( this, opcode, operands ) );
+
+	/// <summary>An effect result is unavailable when the implementation records this call as unimplemented.</summary>
+	internal bool TryEffect( Opcode opcode, Operand[] operands, out int result )
+	{
+		unimplementedEffects.TryGetValue( opcode, out var before );
+		result = Effect( opcode, operands );
+		unimplementedEffects.TryGetValue( opcode, out var after );
+		return after == before;
+	}
 
 	/// <summary>Counts an unimplemented effect; returns true the first time for this opcode.</summary>
 	public bool RecordUnimplementedEffect( Opcode opcode )

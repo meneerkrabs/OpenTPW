@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "scope": "synthetic scalar evidence; no original assets or game execution",
+  "tests": [
+    "category binding and first-member fallback",
+    "default and explicit channel bounds",
+    "scaled and unscaled clock flag",
+    "first frame and pre-start ambiguity",
+    "end and unknown playback boundaries",
+    "single precision after long gaps",
+    "GETANIM_CH ID and flag4 query",
+    "per-mille speed and independent deadline divisor",
+    "signed trigger clamp boundaries",
+    "ordinary signed trigger deadline",
+    "unsupported numeric input domains"
+  ],
+  "defaultChannel": 0,
+  "channelStride": 56,
+  "unscaledClockFlag": 64,
+  "unsupported": [
+    "before-start/clock wrap",
+    "at/after end",
+    "loop/deferred/mixing flags",
+    "WAITANIM unsigned path",
+    "exceptional FP or deadline overflow"
+  ]
+}

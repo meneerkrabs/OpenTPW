@@ -21,32 +21,47 @@ internal sealed class SetupWizard : IDisposable
 	private readonly GraphicsDevice device;
 	private readonly ImGuiRenderer imGui;
 	private readonly CommandList commandList;
-	private readonly IReadOnlyList<InstallationReport> detected;
+	private IReadOnlyList<InstallationReport> detected;
+	private readonly CancellationTokenSource lifetime = new();
+	private Task<InstallationDiscoveryResult>? discovery;
+	private bool discoveryTimedOut;
+	private Task<InstallationDiscoveryResult>? inspection;
+	private CancellationTokenSource? inspectionCancellation;
+	private string? pendingInspection;
+	private Point2 logicalSize;
+	internal const int MinimumWidth = 520;
+	internal const int MinimumHeight = 420;
+	internal static float DpiScale( Point2 logical, Point2 pixels ) => Math.Max( 1f, pixels.X / (float)Math.Max( 1, logical.X ) );
 	private float scale;
 
 	private Page page;
 	private string gamePath;
 	private readonly string? savedCd;
 	private InstallationReport? gameReport;
-	private Task<string?>? picker;
+	private Task<InstallationDiscoveryResult>? picker;
 	private Action<string>? pickerTarget;
 	private string? dropped;
 	private Result? result;
 	private bool cancelled;
 
-	private SetupWizard( SetupSettings saved, IReadOnlyList<InstallationReport> detected )
+	private SetupWizard( SetupSettings saved, InstallationDiscoveryResult? initialDiscovery )
 	{
-		this.detected = detected;
+		detected = initialDiscovery?.Reports ?? Array.Empty<InstallationReport>();
+		discoveryTimedOut = initialDiscovery?.TimedOut == true;
 		gamePath = saved.GamePath ?? detected.FirstOrDefault()?.Path ?? "";
 		savedCd = saved.CdPath;
 		if ( gamePath.Length > 0 )
-			gameReport = GameInstallation.Inspect( gamePath );
+			pendingInspection = gamePath;
 
 		window = new Window( 760, 560, "OpenTPW setup" );
+		SdlDisplay.SetMinimumSize( window.SdlWindow, MinimumWidth, MinimumHeight );
+		logicalSize = window.Size;
+		if ( initialDiscovery == null )
+			discovery = InstallationDiscovery.SearchAsync( cancellation: lifetime.Token );
 		window.SdlWindow.DragDrop += drop => dropped = drop.File;
 		device = Renderer.CreateDevice( window );
 		var pixels = window.PixelSize;
-		scale = Math.Max( 1f, pixels.X / (float)Math.Max( 1, window.Size.X ) );
+		scale = DpiScale( logicalSize, pixels );
 		imGui = new ImGuiRenderer( device, device.MainSwapchain.Framebuffer.OutputDescription, pixels.X, pixels.Y );
 		ImGui.GetIO().FontGlobalScale = scale * 1.25f;
 		ImGui.GetStyle().ScaleAllSizes( scale );
@@ -54,11 +69,9 @@ internal sealed class SetupWizard : IDisposable
 	}
 
 	/// <summary>Shows the wizard until the player finishes (result) or closes it (null).</summary>
-	public static Result? Run( SetupSettings saved, IEnumerable<string> candidates )
+	public static Result? Run( SetupSettings saved, InstallationDiscoveryResult? discovery = null )
 	{
-		var detected = candidates.Select( GameInstallation.Inspect ).Where( report => report.IsUsable )
-			.DistinctBy( report => report.Path ).ToArray();
-		using var wizard = new SetupWizard( saved, detected );
+		using var wizard = new SetupWizard( saved, discovery );
 		return wizard.Loop();
 	}
 
@@ -82,14 +95,15 @@ internal sealed class SetupWizard : IDisposable
 			{
 				device.MainSwapchain.Resize( (uint)pixels.X, (uint)pixels.Y );
 				imGui.WindowResized( pixels.X, pixels.Y );
-				// Moving to a display with another scale factor changes pixels per point.
-				var newScale = Math.Max( 1f, pixels.X / (float)window.Size.X );
-				if ( Math.Abs( newScale - scale ) > 0.01f )
-				{
-					ImGui.GetStyle().ScaleAllSizes( newScale / scale );
-					scale = newScale;
-					ImGui.GetIO().FontGlobalScale = scale * 1.25f;
-				}
+			}
+			// Logical size can change while the drawable stays fixed during a DPI transition.
+			logicalSize = window.Size;
+			var newScale = DpiScale( logicalSize, pixels );
+			if ( Math.Abs( newScale - scale ) > 0.01f )
+			{
+				ImGui.GetStyle().ScaleAllSizes( newScale / scale );
+				scale = newScale;
+				ImGui.GetIO().FontGlobalScale = scale * 1.25f;
 			}
 			var now = clock.Elapsed.TotalSeconds;
 			imGui.Update( (float)(now - previous), new ScaledInput( snapshot, scale ) );
@@ -111,9 +125,37 @@ internal sealed class SetupWizard : IDisposable
 
 	private void ApplyPickerAndDrop()
 	{
+		if ( discovery is { IsCompleted: true } )
+		{
+			if ( discovery.IsCompletedSuccessfully )
+			{
+				detected = discovery.Result.Reports.Where( report => report.IsUsable ).DistinctBy( report => report.Path ).ToArray();
+				discoveryTimedOut = discovery.Result.TimedOut;
+			}
+			discovery = null;
+		}
+		if ( inspection is { IsCompleted: true } )
+		{
+			if ( inspection.IsCompletedSuccessfully && inspectionCancellation?.IsCancellationRequested == false )
+			{
+				var report = inspection.Result.Reports.FirstOrDefault() ?? new InstallationReport( gamePath, null,
+					Array.Empty<string>(), new[] { "This folder could not be inspected. Choose an available local folder or CD." }, Array.Empty<string>() );
+				gameReport = report;
+				if ( report.IsUsable ) gamePath = report.Path;
+			}
+			inspection = null;
+			inspectionCancellation?.Dispose();
+			inspectionCancellation = null;
+		}
+		if ( inspection == null && pendingInspection is { } pending )
+		{
+			pendingInspection = null;
+			inspectionCancellation = CancellationTokenSource.CreateLinkedTokenSource( lifetime.Token );
+			inspection = InstallationDiscovery.InspectAsync( pending, cancellation: inspectionCancellation.Token );
+		}
 		if ( picker is { IsCompleted: true } )
 		{
-			var chosen = picker.Status == TaskStatus.RanToCompletion ? picker.Result : null;
+			var chosen = picker.Status == TaskStatus.RanToCompletion ? picker.Result.Reports.FirstOrDefault()?.Path : null;
 			if ( chosen != null )
 				pickerTarget?.Invoke( chosen );
 			picker = null;
@@ -122,8 +164,7 @@ internal sealed class SetupWizard : IDisposable
 		if ( dropped != null )
 		{
 			// A dropped file means its folder.
-			var folder = Directory.Exists( dropped ) ? dropped : Path.GetDirectoryName( dropped ) ?? dropped;
-			SetGamePath( folder );
+			SetGamePath( dropped );
 			page = Page.GameFolder;
 			dropped = null;
 		}
@@ -165,7 +206,9 @@ internal sealed class SetupWizard : IDisposable
 			}
 		}
 		else
-			ImGui.TextWrapped( "No copy of Theme Park World was found automatically." );
+			ImGui.TextWrapped( discovery != null ? "Looking for Theme Park World..." : discoveryTimedOut
+				? "Automatic search could not finish. You can choose the game folder below."
+				: "No copy of Theme Park World was found automatically." );
 		ImGui.Spacing();
 		Footer( canGoBack: false, nextLabel: "Choose a folder", canGoNext: true, next: () => page = Page.GameFolder );
 	}
@@ -204,9 +247,9 @@ internal sealed class SetupWizard : IDisposable
 		ImGui.BeginDisabled( busy );
 		if ( ImGui.Button( busy ? "Waiting..." : "Browse...", new Numerics.Vector2( 110 * scale, 0 ) ) )
 		{
-			var initial = Directory.Exists( path ) ? path : null;
+			var initial = gameReport?.Path;
 			pickerTarget = set;
-			picker = Task.Run( () => FolderPicker.Pick( "Choose the Theme Park World folder", initial ) );
+			picker = InstallationDiscovery.PickAsync( "Choose the Theme Park World folder", initial, lifetime.Token );
 		}
 		ImGui.EndDisabled();
 	}
@@ -214,10 +257,9 @@ internal sealed class SetupWizard : IDisposable
 	private void SetGamePath( string path )
 	{
 		gamePath = path;
-		gameReport = path.Trim().Length > 0 ? GameInstallation.Inspect( path ) : null;
-		// Picking the Data folder is corrected to its parent; show the folder that will be used.
-		if ( gameReport is { IsUsable: true } && gameReport.Path != path )
-			gamePath = gameReport.Path;
+		gameReport = null;
+		inspectionCancellation?.Cancel();
+		pendingInspection = path.Trim().Length > 0 ? path : null;
 	}
 
 	private static void Report( InstallationReport? report )
@@ -277,6 +319,9 @@ internal sealed class SetupWizard : IDisposable
 
 	public void Dispose()
 	{
+		lifetime.Cancel();
+		inspectionCancellation?.Cancel();
+		lifetime.Dispose();
 		commandList.Dispose();
 		imGui.Dispose();
 		device.Dispose();

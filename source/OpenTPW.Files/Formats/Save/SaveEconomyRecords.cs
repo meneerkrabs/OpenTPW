@@ -3,7 +3,12 @@ using System.Buffers.Binary;
 namespace OpenTPW;
 
 /// <summary>One 32-byte loan-offer record of an original save payload.</summary>
-public readonly record struct SaveLoanRecord( int Offset, int Index, long Amount, int Months, int MonthlyRepayment, int Opaque16, int Opaque20, int Opaque28 );
+public readonly record struct SaveLoanRecord( int Offset, int Index, bool Available, int Amount, int AprPercent, int Months,
+	int MonthlyRepayment, bool Bought, int MonthsRepaid, int LenderNameIndex );
+
+/// <summary>The seven 32-bit bank fields immediately before the loan records.</summary>
+public readonly record struct SaveBankRecord( int Offset, int AdmissionFee, int Balance, int BatchBalance, bool WithdrawalsEnabled,
+	int LastBalance, uint TurnEnteredRed, int ProfitThisYear );
 
 /// <summary>One 45-byte challenge record of an original save payload (field order differs from <c>Challenges.sam</c>).</summary>
 public readonly record struct SaveChallengeRecord( int Offset, int Type, int TargetTime, int TargetValue, int TargetObject, int TargetObject2, int Prize, int FollowupType, bool Independent );
@@ -13,48 +18,53 @@ public readonly record struct SaveChallengeRecord( int Offset, int Type, int Tar
 /// docs/TPWS-PAYLOAD.md). Only one fixture exists, so the locators are strict and the caller must
 /// cross-check the records against the original settings before trusting them:
 /// <list type="bullet">
-/// <item>Loan offers: consecutive 32-byte records <c>i64 amount, i32 months, i32 monthly repayment,
-/// i32 ?, i32 ?, i32 index, i32 ?</c> with indices 0, 1, 2, …</item>
+/// <item>Loan offers: consecutive eight-word records <c>available, amount, APR, months,
+/// monthly repayment, bought, months repaid, lender</c>. Index is their position, not the lender.</item>
 /// <item>Challenges: consecutive 45-byte records <c>i32 type, time, value, object, object2, prize,
 /// follow-up type</c>, 14 zero bytes, <c>u8 independent</c>, two zero bytes.</item>
-/// <item>The 32 bytes before the loan table (observed: <c>25, 87987 (i64), 1, 87787 (i64),
-/// −12013, 0</c>) are reported raw: they look like balance values but are not reconciled.</item>
+/// <item>The 28-byte bank prefix is <c>admission fee, balance, batch balance, withdrawals enabled,
+/// last balance, entered-red tick, profit this year</c>. The Mac serializer order matches the PC fixture.</item>
 /// </list>
 /// </summary>
 public sealed class SaveEconomyRecords
 {
 	public const int LoanRecordSize = 32;
+	public const int BankRecordSize = 28;
 	public const int ChallengeRecordSize = 45;
 	public const int MinimumLoanRecords = 4;
 	public const int MinimumChallengeRecords = 2;
 
-	private SaveEconomyRecords( IReadOnlyList<SaveLoanRecord> loans, IReadOnlyList<SaveChallengeRecord> challenges, IReadOnlyList<int> wordsBeforeLoans )
+	private SaveEconomyRecords( IReadOnlyList<SaveLoanRecord> loans, IReadOnlyList<SaveChallengeRecord> challenges, SaveBankRecord bank )
 	{
 		Loans = loans;
 		Challenges = challenges;
-		WordsBeforeLoans = wordsBeforeLoans;
+		Bank = bank;
 	}
 
 	public IReadOnlyList<SaveLoanRecord> Loans { get; }
 	public IReadOnlyList<SaveChallengeRecord> Challenges { get; }
-	/// <summary>Eight little-endian i32 words immediately before the loan table (opaque).</summary>
-	public IReadOnlyList<int> WordsBeforeLoans { get; }
+	public SaveBankRecord Bank { get; }
 
 	/// <summary>Locates the records; throws when either table is missing or ambiguous.</summary>
 	public static SaveEconomyRecords Parse( ReadOnlySpan<byte> payload )
 	{
 		var loans = FindUnique( payload, LoanRecordSize, MinimumLoanRecords, IsLoanRecord, "loan offer" );
+		if ( loans.Offset < BankRecordSize )
+			throw new InvalidDataException( "The save payload has a truncated bank prefix before the loan offer table." );
+		var bankOffset = loans.Offset - BankRecordSize;
+		if ( !IsFlag( Int( payload, bankOffset + 12 ) ) )
+			throw new InvalidDataException( "The save bank prefix has a non-boolean withdrawals-enabled flag." );
+		var bank = new SaveBankRecord( bankOffset, Int( payload, bankOffset ), Int( payload, bankOffset + 4 ),
+			Int( payload, bankOffset + 8 ), Int( payload, bankOffset + 12 ) != 0, Int( payload, bankOffset + 16 ),
+			BinaryPrimitives.ReadUInt32LittleEndian( payload.Slice( bankOffset + 20, 4 ) ), Int( payload, bankOffset + 24 ) );
 		var challenges = FindUnique( payload, ChallengeRecordSize, MinimumChallengeRecords, IsChallengeRecord, "challenge" );
 		var loanRecords = new List<SaveLoanRecord>();
 		for ( var index = 0; index < loans.Count; index++ )
-			loanRecords.Add( ReadLoan( payload, loans.Offset + index * LoanRecordSize ) );
+			loanRecords.Add( ReadLoan( payload, loans.Offset + index * LoanRecordSize, index ) );
 		var challengeRecords = new List<SaveChallengeRecord>();
 		for ( var index = 0; index < challenges.Count; index++ )
 			challengeRecords.Add( ReadChallenge( payload, challenges.Offset + index * ChallengeRecordSize ) );
-		var words = new List<int>();
-		for ( var index = 0; loans.Offset >= 32 && index < 8; index++ )
-			words.Add( Int( payload, loans.Offset - 32 + index * 4 ) );
-		return new SaveEconomyRecords( loanRecords, challengeRecords, words );
+		return new SaveEconomyRecords( loanRecords, challengeRecords, bank );
 	}
 
 	private delegate bool RecordTest( ReadOnlySpan<byte> payload, int offset, int index );
@@ -80,16 +90,21 @@ public sealed class SaveEconomyRecords
 	}
 
 	private static int Int( ReadOnlySpan<byte> payload, int offset ) => BinaryPrimitives.ReadInt32LittleEndian( payload.Slice( offset, 4 ) );
+	private static bool IsFlag( int value ) => value is 0 or 1;
 
 	private static bool IsLoanRecord( ReadOnlySpan<byte> payload, int offset, int index )
 	{
-		if ( offset + LoanRecordSize > payload.Length || Int( payload, offset + 24 ) != index )
+		if ( offset + LoanRecordSize > payload.Length || !IsFlag( Int( payload, offset ) ) || !IsFlag( Int( payload, offset + 20 ) ) )
 			return false;
-		var amount = BinaryPrimitives.ReadInt64LittleEndian( payload.Slice( offset, 8 ) );
-		var months = Int( payload, offset + 8 );
-		var monthly = Int( payload, offset + 12 );
+		var amount = Int( payload, offset + 4 );
+		var apr = Int( payload, offset + 8 );
+		var months = Int( payload, offset + 12 );
+		var monthly = Int( payload, offset + 16 );
+		var repaid = Int( payload, offset + 24 );
+		var lender = Int( payload, offset + 28 );
 		// [APPROX:ECON-045] loan/challenge record locators use plausibility bounds (one fixture) — evidence needed: a second TPWS/TPWI fixture
-		return amount is > 0 and <= 100_000_000 && months is > 0 and <= 600 && monthly > 0
+		return amount is > 0 and <= 100_000_000 && apr >= 0 && months is > 0 and <= 600 && monthly > 0
+			&& repaid >= 0 && repaid <= months && lender >= 0
 			&& (long)monthly * months >= amount - months && (long)monthly * months <= amount * 4;
 	}
 
@@ -115,9 +130,9 @@ public sealed class SaveEconomyRecords
 		return true;
 	}
 
-	private static SaveLoanRecord ReadLoan( ReadOnlySpan<byte> payload, int offset ) => new( offset, Int( payload, offset + 24 ),
-		BinaryPrimitives.ReadInt64LittleEndian( payload.Slice( offset, 8 ) ), Int( payload, offset + 8 ), Int( payload, offset + 12 ),
-		Int( payload, offset + 16 ), Int( payload, offset + 20 ), Int( payload, offset + 28 ) );
+	private static SaveLoanRecord ReadLoan( ReadOnlySpan<byte> payload, int offset, int index ) => new( offset, index,
+		Int( payload, offset ) != 0, Int( payload, offset + 4 ), Int( payload, offset + 8 ), Int( payload, offset + 12 ),
+		Int( payload, offset + 16 ), Int( payload, offset + 20 ) != 0, Int( payload, offset + 24 ), Int( payload, offset + 28 ) );
 
 	private static SaveChallengeRecord ReadChallenge( ReadOnlySpan<byte> payload, int offset ) => new( offset, Int( payload, offset ), Int( payload, offset + 4 ),
 		Int( payload, offset + 8 ), Int( payload, offset + 12 ), Int( payload, offset + 16 ), Int( payload, offset + 20 ), Int( payload, offset + 24 ), payload[offset + 42] != 0 );

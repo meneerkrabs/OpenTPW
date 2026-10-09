@@ -134,7 +134,8 @@ internal sealed class GameFlow : IDisposable
 			Level!.LoadSandbox();
 		}
 		else
-			StartLevel( entry.Level, original: true, developerPanels: false );
+			StartLevel( entry.Level, original: true, developerPanels: false,
+				gameMode: Mode == GameMode.InstantAction ? ParkGameMode.InstantAction : ParkGameMode.FullSimulation );
 	}
 
 	/// <summary>Creates a level with the original HUD. CLI paths keep the developer panels.</summary>
@@ -159,6 +160,8 @@ internal sealed class GameFlow : IDisposable
 
 	private void TearDown()
 	{
+		Hud?.Stack.Clear();
+		Menu?.Stack.Clear();
 		if ( Level != null )
 		{
 			Level.Dispose();
@@ -285,6 +288,8 @@ internal sealed class GameFlow : IDisposable
 
 	public void Dispose()
 	{
+		Hud?.Stack.Clear();
+		Menu?.Stack.Clear();
 		if ( chatOverlay != null )
 			global::Global.Render.OnOverlayRender -= chatOverlay.Draw;
 		chatOverlay?.Dispose();

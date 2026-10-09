@@ -636,6 +636,73 @@ initializer `0x8ef50` and camera vector/matrix update `0x8f1f4`; tracing the
 parsed fields through the lobby controller and interpolation is still needed.
 No 60° FOV, 3/s glide or focus behavior is certified by those class identities.
 
+## Bounded production model-binding integration
+
+The current UI model cache no longer treats a filename as the original registry
+identity. `UiModel` retains `RootNodeName` from `ModelFile.RootNodeIndex` and
+computes `DrawingKey` with the evidenced signed-byte recurrence. `UiModels`
+builds the actual root-key registry and exposes strict drawing-key/root-name
+lookups. Existing authored widget calls can still use explicit filename aliases;
+exact-case aliases take priority over an unambiguous case-insensitive fallback.
+Root names themselves are not case-folded or trimmed. Colliding drawing hashes
+and ambiguous asset aliases produce explicit diagnostics, not first-file selection.
+
+The all-278 corpus revealed a real duplicate: `shadow1.MD2` and
+`w_small_shadow.MD2` both have root `wshadow1`, key 1248416976. The ordinary
+loader's filename comparison at `code:0x13c170` resolves to imported `strcmp`
+and its matching branch returns without registration. The production registry
+keeps that specific shadow-file exclusion, while inventory/explicit asset lookup
+still exposes all 278 files. This yields 277 ordinary bindings and avoids
+pretending both files have distinct original keys. Upstream filename canonicalization
+is not generalized into root-name case folding.
+
+Verification locks the actual bug: a synthetic asset whose filename differs
+from its stored root could not be resolved before the fix. Tests additionally
+cover a sparse dummy root distinct from the first drawable frame, case-sensitive
+root variants, ambiguous filename variants, deliberate distinct-name hash
+collisions, the special shadow asset and collision detection after custom loads.
+The corpus test checks every asset's stored root against its independent ModelFile
+record and all ordinary key lookups. **56 UI tests pass, zero skips**, including
+the existing custom display/interface scaling tests. Build reports existing
+repository/package warnings; no dependency versions or unrelated sources changed.
+
+This integrates the root binding rule only. The 55-screen metadata reader stays
+standalone pending peer review; controller/layout/paint integration and original
+pixel verification remain open.
+
+## Current sign renderer correction plan
+
+The production call path was independently checked:
+`SignTextRenderer.RenderSign -> SignCanvas.Compose -> SignCanvas.SlotColor`.
+`SlotColor` clamps `Parameters[2..4]` into independent RGB channels and passes
+them to `SignTextLayout.DrawLine`. `SignFileTests.ReadsHeaderTextSlotsAndLogFont`
+currently asserts that RGB interpretation. This tests the existing implementation,
+not the original behavior, and contradicts the established effect arithmetic.
+
+A correction must remove that interpretation rather than rename its output:
+
+1. Preserve the slot floats as effect/material coefficients and correct the SGN
+   effect/header record boundaries with a bounded reader. Parse the original
+   per-effect source image/color blocks before assigning a final sign color.
+2. Keep glyph coverage separate from surface color. The original raster helper's
+   white text produces an 8-bit mask with integer 2×2 averaging; it does not
+   establish a flat white final sign material or a Windows hinting oracle.
+3. Apply shared base/diffuse/specular terms to the decoded source RGB, preserve
+   mask alpha, then perform the identified channel swizzle and output split/pack.
+   Validate flat and enabled-effect paths, boundary coefficients, missing blocks,
+   clipping and the 16-bit consumer separately.
+4. Replace the RGB assertion with meaningful regressions: modifying a material
+   coefficient affects the same lighting term across channels, not an arbitrarily
+   selected color channel. Use synthetic image/mask fixtures plus privately
+   identified original records; keep raw assets outside Git.
+
+No new guessed RGB or neutral-color replacement is proposed. Until the complete
+surface path is available, any mask-only preview must be explicit presentation
+policy with diagnostics; it cannot claim original final color. The binder's write
+scope does not include the sign compositor, so this plan is handed to the sign
+owner and the current contradictory runtime path remains identified as a required
+follow-up rather than being silently certified.
+
 ## Every UI approximation: result and concrete remaining dependency
 
 “Partial” means a replaceable subclaim is established; it does not close the

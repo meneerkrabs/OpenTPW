@@ -248,6 +248,37 @@ public class Md2VertexAnimationTests
 		Assert.AreEqual( new NVector3( 13, 12, 13 ), positions[2] );
 	}
 
+	/// <summary>
+	/// 0xa4a58 keeps each group's cursor between samples; only a clip bind (0xa5894 clearing node flag
+	/// 0x00800000, e.g. the loop replay through 0xa67d8) resets it. A fresh search equals the kept cursor
+	/// for times that do not decrease since the reset; a decrease without a reset extrapolates.
+	/// </summary>
+	[TestMethod]
+	public void KeptCursorEqualsFreshSearchUntilTimeDecreasesWithoutAReset()
+	{
+		var group = Read( CreateAnimation() ).Tracks[0].VertexAnimation!.Groups[2]; // ticks 0, 4, 10
+		var cursor = 0;
+		foreach ( var time in new[] { 0f, 1.5f, 4f, 4f, 4.25f, 9f, 10f } )
+		{
+			var kept = group.AdvanceKey( ref cursor, time, out var keptFraction );
+			Assert.AreEqual( group.FindKey( time, out var freshFraction ), kept, $"key at {time}" );
+			Assert.AreEqual( freshFraction, keptFraction, $"fraction at {time}" );
+		}
+
+		// Wrap without a bind (the 0xa7190 replay with flag 8 skips 0xa5894): the cursor stays on 4…10.
+		Assert.AreEqual( 1, group.AdvanceKey( ref cursor, 1, out var stale ) );
+		Assert.AreEqual( -0.5f, stale );
+		Assert.AreEqual( 0, group.FindKey( 1, out var fresh ) );
+		Assert.AreEqual( 0.25f, fresh );
+
+		// After a bind the cursor restarts at key 0, which is the fresh search again.
+		cursor = 0;
+		Assert.AreEqual( 0, group.AdvanceKey( ref cursor, 1, out var rebound ) );
+		Assert.AreEqual( fresh, rebound );
+		cursor = 2;
+		Assert.ThrowsException<ArgumentOutOfRangeException>( () => group.AdvanceKey( ref cursor, 1, out _ ) );
+	}
+
 	[TestMethod]
 	public void SetModePoseWritesStaticKeyZeroAndAnimatedGroups()
 	{

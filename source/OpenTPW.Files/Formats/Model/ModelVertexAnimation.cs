@@ -30,23 +30,34 @@ public sealed class ModelVertexGroup
 	}
 
 	/// <summary>
-	/// Cursor search of SimThemePark 0xa4a58: from key 0, advance while
-	/// <c>ticks[c + 1] &lt; time</c>, so a time on a key tick stays on the earlier segment with
-	/// fraction 1 and a time before the first key extrapolates. The original keeps the cursor
-	/// between frames and only resets it while node-state flag 0x00800000 is clear; for times
-	/// that do not decrease since the reset that gives this result. Past the last key the
-	/// original reads beyond the tick array, so that is rejected.
+	/// <see cref="AdvanceKey"/> from a cursor reset to key 0. The original keeps the cursor between
+	/// samples and resets it only while node-state flag 0x00800000 is clear (after a clip bind), so
+	/// this equals its result whenever no sample since the last reset had a later time.
 	/// </summary>
 	public int FindKey( float time, out float fraction )
 	{
+		var cursor = 0;
+		return AdvanceKey( ref cursor, time, out fraction );
+	}
+
+	/// <summary>
+	/// Cursor search of SimThemePark 0xa4a58: advance <paramref name="cursor"/> while
+	/// <c>ticks[c + 1] &lt; time</c> and never move it back, so a time on a key tick stays on the
+	/// earlier segment with fraction 1, and a time before <c>ticks[cursor]</c> (the first key, or a
+	/// segment kept from an earlier sample at a later time) extrapolates with a negative fraction. Past the last
+	/// key the original reads beyond the tick array, so that is rejected.
+	/// </summary>
+	public int AdvanceKey( ref int cursor, float time, out float fraction )
+	{
 		if ( float.IsNaN( time ) || Ticks.Count < 2 || time > Ticks[^1] )
 			throw new ArgumentOutOfRangeException( nameof( time ), "Time lies outside the traced vertex-key domain." );
-		var key = 0;
-		while ( Ticks[key + 1] < time )
-			key++;
-		float start = Ticks[key];
-		fraction = (time - start) / (Ticks[key + 1] - start);
-		return key;
+		if ( (uint)cursor > (uint)(Ticks.Count - 2) )
+			throw new ArgumentOutOfRangeException( nameof( cursor ) );
+		while ( Ticks[cursor + 1] < time )
+			cursor++;
+		float start = Ticks[cursor];
+		fraction = (time - start) / (Ticks[cursor + 1] - start);
+		return cursor;
 	}
 }
 

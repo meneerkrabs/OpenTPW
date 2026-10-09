@@ -166,6 +166,7 @@ def check_md2(root: Path) -> dict:
     versions = collections.Counter()
     statuses = collections.Counter()
     geometry = collections.defaultdict(list)
+    geometry_checks = collections.Counter()
     for wad, name, data in members:
         major, minor = u32(data, 4), u32(data, 8)
         trailer = u32(data, 0x98) if major == 221 else 0
@@ -177,6 +178,10 @@ def check_md2(root: Path) -> dict:
                                     u32(data, 0))[0]] += 1
         if major == 221 and not trailer:
             geometry[wad].append((name, data))
+            # Mesh-record flag 0x00800000 (static group applied, cursors kept) starts clear.
+            meshes, records = u16(data, 0x44), u32(data, 0x70)
+            geometry_checks['mesh_records_cursor_flag_clear' if all(not u32(data, records + 160 * m) & 0x00800000
+                                                             for m in range(meshes)) else 'mesh_records_cursor_flag_set'] += 1
     checks = collections.Counter()
     for wad, name, data in members:
         if u32(data, 4) != 221 or not u32(data, 0x98):
@@ -230,6 +235,9 @@ def check_md2(root: Path) -> dict:
             if max(last_ticks) == duration:
                 checks['quantized_last_tick_equals_duration'] += 1
             static = 1 if header[0] & 2 else None
+            # The runtime key cursor (+16) starts at 0, so the first sample searches from key 0.
+            checks['quantized_group_cursors_zero' if all(u32(data, group_table + 20 * g + 16) == 0
+                                                         for g in range(groups)) else 'quantized_group_cursor_nonzero'] += 1
             clip_end = u32(data, trailer + 8) - u32(data, trailer + 4)
             # 0xa4a58 has no upper bound on its cursor: every animated group must reach the clip end.
             checks['quantized_animated_groups_reach_clip_end' if all(
@@ -244,6 +252,7 @@ def check_md2(root: Path) -> dict:
                 if sum(u16(data, group_table + 20 * g + 2) for g in range(1, groups)) == positions:
                     checks['quantized_groups_cover_mesh_vertices'] += 1
     return {'members': len(members), 'versions': dict(versions), 'load_status_by_model': dict(statuses),
+            'geometry_checks': dict(geometry_checks),
             'animation_checks': dict(sorted(checks.items()))}
 
 

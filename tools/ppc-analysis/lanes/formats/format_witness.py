@@ -445,6 +445,111 @@ def md2_runtime_binding(app: Image) -> dict:
             'relative_animation_kept_when': 'loader argument & 0x20000 (0x594c8: flag word & 0x01000000)'}
 
 
+def md2_clip_lifecycle(app: Image) -> dict:
+    """Loop replay, cursor reset, copy-back gate and normal recomputation around the vertex sampler."""
+    # Object update 0xa7960(object, r4, r5) passes r4 to the channel update 0xa7190 as r27.
+    d(app, 0xa796c, (ADDI, 30, 4, 0), 'object update keeps its second argument')
+    d(app, 0xa7a58, (ADDI, 5, 30, 0), 'passed as the channel update third argument')
+    require(app.call(0xa7a5c), 0xa7190, 'channel update call')
+    d(app, 0xa71a4, (ADDI, 27, 5, 0), 'channel update keeps it in r27')
+    # Wrap: AnimFrame (+32) > TotalAnimFrames (+28), no deferred clip (+36 == 12), object flags 0x18 clear.
+    d(app, 0xa7358, (LFS, 1, 26, 32), 'channel AnimFrame')
+    d(app, 0xa735c, (LFS, 0, 26, 28), 'channel TotalAnimFrames')
+    xop(app, 0xa7360, (63, 32, 0, 1, 0), 'fcmpo AnimFrame, TotalAnimFrames')
+    bc(app, 0xa7364, (BF, CR_GT, 0xa74f4), 'not past the end: no wrap')
+    d(app, 0xa7380, (LWZ, 4, 26, 36), 'channel DeferredAnimID')
+    cmpli(app, 0xa7384, (10, 0, 4, 12), 'no deferred clip is 12')
+    bc(app, 0xa7388, (BF, CR_EQ, 0xa74a8), 'deferred clip present: switch to it')
+    rot(app, 0xa7390, (RLWINM, 3, 0, 0, 27, 28, 1), 'object flags 0x18 (stop or hold)')
+    bc(app, 0xa7394, (BT, CR_EQ, 0xa7420), 'neither set: replay path')
+    rot(app, 0xa7428, (RLWINM, 0, 0, 0, 31, 31, 1), 'channel loop bit 0x1')
+    bc(app, 0xa742c, (BT, CR_EQ, 0xa7478), 'loop bit clear: no replay of the same clip')
+    # Replay of the same AnimID/SubAnim through 0xa67d8 with flags 1 (r27 != 0) or 9 (r27 == 0).
+    require(compare_immediate(app.w(0xa7448)), (11, 0, 27, 0), 'r27 tested')
+    bc(app, 0xa744c, (BT, CR_EQ, 0xa7458), 'r27 == 0 selects flag 8')
+    d(app, 0xa7450, (ADDI, 0, 0, 0), 'r27 != 0: no flag 8')
+    d(app, 0xa7458, (ADDI, 0, 0, 8), 'r27 == 0: flag 8')
+    d(app, 0xa745c, (LWZ, 4, 26, 4), 'same AnimID')
+    d(app, 0xa7464, (LWZ, 5, 26, 8), 'same SubAnim')
+    d(app, 0xa746c, (ORI, 0, 7, 1), 'flags | 1 (loop)')
+    require(app.call(0xa7470), 0xa67d8, 'replay call')
+    # 0xa67d8: carry = time - duration, bind only when flags & 0xC == 0, old clip = current clip.
+    d(app, 0xa68f4, (LFS, 1, 25, 32), 'replay: AnimFrame')
+    d(app, 0xa68f8, (LFS, 0, 25, 28), 'replay: TotalAnimFrames')
+    bc(app, 0xa6900, (BF, CR_GT, 0xa6910), 'not past the end: no carry')
+    fp(app, 0xa6904, (FSUBS, 31, 1, 0, 0), 'carry = AnimFrame - TotalAnimFrames')
+    d(app, 0xa6948, (LWZ, 4, 3, 4), 'old clip = current clip entry +4')
+    rot(app, 0xa6994, (RLWINM, 26, 0, 0, 28, 29, 1), 'replay flags 0xC')
+    bc(app, 0xa6998, (BF, CR_EQ, 0xa69a8), 'flag 4 or 8: no bind')
+    d(app, 0xa69a0, (ADDI, 5, 30, 0), 'new clip')
+    require(app.call(0xa69a4), 0xa5894, 'bind call')
+    xop(app, 0xa69ac, (63, 72, 1, 0, 31), 'start time argument = carry')
+    require(app.call(0xa69c4), 0xa6398, 'set-clip call')
+    # 0xa6398 caps the start time at the duration.
+    xop(app, 0xa641c, (63, 32, 0, 1, 0), 'start time against duration')
+    bc(app, 0xa6420, (BF, CR_GT, 0xa6428), 'within the duration: kept')
+    xop(app, 0xa6424, (63, 72, 1, 0, 0), 'else capped to the duration')
+    # The object-list update passes r4 = 0 (flag 8); other updates pass 1.
+    for site, r4, r5 in ((0x4d39c, 1, 0), (0x4d420, 0, 8), (0x4d4b0, 1, 4)):
+        require(app.call(site), 0xa7960, f'object update call {site:#x}')
+        d(app, site - 8, (ADDI, 4, 0, r4), f'second argument at {site:#x}')
+        d(app, site - 4, (ADDI, 5, 0, r5), f'third argument at {site:#x}')
+    # With r27 == 0 the channel samples only when object flag 0x00400000 is set.
+    rot(app, 0xa7644, (RLWINM, 0, 0, 0, 9, 9, 1), 'object flag 0x00400000')
+    bc(app, 0xa7648, (BF, CR_EQ, 0xa7668), 'set: sample')
+    bc(app, 0xa7650, (BT, CR_EQ, 0xa76f4), 'r27 == 0: no sample')
+    # Mesh-record flag 0x00800000 is cleared only by the bind and the frame-capture loop 0x4f584.
+    clears = [offset for offset in range(0, len(app.code) - 3, 4)
+              if rotate(app.w(offset))[0] == RLWINM and rotate(app.w(offset))[3:6] == (0, 9, 7)]
+    require(clears, [0x2234c, 0x4d2c0, 0x4fa4c, 0x4fa58, 0x4fa64, 0x4fa70, 0x4fa7c, 0x4fa88, 0x4fa94, 0x4faa0,
+                     0x4fac0, 0x5d310, 0x12bc90, 0x12bcb8], 'rlwinm clears of bit 0x00800000')
+    d(app, 0x4fa2c, (LWZ, 4, 26, 112), 'frame-capture loop walks the mesh records')
+    d(app, 0x4fac8, (ADDI, 4, 4, 160), 'mesh record stride')
+    d(app, 0x5d30c, (LWZ, 0, 31, 48), '0x5d310 clears a header flag word, not a mesh record')
+    # Copy-back gate in the bind: skipped when r27 bit 0 is set and header flag 0x4 is clear.
+    rot(app, 0xa58c8, (RLWINM, 0, 8, 0, 28, 28, 1), 'object flag 0x8')
+    d(app, 0xa58cc, (LWZ, 27, 7, 16396), 'global option word')
+    bc(app, 0xa58dc, (BF, CR_EQ, 0xa58e8), 'object flag 0x8 set')
+    rot(app, 0xa58e0, (RLWINM, 0, 0, 0, 11, 11, 1), 'object flag 0x00100000')
+    bc(app, 0xa58e4, (BT, CR_EQ, 0xa594c), '0x00100000 clear: option word unchanged')
+    bc(app, 0xa58ec, (BT, CR_EQ, 0xa5948), '0x8 clear and 0x00100000 set: set bit 0')
+    require(branch_target(app.w(0xa5944), 0xa5944, link=False), 0xa594c, 'flag 0x8 path skips the set')
+    d(app, 0xa5948, (ORI, 27, 27, 1), 'option bit 0 forced')
+    rot(app, 0xa5a5c, (RLWINM, 27, 0, 0, 31, 31, 1), 'option bit 0')
+    bc(app, 0xa5a60, (BT, CR_EQ, 0xa5a70), 'clear: copy back')
+    d(app, 0xa5a64, (LWZ, 0, 24, 48), 'header flags')
+    bc(app, 0xa5a6c, (BT, CR_EQ, 0xa5d24), 'set and header flag 0x4 clear: skip the copy-back')
+    bc(app, 0xa5d20, (BF, CR_EQ, 0xa5b98), 'copy-back loop ends before 0xa5d24')
+    # Relative-animation models: per-update restore through the bind without a new clip, then normals.
+    d(app, 0xa79e8, (LWZ, 0, 3, 48), 'object update: header flags')
+    rot(app, 0xa79ec, (RLWINM, 0, 0, 0, 29, 29, 1), 'header flag 0x4')
+    bc(app, 0xa79f0, (BT, CR_EQ, 0xa7a44), 'clear: no restore')
+    d(app, 0xa7a28, (ADDI, 5, 0, 0), 'no new clip')
+    require(app.call(0xa7a30), 0xa5894, 'restore through the bind')
+    d(app, 0xa7b20, (LWZ, 0, 27, 48), 'after the channels: header flags')
+    rot(app, 0xa7b24, (RLWINM, 0, 0, 0, 29, 29, 1), 'header flag 0x4')
+    bc(app, 0xa7b28, (BT, CR_EQ, 0xa7b68), 'clear: no normal recomputation here')
+    rot(app, 0xa7b3c, (RLWINM, 0, 0, 0, 15, 15, 1), 'mesh flag 0x00010000 (after a vertex pass)')
+    require(app.call(0xa7b48), 0xa772c, 'face-normal recomputation')
+    d(app, 0xa7750, (LWZ, 30, 3, 112), 'faces at mesh record +112')
+    d(app, 0xa7754, (LHZ, 31, 3, 92), 'face count at mesh record +92')
+    d(app, 0xa778c, (LWZ, 11, 28, 96), 'positions at mesh record +96')
+    d(app, 0xa779c, (LWZ, 8, 28, 100), 'normals at mesh record +100')
+    recompute = app.calls_to(0xa772c)
+    require(recompute, [0xa7924, 0xa7b48, 0x19ac0c], 'face-normal recomputation call sites')
+    require(app.calls_to(0xa78ec), [0x567e4, 0x5a4b4], 'all-mesh recomputation call sites')
+    rot(app, 0x19abf8, (RLWINM, 3, 0, 0, 3, 3, 1), 'renderer: mesh flag 0x10000000')
+    rot(app, 0x19ac00, (RLWINM, 3, 0, 0, 15, 15, 1), 'renderer: mesh flag 0x00010000')
+    return {'replay': 'AnimFrame > TotalAnimFrames, no deferred clip, object flags 0x18 clear, channel bit 0x1: '
+                      'same clip through 0xa67d8 starting at min(time - duration, duration)',
+            'replay_flags': {'object_update_r4_nonzero': 1, 'object_update_r4_zero': 9},
+            'cursor_reset': 'bind 0xa5894 (flags & 0xC == 0) or frame-capture loop 0x4f584',
+            'object_list_update_r4_zero': '0x4d420 (flag 8; samples only with object flag 0x00400000)',
+            'copy_back_when': 'header flag 0x4, or option bit 0 clear and not (object 0x8 clear and 0x00100000 set)',
+            'normal_recompute_sites': recompute,
+            'relative_animation_update': 'restore via 0xa5894 without a new clip, add, recompute face normals'}
+
+
 # ------------------------------------------------------------------ TPWS
 def tpws_writer(app: Image) -> dict:
     base, first = app.toc_string(0x11cb84, 31)
@@ -645,6 +750,7 @@ def inspect(root: Path) -> dict:
               'md2_vertex_packing': md2_vertex_packing(engine),
               'md2_runtime': md2_runtime(app),
               'md2_runtime_binding': md2_runtime_binding(app),
+              'md2_clip_lifecycle': md2_clip_lifecycle(app),
               'tpws_writer': tpws_writer(app),
               'tpws_schema': tpws_schema(app),
               'tpws_cells': tpws_cells(app),
@@ -654,7 +760,7 @@ def inspect(root: Path) -> dict:
     return result
 
 
-ADDRESS_KEYS = {'code_entry', 'ride_loader_call_sites', 'bind_clear_mask', 'relative', 'set_mode', 'vertex_sampler', 'vertex_group_dispatch', 'record_sampler', 'key_search',
+ADDRESS_KEYS = {'code_entry', 'normal_recompute_sites', 'ride_loader_call_sites', 'bind_clear_mask', 'relative', 'set_mode', 'vertex_sampler', 'vertex_group_dispatch', 'record_sampler', 'key_search',
                 'loader_call_sites', 'writer', 'action_record_writer', 'world_writer', 'writer_call',
                 'final_untagged_writer', 'map_save', 'handler', 'draw_8888', 'conversion_code',
                 'divide_by_15_multiplier', 'divide_by_255_multiplier', 'magic'}

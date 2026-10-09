@@ -162,10 +162,12 @@ public sealed class ObjectAnimator
 	{
 		if ( track.VertexAnimation == null )
 			return "the 12-byte vertex layout (record flag 0x4000) is not decoded";
-		// The sampler adds instead of sets under this flag (0xa4a58/0xa4f68). The ride loader strips it unless
-		// an untraced ride flag word allows it (0x58a3c), and what resets the summed positions was not traced.
+		// The sampler adds instead of sets under this flag (0xa4a58/0xa4f68); each update first restores the
+		// clip's channels from the base model (0xa7960 -> 0xa5894 without a new clip) and afterwards
+		// recomputes face normals (0xa772c). Not implemented; the ride loader strips the flag unless an
+		// untraced ride flag word allows it (0x58a3c), and no catalog model has it.
 		if ( (model.HeaderFlags & ModelFile.RelativeAnimationFlag) != 0 )
-			return "relative-animation model (header flag 0x4) adds vertex keys; its reset is not traced";
+			return "relative-animation model (header flag 0x4) adds vertex keys to a per-update base copy; not implemented";
 		var mesh = meshByNode[track.NodeIndex];
 		if ( mesh < 0 )
 			return "the node has no mesh";
@@ -198,8 +200,12 @@ public sealed class ObjectAnimator
 
 	/// <summary>
 	/// The winning clip's vertex track sets every position of the mesh (set mode, static group plus
-	/// animated groups at the clip tick). Without one the mesh shows its stored positions, as the original
-	/// copies them back from the base model when a clip that animated them is replaced (0xa5894).
+	/// animated groups at the clip tick). A fresh key search per sample equals the original's kept cursor
+	/// because its loop replay rebinds the clip (0xa7190 -> 0xa67d8 -> 0xa5894), which resets the cursor;
+	/// the object-list update (0x4d354, flag 8) replays without a bind and is not modelled.
+	/// Without a track the mesh shows its stored positions. That is an OpenTPW choice: the original copies
+	/// them back on a clip change only when header flag 0x4 is set or global option bit 0 is clear and the
+	/// object does not have flag 0x00100000 with 0x8 clear (0xa5894); otherwise the last pose stays.
 	/// </summary>
 	private void UpdateVertices( int mesh, Channel? channel, ModelVertexAnimation? animation )
 	{

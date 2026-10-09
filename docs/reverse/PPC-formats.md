@@ -23,7 +23,7 @@ OPENTPW_NATIVE_SHADER_TESTS=1 dotnet test source/OpenTPW.Tests --filter "FullyQu
 ```
 
 - `format_witness.py` refuses any container whose SHA-256 differs from the pins
-  below, then makes 353 checks of instruction fields, branch conditions, relocated TOC slots, literal
+  below, then makes 438 checks of instruction fields, branch conditions, relocated TOC slots, literal
   constants and label strings at the offsets cited here, and prints interpreted
   JSON (labels, widths, constants, offsets). It never executes code and does not
   print bytes or instruction text. It bypasses `analyze.py` and its heuristic
@@ -220,15 +220,28 @@ confirming the existing `P0, (C, C, P)…` reading. Model: `bezier`.
 - **Clip bind 0xa5894** (target and base header, each as object +8 → +4): for
   every record of the clip being replaced it clears node-state flags 0x00800000
   (with header flag 0x4) or 0x00F40000 (without), which includes the
-  static-group/cursor-reset flag. Channels the replaced clip animated but the
-  new one does not (`old & ~new` per node, 0xa5aa8) are copied back from the
-  base header: matrix rows for 0x289, the vertex block (`(n + 3)/4 × 48` bytes
+  static-group/cursor-reset flag. Then, **only when header flag 0x4 is set or
+  global option bit 0 (+16396) is clear and the object does not have flag
+  0x00100000 with 0x8 clear** (0xa58c8–0xa5948, gate 0xa5a5c–0xa5a6c; 11c1003
+  described the copy-back as unconditional), channels the replaced clip
+  animated but the new one does not (`old & ~new` per node, 0xa5aa8; all of the
+  old clip's channels when there is no new clip) are copied back from the base
+  header: matrix rows for 0x289, the vertex block (`(n + 3)/4 × 48` bytes
   via `memcpy`) plus the four bounds words for 0x1000, and the array at +104
   (count +94, i.e. texture coordinates per corner) for 0x10000. The last is a
   lead that the 0x10000 block animates texture coordinates; it is not proven.
 - The record +60 binding itself (where a clip's records are pointed at the
   header's records) was not found among direct stores; the sampler and the bind
   routine agree on the record layout above.
+- Normals after a vertex pass: 0xa772c recomputes each face normal (mesh
+  record +100, indexed by face word >> 1) from the cross product of the face's
+  corner positions, normalised. It runs for mesh records with flag 0x00010000
+  from 0xa7960 only for relative-animation models (header flag 0x4), from
+  0xa78ec (all meshes; called at 0x567e4 and 0x5a4b4, conditions not traced)
+  and from the renderer at 0x19ac0c when mesh flag 0x10000000 is also set (clear
+  in all 4,914 stored records; its setter was not traced). Set-mode objects
+  therefore keep stored normals on the 0xa7960 path; the other two routes are
+  open.
 - 0xa4a58 computes `modf(time)` and a decremented integer part on entry
   (0xa4a88–0xa4abc) that nothing reads.
 
@@ -250,8 +263,50 @@ confirming the existing `P0, (C, C, P)…` reading. Model: `bezier`.
 - One caller (0x4f888) starts a clip with speed 1.0.
 
 So, at speed 1.0 and an unscaled scene clock, MD2 ticks advance at 30 per
-second. The game-speed scaling and pause policy of the scene clock and clip
-looping at the end are runtime dependencies (not traced).
+second. The game-speed scaling and pause policy of the scene clock are runtime
+dependencies (not traced).
+
+### Clip lifecycle: loop replay and cursor reset (proven for this build)
+
+Channel fields are labelled by the debug dump near 0x1c98fa: AnimID +4, SubAnim
++8, StartAnimTime +16, AnimTime +20, NoPauseAnimTime +24, TotalAnimFrames +28,
+AnimFrame +32, DeferredAnimID +36, DeferredSubAnim +40 (12 = none).
+
+- The object update 0xa7960(object, r4, r5) runs the channel update 0xa7190 for
+  each channel with r4 as its third argument (r27). 0xa7190 recomputes
+  AnimFrame and, when AnimFrame > TotalAnimFrames (strict, 0xa7360), no clip is
+  deferred and object flags 0x18 are clear, replays the same AnimID/SubAnim
+  through 0xa67d8 if channel bit 0x1 (loop) is set, with flags `1` when r27 ≠ 0
+  and `9` when r27 = 0. A deferred clip is started the same way; other cases
+  stop (0x8) or hold (0x10) and are not modelled here.
+- 0xa67d8 carries `AnimFrame − TotalAnimFrames` (0xa6904) as the start time,
+  which 0xa6398 caps at the duration and converts to a whole-millisecond start
+  (the original's AnimFrame after a wrap is that carry rounded through integer
+  milliseconds). It calls the bind 0xa5894 with old clip = current clip only when
+  `flags & 0xC` is 0 (0xa6994), so with flags 1 the replay rebinds the same clip:
+  0x00800000 is cleared on its nodes and the next sample (normally later in the
+  same update, 0xa7574) resets every group cursor to key 0.
+- Mesh-record flag 0x00800000 is cleared only by the bind and by the
+  frame-capture loop 0x4f584 (which steps a local clock by 30 ms and clears it on
+  every mesh record after each frame); the other 12 `rlwinm` clears of that bit
+  act on object or header words or unrelated structures. Stored state starts
+  reset: every group cursor (+16) is 0 (1,736/1,736 blocks) and every mesh
+  record has the flag clear (838/838 geometry members).
+- Callers: 0x4d39c, 0x4d4b0 and the other direct callers pass r4 = 1, except
+  0x4d2fc (its caller's argument, with r5 = 8 when that is 0). The
+  object-list update 0x4d354 passes r4 = 0 with r5 = 8 (0x4d420) for listed
+  objects without flag 0x00200000; there a wrap replays without a bind, so the
+  cursors stay on the last segment, and the channel samples only when object
+  flag 0x00400000 is set (0xa7644–0xa7650). Such a sample at a smaller time would
+  extrapolate from the kept segment (`AdvanceKey` reproduces it). Which objects
+  take that path is not traced.
+
+So with r4 = 1 the cursor at every sample equals a fresh search from key 0:
+between binds AnimFrame does not decrease (unless the untraced scene-clock
+rate is negative), and the search only moves forward. This assumes the cursor
+(stored in the clip's group, +16) and the flag (in the header's mesh record)
+are not shared with another object sampling the same clip at a different time;
+whether clips and headers are per object was not traced.
 
 ### Vertex animation (record +40)
 
@@ -455,7 +510,7 @@ Parser and sampling helpers; the runtime use is in the next section.
 | --- | --- |
 | quantised block, groups, key-major packed words | `ModelVertexAnimation`, `ModelVertexGroup` (`ModelAnimationTrack.VertexAnimation`) |
 | signed 10:10:10, fused `q·scale + offset` | `ModelVertexAnimation.Unpack`, `Dequantise` |
-| cursor search, `cur·(1 − t) + next·t` | `ModelVertexGroup.FindKey`, `ApplyAnimatedGroups(time, positions, add)` |
+| cursor search, `cur·(1 − t) + next·t` | `ModelVertexGroup.AdvanceKey` (kept cursor), `FindKey` (reset cursor), `ApplyAnimatedGroups(time, positions, add)` |
 | group 0 padded lower/upper vectors | `SampleBounds` |
 | static group (key 0) | `ApplyStaticGroup(positions, add)` |
 | texture-frame tracks and their gate | `ModelAnimation.TextureFrameTracks`, `TextureFramesEnabled`, `ModelTextureFrameTrack.FrameAt` |
@@ -487,11 +542,16 @@ matrices, an OpenTPW choice) with `ApplyPose` at the channel tick; without one
 the mesh shows its stored positions. Equivalence argument: when
 `GetPoseLimitation` is null the static and animated groups write every position
 of the mesh, so the array equals the original's after its set-mode passes since
-the bind, and the base copy on clip replacement (0xa5894) equals showing the
-stored positions. The per-bind cursor is replaced by a fresh search from key 0,
-which is the original's result for times that do not decrease since the bind; at
-a sandbox loop wrap this assumes the original rebinds (its loop policy is not
-traced). Played: 599 of the 609 catalog clips that carry vertex tracks; the 10
+the bind. The kept cursor is replaced by a fresh search from key 0, which equals
+it on the r4 = 1 update path (see "Clip lifecycle"): the loop replay rebinds and
+resets it. Not modelled: the object-list path (r4 = 0) that keeps cursors
+across a wrap, the whole-millisecond rounding and duration cap of the carry
+(OpenTPW wraps with `tick % duration`, and samples tick 0 where the original,
+wrapping only past the end, samples the last key at exactly the duration), and
+per-object ownership of clip and header state. Showing stored positions without
+a track is an OpenTPW choice, not a proof: the original copies them back only
+under the 0xa5894 gate above and otherwise keeps the replaced clip's last pose.
+Played: 599 of the 609 catalog clips that carry vertex tracks; the 10
 others hold only the 12-byte layout (23 tracks) and are listed in
 `VertexLimitations` with the stored mesh shown. Also listed instead of guessed:
 relative-animation models, blocks that do not list every position once, and
@@ -514,7 +574,10 @@ Not wired, because the runtime binding is not proven: group-0 bounds (no
 consumer of the mesh-record bounds traced), node-flag toggles (bit 0x10's
 consumer), texture-frame tracks (the header slot entries are identified, but the
 engine's frame-to-texture use and option bit 0x8 at run time are not), the
-0x10000 block, add mode, and normals after a vertex pass.
+0x10000 block, and add mode (relative-animation models: per-update base restore
+through 0xa5894 without a new clip, add, then face normals by 0xa772c; traced
+but not implemented). Stored normals are kept after a vertex pass, which matches
+the 0xa7960 path for set-mode models; the 0xa78ec and renderer routes are open.
 
 ## Code replacement handoffs (root to verify and integrate)
 
@@ -524,7 +587,10 @@ engine's frame-to-texture use and option bit 0x8 at run time are not), the
    are known. Keep 30 ticks/s but cite this proof. Gate PC claims behind a PC
    capture.
 2. **Fidelity register / RIDES-001**: tick rate is proven (Mac, speed 1.0);
-   loop policy, scene-clock scaling/pause and trigger mapping remain open.
+   the loop policy is traced (replay past the end with a carried start, see
+   "Clip lifecycle"); scene-clock scaling/pause and trigger mapping remain open.
+   A register entry is needed for the stored-mesh choice when a vertex clip is
+   replaced (copy-back is conditional in the original).
 3. **TPWS** (`SavePayloadLayout`, `TPWS-PAYLOAD.md`, importer naming): treat tags
    as trailing delimiters; rename sections by owner (RideSystem holds the placed
    objects); adopt the cell schema and world-var names; the importer's offsets
@@ -556,8 +622,13 @@ engine's frame-to-texture use and option bit 0x8 at run time are not), the
   records whose type word has bit 31 clear; what bit 0x10 controls is not traced.
 - Path parameter (0x200/0x400) and header 0xAC table: selection via node +82 and
   the third evaluator 0xa89f0 only partly read.
-- Clip end/loop policy, game-speed scaling, pause: owners of player +12/+16/+20
-  and the scene-clock rate field (0x127cd0 object +24) at run time.
+- Clip lifecycle at run time: which objects use the object-list update (r4 = 0)
+  and carry flag 0x00400000; the meaning and setters of object flags 0x8,
+  0x18 and 0x00100000 and of global option bit 0 (copy-back gate); whether clip
+  data (group cursors) and headers are per object; game-speed scaling and pause
+  (player +12/+16/+20, scene-clock rate at 0x127cd0 object +24).
+- Face-normal recomputation outside relative models: conditions of 0x567e4 and
+  0x5a4b4 (0xa78ec) and the setter of mesh flag 0x10000000 (renderer 0x19ac0c).
 - Rotation interpolation and texture-frame gating: runtime values of global option bits 0x2 and 0x8 (+16396).
 - MAP bit 0x04 and the remaining cell/status bits; World sub-blocks after the
   world vars; all other subsystem payloads.

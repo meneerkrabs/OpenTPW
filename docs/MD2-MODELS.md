@@ -242,17 +242,23 @@ playable vertex track, and fills it in set mode: static group key 0, then the
 animated groups at the clip tick. This equals the Mac sampler's result after
 the set-mode passes since the clip was bound, because the groups list every
 position once and the static group is applied once per bind (node-state flag
-0x00800000). Without such a track the mesh shows its stored positions, as the
-original copies them back from the base model when a clip is replaced
-(0xa5894). The parsed, cached `ModelFile` is never written, so instances of one
+0x00800000). Each sample searches keys from key 0; the original keeps a cursor,
+but its loop replay past the clip end rebinds the clip (0xa7190 → 0xa67d8 →
+0xa5894), which resets it, so both agree on the normal object update. Its
+object-list update replays without a bind and is not modelled
+(`docs/reverse/PPC-formats.md`, "Clip lifecycle"). Without such a track the mesh
+shows its stored positions; that is an OpenTPW choice, because the original
+copies them back on a clip change only under runtime object and option flags
+(0xa5894) and otherwise keeps the last pose. The parsed, cached `ModelFile` is never written, so instances of one
 asset keep independent poses. Unplayable tracks are listed in
 `VertexLimitations` and leave the stored mesh: the 12-byte layout (10 catalog
 clips, 23 tracks), relative-animation models, blocks that do not list every
 position exactly once, and groups that end before the clip. All 599 other
 catalog clips with vertex tracks play. `ObjectRenderParts.WritePositions` maps
 positions through the corner order into the part's own vertex array (engine
-axes); stored normals are kept (the original's handling of normals after a
-vertex pass is not traced). Those parts use a fixed-size `Dynamic` vertex buffer
+axes); stored normals are kept. The original's object update recomputes face
+normals after a vertex pass only for relative-animation models (0xa772c); two
+other recomputation routes have untraced conditions. Those parts use a fixed-size `Dynamic` vertex buffer
 that `Model.UpdateVertices` refreshes through the frame command list when the
 pose version changes. Not played yet: group-0 bounds (no consumer traced),
 node-flag toggles and texture-frame tracks (their runtime bindings to visibility

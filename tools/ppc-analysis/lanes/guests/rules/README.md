@@ -11,7 +11,7 @@ Run its synthetic regressions from the repository root:
 dotnet run --project tools/ppc-analysis/lanes/guests/rules/GuestOriginalRules.Tests.csproj --configuration Release
 ```
 
-Expected result: 18 cases passed. No original game assets or dependencies are
+Expected result: 23 cases passed. No original game assets or dependencies are
 needed. Lookup buffers in the tests are synthetic; no complete original table
 is embedded. `../evidence.py` independently validates the identified original
 input, addresses, table samples, and bounded code hashes when local assets exist.
@@ -28,7 +28,7 @@ code section 0, TOC data section 1 offset `0x8000`.
 | `ExcitementMatch` | `0xe9424..0xe9470` | Byte difference capped at 50; caller resolves category/weight gate |
 | Need lookup helpers | `0xe94b0..0xe96bc` | Caller-supplied interpreted 11×11 and 21-entry tables; valid needs/effects 0..100 |
 | `NormalizeBaseScore` | `0xe96c0..0xe9714` | Seven active register operands, low-32-bit products/additions, unsigned division |
-| `ApplyHistory` | `0xe98c0..0xe9a30` | First match per four-slot history, signed truncating divisions 5/4/3/2 |
+| `ApplyHistory` | `0xe98c0..0xe9a30` | Used history first match; temporary history every match in slot order; signed truncating divisions 5/4/3/2 |
 | `ApplyShopEffect` | `0xeabc4..0xeaca4` | Subtract signed effect amount and clamp the need to 0..100 |
 | Ride illness helpers | `0xea4d4..0xea580` | Positive divisor, hunger-dependent integer bands, illness clamp 0..100 |
 
@@ -46,6 +46,13 @@ produces numerator −150 modulo 2³²; unsigned division by 3 yields `143165571
 Clamping the queue term to zero would change the witnessed arithmetic. History
 division later treats the same register as signed; selector behavior must be
 reviewed separately before any gameplay integration.
+
+Used history (`guest+480..486`) exits to `0xe9978` after its first matching
+slot. Temporary history (`guest+488..494`) falls through after every matching
+slot at `0xe99b8`, `0xe99dc`, and `0xe9a0c`. Thus score 600, attraction ID 7,
+no used matches, and temporary IDs `[7,7,7,7]` produces `600/5/4/3/2 = 5`.
+Each division reinterprets the current 32-bit score as signed and truncates
+toward zero. No uniqueness assumption is imposed on either caller span.
 
 Zero/wrapped-zero divisors, invalid lookup layouts, nonfinite needs, and inputs
 outside the declared bounded domains are rejected. This is a fail-closed helper

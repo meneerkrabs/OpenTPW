@@ -93,7 +93,7 @@ internal static class Program
 			Equal( 100u, GuestOriginalRules.NormalizeBaseScore(
 				new uint[] { 1, queue.Weight, 0, 0, 0, 0, 0 }, new uint[] { 100, queue.Match, 0, 0, 0, 0, 0 } ) );
 		} );
-		Test( "history uses first match and both four-slot histories", () =>
+		Test( "used history uses first match before temporary history", () =>
 		{
 			var empty = new ushort[4];
 			Equal( 20u, GuestOriginalRules.ApplyHistory( 100, 17, new ushort[] { 17, 17, 0, 0 }, empty ) );
@@ -108,6 +108,45 @@ internal static class Program
 			Equal( 4294967290u, GuestOriginalRules.ApplyHistory( 4294967271u, 17, new ushort[] { 0, 17, 0, 0 }, new ushort[4] ) );
 			Equal( 4294967288u, GuestOriginalRules.ApplyHistory( 4294967271u, 17, new ushort[] { 0, 0, 17, 0 }, new ushort[4] ) );
 			Equal( 4294967284u, GuestOriginalRules.ApplyHistory( 4294967271u, 17, new ushort[] { 0, 0, 0, 17 }, new ushort[4] ) );
+		} );
+		Test( "all temporary matches accumulate their penalties", () =>
+		{
+			Equal( 5u, GuestOriginalRules.ApplyHistory( 600, 7, new ushort[4], new ushort[] { 7, 7, 7, 7 } ) );
+		} );
+		Test( "temporary match subsets follow native slot order", () =>
+		{
+			// Literal results of the native 5/4/3/2 fall-through paths, indexed by match mask.
+			uint[] expected = { 600, 120, 150, 30, 200, 40, 50, 10, 300, 60, 75, 15, 100, 20, 25, 5 };
+			for ( var mask = 0; mask < expected.Length; mask++ )
+			{
+				var temporary = new ushort[4];
+				for ( var slot = 0; slot < temporary.Length; slot++ )
+					temporary[slot] = (ushort)((mask & (1 << slot)) != 0 ? 7 : 9);
+				Equal( expected[mask], GuestOriginalRules.ApplyHistory( 600, 7, new ushort[4], temporary ) );
+			}
+		} );
+		Test( "used history stops before cumulative temporary history", () =>
+		{
+			Equal( 10u, GuestOriginalRules.ApplyHistory( 600, 7, new ushort[] { 9, 7, 7, 7 }, new ushort[] { 7, 9, 7, 9 } ) );
+			Equal( 15u, GuestOriginalRules.ApplyHistory( 600, 7, new ushort[] { 7, 7, 7, 7 }, new ushort[] { 9, 7, 9, 7 } ) );
+		} );
+		Test( "temporary matches truncate each signed intermediate toward zero", () =>
+		{
+			int[] expected = { -25, -5, -6, -1, -8, -1, -2, 0, -12, -2, -3, 0, -4, 0, -1, 0 };
+			for ( var mask = 0; mask < expected.Length; mask++ )
+			{
+				var temporary = new ushort[4];
+				for ( var slot = 0; slot < temporary.Length; slot++ )
+					temporary[slot] = (ushort)((mask & (1 << slot)) != 0 ? 7 : 9);
+				Equal( unchecked((uint)expected[mask]), GuestOriginalRules.ApplyHistory( 4294967271u, 7, new ushort[4], temporary ) );
+			}
+		} );
+		Test( "unsigned raw scores cross the signed history boundary", () =>
+		{
+			var all = new ushort[] { 7, 7, 7, 7 };
+			Equal( 4277071599u, GuestOriginalRules.ApplyHistory( 2147483648u, 7, new ushort[4], all ) );
+			Equal( 17895697u, GuestOriginalRules.ApplyHistory( 2147483647u, 7, new ushort[4], all ) );
+			Equal( 0u, GuestOriginalRules.ApplyHistory( uint.MaxValue, 7, new ushort[4], all ) );
 		} );
 		Test( "shop subtracts amount and preserves fractional remainder", () =>
 		{

@@ -211,8 +211,16 @@ gameplay score.
 
 Subsequent multipliers handle new rides, indoor rides in rain, gold-ticket
 rides, and expensive rides. Two history arrays hold four object IDs each:
-matching positions penalize the score by dividing by 5, 4, 3, or 2, with
-integer truncation. The arrays are guest `+480..+486` and `+488..+494`.
+matching positions penalize the score by signed divisions 5, 4, 3, or 2,
+truncating toward zero. Used history at guest `+480..+486` stops at its first
+match: slot 0/1/2 success branches at `0xe98f4`, `0xe991c`, and `0xe9950`
+all target `0xe9978`; slot 3 finishes at `0xe9974`. Temporary history at
+`+488..+494` applies every matched divisor in order: successful divisions end
+at `0xe99b8`, `0xe99dc`, and `0xe9a0c`, then fall through to the next slot's
+comparison (`0xe99d0`, `0xe99f4`, `0xe9a24`). No uniqueness invariant is
+proved, so duplicate temporary IDs cannot be reduced to the first match.
+For raw score 600 and attraction ID 7 with no used match and all four temporary
+IDs equal to 7, the original path returns 5 (`600/5/4/3/2`), rather than 120.
 These differ from OpenTPW's single `LastAttractionId` penalty and omitted
 `DecisionVariable` behavior.
 
@@ -418,7 +426,17 @@ layouts, nonfinite needs, and inputs outside the supported domain fail closed;
 these rejections do not claim to reproduce original invalid-input behavior.
 No need growth cadence or original score multiplier is fabricated.
 
-Validation: dependency-free .NET 8 console regressions pass **18/18**, Release
+Independent control-flow review (`24f5456`) found that the initial helper
+incorrectly applied a first-match rule to both arrays. The repaired temporary
+path retains all matched divisions while used-history behavior stays intact.
+Five new regression groups fail against the initial helper, then pass after
+the repair: the 600/7 duplicate case, all 16 temporary match masks, mixed used
+and temporary duplicates, negative signed intermediates, and raw scores across
+the `0x80000000` boundary. Expected mask results are literal arithmetic values,
+not values obtained from the implementation under test. These are helper
+regressions; original-path evidence remains the identified Mac code above.
+
+Validation: dependency-free .NET 8 console regressions pass **23/23**, Release
 build reports zero warnings/errors, and the original-input Python witness
 suite remains **11/11, zero skips**. Run instructions and per-method binary
 anchors are in `rules/README.md`. Parent review must resolve metadata domains,

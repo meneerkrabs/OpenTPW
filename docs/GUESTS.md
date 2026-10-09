@@ -162,7 +162,7 @@ home (21) → removed.
 | No exit lane | guests vanish (original ejection not modelled) |
 
 An isolated [GuestOriginalRules helper](../tools/ppc-analysis/lanes/guests/rules/README.md)
-and 18 synthetic regression cases preserve selected Feral arithmetic: four
+and 23 synthetic regression cases preserve selected Feral arithmetic: four
 positions per queue cell, normalized base score, distance divisor 450,
 nonlinear need lookups, two ride histories, shop effect subtraction, and
 hunger-dependent ride illness. The helper remains outside the production

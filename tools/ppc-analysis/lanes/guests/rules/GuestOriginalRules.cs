@@ -88,14 +88,19 @@ public static class GuestOriginalRules
 	}
 
 	/// <summary>
-	/// First matching slot in each four-ID history divides by 5,4,3,2, with signed truncation.
+	/// Used history stops at its first match; temporary history applies every matched 5,4,3,2 divisor.
 	/// The score is a raw register bit pattern; code 0xe98c0..0xe9a30 reinterprets it as signed.
 	/// </summary>
 	public static uint ApplyHistory( uint score, ushort attractionId, ReadOnlySpan<ushort> usedHistory, ReadOnlySpan<ushort> temporaryHistory )
 	{
 		if ( usedHistory.Length != 4 || temporaryHistory.Length != 4 )
 			throw new ArgumentException( "Two four-ID histories are required." );
-		return ApplyOneHistory( ApplyOneHistory( score, attractionId, usedHistory ), attractionId, temporaryHistory );
+		score = ApplyUsedHistory( score, attractionId, usedHistory );
+		// Native temporary slots fall through after division; duplicates are cumulative.
+		for ( var i = 0; i < temporaryHistory.Length; i++ )
+			if ( temporaryHistory[i] == attractionId )
+				score = unchecked((uint)(unchecked((int)score) / (5 - i)));
+		return score;
 	}
 
 	/// <summary>Subtract signed shop metadata effect, clamp to [0,100]; code 0xeabc4..0xeaca4.</summary>
@@ -120,7 +125,7 @@ public static class GuestOriginalRules
 		return Math.Clamp( currentIllness + RideIllnessIncrement( excitement, divisor, hunger ), 0, 100 );
 	}
 
-	private static uint ApplyOneHistory( uint score, ushort attractionId, ReadOnlySpan<ushort> history )
+	private static uint ApplyUsedHistory( uint score, ushort attractionId, ReadOnlySpan<ushort> history )
 	{
 		for ( var i = 0; i < history.Length; i++ )
 			if ( history[i] == attractionId )

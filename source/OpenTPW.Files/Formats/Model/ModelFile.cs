@@ -26,6 +26,12 @@ public partial class ModelFile : BaseFormat
 	public uint VersionMinor { get; private set; }
 	public string SourceName { get; private set; } = "";
 	public uint HeaderFlags { get; private set; }
+	/// <summary>
+	/// <see cref="HeaderFlags"/> bit that makes the Feral Mac record sampler add vertex keys and
+	/// translations instead of setting them. The ride loader calls it "relative animation" and strips
+	/// it unless the ride's flag word allows it (docs/reverse/PPC-formats.md).
+	/// </summary>
+	public const uint RelativeAnimationFlag = 0x4;
 	public ModelHeaderCounts Counts { get; private set; } = null!;
 	public Vector3 BoundsMin { get; private set; }
 	public Vector3 BoundsMax { get; private set; }

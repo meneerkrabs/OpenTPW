@@ -100,9 +100,9 @@ public sealed class ModelVertexAnimation
 
 	/// <summary>
 	/// Group 0 (0xa468c): vertex 0 gives <c>lerp − scale − 0.25</c> and vertex 1
-	/// <c>lerp + scale + 0.25</c>, stored to node-state +120 and +132. In the corpus vertex 0 ≤ vertex 1
-	/// on every axis and every animated key lies between them (a padded bounding box); the consumer
-	/// of the two node-state fields was not traced.
+	/// <c>lerp + scale + 0.25</c>, stored to +120 and +132 of the node state, the mesh record's stored
+	/// bounds fields. In the corpus vertex 0 ≤ vertex 1 on every axis and every animated key lies between
+	/// them (a padded bounding box); the reader of those fields was not traced.
 	/// </summary>
 	public (NVector3 Lower, NVector3 Upper) SampleBounds( float time )
 	{
@@ -116,7 +116,8 @@ public sealed class ModelVertexAnimation
 	/// <summary>
 	/// Writes (or, in add mode, adds) key 0 of the static group to <paramref name="positions"/>. The
 	/// original does this only while node-state flag 0x00800000 is clear and sets that flag after a
-	/// set-mode pass, so the static group is applied once per reset. Add mode is instance flag 4.
+	/// set-mode pass, so the static group is applied once per clip bind. Add mode is header flag 0x4
+	/// (<see cref="ModelFile.RelativeAnimationFlag"/>).
 	/// </summary>
 	public void ApplyStaticGroup( Span<NVector3> positions, bool add )
 	{
@@ -149,6 +150,48 @@ public sealed class ModelVertexAnimation
 				target = add ? target + value : value;
 			}
 		}
+	}
+
+	/// <summary>
+	/// Why <see cref="ApplyPose"/> cannot stand in for the original's set-mode passes on a mesh of
+	/// <paramref name="positionCount"/> positions over ticks 0…<paramref name="duration"/>, or null.
+	/// The original leaves positions that no group lists at whatever an earlier clip wrote, so the
+	/// static and animated groups must list every position exactly once (true for all 1,735 paired
+	/// corpus blocks); and it reads past a tick array after its last key, so each animated group must
+	/// reach <paramref name="duration"/>.
+	/// </summary>
+	public string? GetPoseLimitation( int positionCount, int duration )
+	{
+		var listed = new bool[positionCount];
+		foreach ( var group in Groups.Skip( 1 ) )
+		{
+			foreach ( var index in group.VertexIndices )
+			{
+				if ( index >= positionCount )
+					return $"vertex index {index} lies outside the {positionCount} mesh positions";
+				if ( listed[index] )
+					return $"vertex {index} is listed by more than one group";
+				listed[index] = true;
+			}
+		}
+		if ( Array.IndexOf( listed, false ) is var missing and >= 0 )
+			return $"no group lists vertex {missing}";
+		if ( AnimatedGroups.FirstOrDefault( group => group.Ticks[^1] < duration ) is { } early )
+			return $"an animated group ends at tick {early.Ticks[^1]}, before the clip end {duration}";
+		return null;
+	}
+
+	/// <summary>
+	/// Set-mode pose at <paramref name="time"/>: the static group's key 0, then every animated group.
+	/// When <see cref="GetPoseLimitation"/> is null this writes every position, which is what the
+	/// original's positions hold after the set-mode passes since the last clip bind (the static group
+	/// is applied once per bind and no animated group lists its vertices).
+	/// </summary>
+	public void ApplyPose( float time, Span<NVector3> positions )
+	{
+		if ( HasStaticGroup )
+			ApplyStaticGroup( positions, false );
+		ApplyAnimatedGroups( time, positions, false );
 	}
 
 	// cur × (1 − t) + (next × t), the second product rounded first (fmuls, then fmadds).

@@ -249,7 +249,7 @@ def md2_runtime(app: Image) -> dict:
     fp(app, 0xa44ac, (FMADDS, 2, 3, 2, 0), 'current * (1 - fraction) + product')
     # 0xa4a58 group dispatcher; r3 is the node state (0xa5054), not the instance.
     xop(app, 0xa5054, (31, 444, 27, 3, 27), 'dispatcher argument r3 = node state')
-    rot(app, 0xa5060, (RLWINM, 0, 7, 0, 29, 29, 0), 'add mode = instance+48 bit 0x4')
+    rot(app, 0xa5060, (RLWINM, 0, 7, 0, 29, 29, 0), 'add mode = header flags (+0x30) bit 0x4')
     d(app, 0xa5058, (LWZ, 4, 28, 40), 'vertex block at record+40')
     rot(app, 0xa4ac8, (RLWINM, 0, 0, 0, 8, 8, 1), 'node-state flag 0x00800000')
     bc(app, 0xa4ad0, (BF, CR_EQ, 0xa4de8), 'flag set: keep cursors and skip the static group')
@@ -354,6 +354,95 @@ def md2_runtime(app: Image) -> dict:
             'rotation_mode': 'global option & 0x2 clear: table slerp 0xa7fc8; set: linear blend',
             'animation_ticks_per_second': ticks, 'milliseconds_per_second': milliseconds,
             'milliseconds_per_tick': per_tick, 'loader_call_sites': sites, 'loader_flags_used': flags}
+
+
+MULLI, ANDI_DOT, STW = 7, 28, 36
+
+
+def md2_runtime_binding(app: Image) -> dict:
+    """Which objects the vertex sampler writes, how a clip bind resets them, and the relative-animation flag."""
+    # The sampler's "instance" is the geometry M3D2 header: object +8 -> model object, whose +4 the
+    # geometry loader passes to CMesh::Init(tag_sM3D2Header *) (0x99b84).
+    d(app, 0x99b84, (LWZ, 4, 31, 4), 'model object +4 is the header given to CMesh::Init')
+    require(app.glue_symbol(app.call(0x99b88)), 'Init__5CMeshFP15tag_sM3D2Header', 'CMesh::Init import')
+    for site in (0xa573c, 0xa7238):
+        d(app, site, (LWZ, 4, 28, 4), f'record sampler instance = model object +4 ({site:#x})')
+    d(app, 0xa5734, (LWZ, 6, 31, 60), 'node state = record +60')
+    # Clip bind 0xa5894: r24 = target header, r25 = base header, both as object +8 -> +4.
+    d(app, 0xa58b8, (LWZ, 6, 3, 0), 'bind: base object')
+    d(app, 0xa58c0, (LWZ, 4, 6, 8), 'bind: base model object')
+    d(app, 0xa58c4, (LWZ, 3, 3, 8), 'bind: target model object')
+    d(app, 0xa58d4, (LWZ, 25, 4, 4), 'bind: base header')
+    d(app, 0xa58d8, (LWZ, 24, 3, 4), 'bind: target header')
+    # Node index -> header mesh records (+0x70, 160 bytes) below the mesh count (+0x44), else dummies (+0x74, 88).
+    d(app, 0xa5a08, (LHZ, 3, 24, 68), 'mesh count at header +0x44')
+    d(app, 0xa5a14, (MULLI, 0, 0, 160), 'mesh record stride 160')
+    d(app, 0xa5a18, (LWZ, 3, 24, 112), 'mesh records at header +0x70')
+    d(app, 0xa5a28, (LWZ, 3, 24, 116), 'dummy records at header +0x74')
+    d(app, 0xa5a2c, (MULLI, 0, 0, 88), 'dummy record stride 88')
+    # Flags cleared on the replaced clip's nodes: 0x00800000 with relative animation, else 0x00F40000.
+    d(app, 0xa594c, (LWZ, 0, 24, 48), 'header flags (+0x30)')
+    rot(app, 0xa5950, (RLWINM, 0, 0, 0, 29, 29, 1), 'header flag 0x4')
+    bc(app, 0xa5954, (BT, CR_EQ, 0xa5960), 'flag 0x4 clear: wider mask')
+    d(app, 0xa5958, (ADDIS, 26, 0, 128), 'mask 0x00800000')
+    d(app, 0xa5960, (ADDIS, 26, 0, 244), 'mask 0x00F40000')
+    xop(app, 0xa59e0, (31, 124, 26, 5, 26), 'complement of the mask')
+    xop(app, 0xa5a38, (31, 28, 0, 0, 5), 'node flags &= ~mask')
+    # Channels animated by the replaced clip but not the new one are copied back from the base header.
+    xop(app, 0xa5aa8, (31, 60, 4, 0, 0), 'old record flags & ~new record flags')
+    d(app, 0xa5bfc, (ANDI_DOT, 29, 0, 0x289), 'matrix channels 0x289 restore the local matrix rows')
+    rot(app, 0xa5c64, (RLWINM, 29, 0, 0, 19, 19, 1), 'vertex flag 0x1000 restores positions and bounds')
+    d(app, 0xa5c6c, (LWZ, 3, 31, 96), 'target positions at mesh record +96')
+    d(app, 0xa5c78, (LWZ, 4, 30, 96), 'base positions at mesh record +96')
+    d(app, 0xa5c84, (LHZ, 5, 31, 88), 'position count at mesh record +88')
+    d(app, 0xa5c98, (MULLI, 5, 0, 48), '48 bytes per block of four positions')
+    require(app.glue_symbol(app.call(0xa5c9c)), 'memcpy', 'position copy')
+    for site, field in ((0xa5cac, 120), (0xa5cbc, 128), (0xa5cc0, 132), (0xa5cd0, 140)):
+        d(app, site, (STW, 3 if field in (120, 128) else 0, 31, field), f'bounds word +{field} copied')
+    rot(app, 0xa5cd4, (RLWINM, 29, 0, 0, 15, 15, 1), 'flag 0x10000 restores the +104 array')
+    d(app, 0xa5cdc, (LWZ, 3, 31, 104), 'mesh record +104 (texture coordinates)')
+    d(app, 0xa5cf4, (LHZ, 5, 31, 94), 'count at mesh record +94 (corners)')
+    # Vertex writes: positions at node state +96 in blocks of four; after the pass node flag 0x00010000 is set
+    # and the sampler sets header flag 0x00040000.
+    d(app, 0xa4c0c, (LWZ, 6, 26, 96), 'positions at node state +96')
+    d(app, 0xa4c2c, (MULLI, 5, 5, 48), 'position block of four')
+    d(app, 0xa4f44, (ORIS, 0, 0, 1), 'node-state flag 0x00010000 after a vertex pass')
+    d(app, 0xa5050, (LWZ, 0, 26, 48), 'add mode read from header flags')
+    d(app, 0xa5070, (ORIS, 0, 0, 4), 'header flag 0x00040000 after a vertex pass')
+    # Ride loader 0x58a3c strips header flag 0x4 unless its argument has bit 0x20000.
+    d(app, 0x58a44, (ADDI, 17, 4, 0), 'loader argument word')
+    rot(app, 0x58bd0, (RLWINM, 17, 0, 0, 14, 14, 1), 'loader argument bit 0x20000')
+    bc(app, 0x58bd4, (BF, CR_EQ, 0x58c14), 'bit 0x20000 set: keep relative animation')
+    d(app, 0x58bd8, (LWZ, 4, 22, 4), 'loaded geometry header')
+    d(app, 0x58bdc, (LWZ, 0, 4, 48), 'header flags')
+    rot(app, 0x58be0, (RLWINM, 0, 0, 0, 29, 29, 1), 'header flag 0x4')
+    bc(app, 0x58be4, (BT, CR_EQ, 0x58c14), 'flag clear: nothing to strip')
+    _, base, _ = app.toc_slot(0x58a5c, 24)
+    d(app, 0x58be8, (ADDI, 3, 24, 374), 'warning text')
+    warning = cstring(app.code, base.addend + 374)
+    require(warning.startswith('Ride %s has relative animation incorrectly set'), True, 'relative animation warning')
+    rot(app, 0x58bfc, (RLWINM, 0, 0, 0, 30, 28, 0), 'clear header flag 0x4')
+    d(app, 0x58c0c, (ORIS, 0, 0, 256), 'set header flag 0x01000000')
+    callers = app.calls_to(0x58a3c)
+    require(callers, [0x29180, 0x4da20, 0x4da44, 0x596b0, 0x59704], 'ride loader call sites')
+    arguments = {0x29180: lis_addi_constant(app, 0x29168, 0x29174, 4),
+                 0x4da20: d(app, 0x4da14, (ADDI, 4, 0, 8), 'argument')[3],
+                 0x4da44: d(app, 0x4da38, (ADDI, 4, 0, 8), 'argument')[3],
+                 0x59704: d(app, 0x596f4, (ADDI, 4, 0, 0), 'argument')[3]}
+    require(any(value & 0x20000 for value in arguments.values()), False, 'constant arguments strip the flag')
+    # 0x594c8 builds the argument for 0x596b0: bit 0x20000 only from bit 0x01000000 of its r7 word.
+    d(app, 0x594e8, (ADDI, 24, 7, 0), 'flag word argument')
+    rot(app, 0x595f8, (RLWINM, 24, 0, 0, 7, 7, 1), 'flag word bit 0x01000000')
+    bc(app, 0x595fc, (BT, CR_EQ, 0x59604), 'bit clear: argument keeps 0x20000 clear')
+    d(app, 0x59600, (ORIS, 19, 19, 2), 'argument bit 0x20000')
+    d(app, 0x596a0, (ADDI, 4, 19, 0), 'argument passed to the ride loader')
+    return {'instance': 'geometry M3D2 header (model object +4)',
+            'node_state': 'header mesh record (+0x70, 160 bytes) or dummy record (+0x74, 88 bytes)',
+            'positions': 'mesh record +96, count +88; bounds +120/+132 are the stored mesh bounds fields',
+            'bind_clear_mask': {'relative': 0x00800000, 'set_mode': 0x00F40000},
+            'relative_animation_flag': 0x4, 'warning': warning,
+            'ride_loader_call_sites': callers, 'ride_loader_constant_arguments': {f'{k:#x}': v for k, v in arguments.items()},
+            'relative_animation_kept_when': 'loader argument & 0x20000 (0x594c8: flag word & 0x01000000)'}
 
 
 # ------------------------------------------------------------------ TPWS
@@ -555,6 +644,7 @@ def inspect(root: Path) -> dict:
               'md2_trailer': md2_trailer_and_records(engine),
               'md2_vertex_packing': md2_vertex_packing(engine),
               'md2_runtime': md2_runtime(app),
+              'md2_runtime_binding': md2_runtime_binding(app),
               'tpws_writer': tpws_writer(app),
               'tpws_schema': tpws_schema(app),
               'tpws_cells': tpws_cells(app),
@@ -564,7 +654,7 @@ def inspect(root: Path) -> dict:
     return result
 
 
-ADDRESS_KEYS = {'code_entry', 'vertex_sampler', 'vertex_group_dispatch', 'record_sampler', 'key_search',
+ADDRESS_KEYS = {'code_entry', 'ride_loader_call_sites', 'bind_clear_mask', 'relative', 'set_mode', 'vertex_sampler', 'vertex_group_dispatch', 'record_sampler', 'key_search',
                 'loader_call_sites', 'writer', 'action_record_writer', 'world_writer', 'writer_call',
                 'final_untagged_writer', 'map_save', 'handler', 'draw_8888', 'conversion_code',
                 'divide_by_15_multiplier', 'divide_by_255_multiplier', 'magic'}

@@ -16,12 +16,14 @@ python3 -I tools/ppc-analysis/lanes/formats/format_witness.py /Users/sander/serv
 python3 -I tools/ppc-analysis/lanes/formats/corpus_check.py /Users/sander/server/game-assets/theme-park-world/Data
 python3 -I tools/ppc-analysis/lanes/formats/corpus_check.py /Users/sander/server/game-assets/theme-park-world-patch2/Data
 # C# parser (synthetic) and corpus cross-check of the decoders in "Implemented in the parser"
-dotnet test source/OpenTPW.Tests --filter "FullyQualifiedName~Md2"
-OPENTPW_GAME_PATH=/Users/sander/server/game-assets/theme-park-world dotnet test source/OpenTPW.Tests --filter "FullyQualifiedName~Md2"
+dotnet test source/OpenTPW.Tests --filter "FullyQualifiedName~Md2|FullyQualifiedName~ObjectVertexAnimation"
+OPENTPW_GAME_PATH=/Users/sander/server/game-assets/theme-park-world dotnet test source/OpenTPW.Tests --filter "FullyQualifiedName~Md2|FullyQualifiedName~ObjectVertexAnimation"
+# two dynamic vertex buffers read back from Metal (macOS)
+OPENTPW_NATIVE_SHADER_TESTS=1 dotnet test source/OpenTPW.Tests --filter "FullyQualifiedName~NativeDynamicVertexBuffers"
 ```
 
 - `format_witness.py` refuses any container whose SHA-256 differs from the pins
-  below, then makes 284 checks of instruction fields, branch conditions, relocated TOC slots, literal
+  below, then makes 353 checks of instruction fields, branch conditions, relocated TOC slots, literal
   constants and label strings at the offsets cited here, and prints interpreted
   JSON (labels, widths, constants, offsets). It never executes code and does not
   print bytes or instruction text. It bypasses `analyze.py` and its heuristic
@@ -126,8 +128,9 @@ is left untouched.
 
 ### Record sampler (SimThemePark 0xa4f68)
 
-Inputs: player state (float time +32, float duration +28), instance, node state
-(the record's runtime +60 word), record. If time > the **player's** duration
+Inputs: player state (float time +32, float duration +28), instance (the
+geometry M3D2 header), node state (the record's runtime +60 word: a mesh or
+dummy record of that header), record. If time > the **player's** duration
 (clip duration, not the record's +12) the record is skipped. Then, in order:
 
 - **0x20000 node-flag toggle list** (`u16` at +22 entries of signed `i16` at
@@ -138,14 +141,16 @@ Inputs: player state (float time +32, float duration +28), instance, node state
   `|value| ≤` record duration. What bit 0x10 controls is not traced (often read
   as visibility).
 - **0x1000 vertex animation**, only when 0x4000 is clear → 0xa4a58 (below) with
-  the node state as its object (`mr r3, r27` at 0xa5054) and add mode = instance
-  +48 bit 0x4. 0x4000 records (30 in corpus) are not handled by this sampler.
+  the node state as its object (`mr r3, r27` at 0xa5054) and add mode = header
+  flags (+0x30) bit 0x4 ("relative animation", see "Instance, node state and
+  clip bind"); afterwards the header gets flag 0x00040000 (0xa5070). 0x4000
+  records (30 in corpus) are not handled by this sampler.
 - **0x8 rotation** keys (kind 2, stride 20, wrap flag set) → optional easing →
   0xa820c.
 - **0x80 scale** keys (kind 4, stride 16, no wrap) → per-component linear.
 - **0x1 position**: header kind bit 2 → Bézier (0xa85ac, base index
   `3·key+1`); kind bit 8 → linear (0xa88fc); otherwise 0xa89f0. Result is
-  written to the node translation, or added when instance flag 4 is set.
+  written to the node translation, or added when header flag 0x4 is set.
 - **0x200 path parameter** (used when 0x200 is set, the position flag 0x1 is
   clear and the node state's bit 8 is set): block +36 is
   `{u32 start, u32 count, u32, ptr→count f32}`; within `start ≤ time ≤
@@ -182,6 +187,50 @@ quaternion implicitly. The runtime value of the option bit is not established.
 cubic Bézier over `P[i−1], P[i], P[i+1], P[i+2]` (indices modulo the point count
 in header u16 +4). With `base = 3·key + 1` this is exactly `P[3k] … P[3k+3]`,
 confirming the existing `P0, (C, C, P)…` reading. Model: `bezier`.
+
+### Instance, node state and clip bind (identities)
+
+- **Instance = the geometry M3D2 header.** The geometry loader 0x99aa4 passes
+  model object +4 to `CMesh::Init(tag_sM3D2Header *)` (0x99b84/0x99b88); both
+  record-sampler call sites take the instance as model object +4 (0xa573c,
+  0xa7238). The fields the runtime uses are header fields of `ModelFile`: +0x30
+  flags (+48), +0x42 node count (+66), +0x44 mesh count (+68), +0x50 texture-slot
+  table (+80; the texture-frame tracks write its 8-byte entries, the same
+  entries materials point at), +0x70 mesh records (+112, 160 bytes) and +0x74
+  dummy records (+116, 88 bytes).
+- **Node state = that header's mesh record** (dummy record past the mesh
+  count; 0xa5a08–0xa5a2c). So the vertex array at node state +96 is the mesh
+  record's vertex block (`VertexOffset`, count u16 +88), stored in blocks of four
+  (48 bytes), and group 0's vectors at +120/+132 overwrite the record's stored
+  bounds fields (`Mesh.BoundsMin/BoundsMax`). A scratch corpus check (not in the
+  checker) found the tick-0 box equal to the stored bounds in 0 of 1,735 blocks
+  and containing them in 811, so the stored bounds are not the animated box.
+  Which renderer or culling code reads the bounds was not traced. After a vertex
+  pass the record gets flag 0x00010000 (0xa4f44); its consumer was not traced.
+- **Relative animation (header flag 0x4).** The ride loader 0x58a3c strips the
+  flag (clears 0x4, sets 0x01000000) and prints `"Ride %s has relative animation
+  incorrectly set / Stripping flag, animation will not work!"` unless its
+  argument has bit 0x20000 (`bf eq` at 0x58bd4). Its constant call sites pass
+  0x50120 (0x29180), 8 (0x4da20, 0x4da44) and 0 (0x59704); 0x596b0 passes a word
+  built by 0x594c8 that gets 0x20000 only from bit 0x01000000 of its r7 flag word
+  (0x595f8), whose source in ride data was not traced. So in this build set
+  mode is the default and add mode needs that explicit flag. Corpus: 27
+  geometry members carry 0x4 (coaster pylons, carts, track), 31 vertex clips pair
+  with them, and no object-catalog model has it.
+- **Clip bind 0xa5894** (target and base header, each as object +8 → +4): for
+  every record of the clip being replaced it clears node-state flags 0x00800000
+  (with header flag 0x4) or 0x00F40000 (without), which includes the
+  static-group/cursor-reset flag. Channels the replaced clip animated but the
+  new one does not (`old & ~new` per node, 0xa5aa8) are copied back from the
+  base header: matrix rows for 0x289, the vertex block (`(n + 3)/4 × 48` bytes
+  via `memcpy`) plus the four bounds words for 0x1000, and the array at +104
+  (count +94, i.e. texture coordinates per corner) for 0x10000. The last is a
+  lead that the 0x10000 block animates texture coordinates; it is not proven.
+- The record +60 binding itself (where a clip's records are pointed at the
+  header's records) was not found among direct stores; the sampler and the bind
+  routine agree on the record layout above.
+- 0xa4a58 computes `modf(time)` and a decremented integer part on entry
+  (0xa4a88–0xa4abc) that nothing reads.
 
 ### Animation clock: 30 ticks per second (proven for this build)
 
@@ -225,8 +274,8 @@ cursor`.
   `(time − ticks[c])/(ticks[c+1] − ticks[c])` in single precision, so a time on a
   key tick stays on the earlier segment with fraction 1 and a time before the
   first tick extrapolates. Values are `cur·(1 − t) + (next·t)` (`fmuls` then
-  `fmadds`). Destination is the node state's position array (+96), laid out
-  like the stored blocks (`48·(v/4) + 4·(v%4)` for X, +16 Y, +32 Z); add mode
+  `fmadds`). Destination is the node state's position array (+96, the mesh
+  record's vertex block), laid out like the stored blocks (`48·(v/4) + 4·(v%4)` for X, +16 Y, +32 Z); add mode
   adds, else sets.
 - Group 0 is always handled by 0xa468c and uses **both** of its vertices
   (words 0 and 1 of each key row): `lerp(v0) − scale − 0.25` → node state
@@ -235,13 +284,14 @@ cursor`.
   paired), `v0 ≤ v1` on every axis at every key (63,465 keys), and every key of
   another group at a group-0 tick lies between them (713,695 animated and
   7,308 static vertex keys, none outside). So group 0 is a per-key bounding box
-  padded by one quantisation step plus 0.25; the consumer of node state
-  +120/+132 was not traced. (b0935b4 described only vertex 0 as an instance
+  padded by one quantisation step plus 0.25, written over the mesh record's
+  stored bounds fields (see "Instance, node state and clip bind"); their reader
+  was not traced. (b0935b4 described only vertex 0 as an instance
   translation; that was wrong.)
 - Header flag 0x2: group 1 is static (key 0, no interpolation), applied only
   while node-state flag 0x00800000 is clear; a set-mode pass then sets that flag
-  (0xa4ddc), so cursors persist and the static group is not re-applied until
-  something clears it (not traced). Corpus: flags are 1 (1,338) or 3 (398);
+  (0xa4ddc), so cursors persist and the static group is not re-applied until the
+  clip is replaced (0xa5894 clears the flag on the replaced clip's nodes). Corpus: flags are 1 (1,338) or 3 (398);
   static groups have 1 (365) or 2 (33) keys.
 - Corpus: fields +4/+6/+8 and the +16 pointer are zero in all 1,736 (the
   dispatcher does not read them); animated groups (group 0 included) have ≥ 2
@@ -399,8 +449,7 @@ rounding therefore cannot be resolved from either binary statically here.
 
 ## Implemented in the parser (`source/OpenTPW.Files/Formats/Model`)
 
-Only the parser and its sampling helpers; runtime vertex buffers, renderer and
-`ObjectAnimator` wiring are left for root review.
+Parser and sampling helpers; the runtime use is in the next section.
 
 | Proof above | C# |
 | --- | --- |
@@ -414,6 +463,8 @@ Only the parser and its sampling helpers; runtime vertex buffers, renderer and
 | easing scale 8.999995, `(1 − s)·lo + (s·hi)` | `ModelAnimationTrack.Ease`, `EaseScale` |
 | key search: before the first key → unchanged (null); last rotation/scale key holds | `SampleTranslation/Rotation/Scale` (the player substitutes the stored node component for null) |
 | scale `(1 − t)·a + (t·b)` | `SampleScale` |
+| set-mode pose (static key 0, then animated groups) and its preconditions | `ModelVertexAnimation.ApplyPose`, `GetPoseLimitation` |
+| header flag 0x4 | `ModelFile.RelativeAnimationFlag` |
 
 Explicitly unsupported (not decoded, reported by `ModelAnimationTrack.UnsupportedFlags`,
 1,122 corpus records): the 12-byte vertex layout (0x4000), the 0x10000 block,
@@ -428,14 +479,50 @@ blocks, 1,735 paired (virtual pair, coverage, whole-clip sampling, 713,683
 bracketed animated keys and none outside), 2,536 toggle lists, 1,278 clip gates
 and 459 texture-frame tracks; these agree with `corpus_check.py`.
 
+## Runtime integration (objects)
+
+`ObjectAnimator` keeps per instance one position array per mesh and fills it
+from the winning clip's vertex track (same most-recent-channel rule as the node
+matrices, an OpenTPW choice) with `ApplyPose` at the channel tick; without one
+the mesh shows its stored positions. Equivalence argument: when
+`GetPoseLimitation` is null the static and animated groups write every position
+of the mesh, so the array equals the original's after its set-mode passes since
+the bind, and the base copy on clip replacement (0xa5894) equals showing the
+stored positions. The per-bind cursor is replaced by a fresh search from key 0,
+which is the original's result for times that do not decrease since the bind; at
+a sandbox loop wrap this assumes the original rebinds (its loop policy is not
+traced). Played: 599 of the 609 catalog clips that carry vertex tracks; the 10
+others hold only the 12-byte layout (23 tracks) and are listed in
+`VertexLimitations` with the stored mesh shown. Also listed instead of guessed:
+relative-animation models, blocks that do not list every position once, and
+groups that end before the clip (none in the catalog).
+
+`ObjectRenderParts.WritePositions` maps positions through the corner order into
+the part's own vertex array (engine axes; stored normals kept), and
+`OriginalObject` refreshes a fixed-size `Dynamic` vertex buffer
+(`Model.UpdateVertices`) through the frame command list only when the mesh's pose
+version changes. The parsed `ModelFile` is shared through the model cache and is
+never written. Tests: two Belly Bounce instances at ticks 30 and 105 hold
+different poses, each equal to a direct sample; the shared positions are
+unchanged; each `Build` gets its own arrays; stopping one instance restores its
+stored mesh only; a Metal readback of two dynamic buffers keeps each instance's
+upload over three frames with no buffer growth. Native jungle smoke (baseline
+and Patch 2 data) passes, 3,808 frames each; it does not assert vertex-animated
+pixels.
+
+Not wired, because the runtime binding is not proven: group-0 bounds (no
+consumer of the mesh-record bounds traced), node-flag toggles (bit 0x10's
+consumer), texture-frame tracks (the header slot entries are identified, but the
+engine's frame-to-texture use and option bit 0x8 at run time are not), the
+0x10000 block, add mode, and normals after a vertex pass.
+
 ## Code replacement handoffs (root to verify and integrate)
 
-1. **MD2 animation runtime**: the parser side is above. Still to wire after
-   review: apply vertex groups to the mesh positions per frame (set mode,
-   static group once), use group 0's padded box for culling/bounds if wanted,
-   texture-frame tracks to texture slot frames, and the 0x20000 bit once its
-   consumer is known. Keep 30 ticks/s but cite this proof. Gate PC claims behind
-   a PC capture. `docs/MD2-MODELS.md` should take the layouts above.
+1. **MD2 animation runtime**: vertex tracks are wired for objects (section
+   above; `docs/MD2-MODELS.md` updated). Still open: texture-frame tracks to
+   texture slot frames, the 0x20000 bit, group-0 bounds, once their consumers
+   are known. Keep 30 ticks/s but cite this proof. Gate PC claims behind a PC
+   capture.
 2. **Fidelity register / RIDES-001**: tick rate is proven (Mac, speed 1.0);
    loop policy, scene-clock scaling/pause and trigger mapping remain open.
 3. **TPWS** (`SavePayloadLayout`, `TPWS-PAYLOAD.md`, importer naming): treat tags
@@ -450,8 +537,9 @@ and 459 texture-frame tracks; these agree with `corpus_check.py`.
 
 ## Unresolved, with exact dependencies
 
-- Consumers of node state +120/+132 (group-0 box) and of the static-group /
-  cursor reset flag 0x00800000 (who clears it on clip change).
+- Consumers of the mesh-record bounds (+120/+132, written by group 0) and of
+  node flag 0x00010000; where record +60 is bound to the header's records; the
+  ride-data source of the 0x594c8 flag word that permits relative animation.
 - Degenerate inputs absent from the corpus and not modelled: a single-key
   rotation track (the wrapping search divides by zero, so the original
   produces NaN), times past a vertex group's last tick, and position-time

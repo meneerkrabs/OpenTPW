@@ -215,6 +215,36 @@ public class Md2VertexAnimationTests
 	}
 
 	[TestMethod]
+	public void SetModePoseWritesStaticKeyZeroAndAnimatedGroups()
+	{
+		var vertex = Read( CreateAnimation() ).Tracks[0].VertexAnimation!;
+		var expected = Mesh();
+		vertex.ApplyStaticGroup( expected, add: false );
+		vertex.ApplyAnimatedGroups( 7, expected, add: false );
+		var positions = Mesh();
+		vertex.ApplyPose( 7, positions );
+		CollectionAssert.AreEqual( expected, positions );
+		CollectionAssert.AreEqual( new[] { new NVector3( 256.5f, 2, 3 ), new NVector3( -255, 2.25f, 1 ), new NVector3( 5, 3, 5 ), new NVector3( 1, 2, 3 ) }, positions );
+		// Every position is written, so the result does not depend on what the array held.
+		var other = new NVector3[4];
+		vertex.ApplyPose( 7, other );
+		CollectionAssert.AreEqual( positions, other );
+	}
+
+	[TestMethod]
+	public void PoseNeedsEveryPositionListedOnceThroughTheClip()
+	{
+		var vertex = Read( CreateAnimation() ).Tracks[0].VertexAnimation!;
+		Assert.IsNull( vertex.GetPoseLimitation( 4, 10 ) );
+		Assert.AreEqual( "no group lists vertex 4", vertex.GetPoseLimitation( 5, 10 ) );
+		Assert.AreEqual( "vertex index 3 lies outside the 3 mesh positions", vertex.GetPoseLimitation( 3, 10 ) );
+		Assert.AreEqual( "an animated group ends at tick 10, before the clip end 11", vertex.GetPoseLimitation( 4, 11 ) );
+		var data = CreateAnimation();
+		W16( data, AnimatedIndices + 2, 1 );
+		Assert.AreEqual( "vertex 1 is listed by more than one group", Read( data ).Tracks[0].VertexAnimation!.GetPoseLimitation( 4, 10 ) );
+	}
+
+	[TestMethod]
 	public void SamplingOutsideTheTracedDomainIsExplicit()
 	{
 		var vertex = Read( CreateAnimation() ).Tracks[0].VertexAnimation!;

@@ -31,6 +31,8 @@ public readonly record struct SchedulerAdvance(
 /// Pure finite scheduler slice from code:0x1c22b4–0x1c24cc and 0x105398–0x1053a0.
 /// Unsupported timestamp boundaries return the original state, never guessed work.
 /// Per-callback turn work begins at zero; caller binding must establish the normal reset path.
+/// ScriptPassCounter assumes the manager is initialized; native +0 gates its increment.
+/// An initialized empty manager still increments. ScriptManagerPasses counts manager calls.
 /// </summary>
 public static class SchedulerRules
 {

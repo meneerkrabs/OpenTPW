@@ -606,3 +606,151 @@ and existing catalog/advisor behavior. It does **not** exercise the large-count
 allocation order above, prove complete renderer state isolation, or provide
 original-game visual/clock traces. Passing valid corpus inputs cannot clear the
 allocation objection.
+
+## Consumer dependencies after the scheduler review
+
+This follow-up uses the identified application above and C runtime
+`c_c++_shared.data`, SHA-256
+`5e04f9c00c922dc78a787d1b93067c75d37a3e65b0a0202e50c2f449f131b27f`,
+code section 0 and TOC data section 1 `0x8000`. The live-source map was read
+from root commit `9e40f52b7a43825c943393b27d754ab00df5c236`; it describes
+connections required for future integration, not production changes.
+
+### Three distinct mode/state domains
+
+The callback dispatch at `0x1c1358..0x1c1374` uses state word
+`data:0x15c488`, reached through TOC `data:0x988`, and a 16-entry code-pointer
+table at `data:0x52cc8` through TOC `data:0x4770`. Callback state **4** dispatches
+`0x1c1378`, sets state **5**, then leaves the body. Callback state **10**
+dispatches `0x1c2264`, the active scheduler. These are distinct from the
+GameType selector **0/1/2** and from world field `+0x1da738`.
+
+The latter world field is tested against **4** at `0x1053a4..0x1053ac`,
+after `mGameTick` has already incremented at `0x105398..0x1053a0`. Its equality
+branch targets `0x105470`, bypassing normal thing iteration (`0x1053b0..0x10546c`).
+The common tail still calls player update `0xd67f0` at `0x10563c`; that updater
+calls calendar `0xe3f0c` at `0xd6818` using player member `+672`. Therefore world
+state 4 alone does **not** stop the virtual calendar or advisor turn history.
+The scenarios lane's bankruptcy-to-state-4 path must be combined with any
+subsequent callback/pause transition before claiming that bankruptcy freezes
+time. It does prevent the bypassed regular guest/thing update on this path.
+The same world-state-4 comparison also zeros two periodic aggregate operands
+at `0x1c2460..0x1c2468` and `0x1c24ac..0x1c24b4`; their full downstream meaning
+remains separate from clock units.
+
+### Manager initialization, sample time and signed timer boundaries
+
+Manager initialization `0xb2760` sets manager `+0 = 1`, `+8 = 1`, list head
+`+16 = 0`, and pass counter `+4 = 0` at `0xb27a0..0xb27c0`. The manager at
+`0xb2838` checks initialized state `+0` at `0xb2870..0xb2878`; the zero path
+bypasses incrementing `+4`. Its initialized path increments the counter before
+reading list `+16`, so an initialized **empty** list still advances the pass
+phase. Shutdown `0xb2b18` clears initialized state at `0xb2b68`. The standalone
+`SchedulerRules.ScriptPassCounter` assumes the manager is initialized during
+allowed work; its `ScriptManagerPasses` counts calls and cannot by itself prove
+a manager counter advance while initialization is false. Script IDs require
+manager-owned allocation, independently of attraction and guest IDs.
+
+Animation cache update `0xa6f70` is called at `0x1c22ac`, before the scheduler
+samples its loop's current word at `0x1c22b4`. It fills global animation
+`+16400` with the selected scaled clock and `+16408` with the unscaled clock.
+The per-channel frame formula reads those cached words. In contrast, RSE
+GETTIME/WAIT/SETTIMER/GETTIMER call the clock getter again at their instructions.
+A catch-up pass is **not** an instruction to advance all clocks by 31 ms.
+Injected timestamp reads must preserve this distinction between cached callback
+samples, direct getter samples, and scheduled previous time.
+
+SETTIMER `0xb1fd0` stores wrapped word `now + resolved_operand` in script `+196`.
+GETTIMER `0xb1ffc` subtracts the current word at `0xb2014`, stores raw difference
+in accumulator `+72`, and uses a **signed** compare/clamp at `0xb2020..0xb202c`.
+Thus deadline `0x80000010`, now 0 gives remaining 0; deadline `0x10`, now
+`0xfffffff0` gives 32. This differs from WAIT's unsigned now/deadline comparison
+and from the live VM's wide double deadline with a ceiling/nonnegative clamp.
+The new witness separately verifies BO/BI/target of the negative clamp branch.
+
+Animation elapsed `0xa70a4` is a wrapped subtraction interpreted **unsigned**:
+the conversion uses high word `0x4330` without a signed XOR and subtracts
+`2^52` from the constructed double (`data:0x51a8`). It then rounds to binary32
+before separately rounded multiplication by 30, division by 1000, and
+multiplication by channel speed (`0xa70b4..0xa70c4`). Backward timestamps are
+not clamped here. For now 100/start 200/speed 1, the bounded formula gives
+128849016 frames after the unsigned word rounds to `2^32`; this is an
+arithmetic edge witness, not a claim that normal playback reaches that state.
+
+Scheduler reset `0x1c3520` samples the current selected clock into previous
+scheduled time and two other cadence stamps (`0x1c3538..0x1c3568`), then clears
+substep phase at `0x1c3570`. Its only direct linked call in this identified
+code is `0x1c2274`, behind a nonzero reset request at TOC `data:0x1864` (pointer to
+`data:0x15c468`). Lifecycle routine `0x11b4f4` sets that request to 1 at
+`0x11b540..0x11b548`; the scheduler clears it at `0x1c227c..0x1c2280`. The
+complete caller mapping of that lifecycle routine and indirect entry paths
+remains unresolved. No automatic near-`2^31` reset is established; the signed crossing
+remains unsupported in the bounded scheduler contract.
+
+### RSE civil time is an independent clock domain
+
+The RSE dispatch table binds YEAR 97 to `0xb2144`, MONTH 98 to `0xb2194`, DAY
+99 to `0xb21e8`, and HOUR 100 to `0xb2238`. Every handler invokes app glue
+`0x1c6474` importing C runtime **time**, then `0x1c648c` importing **localtime**.
+Their return fields are:
+
+| Opcode | Native result | Load/adjust address |
+| --- | --- | --- |
+| YEAR 97 | `tm_year` directly, with no addition of 1900 | `0xb215c` reads `+20` |
+| MONTH 98 | `tm_mon + 1` | `0xb21ac` reads `+16`; `0xb21b4` adds 1 |
+| DAY 99 | `tm_mday` | `0xb2200` reads `+12` |
+| HOUR 100 | `tm_hour` | `0xb2250` reads `+8` |
+
+C runtime transition vector `data:0x1dcc` maps time to `0x23200`; vector
+`data:0x1dac` maps localtime to `0x23974`. Time calls wrapper `0x248a8`, which
+invokes full validated import glue `0x2bf30` for InterfaceLib **GetDateTime** at
+`0x248b8`. The wrapper adds 126144000 to the returned word at `0x248c4..0x248c8`.
+Apple defines this OS input as current seconds since January 1, 1904.
+[Apple, Getting the Current Date and Time](https://developer.apple.com/library/archive/documentation/mac/OSUtilities/OSUtilities-105.html)
+The offset is the 1461 days from January 1, 1900 to January 1, 1904. Localtime
+passes that word to converter `0x22d00`; the year-count loop starts at zero
+(`0x22d3c`), increments at `0x22de8`, and stores the count directly at `+20`
+(`0x22df0`). This native chain supports the year-minus-1900 interpretation,
+without relying only on the export name or a modern runtime's ABI.
+
+These opcodes use host civil time, independently of scale, scheduler turn
+count, virtual epoch and pause offset. They sample host time only when an
+eligible script executes. The native OS timezone, invalid/rollover dates,
+clock edits, imported runtime loading, and Windows/Patch 2 implementation still
+need qualification. They must not be connected to `ParkCalendar.ToDate` merely
+because `Clock.RSE` uses HOUR. Flags/destination-fetch ordering are not approved
+by this clock-domain witness.
+
+### Live integration map
+
+| Live consumer at the pinned root version | Required original input/state | Connection dependency |
+| --- | --- | --- |
+| `Level.Update` → `FixedStepClock.Advance` | Callback state10; selected `u32` source; previous scheduled word; outer phase; reset request; binary flag gates; cap reset | One scheduler owner supplies allowed work and world turns. Current 60 Hz/16-step frame loop does not implement the 31 ms ceiling/2000 ms/3-turn rules. |
+| `RideVM.Advance`, `Handlers/Scheduling.GetTime` | Shared selected clock word; manager initialized state/phase; stable script ID; `+184` phase override; header `+148` budget | Supply shared clock samples and eligible slices separately. A VM's creation time, `TimeMilliseconds`, or recursive per-child elapsed update cannot substitute for the manager clock/ID list. |
+| `WAIT`, `WAITABS`, `SETTIMER`, `GETTIMER`, animation waits | Separate raw word deadline fields `+160/+164/+196`, zero sentinel, first-encounter yield; signed bias `+192` | Preserve each opcode's conversion and comparison. Do not normalize all deadlines to one wide monotonic/nonnegative duration API. |
+| `OriginalObjectRuntime.Simulate` → `ObjectAnimator.Advance`; `PrototypeRide` | Callback animation caches; channel `+16` start word, `+12` speed, flag `0x40` source selection, `+32` binary32 frame | Feed selected timestamps, then native frame arithmetic. Local double elapsed totals and multiplying the same per-object seconds by 30 omit alternate clock, reset, wrap and callback-cache behavior. Playback/loop/end options remain the formats/rides contract. |
+| `ParkEconomyRuntime.FixedTick` → `ParkEconomy.AdvanceFixedTick` / `ParkCalendar.ToDate` | Actual world counter `+0x1da70c`, serialized epoch/rate, calendar previous fields and day/month/year messages | Advance the original world counter once per admitted turn, then compute virtual date. Do not reapply `GameSpeed` after the scheduler scales time. World state4 suppresses regular things but still reaches calendar update. Existing 60 Hz/30-day persisted port `Tick` is a different field and cannot be silently reinterpreted. |
+| `Handlers/Effects.Year/Month/Day/Hour` → effect hook | Host civil `time/localtime` field snapshot, sampled at instruction execution | A separate host-date provider is required. `IParkClock`'s virtual date is the wrong domain for this Mac path; these hooks currently lack a demonstrated original binding. |
+| `Advisor.Render` / `SpeechAudioPlayer.Position` / `LipSyncTimeline` | Unscaled pause-aware elapsed word, speech-start stamp, one-mark-per-update strict deadline, independent mouth-choice elapsed state | LIP driver's elapsed source is independent of PCM queue position and selected simulation speed. Do not wire it to scheduler phase or virtual turn; native audio pause/completion callbacks remain separate. |
+| Native advisor queue/repeat history (standalone helper, no live root binding) | World counter sampled/stored raw; elapsed `(current >> 2) - (saved >> 2)` with word arithmetic | Supply actual world counter, including cap/gates/state4 behavior. A wall-second cooldown or LIP elapsed value does not reproduce history units. |
+
+The adapter boundary therefore needs explicit raw clock reads, a scaled/pause
+wrapper, an unscaled/pause wrapper, callback animation samples, scheduler
+previous/phase/cap state, manager initialization/pass/IDs, and original world
+counter. Live source ownership and save migration require a separate integration
+change. The current standalone C# scheduler intentionally excludes unqualified
+signed timestamp crossings; it must expose that diagnostic to its caller rather
+than inventing native recovery.
+
+Reproduction:
+
+```sh
+python3 tools/ppc-analysis/lanes/clock/clock_consumers.py /path/to/mac-feral/bin
+OPENTPW_PPC_BIN_ROOT=/path/to/mac-feral/bin python3 -m unittest discover -s tools/ppc-analysis/lanes/clock -p test_clock_consumers.py -v
+```
+
+Validation: **9/9** new tests with the identified-input witness enabled; eight
+bounded application hashes and four C runtime hashes; full six-instruction
+import-glue validation for both RSE time imports and the OS host-clock import.
+Synthetic examples qualify finite arithmetic only. No original instructions
+were executed and no game source or original bytes were added.

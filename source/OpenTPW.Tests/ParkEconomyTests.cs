@@ -534,6 +534,22 @@ public class ParkEconomyTests
 	}
 
 	[TestMethod]
+	public void GoldenTicketsAreCheckedEvery100TicksInFullSimulationOnly()
+	{
+		foreach ( var mode in new[] { ParkGameMode.FullSimulation, ParkGameMode.InstantAction } )
+		{
+			var park = EconomyTestData.Park( mode: mode );
+			park.OpenPark();
+			for ( var visitor = 0; visitor < 100; visitor++ )
+				park.TryAdmitVisitor( 100, out _ );
+			park.Advance( ParkEconomy.GoldenTicketCheckInterval - 1 );
+			Assert.AreEqual( 0, park.Objectives.GoldenTickets.Count, $"{mode}: not checked before tick 100" );
+			park.Advance( 1 );
+			Assert.AreEqual( mode == ParkGameMode.FullSimulation ? 1 : 0, park.Objectives.GoldenTickets.Count, $"{mode}: checked at tick 100" );
+		}
+	}
+
+	[TestMethod]
 	public void GoldenTicketsAndKeys()
 	{
 		var park = EconomyTestData.Park();

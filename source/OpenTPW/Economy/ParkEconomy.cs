@@ -112,6 +112,10 @@ public sealed class ParkEconomy : IParkEconomy
 		for ( long step = 0; step < ticks && !IsBankrupt; step++ )
 		{
 			Tick++;
+			// [BIN:STP-PPC:0x100D67F0 world update] the golden-ticket check (0x100D31D0) runs when the world tick counter is a multiple of 100, and only in Full Simulation (game type 0)
+			// [APPROX:ECON-033] one park tick stands for one original world update — evidence needed: the world-update rate against OpenTPW's fixed tick
+			if ( Tick % GoldenTicketCheckInterval == 0 && Mode == ParkGameMode.FullSimulation )
+				CheckGoldenTickets();
 			if ( Tick % ParkCalendar.TicksPerHour == 0 )
 				UpdateHour();
 			if ( Tick % ParkCalendar.TicksPerDay != 0 )
@@ -121,6 +125,14 @@ public sealed class ParkEconomy : IParkEconomy
 			if ( day % ParkCalendar.DaysPerMonth == 0 )
 				EndMonth( day / ParkCalendar.DaysPerMonth );
 		}
+	}
+
+	public const int GoldenTicketCheckInterval = 100;
+
+	private void CheckGoldenTickets()
+	{
+		foreach ( var ticket in Objectives.CheckGoldenTickets( Counters, guestStatistics, Research, Ledger.History, monthlyAdmissions ) )
+			Raise( ParkEventKind.GoldenTicketWon, (int)ticket, 0, 0, ticket.ToString() );
 	}
 
 	public void AdvanceDays( int days ) => Advance( (long)days * ParkCalendar.TicksPerDay );
@@ -303,9 +315,6 @@ public sealed class ParkEconomy : IParkEconomy
 			MonthsInRed = 0;
 		var closed = Ledger.CloseMonth( nextMonthIndex, ParkRating, ParkValue );
 		Raise( ParkEventKind.MonthEnded, closed.ClosingBalance, 0, 0, $"in ${closed.MoneyIn}, out ${closed.MoneyOut}" );
-		// [APPROX:ECON-033] golden tickets are checked at each month end — evidence needed: capture of the award timing
-		foreach ( var ticket in Objectives.CheckGoldenTickets( Counters, guestStatistics, Research, Ledger.History, monthlyAdmissions ) )
-			Raise( ParkEventKind.GoldenTicketWon, (int)ticket, 0, 0, ticket.ToString() );
 		if ( nextMonthIndex % ParkCalendar.MonthsPerYear == 0 )
 		{
 			var year = Ledger.SummariseYear( nextMonthIndex / ParkCalendar.MonthsPerYear - 1 );

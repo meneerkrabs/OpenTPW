@@ -192,7 +192,7 @@ mismatches; original-data tests check the typed PC fixture.
 | Maintenance | Wear rates, upgrade durations, worn threshold 25 | Wear per open day, repair restores 100 |
 | Research | Items, categories, groups, costs, effort, ability, thresholds | Points per day, group opening rule, info-id research order, automatic Instant Action rate |
 | Challenges | Definitions, level list, timings, prizes, follow-ups | Type semantics from comments; explicit accept/decline; types 14, 22, 23, 26, 32+ unmeasured |
-| Golden tickets | All thresholds | Monthly check; tickets spent on purchases |
+| Golden tickets | All thresholds | Checked every 100 world updates in Full Simulation only (traced); one park tick per world update is approximate; tickets spent on purchases |
 | Keys/progression | Keys per theme, theme order (THEMENAMES; ascending key cost); +1 per 3 earned golden tickets; spending tickets preserves keys (manual p. 28) | Start with 1 key; keys persist when entering themes |
 | Park rating | — (traced: Mac binary 0x100C7B24) | Capped counts: guests in park × 20 / 1000 (max 20), rides × 1.5 (max 20), shops and sideshows × 2 (max 10 each), features (max 10), rides at upgrade level 2 (max 10), each staff type (max 4); the sub-kind to object-kind mapping is approximate |
 
@@ -277,7 +277,7 @@ site, is listed in `Economy/EconomyApproximations.cs` and is logged once at star
 | ECON-029 | `Economy/ParkEconomy.cs:438` | golden tickets are spent when buying items with GoldenTicketCost | capture of ticket count after such a purchase |
 | ECON-030 | `Economy/ParkEconomy.cs:110` | the simulation stops once bankrupt | capture of the bankrupt state |
 | ECON-031 | `Economy/ParkEconomyRuntime.cs:33` | imported parks are opened on load (open state not decoded) | park-open flag in the save |
-| ECON-033 | `Economy/ParkEconomy.cs:304` | golden tickets are checked at each month end | capture of the award timing |
+| ECON-033 | `Economy/ParkEconomy.cs:116` | one park tick stands for one original world update | the world-update rate against OpenTPW's fixed tick |
 | ECON-034 | `Economy/ParkObjectives.cs:113` | challenge type meanings come from Challenges.sam comments (shop types by ShopType/SpecialIngredient) | challenge captures per type |
 | ECON-035 | `Economy/ParkObjectives.cs:153` | offers wait for accept/decline; follow-ups are offered right after completion; failed challenges count as finished | challenge flow captures |
 | ECON-036 | `Economy/ParkObjectives.cs:149` | build challenges with TargetVal 0 need one item; type 28 needs level 3 | challenge captures |

@@ -40,7 +40,7 @@ public static class EconomyApproximations
 		("ECON-029", "golden tickets are spent when buying items with GoldenTicketCost", "capture of ticket count after such a purchase"),
 		("ECON-030", "the simulation stops once bankrupt", "capture of the bankrupt state"),
 		("ECON-031", "imported parks are opened on load (open state not decoded)", "park-open flag in the save"),
-		("ECON-033", "golden tickets are checked at each month end", "capture of the award timing"),
+		("ECON-033", "one park tick stands for one original world update", "the world-update rate against OpenTPW's fixed tick"),
 		("ECON-034", "challenge type meanings come from Challenges.sam comments (shop types by ShopType/SpecialIngredient)", "challenge captures per type"),
 		("ECON-035", "offers wait for accept/decline; follow-ups are offered right after completion; failed challenges count as finished", "challenge flow captures"),
 		("ECON-036", "build challenges with TargetVal 0 need one item; type 28 needs level 3", "challenge captures"),

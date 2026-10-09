@@ -142,7 +142,7 @@ screens, options), `FrontEnd/`, `Hud/`, `World/Lobby/LobbyScene.cs`,
 - Load Park (202): original Easymode parks (read-only) and the OpenTPW sandbox
   save. Quit asks with the original confirmation (9).
 - Not implemented: player profiles (Create/Select New Player), online world,
-  golden tickets/keys, credits, intro movies before the lobby.
+  golden tickets/keys, credits. (The start-up movies now play before the lobby: docs/TGQ-MOVIES.md.)
 
 ### Button text fitting
 
@@ -355,6 +355,7 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-031 | `Hud/ParkHud.cs:350` | one placement per menu selection; Level.PlaceObject owns purchase/guest linkage and its removal handler owns scrap credits | original build-tool continuation |
 | UI-032 | `UI/Original/UiWidgets.cs:179`, `Hud/ParkHud.cs:590` | longer labels fall back to the small font; catalogue names greedily wrap in their slots | captures of translated original screens |
 | UI-034 | `UI/Original/UiImages.cs` | a fully opaque texture on a transparent (flag 0x2) model slot keys out black; only `ipan` in the lobby `f_lobbutbg` panel | the original's render state for flagged texture slots |
+| UI-035 | `Client/Movie/IntroPlaylist.cs` | start-up movies: the Mac order (bf, then a day-of-month trailer) assumed for the PC; input held at launch ignored until released; movies letterboxed to 640:352 | PC executable analysis or captures of the PC start-up sequence |
 
 Data-backed (tagged `[DATA]`): the 2048×1536 canvas and authored rectangles of
 placed models (`ui.wad` roots/bounds), button state frames and texture order, V

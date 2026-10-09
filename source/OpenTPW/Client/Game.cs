@@ -186,17 +186,41 @@ internal static class Game
 		// Default: the original-style front end (docs/UI.md). --load-original-level, --sandbox and a
 		// plain --smoke-test bypass it as before; --front-end --smoke-test tests the front end.
 		using var flow = new GameFlow { OnlineFolders = onlineFolders };
-		Render.OnUpdate += flow.Update;
-		Render.OnRender += flow.Render;
+		var smoke = args.Contains( "--smoke-test" );
+		var frontEndRun = visit == null && originalLevelIndex < 0 && !args.Contains( "--advisor-say" ) && !args.Contains( "--sandbox" ) && (!smoke || args.Contains( "--front-end" ));
+		// The original plays its start-up movies before the front end on every start (docs/TGQ-MOVIES.md);
+		// smoke tests and --no-intro / OPENTPW_NO_INTRO go straight to the front end.
+		var playIntro = frontEndRun && !smoke && !args.Contains( "--no-intro" ) && string.IsNullOrEmpty( Environment.GetEnvironmentVariable( "OPENTPW_NO_INTRO" ) );
+		if ( !playIntro )
+		{
+			Render.OnUpdate += flow.Update;
+			Render.OnRender += flow.Render;
+		}
 		var capturePath = GetOption( args, "--capture-world", "a .png file for the world-only screenshot" );
 		if ( capturePath != null )
 		{
 			var frames = GetOption( args, "--capture-frames", "a frame count" ) is { } text && int.TryParse( text, out var parsed ) && parsed > 0 ? parsed : 240;
 			Render.PostUpdate += new WorldCapture( capturePath, frames ).Update;
 		}
-		var smoke = args.Contains( "--smoke-test" );
-		if ( visit == null && originalLevelIndex < 0 && !args.Contains( "--advisor-say" ) && !args.Contains( "--sandbox" ) && (!smoke || args.Contains( "--front-end" )) )
+		if ( frontEndRun )
 		{
+			if ( playIntro )
+			{
+				using var intro = new IntroSequence( dataDirectory, IntroPlaylist.For( DateTime.Now ), !args.Contains( "--mute" ), GameOptions.Gain( GameOptions.Current.MovieVolume ) );
+				Render.OnUpdate += intro.Update;
+				Render.OnRender += intro.Draw;
+				intro.Completed += () =>
+				{
+					Render.OnUpdate -= intro.Update;
+					Render.OnRender -= intro.Draw;
+					Render.OnUpdate += flow.Update;
+					Render.OnRender += flow.Render;
+					flow.DiscardHeldInput();
+					flow.ShowFrontEnd();
+				};
+				Render.Run();
+				return;
+			}
 			flow.ShowFrontEnd();
 			if ( smoke )
 			{

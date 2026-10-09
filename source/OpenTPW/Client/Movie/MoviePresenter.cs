@@ -4,7 +4,7 @@ namespace OpenTPW;
 
 /// <summary>
 /// Uploads decoded movie frames to a GPU texture (CPU BT.601 full-range conversion to RGBA) and draws them
-/// aspect-correct (square pixels, letter/pillarboxed) with the fullscreen-triangle blit shader.
+/// at the original's display aspect (letter/pillarboxed) with the fullscreen-triangle blit shader.
 /// </summary>
 internal sealed class MoviePresenter : IDisposable
 {
@@ -38,8 +38,17 @@ internal sealed class MoviePresenter : IDisposable
 			output ) );
 	}
 
+	/// <summary>
+	/// Width : height of the displayed picture. The original draws every movie into a rectangle of the screen width
+	/// by 352/480 of its height, which is 640 x 352 on a 640 x 480 screen; the 320 x 352 TGQ frames are therefore
+	/// shown at twice their width, with non-square pixels ([BIN:STP-PPC:0x1009B1DC movie box], docs/TGQ-MOVIES.md).
+	/// </summary>
+	public const double OriginalDisplayAspect = 640d / 352;
+
 	public int Width { get; }
 	public int Height { get; }
+	/// <summary>Displayed width : height; 0 keeps the movie's own (square-pixel) aspect.</summary>
+	public double DisplayAspect { get; init; } = OriginalDisplayAspect;
 	/// <summary>RGBA of the last uploaded frame (CPU copy, used for readback checks).</summary>
 	public ReadOnlySpan<byte> Pixels => rgba;
 	public bool HasFrame { get; private set; }
@@ -53,12 +62,16 @@ internal sealed class MoviePresenter : IDisposable
 		HasFrame = true;
 	}
 
-	/// <summary>Largest centred rectangle with the movie's aspect ratio inside a target of the given size.</summary>
-	public static (int X, int Y, int Width, int Height) Fit( int movieWidth, int movieHeight, int targetWidth, int targetHeight )
+	/// <summary>
+	/// Largest centred rectangle with the given display aspect (width : height; 0 = the movie's own) inside a
+	/// target of the given size.
+	/// </summary>
+	public static (int X, int Y, int Width, int Height) Fit( int movieWidth, int movieHeight, int targetWidth, int targetHeight, double displayAspect = 0 )
 	{
-		var scale = Math.Min( targetWidth / (double)movieWidth, targetHeight / (double)movieHeight );
-		var width = Math.Max( 1, (int)Math.Round( movieWidth * scale ) );
-		var height = Math.Max( 1, (int)Math.Round( movieHeight * scale ) );
+		var aspect = displayAspect > 0 ? displayAspect : movieWidth / (double)movieHeight;
+		var scale = Math.Min( targetWidth / aspect, targetHeight );
+		var width = Math.Max( 1, (int)Math.Round( scale * aspect ) );
+		var height = Math.Max( 1, (int)Math.Round( scale ) );
 		return ((targetWidth - width) / 2, (targetHeight - height) / 2, width, height);
 	}
 
@@ -66,7 +79,7 @@ internal sealed class MoviePresenter : IDisposable
 	{
 		if ( !HasFrame )
 			return;
-		var (x, y, width, height) = Fit( Width, Height, (int)targetWidth, (int)targetHeight );
+		var (x, y, width, height) = Fit( Width, Height, (int)targetWidth, (int)targetHeight, DisplayAspect );
 		commands.SetViewport( 0, new Viewport( x, y, width, height, 0, 1 ) );
 		commands.SetPipeline( pipeline );
 		commands.SetGraphicsResourceSet( 0, resourceSet );

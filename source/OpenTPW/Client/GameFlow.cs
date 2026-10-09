@@ -54,6 +54,12 @@ internal sealed class GameFlow : IDisposable
 
 	public void Queue( Action transition ) => pending = transition;
 
+	/// <summary>
+	/// Records the keys and buttons held right now as already seen, so a press that skipped the start-up movies
+	/// (Space also activates a menu button) does not act on the front end's first frame.
+	/// </summary>
+	public void DiscardHeldInput() => inputSource.Poll( 1, 1 );
+
 	// ---- Front end -------------------------------------------------------------------------
 
 	public void ShowFrontEnd( string? selectLevel = null )

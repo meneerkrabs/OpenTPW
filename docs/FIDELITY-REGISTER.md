@@ -157,7 +157,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-012 | Original-fidelity area (scope unadjudicated) | hover focuses, release activates, arrows/Enter/Escape navigate, P pauses, right click backs out of modal screens | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:23` |
 | UI-013 | Original-fidelity area (scope unadjudicated) | window sizes and inner layout of options, game mode, load, pause and message dialogs | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:24` |
 | UI-014 | Original-fidelity area (scope unadjudicated) | positions inside the lobby panel (island name, prev/enter/next), logo/title placement, right-hand Load/Options/Quit column | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:25` |
-| UI-015 | Original-fidelity area (scope unadjudicated) | front-end flow without player profiles; Game Mode is asked when entering a park; both modes play the same | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:26` |
+| UI-015 | Original-fidelity area (scope unadjudicated) | front-end flow without player profiles; Game Mode is asked when entering a park instead of at player creation | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:26` |
 | UI-016 | Original-fidelity area (scope unadjudicated) | lobby ISLAND angle = island yaw in degrees, height = camera target height | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:27` |
 | UI-017 | Original-fidelity area (scope unadjudicated) | lobby camera: SPINSPEED read as radians per 0.1 s, vertical field of view 60, 3/s glide between islands, ISLANDFOV unused | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:28` |
 | UI-018 | Original-fidelity area (scope unadjudicated) | lobby sky drawn as a flat SKYCOLOUR backdrop; flying meshes, rain, lightning, animations not drawn | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:29` |
@@ -215,7 +215,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-004 | `source/OpenTPW/Economy/ParkCalendar.cs:11` | [APPROX:ECON-004] Fast x2 and Fastest x4 speeds (only pause is evidenced) — evidence needed: original speed controls, if any |
 | ECON-005 | `source/OpenTPW/Economy/ParkLedger.cs:53` | [APPROX:ECON-005] challenge prizes and scrap sales are other income; build, upgrade, goods, prizes, land are other costs; loans received are not money in — evidence needed: captured financial screen after these transactions |
 | ECON-006 | `source/OpenTPW/Economy/ParkLedger.cs:121` | [APPROX:ECON-006] APR &gt; 0 repayment is an annuity at APR/12 per month, rounded down; interest accrues monthly on the balance — evidence needed: standard-mode save or capture with an outstanding loan |
-| ECON-007 | `source/OpenTPW/Economy/ParkEconomy.cs:266` | [APPROX:ECON-007] a repaid loan offer becomes available again — evidence needed: capture of the loan screen after repayment |
+| ECON-007 | `source/OpenTPW/Economy/ParkEconomy.cs:271` | [APPROX:ECON-007] a repaid loan offer becomes available again — evidence needed: capture of the loan screen after repayment |
 | ECON-008 | `source/OpenTPW/Economy/ParkStaff.cs:50` | [APPROX:ECON-008] 100 training points per grade (from Online_Standard.sam comments "costs 1000 to get up to grade 1") — evidence needed: capture of a training run |
 | ECON-009 | `source/OpenTPW/Economy/ParkStaff.cs:112` | [APPROX:ECON-009] candidate grade = average + 2 when "great", else average +-1 — evidence needed: hiring pool captures (grade distribution) |
 | ECON-010 | `source/OpenTPW/Economy/ParkStaff.cs:64` | [APPROX:ECON-010] TimeBetweenStaffUpdates/StaffTimeoutTime are seconds at normal speed — evidence needed: capture of pool refresh timing |
@@ -229,19 +229,19 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-018 | `source/OpenTPW/Economy/ParkResearch.cs:41` | [APPROX:ECON-018] ride upgrade levels and add-on objects form the "upgrade" research category — evidence needed: research lab capture |
 | ECON-019 | `source/OpenTPW/Economy/ParkResearch.cs:136` | [APPROX:ECON-019] Instant Action research runs at one grade-2 researcher without staff — evidence needed: Instant Action capture |
 | ECON-020 | `source/OpenTPW/Economy/ParkEconomy.cs:28` | [APPROX:ECON-020] a sale drops LitterEffect/100 litter items — evidence needed: capture of litter after sales |
-| ECON-021 | `source/OpenTPW/Economy/ParkEconomy.cs:185` | [APPROX:ECON-021] a repair takes WorkDuration game hours (x DurationOfUpgrade for upgrades); mechanics are dispatched instantly — evidence needed: capture of repair duration per grade |
-| ECON-022 | `source/OpenTPW/Economy/ParkEconomy.cs:203` | [APPROX:ECON-022] a handyman removes one litter item per WorkDuration game minutes, park-wide — evidence needed: capture of cleaning speed |
-| ECON-023 | `source/OpenTPW/Economy/ParkEconomy.cs:217` | [APPROX:ECON-023] an open ride loses WearRate state of repair per game day; breakdown at 0 — evidence needed: capture of state of repair over time |
-| ECON-024 | `source/OpenTPW/Economy/ParkEconomy.cs:160` | [APPROX:ECON-024] a repair restores state of repair to 100 — evidence needed: capture after a repair |
-| ECON-025 | `source/OpenTPW/Economy/ParkEconomy.cs:329` | [APPROX:ECON-025] scrap value basis = catalogue cost of all levels up to the current one — evidence needed: capture of scrap value |
-| ECON-026 | `source/OpenTPW/Economy/ParkEconomy.cs:337` | [APPROX:ECON-026] park value = sum of scrap values — evidence needed: capture of the park value screen |
-| ECON-027 | `source/OpenTPW/Economy/ParkEconomy.cs:354` | [APPROX:ECON-027] park rating = (2 x happiness + attractions/3 + cleanliness) / 4 — evidence needed: park rating formula (binary/captures) |
-| ECON-028 | `source/OpenTPW/Economy/ParkEconomy.cs:434` | [APPROX:ECON-028] purchases need a balance covering the cost — evidence needed: capture of building with too little money |
-| ECON-029 | `source/OpenTPW/Economy/ParkEconomy.cs:438` | [APPROX:ECON-029] golden tickets are spent when buying items with GoldenTicketCost — evidence needed: capture of ticket count after such a purchase |
-| ECON-030 | `source/OpenTPW/Economy/ParkEconomy.cs:110` | [APPROX:ECON-030] the simulation stops once bankrupt — evidence needed: capture of the bankrupt state |
-| ECON-031 | `source/OpenTPW/Economy/ParkEconomyRuntime.cs:33` | [APPROX:ECON-031] imported parks are opened on load (open state not decoded) — evidence needed: park-open flag in the save |
-| ECON-032 | `source/OpenTPW/Economy/ParkEconomyRuntime.cs:46` | [APPROX:ECON-032] the prototype ride is registered uncharged — evidence needed: replace with a real catalogue purchase (rides slice) |
-| ECON-033 | `source/OpenTPW/Economy/ParkEconomy.cs:304` | [APPROX:ECON-033] golden tickets are checked at each month end — evidence needed: capture of the award timing |
+| ECON-021 | `source/OpenTPW/Economy/ParkEconomy.cs:187` | [APPROX:ECON-021] a repair takes WorkDuration game hours (x DurationOfUpgrade for upgrades); mechanics are dispatched instantly — evidence needed: capture of repair duration per grade |
+| ECON-022 | `source/OpenTPW/Economy/ParkEconomy.cs:205` | [APPROX:ECON-022] a handyman removes one litter item per WorkDuration game minutes, park-wide — evidence needed: capture of cleaning speed |
+| ECON-023 | `source/OpenTPW/Economy/ParkEconomy.cs:219` | [APPROX:ECON-023] an open ride loses WearRate state of repair per game day; breakdown at 0 — evidence needed: capture of state of repair over time |
+| ECON-024 | `source/OpenTPW/Economy/ParkEconomy.cs:162` | [APPROX:ECON-024] a repair restores state of repair to 100 — evidence needed: capture after a repair |
+| ECON-025 | `source/OpenTPW/Economy/ParkEconomy.cs:335` | [APPROX:ECON-025] scrap value basis = catalogue cost of all levels up to the current one — evidence needed: capture of scrap value |
+| ECON-026 | `source/OpenTPW/Economy/ParkEconomy.cs:343` | [APPROX:ECON-026] park value = sum of scrap values — evidence needed: capture of the park value screen |
+| ECON-027 | `source/OpenTPW/Economy/ParkEconomy.cs:360` | [APPROX:ECON-027] park rating = (2 x happiness + attractions/3 + cleanliness) / 4 — evidence needed: park rating formula (binary/captures) |
+| ECON-028 | `source/OpenTPW/Economy/ParkEconomy.cs:440` | [APPROX:ECON-028] purchases need a balance covering the cost — evidence needed: capture of building with too little money |
+| ECON-029 | `source/OpenTPW/Economy/ParkEconomy.cs:444` | [APPROX:ECON-029] golden tickets are spent when buying items with GoldenTicketCost — evidence needed: capture of ticket count after such a purchase |
+| ECON-030 | `source/OpenTPW/Economy/ParkEconomy.cs:112` | [APPROX:ECON-030] the simulation stops once bankrupt — evidence needed: capture of the bankrupt state |
+| ECON-031 | `source/OpenTPW/Economy/ParkEconomyRuntime.cs:35` | [APPROX:ECON-031] imported parks are opened on load (open state not decoded) — evidence needed: park-open flag in the save |
+| ECON-032 | `source/OpenTPW/Economy/ParkEconomyRuntime.cs:48` | [APPROX:ECON-032] the prototype ride is registered uncharged — evidence needed: replace with a real catalogue purchase (rides slice) |
+| ECON-033 | `source/OpenTPW/Economy/ParkEconomy.cs:309` | [APPROX:ECON-033] golden tickets are checked at each month end — evidence needed: capture of the award timing |
 | ECON-034 | `source/OpenTPW/Economy/ParkObjectives.cs:113` | [APPROX:ECON-034] challenge type meanings come from Challenges.sam comments (shop types by ShopType/SpecialIngredient) — evidence needed: challenge captures per type |
 | ECON-035 | `source/OpenTPW/Economy/ParkObjectives.cs:153` | [APPROX:ECON-035] offers wait for accept/decline; follow-ups are offered right after completion; failed challenges count as finished — evidence needed: challenge flow captures |
 | ECON-036 | `source/OpenTPW/Economy/ParkObjectives.cs:149` | [APPROX:ECON-036] build challenges with TargetVal 0 need one item; type 28 needs level 3 — evidence needed: challenge captures |
@@ -254,7 +254,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-043 | `source/OpenTPW/Economy/BalanceSettings.cs:173` | [APPROX:ECON-043] monthly wage = BaseWage[grade] x PayMultiplier[type] — evidence needed: staff list capture with grades |
 | ECON-044 | `source/OpenTPW/Economy/GuestEconomyBridge.cs:60` | [APPROX:ECON-044] balloon/costume percentages are 0 (guests carry no items yet) — evidence needed: guests slice item state |
 | ECON-045 | `source/OpenTPW.Files/Formats/Save/SaveEconomyRecords.cs:91` | [APPROX:ECON-045] loan/challenge record locators use plausibility bounds (one fixture) — evidence needed: a second TPWS/TPWI fixture |
-| ECON-046 | `source/OpenTPW/Economy/ParkEconomy.cs:522` | [APPROX:ECON-046] upgrades need at least one employed mechanic to be bought — evidence needed: capture (TAG_SYSTEM 151 suggests it) |
+| ECON-046 | `source/OpenTPW/Economy/ParkEconomy.cs:528` | [APPROX:ECON-046] upgrades need at least one employed mechanic to be bought — evidence needed: capture (TAG_SYSTEM 151 suggests it) |
 | ONLINE-001 | `source/OpenTPW.Online/Moderation/WordFilter.cs:86` | [APPROX:ONLINE-001] Matching rule — evidence needed: the original filter code is not |
 | ONLINE-002 | `source/OpenTPW.Online/Chat/ChatCommands.cs:180` | [APPROX:ONLINE-002] A line starting with '/' is a command, anything else is "say" — evidence |
 | ONLINE-003 | `source/OpenTPW.Online/Chat/ChatCommands.cs:34` | [APPROX:ONLINE-003] 102/110 are both "Could not add "; assigned to ignore/buddy by their position next to |
@@ -306,12 +306,12 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-012 | `source/OpenTPW/UI/Original/UiScreen.cs:59` | [APPROX:UI-012] hover focus, activate on release, keyboard navigation, right click backs out — evidence needed: binary input handling |
 | UI-013 | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:92` | [APPROX:UI-013] options window size, row pitch 84, OK/Back placement — evidence needed: capture of the original options screen |
 | UI-013 | `source/OpenTPW/UI/Original/UiDialogs.cs:9` | [APPROX:UI-013] dialog window sizes and inner layout — evidence needed: captures of original dialogs |
-| UI-014 | `source/OpenTPW/FrontEnd/FrontEndMenu.cs:76` | [APPROX:UI-014] island name and prev/enter/next button positions in the lobby panel — evidence needed: capture of the original lobby |
-| UI-014 | `source/OpenTPW/FrontEnd/FrontEndMenu.cs:92` | [APPROX:UI-014] logo/title placement and the right-hand Load/Options/Quit column — evidence needed: capture of the original lobby |
-| UI-015 | `source/OpenTPW/FrontEnd/FrontEndMenu.cs:120` | [APPROX:UI-015] Game Mode asked when entering a park (no player profiles); modes play the same — evidence needed: original player/mode flow |
+| UI-014 | `source/OpenTPW/FrontEnd/FrontEndMenu.cs:79` | [APPROX:UI-014] island name and prev/enter/next button positions in the lobby panel — evidence needed: capture of the original lobby |
+| UI-014 | `source/OpenTPW/FrontEnd/FrontEndMenu.cs:95` | [APPROX:UI-014] logo/title placement and the right-hand Load/Options/Quit column — evidence needed: capture of the original lobby |
+| UI-015 | `source/OpenTPW/FrontEnd/FrontEndMenu.cs:123` | [APPROX:UI-015] Game Mode asked when entering a park (no player profiles) instead of at player creation — evidence needed: original player/mode flow |
 | UI-016 | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:79` | [DATA:lobby.wad:&lt;theme&gt;.txt ISLAND/SKYCOLOUR/FLYINGMESH/RAINY/LIGHTNING] [APPROX:UI-016] angle = yaw, height = camera target height — evidence needed: binary/capture |
 | UI-017 | `source/OpenTPW/World/LobbyCameraMode.cs:25` | [APPROX:UI-017] SPINSPEED as radians per 0.1 s, FOV 60, 3/s glide — evidence needed: binary or capture of the lobby camera |
-| UI-018 | `source/OpenTPW/Client/GameFlow.cs:229` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
+| UI-018 | `source/OpenTPW/Client/GameFlow.cs:238` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
 | UI-018 | `source/OpenTPW/World/Lobby/LobbyScene.cs:14` | [APPROX:UI-018] flying meshes, rain, lightning and island/gate animations are not drawn — evidence needed: binary/capture of the lobby |
 | UI-019 | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:92` | [APPROX:UI-019] fallback position when lobby.txt lacks ISLANDCAMERAPOSITION — evidence needed: none if lobby.txt is complete |
 | UI-020 | `source/OpenTPW/Hud/ParkHud.cs:119` | [APPROX:UI-020] panel button positions (the models share one authored centre) — evidence needed: capture of the original HUD |
@@ -436,7 +436,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | levels/jungle/Easymode.TPWI:loan table repayments = floor(amount/months) at 0 % APR | `source/OpenTPW/Economy/ParkLedger.cs:119` | [DATA:levels/jungle/Easymode.TPWI:loan table repayments = floor(amount/months) at 0 % APR] |
 | levels/space/rides/megacost.wad/megacost.sgn:slot 1 = "EggIt Italic"/EGGII___.TTF, not in fonts.wad | `source/OpenTPW.Files/Public/DataCorrections.cs:18` | [EXT:COMPAT-FIX sign-font-substitution] [DATA:levels/space/rides/megacost.wad/megacost.sgn:slot 1 = "EggIt Italic"/EGGII___.TTF, not in fonts.wad] |
 | lobby.wad:&lt;theme&gt;.txt ISLAND/SKYCOLOUR/FLYINGMESH/RAINY/LIGHTNING | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:79` | [DATA:lobby.wad:&lt;theme&gt;.txt ISLAND/SKYCOLOUR/FLYINGMESH/RAINY/LIGHTNING] [APPROX:UI-016] angle = yaw, height = camera target height — evidence needed: binary/capture |
-| lobby.wad:&lt;theme&gt;.txt SKYCOLOUR | `source/OpenTPW/Client/GameFlow.cs:229` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
+| lobby.wad:&lt;theme&gt;.txt SKYCOLOUR | `source/OpenTPW/Client/GameFlow.cs:238` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
 | lobby.wad:lobby.txt ISLANDFOV/SPINSPEED/SPINRADIUS/VERTICALOFFSET | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:31` | [DATA:lobby.wad:lobby.txt ISLANDFOV/SPINSPEED/SPINRADIUS/VERTICALOFFSET] defaults equal the shipped values |
 | low.sam/med.sam/high.sam | `source/OpenTPW.Tests/CompatibilityTests.cs:122` | [DATA:low.sam/med.sam/high.sam] in file order (TEXTUREQUALITY .. LOBBYOBJECTS). |
 | low.sam/med.sam/high.sam:comment legend | `source/OpenTPW/Compat/GraphicsSettings.cs:21` | ([DATA:low.sam/med.sam/high.sam:comment legend]). |
@@ -446,5 +446,5 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | theme-park-world_win_manual_europe_en_ii5.pdf:PDF-page-15/printed-page-28; SHA256=c96eb25f3dc13f7f0824bbf03f9bbeb3bb94e9f4756d4d8dfa09ac71732b0668 | `source/OpenTPW/Economy/ParkObjectives.cs:316` | [DATA:theme-park-world_win_manual_europe_en_ii5.pdf:PDF-page-15/printed-page-28; SHA256=c96eb25f3dc13f7f0824bbf03f9bbeb3bb94e9f4756d4d8dfa09ac71732b0668] |
 | ui.wad:button UVs v 0.42..1 vs art in the top 58% | `source/OpenTPW/UI/Original/UiModel.cs:117` | [DATA:ui.wad:button UVs v 0.42..1 vs art in the top 58%] V flipped as in the 3D shaders |
 | ui.wad:f_chat.MD2,w_map.MD2 bounds | `source/OpenTPW/UI/Original/UiCanvas.cs:25` | [DATA:ui.wad:f_chat.MD2,w_map.MD2 bounds] full-screen UI frames span 2048×1536 |
-| ui.wad:islandlobby.MD2,f_lobbutbg.MD2 root/bounds | `source/OpenTPW/FrontEnd/FrontEndMenu.cs:73` | [DATA:ui.wad:islandlobby.MD2,f_lobbutbg.MD2 root/bounds] authored panel rectangles |
+| ui.wad:islandlobby.MD2,f_lobbutbg.MD2 root/bounds | `source/OpenTPW/FrontEnd/FrontEndMenu.cs:76` | [DATA:ui.wad:islandlobby.MD2,f_lobbutbg.MD2 root/bounds] authored panel rectangles |
 | ui.wad:mainpanel,gauge,date,panel MD2 roots | `source/OpenTPW/Hud/ParkHud.cs:111` | [DATA:ui.wad:mainpanel,gauge,date,panel MD2 roots] authored HUD rectangles |

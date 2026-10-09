@@ -574,6 +574,32 @@ not wired into `ParkEconomy`, `PlayerProgress` or the front end; the economy
 lane's annuity placeholder is untouched. Its README lists each member's anchor
 and the parts it does not model.
 
+## Production mode wiring
+
+The production game now applies the mode findings that existing code paths can
+carry (docs/ECONOMY.md, "Game modes"); the contract above stays a separate,
+unwired reference.
+
+- `ParkStart` (`source/OpenTPW/Economy/ParkStart.cs`) resolves a start kind into
+  economy rules, the `Easy_` layer and the shipped-save import as three separate
+  decisions. The front-end `GameMode` button maps to it by name (its values are
+  in the opposite order to `ParkGameMode`). Neither is the original GameType,
+  front-end exit code or main-loop state, and online play (GameType 1) has no
+  `ParkGameMode`: read-only visits run no economy.
+- Full Simulation: standard balance, `Easymode.TPWI` not read. Instant Action:
+  `Easy_` layer and seed where present (jungle only). `--load-original-level`
+  and the Load Park entry keep the reference start (shipped save with the
+  balance it was made with, Full Simulation rules) unchanged.
+- `ParkModeFeatures` gates golden-ticket checks, challenges, loans, research
+  lab efforts and upgrades in Instant Action. Research points come only from
+  hired researchers in both modes; `ParkEconomy` no longer uses the ECON-019
+  staffless rate. The seed's staff are not decoded, so nothing is invented for
+  them.
+- Assumption kept explicit: "Full Simulation starts without the seed" rests on
+  the copy at `0x137600` being Instant-Action-only; the Full Simulation new-park
+  loader was not traced. The ticket cadence (ECON-033), keys (ECON-040,
+  `PlayerProgress`), research rates and all PC behaviour are unchanged.
+
 ## Register impact (proposals; registers not edited here)
 
 | ID / area | Current OpenTPW assumption | Mac binary evidence | Suggested state |
@@ -586,17 +612,17 @@ and the parts it does not model.
 | Ticket predicates (untagged) | `>=`; happiness counts happy guests | strict signed `>`; people in park = guests (class 1) on cell types 0/1/3/9/10; happiness = float mean of truncated guest happiness (0 while closed) and the second test reuses the guest count; RecentVisitors also needs park age > N months | untagged divergence |
 | ECON-039 | profit of last 12 closed months | year-to-date accumulator +292, zeroed on end of year, checked every 100 ticks | contradicted |
 | ECON-034..036 | challenge semantics/flow | challenges only in GameType 0; first offer at park-age day ≥ DaysUntilFirstChallenge | only activation resolved |
-| Challenges/tickets in Instant Action (untagged) | `ParkEconomy` runs both in every mode | both disabled for GameType ≠ 0 | untagged divergence |
+| Challenges/tickets in Instant Action (untagged) | disabled in Instant Action (`ParkModeFeatures`) | both disabled for GameType ≠ 0 | applied for the Mac rule |
 | ECON-014 | no strikes, happiness constant | happiness is not constant: work drains it, rest recovers it, training resets it to 100; strike state machine present but gated; Mac guide says strikes were removed | happiness part contradicted; strikes conflict, requires PC/runtime evidence |
 | ECON-015 | ResearchAbility per day split by effort | per researcher work cycle, × effort share × workload/100 (workload starts at StartingWorkLoad 85, player-set ≤ 100) | partially contradicted (cycle timing open) |
 | ECON-016 | group g opens at PercentageForThisTech[g] % of group g−1 | group g opens at PercentageForThisTech[g] (same index, layout-proven) measured **cumulatively over all groups ≤ g−1**, unsigned percentage and compare, 0 % for an empty set | partially supported: threshold index matches, percentage basis differs |
 | ECON-017 | cheapest first | item choice not traced | unresolved |
-| ECON-019 | Instant Action: virtual grade-2 researcher | no staffless path; researcher staff only; the research panel is refused with the 'research is automatic' text | contradicted |
-| UI-015 | mode asked per park; modes identical | mode fixed at player creation (4 slots); modes differ in balance overlay, start park, keys, tickets, challenges, research completion | contradicted |
+| ECON-019 | Instant Action: virtual grade-2 researcher (code and declaration remain; `ParkEconomy` no longer calls it) | no staffless path; researcher staff only; the research panel is refused with the 'research is automatic' text | contradicted; delete code and declaration when the register is adjudicated |
+| UI-015 | mode asked per park (declaration reworded; modes now differ, see *Production mode wiring*) | mode fixed at player creation (4 slots); modes differ in balance overlay, start park, keys, tickets, challenges, research completion | per-park choice remains an approximation |
 | ECON-030 / bankruptcy | stops when bankrupt; 6 months in red | ≥ 6 thirty-day months since the balance went negative, checked at month end → world mode 4 (subject to one unresolved id gate) | count supported; "stops" consistent with mode 4 exit but the mode-4 consequences belong to the calendar/clock lane |
 | ECON-046 | upgrades need a mechanic | not traced (only the TAG text "can't upgrade during a mechanics' strike") | unresolved |
 | Secret 'own all land' ticket (untagged) | — | no award path in the Mac binary | do not implement as earnable without PC evidence |
-| Instant Action UI (untagged) | loans, research panel and upgrades available in every mode | bank panel not opened, loan buttons disabled, research panel refused, upgrade list skipped | untagged divergence (matches both manuals for loans/research) |
+| Instant Action UI (untagged) | economy refuses loans, research effort and upgrades in Instant Action; no HUD bank/research panel exists to show the refusal | bank panel not opened, loan buttons disabled, research panel refused, upgrade list skipped | economy gates applied; panel presentation missing |
 | Staff wages/dismissal/training (untagged) | — | wage PayMultiplier×BaseWage monthly; dismissal debits one more wage; training points = amount/PoundsPerTrainingPoint, promotion resets happiness to 100 | new Mac facts for the economy owner |
 
 ## Unresolved dependencies (explicit blockers)

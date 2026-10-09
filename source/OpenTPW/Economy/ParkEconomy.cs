@@ -39,6 +39,7 @@ public sealed class ParkEconomy : IParkEconomy
 		Settings = settings ?? throw new ArgumentNullException( nameof( settings ) );
 		Catalog = catalog ?? throw new ArgumentNullException( nameof( catalog ) );
 		Mode = mode;
+		Features = ParkModeFeatures.For( mode );
 		Random = new DeterministicRandom( seed );
 		Ledger = new ParkLedger( settings.InitialCash );
 		Staff = new ParkStaff( settings );
@@ -55,6 +56,7 @@ public sealed class ParkEconomy : IParkEconomy
 	public BalanceSettings Settings { get; }
 	public IEconomyObjectCatalog Catalog { get; }
 	public ParkGameMode Mode { get; }
+	public ParkModeFeatures Features { get; }
 	public DeterministicRandom Random { get; }
 	public ParkLedger Ledger { get; }
 	public ParkStaff Staff { get; }
@@ -81,7 +83,7 @@ public sealed class ParkEconomy : IParkEconomy
 	public event Action<ParkEvent>? EventRaised;
 
 	/// <summary>Loan offers that can still be taken; none in Instant Action (UIHELPTEXT 493).</summary>
-	public IEnumerable<LoanOffer> AvailableLoans => Mode == ParkGameMode.InstantAction
+	public IEnumerable<LoanOffer> AvailableLoans => !Features.Loans
 		? Enumerable.Empty<LoanOffer>()
 		: Settings.Loans.Where( offer => !takenOffers.Contains( offer.Index ) );
 
@@ -224,13 +226,16 @@ public sealed class ParkEconomy : IParkEconomy
 			else if ( before >= WornStateOfRepair && item.StateOfRepair < WornStateOfRepair )
 				Raise( ParkEventKind.RideWorn, item.StateOfRepair, item.Id, item.InfoId );
 		}
-		var points = Research.DailyPoints( Staff.OfType( StaffType.Researcher ), Mode == ParkGameMode.InstantAction );
+		// Researcher staff only, in every mode (Mac 0xf0728 has no staffless path). The imported Instant Action
+		// seed's staff are not decoded, so such a park researches only once researchers are hired.
+		var points = Research.DailyPoints( Staff.OfType( StaffType.Researcher ), automatic: false );
 		foreach ( var item in Research.AdvanceDay( points ) )
 		{
 			Counters.Add( ParkCounters.Researched( item.Category ), 1 );
 			Raise( ParkEventKind.ItemResearched, item.Level, 0, item.InfoId, Catalog.TryGet( item.InfoId, out var info ) ? info.Name : "" );
 		}
-		foreach ( var (kind, index, amount, detail) in Objectives.AdvanceDay( day + 1, MeasureChallenge ).ToList() )
+		var challenges = Features.Challenges ? Objectives.AdvanceDay( day + 1, MeasureChallenge ).ToList() : new();
+		foreach ( var (kind, index, amount, detail) in challenges )
 		{
 			if ( kind == ParkEventKind.ChallengeCompleted )
 				Post( LedgerCategory.OtherIncome, amount );
@@ -302,7 +307,8 @@ public sealed class ParkEconomy : IParkEconomy
 		var closed = Ledger.CloseMonth( nextMonthIndex, ParkRating, ParkValue );
 		Raise( ParkEventKind.MonthEnded, closed.ClosingBalance, 0, 0, $"in ${closed.MoneyIn}, out ${closed.MoneyOut}" );
 		// [APPROX:ECON-033] golden tickets are checked at each month end — evidence needed: capture of the award timing
-		foreach ( var ticket in Objectives.CheckGoldenTickets( Counters, guestStatistics, Research, Ledger.History, monthlyAdmissions ) )
+		var tickets = Features.GoldenTickets ? Objectives.CheckGoldenTickets( Counters, guestStatistics, Research, Ledger.History, monthlyAdmissions ) : Array.Empty<GoldenTicketKind>();
+		foreach ( var ticket in tickets )
 			Raise( ParkEventKind.GoldenTicketWon, (int)ticket, 0, 0, ticket.ToString() );
 		if ( nextMonthIndex % ParkCalendar.MonthsPerYear == 0 )
 		{
@@ -506,7 +512,7 @@ public sealed class ParkEconomy : IParkEconomy
 	{
 		if ( IsBankrupt )
 			return PurchaseResult.Bankrupt;
-		if ( Mode == ParkGameMode.InstantAction )
+		if ( !Features.Upgrades )
 			return PurchaseResult.NotAvailableInInstantAction;
 		var item = RequireObject( instanceId );
 		if ( !Catalog.TryGet( item.InfoId, out var info ) || item.Kind != ParkObjectKind.Ride )
@@ -605,7 +611,13 @@ public sealed class ParkEconomy : IParkEconomy
 
 	public void SetTrainingBudget( StaffType type, long monthlyBudget ) => Staff.SetTrainingBudget( type, monthlyBudget );
 
-	public void SetResearchEffort( ResearchCategory category, int effort ) => Research.SetEffort( category, effort );
+	/// <summary>Research lab effort; refused in Instant Action, whose research panel does not open (UITEXT 467).</summary>
+	public void SetResearchEffort( ResearchCategory category, int effort )
+	{
+		if ( !Features.ResearchPanel )
+			throw new InvalidOperationException( "Research is automatic in Instant Action: the research lab cannot be changed." );
+		Research.SetEffort( category, effort );
+	}
 
 	public void AcceptChallenge()
 	{

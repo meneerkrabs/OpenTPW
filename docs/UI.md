@@ -110,8 +110,12 @@ screens, options), `FrontEnd/`, `Hud/`, `World/Lobby/LobbyScene.cs`,
   on the original `purple_button` art. Positions inside the panel and of the
   right-hand buttons are approximations.
 - Enter park → Game Mode window (239; Instant Action 240 / Full Simulation 241,
-  tooltips 358/359) → loads the original level of the island
-  (`--load-original-level` equivalent). Both modes currently play the same.
+  tooltips 358/359) → starts a new park on the original level of the island.
+  Instant Action adds the `Easy_` balance layer and the shipped `Easymode.TPWI`
+  seed where the level has them and gates tickets, challenges, loans, the
+  research lab and upgrades; Full Simulation starts without the seed
+  (docs/ECONOMY.md, "Game modes"). `--load-original-level` and the Load Park
+  entry keep the read-only reference start (shipped save, Full Simulation rules).
 - Load Park (202): original Easymode parks (read-only) and the OpenTPW sandbox
   save. Quit asks with the original confirmation (9).
 - Not implemented: player profiles (Create/Select New Player), online world,
@@ -274,11 +278,11 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-011 | `UI/Original/UiScreen.cs:164` | modal screens dim what is below | captures of original dialogs |
 | UI-012 | `UI/Original/UiInput.cs:49`, `UI/Original/UiScreen.cs:59` | hover focuses, release activates, arrows/Enter/Escape navigate, P pauses, right click backs out of modal screens | binary: input handling; KEYBOARD.str meaning |
 | UI-013 | `UI/Original/Options/OptionsScreen.cs:92`, `UI/Original/UiDialogs.cs:9` | window sizes and inner layout of options, game mode, load, pause and message dialogs | captures of original dialogs |
-| UI-014 | `FrontEnd/FrontEndMenu.cs:76`, `FrontEnd/FrontEndMenu.cs:92` | positions inside the lobby panel (island name, prev/enter/next), logo/title placement, right-hand Load/Options/Quit column | capture of the original lobby screen |
-| UI-015 | `FrontEnd/FrontEndMenu.cs:120` | front-end flow without player profiles; Game Mode is asked when entering a park; both modes play the same | binary/manual: original player and mode flow |
+| UI-014 | `FrontEnd/FrontEndMenu.cs:79`, `FrontEnd/FrontEndMenu.cs:95` | positions inside the lobby panel (island name, prev/enter/next), logo/title placement, right-hand Load/Options/Quit column | capture of the original lobby screen |
+| UI-015 | `FrontEnd/FrontEndMenu.cs:123` | front-end flow without player profiles; Game Mode is asked when entering a park instead of at player creation | binary/manual: original player and mode flow |
 | UI-016 | `FrontEnd/LobbyDefinition.cs:79` | lobby ISLAND angle = island yaw in degrees, height = camera target height | binary: lobby script interpretation or capture |
 | UI-017 | `World/LobbyCameraMode.cs:25` | lobby camera: SPINSPEED read as radians per 0.1 s, vertical field of view 60, 3/s glide between islands, ISLANDFOV unused | binary or capture of the lobby camera |
-| UI-018 | `Client/GameFlow.cs:223`, `World/Lobby/LobbyScene.cs:14` | lobby sky drawn as a flat SKYCOLOUR backdrop; flying meshes, rain, lightning, animations not drawn | binary/capture of the lobby |
+| UI-018 | `Client/GameFlow.cs:238`, `World/Lobby/LobbyScene.cs:14` | lobby sky drawn as a flat SKYCOLOUR backdrop; flying meshes, rain, lightning, animations not drawn | binary/capture of the lobby |
 | UI-019 | `FrontEnd/LobbyDefinition.cs:92` | fallback island position (400 + index × 200, 400) when lobby.txt has none | none needed if lobby.txt is complete |
 | UI-020 | `Hud/ParkHud.cs:119` | positions of buy/info/finance/research/map buttons on the main panel (shared authored centre) | capture of the original HUD |
 | UI-021 | `Hud/ParkHud.cs:115`, `Hud/ParkHud.cs:80` | positions and fonts of the date and bank balance text; money grouped with ',' digits | capture of the original HUD; locale number format |

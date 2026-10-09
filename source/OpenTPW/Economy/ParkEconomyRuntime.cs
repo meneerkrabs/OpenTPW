@@ -1,10 +1,10 @@
 namespace OpenTPW;
 
 /// <summary>
-/// Connects a <see cref="ParkEconomy"/> to a running level: creates it for an imported original
-/// level (easy balance when the level ships <c>Easymode.TPWI</c>, whose loan table proves it was made
-/// with <c>Easy_Standard.sam</c>), advances it on the fixed simulation clock and writes HUD-free log
-/// lines for days and months. Saving uses <see cref="ParkSaveFile"/>; original saves stay read-only.
+/// Connects a <see cref="ParkEconomy"/> to a running level: creates it for an original level in the
+/// chosen <see cref="ParkStart"/> (game mode, <c>Easy_</c> balance layer and shipped-save import are
+/// separate decisions), advances it on the fixed simulation clock and writes HUD-free log lines for
+/// days and months. Saving uses <see cref="ParkSaveFile"/>; original saves stay read-only.
 /// </summary>
 public sealed class ParkEconomyRuntime
 {
@@ -17,6 +17,8 @@ public sealed class ParkEconomyRuntime
 
 	public ParkEconomy Economy { get; private set; }
 	public OriginalEconomyImport? Import { get; }
+	/// <summary>How the park was started (mode, balance layer, shipped-save import).</summary>
+	public ParkStart Start { get; private init; }
 	/// <summary>Guest payments and statistics, once <see cref="AttachGuests"/> ran.</summary>
 	public GuestEconomyBridge? Guests { get; private set; }
 
@@ -60,18 +62,26 @@ public sealed class ParkEconomyRuntime
 	/// <summary>Latest status line, e.g. for a debug overlay.</summary>
 	public string Status => $"{Economy.Date}: balance ${Economy.Balance}, {Economy.Staff.Members.Count} staff, rating {Economy.ParkRating}, speed {Economy.Speed}";
 
-	public static ParkEconomyRuntime ForOriginalLevel( OriginalPark park )
+	/// <summary>
+	/// Creates the economy of <paramref name="park"/>. The park must have been loaded with
+	/// <see cref="ParkStart.ReadsShippedSave"/> for <paramref name="kind"/>, so its save is present exactly
+	/// when the start imports it.
+	/// </summary>
+	public static ParkEconomyRuntime ForOriginalLevel( OriginalPark park, ParkStartKind kind = ParkStartKind.OriginalSaveReference )
 	{
 		ArgumentNullException.ThrowIfNull( park );
+		if ( park.Save != null && !ParkStart.ReadsShippedSave( kind ) )
+			throw new ArgumentException( $"A {kind} start does not use the shipped save; load the level without it.", nameof( park ) );
 		EconomyApproximations.LogOnce();
-		var easy = park.Save != null && BalanceSettings.HasEasyLayer( park.LevelName );
-		var economy = ParkEconomy.CreateForTheme( park.LevelName, easy );
-		var import = park.Save != null ? OriginalEconomyImport.Apply( economy, park ) : null;
-		Log.Trace( $"Park economy: {park.LevelName} {(easy ? "easy" : "standard")} balance from {string.Join( ", ", economy.Settings.Standard.Sources )}; "
+		var start = ParkStart.Resolve( kind, park.Save != null, BalanceSettings.HasEasyLayer( park.LevelName ) );
+		var easy = start.EasyBalance;
+		var economy = ParkEconomy.CreateForTheme( park.LevelName, easy, start.Mode );
+		var import = start.ImportShippedSave ? OriginalEconomyImport.Apply( economy, park ) : null;
+		Log.Trace( $"Park economy: {kind} start, {start.Mode} rules; {park.LevelName} {(easy ? "easy" : "standard")} balance from {string.Join( ", ", economy.Settings.Standard.Sources )}; "
 			+ $"cash ${economy.Balance}, entrance fee ${economy.EntranceFee}, {economy.Catalog.Objects.Count} catalogue objects, {economy.Research.Items.Count} research items." );
 		foreach ( var line in import?.Evidence ?? Array.Empty<string>() )
 			Log.Trace( $"Park economy import: {line}" );
-		return new ParkEconomyRuntime( economy, import );
+		return new ParkEconomyRuntime( economy, import ) { Start = start };
 	}
 
 	/// <summary>Called once per 60 Hz fixed simulation tick.</summary>

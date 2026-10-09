@@ -401,9 +401,12 @@ public class ParkEconomyTests
 		Assert.IsTrue( park.Research.IsAllResearched );
 		Assert.IsTrue( park.Research.IsAvailable( 1500 ), "add-on after its target ride" );
 
-		var automatic = EconomyTestData.Park( mode: ParkGameMode.InstantAction );
-		automatic.AdvanceDays( 1 );
-		Assert.IsTrue( automatic.Research.GetProgress( automatic.Research.Current( ResearchCategory.Ride )! ) > 0, "Instant Action research is automatic" );
+		var instant = EconomyTestData.Park( mode: ParkGameMode.InstantAction );
+		instant.AdvanceDays( 1 );
+		Assert.AreEqual( 0, instant.Research.GetProgress( instant.Research.Current( ResearchCategory.Ride )! ), "no staffless Instant Action research" );
+		EconomyTestData.HireBest( instant, StaffType.Researcher );
+		instant.AdvanceDays( 1 );
+		Assert.IsTrue( instant.Research.GetProgress( instant.Research.Current( ResearchCategory.Ride )! ) > 0, "Instant Action researchers research" );
 	}
 
 	[TestMethod]

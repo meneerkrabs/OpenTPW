@@ -23,7 +23,7 @@ public static class UiApproximations
 		("UI-012", "hover focuses, release activates, arrows/Enter/Escape navigate, P pauses, right click backs out of modal screens", "binary: input handling; KEYBOARD.str meaning"),
 		("UI-013", "window sizes and inner layout of options, game mode, load, pause and message dialogs", "captures of original dialogs"),
 		("UI-014", "positions inside the lobby panel (island name, prev/enter/next), logo/title placement, right-hand Load/Options/Quit column", "capture of the original lobby screen"),
-		("UI-015", "front-end flow without player profiles; Game Mode is asked when entering a park; both modes play the same", "binary/manual: original player and mode flow"),
+		("UI-015", "front-end flow without player profiles; Game Mode is asked when entering a park instead of at player creation", "binary/manual: original player and mode flow"),
 		("UI-016", "lobby ISLAND angle = island yaw in degrees, height = camera target height", "binary: lobby script interpretation or capture"),
 		("UI-017", "lobby camera: SPINSPEED read as radians per 0.1 s, vertical field of view 60, 3/s glide between islands, ISLANDFOV unused", "binary or capture of the lobby camera"),
 		("UI-018", "lobby sky drawn as a flat SKYCOLOUR backdrop; flying meshes, rain, lightning, animations not drawn", "binary/capture of the lobby"),

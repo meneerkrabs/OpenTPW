@@ -36,7 +36,8 @@ public sealed class OriginalPark
 
 	public string DescribeObject( int infoId ) => Catalog.TryGetValue( infoId, out var info ) ? info.Name : $"Info.Id {infoId}";
 
-	public static OriginalPark Load( string levelName )
+	/// <param name="readShippedSave">False starts the level without its <c>Easymode.TPWI</c> (a new Full Simulation park, <see cref="ParkStart.ReadsShippedSave"/>).</param>
+	public static OriginalPark Load( string levelName, bool readShippedSave = true )
 	{
 		if ( string.IsNullOrWhiteSpace( levelName ) || levelName.IndexOfAny( new[] { '/', '\\', '.' } ) >= 0 )
 			throw new ArgumentException( "Original level names are plain directory names such as 'jungle'.", nameof( levelName ) );
@@ -44,7 +45,7 @@ public sealed class OriginalPark
 		var model = new ModelFile( $"/levels/{levelName}/terrain/base.MD2" );
 		var catalog = LoadCatalog( levelName );
 		OriginalParkImport? save = null;
-		var savePath = FileSystem.GetFiles( $"/levels/{levelName}" )
+		var savePath = !readShippedSave ? null : FileSystem.GetFiles( $"/levels/{levelName}" )
 			.FirstOrDefault( path => string.Equals( Path.GetFileName( path ), SaveFileName, StringComparison.OrdinalIgnoreCase ) );
 		if ( savePath != null )
 		{

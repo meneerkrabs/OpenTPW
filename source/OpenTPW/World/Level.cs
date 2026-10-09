@@ -47,7 +47,8 @@ public partial class Level : IDisposable
 	public bool IsReadOnlyVisit => Visit != null;
 	private OnlinePanel? onlinePanel;
 
-	public Level( string levelName, bool loadOriginalLevel = false, ParkVisitInfo? visit = null, OnlineFolders? onlineFolders = null )
+	/// <param name="start">How a writable original level starts; ignored for the sandbox and for read-only visits (which load the shipped save and run no economy).</param>
+	public Level( string levelName, bool loadOriginalLevel = false, ParkVisitInfo? visit = null, OnlineFolders? onlineFolders = null, ParkStartKind start = ParkStartKind.OriginalSaveReference )
 	{
 		if ( visit != null && visit.Level != levelName )
 			throw new ArgumentException( "The visit level must match the loaded level.", nameof( visit ) );
@@ -57,9 +58,9 @@ public partial class Level : IDisposable
 		Current = this;
 		if ( visit != null ? !visit.IsSandbox : loadOriginalLevel )
 		{
-			OriginalPark = OriginalPark.Load( levelName );
+			OriginalPark = OriginalPark.Load( levelName, readShippedSave: IsReadOnlyVisit || ParkStart.ReadsShippedSave( start ) );
 			if ( !IsReadOnlyVisit )
-				Park = ParkEconomyRuntime.ForOriginalLevel( OriginalPark );
+				Park = ParkEconomyRuntime.ForOriginalLevel( OriginalPark, start );
 		}
 
 		SetupEntities();

@@ -18,6 +18,24 @@ OpenTPW is a re-implementation of Theme Park World, requiring an installation th
 
 **In order to run OpenTPW, you must have a full legal copy of any version of the original game.**
 
+## Goals
+
+These are goals, not current features; [Status](#status) below says what works today.
+
+1. **Theme Park World**: the complete original offline game. This is the primary goal;
+   it is in progress and not yet playable ([completion plan](docs/COMPLETION-PLAN.md)).
+2. **Online play as in the original game**: sharing, visiting and voting on parks,
+   postcards and chat. The original servers are gone and their protocol is not
+   reconstructed, so OpenTPW provides its own opt-in, self-hostable service. Partly
+   implemented as an extension (accounts, park publish/search/download/visit,
+   voting, postcards, chat); see [online](docs/ONLINE.md).
+3. **Theme Park Inc / Sim Coaster**: a separate, later goal. Both games share most file
+   formats and an identical ride-script VM ([comparison](docs/THEME-PARK-INC.md)), but
+   its `.fsh` textures, extended saves and missions are not read yet. Not supported yet.
+4. **Sandbox modes** (an OpenTPW extension, not original behaviour): free building with
+   Theme Park World content, Theme Park Inc content, or both combined. Planned; today's
+   `--sandbox` uses Theme Park World content only.
+
 ## Status
 
 OpenTPW is currently in a very early stage of development, and is not yet playable.

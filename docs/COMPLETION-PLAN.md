@@ -16,6 +16,9 @@ adviseur, audio, UI, camera/first-person en betrouwbaar opslaan/laden. Per onder
 wordt het verschil met de gekozen originele versie expliciet bijgehouden.
 Herstel van de verdwenen onlinedienst is een afzonderlijk, later project: dit was
 uitgesloten in de eerder goedgekeurde scope en wordt niet stilzwijgend toegevoegd.
+Hetzelfde geldt voor Theme Park Inc (Sim Coaster) en de sandboxmodi met TPW-, TPI- of
+gecombineerde content: doelen na de offline TPW-acceptatie, met eigen gates en
+zonder invloed op het kritieke pad hierboven (zie README en docs/THEME-PARK-INC.md).
 
 `docs/FEATURE-MATRIX.md` scheidt implementatie, macOS-/Windows-/Linux-kwalificatie
 en originele VM-fidelity. Een tussengate mag een benoemde subset accepteren met

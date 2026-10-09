@@ -236,27 +236,41 @@ public class TexturePackTests
 			Graphics = withGraphics ? graphics : null, TexturePackAvailable = available
 		};
 
+		UiOptionRow Row( UiScreenStack stack, UiScreen main )
+		{
+			main.Find( "openTpw" )!.Activate();
+			return (UiOptionRow)stack.Top!.Find( "enhancedTextures" )!;
+		}
+
 		var stack = new UiScreenStack();
 		var screen = OptionsScreen.Create( stack, strings, Services( false ), () => { } );
 		stack.Push( screen );
-		var row = (UiOptionRow)screen.Find( "enhancedTextures" )!;
+		var row = Row( stack, screen );
 		Assert.AreEqual( " No pack built", row.Value() );
 		row.Adjust( 1 );
 		Assert.AreEqual( " No pack built", row.Value(), "nothing to turn on without a pack" );
 
+		stack = new UiScreenStack();
 		screen = OptionsScreen.Create( stack, strings, Services( true ), () => { } );
 		stack.Push( screen );
-		row = (UiOptionRow)screen.Find( "enhancedTextures" )!;
+		row = Row( stack, screen );
 		Assert.AreEqual( strings[UIStrings.No], row.Value() );
 		row.Adjust( 1 );
 		Assert.AreEqual( strings[UIStrings.Yes], row.Value() );
+		stack.Pop();
+		Assert.IsFalse( graphics.Current.EnhancedTextures, "nothing applied before OK" );
 		screen.Find( "ok" )!.Activate();
 		Assert.IsTrue( graphics.Current.EnhancedTextures );
 		Assert.AreEqual( "restart", stack.Top!.Name );
 
-		Assert.IsNull( OptionsScreen.Create( new UiScreenStack(), strings, Services( true, withGraphics: false ), () => { } ).Find( "enhancedTextures" ), "hidden without graphics settings" );
+		var hidden = new UiScreenStack();
+		var hiddenMain = OptionsScreen.Create( hidden, strings, Services( true, withGraphics: false ), () => { } );
+		hidden.Push( hiddenMain );
+		hiddenMain.Find( "openTpw" )!.Activate();
+		Assert.IsNull( hidden.Top!.Find( "enhancedTextures" ), "hidden without graphics settings" );
 
 		// Changing the window size as well: the restart notice follows the display confirmation.
+		graphics.Apply( graphics.Current with { EnhancedTextures = false } );
 		var display = new StubDisplaySettings( DisplaySettings.Default with { Width = 1280, Height = 720 } );
 		var combined = new UiScreenStack();
 		var closed = 0;
@@ -266,8 +280,9 @@ public class TexturePackTests
 			Graphics = graphics, TexturePackAvailable = true
 		}, () => closed++ );
 		combined.Push( screen );
-		((UiOptionRow)screen.Find( "enhancedTextures" )!).Adjust( 1 );
-		((UiOptionRow)screen.Find( "resolution" )!).Adjust( 1 );
+		Row( combined, screen ).Adjust( 1 );
+		combined.Pop();
+		((UiSlider)screen.Find( "resolution" )!).Adjust( 1 );
 		screen.Find( "ok" )!.Activate();
 		Assert.AreNotEqual( "restart", combined.Top!.Name, "the display confirmation comes first" );
 		combined.Top!.Find( "choice0" )!.Activate();

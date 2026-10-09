@@ -14,9 +14,9 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **129 unresolved unique APPROX IDs**, 144 APPROX occurrences, 58 EXT occurrences, 62 DATA occurrences and 35 BIN occurrences.
+Current inventory: **131 unresolved unique APPROX IDs**, 146 APPROX occurrences, 62 EXT occurrences, 65 DATA occurrences and 35 BIN occurrences.
 
-Of these, 123 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
+Of these, 125 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
 CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.
 
@@ -29,7 +29,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON | 36 | 36 |
 | ONLINE | 6 | 6 |
 | RIDES | 26 | 26 |
-| UI | 34 | 48 |
+| UI | 36 | 50 |
 
 ## Approximation declarations
 
@@ -138,32 +138,34 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-006 | Original-fidelity area (scope unadjudicated) | text colours (white, yellow highlight/title, green values, grey disabled), shadow and backdrop colours | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:17` |
 | UI-007 | Original-fidelity area (scope unadjudicated) | one-pixel (×UI scale) drop shadow under UI text | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:18` |
 | UI-008 | Original-fidelity area (scope unadjudicated) | text buttons on purple_button art: each half is one end cap, drawn with its mirror image; upper half normal, lower half focused/pressed | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:19` |
-| UI-009 | Original-fidelity area (scope unadjudicated) | option rows: label to 58%, value between arrows at 58.5%..97.5% of the f_optpanel2 frame | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:20` |
-| UI-010 | Original-fidelity area (scope unadjudicated) | popup help box at the top centre with a dark blue backdrop | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:21` |
-| UI-011 | Original-fidelity area (scope unadjudicated) | modal screens dim what is below | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:22` |
-| UI-012 | Original-fidelity area (scope unadjudicated) | hover focuses, release activates, arrows/Enter/Escape navigate, P pauses, right click backs out of modal screens | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:23` |
-| UI-013 | Original-fidelity area (scope unadjudicated) | window sizes and inner layout of options, game mode, load, pause and message dialogs | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:24` |
-| UI-014 | Original-fidelity area (scope unadjudicated) | positions inside the lobby panel (island name, prev/enter/next), logo/title placement, right-hand Load/Options/Quit column | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:25` |
-| UI-015 | Original-fidelity area (scope unadjudicated) | front-end flow without player profiles; Game Mode is asked when entering a park instead of once per player | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:26` |
-| UI-016 | Original-fidelity area (scope unadjudicated) | lobby ISLAND angle = island yaw in degrees, height = camera target height | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:27` |
-| UI-017 | Original-fidelity area (scope unadjudicated) | lobby camera: SPINSPEED read as radians per 0.1 s, vertical field of view 60, 3/s glide between islands, ISLANDFOV unused | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:28` |
-| UI-018 | Original-fidelity area (scope unadjudicated) | lobby sky drawn as a flat SKYCOLOUR backdrop; flying meshes, rain, lightning, animations not drawn | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:29` |
-| UI-019 | Original-fidelity area (scope unadjudicated) | fallback island position (400 + index × 200, 400) when lobby.txt has none | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:30` |
-| UI-020 | Original-fidelity area (scope unadjudicated) | positions of buy/info/finance/research/map buttons on the main panel (shared authored centre) | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:31` |
-| UI-021 | Original-fidelity area (scope unadjudicated) | positions and fonts of the date and bank balance text; money grouped with ',' digits | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:32` |
-| UI-022 | Original-fidelity area (scope unadjudicated) | speed control (pause, ×1, ×2, ×4) bottom-right; faster speeds only speed up the economy clock, not rides/guests | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:33` |
-| UI-023 | Original-fidelity area (scope unadjudicated) | test-only stub calendar (2 s/day); the game shows the economy clock (see ECON tags) | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:34` |
-| UI-024 | Original-fidelity area (scope unadjudicated) | layout inside the build and info arms (category buttons, title, three-slot pages/arrows sorted by Info.Id, adaptive preview size to fit translated names/prices, stat rows, door/erase buttons) | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:35` |
-| UI-025 | Original-fidelity area (scope unadjudicated) | message area keeps up to 3 messages for 8 s in the f_tag frame | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:36` |
-| UI-026 | Original-fidelity area (scope unadjudicated) | build icons: CPU orthographic projection of P&lt;name&gt;.MD2 with 30° tilt, 0.8 rad/s turn, painter sorting | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:37` |
-| UI-027 | Original-fidelity area (scope unadjudicated) | a park click selects the original object occupying its grid cell | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:38` |
-| UI-028 | Original-fidelity area (scope unadjudicated) | excitement shown as '&lt;ExcitementLevel&gt;%'; reliability, repair and life shown as not simulated | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:39` |
-| UI-029 | Original-fidelity area (scope unadjudicated) | b_door 'down' frames mean the ride is closed; b_erase used as the delete button | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:40` |
-| UI-030 | Original-fidelity area (scope unadjudicated) | volumes in 0..10 steps, default 8; popup help default on | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:41` |
-| UI-031 | Original-fidelity area (scope unadjudicated) | one placement per menu selection; Level.PlaceObject owns purchase/guest linkage and its removal handler owns scrap credits | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:42` |
-| UI-032 | Original-fidelity area (scope unadjudicated) | longer labels fall back to the small font; catalogue names greedily wrap in their slots | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:43` |
-| UI-034 | Original-fidelity area (scope unadjudicated) | a fully opaque texture on a transparent (flag 0x2) model slot keys out black (only ipan in the lobby f_lobbutbg panel) | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:44` |
-| UI-035 | Original-fidelity area (scope unadjudicated) | start-up movies: the Mac build's order (bf, then a day-of-month trailer) is assumed for the PC .tgq files; input held at launch is ignored until released; movies are letterboxed to their aspect instead of stretched to the window width | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:45` |
+| UI-010 | Original-fidelity area (scope unadjudicated) | popup help box at the top centre with a dark blue backdrop | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:20` |
+| UI-011 | Original-fidelity area (scope unadjudicated) | modal screens dim what is below | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:21` |
+| UI-012 | Original-fidelity area (scope unadjudicated) | hover focuses, release activates, arrows/Enter/Escape navigate, P pauses, right click backs out of modal screens | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:22` |
+| UI-013 | Original-fidelity area (scope unadjudicated) | window sizes and inner layout of game mode, load, pause and message dialogs (the options page now follows the original table) | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:23` |
+| UI-014 | Original-fidelity area (scope unadjudicated) | positions inside the lobby panel (island name, prev/enter/next), logo/title placement, right-hand Load/Options/Quit column | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:24` |
+| UI-015 | Original-fidelity area (scope unadjudicated) | front-end flow without player profiles; Game Mode is asked when entering a park instead of once per player | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:25` |
+| UI-016 | Original-fidelity area (scope unadjudicated) | lobby ISLAND angle = island yaw in degrees, height = camera target height | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:26` |
+| UI-017 | Original-fidelity area (scope unadjudicated) | lobby camera: SPINSPEED read as radians per 0.1 s, vertical field of view 60, 3/s glide between islands, ISLANDFOV unused | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:27` |
+| UI-018 | Original-fidelity area (scope unadjudicated) | lobby sky drawn as a flat SKYCOLOUR backdrop; flying meshes, rain, lightning, animations not drawn | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:28` |
+| UI-019 | Original-fidelity area (scope unadjudicated) | fallback island position (400 + index × 200, 400) when lobby.txt has none | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:29` |
+| UI-020 | Original-fidelity area (scope unadjudicated) | positions of buy/info/finance/research/map buttons on the main panel (shared authored centre) | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:30` |
+| UI-021 | Original-fidelity area (scope unadjudicated) | positions and fonts of the date and bank balance text; money grouped with ',' digits | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:31` |
+| UI-022 | Original-fidelity area (scope unadjudicated) | speed control (pause, ×1, ×2, ×4) bottom-right; faster speeds only speed up the economy clock, not rides/guests | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:32` |
+| UI-023 | Original-fidelity area (scope unadjudicated) | test-only stub calendar (2 s/day); the game shows the economy clock (see ECON tags) | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:33` |
+| UI-024 | Original-fidelity area (scope unadjudicated) | layout inside the build and info arms (category buttons, title, three-slot pages/arrows sorted by Info.Id, adaptive preview size to fit translated names/prices, stat rows, door/erase buttons) | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:34` |
+| UI-025 | Original-fidelity area (scope unadjudicated) | message area keeps up to 3 messages for 8 s in the f_tag frame | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:35` |
+| UI-026 | Original-fidelity area (scope unadjudicated) | build icons: CPU orthographic projection of P&lt;name&gt;.MD2 with 30° tilt, 0.8 rad/s turn, painter sorting | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:36` |
+| UI-027 | Original-fidelity area (scope unadjudicated) | a park click selects the original object occupying its grid cell | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:37` |
+| UI-028 | Original-fidelity area (scope unadjudicated) | excitement shown as '&lt;ExcitementLevel&gt;%'; reliability, repair and life shown as not simulated | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:38` |
+| UI-029 | Original-fidelity area (scope unadjudicated) | b_door 'down' frames mean the ride is closed; b_erase used as the delete button | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:39` |
+| UI-030 | Original-fidelity area (scope unadjudicated) | volumes in 0..10 steps (10 % each; the capture shows 75 %, so the original has finer steps), default 8; popup help, advisor, tutorial, confirmations and RMB cancel default on, rotation 90 degs, scroll pushscroll | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:40` |
+| UI-031 | Original-fidelity area (scope unadjudicated) | one placement per menu selection; Level.PlaceObject owns purchase/guest linkage and its removal handler owns scrap credits | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:41` |
+| UI-032 | Original-fidelity area (scope unadjudicated) | longer labels fall back to the small font; catalogue names greedily wrap in their slots | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:42` |
+| UI-034 | Original-fidelity area (scope unadjudicated) | a fully opaque texture on a transparent (flag 0x2) model slot keys out black (only ipan in the lobby f_lobbutbg panel) | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:43` |
+| UI-035 | Original-fidelity area (scope unadjudicated) | start-up movies: the Mac build's order (bf, then a day-of-month trailer) is assumed for the PC .tgq files; input held at launch is ignored until released; movies are letterboxed to their aspect instead of stretched to the window width | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:44` |
+| UI-036 | Original-fidelity area (scope unadjudicated) | options slider: ball centre moves linearly over the track for value index 0..steps-1; click/drag sets the nearest step | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:45` |
+| UI-037 | Original-fidelity area (scope unadjudicated) | option bar label colour (16,16,48), no drop shadow | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:46` |
+| UI-038 | Original-fidelity area (scope unadjudicated) | 3D card rendering, videocard and audio quality are drawn fixed and disabled (OpenTPW has no software renderer, card choice or audio quality) | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:47` |
 
 ## Approximation sites
 
@@ -273,13 +275,11 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-005 | `source/OpenTPW/UI/Original/UiImages.cs:70` | [APPROX:UI-005] pink key + neighbour colour bleed for linear filtering — evidence needed: capture of UI edges at other resolutions |
 | UI-006 | `source/OpenTPW/UI/Original/UiText.cs:144` | [APPROX:UI-006] all UI text/backdrop colours — evidence needed: captures of original screens |
 | UI-007 | `source/OpenTPW/UI/Original/UiWidgets.cs:73` | [APPROX:UI-007] drop shadow one text pixel down-right — evidence needed: captures of original screens |
-| UI-008 | `source/OpenTPW/UI/Original/UiWidgets.cs:300` | [APPROX:UI-008] purple_button as a mirrored end cap, upper half normal, lower half focused/pressed — evidence needed: capture of the original front-end buttons |
-| UI-009 | `source/OpenTPW/UI/Original/UiWidgets.cs:370` | [APPROX:UI-009] option-row arrow/value positions — evidence needed: capture of the original options screen |
-| UI-010 | `source/OpenTPW/UI/Original/UiScreen.cs:216` | [APPROX:UI-010] popup help placement/backdrop — evidence needed: capture of original popup help |
-| UI-011 | `source/OpenTPW/UI/Original/UiScreen.cs:206` | [APPROX:UI-011] modal screens dim the screens below — evidence needed: captures of original dialogs |
+| UI-008 | `source/OpenTPW/UI/Original/UiWidgets.cs:309` | [APPROX:UI-008] purple_button as a mirrored end cap, upper half normal, lower half focused/pressed — evidence needed: capture of the original front-end buttons |
+| UI-010 | `source/OpenTPW/UI/Original/UiScreen.cs:224` | [APPROX:UI-010] popup help placement/backdrop — evidence needed: capture of original popup help |
+| UI-011 | `source/OpenTPW/UI/Original/UiScreen.cs:214` | [APPROX:UI-011] modal screens dim the screens below — evidence needed: captures of original dialogs |
 | UI-012 | `source/OpenTPW/UI/Original/UiInput.cs:54` | [APPROX:UI-012] key map (arrows, Enter, Escape, P) — evidence needed: binary key handling / KEYBOARD.str |
 | UI-012 | `source/OpenTPW/UI/Original/UiScreen.cs:61` | [APPROX:UI-012] hover focus, activate on release, keyboard navigation, right click backs out — evidence needed: binary input handling |
-| UI-013 | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:101` | [APPROX:UI-013] options window size, row pitch 80, OK/Back placement — evidence needed: capture of the original options screen |
 | UI-013 | `source/OpenTPW/UI/Original/UiDialogs.cs:9` | [APPROX:UI-013] dialog window sizes and inner layout — evidence needed: captures of original dialogs |
 | UI-014 | `source/OpenTPW/FrontEnd/FrontEndMenu.cs:78` | [APPROX:UI-014] island name and prev/enter/next button positions in the lobby panel — evidence needed: capture of the original lobby |
 | UI-014 | `source/OpenTPW/FrontEnd/FrontEndMenu.cs:94` | [APPROX:UI-014] logo/title placement and the right-hand Load/Options/Quit column — evidence needed: capture of the original lobby |
@@ -307,12 +307,16 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-027 | `source/OpenTPW/Hud/ParkHud.cs:486` | [APPROX:UI-027] Select by occupied grid cell; original cursor picking is not verified. |
 | UI-028 | `source/OpenTPW/Hud/ParkHud.cs:285` | [APPROX:UI-028] authored excitement as a percentage; unknown simulation statistics stay unavailable. |
 | UI-029 | `source/OpenTPW/Hud/ParkHud.cs:209` | [APPROX:UI-024] layout inside the info arm; [APPROX:UI-029] b_door down = closed, b_erase = delete — evidence needed: capture of the ride panel |
-| UI-030 | `source/OpenTPW/UI/Original/Options/GameOptions.cs:16` | [APPROX:UI-030] 0..10 volume steps, default 8, popup help on — evidence needed: original options defaults |
+| UI-030 | `source/OpenTPW/UI/Original/Options/GameOptions.cs:34` | [APPROX:UI-030] 0..10 volume steps, default 8, popup help on — evidence needed: original options defaults |
+| UI-030 | `source/OpenTPW/UI/Original/Options/GameOptions.cs:45` | [APPROX:UI-030] right-column defaults: all on, 90 degs rotation (as in the supplied capture), pushscroll |
 | UI-031 | `source/OpenTPW/Hud/ParkHud.cs:352` | [APPROX:UI-031] one placement per menu selection; Level owns purchase/sale — evidence needed: original build-tool continuation |
 | UI-032 | `source/OpenTPW/Hud/ParkHud.cs:595` | [APPROX:UI-032] Wrap translated catalogue names within their slot at the integer text scale. |
-| UI-032 | `source/OpenTPW/UI/Original/UiWidgets.cs:213` | [APPROX:UI-032] small-font fallback and greedy wrap for long labels — evidence needed: captures of translated original screens |
+| UI-032 | `source/OpenTPW/UI/Original/UiWidgets.cs:222` | [APPROX:UI-032] small-font fallback and greedy wrap for long labels — evidence needed: captures of translated original screens |
 | UI-034 | `source/OpenTPW/UI/Original/UiImages.cs:64` | [APPROX:UI-034] a fully opaque texture on a transparent (flag 0x2) slot keys out black — evidence needed: the original's render state for flagged slots |
 | UI-035 | `source/OpenTPW/Client/Movie/IntroPlaylist.cs:30` | Input already held when the sequence begins is ignored until released [APPROX:UI-035], so launching the game |
+| UI-036 | `source/OpenTPW/UI/Original/UiWidgets.cs:378` | [APPROX:UI-036] linear knob travel over the track, value index 0..Steps-1 from the knob's centre — evidence needed: capture of the original slider ends / binary slider code |
+| UI-037 | `source/OpenTPW/UI/Original/UiText.cs:153` | [APPROX:UI-037] option bar label colour (16,16,48) read off a capture by eye — evidence needed: exact pixel colour from a capture or the font palette |
+| UI-038 | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:189` | [APPROX:UI-038] 3D card rendering, videocard and audio quality are shown fixed (disabled) — OpenTPW has no software renderer, video card or audio quality choice |
 
 ## Extension sites
 
@@ -325,6 +329,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | COMPAT-GFX-ENHANCED | `source/OpenTPW/Compat/GraphicsSettings.cs:165` | &lt;summary&gt;[EXT:COMPAT-GFX-ENHANCED] anisotropy used by the Enhanced preset (TEXTUREFILTERING 3 is never used by the original presets).&lt;/summary&gt; |
 | COMPAT-GFX-ENHANCED | `source/OpenTPW/Compat/GraphicsSettings.cs:167` | &lt;summary&gt;[EXT:COMPAT-GFX-ENHANCED] view distance scale of the Enhanced preset (OpenTPW fog distance multiplier).&lt;/summary&gt; |
 | COMPAT-GFX-ENHANCED | `source/OpenTPW/Compat/GraphicsSettings.cs:182` | [EXT:COMPAT-GFX-ENHANCED] user-selected deviation from the original High preset by design. |
+| COMPAT-GFX-ENHANCED | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:112` | [EXT:COMPAT-GFX-ENHANCED] the Enhanced preset is not in the original game; it is the slider's last step |
 | COMPAT-GFX-VIEWDISTANCE | `source/OpenTPW/Compat/GraphicsSettings.cs:266` | &lt;summary&gt;[EXT:COMPAT-GFX-VIEWDISTANCE] OpenTPW fog distance multiplier; 1 = unchanged.&lt;/summary&gt; |
 | ONLINE-001 | `source/OpenTPW.Online/Packages/BoundedZip.cs:10` | [EXT:ONLINE-001] OpenTPW container design (the original online service used EA's servers; no |
 | ONLINE-002 | `source/OpenTPW.Online/Packages/BoundedZip.cs:18` | &lt;summary&gt;[EXT:ONLINE-002] Highest accepted uncompressed/compressed ratio for entries above 4 KiB.&lt;/summary&gt; |
@@ -356,25 +361,28 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ONLINE-UI | `source/OpenTPW/Online/OnlineScreens.cs:102` | [EXT:ONLINE-UI] the server address is an OpenTPW field; the original service address was built in |
 | ONLINE-UI | `source/OpenTPW/UI/Original/UiTextWidgets.cs:46` | [EXT:ONLINE-UI] text field art and caret are OpenTPW's; the original field template is not decoded |
 | SETUP | `source/OpenTPW/UI/Original/Options/GameFilesScreen.cs:10` | [EXT:SETUP] OpenTPW setting; the original installer chose one folder and never changed it in game |
-| SETUP | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:236` | [EXT:SETUP] Game files (game folder and CD) between Back and OK |
+| SETUP | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:406` | [EXT:SETUP] Game files (game folder and CD) |
 | art-override | `source/OpenTPW/UI/Original/UiArtOverrides.cs:10` | [EXT:art-override] optional player-supplied replacement art; the original only has its own textures |
 | bonus-content | `source/OpenTPW/Client/Setup/BonusContent.cs:14` | [EXT:bonus-content] Setup-managed copy of the official bonus WADs; the original game only had the CD and install folders |
 | developer-prototype | `source/OpenTPW/Economy/ParkEconomyRuntime.cs:46` | [EXT:developer-prototype] the developer prototype ride is registered uncharged (no original counterpart) |
 | developer-prototype | `source/OpenTPW/World/Level.Objects.cs:170` | [EXT:developer-prototype] Sandbox Totem blocks cells whose centres lie within its 6×8-unit model box (no original counterpart) |
 | developer-prototype | `source/OpenTPW/World/Level.Objects.cs:251` | [EXT:developer-prototype] When the economy refuses the Totem (e.g. Research.Group 4 not yet researched), the developer prototype is registered uncharged (no original counterpart) |
 | developer-prototype | `source/OpenTPW/World/PrototypeRide.cs:13` | [EXT:developer-prototype] Sandbox Totem bounds check uses a 5-unit radius around its centre (no original counterpart) |
-| display | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:130` | [EXT:display] window mode, upscaling, render scale and interface scale rows are OpenTPW extensions |
+| display | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:350` | [EXT:display] window mode, upscaling, render scale and interface scale rows are OpenTPW extensions |
 | fit-button-text | `source/OpenTPW/UI/Original/UiTextFit.cs:10` | [EXT:fit-button-text] button labels shrink to fit; the original sized its fixed strings per language by hand |
 | interface-scale-fit | `source/OpenTPW/UI/Original/UiCanvas.cs:33` | [EXT:interface-scale-fit] Above 1×, limit forced text scales to UiScaling's reference-layout fit (HiDPI-aware via PixelDensity). |
-| language | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:157` | [EXT:language] language row (original installs had one language; OpenTPW reads CD overlays) |
+| language | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:372` | [EXT:language] language row (original installs had one language; OpenTPW reads CD overlays) |
+| opentpw-page | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:309` | [EXT:opentpw-page] button to the OpenTPW page, in the free area left of the OK panel |
+| opentpw-page | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:324` | The OpenTPW page ([EXT:opentpw-page]): everything OpenTPW adds to the original options, in its own |
+| opentpw-page | `source/OpenTPW/UI/Original/UiWidgets.cs:454` | [EXT:opentpw-page] option-row arrow/value positions: OpenTPW's own row style for its page (the original page uses sliders and toggles) |
 | ps2-data | `source/OpenTPW/Client/Ps2Export.cs:13` | [EXT:ps2-data] viewing aid for the PS2 version's data, not original behaviour |
 | strings | `source/OpenTPW/UI/Original/SupplementaryStrings.cs:10` | [EXT:strings] OpenTPW supplementary labels (display/upscaling/language rows and OpenTPW messages), not original data |
 | test-stub | `source/OpenTPW/Hud/HudStubs.cs:130` | [EXT:test-stub] price shown when Totem.sam cannot be read (the economy catalogue price is used when a park economy runs) |
 | texture-pack | `source/OpenTPW/Compat/GraphicsSettings.cs:268` | &lt;summary&gt;[EXT:texture-pack] Use the locally built upscaled texture pack (docs/TEXTURE-PACKS.md); off = original textures. Applies at the next start.&lt;/summary&gt; |
 | texture-pack | `source/OpenTPW/Render/Assets/TexturePack.cs:13` | [EXT:texture-pack] Upscaled replacement textures are an OpenTPW presentation option, not original behaviour. |
 | texture-pack | `source/OpenTPW/Render/Assets/TexturePackBuilder.cs:63` | [EXT:texture-pack] Builder for the optional local upscaled texture pack; original files are only read. |
-| texture-pack | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:147` | [EXT:texture-pack] optional locally built upscaled textures; off unless a pack exists and the player turns it on |
-| upscaling | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:34` | [EXT:upscaling] render-scale steps (presets 77/67/59/50 from the display slice plus 5% steps) |
+| texture-pack | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:367` | [EXT:texture-pack] optional locally built upscaled textures; off unless a pack exists and the player turns it on |
+| upscaling | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:37` | [EXT:upscaling] render-scale steps (presets 77/67/59/50 from the display slice plus 5% steps) |
 | world-capture | `source/OpenTPW/Client/WorldCapture.cs:13` | [EXT:world-capture] developer/screenshot command, not original behaviour |
 
 ## Data provenance sites
@@ -420,7 +428,6 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | Totem.sam:Info.Shape | `source/OpenTPW/World/PrototypeRide.cs:74` | [DATA:Totem.sam:Info.Shape] 3×4 cells = 30×40 MD2 units, centred |
 | Totem.sam:Upgrades[0].CostOfUpgrade | `source/OpenTPW/Hud/HudStubs.cs:143` | [DATA:Totem.sam:Upgrades[0].CostOfUpgrade] (FallbackCost only when the file is missing) |
 | Totem.sam:UsageInfo.ExcitementLevel | `source/OpenTPW/Hud/HudStubs.cs:147` | [DATA:Totem.sam:UsageInfo.ExcitementLevel] overrides [DATA:Rides.sam:UsageInfo.ExcitementLevel] |
-| UITEXT.str:318,340-346 | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:122` | [DATA:UITEXT.str:318,340-346] original row label and resolution labels |
 | UITEXT.str:448,449 | `source/OpenTPW/Hud/ParkHud.cs:82` | [DATA:UITEXT.str:448,449] currency prefix; [APPROX:UI-021] ","-grouped digits — evidence needed: locale number format of the original |
 | global/Speech/lips.wad | `source/OpenTPW/World/Advisor.cs:20` | [DATA:global/Speech/speechHD.SDT] [DATA:global/Speech/lips.wad] |
 | global/Speech/lips.wad:members sp_001–sp_637 | `source/OpenTPW/World/Advisor.cs:27` | [DATA:global/Speech/lips.wad:members sp_001–sp_637] |
@@ -436,11 +443,15 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | low.sam/med.sam/high.sam | `source/OpenTPW.Tests/CompatibilityTests.cs:133` | [DATA:low.sam/med.sam/high.sam] in file order (TEXTUREQUALITY .. LOBBYOBJECTS). |
 | low.sam/med.sam/high.sam:comment legend | `source/OpenTPW/Compat/GraphicsSettings.cs:21` | ([DATA:low.sam/med.sam/high.sam:comment legend]). |
 | low/med/high.sam:TEXTUREFILTERING, MIPMAP | `source/OpenTPW/Render/Assets/Material.cs:60` | World textures follow the graphics preset ([DATA:low/med/high.sam:TEXTUREFILTERING, MIPMAP]); see docs/COMPATIBILITY.md. |
+| options table 0x4b0dc | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:187` | [DATA:options table 0x4b0dc] control rectangles of the original page; meanings from the supplied PC capture |
+| options table 0x4b0dc:120020 | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:142` | [DATA:options table 0x4b0dc:120020] title text rectangle |
+| options table 0x4b0dc:120031,OK,Cancel | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:305` | [DATA:options table 0x4b0dc:120031,OK,Cancel] bottom-right panel with the OK and Cancel buttons |
 | speechHD.SDT/MusicHD.sdt:all Layer II frames fit this table to ≤23 spare bits | `source/OpenTPW.Files/Formats/Sound/Mp2Decoder.cs:38` | [DATA:speechHD.SDT/MusicHD.sdt:all Layer II frames fit this table to ≤23 spare bits] |
 | speechHD.SDT:entry word 0 = header size (40) | `source/OpenTPW/World/Advisor.cs:215` | [DATA:speechHD.SDT:entry word 0 = header size (40)] |
 | theme-park-world_win_manual_europe_en_ii5.pdf:PDF-page-15/printed-page-28; SHA256=c96eb25f3dc13f7f0824bbf03f9bbeb3bb94e9f4756d4d8dfa09ac71732b0668 | `source/OpenTPW/Economy/ParkObjectives.cs:315` | [DATA:theme-park-world_win_manual_europe_en_ii5.pdf:PDF-page-15/printed-page-28; SHA256=c96eb25f3dc13f7f0824bbf03f9bbeb3bb94e9f4756d4d8dfa09ac71732b0668] |
 | ui.wad:button UVs v 0.42..1 vs art in the top 58% | `source/OpenTPW/UI/Original/UiModel.cs:131` | [DATA:ui.wad:button UVs v 0.42..1 vs art in the top 58%] V flipped as in the 3D shaders |
 | ui.wad:f_chat.MD2,w_map.MD2 bounds | `source/OpenTPW/UI/Original/UiCanvas.cs:25` | [DATA:ui.wad:f_chat.MD2,w_map.MD2 bounds] full-screen UI frames span 2048×1536 |
+| ui.wad:f_screen | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:132` | [DATA:ui.wad:f_screen] the full-screen frame with the tiled wave background |
 | ui.wad:islandlobby.MD2,f_lobbutbg.MD2 root/bounds | `source/OpenTPW/FrontEnd/FrontEndMenu.cs:75` | [DATA:ui.wad:islandlobby.MD2,f_lobbutbg.MD2 root/bounds] authored panel rectangles |
 | ui.wad:mainpanel,gauge,date,panel MD2 roots | `source/OpenTPW/Hud/ParkHud.cs:113` | [DATA:ui.wad:mainpanel,gauge,date,panel MD2 roots] authored HUD rectangles |
 

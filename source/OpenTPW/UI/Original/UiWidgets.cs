@@ -204,17 +204,26 @@ public sealed class UiLabel : UiElement
 	public RgbaByte Color { get; set; } = UiColors.Text;
 	public UiAlign Align { get; set; } = UiAlign.Left;
 	public bool Wrap { get; set; }
+	/// <summary>Drop shadow under the text; the dark option labels have none.</summary>
+	public bool Shadow { get; set; } = true;
+	/// <summary>Fit the single line into the rectangle (smaller font, smaller scale) instead of the small-font fallback.</summary>
+	public bool Fit { get; set; }
 
 	public override void Draw( UiContext context, bool focused, bool pressed )
 	{
 		var rect = ScreenRect( context.Canvas );
 		var font = Font( context.Fonts );
 		var text = Text();
+		if ( Fit && !Wrap )
+		{
+			context.DrawFittedText( font, text, rect, Color, Align, Shadow );
+			return;
+		}
 		// [APPROX:UI-032] small-font fallback and greedy wrap for long labels — evidence needed: captures of translated original screens
 		// Longer translations fall back to the small game font instead of overflowing the art.
 		if ( !Wrap && context.Measure( font, text ).Width > rect.Width )
 			font = context.Fonts.Small;
-		context.DrawText( font, text, rect, Color, Align, Wrap );
+		context.DrawText( font, text, rect, Color, Align, Wrap, Shadow );
 	}
 }
 
@@ -344,7 +353,82 @@ public sealed class UiButton : UiElement
 }
 
 /// <summary>
-/// An options row in the style of the original options panel (f_optpanel2 bar): label on the left,
+/// A horizontal slider in the style of the original options screen: a <c>b_scroller</c> ball on a track,
+/// <see cref="UiElement.Bounds"/> being the mouse hit region. Values are step indices 0..Steps-1.
+/// </summary>
+public sealed class UiSlider : UiElement
+{
+	public const string KnobModel = "b_scroller";
+
+	/// <summary>Authored track the ball runs along.</summary>
+	public UiRect Track { get; set; }
+	/// <summary>Authored size of the ball.</summary>
+	public NVector2 KnobSize { get; set; } = new( 67, 67 );
+	/// <summary>Authored vertical position of the ball's top.</summary>
+	public float KnobTop { get; set; }
+	public Func<int> Steps { get; set; } = () => 2;
+	public Func<int> Value { get; set; } = () => 0;
+	public Action<int>? Changed { get; set; }
+	public override bool Focusable => Visible && Enabled;
+
+	/// <summary>
+	/// Authored ball rectangle for <paramref name="value"/>: the ball's centre moves linearly from half a ball
+	/// inside the track's left end to half a ball inside its right end.
+	/// </summary>
+	// [APPROX:UI-036] linear knob travel over the track, value index 0..Steps-1 from the knob's centre — evidence needed: capture of the original slider ends / binary slider code
+	public UiRect KnobRect( int value )
+	{
+		var steps = Math.Max( 2, Steps() );
+		var fraction = Math.Clamp( value, 0, steps - 1 ) / (float)(steps - 1);
+		var left = Track.X + (Track.Width - KnobSize.X) * fraction;
+		return new UiRect( left, KnobTop, KnobSize.X, KnobSize.Y );
+	}
+
+	/// <summary>Value whose ball centre is nearest to the authored x position <paramref name="authoredX"/>.</summary>
+	public int ValueAt( float authoredX )
+	{
+		var steps = Math.Max( 2, Steps() );
+		var travel = Track.Width - KnobSize.X;
+		if ( travel <= 0 )
+			return 0;
+		var fraction = (authoredX - Track.X - KnobSize.X / 2) / travel;
+		return Math.Clamp( (int)MathF.Round( fraction * (steps - 1) ), 0, steps - 1 );
+	}
+
+	/// <summary>Sets the value from a mouse position in framebuffer pixels.</summary>
+	public void SetFromMouse( UiCanvas canvas, NVector2 point )
+	{
+		if ( !Enabled )
+			return;
+		var rect = ScreenRect( canvas );
+		if ( rect.Width <= 0 )
+			return;
+		Set( ValueAt( Bounds.X + (point.X - rect.X) / rect.Width * Bounds.Width ) );
+	}
+
+	private void Set( int value )
+	{
+		if ( value != Value() )
+			Changed?.Invoke( value );
+	}
+
+	public override void Adjust( int direction )
+	{
+		if ( Enabled )
+			Set( Math.Clamp( Value() + direction, 0, Math.Max( 2, Steps() ) - 1 ) );
+	}
+
+	public override void Draw( UiContext context, bool focused, bool pressed )
+	{
+		var knob = KnobRect( Value() );
+		var rect = context.Canvas.Map( knob, Anchor );
+		if ( !context.DrawModel( KnobModel, 0, rect ) )
+			context.Batch.AddRectangle( rect, UiColors.Value );
+	}
+}
+
+/// <summary>
+/// An options row of the OpenTPW page in the style of the original options panel (f_optpanel2 bar): label on the left,
 /// value on the right, cycled with the arrows (b_sleft/b_sright), the mouse wheel or left/right keys.
 /// </summary>
 public sealed class UiOptionRow : UiElement
@@ -367,7 +451,7 @@ public sealed class UiOptionRow : UiElement
 		var rect = ScreenRect( canvas );
 		var size = rect.Height * 0.8f;
 		var top = rect.Y + (rect.Height - size) / 2;
-		// [APPROX:UI-009] option-row arrow/value positions — evidence needed: capture of the original options screen
+		// [EXT:opentpw-page] option-row arrow/value positions: OpenTPW's own row style for its page (the original page uses sliders and toggles)
 		// The f_optpanel2 art: label lozenge up to ~58% of the frame width, then the value lozenges to the end.
 		var left = new UiRect( rect.X + rect.Width * 0.585f, top, size, size );
 		var right = new UiRect( rect.X + rect.Width * 0.975f - size, top, size, size );

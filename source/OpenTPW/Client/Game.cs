@@ -206,7 +206,7 @@ internal static class Game
 		{
 			if ( playIntro )
 			{
-				using var intro = new IntroSequence( dataDirectory, IntroPlaylist.For( DateTime.Now ), !args.Contains( "--mute" ), GameOptions.Gain( GameOptions.Current.MovieVolume ) );
+				using var intro = new IntroSequence( dataDirectory, IntroPlaylist.For( DateTime.Now ), !args.Contains( "--mute" ), GameOptions.Current.MovieGain );
 				Render.OnUpdate += intro.Update;
 				Render.OnRender += intro.Draw;
 				intro.Completed += () =>

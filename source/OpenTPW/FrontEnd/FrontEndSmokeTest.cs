@@ -144,19 +144,38 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		{
 			Require( flow.Menu!.Stack.Top?.Name == "options", "options screen opens" );
 			var effects = GameOptions.Current.SoundEffectsVolume;
+			// A click in the middle of the slider's hit region sets the middle step.
 			Click( flow.Menu.Stack.Top!, "effects" );
 			stepState = effects;
 		} );
 		Wait( "volume changes", 3 );
 		Do( "options capture", () =>
 		{
-			Require( GameOptions.Current.SoundEffectsVolume != stepState, "clicking a volume row changes it" );
+			Require( GameOptions.Current.SoundEffectsVolume != stepState, "clicking a volume slider changes it" );
+			var options = flow.Menu!.Stack.Top!;
 			var capture = CaptureFrame( "options.png" );
 			VerifyText( capture, flow.Strings[UIStrings.GameOptions], "Game Options title" );
-			VerifyText( capture, flow.Strings[UIStrings.ScreenResolution], "screen resolution row" );
+			VerifyText( capture, ((UiLabel)options.Find( "resolutionLabel" )!).Text(), "screen resolution label" );
+			VerifyText( capture, ((UiLabel)options.Find( "effectsLabel" )!).Text(), "sound effects volume label" );
+			VerifyText( capture, ((UiLabel)options.Find( "advisorLabel" )!).Text(), "advisor label" );
+			VerifyText( capture, ((UiLabel)options.Find( "scrollLabel" )!).Text(), "scroll label" );
+			VerifyText( capture, flow.Strings.Extra( OpenTpwText.OpenTpwPage ), "OpenTPW button" );
+			Click( options, "openTpw" );
+		} );
+		Wait( "OpenTPW page opens", 3 );
+		Do( "OpenTPW page capture", () =>
+		{
+			Require( flow.Menu!.Stack.Top?.Name == "openTpwOptions", "the OpenTPW button opens its page" );
+			var capture = CaptureFrame( "options-opentpw.png" );
 			VerifyText( capture, flow.Strings.Extra( OpenTpwText.Upscaling ), "OpenTPW upscaling row" );
 			if ( Context.Canvas.TextScale < flow.Display.EffectiveUiScale )
-				VerifyText( capture, ((UiLabel)flow.Menu!.Stack.Top!.Find( "effective" )!).Text(), "effective output and interface-scale fallback" );
+				VerifyText( capture, ((UiLabel)flow.Menu.Stack.Top.Find( "effective" )!).Text(), "effective output and interface-scale fallback" );
+			flow.InjectedInput = UiInput.Key( UiKeys.Back );
+		} );
+		Wait( "OpenTPW page closes", 3 );
+		Do( "back on the original page", () =>
+		{
+			Require( flow.Menu!.Stack.Top?.Name == "options", "Back returns to the original options page" );
 			flow.InjectedInput = UiInput.Key( UiKeys.Back );
 		} );
 		Wait( "options cancelled", 3 );

@@ -74,14 +74,17 @@ public class UiScreen
 		var consumed = hit != null;
 		if ( input.LeftPressed )
 			pressed = hit;
+		// A slider follows the mouse while it is held, wherever the pointer has drifted to.
+		if ( pressed is UiSlider { Enabled: true } slider && input.Mouse.X >= 0 && (input.LeftDown || input.LeftPressed || input.LeftReleased) )
+			slider.SetFromMouse( canvas, input.Mouse );
 		if ( input.LeftReleased )
 		{
 			if ( hit != null && (pressed == null || pressed == hit) )
 				Click( canvas, hit, input.Mouse );
 			pressed = null;
 		}
-		if ( hit is UiOptionRow wheelRow && input.Wheel != 0 )
-			wheelRow.Adjust( input.Wheel > 0 ? 1 : -1 );
+		if ( hit is UiOptionRow or UiSlider && input.Wheel != 0 )
+			hit.Adjust( input.Wheel > 0 ? 1 : -1 );
 		if ( hit is UiScrollList wheelList && input.Wheel != 0 )
 			wheelList.Scroll( input.Wheel > 0 ? -1 : 1 );
 		if ( input.Has( UiKeys.Tab ) )
@@ -130,6 +133,11 @@ public class UiScreen
 				list.Activate();
 			else if ( index >= 0 )
 				list.Select( index );
+			return;
+		}
+		if ( element is UiSlider slider )
+		{
+			slider.SetFromMouse( canvas, point );
 			return;
 		}
 		if ( element is UiOptionRow row )

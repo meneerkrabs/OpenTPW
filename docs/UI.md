@@ -164,27 +164,54 @@ and the rounded ends.
 
 ### Options (Game Options, 314)
 
-Original rows: Screen resolution (318, values 340–346 where the size matches,
-otherwise the same " W x H" format, sizes from `IDisplaySettings.GetResolutions`),
-Sound effects / Music / Speech / Movie volume (320–323, 0–10), Popup help (326,
-Yes/No). OpenTPW rows in the same style: Window mode (windowed / borderless /
-exclusive "Full screen"), Upscaling (Native/Linear/Nearest), Render scale
-(Native, presets 77/67/59/50 %, other values labelled with the original
-" Custom"), Interface scale (Automatic or 1x–8x, the display's integer UI scale),
-Language, plus the effective internal/output size and fallback reason. Each row
-is the original `f_optpanel2` bar with `b_sleft`/`b_sright` arrows inside the
-original `w_med` window; OK is `b_okay`.
+The page follows the options table of the Mac build (authored 2048x1536 coordinates, 57
+controls; `OptionsScreen`). The `f_screen` root (frame plus tiled wave background) covers the
+4:3 area; all elements are centre-anchored, so wider outputs show the lobby beside it. The
+title (UITEXT 314) is in the yellow title font. Labels are small dark text
+([UI-037]) inside the light-green bars, left aligned, label and value in one string
+without shadow, fitted to the bar (`UiLabel.Fit`, so long translations shrink).
 
-The rows edit a pending copy of the display settings; Back/Escape discards it and
-restores the volumes. OK saves the volumes to `save/opentpw-options.json` and
-binds to the display slice's `IDisplaySettings.Instance` (the renderer):
-size/window-mode changes use `ApplyWithConfirmation` (15 s) with the original
-UITEXT 400 question showing the display's own countdown — Yes → `Confirm`, No →
-`Revert`, and on No or the display's timeout the original 401 message; upscaling,
-render scale and UI scale use `Apply`. A language change is stored for the next
-start and shows UITEXT 402 (RESTART GAME). `StubDisplaySettings` is only for
-tests/headless use. Audio code should read volumes from `GameOptions.Current`
-(`GameOptions.Gain`).
+| Row (panel model) | Control | Wired to |
+| --- | --- | --- |
+| 3D card rendering (`f_optpanel`, 120008) | `b_on2`, disabled | fixed: OpenTPW always renders on the GPU (UI-038) |
+| Videocard: Primary (`f_optpanel`, 120010) | `b_on2`, disabled | fixed (UI-038) |
+| Screen resolution (`f_optpanel3`, 120021) | slider over `IDisplaySettings.GetResolutions` | pending display size; OK applies it with the keep-or-revert flow |
+| Graphics quality (120022) | slider over `IGraphicsSettings.Presets` | Low/Medium/High, then Enhanced (OpenTPW extension, `[EXT:COMPAT-GFX-ENHANCED]`, last step), Custom only while current; applied on OK, restart notice when `RestartRequired` |
+| Audio quality (120032) | slider, disabled at 100 % | fixed (UI-038): OpenTPW has no audio quality setting |
+| Sound effects / Music / Speech / Movie volume (`f_optpanel2`, 120024-120030) | slider 0..10 (shown as 0..100 %) + `b_on` mute toggle | `GameOptions` volume and `*On`; `GameOptions.*Gain` is 0 while off |
+| Advisor, Tutorial, Popup help, Confirmations, RMB cancel (`f_optpanel`, 120011-120015) | `b_on` toggle | `GameOptions` bools |
+| Rotation (Smooth / 90 degs), Scroll (Pushscroll / Right button) (120016, 120017) | `b_on2` cycle button | `GameOptions.Rotation`, `Scroll` |
+| OK (`b_okay`), Cancel (`b_exit`) on `!f_plain` (120031) | buttons | OK applies, Cancel/Escape/right click discard |
+
+`b_on` draws its normal and highlight frames as ON (upper indicator lit) and the down frame
+as OFF, so a toggle is a `UiButton` with `Selected = () => !isOn`. `UiSlider` draws the
+`b_scroller` ball on the track; clicking or dragging inside the hit region sets the value
+from the mouse x, the wheel and Left/Right step it (UI-036).
+
+Wired today: movie volume and its mute toggle (start-up movies), popup help (hover
+help), screen resolution/size, graphics preset. STORED ONLY, no effect yet and listed in the
+`GameOptions` doc comment: sound effects, music and speech volume and mute (no game audio
+mixes them), Advisor (the advisor speaks only from `--advisor-say`), Tutorial,
+Confirmations, RMB cancel, Rotation and Scroll. Options files from older versions get the
+defaults (all on, 90 degs, pushscroll).
+
+The "OpenTPW" button (purple text button left of the OK panel, `[EXT:opentpw-page]`) opens a
+separate page in the OpenTPW window style (`w_med`, option rows) with everything the original
+did not have: window mode (windowed / borderless / exclusive "Full screen"), upscaling
+(Native/Linear/Nearest), render scale (Native, presets 77/67/59/50 %, others labelled with
+the original " Custom"), interface scale (Automatic or 1x-8x), enhanced textures, language,
+the effective internal/output size with fallback reason, and the Game files button. It edits
+the same pending state: its Back/Escape returns to the original page with the edits still
+pending, and OK on the original page applies both pages; Cancel/Escape there discards
+everything.
+
+OK saves `save/opentpw-options.json`. Size/window-mode changes use
+`ApplyWithConfirmation` (15 s) with the original UITEXT 400 question showing the display's
+countdown - Yes -> `Confirm`, No -> `Revert`, and on No or the timeout the original 401
+message; upscaling, render scale and UI scale use `Apply`. A language change (and a
+graphics change that needs a restart) shows UITEXT 402 (RESTART GAME). `StubDisplaySettings`
+is only for tests/headless use. Audio code reads volumes via `GameOptions.Current`
+(`MovieGain` etc.).
 
 ### Local art overrides
 
@@ -277,7 +304,7 @@ glyph in all 14 UI fonts of each language.
 | `Hud.IBuildCatalog` (`BuildItem`: category = WhichUIType, OBJECT_NAMES index, cost, preview model, texture dirs) | rides/objects | `OriginalBuildCatalog` adapts `Level.Objects.Catalog`, with original names, preview models and `Upgrades[0].CostOfUpgrade`; `TotemBuildCatalog` remains a test fixture |
 | `Hud.ObjectInfo`/`ObjectStat` for the info arm | rides/guests/economy | `ParkHud.SelectedInfo` follows `OriginalObject` |
 | `IDisplaySettings` (real: the renderer) | display | `StubDisplaySettings` (tests only) |
-| `GameOptions.Current` volumes | audio | — |
+| `GameOptions.Current` volumes, mute toggles and gameplay switches | audio, camera, tutorial/advisor | movie volume only; the rest is stored (see Options) |
 
 `GameFlow.StartLevel` binds the HUD; guest admissions reach the balance through the economy's guest bridge.
 
@@ -330,11 +357,10 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-006 | `UI/Original/UiText.cs:102` | text colours (white, yellow highlight/title, green values, grey disabled), shadow and backdrop colours | captures of original screens |
 | UI-007 | `UI/Original/UiWidgets.cs:96` | one-pixel (×UI scale) drop shadow under UI text | captures of original screens |
 | UI-008 | `UI/Original/UiWidgets.cs` | text buttons on purple_button art: each half is one end cap drawn with its mirror image; upper half normal, lower half focused/pressed | capture of the original front-end buttons |
-| UI-009 | `UI/Original/UiWidgets.cs:290` | option rows: label to 58%, value between arrows at 58.5%..97.5% of the f_optpanel2 frame | capture of the original options screen |
 | UI-010 | `UI/Original/UiScreen.cs:174` | popup help box at the top centre with a dark blue backdrop | capture of original popup help (helpbg art exists) |
 | UI-011 | `UI/Original/UiScreen.cs:164` | modal screens dim what is below | captures of original dialogs |
 | UI-012 | `UI/Original/UiInput.cs:49`, `UI/Original/UiScreen.cs:59` | hover focuses, release activates, arrows/Enter/Escape navigate, P pauses, right click backs out of modal screens | binary: input handling; KEYBOARD.str meaning |
-| UI-013 | `UI/Original/Options/OptionsScreen.cs:92`, `UI/Original/UiDialogs.cs:9` | window sizes and inner layout of options, game mode, load, pause and message dialogs | captures of original dialogs |
+| UI-013 | `UI/Original/UiDialogs.cs:9` | window sizes and inner layout of game mode, load, pause and message dialogs (the options page now follows the original table) | captures of original dialogs |
 | UI-014 | `FrontEnd/FrontEndMenu.cs:76`, `FrontEnd/FrontEndMenu.cs:92` | positions inside the lobby panel (island name, prev/enter/next), logo/title placement, right-hand Load/Options/Quit column | capture of the original lobby screen |
 | UI-015 | `FrontEnd/FrontEndMenu.cs:120` | front-end flow without player profiles; Game Mode is asked when entering a park instead of once per player | player profiles: the original stores the mode per player (STP-PPC 0x1015D220/0x1013741C) |
 | UI-016 | `FrontEnd/LobbyDefinition.cs:79` | lobby ISLAND angle = island yaw in degrees, height = camera target height | binary: lobby script interpretation or capture |
@@ -351,11 +377,14 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-027 | `Hud/ParkHud.cs:481` | a park click selects the original object occupying its grid cell | binary: original picking |
 | UI-028 | `Hud/ParkHud.cs:283` | excitement shown as '<ExcitementLevel>%'; reliability, repair and life shown as not simulated | capture of the original ride info; simulation |
 | UI-029 | `Hud/ParkHud.cs:207` | b_door 'down' frames mean the ride is closed; b_erase used as the delete button | capture of the original ride panel |
-| UI-030 | `UI/Original/Options/GameOptions.cs:16` | volumes in 0..10 steps, default 8; popup help default on | capture/registry defaults of the original options |
+| UI-030 | `UI/Original/Options/GameOptions.cs` | volumes in 0..10 steps (10 % each; the capture shows 75 %, so the original has finer steps), default 8; popup help, advisor, tutorial, confirmations and RMB cancel default on, rotation 90 degs, scroll pushscroll | original step count and defaults (registry/ini of the original options) |
 | UI-031 | `Hud/ParkHud.cs:350` | one placement per menu selection; Level.PlaceObject owns purchase/guest linkage and its removal handler owns scrap credits | original build-tool continuation |
 | UI-032 | `UI/Original/UiWidgets.cs:179`, `Hud/ParkHud.cs:590` | longer labels fall back to the small font; catalogue names greedily wrap in their slots | captures of translated original screens |
 | UI-034 | `UI/Original/UiImages.cs` | a fully opaque texture on a transparent (flag 0x2) model slot keys out black; only `ipan` in the lobby `f_lobbutbg` panel | the original's render state for flagged texture slots |
 | UI-035 | `Client/Movie/IntroPlaylist.cs` | start-up movies: the Mac order (bf, then a day-of-month trailer) assumed for the PC; input held at launch ignored until released; movies letterboxed to 640:352 | PC executable analysis or captures of the PC start-up sequence |
+| UI-036 | `UI/Original/UiWidgets.cs` | options slider: ball centre moves linearly over the track for value index 0..steps-1; click/drag sets the nearest step | capture of the original slider ends or binary slider code |
+| UI-037 | `UI/Original/UiText.cs` | option bar label colour (16,16,48), no drop shadow | exact label colour from a capture or the font palette |
+| UI-038 | `UI/Original/Options/OptionsScreen.cs` | 3D card rendering, videocard and audio quality drawn fixed and disabled (OpenTPW has no software renderer, card choice or audio quality) | none for the game path |
 
 Data-backed (tagged `[DATA]`): the 2048×1536 canvas and authored rectangles of
 placed models (`ui.wad` roots/bounds), button state frames and texture order, V

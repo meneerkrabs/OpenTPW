@@ -155,9 +155,12 @@ is the label wrapped in the smallest size.
 Fitting uses the drawn pixels, not the BF4 line box: glyph offsets put ink above and below the line box,
 so a label measured by its line box could hang out of the button. Horizontally the label's own ink is
 centred; vertically the font's letter box (capitals, ascenders, descenders) is centred, so neighbouring
-buttons share a baseline. On the `purple_button` art the label is fitted inside the visible bar, which
-covers three quarters of each texture half (the top of the normal half, the bottom of the pressed half),
-with a margin off the rim and the rounded ends.
+buttons share a baseline. The `purple_button` texture holds two button ends, not two whole buttons: the upper half is a bar with
+a rounded left end (normal), the lower half a lighter bar with a rounded right end (focused/pressed);
+each bar fills 48 of the half's 64 rows and is cut flat at the other end. A button is drawn as that
+piece plus its mirror image, rounded caps at their own aspect and the body stretched to meet in the
+middle (UI-008), so both ends are rounded. The label is fitted inside the bar with a margin off the rim
+and the rounded ends.
 
 ### Options (Game Options, 314)
 
@@ -182,6 +185,22 @@ render scale and UI scale use `Apply`. A language change is stored for the next
 start and shows UITEXT 402 (RESTART GAME). `StubDisplaySettings` is only for
 tests/headless use. Audio code should read volumes from `GameOptions.Current`
 (`GameOptions.Gain`).
+
+### Local art overrides
+
+`UiArtOverrides` (`[EXT:art-override]`) lets a player replace an original UI element with their own
+sharper art: a PNG at `<config>/art/<name>.png` (on macOS `~/Library/Application Support/OpenTPW/art`).
+Only the lobby logo uses it so far: `tpw_logo.png` is drawn, aspect-fitted, in the `tpwlogo` model's box
+instead of the model, whose 128×128 texture holds the logo in about 90×28 pixels. OpenTPW ships no
+override art; without a file the original is drawn. The CD's autorun archive (`Autorun/general.tre`)
+holds a sharper copy of the logo (about 215 pixels wide) in data players already own.
+
+### Lobby button panel
+
+`f_lobbutbg` maps `ipan`, an opaque texture with a black background, through a texture slot with flag
+0x2; `w_dialog` and `f_train` map the same texture without the flag and draw it opaque. Of the 185 ui.wad
+slots with flag 0x2, the other 184 textures carry their own alpha, so the flag reads as "transparent":
+for a fully opaque texture on such a slot black is keyed out (UI-034), leaving the panel's blue edge.
 
 ### Resolution independence
 
@@ -310,7 +329,7 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-005 | `UI/Original/UiImages.cs:34` | pink (255,0,255) key with neighbour colour bleed; linear filtering of UI images | capture of edges at non-native resolutions |
 | UI-006 | `UI/Original/UiText.cs:102` | text colours (white, yellow highlight/title, green values, grey disabled), shadow and backdrop colours | captures of original screens |
 | UI-007 | `UI/Original/UiWidgets.cs:96` | one-pixel (×UI scale) drop shadow under UI text | captures of original screens |
-| UI-008 | `UI/Original/UiWidgets.cs:252` | text buttons on purple_button art: top half normal, bottom half focused/pressed | capture of the original front-end buttons |
+| UI-008 | `UI/Original/UiWidgets.cs` | text buttons on purple_button art: each half is one end cap drawn with its mirror image; upper half normal, lower half focused/pressed | capture of the original front-end buttons |
 | UI-009 | `UI/Original/UiWidgets.cs:290` | option rows: label to 58%, value between arrows at 58.5%..97.5% of the f_optpanel2 frame | capture of the original options screen |
 | UI-010 | `UI/Original/UiScreen.cs:174` | popup help box at the top centre with a dark blue backdrop | capture of original popup help (helpbg art exists) |
 | UI-011 | `UI/Original/UiScreen.cs:164` | modal screens dim what is below | captures of original dialogs |
@@ -335,6 +354,7 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-030 | `UI/Original/Options/GameOptions.cs:16` | volumes in 0..10 steps, default 8; popup help default on | capture/registry defaults of the original options |
 | UI-031 | `Hud/ParkHud.cs:350` | one placement per menu selection; Level.PlaceObject owns purchase/guest linkage and its removal handler owns scrap credits | original build-tool continuation |
 | UI-032 | `UI/Original/UiWidgets.cs:179`, `Hud/ParkHud.cs:590` | longer labels fall back to the small font; catalogue names greedily wrap in their slots | captures of translated original screens |
+| UI-034 | `UI/Original/UiImages.cs` | a fully opaque texture on a transparent (flag 0x2) model slot keys out black; only `ipan` in the lobby `f_lobbutbg` panel | the original's render state for flagged texture slots |
 
 Data-backed (tagged `[DATA]`): the 2048×1536 canvas and authored rectangles of
 placed models (`ui.wad` roots/bounds), button state frames and texture order, V

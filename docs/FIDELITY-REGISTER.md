@@ -14,9 +14,9 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **127 unresolved unique APPROX IDs**, 142 APPROX occurrences, 57 EXT occurrences, 62 DATA occurrences and 33 BIN occurrences.
+Current inventory: **128 unresolved unique APPROX IDs**, 143 APPROX occurrences, 58 EXT occurrences, 62 DATA occurrences and 33 BIN occurrences.
 
-Of these, 121 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
+Of these, 122 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
 CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.
 
@@ -29,7 +29,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON | 36 | 36 |
 | ONLINE | 6 | 6 |
 | RIDES | 26 | 26 |
-| UI | 32 | 46 |
+| UI | 33 | 47 |
 
 ## Approximation declarations
 
@@ -137,7 +137,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-005 | Original-fidelity area (scope unadjudicated) | pink (255,0,255) key with neighbour colour bleed; linear filtering of UI images | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:16` |
 | UI-006 | Original-fidelity area (scope unadjudicated) | text colours (white, yellow highlight/title, green values, grey disabled), shadow and backdrop colours | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:17` |
 | UI-007 | Original-fidelity area (scope unadjudicated) | one-pixel (×UI scale) drop shadow under UI text | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:18` |
-| UI-008 | Original-fidelity area (scope unadjudicated) | text buttons on purple_button art: top half normal, bottom half focused/pressed | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:19` |
+| UI-008 | Original-fidelity area (scope unadjudicated) | text buttons on purple_button art: each half is one end cap, drawn with its mirror image; upper half normal, lower half focused/pressed | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:19` |
 | UI-009 | Original-fidelity area (scope unadjudicated) | option rows: label to 58%, value between arrows at 58.5%..97.5% of the f_optpanel2 frame | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:20` |
 | UI-010 | Original-fidelity area (scope unadjudicated) | popup help box at the top centre with a dark blue backdrop | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:21` |
 | UI-011 | Original-fidelity area (scope unadjudicated) | modal screens dim what is below | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:22` |
@@ -162,6 +162,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-030 | Original-fidelity area (scope unadjudicated) | volumes in 0..10 steps, default 8; popup help default on | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:41` |
 | UI-031 | Original-fidelity area (scope unadjudicated) | one placement per menu selection; Level.PlaceObject owns purchase/guest linkage and its removal handler owns scrap credits | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:42` |
 | UI-032 | Original-fidelity area (scope unadjudicated) | longer labels fall back to the small font; catalogue names greedily wrap in their slots | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:43` |
+| UI-034 | Original-fidelity area (scope unadjudicated) | a fully opaque texture on a transparent (flag 0x2) model slot keys out black (only ipan in the lobby f_lobbutbg panel) | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:44` |
 
 ## Approximation sites
 
@@ -266,13 +267,13 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-001 | `source/OpenTPW/UI/Original/UiCanvas.cs:47` | [APPROX:UI-001] anchors keep the authored distance to the nearest edge on non-4:3 outputs — evidence needed: original widescreen behaviour / design decision |
 | UI-002 | `source/OpenTPW/UI/Original/UiCanvas.cs:43` | [APPROX:UI-002] font tier thresholds 0.36 / 0.6 of logical scale — evidence needed: binary font selection per screen mode |
 | UI-002 | `source/OpenTPW/UI/Original/UiText.cs:57` | [APPROX:UI-002] which shipped font serves which role per tier — evidence needed: binary font use / captures |
-| UI-003 | `source/OpenTPW/UI/Original/UiModel.cs:67` | [APPROX:UI-003] state frames use the root pose (child translation dropped) — evidence needed: binary UI model drawing code |
-| UI-004 | `source/OpenTPW/UI/Original/UiModel.cs:137` | [APPROX:UI-004] back-to-front by Z per texture group — evidence needed: binary or capture of overlapping UI parts |
-| UI-005 | `source/OpenTPW/UI/Original/UiImages.cs:34` | [APPROX:UI-005] pink key + neighbour colour bleed for linear filtering — evidence needed: capture of UI edges at other resolutions |
+| UI-003 | `source/OpenTPW/UI/Original/UiModel.cs:68` | [APPROX:UI-003] state frames use the root pose (child translation dropped) — evidence needed: binary UI model drawing code |
+| UI-004 | `source/OpenTPW/UI/Original/UiModel.cs:138` | [APPROX:UI-004] back-to-front by Z per texture group — evidence needed: binary or capture of overlapping UI parts |
+| UI-005 | `source/OpenTPW/UI/Original/UiImages.cs:70` | [APPROX:UI-005] pink key + neighbour colour bleed for linear filtering — evidence needed: capture of UI edges at other resolutions |
 | UI-006 | `source/OpenTPW/UI/Original/UiText.cs:144` | [APPROX:UI-006] all UI text/backdrop colours — evidence needed: captures of original screens |
 | UI-007 | `source/OpenTPW/UI/Original/UiWidgets.cs:73` | [APPROX:UI-007] drop shadow one text pixel down-right — evidence needed: captures of original screens |
-| UI-008 | `source/OpenTPW/UI/Original/UiWidgets.cs:288` | [APPROX:UI-008] purple_button halves for normal/focused — evidence needed: capture of the original front-end buttons |
-| UI-009 | `source/OpenTPW/UI/Original/UiWidgets.cs:331` | [APPROX:UI-009] option-row arrow/value positions — evidence needed: capture of the original options screen |
+| UI-008 | `source/OpenTPW/UI/Original/UiWidgets.cs:300` | [APPROX:UI-008] purple_button as a mirrored end cap, upper half normal, lower half focused/pressed — evidence needed: capture of the original front-end buttons |
+| UI-009 | `source/OpenTPW/UI/Original/UiWidgets.cs:370` | [APPROX:UI-009] option-row arrow/value positions — evidence needed: capture of the original options screen |
 | UI-010 | `source/OpenTPW/UI/Original/UiScreen.cs:216` | [APPROX:UI-010] popup help placement/backdrop — evidence needed: capture of original popup help |
 | UI-011 | `source/OpenTPW/UI/Original/UiScreen.cs:206` | [APPROX:UI-011] modal screens dim the screens below — evidence needed: captures of original dialogs |
 | UI-012 | `source/OpenTPW/UI/Original/UiInput.cs:54` | [APPROX:UI-012] key map (arrows, Enter, Escape, P) — evidence needed: binary key handling / KEYBOARD.str |
@@ -309,6 +310,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-031 | `source/OpenTPW/Hud/ParkHud.cs:352` | [APPROX:UI-031] one placement per menu selection; Level owns purchase/sale — evidence needed: original build-tool continuation |
 | UI-032 | `source/OpenTPW/Hud/ParkHud.cs:595` | [APPROX:UI-032] Wrap translated catalogue names within their slot at the integer text scale. |
 | UI-032 | `source/OpenTPW/UI/Original/UiWidgets.cs:213` | [APPROX:UI-032] small-font fallback and greedy wrap for long labels — evidence needed: captures of translated original screens |
+| UI-034 | `source/OpenTPW/UI/Original/UiImages.cs:64` | [APPROX:UI-034] a fully opaque texture on a transparent (flag 0x2) slot keys out black — evidence needed: the original's render state for flagged slots |
 
 ## Extension sites
 
@@ -353,6 +355,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ONLINE-UI | `source/OpenTPW/UI/Original/UiTextWidgets.cs:46` | [EXT:ONLINE-UI] text field art and caret are OpenTPW's; the original field template is not decoded |
 | SETUP | `source/OpenTPW/UI/Original/Options/GameFilesScreen.cs:10` | [EXT:SETUP] OpenTPW setting; the original installer chose one folder and never changed it in game |
 | SETUP | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:236` | [EXT:SETUP] Game files (game folder and CD) between Back and OK |
+| art-override | `source/OpenTPW/UI/Original/UiArtOverrides.cs:10` | [EXT:art-override] optional player-supplied replacement art; the original only has its own textures |
 | bonus-content | `source/OpenTPW/Client/Setup/BonusContent.cs:14` | [EXT:bonus-content] Setup-managed copy of the official bonus WADs; the original game only had the CD and install folders |
 | developer-prototype | `source/OpenTPW/Economy/ParkEconomyRuntime.cs:46` | [EXT:developer-prototype] the developer prototype ride is registered uncharged (no original counterpart) |
 | developer-prototype | `source/OpenTPW/World/Level.Objects.cs:170` | [EXT:developer-prototype] Sandbox Totem blocks cells whose centres lie within its 6×8-unit model box (no original counterpart) |
@@ -434,7 +437,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | speechHD.SDT/MusicHD.sdt:all Layer II frames fit this table to ≤23 spare bits | `source/OpenTPW.Files/Formats/Sound/Mp2Decoder.cs:38` | [DATA:speechHD.SDT/MusicHD.sdt:all Layer II frames fit this table to ≤23 spare bits] |
 | speechHD.SDT:entry word 0 = header size (40) | `source/OpenTPW/World/Advisor.cs:215` | [DATA:speechHD.SDT:entry word 0 = header size (40)] |
 | theme-park-world_win_manual_europe_en_ii5.pdf:PDF-page-15/printed-page-28; SHA256=c96eb25f3dc13f7f0824bbf03f9bbeb3bb94e9f4756d4d8dfa09ac71732b0668 | `source/OpenTPW/Economy/ParkObjectives.cs:315` | [DATA:theme-park-world_win_manual_europe_en_ii5.pdf:PDF-page-15/printed-page-28; SHA256=c96eb25f3dc13f7f0824bbf03f9bbeb3bb94e9f4756d4d8dfa09ac71732b0668] |
-| ui.wad:button UVs v 0.42..1 vs art in the top 58% | `source/OpenTPW/UI/Original/UiModel.cs:130` | [DATA:ui.wad:button UVs v 0.42..1 vs art in the top 58%] V flipped as in the 3D shaders |
+| ui.wad:button UVs v 0.42..1 vs art in the top 58% | `source/OpenTPW/UI/Original/UiModel.cs:131` | [DATA:ui.wad:button UVs v 0.42..1 vs art in the top 58%] V flipped as in the 3D shaders |
 | ui.wad:f_chat.MD2,w_map.MD2 bounds | `source/OpenTPW/UI/Original/UiCanvas.cs:25` | [DATA:ui.wad:f_chat.MD2,w_map.MD2 bounds] full-screen UI frames span 2048×1536 |
 | ui.wad:islandlobby.MD2,f_lobbutbg.MD2 root/bounds | `source/OpenTPW/FrontEnd/FrontEndMenu.cs:75` | [DATA:ui.wad:islandlobby.MD2,f_lobbutbg.MD2 root/bounds] authored panel rectangles |
 | ui.wad:mainpanel,gauge,date,panel MD2 roots | `source/OpenTPW/Hud/ParkHud.cs:113` | [DATA:ui.wad:mainpanel,gauge,date,panel MD2 roots] authored HUD rectangles |

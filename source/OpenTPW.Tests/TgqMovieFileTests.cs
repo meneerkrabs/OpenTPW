@@ -284,18 +284,18 @@ public class TgqMovieFileTests
 		Assert.AreEqual( 64, frame.Cb.Length );
 		Assert.IsTrue( frame.Cb.All( value => value == 128 ) );
 		Assert.IsTrue( frame.Cr.All( value => value == 50 ) );
+		// Single horizontal frequency-1 coefficients (level +1 and escaped +3) over DC 64. The expected rows are the
+		// offsets an external FFmpeg TQI oracle produces for these levels in the original movies.
+		int[] levelOne = { 2, 1, 1, 0, -1, -1, -2, -2 };
+		int[] levelThree = { 5, 4, 3, 1, -1, -3, -5, -6 };
 		for ( var row = 0; row < 8; row++ )
 		{
 			for ( var column = 0; column < 8; column++ )
 			{
 				Assert.AreEqual( 100, frame.Y[row * 16 + column] );
 				Assert.AreEqual( 64, frame.Y[row * 16 + 8 + column] );
-				// Block 2: DC 64 plus horizontal frequency 1, level +1, dequantised by 16 * (107.5 - 99) * 0.625 / 8.
-				var horizontal = 64 + Math.Sqrt( 0.125 ) * 0.5 * Math.Cos( (2 * column + 1) * Math.PI / 16 ) * 16 * 8.5 * 0.625 / 8;
-				Assert.AreEqual( (byte)Math.Floor( horizontal + 0.5 ), frame.Y[(8 + row) * 16 + column], $"r{row} c{column}" );
-				// Block 3: escape run 0 level 3 at horizontal frequency 1.
-				var escaped = 64 + Math.Sqrt( 0.125 ) * 0.5 * Math.Cos( (2 * column + 1) * Math.PI / 16 ) * 3 * 16 * 8.5 * 0.625 / 8;
-				Assert.AreEqual( (byte)Math.Floor( escaped + 0.5 ), frame.Y[(8 + row) * 16 + 8 + column], $"r{row} c{column}" );
+				Assert.AreEqual( 64 + levelOne[column], frame.Y[(8 + row) * 16 + column], $"r{row} c{column}" );
+				Assert.AreEqual( 64 + levelThree[column], frame.Y[(8 + row) * 16 + 8 + column], $"r{row} c{column}" );
 			}
 		}
 		Assert.AreNotEqual( frame.Y[8 * 16], frame.Y[8 * 16 + 7] );
@@ -413,11 +413,11 @@ public class TgqMovieFileTests
 	}
 
 	[DataTestMethod]
-	[DataRow( "bf.tgq", 0, "1D4342FCD8AEA35FFD74F8689FD8E31AAC5972511A436BFCEE29414A3A117495" )]
-	[DataRow( "bf.tgq", 127, "6AC73535C81C09BC1FE9D14518E3434D0F96AD0731AB19A60DA3315B2D7E3640" )]
+	[DataRow( "bf.tgq", 0, "FA16BDEC3FEBBCBED042110427C6E53FE48D338ED51D218FC2CFDD814633FF08" )]
+	[DataRow( "bf.tgq", 127, "7199C61776B43C297CD8219E9D8501E43C201BB46417BEA705A97EEFC1CC5993" )]
 	[DataRow( "bub.tgq", 0, "83FE6707DB6C43D97D195B1CB5347E7CCD92CFBBBB7DAC13FD5C303754C108F5" )]
-	[DataRow( "bub.tgq", 587, "8E8AF40C38A099A07BD8937AFAF2208DCC2BD65982D7DC9905182EA5EBFB4DF4" )]
-	[DataRow( "plan.tgq", 569, "CA804C6E2081B4A2370E91640D8F9836557F785233797F375FA8E543CE0261CC" )]
+	[DataRow( "bub.tgq", 587, "1FD72A9EE1F98AE101B2CB1E0ED3CAADB014BF64BF5FC582BD9070F381A4E1F5" )]
+	[DataRow( "plan.tgq", 569, "7D9A9672F871C15CFC849644A55A850403875F5F6C7F130D48774C60E4A53031" )]
 	public void OriginalMovieFramesMatchPinnedPlanarHashes( string name, int index, string yuvHash )
 	{
 		using var stream = File.OpenRead( Path.Combine( OriginalMovieDirectory(), name ) );

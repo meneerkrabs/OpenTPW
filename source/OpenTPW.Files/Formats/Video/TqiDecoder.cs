@@ -129,7 +129,30 @@ public static class TqiDecoder
 	private static readonly int[] CoefficientLookup = BuildCoefficientLookup();
 	private static readonly int[] LumaDcLookup = BuildDcLookup( LumaDcCodes );
 	private static readonly int[] ChromaDcLookup = BuildDcLookup( ChromaDcCodes );
-	private static readonly double[] Basis = BuildBasis();
+
+	// Integer AAN prescale: round(2^17 * s(u) * s(v)) with s(0) = 1/(2*sqrt 2) and s(k) = 1/(4*cos(k*pi/16)),
+	// natural order. Folding these into dequantisation leaves only the four rotations below for the transform.
+	private static readonly int[] AanScale =
+	{
+		16384, 11812, 12540, 13933, 16384, 20853, 30274, 59384,
+		11812, 8516, 9041, 10045, 11812, 15034, 21826, 42813,
+		12540, 9041, 9598, 10664, 12540, 15960, 23170, 45451,
+		13933, 10045, 10664, 11849, 13933, 17734, 25746, 50502,
+		16384, 11812, 12540, 13933, 16384, 20853, 30274, 59384,
+		20853, 15034, 15960, 17734, 20853, 26541, 38531, 75581,
+		30274, 21826, 23170, 25746, 30274, 38531, 55938, 109727,
+		59384, 42813, 45451, 50502, 59384, 75581, 109727, 215238,
+	};
+
+	// Rotation constants of the AAN flowgraph in 12-bit fixed point: cos(pi/4), cos(pi/8) - cos(3pi/8),
+	// cos(pi/8) + cos(3pi/8), cos(3pi/8).
+	private const long A1 = 2896, A2 = 2217, A4 = 5352, A5 = 1567;
+	private const int ConstantBits = 12;
+	// Coefficients carry 6 fraction bits; the first (column) pass drops one, the row pass output keeps five.
+	private const int FractionBits = 6;
+	private const int FinalShift = FractionBits - 1;
+	// Empirical quarter-LSB rounding bias; it best matches the external oracle (see docs/TGQ-MOVIES.md).
+	private const int FinalBias = 1 << (FinalShift - 2);
 
 	/// <summary>Number of run/level entries in the coefficient table (excluding end-of-block and escape).</summary>
 	public static int CoefficientTableEntries => CoefficientCodes.Length - 2;
@@ -155,19 +178,14 @@ public static class TqiDecoder
 		var header = ReadHeader( payload );
 		var width = header.Width;
 		var height = header.Height;
-		var scale = (107.5 - header.Quantizer) * 0.625 / 8.0;
-		var dequant = new double[64];
-		dequant[0] = 8.0;
-		for ( var index = 1; index < 64; index++ )
-			dequant[index] = IntraMatrix[index] * scale;
+		var dequant = BuildDequantisation( header.Quantizer );
 
 		var y = new byte[width * height];
 		var cb = new byte[width * height / 4];
 		var cr = new byte[width * height / 4];
 		var reader = new BitReader( payload[HeaderBytes..] );
 		var predictors = new int[3];
-		var coefficients = new double[64];
-		var temporary = new double[64];
+		var coefficients = new long[64];
 		for ( var macroY = 0; macroY < height / 16; macroY++ )
 		{
 			for ( var macroX = 0; macroX < width / 16; macroX++ )
@@ -176,11 +194,11 @@ public static class TqiDecoder
 				{
 					var component = block < 4 ? 0 : block - 3;
 					DecodeBlock( ref reader, component, ref predictors[component], dequant, coefficients );
-					InverseTransform( coefficients, temporary );
+					InverseTransform( coefficients );
 					if ( block < 4 )
-						Store( temporary, y, width, macroX * 16 + (block & 1) * 8, macroY * 16 + (block >> 1) * 8 );
+						Store( coefficients, y, width, macroX * 16 + (block & 1) * 8, macroY * 16 + (block >> 1) * 8 );
 					else
-						Store( temporary, block == 4 ? cb : cr, width / 2, macroX * 8, macroY * 8 );
+						Store( coefficients, block == 4 ? cb : cr, width / 2, macroX * 8, macroY * 8 );
 				}
 			}
 		}
@@ -188,7 +206,7 @@ public static class TqiDecoder
 		return new TqiFrame( width, height, y, cb, cr );
 	}
 
-	private static void DecodeBlock( ref BitReader reader, int component, ref int predictor, ReadOnlySpan<double> dequant, Span<double> coefficients )
+	private static void DecodeBlock( ref BitReader reader, int component, ref int predictor, ReadOnlySpan<long> dequant, Span<long> coefficients )
 	{
 		coefficients.Clear();
 		var entry = (component == 0 ? LumaDcLookup : ChromaDcLookup)[reader.Peek( 8 )];
@@ -201,7 +219,7 @@ public static class TqiDecoder
 			var bits = reader.Read( size );
 			predictor += (bits >> (size - 1)) != 0 ? bits : bits - (1 << size) + 1;
 		}
-		coefficients[0] = predictor * dequant[0];
+		coefficients[0] = (long)predictor << FractionBits;
 		var position = 0;
 		while ( true )
 		{
@@ -246,50 +264,85 @@ public static class TqiDecoder
 		}
 	}
 
-	private static void InverseTransform( Span<double> coefficients, Span<double> output )
+	/// <summary>
+	/// Per-position dequantisation factors with the AAN prescale folded in, in units of 2^-6 pixel:
+	/// floor(AanScale * W * qscale / 2^18) where qscale = (215 - 2q) * 5, i.e. W * (107.5 - q) * 0.625 / 8.
+	/// </summary>
+	private static long[] BuildDequantisation( int quantizer )
 	{
-		// Separable orthonormal 8x8 IDCT: output[r,c] = sum_v sum_u B[v,r] F[v,u] B[u,c].
-		Span<double> rows = stackalloc double[64];
-		for ( var v = 0; v < 8; v++ )
-		{
-			var any = false;
-			for ( var u = 0; u < 8; u++ )
-				any |= coefficients[v * 8 + u] != 0;
-			for ( var column = 0; column < 8; column++ )
-			{
-				var sum = 0.0;
-				if ( any )
-					for ( var u = 0; u < 8; u++ )
-						sum += coefficients[v * 8 + u] * Basis[u * 8 + column];
-				rows[v * 8 + column] = sum;
-			}
-		}
-		for ( var row = 0; row < 8; row++ )
-		{
-			for ( var column = 0; column < 8; column++ )
-			{
-				var sum = 0.0;
-				for ( var v = 0; v < 8; v++ )
-					sum += Basis[v * 8 + row] * rows[v * 8 + column];
-				output[row * 8 + column] = sum;
-			}
-		}
+		var qscale = (215L - 2 * quantizer) * 5;
+		var dequant = new long[64];
+		for ( var index = 1; index < 64; index++ )
+			dequant[index] = AanScale[index] * IntraMatrix[index] * qscale >> (24 - FractionBits);
+		return dequant;
 	}
 
-	private static void Store( ReadOnlySpan<double> samples, byte[] plane, int stride, int left, int top )
+	/// <summary>
+	/// Integer 8x8 inverse DCT: the transposed Arai-Agui-Nakajima flowgraph (adjoint of the classic AAN forward
+	/// DCT), columns first with a one-bit floor shift between passes, floor products, then (x + 8) >> 5.
+	/// Selected empirically against an external oracle; it is closer than an exact float IDCT but not bit-exact.
+	/// </summary>
+	private static void InverseTransform( Span<long> block )
+	{
+		for ( var column = 0; column < 8; column++ )
+			Transform1D( block, column, 8, 1 );
+		for ( var row = 0; row < 8; row++ )
+			Transform1D( block, row * 8, 1, 0 );
+	}
+
+	private static void Transform1D( Span<long> data, int start, int stride, int shift )
+	{
+		var d0 = data[start];
+		var d1 = data[start + stride];
+		var d2 = data[start + 2 * stride];
+		var d3 = data[start + 3 * stride];
+		var d4 = data[start + 4 * stride];
+		var d5 = data[start + 5 * stride];
+		var d6 = data[start + 6 * stride];
+		var d7 = data[start + 7 * stride];
+
+		// Even part.
+		var sum04 = d0 + d4;
+		var difference04 = d0 - d4;
+		var rotated26 = Multiply( d2 - d6, A1 );
+		var sum26 = d2 + d6 + rotated26;
+		var even0 = sum04 + sum26;
+		var even3 = sum04 - sum26;
+		var even1 = difference04 + rotated26;
+		var even2 = difference04 - rotated26;
+
+		// Odd part.
+		var z13 = d5 + d3;
+		var z2 = d5 - d3;
+		var z11 = d1 + d7;
+		var z4 = d1 - d7;
+		var odd7 = z11 + z13;
+		var odd11 = Multiply( z11 - z13, A1 );
+		var z5 = Multiply( z2 + z4, A5 );
+		var odd10 = Multiply( z2, A2 ) + z5;
+		var odd12 = Multiply( z4, A4 ) - z5;
+		var tap4 = odd10;
+		var tap5 = odd10 + odd11;
+		var tap6 = odd11 + odd12;
+		var tap7 = odd12 + odd7;
+
+		data[start] = (even0 + tap7) >> shift;
+		data[start + stride] = (even1 + tap6) >> shift;
+		data[start + 2 * stride] = (even2 + tap5) >> shift;
+		data[start + 3 * stride] = (even3 + tap4) >> shift;
+		data[start + 4 * stride] = (even3 - tap4) >> shift;
+		data[start + 5 * stride] = (even2 - tap5) >> shift;
+		data[start + 6 * stride] = (even1 - tap6) >> shift;
+		data[start + 7 * stride] = (even0 - tap7) >> shift;
+	}
+
+	private static long Multiply( long value, long constant ) => value * constant >> ConstantBits;
+
+	private static void Store( ReadOnlySpan<long> samples, byte[] plane, int stride, int left, int top )
 	{
 		for ( var row = 0; row < 8; row++ )
 			for ( var column = 0; column < 8; column++ )
-				plane[(top + row) * stride + left + column] = (byte)Math.Clamp( Math.Floor( samples[row * 8 + column] + 0.5 ), 0, 255 );
-	}
-
-	private static double[] BuildBasis()
-	{
-		var basis = new double[64];
-		for ( var frequency = 0; frequency < 8; frequency++ )
-			for ( var sample = 0; sample < 8; sample++ )
-				basis[frequency * 8 + sample] = (frequency == 0 ? Math.Sqrt( 0.125 ) : 0.5) * Math.Cos( (2 * sample + 1) * frequency * Math.PI / 16 );
-		return basis;
+				plane[(top + row) * stride + left + column] = (byte)Math.Clamp( (samples[row * 8 + column] + FinalBias) >> FinalShift, 0, 255 );
 	}
 
 	private static int[] BuildCoefficientLookup()

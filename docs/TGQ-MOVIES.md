@@ -90,22 +90,69 @@ run/level table; the standard MPEG-1 values are what match the oracle (PSNR
 ~55 dB versus ~21–40 dB for wrong scan variants during investigation).
 
 Dequantisation: `F[0] = dc × 8`, `F[i] = level × W[i] × (107.5 − q) × 0.625 / 8`
-with `W` the MPEG-1 default intra matrix (wiki "base_table2"). An orthonormal
-floating-point 8×8 IDCT, round-half-up and clip to 0–255 produce the planes;
-DC is in pixel units (no +128 offset). Every frame ends within its final
-32-bit word with zero padding bits; the decoder requires that.
+with `W` the MPEG-1 default intra matrix (wiki "base_table2"); in integer form
+`qscale = (215 − 2q) × 5` and `F[i] = level × W[i] × qscale / 128`. DC is in
+pixel units (no +128 offset). Every frame ends within its final 32-bit word
+with zero padding bits; the decoder requires that.
 
-Oracle comparison (FFmpeg 8.0.1 `tqi`, `-pix_fmt yuv420p`, run locally only)
-over all 4,919 frames of `bf`, `bub`, `mir`, `plan`, `roll`: same frame counts
-and dimensions, max absolute plane difference 5, 79–85 % identical samples,
-mean PSNR 54.6–56.2 dB, worst frame 52.7 dB. The residual is IDCT arithmetic:
-the original/FFmpeg EA integer IDCT was not reproduced (no third-party decoder
-source was consulted or copied). Output is therefore deterministic but not
-bit-exact with the original player.
+### IDCT: integer variants measured against the oracle
 
-`TqiFrame.ToRgb24()` uses full-range BT.601 with nearest-neighbour chroma. This
-is an **assumption** (luma spans 0–255 with ~1 % of samples below 16, which
-suggests full range); the original colour conversion was not verified.
+Oracle: FFmpeg 8.0.1 `tqi`, `-pix_fmt yuv420p`, run locally only; no FFmpeg
+or other third-party decoder source was consulted or copied. Each candidate
+was implemented from the published algorithms and compared sample-by-sample
+(scratch harness outside the repository):
+
+| Candidate | `bf` identical / PSNR | `plan` identical / PSNR |
+| --- | ---: | ---: |
+| Orthonormal float IDCT, round half up (previous decoder) | 84.9 % / 56.16 dB | 82.3 % / 55.48 dB |
+| IJG-style AAN IDCT (float, prescaled) | ≈ float | — |
+| MPEG reference Chen–Wang 11-bit IDCT (4 dequant roundings) | 80.4–82.2 % / ≤55.6 dB (2 frames) | — |
+| IJG-style integer AAN, best of ~4,000 precision/order/rounding variants | 94.6 % / 60.8 dB (1 frame) | — |
+| **Transposed AAN (adjoint of the AAN forward DCT), integer, selected** | **94.6 % / 60.70 dB** | **90.4 % / 58.22 dB** |
+
+Selected arithmetic (`TqiDecoder.InverseTransform`): AAN prescale folded into
+the dequantisation table, `floor(round(2^17·s(u)·s(v)) × W × qscale / 2^18)`
+(6 fraction bits; `s(0) = 1/(2√2)`, `s(k) = 1/(4 cos(kπ/16))`); the
+transposed AAN flowgraph with 12-bit rotation constants (2896, 2217, 5352,
+1567) and floor products; columns first with a 1-bit floor shift, then rows;
+output `(x + 8) >> 5`, clipped. Precision (6–9 bits tested), pass order, the
+mid shift and the quarter-LSB bias were chosen by search; constant precision
+(9–12 bits) barely matters. The quarter-LSB bias is unexplained: the oracle
+rounds slightly downward relative to round-half-up in every variant tried.
+
+All 9,412 frames (this decoder vs the oracle):
+
+| File | Identical samples | Mean PSNR | Worst frame | Max abs diff |
+| --- | ---: | ---: | ---: | ---: |
+| `bf` | 94.6 % | 60.70 dB | 57.98 dB | 4 |
+| `bub` | 88.2 % | 57.30 dB | 55.69 dB | 4 |
+| `buc` | 87.0 % | 56.90 dB | 54.53 dB | 4 |
+| `grav` | 87.2 % | 57.00 dB | 55.02 dB | 4 |
+| `jug` | 83.9 % | 55.95 dB | 54.53 dB | 4 |
+| `mir` | 90.9 % | 58.47 dB | 56.04 dB | 4 |
+| `plan` | 90.4 % | 58.22 dB | 56.49 dB | 4 |
+| `roc` | 90.0 % | 58.06 dB | 56.13 dB | 4 |
+| `roll` | 87.7 % | 57.13 dB | 54.70 dB | 4 |
+
+(Previous float decoder over `bf`, `bub`, `mir`, `plan`, `roll`: 79–85 %
+identical, 54.6–56.2 dB, max difference 5.) **Still not bit-exact.** Evidence
+of the remaining gap: for blocks with one AC coefficient the oracle output is a
+deterministic function of the level, so the residual is IDCT rounding, not
+bitstream or dequantisation. Of the `plan` blocks holding one horizontal or
+vertical frequency-1 coefficient, 93,921 of 95,345 (20 of 29 distinct levels)
+reproduce exactly, and 6,332 of 6,334 frequency-2 blocks; the misses are ±1 in
+one or two columns. Frequency-1 patterns over all levels fit neither IJG-AAN
+nor transposed-AAN arithmetic with any tested precision, product rounding
+(floor, ceil, nearest, toward zero) or bias, so the original uses a different
+factorisation or rounding order. The synthetic test pins two of those oracle
+patterns.
+
+Colour: `TqiFrame.ToRgb24()` and the GPU path use full-range BT.601 with
+nearest-neighbour chroma. Supporting evidence (oracle planes, every fifth frame
+of `bf`/`plan`): luma clips at both ends (Y = 0: 0.46 %/0.87 %, Y = 255:
+0.43 %/0.73 %) and 1.1 %/2.2 % of luma is below 16, which limited-range video
+would not show. Chroma stays within 16–240 for > 99.9 % of samples. The
+original player's conversion is still **not verified** against captures.
 
 ### Pinned hashes (SHA-256)
 
@@ -130,11 +177,11 @@ Decoded planes (Y‖Cb‖Cr, this decoder; not FFmpeg's bytes):
 
 | Frame | SHA-256 |
 | --- | --- |
-| `bf.tgq` #0 | `1d4342fcd8aea35ffd74f8689fd8e31aac5972511a436bfcee29414a3a117495` |
-| `bf.tgq` #127 | `6ac73535c81c09bc1fe9d14518e3434d0f96ad0731ab19a60da3315b2d7e3640` |
+| `bf.tgq` #0 | `fa16bdec3febbcbed042110427c6e53fe48d338ed51d218fc2cfdd814633ff08` |
+| `bf.tgq` #127 | `7199c61776b43c297cd8219e9d8501e43c201bb46417bea705a97eefc1cc5993` |
 | `bub.tgq` #0 (identical first frame in the other 7 non-`bf` files) | `83fe6707db6c43d97d195b1cb5347e7ccd92cfbbbb7dac13fd5c303754c108f5` |
-| `bub.tgq` #587 | `8e8af40c38a099a07bd8937afaf2208dcc2bd65982d7dc9905182ea5ebfb4df4` |
-| `plan.tgq` #569 | `ca804c6e2081b4a2370e91640d8f9836557f785233797f375fa8e543ce0261cc` |
+| `bub.tgq` #587 | `1fd72a9ee1f98ae101b2cb1e0ed3caadb014bf64bf5fc582bd9070f381a4e1f5` |
+| `plan.tgq` #569 | `7d9a9672f871c15cfc849644a55a850403875f5f6c7f130d48774c60e4a53031` |
 
 ## Limits and strictness
 

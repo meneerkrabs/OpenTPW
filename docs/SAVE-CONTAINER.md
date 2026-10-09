@@ -69,12 +69,11 @@ checksums, dictionary/header corruption, truncated streams and trailing data.
 The optional original fixture test checks exact header and both SHA-256 hashes;
 without that licensed fixture it reports inconclusive, not a compatibility pass.
 
-The decoded payload's section markers are inventoried in TPWS-PAYLOAD.md
-(`SavePayloadLayout`); section contents remain opaque and still need a schema
-and known-state/reference tests.
-`MapFile.ReadFromStream` remains empty. The four local `scape.omp` files start
-with `OBJ_`; this is not evidence that they are terrain tile grids. No invented
-tile meanings or playable park importer are added by this slice.
+The decoded payload's section markers, its per-cell grid and SYSG object records
+are documented in TPWS-PAYLOAD.md (`SavePayloadLayout`, `SaveCellGrid`,
+`SaveObjectList`, read-only `OriginalParkImport`); other contents remain opaque.
+The four local `scape.omp` files start with `OBJ_`; this is not evidence that they
+are terrain tile grids. No playable park importer or save writer exists.
 
 The upstream format document is readable through the GitHub contents API
 (`opentpw-docs` `src/formats/tpws-ints-lays.md`). It agrees with the container

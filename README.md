@@ -49,9 +49,11 @@ Every remaining ⚠️ format now has a bounded, strict CPU reader tested agains
 original files, but none is a finished game feature: MD2 parses 2,116/2,118
 models and decodes position/rotation/scale animation tracks (tick rate and
 vertex animation unverified); MAP reads the 128×128 TP2M terrain grids
-(cell meaning unknown); RSE parses all 308 scripts and the VM runs them (all 84 used
+(five cell bits and the grid-to-world mapping verified, the rest opaque); RSE parses all 308 scripts and the VM runs them (all 84 used
 opcodes handled, 51 of them through an unimplemented-effect hook; the sandbox
-Totem runs its original script); TPWI payloads expose 17 section markers (contents opaque); `.LIP`
+Totem runs its original script); the Jungle TPWI payload's cell grid and placed
+objects are imported read-only into an original level view
+(`--load-original-level`; money, guests and other sections opaque); `.LIP`
 lip-sync timelines and ISO-only `.MTR` files are read structurally (meaning
 unconfirmed); all nine TGQ movies decode audio bit-exact and video close to, not
 bit-identical with, an external reference, without playback. Evidence:

@@ -1,9 +1,12 @@
 # MAP: terrain attribute maps
 
-October 9, 2026. Status: bounded container/grid reader implemented and verified
-against all five terrain MAP members in the selected install. Cell value
-**semantics are not verified**; no gameplay, pathing or rendering uses the data
-yet. No original asset is included in the repository.
+October 9, 2026. Status: bounded container/grid reader verified against all five
+terrain MAP members. The grid-to-world mapping and five cell bits are now
+**supported by cross-format evidence** (terrain MD2 geometry and heightfield in all
+four themes, `Standard.sam` fixed-item positions, the Jungle `Easymode.TPWI` cell
+grid); bit 0x04 and the header values remain opaque. `MapCellFlags` drive the
+read-only original-level build rules (`--load-original-level`). No original asset is
+included in the repository; no original executable was run.
 
 Two unrelated formats share the `.map` extension:
 - **Terrain attribute maps** (`TP2M`), inside `levels/<theme>/terrain.wad`. This
@@ -53,24 +56,78 @@ Cell hashes were computed independently in Python from bytes 0x48..0x4047.
 | 0x404c | 4 | 0 | END payload size; file ends here |
 
 The chunk size exactly spans width/height/opaque values/cells in every fixture,
-which is the cross-check for the tag+size chunk reading. Calling the two
-128 values width/height and treating cells as column-fastest is supported only
-by coherent straight wall runs when rendered that way (a square grid cannot
-distinguish the order by size); the mapping to world X/Z, orientation and cell
-scale is **not verified**.
+which is the cross-check for the tag+size chunk reading.
 
-## Cell values (observed only)
+## Grid-to-world mapping (verified)
+
+The file's slow axis ("height"/row) is the game **X** cell and its fast axis
+("width"/column) the game **Y** cell: `MapFile.GetCellAt( x, y )` reads row `x`,
+column `y`. One cell is 10 MD2 units; cell (x, y) covers MD2 world
+X ∈ [10x, 10x+10), Z ∈ [10y, 10y+10) with no offset. Evidence:
+
+- `Standard.sam` (all four themes) names fixed-item cells with `PosX`/`PosY`.
+  EntranceA/B (47/48, 17) are the first two MAP value-8 cells; TicketBooth,
+  CrossingParkSide, CrossingBSSide, BusStop A/B and the 6-cell StrikeArea all lie
+  on value 144/148 cells (test `OriginalFixedItemSettingsLieOnMatchingMapFlags`).
+- Jungle `base.MD2` dummy node `bridge01` is at MD2 (530, 21.1, 575): exactly the
+  centre of the four value-128 cells (51–54, 57). The `ticket_booths` mesh spans
+  X 463–497, Z 129–141, i.e. cells (46–49, 12–14).
+- Rasterising all 20,405 jungle MD2 triangles (node transforms composed up the
+  hierarchy) onto cell centres: 233 of 240 value-3 cells lie under `river*`
+  meshes, all 4 value-128 cells under `bridge_top`, value-17/144/148 cells under
+  `verge`/`road_*`/`arrival_*`, value-1 interior shapes under `volcanoe`/`newcliff`.
+- The MD2 heightfield (below) has its holes on exactly these cells.
+
+`Standard.sam` also states `MapInfo.HeightfieldWidth 95` / `HeightfieldHeight 84`
+(maximum indices of the 96×85 heightfield) and `FixedItemOriginX/Y 48/17`.
+
+## Terrain heightfield (`base.MD2` 0x6C block, verified layout)
+
+The MD2 header pointer at 0x6C (terrain models only) locates a 48-byte block:
+four opaque words (`0`, `0x1FE02096`, `0x80000000`, `0`), cell size X/Z (10.0,
+10.0), cell counts X/Z (96, 85), two floats that bracket the heights
+(integer-truncated lower/upper; kept raw), then pointers to (96+1)×(85+1) float
+corner heights and 96×85 `u32` cell words, both X-fastest. In all four models the
+two regions are adjacent and end at the block. `ModelFile.Heightfield` exposes it.
+
+- Corner (x, z) is at MD2 (10x, height, 10z): of the MD2 mesh vertices lying on
+  grid corners where the heightfield is not flat (|h| > 0.5), 283/283 (fantasy),
+  558/635 (hallow), 746/984 (space) and 768/1,861 (jungle) have the same height,
+  i.e. cliff/river/volcano seams meet the heightfield.
+- Cell word `1` = hole (no heightfield surface). In all four themes every cell
+  with MAP Water, EntranceArea or FixedWalkway is a hole, every value 0/8 cell is
+  not, and value-1 cells are holes only where rock/volcano meshes replace the
+  ground (jungle 363, fantasy 192, hallow 238, space 314 of them).
+- Otherwise the high 16 bits are an MD2 texture slot: always six distinct slots
+  per theme, all `*_bas1..6` ground textures. The low 16 bits (0x42, 0x44, 0x02,
+  0x04, 0x62, …) are not interpreted.
+
+## Cell bits (`MapCellFlags`)
 
 Value inventory over the five fixtures: 0, 1, 3, 8, 16, 17, 128, 144, 148. All
 four `base.map` files share identical counts at identical positions for 17 (490),
-144 (48), 148 (14) and 8 (10), all nonzero cells lie within columns 0–84 and rows
-0–95, and rows 96–127 are zero. Value 1 forms the outer boundary and per-level
-internal shapes; 3 (240 cells) and 128 (4 cells) appear only in jungle `base.map`;
-16 appears once in fantasy. Jungle `terrain.map` contains only 0/1 with a
-different arrangement (nonzero extent to column/row 96). The values look like
-bit combinations (17 = 16|1, 144 = 128|16, 148 = 128|16|4) but that is a
-hypothesis. The previous placeholder `TileType` enum (Ground/Wall/River/
-NotWalkable/BrickPath) had no evidence and was removed; nothing referenced it.
+144 (48), 148 (14) and 8 (10); nonzero cells lie within X 0–95, Y 0–84.
+
+| Bit | Name | Values | Evidence |
+| --- | --- | --- | --- |
+| 0x01 | `Blocked` | 1, 3, 17 | Edge ring (heightfield present) and rock/cliff/volcano shapes; water; entrance buildings. No Easymode path or object cell has it. |
+| 0x02 | `Water` | 3 only | River/lake meshes, heightfield holes (jungle, 240 cells) |
+| 0x08 | `InitialPath` | 8 | Starts at FixedItemInfo.EntranceA/B; all 10 cells are path cells in the Easymode save grid; heightfield present |
+| 0x10 | `EntranceArea` | 17, 144, 148 | Entrance complex meshes; holes in all four themes |
+| 0x80 | `FixedWalkway` | 128, 144, 148 | Bridge deck (128) and entrance crossings/strike area/ticket lane (144/148): not blocked, holes, covered by deck/road meshes |
+| 0x04 | — | 148 only | Ticket-booth lane cells (X 47–48, Y 10–16); meaning not established, masked out |
+
+Exception: fantasy has one isolated value 16 at (27, 17) with no geometry and no
+heightfield hole; it is unexplained and reported as `EntranceArea` only.
+
+The Jungle save (TPWS-PAYLOAD.md) carries a byte identical to `base.map` at every
+one of 16,384 cells and does **not** match `terrain.map` (0/1 only), so the
+Easymode park was built on `base.map`. What `terrain.map` is for is still unknown.
+
+The game rules derived from these bits in OpenTPW (`OriginalParkPlacement`) refuse
+building on Blocked, Water, EntranceArea, FixedWalkway, InitialPath, heightfield
+holes, saved paths and occupied cells. These are sandbox rules grounded in the
+data, not a reproduction of the original build check.
 
 ## Reader limits
 
@@ -86,16 +143,18 @@ nonseekable short reads work.
 `source/OpenTPW.Tests/MapFileTests.cs`: 20 synthetic cases (header, opaque values,
 cell indexing, truncation, magic/title, dimension limits, chunk size mismatch,
 missing/duplicate/unknown/non-final chunks, sound-catalog signature, short reads,
-oversized input) and 9 private-asset cases (five pinned fixtures, cross-level
-identical positions of values 8/17/144/148, both speaker catalog members and all
-62 loose catalog `.map` files rejected). Asset tests are inconclusive
-without `OPENTPW_GAME_PATH`.
+oversized input) and private-asset cases: five pinned fixtures, cross-level
+identical positions of values 8/17/144/148, heightfield holes and ground texture
+slots versus MAP flags in all four themes, Standard.sam fixed items on the
+expected flags, both speaker catalog members and all 62 loose catalog `.map`
+files rejected. `OriginalParkImportTests` covers `GetCellAt`/`GetFlagsAt`;
+`Md2ModelFileTests` the synthetic heightfield block. Asset tests are
+inconclusive without `OPENTPW_GAME_PATH`.
 
 ## Remaining gates
 
-- Meaning of each cell value/bit, and of the five opaque `8` values.
-- Why jungle has both `base.map` and `terrain.map` and which the game loads.
-- Grid-to-world mapping (axes, origin, cell size) versus terrain MD2/heights.
+- Bit 0x04, the five opaque header values, and the purpose of jungle `terrain.map`.
+- The heightfield cell-word low bits (possibly triangle split; unverified) and the
+  opaque block header words.
+- The original game's actual build/path rules (runtime observation needed).
 - Sound catalog `.map` schema (separate format).
-Verify these with original runtime observation or further corroborating data
-before wiring the grid into placement, pathing or rendering.

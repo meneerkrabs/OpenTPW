@@ -76,7 +76,7 @@ originele assets en worden niet als repositoryfixtures verspreid.
 - Subagentvervolg werd geblokkeerd door een ingetrokken refresh-token. Werk is
   lokaal voortgezet; onafhankelijke architect-/review-signoff is niet geclaimd.
 
-Eerstvolgende inhoudelijke gate: oorspronkelijke MAP/TPWS-structuren en een
+Eerstvolgende inhoudelijke gate: resterende MAP/TPWS-velden (zie TPWS-PAYLOAD.md) en een
 legaal uitvoerbare originele offline gedragsreferentie onderzoeken. Geen
 copy-protection-omzeiling en geen fictieve simulatieregels als vervanging voor bewijs.
 
@@ -177,3 +177,18 @@ Windows had één assert-fout door `UnauthorizedAccessException` in plaats van
 OS-specifieke exceptiontype; behoud van de directory en opruiming van tijdelijke
 bestanden blijven verplicht. Windows-herverificatie blijft nodig voor deze wijziging;
 CPU-CI is geen GPU-/audio-/volledige native releasekwalificatie.
+
+Terrein/save-slice (9 oktober 2026, worktree `terrain`):
+
+- MAP-assen bewezen: bestandsrij = spel-X, kolom = spel-Y, cel = 10 MD2-eenheden
+  (Standard.sam fixed items, `bridge01`-node, rasterisatie van alle jungle-MD2-driehoeken).
+- `base.MD2` 0x6C-blok gedecodeerd als 96×85-heightfield: hoeken, gaten
+  (= MAP water/entree/vaste looppaden in alle vier thema's) en grondtextuurslots.
+- Vijf MAP-bits getypeerd (`MapCellFlags`); bit 0x04 en headerwaarden blijven opaque.
+- Easymode.TPWI: per-celgrid (16.384 records, MAP-byte identiek aan `base.map`,
+  pad/verbindingen/bezetting) en SYSG-objectrecords (Info.Id → .sam-namen)
+  gedecodeerd; read-only `OriginalParkImport` (78 padcellen, 11 objecten, 3 fixed items).
+  Geld/tijd/gasten niet geïmporteerd (niet verifieerbaar met één fixture).
+- `--load-original-level jungle`: originele terreinmeshes + heightfield, geïmporteerde
+  paden/footprints, bouwregels op bewezen bits. Metal smoke-test in beide modi geslaagd.
+- Tests: native assets 417 passed, 7 skipped; zonder assets 347 passed, 77 skipped.

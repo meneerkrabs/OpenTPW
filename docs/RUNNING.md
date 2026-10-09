@@ -49,7 +49,22 @@ bash scripts/run.sh --game-path '/path/to/Theme Park World' --inspect-model '/le
 
 Use `--validate-assets --inspect-rides` for the Jungle archive inventory.
 Runtime logs are written to standard output/error. Original RSE execution and
-original TPWS import remain roadmap tasks, not features of the sandbox.
+playable original TPWS import remain roadmap tasks, not features of the sandbox.
+
+## Read-only original level view
+
+```sh
+bash scripts/run.sh --game-path '/path/to/Theme Park World' --load-original-level jungle
+```
+
+Renders the level's `terrain.wad/base.MD2` meshes and heightfield. For jungle it
+also imports `Easymode.TPWI` read-only: 78 path cells (drawn with the TCT's first
+path texture) and 11 placed objects (orange footprints, named in the HUD by .sam
+`Info.Id`). The prototype Totem can be placed only where MAP flags, heightfield
+holes and the imported paths/objects allow (see MAP.md). Sandbox save/load is
+disabled in this mode and no original file is written. Money, time, guests, staff,
+object models and path styles are not imported. Other themes load without a save.
+`--smoke-test` also works with this flag (captures `native-smoke-original-*.png`).
 
 ## Read-only BF4 font inspection
 

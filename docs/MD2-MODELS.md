@@ -66,9 +66,11 @@ Mesh data (all arrays must lie inside the header region for their kind):
 
 Kept opaque: the 20-byte dummy attribute records (`u32` type such as
 0x100000B1, `u32` value, 12 bytes; count differs from the dummy count in 170
-files), 27 extra 16-byte records, and the 0x6C block found only in five terrain
-`base.MD2` files (48 bytes resembling a 96×85 grid header with two pointers, not
-decoded). Node types (mesh 0x1/0x401/0x2 empty; dummy 0x200/0x208/0x300/0x600)
+files) and 27 extra 16-byte records. The 0x6C block, found only in the four
+level `terrain.wad/base.MD2` files (96×85 cells) and lobby `terrain/Base.MD2`
+(111×110), is decoded as a terrain heightfield (`ModelFile.Heightfield`: corner
+heights, hole/ground-texture-slot cell words; layout and evidence in MAP.md); its
+header words and cell-word low bits stay opaque. Node types (mesh 0x1/0x401/0x2 empty; dummy 0x200/0x208/0x300/0x600)
 are not interpreted.
 
 ### Node transform space
@@ -86,6 +88,9 @@ world` (`ModelAnimationPlayer.ComputeRestTransforms`). Evidence:
 - Sampling every name-paired animation at 9 ticks keeps all sampled base mesh
   positions inside the header bounds widened by one extent for 1,237 of 1,275
   animations with composition, 1,172 without.
+- Terrain: jungle `bridge_top` (local translation (0, −0.1, −15) under dummy
+  `bridge01` at (530, 21.1, 575)) only lands on the MAP bridge cells when
+  composed with its parent (MAP.md).
 - Open: `ui.wad` button models match the uncomposed matrices instead (116 vs 7,
   42 neither); their bounds may be produced differently. UI models are not
   rendered.
@@ -243,7 +248,7 @@ geometry sample the layout cannot be verified, so it is not supported.
 Next: animation tick rate and how scripts select clips (RSE `TRIGANIM`
 family); vertex animation and the other record kinds; node list; rotation flag
 bits; texture/material flag bits from original captures; UI-model matrix space;
-the terrain 0x6C block. CPU parsing and sandbox playback do not qualify original
+the heightfield cell-word low bits. CPU parsing and sandbox playback do not qualify original
 rendering or animation behavior.
 
 Sources: upstream OpenTPW docs page is a TODO stub

@@ -34,8 +34,10 @@ BF4 CPU decoding is implemented for the selected English corpus; a BF4 text pane
 renders on Metal with readback, while original UI integration, visual fidelity and
 D3D11/Vulkan qualification remain unverified.
 MD2, MAP, RSE, TPWI-payload markers, LIP, MTR and TGQ now have bounded CPU readers
-verified against original files (see FORMAT-BACKLOG.md); none is integrated as an
-original gameplay/presentation feature, so their game-feature rows stay unchanged.
+verified against original files (see FORMAT-BACKLOG.md). The MAP/heightfield and the
+Easymode path/object import feed a read-only `--load-original-level` sandbox view
+with data-grounded build rules (MAP.md, TPWS-PAYLOAD.md); that is not an original
+gameplay feature, so the game-feature rows stay unchanged.
 
 Optional presentation extension (requested October 9, 2026): configurable world
 upscaling, design in [UPSCALING-DESIGN.md](UPSCALING-DESIGN.md). Implementation:

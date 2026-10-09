@@ -1,9 +1,11 @@
 # Decoded TPWI/TPWS payload: marker layout
 
-Evidence date: October 9, 2026. This is a **read-only marker inventory** of the
-decoded BILZ payload (see SAVE-CONTAINER.md). Section contents are not decoded.
-It is not a park importer, not save writing and not proof of TPWS support.
-No original executable has been run.
+Evidence date: October 9, 2026. Read-only analysis of the decoded BILZ payload
+(see SAVE-CONTAINER.md): the 17 section markers, the **per-cell grid** in the
+untagged prefix and the **placed-object records** in `SYSG` are decoded where
+cross-format evidence supports them; everything else stays opaque. A read-only
+importer (`OriginalParkImport`) uses only those parts. This is not save writing and
+not proof of general TPWS support (one fixture). No original executable was run.
 
 ## Fixture inventory
 
@@ -48,7 +50,7 @@ marker bytes; it is derived, not a length field read from the file.
 
 | Marker | Offset | Span | Notes (observation only) |
 | --- | --- | --- | --- |
-| (prefix) | 0 | 1,495,462 | Untagged; mostly 84-byte-stride records with variable-size interruptions |
+| (prefix) | 0 | 1,495,462 | Untagged: opaque header, per-cell grid, opaque tail (see below) |
 | `DLRW` | 1,495,462 | 5,456 | Immediately followed by bytes `TPCS` |
 | `CSPS` | 1,500,918 | 76,256 | Followed by `LCTP`; contains 16-byte names such as `WaterFall`, `tButton`, `Tag2` |
 | `TRAP` | 1,577,174 | 270 | |
@@ -73,10 +75,110 @@ Payload order differs from table order (`KOLC TNAV SYSG SYSR` precede `KART`;
 `LCTP`, `FLY_`, `ADV_` and an unrelated `RSSE` inside `RYLF` are not in the
 table and are not treated as sections. The `SYSR` text has `__TIME__`/`__DATE__`
 shape and the date matches the ISO file date (1999-10-21); its meaning is not
-established. Section names, subsystem roles and the prefix (likely terrain/tile
-state) are **unverified interpretations** and are not encoded in code.
+established. `KOLC`, `SSEM` and `TNAV` hold pointer-like words (e.g. `KOLC` =
+`0x06D9D0BC`), not a clock or date. Section names and subsystem roles are not
+encoded in code beyond `SYSG` object records below.
 
-## Reader (`SavePayloadLayout`)
+## Untagged prefix
+
+| Range | Content |
+| --- | --- |
+| 0–6,764 | Opaque header (starts `u32` 0, 1171, 231; contains runs of `0xCD` fill) |
+| 6,765–1,385,520 | Per-cell grid: 16,384 records (16,134 × 84 bytes + 250 × 94 bytes) |
+| 1,385,521–1,495,461 | Opaque; starts with `u32` 42, 41, 1 and holds 16.16-looking values near the entrance |
+
+### Cell grid (verified structure)
+
+Each record is 84 bytes: type byte at +0 (3 or 7), opaque fields, the **MAP
+attribute byte at +46**, and `FF FF` at +82/+83. Type bit 0x04 (value 7) appends a
+10-byte extension after `FF FF` (all 250 type-7 records, and only they, are 94
+bytes). Records are X-fastest: record `k` is game cell (`k % 128`, `k / 128`).
+
+`SaveCellGrid` locates the grid structurally because the header is not decoded:
+exactly one offset in the prefix must begin a run of exactly width × height valid
+records (validity = type 3/7 and `FF FF` at +82), within the first 16 MiB. In
+Easymode that run starts at 6,765 and ends exactly where the `u32 42` tail begins.
+
+| Field | Interpretation | Evidence |
+| --- | --- | --- |
+| +46 | MAP attribute byte | Equals `base.map` at all 16,384 cells (and does not match `terrain.map`) |
+| +13 bit 0 | Path cell | 78 cells forming a connected network from the gate; includes all 10 MAP `InitialPath` cells; never on a MAP flag other than `InitialPath` |
+| +8 | Path connections | For all 78 path cells every cardinal path neighbour has its bit (0x01 −Y, 0x04 +X, 0x10 +Y, 0x40 −X); the 9 other set cardinal bits point at adjacent object/queue cells. Odd (diagonal) bits not interpreted |
+| +12 ≠ 0 | Occupied | Nonzero on all 43 footprint cells of the 11 placed objects and on 5 queue/entrance cells of the Bouncy ride, nowhere else |
+| +0 bit 2 | Extension present | Record length 94 vs 84 |
+
+Observed but **not interpreted** (kept raw in `SaveCell.Record`):
+- +17 holds values that follow `Jungle.tct` PathTex indices by topology on path
+  cells (corners 3/9 = `cnr`, junctions 4/6/7/15 = `tju`, straights 2/19 = `str`,
+  2-wide edges 10/20 = `edg`) and 55/8 elsewhere; +21 looks like an orientation.
+- +2 splits the map into 0x40 cells and a 0x00 region around the park (plus 0xC0
+  on the entrance, 0x20 on a few cells); possibly purchasable land — unverified.
+- Extension byte 6 forms two 11×11 decaying patterns (peaks 23 and 20) centred
+  exactly on the two Security Camera objects at (40, 29) and (55, 29); other
+  extensions sit on the toilets and around (47, 25). Possibly coverage data.
+- Byte +77 alternates 12/25 along lines resembling fences; +56 is a running index
+  on 143 cells.
+
+## SYSG placed-object records
+
+`SYSG` contains variable-length records that begin with `u8 1` followed by
+`u32` Info.Id, X, Y, width, height, kind, index; a `u16` rotation in degrees sits
+38 bytes after the Info.Id. `SaveObjectList` finds them by signature (valid
+coordinates, 1–16 cell size, kind 815/865, rotation multiple of 90, increasing
+index); the importer then cross-checks footprints against grid occupancy. The
+Info.Id matches the `Info.Id` in the object's `.sam`:
+
+| Index | Info.Id (.sam name) | X, Y | Size | Rot | Kind |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 1601 Gates | 45, 16 | 6×3 | 0 | 865 |
+| 2 | 1603 Lights | 48, 17 | 1×1 | 0 | 865 |
+| 3 | 1100 Belly Bounce | 51, 23 | 3×4 | 0 | 815 |
+| 4 | 1303 Jungle Spray | 51, 30 | 3×3 | 0 | 815 |
+| 6 | 1203 Drinks Shop | 43, 30 | 2×2 | 0 | 815 |
+| 7 | 1406 Litter Bin | 44, 29 | 1×1 | 0 | 815 |
+| 8, 9 | 1413 Security Camera | 55, 29 / 40, 29 | 1×1 | 0 | 815 |
+| 10 | 1411 Staff Room | 58, 16 | 2×2 | 90 | 815 |
+| 11–13 | 1402 Small Toilet | 55, 17 / 16 / 15 | 1×1 | 270 | 815 |
+| 14 | 1403 Round Fountain | 57, 19 | 3×3 | 90 | 815 |
+| 15 | 1600 Bus | 48, 17 | 1×1 | 0 | 865 |
+
+Kind 865 marks the gates, lights and bus, which `Standard.sam` calls fixed items
+placed from `FixedItemOrigin` (48, 17); kind 815 everything buildable. Footprints
+verified against the grid: rotation 0 covers [X, X+W) × [Y, Y+H); rotation 90 of a
+square covers [X, X+W) × (Y−H, Y]; 1×1 any rotation. Non-square rotated footprints
+are not observed and stay unresolved. Index 5 is absent. About 150 further
+records share the leading layout with kind 826 and index 0: Info.Ids
+17302–17323 in 2×2 steps along the lines where cell byte +77 alternates 12/25
+(fence-like), and 17002/17003/17005 on the Bouncy queue cells (49–52, 22). Those
+Info.Ids are not in the level object archives; the kind filter skips them and
+nothing about them is imported.
+
+`RYLF` starts with `RSSE` and a header containing the value 14, followed by 14 length-prefixed object
+names and `data\levels\jungle\...` archive paths (Traffic Lights ×2, Fountain,
+Small Toilet ×3, Staff Room, Security Camera ×2, Litter Bin, Coconut Kiosk, Jungle
+Spray Sideshow, Bouncy Dino, Gates), each ending `OBJ ` plus raw heap pointers and
+script-VM-like values. They match the SYSG list but are not decoded.
+
+## Money (observed, not imported)
+
+The tail region holds an `i64` 100,000 at 1,411,394, equal to `Easy_Standard.sam`
+`BankAccountInfo.InitialCash` (but also `LoanInfo[0].LoanAmount`), next to `i32`
+87,987 and −12,013 (87,987 − 100,000). This looks like a balance ledger, but the
+spending could not be reconciled (the placed objects' `CostOfUpgrade` values sum to
+4,450; path/land costs are not in the level files), so no money field is imported.
+
+## Importer (`OriginalParkImport`)
+
+Inputs: decoded payload and the level `base.map`. It parses the marker layout, the
+cell grid (rejecting any attribute that differs from the map: wrong level) and
+the SYSG records (rejecting any placed footprint outside the map or not occupied
+in the grid). Output: path cells, placed objects with footprints, fixed items, and
+unresolved records. `OriginalPark.Load` adds `base.MD2`/heightfield and resolves
+every Info.Id through the level's object `.sam` files (unknown ids are an error).
+**Not imported:** money, date/time, guests, staff, research, ride/shop state,
+prices, the extension data, path styles, queues and object models.
+
+## Marker reader (`SavePayloadLayout`)
 
 `SavePayloadLayout.Parse( ReadOnlySpan<byte> )` / `Parse( SaveReader )`:
 
@@ -92,15 +194,22 @@ state) are **unverified interpretations** and are not encoded in code.
 
 ## Tests
 
-`TpwsPayloadTests`: synthetic layouts (observed and table order, through
+`TpwsPayloadTests`: synthetic marker layouts (observed and table order, through
 `SaveReader`), empty payload, missing/duplicate/false/overlapping markers and the
-size cap. The private fixture test pins the payload hash, prefix hash and all
-17 offsets/spans; without `OPENTPW_GAME_PATH` it is inconclusive, not a pass.
+size cap; the private fixture pins the payload hash, prefix hash and all 17
+offsets/spans. `OriginalParkImportTests`: synthetic grids (extensions, X-fastest
+order, missing/truncated/ambiguous runs), SYSG scanning and footprint rules,
+wrong-map and unoccupied-footprint rejection; the private fixture pins the grid
+range, 78 path cells, the connection-bit property, the 11 placed objects and 3
+fixed items, and rejection against `terrain.map`. `OriginalParkPlacementTests`
+covers Info.Id names and the build rules. Without `OPENTPW_GAME_PATH` the private
+tests are inconclusive, not passes.
 
 ## Remaining gates
 
-- Any second fixture (an actual TPWS, another TPWI, INTS or LAYS) to test
-  marker uniqueness/order and spans; online (LAYS) payloads are unsupported.
-- Schema for each section and for the untagged prefix, with known-state
-  reference saves; until then all contents stay opaque.
-- A read-only importer only after section schemas are verified.
+- Any second fixture (an actual TPWS, another TPWI, INTS or LAYS) to test the
+  grid search, field meanings and SYSG signature; online (LAYS) payloads are
+  unsupported.
+- The prefix header and tail, record fields marked opaque above, the extension
+  data, SYSG record bodies/lengths, RYLF object bodies and every other section.
+- Money/time/guest state needs known-state reference saves before import.

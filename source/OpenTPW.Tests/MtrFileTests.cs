@@ -3,6 +3,7 @@ using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Numerics;
 using System.Security.Cryptography;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -11,7 +12,7 @@ namespace OpenTPW.Tests;
 [TestClass]
 public class MtrFileTests
 {
-	private static byte[] CreateMtr( uint[] table, string name = "s_test" )
+	private static byte[] CreateMtr( uint[] table, string name = "s_test", uint[]? footerWords = null )
 	{
 		var trailerOffset = MtrFile.HeaderBytes + table.Length * 4;
 		var data = new byte[trailerOffset + MtrFile.TrailerBytes];
@@ -28,7 +29,7 @@ public class MtrFileTests
 		cursor += 4;
 		for ( var index = 0; index < MtrFile.TrailerFloatCount; index++, cursor += 4 )
 			BinaryPrimitives.WriteSingleLittleEndian( data.AsSpan( cursor ), index * 0.5f - 3f );
-		var footer = new uint[] { 9, 24, 10, 7, 4 };
+		var footer = footerWords ?? new uint[] { 9, 24, 10, 7, 4 };
 		foreach ( var word in footer )
 		{
 			BinaryPrimitives.WriteUInt32LittleEndian( data.AsSpan( cursor ), word );
@@ -167,6 +168,97 @@ public class MtrFileTests
 		public override bool CanSeek => false;
 		public override long Length => throw new NotSupportedException();
 		public override int Read( byte[] readBuffer, int offset, int count ) => base.Read( readBuffer, offset, Math.Min( count, 3 ) );
+	}
+
+	// Four corners, two faces: (0, 1, 2) and (0, 3, 1) in MD2 corner order.
+	private static readonly uint[] TopologyTable = { 1, 0, 2, 1, 2, 10, 12, 11, 10, 11, 13 };
+	private static readonly uint[] TopologyFooter = { 4, 24, 40, 2, 56 };
+
+	[TestMethod]
+	public void DecodesTopologyFromFooterCounts()
+	{
+		var topology = new MtrFile( new MemoryStream( CreateMtr( TopologyTable, footerWords: TopologyFooter ) ) ).DecodeTopology();
+		Assert.AreEqual( 4, topology.CornerCount );
+		Assert.AreEqual( 2, topology.FaceCount );
+		CollectionAssert.AreEqual( new uint[] { 0, 0, 0, 1 }, topology.FirstFaceOfCorner.ToArray() );
+		CollectionAssert.AreEqual( new uint[] { 0, 2, 1, 2 }, topology.CornerSlot.ToArray() );
+		CollectionAssert.AreEqual( new uint[] { 10, 12, 11, 10, 11, 13 }, topology.FacePositions.ToArray() );
+	}
+
+	[TestMethod]
+	public void RejectsTopologyThatDoesNotFitTheCounts()
+	{
+		Assert.ThrowsException<InvalidDataException>( () => new MtrFile( new MemoryStream( CreateMtr( TopologyTable[..^1], footerWords: TopologyFooter ) ) ).DecodeTopology() );
+		var badSlot = (uint[])TopologyTable.Clone();
+		badSlot[2] = 3;
+		Assert.ThrowsException<InvalidDataException>( () => new MtrFile( new MemoryStream( CreateMtr( badSlot, footerWords: TopologyFooter ) ) ).DecodeTopology() );
+		var badFace = (uint[])TopologyTable.Clone();
+		badFace[0] = 2;
+		Assert.ThrowsException<InvalidDataException>( () => new MtrFile( new MemoryStream( CreateMtr( badFace, footerWords: TopologyFooter ) ) ).DecodeTopology() );
+		Assert.ThrowsException<InvalidDataException>( () => new MtrFile( new MemoryStream( CreateMtr( TopologyTable ) ) ).DecodeTopology() );
+	}
+
+	[TestMethod]
+	public void ViewsTrailerFloatsAsNineRowMajorMatrices()
+	{
+		var mtr = new MtrFile( new MemoryStream( CreateMtr( Array.Empty<uint>() ) ) );
+		Assert.AreEqual( 9, mtr.Matrices.Count );
+		Assert.AreEqual( -3f, mtr.Matrices[0].M11 );
+		Assert.AreEqual( -2.5f, mtr.Matrices[0].M12 );
+		Assert.AreEqual( 4.5f, mtr.Matrices[0].M44 );
+		Assert.AreEqual( 68.5f, mtr.Matrices[8].M44 );
+	}
+
+	[TestMethod]
+	public void OriginalIsoMtrTopologyAndMatricesMatchPairedMd2()
+	{
+		var directory = Environment.GetEnvironmentVariable( "OPENTPW_MTR_PATH" );
+		if ( string.IsNullOrWhiteSpace( directory ) || !Directory.Exists( directory ) )
+			Assert.Inconclusive( "Set OPENTPW_MTR_PATH to a directory with .mtr files (and their sibling .MD2 files) extracted from the original ISO." );
+		var checkedFiles = 0;
+		foreach ( var file in Directory.EnumerateFiles( directory!, "*", SearchOption.AllDirectories ).Where( file => Path.GetExtension( file ).Equals( ".mtr", StringComparison.OrdinalIgnoreCase ) ) )
+		{
+			var md2Path = Directory.EnumerateFiles( Path.GetDirectoryName( file )! ).FirstOrDefault( candidate => string.Equals( Path.GetFileName( candidate ), Path.GetFileNameWithoutExtension( file ) + ".MD2", StringComparison.OrdinalIgnoreCase ) );
+			if ( md2Path == null )
+				continue;
+			var mtr = new MtrFile( new MemoryStream( File.ReadAllBytes( file ) ) );
+			var model = new ModelFile( new MemoryStream( File.ReadAllBytes( md2Path ) ) );
+			Assert.AreEqual( 1, model.Meshes.Count, md2Path );
+			var mesh = model.Meshes[0];
+			Assert.AreEqual( mtr.Name, mesh.Name, file );
+			var topology = mtr.DecodeTopology();
+			var faceCount = mesh.Indices.Length / 3;
+			Assert.AreEqual( mesh.Vertices.Length, topology.CornerCount, file );
+			Assert.AreEqual( faceCount, topology.FaceCount, file );
+			Assert.AreEqual( 4 * mtr.Footer[0] + 24, mtr.Footer[2], file );
+			var reversedSlot = new uint[] { 0, 2, 1 };
+			var seen = new bool[topology.CornerCount];
+			for ( var face = 0; face < faceCount; face++ )
+			{
+				var corners = new[] { mesh.Indices[3 * face], mesh.Indices[3 * face + 2], mesh.Indices[3 * face + 1] };
+				for ( var slot = 0; slot < 3; slot++ )
+					Assert.AreEqual( (uint)mesh.CornerPositionIndices[corners[slot]], topology.FacePositions[3 * face + slot], $"{file} face {face}" );
+				for ( var slot = 0; slot < 3; slot++ )
+				{
+					var corner = (int)mesh.Indices[3 * face + slot];
+					if ( seen[corner] )
+						continue;
+					seen[corner] = true;
+					Assert.AreEqual( (uint)face, topology.FirstFaceOfCorner[corner], $"{file} corner {corner}" );
+					Assert.AreEqual( reversedSlot[slot], topology.CornerSlot[corner], $"{file} corner {corner}" );
+				}
+			}
+			Assert.IsTrue( seen.All( value => value ), file );
+			var matrices = mtr.Matrices;
+			Assert.AreEqual( mesh.TransformMatrix, matrices[0], file );
+			Assert.AreEqual( mesh.TransformMatrix, matrices[1], file );
+			Assert.AreEqual( Matrix4x4.Identity, matrices[4], file );
+			Assert.AreEqual( Matrix4x4.Identity, matrices[8], file );
+			checkedFiles++;
+		}
+		if ( checkedFiles == 0 )
+			Assert.Inconclusive( "OPENTPW_MTR_PATH contains no .mtr file with a sibling .MD2." );
+		Console.WriteLine( $"{checkedFiles} MTR files match their paired MD2 topology and node matrix." );
 	}
 
 	private sealed record Pin( string Name, int TableCount, uint[] Footer, long TableSum );

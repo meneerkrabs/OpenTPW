@@ -90,12 +90,15 @@ internal static class Game
 		// Compatibility: --cd-data overlay, media diagnostics, profile/fixes, graphics preset (docs/COMPATIBILITY.md)
 		CompatibilityStartup.Initialize( args, dataDirectory );
 
-		// Official bonus objects (docs/OBJECTS.md): --bonus-data, else OPENTPW_BONUS_DATA.
-		var bonusData = GetOption( args, "--bonus-data", "the extracted official bonus content directory" );
-		if ( bonusData != null )
-			ObjectCatalog.BonusDataRoot = bonusData;
-		if ( ObjectCatalog.BonusDataRoot != null )
-			Log.Trace( $"Bonus content: {ObjectCatalog.BonusDataRoot}" );
+		// Official bonus objects (docs/OBJECTS.md): --bonus-data, else OPENTPW_BONUS_DATA, else the saved bonus folder, else <config>/bonus.
+		var bonusSettings = SetupSettings.Load( SetupSettings.GetDefaultPath() );
+		var bonusRoot = BonusContent.ResolveRoot( GetOption( args, "--bonus-data", "the extracted official bonus content directory" ),
+			Environment.GetEnvironmentVariable( "OPENTPW_BONUS_DATA" ), bonusSettings.BonusPath, Path.GetDirectoryName( DisplaySettings.GetDefaultPath() )! );
+		if ( bonusRoot is { } bonus )
+		{
+			ObjectCatalog.BonusDataRoot = bonus.Path;
+			Log.Trace( $"Bonus content: {bonus.Path} ({bonus.Source})." );
+		}
 		var modelIndex = Array.IndexOf( args, "--inspect-model" );
 		if ( modelIndex >= 0 )
 		{
@@ -258,7 +261,7 @@ internal static class Game
 				Log.Trace( "Setup closed without choosing a game folder." );
 				return null;
 			}
-			saved = new SetupSettings( chosen.GamePath, chosen.CdPath );
+			saved = saved with { GamePath = chosen.GamePath, CdPath = chosen.CdPath };
 			TrySave( saved, setupPath );
 			resolved = (chosen.GamePath, GamePathSource.Wizard);
 		}

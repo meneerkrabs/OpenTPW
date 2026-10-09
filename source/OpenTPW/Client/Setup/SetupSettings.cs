@@ -3,11 +3,12 @@ using System.Text.Json;
 namespace OpenTPW;
 
 /// <summary>
-/// Where the original game files are, chosen in the setup wizard or found automatically. Stored as
-/// <c>setup.json</c> beside <c>display.json</c> in the user configuration directory, so it survives
-/// moving or updating a release (docs/SETUP.md).
+/// Where the original game files are, chosen in the setup wizard or found automatically, and the optional
+/// official bonus content (docs/OBJECTS.md). Stored as <c>setup.json</c> beside <c>display.json</c> in the
+/// user configuration directory, so it survives moving or updating a release (docs/SETUP.md). A missing
+/// <c>bonusPath</c> means not chosen; an empty one means the player removed the bonus content.
 /// </summary>
-public sealed record SetupSettings( string? GamePath, string? CdPath )
+public sealed record SetupSettings( string? GamePath, string? CdPath, string? BonusPath = null )
 {
 	public const string FileName = "setup.json";
 

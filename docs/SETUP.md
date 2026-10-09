@@ -51,14 +51,32 @@ the game folder is known; it asks only for that folder.
 ## Changing the folders in game
 
 **Options > Game files** is an original-style screen (BF4 fonts, original window and
-button art, labels in the six supported languages) that shows the game folder and the
-optional CD for music and movies, changes either with the platform's folder dialog and
-removes the CD. The CD is stored in `setup.json` and passed to the game as `--cd-data`
-unless that option or `OPENTPW_CD_DATA` is given. The game reads its data at start-up, so
+button art, labels in the six supported languages) that shows the game folder, the
+optional CD for music and movies and the optional bonus content, changes them with the
+platform's folder dialog and removes the CD or the bonus content. The CD is stored in
+`setup.json` and passed to the game as `--cd-data` unless that option or `OPENTPW_CD_DATA`
+is given. The game reads its data at start-up, so
 changes apply after a restart. `--setup` still opens the first-run window.
 
 The folder dialog is the platform's own: `osascript` (`choose folder`) on macOS,
 `zenity` or `kdialog` on Linux, and the Windows `IFileOpenDialog` folder picker.
+
+**Bonus content** is the third row. It shows the bonus folder the game uses (`None`
+when there is none) and takes the official "Bonus content" folder (the one with `levels`
+in it; `Theme-Park-World-Bonus-Stuff.zip` holds 35 bonus WADs). The folder dialog only
+selects folders, so a `.zip` is given by its path in the field that opens where there is
+no folder dialog; with a dialog, extract the zip and choose the folder. A folder or zip
+outside the configuration directory is imported: only the `levels/<theme>/<category>/_name_N.wad`
+files are copied into `<config>/bonus/levels/<theme>/<category>/`, and nothing is written
+into the game folder. The new copy replaces the previous import only when all of it
+succeeded; archive entries that point outside the target (`..` or absolute paths) are
+refused, and a zip or folder without bonus WADs is reported and leaves things as they
+were. **Remove** stores an empty `bonusPath`, which turns the bonus objects off even if
+the imported copy exists; the files are not deleted. The new folder applies after a restart.
+
+At start-up the bonus root is taken from `--bonus-data`, then `OPENTPW_BONUS_DATA`, then
+the saved `bonusPath`, then `<config>/bonus` when it has a `levels` folder. The startup log
+names the source (OBJECTS.md).
 
 Tool and test modes never open the window: `--smoke-test`, `--validate-assets`,
 `--inspect-model`, `--inspect-rides`, `--headless`, `--export-park` and
@@ -74,9 +92,13 @@ on Windows):
 ```json
 {
   "gamePath": "/home/alice/Games/Theme Park World",
-  "cdPath": "/Volumes/THEME_PARK"
+  "cdPath": "/Volumes/THEME_PARK",
+  "bonusPath": "/home/alice/OpenTPW/config/bonus"
 }
 ```
+
+`bonusPath` is optional: a file without it (from an older release) means no bonus folder
+was chosen. An empty string means the bonus content was removed.
 
 An unreadable file is ignored with a warning and the setup asks again.
 

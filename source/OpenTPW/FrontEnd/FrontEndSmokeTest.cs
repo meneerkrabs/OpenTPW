@@ -133,7 +133,9 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		Do( "game files capture", () =>
 		{
 			Require( flow.Menu!.Stack.Top?.Name == "gameFiles", "game files screen opens" );
-			VerifyText( CaptureFrame( "game-files.png" ), flow.Strings.Extra( OpenTpwText.GameFolder ), "game folder label" );
+			var files = CaptureFrame( "game-files.png" );
+			VerifyText( files, flow.Strings.Extra( OpenTpwText.GameFolder ), "game folder label" );
+			VerifyText( files, flow.Strings.Extra( OpenTpwText.BonusFolder ), "bonus content label" );
 			flow.Menu.Stack.Pop();
 		} );
 		Do( "open options", () => Click( flow.Menu!.Main, "options" ) );

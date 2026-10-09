@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "scope": "synthetic reference primitives and sampled-motion scalars; no production controllers, serialized COS layout, admission or full motion",
+  "scope": "synthetic reference primitives, sampled-motion scalars and topology ordering prerequisites; no production controllers, decoder, admission or full motion",
   "tests": [
     "empty ring and missing release boundary",
     "allocated capacity and held-count full guard",
@@ -17,7 +17,10 @@
     "height-dependent uphill downhill and floor",
     "height target retains single fused rounding",
     "mixed single double sampled distance",
-    "unsupported motion and exceptional scalar domains"
+    "unsupported motion and exceptional scalar domains",
+    "auxiliary ordering requires filtered prefix",
+    "visible prefix would precede loader auxiliary read",
+    "exactly one ordinal2 auxiliary node is required"
   ],
   "contractCount": 39,
   "vehicleCapProof": "BUMP only; COAST implicit64 unsupported"

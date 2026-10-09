@@ -41,6 +41,8 @@ def inspect(path):
     d(0x36554, 32, (3, 29, 8)); d(0x36558, 14, (0, 3, 1)); d(0x3655c, 36, (0, 29, 8))
     d(0x39988, 32, (0, 31, 0)); d(0x3998c, 10, (0, 0, 2))
     condition(0x39990, (4, 2), 0x39a88)
+    branch(0x39a04, 0x39a7c); d(0x39a7c, 32, (0, 31, 176))
+    condition(0x39a84, (12, 0), 0x39a08)
     # Count/filter predicate is separate from the ordinal2 auxiliary predicate.
     mask(0x39730, (0, 0, 0, 27, 27)); condition(0x39734, (4, 2), 0x39744)
     mask(0x39a90, (0, 0, 0, 27, 27)); condition(0x39a94, (4, 2), 0x39d70)
@@ -103,6 +105,9 @@ def inspect(path):
                                   "header_flag2": "captures endpoints; does not gate auxiliary I/O"},
             "filter": {"predicate": "sectionDescriptor+4 flag0x10", "count_excludes": True,
                        "write_skips": "34-byte record and ordinary links; ordinal2 auxiliary already written"},
+            "ordering_precondition": {"exactly_one_ordinal2_required": True, "all_prior_nodes_filtered_required": True,
+                                      "native_construction_guarantees_proved": False,
+                                      "qualification": "necessary auxiliary byte-placement prerequisite only; not a decoder or graph validation"},
             "record_gate": {"header_count_offset": 22, "builder_output_gate": 0x3a4f4,
                             "null_output": "increments record counter without reading that record's following link items; invalid-shape behavior unqualified"},
             "link_resolution": {"helper": 0x41dcc, "source": "serialized section ordinals",

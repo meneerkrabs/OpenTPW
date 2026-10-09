@@ -20,11 +20,14 @@ var tests = new (string Name, Action Run)[]
     ("height target retains single fused rounding", HeightRounding),
     ("mixed single double sampled distance", SampleDistance),
     ("unsupported motion and exceptional scalar domains", MotionBoundary),
+    ("auxiliary ordering requires filtered prefix", AuxiliaryAligned),
+    ("visible prefix would precede loader auxiliary read", AuxiliaryVisiblePrefix),
+    ("exactly one ordinal2 auxiliary node is required", AuxiliaryPresence),
 };
 foreach (var test in tests) { test.Run(); Console.WriteLine($"PASS {test.Name}"); }
 Console.WriteLine($"{tests.Length} controller reference tests passed.");
 if (args.Length == 1) File.WriteAllText(args[0], JsonSerializer.Serialize(new { schema = 1,
-    scope = "synthetic reference primitives and sampled-motion scalars; no production controllers, serialized COS layout, admission or full motion",
+    scope = "synthetic reference primitives, sampled-motion scalars and topology ordering prerequisites; no production controllers, decoder, admission or full motion",
     tests = tests.Select(t => t.Name), contractCount = contracts.Count, vehicleCapProof = "BUMP only; COAST implicit64 unsupported" },
     new JsonSerializerOptions { WriteIndented = true }));
 else if (args.Length > 1) throw new ArgumentException("Usage: ControllersWitness [synthetic-metadata.json]");
@@ -180,4 +183,32 @@ static void MotionBoundary()
     Status(PrimitiveStatus.InvalidSnapshot, SampledMotionPrimitives.HeightTarget(1, -float.MaxValue, float.MaxValue, 0, new(1, 1, 1)));
     Status(PrimitiveStatus.InvalidSnapshot, SampledMotionPrimitives.Distance(new(0, float.MaxValue, 0), new(0, 0, 0)));
     Status(PrimitiveStatus.UnsupportedSchema, SampledMotionPrimitives.AdvanceTrain());
+}
+static void AuxiliaryAligned()
+{
+    var nodes = new[] { new TopologyNodeObservation(0, 0x10), new TopologyNodeObservation(1, 0x10),
+        new TopologyNodeObservation(2, 0x10), new TopologyNodeObservation(3, 0) };
+    var observed = TopologyAuxiliaryOrdering.Check(nodes).RequireValue();
+    Equal(2, observed.AuxiliaryNodePosition); Equal(1, observed.OrdinaryRecordCount);
+    nodes[2] = new(2, 0);
+    Equal(2, TopologyAuxiliaryOrdering.Check(nodes).RequireValue().OrdinaryRecordCount);
+    // Passing this ordering check alone does not establish native initial-node shape.
+    Equal(0, TopologyAuxiliaryOrdering.Check(new[] { new TopologyNodeObservation(2, 0) }).RequireValue().AuxiliaryNodePosition);
+}
+static void AuxiliaryVisiblePrefix()
+{
+    Status(PrimitiveStatus.UnsupportedSchema, TopologyAuxiliaryOrdering.Check(new[] {
+        new TopologyNodeObservation(0, 0), new TopologyNodeObservation(1, 0x10), new TopologyNodeObservation(2, 0x10) }));
+    Status(PrimitiveStatus.UnsupportedSchema, TopologyAuxiliaryOrdering.Check(new[] {
+        new TopologyNodeObservation(0, 0x10), new TopologyNodeObservation(1, 0), new TopologyNodeObservation(2, 0) }));
+}
+static void AuxiliaryPresence()
+{
+    Status(PrimitiveStatus.UnsupportedSchema, TopologyAuxiliaryOrdering.Check(Array.Empty<TopologyNodeObservation>()));
+    Status(PrimitiveStatus.UnsupportedSchema, TopologyAuxiliaryOrdering.Check(new[] { new TopologyNodeObservation(0, 0x10) }));
+    Status(PrimitiveStatus.UnsupportedSchema, TopologyAuxiliaryOrdering.Check(new[] {
+        new TopologyNodeObservation(2, 0x10), new TopologyNodeObservation(2, 0x10) }));
+    Status(PrimitiveStatus.UnsupportedSchema, TopologyAuxiliaryOrdering.Check(new[] {
+        new TopologyNodeObservation(2, 0), new TopologyNodeObservation(3, 0), new TopologyNodeObservation(2, 0) }));
+    Status(PrimitiveStatus.InvalidSnapshot, TopologyAuxiliaryOrdering.Check(new[] { new TopologyNodeObservation(-1, 0x10) }));
 }

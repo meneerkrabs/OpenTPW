@@ -61,7 +61,7 @@ The helper implements the following bounded observations:
   advancement returns unsupported; original FPSCR/exceptional modes are
   unqualified.
 
-Sixteen synthetic cases cover full/empty, held counts, wraps, configured-limit
+Nineteen synthetic cases cover full/empty, held counts, wraps, configured-limit
 changes, clamping/distribution, multiple riders per vehicle, reverse order,
 BUMP63/64 boundaries, all39 command directions, unavailable results, and typed
 COS/track-position/direction/physical-seat diagnostics, interpolation endpoints,
@@ -95,3 +95,13 @@ query and first capacity selection. `controller-native.json` now pins the
 comparison registers and selected pointers. Counterexample regressions failed
 before the fixes and pass in Debug/Release, including distinct definition/train
 upper caps. Global0 is used for the10/3 distribution example.
+
+`TopologyAuxiliaryOrdering.Check` supplies one necessary serializer ordering
+prerequisite: exactly one ordinal2 node, with every preceding node filtered by
+descriptor flag0x10. The saver encounters the auxiliary block during its walk;
+the loader reads that single block before ordinary records. Ordinal2 may
+itself be filtered or visible. Missing/duplicate ordinal2 or any visible
+predecessor returns typed unsupported. Three synthetic groups test those
+boundaries. Passing checks only byte-placement ordering, not native initial
+nodes, count/storage bounds, nonempty saves, hierarchy or a decoder. No graph
+construction guarantee is asserted.

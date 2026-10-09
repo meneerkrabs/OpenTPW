@@ -1,6 +1,6 @@
 {
   "base_save_checks": 132,
-  "checked_instruction_count": 104,
+  "checked_instruction_count": 107,
   "failure_paths": [
     {
       "epilogue": 236952,
@@ -89,6 +89,12 @@
     "load": 233772,
     "qualification": "wrapper callsites do not test returned r3; application/global I/O failure handling remains separate",
     "save": 232868
+  },
+  "ordering_precondition": {
+    "all_prior_nodes_filtered_required": true,
+    "exactly_one_ordinal2_required": true,
+    "native_construction_guarantees_proved": false,
+    "qualification": "necessary auxiliary byte-placement prerequisite only; not a decoder or graph validation"
   },
   "ordinal2_auxiliary": {
     "always_read_per_controller": true,

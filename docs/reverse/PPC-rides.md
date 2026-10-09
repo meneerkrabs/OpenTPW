@@ -834,7 +834,7 @@ equivalence.
 
 ## Topology serializer gates and failure boundaries
 
-`save_control_evidence.py`/`save-control-native.json` add104 control-flow
+`save_control_evidence.py`/`save-control-native.json` add107 control-flow
 checks over the132 base serializer checks. The auxiliary predicate uses
 section+0, a **section ordinal**. Builder`0x3611c/0x36124`
 copies the current edit counter into section+0 and`0x36554..0x3655c` advances
@@ -847,6 +847,29 @@ flag0x10 filter at`0x39a94`. The filter excludes a node from the header's
 section count and skips its34-byte record plus ordinary links; it does not
 undo an already written ordinal2 auxiliary block. Those predicates must not
 be collapsed into a single “save all visible nodes” rule.
+
+**Necessary auxiliary-ordering invariant:** the saver walks nodes and writes
+the auxiliary block where it encounters ordinal2, while the loader reads one
+auxiliary block before any ordinary section record. These byte placements
+align only if **exactly one node has ordinal2 and every preceding node is
+filtered by descriptor flag0x10**. A visible predecessor would write a34-byte
+record and its links before the loader's auxiliary read. Missing ordinal2
+would omit the block; duplicates would emit extra blocks the loader does not
+expect. Ordinal2 itself may be filtered or visible: its auxiliary block is
+written before its own ordinary record. This necessary ordering condition is
+not a proof that native construction always satisfies it or that a full save
+can be decoded.
+
+The standalone `TopologyAuxiliaryOrdering.Check` verifies only that condition
+on supplied ordinal/descriptor-flag observations. It returns typed unsupported
+for visible prefixes, missing/duplicate ordinal2 nodes, and a separate invalid
+snapshot result for negative supplied ordinals. It observes ordinary-record
+count without qualifying serialized narrowing or storage limits. Three added
+synthetic groups cover filtered prefixes, visible prefixes, missing/duplicate
+nodes, and either filtered/visible ordinal2. All19 reference cases pass Debug
+and Release. A lone ordinal2 passes the ordering check while initial third-node
+construction remains unproved, explicitly demonstrating that this check is
+not full graph validation. No nonempty-fixture or decoder claim follows.
 
 Load calls the car/model allocator`0x37968` and initial topology constructor
 `0x366bc` before reading the auxiliary count. It then targets the
@@ -898,6 +921,7 @@ every nested failure propagates through these wrapper return values.
 Twenty-four Python cases pass with original identity and the empty PC fixture
 enabled. The empty fixture corroborates none of these nonempty topology or
 failure branches. The next handoff is a nonempty PC save plus verified initial
-node/filter/count bounds, builder-output domain and nested/global I/O failure
+node/filter/count bounds (including the explicit ordering invariant above),
+builder-output domain and nested/global I/O failure
 handling. Until then the complete decoder and production geometry/motion
 remain unsupported; no TPI COS layout is inferred.

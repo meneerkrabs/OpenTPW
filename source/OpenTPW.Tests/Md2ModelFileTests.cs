@@ -193,6 +193,21 @@ public class Md2ModelFileTests
 	}
 
 	[TestMethod]
+	public void RendererNormalsUseVerifiedStoredCornerNormals()
+	{
+		var data = CreateGeometry();
+		WF( data, Normals + 12, 0.6f, 0, 0.8f ); // unit, same hemisphere as its faces: kept
+		WF( data, Normals + 24, 0, 0, -1 ); // opposes its faces: recomputed
+		WF( data, Normals + 36, 0, 0, 2 ); // not unit length: recomputed
+		var mesh = Read( data ).Meshes.Single();
+		Assert.AreEqual( new Vector3( 0, 0, 1 ), mesh.Normals[0] );
+		Assert.AreEqual( new Vector3( 0.6f, 0, 0.8f ), mesh.Normals[1] );
+		Assert.AreEqual( new Vector3( 0, 0, 1 ), mesh.Normals[2] );
+		Assert.AreEqual( new Vector3( 0, 0, 1 ), mesh.Normals[3] );
+		Assert.AreEqual( new Vector3( 0, 0, -1 ), mesh.CornerNormals[2] );
+	}
+
+	[TestMethod]
 	public void AcceptsMaterialWithoutTexturePointer()
 	{
 		var data = CreateGeometry();

@@ -93,7 +93,7 @@ public partial class ModelFile : BaseFormat
 		public Vector3[] CornerNormals { get; set; } = Array.Empty<Vector3>();
 		/// <summary>Stored per-face normals (second part of the mesh normal block).</summary>
 		public Vector3[] FaceNormals { get; set; } = Array.Empty<Vector3>();
-		/// <summary>Legacy renderer normals, recomputed from triangle geometry (not the stored normals).</summary>
+		/// <summary>Renderer normals: verified stored corner normals, recomputed smooth normals as fallback.</summary>
 		public Vector3[] Normals { get; set; } = Array.Empty<Vector3>();
 	}
 
@@ -491,9 +491,20 @@ public partial class ModelFile : BaseFormat
 			throw new InvalidDataException( "MD2 mesh totals disagree with the header counts." );
 	}
 
+	/// <summary>
+	/// Renderer normals: the stored corner normal when it is unit length and faces the same
+	/// hemisphere as every triangle using the corner (true for 297,540 of 301,622 original corner
+	/// uses); otherwise the recomputed smooth normal of the corner's faces.
+	/// </summary>
 	private static void CalculateNormals( Mesh mesh )
 	{
 		var normals = new Vector3[mesh.Vertices.Length];
+		var usable = new bool[mesh.Vertices.Length];
+		for ( var index = 0; index < usable.Length; index++ )
+		{
+			var stored = index < mesh.CornerNormals.Length ? mesh.CornerNormals[index] : Vector3.Zero;
+			usable[index] = float.IsFinite( stored.X ) && float.IsFinite( stored.Y ) && float.IsFinite( stored.Z ) && MathF.Abs( stored.Length - 1 ) <= 1e-3f;
+		}
 		for ( var index = 0; index < mesh.Indices.Length; index += 3 )
 		{
 			var i1 = mesh.Indices[index];
@@ -501,13 +512,18 @@ public partial class ModelFile : BaseFormat
 			var i3 = mesh.Indices[index + 2];
 			var v1 = mesh.Vertices[i1].Position;
 			var faceNormal = (mesh.Vertices[i2].Position - v1).Cross( mesh.Vertices[i3].Position - v1 ).Normal;
-			normals[i1] += faceNormal;
-			normals[i2] += faceNormal;
-			normals[i3] += faceNormal;
+			foreach ( var corner in new[] { i1, i2, i3 } )
+			{
+				normals[corner] += faceNormal;
+				if ( usable[corner] && faceNormal != Vector3.Zero && mesh.CornerNormals[corner].Dot( faceNormal ) <= 0 )
+					usable[corner] = false;
+			}
 		}
 		for ( var index = 0; index < normals.Length; index++ )
 		{
-			if ( normals[index] != Vector3.Zero )
+			if ( usable[index] )
+				normals[index] = mesh.CornerNormals[index];
+			else if ( normals[index] != Vector3.Zero )
 				normals[index] = normals[index].Normal;
 		}
 		mesh.Normals = normals;

@@ -40,7 +40,7 @@
 		<!-- Homebrew's sdl2 is now sdl2-compat, which loads SDL3 from beside itself at startup -->
 		<SDL3NativePath Condition="'$(SDL3NativePath)' == '' And Exists('/opt/homebrew/lib/libSDL3.0.dylib')">/opt/homebrew/lib/libSDL3.0.dylib</SDL3NativePath>
 	</PropertyGroup>
-	<ItemGroup Condition="'$(RuntimeIdentifier)' == 'osx-arm64' And '$(SDL2NativePath)' != ''">
+	<ItemGroup Condition="'$(RuntimeIdentifier)' == 'osx-arm64' And '$(SDL2NativePath)' != '' And !Exists('$(NativeRuntimeDirectory)libsdl2.dylib')">
 		<Content Include="$(SDL2NativePath)" Link="libsdl2.dylib" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
 		<Content Include="$(SDL3NativePath)" Condition="'$(SDL3NativePath)' != '' And Exists('$(SDL3NativePath)')" Link="libSDL3.dylib" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
 	</ItemGroup>

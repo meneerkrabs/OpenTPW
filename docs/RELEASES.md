@@ -14,7 +14,7 @@ pre-release. Original game files are never part of a release: start the game wit
 | `linux-x64` | tar.gz | Vulkan | needs system SDL2 and a Vulkan driver |
 | `linux-arm64` | tar.gz | Vulkan | needs system SDL2 and a Vulkan driver |
 
-`linux-x86` is not built: .NET 8 has no 32-bit x86 Linux runtime, so
+`linux-x86` is not built: .NET (8 and 10 alike) has no 32-bit x86 Linux runtime, so
 `dotnet publish -r linux-x86` cannot succeed. Intel macOS (`osx-x64`) is not in the
 list either.
 

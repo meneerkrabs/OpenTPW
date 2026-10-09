@@ -26,6 +26,12 @@ BLOCKS = {
     'queue_slot': (0xddcc4, 0xde02c, '887248bd61929abb31c31989b7693603c8c5a5df3759faf55e71d5bc18a9a2cd'),
     'queue_limit': (0xdcb74, 0xdcd34, '43e0b767478495cac9edea4102c5e2c0e07d2ced1e2f38131578c5511782c492'),
     'set_destination': (0xff224, 0xff738, '0bd62157967dab81dbf06c03dd0799fae65c5a3a053f4783e9c16a11781422fc'),
+    'guest_constructor': (0xe7644, 0xe7bbc, 'c8c08309bb1faf6cce65942603ebb33983dc4e7f9204985dc28607b9cbc2e9cc'),
+    'person_constructor': (0xe4810, 0xe49a8, '6e2fd3e6213aa6082cf2c904277c226a076de478aa7f61880964a338d6de2819'),
+    'thing_constructor': (0xfa718, 0xfa7f8, '55378d60d10ce2f0e31826ad9018790cd33ee706a22b535d2dc4b6b9905e6824'),
+    'free_slots_initialize': (0x104e84, 0x104f38, 'a56d8d8e72565994ddfdcb329c1b4736bd4f6cbc048e07fc661d41675ac6f55b'),
+    'thing_allocate': (0x105238, 0x1052fc, 'cffd10e621c539a4e2c2b206168fcf98e53b2f8a87c357c240ca07f966a3cc18'),
+    'park_turn': (0x10536c, 0x10565c, '3650a4c24a53a7ed27b2d586f93baf996e30103508f1f605dca53373f87efab6'),
 }
 DISPATCH = (0xef288, 0xef2c8, 0xef36c, 0xef420, 0xef378, 0xef384,
             0xef438, 0xef444, 0xef6c8, 0xef42c, 0xef49c, 0xef4a8,
@@ -77,7 +83,8 @@ def inspect(bin_root: Path):
         (0xe916c, 1, 0x41222), (0xe95e0, 1, 0x4129b),
         (0xe9174, 0, 0x1d04c2), (0xe9180, 1, 0x54860),
         (0xeed48, 1, 0x11ef00), (0xef274, 1, 0x41314),
-        (0xff22c, 1, 0xeca00))]
+        (0xff22c, 1, 0xeca00), (0x105240, 1, 0xecef0),
+        (0x104e84, 1, 0xecef4), (0x105388, 1, 0xeceec))]
     for i, target in enumerate(DISPATCH):
         pointer(c, 0x41314 + i * 4, 0, target)
     for at, op, expected in (
@@ -89,14 +96,22 @@ def inspect(bin_root: Path):
         (0xffe80, 36, (0, 3, 28)), (0xff244, 32, (0, 3, 8)),
         (0xff254, 32, (0, 31, 12)), (0xddd30, 14, (21, 21, -4)),
         (0xdcc58, 48, (31, 3, 436)), (0xe932c, 15, (3, 0, -28253)),
-        (0xe9330, 14, (0, 3, -19515))):
+        (0xe9330, 14, (0, 3, -19515)), (0x104edc, 36, (6, 5, 4)),
+        (0x104ee0, 14, (6, 6, 1)), (0x1052e0, 32, (0, 3, 4)),
+        (0x1052e4, 44, (0, 26, 0)), (0xfa77c, 44, (0, 31, 0)),
+        (0x10539c, 14, (0, 3, 1)), (0x1053a0, 36, (0, 4, -22772)),
+        (0xe7820, 52, (0, 28, 412)), (0xe785c, 52, (0, 28, 420)),
+        (0xe7888, 52, (0, 28, 424)), (0xe78bc, 52, (0, 28, 428))):
         require(d_fields(c, at, op), expected, f'field witness at code:{at:#x}')
     calls = {hex(at): call_target(c, at) for at in
-             (0xfaa5c, 0xfaa64, 0xeed74, 0xe90a0, 0xe9d2c, 0xef4ac, 0xff27c)}
+             (0xfaa5c, 0xfaa64, 0xeed74, 0xe90a0, 0xe9d2c, 0xef4ac, 0xff27c,
+              0xe767c, 0xe483c, 0xfa768, 0x10541c)}
     require(calls, {'0xfaa5c': 0xeece4, '0xfaa64': 0xef240,
                     '0xeed74': 0xd7310, '0xe90a0': 0xe9164,
                     '0xe9d2c': 0xe9164, '0xef4ac': 0xed244,
-                    '0xff27c': 0x101c1c}, 'selected direct call path')
+                    '0xff27c': 0x101c1c, '0xe767c': 0xe4810,
+                    '0xe483c': 0xfa718, '0xfa768': 0x105238,
+                    '0x10541c': 0xfa9b0}, 'selected direct call path')
     # Tables are reported as semantic values, never as binary data.
     needs_table = list(c.data_section.data[0x41222:0x41222 + 121])
     unary_table = list(c.data_section.data[0x4129b:0x4129b + 21])
@@ -108,7 +123,7 @@ def inspect(bin_root: Path):
                                (0x5660, '>d', 65536.0), (0x5668, '>f', 2.0),
                                (0x55c0, '>f', 100.0), (0x55c8, '>f', 0.0),
                                (0x54d8, '>f', 0.25), (0x54dc, '>f', 255.0),
-                               (0x54e8, '>f', 4.0)):
+                               (0x54e8, '>f', 4.0), (0x5590, '>f', 50.0)):
         value = struct.unpack_from(fmt, c.data_section.data, off)[0]
         require(value, expected, f'data constant {off:#x}')
         constants[hex(off)] = value
@@ -121,6 +136,9 @@ def inspect(bin_root: Path):
             'need_match_table_rows': [needs_table[i:i+11] for i in range(0, 121, 11)],
             'toilet_illness_match_table': unary_table,
             'distance_divisor': 450,
+            'fresh_slot_id_range': [1, 10239],
+            'fixed_needs_phase_condition': 'counter mod16 ==0 AND guest thing ID mod4 ==0',
+            'initial_need_remainders': {'thirst': 50, 'hunger': 50, 'toilet': 30},
             'resolved_approximation_ids': [],
             'limitation': 'No original execution; no caller cadence or complete SAM/cell field initialization proof.'}
 

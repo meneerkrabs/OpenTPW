@@ -93,9 +93,10 @@ its complete binding remains outside the bounded witness.
 
 When the same global counter's low four bits are zero, the block additionally
 adds 1 to toilet and 2 each to hunger and thirst, again clamping to `[0,100]`.
-These guards are nested. Their interaction with thing-ID allocation is an
-explicit dependency: do not describe this as “every visitor, every 16 ticks”
-without explaining why the phase condition holds for that visitor.
+These guards are nested: the fixed increments require both counter mod 16 = 0
+and guest thing ID mod 4 = 0. The allocator follow-up below establishes that
+other ID phases exist. Do not describe these writes as “every visitor, every
+16 ticks.”
 At `0xeef6c..0xef0b8`, each of illness, hunger, thirst, and toilet reaching
 integer 100 can add a separate −1 to `+412`, with the same clamp.
 States 16 and 17 are checked later at `0xef0ec`; they do **not** bypass the
@@ -107,12 +108,52 @@ thought is selected when both integer fields exceed 90. Individual hunger,
 thirst, toilet, and illness comparisons use the floating 99 constant after
 integer conversion. This is not evidence for the current thought threshold 70.
 
+The constructor at `0xe7644..0xe7bbc` establishes additional starting values:
+`+412` is set to 50.0 at `0xe7820`; thirst and hunger are set from separate RNG
+results modulo 50 at `0xe785c/0xe7888`, and toilet from an RNG result modulo 30
+at `0xe78bc`. Thus their integer starting domains are 0..49, 0..49, and 0..29,
+respectively, assuming the ordinary unsigned RNG result domain. Illness is
+zeroed at `0xe78c8`. This is arithmetic evidence for distinct initial needs,
+not a claim about RNG distribution or seed equivalence. OpenTPW starts
+happiness at 60 and all needs at zero.
+
 No Energy field or the current energy drain/recovery mechanism was established.
 Do not relabel illness or generic movement adjustors as energy. The current
 `Energy = 100`, resting/riding recovery, nausea decay, and need growth per
 second remain approximations. Exact rates need counter advancement/caller
-frequency, thing-ID phase behavior, map-cell value initialization, and park
+frequency, map-cell value initialization, and park
 clock conversion. The OS timer witness alone cannot close these dependencies.
+
+### Thing-ID allocation and scheduling follow-up
+
+High confidence: guest constructor `0xe7644` sets category argument 1 and calls
+person constructor `0xe4810` at `0xe767c`; the latter calls thing constructor
+`0xfa718` at `0xe483c`. The thing constructor calls allocator `0x105238` at
+`0xfa768`, then stores the returned 16-bit ID at guest `+0` (`0xfa77c`).
+The getter `0xfa9a4` merely copies that halfword. It does not strip type bits,
+shift an aligned handle, or otherwise transform the allocation result.
+
+Free-slot initializer `0x104e84..0x104f38` constructs 20-byte slots with IDs
+1..10239 in slot `+4`, linked through `+16`. Its two-slot loop writes the
+index at `0x104edc/0x104ef4`, increasing it by one between writes, and the last
+slot is explicitly assigned 10239 at `0x104f28`. The allocator pops the free
+head, links it into the live list, stores the thing pointer in slot `+0`, and
+returns slot `+4` unchanged at `0x1052e0..0x1052e4`. TOC slots
+`0x17b4/0x17b0/0xa44` resolve to free-head/live-head/table-base pointer globals
+data:`0xecef0/0xeceec/0xecef4`. Fresh IDs therefore span all four low-bit phases;
+allocation does **not** repair the nested needs guard by aligning guest IDs.
+Reused/save-loaded IDs and other creation paths require separate validation.
+
+Park-turn function `0x10536c..0x10565c` increments the same `+0x1da70c`
+counter once at `0x105398..0x1053a0`, before traversing the live list. Its
+object loop calls `0xfa9b0` at `0x10541c`; the guest case in that dispatcher
+calls needs at `0xfaa5c` and state dispatch at `0xfaa64`. No per-object counter
+increment occurs in this bounded loop. Eligibility flag `thing+3`, park mode,
+list membership, and save-loaded allocation still affect which objects update.
+For this path, the fixed hunger/thirst/toilet increments are confined to
+phase-zero IDs. Whether that is intentional Feral behavior, a port defect,
+or compensated by another need source is unresolved. It is not evidence for
+a uniform visitor growth rate and must not silently become one in OpenTPW.
 
 ## Attraction score and choice
 
@@ -224,7 +265,8 @@ The explicit approximation table in `docs/GUESTS.md` does not cover all
 assumptions in `GuestSimulation.cs`/`Guest.cs`: booth delay 1 second, ride-exit
 delay 1 second, home-bus delay 3 seconds, spawn spacing 0.4 seconds, uniformly
 selected PeepTypes, inclusive symmetric cash/exit variation, ±0.25-cell offsets,
-random initial decision phase, initial needs zero/energy 100, 150 need cap,
+random initial decision phase, initial needs zero/energy 100 (the binary
+constructor disproves the universal zero-needs assumption), 150 need cap,
 initially admitted fallback spawning when arrival lanes are absent, all guests
 processed in list order, deterministic attraction-ID sorting, SplitMix64 and
 modulo-based RNG, hidden riders for every usage state, and no path-link
@@ -233,7 +275,8 @@ binary equivalence evidence, even where the loaded SAM values are original.
 No claim here upgrades them.
 
 Parent handoffs: annotate these assumptions in the fidelity register; send
-counter `*(data:0x11ef04)+0x1da70c` to the clock lane; trace map cell record
+counter `*(data:0x11ef04)+0x1da70c` and the phase-zero restriction to the clock
+lane; trace map cell record
 initialization at `map+0x1b1104` and metadata loader writes; coordinate RSE
 admission state 13→14→16 with ride/script evidence. Keep current gameplay
 until those dependencies and meaningful boundary tests are complete.

@@ -44,8 +44,9 @@ class WitnessTests(unittest.TestCase):
         report = evidence.inspect(Path(os.environ['OPENTPW_PPC_BIN_ROOT']))
         self.assertEqual(report['toc_offset'], 0x8000)
         self.assertEqual(len(report['state_dispatch']), 22)
-        self.assertEqual(len(report['blocks']), 9)
+        self.assertEqual(len(report['blocks']), 15)
         self.assertEqual(report['distance_divisor'], 450)
+        self.assertEqual(report['fresh_slot_id_range'], [1, 10239])
         self.assertEqual(report['resolved_approximation_ids'], [])
 
 

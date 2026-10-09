@@ -549,3 +549,60 @@ commit does not implement the original shared clock, 31 ms scheduler, eight-ID
 phasing, WAIT speed/first-yield rules, CRIT_UNLOCK yield, or native resource/lifecycle
 behavior. Successful runs do not resolve those existing differences, or qualify
 Mac primitive behavior for the Windows baseline or Patch 2 executable.
+
+## Independent format source review: `2439695`
+
+Exact reviewed source: `24396953778852398c5721d88256a601802697b4`, materialized
+read-only in a temporary snapshot. **Verdict: objection pending one HIGH
+allocation/bounds repair.** Native sampling interpretation is otherwise accepted
+within its declared corpus/domain limits. The subsequently committed runtime
+wiring `11c1003` is a separate candidate, not approved by this parser review.
+Neither peer nor root source was edited.
+
+**HIGH — `ModelVertexAnimation.cs:209` (`Decode`).** Packed-key storage is
+allocated with `keyCount * vertexCount` before the packed pointer/byte span is
+validated at line 212. Both counts are u16 and their product is computed as an
+unchecked signed int. The decoder can overflow its array length or request a
+large allocation before determining that the declared payload is impossible.
+Validate a checked wide product, supported materialization/resource limits and
+the complete payload span **before** allocating. Account for aggregate decoded
+storage when many groups/records alias the same payload. This is a defensive
+reader requirement, not a claim that the original loader enforced that budget.
+No oversized allocation, hostile asset or exploitation reproduction was run.
+The same allocation order remains present in `11c1003`.
+
+| Reviewed behavior | Native/source assessment |
+| --- | --- |
+| Signed 10:10:10 unpacking and `q*scale+offset` | Accepted. Native `0xa446c` is single-precision fused multiply-add; target `ModelVertexAnimation.Dequantise` uses `MathF.FusedMultiplyAdd` on each axis. A separate safe synthetic cancellation check against the target assembly gives −2⁻²⁷ for q=3/scale=0.1f/offset=−0.3f, while separately rounded multiplication/addition gives 0. |
+| Vertex interpolation order | Accepted. `0xa4484` rounds `next*fraction` first; `0xa44ac` then fuses `current*(1-fraction)+product`. The source explicitly uses that same order rather than generic vector Lerp. Nondefault native FP state is unqualified. |
+| Group 0 interpretation | Accepted as padded lower/upper vectors, not instance translation. `0xa4ba0` passes node-state+120 to `0xa468c`, with second vector at +132; `0xa47fc/0xa4800` subtract scale then 0.25, and `0xa49b8/0xa49bc` add scale then 0.25. `SampleBounds` preserves these separately rounded operations. Their rendering/culling consumer is not qualified here. |
+| Vertex cursor | Accepted for nondecreasing time since reset. `0xa4b78` advances only when the next tick is strictly less than time. The source remains on the earlier segment at an exact key, extrapolates before the first key, and rejects past-last/NaN sampling. Its search starts at zero each call; native cursor persistence/reset and decreasing/looping time remain caller policies. |
+| TRS before-first and final rotation | Returning null before the first key matches the native no-write path. `0xa820c` overrides the final rotation partner to itself, so the final key holds. This does not prove that a runtime caller may always substitute rest pose for a prior component, or qualify degenerate single-key/nonfinite inputs. |
+| Unsupported blocks | The 12-byte 0x4000 variant, 0x10000 block and other unknown payloads remain reported through `UnsupportedFlags`; the reader does not invent a vertex decoder for them. Accepted. |
+| Texture-frame gate | Native `0xa5768` requires trailer bit 0x2 set and `0xa5778` skips when global option 0x8 is set. Thus option **0x8 clear** is the correct polarity. The source property checks only the trailer gate and explicitly documents the additional runtime condition; callers must bind it before claiming actual texture-frame behavior. |
+| Rotation option | Native `0xa824c` selects table slerp when option **0x2 clear** and a linear blend otherwise. The current sampling API uses its analytic slerp path, without a runtime option input. Its existing trig/threshold approximation and global selector value remain unqualified; native table-sine equivalence is not claimed. |
+| Mutable state and instance ownership | The committed parser/sampler writes only the supplied destination span, not its packed keys or index/tick tables, and keeps no internal runtime cursor. The destination must be owned by the caller. This proves no renderer/per-object isolation for the separate wiring candidate; loop/rebind, static-once, add-mode, normals and unsupported fallback need that review. |
+
+The animation clock `0xa7000` advances `(selected_ms-start_ms)*30/1000*speed`;
+these parser APIs consume **ticks**, so they neither choose a scene clock nor
+establish pause/scale/loop behavior. Root integration must preserve this boundary
+and the Mac/Windows qualification boundary.
+
+### Validation
+
+The identity-pinned target `format_witness.py` passes all 284 native instruction
+facts, including corrected branch polarities. Focused tests on the exact source
+snapshot with the actual baseline assets passed **91**, with three optional
+fixture cases initially skipped. Supplying the known language and official
+bonus roots separately passes the two relevant optional cases: **93 relevant
+MD2/Advisor/ObjectCatalog checks passed overall**. The remaining skipped
+ISO-MTR method was matched by the loose `Md2` name filter and is outside this
+parser review; no extracted MTR directory was supplied. No codec suite or
+original executable ran.
+
+The suite covers the actual quantized/toggle/frame corpus, malformed pointers
+and key ordering, exact-key/before-first/final-rotation cases, unsupported layouts
+and existing catalog/advisor behavior. It does **not** exercise the large-count
+allocation order above, prove complete renderer state isolation, or provide
+original-game visual/clock traces. Passing valid corpus inputs cannot clear the
+allocation objection.

@@ -71,6 +71,7 @@ public sealed class ObjectShape
 	public IEnumerable<ObjectShapeCell> Entrances => cells.Where( cell => cell.Kind == ObjectCellKind.Entrance );
 	public IEnumerable<ObjectShapeCell> Exits => cells.Where( cell => cell.Kind == ObjectCellKind.Exit );
 
+	// [APPROX:RIDES-011] Meanings of N/E (exit), </> (station ends), + (upgrade cells), W (occupied) are inferred; 2, S, *, . are verified in Easymode — evidence needed: saves/captures with these rides
 	public static ObjectCellKind Classify( char symbol ) => symbol switch
 	{
 		'.' or ' ' => ObjectCellKind.Free,
@@ -99,6 +100,7 @@ public static class ObjectFootprint
 	public static bool IsValidRotation( int degrees ) => degrees is 0 or 90 or 180 or 270;
 
 	/// <summary>Grid cell of local cell (u, v) for an object anchored at (x, y).</summary>
+	// [APPROX:RIDES-013] Rotation 180 and non-square rotated footprints follow the rigid rotation verified for 0/90/270 squares — evidence needed: a save with such objects
 	public static (int X, int Y) ToGrid( int anchorX, int anchorY, int rotation, int u, int v ) => rotation switch
 	{
 		0 => (anchorX + u, anchorY + v),
@@ -133,6 +135,7 @@ public static class ObjectFootprint
 	/// Verified for Easymode entrances on the first row (queue/path at −V) and the Belly Bounce exit on the last
 	/// row (path at +V); other edges are inferred.
 	/// </summary>
+	// [APPROX:RIDES-012] Access cells open across the first/last row before the first/last column (verified only for first/last-row cells) — evidence needed: saves with side entrances
 	public static (int U, int V) OutwardDirection( ObjectShape shape, ObjectShapeCell cell )
 	{
 		if ( cell.V == 0 )

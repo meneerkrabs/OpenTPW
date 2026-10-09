@@ -38,7 +38,9 @@ public sealed class OriginalObjectRuntime
 				ResolveScript = ResolveChildScript
 			} );
 			// Upgrade level 0 values from the .sam layers; units of InitDuration follow Info.DurationUnit (not verified).
+			// [DATA:<object>.sam:Upgrades[0].InitCapacity]
 			SetVariable( nameof( RideVariables.VAR_CAPACITY ), entry.InitialCapacity );
+			// [DATA:<object>.sam:Upgrades[0].InitDuration] [APPROX:RIDES-016] written raw; unit per Info.DurationUnit unverified — evidence needed: binary conversion of InitDuration
 			SetVariable( nameof( RideVariables.VAR_DURATION ), entry.Upgrades.FirstOrDefault( level => level.Level == 0 )?.GetInt( "InitDuration" ) ?? 0 );
 			SetVariable( nameof( RideVariables.VAR_RIDECLOSED ), open ? 0 : 1 );
 			Visitors.Attach( Script, () => !stopped && IsOpen );
@@ -109,6 +111,7 @@ public sealed class OriginalObjectRuntime
 		Script?.Advance( deltaSeconds );
 		Animator.Advance( deltaSeconds );
 		var running = GetVariable( RideVariables.VAR_RUNNING ) != 0;
+		// [APPROX:RIDES-023] A completed cycle = VAR_RUNNING 1 → 0 — evidence needed: original ride-cycle/income accounting
 		if ( wasRunning && !running )
 			CompletedCycles++;
 		wasRunning = running;
@@ -172,6 +175,7 @@ public sealed class OriginalObjectRuntime
 			return 0;
 		}
 		// Scripts re-issue LOOPANIM for a loop that already runs (Bouncy every 500 ms); keep it running.
+		// [APPROX:RIDES-004] Re-issued LOOPANIM of the running loop continues instead of restarting — evidence needed: capture of the Belly Bounce idle loop
 		if ( loop && Animator.IsChannelLooping( channel, file!.Name ) )
 			return 0;
 		try
@@ -219,6 +223,7 @@ public sealed class OriginalObjectRuntime
 public sealed class OriginalObjectEffects : IRideScriptEffects
 {
 	/// <summary>Channel of the plain animation opcodes, kept apart from the numbered _CH channels (sideshows use _CH channels 0–2 next to LOOPANIM).</summary>
+	// [APPROX:RIDES-005] Plain animation opcodes use a channel separate from the _CH channels — evidence needed: binary or sideshow capture (TRIGANIM_CH ... 0 next to LOOPANIM)
 	public const int MainChannel = -1;
 
 	private readonly OriginalObjectRuntime ride;
@@ -232,6 +237,7 @@ public sealed class OriginalObjectEffects : IRideScriptEffects
 			case Opcode.TRIGANIM:
 			case Opcode.WAITANIM:
 			case Opcode.TRIGWAITANIM:
+			// [APPROX:RIDES-007] TRIGANIMSPEED plays at normal speed; its 4th operand (e.g. 4000) is ignored — evidence needed: binary semantics of TRIGANIMSPEED
 			case Opcode.TRIGANIMSPEED:
 				return ride.PlayAnimation( call.Argument( 0 ), call.Argument( 1 ), MainChannel, loop: false );
 			case Opcode.LOOPANIM:
@@ -241,6 +247,7 @@ public sealed class OriginalObjectEffects : IRideScriptEffects
 			case Opcode.LOOPANIM_CH:
 				return ride.PlayAnimation( call.Argument( 0 ), call.Argument( 1 ), Math.Max( 0, call.Argument( 2 ) ), loop: true );
 			case Opcode.GETANIM_CH:
+				// [APPROX:RIDES-006] GETANIM_CH returns 1 while the channel plays, else 0 — evidence needed: binary semantics of GETANIM_CH
 				return ride.Animator.IsChannelPlaying( call.Argument( 1 ) ) ? 1 : 0;
 			case Opcode.FLUSHANIM:
 				ride.Animator.StopAll();

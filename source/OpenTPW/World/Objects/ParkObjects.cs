@@ -102,6 +102,7 @@ public sealed class ParkObjects
 	public bool IsOccupied( int x, int y ) => occupied.ContainsKey( (x, y) ) || IsReserved?.Invoke( x, y ) == true;
 
 	/// <summary>Build rule for a catalog object anchored at (x, y) with a rotation.</summary>
+	// [APPROX:RIDES-018] Build rules = footprint inside grid + MAP/save terrain rules + no overlap; no slope, path, land or money rule; costs not charged — evidence needed: original build checks (binary/captures)
 	public OriginalPlacementResult Check( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation )
 	{
 		if ( !ObjectFootprint.IsValidRotation( rotation ) )
@@ -131,6 +132,7 @@ public sealed class ParkObjects
 	/// <summary>Places an object without build rules (imported original records and fixed items).</summary>
 	public OriginalObject Add( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, bool open = true )
 	{
+		// [DATA:Easymode.TPWI:SYSG X/Y/rotation] [DATA:<fixed item>.MD2:park-space coordinates]
 		var placement = entry.IsFixedItem
 			? new ObjectPlacement( 0, 0, 0, Grid.Origin, 0 )
 			: new ObjectPlacement( anchorX, anchorY, rotation, Grid.Origin, GetBaseHeight( entry, anchorX, anchorY, rotation ) );
@@ -146,6 +148,7 @@ public sealed class ParkObjects
 	/// Base height: the mean ground height under the footprint. Rides flatten their ground in the original
 	/// (<c>Info.DontDeformBase</c>, per-archive <c>.hmp</c> files not decoded), so this is an approximation.
 	/// </summary>
+	// [APPROX:RIDES-014] Object base height = mean ground height of its footprint cells (.hmp ground deformation not decoded) — evidence needed: .hmp format, captures on slopes
 	public float GetBaseHeight( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation )
 	{
 		var heights = ObjectFootprint.GetCells( entry.Shape, anchorX, anchorY, rotation )
@@ -182,6 +185,7 @@ public sealed class ParkObjects
 	/// rotation (unresolved non-square rotations use the catalog shape), and the fixed items in park space.
 	/// Imported objects are opened: the save's ride state is not decoded.
 	/// </summary>
+	// [APPROX:RIDES-015] Imported objects start open (saved ride state not decoded); built objects open too — evidence needed: TPWS ride-state fields, original build behaviour
 	public int ImportOriginal( OriginalParkImport save )
 	{
 		var count = 0;
@@ -200,6 +204,7 @@ public sealed class ParkObjects
 	/// For levels without an original save: the three fixed items the Easymode save records (Gates, Lights,
 	/// Bus), in park space. Which fixed items the original spawns, and when (seaplane, ferry, end), is not known.
 	/// </summary>
+	// [APPROX:RIDES-019] Levels without a save get Gates, Lights and Bus (the fixed items Easymode records) — evidence needed: original fixed-item spawning per level
 	public int AddDefaultFixedItems()
 	{
 		var count = 0;

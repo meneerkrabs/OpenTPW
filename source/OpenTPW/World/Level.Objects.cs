@@ -84,6 +84,7 @@ public partial class Level
 	}
 
 	/// <summary>Builds <paramref name="entry"/> with its footprint centred on cell (x, y).</summary>
+	// [APPROX:RIDES-021] Built footprint is centred on the clicked cell; the cursor ray hits the Z = 0 plane — evidence needed: original build cursor behaviour
 	public OriginalObject? PlaceObject( ObjectCatalogEntry entry, int x, int y, int rotation )
 	{
 		var (minX, minY, maxX, maxY) = ObjectFootprint.GetBounds( entry.Shape, 0, 0, rotation );
@@ -118,6 +119,7 @@ public partial class Level
 	/// <summary>Cells covered by the prototype Totem (its 6×8-unit model centred on its position).</summary>
 	private bool IsReservedByPrototype( int x, int y ) => PlacedRide != null && PrototypeCovers( PlacedRide.Position, x, y );
 
+	// [APPROX:RIDES-020] Sandbox Totem blocks cells whose centres lie within its 6×8-unit model box — evidence needed: none for gameplay (prototype only; to be replaced by anchor placement)
 	private bool PrototypeCovers( Vector3 position, int x, int y )
 	{
 		var origin = Objects.Grid.Origin;

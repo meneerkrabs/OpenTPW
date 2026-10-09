@@ -116,6 +116,7 @@ public static class ObjectAssets
 	private static bool IsFinite( System.Numerics.Vector3 value ) => float.IsFinite( value.X ) && float.IsFinite( value.Y ) && float.IsFinite( value.Z );
 
 	/// <summary>Directories searched for an object's textures: its archive, then the theme's shared textures (game data).</summary>
+	// [APPROX:RIDES-022] Texture search: archive textures, gtexture, theme sharetex (stexture/ssharete low-detail sets unused) — evidence needed: binary texture lookup order
 	public static IEnumerable<(BaseFileSystem FileSystem, string Directory)> TextureDirectories( ObjectCatalogEntry entry )
 	{
 		yield return (entry.FileSystem, $"{entry.ArchivePath}/textures");

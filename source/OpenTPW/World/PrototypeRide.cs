@@ -10,6 +10,7 @@ namespace OpenTPW;
 /// </summary>
 public sealed class PrototypeRide : OriginalObject
 {
+	// [APPROX:RIDES-027] Sandbox Totem bounds check uses a 5-unit radius around its centre — evidence needed: none for gameplay (sandbox prototype)
 	public const float FootprintRadius = 5f;
 	public const float ModelScale = ObjectPlacement.ModelScale;
 	public const string DisplayName = "Inca Totem (prototype)";
@@ -67,6 +68,7 @@ public sealed class PrototypeRide : OriginalObject
 	{
 		if ( !float.IsFinite( position.X ) || !float.IsFinite( position.Y ) || !float.IsFinite( position.Z ) )
 			throw new ArgumentOutOfRangeException( nameof( position ) );
+		// [DATA:Totem.sam:Info.Shape] 3×4 cells = 30×40 MD2 units, centred
 		return new ObjectPlacement( 0, 0, 0, new Vector2( position.X - 15 * ModelScale, position.Y - 20 * ModelScale ), position.Z );
 	}
 

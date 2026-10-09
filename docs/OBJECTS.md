@@ -261,3 +261,40 @@ TOUR/BUMP/COAST controllers and track building (coasters, karts, water rides,
 track upgrades); visitor simulation behind the bridge; `.hmp` ground deformation;
 original build rules and costs; animation tick rate; the meaning of `W`, `N`,
 `E`, `<`, `>`; the original channel mixing.
+
+## Approximation register
+
+Every value or rule below is not taken from original data or hard evidence; each
+is tagged `// [APPROX:RIDES-NNN]` at its site (paths under `source/OpenTPW/`) and
+logged once as a warning at the first catalog load (`RidesApproximations`).
+Original-data values are tagged `// [DATA:<file>:<field>]`.
+
+| Id | Site | Current value / rule | Evidence needed |
+| --- | --- | --- | --- |
+| RIDES-001 | World/Objects/ObjectAnimator.cs:15 | Clips play at 30 ticks/s | Original tick rate (binary or timed capture) |
+| RIDES-002 | World/Objects/ObjectAnimator.cs:120 | Most recently started channel wins a node | Original channel mixing |
+| RIDES-003 | World/Objects/ObjectAnimator.cs:111 | Finished clip holds its last pose | Capture after a clip ends |
+| RIDES-004 | World/Objects/OriginalObjectRuntime.cs:158 | Re-issued LOOPANIM continues the loop | Capture of the Belly Bounce idle loop |
+| RIDES-005 | World/Objects/OriginalObjectRuntime.cs:205 | Plain animation opcodes use a channel apart from `_CH` channels | Binary / sideshow capture |
+| RIDES-006 | World/Objects/OriginalObjectRuntime.cs:229 | GETANIM_CH = 1 while playing, else 0 | Binary semantics |
+| RIDES-007 | World/Objects/OriginalObjectRuntime.cs:219 | TRIGANIMSPEED ignores its 4th operand | Binary semantics |
+| RIDES-008 | World/Objects/ObjectAnimations.cs:28 | ANIM_* → letter, variant v → number v+1 | Binary member lookup |
+| RIDES-009 | World/Objects/ObjectCatalog.cs:378 | .sam layers category → shared → object; Easy_/Online_ unused | Binary loading order, difficulty selection |
+| RIDES-010 | World/Objects/ObjectCatalog.cs:451 | OBJECT_NAMES index by English name equality | Binary name-index table |
+| RIDES-011 | World/Objects/ObjectShape.cs:74 | Shape symbols N/E exit, `<`/`>` station ends, `+` upgrade, `W` occupied | Saves/captures with these objects |
+| RIDES-012 | World/Objects/ObjectShape.cs:138 | Access cells open across first/last row, then columns | Saves with side entrances |
+| RIDES-013 | World/Objects/ObjectShape.cs:103 | 180° and non-square rotations follow the rigid rotation | Save with such objects |
+| RIDES-014 | World/Objects/ParkObjects.cs:153 | Base height = mean footprint ground height | `.hmp` format, captures on slopes |
+| RIDES-015 | World/Objects/ParkObjects.cs:190 | Imported and built objects start open | TPWS ride state, original build behaviour |
+| RIDES-016 | World/Objects/OriginalObjectRuntime.cs:62 | VAR_DURATION = raw `Upgrades[0].InitDuration` | Binary conversion by `Info.DurationUnit` |
+| RIDES-017 | World/Objects/ObjectCatalog.cs:124 | Buildable = WhichUIType 0–3, not fixed/tool/upgrade | Original build-menu contents |
+| RIDES-018 | World/Objects/ParkObjects.cs:107 | Build rules: grid, MAP/save terrain, no overlap; no slope/path/land/money; costs not charged | Original build checks |
+| RIDES-019 | World/Objects/ParkObjects.cs:209 | Levels without save get Gates, Lights, Bus | Original fixed-item spawning |
+| RIDES-020 | World/Level.Objects.cs:81 | Sandbox Totem blocks cells inside its 6×8-unit box | None for gameplay (prototype) |
+| RIDES-021 | World/Level.Objects.cs:46 | Build centred on clicked cell; cursor ray hits Z = 0 | Original build cursor behaviour |
+| RIDES-022 | World/Objects/ObjectAssets.cs:119 | Texture search archive textures → gtexture → sharetex | Binary texture lookup order |
+| RIDES-023 | World/Objects/OriginalObjectRuntime.cs:125 | Completed cycle = VAR_RUNNING 1 → 0 | Original cycle/income accounting |
+| RIDES-024 | World/Objects/ObjectCatalog.cs:276 | Bonus archives merge; Info.Id collision skips the bonus entry | Original behaviour with dropped-in WADs |
+| RIDES-025 | World/Objects/ObjectCatalog.cs:545 | Bonus name: language file → English → .sam name | Original bonus-name lookup |
+| RIDES-026 | World/Objects/OriginalObject.cs:12 | 1 MD2 unit = 0.2 engine units | None (engine convention) |
+| RIDES-027 | World/PrototypeRide.cs:13 | Sandbox Totem 5-unit bounds radius | None for gameplay (prototype) |

@@ -12,6 +12,7 @@ namespace OpenTPW;
 public sealed class ObjectAnimator
 {
 	/// <summary>Sandbox choice shared with the Totem prototype; the original tick rate is not verified.</summary>
+	// [APPROX:RIDES-001] Animation clips play at 30 ticks/s — evidence needed: original tick rate (binary or timed capture of a ride cycle)
 	public const float TicksPerSecond = 30f;
 
 	private sealed class Channel
@@ -107,6 +108,7 @@ public sealed class ObjectAnimator
 			channel.Elapsed += seconds;
 			var tick = (float)(channel.Elapsed * TicksPerSecond);
 			channel.Player.SetTick( tick );
+			// [APPROX:RIDES-003] A finished non-looping clip holds its last pose until replaced/flushed — evidence needed: capture after a TRIGANIM clip ends
 			if ( !channel.Loop && tick >= channel.Player.Animation.Duration )
 				channel.Finished = true;
 		}
@@ -115,6 +117,7 @@ public sealed class ObjectAnimator
 
 	private void Update()
 	{
+		// [APPROX:RIDES-002] When several channels animate a node, the most recently started clip wins — evidence needed: original channel mixing (binary or capture of a multi-channel sideshow/Totem)
 		var active = channels.Values.OrderByDescending( channel => channel.Serial ).ToArray();
 		foreach ( var node in order )
 		{

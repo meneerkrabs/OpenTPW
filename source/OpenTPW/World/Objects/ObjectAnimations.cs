@@ -25,6 +25,7 @@ public static class ObjectAnimations
 {
 	private static readonly Regex Suffix = new( @"^(?<letter>[cilsmeubrod])(?<number>\d*)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant );
 
+	// [APPROX:RIDES-008] ANIM_* → suffix letter and variant v → number v+1 (derived from file names and scripts, no counterexample) — evidence needed: binary confirmation of the member lookup
 	public static char? GetLetter( int animation ) => animation switch
 	{
 		(int)ScriptDefs.Animations.ANIM_Create => 'c',

@@ -53,6 +53,7 @@ public sealed class ObjectCatalogEntry
 		Animations = animations;
 		AuxiliaryModels = auxiliaryModels;
 		Models = allModels;
+		// [DATA:<object>.sam:Info.Id] [DATA:<object>.sam:Info.Name]
 		InfoId = settings.GetInt( "Info.Id", -1 );
 		SettingsName = settings["Info.Name"] ?? ArchiveName;
 		DisplayName = SettingsName;
@@ -115,15 +116,18 @@ public sealed class ObjectCatalogEntry
 	public bool IsChoosable => Settings.GetBool( "Info.IsChoosable" );
 	public bool HasQueue => Settings.GetBool( "Info.HasQueue" );
 	/// <summary><c>Info.DontApplyOffset 1</c>: "a fixed item whose animation should be played relative to world (0,0)" (gates, bus, lights, ferry, seaplane, end).</summary>
+	// [DATA:<object>.sam:Info.DontApplyOffset]
 	public bool IsFixedItem => Settings.GetBool( "Info.DontApplyOffset" );
 	/// <summary>Shapes without occupied cells (Mystery ride, Buy Land, Clear Land) are tools, not objects.</summary>
 	public bool IsTool => !Shape.OccupiedCells.Any();
 	/// <summary>Can be placed from a build menu: shown in a UI category, not a fixed item or tool. Upgrades attach to a ride's track.</summary>
+	// [APPROX:RIDES-017] Buildable = WhichUIType 0–3, not fixed/tool/upgrade (DATA:Info.WhichUIType comment "4 = Not to be shown in UI") — evidence needed: original build-menu contents
 	public bool IsBuildable => WhichUIType is >= 0 and <= 3 && !IsFixedItem && !IsTool && Category != ObjectCategory.Upgrade;
 	/// <summary><c>Info.RideTypeStringIndex</c>: ITEMTYPES.str entry (e.g. 12 "Vertical Drop" for the Totem), or null.</summary>
 	public int? RideTypeIndex => Settings.Has( "Info.RideTypeStringIndex" ) ? Settings.GetInt( "Info.RideTypeStringIndex" ) : null;
 	public int NumSimultaneousAnimations => Math.Max( 1, Settings.GetInt( "UsageInfo.NumSimultAnims", 1 ) );
 	/// <summary>Build cost: <c>Upgrades[0].CostOfUpgrade</c> ("cash cost when buying this item").</summary>
+	// [DATA:<object>.sam:Upgrades[0].CostOfUpgrade]
 	public int BuildCost => Upgrades.FirstOrDefault( level => level.Level == 0 )?.GetInt( "CostOfUpgrade" ) ?? 0;
 	/// <summary>Initial ride capacity: <c>Upgrades[0].InitCapacity</c>.</summary>
 	public int InitialCapacity => Upgrades.FirstOrDefault( level => level.Level == 0 )?.GetInt( "InitCapacity" ) ?? 0;
@@ -269,6 +273,7 @@ public sealed class ObjectCatalog
 			{
 				foreach ( var entry in LoadEntries( theme, bonus, FileSystem ) )
 				{
+					// [APPROX:RIDES-024] Bonus archives merge into the theme catalog; an Info.Id collision skips the bonus entry — evidence needed: original behaviour with dropped-in WADs
 					if ( entries.Any( existing => existing.InfoId == entry.InfoId ) )
 						Log?.Warning( $"Bonus object {entry.ArchivePath} reuses Info.Id {entry.InfoId}; it is skipped." );
 					else
@@ -276,6 +281,7 @@ public sealed class ObjectCatalog
 				}
 			}
 			var catalog = new ObjectCatalog( theme, entries );
+			RidesApproximations.LogOnce();
 			ObjectNames.Apply( catalog );
 			cache[key] = catalog;
 			return catalog;
@@ -369,12 +375,14 @@ public sealed class ObjectCatalog
 		}
 		if ( main == null )
 			return null;
+		// [APPROX:RIDES-009] Layer order category defaults → shared .sam → object .sam; Easy_/Online_ overlays not applied — evidence needed: binary .sam loading order / difficulty selection
 		var layers = new List<ObjectSettingsFile>();
 		if ( defaults != null )
 			layers.Add( defaults );
 		layers.AddRange( shared );
 		layers.Add( main );
 		var settings = new ObjectSettings( layers );
+		// [DATA:<object>.sam:Info.Shape]
 		var shapeRows = settings.GetBlock( "Info.Shape" );
 		var shape = shapeRows == null || shapeRows.All( row => row.Trim().Length == 0 ) ? ObjectShape.Single : new ObjectShape( shapeRows );
 
@@ -440,6 +448,7 @@ public static class ObjectNames
 	}
 
 	/// <summary>Pure matching step, exposed for tests.</summary>
+	// [APPROX:RIDES-010] OBJECT_NAMES index bound by English name equality within the theme block — evidence needed: binary name-index table
 	public static IReadOnlyList<(ObjectCatalogEntry Entry, int Index, int Length)> Match( IReadOnlyList<ObjectCatalogEntry> entries, IReadOnlyList<string> names )
 	{
 		var blocks = new List<(int Start, int End)>();
@@ -533,6 +542,7 @@ public static class ObjectNames
 /// </summary>
 public static class BonusNames
 {
+	// [APPROX:RIDES-025] Bonus name: selected language file, then English, then .sam Info.Name — evidence needed: original lookup of bonus name files
 	public static string? Read( ObjectCatalogEntry entry, string? language = null )
 	{
 		language ??= GameLanguage.IsSelected ? GameLanguage.Current.Name : GameLanguage.DefaultLanguage;

@@ -2,8 +2,6 @@ name: Release builds
 on:
   push:
     tags: ['v*']
-    # Temporary: lets the pipeline run while it is developed on this branch.
-    branches: [release-ci]
   workflow_dispatch:
 permissions:
   contents: read

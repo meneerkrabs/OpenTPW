@@ -10,6 +10,7 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 
+import followup_evidence as followup
 import mac_data_compare as compare
 import scenario_evidence as evidence
 from scenario_evidence import Evidence, magic, pef
@@ -132,6 +133,49 @@ class CompareTests(unittest.TestCase):
             self.assertEqual(result['Challenges.sam']['status'], 'missing')
 
 
+def schema_bytes(records):
+    out = b''
+    for kind, name, count in records:
+        out += struct.pack('>I', kind) + name.encode().ljust(48, b'\0') + struct.pack('>II', count, 0)
+    return out
+
+
+class BalanceLayoutTests(unittest.TestCase):
+    RECORDS = [(0, '', 0), (5, 'ExitLevel', 0), (1, 'PeepInfo', 0),
+               (2, '', 0), (5, 'BaseWage', 0), (7, 'RecuperationRate', 0), (3, 'PerGrade', 3),
+               (6, 'StartingWorkLoad', 0), (1, 'Research', 0), (4, 'Loose', 0)]
+
+    def test_parser_rules_counter_start_arrays_and_groups(self):
+        layout = followup.balance_layout(self.RECORDS)
+        # counter starts at word 1 behind an 8-byte value base
+        self.assertEqual(layout['PeepInfo.ExitLevel'], 12)
+        # array element k of a two-field struct: word 2 + 2k (+1 for the second field)
+        self.assertEqual([layout[f'PerGrade[{k}].BaseWage'] for k in range(3)], [16, 24, 32])
+        self.assertEqual(layout['PerGrade[2].RecuperationRate'], 36)
+        # the closing record adds one word after 3*2 element words
+        self.assertEqual(layout['Research.StartingWorkLoad'], 8 + 4 * (2 + 6 + 1))
+        self.assertEqual(layout['Loose'], layout['Research.StartingWorkLoad'] + 4)
+        self.assertNotIn('PeepInfo', layout)
+
+    def test_unclosed_array_and_schema_reader(self):
+        with self.assertRaisesRegex(pef.PEFError, 'no closing record'):
+            followup.balance_layout([(2, '', 0), (5, 'A', 0), (1, 'G', 0)])
+        raw = schema_bytes(self.RECORDS + [(12, '', 0)])
+        self.assertEqual(followup.schema_records(raw, 0), self.RECORDS)
+        with self.assertRaisesRegex(pef.PEFError, 'TABLE_END'):
+            followup.schema_records(schema_bytes(self.RECORDS), 0)
+        with self.assertRaisesRegex(pef.PEFError, 'record type'):
+            followup.schema_records(schema_bytes([(13, 'X', 0)]), 0)
+
+    def test_toc_users_matches_r2_displacements_only(self):
+        words = [d_word(32, 3, 2, 0x10), d_word(32, 3, 4, 0x10), d_word(36, 0, 2, 0x10), d_word(32, 3, 2, 0x14)]
+        e = fixture(words)
+        self.assertEqual(followup.toc_users(e, 0x8010), [0, 8])
+        self.assertEqual(followup.exact_callers(fixture([18 << 26 | 8 | 1, 0, 0]), 8, [0]), ['0x0'])
+        with self.assertRaisesRegex(pef.PEFError, 'callers'):
+            followup.exact_callers(fixture([0, 0, 0]), 8, [0])
+
+
 @unittest.skipUnless(os.environ.get('OPENTPW_MAC_BIN'), 'set OPENTPW_MAC_BIN to the Feral bin directory')
 class CorpusTests(unittest.TestCase):
     def test_identified_executable_facts(self):
@@ -140,7 +184,29 @@ class CorpusTests(unittest.TestCase):
         self.assertEqual(result['theme_entry']['key_consumption_on_entry'], False)
         self.assertEqual(result['golden_ticket_checks']['game_type_required'], 0)
         self.assertEqual(result['strikes']['minimum_park_age_months'], 24)
-        self.assertGreater(result['instruction_checks'], 300)
+        self.assertGreater(result['instruction_checks'], 600)
+        balance = result['main_balance']
+        self.assertEqual(balance['records'], 283)
+        self.assertEqual(balance['derived']['GoldenTicketGlobal.MinCellsOwned'], 1912)
+        self.assertEqual(balance['anchors_verified']['ResearchTech[1].PercentageForThisTech'], 1280)
+        self.assertEqual(result['advisor']['rules']['167']['responses'], [380, 381])
+        self.assertEqual(result['finance']['bankrupt_after_months_in_red'], 6)
+        self.assertEqual(result['staff_economy']['debit_callers'], 16)
+
+    def test_layout_rejects_a_changed_counter_start_or_anchor(self):
+        container = evidence.load_identified(Path(os.environ['OPENTPW_MAC_BIN']) / 'SimThemePark.data')
+        e = Evidence(container)
+        code = bytearray(e.code)
+        struct.pack_into('>I', code, 0x16f90, d_word(14, 27, 0, 0))  # in memory only
+        e.code = bytes(code)
+        with self.assertRaisesRegex(pef.PEFError, 'code:0x16f90'):
+            followup.main_balance(e)
+        e = Evidence(container)
+        data = bytearray(e.data)
+        struct.pack_into('>I', data, followup.MAIN_TABLE + 60 * 44 + 52, 99)  # widen the first array
+        e.data = bytes(data)
+        with self.assertRaisesRegex(pef.PEFError, 'balance layout'):
+            followup.main_balance(e)
 
 
 if __name__ == '__main__':

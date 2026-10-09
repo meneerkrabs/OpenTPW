@@ -17,6 +17,7 @@ import struct
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import pef  # noqa: E402
 
 APP_SHA256 = '04809cd4ccee5433c7fb0b7c93d32f6a7aa629c1849181c0b7906415e5e295f5'
@@ -684,7 +685,8 @@ def research(e: Evidence) -> dict:
     return {'points_per_contribution': 'ResearcherConstsPerGrade[grade].ResearchAbility (balance 1052 + 12*grade)',
             'research_point_sources': contributors,
             'allocation': 'points * effort[c] / sum(effort) * lab[5216] / 100 to category c current item',
-            'group_threshold_balance_offset': '1280 + 4*current_group', 'maximum_group': 7,
+            'group_threshold_balance_offset': '1280 + 4*current_group = ResearchTech[current_group + 1].PercentageForThisTech',
+            'maximum_group': 7,
             'schema': names + tech,
             'completion_advisor_id': 167, 'theme_all_research_flag_offset': 185}
 
@@ -697,9 +699,11 @@ def inspect(bin_root: Path) -> dict:
               'progression': progression(e), 'awards': awards(e), 'modes': modes(e),
               'theme_entry': entry_and_keys(e), 'golden_ticket_checks': golden_ticket_checks(e),
               'challenges': challenges(e), 'strikes': strikes(e), 'research': research(e)}
+    from followup_evidence import inspect_followup  # noqa: E402 (imports this module)
+    result.update(inspect_followup(e))
     result['instruction_checks'] = e.checked
     result['limitation'] = ('Static Mac (Feral 2000) evidence only; not PC Patch 2 or runtime proof. '
-                            'Advisor IDs, stat-function semantics and calendar scale remain unresolved.')
+                            'Advisor speech/tag text, stat-function semantics and calendar scale remain unresolved.')
     return result
 
 

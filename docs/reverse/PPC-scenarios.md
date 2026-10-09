@@ -1,6 +1,6 @@
 # PowerPC scenario, progression and staffing evidence
 
-2026-10-09. Scenario lane of the nine-lane PowerPC continuation. Static
+2026-10-09 (follow-up pass the same day). Scenario lane of the nine-lane PowerPC continuation. Static
 inspection of the Feral Interactive Mac port of *SimTheme Park* (Theme Park
 World); the original program was never run. No original bytes, disassembly,
 extracted assets or manual text are stored here. A local disassembler
@@ -8,16 +8,21 @@ extracted assets or manual text are stored here. A local disassembler
 only and print interpreted operands, offsets and identifiers.
 
 Scope: game modes and player creation, golden tickets and keys, theme entry,
-challenge activation, research progression, strikes. Every finding below is a
+challenge activation, research progression, strikes; follow-up: new-player key
+lifetime, GameType versus front-end/main-loop state, advisor rule/response
+tables, staff wages/dismissal/training/rest, bankruptcy, profit year and the
+complete `Standard.sam` (CMainBalance) field binding. Every finding below is a
 fact about **this Mac binary** unless explicitly stated otherwise. It is not
 evidence for the PC `TP.EXE` or Patch 2 runtime (see *Mac and PC relationship*).
 
 ## Reproduce
 
 ```sh
-# instruction-field witnesses (374 checks, identity-pinned)
+# instruction-field witnesses (629 checks, identity-pinned; follow-up checks live in
+# followup_evidence.py and are included in the same JSON report)
 python3 -I tools/ppc-analysis/lanes/scenarios/scenario_evidence.py /Users/sander/server/game-assets/mac-feral/bin
-# tests (synthetic fixtures; the corpus case runs only with OPENTPW_MAC_BIN set)
+# tests (synthetic fixtures; the two corpus cases, including in-memory mutation
+# regressions, run only with OPENTPW_MAC_BIN set)
 python3 -m unittest discover -s tools/ppc-analysis/lanes/scenarios -v
 OPENTPW_MAC_BIN=/Users/sander/server/game-assets/mac-feral/bin python3 -m unittest discover -s tools/ppc-analysis/lanes/scenarios
 ```
@@ -51,9 +56,11 @@ located from those references and from direct `bl` call targets only; the
 heuristic traceback finder was not used. "Sole caller" claims mean: exactly the
 listed direct calls exist and no relocated data word (transition vector or
 pointer) names the routine. The balance (`.sam`) schema is a static table of
-60-byte records `[type][56-byte name]`; struct field offsets were anchored by
-independent uses (below). Advisor message IDs passed to the message builder at
-`0xb6d8` are advisor-rule IDs, not `.str` indices, and stay unresolved.
+60-byte records `[type][48-byte name][count][spare]`; the follow-up pass
+derived every field offset from the parser itself (see *Balance field binding*)
+and checks the result against 17 independent code displacements. Advisor IDs
+passed to the message builder at `0xb6d8` are advisor **rule** IDs; the lobby
+queue uses **response** IDs directly (see *Advisor rules and responses*).
 
 ## Mac and PC relationship
 
@@ -109,6 +116,23 @@ A global *GameType* object (data `0x53d98`) has three values:
 - Instant Action player creation copies each theme's `levels:<theme>:easymode.TPWI`
   into the player's directory when it exists (`0x137600`, `LbFile_Exists` then
   `LbFile_Copy`). Only jungle ships one.
+
+### GameType versus other state values (high)
+
+Three different enumerations meet at mode changes and must not be conflated:
+
+| Object | Values | Writers |
+| --- | --- | --- |
+| GameType, data `0x53d98` (not serialized) | 0 Full Simulation, 1 online, 2 Instant Action | exactly 10 `SetGameType` call sites: lazy construction from the startup flag bits (4), player load (2, skipped while GameType is 1), online entry `0x971ac` and `0x18b0e4(0)` (→1), main-loop state 11 (2) |
+| Front-end exit code, `*(data 0x84b80)` + 20 | 1 front end running (set on entry `0x8cfb0`), 2 enter a park (park chosen `0x9665c`, and both online entries), 3 quit (`0x8d698`) | read back by `0x8d3b0` |
+| Main-loop state, data `0x15c488` | 0..15, 16-way jump table at data `0x52cc8`; 2 runs the front end, 3 leaves it, 9 loads a park, 11 leaves a park, 12 shuts down | `0x1c1208` |
+
+The online entries write exit code **2 and** GameType **1** together; that is
+the "2 then 1" seen at those sites, not a GameType sequence. The player save
+persists only `mEasyModeUser`. Leaving a park in main state 11 while GameType
+is 1 and the 1028-byte session object (data `0x120da8`) has +1008 == 0 restores
+GameType from `mEasyModeUser` (2 or 0). Front-end exit code 2 → main state 9,
+anything else → 12.
 
 ### Player-global progression record (high)
 
@@ -174,11 +198,23 @@ were seen but their offsets were not individually bound.
   new Full Simulation player has 1 key (jungle and hallow open), matching the
   Mac manual's two initially available worlds (printed p. 6); an Instant Action
   player has 0 keys but ignores key costs.
-- Residual: no clear of the flag was found inside `0x15cd38`; whether a second
-  `0x15cd38(0)` call can occur before front-end init re-evaluates it in the same
-  session (repeat award) is unproven.
+- Lifetime (follow-up, high): the flag has one relocated reference (TOC slot
+  `0x1cc4`) used at exactly three sites. The only writers are front-end init
+  (`0x15c828`: 1 when none of the 4 slots has a name, else 0) and creation
+  (`0x15d164`: 1); the award routine only reads it and **never clears it**. The
+  award runs only for argument 0 with a loaded player (+96 ≠ −1). Its four
+  callers: creation (`0x15d178`), front-end message 5 (`0x15be5c`), slot
+  selection after loading the slot (`0x15c068`) and the quit handler (`0x15c1c8`,
+  argument 1, no award). Front-end init runs from the front-end entry only
+  when no player is loaded, and from the return path `0x1979a8`, which first
+  unloads the player (+96 = −1) and then re-runs init (flag = 0, since a player
+  now exists).
+- Residual (narrowed): a repeat award would need a second argument-0 call
+  (front-end message 5 or a slot selection) after creation and before the
+  front end is left/re-entered. Static evidence does not exclude that UI
+  sequence; it is the only remaining path.
 
-### Golden-ticket checks (high; offsets medium-high)
+### Golden-ticket checks (high)
 
 - Run **only for GameType 0** (`0xd2f1c`), whenever the world tick counter
   (world+0x1E0000−22772, zeroed at world init) is divisible by 100 (`0xd67f0`).
@@ -192,7 +228,7 @@ were seen but their offsets were not individually bound.
 | Local 1 People in park | `0xc3684(park)` > [1876] (200) |
 | Local 2 Happiness | float `0xc19e4(park,0)` > [1880] (75) **and** `0xc3684(park)` > [1884] (150) — the second operand is the same people-in-park count, not a count of happy people |
 | Local 3 All researched and built | `0xc5510(park)` true |
-| Local 4 Profit year | `0xccfa8(…)` > [1888] (15000) |
+| Local 4 Profit year | finance +292 > [1888] (15000); +292 = credits − debits since the last `CMsgEndOfYear` (13 zeroes it), i.e. **year to date**, not a rolling 12 months |
 | Local 5 Recent visitors | `0xc3b88(park, [1896]=6)` > [1892] (350) **and** park age in 30-day months > [1896] |
 | Global 0–2 | coaster height / go-kart excitement / water length statistics > [1900]/[1904]/[1908] (105/90/50); the value is stored per theme |
 | Global 3 Big park | count of 128×128 cells of types {4, 9, 10, 21} or object-occupied > **[1916]** |
@@ -207,10 +243,21 @@ were seen but their offsets were not individually bound.
   below); `ResearcherConstsPerGrade` stride 12. Under that layout the big-park
   ticket reads **MinCellsCovered (2000)**, `MinCellsOwned` (3000) has **no
   non-stack displacement read anywhere**, and the camera ticket ignores both.
+- Follow-up: the complete balance binding (below) now **proves** these offsets
+  from the parser: `MinCellsOwned` = 1912 and `MinCellsCovered` = 1916, so the
+  big-park ticket reads `MinCellsCovered` (high).
+- Award announcements (rule IDs, below) carry `CMsgTag` ids 102–107 for local
+  tickets 0–5 and 108–111 for global tickets 0–3. Their order matches
+  `TAG_SYSTEM` 180–189 exactly (visitors, people, happiness, all researched and
+  built, profit "$", recent visitors; coaster height, go-kart, water ride, "a
+  really big park"); 190/191 are the secret texts (park covered by security
+  cameras; own all the possible land). The id→text table itself was not traced.
 - Not established: semantics of the statistic functions (`0xc3b7c`, `0xc19e4`,
-  `0xc5510`, `0xccfa8`, `0xc3b88`, the coaster/kart/water functions), the cell
-  type enumeration, and how secret ticket 1 (all land) is awarded (no caller in
-  this routine; likely the land-purchase path).
+  `0xc5510`, `0xc3b88`, the coaster/kart/water functions), the cell type values
+  (the predicates read a word at object +8; the same values 2/3/4/21 are
+  written by UI tool callbacks registered at data `0x8a70`–`0x8ad8`, so +8 may be
+  a placed-thing kind rather than terrain), and how secret ticket 1 (all land)
+  is awarded.
 
 ### Challenges activation (high)
 
@@ -249,7 +296,7 @@ age in days ≥ `DaysUntilFirstChallenge` ([1928], 540). The day divisor is
   cannot settle whether the gate above made strikes unreachable on the Mac;
   this must not be generalized to PC.
 
-### Research (high; offsets medium-high)
+### Research (high)
 
 - Points come **only** from researcher staff: `0xf0728` (sole caller `0xf02e4`,
   the researcher work cycle) adds `ResearcherConstsPerGrade[grade].ResearchAbility`
@@ -259,20 +306,107 @@ age in days ≥ `DaysUntilFirstChallenge` ([1928], 540). The day divisor is
   park ships a researcher (manuals: one scientist present).
 - Allocation per contribution: `points × effort[c] / Σeffort × lab[5216] / 100`
   to the current item of each category with effort (lab efforts at
-  5132+16·c). `lab[5216]` is presumably the workload (`Research.StartingWorkLoad`
-  85); its initialization was not traced.
+  5132+16·c). `lab[5216]` is the workload: park init (`0xf0854`) copies
+  `Research.StartingWorkLoad` (balance 1344, shipped 85) into it and the research
+  panel setter (`0xf130c`, sole caller `0x1610b4`) stores a player value clamped
+  to ≤ 100 (high).
 - Group opening (`0xf15b4`): for category c with current group g (lab byte
   5144+16·c), compute 100·researched/total over **all items of c with group ≤
   g**; while that is ≥ balance [1280+4·g] and g < 7, open g+1 (repeatable).
-  The 8-entry per-group array is identified as `ResearchTech[].PercentageForThisTech`
-  (0, 0, 80, 85, 85 shipped) by context; its exact base offset is not
-  layout-proven. Unspecified entries beyond index 4 would open immediately if
-  they default to 0 (parser defaults unverified).
+  Layout-proven (follow-up): `ResearchTech[]` has 10 entries at 1276 + 4·i, so
+  [1280+4·g] is **`ResearchTech[g+1].PercentageForThisTech`** — group g+1 opens
+  at its own percentage (shipped 0, 0, 80, 85, 85 for groups 0–4). Unspecified
+  entries 5–9 would open immediately if the parser defaults them to 0
+  (defaults unverified).
 - Completion: when all research is done the current theme's
   `mAllResearchCompleted` (+185) is set; GameType 2 then queues advisor ID 167
   and calls `0x105b50` (Instant Action finished); GameType 0 queues 167 only once
   every theme's flag is set. The UITEXT congratulation for finishing Instant
   Action (Mac 471) is a candidate text for 167, not proven.
+
+### Advisor rules and responses (high; text binding partial)
+
+- Response table, data `0x18ff4`: 610 records of 32 bytes terminated by id
+  9999; +0 response id, +8 speech sample (`:Speech:lips:sp_%03d.lip`, the same
+  numbers name `sp_NNN.mp2` in the speech bank), +28 a `CMsgTag` id
+  (`0x7274`; 383 = responses without an on-screen tag).
+- Rule table, data `0x1f2b4`: 351 records of 48 bytes with consecutive ids;
+  +32 first response, +36 variant count (`0xd468`/`0xd5ec`). In-game messages
+  (`0xb6d8`/`0xb798`) pass a **rule** id; response = first + variant.
+- Resolved ids:
+
+| Id | Kind | Meaning (from the call site) | Responses → samples |
+| ---: | --- | --- | --- |
+| 167 | rule | all research complete (Instant Action: current theme; offline: every theme) | 380–381 → sp_452/453 |
+| 215 / 216 / 217 | rule | local ticket won: award code 1 / 2 (+key) / 3 (+key +new theme); variant = local ticket 0–5 | 434–439 / 446–451 / 458–463 |
+| 220 / 221 / 222 | rule | global ticket won, same award codes; variant = global ticket 0–3 | 440–443 / 452–455 / 464–467 |
+| 234–237 | rule | global ticket 0–3 "moved here" (award code 4) | 474–477 |
+| 390 / 391 | response | front-end init, no named player | sp_465 / sp_466 |
+| 398 | response | front-end init, players exist | sp_471 |
+| 393 | response | first lobby entry, Full Simulation (extra key) | sp_468 |
+| 394 | response | first lobby entry, Instant Action | sp_469 |
+
+  The spoken wording was not transcribed, and the `CMsgTag` id → `TAG_SYSTEM`
+  table was not traced (ids are not direct indices; see the ticket ordering
+  note above).
+
+### Staff wages, dismissal, training and rest (high)
+
+- Wage (`0xf46bc`) = `PerTypeStaffConsts[t].PayMultiplier` (balance 832+4t) ×
+  `PerGradeStaffConsts[g].BaseWage` (748+16g); type index handyman 0, mechanic 1,
+  entertainer 2, guard 3, researcher 4 (other 5). Shipped: 10/30/15/20/35 ×
+  4/5/6/8/12, e.g. a grade-0 handyman costs 40 and a grade-4 researcher 420.
+- Paid per staff member on `CMsgEndOfMonth` (12) through the debit routine
+  `0xcbfdc` and posted to the wage statistic.
+- Dismissal (`0xf33ec`, callers `0x16e0d8`/`0x16e174`): optional "DISMISS
+  EMPLOYEE" confirmation (Mac UITEXT 397 = Windows 396, shown when preference
+  byte +55 is set), then **one further wage is debited**, the member enters
+  state 19 and is removed.
+- Hiring: none of the 16 direct callers of the debit routine is a hire path
+  (three are staff: month-end wage, dismissal, training; the rest are
+  construction/purchase). A hire fee by another money path is not excluded.
+- Training (`0xf3588`): grade 4 cannot train; the paid amount is debited and
+  converted to `amount / PoundsPerTrainingPoint[type][grade]` points (cap 100 per
+  payment) added to the training byte +488; ≥ 100 raises the grade, keeps the
+  remainder and **resets happiness to 100**.
+- Rest (`0xf3d8c`): energy +504 += `RecuperationRate[grade]` (0.2…0.75),
+  happiness +500 += `HappinessRecuperationRate[grade]` (1…3), each clamped to
+  0…100; work resumes at energy 100. Work (`0xf44c0`): energy −= 0.012·(6 −
+  grade), happiness −= 0.005·(6 − grade), clamped. +504 is therefore energy
+  (high = rested); the strike test's "fatigue" average < 15 means low energy.
+  The step cadence (world ticks per call) is not established.
+
+### Finance, bankruptcy and profit year (high)
+
+- Debit `0xcbfdc`: money (+12) −= amount; when the balance first goes negative
+  the world tick is stored at +288 (in-the-red start); the amount is posted to an
+  expense statistic and subtracted from the year accumulator +292.
+- Month end (`0xcc21c`, on message 12): pending income is credited, eight
+  32-byte loan slots are serviced; then if money < 0 and the time since +288 is
+  ≥ 6 thirty-day months, a `CMsgEvent(2)` (GetType 19) is posted. Its handler
+  calls `0x1059e0`, which sets **world mode 4**, unless the world mode is
+  already 4 or `0x105c6c` reports that halfword data `0xecdcc` differs from
+  halfword data `0x4491e` (meaning unresolved).
+- `CMsgEvent(10)` sets money to `BankAccountInfo.InitialCash` (balance 408).
+- `CMsgEndOfYear` (13) zeroes +292; the profit-year ticket compares +292.
+
+### Balance field binding (high)
+
+The `CMainBalance` object at data `0x54860` is constructed by `0x198fc` (vtable
+`0x38fbc` at +4) and parsed by `0x16f4c`. Its schema is the 283-record table at
+data `0x34d10` (`0x19950`: table + 60·i; record count = index of the first
+type-12 record, `0x197a4`); values start at `this + 8` (`0x19960`). The parser's
+word counter starts at **1**; types 4–11 take one word; a type-2 record opens a
+flat struct array closed by a type-3 record (count at +52) that advances
+(count − 1)·fields + 1 words; type 1 names the preceding scalar group; types
+0/1/2 take no space. Applying this rule binds 487 qualified names (354 of the
+362 keys in `Standard.sam`; the other 8 come from one multi-column header line)
+and reproduces all 17 displacements that code reads from the object, e.g.
+`BankAccountInfo.InitialCash` 408, `BaseWage` 748, `PayMultiplier` 832,
+`ResearchAbility` 1052, `ResearchTech[1]` 1280, `StartingWorkLoad` 1344,
+`GoldenTicketLocal.Visitors` 1872, `MinCellsCovered` 1916,
+`DaysUntilFirstChallenge` 1928. The verifier recomputes the layout and fails
+if any anchor moves (mutation-tested).
 
 ### Time units (medium)
 
@@ -286,41 +420,40 @@ calendar lane, not a resolution of `ECON-001..004`.
 
 | ID / area | Current OpenTPW assumption | Mac binary evidence | Suggested state |
 | --- | --- | --- | --- |
-| ECON-040 | 1 starting key; keys not consumed | Not consumed: proven. Start: Full Sim gets `mExtraKeys` 1 on first lobby entry; Instant Action 0 keys but no key check | Mac-resolved; PC confirmation and repeat-award residual remain |
+| ECON-040 | 1 starting key; keys not consumed | Not consumed: proven. Start: Full Sim gets `mExtraKeys` 1 on first lobby entry; Instant Action 0 keys but no key check; flag lifetime traced | Mac-resolved; PC confirmation and one narrowed UI-sequence residual remain |
 | `PlayerProgress.Keys` (untagged) | 1 + Σ per-theme earned / 3 | `mExtraKeys` + (player-wide globals + per-theme locals + player-wide secrets) / 3 | untagged divergence: global/secret tickets are once per player, not per theme |
 | ECON-029 | tickets spent on GoldenTicketCost purchases | spent once per item ID into a player-wide set; online free | partial support; item set persistence is missing |
 | ECON-033 | checked at month end | every 100 world ticks, GameType 0 only | contradicted (tick scale still open) |
-| ECON-038 | big park = MinCellsOwned, cameras = MinCellsCovered | big park reads offset 1916 (MinCellsCovered under the anchored layout); cameras need 100 % coverage; MinCellsOwned unread | contradicted (medium-high) |
+| ECON-038 | big park = MinCellsOwned, cameras = MinCellsCovered | big park reads 1916 = MinCellsCovered (parser-derived layout); cameras need 100 % coverage; MinCellsOwned (1912) unread | contradicted (high) |
 | Ticket predicates (untagged) | `>=`; happiness counts happy guests | strict `>`; happiness second test uses people in park; RecentVisitors also needs park age > N months | untagged divergence |
-| ECON-039 | profit of last 12 months | value from `0xccfa8` | unresolved |
+| ECON-039 | profit of last 12 closed months | year-to-date accumulator +292, zeroed on end of year, checked every 100 ticks | contradicted |
 | ECON-034..036 | challenge semantics/flow | challenges only in GameType 0; first offer at park-age day ≥ DaysUntilFirstChallenge | only activation resolved |
 | Challenges/tickets in Instant Action (untagged) | `ParkEconomy` runs both in every mode | both disabled for GameType ≠ 0 | untagged divergence |
-| ECON-014 | no strikes, happiness constant | strike state machine present but gated; Mac guide says removed | conflict; requires PC/runtime evidence |
-| ECON-015 | ResearchAbility per day split by effort | per researcher work cycle, × effort share × lab[5216]/100 | partially contradicted (cycle timing open) |
-| ECON-016 | group g opens at % of group g−1 | g+1 opens at cumulative % of groups ≤ g against threshold[g] | contradicted (offset medium-high) |
+| ECON-014 | no strikes, happiness constant | happiness is not constant: work drains it, rest recovers it, training resets it to 100; strike state machine present but gated; Mac guide says strikes were removed | happiness part contradicted; strikes conflict, requires PC/runtime evidence |
+| ECON-015 | ResearchAbility per day split by effort | per researcher work cycle, × effort share × workload/100 (workload starts at StartingWorkLoad 85, player-set ≤ 100) | partially contradicted (cycle timing open) |
+| ECON-016 | group g opens at PercentageForThisTech[g] % of group g−1 | group g opens at PercentageForThisTech[g] (same index, layout-proven) measured **cumulatively over all groups ≤ g−1** | partially supported: threshold index matches, percentage basis differs |
 | ECON-017 | cheapest first | item choice not traced | unresolved |
 | ECON-019 | Instant Action: virtual grade-2 researcher | no staffless path; researcher staff only | contradicted |
 | UI-015 | mode asked per park; modes identical | mode fixed at player creation (4 slots); modes differ in balance overlay, start park, keys, tickets, challenges, research completion | contradicted |
-| ECON-030 / bankruptcy | stops when bankrupt | not traced (TAG 123–127 describe six months in the red) | unresolved |
+| ECON-030 / bankruptcy | stops when bankrupt; 6 months in red | ≥ 6 thirty-day months since the balance went negative, checked at month end → world mode 4 (subject to one unresolved id gate) | count supported; "stops" consistent with mode 4 exit but the mode-4 consequences belong to the calendar/clock lane |
 | ECON-046 | upgrades need a mechanic | not traced (only the TAG text "can't upgrade during a mechanics' strike") | unresolved |
+| Staff wages/dismissal/training (untagged) | — | wage PayMultiplier×BaseWage monthly; dismissal debits one more wage; training points = amount/PoundsPerTrainingPoint, promotion resets happiness to 100 | new Mac facts for the economy owner |
 
 ## Unresolved dependencies (explicit blockers)
 
-- **Advisor IDs** (167, 215–217, 220–222, 393, 394, 398): map the advisor-rule
-  table (Advisor schema at data ~`0x234dc`) to rule names/speech; required to
-  bind completion and lobby messages.
+- **Advisor text**: rule/response ids are now bound (above); the spoken text of
+  the samples and the `CMsgTag` id → `TAG_SYSTEM` table remain.
 - **Statistic semantics**: `0xc3b7c`, `0xc3684`, `0xc19e4`, `0xc5510`, `0xccfa8`,
   `0xc3b88`, `0xc73bc`, `0xc6cec`, `0xc710c`, `0xc2264/0xc21f4`, `0xc1fb4`,
   `0xc3524`, cell types at cell +8, staff floats +500/+504 ranges.
-- **Full balance layout**: the parser's per-type sizes and array counts (type
-  codes 3–8, 10) to prove offsets outside the anchored regions (1280 base,
-  5216 workload source).
+- **Balance**: layout resolved; parser defaults for unspecified fields (e.g.
+  `ResearchTech[5..9]`) and the bounded-value checks were not traced.
 - **Calendar**: calendar object world+672 (+28 multiplier, base date) for tick
   → day conversion.
-- **Flows not traced**: staff hiring/firing/termination costs and the dismiss
-  path, staff fatigue recovery, bankruptcy counter, secret "all land" award,
-  research item selection order, Instant Action end (`0x105b50`) consequences,
-  new-player flag lifetime.
+- **Flows not traced**: hire fees outside `0xcbfdc`, rest/work step cadence,
+  the bankruptcy id gate (`0x105c6c`) and world mode 4 consequences, secret
+  "all land" award, research item selection order, Instant Action end
+  (`0x105b50`) consequences.
 - **PC equivalence**: none of these predicates were checked in `TP.EXE` or
   Patch 2; the Mac/PC strike conflict shows behaviour can differ even with
   identical data.

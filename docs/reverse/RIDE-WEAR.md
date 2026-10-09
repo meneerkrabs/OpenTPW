@@ -156,8 +156,10 @@ Not verified (agent reports, recorded as leads):
 - `0x100d9e04` clears statistic 4 and calls the repair when a job timer ends, except when statistic 7 is set.
 - `0x100df5b4` repairs on a timer without clearing statistic 4.
 - The constructor `0x100da874` sets `+0x40`, `+0x44` and `+0x48` to 0.
-- The object serializer `0x100daf04` saves these three floats as truncated bytes. OpenTPW's save reader does
-  not decode them yet: `SaveObjectList` reads only the 41-byte SYSG header of each record.
+
+Verified since: the object serializer `0x100daf04` writes the three floats as whole numbers 0–255, and
+`SaveAttractionList` decodes them from original saves (see
+[TPWS-PAYLOAD.md](../TPWS-PAYLOAD.md#attraction-records-thing-list-in-the-prefix-tail)). In Easymode all three are 100.
 
 ## Consequences for ECON-023 and ECON-024
 
@@ -175,8 +177,8 @@ These items stay open:
 - the duration of a tick, and so of a game day (ECON-001);
 - the meaning of ride statistics 2, 3 and 5, of ride states 1–4 and of bit 0 of `+0x2e`;
 - the start value of the second gauge after construction;
-- agreement with an oracle. Two original saves of one park at a known tick distance could serve, once
-  `SaveObjectList` decodes the record tail.
+- agreement with an oracle. The decoder exists (`SaveAttractionList`); what is missing is two original saves of
+  one park at a known tick distance, with a ride in use.
 
 The repo's acceptance rule for the original-binary route needs one bounded original function plus
 reproducible agreement with a reference oracle. The first part is met (`0x100dec2c`, `0x100de904`, `0x100e077c`);

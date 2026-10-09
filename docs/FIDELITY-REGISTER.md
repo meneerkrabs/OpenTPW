@@ -369,7 +369,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | developer-prototype | `source/OpenTPW/World/Level.Objects.cs:251` | [EXT:developer-prototype] When the economy refuses the Totem (e.g. Research.Group 4 not yet researched), the developer prototype is registered uncharged (no original counterpart) |
 | developer-prototype | `source/OpenTPW/World/PrototypeRide.cs:13` | [EXT:developer-prototype] Sandbox Totem bounds check uses a 5-unit radius around its centre (no original counterpart) |
 | display | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:121` | [EXT:display] window mode, upscaling, render scale and interface scale rows are OpenTPW extensions |
-| interface-scale-fit | `source/OpenTPW/UI/Original/UiCanvas.cs:33` | [EXT:interface-scale-fit] Above 1×, limit forced text scales to UiScaling's existing reference-layout fit. |
+| interface-scale-fit | `source/OpenTPW/UI/Original/UiCanvas.cs:33` | [EXT:interface-scale-fit] Above 1×, limit forced text scales to UiScaling's reference-layout fit (HiDPI-aware via PixelDensity). |
 | language | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:143` | [EXT:language] language row (original installs had one language; OpenTPW reads CD overlays) |
 | strings | `source/OpenTPW/UI/Original/SupplementaryStrings.cs:10` | [EXT:strings] OpenTPW supplementary labels (display/upscaling/language rows and OpenTPW messages), not original data |
 | test-stub | `source/OpenTPW/Hud/HudStubs.cs:130` | [EXT:test-stub] price shown when Totem.sam cannot be read (the economy catalogue price is used when a park economy runs) |

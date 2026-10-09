@@ -329,7 +329,7 @@ public partial class Renderer : IDisplaySettings
 		var pixels = Window.PixelSize;
 		Metrics = new DisplayMetrics( logical, pixels );
 		Screen.UpdateFrom( logical, pixels );
-		Screen.UiScale = UiScaling.Resolve( DisplaySettings.UiScale, pixels );
+		Screen.UiScale = UiScaling.Resolve( DisplaySettings.UiScale, pixels, Metrics.IntegerPixelDensity );
 		var scaling = RenderScaling.Compute( pixels, DisplaySettings.Upscale, DisplaySettings.RenderScale, maximumTextureSize, worldScalingAllowed );
 		if ( scaling.IsPaused )
 		{

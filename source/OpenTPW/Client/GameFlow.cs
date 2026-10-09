@@ -174,7 +174,7 @@ internal sealed class GameFlow : IDisposable
 	private UiCanvas CurrentCanvas()
 	{
 		var pixels = Screen.PixelSize;
-		var canvas = new UiCanvas( Math.Max( 1, pixels.X ), Math.Max( 1, pixels.Y ), Math.Max( 1, Display.EffectiveUiScale ) );
+		var canvas = new UiCanvas( Math.Max( 1, pixels.X ), Math.Max( 1, pixels.Y ), Math.Max( 1, Display.EffectiveUiScale ), Screen.PixelDensity );
 		var scales = (canvas.UiScale, canvas.TextScale);
 		if ( reportedUiScale != scales && canvas.TextScale < canvas.UiScale )
 			Log.Warning( $"Interface scale {canvas.UiScale}x falls back to {canvas.TextScale}x: {canvas.Width}x{canvas.Height} drawable pixels cannot fit the {UiScaling.ReferenceWidth}x{UiScaling.ReferenceHeight} reference layout at the requested scale." );

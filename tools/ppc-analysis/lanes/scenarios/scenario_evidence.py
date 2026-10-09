@@ -701,6 +701,8 @@ def inspect(bin_root: Path) -> dict:
               'challenges': challenges(e), 'strikes': strikes(e), 'research': research(e)}
     from followup_evidence import inspect_followup  # noqa: E402 (imports this module)
     result.update(inspect_followup(e))
+    from progression_evidence import inspect_progression  # noqa: E402 (imports this module)
+    result.update(inspect_progression(e))
     result['instruction_checks'] = e.checked
     result['limitation'] = ('Static Mac (Feral 2000) evidence only; not PC Patch 2 or runtime proof. '
                             'Advisor speech/tag text, stat-function semantics and calendar scale remain unresolved.')

@@ -12,6 +12,7 @@ import unittest
 
 import followup_evidence as followup
 import mac_data_compare as compare
+import progression_evidence as progression
 import scenario_evidence as evidence
 from scenario_evidence import Evidence, magic, pef
 
@@ -176,6 +177,31 @@ class BalanceLayoutTests(unittest.TestCase):
             followup.exact_callers(fixture([0, 0, 0]), 8, [0])
 
 
+class ProgressionHelperTests(unittest.TestCase):
+    def test_unconditional_branch_rejects_link_and_wrong_target(self):
+        e = fixture([18 << 26 | 8, 18 << 26 | 8 | 1])
+        progression.branch(e, 0, 8)
+        with self.assertRaisesRegex(pef.PEFError, 'unconditional branch'):
+            progression.branch(e, 4, 12)
+        with self.assertRaisesRegex(pef.PEFError, 'unconditional branch'):
+            progression.branch(e, 0, 12)
+
+    def test_vtable_slot_follows_descriptor_to_code(self):
+        relocs = {0x100 + 16: SimpleNamespace(kind='section', target=1, addend=0x200),
+                  0x200: SimpleNamespace(kind='section', target=0, addend=0x40)}
+        e = fixture([0], relocs=relocs)
+        progression.vtable_slot(e, 0x100, 16, 0x40)
+        with self.assertRaisesRegex(pef.PEFError, 'vtable entry'):
+            progression.vtable_slot(e, 0x100, 16, 0x44)
+
+    def test_no_base_stores_flags_any_store_width(self):
+        loads = [d_word(32, 3, 26, 0), d_word(36, 3, 27, 0), d_word(34, 0, 26, 4)]
+        progression.no_base_stores(fixture(loads), 0, 12, 26)
+        for op in (36, 37, 38, 39, 44, 45):
+            with self.assertRaisesRegex(pef.PEFError, 'store through r26'):
+                progression.no_base_stores(fixture(loads + [d_word(op, 0, 26, 8)]), 0, 16, 26)
+
+
 @unittest.skipUnless(os.environ.get('OPENTPW_MAC_BIN'), 'set OPENTPW_MAC_BIN to the Feral bin directory')
 class CorpusTests(unittest.TestCase):
     def test_identified_executable_facts(self):
@@ -192,6 +218,12 @@ class CorpusTests(unittest.TestCase):
         self.assertEqual(result['advisor']['rules']['167']['responses'], [380, 381])
         self.assertEqual(result['finance']['bankrupt_after_months_in_red'], 6)
         self.assertEqual(result['staff_economy']['debit_callers'], 16)
+        self.assertEqual(result['player_window']['window_class'], 'InterfaceWindow')
+        self.assertEqual(result['cell_types']['guest_stat_cells'], [0, 1, 3, 9, 10])
+        self.assertEqual(result['guest_stats']['staff_class_bytes']['researcher'], 8)
+        self.assertEqual(result['instant_action_ui']['loan_button_control_ids'],
+                         {'0x14eeec': 324524, '0x15161c': 74367, '0x1698e8': 733})
+        self.assertTrue(result['mystery_items']['purchase_result_ignored_by_placement'])
 
     def test_layout_rejects_a_changed_counter_start_or_anchor(self):
         container = evidence.load_identified(Path(os.environ['OPENTPW_MAC_BIN']) / 'SimThemePark.data')
@@ -207,6 +239,32 @@ class CorpusTests(unittest.TestCase):
         e.data = bytes(data)
         with self.assertRaisesRegex(pef.PEFError, 'balance layout'):
             followup.main_balance(e)
+
+
+    def _mutated(self, offset, word):
+        container = evidence.load_identified(Path(os.environ['OPENTPW_MAC_BIN']) / 'SimThemePark.data')
+        e = Evidence(container)
+        code = bytearray(e.code)
+        struct.pack_into('>I', code, offset, word)  # in memory only
+        e.code = bytes(code)
+        return e
+
+    def test_progression_witnesses_reject_mutations(self):
+        # Award no longer closes the player window with message 4.
+        with self.assertRaisesRegex(pef.PEFError, 'code:0x15cd7c'):
+            progression.player_window(self._mutated(0x15cd7c, d_word(14, 4, 0, 5)))
+        # A hidden store through the award's player-window register.
+        with self.assertRaisesRegex(pef.PEFError, 'store through r26'):
+            progression.player_window(self._mutated(0x15ce88, d_word(36, 0, 26, 0)))
+        # A second writer of the "own all land" secret byte.
+        with self.assertRaisesRegex(pef.PEFError, 'secret ticket byte stores'):
+            progression.secrets_and_research(self._mutated(0x128d94, d_word(38, 0, 3, 39)))
+        # Guest-cell predicate value changed (entrance 9 -> 8).
+        with self.assertRaisesRegex(pef.PEFError, 'code:0x851d4'):
+            progression.cell_types(self._mutated(0x851d4, d_word(11, 0, 0, 8)))
+        # Mystery placement debits money unconditionally.
+        with self.assertRaisesRegex(pef.PEFError, 'code:0xdacd0'):
+            progression.mystery_items(self._mutated(0xdacd0, 18 << 26 | 0x30))
 
 
 if __name__ == '__main__':

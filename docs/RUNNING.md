@@ -5,7 +5,7 @@ Original legally obtained game assets are required and must not be committed.
 
 ## macOS / Linux
 
-Install the pinned .NET 8 SDK. Apple Silicon uses native arm64 with Metal when
+Install the pinned .NET 10 SDK (`global.json`). Apple Silicon uses native arm64 with Metal when
 the matching libraries are available; see MACOS-NATIVE.md for reproduction.
 The launcher falls back to an Intel/Rosetta bootstrap when those files are absent.
 Linux currently uses Vulkan and needs a working Vulkan driver. Windows uses
@@ -234,7 +234,7 @@ dotnet publish source/OpenTPW/OpenTPW.csproj -c Release -r win-x64 --self-contai
 dotnet publish source/OpenTPW/OpenTPW.csproj -c Release -r linux-x64 --self-contained false -o artifacts/publish/linux-x64
 ```
 
-These packages require a matching .NET 8 runtime and legally obtained external
+These packages require a matching .NET 10 runtime and legally obtained external
 game assets. Build the arm64 dependency before publishing that RID. Successful
 cross-publication is not successful execution on the target platform.
 Current verification and remaining release blockers are recorded in PROGRESS.md.

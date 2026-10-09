@@ -15,7 +15,9 @@ public class SaveReaderTests
 		using var compressed = new MemoryStream();
 		using ( var encoder = new ZLibStream( compressed, CompressionLevel.Optimal, true ) )
 			encoder.Write( payload );
-		var compressedBytes = compressed.ToArray();
+		// .NET 9+ (zlib-ng) writes nothing for an empty input; the game's saves hold a complete
+		// zlib stream, so use the canonical empty stream there.
+		var compressedBytes = compressed.Length > 0 ? compressed.ToArray() : Convert.FromHexString( "789C030000000001" );
 		var container = new byte[0x629 + compressedBytes.Length];
 		BinaryPrimitives.WriteUInt32LittleEndian( container, magic );
 		BinaryPrimitives.WriteUInt32LittleEndian( container.AsSpan( 0x604 ), 0x19220100 );

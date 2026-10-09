@@ -162,7 +162,7 @@ table fit). The smoke-test thresholds are test-harness checks, not game rules.
 | --- | --- | --- | --- |
 | ADVISOR-001 | `source/OpenTPW/World/Advisor.cs:25` | Talking always shows `Mouth - Aah`; Eee/Ooh/Sss unused | Decoded `Advisorm13` mouth-track payloads or a capture of the talking advisor |
 | ADVISOR-002 | `source/OpenTPW/World/Advisor.cs:30` | Visible: body, head, eyes, antennae, hands; hats, spatula, bow tie, ShutEye hidden | Original node-visibility rules (dummy attributes 0x401/0x411, Advisorm* tracks) or captures per advisor role |
-| ADVISOR-003 | `source/OpenTPW/World/Advisor.cs:74` | Bottom-left square viewport, ⅓ of the short screen side (min 64 px), 16 px margin | Original placement/size captures per resolution |
+| ADVISOR-003 | `source/OpenTPW/World/Advisor.cs:74` | Bottom-left square viewport, ⅓ of the short logical screen side (min 64 logical px), 16 logical px margin; mapped to the world target for render scale/HiDPI | Original placement/size captures per resolution |
 | ADVISOR-004 | `source/OpenTPW/World/Advisor.cs:58` | Camera at z = −70 facing +Z, 40° FOV, near 1 / far 500 | Original advisor camera/projection (binary or capture) |
 | ADVISOR-005 | `source/OpenTPW/World/Advisor.cs:247` | Headlight at camera, light colour 0.6, `test.shader` ambient 0.4 + fog | Original advisor lighting/material captures |
 | ADVISOR-006 | `source/OpenTPW/World/Advisor.cs:94` | Bind pose; no `Advisorm*` clip played | Decoded vertex/visibility payloads of the `Advisorm*` tracks |

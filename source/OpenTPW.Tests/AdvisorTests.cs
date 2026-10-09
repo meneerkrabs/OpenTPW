@@ -10,6 +10,17 @@ namespace OpenTPW.Tests;
 [DoNotParallelize]
 public class AdvisorTests
 {
+	[DataTestMethod]
+	[DataRow( 1024, 768, 16, 496, 256 )]
+	[DataRow( 512, 384, 8, 248, 128 )]
+	[DataRow( 2048, 1536, 32, 992, 512 )]
+	public void AdvisorViewportMapsLogicalPlacementIntoTheWorldTarget( int width, int height, int x, int y, int size )
+	{
+		var viewport = Advisor.ViewportRectangle( new Point2( 1024, 768 ), new Point2( width, height ) );
+		Assert.AreEqual( (x, y, size), viewport );
+		Assert.IsTrue( viewport.X + viewport.Size <= width && viewport.Y + viewport.Size <= height );
+	}
+
 	[TestMethod]
 	public void MouthFollowsTimelineAndDefaultsClosed()
 	{

@@ -181,6 +181,24 @@ public sealed class GameLanguage
 			"Other shipped languages are on the original CD; pass its extracted language data with --language-data (see docs/LANGUAGES.md)." );
 	}
 
+	/// <summary>
+	/// The English language of the same installation/overlay, used as the fallback for missing
+	/// strings; null when no English folder exists. Returns <paramref name="language"/> itself when it is English.
+	/// </summary>
+	public static GameLanguage? TryResolveEnglish( GameLanguage language )
+	{
+		if ( string.Equals( language.Name, DefaultLanguage, StringComparison.OrdinalIgnoreCase ) )
+			return language;
+		try
+		{
+			return Resolve( language.BaseDataDirectory, DefaultLanguage, null );
+		}
+		catch ( DirectoryNotFoundException )
+		{
+			return null;
+		}
+	}
+
 	/// <summary>Maps a name to the shipped capitalization when it is a shipped language.</summary>
 	public static string CanonicalName( string name ) =>
 		ShippedLanguages.FirstOrDefault( language => string.Equals( language, name, StringComparison.OrdinalIgnoreCase ) ) ?? name;

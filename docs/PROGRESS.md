@@ -269,3 +269,21 @@ Terrein/save-slice (9 oktober 2026, worktree `terrain`):
   `OPENTPW_GAME_PATH` 519 / 30; plus taaldata 539 / 10; 0 failed.
 - Open: bezoekersuitgaven, personeelsgedrag/stakingen, adviseur, HUD-schermen (andere slices), en
   originele formules voor dagduur, rente, parkwaardering en sleutels.
+
+## Compatibiliteit (9 oktober 2026)
+
+- Eigen TrueType-parser/rasterizer leest de 17 fonts in-memory uit `fonts.wad`
+  (identiek aan `tpwfnt`, gepinde hashes, metrics en rasterhashes). `.sgn` (84 bestanden)
+  levert per bord twee LOGFONT-tekstregels; de jungle-poort toont "Lost Kingdom" in
+  Young Itch AOE 144 px (native smoketest eist tekstpixels). Alle bordtekens van zes
+  talen hebben een glyph in alle 17 fonts.
+- `--cd-data`: read-only, hoofdletterongevoelige fallback voor ontbrekende films/muziek,
+  met startupdiagnose; synthetische minimale-installatietest.
+- Detailpresets Low/Medium/High uit `low/med/high.sam` + Enhanced (EXT); filtering/mipmaps
+  naar samplers, view distance naar de mist; `IGraphicsSettings`, `graphics.json`.
+- Profiel Original (standaard) / Recommended / Custom met stabiele fix-ids,
+  `CompatibilityFlags`-savemetadata, hash-gebonden in-memory datacorrecties
+  (megacost.sgn verwijst naar een niet-meegeleverd font).
+- Robuustheid: ontbrekende strings → Engels → interne naam (vond UITEXT[473] buiten elke
+  tabel en Frans [457] leeg), beschadigde SDT-entries overgeslagen, `UniToMB.dat` gelezen.
+- Benaderingen staan in het register van [COMPATIBILITY.md](COMPATIBILITY.md).

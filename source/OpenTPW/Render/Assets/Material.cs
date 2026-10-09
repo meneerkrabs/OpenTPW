@@ -57,9 +57,19 @@ public partial class Material : Asset
 
 	private static Sampler CreateSampler( SamplerType type )
 	{
+		// World textures follow the graphics preset ([DATA:low/med/high.sam:TEXTUREFILTERING, MIPMAP]); see docs/COMPATIBILITY.md.
+		var quality = CompatibilityRuntime.RenderQuality;
+		// [APPROX:COMPAT-010] Veldrid sampler modes stand in for the original Direct3D filter states — evidence needed: binary render-state setup or captures.
+		var world = type is SamplerType.Anisotropic or SamplerType.AnisotropicWrap or SamplerType.AnisotropicRepeat;
 		var samplerFilter = type switch
 		{
-			SamplerType.Anisotropic or SamplerType.AnisotropicWrap or SamplerType.AnisotropicRepeat => SamplerFilter.Anisotropic,
+			_ when world => quality.Filter switch
+			{
+				TextureFilterMode.Point => SamplerFilter.MinPoint_MagPoint_MipPoint,
+				TextureFilterMode.Bilinear => SamplerFilter.MinLinear_MagLinear_MipPoint,
+				TextureFilterMode.Trilinear => SamplerFilter.MinLinear_MagLinear_MipLinear,
+				_ => SamplerFilter.Anisotropic
+			},
 			SamplerType.Linear => SamplerFilter.MinLinear_MagLinear_MipLinear,
 			SamplerType.Point => SamplerFilter.MinPoint_MagPoint_MipPoint,
 			_ => throw new NotImplementedException()
@@ -79,9 +89,9 @@ public partial class Material : Asset
 			samplerAddressMode,
 			samplerFilter,
 			ComparisonKind.Always,
-			(type == SamplerType.Anisotropic || type == SamplerType.AnisotropicWrap || type == SamplerType.AnisotropicRepeat) ? 16u : 0u,
+			world && quality.Filter == TextureFilterMode.Anisotropic ? (uint)quality.MaxAnisotropy : 0u,
 			0,
-			10,
+			world && !quality.Mipmaps ? 0u : 10u,
 			0,
 			SamplerBorderColor.TransparentBlack
 		);

@@ -13,6 +13,7 @@ vertex {
         vec3 g_vLightColor;
         vec3 g_vCameraPos;
         float g_flTime;
+        float g_flViewDistanceScale;
     } g_oUbo;
 
     layout(location = 0) out VS_OUT {
@@ -61,6 +62,7 @@ fragment {
         vec3 g_vLightColor;
         vec3 g_vCameraPos;
         float g_flTime;
+        float g_flViewDistanceScale;
     } g_oUbo;
 
     layout( set = 1, binding = 0 ) uniform texture2D Color0;
@@ -141,7 +143,9 @@ fragment {
         fragColor = vec4(vOutColor, vTextureSample.a);
 
         // Calculate fog using view space depth
-        float viewSpaceDepth = length(vs_out.vWorldPosition);
+        // g_flViewDistanceScale stretches the fog distance (graphics settings); 0 from older callers means 1.
+        float viewDistanceScale = g_oUbo.g_flViewDistanceScale > 0.0 ? g_oUbo.g_flViewDistanceScale : 1.0;
+        float viewSpaceDepth = length(vs_out.vWorldPosition) / viewDistanceScale;
         float fogFactor = exp(viewSpaceDepth * 0.01) * 0.025;
         fogFactor = clamp( fogFactor, 0, 1 );
         

@@ -20,6 +20,9 @@ public class Level
 	public OriginalTerrain? OriginalTerrain { get; private set; }
 	/// <summary>Park management simulation (money, clock, staff, research); original levels only for now.</summary>
 	public ParkEconomyRuntime? Park { get; private set; }
+
+	/// <summary>Park name on the gate sign of an imported original level (TrueType sign text demo).</summary>
+	public OriginalGateSign? GateSign { get; private set; }
 	private bool wasMouseDown;
 	private readonly FixedStepClock simulationClock = new();
 	/// <summary>Park visitors (imported original levels only; docs/GUESTS.md).</summary>
@@ -55,6 +58,11 @@ public class Level
 		else
 		{
 			OriginalTerrain = new OriginalTerrain( OriginalPark );
+			try { GateSign = OriginalGateSign.TryCreate( OriginalPark, Global ); }
+			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or KeyNotFoundException )
+			{
+				Log.Warning( $"Gate sign: {exception.Message}" );
+			}
 			var origin = OriginalParkPlacement.GetOrigin( OriginalPark.Heightfield );
 			ParkCameraMode.TargetExtent = Math.Max( origin.X, origin.Y );
 			var save = OriginalPark.Save;

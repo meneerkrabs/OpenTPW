@@ -68,13 +68,20 @@ internal sealed class Advisor : IDisposable
 	/// <summary>Mouth mesh used by the most recent <see cref="Render"/> call.</summary>
 	public string? LastRenderedMouth { get; private set; }
 
-	/// <summary>Pixel rectangle of the advisor viewport for the current screen size.</summary>
-	public static (int X, int Y, int Size) ViewportRectangle()
+	/// <summary>World-target pixel rectangle of the advisor viewport.</summary>
+	public static (int X, int Y, int Size) ViewportRectangle() => ViewportRectangle(
+		Screen.Size, new Point2( (int)global::Global.Render.MultisampledFramebuffer.Width, (int)global::Global.Render.MultisampledFramebuffer.Height ) );
+
+	internal static (int X, int Y, int Size) ViewportRectangle( Point2 logicalSize, Point2 targetSize )
 	{
-		// [APPROX:ADVISOR-003] Bottom-left square viewport, 1/3 of the short screen side (min 64 px), 16 px margin — evidence needed: original advisor screen placement/size captures per resolution
-		var size = Math.Max( 64, (int)(Math.Min( Screen.Width, Screen.Height ) / 3) );
-		const int margin = 16;
-		return (margin, Math.Max( 0, (int)Screen.Height - size - margin ), size);
+		// [APPROX:ADVISOR-003] Bottom-left square viewport, 1/3 of the short screen side (min 64 logical px), 16 logical px margin — evidence needed: original advisor screen placement/size captures per resolution
+		var scaleX = (float)targetSize.X / Math.Max( 1, logicalSize.X );
+		var scaleY = (float)targetSize.Y / Math.Max( 1, logicalSize.Y );
+		var logicalSide = Math.Max( 64, Math.Min( logicalSize.X, logicalSize.Y ) / 3 );
+		var size = Math.Max( 1, (int)(logicalSide * Math.Min( scaleX, scaleY )) );
+		var marginX = (int)(16 * scaleX);
+		var marginY = (int)(16 * scaleY);
+		return (marginX, Math.Max( 0, targetSize.Y - size - marginY ), size);
 	}
 
 	public Advisor()

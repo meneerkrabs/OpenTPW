@@ -77,6 +77,11 @@ internal static class Game
 			?? Environment.GetEnvironmentVariable( "OPENTPW_LANGUAGE" ) ?? Settings.Default.Language;
 		var languageData = GetOption( args, "--language-data", "a directory with the original CD's language data" )
 			?? Environment.GetEnvironmentVariable( "OPENTPW_LANGUAGE_DATA" ) ?? Settings.Default.LanguageDataPath;
+		// The CD chosen in Game files (or --cd-data) also holds the other shipped languages: without separate
+		// language data, offer those too.
+		if ( string.IsNullOrWhiteSpace( languageData ) && CdLanguageOverlay( args, dataDirectory ) is { } cdLanguages )
+			languageData = cdLanguages;
+		GameLanguage.AvailableOverlay = string.IsNullOrWhiteSpace( languageData ) ? null : languageData;
 		if ( !string.IsNullOrWhiteSpace( language ) || !string.IsNullOrWhiteSpace( languageData ) )
 			GameLanguage.Current = GameLanguage.Resolve( dataDirectory, language, languageData );
 		else
@@ -321,6 +326,22 @@ internal static class Game
 		Log.Trace( $"Done: {manifest.Textures} textures at {manifest.Scale}x. Turn on Enhanced textures in Game Options (or set EnhancedTextures in graphics.json)." );
 		if ( !string.Equals( Path.GetFullPath( packDirectory ), Path.GetFullPath( TexturePack.DefaultPackDirectory() ), StringComparison.Ordinal ) )
 			Log.Warning( $"The game only loads the pack at {TexturePack.DefaultPackDirectory()}; use this one with OPENTPW_TEXTURE_PACK={Path.Combine( packDirectory, TexturePack.TexturesDirectoryName )}." );
+	}
+
+	/// <summary>The --cd-data / OPENTPW_CD_DATA folder when it adds languages to the installation, else null.</summary>
+	private static string? CdLanguageOverlay( string[] args, string dataDirectory )
+	{
+		var cd = GetOption( args, "--cd-data", "the original CD's folder" ) ?? Environment.GetEnvironmentVariable( "OPENTPW_CD_DATA" );
+		if ( string.IsNullOrWhiteSpace( cd ) || !Directory.Exists( cd ) )
+			return null;
+		try
+		{
+			return GameLanguage.FindLanguages( dataDirectory, cd ).Count > GameLanguage.FindLanguages( dataDirectory, null ).Count ? cd : null;
+		}
+		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException )
+		{
+			return null;
+		}
 	}
 
 	private static string? GetOption( string[] args, string name, string description )

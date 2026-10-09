@@ -36,6 +36,17 @@ public sealed class GameLanguage
 	/// <summary>Whether a language has been selected or resolved.</summary>
 	public static bool IsSelected => current != null;
 
+	/// <summary>
+	/// The language data the player has available besides the installation (--language-data or the CD
+	/// chosen in Game files). Kept even when the selected language comes from the installation, so the
+	/// options screen can still offer the other languages.
+	/// </summary>
+	public static string? AvailableOverlay { get; set; }
+
+	/// <summary>Languages the player can choose: the installation's plus those in <see cref="AvailableOverlay"/>.</summary>
+	public static IReadOnlyList<string> Choosable() =>
+		FindLanguages( Current.BaseDataDirectory, Current.OverlayDataDirectory ?? AvailableOverlay );
+
 	/// <summary>Language name, using the shipped capitalization (e.g. "Danish").</summary>
 	public string Name { get; }
 

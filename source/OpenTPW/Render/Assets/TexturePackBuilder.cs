@@ -51,28 +51,40 @@ public sealed record TexturePackBuildOptions
 	public int MinimumSize { get; init; } = 32;
 	/// <summary>Only WADs below this data-relative directory (e.g. <c>levels/jungle</c>); empty for all.</summary>
 	public string Subtree { get; init; } = "";
+	/// <summary>Only interface art (needs an interface upscaler); world textures are left out.</summary>
+	public bool InterfaceOnly { get; init; }
+	/// <summary>Keep the existing pack's textures and add or replace the ones built now.</summary>
+	public bool Merge { get; init; }
 }
 
 /// <summary>
-/// Builds a <see cref="TexturePack"/> from the player's own installation. Each texture is wrap-padded
-/// before upscaling and cropped afterwards, so tiling textures stay seamless. Interface art (pixel art,
-/// <c>ui/</c>), the low-detail <c>stexture</c>/<c>ssharete</c> variants, small textures and textures
-/// with an exact magenta chroma key stay original. The pack is written to a temporary directory and
+/// Builds a <see cref="TexturePack"/> from the player's own installation. Each world texture is wrap-padded
+/// before upscaling and cropped afterwards, so tiling textures stay seamless. Interface art (<c>ui/</c>)
+/// stays original unless an interface upscaler is given (docs/TEXTURE-PACKS.md); it is edge-padded instead,
+/// because UI textures are atlases of separate pieces, not tiles. The low-detail <c>stexture</c>/<c>ssharete</c>
+/// variants, fonts, small textures and world textures with an exact magenta chroma key stay original. The pack is written to a temporary directory and
 /// moved into place only when complete; <c>pack.json</c> is written last.
 /// </summary>
 // [EXT:texture-pack] Builder for the optional local upscaled texture pack; original files are only read.
 public static class TexturePackBuilder
 {
-	public enum Skip { None, Interface, LowDetail, Small, ChromaKey, Unreadable }
+	public enum Skip { None, Interface, LowDetail, Small, ChromaKey, Unreadable, NotSelected }
+
+	/// <summary>Interface art an interface upscaler may enlarge: <c>ui/</c> textures except the low-detail variants and fonts.</summary>
+	public static bool IsUpscalableInterface( string gamePath )
+	{
+		var segments = gamePath.Replace( '\\', '/' ).TrimStart( '/' ).ToLowerInvariant().Split( '/' );
+		return segments[0] == "ui" && !segments.Contains( "stexture" ) && !segments.Contains( "fonts" );
+	}
 
 	/// <summary>Skip reasons that follow from the path alone, so those textures are never decoded.</summary>
 	public static Skip ClassifyPath( string gamePath )
 	{
 		var segments = gamePath.Replace( '\\', '/' ).TrimStart( '/' ).ToLowerInvariant().Split( '/' );
-		if ( segments[0] == "ui" || segments.Contains( "fonts" ) )
-			return Skip.Interface;
 		if ( segments.Contains( "stexture" ) || segments.Contains( "ssharete" ) )
 			return Skip.LowDetail;
+		if ( segments[0] == "ui" || segments.Contains( "fonts" ) )
+			return Skip.Interface;
 		return Skip.None;
 	}
 
@@ -103,6 +115,24 @@ public static class TexturePackBuilder
 			for ( var x = 0; x < paddedWidth; x++ )
 			{
 				var sourceX = ((x - padding) % width + width) % width;
+				Buffer.BlockCopy( rgba, (sourceY * width + sourceX) * 4, result, (y * paddedWidth + x) * 4, 4 );
+			}
+		}
+		return result;
+	}
+
+	/// <summary>Surrounds an RGBA image with <paramref name="padding"/> copies of its edge pixels.</summary>
+	public static byte[] ClampPad( byte[] rgba, int width, int height, int padding )
+	{
+		var paddedWidth = width + 2 * padding;
+		var paddedHeight = height + 2 * padding;
+		var result = new byte[paddedWidth * paddedHeight * 4];
+		for ( var y = 0; y < paddedHeight; y++ )
+		{
+			var sourceY = Math.Clamp( y - padding, 0, height - 1 );
+			for ( var x = 0; x < paddedWidth; x++ )
+			{
+				var sourceX = Math.Clamp( x - padding, 0, width - 1 );
 				Buffer.BlockCopy( rgba, (sourceY * width + sourceX) * 4, result, (y * paddedWidth + x) * 4, 4 );
 			}
 		}
@@ -155,24 +185,37 @@ public static class TexturePackBuilder
 	}
 
 	/// <summary>Builds the pack at <paramref name="packDirectory"/>, replacing an existing one only on success.</summary>
+	/// <param name="interfaceUpscaler">Upscaler for interface art (same scale); null keeps interface art original.</param>
 	public static TexturePackManifest Build( IEnumerable<(string GamePath, Func<TextureData> Load)> textures, string packDirectory,
-		IImageUpscaler upscaler, TexturePackBuildOptions options, Action<string> log )
+		IImageUpscaler upscaler, TexturePackBuildOptions options, Action<string> log, IImageUpscaler? interfaceUpscaler = null )
 	{
+		if ( interfaceUpscaler != null && interfaceUpscaler.Scale != upscaler.Scale )
+			throw new ArgumentException( $"The interface upscaler's scale ({interfaceUpscaler.Scale}) must match the world upscaler's ({upscaler.Scale})." );
+		if ( options.InterfaceOnly && interfaceUpscaler == null )
+			throw new ArgumentException( "An interface-only texture pack build needs an interface upscaler." );
 		var work = Path.Combine( Path.GetTempPath(), $"opentpw-texture-pack-{Guid.NewGuid():N}" );
 		var input = Path.Combine( work, "in" );
 		var output = Path.Combine( work, "out" );
-		System.IO.Directory.CreateDirectory( input );
-		System.IO.Directory.CreateDirectory( output );
+		var interfaceInput = Path.Combine( work, "ui-in" );
+		var interfaceOutput = Path.Combine( work, "ui-out" );
+		foreach ( var directory in new[] { input, output, interfaceInput, interfaceOutput } )
+			System.IO.Directory.CreateDirectory( directory );
 		var parent = Path.GetDirectoryName( Path.GetFullPath( packDirectory ) )!;
 		System.IO.Directory.CreateDirectory( parent );
 		var staging = Path.Combine( parent, $".{Path.GetFileName( packDirectory )}.building-{Guid.NewGuid():N}" );
 		try
 		{
-			var queued = new List<(string Flat, string GamePath, int Width, int Height, int Padding)>();
+			var queued = new List<(string Flat, string GamePath, int Width, int Height, int Padding, bool Interface)>();
 			var skipped = new Dictionary<Skip, int>();
 			foreach ( var (gamePath, load) in textures )
 			{
-				if ( ClassifyPath( gamePath ) is var byPath and not Skip.None )
+				var interfaceArt = interfaceUpscaler != null && IsUpscalableInterface( gamePath );
+				if ( options.InterfaceOnly && !interfaceArt )
+				{
+					skipped[Skip.NotSelected] = skipped.GetValueOrDefault( Skip.NotSelected ) + 1;
+					continue;
+				}
+				if ( !interfaceArt && ClassifyPath( gamePath ) is var byPath and not Skip.None )
 				{
 					skipped[byPath] = skipped.GetValueOrDefault( byPath ) + 1;
 					continue;
@@ -195,7 +238,9 @@ public static class TexturePackBuilder
 					skipped[Skip.Unreadable] = skipped.GetValueOrDefault( Skip.Unreadable ) + 1;
 					continue;
 				}
-				var skip = Classify( gamePath, texture, options.MinimumSize );
+				// Interface textures carry real alpha after decoding, so the chroma-key rule is for world textures only.
+				var skip = interfaceArt ? (Math.Min( texture.Width, texture.Height ) < options.MinimumSize ? Skip.Small : Skip.None)
+					: Classify( gamePath, texture, options.MinimumSize );
 				if ( skip != Skip.None )
 				{
 					skipped[skip] = skipped.GetValueOrDefault( skip ) + 1;
@@ -203,19 +248,39 @@ public static class TexturePackBuilder
 				}
 				var padding = Padding( texture.Width, texture.Height );
 				var flat = $"t{queued.Count:D6}.png";
-				File.WriteAllBytes( Path.Combine( input, flat ),
-					PngImage.EncodeRgba( texture.Width + 2 * padding, texture.Height + 2 * padding, WrapPad( texture.Data, texture.Width, texture.Height, padding ) ) );
-				queued.Add( (flat, gamePath, texture.Width, texture.Height, padding) );
+				var padded = interfaceArt ? ClampPad( texture.Data, texture.Width, texture.Height, padding ) : WrapPad( texture.Data, texture.Width, texture.Height, padding );
+				File.WriteAllBytes( Path.Combine( interfaceArt ? interfaceInput : input, flat ), PngImage.EncodeRgba( texture.Width + 2 * padding, texture.Height + 2 * padding, padded ) );
+				queued.Add( (flat, gamePath, texture.Width, texture.Height, padding, interfaceArt) );
 			}
-			log( $"Upscaling {queued.Count} textures {upscaler.Scale}x with {upscaler.Name} ({upscaler.Model}); kept original: " +
+			var interfaceCount = queued.Count( entry => entry.Interface );
+			log( $"Upscaling {queued.Count - interfaceCount} textures {upscaler.Scale}x with {upscaler.Name} ({upscaler.Model})" +
+				(interfaceUpscaler != null ? $" and {interfaceCount} interface textures with {interfaceUpscaler.Model}" : "") + "; kept original: " +
 				string.Join( ", ", skipped.OrderBy( entry => entry.Key ).Select( entry => $"{entry.Value} {entry.Key}" ) ) + "." );
-			upscaler.Upscale( input, output );
+			if ( queued.Count > interfaceCount )
+				upscaler.Upscale( input, output );
+			if ( interfaceCount > 0 )
+				interfaceUpscaler!.Upscale( interfaceInput, interfaceOutput );
 
 			var texturesRoot = Path.Combine( staging, TexturePack.TexturesDirectoryName );
-			var written = 0;
-			foreach ( var (flat, gamePath, width, height, padding) in queued )
+			var kept = 0;
+			if ( options.Merge && TexturePack.Open( packDirectory, new List<string>() ) is { } existing )
 			{
-				var upscaledPath = Path.Combine( output, flat );
+				if ( existing.Scale != upscaler.Scale )
+					throw new InvalidOperationException( $"The existing pack is {existing.Scale}x, this build {upscaler.Scale}x; merge needs the same scale." );
+				var existingRoot = Path.Combine( packDirectory, TexturePack.TexturesDirectoryName );
+				foreach ( var file in System.IO.Directory.EnumerateFiles( existingRoot, "*", SearchOption.AllDirectories ) )
+				{
+					var target = Path.Combine( texturesRoot, Path.GetRelativePath( existingRoot, file ) );
+					System.IO.Directory.CreateDirectory( Path.GetDirectoryName( target )! );
+					File.Copy( file, target );
+					kept++;
+				}
+				log( $"Kept {kept} textures of the existing pack." );
+			}
+			var written = 0;
+			foreach ( var (flat, gamePath, width, height, padding, interfaceArt) in queued )
+			{
+				var upscaledPath = Path.Combine( interfaceArt ? interfaceOutput : output, flat );
 				if ( !File.Exists( upscaledPath ) )
 					throw new InvalidOperationException( $"{upscaler.Name} produced no output for {gamePath}; the existing pack is kept." );
 				var image = ImageResult.FromMemory( File.ReadAllBytes( upscaledPath ), ColorComponents.RedGreenBlueAlpha );
@@ -225,6 +290,8 @@ public static class TexturePackBuilder
 				var cropped = Crop( image.Data, image.Width, padding * scale, padding * scale, width * scale, height * scale );
 				var target = Path.Combine( texturesRoot, TexturePack.RelativeFileName( gamePath ) );
 				System.IO.Directory.CreateDirectory( Path.GetDirectoryName( target )! );
+				if ( options.Merge && kept > 0 && File.Exists( target ) )
+					kept--;
 				File.WriteAllBytes( target, PngImage.EncodeRgba( width * scale, height * scale, cropped ) );
 				written++;
 			}
@@ -234,7 +301,9 @@ public static class TexturePackBuilder
 				Scale = upscaler.Scale,
 				Upscaler = upscaler.Name,
 				Model = upscaler.Model,
-				Textures = written,
+				InterfaceModel = interfaceUpscaler?.Model ?? "",
+				Textures = written + kept,
+				InterfaceTextures = interfaceCount,
 				SkippedSmall = skipped.GetValueOrDefault( Skip.Small ),
 				SkippedLowDetail = skipped.GetValueOrDefault( Skip.LowDetail ),
 				SkippedInterface = skipped.GetValueOrDefault( Skip.Interface ),
@@ -266,7 +335,7 @@ public static class TexturePackBuilder
 			}
 			else
 				System.IO.Directory.Move( staging, packDirectory );
-			log( $"Texture pack written to {packDirectory}: {written} textures." );
+			log( $"Texture pack written to {packDirectory}: {written} textures built{(kept > 0 ? $", {kept} kept" : "")}." );
 			return manifest;
 		}
 		finally

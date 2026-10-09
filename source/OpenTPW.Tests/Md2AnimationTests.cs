@@ -120,19 +120,44 @@ public class Md2AnimationTests
 		var track = Read( CreateAnimation() ).Clip!.Tracks[0];
 		// Bézier P0=C0=C1=0, P1=8: s³·8 at s = 0.5 is 1 (linear interpolation would give 4).
 		Assert.AreEqual( new NVector3( 1, 0, 0 ), track.SampleTranslation( 50 ) );
-		Assert.AreEqual( NVector3.Zero, track.SampleTranslation( -5 ) );
 		Assert.AreEqual( new NVector3( 8, 0, 0 ), track.SampleTranslation( 500 ) );
 		Assert.AreEqual( new NVector3( 2, 1, 1 ), track.SampleScale( 50 ) );
+		Assert.ThrowsException<ArgumentOutOfRangeException>( () => track.SampleTranslation( -5 ) );
 
 		// Ease curve: s = 0.5 lies between samples 4/9 (77) and 5/9 (114).
 		var eased = (77 + 0.5f * (114 - 77)) / 255f;
 		Assert.AreEqual( eased, ModelAnimationTrack.Ease( EaseIn, 0.5f ), 1e-6 );
 		Assert.AreEqual( 0, ModelAnimationTrack.Ease( EaseIn, 0 ) );
-		Assert.AreEqual( 1, ModelAnimationTrack.Ease( EaseIn, 1 ) );
+		// The original scales by 8.999995 (TOC literal 0x410FFFFB), so fraction 1 stays in the last segment just short of 1.
+		Assert.AreEqual( 0x410FFFFBu, BitConverter.SingleToUInt32Bits( ModelAnimationTrack.EaseScale ) );
+		var local = 8.999995f - 8;
+		Assert.AreEqual( MathF.FusedMultiplyAdd( 1 - local, 224 / 255f, local ), ModelAnimationTrack.Ease( EaseIn, 1 ) );
+		Assert.AreNotEqual( 1f, ModelAnimationTrack.Ease( EaseIn, 1 ) );
+		Assert.AreEqual( 1, ModelAnimationTrack.Ease( EaseIn, 1 ), 1e-5 );
 		AreClose( new Quaternion( 0, MathF.Sin( eased * MathF.PI / 2 ), 0, MathF.Cos( eased * MathF.PI / 2 ) ), track.SampleRotation( 25 )!.Value );
 
 		// No hemisphere flip: 180° -> 450° continues forward through 315° instead of going back.
 		AreClose( new Quaternion( 0, MathF.Sin( 315 * MathF.PI / 360 ), 0, MathF.Cos( 315 * MathF.PI / 360 ) ), track.SampleRotation( 75 )!.Value );
+	}
+
+	[TestMethod]
+	public void ChannelsBeforeTheirFirstKeyAreUnchangedAndTheLastRotationHolds()
+	{
+		var data = CreateAnimation();
+		W16( data, RotationKeys, 10 );
+		W32( data, PositionTimes, 10 );
+		var track = Read( data ).Clip!.Tracks[0];
+		Assert.IsNull( track.SampleRotation( 9.9f ) );
+		Assert.IsNull( track.SampleTranslation( 9.5f ) );
+		AreClose( Quaternion.Identity, track.SampleRotation( 10 )!.Value );
+		Assert.AreEqual( new NVector3( 1, 1, 1 ), track.SampleScale( 0 ) );
+		AreClose( new Quaternion( 0, -MathF.Sqrt( 0.5f ), 0, -MathF.Sqrt( 0.5f ) ), track.SampleRotation( 150 )!.Value );
+
+		// The player keeps the stored node component for an unchanged channel.
+		var model = Read( Md2ModelFileTests.CreateGeometry() );
+		var player = new ModelAnimationPlayer( model, Read( data ).Clip!, 30 );
+		player.SetTick( 5 );
+		Assert.AreEqual( 0, NVector3.Distance( model.Nodes[1].Transform.Translation, player.LocalTransform( 1 ).Translation ), 1e-6 );
 	}
 
 	[TestMethod]

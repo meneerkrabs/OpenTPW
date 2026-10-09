@@ -54,8 +54,24 @@ class VertexPackingTests(unittest.TestCase):
         self.assertEqual(models.unpack_vertex_key(0x200 | (0x1ff << 10) | (0x3ff << 20)), (-512, 511, -1))
         self.assertEqual(models.vertex_key_value((2, -1, 0), (1.0, 2.0, 3.0), (0.5, 0.25, 1.0)), (2.0, 1.75, 3.0))
         self.assertEqual(models.lerp((0, 0, 0), (2, 4, 6), 0.5), (1.0, 2.0, 3.0))
-        self.assertEqual(models.group0_translation((1, 1, 1), (1, 1, 1), 0.3, (0.5, 0.5, 0.5)),
-                         (0.25, 0.25, 0.25))
+        self.assertEqual(models.group0_vectors((1, 1, 1), (1, 1, 1), (2, 3, 4), (4, 3, 2), 0.5, (0.5, 0.5, 0.5)),
+                         ((0.25, 0.25, 0.25), (3.75, 3.75, 3.75)))
+
+    def test_vertex_cursor_stays_on_the_earlier_segment_at_a_key(self):
+        self.assertEqual(models.vertex_cursor([0, 4, 10], 2), (0, 0.5))
+        self.assertEqual(models.vertex_cursor([0, 4, 10], 4), (0, 1.0))
+        self.assertEqual(models.vertex_cursor([0, 4, 10], 7), (1, 0.5))
+        self.assertEqual(models.vertex_cursor([0, 4, 10], 7, cursor=1), (1, 0.5))
+        self.assertEqual(models.vertex_cursor([2, 4], 1), (0, -0.5))  # before the first key: extrapolates
+        with self.assertRaises(ValueError):
+            models.vertex_cursor([0, 4, 10], 10.5)
+
+    def test_texture_frames_and_toggles_scan_backwards(self):
+        keys = [(2, 3), (5, 0), (5, 1)]
+        self.assertEqual([models.texture_frame_at(keys, t) for t in (1.9, 2, 4.99, 5)], [None, 3, 3, 1])
+        self.assertEqual([models.toggle_state([0, 3, -7], t) for t in (0, 2.9, 3, 7)], [True, True, False, True])
+        self.assertIsNone(models.toggle_state([2, 3], 1))
+        self.assertIsNone(models.toggle_state([-32768], 40000))
 
 
 class LoaderTests(unittest.TestCase):

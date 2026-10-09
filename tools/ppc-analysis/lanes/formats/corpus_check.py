@@ -127,6 +127,35 @@ def node_records(data: bytes) -> dict[int, int]:
     return nodes
 
 
+def group0_brackets(data: bytes, block: int, group_table: int, groups: int, static) -> collections.Counter:
+    """Keys of the other groups that lie between group 0's two vertices at the same tick."""
+    offset = struct.unpack_from('<3f', data, block + 20)
+    scale = struct.unpack_from('<3f', data, block + 32)
+
+    def group(g):
+        entry = group_table + 20 * g
+        keys, vertices = u16(data, entry), u16(data, entry + 2)
+        ticks = [u16(data, u32(data, entry + 8) + 2 * k) for k in range(keys)]
+        packed = u32(data, entry + 12)
+        return ticks, vertices, lambda k, v: models.vertex_key_value(
+            models.unpack_vertex_key(u32(data, packed + 4 * (k * vertices + v))), offset, scale)
+
+    counts = collections.Counter()
+    ticks0, _, key0 = group(0)
+    for g in range(1, groups):
+        ticks, vertices, key = group(g)
+        kind = 'static' if g == static else 'animated'
+        for k, tick in enumerate(ticks):
+            if tick not in ticks0:
+                continue
+            low, high = key0(ticks0.index(tick), 0), key0(ticks0.index(tick), 1)
+            for v in range(vertices):
+                value = key(k, v)
+                inside = all(low[a] <= value[a] <= high[a] for a in range(3))
+                counts[f'group0_brackets_{kind}_keys' if inside else f'group0_misses_{kind}_keys'] += 1
+    return counts
+
+
 def check_md2(root: Path) -> dict:
     members = []
     for wad in sorted(root.rglob('*')):
@@ -200,6 +229,12 @@ def check_md2(root: Path) -> dict:
                           for g in range(groups)]
             if max(last_ticks) == duration:
                 checks['quantized_last_tick_equals_duration'] += 1
+            static = 1 if header[0] & 2 else None
+            clip_end = u32(data, trailer + 8) - u32(data, trailer + 4)
+            # 0xa4a58 has no upper bound on its cursor: every animated group must reach the clip end.
+            checks['quantized_animated_groups_reach_clip_end' if all(
+                last_ticks[g] >= clip_end for g in range(groups) if g != static) else 'quantized_group_ends_early'] += 1
+            checks.update(group0_brackets(data, block, group_table, groups, static))
             node = u16(data, record + 20)
             if base and node in nodes:
                 positions = u16(base[1], nodes[node] + 88)

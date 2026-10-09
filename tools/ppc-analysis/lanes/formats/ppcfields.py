@@ -70,6 +70,16 @@ def branch_target(w: int, offset: int, link: bool = True) -> int:
     return displacement if w & 2 else offset + displacement
 
 
+def branch_conditional(w: int, offset: int) -> tuple[int, int, int]:
+    """bc without link/absolute: BO (12 = branch if CR bit set, 4 = if clear), BI and target."""
+    if w >> 26 != 16 or w & 3:
+        raise WitnessError(f'not a relative conditional branch at {offset:#x}')
+    displacement = w & 0xfffc
+    if displacement & 0x8000:
+        displacement -= 0x10000
+    return w >> 21 & 31, w >> 16 & 31, offset + displacement
+
+
 def rotate_mask(mb: int, me: int) -> int:
     """32-bit mask for IBM bit numbers mb..me (wrapping when mb > me)."""
     bits = 0

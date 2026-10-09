@@ -21,8 +21,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from ppcfields import (WitnessError, a_form, branch_target, compare_immediate, cstring, d_form,
-                       require, rotate, word, x_form)
+from ppcfields import (WitnessError, a_form, branch_conditional, branch_target, compare_immediate, cstring,
+                       d_form, require, rotate, word, x_form)
 import pef  # noqa: E402  (ppcfields adds the shared reader directory)
 
 IDENTITIES = {
@@ -30,7 +30,8 @@ IDENTITIES = {
     'engine_shared.data': 'c549123f647dcf33c3e2c3d515bffe2cfcb19d11680f743f02ca42bb09dbd73b',
     'ltms_shared.data': '2b0f7ac92c1f8b67761d271dd5832fca1bd19a8dd8d494b7b89b6ffa693e6ee8',
 }
-LIS, ADDI, ADDIS, LWZ, LFS, LHZ = 15, 14, 15, 32, 48, 40
+LIS, ADDI, ADDIS, LWZ, LFS, LHZ, LHA, ORI, ORIS = 15, 14, 15, 32, 48, 40, 42, 24, 25
+BT, BF, CR_LT, CR_GT, CR_EQ = 12, 4, 0, 1, 2
 RLWIMI, RLWINM = 20, 21
 SRAWI = 824
 
@@ -111,6 +112,27 @@ def d(image: Image, offset: int, expected: tuple, context: str):
 
 def rot(image: Image, offset: int, expected: tuple, context: str):
     return require(rotate(image.w(offset)), expected, context)
+
+
+def bc(image: Image, offset: int, expected: tuple, context: str):
+    """Conditional branch: (BO, BI, target)."""
+    return require(branch_conditional(image.w(offset), offset), expected, context)
+
+
+def fp(image: Image, offset: int, expected: tuple, context: str):
+    """Single-precision A-form (opcode 59): (extended opcode, frt, fra, frb, frc)."""
+    op, frt, fra, frb, frc, xo = a_form(image.w(offset))
+    require(op, 59, f'single-precision arithmetic at {offset:#x}')
+    return require((xo, frt, fra, frb, frc), expected, context)
+
+
+def xop(image: Image, offset: int, expected: tuple, context: str):
+    """Opcode-31/63 X-form: (opcode, extended opcode, rt, ra, rb)."""
+    op, rt, ra, rb, xo, _ = x_form(image.w(offset))
+    return require((op, xo, rt, ra, rb), expected, context)
+
+
+FADDS, FSUBS, FMULS, FMADDS = 21, 20, 25, 29
 
 
 def cmpli(image: Image, offset: int, expected: tuple, context: str):
@@ -222,25 +244,64 @@ def md2_runtime(app: Image) -> dict:
     fused = a_form(app.w(0xa446c))
     require((fused[0], fused[5], fused[2], fused[4], fused[3]), (59, 29, 2, 5, 6), 'q * scale + offset')
     require(app.toc_float(0xa438c, 0), 1.0, 'interpolation complement')
-    # 0xa4a58 group dispatcher.
-    require(app.call(0xa4bc8), 0xa468c, 'group 0 translation helper')
-    d(app, 0xa4ba0, (ADDI, 4, 26, 120), 'group 0 target at instance+120')
-    rot(app, 0xa4bd8, (RLWINM, 0, 0, 0, 30, 30, 1), 'header bit 2: static second group')
+    xop(app, 0xa436c, (31, 235, 7, 0, 11), 'key row = cursor * vertices (key-major packed words)')
+    fp(app, 0xa4484, (FMULS, 2, 2, 0, 1), 'next value * fraction')
+    fp(app, 0xa44ac, (FMADDS, 2, 3, 2, 0), 'current * (1 - fraction) + product')
+    # 0xa4a58 group dispatcher; r3 is the node state (0xa5054), not the instance.
+    xop(app, 0xa5054, (31, 444, 27, 3, 27), 'dispatcher argument r3 = node state')
+    rot(app, 0xa5060, (RLWINM, 0, 7, 0, 29, 29, 0), 'add mode = instance+48 bit 0x4')
+    d(app, 0xa5058, (LWZ, 4, 28, 40), 'vertex block at record+40')
+    rot(app, 0xa4ac8, (RLWINM, 0, 0, 0, 8, 8, 1), 'node-state flag 0x00800000')
+    bc(app, 0xa4ad0, (BF, CR_EQ, 0xa4de8), 'flag set: keep cursors and skip the static group')
+    d(app, 0xa4af0, (36, 4, 30, 16), 'flag clear: reset group cursors (stw 0 to group+16)')
+    xop(app, 0xa4b74, (63, 32, 0, 0, 31), 'compare ticks[cursor + 1] with time')
+    bc(app, 0xa4b78, (BT, CR_LT, 0xa4b48), 'advance the cursor while ticks[cursor + 1] < time')
+    d(app, 0xa4b4c, (ADDI, 3, 3, 1), 'cursor + 1')
+    require(app.call(0xa4bc8), 0xa468c, 'group 0 bounds helper')
+    d(app, 0xa4ba0, (ADDI, 4, 26, 120), 'group 0 target at node state+120')
+    rot(app, 0xa4bd8, (RLWINM, 0, 0, 0, 30, 30, 1), 'header bit 0x2: static second group')
+    d(app, 0xa4ddc, (ORIS, 0, 0, 128), 'set-mode pass sets node-state flag 0x00800000')
     require(app.call(0xa4f2c), 0xa4344, 'remaining groups sampler')
+    # 0xa468c: vertex 0 -> lerp - scale - 0.25 at +0..+8, vertex 1 -> scale + lerp + 0.25 at +12..+20.
     require(app.toc_float(0xa47e0, 6), 0.25, 'group 0 quarter-unit adjustment')
+    fp(app, 0xa47fc, (FSUBS, 0, 5, 0, 0), 'lower: lerp - scale')
+    fp(app, 0xa4800, (FSUBS, 0, 0, 6, 0), 'lower: - 0.25')
+    d(app, 0xa4888, (LHA, 9, 3, 4), 'vertex 1 word of the current key')
+    d(app, 0xa4890, (LWZ, 0, 3, 4), 'vertex 1 word of the current key')
+    d(app, 0xa48a8, (LHA, 0, 5, 4), 'vertex 1 word of the next key')
+    require(app.toc_float(0xa499c, 5), 0.25, 'upper quarter-unit adjustment')
+    fp(app, 0xa49b8, (FADDS, 2, 8, 4, 0), 'upper: scale + lerp')
+    fp(app, 0xa49bc, (FADDS, 2, 5, 2, 0), 'upper: + 0.25')
+    d(app, 0xa49c4, (52, 2, 4, 12), 'upper stored at target+12 (node state+132)')
     # 0xa4f68 record sampler dispatch.
-    rot(app, 0xa4fb4, (RLWINM, 0, 0, 0, 14, 14, 1), 'visibility list flag 0x20000')
+    d(app, 0xa4f94, (LFS, 1, 3, 32), 'player time')
+    d(app, 0xa4f98, (LFS, 0, 3, 28), 'player duration')
+    bc(app, 0xa4fa0, (BF, CR_GT, 0xa4fac), 'records are skipped when time > duration')
+    rot(app, 0xa4fb4, (RLWINM, 0, 0, 0, 14, 14, 1), 'node-flag toggle list flag 0x20000')
+    d(app, 0xa4fcc, (ADDI, 6, 4, -2), 'toggle scan starts at the last entry')
+    xop(app, 0xa4fec, (31, 104, 4, 4, 0), 'toggle magnitude: neg')
+    xop(app, 0xa4ff4, (31, 32, 0, 3, 0), 'unsigned compare of tick with magnitude')
+    bc(app, 0xa4ff8, (BT, CR_LT, 0xa5004), 'skip entries with tick < magnitude')
+    bc(app, 0xa501c, (BT, CR_GT, 0xa5030), 'positive entry clears')
+    d(app, 0xa5024, (ORI, 0, 0, 16), 'zero/negative entry sets node-state bit 0x10')
+    rot(app, 0xa5034, (RLWINM, 0, 0, 0, 28, 26, 0), 'positive entry clears node-state bit 0x10')
     rot(app, 0xa5040, (RLWINM, 3, 0, 0, 19, 19, 1), 'vertex flag 0x1000')
     rot(app, 0xa5048, (RLWINM, 3, 0, 0, 17, 17, 1), 'vertex layout flag 0x4000')
     require(app.call(0xa5068), 0xa4a58, 'quantized vertex animation')
-    # 0xa56f8 clip update: texture-frame tracks need trailer word 0 bit 2 and global option bit 8.
+    # 0xa56f8 clip update: texture-frame tracks need trailer word 0 bit 0x2 set and global option bit 0x8 clear.
     d(app, 0xa5760, (LWZ, 0, 29, 0), 'trailer word 0')
-    rot(app, 0xa5764, (RLWINM, 0, 0, 0, 30, 30, 1), 'trailer word 0 bit 2')
+    rot(app, 0xa5764, (RLWINM, 0, 0, 0, 30, 30, 1), 'trailer word 0 bit 0x2')
+    bc(app, 0xa5768, (BT, CR_EQ, 0xa578c), 'skip when trailer bit 0x2 is clear')
     d(app, 0xa5770, (LWZ, 0, 3, 16396), 'global option word')
-    rot(app, 0xa5774, (RLWINM, 0, 0, 0, 28, 28, 1), 'global option bit 8')
+    rot(app, 0xa5774, (RLWINM, 0, 0, 0, 28, 28, 1), 'global option bit 0x8')
+    bc(app, 0xa5778, (BF, CR_EQ, 0xa578c), 'skip when global option bit 0x8 is set')
     require(app.call(0xa5788), 0xa4160, 'texture-frame track sampler')
     d(app, 0xa4184, (LWZ, 9, 31, 48), 'texture-frame tracks at trailer+48')
     d(app, 0xa4188, (LHZ, 8, 31, 24), 'texture-frame track count at trailer+24')
+    d(app, 0xa41a8, (ADDI, 4, 4, -4), 'scan starts at the last key')
+    xop(app, 0xa41c4, (31, 32, 0, 3, 0), 'compare tick with key tick')
+    bc(app, 0xa41c8, (BT, CR_LT, 0xa41f0), 'tick < key tick: step back one key')
+    d(app, 0xa41f0, (ADDI, 4, 4, -4), 'previous key')
     d(app, 0xa41e4, (24, 0, 0, 1024), 'texture slot dirty bit 0x400')
     rot(app, 0xa507c, (RLWINM, 0, 0, 0, 28, 28, 1), 'rotation flag 0x8')
     d(app, 0xa509c, (ADDI, 6, 0, 2), 'rotation key kind')
@@ -263,7 +324,8 @@ def md2_runtime(app: Image) -> dict:
     require(app.call(0xa4074), 0x1c3fbc, 'double to unsigned conversion')
     # Rotation pair and interpolation mode.
     d(app, 0xa8228, (LWZ, 3, 5, 16412), 'rotation key count global')
-    rot(app, 0xa8248, (RLWINM, 0, 0, 0, 30, 30, 1), 'global option bit 2: table slerp')
+    rot(app, 0xa8248, (RLWINM, 0, 0, 0, 30, 30, 1), 'global option bit 0x2')
+    bc(app, 0xa824c, (BT, CR_EQ, 0xa82c4), 'option bit 0x2 clear: table slerp; set: linear blend')
     require(app.call(0xa82e0), 0xa7fc8, 'slerp helper')
     require(app.call(0xa82ec), 0xa7ef8, 'quaternion to matrix with 2/|q|^2')
     slerp_threshold = app.toc_float(0xa8030, 2)
@@ -286,6 +348,10 @@ def md2_runtime(app: Image) -> dict:
     return {'vertex_sampler': 0xa4344, 'vertex_group_dispatch': 0xa4a58, 'record_sampler': 0xa4f68,
             'key_search': 0xa3ff0, 'key_strides': strides, 'easing_scale': easing_scale,
             'easing_sample_divisor': sample_scale, 'slerp_threshold': slerp_threshold,
+            'group0_vectors': {'lower': 'lerp(vertex 0) - scale - 0.25 -> node state +120',
+                               'upper': 'scale + lerp(vertex 1) + 0.25 -> node state +132'},
+            'texture_frames_require': 'trailer word 0 & 0x2 set and global option & 0x8 clear',
+            'rotation_mode': 'global option & 0x2 clear: table slerp 0xa7fc8; set: linear blend',
             'animation_ticks_per_second': ticks, 'milliseconds_per_second': milliseconds,
             'milliseconds_per_tick': per_tick, 'loader_call_sites': sites, 'loader_flags_used': flags}
 

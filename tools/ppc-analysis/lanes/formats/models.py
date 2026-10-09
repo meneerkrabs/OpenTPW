@@ -70,10 +70,55 @@ def lerp(a, b, t: float):
     return tuple(a[i] * (1.0 - t) + b[i] * t for i in range(3))
 
 
-def group0_translation(current, following, t: float, scale) -> tuple[float, float, float]:
-    """SimThemePark 0xa468c: first group's first vertex, minus one scale step and 0.25 per axis."""
-    value = lerp(current, following, t)
-    return tuple(value[i] - scale[i] - 0.25 for i in range(3))
+def group0_vectors(current0, following0, current1, following1, t: float, scale):
+    """SimThemePark 0xa468c: group 0's two vertices give a lower and an upper vector.
+
+    lower = lerp(vertex 0) - scale - 0.25 (node state +120), upper = scale +
+    lerp(vertex 1) + 0.25 (node state +132). In the corpus vertex 0 <= vertex 1
+    and every other group's key lies between them, i.e. a padded bounding box.
+    """
+    low, high = lerp(current0, following0, t), lerp(current1, following1, t)
+    return (tuple(low[i] - scale[i] - 0.25 for i in range(3)),
+            tuple(scale[i] + high[i] + 0.25 for i in range(3)))
+
+
+def vertex_cursor(ticks: list[int], time: float, cursor: int = 0):
+    """SimThemePark 0xa4a58: advance the cursor while ticks[cursor + 1] < time, then the fraction.
+
+    The original keeps the cursor between calls and resets it to 0 only while
+    node-state flag 0x00800000 is clear; there is no upper bound, so a time past
+    the last tick reads beyond the array (ValueError here).
+    """
+    if len(ticks) < 2 or not time <= ticks[-1]:
+        raise ValueError('time outside the vertex-key domain')
+    while ticks[cursor + 1] < time:
+        cursor += 1
+    return cursor, (time - ticks[cursor]) / (ticks[cursor + 1] - ticks[cursor])
+
+
+def texture_frame_at(keys: list[tuple[int, int]], time: float):
+    """SimThemePark 0xa4160: scanning backwards, the first (tick, frame) with tick <= trunc(time); None = unchanged."""
+    tick = max(int(time), 0)
+    for key_tick, frame in reversed(keys):
+        if key_tick <= tick:
+            return frame
+    return None
+
+
+def toggle_state(entries: list[int], time: float):
+    """SimThemePark 0xa4f68 (flag 0x20000): last entry with |value| <= trunc(time); True sets node bit 0x10.
+
+    A positive entry clears the bit (False), zero or negative sets it; None
+    leaves it unchanged. -32768 never matches (its magnitude stays 0xFFFF8000).
+    """
+    tick = max(int(time), 0)
+    for value in reversed(entries):
+        magnitude = -value if value < 0 else value
+        if magnitude == 32768:
+            continue
+        if magnitude <= tick:
+            return value <= 0
+    return None
 
 
 # ------------------------------------------------------------ key sampling

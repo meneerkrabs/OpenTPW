@@ -15,10 +15,13 @@ python3 -m unittest discover -s tools/ppc-analysis/lanes/formats -p 'test_*.py' 
 python3 -I tools/ppc-analysis/lanes/formats/format_witness.py /Users/sander/server/game-assets/mac-feral/bin
 python3 -I tools/ppc-analysis/lanes/formats/corpus_check.py /Users/sander/server/game-assets/theme-park-world/Data
 python3 -I tools/ppc-analysis/lanes/formats/corpus_check.py /Users/sander/server/game-assets/theme-park-world-patch2/Data
+# C# parser (synthetic) and corpus cross-check of the decoders in "Implemented in the parser"
+dotnet test source/OpenTPW.Tests --filter "FullyQualifiedName~Md2"
+OPENTPW_GAME_PATH=/Users/sander/server/game-assets/theme-park-world dotnet test source/OpenTPW.Tests --filter "FullyQualifiedName~Md2"
 ```
 
 - `format_witness.py` refuses any container whose SHA-256 differs from the pins
-  below, then makes about 240 checks of instruction fields, relocated TOC slots, literal
+  below, then makes 284 checks of instruction fields, branch conditions, relocated TOC slots, literal
   constants and label strings at the offsets cited here, and prints interpreted
   JSON (labels, widths, constants, offsets). It never executes code and does not
   print bytes or instruction text. It bypasses `analyze.py` and its heuristic
@@ -104,13 +107,16 @@ Trailer (72 bytes): words 0–2 u32, 12–28 nine u16, 32–68 pointers relocate
 | +52 (word 13) | — | relocated only | zero in corpus |
 
 Texture-frame tracks: the clip update 0xa56f8 calls 0xa4160 only when
-**trailer word 0 bit 2** is set and global option bit 8 is set. 0xa4160 scans
-each track backwards for the last `tick ≤ trunc(time)` and, when the frame
-differs, stores it in that slot's 8-byte runtime entry (array pointed to by
-instance +80) and sets the entry's dirty bit 0x400. Corpus: trailer word 0 bit 2
-is set exactly in the 229 files that have tracks (1,278/1,278 agree); 459
-tracks, 458 index a slot of the paired base model with every frame below that
-slot's frame count (one track has no in-range slot).
+**trailer word 0 bit 0x2** is set (`bt eq` skip at 0xa5768) and global option bit
+0x8 (+16396 of the global block) is **clear** (`bf eq` skip at 0xa5778). 0xa4160
+scans each track from its last key backwards and takes the first key with
+`tick ≤ trunc(time)` (so of two equal ticks the later entry wins; none found →
+slot unchanged); when the frame differs it stores it in that slot's 8-byte
+runtime entry (array pointed to by instance +80) and sets the entry's dirty bit
+0x400. Corpus: trailer word 0 bit 0x2 is set exactly in the 229 files that have
+tracks (1,278/1,278 agree); 459 tracks (4 with a repeated tick), 458 index a
+slot of the paired base model with every frame below that slot's frame count
+(one track has no in-range slot).
 
 Record (64 bytes) pointers relocated by 0x41574: +24 position header, +28
 rotation keys, +32 scale keys, +36 path-parameter block, +44 0x10000 block, +48
@@ -120,15 +126,20 @@ is left untouched.
 
 ### Record sampler (SimThemePark 0xa4f68)
 
-Inputs: player state (float time +32, float duration +28), instance, node state,
-record. If time > duration the record is skipped. Then, in order:
+Inputs: player state (float time +32, float duration +28), instance, node state
+(the record's runtime +60 word), record. If time > the **player's** duration
+(clip duration, not the record's +12) the record is skipped. Then, in order:
 
-- **0x20000 visibility list** (`u16` at +22 entries of signed `i16` at +48):
-  the last entry whose `|value| ≤ trunc(time)` decides; a positive entry
-  **clears** node-state bit 0x10, a zero/negative entry **sets** it. Corpus: 2,536
-  lists, all `|value| ≤` record duration. What bit 0x10 controls is not traced.
-- **0x1000 vertex animation**, only when 0x4000 is clear → 0xa4a58 (below).
-  0x4000 records (30 in corpus) are not handled by this sampler.
+- **0x20000 node-flag toggle list** (`u16` at +22 entries of signed `i16` at
+  +48): scanning from the last entry backwards, the first entry whose
+  `|value| ≤ trunc(time)` (unsigned compare; −32768 never matches) decides; a
+  positive entry **clears** node-state bit 0x10, a zero/negative entry **sets**
+  it; none found → unchanged. Corpus: 2,536 lists, all sorted by magnitude and
+  `|value| ≤` record duration. What bit 0x10 controls is not traced (often read
+  as visibility).
+- **0x1000 vertex animation**, only when 0x4000 is clear → 0xa4a58 (below) with
+  the node state as its object (`mr r3, r27` at 0xa5054) and add mode = instance
+  +48 bit 0x4. 0x4000 records (30 in corpus) are not handled by this sampler.
 - **0x8 rotation** keys (kind 2, stride 20, wrap flag set) → optional easing →
   0xa820c.
 - **0x80 scale** keys (kind 4, stride 16, no wrap) → per-component linear.
@@ -160,10 +171,10 @@ literal at TOC 0x5198), segment `i = trunc(s)`, local `s − i`, linear between
 divided by 255.0. This proves the "(0,0), eight samples, (1,1)" reading and adds
 the 8.999995 scale. Model: `ease`.
 
-**Rotation interpolation** (0xa820c): global option bit 2 (`+16396` of the
-global block at data 0x1577c0) selects table-sine slerp 0xa7fc8 (threshold
-0.001 on `1 ± dot`, no sign flip of the second quaternion); otherwise the
-components are linearly blended. Either result goes through 0xa7ef8, a
+**Rotation interpolation** (0xa820c): with global option bit 0x2 (`+16396` of
+the global block at data 0x1577c0) **clear** it calls table-sine slerp 0xa7fc8
+(threshold 0.001 on `1 ± dot`, no sign flip of the second quaternion); with the
+bit set the components are blended linearly, `(1 − t)·a + (t·b)`. Either result goes through 0xa7ef8, a
 quaternion-to-matrix conversion using `s = 2/|q|²`, which normalises the blended
 quaternion implicitly. The runtime value of the option bit is not established.
 
@@ -205,24 +216,42 @@ cursor`.
 - Packed word (engine 0x41cac swap + application extraction): signed 10-bit
   X/Y/Z in little-endian bits 0–9/10–19/20–29; bits 30–31 discarded.
   `value = q × scale + offset` per axis (0xa446c `fmadds`).
-- Dispatcher 0xa4a58: time → per-group cursor advanced forward while
-  `ticks[c+1] < time`; fraction `(time − ticks[c])/(ticks[c+1] − ticks[c])`;
-  linear interpolation of the dequantised values. Destination is the mesh
-  position blocks (`48·(v/4) + 4·(v%4)` for X, +16 Y, +32 Z); add mode when
-  instance flag 4 is set, else set.
-- Group 0 is always handled by 0xa468c: only its first vertex is used, giving
-  `lerp − scale − 0.25` per axis written/added to instance +120. Corpus: in
-  1,735/1,735 paired records group 0 lists exactly the two indices
-  `(positions, positions + 1)` — virtual vertices past the mesh.
-- Header flag bit 2: group 1 is static (first key, no interpolation), applied
-  only while instance flag 0x00800000 is clear; set mode then sets that flag.
-  Corpus: flags are 1 (1,338) or 3 (398).
-- Corpus: fields +4/+6/+8 and the +16 pointer are zero in all 1,736; the groups
-  after group 0 cover exactly the mesh's position count (1,735/1,735); the
-  latest group tick equals the record duration (1,736/1,736). A scratch check
-  (not in the checker) found static-group key 0 within one quantisation step of
-  the paired base position for 89% of 6,945 vertices; the rest differ more, so
-  the static group is not simply a copy of the base mesh.
+- Packed words are **key-major**: the row of key `c` starts at
+  `packed + 4·c·vertices` (`mullw` at 0xa436c).
+- Dispatcher 0xa4a58 (object = node state): while node-state flag 0x00800000
+  is clear it first resets every group's cursor (+16) to 0; then per group the
+  cursor advances while `ticks[c+1] < time` (no upper bound: a time past the
+  last tick reads beyond the array); fraction
+  `(time − ticks[c])/(ticks[c+1] − ticks[c])` in single precision, so a time on a
+  key tick stays on the earlier segment with fraction 1 and a time before the
+  first tick extrapolates. Values are `cur·(1 − t) + (next·t)` (`fmuls` then
+  `fmadds`). Destination is the node state's position array (+96), laid out
+  like the stored blocks (`48·(v/4) + 4·(v%4)` for X, +16 Y, +32 Z); add mode
+  adds, else sets.
+- Group 0 is always handled by 0xa468c and uses **both** of its vertices
+  (words 0 and 1 of each key row): `lerp(v0) − scale − 0.25` → node state
+  +120..+128 and `scale + lerp(v1) + 0.25` → node state +132..+140 (set or
+  add). Corpus: group 0 lists exactly `(positions, positions + 1)` (1,735/1,735
+  paired), `v0 ≤ v1` on every axis at every key (63,465 keys), and every key of
+  another group at a group-0 tick lies between them (713,695 animated and
+  7,308 static vertex keys, none outside). So group 0 is a per-key bounding box
+  padded by one quantisation step plus 0.25; the consumer of node state
+  +120/+132 was not traced. (b0935b4 described only vertex 0 as an instance
+  translation; that was wrong.)
+- Header flag 0x2: group 1 is static (key 0, no interpolation), applied only
+  while node-state flag 0x00800000 is clear; a set-mode pass then sets that flag
+  (0xa4ddc), so cursors persist and the static group is not re-applied until
+  something clears it (not traced). Corpus: flags are 1 (1,338) or 3 (398);
+  static groups have 1 (365) or 2 (33) keys.
+- Corpus: fields +4/+6/+8 and the +16 pointer are zero in all 1,736 (the
+  dispatcher does not read them); animated groups (group 0 included) have ≥ 2
+  keys with strictly increasing ticks starting at 0, and each reaches the clip
+  end (1,736/1,736), so sampling never runs past a tick array within a clip; the
+  latest group tick equals the record duration (1,736/1,736); packed bits 30–31
+  are zero; no vertex index repeats. A scratch check (not in the checker) found
+  static-group key 0 within one quantisation step of the paired base position
+  for 89% of 6,945 vertices, so the static group is not simply a copy of the
+  base mesh.
 
 **12-byte variant (flag 0x4000 set; 30 records, `plane_anim` etc.).** Block
 `{ptr, u32 count, ptr→count × 3 u32}`; the first pointer is relocated but not
@@ -368,16 +397,45 @@ any container. The PC `TP.ICD` (baseline and Patch 2) keeps section names such a
 high-entropy (7.99 and 7.34 bits/byte) and were not decoded. The residual IDCT
 rounding therefore cannot be resolved from either binary statically here.
 
+## Implemented in the parser (`source/OpenTPW.Files/Formats/Model`)
+
+Only the parser and its sampling helpers; runtime vertex buffers, renderer and
+`ObjectAnimator` wiring are left for root review.
+
+| Proof above | C# |
+| --- | --- |
+| quantised block, groups, key-major packed words | `ModelVertexAnimation`, `ModelVertexGroup` (`ModelAnimationTrack.VertexAnimation`) |
+| signed 10:10:10, fused `q·scale + offset` | `ModelVertexAnimation.Unpack`, `Dequantise` |
+| cursor search, `cur·(1 − t) + next·t` | `ModelVertexGroup.FindKey`, `ApplyAnimatedGroups(time, positions, add)` |
+| group 0 padded lower/upper vectors | `SampleBounds` |
+| static group (key 0) | `ApplyStaticGroup(positions, add)` |
+| texture-frame tracks and their gate | `ModelAnimation.TextureFrameTracks`, `TextureFramesEnabled`, `ModelTextureFrameTrack.FrameAt` |
+| 0x20000 toggle list | `ModelAnimationTrack.NodeFlagToggles`, `SampleNodeFlag` |
+| easing scale 8.999995, `(1 − s)·lo + (s·hi)` | `ModelAnimationTrack.Ease`, `EaseScale` |
+| key search: before the first key → unchanged (null); last rotation/scale key holds | `SampleTranslation/Rotation/Scale` (the player substitutes the stored node component for null) |
+| scale `(1 − t)·a + (t·b)` | `SampleScale` |
+
+Explicitly unsupported (not decoded, reported by `ModelAnimationTrack.UnsupportedFlags`,
+1,122 corpus records): the 12-byte vertex layout (0x4000), the 0x10000 block,
+0x2000 and the path parameters (0x200/0x400). `HasUndecodedPayload` keeps its
+earlier meaning ("more than rigid tracks"). Rejected as malformed: a missing
+bounds or static group, a group-0 vertex count below 2, an animated group with
+fewer than 2 keys or non-increasing ticks, a static group without keys,
+non-finite offset/scale, and pointers or counts outside the payload. Sampling a
+vertex group past its last tick, NaN times, and negative times for the TRS
+channels throw instead of guessing. The C# corpus test checks 1,736 decoded
+blocks, 1,735 paired (virtual pair, coverage, whole-clip sampling, 713,683
+bracketed animated keys and none outside), 2,536 toggle lists, 1,278 clip gates
+and 459 texture-frame tracks; these agree with `corpus_check.py`.
+
 ## Code replacement handoffs (root to verify and integrate)
 
-1. **MD2 animation** (`ModelAnimation*`): decode quantised vertex blocks
-   (layout, signed 10:10:10, `q·scale+offset`, per-group key cursors, group 0 →
-   instance translation `lerp − scale − 0.25`, static group bit 2, set/add);
-   texture-frame tracks (trailer +48/+24, gated by trailer word 0 bit 2);
-   0x20000 visibility toggles; easing with
-   the 8.999995 scale; rotation partner `min(i+1, n−1)`; key search
-   "before first key = unchanged". Keep 30 ticks/s but cite this proof. Gate
-   PC claims behind a PC capture.
+1. **MD2 animation runtime**: the parser side is above. Still to wire after
+   review: apply vertex groups to the mesh positions per frame (set mode,
+   static group once), use group 0's padded box for culling/bounds if wanted,
+   texture-frame tracks to texture slot frames, and the 0x20000 bit once its
+   consumer is known. Keep 30 ticks/s but cite this proof. Gate PC claims behind
+   a PC capture. `docs/MD2-MODELS.md` should take the layouts above.
 2. **Fidelity register / RIDES-001**: tick rate is proven (Mac, speed 1.0);
    loop policy, scene-clock scaling/pause and trigger mapping remain open.
 3. **TPWS** (`SavePayloadLayout`, `TPWS-PAYLOAD.md`, importer naming): treat tags
@@ -392,6 +450,14 @@ rounding therefore cannot be resolved from either binary statically here.
 
 ## Unresolved, with exact dependencies
 
+- Consumers of node state +120/+132 (group-0 box) and of the static-group /
+  cursor reset flag 0x00800000 (who clears it on clip change).
+- Degenerate inputs absent from the corpus and not modelled: a single-key
+  rotation track (the wrapping search divides by zero, so the original
+  produces NaN), times past a vertex group's last tick, and position-time
+  entries whose upper u16 is nonzero (the search reads `lhz` at +0 of each
+  4-byte entry; all upper halves are zero in the corpus).
+
 - 12-byte vertex variant (flag 0x4000), 0x10000 block and node-state bit 0x10:
   consumers not found; need a traced caller of these record fields. The node
   list (trailer +56) is read by 0xa65b8, which sets bit 0x10 in listed node
@@ -400,7 +466,7 @@ rounding therefore cannot be resolved from either binary statically here.
   the third evaluator 0xa89f0 only partly read.
 - Clip end/loop policy, game-speed scaling, pause: owners of player +12/+16/+20
   and the scene-clock rate field (0x127cd0 object +24) at run time.
-- Rotation interpolation mode: runtime value of global option bit 2 (+16396).
+- Rotation interpolation and texture-frame gating: runtime values of global option bits 0x2 and 0x8 (+16396).
 - MAP bit 0x04 and the remaining cell/status bits; World sub-blocks after the
   world vars; all other subsystem payloads.
 - PC equivalence of everything above: PC `TP.ICD` code is not readable

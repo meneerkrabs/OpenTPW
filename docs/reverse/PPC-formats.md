@@ -252,11 +252,28 @@ confirming the existing `P0, (C, C, P)…` reading. Model: `bezier`.
   0xB24A9/0x4B24A9 and 0xC0. Only 0x119ac0 passes 0x40000 without 0x200: it is
   in the ride catalog loader 0x119328 ("Too many rides loaded"), which picks that
   word when the ride descriptor's word +56 is non-zero and 0xB24A9 otherwise.
-  So the original copies the stored mesh back on a clip change for every object
-  except catalog rides whose descriptor +56 is set (and that are not
-  relative-animation models); those keep the replaced clip's last pose. Which
-  descriptor field +56 is (filled by the ride-record parsers, not by a direct
-  callee of 0x119328) was not traced.
+- **Descriptor word +56 is `Info.DontApplyOffset`** (witness
+  `md2_ride_descriptor_fields`). 0x119328 allocates the 2,056-byte descriptor,
+  stores the vtable 0x46030 (type name `CRideBalance`) at +8 and calls the
+  schema layout 0x16f4c on +4. Its vtable returns field record
+  `0x39b64 + 60 × i` (+8) and the field data at schema +8, i.e. descriptor +12
+  (+12). 0x16f4c counts records up to kind 12 (0x197a4) and gives each record of
+  kind 4–11 the word at `data + 4 × n`, n from 1; kinds 0 and 1 get none. The
+  records up to the `Info` group are kinds 0, 5, 6, 10 and 11 (no arrays), so
+  the 35 `Info.*` keys take words +16 … +152 in table order: `Id` +16, `Shape`
+  +24, `Hoarding` +28, `EngineFootprintWidth/HeightOverride` +40/+44,
+  `DontApplyOffset` +56 (kind 6, bound 2) and `DoHeadProcessing` +132. Every
+  descriptor read of the loader matches: Id (+16) selects the record, Shape and
+  Hoarding go to the object builder, the footprint overrides are passed only
+  on the +56 path, and +132 adds caller flag 0x00400000.
+- So, with the option word at 0, the original copies the stored mesh back on a
+  clip change for every object except the catalog object of a fixed item
+  (`Info.DontApplyOffset 1`), which keeps the replaced clip's last pose (header
+  flag 0x4 would still copy back). The only 0x58a3c objects are those of the
+  creators above (advisor, level base, track pieces, queue models, lobby globe,
+  catalog objects and their sub-models); no other code allocates or copies the
+  252-byte object. How a placed instance relates to its catalog object (shared
+  or copied state) was not traced.
 - The record +60 binding itself (where a clip's records are pointed at the
   header's records) was not found among direct stores; the sampler and the bind
   routine agree on the record layout above.
@@ -601,11 +618,14 @@ speeds other than 1.0, and per-object ownership of clip and header state. How
 the original's scene clock reaches whole milliseconds (0xa6f70 stores the
 integer result of 0x10e844) belongs to the clock lane. A model whose meshes
 share a node is rejected (a parsed model gives mesh i node i; a track drives
-one mesh record). Showing stored positions without
-a track (proposed register entry RIDES-030) matches the original for every
-object except ride-catalog rides whose descriptor word +56 is set, which keep
-the replaced clip's last pose ("Gate inputs"). Because the catalog entries with
-that word are not identified, OpenTPW restores the stored mesh for all.
+one mesh record). When a mesh loses its track the
+animator shows the stored positions, except on fixed items
+(`ObjectCatalogEntry.IsFixedItem`, passed by `OriginalObjectRuntime`), which
+keep the last pose; this is the copy-back gate above with the option word at 0
+and the creator flags of the catalog loader. In the catalog only the fantasy
+gates' three clips (`gatese`, `gatesm`, `gatess`) give a fixed item a vertex
+track (baseline and Patch 2); the corpus test checks that `StopAll` keeps their
+pose and restores every other object's stored mesh.
 Played: 599 of the 609 catalog clips that carry vertex tracks; the 10
 others hold only the 12-byte layout (23 tracks) and are listed in
 `VertexLimitations` with the stored mesh shown. Also listed instead of guessed:
@@ -644,13 +664,9 @@ the 0xa7960 path for set-mode models; the 0xa78ec and renderer routes are open.
 2. **Fidelity register / RIDES-001**: tick rate is proven (Mac, speed 1.0);
    the loop policy is traced (replay past the end with a carried start, see
    "Clip lifecycle"); scene-clock scaling/pause and trigger mapping remain open.
-   Proposed **RIDES-030** (next free ID after RIDES-029): "a replaced vertex
-   clip restores the stored mesh for every object" — evidence needed: which
-   ride descriptors set word +56 (0x119328 → 0x119ac0 creator flags 0x50C00
-   give object flag 0x00100000 without 0x8, so 0xa5894 skips the copy-back).
-   Suggested code tag at `ObjectAnimator.UpdateVertices`, where the comment
-   names the proposal; the root adds the `RidesApproximations` entry, the
-   docs/OBJECTS.md row and regenerates the register.
+   The stored-mesh rule after a vertex clip is now derived (fixed items keep
+   the last pose; see "Gate inputs"), so the RIDES-030 entry proposed in
+   2760acb is withdrawn; no register change is needed for it.
 3. **TPWS** (`SavePayloadLayout`, `TPWS-PAYLOAD.md`, importer naming): treat tags
    as trailing delimiters; rename sections by owner (RideSystem holds the placed
    objects); adopt the cell schema and world-var names; the importer's offsets
@@ -683,9 +699,9 @@ the 0xa7960 path for set-mode models; the 0xa78ec and renderer routes are open.
 - Path parameter (0x200/0x400) and header 0xAC table: selection via node +82 and
   the third evaluator 0xa89f0 only partly read.
 - Clip lifecycle at run time: which objects use the object-list update (r4 = 0)
-  and carry flag 0x00400000; which ride descriptor field is word +56 (selects
-  the creator flags that skip the copy-back) and which catalog rides set it;
-  bulk writes of the global block (the option word has one direct store, 0);
+  and carry flag 0x00400000; how a placed ride instance relates to the catalog
+  loader's object (shared or copied flags and clip state); bulk writes of the
+  global block (the option word has one direct store, 0);
   whether clip data (group cursors) and headers are per object; game-speed
   scaling and pause (player +12/+16/+20, scene-clock rate at 0x127cd0 object
   +24).

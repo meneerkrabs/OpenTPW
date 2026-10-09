@@ -25,7 +25,8 @@ public sealed class OriginalObjectRuntime
 		Model = ObjectAssets.LoadModel( entry.FileSystem, entry.ModelPath );
 		if ( Model.Kind != ModelFileKind.Geometry )
 			throw new InvalidDataException( $"{entry.ModelPath} is not a geometry model." );
-		Animator = new ObjectAnimator( Model );
+		// Fixed items keep their last vertex pose when a clip ends (ObjectAnimator.UpdateVertices).
+		Animator = new ObjectAnimator( Model, keepsPoseOnClipChange: entry.IsFixedItem );
 		if ( entry.ScriptPath != null )
 		{
 			using var stream = entry.FileSystem.OpenRead( entry.ScriptPath );

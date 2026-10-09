@@ -256,11 +256,13 @@ at the duration and truncated to whole milliseconds, at most once per update. So
 a 10-tick clip restarts every 334 ms, not every 333.3 ms, and one update far
 past the end lands at the duration rather than at `time mod duration`. A
 non-looping clip counts as finished only past its end. Without such a track the mesh
-shows its stored positions (proposed register entry RIDES-030). The original
-copies them back on a clip change (0xa5894) for every object except ride-catalog
-rides whose descriptor word +56 is set (creator flags give object flag
-0x00100000 without 0x8; the option word is only ever stored as 0); those keep
-the last pose. Which rides set that word is not traced. The parsed, cached `ModelFile` is never written, so instances of one
+shows its stored positions, except on fixed items (`Info.DontApplyOffset 1`),
+which keep the last pose. That is the original's bind (0xa5894): it copies the
+stored mesh back unless the object has flag 0x00100000 with 0x8 clear, which only
+the ride catalog loader requests, for descriptors whose word +56, by the
+`CRideBalance` schema `Info.DontApplyOffset`, is set (the option word that could
+also skip it is only ever stored as 0). In the catalog only the fantasy gates'
+three clips are affected. The parsed, cached `ModelFile` is never written, so instances of one
 asset keep independent poses. Unplayable tracks are listed in
 `VertexLimitations` and leave the stored mesh: the 12-byte layout (10 catalog
 clips, 23 tracks), relative-animation models, blocks that do not list every

@@ -722,6 +722,83 @@ def md2_copy_back_flags(app: Image) -> dict:
             'direct_loader_words': {f'{site:#x}': f'{value:#x}' for site, value in direct.items()}}
 
 
+
+def md2_ride_descriptor_fields(app: Image) -> dict:
+    """The catalog loader's descriptor words are Info.* fields of the CRideBalance schema."""
+    # 0x119328 allocates a 2,056-byte descriptor, puts the CRideBalance vtable at +8 and lays out +4.
+    d(app, 0x119478, (ADDI, 3, 0, 2056), 'descriptor size')
+    op, target, slot = app.toc_slot(0x119490, 0)
+    require((op, target.kind, target.addend), (LWZ, 'section', 0x46030), 'CRideBalance vtable')
+    d(app, 0x11949c, (STW, 0, 19, 8), 'vtable at descriptor +8 (schema object at +4)')
+    d(app, 0x1194a0, (ADDI, 3, 19, 4), 'schema object')
+    require(app.call(0x1194a4), 0x16f4c, 'schema layout call')
+    vtable = {k: app.relocs[0x46030 + k] for k in (0, 8, 12)}
+    rtti = app.relocs[vtable[0].addend]
+    require(cstring(app.code, rtti.addend), 'CRideBalance', 'vtable type name')
+    require([app.relocs[vtable[k].addend].addend for k in (8, 12)], [0x119fe8, 0x119ff8], 'vtable +8/+12 methods')
+    d(app, 0x119fe8, (MULLI, 0, 4, 60), 'field record stride 60')
+    op, target, slot = app.toc_slot(0x119fec, 3)
+    require((target.kind, target.addend), ('section', 0x39b64), 'field table')
+    d(app, 0x119ff8, (ADDI, 3, 3, 8), 'field data at schema +8 (descriptor +12)')
+    # 0x16f4c: field count = records before kind 12; kinds 4..11 get a word at data + 4 * r27, r27 from 1.
+    require(app.call(0x16f64), 0x197a4, 'field count call')
+    require(compare_immediate(app.w(0x197e0)), (11, 0, 0, 12), 'count stops at kind 12')
+    d(app, 0x16f90, (ADDI, 27, 0, 1), 'first slot index 1')
+    require(compare_immediate(app.w(0x16fc4)), (11, 0, 0, 3), 'kind 3')
+    bc(app, 0x16fc8, (BT, CR_EQ, 0x17124), 'kind 3: array end')
+    bc(app, 0x16fcc, (BF, CR_LT, 0x16fe8), 'kind above 3')
+    bc(app, 0x16fd4, (BT, CR_EQ, 0x17024), 'kind 1: group, no slot')
+    bc(app, 0x16fd8, (BF, CR_LT, 0x1704c), 'kind 2: array start')
+    bc(app, 0x16fe0, (BF, CR_LT, 0x16ffc), 'kind 0: no slot')
+    require(compare_immediate(app.w(0x16fe8)), (11, 0, 0, 12), 'kind 12')
+    bc(app, 0x16fec, (BF, CR_LT, 0x171ec), 'kind 12 and above: skipped')
+    require(compare_immediate(app.w(0x16ff0)), (11, 0, 0, 10), 'kind 10')
+    bc(app, 0x16ff4, (BF, CR_LT, 0x171ac), 'kinds 10/11: slot')
+    require(branch_target(app.w(0x16ff8), 0x16ff8, link=False), 0x17168, 'kinds 4..9: slot')
+    for start in (0x17168, 0x171ac):
+        d(app, start + 4, (LWZ, 12, 23, 4), f'vtable at {start:#x}')
+        d(app, start + 8, (LWZ, 12, 12, 12), f'GetData at {start:#x}')
+        rot(app, start + 20, (RLWINM, 27, 0, 2, 0, 29, 0), f'4 * slot at {start:#x}')
+        xop(app, start + 28, (31, 266, 0, 3, 0), f'data + 4 * slot at {start:#x}')
+        xop(app, start + 36, (31, 151, 0, 4, 29), f'stored as the field address at {start:#x}')
+        d(app, start + 44, (ADDI, 27, 27, 1), f'next slot at {start:#x}')
+    for offset in list(range(0x16ffc, 0x17024, 4)) + list(range(0x17024, 0x1704c, 4)):
+        require(d_form(app.w(offset))[:2] != (ADDI, 27), True, f'no slot for kinds 0/1 at {offset:#x}')
+    # The table: records until kind 12, slot offsets in the descriptor.
+    fields, slot_index, index = {}, 1, 0
+    while True:
+        record = 0x39b64 + 60 * index
+        kind = struct.unpack_from('>I', app.data, record)[0]
+        if kind == 12:
+            break
+        name = cstring(app.data, record + 4)
+        require(kind in (0, 1, 5, 6, 10, 11), True, f'kind {kind} of field {index} ({name!r}) before the Info fields end')
+        if 4 <= kind <= 11:
+            fields[name] = 12 + 4 * slot_index
+            slot_index += 1
+        index += 1
+        if kind == 1:
+            break
+    require(index, 37, 'records through the Info group')
+    for name, offset in (('Id', 16), ('Shape', 24), ('Hoarding', 28), ('EngineFootprintWidthOverride', 40),
+                         ('EngineFootprintHeightOverride', 44), ('DontApplyOffset', 56), ('DoHeadProcessing', 132)):
+        require(fields[name], offset, f'Info.{name} at descriptor +{offset}')
+    require((struct.unpack_from('>I', app.data, 0x39b64 + 60 * 11)[0], cstring(app.data, 0x39b64 + 60 * 11 + 4)),
+            (6, 'DontApplyOffset'), 'record 11: bounded integer DontApplyOffset')
+    require(struct.unpack_from('>I', app.data, 0x39b64 + 60 * 11 + 40)[0], 2, 'DontApplyOffset bound 2 (0 or 1)')
+    # The loader's reads at those offsets.
+    d(app, 0x11999c, (LWZ, 0, 3, 16), 'Id')
+    d(app, 0x119ab4, (LWZ, 5, 9, 24), 'Shape block')
+    d(app, 0x119ab8, (LWZ, 6, 9, 28), 'Hoarding block')
+    d(app, 0x119aa4, (LWZ, 0, 9, 40), 'footprint width override (fixed items only)')
+    d(app, 0x119aac, (LWZ, 0, 9, 44), 'footprint height override (fixed items only)')
+    d(app, 0x119a6c, (LWZ, 0, 9, 132), 'DoHeadProcessing selects caller flag 0x00400000')
+    return {'descriptor': 'CRideBalance, 2,056 bytes; schema at +4, field words from +12 + 4',
+            'word_56': 'Info.DontApplyOffset (fixed item): creator word 0x50C00 -> object 0x00100000, 0x8 clear',
+            'word_132': 'Info.DoHeadProcessing',
+            'fields': fields}
+
+
 # ------------------------------------------------------------------ TPWS
 def tpws_writer(app: Image) -> dict:
     base, first = app.toc_string(0x11cb84, 31)
@@ -925,6 +1002,7 @@ def inspect(root: Path) -> dict:
               'md2_clip_lifecycle': md2_clip_lifecycle(app),
               'md2_clip_clock': md2_clip_clock(app),
               'md2_copy_back_flags': md2_copy_back_flags(app),
+              'md2_ride_descriptor_fields': md2_ride_descriptor_fields(app),
               'tpws_writer': tpws_writer(app),
               'tpws_schema': tpws_schema(app),
               'tpws_cells': tpws_cells(app),

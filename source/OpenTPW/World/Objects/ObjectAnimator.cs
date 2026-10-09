@@ -48,15 +48,22 @@ public sealed class ObjectAnimator
 	private readonly int[] vertexVersions;
 	private readonly (long Serial, float Tick)[] vertexSources;
 	private readonly SortedSet<string> vertexLimitations = new( StringComparer.Ordinal );
+	private readonly bool keepsPoseOnClipChange;
 	private long serial;
 	private double clockMilliseconds;
 
-	public ObjectAnimator( ModelFile model )
+	/// <param name="model">The object's geometry model, shared and never written.</param>
+	/// <param name="keepsPoseOnClipChange">
+	/// True for fixed items (<c>Info.DontApplyOffset</c>): a mesh keeps its last vertex pose when its track
+	/// ends instead of showing its stored positions, unless the model has header flag 0x4.
+	/// </param>
+	public ObjectAnimator( ModelFile model, bool keepsPoseOnClipChange = false )
 	{
 		ArgumentNullException.ThrowIfNull( model );
 		if ( model.Kind != ModelFileKind.Geometry )
 			throw new ArgumentException( "Animations play against a geometry model.", nameof( model ) );
 		this.model = model;
+		this.keepsPoseOnClipChange = keepsPoseOnClipChange && (model.HeaderFlags & ModelFile.RelativeAnimationFlag) == 0;
 		rest = ModelAnimationPlayer.ComputeRestTransforms( model );
 		world = (Matrix4x4[])rest.Clone();
 		var sorted = new List<int>( model.Nodes.Count );
@@ -261,17 +268,18 @@ public sealed class ObjectAnimator
 	/// animated groups at the clip tick). A fresh key search per sample equals the original's kept cursor
 	/// because its loop replay rebinds the clip (0xa7190 -> 0xa67d8 -> 0xa5894), which resets the cursor;
 	/// the object-list update (0x4d354, flag 8) replays without a bind and is not modelled.
-	/// Without a track the mesh shows its stored positions (proposed register entry RIDES-030). The
-	/// original copies them back on a clip change unless global option bit 0 is set or the object has flag
-	/// 0x00100000 with 0x8 clear, and always for header flag 0x4 (0xa5894). The option is only ever stored
-	/// as 0 (0xa7eec from 0x54c08); the object flags come from the creator's ride flags (0x594c8 -> 0x58a3c),
-	/// and only the ride catalog loader 0x119328 sets 0x00100000 without 0x8, for descriptors whose +56 word
-	/// is non-zero. Which catalog entries those are is not traced, so for them the last pose would stay.
+	/// When a mesh loses its track it shows its stored positions, except on fixed items, where the last
+	/// pose stays. The original's bind (0xa5894) copies the stored mesh back unless global option bit 0 is
+	/// set or the object has flag 0x00100000 with 0x8 clear, and always for header flag 0x4. The option word
+	/// is only ever stored as 0 (0xa7eec from 0x54c08). Object flags come only from the ride loader's flag
+	/// word (0x58a3c, via 0x594c8), and only the ride catalog loader 0x119328 asks for 0x00100000 without
+	/// 0x8: for a CRideBalance whose word +56 is set, which its schema (0x39b64, laid out by 0x16f4c) makes
+	/// <c>Info.DontApplyOffset</c>.
 	/// </summary>
 	private void UpdateVertices( int mesh, Channel? channel, ModelVertexAnimation? animation )
 	{
 		var source = animation == null ? (0L, 0f) : (channel!.Serial, channel.Player.Tick);
-		if ( source == vertexSources[mesh] )
+		if ( source == vertexSources[mesh] || (animation == null && keepsPoseOnClipChange) )
 			return;
 		if ( animation != null )
 		{

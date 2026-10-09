@@ -98,6 +98,39 @@ public class ObjectVertexAnimationTests
 		Assert.AreEqual( 30f, animator.GetTick( 0 ) );
 	}
 
+	/// <summary>
+	/// The bind's copy-back gate (0xa5894): an ordinary object shows its stored mesh once its track ends, a fixed
+	/// item (object flag 0x00100000 without 0x8) keeps the last pose.
+	/// </summary>
+	[TestMethod]
+	public void FixedItemsKeepTheirLastVertexPoseWhenTheClipEnds()
+	{
+		var model = new ModelFile( new MemoryStream( Md2ModelFileTests.CreateGeometry() ) );
+		var clip = new ModelFile( new MemoryStream( Md2VertexAnimationTests.CreateAnimation( 0, 30 ) ) ).Clip!;
+		var expected = new NVector3[model.Meshes[0].Positions.Length];
+		clip.Tracks.Single().VertexAnimation!.ApplyPose( 15, expected );
+
+		var fixedItem = new ObjectAnimator( model, keepsPoseOnClipChange: true );
+		var ordinary = new ObjectAnimator( model );
+		foreach ( var animator in new[] { fixedItem, ordinary } )
+		{
+			animator.Play( 0, clip, "synth", loop: true );
+			animator.Advance( 0.5 );
+			CollectionAssert.AreEqual( expected, animator.GetVertexPositions( 0 )!.ToArray() );
+		}
+		var version = fixedItem.GetVertexVersion( 0 );
+		fixedItem.Stop( 0 );
+		ordinary.Stop( 0 );
+		CollectionAssert.AreEqual( expected, fixedItem.GetVertexPositions( 0 )!.ToArray() );
+		Assert.AreEqual( version, fixedItem.GetVertexVersion( 0 ), "no upload for a kept pose" );
+		Assert.IsNull( ordinary.GetVertexPositions( 0 ) );
+
+		// A new clip resamples the kept mesh.
+		fixedItem.Play( 0, clip, "synth", loop: true );
+		Assert.AreEqual( 0f, fixedItem.GetTick( 0 ) );
+		Assert.AreNotEqual( version, fixedItem.GetVertexVersion( 0 ) );
+	}
+
 	/// <summary>A vertex track drives one mesh record, so two meshes on one node are rejected, not half-animated.</summary>
 	[TestMethod]
 	public void MeshesSharingANodeAreRejected()
@@ -220,6 +253,7 @@ public class ObjectVertexAnimationCorpusTests
 	public void EveryCatalogVertexTrackPlaysOrIsReported()
 	{
 		int clips = 0, played = 0, limitedClips = 0, limitations = 0, relative = 0, poses = 0;
+		var fixedClips = new List<string>();
 		var meshes = 0;
 		foreach ( var theme in ObjectCatalog.Themes )
 		{
@@ -239,7 +273,7 @@ public class ObjectVertexAnimationCorpusTests
 					if ( tracks.Length == 0 )
 						continue;
 					clips++;
-					var animator = new ObjectAnimator( model );
+					var animator = new ObjectAnimator( model, entry.IsFixedItem );
 					animator.Play( 0, clip, animation.Name, false );
 					limitations += animator.VertexLimitations.Count;
 					limitedClips += animator.VertexLimitations.Count > 0 ? 1 : 0;
@@ -261,13 +295,23 @@ public class ObjectVertexAnimationCorpusTests
 							poses++;
 						}
 					}
+					// Ending the clip keeps a fixed item's last pose and restores everything else's stored mesh.
+					animator.StopAll();
+					if ( entry.IsFixedItem )
+						fixedClips.Add( animation.Path );
+					foreach ( var track in supported )
+					{
+						var mesh = model.Meshes.FindIndex( candidate => candidate.NodeIndex == track.NodeIndex );
+						Assert.AreEqual( entry.IsFixedItem, animator.GetVertexPositions( mesh ) != null, animation.Path );
+					}
 				}
 			}
 		}
 		Assert.AreEqual( 0, relative );
 		Assert.AreEqual( (609, 599, 10, 23), (clips, played, limitedClips, limitations) );
 		Assert.AreEqual( 0, poses % 4 );
-		Console.WriteLine( $"{meshes} vertex-animated meshes, {poses} sampled poses" );
+		Assert.AreEqual( 3, fixedClips.Count, string.Join( ", ", fixedClips ) );
+		Console.WriteLine( $"{meshes} vertex-animated meshes, {poses} sampled poses, fixed-item vertex clips {string.Join( ", ", fixedClips )}" );
 	}
 
 	/// <summary>

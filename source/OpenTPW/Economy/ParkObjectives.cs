@@ -306,13 +306,16 @@ public sealed class ParkObjectives
 /// Player progress across themes: golden tickets won per theme and golden keys. Themes open when
 /// the player owns <c>Keys.CostToEnter</c> keys (per-theme <c>global.sam</c>); the theme order follows
 /// <c>THEMENAMES.str</c> (jungle, hallow, fantasy, space — also ascending key cost 1, 1, 3, 5).
-/// <b>Approximation</b>: how keys are earned is unknown; OpenTPW starts with one key and awards one
-/// for every <see cref="TicketsPerKey"/> golden tickets. Keys are not consumed by entering.
+/// The Windows European English manual (printed p. 28) awards one key for every third earned ticket;
+/// spending tickets on mystery items preserves earned keys. Pass cumulative earned counts to
+/// <see cref="SetTickets"/>, not the available ticket balance.
+/// <b>Approximation</b>: OpenTPW starts with one key; keys are not consumed by entering.
 /// </summary>
 public sealed class PlayerProgress
 {
-	// [APPROX:ECON-040] players start with 1 golden key and earn one per 4 golden tickets — evidence needed: lobby/progression captures
-	public const int TicketsPerKey = 4;
+	// [DATA:theme-park-world_win_manual_europe_en_ii5.pdf:PDF-page-15/printed-page-28; SHA256=c96eb25f3dc13f7f0824bbf03f9bbeb3bb94e9f4756d4d8dfa09ac71732b0668]
+	public const int TicketsPerKey = 3;
+	// [APPROX:ECON-040] players start with 1 golden key and keys are not consumed by entering themes — evidence needed: initial lobby and repeated theme-entry captures
 	public const int StartingKeys = 1;
 	// [DATA:Language/*/THEMENAMES.str:order; levels/*/global.sam:Keys.CostToEnter]
 	public static readonly IReadOnlyList<string> ThemeOrder = new[] { "jungle", "hallow", "fantasy", "space" };

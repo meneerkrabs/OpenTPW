@@ -10,9 +10,33 @@ import evidence
 import contracts
 import controller_native
 import animation_evidence
+import motion_evidence
 
 
 class RideEvidenceTests(unittest.TestCase):
+    def test_scalar_descriptor_offsets_expand_arrays_and_skip_strings(self):
+        records = [(2, "", 0), (7, "x", 0), (7, "y", 0), (3, "points", 3),
+                   (0, "", 0), (1, "filename", 0), (7, "speed", 0), (12, "", 0)]
+        self.assertEqual(motion_evidence.scalar_offsets(records), {1: ("x", 12), 2: ("y", 16), 6: ("speed", 40)})
+
+    def test_scalar_descriptor_offsets_reject_unsupported_shapes(self):
+        for records in ([(3, "orphan", 2), (12, "", 0)], [(2, "", 0), (12, "", 0)],
+                        [(2, "", 0), (2, "nested", 0), (3, "end", 2), (12, "", 0)],
+                        [(11, "unknown", 0), (12, "", 0)], [(7, "unfinished", 0)]):
+            with self.assertRaises(evidence.pef.PEFError): motion_evidence.scalar_offsets(records)
+
+    @unittest.skipUnless(os.environ.get("OPENTPW_MAC_APP"), "set OPENTPW_MAC_APP for coaster motion witness")
+    def test_original_motion_schema_and_boarding(self):
+        result = motion_evidence.inspect(Path(os.environ["OPENTPW_MAC_APP"]))
+        settings = {entry["name"]: entry["definition_field"] for entry in result["settings"]["mapping"]}
+        self.assertEqual(settings["fWinchSpeed"], 68)
+        self.assertEqual(settings["fMinSpeed"], 72)
+        self.assertEqual(settings["fUphillAccelModifier"], 40)
+        self.assertEqual(result["motion"]["path_stride"], 56)
+        self.assertEqual(result["tour_unload"]["raw_command"], 14)
+        self.assertEqual(result["sound_output"]["record"], "train, not car")
+        self.assertGreaterEqual(result["checked_instruction_count"], 150)
+
     def fixture(self, code=b"\0" * 16, relocations=None):
         return SimpleNamespace(code=SimpleNamespace(index=0, data=bytearray(code)),
                                data_section=SimpleNamespace(index=1, data=bytearray(16)),

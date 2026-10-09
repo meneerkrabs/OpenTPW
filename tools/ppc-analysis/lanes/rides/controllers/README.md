@@ -48,11 +48,32 @@ The helper implements the following bounded observations:
   Missing effect results produce unsupported instead of a fabricated zero.
   Required-variable gates skip calls; consumed COAST7 is a no-op. No real
   controller results or admission outcomes are generated.
+- `SampledMotionPrimitives` operates on supplied adjacent sampled XYZ values,
+  never serialized tracks. Interpolation rounds `next*fraction` to single,
+  then uses a single fused operation for `current*(1-fraction)+product`.
+  Height target uses single height subtraction/multiplication and a single
+  fused modifier/acceleration/speed operation before the supplied floor.
+  `motion-native.json` pins the schema→loader→tick field assignments.
+- Distance retains the helper0x4316c mixed precision: single coordinate deltas,
+  single Y/Z squares, double fused X-square plus Y-square, double sum/sqrt,
+  then single return. Finite-domain validation is tool policy. Full train
+  advancement returns unsupported; original FPSCR/exceptional modes are
+  unqualified.
 
-Eleven synthetic cases cover full/empty, held counts, wraps, configured-limit
+Sixteen synthetic cases cover full/empty, held counts, wraps, configured-limit
 changes, clamping/distribution, multiple riders per vehicle, reverse order,
 BUMP63/64 boundaries, all39 command directions, unavailable results, and typed
-COS/track-position/direction/physical-seat diagnostics. Input bounds and snapshot
+COS/track-position/direction/physical-seat diagnostics, interpolation endpoints,
+uphill/downhill/floor behavior, a fused-rounding regression and mixed-precision
+distance. Input bounds and snapshot
 validation are evidence-tool policy. Full coaster/cart motion, original track
 data layouts, save linkage, complete controller lifecycle and Windows runtime
 equivalence remain unqualified.
+
+The native boarding function0x3e2f8 removes guests FIFO from the pending ring,
+but car selection starts from an RNG-derived candidate and scans with wrap for
+available allowance. The ring helper therefore does not establish car/seat
+order. TOUR14 parameter0 changes positive occupancy into negative occupancy
+for type1 entries unless controller+52==3, connecting the already qualified
+reverse departure-slot arithmetic to an actual transition. Neither observation
+is a complete controller/admission implementation.

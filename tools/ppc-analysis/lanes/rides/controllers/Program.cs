@@ -15,11 +15,16 @@ var tests = new (string Name, Action Run)[]
     ("all command operand/accumulator directions", Directions),
     ("unavailable effect is not a zero response", Unavailable),
     ("typed COS, direction and seat schema diagnostics", UnsupportedShapes),
+    ("path sample endpoints and XYZ interpolation", PathSample),
+    ("height-dependent uphill downhill and floor", HeightTarget),
+    ("height target retains single fused rounding", HeightRounding),
+    ("mixed single double sampled distance", SampleDistance),
+    ("unsupported motion and exceptional scalar domains", MotionBoundary),
 };
 foreach (var test in tests) { test.Run(); Console.WriteLine($"PASS {test.Name}"); }
 Console.WriteLine($"{tests.Length} controller reference tests passed.");
 if (args.Length == 1) File.WriteAllText(args[0], JsonSerializer.Serialize(new { schema = 1,
-    scope = "synthetic reference primitives; no production controllers, serialized COS layout, admission or motion",
+    scope = "synthetic reference primitives and sampled-motion scalars; no production controllers, serialized COS layout, admission or full motion",
     tests = tests.Select(t => t.Name), contractCount = contracts.Count, vehicleCapProof = "BUMP only; COAST implicit64 unsupported" },
     new JsonSerializerOptions { WriteIndented = true }));
 else if (args.Length > 1) throw new ArgumentException("Usage: ControllersWitness [synthetic-metadata.json]");
@@ -129,4 +134,44 @@ void Unavailable()
 static void UnsupportedShapes()
 {
     foreach (var missing in Enum.GetValues<UnsupportedShape>()) Status(PrimitiveStatus.UnsupportedSchema, TrackSchemaBoundary.Require(missing));
+}
+static void PathSample()
+{
+    var a = new SampledPosition(1, 2, 3); var b = new SampledPosition(5, 10, 15);
+    Equal(a, SampledMotionPrimitives.Interpolate(a, b, 0).RequireValue());
+    Equal(b, SampledMotionPrimitives.Interpolate(a, b, 1).RequireValue());
+    Equal(new SampledPosition(2, 4, 6), SampledMotionPrimitives.Interpolate(a, b, .25f).RequireValue());
+}
+static void HeightTarget()
+{
+    var settings = new HeightAcceleration(2, .5f, 1.5f);
+    Equal(8f, SampledMotionPrimitives.HeightTarget(10, 0, 2, 3, settings).RequireValue());
+    Equal(16f, SampledMotionPrimitives.HeightTarget(10, 2, 0, 3, settings).RequireValue());
+    Equal(3f, SampledMotionPrimitives.HeightTarget(1, 0, 2, 3, settings).RequireValue());
+    Equal(10f, SampledMotionPrimitives.HeightTarget(10, 2, 2, 3, settings).RequireValue());
+}
+static void HeightRounding()
+{
+    var epsilon = MathF.ScaleB(1f, -23);
+    var settings = new HeightAcceleration(1, 1 + epsilon, 1);
+    var actual = SampledMotionPrimitives.HeightTarget(1, 0, 1 - epsilon, 0, settings).RequireValue();
+    Equal(BitConverter.SingleToInt32Bits(MathF.ScaleB(1f, -46)), BitConverter.SingleToInt32Bits(actual));
+    Equal(0f, (1 + epsilon) * (-1 + epsilon) + 1);
+}
+static void SampleDistance()
+{
+    Equal(5f, SampledMotionPrimitives.Distance(new(0, 0, 0), new(3, 4, 0)).RequireValue());
+    Equal(13f, SampledMotionPrimitives.Distance(new(0, 0, 0), new(3, 4, 12)).RequireValue());
+    Equal(0f, SampledMotionPrimitives.Distance(new(2, 3, 4), new(2, 3, 4)).RequireValue());
+    var point = new SampledPosition(100000000, 1, .125f);
+    Equal(BitConverter.SingleToInt32Bits(100000000f), BitConverter.SingleToInt32Bits(SampledMotionPrimitives.Distance(point, new(0, 0, 0)).RequireValue()));
+}
+static void MotionBoundary()
+{
+    Status(PrimitiveStatus.InvalidSnapshot, SampledMotionPrimitives.Interpolate(new(0, 0, 0), new(1, 1, 1), -1));
+    Status(PrimitiveStatus.InvalidSnapshot, SampledMotionPrimitives.Interpolate(new(float.NaN, 0, 0), new(1, 1, 1), 0));
+    Status(PrimitiveStatus.InvalidSnapshot, SampledMotionPrimitives.HeightTarget(1, 0, 1, -1, new(1, 1, 1)));
+    Status(PrimitiveStatus.InvalidSnapshot, SampledMotionPrimitives.HeightTarget(1, -float.MaxValue, float.MaxValue, 0, new(1, 1, 1)));
+    Status(PrimitiveStatus.InvalidSnapshot, SampledMotionPrimitives.Distance(new(0, float.MaxValue, 0), new(0, 0, 0)));
+    Status(PrimitiveStatus.UnsupportedSchema, SampledMotionPrimitives.AdvanceTrain());
 }

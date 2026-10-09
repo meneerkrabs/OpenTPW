@@ -13,6 +13,8 @@ var scripts = new List<object>();
 var commands = new SortedDictionary<int, SortedDictionary<int, int>>();
 var observations = new SortedDictionary<string, List<ControllerUse>>(StringComparer.Ordinal);
 var trackSettings = new List<object>();
+var motionSettingNames = new[] { "fAccelerationPerHeight", "fUphillAccelModifier", "fDownhillAccelModifier", "fWinchSpeed",
+    "fMinSpeed", "fMaxSpeedAtMinSetting", "fMaxSpeedAtMaxSetting", "fFrictionMultiplier", "fGravityX", "fGravityY", "fGravityZ", "fForceMultiplier" };
 var animationCounts = new SortedDictionary<int, int>();
 var animationSpeedCalls = new List<object>();
 var totemBindings = new List<object>();
@@ -42,7 +44,9 @@ foreach (var archive in Directory.GetFiles(levelRoot, "*.wad", SearchOption.AllD
                         || e.Key.EndsWith(".uiRearCarTypeIndex", StringComparison.OrdinalIgnoreCase)
                         || e.Key.EndsWith(".fFrontCarSpacing", StringComparison.OrdinalIgnoreCase)
                         || e.Key.EndsWith(".fStdCarSpacing", StringComparison.OrdinalIgnoreCase)
-                        || e.Key.EndsWith(".fEndCarSpacing", StringComparison.OrdinalIgnoreCase))
+                        || e.Key.EndsWith(".fEndCarSpacing", StringComparison.OrdinalIgnoreCase)
+                        || motionSettingNames.Any(name => e.Key.Equals(name, StringComparison.OrdinalIgnoreCase)
+                            || e.Key.EndsWith("." + name, StringComparison.OrdinalIgnoreCase)))
                     .Where(e => double.TryParse(e.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out _))
                     .Select(e => new { key = e.Key, value = double.Parse(e.Value, CultureInfo.InvariantCulture) }).ToArray();
                 if (values.Length > 0) trackSettings.Add(new { path = Path.GetRelativePath(root, archive).Replace('\\', '/') + "/" + member,

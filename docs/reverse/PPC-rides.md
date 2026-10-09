@@ -546,3 +546,115 @@ typed diagnostic. Eleven synthetic cases pass in Debug and Release for
 empty/full/held rings, cursor wrap, capacity changes/distribution, paired logical
 rider counts, reverse TOUR order, BUMP63/64, all command roles and unsupported
 shapes. No gameplay/controller core changes are included.
+
+## Coaster schema, sampled motion and boarding dependencies
+
+`motion_evidence.py` and `motion-native.json` pin159 instruction fields/calls
+on the same identified Mac PEF SHA. The real callback chain is application
+`0x1c262c`→manager`0x3864c`→`0x38710`→tick`0x40650`.
+Geometry preparation calls`0x3fc18` at`0x44ab4`. The manager walks controller
+links at+24, tests controller+8 bits1..3 and uses train records128 bytes.
+These are native-memory observations, not serialized COS record claims.
+
+The SAM linkage is stronger than adjacent name strings. Settings vtable
+data`0x3d08c`+8→CFM`0x6348`→`0x3ab54` returns descriptor table
+data`0x2ef24`+index*60; +12→CFM`0x6350`→`0x3ab64` returns settings base+8.
+Constructor`0x16f4c` starts scalar word index1, skips strings/delimiters and
+expands scalar arrays using descriptor+52 counts. The witness checks its
+branches and arithmetic, walks384 descriptors to derive scalar offsets, then verifies
+the loader`0x2fde8` copies into the definition used by the tick. The descriptor
+region SHA is`ee3e328dd7b32dc0276c1a2f77f6e73c89164fbed76aad530cb0b407f9976690`.
+
+| SAM field | Settings offset | Definition offset |
+| --- | ---: | ---: |
+| fAccelerationPerHeight | 15064 | 36 |
+| fUphillAccelModifier | 15068 | 40 |
+| fDownhillAccelModifier | 15072 | 44 |
+| fWinchSpeed | 15116 | 68 |
+| fMinSpeed | 15120 | 72 |
+| fMaxSpeedAtMinSetting | 15124 | 76 |
+| fMaxSpeedAtMaxSetting | 15128 | 80 |
+| fFrictionMultiplier | 15132 | 84 |
+| fGravityX/Y/Z | 15144/15148/15152 | 96/100/104 |
+| fForceMultiplier | 15156 | 108 |
+
+The bounded schema/loader links have high static confidence. They do not by
+themselves recover defaults, full gravity/force integration, settings-domain
+validation or PC runtime behavior. In particular, winch is+68 and minimum
+speed is+72; an exploratory guess that reversed those names is rejected.
+
+Tick`0x40650` passes literal0 to`0xa3e08` at`0x406c4`, selecting the cached
+scaled animation timestamp+16400. This is not a live scheduler-clock getter.
+Controller+288 stores the previous timestamp; unsigned elapsed milliseconds
+convert through2^52 into single, divide1000 in single and initialize train+124
+remaining seconds. CLOCK owns when that cache is updated and the main-loop
+cadence. Main31ms catch-up steps must not be substituted for this elapsed
+cache difference.
+
+Controller+156 points to sampled path records56 bytes, whose XYZ floats are
++4/+8/+12. The tick writes prospective car XYZ at+84/+88/+92; current car XYZ
+are+72/+76/+80. It derives index/fraction through native fmod/modf calls,
+then rounds `next*fraction` to single and uses a single fused operation for
+`current*(1-fraction)+product`. A reference helper implements only that
+supplied-point interpolation, not path decoding/wrap or complete train motion.
+
+Height target at`0x40a20..0x40b50` computes single
+`delta=currentY−prospectiveY`, single `acceleration=PerHeight*delta`, then
+single fused `modifier*acceleration+currentSpeed`. Modifier+40 is selected
+when prospectiveY>currentY, otherwise+44. It floors that result using an
+externally supplied value. A path section chain record+44→object+16→flags+8
+selects bit0x800 for the winch branch. The effective winch/minimum floors also
+depend on controller scaling and train flags; the helper does not fabricate
+those gates. Sample flag8 multiplies the later averaged target by friction+84.
+Station blending, speed caps, adaptive time/distance integration, collision,
+braking and train ordering still require their full branches.
+
+Distance helper`0x4316c` has mixed precision: XYZ deltas are single, Y/Z squares
+are single, X-square plus Y-square is double fused, the sum and sqrt are double,
+and the return is single. `SampledMotionPrimitives` preserves those observed
+operation boundaries and the height/interpolation fused operations. Finite
+input rejection is reference-tool policy; original FPSCR, subnormal and
+exceptional behavior are unqualified. Full advancement returns unsupported.
+Five added synthetic cases cover endpoints, uphill/downhill/floors, exact
+fused-rounding bits, mixed precision and rejected full/exceptional motion;
+all16 controller cases pass Debug and Release. Nineteen Python cases pass
+with the identified original enabled.
+
+The actual PC level-WAD SAM scan records three explicit overrides:
+Fantasy b_drip acceleration1.2/friction0.98, Hallow c_hade1/0.97,
+Jungle coaster1 0.8/0.95. Baseline and verified Patch2 preserve these values;
+selected SAM member identities differ in five files. Twelve coaster members
+also provide train index/count settings. No other probed motion scalar key
+is observed in this bounded scan. Script counts remain308; the command-use
+observations are identical. These input matches corroborate the named
+configuration contract, not native Windows execution or full motion fidelity.
+
+Boarding function`0x3e2f8` pops the pending ring read cursor+196 and decrements
+count+188: guest removal is FIFO. It updates a native uint32 RNG state as
+`state*214013+2531011`, uses upper16 bits modulo the supplied eligible-car
+count, then scans/wraps candidates until car+52<car+68. FIFO guest removal
+therefore does not imply sequential car allocation. This RNG proof is scoped
+to this boarding helper, not RSE RAND or the entire game's randomness.
+The host attachment call obtains a physical node from carDefinition+44
+indexed by existing rider count, with model handle from car+12. The node-array
+construction, ownership callback and paired-seat mapping remain unresolved.
+
+TOUR raw14 reaches`0x66dc0`. Nonzero input sets controller+0 from+4 and+56=1.
+Zero input returns unchanged when controller+52==3; otherwise it sets+0=1,
++56=0 and negates positive occupancy+232 for entries whose type+220 is1.
+Departure`0x66784` increments that negative count toward0 before reading
+slot[-updatedCount], proving reverse boarding order. Fourteen literal TOUR14
+calls occur in each PC corpus; the metadata representative is Fantasy
+twetours word23/input1, and both parameter branches remain native facts.
+This is one transition, not a complete start/stop/boarding state machine.
+
+Sound initializer`0x3bb6c` receives a **train** from caller`0x3efd0`, after the
+caller iterates cars at train+40/count+12 with96-byte stride. Its output+84..104
+must not be conflated with prospective car XYZ. The advisor/audio lane owns
+the sound routing and event-index meaning.
+
+Next implementation dependencies remain explicit: original TrackInfo.Direction
+axis/enum, type4 binding, COS caller/load/save linkage, spline/sample creation,
+station and release boundaries, seat-node mapping, and full adaptive motion.
+Absence from a SAM search does not prove absence from another format, defaults
+or native runtime. No production motion/controller code changed in this slice.

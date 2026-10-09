@@ -1655,6 +1655,14 @@
         {
           "key": "sTrainType.uiMaxCars",
           "value": 1
+        },
+        {
+          "key": "sCoasterType.fAccelerationPerHeight",
+          "value": 1.2
+        },
+        {
+          "key": "sCoasterType.fFrictionMultiplier",
+          "value": 0.98
         }
       ]
     },
@@ -1901,6 +1909,14 @@
         {
           "key": "sTrainType.uiMaxCars",
           "value": 1
+        },
+        {
+          "key": "sCoasterType.fAccelerationPerHeight",
+          "value": 1
+        },
+        {
+          "key": "sCoasterType.fFrictionMultiplier",
+          "value": 0.97
         }
       ]
     },
@@ -2127,6 +2143,14 @@
         {
           "key": "sTrainType.uiMaxCars",
           "value": 1
+        },
+        {
+          "key": "sCoasterType.fAccelerationPerHeight",
+          "value": 0.8
+        },
+        {
+          "key": "sCoasterType.fFrictionMultiplier",
+          "value": 0.95
         }
       ]
     },

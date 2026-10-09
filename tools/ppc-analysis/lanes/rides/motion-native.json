@@ -1,0 +1,172 @@
+{
+  "boarding": {
+    "candidate_rng": "uint32 state*214013+2531011; upper16 remainder eligibleCarCount; RNG scope is this helper only",
+    "car_order": "native random candidate remainder then wrap scan for car+52 < car+68",
+    "function": 254712,
+    "guest_order": "pending ring FIFO",
+    "physical_node_source": "carDefinition+44[existing rider count]; caller uses modelhandle car+12",
+    "startup_phase": "not fully qualified; station-range and controller flags gate loading"
+  },
+  "checked_instruction_count": 159,
+  "motion": {
+    "cached_clock": "scaled animation cache+16400",
+    "car_current_xyz": [
+      72,
+      76,
+      80
+    ],
+    "car_projected_xyz": [
+      84,
+      88,
+      92
+    ],
+    "distance": "single deltas; single y/z squares; double fused x*x+ySquare; double sum/sqrt -> single",
+    "height_target": "max(supplied_floor, fma(modifier, single(acceleration * single(currentY-projectedY)), speed))",
+    "interpolation": "single(next*fraction) then single fused current*(1-fraction)+product",
+    "manager": 230988,
+    "path_precompute": 261144,
+    "path_stride": 56,
+    "path_xyz": [
+      4,
+      8,
+      12
+    ],
+    "sample_friction_flag": 8,
+    "section_winch_flag": 2048,
+    "tick": 263760,
+    "time_delta": "uint32 elapsed -> single -> /1000 single; no live clock call"
+  },
+  "schema": 1,
+  "scope": "static Mac schema-to-motion and FIFO boarding; no full motion/serialized track decoder",
+  "settings": {
+    "constructor": 94028,
+    "descriptor_base": 192292,
+    "descriptor_count": 384,
+    "descriptor_sha256": "ee3e328dd7b32dc0276c1a2f77f6e73c89164fbed76aad530cb0b407f9976690",
+    "descriptor_stride": 60,
+    "loader": 196072,
+    "mapping": [
+      {
+        "copy_load": 196468,
+        "copy_store": 196484,
+        "definition_field": 36,
+        "descriptor_index": 340,
+        "name": "fAccelerationPerHeight",
+        "settings_field": 15064
+      },
+      {
+        "copy_load": 196488,
+        "copy_store": 196504,
+        "definition_field": 40,
+        "descriptor_index": 341,
+        "name": "fUphillAccelModifier",
+        "settings_field": 15068
+      },
+      {
+        "copy_load": 196508,
+        "copy_store": 196524,
+        "definition_field": 44,
+        "descriptor_index": 342,
+        "name": "fDownhillAccelModifier",
+        "settings_field": 15072
+      },
+      {
+        "copy_load": 196536,
+        "copy_store": 196552,
+        "definition_field": 68,
+        "descriptor_index": 353,
+        "name": "fWinchSpeed",
+        "settings_field": 15116
+      },
+      {
+        "copy_load": 196556,
+        "copy_store": 196572,
+        "definition_field": 72,
+        "descriptor_index": 354,
+        "name": "fMinSpeed",
+        "settings_field": 15120
+      },
+      {
+        "copy_load": 196576,
+        "copy_store": 196592,
+        "definition_field": 76,
+        "descriptor_index": 355,
+        "name": "fMaxSpeedAtMinSetting",
+        "settings_field": 15124
+      },
+      {
+        "copy_load": 196596,
+        "copy_store": 196612,
+        "definition_field": 80,
+        "descriptor_index": 356,
+        "name": "fMaxSpeedAtMaxSetting",
+        "settings_field": 15128
+      },
+      {
+        "copy_load": 197044,
+        "copy_store": 197060,
+        "definition_field": 84,
+        "descriptor_index": 357,
+        "name": "fFrictionMultiplier",
+        "settings_field": 15132
+      },
+      {
+        "copy_load": 196616,
+        "copy_store": 196632,
+        "definition_field": 96,
+        "descriptor_index": 360,
+        "name": "fGravityX",
+        "settings_field": 15144
+      },
+      {
+        "copy_load": 196636,
+        "copy_store": 196652,
+        "definition_field": 100,
+        "descriptor_index": 361,
+        "name": "fGravityY",
+        "settings_field": 15148
+      },
+      {
+        "copy_load": 196656,
+        "copy_store": 196672,
+        "definition_field": 104,
+        "descriptor_index": 362,
+        "name": "fGravityZ",
+        "settings_field": 15152
+      },
+      {
+        "copy_load": 196676,
+        "copy_store": 196692,
+        "definition_field": 108,
+        "descriptor_index": 363,
+        "name": "fForceMultiplier",
+        "settings_field": 15156
+      }
+    ]
+  },
+  "sha256": "04809cd4ccee5433c7fb0b7c93d32f6a7aa629c1849181c0b7906415e5e295f5",
+  "sound_output": {
+    "caller": 258000,
+    "initializer": 244588,
+    "record": "train, not car"
+  },
+  "tour_unload": {
+    "departure": "0x66784 increments negative occupancy toward zero then loads slot[-updatedOccupancy]",
+    "exception_gate": "controller+52==3 returns without transition",
+    "function": 421312,
+    "parameter": "resolved zero",
+    "raw_command": 14,
+    "state": "controller+0=1, +56=0; entries type+220==1 negate positive occupancy+232"
+  },
+  "unresolved": [
+    "TrackInfo.Direction axis/enum",
+    "COS load/save linkage",
+    "type4 binding",
+    "full station/start/stop transitions",
+    "adaptive motion integration",
+    "seat node ownership callbacks",
+    "brake/collision/reverse train state",
+    "original FPSCR/exceptional float behavior",
+    "PC runtime equivalence"
+  ]
+}

@@ -172,6 +172,12 @@ internal static class Game
 		using var flow = new GameFlow { OnlineFolders = onlineFolders };
 		Render.OnUpdate += flow.Update;
 		Render.OnRender += flow.Render;
+		var capturePath = GetOption( args, "--capture-world", "a .png file for the world-only screenshot" );
+		if ( capturePath != null )
+		{
+			var frames = GetOption( args, "--capture-frames", "a frame count" ) is { } text && int.TryParse( text, out var parsed ) && parsed > 0 ? parsed : 240;
+			Render.PostUpdate += new WorldCapture( capturePath, frames ).Update;
+		}
 		var smoke = args.Contains( "--smoke-test" );
 		if ( visit == null && originalLevelIndex < 0 && !args.Contains( "--advisor-say" ) && !args.Contains( "--sandbox" ) && (!smoke || args.Contains( "--front-end" )) )
 		{

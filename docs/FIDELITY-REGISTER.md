@@ -14,7 +14,7 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **135 unresolved unique APPROX IDs**, 150 APPROX occurrences, 48 EXT occurrences, 62 DATA occurrences and 9 BIN occurrences.
+Current inventory: **135 unresolved unique APPROX IDs**, 150 APPROX occurrences, 49 EXT occurrences, 62 DATA occurrences and 9 BIN occurrences.
 
 Of these, 129 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
@@ -378,6 +378,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | texture-pack | `source/OpenTPW/Render/Assets/TexturePackBuilder.cs:63` | [EXT:texture-pack] Builder for the optional local upscaled texture pack; original files are only read. |
 | texture-pack | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:147` | [EXT:texture-pack] optional locally built upscaled textures; off unless a pack exists and the player turns it on |
 | upscaling | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:34` | [EXT:upscaling] render-scale steps (presets 77/67/59/50 from the display slice plus 5% steps) |
+| world-capture | `source/OpenTPW/Client/WorldCapture.cs:13` | [EXT:world-capture] developer/screenshot command, not original behaviour |
 
 ## Data provenance sites
 

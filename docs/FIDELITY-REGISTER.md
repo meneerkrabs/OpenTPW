@@ -253,7 +253,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-042 | `source/OpenTPW/Economy/EconomyObjectCatalog.cs:111` | [APPROX:ECON-042] sideshow InitCostOfGoods is the cost of a prize paid per win — evidence needed: sideshow panel capture |
 | ECON-043 | `source/OpenTPW/Economy/BalanceSettings.cs:173` | [APPROX:ECON-043] monthly wage = BaseWage[grade] x PayMultiplier[type] — evidence needed: staff list capture with grades |
 | ECON-044 | `source/OpenTPW/Economy/GuestEconomyBridge.cs:60` | [APPROX:ECON-044] balloon/costume percentages are 0 (guests carry no items yet) — evidence needed: guests slice item state |
-| ECON-045 | `source/OpenTPW.Files/Formats/Save/SaveEconomyRecords.cs:91` | [APPROX:ECON-045] loan/challenge record locators use plausibility bounds (one fixture) — evidence needed: a second TPWS/TPWI fixture |
+| ECON-045 | `source/OpenTPW.Files/Formats/Save/SaveEconomyRecords.cs:105` | [APPROX:ECON-045] loan/challenge record locators use plausibility bounds (one fixture) — evidence needed: a second TPWS/TPWI fixture |
 | ECON-046 | `source/OpenTPW/Economy/ParkEconomy.cs:522` | [APPROX:ECON-046] upgrades need at least one employed mechanic to be bought — evidence needed: capture (TAG_SYSTEM 151 suggests it) |
 | ONLINE-001 | `source/OpenTPW.Online/Moderation/WordFilter.cs:86` | [APPROX:ONLINE-001] Matching rule — evidence needed: the original filter code is not |
 | ONLINE-002 | `source/OpenTPW.Online/Chat/ChatCommands.cs:180` | [APPROX:ONLINE-002] A line starting with '/' is a command, anything else is "say" — evidence |

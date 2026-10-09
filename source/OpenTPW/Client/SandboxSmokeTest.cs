@@ -10,8 +10,10 @@ internal sealed class SandboxSmokeTest : IDisposable
 	private readonly Level level;
 	private readonly BaseFileSystem originalSaveFileSystem;
 	private readonly string temporaryDirectory = Path.Combine( Path.GetTempPath(), $"opentpw-smoke-{Guid.NewGuid():N}" );
+	private const double MaximumSecondsUntilMotion = 30;
+	private readonly System.Diagnostics.Stopwatch sinceOpened = System.Diagnostics.Stopwatch.StartNew();
 	private int frame;
-	private bool observedMotion;
+	private int motionFrame;
 	private bool completed;
 
 	public SandboxSmokeTest( Level level )
@@ -27,37 +29,45 @@ internal sealed class SandboxSmokeTest : IDisposable
 	public void Update()
 	{
 		++frame;
-		if ( frame <= 90 )
-			observedMotion |= level.PlacedRide!.MotionHeight > 0;
-		if ( frame == 90 )
+		if ( motionFrame == 0 )
 		{
-			Require( observedMotion, "running ride moves" );
+			// Totem.RSE waits up to 10 s for passengers before it triggers its main animation.
+			if ( level.PlacedRide!.MotionHeight > 0 )
+				motionFrame = frame;
+			else
+				Require( sinceOpened.Elapsed.TotalSeconds < MaximumSecondsUntilMotion, "original Totem script starts the ride motion" );
+			return;
+		}
+		var step = frame - motionFrame;
+		if ( step == 30 )
+		{
+			Require( level.PlacedRide!.Script.State != RideVMState.Faulted && level.PlacedRide.Script[RideVariables.VAR_RUNNING] == 1, "original script reports the ride running" );
 			CaptureFrame( "park.png" );
 			level.SaveSandbox();
 			level.PlacedRide!.Stop();
-			Require( !level.PlacedRide.IsRunning && level.PlacedRide.MotionHeight == 0, "stop resets motion" );
+			Require( !level.PlacedRide.IsOpen, "close ride" );
 			level.RemoveRide();
 			Require( level.PlacedRide == null, "remove ride" );
 			level.LoadSandbox();
-			Require( level.PlacedRide != null && level.PlacedRide.IsRunning, "restore running ride" );
+			Require( level.PlacedRide != null && level.PlacedRide.IsOpen, "restore open ride" );
 		}
-		if ( frame == 120 )
+		if ( step == 60 )
 		{
 			level.RemoveRide();
 			level.SaveSandbox();
 			level.LoadSandbox();
 			Require( level.PlacedRide == null, "restore empty park" );
 		}
-		if ( frame == 125 )
+		if ( step == 65 )
 		{
 			CaptureFrame( "terrain.png" );
 			Require( level.PlaceRide( new Vector3( 10, 10, 0 ) ), "place ride again" );
 		}
-		if ( frame == 150 )
+		if ( step == 90 )
 		{
 			Device.WaitForIdle();
 			completed = true;
-			Log.Trace( $"Native sandbox smoke test passed: {frame} frames, original ride, motion, stop, remove, isolated save/load and GPU readback." );
+			Log.Trace( $"Native sandbox smoke test passed: {frame} frames, original ride and RSE script, script-triggered motion, close, remove, isolated save/load and GPU readback." );
 			Render.Window.SdlWindow.Close();
 		}
 	}

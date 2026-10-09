@@ -18,7 +18,7 @@ public sealed class ParkLayout
 		ImGui.SetNextWindowSize( new System.Numerics.Vector2( 320, 0 ), ImGuiCond.Always );
 		if ( ImGui.Begin( "OpenTPW - Jungle sandbox", ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.AlwaysAutoResize ) )
 		{
-			ImGui.TextWrapped( "Original assets; prototype motion. Full simulation and original ride scripts are not implemented yet." );
+			ImGui.TextWrapped( "Original assets. The Totem runs its original RSE script; its carriage motion is a procedural stand-in, and visitors, sounds and effects are not simulated." );
 			ImGui.Separator();
 			if ( level.PlacedRide == null )
 			{
@@ -29,10 +29,12 @@ public sealed class ParkLayout
 			}
 			else
 			{
-				ImGui.Text( level.PlacedRide.IsRunning ? "Ride: running" : "Ride: stopped" );
-				if ( ImGui.Button( level.PlacedRide.IsRunning ? "Stop ride" : "Start ride" ) )
+				var script = level.PlacedRide.Script;
+				ImGui.Text( level.PlacedRide.IsOpen ? "Ride: open" : "Ride: closed" );
+				ImGui.Text( $"Script: {script.ScriptName}, {script.State}, VAR_RUNNING={script[RideVariables.VAR_RUNNING]}" );
+				if ( ImGui.Button( level.PlacedRide.IsOpen ? "Close ride" : "Open ride" ) )
 				{
-					if ( level.PlacedRide.IsRunning )
+					if ( level.PlacedRide.IsOpen )
 						level.PlacedRide.Stop();
 					else
 						level.PlacedRide.Start();

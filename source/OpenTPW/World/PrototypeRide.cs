@@ -9,15 +9,27 @@ public sealed class PrototypeRide : Entity
 	public const string DisplayName = "Inca Totem (prototype)";
 	internal const string ArchivePath = "/levels/jungle/rides/totem";
 	internal const string CarriageMeshName = "tp_cart";
+	internal const string ScriptPath = ArchivePath + "/Totem.RSE";
+
+	/// <summary>
+	/// <c>ANIM_Main</c> in ScriptDefs and the first operand of the docs' <c>TRIGANIM ANIM_Main 0 0</c> example.
+	/// Totem.RSE triggers it once per ride cycle after setting VAR_RUNNING and waits for it with WAIT4ANIM.
+	/// </summary>
+	internal const int MainAnimation = 5;
 
 	private readonly RideMotion motion = new();
+	private readonly RideVM script;
 	private readonly List<(ModelEntity Entity, Vector3 Offset, bool IsCarriage)> children = new();
 	private readonly List<Model> models = new();
 	private bool deleted;
 
-	public bool IsRunning => motion.IsRunning;
+	/// <summary>The ride is open: the original script sees VAR_RIDECLOSED = 0.</summary>
+	public bool IsOpen => script[RideVariables.VAR_RIDECLOSED] == 0;
 	public float MotionHeight => motion.Height;
 	public double Phase => motion.Phase;
+
+	/// <summary>The original Totem.RSE, driven by the fixed simulation tick.</summary>
+	public RideVM Script => script;
 
 	public PrototypeRide( Vector3 position )
 	{
@@ -32,6 +44,12 @@ public sealed class PrototypeRide : Entity
 			if ( settings["Info.Id"] != "1110" )
 				throw new InvalidDataException( "The ride settings do not identify the original Inca Totem." );
 			Name = DisplayName;
+			using ( var scriptStream = FileSystem.OpenRead( ScriptPath ) )
+				script = new RideVM( scriptStream, new RideVMOptions { Effects = new TotemEffects( this ), SourceName = ScriptPath } );
+			// Upgrades[0].InitCapacity is the only capacity the .sam gives for a new ride. VAR_DURATION has no
+			// source yet and stays 0, which Totem.RSE treats as a single ride cycle per run.
+			script[RideVariables.VAR_CAPACITY] = int.Parse( settings["Upgrades[0].InitCapacity"], System.Globalization.CultureInfo.InvariantCulture );
+			script[RideVariables.VAR_RIDECLOSED] = 1;
 			var modelFile = new ModelFile( $"{ArchivePath}/totem.MD2" );
 			if ( !modelFile.Meshes.Any( mesh => IsCarriage( mesh.Name ) ) )
 				throw new InvalidDataException( "The original Totem model does not contain its tp_cart carriage mesh." );
@@ -80,23 +98,28 @@ public sealed class PrototypeRide : Entity
 		}
 	}
 
+	/// <summary>Opens the ride. The script decides when the carriage moves (Totem.RSE waits up to 10 s for passengers).</summary>
 	public void Start()
 	{
 		if ( !deleted )
-			motion.Start();
+			script[RideVariables.VAR_RIDECLOSED] = 0;
 	}
 
+	/// <summary>Closes the ride; the script finishes its current cycle and then idles.</summary>
 	public void Stop()
 	{
-		motion.Stop();
-		UpdateChildren();
+		if ( !deleted )
+			script[RideVariables.VAR_RIDECLOSED] = 1;
 	}
 
 	internal void Simulate( float deltaTime )
 	{
 		if ( deleted )
 			return;
+		script.Advance( deltaTime );
 		motion.Update( deltaTime );
+		if ( motion.IsRunning && motion.ElapsedSeconds >= motion.CycleDuration )
+			motion.Stop();
 		UpdateChildren();
 	}
 
@@ -109,6 +132,7 @@ public sealed class PrototypeRide : Entity
 	protected override void OnDelete()
 	{
 		deleted = true;
+		script?.Stop();
 		motion.Stop();
 		foreach ( var child in children )
 			child.Entity.Delete();
@@ -123,6 +147,29 @@ public sealed class PrototypeRide : Entity
 			} );
 		}
 		models.Clear();
+	}
+
+	/// <summary>
+	/// Routes Totem.RSE effects. Only ANIM_Main is connected: it plays one cycle of the procedural
+	/// <see cref="RideMotion"/> as a stand-in for the undecoded MD2 animation and reports that cycle's length.
+	/// Everything else (sounds, objects, visitors, channel animations) is an unimplemented effect.
+	/// </summary>
+	private sealed class TotemEffects : IRideScriptEffects
+	{
+		private readonly PrototypeRide ride;
+
+		public TotemEffects( PrototypeRide ride ) => this.ride = ride;
+
+		public int Perform( RideEffectCall call )
+		{
+			if ( call.Opcode is Opcode.TRIGANIM or Opcode.WAITANIM or Opcode.TRIGWAITANIM && call.Argument( 0 ) == MainAnimation )
+			{
+				ride.motion.Stop();
+				ride.motion.Start();
+				return (int)(ride.motion.CycleDuration * 1000);
+			}
+			return UnimplementedRideScriptEffects.Instance.Perform( call );
+		}
 	}
 
 	internal static bool IsCarriage( string meshName ) => string.Equals( meshName.TrimEnd( '\0' ), CarriageMeshName, StringComparison.OrdinalIgnoreCase );

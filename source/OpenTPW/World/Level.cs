@@ -62,7 +62,7 @@ public class Level
 			return false;
 		PlacedRide = new PrototypeRide( position );
 		IsPlacing = false;
-		Log.Trace( $"Placed prototype ride at {position}. Original RSE execution is not yet implemented." );
+		Log.Trace( $"Placed prototype ride at {position}; it runs its original Totem.RSE script." );
 		return true;
 	}
 
@@ -76,7 +76,7 @@ public class Level
 	public void SaveSandbox()
 	{
 		var state = PlacedRide == null ? SandboxSave.CreateEmpty() : new SandboxSave(
-			SandboxSave.CurrentVersion, PlacedRide.Position.X, PlacedRide.Position.Y, true, PlacedRide.IsRunning );
+			SandboxSave.CurrentVersion, PlacedRide.Position.X, PlacedRide.Position.Y, true, PlacedRide.IsOpen );
 		SandboxSave.Save( SaveFileSystem.GetAbsolutePath( "opentpw-sandbox.json" ), state );
 		LastActionMessage = "Sandbox saved. This is not an original TPWS save.";
 	}
@@ -93,7 +93,7 @@ public class Level
 		RemoveRide();
 		PlacedRide = replacement;
 		simulationClock.Reset();
-		LastActionMessage = "Sandbox loaded; motion restarts from its initial phase.";
+		LastActionMessage = "Sandbox loaded; the ride script restarts from its first instruction.";
 	}
 
 	public void Render()

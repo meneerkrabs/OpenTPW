@@ -8,7 +8,8 @@ namespace OpenTPW.UI.Original;
 public readonly record struct UiModelVertex( NVector2 Position, float Depth, NVector2 TexCoords );
 
 /// <summary>Triangles of one texture inside a <see cref="UiModelFrame"/>.</summary>
-public sealed record UiModelPart( string TextureName, IReadOnlyList<UiModelVertex> Vertices, IReadOnlyList<int> Indices );
+/// <param name="Transparent">The texture slot sets flag 0x2 (<see cref="UiImages.TransparentFlag"/>).</param>
+public sealed record UiModelPart( string TextureName, IReadOnlyList<UiModelVertex> Vertices, IReadOnlyList<int> Indices, bool Transparent = false );
 
 /// <summary>
 /// One drawable frame of an original <c>ui.wad</c> model. Frame 0 is the root mesh; further frames are
@@ -138,6 +139,7 @@ public sealed class UiModel
 		// Group triangles by material texture and order groups back to front (lower Z first), as the
 		// panels layer flat inner faces over their bevels.
 		var groups = new Dictionary<string, List<(float Depth, int A, int B, int C)>>( StringComparer.OrdinalIgnoreCase );
+		var transparent = new HashSet<string>( StringComparer.OrdinalIgnoreCase );
 		for ( var face = 0; face + 2 < mesh.Indices.Length; face += 3 )
 		{
 			var a = (int)mesh.Indices[face];
@@ -147,6 +149,8 @@ public sealed class UiModel
 				continue;
 			var material = mesh.Materials[(int)Math.Min( mesh.Vertices[a].TextureIndex, (uint)mesh.Materials.Length - 1 )];
 			var key = material.TextureIndex < 0 ? "" : material.Name;
+			if ( (material.Flags & UiImages.TransparentFlag) != 0 )
+				transparent.Add( key );
 			if ( !groups.TryGetValue( key, out var list ) )
 				groups[key] = list = new();
 			list.Add( ((vertices[a].Depth + vertices[b].Depth + vertices[c].Depth) / 3, a, b, c) );
@@ -155,7 +159,7 @@ public sealed class UiModel
 		{
 			var triangles = group.Value.OrderBy( triangle => triangle.Depth ).ToList();
 			return (Depth: triangles.Average( triangle => triangle.Depth ), Part: new UiModelPart( group.Key, vertices,
-				triangles.SelectMany( triangle => new[] { triangle.A, triangle.B, triangle.C } ).ToArray() ));
+				triangles.SelectMany( triangle => new[] { triangle.A, triangle.B, triangle.C } ).ToArray(), transparent.Contains( group.Key ) ));
 		} ).OrderBy( part => part.Depth ).Select( part => part.Part ).ToArray();
 		return new UiModelFrame( nodeName, parts, minX, minY, maxX, maxY );
 	}

@@ -115,7 +115,7 @@ internal sealed class UiRenderer : IDisposable
 				return null;
 			try
 			{
-				var (width, height, rgba) = UiImages.Load( texture.ImagePath );
+				var (width, height, rgba) = UiImages.LoadKeyed( texture.ImagePath );
 				entry = Create( rgba, width, height, Device.LinearSampler );
 			}
 			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or NotSupportedException or ArgumentException or InvalidOperationException )

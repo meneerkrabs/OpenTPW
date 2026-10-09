@@ -92,7 +92,7 @@ public sealed class FrontEndMenu
 		IslandButton( "nextIsland", "b_lobright", 369, 344, () => NextIsland( 1 ) );
 
 		// [APPROX:UI-014] logo/title placement and the right-hand Load/Options/Quit column — evidence needed: capture of the original lobby
-		screen.Add( new UiModelImage { Id = "logo", Model = "tpwlogo", Bounds = new UiRect( 819, 40, 410, 154 ), Anchor = UiAnchor.Top } );
+		screen.Add( new UiModelImage { Id = "logo", Model = "tpwlogo", ArtOverride = "tpw_logo", Bounds = new UiRect( 819, 40, 410, 154 ), Anchor = UiAnchor.Top } );
 		screen.Add( new UiLabel { Id = "title", Text = () => strings[UIStrings.ThemeParkWorld], Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center, Bounds = new UiRect( 624, 196, 800, 90 ), Anchor = UiAnchor.Top } );
 
 		var menu = new (string Id, UIStrings Label, Action Clicked)[]

@@ -1015,3 +1015,103 @@ compressed audio, PCM, script bytes or disassembly is committed. Remaining
 runtime blockers are category/bank remap state, event element selection and
 parameter semantics, full music sequencing, environmental priorities/voice
 limits, plus game-message/score and pause-aware clock integration.
+
+## Phase 8: category bank ordinals resolve to SDT members
+
+`bank_remap_evidence.py` advances the earlier bank-remap dependency with
+identity-pinned native operands and actual selected PC/Mac assets. The transient
+map belongs to a **category registration**, while the loaded-bank registry is
+shared. A catalog ID, a serialized bank ordinal, a global loaded-bank index,
+a sample ordinal and an SDT entry name are separate identities.
+
+### Native registration and fixup lifetime
+
+| Native sound-library evidence | Established role |
+| --- | --- |
+| `0x14bc0 → 0x15d4c → 0x157d0 → 0x15100` | Register category BANK definitions before reading SFX definitions. |
+| `0x15194`, `0x15208` | Bank records occupy 11 bytes and are processed in stored order. |
+| `0x151dc`, `0x151e8`, `0x151cc` | Reset serialized handle/cache fields and replace the serialized string pointer. These stored pointer-shaped words do not supply an SDT filename or a stable runtime handle. |
+| `0x15b8c–0x15b94`, `0x15c24–0x15c30` | A newly registered bank takes the next logical counter at streamer +52 and stores its global registry index in vector +44. |
+| `0x15590–0x15598`, `0x15628–0x15638` | A reused loaded bank also takes the next logical counter and appends its existing registry index. Reuse does not collapse or skip a BANK-file ordinal. |
+| `0x14c00 → 0x161c0 → 0x15f00 → 0x162bc` | Read the SFX catalog after the logical bank map has been built. |
+| `0x16a58`, `0x16af4–0x16b04` | Read the packed sample-choice bank at +12; for nonzero values, index `bankOrdinal - 1` into streamer +44 and overwrite that field with the global registry index. |
+| `0x14c10–0x14c34`, `0x14fa0–0x14fc8` | Free/reset the transient vector, capacity +48 and logical counter +52 after registration. The lifetime is BANK load → SFX fixup → temporary-map teardown. |
+| `0xf5d0`, `0xf5e8` | The placeholder resolves the rewritten bank while retaining sample ID at choice +0. |
+| `0x6fa4` | `TbMMFileBank::GetSamplePosition` subtracts one before indexing its entry-position array: sample IDs are one-based. |
+| `0x6a64` | Identified `TbFileBank::GetSampleName` returns zero. This path does not establish playback by stored SDT name. |
+
+Bank zero is a native special branch that skips this remap. The bounded resolver
+rejects zero or out-of-range ordinals instead of silently assigning the first
+bank. Registration success, alternate-root flags, filename quality selection
+and mixer/device policy remain separate dependencies. The corpus command takes
+`HD.sdt` explicitly; matching that supplied family is not proof that every
+original runtime always chooses HD data. Selected BANK flag bytes contain no
+0x20 alternate-root route, which the bounded corpus check refuses to invent.
+
+### Actual corpus resolution
+
+The existing BANK reader bounds every path string, record count and end of
+input. `bank_records` keeps file order and registration flags while ignoring
+serialized cache/pointer fields. Each SFX sample choice first resolves its
+BANK-file ordinal, then its SDT sample ordinal. Names are preserved exactly as
+stored in the fixed 16-byte SDT name field; no suffix repair, prefix matching,
+case folding or duplicate-name collapse is applied to entries.
+
+| Corpus | Catalogs | Logical BANK records | Referenced SDT paths | Resolved sample choices |
+| --- | ---: | ---: | ---: | ---: |
+| Supplied PC baseline `Data` tree | 31 | 53 | 47 | 3,631 |
+| Selected Mac HFS copies: global UI and fantasy/hallow/jungle rides | 4 | 13 | 13 | 1,105 |
+
+The UI lane copied 21 original Mac data forks read-only to
+`/tmp/ppc-advisor-mac-Data`, preserving case and recording source paths,
+lengths and SHA-256 outside Git. The HFS image remained unchanged at SHA-256
+`46edf2f94ce9a36834f7760ef3e3852e623863a8a8ef99ef629872b15d599365` and was
+unmounted afterward. No HFS global state was modified by this advisor lane.
+The four selected BANK/SFX pairs are byte-identical between these supplied
+PC and Mac copies; their resolved choices agree. This is selected asset
+correspondence, not Windows executable or device parity.
+
+| Catalog context / ID | BANK ordinal / family | SDT ordinals / actual stored names |
+| --- | --- | --- |
+| Global `cat_ui` / 31 | 1 / `Sound\sfUi` | 10 / `BUTTON01.mp2` |
+| Fantasy `cat_rides` / 145 | 3 / `Sound\xRide` | 15–20 / `dull_crmbl1.mp2`, `dull_crmbl2.mp2`, `dull_crmbl3.mp2`, `dull_crmbl5.mp2`, `dull_crmbl6.mp2`, `dull_crmbl7.mp2` |
+| Hallow `cat_rides` / 175 | 2 / `Sound\xRide` | 8–13 / `mt_crmbl1.mp2` through `mt_crmbl6.mp2` |
+| Jungle `cat_rides` / 204 | 3 / `Sound\xRide` | 8–12 / `wd_crmbl1e.mp2`, `wd_crmbl2e.mp2`, `wd_crmbl3e.mp2`, `wd_crmbl5e.mp2`, `wd_crmbl7e.mp2` |
+
+Fantasy and jungle list banks `[Ride, sRide, xRide]`; hallow lists
+`[ride, xRide, sRide]`. Thus bank 2/3 have context-dependent meanings. Likewise,
+Jungle catalog 145 resolves to `Sound\Ride` sample 217, `fallz2.mp2`, while
+Fantasy catalog 145 resolves to the six xRide members above. A number alone
+cannot receive a global event or clip alias.
+
+Stored names also cannot replace numeric identities: global `UIHD.sdt` has
+two entries named `tp_balloon_pop_`; Jungle `AmbientHD.sdt` has two each named
+`TP STRANGE DEEP` and `TP STRANGELY DE`. They remain distinct ordinal/offset
+records even when their truncated strings coincide. The current production
+SDT reader's packed-field/natural-name fixes were integrated separately; this
+lane adds no gameplay or archive-lookup changes.
+
+### Role in EVENT and SPAWNSOUND
+
+The recovered RSE `EVENT` category selector chooses local/global registered
+categories as shown in phase 7. Its catalog ID selects a sound definition;
+that definition's sample choices use the category BANK map before reaching
+loaded-bank/sample positions. `SPAWNSOUND` loads the child script; its variable
+getter and wrapper resolve a variable to that catalog ID, with zero suppressing
+submission. Neither operation supplies an SDT name directly. The mappings above
+now attach concrete names to selected numeric choices without treating the
+EventMap variable, sound catalog record and SDT ordinal as interchangeable.
+
+```sh
+OPENTPW_PPC_BIN_ROOT=/Users/sander/server/game-assets/mac-feral/bin OPENTPW_PC_DATA=/Users/sander/server/game-assets/theme-park-world/Data OPENTPW_MAC_DATA=/tmp/ppc-advisor-mac-Data python3 -m unittest discover -s tools/ppc-analysis/lanes/advisor -p 'test_*.py' -v
+python3 tools/ppc-analysis/lanes/advisor/bank_remap_evidence.py /Users/sander/server/game-assets/mac-feral/bin --pc-data /Users/sander/server/game-assets/theme-park-world/Data --mac-data /tmp/ppc-advisor-mac-Data > /tmp/advisor-bank-remap-pc-mac.json
+```
+
+All 48 lane Python checks pass with the selected fixtures. Ten new cases cover
+record order, ignored cache words, bank-before-sample resolution, duplicate
+truncated names, invalid ordinals/paths/quality suffixes, context-specific IDs
+and actual native/PC/Mac operands and mappings. Confidence is high for these
+identities and bounds. Event element selection, random weighting, parameter
+semantics, exact filename quality/root policy, environmental priority and audio
+output scheduling remain unimplemented dependencies; no PCM-clock LIP bridge
+or original runtime parity is inferred.

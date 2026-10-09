@@ -517,3 +517,32 @@ The actual speed calls are Fantasy4000, Hallow2000, Jungle4000 and Space1800
 in their gates scripts, with exact word offsets and script SHA in the metadata.
 These are PC asset corroborations; no original game was executed and no
 Windows runtime or full animation fidelity is claimed.
+
+## Bounded vehicle/passenger reference helper
+
+[Controller reference primitives](../../tools/ppc-analysis/lanes/rides/controllers/README.md)
+are a separate no-dependency C# console project outside production. They model
+supplied ring counters/cursors and departure boundaries, logical per-vehicle
+rider allowance/count snapshots, capacity-plan arithmetic, TOUR reverse slot
+order, and the 39 command input/output/accumulator directions. Missing effect
+results are typed unsupported, never an invented admission/query zero.
+
+The known 64-vehicle predicate remains explicitly **BUMP only**; its launch
+guard is not a successful allocation/admission result or a proven COAST cap.
+Coaster capacity10 across three eligible cars yields3,3,4, while two observed
+cars with two/one riders contain three passengers. Reduced allowances retain
+existing riders; live teardown/redistribution and physical paired-seat/node
+binding are unsupported. Ring room can be negative after a configured-limit
+reduction. Physical capacity changes reject without discarding occupants.
+Release-boundary and held-count transfers are supplied observations, not
+guessed control transitions.
+
+The shared TPI `7f2a6b2` metadata groups80 COS files into16 body SHA groups
+after offset132, five languages each, and finds no TrackInfo/Direction key
+among369 SAM inputs. These are comparison/schema constraints only. No COS
+memory/file linkage, serialized record size, track position or direction-axis
+contract is inferred by the reference helper. Each missing schema yields a
+typed diagnostic. Eleven synthetic cases pass in Debug and Release for
+empty/full/held rings, cursor wrap, capacity changes/distribution, paired logical
+rider counts, reverse TOUR order, BUMP63/64, all command roles and unsupported
+shapes. No gameplay/controller core changes are included.

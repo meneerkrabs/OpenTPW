@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "scope": "synthetic reference primitives; no production controllers, serialized COS layout, admission or motion",
+  "tests": [
+    "empty ring and missing release boundary",
+    "allocated capacity and held-count full guard",
+    "cursor wrapping with observed boundaries",
+    "configured capacity reductions preserve signed query",
+    "capacity 3/3/4 and eligible car separation",
+    "per-vehicle and total rider counts",
+    "BUMP64 guard without invented allocation",
+    "reverse TOUR departure slots",
+    "all command operand/accumulator directions",
+    "unavailable effect is not a zero response",
+    "typed COS, direction and seat schema diagnostics"
+  ],
+  "contractCount": 39,
+  "vehicleCapProof": "BUMP only; COAST implicit64 unsupported"
+}

@@ -4,11 +4,9 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Remove="animation/**/*.cs" />
-    <Compile Remove="controllers/**/*.cs" />
-    <Compile Include="animation/OriginalAnimationState.cs" />
-    <ProjectReference Include="../../../../source/OpenTPW.Files/OpenTPW.Files.csproj" />
+    <None Include="../controller-contracts.json" Link="controller-contracts.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

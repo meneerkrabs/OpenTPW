@@ -18,6 +18,8 @@ public class Level
 	/// <summary>Imported original level data; null for the generic sandbox.</summary>
 	public OriginalPark? OriginalPark { get; private set; }
 	public OriginalTerrain? OriginalTerrain { get; private set; }
+	/// <summary>Park management simulation (money, clock, staff, research); original levels only for now.</summary>
+	public ParkEconomyRuntime? Park { get; private set; }
 	private bool wasMouseDown;
 	private readonly FixedStepClock simulationClock = new();
 	/// <summary>Park visitors (imported original levels only; docs/GUESTS.md).</summary>
@@ -31,7 +33,10 @@ public class Level
 		Global = new SettingsFile( $"/levels/{levelName}/global.sam" );
 		Current = this;
 		if ( loadOriginalLevel )
+		{
 			OriginalPark = OriginalPark.Load( levelName );
+			Park = ParkEconomyRuntime.ForOriginalLevel( OriginalPark );
+		}
 
 		SetupEntities();
 		SetupHud();
@@ -169,6 +174,7 @@ public class Level
 		{
 			Guests?.Tick( deltaTime );
 			PlacedRide?.Simulate( deltaTime );
+			Park?.FixedTick();
 		} );
 		foreach ( var entity in Entity.All.ToArray() )
 			entity.Update();

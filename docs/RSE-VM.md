@@ -146,22 +146,28 @@ The visitor opcodes (HUSH, WALKON, HOP, WALKOFF, WALKGET, LIMBO, UNLIMBO,
 FORCEUNLIMBO, INLIMBO, LIMBOSPACE, BOUNCE, UNBOUNCE, FORCEUNBOUNCE, BOUNCING,
 ADDHEAD, DELHEAD) and the `VAR_LETMEON`/`VAR_LETMEOFF` host protocol are
 implemented against real guests by `RideVisitorBridge` (an `IRideScriptEffects`
-layer; `VisitorRideScriptEffects` wraps any other effects). The sandbox Totem uses
+layer; `VisitorRideScriptEffects` wraps any other effects). Every original object (OBJECTS.md) and the sandbox Totem use
 it: with guests nearby its script fills at ≈3.3 s and unloads through
 HOP/WALKOFF/WALKGET. Semantics are inferred from the corpus, see
 [GUESTS.md](GUESTS.md). The default `UnimplementedRideScriptEffects` still returns
 0 for scripts without a bridge.
 
+Since the objects slice every original object runs its script this way with
+generic effects that play the original clips for all animation opcodes,
+including the Totem's `TRIGANIM_CH` channel clips (`totemm2…10`); the ANIM_* →
+member mapping, channels and the corpus run of all 262 object scripts are in
+[OBJECTS.md](OBJECTS.md).
+
 ## Not original behaviour yet
 
 - Slice scheduling (one slice per 60 Hz tick, budget = header time slice),
   millisecond units, and CRIT_LOCK semantics are inferred, not traced.
-- Visitor opcodes work only where a `RideVisitorBridge` is attached (the Totem);
+- Visitor opcodes work for every placed original object (its `RideVisitorBridge`);
   walks along ride nodes are instantaneous, riders are not drawn, and
   TOUR/BUMP/COAST guest handling and WALKST_FLOAT/WALKFLOATSTAT/WALKFLOATSTOP
   are unimplemented.
-- No animation playback or durations (default 0 ms) except the Totem's
-  ANIM_Main, no sounds/EVENT mapping,
+- Animation playback only through the objects' effects (OBJECTS.md; rigid node
+  tracks, vertex animation not decoded), no sounds/EVENT mapping,
   no objects/particles, no ride-type controllers (TOUR/BUMP/COAST), no park
   clock (HOUR/MIN/SEC return 0), no light opcodes.
 - What the engine does with `EventMap.rse` variables, how the host is meant to

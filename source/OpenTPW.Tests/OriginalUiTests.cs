@@ -416,7 +416,7 @@ public class OriginalUiTests
 	{
 		var first = EconomyTestData.Park( initialCash: 50000 );
 		ParkEconomy? current = first;
-		var status = new EconomyParkStatus( () => current, () => null );
+		var status = new EconomyParkStatus( () => current );
 		Assert.IsTrue( status.HasEconomy );
 		Assert.AreEqual( first.Balance, status.Money );
 		Assert.AreEqual( first.Date, status.Date );

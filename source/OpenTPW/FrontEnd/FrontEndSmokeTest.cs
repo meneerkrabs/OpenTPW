@@ -13,14 +13,20 @@ namespace OpenTPW;
 /// front-end menu render (GPU readback with BF4 text checked texel by texel), the menu is driven
 /// with injected mouse clicks and keys (next island, options open/cancel, enter park, game mode) into
 /// the original jungle level, the HUD renders with money/date text verified in readback, a Totem is
-/// bought through the build arm and charged, its info arm shows, the pause menu opens and the game
-/// exits to the lobby. Options are never written and saves go to a temporary directory.
+/// bought through the catalogue build arm and charged exactly once; a second researched object is
+/// built, opened/closed and checked for overlap refusal. The game exits to the lobby, then loads a
+/// read-only visit and checks build/open/delete/save mutation boundaries. Options are never written and saves go to a temporary directory.
 /// </summary>
 internal sealed class FrontEndSmokeTest : IDisposable
 {
 	private const int MaximumFrames = 3000;
 	private readonly GameFlow flow;
 	private readonly BaseFileSystem originalSaveFileSystem;
+	private readonly OnlineFolders? originalOnlineFolders;
+	private ParkVisitInfo? readOnlyVisit;
+	private OriginalObject? visitedObject;
+	private bool visitedOpen;
+	private int visitedCount;
 	private readonly string temporaryDirectory = Path.Combine( Path.GetTempPath(), $"opentpw-frontend-smoke-{Guid.NewGuid():N}" );
 	private readonly Queue<(string Name, Func<bool> Step)> steps = new();
 	private int frame;
@@ -30,7 +36,11 @@ internal sealed class FrontEndSmokeTest : IDisposable
 	private bool totemLockedAtStart;
 	private long soldFor;
 	private int objectsBeforePurchase;
-	private static readonly BuildItem TotemItem = new TotemBuildCatalog().GetItems( BuildCategory.Rides ).Single();
+	private BuildItem TotemItem => flow.Hud!.Catalog.GetItems( BuildCategory.Rides ).Single( item => item.InfoId == PrototypeRide.InfoId );
+	private OriginalObject? totem;
+	private OriginalObject? secondObject;
+	private BuildItem? secondItem;
+	private int purchaseEvents;
 
 	public FrontEndSmokeTest( GameFlow flow )
 	{
@@ -40,6 +50,8 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		Directory.CreateDirectory( temporaryDirectory );
 		SaveFileSystem = new BaseFileSystem( temporaryDirectory );
 		flow.OptionsPath = Path.Combine( temporaryDirectory, GameOptions.FileName );
+		originalOnlineFolders = flow.OnlineFolders;
+		flow.OnlineFolders = new OnlineFolders( Path.Combine( temporaryDirectory, "online" ) );
 		// Read back the composed output (world after scaling + UI at drawable pixels).
 		global::Global.Render.CaptureOutput = true;
 		Plan();
@@ -118,19 +130,37 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			economy.EventRaised += item =>
 			{
 				if ( item.Kind == ParkEventKind.ObjectBuilt && item.InfoId == PrototypeRide.InfoId )
-					builtCost = item.Amount;
+					{
+						builtCost = item.Amount;
+						purchaseEvents++;
+					}
 			};
 			Click( flow.Hud.Screen, "buy" );
 		} );
 		Wait( "build arm opens", 3 );
+		Do( "next build page", () => Click( flow.Hud!.Screen, "nextBuildPage" ) );
+		Wait( "next build page visible", 3 );
+		Do( "previous build page", () =>
+		{
+			Require( flow.Hud!.BuildPage == 1, "next page button exposes later catalogue items" );
+			Click( flow.Hud.Screen, "previousBuildPage" );
+		} );
+		Wait( "previous build page visible", 3 );
+		Do( "show Totem page", () =>
+		{
+			Require( flow.Hud!.BuildPage == 0, "previous page button returns to the first page" );
+			ShowItem( TotemItem );
+		} );
+		Wait( "Totem page visible", 3 );
 		Do( "build arm", () =>
 		{
 			Require( flow.Hud!.BuildArmOpen, "buy button opens the build arm" );
+			Require( flow.Hud.Catalog is OriginalBuildCatalog && flow.Hud.BuildPageCount > 1, "the original catalogue spans build-menu pages" );
 			var capture = CaptureFrame( "build-arm.png" );
 			VerifyText( capture, flow.Strings[UIStrings.BuyRide], "Buy Ride title" );
-			VerifyText( capture, flow.Strings.Object( TotemBuildCatalog.ObjectNameIndex ), "Totem build item" );
+			VerifyText( capture, flow.Hud.ItemName( TotemItem ), "Totem build item" );
 			totemLockedAtStart = !flow.Hud.Status.IsAvailable( TotemItem );
-			Click( flow.Hud.Screen, "item0" );
+			ClickItem( TotemItem );
 		} );
 		Wait( "item chosen", 3 );
 		Do( "research gate", () =>
@@ -139,18 +169,21 @@ internal sealed class FrontEndSmokeTest : IDisposable
 				return;
 			// The economy has not researched the Totem yet: the HUD must refuse it. Test setup then marks
 			// it researched (as if research finished) so the purchase path can be exercised.
-			Require( !flow.Level!.IsPlacing && flow.Hud!.Messages.Contains( flow.Strings.Extra( OpenTpwText.NotAvailable ) ), "an unresearched item cannot be placed" );
+			Require( flow.Level!.BuildEntry == null && flow.Hud!.Messages.Contains( flow.Strings.Extra( OpenTpwText.NotAvailable ) ), "an unresearched item cannot be placed" );
 			var research = flow.Level.Park!.Economy.Research;
 			research.Restore( research.Completed.Append( (PrototypeRide.InfoId, 0) ).Distinct().ToArray(), research.ProgressEntries.ToArray(), research.Effort );
 			Require( flow.Hud!.Status.IsAvailable( TotemItem ), "Totem available once researched" );
 			Log.Trace( "Front-end smoke: the Totem was not researched at the start; research marked complete for the purchase test." );
-			Click( flow.Hud.Screen, "item0" );
+			ClickItem( TotemItem );
 		} );
 		Wait( "placing", 3 );
 		Do( "place Totem", () =>
 		{
-			Require( flow.Level!.IsPlacing, "choosing the Totem starts placement" );
-			Require( flow.Level.PlaceRide( FindSite( flow.Level ) ), "Totem placed on a buildable cell" );
+			Require( flow.Level!.BuildEntry == TotemItem.Entry, "choosing the Totem starts catalogue placement" );
+			var site = FindObjectSite( flow.Level, TotemItem.Entry! );
+			var cash = flow.Level.Park!.Economy.Balance;
+			totem = flow.Level.PlaceObject( TotemItem.Entry!, site.X, site.Y, flow.Level.BuildRotation );
+			Require( totem != null && cash - flow.Level.Park.Economy.Balance == TotemItem.Cost, "Totem placed and charged exactly once" );
 		} );
 		Wait( "purchase booked", 3 );
 		Do( "purchase charged", () =>
@@ -158,12 +191,13 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			var economy = flow.Level!.Park!.Economy;
 			var price = flow.Hud!.Status.PriceOf( TotemItem );
 			Require( builtCost > 0 && builtCost == price, $"the Totem is bought through ParkEconomy.TryBuild at its catalogue price (built {builtCost}, price {price})" );
-			Require( flow.Hud.Status.Money == economy.Balance && flow.Level.PlacedRide != null, "HUD balance follows the economy after the purchase" );
-			Require( economy.Objects.Count == objectsBeforePurchase + 1, "the charged ride replaces its uncharged placeholder" );
-			Require( flow.Level.Park.Guests!.TryGetInstance( flow.Level.PlacedRide!.Visitors.AttractionId, out var linked ) && economy.TryGetObject( linked, out var bought ) && bought.TotalSpent == builtCost, "guest payments link to the purchased ride" );
+			Require( flow.Hud.Status.Money == economy.Balance && totem != null, "HUD balance follows the economy after the purchase" );
+			Require( economy.Objects.Count == objectsBeforePurchase + 1, "one purchased economy object is created" );
+			Require( flow.Level.Park.Guests!.TryGetInstance( totem!.Visitors.AttractionId, out var linked ) && economy.TryGetObject( linked, out var bought ) && bought.TotalSpent == builtCost, "guest payments link to the purchased ride" );
 			Log.Trace( $"HUD money: {economy.Balance} after buying the Totem for {builtCost}; park date {economy.Date}." );
 			Require( !flow.Hud.BuildArmOpen, "build arm closes after building" );
-			flow.Hud.SelectPlacedRide();
+			Require( purchaseEvents == 1 && flow.Level.PlacedRide == null, "catalogue purchase bypasses the developer prototype and HUD wallet" );
+			flow.Hud.SelectObject( totem );
 		} );
 		Wait( "info arm opens", 3 );
 		Do( "info arm", () =>
@@ -189,9 +223,41 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		Wait( "ride sold", 3 );
 		Do( "ride deleted", () =>
 		{
-			Require( flow.Level!.PlacedRide == null && soldFor > 0 && flow.Hud!.Status.Money == flow.Level.Park!.Economy.Balance, $"deleting the ride sells it for its scrap value (got {soldFor})" );
-			Require( flow.Level.Park!.Economy.Objects.Count == objectsBeforePurchase, "selling removes the purchased economy object" );
+			Require( totem!.IsDeleted && soldFor > 0 && flow.Hud!.Status.Money == flow.Level!.Park!.Economy.Balance, $"deleting the ride sells it for its scrap value (got {soldFor})" );
+			Require( flow.Level!.Park!.Economy.Objects.Count == objectsBeforePurchase, "selling removes the purchased economy object" );
 			Log.Trace( $"HUD delete sold the Totem for {soldFor}; balance {flow.Level.Park.Economy.Balance}." );
+			flow.Hud!.SetBuildArm( true );
+			secondItem = flow.Hud.Catalog.GetItems( BuildCategory.Rides ).First( item => item.InfoId != PrototypeRide.InfoId && flow.Hud.Status.IsAvailable( item ) );
+			ShowItem( secondItem );
+		} );
+		Wait( "second build page visible", 3 );
+		Do( "choose second object", () => ClickItem( secondItem! ) );
+		Wait( "second item chosen", 3 );
+		Do( "build second catalogue object", () =>
+		{
+			var level = flow.Level!;
+			Require( level.BuildEntry == secondItem!.Entry, "a second distinct researched catalogue object can be chosen" );
+			var site = FindObjectSite( level, secondItem.Entry! );
+			var cash = level.Park!.Economy.Balance;
+			secondObject = level.PlaceObject( secondItem.Entry!, site.X, site.Y, level.BuildRotation );
+			Require( secondObject != null && cash - level.Park.Economy.Balance == secondItem.Cost, "the second catalogue object is charged exactly once" );
+			var instance = level.GetEconomyInstance( secondObject! );
+			Require( instance != null && level.Park.Economy.TryGetObject( instance.Value, out var bought ) && bought.TotalSpent == secondItem.Cost, "the second object links to its paid economy record" );
+			var after = level.Park.Economy.Balance;
+			Require( level.PlaceObject( secondItem.Entry!, site.X, site.Y, level.BuildRotation ) == null && level.Park.Economy.Balance == after, "overlap refusal does not charge" );
+			Log.Trace( $"HUD catalogue built distinct objects {TotemItem.InfoId} and {secondItem.InfoId} through the economy." );
+			flow.Hud!.SelectObject( secondObject );
+		} );
+		Wait( "second object info", 3 );
+		Do( "second object open and close", () =>
+		{
+			Require( flow.Hud!.SelectedObject == secondObject && flow.Hud.SelectedInfo!.DisplayName == flow.Hud.ItemName( secondItem! ), "info arm follows the selected catalogue object" );
+			Click( flow.Hud.Screen, "openRide" );
+		} );
+		Wait( "second object closed", 3 );
+		Do( "closed state", () =>
+		{
+			Require( !secondObject!.IsOpen, "HUD door closes the selected original object" );
 			flow.InjectedInput = UiInput.Key( UiKeys.Back );
 		} );
 		Wait( "pause opens", 3 );
@@ -217,9 +283,45 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			Require( flow.Level == null && flow.Menu != null && flow.Lobby != null, "Exit To Lobby returns to the front end" );
 			Require( flow.Menu!.Selected.Level == "jungle", "lobby returns to the island of the park" );
 			CaptureFrame( "frontend-return.png" );
+			var park = OriginalPark.Load( "jungle" );
+			var snapshot = ParkSnapshotBuilder.FromOriginal( park, null );
+			readOnlyVisit = ParkSharing.PrepareVisit( ParkSharing.CreatePackage( snapshot, "HUD read-only smoke", "", "OpenTPW", park.Map ) );
+			flow.StartLevel( "jungle", original: true, developerPanels: false, visit: readOnlyVisit );
+		} );
+		Wait( "read-only visit loads", 40 );
+		Do( "read-only visit guards", () =>
+		{
+			var level = flow.Level!;
+			var hud = flow.Hud!;
+			Require( level.IsReadOnlyVisit && level.Park == null, "visited parks have no writable economy" );
+			visitedCount = level.Objects.Objects.Count;
+			visitedObject = level.Objects.Objects.First( item => item.Runtime.IsAttraction && !item.Entry.IsFixedItem );
+			visitedOpen = visitedObject.IsOpen;
+			hud.BeginPlacing( hud.Catalog.GetItems( BuildCategory.Rides ).First() );
+			Require( level.BuildEntry == null && !level.IsPlacing, "read-only HUD refuses direct placement requests" );
+			Require( hud.Screen.Find( "buy" ) is UiButton { Enabled: false }, "build control is disabled while visiting" );
+			hud.SelectObject( visitedObject );
+		} );
+		Wait( "read-only info renders", 3 );
+		Do( "read-only object controls", () =>
+		{
+			var hud = flow.Hud!;
+			var door = (UiButton)hud.Screen.Find( "openRide" )!;
+			var erase = (UiButton)hud.Screen.Find( "deleteRide" )!;
+			Require( !door.Enabled && !erase.Enabled, "visit object open/delete controls are disabled" );
+			// Invoke their callbacks directly to prove the mutation boundary also rejects programmatic calls.
+			door.Clicked!();
+			erase.Clicked!();
+			Require( visitedObject!.IsOpen == visitedOpen && !visitedObject.IsDeleted && flow.Level!.Objects.Objects.Count == visitedCount, "read-only callbacks neither change nor remove objects" );
+			hud.OpenPauseMenu();
+			var save = (UiButton)hud.Stack.Top!.Find( nameof( UIStrings.Save ) )!;
+			Require( !save.Enabled, "visit save control is disabled" );
+			save.Clicked!();
+			Require( hud.Messages.Contains( OnlineStrings.Get( OnlineLabel.ReadOnlyVisit ) ) && !Directory.EnumerateFiles( temporaryDirectory, "*.json", SearchOption.AllDirectories ).Any(), "read-only save callback refuses writes" );
+			CaptureFrame( "read-only-visit.png" );
 			Device.WaitForIdle();
 			completed = true;
-			Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name} at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames, lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, Totem bought through the park economy, info arm, economy pause, sale, pause menu, exit to lobby." );
+			Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name} at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames, lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, two distinct catalogue objects bought exactly once through the park economy, info arm, economy pause, sale, overlap refusal, open/close, pause menu, exit to lobby, read-only visit build/open/delete/save guards." );
 			GameFlow.Quit();
 		} );
 	}
@@ -257,16 +359,25 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		flow.InjectedInput = UiInput.Click( element!.ScreenRect( Context.Canvas ).Center );
 	}
 
-	private static Vector3 FindSite( Level level )
+	private void ShowItem( BuildItem item )
 	{
-		var park = level.OriginalPark!;
-		var field = park.Heightfield;
-		var cells = Enumerable.Range( 0, field.CellCountX * field.CellCountZ ).Select( index => (X: index % field.CellCountX, Y: index / field.CellCountX) ).ToArray();
-		var start = cells.Where( cell => park.Map.GetFlagsAt( cell.X, cell.Y ).HasFlag( MapCellFlags.InitialPath ) ).DefaultIfEmpty( (X: field.CellCountX / 2, Y: field.CellCountZ / 2) ).First();
-		var site = cells.OrderBy( cell => Math.Abs( cell.X - start.X ) + Math.Abs( cell.Y - start.Y ) )
-			.First( cell => level.CheckOriginalPlacement( OriginalParkPlacement.GetCellCenter( field, cell.X, cell.Y ) ) == OriginalPlacementResult.Allowed );
-		return OriginalParkPlacement.GetCellCenter( field, site.X, site.Y );
+		var hud = flow.Hud!;
+		hud.SelectCategory( item.Category );
+		var index = hud.Catalog.GetItems( item.Category ).ToList().IndexOf( item );
+		hud.ChangeBuildPage( index / 3 );
 	}
+
+	private void ClickItem( BuildItem item )
+	{
+		var index = flow.Hud!.VisibleBuildItems.ToList().IndexOf( item );
+		Require( index >= 0, "requested catalogue item is on the visible page" );
+		Click( flow.Hud.Screen, $"item{index}" );
+	}
+
+	private static (int X, int Y) FindObjectSite( Level level, ObjectCatalogEntry entry ) =>
+		Enumerable.Range( 0, level.Objects.Grid.Width * level.Objects.Grid.Height )
+			.Select( index => (X: index % level.Objects.Grid.Width, Y: index / level.Objects.Grid.Width) )
+			.First( cell => level.CheckObject( entry, cell.X, cell.Y, level.BuildRotation ) == OriginalPlacementResult.Allowed );
 
 	/// <summary>
 	/// Finds the glyphs drawn for <paramref name="text"/> in the last UI batch and requires every fully
@@ -374,6 +485,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 	{
 		global::Global.Render.PostUpdate -= Update;
 		SaveFileSystem = originalSaveFileSystem;
+		flow.OnlineFolders = originalOnlineFolders;
 		try { Directory.Delete( temporaryDirectory, true ); }
 		catch ( IOException ) { }
 	}

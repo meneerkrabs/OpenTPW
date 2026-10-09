@@ -20,7 +20,7 @@ public sealed class HudHost
 /// date display, happiness gauge and bank balance at their authored places; the panel buttons
 /// (buy/build, information, finance, research, map) with their original tooltips; the build arm
 /// (panel.MD2 "pan_buy") with the four category buttons and preview-model icons; the information arm
-/// ("pan_info") for the selected ride; the message area (f_tagl/m/r) and the pause menu. Positions of
+/// ("pan_info") for the selected original object; the message area (f_tagl/m/r) and the pause menu. Positions of
 /// code-placed buttons inside the panel/arms and the speed control are OpenTPW approximations.
 /// </summary>
 public sealed class ParkHud
@@ -46,7 +46,8 @@ public sealed class ParkHud
 	private readonly List<UiElement> infoElements = new();
 	private string lastLevelMessage = "";
 	private BuildItem? pendingItem;
-	private bool hadRide;
+	private OriginalObject? selectedObject;
+	private int buildPage;
 
 	public ParkHud( Level level, UiStringTable strings, IHudParkStatus status, IBuildCatalog catalog, HudHost host )
 	{
@@ -56,7 +57,7 @@ public sealed class ParkHud
 		Status = status;
 		Catalog = catalog;
 		lastLevelMessage = level.LastActionMessage;
-		hadRide = level.PlacedRide != null;
+		level.Objects.ObjectPlaced += OnObjectPlaced;
 		hud = new UiScreen( "hud" ) { Modal = false };
 		Stack.Push( hud );
 		Build();
@@ -69,6 +70,10 @@ public sealed class ParkHud
 	public bool BuildArmOpen { get; private set; }
 	public bool InfoArmOpen { get; private set; }
 	public BuildCategory Category { get; private set; } = BuildCategory.Rides;
+	public int BuildPage => buildPage;
+	public int BuildPageCount => Math.Max( 1, (Catalog.GetItems( Category ).Count + 2) / 3 );
+	public OriginalObject? SelectedObject => selectedObject;
+	public IReadOnlyList<BuildItem> VisibleBuildItems => Catalog.GetItems( Category ).Skip( buildPage * 3 ).Take( 3 ).ToArray();
 	public bool Paused => Stack.Screens.Count > 1;
 	public IReadOnlyList<string> Messages => messages.Select( message => message.Text ).ToArray();
 
@@ -112,7 +117,7 @@ public sealed class ParkHud
 		hud.Add( new UiLabel { Id = "money", Text = () => MoneyText, Font = fonts => fonts.Cash, Color = UiColors.Value, Align = UiAlign.Center, Bounds = new UiRect( 165, 1125, 240, 60 ), Anchor = UiAnchor.BottomLeft, Help = strings.Help( 465 ) } );
 
 		// [APPROX:UI-020] panel button positions (the models share one authored centre) — evidence needed: capture of the original HUD
-		PanelButton( "buy", "b_buy", 235, 1240, 469, ToggleBuildArm ).Selected = () => BuildArmOpen;
+		PanelButton( "buy", "b_buy", 235, 1240, 469, level.IsReadOnlyVisit ? null : ToggleBuildArm ).Selected = () => BuildArmOpen;
 		PanelButton( "info", "b_info", 355, 1240, 470, null );
 		PanelButton( "finance", "b_money", 235, 1350, 471, null );
 		PanelButton( "research", "b_resrch", 355, 1350, 472, null );
@@ -146,7 +151,7 @@ public sealed class ParkHud
 				Id = $"category{entry.Category}",
 				Model = entry.Model,
 				Help = strings.Help( entry.Help ),
-				Clicked = () => Category = entry.Category,
+				Clicked = () => SelectCategory( entry.Category ),
 				Selected = () => Category == entry.Category,
 				Bounds = UiRect.FromCenter( new NVector2( 530 + index * 112, 1130 ), 102.4f, 102.4f ),
 				Anchor = UiAnchor.BottomLeft,
@@ -159,10 +164,24 @@ public sealed class ParkHud
 			Text = () => strings[Categories.First( entry => entry.Category == Category ).Title],
 			Font = fonts => fonts.Label,
 			Color = UiColors.Title,
-			Bounds = new UiRect( 480, 1185, 500, 50 ),
+			Bounds = new UiRect( 535, 1185, 390, 50 ),
 			Anchor = UiAnchor.BottomLeft,
 			Visible = false
 		} ) );
+		// [APPROX:UI-024] Three-slot pages and arrow positions are OpenTPW layout, not original menu evidence.
+		foreach ( var direction in new[] { -1, 1 } )
+		{
+			var step = direction;
+			buildElements.Add( hud.Add( new UiButton
+			{
+				Id = step < 0 ? "previousBuildPage" : "nextBuildPage",
+				Model = step < 0 ? "b_sleft" : "b_sright",
+				Clicked = () => ChangeBuildPage( step ),
+				Bounds = new UiRect( step < 0 ? 475 : 930, 1185, 50, 50 ),
+				Anchor = UiAnchor.BottomLeft,
+				Visible = false
+			} ) );
+		}
 		for ( var slot = 0; slot < 3; slot++ )
 		{
 			var index = slot;
@@ -190,7 +209,7 @@ public sealed class ParkHud
 		infoElements.Add( hud.Add( new UiLabel
 		{
 			Id = "infoName",
-			Text = () => SelectedInfo == null ? "" : strings.Object( SelectedInfo.ObjectNameIndex ),
+			Text = () => SelectedInfo == null ? "" : SelectedInfo.DisplayName ?? strings.Object( SelectedInfo.ObjectNameIndex ),
 			Font = fonts => fonts.Heading,
 			Color = UiColors.Title,
 			Bounds = new UiRect( 470, 1090, 520, 70 ),
@@ -227,7 +246,7 @@ public sealed class ParkHud
 			Help = strings.Help( 12 ),
 			Clicked = ToggleRideOpen,
 			// b_door state frames: open door normally, closed door in the "down" frames.
-			Selected = () => level.PlacedRide?.IsOpen == false,
+			Selected = () => selectedObject?.IsOpen == false,
 			Bounds = UiRect.FromCenter( new NVector2( 560, 1425 ), 120, 120 ),
 			Anchor = UiAnchor.BottomLeft,
 			Visible = false
@@ -258,21 +277,29 @@ public sealed class ParkHud
 	}
 
 
-	public ObjectInfo? SelectedInfo => InfoArmOpen && level.PlacedRide is { } ride
-		? Describe( ride, Catalog.GetItems( BuildCategory.Rides ).FirstOrDefault( item => item.Id == TotemBuildCatalog.ItemId ) ) : null;
+	public ObjectInfo? SelectedInfo => InfoArmOpen && selectedObject is { IsDeleted: false } item
+		? new ObjectInfo( item.Entry.ObjectNameIndex ?? -1, item.IsOpen, item.Runtime.IsAttraction, new[]
+		{
+			// [APPROX:UI-028] authored excitement as a percentage; unknown simulation statistics stay unavailable.
+			new ObjectStat( UIStrings.Excitement, item.Entry.Settings.Has( "UsageInfo.ExcitementLevel" ) ? $"{item.Entry.Settings.GetInt( "UsageInfo.ExcitementLevel" )}%" : null ),
+			new ObjectStat( UIStrings.Reliability, null ),
+			new ObjectStat( UIStrings.StateOfRepair, null ),
+			new ObjectStat( UIStrings.RemainingLife, null ),
+		}, EntryName( item.Entry ) ) : null;
 
-	/// <summary>
-	/// Info for the placed prototype ride. Excitement is the original <c>UsageInfo.ExcitementLevel</c>
-	/// default (70 for the Totem, from Totem.sam); reliability, repair and life are not simulated yet.
-	/// </summary>
-	public static ObjectInfo Describe( PrototypeRide ride, BuildItem? item ) => new( TotemBuildCatalog.ObjectNameIndex, ride.IsOpen, true, new[]
+	public void SelectCategory( BuildCategory category )
 	{
-		// [APPROX:UI-028] excitement shown as "<ExcitementLevel>%" — evidence needed: capture of the original ride info panel
-		new ObjectStat( UIStrings.Excitement, item?.DefaultExcitement is int excitement ? $"{excitement}%" : null ),
-		new ObjectStat( UIStrings.Reliability, null ),
-		new ObjectStat( UIStrings.StateOfRepair, null ),
-		new ObjectStat( UIStrings.RemainingLife, null ),
-	} );
+		Category = category;
+		buildPage = 0;
+	}
+
+	public void ChangeBuildPage( int direction ) => buildPage = Math.Clamp( buildPage + direction, 0, BuildPageCount - 1 );
+	public string ItemName( BuildItem item ) => item.Entry == null ? strings.Object( item.ObjectNameIndex ) : EntryName( item.Entry );
+
+	private string EntryName( ObjectCatalogEntry entry ) => entry.ObjectNameIndex is int index
+		? string.Join( " ", Enumerable.Range( index, Math.Max( 1, entry.ObjectNameLength ) ).Select( strings.Object ).Where( text => text.Length > 0 ) )
+		: entry.DisplayName;
+
 
 	public void ToggleBuildArm() => SetBuildArm( !BuildArmOpen );
 
@@ -285,24 +312,22 @@ public sealed class ParkHud
 		{
 			pendingItem = null;
 			level.IsPlacing = false;
+			level.BuildEntry = null;
 		}
 	}
 
 	public void SetInfoArm( bool open )
 	{
-		InfoArmOpen = open && level.PlacedRide != null;
+		InfoArmOpen = open && selectedObject is { IsDeleted: false };
 		if ( InfoArmOpen )
-			BuildArmOpen = false;
+			SetBuildArm( false );
 	}
 
 	/// <summary>Starts placing a catalog item (the click on the ground is handled by <see cref="Level"/>).</summary>
 	public void BeginPlacing( BuildItem item )
 	{
-		if ( level.PlacedRide != null )
-		{
-			PostMessage( strings.Extra( OpenTpwText.OnlyOnePrototypeRide ) );
+		if ( RejectReadOnlyAction() )
 			return;
-		}
 		if ( !Status.IsAvailable( item ) )
 		{
 			PostMessage( strings.Extra( OpenTpwText.NotAvailable ) );
@@ -313,27 +338,50 @@ public sealed class ParkHud
 			PostMessage( strings.Help( 152 ) );
 			return;
 		}
+		if ( item.Entry is not { } entry )
+			return;
 		pendingItem = item;
-		level.IsPlacing = true;
+		level.BuildEntry = entry;
+		level.IsRemovingObjects = false;
+		level.IsPlacing = false;
 		PostMessage( strings.Help( 440 ) );
+	}
+
+	// [APPROX:UI-031] one placement per menu selection; Level owns purchase/sale — evidence needed: original build-tool continuation
+	private void OnObjectPlaced( OriginalObject item )
+	{
+		if ( pendingItem?.Entry != item.Entry )
+			return;
+		// Level.PlaceObject owns the purchase and guest link; this callback only finishes the HUD tool.
+		PostMessage( string.Format( strings.Extra( OpenTpwText.Built ), ItemName( pendingItem ) ) );
+		SetBuildArm( false );
 	}
 
 	private void ToggleRideOpen()
 	{
-		if ( level.PlacedRide is not { } ride )
+		if ( RejectReadOnlyAction() )
 			return;
-		if ( ride.IsOpen )
-			ride.Stop();
-		else
-			ride.Start();
+		if ( selectedObject is not { IsDeleted: false } item || !item.Runtime.IsAttraction )
+			return;
+		if ( item.IsOpen ) item.Close(); else item.Open();
 	}
 
 	private void DeleteRide()
 	{
-		if ( level.PlacedRide is { } ride )
-			Status.SellPlaced( ride );
-		level.RemoveRide();
+		if ( RejectReadOnlyAction() )
+			return;
+		if ( selectedObject is { IsDeleted: false } item && !item.Entry.IsFixedItem )
+			level.Objects.Remove( item ); // The level's removal handler sells/unlinks exactly once.
+		selectedObject = null;
 		SetInfoArm( false );
+	}
+
+	private bool RejectReadOnlyAction()
+	{
+		if ( !level.IsReadOnlyVisit )
+			return false;
+		PostMessage( OnlineStrings.Get( OnlineLabel.ReadOnlyVisit ) );
+		return true;
 	}
 
 	public void OpenPauseMenu()
@@ -361,6 +409,7 @@ public sealed class ParkHud
 				Id = entry.Label.ToString(),
 				Text = () => strings[entry.Label],
 				Clicked = entry.Clicked,
+				Enabled = !level.IsReadOnlyVisit || entry.Label != UIStrings.Save,
 				Bounds = new UiRect( window.X + 160, window.Y + 190 + index * 140, window.Width - 400, 116 ),
 				Anchor = UiAnchor.Center
 			} );
@@ -378,6 +427,8 @@ public sealed class ParkHud
 
 	private void SavePark()
 	{
+		if ( RejectReadOnlyAction() )
+			return;
 		if ( level.OriginalPark != null )
 		{
 			PostMessage( strings.Extra( OpenTpwText.OriginalParkReadOnly ) );
@@ -405,9 +456,14 @@ public sealed class ParkHud
 		foreach ( var element in buildElements )
 			element.Visible = BuildArmOpen;
 		foreach ( var element in infoElements )
-			element.Visible = InfoArmOpen && level.PlacedRide != null;
-		if ( level.PlacedRide == null && InfoArmOpen )
+			element.Visible = InfoArmOpen && selectedObject is { IsDeleted: false };
+		if ( selectedObject is not { IsDeleted: false } && InfoArmOpen )
 			InfoArmOpen = false;
+
+		if ( hud.Find( "openRide" ) is UiButton openButton )
+			openButton.Enabled = !level.IsReadOnlyVisit && SelectedInfo?.CanOpen == true;
+		if ( hud.Find( "deleteRide" ) is UiButton deleteButton )
+			deleteButton.Enabled = !level.IsReadOnlyVisit && selectedObject is { IsDeleted: false } item && !item.Entry.IsFixedItem;
 
 		var paused = Paused;
 		var overUi = Stack.Covers( context.Canvas, input.Mouse ) || Stack.Screens.Count > 1;
@@ -415,25 +471,6 @@ public sealed class ParkHud
 		if ( !paused && input.Has( UiKeys.Pause ) )
 			Status.Speed = Status.Speed == GameSpeed.Paused ? GameSpeed.Normal : GameSpeed.Paused;
 
-		// [APPROX:UI-031] charge on appearance; one prototype ride — evidence needed: original placement/purchase order
-		// Purchases: a ride appearing while an item is pending is charged; failures are reported.
-		var hasRide = level.PlacedRide != null;
-		if ( hasRide && !hadRide && pendingItem != null && level.PlacedRide is { } placed )
-		{
-			var charge = Status.ChargePlaced( pendingItem, placed );
-			if ( charge == BuildCharge.Charged )
-				PostMessage( string.Format( strings.Extra( OpenTpwText.Built ), strings.Object( pendingItem.ObjectNameIndex ) ) );
-			else
-			{
-				// The purchase was refused by the economy: take the placement back.
-				level.RemoveRide();
-				hasRide = false;
-				PostMessage( strings.Extra( charge == BuildCharge.NotEnoughMoney ? OpenTpwText.NotEnoughMoney : OpenTpwText.NotAvailable ) );
-			}
-			pendingItem = null;
-			SetBuildArm( false );
-		}
-		hadRide = hasRide;
 		if ( level.LastActionMessage != lastLevelMessage )
 		{
 			lastLevelMessage = level.LastActionMessage;
@@ -441,14 +478,10 @@ public sealed class ParkHud
 				PostMessage( strings.Extra( OpenTpwText.CannotBuildHere ) );
 		}
 
-		// Selecting the placed ride: left click on the park near it while not placing.
-		if ( !overUi && !consumed && !level.IsPlacing && input.LeftReleased && level.PlacedRide is { } ride
-			&& level.TryGetPlacementPosition( new Vector2( input.Mouse.X, input.Mouse.Y ), new Vector2( context.Canvas.Width, context.Canvas.Height ), out var position ) )
-		{
-			var dx = position.X - ride.Position.X;
-			var dy = position.Y - ride.Position.Y;
-			SetInfoArm( dx * dx + dy * dy <= SelectionRadius * SelectionRadius );
-		}
+		// [APPROX:UI-027] Select by occupied grid cell; original cursor picking is not verified.
+		if ( !overUi && !consumed && level.BuildEntry == null && !level.IsPlacing && input.LeftReleased
+			&& level.TryGetGridCell( input.Mouse, new NVector2( context.Canvas.Width, context.Canvas.Height ), out var x, out var y ) )
+			SelectObject( level.Objects.FindAt( x, y ) );
 
 		for ( var index = messages.Count - 1; index >= 0; index-- )
 		{
@@ -460,12 +493,11 @@ public sealed class ParkHud
 		return overUi || consumed;
 	}
 
-	/// <summary>Click distance (engine units) that selects the prototype ride: its footprint plus one unit.</summary>
-	// [APPROX:UI-027] selection radius = footprint + 1 — evidence needed: binary picking
-	public const float SelectionRadius = PrototypeRide.FootprintRadius + 1;
-
-	/// <summary>Selects the placed ride as if it had been clicked (smoke test, keyboard).</summary>
-	public void SelectPlacedRide() => SetInfoArm( true );
+	public void SelectObject( OriginalObject? item )
+	{
+		selectedObject = item;
+		SetInfoArm( item != null );
+	}
 
 	private void DrawMessages( UiContext context )
 	{
@@ -523,7 +555,7 @@ public sealed class ParkHud
 		{
 			get
 			{
-				var items = owner.Catalog.GetItems( owner.Category );
+				var items = owner.VisibleBuildItems;
 				return index < items.Count ? items[index] : null;
 			}
 		}
@@ -542,16 +574,22 @@ public sealed class ParkHud
 				return;
 			Help = owner.strings.Help( 151 );
 			var rect = ScreenRect( context.Canvas );
-			var iconRect = new UiRect( rect.X, rect.Y, rect.Width, rect.Width );
+			var name = owner.ItemName( item );
+			var price = string.Format( System.Globalization.CultureInfo.InvariantCulture, "{0}{1:#,0}", owner.strings[UIStrings.Dollar], owner.Status.PriceOf( item ) ?? item.Cost ).Replace( "  ", " " );
+			var nameHeight = context.Measure( context.Fonts.Small, name, (int)rect.Width ).Height;
+			var priceHeight = context.Measure( context.Fonts.Small, price ).Height;
+			// [APPROX:UI-024] Keep each translated name and price inside its slot; previews use the remaining height.
+			var iconSize = Math.Max( 0, Math.Min( rect.Width * 0.7f, rect.Height - nameHeight - priceHeight - 6 ) );
+			var iconRect = new UiRect( rect.X + (rect.Width - iconSize) / 2, rect.Y, iconSize, iconSize );
 			var available = owner.Status.IsAvailable( item );
 			context.Batch.AddRectangle( iconRect, !available ? new RgbaByte( 60, 60, 60, 160 ) : focused || owner.pendingItem == item ? new RgbaByte( 255, 230, 70, 90 ) : new RgbaByte( 0, 0, 40, 90 ) );
 			// [APPROX:UI-026] icon turn speed 0.8 rad/s — evidence needed: capture of the original build menu
-			owner.GetIcon( item )?.Draw( context.Batch, iconRect.Inflate( -rect.Width * 0.06f ), context.Time * 0.8f );
-			var name = owner.strings.Object( item.ObjectNameIndex );
-			var price = string.Format( System.Globalization.CultureInfo.InvariantCulture, "{0}{1:#,0}", owner.strings[UIStrings.Dollar], owner.Status.PriceOf( item ) ?? item.Cost ).Replace( "  ", " " );
+			if ( iconSize > 16 )
+				owner.GetIcon( item )?.Draw( context.Batch, iconRect.Inflate( -iconSize * 0.06f ), context.Time * 0.8f );
 			var textTop = iconRect.Bottom + 2;
-			context.DrawText( context.Fonts.Small, name, new UiRect( rect.X, textTop, rect.Width, (rect.Bottom - textTop) / 2 ), focused ? UiColors.Highlight : UiColors.Text, UiAlign.Center );
-			context.DrawText( context.Fonts.Small, price, new UiRect( rect.X, textTop + (rect.Bottom - textTop) / 2, rect.Width, (rect.Bottom - textTop) / 2 ), UiColors.Value, UiAlign.Center );
+			// [APPROX:UI-032] Wrap translated catalogue names within their slot at the integer text scale.
+			context.DrawText( context.Fonts.Small, name, new UiRect( rect.X, textTop, rect.Width, nameHeight ), focused ? UiColors.Highlight : UiColors.Text, UiAlign.Center, wrap: true );
+			context.DrawText( context.Fonts.Small, price, new UiRect( rect.X, textTop + nameHeight + 2, rect.Width, priceHeight ), UiColors.Value, UiAlign.Center );
 		}
 	}
 }

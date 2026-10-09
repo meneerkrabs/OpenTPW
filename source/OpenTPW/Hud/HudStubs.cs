@@ -34,16 +34,6 @@ public sealed class StubParkStatus : IHudParkStatus
 
 	public bool IsAvailable( BuildItem item ) => true;
 
-	public BuildCharge ChargePlaced( BuildItem item, PrototypeRide ride )
-	{
-		if ( item.Cost > Money )
-			return BuildCharge.NotEnoughMoney;
-		Money -= item.Cost;
-		return BuildCharge.Charged;
-	}
-
-	public long SellPlaced( PrototypeRide ride ) => 0;
-
 	public void Earn( long amount ) => Money += Math.Max( 0, amount );
 }
 
@@ -59,29 +49,24 @@ public sealed class NoEconomyStatus : IHudParkStatus
 	public void Update( float realSeconds ) { }
 	public long? PriceOf( BuildItem item ) => null;
 	public bool IsAvailable( BuildItem item ) => true;
-	public BuildCharge ChargePlaced( BuildItem item, PrototypeRide ride ) => BuildCharge.Charged;
-	public long SellPlaced( PrototypeRide ride ) => 0;
 }
 
 /// <summary>
 /// HUD binding to the park economy of a level (<see cref="Level.Park"/>): balance, calendar and
-/// speed from <see cref="ParkEconomy"/>, purchases through <see cref="ParkEconomy.TryBuild"/> and
-/// sales through <see cref="ParkEconomy.Sell"/>. The runtime is looked up on every access, so a
-/// loaded park save (which replaces the economy object) is followed.
+/// speed from <see cref="ParkEconomy"/>. The level owns purchases and sales. The runtime is
+/// looked up on every access, so a loaded park save (which replaces the economy object) is followed.
 /// </summary>
 public sealed class EconomyParkStatus : IHudParkStatus
 {
 	private readonly Func<ParkEconomy?> economy;
-	private readonly Func<GuestEconomyBridge?> guests;
 
-	public EconomyParkStatus( Func<ParkEconomy?> economy, Func<GuestEconomyBridge?> guests )
+	public EconomyParkStatus( Func<ParkEconomy?> economy )
 	{
 		this.economy = economy;
-		this.guests = guests;
 	}
 
 	/// <summary>Binds to a level's runtime (followed on every access).</summary>
-	public static EconomyParkStatus ForLevel( Level level ) => new( () => level.Park?.Economy, () => level.Park?.Guests );
+	public static EconomyParkStatus ForLevel( Level level ) => new( () => level.Park?.Economy );
 
 	private ParkEconomy? Economy => economy();
 
@@ -111,33 +96,26 @@ public sealed class EconomyParkStatus : IHudParkStatus
 	public bool IsAvailable( BuildItem item ) =>
 		Economy is not { } park || park.Catalog.TryGet( item.InfoId, out _ ) && park.Research.IsAvailable( item.InfoId );
 
-	public BuildCharge ChargePlaced( BuildItem item, PrototypeRide ride )
+}
+
+/// <summary>The level's original, footprint-bearing catalogue, grouped by its authored UI category.</summary>
+public sealed class OriginalBuildCatalog : IBuildCatalog
+{
+	private readonly IReadOnlyDictionary<BuildCategory, BuildItem[]> categories;
+
+	public OriginalBuildCatalog( ObjectCatalog catalog )
 	{
-		if ( Economy is not { } park )
-			return BuildCharge.Charged;
-		var result = park.TryBuild( item.InfoId, out var built );
-		if ( result != ParkEconomy.PurchaseResult.Ok || built == null )
-		{
-			Log?.Trace( $"HUD purchase of {item.Id} refused by the park economy: {result}." );
-			return result == ParkEconomy.PurchaseResult.NotEnoughMoney ? BuildCharge.NotEnoughMoney : BuildCharge.NotAvailable;
-		}
-		// The level linked the placement as an uncharged object; replace it with the purchased one.
-		if ( guests() is { } bridge )
-		{
-			if ( bridge.TryGetInstance( ride.Visitors.AttractionId, out var placeholder ) && park.TryGetObject( placeholder, out _ ) )
-				park.Remove( placeholder );
-			bridge.Link( ride.Visitors.AttractionId, built.Id );
-		}
-		return BuildCharge.Charged;
+		// [APPROX:UI-024] Catalogue pages sort by Info.Id; original build-menu order is not verified.
+		categories = catalog.Buildable.OrderBy( entry => entry.InfoId ).Select( entry => new BuildItem(
+			$"{entry.Theme}/{entry.InfoId}", entry.InfoId, (BuildCategory)entry.WhichUIType, entry.ObjectNameIndex ?? -1,
+			entry.BuildCost, entry.IsBonus ? null : entry.PreviewModelPath,
+			ObjectAssets.TextureDirectories( entry ).Where( location => location.FileSystem == FileSystem ).Select( location => location.Directory ).ToArray(),
+			entry.Settings.Has( "UsageInfo.ExcitementLevel" ) ? entry.Settings.GetInt( "UsageInfo.ExcitementLevel" ) : null, entry ) )
+			.GroupBy( item => item.Category ).ToDictionary( group => group.Key, group => group.ToArray() );
 	}
 
-	public long SellPlaced( PrototypeRide ride )
-	{
-		if ( Economy is not { } park || guests() is not { } bridge || !bridge.TryGetInstance( ride.Visitors.AttractionId, out var instance ) || !park.TryGetObject( instance, out _ ) )
-			return 0;
-		bridge.Unlink( ride.Visitors.AttractionId );
-		return park.Sell( instance );
-	}
+	public IReadOnlyList<BuildItem> GetItems( BuildCategory category ) =>
+		categories.TryGetValue( category, out var items ) ? items : Array.Empty<BuildItem>();
 }
 
 /// <summary>

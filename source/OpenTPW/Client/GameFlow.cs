@@ -140,7 +140,7 @@ internal sealed class GameFlow : IDisposable
 		// Money, calendar, speed and purchases come from the park economy of original levels (Level.Park,
 		// looked up on every access so loading a park save is followed); the generic sandbox has none.
 		IHudParkStatus status = level.Park != null ? EconomyParkStatus.ForLevel( level ) : new NoEconomyStatus();
-		Hud = new ParkHud( level, Strings, status, new TotemBuildCatalog( "jungle" ), new HudHost
+		Hud = new ParkHud( level, Strings, status, new OriginalBuildCatalog( level.Objects.Catalog ), new HudHost
 		{
 			ExitToLobby = () => Queue( () => ShowFrontEnd( levelName ) ),
 			Quit = Quit,

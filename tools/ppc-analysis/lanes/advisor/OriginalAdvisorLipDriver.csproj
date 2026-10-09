@@ -10,5 +10,6 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Remove="layer1/**/*.cs" />
+    <Compile Remove="audio-events/**/*.cs" />
   </ItemGroup>
 </Project>

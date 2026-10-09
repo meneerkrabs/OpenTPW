@@ -847,3 +847,171 @@ audit warnings outside the changed codec. New C# files pass scoped formatting;
 existing source LF endings are preserved to keep the diff bounded. The static
 Layer I witness gives identical normal/optimized Python output, and the external
 PCM report meets the fixed 1-LSB acceptance limit.
+
+## Phase 6: validated compressed-entry format metadata
+
+`MP2File` now reads sample rate and channel count through the existing MPEG
+header parser at the declared entry `Header` offset. A supported, complete first
+frame overrides legacy container hints; it does not decode PCM or establish
+that subsequent frames or payload allocations are valid. The new `Channels`
+property reports that header count. Unsupported, truncated or invalid first
+headers preserve the supplied container rate and any mono/stereo type hint;
+channels are zero when neither is known. Archive listing therefore does not
+become contingent on successful decoding.
+
+The existing only constructor caller is `SoundFile.GetFile`; runtime advisor
+playback reads its entry bytes directly and uses decoded `Mp2Audio` metadata.
+In the identified 40-byte banks, rate/bit-depth/type are packed at entry
+`+24/+26/+27`. The legacy `SoundFile` reads signed Int16 followed by Int32
+fields, making its type hint unreliable and 44,100 wrap negative. This bounded
+fix recognizes MPEG from its validated frame header regardless of that type.
+A full packed-container parser correction, and metadata for non-MPEG or
+unsupported formats, remain separate dependencies.
+
+A generated 44,100-Hz entry initially failed because the preceding constructor
+reported 22,050. Fourteen metadata cases now pass: all supported Layer I rates
+and channel modes, supported Layer II rates/mono/stereo, mismatched container
+hints and fixed-offset `SoundData`, invalid/truncated/unsupported headers,
+invalid entry offsets, and actual private `SfxHD.sdt/keyexplode` (44,100 Hz) and
+`speechHD.SDT/sp_001` (22,050 Hz). The private checks compare metadata to decoded
+format. The combined focused MPEG/LIP/metadata run passes 63 cases with zero
+skips, preserving all preceding 49 codec/LIP checks. No original stream or PCM
+bytes are committed; the previous full-corpus PCM comparison remains unchanged.
+
+## Phase 7: sound catalog routes and automatic advisor speech bindings
+
+The new `audio_event_evidence.py` pins the two existing binary identities,
+relocations, selected call/field operands and bounded code-range hashes. It
+never runs original instructions. Its packed catalog reader derives strides
+from the sound library: category 24 bytes at `0x162d8`, sound 20 bytes at
+`0x1642c`, event 42 bytes at `0x165fc`, sample choice 16 bytes and child link
+8 bytes. Flags, thresholds, event spans and scheduling policies remain opaque.
+The reader bounds counts, consumes the entire input and validates one-based
+child-element references. It is an evidence reader, not a runtime scheduler.
+
+### RSE sound events use category IDs, distinct from advisor game events
+
+App `0xaf9e8` (opcode 13, `EVENT`) and `0xafa60` (opcode 14, `EVENT_EXT`)
+call the effect dispatcher `0xae930`. `EVENT` supplies final control argument
+1000. The relocated switch is data `0x3f278`. Types 3–9 submit through audio
+wrapper `0xbb4fc`, using the category-handle array at data `0x97f8c`:
+
+| RSE type | Category selected | Handle-array offset | Load / submit, app code |
+| ---: | --- | ---: | --- |
+| 3 | Local `cat_rides` | +28 | `0xaeba0` / `0xaebc0` |
+| 4 | Local `cat_ambient` | +24 | `0xaec04` / `0xaec24` |
+| 5 | Global `cat_rides` | +8 | `0xaee54` / `0xaee74` |
+| 6 | Global `cat_kids` | +4 | `0xaeeb8` / `0xaeed8` |
+| 7 | Global `cat_staff` | +16 | `0xaed8c` / `0xaedac` |
+| 8 | Global `cat_ambient` | +0 | `0xaed28` / `0xaed48` |
+| 9 | Global `cat_ui` | +12 | `0xaedf0` / `0xaee10` |
+
+Global names are grounded in registration `0xbc6f0–0xbc864`; local registration
+`0xbc864–0xbc9a0` places ambient/rides/speech/music at +24/+28/+32/+36. Type 10
+at `0xaec2c` resolves the current thing's custom bank and submits it at
+`0xaecd4`; failure reaches the missing-custom-bank diagnostic at `0xaece0`.
+Types 1/2 take separate non-audio branches; type 0 is the unsupported/default
+route. These are numeric dispatch meanings, not invented event aliases.
+
+`SPAWNSOUND` stores the child script ID at parent script +20 (`0xb12a0`).
+The sound-variable accessor `0xb5c5c–0xb5da4` resolves parent and child IDs,
+checks variable index against child +140 and reads child variable-array +28.
+Wrapper `0xbcaf8` passes its variable-index argument to that accessor at
+`0xbcb20`; a zero result suppresses submission at `0xbcb28`, otherwise it
+passes the resolved catalog ID to `0xbb4fc` at `0xbcb40`.
+
+Train initialization `0x3bb6c` reads sound-child indices 5–8 into train
++84/+88/+92/+96 and creates handles at +100/+104 through `0xbcaf8`, with
+indices 0 and 1 respectively. Train identity is established by the rides lane's
+caller `0x3efd0`: it passes the train in r4 after a separate car loop of stride
+96; sound refresh `0x3c21c` advances train records by 128. These train sound
+fields must not be confused with car +84/+88/+92 projected coordinates.
+
+The SDK-only asset command below uses existing `WadArchive`/`RideScriptFile`
+readers and parses all 28 supplied baseline EventMaps without running scripts.
+It writes only interpreted variable indices, SET literals and identities to
+an external report. For baseline `b_drip`, `c_hade` and `coaster1`, indices 5–8
+are `VAR_PAR0–3`; for the bumper maps they are `VAR_EVT5–8`. Variable indices
+therefore cannot receive universal event names. The three coaster `VAR_EVT0`
+values 145/175/204 identify local catalog records with 6/6/5 elements; their
+sample choices reference bank IDs 3/2/3. Sound-library `ReadSounds` rebases
+that field through its bank-fixup array at `0x16af4–0x16b04`. Resolving those bank IDs requires the
+native bank remap state before attaching SDT clip names. Simply indexing the
+main RideHD bank would yield the wrong names.
+
+```sh
+/Users/sander/.local/share/opentpw-dotnet/dotnet run --project tools/ppc-analysis/lanes/advisor/audio-events/AudioEventAssets.csproj --configuration Release -- /Users/sander/server/game-assets/theme-park-world/Data /tmp/advisor-event-map-corpus-validated.json
+python3 tools/ppc-analysis/lanes/advisor/audio_event_evidence.py /Users/sander/server/game-assets/mac-feral/bin --assets /Users/sander/server/game-assets/theme-park-world/Data --event-maps /tmp/advisor-event-map-corpus-validated.json > /tmp/advisor-audio-event-evidence.json
+```
+
+The bounded reader consumes all 31 loose supplied SFX catalogs exactly,
+covering 1,267 catalog IDs. A sample-choice bank ID is its packed field +12
+(sound placeholder `0xf5d0`), while the sample ID is +0 (`0xf5e8`); bank lookup
+subtracts one from a sample index at sound code `0x6fa4`. This establishes
+one-based SDT member indexing only after the bank is resolved.
+
+### Local music uses catalog 2, with a multi-sample bank definition
+
+App `0xbc144` submits catalog ID 2 through local music handle-array +36 at
+`0xbc174`, then calls the audio interface parameter wrapper `0xbaf70` with
+control 4 and argument 0 at `0xbc188`. It is called during main-loop transitions
+at `0x1c1c40`. During updates, `0x1c246c` calls `0xbc1d4`, which applies
+control 4 with the supplied argument to the retained music handle. Exit
+`0x1c2994` calls `0xbc1a4`, passing that handle to `0xbba58`. Complete
+play/stop/fade semantics of those interface/control operations are not
+established here.
+
+The supplied fantasy `cat_musicSFX.map` contains exactly catalog ID 2, with 89
+sample references across its elements. Every reference selects bank 1 and is
+within the supplied 89-entry music bank. `cat_musicBANK.map`, whose 11-byte
+record stride is grounded at sound code `0x15194`, names family `Music\Music`.
+The first listed reference is sample 44, `Level1-a.mp2`, in `Music/MusicHD.sdt`.
+Catalog selection, random thresholds, sentence chaining and playlist ordering
+are separate mechanisms; these records do not prove a simple sequential or
+uniform-random playlist.
+
+| Selected asset | SHA-256 |
+| --- | --- |
+| Fantasy `Music/cat_musicSFX.map` | `bdd080f8bece1d03df33cf2868ef82d4433b62543f0994b9d24e59fefda8b65e` |
+| Fantasy `Music/cat_musicBANK.map` | `ad45ce6ab74cef5c284f2ae6e7be5780d99a3e9fae1608990672b305528328b4` |
+| Fantasy `Music/MusicHD.sdt` | `6d35cd515ba59027be57d492eb9803554e1ff51ffc231381a5f09e0ca07a0852` |
+
+### Actual CMsgEvent producers reach selected speech and LIP records
+
+`CMsgEvent` constructor `0x116528` installs RTTI table data `0x408a4` and
+stores its event-ID argument at object +8 (`0x116540`). Advisor reception reads
+that field at `0xad40` and calls `0x94dc` at `0xad48`. Its switch table is
+**data `0x1e0f4`**, independent of the RSE sound switch and catalog namespace.
+The table routes IDs 0/2/3/4 to concrete advice records:
+
+| CMsgEvent ID | Pending advice ID / construct call | Configured score field | Descriptor response IDs | Bank / speech and LIP IDs |
+| ---: | --- | --- | --- | --- |
+| 0 | 0 / `0x9548` | `Welcome.Score` | 1 | Local / 1 |
+| 2 | 106 / `0x98d4` | `Bankrupted.Score` | 274, 275 | Global / 424, 425 |
+| 3 | 128 / `0x9a88` | `ParkNowOpen.Score` | 308, 309 | Global / 342, 343 |
+| 4 | 129 / `0x9c3c` | `ParkNowClosed.Score` | 310, 311 | Global / 344, 345 |
+
+Rows follow the existing 351-descriptor table data `0x1f2b4` into the
+610-response table data `0x18ff4`; they identify candidates, not unconditional
+playback. Eligibility, queue score, busy-action and cyclic response rules
+still apply. Event 0 also constructs advice 323 when the global mode value is
+2 (`0x96f4–0x9720`); its `PrebuiltPark.Score` descriptor resolves response 587
+and global speech/LIP 606. Event 10 clears history, as established earlier.
+
+Concrete producer constructor calls are `0xcc464` (ID 2), `0x108fd4` (ID 3),
+`0x109118` (ID 4), `0x104d2c` (ID 0), and main-loop `0x1c2108` (ID 10)
+followed by `0x1c2174` (ID 0). In `0x108ee4`, the ID 3 branch changes game
+field +0x1da710 from nonzero to zero at `0x108f50`; the ID 4 branch changes
+it from zero to one at `0x109044`. The matching score properties corroborate
+park open/closed messaging, while transition preconditions and the financial
+threshold at the ID 2 producer remain owned gameplay proofs. No RSE audio
+callback is established as a producer of these advisor messages.
+
+Verification: eleven new synthetic catalog/bank bounds and reference cases pass,
+bringing the lane Python total to 38. The native operand/relocation witness and
+31-catalog corpus scan pass. The C# asset command parses all 28 EventMaps; the
+standalone advisor helpers retain all 52 passing cases. No original code,
+compressed audio, PCM, script bytes or disassembly is committed. Remaining
+runtime blockers are category/bank remap state, event element selection and
+parameter semantics, full music sequencing, environmental priorities/voice
+limits, plus game-message/score and pause-aware clock integration.

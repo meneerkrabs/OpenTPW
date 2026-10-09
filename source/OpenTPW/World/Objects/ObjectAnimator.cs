@@ -11,9 +11,9 @@ namespace OpenTPW;
 /// </summary>
 public sealed class ObjectAnimator
 {
-	/// <summary>Sandbox choice shared with the Totem prototype; the original tick rate is not verified.</summary>
+	/// <summary>Sandbox choice shared with the Totem prototype; the original tick rate is not verified. Default for new animators.</summary>
 	// [APPROX:RIDES-001] Animation clips play at 30 ticks/s — evidence needed: original tick rate (binary or timed capture of a ride cycle)
-	public const float TicksPerSecond = 30f;
+	public const float DefaultTicksPerSecond = 30f;
 
 	private sealed class Channel
 	{
@@ -33,12 +33,18 @@ public sealed class ObjectAnimator
 	private readonly int[] order;
 	private long serial;
 
-	public ObjectAnimator( ModelFile model )
+	/// <summary>Clip ticks per second used by every channel this animator plays.</summary>
+	public float TicksPerSecond { get; }
+
+	public ObjectAnimator( ModelFile model, float ticksPerSecond = DefaultTicksPerSecond )
 	{
 		ArgumentNullException.ThrowIfNull( model );
 		if ( model.Kind != ModelFileKind.Geometry )
 			throw new ArgumentException( "Animations play against a geometry model.", nameof( model ) );
+		if ( !float.IsFinite( ticksPerSecond ) || ticksPerSecond <= 0 )
+			throw new ArgumentOutOfRangeException( nameof( ticksPerSecond ) );
 		this.model = model;
+		TicksPerSecond = ticksPerSecond;
 		rest = ModelAnimationPlayer.ComputeRestTransforms( model );
 		world = (Matrix4x4[])rest.Clone();
 		var sorted = new List<int>( model.Nodes.Count );

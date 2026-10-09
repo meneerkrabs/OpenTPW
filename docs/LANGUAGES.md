@@ -121,5 +121,6 @@ and its readback matches the CPU composite (max difference 0 on Metal).
   unverified.
 - No in-game language switch; the language is chosen at startup.
 - Speech audio, lip-sync playback and banner rendering are not implemented.
-- `UniToMB.dat` (reverse table, needed for text input) is not read.
+- `UniToMB.dat` is read (`BFUMReader`/`GameTextCodec`, round-trip tested in all six
+  languages, see [COMPATIBILITY.md](COMPATIBILITY.md)); no text-input UI uses it yet.
 - Only the CD in `TPWORLD.ISO` was examined; other editions/patches are unverified.

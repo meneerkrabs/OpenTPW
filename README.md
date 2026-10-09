@@ -72,6 +72,14 @@ others from the extracted original CD (see [languages](docs/LANGUAGES.md)). See
 [completion plan](docs/COMPLETION-PLAN.md) and [progress](docs/PROGRESS.md).
 Format checkmarks do not qualify full gameplay or every platform/edition.
 
+Compatibility ([docs](docs/COMPATIBILITY.md)): the 17 sign fonts are read in memory from
+`fonts.wad` by an own TrueType rasterizer (the jungle gate shows the park name in the
+font and size from its `.sgn`); `--cd-data` fills in missing movies/music from the
+extracted CD; Low/Medium/High detail presets come from the original `.sam` files plus an
+Enhanced extension; an Original (default) / Recommended / Custom fix profile, missing-string
+fallback, `UniToMB.dat` text encoding and damaged-SDT tolerance. Approximations are tagged
+and listed in its approximation register.
+
 File format information is available at the [OpenTPW formats](https://opentpw.gu3.me/formats/) website. Keep in mind that this information is a work-in-progress, and therefore might not be of incredible detail - however, upon completion, it still aims to be as useful, detailed, and as in-depth as possible.
 
 ## Contributing

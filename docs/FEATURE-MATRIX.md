@@ -40,6 +40,14 @@ Easymode path/object import feed a read-only `--load-original-level` sandbox vie
 with data-grounded build rules (MAP.md, TPWS-PAYLOAD.md); that is not an original
 gameplay feature, so the game-feature rows stay unchanged.
 
+Compatibility slice ([COMPATIBILITY.md](COMPATIBILITY.md)): in-world TrueType sign text
+from `fonts.wad` (`partial`: gate demo in `--load-original-level`, ride signs need the
+object-to-name mapping; sign layout values are tagged approximations), `--cd-data` media
+fallback (`implemented`, macOS headless/native verified), original detail presets
+(`partial`: filtering/mipmaps applied, most options lack a renderer feature), Original /
+Recommended / Custom fix profile with save-metadata serialization (`implemented`; save
+integration owned by the economy slice).
+
 Optional presentation extension (requested October 9, 2026): configurable world
 upscaling, design in [UPSCALING-DESIGN.md](UPSCALING-DESIGN.md), together with
 high/arbitrary resolutions, HiDPI drawables, borderless/exclusive fullscreen and an

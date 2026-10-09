@@ -21,6 +21,12 @@ public class Level
 	/// <summary>Park management simulation (money, clock, staff, research); original levels only for now.</summary>
 	public ParkEconomyRuntime? Park { get; private set; }
 	private bool wasMouseDown;
+	/// <summary>Set each frame by the original HUD when the pointer is over it, so HUD clicks do not build.</summary>
+	public bool UiCapturesMouse { get; set; }
+	/// <summary>Simulation speed from the HUD speed control (0 = paused).</summary>
+	public float SimulationTimeScale { get; set; } = 1f;
+	/// <summary>Shows the ImGui developer panel and the sandbox BF4 text panel (off when the original HUD runs alone).</summary>
+	public bool ShowDeveloperPanels { get; set; } = true;
 	private readonly FixedStepClock simulationClock = new();
 	/// <summary>Park visitors (imported original levels only; docs/GUESTS.md).</summary>
 	public GuestSimulation? Guests { get; private set; }
@@ -162,20 +168,30 @@ public class Level
 		parkLayout = new ParkLayout( this );
 		TextOverlay = new SandboxTextOverlay();
 		// BF4 UI draws at output size after the world blit, not through the world upscaler.
-		global::Global.Render.OnOverlayRender += TextOverlay.Draw;
+		global::Global.Render.OnOverlayRender += DrawTextOverlay;
 	}
+
+	private void DrawTextOverlay()
+	{
+		if ( ShowDeveloperPanels )
+			TextOverlay.Draw();
+	}
+
+	/// <summary>Stops drawing this level's overlay (the front end replaces the level).</summary>
+	internal void DetachOverlay() => global::Global.Render.OnOverlayRender -= DrawTextOverlay;
 
 	public void Update()
 	{
 		Camera.Update();
-		parkLayout.Draw();
-		if ( IsPlacing && !wasMouseDown && Input.Mouse.Left && !ImGuiNET.ImGui.GetIO().WantCaptureMouse )
+		if ( ShowDeveloperPanels )
+			parkLayout.Draw();
+		if ( IsPlacing && !wasMouseDown && Input.Mouse.Left && !UiCapturesMouse && !ImGuiNET.ImGui.GetIO().WantCaptureMouse )
 		{
 			if ( TryGetPlacementPosition( Input.Mouse.Position, new Vector2( Screen.Size.X, Screen.Size.Y ), out var position ) )
 				PlaceRide( position );
 		}
 		wasMouseDown = Input.Mouse.Left;
-		simulationClock.Advance( Time.Delta, deltaTime =>
+		simulationClock.Advance( Time.Delta * SimulationTimeScale, deltaTime =>
 		{
 			Guests?.Tick( deltaTime );
 			PlacedRide?.Simulate( deltaTime );

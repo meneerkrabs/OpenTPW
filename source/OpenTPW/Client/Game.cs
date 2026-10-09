@@ -147,14 +147,34 @@ internal static class Game
 		var originalLevelIndex = Array.IndexOf( args, "--load-original-level" );
 		if ( originalLevelIndex >= 0 && (originalLevelIndex + 1 >= args.Length || args[originalLevelIndex + 1].StartsWith( "--" )) )
 			throw new ArgumentException( "--load-original-level requires a level name such as 'jungle'." );
-		var level = originalLevelIndex >= 0 ? new Level( args[originalLevelIndex + 1], loadOriginalLevel: true ) : new Level( "jungle" );
+		// Default: the original-style front end (docs/UI.md). --load-original-level, --sandbox and a
+		// plain --smoke-test bypass it as before; --front-end --smoke-test tests the front end.
+		using var flow = new GameFlow();
+		Render.OnUpdate += flow.Update;
+		Render.OnRender += flow.Render;
+		var smoke = args.Contains( "--smoke-test" );
+		if ( originalLevelIndex < 0 && !args.Contains( "--sandbox" ) && (!smoke || args.Contains( "--front-end" )) )
+		{
+			flow.ShowFrontEnd();
+			if ( smoke )
+			{
+				using var frontEndSmokeTest = new FrontEndSmokeTest( flow );
+				Render.PostUpdate += frontEndSmokeTest.Update;
+				Render.Run();
+				frontEndSmokeTest.VerifyCompleted();
+			}
+			else
+				Render.Run();
+			return;
+		}
+		var level = originalLevelIndex >= 0
+			? flow.StartLevel( args[originalLevelIndex + 1], original: true, developerPanels: true )
+			: flow.StartLevel( "jungle", original: false, developerPanels: true );
 
 		//
 		// Run game loop
 		//
-		Render.OnUpdate += level.Update;
-		Render.OnRender += level.Render;
-		if ( args.Contains( "--smoke-test" ) )
+		if ( smoke )
 		{
 			using var smokeTest = new SandboxSmokeTest( level );
 			Render.PostUpdate += smokeTest.Update;

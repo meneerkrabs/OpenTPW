@@ -106,9 +106,14 @@ ancillary bits) decode to the same length as ffmpeg's `mp1` decoder with a maxim
 difference of **1 LSB**. `Mp2DecoderTests` pins one such stream against ffmpeg values
 and covers silence, DC, intensity-stereo scaling, frame sizes and padding.
 `OriginalLayerOneSoundEffectsDecode` decodes every Layer I entry of every `.SDT`
-bank below `OPENTPW_GAME_PATH`; it has not yet been run against the corpus, so the
-MPEG version, sample rates and modes of the original sound effects are still unconfirmed,
-and nothing plays them in-game yet (no sound-effect triggers or mixer).
+bank below `OPENTPW_GAME_PATH`.
+
+Corpus check on the Mac "Sim Theme Park" data (not the pinned Windows edition, see
+THEME-PARK-INC.md): all 2,650 Layer I entries decode (2,641 MPEG-2 22,050 Hz mono,
+5 MPEG-1 44,100 Hz mono, 4 MPEG-2 22,050 Hz stereo) to the same length as ffmpeg's
+`mp1` decoder, with a maximum difference of **1 LSB** over 63,043,584 samples. The
+Windows corpus has not been rerun. Nothing plays sound effects in-game yet (no
+sound-effect triggers or mixer).
 
 ## Advisor runtime slice
 
@@ -200,5 +205,5 @@ table fit). The smoke-test thresholds are test-harness checks, not game rules.
 
 Original-runtime observation of the mouth shape choice while talking, global vs
 level LIP selection, advisor triggers/placement/animation and A/V latency. The undecoded
-`Advisorm*` track payloads (vertex animation/visibility) for idle/talk poses and mouth shapes. A corpus run of the Layer I
-decoder (sound effects and `z_error`) and in-game sound-effect playback. Capture comparison before claiming original fidelity.
+`Advisorm*` track payloads (vertex animation/visibility) for idle/talk poses and mouth shapes. A Windows-corpus run of the
+Layer I decoder (verified on the Mac edition) and in-game sound-effect playback. Capture comparison before claiming original fidelity.

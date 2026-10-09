@@ -20,6 +20,9 @@ smoke tests. Missing display or Vulkan driver ends with a named error instead of
 .NET loader exception. Game data may use any letter case (`data`, `Data`, `DATA`
 from a mounted CD, `Speech`/`speech`): paths are matched to the on-disk spelling.
 linux-arm64 is blocked: the packages ship no arm64 `libveldrid-spirv`/`libcimgui`.
+Shader hot reload shares one file watcher per shader file, because every Linux
+watcher holds an inotify instance (default limit 128 per user); if the limit is
+still reached, hot reload is disabled with a warning instead of stopping the game.
 
 ```sh
 bash scripts/run.sh --game-path '/path/to/Theme Park World'

@@ -393,3 +393,22 @@ Gemeten in een Ubuntu 24.04 x64-container met .NET 8.0.425, Xvfb en Mesa llvmpip
   (`OPENTPW_NATIVE_SHADER_TESTS=1`) op Linux x64.
 - Open: renderen, input en audio met originele assets op Linux; Windows uitvoeren;
   linux-arm64-natives; packaging. Details: RUNNING.md, FEATURE-MATRIX.md.
+
+## Linux met originele data; Theme Park Inc-vergelijking (9 oktober 2026)
+
+Met de Mac-cd van Sim Theme Park (HFS, november 2000) als originele data:
+
+- Linux x64 (Xvfb, Mesa llvmpipe): de sandbox-smoketest (439 frames, originele
+  objecten, animaties, Totem-script, BF4-tekst, upscaling, fullscreen, opslaan/laden)
+  en de front-end-smoketest (lobby, menu's, jungle, HUD, economie) slagen. Daarvoor
+  kregen de Mac-gegevens tijdelijk de pc-lettertypes `GAMEBOLD*.bf4`; niets daarvan
+  staat in git.
+- Gerepareerd: elke `Shader` maakte een eigen `FileSystemWatcher`; op Linux is dat
+  een inotify-instantie (standaard 128 per gebruiker) en de lobby crashte. Nu één
+  watcher per shaderbestand; bij een tekort alleen een waarschuwing.
+- Layer I: alle 2.650 Mac-clips gelijk aan ffmpeg (≤ 1 LSB, zelfde lengte).
+- De Mac-editie wijkt af van de vastgepinde Windows-editie (taalmap `American`,
+  QuickTime-films, geen `fonts.wad`/`lips.wad`, 290 objecten); de tests die
+  Windows-hashes en -aantallen vastpinnen falen daarop, zie THEME-PARK-INC.md.
+- Theme Park Inc vergeleken: zelfde engine-familie en identieke RSE-VM; textures
+  zijn EA `SHPI`/`.fsh` i.p.v. `.wct`. Details en vervolgwerk: THEME-PARK-INC.md.

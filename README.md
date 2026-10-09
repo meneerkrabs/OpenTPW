@@ -65,8 +65,8 @@ drive the original advisor's mouth with SDL audio via `--advisor-say N`; the ori
 mouth-shape choice is unknown. ISO-only `.MTR` files decode as topology and matrices
 redundant with their banner `.MD2` (no material data; runtime use unknown). SDT speech
 and music (MPEG-2 Layer II) decode within 1 LSB of an external decoder; Layer I
-sound effects decode within 1 LSB of an external decoder on generated streams (not yet
-run against the original files, and not played in-game). All nine TGQ movies decode audio bit-exact and video
+sound effects decode within 1 LSB of an external decoder on all 2,650 clips of the Mac
+edition (not yet played in-game). All nine TGQ movies decode audio bit-exact and video
 close to, not bit-identical with, an external reference, without playback. Evidence:
 [MD2](docs/MD2-MODELS.md), [MAP](docs/MAP.md), [RSE](docs/RSE-SCRIPTS.md) / [RSE VM](docs/RSE-VM.md),
 [TPWS payload](docs/TPWS-PAYLOAD.md), [LIPS](docs/LIPS.md), [MTR](docs/MTR.md),

@@ -14,7 +14,10 @@ public class Shader : Asset
 	public bool IsDirty { get; private set; }
 	public Action OnRecompile { get; set; }
 
-	private FileSystemWatcher watcher;
+	// One hot-reload watcher per shader file, shared by every Shader compiled from it. Each
+	// Material creates its own Shader, and on Linux every FileSystemWatcher holds an inotify
+	// instance (128 per user by default), so per-Shader watchers crashed the lobby scene.
+	private static readonly Dictionary<string, FileSystemWatcher?> watchers = new();
 
 	internal Shader( string path )
 	{
@@ -22,23 +25,40 @@ public class Shader : Asset
 		All.Add( this );
 
 		Recompile();
+		Watch();
+	}
 
-		var directoryName = System.IO.Path.GetDirectoryName( Path );
-		var fileName = System.IO.Path.GetFileName( Path );
-
-		watcher = new FileSystemWatcher( directoryName, fileName );
-
-		watcher.NotifyFilter = NotifyFilters.Attributes
-							 | NotifyFilters.CreationTime
-							 | NotifyFilters.DirectoryName
-							 | NotifyFilters.FileName
-							 | NotifyFilters.LastAccess
-							 | NotifyFilters.LastWrite
-							 | NotifyFilters.Security
-							 | NotifyFilters.Size;
-
-		watcher.EnableRaisingEvents = true;
-		watcher.Changed += OnWatcherChanged;
+	private void Watch()
+	{
+		lock ( watchers )
+		{
+			if ( !watchers.TryGetValue( Path, out var watcher ) )
+			{
+				watcher = new FileSystemWatcher( System.IO.Path.GetDirectoryName( Path )!, System.IO.Path.GetFileName( Path ) );
+				watcher.NotifyFilter = NotifyFilters.Attributes
+									 | NotifyFilters.CreationTime
+									 | NotifyFilters.DirectoryName
+									 | NotifyFilters.FileName
+									 | NotifyFilters.LastAccess
+									 | NotifyFilters.LastWrite
+									 | NotifyFilters.Security
+									 | NotifyFilters.Size;
+				try
+				{
+					watcher.EnableRaisingEvents = true;
+				}
+				catch ( IOException exception )
+				{
+					// Hot reload is a development aid; running out of watchers must not stop the game.
+					Log.Warning( $"Shader hot reload disabled for {Path}: {exception.Message}" );
+					watcher.Dispose();
+					watcher = null;
+				}
+				watchers[Path] = watcher;
+			}
+			if ( watcher != null )
+				watcher.Changed += OnWatcherChanged;
+		}
 	}
 
 	public static bool IsFileReady( string path )

@@ -422,3 +422,34 @@ python3 -m unittest discover -s tools/ppc-analysis -p 'test_*.py'
 This change qualifies the evidence reader; it makes no gameplay or Windows
 fidelity change. Original runtime execution and deliberately overlapping
 relocation instruction streams remain outside verification.
+
+## CFM glue and widget clock follow-up
+
+The shared `glue_import` helper now validates the entire supported six-instruction
+CFM form before assigning an imported name: caller TOC preservation at stack+20,
+callee code/TOC loads, code transfer to CTR and an unconditional unlinked branch.
+Code and TOC-slot bounds/alignment and import index are checked. This helper
+supports that form and unaddended pointers; other CFM variants require separate
+recognition. Six added synthetic tests exercise malformed lookalikes, every
+truncated prefix, bounds, alignment and invalid metadata. The toolkit's 31 tests
+and the clock lane's 21 tests pass. All 2,209 full standard imported glues in the
+16 identified containers pass; the prior timer, clock, clock-edge and complete
+relocation-corpus witness outputs remain byte-for-byte identical.
+
+A further real consumer is the button repeat clock. `0x171ef4` reads the selected
+clock object through TOC `data:0x40e4` / pointer `data:0x4fc24` and invokes its
+first virtual slot. The fallback callback is `timeGetTimeClockTickFunction`,
+`0x171e9c`, which divides `GetAbsolute` by 1000 and returns the low quotient.
+Its bounded divider body at `0x1c4010–0x1c40fc` has the same SHA-256 as the
+previously inspected Bullfrog unsigned division helper. The application's UI
+initialization installs object `data:0x120e74` at `0x13cb18`; constructor stores
+at `0x13e218–0x13e220` bind it to the `LbTimeClockTickFunction` vtable
+`data:0x47ddc`, whose callback `0x13ca44` uses `LbTime_GetClock`.
+Both identified widget sources therefore use raw milliseconds, independently
+of the scaled park elapsed clock. This supplies units for the UI lane's 500/125
+repeat thresholds; alternate injected clock objects, complete input event
+behavior and Windows applicability remain unqualified.
+
+```
+python3 tools/ppc-analysis/lanes/clock/widget_clock.py /path/to/mac-feral/bin
+```

@@ -1,9 +1,8 @@
 ## Ignore Visual Studio temporary files, build results, and
-/.omx/logs/
-/.omx/state/
-/.omx/notepad.md
-/.omx/tmux-hook.json
-/.omx/context/
+# Local agent tooling state (oh-my-codex, Claude Code local settings, macOS metadata)
+/.omx/
+.claude/settings.local.json
+.DS_Store
 /.opentpw/
 /native/
 /artifacts/

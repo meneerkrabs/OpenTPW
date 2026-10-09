@@ -33,7 +33,7 @@ public class OnlineFormatTests
 
 	internal static ParkPackage Package( string name = "My Jungle", byte[]? thumbnail = null ) => ParkPackage.Create(
 		Payload().ToSnapshot( new[] { new RequiredContent( ContentKinds.Level, "jungle", new string( 'a', 64 ) ), new RequiredContent( ContentKinds.Object, "1100", null ) } ),
-		new ParkInfo( name, "Line one\nline two", "Sander", "ignored" ), new GameInfo( "Theme Park World", "English" ), thumbnail ?? Thumbnail(), FixedId, FixedTime );
+		new ParkInfo( name, "Line one\nline two", "Alice", "ignored" ), new GameInfo( "Theme Park World", "English" ), thumbnail ?? Thumbnail(), FixedId, FixedTime );
 
 	[TestMethod]
 	public void ParkPackageRoundTripsAndIsDeterministic()
@@ -183,24 +183,24 @@ public class OnlineFormatTests
 	[TestMethod]
 	public void PostcardRoundTripsAndRejectsHostileInput()
 	{
-		var card = Postcard.Create( "Sander", new[] { "Bob", "Ann Marie" }, "Greetings from Theme Park World!", "Come and see\nmy park", "English",
+		var card = Postcard.Create( "Alice", new[] { "Bob", "Ann Marie" }, "Greetings from Theme Park World!", "Come and see\nmy park", "English",
 			new PostcardParkReference( FixedId, "My Jungle", "jungle", "abc123" ), Thumbnail(), FixedId, FixedTime );
 		var read = Postcard.Read( card.ToBytes() );
-		Assert.AreEqual( "Sander", read.Manifest.From );
+		Assert.AreEqual( "Alice", read.Manifest.From );
 		CollectionAssert.AreEqual( new[] { "Bob", "Ann Marie" }, read.Manifest.To.ToArray() );
 		Assert.AreEqual( "Come and see\nmy park", read.Manifest.Text );
 		Assert.AreEqual( "abc123", read.Manifest.Park!.ServerParkId );
 		Assert.IsNotNull( read.Image );
-		Assert.AreEqual( "a\nb", Postcard.Create( "Sander", new[] { "Bob" }, "t", "a\r\nb", "English" ).Manifest.Text );
+		Assert.AreEqual( "a\nb", Postcard.Create( "Alice", new[] { "Bob" }, "t", "a\r\nb", "English" ).Manifest.Text );
 
-		Assert.ThrowsException<InvalidDataException>( () => Postcard.Create( "Sander", Array.Empty<string>(), "t", "x", "English" ) );
-		Assert.ThrowsException<InvalidDataException>( () => Postcard.Create( "Sander", new[] { "Bob", "BOB" }, "t", "x", "English" ) );
-		Assert.ThrowsException<InvalidDataException>( () => Postcard.Create( "Sander", Enumerable.Range( 0, 11 ).Select( i => $"Player{i}" ), "t", "x", "English" ) );
+		Assert.ThrowsException<InvalidDataException>( () => Postcard.Create( "Alice", Array.Empty<string>(), "t", "x", "English" ) );
+		Assert.ThrowsException<InvalidDataException>( () => Postcard.Create( "Alice", new[] { "Bob", "BOB" }, "t", "x", "English" ) );
+		Assert.ThrowsException<InvalidDataException>( () => Postcard.Create( "Alice", Enumerable.Range( 0, 11 ).Select( i => $"Player{i}" ), "t", "x", "English" ) );
 		Assert.ThrowsException<InvalidDataException>( () => Postcard.Create( "../x", new[] { "Bob" }, "t", "x", "English" ) );
-		Assert.ThrowsException<InvalidDataException>( () => Postcard.Create( "Sander", new[] { "Bob" }, "", "x", "English" ) );
-		Assert.ThrowsException<InvalidDataException>( () => Postcard.Create( "Sander", new[] { "Bob" }, "t", new string( 'x', 1025 ), "English" ) );
-		Assert.ThrowsException<InvalidDataException>( () => Postcard.Create( "Sander", new[] { "Bob" }, "t", "evil\u202Etext", "English" ) );
-		Assert.ThrowsException<InvalidDataException>( () => Postcard.Create( "Sander", new[] { "Bob" }, "t", "x", "../English" ) );
+		Assert.ThrowsException<InvalidDataException>( () => Postcard.Create( "Alice", new[] { "Bob" }, "", "x", "English" ) );
+		Assert.ThrowsException<InvalidDataException>( () => Postcard.Create( "Alice", new[] { "Bob" }, "t", new string( 'x', 1025 ), "English" ) );
+		Assert.ThrowsException<InvalidDataException>( () => Postcard.Create( "Alice", new[] { "Bob" }, "t", "evil\u202Etext", "English" ) );
+		Assert.ThrowsException<InvalidDataException>( () => Postcard.Create( "Alice", new[] { "Bob" }, "t", "x", "../English" ) );
 		Assert.ThrowsException<InvalidDataException>( () => Postcard.Read( Zip( ("card.json", Encoding.UTF8.GetBytes( "{}" )) ) ) );
 		Assert.ThrowsException<InvalidDataException>( () => Postcard.Read( Zip( ("card.json", Encoding.UTF8.GetBytes( "{}" )), ("script.js", new byte[1]) ) ) );
 		Assert.ThrowsException<InvalidDataException>( () => Postcard.Read( Encoding.ASCII.GetBytes( "PK\u0003\u0004 garbage" ) ) );

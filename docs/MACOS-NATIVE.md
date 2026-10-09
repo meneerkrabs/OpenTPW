@@ -17,8 +17,7 @@ The script is a wrapper around `scripts/build-native.py`, which also builds SDL2
 Windows/Linux arm64 libraries for release builds (RELEASES.md).
 
 The script fetches source into the external sibling cache
-`../tooling/veldrid-spirv` (for this checkout,
-`/Users/sander/server/tooling/veldrid-spirv`). Override it with
+`../tooling/veldrid-spirv`, relative to the checkout. Override it with
 `VELDRID_SPIRV_SOURCE_DIR`; override the four-job build limit with
 `NATIVE_BUILD_JOBS`. It installs no tools or packages and does not run .NET.
 

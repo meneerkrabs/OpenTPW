@@ -68,8 +68,19 @@ dotnet run --project tools/tpi-compare/TpiCompare.csproj --configuration Release
 dotnet run --project tools/tpi-compare/TpiCompare.csproj --configuration Release -- --full /Users/sander/server/game-assets/theme-park-inc/retail TPI-retail-full /tmp/tpi-full-retail.json
 dotnet run --project tools/tpi-compare/TpiCompare.csproj --configuration Release -- --full /Users/sander/server/game-assets/theme-park-inc/cd/THEME_PARK/CoasterData TPI-CD-coasters-full /tmp/tpi-full-cos.json
 python3 tools/tpi-compare/readme_metadata.py /Users/sander/server/game-assets/theme-park-inc/cd/THEME_PARK/Readme.txt /Users/sander/server/game-assets/theme-park-inc/cd/THEME_PARK/ReadMe.htm --output /tmp/tpi-full-readme.json
-python3 tools/tpi-compare/full_summary.py --tpw /tmp/tpi-full-tpw.json --patch2 /tmp/tpi-full-patch2.json --tpi /tmp/tpi-full-retail.json --source-root . --cos /tmp/tpi-full-cos.json --readme /tmp/tpi-full-readme.json --output tools/tpi-compare/full-evidence.json
+python3 tools/tpi-compare/full_summary.py --tpw /tmp/tpi-full-tpw.json --patch2 /tmp/tpi-full-patch2.json --tpi /tmp/tpi-full-retail.json --source-root . --cos /tmp/tpi-full-cos.json --readme /tmp/tpi-full-readme.json --output /Users/sander/server/game-assets/theme-park-inc/analysis/tpi-full-evidence.json
 ```
+
+The full artifact remains outside Git at the path above. Generate the checked-in
+compact review artifact separately:
+
+```sh
+python3 tools/tpi-compare/compact_audit.py --full /Users/sander/server/game-assets/theme-park-inc/analysis/tpi-full-evidence.json --output tools/tpi-compare/full-evidence.json --regeneration-command "python3 tools/tpi-compare/full_summary.py --tpw /tmp/tpi-full-tpw.json --patch2 /tmp/tpi-full-patch2.json --tpi /tmp/tpi-full-retail.json --source-root . --cos /tmp/tpi-full-cos.json --readme /tmp/tpi-full-readme.json --output /Users/sander/server/game-assets/theme-park-inc/analysis/tpi-full-evidence.json"
+```
+
+The compact artifact retains all partial-reader records, diagnostic group counts
+and examples, corpus manifests, opcode proofs and format limits. It pins exact
+full-report bytes/SHA-256 plus fingerprints of the detailed arrays.
 
 The full artifact records manifests, every exact shared payload hash, duplicate
 occurrence counts, reader outcomes, missing-handler opcode IDs with source/script

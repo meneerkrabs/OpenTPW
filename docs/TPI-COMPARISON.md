@@ -7,9 +7,11 @@ Executable engine version remains unverified. No game or installer was run,
 and no protection was removed.
 
 The full phase 2 audit below supersedes the initial sample counts. Its
-[full-evidence.json](../tools/tpi-compare/full-evidence.json) contains every
-shared payload hash and reproducible whole-corpus manifests, with failures
-and unsupported schemas retained explicitly. The original sampled evidence
+[full-evidence.json](../tools/tpi-compare/full-evidence.json) contains compact
+coverage, intersection and diagnostic aggregates. It pins the SHA-256 and
+regeneration command of the complete external audit, which retains every
+shared payload hash and per-file diagnostic. Partial SDT results and unknown
+COS/SHPI schemas remain explicit. The original sampled evidence
 is preserved for provenance.
 
 ## Full bounded corpus audit
@@ -59,7 +61,9 @@ are counted separately; all matching hashes are recorded in the full artifact.
 These are full bounded asset intersections, not engine-code overlap or proof
 that renamed objects have the same role. Manifest SHA-256 values and resource
 bounds are in `full-evidence.json` and can be regenerated from the original
-inputs without storing them in Git.
+inputs without storing them in Git. The 2,745,817-byte full audit is preserved
+at `/Users/sander/server/game-assets/theme-park-inc/analysis/tpi-full-evidence.json`;
+its exact SHA-256 and removed-array fingerprints are in the compact artifact.
 
 ### Unsupported opcodes and partial sound banks
 

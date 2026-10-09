@@ -20,6 +20,7 @@ python3 -I tools/ppc-analysis/lanes/review/round2_evidence.py /Users/sander/serv
   --mac-hfs /Users/sander/server/game-assets/mac-feral/hfs.img \
   --pc-speech /Users/sander/server/game-assets/theme-park-world/Data/global/Speech
 python3 -I tools/ppc-analysis/lanes/review/round3_evidence.py /Users/sander/server/game-assets/mac-feral/bin
+python3 -I tools/ppc-analysis/lanes/review/round4_evidence.py /Users/sander/server/game-assets/mac-feral/bin
 OPENTPW_PPC_BIN_ROOT=/Users/sander/server/game-assets/mac-feral/bin \
   python3 -I -m unittest discover -s tools/ppc-analysis/lanes/review -p 'test_*.py'
 ```
@@ -27,9 +28,10 @@ OPENTPW_PPC_BIN_ROOT=/Users/sander/server/game-assets/mac-feral/bin \
 `round2_evidence.py` (section 4 onwards) uses the same pinned `Binary` and
 fails closed in the same way. Its optional asset check prints only sizes,
 SHA-256 values and image offsets. `round3_evidence.py` (section 12 onwards)
-additionally pins `engine_shared.data` and `ltms_shared.data`. With the binary
-variable set, all 43 lane tests run, with no skips. Without it, 41 pass and the
-two original-file witnesses skip.
+additionally pins `engine_shared.data` and `ltms_shared.data`; `round4_evidence.py`
+(section 18 onwards) reuses those pins. With the binary variable set, all 65 lane
+tests run, with no skips. Without it, 62 pass and the three original-file
+witnesses skip.
 
 `review_evidence.py` exits non-zero if any identity, relocation, glue stub,
 operand or constant differs from the reviewed value. Unlike
@@ -649,7 +651,9 @@ points, and challenge activation.
 
 - **Clock:** accepted. My round-2 additions are absorbed: the exclusion gates
   `0x52e44&8`/`0x52e40&1`, the cap dropping park turns, and `mGameTick` at
-  `0x1053a0`. The widget clock is raw milliseconds through the unsigned
+  `0x1053a0`. **Retracted in round 4 (section 18):** the gate polarity and
+  mode routing in `a5263bb` were wrong, and this line accepted them without
+  re-checking against my own round-2 witness, which had both right. The widget clock is raw milliseconds through the unsigned
   divider. Zero time-slice behaviour stays open (conservative).
 - **Economy `7b63c41`:** accepted. The unsigned `(M·N−P)/N` wrap is
   documented (119,304,646). The descriptor-to-runtime proof is the anchor
@@ -699,3 +703,207 @@ Recommended safe order (root):
 
 Uncommitted source edits (formats `ModelAnimation*`, economy loan rules) need
 their own commit and review round before integration.
+
+# Round 4: clock branch repair, loan model, MD2 tracks, scenarios, advisor, UI, TPI
+
+Reviewed: the clock repair on top of `a5263bb` (doc, contract,
+`native_scheduler_branches.py`, `NativeBranchRules.json`), reviewed uncommitted and
+since committed as `bbc89e5`. Its `tools/ppc-analysis` tree is byte-identical to
+what I reviewed. `c2a0930` adds only a doc section on the rides VM, consistent
+with section 13. Also reviewed: economy `6f0a0ea`;
+formats `2439695`; scenarios `089ca5f`; advisor `8b256a3`; UI `643f132`; TPI
+`873cb71`. Guests (`00a6393`) and rides (`b3d14f9`) have no new commits since
+round 3. Every lane was run from a `git archive` export or an rsync copy in
+`/tmp`, so no lane tree was written. New address claims are pinned in
+`round4_evidence.py` (exit 0), with 22 regressions in `test_round4.py` that
+tell the competing readings apart.
+
+Runs: clock contract 35 checks, clock Python 21, and my regenerated branch JSON
+matches the lane's `NativeBranchRules.json` exactly. Economy model 15 groups and
+5,437 assertions. Formats witness exit 0, Python 26, MD2 C# filter 69 pass and
+1 skip (the ISO/MTR case, which predates this commit). Corpus output is
+byte-identical on the PC baseline and Patch 2. Scenarios witness exit 0 and 15
+tests. Advisor 46 C# checks, 27 Python tests and the controller witness exit 0.
+UI 19 synthetic cases, and the private verification (export written to `/tmp`)
+covers 55 tables and 934 controls. TPI 9 C# fixture cases and 8 Python tests.
+
+## 18. Clock branch repair (`bbc89e5`): accepted
+
+I decoded the routes myself from the BO/BI fields, without reusing the lane's
+JSON:
+
+- `0x1c22f8 rlwinm. &8` and `0x1c22fc bc 4,2 → 0x1c230c`: flag 8 set jumps
+  **into** the work block.
+- With flag 8 clear, `0x1c2304 &1` and `0x1c2308 bc 4,2 → 0x1c24c0`: flag 1
+  set skips. Work therefore runs when **flag8 OR NOT flag1**. Scheduled time
+  (`+31`) and the phase (`+1`) advance first, at `0x1c22e0/0x1c22ec`.
+- `0x1c2388 bc 12,2 → 0x1c23b4`: mode 0 takes the direct tick, and mode 2
+  falls through to it. Mode 1 reaches the wrapper `0x10565c`, which rechecks
+  `== 1` (`0x1056a0`) and calls `0x10536c`. Any other value skips.
+- **New binding:** the mode word is the **GameType** object. r30 is loaded from
+  TOC → data `0x53d98` at `0x1c1228`, and no integer write to r30 happens before
+  `0x1c2380`. The wrapper uses the same slot. Using the scenarios lane's
+  enumeration, Full Simulation (0) and Instant Action (2) tick directly and
+  online (1) goes through the wrapper. Under the old contract, offline Full
+  Simulation would never have advanced a turn. A regression shows that reading
+  BO 12 as branch-if-false reproduces the superseded mode-0 claim exactly. The
+  clock README's "names unresolved" can now cite this binding (low).
+- **FMA: accepted.** `0x127d14` is `fmadd f0 = f2·f1 + f0` with delta, scale
+  (`+24`) and the prior accumulator (`+16`). The delta is converted **unsigned**:
+  the `0x4330` high word, minus the 2⁵² bias at `data:0x56f0`. One binary64
+  rounding matches `Math.FusedMultiplyAdd(delta, Scale, Acc)`. Limit: the
+  native FPSCR rounding and NI modes are not established.
+- **Self-correction:** my round-2 witness already encoded both facts (skip only
+  when `!(flag8) && flag1`, modes 0 and 2 direct). My round-3 "absorbed" line
+  was a rubber stamp and is retracted. **Integration rule:** never merge
+  `a5263bb` without `bbc89e5`.
+
+## 19. Economy `6f0a0ea` (standalone loan model): accepted
+
+The model matches my decode of `0xcc21c` and `0xccc78`:
+
+- **Monthly installment:** the debit is skipped only when withdrawals are
+  disabled. Repaid is incremented in every case. The `0xb678` assert comes
+  first, then the `months == 0` guard (`0xcc368/0xcc36c`), then
+  `profit += M − divwu(M·N − P, N)`. Completion is equality-only.
+- **Payoff:** affordability uses `cmplw`. The routine clears bought/repaid
+  (`0xccd74/0xccd78`) **before** reloading repaid for `q·(N − 0)`, which
+  confirms the whole-term interest charge.
+- **Constructor FP:** `fdiv`, `fmul`, `fadd`, `pow`, `fmul`, `fdiv`. There is
+  **no fused operation** in `0xcb7a8–0xcb910`, so the host `pow` is the only
+  libm dependency.
+- The eight shipped `Standard.sam` offers sit at least **0.148** from an
+  integer before truncation, so host-versus-original `pow` ulp differences
+  cannot change them. Edge inputs (NaN, ∞, zero term) stay qualified.
+
+**Still open (medium):** this commit does not repair the round-3 importer
+objection. `ab3c74d` still demands annuity equality for APR > 0. Recommended
+fix: use the Mac formula, which is safe for shipped values, or skip the
+equality check for APR > 0.
+
+## 20. Formats `2439695` (MD2 tracks, parser in `source/`): accepted with limits
+
+- **10:10:10 layout, independently derived.** Engine `0x41cac–0x41d04`
+  repacks each file word with `rlwimi`: X from `b0 | (b1&3)<<8` goes to memory
+  bits 22–31, Y from `(b2&0xF)<<6 | b1>>2` to 12–21, Z from
+  `(b3&0x3F)<<4 | b2>>4` to 2–11, and bits 0–1 are cleared. The application
+  (`0xa43bc/0xa43cc/0xa43e8` + `srawi 22`) reads exactly those fields. My
+  composite model reproduces the lane's little-endian 0–9/10–19/20–29 reading
+  on 3,000+ words. A plain byte-swap reading fails.
+- **Dequantise and lerp.** `fmadds q·scale + offset` (`0xa446c`; q is an exact
+  int→float conversion), then `fmuls next·t` and
+  `fmadds cur·(1−t) + that`, all binary32 with one rounding each. The C#
+  `MathF.FusedMultiplyAdd` matches, and a regression shows that an unfused
+  version differs.
+- **Group 0.** `lower = (lerp − scale) − 0.25` (two `fsubs`) and
+  `upper = 0.25 + (scale + lerp)`. The padding constant is 0.25 at TOC
+  `0x519c`. The rounding order is observable and C# follows it.
+- **Gates.** Trailer bit 0x2 set **and** option 0x8 clear enable texture frames
+  (`0xa5768` `bt`, `0xa5778` `bf`). Option 0x2 **clear** selects slerp
+  (`0xa824c`). The linear blend is fused (`0xa827c`).
+- **Rotation partner:** first suspected and then cleared. `0xa820c` reads
+  `count−1` from global `+16412`, not from the record. The only writer is
+  `0xa50b4`, which stores the record's `+16` count just before. A scan shows
+  exactly those two users, so `min(i+1, count−1)` stands.
+- **Dispatcher.** `0xa4ad0`: cursors reset, and the static group applies, only
+  while node flag 0x00800000 is clear. Group 0 is sampled on both paths. The
+  cursor advances while `ticks[c+1] < time`, so an exact key keeps the earlier
+  segment with t = 1. The fraction is `fdivs`. Toggles take `|v|` (`neg`, then
+  `extsh`) unsigned against the tick, the last match wins, and positive clears
+  0x10. The record is skipped when time is strictly greater than the clip
+  duration.
+
+**Objections:**
+- **Medium (integration):** `ModelVertexGroup.FindKey` searches from 0 on every
+  call. The original keeps its cursor while 0x00800000 is set, and who clears
+  that flag is untraced. A looping clip whose time goes backwards would
+  therefore extrapolate from the last segment natively. The C# doc states the
+  non-decreasing-time precondition, so `ObjectAnimator` wiring must carry it
+  explicitly or trace the reset first.
+- **Low:** the commit message says the C# and Python checks "agree on 713,683".
+  Python actually reports 713,695 over all 1,736 blocks against the raw
+  group-0 box. C# reports 713,683 over the 1,735 paired blocks against the
+  padded box. Both find 0 outside the box, so only the wording is wrong.
+- **Low (unreported writes):** `0xa4f44` sets node-state 0x00010000 after every
+  vertex pass, and `0xa5070` sets instance `+48` 0x00040000 after the vertex
+  call. Neither consumer is traced.
+- **Limit:** native FPSCR/NI mode and G3/G4 conformance of `fmadds` are
+  assumed to follow the architecture. PC rendering is unknown.
+
+## 21. Scenarios `089ca5f`: round-3 research objection resolved
+
+- **Resolved.** The parser-derived layout puts `ResearchTech[i]` at 1276 + 4i
+  (17 anchors), so `[1280+4g]` = `ResearchTech[g+1]`. The prose and ECON-016
+  now say this. MinCellsCovered 1916 is unchanged.
+- **Profit year: accepted.** `0xccfa8` returns `+292` and is compared with a
+  **signed** `cmpw` at `0xd33fc`. Cross-lane, the round-2 0 %-APR wrap cannot
+  reach this ticket with shipped data. The `Easy_` overlay (the only 0 % loans)
+  applies to Instant Action, which runs no tickets, and the Full Simulation
+  `Standard.sam` loans are 18–23 % APR. Low, mods only: two 0 % 100,000/36
+  loans in GameType 0 would wrap yearly profit positive within 10 months and
+  award the ticket spuriously (regression added).
+- **Wage: accepted.** `0xf4760` multiplies `PayMultiplier[type]` (+832)
+  by `BaseWage[grade]` (+748, ×16). The kind-to-index switch maps 5/4/6/7/8 to
+  0–4, and anything else asserts and uses 5.
+- **Still open (low):** the ticket counter text still says "zeroed at world
+  init", when it is `mGameTick` and is restored from saves. The Local 2
+  "people in park" wording is still inferred from Local 1's field name.
+
+## 22. Advisor `8b256a3`, UI `643f132`, TPI `873cb71`: accepted
+
+- **Advisor:** busy `cmplw now, start+dur`; repeat `cmplwi 0` sentinel, then
+  `cmplw` with equality passing; revalidation `cmpw score ≥ min`; cyclic
+  variant `cmpw` signed; duplicates `cmpw count < max`. All confirmed. The C#
+  types are `uint` for the unsigned gates.
+- **UI:** the factory checks `cmplwi 13` and dispatches through a 14-entry
+  relocated table at `data:0x50098`. Entry 0 is `0x18020c` (`li r3,0`, returns
+  null), which confirms the type-0 rejection. **Limit:** the C# reader's
+  934-control agreement is with the same lane's Python decoder. That is
+  agreement between two implementations, not an independent proof of
+  semantics. The exporter refuses Git destinations, and its slices stay
+  outside Git.
+- **TPI:** the disc-root `Game.exe` (`17adfde8…`) is not the no-CD copy
+  (`77ea0c41…`, 6,742,016 bytes in `WIN10FIX+NOCDFIX`). The evidence uses
+  retail CABs and the root executable only. It makes no engine-equivalence
+  claim, and its build output is ignored by Git.
+
+## 23. Round-4 classification and integration order
+
+| Item | Status | Severity |
+| --- | --- | --- |
+| Clock gate flag8 OR NOT flag1; GameType 0/2 direct, 1 wrapper | Accepted (`bbc89e5`); `a5263bb` alone rejected | Critical if split |
+| Clock mode word = GameType `0x53d98` | New binding | — |
+| My round-3 clock acceptance | Retracted | Self-correction |
+| Scaled clock binary64 FMA, unsigned delta | Accepted (Mac) | — |
+| Economy standalone loan model | Accepted (Mac) | — |
+| Importer APR > 0 annuity equality (`ab3c74d`) | Still open | Medium |
+| MD2 10:10:10, fused dequantise/lerp, group-0 order, gates, partner | Accepted (Mac) | — |
+| Stateless `FindKey` vs native persistent cursor | Integration precondition | Medium |
+| 713,683 vs 713,695 wording; two unreported flag writes | Correction/addition | Low |
+| Scenarios research g+1, profit-year signed YTD, wage | Accepted / resolved | — |
+| Ticket counter "zeroed", Local 2 wording | Still open | Low |
+| Advisor queue edges; UI factory and reader; TPI boundaries | Accepted | — |
+| Any PC/Patch 2 runtime equivalence | Needs evidence | — |
+
+Safe order (root), updating section 17:
+
+1. Shared toolkit as one unit (`068a076` → `dd903c6` → `3995687`).
+2. Clock `3b9b322` → `dafbdb1` → `a5263bb` → `bbc89e5` → `c2a0930` as one unit.
+   Never stop at `a5263bb`.
+3. Rides `51425bd` → `15313d2` → `b3d14f9`.
+4. Economy `14dff87` → `7b63c41` → `ab3c74d` → `6f0a0ea`, then the importer
+   APR > 0 follow-up before any positive-APR import claim.
+5. Formats `b0935b4` → `2439695` (parser only), then root's `TPWS-PAYLOAD.md`
+   change. Wire `ObjectAnimator` later, carrying the cursor precondition.
+6. Scenarios `b8602bd` → `089ca5f`, with the register updates (ECON-016 g+1,
+   ECON-038, ECON-039 YTD).
+7. Guests, advisor (→ `8b256a3`) and UI (→ `643f132`), independent of each
+   other.
+8. TPI `873cb71`: docs/tools only, kept separate from TPW fidelity claims.
+
+**Not reviewed (in flight when this round closed):** formats has uncommitted
+runtime wiring (`ObjectAnimator`, `ObjectRenderParts`, `OriginalObject`,
+`Model.cs`, `ModelFile.cs`, `ModelVertexAnimation.cs`, new
+`ObjectVertexAnimationTests`). Scenarios has uncommitted `progression_evidence.py`
+and `contract/`. The formats wiring must answer the section 20 cursor
+precondition before integration.

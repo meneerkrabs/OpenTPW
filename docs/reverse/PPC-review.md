@@ -13,8 +13,9 @@ supports them (see "Mac/PC transfer" below).
 Placeholders: `$FERAL_BIN` is the directory holding the extracted Feral `.data`
 files (with `libraries/` below it), `$FERAL_HFS` the Mac disc image, `$TPW_DATA`
 and `$PATCH2_DATA` the `Data` directories of a retail and a Patch 2 install, and
-`$RIDES_CHECKOUT` a checkout of the rides lane, and `$INTEGRATION_CHECKOUT` the
-integration checkout under review.
+`$RIDES_CHECKOUT` a checkout of the rides lane, `$INTEGRATION_CHECKOUT` the
+integration checkout under review, `$TPI_DATA` the `Data` directory of the
+supplied TPI retail install, and `$ROOT_CHECKOUT` the root repository.
 
 ```sh
 python3 -I -m unittest discover -s tools/ppc-analysis/lanes/review -p 'test_*.py' -v
@@ -38,6 +39,11 @@ python3 -I tools/ppc-analysis/lanes/review/round6_evidence.py \
 python3 -I tools/ppc-analysis/lanes/review/round7_evidence.py \
   --bin-root $FERAL_BIN \
   --repo $INTEGRATION_CHECKOUT
+python3 -I tools/ppc-analysis/lanes/review/round9_evidence.py \
+  --bin-root $FERAL_BIN \
+  --pc-save $TPW_DATA/levels/jungle/Easymode.TPWI \
+  --tpi-save $TPI_DATA/PreBuilt/prebuilt.TPWS \
+  --git $ROOT_CHECKOUT
 OPENTPW_PPC_BIN_ROOT=$FERAL_BIN \
 OPENTPW_PC_DATA=$TPW_DATA \
   python3 -I -m unittest discover -s tools/ppc-analysis/lanes/review -p 'test_*.py'
@@ -1780,3 +1786,274 @@ Unresolved objections carried forward: no PC or Patch 2 runtime equivalence for
 any Mac-derived rule. The Instant Action research policy (section 34) is a Mac
 static reading only. The SDT bank remap is needed before clip names (advisor).
 The TPI history blob (section 38) remains.
+
+## 45. Round 9: formats clock and pose, economy scientist, rides save boundary, TPI header
+
+Brief: as in rounds 7 and 8. This round wrote only this section, the reproduce
+block above, `lanes/review/round9_evidence.py` and `lanes/review/test_round9.py`.
+No peer tree, runner, workflow or source file was written. Peer suites ran from
+scratch copies (`git archive` or `rsync` without `bin`/`obj`) or in place with
+`python -I -B`. Asset access was limited to the files named below, read by exact
+path. No codec run took longer than a few seconds.
+
+### Formats `c546a24` (channel clock): accepted, Mac static, speed 1.0 only
+
+Independent decode (`round9_evidence.py channel_clock`):
+
+- `0xa6484`: `frame = speed(+12) × (30 × (float)(u32)(now(+20) − start(+16)) / 1000)`.
+  Every step is single precision, and speed is applied last. The bias at TOC
+  `0x51a8` is the unsigned 2^52 pattern, and the constants are 30.0 and 1000.0.
+- `0xa7360`: `fcmpo frame, duration` and a branch on "not greater". So a
+  frame equal to the duration is not past the end.
+- `0xa6398` (carry path): the carry is capped at the duration, then
+  `1000 × c / 30 / speed` in single precision, then the truncating unsigned
+  converter `0x1c3fbc` (`fctiwz`, top half via `addis 0x8000`). Finally
+  `start = now − ms`.
+
+`ObjectAnimator.GetFrame` / `GetCarryMilliseconds` match this at speed 1.0. The
+review's float32 model (`Channel`) reproduces the lane's 30 Hz cases:
+999/1000/1100 ms give 29.97/30/3, one 2,500 ms update gives 30, and a 10-tick
+clip at 334/667 ms gives 0/9.99.
+
+Qualifications kept:
+- Speed ≠ 1.0 and the object-list update `0x4d354` are unsupported, as the lane
+  states.
+- **New:** on a fresh bind, `0xa6398` takes the start time from the global
+  block at +16408 when channel flag 0x40 is set and at +16400 otherwise. Those
+  are the two clocks of round 7's `0xa3e08`. OpenTPW gives every channel one
+  animator clock. Which clock the caller passes as `now` to `0xa6484` was not
+  traced. This matters for game speeds other than 1×.
+- `RIDES-001` still says "original tick rate not verified". The Mac constant is
+  now proven statically, so the entry should be re-described as "30 in the Mac
+  channel clock; PC unverified" rather than left as an open question.
+  Register edit (root owner).
+
+### Formats `2760acb` + `2d3442f` (copy-back gate, fixed-item pose): accepted with one limit
+
+Re-decoded:
+- Bind `0xa5894` loads the option word +16396 and object flags +4. Flag 0x8
+  set skips to the per-mesh 0x10 clear loop. With 0x8 clear and 0x00100000
+  set, it executes `ori r27,r27,1` (keep the pose). Header flag 0x4 is tested
+  next.
+- The option word's only store is at `0xa7eec`, and setup `0x54c08` calls it
+  with `r3 = 0`.
+- Builder `0x594c8` maps caller 0x200 to ride 0x100 and caller 0x40000 to
+  ride 0x1000. Loader `0x58a3c` maps ride 0x100 to object 0x8 and ride 0x1000
+  to object 0x00100000.
+- Catalog loader `0x119a60`: descriptor +56 ≠ 0 gives caller flags 0x50c00
+  (0x40000 set, 0x200 clear), plus 0x400000 when +132 ≠ 0. It then calls
+  `0x594c8` at `0x119ac0`.
+
+`IsFixedItem` is `GetInt("Info.DontApplyOffset") != 0`, which equals the
+native non-zero test. The `+56 = DontApplyOffset` schema layout (`0x16f4c`)
+was not re-derived here. It is accepted on the lane's 113 checks.
+
+**Limit (kept, not a blocker):** the gate reads flags from the object passed to
+the bind. Only the catalog-built object is shown to carry 0x00100000. How a
+placed instance's bind object relates to it was not traced. OpenTPW applies the
+catalog entry's value to each placed instance. Also, a bulk write that sets
+option-word bit 0 is not excluded.
+
+### Formats round-6 working tree (instance rate): pending, uncommitted
+
+The formats tree is at `2d3442f` plus an uncommitted edit to `ObjectAnimator`,
+`PrototypeRide`, `Md2AnimationTests` and `ObjectVertexAnimationTests`. Tested
+snapshot: diff SHA-256 `59ac2d84…` over all four files, copied at the same moment. The
+edit makes the constructor
+`ObjectAnimator(ModelFile, float ticksPerSecond = 30, bool keepsPoseOnClipChange = false)`
+and substitutes the instance rate for both 30s.
+
+**Constructor collision (real, repaired only in the working tree):**
+- `origin/main` `778ea5d` (and the staged integration) has
+  `ObjectAnimator(ModelFile, float ticksPerSecond)` and tests `new ObjectAnimator(model, 15)`.
+- Committed `2d3442f` has `ObjectAnimator(ModelFile, bool keepsPoseOnClipChange)`
+  and the positional call `new ObjectAnimator(model, entry.IsFixedItem)` at
+  `ObjectVertexAnimationTests.cs:276`.
+- Merging `2d3442f` as committed gives a compile error (`bool` does not convert
+  to `float`) or a silently dropped parameter, depending on how the conflict is
+  resolved.
+- The working tree uses named `keepsPoseOnClipChange:` everywhere, and
+  `OriginalObjectRuntime` passes no rate (30).
+
+**Integration must take the reconciled commit, not `2d3442f`.**
+
+New 15 Hz tests:
+- 2,000 ms is the endpoint and 2,100 ms replays from a carry of 1.5 ticks =
+  100 ms.
+- One 5,000 ms update lands at 30.
+- 10 ticks at 667 ms truncate to a 0 ms carry.
+- A fixed item finishes only past 2,000 ms and keeps its pose through a
+  matrix-only clip.
+
+`clock_cases` recomputes every one of these from the decoded formula with 15 in
+place of both constants, and they agree. They are **self-consistency of an
+OpenTPW extension**: the original has no rate parameter. Affected .NET tests on
+the scratch copy (SDK 8, lane pin 8.0.425) passed 12, failed 0, skipped 3
+(asset-bound). Re-review after commit.
+
+### Economy `abbb52c` (standalone scientist snapshot): accepted
+
+Serializer re-decode (`scientist_tail`):
+- The staff tail `0xf2c7c..` writes, in order, these runtime fields with these
+  name strings (from the code string table at TOC `0x34ec`):
+
+  | Runtime field | Name / content | Width |
+  | --- | --- | --- |
+  | +484 | `mCurrentPayGrade` | 4 |
+  | +500 | happiness | 4 |
+  | +512 | `mJobsDone` | 4 |
+  | +416 | `mName[i]` | 33 × 2 |
+  | +518, +520 | `mPatrolRegionBL/TR` | 2 + 2 |
+  | +488 | `mPercentageThroughGrade` | 1 |
+  | +516 | `mRestArea` | 2 |
+  | +412 | `mState` | 4 |
+  | +508 | `mTimeStartedIdling` | 4 |
+  | +492 | `mTimeHired` | 8 |
+  | +504 | energy | 4 |
+
+  The total is 105 bytes.
+- The researcher tail writes +528 `mTimeStartedResearching` (4) and +524
+  `mNext` (2).
+- Happiness and energy go through `fctiwz` → low byte → float before the
+  write. Keeping the saved bits is therefore correct, and the reader must not
+  truncate again.
+
+Every reader offset (0/4/8/12/78/80/82/83/85/89/93/101, then 105/109) matches.
+
+Fixture walk (`scientist_walk`, stdlib zlib, independent of the lane's C#):
+- World offset 1179, FirstResearcher 30.
+- From head offset 1,385,521: 12 guests, then scientist 30 at header 1,391,921,
+  body 1,391,929..1,392,430.
+- Grade 2, state 1, research tick 697, next researcher 0, next used actor 29.
+
+The lane's harness on a scratch copy (SDK 8, Release, actual fixture) passed
+10/10 groups and 1,157 assertions.
+
+Cycle, truncation and ID bounds:
+- Back-links and self-links in the used chain are rejected before the next
+  header is read.
+- Header and body truncation are checked against the exact remaining length.
+- The model allowlist is {1, 8}, records are limited to 1..64, and payloads to
+  8 MiB.
+- The researcher self-link is rejected.
+- A caller boundary never gains the fixture qualification.
+
+Kept limits:
+- Cycles entirely inside the unparsed suffix are not detected.
+- Head offset 1,385,521 is the lane's fixture constant (formats map-end
+  evidence), not re-derived here. Reaching FirstResearcher 30 from it is
+  corroboration only.
+- The harness is net8 and is not in `run_evidence_checks.py` `SELF_TESTS`, so
+  the runner reports it but does not run it. See the handoff below.
+
+### Rides `3d9a01c` (coaster save boundary, byte 12): accepted, empty fixture only
+
+Re-decoded (`coaster_save`):
+- Load: compare with `EMAK` (`addis −0x4b41` / `cmplwi 0x4d45`), loader
+  `0x39f98`, `LbFile_Read`, compare with `SAOC` (`addis −0x434f`).
+- Save: saver `0x394b8`, then `0x434f4153` is built and written with
+  `LbFile_Write`.
+- So SAOC is a trailing marker.
+- Byte 12: `clrlwi` and `cmplwi 255` at `0x377bc` (255 takes a computed value),
+  then `r10` → `0x36020 r28` (the only assignment) → `0x36514 r6` →
+  `0x34d90 r26`. The value lands in `section+4` at `0x34f74`, with the cell
+  array +52 [ordinal] = section, section +256 = cell, cell +48 incremented and
+  shifted sections renumbered at `0x34f48`.
+- It is an insertion ordinal, not Direction.
+
+PC fixture (`coaster_body`): one EMAK, one SAOC, body 1,606,446..1,606,462,
+16 bytes, words 0/0/0/1, body SHA `741939cc…`. The lane's suite on a
+`git archive` of `3d9a01c` passed 23/23 with `OPENTPW_MAC_APP` and
+`OPENTPW_PC_FIXTURE`.
+
+Kept: no nonempty track or train fixture, no codec, and the 34-byte record
+layout is not checked beyond the lane's 132 pins.
+
+Pending:
+- The rides tree has further uncommitted work (`save_control_evidence.py`,
+  edits to `save_evidence.py`, the JSON and the doc; 24 tests pass in place).
+  Not reviewed.
+- **Runner gap:** the new skip uses a fourth variable, `OPENTPW_PC_FIXTURE`
+  (a file). `run_evidence_checks.py` neither sets nor strips it. After this
+  merges, `--require-fixtures` fails with one skip, and a stale shell value
+  would pass through. Resolve it either way:
+  - rides reads `$OPENTPW_PC_DATA/levels/jungle/Easymode.TPWI`, or
+  - the runner derives `OPENTPW_PC_FIXTURE` from `--pc-data` and adds it to
+    `FIXTURE_VARIABLES`.
+
+### TPI `0930182` (shifted header, edition identities): accepted with qualifications
+
+`tpi_header` on the identified TPI `prebuilt.TPWS`:
+- magic 500, byte 4 = 1, label length 19, shift 24.
+- Shifted version byte 133, offline byte 0, BILZ at `0x625`.
+- At the legacy fixed offsets: `0x608` = 0, `0x609` = 0, no BILZ at `0x60d`.
+
+The committed `SaveReader` (root `f468f03`) checks `container[0x608]` before
+BILZ. It therefore rejects this file as **"Unsupported save container version 0;
+expected 133"**. Rejecting it is correct, but the stated reason is wrong: the
+inner version is 133.
+
+Recommendation (MED, root owner): check the length-prefixed profile before the
+version byte and report "unsupported TPI length-prefixed profile". Otherwise
+setup and import messages misdiagnose TPI saves.
+
+Allowlist qualification:
+- `KNOWN_STANDARD` / `KNOWN_SAVE` are two exact hashes per supplied family. The
+  doc correctly says they are not a universal allowlist.
+- The recommendation "TPW setup requires positive TPW identity" would, if
+  applied in production, reject every other TPW edition, locale or
+  modification (Mac, other retail prints).
+- It must stay a corpus witness until each of those has its own identity
+  profile.
+- `theme-park-world-nl` here is a language overlay without `Standard.sam`, so
+  it gives no evidence either way.
+- `byte4 == 1` is a heuristic profile switch. A legacy save whose first banner
+  byte is 1 would be parsed as labelled and then fail the label checks. It
+  fails closed, so the outcome is acceptable.
+
+29/29 TPI Python cases pass in place.
+
+LOW: `tools/tpi-compare/README.md` adds a home-directory path, the same class
+as the round-7 item.
+
+### Root docs: min/max correction (committed trees only)
+
+`rides_doc_status`:
+
+| Ref | `PPC-rides.md` capacity wording |
+| --- | --- |
+| root `main` `f468f03` | **old `min(global_admission_limit, …)` (wrong)** |
+| `origin/main` `78dfb5e` | no `PPC-rides.md` |
+| rides `8f27b00`, `3d9a01c` | corrected: max(request, global), then min(definition, train) |
+
+The correction exists only on detached rides commits. It is not on any root
+branch.
+
+### Status
+
+| Item | State |
+| --- | --- |
+| Formats `c546a24`, `2760acb`, `2d3442f` | Accepted (Mac static, speed 1.0; placed-instance flags and per-channel clock source open) |
+| Formats instance-rate / constructor reconciliation | **Pending** (uncommitted; scratch run 12 passed / 3 skipped) |
+| Economy `abbb52c` | Accepted (standalone; not registered in the runner) |
+| Rides `3d9a01c` | Accepted (empty PC body only). Further rides edits **pending** |
+| TPI `0930182` | Accepted as a corpus witness. `SaveReader` diagnosis MED; allowlist must not become a setup gate |
+| Root `PPC-rides.md` min/max | **Not fixed** on any committed root ref |
+| Integration | **Pending.** `integration-remote` is still `f468f03` + `MERGE_HEAD` `778ea5d`, 116 changed paths, and `origin/main` is now 4 commits past that (`127d9e6..78dfb5e`), so the merge base is stale |
+| CI runner switch (round 8) | **Pending** with the integration owner, plus the two runner gaps above (`OPENTPW_PC_FIXTURE`, scientist harness) |
+
+Fixed since round 8: none on a committed root ref. Stale: round 8's
+"245 tests". This tree now runs 258 Python tests (8 skipped with fixtures,
+24 without).
+
+Concrete remaining blockers:
+1. The formats reconciliation commit (constructor collision).
+2. Root `PPC-rides.md` min/max wording.
+3. Integration merge onto current `origin/main`, with mode persistence,
+   ECON-007 and the wizard (round 7).
+4. The runner's `OPENTPW_PC_FIXTURE` handling before `--require-fixtures` is
+   used in CI.
+
+Unresolved objections carried forward: no PC or Patch 2 runtime equivalence for
+any Mac-derived rule; Instant Action policy (section 34); SDT bank remap
+(advisor); TPI history blob (section 38).

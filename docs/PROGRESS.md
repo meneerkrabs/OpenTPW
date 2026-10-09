@@ -594,3 +594,14 @@ Using the Mac CD of Sim Theme Park (HFS, November 2000) as original data:
   readable code (`.text` entropy 5.83 instead of 7.92) and the import list of
   TPW's `TP.ICD` (DDRAW, DINPUT, DSOUND, QMIXER, `wea*`, WSOCK32, USP10). The PE
   timestamp (1996) was rewritten by the crack and says nothing about the build.
+
+## Final pre-push remote updates — October 10, 2026
+
+Remote commits `2160e19` and `f4482c4` are retained: read-only PS2 FKNL/SSH
+viewing/export support and button-label fitting. The generated register was
+reconciled at 136 unresolved IDs. The affected FKNL, text-fit and widget filter
+passed **16 cases**; one private PS2 corpus case was skipped because its fixture
+path was not supplied. Release build passed with zero errors, and the Dutch
+Metal smoke passed **264 frames** with strict text readback and the existing
+online/folder, mode, payment, reload and read-only guards. No wider codec or
+research batch was included in this merge.

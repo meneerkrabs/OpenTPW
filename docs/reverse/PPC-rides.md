@@ -39,7 +39,7 @@ identities. Debug-name relocations independently bind the selected opcode
 numbers to the native names rather than relying on the OpenTPW enum alone.
 
 Checked-in metadata: `tools/ppc-analysis/lanes/rides/mac-witness.json`,
-`pc-baseline-witness.json`, and `pc-patch2-witness.json`. Fifteen Python tests pass,
+`pc-baseline-witness.json`, and `pc-patch2-witness.json`. Sixteen Python tests pass,
 including the identified original-file witness and synthetic failures for
 wrong identity, absent/import relocations, invalid switch targets, wrong
 instruction kinds, signed/absolute linked branches, native controller contracts,
@@ -69,9 +69,9 @@ scaling, and clip frame rate belong to the CLOCK lane.
 |---|---|---|
 | Literal operands sign-extend 16 bits; variable values are int32 | Operand resolver `0xae6ec`: variable-table pointer at script+28; signed literal path `0xae710` | High; confirms −1 for raw literal 65535 |
 | Branches inspect a shared signed accumulator | Script+72 is compared with zero at `0xb0900`, `0xb0944`, `0xb0988`, `0xb09cc` | High; zero, negative, strictly positive, nonzero cases agree with corpus control flow |
-| COPY into a variable changes branch state | Opcode 3 case `0xaf5f0`, result copied back to script+72 at `0xaf638` | High; current VM's COPY-preserves-flags claim is contradicted |
+| COPY into a variable changes branch state | Opcode 3 case `0xaf5f0`, result copied back to script+72 at `0xaf638` | High; implemented after independent review in `b3d14f9` |
 | SUB is destination first | Opcode 5 `0xaf650` resolves the second/third operands, subtracts at `0xaf69c`, stores accumulator, optionally destination | High; agrees with corpus-derived operand order |
-| DIV/MOD by zero produce zero | DIV case `0xb0c58`: zero arm `0xb0ca8`; MOD `0xb0cd8`: zero arm `0xb0d30`; both store zero to script+72 and then optional destination | High; current fault-on-zero policy is contradicted |
+| DIV/MOD by zero produce zero | DIV case `0xb0c58`: zero arm `0xb0ca8`; MOD `0xb0cd8`: zero arm `0xb0d30`; both store zero to script+72 and then optional destination | High; implemented in `b3d14f9`, with native signed-overflow behavior still unqualified |
 | CMP subtracts variable first operand and resolved second operand | Opcode 39 `0xb0da0`, subtraction `0xb0de8`, accumulator store `0xb0dec` | High for variable first operands; do not generalize to arbitrary literal first operands |
 | RAND includes max | Case `0xb07e4`; sign-extends max, takes remainder modulo max+1, stores accumulator at `0xb082c` | High for nonnegative corpus bounds; PRNG identity and stream sharing are unresolved |
 | Literal destinations do not uniformly mean “do arithmetic, update flags, discard write” | COPY, ADD, TEST and CMP guard their variable operand path; e.g. ADD reaches its arithmetic only after variable-kind test at `0xb0bac..b0bc4` | High; audit each opcode rather than applying one generic destination rule |
@@ -457,3 +457,63 @@ is not qualified here. Controller modulo and floating-point geometry divisions
 do not inherit the RSE zero-result rule. Pure helpers reject empty rings,
 zero track length and unsupported input domains as evidence-tool policy,
 not recovered original input checks.
+
+## Standalone animation scalar implementation
+
+[The animation helper](../../tools/ppc-analysis/lanes/rides/animation/README.md)
+contains `OriginalAnimationState.cs`, a standalone C# module with no package
+or project dependencies. It is not linked into the game animator. The corpus
+tool reuses the same source for binding metadata while retaining its existing
+file-reader dependencies. No renderer, animation VM hook, controller, pose
+decoder, or gameplay file changes are part of this helper.
+
+It implements only qualified scalars: ID→suffix and v+1 metadata with the
+first-member unnumbered retry; channel0 and record stride56; flag0x40 clock
+selection; GETANIM_CH ID/flag4; script speed bias and per-mille speed; and
+signed trigger return/deadline arithmetic. `FrameBeforeEnd` covers ordinary
+pre-end progress using supplied clocks and externally satisfied model gates.
+Elapsed milliseconds convert from unsigned32 through an exact double
+representation to a single result; multiply30, divide1000, and multiply speed
+are each single-precision steps, not one reassociated double expression.
+The extra `animation_evidence.py` witness pins the FP opcode/register fields,
+clock masks, constants, and clamp branches on the identified executable.
+
+Signed trigger cases16/19/21/23 compute `max(returned_value−300,300)` before
+their deadline conversion. Around the threshold: returns0/299/300/599/600
+all produce300; 601 produces301. This takes an **actual native trigger return**,
+not an assumed clip-duration formula. Ordinary trigger deadlines then divide
+by script speed with single arithmetic and truncate to int32. TRIGANIMSPEED
+deadlines instead use signed integer `adjusted*1000 / original_operand`,
+independently of script speed, while its channel speed is
+`script_speed * operand / 1000` with single arithmetic. The stored int16
+operand is a separate field, not the deadline divisor.
+
+**WAITANIM is not covered by that signed formula.** Its code at `0xafc88`
+loads the unsigned conversion constant2^52; `0xafcb4` performs an unsigned
+comparison **after** speed division/truncation. Both order and below300/
+exceptional boundaries differ from the signed cases. The helper returns an
+explicit unsupported result for WAITANIM, rather than promoting the earlier
+review's broad adjustment description into an implementation. Native units,
+missing/deferred animation return values and the full wait protocol still
+require their own paths.
+
+The helper also returns unsupported at exact/late end, before-start/wrap
+ambiguity, unknown loop/end/deferred/mixing flags, sentinel/unknown categories,
+nonpositive or exceptional FP domains, and signed deadline numerator overflow.
+Those rejections are evidence-tool policy, not inferred native validation.
+The native completion comparison at `0xa70d4` is strictly greater than total
+frames; this observation alone does not settle final poses or loop transitions.
+Original FPSCR state and exceptional rounding/trap modes remain unqualified.
+
+Eleven synthetic cases pass in both Debug and Release, covering first frame,
+end boundaries, large clock gaps with exact float-bit checks, flags, channels,
+queries, speeds, per-mille int16 storage, signed thresholds and deadlines.
+Sixteen Python tests pass with the original-file witness enabled. Baseline
+and verified Patch2 each still parse308 scripts. Their animation opcode
+histograms, four speed calls, and13 Totem selector/member/hash bindings are
+identical. Totem category0/variant0 matches `totemc.MD2`; category5/variants0..9
+match `totemm1..10.MD2`; repair category10/variant0 matches `totemr.MD2`.
+The actual speed calls are Fantasy4000, Hallow2000, Jungle4000 and Space1800
+in their gates scripts, with exact word offsets and script SHA in the metadata.
+These are PC asset corroborations; no original game was executed and no
+Windows runtime or full animation fidelity is claimed.

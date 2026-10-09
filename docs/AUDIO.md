@@ -75,13 +75,30 @@ output the listener has been given since the clip started.
 | --- | --- | --- |
 | Park music | `cat_music` 2 (branching sentence) | `0x100BC144`, parameter `0x101C2444` |
 | Click in the park view | `cat_ui` 0x1F | `0x10137FD0` |
-| Advisor speech | global speech clip `sp_NNN` (event N of `cat_speech`) | `0x10006B7C` |
+| Advisor speech | response table: sample and LIP from the global or level speech bank | `0x10006B7C` |
 
 Other calls found in the binary (not triggered yet): `cat_ui` 0x1C (map/research drawer,
 `0x1015644C`), 0x1D (error feedback, `0x10139A40`), 0xBD (park view click with a modifier),
 the slap reactions 639–641 of `cat_speech` (`0x10007068`), the crowd event 0x5B of
 `cat_kids` with a 0–100 parameter (guests within four cells of the camera, `0x101C2490`),
 and the lobby events of `cat_globallobbysfx` and `cat_locallobbysfx`.
+
+## Advisor response table
+
+The game asks the advisor for a *response* ID; the response table says which speech
+sample, LIP file, animation and model that is, and whether the clip comes from the
+global speech bank or the level's (`Speech/speechHD.SDT` and `Speech/lips`). The
+table is shipped as `content/data/advisor-responses.toml` (610 responses), copied for
+interoperability from the Mac application (offset 0x18FF4; see the provenance
+exception in COMPLETION-PLAN.md) and regenerated or checked with
+`tools/ppc-analysis/lanes/advisor/response_table.py <SimTheme Park> --write|--check <file>`.
+Response 0 is the error sound (sample 638, no LIP); responses 1 and 399–402 use the
+level bank's `sp_001`. `--advisor-response N` (with `--load-original-level <level>`,
+default jungle) plays a response.
+
+Which response the game asks for, and when, is decided by the advisor controller
+(scores from `Advisor/Advisor.sam`, docs/reverse/PPC-advisor.md); that is not
+implemented yet.
 
 ## Approximation register
 

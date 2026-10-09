@@ -14,7 +14,7 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **134 unresolved unique APPROX IDs**, 150 APPROX occurrences, 59 EXT occurrences, 63 DATA occurrences and 44 BIN occurrences.
+Current inventory: **134 unresolved unique APPROX IDs**, 150 APPROX occurrences, 59 EXT occurrences, 63 DATA occurrences and 45 BIN occurrences.
 
 Of these, 128 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
@@ -44,7 +44,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ADVISOR-006 | Original-fidelity area (scope unadjudicated) | bind pose; no Advisorm* clip is played | See source annotation/runtime register | `source/OpenTPW/World/Advisor.cs:41` |
 | ADVISOR-007 | Original-fidelity area (scope unadjudicated) | triangle corner order reversed for the clockwise front-face pipeline | See source annotation/runtime register | `source/OpenTPW/World/Advisor.cs:42` |
 | ADVISOR-008 | Original-fidelity area (scope unadjudicated) | speech starts at the first rendered advisor frame | See source annotation/runtime register | `source/OpenTPW/World/Advisor.cs:43` |
-| ADVISOR-009 | Original-fidelity area (scope unadjudicated) | always the global speech bank and lips.wad; level sp_001.LIP never chosen | See source annotation/runtime register | `source/OpenTPW/World/Advisor.cs:44` |
+| ADVISOR-009 | Original-fidelity area (scope unadjudicated) | --advisor-say plays global clips by number; the advisor controller that picks response IDs is not implemented | See source annotation/runtime register | `source/OpenTPW/World/Advisor.cs:44` |
 | ADVISOR-010 | Original-fidelity area (scope unadjudicated) | lip-sync clock = PCM consumed from the SDL queue (leads output by up to one device buffer) | See source annotation/runtime register | `source/OpenTPW/World/Advisor.cs:45` |
 | ADVISOR-011 | Original-fidelity area (scope unadjudicated) | wall clock drives the mouth when no audio device opens | See source annotation/runtime register | `source/OpenTPW/World/Advisor.cs:46` |
 | ADVISOR-012 | Original-fidelity area (scope unadjudicated) | mono speech duplicated to both stereo channels | See source annotation/runtime register | `source/OpenTPW/World/Advisor.cs:47` |
@@ -179,11 +179,11 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ADVISOR-002 | `source/OpenTPW/World/Advisor.cs:30` | [APPROX:ADVISOR-002] Visible set: body, head, eyes, antennae, hands; hats, spatula, bow tie and ShutEye meshes hidden — evidence needed: original node visibility rules (dummy attributes 0x401/0x411, Advisorm* tracks) or captures per advisor role |
 | ADVISOR-003 | `source/OpenTPW/World/Advisor.cs:78` | [APPROX:ADVISOR-003] Bottom-left square viewport, 1/3 of the short screen side (min 64 logical px), 16 logical px margin — evidence needed: original advisor screen placement/size captures per resolution |
 | ADVISOR-004 | `source/OpenTPW/World/Advisor.cs:59` | [APPROX:ADVISOR-004] Overlay camera at z = −70 looking at the origin, 40° FOV, near 1/far 500 — evidence needed: original advisor camera/projection (binary or capture) |
-| ADVISOR-005 | `source/OpenTPW/World/Advisor.cs:255` | [APPROX:ADVISOR-005] Headlight at the camera, colour 0.6, test.shader ambient 0.4 and fog — evidence needed: original advisor lighting/material captures |
+| ADVISOR-005 | `source/OpenTPW/World/Advisor.cs:317` | [APPROX:ADVISOR-005] Headlight at the camera, colour 0.6, test.shader ambient 0.4 and fog — evidence needed: original advisor lighting/material captures |
 | ADVISOR-006 | `source/OpenTPW/World/Advisor.cs:102` | [APPROX:ADVISOR-006] Bind pose only; every Advisorm*.MD2 clip has undecoded non-rigid tracks — evidence needed: decoded vertex/visibility track payloads |
 | ADVISOR-007 | `source/OpenTPW/World/Advisor.cs:126` | [APPROX:ADVISOR-007] Corner order reversed so faces survive the renderer's clockwise back-face culling (chosen from a capture of this renderer, not the original) — evidence needed: original MD2 front-face convention |
-| ADVISOR-008 | `source/OpenTPW/World/Advisor.cs:243` | [APPROX:ADVISOR-008] Speech starts at the first rendered advisor frame — evidence needed: original advisor speech trigger timing |
-| ADVISOR-009 | `source/OpenTPW/World/Advisor.cs:191` | [APPROX:ADVISOR-009] Always the global bank/lips.wad; level Speech/lips/sp_001.LIP is never chosen — evidence needed: original global-vs-level speech selection (binary or file-access trace) |
+| ADVISOR-008 | `source/OpenTPW/World/Advisor.cs:305` | [APPROX:ADVISOR-008] Speech starts at the first rendered advisor frame — evidence needed: original advisor speech trigger timing |
+| ADVISOR-009 | `source/OpenTPW/World/Advisor.cs:191` | [APPROX:ADVISOR-009] --advisor-say plays global clips by number; responses (SayResponse) follow the traced global/level selector, but the controller that picks response IDs is not implemented — evidence needed: the advisor controller (0x86BC–0x8B10) and its message-to-response mapping |
 | ADVISOR-010 | `source/OpenTPW/Client/SpeechAudioPlayer.cs:39` | [APPROX:ADVISOR-010] Lip-sync clock = frames SDL took from its queue; leads the speaker by up to one device buffer (≈46 ms) — evidence needed: original A/V sync source and latency measurement |
 | ADVISOR-011 | `source/OpenTPW/Client/SpeechAudioPlayer.cs:36` | [APPROX:ADVISOR-011] Wall clock when no audio device opened — evidence needed: original behaviour without sound hardware |
 | ADVISOR-012 | `source/OpenTPW/Audio/AudioMixer.cs:65` | [APPROX:ADVISOR-012] Mono samples are duplicated to both channels — evidence needed: original output channel layout/panning |
@@ -462,8 +462,9 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 
 | Label | Location | Source comment context |
 | --- | --- | --- |
+| STP-PPC:0x10006B7C advisor playback | `source/OpenTPW/World/Advisor.cs:228` | [BIN:STP-PPC:0x10006B7C advisor playback] the response record's +16 high half selects the current level's speech folder and bank instead of Data:Global; +4 is the sample and +8 the sp_%03d.lip number |
 | STP-PPC:0x10007434 advisor update | `source/OpenTPW.Files/Public/LipSyncTimeline.cs:53` | [BIN:STP-PPC:0x10007434 advisor update] marks are read in order until -1, divided by 1000 (µs to the ms speech clock) and each one flips the talking flag |
-| STP-PPC:0x10007434 advisor update | `source/OpenTPW/World/Advisor.cs:315` | [BIN:STP-PPC:0x10007434 advisor update] silent or no LIP data: node 1; talking: when the speech clock (ms) passes the next-change time, node = rand() % 5 + 1 and the next change is 100 ms later |
+| STP-PPC:0x10007434 advisor update | `source/OpenTPW/World/Advisor.cs:377` | [BIN:STP-PPC:0x10007434 advisor update] silent or no LIP data: node 1; talking: when the speech clock (ms) passes the next-change time, node = rand() % 5 + 1 and the next change is 100 ms later |
 | STP-PPC:0x10015100 TbMapStreamer::ReadBankDataFromMap | `source/OpenTPW.Files/Formats/Sound/SoundCatalog.cs:143` | [BIN:STP-PPC:0x10015100 TbMapStreamer::ReadBankDataFromMap] 11-byte records (rewritten at load), then per bank a u32 length and the name |
 | STP-PPC:0x1009B1DC movie box | `source/OpenTPW/Client/Movie/MoviePresenter.cs:44` | shown at twice their width, with non-square pixels ([BIN:STP-PPC:0x1009B1DC movie box], docs/TGQ-MOVIES.md). |
 | STP-PPC:0x100ABF14 sign compositor | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:25` | [BIN:STP-PPC:0x100ABF14 sign compositor] each line is colour-blitted with its colour block's bytes (+0x430..+0x432 for the first line, +0x444..+0x446 for the second) only when its colour mode is 1 or 2 |

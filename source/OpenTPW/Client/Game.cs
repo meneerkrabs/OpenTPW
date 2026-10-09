@@ -188,7 +188,7 @@ internal static class Game
 		GameAudio.Enabled = !args.Contains( "--mute" );
 		using var flow = new GameFlow { OnlineFolders = onlineFolders };
 		var smoke = args.Contains( "--smoke-test" );
-		var frontEndRun = visit == null && originalLevelIndex < 0 && !args.Contains( "--advisor-say" ) && !args.Contains( "--sandbox" ) && (!smoke || args.Contains( "--front-end" ));
+		var frontEndRun = visit == null && originalLevelIndex < 0 && !args.Contains( "--advisor-say" ) && !args.Contains( "--advisor-response" ) && !args.Contains( "--sandbox" ) && (!smoke || args.Contains( "--front-end" ));
 		// The original plays its start-up movies before the front end on every start (docs/TGQ-MOVIES.md);
 		// smoke tests and --no-intro / OPENTPW_NO_INTRO go straight to the front end.
 		var playIntro = frontEndRun && !smoke && !args.Contains( "--no-intro" ) && string.IsNullOrEmpty( Environment.GetEnvironmentVariable( "OPENTPW_NO_INTRO" ) );
@@ -411,6 +411,15 @@ internal static class Game
 	/// </summary>
 	private static Advisor? CreateAdvisor( string[] args )
 	{
+		if ( GetOption( args, "--advisor-response", "a response ID from content/data/advisor-responses.toml" ) is { } responseText )
+		{
+			if ( !int.TryParse( responseText, out var responseId ) || !AdvisorResponses.Table.ContainsKey( responseId ) )
+				throw new ArgumentException( $"--advisor-response {responseText} is not in {AdvisorResponses.RelativePath}." );
+			var level = GetOption( args, "--load-original-level", "a level name such as 'jungle'" ) ?? "jungle";
+			var responder = new Advisor();
+			responder.SayResponse( responseId, level, GameLanguage.IsSelected ? GameLanguage.Current : null );
+			return responder;
+		}
 		var index = Array.IndexOf( args, "--advisor-say" );
 		if ( index < 0 )
 			return null;

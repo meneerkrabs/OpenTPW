@@ -13,6 +13,10 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OpenTPW.Common", "OpenTPW.C
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenTPW.ModKit", "OpenTPW.ModKit\OpenTPW.ModKit.csproj", "{5C8022A2-4124-496A-9DA6-C55421EAFBB4}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenTPW.Online", "OpenTPW.Online\OpenTPW.Online.csproj", "{C2A105A9-C767-45E7-9D45-B07ED3CCFC4E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenTPW.Server", "OpenTPW.Server\OpenTPW.Server.csproj", "{198E5B56-B10F-4A29-BF26-97F52003EB3D}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -39,6 +43,14 @@ Global
 		{5C8022A2-4124-496A-9DA6-C55421EAFBB4}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{5C8022A2-4124-496A-9DA6-C55421EAFBB4}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{5C8022A2-4124-496A-9DA6-C55421EAFBB4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C2A105A9-C767-45E7-9D45-B07ED3CCFC4E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C2A105A9-C767-45E7-9D45-B07ED3CCFC4E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C2A105A9-C767-45E7-9D45-B07ED3CCFC4E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C2A105A9-C767-45E7-9D45-B07ED3CCFC4E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{198E5B56-B10F-4A29-BF26-97F52003EB3D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{198E5B56-B10F-4A29-BF26-97F52003EB3D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{198E5B56-B10F-4A29-BF26-97F52003EB3D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{198E5B56-B10F-4A29-BF26-97F52003EB3D}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

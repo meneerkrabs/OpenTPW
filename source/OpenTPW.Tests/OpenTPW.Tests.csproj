@@ -16,6 +16,13 @@
 
   <ItemGroup>
     <ProjectReference Include="..\OpenTPW\OpenTPW.csproj" />
+    <ProjectReference Include="..\OpenTPW.Online\OpenTPW.Online.csproj" />
+    <ProjectReference Include="..\OpenTPW.Server\OpenTPW.Server.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Hosts the online server in-process on loopback for integration tests (shared framework, not a package). -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
 </Project>

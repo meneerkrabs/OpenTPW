@@ -244,3 +244,28 @@ Terrein/save-slice (9 oktober 2026, worktree `terrain`):
 - Open: geen originele menu-/UI-schermen, geen taalwissel tijdens het spel,
   `UniToMB.dat` (tekstinvoer) ongelezen, andere edities niet onderzocht. Zie
   [LANGUAGES.md](LANGUAGES.md).
+
+## Parkeconomie (9 oktober 2026, worktree `economy`)
+
+- Gelaagde `.sam`-instellingen (`levels/Standard.sam` → thema-`Standard.sam` → `Easy_Standard.sam`;
+  categorie- → object- → `Easy_`-objectbestanden) met bronvermelding per waarde. Inventaris van alle
+  economie-, personeel-, research- en doelinstellingen met betekenis en gebruik in
+  [ECONOMY.md](ECONOMY.md).
+- `ParkEconomy`: deterministische parkklok (dag = 240 vaste ticks, 30-dagenmaanden: benadering),
+  pauze/snelheden, grootboek met de originele UI-categorieën, entreeprijs, winkel- en
+  sideshowprijzen, bouw-, upgrade-, cel- en grondkosten, schrootwaarde, leningen (LOANNAMES),
+  faillissement na zes maanden rood (TAG_SYSTEM-teksten), personeelspool, lonen
+  (BaseWage × PayMultiplier), training, monteurs/schoonmakers (benaderd), research, uitdagingen,
+  golden tickets en sleutels. Benaderingen staan per regel gedocumenteerd.
+- Easymode.TPWI: leningtabel (8 × 32 bytes; aflossing floor(bedrag/maanden) = 0 % rente, dus
+  `Easy_Standard.sam`) en uitdagingslijst (8 × 45 bytes = jungle `ChallengesInThisLevel`) gevonden en
+  gecontroleerd. 87.987 / −12.013 blijft onverklaard (oneven, terwijl alle bouwkosten veelvouden van 5
+  zijn); het saldo start daarom op `InitialCash`.
+- Eigen geversioneerd parksaveformaat (JSON, atomisch, strikt gevalideerd) met klok, RNG, geld,
+  personeel, research en doelen; roundtrip en identieke voortzetting na laden getest.
+- `--load-original-level <thema>`: economie loopt mee op de vaste klok en logt datum/saldo per
+  speldag; de smoketest betaalt een maand loon en doet een parksave-roundtrip (alle vier thema's
+  geslaagd, macOS arm64 Metal). Volledige suite: zonder assets 427 passed / 122 skipped; met
+  `OPENTPW_GAME_PATH` 519 / 30; plus taaldata 539 / 10; 0 failed.
+- Open: bezoekersuitgaven, personeelsgedrag/stakingen, adviseur, HUD-schermen (andere slices), en
+  originele formules voor dagduur, rente, parkwaardering en sleutels.

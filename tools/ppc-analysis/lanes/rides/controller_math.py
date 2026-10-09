@@ -36,7 +36,7 @@ def distribute_capacity(total: int, eligible_count: int) -> list[int]:
     """0x3eb84..3eb94: distribute remainder over remaining eligible cars.
 
     car types that differ from the eligible type receive zero outside this
-    helper. Global/config/physical clamps precede this path in native code.
+    helper. A global floor, then definition/train upper caps precede this path.
     """
     if not 0 <= total < 1 << 32 or eligible_count <= 0:
         raise ValueError("unsigned total and positive eligible count required")

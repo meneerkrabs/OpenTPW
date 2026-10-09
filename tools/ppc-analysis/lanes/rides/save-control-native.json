@@ -1,0 +1,130 @@
+{
+  "base_save_checks": 132,
+  "checked_instruction_count": 107,
+  "failure_paths": [
+    {
+      "epilogue": 236952,
+      "failure_result": 0,
+      "io_call": 235984,
+      "operation": "write",
+      "stage": "ordinal2 auxiliary count",
+      "success_test": 236000
+    },
+    {
+      "epilogue": 236952,
+      "failure_result": 0,
+      "io_call": 236104,
+      "operation": "write",
+      "stage": "ordinal2 auxiliary item",
+      "success_test": 236120
+    },
+    {
+      "epilogue": 236952,
+      "failure_result": 0,
+      "io_call": 236660,
+      "operation": "write",
+      "stage": "section34",
+      "success_test": 236752
+    },
+    {
+      "epilogue": 236952,
+      "failure_result": 0,
+      "io_call": 236848,
+      "operation": "write",
+      "stage": "section link item",
+      "success_test": 236864
+    },
+    {
+      "epilogue": 240288,
+      "failure_result": 0,
+      "io_call": 238036,
+      "operation": "read",
+      "stage": "controller32",
+      "success_test": 238148
+    },
+    {
+      "epilogue": 240288,
+      "failure_result": 0,
+      "io_call": 238444,
+      "operation": "read",
+      "stage": "initial third-node auxiliary count",
+      "success_test": 238460
+    },
+    {
+      "epilogue": 240288,
+      "failure_result": 0,
+      "io_call": 238532,
+      "operation": "read",
+      "stage": "initial third-node auxiliary item",
+      "success_test": 238548
+    },
+    {
+      "epilogue": 240288,
+      "failure_result": 0,
+      "io_call": 238660,
+      "operation": "read",
+      "stage": "section34",
+      "success_test": 238752
+    },
+    {
+      "epilogue": 240288,
+      "failure_result": 0,
+      "io_call": 239284,
+      "operation": "read",
+      "stage": "section link item",
+      "success_test": 239300
+    }
+  ],
+  "filter": {
+    "count_excludes": true,
+    "predicate": "sectionDescriptor+4 flag0x10",
+    "write_skips": "34-byte record and ordinary links; ordinal2 auxiliary already written"
+  },
+  "link_resolution": {
+    "destination": "linked section pointers after topology rebuild; no ordinal bounds/null guard qualified",
+    "helper": 269772,
+    "source": "serialized section ordinals"
+  },
+  "nested_helpers": {
+    "load": 233772,
+    "qualification": "wrapper callsites do not test returned r3; application/global I/O failure handling remains separate",
+    "save": 232868
+  },
+  "ordering_precondition": {
+    "all_prior_nodes_filtered_required": true,
+    "exactly_one_ordinal2_required": true,
+    "native_construction_guarantees_proved": false,
+    "qualification": "necessary auxiliary byte-placement prerequisite only; not a decoder or graph validation"
+  },
+  "ordinal2_auxiliary": {
+    "always_read_per_controller": true,
+    "header_flag2": "captures endpoints; does not gate auxiliary I/O",
+    "load_target": "existing controller+84->next+100->next+100, third node",
+    "predicate": "section+0==2, a section ordinal not type enum",
+    "wire": "u32-le count followed by count u16-le section ordinals"
+  },
+  "partial_failure": {
+    "clear": 239404,
+    "load_mode_global_data": 355224,
+    "qualification": "tracked early failures branch to epilogue before direct mode reset, after prior initialization/mutations; helper side effects and rollback unqualified",
+    "set": 238016
+  },
+  "record_gate": {
+    "builder_output_gate": 238836,
+    "header_count_offset": 22,
+    "null_output": "increments record counter without reading that record's following link items; invalid-shape behavior unqualified"
+  },
+  "remaining": [
+    "valid initial-node/filter invariants",
+    "nonempty PC save fixture",
+    "native link/record count limits",
+    "builder null-output input domain",
+    "nested/global I/O failure propagation",
+    "full topology/train payload",
+    "TPI COS linkage",
+    "full motion/geometry/runtime qualification"
+  ],
+  "schema": 1,
+  "scope": "static topology serializer control flow; no decoder/nonempty fixture",
+  "sha256": "04809cd4ccee5433c7fb0b7c93d32f6a7aa629c1849181c0b7906415e5e295f5"
+}

@@ -7,6 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Remove="animation/**/*.cs" />
+    <Compile Remove="controllers/**/*.cs" />
     <Compile Include="animation/OriginalAnimationState.cs" />
     <ProjectReference Include="../../../../source/OpenTPW.Files/OpenTPW.Files.csproj" />
   </ItemGroup>

@@ -184,7 +184,7 @@ medium for the descriptive controller role:
 | COAST 2 / 3 | Calls `0x3dd14` / `0x3dd5c`, writes accumulator and optional variable output. 2 queries remaining queue admission room; 3 extracts a departing visitor. |
 | COAST 4 | Resolves input and calls `0x3ddfc`, which translates states 0,1,2 into controller flags 16,32,64. |
 | COAST 5 | Resolves input and calls close/open controller routine `0x3dec8`; conditions depend on existing flags. |
-| COAST 6 | Resolves capacity input and calls `0x3df24`, which clamps against global/config/controller limits before updating. |
+| COAST 6 | Resolves capacity input and calls `0x3df24`: MAX with the global value, then MIN with definition/train upper bounds before updating. |
 | COAST 7 | Consumes but ignores parameter; no controller call or branch-accumulator store. |
 
 The vehicle-launch routine `0x242d8` checks controller active vehicle count
@@ -519,9 +519,415 @@ in their gates scripts, with exact word offsets and script SHA in the metadata.
 These are PC asset corroborations; no original game was executed and no
 Windows runtime or full animation fidelity is claimed.
 
-
 Integration note: independent rides review corrected the capacity comparators
 above. The native admission room is floored by the global minimum; request
-selection first applies that minimum and then the two capacity caps. The older
-standalone controller helper in this merge predates that correction; its update
-remains a separate reviewed lane commit and is not a production runtime bridge.
+selection first applies that minimum and then the two capacity caps. The reviewed
+standalone controller helper through `84fe814` includes that correction and
+remains a reference helper outside the production runtime.
+
+## Bounded vehicle/passenger reference helper
+
+[Controller reference primitives](../../tools/ppc-analysis/lanes/rides/controllers/README.md)
+are a separate no-dependency C# console project outside production. They model
+supplied ring counters/cursors and departure boundaries, logical per-vehicle
+rider allowance/count snapshots, capacity-plan arithmetic, TOUR reverse slot
+order, and the 39 command input/output/accumulator directions. Missing effect
+results are typed unsupported, never an invented admission/query zero.
+
+The known 64-vehicle predicate remains explicitly **BUMP only**; its launch
+guard is not a successful allocation/admission result or a proven COAST cap.
+Coaster capacity10 across three eligible cars yields3,3,4, while two observed
+cars with two/one riders contain three passengers. Reduced allowances retain
+existing riders; live teardown/redistribution and physical paired-seat/node
+binding are unsupported. Ring room is floored by the supplied global minimum;
+with global0, negative configured-minus-occupancy returns0. Physical capacity
+changes reject without discarding occupants.
+Release-boundary and held-count transfers are supplied observations, not
+guessed control transitions.
+
+The shared TPI `7f2a6b2` metadata groups80 COS files into16 body SHA groups
+after offset132, five languages each, and finds no TrackInfo/Direction key
+among369 SAM inputs. These are comparison/schema constraints only. No COS
+memory/file linkage, serialized record size, track position or direction-axis
+contract is inferred by the reference helper. Each missing schema yields a
+typed diagnostic. Eleven synthetic cases pass in Debug and Release for
+empty/full/held rings, cursor wrap, capacity changes/distribution, paired logical
+rider counts, reverse TOUR order, BUMP63/64, all command roles and unsupported
+shapes. No gameplay/controller core changes are included.
+
+## Coaster schema, sampled motion and boarding dependencies
+
+`motion_evidence.py` and `motion-native.json` pin159 instruction fields/calls
+on the same identified Mac PEF SHA. The real callback chain is application
+`0x1c262c`→manager`0x3864c`→`0x38710`→tick`0x40650`.
+Geometry preparation calls`0x3fc18` at`0x44ab4`. The manager walks controller
+links at+24, tests controller+8 bits1..3 and uses train records128 bytes.
+These are native-memory observations, not serialized COS record claims.
+
+The SAM linkage is stronger than adjacent name strings. Settings vtable
+data`0x3d08c`+8→CFM`0x6348`→`0x3ab54` returns descriptor table
+data`0x2ef24`+index*60; +12→CFM`0x6350`→`0x3ab64` returns settings base+8.
+Constructor`0x16f4c` starts scalar word index1, skips strings/delimiters and
+expands scalar arrays using descriptor+52 counts. The witness checks its
+branches and arithmetic, walks384 descriptors to derive scalar offsets, then verifies
+the loader`0x2fde8` copies into the definition used by the tick. The descriptor
+region SHA is`ee3e328dd7b32dc0276c1a2f77f6e73c89164fbed76aad530cb0b407f9976690`.
+
+| SAM field | Settings offset | Definition offset |
+| --- | ---: | ---: |
+| fAccelerationPerHeight | 15064 | 36 |
+| fUphillAccelModifier | 15068 | 40 |
+| fDownhillAccelModifier | 15072 | 44 |
+| fWinchSpeed | 15116 | 68 |
+| fMinSpeed | 15120 | 72 |
+| fMaxSpeedAtMinSetting | 15124 | 76 |
+| fMaxSpeedAtMaxSetting | 15128 | 80 |
+| fFrictionMultiplier | 15132 | 84 |
+| fGravityX/Y/Z | 15144/15148/15152 | 96/100/104 |
+| fForceMultiplier | 15156 | 108 |
+
+The bounded schema/loader links have high static confidence. They do not by
+themselves recover defaults, full gravity/force integration, settings-domain
+validation or PC runtime behavior. In particular, winch is+68 and minimum
+speed is+72; an exploratory guess that reversed those names is rejected.
+
+Tick`0x40650` passes literal0 to`0xa3e08` at`0x406c4`, selecting the cached
+scaled animation timestamp+16400. This is not a live scheduler-clock getter.
+Controller+288 stores the previous timestamp; unsigned elapsed milliseconds
+convert through2^52 into single, divide1000 in single and initialize train+124
+remaining seconds. CLOCK owns when that cache is updated and the main-loop
+cadence. Main31ms catch-up steps must not be substituted for this elapsed
+cache difference.
+
+Controller+156 points to sampled path records56 bytes, whose XYZ floats are
++4/+8/+12. The tick writes prospective car XYZ at+84/+88/+92; current car XYZ
+are+72/+76/+80. It derives index/fraction through native fmod/modf calls,
+then rounds `next*fraction` to single and uses a single fused operation for
+`current*(1-fraction)+product`. A reference helper implements only that
+supplied-point interpolation, not path decoding/wrap or complete train motion.
+
+Height target at`0x40a20..0x40b50` computes single
+`delta=currentY−prospectiveY`, single `acceleration=PerHeight*delta`, then
+single fused `modifier*acceleration+currentSpeed`. Modifier+40 is selected
+when prospectiveY>currentY, otherwise+44. It floors that result using an
+externally supplied value. A path section chain record+44→object+16→flags+8
+selects bit0x800 for the winch branch. The effective winch/minimum floors also
+depend on controller scaling and train flags; the helper does not fabricate
+those gates. Sample flag8 multiplies the later averaged target by friction+84.
+Station blending, speed caps, adaptive time/distance integration, collision,
+braking and train ordering still require their full branches.
+
+Distance helper`0x4316c` has mixed precision: XYZ deltas are single, Y/Z squares
+are single, X-square plus Y-square is double fused, the sum and sqrt are double,
+and the return is single. `SampledMotionPrimitives` preserves those observed
+operation boundaries and the height/interpolation fused operations. Finite
+input rejection is reference-tool policy; original FPSCR, subnormal and
+exceptional behavior are unqualified. Full advancement returns unsupported.
+Five added synthetic cases cover endpoints, uphill/downhill/floors, exact
+fused-rounding bits, mixed precision and rejected full/exceptional motion;
+all16 controller cases pass Debug and Release. Nineteen Python cases pass
+with the identified original enabled.
+
+The actual PC level-WAD SAM scan records three explicit overrides:
+Fantasy b_drip acceleration1.2/friction0.98, Hallow c_hade1/0.97,
+Jungle coaster1 0.8/0.95. Baseline and verified Patch2 preserve these values;
+selected SAM member identities differ in five files. Twelve coaster members
+also provide train index/count settings. No other probed motion scalar key
+is observed in this bounded scan. Script counts remain308; the command-use
+observations are identical. These input matches corroborate the named
+configuration contract, not native Windows execution or full motion fidelity.
+
+Boarding function`0x3e2f8` pops the pending ring read cursor+196 and decrements
+count+188: guest removal is FIFO. It updates a native uint32 RNG state as
+`state*214013+2531011`, uses upper16 bits modulo the supplied eligible-car
+count, then scans/wraps candidates until car+52<car+68. FIFO guest removal
+therefore does not imply sequential car allocation. This RNG proof is scoped
+to this boarding helper, not RSE RAND or the entire game's randomness.
+The host attachment call obtains a physical node from carDefinition+44
+indexed by existing rider count, with model handle from car+12. Full attribute/
+hierarchy association, ownership callback and paired-seat mapping remain
+unresolved; the producer is traced in the following section.
+
+TOUR raw14 reaches`0x66dc0`. Nonzero input sets controller+0 from+4 and+56=1.
+Zero input returns unchanged when controller+52==3; otherwise it sets+0=1,
++56=0 and negates positive occupancy+232 for entries whose type+220 is1.
+Departure`0x66784` increments that negative count toward0 before reading
+slot[-updatedCount], proving reverse boarding order. Fourteen literal TOUR14
+calls occur in each PC corpus; the metadata representative is Fantasy
+twetours word23/input1, and both parameter branches remain native facts.
+This is one transition, not a complete start/stop/boarding state machine.
+
+Sound initializer`0x3bb6c` receives a **train** from caller`0x3efd0`, after the
+caller iterates cars at train+40/count+12 with96-byte stride. Its output+84..104
+must not be conflated with prospective car XYZ. The advisor/audio lane owns
+the sound routing and event-index meaning.
+
+Next implementation dependencies remain explicit: original TrackInfo.Direction
+axis/enum, type4 binding, COS caller/load/save linkage, spline/sample creation,
+station and release boundaries, seat-node mapping, and full adaptive motion.
+Absence from a SAM search does not prove absence from another format, defaults
+or native runtime. No production motion/controller code changed in this slice.
+
+## Boarding socket producer and per-train capacity
+
+`seat_evidence.py`/`seat-native.json` add83 pinned fields/calls on the same Mac
+identity. Model setup`0x303a8` receives a52-byte car definition, loads its model
+handle into+12, calls`0x19b354` with flag0x80, and stores its result at+48.
+It allocates count*4 bytes at+44 and populates them through`0x19b300` with
+one-based matching ordinals1..count. Zero count instead leaves+44 zero.
+
+The queried model data is a **20-byte attribute table**, not the160/88-byte
+hierarchy node table. Its runtime count is a halfword at modelDefinition+72;
+pointer+124 supplies the records. `0x19b354` counts records whose first word
+intersects the input mask. `0x19b300` returns the zero-based **raw attribute
+index** when its incremented match count equals the requested ordinal, or−1
+if no match exists. Bit0x80 is proved by this producer and subsequent boarding
+use, not an assumed generic enum or attribute ordinal equaling nodeID.
+
+Setup`0x308f8` selects front/centre/rear car definitions at coasterDefinition
++764/+768/+772. For each configured car up to+756, it sums selected role+48
+into per-train socket total+760. The first car uses front even for a one-car
+train; the last uses rear when it is not also first; others use centre.
+Final setup`0x311d0` multiplies this total by maximum trains+744 and stores
+fleet socket total+792 at`0x3129c`, closing the source of two recovered
+capacity-setter bounds. Int32 multiplication overflow and invalid configured
+car counts remain unqualified.
+
+Train allocation`0x37968` reserves separate passenger-ID buffers for each car,
+each sized by carDefinition+48. Car+32/+36 are initial pointers; +40/+44 are
+active pointers. The shared cursor advances by count*4 for **each** buffer.
+Two buffers do not establish two people per socket or a paired-seat transform.
+Boarding obtains the attribute index from carDefinition+44[car+52], passing
+it, the model instance and supplied guest ID to`0x19b56c` at`0x3e420`.
+Unloading calls`0x19b680` at`0x3e298`.
+
+Attach`0x19b56c` indexes a dynamic20-byte record through model instance+40,
+sets record flag2, increments the attachment count and stores a created child
+handle at record+12. Detach`0x19b680` decrements the count, clears that flag,
+releases the child and stores−1 at+12. Visitor-ID resolution and created-child
+visual ownership/lifetime continue through other host functions and are not
+implemented here. Equal static/runtime strides do not prove the PC loader or
+hierarchy/transform association.
+
+The corpus tool reuses `ModelFile.DummyAttributes`, without codec changes,
+to resolve14 declared `asCarTypes[].pcMeshFilename` bindings in12 coaster SAM
+members to existing same-archive exact/stem.MD2 members. That search rule is
+metadata-tool policy; shared native path/case behavior remains unqualified.
+Model/SAM hashes, attribute counts and selected raw indices are metadata only.
+
+| PC model binding | flag0x80 matches |
+| --- | ---: |
+| Fantasy b_drip / candy_c | 2 / 4 |
+| Fantasy cat_co head / body / tail | 0 / 4 / 0 |
+| Hallow c_hade / c_scat / coasta | 6 / 3 / 4 |
+| Jungle coaster1 / coaster3 / minecart | 6 / 2 / 6 |
+| Space megacost / moonshot / shocker | 4 / 3 / 6 |
+
+The50 matches across14 model definitions are not a park/fleet passenger total.
+Noncontiguous selections such as caterbody1,2,3,5 and coasta0,1,3,4 show why
+filtered ordinal differs from raw index. All selected indices/counts match
+verified Patch2; coasta/cart and minecart/cart model hashes change, as do
+their SAM hashes. These findings corroborate input-side flag selection while
+retaining the native-runtime loader as an exact dependency. Twenty Python
+cases and both308-script corpus scans pass. Production admission, seat
+binding and controller motion remain unimplemented by these evidence tools.
+
+## Independent capacity-selection correction
+
+Independent round6 review found a reversed comparator interpretation in the
+reference helper and earlier prose. The explicit branch/pointer checks now
+pin query`0x3dd48/0x3dd4c`: if global>=free it keeps the global pointer;
+otherwise`0x3dd50` selects the free-space local. This is **MAX**, so
+global100/free−1 returns100, and global0/free−1 returns0 in the helper's
+nonnegative-global domain. It is not a negative-room result or an upper cap.
+
+Capacity`0x3df4c/0x3df54` similarly chooses **MAX(request,global)**, but
+`0x3df78/0x3df7c` and`0x3dfac/0x3dfb0` choose the definition/train bound
+when the running value is>=that bound. Those latter selections are **MIN**.
+The complete scalar is `min(min(max(request,global),definition),train)`.
+Request10/global100/definition100/train100 gives100; request10/global0 with
+upper bounds100 gives10; request100/global10/definition50/train100 gives50.
+The3/3/4 distribution example therefore supplies global0 for total10, rather
+than incorrectly using global100 as an upper bound.
+
+Regressions failed against the old query and capacity implementations before
+their respective fixes. All16 reference cases now pass in Debug/Release,
+including the counterexamples and independent upper-cap checks. This repairs
+the standalone evidence tools/docs only, not production admission/controller
+behavior. Unreviewed motion, schema and physical-binding boundaries above
+remain explicit; this correction does not qualify full gameplay fidelity.
+
+## Original TPW coaster save/load contract
+
+`save_evidence.py`/`save-native.json` pin132 native fields/calls plus import
+relocations. Application save`0x11d6c8`→`0x394b8` and load`0x11c038`→`0x39f98`
+are actual original TPW coaster serialization paths. Their byte I/O glues
+`0x1c4b54`/`0x1c4b24` resolve to Bullfrog shared `LbFile_Write`/`LbFile_Read`.
+No original program or imported library was executed.
+
+**The boundary marker is trailing.** Load checks the preceding integer
+0x4b414d45 (wire`EMAK`), runs the coaster loader, then checks0x434f4153
+(wire`SAOC`). Save likewise runs the coaster saver and subsequently writes
+`SAOC`. Thus this coaster body lies **between EMAK and SAOC**, not after SAOC.
+The shared `SavePayloadLayout` inventories marker-delimited regions and leaves
+contents opaque; this native ordering must be applied before assigning a
+region to a module. No shared save reader or its document was edited here.
+
+The body starts with four little-endian32-bit fields: linked-list coaster
+count followed by three globals whose names/semantics are unqualified. Each
+coaster then has a packed32-byte header. Source stores, narrowing operations,
+in-place endian helpers and exact byte I/O calls establish the field widths:
+
+| Header offset | Wire type | Native source |
+| ---: | --- | --- |
+| 0 | u32 | remapped controller flags |
+| 4 | u32 | controller+8 |
+| 8/10/12/14/16 | u16 each | controller+12/+16/+20/+28/+32 |
+| 18 | f32 | controller+44 |
+| 22 | u16 | count linked sections excluding descriptor+4 flag0x10 |
+| 24/26 | u16 each | controller+244/+240 |
+| 28 | u32 | controller+320 |
+
+The section record is packed34 bytes, followed by individually narrowed u16
+link values. Float fields are unaligned; these serialized bytes are distinct
+from the sampled56-byte path records used by the motion tick.
+
+| Section offset | Wire type | Native source |
+| ---: | --- | --- |
+| 0 | u32 | remapped section+8 flags |
+| 4 | u32 | section+112 |
+| 8/10 | u16 each | section descriptor+12/+16 grid coordinates |
+| 12 | u8 | section+4 cell stack insertion ordinal |
+| 13/17/21/25/29 | f32 each | section+232/+216/+220/+224/+248 |
+| 33 | u8 | section+176 number of following u16 link values |
+
+The native list loop uses the full section+176 value, while byte33 narrows it.
+Counts above255 remain unqualified; do not assume that byte is a complete
+decoder bound without recovering the native input limits.
+
+Grid coordinates pass through`0x375c4`, which flattens them as y*mapwidth+x.
+The byte at12 is **not a Direction field**: caller`0x37804` passes it into
+builder`0x35fdc`; `0x36528`→`0x34d90` stores it into section+4 at`0x34f74`,
+inserts the section into the cell's pointer array+52[index*4], and increments
+cell+48. Existing later sections have their+4 indices rewritten while entries
+shift. Byte255 requests a computed insertion ordinal through the builder
+caller. Ordinal validity, complete cell-height ordering and the original
+TrackInfo.Direction schema/axis remain separate dependencies.
+
+This is not a complete flat-record codec. Sections with native ordinal+0==2 can
+write an auxiliary u32 count and u16 list before the ordinary record; flagged
+sections can be excluded. After topology, `0x39d84` calls`0x38da4` to serialize
+train/car/passenger data. The full flags remapping, float meanings, auxiliary
+relationships, train payload and malformed-input behavior still require
+qualification. No production or geometry format code was changed.
+
+The only available nonexecuted PC save fixture is jungle Easymode.TPWI,
+container SHA`6d89303d098900364bf5e80b236b64bd85976fb947e9e4609d088547f430b39a`
+and decoded SHA`a3c9a28252c37ad49a8eb78e4a0c5e1d5229d01548fa35801db67015d2589173`.
+It places EMAK at1606442 and SAOC at1606462, leaving a16-byte coaster body
+at1606446..1606462. Its four values are0,0,0,1: empty coaster count with three
+unqualified globals. Body SHA is
+`741939ccb979df0dbf391a6548f88fd9d1873aa3fb996f1df39abc6a66df7025`.
+Verified Patch2 yields identical fixture metadata. No nonempty PC serialized
+track record is available to corroborate the static nonempty layout.
+
+The witness checks fixture identity before bounded known-container inflation,
+emits metadata only and has a rejection regression for foreign containers.
+Twenty-three Python cases pass with the Mac executable and PC fixture enabled.
+This establishes original TPW save-field contracts and one empty PC boundary,
+not TPI COS serialization, a general save importer, full motion or runtime
+equivalence.
+
+## Topology serializer gates and failure boundaries
+
+`save_control_evidence.py`/`save-control-native.json` add107 control-flow
+checks over the132 base serializer checks. The auxiliary predicate uses
+section+0, a **section ordinal**. Builder`0x3611c/0x36124`
+copies the current edit counter into section+0 and`0x36554..0x3655c` advances
+that counter. The saver compares this ordinal with2 at`0x3998c`, then writes
+that node's u32 link count and its u16 link ordinals. The special block is not
+selected by a recovered type enum.
+
+Save performs that auxiliary write **before** the separate descriptor+4
+flag0x10 filter at`0x39a94`. The filter excludes a node from the header's
+section count and skips its34-byte record plus ordinary links; it does not
+undo an already written ordinal2 auxiliary block. Those predicates must not
+be collapsed into a single “save all visible nodes” rule.
+
+**Necessary auxiliary-ordering invariant:** the saver walks nodes and writes
+the auxiliary block where it encounters ordinal2, while the loader reads one
+auxiliary block before any ordinary section record. These byte placements
+align only if **exactly one node has ordinal2 and every preceding node is
+filtered by descriptor flag0x10**. A visible predecessor would write a34-byte
+record and its links before the loader's auxiliary read. Missing ordinal2
+would omit the block; duplicates would emit extra blocks the loader does not
+expect. Ordinal2 itself may be filtered or visible: its auxiliary block is
+written before its own ordinary record. This necessary ordering condition is
+not a proof that native construction always satisfies it or that a full save
+can be decoded.
+
+The standalone `TopologyAuxiliaryOrdering.Check` verifies only that condition
+on supplied ordinal/descriptor-flag observations. It returns typed unsupported
+for visible prefixes, missing/duplicate ordinal2 nodes, and a separate invalid
+snapshot result for negative supplied ordinals. It observes ordinary-record
+count without qualifying serialized narrowing or storage limits. Three added
+synthetic groups cover filtered prefixes, visible prefixes, missing/duplicate
+nodes, and either filtered/visible ordinal2. All19 reference cases pass Debug
+and Release. A lone ordinal2 passes the ordering check while initial third-node
+construction remains unproved, explicitly demonstrating that this check is
+not full graph validation. No nonempty-fixture or decoder claim follows.
+
+Load calls the car/model allocator`0x37968` and initial topology constructor
+`0x366bc` before reading the auxiliary count. It then targets the
+expected third node through controller+84→next+100→next+100. The branch at
+`0x3a330` on header flag0x2 skips only endpoint-pointer capture: **both arms
+reach the auxiliary read at0x3a36c**. Its u32 count controls u16 item reads,
+stored into that existing node's+180 word-array slots. Valid initial-node,
+filter and storage-size invariants still require their full constructors.
+
+| Stream component | Native write/read dependency |
+| --- | --- |
+| Auxiliary list | saver ordinal2; loader initial third node; 4-byte count plus2 bytes per item |
+| Ordinary sections | header offset22 count; saver excludes descriptor flag0x10; loader iterates that many34-byte records |
+| Ordinary links | saved section+176 count, narrowed to byte33; each item has its own2-byte I/O call |
+| Pointer restoration | after topology rebuild, link ordinals resolve through helper0x41dcc |
+| Train/car/passengers | separate nested helpers after section/link processing |
+
+The loader's builder-output gate`0x3a4f4` has another exact dependency. If the
+cell output is null, it jumps to`0x3a718`, advances the ordinary-record counter
+and skips the following link-item reads as well as updates. The valid input
+domain for that arm is unqualified; a decoder cannot assume either that every
+record creates a section or that malformed/skipped shapes consume the same
+number of bytes as successful shapes.
+
+Serialized link values are narrowed section ordinals, not runtime pointers.
+After rebuild, `0x3a8f0` calls`0x41dcc`: it starts at controller+60+24 (the
+section-list head) and follows next+100 the supplied number of times. The
+result replaces the temporary ordinal in the node's link array. Zero selects
+the head. Link bounds, null pointers and ordinal overflow are not qualified.
+Consequently a standalone34-byte parser would miss auxiliary bytes, varying
+link lists, topology-dependent pointer restoration and the later train data.
+
+Nine pinned short-I/O paths cover four write stages and five read stages.
+Each tests the native normalized transferred-unit count against1; mismatch
+sets return r3=0 and branches directly to the function epilogue. Save may
+already have emitted earlier fields. Load has already initialized models/
+topology or updated earlier link slots, and the auxiliary count is read
+directly into the existing node before its transfer check. The observed
+load-mode global is set at`0x3a1c0` and directly reset later at`0x3a72c`;
+tracked earlier failures bypass that direct reset. No rollback path is proved.
+Interprocedural diagnostic/helper side effects remain a separate boundary.
+
+Outer save`0x39d84` and load`0x3aa38` do not test the nested train helper's
+returned r3 at those callsites before proceeding. This does not prove that
+the complete application ignores all failures: shared/global I/O status and
+application cleanup need separate tracing. It does prevent claiming that
+every nested failure propagates through these wrapper return values.
+
+Twenty-four Python cases pass with original identity and the empty PC fixture
+enabled. The empty fixture corroborates none of these nonempty topology or
+failure branches. The next handoff is a nonempty PC save plus verified initial
+node/filter/count bounds (including the explicit ordering invariant above),
+builder-output domain and nested/global I/O failure
+handling. Until then the complete decoder and production geometry/motion
+remain unsupported; no TPI COS layout is inferred.

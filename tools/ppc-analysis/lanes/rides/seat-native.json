@@ -1,0 +1,57 @@
+{
+  "binding": {
+    "attach": 1684844,
+    "board": 255008,
+    "detach": 1685120,
+    "dynamic_attribute_stride": 20,
+    "dynamic_child_handle_field": 12,
+    "model_instance_field": 40,
+    "unload": 254616
+  },
+  "capacity": {
+    "centre_role": 768,
+    "fleet": "definition+760 * definition+744, int32 multiplication; overflow unqualified",
+    "fleet_socket_count": 792,
+    "front_role": 764,
+    "max_cars": 756,
+    "max_trains": 744,
+    "per_train": "first car uses front role; last uses rear unless also first; others centre; sum role+48",
+    "per_train_socket_count": 760,
+    "rear_role": 772,
+    "role_setup": 198904
+  },
+  "checked_instruction_count": 83,
+  "passenger_buffers": {
+    "active_fields": [
+      40,
+      44
+    ],
+    "allocation": 227688,
+    "count_source": "carDefinition+48 for each buffer; two distinct ID arrays",
+    "original_fields": [
+      32,
+      36
+    ]
+  },
+  "producer": {
+    "attribute_mask": 128,
+    "count_field": 48,
+    "count_helper": 1684308,
+    "function": 197544,
+    "ordinal_helper": 1684224,
+    "raw_index_array_field": 44,
+    "runtime_attribute_stride": 20,
+    "selection": "mask intersection, positive one-based match ordinal returns zero-based raw attribute index"
+  },
+  "schema": 1,
+  "scope": "static model-attribute boarding selection and separate ID buffers; no asset codec or admission",
+  "sha256": "04809cd4ccee5433c7fb0b7c93d32f6a7aa629c1849181c0b7906415e5e295f5",
+  "unresolved": [
+    "static PC dummy-attribute-to-native-runtime loader linkage",
+    "attribute hierarchy/transform association",
+    "paired-seat mapping",
+    "host guest visual ownership/lifetime",
+    "full boarding/release state machine",
+    "original asset/runtime and Windows qualification"
+  ]
+}

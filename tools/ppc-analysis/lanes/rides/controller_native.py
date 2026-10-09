@@ -49,7 +49,20 @@ def inspect(path):
     x(0x3dc0c, (31, 0, 4, 3, 459))
     d(0x3dc20, 36, (0, 6, 24))
     d(0x3dde4, 36, (0, 7, 12))
-    # Capacity is clamped by a global, definition+792, and first train definition+8.
+    # Query selects MAX(global, configured-minus-occupancy); capacity uses a global
+    # minimum first, followed by MIN with definition and train upper bounds.
+    x(0x3dd48, (31, 0, 3, 0, 0))
+    conditional(app, 0x3dd4c, (4, 0), 0x3dd54)
+    d(0x3dd50, 14, (5, 1, -12))
+    x(0x3df4c, (31, 0, 3, 0, 0))
+    conditional(app, 0x3df54, (4, 0), 0x3df5c)
+    d(0x3df58, 14, (6, 1, 124))
+    x(0x3df78, (31, 0, 4, 0, 0))
+    conditional(app, 0x3df7c, (4, 0), 0x3df88)
+    d(0x3df80, 14, (4, 1, 124)); d(0x3df88, 14, (4, 1, 92))
+    x(0x3dfac, (31, 0, 4, 0, 0))
+    conditional(app, 0x3dfb0, (4, 0), 0x3dfbc)
+    d(0x3dfb4, 14, (4, 1, 124)); d(0x3dfbc, 14, (4, 1, 88))
     d(0x3df6c, 32, (0, 5, 792))
     d(0x3df94, 32, (5, 7, 296))
     d(0x3dfa0, 32, (0, 5, 8))
@@ -110,7 +123,9 @@ def inspect(path):
     return {"schema": 1, "sha256": evidence.SHA, "scope": "static layout/arithmetic witnesses; conditional schema, no original execution",
             "checked_instruction_count": len(checks), "controller_contract_count": len(contract["commands"]),
             "coast": {"train_stride": 128, "car_stride": 96, "capacity_per_car_field": 68,
-                      "car_offset_field": 56, "normalized_offset_field": 60, "track_length_field": 172},
+                      "car_offset_field": 56, "normalized_offset_field": 60, "track_length_field": 172,
+                      "room_selection": "max(globalMinimum, configuredLimit - queued - held), signed compare",
+                      "capacity_selection": "min(min(max(requested, globalMinimum), definition+792), firstTrainDefinition+8)"},
             "tour": {"allocation_bytes": 4652, "header_bytes": 92, "record_count": 20, "record_stride": 228,
                      "state_field_in_record": 128, "signed_occupancy_field": 140, "passenger_array_field": 144,
                      "passenger_array_observed_space": 48, "grouping_field": 220},

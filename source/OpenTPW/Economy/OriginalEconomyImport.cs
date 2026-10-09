@@ -6,7 +6,7 @@ namespace OpenTPW;
 /// the save's loan-offer and challenge tables against the balance settings. Both tables must match
 /// the settings exactly — that is what proves their layout and that the save was made with the
 /// easy-mode balance file — and they then confirm, rather than replace, the setting-driven state.
-/// The candidate balance words before the loan table are reported but not imported.
+/// The decoded bank prefix is reported but not imported into the simulation.
 /// </summary>
 public sealed class OriginalEconomyImport
 {
@@ -51,10 +51,12 @@ public sealed class OriginalEconomyImport
 			var saved = records.Loans[index];
 			var offer = settings.Loans[index];
 			var expected = LoanMath.MonthlyRepayment( offer.Amount, offer.AprPercent, offer.Months );
-			if ( saved.Amount != offer.Amount || saved.Months != offer.Months || saved.MonthlyRepayment != expected )
-				throw new InvalidDataException( $"Save loan offer {index} ({saved.Amount}/{saved.Months} months/{saved.MonthlyRepayment} monthly) differs from LoanInfo[{offer.Index}] ({offer.Amount}/{offer.Months}/{expected})." );
+			if ( saved.Amount != offer.Amount || saved.AprPercent != offer.AprPercent || saved.Months != offer.Months
+				|| saved.MonthlyRepayment != expected || saved.LenderNameIndex != offer.LenderNameIndex )
+				throw new InvalidDataException( $"Save loan offer {index} ({saved.Amount}/{saved.AprPercent} % APR/{saved.Months} months/{saved.MonthlyRepayment} monthly/lender {saved.LenderNameIndex}) differs from LoanInfo[{offer.Index}] ({offer.Amount}/{offer.AprPercent}/{offer.Months}/{expected}/lender {offer.LenderNameIndex})." );
 		}
-		evidence.Add( $"{records.Loans.Count} loan offers match LoanInfo amounts, terms and floor(amount/months) repayments ({(settings.Loans.All( offer => offer.AprPercent == 0 ) ? "0 % APR" : "settings APR")})." );
+		var repaymentRule = settings.Loans.All( offer => offer.AprPercent == 0 ) ? "floor(amount/months), 0 % APR" : "current repayment approximation";
+		evidence.Add( $"{records.Loans.Count} loan offers match LoanInfo amounts, APR, terms, lenders and repayments ({repaymentRule})." );
 		var level = settings.ChallengesInThisLevel;
 		if ( records.Challenges.Count != level.Count )
 			throw new InvalidDataException( $"The save has {records.Challenges.Count} challenges; ChallengesInThisLevel lists {level.Count}." );
@@ -68,8 +70,7 @@ public sealed class OriginalEconomyImport
 				throw new InvalidDataException( $"Save challenge {index} (type {saved.Type}, prize {saved.Prize}) differs from Challenges[{definition.Index}]." );
 		}
 		evidence.Add( $"{level.Count} challenge records equal Challenges[{string.Join( ", ", level )}] in ChallengesInThisLevel order." );
-		if ( records.WordsBeforeLoans.Count == 8 )
-			evidence.Add( $"Unreconciled words before the loan table: {string.Join( ", ", records.WordsBeforeLoans )} (not imported; balance stays BankAccountInfo.InitialCash = {settings.InitialCash})." );
+		evidence.Add( $"Decoded bank prefix: balance {records.Bank.Balance}, last balance {records.Bank.LastBalance}, annual profit {records.Bank.ProfitThisYear}, admission fee {records.Bank.AdmissionFee} (not imported; balance stays BankAccountInfo.InitialCash = {settings.InitialCash})." );
 		var objects = 0;
 		foreach ( var infoId in placedInfoIds )
 		{

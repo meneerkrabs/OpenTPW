@@ -572,3 +572,31 @@ The manual supports monthly wages, real scientists, staff rest/strikes,
 preventive maintenance and three tickets per key. It does not prove the
 quantitative formulas above. `startingkey1` remains unknown; no claim in this
 lane restores the superseded four-ticket earning interval.
+
+## Reviewed PC save-reader correction (phase three)
+
+The independent review confirmed the serializer's seven bank words and
+eight-word loans against the actual PC `Easymode.TPWI` fixture. Its file
+SHA-256 is `6d89303d098900364bf5e80b236b64bd85976fb947e9e4609d088547f430b39a`.
+Decoded payload bank offset is 1,411,362; loans start at 1,411,390. The
+previous reader started four bytes late, read amount/APR together as i64,
+required lender to equal record order and included the following available
+flag as an opaque trailing word.
+
+`SaveEconomyRecords` now exposes `SaveBankRecord` and all eight loan fields.
+Loan `Index` is the inferred ordinal, independent of `LenderNameIndex`.
+Import cross-checks the saved APR and lender as well as amount, term and
+repayment against settings. It reports the decoded bank values and preserves
+the existing initial-cash/no-active-loan simulation behavior. This correction
+does not port the Mac loan arithmetic into the PC runtime. Locator bounds
+remain explicitly heuristic under ECON-045; no new variant format is claimed.
+
+Tests were added before implementation and reproduced failures with positive
+APR, reordered lenders and invalid flags. The final focused run passes 14
+tests, including typed fields of the actual PC fixture, bank-prefix and loan
+truncation boundaries, independent-table ambiguity and APR/lender settings
+mismatch. The broader run with the installed PC corpus passes 761 tests,
+fails none and skips 54 optional language/MTR/bonus/native gates (815 total).
+Build/type checking succeeds; pre-existing compiler/package warnings remain.
+Formatting verification exposes the existing tracked-LF/editorconfig-CRLF
+conflict; files retain the tracked LF convention to avoid whole-file churn.

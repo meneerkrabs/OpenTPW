@@ -59,7 +59,8 @@ falls back to the original. `OPENTPW_TEXTURE_PACK=<pack>/textures` forces a pack
 
 - A full build from an English installation took about 15 minutes: 3,784 textures
   upscaled; kept original 921 interface, 3,617 low-detail, 49 small and 4 unreadable
-  textures (four low-detail `.wct` files the current decoder cannot read). The pack is
+  textures (four low-detail `.wct` files the current decoder cannot read; the builder now
+  skips low-detail paths before decoding, so they no longer show up). The pack is
   1.3 GB of PNG. A jungle-only trial upscaled 1,698 textures in 167 seconds.
 - In the 3D lobby the difference is visible on the island (grass, rock edge, the dinosaur).
   At the default park camera it is small: a texture covers only about

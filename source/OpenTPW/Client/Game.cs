@@ -185,6 +185,7 @@ internal static class Game
 			throw new ArgumentException( "--load-original-level requires a level name such as 'jungle'." );
 		// Default: the original-style front end (docs/UI.md). --load-original-level, --sandbox and a
 		// plain --smoke-test bypass it as before; --front-end --smoke-test tests the front end.
+		GameAudio.Enabled = !args.Contains( "--mute" );
 		using var flow = new GameFlow { OnlineFolders = onlineFolders };
 		var smoke = args.Contains( "--smoke-test" );
 		var frontEndRun = visit == null && originalLevelIndex < 0 && !args.Contains( "--advisor-say" ) && !args.Contains( "--sandbox" ) && (!smoke || args.Contains( "--front-end" ));

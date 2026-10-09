@@ -226,7 +226,7 @@ internal sealed class Advisor : IDisposable
 		player?.Dispose();
 		timeline = lips;
 		ClipNumber = number;
-		player = new SpeechAudioPlayer( audio );
+		player = GameAudio.EnsureStarted() && AudioMixer.Current is { } mixer ? new SpeechAudioPlayer( audio, mixer ) : new SpeechAudioPlayer( audio );
 		Log.Trace( $"Advisor says {ClipName( number )} ({source}): {audio.DurationSeconds:F2} s, {lips.Marks.Count} LIP marks, clock: {player.ClockSource}{(player.DeviceError == null ? "" : $" ({player.DeviceError})")}." );
 	}
 

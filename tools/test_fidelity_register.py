@@ -131,7 +131,7 @@ var text = "[APPROX:TEST-002] runtime string";
             command = [sys.executable, str(tool), '--root', str(root), '--check']
             result = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("6 unresolved unique APPROX IDs", result.stdout)
+            self.assertIn(f"{len(REGISTERS) + 1} unresolved unique APPROX IDs", result.stdout)
             document.write_text(render(data).replace('| ECON-001 |', '| ECON-999 |'))
             result = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(result.returncode, 1)

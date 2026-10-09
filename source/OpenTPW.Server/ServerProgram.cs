@@ -1,0 +1,293 @@
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.Http.Features;
+using OpenTPW.Online;
+using OpenTPW.Online.Api;
+using OpenTPW.Online.Moderation;
+using OpenTPW.Online.Packages;
+
+namespace OpenTPW.Server;
+
+/// <summary>
+/// [EXT:ONLINE-054] Self-hostable OpenTPW server (ASP.NET Core minimal APIs). See docs/SERVER.md.
+/// It stores player-made park packages and postcards only; it never contains original game assets.
+/// </summary>
+public static class ServerProgram
+{
+	public const string Version = "1.0";
+	public const int ProtocolVersion = 1;
+	private const int MaximumJsonBodyBytes = 8 * 1024;
+
+	public static async Task<int> Main( string[] args )
+	{
+		var app = Build( args );
+		await app.RunAsync();
+		return 0;
+	}
+
+	public static WebApplication Build( string[] args, Action<ServerOptions>? configure = null )
+	{
+		var builder = WebApplication.CreateBuilder( new WebApplicationOptions { Args = args, ContentRootPath = AppContext.BaseDirectory } );
+		var options = new ServerOptions();
+		builder.Configuration.GetSection( ServerOptions.Section ).Bind( options );
+		configure?.Invoke( options );
+		options.Validate();
+
+		builder.WebHost.ConfigureKestrel( kestrel =>
+		{
+			kestrel.AddServerHeader = false;
+			kestrel.Limits.MaxRequestBodySize = ParkPackage.MaximumPackageBytes + 4096;
+			kestrel.Limits.MaxRequestHeadersTotalSize = 16 * 1024;
+			kestrel.Limits.MaxConcurrentConnections = options.MaximumChatConnections + 256;
+		} );
+
+		var filter = string.IsNullOrWhiteSpace( options.FilterDirectory ) ? WordFilter.Empty : WordFilter.LoadDirectory( options.FilterDirectory );
+		var store = new ServerStore( options );
+		var hub = new ChatHub( store, options, filter );
+		builder.Services.AddSingleton( options );
+		builder.Services.AddSingleton( store );
+		builder.Services.AddSingleton( filter );
+		builder.Services.AddSingleton( hub );
+		builder.Services.AddRateLimiter( limiter =>
+		{
+			limiter.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+			limiter.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>( context => RateLimitPartition.GetFixedWindowLimiter( Address( context ),
+				_ => new FixedWindowRateLimiterOptions { PermitLimit = options.RequestsPerMinute, Window = TimeSpan.FromMinutes( 1 ), QueueLimit = 0 } ) );
+			limiter.AddPolicy( "auth", context => RateLimitPartition.GetFixedWindowLimiter( Address( context ),
+				_ => new FixedWindowRateLimiterOptions { PermitLimit = options.AuthenticationsPerMinute, Window = TimeSpan.FromMinutes( 1 ), QueueLimit = 0 } ) );
+			limiter.AddPolicy( "upload", context => RateLimitPartition.GetFixedWindowLimiter( Address( context ),
+				_ => new FixedWindowRateLimiterOptions { PermitLimit = options.UploadsPerHour, Window = TimeSpan.FromHours( 1 ), QueueLimit = 0 } ) );
+		} );
+
+		var app = builder.Build();
+		app.Logger.LogInformation( "OpenTPW server data in {Directory}; word filter: {Swears} entries, {Alloweds} exceptions.", store.Root, filter.SwearCount, filter.AllowedCount );
+		app.Use( async ( context, next ) =>
+		{
+			context.Response.Headers.XContentTypeOptions = "nosniff";
+			context.Response.Headers["Referrer-Policy"] = "no-referrer";
+			context.Response.Headers.CacheControl = "no-store";
+			await next();
+		} );
+		app.UseWebSockets( new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds( 30 ) } );
+		app.UseRateLimiter();
+		Map( app, options, store, hub, filter );
+		return app;
+	}
+
+	/// <summary>Typed handler so minimal APIs write the returned result (a bare HttpContext lambda would bind as RequestDelegate).</summary>
+	private static Delegate Handler( Func<HttpContext, Task<IResult>> handler ) => handler;
+
+	private static string Address( HttpContext context ) => context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+	private static IResult Error( int status, string message ) => Results.Json( new ApiError( message ), StrictJson.Options, statusCode: status );
+
+	private static IResult Ok<T>( T value, int status = StatusCodes.Status200OK ) => Results.Json( value, StrictJson.Options, statusCode: status );
+
+	private static string? Token( HttpContext context )
+	{
+		var header = context.Request.Headers.Authorization.ToString();
+		return header.StartsWith( "Bearer ", StringComparison.Ordinal ) ? header[7..].Trim() : null;
+	}
+
+	private static bool IsId( string id ) => id.Length is >= 1 and <= 64 && id.All( char.IsAsciiLetterOrDigit );
+
+	private static async Task<byte[]> ReadBodyAsync( HttpRequest request, int maximumBytes )
+	{
+		if ( request.ContentLength > maximumBytes )
+			throw new StoreException( StatusCodes.Status413PayloadTooLarge, "File is too large." );
+		var feature = request.HttpContext.Features.Get<IHttpMaxRequestBodySizeFeature>();
+		if ( feature is { IsReadOnly: false } )
+			feature.MaxRequestBodySize = maximumBytes + 1L;
+		using var output = new MemoryStream();
+		var buffer = new byte[81920];
+		while ( true )
+		{
+			int count;
+			try
+			{
+				count = await request.Body.ReadAsync( buffer, request.HttpContext.RequestAborted );
+			}
+			catch ( BadHttpRequestException )
+			{
+				throw new StoreException( StatusCodes.Status413PayloadTooLarge, "File is too large." );
+			}
+			if ( count == 0 )
+				break;
+			if ( output.Length + count > maximumBytes )
+				throw new StoreException( StatusCodes.Status413PayloadTooLarge, "File is too large." );
+			output.Write( buffer, 0, count );
+		}
+		return output.ToArray();
+	}
+
+	private static async Task<T> ReadJsonAsync<T>( HttpRequest request ) where T : class =>
+		StrictJson.Deserialize<T>( await ReadBodyAsync( request, MaximumJsonBodyBytes ), "Request" );
+
+	/// <summary>Runs a handler with the caller's account; maps store and format errors to JSON errors.</summary>
+	private static async Task<IResult> Guarded( HttpContext context, ServerStore store, bool requireUser, Func<AccountRecord?, Task<IResult>> handler )
+	{
+		try
+		{
+			AccountRecord? user = null;
+			if ( requireUser )
+			{
+				user = store.Authenticate( Token( context ) );
+				if ( user == null )
+					return Error( StatusCodes.Status401Unauthorized, "Authorisation failed." );
+			}
+			return await handler( user );
+		}
+		catch ( StoreException exception )
+		{
+			return Error( exception.Status, exception.Message );
+		}
+		catch ( InvalidDataException exception )
+		{
+			return Error( StatusCodes.Status400BadRequest, exception.Message );
+		}
+	}
+
+	private static void RequireClean( WordFilter filter, string text, string what )
+	{
+		filter.Apply( text, out var changed );
+		if ( changed )
+			throw new StoreException( StatusCodes.Status400BadRequest, $"{what} contains words blocked by this server's filter." );
+	}
+
+	private static void Map( WebApplication app, ServerOptions options, ServerStore store, ChatHub hub, WordFilter filter )
+	{
+		app.MapGet( ApiRoutes.Server, () => Ok( new ServerInfo( options.ServerName, Version, ProtocolVersion, options.Message, options.AllowRegistration, !filter.IsEmpty,
+			ParkPackage.MaximumPackageBytes, Postcard.MaximumCardBytes, options.MaximumParksPerPlayer, options.MaximumVotesPerDay ) ) );
+
+		app.MapPost( ApiRoutes.Accounts, Handler( context => Guarded( context, store, false, async _ =>
+		{
+			var credentials = await ReadJsonAsync<Credentials>( context.Request );
+			RequireClean( filter, credentials.Name ?? "", "Name" );
+			var account = store.Register( credentials.Name ?? "", credentials.Password ?? "" );
+			return Ok( new { name = account.Name }, StatusCodes.Status201Created );
+		} ) ) ).RequireRateLimiting( "auth" );
+
+		app.MapPost( ApiRoutes.Sessions, Handler( context => Guarded( context, store, false, async _ =>
+		{
+			var credentials = await ReadJsonAsync<Credentials>( context.Request );
+			return Ok( store.Login( credentials.Name ?? "", credentials.Password ?? "" ) );
+		} ) ) ).RequireRateLimiting( "auth" );
+
+		app.MapDelete( ApiRoutes.Sessions, Handler( context => Guarded( context, store, true, _ =>
+		{
+			store.Logout( Token( context )! );
+			return Task.FromResult( Results.NoContent() );
+		} ) ) );
+
+		app.MapGet( ApiRoutes.Parks, ( HttpContext context, string? search, string? author, string? sort, int? offset, int? limit ) => Guarded( context, store, true, user =>
+		{
+			if ( search?.Length > 64 || author?.Length > OnlineText.MaximumNameLength )
+				throw new StoreException( StatusCodes.Status400BadRequest, "Search text is too long." );
+			var parks = store.ListParks( search, author, sort ?? "recent" );
+			var page = parks.Skip( Math.Clamp( offset ?? 0, 0, int.MaxValue ) ).Take( Math.Clamp( limit ?? 50, 1, 100 ) )
+				.Select( park => store.Summarize( park, user, hub.PlayersIn( Online.Chat.ChatProtocol.ParkRoom( park.Id ) ) ) ).ToList();
+			return Task.FromResult( Ok( new ParkList( page, parks.Count ) ) );
+		} ) );
+
+		app.MapPost( ApiRoutes.Parks, Handler( context => Guarded( context, store, true, async user =>
+		{
+			var bytes = await ReadBodyAsync( context.Request, ParkPackage.MaximumPackageBytes );
+			var package = ParkPackage.Read( bytes );
+			RequireClean( filter, package.Manifest.Park.Name, "Park name" );
+			RequireClean( filter, package.Manifest.Park.Description, "Park description" );
+			var park = store.Publish( user!, package, bytes );
+			return Ok( store.Summarize( park, user, 0 ), StatusCodes.Status201Created );
+		} ) ) ).RequireRateLimiting( "upload" );
+
+		app.MapGet( ApiRoutes.Parks + "/{id}", ( HttpContext context, string id ) => Guarded( context, store, true, user =>
+		{
+			var park = (IsId( id ) ? store.FindPark( id ) : null) ?? throw new StoreException( StatusCodes.Status404NotFound, "Park ID is invalid." );
+			return Task.FromResult( Ok( store.Summarize( park, user, hub.PlayersIn( Online.Chat.ChatProtocol.ParkRoom( park.Id ) ) ) ) );
+		} ) );
+
+		app.MapGet( ApiRoutes.Parks + "/{id}/package", ( HttpContext context, string id ) => Guarded( context, store, true, _ =>
+		{
+			var park = (IsId( id ) ? store.FindPark( id ) : null) ?? throw new StoreException( StatusCodes.Status404NotFound, "Park ID is invalid." );
+			return Task.FromResult( Results.File( store.ParkFile( park.Id, ParkPackage.FileExtension ), ApiRoutes.PackageMediaType, park.Id + ParkPackage.FileExtension ) );
+		} ) );
+
+		app.MapGet( ApiRoutes.Parks + "/{id}/thumbnail", ( HttpContext context, string id ) => Guarded( context, store, true, _ =>
+		{
+			var park = (IsId( id ) ? store.FindPark( id ) : null) ?? throw new StoreException( StatusCodes.Status404NotFound, "Park ID is invalid." );
+			if ( !park.HasThumbnail )
+				throw new StoreException( StatusCodes.Status404NotFound, "This park has no thumbnail." );
+			return Task.FromResult( Results.File( store.ParkFile( park.Id, ".png" ), "image/png" ) );
+		} ) );
+
+		app.MapPost( ApiRoutes.Parks + "/{id}/visits", ( HttpContext context, string id ) => Guarded( context, store, true, user =>
+			Task.FromResult( IsId( id ) ? Ok( store.Visit( user!, id ) ) : Error( StatusCodes.Status404NotFound, "Park ID is invalid." ) ) ) );
+
+		app.MapPost( ApiRoutes.Parks + "/{id}/votes", ( HttpContext context, string id ) => Guarded( context, store, true, user =>
+			Task.FromResult( IsId( id ) ? Ok( store.Vote( user!, id ) ) : Error( StatusCodes.Status404NotFound, "Park ID is invalid." ) ) ) );
+
+		app.MapDelete( ApiRoutes.Parks + "/{id}", ( HttpContext context, string id ) => Guarded( context, store, true, user =>
+		{
+			if ( !IsId( id ) )
+				throw new StoreException( StatusCodes.Status404NotFound, "Park ID is invalid." );
+			store.Unpublish( user!, id );
+			return Task.FromResult( Results.NoContent() );
+		} ) );
+
+		app.MapPost( ApiRoutes.Postcards, Handler( context => Guarded( context, store, true, async user =>
+		{
+			var bytes = await ReadBodyAsync( context.Request, Postcard.MaximumCardBytes );
+			var card = Postcard.Read( bytes );
+			if ( OnlineText.NormalizeName( card.Manifest.From ) != user!.Key )
+				throw new StoreException( StatusCodes.Status400BadRequest, "The postcard sender must be the logged-in player." );
+			RequireClean( filter, card.Manifest.Title, "Postcard title" );
+			RequireClean( filter, card.Manifest.Text, "Postcard text" );
+			var (id, delivered) = store.SendPostcard( user, card, bytes );
+			return Ok( new PostcardSent( id, delivered ), StatusCodes.Status201Created );
+		} ) ) ).RequireRateLimiting( "upload" );
+
+		app.MapGet( ApiRoutes.Inbox, Handler( context => Guarded( context, store, true, user =>
+			Task.FromResult( Ok( new PostcardInbox( store.Inbox( user! ) ) ) ) ) ) );
+
+		app.MapGet( ApiRoutes.Postcards + "/{id}", ( HttpContext context, string id ) => Guarded( context, store, true, user =>
+		{
+			if ( !IsId( id ) )
+				throw new StoreException( StatusCodes.Status404NotFound, "Postcard not found." );
+			return Task.FromResult( Results.File( store.OwnPostcardFile( user!, id ), ApiRoutes.PostcardMediaType ) );
+		} ) );
+
+		app.MapDelete( ApiRoutes.Postcards + "/{id}", ( HttpContext context, string id ) => Guarded( context, store, true, user =>
+		{
+			if ( !IsId( id ) )
+				throw new StoreException( StatusCodes.Status404NotFound, "Postcard not found." );
+			store.DeletePostcard( user!, id );
+			return Task.FromResult( Results.NoContent() );
+		} ) );
+
+		app.MapPost( ApiRoutes.Reports, Handler( context => Guarded( context, store, true, async user =>
+		{
+			var report = await ReadJsonAsync<ReportRequest>( context.Request );
+			if ( !ReportKinds.IsKnown( report.Kind ) )
+				throw new StoreException( StatusCodes.Status400BadRequest, "Unknown report kind." );
+			OnlineText.RequireText( report.Target, 64, false, false, "Report target" );
+			OnlineText.RequireText( report.Reason, 500, true, true, "Report reason" );
+			store.Report( user!, report.Kind, report.Target, report.Reason );
+			return Results.Accepted();
+		} ) ) ).RequireRateLimiting( "upload" );
+
+		app.Map( ApiRoutes.Chat, async ( HttpContext context ) =>
+		{
+			if ( !context.WebSockets.IsWebSocketRequest )
+			{
+				context.Response.StatusCode = StatusCodes.Status400BadRequest;
+				return;
+			}
+			var user = store.Authenticate( Token( context ) );
+			if ( user == null )
+			{
+				context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+				return;
+			}
+			using var socket = await context.WebSockets.AcceptWebSocketAsync();
+			await hub.RunAsync( socket, user, context.RequestAborted );
+		} );
+	}
+}

@@ -69,8 +69,10 @@ close to, not bit-identical with, an external reference, without playback. Evide
 
 The BF4 CPU decoder handles four-bit, RLE and monochrome glyphs and is tested
 against the 33 original fonts of each shipped language. A GPU glyph atlas draws original
-strings in a sandbox panel (Metal readback-verified, English and German); original UI screens and
-visual fidelity are still pending, so BF4 stays partial. Strings decode in all six
+strings; the default start is now an original-style front end (the 3D lobby islands, menus,
+options) and an in-game HUD built from the original `ui.wad` models and textures, string tables
+and fonts in all six languages (Metal readback-verified). Positions of code-placed elements are
+approximations and visual fidelity is unverified, so BF4 stays partial (see [UI](docs/UI.md)). Strings decode in all six
 verified languages (English, Danish, Dutch, French, German, Swedish) with each language's
 own character table; `--language` selects one and `--language-data` reads the
 others from the extracted original CD (see [languages](docs/LANGUAGES.md)). See

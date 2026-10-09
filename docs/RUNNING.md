@@ -13,8 +13,13 @@ Direct3D 11. Windows/Linux GPU execution is not yet locally qualified.
 
 ```sh
 bash scripts/run.sh --game-path '/path/to/Theme Park World'
+bash scripts/run.sh --game-path '/path/to/Theme Park World' --sandbox
 bash scripts/run.sh --game-path '/path/to/Theme Park World' --validate-assets
 ```
+
+The default start is the original-style front end (3D lobby; pick an island and
+enter the park, or Load/Options/Quit Game) with the in-game HUD; see UI.md.
+`--sandbox` opens the former default jungle sandbox with its ImGui developer panel.
 
 The installation directory must contain `data` or `Data`. `OPENTPW_GAME_PATH`
 can replace `--game-path`. `DOTNET` selects a particular SDK executable.
@@ -178,6 +183,10 @@ fullscreen-toggle changes without growing GPU resources. Combine it with the dis
 options, e.g. `--render-scale 50 --upscale linear`; `OPENTPW_TEST_PIXEL_SCALE=2` (test only)
 doubles the drawable to exercise the HiDPI path on a 1x display (1280x720 window ->
 2560x1440 output).
+`--front-end --smoke-test` instead drives the front end with injected mouse/keys
+into the original jungle level and checks lobby, options, HUD, build/info arms
+and pause menu text in readback (UI.md); captures are
+`artifacts/native-smoke-<language>-*.png`.
 These captures omit the ImGui UI and remain ignored;
 they are not proof of interactive UI correctness or original-game visual fidelity.
 The nine native shader tests verify MSL/HLSL/GLSL material and text binding names without

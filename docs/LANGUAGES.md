@@ -71,8 +71,8 @@ and must not be run.
 
 | Data | Status |
 |---|---|
-| String tables (`*.str`) | Loaded from the language folder with that folder's own `MBToUni.dat` (`Localization`, sandbox text panel). |
-| BF4 fonts (`*.bf4`) | Loaded from the language folder (sandbox text panel). |
+| String tables (`*.str`) | Loaded from the language folder with that folder's own `MBToUni.dat` (front end, options, HUD, popup help, sandbox text panel; see UI.md). |
+| BF4 fonts (`*.bf4`) | Loaded from the language folder (UI screens in SMALL/MED/BIG tiers, sandbox text panel). |
 | Banner meshes (`bankrupt`/`congrats`/`paused.MD2`) | Resolvable via `GameLanguage.FindFile`; not drawn by the game yet. |
 | Speech banks, `lips.WAD`, level `.LIP` | Resolvable via `GameLanguage.ResolveDataFile` (overlay first). `--advisor-say N` plays global `sp_NNN` and its `lips.WAD` mark list from the selected language (see LIPS.md); level LIPs are not used. |
 
@@ -116,11 +116,8 @@ and its readback matches the CPU composite (max difference 0 on Metal).
 
 ## Not done
 
-- No original menu/UI screens use the strings yet; only the sandbox panel and
-  `Localization.Parse` do. Layout of longer translations in original screens is
-  unverified.
-- No in-game language switch; the language is chosen at startup.
-- Only the `--advisor-say` speech/lip-sync slice exists (no in-game triggers); banner rendering is not implemented.
-- `UniToMB.dat` is read (`BFUMReader`/`GameTextCodec`, round-trip tested in all six
-  languages, see [COMPATIBILITY.md](COMPATIBILITY.md)); no text-input UI uses it yet.
+- Original-style screens use the strings (UI.md); their layout remains an approximation. Supplementary labels come from the OpenTPW translated table.
+- No live language switch; Options stores the choice for the next startup.
+- The `--advisor-say` speech/lip-sync slice works; automatic gameplay triggers and banner rendering remain unimplemented.
+- `UniToMB.dat` is read and round-trip tested in all six languages (COMPATIBILITY.md); text-input UI integration remains incomplete.
 - Only the CD in `TPWORLD.ISO` was examined; other editions/patches are unverified.

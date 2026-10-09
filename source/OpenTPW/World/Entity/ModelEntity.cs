@@ -29,8 +29,8 @@ public partial class ModelEntity : Entity
 			g_mModel = TransformOverride ?? ModelMatrix,
 			g_mView = Camera.ViewMatrix,
 			g_mProj = Camera.ProjMatrix,
-			g_vLightPos = Level.SunLight?.Position ?? Vector3.Zero,
-			g_vLightColor = Level.SunLight?.Color ?? Vector3.One,
+			g_vLightPos = Level?.SunLight?.Position ?? Vector3.Zero,
+			g_vLightColor = Level?.SunLight?.Color ?? Vector3.One,
 			g_vCameraPos = Camera.Position,
 			g_flTime = Time.Now,
 

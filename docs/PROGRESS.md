@@ -312,3 +312,32 @@ Terrein/save-slice (9 oktober 2026, worktree `terrain`):
   met originele advisor-/bordcaptures blijven onverifieerd. De registers in
   [LIPS.md](LIPS.md), [COMPATIBILITY.md](COMPATIBILITY.md), [GUESTS.md](GUESTS.md)
   en [ECONOMY.md](ECONOMY.md) blijven van toepassing.
+
+## Originele UI: front-end en HUD (9 oktober 2026, worktree `frontend`)
+
+- Bewijs (UI.md): de 278 `ui.wad`-modellen zijn geschreven in een virtueel scherm van
+  2048×1536 (volledige-schermframes beslaan precies 0..2048 × 0..−1536); HUD-modellen staan
+  op hun schermpositie, generieke knoppen/vensters op de oorsprong. Kindnodes zijn
+  alternatieve toestandsframes (normaal/uitgeschakeld/oplichten/ingedrukt), geen onderdelen;
+  dit verklaart de "ongecomponeerde" bounds uit MD2-MODELS.md. Texture-V loopt van onder naar
+  boven; puur roze is transparant. `lobby.wad` beschrijft de 3D-lobby (vier eilanden,
+  cameraposities, luchtkleur).
+- Standaardstart is nu een front-end in originele stijl: 3D-lobby met de vier eilanden, menu
+  met originele knoppen/teksten/tooltips (UITEXT/UIHELPTEXT), spelmodus, laden, opties en
+  afsluiten; daarna het originele level met een HUD (hoofdpaneel, datum, saldo, bouwarm met
+  categorieën en draaiende preview-modellen, infoarm, berichten, pauzemenu). `--sandbox`,
+  `--load-original-level` en een kale `--smoke-test` slaan de front-end over zoals voorheen.
+- Opties: originele rijen (resolutie, volumes, popup-hulp) plus OpenTPW-rijen (venstermodus,
+  upscaling, renderschaal, interfaceschaal, taal) in dezelfde stijl, met de originele
+  bevestig/herstel/herstart-meldingen; ontbrekende labels komen uit een eigen, in zes talen
+  vertaalde aanvullende tabel. Weergave via een stub van `IDisplaySettings` (display-slice).
+- Benaderingen (gedocumenteerd): posities van door code geplaatste elementen, lettertype-
+  niveau per resolutie, snelheidsknoppen, kalender en startsaldo-stub (startsaldo zelf uit
+  `Easy_Standard.sam`), Totem-prijs uit `Totem.sam`. Interfaces voor economie, catalogus en
+  display staan in UI.md.
+- Tests: zonder assets 433 geslaagd / 129 overgeslagen; met `OPENTPW_GAME_PATH` en
+  `OPENTPW_LANGUAGE_DATA` 552 geslaagd / 10 overgeslagen; 0 mislukt. Metal-smoketest
+  `--front-end --smoke-test` geslaagd in alle zes talen (tekst in readback texel voor texel
+  gecontroleerd); bestaande sandbox-, jungle- en fantasy-smoketests blijven slagen.
+- Open: originele schermposities, profielen/online, cursor, animaties en geluid van knoppen,
+  vergelijking met originele captures, D3D11/Vulkan.

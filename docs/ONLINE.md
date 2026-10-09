@@ -30,6 +30,26 @@ saves it locally and inspects it. To open it as a read-only visit, restart the g
 bash scripts/run.sh --game-path /path/to/installation --visit-park /path/to/shared.tpwpark
 ```
 
+Offline command-line export/import also runs before graphics or the save folder is created:
+
+```sh
+bash scripts/run.sh --game-path /path/to/installation --export-park /tmp/jungle.tpwpark --load-original-level jungle
+bash scripts/run.sh --game-path /path/to/installation --import-park /tmp/jungle.tpwpark --online-dir /tmp/online
+```
+
+`--export-park` captures the original startup import selected by `--load-original-level`;
+without that option it exports an empty Jungle sandbox. It does not capture a running
+process's edits. `--import-park` validates the package against local content and copies
+it into the online folder's `visited` directory under its package id. Both commands exit
+without launching the renderer or contacting a server. Their output paths cannot be
+inside the original installation, including through existing symbolic links. Malformed
+imports create no downloaded park. Choose one export/import/visit action per invocation.
+
+`--visit-park <file> --smoke-test` performs a dedicated native read-only visit check:
+no economy runtime, rejected object/prototype building and removal, rejected save/load
+and export, followed by eight rendered frames and a GPU capture at
+`artifacts/native-smoke-online-visit.png`. It uses no sandbox build/save smoke steps.
+
 A visit cannot place/remove rides or save/load the sandbox. It creates no economy
 runtime and therefore cannot charge visitors or advance a park's economy. Version 1
 contains only the original level's imported path/object records and the prototype

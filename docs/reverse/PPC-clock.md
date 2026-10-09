@@ -216,3 +216,180 @@ explicit control edges. LLVM's locally installed disassembler was used only for
 transient inspection, outside repository artifacts. Eight synthetic tests cover
 signed operands, negative/conditional/absolute branches, call-vs-jump validation,
 and aligned bounds rejection. The pinned helper passes on the identified assets.
+
+## Follow-up: startup modes, input actions and boundary behavior
+
+The phase-two witness is `tools/ppc-analysis/lanes/clock/clock_edges.py`.
+It adds exact guards and finite conversion boundaries; its bounded mathematical
+examples are not an original executable run.
+
+### Startup and turn gates
+
+The lazy mode constructor at `0x12bb64` initializes the integer stored at
+`data:0x53d98` from gameplay flags `data:0x52e40`:
+
+| Flags | Stored mode | Exact observable linkage |
+| --- | ---: | --- |
+| `0x02000000` set | 2 | The active loop calls turn update `0x10536c` directly. |
+| Otherwise `0x01000000` set | 1 | `CLBScreenComponentOnlineIslands::vf18` explicitly selects this at `0x971f4–0x971fc`; the loop uses wrapper `0x10565c`. |
+| Otherwise | 0 | Neither turn-update branch runs. |
+
+The setter `0x12bbf4` also rewrites these flag bits. Its diagnostic string is
+`Invalid GameType in SetGameType`, so these are a game-type selector, not the
+clock scale or the difficulty selector. Default startup `0x4b6a4` writes
+`0x000c0e15`, which has no recognized mode bits and therefore selects mode 0.
+A loaded configuration can override the flags at `0x4b6e8`.
+A successful transition predicate in the main state machine selects mode 2 at
+`0x1c2a94–0x1c2a9c`, and its failed branch selects mode 0 at
+`0x1c2ac0–0x1c2ac8`. Similar selection is visible at `0x1379b4/0x1379bc`
+and `0x1379e0/0x1379e8`. **Numeric mode selection is proven; a complete mapping
+of every single-player/load/network entry route to these transitions is not.**
+The OnlineIslands action alone must not be used to label mode 2 exclusively
+single-player or to invent a network-only cadence.
+
+World work has two additional exclusion gates: `data:0x52e44 & 8` at
+`0x1c22f4–0x1c22fc`, and `data:0x52e40 & 1` at `0x1c2300–0x1c2308`.
+When either is set, the loop still advances scheduled time and its substep
+counter, but skips the script/world/turn body. These exact bits are identified;
+the first is also altered by `ThemeParkWorld::vf26` at `0xbf8–0xc24`, which
+can invoke the high-level pause path at `0xc50`. They are not automatically
+synonyms for the separate pause state described below.
+
+The park-work cap is reset at the normal callback tail `0x1c27a4–0x1c27a8`.
+Once its three eligible park phases have been consumed, later eligible phases
+skip the turn update while the scheduler and script manager continue. Their
+scheduled phases are consumed, not queued for a later park turn. This means the
+calendar/needs/history turn count can lag the script clock during catch-up.
+
+Calendar conversion and advisor history use the concrete `mGameTick` writer
+`0x105398–0x1053a0`. High-level pause freezes both source clocks, so normal
+scaled-time scheduling and this turn-derived calendar stop. Mode 0, either
+world exclusion gate, and catch-up park-work drops independently prevent turn
+advances. Advisor history consumer `0x1210f8` uses
+`(current_turn >> 2) - (saved_turn >> 2)`, not LIP milliseconds. Four nominal
+248 ms turns are 992 ms of scaled clock, but this is not an exact wall-second
+or a uniform message cooldown once those gates and phase alignment matter.
+
+### Pause and speed input records
+
+The startup input initializer `0x114d50` creates a `system` group with 12
+records and a `game` group with 15 records. The strings are at
+`code:0x1d4e48` and `code:0x1d4e4f`. A group stores its record pointer at `+0`,
+count at signed short `+4`, enabled state at `+6`, and name at `+8`.
+The record layout is established by the consumers, not inferred from a symbol:
+
+| Record field | Consumer |
+| --- | --- |
+| signed short `+0` | action ID (the state lookup at `0x114c78` checks it) |
+| signed short `+2` | key token, compared at `0x114b14` / `0x114bf0` |
+| signed short `+4` | modifiers, compared at `0x114b20` / `0x114bfc` |
+| short `+6` | held state, set by `0x114b80`, cleared by `0x114c5c` |
+| pointer `+12` | release-side action, invoked at `0x114c48` |
+| pointer `+16` | press-side action, invoked at `0x114b6c` |
+
+Records are 20 bytes. `0x114ac0` handles the press-side path;
+`0x114b9c` handles the release-side path. `ThemeParkWorld::vf23` calls them at
+`0x824`, `0x850`, and `0x8b4`; game-group routing also occurs in the larger
+input dispatcher around `0x13b88c–0x13b950`.
+
+| Group / record | Key token / modifiers | Release callback |
+| --- | --- | --- |
+| System record 0, `data:0x4515c` | `0x0050` (ASCII `P`), 0 | Transition vector `0x7550` → `0x11288c` → `0x110604` pause toggle. |
+| Game record 6, `data:0x452c4` | `0x6d00`, 0 | Vector `0x7508` → `0x11315c` → `0x127c88`, divide scale by 1.25. |
+| Game record 7, `data:0x452d8` | `0x6b00`, 0 | Vector `0x7510` → `0x113184` → `0x127c48`, multiply scale by 1.25. |
+
+The speed callbacks clamp finite scale to 0.25–2. The physical names of the two
+special key tokens and any runtime binding replacement remain unqualified.
+The first word of the game table, 27, is record 0's Escape key token, not the
+record count. This distinction prevents the earlier ambiguous table view from
+being treated as a hotkey schema without its consumer.
+
+Pause entry `0x110518`, resume `0x110598`, and toggle `0x110604` require host
+state `+60 == 1`. Pause stores host `+28 = 1`; resume clears it.
+The pause entry calls `0x10e888`, which freezes the scaled clock through
+`0x117c54` and the unscaled clock through `0x117ae8`.
+Resume calls `0x10e8bc`, which resumes them through `0x117c9c/0x117b30`.
+Toggle calls `0x10e8f0`, which toggles them through `0x117cf4/0x117b88`.
+Thus advisor LIP, ordinary animation/script time and scaled scheduling share
+this pause action while retaining separate scaling. This narrows UI-022's
+missing pause evidence but does not establish the port's complete UI behavior.
+
+### Rollover, saturation and interval drops
+
+The underlying `LbTime_GetClock` result is a low 32-bit unsigned value. Both
+application accumulators subtract the prior reading with ordinary 32-bit
+subtraction, then convert the resulting **unsigned** word to double. One source
+rollover therefore produces a modulo-32-bit delta, not a negative elapsed time,
+provided no more than one full source period passes between samples. An absence
+of samples for a full 32-bit period cannot be reconstructed by this consumer.
+
+Both accumulator return paths call compiler helper `0x1c3fbc`. Its constants
+are 0, `2^32`, and `2^31` at `data:0x52e24/0x52e2c/0x52e34`.
+For finite input it returns 0 below zero, `0xffffffff` at or above `2^32`, and
+otherwise truncates toward zero, using a `2^31` subtraction/reconstruction for
+the upper unsigned half. The double accumulator itself continues increasing;
+**the returned clock saturates instead of wrapping**. Pause offsets, forced
+clock additions and the park/substep counters use 32-bit word arithmetic and
+can wrap independently. A direct scale setter `0x127c40` stores its argument
+without the UI callbacks' clamps; its complete caller/load validation remains
+untraced.
+
+The scheduler's backlog check is signed `now - previous > 2000` at
+`0x1c22c4–0x1c22cc`. It first drops excess backlog by setting
+`previous = now - 2000`. Its loop condition is a direct **signed**
+`now > previous` at `0x1c24c8`, and each iteration advances previous by 31.
+For an ordinary same-signed-range example, a 1 ms positive gap runs one step
+and overshoots by 30 ms. A 2000 ms gap runs 65 steps and finishes 15 ms ahead;
+with initial substep phase 0 and active mode 2, it services 65 script passes,
+advances three park turns, and consumes five later eligible park phases without
+turn updates. A 5000 ms gap first drops 3000 ms, then performs that bounded work.
+These are mathematical consequences of the pinned slice, not measured gameplay.
+
+Signed comparison and word wrapping are not interchangeable around `2^31`.
+The bounded synthetic prefix `previous=0x7ffffffe, now=0x7fffffff` still has its
+loop condition true after previous crosses the signed boundary. No corrective
+saturation/wrap guard was found in this loop. This is a concrete unresolved
+long-session edge, not a claim that the original runtime exhibits a particular
+hang; initialization, resets, alternate sources and higher-level runtime paths
+still need qualification.
+
+### WAIT boundaries and ID phases
+
+The manager increments its independent pass counter before matching ID low
+three bits (`0xb2884–0xb28c8`). With initial counter 0, ordinary ID 1 runs on
+passes 1/9, and ID 0 on passes 8/16. Ordinary WAIT/WAITABS servicing is therefore
+nominally eight active 31 ms manager passes apart; script flag `+184` bypasses
+that filter. A world exclusion skips the manager entirely while the outer
+substep phase advances. The manager phase and park phase must not be conflated.
+
+WAIT's first encounter always writes/reuses the operand-derived deadline,
+rewinds two code words, and yields (`0xb06f8–0xb0708`), including a zero or
+negative duration. The later encounter compares unsigned now against deadline;
+equality resumes. WAITABS has the same first-encounter yield at
+`0xb0788–0xb0798`, but performs integer `now + operand` without speed division.
+Both use a zero deadline as the uninitialized sentinel. A deadline that wraps
+to zero can therefore be reinitialized rather than treated as already set.
+
+WAIT converts the resolved signed operand through single-precision arithmetic,
+divides by `0.5 + signed_bias/100`, then uses `fctiwz` at `0xb06e8` before adding
+the result to the 32-bit clock. `fctiwz` truncates toward zero and saturates
+finite out-of-range values to signed 32-bit limits under the architecture's
+conversion semantics. [IBM Assembler Language Reference, instruction section](https://public.dhe.ibm.com/systems/power/docs/aix/53/alangref.pdf)
+The speed-bias field is signed 16-bit; bias -50 produces zero speed. No zero,
+negative speed, negative duration, NaN or exception check appears in this WAIT
+path. Floating-point exception mode and NaN results remain an explicit boundary;
+no synthetic model invents their runtime handling. Single-precision rounding
+and 32-bit deadline addition also limit faithful use of a wide integer clock.
+For example, a deadline wrapping below current unsigned now can resume early,
+while the zero sentinel has different behavior. The port's checked/nonnegative
+clock and delay rules need platform-qualified comparison before replacement.
+
+Additional validation: both pinned witness commands pass; **21 synthetic tests**
+cover operand/branch validation, unsigned saturation and source rollover,
+fractional scale accumulation, catch-up ceiling/drop/cap behavior, excluded-world
+phase advancement and a bounded signed-boundary prefix. Tests explicitly reject
+NaN/infinity from the finite arithmetic model. Run the second witness with:
+
+```
+python3 tools/ppc-analysis/lanes/clock/clock_edges.py /path/to/mac-feral/bin
+```

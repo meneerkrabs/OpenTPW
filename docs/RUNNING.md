@@ -99,8 +99,9 @@ bash scripts/run.sh --game-path '/path/to/Theme Park World' --smoke-test
 OPENTPW_NATIVE_SHADER_TESTS=1 OPENTPW_GAME_PATH='/path/to/Theme Park World' dotnet test source/OpenTPW.Tests/OpenTPW.Tests.csproj -r osx-arm64
 ```
 
-The smoke test runs 150 rendered frames, places the original Totem, checks
-procedural motion and stop/reset, removes/replaces the ride and exercises
+The smoke test runs 150 rendered frames, places the original Totem, waits for
+its script to trigger the original `totemm1.MD2` animation, requires two
+readbacks to show changed node poses and pixels, checks close/reset, removes/replaces the ride and exercises
 save/load in an isolated temporary directory. It exits nonzero on failure or
 premature window closure. GPU readback checks nonblack textured terrain and
 writes `artifacts/native-smoke-park.png` and `artifacts/native-smoke-terrain.png`

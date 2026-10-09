@@ -131,11 +131,13 @@ fixed simulation tick. Open/Close set `VAR_RIDECLOSED` (0/1); `VAR_CAPACITY`
 is the .sam `Upgrades[0].InitCapacity` (6); `VAR_DURATION` has no source and
 stays 0 (one cycle per run). The script decides **when** the carriage moves:
 its `TRIGANIM 5` (`ANIM_Main` in the repository's ScriptDefs and the docs'
-`TRIGANIM ANIM_Main 0 0` example) starts one 8 s cycle of the existing
-procedural `RideMotion`, whose length is reported back as the animation
-duration. The **shape** of the motion is still procedural: MD2 animation tracks
-(`totemm1…10.MD2`) are not decoded. All other Totem effects (channel
-animations, sounds, objects, screams, reverb, visitors) are unimplemented.
+`TRIGANIM ANIM_Main 0 0` example) plays the original `totemm1.MD2` clip once
+through `ModelAnimationPlayer` ([MD2-MODELS.md](MD2-MODELS.md)); its 430 ticks
+at the sandbox's unverified 30 ticks/s (14,333 ms) are reported back as the
+animation duration for the duration operand and WAIT4ANIM. Which Totem clip the
+original binds to `ANIM_Main` is inferred (`totemm1` is the full cart/cog
+cycle), not traced. All other Totem effects (channel animations
+`totemm2…10`, sounds, objects, screams, reverb, visitors) are unimplemented.
 With no visitors, an opened Totem waits 10 s, moves once, and repeats.
 
 ## Not original behaviour yet
@@ -144,7 +146,8 @@ With no visitors, an opened Totem waits 10 s, moves once, and repeats.
   millisecond units, and CRIT_LOCK semantics are inferred, not traced.
 - No visitor simulation: every visitor opcode returns 0, so scripts never
   board, unload, limbo, bounce or walk anyone.
-- No animation playback or durations (default 0 ms), no sounds/EVENT mapping,
+- No animation playback or durations (default 0 ms) except the Totem's
+  ANIM_Main, no sounds/EVENT mapping,
   no objects/particles, no ride-type controllers (TOUR/BUMP/COAST), no park
   clock (HOUR/MIN/SEC return 0), no light opcodes.
 - What the engine does with `EventMap.rse` variables, how the host is meant to

@@ -493,7 +493,7 @@ public partial class ModelFile : BaseFormat
 
 	/// <summary>
 	/// Renderer normals: the stored corner normal when it is unit length and faces the same
-	/// hemisphere as every triangle using the corner (true for 297,540 of 301,622 original corner
+	/// hemisphere as every triangle using the corner (true for 297,540 of 301,629 original corner
 	/// uses); otherwise the recomputed smooth normal of the corner's faces.
 	/// </summary>
 	private static void CalculateNormals( Mesh mesh )

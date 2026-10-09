@@ -140,8 +140,13 @@ Parallelle formaat-slice (7 formaten, geïsoleerde worktrees, 9 oktober 2026):
 
 - MD2: `ModelFile` herschreven als begrensde lezer; 2.116 van 2.118 corpusmembers
   parsen (838 geometrie, 1.278 animatiecontainers met opaque payload), 2
-  versie-207.201-bestanden expliciet geweigerd. Animatietracks niet gedecodeerd.
-  Ongebruikte stub `OpenTPW.Files/Public/ModelFile.cs` verwijderd.
+  versie-207.201-bestanden expliciet geweigerd. Ongebruikte stub
+  `OpenTPW.Files/Public/ModelFile.cs` verwijderd.
+- MD2-animatie: positie- (Bézier/lineair), rotatie- (slerp met easingcurves) en
+  schaaltracks gedecodeerd en tegen alle 1.278 animaties gevalideerd; node-matrices
+  zijn parent-relatief. De sandbox-Totem speelt `totemm1.MD2` af wanneer `Totem.RSE`
+  ANIM_Main triggert (30 ticks/s is een eigen keuze); de smoketest eist veranderende nodes en pixels. Vertexanimatie en
+  andere recordsoorten blijven ongedecodeerd ([MD2-MODELS.md](MD2-MODELS.md)).
 - MAP: TP2M-terreinkaarten (128×128 cellen, 5 gepinde fixtures); 64
   sound-catalog-`.map`-bestanden onderscheiden en geweigerd. Celbetekenis onbekend.
 - RSE: `RideScriptFile` + statische analyse; alle 308 scripts parsen, 84 gebruikte
@@ -149,8 +154,8 @@ Parallelle formaat-slice (7 formaten, geïsoleerde worktrees, 9 oktober 2026):
   33 opcodes volledig in de VM, 51 via een hook die "unimplemented effect"
   registreert (bezoekers, animatie, geluid, objecten, ritcontrollers, parkklok).
   Alle 263 startbare scripts + 44 kinderen draaien 60 s zonder fouten; de
-  sandbox-Totem draait `Totem.RSE`, dat bepaalt wanneer de (nog procedurele)
-  beweging start. Slicing, milliseconden en CRIT_LOCK zijn afgeleid, niet getraced.
+  sandbox-Totem draait `Totem.RSE`, dat bepaalt wanneer de originele
+  `totemm1.MD2`-animatie start. Slicing, milliseconden en CRIT_LOCK zijn afgeleid, niet getraced.
 - TPWS/TPWI: 17 unieke sectiemarkers in de enige fixture gelokaliseerd; inhoud opaque.
   Er staat geen ander TPWI/TPWS-bestand op de ISO.
 - LIPS: gevonden als `.LIP` (639 in `lips.wad` + 4 levelbestanden); strikte lezer,

@@ -47,7 +47,8 @@ OpenTPW is currently in a very early stage of development, and is not yet playab
 
 Every remaining ⚠️ format now has a bounded, strict CPU reader tested against the
 original files, but none is a finished game feature: MD2 parses 2,116/2,118
-models (animation tracks undecoded); MAP reads the 128×128 TP2M terrain grids
+models and decodes position/rotation/scale animation tracks (tick rate and
+vertex animation unverified); MAP reads the 128×128 TP2M terrain grids
 (cell meaning unknown); RSE parses all 308 scripts and the VM runs them (all 84 used
 opcodes handled, 51 of them through an unimplemented-effect hook; the sandbox
 Totem runs its original script); TPWI payloads expose 17 section markers (contents opaque); `.LIP`

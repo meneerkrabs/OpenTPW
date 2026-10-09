@@ -34,7 +34,8 @@ public sealed class MP2File : ArchiveFile
 	}
 
 	/// <summary>
-	/// The MPEG frame stream after the entry header. <see cref="Header"/> (the first
+	/// The MPEG Layer I or II frame stream after the entry header (the bank member suffix
+	/// is usually .mp2 for either layer). <see cref="Header"/> (the first
 	/// header word) gives its offset; <see cref="SoundData"/> is read at a fixed offset
 	/// that does not match the 40-byte headers in the original speech banks.
 	/// </summary>

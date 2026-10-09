@@ -186,6 +186,17 @@ public class PortableFileSystemTests
 		}
 
 		fileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
+		foreach ( var path in new[] { "/", ".", root } )
+		{
+			CollectionAssert.AreEqual( Array.Empty<string>(), fileSystem.GetFiles( path ) );
+			CollectionAssert.AreEqual( new[] { Path.Combine( root, "terrain" ) }, fileSystem.GetDirectories( path ) );
+		}
+		foreach ( var archiveRoot in new[] { "terrain", "terrain.WAD" } )
+		{
+			CollectionAssert.AreEqual( Array.Empty<string>(), fileSystem.GetFiles( archiveRoot ) );
+			CollectionAssert.AreEqual( new[] { Path.Combine( archiveRoot, "nested" ) }, fileSystem.GetDirectories( archiveRoot ) );
+		}
+		CollectionAssert.AreEqual( File.ReadAllBytes( Path.Combine( root, "terrain.WAD" ) ), fileSystem.ReadAllBytes( "terrain.WAD" ), "bare archive reads still return the container" );
 		CollectionAssert.AreEqual( contents, fileSystem.ReadAllBytes( @"terrain\nested\file.txt" ) );
 		Assert.AreEqual( "synthetic WAD contents", fileSystem.ReadAllText( "/terrain/nested/file.txt" ) );
 		Assert.AreEqual( (long)contents.Length, fileSystem.GetSize( "terrain/nested/file.txt" ) );

@@ -138,7 +138,7 @@ public class BaseFileSystem
 	private string[] GetFileSystemEntries( string relativePath, bool directories )
 	{
 		var absolutePath = GetAbsolutePath( relativePath );
-		var (archivePath, internalPath) = FindArchivePath( absolutePath );
+		var (archivePath, internalPath) = FindArchivePath( absolutePath, includeExplicitRoot: true );
 
 		if ( !string.IsNullOrEmpty( archivePath ) )
 		{
@@ -178,14 +178,15 @@ public class BaseFileSystem
 		return null;
 	}
 
-	private (string ArchivePath, string InternalPath) FindArchivePath( string path )
+	private (string ArchivePath, string InternalPath) FindArchivePath( string path, bool includeExplicitRoot = false )
 	{
 		path = ValidateAbsolutePath( path );
 		var parts = Path.GetRelativePath( basePath, path ).Split( Path.DirectorySeparatorChar );
 		var currentPath = basePath;
 
-		foreach ( var part in parts )
+		for ( var index = 0; index < parts.Length; index++ )
 		{
+			var part = parts[index];
 			currentPath = Path.Combine( currentPath, part );
 			var parentPath = Path.GetDirectoryName( currentPath );
 			if ( parentPath == null || !Directory.Exists( parentPath ) )
@@ -198,9 +199,9 @@ public class BaseFileSystem
 				if ( !archiveHandlers.ContainsKey( Path.GetExtension( candidate ) ) )
 					continue;
 
-				var remainingPath = path[currentPath.Length..].TrimStart( Path.DirectorySeparatorChar );
+				var remainingPath = string.Join( Path.DirectorySeparatorChar, parts.Skip( index + 1 ) );
 				var extensionlessMatch = string.Equals( Path.GetFileNameWithoutExtension( candidate ), part, StringComparison.OrdinalIgnoreCase );
-				var explicitMatch = remainingPath.Length > 0 && string.Equals( Path.GetFileName( candidate ), part, StringComparison.OrdinalIgnoreCase );
+				var explicitMatch = (includeExplicitRoot || remainingPath.Length > 0) && string.Equals( Path.GetFileName( candidate ), part, StringComparison.OrdinalIgnoreCase );
 				if ( extensionlessMatch || explicitMatch )
 				{
 					return (candidate, remainingPath);

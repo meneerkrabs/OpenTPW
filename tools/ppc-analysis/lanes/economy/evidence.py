@@ -18,9 +18,11 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import pef
 from timer_evidence import call_target, d_fields, glue_import, require, vector
+from schema import fields as schema_fields
 
 APP_SHA = '04809cd4ccee5433c7fb0b7c93d32f6a7aa629c1849181c0b7906415e5e295f5'
 BULL_SHA = 'b67b56b7b2b75962b8b34559e20fd97b623b2d0f7f08a0035f82072ffbf4ec06'
+MACDOZE_SHA = 'ba11331a70bce77140ae6e7fe73145fe4e13cce5f042707a494cb77654b32f0d'
 SPANS = {
     'loan_constructor': (0xcb7a8, 0xcba34, 'ef8885600d588751ccf530f8202cd32a8db5fa13a9c43c753e05dfde9eeda7ef'),
     'loan_month': (0xcc21c, 0xcc4d0, '4976309036d92d5754a38f9fee471ef821dee6e90467fab574e951cddd8f4e28'),
@@ -47,6 +49,16 @@ SPANS = {
     'mechanic_duration': (0xd9c0c, 0xd9e04, 'c5d916eed23f333e81d82354467807f7781762ded1587b75547be3a924c9f070'),
     'mechanic_complete': (0xd9e04, 0xd9ef0, 'e0bfc355af422354589349806196b2afb96068c6170b1966e65178b300398456'),
     'cleaner_complete': (0xd60c8, 0xd6230, '54296576055c8acc284aa666cb1955ac6412bbdf30d909e598d7c4bb41551514'),
+    'schema_builder': (0x16f4c, 0x1721c, 'b70e3749d13c115d2359b045caee7683c85758638121f22d49e0e507567d45c3'),
+    'sam_int_store': (0x182a0, 0x18378, '74fcc3941ed705125172c8bf965bc9d453ff672f522fd7b197491c876332b3e6'),
+    'sam_parse': (0x18c54, 0x197a4, '5142f753af32e28f0522fe459471962e112edc45ca5d30af696ebe709b3dbd68'),
+    'balance_getters': (0x19950, 0x19968, '15c63efa1288e1753a8b741f6d2c10dfdd6d8af251e6de43bea6aa335fdad8ae'),
+    'catalogue_getters': (0x119fe8, 0x11a000, '42297eefccdc7c5e7588e945f4bf136cb3e5e70eeb3a754ed897743f3a8b411a'),
+    'catalogue_loader': (0x119328, 0x119d14, '0624ae33514566e9bdc12f01248ab8fd948807acb51cfad52b732e1f7a36fb4a'),
+    'rating_ui': (0x16eeb0, 0x16f780, 'f02ed0adc1c74ed44c6e851535a88af698aae89dbbd7700138e5d578c625ae1d'),
+    'calendar_events': (0xe3f0c, 0xe41cc, '61f181fd326964e7a7eb753d2a7faef24364b09c8886b0204abe5986b20d53ea'),
+    'calendar_message_types': (0xe47f8, 0xe4810, 'de00cb6476fc7b59ef8af432f3f1748e4291889c2f231ad5d71f0393b19fdeef'),
+    'wear_amount': (0xde904, 0xdebf0, 'e0db3b0fa70a893f0d91c1d92431da1761ac59b53b53038f63c1dc43f396350e'),
 }
 
 
@@ -75,6 +87,13 @@ def monthly_payment(principal: int, apr: int, months: int) -> int:
     return min(math.trunc(value), 0xffffffff)
 
 
+def profit_interest(principal: int, payment: int, months: int) -> int:
+    """Independent arithmetic example of the witnessed unsigned division."""
+    if months <= 0:
+        raise ValueError('requires positive term')
+    return ((payment * months - principal) & 0xffffffff) // months
+
+
 def sam_examples(path: Path) -> dict:
     raw = path.read_bytes()
     values = {}
@@ -92,14 +111,48 @@ def sam_examples(path: Path) -> dict:
         payment = monthly_payment(principal, apr, months)
         loans.append({'index': index, 'principal': principal, 'apr_percent': apr,
                       'months': months, 'mac_formula_payment': payment,
-                      'total_installments': payment * months})
+                      'total_installments': payment * months,
+                      'profit_interest_per_month': profit_interest(principal, payment, months)})
     return {'file': path.name, 'sha256': hashlib.sha256(raw).hexdigest(), 'loans': loans,
             'limitation': 'PC SAM inputs do not prove PC executable arithmetic.'}
+
+
+def language_labels(folder: Path) -> dict:
+    """Read only the five labels coupling the annual-summary controls.
+
+    Uses the existing repository BFST/BFMU format interpretation; no assets
+    are copied to the repository and neither table's full contents are output.
+    """
+    table = (folder / 'UITEXT.str').read_bytes()
+    mapping = (folder / 'MBToUni.dat').read_bytes()
+    table_sha = '3fe8b89c994bdd177b7226a51f24222621cc7e27beee94668942dc1f821137cf'
+    map_sha = '69f23492ef61a27ed79dd4df67978536720d403f7e2733acb6b43e6f4f78c587'
+    require(hashlib.sha256(table).hexdigest(), table_sha, 'identified English UITEXT')
+    require(hashlib.sha256(mapping).hexdigest(), map_sha, 'identified English BFMU')
+    count = struct.unpack_from('<H', mapping, 6)[0]
+    characters = struct.unpack_from('<' + str(count) + 'H', mapping, 8)
+    labels = {}
+    for index, expected in [(186, 'End Of Year Summary'), (187, 'Last Year'),
+                            (188, 'This Year'), (189, 'Park value'), (190, 'Park rating')]:
+        offset = 12 + struct.unpack_from('<I', table, 12 + 4 * index)[0]
+        require(table[offset], 1, 'BFST record marker')
+        length = int.from_bytes(table[offset + 1:offset + 4], 'little')
+        if length > 64 or offset + 4 + length > len(table):
+            raise ValueError('label outside bounded record')
+        coded = table[offset + 4:offset + 4 + length]
+        if any(not 1 <= value <= count for value in coded):
+            raise ValueError('label outside character mapping')
+        label = ''.join(chr(characters[value - 1]) for value in coded)
+        require(label, expected, f'UITEXT {index}')
+        labels[str(index)] = label
+    return {'uitext_sha256': table_sha, 'bfmu_sha256': map_sha, 'labels': labels,
+            'limitation': 'PC language label cross-check; Mac layout and accessor are separately witnessed.'}
 
 
 def inspect(root: Path) -> dict:
     c = load(root / 'SimThemePark.data', APP_SHA)
     bull = load(root / 'libraries/bullfrog_shared.data', BULL_SHA)
+    mac = load(root / 'libraries/macdoze_shared.data', MACDOZE_SHA)
     spans = {}
     for name, (start, end, identity) in SPANS.items():
         digest = hashlib.sha256(c.code.data[start:end]).hexdigest()
@@ -123,6 +176,15 @@ def inspect(root: Path) -> dict:
         (0xeaad0, 32, (0, 29, 416)), (0xeaad8, 36, (0, 29, 416)),
         (0xdef88, 52, (0, 31, 64)),
         (0xe2620, 32, (0, 31, 440)), (0xd9ed0, 36, (0, 29, 528)),
+        (0x16f0c4, 14, (3, 0, 190)), (0x16f078, 14, (4, 4, -21085)),
+        (0x16f328, 14, (4, 4, -21086)), (0x16f3a8, 14, (3, 3, 5040)),
+        (0x16f450, 14, (3, 3, 5040)), (0x16f44c, 14, (5, 0, 12)),
+        (0xe47f8, 14, (3, 0, 13)), (0xe4800, 14, (3, 0, 12)),
+        (0xe4808, 14, (3, 0, 11)), (0x19960, 14, (3, 3, 8)),
+        (0x119ff8, 14, (3, 3, 8)), (0x1194a0, 14, (3, 19, 4)),
+        (0x16f90, 14, (27, 0, 1)), (0x18354, 36, (30, 29, 0)),
+        (0xcc158, 11, (0, 3, 13)), (0xcc1e8, 36, (0, 29, 292)),
+        (0xcb9fc, 14, (5, 0, 13)), (0xde940, 14, (4, 0, 5)),
     ]:
         require(d_fields(c, addr, opcode), operands, f'field/immediate {addr:#x}')
     for offset, operation, regs in [(0xf4760, 235, (3, 4, 0)),
@@ -147,19 +209,80 @@ def inspect(root: Path) -> dict:
     require(call_target(c, 0xdc05c), 0xe25e8, 'deleted object scrap amount')
     require(call_target(c, 0xe261c), 0xe2424, 'scrap percentage')
     require(call_target(c, 0xd9eac), 0xdef2c, 'mechanic full repair completion')
+    require(call_target(c, 0x16f0c8), 0x138504, 'rating label UITEXT accessor')
+    require(call_target(c, 0xe3fb0), 0x116488, 'day event constructor')
+    require(call_target(c, 0xe4088), 0x1164a4, 'month event constructor')
+    require(call_target(c, 0xe4148), 0x1164c0, 'year event constructor')
+    require(call_target(c, 0xc17b8), 0xc7b24, 'rating history writer')
+    require(call_target(c, 0xcba00), 0x116740, 'bank subscribes to year event')
+    require(call_target(c, 0xfac04), 0xcc120, 'actor dispatcher bank handler')
+    main_slot = 0x8000 + d_fields(c, 0x19954, 32)[2]
+    ride_slot = 0x8000 + d_fields(c, 0x119fec, 32)[2]
+    relocs = c.relocs[c.data_section.index]
+    require(relocs[main_slot].addend, 0x34d10, 'CMainBalance descriptor relocation')
+    require(relocs[ride_slot].addend, 0x39b64, 'CRideBalance descriptor relocation')
+    for base, end, digest in [
+        (0x34d10, 0x38fa0, '775aaa73be12c71658d7b26147807416cd4415ef54fabf5bfd57c10ba69f70c8'),
+        (0x39b64, 0x3ba54, 'eb137c713ebb51bede258b87c9aa759f7a42f25530c8b7fd137474a83ef5ae0f'),
+    ]:
+        require(hashlib.sha256(c.data_section.data[base:end]).hexdigest(), digest, 'schema region')
+    selected = {}
+    main_rows = schema_fields(c.data_section.data, 0x34d10)
+    ride_rows = schema_fields(c.data_section.data, 0x39b64, embedded_offset=4)
+    expected_fields = {
+        'LoanInfo.LoanAmount': 416, 'LoanInfo.APRInPercent': 420,
+        'LoanInfo.RepaymentPeriodInMonths': 424, 'PerGradeStaffConsts.BaseWage': 748,
+        'PerTypeStaffConsts.PayMultiplier': 832, 'ResearcherConstsPerGrade.ResearchAbility': 1052,
+        'ResearchTech.PercentageForThisTech': 1276, 'Upgrades.WearRate': 432,
+        'Upgrades.ScrapValueYear1': 392, 'Upgrades.ScrapValueYear2': 396,
+        'Upgrades.ScrapValueYear3': 400, 'Upgrades.ScrapValueYear4': 404,
+        'Upgrades.CostOfUpgrade': 440, 'Upgrades.DurationOfUpgrade': 444,
+        'UsageInfo.MaxCapacity': 296, 'UsageInfo.MaxSpeed': 312,
+        'Upgrades.RedLineCapacity': 412, 'Upgrades.RedLineSpeed': 428,
+    }
+    for row in main_rows + ride_rows:
+        if row['path'] in expected_fields:
+            require(row['runtime_offset'], expected_fields[row['path']], row['path'])
+            selected[row['path']] = row
+    require(set(selected), set(expected_fields), 'complete selected schema field set')
     timestamp_set = vector(bull, 'SetTime__11TbTimeStampFiiiiiii')
     timestamp_get = vector(bull, 'GetTime__11TbTimeStampCFPiPiPiPiPiPiPiPi')
     require((timestamp_set['code_offset'], timestamp_get['code_offset']), (0x1bb50, 0x1bbfc), 'date exports')
     set_api = glue_import(bull, call_target(bull, 0x1bb94))
     get_api = glue_import(bull, call_target(bull, 0x1bc70))
-    return {'app_sha256': APP_SHA, 'bullfrog_sha256': BULL_SHA, 'spans': spans,
+    mac_get = vector(mac, get_api['symbol'])
+    mac_set = vector(mac, set_api['symbol'])
+    require((mac_get['code_offset'], mac_set['code_offset']), (0x4180, 0x4270), 'macdoze conversion exports')
+    long_get = glue_import(mac, call_target(mac, 0x4210))
+    long_set = glue_import(mac, call_target(mac, 0x42c4))
+    require((long_get['symbol'], long_set['symbol']), ('LongSecondsToDate', 'LongDateToSeconds'), 'OS calendar conversion imports')
+    for address, src, dst in [(0x4218, 58, 0), (0x4224, 60, 2),
+                              (0x422c, 70, 4), (0x4234, 62, 6),
+                              (0x423c, 64, 8), (0x4244, 66, 10), (0x424c, 68, 12)]:
+        require(d_fields(mac, address, 40), (0, 1, src), 'LongDateRec field load')
+        store = address + (8 if address == 0x4218 else 4)
+        require(d_fields(mac, store, 44), (0, 30, dst), 'SYSTEMTIME field store')
+    mac_spans = {}
+    for start, end, digest in [
+        (0x4180, 0x4270, 'd3620c96a34dc81ce915971ed6948a532531ae6e9f8c181a6b39d684c3feea63'),
+        (0x4270, 0x4340, 'ce0f5fd1676febb4525092af0a5b420312428785e4acedd929261db53ab1cf7c'),
+    ]:
+        require(hashlib.sha256(mac.code.data[start:end]).hexdigest(), digest, 'macdoze calendar region')
+        mac_spans[hex(start)] = {'code_end_exclusive': end, 'sha256': digest}
+    return {'app_sha256': APP_SHA, 'bullfrog_sha256': BULL_SHA, 'macdoze_sha256': MACDOZE_SHA, 'spans': spans,
             'constants': constants, 'loan_pow': pow_call,
             'date_exports': [timestamp_set, timestamp_get], 'date_conversion_imports': [set_api, get_api],
+            'os_date_imports': [long_set, long_get], 'selected_schema_fields': selected,
+            'macdoze_calendar_spans': mac_spans,
+            'calendar_event_types': {'day': 11, 'month': 12, 'year': 13},
+            'rating_current_control': 44450, 'rating_label_control': 44451,
+            'rating_label_uitext_index': 190, 'rating_history_offset': 0x213b0,
             'mac_formula': 'trunc_u32(P * (1 + APR/100) ** (months/24) / months)',
             'payoff_formula': 'monthly_payment * (term - months_repaid)',
             'wage_formula': 'BaseWage[grade] * PayMultiplier[type]',
             'skill_formula': 'trunc_u32(20 * (grade + percentage_through_grade/100))',
             'research_period_turns': 20, 'wear_inner_period_turns': 64,
+            'wear_runtime_equation': 'D=0.5*(speed_adjustment+load_adjustment)*WearRate; see report for branches',
             'calendar_seconds_formula': 'floor(uint64(turn * funny_seconds_per_real_second) / 4)',
             'calendar_default_multiplier': 15000, 'calendar_epoch': '2000-01-01T00:00:00',
             'scrap_basis_field': 'base catalogue cost at +440; excludes higher-level costs',
@@ -170,10 +293,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('bin_root', type=Path)
     parser.add_argument('--sam', type=Path, action='append', default=[])
+    parser.add_argument('--language', type=Path, help='identified English folder for five selected label witnesses')
     args = parser.parse_args()
     try:
         result = inspect(args.bin_root)
         result['sam_examples'] = [sam_examples(path) for path in args.sam]
+        if args.language:
+            result['annual_summary_labels'] = language_labels(args.language)
     except (OSError, pef.PEFError, ValueError) as error:
         parser.exit(1, f'economy evidence: {error}\n')
     print(json.dumps(result, indent=2, sort_keys=True))

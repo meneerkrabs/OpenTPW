@@ -14,13 +14,13 @@ cannot preserve these independently scheduled operations.
 ## Reproduction and identity
 
 ```sh
-python3 tools/ppc-analysis/lanes/economy/evidence.py /Users/sander/server/game-assets/mac-feral/bin --sam /Users/sander/server/game-assets/theme-park-world-patch2/Data/levels/Standard.sam
+python3 tools/ppc-analysis/lanes/economy/evidence.py /Users/sander/server/game-assets/mac-feral/bin --sam /Users/sander/server/game-assets/theme-park-world-patch2/Data/levels/Standard.sam --language /Users/sander/server/game-assets/theme-park-world/Data/Language/English
 python3 -m unittest discover -s tools/ppc-analysis/lanes/economy -p 'test_*.py' -v
 python3 -m unittest discover -s tools/ppc-analysis -p 'test_*.py' -v
 ```
 
 The verifier uses the validated `pef.py` loader and timer witness helpers. It
-checks file identities, 25 manually inspected function-region hashes,
+checks file identities, 35 application and two macdoze function-region hashes,
 selected operands, branch targets, constants and import relocations. Output
 is interpreted metadata. These are bounded static witnesses, not formal
 decompilation proofs. Tests contain synthetic fixtures and independently
@@ -30,6 +30,7 @@ written arithmetic examples; they never execute original instructions.
 | --- | --- |
 | `SimThemePark.data` | `04809cd4ccee5433c7fb0b7c93d32f6a7aa629c1849181c0b7906415e5e295f5` |
 | `bullfrog_shared.data` | `b67b56b7b2b75962b8b34559e20fd97b623b2d0f7f08a0035f82072ffbf4ec06` |
+| `macdoze_shared.data` | `ba11331a70bce77140ae6e7fe73145fe4e13cce5f042707a494cb77654b32f0d` |
 | PC baseline and patch-2 global `Standard.sam` (identical) | `3d39433641df70dba73e6ce0f4ae576a5a334ed93e61adc1cdd570b751a8bf4b` |
 | PC jungle `Easy_Standard.sam` | `855ca41c493cb91ea41b2ac2d673e6b0163e4ac9b8e8e4ecfa159c310dfbcea0` |
 
@@ -97,7 +98,7 @@ for each bought loan (`0xcc2d0–0xcc2e4`) and increments months repaid. It
 clears bought and months-repaid flags when the count equals `N`
 (`0xcc394–0xcc3bc`). It does not maintain a declining principal balance or
 compute monthly APR interest. Message dispatch at `0xcc120` routes message
-type 12 to this handler; the calendar creates that message through `0x116488`.
+type 12 to this handler; the calendar creates that message through `0x1164a4`.
 
 Early payoff at `0xccc78` computes `M × (N - months_repaid)` at
 `0xcccc4–0xcccd8`, checks affordability, subtracts that full outstanding
@@ -147,15 +148,15 @@ transition vector data `0x186c` resolves it to code `0x1bb50`. Its call at
 `0x1bb94` reaches macdoze `SystemTimeToFileTime`. Getter vector data
 `0x1864` resolves to `0x1bbfc`, calling `FileTimeToSystemTime` at `0x1bc70`.
 The app extracts date components through this timestamp API, rather than
-dividing into fixed 30-day months. The exact civil/leap-calendar implementation
-remains the macdoze conversion dependency; merely naming the API is not a
-proof of every leap-year edge case.
+dividing into fixed 30-day months. The phase-two section follows these
+imports through macdoze to the actual legacy OS conversion calls and states
+the environment boundary for civil/leap-calendar interpretation.
 
 Calendar update `0xe3f0c` compares extracted day/month with its saved previous
 values, emits day/month events on changes, and stores the new values. Year
-changes generate the separately constructed year event. Initial date is
-directly established; Mac month/hour extraction and Windows equivalence need
-the conversion implementation/capture to close the remaining boundaries.
+changes generate the separately constructed year event. Initial date
+arguments are directly established; month/hour extraction is traced below.
+Runtime calendar environment and Windows equivalence require their own evidence.
 
 ## Staff, research and maintenance
 
@@ -164,7 +165,7 @@ indices and loads grade `+484`. At `0xf4744–0xf4760` it multiplies global
 balance `+832 + 4×role` by `+748 + 16×grade`. The parallel candidate wage
 getter `0xf477c` uses the same product. Embedded SAM descriptors name
 `BaseWage` at data `0x36574` and `PayMultiplier` at `0x366dc`; their runtime
-schema offsets warrant an independent schema-reader check. The actual PC
+schema offsets are verified by the descriptor initializer below. The actual PC
 SAM values yield monthly grade-0 wages 40/120/60/80/140. Staff event handler
 `0xf2b5c` routes type 12 to debit routine `0xf3364`, which calls this wage
 getter and bank withdrawal. Thus monthly debit cadence and multiplication
@@ -199,7 +200,7 @@ remain in `0xf445c–0xf46bc`, `0xf3d8c`, and `0xf4900`.
 `0xf0728` only at remainder zero. The contribution loads one grade-dependent
 integer from balance `+1052 + 12×grade` and passes it to lab `0xf0df0`.
 The descriptor at data `0x36b50` identifies the ResearchAbility lead; the
-full schema mapping remains independently checkable. It is not called once
+schema mapping is now directly established. It is not called once
 per calendar day. The broad-state exclusion and workload also matter: this
 is not an unconditional hired-headcount sum.
 
@@ -211,7 +212,7 @@ is progress >= cost. Category effort and workload setters clamp at 100.
 
 Group updater `0xf15b4` counts projects **of the same category whose group
 is less than current_highest_group + 1**, and compares integer percent
-completed with threshold indexed by current_highest_group. It may repeatedly
+completed with threshold `ResearchTech[current_highest_group + 1]`. It may repeatedly
 advance through groups up to 7. Thus it tests cumulative completion through
 the current group, not only the preceding group's completion. Descriptor
 `PercentageForThisTech` is at data `0x373c0`; arithmetic/counting at
@@ -234,10 +235,8 @@ conditions. It subtracts derived amount `D` from float object `+64` and
 `0.02×D` from float `+68`, independently clamped to [0,100]. `D` comes
 from operating speed/capacity parameters and upgrade fields through
 `0xde904`; simply subtracting raw WearRate each day is contradicted.
-That function combines two operating ratios and branch adjustments before
-multiplying by the upgrade wear field. Script getters `0xb5b40/0xb5be0`
-and SAM descriptor-to-offset mapping are required to label every operand
-and recover the complete equation without guessing.
+The runtime equation is recovered below using the established schema
+offsets and actual speed getter/setter path.
 
 Full repair completion `0xdef2c` writes 100 only to `+64` (`0xdef78–0xdef88`)
 and clears maintenance flags/assignment. It does not restore `+68` there.
@@ -282,10 +281,9 @@ history caller `0xc163c → 0xc17b8`. It combines a capped visitor component,
 counts of rides/shops/sideshows/features and upgraded rides, and five capped
 staff-role counts. It does not read the happiness/cleanliness formula used
 by OpenTPW. Its result is written to analyzer history at `+0x213b0`.
-The **mapping of this statistic to the original park-rating UI has not yet
-been proven**, so this is a concrete candidate, not grounds to replace
-ECON-027 by a guessed formula. The next dependency is the consumer of that
-history, with category counters `0xc5864` and staff counters `0xc4064`.
+Its mapping to the annual-summary park-rating UI is now established by the
+control/text/history chain below. Category counters are `0xc5864`, staff
+counters `0xc4064` and current visitors `0xc3684`.
 
 **Scrap, ECON-025.** The actual object deletion/sale path `0xdbfa8` calls
 `0xe25e8` at `0xdc05c` and deposits the result at `0xdc070`. This getter
@@ -310,8 +308,8 @@ fact does not authorize silently removing a Windows approximation tag.
 | ID | Direct fact or concrete next dependency |
 | --- | --- |
 | 001 | Date consumer `0xe4394`: floor(turn × 15000 / 4) seconds; turn scheduling belongs to clock lane. |
-| 002 | Uses timestamp conversion; inspect macdoze SystemTimeToFileTime/FileTimeToSystemTime for exact civil-calendar edges. |
-| 003 | Timestamp getter passes SYSTEMTIME hour; app `0xe4394`, bullfrog `0x1bbfc`; inspect macdoze hour conversion. |
+| 002 | Macdoze conversion delegates to Apple long-date APIs; Gregorian is the documented default, with current script-system dependency. |
+| 003 | SYSTEMTIME hour comes directly from LongDateRec hour (0..23); complete copy chain below. |
 | 004 | Clock lane owns UI speed factor and active-loop scheduling; economy uses turn field `+0x1da70c`. |
 | 005 | Receipt/cost `0xe1b60/0xe1e58`; loan deposit `0xcc904` updates same deposit accumulator as normal deposit, annual profit cancels principal. Financial UI row meanings still required. |
 | 006 | Proven power formula, fixed installments, payoff outstanding installment total. |
@@ -331,11 +329,11 @@ fact does not authorize silently removing a Windows approximation tag.
 | 020 | Actual guest-use litter event is inside `0xeaaf8`; exact LitterEffect mapping and probability/count next. |
 | 021 | Arrival, health-scaled repair countdown, upgrade product and animation completion proven. |
 | 022 | Assigned-cell cleaning by turn deadline proven `0xd60c8`; toilet jobs separate. |
-| 023 | 64-turn inner wear gate, derived decrement and separate 2% life decrement proven; label operands in `0xde904`. |
+| 023 | 64-turn inner wear gate, derived decrement and separate 2% life decrement proven; full runtime equation below. |
 | 024 | Full repair writes 100 at `+64`, not `+68`, proven. |
 | 025 | Proven sale `0xdbfa8 → 0xe25e8 → 0xe2424`: base cost only × age/upgrade percentage, initial unused-refund branch. |
 | 026 | Analyzer valuation includes infrastructure in addition to placed objects; `0xc1d4c` rather than sum of scrap values alone. |
-| 027 | Composite candidate `0xc7b24` writes history `+0x213b0`; prove UI consumer before assigning park-rating meaning. |
+| 027 | Composite `0xc7b24` writes history `+0x213b0`, read by annual-summary value44450 aligned with UITEXT190 Park rating. Exact count formula below. |
 | 028 | Actual bank withdrawal allows negative balances `0xcbfdc`; build affordability belongs to callers `0x859b4`, `0x8ba34` and object purchase `0xda874`. |
 | 029 | Manual explicitly supports ticket spending; ticket controller `0xd31d0` and purchase `0xda874` next. |
 | 030 | Bank month handler after six elapsed 30-day periods in red emits game-over event `0xcc3d0–0xcc4b0`; UI/game state consumer `0x1059e0` next for stop behavior. |
@@ -356,6 +354,201 @@ fact does not authorize silently removing a Windows approximation tag.
 | 045 | Loan serialization field order proven at `0xcba54`; file framing/second fixture still required for general save locating. |
 | 046 | Upgrade purchase/availability `0xdf928`; follow its real menu callers and count predicate for mechanic requirement. Tag remains. |
 
+## Descriptor-to-runtime proof (phase two)
+
+The scoped naming dependency is now closed. `CMainBalance` virtual descriptor
+getter `0x19950` multiplies index by 60 and loads a relocated pointer to data
+`0x34d10`; its payload getter `0x19960` returns balance object +8. Shared
+initializer `0x16f4c` starts a slot cursor at 1 (`0x16f90`). Each scalar
+descriptor creates a lookup entry at `payload + 4×cursor`, then increments
+the cursor. Array delimiters store child stride/count and reserve a trailing
+count word: closing an array advances the cursor by
+`(capacity - 1)×stride + 1`. Each lookup record contains destination pointer,
+element stride in words and optional count pointer. Integer SAM load
+`0x18c54` computes destination + index×stride×4 at `0x1961c–0x19634`, then
+passes it to integer store `0x182a0`, which writes the checked parsed value
+at `0x18354`. Names are thus connected to the actual stored operands.
+
+Ride getter `0x119fe8` resolves to data `0x39b64`; payload getter `0x119ff8`
+also returns object +8. The catalogue loader embeds that balance object at
+**catalogue +4** (`0x1194a0/0x1194a4`), so catalogue consumers see another
+four-byte shift. Omitting it would mislabel WearRate as QueueWaitTimeConstant
+and shift all scrap fields.
+
+| SAM path | Descriptor index | Runtime byte offset | Array stride/capacity |
+| --- | ---: | ---: | --- |
+| `LoanInfo[].LoanAmount` | 50 | balance +416 | 16 / 10 |
+| `LoanInfo[].APRInPercent` | 51 | balance +420 | 16 / 10 |
+| `LoanInfo[].RepaymentPeriodInMonths` | 52 | balance +424 | 16 / 10 |
+| `PerGradeStaffConsts[].BaseWage` | 104 | balance +748 | 16 / 5 |
+| `PerTypeStaffConsts[].PayMultiplier` | 110 | balance +832 | 4 / 5 |
+| `HandymanConstsPerGrade[].WorkDuration` | 119 | balance +940 | 12 / 5 |
+| `MechanicConstsPerGrade[].WorkDuration` | 124 | balance +1004 | 8 / 5 |
+| `ResearcherConstsPerGrade[].ResearchAbility` | 129 | balance +1052 | 12 / 5 |
+| `ResearchTech[].PercentageForThisTech` | 165 | balance +1276 | 4 / 10 |
+| `Upgrades[].ScrapValueYear1..4` | 103..106 | catalogue +392/+396/+400/+404 | 64 / 3 |
+| `UsageInfo.MaxCapacity` / `MaxSpeed` | 75 / 79 | catalogue +296 / +312 | scalar |
+| `Upgrades[].RedLineCapacity` / `RedLineSpeed` | 108 / 112 | catalogue +412 / +428 | 64 / 3 |
+| `Upgrades[].WearRate` | 113 | catalogue +432 | 64 / 3 |
+| `Upgrades[].CostOfUpgrade` | 115 | catalogue +440 | 64 / 3 |
+| `Upgrades[].DurationOfUpgrade` | 116 | catalogue +444 | 64 / 3 |
+
+Loan schema capacity is ten; the constructor uses only eight. Descriptor
+region identities: main data `[0x34d10,0x38fa0)` hashes to
+`775aaa73be12c71658d7b26147807416cd4415ef54fabf5bfd57c10ba69f70c8`;
+ride data `[0x39b64,0x3ba54)` hashes to
+`eb137c713ebb51bede258b87c9aa759f7a42f25530c8b7fd137474a83ef5ae0f`.
+The bounded `schema.py` helper interprets metadata and rejects unmatched
+scopes, nested arrays, invalid counts, unsupported tags and out-of-bounds
+records. Synthetic tests check embedding, strides and count-word reservation.
+
+APR's kind-6 descriptor has inclusive integer bounds 0 and 100; integer
+store `0x182a0` enforces them. Amount and term are kind 5: negative parsed
+values are rejected, zero accepted. There is no constructor guard before
+floating division by term. The ordinary formula therefore assumes positive
+terms; zero-term/NaN behavior is outside the proven ordinary rule. The
+arithmetic-example helper rejects zero terms independently.
+
+Monthly profit bookkeeping uses unsigned 32-bit `(M×N - P)/N`. This matters
+even with plausible zero-APR inputs: `P=100000,N=36,M=2777` makes the
+subtraction wrap to 4,294,967,268 and yields 119,304,646 as the amount treated
+as monthly interest in that adjustment. This is a static consequence of
+the operands and unsigned division, not a captured bug. Whether that
+configuration is reachable requires mode/loan-availability evidence; the
+manual forbids Instant Action loans. Do not silently normalize it to zero
+interest while claiming the Mac arithmetic is preserved.
+
+## Actual park-rating formula and UI (phase two)
+
+The UI lane traced annual-summary builder `0x16eeb0` and the embedded layout
+at data `0x4f81c`. Current value control **44450** and label control **44451**
+occupy the same row; last-year value **44461** occupies the last-year column.
+At `0x16f078`, the builder looks up label 44451; `0x16f0c4/0x16f0c8`
+passes string index **190** to UITEXT accessor `0x138504`. It reads current
+analyzer history `+0x213b0` at `0x16f3a8` and assigns it to control 44450.
+At `0x16f450` it reads that history twelve periods earlier for 44461.
+Title index 186, column indices 188/187 and row 190 independently decode
+from the actual English BFST/BFMU corpus as “End Of Year Summary”, “This
+Year”, “Last Year” and “Park rating”. This proves the statistic's role.
+
+English table identities: UITEXT
+`3fe8b89c994bdd177b7226a51f24222621cc7e27beee94668942dc1f821137cf`;
+BFMU `69f23492ef61a27ed79dd4df67978536720d403f7e2733acb6b43e6f4f78c587`.
+`--language` reproduces only these five selected label records using the
+repository's documented BFST/BFMU interpretation, without exporting assets.
+Mac code/layout binding and PC English label cross-check are distinct from
+a captured original screen or proof of Windows executable arithmetic.
+
+Let `V` be visitors currently in the park, `R/S/A/F` the eligible placed
+ride/shop/sideshow/feature counts, `U` rides at upgrade level >=2, and
+`H/M/E/G/Q` the eligible handyman/mechanic/entertainer/guard/researcher counts.
+The integer park rating at `0xc7b24` is:
+
+`floor(min(V,1000)/50) + min(floor(3R/2),20) + min(2S,10) + min(2A,10)`
+
+`+ min(F,10) + min(U,10) + min(H,4)+min(M,4)+min(E,4)+min(G,4)+min(Q,4)`.
+
+The maximum is 100. Arithmetic witnesses are visitor scaling
+`0xc7bec–0xc7c24`, ride scaling `0xc7cdc–0xc7d10`, category components
+`0xc7dc4–0xc8074`, staff components `0xc817c–0xc8624`, and final sum
+`0xc8628–0xc864c`. Counters use object/actor categories and subtype filters:
+rides use a minimum upgrade-level bound of zero, upgraded rides require >=2, and
+staff loops count subtype zero. Preserve those eligibility predicates,
+rather than counting every allocation or candidate. There is no direct
+happiness or cleanliness component. Monthly history writer `0xc163c`
+calls this function at `0xc17b8`; serialization at `0xc0778/0xc0f3c`
+serializes the same history without an explicit statistic name. UI binding,
+rather than a guessed serializer label, supplies the semantic identification.
+
+## Complete runtime wear equation (phase two)
+
+For the normal runtime call `0xded80 → 0xde904`, let `S` be current speed
+from special getter `0xb5b40`, and let `C` be script variable 5 clipped to
+`[0,UsageInfo.MaxCapacity]`. The speed setter `0xdc5c4` calls `0xb5af0`
+and prints its actual speed label; setter and getter access the same signed
+halfword at script-controller +192. The rides lane identifies variable 5
+as `VAR_ONRIDE` in actual script tables; interpreting it as seating capacity
+alone would omit the current-load dependence.
+
+Define `x = 0.9 × S / UsageInfo.MaxSpeed` and
+`y = 0.9 × C / UsageInfo.MaxCapacity`. Then:
+
+`a = 0.1 + x` if `S < Upgrades[level].RedLineSpeed`, otherwise
+`a = 0.5 × (1.1 + x)`.
+
+`b = 0.1 + y` if `C/10 < Upgrades[level].RedLineCapacity`, otherwise
+`b = 0.5 × (1.1 + y)`.
+
+`D = 0.5 × (a + b) × Upgrades[level].WearRate`.
+
+The `C/10` comparison is direct arithmetic at `0xdeb3c–0xdeb5c`; do not
+replace it with a conventional occupancy percentage. These are ordered
+single-precision operations (constants round to binary float), with
+speed branch `0xdea20–0xdea58`, load ratio `0xdeabc–0xdeaf8`, load branch
+`0xdeb58–0xdeb78`, and combination `0xdeb90–0xdebc8`. The caller skips
+decrement when script variable 5 is zero (`0xdecf0–0xded00`) and still
+requires the 64-turn and open/flag gates previously identified. Positive
+MaxSpeed/MaxCapacity are ordinary catalogue prerequisites; zero denominators
+are not guarded in this equation. The separate preview caller `0xdebf0`
+sets a flag that changes load-ratio sourcing; this runtime equation should
+not be reused as that preview's exact behavior.
+
+## Calendar conversion and annual-profit caller chain (phase two)
+
+Macdoze export resolution closes the previous API boundary:
+`FileTimeToSystemTime` vector data `0x7a4` resolves to code `0x4180`;
+`SystemTimeToFileTime` vector data `0x79c` resolves to `0x4270`.
+The former calls actual InterfaceLib import `LongSecondsToDate` at `0x4210`
+through glue `0xa938`; the latter calls `LongDateToSeconds` at `0x42c4`
+through `0xa920`. It scales between integer seconds and 10,000,000 units
+per second, adding/subtracting the epoch offset 95,616,288,000,000,000.
+This confirms the time-difference units used by the application's calendar.
+
+| LongDateRec offset | SYSTEMTIME offset | TbTimeStamp GetTime argument |
+| ---: | ---: | --- |
+| +2 year | +0 | first output pointer |
+| +4 month | +2 | second |
+| +6 day | +6 | third |
+| +14 weekday | +4 | fourth |
+| +8 hour | +8 | fifth |
+| +10 minute | +10 | sixth |
+| +12 second | +12 | seventh |
+
+Macdoze copies these fields at `0x4218–0x4250`; bullfrog forwards them at
+`0x1bc88–0x1bd04`. It sets SYSTEMTIME milliseconds to zero. Apple's
+[LongDateRec reference](https://developer.apple.com/library/archive/documentation/mac/OSUtilities/OSUtilities-100.html)
+defines the corresponding month/day/hour ranges and leap-day conversion;
+the hour is maintained as 0..23. Apple documents Gregorian as the default
+calendar and 86,400-second days, while conversion routines depend on the
+current script system. Thus default Gregorian month lengths/leap handling
+are API-supported evidence, conditional on that environment; there is no
+local hardcoded 30-day calendar.
+[Apple conversion documentation](https://developer.apple.com/library/archive/documentation/mac/OSUtilities/OSUtilities-95.html)
+
+The setter fills the year-through-weekday fields of a stack LongDateRec;
+it does not explicitly initialize the era/reserved fields before the OS
+call. No original execution establishes their contents or selected script
+system. These remain precise environmental dependencies, rather than
+grounds to assert every historical/alternate-calendar edge is proven.
+
+Nominal scheduling is the independent clock lane's eight 31-ms substeps
+per turn. Combining that witness with calendar conversion gives nominal
+3750 simulated seconds per 248-ms turn, approximately 5.71392 real seconds
+per simulated day at unit speed. Date transitions occur at sampled turns;
+catch-up, speed factor, pause and dropped debt remain clock-lane rules.
+
+Day constructor `0x116488` installs the day vtable whose type getter
+`0xe4808` returns 11; month constructor `0x1164a4` installs type getter
+`0xe4800` returning 12; year constructor `0x1164c0` uses `0xe47f8` returning
+13. These correct the phase-one month-constructor reference. Calendar day
+change calls the first at `0xe3fb0`, month change calls the second at
+`0xe4088`, and extracted year change calls the third at `0xe4148`.
+Each is posted through `0x11688c`. The bank registers for type 13 at
+`0xcb9f4–0xcba00`; dispatcher `0xfab68` reaches the bank handler
+`0xcc120` through `0xfac04`; its type-13 branch clears named
+`mProfitThisYear` at `0xcc1e4–0xcc1e8`. The reset therefore follows actual
+calendar-year change, not a twelve-month rolling-window statistic.
+
 ## Recommended implementation follow-up
 
 First add an explicit source/platform distinction before changing behavior
@@ -370,8 +563,10 @@ money/point truncation. Use the independently proved turn schedule to drive
 calendar, research and wear separately; do not convert all of them to
 day-end operations. Preserve distinct repair/life fields, health-scaled
 repair duration, assigned-cell cleaner jobs, state-filtered research and
-workload distribution. UI rating, full wear equation, exact research order,
-initial keys and Windows equivalence remain explicit evidence dependencies.
+workload distribution. Replace the rating approximation only in a rule set
+with an explicit source/platform distinction, preserving the proved count
+filters. Exact research order, preview wear behavior, initial keys and
+Windows equivalence remain explicit evidence dependencies.
 
 The manual supports monthly wages, real scientists, staff rest/strikes,
 preventive maintenance and three tickets per key. It does not prove the

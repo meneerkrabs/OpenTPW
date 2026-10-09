@@ -808,7 +808,7 @@ shift. Byte255 requests a computed insertion ordinal through the builder
 caller. Ordinal validity, complete cell-height ordering and the original
 TrackInfo.Direction schema/axis remain separate dependencies.
 
-This is not a complete flat-record codec. Sections with native type0==2 can
+This is not a complete flat-record codec. Sections with native ordinal+0==2 can
 write an auxiliary u32 count and u16 list before the ordinary record; flagged
 sections can be excluded. After topology, `0x39d84` calls`0x38da4` to serialize
 train/car/passenger data. The full flags remapping, float meanings, auxiliary
@@ -831,3 +831,73 @@ Twenty-three Python cases pass with the Mac executable and PC fixture enabled.
 This establishes original TPW save-field contracts and one empty PC boundary,
 not TPI COS serialization, a general save importer, full motion or runtime
 equivalence.
+
+## Topology serializer gates and failure boundaries
+
+`save_control_evidence.py`/`save-control-native.json` add104 control-flow
+checks over the132 base serializer checks. The auxiliary predicate uses
+section+0, a **section ordinal**. Builder`0x3611c/0x36124`
+copies the current edit counter into section+0 and`0x36554..0x3655c` advances
+that counter. The saver compares this ordinal with2 at`0x3998c`, then writes
+that node's u32 link count and its u16 link ordinals. The special block is not
+selected by a recovered type enum.
+
+Save performs that auxiliary write **before** the separate descriptor+4
+flag0x10 filter at`0x39a94`. The filter excludes a node from the header's
+section count and skips its34-byte record plus ordinary links; it does not
+undo an already written ordinal2 auxiliary block. Those predicates must not
+be collapsed into a single “save all visible nodes” rule.
+
+Load calls the car/model allocator`0x37968` and initial topology constructor
+`0x366bc` before reading the auxiliary count. It then targets the
+expected third node through controller+84→next+100→next+100. The branch at
+`0x3a330` on header flag0x2 skips only endpoint-pointer capture: **both arms
+reach the auxiliary read at0x3a36c**. Its u32 count controls u16 item reads,
+stored into that existing node's+180 word-array slots. Valid initial-node,
+filter and storage-size invariants still require their full constructors.
+
+| Stream component | Native write/read dependency |
+| --- | --- |
+| Auxiliary list | saver ordinal2; loader initial third node; 4-byte count plus2 bytes per item |
+| Ordinary sections | header offset22 count; saver excludes descriptor flag0x10; loader iterates that many34-byte records |
+| Ordinary links | saved section+176 count, narrowed to byte33; each item has its own2-byte I/O call |
+| Pointer restoration | after topology rebuild, link ordinals resolve through helper0x41dcc |
+| Train/car/passengers | separate nested helpers after section/link processing |
+
+The loader's builder-output gate`0x3a4f4` has another exact dependency. If the
+cell output is null, it jumps to`0x3a718`, advances the ordinary-record counter
+and skips the following link-item reads as well as updates. The valid input
+domain for that arm is unqualified; a decoder cannot assume either that every
+record creates a section or that malformed/skipped shapes consume the same
+number of bytes as successful shapes.
+
+Serialized link values are narrowed section ordinals, not runtime pointers.
+After rebuild, `0x3a8f0` calls`0x41dcc`: it starts at controller+60+24 (the
+section-list head) and follows next+100 the supplied number of times. The
+result replaces the temporary ordinal in the node's link array. Zero selects
+the head. Link bounds, null pointers and ordinal overflow are not qualified.
+Consequently a standalone34-byte parser would miss auxiliary bytes, varying
+link lists, topology-dependent pointer restoration and the later train data.
+
+Nine pinned short-I/O paths cover four write stages and five read stages.
+Each tests the native normalized transferred-unit count against1; mismatch
+sets return r3=0 and branches directly to the function epilogue. Save may
+already have emitted earlier fields. Load has already initialized models/
+topology or updated earlier link slots, and the auxiliary count is read
+directly into the existing node before its transfer check. The observed
+load-mode global is set at`0x3a1c0` and directly reset later at`0x3a72c`;
+tracked earlier failures bypass that direct reset. No rollback path is proved.
+Interprocedural diagnostic/helper side effects remain a separate boundary.
+
+Outer save`0x39d84` and load`0x3aa38` do not test the nested train helper's
+returned r3 at those callsites before proceeding. This does not prove that
+the complete application ignores all failures: shared/global I/O status and
+application cleanup need separate tracing. It does prevent claiming that
+every nested failure propagates through these wrapper return values.
+
+Twenty-four Python cases pass with original identity and the empty PC fixture
+enabled. The empty fixture corroborates none of these nonempty topology or
+failure branches. The next handoff is a nonempty PC save plus verified initial
+node/filter/count bounds, builder-output domain and nested/global I/O failure
+handling. Until then the complete decoder and production geometry/motion
+remain unsupported; no TPI COS layout is inferred.

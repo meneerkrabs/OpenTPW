@@ -159,7 +159,7 @@ def inspect(path):
                                "byte_selector": "cell stack insertion ordinal;255 selects computed fallback; not Direction",
                                "ordinal_consumer": {"function": 0x34d90, "section_field": 4, "cell_count": 48,
                                                     "cell_section_array_field": 52, "cell_pointer_in_section": 256}},
-            "additional_payload": ["type2 auxiliary u32 count/u16 list", "filtered linked sections", "train/car/passenger payload via0x38da4"],
+            "additional_payload": ["section-ordinal2 auxiliary u32 count/u16 list", "filtered linked sections", "train/car/passenger payload via0x38da4"],
             "unresolved": ["nonempty PC save fixture", "full section flags/float meanings", "complete topology/train codec",
                            "TrackInfo.Direction axis/enum", "type4 binding", "TPI COS format linkage", "full motion/runtime qualification"]}
 

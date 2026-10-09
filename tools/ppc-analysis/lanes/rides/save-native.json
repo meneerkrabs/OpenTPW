@@ -1,6 +1,6 @@
 {
   "additional_payload": [
-    "type2 auxiliary u32 count/u16 list",
+    "section-ordinal2 auxiliary u32 count/u16 list",
     "filtered linked sections",
     "train/car/passenger payload via0x38da4"
   ],

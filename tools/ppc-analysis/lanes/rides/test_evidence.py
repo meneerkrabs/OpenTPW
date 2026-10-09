@@ -13,6 +13,7 @@ import animation_evidence
 import motion_evidence
 import seat_evidence
 import save_evidence
+import save_control_evidence
 
 
 class RideEvidenceTests(unittest.TestCase):
@@ -52,6 +53,18 @@ class RideEvidenceTests(unittest.TestCase):
         self.assertEqual(floats, [13, 17, 21, 25, 29])
         self.assertIn("insertion ordinal", result["section_record"]["byte_selector"])
         self.assertGreaterEqual(result["checked_instruction_count"], 120)
+
+    @unittest.skipUnless(os.environ.get("OPENTPW_MAC_APP"), "set OPENTPW_MAC_APP for native topology I/O control flow")
+    def test_original_topology_auxiliary_and_failure_paths(self):
+        result = save_control_evidence.inspect(Path(os.environ["OPENTPW_MAC_APP"]))
+        self.assertTrue(result["ordinal2_auxiliary"]["always_read_per_controller"])
+        self.assertIn("not type enum", result["ordinal2_auxiliary"]["predicate"])
+        self.assertTrue(result["filter"]["count_excludes"])
+        self.assertEqual(result["record_gate"]["builder_output_gate"], 0x3a4f4)
+        self.assertEqual(result["link_resolution"]["helper"], 0x41dcc)
+        self.assertEqual(len(result["failure_paths"]), 9)
+        self.assertEqual({p["failure_result"] for p in result["failure_paths"]}, {0})
+        self.assertGreaterEqual(result["checked_instruction_count"], 100)
 
     @unittest.skipUnless(os.environ.get("OPENTPW_MAC_APP"), "set OPENTPW_MAC_APP for coaster motion witness")
     def test_original_motion_schema_and_boarding(self):

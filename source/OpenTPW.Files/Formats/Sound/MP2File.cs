@@ -33,6 +33,13 @@ public sealed class MP2File : ArchiveFile
 		Data = data;
 	}
 
+	/// <summary>
+	/// The MPEG frame stream after the entry header. <see cref="Header"/> (the first
+	/// header word) gives its offset; <see cref="SoundData"/> is read at a fixed offset
+	/// that does not match the 40-byte headers in the original speech banks.
+	/// </summary>
+	public byte[] FrameData => Data[Math.Min( Header, Data.Length )..];
+
 	public override byte[] GetData()
 	{
 		return Data;

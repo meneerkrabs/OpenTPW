@@ -62,8 +62,22 @@ internal static class InstallationDiscovery
 	private static ProcessStartInfo ChildStart( params string[] args )
 	{
 		var executable = Environment.ProcessPath ?? throw new InvalidOperationException( "The process executable is unavailable." );
-		var info = new ProcessStartInfo( executable ) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
-		if ( string.Equals( Path.GetFileNameWithoutExtension( executable ), "dotnet", StringComparison.OrdinalIgnoreCase ) )
+		var applicationHost = System.Reflection.Assembly.GetEntryAssembly() == typeof( Program ).Assembly;
+		var dotnetHost = Environment.GetEnvironmentVariable( "DOTNET_HOST_PATH" );
+		if ( string.IsNullOrWhiteSpace( dotnetHost ) && Environment.GetEnvironmentVariable( "DOTNET_ROOT" ) is { Length: > 0 } root )
+			dotnetHost = Path.Combine( root, OperatingSystem.IsWindows() ? "dotnet.exe" : "dotnet" );
+		return ChildStartForHost( executable, applicationHost, dotnetHost, args );
+	}
+
+	internal static ProcessStartInfo ChildStartForHost( string executable, bool applicationHost, string? dotnetHost, params string[] args )
+	{
+		var isDotnet = string.Equals( Path.GetFileNameWithoutExtension( executable ), "dotnet", StringComparison.OrdinalIgnoreCase );
+		// A native testhost is not the application's apphost. Launch the application
+		// assembly through dotnet instead of feeding internal setup arguments to it.
+		var managed = isDotnet || !applicationHost;
+		var host = isDotnet || !managed ? executable : string.IsNullOrWhiteSpace( dotnetHost ) ? "dotnet" : dotnetHost;
+		var info = new ProcessStartInfo( host ) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
+		if ( managed )
 			info.ArgumentList.Add( typeof( Program ).Assembly.Location );
 		foreach ( var argument in args )
 			info.ArgumentList.Add( argument );

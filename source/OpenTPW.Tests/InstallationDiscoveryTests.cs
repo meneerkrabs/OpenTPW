@@ -11,6 +11,28 @@ namespace OpenTPW.Tests;
 public class InstallationDiscoveryTests
 {
 	[TestMethod]
+	public void ExternalNativeTestHostLaunchesTheApplicationThroughDotnet()
+	{
+		var host = Path.Combine( "sdk", "dotnet.exe" );
+		var folder = "a folder with spaces";
+		var info = InstallationDiscovery.ChildStartForHost( "testhost.exe", false, host, InstallationDiscovery.InspectCommand, folder );
+		Assert.AreEqual( host, info.FileName );
+		Assert.AreEqual( typeof( Program ).Assembly.Location, info.ArgumentList[0] );
+		Assert.AreEqual( InstallationDiscovery.InspectCommand, info.ArgumentList[1] );
+		Assert.AreEqual( folder, info.ArgumentList[2] );
+		Assert.IsFalse( info.UseShellExecute );
+	}
+
+	[TestMethod]
+	public void ApplicationApphostKeepsItsOwnExecutableForSetupChildren()
+	{
+		var info = InstallationDiscovery.ChildStartForHost( "renamed-game.exe", true, "unused-dotnet", InstallationDiscovery.SearchCommand );
+		Assert.AreEqual( "renamed-game.exe", info.FileName );
+		Assert.AreEqual( 1, info.ArgumentList.Count );
+		Assert.AreEqual( InstallationDiscovery.SearchCommand, info.ArgumentList[0] );
+	}
+
+	[TestMethod]
 	public void InspectsSyntheticFoldersWithoutStartingTheGame()
 	{
 		var root = Path.Combine( Path.GetTempPath(), "opentpw-inspect-" + Guid.NewGuid().ToString( "N" ) );

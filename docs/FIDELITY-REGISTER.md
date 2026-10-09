@@ -14,7 +14,7 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **129 unresolved unique APPROX IDs**, 144 APPROX occurrences, 58 EXT occurrences, 62 DATA occurrences and 35 BIN occurrences.
+Current inventory: **129 unresolved unique APPROX IDs**, 144 APPROX occurrences, 59 EXT occurrences, 62 DATA occurrences and 35 BIN occurrences.
 
 Of these, 123 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
@@ -270,7 +270,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-002 | `source/OpenTPW/UI/Original/UiText.cs:57` | [APPROX:UI-002] which shipped font serves which role per tier — evidence needed: binary font use / captures |
 | UI-003 | `source/OpenTPW/UI/Original/UiModel.cs:68` | [APPROX:UI-003] state frames use the root pose (child translation dropped) — evidence needed: binary UI model drawing code |
 | UI-004 | `source/OpenTPW/UI/Original/UiModel.cs:138` | [APPROX:UI-004] back-to-front by Z per texture group — evidence needed: binary or capture of overlapping UI parts |
-| UI-005 | `source/OpenTPW/UI/Original/UiImages.cs:70` | [APPROX:UI-005] pink key + neighbour colour bleed for linear filtering — evidence needed: capture of UI edges at other resolutions |
+| UI-005 | `source/OpenTPW/UI/Original/UiImages.cs:76` | [APPROX:UI-005] pink key + neighbour colour bleed for linear filtering — evidence needed: capture of UI edges at other resolutions |
 | UI-006 | `source/OpenTPW/UI/Original/UiText.cs:144` | [APPROX:UI-006] all UI text/backdrop colours — evidence needed: captures of original screens |
 | UI-007 | `source/OpenTPW/UI/Original/UiWidgets.cs:73` | [APPROX:UI-007] drop shadow one text pixel down-right — evidence needed: captures of original screens |
 | UI-008 | `source/OpenTPW/UI/Original/UiWidgets.cs:300` | [APPROX:UI-008] purple_button as a mirrored end cap, upper half normal, lower half focused/pressed — evidence needed: capture of the original front-end buttons |
@@ -311,7 +311,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-031 | `source/OpenTPW/Hud/ParkHud.cs:352` | [APPROX:UI-031] one placement per menu selection; Level owns purchase/sale — evidence needed: original build-tool continuation |
 | UI-032 | `source/OpenTPW/Hud/ParkHud.cs:595` | [APPROX:UI-032] Wrap translated catalogue names within their slot at the integer text scale. |
 | UI-032 | `source/OpenTPW/UI/Original/UiWidgets.cs:213` | [APPROX:UI-032] small-font fallback and greedy wrap for long labels — evidence needed: captures of translated original screens |
-| UI-034 | `source/OpenTPW/UI/Original/UiImages.cs:64` | [APPROX:UI-034] a fully opaque texture on a transparent (flag 0x2) slot keys out black — evidence needed: the original's render state for flagged slots |
+| UI-034 | `source/OpenTPW/UI/Original/UiImages.cs:70` | [APPROX:UI-034] a fully opaque texture on a transparent (flag 0x2) slot keys out black — evidence needed: the original's render state for flagged slots |
 | UI-035 | `source/OpenTPW/Client/Movie/IntroPlaylist.cs:30` | Input already held when the sequence begins is ignored until released [APPROX:UI-035], so launching the game |
 
 ## Extension sites
@@ -372,8 +372,9 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | test-stub | `source/OpenTPW/Hud/HudStubs.cs:130` | [EXT:test-stub] price shown when Totem.sam cannot be read (the economy catalogue price is used when a park economy runs) |
 | texture-pack | `source/OpenTPW/Compat/GraphicsSettings.cs:268` | &lt;summary&gt;[EXT:texture-pack] Use the locally built upscaled texture pack (docs/TEXTURE-PACKS.md); off = original textures. Applies at the next start.&lt;/summary&gt; |
 | texture-pack | `source/OpenTPW/Render/Assets/TexturePack.cs:13` | [EXT:texture-pack] Upscaled replacement textures are an OpenTPW presentation option, not original behaviour. |
-| texture-pack | `source/OpenTPW/Render/Assets/TexturePackBuilder.cs:63` | [EXT:texture-pack] Builder for the optional local upscaled texture pack; original files are only read. |
+| texture-pack | `source/OpenTPW/Render/Assets/TexturePackBuilder.cs:68` | [EXT:texture-pack] Builder for the optional local upscaled texture pack; original files are only read. |
 | texture-pack | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:147` | [EXT:texture-pack] optional locally built upscaled textures; off unless a pack exists and the player turns it on |
+| texture-pack | `source/OpenTPW/UI/Original/UiImages.cs:29` | [EXT:texture-pack] the optional local pack replaces interface art too (docs/TEXTURE-PACKS.md); UVs are relative, so a larger image drops in. |
 | upscaling | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:34` | [EXT:upscaling] render-scale steps (presets 77/67/59/50 from the display slice plus 5% steps) |
 | world-capture | `source/OpenTPW/Client/WorldCapture.cs:13` | [EXT:world-capture] developer/screenshot command, not original behaviour |
 

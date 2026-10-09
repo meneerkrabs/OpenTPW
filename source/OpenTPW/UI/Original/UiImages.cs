@@ -26,7 +26,13 @@ public static class UiImages
 				throw new InvalidDataException( $"UI image {path} has an unexpected size." );
 			return (image.Width, image.Height, image.Data);
 		}
-		if ( path.EndsWith( ".wct", StringComparison.OrdinalIgnoreCase ) )
+		// [EXT:texture-pack] the optional local pack replaces interface art too (docs/TEXTURE-PACKS.md); UVs are relative, so a larger image drops in.
+		if ( path.EndsWith( ".wct", StringComparison.OrdinalIgnoreCase ) && TexturePack.Find( path ) is { } replacement )
+		{
+			var image = ImageResult.FromMemory( File.ReadAllBytes( replacement ), ColorComponents.RedGreenBlueAlpha );
+			(width, height, data) = (image.Width, image.Height, image.Data);
+		}
+		else if ( path.EndsWith( ".wct", StringComparison.OrdinalIgnoreCase ) )
 		{
 			var texture = new TextureFile( path ).Data;
 			(width, height, data) = (texture.Width, texture.Height, (byte[])texture.Data.Clone());

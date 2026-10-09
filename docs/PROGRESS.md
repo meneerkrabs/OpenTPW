@@ -195,3 +195,28 @@ Terrein/save-slice (9 oktober 2026, worktree `terrain`):
   479 passed, 10 skipped (opt-in MTR/native-shadertests); zonder assets 397 passed,
   92 skipped. Metal smoke-test geslaagd voor sandbox (script, animatie, tekst,
   save/load) en `--load-original-level jungle`/`fantasy`.
+## Talen (9 oktober 2026)
+
+- Alle vijf meegeleverde talen (Engels, Deens, Frans, Duits, Zweeds) decoderen:
+  `.str` gebruikt nu `MBToUni.dat` uit de eigen taalmap (Deens/Zweeds 248 tekens,
+  overige 249). Eerder waren 2.254/2.358 Deense en 2.268/2.358 Zweedse strings
+  verminkt, plus 3 Franse (œ) en 1 Duitse (š). De 24-bit stringlengte wordt volledig
+  gelezen; UITEXT-strings > 255 tekens werden afgekapt (ook Engels). Tekentabel
+  wordt eenmaal opgebouwd in plaats van per teken.
+- Taalkeuze: `--language`, `OPENTPW_LANGUAGE` of instelling `Language`; standaard
+  Engels als geïnstalleerd, anders de geïnstalleerde taal. Andere talen via
+  `--language-data` / `OPENTPW_LANGUAGE_DATA`: een read-only, hoofdletterongevoelige
+  overlay van de uitgepakte CD-mappen `<Lang>/data` en `<Lang>/Meshes`; er wordt
+  niets naar de gamemap of git gekopieerd. Strings en fonts (Localization,
+  sandboxpaneel) volgen de keuze; spraak/LIP/banners zijn alleen resolvebaar,
+  niet afgespeeld/getekend.
+- Tests: synthetische reader- en resolutietests; met de CD-data per taal 21
+  stringtabellen / 2.358 strings, gepinde voorbeelden ("Gå Online", "Koppla upp",
+  "d'œuvre", "Unfuhg Gibsniš"), glyphdekking in alle 33 fonts per taal, LIP/banners.
+  Native Metal-smoketest slaagt in Engels en Duits (readbackverschil 0).
+  Volledige suite: zonder assets 394 passed / 98 skipped; met `OPENTPW_GAME_PATH`
+  466 / 26; plus `OPENTPW_LANGUAGE_DATA` 482 / 10 (de 10 zijn de opt-in native
+  shader- en MTR-tests); 0 failed.
+- Open: geen originele menu-/UI-schermen, geen taalwissel tijdens het spel,
+  `UniToMB.dat` (tekstinvoer) ongelezen, andere edities niet onderzocht. Zie
+  [LANGUAGES.md](LANGUAGES.md).

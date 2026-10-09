@@ -23,6 +23,20 @@ Native dependencies must match the selected process architecture.
 Engine content is copied beside the executable; shader files/includes resolve
 from the executable directory rather than the shell's current directory.
 
+## Language
+
+```sh
+bash scripts/run.sh --game-path '/path/to/Theme Park World' --language German --language-data /path/to/extracted-cd
+```
+
+Text uses English when installed, otherwise the installed language.
+`--language` (or `OPENTPW_LANGUAGE`) picks English, Danish, French, German or
+Swedish. Non-English languages other than the installed one come from the
+original CD: extract its `<Lang>/data` and `<Lang>/Meshes` folders outside the
+repository and pass the extraction folder (or one `<Lang>/data` folder) with
+`--language-data` (or `OPENTPW_LANGUAGE_DATA`). Nothing is copied into the game
+folder. See LANGUAGES.md for the 7-Zip command, defaults and current limits.
+
 ## Windows
 
 ```powershell
@@ -36,6 +50,8 @@ dotnet test source/OpenTPW.Tests/OpenTPW.Tests.csproj
 OPENTPW_GAME_PATH='/path/to/Theme Park World' dotnet test source/OpenTPW.Tests/OpenTPW.Tests.csproj
 ```
 
+Set `OPENTPW_LANGUAGE_DATA` to the extracted CD language folders to also run the
+Danish/French/German/Swedish string and font tests (LANGUAGES.md).
 Asset-dependent tests are inconclusive when original files are unavailable; CPU
 tests do not require them. An asset-test skip is not a compatibility pass.
 The workflow builds/tests all three host OSes, but does not qualify GPU rendering
@@ -120,8 +136,9 @@ readbacks to show changed node poses and pixels, checks close/reset, removes/rep
 save/load in an isolated temporary directory. It exits nonzero on failure or
 premature window closure. GPU readback checks nonblack textured terrain and
 writes `artifacts/native-smoke-park.png` and `artifacts/native-smoke-terrain.png`
-relative to the current directory. The BF4 text panel (original fonts and strings)
-must match its CPU composite in readback; its crop is `artifacts/native-smoke-text.png`.
+relative to the current directory. The BF4 text panel (original fonts and strings
+in the selected language; add `--language German --language-data <dir>` to check
+another one) must match its CPU composite in readback; its crop is `artifacts/native-smoke-text.png`.
 These captures omit the ImGui UI and remain ignored;
 they are not proof of interactive UI correctness or original-game visual fidelity.
 The nine native shader tests verify MSL/HLSL/GLSL material and text binding names without

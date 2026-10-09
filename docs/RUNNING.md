@@ -144,6 +144,21 @@ they are not proof of interactive UI correctness or original-game visual fidelit
 The nine native shader tests verify MSL/HLSL/GLSL material and text binding names without
 creating a GPU device; omit the opt-in variable when matching libraries are absent.
 
+## Advisor speech
+
+```sh
+bash scripts/run.sh --game-path '/path/to/Theme Park World' --advisor-say 1
+bash scripts/run.sh --game-path '/path/to/Theme Park World' --smoke-test --advisor-say 1
+```
+
+`--advisor-say N` (1–637) draws the original advisor model in the bottom-left
+corner, plays global speech clip `sp_NNN` through SDL2 audio and switches its mouth
+between `Mouth - Aah` (talking) and `Mouth - Normal` from the clip's `.LIP` marks.
+Without an audio device the mouth follows a wall clock silently. With `--smoke-test`
+it runs until the clip ends, checks the clock against wall time and the mouth sequence,
+and writes `artifacts/native-smoke-advisor-{talking,closed}.png`. The advisor's
+original pose, animation, mouth-shape choice and triggers are not reproduced; see LIPS.md.
+
 ## Development packages
 
 ```sh

@@ -32,7 +32,7 @@ OpenTPW is currently in a very early stage of development, and is not yet playab
 |---------------------------------------------------------|--------|
 | Textures ([.WCT](https://opentpw.gu3.me/formats/wct.html))                    | ✅     |
 | Settings ([.SAM](https://opentpw.gu3.me/formats/sam.html))                    | ✅     |
-| Sounds ([.SDT](https://opentpw.gu3.me/formats/sdt.html), .MP2)         | ✅     |
+| Sounds ([.SDT](https://opentpw.gu3.me/formats/sdt.html), .MP2)         | ⚠️     |
 | Strings ([.BFMU](https://opentpw.gu3.me/formats/bfmu.html), [.BFST](https://opentpw.gu3.me/formats/bfst.html), [.BFUM](https://opentpw.gu3.me/formats/bfum.html)) | ✅     |
 | Models ([.MD2](https://opentpw.gu3.me/formats/m3d2.html))                      | ⚠️     |
 | Map Data ([.MAP](https://opentpw.gu3.me/formats/map.html))                    | ⚠️     |
@@ -40,7 +40,7 @@ OpenTPW is currently in a very early stage of development, and is not yet playab
 | Save Files ([.TPWS](https://opentpw.gu3.me/formats/tpws-ints-lays.html))                | ⚠️     |
 | Fonts ([.BF4](https://opentpw.gu3.me/formats/bf4.html))                      | ⚠️     |
 | Lip Sync ([.LIP](https://opentpw.gu3.me/formats/lips.html))                   | ⚠️     |
-| Materials ([.MTR](https://opentpw.gu3.me/formats/mtr.html))                   | ⚠️     |
+| Banner mesh companions ([.MTR](https://opentpw.gu3.me/formats/mtr.html))      | ⚠️     |
 | Video ([.TQI/.TGQ](https://opentpw.gu3.me/formats/tqi.html))                  | ⚠️     |
 
 ### Documentation
@@ -53,10 +53,14 @@ vertex animation unverified); MAP reads the 128×128 TP2M terrain grids
 opcodes handled, 51 of them through an unimplemented-effect hook; the sandbox
 Totem runs its original script); the Jungle TPWI payload's cell grid and placed
 objects are imported read-only into an original level view
-(`--load-original-level`; money, guests and other sections opaque); `.LIP`
-lip-sync timelines and ISO-only `.MTR` files are read structurally (meaning
-unconfirmed); all nine TGQ movies decode audio bit-exact and video close to, not
-bit-identical with, an external reference, without playback. Evidence:
+(`--load-original-level`; money, guests and other sections opaque); `.LIP` marks
+are microsecond talking/silence toggles, inferred from the decoded speech audio. They
+drive the original advisor's mouth with SDL audio via `--advisor-say N`; the original
+mouth-shape choice is unknown. ISO-only `.MTR` files decode as topology and matrices
+redundant with their banner `.MD2` (no material data; runtime use unknown). SDT speech
+and music (MPEG-2 Layer II) decode within 1 LSB of an external decoder, but Layer I
+sound effects do not decode yet. All nine TGQ movies decode audio bit-exact and video
+close to, not bit-identical with, an external reference, without playback. Evidence:
 [MD2](docs/MD2-MODELS.md), [MAP](docs/MAP.md), [RSE](docs/RSE-SCRIPTS.md) / [RSE VM](docs/RSE-VM.md),
 [TPWS payload](docs/TPWS-PAYLOAD.md), [LIPS](docs/LIPS.md), [MTR](docs/MTR.md),
 [TGQ](docs/TGQ-MOVIES.md).

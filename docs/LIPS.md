@@ -1,8 +1,11 @@
 # LIPS: advisor lip-sync marks
 
-October 9, 2026. Status: strict CPU reader for `.LIP` files implemented and checked
-against every located original file; **advisor animation/synchronization not
-implemented and mark semantics not verified**. No original data is in the repository.
+October 9, 2026. Status: strict `.LIP` reader; mark unit and toggle meaning
+**inferred from the decoded speech audio** (not from the original runtime);
+`--advisor-say N` renders the original advisor model with a LIP-driven
+talking/closed mouth synced to SDL audio playback. The mouth **shape** the original
+picks while talking, the advisor's animation/pose and its in-game triggers are not
+known. No original data is in the repository.
 
 ## Where the data is
 
@@ -32,50 +35,115 @@ u32 LE 0xFFFFFFFF                terminator, last word only
 Every one of the 3,207 located files (643 English + 4 × 641 ISO localized)
 meets these rules: length is a non-zero multiple of eight bytes. That means `n` is always
 odd (1–39 marks in total; English global: 156 files have 1 mark, 185 have 3, max 35).
-Some files start at mark 0 (18 English files).
+Some files start at mark 0 (16 English global files plus the jungle and space level files).
 
-Observed scale, not verified: the last mark divided by 10^6 is ≤ the paired MP2
-duration (bitrate × data size; 22,050 Hz MPEG-2 Layer II, mostly 48 kbps) for 642/643 English
-files and every French/German/Swedish file. The ratio max is ≈0.998 (e.g. `sp_630`: last mark
-18,514,104 vs 18.65 s audio). This is consistent with **microseconds from speech start**.
+## Meaning (inferred from audio, October 9, 2026)
+
+**Marks are microseconds from the start of the paired speech clip. The advisor is
+talking from 0 until the first mark; every mark toggles talking/silent.** With the
+always-odd count the last mark ends the final utterance; a leading mark 0 means the
+clip starts silent. This is a voice-activity timeline, not phonemes or visemes.
+
+Evidence (separate Python/numpy analysis of every clip decoded with ffmpeg; repeated
+in C# by `LipSyncTimelineTests` with the new decoder):
+
+- Loudness: in the 638 decodable English global clips, 10 ms windows inside talking
+  intervals average 70.2 dB, silent ones 41.9 dB (re 1 LSB; C# test). Per interval
+  pair, a silent interval is louder than the following talking one in < 1 %.
+  Danish/German/Swedish/French ISO clips give 23–34 dB differences.
+- Transitions: at odd-index marks (silent→talking) energy rises in 97 % of 1,291
+  cases (+20.6 dB mean, 50 ms before/after); at even-index marks it falls in 85 %.
+  Talk onsets lie within 50 ms of a mark in 98.8 % of cases (median −4 ms), offsets
+  in 96.3 % (median +7 ms).
+- Scale: rescaling marks by 0.95/0.98/1.00/1.02/1.05 gives talking-minus-silent
+  differences of 9.6/18.8/**31.5**/27.5/12.4 dB; the peak is exactly at 1 µs per unit
+  in all five languages and for the four level `sp_001.LIP` against their level
+  speech banks (20–31 dB).
+- Fit: the last mark lies inside the clip for 637/638 decodable English global clips
+  (exception: `sp_478`, 1.05×; its byte-identical space-level copy fits the
+  space speech). Danish `sp_127`/`sp_427` overrun by 3 %/0.3 %.
+
 Each level `sp_001.LIP` is byte-identical to one global member: fantasy = `sp_473`,
-hallow = `sp_476`, jungle = `sp_479`, space = `sp_478`. The only English overrun is
-global `sp_478` (1.05× its global MP2). Its identical space copy fits the space-level
-audio (0.9985×). That suggests these marks were authored for the level speech. Danish
-`sp_127`/`sp_427` overrun by 3%/0.3%. An odd count plus 8-byte alignment suggests open/close toggles or
-(start, end) intervals with an open-ended final interval. That is a **hypothesis**: there is no
-runtime trace, no executable reference, and no upstream description.
+hallow = `sp_476`, jungle = `sp_479`, space = `sp_478`. How the original chooses
+between global and level copies, and how it maps talking to the five mouth meshes,
+are not known (no runtime trace; `strings tp.exe` has no `lip`/`phon`/`viseme`).
 
-## Reader
+## Speech audio decoding
 
-`LipSyncFile` (`source/OpenTPW.Files/Public/LipSyncFile.cs`) returns `Marks` as raw
-`uint` values. It does not convert them to time. Input is capped at 64 KiB
-(largest observed file: 160 bytes). It rejects lengths that are not positive
-multiples of 8, a missing terminator, an early terminator and marks that do not
-strictly increase. Caller-owned streams stay open, and short nonseekable reads work. WAD
-access reuses the existing `WadArchive` (members are stored uncompressed).
+The speech banks are MPEG-2 (LSF) Layer II, 22,050 Hz mono, 48 kbps (640 of 641
+global entries; `z_error` is Layer I). Music banks are LSF Layer II stereo; 2,642
+sound-effect entries are Layer I (not decoded). `Mp2Decoder`
+(`source/OpenTPW.Files/Formats/Sound/Mp2Decoder.cs`) is a clean-room LSF Layer II
+decoder written from the ISO/IEC 11172-3/13818-3 process. Its synthesis window is
+the 257 standard Table 3-B.3 coefficients as multiples of 2⁻¹⁶ (values taken from the
+locally installed ffmpeg's data table and checked against the standard's
+D[1] = −0.000015259, D[256] = 1.144989014). The LSF allocation table's 4-bit row
+includes the 7-level class: with it every frame of every corpus stream consumes its
+payload to within 23 spare bits, unlike the tested alternatives.
 
-Tests (`LipSyncFileTests`): 12 synthetic tests always run. Five private tests check the
-pinned `lips.wad` hash, all 639 members (3,223 marks in total) and pinned values
-(`sp_001` = 2,226,893 / 2,812,380 / 4,058,820; `z_z_ouch1` = 305,804) plus the four level files
-(hash, count, first/last). These are inconclusive without `OPENTPW_GAME_PATH`. 17/17 pass with it.
+Verification: all 965 corpus Layer II streams that ffmpeg also decodes (speech and
+stereo music; same-name duplicates and 1-frame clips ffmpeg rejects excluded) decode to the same length as ffmpeg's `mp2` decoder with a maximum difference of
+**1 LSB** (≈81 dB SNR on speech). MPEG-1, joint stereo, free format, Layer I/III and
+MPEG-2.5 are rejected (no TPW Layer II stream uses them, so their tables would be
+unverified); CRC words are skipped, not checked. `MP2File.FrameData` slices the
+entry at its header-size word; the legacy `SoundData` offset does not fit the
+40-byte speech headers.
 
-## Search method
+## Advisor runtime slice
+
+`--advisor-say N` (1–637) adds `Advisor` (`source/OpenTPW/World/Advisor.cs`) to the
+park scene: `global/advisor.wad/Advisor.MD2` is drawn in a bottom-left viewport
+with its own camera. The model has five co-located mouth meshes (`Mouth - Normal`,
+`- Aah`, `- Eee`, `- Ooh`, `- Sss`, textures `Mouth1a`–`e`) and `ShutEye` blink meshes.
+Talking shows `Mouth - Aah`, silence `Mouth - Normal`. Using only `Aah` is a
+presentation choice: LIP data carries no shape. Body, head, eyes, antennae and hands are
+shown; the seven hats, spatula, bow tie and blink meshes are hidden. All nodes are
+composed through the hierarchy; with the root `Position Dummy` the model is Y-up
+facing −Z. Triangle corner order is reversed for the renderer's clockwise front faces.
+No MD2 animation is played (the `Advisorm1`–`m15` animation members are not decoded;
+that is the MD2 animation track work). Mouth switching is a mesh-visibility choice
+per frame and can later be driven by decoded tracks.
+
+`SpeechAudioPlayer` queues the decoded PCM on an SDL2 audio device (`SDL_QueueAudio`
+through Veldrid's SDL2 loader, no new dependency). The lip-sync position is bytes
+consumed from the queue, so it leads the speaker by up to one 1,024-frame buffer
+(≈46 ms). Playback starts at the first rendered advisor frame. Without an audio
+device, a wall clock drives the mouth and nothing is heard.
+
+On macOS arm64 (Metal) `--smoke-test --advisor-say 1` passed: 4.25 s wall time for
+4.23 s of speech, mouth sequence Aah > Normal > Aah > Normal, and 491 changed
+pixels in the projected mouth rectangle between the talking/closed captures
+`artifacts/native-smoke-advisor-{talking,closed}.png`. With
+`SDL_AUDIODRIVER=nosuchdriver`, `sp_473` (27 marks) passed on the wall clock (one
+5.4 ms interval is shorter than a frame and is not seen). Original visual fidelity
+(lighting, scale, placement, idle animation) is not compared.
+
+## Reader and tests
+
+`LipSyncFile` returns raw `Marks` (input cap 64 KiB; rejects lengths that are not
+positive multiples of 8, missing/early terminators and nonincreasing marks; streams
+stay open; short nonseekable reads work). `LipSyncTimeline` applies the inferred meaning:
+`IsTalking(µs or TimeSpan)` (even number of marks at or before the position) and
+`TalkingIntervals`.
+
+Tests: `LipSyncFileTests` (12 synthetic + 5 private corpus), `LipSyncTimelineTests`
+(5 synthetic + 1 corpus loudness test), `Mp2DecoderTests` (13 synthetic incl. a unit-DC-gain
+check of the window/matrixing + 2 corpus: all 640 Layer II speech clips decode;
+`sp_001` samples and RMS match the external decoder ±1), `AdvisorTests` (8 synthetic
+incl. the 60 Hz mouth-change frames 134/169/244 for `sp_001` + 2 private: model
+orientation/co-located mouths and loading `sp_001` through the game file system).
+Private tests are inconclusive without `OPENTPW_GAME_PATH`.
+
+## Search method (location)
 
 - Upstream `opentpw-docs@34f357f` `src/formats/lips.md`: title only, `TODO`.
-- Loose `Data` walk (801 files) by extension and name (`*lip*`, `*phn*`, `*lsp*`).
-- An independent Python DWFB + RefPack scan of all 312 WADs (13,394 members, 6,804
-  RefPack; no decode errors). It checked content shape (u32 strictly increasing +
-  `FFFFFFFF`, len % 8 == 0) and keywords `.lip`/`lips` in non-LIP members. No LIP-shaped data
-  exists outside `.LIP` members, and no data file (SAM/RSE/TXT/…) names LIP files.
+- Loose `Data` walk (801 files) and an independent Python DWFB + RefPack scan of all
+  312 WADs (13,394 members): no LIP-shaped data outside `.LIP` members.
 - `7z l` of `TPWORLD.ISO` (2,989 entries): 20 `.LIP` loose files and 5 `lips.WAD`.
-- `strings tp.exe`: no `lip`/`phon`/`viseme` strings. The 285 KB launcher appears to be
-  packed; `TP.ICD` was not inspected. The runtime load path and selection logic are
-  still unknown.
 
 ## Remaining gates
 
-The unit and meaning of marks (toggle vs. interval, mouth shape) need original runtime
-observation. We also need to know how the game picks the global or level LIP for the same `sp_NNN`.
-After that comes advisor mouth animation with audio-clock sync and a comparison against captures.
-Do not claim advisor lip-sync until then.
+Original-runtime observation of the mouth shape choice while talking, global vs
+level LIP selection, advisor triggers/placement/animation and A/V latency. Decoded
+MD2 animation members (`Advisorm*.MD2`) for idle/talk poses. Layer I decoding for
+sound effects and `z_error`. Capture comparison before claiming original fidelity.

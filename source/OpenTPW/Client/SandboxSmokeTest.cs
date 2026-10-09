@@ -18,6 +18,12 @@ internal sealed class SandboxSmokeTest : IDisposable
 	private byte[]? earlyPixels;
 	private System.Numerics.Matrix4x4[]? earlyPose;
 	private float earlyTick;
+	private bool guestsVerified;
+	private int guestCaptureFrame;
+	private byte[]? guestPixels;
+	private double motionScriptMilliseconds;
+	private readonly System.Diagnostics.Stopwatch sinceMotion = new();
+	private const double MaximumSecondsUntilRelease = 60;
 
 	public SandboxSmokeTest( Level level )
 	{
@@ -36,6 +42,22 @@ internal sealed class SandboxSmokeTest : IDisposable
 			Console.Error.WriteLine( $"Native sandbox smoke test failed: timed out after {MaximumSeconds} s at frame {frame}; display {Render.Metrics}, {Render.Scaling.Describe()}" );
 			Environment.Exit( 1 );
 		}, null, TimeSpan.FromSeconds( MaximumSeconds ), System.Threading.Timeout.InfiniteTimeSpan );
+		if ( level.Guests != null )
+			SpawnGuestsNearRide( level.Guests, level.PlacedRide );
+	}
+
+	/// <summary>Seeds visitors on the path cells around the Totem's entrance so its script sees passengers early.</summary>
+	private static void SpawnGuestsNearRide( GuestSimulation guests, PrototypeRide ride )
+	{
+		Require( guests.Grid.WalkableCount > 0 && guests.Attractions.Contains( ride.Visitors ), "register the Totem with the guest simulation" );
+		var (ex, ey) = ride.Visitors.EntranceCell;
+		var cells = Enumerable.Range( 0, guests.Grid.CountX * guests.Grid.CountY )
+			.Select( index => (X: index % guests.Grid.CountX, Y: index / guests.Grid.CountX) )
+			.Where( cell => guests.Grid.Distance( cell.X, cell.Y, ex, ey ) is >= 1 and <= 4 )
+			.OrderBy( cell => guests.Grid.Distance( cell.X, cell.Y, ex, ey ) ).ThenBy( cell => cell.Y ).ThenBy( cell => cell.X ).ToArray();
+		Require( cells.Length > 0, "find path cells near the Totem entrance" );
+		for ( var index = 0; index < 10; index++ )
+			guests.SpawnInPark( cells[index % cells.Length].X, cells[index % cells.Length].Y );
 	}
 
 	private const int MaximumSeconds = 180;
@@ -73,9 +95,31 @@ internal sealed class SandboxSmokeTest : IDisposable
 		{
 			// Totem.RSE waits up to 10 s for passengers before it triggers its main animation.
 			if ( level.PlacedRide!.MotionHeight > 0 )
+			{
 				motionFrame = frame;
+				motionScriptMilliseconds = level.PlacedRide.Script.TimeMilliseconds;
+				sinceMotion.Start();
+				if ( level.Guests != null && !guestsVerified )
+				{
+					var riders = level.PlacedRide.Script[RideVariables.VAR_ONRIDE];
+					Log.Trace( $"Totem started at script time {motionScriptMilliseconds:F0} ms with {riders} passenger(s); {level.PlacedRide.Visitors.BoardedTotal} boarded so far." );
+					Require( riders > 0 && level.PlacedRide.Visitors.Riders.Count == riders, "Totem.RSE sees real guests on board (VAR_ONRIDE)" );
+					Require( motionScriptMilliseconds < 10_000, "guests fill the Totem before its 10 s passenger time-out" );
+				}
+			}
 			else
 				Require( sinceOpened.Elapsed.TotalSeconds < MaximumSecondsUntilMotion, "original Totem script starts the ride motion" );
+			return;
+		}
+		if ( level.Guests != null && !guestsVerified )
+		{
+			UpdateGuestPhase( level.Guests );
+			if ( guestsVerified )
+			{
+				// Run the animation/close/remove checks on the next ride cycle.
+				motionFrame = 0;
+				sinceOpened.Restart();
+			}
 			return;
 		}
 		var step = frame - motionFrame;
@@ -128,8 +172,45 @@ internal sealed class SandboxSmokeTest : IDisposable
 			completed = true;
 			Log.Trace( level.OriginalPark == null
 				? $"Native sandbox smoke test passed: {frame} frames, original ride and RSE script, script-triggered motion, original animation readback, close, remove, isolated save/load, BF4 text and GPU readback; {displaySummary}."
-				: $"Native original-level smoke test passed: {frame} frames, {level.OriginalPark.LevelName} terrain/import, MAP/save build rules, original ride and RSE script, animation readback, close, remove, BF4 text and GPU readback; {displaySummary}." );
+				: $"Native original-level smoke test passed: {frame} frames, {level.OriginalPark.LevelName} terrain/import, MAP/save build rules, original ride and RSE script, guests boarding/riding/released by Totem.RSE, guest sprite readback, animation readback, close, remove, BF4 text and GPU readback; {displaySummary}." );
 			Render.Window.SdlWindow.Close();
+		}
+	}
+
+	/// <summary>
+	/// Waits until Totem.RSE releases a rider through VAR_LETMEOFF, then compares GPU readback with and
+	/// without the guest sprites.
+	/// </summary>
+	private void UpdateGuestPhase( GuestSimulation guests )
+	{
+		var ride = level.PlacedRide!;
+		if ( guestPixels == null )
+		{
+			if ( ride.Visitors.ReleasedTotal == 0 )
+			{
+				Require( sinceMotion.Elapsed.TotalSeconds < MaximumSecondsUntilRelease, "Totem.RSE releases its riders through VAR_LETMEOFF" );
+				return;
+			}
+			Require( level.GuestRenderer != null && level.GuestRenderer.DrawnGuests > 0, "draw guest sprites" );
+			guestPixels = CaptureFrame( "original-guests.png" ).Pixels;
+			level.GuestRenderer!.Visible = false;
+			guestCaptureFrame = frame;
+			return;
+		}
+		if ( frame == guestCaptureFrame + 1 )
+		{
+			var hidden = CaptureFrame( "original-guests-hidden.png" ).Pixels;
+			level.GuestRenderer!.Visible = true;
+			var changed = 0;
+			for ( var index = 0; index < hidden.Length; index += 4 )
+				changed += hidden.AsSpan( index, 3 ).SequenceEqual( guestPixels.AsSpan( index, 3 ) ) ? 0 : 1;
+			var stats = guests.GetStatistics();
+			Log.Trace( $"Guests: {guests.Guests.Count} total, {stats.InPark} in park ({stats.Walking} walking, {stats.Queueing} queueing, {stats.OnRides} riding), {stats.Arriving} arriving, {stats.Leaving} leaving; "
+				+ $"{stats.Admissions} admissions, Totem boarded {ride.Visitors.BoardedTotal}/released {ride.Visitors.ReleasedTotal}; sprite pixels in readback: {changed}." );
+			Require( changed > 200, "guest sprites change the GPU readback" );
+			Require( guests.Guests.Any( guest => guest.IsVisible && guests.Grid.IsWalkable( guest.Cell.X, guest.Cell.Y ) && guest.State is GuestState.WalkingAround or GuestState.GoingToRide or GuestState.ExitingRide ), "guests walk the imported paths" );
+			Require( stats.Admissions > 0 || stats.Arriving > 0, "guests arrive from the bus stops" );
+			guestsVerified = true;
 		}
 	}
 

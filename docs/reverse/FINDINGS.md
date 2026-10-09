@@ -202,3 +202,8 @@ candidate while examining `bullfrog_shared`; it attempted an out-of-range
 name read. The evidence above uses explicit exports and loader relocations
 instead. General heuristic function boundaries remain untrusted, as already
 noted in the reader limitations.
+
+## See also
+
+[RIDE-WEAR.md](RIDE-WEAR.md): SAM schema records and slot layout, and the ride wear functions found with
+Ghidra in `SimThemePark.data` (ECON-023 evidence).

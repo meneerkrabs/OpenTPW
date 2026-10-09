@@ -14,6 +14,20 @@ public class BaseFileSystem
 		Directory.CreateDirectory( basePath );
 	}
 
+	/// <summary>
+	/// Read-only fallback for files missing from this root (e.g. <c>--cd-data</c> movies and music):
+	/// maps a relative path to another file system and its on-disk (case-corrected) relative path, or
+	/// null. Only <see cref="OpenRead"/>, <see cref="FileExists"/> and <see cref="GetSize"/> consult it;
+	/// directory listings stay those of this root.
+	/// </summary>
+	public Func<string, (BaseFileSystem FileSystem, string RelativePath)?>? FallbackResolver { get; set; }
+
+	private bool ExistsHere( string absolutePath ) =>
+		File.Exists( absolutePath ) || Directory.Exists( absolutePath ) || !string.IsNullOrEmpty( FindArchivePath( absolutePath ).ArchivePath );
+
+	private (BaseFileSystem FileSystem, string RelativePath)? Fallback( string relativePath, string absolutePath ) =>
+		FallbackResolver != null && !ExistsHere( absolutePath ) ? FallbackResolver( GetRelativePath( absolutePath ) ) : null;
+
 	public void RegisterArchiveHandler<T>( string extension ) where T : IArchive
 	{
 		archiveHandlers[extension] = typeof( T );
@@ -37,6 +51,8 @@ public class BaseFileSystem
 	public bool FileExists( string relativePath )
 	{
 		var absolutePath = GetAbsolutePath( relativePath );
+		if ( Fallback( relativePath, absolutePath ) is { } fallback )
+			return fallback.FileSystem.FileExists( fallback.RelativePath );
 		return File.Exists( absolutePath );
 	}
 
@@ -66,6 +82,8 @@ public class BaseFileSystem
 	public Stream OpenRead( string relativePath )
 	{
 		var absolutePath = GetAbsolutePath( relativePath );
+		if ( Fallback( relativePath, absolutePath ) is { } fallback )
+			return fallback.FileSystem.OpenRead( fallback.RelativePath );
 		var (archivePath, internalPath) = FindArchivePath( absolutePath );
 
 		if ( !string.IsNullOrEmpty( archivePath ) )
@@ -80,6 +98,8 @@ public class BaseFileSystem
 	public long GetSize( string relativePath )
 	{
 		var absolutePath = GetAbsolutePath( relativePath );
+		if ( Fallback( relativePath, absolutePath ) is { } fallback )
+			return fallback.FileSystem.GetSize( fallback.RelativePath );
 		var (archivePath, internalPath) = FindArchivePath( absolutePath );
 
 		if ( !string.IsNullOrEmpty( archivePath ) )

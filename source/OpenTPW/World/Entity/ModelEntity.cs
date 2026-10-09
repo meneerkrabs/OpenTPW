@@ -36,7 +36,8 @@ public partial class ModelEntity : Entity
 
 			_padding0 = 0,
 			_padding1 = 0,
-			_padding2 = 0,
+			// test.shader g_flViewDistanceScale: fog distance multiplier from the graphics settings (1 = unchanged).
+			_padding2 = CompatibilityRuntime.RenderQuality.ViewDistanceScale,
 		};
 
 		Model.Material.Set( "ObjectUniformBuffer", uniformBuffer );

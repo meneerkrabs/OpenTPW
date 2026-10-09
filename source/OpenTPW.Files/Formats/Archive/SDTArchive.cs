@@ -8,6 +8,20 @@ public class SdtArchive : IArchive
 	public byte[] buffer;
 	public List<MP2File> soundFiles;
 
+	/// <summary>Maximum entry count accepted from the header (the largest shipped bank holds far fewer).</summary>
+	public const int MaximumEntryCount = 65536;
+	/// <summary>Smallest entry header: the two sizes and the 16-byte name (shipped headers are 40 bytes).</summary>
+	public const int MinimumEntryHeaderBytes = 24;
+
+	/// <summary>
+	/// Entries that were skipped because their offset, header or data size points outside the bank;
+	/// the remaining entries stay playable (one damaged entry no longer silences the whole bank).
+	/// </summary>
+	public List<string> SkippedEntries { get; } = new();
+
+	/// <summary>Receives one line per skipped entry (wire to the game log).</summary>
+	public static Action<string>? Diagnostic { get; set; }
+
 	public SdtArchive( string path )
 	{
 		soundFiles = new List<MP2File>();
@@ -64,12 +78,41 @@ public class SdtArchive : IArchive
 				n bytes: File data
 		*/
 
-		var fileCount = memoryStream.ReadInt32();
-
-		for ( int i = 0; i < fileCount; i++ ) 
+		if ( buffer.Length < 4 )
 		{
-			var file = mp2Reader.GetFile( memoryStream, memoryStream.ReadInt32() );
-			soundFiles.Add( file );
+			Skip( "the bank is shorter than its entry count" );
+			return;
+		}
+		var fileCount = BitConverter.ToInt32( buffer, 0 );
+		if ( fileCount < 0 || fileCount > MaximumEntryCount || 4L + fileCount * 4L > buffer.Length )
+		{
+			Skip( $"entry count {fileCount} does not fit the {buffer.Length}-byte bank" );
+			return;
+		}
+
+		for ( int i = 0; i < fileCount; i++ )
+		{
+			var offset = BitConverter.ToInt32( buffer, 4 + i * 4 );
+			if ( offset < 4 + fileCount * 4 || offset > buffer.Length - MinimumEntryHeaderBytes )
+			{
+				Skip( $"entry {i}: offset {offset} is outside the bank" );
+				continue;
+			}
+			var headerSize = BitConverter.ToInt32( buffer, offset );
+			var dataSize = BitConverter.ToInt32( buffer, offset + 4 );
+			if ( headerSize < MinimumEntryHeaderBytes || dataSize < 0 || (long)offset + headerSize + dataSize > buffer.Length )
+			{
+				Skip( $"entry {i}: header {headerSize} + data {dataSize} bytes at {offset} exceed the {buffer.Length}-byte bank" );
+				continue;
+			}
+			try
+			{
+				soundFiles.Add( mp2Reader.GetFile( memoryStream, offset ) );
+			}
+			catch ( Exception exception ) when ( exception is ArgumentException or IOException or InvalidDataException )
+			{
+				Skip( $"entry {i}: {exception.Message}" );
+			}
 		}
 	}
 
@@ -84,9 +127,17 @@ public class SdtArchive : IArchive
 		return Array.Empty<string>();
 	}
 
+	private void Skip( string reason )
+	{
+		SkippedEntries.Add( reason );
+		Diagnostic?.Invoke( $"SDT bank: skipped {reason}." );
+	}
+
 	public ArchiveFile GetFile( string name )
 	{
 		int index = soundFiles.FindIndex( x => x.Name.StartsWith( name ) );
+		if ( index < 0 )
+			throw new FileNotFoundException( $"'{name}' is not in this SDT bank{(SkippedEntries.Count > 0 ? $" ({SkippedEntries.Count} damaged entries were skipped)" : "")}.", name );
 		return soundFiles[index];
 	}
 

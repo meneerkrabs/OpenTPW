@@ -78,6 +78,9 @@ internal static class Game
 		}
 		if ( GameLanguage.IsSelected )
 			Log.Trace( $"Language: {GameLanguage.Current}" );
+
+		// Compatibility: --cd-data overlay, media diagnostics, profile/fixes, graphics preset (docs/COMPATIBILITY.md)
+		CompatibilityStartup.Initialize( args, dataDirectory );
 		var modelIndex = Array.IndexOf( args, "--inspect-model" );
 		if ( modelIndex >= 0 )
 		{

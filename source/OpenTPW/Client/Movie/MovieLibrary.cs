@@ -9,31 +9,37 @@ public static class MovieLibrary
 	/// Resolves <paramref name="name"/> ("bf" or "bf.tgq") to a file in <c>&lt;data&gt;/Movies</c>.
 	/// Names containing path separators are rejected so the lookup stays inside the movie folder.
 	/// </summary>
+	/// <summary>
+	/// Read-only data directories searched after the install when a movie is missing there (the
+	/// extracted CD from <c>--cd-data</c>; see docs/COMPATIBILITY.md).
+	/// </summary>
+	public static IReadOnlyList<string> FallbackDataDirectories { get; set; } = Array.Empty<string>();
+
 	public static string Resolve( string dataDirectory, string name )
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace( name );
 		if ( name.IndexOfAny( new[] { '/', '\\' } ) >= 0 || name.Contains( ".." ) )
 			throw new ArgumentException( "Movie names must not contain path separators.", nameof( name ) );
 		var fileName = name.EndsWith( Extension, StringComparison.OrdinalIgnoreCase ) ? name : name + Extension;
-		var directory = Directory.EnumerateDirectories( dataDirectory )
-			.FirstOrDefault( entry => string.Equals( Path.GetFileName( entry ), "movies", StringComparison.OrdinalIgnoreCase ) )
-			?? throw new DirectoryNotFoundException( $"No Movies folder in '{dataDirectory}'." );
-		return Directory.EnumerateFiles( directory )
+		var directories = MovieDirectories( dataDirectory ).ToArray();
+		if ( directories.Length == 0 )
+			throw new DirectoryNotFoundException( $"No Movies folder in '{dataDirectory}'{(FallbackDataDirectories.Count > 0 ? " or the --cd-data overlay" : "; pass the extracted CD with --cd-data")}." );
+		return directories.SelectMany( Directory.EnumerateFiles )
 			.FirstOrDefault( entry => string.Equals( Path.GetFileName( entry ), fileName, StringComparison.OrdinalIgnoreCase ) )
 			?? throw new FileNotFoundException( $"Movie '{fileName}' not found. Available: {string.Join( ", ", List( dataDirectory ) )}." );
 	}
 
-	public static IEnumerable<string> List( string dataDirectory )
-	{
-		var directory = Directory.EnumerateDirectories( dataDirectory )
-			.FirstOrDefault( entry => string.Equals( Path.GetFileName( entry ), "movies", StringComparison.OrdinalIgnoreCase ) );
-		return directory == null
-			? Enumerable.Empty<string>()
-			: Directory.EnumerateFiles( directory, "*", SearchOption.TopDirectoryOnly )
-				.Where( entry => entry.EndsWith( Extension, StringComparison.OrdinalIgnoreCase ) )
-				.Select( entry => Path.GetFileNameWithoutExtension( entry ) )
-				.Order( StringComparer.OrdinalIgnoreCase );
-	}
+	public static IEnumerable<string> List( string dataDirectory ) =>
+		MovieDirectories( dataDirectory ).SelectMany( directory => Directory.EnumerateFiles( directory, "*", SearchOption.TopDirectoryOnly ) )
+			.Where( entry => entry.EndsWith( Extension, StringComparison.OrdinalIgnoreCase ) )
+			.Select( entry => Path.GetFileNameWithoutExtension( entry ) )
+			.Distinct( StringComparer.OrdinalIgnoreCase )
+			.Order( StringComparer.OrdinalIgnoreCase );
+
+	private static IEnumerable<string> MovieDirectories( string dataDirectory ) =>
+		new[] { dataDirectory }.Concat( FallbackDataDirectories ).Where( Directory.Exists )
+			.Select( root => Directory.EnumerateDirectories( root ).FirstOrDefault( entry => string.Equals( Path.GetFileName( entry ), "movies", StringComparison.OrdinalIgnoreCase ) ) )
+			.OfType<string>();
 }
 
 /// <summary>Result of a GPU-free playback run.</summary>

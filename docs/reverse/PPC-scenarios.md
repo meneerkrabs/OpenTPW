@@ -1,6 +1,6 @@
 # PowerPC scenario, progression and staffing evidence
 
-2026-10-09 (four follow-up passes the same day). Scenario lane of the nine-lane PowerPC continuation. Static
+2026-10-09 (four follow-up passes the same day; fifth pass 2026-10-10). Scenario lane of the nine-lane PowerPC continuation. Static
 inspection of the Feral Interactive Mac port of *SimTheme Park* (Theme Park
 World); the original program was never run. No original bytes, disassembly,
 extracted assets or manual text are stored here. A local disassembler
@@ -23,18 +23,22 @@ for a later profile implementation (*Player profiles*, *Profile handoff*); fourt
 complete `gms.dat` byte schema and its version gate, read-failure ordering, the
 key award's ordering against creation, where the key count comes from, and the
 saved first-time and swear-filter flags (*Player file schema and failure
-order*, *Key award and key source*). Every finding below is a
+order*, *Key award and key source*); fifth follow-up: the eight front-end
+`Keys()` readers, the lobby door display against the door gate, and spent
+tickets versus keys in mystery purchases, with a bounded reference calculation
+(*Key displays and ticket spending*). Every finding below is a
 fact about **this Mac binary** unless explicitly stated otherwise. It is not
 evidence for the PC `TP.EXE` or Patch 2 runtime (see *Mac and PC relationship*).
 
 ## Reproduce
 
 ```sh
-# instruction-field witnesses (1689 checks, identity-pinned; follow-up checks live in
+# instruction-field witnesses (1931 checks, identity-pinned; follow-up checks live in
 # followup_evidence.py, progression_evidence.py, park_entry_evidence.py,
-# profile_evidence.py and player_file_evidence.py, included in the same JSON report)
+# profile_evidence.py, player_file_evidence.py and key_display_evidence.py,
+# included in the same JSON report)
 python3 -I tools/ppc-analysis/lanes/scenarios/scenario_evidence.py /Users/sander/server/game-assets/mac-feral/bin
-# tests (synthetic fixtures; the five corpus cases, including in-memory mutation
+# tests (synthetic fixtures; the seven corpus cases, including in-memory mutation
 # regressions, run only with OPENTPW_MAC_BIN set)
 python3 -m unittest discover -s tools/ppc-analysis/lanes/scenarios -v
 OPENTPW_MAC_BIN=/Users/sander/server/game-assets/mac-feral/bin python3 -m unittest discover -s tools/ppc-analysis/lanes/scenarios
@@ -394,7 +398,8 @@ which file's settings win at start-up is not established.
   demand and frees it with a log on failure), and 2 secret bytes. Available
   tickets subtract `mSpentTickets`, `Keys()` does not, so spending never
   costs keys. Eleven read-only `Keys()` callers: the theme door, the award code
-  (twice) and eight front-end sites whose presentation is not traced.
+  (twice) and eight front-end sites, now bound in *Key displays and ticket
+  spending*.
 - **Instant Action bypass**: only at the theme door (GameType 2 skips the key
   check, *Player profiles*), and in the award (no key). Instant Action records
   are otherwise counted the same way.
@@ -598,9 +603,75 @@ which file's settings win at start-up is not established.
   cost ≤ earned − spent, then the id is inserted and the cost added to
   `mSpentTickets` once. The placement routine **ignores** the purchase
   result (`0xdacfc` branches on), so affordability must be checked before
-  placement; that check was not traced.
+  placement. Fifth follow-up: the build-menu proc `0x163748` makes that check
+  (*Key displays and ticket spending*).
 - Instant Action players earn no tickets (ticket checks need GameType 0), so
   they cannot uncover mystery items that cost tickets.
+
+### Key displays and ticket spending (high for operands; presentation not traced)
+
+Fifth follow-up (`key_display_evidence.py`, 242 checks). Control ids, states
+and format strings are operands; what they look like is not traced, and no
+label, art or screen name is implied.
+
+- **The eight front-end `Keys()` readers** are two routines:
+  - In-park count panel, window proc `0x155b7c` (only address-taken: vector
+    data `0x7f70`, installed on child 0x33 by `0x156bac`, sole caller
+    `0x13cfb4`). Message 0x15 sets both caches to −1; message 0x1e refreshes.
+    Key group (`0x155c74`, `0x155cb4`, `0x155cec`, `0x155d7c`): skipped
+    entirely under GameType 2; otherwise when `Keys()` differs from the cache,
+    the cache is updated; 0 clears bit 0 of control +0x44 (`0x17fa64`) on
+    controls 0x36 and 0x34, any other value sets it and writes
+    `swprintf(L"%d  x", Keys())` (8-character buffer) to 0x36. The ticket group
+    (0x37/0x35, same pattern, any GameType) shows **available** tickets
+    (`0x128a2c`, earned − `mSpentTickets`), initial text `L"0  x"`.
+  - Lobby refresh `0x184028` (callers `0x75e0`, `0x183830`, `0x183a94`).
+    Door group (0x1e0ea/0x1e0eb): left untouched when the theme lookup
+    `0x129ae0` returns 0; GameType 2 clears bit 0 of 0x1e0ea; otherwise
+    signed `Keys()` < `CostToEnter` gives state 1 and value cost+4 and stops the
+    looping sound, else state 0, value cost−1 and looping sound 0x61 if none
+    plays. Count group (0x1e0ec, text 0x1e0ee): GameType 2 or `Keys()` ≤ 0
+    clears bit 0; else `swprintf(L"%d x", Keys())`. Every refresh, under any
+    GameType, ends by storing `Keys()` in data `0x135fb0` (`0x1843f0`).
+- **Cached copy**: `0x135fb0` has exactly three users: one routine zeroes it and
+  immediately calls the refresh (`0x183a80`–`0x183a94`; that routine is not
+  identified), the refresh writes it,
+  and `0x183dd0` (callers `0x960bc`, `0x962dc`, `0x9675c`, `0x967e0`,
+  `0x15cee8`) repeats the door-group rule against the cached value.
+- **Display gate = door gate**: the door (`0x964c4`) enters iff signed
+  `CostToEnter <= Keys()`; the display marks locked iff signed `Keys() <
+  CostToEnter`. Both need the theme lookup to succeed first (find or create,
+  then 0 unless `global.sam` loads), and the cost getter `0x12a4c8` returns −1
+  for an unusable theme (eight callers). Door order: already entering → no
+  target → GameType 2 enters → unusable theme → `Keys()`, then cost → signed
+  compare. Instant Action therefore bypasses keys before the theme's
+  `global.sam` is consulted.
+- **Spent tickets versus keys**: `Keys()` reads `mExtraKeys` (+32) and the
+  earned bytes and has no +28 (`mSpentTickets`) load; the insert `0x128ca8`
+  adds the cost to +28 only for a new id and writes no +32. The build-menu proc
+  `0x163748` (vector data `0x8090`) applies the affordability test `0xd313c`
+  (signed cost ≤ available, **no GameType test**, four callers) when cost ≠ 0
+  and the id is not owned; refusal calls `0x139a40` (`0xbb4fc` with 29, not
+  interpreted) and returns. The placement tests cost **> 0** instead, and an
+  unaffordable purchase that still reaches `0xd3000` returns 0 with **no
+  ticket spend, no record and no money debit**. The owned-set key is the high
+  16 bits of the 32-bit item-id word (`stw` at +0x7c, `lhz` at +0x7c).
+- **Widths**: `mExtraKeys`, `mSpentTickets`, `CostToEnter`, `Keys()` and
+  available tickets are signed 32-bit; `Keys()` adds and available subtracts
+  with 32-bit wraparound; all compares above are `cmpw`.
+
+Reference calculation (same module, synthetic values only): `earned_tickets`,
+`mac_keys`, `mac_available_tickets`, `mac_theme_door`, `mac_lobby_door_display`,
+`mac_count_panel`, `mac_mystery_place` and `mac_menu_affordable`. Preconditions:
+GameType ∈ {0, 1, 2}; counters and costs signed 32-bit ints; ticket bytes
+exactly 4/6/2 unsigned bytes; theme usability is a caller-supplied bool (the
+original loads `global.sam` as a side effect, the reference does not); item
+keys unsigned 16-bit. A violated precondition raises before any result.
+`test_key_display.py` covers the failure order, equality boundaries, signed and
+wrap cases, and 11 in-memory mutations (wrong branch, unsigned compare, extra
+cache user, spend into `mExtraKeys`, placement debiting money) that the
+witnesses must reject. Nothing here is PC evidence; ECON-040 stays
+PC-unqualified.
 
 ### Instant Action availability (high for the gates)
 
@@ -622,9 +693,10 @@ challenges). Mac UITEXT indices from 207 on are Windows + 1.
 The three disabled controls carry help texts 196, 219 and 174 ("Click to take
 out or repay loans (L)") in their layout records. This binding comes from the
 UI lane's layout decoder (`ppc-ui` `corpus.layout_table`), read-only, and is
-not re-verified by this lane's witness. Not interpreted: lobby callbacks
-`0x966f8`/`0x9677c` and `0x183cc0`/`0x183dd0`/`0x184028` also skip work under
-GameType 2 (probably theme navigation and lobby key display). The advisor rule
+not re-verified by this lane's witness. Lobby callbacks `0x183dd0`/`0x184028`
+are the key displays (*Key displays and ticket spending*); `0x183cc0` (click
+sound, UI lane) and `0x966f8`/`0x9677c` also skip work under GameType 2 and are
+not interpreted here. The advisor rule
 filters `0xe128`/`0xe4ec` accept every rule under GameType 0, only rules whose
 +12 word is 1 under GameType 2, and none online (advisor lane to interpret).
 
@@ -847,8 +919,11 @@ the PC runtime is unproved (*Park header gate and PC park files*).
   original. OpenTPW's own save currently requires `Mode` and `Easy` and refuses
   a mode mismatch; keeping that stricter rule is a deliberate divergence and
   should be labelled as one rather than copied silently.
+- Key displays: keys and available tickets are separate numbers; a mystery
+  purchase lowers the ticket count and never the key count. The lobby door
+  display uses the door's own predicate (*Key displays and ticket spending*).
 - Do not invent: the `<base>` directory, `0x109e0c`'s object check, the door's
-  locked presentation, the front-end slot icon, the research/staff/lab state of
+  locked presentation (only control operands are traced), the front-end slot icon, the research/staff/lab state of
   a resumed save (the economy snapshot needs its own bridge), and anything PC.
 
 ## Progression contract
@@ -900,9 +975,9 @@ unwired reference.
 
 | ID / area | Current OpenTPW assumption | Mac binary evidence | Suggested state |
 | --- | --- | --- | --- |
-| ECON-040 | 1 starting key; keys not consumed | Not consumed: proven. Start: Full Sim gets `mExtraKeys` 1 on first lobby entry; Instant Action 0 keys but no key check; a repeat award needs front-end init, which clears the flag (player-window closure); keys are derived (`mExtraKeys` + earned/3, earned = non-zero ticket bytes, locals only for themes whose `global.sam` loads); the award is a second `gms.dat` write after creation, and failures of both writes are ignored | Mac-resolved; PC confirmation remains |
+| ECON-040 | 1 starting key; keys not consumed | Not consumed: proven. Start: Full Sim gets `mExtraKeys` 1 on first lobby entry; Instant Action 0 keys but no key check; a repeat award needs front-end init, which clears the flag (player-window closure); keys are derived (`mExtraKeys` + earned/3, earned = non-zero ticket bytes, locals only for themes whose `global.sam` loads); the award is a second `gms.dat` write after creation, and failures of both writes are ignored | Mac-resolved; PC confirmation remains. Display: lobby door display uses the door predicate, key counts are hidden at 0 keys and never shown in Instant Action |
 | `PlayerProgress.Keys` (untagged) | 1 + Σ per-theme earned / 3 | `mExtraKeys` + (player-wide globals + per-theme locals + player-wide secrets) / 3 | untagged divergence: global/secret tickets are once per player, not per theme |
-| ECON-029 | tickets spent on GoldenTicketCost purchases | first placement of a ticket-cost item spends tickets once per ID (player-wide set), no money; later copies cost the money price; online free and unrecorded | partial support; item set persistence and the cash price after uncovering are missing |
+| ECON-029 | tickets spent on GoldenTicketCost purchases | first placement of a ticket-cost item spends tickets once per ID (player-wide set), no money; later copies cost the money price; online free and unrecorded | partial support; item set persistence and the cash price after uncovering are missing. Fifth pass: build-menu gate signed cost ≤ earned − spent (no GameType test); spending lowers available tickets only, never keys; an unaffordable placement that reaches `0xd3000` is neither recorded nor charged |
 | ECON-033 | checked at month end | every 100 `mGameTick` ticks (unsigned modulo), GameType 0 only; about 4.34 game days per check (cross-lane calendar figure) | contradicted |
 | ECON-038 | big park = MinCellsOwned, cameras = MinCellsCovered | big park reads 1916 = MinCellsCovered (parser-derived layout); cameras need 100 % coverage; MinCellsOwned (1912) unread | contradicted (high) |
 | Ticket predicates (untagged) | `>=`; happiness counts happy guests | strict signed `>`; people in park = guests (class 1) on cell types 0/1/3/9/10; happiness = float mean of truncated guest happiness (0 while closed) and the second test reuses the guest count; RecentVisitors also needs park age > N months | untagged divergence |
@@ -937,14 +1012,16 @@ unwired reference.
 - **Flows not traced**: hire fees outside `0xcbfdc`, rest/work step cadence,
   the bankruptcy id gate (`0x105c6c`) and world mode 4 consequences, research
   item selection order, Instant Action end (`0x105b50`) consequences, the
-  affordability check before mystery placement, the lobby callbacks skipped
-  under GameType 2, queued input addressed to a deleted player window, the
+  lobby callbacks `0x966f8`/`0x9677c` skipped under GameType 2, what the
+  door-display state/value/sound and the bit-0 flag look like on screen, the
+  in-park count panel's screen identity, the other two affordability callers
+  (`0x163240`, `0x164094`), queued input addressed to a deleted player window, the
   profile `<base>` directory, the park header's object block (`0x109e0c`), the
   locked-door presentation and the front-end slot icon.
 - **Player file**: the `FindFirst` order (which file's settings win at start-up),
   what the import stores on a short read, the two `mFirstTimePlayer` events
-  (data `0x11f9bc`), the settings toggles at `0x1af8c8`/`0x1af944` and the eight
-  front-end `Keys()` readers are not traced.
+  (data `0x11f9bc`) and the settings toggles at `0x1af8c8`/`0x1af944` are not
+  traced.
 - **PC profiles**: no PC player file or player save exists in the assets and the
   PC executables expose none of the profile names; the PC profile layout and
   failure behaviour are unproved.

@@ -777,7 +777,7 @@ as native manager ordering solely from the parent/child relationship.
 
 Manager state writer `0xb3868` writes a 20-byte header size at `0xb38c8` and
 copies initialized/pass/allocator/count/head words at `0xb390c..0xb3940`.
-Reader `0xb4824` invokes manager initialization at `0xb48a4`, then restores
+Reader `0xb4818` invokes manager initialization at `0xb48a4`, then restores
 these words from the state block. Its pass-counter byte-reversed store is
 `0xb495c`; the allocator word is separately reversed and stored at
 `0xb4960..0xb4974`. The saved phase and next ID therefore override fresh
@@ -869,3 +869,144 @@ pass with both original-input witnesses enabled, zero skips. No original record
 bytes are emitted or stored. Full save-list reconstruction is the concrete
 remaining save dependency for a live clock/VM adapter; this witness supplies
 metadata and first-record framing, not a production importer.
+
+## Saved-script framing and reference reconstruction
+
+The source-backed graph witness is `saved_script_native.py`; the bounded
+metadata reader is `saved_script_graph.py`. They use the same identified Mac
+application and PC fixture above, retain five complete functional-region hashes,
+and execute no original instructions. The exact native reader entry is
+**`0xb4818`** (earlier `0xb4824` citations were an instruction inside its prologue).
+The producer is `0xb3868`, and global script-ID lookup is `0xb5758`.
+
+### Serialized widths and endpoints
+
+For an initialized manager, the producer writes the manager header20, five
+`PAD_` words, an independently traversed script-record count, and fixed-record
+width244. Each script consists of that fixed record followed by these framed
+regions in order:
+
+| Region | Fixed script field | Framing / source width |
+| --- | ---: | --- |
+| Code words | count `+80`, pointer `+24` | u32 byte length, then count×4 bytes |
+| Label-word region | count `+84`, pointer `+32` | u32 byte length, then count×4 bytes |
+| Variable words | count `+140`, pointer `+28` | u32 byte length, then count×4 bytes |
+| Literal-byte region | byte length `+144`, pointer `+52` | u32 byte length, then that many bytes |
+| Opaque metadata8 | count `+88`, pointer `+36` | u32 byte length, then count×8 bytes |
+| Opaque metadata16 | count `+100`, pointer `+40` | u32 byte length, then count×16 bytes |
+| Opaque metadata32 | count `+124`, pointer `+44` | u32 **record count**, then count×32 bytes |
+| Auxiliary words | count `+76`, pointer `+48` | u32 byte length, then count×4 bytes |
+| Saved name bytes | pointer `+56` | u32 byte length, then that many bytes |
+| Object bindings | list pointer `+176` | `OBJ ` marker, u32 count, u32 width28, then count×28 bytes |
+
+The witness pins producer shifts at `0xb3fd4`, `0xb4064`, `0xb40f4`,
+`0xb41ec`, `0xb4280`, `0xb435c`, and `0xb446c`, paired with consumer shifts
+at `0xb4e24`, `0xb4ed8`, `0xb4f8c`, `0xb50d8`, `0xb5188`,
+`0xb51f0/0xb5244`, and `0xb5310`. Fixed record output is244 bytes at
+`0xb3fb8`; object-binding allocation is28 bytes at `0xb5574`.
+The opaque metadata names express widths only: this does not decode their
+complete variable/type/model semantics or turn them into COS records.
+
+All14 records in the identified PC fixture frame without gaps or guessed
+searching between records. The manager block starts at **1595542** and ends at
+**1606398**, leaving the following payload region untouched. Serialized script
+IDs, in traversal order, are:
+
+`15,14,13,12,11,10,9,8,7,6,4,3,2,1`.
+
+The witness preserves raw signed PC/bias and unsigned deadline words. It emits
+only field metadata and span offsets/lengths; code, strings, variables and other
+opaque payload bytes remain outside Git and are neither emitted nor executed.
+Unaligned file offsets caused by variable byte regions are supported; native
+word I/O does not make every serialized record start four-byte aligned.
+
+### Addresses are discarded; script-ID references survive
+
+The native reader inserts every new script at its current list head at
+`0xb4b1c..0xb4b38`. It captures those freshly built next/previous pointers in
+r20/r21 at `0xb4b48/0xb4b50`, reads the fixed record, then restores the fresh
+pointers over the serialized tokens at `0xb4d80/0xb4d90`. The saved manager
+head token and serialized script next/previous tokens are therefore not host
+addresses to restore. The supported metadata reader checks their serialized
+consistency as **tool policy**, without dereferencing any token; the original
+reader's handling of malformed tokens is not reproduced.
+
+Because the writer traverses head→tail and the reader repeatedly inserts at the
+head, the rebuilt order is the reverse of serialized order. For the fixture:
+
+`1,2,3,4,6,7,8,9,10,11,12,13,14,15`.
+
+IDs are read from fixed script `+8`; loading these records does not renumber
+them through the fresh-script allocator. Manager pass6055 and nextID16 remain
+separate restored words. All fixture phase-override bytes `+184` are0. Given
+a subsequent initialized-manager pass6057, ordinary eligible IDs1/9 would be
+visited in rebuilt order **1 then9**, not serialized order9 then1. This is a
+scheduling consequence of the decoded list/phase rules, not an original run.
+
+Script references are numeric IDs rather than these intrusive list pointers:
+
+| Field | Native producer / consumer proof |
+| --- | --- |
+| `+12` child ID | Loader result stored at `0xb11f8`; lookup at `0xb1208`; cleanup resolves it at `0xb3808` |
+| `+16` parent ID | Parent's `+8` copied to child's `+16` at `0xb120c..0xb1210`; parent-variable lookup at `0xb13ec`; cleanup resolves it at `0xb3824` and clears parent's `+12` at `0xb3828` |
+| `+20` secondary script ID | Loader result stored at `0xb12a0`; cleanup resolves it at `0xb37f0`; its full sound/owner role remains separate |
+
+Global lookup `0xb5758` starts at manager `+16`, follows rebuilt script `+0`,
+and compares each stored `+8` ID against the requested ID at `0xb5790..0xb5798`.
+It does not translate a serialized address. All three reference fields are zero
+in the available fixture, so actual nonzero-edge persistence is not corpus
+qualified. Synthetic graphs cover forward/backward ID references and unresolved
+IDs; the native creation/consumer paths supply the independent field proof.
+
+Object-binding nodes have a separate28-byte list. Their reader likewise
+rebuilds next/previous and overwrites saved tokens at `0xb5594..0xb55ac` /
+`0xb5620..0xb5628`. The available fixture contains three object-binding records.
+This graph witness bounds/skips those opaque records; host object/model/audio
+reference reconstruction is not implemented or inferred from script IDs.
+
+### Stored count and clock words must remain separate
+
+There is an observed counter subtlety. The reader restores the manager header's
+count word `+12` (`0xb4980` byte-reversed store), then increments the same word
+for each inserted script (`0xb4b0c..0xb4b18`, pointer established at `0xb4938`).
+No direct clear of that count was found in the traced reader body. Thus the
+explicit insertion arithmetic projects headerCount14 + recordCount14 to28,
+while the physical rebuilt list has14 nodes. This projection excludes any
+untraced callee mutation; it is not an observed runtime bug or permission to
+normalize the original field. The metadata reader deliberately keeps serialized
+count, physical record count and that projection distinct and accepts a
+mismatch between the first two. Inactive-manager serialization is outside this
+bounded profile; initialized empty-list framing is covered.
+
+WAIT/animation-wait/timer deadlines at `+160/+164/+196` are restored by the
+word byte-swap helper `0xb4764` (calls `0xb4ce0`, `0xb4ce8`, `0xb4d2c`).
+There is no clock-origin subtraction or rebasing in those calls. Actual fixture
+nonzero deadlines include WAIT words114377145/114377133 for IDs9/8, animation
+wait114193871 for ID4, and WAIT114374867 for ID3. Copying such words into a
+fresh per-VM clock starting at0 would change their meaning. A future restore
+must qualify the separate shared-clock state and retain timer comparisons and
+variable-word interpretation; it must not invent a per-script creation epoch.
+
+The production clock-restore dependency remaining after this slice is the
+shared elapsed-clock restore/lifecycle and host object-reference binding.
+Complete script metadata payload interpretation, runtime callee effects,
+ID rollover, exceptional inputs and Windows/Patch2 execution remain unqualified.
+This source witness and explicit-offset reader are outside live game code and
+are not a general save importer.
+
+Reproduction:
+
+```sh
+python3 tools/ppc-analysis/lanes/clock/saved_script_native.py /path/to/mac-feral/bin
+python3 tools/ppc-analysis/lanes/clock/saved_script_graph.py /path/to/Easymode.TPWI
+OPENTPW_PPC_BIN_ROOT=/path/to/mac-feral/bin OPENTPW_PPC_SAVE_PATH=/path/to/Easymode.TPWI python3 -m unittest discover -s tools/ppc-analysis/lanes/clock -p 'test_*.py' -v
+```
+
+Validation: **52/52** clock tests with both original fixtures enabled, zero skips.
+New cases cover nonzero synthetic ID edges, duplicate/null/dangling IDs,
+serialized token cycles and broken previous chains, truncated fixed/blob/object
+spans, coherent oversized declarations, wrong strides/count limits, preserved
+signed/unsigned fields, empty initialized lists, and distinct stored/physical
+counts. Five source-region hashes and explicit producer/consumer operands pass;
+Python compilation and whitespace checks pass. No original payload or raw
+instructions were added to the repository.

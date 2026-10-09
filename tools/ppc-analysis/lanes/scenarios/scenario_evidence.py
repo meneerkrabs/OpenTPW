@@ -705,6 +705,8 @@ def inspect(bin_root: Path) -> dict:
     result.update(inspect_progression(e))
     from park_entry_evidence import park_entry  # noqa: E402 (imports this module)
     result['park_entry'] = park_entry(e)
+    from profile_evidence import inspect_profiles  # noqa: E402 (imports this module)
+    result.update(inspect_profiles(e))
     result['instruction_checks'] = e.checked
     result['limitation'] = ('Static Mac (Feral 2000) evidence only; not PC Patch 2 or runtime proof. '
                             'Advisor speech/tag text, stat-function semantics and calendar scale remain unresolved.')

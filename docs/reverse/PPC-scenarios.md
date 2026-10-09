@@ -1,6 +1,6 @@
 # PowerPC scenario, progression and staffing evidence
 
-2026-10-09 (two follow-up passes the same day). Scenario lane of the nine-lane PowerPC continuation. Static
+2026-10-09 (three follow-up passes the same day). Scenario lane of the nine-lane PowerPC continuation. Static
 inspection of the Feral Interactive Mac port of *SimTheme Park* (Theme Park
 World); the original program was never run. No original bytes, disassembly,
 extracted assets or manual text are stored here. A local disassembler
@@ -15,21 +15,28 @@ complete `Standard.sam` (CMainBalance) field binding; second follow-up: player-w
 lifetime (new-player key closure), map-cell types and guest statistics, secret
 tickets, "all researched and built", mystery-item placement, Instant Action UI
 gates, a manual-versus-code table and a typed contract with synthetic boundary
-tests (*Progression contract*). Every finding below is a
+tests (*Progression contract*); third follow-up: player profile creation,
+enumeration, selection, persistence and deletion, where the mode is stored, the
+missing/unreadable player-file path, the key gate's refusal path, the park
+loader's header gate and its application to the PC park files, and a handoff
+for a later profile implementation (*Player profiles*, *Profile handoff*). Every finding below is a
 fact about **this Mac binary** unless explicitly stated otherwise. It is not
 evidence for the PC `TP.EXE` or Patch 2 runtime (see *Mac and PC relationship*).
 
 ## Reproduce
 
 ```sh
-# instruction-field witnesses (964 checks, identity-pinned; follow-up checks live in
-# followup_evidence.py, progression_evidence.py and park_entry_evidence.py, included in
-# the same JSON report)
+# instruction-field witnesses (1232 checks, identity-pinned; follow-up checks live in
+# followup_evidence.py, progression_evidence.py, park_entry_evidence.py and
+# profile_evidence.py, included in the same JSON report)
 python3 -I tools/ppc-analysis/lanes/scenarios/scenario_evidence.py /Users/sander/server/game-assets/mac-feral/bin
-# tests (synthetic fixtures; the four corpus cases, including in-memory mutation
+# tests (synthetic fixtures; the five corpus cases, including in-memory mutation
 # regressions, run only with OPENTPW_MAC_BIN set)
 python3 -m unittest discover -s tools/ppc-analysis/lanes/scenarios -v
 OPENTPW_MAC_BIN=/Users/sander/server/game-assets/mac-feral/bin python3 -m unittest discover -s tools/ppc-analysis/lanes/scenarios
+# Mac park-header checks applied to PC park files (interpreted values only)
+python3 -I tools/ppc-analysis/lanes/scenarios/profile_evidence.py /Users/sander/server/game-assets/mac-feral/bin \
+  /Users/sander/server/game-assets/theme-park-world/Data/levels/jungle/Easymode.TPWI
 # typed contract, synthetic boundaries only (23 cases)
 dotnet run --project tools/ppc-analysis/lanes/scenarios/contract/OriginalProgressionContract.Tests.csproj --configuration Release
 ```
@@ -178,6 +185,38 @@ online session (`0x1c200c`, GameType 1). Not established: what `0x11acfc` does
 with each file, the wildcard semantics of the imported `CFileStorage`, how a
 player starts a theme over, and PC equivalence.
 
+### Park header gate and PC park files (high for the gates)
+
+The park loader `0x11acfc` and its header reader `0x11c880` (sole caller)
+apply these checks before the payload, in this order:
+
+1. A little-endian int32 version; the resume load (mode 2) rejects a version
+   above 500 (error 9, "future version").
+2. A language byte, then 1280 bytes of UTF-16LE text compared with that entry
+   of the banner table (`0x120114`, 20 bytes per entry; entry 0 is the
+   412-character legal text at code `0x1d6144`). A mismatch logs "legal text
+   has been jiggered with". That the compare stops at the first NUL is the
+   imported `TbStringBase<w>::operator!=(const wchar_t*)` semantics (inference).
+3. 256 bytes passed to `0x109e0c` (object availability; a non-zero result is
+   error 8; not traced).
+4. Four raw bytes equal to the word at data `0x46fb8` (`0x01221985`; error 6).
+5. A little-endian int32: 1 = an embedded header follows, 0 = none.
+
+`profile_evidence.py` applies 1, 2 (entry 0 only), 4 and 5 to PC files:
+
+| File | Version | Language | Banner | Block | Tag | Result |
+| --- | ---: | ---: | --- | --- | --- | --- |
+| baseline and Patch 2 `levels/jungle/Easymode.TPWI` (identical) | 400 | 0 | equal | all zero | equal | passes the traced gates |
+| Theme Park Inc `PreBuilt/prebuilt.TPWS` (negative) | 500 | 1 | unchecked | all zero | different | rejected (tag) |
+
+So the PC file that Instant Action copies passes every header check the Mac
+resume applies, except the untraced object block (all zero here). The payload
+is not qualified. No other PC save exists in the assets: both PC `save`
+directories are empty and no `gms.dat` is present. The PC executables carry
+none of the profile names in plain text (`tp.exe` and Patch 2 `TP.EXE` are
+small loaders; `TP.ICD` is encrypted), so the PC profile layout is **not
+established** by these assets.
+
 ### Player-global progression record (high)
 
 A 76-byte singleton (pointer at data `0x120d84`) is reset by `0x1287d4` and
@@ -201,6 +240,67 @@ loaded `global.sam` object (+28) and `mAllResearchCompleted` (+185); the
 per-theme serializer names (`mEarnedLocalTicket[i]`, `mAward[i]`,
 `mAwardScore[i]`, `mSignNameA/B[i]`, `mNameChanged`, `mAllResearchCompleted`)
 were seen but their offsets were not individually bound.
+
+### Player profiles (high)
+
+`profile_evidence.py` (268 checks). A 212-byte manager (pointer at data
+`0x120e2c`, constructor `0x136860`) holds four 24-byte slots (a wide name string
+and a word at +20) and the current slot at +96 (−1 = none).
+
+| Path | Built by |
+| --- | --- |
+| `<base>save` | `0x137058` (`<base>` comes from the object at data `0x53750`, not traced) |
+| `<base>save:users` | `0x1370d4` (`online` sits beside it, `0x137d20`) |
+| `<base>save:users:<slot+1><name>` | `0x137284`: decimal slot + 1 (`_itow`, radix 10), then the name |
+| `…:<name>:gms.dat` | player-info file; static wide string `gms.dat` (`0x137f98`) |
+| `…:<name>:<theme>` | park saves (*Park entry*) |
+
+- **Enumeration** (`0x1369e4`, sole caller `0x498` at start-up): all four slots
+  are cleared, then every entry of `save:users` (`*`) that is a directory, does
+  not start with `.`, is longer than one character and starts with a digit
+  1–4 fills slot digit − 1 with the rest of the name; a later entry with the
+  same digit replaces the earlier one. Each slot's +20 is the `mEasyModeUser` of
+  its `gms.dat`, and the theme directories are created for it. Missing `save`
+  or `users` directories are created (`save`, `users`, `online`).
+- **Creation** (`0x15cf00` → `CreatePlayer 0x13741c`): trailing spaces are
+  removed; an empty name creates nothing and the dialog stays open. The dialog
+  supplies the slot; a slot that already has a name loses its directory first.
+  The player directory and every `<player>:<theme>` directory are created for
+  both modes (`0x137600`); only the `easymode.TPWI` copy needs the flag. The
+  record is a fresh one (reset values: no tickets, `mExtraKeys` 0,
+  `mSwearFilterOn` 1, `mFirstTimePlayer` 1) with `mEasyModeUser` = flag, and
+  `gms.dat` is written at once; then the slot is loaded and the new-player key
+  award runs (*Theme entry and initial key*).
+- **Selection** (`0x13781c`; callers: slot selection `0x15c060`, creation
+  `0x15d034`, state-9 fallback `0x1c1c1c`): +96 = slot; `gms.dat` is read into a
+  reset record; GameType = 2 if `mEasyModeUser` else 0, unless GameType is 1;
+  each theme's record is found or created.
+- **Mode storage**: one byte, `mEasyModeUser` in `gms.dat`, fixed at creation
+  (its setter `0x128f54` has two calls, both in `CreatePlayer`; other stores
+  through other pointers were not scanned). The slot +20 copy feeds the front-end slot list (four
+  readers `0x15c454`…`0x15c7e4`; the control's look is not traced). GameType is
+  the runtime copy and is not saved.
+- **Persistence**: `gms.dat` = version tag 12, then the named members
+  (*Player-global progression record*). It is written on creation, on the
+  new-player key award (`0x15ceb4`), when leaving a park (`0x1989b8`, the
+  autosave path) and on unload (`0x137b0c`). Every caller ignores the write
+  result (an open failure only logs `Failed to open %s`).
+- **Missing or unreadable `gms.dat`**: the reader resets the record first and
+  returns 0 on open failure, header failure, version < 12 or a member read
+  failure; **both callers ignore the result**. So the slot is still listed under
+  its directory name, and selecting it gives the reset values overlaid by
+  whatever members were read before the failure: with nothing read, a Full
+  Simulation player with no tickets and 0 keys. That player cannot enter any
+  theme (all `CostToEnter` ≥ 1) and gets no new-player key (the flag is set only
+  by creation and an empty slot list). An Instant Action player therefore turns
+  into a Full Simulation one silently. Not traced: the partial-read order
+  beyond the named members, and whether the front end offers any repair.
+- **Unload** (`0x137a88`; callers `0x1979f0`, `0x1c2b38`): writes `gms.dat`, frees
+  the record, +96 = −1. **Deletion** (`0x137350`, sole caller `0x15bedc`): deletes
+  the player directory and clears the slot.
+- **State-9 fallback**: entering a park with no player loaded creates a slot-0
+  player named `debug` with flag 0 (Full Simulation) when slot 0 is empty, then
+  loads slot 0. It never yields an Instant Action player.
 
 ### Tickets and keys (high)
 
@@ -270,6 +370,17 @@ were seen but their offsets were not individually bound.
   award is therefore impossible without passing front-end init. Not modelled:
   queued input addressed to an already deleted window (the destroyed byte
   rejects it only while the memory is not reused).
+
+- Refusal path (third follow-up, high): the door's virtual +72 (`0x964c4`,
+  vtable `0x3ecc8`) does nothing while already entering (+20) or without a
+  target theme. GameType 2 goes straight to +76. Otherwise the per-theme record
+  is found or created (`0x129ae0`); if `0x12a50c` fails for it (the same test
+  the `CostToEnter` getter makes before reading `global.sam`) the lookup
+  returns 0 and the door does nothing; a signed `CostToEnter >
+  Keys()` jumps to the epilogue. **The refusal has no message, state change or
+  key change** in this routine. +76 sets +20 = 1; +80 (`0x9665c`) selects the
+  theme and sets front-end exit code 2. The door's locked appearance and any
+  hover text are not traced.
 
 ### Golden-ticket checks (high)
 
@@ -597,6 +708,37 @@ ticket check ≈ 4.34 game days, unless a `.sam` or save overrides `+0x1c`
 Manual statements are player-facing descriptions; where they agree with the
 Mac code that agreement is still not PC `TP.EXE` evidence.
 
+## Profile handoff
+
+For a later unified `ParkGameMode`/profile implementation. Mac facts only;
+the PC runtime is unproved (*Park header gate and PC park files*).
+
+- Profile identity: slot 1–4 plus a non-empty name (trailing spaces removed).
+  The mode is chosen once at creation and stored as one byte; there is no
+  per-park mode choice and no mode change after creation.
+- Creation: fresh progression record (no tickets, keys from `mExtraKeys` 0,
+  swear filter on, first-time flag set), save it, create the player and theme
+  directories, copy `easymode.TPWI` per theme for Instant Action, select the
+  profile, then the new-player award (Full Simulation: `mExtraKeys` 1 and save;
+  Instant Action: lobby message only).
+- Selection: mode → GameType (online keeps 1). Theme entry: Instant Action
+  ignores keys; otherwise the theme's `global.sam` record must be usable and
+  `CostToEnter <= Keys()`; refusal is silent; keys are never consumed.
+- Park per theme: first entry from level and balance (plus the copied
+  `easymode.TPWI` for Instant Action where shipped), later entries resume the
+  newest `*.TPW*` in the theme directory, which must pass the header gate;
+  leaving writes `autosave.TPWS`.
+- Persistence points: creation, new-player award, leaving a park, unload.
+  Write failures are ignored by the original.
+- Failure paths with an explicit choice for OpenTPW: a missing or unreadable
+  player file silently becomes a Full Simulation profile with 0 keys in the
+  original. OpenTPW's own save currently requires `Mode` and `Easy` and refuses
+  a mode mismatch; keeping that stricter rule is a deliberate divergence and
+  should be labelled as one rather than copied silently.
+- Do not invent: the `<base>` directory, `0x109e0c`'s object check, the door's
+  locked presentation, the front-end slot icon, the research/staff/lab state of
+  a resumed save (the economy snapshot needs its own bridge), and anything PC.
+
 ## Progression contract
 
 `tools/ppc-analysis/lanes/scenarios/contract/` is a dependency-free .NET 8
@@ -660,7 +802,7 @@ unwired reference.
 | ECON-016 | group g opens at PercentageForThisTech[g] % of group g−1 | group g opens at PercentageForThisTech[g] (same index, layout-proven) measured **cumulatively over all groups ≤ g−1**, unsigned percentage and compare, 0 % for an empty set | partially supported: threshold index matches, percentage basis differs |
 | ECON-017 | cheapest first | item choice not traced | unresolved |
 | ECON-019 | unused leftover (declaration reworded to say so; `ParkEconomy` no longer calls it) | no staffless path; researcher staff only; the research panel is refused with the 'research is automatic' text | contradicted; delete code and declaration once PC behaviour confirms |
-| UI-015 | mode asked per park entry and every entry starts a new park (declaration reworded) | mode fixed at player creation (4 slots); each theme resumes the player's newest save (`autosave.TPWS` on leaving); modes differ in balance overlay, first park, keys, tickets, challenges, research completion | per-park choice and the missing resume remain approximations |
+| UI-015 | mode asked per park entry and every entry starts a new park (declaration reworded) | mode fixed at player creation (4 slots, one byte in `save:users:<n><name>:gms.dat`); each theme resumes the player's newest save (`autosave.TPWS` on leaving); modes differ in balance overlay, first park, keys, tickets, challenges, research completion; an unreadable `gms.dat` silently yields Full Simulation with 0 keys | per-park choice, profiles and the missing resume remain approximations |
 | ECON-030 / bankruptcy | stops when bankrupt; 6 months in red | ≥ 6 thirty-day months since the balance went negative, checked at month end → world mode 4 (subject to one unresolved id gate) | count supported; "stops" consistent with mode 4 exit but the mode-4 consequences belong to the calendar/clock lane |
 | ECON-046 | upgrades need a mechanic | not traced (only the TAG text "can't upgrade during a mechanics' strike") | unresolved |
 | Secret 'own all land' ticket (untagged) | — | no award path in the Mac binary | do not implement as earnable without PC evidence |
@@ -684,7 +826,12 @@ unwired reference.
   the bankruptcy id gate (`0x105c6c`) and world mode 4 consequences, research
   item selection order, Instant Action end (`0x105b50`) consequences, the
   affordability check before mystery placement, the lobby callbacks skipped
-  under GameType 2, and queued input addressed to a deleted player window.
+  under GameType 2, queued input addressed to a deleted player window, the
+  profile `<base>` directory, the park header's object block (`0x109e0c`), the
+  locked-door presentation and the front-end slot icon.
+- **PC profiles**: no PC player file or player save exists in the assets and the
+  PC executables expose none of the profile names; the PC profile layout and
+  failure behaviour are unproved.
 - **PC equivalence**: none of these predicates were checked in `TP.EXE` or
   Patch 2; the Mac/PC strike conflict shows behaviour can differ even with
   identical data.

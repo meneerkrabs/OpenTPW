@@ -13,6 +13,7 @@ import unittest
 import followup_evidence as followup
 import mac_data_compare as compare
 import park_entry_evidence as park_entry
+import profile_evidence as profile
 import progression_evidence as progression
 import scenario_evidence as evidence
 from scenario_evidence import Evidence, magic, pef
@@ -221,6 +222,37 @@ class ParkEntryHelperTests(unittest.TestCase):
         self.assertEqual(park_entry.stores_at(fixture(words), 0, 4 * len(words), 1028), [4, 8, 12, 16, 20, 24])
 
 
+def park_header(version=400, language=0, banner='LEGAL', block=bytes(256), tag=0x01221985, flag=0):
+    text = banner.encode('utf-16-le').ljust(1280, b'\0')
+    return struct.pack('<i', version) + bytes([language]) + text + block + struct.pack('>I', tag) + \
+        struct.pack('<i', flag) + b'payload'
+
+
+class ParkHeaderTests(unittest.TestCase):
+    def test_traced_header_checks_accept_a_matching_file(self):
+        result = profile.qualify_tpwi_header(park_header(), 'LEGAL', 0x01221985)
+        self.assertTrue(result['qualified'])
+        self.assertEqual((result['version'], result['header_flag']), (400, 0))
+        self.assertTrue(profile.qualify_tpwi_header(park_header(version=500), 'LEGAL', 0x01221985)['qualified'])
+
+    def test_corrupt_headers_are_rejected(self):
+        for raw, failed in ((park_header(version=501), 'version_le_limit'),
+                            (park_header(banner='LEGAl'), 'banner_equal'),
+                            (park_header(tag=0x85192201), 'tag_equal')):
+            result = profile.qualify_tpwi_header(raw, 'LEGAL', 0x01221985)
+            self.assertFalse(result['qualified'])
+            self.assertIs(result[failed], False)
+        self.assertEqual(profile.qualify_tpwi_header(park_header()[:1548], 'LEGAL', 0x01221985),
+                         {'qualified': False, 'reason': 'shorter than the traced header'})
+
+    def test_untraced_language_entry_is_not_a_pass(self):
+        result = profile.qualify_tpwi_header(park_header(language=1), 'LEGAL', 0x01221985)
+        self.assertIsNone(result['banner_equal'])
+        self.assertFalse(result['qualified'])
+        self.assertFalse(profile.qualify_tpwi_header(park_header(block=b'\1' + bytes(255)), 'LEGAL', 0x01221985)
+                         ['object_block_all_zero'])
+
+
 @unittest.skipUnless(os.environ.get('OPENTPW_MAC_BIN'), 'set OPENTPW_MAC_BIN to the Feral bin directory')
 class CorpusTests(unittest.TestCase):
     def test_identified_executable_facts(self):
@@ -304,6 +336,38 @@ class CorpusTests(unittest.TestCase):
         with self.assertRaisesRegex(pef.PEFError, 'code:0x1376b4'):
             park_entry.park_entry(self._mutated(0x1376b4, 0x60000000))
 
+
+    def test_profile_witnesses_reject_mutations(self):
+        container = evidence.load_identified(Path(os.environ['OPENTPW_MAC_BIN']) / 'SimThemePark.data')
+        result = profile.inspect_profiles(Evidence(container))
+        self.assertEqual(result['profile_paths']['player_info_file'], '<player directory>:gms.dat')
+        self.assertEqual(result['profile_info_file']['version_written'], 12)
+        self.assertFalse(result['profile_scan']['load_result_used'])
+        self.assertEqual(result['profile_select']['delete_callers'], ['0x15bedc'])
+        # The scan tests the gms.dat load result.
+        with self.assertRaisesRegex(pef.PEFError, 'code:0x136d28'):
+            profile.scan(self._mutated(0x136d28, d_word(11, 0, 3, 0)))
+        # A slot digit of 5 is accepted.
+        with self.assertRaisesRegex(pef.PEFError, 'code:0x136c04'):
+            profile.scan(self._mutated(0x136c04, d_word(11, 0, 25, 5)))
+        # gms.dat version 11 written.
+        with self.assertRaisesRegex(pef.PEFError, 'code:0x128fc0'):
+            profile.info_file(self._mutated(0x128fc0, d_word(14, 0, 0, 11)))
+        # An empty player name is accepted.
+        with self.assertRaisesRegex(pef.PEFError, 'code:0x15cf8c'):
+            profile.create(self._mutated(0x15cf8c, 0x60000000))
+        # The key-gate refusal shows something (a call in the epilogue path).
+        with self.assertRaisesRegex(pef.PEFError, 'call in refusal path'):
+            profile.key_gate(self._mutated(0x96610, 18 << 26 | 0x101))
+        # Cost equal to keys refused (bgt -> bge).
+        with self.assertRaisesRegex(pef.PEFError, 'code:0x965e0'):
+            profile.key_gate(self._mutated(0x965e0, 16 << 26 | 4 << 21 | 0 << 16 | 0x30))
+        # The resume accepts a newer save version.
+        with self.assertRaisesRegex(pef.PEFError, 'code:0x11ae64'):
+            profile.header_gate(self._mutated(0x11ae64, d_word(11, 0, 0, 600)))
+        # A second current-slot writer in the load routine.
+        with self.assertRaisesRegex(pef.PEFError, 'current-slot stores'):
+            profile.select_and_unload(self._mutated(0x137a44, d_word(36, 0, 27, 96)))
 
 if __name__ == '__main__':
     unittest.main()

@@ -145,10 +145,21 @@ public static class DisplayModes
 	/// Distinct sizes from the display's modes plus original/common sizes that fit the desktop,
 	/// sorted by area then width. Sizes below the minimum window size are dropped.
 	/// </summary>
-	public static IReadOnlyList<Point2> Build( IEnumerable<Point2> displayModes, Point2 desktop )
+	public static IReadOnlyList<Point2> Build( IEnumerable<Point2> displayModes, Point2 desktop ) =>
+		Build( displayModes, desktop, [], WindowMode.Windowed );
+
+	/// <summary>
+	/// Sizes for <paramref name="mode"/>. Exclusive fullscreen: only the display's modes. Windowed and
+	/// borderless: the modes plus <paramref name="current"/> (window/drawable sizes) plus the original
+	/// and common sizes that fit the desktop (all of them when the desktop size is unknown).
+	/// </summary>
+	public static IReadOnlyList<Point2> Build( IEnumerable<Point2> displayModes, Point2 desktop, IEnumerable<Point2> current, WindowMode mode )
 	{
 		var fits = ( Point2 size ) => desktop.X <= 0 || desktop.Y <= 0 || (size.X <= desktop.X && size.Y <= desktop.Y);
-		return displayModes.Concat( Original.Where( fits ) ).Concat( Common.Where( fits ) )
+		var sizes = mode == WindowMode.Exclusive
+			? displayModes
+			: displayModes.Concat( current ).Concat( Original.Where( fits ) ).Concat( Common.Where( fits ) );
+		return sizes
 			.Where( size => size.X >= DisplaySettings.MinimumWindowWidth && size.Y >= DisplaySettings.MinimumWindowHeight
 				&& size.X <= DisplaySettings.MaximumWindowSize && size.Y <= DisplaySettings.MaximumWindowSize )
 			.Distinct()

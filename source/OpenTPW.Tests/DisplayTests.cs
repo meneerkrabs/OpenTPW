@@ -292,4 +292,41 @@ public class DisplayTests
 		CollectionAssert.AreEqual( list.OrderBy( size => size.X * size.Y ).ToArray(), list.ToArray(), "Sorted by area." );
 		Assert.IsTrue( DisplayModes.Build( Array.Empty<Point2>(), Size( 0, 0 ) ).Contains( Size( 3840, 2160 ) ), "Unknown desktop: offer every size." );
 	}
+
+	[TestMethod]
+	public void ExclusiveFullscreenOnlyOffersDisplayModes()
+	{
+		var modes = new[] { Size( 1920, 1080 ), Size( 1280, 720 ) };
+		var current = new[] { Size( 1500, 900 ), Size( 3000, 1800 ) };
+		var exclusive = DisplayModes.Build( modes, Size( 1920, 1080 ), current, WindowMode.Exclusive );
+		CollectionAssert.AreEqual( new[] { Size( 1280, 720 ), Size( 1920, 1080 ) }, exclusive.ToArray() );
+		var windowed = DisplayModes.Build( modes, Size( 1920, 1080 ), current, WindowMode.Windowed );
+		Assert.IsTrue( windowed.Contains( Size( 1500, 900 ) ) && windowed.Contains( Size( 3000, 1800 ) ), "Current window and drawable sizes are always listed." );
+		Assert.IsTrue( windowed.Contains( Size( 512, 384 ) ) && windowed.Contains( Size( 1600, 900 ) ) );
+	}
+
+	[TestMethod]
+	public void UnconfirmedDisplayChangeRevertsAfterTimeout()
+	{
+		var confirmation = new DisplayChangeConfirmation();
+		var original = DisplaySettings.Default;
+		var second = TimeSpan.FromSeconds( 1 );
+		Assert.IsNull( confirmation.Poll( TimeSpan.Zero ) );
+		confirmation.Begin( original, TimeSpan.Zero, 15 * second );
+		Assert.IsTrue( confirmation.IsPending );
+		Assert.AreEqual( 15, confirmation.SecondsRemaining( TimeSpan.Zero ) );
+		Assert.AreEqual( 1, confirmation.SecondsRemaining( 14.2 * second ) );
+		Assert.IsNull( confirmation.Poll( 14 * second ) );
+		// A second unconfirmed change keeps the original restore point and restarts the timer.
+		confirmation.Begin( original with { Width = 800, Height = 600 }, 14 * second, 15 * second );
+		Assert.IsNull( confirmation.Poll( 20 * second ) );
+		Assert.AreEqual( original, confirmation.Poll( 29 * second ) );
+		Assert.IsFalse( confirmation.IsPending );
+		Assert.AreEqual( 0, confirmation.SecondsRemaining( 29 * second ) );
+
+		confirmation.Begin( original, TimeSpan.Zero, second );
+		Assert.AreEqual( original, confirmation.Take(), "Revert returns the restore point." );
+		Assert.IsNull( confirmation.Take(), "Confirm/revert twice is harmless." );
+		Assert.ThrowsException<ArgumentOutOfRangeException>( () => confirmation.Begin( original, TimeSpan.Zero, TimeSpan.Zero ) );
+	}
 }

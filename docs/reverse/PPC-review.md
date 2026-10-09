@@ -10,22 +10,32 @@ supports them (see "Mac/PC transfer" below).
 
 ## Reproduce
 
+Placeholders: `$FERAL_BIN` is the directory holding the extracted Feral `.data`
+files (with `libraries/` below it), `$FERAL_HFS` the Mac disc image, `$TPW_DATA`
+and `$PATCH2_DATA` the `Data` directories of a retail and a Patch 2 install, and
+`$RIDES_CHECKOUT` a checkout of the rides lane.
+
 ```sh
 python3 -I -m unittest discover -s tools/ppc-analysis/lanes/review -p 'test_*.py' -v
-python3 -I tools/ppc-analysis/lanes/review/review_evidence.py /Users/sander/server/game-assets/mac-feral/bin \
-  --pc-save /Users/sander/server/game-assets/theme-park-world/Data/levels/jungle/Easymode.TPWI
-python3 -I tools/ppc-analysis/lanes/review/reloc_audit.py /Users/sander/server/game-assets/mac-feral/bin/*.data \
-  /Users/sander/server/game-assets/mac-feral/bin/libraries/*.data
-python3 -I tools/ppc-analysis/lanes/review/round2_evidence.py /Users/sander/server/game-assets/mac-feral/bin \
-  --mac-hfs /Users/sander/server/game-assets/mac-feral/hfs.img \
-  --pc-speech /Users/sander/server/game-assets/theme-park-world/Data/global/Speech
-python3 -I tools/ppc-analysis/lanes/review/round3_evidence.py /Users/sander/server/game-assets/mac-feral/bin
-python3 -I tools/ppc-analysis/lanes/review/round4_evidence.py /Users/sander/server/game-assets/mac-feral/bin
-python3 -I tools/ppc-analysis/lanes/review/round5_evidence.py /Users/sander/server/game-assets/mac-feral/bin \
-  --pc-data /Users/sander/server/game-assets/theme-park-world/Data \
-  --pc-data /Users/sander/server/game-assets/theme-park-world-patch2/Data \
-  --rides-root /Users/sander/server/opentpw-worktrees/ppc-rides
-OPENTPW_PPC_BIN_ROOT=/Users/sander/server/game-assets/mac-feral/bin \
+python3 -I tools/ppc-analysis/lanes/review/review_evidence.py $FERAL_BIN \
+  --pc-save $TPW_DATA/levels/jungle/Easymode.TPWI
+python3 -I tools/ppc-analysis/lanes/review/reloc_audit.py $FERAL_BIN/*.data \
+  $FERAL_BIN/libraries/*.data
+python3 -I tools/ppc-analysis/lanes/review/round2_evidence.py $FERAL_BIN \
+  --mac-hfs $FERAL_HFS \
+  --pc-speech $TPW_DATA/global/Speech
+python3 -I tools/ppc-analysis/lanes/review/round3_evidence.py $FERAL_BIN
+python3 -I tools/ppc-analysis/lanes/review/round4_evidence.py $FERAL_BIN
+python3 -I tools/ppc-analysis/lanes/review/round5_evidence.py $FERAL_BIN \
+  --pc-data $TPW_DATA \
+  --pc-data $PATCH2_DATA \
+  --rides-root $RIDES_CHECKOUT
+python3 -I tools/ppc-analysis/lanes/review/round6_evidence.py \
+  --bin-root $FERAL_BIN \
+  --pc-data $TPW_DATA \
+  --pc-data $PATCH2_DATA
+OPENTPW_PPC_BIN_ROOT=$FERAL_BIN \
+OPENTPW_PC_DATA=$TPW_DATA \
   python3 -I -m unittest discover -s tools/ppc-analysis/lanes/review -p 'test_*.py'
 ```
 
@@ -36,9 +46,11 @@ additionally pins `engine_shared.data` and `ltms_shared.data`; `round4_evidence.
 (section 18 onwards) reuses those pins, and `round5_evidence.py` (section 24
 onwards) adds `sound_shared.data`. Its optional `--pc-data` check reads LoanInfo
 numbers from the install at run time, and `--rides-root` compares a rides
-checkout's dispatch table with that lane's contract JSON. With the binary
-variable set, all 84 lane tests run, with no skips. Without it, 80 pass and the
-four original-file witnesses skip.
+checkout's dispatch table with that lane's contract JSON. `round6_evidence.py`
+(section 32 onwards) reuses the `SimThemePark.data` pin for the rides selector
+routines and reads SDT entry headers from each `--pc-data` install, printing
+counts only. With both variables set, all 95 lane tests run, with no skips.
+Without them, 89 pass and the six original-file witnesses skip.
 
 `review_evidence.py` exits non-zero if any identity, relocation, glue stub,
 operand or constant differs from the reviewed value. Unlike
@@ -1152,3 +1164,388 @@ Merge order from current root:
 
 Scenarios' uncommitted `GameFlow.cs`/`ParkEconomy.cs` edits, formats'
 uncommitted repair and TPI's `pal8.py` are tentative and outside this verdict.
+
+## 32. Root `main` `9e40f52`: combined tree verified
+
+`9e40f52` merges `7b6b46e` into `75a3380`. The second parent adds only
+`lanes/clock/review-native-contracts.md`. `75a3380` already carried the
+temporary-history repair inside the guest merge, so `main`'s
+`lanes/guests/rules`, `GUESTS.md` and `PPC-guests.md` are identical to
+`7b6b46e` (`git diff --quiet 7b6b46e 9e40f52 -- …` is clean). The two guest
+lineages (`00a6393` and its rebased copy `be42615`) write the same paths, so no
+duplicated helper exists. Every C# type name defined twice is either a partial
+class or lives in a separate assembly (`CompatibilityFlags` in Online and in
+Compat, unchanged since `6a69e3f`). The only cross-tree compilation is the
+advisor's `Layer1Corpus.csproj`, which compiles production `Mp2Decoder*.cs` and
+`Layer1TestFrames.cs` by link. That is intended, and the project builds with
+zero warnings. No lane helper is referenced from `source/`.
+
+Run on a `git archive` export of `9e40f52`:
+
+| Check | Result |
+| --- | --- |
+| `dotnet test source/OpenTPW.Tests -c Release` with `OPENTPW_GAME_PATH`, `OPENTPW_LANGUAGE_DATA`, `OPENTPW_BONUS_DATA` | 864 passed, 0 failed, 12 skipped (all opt-in native-shader tests), 22.5 min |
+| Scheduler / guests / advisor / rides animation / UI layout helpers (`dotnet run -c Release`) | 35 / 23 / 52 / 11 / 19, all pass |
+| Economy `OriginalLoanRules.Tests.csproj` (`dotnet run`; `dotnet test` discovers nothing) | 15/15 groups, 5,437 assertions |
+| Python: `tools/ppc-analysis` and each lane (`OPENTPW_PPC_BIN_ROOT` set) | 222 run, 11 skipped (lane-specific env vars), 0 failed |
+| `Layer1Corpus`, rides `CorpusWitness`, `PatchAnalysis` builds | 0 errors |
+
+## 33. Rides: `56a9d26` blocked (HIGH); `b7df1a0` accepted with limits
+
+**`56a9d26`, HIGH (both items decoded by me and pinned in `round6_evidence.py`).**
+`PassengerRing.QueryRoom` and `PlanAllowance` take a minimum where the native
+code takes a maximum.
+
+- **Room query (`0x3dd14`):** diff = config `+184` − (`+188` + `+192`), using
+  32-bit wrapping arithmetic. `cmpw global,diff` / `bf lt` keeps the global's
+  address unless global < diff. The result is therefore `max(global, diff)`.
+  With global 100, configured 2 and 3 queued, native returns 100 and the helper
+  returns −1.
+- **Capacity plan (`0x3df24`):** the first select is the same max over
+  (global, request). Two min selects follow, against definition `+792` and
+  against the train limit. `0x3ea74` is called only when the result differs from
+  `+240`. With (10, 100, 100, 100), native gives 100 and the helper gives 10. The
+  lane's 3/3/4 split test passes only because of that min.
+
+Medium findings:
+
+- The builder at `0x3eb1c` substitutes train definition `+8` when the total is
+  0, whereas the helper returns zeros.
+- `main`'s `PPC-rides.md` already states both min readings, at the `0x3dd14`
+  paragraph and in the COAST6 sentence. It needs correcting.
+
+Production is unaffected, because COAST still goes through the
+unimplemented-effects path.
+
+Confirmed by the delegated decode: the BUMP guard (`0x24364`) is a signed,
+strict less-than against `+100` and against 64. Ring append uses an unsigned
+compare and wraps the cursor with an unsigned divide. Low findings not modelled:
+the fallback ring at `+208`, and the car-eligibility counting rule. The helper
+builds, 11/11 checks pass, the JSON regenerates identically, and merge-tree
+with `main` is clean.
+
+**`b7df1a0` (already merged): accepted with limits.** It touches only the
+standalone rides lane and its doc. VM and animator behaviour is unchanged, so
+"WAITANIM unsupported" describes the helper, not production. The four trigger
+sites take a signed `max(ret−300, 300)`. WAITANIM (`0xafc78`) compares unsigned
+after the division, so marking it unsupported is right. Low: opcode 16's
+accumulator and variable writes are not modelled. Rides/VM tests on `main`:
+113 passed, 0 skipped with `OPENTPW_GAME_PATH`.
+
+## 34. Scenarios `b093ee3` accepted; `bac3428` accepted with one medium gap
+
+Natively confirmed on `SimThemePark.data`:
+
+- Mode values: lazy constructor `0x12bb64` → `SetGameType` `0x12bbf4`, which
+  maps startup flags to 2/1/0.
+- Feature gates:
+  - tickets: `0xd2f1c` runs only when GameType == 0, and its caller only when
+    `tick % 100 == 0`;
+  - challenges: `0xcfef4`;
+  - bank panel: `0x154aa0`;
+  - research panel text 468: `0x161910`;
+  - upgrades: `0x165a0c`;
+  - `Easy_` balance layer: `0x10474c`.
+- Keys = `mExtraKeys` + earned ÷ 3 (`0x128b60`). The new-player award gives
+  response 394 for GameType 2, and otherwise increments `mExtraKeys` and gives
+  response 393 (`0x128f3c`).
+- The Easymode copy is the only code reference to "easymode" (`0x137600`), and
+  it is gated on the easy flag.
+
+Answers to the open concerns:
+
+- **(a) Not inferred.** The mode comes from the explicit front-end button
+  (`FrontEndMenu` → `GameFlow.StartPark` → `ParkStart.FromFrontEnd`). File
+  presence decides only the `Easy_` layer and the seed, matching the gates
+  above.
+- **The original `.TPWI` has no mode field.** GameType is not serialized; only
+  `mEasyModeUser` is saved. OpenTPW's own save stores `Mode`.
+- **(b) Saved researchers.** Researchers restored from an OpenTPW save research
+  in both modes.
+- **(c) Not covered.** The Instant Action start has unit and asset tests only;
+  there is no native smoke run.
+
+Findings:
+
+- **MEDIUM:** in production, Instant Action research never progresses. The
+  seed's researcher is not imported, the staffless rate (ECON-019) is no longer
+  called, and nothing can hire staff (`Hire` is called only from the sandbox
+  smoke test). A delegated scratch test ran 365 days with zero research
+  progress. Natively, the seeded researcher (identified by economy `6305d32`,
+  section 35) would research. Register this as "seed staff not imported" or
+  block it in the UI.
+- **LOW–MEDIUM:** `FIDELITY-REGISTER.md`, `EconomyApproximations.cs` and the
+  runtime log still describe ECON-019 as active, though the code path is now
+  dead.
+- **LOW:** the start record goes stale after loading a save in a different
+  mode. Only the sandbox can reach this.
+- **LOW:** `FIDELITY-REGISTER.md` conflicts with `main`. The conflict is only
+  regenerated line numbers; `fidelity_register.py --write` and then `--check`
+  pass.
+
+Merged tree with the register regenerated: 827 passed, 0 failed, 54 skipped.
+Lane Python: 19 OK. Contract: 23/23. `scenario_evidence.py`: 874 checks pass.
+
+## 35. Economy `974f546`, `1c53e14`, `6305d32`: accepted (standalone)
+
+**`974f546`.** All 11 cap compares in `0xc7b24` are signed `cmpwi` against the
+literals 1000/20/10/10/10/10/4/4/4/4/4. Visitor arithmetic is cap × 20, then a
+signed truncating ÷ 1000; ride arithmetic is × 3, then a truncating ÷ 2. The
+skill chain `0xf41dc` runs in this order:
+
+1. `fdiv` (double) for the percentage ÷ 100;
+2. single-precision grade;
+3. double add, then `frsp`;
+4. `fmuls` × 20, with no fused multiply-add;
+5. `0x1c3fbc`: `fctiwz` with unsigned saturation.
+
+Inputs that separate the readings, all checked against the helper:
+
+| Input | Native and helper | Competing reading |
+| --- | --- | --- |
+| skill(−1, 115) | 3 | 2 (double port) |
+| skill(16777217, 0) | 335544320 | 335544340 (double) |
+| skill(−1, 105) | 1 | 0 (all-single) |
+| rides(−3) | −4 | −5 (floor) |
+| visitors(−49) | 0 | −1 (floor) |
+
+**`1c53e14`.** The save is `jungle/Easymode.TPWI`; Patch 2's copy is
+identical. The witness checks the world prefix at 1179, bank 8 and tick 755.
+Tick 755 maps to 2000-02-02, which agrees with the saved month and day caches.
+Limit: bank offset 1411362 is pinned rather than parsed.
+
+**`6305d32`.** This is a real next-ID chain walk (42 → … → 30), not a pattern
+match. The researcher's ID agrees with the world FirstResearcher field. The walk
+stays aligned past the researcher, and the header pattern occurs only once.
+Native `0xf2ca0`/`0xf2e60` store `fctiwz`, then the low byte, then f32. Only the
+name's SHA is committed. Limit: the start offset 1,385,521 comes from the formats
+lane's map and was not re-derived. These commits claim no production import.
+
+Low: `evidence.py` needs its sibling `schema` module on `sys.path` and fails
+under `python3 -I`; it passes with `-E -s`. Python: 16 OK at `6305d32`. Loan
+helper at `1c53e14`: 25/25 groups, 11,183 assertions. Merge-tree with `main` is
+clean, touching lane paths only.
+
+## 36. Advisor `2b8e4bf` (`MP2File` format metadata): accepted
+
+`MP2File` now reports the rate and channels of the first complete frame instead
+of a fixed 22050. `round6_evidence.py --pc-data` checks this with an MPEG header
+reader written from ISO 11172-3/13818-3, independent of `Mp2Decoder`:
+
+- PC and Patch 2 have identical banks: 47 banks, 3,739 entries.
+- Every entry has a complete supported first frame; the fallback is reached 0
+  times.
+- Exactly 5 entries are Layer I 44.1 kHz mono, and the fixed 22050 was wrong
+  for exactly those 5.
+
+**Low:** when the frame is invalid, `SampleRate` falls back to the legacy reader's
+int16 at entry `+24`, which reads 44100 as −21436. Prefer 0 ("unknown").
+
+Merge-tree with `main` is clean. On the merged tree, the
+`MP2FileMetadata|Layer1Decoder|Mp2Decoder|LipSyncTimeline` tests give 66
+passed, 0 skipped, and `Layer1Corpus` builds with `-warnaserror`. The advisor's
+uncommitted `audio-events/` work is not reviewed.
+
+## 37. UI `68be372` / `0c5739b` and clock `7f8ef64`: accepted with limits
+
+**UI `68be372`.**
+
+- PC has 84 `.sgn` members in 81 WADs. Each is a 17-byte header, then two
+  font+effect pairs, then 20-byte paint records, then exactly two 16×128×4
+  bitmaps. Trailing bytes are zero.
+- 23 version-101 files add a 256×128 wavelet.
+- Mac `lobby.wad` is byte-identical to PC, so the Mac lobby check adds nothing.
+  A scan of every WAD in `hfs.img` found 94 Mac signs with the same layout.
+- The reader `0xabac0` and the relief function's base/diffuse/specular
+  coefficients are confirmed.
+- The coordinator's "1717 / 39244" is not a count. The nearest figures are file
+  sizes: 17,337 bytes for 60 signs, and 39,842 for the largest.
+- Low: the parser's minimum size rose from 885 to 889 bytes. No shipped file is
+  affected.
+
+**UI `0c5739b`.**
+
+- `alphablt`/`colourblt` compute `d + ((a·(s−d)) >> 8)` with signed `srawi`,
+  and alpha is max(src, dst).
+- Mode 1 byte-reverses through `swizzle_for_gimex`. Mode 2 packs nibbles R:G:B:A
+  as a big-endian `sth`. Destination rows are reversed.
+- With zero iterations the Gaussian loop never runs, so the binary ink passes
+  through unchanged.
+- The `descimate` step is a signed `divw`.
+- The reference matches all of these.
+
+Remaining UI items, all LOW:
+
+- Duplicate root names are still detected at the first draw, not at load.
+- `test_phase2`/`test_witness` raise `KeyError` when only `UI_EVIDENCE_BIN_ROOT`
+  is set.
+
+UI Python with all `UI_EVIDENCE_*` set: 43 OK, 0 skipped. The round-5
+shadow-name qualification is already in `main`, through `ae788a3`.
+
+**Clock `7f8ef64`.**
+
+- The RSE handlers at `0xb2144`, `0xb2194`, `0xb21e8` and `0xb2238` call
+  `time` and then `localtime` through complete glue stubs. The C runtime backs
+  `time` with `InterfaceLib:GetDateTime` plus 126,144,000. So these handlers
+  read host civil time, not the park calendar.
+- World state 4 increments the world counter, skips the first object loop and
+  still reaches `0xd67f0` → `0xe3f0c`.
+- Low: the commit message says state 4 skips "thing iteration", but a second
+  list loop (`0x105470`–`0x105618`) still runs. The doc's narrower wording is
+  correct.
+- The `SchedulerRules.cs` change adds comments only. 35/35 checks pass, and 30
+  Python tests pass with no skips.
+
+## 38. TPI `11203fe`: accepted with limits
+
+`18b09c5` replaces the 2.7 MB `full-evidence.json` with a 95 KB compact audit
+that pins the full report's size and SHA. `11203fe` commits PAL8:
+
+- index plane plus raw palette records for formats 0x7b/0xfb;
+- the same 7,283 occurrences and 5,568 unique files in an independent scan;
+- 60 sampled images agree with an independent RefPack decode.
+
+The JSON holds hashes, counts and sizes only, and exports refuse to write into a
+git repository.
+
+- **MEDIUM:** local `main` merged `18b09c5` (not `11203fe`) in `ee373cd`, so
+  `7f2a6b2`'s 2,745,817-byte blob is now in `main`'s unpushed history. It
+  contains metadata only, so this is a size decision, not a content one.
+  Rewriting is possible only before the push.
+- **LOW–MEDIUM:** the pinned `Visitors.cs`/`Math.cs` hashes are stale against
+  `main`, but nothing checks them. Regeneration shows 0 opcode-status
+  differences.
+
+24 Python tests OK; `--self-test` 14/14; merge-tree with `main` is clean. No
+engine-equivalence claim is made.
+
+## 39. Formats `dbcb859` + `6382736`: HIGH resolved; accepted with limits
+
+**Allocation (round-5 HIGH): resolved.** At `6382736`, every array in
+`ModelAnimation.Decode` and `ModelVertexAnimation.Decode` whose size comes from
+the file is checked before it is allocated. Each check covers offset ≥ `0xB8`,
+offset ≤ trailer, and 64-bit length ≤ trailer − offset, and each charges the
+4×payload budget. The trailer is pinned to `length − 72`, and members are capped
+at 16 MiB. A delegated scratch test set every counted table to 65535 and used
+wrapping pointers `0xFFFFFFF0`/`0xFFFFFFFF` and a vertex block running into the
+trailer. All 14 hostile inputs threw `InvalidDataException` after allocating
+about 20 KB. The corpus still parses: 1,735 paired blocks, 1,278 clips and
+6,010,956 table bytes, on both baseline and Patch 2.
+
+Low: the budget counts table bytes, not managed objects. Records sharing one
+rotation key with ease 32767 allocate about 22× the file size before rejection,
+which extrapolates to about 370 MB for a 16 MiB member. That is bounded and
+linear. A single slab array for the curves would remove it.
+
+**Loop replay (`6382736`): confirmed by independent decode.**
+
+- `0xa7960` passes r4 to `0xa7190` as r27. The wrap is `fcmpo`/`bf gt`, so it
+  wraps only when AnimFrame > total, and only for deferred clip ≠ 12 with object
+  `+4 & 0x18 == 0`. With channel bit 0x1 set, it calls `0xa67d8` with the same
+  clip and flags `(r27 ? 0 : 8) | 1`.
+- `0xa67d8` carries AnimFrame − total (`fsubs`) and binds through `0xa5894` only
+  when `flags & 0xC == 0`. Replaying the same clip copies nothing back
+  (`andc` = 0).
+- The object-list update `0x4d354` calls with (r4 = 0, flags 8). Its samples
+  then depend on object flag `0x00400000`.
+- The copy-back gate matches bit for bit: (header +48 & 0x4) ∨ (option bit 0
+  clear ∧ ¬(obj & 0x8 == 0 ∧ obj & 0x00100000)).
+- Relative models rebind with clip 0. `0xa772c` then recomputes face normals and
+  clears `0x00010000`.
+
+**Exact end:** native code holds the last key at time == length, whereas the C#
+`tick % duration` samples tick 0. This is documented as not modelled, not
+claimed.
+
+Open, all LOW:
+
+- There is no register entry or `[APPROX:]` tag for the copy-back choice or the
+  exact-end wrap. The lane hands this to the root.
+- Doc nits:
+  - copy-back moves six bounds words (+120..+140), not four;
+  - the `0x10000` copy is `(n+3)/4 × 32` bytes;
+  - the bind also clears node bit 0x10 (the toggle bit) when object flag 0x8 is
+    set.
+- Closed: the round-5 "more than one mesh per node" case cannot occur, because
+  mesh *i* is node *i*.
+
+Runs:
+
+- Full suite at `6382736`: 769 passed, 0 failed, 55 skipped.
+- Merged with `ee373cd`: 842 passed, 0 failed, 55 skipped.
+- MD2 subset: 77/0/2 on both corpora.
+- Lane Python: 26 OK. `format_witness.py` and `corpus_check.py`: exit 0.
+- Merge-tree is clean.
+
+The lane's uncommitted `ObjectAnimator.cs` and test edits are not reviewed.
+
+## 40. Newer heads seen during this round (not reviewed)
+
+These appeared while round 6 was running: rides `f5c77fe`, clock `f95c694` and
+`d66857e`, advisor `be46ebe`, scenarios merge `0f5492a` (plus 15 uncommitted
+paths), formats' uncommitted animator edits, and TPI `11203fe` (PAL8, which is
+not in `main`). Root `main` also advanced to `f468f03`, which merges TPI
+`18b09c5`; see section 41.
+
+## 41. Root `main` `f468f03` and the diverged `origin/main` (second push)
+
+`f468f03` (`9e40f52` → TPI `18b09c5` → progress note) changes no `source/`
+files. TPI tests (15) and `fidelity_register.py --check` (141 unresolved) pass
+on an export.
+
+**Local `main` and `origin/main` (`778ea5d`) have diverged: 57 commits only on
+local `main`, 53 only on `origin/main`.** `merge-tree` reports conflicts in
+`README.md`, `FIDELITY-REGISTER.md`, `LIPS.md`, `PROGRESS.md`, `MP2File.cs` and
+`Mp2Decoder.cs`. Upstream pins .NET 10 (`global.json` 10.0.401). Only SDK 8 is
+installed here, so **the combined tree has not been built or tested**; nothing
+below is a combined-tree pass. The delegated net8 probes used local `main` with
+either side's decoder.
+
+| Risk | Severity | What a correct resolution keeps |
+| --- | --- | --- |
+| Two Layer I decoders (upstream `f080218` in `Mp2Decoder.cs`, local `58538df` in `Mp2Decoder.Layer1.cs`) | HIGH | Local hunks. Delete upstream `DecodeLayerOneFrame`/`Requantize`/`Mpeg1LayerOneBitrates`; keep upstream tests. Naive resolutions fail to compile (duplicate or missing members), so this is loud rather than a silent alias. Semantics differ: upstream rounds the requantizer twice in float (local folds once in double, matching the 882 Mac factors) and ignores emphasis. Two local Layer I tests fail against the upstream decoder. |
+| Two game-mode models (upstream `3286a6c` `ParkGameMode?` + `Easy_<object>.sam` overlay; scenarios `bac3428` `ParkStart`/`ParkStartKind`) | HIGH when scenarios lands | One model (`ParkStart`), feeding upstream's catalog/balance `easy` flag from game type 2, not from layer presence. Research policy must be chosen once: upstream keeps automatic Instant Action research, while scenarios is staff-only (section 34 medium). Scenarios + upstream conflicts in 13 files. |
+| `ObjectAnimator.TicksPerSecond` became an instance property upstream (`47c1554`); formats `6382736` tests use it statically | MED (inferred CS0120) | Upstream instance property; update the formats tests. |
+| SDT header widths (upstream `28864fa`: UInt16 rate, byte bits/type, `RawSampleField`) vs advisor `2b8e4bf`/`be46ebe` | MED | Upstream constructor body, plus the advisor's `Channels` and `TryReadFrameFormat`. With `28864fa`, the advisor's container fallback (section 36 low) becomes correct. Stale text: `MP2File` doc comment, `PPC-advisor.md` "hardcoded at 22,050". |
+| net8 lane tools under the .NET 10 pin | MED (inferred) | `CorpusWitness.csproj` and `TpiCompare.csproj` reference `OpenTPW.Files` and need retargeting (NU1201). Other lane tools still need a net8 runtime to run. None are in the solution, so CI will not notice. |
+| Upstream policies: English-only repo files (`2d3ce02`), no home paths or `.omx` (`b612f0c`) | MED | Translate the Dutch `PROGRESS.md` section added in `f468f03`. Replace home-directory paths in `PPC-advisor/economy/guests/rides.md`, `TPI-COMPARISON.md`, `tools/tpi-compare/README.md` and `full-evidence.json` (this doc is fixed in this round). The `.omx` files drop out cleanly. |
+| Fidelity register | LOW | Resolve sources first, then `--write`. That gives 135 unresolved with no ID collisions. Upstream retired ECON-007/032, RIDES-020/027/029 and UI-033, and unmerged lanes still carry some of those tags. |
+| CI Python discovery | LOW | `unittest discover -s tools/ppc-analysis` finds none of the 17 lane test files (no `__init__.py`). Run each lane explicitly. |
+
+## 42. Round-6 classification and integration order
+
+| Item | Status | Severity / owner |
+| --- | --- | --- |
+| Root `9e40f52` / `f468f03` combined local tree | Verified (864/0/12 full suite; helpers; Python) | — |
+| Local `main` vs `origin/main` | **Hold the push** until a real merge is resolved and built on .NET 10 | HIGH: Layer I duplicate / root |
+| Formats `dbcb859` + `6382736` | Accepted with limits; HIGH resolved | Low: object amplification, register entry, doc nits / formats; MED test fix after upstream merge |
+| Rides `56a9d26` | **Blocked**: QueryRoom and PlanAllowance take a min where native takes a max | HIGH / rides; MED: `PPC-rides.md` on `main` states min |
+| Rides `b7df1a0` (in `main`) | Accepted with limits (helper only) | Low |
+| Scenarios `b093ee3` | Accepted | — |
+| Scenarios `bac3428` | Accepted with limits | MED: Instant Action research stalls / scenarios; low–med: stale ECON-019; HIGH merge interaction with upstream `3286a6c` |
+| Economy `974f546`, `1c53e14`, `6305d32` | Accepted (standalone) | Low: `-I` import, pinned offsets |
+| Advisor `2b8e4bf` | Accepted | Low: fallback value; resolve with upstream `28864fa` |
+| UI `68be372`, `0c5739b` | Accepted with limits | Low: lazy duplicate detection, test skip guards |
+| Clock `7f8ef64` | Accepted | Low: commit wording |
+| TPI `18b09c5` (in `main`) / `11203fe` | Accepted with limits | MED: 2.7 MB blob in unpushed history |
+| Rides `f5c77fe`, clock `f95c694`/`d66857e`, advisor `be46ebe`, scenarios `0f5492a`, formats uncommitted edits | Not reviewed | — |
+| Any PC/Patch 2 runtime equivalence | Needs evidence | — |
+
+Merge order:
+
+1. Resolve local `main` with `origin/main` first, since every lane below must
+   then rebase onto .NET 10 and the upstream decoder, header and mode work. Keep
+   local Layer I. Take upstream SDT widths and the animator instance clock.
+   Translate the Dutch section, replace home paths, regenerate the register, and
+   build and test on SDK 10.0.401. This lane (`ppc-review-lane`) merges without
+   conflict either way.
+2. Economy `974f546` → `1c53e14` → `6305d32` (lane paths only).
+3. Clock `7f8ef64`; UI `68be372` → `0c5739b` (lane paths only).
+4. Advisor `2b8e4bf`, resolved against upstream `28864fa` as in section 41.
+5. Formats `b0935b4` → … → `6382736`, with the static `TicksPerSecond` test use
+   updated after step 1, plus a register entry for copy-back and exact-end.
+6. Scenarios `bac3428`, only after it is unified with upstream `ParkGameMode`
+   into one model and the Instant Action research gap is registered or closed.
+7. Rides `56a9d26`, after the max/min correction (and a `PPC-rides.md` fix on
+   `main`).

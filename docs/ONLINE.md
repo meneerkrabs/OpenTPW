@@ -87,3 +87,20 @@ The package/protocol/server code owns tags 001–059. The game adapters own:
 | 064 | Chat line formatting |
 | 065 | BF4 chat overlay layout, colours and line count |
 | 066 | ImGui Online panel and restart-based visits |
+
+## Approximation register
+
+The online service is an allowed OpenTPW extension. Its `EXT:ONLINE-*` choices
+remain separate from these unresolved interpretations of original words, data
+and behavior. An extension label does not resolve an `APPROX:ONLINE-*` uncertainty.
+The six entries below preserve the source comments' evidence requirements; they
+are not claims that the original online protocol or service has been recovered.
+
+| ID | Assumption | Evidence needed |
+| --- | --- | --- |
+| ONLINE-001 | Word filtering uses case-insensitive substring matches in space-padded text; entry spaces act as boundaries; allowed substrings exempt matches; hit characters except spaces become asterisks. | Original word-filter code or observed original filtering behavior; the source comment says the encrypted TP.ICD implementation is unreadable. |
+| ONLINE-002 | A leading slash introduces a chat command; other text means say. | Original chat input syntax, which is not documented in the available data. |
+| ONLINE-003 | Response strings 102 and 110 mean failure to add an ignored player and a buddy respectively, based on nearby string blocks. | Original response-code table. |
+| ONLINE-004 | Buddy response strings 111–113 mean online, offline and removed. | Localized variants or the original response-code table. |
+| ONLINE-005 | Chat command semantics follow command words, response strings and weachatr.dll export names; say/emote/shout reach a room, wshout/ushout all rooms; hearing has no positional effect; blackmark creates a moderation report. | Original chat server behavior, including command reach, hearing range and blackmark handling. |
+| ONLINE-006 | A visitor already inside a park must leave it before visiting another, inferred from CHAT_COMMANDS string 127. | Original park-visit transition behavior or an original chat/runtime trace. |

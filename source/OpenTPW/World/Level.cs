@@ -98,6 +98,8 @@ public class Level
 
 		parkLayout = new ParkLayout( this );
 		TextOverlay = new SandboxTextOverlay();
+		// BF4 UI draws at output size after the world blit, not through the world upscaler.
+		global::Global.Render.OnOverlayRender += TextOverlay.Draw;
 	}
 
 	public void Update()
@@ -178,6 +180,5 @@ public class Level
 	{
 		foreach ( var entity in Entity.All.ToArray() )
 			entity.Render();
-		TextOverlay.Draw();
 	}
 }

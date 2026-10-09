@@ -44,6 +44,8 @@ internal static class MovieCommands
 	/// <summary>Plays the movie in the game window until it ends, is skipped or the window closes.</summary>
 	public static void Play( string dataDirectory, string name, bool withAudio, bool smokeTest )
 	{
+		// Movies are not 3D world content: they always render at output size.
+		Render.WorldScalingAllowed = false;
 		var movie = Open( dataDirectory, name );
 		using var screen = new MovieScreen( movie, withAudio && !smokeTest );
 		Render.OnUpdate += screen.Update;

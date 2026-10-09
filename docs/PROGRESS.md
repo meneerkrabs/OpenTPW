@@ -190,5 +190,8 @@ Terrein/save-slice (9 oktober 2026, worktree `terrain`):
   gedecodeerd; read-only `OriginalParkImport` (78 padcellen, 11 objecten, 3 fixed items).
   Geld/tijd/gasten niet geïmporteerd (niet verifieerbaar met één fixture).
 - `--load-original-level jungle`: originele terreinmeshes + heightfield, geïmporteerde
-  paden/footprints, bouwregels op bewezen bits. Metal smoke-test in beide modi geslaagd.
-- Tests: native assets 417 passed, 7 skipped; zonder assets 347 passed, 77 skipped.
+  paden/footprints, bouwregels op bewezen bits.
+- Na rebase op `55b1b93` (RSE-VM, BF4-tekst, TGQ, MD2-animatie): native assets
+  479 passed, 10 skipped (opt-in MTR/native-shadertests); zonder assets 397 passed,
+  92 skipped. Metal smoke-test geslaagd voor sandbox (script, animatie, tekst,
+  save/load) en `--load-original-level jungle`/`fantasy`.

@@ -48,9 +48,14 @@ public class Level
 			var origin = OriginalParkPlacement.GetOrigin( OriginalPark.Heightfield );
 			ParkCameraMode.TargetExtent = Math.Max( origin.X, origin.Y );
 			var save = OriginalPark.Save;
-			var focus = save?.PathCells.Count > 0
-				? (X: (int)save.PathCells.Average( cell => cell.X ), Y: (int)save.PathCells.Average( cell => cell.Y ))
-				: (X: OriginalPark.Heightfield.CellCountX / 2, Y: OriginalPark.Heightfield.CellCountZ / 2);
+			// Focus the imported paths, else the MAP initial path at the entrance, else the terrain centre.
+			var field = OriginalPark.Heightfield;
+			var paths = save?.PathCells.ToList() ?? Enumerable.Range( 0, field.CellCountX * field.CellCountZ )
+				.Select( index => (X: index % field.CellCountX, Y: index / field.CellCountX) )
+				.Where( cell => OriginalPark.Map.GetFlagsAt( cell.X, cell.Y ).HasFlag( MapCellFlags.InitialPath ) ).ToList();
+			var focus = paths.Count > 0
+				? (X: (int)paths.Average( cell => cell.X ), Y: (int)paths.Average( cell => cell.Y ))
+				: (X: field.CellCountX / 2, Y: field.CellCountZ / 2);
 			var center = OriginalParkPlacement.GetCellCenter( OriginalPark.Heightfield, focus.X, focus.Y );
 			ParkCameraMode.InitialTarget = new Vector3( center.X, center.Y, 0 );
 			Log.Trace( $"Original {OriginalPark.LevelName} level: {OriginalTerrain.SurfaceCellCount} heightfield cells, {OriginalTerrain.TerrainMeshCount} terrain meshes"

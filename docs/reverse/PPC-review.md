@@ -2497,3 +2497,187 @@ Instant Action policy.
 
 Review tests: 152 (133 pass and 19 skip without fixture variables; 152 pass
 with `--mac-bin --pc-data`).
+
+## 49. Round 13: runner `0f4ae55` fixture trust, formats `ab444e3`, clock selector and snapshot state
+
+Scope: own files only (`lanes/review/round13_evidence.py`, `test_round13.py`
+and this section). No production, workflow or peer tree was written. The only
+original files read were the two supplied fixtures, each by stat and hash
+(`SimThemePark.data` 2,274,758 bytes; `Easymode.TPWI` 38,479 bytes, SHA-256
+`6d89303d…`). No asset directory was listed. Root `main` is still `0d58bd4`,
+and no integration commit after it exists, so the **final integration snapshot
+is pending**. Its checks below were run on `0d58bd4` and the lane heads. Native
+UI lifecycle work (mixed CD remnants, bounded `GameFilesScreen`, `Dispose`
+cancellation, manual path actions, busy-state typed actions) belongs to the
+Native UI reviewer and is not duplicated here.
+
+### Runner `0f4ae55`: one MEDIUM, one LOW (latent), the rest holds
+
+**MEDIUM: `--require-fixtures` passes with a fixture nothing consumed when
+`--dotnet` is omitted.** `fixture_consumers` counts a *present* fixture-argument
+harness as a consumer, whether or not it runs. Probe: scratch `git archive` of
+`ppc-economy` `62c0a2e`, stale `OPENTPW_PC_FIXTURE` exported, then
+`--pc-fixture <actual> --require-fixtures` with no `--dotnet`. Result: **exit
+0**. The scientist harness is `not-run no --dotnet`, no Python source in that
+tree reads the variable, and `unconsumed_fixtures` is empty. With `--dotnet`
+the same tree is correct: the harness passes with `--fixture` (round 12), or
+fails as `fixture-skipped`. Fix options (runner owner's choice):
+- under `--require-fixtures`, fail when `--pc-fixture` is supplied without
+  `--dotnet` and no Python reader exists; or
+- count a harness as a consumer only after it reports `passed` with the
+  fixture argument.
+
+`round13_evidence.vacuous_fixture_consumers(report, FIXTURE_ARGUMENTS)` flags
+this case from a `--json` report. It flags `OPENTPW_PC_FIXTURE` for the
+`62c0a2e` probe and nothing once a Python reader or a passing fixture run
+exists.
+
+**LOW (latent): linked harness items fail in the scratch copy.** `run_dotnet`
+copies only `project.parent`. Rides `84fe814`'s unregistered
+`controllers/ControllersWitness.csproj` has `None Include="../controller-contracts.json"`
+with `CopyToOutputDirectory`. Probe: register it in memory only, then run it
+with SDK 8.0.425. Result: `MSB3030 Could not copy … controller-contracts.json`,
+classified as generic `failed`. This fails closed, but it is misleading. If the
+owner registers that witness, the copy must preserve the lane-relative layout,
+or the runner must report `linked-outside-copy`. `Layer1Corpus` (links
+`source/…` files) and `CorpusWitness` (references `OpenTPW.Files`) are
+`NEEDS_CORPUS` and never copied. `linked_outside_copy` was applied to every
+present `SELF_TESTS` project in `0d58bd4`, `62c0a2e`, `84fe814`, `1d3b8d4` and
+`6d1b8d9`: no include climbs out. A test pins this for the current checkout.
+
+Holds under realistic absences:
+- Registered projects missing from a tree are `absent`, never coverage and
+  never consumers. This was checked on the economy-only archive: seven absent,
+  and the scientist is counted only when present.
+- Stale `OPENTPW_PC_FIXTURE` is stripped for both Python lanes and harness
+  processes.
+- The fixture is never inferred from `--pc-data`. The review lane's own
+  round-10 walk derives the path from `OPENTPW_PC_DATA`, but pins both the
+  container and payload SHA-256, so it cannot pass on another file.
+- No SDK 8 registered harness references a newer project. `CorpusWitness`:
+  rides `84fe814` only adds a `Compile Remove` line, and main's `net10.0` hunk
+  does not overlap it, so a 3-way merge keeps `net10.0` and no
+  `incompatible-reference` failure appears.
+- Scenarios `1d3b8d4` adds `OriginalProgressionContract.Tests.csproj`, which is
+  unregistered and therefore `not-run`. Coverage is not claimed for it.
+
+### Caller metadata and original-source reauthentication (economy `62c0a2e`)
+
+`PersistedOriginalScientistSnapshot.SourcePayloadRevalidated` and
+`CanRestoreRuntimeStaff` are constant `false`. No JSON field can set them, and
+unknown members are rejected. So caller metadata **cannot claim reauthentication**
+through the wrapper. Round 10's LOW is fixed: the identified label now requires
+the exact 13-row prefix, scientist record and tail 215,879.
+
+Residual qualification (not a blocker): under `IdentifiedPcEasymodeFixture`,
+`Validate` pins provenance and shape but not the scalars. `GradeWord`,
+`RawStateWord`, happiness/energy bits, ticks, `PersonRecordSha256` and the
+inline name are not pinned. The name only has to match its own digest. So a
+caller envelope with altered scalars keeps the identified label on
+`persisted.Snapshot.Provenance.Qualification`. That inner object has the same
+type a direct reader produces. Consumers must gate on the wrapper, not on the
+inner label. This is a static finding: no SDK build was run for it. Since the
+label names one file, the cheap fix is to pin every scalar to the values that
+`ActualFixture` already asserts. The alternative is to downgrade the label on
+load.
+
+### Formats `ab444e3` (per-animator rate): accepted with qualifications
+
+- **Rate compatibility.** The constructor is `(model, ticksPerSecond = 30,
+  keepsPoseOnClipChange = false)`, a superset of main's `(model, ticksPerSecond
+  = 30)`. Main's rate test is carried verbatim. A positional `bool` cannot bind
+  to `float`, so old call sites fail at compile time instead of silently
+  changing. `git merge-tree 0d58bd4 ab444e3` leaves **one conflict** in
+  `ObjectAnimator.cs`: the constructor line and the `keepsPoseOnClipChange`
+  assignment. The resolution takes `ab444e3`. The merged `GetFrame` and carry
+  use the instance rate once, and `Play` and the player use it consistently.
+  At 30 the single-precision steps match the `0xa6484`/`0xa6398` formulas.
+- **15 ticks/s test scope.** I recomputed the arithmetic by hand:
+  - endpoint 2000 ms → 30, not past the end;
+  - +100 ms → carry 1.5 ticks → 100 ms (the 30-rate formula would give 50 ms);
+  - a far-past update caps at the duration;
+  - 10 ticks at 667 ms → 0.333 ms truncates to 0;
+  - the fixed-item pose holds through a matrix-only clip.
+
+  This is internal consistency of an OpenTPW extension, not original
+  evidence. The doc says so. A rate other than 30 must not be presented as
+  game-speed emulation. The original scales the selected clock's milliseconds
+  and keeps `1000 × carry / 30`, so truncation happens in different units.
+- **Two channel clocks: limitation preserved, not modelled.** `0xa6398` picks
+  the bind start from +16408 (channel flag 0x40) or +16400. One animator clock
+  per object remains, and which clock feeds `now` in `0xa6484` is still
+  untraced.
+- **Docs/register freshness.**
+  - `OBJECTS.md` still says "30 ticks/s (unverified)", while `MD2-MODELS.md`
+    says Mac speed 1.0 is proven. `RIDES-001` still reads "original tick rate
+    not verified". These carry forward from round 9.
+  - `fidelity_register.py --check` fails on `ab444e3` (RIDES-001/002/003 lines
+    move to 25/256/198), and already failed on its parent `2d3442f` (older
+    base). `main` `0d58bd4` passes (136 IDs).
+  - CI runs `--check`, so the integration must regenerate the register after
+    merging formats.
+
+### Clock selector1 correction: pending (not committed)
+
+`ppc-clock` is clean at `6d1b8d9`. That commit still says "Both visible paths
+can reach saved-word/state reading". `ApplyPostLoadHook(existing, saved, bases,
+1)` returns `existing` but takes `saved` words that a source early-success path
+would never read. Pending owner edits were not inspected or accepted. To accept
+the committed correction:
+- it cites the early-success branch, with a hash-pinned region;
+- the doc sentence is replaced;
+- the selector1 contract no longer implies the SSEM/RSE words were read;
+- a test covers the no-load path;
+- "selector1 is not GameType1" and "full lifecycle unqualified" stay.
+
+### Integration snapshot checks (on `0d58bd4`; final snapshot pending)
+
+- **Original assets.** Neither fixture's git blob hash (`245a6743…`,
+  `816de5d1…`) exists in the object database, and no blob has either exact
+  size. No asset-extension paths are in `0d58bd4`, `62c0a2e`, `84fe814`,
+  `ab444e3`, `6d1b8d9`, `1d3b8d4` or `0f4ae55`. The only tree blob over 1 MB is
+  upstream `content/textures/test.png` (2022).
+- **Source aliases.** `0d58bd4` uses only the declared `[BIN:STP-PPC` alias (9
+  sites), and the lane heads add none.
+- **Register.** `0d58bd4` is fresh. `ab444e3` needs regeneration on merge, as
+  above.
+
+### Results
+
+| Target | Command | Result |
+| --- | --- | --- |
+| This tree | CI (no flags, stale fixture exported) | OK, 295 tests, 31 skipped; review 157 (19 skip) |
+| This tree | `--mac-bin --pc-data` | OK, 295 tests, 8 skipped (UI corpus); review 157/157 |
+| `62c0a2e` archive | `--pc-fixture --require-fixtures` (no `--dotnet`) | **exit 0**, `vacuous_fixture_consumers = [OPENTPW_PC_FIXTURE]` (MEDIUM) |
+| `84fe814` archive | `ControllersWitness` in-memory registration, SDK 8.0.425 | `failed` (MSB3030 linked file) (LOW, latent) |
+
+Not run: a full codec rerun, a combined economy+rides+formats scratch merge
+build, the UI corpus, original runtime and PC/Patch 2 parity.
+
+Unresolved objections carried forward unchanged:
+- no PC or Patch 2 runtime equivalence for Mac-derived rules;
+- the formats per-channel clock source (two clocks) is unmodelled;
+- SDT bank remap;
+- TPI history blob qualification (section 38);
+- Instant Action policy.
+
+### Handoff
+
+1. Runner owner: close the MEDIUM gap before relying on
+   `--require-fixtures --pc-fixture` without `--dotnet`. Until then, always pass
+   `--dotnet $DOTNET8/dotnet` with `--pc-fixture`. Take the round-12 runner
+   whole when economy and rides merge, as before.
+2. Integration owner, after merging formats `ab444e3`:
+   - resolve the `ObjectAnimator.cs` constructor conflict toward `ab444e3`;
+   - run `python3 tools/fidelity_register.py --write`;
+   - re-describe RIDES-001 as "30 in the Mac channel clock at speed 1.0; PC and
+     clock selection unverified".
+3. Economy owner: optionally pin the identified-label scalars, or downgrade the
+   label on load.
+4. Clock owner: commit the selector1 correction with the criteria above. Review
+   will accept it only from a commit.
+5. Re-run this section's snapshot checks (asset blobs, aliases,
+   `fidelity_register.py --check`) on the final integration commit.
+
+Review tests: 157 (138 pass and 19 skip without fixture variables; 157 pass
+with `--mac-bin --pc-data`).

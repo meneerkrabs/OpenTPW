@@ -88,9 +88,23 @@ met instelbare wereldresolutie eerst, UI op outputresolutie. Simulatie/save/repl
 blijven onaangeraakt. Vendor-/temporal-upscaling en dynamische resolutie pas na
 afzonderlijk capability-, licentie-, input- en performancebewijs.
 
-Dit is alleen een ontwerpwijziging, geen nieuwe rendererfunctie of test-pass.
 Save-/maponderzoek blijft de eerstvolgende gameplay-gate; upscaling verplaatst
-dit kritieke pad niet. Eerdere build-/smoke-evidence betreft de bestaande renderer.
+dit kritieke pad niet.
+
+Implementatie M6-U1 + hoge resoluties (9 oktober 2026, worktree `display`):
+willekeurige venstergroottes (`--resolution`), borderless/exclusive fullscreen
+(`--fullscreen`, `--fullscreen-exclusive`, Alt+Enter/F11), HiDPI-drawables, Native/
+Linear/Nearest met presets 77/67/59/50 en custom 50–100 (`--upscale`, `--render-scale`),
+geheeltallige BF4-UI-schaal, gebruikersinstellingen in `display.json`, ImGui-sectie
+"Display" en de UI-agnostische `OpenTPW.IDisplaySettings`-API (met bevestigen/terugzetten).
+Alleen de 3D-wereld schaalt; BF4-tekst, ImGui en films renderen op outputgrootte.
+Bewijs (alleen macOS arm64/Metal, 1x-scherm 1920×1080): CPU-tests voor grootte,
+afronding, fallbacks, DPI, picking en configuratie; native smoke voor sandbox en
+`--load-original-level jungle` op 1280×720, 1920×1080 borderless (67%), 2560×1440
+output via `OPENTPW_TEST_PIXEL_SCALE=2` met 50% Linear (wereld 1280×720, UI-schaal 2,
+BF4-tekst exact, picking correct) en runtime schaal-/venster-/fullscreenwissels.
+Niet bewezen: echte Retina, exclusive fullscreen, Windows/Linux-GPU, performance.
+Zie `docs/UPSCALING-DESIGN.md`.
 
 ## Geleverde savecontainer-slice
 

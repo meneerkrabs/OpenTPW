@@ -41,8 +41,13 @@ with data-grounded build rules (MAP.md, TPWS-PAYLOAD.md); that is not an origina
 gameplay feature, so the game-feature rows stay unchanged.
 
 Optional presentation extension (requested October 9, 2026): configurable world
-upscaling, design in [UPSCALING-DESIGN.md](UPSCALING-DESIGN.md). Implementation:
-`missing`; macOS/Windows/Linux: `unverified`; original VM: `not-applicable`
+upscaling, design in [UPSCALING-DESIGN.md](UPSCALING-DESIGN.md), together with
+high/arbitrary resolutions, HiDPI drawables, borderless/exclusive fullscreen and an
+integer BF4 UI scale. Implementation: `partial` (M6-U1 Native/Linear/Nearest with
+presets/custom scale; vendor/temporal methods and dynamic resolution deferred);
+macOS: `partial` (Metal smoke at 1280x720, 1920x1080 borderless, 2560x1440 via the
+test pixel scale and 50% Linear/Nearest; real Retina hardware and exclusive fullscreen
+unverified); Windows/Linux: `unverified` (not run); original VM: `not-applicable`
 (presentation only). Native remains the default and fidelity baseline. Offered
 portable modes require platform qualification; optional vendor/temporal experiments
 are not mandatory original-game requirements or permission to add dependencies.

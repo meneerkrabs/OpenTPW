@@ -18,6 +18,7 @@ internal sealed class GameFlow : IDisposable
 	private readonly UiBatch backgroundBatch = new();
 	private Action? pending;
 	private LobbyDefinition? lobbyDefinition;
+	private (int Requested, int Fitted)? reportedUiScale;
 
 	public GameFlow()
 	{
@@ -173,7 +174,12 @@ internal sealed class GameFlow : IDisposable
 	private UiCanvas CurrentCanvas()
 	{
 		var pixels = Screen.PixelSize;
-		return new UiCanvas( Math.Max( 1, pixels.X ), Math.Max( 1, pixels.Y ), Math.Max( 1, Display.EffectiveUiScale ) );
+		var canvas = new UiCanvas( Math.Max( 1, pixels.X ), Math.Max( 1, pixels.Y ), Math.Max( 1, Display.EffectiveUiScale ) );
+		var scales = (canvas.UiScale, canvas.TextScale);
+		if ( reportedUiScale != scales && canvas.TextScale < canvas.UiScale )
+			Log.Warning( $"Interface scale {canvas.UiScale}x falls back to {canvas.TextScale}x: {canvas.Width}x{canvas.Height} drawable pixels cannot fit the {UiScaling.ReferenceWidth}x{UiScaling.ReferenceHeight} reference layout at the requested scale." );
+		reportedUiScale = scales;
+		return canvas;
 	}
 
 	public void Update()

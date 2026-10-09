@@ -97,6 +97,8 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			VerifyText( capture, flow.Strings[UIStrings.GameOptions], "Game Options title" );
 			VerifyText( capture, flow.Strings[UIStrings.ScreenResolution], "screen resolution row" );
 			VerifyText( capture, flow.Strings.Extra( OpenTpwText.Upscaling ), "OpenTPW upscaling row" );
+			if ( Context.Canvas.TextScale < flow.Display.EffectiveUiScale )
+				VerifyText( capture, ((UiLabel)flow.Menu!.Stack.Top!.Find( "effective" )!).Text(), "effective output and interface-scale fallback" );
 			flow.InjectedInput = UiInput.Key( UiKeys.Back );
 		} );
 		Wait( "options cancelled", 3 );

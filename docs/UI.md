@@ -145,9 +145,14 @@ tests/headless use. Audio code should read volumes from `GameOptions.Current`
 
 The UI is built in drawable pixels in the renderer's overlay pass (after world
 upscaling, so render scale never blurs it). The canvas fits the 2048×1536 layout
-to the pixel size; BF4 text is drawn at exactly the display's integer UI scale
-(`Screen.UiScale`, automatic = 2 on a 2560×1440 drawable) and the font tier is
-picked from the logical size, so a HiDPI output shows the same layout and fonts
+to the pixel size; BF4 text uses the requested integer UI scale up to the
+existing display policy's reference-layout fit (`UiScaling`, 1280×720). An
+oversized manual request falls back to the largest fitting integer (at least
+1); the request stays saved, the fallback is logged, and options show requested
+and applied values. Thus 1280×720 with a requested 2× uses 1×; 2560×1440 uses
+2×. This is an OpenTPW extension (`EXT:interface-scale-fit`), with no claim
+about original game scaling. The font tier is picked from the fitted logical
+size, so a HiDPI output shows the same layout and fonts
 as its logical size with every glyph texel a pixel-exact 2×2 block (verified with
 `OPENTPW_TEST_PIXEL_SCALE=2`). Mouse input is converted from logical to pixel units.
 
@@ -240,9 +245,10 @@ glyph in all 14 UI fonts of each language.
   a prepared read-only visit verifies disabled build/open/delete/save controls
   and their direct callbacks without mutating the park or writing a save. The earlier UI flow
   passed in all six languages; the economy integration was verified in English
-  (1280×720, UI scale 1) and Dutch (1920×932 drawable, UI scale 2, nearest
-  upscaling at 50% render scale; the desktop clamps the requested 1920×1080
-  window). Captures: `artifacts/native-smoke-<language>-*.png`.
+  (1280×720, UI scale 1) and, before reference-fit limiting, Dutch at
+  1920×932 drawable/UI scale 2 with nearest upscaling at 50% render scale
+  (the desktop clamps the requested 1920×1080 window). The smaller 1280×720 Dutch/nearest/50% case with requested UI
+  scale 2 also verifies the explicit 1× fallback and full glyph readback. Captures: `artifacts/native-smoke-<language>-*.png`.
 
 ## Approximation register
 

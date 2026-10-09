@@ -152,6 +152,9 @@ public static class OptionsScreen
 			{
 				var effective = display.Effective;
 				var line = string.Format( strings.Extra( OpenTpwText.EffectiveSize ), effective.InternalSize.X, effective.InternalSize.Y, effective.OutputSize.X, effective.OutputSize.Y );
+				var canvas = new UiCanvas( effective.OutputSize.X, effective.OutputSize.Y, display.EffectiveUiScale );
+				if ( canvas.TextScale < canvas.UiScale )
+					line += "\n" + string.Format( strings.Extra( OpenTpwText.Fallback ), $"{strings.Extra( OpenTpwText.UiScale )} {canvas.UiScale}x -> {canvas.TextScale}x" );
 				var reason = effective.FallbackReason ?? display.Diagnostics.LastOrDefault();
 				return reason == null ? line : line + "\n" + string.Format( strings.Extra( OpenTpwText.Fallback ), reason );
 			},

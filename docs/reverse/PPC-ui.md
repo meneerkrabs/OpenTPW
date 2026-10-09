@@ -1,6 +1,6 @@
 # Feral PowerPC UI evidence
 
-October 9, 2026. This lane supplies static evidence and replacement specifications,
+October 9, 2026. This lane supplies static evidence, bounded metadata readers and replacement specifications,
 not original screen captures or gameplay changes. No original executable was run.
 All addresses below are **section-relative**: `code:` is PEF section 0; `data:`
 is instantiated section 1. Mac evidence is not automatically Windows Patch 2
@@ -58,7 +58,7 @@ corpus and negative/truncated corpus spans, RefPack expansion/reference checks,
 relative resource offsets, node-table bounds and signed branch/operand decoding.
 The embedded layout tests also reject unknown/truncated commands and preserve
 signed coordinates and low/high control IDs.
-No C# runtime files changed, so this evidence lane does not claim a new game test
+No OpenTPW game runtime files changed, so this evidence lane does not claim a new game test
 pass. Python compilation and `git diff --check` also pass.
 
 ## Asset identity and authored layout
@@ -476,6 +476,100 @@ python3 tools/ppc-analysis/lanes/ui/phase2.py \
   --mac-uihelp /private/mac-uihelp.str \
   --mac-mbtouni /private/mac-mbtouni.dat
 ```
+
+## Standalone C# metadata reader
+
+`tools/ppc-analysis/lanes/ui/csharp/OriginalLayoutReader.csproj` targets the
+repository's .NET 8 SDK and uses only framework libraries. It has no package or
+project dependencies and is not connected to the OpenTPW renderer. Public
+reader/metadata types live in `OpenTPW.Reverse.Ui`; the executable entry point
+is a dependency-free validation runner.
+
+`OriginalLayoutReader.Read` returns an ordered command AST, flat allocation-order
+control list, source addresses, signed rectangles/control IDs, unsigned attribute
+bits, drawing keys, neutral geometry/style parameters, pairs and nested scopes.
+Parent indexes identify actual allocations even when different controls reuse
+the same numeric ID. Repeated property assignments remain ordered in the AST;
+their last values can be inspected without deleting the earlier commands.
+Properties of an existing external caller remain in the outer scope. The reader
+does not manufacture that caller's control type or apply those properties to an
+unrelated child.
+
+All 19 proved command shapes are supported on the fresh-allocation path. Unknown
+commands/subtypes, incompatible implied-child parents, duplicate implied children,
+unknown external-parent types for typed commands, invalid light indexes and
+truncated spans have explicit diagnostics with command and section-relative
+address. Type 0 is rejected: original factory jump-table entry 0 reaches
+`code:0x18020c`, which returns null rather than an allocated control. Other types
+outside 1–13 are also rejected. Geometry subtypes 1–3 preserve their scalar
+arguments; exact paint/hit-test semantics are not invented. This is a metadata
+reader, not an emulator of state-dependent window lookup or allocation failure.
+
+Hard caps are 32 MiB input, 4096 consumed halfwords, 512 controls, 64 nested scopes
+and 512 entries per geometry/column array. Caller limits can tighten these caps.
+Source-address overflow, trailing input and missing end commands fail; explicitly
+requested prefix mode reports exact consumption when reading from a larger local
+buffer. `OriginalNodeNameHash.Compute` takes nonzero name bytes and reproduces
+the signed-byte XOR/multiply-47 arithmetic, including wraparound. It rejects
+embedded C-string terminators and names over 255 bytes.
+
+Font assignments are separate constructor metadata. `OriginalLayoutFontMetadata`
+returns the three known HUD slot/color bindings only when the declared Mac
+executable identity, section/address and **computed table SHA-256** all match.
+A synthetic table carrying a claimed Mac source identity receives no bindings.
+The layout grammar itself does not choose a BF4 bank or decode glyphs.
+
+`OriginalUiLabelResolver` identifies actual UITEXT/BFMU pairs by both SHA-256
+values and entry count. It describes explicitly observed semantic/index pairs
+for the identified Mac American and Windows baseline English editions. It can
+read selected labels only from the matching resource identity; unknown variants,
+mixed character tables and mismatched raw indexes fail. It does not alter the
+PC enum or infer a universal +1 rule. Mac Ctrl-click and PC right-button option
+descriptions remain edition-specific. Other languages/editions need their own
+verified mappings.
+
+Validation:
+
+- **19 synthetic C# cases passed, zero skips**, covering every command shape,
+  all geometry arities, signed/full-width fields, parent indexes, ordered/outer
+  properties, unsupported corners, budgets, diagnostics and identity guards.
+- A temporary, off-Git corpus manifest supplies the 55 original table slices
+  plus independently generated Python metadata. C# matches **all 934 controls**,
+  consumed words, source offsets, IDs/types/attribute bits, parent IDs, every
+  effective property, geometry/column payload and table hash. It also verifies
+  the three known font bindings and both label editions.
+- Build/static analyzers: **zero warnings/errors**. SDK formatting verification
+  passes. Python compilation and `git diff --check` pass.
+
+Reproduce synthetic validation:
+
+```sh
+dotnet build tools/ppc-analysis/lanes/ui/csharp/OriginalLayoutReader.csproj
+dotnet run --project tools/ppc-analysis/lanes/ui/csharp/OriginalLayoutReader.csproj \
+  --no-build -- --self-test
+```
+
+Generate private inputs **outside every Git worktree**, then verify them:
+
+```sh
+python3 tools/ppc-analysis/lanes/ui/export_private_layouts.py \
+  /path/to/mac-feral/bin /private/off-git/ui-layout-corpus \
+  --mac-uitext /private/mac-uitext.str --mac-mbtouni /private/mac-mbtouni.dat \
+  --pc-uitext /path/to/pc/English/UITEXT.str --pc-mbtouni /path/to/pc/English/MBToUni.dat
+dotnet run --project tools/ppc-analysis/lanes/ui/csharp/OriginalLayoutReader.csproj \
+  --no-build -- --verify-private /private/off-git/ui-layout-corpus/manifest.private.json
+```
+
+The exporter checks the identified executable and refuses a destination beneath
+a Git worktree before reading/copying original table data. This guard was tested
+with a repository destination and no output was created. Private table slices,
+language resources and generated expectations are not checked-in fixtures.
+Synthetic fixture construction is confined to the validation runner.
+
+Independent review is required before renderer/controller integration. Remaining
+gates include conditional lookup/allocation behavior, dynamic rectangles, BF4
+coverage/baselines, control routing, full locale identity maps and original pixels.
+The reader supplies evidence-grounded metadata; it does not close UI fidelity tags.
 
 ## Sign/font compatibility path
 

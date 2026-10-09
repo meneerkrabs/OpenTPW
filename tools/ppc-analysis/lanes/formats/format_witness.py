@@ -599,6 +599,33 @@ def md2_clip_clock(app: Image) -> dict:
             'replay_start': 'now - (unsigned)trunc(1000 * min(carry, duration) / 30 / speed)'}
 
 
+def logical_immediate(op: int, imm: int) -> int:
+    """Value ORed by `ori`/`oris`: the 16-bit field is unsigned (d_form sign-extends it)."""
+    require(op in (ORI, ORIS), True, 'logical immediate opcode')
+    return (imm & 0xffff) << 16 if op == ORIS else imm & 0xffff
+
+
+def builder_flag_mapping(app: Image) -> dict[int, int]:
+    """0x594c8: each tested bit of its r7 word ORs one ride-flag bit into r19 (the loader's flag argument)."""
+    mapping = {}
+    for test in [0x59558] + list(range(0x59568, 0x59604, 12)):
+        _, rs, _, _, mb, me, record = rotate(app.w(test))
+        require((rs, mb == me, record), (24, True, 1), f'builder flag test at {test:#x}')
+        op, rt, ra, imm = d_form(app.w(0x59564 if test == 0x59558 else test + 8))
+        require((op in (ORI, ORIS), rt, ra), (True, 19, 19), f'builder flag set after {test:#x}')
+        mapping[1 << (31 - mb)] = logical_immediate(op, imm)
+    require(len(mapping), 14, 'builder flag tests')
+    return mapping
+
+
+def ride_flags_from_builder_word(mapping: dict[int, int], word_: int) -> int:
+    flags = 0
+    for caller_bit, ride_bit in mapping.items():
+        if word_ & caller_bit:
+            flags |= ride_bit
+    return flags
+
+
 def md2_copy_back_flags(app: Image) -> dict:
     """Where the bind's copy-back gate inputs come from: option word +16396 and object flags 0x8/0x00100000."""
     sites = []
@@ -662,14 +689,7 @@ def md2_copy_back_flags(app: Image) -> dict:
     direct.update({0x4da20: 8, 0x4da44: 8, 0x59704: 0})
     d(app, 0x594e8, (ADDI, 24, 7, 0), 'builder keeps r7')
     d(app, 0x5955c, (ADDI, 19, 0, 0), 'ride flags start empty')
-    mapping = {}
-    for test in [0x59558] + list(range(0x59568, 0x59604, 12)):
-        _, rs, _, _, mb, me, record = rotate(app.w(test))
-        require((rs, mb == me, record), (24, True, 1), f'builder flag test at {test:#x}')
-        op, rt, ra, imm = d_form(app.w(0x59564 if test == 0x59558 else test + 8))
-        require((op in (ORI, ORIS), rt, ra), (True, 19, 19), f'builder flag set after {test:#x}')
-        mapping[1 << (31 - mb)] = imm << 16 if op == ORIS else imm
-    require(len(mapping), 14, 'builder flag tests')
+    mapping = builder_flag_mapping(app)
     require(mapping[0x200], 0x100, 'caller 0x200 -> ride 0x100 (object 0x8)')
     require(mapping[0x40000], 0x1000, 'caller 0x40000 -> ride 0x1000 (object 0x00100000)')
     require([k for k, v in mapping.items() if v in (0x100, 0x1000)], [0x200, 0x40000], 'no other source of those ride bits')
@@ -800,6 +820,316 @@ def md2_ride_descriptor_fields(app: Image) -> dict:
 
 
 # ------------------------------------------------------------------ TPWS
+GLOBAL_BLOCK_TOC, CLOCK_OBJECT_TOC, OBJECT_TABLE_TOC = -0x7684, -0x75d8, -0x739c
+LWZU, STWU, STFD, FP_DOUBLE = 33, 37, 54, 63
+CHANNEL_SIZE, OBJECT_SIZE = 56, 252
+CLOCK_A, CLOCK_B = 16400, 16408
+
+
+def a63(image: Image, offset: int, expected: tuple, context: str):
+    """Double-precision A-form (opcode 63): (extended opcode, frt, fra, frb, frc)."""
+    op, frt, fra, frb, frc, xo = a_form(image.w(offset))
+    require(op, FP_DOUBLE, f'double-precision arithmetic at {offset:#x}')
+    return require((xo, frt, fra, frb, frc), expected, context)
+
+
+X_FORM_RA_DESTINATION = {24, 26, 28, 60, 124, 284, 316, 412, 444, 476, 536, 792, 824, 922, 954}
+X_FORM_NO_DESTINATION = {0, 32, 54, 86, 150, 151, 183, 215, 247, 278, 407, 439, 470, 598, 662, 663, 695, 727, 759,
+                         854, 918, 982, 1014}
+
+
+def gpr_destination(w: int) -> int | None:
+    """General register written by one instruction word (None for stores, branches, compares and FP results)."""
+    op = w >> 26
+    if op in (7, 8, 12, 13, 14, 15, 32, 33, 34, 35, 40, 41, 42, 43, 46):
+        return w >> 21 & 31
+    if op in (20, 21, 23, 24, 25, 26, 27, 28, 29):
+        return w >> 16 & 31
+    if op == 31:
+        xo = w >> 1 & 0x3ff
+        if xo in X_FORM_NO_DESTINATION or xo == 467:
+            return None
+        return w >> 16 & 31 if xo in X_FORM_RA_DESTINATION else w >> 21 & 31
+    return None
+
+
+def channel_flag_0x40_stores(image: Image, start: int, end: int) -> list[tuple[int, str]]:
+    """`ori 0x40` / `rlwinm` clearing only 0x40 whose result is stored to +0 of a base within two words."""
+    sites = []
+    for offset in range(start, end - 8, 4):
+        w = image.w(offset)
+        op, rs, ra = w >> 26, w >> 21 & 31, w >> 16 & 31
+        if op == ORI and w & 0xffff == 0x40:
+            kind = 'set'
+        elif op == RLWINM and rotate(w)[3:6] == (0, 26, 24):
+            kind = 'clear'
+        else:
+            continue
+        for k in (4, 8):
+            sop, srt, _, simm = d_form(image.w(offset + k))
+            if (sop, srt, simm) == (STW, ra, 0):
+                sites.append((offset, kind))
+                break
+    return sites
+
+
+def md2_channel_clock_selector(app: Image) -> dict:
+    """Channel bit 0x40 picks scene clock B (+16408) over A (+16400); who sets it, and how instances inherit it."""
+    toc_global = (LWZ, None, 2, GLOBAL_BLOCK_TOC)
+    # Consumers: every channel read of the scene clock tests channel word +0 bit 0x40 first.
+    consumers = {}
+    for name, global_load, base, channel_load, test, branch, clock_b, clock_a in (
+            ('fresh start 0xa6398', 0xa63a4, 7, (0xa63e8, 31), 0xa63ec, (0xa63f0, 0xa63fc), 0xa63f4, 0xa63fc),
+            ('channel update 0xa7190', 0xa719c, 31, (0xa7288, 26), 0xa728c, (0xa7290, 0xa729c), 0xa7294, 0xa729c),
+            ('all-ended check 0xa7000', 0xa7004, 6, (0xa7070, 7), 0xa7074, (0xa7078, 0xa7084), 0xa707c, 0xa7084)):
+        op, rt, ra, imm = d_form(app.w(global_load))
+        require((op, rt, ra, imm), (LWZ, base, 2, GLOBAL_BLOCK_TOC), f'{name}: global block pointer')
+        op, rt, ra, imm = d_form(app.w(channel_load[0]))
+        require((op, ra, imm), (LWZ, channel_load[1], 0), f'{name}: channel word +0')
+        rot(app, test, (RLWINM, rt, rt, 0, 25, 25, 1), f'{name}: channel bit 0x40')
+        bc(app, branch[0], (BT, CR_EQ, branch[1]), f'{name}: clear selects clock A')
+        require(d_form(app.w(clock_b))[2:], (base, CLOCK_B), f'{name}: set reads +16408')
+        require(d_form(app.w(clock_a))[2:], (base, CLOCK_A), f'{name}: clear reads +16400')
+        consumers[name] = {'test': test, 'clock_b_load': clock_b, 'clock_a_load': clock_a}
+    # 0xa7190 stores the selected clock into AnimTime (+20) and NoPauseAnimTime (+24) unless bits 0x6 freeze it.
+    d(app, 0xa72a0, (STW, 3, 1, 0x4c), 'selected clock kept')
+    rot(app, 0xa72a8, (RLWINM, 4, 0, 0, 29, 30, 1), 'channel bits 0x6 freeze AnimTime')
+    bc(app, 0xa72ac, (BT, CR_EQ, 0xa730c), 'neither: AnimTime = selected clock')
+    d(app, 0xa730c, (STW, 3, 26, 20), 'AnimTime = selected clock')
+    d(app, 0xa7318, (STW, 3, 26, 24), 'NoPauseAnimTime = selected clock')
+    rot(app, 0xa72b0, (RLWINM, 4, 0, 0, 30, 30, 1), 'bit 0x2 (frame 0) before 0x4 (last frame)')
+    bc(app, 0xa72b4, (BT, CR_EQ, 0xa72cc), '0x4 alone: hold at the end')
+    d(app, 0xa72b8, (LWZ, 0, 26, 16), '0x2: StartAnimTime')
+    d(app, 0xa72bc, (STW, 0, 26, 20), '0x2: AnimTime = StartAnimTime')
+    d(app, 0xa72c4, (STFS, 0, 26, 32), '0x2: AnimFrame = 0')
+    require(app.toc_float(0xa72c0, 0), 0.0, '0x2: frame literal')
+    fp(app, 0xa72d8, (FMULS, 2, 2, 0, 0), '0x4: 1000 * TotalAnimFrames')
+    fp(app, 0xa72e0, (FDIVS, 1, 2, 1, 0), '0x4: / 30')
+    d(app, 0xa72dc, (LFS, 0, 26, 12), '0x4: speed')
+    fp(app, 0xa72e4, (FDIVS, 1, 1, 0, 0), '0x4: / speed')
+    require(app.call(0xa72e8), 0x1c3fbc, '0x4: truncated to whole milliseconds')
+    xop(app, 0xa72f0, (31, 266, 0, 0, 3), '0x4: AnimTime = start + that')
+    d(app, 0xa72f8, (LFS, 0, 26, 28), '0x4: TotalAnimFrames')
+    d(app, 0xa72fc, (STFS, 0, 26, 32), '0x4: AnimFrame = TotalAnimFrames')
+    d(app, 0xa7304, (STW, 0, 26, 24), 'frozen: NoPauseAnimTime still follows the selected clock')
+    # 0xa7000 reads channel 0 for every channel: r7 is loaded once and never advanced in its loop.
+    d(app, 0xa703c, (LWZ, 7, 3, 16), 'all-ended check: channel array')
+    from_loop = [o for o in range(0xa705c, 0xa70e0, 4) if d_form(app.w(o))[0] in (ADDI, LWZ) and
+                 d_form(app.w(o))[1] == 7]
+    require(from_loop, [], 'all-ended check never advances its channel pointer')
+    bc(app, 0xa70dc, (16, 0, 0xa705c), 'loop counted by ctr (channel count +14)')
+
+    # Scene clocks: 0xa6f70 refreshes both from the clock object (TOC -0x75d8) once per call.
+    require(app.calls_to(0xa6f70), [0x5ba44, 0x11b550, 0x1c16f4, 0x1c22ac], 'scene clock refresh call sites')
+    d(app, 0xa6f78, (LWZ, 31, 2, GLOBAL_BLOCK_TOC), 'refresh: global block')
+    d(app, 0xa6f80, (LWZ, 30, 2, CLOCK_OBJECT_TOC), 'refresh: clock object')
+    xop(app, 0xa6f8c, (31, 444, 30, 3, 30), 'clock A read on the object')
+    require(app.call(0xa6fa0), 0x10e844, 'clock A getter')
+    d(app, 0xa6f88, (ADDI, 29, 31, CLOCK_A), 'clock A slot')
+    d(app, 0xa6fa4, (STW, 3, 29, 0), '+16400 = clock A')
+    fp(app, 0xa6fd0, (FDIVS, 0, 1, 0, 0), '(A - previous A) / 1000')
+    d(app, 0xa6fd4, (STFS, 0, 31, 16404), '+16404 = clock A step in seconds (single)')
+    d(app, 0xa6fac, (ADDI, 3, 30, 0), 'clock B read on the same object')
+    require(app.call(0xa6fd8), 0x10e864, 'clock B getter')
+    d(app, 0xa6fdc, (STW, 3, 31, CLOCK_B), '+16408 = clock B')
+    # Clock A: timer at object +0; save offset +0x3c, hold +0x2c/+0x30, pause +0x28, rate-scaled accumulator.
+    require(app.call(0x10e850), 0x11a588, 'A: offset getter')
+    require(app.call(0x11a59c), 0x10ed54, 'A: held/paused value')
+    d(app, 0x11a5a0, (LWZ, 0, 31, 0x3c), 'A: + save/restore offset (+0x3c)')
+    d(app, 0x10ed68, (LWZ, 0, 3, 0x2c), 'A: hold flag (+0x2c)')
+    bc(app, 0x10ed70, (BT, CR_EQ, 0x10ed7c), 'A: not held')
+    d(app, 0x10ed74, (LWZ, 3, 31, 0x30), 'A: held value (+0x30)')
+    require(app.call(0x10ed80), 0x117d74, 'A: paused timer')
+    d(app, 0x10ed84, (LWZ, 0, 31, 0x38), 'A: + offset (+0x38)')
+    d(app, 0x117d88, (LWZ, 0, 3, 0x28), 'A: pause flag (+0x28)')
+    require(app.call(0x117d98), 0x127cd0, 'A: scaled accumulator')
+    d(app, 0x117d9c, (LWZ, 0, 31, 0x24), 'A: - paused time (+0x24)')
+    require(app.glue_symbol(app.call(0x127ce4)), 'LbTime_GetClock__Fv', 'A: raw clock')
+    d(app, 0x127cec, (LWZ, 4, 31, 0xc), 'A: previous raw')
+    op, target, slot = app.toc_slot(0x127cf4, 3)
+    require((op, target, struct.unpack_from('>Q', app.data, slot)[0]), (LFD, None, 0x4330000000000000),
+            'A: unsigned raw step')
+    d(app, 0x127cfc, (LFD, 1, 31, 0x18), 'A: double rate (+0x18)')
+    d(app, 0x127d04, (LFD, 0, 31, 0x10), 'A: double accumulator (+0x10)')
+    a63(app, 0x127d14, (FMADDS, 0, 2, 0, 1), 'A: accumulator += step * rate')
+    d(app, 0x127d18, (STFD, 0, 31, 0x10), 'A: accumulator kept')
+    require(app.call(0x127d24), 0x1c3fbc, 'A: truncated to whole milliseconds')
+    # Clock B: timer at object +0x44; save offset +0x18, pause +0x14, unscaled accumulator.
+    d(app, 0x10e868, (ADDI, 3, 3, 0x44), 'B: timer at clock object +0x44')
+    require(app.call(0x10e874), 0x11a428, 'B: offset getter')
+    require(app.call(0x11a43c), 0x117c00, 'B: paused timer')
+    d(app, 0x11a440, (LWZ, 0, 31, 0x18), 'B: + save/restore offset (+0x18)')
+    d(app, 0x117c14, (LWZ, 0, 3, 0x14), 'B: pause flag (+0x14)')
+    require(app.call(0x117c24), 0x10edb4, 'B: accumulator')
+    d(app, 0x117c28, (LWZ, 0, 31, 0x10), 'B: - paused time (+0x10)')
+    require(app.glue_symbol(app.call(0x10edc8)), 'LbTime_GetClock__Fv', 'B: raw clock')
+    op, target, slot = app.toc_slot(0x10edd8, 1)
+    require((op, target, struct.unpack_from('>Q', app.data, slot)[0]), (LFD, None, 0x4330000000000000),
+            'B: unsigned raw step')
+    d(app, 0x10ede0, (LFD, 2, 31, 4), 'B: double accumulator (+4)')
+    a63(app, 0x10edf4, (21, 0, 2, 0, 0), 'B: accumulator += step (fadd, no rate)')
+    d(app, 0x10edf8, (STFD, 0, 31, 4), 'B: accumulator kept')
+    require(app.call(0x10ee04), 0x1c3fbc, 'B: truncated to whole milliseconds')
+    # Save snapshot 0x10e9ec keeps A at +0x40 and B at +0x44 + 0x1c; restore 0x10ea28 turns them into offsets.
+    require(app.calls_to(0x10e9ec), [0x11dbac], 'clock snapshot call site')
+    require((app.call(0x10ea00), app.call(0x10ea0c)), (0x11a588, 0x11a428), 'snapshot reads A and B')
+    d(app, 0x10ea04, (STW, 3, 31, 0x40), 'A snapshot (+0x40)')
+    d(app, 0x10ea10, (STW, 3, 31, 0x60), 'B snapshot (+0x44 + 0x1c)')
+    require(app.calls_to(0x10ea28), [0x11b54c], 'clock restore call site')
+    require(app.call(0x11b550), 0xa6f70, 'scene clocks refreshed right after the restore')
+    require((app.call(0x10ea3c), app.call(0x10ea44)), (0x11a5bc, 0x11a45c), 'restore A and B')
+    d(app, 0x11a5d4, (LWZ, 0, 31, 0x40), 'A: snapshot')
+    d(app, 0x11a5dc, (STW, 0, 31, 0x3c), 'A: offset = snapshot - held/paused value')
+    d(app, 0x11a474, (LWZ, 0, 31, 0x1c), 'B: snapshot')
+    d(app, 0x11a47c, (STW, 0, 31, 0x18), 'B: offset = snapshot - paused value')
+    # Pause, resume and toggle wrappers drive both timers; each timer routine has only that caller.
+    pause_pairs = {}
+    for wrapper, (a_site, a_routine, b_site, b_routine) in {
+            0x10e888: (0x10e89c, 0x117c54, 0x10e8a4, 0x117ae8),
+            0x10e8bc: (0x10e8d0, 0x117c9c, 0x10e8d8, 0x117b30),
+            0x10e8f0: (0x10e904, 0x117cf4, 0x10e90c, 0x117b88)}.items():
+        require(app.call(a_site), a_routine, f'{wrapper:#x}: clock A routine')
+        d(app, b_site - 4, (ADDI, 3, 31, 0x44), f'{wrapper:#x}: clock B timer')
+        require(app.call(b_site), b_routine, f'{wrapper:#x}: clock B routine')
+        require(app.calls_to(a_routine), [a_site], f'{a_routine:#x} only from {wrapper:#x}')
+        require(app.calls_to(b_routine), [b_site], f'{b_routine:#x} only from {wrapper:#x}')
+        pause_pairs[f'{wrapper:#x}'] = [f'{site:#x}' for site in app.calls_to(wrapper)]
+    d(app, 0x117c84, (STW, 0, 31, 0x28), 'pause sets A +0x28')
+    d(app, 0x117b18, (STW, 0, 31, 0x14), 'pause sets B +0x14')
+
+    # Producer: 0xa7bb8(object, stop, use_b, r6) ORs 0x40 into every channel when use_b != 0; nothing clears it.
+    xop(app, 0xa7bc8, (31, 444, 5, 29, 5), 'reset: use_b argument kept in r29')
+    d(app, 0xa7be0, (LWZ, 26, 31, 16), 'reset: channel array (+16)')
+    d(app, 0xa7be8, (LHZ, 27, 31, 14), 'reset: channel count (+14)')
+    require(compare_immediate(app.w(0xa7bf0)), (11, 0, 29, 0), 'reset: use_b tested')
+    bc(app, 0xa7bf4, (BT, CR_EQ, 0xa7c04), 'reset: zero leaves the bit as it was')
+    d(app, 0xa7bfc, (ORI, 0, 0, 0x40), 'reset: channel bit 0x40')
+    d(app, 0xa7c00, (STW, 0, 26, 0), 'reset: channel word +0')
+    d(app, 0xa7c0c, (ADDI, 4, 0, 0), 'reset: no clip')
+    require(app.call(0xa7c14), 0xa6398, 'reset: clip cleared through 0xa6398')
+    d(app, 0xa7c28, (ADDI, 26, 26, CHANNEL_SIZE), 'reset: 56-byte channels')
+    module = channel_flag_0x40_stores(app, 0xa3000, 0xa9000)
+    require(module, [(0xa7bfc, 'set')], 'animation code 0xa3000-0xa9000: the only channel bit 0x40 store')
+    require(channel_flag_0x40_stores(app, 0x150a00, 0x150a30), [(0x150a10, 'set'), (0x150a20, 'clear')],
+            'control: the scan sees a set and a clear outside the animation code')
+    require(app.calls_to(0xa7bb8), [0x291ac, 0x4f5fc, 0x591ec, 0x5a0ec], 'reset call sites')
+    d(app, 0x291a4, (ADDI, 5, 0, 1), 'advisor creator: use_b = 1')
+    d(app, 0x4f5f4, (ADDI, 5, 0, 0), 'frame capture: use_b = 0')
+    d(app, 0x5a0e4, (ADDI, 5, 0, 0), 'placement: use_b = 0')
+    rot(app, 0x591e0, (RLWINM, 17, 5, 0, 13, 13, 0), 'ride loader: use_b = ride flag 0x40000')
+    require(d_form(app.w(0x591d4)), (ANDI_DOT, 17, 18, 0xa), 'ride loader: reset only with ride flag 0x2 or 0x8')
+    bc(app, 0x591d8, (BT, CR_EQ, 0x59270), 'neither: no reset')
+    writes_r17 = [o for o in range(0x58a48, 0x591e0, 4) if gpr_destination(app.w(o)) == 17]
+    require(writes_r17, [], 'ride loader keeps its flag argument in r17')
+    require([o for o in range(0x58a3c, 0x58a48, 4) if gpr_destination(app.w(o)) == 17], [0x58a44],
+            'control: the scan sees the loader setting r17')
+    # Ride flags reaching the loader: direct words and the 0x594c8 mapping of every creator word.
+    mapping = builder_flag_mapping(app)
+    require(sorted(caller for caller, ride in mapping.items() if ride & (0x40000 | 0x8 | 0x2)), [0x10],
+            'builder sources of ride 0x40000, 0x8, 0x2')
+    flags = md2_copy_back_flags(app)
+    creator_words = {site: [int(v, 16) for v in values] for site, values in flags['creator_words'].items()}
+    direct_words = {site: int(v, 16) for site, v in flags['direct_loader_words'].items()}
+    loader_sets_b = sorted(site for site, values in creator_words.items()
+                           for value in values if ride_flags_from_builder_word(mapping, value) & 0x40000)
+    loader_sets_b += sorted(site for site, value in direct_words.items() if value & 0xa and value & 0x40000)
+    require(loader_sets_b, [], 'no loader call reaches the reset with ride flag 0x40000')
+    require(direct_words['0x29180'] & (0x40000 | 0xa), 0x40000, 'advisor loader word: 0x40000 but no loader reset')
+    resetting_creators = sorted(site for site, values in creator_words.items()
+                                for value in values if ride_flags_from_builder_word(mapping, value) & 0xa)
+    # Advisor: TOC string pool "Advisor%s.md2" / "Advisor.md2"; loader object -> instance -> reset with use_b.
+    address, text = app.toc_string(0x2908c, 30)
+    require((text, cstring(app.code, address + 14)), ('Advisor%s.md2', 'Advisor.md2'), 'advisor model names')
+    d(app, 0x2914c, (ADDI, 4, 30, 14), 'advisor default name')
+    require(app.call(0x29180), 0x58a3c, 'advisor: loader')
+    d(app, 0x29184, (LWZ, 3, 28, 0), 'advisor: loaded object is the template')
+    d(app, 0x29188, (ADDI, 6, 28, 4), 'advisor: instance out')
+    require(app.call(0x29198), 0x543cc, 'advisor: instance constructor')
+    d(app, 0x2919c, (LWZ, 3, 28, 4), 'advisor: reset the instance')
+
+    # Instance constructor 0x543cc copies the whole 252-byte template, then its channels.
+    require(app.calls_to(0x543cc), [0x29198, 0x4f5d8, 0x59f90, 0x59fa8], 'instance constructor call sites')
+    d(app, 0x54514, (ADDI, 0, 0, 31), 'copy: 31 double words')
+    d(app, 0x54518, (ADDI, 4, 31, -8), 'copy: from the template')
+    d(app, 0x54524, (ADDI, 5, 28, -8), 'copy: to the instance')
+    d(app, 0x5452c, (LWZU, 3, 4, 8), 'copy: load pair')
+    d(app, 0x54534, (STWU, 3, 5, 8), 'copy: store pair')
+    d(app, 0x54540, (LWZ, 0, 4, 8), 'copy: last word (+248)')
+    d(app, 0x54544, (STW, 0, 5, 8), 'copy: 31 * 8 + 4 = 252 bytes')
+    d(app, 0x5455c, (STW, 31, 28, 0), 'instance +0 = template')
+    d(app, 0x5454c, (STW, 0, 28, 8), 'instance +8 = header from 0x53004')
+    require(app.call(0x54408), 0x53004, 'header from the template header (copy depth not traced)')
+    d(app, 0x54564, (ADDI, 0, 3, OBJECT_SIZE), 'instance channels follow the object')
+    d(app, 0x54570, (STW, 0, 28, 16), 'instance +16 = own channel array')
+    d(app, 0x54580, (LWZ, 4, 31, 16), 'template channels')
+    d(app, 0x5458c, (LHZ, 0, 31, 14), 'template channel count')
+    d(app, 0x54598, (MULLI, 5, 0, CHANNEL_SIZE), 'count * 56 bytes')
+    require(app.glue_symbol(app.call(0x5459c)), 'memcpy', 'channels copied (bit 0x40 included)')
+    memcpy_glue = app.call(0x5459c)
+    channel_copies = [o for o in range(0, len(app.code) - 12, 4) if d_form(app.w(o))[0] == MULLI and
+                      d_form(app.w(o))[3] == CHANNEL_SIZE and
+                      any(app.w(o + k) >> 26 == 18 and app.w(o + k) & 3 == 1 and app.call(o + k) == memcpy_glue
+                          for k in (4, 8, 12))]
+    require(channel_copies, [0x54598], 'the only memcpy of count * 56 bytes')
+    # Allocation: the loader asks 0x55b54 for zeroed memory (GlobalAlloc flag 0x40), the constructor does not.
+    rot(app, 0x55b68, (RLWINM, 4, 0, 0, 31, 31, 1), 'alloc: zero-fill argument')
+    d(app, 0x55b70, (ADDI, 3, 0, 0x40), 'alloc: GlobalAlloc flags 0x40')
+    require(app.glue_symbol(app.call(0x55b78)), 'GlobalAlloc__10NS_MacDozeFUiUl', 'alloc: MacDoze GlobalAlloc')
+    d(app, 0x5908c, (MULLI, 3, 0, CHANNEL_SIZE), 'loader: channel bytes')
+    d(app, 0x59090, (ADDI, 3, 3, OBJECT_SIZE), 'loader: + object')
+    d(app, 0x59088, (ADDI, 4, 0, 1), 'loader: zero-filled')
+    require(app.call(0x59094), 0x55b54, 'loader: allocation')
+    d(app, 0x590ac, (STW, 0, 1, 0x444 + 16), 'loader: object +16 = channels after the object')
+    d(app, 0x54500, (ADDI, 4, 0, 0), 'constructor: not zero-filled (everything copied)')
+    require(app.call(0x5450c), 0x55b54, 'constructor: allocation')
+    # Catalog table: the builder appends each loaded object; placement 0x59f00 instantiates from it.
+    d(app, 0x596a8, (ADDI, 5, 1, 0x1444), 'builder: loader output')
+    d(app, 0x59914, (LWZ, 3, 2, OBJECT_TABLE_TOC), 'builder: object table')
+    d(app, 0x59924, (LWZ, 4, 1, 0x1444), 'builder: loaded object')
+    xop(app, 0x59930, (31, 151, 4, 3, 0), 'builder: table[n] = object')
+    d(app, 0x59f48, (LWZ, 3, 2, OBJECT_TABLE_TOC), 'placement: same object table')
+    xop(app, 0x59f50, (31, 23, 0, 3, 0), 'placement: template = table[id]')
+    d(app, 0x59f64, (ADDI, 5, 0, 0x211f), 'placement: constructor flags')
+    d(app, 0x59f6c, (ORI, 5, 5, 0x200), 'placement flag 0x800 adds 0x200')
+    d(app, 0x59f78, (LWZ, 3, 4, 0xd0), 'placement flag 0x400: alternate template +0xd0')
+    stores = {}
+    for offset in range(0x59fac, 0x5a0ec, 4):
+        op, rs, ra, imm = d_form(app.w(offset))
+        if (op, imm) == (STW, 4) and ra == 3 and d_form(app.w(offset - 8)) == (LWZ, 0, 3, 4):
+            stores[offset] = app.w(offset - 4)
+    require(sorted(stores), [0x59fc8, 0x5a0a8, 0x5a0c0, 0x5a0d8], 'placement: instance +4 updates')
+    rot(app, 0x59fc4, (RLWINM, 0, 0, 0, 0, 30, 0), 'placement clears only instance bit 0x1')
+    require([logical_immediate(*d_form(stores[o])[0:1], d_form(stores[o])[3]) for o in (0x5a0a8, 0x5a0c0, 0x5a0d8)],
+            [0x4, 0x4000, 0x8000], 'placement only adds instance bits 0x4, 0x4000, 0x8000')
+    d(app, 0x59fd0, (STW, 31, 3, 0xe4), 'placement flags kept at +0xe4')
+    rot(app, 0x5a094, (RLWINM, 31, 0, 0, 31, 31, 1), 'placement 0x1 -> instance 0x4')
+    rot(app, 0x5a0ac, (RLWINM, 31, 21, 0, 30, 30, 1), 'placement 0x2 -> instance 0x4000')
+    rot(app, 0x5a0c4, (RLWINM, 31, 0, 0, 24, 24, 1), 'placement 0x80 -> instance 0x8000')
+    for site, anim in ((0x5a120, 0), (0x5a13c, 13)):
+        require(app.call(site), 0xa6cc0, f'placement start at {site:#x}')
+        d(app, site - 0x14, (ADDI, 4, 0, anim), f'AnimID {anim}')
+        d(app, site - 4, (ADDI, 8, 0, 0), 'channel 0')
+    return {'selector': 'channel word +0 bit 0x40: set -> global +16408 (clock B), clear -> +16400 (clock A)',
+            'consumers': {k: {kk: f'{vv:#x}' for kk, vv in v.items()} for k, v in consumers.items()},
+            'frozen_bits': '0x2: AnimTime = start, frame 0; 0x4 (0x2 clear): AnimTime = start + '
+                           'trunc(1000 * total / 30 / speed), frame = total; NoPauseAnimTime still the clock',
+            'all_ended_check_quirk': '0xa7000 tests channel 0 once per channel (pointer never advanced)',
+            'clock_a': 'LbTime_GetClock steps * double rate (+0x18) accumulated, truncated; pause +0x28; '
+                       'hold +0x2c returns +0x30 instead of timer + 0x38; + save offset +0x3c; '
+                       '+16404 = step / 1000 s',
+            'clock_b': 'LbTime_GetClock steps accumulated unscaled, truncated; pause +0x14 (timer +0x44), offset +0x18',
+            'pause_wrappers_drive_both': pause_pairs,
+            'set_by': '0xa7bb8 with use_b != 0 (only bit-0x40 store in 0xa3000-0xa9000); never cleared there',
+            'use_b_callers': {'0x291ac': 'advisor instance, 1', '0x4f5fc': 'frame capture, 0',
+                              '0x591ec': 'ride loader, ride flag 0x40000 (unreachable)', '0x5a0ec': 'placement, 0'},
+            'ride_loader_resets': {'direct': sorted(s for s, v in direct_words.items() if v & 0xa),
+                                   'builder_creators': resetting_creators},
+            'instances': '0x543cc copies the 252-byte template and memcpys its channels; +0 template, '
+                         '+8 header via 0x53004, +16 own channels',
+            'placement': '0x59f00: template = object table[id] (builder 0x594c8 fills it); clears +4 bit 0x1, '
+                         'adds 0x4/0x4000/0x8000, reset with use_b = 0'}
+
+
 def tpws_writer(app: Image) -> dict:
     base, first = app.toc_string(0x11cb84, 31)
     require(first.startswith('Cannot have header-only save'), True, 'writer label table')
@@ -1003,6 +1333,7 @@ def inspect(root: Path) -> dict:
               'md2_clip_clock': md2_clip_clock(app),
               'md2_copy_back_flags': md2_copy_back_flags(app),
               'md2_ride_descriptor_fields': md2_ride_descriptor_fields(app),
+              'md2_channel_clock_selector': md2_channel_clock_selector(app),
               'tpws_writer': tpws_writer(app),
               'tpws_schema': tpws_schema(app),
               'tpws_cells': tpws_cells(app),

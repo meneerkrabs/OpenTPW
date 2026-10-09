@@ -60,6 +60,51 @@ class FieldTests(unittest.TestCase):
             with self.assertRaisesRegex(WitnessError, 'identity'):
                 format_witness.Image(path)
 
+    def test_logical_immediates_are_unsigned(self):
+        # d_form sign-extends; `ori 0x8000` ORs 0x8000, not -0x8000.
+        ori = (24 << 26) | (19 << 21) | (19 << 16) | 0x8000
+        op, _, _, imm = d_form(ori)
+        self.assertEqual(imm, -0x8000)
+        self.assertEqual(format_witness.logical_immediate(op, imm), 0x8000)
+        self.assertEqual(format_witness.logical_immediate(25, -0x8000), 0x80000000)
+        with self.assertRaises(WitnessError):
+            format_witness.logical_immediate(14, 1)
+        self.assertEqual(format_witness.ride_flags_from_builder_word({0x10: 0x2, 0x200: 0x100}, 0x210), 0x102)
+        self.assertEqual(format_witness.ride_flags_from_builder_word({0x10: 0x2}, 0x20), 0)
+
+    def test_gpr_destination(self):
+        addi_r17 = (14 << 26) | (17 << 21) | (4 << 16)
+        stw_r17 = (36 << 26) | (17 << 21) | (1 << 16) | 8
+        ori_into_r17 = (24 << 26) | (3 << 21) | (17 << 16) | 1
+        or_into_r17 = (31 << 26) | (5 << 21) | (17 << 16) | (5 << 11) | (444 << 1)
+        lwzx_r17 = (31 << 26) | (17 << 21) | (3 << 16) | (4 << 11) | (23 << 1)
+        stwx_r17 = (31 << 26) | (17 << 21) | (3 << 16) | (4 << 11) | (151 << 1)
+        cmpw_r17 = (31 << 26) | (17 << 16) | (4 << 11)
+        self.assertEqual([format_witness.gpr_destination(w) for w in
+                          (addi_r17, stw_r17, ori_into_r17, or_into_r17, lwzx_r17, stwx_r17, cmpw_r17)],
+                         [17, None, 17, 17, 17, None, None])
+
+    def test_channel_flag_scan(self):
+        class Words:
+            def __init__(self, words):
+                self.words = words
+
+            def w(self, offset):
+                return self.words[offset // 4]
+
+        lwz = (32 << 26) | (0 << 21) | (26 << 16)
+        ori_40 = (24 << 26) | (0 << 21) | (0 << 16) | 0x40
+        clear_40 = (21 << 26) | (0 << 21) | (0 << 16) | (26 << 6) | (24 << 1)
+        clear_60 = (21 << 26) | (0 << 21) | (0 << 16) | (27 << 6) | (24 << 1)
+        stw_0 = (36 << 26) | (0 << 21) | (26 << 16)
+        stw_4 = stw_0 | 4
+        stw_other = (36 << 26) | (3 << 21) | (26 << 16)
+        nop = 24 << 26
+        words = [lwz, ori_40, stw_0, ori_40, stw_4, ori_40, stw_other, clear_40, nop, stw_0, clear_60, stw_0,
+                 nop, nop, nop]
+        self.assertEqual(format_witness.channel_flag_0x40_stores(Words(words), 0, len(words) * 4),
+                         [(4, 'set'), (28, 'clear')])
+
     def test_hexify_only_addresses(self):
         self.assertEqual(format_witness.hexify({'handler': 16, 'cells': 16, 'loader_call_sites': [1, 2]}),
                          {'handler': '0x10', 'cells': 16, 'loader_call_sites': ['0x1', '0x2']})

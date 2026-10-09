@@ -5,29 +5,6 @@ namespace OpenTPW.UI.Original;
 
 public enum UiAlign { Left, Center, Right }
 
-/// <summary>Original UI models by name, loaded once; missing models are reported once and drawn as fallbacks.</summary>
-public sealed class UiModels
-{
-	private readonly Dictionary<string, UiModel?> models = new( StringComparer.OrdinalIgnoreCase );
-	private readonly Func<string, UiModel> load;
-
-	public UiModels( Func<string, UiModel>? load = null ) => this.load = load ?? UiModel.Load;
-
-	public UiModel? Get( string name )
-	{
-		if ( models.TryGetValue( name, out var model ) )
-			return model;
-		try { model = load( name ); }
-		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or NotSupportedException or InvalidOperationException or ArgumentException )
-		{
-			Log?.Warning( $"Original UI model {name} unavailable: {exception.Message}" );
-			model = null;
-		}
-		models[name] = model;
-		return model;
-	}
-}
-
 /// <summary>Everything a screen needs to lay out and draw one frame.</summary>
 public sealed class UiContext
 {
@@ -76,11 +53,11 @@ public sealed class UiContext
 	}
 
 	/// <summary>Draws text aligned horizontally inside <paramref name="rect"/> and centred vertically when it fits.</summary>
-	public void DrawText( FontAtlas font, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Left, bool wrap = false, bool shadow = true )
+	public void DrawText( FontAtlas font, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Left, bool wrap = false, bool shadow = true, int? textScale = null )
 	{
 		if ( string.IsNullOrEmpty( text ) )
 			return;
-		var scale = Canvas.TextScale;
+		var scale = wrap ? Canvas.TextScale : textScale ?? Canvas.TextScale;
 		var layout = Layout( font, text, wrap ? (int)rect.Width : 0 );
 		var width = layout.Width * scale;
 		var height = layout.Height * scale;
@@ -97,6 +74,21 @@ public sealed class UiContext
 		if ( shadow )
 			Batch.AddText( font, layout, ix + scale, iy + scale, UiColors.Shadow, scale );
 		Batch.AddText( font, layout, ix, iy, color, scale, text );
+	}
+
+	/// <summary>
+	/// Draws single-line text that fits <paramref name="rect"/>: the given font, else a smaller size of its family,
+	/// else a smaller whole text scale (glyphs stay pixel-exact), else wrapped in the smallest size (UiTextFit).
+	/// </summary>
+	public void DrawFittedText( FontAtlas font, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Center, bool shadow = true )
+	{
+		if ( string.IsNullOrEmpty( text ) )
+			return;
+		var candidates = new List<FontAtlas> { font };
+		candidates.AddRange( Fonts.Smaller( font ) );
+		var sizes = candidates.Select( candidate => { var layout = Layout( candidate, text ); return (layout.Width, layout.Height); } ).ToArray();
+		var fit = UiTextFit.Choose( Canvas.TextScale, sizes, rect.Width, rect.Height );
+		DrawText( candidates[fit.Index], text, rect, color, align, fit.Wrap, shadow, fit.Scale );
 	}
 
 	/// <summary>Draws a model frame stretched so its bounds fill <paramref name="rect"/>.</summary>
@@ -246,7 +238,7 @@ public sealed class UiButton : UiElement
 		if ( Model != null && context.DrawModel( Model, frame, rect ) )
 		{
 			if ( Text != null )
-				context.DrawText( Font( context.Fonts ), Text(), rect, focused ? UiColors.Highlight : UiColors.Text, Align );
+				context.DrawFittedText( Font( context.Fonts ), Text(), rect, focused ? UiColors.Highlight : UiColors.Text, Align );
 			return;
 		}
 		// [APPROX:UI-008] purple_button halves for normal/focused — evidence needed: capture of the original front-end buttons
@@ -259,7 +251,7 @@ public sealed class UiButton : UiElement
 		else
 			context.Batch.AddRectangle( rect, focused ? UiColors.Highlight : UiColors.HelpBackground );
 		var inner = new UiRect( rect.X + rect.Height * 0.4f, rect.Y, rect.Width - rect.Height * 0.8f, rect.Height );
-		context.DrawText( Font( context.Fonts ), Text?.Invoke() ?? "", inner, !Enabled ? UiColors.Disabled : focused ? UiColors.Highlight : UiColors.Text, Align );
+		context.DrawFittedText( Font( context.Fonts ), Text?.Invoke() ?? "", inner, !Enabled ? UiColors.Disabled : focused ? UiColors.Highlight : UiColors.Text, Align );
 	}
 }
 

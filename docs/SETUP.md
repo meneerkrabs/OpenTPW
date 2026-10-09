@@ -30,8 +30,12 @@ detection or the old setting is saved, so detection does not run again.
 
 A folder is usable when it has a `Data` folder (any spelling) with `levels`, `global`
 and at least one `Language/<name>` folder. An installed copy, a copy of the CD and the
-mounted CD all qualify: the CD's own `Data` folder is complete game data. The inspector
-warns, without refusing, when:
+mounted CD can qualify: the CD's own `Data` folder is complete game data. A known
+negative identity rejects the supplied Theme Park Inc / Sim Coaster retail
+`levels/Standard.sam` (SHA-256 `8966c8647104feb1878ff3c3d43f3b2ac6dc89856570f9aa5a5a0bf040e6749e`).
+Unknown or modified editions are not classified from generic folders; structural
+usability does not certify edition compatibility. The inspector warns, without
+refusing, when:
 
 - the language folder lacks `bankrupt.MD2`, `congrats.MD2`, `paused.MD2` or
   `swears.txt`, which the installer copies from the CD's language folders (some banners
@@ -112,3 +116,37 @@ the CD into a user folder is not offered yet (the CD works directly).
 Tested on macOS (Apple Silicon). The Windows folder dialog, the Windows registry and
 drive search, and the Linux `zenity`/`kdialog` dialogs are compile- and unit-tested
 only.
+
+## Bounded detection and folder validation
+
+Saved-folder validation, automatic discovery and wizard inspection run in
+separate child processes, with a three-second request deadline and cancellation.
+A mounted drive can block inside the OS even after cancellation; an automatic
+scan cannot freeze the setup window or prevent manual validation of a local
+folder. At most one automatic search and one inspection can be outstanding.
+A user-controlled picker has its own single child slot; lookup and native
+dialogs run there instead of probing Linux PATH on the UI thread. Closing the
+wizard cancels it and terminates its owned process tree. If no native dialog
+tool is installed, the editable folder field remains available.
+
+When a deadline expires the child is killed, and its slot remains reserved until
+it actually exits. This prevents repeated requests from accumulating stalled
+children. If a manual inspection itself stalls in the kernel, later manual
+requests time out until that child exits; the window remains responsive. No
+mount is changed or disconnected.
+
+The wizard opens before its optional scan and updates results asynchronously.
+Changing a field cancels stale validation; the result applies only to the
+current field request. UI scale follows both logical and drawable changes,
+including transitions where drawable size stays fixed. The setup window has a
+520×420 logical minimum so Quit, Back and Next remain usable.
+
+The live-host discovery test is opt-in (`OPENTPW_INSTALLATION_SCAN_TESTS=1`) and
+uses a one-second bounded child; synthetic candidate, timeout, cancellation and
+manual-recovery cases run without mounted-game assumptions. The identified
+unsupported-edition fixture test uses `OPENTPW_TPI_GAME_PATH`.
+
+The original-style Options > Game files screen reuses these bounded operations.
+Game and CD paths can always be typed directly, including when Linux has no
+native dialog helper. Closing the screen or disposing GameFlow cancels its
+pending inspection and picker work.

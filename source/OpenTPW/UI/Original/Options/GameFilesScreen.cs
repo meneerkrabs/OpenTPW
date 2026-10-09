@@ -10,7 +10,11 @@ namespace OpenTPW.UI.Original;
 // [EXT:SETUP] OpenTPW setting; the original installer chose one folder and never changed it in game
 public static class GameFilesScreen
 {
-	public static UiScreen Create( UiScreenStack stack, UiStringTable strings, string? settingsPath = null )
+	public static UiScreen Create( UiScreenStack stack, UiStringTable strings, string? settingsPath = null ) =>
+		Create( stack, strings, settingsPath, (path, cancellation) => InstallationDiscovery.InspectAsync( path, cancellation: cancellation ) );
+
+	internal static UiScreen Create( UiScreenStack stack, UiStringTable strings, string? settingsPath,
+		Func<string, CancellationToken, Task<InstallationDiscoveryResult>> inspect )
 	{
 		settingsPath ??= SetupSettings.GetDefaultPath();
 		var saved = SetupSettings.Load( settingsPath );
@@ -22,10 +26,14 @@ public static class GameFilesScreen
 		void RefreshBonus() => bonusShown = BonusContent.ResolveRoot( null, null, saved.BonusPath, configDirectory )?.Path;
 		RefreshBonus();
 		var status = "";
-		Task<string?>? picker = null;
+		Task<InstallationDiscoveryResult>? picker = null;
+		Task<InstallationDiscoveryResult>? inspection = null;
+		Action<InstallationReport>? inspected = null;
+		var lifetime = new CancellationTokenSource();
 		Action<string>? pickerTarget = null;
 
 		var screen = new UiScreen( "gameFiles" );
+		screen.Removed = () => { lifetime.Cancel(); lifetime.Dispose(); };
 		var window = UiDialogs.CenteredWindow( 1500, 1420 );
 		UiDialogs.AddWindow( screen, window, "w_med", () => strings.Extra( OpenTpwText.GameFiles ) );
 
@@ -44,29 +52,26 @@ public static class GameFilesScreen
 			}
 		}
 
-		void SetGame( string path )
+		void Inspect( string path, Action<InstallationReport> apply )
 		{
-			var report = GameInstallation.Inspect( path );
-			if ( !report.IsUsable )
-			{
-				status = strings.Extra( OpenTpwText.FolderNotUsable );
-				return;
-			}
-			gamePath = report.Path;
-			Store( saved with { GamePath = report.Path } );
+			if ( inspection != null ) return;
+			inspected = apply;
+			inspection = inspect( path, lifetime.Token );
 		}
 
-		void SetCd( string path )
+		void SetGame( string path ) => Inspect( path, report =>
 		{
-			var report = GameInstallation.Inspect( path );
-			if ( report.DataDirectory == null )
-			{
-				status = strings.Extra( OpenTpwText.FolderNotUsable );
-				return;
-			}
+			if ( !report.IsUsable ) { status = strings.Extra( OpenTpwText.FolderNotUsable ); return; }
+			gamePath = report.Path;
+			Store( saved with { GamePath = report.Path } );
+		} );
+
+		void SetCd( string path ) => Inspect( path, report =>
+		{
+			if ( report.DataDirectory == null ) { status = strings.Extra( OpenTpwText.FolderNotUsable ); return; }
 			cdPath = report.Path;
 			Store( saved with { CdPath = report.Path } );
-		}
+		} );
 
 		void SetBonus( string path )
 		{
@@ -101,8 +106,7 @@ public static class GameFilesScreen
 				return;
 			}
 			pickerTarget = target;
-			var start = initial != null && Directory.Exists( initial ) ? initial : null;
-			picker = Task.Run( () => FolderPicker.Pick( strings.Extra( OpenTpwText.GameFiles ), start ) );
+			picker = InstallationDiscovery.PickAsync( strings.Extra( OpenTpwText.GameFiles ), initial, lifetime.Token );
 		}
 
 		var x = window.X + 120;
@@ -116,11 +120,20 @@ public static class GameFilesScreen
 		}
 
 		var changeGame = AddFolder( "game", OpenTpwText.GameFolder, () => gamePath, window.Y + 160, () => Browse( SetGame, gamePath ) );
+		var typeGame = screen.Add( new UiButton { Id = "gameType", Text = () => strings.Extra( OpenTpwText.EnterFolderPath ),
+			Clicked = () => stack.Push( PathEntry( stack, strings, gamePath, SetGame ) ),
+			Bounds = new UiRect( x + 460, window.Y + 356, 420, 104 ), Anchor = UiAnchor.Center } );
 		var changeCd = AddFolder( "cd", OpenTpwText.CdFolder, () => cdPath ?? strings.Extra( OpenTpwText.NoFolder ), window.Y + 500, () => Browse( SetCd, cdPath ) );
+		var typeCd = screen.Add( new UiButton { Id = "cdType", Text = () => strings.Extra( OpenTpwText.EnterFolderPath ),
+			Clicked = () => stack.Push( PathEntry( stack, strings, cdPath, SetCd ) ),
+			Bounds = new UiRect( x + 920, window.Y + 696, 240, 104 ), Anchor = UiAnchor.Center } );
 		var removeCd = screen.Add( new UiButton { Id = "cdRemove", Text = () => strings.Extra( OpenTpwText.RemoveFolder ),
 			Clicked = () => { cdPath = null; Store( saved with { CdPath = null } ); },
 			Bounds = new UiRect( x + 460, window.Y + 696, 420, 104 ), Anchor = UiAnchor.Center } );
 		var changeBonus = AddFolder( "bonus", OpenTpwText.BonusFolder, () => bonusShown ?? strings.Extra( OpenTpwText.NoFolder ), window.Y + 840, () => Browse( SetBonus, bonusShown ) );
+		var typeBonus = screen.Add( new UiButton { Id = "bonusType", Text = () => strings.Extra( OpenTpwText.EnterFolderPath ),
+			Clicked = () => stack.Push( PathEntry( stack, strings, bonusShown, SetBonus ) ),
+			Bounds = new UiRect( x + 920, window.Y + 1036, 240, 104 ), Anchor = UiAnchor.Center } );
 		// Remove stores an empty path, so the imported copy is not used either; the files stay where they are.
 		var removeBonus = screen.Add( new UiButton { Id = "bonusRemove", Text = () => strings.Extra( OpenTpwText.RemoveFolder ),
 			Clicked = () => Store( saved with { BonusPath = "" } ),
@@ -133,15 +146,24 @@ public static class GameFilesScreen
 		{
 			if ( picker is { IsCompleted: true } )
 			{
-				var chosen = picker.Status == TaskStatus.RanToCompletion ? picker.Result : null;
+				var chosen = picker.Status == TaskStatus.RanToCompletion ? picker.Result.Reports.FirstOrDefault()?.Path : null;
 				if ( chosen != null )
 					pickerTarget?.Invoke( chosen );
 				picker = null;
 				pickerTarget = null;
 			}
-			changeGame.Enabled = changeCd.Enabled = changeBonus.Enabled = picker == null;
-			removeCd.Enabled = cdPath != null && picker == null;
-			removeBonus.Enabled = bonusShown != null && picker == null;
+			if ( inspection is { IsCompleted: true } )
+			{
+				if ( inspection.IsCompletedSuccessfully && inspection.Result.Reports.FirstOrDefault() is { } report )
+					inspected?.Invoke( report );
+				else status = strings.Extra( OpenTpwText.FolderNotUsable );
+				inspection = null;
+				inspected = null;
+			}
+			changeGame.Enabled = changeCd.Enabled = changeBonus.Enabled = picker == null && inspection == null;
+			typeGame.Enabled = typeCd.Enabled = typeBonus.Enabled = inspection == null;
+			removeCd.Enabled = cdPath != null && picker == null && inspection == null;
+			removeBonus.Enabled = bonusShown != null && picker == null && inspection == null;
 		};
 		screen.Focus( changeGame );
 		return screen;

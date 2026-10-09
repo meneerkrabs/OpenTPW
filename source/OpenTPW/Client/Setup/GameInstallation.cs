@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+
 namespace OpenTPW;
 
 /// <summary>Whether a folder can serve as the original game data, and why (docs/SETUP.md).</summary>
@@ -32,6 +34,7 @@ public static class GameInstallation
 		{
 			return new( path, null, Array.Empty<string>(), new[] { $"'{path}' is not a valid folder path." }, warnings );
 		}
+		if ( File.Exists( root ) ) root = System.IO.Path.GetDirectoryName( root )!;
 		if ( !Directory.Exists( root ) )
 			return new( root, null, Array.Empty<string>(), new[] { "This folder does not exist." }, warnings );
 		try
@@ -58,6 +61,17 @@ public static class GameInstallation
 		{
 			problems.Add( "No Data folder: choose the folder where Theme Park World is installed, or the root of the CD." );
 			return new( root, null, Array.Empty<string>(), problems, warnings );
+		}
+
+		// Exact negative identity for the supplied Sim Coaster retail corpus. Unknown or
+		// modified editions are not classified from generic folders or missing assets.
+		var standard = GameLanguage.FindEntry( dataDirectory, System.IO.Path.Combine( "levels", "Standard.sam" ), false );
+		if ( standard != null && new FileInfo( standard ).Length == 45695 )
+		{
+			using var input = File.OpenRead( standard );
+			if ( Convert.ToHexString( SHA256.HashData( input ) ).Equals(
+				"8966C8647104FEB1878FF3C3D43F3B2AC6DC89856570F9AA5A5A0BF040E6749E", StringComparison.Ordinal ) )
+				problems.Add( "These files match the supplied Theme Park Inc / Sim Coaster retail edition, which is not supported yet. Choose Theme Park World files." );
 		}
 
 		foreach ( var required in new[] { "levels", "global" } )

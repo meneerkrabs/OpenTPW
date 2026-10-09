@@ -80,5 +80,5 @@ public static class GamePathResolution
 	/// </summary>
 	public static bool IsInteractive( string[] args ) =>
 		Environment.GetEnvironmentVariable( "OPENTPW_NO_SETUP" ) != "1"
-		&& !args.Any( argument => argument is "--smoke-test" or "--validate-assets" or "--inspect-model" or "--inspect-rides" or "--headless" or "--export-park" or "--import-park" );
+		&& !args.Any( argument => argument is "--smoke-test" or "--validate-assets" or "--inspect-model" or "--inspect-rides" or "--headless" or "--build-texture-pack" or "--capture-world" or "--export-park" or "--import-park" );
 }

@@ -61,12 +61,54 @@ public sealed class UiFonts
 			UiFontTier.Big => ("TITLEBIG", "MENUBIG", "GAME12AA", "GAME10AA", "GAMEBOLD12", "SESHBIG"),
 			_ => ("TITLEMED", "MENUMED", "GAME12AA", "GAME8AA", "GAMEBOLD12", "SESHMED"),
 		};
-		Title = load( title + ".bf4" );
-		Menu = load( menu + ".bf4" );
-		Label = load( label + ".bf4" );
-		Small = load( small + ".bf4" );
-		Cash = load( cash + ".bf4" );
-		Heading = load( heading + ".bf4" );
+		Title = Load( title );
+		Menu = Load( menu );
+		Label = Load( label );
+		Small = Load( small );
+		Cash = Load( cash );
+		Heading = Load( heading );
+	}
+
+	// Shipped BF4 families from largest to smallest; used to shrink text that does not fit (UiTextFit).
+	private static readonly string[][] Families =
+	{
+		new[] { "TITLEBIG", "TITLEMED", "TITLESMALL" },
+		new[] { "MENUBIG", "MENUMED", "MENUSMALL" },
+		new[] { "SESHBIG", "SESHMED", "SESHSMALL" },
+		new[] { "GAMEBOLD12", "GAMEBOLD10" },
+		new[] { "GAME12AA", "GAME10AA", "GAME8AA" },
+	};
+
+	private readonly Dictionary<FontAtlas, string> names = new( ReferenceEqualityComparer.Instance );
+
+	private FontAtlas Load( string name )
+	{
+		var font = load( name + ".bf4" );
+		names[font] = name;
+		return font;
+	}
+
+	/// <summary>The smaller sizes of <paramref name="font"/>'s family, largest first; missing fonts are skipped.</summary>
+	public IEnumerable<FontAtlas> Smaller( FontAtlas font )
+	{
+		if ( !names.TryGetValue( font, out var name ) )
+			yield break;
+		var family = Families.FirstOrDefault( entry => entry.Contains( name, StringComparer.OrdinalIgnoreCase ) );
+		if ( family == null )
+			yield break;
+		foreach ( var smaller in family.SkipWhile( entry => !string.Equals( entry, name, StringComparison.OrdinalIgnoreCase ) ).Skip( 1 ) )
+		{
+			FontAtlas? atlas = null;
+			try
+			{
+				atlas = Load( smaller );
+			}
+			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or KeyNotFoundException )
+			{
+			}
+			if ( atlas != null )
+				yield return atlas;
+		}
 	}
 
 	public static Func<string, FontAtlas> CachedLoader( GameLanguage language )

@@ -64,6 +64,9 @@ public readonly struct SaveCell
 /// </summary>
 public sealed class SaveCellGrid
 {
+	/// <summary>Search window cap (the Easymode prefix is 1,495,462 bytes); bounds the run table to 64 MiB.</summary>
+	public const int MaximumSearchBytes = 16 * 1024 * 1024;
+
 	private readonly SaveCell[] cells;
 
 	private SaveCellGrid( int countX, int countY, int startOffset, int endOffset, SaveCell[] cells )
@@ -101,6 +104,8 @@ public sealed class SaveCellGrid
 			throw new ArgumentOutOfRangeException( nameof( countX ), "Grid dimensions must match a valid MAP." );
 		if ( searchLength < 0 || searchLength > payload.Length )
 			throw new ArgumentOutOfRangeException( nameof( searchLength ) );
+		if ( searchLength > MaximumSearchBytes )
+			throw new InvalidDataException( $"Save cell grid search exceeds the {MaximumSearchBytes}-byte limit." );
 		var data = payload.Span[..searchLength];
 		var required = countX * countY;
 

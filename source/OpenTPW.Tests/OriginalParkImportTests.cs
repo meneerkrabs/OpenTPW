@@ -137,6 +137,8 @@ public class OriginalParkImportTests
 		var exception = Assert.ThrowsException<InvalidDataException>( () => SaveCellGrid.Parse( longer, longer.Length, 2, 2 ) );
 		StringAssert.Contains( exception.Message, "ambiguous" );
 		Assert.ThrowsException<ArgumentOutOfRangeException>( () => SaveCellGrid.Parse( payload, payload.Length + 1, 2, 2 ) );
+		var oversized = new byte[SaveCellGrid.MaximumSearchBytes + 1];
+		Assert.ThrowsException<InvalidDataException>( () => SaveCellGrid.Parse( oversized, oversized.Length, 2, 2 ) );
 	}
 
 	[TestMethod]

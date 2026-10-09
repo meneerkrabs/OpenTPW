@@ -56,6 +56,7 @@ public class UiScreen
 		Modal || elements.Any( element => element.Visible && element.ScreenRect( canvas ).Contains( point ) );
 
 	/// <summary>Handles one frame of input; returns true when the input was consumed.</summary>
+	// [APPROX:UI-012] hover focus, activate on release, keyboard navigation, right click backs out — evidence needed: binary input handling
 	public virtual bool Update( UiContext context, UiInput input )
 	{
 		Updating?.Invoke( context );
@@ -160,6 +161,7 @@ public sealed class UiScreenStack
 	{
 		for ( var index = 0; index < screens.Count; index++ )
 		{
+			// [APPROX:UI-011] modal screens dim the screens below — evidence needed: captures of original dialogs
 			if ( screens[index].Modal && index > 0 )
 				context.Batch.AddRectangle( new UiRect( 0, 0, context.Canvas.Width, context.Canvas.Height ), UiColors.Backdrop );
 			screens[index].Draw( context );
@@ -169,6 +171,7 @@ public sealed class UiScreenStack
 	}
 
 	/// <summary>Popup help box along the top edge (placement is an OpenTPW approximation; helpbg art).</summary>
+	// [APPROX:UI-010] popup help placement/backdrop — evidence needed: capture of original popup help
 	private static void DrawHelp( UiContext context, string text )
 	{
 		var canvas = context.Canvas;

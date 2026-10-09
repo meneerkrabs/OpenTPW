@@ -11,6 +11,7 @@ namespace OpenTPW;
 /// hierarchy (parent-relative, docs/MD2-MODELS.md); MD2 (x, y-up, z) maps to engine (x, z, y-up).
 /// Flying meshes, rain, lightning and the online globe are not rendered.
 /// </summary>
+// [APPROX:UI-018] flying meshes, rain, lightning and island/gate animations are not drawn — evidence needed: binary/capture of the lobby
 public sealed class LobbyScene : Entity
 {
 	private const int MaximumTextureSlots = 16;

@@ -7,6 +7,7 @@ namespace OpenTPW.UI.Original;
 /// label is translated for the six verified languages and drawn with the original BF4 fonts; a test
 /// checks that every character has a glyph in each language's fonts (docs/UI.md).
 /// </summary>
+// [EXT:strings] OpenTPW supplementary labels (display/upscaling/language rows and OpenTPW messages), not original data
 public enum OpenTpwText
 {
 	Language,

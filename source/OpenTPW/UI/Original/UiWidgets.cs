@@ -93,6 +93,7 @@ public sealed class UiContext
 		var y = height <= rect.Height ? rect.Y + (rect.Height - height) / 2 : rect.Y;
 		var ix = (int)MathF.Round( x );
 		var iy = (int)MathF.Round( y );
+		// [APPROX:UI-007] drop shadow one text pixel down-right — evidence needed: captures of original screens
 		if ( shadow )
 			Batch.AddText( font, layout, ix + scale, iy + scale, UiColors.Shadow, scale );
 		Batch.AddText( font, layout, ix, iy, color, scale, text );
@@ -175,6 +176,7 @@ public sealed class UiLabel : UiElement
 		var rect = ScreenRect( context.Canvas );
 		var font = Font( context.Fonts );
 		var text = Text();
+		// [APPROX:UI-032] small-font fallback and greedy wrap for long labels — evidence needed: captures of translated original screens
 		// Longer translations fall back to the small game font instead of overflowing the art.
 		if ( !Wrap && context.Measure( font, text ).Width > rect.Width )
 			font = context.Fonts.Small;
@@ -247,6 +249,7 @@ public sealed class UiButton : UiElement
 				context.DrawText( Font( context.Fonts ), Text(), rect, focused ? UiColors.Highlight : UiColors.Text, Align );
 			return;
 		}
+		// [APPROX:UI-008] purple_button halves for normal/focused — evidence needed: capture of the original front-end buttons
 		var art = context.ResolveTexture( "purple_button" );
 		if ( art != null )
 		{
@@ -284,6 +287,7 @@ public sealed class UiOptionRow : UiElement
 		var rect = ScreenRect( canvas );
 		var size = rect.Height * 0.8f;
 		var top = rect.Y + (rect.Height - size) / 2;
+		// [APPROX:UI-009] option-row arrow/value positions — evidence needed: capture of the original options screen
 		// The f_optpanel2 art: label lozenge up to ~58% of the frame width, then the value lozenges to the end.
 		var left = new UiRect( rect.X + rect.Width * 0.585f, top, size, size );
 		var right = new UiRect( rect.X + rect.Width * 0.975f - size, top, size, size );

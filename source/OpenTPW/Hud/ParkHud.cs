@@ -25,6 +25,7 @@ public sealed class HudHost
 /// </summary>
 public sealed class ParkHud
 {
+	// [APPROX:UI-025] message area: 3 messages, 8 s — evidence needed: binary/capture of the message system
 	public const float MessageSeconds = 8f;
 	private static readonly UiRect ArmRect = new( 330.5f, 1068.5f, 675.8f, 426.1f );
 	private static readonly (BuildCategory Category, string Model, UIStrings Title, int Help)[] Categories =
@@ -71,6 +72,7 @@ public sealed class ParkHud
 	public bool Paused => Stack.Screens.Count > 1;
 	public IReadOnlyList<string> Messages => messages.Select( message => message.Text ).ToArray();
 
+	// [DATA:UITEXT.str:448,449] currency prefix; [APPROX:UI-021] ","-grouped digits — evidence needed: locale number format of the original
 	public string MoneyText => string.Format( System.Globalization.CultureInfo.InvariantCulture, "{0}{1:#,0}", Status.Money < 0 ? strings[UIStrings.NegativeDollar] : strings[UIStrings.Dollar], Math.Abs( Status.Money ) ).Replace( "  ", " " );
 	public string DateText => string.Format( strings.Extra( OpenTpwText.DateFormat ), Status.Date.Year, Status.Date.Month, Status.Date.Day );
 
@@ -101,18 +103,22 @@ public sealed class ParkHud
 		var infoArm = hud.Add( new UiModelImage { Id = "infoArm", Model = "panel", Frame = () => 1, Bounds = ArmRect, Anchor = UiAnchor.BottomLeft, Visible = false } );
 		buildElements.Add( buildArm );
 		infoElements.Add( infoArm );
+		// [DATA:ui.wad:mainpanel,gauge,date,panel MD2 roots] authored HUD rectangles
 		hud.Add( new UiModelImage { Id = "mainPanel", Model = "mainpanel", Bounds = new UiRect( 37.1f, 984.2f, 401.7f, 523.1f ), Anchor = UiAnchor.BottomLeft } );
 		hud.Add( new UiModelImage { Id = "gauge", Model = "gauge", Bounds = new UiRect( 66.6f, 1080.4f, 96.6f, 264.2f ), Anchor = UiAnchor.BottomLeft, Help = strings.Help( 477 ) } );
 		hud.Add( new UiModelImage { Id = "dateDisplay", Model = "date", Bounds = new UiRect( 152.6f, 1043.6f, 251.7f, 77.5f ), Anchor = UiAnchor.BottomLeft, Help = strings.Help( 478 ) } );
+		// [APPROX:UI-021] date/money text positions and fonts — evidence needed: capture of the original HUD
 		hud.Add( new UiLabel { Id = "date", Text = () => DateText, Font = fonts => fonts.Small, Align = UiAlign.Center, Bounds = new UiRect( 170, 1050, 220, 64 ), Anchor = UiAnchor.BottomLeft } );
 		hud.Add( new UiLabel { Id = "money", Text = () => MoneyText, Font = fonts => fonts.Cash, Color = UiColors.Value, Align = UiAlign.Center, Bounds = new UiRect( 165, 1125, 240, 60 ), Anchor = UiAnchor.BottomLeft, Help = strings.Help( 465 ) } );
 
+		// [APPROX:UI-020] panel button positions (the models share one authored centre) — evidence needed: capture of the original HUD
 		PanelButton( "buy", "b_buy", 235, 1240, 469, ToggleBuildArm ).Selected = () => BuildArmOpen;
 		PanelButton( "info", "b_info", 355, 1240, 470, null );
 		PanelButton( "finance", "b_money", 235, 1350, 471, null );
 		PanelButton( "research", "b_resrch", 355, 1350, 472, null );
 		PanelButton( "map", "b_map", 235, 1455, 473, null );
 
+		// [APPROX:UI-022] speed buttons and multipliers — evidence needed: binary game speed options
 		// Speed control (OpenTPW addition; the original has pause only).
 		var speeds = new[] { (GameSpeed.Paused, "||"), (GameSpeed.Normal, ">"), (GameSpeed.Fast, ">>"), (GameSpeed.Fastest, ">>>") };
 		for ( var index = 0; index < speeds.Length; index++ )
@@ -130,6 +136,7 @@ public sealed class ParkHud
 			} );
 		}
 
+		// [APPROX:UI-024] layout inside the build arm — evidence needed: capture of the original build arm
 		// Build arm contents.
 		for ( var index = 0; index < Categories.Length; index++ )
 		{
@@ -178,6 +185,7 @@ public sealed class ParkHud
 			Visible = false
 		} ) );
 
+		// [APPROX:UI-024] layout inside the info arm; [APPROX:UI-029] b_door down = closed, b_erase = delete — evidence needed: capture of the ride panel
 		// Information arm contents.
 		infoElements.Add( hud.Add( new UiLabel
 		{
@@ -250,15 +258,17 @@ public sealed class ParkHud
 	}
 
 
-	public ObjectInfo? SelectedInfo => InfoArmOpen && level.PlacedRide is { } ride ? Describe( ride ) : null;
+	public ObjectInfo? SelectedInfo => InfoArmOpen && level.PlacedRide is { } ride
+		? Describe( ride, Catalog.GetItems( BuildCategory.Rides ).FirstOrDefault( item => item.Id == TotemBuildCatalog.ItemId ) ) : null;
 
 	/// <summary>
 	/// Info for the placed prototype ride. Excitement is the original <c>UsageInfo.ExcitementLevel</c>
-	/// default (70 for the Totem); reliability, repair and life are not simulated yet.
+	/// default (70 for the Totem, from Totem.sam); reliability, repair and life are not simulated yet.
 	/// </summary>
-	public static ObjectInfo Describe( PrototypeRide ride ) => new( TotemBuildCatalog.ObjectNameIndex, ride.IsOpen, true, new[]
+	public static ObjectInfo Describe( PrototypeRide ride, BuildItem? item ) => new( TotemBuildCatalog.ObjectNameIndex, ride.IsOpen, true, new[]
 	{
-		new ObjectStat( UIStrings.Excitement, "70%" ),
+		// [APPROX:UI-028] excitement shown as "<ExcitementLevel>%" — evidence needed: capture of the original ride info panel
+		new ObjectStat( UIStrings.Excitement, item?.DefaultExcitement is int excitement ? $"{excitement}%" : null ),
 		new ObjectStat( UIStrings.Reliability, null ),
 		new ObjectStat( UIStrings.StateOfRepair, null ),
 		new ObjectStat( UIStrings.RemainingLife, null ),
@@ -398,6 +408,7 @@ public sealed class ParkHud
 		if ( !paused && input.Has( UiKeys.Pause ) )
 			Status.Speed = Status.Speed == GameSpeed.Paused ? GameSpeed.Normal : GameSpeed.Paused;
 
+		// [APPROX:UI-031] charge on appearance; one prototype ride — evidence needed: economy/catalog slices
 		// Purchases: a ride appearing while an item is pending is charged; failures are reported.
 		var hasRide = level.PlacedRide != null;
 		if ( hasRide && !hadRide && pendingItem != null )
@@ -435,6 +446,7 @@ public sealed class ParkHud
 	}
 
 	/// <summary>Click distance (engine units) that selects the prototype ride: its footprint plus one unit.</summary>
+	// [APPROX:UI-027] selection radius = footprint + 1 — evidence needed: binary picking
 	public const float SelectionRadius = PrototypeRide.FootprintRadius + 1;
 
 	/// <summary>Selects the placed ride as if it had been clicked (smoke test, keyboard).</summary>
@@ -517,6 +529,7 @@ public sealed class ParkHud
 			var rect = ScreenRect( context.Canvas );
 			var iconRect = new UiRect( rect.X, rect.Y, rect.Width, rect.Width );
 			context.Batch.AddRectangle( iconRect, focused || owner.pendingItem == item ? new RgbaByte( 255, 230, 70, 90 ) : new RgbaByte( 0, 0, 40, 90 ) );
+			// [APPROX:UI-026] icon turn speed 0.8 rad/s — evidence needed: capture of the original build menu
 			owner.GetIcon( item )?.Draw( context.Batch, iconRect.Inflate( -rect.Width * 0.06f ), context.Time * 0.8f );
 			var name = owner.strings.Object( item.ObjectNameIndex );
 			var price = string.Format( System.Globalization.CultureInfo.InvariantCulture, "{0}{1:#,0}", owner.strings[UIStrings.Dollar], item.Cost ).Replace( "  ", " " );

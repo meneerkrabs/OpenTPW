@@ -21,6 +21,7 @@ public enum UiAnchor
 /// </summary>
 public readonly record struct UiCanvas( int Width, int Height, int UiScale = 1 )
 {
+	// [DATA:ui.wad:f_chat.MD2,w_map.MD2 bounds] full-screen UI frames span 2048×1536
 	public const float VirtualWidth = 2048;
 	public const float VirtualHeight = 1536;
 
@@ -37,9 +38,11 @@ public readonly record struct UiCanvas( int Width, int Height, int UiScale = 1 )
 	/// Font tier for the logical size: SMALL up to 640×480-like sizes, MED up to about 1024×768 and
 	/// 1280×720, BIG above (inferred from the three shipped sizes).
 	/// </summary>
+	// [APPROX:UI-002] font tier thresholds 0.36 / 0.6 of logical scale — evidence needed: binary font selection per screen mode
 	public UiFontTier FontTier => LogicalScale < 0.36f ? UiFontTier.Small : LogicalScale < 0.6f ? UiFontTier.Medium : UiFontTier.Big;
 
 	/// <summary>Maps an authored canvas point to framebuffer pixels.</summary>
+	// [APPROX:UI-001] anchors keep the authored distance to the nearest edge on non-4:3 outputs — evidence needed: original widescreen behaviour / design decision
 	public NVector2 Map( NVector2 point, UiAnchor anchor )
 	{
 		var scale = Scale;

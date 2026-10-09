@@ -22,6 +22,7 @@ public class LobbyCameraMode : CameraMode
 		Update();
 	}
 
+	// [APPROX:UI-017] SPINSPEED as radians per 0.1 s, FOV 60, 3/s glide — evidence needed: binary or capture of the lobby camera
 	public override void Update()
 	{
 		angle += SpinSpeed * 10 * Math.Min( Time.Delta, 0.1f );

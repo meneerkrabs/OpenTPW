@@ -9,6 +9,7 @@ namespace OpenTPW.Hud;
 /// real seconds at normal speed, 30-day months, 12 months a year) and the speed multipliers are
 /// OpenTPW placeholders, not original values.
 /// </summary>
+// [APPROX:UI-023] placeholder calendar (2 s/day, 30-day months, 12 months) and [APPROX:UI-022] speed multipliers — evidence needed: park clock in binary/economy data
 public sealed class StubParkStatus : IHudParkStatus
 {
 	public const float SecondsPerDay = 2f;
@@ -23,6 +24,7 @@ public sealed class StubParkStatus : IHudParkStatus
 		try
 		{
 			var settings = new SettingsFile( $"/levels/{levelName}/Easy_Standard.sam" );
+			// [DATA:Easy_Standard.sam:BankAccountInfo.InitialCash] (DefaultInitialCash is only the fallback when the file is missing)
 			if ( long.TryParse( settings["BankAccountInfo.InitialCash"], NumberStyles.Integer, CultureInfo.InvariantCulture, out var value ) )
 				cash = value;
 		}
@@ -87,12 +89,18 @@ public sealed class TotemBuildCatalog : IBuildCatalog
 		var archive = $"/levels/{levelName}/rides/totem";
 		var cost = FallbackCost;
 		var category = BuildCategory.Rides;
+		int? excitement = null;
 		try
 		{
 			var settings = new SettingsFile( $"{archive}/Totem.sam" );
+			// [DATA:Totem.sam:Upgrades[0].CostOfUpgrade] (FallbackCost only when the file is missing)
 			if ( long.TryParse( settings["Upgrades[0].CostOfUpgrade"], NumberStyles.Integer, CultureInfo.InvariantCulture, out var value ) )
 				cost = value;
 			var rides = new SettingsFile( $"/levels/{levelName}/rides/Rides.sam" );
+			// [DATA:Totem.sam:UsageInfo.ExcitementLevel] overrides [DATA:Rides.sam:UsageInfo.ExcitementLevel]
+			if ( int.TryParse( settings["UsageInfo.ExcitementLevel"] ?? rides["UsageInfo.ExcitementLevel"], NumberStyles.Integer, CultureInfo.InvariantCulture, out var level ) )
+				excitement = level;
+			// [DATA:Rides.sam:Info.WhichUIType]
 			if ( int.TryParse( rides["Info.WhichUIType"], NumberStyles.Integer, CultureInfo.InvariantCulture, out var type ) && Enum.IsDefined( (BuildCategory)type ) )
 				category = (BuildCategory)type;
 		}
@@ -101,7 +109,7 @@ public sealed class TotemBuildCatalog : IBuildCatalog
 			Log?.Warning( $"Totem catalog data unavailable: {exception.Message}" );
 		}
 		totem = new BuildItem( ItemId, category, ObjectNameIndex, cost, $"{archive}/Ptotem.MD2",
-			new[] { $"{archive}/textures", $"/levels/{levelName}/sharetex", $"/levels/{levelName}/ssharete", $"{archive}/stexture" } );
+			new[] { $"{archive}/textures", $"/levels/{levelName}/sharetex", $"/levels/{levelName}/ssharete", $"{archive}/stexture" }, excitement );
 	}
 
 	public IReadOnlyList<BuildItem> GetItems( BuildCategory category ) =>

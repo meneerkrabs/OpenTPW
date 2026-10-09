@@ -28,6 +28,7 @@ public sealed class LobbyDefinition
 {
 	public static readonly string[] ThemeFiles = { "jungle", "fantasy", "hallow", "space" };
 
+	// [DATA:lobby.wad:lobby.txt ISLANDFOV/SPINSPEED/SPINRADIUS/VERTICALOFFSET] defaults equal the shipped values
 	public float FieldOfView { get; private set; } = 100;
 	public float SpinSpeed { get; private set; } = 0.02f;
 	public float SpinRadius { get; private set; } = 70;
@@ -75,6 +76,7 @@ public sealed class LobbyDefinition
 			: ((byte)Math.Clamp( Number( sky.Arguments, 0 ), 0, 255 ), (byte)Math.Clamp( Number( sky.Arguments, 1 ), 0, 255 ), (byte)Math.Clamp( Number( sky.Arguments, 2 ), 0, 255 ));
 		var lightning = commands.FirstOrDefault( command => command.Name == "LIGHTNING" );
 		var rainy = commands.FirstOrDefault( command => command.Name == "RAINY" );
+		// [DATA:lobby.wad:<theme>.txt ISLAND/SKYCOLOUR/FLYINGMESH/RAINY/LIGHTNING] [APPROX:UI-016] angle = yaw, height = camera target height — evidence needed: binary/capture
 		var result = new LobbyIslandInfo( (int)Number( island.Arguments, 0 ), level, island.Arguments[1], island.Arguments[2], island.Arguments[3], island.Arguments[4],
 			Number( island.Arguments, 5 ), Number( island.Arguments, 6 ), colour,
 			commands.Where( command => command.Name == "FLYINGMESH" && command.Arguments.Count >= 2 ).Select( command => command.Arguments[1] ).ToArray(),
@@ -87,6 +89,7 @@ public sealed class LobbyDefinition
 
 	/// <summary>Island centre in MD2 lobby coordinates (x, z), from ISLANDCAMERAPOSITION.</summary>
 	public (float X, float Z) PositionOf( LobbyIslandInfo island ) =>
+		// [APPROX:UI-019] fallback position when lobby.txt lacks ISLANDCAMERAPOSITION — evidence needed: none if lobby.txt is complete
 		IslandPositions.TryGetValue( island.Index, out var position ) ? position : (400 + island.Index * 200, 400);
 
 	private static float Number( IReadOnlyList<string> arguments, int index ) =>

@@ -31,6 +31,7 @@ public static class UiImages
 		return (width, height, data);
 	}
 
+	// [APPROX:UI-005] pink key + neighbour colour bleed for linear filtering — evidence needed: capture of UI edges at other resolutions
 	public static void KeyOutPink( byte[] rgba, int width, int height )
 	{
 		var keyed = new bool[width * height];

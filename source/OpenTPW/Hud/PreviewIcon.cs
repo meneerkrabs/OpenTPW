@@ -11,6 +11,7 @@ namespace OpenTPW.Hud;
 /// turning in the menu; OpenTPW projects the model orthographically on the CPU with a fixed
 /// 30° tilt and painter-sorted triangles, which is an approximation of the original 3D draw.
 /// </summary>
+// [APPROX:UI-026] orthographic CPU projection, 30° tilt, painter sorting — evidence needed: capture of the original build menu
 public sealed class PreviewIcon
 {
 	private readonly List<(NVector3 A, NVector3 B, NVector3 C, NVector2 UvA, NVector2 UvB, NVector2 UvC, string? Texture)> triangles = new();

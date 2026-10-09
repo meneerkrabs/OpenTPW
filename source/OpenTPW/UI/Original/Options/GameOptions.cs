@@ -13,6 +13,7 @@ public sealed class GameOptions
 	public const string FileName = "opentpw-options.json";
 	public const int MaximumVolume = 10;
 
+	// [APPROX:UI-030] 0..10 volume steps, default 8, popup help on — evidence needed: original options defaults
 	public int SoundEffectsVolume { get; set; } = 8;
 	public int MusicVolume { get; set; } = 8;
 	public int SpeechVolume { get; set; } = 8;

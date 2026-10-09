@@ -70,8 +70,10 @@ public sealed class FrontEndMenu
 	private UiScreen CreateMain()
 	{
 		var screen = new UiScreen( "lobby" ) { Modal = false };
+		// [DATA:ui.wad:islandlobby.MD2,f_lobbutbg.MD2 root/bounds] authored panel rectangles
 		screen.Add( new UiModelImage { Id = "lobbyPanel", Model = "islandlobby", Bounds = new UiRect( 27.7f, 855.1f, 447.8f, 665.8f ), Anchor = UiAnchor.BottomLeft } );
 		screen.Add( new UiModelImage { Id = "lobbyButtons", Model = "f_lobbutbg", Bounds = new UiRect( 66.9f, 1272.7f, 371.2f, 211.2f ), Anchor = UiAnchor.BottomLeft } );
+		// [APPROX:UI-014] island name and prev/enter/next button positions in the lobby panel — evidence needed: capture of the original lobby
 		screen.Add( new UiLabel { Id = "islandName", Text = () => SelectedName, Font = fonts => fonts.Label, Color = UiColors.Title, Align = UiAlign.Center, Bounds = new UiRect( 90, 1282, 326, 70 ), Anchor = UiAnchor.BottomLeft } );
 		UiButton IslandButton( string id, string model, float x, int help, Action clicked ) => screen.Add( new UiButton
 		{
@@ -87,6 +89,7 @@ public sealed class FrontEndMenu
 		var enter = IslandButton( "enterPark", "b_entpark", 252, 345, ShowGameMode );
 		IslandButton( "nextIsland", "b_lobright", 369, 344, () => NextIsland( 1 ) );
 
+		// [APPROX:UI-014] logo/title placement and the right-hand Load/Options/Quit column — evidence needed: capture of the original lobby
 		screen.Add( new UiModelImage { Id = "logo", Model = "tpwlogo", Bounds = new UiRect( 819, 40, 410, 154 ), Anchor = UiAnchor.Top } );
 		screen.Add( new UiLabel { Id = "title", Text = () => strings[UIStrings.ThemeParkWorld], Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center, Bounds = new UiRect( 624, 196, 800, 90 ), Anchor = UiAnchor.Top } );
 
@@ -114,6 +117,7 @@ public sealed class FrontEndMenu
 		return screen;
 	}
 
+	// [APPROX:UI-015] Game Mode asked when entering a park (no player profiles); modes play the same — evidence needed: original player/mode flow
 	public void ShowGameMode()
 	{
 		var screen = new UiScreen( "gameMode" );

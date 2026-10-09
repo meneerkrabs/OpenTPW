@@ -57,6 +57,7 @@ public sealed class UiModel
 		{
 			if ( node.MeshIndex < 0 || node.MeshIndex >= model.Meshes.Count )
 				continue;
+			// [APPROX:UI-003] state frames use the root pose (child translation dropped) — evidence needed: binary UI model drawing code
 			var transform = node.Index == root.Index ? root.Transform : WithoutTranslation( node.Transform ) * root.Transform;
 			var frame = Flatten( model.Meshes[node.MeshIndex], node.Name, transform );
 			if ( frame != null )
@@ -113,12 +114,14 @@ public sealed class UiModel
 		{
 			var position = NVector3.Transform( mesh.Vertices[index].Position.GetSystemVector3(), transform );
 			var point = new NVector2( position.X, -position.Y );
+			// [DATA:ui.wad:button UVs v 0.42..1 vs art in the top 58%] V flipped as in the 3D shaders
 			vertices[index] = new UiModelVertex( point, position.Z, new NVector2( mesh.TexCoords[index].X, 1 - mesh.TexCoords[index].Y ) );
 			minX = Math.Min( minX, point.X );
 			minY = Math.Min( minY, point.Y );
 			maxX = Math.Max( maxX, point.X );
 			maxY = Math.Max( maxY, point.Y );
 		}
+		// [APPROX:UI-004] back-to-front by Z per texture group — evidence needed: binary or capture of overlapping UI parts
 		// Group triangles by material texture and order groups back to front (lower Z first), as the
 		// panels layer flat inner faces over their bevels.
 		var groups = new Dictionary<string, List<(float Depth, int A, int B, int C)>>( StringComparer.OrdinalIgnoreCase );

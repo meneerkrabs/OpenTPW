@@ -221,6 +221,57 @@ glyph in all 14 UI fonts of each language.
   pause menu, refused save, exit to lobby. Passed in all six languages
   (captures `artifacts/native-smoke-<language>-*.png`).
 
+## Approximation register
+
+Project rule: every UI value or rule that is not original data or hard evidence is
+tagged at its site with `// [APPROX:UI-NNN] … — evidence needed: …` and logged once
+at startup (`[APPROX:UI-NNN]` warnings from `UiApproximations.LogOnce`). Original
+values carry `// [DATA:<file>:<field>]`, OpenTPW extensions (display/upscaling/
+language rows and their supplementary strings) `// [EXT:…]`. Paths are relative to
+`source/OpenTPW/`; line numbers are as of this commit.
+
+| Id | Site(s) | Current value / rule | Evidence needed |
+| --- | --- | --- | --- |
+| UI-001 | `UI/Original/UiCanvas.cs:45` | non-4:3 outputs keep each element at its authored distance from the nearest edge (anchors) | original widescreen behaviour (none in 1999) / design decision |
+| UI-002 | `UI/Original/UiCanvas.cs:41`, `UI/Original/UiText.cs:57` | BF4 font size tier (SMALL/MED/BIG) chosen by logical scale thresholds 0.36 and 0.6 | binary: font selection per screen mode |
+| UI-003 | `UI/Original/UiModel.cs:60` | button/arm state frames drawn at the root node pose; child translations ignored | binary: UI model drawing code |
+| UI-004 | `UI/Original/UiModel.cs:124` | UI model triangles drawn back to front by Z, grouped per texture | binary or capture of overlapping UI parts |
+| UI-005 | `UI/Original/UiImages.cs:34` | pink (255,0,255) key with neighbour colour bleed; linear filtering of UI images | capture of edges at non-native resolutions |
+| UI-006 | `UI/Original/UiText.cs:102` | text colours (white, yellow highlight/title, green values, grey disabled), shadow and backdrop colours | captures of original screens |
+| UI-007 | `UI/Original/UiWidgets.cs:96` | one-pixel (×UI scale) drop shadow under UI text | captures of original screens |
+| UI-008 | `UI/Original/UiWidgets.cs:252` | text buttons on purple_button art: top half normal, bottom half focused/pressed | capture of the original front-end buttons |
+| UI-009 | `UI/Original/UiWidgets.cs:290` | option rows: label to 58%, value between arrows at 58.5%..97.5% of the f_optpanel2 frame | capture of the original options screen |
+| UI-010 | `UI/Original/UiScreen.cs:174` | popup help box at the top centre with a dark blue backdrop | capture of original popup help (helpbg art exists) |
+| UI-011 | `UI/Original/UiScreen.cs:164` | modal screens dim what is below | captures of original dialogs |
+| UI-012 | `UI/Original/UiInput.cs:49`, `UI/Original/UiScreen.cs:59` | hover focuses, release activates, arrows/Enter/Escape navigate, P pauses, right click backs out of modal screens | binary: input handling; KEYBOARD.str meaning |
+| UI-013 | `UI/Original/Options/OptionsScreen.cs:92`, `UI/Original/UiDialogs.cs:9` | window sizes and inner layout of options, game mode, load, pause and message dialogs | captures of original dialogs |
+| UI-014 | `FrontEnd/FrontEndMenu.cs:76`, `FrontEnd/FrontEndMenu.cs:92` | positions inside the lobby panel (island name, prev/enter/next), logo/title placement, right-hand Load/Options/Quit column | capture of the original lobby screen |
+| UI-015 | `FrontEnd/FrontEndMenu.cs:120` | front-end flow without player profiles; Game Mode is asked when entering a park; both modes play the same | binary/manual: original player and mode flow |
+| UI-016 | `FrontEnd/LobbyDefinition.cs:79` | lobby ISLAND angle = island yaw in degrees, height = camera target height | binary: lobby script interpretation or capture |
+| UI-017 | `World/LobbyCameraMode.cs:25` | lobby camera: SPINSPEED read as radians per 0.1 s, vertical field of view 60, 3/s glide between islands, ISLANDFOV unused | binary or capture of the lobby camera |
+| UI-018 | `Client/GameFlow.cs:223`, `World/Lobby/LobbyScene.cs:14` | lobby sky drawn as a flat SKYCOLOUR backdrop; flying meshes, rain, lightning, animations not drawn | binary/capture of the lobby |
+| UI-019 | `FrontEnd/LobbyDefinition.cs:92` | fallback island position (400 + index × 200, 400) when lobby.txt has none | none needed if lobby.txt is complete |
+| UI-020 | `Hud/ParkHud.cs:114` | positions of buy/info/finance/research/map buttons on the main panel (shared authored centre) | capture of the original HUD |
+| UI-021 | `Hud/ParkHud.cs:110`, `Hud/ParkHud.cs:75` | positions and fonts of the date and bank balance text; money grouped with ',' digits | capture of the original HUD; locale number format |
+| UI-022 | `Hud/HudStubs.cs:12`, `Hud/ParkHud.cs:121` | speed control (pause, ×1, ×2, ×4) bottom-right and its multipliers | binary: original game speed options (pause only is known) |
+| UI-023 | `Hud/HudStubs.cs:12` | calendar: 2 real seconds per day, 30-day months, 12-month years, starts Month 1 Year 1 | binary/economy data: park clock |
+| UI-024 | `Hud/ParkHud.cs:139`, `Hud/ParkHud.cs:188` | layout inside the build and info arms (category buttons, title, three item slots, stat rows, door/erase buttons) | captures of the original arms |
+| UI-025 | `Hud/ParkHud.cs:28` | message area keeps up to 3 messages for 8 s in the f_tag frame | binary/capture of the original message system |
+| UI-026 | `Hud/ParkHud.cs:532`, `Hud/PreviewIcon.cs:14` | build icons: CPU orthographic projection of P<name>.MD2 with 30° tilt, 0.8 rad/s turn, painter sorting | capture of the original build menu |
+| UI-027 | `Hud/ParkHud.cs:449` | a park click selects the ride within its footprint radius + 1 | binary: original picking |
+| UI-028 | `Hud/ParkHud.cs:270` | excitement shown as '<ExcitementLevel>%'; reliability, repair and life shown as not simulated | capture of the original ride info; simulation |
+| UI-029 | `Hud/ParkHud.cs:188` | b_door 'down' frames mean the ride is closed; b_erase used as the delete button | capture of the original ride panel |
+| UI-030 | `UI/Original/Options/GameOptions.cs:16` | volumes in 0..10 steps, default 8; popup help default on | capture/registry defaults of the original options |
+| UI-031 | `Hud/ParkHud.cs:411` | price charged when the placed ride appears; only one prototype ride | economy slice / ride catalog |
+| UI-032 | `UI/Original/UiWidgets.cs:179` | longer labels fall back to the small font; greedy word wrap | captures of translated original screens |
+
+Data-backed (tagged `[DATA]`): the 2048×1536 canvas and authored rectangles of
+placed models (`ui.wad` roots/bounds), button state frames and texture order, V
+flip, lobby.txt/theme files, starting cash (`Easy_Standard.sam`), Totem price
+(`Totem.sam`), build category (`Rides.sam`), excitement level (`Totem.sam`/
+`Rides.sam` `UsageInfo.ExcitementLevel`), every UITEXT/UIHELPTEXT/THEMENAMES/
+OBJECT_NAMES string, BF4 fonts.
+
 ## Open
 
 Original screen positions of code-placed elements, menu flow details (profiles,

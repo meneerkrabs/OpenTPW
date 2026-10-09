@@ -27,6 +27,7 @@ public sealed class OptionsServices
 /// </summary>
 public static class OptionsScreen
 {
+	// [EXT:upscaling] render-scale steps (presets 77/67/59/50 from the display slice plus 5% steps)
 	public static readonly int[] RenderScaleSteps = { 100, 95, 90, 85, 80, 77, 75, 70, 67, 65, 60, 59, 55, 50 };
 
 	private static readonly (int Width, int Height, UIStrings Label)[] OriginalResolutionLabels =
@@ -88,6 +89,7 @@ public static class OptionsScreen
 		var language = services.CurrentLanguage;
 		var pending = display.Current;
 		var screen = new UiScreen( "options" );
+		// [APPROX:UI-013] options window size, row pitch 84, OK/Back placement — evidence needed: capture of the original options screen
 		var window = UiDialogs.CenteredWindow( 1760, 1380 );
 		UiDialogs.AddWindow( screen, window, "w_med", () => strings[UIStrings.GameOptions] );
 
@@ -108,6 +110,7 @@ public static class OptionsScreen
 		static string Volume( int value ) => $" {value}";
 		static int Step( int value, int direction ) => Math.Clamp( value + direction, 0, GameOptions.MaximumVolume );
 
+		// [DATA:UITEXT.str:318,340-346] original row label and resolution labels
 		Row( "resolution", () => strings[UIStrings.ScreenResolution], () => ResolutionLabel( strings, new Point2( pending.Width, pending.Height ) ), direction =>
 		{
 			var sizes = display.GetResolutions( pending.Mode );
@@ -115,6 +118,7 @@ public static class OptionsScreen
 			var next = sizes.Count == 0 ? new Point2( pending.Width, pending.Height ) : sizes[index < 0 ? 0 : Math.Clamp( index + direction, 0, sizes.Count - 1 )];
 			pending = pending with { Width = next.X, Height = next.Y };
 		} );
+		// [EXT:display] window mode, upscaling, render scale and interface scale rows are OpenTPW extensions
 		Row( "windowMode", () => strings.Extra( OpenTpwText.WindowMode ), () => WindowModeLabel( strings, pending.Mode ),
 			direction => pending = pending with { Mode = Cycle( Enum.GetValues<WindowMode>(), pending.Mode, direction ) } );
 		Row( "upscaling", () => strings.Extra( OpenTpwText.Upscaling ), () => UpscaleLabel( strings, pending.Upscale ), direction =>
@@ -136,6 +140,7 @@ public static class OptionsScreen
 		Row( "speech", () => strings[UIStrings.SpeechVolume], () => Volume( options.SpeechVolume ), direction => options.SpeechVolume = Step( options.SpeechVolume, direction ) );
 		Row( "movie", () => strings[UIStrings.MovieVolume], () => Volume( options.MovieVolume ), direction => options.MovieVolume = Step( options.MovieVolume, direction ) );
 		Row( "popupHelp", () => strings[UIStrings.PopupHelp], () => strings[options.PopupHelp ? UIStrings.Yes : UIStrings.No], _ => options.PopupHelp = !options.PopupHelp );
+		// [EXT:language] language row (original installs had one language; OpenTPW reads CD overlays)
 		Row( "language", () => strings.Extra( OpenTpwText.Language ),
 			() => " " + (SupplementaryStrings.LanguageNames.TryGetValue( language, out var name ) ? name : language),
 			direction => language = Cycle( services.Languages, language, direction ) );

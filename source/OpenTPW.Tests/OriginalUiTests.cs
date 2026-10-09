@@ -404,6 +404,14 @@ public class OriginalUiTests
 	}
 
 	[TestMethod]
+	public void ApproximationRegisterIdsAreUniqueAndDescribed()
+	{
+		var ids = UiApproximations.All.Select( entry => entry.Id ).ToArray();
+		CollectionAssert.AllItemsAreUnique( ids );
+		Assert.IsTrue( UiApproximations.All.All( entry => entry.Id.StartsWith( "UI-" ) && entry.Assumption.Length > 10 && entry.EvidenceNeeded.Length > 3 ) );
+	}
+
+	[TestMethod]
 	public void StubParkStatusKeepsMoneyAndAnApproximateCalendar()
 	{
 		var status = new StubParkStatus( 100000 );

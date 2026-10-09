@@ -21,6 +21,7 @@ internal sealed class GameFlow : IDisposable
 
 	public GameFlow()
 	{
+		UiApproximations.LogOnce();
 		Strings = UiStringTable.Load( GameLanguage.Current );
 		Context = new UiContext( Strings, UiFonts.Load( GameLanguage.Current ), new UiModels() );
 		OptionsPath = SaveFileSystem.GetAbsolutePath( GameOptions.FileName );
@@ -219,6 +220,7 @@ internal sealed class GameFlow : IDisposable
 			Level.Render();
 		else
 		{
+			// [DATA:lobby.wad:<theme>.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky
 			// Lobby sky: the SKYCOLOUR of the selected island behind the 3D scene.
 			backgroundBatch.Clear();
 			var sky = Menu?.Selected.SkyColour ?? ((byte)40, (byte)90, (byte)160);

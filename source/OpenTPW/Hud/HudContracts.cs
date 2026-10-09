@@ -34,7 +34,8 @@ public enum BuildCategory { Rides = 0, Shops = 1, Sideshows = 2, Features = 3 }
 /// <param name="ObjectNameIndex">OBJECT_NAMES.str entry of the name.</param>
 /// <param name="PreviewModel">Path of the original preview model (<c>P&lt;name&gt;.MD2</c>) drawn as the icon.</param>
 /// <param name="TextureDirectories">Where the preview model's textures are looked up, in order.</param>
-public sealed record BuildItem( string Id, BuildCategory Category, int ObjectNameIndex, long Cost, string? PreviewModel, IReadOnlyList<string> TextureDirectories );
+/// <param name="DefaultExcitement">Original <c>UsageInfo.ExcitementLevel</c> ("average excitement level by default"), if known.</param>
+public sealed record BuildItem( string Id, BuildCategory Category, int ObjectNameIndex, long Cost, string? PreviewModel, IReadOnlyList<string> TextureDirectories, int? DefaultExcitement = null );
 
 /// <summary>
 /// What can be bought. The object-catalog slice implements this for every ride/shop/sideshow/feature;

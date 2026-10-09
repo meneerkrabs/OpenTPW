@@ -54,6 +54,7 @@ public sealed class UiFonts
 	{
 		this.load = load;
 		Tier = tier;
+		// [APPROX:UI-002] which shipped font serves which role per tier — evidence needed: binary font use / captures
 		var (title, menu, label, small, cash, heading) = tier switch
 		{
 			UiFontTier.Small => ("TITLESMALL", "MENUSMALL", "GAME10AA", "GAME8AA", "GAMEBOLD10", "SESHSMALL"),
@@ -98,6 +99,7 @@ public sealed class UiFonts
 }
 
 /// <summary>Colours used by the original-style screens (OpenTPW choices, see docs/UI.md).</summary>
+// [APPROX:UI-006] all UI text/backdrop colours — evidence needed: captures of original screens
 public static class UiColors
 {
 	public static readonly RgbaByte Text = new( 255, 255, 255, 255 );

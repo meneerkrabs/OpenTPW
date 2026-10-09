@@ -156,7 +156,12 @@ public sealed class ObjectAnimator
 		}
 		channels[channel] = new Channel
 		{
-			Player = player, Animates = animates, Vertices = vertices, Clip = clipName, Loop = loop, Serial = ++serial,
+			Player = player,
+			Animates = animates,
+			Vertices = vertices,
+			Clip = clipName,
+			Loop = loop,
+			Serial = ++serial,
 			StartMilliseconds = NowMilliseconds
 		};
 		Update();

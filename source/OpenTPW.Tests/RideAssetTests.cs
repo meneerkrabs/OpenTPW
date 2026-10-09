@@ -137,4 +137,17 @@ public class RideMeshConversionTests
 		mesh.Vertices[0] = new ModelFile.Vertex { Position = new Vector3( float.NaN, 0, 0 ), TextureIndex = 0 };
 		Assert.ThrowsException<InvalidDataException>( () => PrototypeRide.ConvertMesh( mesh ) );
 	}
+
+	[TestMethod]
+	public void RenderTransformSwapsAxesAroundTheModelSpaceNodeMatrix()
+	{
+		var position = new Vector3( 10, 20, 1 );
+		// Converted vertex (renderer axes) of model-space point (1, 2, 3) is (1, 3, 2).
+		var node = System.Numerics.Matrix4x4.CreateRotationY( MathF.PI / 2 ) * System.Numerics.Matrix4x4.CreateTranslation( 15, -2, 20 );
+		var expectedModel = System.Numerics.Vector3.Transform( new System.Numerics.Vector3( 1, 2, 3 ), node );
+		var actual = System.Numerics.Vector3.Transform( new System.Numerics.Vector3( 1, 3, 2 ), PrototypeRide.ToRenderTransform( node, position ) );
+		var expected = (new System.Numerics.Vector3( expectedModel.X, expectedModel.Z, expectedModel.Y ) - new System.Numerics.Vector3( 15, 20, 0 )) * PrototypeRide.ModelScale
+			+ new System.Numerics.Vector3( 10, 20, 1 );
+		Assert.AreEqual( 0, System.Numerics.Vector3.Distance( expected, actual ), 1e-5 );
+	}
 }

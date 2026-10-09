@@ -16,17 +16,32 @@ public sealed class PrototypeRide : Entity
 	/// Totem.RSE triggers it once per ride cycle after setting VAR_RUNNING and waits for it with WAIT4ANIM.
 	/// </summary>
 	internal const int MainAnimation = 5;
+	/// <summary>Original running cycle: cart lift/drop plus counter-rotating cogs (430 ticks).</summary>
+	internal const string AnimationName = "totemm1.MD2";
+	/// <summary>Sandbox choice; the original animation tick rate is not verified.</summary>
+	public const float AnimationTicksPerSecond = 30f;
 
 	private readonly RideMotion motion = new();
 	private readonly RideVM script;
-	private readonly List<(ModelEntity Entity, Vector3 Offset, bool IsCarriage)> children = new();
+	private readonly List<(ModelEntity Entity, int NodeIndex)> children = new();
 	private readonly List<Model> models = new();
+	private readonly ModelAnimationPlayer animation = null!;
+	private readonly Matrix4x4[] restTransforms = Array.Empty<Matrix4x4>();
+	private readonly Matrix4x4[] nodeTransforms = Array.Empty<Matrix4x4>();
+	private readonly int carriageNode;
 	private bool deleted;
 
 	/// <summary>The ride is open: the original script sees VAR_RIDECLOSED = 0.</summary>
 	public bool IsOpen => script[RideVariables.VAR_RIDECLOSED] == 0;
-	public float MotionHeight => motion.Height;
+	/// <summary>Animated carriage height above its rest pose, in sandbox units.</summary>
+	public float MotionHeight { get; private set; }
 	public double Phase => motion.Phase;
+	/// <summary>True while ANIM_Main (totemm1.MD2) is playing.</summary>
+	public bool IsAnimating => motion.IsRunning;
+	/// <summary>Current animation tick (0 when not playing).</summary>
+	public float AnimationTick => animation.Tick;
+	/// <summary>Model-space node matrices of the current pose.</summary>
+	public IReadOnlyList<Matrix4x4> NodeTransforms => nodeTransforms;
 
 	/// <summary>The original Totem.RSE, driven by the fixed simulation tick.</summary>
 	public RideVM Script => script;
@@ -51,16 +66,21 @@ public sealed class PrototypeRide : Entity
 			script[RideVariables.VAR_CAPACITY] = int.Parse( settings["Upgrades[0].InitCapacity"], System.Globalization.CultureInfo.InvariantCulture );
 			script[RideVariables.VAR_RIDECLOSED] = 1;
 			var modelFile = new ModelFile( $"{ArchivePath}/totem.MD2" );
-			if ( !modelFile.Meshes.Any( mesh => IsCarriage( mesh.Name ) ) )
-				throw new InvalidDataException( "The original Totem model does not contain its tp_cart carriage mesh." );
+			var carriage = modelFile.Meshes.FirstOrDefault( mesh => IsCarriage( mesh.Name ) )
+				?? throw new InvalidDataException( "The original Totem model does not contain its tp_cart carriage mesh." );
+			carriageNode = carriage.NodeIndex;
+			var clip = new ModelFile( $"{ArchivePath}/{AnimationName}" ).Clip
+				?? throw new InvalidDataException( "The original Totem animation is not an animation member." );
+			animation = new ModelAnimationPlayer( modelFile, clip, AnimationTicksPerSecond ) { Loop = false };
+			motion = new RideMotion( cycleDuration: clip.Duration / AnimationTicksPerSecond );
+			restTransforms = ModelAnimationPlayer.ComputeRestTransforms( modelFile );
+			nodeTransforms = (Matrix4x4[])restTransforms.Clone();
 
 			var textures = new Dictionary<string, Texture>( StringComparer.OrdinalIgnoreCase );
 			var missingTexture = Texture.Missing;
 			foreach ( var mesh in modelFile.Meshes )
 			{
 				var vertices = ConvertMesh( mesh );
-				if ( !Matrix4x4.Decompose( mesh.TransformMatrix, out var scale, out var rotation, out var translation ) )
-					throw new InvalidDataException( $"Cannot decompose ride mesh transform: {mesh.Name}" );
 
 				var textureSlots = new Texture[16];
 				Array.Fill( textureSlots, missingTexture );
@@ -79,17 +99,14 @@ public sealed class PrototypeRide : Entity
 				material.Set( "Color", textureSlots );
 				var model = new Model( vertices, mesh.Indices, material );
 				models.Add( model );
-				var offset = (ConvertAxes( translation ) - new Vector3( 15, 20, 0 )) * ModelScale;
 				var child = new ModelEntity
 				{
 					Model = model,
-					Name = mesh.Name.TrimEnd( '\0' ),
-					Scale = ConvertAxes( scale ) * ModelScale,
-					Rotation = new Quaternion( rotation.X, rotation.Z, rotation.Y, -rotation.W ),
-					Position = Position + offset
+					Name = mesh.Name.TrimEnd( '\0' )
 				};
-				children.Add( (child, offset, IsCarriage( mesh.Name )) );
+				children.Add( (child, mesh.NodeIndex) );
 			}
+			UpdateChildren();
 		}
 		catch
 		{
@@ -125,8 +142,36 @@ public sealed class PrototypeRide : Entity
 
 	private void UpdateChildren()
 	{
+		if ( motion.IsRunning )
+		{
+			animation.SetTick( (float)motion.ElapsedSeconds * AnimationTicksPerSecond );
+			animation.ComputeWorldTransforms( nodeTransforms );
+		}
+		else
+		{
+			animation.Reset();
+			restTransforms.CopyTo( nodeTransforms, 0 );
+		}
+		MotionHeight = (nodeTransforms[carriageNode].M42 - restTransforms[carriageNode].M42) * ModelScale;
 		foreach ( var child in children )
-			child.Entity.Position = Position + child.Offset + (child.IsCarriage ? Vector3.Up * motion.Height : Vector3.Zero);
+		{
+			var transform = ToRenderTransform( nodeTransforms[child.NodeIndex], Position );
+			child.Entity.TransformOverride = transform;
+			child.Entity.Position = new Vector3( transform.M41, transform.M42, transform.M43 );
+		}
+	}
+
+	/// <summary>
+	/// Maps a model-space MD2 node matrix to the renderer: swap Y/Z on both sides (vertices are
+	/// converted with <see cref="ConvertAxes"/>), centre the ride footprint, scale and place it.
+	/// </summary>
+	internal static Matrix4x4 ToRenderTransform( Matrix4x4 node, Vector3 position )
+	{
+		var swap = new Matrix4x4( 1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1 );
+		return swap * node * swap
+			* Matrix4x4.CreateTranslation( -15, -20, 0 )
+			* Matrix4x4.CreateScale( ModelScale )
+			* Matrix4x4.CreateTranslation( position.X, position.Y, position.Z );
 	}
 
 	protected override void OnDelete()
@@ -150,8 +195,8 @@ public sealed class PrototypeRide : Entity
 	}
 
 	/// <summary>
-	/// Routes Totem.RSE effects. Only ANIM_Main is connected: it plays one cycle of the procedural
-	/// <see cref="RideMotion"/> as a stand-in for the undecoded MD2 animation and reports that cycle's length.
+	/// Routes Totem.RSE effects. Only ANIM_Main is connected: it plays the original totemm1.MD2 clip once
+	/// (430 ticks at <see cref="AnimationTicksPerSecond"/>) and reports its length in milliseconds.
 	/// Everything else (sounds, objects, visitors, channel animations) is an unimplemented effect.
 	/// </summary>
 	private sealed class TotemEffects : IRideScriptEffects

@@ -6,6 +6,9 @@ public partial class ModelEntity : Entity
 {
 	public Model? Model { get; set; }
 
+	/// <summary>Explicit model matrix (e.g. an MD2 node's composed hierarchy transform); overrides Position/Rotation/Scale.</summary>
+	public System.Numerics.Matrix4x4? TransformOverride { get; set; }
+
 	public ModelEntity()
 	{
 		Spawn();
@@ -23,7 +26,7 @@ public partial class ModelEntity : Entity
 
 		var uniformBuffer = new ObjectUniformBuffer
 		{
-			g_mModel = ModelMatrix,
+			g_mModel = TransformOverride ?? ModelMatrix,
 			g_mView = Camera.ViewMatrix,
 			g_mProj = Camera.ProjMatrix,
 			g_vLightPos = Level.SunLight?.Position ?? Vector3.Zero,

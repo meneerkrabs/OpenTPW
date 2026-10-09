@@ -15,6 +15,9 @@ internal sealed class SandboxSmokeTest : IDisposable
 	private int frame;
 	private int motionFrame;
 	private bool completed;
+	private byte[]? earlyPixels;
+	private System.Numerics.Matrix4x4[]? earlyPose;
+	private float earlyTick;
 
 	public SandboxSmokeTest( Level level )
 	{
@@ -39,10 +42,19 @@ internal sealed class SandboxSmokeTest : IDisposable
 			return;
 		}
 		var step = frame - motionFrame;
+		if ( step == 10 )
+		{
+			Require( level.PlacedRide!.IsAnimating, "script-triggered ANIM_Main plays the original Totem animation" );
+			earlyPixels = CaptureFrame( "ride-early.png" ).Pixels;
+			earlyPose = level.PlacedRide.NodeTransforms.ToArray();
+			earlyTick = level.PlacedRide.AnimationTick;
+		}
 		if ( step == 30 )
 		{
 			Require( level.PlacedRide!.Script.State != RideVMState.Faulted && level.PlacedRide.Script[RideVariables.VAR_RUNNING] == 1, "original script reports the ride running" );
-			VerifyText( CaptureFrame( "park.png" ) );
+			var parkFrame = CaptureFrame( "park.png" );
+			VerifyPoseChanged( level.PlacedRide, parkFrame.Pixels );
+			VerifyText( parkFrame );
 			level.SaveSandbox();
 			level.PlacedRide!.Stop();
 			Require( !level.PlacedRide.IsOpen, "close ride" );
@@ -67,7 +79,7 @@ internal sealed class SandboxSmokeTest : IDisposable
 		{
 			Device.WaitForIdle();
 			completed = true;
-			Log.Trace( $"Native sandbox smoke test passed: {frame} frames, original ride and RSE script, script-triggered motion, close, remove, isolated save/load, BF4 text and GPU readback." );
+			Log.Trace( $"Native sandbox smoke test passed: {frame} frames, original ride and RSE script, script-triggered motion, original animation readback, close, remove, isolated save/load, BF4 text and GPU readback." );
 			Render.Window.SdlWindow.Close();
 		}
 	}
@@ -105,6 +117,19 @@ internal sealed class SandboxSmokeTest : IDisposable
 		{
 			Device.Unmap( staging );
 		}
+	}
+
+	/// <summary>Requires the original animation to move nodes and change the GPU readback between two frames.</summary>
+	private void VerifyPoseChanged( PrototypeRide ride, byte[] pixels )
+	{
+		Require( ride.AnimationTick != earlyTick, "original Totem animation advances" );
+		var changedNodes = ride.NodeTransforms.Where( ( transform, index ) => !transform.Equals( earlyPose![index] ) ).Count();
+		Require( changedNodes >= 3, "animated cart and cogs change pose between frames" );
+		var changedPixels = 0;
+		for ( var index = 0; index < pixels.Length; index += 4 )
+			changedPixels += pixels.AsSpan( index, 3 ).SequenceEqual( earlyPixels!.AsSpan( index, 3 ) ) ? 0 : 1;
+		Require( changedPixels > 100, "animated pose changes the GPU readback" );
+		Log.Trace( $"Totem animation ticks {earlyTick:F1} -> {ride.AnimationTick:F1}: {changedNodes} node transforms and {changedPixels} pixels changed." );
 	}
 
 	/// <summary>

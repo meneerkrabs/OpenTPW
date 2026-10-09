@@ -10,6 +10,7 @@ public sealed class LobbyIsland : Entity
 
 		var modelPrefix = themeName[0..3];
 		var modelFile = new ModelFile( $"lobby/terrain/{modelPrefix}_isle.md2" );
+		var nodeTransforms = ModelAnimationPlayer.ComputeRestTransforms( modelFile );
 
 		foreach ( var mesh in modelFile.Meshes )
 		{
@@ -20,6 +21,11 @@ public sealed class LobbyIsland : Entity
 			{
 				if ( mesh.Materials.Length <= i )
 				{
+					textures.Add( Texture.Missing );
+				}
+				else if ( mesh.Materials[i].TextureIndex < 0 )
+				{
+					// Untextured material (no texture pointer): render with the plain white texture.
 					textures.Add( Texture.Missing );
 				}
 				else
@@ -37,7 +43,7 @@ public sealed class LobbyIsland : Entity
 				vertices.Add( new Vertex()
 				{
 					Position = new Vector3( mesh.Vertices[i].Position.X, mesh.Vertices[i].Position.Z, mesh.Vertices[i].Position.Y ),
-					Normal = mesh.Normals[i],
+					Normal = new Vector3( mesh.Normals[i].X, mesh.Normals[i].Z, mesh.Normals[i].Y ),
 					TexCoords = mesh.TexCoords[i],
 					TexIndex = (int)mesh.Vertices[i].TextureIndex,
 					MatFlags = mesh.Materials[(int)mesh.Vertices[i].TextureIndex].Flags
@@ -45,18 +51,15 @@ public sealed class LobbyIsland : Entity
 			}
 
 			var model = new Model( [.. vertices], mesh.Indices, material );
-			Matrix4x4.Decompose( mesh.TransformMatrix, out var scl, out var rot, out var pos );
-
-			var position = new Vector3( pos.X, pos.Z, pos.Y - 2.5f );
-			var rotation = new Quaternion( rot.X, rot.Z, rot.Y, -rot.W );
-			var scale = new Vector3( scl.X, scl.Z, scl.Y );
+			// Node matrices are parent-relative; swap Y/Z on both sides like the vertices.
+			var swap = new Matrix4x4( 1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1 );
+			var transform = swap * nodeTransforms[mesh.NodeIndex] * swap * Matrix4x4.CreateTranslation( Position.X, Position.Y, Position.Z - 2.5f );
 
 			_ = new ModelEntity()
 			{
 				Model = model,
-				Scale = scale,
-				Rotation = rotation,
-				Position = position + Position,
+				TransformOverride = transform,
+				Position = new Vector3( transform.M41, transform.M42, transform.M43 ),
 			};
 		}
 	}

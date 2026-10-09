@@ -38,6 +38,21 @@ public class ShaderTests
 		CollectionAssert.Contains( names, "s_Color" );
 	}
 
+	[DataTestMethod]
+	[DataRow( CrossCompileTarget.MSL )]
+	[DataRow( CrossCompileTarget.HLSL )]
+	[DataRow( CrossCompileTarget.GLSL )]
+	public void NativeTextShaderExposesAtlasBindings( CrossCompileTarget target )
+	{
+		if ( Environment.GetEnvironmentVariable( "OPENTPW_NATIVE_SHADER_TESTS" ) != "1" )
+			Assert.Inconclusive( "Set OPENTPW_NATIVE_SHADER_TESTS=1 with architecture-matching native SPIR-V libraries." );
+		Log = new();
+		var program = ShaderCompiler.CompileProgram( GetShaderPath( "text.shader" ), target );
+		var names = program.Reflection.ResourceLayouts.Single().Elements.Select( element => element.Name ).ToArray();
+		CollectionAssert.AreEqual( new[] { "Atlas", "s_Atlas" }, names );
+		Assert.AreEqual( 3, program.Reflection.VertexElements.Length );
+	}
+
 	private static string GetShaderPath( string shader )
 	{
 		var directory = new System.IO.DirectoryInfo( System.AppContext.BaseDirectory );

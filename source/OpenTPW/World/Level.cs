@@ -11,6 +11,7 @@ public class Level
 
 	public SettingsFile Global { get; private init; }
 	private ParkLayout parkLayout = null!;
+	internal SandboxTextOverlay TextOverlay { get; private set; } = null!;
 	public PrototypeRide? PlacedRide { get; private set; }
 	public bool IsPlacing { get; set; }
 	public string LastActionMessage { get; private set; } = "";
@@ -39,6 +40,7 @@ public class Level
 		Hud = new();
 
 		parkLayout = new ParkLayout( this );
+		TextOverlay = new SandboxTextOverlay();
 	}
 
 	public void Update()
@@ -100,5 +102,6 @@ public class Level
 	{
 		foreach ( var entity in Entity.All.ToArray() )
 			entity.Render();
+		TextOverlay.Draw();
 	}
 }

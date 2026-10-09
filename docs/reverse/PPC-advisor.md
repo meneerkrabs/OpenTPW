@@ -1184,10 +1184,10 @@ its return into that word at `0x118cc`; the static constructor list calls it
 at `0x3c`. Thus this selected RNG state belongs to the sound module and its
 initial value comes from the clock, separately from the game's advisor-mouth
 random call. Data relocation slot `0x348` also points to the seed word;
-its indirect use has not been recovered. The witnesses establish direct
-consumers and initializer, not a complete absence of indirect writers or an
-original runtime sequence. Do not turn these pure functions into an advancing
-per-draw RNG without finding a native state writer.
+phase 10 below resolves its export/linkage ownership. The witnesses establish
+direct consumers and initializer, not an original runtime sequence. Do not
+turn these pure functions into an advancing per-draw RNG without finding a
+native state writer.
 
 ### Volume, pitch and parameter codes
 
@@ -1252,5 +1252,92 @@ exhaustion, singleton bypasses, anti-repeat, inclusive branches, zero-divisor
 dependencies, signed pitch, reversed bounds, random/parameter endpoints,
 byte truncation/masks, frequency algebra, native operands and private PC/Mac
 metadata. Confidence is high for the selected static consumers and supplied
-record interpretations. Indirect RNG writers, complete class dispatch,
+record interpretations. External RNG mutation, complete class dispatch,
 parameter producers, scheduling and device behavior remain separate handoffs.
+
+## Phase 10: seed alias ownership and advancement qualification
+
+`sound_seed_evidence.py` identifies all 16 supplied Mac PEF containers by
+SHA-256 before examining their imports, exports, relocations and selected
+operands. Its result is a linkage witness, not execution of the original game.
+
+### What slot 0x348 owns
+
+The sound export `mRandomSeed__17CAudioPlaceHolder` has symbol class **1
+(data)**, data section 1, offset `0xc2e4`. Slot `data0x348` is the sole
+relocation to that exported word; its target is section 1 at `0xc2e4`.
+It is a TOC pointer to the static seed, not a function pointer, transition
+vector, scheduler callback or second seed. The sound code has no direct
+D-form load/store/address construction via `r2` accessing that slot with its
+TOC `0x8000`, and no relocation points to the slot itself. Indexed pointer
+flow is not inferred solely from that operand scan.
+
+The nine direct seed-address constructions from phase 9 are independently
+checked. Eight belong to selection/range calculation blocks; their address
+consumers load the seed value and use it as an arithmetic input. For the
+sample chooser, `0xfcf0` reads through `r6`, then `0xfcf4` replaces `r6` with
+the sample-array pointer. For the event chooser, `0xff90` reads through `r5`,
+then `0xff98` replaces `r5` with the event-array pointer. The one-shot branch
+consumer `0x18108` overwrites `r6` with the loaded integer, and the other
+branch consumer reads it at `0x193ac` before replacing the pointer register
+at `0x193b0`. Volume/pitch consumers load the integer through `r4`; their
+selected arithmetic blocks do not pass the seed address to another routine
+or write a successor. The ninth site is the initializer's clock-return
+store at `0x118cc`, reached through the PEF initializer and constructor list.
+
+### Imported and dynamically resolved ownership
+
+None of the 16 identified containers imports the seed symbol. Its exact
+symbol-name literal also occurs in none of their code/data payloads, where a
+dynamic lookup name would be supplied; the export's loader metadata remains
+the identified owner. The exact bundle set is checked so missing libraries
+cannot silently support an exhaustive import claim.
+
+The supplied containers have one `FindSymbol` import, in
+`sams_utils_shared.data`, import index 193. That library uses TOC **0**, unlike
+the sound library. Glue `0x1f6fc` has one direct caller at `0xa86c`, inside
+resolver helper `0xa808`. The helper calls `GetSharedLibrary` at `0xa840`
+and forwards the caller's symbol name to `FindSymbol`. No relocation supplies
+an indirect entry to that helper. Its only direct
+callers, `0xa0b4` and `0xa0d0`, load these bounded Pascal strings:
+
+| Call | Library | Symbol |
+| --- | --- | --- |
+| `0xa0b4` | `DriverServicesLib` | `UpTime` |
+| `0xa0d0` | `DriverServicesLib` | `AbsoluteToNanoseconds` |
+
+Their base is the code-section literal pointer at Sams TOC slot 2040,
+relocated to `code0x212e1`; symbol offsets are +18 and +25. Thus the recovered
+dynamic lookup path resolves clock facilities, not an indirect sound-seed
+writer. No seed setter import or seed lookup caller was identified in this
+bundle. External system libraries are not disassembled by this witness.
+
+### Result and limits
+
+The recovered bundle selection path **does not advance the seed**. Its
+choosers calculate a successor candidate from the same sound-owned word;
+the identified initialization path writes the clock-derived starting value.
+Between initialization and any external mutation, repeated calculations
+with that seed reuse the same candidate. Anti-repeat history and branch
+parameters can still change the selected record without advancing this seed.
+
+This qualification rests on export/relocation ownership, all identified
+bundle imports, the selected dynamic lookup callers and the local seed
+consumers—not only an absent direct store. Because the seed is exported
+data, a module outside the identified bundle or deliberate external access
+could mutate it. The evidence does not rule that out, establish a whole-game
+runtime trace, or prove the Windows build uses the same seed policy. It
+supports retaining the pure helper's explicit snapshot dependency rather
+than introducing an advancing random generator into production audio.
+
+Six added cases check data versus executable ownership, wrong relocation
+targets, TOC rebasing, indirect pointers to the alias cell, bounded Pascal
+lookup strings, repeated/explicitly changed seed snapshots and the actual
+16-container native linkage. All **73** advisor Python tests pass with the
+supplied binary/PC/Mac fixtures, zero skips; `git diff --check` passes.
+Confidence is high for identities, ownership and selected call chains;
+the fixed-between-writes statement is qualified to the recovered bundle.
+
+```sh
+python3 tools/ppc-analysis/lanes/advisor/sound_seed_evidence.py /Users/sander/server/game-assets/mac-feral/bin > /tmp/advisor-sound-seed.json
+```

@@ -53,7 +53,7 @@ Own macOS arm64 verification on SDK 10.0.401:
 - Dutch Metal smoke passed **231 frames**: the original payment/reload/read-only
   checks plus Instant Action → lobby → load, with Easy balance layers and
   $100,000 retained. The requested UI scale 2 fitted to 1 at 1280×720.
-- The isolated evidence runner reached **245 Python cases**, with no failures
+- The isolated evidence runner reached **230 Python cases**, with no failures
   and eight missing private UI-fixture skips; all six retained SDK 8 standalone
   harnesses passed. Source-reference tools follow .NET 10; source-link-only
   helpers retain their compatible framework.
@@ -61,6 +61,29 @@ Own macOS arm64 verification on SDK 10.0.401:
 Release builds have zero errors; existing dependency, nullable/compiler and
 new SDK analyzer warnings remain. These checks qualify the merge and bounded
 regressions, not original gameplay/device fidelity or every other OS/edition.
+
+## Latest remote UI and graphics updates
+
+The integration also includes remote commit `e31c804`: optional local texture
+packs, world-only capture, original-style online screens, text input/scrolling
+and Options > Game files. First-run setup asks only for the game folder; its
+bounded inspection/picker behavior survives that simplification. In-game
+folder changes use the same cancellable children, provide explicit typed-path
+recovery and cancel owned work when screens or GameFlow are disposed.
+
+After this update, **182 focused texture/UI/online/setup/display/compatibility
+checks passed with no skips**, and the Release build had zero errors. Dutch
+Metal smoke passed **264 frames**, including the new online and folder screens
+and the earlier mode/payment/reload/read-only regressions. A world-only capture
+wrote a validated **1280×720 PNG** outside Git. Text readback now selects the
+exact glyph range of its draw; the earlier overlap heuristic incorrectly
+included covered glyphs from the underlying lobby. No threshold was relaxed.
+
+`scripts/run.sh` selects the private SDK 10 fallback before the retained SDK 8
+on the verified arm64 route and respects explicit `DOTNET`; shell syntax and
+normal selection were checked. Linux/Windows native execution, actual external
+upscaler execution and every platform's live folder dialog remain separate
+checks. No original assets, captures or native binaries are published.
 
 ## Integrated check after resumption
 

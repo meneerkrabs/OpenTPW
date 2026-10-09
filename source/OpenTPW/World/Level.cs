@@ -45,7 +45,9 @@ public partial class Level : IDisposable
 	/// </summary>
 	public ParkVisitInfo? Visit { get; }
 	public bool IsReadOnlyVisit => Visit != null;
+	// Developer tools only (--sandbox); players use the original-style online screens (OnlineScreens).
 	private OnlinePanel? onlinePanel;
+	private OnlineFolders onlineFolders = null!;
 
 	public Level( string levelName, bool loadOriginalLevel = false, ParkVisitInfo? visit = null, OnlineFolders? onlineFolders = null, ParkGameMode? gameMode = null )
 	{
@@ -210,7 +212,7 @@ public partial class Level : IDisposable
 		Hud = new();
 
 		parkLayout = new ParkLayout( this );
-		onlinePanel = new OnlinePanel( this, folders ?? OnlineFolders.FromEnvironment() );
+		onlineFolders = folders ?? OnlineFolders.FromEnvironment();
 		TextOverlay = new SandboxTextOverlay();
 		// BF4 UI draws at output size after the world blit, not through the world upscaler.
 		global::Global.Render.OnOverlayRender += DrawTextOverlay;
@@ -230,7 +232,11 @@ public partial class Level : IDisposable
 		Camera.Update();
 		if ( ShowDeveloperPanels )
 			parkLayout.Draw();
-		onlinePanel?.Draw();
+		if ( ShowDeveloperPanels )
+		{
+			onlinePanel ??= new OnlinePanel( this, onlineFolders );
+			onlinePanel.Draw();
+		}
 		if ( IsPlacing && !wasMouseDown && Input.Mouse.Left && !UiCapturesMouse && !ImGuiNET.ImGui.GetIO().WantCaptureMouse )
 		{
 			if ( TryGetPlacementPosition( Input.Mouse.Position, new Vector2( Screen.Size.X, Screen.Size.Y ), out var position ) )

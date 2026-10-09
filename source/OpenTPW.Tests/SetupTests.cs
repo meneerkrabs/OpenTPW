@@ -156,7 +156,7 @@ public class SetupTests
 	{
 		Assert.IsTrue( GamePathResolution.IsInteractive( Array.Empty<string>() ) );
 		Assert.IsTrue( GamePathResolution.IsInteractive( new[] { "--sandbox" } ) );
-		foreach ( var tool in new[] { "--smoke-test", "--validate-assets", "--inspect-model", "--headless", "--export-park", "--import-park" } )
+		foreach ( var tool in new[] { "--smoke-test", "--validate-assets", "--inspect-model", "--headless", "--build-texture-pack", "--capture-world", "--export-park", "--import-park" } )
 			Assert.IsFalse( GamePathResolution.IsInteractive( new[] { tool } ), tool );
 	}
 }

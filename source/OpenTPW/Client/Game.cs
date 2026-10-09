@@ -108,6 +108,11 @@ internal static class Game
 			MovieCommands.RunHeadless( dataDirectory, movieName, !args.Contains( "--mute" ) );
 			return;
 		}
+		if ( args.Contains( "--build-texture-pack" ) )
+		{
+			BuildTexturePack( args, dataDirectory );
+			return;
+		}
 		if ( args.Contains( "--validate-assets" ) )
 		{
 			var globalSettings = new SettingsFile( "/levels/jungle/global.sam" );
@@ -167,6 +172,12 @@ internal static class Game
 		using var flow = new GameFlow { OnlineFolders = onlineFolders };
 		Render.OnUpdate += flow.Update;
 		Render.OnRender += flow.Render;
+		var capturePath = GetOption( args, "--capture-world", "a .png file for the world-only screenshot" );
+		if ( capturePath != null )
+		{
+			var frames = GetOption( args, "--capture-frames", "a frame count" ) is { } text && int.TryParse( text, out var parsed ) && parsed > 0 ? parsed : 240;
+			Render.PostUpdate += new WorldCapture( capturePath, frames ).Update;
+		}
 		var smoke = args.Contains( "--smoke-test" );
 		if ( visit == null && originalLevelIndex < 0 && !args.Contains( "--advisor-say" ) && !args.Contains( "--sandbox" ) && (!smoke || args.Contains( "--front-end" )) )
 		{
@@ -305,6 +316,23 @@ internal static class Game
 			Log.Warning( $"The game folder is read-only ({exception.Message}); saves go to {fallback}." );
 			return fallback + Path.DirectorySeparatorChar;
 		}
+	}
+
+	/// <summary><c>--build-texture-pack --upscaler &lt;realesrgan-ncnn-vulkan&gt;</c>: builds the optional local texture pack (docs/TEXTURE-PACKS.md).</summary>
+	private static void BuildTexturePack( string[] args, string dataDirectory )
+	{
+		var upscaler = GetOption( args, "--upscaler", "the path of a realesrgan-ncnn-vulkan executable" )
+			?? throw new ArgumentException( "--build-texture-pack requires --upscaler <path of realesrgan-ncnn-vulkan> (docs/TEXTURE-PACKS.md)." );
+		var model = GetOption( args, "--upscale-model", "a Real-ESRGAN model name such as realesrgan-x4plus" ) ?? "realesrgan-x4plus";
+		var packDirectory = GetOption( args, "--texture-pack-dir", "a directory for the texture pack" ) ?? TexturePack.DefaultPackDirectory();
+		var subtree = GetOption( args, "--texture-pack-subtree", "a data-relative directory such as levels/jungle" ) ?? "";
+		var options = new TexturePackBuildOptions { Subtree = subtree };
+		Log.Trace( $"Building texture pack from {dataDirectory}{(subtree.Length > 0 ? $"/{subtree}" : "")} into {packDirectory}." );
+		var manifest = TexturePackBuilder.Build( TexturePackBuilder.EnumerateGameTextures( dataDirectory, subtree ), packDirectory,
+			new RealEsrganUpscaler( upscaler, model ), options, message => Log.Trace( message ) );
+		Log.Trace( $"Done: {manifest.Textures} textures at {manifest.Scale}x. Turn on Enhanced textures in Game Options (or set EnhancedTextures in graphics.json)." );
+		if ( !string.Equals( Path.GetFullPath( packDirectory ), Path.GetFullPath( TexturePack.DefaultPackDirectory() ), StringComparison.Ordinal ) )
+			Log.Warning( $"The game only loads the pack at {TexturePack.DefaultPackDirectory()}; use this one with OPENTPW_TEXTURE_PACK={Path.Combine( packDirectory, TexturePack.TexturesDirectoryName )}." );
 	}
 
 	private static string? GetOption( string[] args, string name, string description )

@@ -253,6 +253,8 @@ public sealed record GraphicsSettings
 	public int Anisotropy { get; init; } = GraphicsPresets.EnhancedAnisotropy;
 	/// <summary>[EXT:COMPAT-GFX-VIEWDISTANCE] OpenTPW fog distance multiplier; 1 = unchanged.</summary>
 	public float ViewDistanceScale { get; init; } = 1;
+	/// <summary>[EXT:texture-pack] Use the locally built upscaled texture pack (docs/TEXTURE-PACKS.md); off = original textures. Applies at the next start.</summary>
+	public bool EnhancedTextures { get; init; }
 
 	public static GraphicsSettings Default { get; } = new();
 

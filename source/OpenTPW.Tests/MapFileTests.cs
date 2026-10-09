@@ -217,6 +217,11 @@ public class MapFileTests
 			}
 		}
 		Assert.AreEqual( blockedHoles, holesOnBlockedOnly );
+		var model = new ModelFile( new MemoryStream( ReadOriginalMember( level, "base.MD2" ) ) );
+		var slots = Enumerable.Range( 0, field.CellCountX * field.CellCountZ ).Select( index => field.GetCellTextureSlot( index % field.CellCountX, index / field.CellCountX ) )
+			.Where( slot => slot >= 0 ).Distinct().ToArray();
+		Assert.AreEqual( 6, slots.Length );
+		Assert.IsTrue( slots.All( slot => slot < model.Textures.Count && model.Textures[slot].FrameNames[0].Contains( "_bas", StringComparison.OrdinalIgnoreCase ) ), level );
 	}
 
 	[DataTestMethod]

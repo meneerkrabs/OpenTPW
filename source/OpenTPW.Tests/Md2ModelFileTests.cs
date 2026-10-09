@@ -160,6 +160,7 @@ public class Md2ModelFileTests
 		Assert.IsTrue( field.IsHole( 0, 0 ) );
 		Assert.IsFalse( field.IsHole( 1, 0 ) );
 		Assert.AreEqual( 0x1B0042u, field.GetCellWord( 1, 0 ) );
+		Assert.AreEqual( (-1, 0x1B), (field.GetCellTextureSlot( 0, 0 ), field.GetCellTextureSlot( 1, 0 )) );
 		Assert.ThrowsException<ArgumentOutOfRangeException>( () => field.GetCornerHeight( 3, 0 ) );
 		Assert.ThrowsException<ArgumentOutOfRangeException>( () => field.GetCellWord( 0, 1 ) );
 

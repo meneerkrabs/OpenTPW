@@ -53,7 +53,8 @@ public sealed record ModelAnimationTrailer( int Offset, IReadOnlyList<uint> Word
 /// bracket the heights (kept raw), then pointers to (CountX+1)*(CountZ+1) corner heights and
 /// CountX*CountZ per-cell words, both stored X-fastest. Corner (x, z) lies at MD2 world
 /// (x * CellSizeX, height, z * CellSizeZ). Cell word <see cref="HoleCellWord"/> marks cells
-/// without heightfield surface; other cell word bits are not interpreted. See docs/MAP.md.
+/// without heightfield surface; otherwise the high 16 bits select an MD2 texture slot (always a
+/// <c>*_bas1..6</c> ground texture in the four terrain models). The low 16 bits are not interpreted.
 /// </summary>
 public sealed class ModelHeightfield
 {
@@ -102,4 +103,7 @@ public sealed class ModelHeightfield
 	}
 
 	public bool IsHole( int x, int z ) => GetCellWord( x, z ) == HoleCellWord;
+
+	/// <summary>MD2 texture slot of a surface cell, or -1 for a hole.</summary>
+	public int GetCellTextureSlot( int x, int z ) => IsHole( x, z ) ? -1 : (int)(GetCellWord( x, z ) >> 16);
 }

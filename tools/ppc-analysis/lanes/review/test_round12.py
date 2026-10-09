@@ -187,10 +187,10 @@ class MainExitCodes(Scratch):
         path = str(self.fixture())
         code, output = self.main('--pc-fixture', path)
         self.assertEqual(0, code)
-        self.assertIn('note --pc-fixture (OPENTPW_PC_FIXTURE) is set but nothing that ran in this checkout used it', output)
+        self.assertIn('note --pc-fixture (OPENTPW_PC_FIXTURE, OPENTPW_PPC_SAVE_PATH) is set but nothing that ran in this checkout used it', output)
         code, output = self.main('--pc-fixture', path, '--require-fixtures')
         self.assertEqual(1, code)
-        self.assertIn('FAIL --pc-fixture (OPENTPW_PC_FIXTURE) is set but nothing', output)
+        self.assertIn('FAIL --pc-fixture (OPENTPW_PC_FIXTURE, OPENTPW_PPC_SAVE_PATH) is set but nothing', output)
 
     def test_mac_bin_is_consumed_when_either_of_its_variables_is_read(self):
         bin_root = self.root / 'bin'

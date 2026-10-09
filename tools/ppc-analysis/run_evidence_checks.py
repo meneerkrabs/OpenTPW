@@ -13,7 +13,8 @@ otherwise, so a stale shell variable cannot change the result. --mac-bin is the 
 directory; it sets OPENTPW_PPC_BIN_ROOT to that directory and OPENTPW_MAC_APP to the
 SimThemePark.data file in it (rides wants the file, the other lanes the directory). Only those two
 paths are stat'ed; no directory is listed. --pc-fixture is the one identified PC save container
-(Data/levels/jungle/Easymode.TPWI); it sets OPENTPW_PC_FIXTURE and is passed as `--fixture` to
+(Data/levels/jungle/Easymode.TPWI); it sets OPENTPW_PC_FIXTURE and OPENTPW_PPC_SAVE_PATH (clock's
+name for the same save) and is passed as `--fixture` to
 harnesses registered in FIXTURE_ARGUMENTS. It is never derived from --pc-data. The runner checks only
 its shape (a regular .TPWI file outside the checkout, longer than the container header, within the
 8 MiB harness bound); the lanes check its identity. UI_EVIDENCE_* variables pass through unchanged.
@@ -48,13 +49,14 @@ import sys
 import tempfile
 from pathlib import Path
 
-FIXTURE_VARIABLES = ('OPENTPW_PPC_BIN_ROOT', 'OPENTPW_MAC_APP', 'OPENTPW_PC_DATA', 'OPENTPW_PC_FIXTURE')
+FIXTURE_VARIABLES = ('OPENTPW_PPC_BIN_ROOT', 'OPENTPW_MAC_APP', 'OPENTPW_PC_DATA', 'OPENTPW_PC_FIXTURE',
+                     'OPENTPW_PPC_SAVE_PATH')
 ITEM = re.compile(r'<(Compile|ProjectReference|None|Content|EmbeddedResource)\s+[^>]*?Include="([^"]+)"')
 PROJECT_DIRECTORY = re.compile(r'^\$\((?:MSBuildThisFileDirectory|MSBuildProjectDirectory)\)[\\/]?')
 FIXTURE_FLAGS = {
     '--mac-bin': ('OPENTPW_PPC_BIN_ROOT', 'OPENTPW_MAC_APP'),
     '--pc-data': ('OPENTPW_PC_DATA',),
-    '--pc-fixture': ('OPENTPW_PC_FIXTURE',),
+    '--pc-fixture': ('OPENTPW_PC_FIXTURE', 'OPENTPW_PPC_SAVE_PATH'),
 }
 APP_NAME = 'SimThemePark.data'
 PC_FIXTURE_SUFFIX = '.tpwi'
@@ -115,7 +117,8 @@ def fixture_environment(base: dict, mac_bin: Path | None, pc_data: Path | None,
             raise FixtureError(f'--pc-data is not a directory: {pc_data}')
         env['OPENTPW_PC_DATA'] = str(pc_data)
     if pc_fixture is not None:
-        env['OPENTPW_PC_FIXTURE'] = str(check_pc_fixture(pc_fixture, repo))
+        # Rides and economy read OPENTPW_PC_FIXTURE; clock's saved-epoch witnesses read OPENTPW_PPC_SAVE_PATH.
+        env['OPENTPW_PC_FIXTURE'] = env['OPENTPW_PPC_SAVE_PATH'] = str(check_pc_fixture(pc_fixture, repo))
     return env
 
 

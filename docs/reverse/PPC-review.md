@@ -2825,3 +2825,163 @@ parity.
    of `FUN_100e3c90`, or reject it.
 4. Re-review `255cc7b` (or its successor) as a new checkpoint; it is not
    covered here.
+
+## 51. Round 15: batch 2 partial integration, runner save-path variable, unmerged UI/rides/economy tips
+
+Scope: `integration-batch2` as committed at **`ef6ff14`** (base `f635468`;
+formats `ab444e3` → `2175677`, clock `b52dcff` → `5cb584c`, economy `62c0a2e` →
+`76e7700`, rides `84fe814` → `ef6ff14`), plus unmerged tips UI `f51cc05` and
+`b7bead5`, rides `c6b0906` and economy `60d86de`. The UI merge of `917eb36` was
+still in progress (four files with conflict markers: `COMPATIBILITY.md`,
+`SignCanvas.cs`, `SignFile.cs`, `SignFileTests.cs`), and review `4e173cb` was not
+merged. Those resolutions are **pending**, not reviewed. The sign conflict audit
+belongs to the UI owner and is not repeated here. Every check ran on `git archive`
+copies under `/tmp`. Nothing was built or written in the batch-2 worktree.
+
+### Committed batch 2 resolutions
+
+| Merge | Conflict | Verdict |
+| --- | --- | --- |
+| `2175677` formats | `ObjectAnimator` constructor | Correct. It keeps main's `ticksPerSecond` finite/positive validation and `TicksPerSecond` assignment, together with the format lane's `keepsPoseOnClipChange` parameter, field and `RelativeAnimationFlag` mask. `OriginalObjectRuntime` passes `entry.IsFixedItem`. |
+| `5cb584c` clock | none | Clean. |
+| `76e7700` economy | none | Clean. No lab reader (`60d86de`) or RNG ancestry. Scientist harness is 16 groups / 1,658 assertions here, not 22 / 8,305. |
+| `ef6ff14` rides | `PPC-rides.md` integration note | Correct. The rewritten note says that the helper through `84fe814` includes the capacity correction. `CoasterVehicleState.PlanAllowance` is `min(min(max(requested, globalMin), definition), train)`, and `PassengerRing.QueryRoom` floors by the global minimum, as the note says. |
+
+`git diff --check f635468 ef6ff14` is clean. No later clock, RNG or lab commit is
+an ancestor of `ef6ff14`.
+
+### New finding R15-1 (corrected in this lane): clock real-save witnesses were never run by the runner
+
+Four clock tests (`test_clock_epoch`, `test_calendar_epoch`, `test_save_phase`,
+`test_saved_script_graph`) read the identified save as
+**`OPENTPW_PPC_SAVE_PATH`**. The runner neither set that variable from
+`--pc-fixture` nor stripped it from the environment. So on `ef6ff14`, the run
+with `--pc-fixture <actual>` skipped all four (69 ran, 4 skipped). With
+`--require-fixtures` the run would fail. If a stale shell value was present, the
+tests ran against whatever file it named. Run directly with the actual
+`Easymode.TPWI`, they pass: 69/69 with no skips. The witnesses were correct, but
+the runner never exercised them.
+
+Fix: `--pc-fixture` now sets both `OPENTPW_PC_FIXTURE` and
+`OPENTPW_PPC_SAVE_PATH` from the one shape-checked path. Both are in
+`FIXTURE_VARIABLES`, so both are stripped when the flag is absent. Consumer
+accounting now credits clock. `test_round15.py` covers set, strip, the
+`--require-fixtures` skip failure and the mapping; it fails 4/4 against the
+`4e173cb` runner. The two round-12 message assertions now name both variables.
+`UI_EVIDENCE_*` remains a documented pass-through and is unchanged.
+
+### Unmerged lane tips
+
+- **UI `f51cc05` stable catalog sort.** `linked_sort` does a strict
+  first-extreme head selection, then strict insertion, recomputing the ordinal
+  predecessor after each relink. I compared it against Python's stable `sorted`
+  in 4,000 random trials: 0–12 rows, both directions, duplicate signed and text
+  keys, item IDs −2/−1/0/5/7 and shuffled links. Every result matched. Marker −1
+  versus item ID −1/−2 stays separate, and hierarchical rows and high-bit UTF-16
+  are rejected. Accepted as a flat-root reference only.
+- **UI `b7bead5` key/mouse/queue/invalid-row witnesses.** `QueueReference` is
+  FIFO on descending indexes. It rejects a full slot without overwriting it.
+  `emit_normal` reports success independently of enqueue, so a reported success
+  is not a delivery. An invalid nonempty ordinal returns the head, and the false
+  path yields `None`, not an invented ID. Native witnesses with only
+  `UI_EVIDENCE_BIN_ROOT=<Feral bin>`: `test_catalog_sort`, `test_catalog_input`
+  and `test_catalog_events` give 26 tests, 0 skipped. The full UI lane without the
+  private ui.wad/residx/str extractions gives 69 tests, 27 skipped. The commit's
+  "zero skips" holds only with those private paths, which were not located here.
+  No filesystem scan was done to find them.
+- **Rides `c6b0906` RNG streams.** The context LCG (1664525/1013904223, wrapping
+  signed abs), stdlib (1103515245/12345, 15-bit) and COAST (214013/2531011, high
+  16 bits) generators stay separate. The RSE projection does a logical >>1, then
+  a remainder by signed16 bound + 1. The −2/−3/−32768 rows of `rand-native.json`
+  follow from the C# arithmetic. Bound −1 (divisor 0) and controller count 0 are
+  rejected as unqualified. TOUR on the signed minimum gives −48. Only reference
+  helpers and witnesses change; there is no production RNG. The seed source is
+  recorded as `time(NULL)` and `UTimer` with clock ownership, and seed, reset,
+  interleaving and restore are listed as unresolved. ControllersWitness, run with
+  the lane-relative `controller-contracts.json` under SDK 8 Debug and Release:
+  25/25. Rides Python with `OPENTPW_MAC_APP` and the actual fixture: 26/26. This
+  is a projection reference, **not** seed or stream restoration.
+- **Economy `60d86de` lab reader.** `ReadIdentifiedPcCandidate` gates on the
+  container SHA, decoded length, payload SHA and fixed world-reference words
+  before the three local frames. It returns
+  `LocallyFramedIdentifiedPcCandidate`, and `IsCompleteWorldSnapshot` and
+  `CanRestoreLiveResearch` are both constant `false`. Harness under SDK 8 with
+  `--fixture <actual>`: 22/22 groups, 8,305 assertions, in both Debug and
+  Release. Without the fixture: 21/21 groups, 8,140 assertions, with a
+  `NOT RUN: actual PC fixture` line. The qualification is explicit and accepted.
+
+### Freshness (committed `ef6ff14` only; final batch commit pending)
+
+| Check | `ef6ff14` |
+| --- | --- |
+| Fixture blob prefixes `245a6743`/`816de5d1` in object DB | absent |
+| Blob of size 2,274,758 or 38,479 | none |
+| Original-asset extension paths | 0 |
+| Blobs > 1 MB | upstream `content/textures/test.png` only |
+| `[BIN:` aliases in `source/` | 29, all `STP-PPC` |
+| `fidelity_register.py --check` | **exit 1, stale** (base `f635468` exit 0, 129 IDs) |
+
+The stale register is line drift only. `--write` on a copy changes the RIDES-001…007,
+RIDES-016, RIDES-023 and `.sam` DATA row line numbers, which moved with
+`ObjectAnimator.cs`/`OriginalObjectRuntime.cs` in `2175677`. The ID rows are
+identical, and `--check` then passes with 129 IDs. This is the same class as the
+earlier `ab444e3` finding. `origin/main` has since moved to `0829614`, which
+changes production `ParkResearch`/`ParkEconomy` and the CD UITEXT numbering.
+Batch 2 is based on `f635468`, so that drift must be merged or explicitly deferred.
+
+### ECON-002 host-date claim: source refutation present, correction pending
+
+`ef6ff14` `docs/reverse/APPROX-TRACE.md:289` still says the funny clock starts
+from host local time at `FUN_100e3c90` and adds tick × 15000. The merged clock
+section "Calendar epoch reconciliation" (`b52dcff`) contradicts both claims:
+
+- `0xe4348` sets `+0` `mFunnyTimeStart` to fixed 2000/1/1. The host
+  `GetLocalTime` writes only `+8` `mSessionStart`.
+- Conversion `0xe4394` divides rate × counter by 4, which gives 3,750 virtual
+  seconds per turn.
+
+`FUN_100e3c90` is probably the same Mac constructor `0xe3c90` at a 0x10000000
+image base. This is an inference and is not verified here. The planned
+APPROX-TRACE correction is **not in `ef6ff14`**. It is a blocker for the final
+batch commit, not a corrected finding. It covers the Mac PEF only. No PC or
+Patch 2 calendar claim follows from it.
+
+### Old findings status
+
+- Corrected earlier and confirmed again: round-14 fixture consumers. The batch-2
+  `ef6ff14` runner is still pre-`4e173cb`, so it lands only when review is merged.
+- Corrected this round: R15-1 (save-path variable).
+- Pending: the UI merge resolution, merging review `4e173cb`+R15-1, regenerating
+  the register, the ECON-002 correction, and the final-commit count/alias/register/
+  containment rerun. `origin/main` `0829614` drift is also pending.
+- Carried unchanged: no PC/Patch 2 runtime equivalence, no channel-clock source,
+  and no SDT-device claim. Self-tests are not runtime parity.
+  ControllersWitness stays unregistered.
+
+### Results
+
+| Target | Command | Result |
+| --- | --- | --- |
+| `ef6ff14` archive | `dotnet test` SDK 10.0.401, filter Md2/ObjectVertexAnimation/ObjectCatalog | build OK; 88 pass, 3 skip (ISO/bonus/GPU), 0 fail |
+| `ef6ff14` archive | 4e173cb runner, `--mac-bin --pc-fixture <actual> --dotnet` SDK 8 | exit 0; 6 harnesses pass, scientist 16/16 with fixture; clock 4 skipped |
+| `ef6ff14` archive | R15 runner, same + `--require-fixtures`, `OPENTPW_PPC_SAVE_PATH=/nonexistent` exported | clock 69/0 skip (stale value stripped); exit 1 only for UI's 8 private-corpus skips |
+| `ef6ff14` archive | same with SDK 10 `--dotnet` | harnesses `missing-runtime` (net8.0); SDK 8 is required for lane harnesses |
+| review lane | `test_round12..15` | 34 OK; `test_round15` against `4e173cb` runner: 4 failures |
+| `b7bead5`, `c6b0906`, `60d86de` | as above | UI native 26/0; rides 26 + Controllers 25; lab 22/8,305 |
+
+Not run: the full codec or corpus reruns, the UI private corpus, the original
+runtime, PC/Patch 2 parity, and any filesystem or mount scan.
+
+### Handoff
+
+1. Batch 2 integrator (`nativeppc_guests`): finish the `917eb36` merge under the
+   UI owner's sign audit. Merge review with this round's runner taken whole.
+   Run `tools/fidelity_register.py --write` after the last source merge. Land the
+   ECON-002 APPROX-TRACE correction, limited to the Mac PEF. Then hand the final
+   SHA back for the count/alias/register/containment rerun.
+2. Run the runner with `--dotnet` on SDK 8 (`opentpw-dotnet`), not SDK 10. Lane
+   harnesses are net8.0.
+3. UI owner: either record the private UI paths needed for "zero skips", or
+   qualify the claim as "with private extractions".
+4. Decide on merging or deferring `origin/main` `0829614` (production research
+   cadence) before batch 2 is pushed.

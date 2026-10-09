@@ -427,6 +427,23 @@ public class ParkEconomyTests
 	}
 
 	[TestMethod]
+	public void ResearchFollowsTableOrderNotCost()
+	{
+		var scrap = new[] { 50, 30, 20, 10 };
+		var catalog = new EconomyObjectCatalog( new[]
+		{
+			new EconomyObjectInfo( 1100, "Belly Bounce", ParkObjectKind.Ride, ResearchCategory.Ride, 0, new[] { new UpgradeLevelInfo( 0, 500, 0, 5, 0, scrap ) }, null, null, null, 0, 0, 0, 0, 0, 25, "rides/bouncy.wad" ),
+			new EconomyObjectInfo( 1120, "Expensive", ParkObjectKind.Ride, ResearchCategory.Ride, 1, new[] { new UpgradeLevelInfo( 0, 5000, 900, 1, 0, scrap ) }, null, null, null, 0, 0, 0, 0, 0, 25, "rides/a.wad" ),
+			new EconomyObjectInfo( 1130, "Cheap", ParkObjectKind.Ride, ResearchCategory.Ride, 1, new[] { new UpgradeLevelInfo( 0, 500, 100, 1, 0, scrap ) }, null, null, null, 0, 0, 0, 0, 0, 25, "rides/b.wad" )
+		} );
+		var research = new ParkResearch( EconomyTestData.Settings(), catalog );
+		Assert.AreEqual( 1120, research.Current( ResearchCategory.Ride )!.InfoId, "the first open item in table order, although it costs more" );
+		research.AdvanceDay( 900L * ParkResearch.PointScale );
+		Assert.IsTrue( research.IsAvailable( 1120 ) );
+		Assert.AreEqual( 1130, research.Current( ResearchCategory.Ride )!.InfoId );
+	}
+
+	[TestMethod]
 	public void ChallengesAreOfferedCompletedFollowedUpAndForfeited()
 	{
 		var park = EconomyTestData.Park();

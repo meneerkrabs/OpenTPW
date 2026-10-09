@@ -12,7 +12,7 @@ public sealed record ResearchItem( int InfoId, int Level, ResearchCategory Categ
 /// shop, sideshow and feature categories start researched whatever their cost.
 /// <b>Approximations</b>: each researcher adds its grade's <c>ResearchAbility</c> points per game day,
 /// split over the categories by effort; a group opens once that percentage of the previous group of
-/// the same category is researched; items are researched cheapest first within the open groups;
+/// the same category is researched; items are researched in info-id order within the open groups (the original's table order is unverified);
 /// ride upgrade levels and add-on objects form the "upgrade" category; Instant Action research runs
 /// at one grade-2 researcher's ability without staff. <c>Research.StartingWorkLoad</c> and researcher
 /// <c>WorkDuration</c> are not used (meaning unknown).
@@ -54,8 +54,6 @@ public sealed class ParkResearch
 				byCategory[item.Category] = list = new List<ResearchItem>();
 			list.Add( item );
 		}
-		foreach ( var list in byCategory.Values )
-			list.Sort( ( a, b ) => (a.Group, a.Cost, a.InfoId, a.Level).CompareTo( (b.Group, b.Cost, b.InfoId, b.Level) ) );
 		// "Research.Group 0 = Available initially" (category files); add-ons are always group 0 but carry a research cost.
 		foreach ( var item in items.Where( item => item.Group == 0 && item.Level == 0 && item.Category != ResearchCategory.Upgrade ) )
 			completed.Add( (item.InfoId, item.Level) );
@@ -107,7 +105,8 @@ public sealed class ParkResearch
 	}
 
 	/// <summary>The item a category is currently researching, or null when nothing is researchable.</summary>
-	// [APPROX:ECON-017] items are researched cheapest first within open groups — evidence needed: capture of research order
+	// [BIN:STP-PPC:0x100F0EF0 research cursor] each category researches the first item in table order whose group is open and which is not yet researched; cost is never compared
+	// [APPROX:ECON-017] the research table is in info-id order and the player cannot step the cursor to another item — evidence needed: the table fill order (FUN_100c9064) and the next/previous control
 	public ResearchItem? Current( ResearchCategory category )
 	{
 		if ( !byCategory.TryGetValue( category, out var list ) )

@@ -24,7 +24,7 @@ public static class EconomyApproximations
 		("ECON-014", "staff start at happiness 100 and it never changes (no strikes)", "staff happiness rules (binary/captures)"),
 		("ECON-015", "each researcher adds ResearchAbility points per game day, split by effort", "capture of research progress over time"),
 		("ECON-016", "group g opens when PercentageForThisTech % of group g-1 of the same category is researched", "capture of new research groups appearing"),
-		("ECON-017", "items are researched cheapest first within open groups", "capture of research order"),
+		("ECON-017", "the research table is in info-id order and the player cannot step the cursor to another item", "the table fill order (FUN_100c9064) and the next/previous control"),
 		("ECON-018", "ride upgrade levels and add-on objects form the \"upgrade\" research category", "research lab capture"),
 		("ECON-019", "Instant Action research runs at one grade-2 researcher without staff", "Instant Action capture"),
 		("ECON-020", "a sale drops LitterEffect/100 litter items", "capture of litter after sales"),

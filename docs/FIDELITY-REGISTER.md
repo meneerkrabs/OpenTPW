@@ -14,7 +14,7 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **134 unresolved unique APPROX IDs**, 149 APPROX occurrences, 56 EXT occurrences, 62 DATA occurrences and 11 BIN occurrences.
+Current inventory: **134 unresolved unique APPROX IDs**, 149 APPROX occurrences, 56 EXT occurrences, 62 DATA occurrences and 12 BIN occurrences.
 
 Of these, 128 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
@@ -77,7 +77,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-014 | Original-fidelity area (scope unadjudicated) | staff start at happiness 100 and it never changes (no strikes) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:24` |
 | ECON-015 | Original-fidelity area (scope unadjudicated) | each researcher adds ResearchAbility points per game day, split by effort | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:25` |
 | ECON-016 | Original-fidelity area (scope unadjudicated) | group g opens when PercentageForThisTech % of group g-1 of the same category is researched | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:26` |
-| ECON-017 | Original-fidelity area (scope unadjudicated) | items are researched cheapest first within open groups | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:27` |
+| ECON-017 | Original-fidelity area (scope unadjudicated) | the research table is in info-id order and the player cannot step the cursor to another item | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:27` |
 | ECON-018 | Original-fidelity area (scope unadjudicated) | ride upgrade levels and add-on objects form the \\"upgrade\\" research category | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:28` |
 | ECON-019 | Original-fidelity area (scope unadjudicated) | Instant Action research runs at one grade-2 researcher without staff | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:29` |
 | ECON-020 | Original-fidelity area (scope unadjudicated) | a sale drops LitterEffect/100 litter items | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:30` |
@@ -215,11 +215,11 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-012 | `source/OpenTPW/Economy/ParkStaff.cs:119` | [APPROX:ECON-012] hiring is free; BaseCostPerStaff/CostPerQualityLevel unused — evidence needed: capture of the balance before/after hiring |
 | ECON-013 | `source/OpenTPW/Economy/ParkStaff.cs:139` | [APPROX:ECON-013] training budget is spent evenly over a role at month end — evidence needed: capture of training budget effects |
 | ECON-014 | `source/OpenTPW/Economy/ParkStaff.cs:24` | [APPROX:ECON-014] staff start at happiness 100 and it never changes (no strikes) — evidence needed: staff happiness rules (binary/captures) |
-| ECON-015 | `source/OpenTPW/Economy/ParkResearch.cs:131` | [APPROX:ECON-015] each researcher adds ResearchAbility points per game day, split by effort — evidence needed: capture of research progress over time |
-| ECON-016 | `source/OpenTPW/Economy/ParkResearch.cs:100` | [APPROX:ECON-016] group g opens when PercentageForThisTech % of group g-1 of the same category is researched — evidence needed: capture of new research groups appearing |
-| ECON-017 | `source/OpenTPW/Economy/ParkResearch.cs:110` | [APPROX:ECON-017] items are researched cheapest first within open groups — evidence needed: capture of research order |
+| ECON-015 | `source/OpenTPW/Economy/ParkResearch.cs:130` | [APPROX:ECON-015] each researcher adds ResearchAbility points per game day, split by effort — evidence needed: capture of research progress over time |
+| ECON-016 | `source/OpenTPW/Economy/ParkResearch.cs:98` | [APPROX:ECON-016] group g opens when PercentageForThisTech % of group g-1 of the same category is researched — evidence needed: capture of new research groups appearing |
+| ECON-017 | `source/OpenTPW/Economy/ParkResearch.cs:109` | [APPROX:ECON-017] the research table is in info-id order and the player cannot step the cursor to another item — evidence needed: the table fill order (FUN_100c9064) and the next/previous control |
 | ECON-018 | `source/OpenTPW/Economy/ParkResearch.cs:41` | [APPROX:ECON-018] ride upgrade levels and add-on objects form the "upgrade" research category — evidence needed: research lab capture |
-| ECON-019 | `source/OpenTPW/Economy/ParkResearch.cs:136` | [APPROX:ECON-019] Instant Action research runs at one grade-2 researcher without staff — evidence needed: Instant Action capture |
+| ECON-019 | `source/OpenTPW/Economy/ParkResearch.cs:135` | [APPROX:ECON-019] Instant Action research runs at one grade-2 researcher without staff — evidence needed: Instant Action capture |
 | ECON-020 | `source/OpenTPW/Economy/ParkEconomy.cs:28` | [APPROX:ECON-020] a sale drops LitterEffect/100 litter items — evidence needed: capture of litter after sales |
 | ECON-021 | `source/OpenTPW/Economy/ParkEconomy.cs:186` | [APPROX:ECON-021] a repair takes WorkDuration game hours (x DurationOfUpgrade for upgrades); mechanics are dispatched instantly — evidence needed: capture of repair duration per grade |
 | ECON-022 | `source/OpenTPW/Economy/ParkEconomy.cs:204` | [APPROX:ECON-022] a handyman removes one litter item per WorkDuration game minutes, park-wide — evidence needed: capture of cleaning speed |
@@ -459,6 +459,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | STP-PPC:0x10007434 advisor update | `source/OpenTPW.Files/Public/LipSyncTimeline.cs:53` | [BIN:STP-PPC:0x10007434 advisor update] marks are read in order until -1, divided by 1000 (µs to the ms speech clock) and each one flips the talking flag |
 | STP-PPC:0x10007434 advisor update | `source/OpenTPW/World/Advisor.cs:315` | [BIN:STP-PPC:0x10007434 advisor update] silent or no LIP data: node 1; talking: when the speech clock (ms) passes the next-change time, node = rand() % 5 + 1 and the next change is 100 ms later |
 | STP-PPC:0x100CC21C loan instalment | `source/OpenTPW/Economy/ParkEconomy.cs:267` | [BIN:STP-PPC:0x100CC21C loan instalment] a fully repaid loan clears its bought flag; 0x100CC9E8 then offers it again when the credit test passes |
+| STP-PPC:0x100F0EF0 research cursor | `source/OpenTPW/Economy/ParkResearch.cs:108` | [BIN:STP-PPC:0x100F0EF0 research cursor] each category researches the first item in table order whose group is open and which is not yet researched; cost is never compared |
 | STP-PPC:0x1010474C world setup | `source/OpenTPW/Economy/BalanceSettings.cs:177` | [BIN:STP-PPC:0x1010474C world setup] game type 0/2 load levels/Standard.sam then &lt;theme&gt;/Standard.sam; type 2 (Instant Action) adds &lt;theme&gt;/Easy_Standard.sam and only logs when it is missing |
 | STP-PPC:0x10119328 object loader | `source/OpenTPW/World/Objects/ObjectCatalog.cs:387` | [BIN:STP-PPC:0x10119328 object loader] In Instant Action (game type 2) Easy_&lt;object file&gt; is layered after the object file when it exists; Online_ files belong to the online game type and are not loaded offline |
 | STP-PPC:0x10128B60 profile key count | `source/OpenTPW/Economy/ParkObjectives.cs:317` | [BIN:STP-PPC:0x10128B60 profile key count] keys = mExtraKeys + (earned global, per-theme and secret tickets) / 3, truncated; spent tickets are not subtracted |

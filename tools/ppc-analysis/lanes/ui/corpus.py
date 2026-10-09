@@ -103,9 +103,11 @@ def model_summary(data: bytes) -> dict:
     if not 0 < mesh_count <= node_count <= 512:
         raise ValueError('M3D2 node count')
     nodes = []
+    records = []
     for index in range(node_count):
         record = mesh_offset + index * 160 if index < mesh_count else dummy_offset + (index - mesh_count) * 88
         span(data, record, 88)
+        records.append(record)
         name_offset = struct.unpack('<I', span(data, record + 84, 4))[0]
         tail = span(data, name_offset, min(256, len(data) - name_offset))
         if 0 not in tail:
@@ -113,9 +115,54 @@ def model_summary(data: bytes) -> dict:
         matrix = struct.unpack('<16f', span(data, record + 16, 64))
         nodes.append({'name': tail.split(b'\0', 1)[0].decode('ascii'),
                       'translation': list(matrix[12:15])})
+    root = struct.unpack('<I', span(data, 0x78, 4))[0]
+    if root not in records:
+        raise ValueError('M3D2 root pointer')
     return {'sha256': hashlib.sha256(data).hexdigest(), 'nodes': nodes,
+            'root_node_index': records.index(root),
             'bounds_min': list(struct.unpack('<3f', span(data, 0x80, 12))),
             'bounds_max': list(struct.unpack('<3f', span(data, 0x8c, 12)))}
+
+
+def name_hash(name: str) -> int:
+    """Original registry recurrence: (hash XOR signed byte) times 47, modulo 2^32."""
+    value = 0
+    for byte in name.encode('ascii'):
+        value = ((value ^ byte) * 47) & 0xffffffff
+    return value - 2**32 if value & 2**31 else value
+
+
+def string_labels(strings: bytes, character_table: bytes, identifiers: list[int]) -> dict[int, str]:
+    """Read selected BFST labels with their own BFMU; never dump a language table."""
+    if len(strings) > LIMIT or span(strings, 0, 4) != b'BFST' or span(character_table, 0, 4) != b'BFMU':
+        raise ValueError('BFST/BFMU identity or input limit')
+    character_count = struct.unpack('<H', span(character_table, 6, 2))[0]
+    if character_count > 255:
+        raise ValueError('BFMU count exceeds byte index')
+    characters = struct.unpack('<' + 'H' * character_count, span(character_table, 8, character_count * 2))
+    count = struct.unpack('<I', span(strings, 8, 4))[0]
+    if count > 8192 or len(identifiers) > 64:
+        raise ValueError('selected string count limit')
+    span(strings, 12, count * 4)
+    labels = {}
+    for identifier in identifiers:
+        if not 0 <= identifier < count:
+            raise ValueError('BFST identifier out of range')
+        relative = struct.unpack('<I', span(strings, 12 + identifier * 4, 4))[0]
+        position = 12 + relative
+        require_marker = span(strings, position, 4)
+        if require_marker[0] != 1:
+            raise ValueError('BFST string marker')
+        length = int.from_bytes(require_marker[1:], 'little')
+        if length > 512:
+            raise ValueError('selected label length limit')
+        text = []
+        for index in span(strings, position + 4, length):
+            if not 1 <= index <= character_count:
+                raise ValueError('BFMU character index')
+            text.append(chr(characters[index - 1]))
+        labels[identifier] = ''.join(text)
+    return labels
 
 
 def resource_index(data: bytes) -> dict[int, str]:
@@ -137,13 +184,13 @@ def resource_index(data: bytes) -> dict[int, str]:
 
 
 def layout_table(data: bytes, offset: int) -> dict:
-    """Decode only established commands of the original embedded short stream.
+    """Decode the established nineteen-command embedded layout stream.
 
-    Unsupported commands fail rather than guess their length. This is not a
-    general UI layout decoder: the identified park-information table uses this
-    bounded subset of the original nineteen-command interpreter.
+    Geometry payload meanings remain neutral where only their consumption is
+    proved. Implied child controls describe the interpreter's fresh-allocation
+    path; original checks reject duplicates or incompatible parent types.
     """
-    position, commands, windows = offset, 0, []
+    position, commands, windows, external_properties = offset, 0, [], {}
 
     def read():
         nonlocal position, commands
@@ -162,6 +209,25 @@ def layout_table(data: bytes, offset: int) -> dict:
         value = low | high << 16
         return value - 2**32 if value & 2**31 else value
 
+    def rectangle():
+        return [signed(read()) for _ in range(4)]
+
+    def node(at, kind, attributes, identifier, rect, parent, command):
+        if len(windows) >= 512:
+            raise ValueError('layout window budget exceeded')
+        value = {'data_offset': at, 'type': kind, 'attributes': attributes,
+                 'id': identifier, 'rectangle': rect,
+                 'parent': parent['id'] if parent else None, 'origin_command': command}
+        windows.append(value)
+        return value
+
+    def parent_required(parent):
+        if parent is None:
+            # The original caller can supply an already-existing parent. Keep
+            # outer property commands separate; never invent its type or ID.
+            return external_properties
+        return parent
+
     def parse(parent, depth=0):
         if depth > 64:
             raise ValueError('layout nesting budget exceeded')
@@ -170,18 +236,56 @@ def layout_table(data: bytes, offset: int) -> dict:
             command = read()
             if command == 0:
                 kind, attributes, identifier = read(), pair(), pair()
-                rectangle = [signed(read()) for _ in range(4)]
-                if len(windows) >= 512:
-                    raise ValueError('layout window budget exceeded')
-                windows.append({'data_offset': at, 'type': kind,
-                                'attributes': attributes, 'id': identifier,
-                                'rectangle': rectangle, 'parent': parent})
-                parse(identifier, depth + 1)
+                child = node(at, kind, attributes, identifier, rectangle(), parent, command)
+                parse(child, depth + 1)
             elif command in (1, 2, 17, 18):
-                pair()
+                parent_required(parent)[f'command_{command}'] = pair()
             elif command == 3:
-                for _ in range(4):
-                    read()
+                parent_required(parent)['command_3'] = rectangle()
+            elif command == 4:
+                subtype = read()
+                if subtype in (1, 2, 3):
+                    values = [signed(read()) for _ in range(3 if subtype == 2 else 4)]
+                elif subtype == 4:
+                    count = signed(read())
+                    if not 0 <= count <= 512:
+                        raise ValueError('layout polygon count limit')
+                    values = [[signed(read()), signed(read())] for _ in range(count)]
+                else:
+                    raise ValueError('unsupported layout geometry subtype')
+                parent_required(parent)['command_4'] = {'subtype': subtype, 'values': values}
+            elif command in (6, 7, 8, 9, 12, 14, 15, 16):
+                current = parent_required(parent)
+                kinds = {6: 3, 7: 3, 8: 3, 9: (4, 7), 12: 7, 14: 12, 15: 12, 16: 13}
+                valid = kinds[command]
+                if current['type'] not in (valid if isinstance(valid, tuple) else (valid,)):
+                    raise ValueError('layout implied child has incompatible parent type')
+                if command in (12, 16):
+                    number = signed(read())
+                    if command == 16 and not 0 <= number < 32:
+                        raise ValueError('layout light index limit')
+                    identifier = number + 16 if command == 12 else 0x11100000 | number
+                else:
+                    identifier = {6: 1, 7: 2, 8: 3, 9: 1, 14: 1, 15: 2}[command]
+                kind = 3 if command == 9 else 6 if command == 16 else 2
+                attributes = 16 if command == 9 else 1 if command in (8, 12, 16) else 33
+                child = node(at, kind, attributes, identifier, rectangle(), current, command)
+                parse(child, depth + 1)
+            elif command == 10:
+                if parent_required(parent)['type'] not in (4, 7):
+                    raise ValueError('layout command 10 parent type')
+                parent['command_10'] = rectangle()
+            elif command == 11:
+                if parent_required(parent)['type'] != 7:
+                    raise ValueError('layout command 11 parent type')
+                count = signed(read())
+                if not 0 <= count <= 512:
+                    raise ValueError('layout value table count limit')
+                parent['command_11'] = [[signed(read()), signed(read())] for _ in range(count)]
+            elif command == 13:
+                if parent_required(parent)['type'] != 11:
+                    raise ValueError('layout command 13 parent type')
+                parent['command_13'] = [signed(read()), signed(read())]
             elif command == 5:
                 return
             else:
@@ -189,4 +293,4 @@ def layout_table(data: bytes, offset: int) -> dict:
 
     parse(None)
     return {'data_offset': offset, 'words_consumed': (position - offset) // 2,
-            'windows': windows}
+            'windows': windows, 'external_parent_properties': external_properties}

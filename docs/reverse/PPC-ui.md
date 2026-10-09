@@ -16,6 +16,10 @@ evidence. Current OpenTPW pixels were never used as an original appearance oracl
 | HFS `:Theme Park Data:data:Language:American:residx.dat` | `02b937519e897a9fc7f36fec29197bc1abe40350979800306062c56f039174f0` |
 | Windows baseline `Data/ui.wad` | `dd9cbf829d14c798be908b8910305d7ec04e9b449794806c0581293458bc9362` |
 | Mac and Windows baseline `lobby.wad` | `b9afda6264961021aecaca882adf9ce25aa6973f48111415176ed45afd2c9ee7` |
+| `engine_shared.data` | `c549123f647dcf33c3e2c3d515bffe2cfcb19d11680f743f02ca42bb09dbd73b` |
+| Mac American `UITEXT.str` | `c3768d1f448c0f85952ae3edda41da750081e85996eb76750df53fad7688bdef` |
+| Mac American `UIHELPTEXT.str` | `adc16efc04bdb8c605e916a23b7794342d507d0a90cc3f8f635dadf20cf59b75` |
+| Mac American `MBToUni.dat` | `f682ed03507d6ea20f5f1689c321f32b52f8a21e838e9440fbc3207e7236b67d` |
 
 HFS assets were read with the existing `hfsutils` tools and copied to `/tmp`.
 No HFS write/copy-into-volume operation was used. Assets, raw instructions,
@@ -42,10 +46,14 @@ UI_EVIDENCE_BIN_ROOT=/path/to/mac-feral/bin \
 UI_EVIDENCE_MAC_UI=/private/mac-ui.wad \
 UI_EVIDENCE_RESIDX=/private/mac-residx.dat \
 UI_EVIDENCE_PC_UI=/path/to/windows/Data/ui.wad \
+UI_EVIDENCE_MAC_UITEXT=/private/mac-uitext.str \
+UI_EVIDENCE_MAC_UIHELP=/private/mac-uihelp.str \
+UI_EVIDENCE_MAC_MBTOUNI=/private/mac-mbtouni.dat \
 python3 -m unittest discover -s tools/ppc-analysis/lanes/ui -v
 ```
 
-The local run passed **12 tests, zero skips**, including the identified original
+The first phase passed 12 tests; the expanded lane passes **24 tests, zero
+skips**, including the identified original
 corpus and negative/truncated corpus spans, RefPack expansion/reference checks,
 relative resource offsets, node-table bounds and signed branch/operand decoding.
 The embedded layout tests also reject unknown/truncated commands and preserve
@@ -220,8 +228,8 @@ window's child stream at `0x181c64`. Command 5 ends a stream. Commands 1/2 take
 two-word resource references; 17/18 store two-word values at window fields
 140/144. Their field meanings are not assigned invented names here.
 
-The bounded lane decoder handles only those established commands plus the
-four-coordinate command 3; it fails on other commands. It parses the annual
+The first phase decoded that established subset; phase two handles all 19
+command shapes, with neutral geometry-property names. It parses the annual
 summary table at `data:0x4f81c` completely: **27 windows, 478 halfwords**.
 No inferred instruction length or guessed boundary is used to skip commands.
 
@@ -254,9 +262,220 @@ lane's formula evidence; neither screen title nor proximity alone proves the
 formula. These are allocation rectangles, not a screenshot or a guarantee
 that every child uses absolute screen coordinates after all transforms.
 
-Other tables and commands remain unparsed. This demonstrates a concrete route
-for resolving UI-013/020/021/024/028 rather than replacing all original tables
-with invented proportions; it does not close those IDs wholesale.
+Phase two additionally identifies and decodes 54 other tables as described
+below. This supplies original allocation metadata for UI-013/020/021/024/028;
+it does not certify original pixels or close those IDs wholesale.
+
+## Expanded layout corpus and root-name resource bindings
+
+`phase2.py` independently verifies **60 caller paths to 55 distinct tables,
+934 controls**. Fifty-one calls reach `0x181aac` directly; nine status-panel
+initializers forward their table through `0x1471f8` to that entry. Each table
+argument is proved by its TOC relocation and the actual load/call operands,
+including copies from preserved registers. The report stores table ranges,
+hashes, counts, root rectangles and selected controls; it emits no whole raw
+table or disassembly. These are the identified caller set, not a claim that
+every possible indirect table reference in the executable has been found.
+
+Command shapes now include typed geometry blocks, bounded point arrays,
+scrollbar/vary-box/list-control implied child rectangles, list column pairs,
+light-panel indexes and the outer caller's rectangle properties. Counts are
+limited to 512 entries, nesting to 64, controls to 512 per table and total
+read words to 4096. Invalid subtypes, incompatible implied-child parent types,
+unknown commands and truncated spans fail. Commands applying properties to an
+existing caller-supplied window are retained as external-parent properties,
+not attributed to the last decoded child. One concrete example is
+`data:0x50172`, the city-lobby table, whose final command 3 targets the caller.
+
+Resource references are **root-node name hashes**, not filename hashes.
+Ordinary model loader `code:0x13c0ec` loads the model, reads its root mesh at
+`0x13c1fc` and that mesh's name field `+84` at `0x13c200`, then registers the
+drawing object through `0x173844`. Registration calls `0x1709b8` with multiplier
+47, storing the result at registry-node `+16`. That helper's recurrence is
+`h = ((h XOR byte) * 47) mod 2^32`, starting at zero. Layout commands 1/2
+resolve their stored keys through `0x173a70`, which compares registry field
+`+16`, follows link `+20`, and obtains the drawing object through its virtual
+slot. This proves the name-to-table-to-renderer chain rather than merely finding
+matching strings. The registry rejects duplicate keys; witness output retains
+multiple asset candidates if an offline hash join is ambiguous.
+
+For example, `mainpanel.MD2` has root name `base`, hash 468387477; hashing
+`mainpanel` gives a different key. `panel.MD2` uses `pan_money`, and
+`f_optpanel2.MD2` uses `optpanel2`. All selected primary references below have
+one identified member/root candidate.
+
+### Main HUD: `data:0x4ab38`, caller `code:0x156c24`
+
+| Control | Model/root | Authored allocation rectangle |
+| --- | --- | --- |
+| 29 | mainpanel / base | `(37,984,439,1507)` |
+| 32 | date / date | `(153,1044,404,1121)` |
+| 33 | panel / pan_money | `(331,1069,1006,1495)` |
+| 38 buy | b_buy | `(170,1122,288,1240)` |
+| 40 info | b_info | `(287,1133,405,1252)` |
+| 42 finance | b_money | `(156,1241,274,1360)` |
+| 43 research | b_resrch | `(274,1254,392,1372)` |
+| 41 map | b_map | `(81,1340,200,1458)` |
+| 39 camera | b_camera | `(202,1355,320,1474)` |
+| 47 cash text | text object installed by builder | `(258,60,720,260)` |
+| 48 cash change text | text object installed by builder | `(458,273,720,363)` |
+
+These six principal buttons have different original rectangles despite their
+shared authored root pose. The ordinary HUD builder installs **cash font slot
+1 with white RGBA** at `0x157030..0x157068`; **date font slot 3 with black
+RGBA** at `0x1573ac..0x1573dc`. The cash-change text uses slot 2 with yellow
+RGBA at `0x1570c8..0x157100`. Cash control 47 is additionally resized/repositioned
+from measured font extents and drawable dimensions by `0x156ef4..0x157000`;
+the table rectangle alone is not its final glyph box. Date text has its own
+explicit drawing-region rectangle `(182,1061,383,1103)`. Number formatting and
+the complete cash/date baseline conversion remain separate dependencies.
+
+### Theme lobby and online world lobby are different tables
+
+Theme table `data:0x50366`, loaded at `code:0x1839a4`, binds:
+
+| Control | Model/root | Authored allocation rectangle |
+| --- | --- | --- |
+| 123111 main panel | islandlobby / islandlob | `(28,855,476,1521)` |
+| 123112 enter | b_entpark | `(68,1114,221,1267)` |
+| 123113 world view | b_worldview | `(68,946,221,1099)` |
+| 123120 previous | b_lobleft | `(97,1299,250,1453)` |
+| 123121 next | b_lobright | `(260,1299,413,1453)` |
+| 123119 theme text | installed text object | `(477,1303,1571,1437)` |
+
+The panel's secondary drawing reference binds `f_lobbutbg` and command 3 sets
+region `(67,1273,438,1484)`; a 23-point polygon supplies its shaped hit region.
+This is stronger evidence for UI-014 than putting the enter button between
+previous/next based on modern frontend appearance. Caller font assignments and
+mode-specific show/hide logic still need integration. `tpwlogo` also appears in
+the separate login/profile layout `data:0x4bea8`, so its authored root alone
+does not establish every lobby's logo position.
+
+The **online world** table `data:0x523f0`, loaded at `code:0x1b90ac`, instead
+binds `worldlob`, `f_wlobbg`, world-navigation arrows and find/back/zoom buttons.
+Its root rectangle is `(9,620,510,1531)`. Applying these world-lobby allocations
+to the offline island frontend would conflate two original screens.
+
+### Options, buy-items and ride information
+
+The options table at `data:0x4b0dc`, loaded at `code:0x158cd4`, has **57 controls**
+and a full-canvas `f_screen` root `(0,0,2048,1536)`. It is not a generic `w_med`
+window. A representative option row 120021 binds `f_optpanel3 / optpanel3`
+at `(57,323,1289,472)`, with value region `(990,361,1248,432)`, a scroller child
+at `(1023,364,1090,431)`, and label 120009 at `(117,375,706,420)`. Other rows
+use `f_optpanel`, `f_optpanel2`, toggle buttons and distinct column groups;
+the uniform 58%-split rule is not the original allocation scheme. OK/exit use
+`b_okay` and `b_exit` at `(1763,1340,1846,1424)` and
+`(1853,1340,1936,1424)`.
+
+Buy-items table `data:0x4cd94`, loaded at `code:0x164528`, has a `w_big`
+root `(186,30,2018,1007)`, a preview frame 490 `(408,179,822,593)` and catalogue
+control 504 using `f_buyitem / buyitem` at `(1009,179,1813,902)`. Command 11
+provides **three columns**, `(1039,1447)`, `(1460,1664)`, `(1673,1724)`;
+its content region is `(1037,427,1727,871)`. It has actual scrolling children,
+plus ride/shop/show/feature category buttons 507/509/506/508. Three columns
+do not mean three rotating preview-icon slots: catalogue sorting, row contents,
+selection and post-purchase continuation still require their controller.
+
+Ride-status initializer `code:0x1673a4` forwards `data:0x4d1e8`. The table has
+a `w_med / window2` root 15892 `(248,30,1800,1007)`, left preview frame 15908
+`(348,162,762,576)` and text/stat frame 15893 `(853,162,1565,549)`. Original
+label/value rows include users-last-month, age and excitement; labels use font
+slot 6. The excitement label 15900 is `(876,279,1273,324)` and its value 15894
+is `(1315,279,1550,324)`. This is an original separate information window,
+not proof that the current build/info arm reproduces the same composition.
+The delete button 15915 binds `b_erase` at `(300,800,454,953)`; door 15928
+binds `b_door` at `(1430,784,1635,953)`.
+
+### Platform text and door state semantics
+
+The actual Mac American table contains **474 UITEXT entries**, versus 473 in
+the baseline English PC table. IDs 17–193 used above agree, but late IDs shift:
+Mac 315 is Game Options, 319 screen resolution, 320 audio quality, 321 effects
+volume, 324 movie volume, 327 popup help. Mac 330 is **Ctrl-click scroll**;
+the PC's corresponding option names a right-button operation. Do not copy Mac
+late resource indexes into the current PC enumeration without an edition map.
+Selected Mac labels are decoded with the Mac's own BFMU, with both identities
+pinned; they do not depend on current OpenTPW fallback strings.
+
+The door table sets field 140 to help ID 13 and field 144 to ID 12. Button
+virtual slot 11, `code:0x172d90`, returns field 144 when its state byte `+312`
+equals 1; otherwise it returns field 140. Actual Mac help 12 offers **open**,
+help 13 offers **close**. Together with the state classifier, this establishes
+the ordinary/open and latched-down/closed UI interpretation beyond the art.
+The callback that mutates the ride's simulation open flag and the delete refund
+remain untraced; the prompt alone cannot establish purchase/scrap arithmetic.
+
+### Keyboard and button event consumers
+
+Keyboard group matching at `code:0x114ac0` and `0x114b9c` scans 20-byte records
+using signed-short key/modifier fields `+2/+4`. The first calls callback `+16`
+and sets record `+6=1`; the second calls callback `+12` and clears that field.
+The original game group has 15 records. Slow/fast scalar callbacks are in the
+second slot: records `data:0x452c4`/`0x452d8` have encoded keys `0x6d00`/`0x6b00`,
+modifiers 0, vectors `0x7508`/`0x7510` and no first-slot callback. These are
+release-side speed actions. Their hardware key translation still requires the
+platform input producer; no physical key name is inferred from an encoded short.
+
+The button event handler `code:0x1724f4` sets state bit 1 on protocol message
+`0x10005`, then clears/toggles state on `0x10004`, depending on attributes.
+After checking its stored press/capture record, it emits parent message 256
+with window ID and state (`code:0x172a34/0x172a38`). It also maintains hover
+byte `+313`, checks disabled/repeat attributes, and has constructor repeat
+intervals **500/125 milliseconds** at `+316/+320`. The clock lane traced widget
+getter `0x171ef4` through current clock object `data:0x4fc24`. The default
+callback `0x171e9c` divides GetAbsolute by 1000; application UI setup at
+`0x13cb18` selects a callback through object `data:0x120e74` to
+`LbTimeClockTickFunction` at `0x13ca44`, which calls `LbTime_GetClock`.
+Both are raw milliseconds, distinct from the scaled park scheduling clock.
+This supports release activation and latched buttons within the original UI
+protocol; top-level pointer production and keyboard focus navigation remain open.
+
+## Sign effects: RGB assumption contradicted
+
+The expanded sign witness identifies `engine_shared` as well as the app.
+`Parameters[2]`, `[3]`, `[4]` are **not an RGB triplet**. Effect helper
+`code:0xab128` loads them from effect offsets 12/16/20 into three scalar
+registers. At `0xab484/0xab488/0xab48c`, all three normalized source image
+color channels are multiplied by the **same** first coefficient. A positive
+lighting term scales the second coefficient and affects all channels; a
+specular term raises a value to the exponent at offset 24 (`Parameters[5]`)
+and adds the third coefficient as a white highlight. Each channel is converted
+back to 0–255 and clamped. These are ambient/diffuse/specular-style coefficients,
+with the labels inferred from the arithmetic, not official field names.
+Parameters 6/7 additionally feed angle-to-radian/sine/cosine calculations in
+this effect path; calling them x/y/width is not supported.
+
+The effect output's byte 0 is copied from the mask; computed color bytes occupy
+1/2/3 (`code:0xab54c`, `0xab564`, `0xab56c`, `0xab570`). Engine export
+`Bitmap::swizzle_for_gimex()` resolves to `engine code:0x3e6c8`; its complete
+loop reverses each four-byte pixel to **B,G,R,A**, preserving alpha and dimensions.
+It does not resize the 256-square intermediate before the output copy/pack
+loops. Those loops fill two caller-supplied 128-square destinations. Therefore
+OpenTPW's two 256-square destinations are an enlarged policy, not original
+texture sizing. Exact mesh UV orientation, all compositing operations and
+the packed 16-bit mode's consumer still need verification.
+
+The source SGN interpretation also needs repair before naming every field:
+the original loader reads two effect/style integers at source offsets 9 and
+13 before reading the first font record at 17. Its effect reader consumes
+**11 words / 44 bytes** after each 392-byte font record. The second font record
+therefore starts at 453. Current `SignFile` reaches the same face/LOGFONT
+offsets, but its `HeaderCount` / per-slot `StyleId` interpretation cuts the
+record boundaries differently. Four SGNs from the identified Mac/PC-identical
+lobby archive confirm these offsets and have nonzero effect extents. This is
+an evidence-backed semantic correction dependency, not permission to silently
+reinterpret the public reader or every field's units.
+
+Reproduce the expanded metadata without storing it in Git:
+
+```sh
+python3 tools/ppc-analysis/lanes/ui/phase2.py \
+  /path/to/mac-feral/bin /private/mac-ui.wad \
+  --mac-uitext /private/mac-uitext.str \
+  --mac-uihelp /private/mac-uihelp.str \
+  --mac-mbtouni /private/mac-mbtouni.dat
+```
 
 ## Sign/font compatibility path
 
@@ -337,30 +556,30 @@ values to stay available.
 | UI-003 | Partial: linked state selection and fitted mesh matrix path established. | Decode `SetLocalMatrix` and ancestor composition, show how child translations cancel/participate for each frame. |
 | UI-004 | Open; no triangle-depth order proof. | Follow selected mesh to the engine render queue, texture ordering and Z/depth/blend flags. |
 | UI-005 | Pink unused texels are asset data; filter/bleed remains OpenTPW policy. | Trace original texture conversion and sampler settings at UI mesh rendering. |
-| UI-006 | Partial: popup text white is supplied by original allocator. | Trace each other text/control color setter and disabled/highlight paths; establish original blend/backdrop colors. |
+| UI-006 | Partial: popup white, HUD cash white, cash-change yellow and date black supplied by original constructors. | Trace other controls and disabled/highlight paths; establish final blend/backdrop colors. |
 | UI-007 | Open. | Trace text drawing flags and secondary draw offset; one framebuffer/UI-scaled pixel is not proved. |
 | UI-008 | Partial: generic six-way state classifier is proved. | Find the purple text-button resource allocation and UV/state binding; do not infer halves from generic buttons. |
-| UI-009 | Open. | Identify option-row constructor rectangles and arrow child IDs; compare actual label/value rectangles to proposed percentages. |
+| UI-009 | Partial replacement: complete 57-control options table, row-specific frames/label/value regions and scroller children decoded. | Bind every row's dynamic value/label and handler; verify clipping and final transformed text bounds. |
 | UI-010 | Partial replacement: bottom rectangle and `f_helpbg` identified. | Follow help draw object baseline, alpha, multi-line resize and show/hide timing. |
 | UI-011 | Open. | Trace dialog stack draw order and background overlay/disable flags; a modal input lock does not prove dimming. |
-| UI-012 | Partial: state fields/setters and separate cursor class exist. | Trace mouse press/release and keyboard dispatch into window methods, explicit escape/right-click/pause and focus ownership. |
-| UI-013 | Partial: window factory, embedded short-stream interpreter and one complete 27-window table identified. | Map options/game-mode/load/pause/message tables, support their remaining commands, bind source models/string IDs. |
-| UI-014 | Mac/PC lobby geometry identical; executable screen arrangement open. | Map lobby controller allocations to island names, navigation, logo and right-side column; account for different logo pixels. |
+| UI-012 | Partial: release-side activation, keyboard callback records, latched states and unscaled 500/125 ms repeat traced. | Trace top-level physical input conversion, arrow/Enter/Escape navigation, Mac Ctrl-click versus PC right button and focus ownership. |
+| UI-013 | Partial: 55 tables/60 caller paths, 934 controls, all 19 command shapes, root-name bindings decoded. | Trace indirect/custom allocations, mode-specific visibility and final transforms; qualify each named screen's controller. |
+| UI-014 | Partial: actual island panel/enter/previous/next rectangles and model keys identified; world lobby kept separate. | Bind theme/name text, logo and player/menu state; account for different logo pixels and dynamic visibility. |
 | UI-015 | Contradicted by Windows manual's player-creation mode flow. | Trace Mac player creation/select/continue state machine and save handoff; distinguish mode-specific park initialization. |
 | UI-016 | Angle/height literals remain data, usage open. | Trace ISLAND parser writes to island transform/camera-target consumers, including degree/radian conversion. |
 | UI-017 | Parsed camera fields identified; current unit/FOV/glide rules open. | Follow float fields 4/8/12/16 through lobby controller to view interpolation and camera projection. |
 | UI-018 | Partial asset equality; static sky is incomplete behavior. | Trace lobby flying mesh, rain/lightning and animation consumers plus camera scene render stages. |
 | UI-019 | Current fallback only. | Establish completeness of every original camera-position record and original absent-record branch; no invented default from gaps. |
-| UI-020 | Identical authored panel/button data; final button layout open. | Resolve HUD constructor rectangles/IDs for buy/info/finance/research/map rather than shared authored root positions. |
-| UI-021 | Partial: cash/date banks established, including DATETINY fourth tier. | Resolve date/cash object rectangles, formatting resource and locale grouping; cash text formatter has distinct class. |
+| UI-020 | Partial replacement: six distinct original HUD button rectangles, model keys and Mac help-role bindings established. | Apply original transforms and compare original runtime pixels; button state effects and clipping must stay consistent. |
+| UI-021 | Partial replacement: cash/date rectangles, font slots and constructor colors established, including DATETINY tier. | Complete measured cash repositioning, date baseline and locale grouping/formatting; table bounds alone are insufficient. |
 | UI-022 | Contradicted subclaims: scalar uses 1.25 steps, .25..2 and affects scheduler/animation/scripts. | Resolve callbacks' input dispatch, displayed control and pause behavior; integrate clock-lane consumer proofs. |
 | UI-023 | Test-only value, no original evidence required for game path. | Keep fixture calendar separate and audit all runtime consumers for accidental use. |
-| UI-024 | Partial: arm nodes identical; status labels bind specific original IDs/font slots; annual-summary table completely decoded. | Resolve build/ride info tables and catalogue order/page size/category logic, coordinate inheritance and translated text rectangles. |
+| UI-024 | Partial replacement: original buy window with preview/three-column scrolling catalogue and separate ride-status window decoded. | Trace catalogue row contents/sort/selection/category controller, coordinate inheritance, translated labels and final arm/window state. |
 | UI-025 | Open. | Identify tag queue enqueue/dequeue, capacity/expiry clock and `msgtag`/`f_tag*` allocation; distinguish advisor from UI queue. |
 | UI-026 | Preview meshes are original data; projection/turn/sort open. | Follow catalogue preview draw object's model rotation, animation selection, camera projection and queue ordering. |
 | UI-027 | Open. | Trace original hit/pick mode and geometry/grid query before selection notification; ground-cell occupancy alone is insufficient. |
 | UI-028 | Open, simulation dependency remains. | Resolve RideStatusPanel value bindings and formatter for excitement/reliability/repair/life; render advertised values from real simulation. |
-| UI-029 | Door/erase visual names do not prove semantics. | Trace ride-open flag into button latch writer and erase event into deletion/accounting. |
+| UI-029 | Partial: door state 1 selects actual Mac open prompt, ordinary state close prompt; erase/door IDs and rectangles identified. | Trace ride-open flag mutation and erase event into deletion/accounting; prompts do not establish refund behavior. |
 | UI-030 | Open. | Trace options initialization from registry/defaults and normalized audio gains, help toggle persisted state and missing-key branch. |
 | UI-031 | Windows manual contradicts ride-only single placement: queue follows ride placement. | Trace Mac placement mode transition after purchase, cancellation, shop/feature repetition and scrap ownership; implement a real queue tool. |
 | UI-032 | Partial: per-character measurement established. | Trace original wrap/truncation/font-switch decisions for each control and localized text; current greedy wrapping is not established. |
@@ -370,9 +589,9 @@ Relevant compatibility IDs:
 
 | ID | Result and remaining dependency |
 | --- | --- |
-| COMPAT-001 | Partial: park sign caller supplies two 128×128 destinations, with larger intermediate masks/DIBs; follow compositing, swizzle and two final texture buffers before replacing whole canvas sizing/orientation. |
+| COMPAT-001 | Partial replacement: two 128×128 destinations, larger masks/DIBs and dimension-preserving channel swizzle established; geometry UV orientation and full compositing still require integration. |
 | COMPAT-002 | Partial replacement: OS-measured centering and LOGFONT-width search, no evidenced eight-texel margin; trace empty/overlong/multi-line text and final texture coordinates. |
-| COMPAT-003 | Open: slot float-to-RGB interpretation requires effect parser and compositing arithmetic; a white text mask does not prove final sign color. |
+| COMPAT-003 | Contradicted: parameters 2–4 are shared material/lighting coefficients, not RGB. Preserve source image colors and implement the evidenced effect arithmetic after correcting SGN field meanings/compositing. |
 | COMPAT-004 | Partial: SGN reader handles effect/pixel blocks and optional image path; trace/decode the background/effects and verify byte-consistent output instead of flat dark board. |
 | COMPAT-005 | Open: SGN scale integer is read separately from LOGFONT width; width-search proof does not assign the 85..141 field a unit or prove it is ignored. Trace its consumers. |
 | COMPAT-006 | Partial: identified Mac sign call reaches QuickDraw StdText/StdTxMeas; no Windows GDI pair-kerning conclusion follows. Inspect backend/font settings or obtain original-platform glyph-spacing oracle. |

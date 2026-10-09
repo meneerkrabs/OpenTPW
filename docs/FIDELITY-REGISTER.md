@@ -14,9 +14,9 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **134 unresolved unique APPROX IDs**, 149 APPROX occurrences, 56 EXT occurrences, 62 DATA occurrences and 16 BIN occurrences.
+Current inventory: **133 unresolved unique APPROX IDs**, 148 APPROX occurrences, 56 EXT occurrences, 62 DATA occurrences and 17 BIN occurrences.
 
-Of these, 128 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
+Of these, 127 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
 CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.
 
@@ -26,7 +26,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | --- | ---: | ---: |
 | ADVISOR | 14 | 14 |
 | COMPAT | 13 | 14 |
-| ECON | 43 | 43 |
+| ECON | 42 | 42 |
 | ONLINE | 6 | 6 |
 | RIDES | 26 | 26 |
 | UI | 32 | 46 |
@@ -96,15 +96,14 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-034 | Original-fidelity area (scope unadjudicated) | challenge type meanings come from Challenges.sam comments (shop types by ShopType/SpecialIngredient) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:43` |
 | ECON-035 | Original-fidelity area (scope unadjudicated) | offers wait for accept/decline; follow-ups are offered right after completion; failed challenges count as finished | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:44` |
 | ECON-036 | Original-fidelity area (scope unadjudicated) | build challenges with TargetVal 0 need one item; type 28 needs level 3 | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:45` |
-| ECON-037 | Original-fidelity area (scope unadjudicated) | staff skill % = grade x 25 + training points / 4 | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:46` |
-| ECON-038 | Original-fidelity area (scope unadjudicated) | big park uses MinCellsOwned, cameras use MinCellsCovered | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:47` |
-| ECON-039 | Original-fidelity area (scope unadjudicated) | profit year = profit of the last 12 closed months | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:48` |
-| ECON-040 | Original-fidelity area (scope unadjudicated) | players start with 1 golden key and keys are not consumed by entering themes | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:49` |
-| ECON-041 | Original-fidelity area (scope unadjudicated) | features-directory objects with Research.Category != 3 are fixed (non-buyable) items | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:50` |
-| ECON-042 | Original-fidelity area (scope unadjudicated) | sideshow InitCostOfGoods is the cost of a prize paid per win | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:51` |
-| ECON-043 | Original-fidelity area (scope unadjudicated) | monthly wage = BaseWage[grade] x PayMultiplier[type] | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:52` |
-| ECON-044 | Original-fidelity area (scope unadjudicated) | balloon/costume percentages are 0 (guests carry no items yet) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:53` |
-| ECON-045 | Original-fidelity area (scope unadjudicated) | loan/challenge record locators use plausibility bounds (one fixture) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:54` |
+| ECON-038 | Original-fidelity area (scope unadjudicated) | big park uses MinCellsOwned, cameras use MinCellsCovered | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:46` |
+| ECON-039 | Original-fidelity area (scope unadjudicated) | profit year = profit of the last 12 closed months | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:47` |
+| ECON-040 | Original-fidelity area (scope unadjudicated) | players start with 1 golden key and keys are not consumed by entering themes | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:48` |
+| ECON-041 | Original-fidelity area (scope unadjudicated) | features-directory objects with Research.Category != 3 are fixed (non-buyable) items | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:49` |
+| ECON-042 | Original-fidelity area (scope unadjudicated) | sideshow InitCostOfGoods is the cost of a prize paid per win | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:50` |
+| ECON-043 | Original-fidelity area (scope unadjudicated) | monthly wage = BaseWage[grade] x PayMultiplier[type] | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:51` |
+| ECON-044 | Original-fidelity area (scope unadjudicated) | balloon/costume percentages are 0 (guests carry no items yet) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:52` |
+| ECON-045 | Original-fidelity area (scope unadjudicated) | loan/challenge record locators use plausibility bounds (one fixture) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:53` |
 | ONLINE-001 | OpenTPW online extension | Word filtering uses case-insensitive substring matches in space-padded text; entry spaces act as boundaries; allowed substrings exempt matches; hit characters except spaces become asterisks. | Original word-filter code or observed original filtering behavior; the source comment says the encrypted TP.ICD implementation is unreadable. | `docs/ONLINE.md:155` |
 | ONLINE-002 | OpenTPW online extension | A leading slash introduces a chat command; other text means say. | Original chat input syntax, which is not documented in the available data. | `docs/ONLINE.md:156` |
 | ONLINE-003 | OpenTPW online extension | Response strings 102 and 110 mean failure to add an ignored player and a buddy respectively, based on nearby string blocks. | Original response-code table. | `docs/ONLINE.md:157` |
@@ -210,10 +209,10 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-006 | `source/OpenTPW/Economy/ParkLedger.cs:122` | [APPROX:ECON-006] APR &gt; 0 repayment is an annuity at APR/12 per month, rounded down; interest accrues monthly on the balance — evidence needed: standard-mode save or capture with an outstanding loan |
 | ECON-007 | `source/OpenTPW/Economy/ParkEconomy.cs:280` | [APPROX:ECON-007] reopening has no original credit-eligibility gate — evidence needed: implement the traced credit predicate and qualify its cross-edition behavior |
 | ECON-008 | `source/OpenTPW/Economy/ParkStaff.cs:50` | [APPROX:ECON-008] 100 training points per grade (from Online_Standard.sam comments "costs 1000 to get up to grade 1") — evidence needed: capture of a training run |
-| ECON-009 | `source/OpenTPW/Economy/ParkStaff.cs:142` | [APPROX:ECON-009] candidate grade = average + 2 when "great", else average +-1 — evidence needed: hiring pool captures (grade distribution) |
+| ECON-009 | `source/OpenTPW/Economy/ParkStaff.cs:145` | [APPROX:ECON-009] candidate grade = average + 2 when "great", else average +-1 — evidence needed: hiring pool captures (grade distribution) |
 | ECON-010 | `source/OpenTPW/Economy/ParkStaff.cs:64` | [APPROX:ECON-010] TimeBetweenStaffUpdates/StaffTimeoutTime are seconds at normal speed — evidence needed: capture of pool refresh timing |
-| ECON-012 | `source/OpenTPW/Economy/ParkStaff.cs:149` | [APPROX:ECON-012] hiring is free; BaseCostPerStaff/CostPerQualityLevel unused — evidence needed: capture of the balance before/after hiring |
-| ECON-013 | `source/OpenTPW/Economy/ParkStaff.cs:169` | [APPROX:ECON-013] training budget is spent evenly over a role at month end — evidence needed: capture of training budget effects |
+| ECON-012 | `source/OpenTPW/Economy/ParkStaff.cs:152` | [APPROX:ECON-012] hiring is free; BaseCostPerStaff/CostPerQualityLevel unused — evidence needed: capture of the balance before/after hiring |
+| ECON-013 | `source/OpenTPW/Economy/ParkStaff.cs:172` | [APPROX:ECON-013] training budget is spent evenly over a role at month end — evidence needed: capture of training budget effects |
 | ECON-014 | `source/OpenTPW/Economy/ParkStaff.cs:24` | [APPROX:ECON-014] staff start at happiness 100 and it never changes (no strikes) — evidence needed: staff happiness rules (binary/captures) |
 | ECON-015 | `source/OpenTPW/Economy/ParkResearch.cs:130` | [APPROX:ECON-015] each researcher adds ResearchAbility points per game day, split by effort — evidence needed: capture of research progress over time |
 | ECON-016 | `source/OpenTPW/Economy/ParkResearch.cs:98` | [APPROX:ECON-016] group g opens when PercentageForThisTech % of group g-1 of the same category is researched — evidence needed: capture of new research groups appearing |
@@ -236,7 +235,6 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-034 | `source/OpenTPW/Economy/ParkObjectives.cs:113` | [APPROX:ECON-034] challenge type meanings come from Challenges.sam comments (shop types by ShopType/SpecialIngredient) — evidence needed: challenge captures per type |
 | ECON-035 | `source/OpenTPW/Economy/ParkObjectives.cs:153` | [APPROX:ECON-035] offers wait for accept/decline; follow-ups are offered right after completion; failed challenges count as finished — evidence needed: challenge flow captures |
 | ECON-036 | `source/OpenTPW/Economy/ParkObjectives.cs:149` | [APPROX:ECON-036] build challenges with TargetVal 0 need one item; type 28 needs level 3 — evidence needed: challenge captures |
-| ECON-037 | `source/OpenTPW/Economy/ParkObjectives.cs:107` | [APPROX:ECON-037] staff skill % = grade x 25 + training points / 4 — evidence needed: staff skill display capture |
 | ECON-038 | `source/OpenTPW/Economy/ParkObjectives.cs:281` | [APPROX:ECON-038] big park uses MinCellsOwned, cameras use MinCellsCovered — evidence needed: golden ticket award captures |
 | ECON-039 | `source/OpenTPW/Economy/ParkObjectives.cs:262` | [APPROX:ECON-039] profit year = profit of the last 12 closed months — evidence needed: golden ticket award capture |
 | ECON-040 | `source/OpenTPW/Economy/ParkObjectives.cs:319` | [APPROX:ECON-040] players start with 1 golden key and keys are not consumed by entering themes — evidence needed: initial lobby and repeated theme-entry captures |
@@ -463,7 +461,8 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | STP-PPC:0x100CC904 loan deposit | `source/OpenTPW/Economy/ParkLedger.cs:24` | [BIN:STP-PPC:0x100CC904 loan deposit] loan proceeds are added to the "Money in" accumulator (+0x1FC90, graph toggle 0x12279 "Money in") like every other credit; instalments go to the money-out accumulator (+0x1F5A0) |
 | STP-PPC:0x100D67F0 world update | `source/OpenTPW/Economy/ParkEconomy.cs:115` | [BIN:STP-PPC:0x100D67F0 world update] the golden-ticket check (0x100D31D0) runs when the world tick counter is a multiple of 100, and only in Full Simulation (game type 0) |
 | STP-PPC:0x100F0EF0 research cursor | `source/OpenTPW/Economy/ParkResearch.cs:108` | [BIN:STP-PPC:0x100F0EF0 research cursor] each category researches the first item in table order whose group is open and which is not yet researched; cost is never compared |
-| STP-PPC:0x100F6E24 staff pool update | `source/OpenTPW/Economy/ParkStaff.cs:97` | [BIN:STP-PPC:0x100F6E24 staff pool update] draw = rand() % total shortfall picks the role whose share it falls in; each added candidate lowers that role's shortfall and the per-update cap (also limited by the 32 free slots); 0x100F65E8 drops roles whose hired count reached Max*InPark; 0x100F6790 then tops every role up to Min*InPool counting hired and pooled staff |
+| STP-PPC:0x100F41DC staff skill | `source/OpenTPW/Economy/ParkObjectives.cs:107` | [BIN:STP-PPC:0x100F41DC staff skill] skill = trunc(20 × (grade + training percentage / 100)) in single precision; grade 4 at 0 % is 80 |
+| STP-PPC:0x100F6E24 staff pool update | `source/OpenTPW/Economy/ParkStaff.cs:100` | [BIN:STP-PPC:0x100F6E24 staff pool update] draw = rand() % total shortfall picks the role whose share it falls in; each added candidate lowers that role's shortfall and the per-update cap (also limited by the 32 free slots); 0x100F65E8 drops roles whose hired count reached Max*InPark; 0x100F6790 then tops every role up to Min*InPool counting hired and pooled staff |
 | STP-PPC:0x1010474C world setup | `source/OpenTPW/Economy/BalanceSettings.cs:177` | [BIN:STP-PPC:0x1010474C world setup] game type 0/2 load levels/Standard.sam then &lt;theme&gt;/Standard.sam; type 2 (Instant Action) adds &lt;theme&gt;/Easy_Standard.sam and only logs when it is missing |
 | STP-PPC:0x10119328 object loader | `source/OpenTPW/World/Objects/ObjectCatalog.cs:387` | [BIN:STP-PPC:0x10119328 object loader] In Instant Action (game type 2) Easy_&lt;object file&gt; is layered after the object file when it exists; Online_ files belong to the online game type and are not loaded offline |
 | STP-PPC:0x10128B60 profile key count | `source/OpenTPW/Economy/ParkObjectives.cs:317` | [BIN:STP-PPC:0x10128B60 profile key count] keys = mExtraKeys + (earned global, per-theme and secret tickets) / 3, truncated; spent tickets are not subtracted |

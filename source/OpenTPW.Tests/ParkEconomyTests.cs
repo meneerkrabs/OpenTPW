@@ -192,6 +192,16 @@ public class ParkEconomyTests
 	}
 
 	[TestMethod]
+	public void StaffSkillIsTwentyTimesGradePlusTrainingPercentage()
+	{
+		StaffMember Member( int grade, int points ) => new() { Id = 1, Type = StaffType.Handyman, NameIndex = 0, Grade = grade, TrainingPoints = points };
+		Assert.AreEqual( 0, ParkStaff.StaffSkill( Member( 0, 0 ) ) );
+		Assert.AreEqual( 80, ParkStaff.StaffSkill( Member( 4, 0 ) ) );
+		Assert.AreEqual( 27, ParkStaff.StaffSkill( Member( 1, 35 ) ) );
+		Assert.AreEqual( 99, ParkStaff.StaffSkill( Member( 4, 99 ) ) );
+	}
+
+	[TestMethod]
 	public void StaffPoolRefillFillsEachRolesShortfallUpToTheCap()
 	{
 		var park = EconomyTestData.Park();

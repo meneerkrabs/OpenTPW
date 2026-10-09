@@ -71,6 +71,9 @@ public sealed class ParkStaff
 
 	public void SetTrainingBudget( StaffType type, long monthlyBudget ) => trainingBudget[(int)type] = Math.Max( 0, monthlyBudget );
 
+	/// <summary>Skill shown for an employee: 20 × (grade + training percentage / 100), truncated, in single precision as in the original (0x100F41DC).</summary>
+	public static int StaffSkill( StaffMember member ) => (int)(20f * (float)(member.Grade + member.TrainingPoints / 100.0));
+
 	public long MonthlyWage( StaffMember member ) => settings.GetMonthlyWage( member.Type, member.Grade );
 
 	public long TotalMonthlyWages => members.Sum( MonthlyWage );

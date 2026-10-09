@@ -104,11 +104,11 @@ public sealed class ParkObjectives
 			var members = staff.Members.Where( member => type == null || member.Type == type ).ToList();
 			return members.Count == 0 ? 0 : (int)members.Average( member => member.Happiness );
 		}
-		// [APPROX:ECON-037] staff skill % = grade x 25 + training points / 4 — evidence needed: staff skill display capture
+		// [BIN:STP-PPC:0x100F41DC staff skill] skill = trunc(20 × (grade + training percentage / 100)) in single precision; grade 4 at 0 % is 80
 		long SkillPercent( StaffType type )
 		{
 			var members = staff.OfType( type ).ToList();
-			return members.Count == 0 ? 0 : (long)members.Average( member => member.Grade * 25 + member.TrainingPoints / 4 );
+			return members.Count == 0 ? 0 : (long)members.Average( member => ParkStaff.StaffSkill( member ) );
 		}
 		// [APPROX:ECON-034] challenge type meanings come from Challenges.sam comments (shop types by ShopType/SpecialIngredient) — evidence needed: challenge captures per type
 		return definition.Type switch

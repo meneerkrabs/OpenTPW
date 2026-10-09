@@ -280,7 +280,6 @@ site, is listed in `Economy/EconomyApproximations.cs` and is logged once at star
 | ECON-034 | `Economy/ParkObjectives.cs:113` | challenge type meanings come from Challenges.sam comments (shop types by ShopType/SpecialIngredient) | challenge captures per type |
 | ECON-035 | `Economy/ParkObjectives.cs:153` | offers wait for accept/decline; follow-ups are offered right after completion; failed challenges count as finished | challenge flow captures |
 | ECON-036 | `Economy/ParkObjectives.cs:149` | build challenges with TargetVal 0 need one item; type 28 needs level 3 | challenge captures |
-| ECON-037 | `Economy/ParkObjectives.cs:107` | staff skill % = grade x 25 + training points / 4 | staff skill display capture |
 | ECON-038 | `Economy/ParkObjectives.cs:281` | big park uses MinCellsOwned, cameras use MinCellsCovered | golden ticket award captures |
 | ECON-039 | `Economy/ParkObjectives.cs:262` | profit year = profit of the last 12 closed months | golden ticket award capture |
 | ECON-040 | `Economy/ParkObjectives.cs:318` | players start with 1 golden key and keys are not consumed by entering themes | initial lobby and repeated theme-entry captures |

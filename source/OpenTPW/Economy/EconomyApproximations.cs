@@ -43,7 +43,6 @@ public static class EconomyApproximations
 		("ECON-034", "challenge type meanings come from Challenges.sam comments (shop types by ShopType/SpecialIngredient)", "challenge captures per type"),
 		("ECON-035", "offers wait for accept/decline; follow-ups are offered right after completion; failed challenges count as finished", "challenge flow captures"),
 		("ECON-036", "build challenges with TargetVal 0 need one item; type 28 needs level 3", "challenge captures"),
-		("ECON-037", "staff skill % = grade x 25 + training points / 4", "staff skill display capture"),
 		("ECON-038", "big park uses MinCellsOwned, cameras use MinCellsCovered", "golden ticket award captures"),
 		("ECON-039", "profit year = profit of the last 12 closed months", "golden ticket award capture"),
 		("ECON-040", "players start with 1 golden key and keys are not consumed by entering themes", "initial lobby and repeated theme-entry captures"),

@@ -48,12 +48,13 @@ OpenTPW is currently in a very early stage of development, and is not yet playab
 Every remaining ⚠️ format now has a bounded, strict CPU reader tested against the
 original files, but none is a finished game feature: MD2 parses 2,116/2,118
 models (animation tracks undecoded); MAP reads the 128×128 TP2M terrain grids
-(cell meaning unknown); RSE parses all 308 scripts (the VM handles 25 of 84 used
-opcodes); TPWI payloads expose 17 section markers (contents opaque); `.LIP`
+(cell meaning unknown); RSE parses all 308 scripts and the VM runs them (all 84 used
+opcodes handled, 51 of them through an unimplemented-effect hook; the sandbox
+Totem runs its original script); TPWI payloads expose 17 section markers (contents opaque); `.LIP`
 lip-sync timelines and ISO-only `.MTR` files are read structurally (meaning
 unconfirmed); all nine TGQ movies decode audio bit-exact and video close to, not
 bit-identical with, an external reference, without playback. Evidence:
-[MD2](docs/MD2-MODELS.md), [MAP](docs/MAP.md), [RSE](docs/RSE-SCRIPTS.md),
+[MD2](docs/MD2-MODELS.md), [MAP](docs/MAP.md), [RSE](docs/RSE-SCRIPTS.md) / [RSE VM](docs/RSE-VM.md),
 [TPWS payload](docs/TPWS-PAYLOAD.md), [LIPS](docs/LIPS.md), [MTR](docs/MTR.md),
 [TGQ](docs/TGQ-MOVIES.md).
 

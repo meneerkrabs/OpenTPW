@@ -140,8 +140,12 @@ Parallelle formaat-slice (7 formaten, geïsoleerde worktrees, 9 oktober 2026):
 - MAP: TP2M-terreinkaarten (128×128 cellen, 5 gepinde fixtures); 64
   sound-catalog-`.map`-bestanden onderscheiden en geweigerd. Celbetekenis onbekend.
 - RSE: `RideScriptFile` + statische analyse; alle 308 scripts parsen, 84 gebruikte
-  opcodes, geen onbekende. De VM dekt 25 daarvan; originele scripts draaien nog niet.
-  Bestaand defect genoteerd: `RideVM` laat zijn variabelenlijst leeg.
+  opcodes, geen onbekende. `RideVM` voert ze nu uit (zie [RSE-VM.md](RSE-VM.md)):
+  33 opcodes volledig in de VM, 51 via een hook die "unimplemented effect"
+  registreert (bezoekers, animatie, geluid, objecten, ritcontrollers, parkklok).
+  Alle 263 startbare scripts + 44 kinderen draaien 60 s zonder fouten; de
+  sandbox-Totem draait `Totem.RSE`, dat bepaalt wanneer de (nog procedurele)
+  beweging start. Slicing, milliseconden en CRIT_LOCK zijn afgeleid, niet getraced.
 - TPWS/TPWI: 17 unieke sectiemarkers in de enige fixture gelokaliseerd; inhoud opaque.
   Er staat geen ander TPWI/TPWS-bestand op de ISO.
 - LIPS: gevonden als `.LIP` (639 in `lips.wad` + 4 levelbestanden); strikte lezer,

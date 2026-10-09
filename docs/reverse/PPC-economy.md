@@ -600,3 +600,60 @@ fails none and skips 54 optional language/MTR/bonus/native gates (815 total).
 Build/type checking succeeds; pre-existing compiler/package warnings remain.
 Formatting verification exposes the existing tracked-LF/editorconfig-CRLF
 conflict; files retain the tracked LF convention to avoid whole-file churn.
+
+## Standalone reviewed loan-operation model
+
+`tools/ppc-analysis/lanes/economy/OriginalLoanRules.cs` is an independently
+written C# model of the reviewed loan operands. Its console regression
+project has no package or project references and is not linked to gameplay.
+It never reads or executes an original binary. Run:
+
+```sh
+dotnet run --project tools/ppc-analysis/lanes/economy/OriginalLoanRules.Tests.csproj --configuration Release
+dotnet run --project tools/ppc-analysis/lanes/economy/OriginalLoanRules.Tests.csproj --configuration Debug
+```
+
+The source exposes raw loan words, the touched bank words, a host repayment
+estimate, unsigned-division qualification and immutable operation results.
+All integer products, subtractions, additions and display-bit casts use
+explicit modulo-2^32 arithmetic, checked against a separate BigInteger
+reference over 1,296 operand combinations. The project enables checked
+arithmetic globally so accidental omissions of `unchecked` fail tests.
+
+The floating constructor calculation preserves the inspected operation
+order. Its final conversion maps negative values to zero, truncates finite
+nonnegative values below 2^32, and maps NaN, positive infinity and larger
+values to `uint.MaxValue`. Thus positive-principal/zero-term gives saturated
+infinity; zero-principal/zero-term gives saturated NaN. The preceding `pow`
+comes from **the host .NET math library**, not the original library. Ordinary
+SAM examples match the reviewed values on this host, but original libm
+precision, rounding state, NaN propagation and edge-case reachability remain
+unqualified; matching these examples does not establish PC behavior.
+
+Monthly operations keep the fixed installment, increase months repaid even
+when withdrawals are disabled, and complete only on equality with the term.
+The profit adjustment uses the unsigned wrapped interest numerator. Early
+payoff tests affordability against unsigned balance bits and clears the loan
+before reading months repaid for profit adjustment, preserving the reviewed
+whole-term interest charge. Disabled withdrawals skip only the debit/profit
+subtraction, not those subsequent state/profit operations.
+
+`DivideUnsigned` deliberately returns **no qualified quotient** for divisor
+zero; it does not invent PowerPC DIVWU zero results. The actual monthly and
+payoff routines guard the interest division when the term is zero. Their
+modeled continuation is marked `AssumesZeroTermDiagnosticReturns`, because
+the preceding original diagnostic call is not executed by this helper.
+A null interest-division result means skipped/not reached, not interest zero.
+The model omits batch flushing, calendar/year events, other financial statistics, credit-capacity
+updates, red-entry timestamps and diagnostic side effects. Caller order and
+mode restrictions remain evidence dependencies.
+
+The 15 regression groups cover 5,437 assertions: all eight ordinary APR
+offers; all eight zero-APR bookkeeping cases; full-term completion; disabled
+withdrawals; signed-display/unsigned-affordability distinctions; clearing
+order; inactive/refused paths; 32-bit overflow; equality-only completion;
+NaN/infinity/zero terms; guarded versus unqualified division; and the bounded
+BigInteger cross-check. For the 100,000/36 zero-APR example the first monthly
+profit change is −119,304,646; after 36 isolated calls without a year reset,
+the wrapped profit field is +40 and cash retains 28. These are arithmetic model results,
+not original runtime captures or realistic accounting conventions.

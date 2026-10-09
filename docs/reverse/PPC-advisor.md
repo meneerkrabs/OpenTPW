@@ -243,14 +243,16 @@ an immediate and an animation-led delayed path. The asset sample, response
 animation and flags must all be retained to reproduce this scheduling.
 
 The setup routine `0x29084–0x2925c` supplies independently verified data values:
-object fields `+56/+60/+64` receive `(0.6, −0.6, 0.2)`, an associated structure
+object fields `+56/+60/+64` receive `(0.6, −0.6, 0.2)` as the translation of
+the identity matrix at object `+8` (proved in the phase-two follow-up below),
+and an associated structure
 receives four 1.0 components at `+4/+8/+12/+16`, and its `+44/+48/+52` fields
 receive `(26.666667, −26.666667, 800)`. It calls imported `CSystem::UpdateLights`
 at `0x290dc` and `0x29108`. Scale-vector construction at `0x29208–0x29244`
 passes `(0.01125, 0.001, 0.015)` to `0xa2850`; the first component is the product
-of 0.015 and 0.75. MapWho linking uses ID 16 (`0x29200`). These are concrete
-geometry/lighting leads; treating either vector as an advisor camera location
-would be unjustified. Viewport placement, projection, front-face convention and
+of 0.015 and 0.75. MapWho linking passes selector flags 16 (`0x29200`), which
+the engine resolves to bucket 0, rather than a viewport ID. These are concrete
+geometry/lighting leads; neither vector establishes an advisor camera location. Viewport placement, projection, front-face convention and
 all hat/accessory/blink visibility rules remain open.
 
 ## Audio scheduling and the Layer I gap
@@ -319,7 +321,7 @@ following table distinguishes narrower established facts from completion:
 | ADVISOR-011 | Original missing-device behavior not recovered; current wall-clock fallback remains unverified |
 | ADVISOR-012 | Original channel/output routing not recovered; mono duplication remains unverified |
 | ADVISOR-013 | Direct /1000, start-talking, strict threshold, one mark/update, terminal close recovered; absolute unit remains timer-route conditional |
-| ADVISOR-014 | No new coefficient-table provenance proof; original decoder existence does not validate every clean-room synthesis coefficient |
+| ADVISOR-014 | Phase two matches all 257 half-window coefficients to the original synthesis table; full published-standard provenance and decoder equivalence remain separate |
 
 Implementation order: preserve separate message/response/sample identities and
 history; wire automatic game-message inputs; add eligibility and bounded scored
@@ -334,3 +336,255 @@ lane tests pass, including queue ties, integer conversion, zero/fractional marks
 strict deadlines, one-expired-mark updates, terminal close and malformed asset
 bounds. Shared PEF/timer tests are run separately. Lint/static checks are Python
 compilation and `git diff --check`; no gameplay changes require a game build.
+
+
+## Phase two: full descriptor linkage and narrower controller rules
+
+Additional reproducible witnesses:
+
+```sh
+python3 tools/ppc-analysis/lanes/advisor/controller_evidence.py /Users/sander/server/game-assets/mac-feral/bin
+python3 tools/ppc-analysis/lanes/advisor/controller_evidence.py /Users/sander/server/game-assets/mac-feral/bin --details > /tmp/advisor-controller-detail.json
+python3 -m unittest discover -s tools/ppc-analysis/lanes/advisor -p 'test_*.py' -v
+```
+
+Detailed output covers all 351 message descriptors and all 610 response bindings,
+including callback addresses, direct score-property meanings, response ranges,
+model and bank selectors. It remains interpreted metadata outside Git; the
+proprietary table contents are not checked in as fixtures. The additional engine
+identity is SHA-256 `c549123f647dcf33c3e2c3d515bffe2cfcb19d11680f743f02ca42bb09dbd73b`.
+
+### Scored message, response and sample are separate domains
+
+The scored-message descriptor table is data `0x1f2b4`, **351 records of 48
+bytes**. Its message IDs are exactly 0–350. Every shipped descriptor selects
+variant mode 2. The descriptor's response range selects the separate 610-record
+response table, which in turn selects a bank sample and LIP stem. For example,
+message 0 chooses response 1; response 1 selects local sample 1 and local
+`sp_001.LIP`. It does not select global sample or global LIP 0.
+
+| Descriptor field | Established meaning and consumer |
+| --- | --- |
+| `+0` | Zero permits the background score scan; nonzero skips that scan (`0xe548–0xe550`) |
+| `+4` | Message ID; validated against all 351 indexed records |
+| `+8` | Message group; used by repeat/once/slap accessors |
+| `+12` | Game-mode eligibility selector; 2 always passes, 0 checks mode 0, 1 checks mode 2 (`0xe128`) |
+| `+16..+24` | Three-word member-function callback descriptor installed by static initialization |
+| `+28` low byte | Maximum pending duplicates; used by accessor `0xd770` and eligibility count comparison |
+| `+32` | First response ID; accessor `0xd468` |
+| `+36` | Response variant count; accessor `0xd5ec` |
+| `+40` | Variant selection mode; accessor `0xdc44`; all shipped values are 2 |
+| `+44` | Literal 352 in the inspected descriptors; behavioral use remains unresolved |
+
+The initializer at `0x148a0` copies callback metadata from data
+`0x1e240 + messageID * 12` into each descriptor. The new witness verifies **all
+1,053 word-copy provenances** over the straight-line copy body
+`0x148d4–0x16f38`. It rejects any instruction outside the reviewed load/store
+subset; it does not execute the initializer or original arithmetic. Every
+source has adjustment 0, direct-member marker −1, and a relocated transition
+vector whose code entry and TOC are resolved. There are 241 distinct callback
+code entries across the 351 slots.
+
+The schema at data `0x2349c` contains 774 60-byte records before its type-12
+terminator. Its getter is `CAdvisorBalance::vf0`, code `0xbee4`. The reviewed
+constructor `0x16f4c` assigns scalar fields and expands the ten message groups;
+391 named balance fields are recovered. Critical bindings are:
+
+| Balance field | SAM property |
+| --- | --- |
+| `+24` | `GeneralAdvisor.MinTimeAnyMessage` |
+| `+28` | `GeneralAdvisor.MinTimeSameMessage` |
+| `+32` | `GeneralAdvisor.MinScoreForConsideration` |
+| `+36 + 12*g` | `MessageGroups[g].MinTimeSameMessage` |
+| `+40 + 12*g` | `MessageGroups[g].SayOnlyOnce` |
+| `+44 + 12*g` | `MessageGroups[g].DiscardAfterSlaps` |
+| `+160` | `Welcome.Score` |
+| `+164` | `OpenPark.ScorePerWaitingPerson` |
+| `+168` | `ClosePark.Score` |
+| `+172/+176` | `VisitorsThirsty.ScorePerThirstyPerson` / `ThirstierThan` |
+| `+180/+184` | `VisitorsHungry.ScorePerHungryPerson` / `HungrierThan` |
+| `+188/+192` | `StaffHireMechanics1.ScorePerWornRide` / `PoorerStateThan` |
+| `+196` | `StaffHireMechanics2.ScorePerBrokenRide` |
+| `+200/+204` | `StaffHireMechanics3.IdealNumberOfRidesPerMechanic` / `ScorePerExtraRide` |
+
+Of all 351 callback slots, 170 consist of a complete direct getter of a named
+balance field. Another 46 are complete constant-return functions: 44 return
+zero, message 167 returns 10,000 and message 168 returns 9,999. The remaining
+**135 slots have conditional or computed score functions**; the detailed output
+provides their exact addresses instead of claiming their formulas are solved.
+Thus 216 score bindings now have direct implementation meaning. Every remaining
+computed producer is an explicit bounded dependency.
+
+Selected complete message-to-score-to-response links:
+
+| Message | Score callback | Score meaning | Response range |
+| ---: | --- | --- | --- |
+| 0 | `0xe8c4` | `Welcome.Score` | 1 |
+| 1 | `0xe8cc` | Gated waiting-person count × `OpenPark.ScorePerWaitingPerson` | 2–4 |
+| 2 | `0xe9b0` | Gated `ClosePark.Score` | 5–7 |
+| 3 | `0xea80` | Thirst count × `VisitorsThirsty.ScorePerThirstyPerson` | 8–10 |
+| 4 | `0xeacc` | Hunger count × `VisitorsHungry.ScorePerHungryPerson` | 11–13 |
+| 5 | `0xeb18` | Gated worn-ride count × `StaffHireMechanics1.ScorePerWornRide` | 14–16 |
+| 6 | `0xeb8c` | Gated broken-ride count × `StaffHireMechanics2.ScorePerBrokenRide` | 17–19 |
+| 33 / 34 | `0xfe9c` / `0xfea4` | Unhappy mechanic / handyman configured score | 97–99 / 100–102 |
+| 93 | `0x113a4` | `ResearchRideResearched.Score` | 248–249 |
+| 94 | `0x113ac` | `ResearchAddonResearched.Score` | 250 |
+| 95 | `0x113b4` | `ResearchShopResearched.Score` | 251–252 |
+| 96 | `0x113bc` | `ResearchSideshowResearched.Score` | 253–254 |
+| 97 | `0x113c4` | `ResearchFeatureResearched.Score` | 255–256 |
+| 291 | `0x1145c` | `HelpMessage.Score` | 551, absent from response map |
+
+The guest lane independently verified thirst/hunger producers `0xc3a60` and
+`0xc3964`: they count live category-1 guests accepted by a map-cell predicate
+and compare truncated need values **strictly greater** than the supplied
+threshold. The callbacks pass threshold low byte 99 and multiply by configured
+score 1. For normal 0–100 need values, only integer value 100 qualifies. Waiting
+producer `0xc3758` visits both ticket-booth cells, counts category-1 guests whose
+state is 3, stores the current result with `0xc9020` and reads it back with
+`0xc9018`; no history smoothing was established. Open/close-park gating and the
+135 computed slots require their individual predicate proofs.
+
+The full response set is IDs 0–612 with **396, 397 and 551 absent**. Descriptor
+291 references response 551; the static playback search would fail for that
+ID. This is a witnessed table mismatch, not an observed original-runtime error.
+Keep it explicit rather than silently substituting a neighboring clip. The
+response `+28` metadata lookup is passed into a `CMsgTag` constructor at
+`0x1165b4`; the UI lane verified that field's constructor identity. Its default
+383 is not established as a help-text or direct string-table index. Node
+visibility controls and this tag's final consumer remain dependencies.
+
+### Cyclic variants, thresholds and interruption
+
+All shipped descriptor modes are 2, whose path reads the previous response
+variant at history `+228`, adds one (`0x8974–0x8978`), and resets to zero if the
+result is not below the variant count (`0x89d8–0x89e0`). Initial history value
+−1 therefore starts at variant 0. The response ID is `firstResponse + variant`.
+Random variant modes exist in code but are not selected by these shipped records;
+random mouth and slap selection are separate rules.
+
+Both background candidates and queued candidates must have score **strictly
+greater** than `MinScoreForConsideration` (`0x878c`, `0x8850`). With supplied
+value 25, a score of exactly 25 does not begin advice.
+
+After refreshing background advice, the controller calls `0xa130` at `0x87c8`.
+That function compares current advisor clock against `lastActionStarted` at
+controller `+216` plus `lastActionDuration` at `+220`. It returns busy only
+while current time is below the endpoint. A busy result exits controller update
+before picking/starting queued advice. High-scoring advice can evict a weaker
+**pending** entry but does not preempt this active action through the ordinary
+scored-controller path. User slap/cancellation and explicit UI/script calls are
+separate paths; no global no-interruption rule is inferred.
+
+### Repeat eligibility uses game ticks, not speech milliseconds
+
+History setter `0x121098` copies game object field `+0x1da70c`. Elapsed getter
+`0x1210f8` calls world getter `0x10a9a4`, reads that field, shifts **each** live
+and saved value right by two, then subtracts. Repeat eligibility compares this
+result directly with the group repeat property (`0x90dc–0x90f0`):
+
+`elapsed = (liveGameTick >> 2) - (savedGameTick >> 2)`
+
+The clock lane independently identified this field as `mGameTick`, incremented
+once at `0x105398–0x1053a0`. The active main scheduler nominally advances it every
+248 ms of its selected scaled clock, making four ticks approximately 992 ms.
+Mode, game flags, pause, speed and capped catch-up affect advancement. A SAM
+repeat value 120 is therefore **120 groups of four game ticks**, not a proved
+wall-clock duration of 120 exact seconds. On raw-counter wrap the shifted
+subtraction is not a smoothly wrapping 30-bit seconds counter. The synthetic
+edge test records that arithmetic rather than repairing it.
+
+### Deferred scheduler arithmetic
+
+Let `t` be the advisor presentation clock at response request. The recovered
+branches give the following separate quantities:
+
+| Quantity | Recovered expression |
+| --- | --- |
+| Initial LIP/start base | `t - 200` |
+| Pending speech-start deadline | `t + 800` |
+| Deferred LIP/start base | `t + 800` after shifting initial base by 1000 |
+| Animation budget from audio length `D` | `D + 200 + 300` |
+| Playback returned action span | `sequenceDuration + endingClipDuration + 1000` |
+| Controller reserved duration | Returned span plus another 1000 |
+
+The pending audio start accepts **equality**, because its update skips only
+while `deadline - now` is greater than zero (`0x7548–0x754c`). LIP toggles and
+mouth changes require strictly greater deadlines. Combining them into one
+uniform comparison changes an original boundary.
+
+The two margin values are independently visible at `0x6ec0`, `0x6ef8`,
+`0x7048` and `0x8a10`; the helper provides a derived arithmetic witness and
+synthetic cases for immediate/deferred paths. Sequence duration and final clip
+state must be supplied by the original animation path; they are not replaced
+by audio length. Original audio start latency remains unobserved.
+
+### Geometry field meaning and shared-render boundary
+
+The phase-one translation fields are now tied to an actual matrix initializer:
+`0xa1e9c` clears 64 bytes and sets 1.0 at diagonal offsets 0, 20, 40 and 60.
+Advisor setup calls it on context `+8`. Translation is therefore matrix offsets
+48/52/56, `(0.6, −0.6, 0.2)`, not a light position. Contexts start at data
+`0x559f4`, stride 188. The actor retains that matrix address at `+200`
+(`0x291d8–0x291e4`); animation start retrieves it at `0xa6d18` and passes it via
+`0x55f54` to imported `CMesh::SetLocalMatrix(int, sMatrix&)` at `0x55f84` with
+flags 1. The engine export transition vector is data `0x1060`, code `0x1903c`.
+The nonuniform `(0.01125, 0.001, 0.015)` scale modifies the model matrix basis
+through `0xa2850`. Final screen coordinates still require the render/projection
+consumer; treating the translation directly as pixel placement is unjustified.
+
+MapWho linking selector 16 is decoded by engine `CMapWho::Link`, code `0x13e50`:
+its bucket calculation is `(selector >> 4) - 1`, then `20 + bucket*4`. It links
+advisor geometry into bucket 0 at MapWho offset `+20`. **16 is not a private
+viewport ID.** The shared render path `0x145f4` receives a viewport configuration
+whose matrix pointer is at `+20` and rectangle values at `+4/+8/+12/+16`, saves
+and replaces the global matrix, then renders bucket lists. This narrows the
+remaining projection dependency to that shared configuration and mesh render
+mode. No separate bottom-left square viewport or camera `(0,0,-70)` was proved.
+
+Phase-two verification: the controller witness verifies all callback copies,
+all descriptor/response bindings and selected scheduling/geometry operands on
+the identified binaries. Normal and optimized Python output match. Ten new
+synthetic controller tests bring the advisor lane total to **25 passing tests**;
+the shared toolkit has 16 passing tests. Python compilation and diff checks
+pass. All approximation-status decisions remain with integration and original
+presentation/capture verification.
+
+
+### Original sample indexing and complete synthesis-window correspondence
+
+Original sound bank retrieval supplies a direct indexing proof: exported
+`TbFileBank::RetrieveSample` (vector data `0xb3c`, code `0x691c`) subtracts one
+for its cache index at `0x6928` but accesses the SDT offset table with
+`sampleID * 4` at `0x6944`. The count occupies table word zero, so sample 1
+selects the first entry offset. `TbMMFileBank::RetrieveSample` (vector data
+`0xb7c`, code `0x6e6c`) subtracts one at `0x6e84` before selecting a sample
+record. This proves the earlier one-based association: original sample 638
+selects `z_error`, and 639–641 select the supplied ouch entries.
+
+`CMpegBase::PolySynth` (vector data `0x9bc`, code `0x53a0`) addresses its
+coefficient table at sound data `0x8410`, using TOC +1040 at `0x53bc`; its
+coefficient consumer begins at `0x545c`. The table has 544 float entries,
+17 rows of 32, with each row's 16 coefficients duplicated. The new witness
+compares every original entry with the existing clean-room `HalfWindow` in
+`Mp2Decoder.cs`, under this exact correspondence:
+
+`original[row*32 + tap] = -0.5 * Dint[32*tap + row]`
+
+Here rows are 0–16 and taps are 0–15. `Dint` is the existing 512-entry synthesis
+window before division by 65,536, including its stated symmetry; each original
+coefficient repeats at row offset `+16`. All 544 comparisons are exact.
+Mapping each selected full-window index to its symmetric half-window index
+covers **all 257** existing `HalfWindow` values, with no missing entries. This
+is not a short prefix match or a waveform-correlation inference. The original
+coefficient block SHA-256 is
+`a81ef42fead481ee76ce956b404aab71f47e2da031a20a79d5eaa2aa3c6a046c`.
+
+The scale relates original PCM-scaled coefficients to normalized window
+values; the helper reports the numerical relation and consumer addresses
+without checking original coefficient contents into Git. It does not execute
+the original synthesis routine. This materially narrows `ADVISOR-014`: every
+existing clean-room window coefficient corresponds to the identified original
+binary. Full comparison with published ISO text, DCT/arithmetic equivalence,
+rounding, clipping and all decoder formats remain distinct claims. Registry
+status and source comments should be revised only after independent integration
+review of this narrower evidence.

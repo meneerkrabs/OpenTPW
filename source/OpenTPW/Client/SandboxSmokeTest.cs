@@ -29,7 +29,17 @@ internal sealed class SandboxSmokeTest : IDisposable
 			rideSite = VerifyOriginalLevel( level.OriginalPark );
 		Require( level.PlaceRide( rideSite ), "place original Totem" );
 		level.PlacedRide!.Start();
+		Render.CaptureOutput = true;
+		// Safety net: a smoke test that stops getting frames (e.g. paused rendering) must fail, not hang.
+		watchdog = new System.Threading.Timer( _ =>
+		{
+			Console.Error.WriteLine( $"Native sandbox smoke test failed: timed out after {MaximumSeconds} s at frame {frame}; display {Render.Metrics}, {Render.Scaling.Describe()}" );
+			Environment.Exit( 1 );
+		}, null, TimeSpan.FromSeconds( MaximumSeconds ), System.Threading.Timeout.InfiniteTimeSpan );
 	}
+
+	private const int MaximumSeconds = 180;
+	private readonly System.Threading.Timer watchdog;
 
 	private Vector3 rideSite = Vector3.Zero;
 
@@ -81,7 +91,9 @@ internal sealed class SandboxSmokeTest : IDisposable
 			Require( level.PlacedRide!.Script.State != RideVMState.Faulted && level.PlacedRide.Script[RideVariables.VAR_RUNNING] == 1, "original script reports the ride running" );
 			var parkFrame = CaptureFrame( level.OriginalPark == null ? "park.png" : "original-park.png" );
 			VerifyPoseChanged( level.PlacedRide, parkFrame.Pixels );
-			VerifyText( parkFrame );
+			VerifyDisplaySizes();
+			VerifyPicking();
+			VerifyText( CaptureOutputFrame( level.OriginalPark == null ? "output.png" : "original-output.png" ) );
 			if ( level.OriginalPark == null )
 				level.SaveSandbox();
 			level.PlacedRide!.Stop();
@@ -108,20 +120,27 @@ internal sealed class SandboxSmokeTest : IDisposable
 			CaptureFrame( level.OriginalPark == null ? "terrain.png" : "original-terrain.png" );
 			Require( level.PlaceRide( level.OriginalPark == null ? new Vector3( 10, 10, 0 ) : rideSite ), "place ride again" );
 		}
-		if ( step == 90 )
+		if ( step >= 66 && !displayChangesDone )
+			displayChangesDone = StepDisplayChanges();
+		if ( step >= 90 && displayChangesDone && !completed )
 		{
 			Device.WaitForIdle();
 			completed = true;
 			Log.Trace( level.OriginalPark == null
-				? $"Native sandbox smoke test passed: {frame} frames, original ride and RSE script, script-triggered motion, original animation readback, close, remove, isolated save/load, BF4 text and GPU readback."
-				: $"Native original-level smoke test passed: {frame} frames, {level.OriginalPark.LevelName} terrain/import, MAP/save build rules, original ride and RSE script, animation readback, close, remove, BF4 text and GPU readback." );
+				? $"Native sandbox smoke test passed: {frame} frames, original ride and RSE script, script-triggered motion, original animation readback, close, remove, isolated save/load, BF4 text and GPU readback; {displaySummary}."
+				: $"Native original-level smoke test passed: {frame} frames, {level.OriginalPark.LevelName} terrain/import, MAP/save build rules, original ride and RSE script, animation readback, close, remove, BF4 text and GPU readback; {displaySummary}." );
 			Render.Window.SdlWindow.Close();
 		}
 	}
 
-	private static (byte[] Pixels, int Width, int Height) CaptureFrame( string name )
+	/// <summary>World-only readback: the resolved internal-size 3D target before scaling and UI.</summary>
+	private static (byte[] Pixels, int Width, int Height) CaptureFrame( string name ) => Capture( Render.ResolveColorTexture, name );
+
+	/// <summary>End-to-end readback of the output after world scaling and the BF4 UI (ImGui excluded).</summary>
+	private static (byte[] Pixels, int Width, int Height) CaptureOutputFrame( string name ) => Capture( Render.OutputCaptureTexture!, name );
+
+	private static (byte[] Pixels, int Width, int Height) Capture( Veldrid.Texture source, string name )
 	{
-		var source = Render.ResolveColorTexture;
 		using var staging = Device.ResourceFactory.CreateTexture( TextureDescription.Texture2D(
 			source.Width, source.Height, 1, 1, source.Format, TextureUsage.Staging ) );
 		using var commands = Device.ResourceFactory.CreateCommandList();
@@ -137,6 +156,10 @@ internal sealed class SandboxSmokeTest : IDisposable
 			var pixels = new byte[checked(rowBytes * (int)source.Height)];
 			for ( var row = 0; row < source.Height; ++row )
 				Marshal.Copy( IntPtr.Add( mapped.Data, checked((int)(row * mapped.RowPitch)) ), pixels, row * rowBytes, rowBytes );
+			if ( source.Format is PixelFormat.R8_G8_B8_A8_UNorm )
+				for ( var pixel = 0; pixel < pixels.Length; pixel += 4 )
+					(pixels[pixel], pixels[pixel + 2]) = (pixels[pixel + 2], pixels[pixel]);
+			Require( source.Format is PixelFormat.B8_G8_R8_A8_UNorm or PixelFormat.R8_G8_B8_A8_UNorm, "readback format is 8-bit RGBA" );
 			Require( pixels.Where( ( value, index ) => index % 4 != 3 ).Any( value => value != 0 ), "terrain framebuffer is not black" );
 			var colors = new HashSet<uint>();
 			for ( var pixel = 0; pixel < pixels.Length && colors.Count <= 32; pixel += 4 )
@@ -193,14 +216,176 @@ internal sealed class SandboxSmokeTest : IDisposable
 		}
 		var inkPixels = overlay.Batch.Quads.Where( quad => quad.Atlas != null ).Sum( quad =>
 			Enumerable.Range( 0, quad.Height ).Sum( row => quad.Atlas!.Alpha.AsSpan( (quad.AtlasY + row) * quad.Atlas.Width + quad.AtlasX, quad.Width ).ToArray().Count( value => value != 0 ) ) );
-		Log.Trace( $"BF4 text readback: {textPixels} text pixels in {width}x{height} panel; {inkPixels} atlas ink texels; max channel difference {maximumDifference}." );
-		Require( textPixels >= inkPixels * 9 / 10 && inkPixels > 200, "BF4 text pixels are present in GPU readback" );
+		var scale = overlay.Scale;
+		Log.Trace( $"BF4 text readback: {textPixels} text pixels in {width}x{height} panel at UI scale {scale}; {inkPixels} atlas ink texels; max channel difference {maximumDifference}." );
+		Require( textPixels >= inkPixels * scale * scale * 9 / 10 && inkPixels > 200, "BF4 text pixels are present in GPU readback" );
 		Require( maximumDifference <= 2, "BF4 text readback matches the CPU composite" );
 		var crop = new byte[width * height * 4];
 		for ( var row = 0; row < height; ++row )
 			Array.Copy( frame.Pixels, ((y + row) * frame.Width + x) * 4, crop, row * width * 4, width * 4 );
 		using var image = Image.LoadPixelData<Bgra32>( crop, width, height );
 		image.SaveAsPng( Path.Combine( Path.GetFullPath( "artifacts" ), "native-smoke-text.png" ) );
+	}
+
+	private string displaySummary = "";
+
+	/// <summary>
+	/// Rendertarget sizes against the pure size computation: swapchain = drawable pixels, world target
+	/// = render-scaled internal size, output capture = output size.
+	/// </summary>
+	private void VerifyDisplaySizes()
+	{
+		var metrics = Render.Metrics;
+		var scaling = Render.Scaling;
+		var settings = Render.DisplaySettings;
+		var swapchain = Device.MainSwapchain.Framebuffer;
+		var expected = RenderScaling.Compute( metrics.PixelSize, settings.Upscale, settings.RenderScale, uint.MaxValue, Render.WorldScalingAllowed );
+		Require( swapchain.Width == metrics.PixelSize.X && swapchain.Height == metrics.PixelSize.Y, "swapchain matches the drawable pixel size" );
+		if ( Window.TestPixelScale > 1 )
+			Require( metrics.PixelSize.X >= metrics.LogicalSize.X * Window.TestPixelScale && metrics.PixelSize.Y >= metrics.LogicalSize.Y * Window.TestPixelScale, "test pixel scale enlarges the drawable" );
+		Require( expected.InternalSize.Equals( scaling.InternalSize ) && expected.Mode == scaling.Mode, "renderer uses the computed internal size" );
+		var world = Render.ResolveColorTexture;
+		Require( world.Width == scaling.InternalSize.X && world.Height == scaling.InternalSize.Y && Render.MultisampledFramebuffer.Width == world.Width, "world target has the internal size" );
+		var output = Render.OutputCaptureTexture!;
+		Require( output.Width == metrics.PixelSize.X && output.Height == metrics.PixelSize.Y, "output capture has the output size" );
+		Require( Screen.UiScale == UiScaling.Resolve( settings.UiScale, metrics.PixelSize ), "UI scale follows the output size" );
+		displaySummary = $"output {metrics}, world {world.Width}x{world.Height} ({scaling.Mode} {scaling.EffectivePercent}%), UI scale {Screen.UiScale}";
+		Log.Trace( $"Display readback: {displaySummary}; swapchain {swapchain.Width}x{swapchain.Height}; {Render.OwnedTargetResourceCount} owned target resources." );
+	}
+
+	/// <summary>
+	/// Projects the Totem cell centre to output pixels, converts to logical mouse units as SDL reports
+	/// them, and requires the placement pick to return the same cell (no render-scale or DPI offset).
+	/// </summary>
+	private void VerifyPicking()
+	{
+		var offCentre = new Vector3( 10, 10, 0 );
+		if ( level.OriginalPark != null )
+		{
+			var field = level.OriginalPark.Heightfield;
+			Require( OriginalParkPlacement.TryGetCell( field, rideSite.X, rideSite.Y, out var x, out var y ), "Totem site is a terrain cell" );
+			offCentre = OriginalParkPlacement.GetCellCenter( field, Math.Min( x + 4, field.CellCountX - 1 ), Math.Min( y + 3, field.CellCountZ - 1 ) );
+		}
+		VerifyPick( rideSite, "Totem cell" );
+		VerifyPick( offCentre, "off-centre cell" );
+	}
+
+	private void VerifyPick( Vector3 cell, string label )
+	{
+		var metrics = Render.Metrics;
+		var site = new System.Numerics.Vector3( cell.X, cell.Y, 0 );
+		Require( ScreenMapping.TryProjectToPixel( site, Camera.ViewMatrix, Camera.ProjMatrix, metrics.PixelSize, out var pixel ), $"{label} projects onto the screen" );
+		var mouse = metrics.PixelToLogical( pixel );
+		Require( level.TryGetPlacementPosition( mouse, new Vector2( Screen.Size.X, Screen.Size.Y ), out var picked ), $"pick the {label}" );
+		Log.Trace( $"Picking: {label} {cell} at output pixel ({pixel.X:F1}, {pixel.Y:F1}), mouse ({mouse.X:F1}, {mouse.Y:F1}) logical -> {picked}." );
+		Require( picked.X == cell.X && picked.Y == cell.Y, $"picking returns the {label}" );
+	}
+
+	private int originalResourceCount;
+	private IEnumerator<bool>? displayChanges;
+	private bool displayChangesDone;
+
+	/// <summary>Advances the runtime display-change sequence by one frame; true when it has finished.</summary>
+	private bool StepDisplayChanges()
+	{
+		displayChanges ??= DisplayChangeSequence();
+		return !displayChanges.MoveNext();
+	}
+
+	/// <summary>
+	/// Switches render scale and method, resizes the window, lets an unconfirmed change revert on its
+	/// timeout and toggles fullscreen (Alt+Enter path) at runtime. Every change must recreate the
+	/// targets at the right size without growing the owned GPU resources.
+	/// </summary>
+	private IEnumerator<bool> DisplayChangeSequence()
+	{
+		var original = Render.DisplaySettings;
+		originalResourceCount = Render.OwnedTargetResourceCount;
+		var generation = Render.TargetGeneration;
+		var originalLogical = Render.Metrics.LogicalSize;
+
+		foreach ( var (mode, percent) in new[] { (UpscaleMode.Linear, 77), (UpscaleMode.Nearest, 59), (UpscaleMode.Native, 100) } )
+		{
+			Render.ChangeDisplaySettings( original with { Upscale = mode, RenderScale = percent } );
+			for ( var frame = 0; frame < 3; frame++ )
+				yield return true;
+			VerifyApplied( percent );
+		}
+
+		if ( original.Mode == WindowMode.Windowed )
+		{
+			var target = new Point2( originalLogical.X - 64, originalLogical.Y - 36 );
+			Render.ChangeDisplaySettings( Render.DisplaySettings with { Width = target.X, Height = target.Y } );
+			foreach ( var wait in WaitFor( () => Render.Metrics.LogicalSize.Equals( target ), 5 ) )
+				yield return wait;
+			Require( Render.Metrics.LogicalSize.Equals( target ), "runtime window resize applies" );
+			VerifyApplied( 100 );
+			Render.ChangeDisplaySettings( Render.DisplaySettings with { Width = originalLogical.X, Height = originalLogical.Y } );
+			foreach ( var wait in WaitFor( () => Render.Metrics.LogicalSize.Equals( originalLogical ), 5 ) )
+				yield return wait;
+			Require( Render.Metrics.LogicalSize.Equals( originalLogical ), "window size restored" );
+		}
+
+		// "Keep these settings?" flow: an unconfirmed change reverts on its own after the timeout.
+		var display = (IDisplaySettings)Render;
+		var beforeConfirmation = display.Current;
+		DisplaySettings? reverted = null;
+		Action<DisplaySettings> onReverted = settings => reverted = settings;
+		display.Reverted += onReverted;
+		display.ApplyWithConfirmation( beforeConfirmation with { Upscale = UpscaleMode.Linear, RenderScale = 50 }, TimeSpan.FromSeconds( 0.5 ) );
+		for ( var frame = 0; frame < 3; frame++ )
+			yield return true;
+		Require( display.IsConfirmationPending, "unconfirmed change is pending" );
+		VerifyApplied( 50 );
+		foreach ( var wait in WaitFor( () => !display.IsConfirmationPending, 5 ) )
+			yield return wait;
+		for ( var frame = 0; frame < 3; frame++ )
+			yield return true;
+		display.Reverted -= onReverted;
+		Require( reverted == beforeConfirmation && display.Current == beforeConfirmation, "unconfirmed change reverts after its timeout" );
+		VerifyApplied( 100 );
+
+		// Fullscreen toggle and back (Alt+Enter / F11 call the same method).
+		var before = Render.Metrics.LogicalSize;
+		Render.ToggleFullscreen();
+		foreach ( var wait in WaitFor( () => !Render.Metrics.LogicalSize.Equals( before ), 10 ) )
+			yield return wait;
+		for ( var frame = 0; frame < 30; frame++ )
+			yield return true;
+		var toggled = Render.Metrics;
+		Require( !toggled.LogicalSize.Equals( before ), "fullscreen toggle changes the output size" );
+		VerifyApplied( 100 );
+		Render.ToggleFullscreen();
+		foreach ( var wait in WaitFor( () => Render.Metrics.LogicalSize.Equals( before ), 10 ) )
+			yield return wait;
+		for ( var frame = 0; frame < 30; frame++ )
+			yield return true;
+		Require( Render.Metrics.LogicalSize.Equals( before ), "fullscreen toggle returns to the previous size" );
+		Log.Trace( $"Fullscreen toggle: {before.X}x{before.Y} -> {toggled} -> {Render.Metrics}." );
+
+		Render.ChangeDisplaySettings( original );
+		for ( var frame = 0; frame < 3; frame++ )
+			yield return true;
+		VerifyApplied( original.Upscale == UpscaleMode.Native ? 100 : original.RenderScale );
+		Log.Trace( $"Display changes: {Render.TargetGeneration - generation} target recreations at runtime; {Render.OwnedTargetResourceCount} owned target resources before and after." );
+	}
+
+	/// <summary>Yields frames until the condition holds or the timeout passes.</summary>
+	private static IEnumerable<bool> WaitFor( Func<bool> condition, double seconds )
+	{
+		var timer = System.Diagnostics.Stopwatch.StartNew();
+		while ( !condition() && timer.Elapsed.TotalSeconds < seconds )
+			yield return true;
+	}
+
+	private void VerifyApplied( int percent )
+	{
+		var scaling = Render.Scaling;
+		var output = Render.Metrics.PixelSize;
+		Require( scaling.EffectivePercent == percent, $"render scale {percent}% applies" );
+		Require( Render.ResolveColorTexture.Width == RenderScaling.ScaleDimension( output.X, percent ) && Render.ResolveColorTexture.Height == RenderScaling.ScaleDimension( output.Y, percent ), $"world target follows {percent}%" );
+		Require( Device.MainSwapchain.Framebuffer.Width == output.X && Render.OutputCaptureTexture!.Width == output.X, "output stays at the drawable size" );
+		Require( Render.OwnedTargetResourceCount == originalResourceCount, "owned GPU targets do not grow" );
 	}
 
 	private static bool Throws( Action action )
@@ -226,6 +411,7 @@ internal sealed class SandboxSmokeTest : IDisposable
 
 	public void Dispose()
 	{
+		watchdog.Dispose();
 		Render.PostUpdate -= Update;
 		SaveFileSystem = originalSaveFileSystem;
 		Directory.Delete( temporaryDirectory, true );

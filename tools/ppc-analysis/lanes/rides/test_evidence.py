@@ -12,6 +12,7 @@ import controller_native
 import animation_evidence
 import motion_evidence
 import seat_evidence
+import save_evidence
 
 
 class RideEvidenceTests(unittest.TestCase):
@@ -25,6 +26,32 @@ class RideEvidenceTests(unittest.TestCase):
                         [(2, "", 0), (2, "nested", 0), (3, "end", 2), (12, "", 0)],
                         [(11, "unknown", 0), (12, "", 0)], [(7, "unfinished", 0)]):
             with self.assertRaises(evidence.pef.PEFError): motion_evidence.scalar_offsets(records)
+
+    def test_save_fixture_identity_rejected_before_inflation(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "foreign.TPWI"
+            path.write_bytes(b"not the known container")
+            with self.assertRaisesRegex(evidence.pef.PEFError, "container identity"):
+                save_evidence.fixture_metadata(path)
+
+    @unittest.skipUnless(os.environ.get("OPENTPW_PC_FIXTURE"), "set OPENTPW_PC_FIXTURE for the known empty coaster body")
+    def test_known_save_fixture_empty_body(self):
+        result = save_evidence.fixture_metadata(Path(os.environ["OPENTPW_PC_FIXTURE"]))
+        self.assertEqual(result["body_bytes"], 16)
+        self.assertEqual(result["coaster_count"], 0)
+        self.assertEqual(result["unqualified_global_values"], (0, 0, 1))
+
+    @unittest.skipUnless(os.environ.get("OPENTPW_MAC_APP"), "set OPENTPW_MAC_APP for native coaster serializer")
+    def test_original_coaster_serialized_fields(self):
+        result = save_evidence.inspect(Path(os.environ["OPENTPW_MAC_APP"]))
+        self.assertEqual(result["boundary"]["trailing_marker"], "SAOC")
+        self.assertFalse(result["boundary"]["markers_are_prefixes"])
+        self.assertEqual(result["controller_header"]["bytes"], 32)
+        self.assertEqual(result["section_record"]["bytes"], 34)
+        floats = [v["wire_offset"] for v in result["section_record"]["fields"] if v["wire_type"] == "f32-le"]
+        self.assertEqual(floats, [13, 17, 21, 25, 29])
+        self.assertIn("insertion ordinal", result["section_record"]["byte_selector"])
+        self.assertGreaterEqual(result["checked_instruction_count"], 120)
 
     @unittest.skipUnless(os.environ.get("OPENTPW_MAC_APP"), "set OPENTPW_MAC_APP for coaster motion witness")
     def test_original_motion_schema_and_boarding(self):

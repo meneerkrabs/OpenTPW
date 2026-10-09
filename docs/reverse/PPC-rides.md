@@ -750,3 +750,84 @@ including the counterexamples and independent upper-cap checks. This repairs
 the standalone evidence tools/docs only, not production admission/controller
 behavior. Unreviewed motion, schema and physical-binding boundaries above
 remain explicit; this correction does not qualify full gameplay fidelity.
+
+## Original TPW coaster save/load contract
+
+`save_evidence.py`/`save-native.json` pin132 native fields/calls plus import
+relocations. Application save`0x11d6c8`→`0x394b8` and load`0x11c038`→`0x39f98`
+are actual original TPW coaster serialization paths. Their byte I/O glues
+`0x1c4b54`/`0x1c4b24` resolve to Bullfrog shared `LbFile_Write`/`LbFile_Read`.
+No original program or imported library was executed.
+
+**The boundary marker is trailing.** Load checks the preceding integer
+0x4b414d45 (wire`EMAK`), runs the coaster loader, then checks0x434f4153
+(wire`SAOC`). Save likewise runs the coaster saver and subsequently writes
+`SAOC`. Thus this coaster body lies **between EMAK and SAOC**, not after SAOC.
+The shared `SavePayloadLayout` inventories marker-delimited regions and leaves
+contents opaque; this native ordering must be applied before assigning a
+region to a module. No shared save reader or its document was edited here.
+
+The body starts with four little-endian32-bit fields: linked-list coaster
+count followed by three globals whose names/semantics are unqualified. Each
+coaster then has a packed32-byte header. Source stores, narrowing operations,
+in-place endian helpers and exact byte I/O calls establish the field widths:
+
+| Header offset | Wire type | Native source |
+| ---: | --- | --- |
+| 0 | u32 | remapped controller flags |
+| 4 | u32 | controller+8 |
+| 8/10/12/14/16 | u16 each | controller+12/+16/+20/+28/+32 |
+| 18 | f32 | controller+44 |
+| 22 | u16 | count linked sections excluding descriptor+4 flag0x10 |
+| 24/26 | u16 each | controller+244/+240 |
+| 28 | u32 | controller+320 |
+
+The section record is packed34 bytes, followed by individually narrowed u16
+link values. Float fields are unaligned; these serialized bytes are distinct
+from the sampled56-byte path records used by the motion tick.
+
+| Section offset | Wire type | Native source |
+| ---: | --- | --- |
+| 0 | u32 | remapped section+8 flags |
+| 4 | u32 | section+112 |
+| 8/10 | u16 each | section descriptor+12/+16 grid coordinates |
+| 12 | u8 | section+4 cell stack insertion ordinal |
+| 13/17/21/25/29 | f32 each | section+232/+216/+220/+224/+248 |
+| 33 | u8 | section+176 number of following u16 link values |
+
+The native list loop uses the full section+176 value, while byte33 narrows it.
+Counts above255 remain unqualified; do not assume that byte is a complete
+decoder bound without recovering the native input limits.
+
+Grid coordinates pass through`0x375c4`, which flattens them as y*mapwidth+x.
+The byte at12 is **not a Direction field**: caller`0x37804` passes it into
+builder`0x35fdc`; `0x36528`→`0x34d90` stores it into section+4 at`0x34f74`,
+inserts the section into the cell's pointer array+52[index*4], and increments
+cell+48. Existing later sections have their+4 indices rewritten while entries
+shift. Byte255 requests a computed insertion ordinal through the builder
+caller. Ordinal validity, complete cell-height ordering and the original
+TrackInfo.Direction schema/axis remain separate dependencies.
+
+This is not a complete flat-record codec. Sections with native type0==2 can
+write an auxiliary u32 count and u16 list before the ordinary record; flagged
+sections can be excluded. After topology, `0x39d84` calls`0x38da4` to serialize
+train/car/passenger data. The full flags remapping, float meanings, auxiliary
+relationships, train payload and malformed-input behavior still require
+qualification. No production or geometry format code was changed.
+
+The only available nonexecuted PC save fixture is jungle Easymode.TPWI,
+container SHA`6d89303d098900364bf5e80b236b64bd85976fb947e9e4609d088547f430b39a`
+and decoded SHA`a3c9a28252c37ad49a8eb78e4a0c5e1d5229d01548fa35801db67015d2589173`.
+It places EMAK at1606442 and SAOC at1606462, leaving a16-byte coaster body
+at1606446..1606462. Its four values are0,0,0,1: empty coaster count with three
+unqualified globals. Body SHA is
+`741939ccb979df0dbf391a6548f88fd9d1873aa3fb996f1df39abc6a66df7025`.
+Verified Patch2 yields identical fixture metadata. No nonempty PC serialized
+track record is available to corroborate the static nonempty layout.
+
+The witness checks fixture identity before bounded known-container inflation,
+emits metadata only and has a rejection regression for foreign containers.
+Twenty-three Python cases pass with the Mac executable and PC fixture enabled.
+This establishes original TPW save-field contracts and one empty PC boundary,
+not TPI COS serialization, a general save importer, full motion or runtime
+equivalence.

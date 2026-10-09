@@ -15,12 +15,13 @@ cannot preserve these independently scheduled operations.
 
 ```sh
 python3 tools/ppc-analysis/lanes/economy/evidence.py /Users/sander/server/game-assets/mac-feral/bin --sam /Users/sander/server/game-assets/theme-park-world-patch2/Data/levels/Standard.sam --language /Users/sander/server/game-assets/theme-park-world/Data/Language/English
+python3 tools/ppc-analysis/lanes/economy/save_bridge_evidence.py /Users/sander/server/game-assets/theme-park-world/Data/levels/jungle/Easymode.TPWI
 python3 -m unittest discover -s tools/ppc-analysis/lanes/economy -p 'test_*.py' -v
 python3 -m unittest discover -s tools/ppc-analysis -p 'test_*.py' -v
 ```
 
 The verifier uses the validated `pef.py` loader and timer witness helpers. It
-checks file identities, 38 application and two macdoze function-region hashes,
+checks file identities, 54 application and two macdoze function-region hashes,
 selected operands, branch targets, constants and import relocations. Output
 is interpreted metadata. These are bounded static witnesses, not formal
 decompilation proofs. Tests contain synthetic fixtures and independently
@@ -734,3 +735,187 @@ ordering, caps, pass disagreement, low-word overflow and 2,048 bounded
 BigInteger reference comparisons. Staff cases cover raw bytes, lack of
 percentage normalization, f32 order and the reviewed bounded domain. The
 production rating and staff calculations remain unwired and unchanged.
+
+## Migration contract before gameplay wiring
+
+This plan uses reviewed standalone contract `974f546`, reader correction
+`ab3c74d`, consumer qualification `c7bedf1`, and independent review of the
+Mac/PC save copy. It does not select a compatibility policy, port formulas,
+or change state import. The proposed name `OriginalMacReference` would mean
+an explicitly selected Mac arithmetic/timing contract, not inferred Windows
+fidelity. Difficulty, Instant Action/Full Simulation and arithmetic
+provenance are separate properties; the scenario/factory lane owns mode
+selection. Matching SAM inputs or saved words does not select a rule set.
+
+### Concrete world and save ownership
+
+World writer `0x105d3c` and reader `0x106708` serialize `mBankAccount` as a
+u16 object ID at world `+0x1da726` (operand/call pairs
+`0x105eac/0x105eb0`, `0x10683c/0x106840`), and `mGameTick` as u32 at
+`+0x1da70c` (`0x105efc/0x105f00`, `0x10688c/0x106890`). Getter
+`0x108424` reads the bank ID at `0x108440`, multiplies by 20 at `0x108464`,
+and loads the object pointer from `ThingArray`, data `0xecef4`, at
+`0x108468`. These are field/call/relocation references, not symbol guesses.
+
+World bank write dispatch calls `0xcba54` at `0x10663c`. The read table's
+type-16 relocation points to `0x107620`, which allocates 296 bytes; the case
+restores the actor ID, calls `0xcba54` at `0x10765c`, and stores the pointer
+in its actor entry. Base actor serializer `0xfa808`, called at `0xcba78`,
+emits X/Y/MapChild/MapParent as four 16-bit fields before the bank words.
+Each actor is preceded by the **next** used-object ID and 32-bit model type
+(`0x106394/0x1063c4`; mirrored readers `0x106c9c/0x106cf0`). The fixture's
+word 7 before bank model 16 therefore names the next actor, not current bank
+ID 8. A full actor walk must establish the current ID through the chain.
+
+The formats lane establishes the leading action recording as
+`u32 published flag, u32 size, size bytes`, followed by the world prefix.
+Our identity-bounded witness repeats this on the PC save: flag 0, recording
+size 1,171, world start 1,179, version 2. Selected fields are:
+
+| PC payload offset | Value | Native world field |
+| --- | --- | --- |
+| 1,189 | 8 | bank ID, `+0x1da726` |
+| 1,193 | 755 | game tick, `+0x1da70c` |
+| 1,197 | 2 | mechanic HQ ID, `+0x1da71a` |
+| 1,199 | 5 | analyser ID, `+0x1da720` |
+| 1,201 | 0 | park-closed word, `+0x1da710` |
+| 1,217 | 6 | research-lab ID, `+0x1da722` |
+| 1,219 | 1 | staff-HQ ID, `+0x1da718` |
+| 1,227 | 0 | world-state word, `+0x1da738`; not GameType |
+
+World write/read call composite `0xd6710` at `0x1062a4/0x106bdc` before
+the map. It calls candidate-pool serializer `0xf5f1c` at `0xd6734`, calendar
+serializer `0xe3d30` with world `+672` at `0xd675c`, and arrival serializer
+`0xcb050` with world `+708` at `0xd6784`. Map serialization follows with
+world `+728` at `0x106c04`. Calendar persisted widths/order are 8,8,4,4,4:
+
+| Calendar runtime offset | Field | Write/read call sites | Persisted bytes |
+| --- | --- | --- | --- |
+| +0 | FunnyTimeStart | `0xe3d80/0xe3e48` | 8 |
+| +8 | SessionStart | `0xe3da4/0xe3e6c` | 8 |
+| +16 | MonthAtLastUpdate | `0xe3dc8/0xe3e90` | 4 |
+| +20 | DayAtLastUpdate | `0xe3dec/0xe3eb4` | 4 |
+| +28 | FunnySecsPerRealSec | `0xe3e10/0xe3ed8` | 4 |
+
+Year cache `+24` is **not serialized**. Initialization calls `0xe42b0`
+through `0x104920 -> 0xd67b0 -> 0xd67d8`; it sets cached month to current
+month minus one and recomputes year. A corresponding post-load reset is not
+established: direct world load ends through actor free-list repair
+`0x107780 -> 0x1077fc`. Do not silently execute the initialization reset on
+restored state. The remaining dependency is outer restore continuation
+`0x11b5ac` after `0x11b680 -> 0x106708`, plus indirect reset paths.
+
+The sole epoch/rate candidate in the identified PC payload is at 6,719:
+FunnyTimeStart 125,911,584,000,000,000; SessionStart
+125,850,128,932,900,000; month cache 1; day cache 2; rate 15,000. Host
+Gregorian conversion of the **Mac equation** with tick 755 gives
+`2000-02-02T18:27:30`, consistent with the month/day caches. Calendar end
+6,747 plus arrival's 18 persisted bytes reaches the formats lane's verified
+map start 6,765. The 18-byte width follows `0xcb050`'s three 4-byte numbers,
+one 4-byte timer (`0x121000`), and two bytes. This is a coherent candidate
+with a traced suffix, **not a fully framed production calendar locator**:
+preceding control-manager/candidate-pool lengths remain unverified
+(`0xd1a60`, `0xf5f1c`). Agreement with this fixture does not prove the PC
+runtime equation. SessionStart is not grounds for inventing offline
+elapsed simulation time.
+
+`save_bridge_evidence.py` validates exact container identity, bounded BILZ
+decompression, decoded identity and selected metadata. The decoded SHA is
+`a3c9a28252c37ad49a8eb78e4a0c5e1d5229d01548fa35801db67015d2589173`
+(1,608,309 bytes). It accepts only this identified save and prints metadata;
+it does not mutate state or offer a production locator. `evidence.py` adds
+16 owner/serializer/restore regions and operand/call/relocation checks.
+Four new synthetic groups exercise truncation/size/trailing-data limits,
+unsigned tick preservation, unnormalized caches, candidate ambiguity and
+identity rejection (13 Python groups total). No original code executes.
+
+### Evidence and port boundaries
+
+| Proposed binding | PC/shared-data/manual support | Mac-only operations | Bridge qualification |
+| --- | --- | --- | --- |
+| Live cash/admission | Reviewed PC bank 87,987/fee 25; exact Mac HFS save copy; manual admission controls | Deposit/debit/profit `0xcbf50/0xcbfdc`, admission `0xcc568` | Retain raw bank snapshot, pending batch and annual profit without inventing category history |
+| Loan offer/state | PC eight-word records; exact amount/APR/term/lender SAM check; zero-APR saved `floor(P/N)`; manual mode restriction | Power repayment, fixed installments, unsigned bookkeeping/payoff `0xcb7a8/0xcc21c/0xccc78` | Preserve stored M and independent Available/Bought/Repaid; PC positive APR/bookkeeping remain unqualified |
+| Calendar/cadence | PC tick 755 and coherent candidate; manual days/monthly wages/year graphs | Product/rate/4 `0xe4394`; civil OS conversion; nominal 8×31 ms park turn in clock lane | Separate original u32 tick from 60 Hz engine tick; qualify event phase/year-cache restore and clock mode gates |
+| Staff wages | Actual PC SAM names/values; baseline/patch-2 global SAM identical; manual monthly wages | Product `0xf46bc`; month debit `0xf2b5c -> 0xf3364` | Map native type/grade and employee records; preserve multiplication bounds/callback order |
+| Staff skill/training | Manual training budget improves skill over time; SAM grade/price inputs | Exact skill `0xf41dc`; allocation/charge order `0xfc1c4/0xf3588` | Preserve grade and percentage byte separately; qualify actor/state binding and reachability |
+| Park rating | PC language label 190; manual qualitative popularity supplies no equation | Eleven provider counts, cap/recount/order `0xc7b24`, monthly history/annual UI | Map every selector/predicate, subtype/upgrade gates; retain two-pass/stable-snapshot precondition |
+
+SAM/copy facts establish inputs or saved layout, not Windows algorithm
+equality. This lane does not prove Mac/PC SAM byte identity; the reviewed
+copy is `Easymode.TPWI`. Pure data import may use reviewed PC fields without
+adopting Mac formulas. Explicitly chosen Mac reference simulation may use
+the standalone rules after bindings and persisted provenance are accepted.
+No automatic policy follows from difficulty, filename, matching repayment,
+or a byte-identical save.
+
+### Current import gap and staged acceptance
+
+`SaveReader.ReadFile -> SaveEconomyRecords.Parse -> OriginalEconomyImport.Apply`
+already carries the PC bank through `OriginalEconomyImport.Records.Bank`.
+`OriginalEconomyImport.cs:84` reports cash 87,987, last 87,787, annual
+profit −12,013 and fee 25. It preserves settings InitialCash 100,000 and the
+constructor fee; the real-data regression explicitly asserts cash 100,000.
+`Records.Loans` retains Available/Bought/MonthsRepaid without creating
+runtime loans. Metadata is available now; absence of state restoration is
+reported. Parent integration may move this ownership into its level factory;
+follow the data path rather than a stale filename.
+
+First qualify a raw original snapshot. Keep all seven bank words and eight
+independent loan words, source container/payload/settings identities and
+per-field qualification. Decode actor-chain ownership so a plausible loan
+run cannot select another object: ECON-045 remains a heuristic locator.
+This fixture has Available only at offer 3, Bought false throughout and
+MonthsRepaid 0; Available is not the inverse of Bought or TakenLoanOffers.
+
+Do not map LastBalance 87,787 to ledger month opening: actual withdrawal
+`0xcbfdc` updates LastBalance after each debit at `0xcc044`. Balance minus
+initial cash and ProfitThisYear cannot manufacture monthly category totals.
+`ParkLedger.Restore` requires opening balance/month/totals/history, which
+the bank prefix does not supply; it has no pending batch/withdrawal flag/
+red-entry/year-profit storage. Cash/fee restoration can be a qualified
+partial import only if unsupported financial history is marked unavailable
+and separately retained native words have defined consumers.
+
+Do not invent annuity RemainingBalance from native loan fields. Current
+`LoanAccount` requires RemainingBalance/MonthsRemaining; native state keeps
+original principal, fixed M, term and repaid count. Native early-payoff
+amount is low-word `M*(N-Repaid)`, not inferred remaining principal. Preserve
+signed-display/unsigned-bit distinctions until the chosen policy consumes
+them. Never recalculate a saved positive-APR M with annuity or the Mac power
+formula as a PC validity gate. Disabled withdrawals, zero-term diagnostic
+continuation, libm and FPSCR qualifications remain explicit.
+
+Next qualify calendar framing/lifecycle, then employee/analyser restoration
+through world IDs. Staff serializer `0xf2c28` names grade at +484
+(`0xf2c80/0xf2ec0`, helpers `0xf530c/0xf5114`) and percentage at +488
+(`0xf2da4/0xf2fbc`, byte helpers `0xcabc4/0xca9bc`), after base serializer
+`0xe4a54`. Those operands/calls are pinned; complete inherited/type-specific
+staff record framing and actual PC actor offsets are pending. Analyser
+serialization and history caller `0xc163c -> 0xc17b8` are the next rating
+state dependencies. Current wage clamps grade and widens product to long;
+native wage uses raw grade/32-bit product. Current rating filters open/
+non-broken objects and adds happiness/cleanliness, unlike native providers.
+Qualify each component before replacing consumers.
+
+M2 denotes the requested restore milestone, not an approved JSON version.
+`ParkSaveFile.CurrentVersion` is 1, strictly rejects unknown/missing members,
+and validates month index with the fixed calendar. A separately reviewed
+versioned provenance/original snapshot representation is required before
+persisting imported native state. Version 1 migration must retain existing
+approximations and must not synthesize original bank/calendar/loan fields.
+Scenario GameType and arithmetic policy must round-trip independently.
+
+| Acceptance test | Required result | Status / next dependency |
+| --- | --- | --- |
+| Current metadata | Actual Bank 87,987/fee 25 and eight exact loans; cash still100,000; positive APR accepted with uncertainty; exact settings mismatches rejected | Existing focused production tests and new fixture witness |
+| Snapshot actor identity | Bank ID 8 resolves to type 16 through full chain; next ID 7 remains independent; ambiguity/truncation rejects before mutation | Owner/type operands pinned; full PC chain framing pending |
+| Partial cash/fee import | Cash 87,987/fee 25 restored once; imported objects uncharged; unknown ledger/history marked unavailable; batch/annualprofit retained | Proposed; parent acceptance and target representation needed |
+| Full loan state | Available/Bought combinations independent; repaid 0/middle/term/raw boundaries survive; saved M never recalculated; Mac policy has no final-remainder settlement | Standalone tests pass; production representation pending |
+| Calendar event phase | Tick 755/rate 15000/epoch yields qualified reference date; save/load across day/month/year neither duplicates nor skips debits; unsaved-year lifecycle and pause/catch-up gates tested | Candidate coherent; `0xd1a60/0xf5f1c` framing and `0x11b5ac` continuation pending |
+| Staff/rating binding | Grade 4 / pct 0 yields skill 80; full byte domain retained; each of 11 selector/cap and eligible/ineligible actors tested; two-pass assumption explicit | 974f tests pass; actual employee/actor binding pending |
+| M2 save continuity | Policy/identities/raw words/availability/event phase round-trip; original/restored continuation identical; version1 retains existing rules | Extend `SaveRoundTripRestoresTheCompleteState`; version/schema decision pending |
+
+Confidence is high for reviewed bank/loan fields and pinned native owner/
+caller operations, medium for the bounded calendar candidate, and
+unqualified for PC numerical algorithms beyond the zero-APR fixture.
+Gameplay/factory/state-import source is unchanged by this plan.

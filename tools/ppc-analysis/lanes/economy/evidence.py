@@ -62,6 +62,22 @@ SPANS = {
     'rating_visitors': (0xc3684, 0xc3758, '8f3f3214ea9fed1c702e11d155d207f834a9c47292643d9dd8b6f24cf16a3567'),
     'rating_objects': (0xc5864, 0xc5968, 'b4a9f5584fa7fc8586ccca42e1ca6e25f454ba5e0b8b3be0ff54d128bce078f1'),
     'rating_staff': (0xc4064, 0xc41a4, 'e2acf06807e7ff2a26cea76d998e0286ba0b2540d5518215e051dafaa3da0f91'),
+    'world_write': (0x105d3c, 0x106708, 'ae1748ed541c3e22dfbd569030f9f8ae95c637d33b226f5a42dcbb8db9e6f499'),
+    'world_read': (0x106708, 0x1077e8, '3ba90e2276fb011bab72c9cbb3d2f34551583e5ee5056b5df84bc2742d0ce0c2'),
+    'world_bank_get': (0x108424, 0x108480, 'cd56a954afa38753b2dc3b3c3785d5271c7b6a8a7dee7d43a6f0d66206c05357'),
+    'world_component_io': (0xd6710, 0xd67b0, 'c0e108dfbd3729eb5f6fe778a863ff1721e912e7dacbbe6305d7d2ca46f4bfee'),
+    'calendar_io': (0xe3d30, 0xe3f0c, '338e566bcdd21963339caf0696de3993a6317b1570420574ffa7bf3eb6d2758b'),
+    'calendar_init_reset': (0xe42b0, 0xe4348, '2fcba293f664a8aac9b302580022c7266cbfc849dd7f5799608962a38866698e'),
+    'world_component_init': (0xd67b0, 0xd67f0, 'a877d03627af467a64da0ef5619bfef287f10c3b915935ad395cb94a71a3df59'),
+    'action_record_io': (0x10bc1c, 0x10bea0, 'b98fd8d7c7a1aafa044e8fd310db612d12becaefe2acd05efae25293d741741a'),
+    'bank_io': (0xcba54, 0xcbf48, '33657afe573f6ece267b5680ec857a0dfe1039a0a06a7dde69060df336903580'),
+    'thing_base_io': (0xfa808, 0xfa9a4, 'c52f5315e5b3fa8c5e1ac55c67d6db742db295056da44c2173fb8ff73872f6ca'),
+    'bank_withdraw': (0xcbfdc, 0xcc084, 'c85be4bd002fa2895bca0c6e26b26678a20ad9a4cee8383f718b593163941105'),
+    'arrival_io': (0xcb050, 0xcb274, 'de82716f4b5bb6271def1c49e23087815569c0b7fa2d608c555e9e4fcbb181cb'),
+    'arrival_timer_io': (0x121000, 0x121098, 'e86611790e6794db4aad56fea1bfc8b3c4bde7a745cf98240cb2cd4f4f92e68a'),
+    'save_restore': (0x11b5ac, 0x11c480, 'ab474f4ea14f1aa0bb78d52bc4b9f1cee1933631c125bd5231683ad2113c3215'),
+    'world_init': (0x10474c, 0x104da8, 'f9b72fae9b7729a6d6ad027bfe0eb0a4daab46952c142b99b190c77800856da4'),
+    'staff_io': (0xf2c28, 0xf30b0, '7539e24d28468ad2227b0a8f4f22d28c25f50eaf2cf4aec5ba6231e509a9c32e'),
 }
 
 
@@ -198,6 +214,25 @@ def inspect(root: Path) -> dict:
         (0x16f90, 14, (27, 0, 1)), (0x18354, 36, (30, 29, 0)),
         (0xcc158, 11, (0, 3, 13)), (0xcc1e8, 36, (0, 29, 292)),
         (0xcb9fc, 14, (5, 0, 13)), (0xde940, 14, (4, 0, 5)),
+        (0x105eac, 14, (4, 4, -22746)), (0x10683c, 14, (4, 4, -22746)),
+        (0x105efc, 14, (4, 4, -22772)), (0x10688c, 14, (4, 4, -22772)),
+        (0x10842c, 15, (4, 3, 30)), (0x108440, 40, (0, 4, -22746)),
+        (0x108464, 7, (0, 0, 20)), (0x107620, 14, (3, 0, 296)),
+        (0xd6758, 14, (3, 27, 672)), (0xd6780, 14, (3, 27, 708)),
+        (0xd67d4, 14, (3, 31, 672)), (0x106bf8, 14, (3, 25, 728)),
+        (0xe3d98, 14, (4, 29, 8)), (0xe3dbc, 14, (4, 29, 16)),
+        (0xe3de0, 14, (4, 29, 20)), (0xe3e04, 14, (4, 29, 28)),
+        (0xe3e60, 14, (4, 29, 8)), (0xe3e84, 14, (4, 29, 16)),
+        (0xe3ea8, 14, (4, 29, 20)), (0xe3ecc, 14, (4, 29, 28)),
+        (0xcbab0, 14, (4, 27, 280)), (0xcbad0, 14, (4, 27, 12)),
+        (0xcbaf4, 14, (4, 27, 16)), (0xcbb18, 14, (4, 27, 276)),
+        (0xcbb3c, 14, (4, 27, 284)), (0xcbb60, 14, (4, 27, 288)),
+        (0xcbb84, 14, (4, 27, 292)), (0xcc044, 36, (0, 30, 284)),
+        (0x10bd9c, 14, (4, 28, 8)), (0x10be00, 14, (4, 29, 0)),
+        (0xfa84c, 14, (4, 29, 4)), (0xfa870, 14, (4, 29, 6)),
+        (0xfa894, 14, (4, 29, 10)), (0xfa8b8, 14, (4, 29, 8)),
+        (0xf2c80, 14, (4, 27, 484)), (0xf2ec0, 14, (4, 27, 484)),
+        (0xf2da4, 14, (4, 27, 488)), (0xf2fbc, 14, (4, 27, 488)),
     ]:
         require(d_fields(c, addr, opcode), operands, f'field/immediate {addr:#x}')
     for offset, operation, regs in [(0xf4760, 235, (3, 4, 0)),
@@ -229,6 +264,30 @@ def inspect(root: Path) -> dict:
     require(call_target(c, 0xc17b8), 0xc7b24, 'rating history writer')
     require(call_target(c, 0xcba00), 0x116740, 'bank subscribes to year event')
     require(call_target(c, 0xfac04), 0xcc120, 'actor dispatcher bank handler')
+    for at, target in [
+        (0x105eb0, 0xbefc), (0x106840, 0xbffc),
+        (0x105f00, 0xc90c), (0x106890, 0xc3f8),
+        (0x10663c, 0xcba54), (0x10765c, 0xcba54), (0xcba78, 0xfa808),
+        (0x1062a4, 0xd6710), (0x106bdc, 0xd6710),
+        (0xd6734, 0xf5f1c), (0xd675c, 0xe3d30), (0xd6784, 0xcb050),
+        (0x106c04, 0xd6c90), (0xd67d8, 0xe42b0), (0x104920, 0xd67b0),
+        (0xe3d80, 0xcacc0), (0xe3da4, 0xcacc0), (0xe3dc8, 0xc7f8),
+        (0xe3dec, 0xc7f8), (0xe3e10, 0xc90c),
+        (0xe3e48, 0xca6d4), (0xe3e6c, 0xca6d4), (0xe3e90, 0xc2fc),
+        (0xe3eb4, 0xc2fc), (0xe3ed8, 0xc3f8),
+        (0x11b610, 0x10bc1c), (0x11b680, 0x106708),
+        (0x10bda8, 0xc2fc), (0x10bdd4, 0xcd0b4),
+        (0xfa858, 0xcde50), (0xfa87c, 0xcde50), (0xfa8a0, 0xbefc), (0xfa8c4, 0xbefc),
+        (0xcb0c8, 0x121000), (0xcb1b8, 0x121000),
+        (0x12103c, 0xc90c), (0x121070, 0xc3f8),
+        (0xf2c4c, 0xe4a54), (0xf2c8c, 0xf530c), (0xf2ecc, 0xf5114),
+        (0xf2db0, 0xcabc4), (0xf2fc8, 0xca9bc),
+    ]:
+        require(call_target(c, at), target, f'owner/serializer call {at:#x}')
+    xform(c, 0x108468, 31, 23, (3, 31, 0))
+    relocs = c.relocs[c.data_section.index]
+    require((relocs[0xa44].target, relocs[0xa44].addend), (1, 0xecef4), 'ThingArray relocation')
+    require((relocs[0x449b4].target, relocs[0x449b4].addend), (0, 0x107620), 'type16 bank restore case')
     rating_sources = {}
     # name, comparison, register, limit, branch, cap store, cap register/value,
     # provider call/entry, selector. Caps are direct operands, not SAM data.
@@ -330,6 +389,15 @@ def inspect(root: Path) -> dict:
             'rating_current_control': 44450, 'rating_label_control': 44451,
             'rating_label_uitext_index': 190, 'rating_history_offset': 0x213b0,
             'rating_component_sources': rating_sources,
+            'world_economy_ownership': {'bank_id_offset': 0x1da726, 'game_tick_offset': 0x1da70c,
+                                        'calendar_offset': 672, 'arrival_offset': 708, 'map_offset': 728,
+                                        'bank_id_width': 2, 'thing_array_data': 0xecef4,
+                                        'thing_array_entry_stride': 20, 'bank_type': 16,
+                                        'bank_restore_case': 0x107620, 'calendar_serializer': 0xe3d30,
+                                        'calendar_persisted_bytes': 28,
+                                        'calendar_year_cache_offset_not_serialized': 24,
+                                        'calendar_init_reset': 0xe42b0,
+                                        'calendar_post_load_reset': 'not established'},
             'staff_skill_operation_order': 'double percentage/100; f32 grade; double sum; f32 round; f32 multiply by20; u32 saturation',
             'mac_formula': 'trunc_u32(P * (1 + APR/100) ** (months/24) / months)',
             'payoff_formula': 'monthly_payment * (term - months_repaid)',

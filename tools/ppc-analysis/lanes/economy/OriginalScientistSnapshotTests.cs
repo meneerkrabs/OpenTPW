@@ -26,6 +26,7 @@ internal static class OriginalScientistSnapshotTests
 		Run( "caller bounds and expected world ID", BoundsAndWorldId );
 		Run( "following actors and payload tail stay unqualified", UnparsedTail );
 		Run( "unidentified containers fail before decoding", Identity );
+		OriginalScientistSnapshotEnvelopeTests.RunAll( Run );
 		if ( args.Length == 2 )
 			Run( "identified actual PC fixture fields and provenance", () => ActualFixture( args[1] ) );
 		else
@@ -41,14 +42,14 @@ internal static class OriginalScientistSnapshotTests
 		catch ( Exception error ) { failures++; Console.Error.WriteLine( $"FAIL {name}: {error.Message}" ); }
 	}
 
-	private static void Equal<T>( T expected, T actual )
+	internal static void Equal<T>( T expected, T actual )
 	{
 		assertions++;
 		if ( !Equals( expected, actual ) )
 			throw new InvalidOperationException( $"Expected {expected}, got {actual}." );
 	}
 
-	private static void Reject<T>( Action action ) where T : Exception
+	internal static void Reject<T>( Action action ) where T : Exception
 	{
 		assertions++;
 		try { action(); }
@@ -60,7 +61,7 @@ internal static class OriginalScientistSnapshotTests
 	private static void U16( byte[] payload, int offset, ushort value ) => BinaryPrimitives.WriteUInt16LittleEndian( payload.AsSpan( offset, 2 ), value );
 	private static uint FloatBits( float value ) => unchecked((uint)BitConverter.SingleToInt32Bits( value ));
 
-	private static (byte[] Payload, int Header, int Body, int Staff) Synthetic()
+	internal static (byte[] Payload, int Header, int Body, int Staff) Synthetic()
 	{
 		const int header = 4 + 8 + 390 + 135;
 		const int body = header + 8;
@@ -224,6 +225,7 @@ internal static class OriginalScientistSnapshotTests
 		Equal( "09612b0d278adcaec1ac978505e3540eba6cf770835446234adc336adb3bcc75", snapshot.InlineNameSha256 );
 		Equal( 33, snapshot.InlineNameCodeUnits.Count ); Equal( true, snapshot.HasUnparsedUsedActors );
 		Equal( false, snapshot.IsCompleteWorldSnapshot ); Equal( 215879, snapshot.PayloadBytesAfterRecord );
+		OriginalScientistSnapshotEnvelopeTests.CheckRoundTrip( snapshot );
 		using ( var compressed = new MemoryStream( container, 0x629, container.Length - 0x629, writable: false ) )
 		using ( var decoder = new ZLibStream( compressed, CompressionMode.Decompress ) )
 		{

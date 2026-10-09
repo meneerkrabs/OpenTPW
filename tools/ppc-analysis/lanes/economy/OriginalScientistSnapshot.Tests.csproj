@@ -10,5 +10,7 @@
   <ItemGroup>
     <Compile Include="OriginalScientistSnapshot.cs" />
     <Compile Include="OriginalScientistSnapshotTests.cs" />
+    <Compile Include="OriginalScientistSnapshotEnvelope.cs" />
+    <Compile Include="OriginalScientistSnapshotEnvelopeTests.cs" />
   </ItemGroup>
 </Project>

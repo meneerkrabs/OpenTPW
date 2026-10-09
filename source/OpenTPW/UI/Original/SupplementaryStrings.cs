@@ -44,10 +44,13 @@ public enum OpenTpwText
 	GameFolder,
 	CdFolder,
 	ChangeFolder,
+	EnterFolderPath,
 	RemoveFolder,
 	NoFolder,
 	RestartToApply,
 	FolderNotUsable,
+	BonusFolder,
+	BonusNotFound,
 }
 
 public static class SupplementaryStrings
@@ -105,6 +108,7 @@ public static class SupplementaryStrings
 		[OpenTpwText.GameFiles] = new[] { "Game files", "Spilfiler", "Spelbestanden", "Fichiers du jeu", "Spieldateien", "Spelfiler" },
 		[OpenTpwText.GameFolder] = new[] { "Game folder:", "Spilmappe:", "Spelmap:", "Dossier du jeu :", "Spielordner:", "Spelmapp:" },
 		[OpenTpwText.CdFolder] = new[] { "CD (music and movies):", "Cd (musik og film):", "Cd (muziek en films):", "CD (musique et films) :", "CD (Musik und Filme):", "Cd (musik och filmer):" },
+		[OpenTpwText.EnterFolderPath] = new[] { "Enter path...", "Indtast sti...", "Pad invoeren...", "Saisir le chemin...", "Pfad eingeben...", "Skriv sökväg..." },
 		[OpenTpwText.ChangeFolder] = new[] { "Change...", "Skift...", "Wijzigen...", "Modifier...", "Wählen...", "Välj..." },
 		[OpenTpwText.RemoveFolder] = new[] { "Remove", "Fjern", "Verwijderen", "Retirer", "Entfernen", "Ta bort" },
 		[OpenTpwText.NoFolder] = new[] { "None", "Ingen", "Geen", "Aucun", "Keine", "Ingen" },
@@ -122,6 +126,14 @@ public static class SupplementaryStrings
 			"Ce dossier ne contient pas de données de Theme Park World.",
 			"Dieser Ordner enthält keine Theme Park World-Daten.",
 			"Den här mappen innehåller inga Theme Park World-data." },
+		[OpenTpwText.BonusFolder] = new[] { "Bonus content:", "Bonusindhold:", "Bonusinhoud:", "Contenu bonus :", "Bonusinhalte:", "Bonusinnehåll:" },
+		[OpenTpwText.BonusNotFound] = new[] {
+			"No bonus content was found in this folder or zip file.",
+			"Der blev ikke fundet noget bonusindhold i denne mappe eller zip-fil.",
+			"Er is geen bonusinhoud gevonden in deze map of zip-bestand.",
+			"Aucun contenu bonus n'a été trouvé dans ce dossier ou fichier zip.",
+			"In diesem Ordner oder dieser ZIP-Datei wurden keine Bonusinhalte gefunden.",
+			"Inget bonusinnehåll hittades i den här mappen eller zip-filen." },
 		[OpenTpwText.NotAvailable] = new[] { "Not available yet", "Endnu ikke tilgængelig", "Nog niet beschikbaar", "Pas encore disponible", "Noch nicht verfügbar", "Inte tillgänglig ännu" },
 		[OpenTpwText.OnlyOnePrototypeRide] = new[] {
 			"Only one ride can be placed in this build",

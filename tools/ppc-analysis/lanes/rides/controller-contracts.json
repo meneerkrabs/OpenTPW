@@ -1,0 +1,528 @@
+{
+  "coast_noop_command": 7,
+  "commands": [
+    {
+      "accumulator": "preserve",
+      "accumulator_store_addresses": [],
+      "direct_controller_calls": [
+        252864
+      ],
+      "family": "COAST",
+      "native_case": 749292,
+      "parameter": "resolved input",
+      "raw_command": 1,
+      "variable_gate_address": null
+    },
+    {
+      "accumulator": "result",
+      "accumulator_store_addresses": [
+        749504
+      ],
+      "direct_controller_calls": [
+        253204
+      ],
+      "family": "COAST",
+      "native_case": 749420,
+      "parameter": "optional variable output",
+      "raw_command": 2,
+      "variable_gate_address": 749508
+    },
+    {
+      "accumulator": "result",
+      "accumulator_store_addresses": [
+        749628
+      ],
+      "direct_controller_calls": [
+        253276
+      ],
+      "family": "COAST",
+      "native_case": 749544,
+      "parameter": "optional variable output",
+      "raw_command": 3,
+      "variable_gate_address": 749632
+    },
+    {
+      "accumulator": "preserve",
+      "accumulator_store_addresses": [],
+      "direct_controller_calls": [
+        253436
+      ],
+      "family": "COAST",
+      "native_case": 749668,
+      "parameter": "resolved input",
+      "raw_command": 4,
+      "variable_gate_address": null
+    },
+    {
+      "accumulator": "preserve",
+      "accumulator_store_addresses": [],
+      "direct_controller_calls": [
+        253640
+      ],
+      "family": "COAST",
+      "native_case": 749792,
+      "parameter": "resolved input",
+      "raw_command": 5,
+      "variable_gate_address": null
+    },
+    {
+      "accumulator": "preserve",
+      "accumulator_store_addresses": [],
+      "direct_controller_calls": [
+        253732
+      ],
+      "family": "COAST",
+      "native_case": 749916,
+      "parameter": "resolved input",
+      "raw_command": 6,
+      "variable_gate_address": null
+    },
+    {
+      "accumulator": "preserve",
+      "accumulator_store_addresses": [],
+      "direct_controller_calls": [],
+      "family": "COAST",
+      "native_case": 750040,
+      "parameter": "consumed and ignored",
+      "raw_command": 7,
+      "variable_gate_address": null
+    },
+    {
+      "accumulator": "preserve",
+      "accumulator_store_addresses": [],
+      "direct_controller_calls": [
+        252668,
+        253544
+      ],
+      "family": "COAST",
+      "native_case": 749200,
+      "parameter": "consumed and ignored",
+      "raw_command": 8,
+      "variable_gate_address": null
+    },
+    {
+      "accumulator": "result",
+      "accumulator_store_addresses": [
+        747432
+      ],
+      "direct_controller_calls": [
+        151976
+      ],
+      "family": "BUMP",
+      "native_case": 747320,
+      "parameter": "required variable input",
+      "raw_command": 1,
+      "variable_gate_address": 747396
+    },
+    {
+      "accumulator": "result",
+      "accumulator_store_addresses": [
+        747560
+      ],
+      "direct_controller_calls": [
+        152212
+      ],
+      "family": "BUMP",
+      "native_case": 747440,
+      "parameter": "required variable output",
+      "raw_command": 2,
+      "variable_gate_address": 747516
+    },
+    {
+      "accumulator": "preserve",
+      "accumulator_store_addresses": [],
+      "direct_controller_calls": [
+        124236
+      ],
+      "family": "BUMP",
+      "native_case": 747780,
+      "parameter": "consumed and ignored",
+      "raw_command": 3,
+      "variable_gate_address": null
+    },
+    {
+      "accumulator": "result",
+      "accumulator_store_addresses": [
+        747636
+      ],
+      "direct_controller_calls": [
+        148184
+      ],
+      "family": "BUMP",
+      "native_case": 747568,
+      "parameter": "consumed and ignored",
+      "raw_command": 4,
+      "variable_gate_address": null
+    },
+    {
+      "accumulator": "host field +40",
+      "accumulator_store_addresses": [
+        747908
+      ],
+      "direct_controller_calls": [],
+      "family": "BUMP",
+      "native_case": 747848,
+      "parameter": "consumed and ignored",
+      "raw_command": 5,
+      "variable_gate_address": null
+    },
+    {
+      "accumulator": "preserve",
+      "accumulator_store_addresses": [],
+      "direct_controller_calls": [
+        122400
+      ],
+      "family": "BUMP",
+      "native_case": 747712,
+      "parameter": "consumed and ignored",
+      "raw_command": 6,
+      "variable_gate_address": null
+    },
+    {
+      "accumulator": "preserve",
+      "accumulator_store_addresses": [],
+      "direct_controller_calls": [
+        121888
+      ],
+      "family": "BUMP",
+      "native_case": 747644,
+      "parameter": "consumed and ignored",
+      "raw_command": 7,
+      "variable_gate_address": null
+    },
+    {
+      "accumulator": "preserve",
+      "accumulator_store_addresses": [],
+      "direct_controller_calls": [
+        123216,
+        123784
+      ],
+      "family": "BUMP",
+      "native_case": 747916,
+      "parameter": "resolved input",
+      "raw_command": 8,
+      "variable_gate_address": null
+    },
+    {
+      "accumulator": "preserve",
+      "accumulator_store_addresses": [],
+      "direct_controller_calls": [
+        123052,
+        123784
+      ],
+      "family": "BUMP",
+      "native_case": 748060,
+      "parameter": "resolved input",
+      "raw_command": 9,
+      "variable_gate_address": null
+    },
+    {
+      "accumulator": "preserve",
+      "accumulator_store_addresses": [],
+      "direct_controller_calls": [
+        122796
+      ],
+      "family": "BUMP",
+      "native_case": 748204,
+      "parameter": "consumed and ignored",
+      "raw_command": 10,
+      "variable_gate_address": null
+    },
+    {
+      "accumulator": "result",
+      "accumulator_store_addresses": [
+        748356
+      ],
+      "direct_controller_calls": [
+        125372
+      ],
+      "family": "BUMP",
+      "native_case": 748272,
+      "parameter": "optional variable output",
+      "raw_command": 11,
+      "variable_gate_address": 748360
+    },
+    {
+      "accumulator": "result",
+      "accumulator_store_addresses": [
+        748460
+      ],
+      "direct_controller_calls": [
+        147432
+      ],
+      "family": "BUMP",
+      "native_case": 748396,
+      "parameter": "consumed and ignored",
+      "raw_command": 12,
+      "variable_gate_address": null
+    },
+    {
+      "accumulator": "original input",
+      "accumulator_store_addresses": [
+        748592
+      ],
+      "direct_controller_calls": [
+        124660
+      ],
+      "family": "BUMP",
+      "native_case": 748468,
+      "parameter": "resolved input multiplied by 30",
+      "raw_command": 13,
+      "variable_gate_address": null
+    },
+    {
+      "accumulator": "original input",
+      "accumulator_store_addresses": [
+        748724
+      ],
+      "direct_controller_calls": [
+        124660
+      ],
+      "family": "BUMP",
+      "native_case": 748600,
+      "parameter": "resolved input negated",
+      "raw_command": 14,
+      "variable_gate_address": null
+    },
+    {
+      "accumulator": "result",
+      "accumulator_store_addresses": [
+        748800
+      ],
+      "direct_controller_calls": [
+        153144
+      ],
+      "family": "BUMP",
+      "native_case": 748732,
+      "parameter": "consumed and ignored",
+      "raw_command": 16,
+      "variable_gate_address": null
+    },
+    {
+      "accumulator": "preserve",
+      "accumulator_store_addresses": [],
+      "direct_controller_calls": [
+        489136,
+        489812,
+        489136,
+        489812
+      ],
+      "family": "BUMP",
+      "native_case": 748808,
+      "parameter": "resolved input",
+      "raw_command": 17,
+      "variable_gate_address": null
+    },
+    {
+      "accumulator": "preserve",
+      "accumulator_store_addresses": [],
+      "direct_controller_calls": [
+        1684120,
+        408416
+      ],
+      "family": "TOUR",
+      "native_case": 745276,
+      "parameter": "resolved input",
+      "raw_command": 1,
+      "variable_gate_address": null
+    },
+    {
+      "accumulator": "preserve",
+      "accumulator_store_addresses": [],
+      "direct_controller_calls": [
+        419152
+      ],
+      "family": "TOUR",
+      "native_case": 745620,
+      "parameter": "consumed and ignored",
+      "raw_command": 2,
+      "variable_gate_address": null
+    },
+    {
+      "accumulator": "result",
+      "accumulator_store_addresses": [
+        745744
+      ],
+      "direct_controller_calls": [
+        420452
+      ],
+      "family": "TOUR",
+      "native_case": 745632,
+      "parameter": "required variable input",
+      "raw_command": 3,
+      "variable_gate_address": 745708
+    },
+    {
+      "accumulator": "result",
+      "accumulator_store_addresses": [
+        745872
+      ],
+      "direct_controller_calls": [
+        419716
+      ],
+      "family": "TOUR",
+      "native_case": 745752,
+      "parameter": "required variable output",
+      "raw_command": 4,
+      "variable_gate_address": 745828
+    },
+    {
+      "accumulator": "preserve",
+      "accumulator_store_addresses": [],
+      "direct_controller_calls": [
+        422556
+      ],
+      "family": "TOUR",
+      "native_case": 745880,
+      "parameter": "resolved input",
+      "raw_command": 5,
+      "variable_gate_address": null
+    },
+    {
+      "accumulator": "preserve",
+      "accumulator_store_addresses": [],
+      "direct_controller_calls": [
+        420812
+      ],
+      "family": "TOUR",
+      "native_case": 746004,
+      "parameter": "resolved input multiplied by 1000",
+      "raw_command": 8,
+      "variable_gate_address": null
+    },
+    {
+      "accumulator": "preserve",
+      "accumulator_store_addresses": [],
+      "direct_controller_calls": [
+        421720
+      ],
+      "family": "TOUR",
+      "native_case": 746132,
+      "parameter": "resolved input",
+      "raw_command": 9,
+      "variable_gate_address": null
+    },
+    {
+      "accumulator": "result",
+      "accumulator_store_addresses": [
+        746320
+      ],
+      "direct_controller_calls": [
+        422624
+      ],
+      "family": "TOUR",
+      "native_case": 746256,
+      "parameter": "consumed and ignored",
+      "raw_command": 10,
+      "variable_gate_address": null
+    },
+    {
+      "accumulator": "result",
+      "accumulator_store_addresses": [
+        746392
+      ],
+      "direct_controller_calls": [
+        422752
+      ],
+      "family": "TOUR",
+      "native_case": 746328,
+      "parameter": "consumed and ignored",
+      "raw_command": 11,
+      "variable_gate_address": null
+    },
+    {
+      "accumulator": "preserve",
+      "accumulator_store_addresses": [],
+      "direct_controller_calls": [
+        422872
+      ],
+      "family": "TOUR",
+      "native_case": 746400,
+      "parameter": "resolved input",
+      "raw_command": 12,
+      "variable_gate_address": null
+    },
+    {
+      "accumulator": "preserve",
+      "accumulator_store_addresses": [],
+      "direct_controller_calls": [
+        421312
+      ],
+      "family": "TOUR",
+      "native_case": 746524,
+      "parameter": "resolved input",
+      "raw_command": 14,
+      "variable_gate_address": null
+    },
+    {
+      "accumulator": "result",
+      "accumulator_store_addresses": [
+        746712
+      ],
+      "direct_controller_calls": [
+        422676
+      ],
+      "family": "TOUR",
+      "native_case": 746648,
+      "parameter": "consumed and ignored",
+      "raw_command": 15,
+      "variable_gate_address": null
+    },
+    {
+      "accumulator": "result",
+      "accumulator_store_addresses": [
+        747088
+      ],
+      "direct_controller_calls": [
+        423004
+      ],
+      "family": "TOUR",
+      "native_case": 746968,
+      "parameter": "required variable output",
+      "raw_command": 16,
+      "variable_gate_address": 747044
+    },
+    {
+      "accumulator": "preserve",
+      "accumulator_store_addresses": [],
+      "direct_controller_calls": [
+        422916
+      ],
+      "family": "TOUR",
+      "native_case": 746720,
+      "parameter": "resolved input",
+      "raw_command": 17,
+      "variable_gate_address": null
+    },
+    {
+      "accumulator": "preserve",
+      "accumulator_store_addresses": [],
+      "direct_controller_calls": [
+        422960
+      ],
+      "family": "TOUR",
+      "native_case": 746844,
+      "parameter": "resolved input",
+      "raw_command": 18,
+      "variable_gate_address": null
+    }
+  ],
+  "schema": 1,
+  "scope": "static native bridge contracts; valid host/controller precondition",
+  "sha256": "04809cd4ccee5433c7fb0b7c93d32f6a7aa629c1849181c0b7906415e5e295f5",
+  "unimplemented_or_invalid_commands": {
+    "BUMP": [
+      0,
+      15
+    ],
+    "COAST": [
+      0
+    ],
+    "TOUR": [
+      0,
+      6,
+      7,
+      13
+    ]
+  }
+}

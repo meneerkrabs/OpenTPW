@@ -188,7 +188,7 @@ public sealed class ObjectCatalog
 	private static bool bonusFromEnvironment = true;
 
 	/// <summary>
-	/// Optional official bonus-content directory (read-only), from <c>--bonus-data</c> or <c>OPENTPW_BONUS_DATA</c>.
+	/// Optional official bonus-content directory (read-only), from <c>--bonus-data</c>, <c>OPENTPW_BONUS_DATA</c>, the saved setup or <c>&lt;config&gt;/bonus</c> (see <c>BonusContent.ResolveRoot</c>).
 	/// It may point at the directory containing <c>levels</c> or any parent up to two levels above it. Its
 	/// <c>levels/&lt;theme&gt;/&lt;category&gt;/_name_N.wad</c> archives are merged into the catalogs as if they were
 	/// dropped into the game's Data directories.

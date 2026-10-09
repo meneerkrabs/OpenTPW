@@ -7,8 +7,8 @@ namespace OpenTPW;
 /// The original advisor model (<c>global/advisor.wad/Advisor.MD2</c>) drawn in a corner
 /// viewport, saying one global speech clip with its mouth driven by the clip's LIP marks
 /// (see docs/LIPS.md). The model carries five co-located mouth meshes; the LIP data only
-/// distinguishes talking from silence, so talking shows "Mouth - Aah" and silence shows
-/// "Mouth - Normal". Which shape the original game picks while talking, how it poses the
+/// distinguishes talking from silence. As in the original, silence shows "Mouth - Normal" and
+/// talking shows a mouth picked at random every 100 ms (<see cref="AdvisorMouth"/>). How it poses the
 /// head/hands (the <c>Advisorm*</c> clips carry undecoded non-rigid tracks) and which hat it shows are not
 /// known; hats, the spatula, the bow tie and the blink meshes are hidden. The model is drawn in
 /// its bind pose (see <see cref="NodeWorld"/>).
@@ -20,10 +20,10 @@ internal sealed class Advisor : IDisposable
 	// [DATA:global/Speech/speechHD.SDT] [DATA:global/Speech/lips.wad]
 	internal const string SpeechArchivePath = "/global/Speech/speechHD";
 	internal const string LipArchivePath = "/global/Speech/lips";
-	// [DATA:Advisor.MD2:mesh names "Mouth - Normal"/"Mouth - Aah"]
+	// [DATA:Advisor.MD2:mesh names "Mouth - Normal", "Mouth - Aah", "Mouth - Eee", "Mouth - Ooh", "Mouth - Sss"]
 	internal const string ClosedMouth = "Mouth - Normal";
-	// [APPROX:ADVISOR-001] Talking always shows "Mouth - Aah"; Eee/Ooh/Sss are never used — evidence needed: decoded Advisorm13 mouth tracks or a runtime capture of the talking advisor
-	internal const string TalkingMouth = "Mouth - Aah";
+	// [APPROX:ADVISOR-001] The original's mouth nodes 1–5 are these meshes in this order (node 1, shown while silent, is Normal) — evidence needed: the node-lookup jump table at 0x1019B3DC or the MD2 node ids
+	internal static readonly string[] Mouths = { ClosedMouth, "Mouth - Aah", "Mouth - Eee", "Mouth - Ooh", "Mouth - Sss" };
 	// [DATA:global/Speech/lips.wad:members sp_001–sp_637]
 	internal const int FirstClip = 1;
 	internal const int LastClip = 637;
@@ -33,7 +33,7 @@ internal sealed class Advisor : IDisposable
 	/// <summary>Every unproven advisor/lip-sync rule (docs/LIPS.md "Approximation register"); logged once when an advisor is created.</summary>
 	internal static readonly (string Id, string Rule)[] Approximations =
 	{
-		("ADVISOR-001", "talking always shows Mouth - Aah"),
+		("ADVISOR-001", "mouth nodes 1–5 are the Normal, Aah, Eee, Ooh and Sss meshes in that order"),
 		("ADVISOR-002", "hats, spatula, bow tie and blink meshes hidden"),
 		("ADVISOR-003", "bottom-left viewport, 1/3 of the short screen side, 16 px margin"),
 		("ADVISOR-004", "overlay camera at z = -70, 40° FOV, near 1, far 500"),
@@ -50,6 +50,7 @@ internal sealed class Advisor : IDisposable
 	};
 
 	private readonly List<(string Name, Model Model, Material Material)> parts = new();
+	private readonly AdvisorMouth mouth = new( new Random() );
 	private SpeechAudioPlayer? player;
 	private LipSyncTimeline? timeline;
 	private bool disposed;
@@ -64,7 +65,7 @@ internal sealed class Advisor : IDisposable
 	public TimeSpan Position => player?.Position ?? TimeSpan.Zero;
 	public bool IsSpeaking => player != null && !player.IsFinished;
 	public string ClockSource => player?.ClockSource ?? "none";
-	public string MouthMesh => MouthFor( timeline, Position );
+	public string MouthMesh => mouth.Current;
 	/// <summary>Mouth mesh used by the most recent <see cref="Render"/> call.</summary>
 	public string? LastRenderedMouth { get; private set; }
 
@@ -94,13 +95,13 @@ internal sealed class Advisor : IDisposable
 		var textureFiles = FileSystem.GetFiles( $"{ArchivePath}/textures" );
 		try
 		{
-			foreach ( var name in BodyMeshes.Append( ClosedMouth ).Append( TalkingMouth ) )
+			foreach ( var name in BodyMeshes.Concat( Mouths ) )
 			{
 				var mesh = modelFile.Meshes.SingleOrDefault( candidate => candidate.Name == name )
 					?? throw new InvalidDataException( $"The original advisor model has no '{name}' mesh." );
 				// [APPROX:ADVISOR-006] Bind pose only; every Advisorm*.MD2 clip has undecoded non-rigid tracks — evidence needed: decoded vertex/visibility track payloads
 				var vertices = ConvertMesh( mesh, restTransforms[mesh.NodeIndex] );
-				if ( name is ClosedMouth or TalkingMouth )
+				if ( Mouths.Contains( name ) )
 					foreach ( var vertex in vertices )
 					{
 						mouthMin = System.Numerics.Vector3.Min( mouthMin, vertex.Position.GetSystemVector3() );
@@ -166,8 +167,8 @@ internal sealed class Advisor : IDisposable
 		return reversed;
 	}
 
-	internal static string MouthFor( LipSyncTimeline? timeline, TimeSpan position ) =>
-		timeline != null && timeline.IsTalking( position ) ? TalkingMouth : ClosedMouth;
+	internal static bool IsTalking( LipSyncTimeline? timeline, TimeSpan position ) =>
+		timeline != null && timeline.IsTalking( position );
 
 	internal static string ClipName( int number )
 	{
@@ -241,10 +242,10 @@ internal sealed class Advisor : IDisposable
 
 		// [APPROX:ADVISOR-008] Speech starts at the first rendered advisor frame — evidence needed: original advisor speech trigger timing
 		player?.Start();
-		var mouth = MouthMesh;
+		var shownMouth = mouth.Update( IsTalking( timeline, Position ), (long)Position.TotalMilliseconds );
 		foreach ( var part in parts )
 		{
-			if ( part.Name is ClosedMouth or TalkingMouth && part.Name != mouth )
+			if ( Mouths.Contains( part.Name ) && part.Name != shownMouth )
 				continue;
 			part.Material.Set( "ObjectUniformBuffer", new ObjectUniformBuffer
 			{
@@ -261,7 +262,7 @@ internal sealed class Advisor : IDisposable
 		}
 		commandList.SetFullViewports();
 		commandList.SetFullScissorRects();
-		LastRenderedMouth = mouth;
+		LastRenderedMouth = shownMouth;
 	}
 
 	/// <summary>Screen-pixel rectangle covering both mouth meshes in the advisor viewport.</summary>
@@ -300,5 +301,36 @@ internal sealed class Advisor : IDisposable
 			} );
 		}
 		parts.Clear();
+	}
+}
+
+/// <summary>
+/// The original advisor's mouth choice. While the LIP data says the advisor is silent the first
+/// mouth node is shown; while talking, a new mouth is picked at random among the five whenever
+/// more than <see cref="ChangeIntervalMilliseconds"/> of speech time have passed since the last pick.
+/// The pick timer is not reset by silence, so a talking stretch may start with the previous mouth.
+/// </summary>
+internal sealed class AdvisorMouth
+{
+	// [BIN:STP-PPC:0x10007434 advisor update] silent or no LIP data: node 1; talking: when the speech clock (ms) passes the next-change time, node = rand() % 5 + 1 and the next change is 100 ms later
+	public const int ChangeIntervalMilliseconds = 100;
+	private readonly Random random;
+	private long nextChange;
+	private int current;
+
+	public AdvisorMouth( Random random ) => this.random = random ?? throw new ArgumentNullException( nameof( random ) );
+
+	public string Current => Advisor.Mouths[current];
+
+	public string Update( bool talking, long speechMilliseconds )
+	{
+		if ( !talking )
+			current = 0;
+		else if ( nextChange < speechMilliseconds )
+		{
+			current = random.Next( Advisor.Mouths.Length );
+			nextChange = speechMilliseconds + ChangeIntervalMilliseconds;
+		}
+		return Current;
 	}
 }

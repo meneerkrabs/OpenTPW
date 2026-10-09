@@ -75,19 +75,81 @@ public static partial class OpcodeHandlers
 	}
 
 	/// <summary>
-	/// Ride-type command opcodes (`command parameter`). Whether the parameter is an input or an output
-	/// depends on the command (docs: BUMP 11 "get cars on ride"; corpus `COAST 3 VAR_LETMEOFF; BRANCH_Z`),
-	/// so the effects layer writes it through <see cref="RideEffectCall.SetOutput"/>; the return value sets flags.
+	/// Ride-type commands use reviewed Mac operand and accumulator contracts.
+	/// Game effects remain external; unsupported queries preserve state and are recorded.
 	/// </summary>
 	public static class RideSystems
 	{
-		[OpcodeHandler( Opcode.TOUR, RideOpcodeStatus.Hooked, "docs (command list); corpus `TOUR 10 0; BRANCH_Z` → result sets flags" )]
-		public static void Tour( RideVM vm, Operand command, Operand parameter ) => vm.SetFlags( vm.Effect( Opcode.TOUR, new[] { command, parameter } ) );
+		[OpcodeHandler( Opcode.TOUR, RideOpcodeStatus.Hooked, "Mac-static command roles: mutators preserve flags; supported queries set flags/output; required-variable gates skip invalid calls" )]
+		public static void Tour( RideVM vm, Operand command, Operand parameter ) => Dispatch( vm, Opcode.TOUR, command, parameter );
 
-		[OpcodeHandler( Opcode.BUMP, RideOpcodeStatus.Hooked, "docs (command list); corpus 57 branches consume BUMP flags" )]
-		public static void Bump( RideVM vm, Operand command, Operand parameter ) => vm.SetFlags( vm.Effect( Opcode.BUMP, new[] { command, parameter } ) );
+		[OpcodeHandler( Opcode.BUMP, RideOpcodeStatus.Hooked, "Mac-static command roles: mutators preserve flags; queries set flags/output; duration commands set flags from original input" )]
+		public static void Bump( RideVM vm, Operand command, Operand parameter ) => Dispatch( vm, Opcode.BUMP, command, parameter );
 
-		[OpcodeHandler( Opcode.COAST, RideOpcodeStatus.Hooked, "docs (COAST_* ids); corpus 36 branches consume COAST flags" )]
-		public static void Coast( RideVM vm, Operand command, Operand parameter ) => vm.SetFlags( vm.Effect( Opcode.COAST, new[] { command, parameter } ) );
+		[OpcodeHandler( Opcode.COAST, RideOpcodeStatus.Hooked, "Mac-static: commands 1/4/5/6/8 preserve flags; 2/3 set flags and optional output; 7 is a no-op" )]
+		public static void Coast( RideVM vm, Operand command, Operand parameter ) => Dispatch( vm, Opcode.COAST, command, parameter );
+
+		private enum CommandBehavior
+		{
+			PreserveInput, PreserveIgnored, ResultIgnored, RequiredInputResult,
+			RequiredOutputResult, OptionalOutputResult, OriginalInput, NoOperation
+		}
+
+		private static CommandBehavior Behavior( Opcode opcode, int command ) => (opcode, command) switch
+		{
+			(Opcode.COAST, 1 or 4 or 5 or 6) => CommandBehavior.PreserveInput,
+			(Opcode.COAST, 8) => CommandBehavior.PreserveIgnored,
+			(Opcode.COAST, 2 or 3) => CommandBehavior.OptionalOutputResult,
+			(Opcode.COAST, 7) => CommandBehavior.NoOperation,
+			(Opcode.BUMP, 3 or 6 or 7 or 10) => CommandBehavior.PreserveIgnored,
+			(Opcode.BUMP, 8 or 9 or 17) => CommandBehavior.PreserveInput,
+			(Opcode.BUMP, 4 or 5 or 12 or 16) => CommandBehavior.ResultIgnored,
+			(Opcode.BUMP, 1) => CommandBehavior.RequiredInputResult,
+			(Opcode.BUMP, 2) => CommandBehavior.RequiredOutputResult,
+			(Opcode.BUMP, 11) => CommandBehavior.OptionalOutputResult,
+			(Opcode.BUMP, 13 or 14) => CommandBehavior.OriginalInput,
+			(Opcode.TOUR, 1 or 5 or 8 or 9 or 12 or 14 or 17 or 18) => CommandBehavior.PreserveInput,
+			(Opcode.TOUR, 2) => CommandBehavior.PreserveIgnored,
+			(Opcode.TOUR, 3) => CommandBehavior.RequiredInputResult,
+			(Opcode.TOUR, 4 or 16) => CommandBehavior.RequiredOutputResult,
+			(Opcode.TOUR, 10 or 11 or 15) => CommandBehavior.ResultIgnored,
+			_ => throw new RideScriptException( $"{opcode}: unreviewed controller command {command}" )
+		};
+
+		private static void Dispatch( RideVM vm, Opcode opcode, Operand command, Operand parameter )
+		{
+			if ( command.Kind != RideScriptOperandKind.Literal )
+				throw new RideScriptException( $"{opcode} requires a literal command" );
+			var behavior = Behavior( opcode, command.Raw );
+			if ( behavior == CommandBehavior.NoOperation )
+				return;
+			if ( behavior is CommandBehavior.RequiredInputResult or CommandBehavior.RequiredOutputResult && !parameter.IsVariable )
+				return;
+			if ( behavior is CommandBehavior.PreserveInput or CommandBehavior.OriginalInput && parameter.Kind is not (RideScriptOperandKind.Literal or RideScriptOperandKind.Variable) )
+				throw new RideScriptException( $"{opcode} command {command.Raw} requires a numeric input" );
+			var operands = new[] { command, parameter };
+			if ( behavior is CommandBehavior.PreserveInput or CommandBehavior.PreserveIgnored )
+			{
+				vm.Effect( opcode, operands );
+				return;
+			}
+			var previousParameter = parameter.Value;
+			if ( behavior == CommandBehavior.OriginalInput )
+			{
+				vm.Effect( opcode, operands );
+				vm.SetFlags( previousParameter );
+				return;
+			}
+			var output = behavior is CommandBehavior.RequiredOutputResult or CommandBehavior.OptionalOutputResult;
+			if ( !vm.TryEffect( opcode, operands, out var result ) )
+			{
+				if ( output )
+					parameter.Value = previousParameter;
+				return;
+			}
+			if ( output )
+				parameter.Value = result;
+			vm.SetFlags( result );
+		}
 	}
 }

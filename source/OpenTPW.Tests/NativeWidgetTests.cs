@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using OpenTPW.UI.Original;
 using NVector2 = System.Numerics.Vector2;
@@ -17,6 +18,78 @@ public class NativeWidgetTests
 	};
 
 	private static NVector2 Centre( UiContext context, UiElement element ) => element.ScreenRect( context.Canvas ).Center;
+
+	[TestMethod]
+	public void TypedFolderActionsAreDisabledUntilInspectionCompletes()
+	{
+		var stack = new UiScreenStack();
+		var pending = new System.Threading.Tasks.TaskCompletionSource<InstallationDiscoveryResult>();
+		var screen = GameFilesScreen.Create( stack, OriginalUiTests.FakeStrings(), Path.Combine( Path.GetTempPath(), Guid.NewGuid().ToString( "N" ), "setup.json" ),
+			( _, _ ) => pending.Task );
+		stack.Push( screen );
+		((UiButton)screen.Find( "gameType" )!).Clicked!();
+		var field = (UiTextField)stack.Top!.Find( "path" )!;
+		field.Text = "/synthetic/pending";
+		field.Submitted!();
+		screen.Updating!( Context() );
+		Assert.IsFalse( screen.Find( "gameType" )!.Enabled );
+		Assert.IsFalse( screen.Find( "cdType" )!.Enabled );
+		pending.SetResult( new( Array.Empty<InstallationReport>(), false, "synthetic refusal" ) );
+		screen.Updating!( Context() );
+		Assert.IsTrue( screen.Find( "gameType" )!.Enabled );
+		Assert.IsTrue( screen.Find( "cdType" )!.Enabled );
+		stack.Clear();
+	}
+
+	[TestMethod]
+	public void TextReadbackUsesOnlyTheSelectedDrawGlyphs()
+	{
+		var font = new FontAtlas( FontAtlasTests.CreateFont( 4, new FontAtlasTests.SyntheticGlyph(
+			'A', 2, 3, 0, 0, 3, Enumerable.Repeat( (byte)15, 6 ).ToArray() ) ) );
+		var layout = TextLayout.Create( font, "A" );
+		var batch = new UiBatch();
+		batch.AddText( font, layout, 10, 12, UiColors.Title, text: "underlying" );
+		batch.AddText( font, layout, 10, 10, UiColors.Title, text: "selected" );
+		var draw = batch.TextDraws.Last();
+		Assert.AreEqual( "selected", draw.Text );
+		Assert.AreEqual( 1, draw.FirstGlyph );
+		Assert.AreEqual( 1, draw.GlyphCount );
+		Assert.AreEqual( 10, batch.Glyphs.Skip( draw.FirstGlyph ).Take( draw.GlyphCount ).Single().Y );
+		batch.Clear();
+		Assert.AreEqual( 0, batch.TextDraws.Count );
+	}
+
+	[TestMethod]
+	public void GameFolderScreenAlwaysOffersTypedManualRecovery()
+	{
+		var stack = new UiScreenStack();
+		var path = Path.Combine( Path.GetTempPath(), "opentpw-unused-" + Guid.NewGuid().ToString( "N" ), "setup.json" );
+		var screen = GameFilesScreen.Create( stack, OriginalUiTests.FakeStrings(), path );
+		stack.Push( screen );
+		((UiButton)screen.Find( "gameType" )!).Clicked!();
+		Assert.AreEqual( "folderEntry", stack.Top!.Name );
+		Assert.IsNotNull( stack.Top.Find( "path" ) );
+		stack.Pop();
+		((UiButton)screen.Find( "cdType" )!).Clicked!();
+		Assert.AreEqual( "folderEntry", stack.Top!.Name );
+		stack.Clear();
+	}
+
+	[TestMethod]
+	public void StackRemovalReleasesScreenOwnedPendingWorkOnce()
+	{
+		var stack = new UiScreenStack();
+		var closed = 0;
+		stack.Push( new UiScreen( "first" ) { Removed = () => closed++ } );
+		stack.Push( new UiScreen( "second" ) { Removed = () => closed++ } );
+		stack.Pop();
+		Assert.AreEqual( 1, closed );
+		stack.Clear();
+		Assert.AreEqual( 2, closed );
+		stack.Clear();
+		stack.Pop();
+		Assert.AreEqual( 2, closed );
+	}
 
 	[TestMethod]
 	public void TextFieldTypesUpToItsLimitAndSubmitsOnEnter()

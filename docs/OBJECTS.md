@@ -233,6 +233,15 @@ The official bonus objects are separate WADs meant to be dropped into
 or up to two levels above it; directory names matched case-insensitively) and
 merges them into the catalogs; nothing is copied into the game data.
 
+Without a flag the root is, in order: the saved bonus folder in `setup.json`
+(`bonusPath`), then `<config>/bonus` when it holds a `levels` folder. An empty
+`bonusPath` (the player chose Remove in Options > Game files) turns the bonus
+objects off without deleting anything. Options > Game files can import the
+original "Bonus content" folder or its `.zip` into `<config>/bonus`, which copies
+only the `levels/<theme>/<category>/_name_N.wad` files (see
+[SETUP.md](SETUP.md#changing-the-folders-in-game)). The startup log names the
+source used.
+
 The supplied set has **35** archives (`_name_N.wad`): jungle 4 rides + 4
 features, hallow 4 rides + 1 sideshow + 4 features, space 3 rides + 2 sideshows
 + 5 features, fantasy 3 rides + 1 sideshow + 4 features; N runs 1…39 with gaps.

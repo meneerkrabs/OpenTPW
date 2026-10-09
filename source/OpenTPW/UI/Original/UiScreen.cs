@@ -25,6 +25,8 @@ public class UiScreen
 	public Action<UiContext>? DrawOverlay { get; set; }
 	/// <summary>Called every frame before input is handled.</summary>
 	public Action<UiContext>? Updating { get; set; }
+	/// <summary>Releases screen-owned pending work after removal from its stack.</summary>
+	public Action? Removed { get; set; }
 	/// <summary>Whether a modal screen dims and blocks what is below it.</summary>
 	public bool Modal { get; init; } = true;
 
@@ -173,7 +175,11 @@ public sealed class UiScreenStack
 	public void Pop()
 	{
 		if ( screens.Count > 0 )
+		{
+			var removed = screens[^1];
 			screens.RemoveAt( screens.Count - 1 );
+			removed.Removed?.Invoke();
+		}
 	}
 
 	public void Replace( UiScreen screen )
@@ -182,7 +188,12 @@ public sealed class UiScreenStack
 		Push( screen );
 	}
 
-	public void Clear() => screens.Clear();
+	public void Clear()
+	{
+		var removed = screens.ToArray();
+		screens.Clear();
+		foreach ( var screen in removed ) screen.Removed?.Invoke();
+	}
 
 	public bool Update( UiContext context, UiInput input ) => Top?.Update( context, input ) ?? false;
 

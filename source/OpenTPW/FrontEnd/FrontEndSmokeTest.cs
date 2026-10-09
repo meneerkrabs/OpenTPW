@@ -133,7 +133,9 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		Do( "game files capture", () =>
 		{
 			Require( flow.Menu!.Stack.Top?.Name == "gameFiles", "game files screen opens" );
-			VerifyText( CaptureFrame( "game-files.png" ), flow.Strings.Extra( OpenTpwText.GameFolder ), "game folder label" );
+			var files = CaptureFrame( "game-files.png" );
+			VerifyText( files, flow.Strings.Extra( OpenTpwText.GameFolder ), "game folder label" );
+			VerifyText( files, flow.Strings.Extra( OpenTpwText.BonusFolder ), "bonus content label" );
 			flow.Menu.Stack.Pop();
 		} );
 		Do( "open options", () => Click( flow.Menu!.Main, "options" ) );
@@ -341,6 +343,23 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			Require( flow.Level == null && flow.Menu != null && flow.Lobby != null, "Exit To Lobby returns to the front end" );
 			Require( flow.Menu!.Selected.Level == "jungle", "lobby returns to the island of the park" );
 			CaptureFrame( "frontend-return.png" );
+			flow.StartPark( "jungle", GameMode.InstantAction );
+		} );
+		Wait( "instant action starts", 3 );
+		Do( "instant action mode before lobby", () =>
+		{
+			Require( flow.Mode == GameMode.InstantAction && flow.Level!.Park!.Economy.Mode == ParkGameMode.InstantAction,
+				"selected Instant Action reaches the park economy" );
+			flow.ShowFrontEnd( "jungle" );
+		} );
+		Wait( "instant action returns to lobby", 3 );
+		Do( "reload original park in selected mode", () => flow.LoadPark( new ParkLoadEntry( "jungle", 0, false ) ) );
+		Wait( "instant action reloads", 3 );
+		Do( "loaded mode and balance layers", () =>
+		{
+			Require( flow.Mode == GameMode.InstantAction && flow.Level!.Park!.Economy.Mode == ParkGameMode.InstantAction
+				&& flow.Level.Park.Economy.Settings.IsEasy && flow.Level.Park.Economy.Balance == 100000,
+				"return-to-lobby/load preserves Instant Action and Easy balance layers" );
 			var park = OriginalPark.Load( "jungle" );
 			var snapshot = ParkSnapshotBuilder.FromOriginal( park, null );
 			readOnlyVisit = ParkSharing.PrepareVisit( ParkSharing.CreatePackage( snapshot, "HUD read-only smoke", "", "OpenTPW", park.Map ) );
@@ -379,7 +398,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			CaptureFrame( "read-only-visit.png" );
 			Device.WaitForIdle();
 			completed = true;
-			Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name} at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames, lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, two distinct catalogue objects bought exactly once through the park economy, info arm, economy pause, sale, overlap refusal, open/close, pause menu, exit to lobby, read-only visit build/open/delete/save guards." );
+			Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name} at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames, lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, two distinct catalogue objects bought exactly once through the park economy, info arm, economy pause, sale, overlap refusal, open/close, pause menu, exit to lobby, Instant Action return/load mode and balance-layer regression, read-only visit build/open/delete/save guards." );
 			GameFlow.Quit();
 		} );
 	}
@@ -445,13 +464,13 @@ internal sealed class FrontEndSmokeTest : IDisposable
 	{
 		var batch = Context.Batch;
 		// The topmost (last drawn) occurrence: a dimmed menu button can carry the same text as a window title.
-		var drawn = batch.Texts.Where( entry => entry.Text == text ).TakeLast( 1 ).ToList();
+		var drawn = batch.TextDraws.Where( entry => entry.Text == text ).TakeLast( 1 ).ToList();
 		Require( drawn.Count > 0, $"{what} ('{text}') is drawn" );
 		var checkedTexels = 0;
 		var matching = 0;
-		foreach ( var (rect, _) in drawn )
+		foreach ( var entry in drawn )
 		{
-			foreach ( var glyph in batch.Glyphs.Where( glyph => glyph.Color.A == 255 && glyph.Color != UiColors.Shadow && Overlaps( rect, glyph ) ) )
+			foreach ( var glyph in batch.Glyphs.Skip( entry.FirstGlyph ).Take( entry.GlyphCount ).Where( glyph => glyph.Color.A == 255 && glyph.Color != UiColors.Shadow ) )
 			{
 				for ( var row = 0; row < glyph.Height / glyph.Scale; row++ )
 				{
@@ -489,9 +508,6 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		Log.Trace( $"UI text readback '{text}' ({what}): {matching}/{checkedTexels} opaque glyph texels match." );
 		Require( checkedTexels >= 3 && matching >= checkedTexels * 97 / 100, $"{what} text pixels match in GPU readback" );
 	}
-
-	private static bool Overlaps( UiRect rect, UiGlyphQuad glyph ) =>
-		glyph.X < rect.Right + 2 && glyph.X + glyph.Width > rect.X - 2 && glyph.Y < rect.Bottom + 2 && glyph.Y + glyph.Height > rect.Y - 2;
 
 	private static (byte[] Pixels, int Width, int Height) CaptureFrame( string name )
 	{

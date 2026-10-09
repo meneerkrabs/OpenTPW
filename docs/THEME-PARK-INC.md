@@ -42,7 +42,7 @@ TPWS container, and its balance settings grow.
 | Movies | QuickTime `.mov` (Mac edition) | 2 `.tgq` (`SCHl`) | 2/2 |
 | Banner companions `.mtr` | none on the Mac CD | 7 | 0/7: header words differ from the TPW variant |
 
-## Ride-script VM: identical
+## Ride-script VM: shared formats and opcode lineage
 
 All 288 Theme Park Inc scripts have the same 48-byte header and time slice (50) as
 all 324 TPW scripts. Every opcode they use is in OpenTPW's `Opcode` enum with the

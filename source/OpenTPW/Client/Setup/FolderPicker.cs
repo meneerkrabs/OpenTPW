@@ -15,11 +15,11 @@ public static class FolderPicker
 	private const uint FosForceFileSystem = 0x40;
 	private const int SigdnFileSystemPath = unchecked((int)0x80058000);
 
-	/// <summary>True when this platform has a native folder dialog available right now.</summary>
-	public static bool IsAvailable =>
-		OperatingSystem.IsMacOS() ? File.Exists( "/usr/bin/osascript" ) :
-		OperatingSystem.IsLinux() ? FindLinuxDialog() != null :
-		OperatingSystem.IsWindows();
+	/// <summary>
+	/// This platform can offer a native picker. Tool availability is checked inside the
+	/// cancellable picker child; querying UI capability never probes PATH or mounted files.
+	/// </summary>
+	public static bool IsAvailable => OperatingSystem.IsMacOS() || OperatingSystem.IsLinux() || OperatingSystem.IsWindows();
 
 	/// <summary>
 	/// Shows the native "choose folder" dialog; returns the chosen absolute path, or null when cancelled or unavailable.

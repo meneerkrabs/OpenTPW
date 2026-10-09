@@ -30,8 +30,12 @@ detection or the old setting is saved, so detection does not run again.
 
 A folder is usable when it has a `Data` folder (any spelling) with `levels`, `global`
 and at least one `Language/<name>` folder. An installed copy, a copy of the CD and the
-mounted CD all qualify: the CD's own `Data` folder is complete game data. The inspector
-warns, without refusing, when:
+mounted CD can qualify: the CD's own `Data` folder is complete game data. A known
+negative identity rejects the supplied Theme Park Inc / Sim Coaster retail
+`levels/Standard.sam` (SHA-256 `8966c8647104feb1878ff3c3d43f3b2ac6dc89856570f9aa5a5a0bf040e6749e`).
+Unknown or modified editions are not classified from generic folders; structural
+usability does not certify edition compatibility. The inspector warns, without
+refusing, when:
 
 - the language folder lacks `bankrupt.MD2`, `congrats.MD2`, `paused.MD2` or
   `swears.txt`, which the installer copies from the CD's language folders (some banners
@@ -51,14 +55,32 @@ the game folder is known; it asks only for that folder.
 ## Changing the folders in game
 
 **Options > Game files** is an original-style screen (BF4 fonts, original window and
-button art, labels in the six supported languages) that shows the game folder and the
-optional CD for music and movies, changes either with the platform's folder dialog and
-removes the CD. The CD is stored in `setup.json` and passed to the game as `--cd-data`
-unless that option or `OPENTPW_CD_DATA` is given. The game reads its data at start-up, so
+button art, labels in the six supported languages) that shows the game folder, the
+optional CD for music and movies and the optional bonus content, changes them with the
+platform's folder dialog and removes the CD or the bonus content. The CD is stored in
+`setup.json` and passed to the game as `--cd-data` unless that option or `OPENTPW_CD_DATA`
+is given. The game reads its data at start-up, so
 changes apply after a restart. `--setup` still opens the first-run window.
 
 The folder dialog is the platform's own: `osascript` (`choose folder`) on macOS,
 `zenity` or `kdialog` on Linux, and the Windows `IFileOpenDialog` folder picker.
+
+**Bonus content** is the third row. It shows the bonus folder the game uses (`None`
+when there is none) and takes the official "Bonus content" folder (the one with `levels`
+in it; `Theme-Park-World-Bonus-Stuff.zip` holds 35 bonus WADs). The folder dialog only
+selects folders, so a `.zip` is given by its path in the field that opens where there is
+no folder dialog; with a dialog, extract the zip and choose the folder. A folder or zip
+outside the configuration directory is imported: only the `levels/<theme>/<category>/_name_N.wad`
+files are copied into `<config>/bonus/levels/<theme>/<category>/`, and nothing is written
+into the game folder. The new copy replaces the previous import only when all of it
+succeeded; archive entries that point outside the target (`..` or absolute paths) are
+refused, and a zip or folder without bonus WADs is reported and leaves things as they
+were. **Remove** stores an empty `bonusPath`, which turns the bonus objects off even if
+the imported copy exists; the files are not deleted. The new folder applies after a restart.
+
+At start-up the bonus root is taken from `--bonus-data`, then `OPENTPW_BONUS_DATA`, then
+the saved `bonusPath`, then `<config>/bonus` when it has a `levels` folder. The startup log
+names the source (OBJECTS.md).
 
 Tool and test modes never open the window: `--smoke-test`, `--validate-assets`,
 `--inspect-model`, `--inspect-rides`, `--headless`, `--export-park` and
@@ -74,9 +96,13 @@ on Windows):
 ```json
 {
   "gamePath": "/home/alice/Games/Theme Park World",
-  "cdPath": "/Volumes/THEME_PARK"
+  "cdPath": "/Volumes/THEME_PARK",
+  "bonusPath": "/home/alice/OpenTPW/config/bonus"
 }
 ```
+
+`bonusPath` is optional: a file without it (from an older release) means no bonus folder
+was chosen. An empty string means the bonus content was removed.
 
 An unreadable file is ignored with a warning and the setup asks again.
 
@@ -90,3 +116,37 @@ the CD into a user folder is not offered yet (the CD works directly).
 Tested on macOS (Apple Silicon). The Windows folder dialog, the Windows registry and
 drive search, and the Linux `zenity`/`kdialog` dialogs are compile- and unit-tested
 only.
+
+## Bounded detection and folder validation
+
+Saved-folder validation, automatic discovery and wizard inspection run in
+separate child processes, with a three-second request deadline and cancellation.
+A mounted drive can block inside the OS even after cancellation; an automatic
+scan cannot freeze the setup window or prevent manual validation of a local
+folder. At most one automatic search and one inspection can be outstanding.
+A user-controlled picker has its own single child slot; lookup and native
+dialogs run there instead of probing Linux PATH on the UI thread. Closing the
+wizard cancels it and terminates its owned process tree. If no native dialog
+tool is installed, the editable folder field remains available.
+
+When a deadline expires the child is killed, and its slot remains reserved until
+it actually exits. This prevents repeated requests from accumulating stalled
+children. If a manual inspection itself stalls in the kernel, later manual
+requests time out until that child exits; the window remains responsive. No
+mount is changed or disconnected.
+
+The wizard opens before its optional scan and updates results asynchronously.
+Changing a field cancels stale validation; the result applies only to the
+current field request. UI scale follows both logical and drawable changes,
+including transitions where drawable size stays fixed. The setup window has a
+520×420 logical minimum so Quit, Back and Next remain usable.
+
+The live-host discovery test is opt-in (`OPENTPW_INSTALLATION_SCAN_TESTS=1`) and
+uses a one-second bounded child; synthetic candidate, timeout, cancellation and
+manual-recovery cases run without mounted-game assumptions. The identified
+unsupported-edition fixture test uses `OPENTPW_TPI_GAME_PATH`.
+
+The original-style Options > Game files screen reuses these bounded operations.
+Game and CD paths can always be typed directly, including when Linux has no
+native dialog helper. Closing the screen or disposing GameFlow cancels its
+pending inspection and picker work.

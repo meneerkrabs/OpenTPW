@@ -243,10 +243,16 @@ public class InstallationFinderTests
 	[TestMethod]
 	public void PublicGetCandidatesRunsOnThisHostAndReturnsExistingDirectories()
 	{
-		var candidates = InstallationFinder.GetCandidates().ToArray();
-
-		Assert.IsNotNull( candidates );
-		foreach ( var candidate in candidates )
-			Assert.IsTrue( Directory.Exists( candidate ), $"'{candidate}' is not an existing directory." );
+		if ( Environment.GetEnvironmentVariable( "OPENTPW_INSTALLATION_SCAN_TESTS" ) != "1" )
+			Assert.Inconclusive( "Set OPENTPW_INSTALLATION_SCAN_TESTS=1 to probe real host folders in a bounded child." );
+		var watch = System.Diagnostics.Stopwatch.StartNew();
+		var scan = InstallationDiscovery.SearchAsync( TimeSpan.FromSeconds( 1 ) ).GetAwaiter().GetResult();
+		Assert.IsTrue( watch.Elapsed < TimeSpan.FromSeconds( 5 ), "A stalled mount must not block the test host." );
+		Assert.IsNotNull( scan.Reports );
+		foreach ( var report in scan.Reports )
+		{
+			Assert.IsTrue( report.IsUsable );
+			Assert.IsTrue( Path.IsPathFullyQualified( report.Path ) );
+		}
 	}
 }

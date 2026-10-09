@@ -90,6 +90,28 @@ public class OriginalUiAssetTests
 	}
 
 	[TestMethod]
+	public void EveryOriginalModelHasItsStoredRootDrawingKey()
+	{
+		var models = new UiModels();
+		Assert.AreEqual( 278, models.Assets.Count );
+		Assert.AreEqual( 277, models.BindingCount, "the original ordinary loader explicitly excludes w_small_shadow.MD2" );
+		foreach ( var asset in models.Assets )
+		{
+			var source = new ModelFile( FileSystem.GetFiles( "/ui" ).Single( path => Path.GetFileNameWithoutExtension( path ) == asset.Name
+				&& path.EndsWith( ".md2", StringComparison.OrdinalIgnoreCase ) ) );
+			Assert.AreEqual( source.Nodes[source.RootNodeIndex].Name, asset.RootNodeName, asset.Name );
+			Assert.AreEqual( UiModels.RootNameKey( asset.RootNodeName ), asset.DrawingKey, asset.Name );
+			Assert.AreSame( asset, models.GetAsset( asset.Name ), asset.Name );
+			if ( !UiModels.IsSpecialShadowAsset( asset ) )
+				Assert.AreSame( asset, models.GetByDrawingKey( asset.DrawingKey ), asset.Name );
+		}
+		Assert.AreEqual( "base", models.GetAsset( "mainpanel" ).RootNodeName );
+		Assert.AreEqual( "pan_money", models.GetAsset( "panel" ).RootNodeName );
+		Assert.AreEqual( "optpanel2", models.GetAsset( "f_optpanel2" ).RootNodeName );
+		Assert.AreEqual( "shadow1", models.GetByRootName( "wshadow1" ).Name );
+	}
+
+	[TestMethod]
 	public void EveryUiWadModelFlattensIntoTheAuthoredCanvas()
 	{
 		var files = FileSystem.GetFiles( "/ui" ).Where( file => file.EndsWith( ".md2", StringComparison.OrdinalIgnoreCase ) ).ToArray();

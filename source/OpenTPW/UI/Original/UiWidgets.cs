@@ -5,29 +5,6 @@ namespace OpenTPW.UI.Original;
 
 public enum UiAlign { Left, Center, Right }
 
-/// <summary>Original UI models by name, loaded once; missing models are reported once and drawn as fallbacks.</summary>
-public sealed class UiModels
-{
-	private readonly Dictionary<string, UiModel?> models = new( StringComparer.OrdinalIgnoreCase );
-	private readonly Func<string, UiModel> load;
-
-	public UiModels( Func<string, UiModel>? load = null ) => this.load = load ?? UiModel.Load;
-
-	public UiModel? Get( string name )
-	{
-		if ( models.TryGetValue( name, out var model ) )
-			return model;
-		try { model = load( name ); }
-		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or NotSupportedException or InvalidOperationException or ArgumentException )
-		{
-			Log?.Warning( $"Original UI model {name} unavailable: {exception.Message}" );
-			model = null;
-		}
-		models[name] = model;
-		return model;
-	}
-}
-
 /// <summary>Everything a screen needs to lay out and draw one frame.</summary>
 public sealed class UiContext
 {

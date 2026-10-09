@@ -15,6 +15,7 @@ public static class EconomyApproximations
 		("ECON-004", "Fast x2 and Fastest x4 speeds (only pause is evidenced)", "original speed controls, if any"),
 		("ECON-005", "challenge prizes and scrap sales are other income; build, upgrade, goods, prizes, land are other costs; loans received are not money in", "captured financial screen after these transactions"),
 		("ECON-006", "APR > 0 repayment is an annuity at APR/12 per month, rounded down; interest accrues monthly on the balance", "standard-mode save or capture with an outstanding loan"),
+		("ECON-007", "repaid loan offers reopen without the original credit-eligibility gate", "implement the traced credit predicate and qualify its cross-edition behavior"),
 		("ECON-008", "100 training points per grade (from Online_Standard.sam comments \"costs 1000 to get up to grade 1\")", "capture of a training run"),
 		("ECON-009", "candidate grade = average + 2 when \"great\", else average +-1", "hiring pool captures (grade distribution)"),
 		("ECON-010", "TimeBetweenStaffUpdates/StaffTimeoutTime are seconds at normal speed", "capture of pool refresh timing"),
@@ -24,7 +25,7 @@ public static class EconomyApproximations
 		("ECON-014", "staff start at happiness 100 and it never changes (no strikes)", "staff happiness rules (binary/captures)"),
 		("ECON-015", "each researcher adds ResearchAbility points per game day, split by effort", "capture of research progress over time"),
 		("ECON-016", "group g opens when PercentageForThisTech % of group g-1 of the same category is researched", "capture of new research groups appearing"),
-		("ECON-017", "items are researched cheapest first within open groups", "capture of research order"),
+		("ECON-017", "the research table is in info-id order and the player cannot step the cursor to another item", "the table fill order (FUN_100c9064) and the next/previous control"),
 		("ECON-018", "ride upgrade levels and add-on objects form the \"upgrade\" research category", "research lab capture"),
 		("ECON-019", "Instant Action research runs at one grade-2 researcher without staff", "Instant Action capture"),
 		("ECON-020", "a sale drops LitterEffect/100 litter items", "capture of litter after sales"),
@@ -34,7 +35,7 @@ public static class EconomyApproximations
 		("ECON-024", "a repair restores state of repair to 100", "capture after a repair"),
 		("ECON-025", "scrap value basis = catalogue cost of all levels up to the current one", "capture of scrap value"),
 		("ECON-026", "park value = sum of scrap values", "capture of the park value screen"),
-		("ECON-027", "park rating = (2 x happiness + attractions/3 + cleanliness) / 4", "park rating formula (binary/captures)"),
+		("ECON-027", "the record sub-kinds 0–3 are rides, shops, sideshows and features, and every hired staff member counts", "the record field at +0x4C behind sub-kind +0x7A8 and the staff byte +3 tested by FUN_100C4064"),
 		("ECON-028", "purchases need a balance covering the cost", "capture of building with too little money"),
 		("ECON-029", "golden tickets are spent when buying items with GoldenTicketCost", "capture of ticket count after such a purchase"),
 		("ECON-030", "the simulation stops once bankrupt", "capture of the bankrupt state"),
@@ -52,7 +53,6 @@ public static class EconomyApproximations
 		("ECON-043", "monthly wage = BaseWage[grade] x PayMultiplier[type]", "staff list capture with grades"),
 		("ECON-044", "balloon/costume percentages are 0 (guests carry no items yet)", "guests slice item state"),
 		("ECON-045", "loan/challenge record locators use plausibility bounds (one fixture)", "a second TPWS/TPWI fixture"),
-		("ECON-046", "upgrades need at least one employed mechanic to be bought", "capture (TAG_SYSTEM 151 suggests it)"),
 	};
 
 	private static bool logged;

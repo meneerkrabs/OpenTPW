@@ -133,32 +133,50 @@ effects), `PeepTypes[0–7]` (excitement, starting cash, boredom), `Arrival.*` (
 between arrivals, fixed rate, new-park bonus, points per visitor), `RegionFX[0–7]` (entertainer,
 clean/dirty toilet, vomit, guard, camera, stink bomb, fireworks), `Seasons[]`/`Weather*`,
 `Info.AttractionValue`/`NewAttractionDecayTime`/`Attraction[n].NewBonus`, `UsageInfo.*` effects,
-`WaitingTimes.*`, `MapInfo.*`, `FixedItemInfo.*`. OpenTPW uses `Info.AttractionValue` only in the
-approximated park rating.
+`WaitingTimes.*`, `MapInfo.*`, `FixedItemInfo.*`. The park rating does not use `Info.AttractionValue`.
 
 ## Original save evidence (Easymode.TPWI)
 
 `SaveEconomyRecords` finds two tables in the decoded payload by structure; `OriginalEconomyImport`
-then requires them to equal the settings exactly.
+then requires loan amount/APR/term/lender metadata and challenge fields to equal settings exactly.
+Monthly repayment equality is required only for 0 % APR, using integer `amount / months`, as
+proven by this fixture. Positive-APR monthly values are preserved in the decoded records and
+reported as **unverified**, without comparing them to the runtime's annuity approximation.
 
 | Table | Offset | Layout | Cross-check |
 | --- | --- | --- | --- |
-| Loan offers | 1,411,394 | 8 × 32 bytes: `i64 amount, i32 months, i32 monthly repayment, i32 0, i32 0, i32 index, i32 ?` (last word 0,0,1,0,0,0,0,6 — unknown, not the lender) | Amounts and terms equal `LoanInfo[0–7]`; repayments 2777, 1388, 694, 277, 750, 1000, 1666, 2166 = floor(amount / months), i.e. 0 % APR: only `Easy_Standard.sam` matches |
+| Bank prefix | 1,411,362 | 7 × 32-bit words: admission fee, balance, batch balance, withdrawals enabled, last balance, entered-red tick, annual profit | Typed values: 25, 87987, 0, true, 87787, 0, −12013 |
+| Loan offers | 1,411,390 | 8 × 32 bytes: available flag, i32 amount, i32 APR, months, monthly repayment, bought flag, months repaid, lender name index | Amounts, APR, terms and lenders equal `LoanInfo[0–7]`; repayments 2777, 1388, 694, 277, 750, 1000, 1666, 2166 = floor(amount / months), i.e. 0 % APR: only `Easy_Standard.sam` matches |
 | Challenges | 1,410,409 | 8 × 45 bytes: `i32 type, time, value, object, object2, prize, follow-up`, 14 zero bytes, `u8 independent`, 2 zero bytes | Equal `Challenges[1, 15, 6, 18, 12, 7, 8, 9]` = jungle `ChallengesInThisLevel`, including the `Independent` flags (1,1,1,1,1,1,0,0) |
 
 Proven and used: the 0 % APR repayment formula, the easy balance for the jungle original level, and
 the challenge list. The placed objects and fixed items (docs/TPWS-PAYLOAD.md) are registered in the
 economy without charge.
 
-**Money not reconciled.** The 32 bytes before the loan table read `25, 87987 (i64), 1,
-87787 (i64), −12013, 0`. 87,987 = 100,000 − 12,013, so the block looks like balance, an earlier
-balance (200 less) and the result since the start, but the 12,013 does not follow from the economy
-model: the 11 placed objects cost 4,450 (`CostOfUpgrade`), 68 non-initial path cells at 20 would
-add 1,360, queue cells 75 each, land 10 each (easy) — all multiples of 5, while 12,013 is odd. An
-odd amount needs a wage-like product (`BaseWage × PayMultiplier`, e.g. 3 × 9 = 27) or something
-not in the data; the save contains no staff names. The previously suspected `i64 100,000` at
-1,411,394 is loan offer 0, not `InitialCash`. OpenTPW therefore starts the imported park with
-`InitialCash` and logs the candidate words. A second save with a known spending history is needed.
+**Bank fields identified; simulation state not restored.** The Mac serializer's named fields
+and 4-byte writes independently identify the bank prefix and eight-word loan records, and the
+actual PC fixture matches that order. The old `i64 amount` combined amount with APR; the old
+record's final word belonged to the next loan's available flag. Lender name index is independent
+of record order. The typed parser handles nonzero APR and reordered lenders, while import still
+requires the original settings metadata to match. APR > 0 repayment arithmetic on PC remains
+unproven; each such saved repayment receives an `[APPROX:ECON-006]` diagnostic and is not reported
+as matched or used to restore active loans. The current runtime calculation remains the ECON-006
+approximation. A positive-APR stored value can differ from that calculation without invalidating
+otherwise matching typed data; replacing one unproved formula with the Mac formula is not part
+of validation.
+
+The decoded balance is 87,987, last balance 87,787 and annual profit −12,013, consistent with
+100,000 − 12,013. The spending history behind that profit is still unknown. This correction
+reports the typed bank values but continues to start the simulation at `InitialCash`; it does
+not restore active loans or other unimplemented original state. The locator still uses
+plausibility limits and lacks framing proof for other saves (**ECON-045**).
+
+The verified PC `Easymode.TPWI` SHA-256 is
+`6d89303d098900364bf5e80b236b64bd85976fb947e9e4609d088547f430b39a`.
+The layout review is documented in [PPC-review.md](reverse/PPC-review.md), with the field/call
+evidence in [PPC-economy.md](reverse/PPC-economy.md). Regression tests cover positive APR,
+permuted lenders, field/flag decoding, truncated prefix/records, ambiguous tables and settings
+mismatches; original-data tests check the typed PC fixture.
 
 ## Simulation model
 
@@ -172,11 +190,11 @@ not in the data; the save contains no staff names. The previously suspected `i64
 | Bankruptcy | Six month-ends in the red, warnings at 3 and 5 months (strings) | Advance stops when bankrupt |
 | Staff | Pool sizes, maxima, wages, training prices | Candidate grades, pool timing, free hiring, 100 points per grade, mechanic/handyman job durations |
 | Maintenance | Wear rates, upgrade durations, worn threshold 25 | Wear per open day, repair restores 100 |
-| Research | Items, categories, groups, costs, effort, ability, thresholds | Points per day, group opening rule, cheapest-first order, automatic Instant Action rate |
+| Research | Items, categories, groups, costs, effort, ability, thresholds | Points per day, group opening rule, info-id research order, automatic Instant Action rate |
 | Challenges | Definitions, level list, timings, prizes, follow-ups | Type semantics from comments; explicit accept/decline; types 14, 22, 23, 26, 32+ unmeasured |
 | Golden tickets | All thresholds | Monthly check; tickets spent on purchases |
 | Keys/progression | Keys per theme, theme order (THEMENAMES; ascending key cost); +1 per 3 earned golden tickets; spending tickets preserves keys (manual p. 28) | Start with 1 key; keys persist when entering themes |
-| Park rating | — | (2 × happiness + attractions + cleanliness) / 4 |
+| Park rating | — (traced: Mac binary 0x100C7B24) | Capped counts: guests in park × 20 / 1000 (max 20), rides × 1.5 (max 20), shops and sideshows × 2 (max 10 each), features (max 10), rides at upgrade level 2 (max 10), each staff type (max 4); the sub-kind to object-kind mapping is approximate |
 
 Determinism: one SplitMix64 state drives candidates and sideshow draws; time advances in whole ticks;
 tests compare saves before/after load and after identical continuations byte for byte.
@@ -234,6 +252,7 @@ site, is listed in `Economy/EconomyApproximations.cs` and is logged once at star
 | ECON-004 | `Economy/ParkCalendar.cs:11` | Fast x2 and Fastest x4 speeds (only pause is evidenced) | original speed controls, if any |
 | ECON-005 | `Economy/ParkLedger.cs:53` | challenge prizes and scrap sales are other income; build, upgrade, goods, prizes, land are other costs; loans received are not money in | captured financial screen after these transactions |
 | ECON-006 | `Economy/ParkLedger.cs:121` | APR > 0 repayment is an annuity at APR/12 per month, rounded down; interest accrues monthly on the balance | standard-mode save or capture with an outstanding loan |
+| ECON-007 | `Economy/ParkEconomy.cs` | Repaid loan offers reopen without the traced original credit-eligibility gate | Implement the credit predicate and qualify its cross-edition behavior |
 | ECON-008 | `Economy/ParkStaff.cs:50` | 100 training points per grade (from Online_Standard.sam comments "costs 1000 to get up to grade 1") | capture of a training run |
 | ECON-009 | `Economy/ParkStaff.cs:112` | candidate grade = average + 2 when "great", else average +-1 | hiring pool captures (grade distribution) |
 | ECON-010 | `Economy/ParkStaff.cs:64` | TimeBetweenStaffUpdates/StaffTimeoutTime are seconds at normal speed | capture of pool refresh timing |
@@ -243,7 +262,7 @@ site, is listed in `Economy/EconomyApproximations.cs` and is logged once at star
 | ECON-014 | `Economy/ParkStaff.cs:24` | staff start at happiness 100 and it never changes (no strikes) | staff happiness rules (binary/captures) |
 | ECON-015 | `Economy/ParkResearch.cs:131` | each researcher adds ResearchAbility points per game day, split by effort | capture of research progress over time |
 | ECON-016 | `Economy/ParkResearch.cs:100` | group g opens when PercentageForThisTech % of group g-1 of the same category is researched | capture of new research groups appearing |
-| ECON-017 | `Economy/ParkResearch.cs:110` | items are researched cheapest first within open groups | capture of research order |
+| ECON-017 | `Economy/ParkResearch.cs:109` | the research table is in info-id order and the player cannot step the cursor to another item | the table fill order (FUN_100c9064) and the next/previous control |
 | ECON-018 | `Economy/ParkResearch.cs:41` | ride upgrade levels and add-on objects form the "upgrade" research category | research lab capture |
 | ECON-019 | `Economy/ParkResearch.cs:136` | Instant Action research runs at one grade-2 researcher without staff | Instant Action capture |
 | ECON-020 | `Economy/ParkEconomy.cs:28` | a sale drops LitterEffect/100 litter items | capture of litter after sales |
@@ -253,7 +272,7 @@ site, is listed in `Economy/EconomyApproximations.cs` and is logged once at star
 | ECON-024 | `Economy/ParkEconomy.cs:160` | a repair restores state of repair to 100 | capture after a repair |
 | ECON-025 | `Economy/ParkEconomy.cs:329` | scrap value basis = catalogue cost of all levels up to the current one | capture of scrap value |
 | ECON-026 | `Economy/ParkEconomy.cs:337` | park value = sum of scrap values | capture of the park value screen |
-| ECON-027 | `Economy/ParkEconomy.cs:354` | park rating = (2 x happiness + attractions/3 + cleanliness) / 4 | park rating formula (binary/captures) |
+| ECON-027 | `Economy/ParkEconomy.cs:353` | the record sub-kinds 0–3 are rides, shops, sideshows and features, and every hired staff member counts | the record field at +0x4C behind sub-kind +0x7A8 and the staff byte +3 tested by FUN_100C4064 |
 | ECON-028 | `Economy/ParkEconomy.cs:434` | purchases need a balance covering the cost | capture of building with too little money |
 | ECON-029 | `Economy/ParkEconomy.cs:438` | golden tickets are spent when buying items with GoldenTicketCost | capture of ticket count after such a purchase |
 | ECON-030 | `Economy/ParkEconomy.cs:110` | the simulation stops once bankrupt | capture of the bankrupt state |
@@ -271,13 +290,12 @@ site, is listed in `Economy/EconomyApproximations.cs` and is logged once at star
 | ECON-043 | `Economy/BalanceSettings.cs:173` | monthly wage = BaseWage[grade] x PayMultiplier[type] | staff list capture with grades |
 | ECON-044 | `Economy/GuestEconomyBridge.cs:60` | balloon/costume percentages are 0 (guests carry no items yet) | guests slice item state |
 | ECON-045 | `Files/Formats/Save/SaveEconomyRecords.cs:91` | loan/challenge record locators use plausibility bounds (one fixture) | a second TPWS/TPWI fixture |
-| ECON-046 | `Economy/ParkEconomy.cs:522` | upgrades need at least one employed mechanic to be bought | capture (TAG_SYSTEM 151 suggests it) |
 
 ## Open questions
 
 - Day length, month lengths and the calendar start; original game speeds.
 - Repayment formula with interest; whether loans can be retaken; whether building is allowed in the red.
 - `BaseCostPerStaff`/`CostPerQualityLevel`, `Research.StartingWorkLoad`, researcher `WorkDuration`.
-- Park rating, park value and the scrap basis; how golden keys are earned.
+- Park value and the scrap basis; how golden keys are earned.
 - The money block before the loan table (87,987 / 87,787 / −12,013), the extra words around the
   challenge table (`09 00 0b 00`, floats 100.0) and the last loan-record word.

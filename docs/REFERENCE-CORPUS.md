@@ -95,8 +95,11 @@ behavior are insufficient. Required trace record:
 
 Static disassembly/reconstruction, community claims, runtime traces and synthetic
 regressions have separate evidence labels. If a safe runnable original is unavailable,
-retain static evidence but leave runtime fidelity unverified. Never remove/bypass
-copy protection to satisfy this gate. One verified trace does not verify all rides.
+retain static evidence but leave runtime fidelity unverified. Do not remove or bypass
+copy protection yourself to satisfy this gate; the only exception is static analysis of
+the decrypted Theme Park Inc executable shipped on its CD, under the conditions in
+COMPLETION-PLAN.md ("Herkomst van spelregels"). A game rule counts as original only
+when it is traced to logic in an original executable. One verified trace does not verify all rides.
 
 ## Proposed deterministic simulation contract
 

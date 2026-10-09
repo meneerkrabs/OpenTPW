@@ -9,6 +9,7 @@ public class Program
 	{
 		try
 		{
+			LinuxNativeLibraries.Register();
 			Game.Run( args );
 			return 0;
 		}

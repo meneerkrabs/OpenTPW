@@ -16,7 +16,7 @@ public static class RidesApproximations
 		("RIDES-006", "GETANIM_CH returns 1 while playing"),
 		("RIDES-007", "TRIGANIMSPEED ignores its speed operand"),
 		("RIDES-008", "ANIM_* to member letter/variant mapping derived from names and scripts"),
-		("RIDES-009", ".sam layer order; Easy_/Online_ not applied"),
+		("RIDES-009", "position of shared (non-Info.Id) .sam files in the object layer order"),
 		("RIDES-010", "OBJECT_NAMES bound by English name equality"),
 		("RIDES-011", "shape symbols N/E/</>/+/W inferred"),
 		("RIDES-012", "access cells open across first/last row before columns"),

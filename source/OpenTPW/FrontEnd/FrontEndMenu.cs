@@ -117,7 +117,7 @@ public sealed class FrontEndMenu
 		return screen;
 	}
 
-	// [APPROX:UI-015] Game Mode asked when entering a park (no player profiles); modes play the same — evidence needed: original player/mode flow
+	// [APPROX:UI-015] Game Mode asked when entering a park (no player profiles); the original asks once when a player is created and stores it in the profile — evidence needed: player profiles
 	public void ShowGameMode()
 	{
 		var screen = new UiScreen( "gameMode" );

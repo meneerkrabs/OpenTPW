@@ -412,3 +412,70 @@ Terrein/save-slice (9 oktober 2026, worktree `terrain`):
 - Niet: bezoekers (alleen `IRideVisitorBridge`), geluid/EVENT/particles,
   coaster/kart/tour-controllers, vertex-animatie, originele bouwregels en kosten.
   Details: [OBJECTS.md](OBJECTS.md).
+
+## SDT-geluidseffecten: MPEG Layer I-decoder (9 oktober 2026)
+
+- `Mp2Decoder` decodeert nu ook MPEG audio Layer I (MPEG-1 en MPEG-2/LSF, alle
+  samplerates, mono/stereo/dual/intensity-stereo, CRC overgeslagen), het formaat
+  van de geluidseffecten en speech `z_error`. Layer II-restricties zijn ongewijzigd.
+- Verificatie zonder originele bestanden: 73 gegenereerde Layer I-streams zijn even
+  lang als en wijken maximaal 1 LSB af van ffmpeg's `mp1`-decoder. Eenheidstests voor
+  stilte, DC, intensity-stereo, framegrootte/padding, verboden allocatie en een
+  tegen ffmpeg vastgepinde stream.
+- Tests: zonder assets 592 geslaagd / 198 overgeslagen; 0 mislukt.
+- Open: `OriginalLayerOneSoundEffectsDecode` met `OPENTPW_GAME_PATH` draaien
+  (MPEG-versie/samplerates van de originele effecten nog onbevestigd); geluidseffecten
+  worden nog nergens in het spel afgespeeld. Details: [LIPS.md](LIPS.md).
+
+## Linux-voorbereiding M7 (9 oktober 2026)
+
+Gemeten in een Ubuntu 24.04 x64-container met .NET 8.0.425, Xvfb en Mesa llvmpipe
+(software-Vulkan 1.4); zonder originele assets.
+
+- Gerepareerd: Vulkan-start faalde op elke distributie met glibc ≥ 2.34 (`vk` 1.0.25
+  laadt `libdl`, alleen `libdl.so.2` bestaat); `LinuxNativeLibraries` leidt dit om.
+  Daarna maakt de app een SDL2-venster, Vulkan-device en swapchain (1280×720).
+- Gerepareerd: hoofdlettergevoelige paden. `BaseFileSystem` corrigeert bestaande
+  segmenten naar de spelling op schijf (exacte match wint); de datamap wordt in elke
+  spelling gevonden (`data`/`Data`/`DATA`). Drie regressietests falen zonder de fix.
+- Duidelijke fouten bij ontbrekend scherm (X11/Wayland) of Vulkan-driver.
+- `dotnet publish -r linux-x64|win-x64|linux-arm64 --self-contained` slaagt; de
+  linux-x64-build start. linux-arm64 mist native `libveldrid-spirv`/`libcimgui`
+  (geblokkeerd); Windows is gebouwd maar niet uitgevoerd.
+- Tests: 605 geslaagd / 189 overgeslagen / 0 mislukt, inclusief native shadertests
+  (`OPENTPW_NATIVE_SHADER_TESTS=1`) op Linux x64.
+- Open: renderen, input en audio met originele assets op Linux; Windows uitvoeren;
+  linux-arm64-natives; packaging. Details: RUNNING.md, FEATURE-MATRIX.md.
+
+## Linux met originele data; Theme Park Inc-vergelijking (9 oktober 2026)
+
+Met de Mac-cd van Sim Theme Park (HFS, november 2000) als originele data:
+
+- Linux x64 (Xvfb, Mesa llvmpipe): de sandbox-smoketest (439 frames, originele
+  objecten, animaties, Totem-script, BF4-tekst, upscaling, fullscreen, opslaan/laden)
+  en de front-end-smoketest (lobby, menu's, jungle, HUD, economie) slagen. Daarvoor
+  kregen de Mac-gegevens tijdelijk de pc-lettertypes `GAMEBOLD*.bf4`; niets daarvan
+  staat in git.
+- Gerepareerd: elke `Shader` maakte een eigen `FileSystemWatcher`; op Linux is dat
+  een inotify-instantie (standaard 128 per gebruiker) en de lobby crashte. Nu één
+  watcher per shaderbestand; bij een tekort alleen een waarschuwing.
+- Layer I: alle 2.650 Mac-clips gelijk aan ffmpeg (≤ 1 LSB, zelfde lengte).
+- De Mac-editie wijkt af van de vastgepinde Windows-editie (taalmap `American`,
+  QuickTime-films, geen `fonts.wad`/`lips.wad`, 290 objecten); de tests die
+  Windows-hashes en -aantallen vastpinnen falen daarop, zie THEME-PARK-INC.md.
+- Theme Park Inc vergeleken: zelfde engine-familie en identieke RSE-VM; textures
+  zijn EA `SHPI`/`.fsh` i.p.v. `.wct`. Details en vervolgwerk: THEME-PARK-INC.md.
+
+## Besluit: herkomst van spelregels (9 oktober 2026)
+
+- Spelregels gelden pas als origineel wanneer ze naar logica in een originele
+  executable herleid zijn: de onversleutelde PowerPC-`SimTheme Park` (TPW) en
+  `Game.exe` (Theme Park Inc). Handleiding, websites en community-bronnen blijven
+  `[APPROX]`; voorbeeld: de Instant Action-regels uit handleiding en `UITEXT.str`.
+- Op besluit van de projecteigenaar mag de ontsleutelde no-CD-`Game.exe` van de
+  Theme Park Inc-cd statisch geanalyseerd worden (interoperabiliteit, art. 6
+  Softwarerichtlijn); niets daarvan in git. Voorwaarden in COMPLETION-PLAN.md.
+- Gecontroleerd: die `Game.exe` heeft dezelfde secties als het SafeDisc-origineel met
+  leesbare code (entropie `.text` 5,83 i.p.v. 7,92) en de importlijst van TPW's
+  `TP.ICD` (DDRAW, DINPUT, DSOUND, QMIXER, `wea*`, WSOCK32, USP10). De PE-tijdstempel
+  (1996) is door de crack herschreven en zegt niets over de build.

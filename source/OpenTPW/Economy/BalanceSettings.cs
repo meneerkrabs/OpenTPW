@@ -174,6 +174,7 @@ public sealed class BalanceSettings
 	public long GetMonthlyWage( StaffType type, int grade ) => (long)BaseWage[Math.Clamp( grade, 0, GradeCount - 1 )] * this[type].PayMultiplier;
 
 	/// <summary>Original layer order for a theme: global Standard, theme Standard, then the theme's Easy_Standard in easy mode.</summary>
+	// [BIN:STP-PPC:0x1010474C world setup] game type 0/2 load levels/Standard.sam then <theme>/Standard.sam; type 2 (Instant Action) adds <theme>/Easy_Standard.sam and only logs when it is missing
 	public static IReadOnlyList<string> GetStandardLayers( string theme, bool easy )
 	{
 		ValidateTheme( theme );
@@ -186,7 +187,10 @@ public sealed class BalanceSettings
 	/// <summary>Loads the balance settings of an original theme from the game file system.</summary>
 	public static BalanceSettings Load( string theme, bool easy )
 	{
-		var layers = GetStandardLayers( theme, easy ).Select( path => SamDocument.Parse( FileSystem.ReadAllText( path ), path ) );
+		// The original treats a missing Easy_Standard.sam as "not critical"; only jungle ships one.
+		var layers = GetStandardLayers( theme, easy )
+			.Where( path => !path.EndsWith( "/Easy_Standard.sam", StringComparison.Ordinal ) || FileSystem.FileExists( path ) )
+			.Select( path => SamDocument.Parse( FileSystem.ReadAllText( path ), path ) );
 		var challenges = FileSystem.FileExists( "/Challenges.sam" ) ? new SamSettings( new[] { SamDocument.Parse( FileSystem.ReadAllText( "/Challenges.sam" ), "/Challenges.sam" ) } ) : null;
 		var globalPath = $"/levels/{theme}/global.sam";
 		var global = FileSystem.FileExists( globalPath ) ? new SamSettings( new[] { SamDocument.Parse( FileSystem.ReadAllText( globalPath ), globalPath ) } ) : null;

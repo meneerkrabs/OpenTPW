@@ -16,6 +16,9 @@ adviseur, audio, UI, camera/first-person en betrouwbaar opslaan/laden. Per onder
 wordt het verschil met de gekozen originele versie expliciet bijgehouden.
 Herstel van de verdwenen onlinedienst is een afzonderlijk, later project: dit was
 uitgesloten in de eerder goedgekeurde scope en wordt niet stilzwijgend toegevoegd.
+Hetzelfde geldt voor Theme Park Inc (Sim Coaster) en de sandboxmodi met TPW-, TPI- of
+gecombineerde content: doelen na de offline TPW-acceptatie, met eigen gates en
+zonder invloed op het kritieke pad hierboven (zie README en docs/THEME-PARK-INC.md).
 
 `docs/FEATURE-MATRIX.md` scheidt implementatie, macOS-/Windows-/Linux-kwalificatie
 en originele VM-fidelity. Een tussengate mag een benoemde subset accepteren met
@@ -94,7 +97,40 @@ Vergelijk Ghidra-assisted reconstructie en, alleen indien aantoonbaar ondersteun
 static lifting met een implementatie in de bestaande C#-kern. Vereis reproduceerbare
 outputs, een complete runtime-afhankelijkhedenlijst en minder verwacht totaalwerk.
 Zonder dat bewijs geen pivot naar een nieuwe recompilation-toolchain.
-Verwijder of omzeil geen kopieerbeveiliging als onderdeel van deze proef.
+Verwijder of omzeil zelf geen kopieerbeveiliging als onderdeel van deze proef; zie
+"Herkomst van spelregels" voor de toegestane statische analyse.
+
+### Herkomst van spelregels (besluit 9 oktober 2026)
+
+Een spelregel geldt alleen als origineel gedrag als hij herleid is naar logica in een
+originele executable: voor Theme Park World de PowerPC-executable `SimTheme Park`
+(Mac-cd, november 2000, PEF, onversleuteld) en haar gedeelde bibliotheken; voor
+Theme Park Inc `Game.exe`. Een regel die alleen uit een handleiding, website,
+community-bron of speltest komt, blijft `[APPROX]`, hoe aannemelijk ook. Databestanden
+blijven `[DATA]`-herkomst: zij bewijzen waarden, niet de regel die ze gebruikt.
+
+De Theme Park Inc-`Game.exe` van de cd is SafeDisc-versleuteld. Op besluit van de
+projecteigenaar mag de ontsleutelde no-CD-`Game.exe` die op dezelfde cd meekomt
+(`WIN10FIX+NOCDFIX/noCD Crack/tpinc_nocd/Game.exe`, zelfde sectie-indeling als het
+origineel) voor statische analyse gebruikt worden. Grondslag: decompilatie voor
+interoperabiliteit door een rechtmatige gebruiker (art. 6 Softwarerichtlijn
+2009/24/EG, art. 45m Auteurswet). "Abandonware" is geen juridische grondslag: het
+auteursrecht ligt bij EA. Voorwaarden:
+
+- Geen executable, ontsleutelde code, disassembly-dumps of crack-bestanden in git,
+  issues of artifacts; alleen eigen beschrijvingen met hash, functie-/adresverwijzing.
+- Clean-room: regels worden in eigen woorden beschreven en opnieuw geïmplementeerd;
+  geen gekopieerde of mechanisch vertaalde originele code.
+- Alleen voor interoperabiliteit van OpenTPW; OpenTPW verspreidt of vereist geen
+  no-CD-bestanden en spelers blijven hun eigen originele exemplaar nodig hebben.
+- De Windows-TPW-executable (`TP.ICD`) valt hier niet onder zolang er geen
+  vergelijkbaar besluit is.
+
+Bewijsverwijzingen krijgen een eigen label, bijvoorbeeld
+`[BIN:STP-PPC:<functie of adres>]` en `[BIN:TPI-EXE:<functie of adres>]`, met de
+SHA-256 van de geanalyseerde executable in `RECOMPILATION-ASSESSMENT.md`. Het
+fidelity-register (`tools/fidelity_register.py`) moet dat label nog leren voordat de
+eerste regel zo wordt gemarkeerd.
 
 ### Evidence- en determinismecontract (vereisten, nog niet geleverd)
 

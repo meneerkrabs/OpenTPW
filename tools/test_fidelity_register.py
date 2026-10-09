@@ -21,6 +21,20 @@ var text = "[APPROX:TEST-002] runtime string";
         self.assertEqual(sites[2].label, 'object.sam:Upgrades[0].InitDuration')
         self.assertEqual([s.line for s in sites], [1, 2, 3, 3])
 
+    def test_binary_evidence_labels(self):
+        sites, errors = annotations('''// [BIN:STP-PPC:0x1010474C world setup] traced
+// [BIN:TPI-EXE:0x00401000] traced
+/// <c>[BIN:STP-PPC:<address>]</c> documentation template
+''', 'fixture.cs')
+        self.assertEqual(errors, [])
+        self.assertEqual([(s.kind, s.label) for s in sites],
+                         [('BIN', 'STP-PPC:0x1010474C world setup'), ('BIN', 'TPI-EXE:0x00401000')])
+        for tag in ['[BIN:0x1010474C]', '[BIN:STP-PPC:]', '[BIN:manual:p12]', '[BIN:]']:
+            with self.subTest(tag=tag):
+                sites, errors = annotations('// ' + tag, 'fixture.cs')
+                self.assertEqual(sites, [])
+                self.assertEqual(len(errors), 1)
+
     def test_multiline_data_comment(self):
         sites, errors = annotations('''/// Original values ([DATA:settings:0 Point,
 /// 1 Bilinear, 2 Trilinear]); inferred sampler setup.

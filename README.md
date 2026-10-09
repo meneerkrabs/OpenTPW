@@ -18,6 +18,24 @@ OpenTPW is a re-implementation of Theme Park World, requiring an installation th
 
 **In order to run OpenTPW, you must have a full legal copy of any version of the original game.**
 
+## Goals
+
+These are goals, not current features; [Status](#status) below says what works today.
+
+1. **Theme Park World**: the complete original offline game. This is the primary goal;
+   it is in progress and not yet complete ([completion plan](docs/COMPLETION-PLAN.md)).
+2. **Online play as in the original game**: sharing, visiting and voting on parks,
+   postcards and chat. The original servers are gone and their protocol is not
+   reconstructed, so OpenTPW provides its own opt-in, self-hostable service. Partly
+   implemented as an extension (accounts, park publish/search/download/visit,
+   voting, postcards, chat); see [online](docs/ONLINE.md).
+3. **Theme Park Inc / Sim Coaster**: a separate, later goal. Both games share most file
+   formats and an identical ride-script VM ([comparison](docs/THEME-PARK-INC.md)), but
+   its `.fsh` textures, extended saves and missions are not read yet. Not supported yet.
+4. **Sandbox modes** (an OpenTPW extension, not original behaviour): free building with
+   Theme Park World content, Theme Park Inc content, or both combined. Planned; today's
+   `--sandbox` uses Theme Park World content only.
+
 ## Status
 
 OpenTPW has a working preview: an original-style front end, options and park HUD,
@@ -69,8 +87,9 @@ speech audio rather than original-runtime timing. They
 drive the original advisor's mouth with SDL audio via `--advisor-say N`; the original
 mouth-shape choice is unknown. ISO-only `.MTR` files decode as topology and matrices
 redundant with their banner `.MD2` (no material data; runtime use unknown). SDT speech
-and music (MPEG-2 Layer II) decode within 1 LSB of an external decoder, but Layer I
-sound effects do not decode yet. All nine TGQ movies decode audio bit-exact and video
+and music (MPEG-2 Layer II) decode within 1 LSB of an external decoder; Layer I
+sound effects decode within 1 LSB of an external decoder on all 2,650 clips of the Mac
+edition (not yet played in-game). All nine TGQ movies decode audio bit-exact and video
 close to, not bit-identical with, an external reference; `--play-movie` streams
 the decoded video and audio. Evidence:
 [MD2](docs/MD2-MODELS.md), [MAP](docs/MAP.md), [RSE](docs/RSE-SCRIPTS.md) / [RSE VM](docs/RSE-VM.md),

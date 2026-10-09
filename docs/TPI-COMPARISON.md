@@ -6,6 +6,136 @@ identical engines, gameplay, opcode semantics, or a working TPI target.
 Executable engine version remains unverified. No game or installer was run,
 and no protection was removed.
 
+The full phase 2 audit below supersedes the initial sample counts. Its
+[full-evidence.json](../tools/tpi-compare/full-evidence.json) contains every
+shared payload hash and reproducible whole-corpus manifests, with failures
+and unsupported schemas retained explicitly. The original sampled evidence
+is preserved for provenance.
+
+## Full bounded corpus audit
+
+Full mode removed sample limits while retaining a 50,000-file bound, 128 MiB
+physical parse bound, 16 MiB member bound, 2 MiB compressed-member bound,
+and existing format-reader limits. All 303 TPI and 312 TPW/Patch 2 WADs
+passed directory preflight and parsing. Every member was decompressed and
+hashed: TPI 15,007; TPW/Patch 2 13,394 each. No WAD member was excluded by a
+resource bound in these corpora. Runtime/gameplay compatibility remains
+outside this static audit.
+
+| Actual reader outcome | TPW baseline | Official Patch 2 | TPI retail |
+| --- | ---: | ---: | ---: |
+| WAD archives accepted | 312 | 312 | 303 |
+| WAD members hashed | 13,394 | 13,394 | 15,007 |
+| Archive MD2 accepted | 2,116 | 2,116 | 1,962 |
+| Loose MD2 accepted | 3 | 3 | 16 |
+| Archive MD2 rejected | 2 (207.201) | 2 (207.201) | 0 |
+| Loose legacy arrows rejected | 2 (24.23) | 2 (24.23) | 2 (24.23) |
+| Archive RSE accepted | 308 | 308 | 287 |
+| Loose RSE accepted | 0 | 0 | 1 |
+| Archive SAM accepted | 345 | 345 | 292 |
+| Loose SAM accepted | 55 | 56 | 77 |
+| BF4 files accepted | 33 | 37 | 180 |
+| TP2M terrain maps accepted | 5 | 5 | 4 |
+| Loose sound-catalog MAP rejected by TP2M reader | 62 | 62 | 38 |
+| SDT banks accepted without skipped entries | 47 | 47 | 26 |
+| SDT banks partially accepted | 0 | 0 | 2 |
+
+Two additional TPW/Patch 2 archive sound-catalog MAP members also fail the
+TP2M reader. These are preserved as format distinctions, not terrain errors.
+The full inventory distinguishes header/entry acceptance from audio playback
+and geometry rendering. BF4 was decoded by the existing `FontFile` reader;
+coverage bytes were not stored in Git.
+
+Exact intersections include physical files and decompressed WAD members,
+matching by payload SHA-256 even when paths differ. Duplicate occurrences
+are counted separately; all matching hashes are recorded in the full artifact.
+
+| Pair | Distinct equal payload hashes | Occurrences before / after | Common logical paths / equal hashes |
+| --- | ---: | ---: | ---: |
+| TPW → Patch 2 | 12,696 | 14,153 / 14,154 | 14,195 / 14,150 |
+| TPW → TPI | 382 | 758 / 501 | 250 / 95 |
+| Patch 2 → TPI | 380 | 756 / 499 | 254 / 93 |
+
+These are full bounded asset intersections, not engine-code overlap or proof
+that renamed objects have the same role. Manifest SHA-256 values and resource
+bounds are in `full-evidence.json` and can be regenerated from the original
+inputs without storing them in Git.
+
+### Unsupported opcodes and partial sound banks
+
+All TPI opcode IDs fall within the current 0..105 enum. TPI uses 72 distinct
+IDs, whereas TPW/Patch 2 use 84. However, the reviewed VM source lacks
+registered handlers for two TPI-used IDs: WAITABS (45), 34 instructions in
+19 scripts; MULT (48), one instruction in `vegetation.RSE`. The full artifact
+pins enum/handler source hashes and each affected script hash. A declared
+opcode name is not execution support, and Hooked statuses remain dependent
+on host effects rather than proving complete TPI behavior.
+
+Arabian `MusicHD.sdt` SHA-256
+`193c976c3d07fda05ef507d00ba97867073dda42e51d99d87040f1fee094d66f`
+declares 143 entries; the existing reader accepts 103 and skips 40 beginning
+at index 103. Water `MusicHD.sdt` SHA-256
+`88a29f9b7ef2f129755ddc0e3d55d852024974c55659d900d77442b342d93b36`
+declares 116; 101 are accepted and 15 skipped beginning at index 101.
+Accepted entry headers are 40 bytes. Rejected offsets fail header/data span
+checks. The audit does not decide whether this is an unsupported bank variant,
+stale directory data, extraction issue, or damaged source; it must not silently
+claim all SDT banks are compatible.
+
+### Settings, training keys, COS, and SHPI structures
+
+The standard SAM comparison retains key names and hashes of normalized
+existing-parser value tokens, without source strings or comments. Of the
+242 common keys, 214 have equal value-hash sequences and 28 differ; 554 keys
+are TPI-only and 120 are TPW-only. All 702 differences are grouped by key
+family in the full artifact. Numeric spelling and boolean case are normalized;
+multi-value/trailing-token semantics remain outside the existing parser.
+
+All 369 accepted TPI SAM files/members were searched. No `TrackInfo` key or
+`TrackInfo.Direction` appears. The only Direction key is lighting-related
+`ThemeEngine.DirectionalLightLevel`. Training/experience evidence includes
+`StaffAgencies[n].TrainingExperienceGainModifier`,
+`AllStaffConstants.MinExperienceForTraining`,
+`AllStaffConstants.TrainingExtraExperience`, and grade-specific experience
+families. Their file paths, file hashes, key names, and value hashes are
+recorded. They establish data presence, not controller direction or staff
+training formulas.
+
+All eighty original disc COS files were hashed and inspected. Every first
+little-endian u32 is 2; none contains the inspected BILZ, DWFB, RSSEQ, SHPI,
+or TP2M tags. The existing save-envelope reader rejects all eighty. These
+observations do not turn that word into a version/type or decode track records.
+
+All 7,283 SHPI-bearing files/members (162 physical, 7,121 archive members)
+pass the same bounded structural consistency checks: the u32 at offset 4
+equals file length, the count/table candidate at offset 8 fits the file, and
+the candidate offsets in eight-byte records starting at 16 lie inside the
+file beyond the table. The four-byte directory tag is hashed, not dumped.
+This qualifies a consistent container-header family, not pixel compression,
+palette semantics, or an implemented SHPI/FSH decoder.
+
+### Retail executable and official readme cross-check
+
+The full extracted retail tree has no `Game.exe`/`Game.icd`; existing
+`unshield l data1.cab` reports no game-executable entry. The disc-root
+`Game.exe` remains the separately identified input. Fix folders are excluded
+and no fix executable is substituted for it. Standard version-resource API
+results are null; the DRM/wrapper limit on engine version remains conditional.
+
+Disc `Readme.txt` SHA-256
+`90f8447c0fd32ebbf851a9ed9bb0fe7f6fde6932fb287ddb1e25d7ba79dfb8cb`
+and `ReadMe.htm` SHA-256
+`4939e85128250b95792d80d34957b30b5684432321fed8f17c3ffb431f73214e`
+contain no version-word or explicit product-engine-version candidate in the
+bounded text check. No readme text is checked into Git. Product titles and
+system requirements cannot fill the missing engine build/version evidence.
+
+Phase 2 validation: thirteen C# fixture cases and eleven Python tests pass.
+Full actual-reader inventories complete without WAD member limit exclusions;
+unsupported versions and partial SDT results remain in the report. No new
+decoder, dependency, game target, installer/game execution, or protection
+removal was introduced.
+
 Metadata and reproducible probes: [tools/tpi-compare](../tools/tpi-compare/README.md),
 [evidence.json](../tools/tpi-compare/evidence.json). All original assets remain
 outside Git. The result records actual reader calls, their failures, and sample

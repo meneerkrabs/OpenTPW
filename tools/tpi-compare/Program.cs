@@ -25,6 +25,8 @@ if ( args.Length == 2 && args[0] == "--version-info" )
 	} ) );
 	return;
 }
+var full = args.Length == 4 && args[0] == "--full";
+if ( full ) args = args[1..];
 if ( args.Length != 3 )
 	throw new ArgumentException( "Usage: TpiCompare <corpus-root> <distinct-baseline-label> <metadata.json>; or --self-test" );
 var root = Path.GetFullPath( args[0] );
@@ -61,19 +63,20 @@ foreach ( var path in files )
 	if ( family != null )
 	{
 		if ( length > 128 * 1024 * 1024 ) result = new { status = "unverified-limit", reason = "128 MiB physical parse bound" };
-		else if ( budget.GetValueOrDefault( family ) >= 12 ) result = new { status = "unverified-limit", reason = "12 physical reader probes per family" };
+		else if ( !full && budget.GetValueOrDefault( family ) >= 12 ) result = new { status = "unverified-limit", reason = "12 physical reader probes per family" };
 		else
 		{
 			budget[family] = budget.GetValueOrDefault( family ) + 1;
 			var data = File.ReadAllBytes( path );
-			result = Probe( relative, data, family, budget );
+			result = Probe( relative, data, family, budget, full );
 		}
 	}
 	records.Add( new { path = relative, bytes = length, sha256 = hash, signature, probeFamily = family, readerResult = result } );
 }
 var report = new
 {
-	schema = 1,
+	schema = 2,
+	exhaustiveRequested = full,
 	baselineLabel = args[1],
 	scope = "Static metadata and existing-reader acceptance only; no executable execution or protection removal",
 	fileCount = records.Count,
@@ -83,9 +86,9 @@ var report = new
 	{
 		maximumFiles = 50000,
 		physicalParseBytes = 128 * 1024 * 1024,
-		physicalProbesPerFamily = 12,
-		memberProbesPerFamily = 24,
-		compressedMemberBytes = 65536,
+		physicalProbesPerFamily = full ? (int?)null : 12,
+		memberProbesPerFamily = full ? (int?)null : 24,
+		compressedMemberBytes = full ? 2 * 1024 * 1024 : 65536,
 		memberBytes = 16 * 1024 * 1024
 	},
 	files = records
@@ -104,6 +107,7 @@ static string Signature( ReadOnlySpan<byte> data )
 	if ( data.StartsWith( "MSCF"u8 ) ) return "Microsoft-CAB";
 	if ( data.StartsWith( "BFST"u8 ) ) return "BFST";
 	if ( data.StartsWith( "BFMU"u8 ) ) return "BFMU";
+	if ( data.StartsWith( "F4FB"u8 ) ) return "BF4";
 	if ( data.StartsWith( "SHPI"u8 ) ) return "SHPI";
 	if ( data.StartsWith( "PK"u8 ) ) return "ZIP-candidate";
 	return "unrecognized";
@@ -116,7 +120,8 @@ static string? ProbeFamily( string signature, string extension ) => signature sw
 	"RSSEQ" => "RSE",
 	"TP2M" => "MAP",
 	"MZ-candidate" => "PE",
-	_ => extension switch { ".sam" => "SAM", ".sdt" => "SDT", ".cos" => "COS", ".md2" => "MD2", ".rse" => "RSE", ".wad" => "WAD", ".map" => "MAP", ".fsh" => "FSH-unverified", _ => null }
+	"BF4" => "BF4",
+	_ => extension switch { ".sam" => "SAM", ".sdt" => "SDT", ".cos" => "COS", ".md2" => "MD2", ".rse" => "RSE", ".wad" => "WAD", ".map" => "MAP", ".fsh" => "FSH-unverified", ".bf4" => "BF4", _ => null }
 };
 
 static string? Exclusion( string path )
@@ -137,7 +142,7 @@ static int ProbePriority( string path )
 	return 2;
 }
 
-static object Probe( string path, byte[] data, string family, Dictionary<string, int> budget )
+static object Probe( string path, byte[] data, string family, Dictionary<string, int> budget, bool full = false )
 {
 	try
 	{
@@ -175,7 +180,8 @@ static object Probe( string path, byte[] data, string family, Dictionary<string,
 					script.CodeWordCount,
 					script.StringBlobLength,
 					instructionCount = script.Instructions.Count,
-					variableNames = script.VariableNames,
+					variableNames = full ? null : script.VariableNames,
+					variableNamesSha256 = Hash( Encoding.UTF8.GetBytes( string.Join( "\n", script.VariableNames ) ) ),
 					opcodeCounts = script.Instructions.GroupBy( x => x.Opcode ).ToDictionary( x => x.Key.ToString(), x => x.Count() )
 				};
 			case "MAP":
@@ -201,6 +207,7 @@ static object Probe( string path, byte[] data, string family, Dictionary<string,
 					limitation = "Syntactic key/value acceptance, not schema compatibility",
 					entryCount = settings.Entries.Count,
 					keys = settings.Entries.Select( x => x.Key ).Distinct().Order().ToArray(),
+					valueHashes = full ? settings.Entries.Select( x => new { x.Key, valueHash = Hash( Encoding.UTF8.GetBytes( NormalizeValue( x.Value ) ) ) } ).ToArray() : null,
 					entriesSha256 = Hash( Encoding.UTF8.GetBytes( string.Join( "\n", settings.Entries.Select( x => x.Key + "=" + x.Value ) ) ) )
 				};
 			case "SDT":
@@ -216,11 +223,27 @@ static object Probe( string path, byte[] data, string family, Dictionary<string,
 						limitation = "Entry/header parsing only; no audio payload decode or playback"
 					};
 			case "COS":
-				using ( var save = new SaveReader( stream ) )
-					return new { status = "existing-envelope-inspected", reader = "SaveReader.Inspect", container = save.Inspect(), limitation = "Save envelope only; no COS payload decoder or coaster implementation" };
+				try
+				{
+					using var save = new SaveReader( stream );
+					return new { status = "existing-envelope-inspected", reader = "SaveReader.Inspect", container = save.Inspect(), structural = StructuralUnknown( data ), limitation = "Save envelope only; no COS payload decoder or coaster implementation" };
+				}
+				catch ( InvalidDataException error ) { return new { status = "reader-rejected", reader = "SaveReader.Inspect", reason = error.Message, structural = StructuralUnknown( data ) }; }
+			case "BF4":
+				var font = new FontFile( stream );
+				return new
+				{
+					status = "parsed-existing-reader",
+					reader = "FontFile",
+					font.HeaderWidthHint,
+					font.HeaderHeightHint,
+					glyphCount = font.Glyphs.Count,
+					encodingCounts = font.Glyphs.GroupBy( x => x.Encoding ).ToDictionary( x => x.Key.ToString(), x => x.Count() ),
+					decodedPixels = font.Glyphs.Sum( x => (long)x.Coverage.Length )
+				};
 			case "WAD":
 				HashSet<string> oversizedMembers;
-				try { oversizedMembers = ValidateWad( data ); }
+				try { oversizedMembers = ValidateWad( data, full ); }
 				catch ( InvalidDataException error ) { return new { status = "preflight-rejected", readerInvoked = false, reason = error.Message }; }
 				using ( var wad = new WadArchive( stream ) )
 				{
@@ -229,9 +252,10 @@ static object Probe( string path, byte[] data, string family, Dictionary<string,
 					foreach ( var (name, file) in leaves )
 					{
 						var memberFamily = ProbeFamily( "unrecognized", Path.GetExtension( name ).ToLowerInvariant() );
-						if ( memberFamily == null || memberFamily is "WAD" or "PE" ) continue;
+						if ( !full && (memberFamily == null || memberFamily is "WAD" or "PE") ) continue;
+						memberFamily ??= "unknown";
 						var key = "member-" + memberFamily;
-						if ( budget.GetValueOrDefault( key ) >= 24 ) continue;
+						if ( !full && budget.GetValueOrDefault( key ) >= 24 ) continue;
 						budget[key] = budget.GetValueOrDefault( key ) + 1;
 						if ( oversizedMembers.Contains( file.Name ?? "" ) )
 						{
@@ -249,7 +273,7 @@ static object Probe( string path, byte[] data, string family, Dictionary<string,
 								bytes = bytes.Length,
 								sha256 = Hash( bytes ),
 								signature = sig,
-								readerResult = Probe( path + "!" + name, bytes, ProbeFamily( sig, Path.GetExtension( name ).ToLowerInvariant() ) ?? memberFamily, budget )
+								readerResult = Probe( path + "!" + name, bytes, ProbeFamily( sig, Path.GetExtension( name ).ToLowerInvariant() ) ?? memberFamily, budget, full )
 							} );
 						}
 						catch ( Exception error ) when ( error is not OutOfMemoryException ) { members.Add( new { path = name, status = "reader-rejected", errorType = error.GetType().Name, reason = error.Message } ); }
@@ -292,7 +316,7 @@ static object Probe( string path, byte[] data, string family, Dictionary<string,
 						sections = headers.SectionHeaders.Select( x => new { x.Name, x.VirtualAddress, x.VirtualSize, x.PointerToRawData, x.SizeOfRawData, flags = x.SectionCharacteristics.ToString() } )
 					};
 				}
-			default: return new { status = "unverified", reason = $"No validated {family} decoder; extension is not a format proof", prefixSha256 = Hash( data.AsSpan( 0, Math.Min( data.Length, 64 ) ) ) };
+			default: return new { status = "unverified", reason = $"No validated {family} decoder; extension is not a format proof", prefixSha256 = Hash( data.AsSpan( 0, Math.Min( data.Length, 64 ) ) ), structural = Signature( data ) == "SHPI" ? StructuralUnknown( data ) : null };
 		}
 	}
 	catch ( Exception error ) when ( error is not OutOfMemoryException )
@@ -308,7 +332,7 @@ static object Probe( string path, byte[] data, string family, Dictionary<string,
 	}
 }
 
-static HashSet<string> ValidateWad( byte[] data )
+static HashSet<string> ValidateWad( byte[] data, bool full = false )
 {
 	var oversized = new HashSet<string>( StringComparer.OrdinalIgnoreCase );
 	if ( data.Length < 88 || !data.AsSpan().StartsWith( "DWFB"u8 ) ) throw new InvalidDataException( "Missing bounded DWFB header." );
@@ -321,7 +345,7 @@ static HashSet<string> ValidateWad( byte[] data )
 		var payload = U32( data, offset + 12 ); var packedBytes = U32( data, offset + 16 );
 		if ( nameBytes is 0 or > 4096 || (long)name + nameBytes > data.Length || (long)payload + packedBytes > data.Length )
 			throw new InvalidDataException( "WAD name or member span exceeds bounded input." );
-		if ( packedBytes > 16 * 1024 * 1024 || U32( data, offset + 24 ) > 16 * 1024 * 1024 || U32( data, offset + 20 ) == 4 && packedBytes > 65536 )
+		if ( packedBytes > 16 * 1024 * 1024 || U32( data, offset + 24 ) > 16 * 1024 * 1024 || U32( data, offset + 20 ) == 4 && packedBytes > (full ? 2 * 1024 * 1024 : 65536) )
 			oversized.Add( Encoding.ASCII.GetString( data, (int)name, (int)nameBytes - 1 ).Split( '\\' )[^1] );
 	}
 	return oversized;
@@ -338,6 +362,46 @@ static IEnumerable<(string Name, ArchiveFile File)> Walk( ArchiveDirectory direc
 
 static uint U32( ReadOnlySpan<byte> bytes, int offset ) => BinaryPrimitives.ReadUInt32LittleEndian( bytes[offset..] );
 static string Hash( ReadOnlySpan<byte> bytes ) => Convert.ToHexString( SHA256.HashData( bytes ) ).ToLowerInvariant();
+
+static string NormalizeValue( string value )
+{
+	if ( bool.TryParse( value, out var boolean ) ) return boolean ? "true" : "false";
+	if ( decimal.TryParse( value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var number ) )
+		return number.ToString( "G29", System.Globalization.CultureInfo.InvariantCulture );
+	return value;
+}
+
+static object StructuralUnknown( byte[] data )
+{
+	var tags = new Dictionary<string, int>();
+	foreach ( var tag in new[] { "BILZ", "RSSEQ", "TP2M", "SHPI", "DWFB" } )
+		tags[tag] = data.AsSpan().IndexOf( Encoding.ASCII.GetBytes( tag ) );
+	object? directoryCandidate = null;
+	if ( data.Length >= 16 && data.AsSpan().StartsWith( "SHPI"u8 ) )
+	{
+		var count = U32( data, 8 );
+		var tableEnd = 16L + count * 8L;
+		var offsets = new List<uint>();
+		if ( count <= 4096 && tableEnd <= data.Length )
+			for ( var i = 0; i < count; i++ ) offsets.Add( U32( data, 16 + i * 8 + 4 ) );
+		directoryCandidate = new
+		{
+			declaredLengthAt4 = U32( data, 4 ),
+			countAt8 = count,
+			tableFits = count <= 4096 && tableEnd <= data.Length,
+			offsetsInsideFile = offsets.Count == count && offsets.All( x => x >= tableEnd && x < data.Length ),
+			distinctOffsets = offsets.Distinct().Count(),
+			directoryTagHash = Hash( data.AsSpan( 12, 4 ) )
+		};
+	}
+	return new
+	{
+		firstU32 = data.Length >= 4 ? U32( data, 0 ) : (uint?)null,
+		tagOffsets = tags,
+		shpiDirectoryCandidate = directoryCandidate,
+		limitation = "Observed bounded word/tag/table consistency only; no payload decoding or unproved COS/SHPI semantics"
+	};
+}
 
 static void SelfTest()
 {
@@ -360,5 +424,14 @@ static void SelfTest()
 	"one.sam\0"u8.CopyTo( wad.AsSpan( 128 ) ); payload.CopyTo( wad.AsSpan( 136 ) );
 	var parsed = JsonSerializer.Serialize( Probe( "fixture.wad", wad, "WAD", budget ) );
 	if ( !parsed.Contains( "WadArchive" ) || !parsed.Contains( "SettingsFile/SAMParser" ) || !parsed.Contains( "\"entryCount\":1" ) ) throw new Exception( "Existing WAD/member readers did not accept the synthetic fixture." );
-	Console.WriteLine( "Nine signature, actual WAD/member readers, exclusion and bounds cases passed." );
+	var font = new byte[8]; "F4FB"u8.CopyTo( font );
+	if ( !JsonSerializer.Serialize( Probe( "fixture.bf4", font, "BF4", budget ) ).Contains( "\"glyphCount\":0" ) ) throw new Exception( "Existing BF4 empty fixture failed." );
+	var shpi = new byte[28]; "SHPI"u8.CopyTo( shpi );
+	BinaryPrimitives.WriteUInt32LittleEndian( shpi.AsSpan( 4 ), 28 ); BinaryPrimitives.WriteUInt32LittleEndian( shpi.AsSpan( 8 ), 1 );
+	BinaryPrimitives.WriteUInt32LittleEndian( shpi.AsSpan( 20 ), 24 );
+	if ( !JsonSerializer.Serialize( StructuralUnknown( shpi ) ).Contains( "\"offsetsInsideFile\":true" ) ) throw new Exception( "Bounded structural directory candidate failed." );
+	var cos = new byte[8]; BinaryPrimitives.WriteUInt32LittleEndian( cos, 2 );
+	if ( !JsonSerializer.Serialize( StructuralUnknown( cos ) ).Contains( "\"firstU32\":2" ) ) throw new Exception( "Unknown COS words must not gain invented semantics." );
+	if ( NormalizeValue( "1.00" ) != NormalizeValue( "1" ) || NormalizeValue( "TRUE" ) != NormalizeValue( "true" ) ) throw new Exception( "Value hash normalization failed." );
+	Console.WriteLine( "Thirteen signature, actual readers, exclusion, structural and value-hash cases passed." );
 }

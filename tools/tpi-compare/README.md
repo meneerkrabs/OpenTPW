@@ -52,3 +52,28 @@ without unwrapping. Candidate text names are not validated RTTI. PEF metadata
 reuses the repository's tested `pef.py` and remains a separate Mac baseline.
 
 See [TPI-COMPARISON](../../docs/TPI-COMPARISON.md) for results and limits.
+
+## Full corpus mode
+
+`--full` removes sampling limits, hashes every WAD member, probes every recognized
+family, adds BF4 decoding through `FontFile`, and records only value hashes for
+SAM tokens and variable-name hashes for RSE. It retains size/count limits;
+compressed member input is capped at 2 MiB and decoded member size at 16 MiB.
+Unknown COS/SHPI header/table observations remain metadata, not new decoders.
+The actual corpora had no WAD member exclusions at these bounds.
+
+```sh
+dotnet run --project tools/tpi-compare/TpiCompare.csproj --configuration Release -- --full /Users/sander/server/game-assets/theme-park-world TPW-Windows-full /tmp/tpi-full-tpw.json
+dotnet run --project tools/tpi-compare/TpiCompare.csproj --configuration Release -- --full /Users/sander/server/game-assets/theme-park-world-patch2 TPW-Patch2-full /tmp/tpi-full-patch2.json
+dotnet run --project tools/tpi-compare/TpiCompare.csproj --configuration Release -- --full /Users/sander/server/game-assets/theme-park-inc/retail TPI-retail-full /tmp/tpi-full-retail.json
+dotnet run --project tools/tpi-compare/TpiCompare.csproj --configuration Release -- --full /Users/sander/server/game-assets/theme-park-inc/cd/THEME_PARK/CoasterData TPI-CD-coasters-full /tmp/tpi-full-cos.json
+python3 tools/tpi-compare/readme_metadata.py /Users/sander/server/game-assets/theme-park-inc/cd/THEME_PARK/Readme.txt /Users/sander/server/game-assets/theme-park-inc/cd/THEME_PARK/ReadMe.htm --output /tmp/tpi-full-readme.json
+python3 tools/tpi-compare/full_summary.py --tpw /tmp/tpi-full-tpw.json --patch2 /tmp/tpi-full-patch2.json --tpi /tmp/tpi-full-retail.json --source-root . --cos /tmp/tpi-full-cos.json --readme /tmp/tpi-full-readme.json --output tools/tpi-compare/full-evidence.json
+```
+
+The full artifact records manifests, every exact shared payload hash, duplicate
+occurrence counts, reader outcomes, missing-handler opcode IDs with source/script
+hashes, standard-settings key/value-hash differences, and training/direction key
+searches. `--readme` can additionally consume a metadata-only readme report.
+Enum/handler status is a static source declaration audit, not VM execution or a
+claim that Hooked effects are implemented for TPI.

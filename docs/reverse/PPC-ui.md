@@ -855,6 +855,99 @@ identity-aware option/font linkage. Concrete remaining paths are category row
 fill/sort, list scroll dispatch, selected-item commands, original clipping and
 the actual display-mode creation consumer.
 
+## Catalog scroll, sort and activation event boundaries
+
+`catalog_events.py` adds a bounded native operand/relocation witness under the
+same identified application SHA-256. These common UI procedures are in the main
+PEF; no separately named UI library or original execution is assumed. A method
+name alone does not establish input semantics. The witness joins runtime RTTI,
+constructor bindings, the embedded allocation table, registration vectors,
+conditional predicates and actual caller targets.
+
+List RTTI header `data:0x4fef4` identifies **InterfaceListControl2**, whose type
+method `code:0x1773f0` returns 7. This matches original control 504's table type
+7 and attributes **0x91**. The constructor binds that table at +280 and default
+callback vector `data:0x8600 ->code:0x17a5fc` to both +272 and +276. The buy
+builder replaces +272 with `0x163e7c` while leaving +276 for explicit delegation
+through `0x181370`. The outer/root window has a separate callback,
+`data:0x8090 ->code:0x163748`: `0x181aac` installs the r5 callback into the
+allocated root's +272. Generic dispatch `0x181398` calls +272 or returns -1 if
+it is missing. Root and list handlers are therefore separate boundaries, not
+aliases inferred from current OpenTPW widgets.
+
+The actual layout supplies sort buttons **16,17,18** parented to list 504 and
+scrollbar child **1**, type 3. Its RTTI is **InterfaceScrollBar** at
+`data:0x48054`; type slot returns 3, and value getter `0x17b9d4` reads +320.
+Sort header command **256** goes from default list handler `0x17a5fc` into
+`0x17a444`, which subtracts 16 from the child ID, checks column count +356 and
+requires attribute bit **0x10**. Repeated header selection toggles direction
+word +362; changed column stores +360. This is distinct from category command
+**257**, whose custom handler additionally requires argument 1. Do not assign
+physical press/release names to either merely from their numbers.
+
+| Native message | Established payload/delivery | Consumer |
+| --- | --- | --- |
+| 1030 sort state | signed `+(column+1)` for direction bit 0, negative for bit 1; synchronous `0x170f98` | root handler stores the word at `data:0x4d1dc` |
+| 2048 scrollbar value | child control value changed, synchronous `0x170f98` | list queries actual child 1's value |
+| 1029 range changed | r5 first visible; r6 `min(first+visible_count,total-1)`, synchronous `0x170f98` | parent callback boundary; inclusive/exclusive range meaning is not invented |
+| 1025 selection changed | source list control ID and selected row ordinal; queued `0x170ec8` | root resolves row identity and updates selection/preview state |
+| 1024 activation | source list control ID and selected row ordinal; queued `0x170ec8` | root enters the item/purchase-command path |
+
+Sort word initial value is **1**. Builder `0x164800` calls `0x17a2a8`, which
+sets column from `abs(word)-1` and direction from its sign. Root handler's 1030
+branch at `0x163db4/0x163db8` persists this word without performing an item/model
+lookup. The three column descriptor flags are **0,1,1** at
+`0x1647ac..0x1647d4`, stored at stride-12 record +10. Generic sort `0x1773f8`
+uses flag 1 for signed integer comparisons; other column data follows text
+comparison helper `0x17abf0`, whose imported **wmemcmp** compares UTF-16 units
+and resolves equal prefixes by length. This is not an evidenced localized or
+case-folded comparator. Final linked-list ordering, special row markers and tie
+stability remain open; the sign of a selector is recorded as a direction bit,
+not prematurely labeled ascending/descending.
+
+Scrollbar setter emits 2048 only when +320 changes. Its list consumer at
+`0x17aa34..0x17aa98` queries child 1 via its value getter, compares first visible
++340, updates it and refreshes rows only on a change, then emits 1029. A separate
+input branch **0x11008** at `0x17aac4..0x17ab04` gets that child value and calls
+its setter with **current minus input delta**. This proves a delta-scroll path;
+which physical wheel/gesture produces this input is not yet pinned. Visible row
+count +370 and total row count +336 feed the range operands. Generic keyboard
+branch recognizes encoded keys 0x2300/0x2400/0x2600/0x2800 to request last/first/
+previous/next selection, but gates on attribute **0x200**. Authored catalog
+attributes 0x91 lack that bit; the runtime writer enabling it is untraced, so
+this does not certify active catalog arrow-key behavior.
+
+Queued delivery is not synchronous invocation: `0x170ec8` calls `0x16fd80`,
+which writes a **16-byte event record** containing target pointer, event, source
+and payload at +0/+4/+8/+12. Queue draining later reaches `0x181398`.
+Synchronous `0x170f98` directly reaches that callback dispatcher. Null/missing
+callback and conditional input predicates are checked by negative tests. The
+selected activation branch at `0x17aa0c..0x17aa2c` requires source argument zero
+and a nonnegative selected row before emitting 1024; no physical-key name is
+assigned to its incoming 0x1000d code.
+
+The root's 1024/1025 paths call row identity accessor **0x17991c**, which reads
+record **+4** after following the list's row links. The positive activation path
+at `0x1639a4/0x1639ac` takes its **low 16 bits** into the catalog item consumers.
+That is separate from the signed 32-bit root-node-name XOR/multiply-47 drawing
+key used by layout/model registration. Binding a UI model cannot itself execute
+a purchase, and sort state is neither a drawing key nor an item ID. Category
+rebuild `0x162308` targets actual list 504, appends typed row data/item IDs through
+`0x178768` and refreshes via `0x177d44`; it does not convert names to drawing
+hashes. The full purchase affordability/research checks and final tool commit
+are separate dependencies.
+
+Validation: **52 Python tests, zero skipped** with private identities supplied.
+Nine new cases cover RTTI/default-versus-override/root callbacks, distinct
+scroll/sort/selection/activation delivery, bounded metadata decoders, and
+mutated private RTTI/operand/conditional/call/relocation rejection. Reference
+sort/header/range decoders reject unsupported domains; those diagnostics do
+not assert how the original responds to arbitrary invalid values. No original
+bytes, disassembly or full layout/string tables are committed, and no production
+UI code is changed. Remaining dependencies are the physical input producers,
+linked sort order/ties/special markers, keyboard-enable writer, purchase business
+logic/tool commit and final clipping/pixels. No approximation ID is closed.
+
 ## Current sign renderer correction plan
 
 `SignTextRenderer.RenderSign -> SignCanvas.Compose -> SignCanvas.SlotColor`
@@ -904,7 +997,7 @@ values to stay available.
 | UI-021 | Partial replacement: cash/date rectangles, font slots and constructor colors established, including DATETINY tier. | Complete measured cash repositioning, date baseline and locale grouping/formatting; table bounds alone are insufficient. |
 | UI-022 | Contradicted subclaims: scalar uses 1.25 steps, .25..2 and affects scheduler/animation/scripts. | Resolve callbacks' input dispatch, displayed control and pause behavior; integrate clock-lane consumer proofs. |
 | UI-023 | Test-only value, no original evidence required for game path. | Keep fixture calendar separate and audit all runtime consumers for accidental use. |
-| UI-024 | Partial replacement: original buy window with preview/three-column scrolling catalogue and separate ride-status window decoded. | Trace catalogue row contents/sort/selection/category controller, coordinate inheritance, translated labels and final arm/window state. |
+| UI-024 | Partial replacement: original buy window with preview/three-column scrolling catalogue and separate ride-status window decoded. | Scroll/sort/selection/activation callback boundaries are now pinned; finish linked sort order/ties, row value semantics, physical inputs, coordinate inheritance and purchase/tool commit. |
 | UI-025 | Open. | Identify tag queue enqueue/dequeue, capacity/expiry clock and `msgtag`/`f_tag*` allocation; distinguish advisor from UI queue. |
 | UI-026 | Preview meshes are original data; projection/turn/sort open. | Follow catalogue preview draw object's model rotation, animation selection, camera projection and queue ordering. |
 | UI-027 | Open. | Trace original hit/pick mode and geometry/grid query before selection notification; ground-cell occupancy alone is insufficient. |

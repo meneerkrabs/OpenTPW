@@ -13,6 +13,9 @@ Clang/Xcode command-line tools available on PATH:
 ./scripts/build-macos-native.sh
 ```
 
+The script is a wrapper around `scripts/build-native.py`, which also builds SDL2 and the
+Windows/Linux arm64 libraries for release builds (RELEASES.md).
+
 The script fetches source into the external sibling cache
 `../tooling/veldrid-spirv` (for this checkout,
 `/Users/sander/server/tooling/veldrid-spirv`). Override it with

@@ -5,7 +5,7 @@ namespace OpenTPW;
 
 /// <summary>
 /// Draws <see cref="TextBatch"/> quads with BF4 atlases uploaded as R8 textures, point sampled
-/// one texel per framebuffer pixel and alpha blended. Solid rectangles sample a 1×1 opaque texture.
+/// one texel per (integer-scaled) block of framebuffer pixels and alpha blended. Solid rectangles sample a 1×1 opaque texture.
 /// </summary>
 internal sealed class TextRenderer : IDisposable
 {
@@ -82,9 +82,9 @@ internal sealed class TextRenderer : IDisposable
 		float textureWidth = quad.Atlas?.Width ?? 1;
 		float textureHeight = quad.Atlas?.Height ?? 1;
 		var left = quad.X * 2f / framebufferWidth - 1;
-		var right = (quad.X + quad.Width) * 2f / framebufferWidth - 1;
+		var right = (quad.X + quad.PixelWidth) * 2f / framebufferWidth - 1;
 		var top = 1 - quad.Y * 2f / framebufferHeight;
-		var bottom = 1 - (quad.Y + quad.Height) * 2f / framebufferHeight;
+		var bottom = 1 - (quad.Y + quad.PixelHeight) * 2f / framebufferHeight;
 		var u0 = quad.AtlasX / textureWidth;
 		var v0 = quad.AtlasY / textureHeight;
 		var u1 = quad.Atlas == null ? 1 : (quad.AtlasX + quad.Width) / textureWidth;

@@ -33,4 +33,27 @@ public class TextBatchTests
 		clipped.Composite( small, 2, 2 );
 		CollectionAssert.AreEqual( new byte[] { 3, 2, 1, 255, 0, 0, 0, 0 }, small[0..8], "Quads are clipped to the image." );
 	}
+
+	[TestMethod]
+	public void IntegerScaleReplicatesEachTexelIntoAPixelBlock()
+	{
+		var atlas = new FontAtlas( FontAtlasTests.CreateFont( 4,
+			new FontAtlasTests.SyntheticGlyph( 'a', 2, 1, 1, 1, 3, new byte[] { 15, 5 } ) ) );
+		var layout = TextLayout.Create( atlas, "a" );
+		var single = new TextBatch();
+		single.AddText( atlas, layout, 0, 0, new RgbaByte( 255, 200, 0, 255 ) );
+		var doubled = new TextBatch();
+		doubled.AddText( atlas, layout, 0, 0, new RgbaByte( 255, 200, 0, 255 ), 2 );
+		var glyph = doubled.Quads.Single();
+		Assert.AreEqual( (2, 2, 2, 1, 4, 2), (glyph.X, glyph.Y, glyph.Width, glyph.Height, glyph.PixelWidth, glyph.PixelHeight), "Offsets and extent scale; atlas texels do not." );
+		Assert.ThrowsException<System.ArgumentOutOfRangeException>( () => doubled.AddText( atlas, layout, 0, 0, new RgbaByte( 0, 0, 0, 255 ), 0 ) );
+
+		var small = new byte[4 * 3 * 4];
+		single.Composite( small, 4, 3 );
+		var large = new byte[8 * 6 * 4];
+		doubled.Composite( large, 8, 6 );
+		for ( var row = 0; row < 6; row++ )
+			for ( var column = 0; column < 8; column++ )
+				CollectionAssert.AreEqual( small[(((row / 2) * 4 + column / 2) * 4)..(((row / 2) * 4 + column / 2) * 4 + 4)], large[((row * 8 + column) * 4)..((row * 8 + column) * 4 + 4)], $"pixel {column},{row}" );
+	}
 }

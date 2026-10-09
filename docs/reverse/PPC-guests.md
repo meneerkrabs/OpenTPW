@@ -28,8 +28,10 @@ OPENTPW_PPC_BIN_ROOT=/Users/sander/server/game-assets/mac-feral/bin python3 -m u
 The witness fails closed on binary identity, selected code-block digests,
 relocated targets, operation classes, field offsets, and direct-call targets.
 It prints interpreted facts and coefficient values only. Without the local
-binary, six arithmetic/decoder/rejection tests run and the original-input test skips.
-With the specified input all seven tests pass, zero skips.
+binary, ten arithmetic/decoder/rejection tests run and the original-input test skips.
+With the specified input all eleven tests pass, zero skips. The original-input
+witness pins 33 bounded functions, including constructors and environmental
+effect writers; it is not a claim of complete instruction interpretation.
 
 ## Movement and coordinates
 
@@ -258,6 +260,132 @@ diagnostic. It also tests toilet >80 and route/admission consistency.
 Units of 100 remain unresolved. Queue edits, dismissed guests, moved queue
 ends, and destination failure have dedicated paths rather than being reduced
 to OpenTPW's direct queue list and nearest-path fallback.
+
+## Phase 2: environmental deltas and alternate need writes
+
+High confidence initialization: map/global binder code:`0x104e4c..0x104e84`
+stores the game object in data:`0x11ef04` and `game+728` in data:`0x11ef00`.
+This explains the 728-byte difference between map-relative and game-relative
+layout addresses. The game constructor `0x104500..0x10465c` constructs
+16,384 ten-byte cell records at game `+0x1b13dc` using the transition vector
+data:`0x6f50`. That vector relocates to code:`0xefddc`, TOC `0x8000`.
+The cell constructor calls CFM import glue `0x1c483c` at `0xefdf8`; its
+relocated import is `memset`, with fill zero and length ten. Cell records
+therefore start with zero environmental deltas, not a baked-in growth rate.
+The cell records can also be read during map load via `0xd7014`; their
+post-load values still require separate save-layout qualification.
+
+Region add/remove wrappers `0xd7340/0xd7370` call common writer `0xd73a0`.
+They supply an add/remove flag, effect index, and encoded source cell. The
+writer uses twelve-byte effect entries at map `+0x1d9104 + 12*index`:
+five signed 16-bit coefficients at entry offsets 0,2,4,6,8, and an unsigned
+radius byte at offset 10. It clips the **square** radius footprint against
+grid 0..127, not a Euclidean circle. For each covered cell and component,
+the contribution is
+`trunc_toward_zero(sign*coefficient/(abs(dx)+abs(dy)+1))`, added to the signed
+16-bit cell component. Add uses sign +1, remove −1. There is no saturation
+in this writer; the stored halfword can wrap. The guest update consumes only
+the first three components; the score distance modifier consumes component 4
+(byte offset 8), and security code `0xf7b2c` consumes component 3.
+
+This proves an environmental source for the otherwise unexplained signed
+cell values. It does not erase the fixed growth branch's phase restriction.
+Integer attenuation also matters: a coefficient −1 contributes only at the
+source cell, because −1/2 truncates to zero. The witness tests signed
+attenuation and exact add/remove cancellation within the no-overflow domain.
+
+Runtime call indices and PC baseline labels agree at useful anchors:
+entertainer setup `0xd2894` adds index 0; guard setup `0xd45f0` adds index 3;
+litter dispatcher `0xd8668/0xd8688` adds indices 2/5; removal counterparts
+include `0xd89ec/0xd8a10`. Toilet cleanliness transition calls remove then
+add at `0xe2764/0xe278c`, and object teardown chooses index 6 or 1 at
+`0xdc134/0xdc160`. Firework stop uses index 7 at `0xe07e8`.
+The inspected Windows baseline `Data/levels/Standard.sam` labels indices
+0..7 as entertainer, clean toilet, vomit, guard, camera, stinkbomb, dirty
+toilet, and fireworks. Its SHA-256 is
+`3d39433641df70dba73e6ce0f4ae576a5a334ed93e61adc1cdd570b751a8bf4b`.
+This is source-corpus comparison, **not** proof of Mac-loaded balance values.
+The exact Mac SAM loader-to-effect-record binding remains unresolved.
+
+Alternate need writes are concrete visit effects. Ride outcome code:
+`0xea318..0xea5a4` uses preferred/excitement differences 5/15/40 to select
+the positive happiness amounts from balance offsets 36/40/44, with clamps
+0..100. Differences above 40 skip those bonuses; this bounded function has
+no corresponding −SmallHappinessChange branch. Its illness increment is
+`trunc(excitement/divisor) * trunc((100-byte(trunc(hunger)))/20)`, then clamped
+0..100; the divisor is balance offset 48. For bounded valid needs, excitement
+70/divisor 10 produces illness +35 at hunger 0, +7 at hunger 80, and +0
+at hunger 81. It is not simply excitement/divisor.
+
+Shop outcome code:`0xeaaf8..0xeb49c` loads object metadata at `0xeabb8`.
+At `0xeabc4..0xeaca4`, it subtracts signed metadata `+324` from thirst and
+`+328` from hunger, clamping each to 0..100. It adds metadata `+332` to
+illness (`0xeace0..0xead44`). Additional configured effects can increase
+toilet/thirst; a toilet-flag path at `0xeb2b0` clears toilet (`0xeb2e0`) and
+can clear illness after a >90 check (`0xeb32c`). Source metadata fields and
+category flags require full loader binding before replacing current visits.
+A bounded search of direct float writes in the guest method range found
+constructor, serialization, ride/shop outcomes, entry logic, and the needs
+routine; it did not identify another unconditional periodic thirst/hunger
+growth routine. Indirect writes, callbacks, and other ranges are not excluded.
+
+## Phase 2: language states, sprites, and admission
+
+The Windows English `KIDSTATES.str` decodes to 22 entries; its SHA-256 is
+`31004291979ba7d255633af3a87789d9dfbe9cd317b4742a17ea3beda2f1b9be`.
+`THOUGHTS.str` has 18 entries, SHA-256
+`92c6a9c38cbc7bc9d3f02ac2a8ec020924650b06d6a23bc9b3c84a2ee9c1723f`.
+Decoding used the repository BFST/BFMU format and English `MBToUni.dat`,
+SHA-256 `69f23492ef61a27ed79dd4df67978536720d403f7e2733acb6b43e6f4f78c587`.
+These are PC corpus identities, not extracted Mac language resources.
+The 22-entry Mac update and entry-action dispatch tables are respectively
+data:`0x41314` and `0x4136c`. Along with the earlier table, the corpus supplies
+omitted distinctions: 3 waits for park opening; 8 has no visible label;
+9 discards litter; 12 is the second queue state; 17 is ejection; and 20 is a
+second homeward road-crossing state. State 17 must not be treated as ordinary
+ride usage merely because the needs code groups 16/17 in one later check.
+
+Sprite binding remains partially unresolved. State-entry code `0xef700` calls
+`0xd2290` with address `guest+12`; that two-instruction setter stores the
+requested behavior at its argument `+4`, i.e. guest `+16`. Entry states 0,2,5,
+9,10 supply mode 1; states 1,3,4,11 supply mode 3 at the shown branch targets.
+These are behavior values, **not demonstrated ESP slot numbers**. Sprite
+creation `0xe79dc -> 0xd2308` uses guest fields `+36/+32`, independently of
+PeepTypes index `+496`; the latter is used for balance selection. The current
+`type mod 8` kid-bank choice is consequently not established by this path.
+Position updater `0xe5ee0` interpolates fixed-point navigation positions and
+calls `0xb7ce8`, which writes sprite XYZ at sprite offsets 136/140/144.
+Direction/frame selection, behavior-to-ESP binding, and the five-direction
+mirroring rule still need the sprite class/update path, not just this setter.
+
+Admission has a precise host/script handshake. Object method
+`0xe03d0..0xe05c8` is named by its own admission diagnostic. It validates
+availability and the pending visitor (`object+104`), clears `+104`, retrieves
+the script through `0xb5758`, reads **script array index 0** through `0xb5be0`
+at `0xe0530`, and writes the visitor there through `0xb57d4` at `0xe0550`
+only if the existing value is zero. Those helpers directly index script
+`+28` with bounds `0 <= index < script+140`; they do not resolve a name.
+Some PC script headers label index 0 as VAR_LETMEON, but per-script layout
+must be established before making that label universal.
+
+Guest state 13 calls this admission method and enters state 14. State 14's
+handler calls `0xe05c8` at `0xef528`. The latter reads script index 0 and
+returns whether it differs from the halfword `object+56`. Only the nonzero
+result advances the dispatch through queue removal and state 16. The
+complete binding of `object+56` and script controller ownership is still a
+ride-lane dependency. This anchors the callback protocol to actual fields
+without assuming every HUSH/WALKON path has identical timing.
+
+Guest statistics also bind advisor consumers to actual needs. The hungry and
+thirsty counters at `0xc3964/0xc3a60` traverse live thing slots, restrict category
+byte `+2` to 1, require cell predicate `0xe6c6c`, and count
+`byte(trunc(guest need)) > byte(threshold)`, strictly greater. The hunger/thirst
+loads are `0xc3a00/0xc3afc`. Predicate `0xe6c6c` queries five current-cell
+properties rather than a GuestState enum; its complete category meaning
+remains unresolved. The waiting counter `0xc3758` traverses both ticket-booth
+cell lists, counts category-1 things in state 3, then stores/returns the
+current value through `0xc9020/0xc9018`. These helpers are a tracked-value
+setter and immediate getter, not evidence of historical smoothing.
 
 ## Untagged assumptions and integration handoffs
 

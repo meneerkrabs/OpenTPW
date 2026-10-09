@@ -14,7 +14,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import pef
-from timer_evidence import load_identified, require, call_target, d_fields
+from timer_evidence import load_identified, require, call_target, d_fields, glue_import
 
 BLOCKS = {
     'score': (0xe9164, 0xe9a84, 'ced5934e024658af2fd2dfe3f164e0b4b2df58bd92efc08add5bf2f987b72802'),
@@ -32,6 +32,24 @@ BLOCKS = {
     'free_slots_initialize': (0x104e84, 0x104f38, 'a56d8d8e72565994ddfdcb329c1b4736bd4f6cbc048e07fc661d41675ac6f55b'),
     'thing_allocate': (0x105238, 0x1052fc, 'cffd10e621c539a4e2c2b206168fcf98e53b2f8a87c357c240ca07f966a3cc18'),
     'park_turn': (0x10536c, 0x10565c, '3650a4c24a53a7ed27b2d586f93baf996e30103508f1f605dca53373f87efab6'),
+    'map_constructor': (0x104500, 0x10465c, '42e6fd6f2fede3b6f50e81cc567a297accfc02aa1ec33f7c78512526173ce141'),
+    'map_global_bind': (0x104e4c, 0x104e84, '276ae921931c6b3d75c578e703e016d07965fe134a3df503a5a62aced3632957'),
+    'cell_constructor': (0xefddc, 0xefe18, 'aa9e9ad0605a5bb5389fe7332dc95a446c969a7da71d6081af5086b25f5bfdf1'),
+    'region_apply': (0xd73a0, 0xd74fc, 'a552960bcf19b07a6813698f0ac0bfd5689370b78ba300e70e0d7f77848ea71c'),
+    'region_add': (0xd7340, 0xd7370, '73a56c10a149aed09a6e90754eebf977fad18a2c6d5f7e35a185679c6ca7381f'),
+    'region_remove': (0xd7370, 0xd73a0, 'afc0d798b70ef0842c1c447dd47123fb269f8afad3985039a666275e768fb74e'),
+    'ride_outcome': (0xea318, 0xea5a4, 'bdf19eede0022d441d0615dd7a5bc5dda884b098c3e065e6fe90d8387d659b16'),
+    'shop_outcome': (0xeaaf8, 0xeb49c, '911e8e225f6304dfaa68e54c0053e6f4265909a3b967dedf17b4dd1fb15f9aca'),
+    'state_entry': (0xef700, 0xefd84, '1a878ae687d7f5ed5d9025988a63ee7b2d41e4bd0b8b1d9fc2829873eb16626a'),
+    'sprite_behavior_set': (0xd2290, 0xd2298, '80966d67214da37bdaf414292e997fa52df02f7e2d3f41d6d6717bd109e66dd9'),
+    'admit_person': (0xe03d0, 0xe05c8, '708496620a8eb46c922d37ef811e5fdb99119a10251eb89730a14a5348c809e9'),
+    'script_admission_changed': (0xe05c8, 0xe0620, '7b79933ea2ce723f6f0983807de49ffe7539877359af7fe3777123b2115dad86'),
+    'script_variable_read': (0xb5be0, 0xb5c5c, '55a1e15769c5dda3814d33f9abe06e01312c2538ec3aff22827200f5fe41f1a0'),
+    'script_variable_write': (0xb57d4, 0xb584c, '008691d15a895a1f9aa4d8f2f64692563a7f1b104e0797d678c24e1cab9b5897'),
+    'waiting_count': (0xc3758, 0xc3868, 'c177f08be8d39603ad2fd70edb83d23019a686fa5fcbe42f5ecc0a02acc2af9f'),
+    'hungry_count': (0xc3964, 0xc3a60, '8892d9982a0c122790f0ff6112bb805130ddfb3cd8d23749075e232301cbbffb'),
+    'thirsty_count': (0xc3a60, 0xc3b5c, '5b385ad60e8f18741de3f7261b068c2939c8d16079ef1324fac5f0af25fa20f1'),
+    'need_statistics_cell_predicate': (0xe6c6c, 0xe6d20, '6f71cf95d3ff846a3c56c1bfd94479951e9f1ef3eae26971b4861c76e3d7819c'),
 }
 DISPATCH = (0xef288, 0xef2c8, 0xef36c, 0xef420, 0xef378, 0xef384,
             0xef438, 0xef444, 0xef6c8, 0xef42c, 0xef49c, 0xef4a8,
@@ -49,6 +67,24 @@ def distance_quotient(squared_cells):
     multiplier = ((-28253 << 16) - 19515)
     shifted = (((multiplier * scaled) >> 32) + scaled) >> 8
     return shifted + (1 if shifted < 0 else 0)
+
+
+def region_delta(coefficient, dx, dy, adding=True):
+    """Signed truncation in the region component loop; excludes radius clipping."""
+    numerator = coefficient * (1 if adding else -1)
+    magnitude = abs(numerator) // (abs(dx) + abs(dy) + 1)
+    return magnitude if numerator >= 0 else -magnitude
+
+
+def ride_illness_increment(excitement, divisor, hunger_byte):
+    """Bounded nonnegative inputs from the ride-outcome arithmetic, not a rate."""
+    return (excitement // divisor) * ((100 - hunger_byte) // 20)
+
+
+def needs_phase(counter, thing_id):
+    """Return eligible-update and fixed-increment predicates from the nested guards."""
+    eligible = (counter & 3) == (thing_id & 3)
+    return eligible, eligible and (counter & 15) == 0
 
 
 def pointer(c, slot, section, address):
@@ -84,7 +120,11 @@ def inspect(bin_root: Path):
         (0xe9174, 0, 0x1d04c2), (0xe9180, 1, 0x54860),
         (0xeed48, 1, 0x11ef00), (0xef274, 1, 0x41314),
         (0xff22c, 1, 0xeca00), (0x105240, 1, 0xecef0),
-        (0x104e84, 1, 0xecef4), (0x105388, 1, 0xeceec))]
+        (0x104e84, 1, 0xecef4), (0x105388, 1, 0xeceec),
+        (0x10457c, 1, 0x6f50), (0xef730, 1, 0x4136c),
+        (0x104e5c, 1, 0x11ef00))]
+    pointer(c, 0x6f50, 0, 0xefddc)
+    pointer(c, 0x6f54, 1, 0x8000)
     for i, target in enumerate(DISPATCH):
         pointer(c, 0x41314 + i * 4, 0, target)
     for at, op, expected in (
@@ -101,17 +141,36 @@ def inspect(bin_root: Path):
         (0x1052e4, 44, (0, 26, 0)), (0xfa77c, 44, (0, 31, 0)),
         (0x10539c, 14, (0, 3, 1)), (0x1053a0, 36, (0, 4, -22772)),
         (0xe7820, 52, (0, 28, 412)), (0xe785c, 52, (0, 28, 420)),
-        (0xe7888, 52, (0, 28, 424)), (0xe78bc, 52, (0, 28, 428))):
+        (0xe7888, 52, (0, 28, 424)), (0xe78bc, 52, (0, 28, 428)),
+        (0x104e58, 14, (0, 3, 728)), (0x104580, 14, (5, 0, 0)),
+        (0x104584, 14, (6, 0, 10)), (0x104588, 14, (7, 0, 16384)),
+        (0xefde8, 14, (4, 0, 0)), (0xefdf0, 14, (5, 0, 10)),
+        (0xd73a4, 7, (7, 5, 12)), (0xd73bc, 34, (4, 4, -28402)),
+        (0xd74b0, 42, (22, 22, -28412)), (0xd74cc, 44, (0, 8, 0)),
+        (0xd2290, 36, (4, 3, 4)), (0xe05ec, 40, (0, 31, 56)),
+        (0xe051c, 44, (0, 29, 104)), (0xb5c1c, 32, (3, 3, 28)),
+        (0xb5810, 32, (3, 3, 28)), (0xc3afc, 48, (0, 25, 420)),
+        (0xc3a00, 48, (0, 25, 424)), (0xc3804, 32, (0, 3, 544)),
+        (0xc3808, 11, (0, 0, 3))):
         require(d_fields(c, at, op), expected, f'field witness at code:{at:#x}')
     calls = {hex(at): call_target(c, at) for at in
              (0xfaa5c, 0xfaa64, 0xeed74, 0xe90a0, 0xe9d2c, 0xef4ac, 0xff27c,
-              0xe767c, 0xe483c, 0xfa768, 0x10541c)}
+              0xe767c, 0xe483c, 0xfa768, 0x10541c, 0xefdf8,
+              0xd735c, 0xd738c, 0x104590, 0xe0530, 0xe0550, 0xe05e8,
+              0xef528, 0xc3af0, 0xc3794)}
     require(calls, {'0xfaa5c': 0xeece4, '0xfaa64': 0xef240,
                     '0xeed74': 0xd7310, '0xe90a0': 0xe9164,
                     '0xe9d2c': 0xe9164, '0xef4ac': 0xed244,
                     '0xff27c': 0x101c1c, '0xe767c': 0xe4810,
                     '0xe483c': 0xfa718, '0xfa768': 0x105238,
-                    '0x10541c': 0xfa9b0}, 'selected direct call path')
+                    '0x10541c': 0xfa9b0, '0xefdf8': 0x1c483c,
+                    '0xd735c': 0xd73a0, '0xd738c': 0xd73a0,
+                    '0x104590': 0x1c4a34, '0xe0530': 0xb5be0,
+                    '0xe0550': 0xb57d4, '0xe05e8': 0xb5be0,
+                    '0xef528': 0xe05c8, '0xc3af0': 0xe6c6c,
+                    '0xc3794': 0xd74fc}, 'selected direct call path')
+    zero_import = glue_import(c, 0x1c483c, 0x8000)
+    require(zero_import['symbol'], 'memset', 'cell zero-initialization import')
     # Tables are reported as semantic values, never as binary data.
     needs_table = list(c.data_section.data[0x41222:0x41222 + 121])
     unary_table = list(c.data_section.data[0x4129b:0x4129b + 21])
@@ -139,6 +198,10 @@ def inspect(bin_root: Path):
             'fresh_slot_id_range': [1, 10239],
             'fixed_needs_phase_condition': 'counter mod16 ==0 AND guest thing ID mod4 ==0',
             'initial_need_remainders': {'thirst': 50, 'hunger': 50, 'toilet': 30},
+            'cell_initialization_import': zero_import,
+            'region_layout': {'map_offset': 0x1d9104, 'stride': 12,
+                              'signed_component_count': 5, 'radius_byte_offset': 10},
+            'admission_script_variable_index': 0,
             'resolved_approximation_ids': [],
             'limitation': 'No original execution; no caller cadence or complete SAM/cell field initialization proof.'}
 

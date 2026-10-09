@@ -2253,3 +2253,125 @@ Unresolved objections carried forward: no PC or Patch 2 runtime equivalence for
 any Mac-derived rule; formats per-channel clock source (`0xa6398` +16400/+16408)
 unmodelled; Instant Action policy (section 34); SDT bank remap (advisor); TPI
 history blob (section 38).
+
+## 47. Round 11: origin `e31c804` against the committed integration `0d58bd4`
+
+Scope: the eight origin commits `778ea5d..e31c804`: texture pack (`127d9e6`,
+`88edd7d`, `5c592c9`), world capture (`78dfb5e`), text fields and scrolling
+(`4b21e61`), online screens (`1e31596`), game and CD folders (`05a25e8`) and
+input focus (`e31c804`). They are checked against the root side
+(`1441ead..f468f03`) and the owner's committed merge. During this round the
+owner committed the `778ea5d` merge as **`0d58bd4`** (parents `f468f03`,
+`778ea5d`). `integration-remote` now has `MERGE_HEAD` `e31c804` with two
+unmerged paths. That pending resolution is **not accepted** here. All results
+come from committed objects (`git show` and `git merge-tree`) plus a scratch
+copy in `/tmp`. Nothing was written to the owner's tree. Native UI process
+cleanup and the PATH/picker lifecycle belong to the Native UI lane and are not
+re-audited.
+
+### Merge shape
+
+`git merge-tree 0d58bd4 e31c804` conflicts in exactly two files:
+`docs/FIDELITY-REGISTER.md` and `source/OpenTPW/Client/Setup/SetupWizard.cs`.
+The six README, LIPS, PROGRESS and MP2 conflicts from the `778ea5d` merge are
+gone because `0d58bd4` resolved them. The new commits touch none of those files.
+
+### Findings
+
+1. **HIGH: the SetupWizard conflict compiles with neither side.** The auto-merge
+   takes `05a25e8`'s `enum Page { Welcome, GameFolder, Done }` and removes the
+   `cdPath` field. Non-conflicting lines from `0d58bd4`'s bounded inspection
+   still use the CD path: `inspectingCd ? cdPath : gamePath`,
+   `if ( inspectingCd ) cdReport = report;` and
+   `page == Page.Cd ? cdReport?.Path`.
+   - Taking "ours" brings back `Page.Cd`, `DrawCd` and `SetCdPath`.
+   - Taking "theirs" keeps those stale lines. It also brings back the in-process
+     `Directory.Exists( dropped )` that `0d58bd4` deliberately removed ("File/directory
+     inspection happens in the bounded child").
+
+   Verified resolution, compiled in a scratch copy:
+   - hunk 1: `Task<InstallationDiscoveryResult>? picker` without `cdReport`;
+   - hunk 2: ours (`pendingInspection = (false, gamePath)`);
+   - hunk 3: `var folder = dropped;` then `SetGamePath`/`Page.GameFolder`, with no CD branch;
+   - hunks 4 and 5: theirs (`Done` and `savedCd`);
+   - hunk 6: drop `SetCdPath`.
+
+   Then remove `inspectingCd` (field and assignment), its two uses, and the
+   `Page.Cd` branch in Browse. Result: OpenTPW.Tests builds with 0 errors. The
+   full suite has 972 tests: 750 pass, 222 skip without original assets, 0 fail.
+   The 6 affected classes (NativeWidget, OriginalUi, TexturePack,
+   UiModelBinding, Setup/Installation, Online/ParkSharing) have 150 tests:
+   135 pass, 15 asset skips.
+2. **MEDIUM: the new in-game Game files screen bypasses the bounded child.**
+   `GameFilesScreen.cs` (`05a25e8`) calls `GameInstallation.Inspect( path )`
+   twice, synchronously on the render/update thread. It also calls
+   `Task.Run( () => FolderPicker.Pick(...) )` in-process. On `0d58bd4`,
+   `InstallationDiscovery` provides `InspectAsync`/`PickAsync` (a child process,
+   with `DefaultTimeout` of 3 s) for exactly this case. The setup window uses
+   them; the options screen would not. This is a textual no-conflict, so it
+   merges silently. It is handed off to the Native UI owner to bind to
+   `InspectAsync`/`PickAsync`. Its lifecycle is not audited here.
+3. **LOW: regenerate the register instead of hand-merging it.**
+   `FIDELITY-REGISTER.md` is generated with line numbers. On the scratch merge,
+   `tools/fidelity_register.py --write` followed by `--check` passes with 136
+   unresolved APPROX IDs. The new `EXT:SETUP`, `EXT:texture-pack` and
+   `EXT:world-capture` rows need no declaration edits.
+
+### Checked, no hazard
+
+- **Input focus:** `GameFlow.Update` sets `Input.TextEntryActive = false`
+  before `Hud.Update` or `Menu.Stack.Update`. A focused `UiTextField` sets the
+  flag and returns `true`. `Input` WASD (4 sites) and `Bindings` (`isPressed = !TextEntryActive`)
+  read the previous frame's flag, which is a one-frame lag only.
+  `Renderer`'s `EditorToggle` goes through `Bindings`. ParkHud's
+  `P` pause toggle runs only when `!Paused`, and online screens push onto the
+  stack, so `Paused` is true while typing. No root-side commit adds raw keyboard reads.
+- **Read-only visits:** Publish is enabled only for
+  `level != null && !level.IsReadOnlyVisit`, and `ParkSharing.ExportLevel`
+  still throws on a visit. The new Visit goes through `StartLevel(..., visit)`.
+- **UI models:** the root (`ae788a3`/`864f82d`) moves `UiModels` to
+  `UiModels.cs`, with root-name keys and strict collisions. Origin still has
+  the old class in `UiWidgets.cs`. The deletion auto-merges and leaves no
+  duplicate type. New callers use `Context.Models.Get(name)`, whose
+  case-insensitive alias fallback still resolves `f_text1`. Tests that use the
+  throwing loader get `null` (fallback drawing) and never hit `Register`
+  collisions. Not qualified: whether any new widget name exactly equals a
+  *different* asset's root name. That needs ui.wad.
+- **Render ownership:** `WorldCapture` reads `ResolveColorTexture` (`Own(...)`,
+  `B8_G8_R8_A8_UNorm` on `0d58bd4`) through its own `using` staging texture.
+  The texture pack only redirects `UpdateFromWct` to `UpdateFromStb` for an
+  existing PNG. The builder skips interface textures. The pack is built locally
+  from the player's install, is never shipped, and is off by default. Original
+  assets are untouched.
+- **Economy/catalog:** the new commits do not touch economy, VM or save files.
+
+### Test handoff
+
+`tools/ppc-analysis/lanes/review/test_round11.py` has six git-object bindings,
+covering the conflict set, the both-sides-fail evidence, the GameFiles bypass,
+focus gating, the read-only publish gate and the UiModels move. They need no
+assets and skip when the commits are absent. Supplementary tests for the owner
+(generated fixtures, no originals):
+- GameFilesScreen through a stubbed `InspectAsync` that never completes, to
+  show the UI stays responsive;
+- a `UiTextField` focused in ParkHud while `P` and `Escape` are pressed;
+- `Input.TextEntryActive` reset after a Visit transition.
+
+`OPENTPW_PC_FIXTURE` and the scientist runner registration are still a future
+handoff after the lanes merge.
+
+### Status
+
+| Item | State |
+| --- | --- |
+| `0d58bd4` (`778ea5d` merge) | Committed by owner. Not re-tested here beyond the scratch merge |
+| `e31c804` merge | **Pending**. Two unmerged paths. HIGH 1 must be hand-resolved |
+| GameFilesScreen bounded inspection | Handoff to Native UI (MEDIUM 2) |
+| Register | Regenerate (LOW 3) |
+
+Unresolved objections carried forward unchanged: no PC or Patch 2 runtime
+equivalence for Mac-derived rules; the formats per-channel clock source is
+unmodelled; TPI history blob qualification (section 38); SDT bank remap;
+Instant Action policy.
+
+Review tests: 138 without the fixture variables (119 pass, 19 skip).

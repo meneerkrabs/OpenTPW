@@ -1,4 +1,5 @@
 using OpenTPW.Evidence.Clock;
+using System.Text.Json;
 
 var checks = new (string Name, Action Run)[]
 {
@@ -39,15 +40,35 @@ var checks = new (string Name, Action Run)[]
 		Equal( 3000u, result.DroppedClockMilliseconds ); Equal( 65, result.Substeps );
 		Equal( 5015u, result.State.PreviousScheduledMilliseconds ); Equal( 3, result.WorldTicks );
 	} ),
-	( "application exclusion advances phase but not scripts", () => CheckGate( true, false ) ),
+	( "application flag8 permits world work", () => CheckGate( true, false ) ),
 	( "gameplay exclusion advances phase but not scripts", () => CheckGate( false, true ) ),
-	( "both exclusions retain independent script counter", () => CheckGate( true, true ) ),
-	( "mode zero consumes eligible phases without world ticks", () =>
+	( "application flag8 overrides gameplay exclusion", () => CheckGate( true, true ) ),
+	( "mode zero uses the direct world tick branch", () =>
 	{
 		var result = SchedulerRules.Advance( new( 0, 0, 0, 57 ), Input( 2000, 0 ) );
-		Equal( 65, result.ScriptManagerPasses ); Equal( 0, result.WorldTicks );
-		Equal( 3, result.ModeSuppressedWorldPhases ); Equal( 5, result.DroppedWorldPhases );
-		Equal( 57u, result.State.WorldTickCounter );
+		Equal( 65, result.ScriptManagerPasses ); Equal( 3, result.WorldTicks );
+		Equal( 5, result.DroppedWorldPhases );
+		Equal( 60u, result.State.WorldTickCounter );
+	} ),
+	( "decoded BO BI gate truth table agrees with scheduler", () =>
+	{
+		using var metadata = ReadNativeBranches();
+		foreach ( var application in new[] { false, true } )
+			foreach ( var gameplay in new[] { false, true } )
+			{
+				var nativeAllowed = NativeWorldWorkAllowed( metadata.RootElement, application, gameplay );
+				var result = SchedulerRules.Advance( default, new( 2000, application, gameplay, 2 ) );
+				Equal( nativeAllowed ? 65 : 0, result.ScriptManagerPasses );
+			}
+	} ),
+	( "decoded mode branch destinations agree with tick policy", () =>
+	{
+		using var metadata = ReadNativeBranches();
+		foreach ( var mode in new[] { 0, 1, 2 } )
+		{
+			Equal( mode == 1 ? "wrapper" : "direct", NativeModeRoute( metadata.RootElement, mode ) );
+			Equal( 3, SchedulerRules.Advance( default, Input( 2000, mode ) ).WorldTicks );
+		}
 	} ),
 	( "mode one literal wrapper branch admits ticks", () =>
 	{
@@ -177,7 +198,7 @@ var checks = new (string Name, Action Run)[]
 	} ),
 	( "manager phase is independent of excluded scheduler phase", () =>
 	{
-		var excluded = SchedulerRules.Advance( new( 0, 0, 7, 0 ), new( 31, true, false, 2 ) );
+		var excluded = SchedulerRules.Advance( new( 0, 0, 7, 0 ), new( 31, false, true, 2 ) );
 		var resumed = SchedulerRules.Advance( excluded.State, Input( 32 ) );
 		Equal( 2u, resumed.State.SubstepPhase ); Equal( 8u, resumed.State.ScriptPassCounter );
 		True( SchedulerRules.IsOrdinaryScriptEligible( 0, resumed.State.ScriptPassCounter ) );
@@ -215,8 +236,12 @@ static void CheckGate( bool applicationFlag, bool gameplayFlag )
 {
 	var result = SchedulerRules.Advance( new( 0, 0, 17, 57 ), new( 2000, applicationFlag, gameplayFlag, 2 ) );
 	Equal( 65, result.Substeps ); Equal( 65u, result.State.SubstepPhase );
-	Equal( 17u, result.State.ScriptPassCounter ); Equal( 57u, result.State.WorldTickCounter );
-	Equal( 0, result.ScriptManagerPasses ); Equal( 0, result.WorldTicks );
+	using var metadata = ReadNativeBranches();
+	var allowed = NativeWorldWorkAllowed( metadata.RootElement, applicationFlag, gameplayFlag );
+	Equal( allowed ? 82u : 17u, result.State.ScriptPassCounter );
+	Equal( allowed ? 60u : 57u, result.State.WorldTickCounter );
+	Equal( allowed ? 65 : 0, result.ScriptManagerPasses );
+	Equal( allowed ? 3 : 0, result.WorldTicks );
 }
 
 static void CheckBoundary( SchedulerState state, uint now, UnsupportedBoundary expected )
@@ -239,4 +264,54 @@ static void Throws<T>( Action action ) where T : Exception
 	try { action(); }
 	catch ( T ) { return; }
 	throw new InvalidOperationException( $"expected {typeof( T ).Name}" );
+}
+
+static JsonDocument ReadNativeBranches()
+{
+	using var stream = typeof( SchedulerRules ).Assembly.GetManifestResourceStream( "NativeBranchRules" )
+		?? throw new InvalidOperationException( "missing decoded native branch fixture" );
+	var metadata = JsonDocument.Parse( stream );
+	Equal( "04809cd4ccee5433c7fb0b7c93d32f6a7aa629c1849181c0b7906415e5e295f5",
+		metadata.RootElement.GetProperty( "identity_sha256" ).GetString() );
+	return metadata;
+}
+
+static bool NativeBranchTaken( JsonElement branch, bool conditionEqual )
+{
+	Equal( 2, branch.GetProperty( "bi" ).GetInt32() );
+	return branch.GetProperty( "bo" ).GetInt32() switch
+	{
+		4 => !conditionEqual,
+		12 => conditionEqual,
+		_ => throw new InvalidOperationException( "unqualified native branch option" )
+	};
+}
+
+static bool NativeWorldWorkAllowed( JsonElement metadata, bool application, bool gameplay )
+{
+	var branches = metadata.GetProperty( "branches" );
+	var appBranch = branches.GetProperty( "application_flag8" );
+	if ( NativeBranchTaken( appBranch, !application ) )
+		return appBranch.GetProperty( "target" ).GetUInt32() == metadata.GetProperty( "work_target" ).GetUInt32();
+	var gameBranch = branches.GetProperty( "gameplay_flag1" );
+	if ( NativeBranchTaken( gameBranch, !gameplay ) )
+		return gameBranch.GetProperty( "target" ).GetUInt32() != metadata.GetProperty( "skip_target" ).GetUInt32();
+	return true;
+}
+
+static string NativeModeRoute( JsonElement metadata, int mode )
+{
+	var branches = metadata.GetProperty( "branches" );
+	var comparisons = metadata.GetProperty( "mode_comparisons" );
+	var mode0 = branches.GetProperty( "mode0" );
+	if ( NativeBranchTaken( mode0, mode == comparisons.GetProperty( "mode0" ).GetInt32() ) )
+		return mode0.GetProperty( "target" ).GetUInt32() == metadata.GetProperty( "direct_target" ).GetUInt32() ? "direct" : "unknown";
+	var mode2 = branches.GetProperty( "mode2" );
+	if ( !NativeBranchTaken( mode2, mode == comparisons.GetProperty( "mode2" ).GetInt32() ) )
+		return "direct";
+	Equal( metadata.GetProperty( "mode1_check_target" ).GetUInt32(), mode2.GetProperty( "target" ).GetUInt32() );
+	var mode1 = branches.GetProperty( "mode1" );
+	if ( NativeBranchTaken( mode1, mode == comparisons.GetProperty( "mode1" ).GetInt32() ) )
+		return mode1.GetProperty( "target" ).GetUInt32() == metadata.GetProperty( "after_world_target" ).GetUInt32() ? "none" : "unknown";
+	return "wrapper";
 }

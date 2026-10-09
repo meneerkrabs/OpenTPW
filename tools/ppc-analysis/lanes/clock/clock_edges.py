@@ -102,7 +102,7 @@ def inspect(root: Path) -> dict:
         (0x971f4, 14, (4, 0, 1), 'OnlineIslands action selects mode1'),
         (0x1c2a94, 14, (4, 0, 2), 'successful transition selects mode2'),
         (0x1c2ac0, 14, (4, 0, 0), 'failed transition selects mode0'),
-        (0x1c2384, 11, (0, 0, 0), 'mode0 skips turn advance'),
+        (0x1c2384, 11, (0, 0, 0), 'mode0 comparison precedes the direct turn branch'),
         (0x1c23ac, 11, (0, 0, 2), 'mode2 calls direct turn advance'),
         (0x1c23e0, 11, (0, 0, 1), 'mode1 calls wrapper turn advance'),
         (0x1c27a4, 14, (0, 0, 0), 'normal callback completion clears turn work cap'),

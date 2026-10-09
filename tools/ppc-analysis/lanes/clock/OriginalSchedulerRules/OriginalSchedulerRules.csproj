@@ -8,4 +8,7 @@
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
     <AnalysisLevel>latest</AnalysisLevel>
   </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="NativeBranchRules.json" LogicalName="NativeBranchRules" />
+  </ItemGroup>
 </Project>

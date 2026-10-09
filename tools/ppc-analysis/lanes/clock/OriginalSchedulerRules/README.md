@@ -22,13 +22,13 @@ setters remain integration responsibilities. Multiple raw counter periods cannot
 be inferred from two sampled words.
 
 `SchedulerRules.Advance` accepts immutable state and explicit observed clock,
-flag-8 exclusion, flag-1 exclusion and numeric mode. It models 31 ms ceiling
+flag-8 override, flag-1 exclusion and numeric mode. It models 31 ms ceiling
 steps, the signed 2000 ms backlog clamp, unsigned phase/counter increments,
 independent script-manager counter, every-eight world phase, three eligible
-world phases per normal callback, and consumed phases after that cap. Both
-exclusions advance scheduled time/phase but suppress scripts and world work.
-Mode 0 suppresses turn increments; mode 1 follows the identified wrapper branch;
-mode 2 follows the direct branch. Complete user-facing names and runtime entry
+world phases per normal callback, and consumed phases after that cap. Work runs when application flag 8 is set OR gameplay flag 1 is clear.
+Only flag 8 clear AND flag 1 set suppresses scripts/world work while advancing
+scheduled time and phase. Modes 0 and 2 follow the direct turn branch; mode 1
+follows the identified wrapper branch. Complete user-facing names and runtime entry
 routes for these numbers remain unresolved. Inputs assume the normal callback
 path resets its turn-work cap. Inputs are a fixed snapshot for this bounded
 call; changes caused by native callbacks within a loop remain an integration
@@ -72,3 +72,12 @@ framework reference packs. Checks cover zero delay, ceiling/overshoot, backlog
 clamp and dropped phases, gates, modes, pause/resume, release scaling, integer
 pause offsets, unsigned source/counter wrap, saturation and unsupported signed
 boundaries. Build enables SDK analyzers and treats warnings as errors.
+
+## Native branch regression
+
+`NativeBranchRules.json` stores decoded BO/BI/target metadata, not instruction
+bytes. Regenerate it with `native_scheduler_branches.py` against the identified
+Mac binary. The checks interpret BO 4 as branch on EQ clear, BO 12 as branch on
+EQ set, then follow the recorded destinations to build the gate truth table and
+mode routes independently of the scheduler implementation. This corrected the
+prior inverted flag-8 gate and incorrect mode-0 suppression in `a5263bb`.

@@ -6,7 +6,7 @@ public readonly record struct SchedulerState(
 /// <summary>
 /// ClockWord is the observed selected clock, after any scale/pause wrapper.
 /// Flag names preserve binary masks; their complete runtime meanings are unresolved.
-/// NumericMode is the literal selector: 0 suppresses ticks, 1 uses a wrapper, 2 advances directly.
+/// NumericMode is the literal selector: 0 and 2 advance directly; 1 uses a wrapper.
 /// </summary>
 public readonly record struct SchedulerInput(
 	uint ClockWord, bool ApplicationFlag8Set, bool GameplayFlag1Set, int NumericMode );
@@ -21,7 +21,7 @@ public enum UnsupportedBoundary
 
 public readonly record struct SchedulerAdvance(
 	SchedulerState State, int Substeps, int ScriptManagerPasses, int EligibleWorldPhases,
-	int WorldTicks, int DroppedWorldPhases, int ModeSuppressedWorldPhases,
+	int WorldTicks, int DroppedWorldPhases,
 	uint DroppedClockMilliseconds, UnsupportedBoundary UndefinedBoundary )
 {
 	public bool IsDefined => UndefinedBoundary == UnsupportedBoundary.None;
@@ -56,7 +56,7 @@ public static class SchedulerRules
 			previous = unchecked(now - MaximumBacklogMilliseconds);
 		}
 		if ( unchecked((int)now) <= unchecked((int)previous) )
-			return new( state, 0, 0, 0, 0, 0, 0, dropped, UnsupportedBoundary.None );
+			return new( state, 0, 0, 0, 0, 0, dropped, UnsupportedBoundary.None );
 
 		var gap = (ulong)now - previous;
 		var steps = (int)((gap + SubstepMilliseconds - 1) / SubstepMilliseconds);
@@ -73,8 +73,7 @@ public static class SchedulerRules
 		var eligible = 0;
 		var ticks = 0;
 		var droppedPhases = 0;
-		var suppressedByMode = 0;
-		var worldAllowed = !input.ApplicationFlag8Set && !input.GameplayFlag1Set;
+		var worldAllowed = input.ApplicationFlag8Set || !input.GameplayFlag1Set;
 		for ( var step = 0; step < steps; ++step )
 		{
 			phase = unchecked(phase + 1);
@@ -90,16 +89,11 @@ public static class SchedulerRules
 				++droppedPhases;
 				continue;
 			}
-			if ( input.NumericMode == 0 )
-			{
-				++suppressedByMode;
-				continue;
-			}
 			world = unchecked(world + 1);
 			++ticks;
 		}
 		return new( new( (uint)nextScheduled, phase, pass, world ), steps, scriptPasses,
-			eligible, ticks, droppedPhases, suppressedByMode, dropped, UnsupportedBoundary.None );
+			eligible, ticks, droppedPhases, dropped, UnsupportedBoundary.None );
 	}
 
 	/// <summary>Manager counter increments before this test; script flag +184 bypasses it.</summary>
@@ -107,5 +101,5 @@ public static class SchedulerRules
 		(scriptId & 7) == (managerPassCounter & 7);
 
 	private static SchedulerAdvance Undefined( SchedulerState state, UnsupportedBoundary boundary ) =>
-		new( state, 0, 0, 0, 0, 0, 0, 0, boundary );
+		new( state, 0, 0, 0, 0, 0, 0, boundary );
 }

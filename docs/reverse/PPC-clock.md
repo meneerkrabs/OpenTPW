@@ -232,7 +232,7 @@ The lazy mode constructor at `0x12bb64` initializes the integer stored at
 | --- | ---: | --- |
 | `0x02000000` set | 2 | The active loop calls turn update `0x10536c` directly. |
 | Otherwise `0x01000000` set | 1 | `CLBScreenComponentOnlineIslands::vf18` explicitly selects this at `0x971f4–0x971fc`; the loop uses wrapper `0x10565c`. |
-| Otherwise | 0 | Neither turn-update branch runs. |
+| Otherwise | 0 | The active loop calls turn update `0x10536c` directly, as for mode 2. |
 
 The setter `0x12bbf4` also rewrites these flag bits. Its diagnostic string is
 `Invalid GameType in SetGameType`, so these are a game-type selector, not the
@@ -247,10 +247,13 @@ of every single-player/load/network entry route to these transitions is not.**
 The OnlineIslands action alone must not be used to label mode 2 exclusively
 single-player or to invent a network-only cadence.
 
-World work has two additional exclusion gates: `data:0x52e44 & 8` at
+World work has an override followed by an exclusion check: `data:0x52e44 & 8` at
 `0x1c22f4–0x1c22fc`, and `data:0x52e40 & 1` at `0x1c2300–0x1c2308`.
-When either is set, the loop still advances scheduled time and its substep
-counter, but skips the script/world/turn body. These exact bits are identified;
+The branch at `0x1c22fc` goes directly to work at `0x1c230c` when flag 8 is
+set. Only when flag 8 is clear does the gameplay flag-1 check apply; if that bit
+is set, the branch at `0x1c2308` skips to `0x1c24c0`. Work therefore runs for
+`application_flag8 || !gameplay_flag1`. The excluded case still advances
+scheduled time and its substep counter, but skips the script/world/turn body. These exact bits are identified;
 the first is also altered by `ThemeParkWorld::vf26` at `0xbf8–0xc24`, which
 can invoke the high-level pause path at `0xc50`. They are not automatically
 synonyms for the separate pause state described below.
@@ -263,9 +266,10 @@ calendar/needs/history turn count can lag the script clock during catch-up.
 
 Calendar conversion and advisor history use the concrete `mGameTick` writer
 `0x105398–0x1053a0`. High-level pause freezes both source clocks, so normal
-scaled-time scheduling and this turn-derived calendar stop. Mode 0, either
-world exclusion gate, and catch-up park-work drops independently prevent turn
-advances. Advisor history consumer `0x1210f8` uses
+scaled-time scheduling and this turn-derived calendar stop. The combined
+exclusion condition `!application_flag8 && gameplay_flag1` and catch-up
+park-work drops independently prevent turn advances; mode 0 does not itself
+suppress world ticks. Advisor history consumer `0x1210f8` uses
 `(current_turn >> 2) - (saved_turn >> 2)`, not LIP milliseconds. Four nominal
 248 ms turns are 992 ms of scaled clock, but this is not an exact wall-second
 or a uniform message cooldown once those gates and phase alignment matter.
@@ -453,3 +457,29 @@ behavior and Windows applicability remain unqualified.
 ```
 python3 tools/ppc-analysis/lanes/clock/widget_clock.py /path/to/mac-feral/bin
 ```
+
+## Branch-interpretation correction from independent review
+
+The decoded condition fields were correct in earlier witnesses, but this lane's
+prose and standalone contract `a5263bb` interpreted two destinations incorrectly.
+Those statements are superseded by the following actual routes:
+
+| Native conditional | Fields and comparison | Taken destination / consequence |
+| --- | --- | --- |
+| `0x1c22fc` | BO 4, BI 2 after the record-form flag-8 mask | EQ clear means flag 8 is set; target `0x1c230c` runs work and bypasses the flag-1 check. |
+| `0x1c2308` | BO 4, BI 2 after the record-form flag-1 mask | EQ clear means flag 1 is set; target `0x1c24c0` skips work. This check is reached only when flag 8 is clear. |
+| `0x1c2388` | BO 12, BI 2 after comparison with mode 0 | EQ set targets `0x1c23b4`, the direct world-tick block. |
+| `0x1c23b0` | BO 4, BI 2 after comparison with mode 2 | Unequal targets the mode-1 check; equal falls through to the direct world-tick block. |
+| `0x1c23e4` | BO 4, BI 2 after comparison with mode 1 | Unequal skips world-tick work; equal falls through to the wrapper call. |
+
+The correct gate is **flag8 OR NOT flag1**, and modes **0 and 2 direct / 1
+wrapper**. Excluded substeps still advance scheduled time and phase. The repaired
+contract removes the invented mode-0 suppression counter. Its new tests derive
+truth tables from `NativeBranchRules.json` BO/BI/destination metadata, independently
+of the model formula. The metadata is reproduced by the identity-pinned
+`native_scheduler_branches.py` helper; no instruction words are committed.
+
+The same helper independently checks `0x127d14` as binary64 fused multiply-add
+with delta and scale as multiplicands and the prior double accumulator as the
+addend. The contract's `Math.FusedMultiplyAdd` and cancellation regression match
+this operation. Native nondefault FP state remains unqualified.

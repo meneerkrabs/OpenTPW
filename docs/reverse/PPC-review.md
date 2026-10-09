@@ -41,6 +41,9 @@ python3 -I tools/ppc-analysis/lanes/review/round7_evidence.py \
 OPENTPW_PPC_BIN_ROOT=$FERAL_BIN \
 OPENTPW_PC_DATA=$TPW_DATA \
   python3 -I -m unittest discover -s tools/ppc-analysis/lanes/review -p 'test_*.py'
+# Every ppc-analysis Python suite, one lane per process (section 44):
+python3 -I -B tools/ppc-analysis/run_evidence_checks.py --mac-bin $FERAL_BIN \
+  [--pc-data $TPW_DATA] [--require-fixtures] [--dotnet $DOTNET8/dotnet]
 ```
 
 `round2_evidence.py` (section 4 onwards) uses the same pinned `Binary` and
@@ -1629,3 +1632,151 @@ Unresolved objections carried forward: no PC or Patch 2 runtime equivalence for
 any Mac-derived rule; the Instant Action research policy (section 34) is a Mac
 static reading only; SDT bank remap is needed before clip names (advisor);
 TPI history blob (section 38).
+
+## 44. Round 8: reproducible lane discovery and the .NET 8 harness strategy
+
+Brief: as in round 7. Verify each lane against the original Mac PEF and PC data
+independently, and keep every qualification. A self-consistent test is not
+evidence of original runtime behavior. This round touched only this section,
+the reproduce block above, `tools/ppc-analysis/run_evidence_checks.py` (new)
+and `lanes/review/test_round8.py` (new). No workflow or source file changed, no
+peer tree was written, no asset directory was listed or scanned, and the Layer I
+corpus run was not repeated.
+
+**Integration is still not committed** (`integration-remote` at `f468f03` with
+`MERGE_HEAD` present). Mode persistence, ECON-007, the wizard DPI/width fix and
+the stalled installation scan are the integration owner's open work. None of it
+is re-reviewed or counted as fixed here. Rides `8f27b00` (max room, max
+request/global, then min definition/train) is detached and not on any branch.
+Round 7 already confirmed its selectors. Its tree passes 20/20 rides Python
+tests with zero skips under the runner below, but it is still **pending merge**,
+together with the untracked `save_evidence.py` in that tree and the root
+`PPC-rides.md` wording fix.
+
+### Python discovery
+
+`unittest discover -s tools/ppc-analysis` reaches only the two top-level test
+files (31 tests). The lane directories have no `__init__.py`. Advisor, economy,
+guests and rides each import a different module named `evidence`, so the lanes
+cannot share one interpreter either. In this tree, 18 lane test files
+(214 tests) are outside CI's discovery. The integration tree has a different
+count (15 files in round 7) because it lacks this lane's review files.
+
+`run_evidence_checks.py` starts one `python -I -B -m unittest discover -s <dir>
+-t <dir>` process per directory: the root and each `lanes/<lane>` that has test
+files. It fails if any `test_*.py` under `tools/ppc-analysis` is not directly in
+one of those directories, if a suite runs zero tests, or (with
+`--require-fixtures`) if any test is skipped. Fixture variables come only from
+flags. Inherited `OPENTPW_*` values are stripped, so a stale shell variable
+cannot change a result. `--mac-bin` is the Feral `bin` directory. It sets
+`OPENTPW_PPC_BIN_ROOT` to that directory and `OPENTPW_MAC_APP` to the
+`SimThemePark.data` file inside it. The two variables have different shapes:
+rides wants the file, the other lanes want the directory. Swapping them gives
+`IsADirectoryError` (rides, 3 errors) or `NotADirectoryError` (guests), so a
+wrong value fails loudly rather than skipping. The runner rejects both shapes up
+front, and also rejects a directory without the data fork (the MacBinary `.bin`
+fails identity). Only those two paths are stat'ed.
+
+Measured on this tree (Python 3.14.2):
+
+| Fixtures | Suites | Tests | Skipped | Remaining skips |
+| --- | --- | --- | --- | --- |
+| none | 8 | 245 | 19 | Mac binary witnesses, PC data, private UI corpus |
+| `--mac-bin $FERAL_BIN` | 8 | 245 | 9 | `OPENTPW_PC_DATA` (1, not supplied: no asset scan this round); `UI_EVIDENCE_*` (8, private UI corpus) |
+
+With `--mac-bin`, all Mac-binary witnesses in guests, rides and review ran and
+passed against the identified `SimThemePark.data`. These are static operand and
+identity checks only. Running the advisor, clock and economy Python lanes needs
+no binary: they are synthetic.
+
+### .NET 8 harnesses under the .NET 10 pin
+
+All 8 lane harnesses are `net8.0`. With `--dotnet`, the runner copies
+each registered self-test harness to a temporary directory (no `global.json`
+applies, and no `bin`/`obj` lands in the checkout), runs it, and classifies a
+failure. It does not run the corpus harnesses (`Layer1Corpus`, `CorpusWitness`).
+It reports a harness whose `ProjectReference` targets a newer framework as an
+incompatible reference, before anything else. Scratch reproductions (copies
+outside every checkout):
+
+| Case | Result | Class |
+| --- | --- | --- |
+| SDK 8.0.425 (retained root), 6 self-test harnesses | All pass: advisor 52, clock 35, economy 15 groups / 5437 assertions, guests 23, rides animation 11, UI 19 | — |
+| SDK 10.0.401 only, same 6 harnesses, packs cached | Build succeeds; every run fails (`Microsoft.NETCore.App` 8.0 not installed; only 10.0.12) | missing runtime |
+| SDK 10.0.401, empty `NUGET_PACKAGES`, no package source | `NU1100` for `Microsoft.NETCore.App.Ref`, `AspNetCore.App.Ref`, `App.Host.osx-arm64` 8.0.31 | restore: targeting pack unavailable |
+| SDK 8.0.425, same empty cache and no source | Build succeeds (packs ship with SDK 8) | — |
+| net8 `CorpusWitness` → net10 `OpenTPW.Files` (integration copy), SDK 10 | "targets 'net10.0'. It cannot be referenced by a project that targets net8.0" | incompatible reference |
+| Same, SDK 8 | `NETSDK1045` | SDK too old |
+| SDK 8 with the working directory inside a checkout pinned to 10.0.401 | `sdk-not-found` (`global.json`) | — |
+
+Conclusions:
+
+- Round 7's `NU1100` was a real restore failure, but it was environmental. SDK 10
+  needs the 8.0 targeting packs from a package source or the cache, and
+  neither was available then. It is not a project incompatibility. **Side
+  effect of this round:** one SDK 10 scratch build downloaded
+  `microsoft.netcore.app.ref` 8.0.31 into the user NuGet cache (23:04). Since
+  then, `NU1100` no longer reproduces from that cache, and the next failure
+  for SDK-10-only runs is the missing 8.0 runtime.
+- The standalone harnesses (advisor driver, clock, economy, guests, rides
+  animation, UI reader) need no upgrade. The retained SDK 8 root runs them all
+  when invoked from outside the pinned checkout. Retargeting them to net10
+  would add churn and prove nothing new.
+- Only harnesses with a `ProjectReference` into `source/` must follow the
+  source framework. Of the harnesses in this tree, that is just
+  `CorpusWitness`, which integration has already retargeted (still unstaged).
+  `tools/patch-analysis` is the same kind, but it is outside the lanes and is
+  built by CI.
+- Passing harnesses are self-consistent. They do not show original runtime
+  behavior.
+
+### CI handoff (integration owner; not applied here)
+
+Once this lane is merged, replace line 23 of `.github/workflows/build.yml`
+(`python -m unittest discover -s tools/ppc-analysis -p "test_*.py" -v`) with:
+
+```sh
+python -I -B tools/ppc-analysis/run_evidence_checks.py
+```
+
+CI has no fixtures, so expect skips there and do not pass
+`--require-fixtures`. For the lane harnesses, an optional step is to install
+both SDK bands and pass the resulting host:
+
+```yaml
+- uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
+  with:
+    dotnet-version: |
+      8.0.x
+      10.0.x
+- run: python -I -B tools/ppc-analysis/run_evidence_checks.py --dotnet "$(command -v dotnet)"
+```
+
+This combined single-root layout is **inferred, not run**. Locally the two SDKs
+live in separate roots, and only the explicit SDK 8 root was exercised. The
+runner's scratch directory has no `global.json`, so the newest SDK builds the
+net8 harnesses using the 8.0 packs installed by the 8.0 band, and runs them on
+the 8.0 runtime. Locally, the verified command is:
+
+```sh
+python3 -I -B tools/ppc-analysis/run_evidence_checks.py --mac-bin $FERAL_BIN --dotnet $DOTNET8/dotnet
+```
+
+where `$DOTNET8` is the retained SDK 8 root. Expect 245 tests with 9 skips and
+6 harnesses passing.
+
+### Status
+
+| Item | Status |
+| --- | --- |
+| CI Python discovery (round 7 MED) | Runner and tests provided on this lane. The CI change is **pending** with the integration owner. |
+| net8 harnesses under SDK 10 (round 7 MED) | Reclassified: standalone harnesses run with the retained SDK 8 (verified). `NU1100` is environmental. Only project-reference harnesses must retarget. A CI step for net8 is **pending** and its layout is untested. |
+| Integration merge commit, mode persistence, ECON-007, wizard, installation scan | **Pending** (uncommitted; not reviewed this round) |
+| Rides `8f27b00` | Accepted (round 7 selectors; 20/20 with fixtures). **Pending merge** and root doc fix |
+| Formats, scenarios | Still in progress with their owners; not reviewed |
+| UI private-corpus witnesses, `OPENTPW_PC_DATA` SDT audit | Not run this round (private inputs; no asset scan) |
+
+Unresolved objections carried forward: no PC or Patch 2 runtime equivalence for
+any Mac-derived rule. The Instant Action research policy (section 34) is a Mac
+static reading only. The SDT bank remap is needed before clip names (advisor).
+The TPI history blob (section 38) remains.

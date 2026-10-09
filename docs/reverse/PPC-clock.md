@@ -332,7 +332,9 @@ are 0, `2^32`, and `2^31` at `data:0x52e24/0x52e2c/0x52e34`.
 For finite input it returns 0 below zero, `0xffffffff` at or above `2^32`, and
 otherwise truncates toward zero, using a `2^31` subtraction/reconstruction for
 the upper unsigned half. The double accumulator itself continues increasing;
-**the returned clock saturates instead of wrapping**. Pause offsets, forced
+**the source conversion saturates instead of wrapping**. The outer saved-epoch
+offset additions described below remain modulo-32-bit operations; the fully
+adjusted clock can wrap. Pause offsets, forced
 clock additions and the park/substep counters use 32-bit word arithmetic and
 can wrap independently. A direct scale setter `0x127c40` stores its argument
 without the UI callbacks' clamps; its complete caller/load validation remains
@@ -1010,3 +1012,130 @@ signed/unsigned fields, empty initialized lists, and distinct stored/physical
 counts. Five source-region hashes and explicit producer/consumer operands pass;
 Python compilation and whitespace checks pass. No original payload or raw
 instructions were added to the repository.
+
+## Shared saved epochs and clock-restore lifecycle
+
+`clock_epoch_evidence.py` pins the actual shared-clock writer, reader, getter
+and alignment path on the identified Mac binary, plus ten functional-region
+hashes. It cross-references the same identified PC save. The implemented
+`SharedClockEpochs.cs` is a typed word-arithmetic contract outside production;
+source accumulators and live clock wiring are untouched.
+
+### Capture, wire words and outer offsets
+
+Capture hook `0x11db9c` calls `0x10e9ec` at `0x11dbac`. The save entry reaches
+this hook at `0x11a800`, before state writing. Capture samples the **adjusted**
+scaled getter `0x11a588` at `0x10ea00` and stores its word at clock `+64`.
+It then samples the adjusted unscaled getter `0x11a428` at `0x10ea0c` using
+embedded member `+68`, storing at overall clock `+96` (embedded `+28`). These
+are distinct reads, not an assumption of one simultaneous hardware sample.
+
+Pair writer `0x10e944` calls scaled writer `0x11a494` first (`0x10e960`), then
+unscaled writer `0x11a334` (`0x10e97c`). Each emits one four-byte saved word.
+The corresponding pair reader `0x10e998` calls `0x11a514` then `0x11a3b4`
+(`0x10e9b4/0x10e9d0`), restoring the respective words with byte reversal.
+The source state reader reaches it at `0x11b9f4`; the writer at `0x11cfe8`.
+The surrounding wire marker is `SSEM`, constructed at `0x11cf20..0x11cf28`
+and checked at `0x11b9cc..0x11b9d0`.
+
+Alignment `0x10ea28` calls scaled alignment `0x11a5bc` at `0x10ea3c`, then
+unscaled alignment `0x11a45c` at `0x10ea44`:
+
+| Clock | Saved adjusted word | Base query used for alignment | New outer offset | Subsequent public reading |
+| --- | --- | --- | --- | --- |
+| Scaled/RSE | overall `+64` | `0x10ed54`, excluding outer offset | `+60 = saved-currentBase` at `0x11a5d8..0x11a5dc` | `0x11a588`: currentBase + `+60` at `0x11a5a4` |
+| Unscaled/advisor | embedded `+28` / overall `+96` | `0x117c00`, excluding outer offset | embedded `+24` / overall `+92 = saved-currentBase` at `0x11a478..0x11a47c` | `0x11a428`: currentBase + embedded `+24` at `0x11a444` |
+
+Subtraction and addition use word arithmetic, modulo2^32. The current bases must
+**exclude the outer epoch offsets being replaced**; passing an already adjusted
+public reading as a base would apply the wrong origin. Scaled base `0x10ed54`
+still includes its forced/normal selection: normal reads add transition offset
+`+56` (`0x10ed84..0x10ed88`), and forced reads use `+48`. Forced exit computes
+`+56 = forcedWord-currentScaledPauseAwareWord` at `0x10ece8..0x10ecf4` to keep
+that separate transition continuous. None of these offsets is a park turn or
+a per-VM creation timestamp.
+
+The lower source's double→u32 conversion saturates, but these outer additions
+wrap. A saturated base `0xffffffff` plus outer offset2 returns1. Treating the
+final adjusted clock as unconditionally saturating or monotonic would change
+this arithmetic. Signed scheduler crossing, unsigned WAIT comparisons and
+zero-deadline sentinels remain separate contracts.
+
+### Actual saved words and near deadlines
+
+The PC payload has one `SSEM` marker at **1577444**, followed immediately by
+scaled word **114374804** at1577448 and unscaled word **114876286** at1577452.
+`KOLC` follows at1577456. Its separate writer `0x127ac8` / reader `0x127b64`
+are reached at `0x11d0c8` / `0x11bac0`; they sample the raw `LbTime_GetClock`
+import at `0x127adc` / `0x127bcc`. The fixture's corresponding raw-clock word
+is114938044. That continuity record is not the two adjusted `SSEM` words;
+its broader consumer lifecycle is not inferred by this contract.
+
+`TNAV` follows at1577464, routed to outer cadence writer `0x1c2e00` at
+`0x11d1a4` and reader `0x1c31f4` at `0x11bb88`. Its first three cadence stamps
+and outer phase are **114374806,114374775,114374589,6055**. The first stamp is
+2ms beyond captured scaled time, and the next two are31/217ms behind that first stamp,
+consistent with the independently pinned ceiling step and cadence masks.
+The saved outer phase happens to match manager pass6055 in this fixture;
+they remain separate fields and have different reset paths. These are static
+input correspondences, not wall-time measurements or a PC runtime proof.
+
+Against the saved scaled word, restored script ID3's WAIT deadline114374867 is
+only **63ms** ahead. ID8/9 WAIT deadlines114377133/114377145 are2329/2341ms ahead;
+ID4 animation-wait114193871 is behind. The reported distances are diagnostic
+signed modular differences within this fixture's ordinary range; they do not
+replace WAIT's native unsigned comparison. A fresh per-VM epoch0 would turn
+the first deadline into a delay of roughly31.8hours. Offset alignment instead
+retains the original word meaning, without modifying the deadlines.
+
+### Numeric load selector and requested cadence reset
+
+Incoming load-entry r6 is copied to r29 at `0x11ad04`. Post-load caller
+`0x11b3cc..0x11b3d8` tests literal1: BO12/BI2 at `0x11b3d0` skips hook
+`0x11b4f4` when equal. The known literal1 callers are `0x112b10` and state9
+callback call `0x1c200c`; literal2 callers are `0x198914` / `0x1990f4`.
+These numbers must not be conflated with GameType0/1/2 or world state4.
+Both visible paths can reach saved-word/state reading, but selector1's complete
+clock/scene lifecycle remains unqualified; the contract models only this hook.
+
+For the hook path, `0x11b4f4` stores reset-request1 at `0x11b548`, then calls
+pair alignment at `0x11b54c`. On the next active callback, `0x1c2274` invokes
+`0x1c3520`: previous scheduled time becomes the **current adjusted** shared
+clock (`0x1c3538..0x1c3540`), and outer substep phase is cleared at `0x1c3570`.
+Thus the saved outer stamps/phase are not blindly continued on that path.
+The independently restored manager pass/allocator remain separate; this reset
+does not normalize script IDs or the observed count-word projection14→28.
+Untraced callee mutations and native partial-load effects remain explicit gaps.
+
+### Typed contract and validation
+
+`SavedClockEpochs` distinguishes the two saved adjusted words;
+`ClockBaseWords` requires the two already-qualified base readings excluding
+outer epoch offsets; `ClockEpochOffsets` contains only the resulting outer
+word offsets. `SharedClockEpochs.Align` and `Read` implement the decoded
+subtraction/addition. `ApplyPostLoadHook` retains prior offsets for selector1
+and aligns them for other selectors, without interpreting their user-facing
+mode names. It does not reset source doubles, scale, pause state, forced-step
+state, counters, IDs, variables or deadlines. Exact8-byte span validation is a
+new evidence-tool guard, not a claim about native transactional I/O: a native
+partial read may already have mutated one saved word.
+
+Validation: **42/42** standalone .NET checks, Release build zero warnings/errors,
+whitespace verification, **54/54** Python clock tests with both original
+fixtures enabled and no skips. Seven new .NET groups cover captured-word
+alignment, the63ms deadline example, offset/read wrap, saturated-base outer
+wrap, selector truth tables interpreted independently from decoded BO/BI,
+skip-path offset retention and malformed pair widths. Python witnesses verify
+ten source hashes, field/call/arithmetic operands and the actual clock words.
+No production clock or original payload bytes changed.
+
+```sh
+python3 tools/ppc-analysis/lanes/clock/clock_epoch_evidence.py /path/to/mac-feral/bin --save /path/to/Easymode.TPWI
+python3 tools/ppc-analysis/lanes/clock/clock_epoch_evidence.py /path/to/mac-feral/bin --contract-rules
+```
+
+Remaining qualification: the broader raw-clock record and selector1 lifecycle,
+source scale/pause/forced state across full restore, native partial-load/callee
+side effects, signed timestamp recovery, host object references and target-PC
+execution. The standalone contract establishes word alignment; it does not
+claim a complete game-clock restore.

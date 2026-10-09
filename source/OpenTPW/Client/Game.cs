@@ -154,7 +154,17 @@ internal static class Game
 		//
 		Render.OnUpdate += level.Update;
 		Render.OnRender += level.Render;
-		if ( args.Contains( "--smoke-test" ) )
+		using var advisor = CreateAdvisor( args );
+		if ( advisor != null )
+			Render.OnRender += advisor.Render;
+		if ( advisor != null && args.Contains( "--smoke-test" ) )
+		{
+			using var advisorSmokeTest = new AdvisorSmokeTest( advisor );
+			Render.PostUpdate += advisorSmokeTest.Update;
+			Render.Run();
+			advisorSmokeTest.VerifyCompleted();
+		}
+		else if ( args.Contains( "--smoke-test" ) )
 		{
 			using var smokeTest = new SandboxSmokeTest( level );
 			Render.PostUpdate += smokeTest.Update;
@@ -173,5 +183,21 @@ internal static class Game
 		if ( index + 1 >= args.Length || args[index + 1].StartsWith( "--" ) )
 			throw new ArgumentException( $"{name} requires {description}." );
 		return args[index + 1];
+	}
+
+	/// <summary>
+	/// <c>--advisor-say N</c>: show the original advisor in a corner viewport saying global
+	/// speech clip <c>sp_NNN</c> with LIP-driven mouth changes (see docs/LIPS.md).
+	/// </summary>
+	private static Advisor? CreateAdvisor( string[] args )
+	{
+		var index = Array.IndexOf( args, "--advisor-say" );
+		if ( index < 0 )
+			return null;
+		if ( index + 1 >= args.Length || !int.TryParse( args[index + 1], out var clip ) || clip < Advisor.FirstClip || clip > Advisor.LastClip )
+			throw new ArgumentException( $"--advisor-say requires a speech clip number from {Advisor.FirstClip} to {Advisor.LastClip}." );
+		var advisor = new Advisor();
+		advisor.Say( clip );
+		return advisor;
 	}
 }

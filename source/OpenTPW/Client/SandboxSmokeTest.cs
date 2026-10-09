@@ -119,7 +119,7 @@ internal sealed class SandboxSmokeTest : IDisposable
 		}
 	}
 
-	private static (byte[] Pixels, int Width, int Height) CaptureFrame( string name )
+	internal static (byte[] Pixels, int Width, int Height) CaptureFrame( string name )
 	{
 		var source = Render.ResolveColorTexture;
 		using var staging = Device.ResourceFactory.CreateTexture( TextureDescription.Texture2D(
@@ -218,7 +218,7 @@ internal sealed class SandboxSmokeTest : IDisposable
 
 	public void VerifyCompleted() => Require( completed, "complete all native smoke-test frames" );
 
-	private static void Require( bool condition, string step )
+	internal static void Require( bool condition, string step )
 	{
 		if ( !condition )
 			throw new InvalidOperationException( $"Native sandbox smoke test failed: {step}." );

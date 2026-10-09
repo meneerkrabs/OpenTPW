@@ -198,11 +198,12 @@ public class BaseFileSystem
 				if ( !archiveHandlers.ContainsKey( Path.GetExtension( candidate ) ) )
 					continue;
 
-				var potentialArchivePath = currentPath + Path.GetExtension( candidate );
-				if ( string.Equals( Path.GetFileNameWithoutExtension( candidate ), part, StringComparison.OrdinalIgnoreCase ) && File.Exists( potentialArchivePath ) )
+				var remainingPath = path[currentPath.Length..].TrimStart( Path.DirectorySeparatorChar );
+				var extensionlessMatch = string.Equals( Path.GetFileNameWithoutExtension( candidate ), part, StringComparison.OrdinalIgnoreCase );
+				var explicitMatch = remainingPath.Length > 0 && string.Equals( Path.GetFileName( candidate ), part, StringComparison.OrdinalIgnoreCase );
+				if ( extensionlessMatch || explicitMatch )
 				{
-					var remainingPath = path[currentPath.Length..].TrimStart( Path.DirectorySeparatorChar );
-					return (potentialArchivePath, remainingPath);
+					return (candidate, remainingPath);
 				}
 			}
 		}

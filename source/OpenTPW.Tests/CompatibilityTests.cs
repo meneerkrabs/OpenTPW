@@ -219,8 +219,9 @@ public class CompatibilityTests
 		var cd = Path.Combine( root, "cd" );
 		Write( cd, "DATA/movies/JUG.TGQ", new byte[] { 2, 2 } );
 		Write( cd, "DATA/movies/bf.tgq", new byte[] { 9 } );
-		Write( cd, "data/LEVELS/Jungle/music/MUSICHD.SDT", new byte[] { 3 } );
-		Write( cd, "data/levels/jungle/global.sam", new byte[] { 4 } );
+		var bank = CreateBank( ("level4c.wav", new byte[] { 3 }) );
+		Write( cd, "DATA/LEVELS/Jungle/music/MUSICHD.SDT", bank );
+		Write( cd, "DATA/LEVELS/Jungle/global.sam", new byte[] { 4 } );
 		var originalFileSystem = FileSystem;
 		var originalFallbacks = MovieLibrary.FallbackDataDirectories;
 		try
@@ -250,7 +251,14 @@ public class CompatibilityTests
 			CompatibilityStartup.Mount( roots );
 			CollectionAssert.AreEqual( new byte[] { 2, 2 }, FileSystem.ReadAllBytes( "/Movies/jug.tgq" ) );
 			Assert.IsTrue( FileSystem.FileExists( "/levels/jungle/Music/MusicHD.sdt" ) );
-			Assert.AreEqual( 1L, FileSystem.GetSize( "/levels/jungle/Music/MusicHD.sdt" ) );
+			Assert.AreEqual( (long)bank.Length, FileSystem.GetSize( "/levels/jungle/Music/MusicHD.sdt" ) );
+			foreach ( var archive in new[] { "MusicHD.sdt", "MusicHD" } )
+			{
+				var member = $"/levels/jungle/Music/{archive}/LEVEL4C.mp2";
+				// SDT virtual files retain their 40-byte entry header.
+				CollectionAssert.AreEqual( bank.AsSpan( 8 ).ToArray(), FileSystem.ReadAllBytes( member ) );
+				Assert.AreEqual( 41L, FileSystem.GetSize( member ) );
+			}
 			Assert.AreEqual( "ParkName.GateObjectId 1601\n", FileSystem.ReadAllText( "/levels/jungle/global.sam" ), "existing install files are never replaced" );
 			Assert.IsFalse( FileSystem.FileExists( "/Movies/roll.tgq" ) );
 			Assert.AreEqual( Path.Combine( overlay.DataDirectory, "movies", "JUG.TGQ" ), MovieLibrary.Resolve( install, "jug" ) );

@@ -135,7 +135,7 @@ public class SdtArchive : IArchive
 
 	public ArchiveFile GetFile( string name )
 	{
-		int index = soundFiles.FindIndex( x => x.Name.StartsWith( name ) );
+		int index = soundFiles.FindIndex( x => x.Name.StartsWith( name, StringComparison.OrdinalIgnoreCase ) );
 		if ( index < 0 )
 			throw new FileNotFoundException( $"'{name}' is not in this SDT bank{(SkippedEntries.Count > 0 ? $" ({SkippedEntries.Count} damaged entries were skipped)" : "")}.", name );
 		return soundFiles[index];

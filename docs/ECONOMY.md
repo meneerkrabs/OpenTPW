@@ -181,8 +181,15 @@ tests compare saves before/after load and after identical continuations byte for
   (GuestPaid, ObjectBuilt/Sold, UpgradeBought/Completed, StaffHired/Fired, WagesPaid, Loan*,
   ItemResearched, Day/Month/YearEnded, InTheRed, BankruptcyWarning, Bankrupt, RideWorn/BrokeDown/
   Repaired, Challenge*, GoldenTicketWon).
-- `IParkGuestStatistics` (guests slice): people in park, average happiness, happy-visitor count,
-  balloon/costume percentages. Default `NoGuestStatistics`.
+- Guests are wired: `GuestSimulation.Payments` (`IGuestPayments`) is a `GuestEconomyBridge`, so
+  admission, shop and sideshow money goes through `TryAdmitVisitor`/`TryBuy`/`PlaySideshow` (the
+  economy's entrance fee and open state are the single source; closed park or too little money turns
+  the guest back at the booth), rides call `RecordRideUse`, and the bridge implements
+  `IParkGuestStatistics` (people in park, average happiness, happy-visitor count; balloons/costumes 0).
+  The guest slice keeps no money totals, only purses and the `MoneySpent` event. Attractions are
+  linked with `ParkEconomyRuntime.LinkAttraction` (the prototype Totem is registered uncharged as
+  Info.Id 1110 in jungle; other themes do not have it, so its visits are not booked there).
+  OpenTPW opens imported parks on load (the original open state is not decoded).
 - `IEconomyObjectCatalog` / `EconomyObjectInfo` (rides/objects slice may supply its own catalogue);
   `ParkEconomy.TryBuild(infoId)` returns the instance id the placed object should keep;
   `RegisterExisting` for imported/fixed items; `SetObjectOpen`, `Sell`, `TryBuyUpgrade`,

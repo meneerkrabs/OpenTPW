@@ -22,7 +22,7 @@ public struct GuestRandom
 }
 
 /// <summary>Counts for overlays, logs and tests.</summary>
-public readonly record struct GuestStatistics( int InPark, int Walking, int Queueing, int OnRides, int Arriving, int Leaving, float AverageHappiness, GuestThought CommonThought, long Admissions, long Revenue );
+public readonly record struct GuestStatistics( int InPark, int Walking, int Queueing, int OnRides, int Arriving, int Leaving, float AverageHappiness, GuestThought CommonThought, long Admissions );
 
 /// <summary>
 /// Park visitors on the fixed simulation tick: arrival from the bus stops through the ticket booth
@@ -57,7 +57,6 @@ public sealed class GuestSimulation : IRideVisitorHost
 		Settings = settings;
 		Seed = seed;
 		random = new GuestRandom( seed );
-		AdmissionFee = settings.AdmissionFee;
 	}
 
 	public GuestPathGrid Grid { get; }
@@ -68,11 +67,14 @@ public sealed class GuestSimulation : IRideVisitorHost
 	public long TickCount { get; private set; }
 	public double TimeSeconds { get; private set; }
 	public bool ArrivalsEnabled { get; set; } = true;
-	public int AdmissionFee { get; set; }
+	/// <summary>Where guests pay (the park economy). Null: the standalone <see cref="GuestSettings.AdmissionFee"/> and attraction prices apply and no money is booked anywhere.</summary>
+	public IGuestPayments? Payments { get; set; }
+	/// <summary>Entrance fee: the economy's when <see cref="Payments"/> is set, else <see cref="GuestSettings.AdmissionFee"/>.</summary>
+	public int AdmissionFee => Payments?.AdmissionFee ?? Settings.AdmissionFee;
+	/// <summary>Number of guests admitted (a visitor count; money is booked by <see cref="Payments"/>).</summary>
 	public long Admissions { get; private set; }
-	public long Revenue { get; private set; }
 	public int Departed { get; private set; }
-	/// <summary>Raised when a guest pays (guest, amount, attraction id or 0 for admission). Hook for the economy slice.</summary>
+	/// <summary>Raised when a guest pays (guest, amount, attraction id or 0 for admission).</summary>
 	public event Action<Guest, int, int>? MoneySpent;
 
 	public Guest? Find( int id ) => byId.TryGetValue( id, out var guest ) ? guest : null;
@@ -223,6 +225,8 @@ public sealed class GuestSimulation : IRideVisitorHost
 				SpawnArrival();
 		}
 	}
+
+	public bool IsInPark( Guest guest ) => InPark( guest );
 
 	private bool InPark( Guest guest ) => guest.State is not (GuestState.CrossingRoad or GuestState.CrossingRoadToPark or GuestState.GoingToTicketBooth
 		or GuestState.AtTicketBooth or GuestState.CrossingRoadHome or GuestState.WaitingToGoHome or GuestState.Gone);
@@ -390,16 +394,18 @@ public sealed class GuestSimulation : IRideVisitorHost
 
 	private void PayAdmission( Guest guest )
 	{
-		if ( guest.Money < AdmissionFee )
+		int fee;
+		if ( Payments != null ? !Payments.TryPayAdmission( guest.Money, out fee ) : guest.Money < (fee = AdmissionFee) )
 		{
+			// Closed park or too expensive: the guest turns back at the booth.
 			guest.Thought = GuestThought.Angry;
 			StartLeavingLane( guest, guest.Lane!, guest.LaneIndex );
 			return;
 		}
-		guest.Money -= AdmissionFee;
+		guest.Money -= fee;
 		Admissions++;
-		Revenue += AdmissionFee;
-		MoneySpent?.Invoke( guest, AdmissionFee, 0 );
+		if ( fee > 0 )
+			MoneySpent?.Invoke( guest, fee, 0 );
 		guest.LaneIndex = guest.Lane!.Length - 1;
 		guest.State = GuestState.EnteringPark;
 		SetLaneWaypoint( guest );
@@ -680,10 +686,15 @@ public sealed class GuestSimulation : IRideVisitorHost
 		guest.State = GuestState.Using;
 		guest.AttractionId = ride.AttractionId;
 		guest.HasWaypoint = false;
-		if ( ride.Price > 0 )
+		var price = 0;
+		if ( Payments != null )
+			Payments.TryPayVisit( ride, guest.Money, out price );
+		else if ( ride.Price > 0 && guest.Money >= ride.Price )
+			price = ride.Price;
+		if ( price > 0 )
 		{
-			guest.Money -= ride.Price;
-			MoneySpent?.Invoke( guest, ride.Price, ride.AttractionId );
+			guest.Money -= price;
+			MoneySpent?.Invoke( guest, price, ride.AttractionId );
 		}
 	}
 
@@ -761,7 +772,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 		for ( var index = 1; index < thoughts.Length; index++ )
 			if ( thoughts[index] > thoughts[common] )
 				common = index;
-		return new GuestStatistics( inPark, walking, queueing, onRides, arriving, leaving, inPark == 0 ? 0 : happiness / inPark, (GuestThought)common, Admissions, Revenue );
+		return new GuestStatistics( inPark, walking, queueing, onRides, arriving, leaving, inPark == 0 ? 0 : happiness / inPark, (GuestThought)common, Admissions );
 	}
 
 	/// <summary>FNV-1a over every guest's simulation state, the RNG and the counters.</summary>
@@ -780,7 +791,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 		Add( TickCount );
 		Add( (long)random.State );
 		Add( nextId );
-		Add( Revenue );
+		Add( Admissions );
 		Add( guests.Count );
 		foreach ( var guest in guests )
 		{

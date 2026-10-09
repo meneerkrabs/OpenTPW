@@ -169,7 +169,7 @@ internal sealed class SandboxSmokeTest : IDisposable
 		if ( step >= 90 && displayChangesDone && !completed )
 		{
 			if ( level.Park != null )
-				VerifyParkEconomy( level.Park );
+				VerifyParkEconomy( level.Park, level.Guests );
 			Device.WaitForIdle();
 			completed = true;
 			Log.Trace( level.OriginalPark == null
@@ -180,10 +180,19 @@ internal sealed class SandboxSmokeTest : IDisposable
 	}
 
 	/// <summary>Checks the park clock/money on the fixed clock, a month-end wage payment and a park save round trip.</summary>
-	private static void VerifyParkEconomy( ParkEconomyRuntime park )
+	private static void VerifyParkEconomy( ParkEconomyRuntime park, GuestSimulation? guests )
 	{
 		var economy = park.Economy;
 		Require( economy.Tick > 0, "park clock advances on the fixed simulation clock" );
+		if ( guests != null )
+		{
+			long Booked( LedgerCategory category ) => economy.Ledger.CurrentTotals.GetValueOrDefault( category ) + economy.Ledger.History.Sum( month => month[category] );
+			var gate = Booked( LedgerCategory.GateTakings );
+			Require( guests.Payments == park.Guests && economy.Counters[ParkCounters.Admissions] == guests.Admissions, "every guest admission goes through the park economy" );
+			Require( guests.Admissions == 0 || gate > 0, "admission revenue enters the ledger" );
+			Log.Trace( $"Park economy guests: {guests.Admissions} admissions at ${economy.EntranceFee}: gate takings ${gate}, shop ${Booked( LedgerCategory.ShopTakings )}, sideshow ${Booked( LedgerCategory.SideshowTakings )}; "
+				+ $"{guests.GetStatistics().InPark} in park, rating {economy.ParkRating}, balance ${economy.Balance}." );
+		}
 		var startDate = economy.Date;
 		var startBalance = economy.Balance;
 		var candidate = economy.Staff.Candidates.FirstOrDefault( item => item.Type == StaffType.Mechanic );

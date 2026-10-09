@@ -472,6 +472,20 @@ public sealed class ParkEconomy : IParkEconomy
 		return value;
 	}
 
+	/// <summary>Removes an object without scrap credit (e.g. an unpaid prototype placement).</summary>
+	public void Remove( int instanceId )
+	{
+		var item = RequireObject( instanceId );
+		objects.Remove( instanceId );
+		foreach ( var member in Staff.Members.Where( member => member.AssignedInstanceId == instanceId ) )
+		{
+			member.AssignedInstanceId = 0;
+			member.BusyTicks = 0;
+			member.State = StaffState.Patrolling;
+		}
+		Raise( ParkEventKind.ObjectSold, 0, instanceId, item.InfoId, "removed" );
+	}
+
 	/// <summary>Buys the next upgrade level of a ride; a mechanic installs it (UITEXT 367–372).</summary>
 	public PurchaseResult TryBuyUpgrade( int instanceId )
 	{

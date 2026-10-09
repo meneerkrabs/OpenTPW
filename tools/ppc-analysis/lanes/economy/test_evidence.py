@@ -48,6 +48,16 @@ class EconomyEvidenceTests(unittest.TestCase):
             with self.assertRaises(evidence.pef.PEFError):
                 evidence.xform(c, 0, 31, operation, regs)
 
+    def test_rating_branch_must_use_signed_less_than_gate_and_right_target(self):
+        words = bytes(8) + struct.pack('>I', (16 << 26) | (4 << 21) | 0xfffc)
+        c = SimpleNamespace(code=SimpleNamespace(data=words))
+        evidence.below_cap_branch(c, 8, 4)
+        with self.assertRaises(evidence.pef.PEFError):
+            evidence.below_cap_branch(c, 8, 12)
+        c.code.data = bytes(8) + struct.pack('>I', (16 << 26) | (12 << 21) | 4)
+        with self.assertRaises(evidence.pef.PEFError):
+            evidence.below_cap_branch(c, 8, 12)
+
     def test_sam_requires_complete_record(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'synthetic.sam'

@@ -15,12 +15,13 @@ cannot preserve these independently scheduled operations.
 
 ```sh
 python3 tools/ppc-analysis/lanes/economy/evidence.py /Users/sander/server/game-assets/mac-feral/bin --sam /Users/sander/server/game-assets/theme-park-world-patch2/Data/levels/Standard.sam --language /Users/sander/server/game-assets/theme-park-world/Data/Language/English
+python3 tools/ppc-analysis/lanes/economy/save_bridge_evidence.py /Users/sander/server/game-assets/theme-park-world/Data/levels/jungle/Easymode.TPWI
 python3 -m unittest discover -s tools/ppc-analysis/lanes/economy -p 'test_*.py' -v
 python3 -m unittest discover -s tools/ppc-analysis -p 'test_*.py' -v
 ```
 
 The verifier uses the validated `pef.py` loader and timer witness helpers. It
-checks file identities, 35 application and two macdoze function-region hashes,
+checks file identities, 54 application and two macdoze function-region hashes,
 selected operands, branch targets, constants and import relocations. Output
 is interpreted metadata. These are bounded static witnesses, not formal
 decompilation proofs. Tests contain synthetic fixtures and independently
@@ -442,13 +443,14 @@ a captured original screen or proof of Windows executable arithmetic.
 Let `V` be visitors currently in the park, `R/S/A/F` the eligible placed
 ride/shop/sideshow/feature counts, `U` rides at upgrade level >=2, and
 `H/M/E/G/Q` the eligible handyman/mechanic/entertainer/guard/researcher counts.
-The integer park rating at `0xc7b24` is:
+For stable eligible counts without low-word multiplication overflow, the
+integer park rating at `0xc7b24` is:
 
 `floor(min(V,1000)/50) + min(floor(3R/2),20) + min(2S,10) + min(2A,10)`
 
 `+ min(F,10) + min(U,10) + min(H,4)+min(M,4)+min(E,4)+min(G,4)+min(Q,4)`.
 
-The maximum is 100. Arithmetic witnesses are visitor scaling
+The maximum on that domain is 100. Arithmetic witnesses are visitor scaling
 `0xc7bec–0xc7c24`, ride scaling `0xc7cdc–0xc7d10`, category components
 `0xc7dc4–0xc8074`, staff components `0xc817c–0xc8624`, and final sum
 `0xc8628–0xc864c`. Counters use object/actor categories and subtype filters:
@@ -657,3 +659,451 @@ BigInteger cross-check. For the 100,000/36 zero-APR example the first monthly
 profit change is −119,304,646; after 36 isolated calls without a year reset,
 the wrapped profit field is +40 and cash retains 28. These are arithmetic model results,
 not original runtime captures or realistic accounting conventions.
+
+## Standalone rating and staff-skill contract
+
+`OriginalParkRatingRules.cs` extends the same dependency-free console
+project; it has no production references and reads no original tables.
+Every count must be supplied by a caller with separately qualified selection
+logic. There are no SAM setting reads in `0xc7b24`: its scales and caps are
+literal operands. Arbitrarily substituting configuration/percentage scales
+would describe a different rule set and is not part of this contract.
+
+The native routine first counts inline to select the cap branch, then
+**recounts through a provider only below the cap**. `RatingCountPass` keeps
+those two observations explicit. `CalculateStableSnapshot` is a convenience
+that expressly assumes both counts agree; it is not evidence that every
+production statistic or traversal already supplies the right value.
+
+| Caller-supplied component input | Native selection / below-cap provider | Provider call | Cap-check operation |
+| --- | --- | --- | --- |
+| Visitors | actor type 1, predicate `0xe6c6c != 0`; `0xc3684` repeats it | `0xc7bf8` | signed population <1000; cap population, then low-word ×20 and signed /1000 |
+| Rides | actor type 3, catalogue category 0; `0xc5864(0,0)` | `0xc7cfc` | low-word ×3, signed /2, compare <20 |
+| Shops | actor type 3, catalogue category 1; `0xc5864(1,0)` | `0xc7ddc` | low-word ×2, compare <10 |
+| Sideshows | actor type 3, catalogue category 2; `0xc5864(2,0)` | `0xc7eb4` | low-word ×2, compare <10 |
+| Features | actor type 3, catalogue category 3; `0xc5864(3,0)` | `0xc7f88` | count <10 |
+| Upgraded rides | actor type 3, catalogue category 0, upgrade byte >=2; `0xc5864(0,2)` | `0xc8068` | count <10 |
+| Handymen | native type 5, subtype 0; `0xc4064(5)` | `0xc818c` | count <4 |
+| Mechanics | native type 4, subtype 0; `0xc4064(4)` | `0xc82b0` | count <4 |
+| Entertainers | native type 6, subtype 0; `0xc4064(6)` | `0xc83d4` | count <4 |
+| Guards | native type 7, subtype 0; `0xc4064(7)` | `0xc84f8` | count <4 |
+| Researchers | native type 8, subtype 0; `0xc4064(8)` | `0xc861c` | count <4 |
+
+The second provider argument is a minimum upgrade bound applied only to
+native category 0. These native numeric selectors are pinned evidence;
+equating them with existing OpenTPW count properties is **not** established
+by this helper. It neither traverses the current world nor filters objects,
+candidates or staff itself.
+
+`evidence.py` now checks all eleven signed comparisons, cap branches,
+literal caps, linked provider targets and selector operands. It also pins
+the provider regions `[0xc3684,0xc3758)`, `[0xc5864,0xc5968)` and
+`[0xc4064,0xc41a4)`, alongside the previously pinned composite/UI regions.
+Synthetic branch tests reject wrong conditions and targets. No original
+instructions are executed or copied into the repository.
+
+All component calculations preserve low-word products and signed truncation
+toward zero. Ride multiplication precedes division and cap checking. The
+recount result is not capped again; final addition follows the original
+order, with visitors last, and has no final [0,100] normalization. Synthetic
+inconsistent passes can therefore exceed 100, and very large/raw negative
+count words can produce signed overflow results. Tests cover those operands
+to distinguish operation ordering; they do not claim such counts occur in
+the original game.
+
+`OriginalStaffSkill.Calculate` follows code `0xf41dc` precisely on the host's
+default floating mode: byte percentage at staff +488 is divided by double
+100; the signed grade word at +484 is rounded to f32; the double sum is
+rounded to f32; then single-precision multiplication by 20 precedes the
+reviewed saturating unsigned truncation helper. The operand verifier checks
+`0xf4220` double divide, `0xf4228` single grade conversion, `0xf422c`
+double add, `0xf4230` single rounding and `0xf4234` single multiplication.
+Neither grade nor percentage is normalized/clamped to the ordinary range.
+For example grade 4/percentage 0 returns 80, and grade 4/byte 255 returns 131.
+
+The all-f32 rewrite loses the native operation order: the synthetic
+grade −1/percentage 105 case yields 0 with early single division, whereas
+the inspected double-fraction/late-rounding order yields 1. That input is
+not asserted reachable. The reviewed grade 0..5 and full byte domain has
+1,536 checked combinations, matching integer `floor((100×grade+pct)/5)`.
+Original rounding state, production field bindings and PC equivalence remain
+separate qualifications.
+
+The combined Release/Debug runner now has 25 groups and 11,183 assertions.
+Rating cases include zero and isolated components, truncation, threshold
+ordering, caps, pass disagreement, low-word overflow and 2,048 bounded
+BigInteger reference comparisons. Staff cases cover raw bytes, lack of
+percentage normalization, f32 order and the reviewed bounded domain. The
+production rating and staff calculations remain unwired and unchanged.
+
+## Migration contract before gameplay wiring
+
+This plan uses reviewed standalone contract `974f546`, reader correction
+`ab3c74d`, consumer qualification `c7bedf1`, and independent review of the
+Mac/PC save copy. It does not select a compatibility policy, port formulas,
+or change state import. The proposed name `OriginalMacReference` would mean
+an explicitly selected Mac arithmetic/timing contract, not inferred Windows
+fidelity. Difficulty, Instant Action/Full Simulation and arithmetic
+provenance are separate properties; the scenario/factory lane owns mode
+selection. Matching SAM inputs or saved words does not select a rule set.
+
+### Concrete world and save ownership
+
+World writer `0x105d3c` and reader `0x106708` serialize `mBankAccount` as a
+u16 object ID at world `+0x1da726` (operand/call pairs
+`0x105eac/0x105eb0`, `0x10683c/0x106840`), and `mGameTick` as u32 at
+`+0x1da70c` (`0x105efc/0x105f00`, `0x10688c/0x106890`). Getter
+`0x108424` reads the bank ID at `0x108440`, multiplies by 20 at `0x108464`,
+and loads the object pointer from `ThingArray`, data `0xecef4`, at
+`0x108468`. These are field/call/relocation references, not symbol guesses.
+
+World bank write dispatch calls `0xcba54` at `0x10663c`. The read table's
+type-16 relocation points to `0x107620`, which allocates 296 bytes; the case
+restores the actor ID, calls `0xcba54` at `0x10765c`, and stores the pointer
+in its actor entry. Base actor serializer `0xfa808`, called at `0xcba78`,
+emits X/Y/MapChild/MapParent as four 16-bit fields before the bank words.
+Each actor is preceded by the **next** used-object ID and 32-bit model type
+(`0x106394/0x1063c4`; mirrored readers `0x106c9c/0x106cf0`). The fixture's
+word 7 before bank model 16 therefore names the next actor, not current bank
+ID 8. A full actor walk must establish the current ID through the chain.
+
+The formats lane establishes the leading action recording as
+`u32 published flag, u32 size, size bytes`, followed by the world prefix.
+Our identity-bounded witness repeats this on the PC save: flag 0, recording
+size 1,171, world start 1,179, version 2. Selected fields are:
+
+| PC payload offset | Value | Native world field |
+| --- | --- | --- |
+| 1,189 | 8 | bank ID, `+0x1da726` |
+| 1,193 | 755 | game tick, `+0x1da70c` |
+| 1,197 | 2 | mechanic HQ ID, `+0x1da71a` |
+| 1,199 | 5 | analyser ID, `+0x1da720` |
+| 1,201 | 0 | park-closed word, `+0x1da710` |
+| 1,217 | 6 | research-lab ID, `+0x1da722` |
+| 1,219 | 1 | staff-HQ ID, `+0x1da718` |
+| 1,227 | 0 | world-state word, `+0x1da738`; not GameType |
+
+World write/read call composite `0xd6710` at `0x1062a4/0x106bdc` before
+the map. It calls candidate-pool serializer `0xf5f1c` at `0xd6734`, calendar
+serializer `0xe3d30` with world `+672` at `0xd675c`, and arrival serializer
+`0xcb050` with world `+708` at `0xd6784`. Map serialization follows with
+world `+728` at `0x106c04`. Calendar persisted widths/order are 8,8,4,4,4:
+
+| Calendar runtime offset | Field | Write/read call sites | Persisted bytes |
+| --- | --- | --- | --- |
+| +0 | FunnyTimeStart | `0xe3d80/0xe3e48` | 8 |
+| +8 | SessionStart | `0xe3da4/0xe3e6c` | 8 |
+| +16 | MonthAtLastUpdate | `0xe3dc8/0xe3e90` | 4 |
+| +20 | DayAtLastUpdate | `0xe3dec/0xe3eb4` | 4 |
+| +28 | FunnySecsPerRealSec | `0xe3e10/0xe3ed8` | 4 |
+
+Year cache `+24` is **not serialized**. Initialization calls `0xe42b0`
+through `0x104920 -> 0xd67b0 -> 0xd67d8`; it sets cached month to current
+month minus one and recomputes year. A corresponding post-load reset is not
+established: direct world load ends through actor free-list repair
+`0x107780 -> 0x1077fc`. Do not silently execute the initialization reset on
+restored state. The remaining dependency is outer restore continuation
+`0x11b5ac` after `0x11b680 -> 0x106708`, plus indirect reset paths.
+
+The sole epoch/rate candidate in the identified PC payload is at 6,719:
+FunnyTimeStart 125,911,584,000,000,000; SessionStart
+125,850,128,932,900,000; month cache 1; day cache 2; rate 15,000. Host
+Gregorian conversion of the **Mac equation** with tick 755 gives
+`2000-02-02T18:27:30`, consistent with the month/day caches. Calendar end
+6,747 plus arrival's 18 persisted bytes reaches the formats lane's verified
+map start 6,765. The 18-byte width follows `0xcb050`'s three 4-byte numbers,
+one 4-byte timer (`0x121000`), and two bytes. This is a coherent candidate
+with a traced suffix, **not a fully framed production calendar locator**:
+preceding control-manager/candidate-pool lengths remain unverified
+(`0xd1a60`, `0xf5f1c`). Agreement with this fixture does not prove the PC
+runtime equation. SessionStart is not grounds for inventing offline
+elapsed simulation time.
+
+`save_bridge_evidence.py` validates exact container identity, bounded BILZ
+decompression, decoded identity and selected metadata. The decoded SHA is
+`a3c9a28252c37ad49a8eb78e4a0c5e1d5229d01548fa35801db67015d2589173`
+(1,608,309 bytes). It accepts only this identified save and prints metadata;
+it does not mutate state or offer a production locator. `evidence.py` adds
+16 owner/serializer/restore regions and operand/call/relocation checks.
+Four new synthetic groups exercise truncation/size/trailing-data limits,
+unsigned tick preservation, unnormalized caches, candidate ambiguity and
+identity rejection (13 Python groups total). No original code executes.
+
+### Evidence and port boundaries
+
+| Proposed binding | PC/shared-data/manual support | Mac-only operations | Bridge qualification |
+| --- | --- | --- | --- |
+| Live cash/admission | Reviewed PC bank 87,987/fee 25; exact Mac HFS save copy; manual admission controls | Deposit/debit/profit `0xcbf50/0xcbfdc`, admission `0xcc568` | Retain raw bank snapshot, pending batch and annual profit without inventing category history |
+| Loan offer/state | PC eight-word records; exact amount/APR/term/lender SAM check; zero-APR saved `floor(P/N)`; manual mode restriction | Power repayment, fixed installments, unsigned bookkeeping/payoff `0xcb7a8/0xcc21c/0xccc78` | Preserve stored M and independent Available/Bought/Repaid; PC positive APR/bookkeeping remain unqualified |
+| Calendar/cadence | PC tick 755 and coherent candidate; manual days/monthly wages/year graphs | Product/rate/4 `0xe4394`; civil OS conversion; nominal 8×31 ms park turn in clock lane | Separate original u32 tick from 60 Hz engine tick; qualify event phase/year-cache restore and clock mode gates |
+| Staff wages | Actual PC SAM names/values; baseline/patch-2 global SAM identical; manual monthly wages | Product `0xf46bc`; month debit `0xf2b5c -> 0xf3364` | Map native type/grade and employee records; preserve multiplication bounds/callback order |
+| Staff skill/training | Manual training budget improves skill over time; SAM grade/price inputs | Exact skill `0xf41dc`; allocation/charge order `0xfc1c4/0xf3588` | Preserve grade and percentage byte separately; qualify actor/state binding and reachability |
+| Park rating | PC language label 190; manual qualitative popularity supplies no equation | Eleven provider counts, cap/recount/order `0xc7b24`, monthly history/annual UI | Map every selector/predicate, subtype/upgrade gates; retain two-pass/stable-snapshot precondition |
+
+SAM/copy facts establish inputs or saved layout, not Windows algorithm
+equality. This lane does not prove Mac/PC SAM byte identity; the reviewed
+copy is `Easymode.TPWI`. Pure data import may use reviewed PC fields without
+adopting Mac formulas. Explicitly chosen Mac reference simulation may use
+the standalone rules after bindings and persisted provenance are accepted.
+No automatic policy follows from difficulty, filename, matching repayment,
+or a byte-identical save.
+
+### Current import gap and staged acceptance
+
+`SaveReader.ReadFile -> SaveEconomyRecords.Parse -> OriginalEconomyImport.Apply`
+already carries the PC bank through `OriginalEconomyImport.Records.Bank`.
+`OriginalEconomyImport.cs:84` reports cash 87,987, last 87,787, annual
+profit −12,013 and fee 25. It preserves settings InitialCash 100,000 and the
+constructor fee; the real-data regression explicitly asserts cash 100,000.
+`Records.Loans` retains Available/Bought/MonthsRepaid without creating
+runtime loans. Metadata is available now; absence of state restoration is
+reported. Parent integration may move this ownership into its level factory;
+follow the data path rather than a stale filename.
+
+First qualify a raw original snapshot. Keep all seven bank words and eight
+independent loan words, source container/payload/settings identities and
+per-field qualification. Decode actor-chain ownership so a plausible loan
+run cannot select another object: ECON-045 remains a heuristic locator.
+This fixture has Available only at offer 3, Bought false throughout and
+MonthsRepaid 0; Available is not the inverse of Bought or TakenLoanOffers.
+
+Do not map LastBalance 87,787 to ledger month opening: actual withdrawal
+`0xcbfdc` updates LastBalance after each debit at `0xcc044`. Balance minus
+initial cash and ProfitThisYear cannot manufacture monthly category totals.
+`ParkLedger.Restore` requires opening balance/month/totals/history, which
+the bank prefix does not supply; it has no pending batch/withdrawal flag/
+red-entry/year-profit storage. Cash/fee restoration can be a qualified
+partial import only if unsupported financial history is marked unavailable
+and separately retained native words have defined consumers.
+
+Do not invent annuity RemainingBalance from native loan fields. Current
+`LoanAccount` requires RemainingBalance/MonthsRemaining; native state keeps
+original principal, fixed M, term and repaid count. Native early-payoff
+amount is low-word `M*(N-Repaid)`, not inferred remaining principal. Preserve
+signed-display/unsigned-bit distinctions until the chosen policy consumes
+them. Never recalculate a saved positive-APR M with annuity or the Mac power
+formula as a PC validity gate. Disabled withdrawals, zero-term diagnostic
+continuation, libm and FPSCR qualifications remain explicit.
+
+Next qualify calendar framing/lifecycle, then employee/analyser restoration
+through world IDs. Staff serializer `0xf2c28` names grade at +484
+(`0xf2c80/0xf2ec0`, helpers `0xf530c/0xf5114`) and percentage at +488
+(`0xf2da4/0xf2fbc`, byte helpers `0xcabc4/0xca9bc`), after base serializer
+`0xe4a54`. Those operands/calls are pinned; complete inherited/type-specific
+staff record framing and actual PC actor offsets are pending. Analyser
+serialization and history caller `0xc163c -> 0xc17b8` are the next rating
+state dependencies. Current wage clamps grade and widens product to long;
+native wage uses raw grade/32-bit product. Current rating filters open/
+non-broken objects and adds happiness/cleanliness, unlike native providers.
+Qualify each component before replacing consumers.
+
+M2 denotes the requested restore milestone, not an approved JSON version.
+`ParkSaveFile.CurrentVersion` is 1, strictly rejects unknown/missing members,
+and validates month index with the fixed calendar. A separately reviewed
+versioned provenance/original snapshot representation is required before
+persisting imported native state. Version 1 migration must retain existing
+approximations and must not synthesize original bank/calendar/loan fields.
+Scenario GameType and arithmetic policy must round-trip independently.
+
+| Acceptance test | Required result | Status / next dependency |
+| --- | --- | --- |
+| Current metadata | Actual Bank 87,987/fee 25 and eight exact loans; cash still100,000; positive APR accepted with uncertainty; exact settings mismatches rejected | Existing focused production tests and new fixture witness |
+| Snapshot actor identity | Bank ID 8 resolves to type 16 through full chain; next ID 7 remains independent; ambiguity/truncation rejects before mutation | Owner/type operands pinned; full PC chain framing pending |
+| Partial cash/fee import | Cash 87,987/fee 25 restored once; imported objects uncharged; unknown ledger/history marked unavailable; batch/annualprofit retained | Proposed; parent acceptance and target representation needed |
+| Full loan state | Available/Bought combinations independent; repaid 0/middle/term/raw boundaries survive; saved M never recalculated; Mac policy has no final-remainder settlement | Standalone tests pass; production representation pending |
+| Calendar event phase | Tick 755/rate 15000/epoch yields qualified reference date; save/load across day/month/year neither duplicates nor skips debits; unsaved-year lifecycle and pause/catch-up gates tested | Candidate coherent; `0xd1a60/0xf5f1c` framing and `0x11b5ac` continuation pending |
+| Staff/rating binding | Grade 4 / pct 0 yields skill 80; full byte domain retained; each of 11 selector/cap and eligible/ineligible actors tested; two-pass assumption explicit | 974f tests pass; actual employee/actor binding pending |
+| M2 save continuity | Policy/identities/raw words/availability/event phase round-trip; original/restored continuation identical; version1 retains existing rules | Extend `SaveRoundTripRestoresTheCompleteState`; version/schema decision pending |
+
+Confidence is high for reviewed bank/loan fields and pinned native owner/
+caller operations, medium for the bounded calendar candidate, and
+unqualified for PC numerical algorithms beyond the zero-APR fixture.
+Gameplay/factory/state-import source is unchanged by this plan.
+
+## Staff cadence, real saved researcher and bankruptcy gate
+
+Run the additional owned witness with:
+
+```sh
+python3 tools/ppc-analysis/lanes/economy/staff_evidence.py /Users/sander/server/game-assets/mac-feral/bin --save /Users/sander/server/game-assets/theme-park-world/Data/levels/jungle/Easymode.TPWI
+```
+
+It pins 20 additional operation/serializer regions, verifies 22 leaf-helper
+write widths through their actual `LbFile_Write` imports, composes eight
+serializer call sequences and checks fixed loop limits. It emits identities,
+addresses, widths and interpreted fields only. The earlier application
+witness and these checks together qualify the framing below; no original
+instructions execute. Both normal and `python3 -O` runs agree.
+
+### Cadence and state/vital transitions
+
+Regular world update `0x10536c` increments `mGameTick`, then visits the used
+actor chain and calls `0xfa9b0` at `0x10541c` for non-null actors with byte
+`+3 == 0`. Researcher dispatch calls `0xf0284` at `0xfaa48`, immediately
+followed by state processing `0xf0304` at `0xfaa50`. These are park-turn
+operations. World-state 4 skips that actor pass, but still reaches
+`0x10563c -> 0xd67f0 -> 0xd6818 -> 0xe3f0c` calendar updates (independently
+pinned by the clock lane). Do not equate this world state with GameType, or
+assume that actor suspension alone freezes calendar events.
+
+`0xf4170` maps raw staff `+412` states to broad UI/eligibility states:
+raw 0→0, raw 1→1, raw 3→3, raw 4/5→4, raw 7→5, and the remaining raw values
+(including research state 15)→2. Thus researcher contribution every 20 turns
+is excluded during broad 3/4/5, not restricted to raw 15. The raw state must
+survive import; a broad-state enum alone loses this distinction.
+
+Vital semantics are identified by the grievance traversals, which read
+`+504` in the fatigue branch and `+500` in the unhappiness branch, in
+addition to the grade/SAM recovery operations. Both are runtime f32 values.
+They are not permanently 100:
+
+| Native routine / caller | Per-call operation | Actual input references |
+| --- | --- | --- |
+| Rest `0xf3d8c`; researcher raw 3 at `0xf035c` | Energy += f32 recuperation; happiness += f32 happiness recuperation; each clamps to [0,100] | staff grade+484; SAM `+756/+760 +16×grade`; loads `0xf3db8/0xf3dfc` |
+| Idle/moving `0xf44c0`; researcher `0xf0530` on navigation-in-progress branch | Energy -= f32(0.012×(6−grade)); happiness -= f32(0.005×(6−grade)); each clamps | double constants data `0x5610/0x5608`; final subtract is f32 |
+| Working `0xf459c`; researcher raw 15 at `0xf0568` | Energy -= f32(f32(0.025)×(6−grade)); happiness -= f32(0.01×(6−grade)); each clamps | float data `0x5600`, double `0x55f8`; grade conversion and rounding order differ |
+| No reachable rest area, `0xf4ad0–0xf4b50` | On `RNG() &15 ==0`, subtract SAM HappyHitCosNoRestArea from happiness and clamp | setting+744; energy threshold uses+740; this is an RNG gate, not a fixed 16-turn interval |
+
+Actual PC global SAM recovery rates by grade 0..4 are energy
+0.2/0.3/0.4/0.5/0.75 and happiness 1/2/2/3/3. IdleDuration is 40/30/20/10/5
+turns; researcher WorkDuration is 10/20/30/40/50 turns. Descriptor-derived
+bindings are +752 and +1048 (strides16/12). RestLevel is 1 and the missing
+rest-area happiness hit is 2. These are PC input values; the operations and
+turn domain above are Mac evidence. There is no inferred fixed-day cadence
+or claim that every mod/raw grade is reachable.
+
+Rest completes when truncated low-byte energy equals 100 (`0xf3e2c–0xf3e44`),
+then `0xf4d00` releases the rest-area association and researcher callback
+`0xf0380` attempts its next action. Below/at RestLevel, `0xf4900` searches
+rest areas: `0xf47a0` selects the nearest squared grid distance among
+eligible objects; `0xf4c18` attempts navigation, stores rest ID+516 on
+success, and only then changes raw staff state to 2 at `0xf4ab8`. A nearest
+unreachable area can fail this attempt; the function does not establish a
+search through all reachable alternatives. Arrival/state 2 processing
+`0xf3b78` is still required before equating walking-to-rest with raw 3 rest.
+
+Research raw 15 records start tick+528. `0xf054c` depletes vitals, then compares
+current tick **strictly greater than** low-word start+WorkDuration at
+`0xf0594`. After navigation/mode checks it transitions through raw 1 or resets
+the work-start tick. Raw0/idle processing `0xf0610` similarly waits until
+current tick > low-word idling-start+IdleDuration before checking strike/rest
+and attempting research. These fields cannot map to current BusyTicks
+without preserving native state and comparison order.
+
+### Strike decision and activation are separate
+
+`0xf7e18` performs training first (`0xf7e48 -> 0xfc1c4`) on its month-event
+path, then considers each present role. Normal consideration requires park
+open; HQ +100 bypasses that gate and makes grievance predicate `0xf8410`
+return true. Per-role state is at HQ `+36+12r`, active strike flag at
+`+40+12r` (`0xf8bc0`), last-considered tick at `+44+12r`. If already active,
+the next consideration clears the active flag instead of escalating again.
+
+`0xf8410` normally requires **more than three** employees in a role and
+unsigned integer average of their truncated low-byte energy or happiness
+**below 15**. Each traversal follows role-linked staff `+524`, including all
+members in that chain, not an arbitrary available-worker list. Handymen
+have an additional analyser-statistic ratio > f32(0.2) grievance at
+`0xf84a8–0xf84fc`; the two statistic meanings remain dependencies
+`0xc21f4/0xc2264`. All five roles, including researchers at
+`0xf8a44–0xf8b90`, have fatigue and unhappiness tests. Empty/three-member
+roles bypass division; there is no divisor-zero policy to invent here.
+
+Escalation `0xf7fe0` is gated until elapsed calendar time reaches 24 fixed
+30-day units (`0xf803c–0xf805c`), then uses grievance state 0→warning1,
+1→strike2, 2→strike3, 3→strike4, and4→repeated strike4. The non-warning
+branches set active flag +40 and emit role messages through `0x116590`.
+Diagnostic text describes one week, two weeks and one month, but actual
+timed release outside the monthly active-flag clearing remains untraced;
+those strings alone are not quantitative duration proof.
+
+When a role is active and gate state `0x1091b8` equals1, individual staff
+`0xf4900` set generic field+392=1, choose a random position from the schema-
+proven StrikeAreaStart/Size fields +1452/+1456/+1460/+1464, attempt navigation
+at `0xf4a34`, and enter raw 4 through `0xf4a48` only on success. The saved
+researcher's happiness 97/energy 93 therefore supplies real input, but does
+not imply a present strike or prescribe a synthetic strike state.
+
+### Framed PC researcher, without invented staff
+
+Inherited serializer sizes are established from actual primitive writes and
+fixed-loop limits, not runtime allocation sizes:
+
+| Serialized component | Bytes | Width/order witnesses |
+| --- | --- | --- |
+| Base thing `0xfa808` | 8 | X/Y/MapChild/MapParent, four 2-byte fields |
+| Sprite animation `0xd2144` | 12 | three 4-byte fields |
+| Navigation `0xfcbcc` | 177 | fixed scalar/vector fields; five 8+4 subpath entries at `0xfcf80` |
+| Thoughts `0xfb304` | 144 | index4 +32×event4 +lastThought4 +script4 +shownTick4; `0xfb398` |
+| Person `0xe4a54`, including the above | 390 | selected scalars 15+34 plus8+12+177+144 |
+| Staff suffix `0xf2c28` | 105 | grade4, happiness4, jobs4, 33×UTF16 name, patrol4, percentage1, restID2, state 4, idleTick4, hiredTimestamp8, energy4 |
+| Guest suffix `0xe7f34` | 135 | scalar fields plus four pairs of previous object IDs (`0xe8338`) |
+| Researcher suffix `0xf00f0` | 6 | researching-start tick4 and researcher-next ID2 |
+
+Starting at the formats lane's verified map end 1,385,521, UsedThingHead is 42.
+Twelve successive type 1 guest records, each 8-byte next/model header plus525
+body bytes, walk IDs 42→41→…→31→30. The next record is actor 30, native model 8,
+next used actor 29, at 1,391,921. Its body is 501 bytes and ends at 1,392,430.
+World FirstResearcher at 1,239 also equals 30; its separate researcher-linked
+next ID is 0. This establishes the first researcher in the actual PC save,
+without a pattern scan, ordinal-as-ID assumption or fabricated employee.
+The bounded walker intentionally stops here; the remaining whole actor
+chain and other model widths remain unparsed.
+
+| Actual PC payload offset | Field | Value |
+| --- | --- | --- |
+| 1,392,319 | Grade | 2 |
+| 1,392,323 | Happiness, saved f32 | 97 |
+| 1,392,401 | Percentage-through-grade byte | 0 |
+| 1,392,402 | Rest-area ID | 0 |
+| 1,392,404 | Raw staff state | 1 |
+| 1,392,408 | Idling-start tick | 0 |
+| 1,392,412 | Hired timestamp | 125,935,884,000,000,000 |
+| 1,392,420 | Energy, saved f32 | 93 |
+| 1,392,424 | Researching-start tick | 697 |
+| 1,392,428 | Researcher-linked next ID | 0 |
+
+The native writer truncates each runtime vital, keeps the low byte, converts
+that integer back to f32, then writes **four bytes** (`0xf2ce0/0xf2e94`).
+Readers restore those floats into +500/+504 at `0xf2f14/0xf3094`. This lossy
+save encoding must not be mistaken for one-byte framing or evidence of
+unchanging happiness. The 33 UTF16 name units are stored inline at 1,392,331;
+there is no serialized NameIndex in this suffix. Mapping that name to the
+current indexed-name API requires separately qualified matching, or an
+explicit inline-name field, rather than inventing an index.
+
+These facts support a future real researcher import for a mode that consumes
+this save. They do not choose Instant Action/Full Simulation or infer that
+the saved actor was created by a particular mode. Native GameType and the
+scenario factory remain the parent/scenario lane's responsibility. The
+same save container/payload identities listed above qualify all offsets.
+The new prefix tests preserve next/current IDs, raw grade/percentage/state,
+u32 ticks/u64 timestamps and both saved floats; they reject unsupported
+models, cycles, truncation and bounded-prefix exhaustion. Total owned Python
+tests now 16; the real fixture and normal/optimized witnesses pass.
+
+### Bankruptcy blocker `0x105c6c` resolved
+
+The predicate compares winning-sequence object ID at data `0xecdcc` against
+null-ID sentinel 0. Start routine `0x105b50` allocates the configured feature
+and copies its real actor ID into that global through `0x105bf0 -> 0xfa9a4`;
+failure stores 0. End routine `0x105c94` diagnoses an unmatched
+EndWinningSequence, deletes the associated object at `0x105d08`, and clears
+the ID at `0x105d18`. Thus the predicate blocks a loss transition during an
+active winning sequence; it is not a money/loan eligibility query.
+
+Month handler `0xcc21c` checks current Balance<0, uses LastBalance and
+TurnEnteredRed to obtain elapsed time through `0xcc434 -> 0xe4750`, divides
+by the fixed 30-day unit, and emits type 19/subtype2 once elapsed quotient ≥6.
+Bank message handler `0xcc120` handles that subtype only if worldState !=4
+and `0x105c6c ==false`, then calls loss transition `0x1059e0` at `0xcc1b8`.
+The transition sets worldState4 (`0x105a30/0x105a40`), runs the failure
+sequence, handles affected ride objects, and closes the park through
+`0x105b38 -> 0x108ee4`. Subsequent world ticks skip ordinary actors while
+the calendar path remains, subject to the clock lane's separate gates.
+
+Cash/fee partial-import proof still does not supply ledger history, general
+calendar framing, unsaved-year initialization, or a PC bankruptcy algorithm.
+The concrete next bridge is now the framed researcher record and its inline
+name/state/vitals, plus loss/winning-sequence state qualification; retain
+the independently accepted reference formulas as a separate opt-in contract.

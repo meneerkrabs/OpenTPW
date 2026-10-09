@@ -8,9 +8,9 @@
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="OriginalLoanRules.cs" />
-    <Compile Include="OriginalLoanRulesTests.cs" />
-    <Compile Include="OriginalParkRatingRules.cs" />
-    <Compile Include="OriginalParkRatingRulesTests.cs" />
+    <Compile Include="OriginalScientistSnapshot.cs" />
+    <Compile Include="OriginalScientistSnapshotTests.cs" />
+    <Compile Include="OriginalScientistSnapshotEnvelope.cs" />
+    <Compile Include="OriginalScientistSnapshotEnvelopeTests.cs" />
   </ItemGroup>
 </Project>

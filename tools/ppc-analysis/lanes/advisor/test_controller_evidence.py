@@ -44,6 +44,9 @@ class ControllerWitnessTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             controller.cyclic_variant(0, 0)
 
+    def test_cyclic_variant_preserves_signed_increment_wrap(self):
+        self.assertEqual(controller.cyclic_variant(0x7FFFFFFF, 3), -0x80000000)
+
     def test_history_truncates_each_counter_before_subtraction(self):
         self.assertEqual(controller.history_elapsed(4, 3), 1)
         self.assertEqual(controller.history_elapsed(7, 4), 0)

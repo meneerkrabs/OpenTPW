@@ -178,6 +178,46 @@ def scheduling(c):
             'extra_controller_reservation_clock_units': 1000}
 
 
+def queue_rule_edges(c):
+    common.require(common.call_target(c, 0x8c38), 0x92ec, 'first free slot scan before any score eviction comparison')
+    common.require(common.conditional_branch(c, 0x8c40), (12, 0, 0x8c84), 'full queue only if no free slot')
+    common.require(common.d_fields(c, 0x8d10, 14), (3, 0, 1), 'full queue eligible acknowledgement even without replacement')
+    common.require(common.x_fields(c, 0xa158, 32), (0, 3, 0), 'UNSIGNED active-action endpoint comparison')
+    common.require(common.x_fields(c, 0xa154, 266), (0, 4, 0), 'plain wrapping endpoint add')
+    common.require(common.x_fields(c, 0x121124, 40), (3, 3, 0), 'plain wrapping difference of shifted history counters')
+    common.require(common.rotate_fields(c, 0x1210f0), (0, 3, 30, 2, 31), 'saved-quarter history sentinel')
+    common.require(common.d_fields(c, 0x90a0, 10), (0, 3, 0), 'unsigned saved-quarter zero check')
+    common.require(common.conditional_branch(c, 0x90a4), (12, 2, 0x90fc), 'zero saved quarter skips repeat gate')
+    common.require(common.x_fields(c, 0x90ec, 32), (0, 3, 22), 'UNSIGNED repeat interval comparison')
+    common.require(common.conditional_branch(c, 0x90f0), (4, 0, 0x90fc), 'repeat equality passes')
+    common.require(common.conditional_branch(c, 0x9100), (4, 2, 0x915c), 'override skips once-only check')
+    common.require(common.conditional_branch(c, 0x9160), (4, 2, 0x91b4), 'override skips slap check')
+    common.require(common.x_fields(c, 0xe0fc, 0), (0, 31, 0), 'SIGNED slap-count threshold comparison')
+    common.require(common.x_fields(c, 0x9230, 0), (0, 23, 0), 'pending duplicate count comparison')
+    common.require(common.conditional_branch(c, 0x9234), (12, 0, 0x9240), 'duplicates below maximum only')
+    common.require(common.x_fields(c, 0x89d8, 0), (0, 29, 3), 'SIGNED cyclic variant bound after wrapping increment')
+    common.require(common.d_fields(c, 0xb7d8, 38), (0, 30, 20), 'playback consumes pending record before score revalidation')
+    common.require(common.x_fields(c, 0xb854, 0), (0, 3, 0), 'SIGNED recomputed playback score')
+    common.require(common.conditional_branch(c, 0xb858), (4, 0, 0xb864), 'playback score equality passes revalidation')
+    common.require(common.d_fields(c, 0x8a3c, 36), (29, 3, 228), 'history stores controller-requested variant without playback fallback normalization')
+    common.require(common.x_fields(c, 0xb8c8, 0), (0, 24, 3), 'playback compares requested variant with count')
+    common.require(common.conditional_branch(c, 0xb8cc), (12, 0, 0xb910), 'variant below count adds to first response')
+    common.require(common.call_target(c, 0xb904), 0xd468, 'out-of-range explicit variant selects first response')
+    common.require(common.d_fields(c, 0x8a4c, 38), (4, 3, 232), 'successful playback marks history as played')
+    return {'admission_has_minimum_score_gate': False,
+            'full_queue_equal_or_lower_score': 'eligible acknowledgement, no replacement',
+            'busy_comparison': 'unsigned now < unchecked(start + duration)',
+            'repeat_zero_sentinel': '(saved_game_tick >> 2) == 0 skips interval gate',
+            'repeat_comparison': 'unsigned elapsed >= interval passes',
+            'override_only_once': 'bypasses once and slap checks; repeat/tutorial/duplicate gates still apply',
+            'slap_comparison': 'signed bit-pattern comparison against nonzero limit',
+            'playback_score_revalidation': 'pending consumed first; recomputed score >= minimum passes',
+            'variant_increment': 'unchecked signed previous + 1; reset only if value >= count',
+            'explicit_variant_fallback': 'playback chooses first for override >= count; history retains requested override',
+            'code_range_sha256': {f'{lo:#x}-{hi:#x}': hashlib.sha256(c.code.data[lo:hi]).hexdigest()
+                                  for lo, hi in ((0x8b78, 0x8d34), (0x9008, 0x92ec), (0xb798, 0xba08))}}
+
+
 def derived_scheduler(request: int, length: int, pending: bool, sequence_duration: int, ending_duration: int):
     """Arithmetic witness of reviewed margins, independent of audio amplitude."""
     base = request - 200
@@ -191,7 +231,9 @@ def derived_scheduler(request: int, length: int, pending: bool, sequence_duratio
 def cyclic_variant(previous: int, count: int):
     if count <= 0:
         raise ValueError('variant count must be positive')
-    value = previous + 1
+    value = (previous + 1) & 0xFFFFFFFF
+    if value & 0x80000000:
+        value -= 0x100000000
     return value if value < count else 0
 
 
@@ -315,7 +357,7 @@ def inspect(root: Path, detailed=False):
         'score_kinds': dict(Counter(m['score']['kind'] for m in messages)),
         'background_candidates': sum(m['background_candidate'] for m in messages),
         'all_shipped_variant_modes': 'cyclic', 'missing_response_references': missing,
-        'scheduling': scheduling(c), 'geometry': inspect_geometry(c, root), 'audio': inspect_audio(c, root),
+        'queue_edges': queue_rule_edges(c), 'scheduling': scheduling(c), 'geometry': inspect_geometry(c, root), 'audio': inspect_audio(c, root),
         'selected_messages': [messages[i] for i in (0, 1, 2, 3, 4, 5, 6, 7, 33, 34, 93, 94, 95, 96, 97, 291, 350)],
         'limitations': ['135 message slots require conditional/computed callback analysis.',
                        'Accessor and timer operands do not prove runtime capture or device latency.',

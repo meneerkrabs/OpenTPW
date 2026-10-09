@@ -639,3 +639,84 @@ that terminal-state check. The C# tests cover both cases; the earlier Python
 `LipCursor` witness is corrected to reflect the next-mark check. Positive
 supplied LIP assets are unaffected. Python advisor witnesses now have 26 passing
 tests, alongside the 21 C# checks and 16 shared toolkit tests.
+
+
+## Phase four: standalone score queue, eligibility and history helper
+
+[OriginalAdvisorScoreQueue.cs](../../tools/ppc-analysis/lanes/advisor/OriginalAdvisorScoreQueue.cs)
+implements the bounded, reviewed consumer slice in the existing standalone C#
+project. Inputs are caller-supplied descriptors/group controls, cached scores,
+initial history, raw game ticks, unscaled advisor-clock values and external
+playback results. No original 351/610-record corpus is embedded and no computed
+score function is invented. Synthetic descriptor IDs and response IDs in tests
+are deliberately outside the original tables.
+
+The combined project now runs 46 C# checks: the original 21 LIP checks and 25
+queue/history checks. The original LIP driver and its clock/audio boundaries
+remain unchanged. The score helper provides separate operations:
+
+- `Eligibility` evaluates the supplied tutorial, repeat, once-only, slap and
+  pending-duplicate controls.
+- `Enqueue` fills the first free slot or replaces the earliest weakest entry
+  only for a strictly greater score; its result separates acknowledgement from
+  whether an item was stored.
+- `SelectNext` gates on the explicit active-action clock, chooses the earliest
+  maximum cached score strictly above the supplied minimum, and resolves the
+  shipped cyclic response variant. It does not begin playback.
+- `BeginPlaybackAttempt` consumes the selected pending record before the
+  external score/playback wrapper runs, freeing its slot for any subsequent
+  admission. `CompletePlaybackAttempt` confirms the supplied wrapper outcome;
+  only success updates history and reserves returned playback span plus 1000
+  original clock units. Failure does not restore the consumed record.
+
+The response dispatcher, appropriate computed-score/override wrapper,
+application game-mode conditions, remaining 135 score producers, general
+background scan, tutorial replay/cancellation, full message payload and runtime
+clock/audio/geometry bridges remain external dependencies. In particular,
+`playbackSucceeded` is an explicit original-wrapper outcome supplied by the
+caller, not inferred from cached score or availability of a PCM sample. The
+helper's stale-selection and descriptor/count validation are its own input
+boundaries, not additional claimed original gameplay rules.
+
+### Boundary facts pinned before modelling
+
+`controller_evidence.py` now verifies these extra original operands and branch
+conditions and reports their code-range identities as `queue_edges`:
+
+| Boundary | Verified original behavior |
+| --- | --- |
+| Zero cached score | Admission at `0x8b78` has no minimum-score gate; a valid zero can occupy a free slot. Selection at `0x8850` rejects scores at or below the minimum and leaves pending records intact. Background-score production is a separate path. |
+| Full-queue equal/lower incoming score | `0x8cd8` skips replacement, then `0x8d10` still returns acknowledgement 1. Acknowledgement is not proof of insertion. |
+| Busy numeric representation | `0xa154` uses plain 32-bit addition and `0xa158` uses **unsigned** comparison: `now < unchecked(start + duration)`. It is not elapsed-time subtraction or signed LIP deadline comparison. Equality releases the gate. |
+| Repeat-history sentinel | `0x1210ec` returns `savedGameTick >> 2`; `0x90a4` skips the interval gate when that value is zero. Saved raw ticks 0, 1, 2 and 3 all take this route; once-only history still applies independently. |
+| Repeat boundary | `0x90ec` compares unsigned elapsed groups against the supplied interval. Strictly less rejects; equality accepts. |
+| Raw tick wrap | `0x121124` performs plain 32-bit subtraction after separate shifts. `live=0, saved=0xfffffffc` yields `0xc0000001`, not a repaired smooth elapsed interval. |
+| Once override | `0x9100` and `0x9160` skip once/slap checks; tutorial, repeat and duplicate gates still apply. |
+| Slap counter | `0xe0fc` uses signed comparison of stored 32-bit patterns against a nonzero configured limit. The helper retains unsigned storage and casts for that comparison. |
+| Duplicate limit | Count must be strictly below the descriptor's low-byte maximum (`0x9230–0x9234`). Zero allows no new pending copy; once override does not bypass this gate. |
+| Cyclic arithmetic | The previous variant increments with wrapping signed 32-bit addition and resets only if the signed result is not below count. Corrupt `int.MaxValue` history becomes `int.MinValue`; it is not silently normalized. |
+| Playback revalidation | `0xb7d8` invalidates the pending record before recomputing score. The computed wrapper's `0xb858` accepts score **equal to** the minimum, while cached selection requires strictly greater. The helper exposes this separate inclusive comparison without running a producer. |
+| Explicit out-of-range variant | The wrapper chooses the first response (`0xb8c8–0xb904`), but controller history still stores the requested variant (`0x8a3c`). The helper keeps requested variant and resolved response ID separate. |
+| Success-only history | The controller saves raw game tick, variant and played flag after wrapper success (`0x8a28–0x8a54`). Failure consumes the pending record without these updates. |
+
+Already-admitted pending records are not retroactively purged or re-evaluated
+against once-only admission history in the reviewed selection path. A synthetic
+case therefore permits two copies admitted before the first play, then rejects
+a new once-only admission while the already-pending second copy remains
+selectable. This is distinct from assuming that every successful play performs
+a global queue eligibility cleanup.
+
+The unsigned busy gate and signed LIP/mouth gates deliberately have different
+clock representations/comparisons in the helpers. Both require explicit
+recovered clock input; neither manufacture wall-clock units or connect to the
+current runtime `Clock`. The Python cyclic witness is also corrected to preserve
+signed increment wrap and has a new regression case.
+
+Verification: all 46 C# checks pass, including queue-full ties, zero/minimum
+scores, cyclic wrap, repeat equality/sentinel, raw tick wrap, unsigned busy
+endpoints, playing priority, failed playback, once/duplicate overrides and
+post-dispatch clock/history capture. The SDK analyzer build has zero warnings
+and errors; formatting matches the repository's CRLF convention. Git whitespace
+checks recognize CRLF via a command-local setting; no global configuration is
+changed. Python advisor tests now total 27, with 16 shared toolkit tests; the
+identity-pinned descriptor/asset witnesses remain successful.

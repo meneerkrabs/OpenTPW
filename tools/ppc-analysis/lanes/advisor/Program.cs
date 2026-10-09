@@ -1,7 +1,7 @@
 try
 {
-	var count = DriverTests.Run();
-	Console.WriteLine( $"OriginalAdvisorLipDriver: {count} tests passed." );
+	var count = DriverTests.Run() + ScoreQueueTests.Run();
+	Console.WriteLine( $"OriginalAdvisor helpers: {count} tests passed." );
 	return 0;
 }
 catch ( Exception exception )

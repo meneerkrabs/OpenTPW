@@ -146,6 +146,8 @@ public class LanguageTests
 
 	public static IEnumerable<object[]> ShippedLanguages => GameLanguage.ShippedLanguages.Select( name => new object[] { name } );
 
+	internal static GameLanguage OriginalLanguagePublic( string name ) => OriginalLanguage( name );
+
 	private static GameLanguage OriginalLanguage( string name )
 	{
 		var data = StringTableTests.OriginalDataDirectory();

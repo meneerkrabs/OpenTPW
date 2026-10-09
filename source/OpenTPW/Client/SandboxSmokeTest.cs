@@ -48,6 +48,7 @@ internal sealed class SandboxSmokeTest : IDisposable
 	{
 		var field = park.Heightfield;
 		Require( level.OriginalTerrain != null && level.OriginalTerrain.SurfaceCellCount > 0 && level.OriginalTerrain.TerrainMeshCount > 0, "build original terrain" );
+		Require( level.GateSign != null && level.GateSign.TextPixelCount > 0, "render the park name on the gate sign with the original TrueType font" );
 		var cells = Enumerable.Range( 0, field.CellCountX * field.CellCountZ ).Select( index => (X: index % field.CellCountX, Y: index / field.CellCountX) ).ToArray();
 		var water = cells.First( cell => park.Map.GetFlagsAt( cell.X, cell.Y ).HasFlag( MapCellFlags.Water ) || park.Map.GetFlagsAt( cell.X, cell.Y ).HasFlag( MapCellFlags.EntranceArea ) );
 		Require( !level.PlaceRide( OriginalParkPlacement.GetCellCenter( field, water.X, water.Y ) ) && level.PlacedRide == null, "reject water/entrance cells" );

@@ -9,6 +9,8 @@ widget allocation and model binding evidence (see [PPC UI findings](reverse/PPC-
 Most screen/controller/rendering choices below remain OpenTPW approximations. No original
 captures were compared, so visual fidelity is **not verified**.
 
+The CD's autorun launcher window is documented separately in [AUTORUN.md](AUTORUN.md).
+
 ## Inventory
 
 All counts from read-only listings of the installed English data.
@@ -400,6 +402,7 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-037 | `UI/Original/UiText.cs` | option bar label colour (16,16,48), no drop shadow | exact label colour from a capture or the font palette |
 | UI-038 | `UI/Original/Options/OptionsScreen.cs` | 3D card rendering, videocard and audio quality drawn fixed and disabled (OpenTPW has no software renderer, card choice or audio quality) | none for the game path |
 | UI-039 | `UI/Original/UiWidgets.cs` | option label size: letter box about 58 % of the label rectangle height, shared per page; a label whose widest value does not fit drops alone to the largest size that does | capture of the original option labels in several languages |
+| UI-040 | `Client/Autorun/AutorunView.cs` | autorun launcher focus rectangle: dotted frame inverting the pixels with even x + y, 2 pixels inside the button | capture of the original launcher with a focused button |
 
 Data-backed (tagged `[DATA]`): the 2048×1536 canvas and authored rectangles of
 placed models (`ui.wad` roots/bounds), button state frames and texture order, V

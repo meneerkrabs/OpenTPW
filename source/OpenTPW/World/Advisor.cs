@@ -41,7 +41,7 @@ internal sealed class Advisor : IDisposable
 		("ADVISOR-006", "bind pose; no Advisorm* clip is played"),
 		("ADVISOR-007", "triangle corner order reversed for the clockwise front-face pipeline"),
 		("ADVISOR-008", "speech starts at the first rendered advisor frame"),
-		("ADVISOR-009", "always the global speech bank and lips.wad; level sp_001.LIP never chosen"),
+		("ADVISOR-009", "--advisor-say plays global clips by number; the advisor controller that picks response IDs is not implemented"),
 		("ADVISOR-010", "lip-sync clock = PCM consumed from the SDL queue (leads output by up to one device buffer)"),
 		("ADVISOR-011", "wall clock drives the mouth when no audio device opens"),
 		("ADVISOR-012", "mono speech duplicated to both stereo channels"),
@@ -188,7 +188,7 @@ internal sealed class Advisor : IDisposable
 		byte[] entry;
 		byte[] lip;
 		string source;
-		// [APPROX:ADVISOR-009] Always the global bank/lips.wad; level Speech/lips/sp_001.LIP is never chosen — evidence needed: original global-vs-level speech selection (binary or file-access trace)
+		// [APPROX:ADVISOR-009] --advisor-say plays global clips by number; responses (SayResponse) follow the traced global/level selector, but the controller that picks response IDs is not implemented — evidence needed: the advisor controller (0x86BC–0x8B10) and its message-to-response mapping
 		if ( language != null )
 		{
 			var bankPath = language.ResolveDataFile( "global/Speech/speechHD.SDT" )
@@ -220,14 +220,76 @@ internal sealed class Advisor : IDisposable
 		return (audio, new LipSyncTimeline( new LipSyncFile( new MemoryStream( lip ) ) ), source);
 	}
 
+	/// <summary>
+	/// Loads advisor response <paramref name="response"/>: its sample from the global speech bank, or for a
+	/// local response from <paramref name="level"/>'s <c>Speech/speechHD.SDT</c>, with <c>sp_NNN.lip</c>
+	/// from the matching <c>lips</c> (none for LIP 0).
+	/// </summary>
+	// [BIN:STP-PPC:0x10006B7C advisor playback] the response record's +16 high half selects the current level's speech folder and bank instead of Data:Global; +4 is the sample and +8 the sp_%03d.lip number
+	internal static (Mp2Audio Audio, LipSyncTimeline Timeline, string Source) LoadResponse( BaseFileSystem fileSystem, AdvisorResponse response, string? level, GameLanguage? language = null )
+	{
+		if ( response.Local && level == null )
+			throw new InvalidOperationException( $"Advisor response {response.Id} uses the level speech bank but no level is loaded." );
+		var root = response.Local ? $"/levels/{level}/Speech" : "/global/Speech";
+		byte[] bankBytes;
+		string source;
+		if ( language != null && !response.Local && language.ResolveDataFile( "global/Speech/speechHD.SDT" ) is { } languageBank )
+		{
+			bankBytes = File.ReadAllBytes( languageBank );
+			source = $"{language.Name}: {languageBank}";
+		}
+		else
+		{
+			bankBytes = File.ReadAllBytes( fileSystem.GetAbsolutePath( $"{root}/speechHD.SDT" ) );
+			source = $"{root}/speechHD.SDT";
+		}
+		var mpeg = new SoundBank( bankBytes ).GetMpeg( (uint)response.Sample )
+			?? throw new FileNotFoundException( $"Speech sample {response.Sample} of response {response.Id} is not in {source}." );
+		var marks = Array.Empty<uint>() as IReadOnlyList<uint>;
+		if ( response.Lip > 0 )
+		{
+			var lipName = $"sp_{response.Lip:000}.LIP";
+			byte[] lip;
+			var wadPath = language != null && !response.Local ? language.ResolveDataFile( "global/Speech/lips.wad" ) : null;
+			if ( wadPath == null && !fileSystem.FileExists( $"{root}/lips/{lipName}" ) && fileSystem.FileExists( $"{root}/lips.wad" ) )
+				wadPath = fileSystem.GetAbsolutePath( $"{root}/lips.wad" );
+			if ( wadPath is { } lipsPath )
+			{
+				using var lips = new WadArchive( lipsPath );
+				var member = lips.GetFiles( "" ).FirstOrDefault( file => string.Equals( file, lipName, StringComparison.OrdinalIgnoreCase ) )
+					?? throw new FileNotFoundException( $"{lipName} is not in {lipsPath}." );
+				lip = lips.GetFile( member ).GetData();
+			}
+			else
+				lip = fileSystem.ReadAllBytes( $"{root}/lips/{lipName}" );
+			marks = new LipSyncFile( new MemoryStream( lip ) ).Marks;
+		}
+		return (Mp2Decoder.Decode( mpeg ), new LipSyncTimeline( marks ), source);
+	}
+
+	/// <summary>Plays advisor response <paramref name="responseId"/> from the response table; false when the table has no such response.</summary>
+	public bool SayResponse( int responseId, string? level, GameLanguage? language = null )
+	{
+		if ( !AdvisorResponses.Table.TryGetValue( responseId, out var response ) )
+			return false;
+		var (audio, lips, source) = LoadResponse( FileSystem, response, level, language );
+		Play( audio, lips, response.Lip, $"response {responseId} (sample {response.Sample}, {source})" );
+		return true;
+	}
+
+	private void Play( Mp2Audio audio, LipSyncTimeline lips, int clipNumber, string description )
+	{
+		player?.Dispose();
+		timeline = lips;
+		ClipNumber = clipNumber;
+		player = GameAudio.EnsureStarted() && AudioMixer.Current is { } mixer ? new SpeechAudioPlayer( audio, mixer ) : new SpeechAudioPlayer( audio );
+		Log.Trace( $"Advisor says {description}: {audio.DurationSeconds:F2} s, {lips.Marks.Count} LIP marks, clock: {player.ClockSource}{(player.DeviceError == null ? "" : $" ({player.DeviceError})")}." );
+	}
+
 	public void Say( int number, GameLanguage? language = null )
 	{
 		var (audio, lips, source) = LoadClip( FileSystem, number, language );
-		player?.Dispose();
-		timeline = lips;
-		ClipNumber = number;
-		player = new SpeechAudioPlayer( audio );
-		Log.Trace( $"Advisor says {ClipName( number )} ({source}): {audio.DurationSeconds:F2} s, {lips.Marks.Count} LIP marks, clock: {player.ClockSource}{(player.DeviceError == null ? "" : $" ({player.DeviceError})")}." );
+		Play( audio, lips, number, $"{ClipName( number )} ({source})" );
 	}
 
 	public void Render()

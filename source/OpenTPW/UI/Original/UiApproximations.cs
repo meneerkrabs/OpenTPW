@@ -46,6 +46,7 @@ public static class UiApproximations
 		("UI-037", "option bar label colour (16,16,48), no drop shadow", "exact label colour from a capture or the font palette"),
 		("UI-038", "3D card rendering, videocard and audio quality are drawn fixed and disabled (OpenTPW has no software renderer, card choice or audio quality)", "none for the game path; the original lets the player change them"),
 		("UI-039", "option label size: letter box about 58 % of the label rectangle height, shared per page; a label whose widest value does not fit drops alone to the largest size that does", "capture of the original option labels in several languages"),
+		("UI-040", "autorun launcher focus rectangle: dotted frame inverting the pixels with even x + y, 2 pixels inside the button (GDI DrawFocusRect brush phase unknown)", "capture of the original launcher with a focused button"),
 	};
 
 	private static bool logged;

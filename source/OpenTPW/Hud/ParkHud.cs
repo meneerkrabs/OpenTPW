@@ -74,6 +74,9 @@ public sealed class ParkHud
 	public BuildCategory Category { get; private set; } = BuildCategory.Rides;
 	public int BuildPage => buildPage;
 	public int BuildPageCount => Math.Max( 1, (Catalog.GetItems( Category ).Count + 2) / 3 );
+	/// <summary>The cat_ui event of a click in the park view.</summary>
+	public const uint ParkViewClickEvent = 0x1F;
+
 	public OriginalObject? SelectedObject => selectedObject;
 	public IReadOnlyList<BuildItem> VisibleBuildItems => Catalog.GetItems( Category ).Skip( buildPage * 3 ).Take( 3 ).ToArray();
 	public bool Paused => Stack.Screens.Count > 1;
@@ -482,6 +485,11 @@ public sealed class ParkHud
 			if ( lastLevelMessage.StartsWith( "Cannot build", StringComparison.Ordinal ) )
 				PostMessage( strings.Extra( OpenTpwText.CannotBuildHere ) );
 		}
+
+		// [BIN:STP-PPC:0x10137FD0 park view input] a button message in the park view plays cat_ui event 0x1F (0xBD when modifier flag 0x10 is set)
+		// [APPROX:AUDIO-004] the 0xBD modifier (flag 0x10 from 0x1017F618) is not mapped to a key, so the view always plays 0x1F — evidence needed: the input flag behind 0x1017F618
+		if ( !overUi && !consumed && input.LeftPressed )
+			GameAudio.PlayUi( ParkViewClickEvent );
 
 		// [APPROX:UI-027] Select by occupied grid cell; original cursor picking is not verified.
 		if ( !overUi && !consumed && level.BuildEntry == null && !level.IsPlacing && input.LeftReleased

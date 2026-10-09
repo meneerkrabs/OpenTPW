@@ -142,6 +142,63 @@ public class TexturePackTests
 	}
 
 	[TestMethod]
+	public void InterfaceArtGoesToTheInterfaceUpscalerWithEdgePadding()
+	{
+		var root = TemporaryDirectory();
+		var pack = Path.Combine( root, "enhanced" );
+		var button = Pattern( 64, 32 );
+		var textures = new (string, Func<TextureData>)[]
+		{
+			("levels/jungle/terrain/textures/grass.wct", () => Pattern( 32, 32 )),
+			("ui/textures/purple_button.wct", () => button),
+			("ui/stexture/purple_button.wct", () => Pattern( 32, 32 )),
+			("ui/textures/tiny.wct", () => Pattern( 16, 16 ))
+		};
+		var world = new NearestUpscaler( 2 );
+		var drawn = new NearestUpscaler( 2 );
+		var manifest = TexturePackBuilder.Build( textures, pack, world, new TexturePackBuildOptions(), _ => { }, drawn );
+
+		Assert.AreEqual( (1, 1), (world.Calls, drawn.Calls), "one batch per model" );
+		Assert.AreEqual( (2, 1, 1, 1), (manifest.Textures, manifest.InterfaceTextures, manifest.SkippedLowDetail, manifest.SkippedSmall) );
+		Assert.AreEqual( "test", manifest.InterfaceModel );
+		var image = ImageResult.FromMemory( File.ReadAllBytes( Path.Combine( pack, "textures", "ui/textures/purple_button.wct.png" ) ), ColorComponents.RedGreenBlueAlpha );
+		CollectionAssert.AreEqual( Nearest( button.Data, 64, 32, 2 ), image.Data, "edge padding is cropped away exactly" );
+	}
+
+	[TestMethod]
+	public void EdgePaddingRepeatsTheBorderPixels()
+	{
+		var texture = Pattern( 4, 3 );
+		var padded = TexturePackBuilder.ClampPad( texture.Data, 4, 3, 2 );
+		int Pixel( byte[] data, int width, int x, int y ) => BitConverter.ToInt32( data, (y * width + x) * 4 );
+		Assert.AreEqual( Pixel( texture.Data, 4, 0, 0 ), Pixel( padded, 8, 0, 0 ), "corners repeat the corner pixel" );
+		Assert.AreEqual( Pixel( texture.Data, 4, 3, 1 ), Pixel( padded, 8, 7, 3 ), "right padding repeats the right edge" );
+		CollectionAssert.AreEqual( texture.Data, TexturePackBuilder.Crop( padded, 8, 2, 2, 4, 3 ) );
+	}
+
+	[TestMethod]
+	public void AnInterfaceOnlyMergeKeepsTheWorldTexturesOfTheExistingPack()
+	{
+		var root = TemporaryDirectory();
+		var pack = Path.Combine( root, "enhanced" );
+		var textures = new (string, Func<TextureData>)[]
+		{
+			("levels/a/textures/x.wct", () => Pattern( 32, 32 )),
+			("ui/textures/b.wct", () => Pattern( 32, 32 ))
+		};
+		TexturePackBuilder.Build( textures, pack, new NearestUpscaler(), new TexturePackBuildOptions(), _ => { } );
+		var world = new NearestUpscaler();
+		var manifest = TexturePackBuilder.Build( textures, pack, world, new TexturePackBuildOptions { InterfaceOnly = true, Merge = true }, _ => { }, new NearestUpscaler() );
+
+		Assert.AreEqual( 0, world.Calls, "world textures are not rebuilt" );
+		Assert.AreEqual( (2, 1), (manifest.Textures, manifest.InterfaceTextures) );
+		Assert.IsTrue( File.Exists( Path.Combine( pack, "textures", "levels/a/textures/x.wct.png" ) ), "the existing world texture is kept" );
+		Assert.IsTrue( File.Exists( Path.Combine( pack, "textures", "ui/textures/b.wct.png" ) ) );
+		Assert.ThrowsException<ArgumentException>( () => TexturePackBuilder.Build( textures, pack, world, new TexturePackBuildOptions { InterfaceOnly = true }, _ => { } ),
+			"interface-only needs an interface upscaler" );
+	}
+
+	[TestMethod]
 	public void AFailedBuildKeepsTheExistingPack()
 	{
 		var root = TemporaryDirectory();

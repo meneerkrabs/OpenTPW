@@ -150,6 +150,8 @@ internal sealed class GameFlow : IDisposable
 		TearDown();
 		var level = new Level( levelName, loadOriginalLevel: original, visit: visit, onlineFolders: OnlineFolders, gameMode: gameMode ) { ShowDeveloperPanels = developerPanels };
 		Level = level;
+		if ( original )
+			GameAudio.EnterPark( levelName );
 		// Money, calendar, speed and purchases come from the park economy of original levels (Level.Park,
 		// looked up on every access so loading a park save is followed); the generic sandbox has none.
 		IHudParkStatus status = level.Park != null ? EconomyParkStatus.ForLevel( level ) : new NoEconomyStatus();
@@ -168,6 +170,7 @@ internal sealed class GameFlow : IDisposable
 	{
 		Hud?.Stack.Clear();
 		Menu?.Stack.Clear();
+		GameAudio.LeavePark();
 		if ( Level != null )
 		{
 			Level.Dispose();
@@ -225,8 +228,11 @@ internal sealed class GameFlow : IDisposable
 			Level.UiCapturesMouse = Hud.Update( Context, input );
 			Level.SimulationTimeScale = Hud.Status.TimeScale;
 			Level.Update();
+			GameAudio.Update( Level.Guests?.GetStatistics().InPark );
 			return;
 		}
+		GameAudio.EnsureStarted();
+		GameAudio.Update();
 		Camera.Update();
 		Menu?.Stack.Update( Context, input );
 		foreach ( var entity in Entity.All.ToArray() )
@@ -294,6 +300,7 @@ internal sealed class GameFlow : IDisposable
 
 	public void Dispose()
 	{
+		GameAudio.Shutdown();
 		Hud?.Stack.Clear();
 		Menu?.Stack.Clear();
 		if ( chatOverlay != null )

@@ -42,6 +42,12 @@ Native dependencies must match the selected process architecture.
 Engine content is copied beside the executable; shader files/includes resolve
 from the executable directory rather than the shell's current directory.
 
+## CD launcher (autorun screen)
+
+When the game folder or the CD (`--cd-data`, saved CD) has the original `Autorun` folder, the start opens the
+CD's launcher window first (Play continues, View Read-me opens the read-me, Exit quits; see AUTORUN.md). Skip it
+with `--no-autorun`, `OPENTPW_NO_AUTORUN=1` or `"showAutorun": false` in `setup.json`.
+
 ## Language
 
 ```sh
@@ -214,7 +220,7 @@ fullscreen-toggle changes without growing GPU resources. Combine it with the dis
 options, e.g. `--render-scale 50 --upscale linear`; `OPENTPW_TEST_PIXEL_SCALE=2` (test only)
 doubles the drawable to exercise the HiDPI path on a 1x display (1280x720 window ->
 2560x1440 output).
-`--front-end --smoke-test` instead drives the front end with injected mouse/keys
+`--front-end --smoke-test` first checks the CD launcher when available (readback, Tab focus, Play) and then drives the front end with injected mouse/keys
 into the original jungle level and checks lobby, options, HUD, build/info arms
 and pause menu text in readback (UI.md); captures are
 `artifacts/native-smoke-<language>-*.png`.

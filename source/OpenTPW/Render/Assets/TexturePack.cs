@@ -106,7 +106,11 @@ public sealed record TexturePackManifest
 	public int Scale { get; init; }
 	public string Upscaler { get; init; } = "";
 	public string Model { get; init; } = "";
+	/// <summary>Model used for interface art; empty when interface art stayed original.</summary>
+	public string InterfaceModel { get; init; } = "";
 	public int Textures { get; init; }
+	/// <summary>Interface textures built in this run (part of <see cref="Textures"/>).</summary>
+	public int InterfaceTextures { get; init; }
 	public int SkippedSmall { get; init; }
 	public int SkippedLowDetail { get; init; }
 	public int SkippedInterface { get; init; }

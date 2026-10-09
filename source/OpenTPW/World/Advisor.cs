@@ -138,29 +138,55 @@ internal sealed class Advisor : IDisposable
 		return $"sp_{number:000}";
 	}
 
-	/// <summary>Loads and decodes global clip <c>sp_NNN</c> and its LIP timeline.</summary>
-	internal static (Mp2Audio Audio, LipSyncTimeline Timeline) LoadClip( BaseFileSystem fileSystem, int number )
+	/// <summary>
+	/// Loads and decodes global clip <c>sp_NNN</c> and its LIP timeline. With a
+	/// <paramref name="language"/>, <c>global/Speech/speechHD.SDT</c> and <c>lips.wad</c> are taken
+	/// from that language (overlay first, case-insensitive); otherwise from the game file system.
+	/// </summary>
+	internal static (Mp2Audio Audio, LipSyncTimeline Timeline, string Source) LoadClip( BaseFileSystem fileSystem, int number, GameLanguage? language = null )
 	{
 		var name = ClipName( number );
-		var entry = fileSystem.ReadAllBytes( $"{SpeechArchivePath}/{name}.mp2" );
+		byte[] entry;
+		byte[] lip;
+		string source;
+		if ( language != null )
+		{
+			var bankPath = language.ResolveDataFile( "global/Speech/speechHD.SDT" )
+				?? throw new FileNotFoundException( $"No global speech bank for {language.Name}." );
+			var lipsPath = language.ResolveDataFile( "global/Speech/lips.wad" )
+				?? throw new FileNotFoundException( $"No global lips.wad for {language.Name}." );
+			using var bank = new SdtArchive( bankPath );
+			entry = bank.soundFiles.FirstOrDefault( file => string.Equals( Path.GetFileNameWithoutExtension( file.Name ), name, StringComparison.OrdinalIgnoreCase ) )?.GetData()
+				?? throw new FileNotFoundException( $"Speech clip {name} is not in {bankPath}." );
+			using var lips = new WadArchive( lipsPath );
+			var lipName = lips.GetFiles( "" ).FirstOrDefault( file => string.Equals( file, $"{name}.LIP", StringComparison.OrdinalIgnoreCase ) )
+				?? throw new FileNotFoundException( $"{name}.LIP is not in {lipsPath}." );
+			lip = lips.GetFile( lipName ).GetData();
+			source = $"{language.Name}: {bankPath}";
+		}
+		else
+		{
+			entry = fileSystem.ReadAllBytes( $"{SpeechArchivePath}/{name}.mp2" );
+			lip = fileSystem.ReadAllBytes( $"{LipArchivePath}/{name}.LIP" );
+			source = SpeechArchivePath;
+		}
 		if ( entry.Length < 8 )
 			throw new InvalidDataException( $"Speech entry {name} is truncated." );
 		var headerBytes = BitConverter.ToInt32( entry, 0 );
 		if ( headerBytes < 8 || headerBytes >= entry.Length )
 			throw new InvalidDataException( $"Speech entry {name} has an invalid header size." );
 		var audio = Mp2Decoder.Decode( entry.AsSpan( headerBytes ) );
-		using var lipStream = fileSystem.OpenRead( $"{LipArchivePath}/{name}.LIP" );
-		return (audio, new LipSyncTimeline( new LipSyncFile( lipStream ) ));
+		return (audio, new LipSyncTimeline( new LipSyncFile( new MemoryStream( lip ) ) ), source);
 	}
 
-	public void Say( int number )
+	public void Say( int number, GameLanguage? language = null )
 	{
-		var (audio, lips) = LoadClip( FileSystem, number );
+		var (audio, lips, source) = LoadClip( FileSystem, number, language );
 		player?.Dispose();
 		timeline = lips;
 		ClipNumber = number;
 		player = new SpeechAudioPlayer( audio );
-		Log.Trace( $"Advisor says {ClipName( number )}: {audio.DurationSeconds:F2} s, {lips.Marks.Count} LIP marks, clock: {player.ClockSource}{(player.DeviceError == null ? "" : $" ({player.DeviceError})")}." );
+		Log.Trace( $"Advisor says {ClipName( number )} ({source}): {audio.DurationSeconds:F2} s, {lips.Marks.Count} LIP marks, clock: {player.ClockSource}{(player.DeviceError == null ? "" : $" ({player.DeviceError})")}." );
 	}
 
 	public void Render()

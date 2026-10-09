@@ -67,7 +67,7 @@ and must not be run.
 | String tables (`*.str`) | Loaded from the language folder with that folder's own `MBToUni.dat` (`Localization`, sandbox text panel). |
 | BF4 fonts (`*.bf4`) | Loaded from the language folder (sandbox text panel). |
 | Banner meshes (`bankrupt`/`congrats`/`paused.MD2`) | Resolvable via `GameLanguage.FindFile`; not drawn by the game yet. |
-| Speech banks, `lips.WAD`, level `.LIP` | Resolvable via `GameLanguage.ResolveDataFile` (overlay first); speech playback is not implemented. |
+| Speech banks, `lips.WAD`, level `.LIP` | Resolvable via `GameLanguage.ResolveDataFile` (overlay first). `--advisor-say N` plays global `sp_NNN` and its `lips.WAD` mark list from the selected language (see LIPS.md); level LIPs are not used. |
 
 ## String table decoding
 
@@ -112,6 +112,6 @@ and its readback matches the CPU composite (max difference 0 on Metal).
   `Localization.Parse` do. Layout of longer translations in original screens is
   unverified.
 - No in-game language switch; the language is chosen at startup.
-- Speech audio, lip-sync playback and banner rendering are not implemented.
+- Only the `--advisor-say` speech/lip-sync slice exists (no in-game triggers); banner rendering is not implemented.
 - `UniToMB.dat` (reverse table, needed for text input) is not read.
 - Only the CD in `TPWORLD.ISO` was examined; other editions/patches are unverified.

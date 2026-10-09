@@ -152,7 +152,7 @@ bash scripts/run.sh --game-path '/path/to/Theme Park World' --smoke-test --advis
 ```
 
 `--advisor-say N` (1–637) draws the original advisor model in the bottom-left
-corner, plays global speech clip `sp_NNN` through SDL2 audio and switches its mouth
+corner, plays global speech clip `sp_NNN` of the selected language (`--language`/`--language-data`) through SDL2 audio and switches its mouth
 between `Mouth - Aah` (talking) and `Mouth - Normal` from the clip's `.LIP` marks.
 Without an audio device the mouth follows a wall clock silently. With `--smoke-test`
 it runs until the clip ends, checks the clock against wall time and the mouth sequence,

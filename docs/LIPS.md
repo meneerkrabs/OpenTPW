@@ -91,7 +91,10 @@ entry at its header-size word; the legacy `SoundData` offset does not fit the
 
 ## Advisor runtime slice
 
-`--advisor-say N` (1–637) adds `Advisor` (`source/OpenTPW/World/Advisor.cs`) to the
+`--advisor-say N` (1–637) takes `global/Speech/speechHD.SDT` and `lips.wad` from the
+selected language (`GameLanguage.ResolveDataFile`, overlay first; e.g. `--language German
+--language-data <CD extraction>` plays German `sp_001` with German marks 3,272,743 /
+3,767,619 / 6,915,192). It adds `Advisor` (`source/OpenTPW/World/Advisor.cs`) to the
 park scene: `global/advisor.wad/Advisor.MD2` is drawn in a bottom-left viewport
 with its own camera. The model has five co-located mouth meshes (`Mouth - Normal`,
 `- Aah`, `- Eee`, `- Ooh`, `- Sss`, textures `Mouth1a`–`e`) and `ShutEye` blink meshes.
@@ -135,7 +138,7 @@ stay open; short nonseekable reads work). `LipSyncTimeline` applies the inferred
 Tests: `LipSyncFileTests` (12 synthetic + 5 private corpus), `LipSyncTimelineTests`
 (5 synthetic + 1 corpus loudness test), `Mp2DecoderTests` (13 synthetic incl. a unit-DC-gain
 check of the window/matrixing + 2 corpus: all 640 Layer II speech clips decode;
-`sp_001` samples and RMS match the external decoder ±1), `AdvisorTests` (9 synthetic
+`sp_001` samples and RMS match the external decoder ±1), `AdvisorTests` (private test for the German overlay bank needs `OPENTPW_LANGUAGE_DATA`; 9 synthetic
 incl. the 60 Hz mouth-change frames 134/169/244 for `sp_001` and the speech clock on a
 simulated audio output, plus 3 private tests: model orientation/co-located mouths, no rigid-only
 `Advisorm*` clip, and loading `sp_001` through the game file system).

@@ -187,7 +187,7 @@ internal static class Game
 
 	/// <summary>
 	/// <c>--advisor-say N</c>: show the original advisor in a corner viewport saying global
-	/// speech clip <c>sp_NNN</c> with LIP-driven mouth changes (see docs/LIPS.md).
+	/// speech clip <c>sp_NNN</c> of the selected language with LIP-driven mouth changes (see docs/LIPS.md).
 	/// </summary>
 	private static Advisor? CreateAdvisor( string[] args )
 	{
@@ -197,7 +197,7 @@ internal static class Game
 		if ( index + 1 >= args.Length || !int.TryParse( args[index + 1], out var clip ) || clip < Advisor.FirstClip || clip > Advisor.LastClip )
 			throw new ArgumentException( $"--advisor-say requires a speech clip number from {Advisor.FirstClip} to {Advisor.LastClip}." );
 		var advisor = new Advisor();
-		advisor.Say( clip );
+		advisor.Say( clip, GameLanguage.IsSelected ? GameLanguage.Current : null );
 		return advisor;
 	}
 }

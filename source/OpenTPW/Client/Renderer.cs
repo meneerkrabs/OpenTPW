@@ -552,14 +552,30 @@ public partial class Renderer : IDisplaySettings
 			HasMainSwapchain = true
 		};
 
-		var swapchainSource = Veldrid.StartupUtilities.VeldridStartup.GetSwapchainSource( Window.SdlWindow );
+		SwapchainSource swapchainSource;
+		try
+		{
+			swapchainSource = Veldrid.StartupUtilities.VeldridStartup.GetSwapchainSource( Window.SdlWindow );
+		}
+		catch ( PlatformNotSupportedException exception ) when ( OperatingSystem.IsLinux() )
+		{
+			throw new PlatformNotSupportedException( "SDL opened no X11 or Wayland window (is DISPLAY or WAYLAND_DISPLAY set?). Headless runs need a virtual display such as xvfb-run.", exception );
+		}
 		var pixels = Window.PixelSize;
 		var description = new SwapchainDescription( swapchainSource, (uint)Math.Max( 1, pixels.X ), (uint)Math.Max( 1, pixels.Y ), options.SwapchainDepthFormat, options.SyncToVerticalBlank, options.SwapchainSrgbFormat );
-		Device = OperatingSystem.IsMacOS()
-			? GraphicsDevice.CreateMetal( options, description )
-			: OperatingSystem.IsWindows()
-				? GraphicsDevice.CreateD3D11( options, description )
-				: GraphicsDevice.CreateVulkan( options, description );
+		try
+		{
+			Device = OperatingSystem.IsMacOS()
+				? GraphicsDevice.CreateMetal( options, description )
+				: OperatingSystem.IsWindows()
+					? GraphicsDevice.CreateD3D11( options, description )
+					: GraphicsDevice.CreateVulkan( options, description );
+		}
+		catch ( Exception exception ) when ( OperatingSystem.IsLinux() && exception is TypeInitializationException { TypeName: "Vulkan.VulkanNative" } or VeldridException )
+		{
+			// No loader (libvulkan.so.1) or no installed driver/ICD (no VK_KHR_surface).
+			throw new PlatformNotSupportedException( $"Vulkan could not be started ({exception.Message}). Install the Vulkan loader and a driver, e.g. libvulkan1 and mesa-vulkan-drivers.", exception );
+		}
 		Log.Trace( $"Graphics backend: {Device.BackendType}; process: {System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}" );
 	}
 

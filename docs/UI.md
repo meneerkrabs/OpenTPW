@@ -111,7 +111,10 @@ screens, options), `FrontEnd/`, `Hud/`, `World/Lobby/LobbyScene.cs`,
   right-hand buttons are approximations.
 - Enter park → Game Mode window (239; Instant Action 240 / Full Simulation 241,
   tooltips 358/359) → loads the original level of the island
-  (`--load-original-level` equivalent). Both modes currently play the same.
+  (`--load-original-level` equivalent). Instant Action loads the `Easy_` balance
+  layers and the Easymode park and disables loans and upgrades; Full Simulation starts
+  with the standard balance and no Easymode park (traced in the Mac binary, see
+  reverse/FINDINGS.md). The original asks once per player, not per park (UI-015).
 - Load Park (202): original Easymode parks (read-only) and the OpenTPW sandbox
   save. Quit asks with the original confirmation (9).
 - Not implemented: player profiles (Create/Select New Player), online world,
@@ -275,7 +278,7 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-012 | `UI/Original/UiInput.cs:49`, `UI/Original/UiScreen.cs:59` | hover focuses, release activates, arrows/Enter/Escape navigate, P pauses, right click backs out of modal screens | binary: input handling; KEYBOARD.str meaning |
 | UI-013 | `UI/Original/Options/OptionsScreen.cs:92`, `UI/Original/UiDialogs.cs:9` | window sizes and inner layout of options, game mode, load, pause and message dialogs | captures of original dialogs |
 | UI-014 | `FrontEnd/FrontEndMenu.cs:76`, `FrontEnd/FrontEndMenu.cs:92` | positions inside the lobby panel (island name, prev/enter/next), logo/title placement, right-hand Load/Options/Quit column | capture of the original lobby screen |
-| UI-015 | `FrontEnd/FrontEndMenu.cs:120` | front-end flow without player profiles; Game Mode is asked when entering a park; both modes play the same | binary/manual: original player and mode flow |
+| UI-015 | `FrontEnd/FrontEndMenu.cs:120` | front-end flow without player profiles; Game Mode is asked when entering a park instead of once per player | player profiles: the original stores the mode per player (STP-PPC 0x1015D220/0x1013741C) |
 | UI-016 | `FrontEnd/LobbyDefinition.cs:79` | lobby ISLAND angle = island yaw in degrees, height = camera target height | binary: lobby script interpretation or capture |
 | UI-017 | `World/LobbyCameraMode.cs:25` | lobby camera: SPINSPEED read as radians per 0.1 s, vertical field of view 60, 3/s glide between islands, ISLANDFOV unused | binary or capture of the lobby camera |
 | UI-018 | `Client/GameFlow.cs:223`, `World/Lobby/LobbyScene.cs:14` | lobby sky drawn as a flat SKYCOLOUR backdrop; flying meshes, rain, lightning, animations not drawn | binary/capture of the lobby |

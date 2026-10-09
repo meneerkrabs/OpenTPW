@@ -43,6 +43,21 @@ public class MapFileTests
 		Assert.ThrowsException<ArgumentOutOfRangeException>( () => map.GetCell( 0, -1 ) );
 	}
 
+	[TestMethod]
+	public void RawBitEnumerationSeesUnverifiedBitThatFlagsMask()
+	{
+		// Width 3 (game Y), height 2 (game X). Raw 0x04 is set on 5, 148, 4 and 12 but is not a verified flag.
+		var map = new MapFile( new MemoryStream( CreateMap( 3, 2, new byte[] { 0, 5, 148, 4, 12, 251 } ) ) );
+		CollectionAssert.AreEqual(
+			new (int X, int Y, byte Raw)[] { (0, 1, 5), (0, 2, 148), (1, 0, 4), (1, 1, 12) },
+			map.EnumerateCellsWithRawBits( 0x04 ).ToArray() );
+		Assert.AreEqual( MapCellFlags.Blocked, map.GetFlagsAt( 0, 1 ) );
+		Assert.AreEqual( MapCellFlags.EntranceArea | MapCellFlags.FixedWalkway, map.GetFlagsAt( 0, 2 ) );
+		Assert.AreEqual( MapCellFlags.None, map.GetFlagsAt( 1, 0 ) );
+		Assert.AreEqual( MapCellFlags.InitialPath, map.GetFlagsAt( 1, 1 ) );
+		Assert.AreEqual( (byte)4, map.GetCellAt( 1, 0 ) );
+	}
+
 	[DataTestMethod]
 	[DataRow( 0 )]
 	[DataRow( 35 )]
@@ -274,6 +289,20 @@ public class MapFileTests
 			using var stream = File.OpenRead( file );
 			Assert.ThrowsException<InvalidDataException>( () => new MapFile( stream ), file );
 		}
+	}
+
+	[DataTestMethod]
+	[DataRow( "fantasy" )]
+	[DataRow( "hallow" )]
+	[DataRow( "jungle" )]
+	[DataRow( "space" )]
+	public void OriginalRawBit04IsOnlyTicketLaneCellsWithValue148( string level )
+	{
+		// Meaning of 0x04 is unknown; this pins where the bit is raw-set, not what it does. See docs/MAP.md.
+		var map = new MapFile( new MemoryStream( ReadOriginalMember( level, "base.map" ) ) );
+		var expected = Enumerable.Range( 47, 2 ).SelectMany( x => Enumerable.Range( 10, 7 ).Select( y => (X: x, Y: y, Raw: (byte)148) ) ).ToArray();
+		CollectionAssert.AreEqual( expected, map.EnumerateCellsWithRawBits( 0x04 ).ToArray(), level );
+		CollectionAssert.AreEqual( new byte[] { 148 }, map.Cells.Where( cell => (cell & 0x04) != 0 ).Distinct().ToArray(), level );
 	}
 
 	private static byte[] ReadOriginalMember( string level, string member ) => ReadOriginalArchiveMember( Path.Combine( "levels", level, "terrain.wad" ), member );

@@ -11,6 +11,19 @@ The launcher falls back to an Intel/Rosetta bootstrap when those files are absen
 Linux currently uses Vulkan and needs a working Vulkan driver. Windows uses
 Direct3D 11. Windows/Linux GPU execution is not yet locally qualified.
 
+Linux (x64) needs the system packages for SDL2, the Vulkan loader and a Vulkan
+driver (Debian/Ubuntu: `libsdl2-2.0-0 libvulkan1 mesa-vulkan-drivers`) and an X11
+or Wayland session; the NuGet packages bring `libveldrid-spirv.so` and
+`libcimgui.so` but no SDL2. Without a GPU, Mesa's llvmpipe software Vulkan works,
+and `xvfb-run -a bash scripts/run.sh …` provides a virtual display for headless
+smoke tests. Missing display or Vulkan driver ends with a named error instead of a
+.NET loader exception. Game data may use any letter case (`data`, `Data`, `DATA`
+from a mounted CD, `Speech`/`speech`): paths are matched to the on-disk spelling.
+linux-arm64 is blocked: the packages ship no arm64 `libveldrid-spirv`/`libcimgui`.
+Shader hot reload shares one file watcher per shader file, because every Linux
+watcher holds an inotify instance (default limit 128 per user); if the limit is
+still reached, hot reload is disabled with a warning instead of stopping the game.
+
 ```sh
 bash scripts/run.sh --game-path '/path/to/Theme Park World'
 bash scripts/run.sh --game-path '/path/to/Theme Park World' --sandbox

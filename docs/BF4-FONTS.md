@@ -58,16 +58,19 @@ identical space slots collapse to one) on shelves ordered by descending height,
 descending width, ascending character, with one transparent padding pixel. Width is
 the smallest power of two from 64 that keeps the packed height within it; height is
 the next power of two. Coverage maps linearly to alpha (`value × 17`, 15 → 255).
-That mapping is an OpenTPW choice: no original palette, gamma or blend mode is
-evidenced. All 33 fonts pack without overlap and every region equals its decoded
+The original blend is now known from the Mac binary (see *Original-binary evidence*):
+it is linear in coverage with no gamma curve, so `× 17` matches it except for rounding
+and the darkening bias described there. No original palette is evidenced. All 33 fonts pack without overlap and every region equals its decoded
 coverage; GAME8AA (128×128) and SESHMED (256×256) atlas hashes are pinned.
 
 `TextLayout` advances the pen by each record's advance and places bitmaps at
 pen + offset X and line top + offset Y. Line height is the header height hint:
 across the corpus the lowest glyph bottom (offset Y + height) is within one pixel
 of it, and glyph tops can be negative (accents above the line box). Interpreting
-offsets relative to the line top, and the hint as line height, is inferred from
-these extents, not from original code. No kerning is applied: records contain no
+offsets relative to the line top is inferred from these extents; using the header
+byte as line height and the record advance as pen step matches the original code
+(see *Original-binary evidence*). The fallback to the lowest glyph bottom when the
+header byte is 0 is OpenTPW policy (the original returns 0). No kerning is applied: records contain no
 pair data. `\n`, `\r` and `\r\n` break lines (UITEXT uses `\n`); optional greedy
 wrapping at spaces and `?` fallback for missing characters are OpenTPW policy.
 Every UITEXT entry lays out in GAME8AA without fallback. Pinned layouts: UITEXT
@@ -83,6 +86,36 @@ smoke test reads the resolved frame back on Metal and requires the panel to matc
 a CPU composite of the same quads (observed: 2,224 ink pixels, maximum channel
 difference 0) and writes `artifacts/native-smoke-text.png`. Visual check of that
 capture: upright, legible glyphs with expected baselines and descenders.
+
+## Original-binary evidence
+
+October 9, 2026. Static analysis (Ghidra, decompiler plus disassembly) of the Mac
+PowerPC library `ltms_shared` (data fork SHA-256
+`2b0f7ac92c1f8b67761d271dd5832fca1bd19a8dd8d494b7b89b6ffa693e6ee8`, part of the corpus
+in [reverse/FINDINGS.md](reverse/FINDINGS.md)). Its exports carry their C++ names, so
+each finding is tied to a named function; nothing was executed and no code is copied here.
+
+- **Font metrics.** `TbIRLE4bitFont::GetVerticalSpacing()` returns header byte 5 (OpenTPW's
+  `HeaderHeightHint`), or 0 without a font. `GetCharSize()` returns (u16 at record +0x16,
+  that same header byte): the record advance OpenTPW already uses, and the line height.
+- **Glyph encodings.** `Tb4BitFontRenderMethod::DrawChar` expands run-length nybble glyphs
+  and 1-bit glyphs (bit → coverage 0 or 15) into one 4-bit buffer before drawing.
+- **Render parameters.** `TbFontRenderParams` holds a colour mode (pre-coloured, recolour,
+  textured) and a write mode (alpha-write or blended). The constructor selects **blended**.
+  Each `Use…` setter fails when the font lacks the matching capability bit (1 pre-coloured,
+  2 recolour, 4 textured, 8 blended).
+- **Blend (one-colour, blended; `TbOneColour4BitFontRenderMethod::DrawCharTo8888`).** Per
+  R, G and B lane, with c the 4-bit coverage: if the colour alpha A is not 255, first
+  c = ⌊A·c / 255⌋; then `out = dst + (c · (colour − dst)) / 15` in **unsigned** 32-bit
+  arithmetic (the divide is a multiply-high by 0x88888889, checked in the disassembly).
+  Destination alpha is left unchanged; A = 0 draws nothing. Consequences: no gamma; a
+  lighter colour over a darker pixel gives the truncated linear blend; a darker colour
+  over a lighter pixel wraps and lands **about 17 above** the linear result per lane (black,
+  full coverage, over white gives 17,17,17). This is derived from the code, not yet
+  seen in a capture.
+- **Pixel formats.** Separate named blitters exist for 8888, BGRA, 565, 555, 4444 and a
+  generic path, plus no-blend and textured variants. Only the 8888 path has been read so
+  far; the 16-bit paths, which the Mac build most likely used, still need the same check.
 
 ## Remaining gates and sources
 

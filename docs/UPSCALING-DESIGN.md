@@ -64,6 +64,8 @@ upscaling is for GPUs that cannot hold the frame rate at native size. One run fa
 at the runtime-resize step after the window was enlarged externally (zoomed or tiled
 by macOS during the test); a rerun passed.
 
+Higher-resolution textures are a separate, optional feature: [TEXTURE-PACKS.md](TEXTURE-PACKS.md).
+
 Not done / not proven:
 
 - On-screen sharpness on Retina was judged by eye only; Veldrid's

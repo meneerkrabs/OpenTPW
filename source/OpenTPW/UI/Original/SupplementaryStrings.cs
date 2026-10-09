@@ -38,6 +38,8 @@ public enum OpenTpwText
 	OnlyOnePrototypeRide,
 	NotEnoughMoney,
 	NotAvailable,
+	EnhancedTextures,
+	TexturePackMissing,
 }
 
 public static class SupplementaryStrings
@@ -90,6 +92,8 @@ public static class SupplementaryStrings
 		[OpenTpwText.NotSimulated] = new[] { "Not simulated yet", "Endnu ikke simuleret", "Nog niet gesimuleerd", "Pas encore simulé", "Noch nicht simuliert", "Inte simulerad ännu" },
 		[OpenTpwText.Built] = new[] { "{0} built.", "{0} er bygget.", "{0} gebouwd.", "{0} construit.", "{0} gebaut.", "{0} byggd." },
 		[OpenTpwText.NotEnoughMoney] = new[] { "Not enough money", "Ikke penge nok", "Niet genoeg geld", "Pas assez d'argent", "Nicht genug Geld", "Inte tillräckligt med pengar" },
+		[OpenTpwText.EnhancedTextures] = new[] { "Enhanced textures:", "Forbedrede teksturer:", "Verbeterde textures:", "Textures améliorées :", "Verbesserte Texturen:", "Förbättrade texturer:" },
+		[OpenTpwText.TexturePackMissing] = new[] { "No pack built", "Ingen pakke bygget", "Geen pakket gebouwd", "Aucun pack créé", "Kein Paket erstellt", "Inget paket byggt" },
 		[OpenTpwText.NotAvailable] = new[] { "Not available yet", "Endnu ikke tilgængelig", "Nog niet beschikbaar", "Pas encore disponible", "Noch nicht verfügbar", "Inte tillgänglig ännu" },
 		[OpenTpwText.OnlyOnePrototypeRide] = new[] {
 			"Only one ride can be placed in this build",

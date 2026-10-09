@@ -81,6 +81,8 @@ internal sealed class GameFlow : IDisposable
 	public UiScreen CreateOptions( UiScreenStack stack, Action closed ) => OptionsScreen.Create( stack, Strings, new OptionsServices
 	{
 		Display = Display,
+		Graphics = IGraphicsSettings.Instance,
+		TexturePackAvailable = TexturePack.IsInstalled(),
 		Options = GameOptions.Current,
 		Languages = GameLanguage.FindLanguages( GameLanguage.Current.BaseDataDirectory, GameLanguage.Current.OverlayDataDirectory ),
 		CurrentLanguage = GameLanguage.Current.Name,

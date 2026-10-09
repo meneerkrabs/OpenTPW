@@ -115,17 +115,40 @@ implementation against those inputs, not equivalence to an executed PC game.
 
 ## Effects hook
 
-Every hooked opcode calls `IRideScriptEffects.Perform(RideEffectCall)` with the
+Valid hooked operations call `IRideScriptEffects.Perform(RideEffectCall)` with the
 resolved operand values. The VM writes the returned value to the opcode's
 destination where the corpus shows one (HOP, WALKGET, UNLIMBO, LIMBOSPACE,
 GETANIM_CH, HOUR, …), sets flags where branches consume them, and uses it as
 the duration in milliseconds for TRIGANIM/WAITANIM/TRIGWAITANIM/TRIGANIMSPEED
-(waits and WAIT4ANIM). For TOUR/BUMP/COAST the direction of the second operand
-depends on the command, so the effect writes it via `SetOutput`.
+(waits and WAIT4ANIM). TOUR/BUMP/COAST use the independently reviewed command
+contracts from [PPC-rides](reverse/PPC-rides.md) (`15313d2`): mutators preserve
+flags, supported queries set flags, and output queries write the effect's
+returned value to their parameter. BUMP13/14 use the captured original input
+for flags, not the controller return. No controller/admission logic or result
+is synthesized by these dispatch rules.
+
+Required-variable gates skip calls for literal parameters: BUMP1/2 and
+TOUR3/4/16. BUMP11 and COAST2/3 query with optional variable output, so a
+literal destination still permits flag-only queries. COAST7 is a native
+consumed-parameter no-op and does not call an effect. Nonliteral commands,
+unknown/default diagnostic command IDs and unqualified numeric-input tags
+fault explicitly as VM safety policy; original native diagnostic fatality
+and full invalid-host handling are not claimed equivalent.
 
 The default, `UnimplementedRideScriptEffects`, returns 0 (no visitor, no
 animation time), counts the call in `RideVM.UnimplementedEffects` and logs
-"unimplemented effect" once per script and opcode. Nothing is faked.
+"unimplemented effect" once per script and opcode. Controller queries detect
+that marker and retain prior flags/output instead of treating its placeholder 0
+as a real result. This lets the incomplete VM continue without manufacturing
+visitor/admission values; it does not establish original controller behavior.
+Other effect handlers retain their documented placeholder policy.
+
+The dispatcher implements all 39 reviewed command roles; the 37 command IDs
+used by the PC corpus are corroborated by parameter-kind/callsite metadata.
+Core dispatch now owns output writes for BUMP2/11, TOUR4/16 and COAST2/3.
+Supported admission/query values still come exclusively from the effect
+implementation. It does not create visitors, vehicles, capacities, queues,
+or success responses. Original controller systems remain unimplemented.
 
 ## Corpus run (`RideVMCorpusTests`)
 
@@ -145,6 +168,18 @@ its parent but is never spawned. All 263 roots run in one shared world for
 Together the runs execute 83 of the 84 corpus opcodes (GETREMOTEVAR is never
 reached; it is covered by a synthetic test) and start all 44 child scripts.
 Set `OPENTPW_RSE_VM_REPORT_OUT=<file>` to write the full report.
+
+After the reviewed controller flag dispatch change, baseline default effects
+execute 23,768,180 instructions (previously 23,776,799), with 216 roots running
+and 47 waiting. Chaos effects execute 17,065,708 (previously 17,200,190), with
+202 running and 61 waiting. The verified Patch 2 corpus executes 23,768,063
+default and 17,062,282 chaos instructions. All runs remain fault/halt-free,
+and the Totem trace remains pinned. Totals changed because accumulator
+contracts, query output directions, unsupported-query policy and COAST7 no-op
+handling affect branching; they do not demonstrate original controller or PC
+runtime equivalence. Focused tests cover all 39 reviewed command roles,
+required/optional variable gates, supported outputs, unsupported markers and
+unknown-command safety faults.
 
 `TotemScriptTraceIsPinned` pins 30 s of Totem.RSE (seed 1234, capacity 6, no
 visitors): WAITANIM 0 at 16 ms, the 10 s passenger time-out, WAIT 700,
@@ -265,9 +300,9 @@ handler attributes diverge.
 | 50 | `MOD` | 5 | implemented | corpus: `MOD dest a b`; Mac-static: signed remainder, zero divisor returns 0; signed overflow retains VM zero policy |
 | 51 | `TURBO` | 20 | hooked | docs (`value` 0..1, meaning unknown) |
 | 52 | `END` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
-| 53 | `TOUR` | 76 | hooked | docs (command list); corpus `TOUR 10 0; BRANCH_Z` → result sets flags |
-| 54 | `BUMP` | 199 | hooked | docs (command list); corpus 57 branches consume BUMP flags |
-| 55 | `COAST` | 144 | hooked | docs (COAST_* ids); corpus 36 branches consume COAST flags |
+| 53 | `TOUR` | 76 | hooked | Mac-static command roles: mutators preserve flags; supported queries set flags/output; required-variable gates skip invalid calls |
+| 54 | `BUMP` | 199 | hooked | Mac-static command roles: mutators preserve flags; queries set flags/output; duration commands set flags from original input |
+| 55 | `COAST` | 144 | hooked | Mac-static: commands 1/4/5/6/8 preserve flags; 2/3 set flags and optional output; 7 is a no-op |
 | 56 | `ADDHEAD` | 31 | hooked | docs (`visitor`) |
 | 57 | `DELHEAD` | 31 | hooked | docs (`visitor`) |
 | 58 | `LIMBO` | 24 | hooked | docs (`visitor unknown`) |

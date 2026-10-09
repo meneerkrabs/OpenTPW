@@ -1,4 +1,4 @@
-# SAM schema layout and ride wear (ECON-023 evidence)
+# SAM schema layout, ride wear and breakdown (ECON-023/024 evidence)
 
 2026-10-09. Static analysis only; no original program was run. Original binaries, decompiler output and
 disassembly stay outside this repository; this page records addresses, field offsets and the conclusions
@@ -78,9 +78,10 @@ The ride's upgrade level is a byte in the ride instance (`+0x4c` Mac, `+100` The
 
 **Gate.** The wear step does nothing when:
 - `Upgrades[level].WearRate` is 0;
-- a global flag is set (Mac `DAT_101ec8f8`, initialised lazily by `0x1012bb64`; meaning unknown);
+- the game runs in online mode (see [Game mode](#game-mode));
 - the ride is not running (helper `0x100dff2c` or instance flag `+0x2e & 0x100`);
-- the global tick counter is not a multiple of 64 (`(counter & 0x3f) != 0`; counter at `*DAT_101ec904 + 0x1da70c`).
+- the global tick counter is not a multiple of 64 (`(counter & 0x3f) != 0`; counter at `*DAT_101ec904 + 0x1da70c`,
+  see [Tick counter](#tick-counter)).
 
 **Step.** When ride statistic 5 is 0 (interpreted as no riders), the wear is 0. Otherwise:
 
@@ -102,24 +103,81 @@ The ride's upgrade level is a byte in the ride instance (`+0x4c` Mac, `+100` The
 The bracketed quantities come from the binaries without interpretation. "Speed", "riders" and "running"
 are interpretations, based on the comparisons with `MaxSpeed`, `MaxCapacity` and the `RedLine*` fields.
 
-## Consequences for ECON-023
+## Tick counter
 
-OpenTPW currently assumes that "an open ride loses WearRate state of repair per game day; breakdown at 0".
-The Mac code differs:
+- `0x1010536c` increments the counter at `game + 0x1da70c` by one per simulation step. `0x1010474c` resets it
+  to 0 at game initialisation.
+- The main loop `0x101c22dc` adds 31 to an accumulator per step until it reaches a target. The same function
+  computes `SamsUtilities::UTimer::GetAbsolute() / 1000`.
+- If `GetAbsolute` returns microseconds, the target is in milliseconds, so one step is 31 ms (about 32.3 steps
+  per second) and one wear step about every 2 s. Not proven: the origin of the target and any game-speed
+  factor.
+- No reader of the counter that derives the hour or day has been found yet, so ECON-001 is unchanged.
 
-- Wear depends on use: `0.1` to about `1.05` times `WearRate` per step, and zero without riders.
-- It runs once per 64 ticks, not once per game day.
-- There are warning thresholds at 20 and 10.
+## Game mode
 
-ECON-023 stays open until these are known:
+`DAT_101ec8f8` holds a mode value G. It is initialised by `0x1012bb64` from three bits of a flag word and
+written by `0x1012bbf4`. The game initialisation `0x1010474c` loads a different balance file per value:
 
-- the unit of the 64-tick counter (shared with ECON-001);
-- the meaning of ride statistics 2, 3 and 5 and of the second float;
-- the global disable flag;
-- the breakdown decision itself, which is not in the wear step;
-- agreement with an oracle, for example two saves of one park at a known tick distance, if the save stores
-  state of repair.
+| G | Balance file | Mode |
+| --- | --- | --- |
+| 0 | `data:levels:Standard.sam` | normal |
+| 1 | `data:levels:online_Standard.sam` | online |
+| 2 | the theme's `Easy_Standard.sam` (error text "There is no Easy_standard.sam file for this theme") | Easy |
 
-The repo's acceptance rule for the original-binary route requires one bounded original function plus
-reproducible agreement with a reference oracle. The first half is met by `0x100dec2c`/`0x100de904`; the
-second is not.
+The strings sit in the code section: TOC slot `0x101ef5dc` relocates to code + `0x1d369c`.
+
+The wear step is off only in online mode. In online mode `0x100e2650` takes over: state of repair falls by
+an amount / 20, and below 25.0 it is restored to 100. OpenTPW does not use the online balance, so for OpenTPW
+wear always applies.
+
+## Breakdown and repair
+
+The ride update `0x100e077c` runs on ticks where `(counter & 7) == 0`. It skips rides in states 1, 3 and 4
+(`ride + 0x198`) and rides with `ride + 0x64 == 0`.
+
+1. It calls the wear step, which acts only on every eighth of these calls, because of its own `& 0x3f` gate.
+2. It checks for a breakdown. A ride breaks down when the truncated state of repair (`+0x40`) is 0, or when a
+   second gauge (`+0x44`) is truncated to 0. Two further conditions apply: bit 0 of `ride + 0x2e` is clear,
+   and the ride is not already broken (statistic 4 is 0). There is no random roll.
+3. If the ride breaks down because repair reached 0 while the gauge is still above 0, the gauge first loses
+   5.0 (clamped to 0–100).
+4. `0x100e09f4` posts an announcement and sets ride statistic 4 to 1. Statistic 4 is the broken-down state.
+
+The wear step itself sets statistic 8 below 20. Statistic 8 is a worn warning; its reader is not yet found.
+
+`0x100def2c` repairs a ride: state of repair becomes 100.0 and statistic 8 is cleared. If `ride + 0x198 == 2`,
+the same function instead advances the upgrade level (`+0x4c`). It does not touch the second gauge.
+
+The second gauge falls by `0.02 * wear` per wear step and by 5.0 per breakdown, and no repair restores it.
+It behaves like a remaining-life meter, which may be the Remaining Life value in UI-028. That is a hypothesis.
+
+Not verified (agent reports, recorded as leads):
+- `0x100d9e04` clears statistic 4 and calls the repair when a job timer ends, except when statistic 7 is set.
+- `0x100df5b4` repairs on a timer without clearing statistic 4.
+- The constructor `0x100da874` sets `+0x40`, `+0x44` and `+0x48` to 0.
+- The object serializer `0x100daf04` saves these three floats as truncated bytes. OpenTPW's save reader does
+  not decode them yet: `SaveObjectList` reads only the 41-byte SYSG header of each record.
+
+## Consequences for ECON-023 and ECON-024
+
+OpenTPW currently assumes that "an open ride loses WearRate state of repair per game day; breakdown at 0", and
+that "a repair restores state of repair to 100".
+
+| Assumption | Mac code |
+| --- | --- |
+| Loss per game day | Use-weighted loss once per 64 ticks: `0.1` to about `1.05` times `WearRate`, zero without riders |
+| Breakdown at 0 | Holds for the state of repair (below 1, deterministic, checked every 8 ticks). A second gauge (`+0x44`) can also trigger it, and every breakdown costs that gauge 5 |
+| Repair restores 100 | Holds (`0x100def2c`). Repair does not restore the second gauge |
+| Not in OpenTPW | Warning flag below 20, a message when repair crosses below 10, and no wear in online mode |
+
+These items stay open:
+- the duration of a tick, and so of a game day (ECON-001);
+- the meaning of ride statistics 2, 3 and 5, of ride states 1–4 and of bit 0 of `+0x2e`;
+- the start value of the second gauge after construction;
+- agreement with an oracle. Two original saves of one park at a known tick distance could serve, once
+  `SaveObjectList` decodes the record tail.
+
+The repo's acceptance rule for the original-binary route needs one bounded original function plus
+reproducible agreement with a reference oracle. The first part is met (`0x100dec2c`, `0x100de904`, `0x100e077c`);
+the oracle part is not.

@@ -2985,3 +2985,119 @@ runtime, PC/Patch 2 parity, and any filesystem or mount scan.
    qualify the claim as "with private extractions".
 4. Decide on merging or deferring `origin/main` `0829614` (production research
    cadence) before batch 2 is pushed.
+
+## 52. Round 16: origin `7bc6c59` start-up movies, formats `f443475` clock selector, scenarios `202fd60` profile snapshot
+
+Scope: the committed `origin/main` start-up movie delta (`aa4674b`, `0b8577f`,
+`7bc6c59`), and the unmerged lane tips formats `f443475` and scenarios `202fd60`.
+The owner merges `7bc6c59` as a separate checkpoint, so nothing here touches batch 2.
+Batch 2 final checks stay **pending** until its final SHA is supplied. The sign audit
+belongs to the UI owner and is not repeated. All checks ran on `git archive`
+copies under `/tmp`.
+
+### `7bc6c59` start-up movies: control flow (no blocker)
+
+| Path | Verdict |
+| --- | --- |
+| Setup child IPC | `InstallationDiscovery.RunChild` returns in `Program.Main` before `Game.Run`. No intro, no window. |
+| Wizard closed | `ResolveGameFolder` returns null before any renderer or intro is created. |
+| `--play-movie` | Headless and windowed both return before `frontEndRun` is computed. Intro never plays. |
+| `--front-end --smoke-test`, plain `--smoke-test`, `--sandbox`, `--load-original-level`, `--visit-park`, `--advisor-say` | `playIntro` is false. Unchanged behaviour. |
+| Default and plain `--front-end` | Intro plays, then the front end. `--no-intro` or any non-empty `OPENTPW_NO_INTRO` skips it (including `0`; worth a line in `RUNNING.md`). |
+| No `Movies` folder / missing `.tgq` | `DirectoryNotFoundException` / `FileNotFoundException` are caught in `TryOpen`, logged, and the movie is skipped. The front end follows. |
+| Window closed mid-intro | `Render.Run` returns. The intro (`using`) and flow are disposed. `Completed` never fires. |
+| Handoff | `Render.OnUpdate` is a delegate field, so removing and adding handlers inside `Completed` works on an invocation snapshot. `DiscardHeldInput` stops a held Esc, Space or click from reaching the lobby. |
+| Register | Code tag `[APPROX:UI-035]` matches the `UiApproximations`, UI.md and FIDELITY-REGISTER rows. `0b8577f` moved the tag off the taken UI-033. |
+
+Findings:
+
+- **R16-1 (medium, origin owner).** Only open-time errors are caught. Frame and
+  audio decoding run lazily in `MoviePlayback.Update` (`DecodeVideoFrame`,
+  `DecodeAudioBlock` through `FillAudio`). That is called from
+  `IntroSequence.Update`, which has no catch. So a truncated or damaged `.tgq`
+  that opens cleanly throws from inside `Render.Run`. `Program.Main` then exits
+  with code 1 before the front end appears. This contradicts the class comment
+  ("a missing or unreadable movie is skipped silently"). Fix: wrap
+  `current.Update()` in the same exception filter, dispose the movie and continue.
+- **R16-2 (low).** `MovieScreen`'s constructor opens the SDL audio output before
+  `new MoviePlayback`. If that throws (`NotSupportedException` for a missing or
+  out-of-range frame rate, or an `ArgumentException` sample-rate mismatch), the
+  intro catches it but the output is never disposed. `UnauthorizedAccessException`
+  (not an `IOException`) is not caught.
+- **R16-3 (low).** `--capture-world` with the default front end now starts
+  counting frames during the intro. Add `capturePath == null` to `playIntro`, or
+  document `--no-intro`.
+
+Fidelity: the Mac order (`bf`, then `day % 8` into an eight-entry table) is
+recorded as UI-035, with the PC order assumed. This round did not re-trace
+`0x101C0F40`.
+
+### Formats `f443475`: channel clock selector
+
+`format_witness.py` exits 0 on the identified `SimThemePark.data`
+(`04809cd4…`). Lane tests `test_clip_clock_reference` and `test_formats_witness`
+pass 24/24. The new `test_round16.py` decodes the nine words at
+`0xa63e8..0xa63fc`, `0xa7288..0xa729c` and `0xa7070..0xa7084` with its own field
+split. It finds `lwz rX,0(ch)`, then `rlwinm. rX,rX,0,25,25` (0x40), then `beq`
+to the `+16400` load (A), with a fall-through `+16408` load (B) and a `b` over it.
+Both clocks load from the same base. Swapping the constants fails 3/3. The doc's
+wording holds:
+
+- "rate is not a ticks-per-second value" is shown only by the reference model's
+  tests.
+- `TicksPerSecond` is called a separate, unproven choice.
+- The model makes no Global.Time wiring or PC claim.
+
+Not independently re-checked: the claim that the advisor is the only
+`use_b = 1` caller, the 252-byte instance copy, the pause wrapper callers, and
+the "channel 0 tested once per channel" quirk. These remain the witness's own.
+The `b52` fixed-2000 epoch and the separate host session are unaffected. Actor
+graph, PC arithmetic and device equivalence stay qualified.
+
+### Scenarios `202fd60`: synthetic gms.dat snapshot
+
+`test_profile_snapshot` passes 31/31 with `OPENTPW_MAC_BIN`.
+`scenario_evidence.py` exits 0. Synthetic probes:
+
+- A complete v12 file round-trips byte-identically.
+- Negative counts cycle under `mac-partial` and give `negative-count` under strict.
+- Version `0xFFFFFFFF` is accepted with an issue under `mac-partial`.
+- A name length of `0xFFFFFFFF` stops at `theme name` (offset 25) without
+  allocating.
+- A partial snapshot whose envelope is forged to `complete: true` is refused by
+  the serializer (settings, then count checks).
+
+The commit and the module make no real-gms or PC parser claim.
+
+- **R16-4 (low).** `from_envelope` checks schema, version and policy only. Other
+  members are not type-checked (a string `version` is accepted). A missing member
+  raises `KeyError`, not `ValueError`. `complete` and `failed_at` are not
+  cross-checked. The serializer still refuses the inconsistent cases tried.
+- **R16-5 (low, wording).** The envelope's `source` field names the Mac executable
+  SHA and the static trace for every snapshot, including ones read from synthetic
+  bytes. It describes where the layout comes from, not where the bytes come from.
+  Rename it to `layout_source`, or add a caller-supplied `bytes_source`, so an
+  envelope is not read as proof of authenticity.
+- **R16-6 (low, efficiency).** The repeated-rideId check is `ride in mystery` on a
+  list, so it is quadratic. 20,000 ids take 1.1 s. Real files are tiny, but a set
+  alongside the list keeps hostile input linear.
+
+### Results
+
+| Target | Command | Result |
+| --- | --- | --- |
+| `7bc6c59` archive | `dotnet test` SDK 10.0.401, filter IntroPlaylist/MoviePlayback/UiApproximation | 26 pass, 4 skip (original movies not supplied), 0 fail |
+| `f443475` archive | `format_witness.py <mac bin>`; lane tests | exit 0; 24/24 |
+| `202fd60` archive | `scenario_evidence.py <mac bin>`; `test_profile_snapshot` | exit 0; 31/31 |
+| review lane | `test_round12..16`; `test_round16` with `OPENTPW_PPC_BIN_ROOT` | OK; 1/1, skipped without the variable |
+
+Not run: the full codec or corpus reruns, the original-movie headless tests, the
+runtime intro on a window, PC parity, and any filesystem scan.
+
+### Handoff
+
+1. Origin owner: R16-1 before or with the `7bc6c59` checkpoint merge. R16-2 and
+   R16-3 can follow.
+2. Scenarios owner: R16-5 wording. R16-4 and R16-6 are optional hardening.
+3. Formats `f443475`: no change needed from this review.
+4. Batch 2: pending its final SHA for the count/alias/register/containment rerun.

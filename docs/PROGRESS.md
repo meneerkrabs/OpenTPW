@@ -287,3 +287,28 @@ Terrein/save-slice (9 oktober 2026, worktree `terrain`):
 - Robuustheid: ontbrekende strings → Engels → interne naam (vond UITEXT[473] buiten elke
   tabel en Frans [457] leeg), beschadigde SDT-entries overgeslagen, `UniToMB.dat` gelezen.
 - Benaderingen staan in het register van [COMPATIBILITY.md](COMPATIBILITY.md).
+
+## Advisor/compat-integratie (9 oktober 2026)
+
+- Advisor `3a5107c` en compat `7065401` zijn met behoud van geschiedenis samengevoegd
+  met main `517c588` op `integrate-advisor-compat-20261009` (`b1eac76`). Gasten,
+  parkeconomie, displayinstellingen en hun bestaande smoketests blijven aanwezig.
+- De advisor gebruikte logische venstercoördinaten rechtstreeks op het wereldtarget;
+  `--render-scale 50` sneed daardoor de mond buiten het target. De viewport wordt nu
+  naar targetpixels omgerekend, met drie regressiegevallen (100%, 50%, HiDPI).
+  De plaatsing blijft de geregistreerde benadering `ADVISOR-003`.
+- macOS arm64-build: 0 errors. Volledige suite met originele assets en taaldata:
+  689 passed / 11 skipped / 0 failed (700 tests, vóór toevoeging van de drie
+  viewportgevallen). Daarna advisor-subset inclusief nieuwe gevallen: 17 passed;
+  MTR/native shader-subset met originele taal-MTR-fixtures: 41 passed / 0 skipped.
+- Native Metal/SDL-advisorsmokes: Engels `sp_001` (513 gewijzigde mondpixels), Duits
+  `sp_001` op 50% render scale (142 pixels), Engels met test-HiDPI 2× (1.948 pixels).
+  Alle drie doorlopen de audioqueue en sluiten de mond na de clip.
+- Native jungle-smoke: poorttekst uit het oorspronkelijke TrueType-font, Totem-RSE
+  met instappen/uitstappen, gastensprites (3.194 readbackpixels), BF4/outputreadback,
+  maandloon ($92) en identieke parksave-roundtrip slagen.
+- De bestaande compiler- en dependency-advisorywaarschuwingen zijn niet opgelost;
+  geen dependencies toegevoegd. Windows/Linux-native-uitvoering en vergelijking
+  met originele advisor-/bordcaptures blijven onverifieerd. De registers in
+  [LIPS.md](LIPS.md), [COMPATIBILITY.md](COMPATIBILITY.md), [GUESTS.md](GUESTS.md)
+  en [ECONOMY.md](ECONOMY.md) blijven van toepassing.

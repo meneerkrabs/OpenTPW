@@ -43,7 +43,7 @@ public sealed class ParkEconomyRuntime
 			Log.Trace( $"Park economy: {attraction.Name} (Info.Id {infoId}) is not in the {Economy.Settings.Theme} catalogue; its visits are not booked." );
 			return null;
 		}
-		// [APPROX:ECON-032] the prototype ride is registered uncharged — evidence needed: replace with a real catalogue purchase (rides slice)
+		// [EXT:developer-prototype] the developer prototype ride is registered uncharged (no original counterpart)
 		var state = Economy.RegisterExisting( infoId );
 		Guests?.Link( attraction.AttractionId, state.Id );
 		return state;

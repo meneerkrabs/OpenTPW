@@ -127,7 +127,7 @@ public sealed class TotemBuildCatalog : IBuildCatalog
 {
 	public const string ItemId = "totem";
 	public const int ObjectNameIndex = 29;
-	// [APPROX:UI-033] price shown when Totem.sam cannot be read (the economy catalogue price is used when a park economy runs)
+	// [EXT:test-stub] price shown when Totem.sam cannot be read (the economy catalogue price is used when a park economy runs)
 	public const long FallbackCost = 3250;
 	private readonly BuildItem? totem;
 

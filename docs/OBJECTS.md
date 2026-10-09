@@ -292,17 +292,14 @@ Original-data values are tagged `// [DATA:<file>:<field>]`.
 | RIDES-017 | World/Objects/ObjectCatalog.cs:124 | Buildable = WhichUIType 0–3, not fixed/tool/upgrade | Original build-menu contents |
 | RIDES-018 | World/Objects/ParkObjects.cs:107 | Build rules: grid, MAP/save terrain, no overlap; no slope/path/land; Level enforces economy purchases | Original build checks |
 | RIDES-019 | World/Objects/ParkObjects.cs:209 | Levels without save get Gates, Lights, Bus | Original fixed-item spawning |
-| RIDES-020 | World/Level.Objects.cs:81 | Sandbox Totem blocks cells inside its 6×8-unit box | None for gameplay (prototype) |
 | RIDES-021 | World/Level.Objects.cs:46 | Build centred on clicked cell; cursor ray hits Z = 0 | Original build cursor behaviour |
 | RIDES-022 | World/Objects/ObjectAssets.cs:119 | Texture search archive textures → gtexture → sharetex | Binary texture lookup order |
 | RIDES-023 | World/Objects/OriginalObjectRuntime.cs:125 | Completed cycle = VAR_RUNNING 1 → 0 | Original cycle/income accounting |
 | RIDES-024 | World/Objects/ObjectCatalog.cs:276 | Bonus archives merge; Info.Id collision skips the bonus entry | Original behaviour with dropped-in WADs |
 | RIDES-025 | World/Objects/ObjectCatalog.cs:545 | Bonus name: language file → English → .sam name | Original bonus-name lookup |
 | RIDES-026 | World/Objects/OriginalObject.cs:12 | 1 MD2 unit = 0.2 engine units | None (engine convention) |
-| RIDES-027 | World/PrototypeRide.cs:13 | Sandbox Totem 5-unit bounds radius | None for gameplay (prototype) |
 
 | RIDES-028 | World/Level.Objects.cs | Non-walkable entrance/exit outside cells use the nearest walkable path | Original queue-path joining rules |
-| RIDES-029 | World/Level.Objects.cs | Developer Totem registers uncharged when research/money refuses purchase; unpaid removal has no refund | None for gameplay (developer tool; normal building uses PlaceObject) |
 
 Imported objects share their economy instance with the guest payment bridge;
 shop/sideshow payments and ride-use statistics use that instance. Open/closed

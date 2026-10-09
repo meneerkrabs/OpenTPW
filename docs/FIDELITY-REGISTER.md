@@ -14,9 +14,9 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **140 unresolved unique APPROX IDs**, 155 APPROX occurrences, 39 EXT occurrences, 62 DATA occurrences and 9 BIN occurrences.
+Current inventory: **135 unresolved unique APPROX IDs**, 150 APPROX occurrences, 44 EXT occurrences, 62 DATA occurrences and 9 BIN occurrences.
 
-Of these, 134 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
+Of these, 129 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
 CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.
 
@@ -26,10 +26,10 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | --- | ---: | ---: |
 | ADVISOR | 14 | 14 |
 | COMPAT | 13 | 14 |
-| ECON | 45 | 45 |
+| ECON | 44 | 44 |
 | ONLINE | 6 | 6 |
-| RIDES | 29 | 29 |
-| UI | 33 | 47 |
+| RIDES | 26 | 26 |
+| UI | 32 | 46 |
 
 ## Approximation declarations
 
@@ -92,21 +92,20 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-029 | Original-fidelity area (scope unadjudicated) | golden tickets are spent when buying items with GoldenTicketCost | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:39` |
 | ECON-030 | Original-fidelity area (scope unadjudicated) | the simulation stops once bankrupt | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:40` |
 | ECON-031 | Original-fidelity area (scope unadjudicated) | imported parks are opened on load (open state not decoded) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:41` |
-| ECON-032 | Original-fidelity area (scope unadjudicated) | the prototype ride is registered uncharged | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:42` |
-| ECON-033 | Original-fidelity area (scope unadjudicated) | golden tickets are checked at each month end | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:43` |
-| ECON-034 | Original-fidelity area (scope unadjudicated) | challenge type meanings come from Challenges.sam comments (shop types by ShopType/SpecialIngredient) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:44` |
-| ECON-035 | Original-fidelity area (scope unadjudicated) | offers wait for accept/decline; follow-ups are offered right after completion; failed challenges count as finished | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:45` |
-| ECON-036 | Original-fidelity area (scope unadjudicated) | build challenges with TargetVal 0 need one item; type 28 needs level 3 | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:46` |
-| ECON-037 | Original-fidelity area (scope unadjudicated) | staff skill % = grade x 25 + training points / 4 | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:47` |
-| ECON-038 | Original-fidelity area (scope unadjudicated) | big park uses MinCellsOwned, cameras use MinCellsCovered | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:48` |
-| ECON-039 | Original-fidelity area (scope unadjudicated) | profit year = profit of the last 12 closed months | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:49` |
-| ECON-040 | Original-fidelity area (scope unadjudicated) | players start with 1 golden key and keys are not consumed by entering themes | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:50` |
-| ECON-041 | Original-fidelity area (scope unadjudicated) | features-directory objects with Research.Category != 3 are fixed (non-buyable) items | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:51` |
-| ECON-042 | Original-fidelity area (scope unadjudicated) | sideshow InitCostOfGoods is the cost of a prize paid per win | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:52` |
-| ECON-043 | Original-fidelity area (scope unadjudicated) | monthly wage = BaseWage[grade] x PayMultiplier[type] | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:53` |
-| ECON-044 | Original-fidelity area (scope unadjudicated) | balloon/costume percentages are 0 (guests carry no items yet) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:54` |
-| ECON-045 | Original-fidelity area (scope unadjudicated) | loan/challenge record locators use plausibility bounds (one fixture) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:55` |
-| ECON-046 | Original-fidelity area (scope unadjudicated) | upgrades need at least one employed mechanic to be bought | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:56` |
+| ECON-033 | Original-fidelity area (scope unadjudicated) | golden tickets are checked at each month end | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:42` |
+| ECON-034 | Original-fidelity area (scope unadjudicated) | challenge type meanings come from Challenges.sam comments (shop types by ShopType/SpecialIngredient) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:43` |
+| ECON-035 | Original-fidelity area (scope unadjudicated) | offers wait for accept/decline; follow-ups are offered right after completion; failed challenges count as finished | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:44` |
+| ECON-036 | Original-fidelity area (scope unadjudicated) | build challenges with TargetVal 0 need one item; type 28 needs level 3 | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:45` |
+| ECON-037 | Original-fidelity area (scope unadjudicated) | staff skill % = grade x 25 + training points / 4 | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:46` |
+| ECON-038 | Original-fidelity area (scope unadjudicated) | big park uses MinCellsOwned, cameras use MinCellsCovered | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:47` |
+| ECON-039 | Original-fidelity area (scope unadjudicated) | profit year = profit of the last 12 closed months | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:48` |
+| ECON-040 | Original-fidelity area (scope unadjudicated) | players start with 1 golden key and keys are not consumed by entering themes | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:49` |
+| ECON-041 | Original-fidelity area (scope unadjudicated) | features-directory objects with Research.Category != 3 are fixed (non-buyable) items | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:50` |
+| ECON-042 | Original-fidelity area (scope unadjudicated) | sideshow InitCostOfGoods is the cost of a prize paid per win | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:51` |
+| ECON-043 | Original-fidelity area (scope unadjudicated) | monthly wage = BaseWage[grade] x PayMultiplier[type] | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:52` |
+| ECON-044 | Original-fidelity area (scope unadjudicated) | balloon/costume percentages are 0 (guests carry no items yet) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:53` |
+| ECON-045 | Original-fidelity area (scope unadjudicated) | loan/challenge record locators use plausibility bounds (one fixture) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:54` |
+| ECON-046 | Original-fidelity area (scope unadjudicated) | upgrades need at least one employed mechanic to be bought | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:55` |
 | ONLINE-001 | OpenTPW online extension | Word filtering uses case-insensitive substring matches in space-padded text; entry spaces act as boundaries; allowed substrings exempt matches; hit characters except spaces become asterisks. | Original word-filter code or observed original filtering behavior; the source comment says the encrypted TP.ICD implementation is unreadable. | `docs/ONLINE.md:121` |
 | ONLINE-002 | OpenTPW online extension | A leading slash introduces a chat command; other text means say. | Original chat input syntax, which is not documented in the available data. | `docs/ONLINE.md:122` |
 | ONLINE-003 | OpenTPW online extension | Response strings 102 and 110 mean failure to add an ignored player and a buddy respectively, based on nearby string blocks. | Original response-code table. | `docs/ONLINE.md:123` |
@@ -132,16 +131,13 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | RIDES-017 | Original-fidelity area (scope unadjudicated) | buildable = WhichUIType 0-3, not fixed/tool/upgrade | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:27` |
 | RIDES-018 | Original-fidelity area (scope unadjudicated) | terrain/overlap rules without slope/path/land; Level enforces economy purchases | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:28` |
 | RIDES-019 | Original-fidelity area (scope unadjudicated) | levels without a save get Gates, Lights and Bus | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:29` |
-| RIDES-020 | Original-fidelity area (scope unadjudicated) | sandbox Totem cell blocking by model box | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:30` |
-| RIDES-021 | Original-fidelity area (scope unadjudicated) | build centred on clicked cell, Z = 0 cursor plane | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:31` |
-| RIDES-022 | Original-fidelity area (scope unadjudicated) | texture search order archive/gtexture/sharetex | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:32` |
-| RIDES-023 | Original-fidelity area (scope unadjudicated) | completed cycle = VAR_RUNNING 1 -&gt; 0 | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:33` |
-| RIDES-024 | Original-fidelity area (scope unadjudicated) | bonus archives merge, Info.Id collisions skipped | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:34` |
-| RIDES-025 | Original-fidelity area (scope unadjudicated) | bonus name language fallback | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:35` |
-| RIDES-026 | Original-fidelity area (scope unadjudicated) | engine scale 0.2 per MD2 unit (presentation) | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:36` |
-| RIDES-027 | Original-fidelity area (scope unadjudicated) | sandbox Totem 5-unit bounds radius | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:37` |
-| RIDES-028 | Original-fidelity area (scope unadjudicated) | non-walkable object access cells use the nearest walkable path | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:38` |
-| RIDES-029 | Original-fidelity area (scope unadjudicated) | developer Totem registers uncharged when the purchase is refused | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:39` |
+| RIDES-021 | Original-fidelity area (scope unadjudicated) | build centred on clicked cell, Z = 0 cursor plane | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:30` |
+| RIDES-022 | Original-fidelity area (scope unadjudicated) | texture search order archive/gtexture/sharetex | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:31` |
+| RIDES-023 | Original-fidelity area (scope unadjudicated) | completed cycle = VAR_RUNNING 1 -&gt; 0 | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:32` |
+| RIDES-024 | Original-fidelity area (scope unadjudicated) | bonus archives merge, Info.Id collisions skipped | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:33` |
+| RIDES-025 | Original-fidelity area (scope unadjudicated) | bonus name language fallback | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:34` |
+| RIDES-026 | Original-fidelity area (scope unadjudicated) | engine scale 0.2 per MD2 unit (presentation) | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:35` |
+| RIDES-028 | Original-fidelity area (scope unadjudicated) | non-walkable object access cells use the nearest walkable path | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:36` |
 | UI-001 | Original-fidelity area (scope unadjudicated) | non-4:3 outputs keep each element at its authored distance from the nearest edge (anchors) | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:12` |
 | UI-002 | Original-fidelity area (scope unadjudicated) | BF4 font size tier (SMALL/MED/BIG) chosen by logical scale thresholds 0.36 and 0.6 | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:13` |
 | UI-003 | Original-fidelity area (scope unadjudicated) | button/arm state frames drawn at the root node pose; child translations ignored | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:14` |
@@ -174,7 +170,6 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-030 | Original-fidelity area (scope unadjudicated) | volumes in 0..10 steps, default 8; popup help default on | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:41` |
 | UI-031 | Original-fidelity area (scope unadjudicated) | one placement per menu selection; Level.PlaceObject owns purchase/guest linkage and its removal handler owns scrap credits | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:42` |
 | UI-032 | Original-fidelity area (scope unadjudicated) | longer labels fall back to the small font; catalogue names greedily wrap in their slots | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:43` |
-| UI-033 | Original-fidelity area (scope unadjudicated) | test-only Totem catalogue falls back to price 3,250 when Totem.sam cannot be read; the game uses ObjectCatalog | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:44` |
 
 ## Approximation sites
 
@@ -238,7 +233,6 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-029 | `source/OpenTPW/Economy/ParkEconomy.cs:439` | [APPROX:ECON-029] golden tickets are spent when buying items with GoldenTicketCost — evidence needed: capture of ticket count after such a purchase |
 | ECON-030 | `source/OpenTPW/Economy/ParkEconomy.cs:111` | [APPROX:ECON-030] the simulation stops once bankrupt — evidence needed: capture of the bankrupt state |
 | ECON-031 | `source/OpenTPW/Economy/ParkEconomyRuntime.cs:33` | [APPROX:ECON-031] imported parks are opened on load (open state not decoded) — evidence needed: park-open flag in the save |
-| ECON-032 | `source/OpenTPW/Economy/ParkEconomyRuntime.cs:46` | [APPROX:ECON-032] the prototype ride is registered uncharged — evidence needed: replace with a real catalogue purchase (rides slice) |
 | ECON-033 | `source/OpenTPW/Economy/ParkEconomy.cs:305` | [APPROX:ECON-033] golden tickets are checked at each month end — evidence needed: capture of the award timing |
 | ECON-034 | `source/OpenTPW/Economy/ParkObjectives.cs:113` | [APPROX:ECON-034] challenge type meanings come from Challenges.sam comments (shop types by ShopType/SpecialIngredient) — evidence needed: challenge captures per type |
 | ECON-035 | `source/OpenTPW/Economy/ParkObjectives.cs:153` | [APPROX:ECON-035] offers wait for accept/decline; follow-ups are offered right after completion; failed challenges count as finished — evidence needed: challenge flow captures |
@@ -278,16 +272,13 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | RIDES-017 | `source/OpenTPW/World/Objects/ObjectCatalog.cs:124` | [APPROX:RIDES-017] Buildable = WhichUIType 0–3, not fixed/tool/upgrade (DATA:Info.WhichUIType comment "4 = Not to be shown in UI") — evidence needed: original build-menu contents |
 | RIDES-018 | `source/OpenTPW/World/Objects/ParkObjects.cs:105` | [APPROX:RIDES-018] Build rules = footprint inside grid + MAP/save terrain rules + no overlap; no slope, path or land rule; Level.PlaceObject enforces economy purchases — evidence needed: original build checks (binary/captures) |
 | RIDES-019 | `source/OpenTPW/World/Objects/ParkObjects.cs:207` | [APPROX:RIDES-019] Levels without a save get Gates, Lights and Bus (the fixed items Easymode records) — evidence needed: original fixed-item spawning per level |
-| RIDES-020 | `source/OpenTPW/World/Level.Objects.cs:170` | [APPROX:RIDES-020] Sandbox Totem blocks cells whose centres lie within its 6×8-unit model box — evidence needed: none for gameplay (prototype only; to be replaced by anchor placement) |
 | RIDES-021 | `source/OpenTPW/World/Level.Objects.cs:92` | [APPROX:RIDES-021] Built footprint is centred on the clicked cell; the cursor ray hits the Z = 0 plane — evidence needed: original build cursor behaviour |
 | RIDES-022 | `source/OpenTPW/World/Objects/ObjectAssets.cs:119` | [APPROX:RIDES-022] Texture search: archive textures, gtexture, theme sharetex (stexture/ssharete low-detail sets unused) — evidence needed: binary texture lookup order |
 | RIDES-023 | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:114` | [APPROX:RIDES-023] A completed cycle = VAR_RUNNING 1 → 0 — evidence needed: original ride-cycle/income accounting |
 | RIDES-024 | `source/OpenTPW/World/Objects/ObjectCatalog.cs:277` | [APPROX:RIDES-024] Bonus archives merge into the theme catalog; an Info.Id collision skips the bonus entry — evidence needed: original behaviour with dropped-in WADs |
 | RIDES-025 | `source/OpenTPW/World/Objects/ObjectCatalog.cs:552` | [APPROX:RIDES-025] Bonus name: selected language file, then English, then .sam Info.Name — evidence needed: original lookup of bonus name files |
 | RIDES-026 | `source/OpenTPW/World/Objects/OriginalObject.cs:12` | [APPROX:RIDES-026] Engine units: 1 MD2 unit = 0.2 (presentation scale shared with the terrain; no game rule) — evidence needed: none (engine convention) |
-| RIDES-027 | `source/OpenTPW/World/PrototypeRide.cs:13` | [APPROX:RIDES-027] Sandbox Totem bounds check uses a 5-unit radius around its centre — evidence needed: none for gameplay (sandbox prototype) |
 | RIDES-028 | `source/OpenTPW/World/Level.Objects.cs:64` | [APPROX:RIDES-028] A non-walkable outside cell (queue area) is replaced by the nearest walkable path cell — evidence needed: original queue-path building/joining rules |
-| RIDES-029 | `source/OpenTPW/World/Level.Objects.cs:251` | [APPROX:RIDES-029] When the economy refuses the Totem (e.g. Research.Group 4 not yet researched), the developer prototype is registered uncharged — evidence needed: none for gameplay (developer tool; players build through PlaceObject) |
 | UI-001 | `source/OpenTPW/UI/Original/UiCanvas.cs:47` | [APPROX:UI-001] anchors keep the authored distance to the nearest edge on non-4:3 outputs — evidence needed: original widescreen behaviour / design decision |
 | UI-002 | `source/OpenTPW/UI/Original/UiCanvas.cs:43` | [APPROX:UI-002] font tier thresholds 0.36 / 0.6 of logical scale — evidence needed: binary font selection per screen mode |
 | UI-002 | `source/OpenTPW/UI/Original/UiText.cs:57` | [APPROX:UI-002] which shipped font serves which role per tier — evidence needed: binary font use / captures |
@@ -334,7 +325,6 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-031 | `source/OpenTPW/Hud/ParkHud.cs:350` | [APPROX:UI-031] one placement per menu selection; Level owns purchase/sale — evidence needed: original build-tool continuation |
 | UI-032 | `source/OpenTPW/Hud/ParkHud.cs:590` | [APPROX:UI-032] Wrap translated catalogue names within their slot at the integer text scale. |
 | UI-032 | `source/OpenTPW/UI/Original/UiWidgets.cs:179` | [APPROX:UI-032] small-font fallback and greedy wrap for long labels — evidence needed: captures of translated original screens |
-| UI-033 | `source/OpenTPW/Hud/HudStubs.cs:130` | [APPROX:UI-033] price shown when Totem.sam cannot be read (the economy catalogue price is used when a park economy runs) |
 
 ## Extension sites
 
@@ -374,10 +364,15 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ONLINE-064 | `source/OpenTPW/Online/OnlineSession.cs:25` | [EXT:ONLINE-064] Line layouts ("name: text", "name *emote*") are OpenTPW choices; the original chat panel layout is unknown. |
 | ONLINE-065 | `source/OpenTPW/Online/ChatOverlay.cs:7` | [EXT:ONLINE-065] Font choice, position (bottom-left), colours and line count are OpenTPW choices; |
 | ONLINE-066 | `source/OpenTPW/Online/OnlinePanel.cs:6` | &lt;summary&gt;[EXT:ONLINE-066] Opt-in ImGui panel; original online panel layout is not reproduced.&lt;/summary&gt; |
+| developer-prototype | `source/OpenTPW/Economy/ParkEconomyRuntime.cs:46` | [EXT:developer-prototype] the developer prototype ride is registered uncharged (no original counterpart) |
+| developer-prototype | `source/OpenTPW/World/Level.Objects.cs:170` | [EXT:developer-prototype] Sandbox Totem blocks cells whose centres lie within its 6×8-unit model box (no original counterpart) |
+| developer-prototype | `source/OpenTPW/World/Level.Objects.cs:251` | [EXT:developer-prototype] When the economy refuses the Totem (e.g. Research.Group 4 not yet researched), the developer prototype is registered uncharged (no original counterpart) |
+| developer-prototype | `source/OpenTPW/World/PrototypeRide.cs:13` | [EXT:developer-prototype] Sandbox Totem bounds check uses a 5-unit radius around its centre (no original counterpart) |
 | display | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:121` | [EXT:display] window mode, upscaling, render scale and interface scale rows are OpenTPW extensions |
 | interface-scale-fit | `source/OpenTPW/UI/Original/UiCanvas.cs:33` | [EXT:interface-scale-fit] Above 1×, limit forced text scales to UiScaling's existing reference-layout fit. |
 | language | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:143` | [EXT:language] language row (original installs had one language; OpenTPW reads CD overlays) |
 | strings | `source/OpenTPW/UI/Original/SupplementaryStrings.cs:10` | [EXT:strings] OpenTPW supplementary labels (display/upscaling/language rows and OpenTPW messages), not original data |
+| test-stub | `source/OpenTPW/Hud/HudStubs.cs:130` | [EXT:test-stub] price shown when Totem.sam cannot be read (the economy catalogue price is used when a park economy runs) |
 | upscaling | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:30` | [EXT:upscaling] render-scale steps (presets 77/67/59/50 from the display slice plus 5% steps) |
 
 ## Data provenance sites

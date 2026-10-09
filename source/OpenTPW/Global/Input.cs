@@ -7,6 +7,10 @@ public static partial class Input
 {
 	public static MouseInfo Mouse { get; internal set; } = new();
 	public static KeyboardInfo Keyboard { get; internal set; } = new();
+	/// <summary>Characters typed this frame (keyboard layout and IME applied by SDL).</summary>
+	public static string Typed { get; private set; } = "";
+	/// <summary>Key presses this frame including auto-repeat, in order (for text editing keys).</summary>
+	public static IReadOnlyList<Key> KeyPresses { get; private set; } = Array.Empty<Key>();
 
 	public static float Forward { get; set; }
 	public static float Right { get; set; }
@@ -98,6 +102,8 @@ public static partial class Input
 		};
 
 		Mouse = mouseInfo;
+		Typed = new string( inputSnapshot.KeyCharPresses.ToArray() );
+		KeyPresses = inputSnapshot.KeyEvents.Where( keyEvent => keyEvent.Down ).Select( keyEvent => keyEvent.Key ).ToArray();
 
 		Right = 0;
 		Forward = 0;

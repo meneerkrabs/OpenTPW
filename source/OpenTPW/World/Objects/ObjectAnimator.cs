@@ -9,6 +9,12 @@ namespace OpenTPW;
 /// <c>_CH</c> opcodes' channel numbers; <c>UsageInfo.NumSimultAnims</c> allows up to 4). When several playing clips animate the same node, the
 /// most recently started one wins; a finished clip holds its last pose until its channel is replaced or
 /// flushed. Channel mixing, holding and the tick rate are OpenTPW choices (docs/OBJECTS.md).
+/// Clip time follows the original channel clock (0xa6484/0xa6398/0xa67d8 in the Feral Mac build): a clip
+/// starts at a whole millisecond of this animator's clock, its frame is <c>30 × elapsed ms / 1000</c> in
+/// single precision, and a looping clip replays only once that frame is strictly past the duration,
+/// restarting from the carry capped at the duration and truncated to whole milliseconds (one replay per
+/// <see cref="Advance"/>). This is the normal object update (0xa7960 with r4 ≠ 0), whose replay rebinds
+/// the clip; the object-list update (0x4d354, r4 = 0) replays without a bind and is not supported.
 /// Quantised vertex tracks of the winning clip give this instance its own mesh positions
 /// (<see cref="GetVertexPositions"/>); the shared <see cref="ModelFile"/> is never written.
 /// </summary>
@@ -27,7 +33,8 @@ public sealed class ObjectAnimator
 		public required string Clip { get; init; }
 		public bool Loop { get; init; }
 		public long Serial { get; init; }
-		public double Elapsed { get; set; }
+		/// <summary>StartAnimTime (channel +16): animator clock in whole milliseconds.</summary>
+		public long StartMilliseconds { get; set; }
 		public bool Finished { get; set; }
 	}
 
@@ -42,6 +49,7 @@ public sealed class ObjectAnimator
 	private readonly (long Serial, float Tick)[] vertexSources;
 	private readonly SortedSet<string> vertexLimitations = new( StringComparer.Ordinal );
 	private long serial;
+	private double clockMilliseconds;
 
 	public ObjectAnimator( ModelFile model )
 	{
@@ -69,8 +77,14 @@ public sealed class ObjectAnimator
 		Array.Fill( meshByNode, -1 );
 		for ( var mesh = 0; mesh < model.Meshes.Count; mesh++ )
 		{
-			if ( model.Meshes[mesh].NodeIndex >= 0 && model.Meshes[mesh].NodeIndex < meshByNode.Length )
-				meshByNode[model.Meshes[mesh].NodeIndex] = mesh;
+			var node = model.Meshes[mesh].NodeIndex;
+			if ( node < 0 || node >= meshByNode.Length )
+				continue;
+			// The sampler's node state is the header's mesh record, so a track drives exactly one mesh; a
+			// parsed model gives mesh i node i. Two meshes on one node would leave one without its track.
+			if ( meshByNode[node] >= 0 )
+				throw new ArgumentException( $"Meshes {meshByNode[node]} and {mesh} share node {node}; vertex tracks bind one mesh per node.", nameof( model ) );
+			meshByNode[node] = mesh;
 		}
 		vertexPositions = new NVector3[]?[model.Meshes.Count];
 		vertexVersions = new int[model.Meshes.Count];
@@ -112,7 +126,8 @@ public sealed class ObjectAnimator
 	/// <summary>Starts <paramref name="clip"/> on a channel and returns its length in seconds.</summary>
 	public double Play( int channel, ModelAnimation clip, string clipName, bool loop )
 	{
-		var player = new ModelAnimationPlayer( model, clip, TicksPerSecond ) { Loop = loop };
+		// The channel wraps the frame itself; the player only clamps.
+		var player = new ModelAnimationPlayer( model, clip, TicksPerSecond ) { Loop = false };
 		var animates = new bool[model.Nodes.Count];
 		var vertices = new ModelVertexAnimation?[model.Nodes.Count];
 		foreach ( var track in clip.Tracks )
@@ -123,7 +138,11 @@ public sealed class ObjectAnimator
 			else
 				vertices[track.NodeIndex] = track.VertexAnimation;
 		}
-		channels[channel] = new Channel { Player = player, Animates = animates, Vertices = vertices, Clip = clipName, Loop = loop, Serial = ++serial };
+		channels[channel] = new Channel
+		{
+			Player = player, Animates = animates, Vertices = vertices, Clip = clipName, Loop = loop, Serial = ++serial,
+			StartMilliseconds = NowMilliseconds
+		};
 		Update();
 		return clip.Duration / TicksPerSecond;
 	}
@@ -140,22 +159,61 @@ public sealed class ObjectAnimator
 		Update();
 	}
 
+	/// <summary>One object update: advances the clock, replays or finishes clips past their end, resamples.</summary>
 	public void Advance( double seconds )
 	{
 		if ( !double.IsFinite( seconds ) || seconds < 0 )
 			throw new ArgumentOutOfRangeException( nameof( seconds ) );
+		clockMilliseconds += seconds * 1000.0;
+		var now = NowMilliseconds;
 		foreach ( var channel in channels.Values )
 		{
 			if ( channel.Finished )
 				continue;
-			channel.Elapsed += seconds;
-			var tick = (float)(channel.Elapsed * TicksPerSecond);
-			channel.Player.SetTick( tick );
-			// [APPROX:RIDES-003] A finished non-looping clip holds its last pose until replaced/flushed — evidence needed: capture after a TRIGANIM clip ends
-			if ( !channel.Loop && tick >= channel.Player.Animation.Duration )
-				channel.Finished = true;
+			var frame = GetFrame( now - channel.StartMilliseconds );
+			float duration = channel.Player.Animation.Duration;
+			// 0xa7360: past the end only when strictly greater, so a frame equal to the duration samples the last key.
+			if ( frame > duration )
+			{
+				if ( channel.Loop )
+				{
+					channel.StartMilliseconds = now - GetCarryMilliseconds( frame - duration, duration );
+					frame = GetFrame( now - channel.StartMilliseconds );
+				}
+				// [APPROX:RIDES-003] A finished non-looping clip holds its last pose until replaced/flushed — evidence needed: capture after a TRIGANIM clip ends
+				else
+					channel.Finished = true;
+			}
+			channel.Player.SetTick( frame );
 		}
 		Update();
+	}
+
+	/// <summary>
+	/// The original's integer scene clock (0xa6f70 stores whole milliseconds); the epsilon absorbs binary
+	/// sums of decimal step sizes. How the scene clock itself rounds is a clock-lane dependency.
+	/// </summary>
+	private long NowMilliseconds => (long)Math.Floor( clockMilliseconds + 1e-6 );
+
+	/// <summary>0xa6484 at speed 1.0: <c>30 × (now − start) / 1000</c>, each step in single precision.</summary>
+	private static float GetFrame( long milliseconds )
+	{
+		var elapsed = (float)milliseconds;
+		var ticks = TicksPerSecond * elapsed;
+		return ticks / 1000f;
+	}
+
+	/// <summary>
+	/// 0xa67d8 → 0xa6398 at speed 1.0: the carry past the end, capped at the duration, becomes
+	/// <c>1000 × carry / 30</c> milliseconds truncated by the unsigned conversion 0x1c3fbc.
+	/// </summary>
+	private static long GetCarryMilliseconds( float carry, float duration )
+	{
+		if ( carry > duration )
+			carry = duration;
+		var milliseconds = 1000f * carry;
+		milliseconds /= TicksPerSecond;
+		return (long)milliseconds;
 	}
 
 	private string? GetVertexLimitation( ModelAnimationTrack track, int duration )

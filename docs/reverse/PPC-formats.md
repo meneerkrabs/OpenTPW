@@ -301,6 +301,20 @@ AnimFrame +32, DeferredAnimID +36, DeferredSubAnim +40 (12 = none).
   extrapolate from the kept segment (`AdvanceKey` reproduces it). Which objects
   take that path is not traced.
 
+- Channel clock (0xa6484, 0xa6398, 0xa67d8; witness `md2_clip_clock`):
+  StartAnimTime (+16) and AnimTime (+20) are whole milliseconds and
+  `AnimFrame = speed × (30 × (float)(now − start) / 1000)`, each step in single
+  precision, the difference converted as unsigned (bias 2^52). A fresh start
+  (r5 ≠ 0) sets start = now = scene clock, so the frame is 0. The replay passes
+  r5 = 0 only with a carry: 0xa6398 caps the carry at the duration, converts
+  `1000 × carry / 30 / speed` through 0x1c3fbc (`fctiwz`, truncation; negative
+  gives 0) and sets start = AnimTime − that. Unless object flag 0x8000 is set,
+  0xa67d8 then recomputes AnimFrame from the new start, so the wrapped frame is
+  `30 × ms / 1000`. A replay happens at most once per update and the carry is
+  capped, so one update far past the end lands at or below the duration, not at
+  `time mod duration`, and a clip whose duration is not a whole number of
+  milliseconds drifts (10 ticks: a 334 ms period).
+
 So with r4 = 1 the cursor at every sample equals a fresh search from key 0:
 between binds AnimFrame does not decrease (unless the untraced scene-clock
 rate is negative), and the search only moves forward. This assumes the cursor
@@ -544,11 +558,23 @@ the mesh shows its stored positions. Equivalence argument: when
 of the mesh, so the array equals the original's after its set-mode passes since
 the bind. The kept cursor is replaced by a fresh search from key 0, which equals
 it on the r4 = 1 update path (see "Clip lifecycle"): the loop replay rebinds and
-resets it. Not modelled: the object-list path (r4 = 0) that keeps cursors
-across a wrap, the whole-millisecond rounding and duration cap of the carry
-(OpenTPW wraps with `tick % duration`, and samples tick 0 where the original,
-wrapping only past the end, samples the last key at exactly the duration), and
-per-object ownership of clip and header state. Showing stored positions without
+resets it. The channel clock follows the trace at speed 1.0: per instance a
+clock in whole milliseconds (accumulated `Advance` time, floored), a start per
+channel, the single-precision frame, the last key at exactly the duration, and
+a looping replay strictly past the end from the capped carry truncated to whole
+milliseconds, once per `Advance` (one object update). A non-looping clip is
+marked finished only past its end; the hold itself stays RIDES-003. A test on
+the synthetic clip pins 999/1000/1000.5/1100 ms on a 30-tick clip (29.97, 30,
+30, 3), one 2,500 ms update (30, then 3 after 100 ms), the 10-tick drift (0 at
+334 ms, 9.99 at 667 ms) and the strict non-looping end; it fails against
+6382736 (frame 0 at 1,000 ms). Not modelled: the object-list path (r4 = 0) that
+keeps cursors across a wrap and replays without a bind (unsupported; a separate
+profile would need the kept-cursor sampler `AdvanceKey`), object flag 0x8000,
+speeds other than 1.0, and per-object ownership of clip and header state. How
+the original's scene clock reaches whole milliseconds (0xa6f70 stores the
+integer result of 0x10e844) belongs to the clock lane. A model whose meshes
+share a node is rejected (a parsed model gives mesh i node i; a track drives
+one mesh record). Showing stored positions without
 a track is an OpenTPW choice, not a proof: the original copies them back only
 under the 0xa5894 gate above and otherwise keeps the replaced clip's last pose.
 Played: 599 of the 609 catalog clips that carry vertex tracks; the 10

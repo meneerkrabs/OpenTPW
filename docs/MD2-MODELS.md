@@ -188,8 +188,9 @@ Timing (Mac key search 0xa3ff0): before a channel's first key the original
 leaves the channel unchanged, so the player keeps the stored node component;
 after the last key position, rotation and scale hold the last. Key ends equal the
 record duration for 3,732 key tracks, 10 end earlier and 1,157 extend past it;
-the sandbox loops at trailer word 2, so later keys are unreachable (the
-original's loop policy is not traced). 30 ticks/s at speed 1.0 is proven for the
+clips loop at trailer word 2, so later keys are unreachable. Placed objects
+follow the original replay (below); the Totem prototype's `ModelAnimationPlayer`
+still wraps with `tick % duration`. 30 ticks/s at speed 1.0 is proven for the
 Mac build (Totem cycle 430 ticks ≈ 14.3 s); scene-clock scaling and pause are not.
 
 - **Vertex animation** (flag 0x1000 without 0x4000; 1,736 records): a 44-byte
@@ -245,8 +246,16 @@ position once and the static group is applied once per bind (node-state flag
 0x00800000). Each sample searches keys from key 0; the original keeps a cursor,
 but its loop replay past the clip end rebinds the clip (0xa7190 → 0xa67d8 →
 0xa5894), which resets it, so both agree on the normal object update. Its
-object-list update replays without a bind and is not modelled
-(`docs/reverse/PPC-formats.md`, "Clip lifecycle"). Without such a track the mesh
+object-list update replays without a bind and is not supported
+(`docs/reverse/PPC-formats.md`, "Clip lifecycle"). Clip time follows the
+original channel clock at speed 1.0: a clip starts at a whole millisecond of the
+instance's clock, its frame is `30 × elapsed ms / 1000` in single precision, a
+frame equal to the duration shows the last key, and a looping clip replays only
+once the frame is strictly past the duration, restarting from the carry capped
+at the duration and truncated to whole milliseconds, at most once per update. So
+a 10-tick clip restarts every 334 ms, not every 333.3 ms, and one update far
+past the end lands at the duration rather than at `time mod duration`. A
+non-looping clip counts as finished only past its end. Without such a track the mesh
 shows its stored positions; that is an OpenTPW choice, because the original
 copies them back on a clip change only under runtime object and option flags
 (0xa5894) and otherwise keeps the last pose. The parsed, cached `ModelFile` is never written, so instances of one
@@ -309,7 +318,8 @@ geometry sample the layout cannot be verified, so it is not supported.
 
 ## Remaining gates and sources
 
-Next: how scripts select clips (RSE `TRIGANIM` family) and the loop policy;
+Next: how scripts select clips (RSE `TRIGANIM` family), the object-list replay
+without a bind, and game-speed scaling of the scene clock;
 the 12-byte vertex layout and the other record kinds; node list; rotation flag
 bits; consumers of the toggle bit, the group-0 box and texture frames;
 texture/material flag bits from original captures;

@@ -106,6 +106,18 @@ public class Md2VertexAnimationTests
 		return data;
 	}
 
+	/// <summary>The synthetic clip retargeted to <paramref name="node"/>, its last keys and duration at <paramref name="duration"/> (≥ 5).</summary>
+	internal static byte[] CreateAnimation( ushort node, ushort duration )
+	{
+		var data = CreateAnimation();
+		W16( data, Records + 20, node );
+		W16( data, Group0Ticks + 2, duration );
+		W16( data, AnimatedTicks + 4, duration );
+		W32( data, Records + 12, duration );
+		W32( data, Trailer + 8, duration );
+		return data;
+	}
+
 	private static void WriteGroup( byte[] data, int group, ushort keys, ushort vertices, int indices, int ticks, int packed )
 	{
 		var entry = Groups + group * 20;

@@ -550,6 +550,55 @@ def md2_clip_lifecycle(app: Image) -> dict:
             'relative_animation_update': 'restore via 0xa5894 without a new clip, add, recompute face normals'}
 
 
+
+STFS, LFD, FDIVS = 52, 50, 18
+
+
+def md2_clip_clock(app: Image) -> dict:
+    """Channel clock: whole-millisecond start, single-precision frame, carry truncated on replay."""
+    # 0xa6484 UpdateTime: AnimFrame = speed * (30 * (float)(unsigned)(now - start) / 1000).
+    d(app, 0xa649c, (LWZ, 5, 3, 16), 'StartAnimTime (+16)')
+    d(app, 0xa64a4, (LWZ, 4, 3, 20), 'AnimTime (+20)')
+    xop(app, 0xa64ac, (31, 40, 4, 5, 4), 'now - start (integer milliseconds)')
+    d(app, 0xa64a0, (LIS, 0, 0, 0x4330), 'conversion magic high word')
+    op, target, slot = app.toc_slot(0xa64a8, 2)
+    require((op, target), (LFD, None), 'conversion bias is a TOC literal')
+    require(struct.unpack_from('>Q', app.data, slot)[0], 0x4330000000000000, 'bias 2^52: unsigned conversion')
+    fp(app, 0xa64c8, (FSUBS, 1, 1, 2, 0), 'elapsed rounded to single')
+    fp(app, 0xa64cc, (FMULS, 1, 3, 0, 1), '30 * elapsed')
+    fp(app, 0xa64d0, (FDIVS, 0, 1, 0, 0), '/ 1000')
+    fp(app, 0xa64d4, (FMULS, 0, 4, 0, 0), '* speed (+12)')
+    d(app, 0xa64d8, (STFS, 0, 3, 32), 'AnimFrame (+32)')
+    # 0xa6398 SetClip(player, clip, fresh r5, start time f1).
+    require(compare_immediate(app.w(0xa63c4)), (11, 0, 5, 0), 'fresh-start argument tested')
+    bc(app, 0xa63e4, (BT, CR_EQ, 0xa6418), 'r5 == 0: start from the carried time')
+    d(app, 0xa63fc, (LWZ, 0, 7, 16400), 'fresh start: scene clock')
+    d(app, 0xa6400, (STW, 0, 31, 16), 'StartAnimTime = clock')
+    d(app, 0xa6410, (STW, 0, 31, 20), 'AnimTime = clock (frame 0)')
+    fp(app, 0xa6430, (FMULS, 1, 0, 0, 1), '1000 * carry')
+    fp(app, 0xa6438, (FDIVS, 1, 1, 2, 0), '/ 30')
+    d(app, 0xa6434, (LFS, 0, 31, 12), 'speed')
+    fp(app, 0xa643c, (FDIVS, 1, 1, 0, 0), '/ speed')
+    require(app.call(0xa6440), 0x1c3fbc, 'double to unsigned conversion of the carry')
+    xop(app, 0x1c3ff4, (63, 15, 2, 0, 2), 'fctiwz: truncation toward zero')
+    d(app, 0xa6444, (LWZ, 0, 31, 20), 'AnimTime of the last update')
+    xop(app, 0xa6448, (31, 40, 0, 3, 0), 'start = now - carry milliseconds')
+    d(app, 0xa644c, (STW, 0, 31, 16), 'StartAnimTime')
+    # 0xa67d8 passes fresh = 0 only with a carry and recomputes AnimFrame from the new start.
+    d(app, 0xa6908, (ADDI, 28, 0, 0), 'carry: fresh = 0')
+    d(app, 0xa6910, (ADDI, 28, 0, 1), 'no carry: fresh = 1')
+    xop(app, 0xa69bc, (31, 444, 28, 5, 28), 'fresh passed as r5')
+    d(app, 0xa69c8, (LWZ, 0, 22, 4), 'object flags')
+    rot(app, 0xa69cc, (RLWINM, 0, 0, 0, 16, 16, 1), 'object flag 0x8000')
+    bc(app, 0xa69d0, (BF, CR_EQ, 0xa6a14), 'set: no recomputation')
+    xop(app, 0xa69e4, (31, 40, 3, 4, 3), 'now - start after the replay')
+    fp(app, 0xa6a04, (FMULS, 1, 3, 0, 1), '30 * elapsed')
+    fp(app, 0xa6a08, (FDIVS, 0, 1, 0, 0), '/ 1000')
+    d(app, 0xa6a10, (STFS, 0, 25, 32), 'AnimFrame after the replay')
+    return {'frame': 'speed * (30 * (float)(unsigned)(now - start) / 1000), single precision; now/start whole ms',
+            'replay_start': 'now - (unsigned)trunc(1000 * min(carry, duration) / 30 / speed)'}
+
+
 # ------------------------------------------------------------------ TPWS
 def tpws_writer(app: Image) -> dict:
     base, first = app.toc_string(0x11cb84, 31)
@@ -751,6 +800,7 @@ def inspect(root: Path) -> dict:
               'md2_runtime': md2_runtime(app),
               'md2_runtime_binding': md2_runtime_binding(app),
               'md2_clip_lifecycle': md2_clip_lifecycle(app),
+              'md2_clip_clock': md2_clip_clock(app),
               'tpws_writer': tpws_writer(app),
               'tpws_schema': tpws_schema(app),
               'tpws_cells': tpws_cells(app),

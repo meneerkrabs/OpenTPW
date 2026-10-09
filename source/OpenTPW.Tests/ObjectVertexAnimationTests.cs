@@ -1,6 +1,7 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Veldrid;
 using NVector3 = System.Numerics.Vector3;
@@ -33,6 +34,79 @@ public class ObjectVertexAnimationTests
 		CollectionAssert.AreEqual( new NVector3[] { new( 4, 6, 5 ), new( 1, 3, 2 ), new( 4, 6, 5 ) }, vertices.Select( vertex => vertex.Position.GetSystemVector3() ).ToArray() );
 		Assert.ThrowsException<ArgumentException>( () => ObjectRenderParts.WritePositions( mesh, null, new Vertex[2] ) );
 		Assert.ThrowsException<ArgumentException>( () => ObjectRenderParts.WritePositions( mesh, new NVector3[3], vertices ) );
+	}
+
+	/// <summary>
+	/// The original channel clock on the synthetic vertex clip (0xa6484, 0xa7190 -> 0xa67d8 -> 0xa6398): frames
+	/// are <c>30 × whole ms / 1000</c>; a frame equal to the duration shows the last key; a looping clip
+	/// replays once per update from the carry capped at the duration and truncated to whole milliseconds;
+	/// a non-looping clip finishes only past its end.
+	/// </summary>
+	[TestMethod]
+	public void LoopReplaysFromTheWholeMillisecondCarryOnlyPastTheEnd()
+	{
+		var model = new ModelFile( new MemoryStream( Md2ModelFileTests.CreateGeometry() ) );
+		ModelAnimation Clip( ushort duration ) => new ModelFile( new MemoryStream( Md2VertexAnimationTests.CreateAnimation( 0, duration ) ) ).Clip!;
+		var thirty = Clip( 30 );
+		NVector3[] PoseAt( ModelAnimation clip, float tick )
+		{
+			var positions = new NVector3[model.Meshes[0].Positions.Length];
+			clip.Tracks.Single().VertexAnimation!.ApplyPose( tick, positions );
+			return positions;
+		}
+
+		var animator = new ObjectAnimator( model );
+		animator.Play( 0, thirty, "synth", loop: true );
+		Assert.AreEqual( 0, animator.VertexLimitations.Count );
+		animator.Advance( 0.999 );
+		Assert.AreEqual( 30f * 999f / 1000f, animator.GetTick( 0 ) );
+		animator.Advance( 0.001 );
+		Assert.AreEqual( 30f, animator.GetTick( 0 ), "1000 ms is the duration, not past it" );
+		CollectionAssert.AreEqual( PoseAt( thirty, 30 ), animator.GetVertexPositions( 0 )!.ToArray() );
+		Assert.AreNotEqual( PoseAt( thirty, 30 )[2], PoseAt( thirty, 0 )[2], "the last key differs from key 0" );
+		animator.Advance( 0.0005 );
+		Assert.AreEqual( 30f, animator.GetTick( 0 ), "whole milliseconds" );
+		animator.Advance( 0.0995 );
+		Assert.AreEqual( 3f, animator.GetTick( 0 ) );
+		CollectionAssert.AreEqual( PoseAt( thirty, 3 ), animator.GetVertexPositions( 0 )!.ToArray() );
+
+		// One update far past the end replays once, from the carry capped at the duration.
+		animator = new ObjectAnimator( model );
+		animator.Play( 0, thirty, "synth", loop: true );
+		animator.Advance( 2.5 );
+		Assert.AreEqual( 30f, animator.GetTick( 0 ) );
+		animator.Advance( 0.1 );
+		Assert.AreEqual( 3f, animator.GetTick( 0 ) );
+
+		// 10 ticks are 333.3 ms: at 334 ms the 0.02-tick carry truncates to 0 ms, so the clip restarts at
+		// 334 ms and 333 ms later is at 9.99 ticks (a phase-free modulo would give 0.02 and 0.01).
+		var ten = Clip( 10 );
+		animator = new ObjectAnimator( model );
+		animator.Play( 0, ten, "synth", loop: true );
+		animator.Advance( 0.334 );
+		Assert.AreEqual( 0f, animator.GetTick( 0 ) );
+		CollectionAssert.AreEqual( PoseAt( ten, 0 ), animator.GetVertexPositions( 0 )!.ToArray() );
+		animator.Advance( 0.333 );
+		Assert.AreEqual( 30f * 333f / 1000f, animator.GetTick( 0 ) );
+
+		animator = new ObjectAnimator( model );
+		animator.Play( 0, thirty, "synth", loop: false );
+		animator.Advance( 1.0 );
+		Assert.IsTrue( animator.IsChannelPlaying( 0 ), "a frame equal to the duration is not past the end" );
+		animator.Advance( 0.001 );
+		Assert.IsFalse( animator.IsChannelPlaying( 0 ) );
+		Assert.AreEqual( 30f, animator.GetTick( 0 ) );
+	}
+
+	/// <summary>A vertex track drives one mesh record, so two meshes on one node are rejected, not half-animated.</summary>
+	[TestMethod]
+	public void MeshesSharingANodeAreRejected()
+	{
+		var model = new ModelFile( new MemoryStream( Md2ModelFileTests.CreateGeometry() ) );
+		Assert.AreEqual( 0, model.Meshes.Single().NodeIndex );
+		_ = new ObjectAnimator( model );
+		model.Meshes.Add( new ModelFile.Mesh { NodeIndex = 0 } );
+		Assert.ThrowsException<ArgumentException>( () => new ObjectAnimator( model ) );
 	}
 
 	/// <summary>
@@ -256,14 +330,19 @@ public class ObjectVertexAnimationCorpusTests
 		}
 		Assert.IsTrue( checkedParts >= meshes.Length );
 
-		// An unchanged tick keeps the version (no upload); a loop wraps the tick and resamples.
+		// An unchanged tick keeps the version (no upload). At exactly the duration the loop has not ended
+		// (strict test), so the last key shows; 100 ms later it replays from the 3-tick carry and resamples.
 		var version = first.GetVertexVersion( meshes[0] );
 		first.Advance( 0 );
 		Assert.AreEqual( version, first.GetVertexVersion( meshes[0] ) );
 		first.Advance( 4.0 );
-		Assert.AreEqual( 0f, first.GetTick( 0 ) );
+		Assert.AreEqual( 150f, first.GetTick( 0 ) );
+		CollectionAssert.AreEqual( Pose( tracks[0], model.Meshes[meshes[0]], 150 ), first.GetVertexPositions( meshes[0] )!.ToArray() );
+		version = first.GetVertexVersion( meshes[0] );
+		first.Advance( 0.1 );
+		Assert.AreEqual( 3f, first.GetTick( 0 ) );
 		Assert.AreNotEqual( version, first.GetVertexVersion( meshes[0] ) );
-		CollectionAssert.AreEqual( Pose( tracks[0], model.Meshes[meshes[0]], 0 ), first.GetVertexPositions( meshes[0] )!.ToArray() );
+		CollectionAssert.AreEqual( Pose( tracks[0], model.Meshes[meshes[0]], 3 ), first.GetVertexPositions( meshes[0] )!.ToArray() );
 
 		// Stopping one instance restores its stored mesh and leaves the other instance's pose.
 		first.Stop( 0 );

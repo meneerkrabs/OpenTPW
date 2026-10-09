@@ -2,7 +2,7 @@
 
 namespace OpenTPW;
 
-public partial class Level
+public partial class Level : IDisposable
 {
 	internal static Level Current { get; set; }
 
@@ -37,18 +37,51 @@ public partial class Level
 	/// <summary>Fixed seed so a level run is reproducible.</summary>
 	public const ulong GuestSeed = 0x5450_5747_7565_7374;
 
-	public Level( string levelName, bool loadOriginalLevel = false )
+	/// <summary>Level directory name, e.g. <c>jungle</c>.</summary>
+	public string LevelName { get; }
+	/// <summary>
+	/// Set when this level shows a shared park read-only (docs/ONLINE.md): building, sandbox saves and
+	/// any economy writes must be refused while it is set.
+	/// </summary>
+	public ParkVisitInfo? Visit { get; }
+	public bool IsReadOnlyVisit => Visit != null;
+	private OnlinePanel? onlinePanel;
+
+	public Level( string levelName, bool loadOriginalLevel = false, ParkVisitInfo? visit = null, OnlineFolders? onlineFolders = null )
 	{
+		if ( visit != null && visit.Level != levelName )
+			throw new ArgumentException( "The visit level must match the loaded level.", nameof( visit ) );
+		LevelName = levelName;
+		Visit = visit;
 		Global = new SettingsFile( $"/levels/{levelName}/global.sam" );
 		Current = this;
-		if ( loadOriginalLevel )
+		if ( visit != null ? !visit.IsSandbox : loadOriginalLevel )
 		{
 			OriginalPark = OriginalPark.Load( levelName );
-			Park = ParkEconomyRuntime.ForOriginalLevel( OriginalPark );
+			if ( !IsReadOnlyVisit )
+				Park = ParkEconomyRuntime.ForOriginalLevel( OriginalPark );
 		}
 
 		SetupEntities();
-		SetupHud();
+		SetupHud( onlineFolders );
+		if ( visit?.Payload.PrototypeRide is { } ride )
+			RestoreVisitedRide( ride );
+	}
+
+	/// <summary>Shows the shared park's prototype ride; the visitor cannot move or remove it.</summary>
+	private void RestoreVisitedRide( OpenTPW.Online.Packages.PrototypeRideState ride )
+	{
+		var position = new Vector3( ride.X, ride.Y, 0 );
+		var allowed = OriginalPark != null ? CheckOriginalPlacement( position ) == OriginalPlacementResult.Allowed : ParkPlacement.IsWithinBounds( position, PrototypeRide.FootprintRadius );
+		if ( !allowed )
+		{
+			LastActionMessage = "The shared park's ride position is not buildable here; the ride is not shown.";
+			return;
+		}
+		PlacedRide = new PrototypeRide( position );
+		RegisterRideWithGuests( PlacedRide );
+		if ( ride.Open )
+			PlacedRide.Start();
 	}
 
 	private void SetupEntities()
@@ -172,11 +205,12 @@ public partial class Level
 		return OriginalParkPlacement.Check( OriginalPark, x - radius, y - radius, x + radius, y + radius );
 	}
 
-	private void SetupHud()
+	private void SetupHud( OnlineFolders? folders )
 	{
 		Hud = new();
 
 		parkLayout = new ParkLayout( this );
+		onlinePanel = new OnlinePanel( this, folders ?? OnlineFolders.FromEnvironment() );
 		TextOverlay = new SandboxTextOverlay();
 		// BF4 UI draws at output size after the world blit, not through the world upscaler.
 		global::Global.Render.OnOverlayRender += DrawTextOverlay;
@@ -196,6 +230,7 @@ public partial class Level
 		Camera.Update();
 		if ( ShowDeveloperPanels )
 			parkLayout.Draw();
+		onlinePanel?.Draw();
 		if ( IsPlacing && !wasMouseDown && Input.Mouse.Left && !UiCapturesMouse && !ImGuiNET.ImGui.GetIO().WantCaptureMouse )
 		{
 			if ( TryGetPlacementPosition( Input.Mouse.Position, new Vector2( Screen.Size.X, Screen.Size.Y ), out var position ) )
@@ -218,6 +253,11 @@ public partial class Level
 
 	public bool PlaceRide( Vector3 position )
 	{
+		if ( IsReadOnlyVisit )
+		{
+			LastActionMessage = "Read-only visit: building is disabled.";
+			return false;
+		}
 		if ( PlacedRide != null )
 			return false;
 		if ( OriginalPark != null )
@@ -245,6 +285,8 @@ public partial class Level
 
 	public void RemoveRide()
 	{
+		if ( IsReadOnlyVisit )
+			return;
 		PlacedRide?.Delete();
 		if ( PlacedRide != null )
 		{
@@ -282,8 +324,17 @@ public partial class Level
 
 	private void RequireSandbox()
 	{
+		if ( IsReadOnlyVisit )
+			throw new InvalidOperationException( "Saving and loading are disabled while visiting a shared park." );
 		if ( OriginalPark != null )
 			throw new InvalidOperationException( "Sandbox saves are disabled for imported original levels; original saves are read-only." );
+	}
+
+	public void Dispose()
+	{
+		onlinePanel?.Dispose();
+		DetachOverlay();
+		TextOverlay?.Dispose();
 	}
 
 	public void Render()

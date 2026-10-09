@@ -91,6 +91,11 @@ public partial class Level
 	// [APPROX:RIDES-021] Built footprint is centred on the clicked cell; the cursor ray hits the Z = 0 plane — evidence needed: original build cursor behaviour
 	public OriginalObject? PlaceObject( ObjectCatalogEntry entry, int x, int y, int rotation )
 	{
+		if ( IsReadOnlyVisit )
+		{
+			LastActionMessage = "Read-only visit: object changes are disabled.";
+			return null;
+		}
 		var anchor = GetCentredAnchor( entry, x, y, rotation );
 		var result = Objects.Check( entry, anchor.X, anchor.Y, rotation );
 		if ( result != OriginalPlacementResult.Allowed )
@@ -133,6 +138,11 @@ public partial class Level
 
 	public bool RemoveObjectAt( int x, int y )
 	{
+		if ( IsReadOnlyVisit )
+		{
+			LastActionMessage = "Read-only visit: object changes are disabled.";
+			return false;
+		}
 		var item = Objects.FindAt( x, y );
 		if ( item == null )
 			return false;
@@ -143,6 +153,8 @@ public partial class Level
 
 	private void HandleObjectClick( System.Numerics.Vector2 mousePosition, System.Numerics.Vector2 viewportSize )
 	{
+		if ( IsReadOnlyVisit )
+			return;
 		if ( (BuildEntry == null && !IsRemovingObjects) || !TryGetGridCell( mousePosition, viewportSize, out var x, out var y ) )
 			return;
 		if ( IsRemovingObjects )

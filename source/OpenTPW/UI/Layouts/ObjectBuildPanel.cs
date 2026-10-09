@@ -17,6 +17,11 @@ public sealed class ObjectBuildPanel
 
 	public void Draw()
 	{
+		if ( level.IsReadOnlyVisit )
+		{
+			ImGui.TextWrapped( OnlineStrings.Get( OnlineLabel.ReadOnlyVisit ) );
+			return;
+		}
 		var objects = level.Objects;
 		if ( objects == null )
 			return;

@@ -1,0 +1,22 @@
+# Example: docker compose -f OpenTPW.Server/docker-compose.example.yml up --build   (run from source/)
+# Put a TLS-terminating reverse proxy (Caddy, nginx, Traefik) in front for internet use.
+services:
+  opentpw-server:
+    build:
+      context: ..
+      dockerfile: OpenTPW.Server/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      OpenTPW__ServerName: "My OpenTPW server"
+      OpenTPW__Message: "Welcome! Be nice."
+      # Optional word filter from YOUR OWN game installation (never shipped with the server):
+      # OpenTPW__FilterDirectory: /game-language
+      # Behind a reverse proxy, let rate limits see real client addresses:
+      # ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+    volumes:
+      - opentpw-data:/data
+      # - "/path/to/Theme Park World/Data/Language/English:/game-language:ro"
+volumes:
+  opentpw-data:

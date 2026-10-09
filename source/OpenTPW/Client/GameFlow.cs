@@ -35,6 +35,7 @@ internal sealed class GameFlow : IDisposable
 
 	public UiStringTable Strings { get; }
 	public UiContext Context { get; }
+	public OnlineFolders? OnlineFolders { get; set; }
 	public IDisplaySettings Display { get; set; }
 	public string OptionsPath { get; set; }
 	/// <summary>When false, options are not written (smoke tests).</summary>
@@ -131,10 +132,10 @@ internal sealed class GameFlow : IDisposable
 	}
 
 	/// <summary>Creates a level with the original HUD. CLI paths keep the developer panels.</summary>
-	public Level StartLevel( string levelName, bool original, bool developerPanels )
+	public Level StartLevel( string levelName, bool original, bool developerPanels, ParkVisitInfo? visit = null )
 	{
 		TearDown();
-		var level = new Level( levelName, loadOriginalLevel: original ) { ShowDeveloperPanels = developerPanels };
+		var level = new Level( levelName, loadOriginalLevel: original, visit: visit, onlineFolders: OnlineFolders ) { ShowDeveloperPanels = developerPanels };
 		Level = level;
 		// Money, calendar, speed and purchases come from the park economy of original levels (Level.Park,
 		// looked up on every access so loading a park save is followed); the generic sandbox has none.
@@ -153,8 +154,7 @@ internal sealed class GameFlow : IDisposable
 	{
 		if ( Level != null )
 		{
-			Level.DetachOverlay();
-			Level.TextOverlay?.Dispose();
+			Level.Dispose();
 			Level = null;
 			Hud = null;
 			OpenTPW.Level.Current = null!;

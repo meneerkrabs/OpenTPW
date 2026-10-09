@@ -144,6 +144,11 @@ internal static class Game
 		//
 		// Init renderer
 		//
+		var visitPath = GetOption( args, "--visit-park", "a local .tpwpark file" );
+		var visit = visitPath == null ? null : ParkSharing.PrepareVisit( OpenTPW.Online.Packages.ParkPackage.Load( visitPath ) );
+		if ( visit != null )
+			Log.Trace( ParkSharing.Describe( visit ) );
+		var onlineFolders = OnlineFolders.FromEnvironment( GetOption( args, "--online-dir", "an online folder outside the original installation" ) );
 		Render = DisplayStartup.CreateRenderer( args );
 		if ( movieName != null )
 		{
@@ -159,11 +164,11 @@ internal static class Game
 			throw new ArgumentException( "--load-original-level requires a level name such as 'jungle'." );
 		// Default: the original-style front end (docs/UI.md). --load-original-level, --sandbox and a
 		// plain --smoke-test bypass it as before; --front-end --smoke-test tests the front end.
-		using var flow = new GameFlow();
+		using var flow = new GameFlow { OnlineFolders = onlineFolders };
 		Render.OnUpdate += flow.Update;
 		Render.OnRender += flow.Render;
 		var smoke = args.Contains( "--smoke-test" );
-		if ( originalLevelIndex < 0 && !args.Contains( "--advisor-say" ) && !args.Contains( "--sandbox" ) && (!smoke || args.Contains( "--front-end" )) )
+		if ( visit == null && originalLevelIndex < 0 && !args.Contains( "--advisor-say" ) && !args.Contains( "--sandbox" ) && (!smoke || args.Contains( "--front-end" )) )
 		{
 			flow.ShowFrontEnd();
 			if ( smoke )
@@ -177,7 +182,9 @@ internal static class Game
 				Render.Run();
 			return;
 		}
-		var level = originalLevelIndex >= 0
+		var level = visit != null
+			? flow.StartLevel( visit.Level, original: !visit.IsSandbox, developerPanels: true, visit: visit )
+			: originalLevelIndex >= 0
 			? flow.StartLevel( args[originalLevelIndex + 1], original: true, developerPanels: true )
 			: flow.StartLevel( "jungle", original: false, developerPanels: true );
 

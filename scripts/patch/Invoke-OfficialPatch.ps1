@@ -85,7 +85,7 @@ try {
         if (!$process.WaitForExit(180000)) { $process.Kill($true); throw 'Patch engine exceeded timeout.' }
         $process.WaitForExit()
         $diagnostic = $stdout.GetAwaiter().GetResult()
-        $summary = [regex]::Match($diagnostic, 'engineResult=[0-9]+; diagnostic=(True|False); unsupportedPrompt=(True|False)').Value
+        $summary = [regex]::Match($diagnostic, 'engineResult=[0-9]+; diagnostic=(True|False); unsupportedPrompt=(True|False); callbacks=[0-9]+:[0-9]+(?:,[0-9]+:[0-9]+)*; firstUnsupported=[0-9]+').Value
         $report.stages += @{ patch = $relative; exitCode = $process.ExitCode; engine = $summary }
         $null = $stderr.GetAwaiter().GetResult()
         if ($process.ExitCode -ne 0 -or !$summary) { throw 'Official patch engine rejected input.' }

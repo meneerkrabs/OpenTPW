@@ -68,3 +68,26 @@ are uploaded in plaintext. Credentials are removed from the patch helper's child
 environment. Input/output plaintext is removed after the script; GitHub destroys
 the ephemeral runner after the job. Disable the download endpoint and remove
 transfer secrets after retrieving the result.
+
+## Native callback diagnosis
+
+The first Windows run (37946517829) stopped before patching with native result
+32769 and an unsupported callback. The initial helper incorrectly treated
+callback 12 as interactive. At engine RVA `0x7dbf` it calls callback 12 with an
+empty string, then compares the returned string to `ANSI` at RVA `0x273f4` to
+select file API encoding. The helper now answers with the constant `ANSI`.
+This never accepts an installation directory, password, or missing-file request.
+
+Callbacks 23..26 are notifications absent from the older wrapper's explicit
+jump table: the wrapper's default branch continues them, and the engine call
+sites ignore their return values beyond the generic null/abort check. Callback
+23 supplies a zero-initialized state pointer (`0x8d15`); 24 reports bookkeeping
+around accumulated file sizes (`0x4da9`); 25 has a null payload (`0x97a4`/`0x9975`);
+26 supplies a status pointer (`0x7fc9`). The helper continues these IDs without
+reading or modifying payloads. IDs 13 and 15..20 still abort; unknown IDs still
+abort. Diagnostic IDs 2..4 still reject success.
+
+Metadata records only numeric callback ID/count pairs and the first unsupported
+ID. Its sanitizer accepts the fixed numeric/status output format, never the
+native callback strings or data. Actual patch success remains unverified until
+all three native stages and file/output checks pass.

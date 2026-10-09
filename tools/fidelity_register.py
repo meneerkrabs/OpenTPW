@@ -21,7 +21,7 @@ ORIGINAL_SCOPE = "Original-fidelity area (scope unadjudicated)"
 ID = re.compile(r"[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*-\d{3}\Z")
 TEMPLATE = re.compile(r"[A-Z]+-NNN\Z")
 MARKER = re.compile(r"\[(APPROX|EXT|DATA|BIN)\b")
-# Executables a BIN label may cite (docs/COMPLETION-PLAN.md, "Herkomst van spelregels").
+# Executables a BIN label may cite (docs/COMPLETION-PLAN.md, "Provenance of game rules").
 BINARIES = ("STP-PPC", "TPI-EXE")
 BIN_LABEL = re.compile(r"(%s):\S.*\Z" % "|".join(BINARIES))
 COMMENT = re.compile(r"^\s*//+\s?(.*)$")

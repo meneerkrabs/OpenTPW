@@ -6,8 +6,8 @@ of the 242 functions that look up controls (`0x1017F770`) or UITEXT strings
 (`0x10138504`) in local Ghidra output, and described screens, controls and rules in their
 own words. No decompiled code is included; Ghidra local-variable names were replaced.
 
-**Status: leads, not evidence.** Under the project's rule (COMPLETION-PLAN.md, "Herkomst
-van spelregels") a rule counts as original behaviour only after it is traced and reviewed.
+**Status: leads, not evidence.** Under the project's rule (COMPLETION-PLAN.md, "Provenance of
+game rules") a rule counts as original behaviour only after it is traced and reviewed.
 Every row below was checked mechanically against the decompiled functions it cites:
 
 - `id ✓`/`id ✗`: the control id occurs in the cited functions;

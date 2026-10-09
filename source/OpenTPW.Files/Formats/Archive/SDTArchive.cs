@@ -10,8 +10,8 @@ public class SdtArchive : IArchive
 
 	/// <summary>Maximum entry count accepted from the header (the largest shipped bank holds far fewer).</summary>
 	public const int MaximumEntryCount = 65536;
-	/// <summary>Smallest entry header: the two sizes and the 16-byte name (shipped headers are 40 bytes).</summary>
-	public const int MinimumEntryHeaderBytes = 24;
+	/// <summary>Smallest entry header: the fixed 40-byte layout (every shipped header is exactly 40 bytes).</summary>
+	public const int MinimumEntryHeaderBytes = 40;
 
 	/// <summary>
 	/// Entries that were skipped because their offset, header or data size points outside the bank;
@@ -37,6 +37,7 @@ public class SdtArchive : IArchive
 
 	public void Dispose()
 	{
+		mp2Reader.Dispose();
 		memoryStream.Dispose();
 	}
 
@@ -50,7 +51,7 @@ public class SdtArchive : IArchive
 		tempStreamReader.BaseStream.Read( buffer, 0, fileLength );
 		tempStreamReader.Close();
 		memoryStream = new ExpandedMemoryStream( buffer );
-		mp2Reader = new SoundFile( new MemoryStream(buffer) );
+		mp2Reader = new SoundFile( buffer );
 
 		ReadArchive();
 	}
@@ -65,16 +66,16 @@ public class SdtArchive : IArchive
 			#For each file
 				4 bytes: File offset
 			#For each file (at offset)
-				4 bytes: Header size
-				4 bytes: Data size
-				16 bytes: File name (usually null terminated)
-				4 bytes: Sample rate
-				4 bytes: Resolution
-				4 bytes: Sound type
+				4 bytes: Header size (40)
+				4 bytes: Data size (MPEG frames plus one trailing zero byte)
+				16 bytes: File name (NUL padded; stored as-is, see SoundFile.GetFile)
+				2 bytes: Sample rate (UInt16)
+				1 byte: Bits per sample (16)
+				1 byte: Sound type (36 mono, 37 stereo)
 					*See enum above (also: https://github.com/ufdada/dk2-tools/blob/6b4e49b607bbb7e0aa843856e584f6dd1365e7fc/Formats/Sound/sdt_struct.bt)
-				4 bytes: Unknown
-				4 bytes: Samples
-				4 bytes: Unknown
+				4 bytes: Unknown (0)
+				4 bytes: Raw value (not proven to be a sample count)
+				4 bytes: Unknown (0)
 				n bytes: File data
 		*/
 
@@ -135,7 +136,8 @@ public class SdtArchive : IArchive
 
 	public ArchiveFile GetFile( string name )
 	{
-		int index = soundFiles.FindIndex( x => x.Name.StartsWith( name, StringComparison.OrdinalIgnoreCase ) );
+		// Exact match on the stored (truncated) name: a prefix such as "x.mp" must not select "x.mp2".
+		int index = soundFiles.FindIndex( x => string.Equals( x.Name, name, StringComparison.OrdinalIgnoreCase ) );
 		if ( index < 0 )
 			throw new FileNotFoundException( $"'{name}' is not in this SDT bank{(SkippedEntries.Count > 0 ? $" ({SkippedEntries.Count} damaged entries were skipped)" : "")}.", name );
 		return soundFiles[index];

@@ -1,481 +1,517 @@
-# Uitvoeringsstatus — 9 oktober 2026
+# Execution status — October 9, 2026
 
-Dit is een ontwikkelprototype, niet de complete offline game. Het volledige
-plan en de eindacceptatie blijven ongewijzigd. Gebruiker heeft publicatie van plan,
-voortgang en geverifieerde code naar de fork goedgekeurd. Git-history registreert
-de gepubliceerde snapshots; originele assets, native binaries, captures en lokale
-agent-runtimebestanden blijven buiten die publicatie.
+This is a development prototype, not the complete offline game. The full plan
+and final acceptance remain unchanged. The user approved publishing the plan,
+progress, and verified code to the fork. Git history records the published
+snapshots; original assets, native binaries, captures, and local agent runtime
+files remain outside that publication.
 
-## Geïntegreerde controle na hervatting
+## Integrated check after resumption
 
-Advisor/compat, frontend, rides en online zijn samengevoegd met economie,
-bezoekers en displayinstellingen. Dit kwalificeert een ontwikkelpreview; originele
-runtime-fidelity en de complete offline scope blijven open.
+The advisor/compat, front-end, rides, and online work has been merged with
+economy, visitors, and display settings. This qualifies as a development
+preview; original runtime fidelity and the complete offline scope remain open.
 
-- Volledige macOS-arm64-suite op de catalogus/online/shader-integratie: **793
-  geslaagd, 0 overgeslagen, 0 mislukt**, inclusief originele data, zes talen,
-  bonuscontent, MTR-fixtures en native shadercontroles; 10m46s.
-- Daarna is de UI-schaal-fit gecorrigeerd. Op de bijgewerkte code: **51 gerichte
-  UI/online-command-tests geslaagd, 0 overgeslagen**, Release-solution-build met
-  0 fouten. Bestaande nullable/compiler- en dependencywaarschuwingen blijven.
-- Eigen Metal-eindcontrole: Nederlands, 1280×720, Nearest 50%, gevraagde UI-schaal
-  2 met zichtbaar uitgelegde fit naar 1. **222 frames**: lobby, opties en glyphs,
-  twee verschillende catalogusobjecten elk eenmaal betaald, verkoop, overlappende
-  bouw geweigerd, terug naar lobby, opnieuw laden en alleen-lezen bezoek.
-- ShaderCompiler bewaart gecompileerde code/reflectie; native shaderobjecten zijn
-  per renderer in eigendom. De gereproduceerde Metal-crash bij levelherladen is
-  daarmee opgelost. Archief-rootlisting en hoofdletterongevoelige SDT-members
-  zijn met regressies gerepareerd. Level/GameFlow beheert level- en online-lifetime.
-- Eigen CLI export/import gevolgd door native bezoek: **8 frames**, 14 onveranderde
-  objecten, geen parkeconomie; bouwen/verwijderen/opslaan/laden/export geweigerd.
-  De volledige themacatalogus staat in het HUD; Level bezit aankoop/verkoop zodat
-  de UI niet nogmaals geld boekt. Gewijzigde gedeelde layouts zijn nog niet renderbaar.
-- [Patch 2](PATCH-2.md) is op een Windows GitHub-runner toegepast: drie native
-  patchstappen geslaagd, 43 installatieverschillen gecontroleerd. De gamedata telt
-  28 verschillen en 24 gewijzigde gedecomprimeerde WAD-members. Alleen hashes,
-  eigen beschrijvingen en analysetools zijn gepubliceerd. Tijdelijke overdracht,
-  secrets en versleuteld artifact zijn verwijderd; referentiedata staat buiten git.
-- [Mac-evidence](reverse/FINDINGS.md): 16 PEF-containers gelezen; de conditionele
-  timerfallback en de millisecondeconversie zijn met gepinde witnesses vastgelegd.
-  Dat bewijst geen animatie-, kalender- of advisorfrequentie. 16 Python-evidencetests
-  en 7 fidelity-registertests slagen; de patchvergelijker heeft synthetische tests.
-- De aangeleverde [Windows-handleiding](REFERENCE-MANUAL.md) bewijst één sleutel
-  per drie verdiende golden tickets. Die ratio is gecorrigeerd met grens-, aankoop-
-  en save-regressies; startaantal/toegangsverbruik blijven als onzekerheid gemarkeerd.
-  Eigen gerichte economiecheck: 28 geslaagd, 0 overgeslagen.
-- README onderscheidt decoderstatus van gameplay-fidelity: BF4 is geïmplementeerd
-  voor 33 fonts in elk van zes geteste talen. Alle resterende formatbeperkingen
-  staan per tabelrij vermeld; filmafhandeling en previewstatus zijn bijgewerkt.
-- Negen onafhankelijke worktrees zijn gestart voor de PowerPC-vervolganalyse en
-  TPI-vergelijking (zes native en drie app-subagents). Hun nieuwe source-/renderer-
-  wijzigingen worden afzonderlijk gereviewd en getest vóór samenvoegen.
-- [Fidelity-register](FIDELITY-REGISTER.md): **135 originele fidelity-items** plus
-  **6 online-extensieonzekerheden** blijven open. CI controleert expliciete tags en
-  registerconsistentie; vindt geen ongemarkeerde logica en bewijst geen pariteit.
-  Windows/Linux GPU/input/audio, originele captures, coastercontrollers, ontbrekende
-  script-effecten en verdere scenarioacceptatie blijven releaseblockers.
+- Full macOS arm64 suite on the catalog/online/shader integration: **793
+  passed, 0 skipped, 0 failed**, including original data, six languages, bonus
+  content, MTR fixtures, and native shader checks; 10m46s.
+- The UI scale fit was then corrected. On the updated code: **51 targeted
+  UI/online command tests passed, 0 skipped**, Release solution build with
+  0 errors. Existing nullable, compiler, and dependency warnings remain.
+- Own Metal final check: Dutch, 1280×720, Nearest 50%, requested UI scale 2
+  with a visibly explained fit to 1. **222 frames**: lobby, options and glyphs,
+  two different catalog objects each paid for once, sale, overlapping build
+  refused, back to lobby, reload, and read-only visit.
+- ShaderCompiler keeps compiled code and reflection; native shader objects are
+  owned per renderer. The reproduced Metal crash on level reload is thereby
+  resolved. Archive root listing and case-insensitive SDT members were repaired,
+  with regression tests. Level/GameFlow manages level and online lifetime.
+- Own CLI export/import followed by a native visit: **8 frames**, 14 unchanged
+  objects, no park economy; build/delete/save/load/export refused. The full
+  theme catalog is shown in the HUD; Level owns purchase/sale so the UI does not
+  charge money again. Modified shared layouts cannot yet be rendered.
+- [Patch 2](PATCH-2.md) was applied on a Windows GitHub runner: three native
+  patch steps passed, 43 installation differences checked. The game data has
+  28 differences and 24 modified decompressed WAD members. Only hashes, own
+  descriptions, and analysis tools were published. Temporary transfer, secrets,
+  and the encrypted artifact were removed; reference data is kept outside git.
+- [Mac evidence](reverse/FINDINGS.md): 16 PEF containers read; the conditional
+  timer fallback and the millisecond conversion are recorded with pinned
+  witnesses. That does not prove an animation, calendar, or advisor frequency.
+  16 Python evidence tests and 7 fidelity register tests pass; the patch
+  comparer has synthetic tests.
+- The supplied [Windows manual](REFERENCE-MANUAL.md) establishes one key per
+  three earned golden tickets. That ratio has been corrected with boundary,
+  purchase, and save regression tests; start count and access usage remain
+  marked as uncertain. Own targeted economy check: 28 passed, 0 skipped.
+- The README distinguishes decoder status from gameplay fidelity: BF4 is
+  implemented for 33 fonts in each of six tested languages. All remaining format
+  limitations are listed per table row; movie handling and preview status have
+  been updated.
+- Nine independent worktrees were started for the PowerPC follow-up analysis and
+  TPI comparison (six native and three app subagents). Their new source and
+  renderer changes will be reviewed and tested separately before merging.
+- [Fidelity register](FIDELITY-REGISTER.md): **135 original fidelity items** plus
+  **6 online extension uncertainties** remain open. CI checks explicit tags and
+  register consistency; it finds no unmarked logic and proves no parity.
+  Windows/Linux GPU/input/audio, original captures, coaster controllers, missing
+  script effects, and further scenario acceptance remain release blockers.
 
-Lokale logs: `/tmp/opentpw-root-final-tests.log`, `-final-ui-tests.log`,
+Local logs: `/tmp/opentpw-root-final-tests.log`, `-final-ui-tests.log`,
 `-final-release-build.log`, `-final-frontend-smoke.log`, `-final-visit.log`.
-De overige secties hieronder bewaren eerdere slices en hun toenmalige controles.
+The other sections below keep earlier slices and the checks they had at the time.
 
-## Geleverd en gecontroleerd
+## Delivered and verified
 
-- Native macOS arm64: SDL2-windowing, Metal-rendering, ImGui-initialisatie en
-  oorspronkelijke Jungle-grondtextuur en Totem-model. Geen Rosetta in deze test.
-- Plaatsen, starten, procedurele beweging, stoppen/resetten, verwijderen en opnieuw
-  plaatsen; geïsoleerd JSON-opslaan/laden van een lopende attractie en leeg park.
-- Reproduceerbare native smoketest van 150 frames met GPU-readback. Controleert
-  niet-zwarte beelden en textuurdetail; capture zonder UI, geen originele fidelitytest.
-- Portable bestandspaden en assettests; oorspronkelijke bestanden blijven buiten git.
-- SPIR-V eenmaal compileren met behouden resource-namen; dezelfde bytecode voedt
-  backendshaders en reflectie. MSL/HLSL/GLSL-bindings hebben native regressietests.
-- Eigen materiaalpipelines gebruiken Improved resource binding. Legacy Metal
-  telde vertexbuffers bij uniformbindings op, terwijl SPIRV-Cross buffer 0 verwachtte.
-  ImGui houdt zijn bestaande bindingcontract; culling blijft ongewijzigd.
-- Mist gebruikt view-space afstand in plaats van geprojecteerde coördinaten.
-  De gekozen mistafstand is een sandboxinstelling, geen gereconstrueerde gamewaarde.
-- Engine-content wordt meegenomen in build/publish en shaderpaden zijn relatief
-  aan de executable. Native smoketest slaagt gestart vanuit `/tmp`, buiten de repo.
-- Framework-dependent pakketten voor `osx-arm64`, `win-x64` en `linux-x64` bouwen.
-  Dit zijn lokale ontwikkelpakketten, geen gekwalificeerde releases.
+- Native macOS arm64: SDL2 windowing, Metal rendering, ImGui initialization, and
+  the original Jungle ground texture and Totem model. No Rosetta in this test.
+- Placing, starting, procedural motion, stopping/resetting, removing, and placing
+  again; isolated JSON save/load of a running attraction and an empty park.
+- Reproducible native smoke test of 150 frames with GPU readback. Checks non-black
+  images and texture detail; capture without UI, not an original fidelity test.
+- Portable file paths and asset tests; original files remain outside git.
+- SPIR-V compiled once with resource names preserved; the same bytecode feeds
+  backend shaders and reflection. MSL/HLSL/GLSL bindings have native regression
+  tests.
+- Own material pipelines use Improved resource binding. Legacy Metal counted
+  vertex buffers into uniform bindings, while SPIRV-Cross expected buffer 0.
+  ImGui keeps its existing binding contract; culling is unchanged.
+- Fog uses view-space distance instead of projected coordinates. The chosen fog
+  distance is a sandbox setting, not a reconstructed game value.
+- Engine content is included in build/publish, and shader paths are relative to
+  the executable. The native smoke test passes when started from `/tmp`, outside
+  the repo.
+- Framework-dependent packages build for `osx-arm64`, `win-x64`, and
+  `linux-x64`. These are local development packages, not qualified releases.
 
-## Simulatiefundament: beperkte M2-slice
+## Simulation foundation: limited M2 slice
 
-De prototype-attractie draait op een gekozen 60 Hz fixed-step clock, los van
-renderframes. CPU-tests vergelijken 30/60/144/240 fps met dezelfde 360 ticks en
-dezelfde eindfase/hoogte. Framevertraging veroorzaakt maximaal 16 inhaalticks;
-extra tijd wordt expliciet als `DroppedSeconds` geteld, niet oneindig ingehaald.
-Renderer-timing gebruikt een monotone stopwatch in plaats van de systeemklok.
+The prototype attraction runs on a chosen 60 Hz fixed-step clock, separate from
+render frames. CPU tests compare 30/60/144/240 fps with the same 360 ticks and
+the same final phase and height. Frame delay causes at most 16 catch-up ticks;
+extra time is explicitly counted as `DroppedSeconds` and is not caught up
+without limit. Renderer timing uses a monotonic stopwatch instead of the system
+clock.
 
-Dit bewijst alleen consistentie van onze prototypebeweging. Het bewijst niet de
-oorspronkelijke tickrate, RSE-uitvoering of bit-identieke volledige simulatie op
-alle platforms. RNG, eventreplay en volledige tick/RNG-save-state ontbreken nog.
-Het huidige sandbox-saveformaat start fase en clock opnieuw bij laden.
+This only proves consistency of our prototype motion. It does not prove the
+original tick rate, RSE execution, or bit-identical full simulation on all
+platforms. RNG, event replay, and full tick/RNG save state are still missing.
+The current sandbox save format restarts phase and clock when loading.
 
-## Verse verificatie
+## Fresh verification
 
-- Hele native assetsuite inclusief shader-, savecontainer- en fontregressies: **185 passed, 0 skipped,
-  0 failed**, .NET SDK 8.0.425, `osx-arm64`.
-- Zonder originele assets/native shader-opt-in: **165 passed, 20 skipped, 0 failed**.
-- Savecontainer-slice: **31 passed**, inclusief de gehashte originele TPWI-fixture.
-- Geïsoleerde clocktests: **12 passed**.
-- Release-solutionbuild: **0 errors**, bestaande warnings blijven aanwezig.
-- Native Metal-smoketest: exitcode 0, 150 frames, originele assets, save/load
-  in een tijdelijke directory; gebruikers-sandboxsave blijft onaangeraakt.
-- Drie RID-publishbuilds geslaagd; opnieuw uitvoeren na iedere bronwijziging.
-- Opnieuw gepubliceerde Mac-build gestart vanuit `/tmp`: read-only saveinspectie
-  en native Metal-smoketest beide exitcode 0. Ongeldig/truncated savebestand en
-  ontbrekend inspectieargument geven exitcode 1; geen oorspronkelijke bestanden gewijzigd.
-- `git diff --check` hoort schoon te blijven.
+- Whole native asset suite, including shader, save container, and font
+  regressions: **185 passed, 0 skipped, 0 failed**, .NET SDK 8.0.425, `osx-arm64`.
+- Without original assets or native shader opt-in: **165 passed, 20 skipped,
+  0 failed**.
+- Save container slice: **31 passed**, including the hashed original TPWI fixture.
+- Isolated clock tests: **12 passed**.
+- Release solution build: **0 errors**; existing warnings remain.
+- Native Metal smoke test: exit code 0, 150 frames, original assets, save/load in
+  a temporary directory; the user's sandbox save remains untouched.
+- Three RID publish builds passed; rerun after every source change.
+- Republished Mac build started from `/tmp`: read-only save inspection and native
+  Metal smoke test both exit code 0. An invalid or truncated save file and a
+  missing inspection argument give exit code 1; no original files changed.
+- `git diff --check` should remain clean.
 
-Reproductie staat in RUNNING.md. Lokale logs staan onder `/tmp/opentpw-*.log`;
-GPU-captures en publishoutput onder het genegeerde `artifacts/`. Captures bevatten
-originele assets en worden niet als repositoryfixtures verspreid.
+Reproduction steps are in RUNNING.md. Local logs are under `/tmp/opentpw-*.log`;
+GPU captures and publish output are under the ignored `artifacts/`. Captures
+contain original assets and are not distributed as repository fixtures.
 
-## Nog open / geen voltooiingsclaim
+## Still open / no completion claim
 
-- M0: volledige native/transitieve dependency- en distributielicentie-inventaris,
-  parsergrenzen, editie-identificatie en alle benodigde assetfixtures.
-- M1: menselijke/automatische UI-inputkwalificatie, camera/zoom/focus en volledige
-  lifecycle/resourcecontrole. Offscreen-captures tonen de knoppen niet.
-- M2–M6: oorspronkelijke map/save-import, padennetwerk, bezoekers, queues,
-  economie, personeel, alle rides/coasters en RSE-opcodes, werelden/scenario's,
-  progression, audio/video, localization en oorspronkelijke gedragsreferenties.
-- M7: daadwerkelijk uitvoeren op Windows/Linux, packaging/licenties,
-  lange sessies, volledig native dependencybewijs en ondersteund release-runtimebeleid.
-- Bestaande NuGet-auditwaarschuwingen voor ImageSharp en bestaande codewarnings
-  zijn niet weggepoetst. Geen dependency-upgrades zonder expliciete autorisatie.
-- Subagentvervolg werd geblokkeerd door een ingetrokken refresh-token. Werk is
-  lokaal voortgezet; onafhankelijke architect-/review-signoff is niet geclaimd.
+- M0: complete native and transitive dependency and distribution license
+  inventory, parser boundaries, edition identification, and all required asset
+  fixtures.
+- M1: human and automatic UI input qualification, camera/zoom/focus, and full
+  lifecycle and resource check. Offscreen captures do not show the buttons.
+- M2–M6: original map/save import, path network, visitors, queues, economy,
+  staff, all rides and coasters and RSE opcodes, worlds/scenarios, progression,
+  audio/video, localization, and original behavior references.
+- M7: actually running on Windows/Linux, packaging and licenses, long sessions,
+  complete native dependency evidence, and a supported release runtime policy.
+- Existing NuGet audit warnings for ImageSharp and existing code warnings have
+  not been cleaned up. No dependency upgrades without explicit authorization.
+- Subagent follow-up was blocked by a revoked refresh token. Work continued
+  locally; independent architect or review sign-off is not claimed.
 
-Eerstvolgende inhoudelijke gate: resterende MAP/TPWS-velden (zie TPWS-PAYLOAD.md) en een
-legaal uitvoerbare originele offline gedragsreferentie onderzoeken. Geen
-copy-protection-omzeiling en geen fictieve simulatieregels als vervanging voor bewijs.
+Next substantive gate: investigate the remaining MAP/TPWS fields (see
+TPWS-PAYLOAD.md) and a legally runnable original offline behavior reference. No
+copy-protection bypass and no fictitious simulation rules as a substitute for
+evidence.
 
-## Ontwerpuitbreiding: optionele upscaling
+## Design extension: optional upscaling
 
-Op gebruikersverzoek toegevoegd aan M6, PRD en testspecificatie op 9 oktober 2026:
-`docs/UPSCALING-DESIGN.md`. Native/100% blijft standaard; portable Linear/Nearest
-met instelbare wereldresolutie eerst, UI op outputresolutie. Simulatie/save/replay
-blijven onaangeraakt. Vendor-/temporal-upscaling en dynamische resolutie pas na
-afzonderlijk capability-, licentie-, input- en performancebewijs.
+Added at the user's request to M6, the PRD, and the test specification on
+October 9, 2026: `docs/UPSCALING-DESIGN.md`. Native/100% remains the default;
+portable Linear/Nearest with an adjustable world resolution comes first, with
+the UI at output resolution. Simulation, save, and replay remain untouched.
+Vendor and temporal upscaling and dynamic resolution only come after separate
+capability, license, input, and performance evidence.
 
-Save-/maponderzoek blijft de eerstvolgende gameplay-gate; upscaling verplaatst
-dit kritieke pad niet.
+Save and map research remains the next gameplay gate; upscaling does not move
+this critical path.
 
-Implementatie M6-U1 + hoge resoluties (9 oktober 2026, worktree `display`):
-willekeurige venstergroottes (`--resolution`), borderless/exclusive fullscreen
-(`--fullscreen`, `--fullscreen-exclusive`, Alt+Enter/F11), HiDPI-drawables, Native/
-Linear/Nearest met presets 77/67/59/50 en custom 50–100 (`--upscale`, `--render-scale`),
-geheeltallige BF4-UI-schaal, gebruikersinstellingen in `display.json`, ImGui-sectie
-"Display" en de UI-agnostische `OpenTPW.IDisplaySettings`-API (met bevestigen/terugzetten).
-Alleen de 3D-wereld schaalt; BF4-tekst, ImGui en films renderen op outputgrootte.
-Bewijs (alleen macOS arm64/Metal, 1x-scherm 1920×1080): CPU-tests voor grootte,
-afronding, fallbacks, DPI, picking en configuratie; native smoke voor sandbox en
-`--load-original-level jungle` op 1280×720, 1920×1080 borderless (67%), 2560×1440
-output via `OPENTPW_TEST_PIXEL_SCALE=2` met 50% Linear (wereld 1280×720, UI-schaal 2,
-BF4-tekst exact, picking correct) en runtime schaal-/venster-/fullscreenwissels.
-Niet bewezen: echte Retina, exclusive fullscreen, Windows/Linux-GPU, performance.
-Zie `docs/UPSCALING-DESIGN.md`.
+Implementation M6-U1 + high resolutions (October 9, 2026, worktree `display`):
+arbitrary window sizes (`--resolution`), borderless/exclusive fullscreen
+(`--fullscreen`, `--fullscreen-exclusive`, Alt+Enter/F11), HiDPI drawables,
+Native/Linear/Nearest with presets 77/67/59/50 and custom 50–100 (`--upscale`,
+`--render-scale`), integer BF4 UI scale, user settings in `display.json`, the
+ImGui section "Display", and the UI-agnostic `OpenTPW.IDisplaySettings` API
+(with confirm/revert). Only the 3D world scales; BF4 text, ImGui, and movies
+render at output size.
 
-## Geleverde savecontainer-slice
+Evidence (macOS arm64/Metal only, 1x display 1920×1080): CPU tests for size,
+rounding, fallbacks, DPI, picking, and configuration; native smoke for the
+sandbox and `--load-original-level jungle` at 1280×720, 1920×1080 borderless
+(67%), and 2560×1440 output via `OPENTPW_TEST_PIXEL_SCALE=2` with 50% Linear
+(world 1280×720, UI scale 2, BF4 text exact, picking correct), plus runtime
+scale, window, and fullscreen switches.
+Not proven: real Retina, exclusive fullscreen, Windows/Linux GPU, performance.
+See `docs/UPSCALING-DESIGN.md`.
 
-`SaveReader` ondersteunt nu het geobserveerde offline version-133 TPWI-envelope
-naast de oude synthetische 500-header. Beperkte binaire intake en zlib-decoding
-vervangen one-shot reads en onbegrensde decompressie; caller-owned streams blijven
-open en herhaalde reads werken. Header-/chunk-/decoded-lengtes, checksum,
-streamcompletion en trailing data worden gecontroleerd, met harde 64 MiB-limieten.
+## Delivered save container slice
 
-`--inspect-save` geeft metadata en hashes zonder GPU of schrijftoegang tot assets.
-Het echte Jungle Easymode-bestand decodeert naar 1.608.309 bytes met de verwachte
-SHA-256; corpus en offsets staan in `REFERENCE-CORPUS.md` en `SAVE-CONTAINER.md`.
-Geen parkpayloadschema, speelbare importer of bewijs van alle originele TPWS-layouts.
-`MapFile` blijft onvolledig en `scape.omp`-semantiek is niet geraden.
+`SaveReader` now supports the observed offline version-133 TPWI envelope
+alongside the old synthetic 500 header. Bounded binary intake and zlib decoding
+replace one-shot reads and unbounded decompression; caller-owned streams stay
+open and repeated reads work. Header, chunk, and decoded lengths, checksum,
+stream completion, and trailing data are checked, with hard 64 MiB limits.
 
-Vervolgsubagents konden geen review leveren (model/account-beperking en een
-geblokkeerde reviewoproep). Tests en lokale controles zijn uitgevoerd; onafhankelijke
-review-signoff en voltooiing van de volledige game zijn niet geclaimd.
+`--inspect-save` gives metadata and hashes without GPU or write access to
+assets. The real Jungle Easymode file decodes to 1,608,309 bytes with the
+expected SHA-256; corpus and offsets are in `REFERENCE-CORPUS.md` and
+`SAVE-CONTAINER.md`. There is no park payload schema, playable importer, or
+evidence for all original TPWS layouts. `MapFile` remains incomplete, and
+`scape.omp` semantics have not been guessed.
 
-## Focus op ontbrekende/gedeeltelijke formaten
+Follow-up subagents could not deliver a review (a model/account restriction and
+a blocked review call). Tests and local checks were run; independent review
+sign-off and completion of the full game are not claimed.
 
-Op gebruikersverzoek krijgt de ❌/⚠️-lijst voorrang. `FORMAT-BACKLOG.md` scheidt
-concrete fixtures, decoderwerk en integratie/fidelity; bestaande groene tekens
-worden niet als volledige game- of platformkwalificatie geïnterpreteerd.
+## Focus on missing/partial formats
 
-- Nieuwe `FontFile`: begrensde BF4-header/offset-/glyphparser, raw vier-bit,
-  nibble-RLE en monochroom. Alle 33 originele Engelse fonts / 8.217 entries
-  decoderen; drie gehashte fixtures pinnen metrics en onafhankelijk berekende samples.
-- README: BF4 van ❌ naar ⚠️. Nog geen GPU-fontatlas/game-UI of oorspronkelijke
-  visuele vergelijking; geen onterechte complete-fontclaim.
-- `--inspect-font`: read-only CPU-diagnostiek zonder assets te wijzigen of GPU
-  te starten. Gepubliceerde Mac-build vanuit `/tmp`: geldig font exit 0,
-  ontbrekend argument exit 1. Drie RID-pakketten opnieuw gebouwd.
-- BF4-tekst: deterministische glyphatlas (coverage × 17 → alpha), layout met
-  originele advance/offsets/regelhoogte, regelafbreking en `?`-fallback; gepind
-  op GAME8AA/SESHMED en UITEXT/OBJECT_NAMES. Sandboxpaneel tekent "Totem" en
-  ride-labels; Metal-smoketest vergelijkt readback met CPU-composiet (max.
-  verschil 0). Geen origineel UI-scherm/AA-vergelijking; D3D11/Vulkan niet gedraaid.
-- Read-only metadata-inventaris van 312 DWFB-archives: 2.118 MD2-, 308 RSE- en
-  7 MAP-members. Jungle terrain bevat `base.map` en `terrain.map`; dit bewijst
-  nog geen kaartsemantiek/import. Negen TGQ-video's gevonden. Geen standalone
-  MTR/LIPS/TQI-namen in deze locaties; ingebedde/differently named data blijft open.
-- Upstream formaatnotities zijn via de GitHub-docsbron teruggevonden. MTR/LIPS
-  blijven TODO; MAP-notitie gaat over sound maps, niet bewezen terreinrecords.
+At the user's request, the ❌/⚠️ list takes priority. `FORMAT-BACKLOG.md`
+separates concrete fixtures, decoder work, and integration/fidelity; existing
+green marks are not interpreted as full game or platform qualification.
 
-Parallelle formaat-slice (7 formaten, geïsoleerde worktrees, 9 oktober 2026):
+- New `FontFile`: bounded BF4 header/offset/glyph parser, raw four-bit,
+  nibble RLE, and monochrome. All 33 original English fonts / 8,217 entries
+  decode; three hashed fixtures pin metrics and independently computed samples.
+- README: BF4 changed from ❌ to ⚠️. No GPU font atlas, game UI, or original
+  visual comparison yet; no unfounded complete-font claim.
+- `--inspect-font`: read-only CPU diagnostics without changing assets or
+  starting the GPU. Published Mac build from `/tmp`: valid font exit 0, missing
+  argument exit 1. Three RID packages rebuilt.
+- BF4 text: deterministic glyph atlas (coverage × 17 → alpha), layout with
+  original advance/offsets/line height, line wrapping, and `?` fallback; pinned
+  on GAME8AA/SESHMED and UITEXT/OBJECT_NAMES. The sandbox panel draws "Totem" and
+  ride labels; the Metal smoke test compares readback with the CPU composite
+  (max. difference 0). No original UI screen or AA comparison; D3D11/Vulkan not
+  run.
+- Read-only metadata inventory of 312 DWFB archives: 2,118 MD2, 308 RSE, and
+  7 MAP members. Jungle terrain contains `base.map` and `terrain.map`; this does
+  not yet prove map semantics or import. Nine TGQ videos found. No standalone
+  MTR/LIPS/TQI names in these locations; embedded or differently named data
+  remains open.
+- Upstream format notes were recovered via the GitHub docs source. MTR/LIPS
+  remain TODO; the MAP note concerns sound maps, not proven terrain records.
 
-- MD2: `ModelFile` herschreven als begrensde lezer; 2.116 van 2.118 corpusmembers
-  parsen (838 geometrie, 1.278 animatiecontainers met opaque payload), 2
-  versie-207.201-bestanden expliciet geweigerd. Ongebruikte stub
-  `OpenTPW.Files/Public/ModelFile.cs` verwijderd.
-- MD2-animatie: positie- (Bézier/lineair), rotatie- (slerp met easingcurves) en
-  schaaltracks gedecodeerd en tegen alle 1.278 animaties gevalideerd; node-matrices
-  zijn parent-relatief. De sandbox-Totem speelt `totemm1.MD2` af wanneer `Totem.RSE`
-  ANIM_Main triggert (30 ticks/s is een eigen keuze); de smoketest eist veranderende nodes en pixels. Vertexanimatie en
-  andere recordsoorten blijven ongedecodeerd ([MD2-MODELS.md](MD2-MODELS.md)).
-- MAP: TP2M-terreinkaarten (128×128 cellen, 5 gepinde fixtures); 64
-  sound-catalog-`.map`-bestanden onderscheiden en geweigerd. Celbetekenis onbekend.
-- RSE: `RideScriptFile` + statische analyse; alle 308 scripts parsen, 84 gebruikte
-  opcodes, geen onbekende. `RideVM` voert ze nu uit (zie [RSE-VM.md](RSE-VM.md)):
-  33 opcodes volledig in de VM, 51 via een hook die "unimplemented effect"
-  registreert (bezoekers, animatie, geluid, objecten, ritcontrollers, parkklok).
-  Alle 263 startbare scripts + 44 kinderen draaien 60 s zonder fouten; de
-  sandbox-Totem draait `Totem.RSE`, dat bepaalt wanneer de originele
-  `totemm1.MD2`-animatie start. Slicing, milliseconden en CRIT_LOCK zijn afgeleid, niet getraced.
-- Bezoekers (benaderd, [GUESTS.md](GUESTS.md)): kinderen zijn originele sprites
-  (`esprites.wad`, ESP/FPC/TPC gedecodeerd, 8 sets × 175 frames, 5 richtingen +
-  spiegeling). Fixed-tick, geseede simulatie: aankomst via bushalte en kassa
-  (`FixedItemInfo`), entree, padzoeken met flow fields over de save-verbindingsbits,
-  behoeften, keuze met de `.sam` DecisionVar-gewichten, wachtrij en de
-  LETMEON/LETMEOFF-hostprotocol + bezoekersopcodes via `RideVisitorBridge`; de
-  Totem vult zich met echte bezoekers (start ≈3,3 s i.p.v. 11,3 s) en laat ze via
-  HOP/WALKOFF/WALKGET weer uitstappen. Snelheden, behoeftetempo's, aankomsteenheid
-  en scoreformule zijn eigen benaderingen. 600 bezoekers ≈0,06 ms per tick.
-- TPWS/TPWI: 17 unieke sectiemarkers in de enige fixture gelokaliseerd; inhoud opaque.
-  Er staat geen ander TPWI/TPWS-bestand op de ISO.
-- LIPS: gevonden als `.LIP` (639 in `lips.wad` + 4 levelbestanden); strikte lezer,
-  eenheid (waarschijnlijk µs) onbevestigd.
-- MTR: alleen 11 ISO-bestanden (`Meshes/<taal>/*.mtr`); structurele lezer,
-  betekenis en gebruik door de game onbekend. Tests via `OPENTPW_MTR_PATH`.
-- TQI/TGQ: alle negen films; container en EA ADPCM-audio (bit-exact t.o.v. een
-  externe referentie) en TQI-video (integer-IDCT, 56–61 dB, niet bit-exact).
-  Afspelen via `--play-movie <naam>` (SDL2-audio, audioklok, frame drop/hold,
-  GPU, native smoke-test); geen in-game trigger (geen bewijs in de data).
+Parallel format slice (7 formats, isolated worktrees, October 9, 2026):
 
-Verificatie na integratie: native assets + shaders **403 passed, 0 skipped**;
-zonder assets 339 passed, 64 skipped; Release-solution 0 errors; Metal
-smoke-test 150 frames geslaagd. Windows/Linux GPU niet gekwalificeerd.
+- MD2: `ModelFile` rewritten as a bounded reader; 2,116 of 2,118 corpus members
+  parse (838 geometry, 1,278 animation containers with opaque payload), and 2
+  version 207.201 files are explicitly rejected. Unused stub
+  `OpenTPW.Files/Public/ModelFile.cs` removed.
+- MD2 animation: position (Bézier/linear), rotation (slerp with easing curves),
+  and scale tracks decoded and validated against all 1,278 animations; node
+  matrices are parent-relative. The sandbox Totem plays `totemm1.MD2` when
+  `Totem.RSE` triggers ANIM_Main (30 ticks/s is our own choice); the smoke test
+  requires changing nodes and pixels. Vertex animation and other record kinds
+  remain undecoded ([MD2-MODELS.md](MD2-MODELS.md)).
+- MAP: TP2M terrain maps (128×128 cells, 5 pinned fixtures); 64 sound catalog
+  `.map` files distinguished and rejected. Cell meaning unknown.
+- RSE: `RideScriptFile` + static analysis; all 308 scripts parse, 84 opcodes
+  used, none unknown. `RideVM` now executes them (see [RSE-VM.md](RSE-VM.md)):
+  33 opcodes fully in the VM, 51 via a hook that logs "unimplemented effect"
+  (visitors, animation, sound, objects, ride controllers, park clock). All 263
+  startable scripts plus 44 children run for 60 s without errors; the sandbox
+  Totem runs `Totem.RSE`, which determines when the original `totemm1.MD2`
+  animation starts. Slicing, milliseconds, and CRIT_LOCK are inferred, not
+  traced.
+- Visitors (approximated, [GUESTS.md](GUESTS.md)): children are original sprites
+  (`esprites.wad`, ESP/FPC/TPC decoded, 8 sets × 175 frames, 5 directions plus
+  mirroring). Fixed-tick, seeded simulation: arrival via bus stop and ticket
+  booth (`FixedItemInfo`), entry, path finding with flow fields over the save
+  connection bits, needs, choice using the `.sam` DecisionVar weights, queue, and
+  the LETMEON/LETMEOFF host protocol plus visitor opcodes via
+  `RideVisitorBridge`. The Totem fills with real visitors (start ≈3.3 s instead
+  of 11.3 s) and lets them disembark again via HOP/WALKOFF/WALKGET. Speeds, need
+  rates, arrival unit, and score formula are our own approximations. 600 visitors
+  ≈0.06 ms per tick.
+- TPWS/TPWI: 17 unique section markers located in the only fixture; content
+  opaque. No other TPWI/TPWS file is on the ISO.
+- LIPS: found as `.LIP` (639 in `lips.wad` + 4 level files); strict reader,
+  unit (probably µs) unconfirmed.
+- MTR: only 11 ISO files (`Meshes/<taal>/*.mtr`); structural reader, meaning
+  and use by the game unknown. Tests via `OPENTPW_MTR_PATH`.
+- TQI/TGQ: all nine movies; container and EA ADPCM audio (bit-exact against an
+  external reference) and TQI video (integer IDCT, 56–61 dB, not bit-exact).
+  Playback via `--play-movie <naam>` (SDL2 audio, audio clock, frame drop/hold,
+  GPU, native smoke test); no in-game trigger (no evidence in the data).
 
-GitHub CI van snapshot `5f23094`: macOS en Ubuntu build/CPU-tests slagen;
-Windows had één assert-fout door `UnauthorizedAccessException` in plaats van
-`IOException` bij vervangen van een directory. De test onderscheidt nu het
-OS-specifieke exceptiontype; behoud van de directory en opruiming van tijdelijke
-bestanden blijven verplicht. Windows-herverificatie blijft nodig voor deze wijziging;
-CPU-CI is geen GPU-/audio-/volledige native releasekwalificatie.
+Verification after integration: native assets + shaders **403 passed, 0 skipped**;
+without assets 339 passed, 64 skipped; Release solution 0 errors; Metal smoke
+test 150 frames passed. Windows/Linux GPU not qualified.
 
-Terrein/save-slice (9 oktober 2026, worktree `terrain`):
+GitHub CI for snapshot `5f23094`: macOS and Ubuntu build/CPU tests pass. Windows
+had one assert failure because of `UnauthorizedAccessException` instead of
+`IOException` when replacing a directory. The test now distinguishes the
+OS-specific exception type; preserving the directory and cleaning up temporary
+files remain required. Windows re-verification is still needed for this change;
+CPU CI is not GPU, audio, or full native release qualification.
 
-- MAP-assen bewezen: bestandsrij = spel-X, kolom = spel-Y, cel = 10 MD2-eenheden
-  (Standard.sam fixed items, `bridge01`-node, rasterisatie van alle jungle-MD2-driehoeken).
-- `base.MD2` 0x6C-blok gedecodeerd als 96×85-heightfield: hoeken, gaten
-  (= MAP water/entree/vaste looppaden in alle vier thema's) en grondtextuurslots.
-- Vijf MAP-bits getypeerd (`MapCellFlags`); bit 0x04 en headerwaarden blijven opaque.
-- Easymode.TPWI: per-celgrid (16.384 records, MAP-byte identiek aan `base.map`,
-  pad/verbindingen/bezetting) en SYSG-objectrecords (Info.Id → .sam-namen)
-  gedecodeerd; read-only `OriginalParkImport` (78 padcellen, 11 objecten, 3 fixed items).
-  Geld/tijd/gasten niet geïmporteerd (niet verifieerbaar met één fixture).
-- `--load-original-level jungle`: originele terreinmeshes + heightfield, geïmporteerde
-  paden/footprints, bouwregels op bewezen bits.
-- Na rebase op `55b1b93` (RSE-VM, BF4-tekst, TGQ, MD2-animatie): native assets
-  479 passed, 10 skipped (opt-in MTR/native-shadertests); zonder assets 397 passed,
-  92 skipped. Metal smoke-test geslaagd voor sandbox (script, animatie, tekst,
-  save/load) en `--load-original-level jungle`/`fantasy`.
+Terrain/save slice (October 9, 2026, worktree `terrain`):
 
-## Talen (9 oktober 2026)
+- MAP axes proven: file row = game X, column = game Y, cell = 10 MD2 units
+  (Standard.sam fixed items, `bridge01` node, rasterization of all jungle MD2
+  triangles).
+- `base.MD2` 0x6C block decoded as a 96×85 heightfield: corners, holes (= MAP
+  water, entrance, and fixed walkways in all four themes), and ground texture
+  slots.
+- Five MAP bits typed (`MapCellFlags`); bit 0x04 and header values remain opaque.
+- Easymode.TPWI: per-cell grid (16,384 records, MAP byte identical to
+  `base.map`, path/connections/occupancy) and SYSG object records (Info.Id → .sam
+  names) decoded; read-only `OriginalParkImport` (78 path cells, 11 objects,
+  3 fixed items). Money, time, and guests are not imported (not verifiable with
+  one fixture).
+- `--load-original-level jungle`: original terrain meshes and heightfield,
+  imported paths and footprints, build rules on proven bits.
+- After rebase onto `55b1b93` (RSE VM, BF4 text, TGQ, MD2 animation): native
+  assets 479 passed, 10 skipped (opt-in MTR/native shader tests); without assets
+  397 passed, 92 skipped. Metal smoke test passed for sandbox (script, animation,
+  text, save/load) and `--load-original-level jungle`/`fantasy`.
 
-- Alle vijf meegeleverde talen (Engels, Deens, Frans, Duits, Zweeds) decoderen:
-  `.str` gebruikt nu `MBToUni.dat` uit de eigen taalmap (Deens/Zweeds 248 tekens,
-  overige 249). Eerder waren 2.254/2.358 Deense en 2.268/2.358 Zweedse strings
-  verminkt, plus 3 Franse (œ) en 1 Duitse (š). De 24-bit stringlengte wordt volledig
-  gelezen; UITEXT-strings > 255 tekens werden afgekapt (ook Engels). Tekentabel
-  wordt eenmaal opgebouwd in plaats van per teken.
-- Taalkeuze: `--language`, `OPENTPW_LANGUAGE` of instelling `Language`; standaard
-  Engels als geïnstalleerd, anders de geïnstalleerde taal. Andere talen via
-  `--language-data` / `OPENTPW_LANGUAGE_DATA`: een read-only, hoofdletterongevoelige
-  overlay van de uitgepakte CD-mappen `<Lang>/data` en `<Lang>/Meshes`; er wordt
-  niets naar de gamemap of git gekopieerd. Strings en fonts (Localization,
-  sandboxpaneel) volgen de keuze; spraak/LIP/banners zijn alleen resolvebaar,
-  niet afgespeeld/getekend.
-- Tests: synthetische reader- en resolutietests; met de CD-data per taal 21
-  stringtabellen / 2.358 strings, gepinde voorbeelden ("Gå Online", "Koppla upp",
-  "d'œuvre", "Unfuhg Gibsniš"), glyphdekking in alle 33 fonts per taal, LIP/banners.
-  Native Metal-smoketest slaagt in Engels en Duits (readbackverschil 0).
-  Volledige suite: zonder assets 394 passed / 98 skipped; met `OPENTPW_GAME_PATH`
-  466 / 26; plus `OPENTPW_LANGUAGE_DATA` 482 / 10 (de 10 zijn de opt-in native
-  shader- en MTR-tests); 0 failed.
-- Open: geen originele menu-/UI-schermen, geen taalwissel tijdens het spel,
-  `UniToMB.dat` (tekstinvoer) ongelezen, andere edities niet onderzocht. Zie
+## Languages (October 9, 2026)
+
+- All five bundled languages (English, Danish, French, German, Swedish) decode:
+  `.str` now uses `MBToUni.dat` from the language's own folder (Danish/Swedish
+  248 characters, others 249). Previously 2,254/2,358 Danish and 2,268/2,358
+  Swedish strings were garbled, plus 3 French (œ) and 1 German (š). The 24-bit
+  string length is now read in full; UITEXT strings longer than 255 characters
+  were truncated (English too). The character table is built once instead of
+  per character.
+- Language selection: `--language`, `OPENTPW_LANGUAGE`, or the `Language` setting;
+  defaults to English if installed, otherwise the installed language. Other
+  languages via `--language-data` / `OPENTPW_LANGUAGE_DATA`: a read-only,
+  case-insensitive overlay of the extracted CD folders `<Lang>/data` and
+  `<Lang>/Meshes`; nothing is copied to the game folder or git. Strings and fonts
+  (Localization, sandbox panel) follow the choice; speech, LIP, and banners are
+  only resolvable, not played or drawn.
+- Tests: synthetic reader and resolution tests; with the CD data per language,
+  21 string tables / 2,358 strings, pinned examples ("Gå Online", "Koppla upp",
+  "d'œuvre", "Unfuhg Gibsniš"), glyph coverage in all 33 fonts per language, and
+  LIP/banners. Native Metal smoke test passes in English and German (readback
+  difference 0). Full suite: without assets 394 passed / 98 skipped; with
+  `OPENTPW_GAME_PATH` 466 / 26; plus `OPENTPW_LANGUAGE_DATA` 482 / 10 (the 10 are
+  the opt-in native shader and MTR tests); 0 failed.
+- Open: no original menu/UI screens, no language switch during play,
+  `UniToMB.dat` (text input) unread, other editions not examined. See
   [LANGUAGES.md](LANGUAGES.md).
 
-## Parkeconomie (9 oktober 2026, worktree `economy`)
+## Park economy (October 9, 2026, worktree `economy`)
 
-- Gelaagde `.sam`-instellingen (`levels/Standard.sam` → thema-`Standard.sam` → `Easy_Standard.sam`;
-  categorie- → object- → `Easy_`-objectbestanden) met bronvermelding per waarde. Inventaris van alle
-  economie-, personeel-, research- en doelinstellingen met betekenis en gebruik in
-  [ECONOMY.md](ECONOMY.md).
-- `ParkEconomy`: deterministische parkklok (dag = 240 vaste ticks, 30-dagenmaanden: benadering),
-  pauze/snelheden, grootboek met de originele UI-categorieën, entreeprijs, winkel- en
-  sideshowprijzen, bouw-, upgrade-, cel- en grondkosten, schrootwaarde, leningen (LOANNAMES),
-  faillissement na zes maanden rood (TAG_SYSTEM-teksten), personeelspool, lonen
-  (BaseWage × PayMultiplier), training, monteurs/schoonmakers (benaderd), research, uitdagingen,
-  golden tickets en sleutels. Benaderingen staan per regel gedocumenteerd.
-- Easymode.TPWI: leningtabel (8 × 32 bytes; aflossing floor(bedrag/maanden) = 0 % rente, dus
-  `Easy_Standard.sam`) en uitdagingslijst (8 × 45 bytes = jungle `ChallengesInThisLevel`) gevonden en
-  gecontroleerd. 87.987 / −12.013 blijft onverklaard (oneven, terwijl alle bouwkosten veelvouden van 5
-  zijn); het saldo start daarom op `InitialCash`.
-- Eigen geversioneerd parksaveformaat (JSON, atomisch, strikt gevalideerd) met klok, RNG, geld,
-  personeel, research en doelen; roundtrip en identieke voortzetting na laden getest.
-- `--load-original-level <thema>`: economie loopt mee op de vaste klok en logt datum/saldo per
-  speldag; de smoketest betaalt een maand loon en doet een parksave-roundtrip (alle vier thema's
-  geslaagd, macOS arm64 Metal). Volledige suite: zonder assets 427 passed / 122 skipped; met
-  `OPENTPW_GAME_PATH` 519 / 30; plus taaldata 539 / 10; 0 failed.
-- Open: bezoekersuitgaven, personeelsgedrag/stakingen, adviseur, HUD-schermen (andere slices), en
-  originele formules voor dagduur, rente, parkwaardering en sleutels.
+- Layered `.sam` settings (`levels/Standard.sam` → theme `Standard.sam` →
+  `Easy_Standard.sam`; category → object → `Easy_` object files) with a source
+  reference per value. Inventory of all economy, staff, research, and goal
+  settings with meaning and use in [ECONOMY.md](ECONOMY.md).
+- `ParkEconomy`: deterministic park clock (day = 240 fixed ticks, 30-day months:
+  approximation), pause/speeds, ledger with the original UI categories, entry
+  price, shop and sideshow prices, build, upgrade, cell and land costs, scrap
+  value, loans (LOANNAMES), bankruptcy after six months in the red (TAG_SYSTEM
+  texts), staff pool, wages (BaseWage × PayMultiplier), training,
+  mechanics/cleaners (approximated), research, challenges, golden tickets, and
+  keys. Approximations are documented per line.
+- Easymode.TPWI: loan table (8 × 32 bytes; repayment floor(amount/months) = 0%
+  interest, hence `Easy_Standard.sam`) and challenge list (8 × 45 bytes = jungle
+  `ChallengesInThisLevel`) found and checked. 87,987 / −12,013 remains unexplained
+  (odd, while all build costs are multiples of 5); the balance therefore starts at
+  `InitialCash`.
+- Own versioned park save format (JSON, atomic, strictly validated) with clock,
+  RNG, money, staff, research, and goals; round trip and identical continuation
+  after loading tested.
+- `--load-original-level <thema>`: economy runs on the fixed clock and logs
+  date/balance per in-game day; the smoke test pays one month of wages and
+  performs a park save round trip (all four themes passed, macOS arm64 Metal).
+  Full suite: without assets 427 passed / 122 skipped; with `OPENTPW_GAME_PATH`
+  519 / 30; plus language data 539 / 10; 0 failed.
+- Open: visitor spending, staff behavior/strikes, advisor, HUD screens (other
+  slices), and original formulas for day length, interest, park rating, and keys.
 
-## Compatibiliteit (9 oktober 2026)
+## Compatibility (October 9, 2026)
 
-- Eigen TrueType-parser/rasterizer leest de 17 fonts in-memory uit `fonts.wad`
-  (identiek aan `tpwfnt`, gepinde hashes, metrics en rasterhashes). `.sgn` (84 bestanden)
-  levert per bord twee LOGFONT-tekstregels; de jungle-poort toont "Lost Kingdom" in
-  Young Itch AOE 144 px (native smoketest eist tekstpixels). Alle bordtekens van zes
-  talen hebben een glyph in alle 17 fonts.
-- `--cd-data`: read-only, hoofdletterongevoelige fallback voor ontbrekende films/muziek,
-  met startupdiagnose; synthetische minimale-installatietest.
-- Detailpresets Low/Medium/High uit `low/med/high.sam` + Enhanced (EXT); filtering/mipmaps
-  naar samplers, view distance naar de mist; `IGraphicsSettings`, `graphics.json`.
-- Profiel Original (standaard) / Recommended / Custom met stabiele fix-ids,
-  `CompatibilityFlags`-savemetadata, hash-gebonden in-memory datacorrecties
-  (megacost.sgn verwijst naar een niet-meegeleverd font).
-- Robuustheid: ontbrekende strings → Engels → interne naam (vond UITEXT[473] buiten elke
-  tabel en Frans [457] leeg), beschadigde SDT-entries overgeslagen, `UniToMB.dat` gelezen.
-- Benaderingen staan in het register van [COMPATIBILITY.md](COMPATIBILITY.md).
+- Own TrueType parser/rasterizer reads the 17 fonts in memory from `fonts.wad`
+  (identical to `tpwfnt`, pinned hashes, metrics, and raster hashes). `.sgn`
+  (84 files) supplies two LOGFONT text lines per sign; the jungle gate shows
+  "Lost Kingdom" in Young Itch AOE 144 px (the native smoke test requires text
+  pixels). All sign characters in six languages have a glyph in all 17 fonts.
+- `--cd-data`: read-only, case-insensitive fallback for missing movies and music,
+  with startup diagnostics; synthetic minimal-installation test.
+- Detail presets Low/Medium/High from `low/med/high.sam` + Enhanced (EXT);
+  filtering/mipmaps to samplers, view distance to the fog; `IGraphicsSettings`,
+  `graphics.json`.
+- Profile Original (default) / Recommended / Custom with stable fix IDs,
+  `CompatibilityFlags` save metadata, and hash-bound in-memory data corrections
+  (megacost.sgn refers to a font that is not bundled).
+- Robustness: missing strings → English → internal name (found UITEXT[473]
+  outside every table and French [457] empty), damaged SDT entries skipped,
+  `UniToMB.dat` read.
+- Approximations are listed in the register in [COMPATIBILITY.md](COMPATIBILITY.md).
 
-## Advisor/compat-integratie (9 oktober 2026)
+## Advisor/compat integration (October 9, 2026)
 
-- Advisor `3a5107c` en compat `7065401` zijn met behoud van geschiedenis samengevoegd
-  met main `517c588` op `integrate-advisor-compat-20261009` (`b1eac76`). Gasten,
-  parkeconomie, displayinstellingen en hun bestaande smoketests blijven aanwezig.
-- De advisor gebruikte logische venstercoördinaten rechtstreeks op het wereldtarget;
-  `--render-scale 50` sneed daardoor de mond buiten het target. De viewport wordt nu
-  naar targetpixels omgerekend, met drie regressiegevallen (100%, 50%, HiDPI).
-  De plaatsing blijft de geregistreerde benadering `ADVISOR-003`.
-- macOS arm64-build: 0 errors. Volledige suite met originele assets en taaldata:
-  689 passed / 11 skipped / 0 failed (700 tests, vóór toevoeging van de drie
-  viewportgevallen). Daarna advisor-subset inclusief nieuwe gevallen: 17 passed;
-  MTR/native shader-subset met originele taal-MTR-fixtures: 41 passed / 0 skipped.
-- Native Metal/SDL-advisorsmokes: Engels `sp_001` (513 gewijzigde mondpixels), Duits
-  `sp_001` op 50% render scale (142 pixels), Engels met test-HiDPI 2× (1.948 pixels).
-  Alle drie doorlopen de audioqueue en sluiten de mond na de clip.
-- Native jungle-smoke: poorttekst uit het oorspronkelijke TrueType-font, Totem-RSE
-  met instappen/uitstappen, gastensprites (3.194 readbackpixels), BF4/outputreadback,
-  maandloon ($92) en identieke parksave-roundtrip slagen.
-- De bestaande compiler- en dependency-advisorywaarschuwingen zijn niet opgelost;
-  geen dependencies toegevoegd. Windows/Linux-native-uitvoering en vergelijking
-  met originele advisor-/bordcaptures blijven onverifieerd. De registers in
-  [LIPS.md](LIPS.md), [COMPATIBILITY.md](COMPATIBILITY.md), [GUESTS.md](GUESTS.md)
-  en [ECONOMY.md](ECONOMY.md) blijven van toepassing.
+- Advisor `3a5107c` and compat `7065401` were merged into main `517c588` with
+  history preserved, on `integrate-advisor-compat-20261009` (`b1eac76`). Guests,
+  park economy, display settings, and their existing smoke tests remain present.
+- The advisor used logical window coordinates directly on the world target;
+  `--render-scale 50` therefore clipped the mouth outside the target. The
+  viewport is now converted to target pixels, with three regression cases (100%,
+  50%, HiDPI). The placement remains the registered approximation `ADVISOR-003`.
+- macOS arm64 build: 0 errors. Full suite with original assets and language
+  data: 689 passed / 11 skipped / 0 failed (700 tests, before the three viewport
+  cases were added). Then the advisor subset including new cases: 17 passed;
+  MTR/native shader subset with original language MTR fixtures: 41 passed /
+  0 skipped.
+- Native Metal/SDL advisor smokes: English `sp_001` (513 changed mouth pixels),
+  German `sp_001` at 50% render scale (142 pixels), English with test HiDPI 2×
+  (1,948 pixels). All three run through the audio queue and close the mouth after
+  the clip.
+- Native jungle smoke: gate text from the original TrueType font, Totem RSE with
+  boarding and disembarking, guest sprites (3,194 readback pixels), BF4/output
+  readback, monthly wage ($92), and identical park save round trip pass.
+- The existing compiler and dependency advisory warnings are not resolved; no
+  dependencies added. Windows/Linux native execution and comparison with original
+  advisor and sign captures remain unverified. The registers in
+  [LIPS.md](LIPS.md), [COMPATIBILITY.md](COMPATIBILITY.md),
+  [GUESTS.md](GUESTS.md), and [ECONOMY.md](ECONOMY.md) still apply.
 
-## Originele UI: front-end en HUD (9 oktober 2026, worktree `frontend`)
+## Original UI: front end and HUD (October 9, 2026, worktree `frontend`)
 
-- Bewijs (UI.md): de 278 `ui.wad`-modellen zijn geschreven in een virtueel scherm van
-  2048×1536 (volledige-schermframes beslaan precies 0..2048 × 0..−1536); HUD-modellen staan
-  op hun schermpositie, generieke knoppen/vensters op de oorsprong. Kindnodes zijn
-  alternatieve toestandsframes (normaal/uitgeschakeld/oplichten/ingedrukt), geen onderdelen;
-  dit verklaart de "ongecomponeerde" bounds uit MD2-MODELS.md. Texture-V loopt van onder naar
-  boven; puur roze is transparant. `lobby.wad` beschrijft de 3D-lobby (vier eilanden,
-  cameraposities, luchtkleur).
-- Standaardstart is nu een front-end in originele stijl: 3D-lobby met de vier eilanden, menu
-  met originele knoppen/teksten/tooltips (UITEXT/UIHELPTEXT), spelmodus, laden, opties en
-  afsluiten; daarna het originele level met een HUD (hoofdpaneel, datum, saldo, bouwarm met
-  categorieën en draaiende preview-modellen, infoarm, berichten, pauzemenu). `--sandbox`,
-  `--load-original-level` en een kale `--smoke-test` slaan de front-end over zoals voorheen.
-- Opties: originele rijen (resolutie, volumes, popup-hulp) plus OpenTPW-rijen (venstermodus,
-  upscaling, renderschaal, interfaceschaal, taal) in dezelfde stijl, met de originele
-  bevestig/herstel/herstart-meldingen; ontbrekende labels komen uit een eigen, in zes talen
-  vertaalde aanvullende tabel. Weergave via een stub van `IDisplaySettings` (display-slice).
-- Benaderingen (gedocumenteerd): posities van door code geplaatste elementen, lettertype-
-  niveau per resolutie, snelheidsknoppen, kalender en startsaldo-stub (startsaldo zelf uit
-  `Easy_Standard.sam`), Totem-prijs uit `Totem.sam`. Interfaces voor economie, catalogus en
-  display staan in UI.md.
-- Tests: zonder assets 433 geslaagd / 129 overgeslagen; met `OPENTPW_GAME_PATH` en
-  `OPENTPW_LANGUAGE_DATA` 552 geslaagd / 10 overgeslagen; 0 mislukt. Metal-smoketest
-  `--front-end --smoke-test` geslaagd in alle zes talen (tekst in readback texel voor texel
-  gecontroleerd); bestaande sandbox-, jungle- en fantasy-smoketests blijven slagen.
-- Open: originele schermposities, profielen/online, cursor, animaties en geluid van knoppen,
-  vergelijking met originele captures, D3D11/Vulkan.
+- Evidence (UI.md): the 278 `ui.wad` models are written in a virtual screen of
+  2048×1536 (full-screen frames span exactly 0..2048 × 0..−1536); HUD models sit
+  at their screen position, and generic buttons/windows sit at the origin. Child
+  nodes are alternative state frames (normal/disabled/highlighted/pressed), not
+  parts; this explains the "uncomposed" bounds from MD2-MODELS.md. Texture V runs
+  from bottom to top; pure pink is transparent. `lobby.wad` describes the 3D lobby
+  (four islands, camera positions, sky color).
+- The default start is now a front end in the original style: 3D lobby with the
+  four islands, a menu with original buttons, texts, and tooltips
+  (UITEXT/UIHELPTEXT), game mode, load, options, and quit; then the original level
+  with a HUD (main panel, date, balance, build arm with categories and rotating
+  preview models, info arm, messages, pause menu). `--sandbox`,
+  `--load-original-level`, and a bare `--smoke-test` skip the front end as before.
+- Options: original rows (resolution, volumes, pop-up help) plus OpenTPW rows
+  (window mode, upscaling, render scale, interface scale, language) in the same
+  style, with the original confirm/revert/restart messages. Missing labels come
+  from our own supplementary table, translated into six languages. Display is
+  handled via a stub of `IDisplaySettings` (display slice).
+- Approximations (documented): positions of elements placed by code, font level
+  per resolution, speed buttons, calendar and starting balance stub (the starting
+  balance itself from `Easy_Standard.sam`), Totem price from `Totem.sam`.
+  Interfaces for economy, catalog, and display are in UI.md.
+- Tests: without assets 433 passed / 129 skipped; with `OPENTPW_GAME_PATH` and
+  `OPENTPW_LANGUAGE_DATA` 552 passed / 10 skipped; 0 failed. Metal smoke test
+  `--front-end --smoke-test` passed in all six languages (text checked texel by
+  texel in readback); the existing sandbox, jungle, and fantasy smoke tests still
+  pass.
+- Open: original screen positions, profiles/online, cursor, button animations and
+  sounds, comparison with original captures, D3D11/Vulkan.
 
-## Originele objecten: rides, winkels, sideshows, features (9 oktober 2026)
+## Original objects: rides, shops, sideshows, features (October 9, 2026)
 
-- Catalogus van alle 274 objecten van de vier thema's uit WAD + `.sam`-lagen
-  (Info.Id, OBJECT_NAMES-naam voor 220, categorie, vorm/footprint, kosten- en
-  upgradewaarden ruw, model, script, animaties); 911 animaties binden aan hun model.
-- Vorm, rotatie en ingang/uitgang geverifieerd tegen Easymode (0°, 90°, 270°);
-  180° en niet-vierkante rotaties volgen uit dezelfde starre rotatie (afgeleid).
-- ANIM_* → bestandsletter/variant (c,i,l,s,m,e,u,b,r,o) afgeleid uit bestandsnamen
-  en scripts; alle 262 objectscripts draaien 60 s in één wereld zonder faults.
-- Easymode-import toont echte modellen i.p.v. oranje markers; bouwen/roteren/
-  verwijderen van elk catalogusobject in sandbox en originele levels (ImGui-paneel).
-  De Totem-prototype is nu een dunne wrapper; native smoke (beide modi) toont
-  Sun God, Crazy Ape, Tom Tom Twister en Eruption animerend.
-- Officiële bonusobjecten (35 `_name_N.wad`) via `--bonus-data`/`OPENTPW_BONUS_DATA`.
-- Niet: bezoekers (alleen `IRideVisitorBridge`), geluid/EVENT/particles,
-  coaster/kart/tour-controllers, vertex-animatie, originele bouwregels en kosten.
-  Details: [OBJECTS.md](OBJECTS.md).
+- Catalog of all 274 objects of the four themes from WAD + `.sam` layers
+  (Info.Id, OBJECT_NAMES name for 220, category, shape/footprint, raw cost and
+  upgrade values, model, script, animations); 911 animations bound to their model.
+- Shape, rotation, and entrance/exit verified against Easymode (0°, 90°, 270°);
+  180° and non-square rotations follow from the same rigid rotation (derived).
+- ANIM_* → file letter/variant (c,i,l,s,m,e,u,b,r,o) derived from file names and
+  scripts; all 262 object scripts run for 60 s in one world without faults.
+- Easymode import shows real models instead of orange markers; building,
+  rotating, and removing each catalog object works in the sandbox and original
+  levels (ImGui panel). The Totem prototype is now a thin wrapper; the native
+  smoke test (both modes) shows Sun God, Crazy Ape, Tom Tom Twister, and Eruption
+  animating.
+- Official bonus objects (35 `_name_N.wad`) via `--bonus-data`/`OPENTPW_BONUS_DATA`.
+- Not implemented: visitors (only `IRideVisitorBridge`), sound/EVENT/particles,
+  coaster/kart/tour controllers, vertex animation, original build rules and
+  costs. Details: [OBJECTS.md](OBJECTS.md).
 
-## SDT-geluidseffecten: MPEG Layer I-decoder (9 oktober 2026)
+## SDT sound effects: MPEG Layer I decoder (October 9, 2026)
 
-- `Mp2Decoder` decodeert nu ook MPEG audio Layer I (MPEG-1 en MPEG-2/LSF, alle
-  samplerates, mono/stereo/dual/intensity-stereo, CRC overgeslagen), het formaat
-  van de geluidseffecten en speech `z_error`. Layer II-restricties zijn ongewijzigd.
-- Verificatie zonder originele bestanden: 73 gegenereerde Layer I-streams zijn even
-  lang als en wijken maximaal 1 LSB af van ffmpeg's `mp1`-decoder. Eenheidstests voor
-  stilte, DC, intensity-stereo, framegrootte/padding, verboden allocatie en een
-  tegen ffmpeg vastgepinde stream.
-- Tests: zonder assets 592 geslaagd / 198 overgeslagen; 0 mislukt.
-- Open: `OriginalLayerOneSoundEffectsDecode` met `OPENTPW_GAME_PATH` draaien
-  (MPEG-versie/samplerates van de originele effecten nog onbevestigd); geluidseffecten
-  worden nog nergens in het spel afgespeeld. Details: [LIPS.md](LIPS.md).
+- `Mp2Decoder` now also decodes MPEG audio Layer I (MPEG-1 and MPEG-2/LSF, all
+  sample rates, mono/stereo/dual/intensity stereo, CRC skipped), the format of the
+  sound effects and speech `z_error`. Layer II restrictions are unchanged.
+- Verification without original files: 73 generated Layer I streams are the same
+  length as, and differ by at most 1 LSB from, ffmpeg's `mp1` decoder. Unit tests
+  cover silence, DC, intensity stereo, frame size/padding, forbidden allocation,
+  and a stream pinned against ffmpeg.
+- Tests: without assets 592 passed / 198 skipped; 0 failed.
+- Open: run `OriginalLayerOneSoundEffectsDecode` with `OPENTPW_GAME_PATH` (the MPEG
+  version and sample rates of the original effects are still unconfirmed); sound
+  effects are not yet played anywhere in the game. Details: [LIPS.md](LIPS.md).
 
-## Linux-voorbereiding M7 (9 oktober 2026)
+## Linux preparation M7 (October 9, 2026)
 
-Gemeten in een Ubuntu 24.04 x64-container met .NET 8.0.425, Xvfb en Mesa llvmpipe
-(software-Vulkan 1.4); zonder originele assets.
+Measured in an Ubuntu 24.04 x64 container with .NET 8.0.425, Xvfb, and Mesa
+llvmpipe (software Vulkan 1.4); without original assets.
 
-- Gerepareerd: Vulkan-start faalde op elke distributie met glibc ≥ 2.34 (`vk` 1.0.25
-  laadt `libdl`, alleen `libdl.so.2` bestaat); `LinuxNativeLibraries` leidt dit om.
-  Daarna maakt de app een SDL2-venster, Vulkan-device en swapchain (1280×720).
-- Gerepareerd: hoofdlettergevoelige paden. `BaseFileSystem` corrigeert bestaande
-  segmenten naar de spelling op schijf (exacte match wint); de datamap wordt in elke
-  spelling gevonden (`data`/`Data`/`DATA`). Drie regressietests falen zonder de fix.
-- Duidelijke fouten bij ontbrekend scherm (X11/Wayland) of Vulkan-driver.
-- `dotnet publish -r linux-x64|win-x64|linux-arm64 --self-contained` slaagt; de
-  linux-x64-build start. linux-arm64 mist native `libveldrid-spirv`/`libcimgui`
-  (geblokkeerd); Windows is gebouwd maar niet uitgevoerd.
-- Tests: 605 geslaagd / 189 overgeslagen / 0 mislukt, inclusief native shadertests
-  (`OPENTPW_NATIVE_SHADER_TESTS=1`) op Linux x64.
-- Open: renderen, input en audio met originele assets op Linux; Windows uitvoeren;
-  linux-arm64-natives; packaging. Details: RUNNING.md, FEATURE-MATRIX.md.
+- Fixed: Vulkan startup failed on every distribution with glibc ≥ 2.34
+  (`vk` 1.0.25 loads `libdl`, but only `libdl.so.2` exists);
+  `LinuxNativeLibraries` redirects this. The app then creates an SDL2 window,
+  Vulkan device, and swapchain (1280×720).
+- Fixed: case-sensitive paths. `BaseFileSystem` corrects existing segments to the
+  spelling on disk (exact match wins); the data folder is found in any spelling
+  (`data`/`Data`/`DATA`). Three regression tests fail without the fix.
+- Clear errors for a missing display (X11/Wayland) or Vulkan driver.
+- `dotnet publish -r linux-x64|win-x64|linux-arm64 --self-contained` succeeds;
+  the linux-x64 build starts. linux-arm64 lacks native `libveldrid-spirv` and
+  `libcimgui` (blocked); Windows is built but not run.
+- Tests: 605 passed / 189 skipped / 0 failed, including native shader tests
+  (`OPENTPW_NATIVE_SHADER_TESTS=1`) on Linux x64.
+- Open: rendering, input, and audio with original assets on Linux; running
+  Windows; linux-arm64 natives; packaging. Details: RUNNING.md, FEATURE-MATRIX.md.
 
-## Linux met originele data; Theme Park Inc-vergelijking (9 oktober 2026)
+## Linux with original data; Theme Park Inc comparison (October 9, 2026)
 
-Met de Mac-cd van Sim Theme Park (HFS, november 2000) als originele data:
+Using the Mac CD of Sim Theme Park (HFS, November 2000) as original data:
 
-- Linux x64 (Xvfb, Mesa llvmpipe): de sandbox-smoketest (439 frames, originele
-  objecten, animaties, Totem-script, BF4-tekst, upscaling, fullscreen, opslaan/laden)
-  en de front-end-smoketest (lobby, menu's, jungle, HUD, economie) slagen. Daarvoor
-  kregen de Mac-gegevens tijdelijk de pc-lettertypes `GAMEBOLD*.bf4`; niets daarvan
-  staat in git.
-- Gerepareerd: elke `Shader` maakte een eigen `FileSystemWatcher`; op Linux is dat
-  een inotify-instantie (standaard 128 per gebruiker) en de lobby crashte. Nu één
-  watcher per shaderbestand; bij een tekort alleen een waarschuwing.
-- Layer I: alle 2.650 Mac-clips gelijk aan ffmpeg (≤ 1 LSB, zelfde lengte).
-- De Mac-editie wijkt af van de vastgepinde Windows-editie (taalmap `American`,
-  QuickTime-films, geen `fonts.wad`/`lips.wad`, 290 objecten); de tests die
-  Windows-hashes en -aantallen vastpinnen falen daarop, zie THEME-PARK-INC.md.
-- Theme Park Inc vergeleken: zelfde engine-familie en identieke RSE-VM; textures
-  zijn EA `SHPI`/`.fsh` i.p.v. `.wct`. Details en vervolgwerk: THEME-PARK-INC.md.
+- Linux x64 (Xvfb, Mesa llvmpipe): the sandbox smoke test (439 frames, original
+  objects, animations, Totem script, BF4 text, upscaling, fullscreen, save/load)
+  and the front-end smoke test (lobby, menus, jungle, HUD, economy) pass. For this,
+  the Mac data temporarily received the PC fonts `GAMEBOLD*.bf4`; none of that is
+  in git.
+- Fixed: every `Shader` created its own `FileSystemWatcher`; on Linux that is an
+  inotify instance (default 128 per user), and the lobby crashed. Now there is one
+  watcher per shader file; on a shortage, only a warning.
+- Layer I: all 2,650 Mac clips equal to ffmpeg (≤ 1 LSB, same length).
+- The Mac edition differs from the pinned Windows edition (language folder
+  `American`, QuickTime movies, no `fonts.wad`/`lips.wad`, 290 objects); the tests
+  that pin Windows hashes and counts fail on it, see THEME-PARK-INC.md.
+- Theme Park Inc compared: same engine family and identical RSE VM; textures are
+  EA `SHPI`/`.fsh` instead of `.wct`. Details and follow-up work:
+  THEME-PARK-INC.md.
 
-## Besluit: herkomst van spelregels (9 oktober 2026)
+## Decision: provenance of game rules (October 9, 2026)
 
-- Spelregels gelden pas als origineel wanneer ze naar logica in een originele
-  executable herleid zijn: de onversleutelde PowerPC-`SimTheme Park` (TPW) en
-  `Game.exe` (Theme Park Inc). Handleiding, websites en community-bronnen blijven
-  `[APPROX]`; voorbeeld: de Instant Action-regels uit handleiding en `UITEXT.str`.
-- Op besluit van de projecteigenaar mag de ontsleutelde no-CD-`Game.exe` van de
-  Theme Park Inc-cd statisch geanalyseerd worden (interoperabiliteit, art. 6
-  Softwarerichtlijn); niets daarvan in git. Voorwaarden in COMPLETION-PLAN.md.
-- Gecontroleerd: die `Game.exe` heeft dezelfde secties als het SafeDisc-origineel met
-  leesbare code (entropie `.text` 5,83 i.p.v. 7,92) en de importlijst van TPW's
-  `TP.ICD` (DDRAW, DINPUT, DSOUND, QMIXER, `wea*`, WSOCK32, USP10). De PE-tijdstempel
-  (1996) is door de crack herschreven en zegt niets over de build.
+- Game rules count as original only when they are traced back to logic in an
+  original executable: the unencrypted PowerPC `SimTheme Park` (TPW) and
+  `Game.exe` (Theme Park Inc). Manuals, websites, and community sources remain
+  `[APPROX]`; example: the Instant Action rules from the manual and `UITEXT.str`.
+- By decision of the project owner, the decrypted no-CD `Game.exe` from the Theme
+  Park Inc CD may be statically analyzed (interoperability, Art. 6 Software
+  Directive); none of it is in git. Conditions in COMPLETION-PLAN.md.
+- Checked: that `Game.exe` has the same sections as the SafeDisc original with
+  readable code (`.text` entropy 5.83 instead of 7.92) and the import list of
+  TPW's `TP.ICD` (DDRAW, DINPUT, DSOUND, QMIXER, `wea*`, WSOCK32, USP10). The PE
+  timestamp (1996) was rewritten by the crack and says nothing about the build.

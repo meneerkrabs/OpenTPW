@@ -71,6 +71,9 @@ public sealed class ParkEconomy : IParkEconomy
 	public int MonthsInRed { get; private set; }
 	public long LitterScaled { get; private set; }
 	public int TicketsSpent { get; private set; }
+	private readonly HashSet<int> ticketItems = new();
+	/// <summary>Objects bought with golden tickets; further copies are paid in cash.</summary>
+	public IReadOnlyCollection<int> TicketItems => ticketItems;
 	public int NextObjectId { get; private set; } = 1;
 	public IReadOnlyCollection<ParkObjectState> Objects => objects.Values;
 	public IReadOnlyList<LoanAccount> Loans => loans;
@@ -128,6 +131,9 @@ public sealed class ParkEconomy : IParkEconomy
 
 	private void AdvanceTurn( long previousTurn, long turn )
 	{
+		// [BIN:STP-PPC:0x100F0284 researcher update] each researcher not in an excluded state does research when the turn counter is a multiple of 20
+		if ( turn % ParkResearch.TurnsPerResearch == 0 )
+			DoResearch();
 		// [BIN:STP-PPC:0x100D67F0 world update] the golden-ticket check (0x100D31D0) runs when the turn counter is a multiple of 100, and only in Full Simulation (game type 0)
 		if ( turn % GoldenTicketCheckInterval == 0 && Mode == ParkGameMode.FullSimulation )
 			CheckGoldenTickets();
@@ -143,11 +149,30 @@ public sealed class ParkEconomy : IParkEconomy
 			EndDay( ended );
 		if ( now.Month != before.Month || now.Year != before.Year )
 			EndMonth( (now.Year - ParkCalendar.Epoch.Year) * ParkCalendar.MonthsPerYear + now.Month - 1 );
+		if ( now.Year != before.Year )
+			Ledger.StartYear();
+	}
+
+	private void DoResearch()
+	{
+		var researchers = Staff.OfType( StaffType.Researcher ).Where( ParkResearch.CanResearch ).ToList();
+		var abilities = researchers.Select( member => Settings.ResearchAbility[member.Grade] ).ToList();
+		if ( abilities.Count == 0 && Mode == ParkGameMode.InstantAction )
+			// [APPROX:ECON-019] Instant Action research runs at one grade-2 researcher without staff — evidence needed: Instant Action capture
+			abilities.Add( Settings.ResearchAbility[2] );
+		foreach ( var ability in abilities )
+		{
+			foreach ( var item in Research.AddResearcherPoints( ability ) )
+			{
+				Counters.Add( ParkCounters.Researched( item.Category ), 1 );
+				Raise( ParkEventKind.ItemResearched, item.Level, 0, item.InfoId, Catalog.TryGet( item.InfoId, out var info ) ? info.Name : "" );
+			}
+		}
 	}
 
 	private void CheckGoldenTickets()
 	{
-		foreach ( var ticket in Objectives.CheckGoldenTickets( Counters, guestStatistics, Research, Ledger.History, monthlyAdmissions ) )
+		foreach ( var ticket in Objectives.CheckGoldenTickets( Counters, guestStatistics, Research, Ledger.ProfitThisYear, monthlyAdmissions ) )
 			Raise( ParkEventKind.GoldenTicketWon, (int)ticket, 0, 0, ticket.ToString() );
 	}
 
@@ -257,12 +282,6 @@ public sealed class ParkEconomy : IParkEconomy
 			else if ( before >= WornStateOfRepair && item.StateOfRepair < WornStateOfRepair )
 				Raise( ParkEventKind.RideWorn, item.StateOfRepair, item.Id, item.InfoId );
 		}
-		var points = Research.DailyPoints( Staff.OfType( StaffType.Researcher ), Mode == ParkGameMode.InstantAction );
-		foreach ( var item in Research.AdvanceDay( points ) )
-		{
-			Counters.Add( ParkCounters.Researched( item.Category ), 1 );
-			Raise( ParkEventKind.ItemResearched, item.Level, 0, item.InfoId, Catalog.TryGet( item.InfoId, out var info ) ? info.Name : "" );
-		}
 		foreach ( var (kind, index, amount, detail) in Objectives.AdvanceDay( day + 1, MeasureChallenge ).ToList() )
 		{
 			if ( kind == ParkEventKind.ChallengeCompleted )
@@ -292,6 +311,7 @@ public sealed class ParkEconomy : IParkEconomy
 		{
 			var (account, paid) = LoanMath.Pay( loans[index] );
 			Post( LedgerCategory.LoanPayments, paid );
+			Ledger.ChargeLoanInterest( LoanMath.InstalmentInterest( account.MonthlyRepayment, account.Months, account.OriginalAmount ) );
 			Raise( ParkEventKind.LoanPayment, paid, 0, account.OfferIndex );
 			if ( account.MonthsRemaining == 0 || account.RemainingBalance <= 0 )
 			{
@@ -464,18 +484,23 @@ public sealed class ParkEconomy : IParkEconomy
 			return PurchaseResult.NotResearched;
 		if ( info.Kind == ParkObjectKind.Upgrade && !objects.Values.Any( item => item.InfoId == info.AddOnTargetId ) )
 			return PurchaseResult.MissingTargetRide;
-		if ( Settings.CanSpendTickets && info.GoldenTicketCost > GoldenTicketsAvailable )
+		// [BIN:STP-PPC:0x100DA874 object purchase] an object with a GoldenTicketCost (+0xC4) above 0 that the park has not yet bought with tickets costs that many tickets (0x100D3000; allowed when cost <= earned - spent) and no cash; it joins the owned set, and later copies and ticket-free objects take the cash path
+		var payWithTickets = Settings.CanSpendTickets && info.GoldenTicketCost > 0 && !ticketItems.Contains( infoId );
+		if ( payWithTickets && info.GoldenTicketCost > GoldenTicketsAvailable )
 			return PurchaseResult.NotEnoughGoldenTickets;
 		// [APPROX:ECON-028] purchases need a balance covering the cost — evidence needed: capture of building with too little money
-		if ( info.PurchaseCost > Balance )
+		if ( !payWithTickets && info.PurchaseCost > Balance )
 			return PurchaseResult.NotEnoughMoney;
-		if ( Settings.CanSpendTickets )
-			// [APPROX:ECON-029] golden tickets are spent when buying items with GoldenTicketCost — evidence needed: capture of ticket count after such a purchase
+		var cost = payWithTickets ? 0 : info.PurchaseCost;
+		if ( payWithTickets )
+		{
 			TicketsSpent += info.GoldenTicketCost;
-		Post( LedgerCategory.OtherCosts, info.PurchaseCost );
+			ticketItems.Add( infoId );
+		}
+		Post( LedgerCategory.OtherCosts, cost );
 		built = AddObject( info, imported: false );
-		built.TotalSpent = info.PurchaseCost;
-		Raise( ParkEventKind.ObjectBuilt, info.PurchaseCost, built.Id, infoId, info.Name );
+		built.TotalSpent = cost;
+		Raise( ParkEventKind.ObjectBuilt, cost, built.Id, infoId, info.Name );
 		return PurchaseResult.Ok;
 	}
 
@@ -736,6 +761,13 @@ public sealed class ParkEconomy : IParkEconomy
 	// ---------------------------------------------------------------- save support
 
 	internal IReadOnlyCollection<int> TakenOffers => takenOffers;
+
+	internal void RestoreTicketItems( IEnumerable<int> items )
+	{
+		ticketItems.Clear();
+		foreach ( var item in items )
+			ticketItems.Add( item );
+	}
 
 	internal void RestoreState( long tick, GameSpeed speed, bool open, int fee, bool bankrupt, int monthsInRed, long litter, int ticketsSpent, int nextObjectId,
 		long droppedAdmissions, IEnumerable<ParkObjectState> restoredObjects, IEnumerable<LoanAccount> restoredLoans, IEnumerable<int> restoredOffers, IEnumerable<long> restoredAdmissions )

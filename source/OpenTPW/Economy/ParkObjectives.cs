@@ -252,15 +252,14 @@ public sealed class ParkObjectives
 	}
 
 	/// <summary>Monthly golden ticket check; returns newly won tickets.</summary>
-	public IReadOnlyList<GoldenTicketKind> CheckGoldenTickets( ParkCounters counters, IParkGuestStatistics guests, ParkResearch research, IReadOnlyList<LedgerMonth> history, IReadOnlyList<long> monthlyAdmissions )
+	public IReadOnlyList<GoldenTicketKind> CheckGoldenTickets( ParkCounters counters, IParkGuestStatistics guests, ParkResearch research, long profitThisYear, IReadOnlyList<long> monthlyAdmissions )
 	{
 		var won = new List<GoldenTicketKind>();
 		if ( !settings.CanEarnTickets )
 			return won;
 		var rules = settings.GoldenTickets;
 		long MaxRecord( ParkRecordKind kind ) => counters.Values.Where( pair => pair.Key.StartsWith( $"record:{kind}:", StringComparison.Ordinal ) ).Select( pair => pair.Value ).DefaultIfEmpty( 0 ).Max();
-		// [APPROX:ECON-039] profit year = profit of the last 12 closed months — evidence needed: golden ticket award capture
-		var lastYear = history.Count >= ParkCalendar.MonthsPerYear ? history.Skip( history.Count - ParkCalendar.MonthsPerYear ).Sum( month => month.Profit ) : long.MinValue;
+		// [APPROX:ECON-039] the profit ticket compares the running yearly profit (mProfitThisYear) with ProfitYear directly; the original (0x10013FDC) scales the threshold by a per-objective factor not yet tied to that key — evidence needed: the caller of 0x10013FDC and its factor
 		var recentMonths = Math.Max( 1, rules.RecentVisitorMonths );
 		var recent = monthlyAdmissions.Count >= recentMonths ? monthlyAdmissions.Skip( monthlyAdmissions.Count - recentMonths ).Sum() : 0;
 		var allBuilt = research.IsAllResearched && catalog.Objects.Where( info => info.IsBuyable ).All( info => counters[ParkCounters.Built( info.InfoId )] > 0 );
@@ -273,7 +272,7 @@ public sealed class ParkObjectives
 		Check( GoldenTicketKind.PeopleInPark, guests.PeopleInPark >= rules.PeopleInPark );
 		Check( GoldenTicketKind.Happiness, guests.PeopleInPark > 0 && guests.AverageHappiness >= rules.Happiness && guests.CountHappierThan( rules.Happiness ) >= rules.AtLeastThisManyHappyPeople );
 		Check( GoldenTicketKind.AllResearchedAndBuilt, allBuilt );
-		Check( GoldenTicketKind.ProfitYear, lastYear >= rules.ProfitYear );
+		Check( GoldenTicketKind.ProfitYear, profitThisYear >= rules.ProfitYear );
 		Check( GoldenTicketKind.RecentVisitors, recent >= rules.RecentVisitors );
 		Check( GoldenTicketKind.CoasterHeight, MaxRecord( ParkRecordKind.CoasterHeight ) >= rules.CoasterHeight );
 		Check( GoldenTicketKind.GokartExcitement, MaxRecord( ParkRecordKind.GokartExcitement ) >= rules.GokartExcitement );

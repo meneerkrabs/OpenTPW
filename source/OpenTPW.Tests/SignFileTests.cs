@@ -11,46 +11,73 @@ namespace OpenTPW.Tests;
 [TestClass]
 public class SignFileTests
 {
-	internal static byte[] CreateSign( params (int Style, string Face, string File, int Scale, int OffsetY, int Height)[] slots )
+	/// <summary>A synthetic sign in the Mac loader's layout: line colours are (R, G, B) when given (colour mode 1), else colour mode 0; two 1x1 fill bitmaps; no board.</summary>
+	internal static byte[] CreateSign( params (int Mode, string Face, string File, int Scale, int OffsetY, int Height)[] slots ) => CreateSign( slots, null );
+
+	internal static byte[] CreateSign( (int Mode, string Face, string File, int Scale, int OffsetY, int Height)[] slots, (byte R, byte G, byte B)[]? colours )
 	{
-		var data = new byte[SignFile.HeaderBytes + SignFile.SlotBytes * 2 + 12];
-		BinaryPrimitives.WriteUInt32LittleEndian( data, 101 );
-		data[8] = 1;
-		BinaryPrimitives.WriteUInt32LittleEndian( data.AsSpan( 9 ), 2 );
+		var data = new List<byte>();
+		void U32( uint value ) { var bytes = new byte[4]; BinaryPrimitives.WriteUInt32LittleEndian( bytes, value ); data.AddRange( bytes ); }
+		U32( 101 );
+		U32( 0 );
+		data.Add( 0 );
+		foreach ( var slot in slots )
+			U32( (uint)slot.Mode );
+		foreach ( var slot in slots )
+		{
+			var bytes = new byte[SignFile.SlotBytes];
+			Encoding.Latin1.GetBytes( slot.Face ).CopyTo( bytes, 0 );
+			Encoding.Latin1.GetBytes( slot.File ).CopyTo( bytes, 64 );
+			BinaryPrimitives.WriteInt32LittleEndian( bytes.AsSpan( 324 ), slot.Scale );
+			BinaryPrimitives.WriteInt32LittleEndian( bytes.AsSpan( 328 ), slot.OffsetY );
+			BinaryPrimitives.WriteInt32LittleEndian( bytes.AsSpan( 332 ), slot.Height );
+			BinaryPrimitives.WriteInt32LittleEndian( bytes.AsSpan( 348 ), 400 );
+			bytes[355] = 1;
+			bytes[356] = 4;
+			bytes[358] = 4;
+			Encoding.Latin1.GetBytes( slot.Face ).CopyTo( bytes, 360 );
+			BinaryPrimitives.WriteSingleLittleEndian( bytes.AsSpan( 400 ), 2.5f );
+			data.AddRange( bytes );
+		}
 		for ( var i = 0; i < slots.Length; i++ )
 		{
-			var offset = SignFile.HeaderBytes + i * SignFile.SlotBytes;
-			var slot = slots[i];
-			BinaryPrimitives.WriteInt32LittleEndian( data.AsSpan( offset ), slot.Style );
-			Encoding.Latin1.GetBytes( slot.Face ).CopyTo( data, offset + 4 );
-			Encoding.Latin1.GetBytes( slot.File ).CopyTo( data, offset + 68 );
-			BinaryPrimitives.WriteInt32LittleEndian( data.AsSpan( offset + 328 ), slot.Scale );
-			BinaryPrimitives.WriteInt32LittleEndian( data.AsSpan( offset + 332 ), slot.OffsetY );
-			BinaryPrimitives.WriteInt32LittleEndian( data.AsSpan( offset + 336 ), slot.Height );
-			BinaryPrimitives.WriteInt32LittleEndian( data.AsSpan( offset + 352 ), 400 );
-			data[offset + 359] = 1;
-			data[offset + 360] = 4;
-			data[offset + 362] = 4;
-			Encoding.Latin1.GetBytes( slot.Face ).CopyTo( data, offset + 364 );
-			BinaryPrimitives.WriteSingleLittleEndian( data.AsSpan( offset + 408 ), 0.5f );
-			BinaryPrimitives.WriteSingleLittleEndian( data.AsSpan( offset + 412 ), 1.0f );
-			BinaryPrimitives.WriteSingleLittleEndian( data.AsSpan( offset + 416 ), 2.0f );
+			if ( slots[i].Mode == 0 )
+				continue;
+			var colour = colours?[i] ?? ((byte)255, (byte)255, (byte)255);
+			data.AddRange( new[] { colour.R, colour.G, colour.B, (byte)0xC0 } );
+			for ( var word = 0; word < 4; word++ )
+				U32( (uint)word );
 		}
-		return data;
+		for ( var bitmap = 0; bitmap < 2; bitmap++ )
+		{
+			U32( 1 );
+			U32( 1 );
+			U32( 4 );
+			data.AddRange( new byte[] { 1, 2, 3, 4 } );
+		}
+		return data.ToArray();
 	}
 
 	[TestMethod]
-	public void ReadsHeaderTextSlotsAndLogFont()
+	public void ReadsHeaderTextSlotsColourBlocksAndBitmaps()
 	{
-		var sign = new SignFile( CreateSign( (2, "Young Itch AOE", "YOUNIA__.TTF", 100, -25, -144), (11, "Clunker AOE", "CLUNA___.TTF", 100, 128, -111) ) );
-		Assert.AreEqual( (101u, 0u, (byte)1, 2u), (sign.Version, sign.HeaderFlag, sign.ExtraImageFlag, sign.HeaderCount) );
+		var sign = new SignFile( CreateSign( new[] { (1, "Young Itch AOE", "YOUNIA__.TTF", 100, -25, -144), (0, "Clunker AOE", "CLUNA___.TTF", 100, 128, -111) }, new[] { ((byte)200, (byte)100, (byte)50), default } ) );
+		Assert.AreEqual( (101u, 0u, (byte)0), (sign.Version, sign.HeaderFlag, sign.BoardFlag) );
+		CollectionAssert.AreEqual( new uint[] { 1, 0 }, sign.ColourModes.ToArray() );
 		Assert.AreEqual( 2, sign.Slots.Count );
 		var first = sign.Slots[0];
-		Assert.AreEqual( (2, "Young Itch AOE", "YOUNIA__.TTF", 100, -25), (first.StyleId, first.FaceName, first.FontFileName, first.HorizontalScalePercent, first.OffsetY) );
+		Assert.AreEqual( ("Young Itch AOE", "YOUNIA__.TTF", 100, -25), (first.FaceName, first.FontFileName, first.HorizontalScalePercent, first.OffsetY) );
 		Assert.AreEqual( (-144, 400, (byte)1, (byte)4, (byte)4), (first.LogFont.Height, first.LogFont.Weight, first.LogFont.CharSet, first.LogFont.OutPrecision, first.LogFont.Quality) );
 		Assert.AreEqual( 144, first.EmHeightPixels );
-		Assert.AreEqual( ((byte)128, (byte)255, (byte)255), SignCanvas.SlotColor( first ), "parameters 2..4 as clamped RGB" );
-		Assert.AreEqual( 12, sign.Remainder.Length );
+		Assert.AreEqual( 11, first.Effects.Count );
+		Assert.AreEqual( 2.5f, BitConverter.Int32BitsToSingle( (int)first.Effects[2] ) );
+		Assert.AreEqual( ((byte)200, (byte)100, (byte)50), SignCanvas.SlotColor( sign, 0 ), "the colour block's red, green and blue" );
+		Assert.AreEqual( (byte)0xC0, sign.ColourBlocks[0]!.Fourth );
+		Assert.IsNull( SignCanvas.SlotColor( sign, 1 ), "colour mode 0: the line is not drawn" );
+		Assert.AreEqual( 2, sign.Fills.Count );
+		Assert.AreEqual( (1, 1, 4), (sign.Fills[1].Width, sign.Fills[1].Height, sign.Fills[1].BytesPerPixel) );
+		Assert.IsNull( sign.Board );
+		Assert.IsNull( sign.BoardWavelet );
 	}
 
 	[TestMethod]
@@ -62,8 +89,10 @@ public class SignFileTests
 		version[0] = 7;
 		Assert.ThrowsException<InvalidDataException>( () => new SignFile( version ) );
 		var mismatch = CreateSign( (1, "Haunt AOE", "HAUNTAOE.TTF", 100, 0, -100), (2, "Haunt AOE", "HAUNTAOE.TTF", 100, 128, -90) );
-		mismatch[SignFile.HeaderBytes + 364] = (byte)'X';
+		mismatch[SignFile.HeaderBytes + 360] = (byte)'X';
 		Assert.ThrowsException<InvalidDataException>( () => new SignFile( mismatch ) );
+		Assert.ThrowsException<InvalidDataException>( () => new SignFile( valid.Concat( new byte[] { 0 } ).ToArray() ), "trailing bytes" );
+		Assert.ThrowsException<InvalidDataException>( () => new SignFile( valid[..^1] ), "truncated bitmap" );
 		var notTtf = CreateSign( (1, "Haunt AOE", "HAUNTAOE.FON", 100, 0, -100), (2, "Haunt AOE", "HAUNTAOE.TTF", 100, 128, -90) );
 		Assert.ThrowsException<InvalidDataException>( () => new SignFile( notTtf ) );
 	}
@@ -83,7 +112,7 @@ public class SignFileTests
 		var builder = new TrueTypeFontTests.FontBuilder();
 		builder.AddSimple( 1000, 'A', new[] { (0, 0, true), (0, 700, true), (1000, 700, true), (1000, 0, true) } );
 		var library = SignFontLibrary.FromFiles( new[] { ("TEST____.TTF", builder.Build()) } );
-		var sign = new SignFile( CreateSign( (1, "Test", "TEST____.TTF", 100, 20, -100), (2, "Gone", "GONE____.TTF", 100, 128, -90) ) );
+		var sign = new SignFile( CreateSign( new[] { (1, "Test", "TEST____.TTF", 100, 20, -100), (2, "Gone", "GONE____.TTF", 100, 128, -90) }, new[] { ((byte)0, (byte)255, (byte)0), ((byte)0, (byte)255, (byte)0) } ) );
 		var diagnostics = new List<string>();
 		var canvas = SignCanvas.Compose( sign, library, new[] { "AA", "A" }, (0, 0, 0, 255), diagnostics );
 		Assert.AreEqual( SignCanvas.Width * SignCanvas.Height * 4, canvas.Length );
@@ -135,6 +164,8 @@ public class SignFileTests
 		var signs = OriginalSignMembers( data ).Select( member => (member.Path, Sign: new SignFile( member.Data )) ).ToList();
 		Assert.AreEqual( 84, signs.Count );
 		Assert.AreEqual( 45, signs.Count( sign => sign.Sign.Version == 101 ) );
+		Assert.IsTrue( signs.All( sign => sign.Sign.Fills.All( fill => (fill.Width, fill.Height, fill.BytesPerPixel) == (16, 128, 4) ) ), "two 16x128 RGBA fill bitmaps" );
+		Assert.IsTrue( signs.All( sign => sign.Sign.BoardFlag == 0 || sign.Sign.BoardWavelet != null ), "every shipped board is a wavelet stream" );
 		using var stream = File.OpenRead( Path.Combine( data, "fonts.wad" ) );
 		var library = SignFontLibrary.Load( stream );
 		var unresolved = signs.SelectMany( sign => sign.Sign.Slots.Select( ( slot, index ) => (sign.Path, index, slot) ) )

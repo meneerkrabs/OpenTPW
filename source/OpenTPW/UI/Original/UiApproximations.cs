@@ -16,7 +16,7 @@ public static class UiApproximations
 		("UI-005", "pink (255,0,255) key with neighbour colour bleed; linear filtering of UI images", "capture of edges at non-native resolutions"),
 		("UI-006", "text colours (white, yellow highlight/title, green values, grey disabled), shadow and backdrop colours", "captures of original screens"),
 		("UI-007", "one-pixel (×UI scale) drop shadow under UI text", "captures of original screens"),
-		("UI-008", "text buttons on purple_button art: top half normal, bottom half focused/pressed", "capture of the original front-end buttons"),
+		("UI-008", "text buttons on purple_button art: each half is one end cap, drawn with its mirror image; upper half normal, lower half focused/pressed", "capture of the original front-end buttons"),
 		("UI-009", "option rows: label to 58%, value between arrows at 58.5%..97.5% of the f_optpanel2 frame", "capture of the original options screen"),
 		("UI-010", "popup help box at the top centre with a dark blue backdrop", "capture of original popup help (helpbg art exists)"),
 		("UI-011", "modal screens dim what is below", "captures of original dialogs"),
@@ -41,6 +41,7 @@ public static class UiApproximations
 		("UI-030", "volumes in 0..10 steps, default 8; popup help default on", "capture/registry defaults of the original options"),
 		("UI-031", "one placement per menu selection; Level.PlaceObject owns purchase/guest linkage and its removal handler owns scrap credits", "original build-tool continuation"),
 		("UI-032", "longer labels fall back to the small font; catalogue names greedily wrap in their slots", "captures of translated original screens"),
+		("UI-034", "a fully opaque texture on a transparent (flag 0x2) model slot keys out black (only ipan in the lobby f_lobbutbg panel)", "the original's render state for flagged texture slots"),
 		("UI-035", "start-up movies: the Mac build's order (bf, then a day-of-month trailer) is assumed for the PC .tgq files; input held at launch is ignored until released; movies are letterboxed to their aspect instead of stretched to the window width", "PC executable analysis or captures of the PC start-up sequence"),
 	};
 

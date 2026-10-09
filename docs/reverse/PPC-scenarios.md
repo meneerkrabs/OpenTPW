@@ -1,6 +1,6 @@
 # PowerPC scenario, progression and staffing evidence
 
-2026-10-09 (four follow-up passes the same day; fifth pass 2026-10-10). Scenario lane of the nine-lane PowerPC continuation. Static
+2026-10-09 (four follow-up passes the same day; fifth and sixth passes 2026-10-10). Scenario lane of the nine-lane PowerPC continuation. Static
 inspection of the Feral Interactive Mac port of *SimTheme Park* (Theme Park
 World); the original program was never run. No original bytes, disassembly,
 extracted assets or manual text are stored here. A local disassembler
@@ -26,19 +26,22 @@ saved first-time and swear-filter flags (*Player file schema and failure
 order*, *Key award and key source*); fifth follow-up: the eight front-end
 `Keys()` readers, the lobby door display against the door gate, and spent
 tickets versus keys in mystery purchases, with a bounded reference calculation
-(*Key displays and ticket spending*). Every finding below is a
+(*Key displays and ticket spending*); sixth follow-up: an immutable `gms.dat`
+snapshot reader, writer and JSON envelope with explicit Mac-partial and
+strict-host policies (*Profile snapshot reference*). Every finding below is a
 fact about **this Mac binary** unless explicitly stated otherwise. It is not
 evidence for the PC `TP.EXE` or Patch 2 runtime (see *Mac and PC relationship*).
 
 ## Reproduce
 
 ```sh
-# instruction-field witnesses (1931 checks, identity-pinned; follow-up checks live in
+# instruction-field witnesses (1950 checks, identity-pinned; follow-up checks live in
 # followup_evidence.py, progression_evidence.py, park_entry_evidence.py,
-# profile_evidence.py, player_file_evidence.py and key_display_evidence.py,
+# profile_evidence.py, player_file_evidence.py, key_display_evidence.py and
+# profile_snapshot.py,
 # included in the same JSON report)
 python3 -I tools/ppc-analysis/lanes/scenarios/scenario_evidence.py /Users/sander/server/game-assets/mac-feral/bin
-# tests (synthetic fixtures; the seven corpus cases, including in-memory mutation
+# tests (synthetic fixtures; the ten corpus cases, including in-memory mutation
 # regressions, run only with OPENTPW_MAC_BIN set)
 python3 -m unittest discover -s tools/ppc-analysis/lanes/scenarios -v
 OPENTPW_MAC_BIN=/Users/sander/server/game-assets/mac-feral/bin python3 -m unittest discover -s tools/ppc-analysis/lanes/scenarios
@@ -673,6 +676,82 @@ cache user, spend into `mExtraKeys`, placement debiting money) that the
 witnesses must reject. Nothing here is PC evidence; ECON-040 stays
 PC-unqualified.
 
+### Profile snapshot reference (high for the layout; strict policy is a host choice)
+
+Sixth follow-up (`profile_snapshot.py`, 19 more checks; `test_profile_snapshot.py`,
+30 synthetic cases and 2 corpus cases). A standalone reference for a later profile
+implementation. It is not wired into the front end, the runtime or any save path,
+creates no folders and touches no host settings. No `gms.dat` exists in the
+assets, so every fixture is synthetic. Nothing here is a PC parser.
+
+Reader details pinned for this pass:
+
+- **Theme name**: the reader allocates length + 1 bytes (`__nwa__`, `0x129798`)
+  and uses the result **without a null test**. The byte loop tests first, so
+  length 0 reads nothing, and compares the index unsigned (`cmplw`, `0x1297d8`).
+  The buffer is NUL-terminated (`0x1297e8`) and passed to
+  `TbDynamicStringTemplate<c>(const char *)` (`0x1297f0`), then freed. The map key
+  therefore ends at the first NUL (inferred from the constructor's signature; its
+  body and the map comparator are not traced). Length `0xFFFFFFFF` allocates
+  0 bytes; for lengths past the end of the file the Mac outcome is not defined
+  by the trace.
+- **Mystery set**: the insert result is unused (`0x129964`), so a repeated
+  `rideId` is absorbed silently.
+- **Mode test**: selection tests the low byte of `mEasyModeUser` for non-zero
+  (`clrlwi.`, `0x137990`), so any non-zero byte selects Instant Action.
+
+Module contents (synthetic bytes only):
+
+- `read_profile_snapshot(raw, policy)` has no default policy. It returns a
+  frozen `ProfileSnapshot`: the raw version (u32), raw ticket bytes, counters,
+  raw mode/swear/first-time bytes, raw signed theme and mystery counts, the
+  inserted themes in file order (raw name bytes, 160-byte record with the
+  award/score and sign-name pairs kept as pairs), the settings read in block
+  order as raw bytes, the `rideId`s in file order, completion, the failing step
+  and offset, the player members read in full, trailing bytes and a list of
+  issues.
+- `mac-partial` follows the traced reader. Reset values are overlaid by every
+  member read before the first failure. A theme is inserted only when complete
+  and its key is new; a duplicate stops the read. Unsigned version ≥ 12 is
+  accepted with the one layout, and versions other than 12 are recorded as an
+  issue. A negative count reads nothing. Repeated `rideId`s are kept in order
+  and collapse in `mystery_set`. Trailing bytes are ignored. Settings read
+  before a failure are kept but `settings_complete` is false (the Mac applies
+  the block only after a complete read). A failing player member shows its
+  reset value, flagged as such, because what a short import stores is not traced.
+- `strict-host` is a **host policy, not Mac behaviour**. It raises
+  `StrictReject` with one fixed reason: `rejected-version` (< 12, as the Mac),
+  `unknown-version` (13…`0xFFFFFFFF`, which the Mac reads), `truncated`,
+  `negative-count`, `duplicate-theme`, `nul-in-theme-name`, `duplicate-ride-id`
+  or `trailing-bytes`. An empty theme name is accepted (the Mac reads it; whether
+  its writer can produce one is not traced).
+- `serialize_profile_snapshot` writes the traced layout in the snapshot's own
+  order with the raw version, raw counts and trailing bytes, so every complete
+  read cycles byte-identically. It refuses partial snapshots. After a partial
+  read the Mac's next write depends on the game-wide settings object, which a
+  snapshot does not hold. This is not the Mac writer's order: that writer
+  iterates the theme map and the mystery set (comparators not traced) and
+  always writes version 12.
+- `to_envelope`/`from_envelope`: JSON envelope
+  `opentpw.reference.mac-gms-snapshot`, envelope version 1, bytes as hex,
+  order kept, source identity included; unknown schema or envelope versions
+  are refused. Derived values are not stored.
+- Derived on demand: `selection_game_type(snapshot, current_game_type)` (1 stays
+  1, else 2 iff the mode byte is non-zero), `key_counters(snapshot, usable)`
+  (reuses `earned_tickets`/`mac_keys`/`mac_available_tickets`; `usable` over
+  theme map keys is required because whether `global.sam` loads is a runtime
+  fact), and `setting_words` (first word big-endian as stored, second
+  little-endian; meanings not traced).
+
+Tests cover every truncation length (partial under `mac-partial`, `truncated`
+under strict), the byte-18 mode boundary, overlay and reset of later members,
+cut themes and settings, an oversized name length, duplicate and NUL-colliding
+theme keys, negative counts, repeated ids, trailing bytes, the version
+boundaries 0/11/12/13/`0x7FFFFFFF`/`0x80000000`/`0xFFFFFFFF`, byte and JSON
+cycles, writer refusals, immutability, agreement with `read_mac_player_file`,
+key counters (non-zero bytes, usable themes only, spending never lowers keys,
+negative and wrapping counters, partial records) and four witness mutations.
+
 ### Instant Action availability (high for the gates)
 
 Every gate below is a direct GameType test (`== 2`, or `== 0` for tickets and
@@ -911,7 +990,9 @@ the PC runtime is unproved (*Park header gate and PC park files*).
   source*).
 - Player file: little-endian, version 12 (any unsigned value ≥ 12 accepted, one
   layout), field order and widths as in *Player file schema and failure
-  order*. The file also carries the game-wide settings block. A reimplementation
+  order*. `profile_snapshot.py` is the byte-level reference for both the Mac
+  partial read and a strict host read; a host that rejects unknown versions must
+  label that as a divergence from the unsigned Mac gate. The file also carries the game-wide settings block. A reimplementation
   must decide whether to keep that coupling. Keys are derived, never stored:
   only `mExtraKeys` is saved.
 - Failure paths with an explicit choice for OpenTPW: a missing or unreadable
@@ -1019,7 +1100,9 @@ unwired reference.
   profile `<base>` directory, the park header's object block (`0x109e0c`), the
   locked-door presentation and the front-end slot icon.
 - **Player file**: the `FindFirst` order (which file's settings win at start-up),
-  what the import stores on a short read, the two `mFirstTimePlayer` events
+  what the import stores on a short read, the string constructor and map
+  comparator behind theme keys, the theme-map and mystery-set iteration order
+  of the writer, the Mac outcome for theme name lengths past the file end, the two `mFirstTimePlayer` events
   (data `0x11f9bc`) and the settings toggles at `0x1af8c8`/`0x1af944` are not
   traced.
 - **PC profiles**: no PC player file or player save exists in the assets and the
@@ -1035,4 +1118,5 @@ Instruction-field checks prove what the selected instructions encode, not that a
 path is executed at runtime. Function boundaries were derived from prologues and
 returns around referenced sites, not from symbols. Manual statements are
 player-facing descriptions. No gameplay code, shared tool or register was
-changed by this lane; the contract helper is evidence-only and unwired.
+changed by this lane; the contract helper and the profile snapshot reference are
+evidence-only and unwired.

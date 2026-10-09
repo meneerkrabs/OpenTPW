@@ -54,7 +54,7 @@ public class MoviePlaybackTests
 	}
 
 	/// <summary>Builds a 16x16 movie with <paramref name="frames"/> video frames and audio blocks of 728 samples.</summary>
-	private static TgqMovieFile Movie( int frames, int audioBlocks, bool frameRateTag = true )
+	internal static TgqMovieFile Movie( int frames, int audioBlocks, bool frameRateTag = true )
 	{
 		var samples = audioBlocks * BlockSamples;
 		var tags = new List<byte>();

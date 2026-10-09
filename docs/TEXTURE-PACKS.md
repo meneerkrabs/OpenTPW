@@ -57,8 +57,12 @@ falls back to the original. `OPENTPW_TEXTURE_PACK=<pack>/textures` forces a pack
 
 ## Results and limits (MacBook Pro, Apple silicon, Retina)
 
-- A jungle-only trial upscaled 1,698 textures in 167 seconds.
-- At the default park camera the visible difference is small: a texture covers only about
+- A full build from an English installation took about 15 minutes: 3,784 textures
+  upscaled; kept original 921 interface, 3,617 low-detail, 49 small and 4 unreadable
+  textures (four low-detail `.wct` files the current decoder cannot read). The pack is
+  1.3 GB of PNG. A jungle-only trial upscaled 1,698 textures in 167 seconds.
+- In the 3D lobby the difference is visible on the island (grass, rock edge, the dinosaur).
+  At the default park camera it is small: a texture covers only about
   100–200 screen pixels there and is sampled from a lower mip level. The gain shows when
   zoomed in and in first-person ride views, where a texture is stretched across much of
   the screen.
@@ -67,6 +71,6 @@ falls back to the original. `OPENTPW_TEXTURE_PACK=<pack>/textures` forces a pack
   restoration; compare with the original before keeping it on.
 - Real-ESRGAN keeps the original soft alpha (WCT alpha is wavelet-compressed with many
   intermediate values) and upscales it with the colour.
-- Memory: 4× means 16× the pixels. PNGs on disk are about 0.3 GB for one level; the
+- Memory: 4× means 16× the pixels. The
   textures are uploaded uncompressed with mipmaps, so GPU memory use grows accordingly.
 - Animated texture frames are upscaled independently; no flicker was checked.

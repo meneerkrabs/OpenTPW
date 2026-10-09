@@ -65,14 +65,21 @@ public static class TexturePackBuilder
 {
 	public enum Skip { None, Interface, LowDetail, Small, ChromaKey, Unreadable }
 
-	public static Skip Classify( string gamePath, TextureData texture, int minimumSize )
+	/// <summary>Skip reasons that follow from the path alone, so those textures are never decoded.</summary>
+	public static Skip ClassifyPath( string gamePath )
 	{
-		var path = gamePath.Replace( '\\', '/' ).TrimStart( '/' ).ToLowerInvariant();
-		var segments = path.Split( '/' );
+		var segments = gamePath.Replace( '\\', '/' ).TrimStart( '/' ).ToLowerInvariant().Split( '/' );
 		if ( segments[0] == "ui" || segments.Contains( "fonts" ) )
 			return Skip.Interface;
 		if ( segments.Contains( "stexture" ) || segments.Contains( "ssharete" ) )
 			return Skip.LowDetail;
+		return Skip.None;
+	}
+
+	public static Skip Classify( string gamePath, TextureData texture, int minimumSize )
+	{
+		if ( ClassifyPath( gamePath ) is var byPath and not Skip.None )
+			return byPath;
 		if ( Math.Min( texture.Width, texture.Height ) < minimumSize )
 			return Skip.Small;
 		for ( var i = 0; i + 3 < texture.Data.Length; i += 4 )
@@ -165,6 +172,11 @@ public static class TexturePackBuilder
 			var skipped = new Dictionary<Skip, int>();
 			foreach ( var (gamePath, load) in textures )
 			{
+				if ( ClassifyPath( gamePath ) is var byPath and not Skip.None )
+				{
+					skipped[byPath] = skipped.GetValueOrDefault( byPath ) + 1;
+					continue;
+				}
 				TextureData texture;
 				try
 				{

@@ -105,3 +105,11 @@ The seven new checks cover real-word re-alignment, a restored deadline63ms away,
 unsigned offset/read wrap, saturated-base outer wrap, independently decoded
 selector truth tables, retained offsets on the skip path and exact pair width.
 The project now has42 standalone checks. No live game references this module.
+
+The later selector-lifecycle witness refines the entry-route boundary: selector0
+returns after initial header processing; selector1 returns after the generic
+prefix operation, before SSEM/KOLC/TNAV and saved-script graph reading. Both
+bypass the pre/post hooks. `AppliesPostLoadAlignment` remains the local predicate
+at its qualified call site; it must not be used alone to decide whether a full
+entry route actually executes that call. No source-zero reset follows from
+these bypasses, and generic header/prefix callee mutations remain unqualified.

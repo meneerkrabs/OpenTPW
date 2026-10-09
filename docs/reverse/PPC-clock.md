@@ -1095,8 +1095,9 @@ Incoming load-entry r6 is copied to r29 at `0x11ad04`. Post-load caller
 `0x11b4f4` when equal. The known literal1 callers are `0x112b10` and state9
 callback call `0x1c200c`; literal2 callers are `0x198914` / `0x1990f4`.
 These numbers must not be conflated with GameType0/1/2 or world state4.
-Both visible paths can reach saved-word/state reading, but selector1's complete
-clock/scene lifecycle remains unqualified; the contract models only this hook.
+The follow-up below proves selector1 returns before the later saved-clock and
+script-state readers. Its generic initial prefix/header callees still require
+separate side-effect qualification; the typed contract models only this hook.
 
 For the hook path, `0x11b4f4` stores reset-request1 at `0x11b548`, then calls
 pair alignment at `0x11b54c`. On the next active callback, `0x1c2274` invokes
@@ -1139,3 +1140,96 @@ source scale/pause/forced state across full restore, native partial-load/callee
 side effects, signed timestamp recovery, host object references and target-PC
 execution. The standalone contract establishes word alignment; it does not
 claim a complete game-clock restore.
+
+## Selector1 bypass: a prefix return, not an unaligned full restore
+
+`selector_lifecycle.py` resolves the earlier provisional gap using raw selector
+register transfers, exact BO/BI/targets, return literals, caller relationships
+and four functional-region hashes. The existing `selector!=1` post-hook
+arithmetic contract is retained; no new mode names or live clock changes are
+introduced.
+
+Incoming entry argument r6 is copied to r29 at `0x11ad04`. After initial header
+processing through `0x11c880` (call `0x11aeb4`), the entry forwards this selector
+as argument r5 at `0x11b3a4` into state reader `0x11b5ac` (`0x11b3ac`). The
+reader copies r5 to r23 at `0x11b5b8`. It performs a generic prefix operation
+through `0x10bc1c` at `0x11b610`, using argument5=0 / argument6=1 / argument7=0
+(`0x11b600/0x11b608/0x11b60c`). Successful continuation requires that initial
+operation to return0; its nonzero failure branch returns before either route.
+
+Then `0x11b658` compares r23 with1. Conditional branch `0x11b660` is **BO4,
+BI2**, so EQ-clear jumps to the full reader body at `0x11b674`. With selector1,
+EQ is set: it falls through, calls `0x11db8c` at `0x11b668` (the callee consists
+of literal return1 and return), sets r3=1 at `0x11b66c`, and jumps directly to
+reader epilogue `0x11c46c` at `0x11b670`. That epilogue retains r3 and returns.
+This is a source-proven early-success path, not a full load of old deadlines
+without epoch alignment.
+
+| Later full-reader consumer | Call site / target | Selector1 consequence after successful prefix |
+| --- | --- | --- |
+| `SSEM` adjusted shared-clock saved words | `0x11b9f4` → `0x10e998` | Not reached; neither scaled `+64` nor unscaled overall `+96` is read by this call |
+| `KOLC` raw-clock continuity record | `0x11bac0` → `0x127b64` | Not reached |
+| `TNAV` outer cadence state | `0x11bb88` → `0x1c31f4` | Not reached |
+| `RSSE` script manager/IDs/deadlines | `0x11bea8` → `0xb4818` | Not reached; the114377xxx fixture deadlines are not consumed here |
+
+The entry also skips both lifecycle hooks for selector1. Comparison
+`0x11b390` and BO12/BI2 branch `0x11b394` skip pre-hook `0x11b478`, called
+at `0x11b39c` otherwise. That pre-hook includes script-manager shutdown
+`0xb2b18` at `0x11b4cc`. Comparison `0x11b3cc` and BO12/BI2 branch `0x11b3d0`
+skip post-hook `0x11b4f4`, called at `0x11b3d8` otherwise. The latter hook
+contains saved-epoch alignment at `0x11b54c` and the reset-request store
+already traced. Thus this selector1 path neither uses those full-state readers
+nor invokes their explicit cleanup/alignment/reset hook chain.
+
+Selector0 has a separate earlier return after header processing:
+`0x11aefc` compares r29 with0; BO4/BI2 at `0x11af00` continues only if unequal.
+Equality falls through to literal success1 at `0x11af14` and jumps to entry
+epilogue `0x11b464` at `0x11af18`. The graph/state reader and both hooks are
+not reached. This further distinguishes an **entry route** from the local
+post-hook predicate: `SharedClockEpochs.AppliesPostLoadAlignment(0)` expresses
+what that particular comparison would do if reached; selector0's entry never
+reaches it on this successful header path.
+
+No user-facing meaning for selectors0/1/2 is inferred. Known literal1 callers
+remain `0x112b10` / state9 call `0x1c200c`, and literal2 callers remain
+`0x198914` / `0x1990f4`. Other selector values allow the later reader body
+only after earlier validation succeeds; the source's literal2 container-header
+checks and all later failure branches still apply. The tool's route projection
+is explicitly conditional on successful initial header/prefix operations.
+
+The adjusted public getters and their base getters do not intrinsically perform
+saved-epoch alignment: `0x10e844` → `0x11a588` adds the scaled outer offset;
+`0x10e864` → `0x11a428` adds the unscaled outer offset; the respective base
+queries are `0x10ed54` / `0x117c00`. Selector1 does not reach their explicit saved
+word reader/alignment calls through this route. It is therefore incorrect to
+force the template's saved deadlines into those getters or reset the live
+clock to0 to compensate. This does **not** prove that all clock/base state is
+unchanged: generic header processing and `0x10bc1c` contain further callees and
+virtual calls whose side effects remain unqualified. Current-time queries may
+also naturally advance during loading.
+
+For non1 routes that reach the state reader, the entry invokes the conditional
+post-hook **before** checking the reader result at `0x11b3dc`. This preserves
+the earlier partial-load/callee-mutation caveat; the bounded typed contract is
+not a claim that the original rolls back failed reads or only aligns complete
+snapshots. The independent serialized count / physical list / explicit14→28
+insertion projection is unaffected.
+
+Validation: **61/61** Python clock tests with original Mac and PC fixtures enabled,
+zero skips; seven new groups cover successful selector0/1/full-body routes,
+register-width limits, independently decoded EQ-set/EQ-clear truth tables,
+malformed LT/CTR lookalikes and truncated instruction input, plus the identified
+native witness. Four region hashes and exact register/call/branch/return
+relationships pass; Python compilation and whitespace checks pass. The existing
+42-case typed epoch/scheduler contract is unchanged by this evidence-only slice.
+
+```sh
+python3 tools/ppc-analysis/lanes/clock/selector_lifecycle.py /path/to/mac-feral/bin
+OPENTPW_PPC_BIN_ROOT=/path/to/mac-feral/bin OPENTPW_PPC_SAVE_PATH=/path/to/Easymode.TPWI python3 -m unittest discover -s tools/ppc-analysis/lanes/clock -p 'test_*.py' -v
+```
+
+Actual remaining restore dependency: integrate only the full-state routes with
+shared saved epochs and raw deadlines; qualify initial generic/header callees,
+partial-load mutations and target-platform execution before claiming complete
+lifecycle behavior. The specific selector1 saved-clock/deadline mismatch is
+closed by its early-return control flow, without speculative enum mapping.

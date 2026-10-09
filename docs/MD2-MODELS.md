@@ -246,6 +246,33 @@ table of 260-byte source-path strings (`C:\WORK\Theme 2\…`) at 0xB8 before the
 texture flags; slot records do not match the 221.203 layout. With a single
 geometry sample the layout cannot be verified, so it is not supported.
 
+**Original loader (Mac `engine_shared`, `LoadM3D2Header(char*, unsigned long)`).**
+Static analysis of the Mac PowerPC library (data fork SHA-256
+`c549123f647dcf33c3e2c3d515bffe2cfcb19d11680f743f02ca42bb09dbd73b`; Ghidra, nothing
+executed) shows how the original treats versions. The loader byte-swaps one fixed
+header layout for every version (32-bit words at 0x00–0x14 and 0x2C–0x30, sixteen
+16-bit counts at 0x34–0x4B, region offsets from 0x4C that it turns into pointers;
+the animation block pointer is word 0x98), then checks, in this order:
+
+| Condition | Log tag | Result |
+| --- | --- | --- |
+| magic ≠ `0x1CD15D46` | `BadFileType` | rejected |
+| major ≥ 222 | `OldCode` | rejected |
+| major < 221 and the caller's flag bit 1 clear | `DeadMesh` | rejected |
+| caller flag bit 2 set (geometry expected) but an animation block exists | `Master is Anim` | rejected |
+| flag bit 2 clear (animation expected) but no animation block | `Anim is Master` | rejected |
+| animation block, minor > 203 | `OldCode` | animation dropped, flag 0x20 cleared |
+| animation block, minor < 203 | `DeadAnim` | animation dropped |
+| animation block, minor = 203 | — | animation tables fixed up |
+| no animation block, major < 221 | `OldMesh` | loaded, warning |
+| otherwise | `Ok` | loaded |
+
+So rejecting 207.201 matches the original's default (`DeadMesh`); the original
+loads such a file only when a caller passes flag bit 1, and would then discard a
+201 animation (`DeadAnim`). Which callers pass that flag is not yet traced. The
+documented 207.201 fields at 0x34–0x4B and 0x4C coincide with the loader's
+count and offset fields, but that does not verify the rest of its layout.
+
 ## Remaining gates and sources
 
 Next: animation tick rate and how scripts select clips (RSE `TRIGANIM`

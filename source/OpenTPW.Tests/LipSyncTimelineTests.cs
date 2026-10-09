@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -100,5 +101,44 @@ public class LipSyncTimelineTests
 		CollectionAssert.AreEqual( new[] { "sp_478" }, overruns );
 		Console.WriteLine( $"{talking.Count} talking windows {talking.Average():F1} dB; {silent.Count} silent windows {silent.Average():F1} dB (re 1 LSB)." );
 		Assert.IsTrue( talking.Average() - silent.Average() > 20, $"talking {talking.Average():F1} dB, silent {silent.Average():F1} dB" );
+	}
+
+	[TestMethod]
+	public void OriginalLastMarkFitsSpeechDurationInMicroseconds()
+	{
+		// Independent check of ADVISOR-013: if marks are microseconds, last / duration is near 1
+		// over the corpus (a millisecond or 1/1000 unit would give ~1000 or ~0.001).
+		var bank = Mp2DecoderTests.OpenSpeechBank();
+		var lipsPath = Path.Combine( Mp2DecoderTests.SpeechDirectory(), "lips.wad" );
+		if ( !File.Exists( lipsPath ) )
+			Assert.Inconclusive( "The global lips.wad is missing." );
+		using var lips = new WadArchive( lipsPath );
+		var ratios = new List<double>();
+		var overruns = new List<string>();
+		var shortest = double.MaxValue;
+		foreach ( var name in lips.GetFiles( "" ) )
+		{
+			var stem = Path.GetFileNameWithoutExtension( name );
+			var clip = bank.soundFiles.Single( file => string.Equals( Path.GetFileNameWithoutExtension( file.Name ), stem, StringComparison.OrdinalIgnoreCase ) );
+			if ( (clip.FrameData[1] & 0x06) == 0x06 )
+				continue; // z_error is Layer I.
+			var audio = Mp2Decoder.Decode( clip.FrameData );
+			var timeline = new LipSyncTimeline( new LipSyncFile( new MemoryStream( lips.GetFile( name ).GetData() ) ) );
+			var ratio = timeline.EndMicroseconds / (audio.DurationSeconds * 1e6);
+			ratios.Add( ratio );
+			if ( ratio > 1 )
+				overruns.Add( stem );
+			if ( timeline.EndMicroseconds > 0 )
+				shortest = Math.Min( shortest, ratio );
+		}
+		ratios.Sort();
+		var median = ratios[ratios.Count / 2];
+		Console.WriteLine( $"last mark / duration: n={ratios.Count} min={ratios[0].ToString( "F6", CultureInfo.InvariantCulture )} shortest-talking={shortest.ToString( "F6", CultureInfo.InvariantCulture )} median={median.ToString( "F6", CultureInfo.InvariantCulture )} max={ratios[^1].ToString( "F6", CultureInfo.InvariantCulture )}" );
+		Assert.AreEqual( 638, ratios.Count );
+		// sp_478 is the only English global clip whose last mark passes its end (about 1.05x).
+		CollectionAssert.AreEqual( new[] { "sp_478" }, overruns );
+		Assert.IsTrue( ratios[^1] < 1.06, $"max {ratios[^1]}" );
+		Assert.IsTrue( shortest > 0.03, $"shortest talking clip {shortest}" );
+		Assert.IsTrue( median > 0.95 && median < 1.0, $"median {median}" );
 	}
 }

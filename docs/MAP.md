@@ -120,6 +120,16 @@ four `base.map` files share identical counts at identical positions for 17 (490)
 Exception: fantasy has one isolated value 16 at (27, 17) with no geometry and no
 heightfield hole; it is unexplained and reported as `EntranceArea` only.
 
+**Bit 0x04 (unknown meaning, not in `MapCellFlags`).** Measured on the four
+`base.map` fixtures (fantasy, hallow, jungle, space): raw bit 0x04 is set on exactly
+14 cells per level, the same cells in each: X 47–48 × Y 10–16 (`GetCellAt(47..48, 10..16)`),
+all with raw value 148. No other value has bit 0x04 in any of the four base maps. The
+jungle `terrain.map` has no bit-0x04 cells (values 0/1 only). The pinned test
+`OriginalRawBit04IsOnlyTicketLaneCellsWithValue148` checks this; `MapFile.EnumerateCellsWithRawBits(0x04)`
+exposes it without giving it a flag. In these fixtures 0x04 never occurs apart from
+value 148, so the terrain data alone cannot tell what the bit means; interpreting it
+needs evidence beyond the terrain map (original code or a capture).
+
 The Jungle save (TPWS-PAYLOAD.md) carries a byte identical to `base.map` at every
 one of 16,384 cells and does **not** match `terrain.map` (0/1 only), so the
 Easymode park was built on `base.map`. What `terrain.map` is for is still unknown.

@@ -62,11 +62,31 @@ in C# by `LipSyncTimelineTests` with the new decoder):
 - Fit: the last mark lies inside the clip for 637/638 decodable English global clips
   (exception: `sp_478`, 1.05×; its byte-identical space-level copy fits the
   space speech). Danish `sp_127`/`sp_427` overrun by 3 %/0.3 %.
+- Second check (`LipSyncTimelineTests.OriginalLastMarkFitsSpeechDurationInMicroseconds`,
+  October 9, 2026): last mark divided by the decoded MP2 duration over the 638 English
+  global clips. Median 0.974, shortest talking clip 0.039 (`sp_019`), longest 1.051 (`sp_478`,
+  the only overrun). One clip (`sp_146`) has a single 0 mark and ratio 0. A millisecond or
+  1/1000 unit would put the median near 1000 or 0.001, so the data supports microseconds.
+  The ratio is not 1.0 exactly, so the marks are not an exact end-of-clip value.
 
 Each level `sp_001.LIP` is byte-identical to one global member: fantasy = `sp_473`,
 hallow = `sp_476`, jungle = `sp_479`, space = `sp_478`. How the original chooses
 between global and level copies, and how it maps talking to the five mouth meshes,
 are not known (no runtime trace; `strings tp.exe` has no `lip`/`phon`/`viseme`).
+
+## Original-binary evidence
+
+The Mac build's main program (`SimThemePark` data fork, SHA-256
+`04809cd4ccee5433c7fb0b7c93d32f6a7aa629c1849181c0b7906415e5e295f5`), contains the LIP path
+template `:Speech:lips:sp_%03d.lip` at offset 1917026, next to the string `ResponseID %d`
+(1917012); the archive name `lips.wad` at 2007032; the mouth mesh name table
+`mouth - normal`, `- aah`, `- eee`, `- ooh`, `- sss` (lowercase) from offset 1996907; and the
+log string `Advisor sample is %d ms long` at 1917066. These were found by a read-only
+`python3 -I` scan of the file. They show that the runtime builds LIP paths from a clip
+number and has the five mouth names, but they do not give the unit or the talking
+toggle. The strings alone do not show whether `sp_%03d.lip` is level-relative or global,
+so ADVISOR-009 stays open. The mouth-name table does not show which shape is used while
+talking, so ADVISOR-001 stays open.
 
 ## Speech audio decoding
 
@@ -162,7 +182,7 @@ stay open; short nonseekable reads work). `LipSyncTimeline` applies the inferred
 `TalkingIntervals`.
 
 Tests: `LipSyncFileTests` (12 synthetic + 5 private corpus), `LipSyncTimelineTests`
-(5 synthetic + 1 corpus loudness test), `Mp2DecoderTests` (13 synthetic incl. a unit-DC-gain
+(5 synthetic + 2 corpus tests: loudness, last mark vs duration), `Mp2DecoderTests` (13 synthetic incl. a unit-DC-gain
 check of the window/matrixing + 2 corpus: all 640 Layer II speech clips decode;
 `sp_001` samples and RMS match the external decoder ±1), `AdvisorTests` (private test for the German overlay bank needs `OPENTPW_LANGUAGE_DATA`; 9 synthetic
 incl. the 60 Hz mouth-change frames 134/169/244 for `sp_001` and the speech clock on a

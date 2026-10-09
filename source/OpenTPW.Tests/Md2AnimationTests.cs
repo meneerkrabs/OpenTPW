@@ -171,6 +171,27 @@ public class Md2AnimationTests
 	}
 
 	[TestMethod]
+	public void AnimatorTickRateScalesClipTimeAndDefaultsToThirty()
+	{
+		var model = Read( Md2ModelFileTests.CreateGeometry() );
+		var clip = Read( CreateAnimation() ).Clip!;
+		Assert.AreEqual( 30f, ObjectAnimator.DefaultTicksPerSecond );
+		Assert.AreEqual( 30f, new ObjectAnimator( model ).TicksPerSecond );
+		Assert.ThrowsException<ArgumentOutOfRangeException>( () => new ObjectAnimator( model, 0 ) );
+
+		var standard = new ObjectAnimator( model );
+		var half = new ObjectAnimator( model, 15 );
+		// Clip length in seconds is duration / rate, so a 15 ticks/s clock takes twice as long.
+		Assert.AreEqual( clip.Duration / 30d, standard.Play( 0, clip, "synth", true ), 1e-6 );
+		Assert.AreEqual( clip.Duration / 15d, half.Play( 0, clip, "synth", true ), 1e-6 );
+
+		standard.Advance( 1 );
+		half.Advance( 1 );
+		Assert.AreEqual( 30f, standard.GetTick( 0 ), 1e-4f );
+		Assert.AreEqual( 15f, half.GetTick( 0 ), 1e-4f );
+	}
+
+	[TestMethod]
 	public void RejectsMalformedTracks()
 	{
 		var data = CreateAnimation();

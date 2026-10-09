@@ -36,6 +36,19 @@ Literal values are kept as raw `ushort`. `0xFFFF` occurs 918 times (mostly
 EVENT's second operand); whether it means -1 is **unverified**, so disassembly
 prints literals ≥ `0x8000` in hex rather than choosing a sign.
 
+### Header version check
+
+The only plausible version field is the magic tail (bytes 5–7, `0F 01 00`
+after `RSSEQ`; bytes 4–7 read as one little-endian word `0x00010F51`). It is
+identical in all 308 members, and the reader already requires it exactly, so a
+non-fatal "differs from corpus" diagnostic could never fire on a file the reader
+accepts. No version property was added. The other header words are sizes or
+constants, not versions: the variable count, stack, limbo, bounce and walk sizes
+vary across members, the time slice is 50 in all 308 and the padding is constant.
+The original's "Script & Script interpreter are different versions" message
+([RSE-VM.md](RSE-VM.md#original-binary-evidence)) shows a version comparison
+exists, but which field it reads is unresolved.
+
 ## Reader policy
 
 Input is capped at 1 MiB (largest member: 2,172 bytes); at most 65,536 code
@@ -112,7 +125,7 @@ full text inventory (per-opcode operand-kind signatures, strings, EVENT tuples).
 
 Unknown: semantics of most operands (see upstream "Unknown" entries), literal
 signedness, wait/time units, EVENT tuple meanings, header field effects, the
-3 bytes after `RSSEQ`. Next: original runtime traces to confirm opcode numbering and the semantics
+3 bytes after `RSSEQ` (constant in all 308; see Header version check). Next: original runtime traces to confirm opcode numbering and the semantics
 the VM infers from corpus control flow ([RSE-VM.md](RSE-VM.md)). Static
 parsing does not qualify any ride behaviour.
 

@@ -1,0 +1,559 @@
+{
+  "schema": 1,
+  "scope": "PC asset structure; no machine instructions or game execution",
+  "scriptCount": 308,
+  "instructionCount": 11913,
+  "controllerCommandCounts": {
+    "53": {
+      "1": 4,
+      "3": 4,
+      "4": 4,
+      "5": 5,
+      "8": 4,
+      "9": 20,
+      "10": 4,
+      "11": 4,
+      "12": 4,
+      "14": 14,
+      "15": 4,
+      "16": 4,
+      "17": 1
+    },
+    "54": {
+      "1": 12,
+      "2": 12,
+      "3": 8,
+      "4": 13,
+      "5": 28,
+      "6": 12,
+      "7": 24,
+      "8": 24,
+      "9": 8,
+      "10": 12,
+      "11": 12,
+      "12": 4,
+      "13": 4,
+      "14": 4,
+      "16": 4,
+      "17": 18
+    },
+    "55": {
+      "1": 12,
+      "2": 12,
+      "3": 24,
+      "4": 24,
+      "5": 36,
+      "6": 12,
+      "7": 12,
+      "8": 12
+    }
+  },
+  "selectedScripts": [
+    {
+      "path": "Data/levels/fantasy/rides/gokarts.wad/EventMap.RSE",
+      "sha256": "fb0f070b72c6fa7a7ace8ef3c84ff9f999c15b18b8e6f9ce908346721d61fa9d",
+      "CodeWordCount": 36,
+      "instructionCount": 13,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "runningWrites": [],
+      "controllerUses": 0,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/fantasy/rides/gokarts.wad/GoKarts.RSE",
+      "sha256": "7fc77ff5d43a875717f83bbbd54512767c792863fff67d385458372b41d00c0e",
+      "CodeWordCount": 267,
+      "instructionCount": 113,
+      "StackSize": 5,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 8,
+      "runningWrites": [
+        {
+          "word": 141,
+          "value": 1
+        },
+        {
+          "word": 187,
+          "value": 0
+        }
+      ],
+      "controllerUses": 17,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/fantasy/rides/wateride.wad/EventMap.RSE",
+      "sha256": "2448f989969c83ddf21f44957c33fb8e232586a00053907409b2e071cf686ca6",
+      "CodeWordCount": 36,
+      "instructionCount": 13,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "runningWrites": [],
+      "controllerUses": 0,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/fantasy/rides/wateride.wad/wateride.RSE",
+      "sha256": "a3b4a09753593a7c8eff84a87d982ab2a3e851080b87f5d3504a430744dfbc18",
+      "CodeWordCount": 261,
+      "instructionCount": 99,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "runningWrites": [
+        {
+          "word": 61,
+          "value": 0
+        }
+      ],
+      "controllerUses": 20,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/hallow/rides/bumper.wad/bumper.RSE",
+      "sha256": "55f4fbb9820e9a4cf401bf1dca64677b1371ca71c048550197f5033667eb1163",
+      "CodeWordCount": 254,
+      "instructionCount": 103,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 10,
+      "runningWrites": [
+        {
+          "word": 17,
+          "value": 0
+        },
+        {
+          "word": 135,
+          "value": 1
+        }
+      ],
+      "controllerUses": 12,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/hallow/rides/bumper.wad/effects.RSE",
+      "sha256": "38bbf77c3f183143e7dbe71549125b23c412efe18e748feea597ea12d28dc2ab",
+      "CodeWordCount": 24,
+      "instructionCount": 9,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "runningWrites": [],
+      "controllerUses": 0,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/hallow/rides/bumper.wad/EventMap.RSE",
+      "sha256": "59844afa05a14707c3552efb80111aaf78a31e140863b2c7992de6f93f4669b2",
+      "CodeWordCount": 36,
+      "instructionCount": 13,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "runningWrites": [],
+      "controllerUses": 0,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/hallow/rides/gokarts.wad/EventMap.RSE",
+      "sha256": "59844afa05a14707c3552efb80111aaf78a31e140863b2c7992de6f93f4669b2",
+      "CodeWordCount": 36,
+      "instructionCount": 13,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "runningWrites": [],
+      "controllerUses": 0,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/hallow/rides/gokarts.wad/GoKarts.RSE",
+      "sha256": "f2fe2e15d7a4d026ab36704c62b836250fb838747d03b4fe8db83446c39114ed",
+      "CodeWordCount": 271,
+      "instructionCount": 106,
+      "StackSize": 5,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "runningWrites": [
+        {
+          "word": 150,
+          "value": 1
+        },
+        {
+          "word": 210,
+          "value": 0
+        }
+      ],
+      "controllerUses": 18,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/hallow/rides/wateride.wad/EventMap.RSE",
+      "sha256": "f05bc3ef99cf5a130f69aa8271662263fb7776bef3c806e8de91736573090c73",
+      "CodeWordCount": 36,
+      "instructionCount": 13,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "runningWrites": [],
+      "controllerUses": 0,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/hallow/rides/wateride.wad/Wateride.RSE",
+      "sha256": "d96949e925714126ac9661caa2bf8352e16a3d807da1de25770e0030e4dbb6bf",
+      "CodeWordCount": 261,
+      "instructionCount": 102,
+      "StackSize": 5,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "runningWrites": [
+        {
+          "word": 60,
+          "value": 0
+        }
+      ],
+      "controllerUses": 20,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/jungle/rides/bouncy.wad/Bouncy.RSE",
+      "sha256": "7f32699cb6c511d8a9d80dd3250ae89f0b3991b2645fdfccf5cc13a68f677a35",
+      "CodeWordCount": 208,
+      "instructionCount": 90,
+      "StackSize": 3,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 10,
+      "WalkSize": 0,
+      "runningWrites": [
+        {
+          "word": 109,
+          "value": 0
+        },
+        {
+          "word": 144,
+          "value": 0
+        }
+      ],
+      "controllerUses": 0,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/jungle/rides/bumper.wad/bumper.RSE",
+      "sha256": "3457da0b10b3d63dbb659fb5d4b094c3c932a968cb1e839e7078ef313763cc6a",
+      "CodeWordCount": 236,
+      "instructionCount": 96,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "runningWrites": [
+        {
+          "word": 23,
+          "value": 0
+        },
+        {
+          "word": 128,
+          "value": 1
+        }
+      ],
+      "controllerUses": 12,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/jungle/rides/bumper.wad/EventMap.RSE",
+      "sha256": "d232cd517a269ffa0a2a216c134d695b95c08c5e9349db575159d40966a1149b",
+      "CodeWordCount": 36,
+      "instructionCount": 13,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "runningWrites": [],
+      "controllerUses": 0,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/jungle/rides/gokarts.wad/EventMap.RSE",
+      "sha256": "d232cd517a269ffa0a2a216c134d695b95c08c5e9349db575159d40966a1149b",
+      "CodeWordCount": 36,
+      "instructionCount": 13,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "runningWrites": [],
+      "controllerUses": 0,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/jungle/rides/gokarts.wad/GoKarts.RSE",
+      "sha256": "7446fcbee430ce633a3a26d254d7a982534d89f731a9eab4f6a4b2b1d3d994da",
+      "CodeWordCount": 213,
+      "instructionCount": 89,
+      "StackSize": 5,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "runningWrites": [
+        {
+          "word": 112,
+          "value": 1
+        },
+        {
+          "word": 152,
+          "value": 0
+        }
+      ],
+      "controllerUses": 17,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/jungle/rides/totem.wad/Totem.RSE",
+      "sha256": "5e1ab461c3692c32ead298defb847eb623db24cc4068cfe9760c53dd70233aaf",
+      "CodeWordCount": 357,
+      "instructionCount": 129,
+      "StackSize": 20,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 20,
+      "runningWrites": [
+        {
+          "word": 66,
+          "value": 1
+        },
+        {
+          "word": 185,
+          "value": 0
+        }
+      ],
+      "controllerUses": 0,
+      "animationChannels": [
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "path": "Data/levels/jungle/rides/wateride.wad/EventMap.RSE",
+      "sha256": "00f7a8a5c1d8b6d73a3bcafd3265189a4cb05c92c092a616a487b364d8bcf160",
+      "CodeWordCount": 36,
+      "instructionCount": 13,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "runningWrites": [],
+      "controllerUses": 0,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/jungle/rides/wateride.wad/Wateride.RSE",
+      "sha256": "0c84f043bb6ef7ff23051cd878e7cf9359940c50e00ca84534cfac1d5778df4a",
+      "CodeWordCount": 243,
+      "instructionCount": 95,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "runningWrites": [
+        {
+          "word": 53,
+          "value": 0
+        }
+      ],
+      "controllerUses": 20,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/space/rides/bouncy.wad/Bouncy.RSE",
+      "sha256": "9002195fc92ea36e0bcf377dadac89bb0fb023091e293ac8ad2d66bf957896b4",
+      "CodeWordCount": 209,
+      "instructionCount": 90,
+      "StackSize": 3,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 12,
+      "WalkSize": 0,
+      "runningWrites": [
+        {
+          "word": 109,
+          "value": 0
+        },
+        {
+          "word": 147,
+          "value": 0
+        }
+      ],
+      "controllerUses": 0,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/space/rides/bumper.wad/bumper.RSE",
+      "sha256": "165537740d156dd1f690425bc21d683a6ac95020f217000200d0cba83caa9a74",
+      "CodeWordCount": 281,
+      "instructionCount": 113,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 10,
+      "runningWrites": [
+        {
+          "word": 26,
+          "value": 0
+        },
+        {
+          "word": 144,
+          "value": 1
+        }
+      ],
+      "controllerUses": 12,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/space/rides/bumper.wad/EventMap.RSE",
+      "sha256": "630558a1625a22056f467b3e9876aeed8950ae38af4371126b76bf2b88716cab",
+      "CodeWordCount": 36,
+      "instructionCount": 13,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "runningWrites": [],
+      "controllerUses": 0,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/space/rides/gokarts.wad/EventMap.RSE",
+      "sha256": "630558a1625a22056f467b3e9876aeed8950ae38af4371126b76bf2b88716cab",
+      "CodeWordCount": 36,
+      "instructionCount": 13,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "runningWrites": [],
+      "controllerUses": 0,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/space/rides/gokarts.wad/GoKarts.RSE",
+      "sha256": "8330710ac9195045c3beaf92e3370f59fe1ee6f41c9073fb2cd5026cb05ee125",
+      "CodeWordCount": 270,
+      "instructionCount": 110,
+      "StackSize": 5,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "runningWrites": [
+        {
+          "word": 131,
+          "value": 1
+        },
+        {
+          "word": 184,
+          "value": 0
+        }
+      ],
+      "controllerUses": 19,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/space/rides/moonshot.wad/Moonshot.RSE",
+      "sha256": "8cc600039af76e352da92438bd62f5ba2367cb164d8686ec7f3a5554e3403e82",
+      "CodeWordCount": 131,
+      "instructionCount": 55,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "runningWrites": [],
+      "controllerUses": 12,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/space/rides/moonshot.wad/EventMap.RSE",
+      "sha256": "20eb2f18e5e4f6d004e0c81c1f652ee2a4ecc2b77e99c5c81473834e4eb05085",
+      "CodeWordCount": 33,
+      "instructionCount": 12,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "runningWrites": [],
+      "controllerUses": 0,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/space/rides/wateride.wad/EventMap.RSE",
+      "sha256": "cb83fc41dd429b54a99c9dc2debd7b79a0d4033a5c6e938fce1b9d15fbd2d622",
+      "CodeWordCount": 36,
+      "instructionCount": 13,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "runningWrites": [],
+      "controllerUses": 0,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/space/rides/wateride.wad/Wateride.RSE",
+      "sha256": "c36ca044c85e60017e16a538c778fad5a192cf0464f649fe7c107d5979ec0e96",
+      "CodeWordCount": 278,
+      "instructionCount": 102,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "runningWrites": [
+        {
+          "word": 73,
+          "value": 0
+        }
+      ],
+      "controllerUses": 20,
+      "animationChannels": []
+    }
+  ]
+}

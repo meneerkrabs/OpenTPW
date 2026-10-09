@@ -9,6 +9,8 @@ widget allocation and model binding evidence (see [PPC UI findings](reverse/PPC-
 Most screen/controller/rendering choices below remain OpenTPW approximations. No original
 captures were compared, so visual fidelity is **not verified**.
 
+The CD's autorun launcher window is documented separately in [AUTORUN.md](AUTORUN.md).
+
 ## Inventory
 
 All counts from read-only listings of the installed English data.
@@ -356,6 +358,7 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-032 | `UI/Original/UiWidgets.cs:179`, `Hud/ParkHud.cs:590` | longer labels fall back to the small font; catalogue names greedily wrap in their slots | captures of translated original screens |
 | UI-034 | `UI/Original/UiImages.cs` | a fully opaque texture on a transparent (flag 0x2) model slot keys out black; only `ipan` in the lobby `f_lobbutbg` panel | the original's render state for flagged texture slots |
 | UI-035 | `Client/Movie/IntroPlaylist.cs` | start-up movies: the Mac order (bf, then a day-of-month trailer) assumed for the PC; input held at launch ignored until released; movies letterboxed to 640:352 | PC executable analysis or captures of the PC start-up sequence |
+| UI-040 | `Client/Autorun/AutorunView.cs` | autorun launcher focus rectangle: dotted frame inverting the pixels with even x + y, 2 pixels inside the button | capture of the original launcher with a focused button |
 
 Data-backed (tagged `[DATA]`): the 2048×1536 canvas and authored rectangles of
 placed models (`ui.wad` roots/bounds), button state frames and texture order, V

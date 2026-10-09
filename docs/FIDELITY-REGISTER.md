@@ -14,9 +14,9 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **134 unresolved unique APPROX IDs**, 150 APPROX occurrences, 59 EXT occurrences, 63 DATA occurrences and 45 BIN occurrences.
+Current inventory: **135 unresolved unique APPROX IDs**, 151 APPROX occurrences, 63 EXT occurrences, 64 DATA occurrences and 45 BIN occurrences.
 
-Of these, 128 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
+Of these, 129 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
 CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.
 
@@ -30,7 +30,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON | 36 | 36 |
 | ONLINE | 6 | 6 |
 | RIDES | 26 | 26 |
-| UI | 34 | 48 |
+| UI | 35 | 49 |
 
 ## Approximation declarations
 
@@ -170,6 +170,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-032 | Original-fidelity area (scope unadjudicated) | longer labels fall back to the small font; catalogue names greedily wrap in their slots | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:43` |
 | UI-034 | Original-fidelity area (scope unadjudicated) | a fully opaque texture on a transparent (flag 0x2) model slot keys out black (only ipan in the lobby f_lobbutbg panel) | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:44` |
 | UI-035 | Original-fidelity area (scope unadjudicated) | start-up movies: the Mac build's order (bf, then a day-of-month trailer) is assumed for the PC .tgq files; input held at launch is ignored until released; movies are letterboxed to their aspect instead of stretched to the window width | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:45` |
+| UI-040 | Original-fidelity area (scope unadjudicated) | autorun launcher focus rectangle: dotted frame inverting the pixels with even x + y, 2 pixels inside the button (GDI DrawFocusRect brush phase unknown) | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:46` |
 
 ## Approximation sites
 
@@ -325,6 +326,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-032 | `source/OpenTPW/UI/Original/UiWidgets.cs:213` | [APPROX:UI-032] small-font fallback and greedy wrap for long labels — evidence needed: captures of translated original screens |
 | UI-034 | `source/OpenTPW/UI/Original/UiImages.cs:70` | [APPROX:UI-034] a fully opaque texture on a transparent (flag 0x2) slot keys out black — evidence needed: the original's render state for flagged slots |
 | UI-035 | `source/OpenTPW/Client/Movie/IntroPlaylist.cs:30` | Input already held when the sequence begins is ignored until released [APPROX:UI-035], so launching the game |
+| UI-040 | `source/OpenTPW/Client/Autorun/AutorunView.cs:163` | [APPROX:UI-040] the exact dot phase of GDI's focus rectangle brush is not known; dots are the pixels with even x + y, inverted. |
 
 ## Extension sites
 
@@ -370,6 +372,10 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | SETUP | `source/OpenTPW/UI/Original/Options/GameFilesScreen.cs:10` | [EXT:SETUP] OpenTPW setting; the original installer chose one folder and never changed it in game |
 | SETUP | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:236` | [EXT:SETUP] Game files (game folder and CD) between Back and OK |
 | art-override | `source/OpenTPW/UI/Original/UiArtOverrides.cs:10` | [EXT:art-override] optional player-supplied replacement art; the original only has its own textures |
+| autorun | `source/OpenTPW/Client/Autorun/AutorunLauncher.cs:5` | [EXT:autorun] It needs the original &lt;c&gt;Autorun&lt;/c&gt; folder (&lt;c&gt;general.tre&lt;/c&gt; and the language archives) in the game |
+| autorun | `source/OpenTPW/Client/Autorun/AutorunScreen.cs:14` | with the operating system's viewer and Exit quits. [EXT:autorun] (docs/AUTORUN.md) |
+| autorun | `source/OpenTPW/Client/Autorun/AutorunView.cs:19` | and clicks. [EXT:autorun] OpenTPW reproduces the CD's autorun dialog as an optional start screen. |
+| autorun | `source/OpenTPW/Client/Game.cs:193` | [EXT:autorun] The CD's launcher window comes first when its Autorun folder is available (docs/AUTORUN.md). |
 | bonus-content | `source/OpenTPW/Client/Setup/BonusContent.cs:14` | [EXT:bonus-content] Setup-managed copy of the official bonus WADs; the original game only had the CD and install folders |
 | developer-prototype | `source/OpenTPW/Economy/ParkEconomyRuntime.cs:46` | [EXT:developer-prototype] the developer prototype ride is registered uncharged (no original counterpart) |
 | developer-prototype | `source/OpenTPW/World/Level.Objects.cs:170` | [EXT:developer-prototype] Sandbox Totem blocks cells whose centres lie within its 6×8-unit model box (no original counterpart) |
@@ -409,6 +415,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | &lt;object&gt;.sam:UsageInfo.ProvidesRelief/HungerEffect/ThirstEffect/InitPricePerUse/ExcitementLevel, Info.AttractionValue | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:137` | [DATA:&lt;object&gt;.sam:UsageInfo.ProvidesRelief/HungerEffect/ThirstEffect/InitPricePerUse/ExcitementLevel, Info.AttractionValue] |
 | Advisor.MD2:mesh names "Mouth - Normal", "Mouth - Aah", "Mouth - Eee", "Mouth - Ooh", "Mouth - Sss" | `source/OpenTPW/World/Advisor.cs:23` | [DATA:Advisor.MD2:mesh names "Mouth - Normal", "Mouth - Aah", "Mouth - Eee", "Mouth - Ooh", "Mouth - Sss"] |
 | Advisor/Advisor.sam:StaffHireMechanics1.PoorerStateThan | `source/OpenTPW/Economy/ParkEconomy.cs:23` | [DATA:Advisor/Advisor.sam:StaffHireMechanics1.PoorerStateThan] |
+| Autorun/autorun.tre:autorun.cfg nvPlayY=61 nvInstallY=103 nvUninstallY=145 nvReinstallY=187 nvTechbuttonY=229 nvReadmeY=271 nvQuitY=313 | `source/OpenTPW/Client/Autorun/AutorunAssets.cs:27` | [DATA:Autorun/autorun.tre:autorun.cfg nvPlayY=61 nvInstallY=103 nvUninstallY=145 nvReinstallY=187 nvTechbuttonY=229 nvReadmeY=271 nvQuitY=313] |
 | CHAT_COMMANDS.str:134-151 | `source/OpenTPW.Online/Chat/ChatCommands.cs:117` | ([DATA:CHAT_COMMANDS.str:134-151] — 18 responses for the 19 mood commands; Think has none). |
 | CHAT_COMMANDS.str:43-85 | `source/OpenTPW.Online/Chat/ChatCommands.cs:5` | holds the localized command words (German "sage", "erzähle", ...) and [DATA:CHAT_COMMANDS.str:43-85] |
 | Easymode.TPWI:SYSG X/Y/rotation | `source/OpenTPW/World/Objects/ParkObjects.cs:135` | [DATA:Easymode.TPWI:SYSG X/Y/rotation] [DATA:&lt;fixed item&gt;.MD2:park-space coordinates] |

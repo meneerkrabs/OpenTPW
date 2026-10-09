@@ -43,6 +43,7 @@ public static class UiApproximations
 		("UI-032", "longer labels fall back to the small font; catalogue names greedily wrap in their slots", "captures of translated original screens"),
 		("UI-034", "a fully opaque texture on a transparent (flag 0x2) model slot keys out black (only ipan in the lobby f_lobbutbg panel)", "the original's render state for flagged texture slots"),
 		("UI-035", "start-up movies: the Mac build's order (bf, then a day-of-month trailer) is assumed for the PC .tgq files; input held at launch is ignored until released; movies are letterboxed to their aspect instead of stretched to the window width", "PC executable analysis or captures of the PC start-up sequence"),
+		("UI-040", "autorun launcher focus rectangle: dotted frame inverting the pixels with even x + y, 2 pixels inside the button (GDI DrawFocusRect brush phase unknown)", "capture of the original launcher with a focused button"),
 	};
 
 	private static bool logged;

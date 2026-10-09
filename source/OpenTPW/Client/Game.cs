@@ -187,38 +187,35 @@ internal static class Game
 		// plain --smoke-test bypass it as before; --front-end --smoke-test tests the front end.
 		GameAudio.Enabled = !args.Contains( "--mute" );
 		using var flow = new GameFlow { OnlineFolders = onlineFolders };
+		var capturePath = GetOption( args, "--capture-world", "a .png file for the world-only screenshot" );
 		var smoke = args.Contains( "--smoke-test" );
-		var frontEndRun = visit == null && originalLevelIndex < 0 && !args.Contains( "--advisor-say" ) && !args.Contains( "--advisor-response" ) && !args.Contains( "--sandbox" ) && (!smoke || args.Contains( "--front-end" ));
-		// The original plays its start-up movies before the front end on every start (docs/TGQ-MOVIES.md);
-		// smoke tests and --no-intro / OPENTPW_NO_INTRO go straight to the front end.
-		var playIntro = frontEndRun && !smoke && !args.Contains( "--no-intro" ) && string.IsNullOrEmpty( Environment.GetEnvironmentVariable( "OPENTPW_NO_INTRO" ) );
-		if ( !playIntro )
+		var startsFrontEnd = visit == null && originalLevelIndex < 0 && !args.Contains( "--advisor-say" ) && !args.Contains( "--advisor-response" ) && !args.Contains( "--sandbox" ) && (!smoke || args.Contains( "--front-end" ));
+		// [EXT:autorun] The CD's launcher window comes first when its Autorun folder is available (docs/AUTORUN.md).
+		var autorun = startsFrontEnd && capturePath == null ? CreateAutorun( args, bonusSettings, dataDirectory ) : null;
+		// The original plays its start-up movies before the front end on every start (docs/TGQ-MOVIES.md); after
+		// the launcher's Play when it is shown. Smoke tests and --no-intro / OPENTPW_NO_INTRO go straight to the front end.
+		var playIntro = startsFrontEnd && !smoke && capturePath == null && !args.Contains( "--no-intro" ) && string.IsNullOrEmpty( Environment.GetEnvironmentVariable( "OPENTPW_NO_INTRO" ) );
+		Func<IDisposable>? startIntro = playIntro ? () => StartIntro( flow, args, dataDirectory ) : null;
+		if ( autorun == null && !playIntro )
 		{
 			Render.OnUpdate += flow.Update;
 			Render.OnRender += flow.Render;
 		}
-		var capturePath = GetOption( args, "--capture-world", "a .png file for the world-only screenshot" );
 		if ( capturePath != null )
 		{
 			var frames = GetOption( args, "--capture-frames", "a frame count" ) is { } text && int.TryParse( text, out var parsed ) && parsed > 0 ? parsed : 240;
 			Render.PostUpdate += new WorldCapture( capturePath, frames ).Update;
 		}
-		if ( frontEndRun )
+		if ( startsFrontEnd )
 		{
-			if ( playIntro )
+			if ( autorun != null )
 			{
-				using var intro = new IntroSequence( dataDirectory, IntroPlaylist.For( DateTime.Now ), !args.Contains( "--mute" ), GameOptions.Gain( GameOptions.Current.MovieVolume ) );
-				Render.OnUpdate += intro.Update;
-				Render.OnRender += intro.Draw;
-				intro.Completed += () =>
-				{
-					Render.OnUpdate -= intro.Update;
-					Render.OnRender -= intro.Draw;
-					Render.OnUpdate += flow.Update;
-					Render.OnRender += flow.Render;
-					flow.DiscardHeldInput();
-					flow.ShowFrontEnd();
-				};
+				RunAutorun( flow, autorun, smoke, startIntro );
+				return;
+			}
+			if ( startIntro != null )
+			{
+				using var intro = startIntro();
 				Render.Run();
 				return;
 			}
@@ -269,6 +266,107 @@ internal static class Game
 		}
 		else
 			Render.Run();
+	}
+
+	/// <summary>The CD launcher screen for the game's language, or null when it is disabled or the CD's Autorun files are absent.</summary>
+	private static AutorunScreen? CreateAutorun( string[] args, SetupSettings settings, string dataDirectory )
+	{
+		var cd = GetOption( args, "--cd-data", "the original CD's folder" ) ?? Environment.GetEnvironmentVariable( "OPENTPW_CD_DATA" );
+		var language = GameLanguage.IsSelected ? GameLanguage.Current.Name : GameLanguage.DefaultLanguage;
+		var assets = AutorunLauncher.FindAssets( args, settings, Settings.Default.GamePath, cd, language );
+		return assets == null ? null : AutorunLauncher.Create( assets, Settings.Default.GamePath );
+	}
+
+	/// <summary>
+	/// Shows the CD launcher, then (on Play) the front end. The hand-over runs after the frame so the front end's first
+	/// update precedes its first draw; Exit has already closed the window.
+	/// </summary>
+	/// <summary>Starts the start-up movies (docs/TGQ-MOVIES.md); the front end follows when they end. Dispose after the loop.</summary>
+	private static IDisposable StartIntro( GameFlow flow, string[] args, string dataDirectory )
+	{
+		var intro = new IntroSequence( dataDirectory, IntroPlaylist.For( DateTime.Now ), !args.Contains( "--mute" ), GameOptions.Gain( GameOptions.Current.MovieVolume ) );
+		Render.OnUpdate += intro.Update;
+		Render.OnRender += intro.Draw;
+		intro.Completed += () =>
+		{
+			Render.OnUpdate -= intro.Update;
+			Render.OnRender -= intro.Draw;
+			Render.OnUpdate += flow.Update;
+			Render.OnRender += flow.Render;
+			flow.DiscardHeldInput();
+			flow.ShowFrontEnd();
+		};
+		return intro;
+	}
+
+	private static void RunAutorun( GameFlow flow, AutorunScreen autorun, bool smoke, Func<IDisposable>? startIntro )
+	{
+		using var screen = autorun;
+		IDisposable? intro = null;
+		FrontEndSmokeTest? frontEndSmokeTest = null;
+		AutorunSmokeTest? autorunSmokeTest = null;
+		Action? handOver = null;
+		handOver = () =>
+		{
+			if ( screen.Result == AutorunResult.None )
+				return;
+			Render.PostUpdate -= handOver;
+			Render.OnUpdate -= screen.Update;
+			Render.OnRender -= screen.Render;
+			if ( screen.Result != AutorunResult.Play )
+				return;
+			Render.WorldScalingAllowed = true;
+			// Free the launcher's GPU resources one frame later, after its last frame was submitted.
+			Action? release = null;
+			release = () =>
+			{
+				Render.PostUpdate -= release;
+				screen.Dispose();
+			};
+			Render.PostUpdate += release;
+			if ( startIntro != null )
+			{
+				intro = startIntro();
+				return;
+			}
+			Render.OnUpdate += flow.Update;
+			Render.OnRender += flow.Render;
+			// Enter or Space held to press Play must not count again as the front end's first key.
+			flow.DiscardHeldInput();
+			flow.ShowFrontEnd();
+			if ( smoke )
+			{
+				frontEndSmokeTest = new FrontEndSmokeTest( flow );
+				Render.PostUpdate += frontEndSmokeTest.Update;
+			}
+		};
+		try
+		{
+			// Like movies, the launcher is not 3D world content: it renders at output size.
+			Render.WorldScalingAllowed = false;
+			Render.OnUpdate += screen.Update;
+			Render.OnRender += screen.Render;
+			if ( smoke )
+			{
+				autorunSmokeTest = new AutorunSmokeTest( screen );
+				Render.PostUpdate += autorunSmokeTest.Update;
+			}
+			Render.PostUpdate += handOver;
+			Render.Run();
+			if ( smoke )
+			{
+				autorunSmokeTest!.VerifyCompleted();
+				if ( frontEndSmokeTest == null )
+					throw new InvalidOperationException( "Native autorun smoke test failed: the front end did not start after Play." );
+				frontEndSmokeTest.VerifyCompleted();
+			}
+		}
+		finally
+		{
+			intro?.Dispose();
+			autorunSmokeTest?.Dispose();
+			frontEndSmokeTest?.Dispose();
+		}
 	}
 
 	/// <summary>

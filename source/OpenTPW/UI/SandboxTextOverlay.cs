@@ -3,7 +3,7 @@ using Veldrid;
 namespace OpenTPW.UI;
 
 /// <summary>
-/// Sandbox panel drawn with original BF4 fonts and original English string-table entries: the
+/// Sandbox panel drawn with the selected language's original BF4 fonts and string-table entries: the
 /// Totem ride name in SESHMED and ride-panel labels in GAME8AA. Placement, colors and the backing
 /// rectangle are OpenTPW choices, not a reproduction of an original UI screen.
 /// </summary>
@@ -28,10 +28,11 @@ internal sealed class SandboxTextOverlay : IDisposable
 
 	public SandboxTextOverlay()
 	{
-		var uiText = new StringFile( "Language/English/UITEXT.str" );
-		var objectNames = new StringFile( "Language/English/OBJECT_NAMES.str" );
-		headingFont = new FontAtlas( new FontFile( "Language/English/SESHMED.bf4" ) );
-		labelFont = new FontAtlas( new FontFile( "Language/English/GAME8AA.bf4" ) );
+		var language = GameLanguage.Current;
+		var uiText = language.LoadStrings( "UITEXT.str" );
+		var objectNames = language.LoadStrings( "OBJECT_NAMES.str" );
+		headingFont = new FontAtlas( language.LoadFont( "SESHMED.bf4" ) );
+		labelFont = new FontAtlas( language.LoadFont( "GAME8AA.bf4" ) );
 		heading = TextLayout.Create( headingFont, objectNames[TotemObjectName] );
 		labels = TextLayout.Create( labelFont, string.Join( "\n",
 			uiText[(int)UIStrings.Excitement], uiText[(int)UIStrings.Reliability], uiText[(int)UIStrings.StateOfRepair], uiText[(int)UIStrings.RemainingLife] ) );

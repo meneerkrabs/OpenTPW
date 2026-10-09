@@ -60,6 +60,24 @@ internal static class Game
 		FileSystem = new BaseFileSystem( dataDirectory );
 		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
 		FileSystem.RegisterArchiveHandler<SdtArchive>( ".sdt" );
+
+		//
+		// Select the text language: --language / --language-data, then OPENTPW_LANGUAGE /
+		// OPENTPW_LANGUAGE_DATA, then the Language / LanguageDataPath settings (docs/LANGUAGES.md)
+		//
+		var language = GetOption( args, "--language", "a language name such as German" )
+			?? Environment.GetEnvironmentVariable( "OPENTPW_LANGUAGE" ) ?? Settings.Default.Language;
+		var languageData = GetOption( args, "--language-data", "a directory with the original CD's language data" )
+			?? Environment.GetEnvironmentVariable( "OPENTPW_LANGUAGE_DATA" ) ?? Settings.Default.LanguageDataPath;
+		if ( !string.IsNullOrWhiteSpace( language ) || !string.IsNullOrWhiteSpace( languageData ) )
+			GameLanguage.Current = GameLanguage.Resolve( dataDirectory, language, languageData );
+		else
+		{
+			try { GameLanguage.Current = GameLanguage.Resolve( dataDirectory, null, null ); }
+			catch ( DirectoryNotFoundException exception ) { Log.Warning( exception.Message ); }
+		}
+		if ( GameLanguage.IsSelected )
+			Log.Trace( $"Language: {GameLanguage.Current}" );
 		var modelIndex = Array.IndexOf( args, "--inspect-model" );
 		if ( modelIndex >= 0 )
 		{
@@ -145,5 +163,15 @@ internal static class Game
 		}
 		else
 			Render.Run();
+	}
+
+	private static string? GetOption( string[] args, string name, string description )
+	{
+		var index = Array.IndexOf( args, name );
+		if ( index < 0 )
+			return null;
+		if ( index + 1 >= args.Length || args[index + 1].StartsWith( "--" ) )
+			throw new ArgumentException( $"{name} requires {description}." );
+		return args[index + 1];
 	}
 }

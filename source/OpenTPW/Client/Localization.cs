@@ -8,7 +8,7 @@ public static class Localization
 
 	static Localization()
 	{
-		UIStrings = new StringFile( "Language/English/UITEXT.str" );
+		UIStrings = GameLanguage.Current.LoadStrings( "UITEXT.str" );
 	}
 
 	private class LocalizationParser : BaseParser

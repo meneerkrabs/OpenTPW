@@ -28,7 +28,7 @@ public sealed class OnlineClient : IDisposable
 	{
 		ServerUrl = ValidateServerUrl( serverUrl );
 		ownsHttp = httpClient == null;
-		http = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds( 60 ) };
+		http = httpClient ?? new HttpClient( new HttpClientHandler { AllowAutoRedirect = false } ) { Timeout = TimeSpan.FromSeconds( 60 ) };
 	}
 
 	public Uri ServerUrl { get; }

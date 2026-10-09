@@ -1,0 +1,89 @@
+# OpenTPW online extension
+
+OpenTPW provides an opt-in, self-hostable service for shared parks, postcards and chat.
+It does not connect to the original Theme Park World service and is not a reconstruction
+of its network protocol. No service address is configured and no network request occurs
+until the player selects a server and an action in the Online panel.
+
+The game panel supports account registration/login, park export/publish/search/download,
+voting, local postcard composition, sending the outbox, fetching the inbox, and chat.
+Chat commands use the selected original `CHAT_COMMANDS.str` words; original text is
+used where verified and supplementary labels cover the six supported languages.
+Online panels use ImGui; their original appearance has not been reproduced. Chat lines
+use the local `GAME8AA.bf4` font.
+
+## Local files and visits
+
+The default folder is `<ApplicationData>/OpenTPW/online`. Set `OPENTPW_ONLINE_DIR`
+or pass `--online-dir <directory>` to choose a different writable directory outside
+the original installation. `online.json` remembers the chosen server and player name;
+passwords and session tokens are not persisted. The `parks`, `visited`, and
+`postcards/{inbox,outbox,sent}` folders hold locally exported/downloaded files.
+Malformed local postcards are reported. A conflicting or damaged existing inbox file
+is retained and prevents deletion of that incoming postcard from the server.
+
+Export/import works without an account or a server. The Online panel inspects a local
+`.tpwpark` and reports required content and layout warnings. Downloading a shared park
+saves it locally and inspects it. To open it as a read-only visit, restart the game:
+
+```sh
+bash scripts/run.sh --game-path /path/to/installation --visit-park /path/to/shared.tpwpark
+```
+
+A visit cannot place/remove rides or save/load the sandbox. It creates no economy
+runtime and therefore cannot charge visitors or advance a park's economy. Version 1
+contains only the original level's imported path/object records and the prototype
+Totem state. It has `read-only-visit` and `no-economy` flags. Visitors and the ride can
+animate locally; those simulations are not synchronized multiplayer.
+
+The original imported paths/footprints can be drawn; an edited shared path/object
+layout cannot yet be applied. The panel and startup log explicitly report mismatches,
+missing objects/bonus archives and terrain hash differences. Missing content is never
+downloaded automatically. Original textures/models/audio and executable code are
+never embedded in these sharing files. Economy, staff, research, live multiplayer,
+original server behavior and original online panel visual parity remain unsupported.
+
+## Local server
+
+Run from the repository root using the existing .NET SDK:
+
+```sh
+dotnet run --project source/OpenTPW.Server -- --urls http://127.0.0.1:5000
+```
+
+Choose `http://127.0.0.1:5000` in the game panel and press Go online, then register or
+log in. This command is for local testing. The existing server Dockerfile and compose
+example support self-hosting; no deployment is performed by the client. Operator
+settings are in `OpenTPW.Server/appsettings.json` and use `OpenTPW__<setting>` environment
+variables. The server stores accounts, sessions, parks, postcards and reports in its
+configured data directory. Its optional word filter uses the operator's local original
+`swears.txt` and `alloweds.txt` files; they are not distributed.
+
+The server hashes passwords with PBKDF2-SHA256, validates and bounds packages/chat
+frames, checks owners and postcard recipients, and limits authentication/uploads/chat.
+For remote use, provide HTTPS and configure the operator's storage and limits. The
+client validates server URLs and disables automatic HTTP redirects so a redirect cannot
+forward a login body to another service. HTTP remains available for local testing.
+Going offline disconnects local clients; issued tokens retain their server expiry.
+
+## Verification and extension labels
+
+CPU and loopback tests cover malformed containers/manifests/payloads, image validation,
+account authorization, ownership, postcard privacy, rate limits, chat commands and
+rooms, the game's background session transitions, local folders and client workflows.
+They require no external server or original assets. Original-data tests opt in through
+`OPENTPW_GAME_PATH`; interactive Online panel behavior and BF4 chat rendering still
+need a graphics-capable manual run.
+
+All `EXT:ONLINE-*` tags describe OpenTPW choices, not recovered original behavior.
+The package/protocol/server code owns tags 001–059. The game adapters own:
+
+| Tag | OpenTPW choice |
+| --- | --- |
+| 060 | Opt-in settings and local folder layout |
+| 061 | Edition label (installation edition detection unsupported) |
+| 062 | Generated map thumbnail palette/layout |
+| 063 | Supplementary translated labels |
+| 064 | Chat line formatting |
+| 065 | BF4 chat overlay layout, colours and line count |
+| 066 | ImGui Online panel and restart-based visits |

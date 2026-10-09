@@ -24,7 +24,9 @@ public sealed class ParkLayout
 			if ( original != null )
 				DrawOriginalImport( original );
 			ImGui.Separator();
-			if ( level.PlacedRide == null )
+			if ( level.IsReadOnlyVisit )
+				ImGui.TextWrapped( OnlineStrings.Get( OnlineLabel.ReadOnlyVisit ) );
+			else if ( level.PlacedRide == null )
 			{
 				if ( ImGui.Button( level.IsPlacing ? "Cancel placement" : "Place Totem tower" ) )
 					level.IsPlacing = !level.IsPlacing;
@@ -50,16 +52,18 @@ public sealed class ParkLayout
 			ImGui.Separator();
 			try
 			{
-				if ( original != null )
+				if ( level.IsReadOnlyVisit )
+					ImGui.TextWrapped( "Sandbox save/load is disabled while visiting." );
+				else if ( original != null )
 					ImGui.TextWrapped( "Sandbox save/load is disabled here; original saves are never written." );
 				else if ( ImGui.Button( "Save sandbox" ) )
 				{
 					level.SaveSandbox();
 					errorMessage = "";
 				}
-				if ( original == null )
+				if ( original == null && !level.IsReadOnlyVisit )
 					ImGui.SameLine();
-				if ( original == null && ImGui.Button( "Load sandbox" ) )
+				if ( original == null && !level.IsReadOnlyVisit && ImGui.Button( "Load sandbox" ) )
 				{
 					level.LoadSandbox();
 					errorMessage = "";

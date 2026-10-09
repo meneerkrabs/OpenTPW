@@ -134,6 +134,11 @@ internal static class Game
 		//
 		// Init renderer
 		//
+		var visitPath = GetOption( args, "--visit-park", "a local .tpwpark file" );
+		var visit = visitPath == null ? null : ParkSharing.PrepareVisit( OpenTPW.Online.Packages.ParkPackage.Load( visitPath ) );
+		if ( visit != null )
+			Log.Trace( ParkSharing.Describe( visit ) );
+		var onlineFolders = OnlineFolders.FromEnvironment( GetOption( args, "--online-dir", "an online folder outside the original installation" ) );
 		Render = DisplayStartup.CreateRenderer( args );
 		if ( movieName != null )
 		{
@@ -147,7 +152,10 @@ internal static class Game
 		var originalLevelIndex = Array.IndexOf( args, "--load-original-level" );
 		if ( originalLevelIndex >= 0 && (originalLevelIndex + 1 >= args.Length || args[originalLevelIndex + 1].StartsWith( "--" )) )
 			throw new ArgumentException( "--load-original-level requires a level name such as 'jungle'." );
-		var level = originalLevelIndex >= 0 ? new Level( args[originalLevelIndex + 1], loadOriginalLevel: true ) : new Level( "jungle" );
+
+		using var level = visit != null ? new Level( visit.Level, !visit.IsSandbox, visit, onlineFolders )
+			: originalLevelIndex >= 0 ? new Level( args[originalLevelIndex + 1], loadOriginalLevel: true, onlineFolders: onlineFolders )
+			: new Level( "jungle", onlineFolders: onlineFolders );
 
 		//
 		// Run game loop

@@ -157,6 +157,30 @@ public class ParkEconomyOriginalDataTests
 		Assert.IsTrue( bouncy.StateOfRepair > ParkEconomy.WornStateOfRepair );
 	}
 
+	[TestMethod]
+	public void GameModeSelectsBalanceLayersAndEasymodePark()
+	{
+		// STP-PPC 0x1013781C/0x1010474C/0x10137600: Instant Action (game type 2) loads the Easy_
+		// layers and the Easymode park; Full Simulation loads neither.
+		UseOriginalData();
+		Log ??= new();
+		var full = ParkEconomyRuntime.ForOriginalLevel( OriginalPark.Load( "jungle", includeEasymodePark: false ), ParkGameMode.FullSimulation );
+		Assert.IsFalse( full.Economy.Settings.IsEasy );
+		Assert.AreEqual( ParkGameMode.FullSimulation, full.Economy.Mode );
+		Assert.AreEqual( 0, full.Economy.Objects.Count( item => item.Imported ) );
+		CollectionAssert.AreEqual( new[] { "/levels/Standard.sam", "/levels/jungle/Standard.sam" }, full.Economy.Settings.Standard.Sources.ToArray() );
+
+		var instant = ParkEconomyRuntime.ForOriginalLevel( OriginalPark.Load( "jungle" ), ParkGameMode.InstantAction );
+		Assert.IsTrue( instant.Economy.Settings.IsEasy );
+		Assert.AreEqual( 100000, instant.Economy.Balance );
+		Assert.IsTrue( instant.Economy.Objects.Any( item => item.Imported ) );
+		Assert.IsFalse( instant.Economy.AvailableLoans.Any() );
+
+		// Themes without Easy_Standard.sam still load in Instant Action, as in the original.
+		var space = BalanceSettings.Load( "space", easy: true );
+		CollectionAssert.AreEqual( new[] { "/levels/Standard.sam", "/levels/space/Standard.sam" }, space.Standard.Sources.ToArray() );
+	}
+
 	private static byte[] ReadEasymode()
 	{
 		using var stream = FileSystem.OpenRead( "/levels/jungle/Easymode.TPWI" );

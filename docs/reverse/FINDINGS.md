@@ -137,12 +137,49 @@ our own words.
 - The lobby/globe code (`0x100923A8`) sets bit `0x02000000` directly; `0x1009261C`,
   `0x10092C08` and `0x10092F94` clear it.
 
-**Not yet closed:** where `mEasyModeUser` selects game type 2, i.e. that type 2 is
-the manual's "Instant Action". The names (`mEasyModeUser`, `Easy_`, `easymode`,
-"RESET_FOR_EASY_MODE") make it likely, not proven. The Instant Action rules from the
-manual and `UITEXT.str` (no upgrades or loans, automatic research) are not traced yet
-and stay approximations.
+### Game type 2 is Instant Action
 
-**Consequence for OpenTPW:** `RIDES-009` ("Easy_/Online_ overlays not applied") can
-be resolved for `Standard.sam` from `0x1010474C`. Online uses `online_Standard.sam`
-as a replacement, not as an overlay on `Standard.sam`.
+- The new-player dialog (`0x1015D220`) builds a radio group `0x70C` with button
+  `0x70D` (UITEXT 241 "Instant Action") and `0x70E` (UITEXT 242 "Full Simulation"),
+  next to UITEXT 239 "Please enter your name" and 243 "Type your name". UITEXT indices
+  are those of the Mac `American` table; the Windows English table is one lower
+  (UI.md lists 240/241).
+- Confirming it (`0x1015CF00`) creates the player through `0x1013741C` with the flag
+  "selected button is `0x70D`". That function stores the flag per player slot,
+  copies the level `easymode` files into the player's saves only when it is set
+  (`0x10137600`), and writes it into the profile's `mEasyModeUser` (setter
+  `0x10128F54`).
+- Selecting a player (`0x1013781C`) loads the profile and, unless the game type is
+  online, sets game type 2 when `mEasyModeUser` is set (getter `0x10128F4C`) and 0
+  otherwise.
+
+### Instant Action rules traced so far
+
+| Rule | Function | Observation |
+| --- | --- | --- |
+| Easy balance layers | `0x1010474C`, `0x10119328` | `<theme>/Easy_Standard.sam` after the two `Standard.sam` files; each object's `Easy_<file>.sam` after the object file, both only when present |
+| No loans | `0x10154AA0` | the "Available Loans" window (UITEXT 170) is only built when the type is not 2 |
+| No upgrades | `0x10165A0C` | the ride upgrade list is only filled when the type is not 2; type 2 shows UITEXT 27 "Upgrades are not available in Instant Action mode" |
+| Research message | `0x10161910` | the research panel shows UITEXT 468 "Research is automatic in Instant Action mode." in type 2 (467 "hire some researchers" otherwise) |
+| Completion message | `0x1013D708` | type 2 shows UITEXT 471 (finished Instant Action, try Full Simulation) |
+| Easymode park | `0x10137600` | copied into a player's saves only for Instant Action players |
+
+Not traced: how research advances without researchers (only the message is
+traced; `ECON-019` stays an approximation), and what several type-2 branches in
+the finance, ticket-price and staff-training panels (`0x10150C54`, `0x1014EC48`,
+`0x10168D8C`) clear exactly.
+
+### Object settings layers
+
+The object loader (`0x10119328`) loads, per object: a base `.sam` named by its
+caller, then in the online type its `Online_` variant; then the object's own
+`.sam`; then `Online_<file>.sam` (online type) or `Easy_<file>.sam` (type 2) when
+that file exists. Online settings replace `Standard.sam` (`online_Standard.sam`)
+but are layered on object files.
+
+**Applied in OpenTPW:** the front end's game mode now selects the balance:
+Instant Action loads the `Easy_` layers (missing files are skipped as in the
+original) and imports the Easymode park; Full Simulation loads neither. The
+loans/upgrades rules and the layer order cite these functions with
+`[BIN:STP-PPC:…]` labels. `RIDES-009` keeps only the open question of where shared
+non-`Info.Id` `.sam` files sit in the object layer order.

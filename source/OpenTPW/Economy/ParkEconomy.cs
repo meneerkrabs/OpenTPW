@@ -81,6 +81,7 @@ public sealed class ParkEconomy : IParkEconomy
 	public event Action<ParkEvent>? EventRaised;
 
 	/// <summary>Loan offers that can still be taken; none in Instant Action (UIHELPTEXT 493).</summary>
+	// [BIN:STP-PPC:0x10154AA0 loans window] the Available Loans window only opens outside game type 2 (Instant Action)
 	public IEnumerable<LoanOffer> AvailableLoans => Mode == ParkGameMode.InstantAction
 		? Enumerable.Empty<LoanOffer>()
 		: Settings.Loans.Where( offer => !takenOffers.Contains( offer.Index ) );
@@ -506,6 +507,7 @@ public sealed class ParkEconomy : IParkEconomy
 	{
 		if ( IsBankrupt )
 			return PurchaseResult.Bankrupt;
+		// [BIN:STP-PPC:0x10165A0C upgrade list] game type 2 (Instant Action) lists no upgrades and shows UITEXT 27 instead
 		if ( Mode == ParkGameMode.InstantAction )
 			return PurchaseResult.NotAvailableInInstantAction;
 		var item = RequireObject( instanceId );

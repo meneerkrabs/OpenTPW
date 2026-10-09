@@ -258,20 +258,21 @@ public sealed class ObjectCatalog
 	public ObjectCatalogEntry Get( int infoId ) => Find( infoId ) ?? throw new KeyNotFoundException( $"No {Theme} object archive declares Info.Id {infoId}." );
 
 	/// <summary>Loads (and caches per file system) the catalog of a theme; names come from the English OBJECT_NAMES when present.</summary>
-	public static ObjectCatalog Load( string theme )
+	/// <param name="easy">Instant Action: each object's <c>Easy_&lt;object file&gt;.sam</c> is layered last when present.</param>
+	public static ObjectCatalog Load( string theme, bool easy = false )
 	{
 		if ( string.IsNullOrWhiteSpace( theme ) || theme.IndexOfAny( new[] { '/', '\\', '.' } ) >= 0 )
 			throw new ArgumentException( "Themes are plain level directory names such as 'jungle'.", nameof( theme ) );
-		var key = $"{FileSystem.GetAbsolutePath( "/" )}|{BonusDataRoot}|{theme}";
+		var key = $"{FileSystem.GetAbsolutePath( "/" )}|{BonusDataRoot}|{theme}|{easy}";
 		lock ( cache )
 		{
 			if ( cache.TryGetValue( key, out var cached ) )
 				return cached;
-			var entries = LoadEntries( theme, FileSystem, null );
+			var entries = LoadEntries( theme, FileSystem, null, easy );
 			var bonus = OpenBonusFileSystem();
 			if ( bonus != null )
 			{
-				foreach ( var entry in LoadEntries( theme, bonus, FileSystem ) )
+				foreach ( var entry in LoadEntries( theme, bonus, FileSystem, easy ) )
 				{
 					// [APPROX:RIDES-024] Bonus archives merge into the theme catalog; an Info.Id collision skips the bonus entry — evidence needed: original behaviour with dropped-in WADs
 					if ( entries.Any( existing => existing.InfoId == entry.InfoId ) )
@@ -293,7 +294,7 @@ public sealed class ObjectCatalog
 	/// <paramref name="defaultsFileSystem"/> (the game data) when given: bonus archives are made to be dropped
 	/// next to them. Directory names are matched case-insensitively.
 	/// </summary>
-	private static List<ObjectCatalogEntry> LoadEntries( string theme, BaseFileSystem fileSystem, BaseFileSystem? defaultsFileSystem )
+	private static List<ObjectCatalogEntry> LoadEntries( string theme, BaseFileSystem fileSystem, BaseFileSystem? defaultsFileSystem, bool easy )
 	{
 		var entries = new List<ObjectCatalogEntry>();
 		var defaultsSource = defaultsFileSystem ?? fileSystem;
@@ -313,7 +314,7 @@ public sealed class ObjectCatalog
 				ObjectCatalogEntry? entry;
 				try
 				{
-					entry = LoadEntry( theme, category, archive, defaultLayer, fileSystem );
+					entry = LoadEntry( theme, category, archive, defaultLayer, fileSystem, easy );
 				}
 				catch ( Exception exception ) when ( defaultsFileSystem != null && exception is InvalidDataException or IOException )
 				{
@@ -343,7 +344,7 @@ public sealed class ObjectCatalog
 
 	private static string Relative( BaseFileSystem fileSystem, string entry ) => fileSystem.GetRelativePath( fileSystem.GetAbsolutePath( entry ) );
 
-	private static ObjectCatalogEntry? LoadEntry( string theme, ObjectCategory category, string archive, ObjectSettingsFile? defaults, BaseFileSystem fileSystem )
+	private static ObjectCatalogEntry? LoadEntry( string theme, ObjectCategory category, string archive, ObjectSettingsFile? defaults, BaseFileSystem fileSystem, bool easy )
 	{
 		var files = fileSystem.GetFiles( archive ).Select( file => Relative( fileSystem, file ) ).ToArray();
 		var name = Path.GetFileName( archive );
@@ -356,11 +357,12 @@ public sealed class ObjectCatalog
 			name = bonusMatch.Groups["stem"].Value;
 		}
 		ObjectSettingsFile? main = null;
+		string? mainFile = null;
 		var shared = new List<ObjectSettingsFile>();
 		foreach ( var file in files.Where( file => file.EndsWith( ".sam", StringComparison.OrdinalIgnoreCase ) ) )
 		{
 			var fileName = Path.GetFileName( file );
-			// Difficulty (Easy_) and online (Online_) overlays are not part of the standard game settings.
+			// Difficulty (Easy_) and online (Online_) overlays are applied after the object file, below.
 			if ( fileName.StartsWith( "Easy_", StringComparison.OrdinalIgnoreCase ) || fileName.StartsWith( "Online_", StringComparison.OrdinalIgnoreCase ) )
 				continue;
 			var layer = ObjectSettingsFile.Load( fileSystem, file );
@@ -369,18 +371,23 @@ public sealed class ObjectCatalog
 				if ( main != null )
 					throw new InvalidDataException( $"{archive} has several .sam files with an Info.Id." );
 				main = layer;
+				mainFile = file;
 			}
 			else
 				shared.Add( layer );
 		}
 		if ( main == null )
 			return null;
-		// [APPROX:RIDES-009] Layer order category defaults → shared .sam → object .sam; Easy_/Online_ overlays not applied — evidence needed: binary .sam loading order / difficulty selection
+		// [APPROX:RIDES-009] Shared (non-Info.Id) .sam files sit between the category defaults and the object file — evidence needed: which base file the binary's object loader is given
 		var layers = new List<ObjectSettingsFile>();
 		if ( defaults != null )
 			layers.Add( defaults );
 		layers.AddRange( shared );
 		layers.Add( main );
+		// [BIN:STP-PPC:0x10119328 object loader] In Instant Action (game type 2) Easy_<object file> is layered after the object file when it exists; Online_ files belong to the online game type and are not loaded offline
+		var easyFile = easy ? files.FirstOrDefault( file => string.Equals( Path.GetFileName( file ), "Easy_" + Path.GetFileName( mainFile ), StringComparison.OrdinalIgnoreCase ) ) : null;
+		if ( easyFile != null )
+			layers.Add( ObjectSettingsFile.Load( fileSystem, easyFile ) );
 		var settings = new ObjectSettings( layers );
 		// [DATA:<object>.sam:Info.Shape]
 		var shapeRows = settings.GetBlock( "Info.Shape" );

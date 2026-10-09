@@ -281,7 +281,7 @@ Original-data values are tagged `// [DATA:<file>:<field>]`.
 | RIDES-006 | World/Objects/OriginalObjectRuntime.cs:229 | GETANIM_CH = 1 while playing, else 0 | Binary semantics |
 | RIDES-007 | World/Objects/OriginalObjectRuntime.cs:219 | TRIGANIMSPEED ignores its 4th operand | Binary semantics |
 | RIDES-008 | World/Objects/ObjectAnimations.cs:28 | ANIM_* → letter, variant v → number v+1 | Binary member lookup |
-| RIDES-009 | World/Objects/ObjectCatalog.cs:378 | .sam layers category → shared → object; Easy_/Online_ unused | Binary loading order, difficulty selection |
+| RIDES-009 | World/Objects/ObjectCatalog.cs:381 | shared (non-Info.Id) .sam files sit between category defaults and the object file; `Easy_<file>` is layered last in Instant Action (traced, STP-PPC 0x10119328) | which base file the binary's object loader is given |
 | RIDES-010 | World/Objects/ObjectCatalog.cs:451 | OBJECT_NAMES index by English name equality | Binary name-index table |
 | RIDES-011 | World/Objects/ObjectShape.cs:74 | Shape symbols N/E exit, `<`/`>` station ends, `+` upgrade, `W` occupied | Saves/captures with these objects |
 | RIDES-012 | World/Objects/ObjectShape.cs:138 | Access cells open across first/last row, then columns | Saves with side entrances |

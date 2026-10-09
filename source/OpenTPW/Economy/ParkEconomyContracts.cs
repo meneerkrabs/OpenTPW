@@ -4,6 +4,7 @@ namespace OpenTPW;
 /// Original game modes (UITEXT 240/241). Instant Action: research is automatic (UITEXT 467),
 /// loans and upgrades are unavailable (UIHELPTEXT 493, UITEXT 27).
 /// </summary>
+// [BIN:STP-PPC:0x1015D220 new-player dialog] radio 0x70D "Instant Action" / 0x70E "Full Simulation"; 0x1013741C stores the choice as profile mEasyModeUser and 0x1013781C turns it into game type 2 (Instant Action) or 0
 public enum ParkGameMode
 {
 	FullSimulation,

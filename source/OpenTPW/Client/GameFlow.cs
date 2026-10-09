@@ -116,8 +116,8 @@ internal sealed class GameFlow : IDisposable
 	public void StartPark( string levelName, GameMode mode )
 	{
 		Mode = mode;
-		StartLevel( levelName, original: true, developerPanels: false );
-		Log.Trace( $"Started {levelName} in {mode} mode from the front end (both modes currently play the same)." );
+		StartLevel( levelName, original: true, developerPanels: false, gameMode: mode == GameMode.InstantAction ? ParkGameMode.InstantAction : ParkGameMode.FullSimulation );
+		Log.Trace( $"Started {levelName} in {mode} mode from the front end." );
 	}
 
 	public void LoadPark( ParkLoadEntry entry )
@@ -132,10 +132,10 @@ internal sealed class GameFlow : IDisposable
 	}
 
 	/// <summary>Creates a level with the original HUD. CLI paths keep the developer panels.</summary>
-	public Level StartLevel( string levelName, bool original, bool developerPanels, ParkVisitInfo? visit = null )
+	public Level StartLevel( string levelName, bool original, bool developerPanels, ParkVisitInfo? visit = null, ParkGameMode? gameMode = null )
 	{
 		TearDown();
-		var level = new Level( levelName, loadOriginalLevel: original, visit: visit, onlineFolders: OnlineFolders ) { ShowDeveloperPanels = developerPanels };
+		var level = new Level( levelName, loadOriginalLevel: original, visit: visit, onlineFolders: OnlineFolders, gameMode: gameMode ) { ShowDeveloperPanels = developerPanels };
 		Level = level;
 		// Money, calendar, speed and purchases come from the park economy of original levels (Level.Park,
 		// looked up on every access so loading a park save is followed); the generic sandbox has none.

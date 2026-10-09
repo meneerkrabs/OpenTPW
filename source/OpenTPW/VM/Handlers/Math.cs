@@ -8,8 +8,18 @@ public static partial class OpcodeHandlers
 	/// </summary>
 	public static class Math
 	{
-		[OpcodeHandler( Opcode.COPY, RideOpcodeStatus.Implemented, "docs; no flags (no branch in the corpus consumes flags after COPY)" )]
-		public static void Copy( RideVM vm, Operand dest, Operand source ) => dest.Value = source.Value;
+		[OpcodeHandler( Opcode.COPY, RideOpcodeStatus.Implemented, "Mac-static: variable destination receives the resolved source and sets flags; non-variable destination aborts with PC -10000" )]
+		public static void Copy( RideVM vm, Operand dest, Operand source )
+		{
+			if ( !dest.IsVariable )
+			{
+				vm.Abort( $"COPY requires a variable destination, found {dest.Kind}" );
+				return;
+			}
+			var result = source.Value;
+			dest.Value = result;
+			vm.SetFlags( result );
+		}
 
 		[OpcodeHandler( Opcode.ADD, RideOpcodeStatus.Implemented, "docs (dest += value, sets flags); corpus: 115 branches consume ADD flags, e.g. `ADD VAR_SPACELEFT 0xFFFF; BRANCH_Z`" )]
 		public static void Add( RideVM vm, Operand dest, Operand value )
@@ -27,24 +37,20 @@ public static partial class OpcodeHandlers
 			vm.SetFlags( result );
 		}
 
-		[OpcodeHandler( Opcode.DIV, RideOpcodeStatus.Implemented, "docs; corpus: `DIV VAR_TEMP VAR_CAPACITY 9` + `MOD 0 VAR_CAPACITY 9` round-up idiom gives `DIV dest a b`; truncating, ÷0 faults" )]
+		[OpcodeHandler( Opcode.DIV, RideOpcodeStatus.Implemented, "corpus: `DIV dest a b`; Mac-static: signed truncation, zero divisor returns 0; signed overflow retains VM wrap policy" )]
 		public static void Div( RideVM vm, Operand dest, Operand valueA, Operand valueB )
 		{
 			var divisor = valueB.Value;
-			if ( divisor == 0 )
-				throw new RideScriptException( "division by zero" );
-			var result = divisor == -1 ? unchecked(-valueA.Value) : valueA.Value / divisor;
+			var result = divisor == 0 ? 0 : divisor == -1 ? unchecked(-valueA.Value) : valueA.Value / divisor;
 			dest.Value = result;
 			vm.SetFlags( result );
 		}
 
-		[OpcodeHandler( Opcode.MOD, RideOpcodeStatus.Implemented, "docs; corpus: `MOD 0 VAR_CAPACITY 9; BRANCH_Z` and clock `MOD VAR_TEMP VAR_TEMP 12; BRANCH_NZ`; ÷0 faults" )]
+		[OpcodeHandler( Opcode.MOD, RideOpcodeStatus.Implemented, "corpus: `MOD dest a b`; Mac-static: signed remainder, zero divisor returns 0; signed overflow retains VM zero policy" )]
 		public static void Mod( RideVM vm, Operand dest, Operand valueA, Operand valueB )
 		{
 			var divisor = valueB.Value;
-			if ( divisor == 0 )
-				throw new RideScriptException( "modulo by zero" );
-			var result = divisor == -1 ? 0 : valueA.Value % divisor;
+			var result = divisor is 0 or -1 ? 0 : valueA.Value % divisor;
 			dest.Value = result;
 			vm.SetFlags( result );
 		}
@@ -55,10 +61,10 @@ public static partial class OpcodeHandlers
 		[OpcodeHandler( Opcode.CMP, RideOpcodeStatus.Implemented, "docs say bitwise AND; corpus needs subtraction (a − b): `RAND VAR_TEMP 10; CMP VAR_TEMP 4; BRANCH_PV; BRANCH_NZ`, `CMP VAR_CAPACITY VAR_CARS; BRANCH_Z`" )]
 		public static void Compare( RideVM vm, Operand valueA, Operand valueB ) => vm.SetFlags( unchecked(valueA.Value - valueB.Value) );
 
-		[OpcodeHandler( Opcode.RAND, RideOpcodeStatus.Implemented, "docs (`RAND dest max`); corpus: inclusive 0..max (Totem `RAND VAR_TEMP 2` selects one of three animation sets; `RAND 0 1; BRANCH_Z` coin flips) and sets flags" )]
+		[OpcodeHandler( Opcode.RAND, RideOpcodeStatus.Implemented, "Mac-static: signed raw bound word, inclusive nonnegative maximum, sets flags; host PRNG remains unqualified" )]
 		public static void Random( RideVM vm, Operand dest, Operand maxValue )
 		{
-			var result = vm.NextRandom( maxValue.Value );
+			var result = vm.NextRandom( (short)maxValue.Raw );
 			dest.Value = result;
 			vm.SetFlags( result );
 		}

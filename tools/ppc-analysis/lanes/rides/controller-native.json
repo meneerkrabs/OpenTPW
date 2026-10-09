@@ -1,0 +1,35 @@
+{
+  "bump": {
+    "controller_stride": 208,
+    "departure_head": 200,
+    "passenger_link_minimum_bytes": 20,
+    "pending_board_head": 196,
+    "vehicle_passenger_head": 48,
+    "vehicle_stride": 172
+  },
+  "checked_instruction_count": 66,
+  "coast": {
+    "capacity_per_car_field": 68,
+    "car_offset_field": 56,
+    "car_stride": 96,
+    "normalized_offset_field": 60,
+    "track_length_field": 172,
+    "train_stride": 128
+  },
+  "controller_contract_count": 39,
+  "schema": 1,
+  "scope": "static layout/arithmetic witnesses; conditional schema, no original execution",
+  "sha256": "04809cd4ccee5433c7fb0b7c93d32f6a7aa629c1849181c0b7906415e5e295f5",
+  "tour": {
+    "allocation_bytes": 4652,
+    "grouping_field": 220,
+    "header_bytes": 92,
+    "passenger_array_field": 144,
+    "passenger_array_observed_space": 48,
+    "record_count": 20,
+    "record_stride": 228,
+    "signed_occupancy_field": 140,
+    "state_field_in_record": 128
+  },
+  "zero_division_boundary": "RSE opcodes49/50 only; controller/geometric division invalid inputs remain unqualified"
+}

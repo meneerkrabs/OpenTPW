@@ -126,6 +126,83 @@ public class RideVMTests
 	}
 
 	[DataTestMethod]
+	[DataRow( -5, Opcode.BRANCH_NV )]
+	[DataRow( 0, Opcode.BRANCH_Z )]
+	[DataRow( 7, Opcode.BRANCH_PV )]
+	public void CopyResultControlsTheImmediatelyFollowingBranch( int value, Opcode branch )
+	{
+		var vm = Load( new Asm()
+			.I( Opcode.TEST, V( 1 ) )
+			.I( Opcode.COPY, V( 0 ), value )
+			.I( branch, "copied" )
+			.I( Opcode.COPY, V( 2 ), 99 ).I( Opcode.BRANCH, "idle" )
+			.Label( "copied" ).I( Opcode.COPY, V( 2 ), 1 )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ) );
+		vm.Variables[1] = value == 0 ? 1 : 0;
+		Run( vm, 1 );
+		Assert.AreEqual( value, vm.Variables[0] );
+		Assert.AreEqual( 1, vm.Variables[2], "COPY replaces the previous branch accumulator" );
+		Assert.AreEqual( RideVMState.Running, vm.State );
+	}
+
+	[TestMethod]
+	public void CopyToLiteralAbortsWithNativePcSentinelBeforeLaterInstructions()
+	{
+		var vm = Load( new Asm()
+			.I( Opcode.TEST, V( 1 ) )
+			.I( Opcode.COPY, 0, V( 0 ) )
+			.I( Opcode.ADD, V( 2 ), 1 )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ) );
+		vm.Variables[0] = 123;
+		vm.Variables[1] = -5;
+		Run( vm, 2 );
+		Assert.AreEqual( RideVMState.Faulted, vm.State, "the native invalid-tag diagnostic maps to a VM fault, not successful completion" );
+		Assert.AreEqual( -10000, vm.ProgramCounter );
+		CollectionAssert.AreEqual( new[] { 123, -5, 0, 0 }, vm.Variables );
+		Assert.AreEqual( RideVM.VMFlags.Sign, vm.Flags, "the rejected COPY leaves its accumulator unchanged" );
+		Assert.AreEqual( 2L, vm.ExecutedInstructions, "no subsequent parsed instruction executes" );
+		StringAssert.Contains( vm.FaultMessage, "COPY requires a variable destination" );
+	}
+
+	[DataTestMethod]
+	[DataRow( Opcode.DIV, false )]
+	[DataRow( Opcode.DIV, true )]
+	[DataRow( Opcode.MOD, false )]
+	[DataRow( Opcode.MOD, true )]
+	public void DivisionAndModuloByZeroReturnZeroAndContinue( Opcode opcode, bool literalDestination )
+	{
+		var vm = Load( new Asm()
+			.I( Opcode.TEST, V( 0 ) )
+			.I( opcode, literalDestination ? 0u : V( 1 ), V( 0 ), 0 )
+			.I( Opcode.BRANCH_Z, "zero" )
+			.I( Opcode.COPY, V( 2 ), 99 ).I( Opcode.BRANCH, "idle" )
+			.Label( "zero" ).I( Opcode.COPY, V( 2 ), 1 )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ) );
+		vm.Variables[0] = -123;
+		vm.Variables[1] = 77;
+		Run( vm, 1 );
+		Assert.AreEqual( literalDestination ? 77 : 0, vm.Variables[1] );
+		Assert.AreEqual( 1, vm.Variables[2], "zero-divisor result replaces the previous negative accumulator" );
+		Assert.AreEqual( RideVMState.Running, vm.State );
+		Assert.IsNull( vm.FaultMessage );
+	}
+
+	[TestMethod]
+	public void SignedMinimumDivisionOverflowKeepsTheExistingVmWrapPolicy()
+	{
+		var vm = Load( new Asm()
+			.I( Opcode.DIV, V( 1 ), V( 0 ), -1 )
+			.I( Opcode.MOD, V( 2 ), V( 0 ), -1 )
+			.I( Opcode.ENDSLICE ) );
+		vm.Variables[0] = int.MinValue;
+		Run( vm, 1 );
+		Assert.AreEqual( int.MinValue, vm.Variables[1] );
+		Assert.AreEqual( 0, vm.Variables[2] );
+		Assert.AreEqual( RideVM.VMFlags.Zero, vm.Flags );
+		Assert.AreEqual( RideVMState.Running, vm.State );
+	}
+
+	[DataTestMethod]
 	[DataRow( -5, 3 )]
 	[DataRow( 0, 1 )]
 	[DataRow( 7, 2 )]
@@ -188,6 +265,29 @@ public class RideVMTests
 			seen.Add( first.Variables[0] );
 		}
 		CollectionAssert.AreEquivalent( new[] { 0, 1, 2 }, seen.Distinct().ToArray() );
+	}
+
+	[DataTestMethod]
+	[DataRow( -100 )]
+	[DataRow( 100 )]
+	[DataRow( int.MaxValue )]
+	public void RandUsesTheRawBoundWordRatherThanTheReferencedVariable( int variableValue )
+	{
+		RideVM Make( object bound ) => Load( new Asm()
+			.Label( "loop" ).I( Opcode.RAND, V( 0 ), bound )
+			.I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "loop" ), new RideVMOptions { Seed = 42 } );
+		var rawVariableBound = Make( V( 2 ) );
+		var literalBound = Make( 2 );
+		rawVariableBound.Variables[2] = variableValue;
+		for ( var tick = 0; tick < 100; ++tick )
+		{
+			rawVariableBound.Advance( Tick );
+			literalBound.Advance( Tick );
+			Assert.AreEqual( RideVMState.Running, rawVariableBound.State );
+			Assert.AreEqual( literalBound.Variables[0], rawVariableBound.Variables[0], "raw variable index2 is the maximum; its contents do not affect RAND" );
+			Assert.IsTrue( rawVariableBound.Variables[0] >= 0 && rawVariableBound.Variables[0] <= 2 );
+		}
+		Assert.AreEqual( variableValue, rawVariableBound.Variables[2] );
 	}
 
 	[TestMethod]
@@ -444,16 +544,12 @@ public class RideVMTests
 	}
 
 	[TestMethod]
-	public void UnknownOpcodesDivisionByZeroAndRunningOffTheEndStopTheScript()
+	public void UnknownOpcodesAndRunningOffTheEndStopTheScript()
 	{
 		var unknown = Load( new Asm().I( Opcode.PUSH, 1 ) );
 		Run( unknown, 1 );
 		Assert.AreEqual( RideVMState.Faulted, unknown.State );
 		StringAssert.Contains( unknown.FaultMessage, "PUSH" );
-
-		var divide = Load( new Asm().I( Opcode.DIV, V( 0 ), 1, V( 1 ) ) );
-		Run( divide, 1 );
-		Assert.AreEqual( RideVMState.Faulted, divide.State );
 
 		var end = Load( new Asm().I( Opcode.NOP ) );
 		Run( end, 2 );

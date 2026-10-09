@@ -919,3 +919,191 @@ Confidence is high for reviewed bank/loan fields and pinned native owner/
 caller operations, medium for the bounded calendar candidate, and
 unqualified for PC numerical algorithms beyond the zero-APR fixture.
 Gameplay/factory/state-import source is unchanged by this plan.
+
+## Staff cadence, real saved researcher and bankruptcy gate
+
+Run the additional owned witness with:
+
+```sh
+python3 tools/ppc-analysis/lanes/economy/staff_evidence.py /Users/sander/server/game-assets/mac-feral/bin --save /Users/sander/server/game-assets/theme-park-world/Data/levels/jungle/Easymode.TPWI
+```
+
+It pins 20 additional operation/serializer regions, verifies 22 leaf-helper
+write widths through their actual `LbFile_Write` imports, composes eight
+serializer call sequences and checks fixed loop limits. It emits identities,
+addresses, widths and interpreted fields only. The earlier application
+witness and these checks together qualify the framing below; no original
+instructions execute. Both normal and `python3 -O` runs agree.
+
+### Cadence and state/vital transitions
+
+Regular world update `0x10536c` increments `mGameTick`, then visits the used
+actor chain and calls `0xfa9b0` at `0x10541c` for non-null actors with byte
+`+3 == 0`. Researcher dispatch calls `0xf0284` at `0xfaa48`, immediately
+followed by state processing `0xf0304` at `0xfaa50`. These are park-turn
+operations. World-state 4 skips that actor pass, but still reaches
+`0x10563c -> 0xd67f0 -> 0xd6818 -> 0xe3f0c` calendar updates (independently
+pinned by the clock lane). Do not equate this world state with GameType, or
+assume that actor suspension alone freezes calendar events.
+
+`0xf4170` maps raw staff `+412` states to broad UI/eligibility states:
+raw 0→0, raw 1→1, raw 3→3, raw 4/5→4, raw 7→5, and the remaining raw values
+(including research state 15)→2. Thus researcher contribution every 20 turns
+is excluded during broad 3/4/5, not restricted to raw 15. The raw state must
+survive import; a broad-state enum alone loses this distinction.
+
+Vital semantics are identified by the grievance traversals, which read
+`+504` in the fatigue branch and `+500` in the unhappiness branch, in
+addition to the grade/SAM recovery operations. Both are runtime f32 values.
+They are not permanently 100:
+
+| Native routine / caller | Per-call operation | Actual input references |
+| --- | --- | --- |
+| Rest `0xf3d8c`; researcher raw 3 at `0xf035c` | Energy += f32 recuperation; happiness += f32 happiness recuperation; each clamps to [0,100] | staff grade+484; SAM `+756/+760 +16×grade`; loads `0xf3db8/0xf3dfc` |
+| Idle/moving `0xf44c0`; researcher `0xf0530` on navigation-in-progress branch | Energy -= f32(0.012×(6−grade)); happiness -= f32(0.005×(6−grade)); each clamps | double constants data `0x5610/0x5608`; final subtract is f32 |
+| Working `0xf459c`; researcher raw 15 at `0xf0568` | Energy -= f32(f32(0.025)×(6−grade)); happiness -= f32(0.01×(6−grade)); each clamps | float data `0x5600`, double `0x55f8`; grade conversion and rounding order differ |
+| No reachable rest area, `0xf4ad0–0xf4b50` | On `RNG() &15 ==0`, subtract SAM HappyHitCosNoRestArea from happiness and clamp | setting+744; energy threshold uses+740; this is an RNG gate, not a fixed 16-turn interval |
+
+Actual PC global SAM recovery rates by grade 0..4 are energy
+0.2/0.3/0.4/0.5/0.75 and happiness 1/2/2/3/3. IdleDuration is 40/30/20/10/5
+turns; researcher WorkDuration is 10/20/30/40/50 turns. Descriptor-derived
+bindings are +752 and +1048 (strides16/12). RestLevel is 1 and the missing
+rest-area happiness hit is 2. These are PC input values; the operations and
+turn domain above are Mac evidence. There is no inferred fixed-day cadence
+or claim that every mod/raw grade is reachable.
+
+Rest completes when truncated low-byte energy equals 100 (`0xf3e2c–0xf3e44`),
+then `0xf4d00` releases the rest-area association and researcher callback
+`0xf0380` attempts its next action. Below/at RestLevel, `0xf4900` searches
+rest areas: `0xf47a0` selects the nearest squared grid distance among
+eligible objects; `0xf4c18` attempts navigation, stores rest ID+516 on
+success, and only then changes raw staff state to 2 at `0xf4ab8`. A nearest
+unreachable area can fail this attempt; the function does not establish a
+search through all reachable alternatives. Arrival/state 2 processing
+`0xf3b78` is still required before equating walking-to-rest with raw 3 rest.
+
+Research raw 15 records start tick+528. `0xf054c` depletes vitals, then compares
+current tick **strictly greater than** low-word start+WorkDuration at
+`0xf0594`. After navigation/mode checks it transitions through raw 1 or resets
+the work-start tick. Raw0/idle processing `0xf0610` similarly waits until
+current tick > low-word idling-start+IdleDuration before checking strike/rest
+and attempting research. These fields cannot map to current BusyTicks
+without preserving native state and comparison order.
+
+### Strike decision and activation are separate
+
+`0xf7e18` performs training first (`0xf7e48 -> 0xfc1c4`) on its month-event
+path, then considers each present role. Normal consideration requires park
+open; HQ +100 bypasses that gate and makes grievance predicate `0xf8410`
+return true. Per-role state is at HQ `+36+12r`, active strike flag at
+`+40+12r` (`0xf8bc0`), last-considered tick at `+44+12r`. If already active,
+the next consideration clears the active flag instead of escalating again.
+
+`0xf8410` normally requires **more than three** employees in a role and
+unsigned integer average of their truncated low-byte energy or happiness
+**below 15**. Each traversal follows role-linked staff `+524`, including all
+members in that chain, not an arbitrary available-worker list. Handymen
+have an additional analyser-statistic ratio > f32(0.2) grievance at
+`0xf84a8–0xf84fc`; the two statistic meanings remain dependencies
+`0xc21f4/0xc2264`. All five roles, including researchers at
+`0xf8a44–0xf8b90`, have fatigue and unhappiness tests. Empty/three-member
+roles bypass division; there is no divisor-zero policy to invent here.
+
+Escalation `0xf7fe0` is gated until elapsed calendar time reaches 24 fixed
+30-day units (`0xf803c–0xf805c`), then uses grievance state 0→warning1,
+1→strike2, 2→strike3, 3→strike4, and4→repeated strike4. The non-warning
+branches set active flag +40 and emit role messages through `0x116590`.
+Diagnostic text describes one week, two weeks and one month, but actual
+timed release outside the monthly active-flag clearing remains untraced;
+those strings alone are not quantitative duration proof.
+
+When a role is active and gate state `0x1091b8` equals1, individual staff
+`0xf4900` set generic field+392=1, choose a random position from the schema-
+proven StrikeAreaStart/Size fields +1452/+1456/+1460/+1464, attempt navigation
+at `0xf4a34`, and enter raw 4 through `0xf4a48` only on success. The saved
+researcher's happiness 97/energy 93 therefore supplies real input, but does
+not imply a present strike or prescribe a synthetic strike state.
+
+### Framed PC researcher, without invented staff
+
+Inherited serializer sizes are established from actual primitive writes and
+fixed-loop limits, not runtime allocation sizes:
+
+| Serialized component | Bytes | Width/order witnesses |
+| --- | --- | --- |
+| Base thing `0xfa808` | 8 | X/Y/MapChild/MapParent, four 2-byte fields |
+| Sprite animation `0xd2144` | 12 | three 4-byte fields |
+| Navigation `0xfcbcc` | 177 | fixed scalar/vector fields; five 8+4 subpath entries at `0xfcf80` |
+| Thoughts `0xfb304` | 144 | index4 +32×event4 +lastThought4 +script4 +shownTick4; `0xfb398` |
+| Person `0xe4a54`, including the above | 390 | selected scalars 15+34 plus8+12+177+144 |
+| Staff suffix `0xf2c28` | 105 | grade4, happiness4, jobs4, 33×UTF16 name, patrol4, percentage1, restID2, state 4, idleTick4, hiredTimestamp8, energy4 |
+| Guest suffix `0xe7f34` | 135 | scalar fields plus four pairs of previous object IDs (`0xe8338`) |
+| Researcher suffix `0xf00f0` | 6 | researching-start tick4 and researcher-next ID2 |
+
+Starting at the formats lane's verified map end 1,385,521, UsedThingHead is 42.
+Twelve successive type 1 guest records, each 8-byte next/model header plus525
+body bytes, walk IDs 42→41→…→31→30. The next record is actor 30, native model 8,
+next used actor 29, at 1,391,921. Its body is 501 bytes and ends at 1,392,430.
+World FirstResearcher at 1,239 also equals 30; its separate researcher-linked
+next ID is 0. This establishes the first researcher in the actual PC save,
+without a pattern scan, ordinal-as-ID assumption or fabricated employee.
+The bounded walker intentionally stops here; the remaining whole actor
+chain and other model widths remain unparsed.
+
+| Actual PC payload offset | Field | Value |
+| --- | --- | --- |
+| 1,392,319 | Grade | 2 |
+| 1,392,323 | Happiness, saved f32 | 97 |
+| 1,392,401 | Percentage-through-grade byte | 0 |
+| 1,392,402 | Rest-area ID | 0 |
+| 1,392,404 | Raw staff state | 1 |
+| 1,392,408 | Idling-start tick | 0 |
+| 1,392,412 | Hired timestamp | 125,935,884,000,000,000 |
+| 1,392,420 | Energy, saved f32 | 93 |
+| 1,392,424 | Researching-start tick | 697 |
+| 1,392,428 | Researcher-linked next ID | 0 |
+
+The native writer truncates each runtime vital, keeps the low byte, converts
+that integer back to f32, then writes **four bytes** (`0xf2ce0/0xf2e94`).
+Readers restore those floats into +500/+504 at `0xf2f14/0xf3094`. This lossy
+save encoding must not be mistaken for one-byte framing or evidence of
+unchanging happiness. The 33 UTF16 name units are stored inline at 1,392,331;
+there is no serialized NameIndex in this suffix. Mapping that name to the
+current indexed-name API requires separately qualified matching, or an
+explicit inline-name field, rather than inventing an index.
+
+These facts support a future real researcher import for a mode that consumes
+this save. They do not choose Instant Action/Full Simulation or infer that
+the saved actor was created by a particular mode. Native GameType and the
+scenario factory remain the parent/scenario lane's responsibility. The
+same save container/payload identities listed above qualify all offsets.
+The new prefix tests preserve next/current IDs, raw grade/percentage/state,
+u32 ticks/u64 timestamps and both saved floats; they reject unsupported
+models, cycles, truncation and bounded-prefix exhaustion. Total owned Python
+tests now 16; the real fixture and normal/optimized witnesses pass.
+
+### Bankruptcy blocker `0x105c6c` resolved
+
+The predicate compares winning-sequence object ID at data `0xecdcc` against
+null-ID sentinel 0. Start routine `0x105b50` allocates the configured feature
+and copies its real actor ID into that global through `0x105bf0 -> 0xfa9a4`;
+failure stores 0. End routine `0x105c94` diagnoses an unmatched
+EndWinningSequence, deletes the associated object at `0x105d08`, and clears
+the ID at `0x105d18`. Thus the predicate blocks a loss transition during an
+active winning sequence; it is not a money/loan eligibility query.
+
+Month handler `0xcc21c` checks current Balance<0, uses LastBalance and
+TurnEnteredRed to obtain elapsed time through `0xcc434 -> 0xe4750`, divides
+by the fixed 30-day unit, and emits type 19/subtype2 once elapsed quotient ≥6.
+Bank message handler `0xcc120` handles that subtype only if worldState !=4
+and `0x105c6c ==false`, then calls loss transition `0x1059e0` at `0xcc1b8`.
+The transition sets worldState4 (`0x105a30/0x105a40`), runs the failure
+sequence, handles affected ride objects, and closes the park through
+`0x105b38 -> 0x108ee4`. Subsequent world ticks skip ordinary actors while
+the calendar path remains, subject to the clock lane's separate gates.
+
+Cash/fee partial-import proof still does not supply ledger history, general
+calendar framing, unsaved-year initialization, or a PC bankruptcy algorithm.
+The concrete next bridge is now the framed researcher record and its inline
+name/state/vitals, plus loss/winning-sequence state qualification; retain
+the independently accepted reference formulas as a separate opt-in contract.

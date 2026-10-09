@@ -21,6 +21,11 @@ CHUNK_OFFSET = 0x60d
 PAYLOAD_OFFSET = CHUNK_OFFSET + 28
 FUNNY_EPOCH = 125911584000000000
 RATE = 15000
+# Fixed serializer widths verified by staff_evidence.py, not runtime sizes.
+PERSON_BYTES = 390
+STAFF_BYTES = 105
+GUEST_BYTES = 135
+RESEARCHER_BYTES = 6
 
 
 def require(actual, expected, label):
@@ -89,6 +94,55 @@ def calendar_candidates(payload: bytes) -> list[dict]:
     return candidates
 
 
+def researcher_prefix(payload: bytes, used_head_offset: int, maximum_records=16) -> dict:
+    """Bounded actor-chain prefix for model1/model8 only, with no scanning.
+
+    The caller must qualify used_head_offset. inspect_save uses the formats
+    lane's map end for the identified fixture. Unsupported types stop rather
+    than inventing a size; this is not a complete World parser.
+    """
+    if used_head_offset < 0 or used_head_offset + 4 > len(payload) or not 1 <= maximum_records <= 64:
+        raise ValueError('invalid actor-prefix bound')
+    current = struct.unpack_from('<I', payload, used_head_offset)[0]
+    offset = used_head_offset + 4
+    seen = set()
+    rows = []
+    for _ in range(maximum_records):
+        if current == 0 or current in seen:
+            raise ValueError('researcher absent or cyclic actor prefix')
+        seen.add(current)
+        if offset + 8 > len(payload):
+            raise ValueError('truncated actor header')
+        next_id, model = struct.unpack_from('<II', payload, offset)
+        if model not in (1, 8):
+            raise ValueError('unsupported actor model before researcher')
+        body = offset + 8
+        size = PERSON_BYTES + (GUEST_BYTES if model == 1 else STAFF_BYTES + RESEARCHER_BYTES)
+        if body + size > len(payload):
+            raise ValueError('truncated actor body')
+        rows.append({'id': current, 'offset': offset, 'next_id': next_id, 'model': model,
+                     'body_bytes': size, 'end_exclusive': body + size})
+        if model == 8:
+            staff = body + PERSON_BYTES
+            result = {'actor_prefix': rows, 'actor_id': current, 'header_offset': offset,
+                      'body_offset': body, 'end_exclusive': body + size}
+            for name, relative, kind in [
+                ('grade', 0, 'i'), ('happiness_saved_float', 4, 'f'), ('jobs_done', 8, 'I'),
+                ('percentage_byte', 82, 'B'), ('rest_area_id', 83, 'H'), ('staff_state', 85, 'i'),
+                ('started_idling_tick', 89, 'I'), ('hired_timestamp', 93, 'Q'),
+                ('energy_saved_float', 101, 'f'), ('started_researching_tick', 105, 'I'),
+                ('next_researcher_id', 109, 'H'),
+            ]:
+                result[name] = {'offset': staff + relative,
+                                'value': struct.unpack_from('<' + kind, payload, staff + relative)[0]}
+            result['inline_name'] = {'offset': staff + 12, 'utf16_code_units': 33,
+                                     'sha256': hashlib.sha256(payload[staff + 12:staff + 78]).hexdigest(),
+                                     'name_index': 'not stored by the native staff serializer'}
+            return result
+        current, offset = next_id, body + size
+    raise ValueError('researcher outside bounded prefix')
+
+
 def inspect_save(path: Path) -> dict:
     if path.stat().st_size > LIMIT:
         raise ValueError('save outside fixture input bound')
@@ -122,9 +176,17 @@ def inspect_save(path: Path) -> dict:
     for index in range(8):
         offset = bank_start + 28 + 32 * index
         loans.append({'index': index, 'offset': offset, **dict(zip(names, struct.unpack_from('<8i', payload, offset)))})
+    researcher = researcher_prefix(payload, 1385521)
+    require((researcher['actor_id'], researcher['header_offset'], researcher['grade']['value'],
+             researcher['percentage_byte']['value'], researcher['happiness_saved_float']['value'],
+             researcher['energy_saved_float']['value'], researcher['staff_state']['value'],
+             researcher['started_researching_tick']['value'], researcher['next_researcher_id']['value']),
+            (30, 1391921, 2, 0, 97.0, 93.0, 1, 697, 0), 'framed PC researcher')
+    require(struct.unpack_from('<H', payload, 1239)[0], researcher['actor_id'], 'world FirstResearcher ID')
     return {'container_sha256': SAVE_SHA, 'payload_sha256': PAYLOAD_SHA, 'decoded_bytes': len(payload),
             'world': world, 'bank': bank, 'loans': loans,
             'calendar_candidate': calendar, 'mac_equation_host_gregorian_date': date.isoformat(),
+            'researcher': researcher,
             'calendar_suffix_context': {'arrival_bytes': 18, 'map_offset_formats_lane': 6765,
                                         'candidate_end_plus_arrival': calendar['offset'] + 28 + 18},
             'limitation': 'One identified byte-identical Mac/PC save. Bank/loans reviewed; world schema matches. '

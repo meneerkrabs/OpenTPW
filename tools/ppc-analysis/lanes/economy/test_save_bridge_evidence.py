@@ -65,6 +65,58 @@ class SaveBridgeEvidenceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'identified PC save'):
                 bridge.inspect_save(path)
 
+    @staticmethod
+    def actor_chain():
+        payload = bytearray(4 + 8 + bridge.PERSON_BYTES + bridge.GUEST_BYTES +
+                            8 + bridge.PERSON_BYTES + bridge.STAFF_BYTES + bridge.RESEARCHER_BYTES)
+        struct.pack_into('<I', payload, 0, 41)
+        struct.pack_into('<II', payload, 4, 30, 1)
+        researcher = 4 + 8 + bridge.PERSON_BYTES + bridge.GUEST_BYTES
+        struct.pack_into('<II', payload, researcher, 27, 8)
+        staff = researcher + 8 + bridge.PERSON_BYTES
+        struct.pack_into('<ifI', payload, staff, 4, 17.0, 9)
+        payload[staff + 12:staff + 12 + 18] = 'Synthetic'.encode('utf-16le')
+        payload[staff + 82] = 255
+        struct.pack_into('<HIIQfIH', payload, staff + 83, 5, 15, 0xfffffffe,
+                         0xffffffffffffffff, 33.0, 0xffffffff, 19)
+        return payload, researcher, staff
+
+    def test_actor_prefix_follows_next_id_and_preserves_raw_staff_fields(self):
+        payload, header, staff = self.actor_chain()
+        row = bridge.researcher_prefix(payload, 0)
+        self.assertEqual(row['actor_id'], 30)
+        self.assertEqual(row['header_offset'], header)
+        self.assertEqual(row['actor_prefix'][1]['next_id'], 27)
+        self.assertEqual(row['grade'], {'offset': staff, 'value': 4})
+        self.assertEqual(row['percentage_byte']['value'], 255)
+        self.assertEqual(row['staff_state']['value'], 15)
+        self.assertEqual(row['energy_saved_float']['value'], 33.0)
+        self.assertEqual(row['happiness_saved_float']['value'], 17.0)
+        self.assertEqual(row['hired_timestamp']['value'], 0xffffffffffffffff)
+        self.assertEqual(row['started_researching_tick']['value'], 0xffffffff)
+        self.assertEqual(row['next_researcher_id']['value'], 19)
+        self.assertIn('not stored', row['inline_name']['name_index'])
+
+    def test_actor_prefix_rejects_truncated_headers_and_bodies(self):
+        payload, header, _ = self.actor_chain()
+        for length in [0, 3, 4, 11, header - 1, header + 7, len(payload) - 1]:
+            with self.assertRaises(ValueError):
+                bridge.researcher_prefix(payload[:length], 0)
+
+    def test_actor_prefix_rejects_cycle_unsupported_model_and_record_bound(self):
+        payload, _, _ = self.actor_chain()
+        with self.assertRaisesRegex(ValueError, 'outside bounded'):
+            bridge.researcher_prefix(payload, 0, maximum_records=1)
+        struct.pack_into('<I', payload, 4, 41)
+        with self.assertRaisesRegex(ValueError, 'cyclic'):
+            bridge.researcher_prefix(payload, 0)
+        struct.pack_into('<I', payload, 8, 4)
+        with self.assertRaisesRegex(ValueError, 'unsupported'):
+            bridge.researcher_prefix(payload, 0)
+        for maximum in [0, 65]:
+            with self.assertRaises(ValueError):
+                bridge.researcher_prefix(payload, 0, maximum_records=maximum)
+
 
 if __name__ == '__main__':
     unittest.main()

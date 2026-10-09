@@ -187,7 +187,7 @@ public sealed class TreArchive
 		while ( position < end )
 		{
 			var length = data[position++];
-			if ( position + length + 4 > data.Length )
+			if ( position + length + 4 > end )
 				break;
 			if ( Encoding.Latin1.GetString( data, position, length ).ToUpperInvariant() == wanted )
 				return U32( position + length );

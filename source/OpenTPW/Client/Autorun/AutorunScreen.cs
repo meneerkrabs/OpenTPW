@@ -23,6 +23,7 @@ internal sealed class AutorunScreen : IDisposable
 	private readonly ResourceSet resourceSet;
 	private readonly Pipeline pipeline;
 	private bool uploaded;
+	private bool disposed;
 
 	/// <param name="openFile">Opens a file with the system's default application; false when that failed.</param>
 	public AutorunScreen( AutorunView launcher, string? readmePath, Func<string, bool>? openFile = null )
@@ -121,6 +122,9 @@ internal sealed class AutorunScreen : IDisposable
 
 	public void Dispose()
 	{
+		if ( disposed )
+			return;
+		disposed = true;
 		pipeline.Dispose();
 		resourceSet.Dispose();
 		layout.Dispose();

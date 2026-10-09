@@ -315,6 +315,14 @@ internal static class Game
 			if ( screen.Result != AutorunResult.Play )
 				return;
 			Render.WorldScalingAllowed = true;
+			// Free the launcher's GPU resources one frame later, after its last frame was submitted.
+			Action? release = null;
+			release = () =>
+			{
+				Render.PostUpdate -= release;
+				screen.Dispose();
+			};
+			Render.PostUpdate += release;
 			if ( startIntro != null )
 			{
 				intro = startIntro();
@@ -322,6 +330,8 @@ internal static class Game
 			}
 			Render.OnUpdate += flow.Update;
 			Render.OnRender += flow.Render;
+			// Enter or Space held to press Play must not count again as the front end's first key.
+			flow.DiscardHeldInput();
 			flow.ShowFrontEnd();
 			if ( smoke )
 			{

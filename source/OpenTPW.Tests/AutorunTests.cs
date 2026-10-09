@@ -59,6 +59,20 @@ public class AutorunTests
 	}
 
 	[TestMethod]
+	public void DraggingOntoAButtonDoesNotClick()
+	{
+		var view = CreateView( "English", readme: true );
+		// Press on the backdrop or an unavailable button, release on Play or Exit: nothing.
+		Assert.AreEqual( AutorunAction.None, view.Handle( new Vector2( 400, 70 ), true, false, UiKeys.None ) );
+		Assert.AreEqual( AutorunAction.None, view.Handle( new Vector2( 5, 70 ), false, true, UiKeys.None ) );
+		Assert.AreEqual( AutorunAction.None, view.Handle( new Vector2( 5, 110 ), true, false, UiKeys.None ) );
+		Assert.AreEqual( AutorunAction.None, view.Handle( new Vector2( 5, 330 ), false, true, UiKeys.None ) );
+		// A normal press and release still works.
+		view.Handle( new Vector2( 5, 70 ), true, false, UiKeys.None );
+		Assert.AreEqual( AutorunAction.Play, view.Handle( new Vector2( 5, 70 ), false, true, UiKeys.None ) );
+	}
+
+	[TestMethod]
 	public void TabMovesFocusAndAcceptActivates()
 	{
 		var view = CreateView( "English", readme: true );

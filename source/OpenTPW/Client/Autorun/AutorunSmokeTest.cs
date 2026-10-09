@@ -62,7 +62,7 @@ internal sealed class AutorunSmokeTest : IDisposable
 	private NVector2 Center( AutorunButton button )
 	{
 		var (x, y, width, _) = AutorunScreen.Placement();
-		var scale = width / AutorunView.Width;
+		var scale = width / (float)AutorunView.Width;
 		return new NVector2( x + (button.X + button.Width / 2f) * scale, y + (button.Y + button.Height / 2f) * scale );
 	}
 

@@ -32,6 +32,7 @@ internal sealed class AutorunView
 	private readonly AutorunAssets assets;
 	private readonly byte[] frame = new byte[Width * Height * 4];
 	private AutorunButton? pressed;
+	private bool pressedSeen;
 	private bool dirty = true;
 
 	/// <param name="readmeAvailable">Whether the language's read-me file exists (the script then shows its button).</param>
@@ -70,7 +71,7 @@ internal sealed class AutorunView
 
 	/// <summary>
 	/// Applies one frame of input. <paramref name="client"/> is the mouse in launcher pixels (null when it is outside the 640x480 image).
-	/// A click needs press and release on the same button, like a push button; a release without a press (injected clicks) counts.
+	/// A click needs press and release on the same button, like a push button; a release with no press at all (injected clicks) counts, but a press that began elsewhere does not.
 	/// </summary>
 	public AutorunAction Handle( NVector2? client, bool leftPressed, bool leftReleased, UiKeys keys )
 	{
@@ -78,18 +79,20 @@ internal sealed class AutorunView
 		if ( leftPressed )
 		{
 			pressed = hit;
+			pressedSeen = true;
 			if ( hit != null )
 				SetFocus( hit );
 		}
 		var action = AutorunAction.None;
 		if ( leftReleased )
 		{
-			if ( hit != null && (pressed == null || pressed == hit) )
+			if ( hit != null && (pressed == hit || (!pressedSeen && pressed == null)) )
 			{
 				SetFocus( hit );
 				action = ActionOf( hit );
 			}
 			pressed = null;
+			pressedSeen = false;
 		}
 		if ( action == AutorunAction.None )
 		{

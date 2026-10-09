@@ -194,6 +194,19 @@ public class TreArchiveTests
 	}
 
 	[TestMethod]
+	public void TruncatedCollisionRecordDoesNotReadFollowingData()
+	{
+		var hash = TreArchive.Hash( "second" );
+		var entries = new List<(uint, byte[], uint, Mode)> { (TreArchive.Hash( "first" ), Ascii( "1" ), 1u, Mode.Stored) };
+		// The declared list holds only "SECOND" and a 2-byte stub of the index; the payload after it must not complete it.
+		var list = new List<byte> { 6 };
+		list.AddRange( Ascii( "SECOND" ) );
+		list.AddRange( [0, 0] );
+		var archive = new TreArchive( Build( entries, collisions: list.ToArray(), collidingHash: hash ) );
+		Assert.IsFalse( archive.TryFind( "second", out _ ) );
+	}
+
+	[TestMethod]
 	public void RejectsMalformedArchives()
 	{
 		var good = Build( [(TreArchive.Hash( "x" ), Ascii( "abc" ), 3u, Mode.Stored)] );

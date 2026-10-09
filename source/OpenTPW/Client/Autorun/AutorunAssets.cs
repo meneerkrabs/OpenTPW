@@ -100,42 +100,67 @@ internal sealed class AutorunAssets
 		problem = null;
 		try
 		{
-			var language = requestedLanguage;
-			var languageFile = GameLanguage.FindEntry( folder, language + ".tre", false );
-			if ( languageFile == null )
+			var languages = requestedLanguage.Equals( "English", StringComparison.OrdinalIgnoreCase ) ? new[] { "English" } : new[] { requestedLanguage, "English" };
+			var reasons = new List<string>();
+			foreach ( var language in languages )
 			{
-				language = "English";
-				languageFile = GameLanguage.FindEntry( folder, "English.tre", false );
+				if ( GameLanguage.FindEntry( folder, language + ".tre", false ) is not { } languageFile )
+				{
+					reasons.Add( $"{language}.tre is missing" );
+					continue;
+				}
+				AutorunAssets? loaded;
+				string? reason;
+				try
+				{
+					loaded = LoadLanguage( folder, language, languageFile, out reason );
+				}
+				catch ( Exception exception ) when ( exception is IOException or InvalidDataException or UnauthorizedAccessException )
+				{
+					(loaded, reason) = (null, exception.Message);
+				}
+				if ( loaded != null )
+					return loaded;
+				reasons.Add( reason! );
+				Log?.Warning( $"Autorun: {language} launcher art is unusable ({reason})." );
 			}
-			if ( languageFile == null )
-			{
-				problem = "no language archive";
-				return null;
-			}
-			var archive = TreArchive.Open( languageFile );
-			var background = archive.Read( @".\autorun\back.bmp" );
-			if ( background == null )
-			{
-				problem = $"{Path.GetFileName( languageFile )} has no backdrop";
-				return null;
-			}
-			var art = new Dictionary<AutorunButtonId, AutorunBitmap>();
-			foreach ( var (id, name) in ArtNames )
-				if ( archive.Read( $@".\autorun\{name}.bmp" ) is { } bytes )
-					art[id] = AutorunBitmap.Decode( bytes );
-			var back = AutorunBitmap.Decode( background );
-			if ( back.Width != AutorunView.Width || back.Height != AutorunView.Height )
-			{
-				problem = $"the backdrop is {back.Width}x{back.Height}, not {AutorunView.Width}x{AutorunView.Height}";
-				return null;
-			}
-			return new AutorunAssets( folder, language, back, art, ReadRows( folder ) );
+			problem = string.Join( "; ", reasons );
+			return null;
 		}
 		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException )
 		{
 			problem = exception.Message;
 			return null;
 		}
+	}
+
+	/// <summary>One language archive; null when it lacks the backdrop or the Play and Exit art, without which the launcher could neither continue nor quit.</summary>
+	private static AutorunAssets? LoadLanguage( string folder, string language, string languageFile, out string? reason )
+	{
+		reason = null;
+		var archive = TreArchive.Open( languageFile );
+		var background = archive.Read( @".\autorun\back.bmp" );
+		if ( background == null )
+		{
+			reason = $"{Path.GetFileName( languageFile )} has no backdrop";
+			return null;
+		}
+		var art = new Dictionary<AutorunButtonId, AutorunBitmap>();
+		foreach ( var (id, name) in ArtNames )
+			if ( archive.Read( $@".\autorun\{name}.bmp" ) is { } bytes )
+				art[id] = AutorunBitmap.Decode( bytes );
+		var back = AutorunBitmap.Decode( background );
+		if ( back.Width != AutorunView.Width || back.Height != AutorunView.Height )
+		{
+			reason = $"the backdrop is {back.Width}x{back.Height}, not {AutorunView.Width}x{AutorunView.Height}";
+			return null;
+		}
+		if ( !art.ContainsKey( AutorunButtonId.Play ) || !art.ContainsKey( AutorunButtonId.Exit ) )
+		{
+			reason = $"{Path.GetFileName( languageFile )} has no Play or Exit button art";
+			return null;
+		}
+		return new AutorunAssets( folder, language, back, art, ReadRows( folder ) );
 	}
 
 	/// <summary>The <c>nv*Y</c> row values of <c>autorun.tre</c>'s script, falling back to the known ones.</summary>

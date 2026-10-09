@@ -120,7 +120,7 @@ Original values ([DATA:Data/low.sam, med.sam, high.sam]):
 | WEATHER / LOBBYOBJECTS | 0/10 | 1/70 | 1/100 | 1/100 | exposed |
 
 The Enhanced preset also stretches OpenTPW's fog distance by 2 ([EXT] view distance; the
-original presets keep scale 1). Default preset: High (APPROX COMPAT-013). Settings live in
+original presets keep scale 1). Default preset: the original's per-machine choice (traced: Low below 65 MB or 301 MHz, Medium below 192 MB or 450 MHz, otherwise High), with the processor clock taken as at least 450 MHz (APPROX COMPAT-013). Settings live in
 `graphics.json` next to `display.json`; `--graphics-preset low|medium|high|enhanced`,
 `--save-graphics-settings`. Filtering/mipmap changes reach the samplers at the next start
 (`RestartRequired`); the view distance applies immediately. Custom presets keep the
@@ -195,7 +195,7 @@ against loose files: `OPENTPW_TPWFNT_PATH=<tpwfnt folder>`.
 | COMPAT-010 | Graphics | TEXTUREFILTERING 0/1/2 → Veldrid point / linear+point-mip / linear+linear-mip; MIPMAP 0 → mip 0 only | binary render states or captures per detail level |
 | COMPAT-011 | Localization | Missing string → English → internal name | original behaviour for missing strings |
 | COMPAT-012 | Text input | Unrepresentable characters → `?` | binary text-input handling |
-| COMPAT-013 | Graphics | High is the default detail preset | installer/registry default |
+| COMPAT-013 | Graphics | The default preset follows the original's thresholds; the processor clock is taken as 450 MHz or faster | none for any machine that runs OpenTPW |
 
 Extensions by design (not approximations): `[EXT:COMPAT-GFX-ENHANCED]` Enhanced preset
 values, `[EXT:COMPAT-GFX-ANISOTROPY]` anisotropy degree, `[EXT:COMPAT-GFX-VIEWDISTANCE]`

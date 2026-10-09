@@ -24,7 +24,7 @@ public static class ApproximationRegister
 		new( "COMPAT-010", "Graphics presets", "TEXTUREFILTERING 0/1/2 (Point/Bilinear/Trilinear, per the .sam legend) map to Veldrid point / linear-with-point-mip / linear-with-linear-mip samplers, and MIPMAP 0 limits sampling to mip 0; the original Direct3D filter states are not known exactly.", "binary render-state setup or captures at each detail level" ),
 		new( "COMPAT-011", "Localization", "A missing localized string falls back to the English table, then to the internal identifier.", "original behaviour for missing strings (the game may show blanks)" ),
 		new( "COMPAT-012", "Text input", "Characters that UniToMB.dat cannot represent are replaced by '?' (or dropped when '?' is unmappable).", "binary text-input handling" ),
-		new( "COMPAT-013", "Graphics presets", "High is the default detail preset; the original chose a detail level per machine at setup.", "installer/registry default" ),
+		new( "COMPAT-013", "Graphics presets", "The default detail preset follows the original's memory and processor thresholds, with the processor clock taken as 450 MHz or faster.", "none for any machine that runs OpenTPW (all exceed 450 MHz)" ),
 	};
 
 	/// <summary>Logs every approximation once.</summary>

@@ -14,7 +14,7 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **131 unresolved unique APPROX IDs**, 146 APPROX occurrences, 57 EXT occurrences, 62 DATA occurrences and 22 BIN occurrences.
+Current inventory: **131 unresolved unique APPROX IDs**, 146 APPROX occurrences, 57 EXT occurrences, 62 DATA occurrences and 23 BIN occurrences.
 
 Of these, 125 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
@@ -198,7 +198,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | COMPAT-010 | `source/OpenTPW/Render/Assets/Material.cs:62` | [APPROX:COMPAT-010] Veldrid sampler modes stand in for the original Direct3D filter states — evidence needed: binary render-state setup or captures. |
 | COMPAT-011 | `source/OpenTPW.Files/Public/LocalizedStringTable.cs:7` | [APPROX:COMPAT-011] the fallback order is an OpenTPW choice — evidence needed: original behaviour |
 | COMPAT-012 | `source/OpenTPW.Files/Formats/String/BFUMReader.cs:106` | they are dropped ([APPROX:COMPAT-012] — evidence needed: binary text-input handling); they are |
-| COMPAT-013 | `source/OpenTPW/Compat/GraphicsSettings.cs:246` | [APPROX:COMPAT-013] High is the default detail level; the original picked one per machine at |
+| COMPAT-013 | `source/OpenTPW/Compat/GraphicsSettings.cs:151` | [APPROX:COMPAT-013] the processor clock is taken as 450 MHz or faster, since .NET cannot read it portably — evidence needed: none for any machine that runs OpenTPW (all exceed 450 MHz) |
 | ECON-001 | `source/OpenTPW/Economy/ParkCalendar.cs:38` | [APPROX:ECON-001] OpenTPW's fixed 60 Hz clock is sampled into 248 ms turns (14.88 ticks per turn), without the original's catch-up cap and scheduler phases — evidence needed: runtime turn timing under load and speed changes |
 | ECON-002 | `source/OpenTPW/Economy/ParkCalendar.cs:59` | [APPROX:ECON-002] the Mac OS date conversion (LongSecondsToDate, reached through 0x101C5C4C) uses the default Gregorian calendar — evidence needed: the script system of an original run |
 | ECON-004 | `source/OpenTPW/Economy/ParkCalendar.cs:11` | [APPROX:ECON-004] Fast x2 and Fastest x4 speeds (only pause is evidenced) — evidence needed: original speed controls, if any |
@@ -322,14 +322,14 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 
 | Label | Location | Source comment context |
 | --- | --- | --- |
-| COMPAT-FIX enhanced-game-options | `source/OpenTPW/Compat/GraphicsSettings.cs:182` | [EXT:COMPAT-FIX enhanced-game-options] simulation-affecting; recorded in save metadata. |
+| COMPAT-FIX enhanced-game-options | `source/OpenTPW/Compat/GraphicsSettings.cs:197` | [EXT:COMPAT-FIX enhanced-game-options] simulation-affecting; recorded in save metadata. |
 | COMPAT-FIX sign-font-substitution | `source/OpenTPW.Files/Public/DataCorrections.cs:18` | [EXT:COMPAT-FIX sign-font-substitution] [DATA:levels/space/rides/megacost.wad/megacost.sgn:slot 1 = "EggIt Italic"/EGGII___.TTF, not in fonts.wad] |
-| COMPAT-GFX-ANISOTROPY | `source/OpenTPW/Compat/GraphicsSettings.cs:252` | &lt;summary&gt;[EXT:COMPAT-GFX-ANISOTROPY] degree used when filtering is anisotropic (1..16).&lt;/summary&gt; |
+| COMPAT-GFX-ANISOTROPY | `source/OpenTPW/Compat/GraphicsSettings.cs:264` | &lt;summary&gt;[EXT:COMPAT-GFX-ANISOTROPY] degree used when filtering is anisotropic (1..16).&lt;/summary&gt; |
 | COMPAT-GFX-ENHANCED | `source/OpenTPW/Compat/GraphicsSettings.cs:13` | &lt;summary&gt;[EXT:COMPAT-GFX-ENHANCED] OpenTPW extension beyond the original High preset (docs/COMPATIBILITY.md).&lt;/summary&gt; |
-| COMPAT-GFX-ENHANCED | `source/OpenTPW/Compat/GraphicsSettings.cs:150` | &lt;summary&gt;[EXT:COMPAT-GFX-ENHANCED] anisotropy used by the Enhanced preset (TEXTUREFILTERING 3 is never used by the original presets).&lt;/summary&gt; |
-| COMPAT-GFX-ENHANCED | `source/OpenTPW/Compat/GraphicsSettings.cs:152` | &lt;summary&gt;[EXT:COMPAT-GFX-ENHANCED] view distance scale of the Enhanced preset (OpenTPW fog distance multiplier).&lt;/summary&gt; |
-| COMPAT-GFX-ENHANCED | `source/OpenTPW/Compat/GraphicsSettings.cs:167` | [EXT:COMPAT-GFX-ENHANCED] user-selected deviation from the original High preset by design. |
-| COMPAT-GFX-VIEWDISTANCE | `source/OpenTPW/Compat/GraphicsSettings.cs:254` | &lt;summary&gt;[EXT:COMPAT-GFX-VIEWDISTANCE] OpenTPW fog distance multiplier; 1 = unchanged.&lt;/summary&gt; |
+| COMPAT-GFX-ENHANCED | `source/OpenTPW/Compat/GraphicsSettings.cs:165` | &lt;summary&gt;[EXT:COMPAT-GFX-ENHANCED] anisotropy used by the Enhanced preset (TEXTUREFILTERING 3 is never used by the original presets).&lt;/summary&gt; |
+| COMPAT-GFX-ENHANCED | `source/OpenTPW/Compat/GraphicsSettings.cs:167` | &lt;summary&gt;[EXT:COMPAT-GFX-ENHANCED] view distance scale of the Enhanced preset (OpenTPW fog distance multiplier).&lt;/summary&gt; |
+| COMPAT-GFX-ENHANCED | `source/OpenTPW/Compat/GraphicsSettings.cs:182` | [EXT:COMPAT-GFX-ENHANCED] user-selected deviation from the original High preset by design. |
+| COMPAT-GFX-VIEWDISTANCE | `source/OpenTPW/Compat/GraphicsSettings.cs:266` | &lt;summary&gt;[EXT:COMPAT-GFX-VIEWDISTANCE] OpenTPW fog distance multiplier; 1 = unchanged.&lt;/summary&gt; |
 | ONLINE-001 | `source/OpenTPW.Online/Packages/BoundedZip.cs:10` | [EXT:ONLINE-001] OpenTPW container design (the original online service used EA's servers; no |
 | ONLINE-002 | `source/OpenTPW.Online/Packages/BoundedZip.cs:18` | &lt;summary&gt;[EXT:ONLINE-002] Highest accepted uncompressed/compressed ratio for entries above 4 KiB.&lt;/summary&gt; |
 | ONLINE-003 | `source/OpenTPW.Online/Packages/BoundedZip.cs:89` | [EXT:ONLINE-003] Fixed timestamp so identical content gives identical bytes. |
@@ -373,7 +373,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ps2-data | `source/OpenTPW/Client/Ps2Export.cs:13` | [EXT:ps2-data] viewing aid for the PS2 version's data, not original behaviour |
 | strings | `source/OpenTPW/UI/Original/SupplementaryStrings.cs:10` | [EXT:strings] OpenTPW supplementary labels (display/upscaling/language rows and OpenTPW messages), not original data |
 | test-stub | `source/OpenTPW/Hud/HudStubs.cs:130` | [EXT:test-stub] price shown when Totem.sam cannot be read (the economy catalogue price is used when a park economy runs) |
-| texture-pack | `source/OpenTPW/Compat/GraphicsSettings.cs:256` | &lt;summary&gt;[EXT:texture-pack] Use the locally built upscaled texture pack (docs/TEXTURE-PACKS.md); off = original textures. Applies at the next start.&lt;/summary&gt; |
+| texture-pack | `source/OpenTPW/Compat/GraphicsSettings.cs:268` | &lt;summary&gt;[EXT:texture-pack] Use the locally built upscaled texture pack (docs/TEXTURE-PACKS.md); off = original textures. Applies at the next start.&lt;/summary&gt; |
 | texture-pack | `source/OpenTPW/Render/Assets/TexturePack.cs:13` | [EXT:texture-pack] Upscaled replacement textures are an OpenTPW presentation option, not original behaviour. |
 | texture-pack | `source/OpenTPW/Render/Assets/TexturePackBuilder.cs:63` | [EXT:texture-pack] Builder for the optional local upscaled texture pack; original files are only read. |
 | texture-pack | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:147` | [EXT:texture-pack] optional locally built upscaled textures; off unless a pack exists and the player turns it on |
@@ -384,7 +384,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 
 | Label | Location | Source comment context |
 | --- | --- | --- |
-| *.sam:TEXTURE_FILTERING 0 Point, 1 Bilinear, 2 Trilinear, 3 Anisotropic; MIPMAP | `source/OpenTPW/Compat/GraphicsSettings.cs:187` | Renderer mapping. Filtering and mipmaps follow the legend ([DATA:*.sam:TEXTURE_FILTERING 0 Point, 1 Bilinear, 2 Trilinear, 3 Anisotropic; MIPMAP]); the anisotropy degree for value 3 and the view |
+| *.sam:TEXTURE_FILTERING 0 Point, 1 Bilinear, 2 Trilinear, 3 Anisotropic; MIPMAP | `source/OpenTPW/Compat/GraphicsSettings.cs:202` | Renderer mapping. Filtering and mipmaps follow the legend ([DATA:*.sam:TEXTURE_FILTERING 0 Point, 1 Bilinear, 2 Trilinear, 3 Anisotropic; MIPMAP]); the anisotropy degree for value 3 and the view |
 | *.sgn:LOGFONT lfHeight | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:67` | [DATA:*.sgn:LOGFONT lfHeight] em height; [DATA:*.sgn:slot offset] cell top (TA_TOP reading is inferred from the values). |
 | *.sgn:slot font file / LOGFONT face | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:56` | [DATA:*.sgn:slot font file / LOGFONT face] |
 | *.sgn:slot offset | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:67` | [DATA:*.sgn:LOGFONT lfHeight] em height; [DATA:*.sgn:slot offset] cell top (TA_TOP reading is inferred from the values). |
@@ -436,7 +436,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | lobby.wad:&lt;theme&gt;.txt ISLAND/SKYCOLOUR/FLYINGMESH/RAINY/LIGHTNING | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:79` | [DATA:lobby.wad:&lt;theme&gt;.txt ISLAND/SKYCOLOUR/FLYINGMESH/RAINY/LIGHTNING] [APPROX:UI-016] angle = yaw, height = camera target height — evidence needed: binary/capture |
 | lobby.wad:&lt;theme&gt;.txt SKYCOLOUR | `source/OpenTPW/Client/GameFlow.cs:240` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
 | lobby.wad:lobby.txt ISLANDFOV/SPINSPEED/SPINRADIUS/VERTICALOFFSET | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:31` | [DATA:lobby.wad:lobby.txt ISLANDFOV/SPINSPEED/SPINRADIUS/VERTICALOFFSET] defaults equal the shipped values |
-| low.sam/med.sam/high.sam | `source/OpenTPW.Tests/CompatibilityTests.cs:122` | [DATA:low.sam/med.sam/high.sam] in file order (TEXTUREQUALITY .. LOBBYOBJECTS). |
+| low.sam/med.sam/high.sam | `source/OpenTPW.Tests/CompatibilityTests.cs:133` | [DATA:low.sam/med.sam/high.sam] in file order (TEXTUREQUALITY .. LOBBYOBJECTS). |
 | low.sam/med.sam/high.sam:comment legend | `source/OpenTPW/Compat/GraphicsSettings.cs:21` | ([DATA:low.sam/med.sam/high.sam:comment legend]). |
 | low/med/high.sam:TEXTUREFILTERING, MIPMAP | `source/OpenTPW/Render/Assets/Material.cs:60` | World textures follow the graphics preset ([DATA:low/med/high.sam:TEXTUREFILTERING, MIPMAP]); see docs/COMPATIBILITY.md. |
 | speechHD.SDT/MusicHD.sdt:all Layer II frames fit this table to ≤23 spare bits | `source/OpenTPW.Files/Formats/Sound/Mp2Decoder.cs:38` | [DATA:speechHD.SDT/MusicHD.sdt:all Layer II frames fit this table to ≤23 spare bits] |
@@ -465,6 +465,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | STP-PPC:0x100F6E24 staff pool update | `source/OpenTPW/Economy/ParkStaff.cs:100` | [BIN:STP-PPC:0x100F6E24 staff pool update] draw = rand() % total shortfall picks the role whose share it falls in; each added candidate lowers that role's shortfall and the per-update cap (also limited by the 32 free slots); 0x100F65E8 drops roles whose hired count reached Max*InPark; 0x100F6790 then tops every role up to Min*InPool counting hired and pooled staff |
 | STP-PPC:0x1010474C world setup | `source/OpenTPW/Economy/BalanceSettings.cs:177` | [BIN:STP-PPC:0x1010474C world setup] game type 0/2 load levels/Standard.sam then &lt;theme&gt;/Standard.sam; type 2 (Instant Action) adds &lt;theme&gt;/Easy_Standard.sam and only logs when it is missing |
 | STP-PPC:0x10119328 object loader | `source/OpenTPW/World/Objects/ObjectCatalog.cs:387` | [BIN:STP-PPC:0x10119328 object loader] In Instant Action (game type 2) Easy_&lt;object file&gt; is layered after the object file when it exists; Online_ files belong to the online game type and are not loaded offline |
+| STP-PPC:0x10125B7C default options | `source/OpenTPW/Compat/GraphicsSettings.cs:144` | [BIN:STP-PPC:0x10125B7C default options] Gestalt 'ram ' in MB (64 when unavailable) and 'pclk' in MHz (266 when unavailable): Low below 65 MB or 301 MHz, Medium below 192 MB or 450 MHz, otherwise High |
 | STP-PPC:0x10128B60 profile key count | `source/OpenTPW/Economy/ParkObjectives.cs:317` | [BIN:STP-PPC:0x10128B60 profile key count] keys = mExtraKeys + (earned global, per-theme and secret tickets) / 3, truncated; spent tickets are not subtracted |
 | STP-PPC:0x10137600 player save setup | `source/OpenTPW/World/Original/OriginalPark.cs:51` | [BIN:STP-PPC:0x10137600 player save setup] the level's easymode park is copied into a player's saves only for Instant Action players (0x1013741C passes the mode flag) |
 | STP-PPC:0x10154AA0 loans window | `source/OpenTPW/Economy/ParkEconomy.cs:84` | [BIN:STP-PPC:0x10154AA0 loans window] the Available Loans window only opens outside game type 2 (Instant Action) |

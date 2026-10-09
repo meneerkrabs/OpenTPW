@@ -1,8 +1,5 @@
 namespace OpenTPW.Hud;
 
-/// <summary>Outcome of charging a placed object.</summary>
-public enum BuildCharge { Charged, NotEnoughMoney, NotAvailable }
-
 /// <summary>
 /// What the HUD shows and does with the park's money and time (<see cref="ParkDate"/> and
 /// <see cref="GameSpeed"/> are the economy slice's). The game binds it to <see cref="Level.Park"/>
@@ -24,10 +21,6 @@ public interface IHudParkStatus
 	long? PriceOf( BuildItem item );
 	/// <summary>Whether the item can be bought now (researched, in the catalogue).</summary>
 	bool IsAvailable( BuildItem item );
-	/// <summary>Charges a ride the player just placed (the level registered it uncharged).</summary>
-	BuildCharge ChargePlaced( BuildItem item, PrototypeRide ride );
-	/// <summary>Sells a placed ride before it is removed; returns the credited scrap value.</summary>
-	long SellPlaced( PrototypeRide ride );
 }
 
 /// <summary>Build-menu categories; the values are the original <c>Info.WhichUIType</c> (0 rides, 1 shops, 2 sideshows, 3 features).</summary>
@@ -39,7 +32,7 @@ public enum BuildCategory { Rides = 0, Shops = 1, Sideshows = 2, Features = 3 }
 /// <param name="PreviewModel">Path of the original preview model (<c>P&lt;name&gt;.MD2</c>) drawn as the icon.</param>
 /// <param name="TextureDirectories">Where the preview model's textures are looked up, in order.</param>
 /// <param name="DefaultExcitement">Original <c>UsageInfo.ExcitementLevel</c> ("average excitement level by default"), if known.</param>
-public sealed record BuildItem( string Id, int InfoId, BuildCategory Category, int ObjectNameIndex, long Cost, string? PreviewModel, IReadOnlyList<string> TextureDirectories, int? DefaultExcitement = null );
+public sealed record BuildItem( string Id, int InfoId, BuildCategory Category, int ObjectNameIndex, long Cost, string? PreviewModel, IReadOnlyList<string> TextureDirectories, int? DefaultExcitement = null, ObjectCatalogEntry? Entry = null );
 
 /// <summary>
 /// What can be bought. The object-catalog slice implements this for every ride/shop/sideshow/feature;
@@ -54,4 +47,4 @@ public interface IBuildCatalog
 public readonly record struct ObjectStat( UIStrings Label, string? Value );
 
 /// <summary>Info panel contents for a selected park object.</summary>
-public sealed record ObjectInfo( int ObjectNameIndex, bool IsOpen, bool CanOpen, IReadOnlyList<ObjectStat> Stats );
+public sealed record ObjectInfo( int ObjectNameIndex, bool IsOpen, bool CanOpen, IReadOnlyList<ObjectStat> Stats, string? DisplayName = null );

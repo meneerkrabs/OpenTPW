@@ -15,9 +15,10 @@ public enum UiAnchor
 /// (docs/UI.md); the canvas scales it uniformly to fit the output framebuffer (drawable pixels) and
 /// keeps each element at its authored distance from its anchor edge, so corner HUD elements stay in
 /// the corners on wide screens (4:3 reproduces the authored layout). <see cref="UiScale"/> is the
-/// display's integer UI scale (<see cref="Screen.UiScale"/>): BF4 text is drawn at exactly that
-/// pixel scale, so it stays pixel-exact on HiDPI outputs, and the font size tier is chosen from the
-/// logical (pixel ÷ UI scale) size. Anchoring and tier choice are OpenTPW policy.
+/// display's requested integer UI scale (<see cref="Screen.UiScale"/>). BF4 text uses the largest
+/// integer no greater than that request at which the display policy's reference layout fits the
+/// output (at least 1), preserving pixel-exact glyphs. Font tier uses the resulting logical size.
+/// Anchoring and tier choice are OpenTPW policy.
 /// </summary>
 public readonly record struct UiCanvas( int Width, int Height, int UiScale = 1 )
 {
@@ -28,8 +29,9 @@ public readonly record struct UiCanvas( int Width, int Height, int UiScale = 1 )
 	/// <summary>Framebuffer pixels per virtual unit.</summary>
 	public float Scale => Math.Max( 0.05f, Math.Min( Width / VirtualWidth, Height / VirtualHeight ) );
 
-	/// <summary>Integer pixel scale of BF4 text: the display UI scale (at least 1).</summary>
-	public int TextScale => Math.Max( 1, UiScale );
+	/// <summary>Integer BF4 scale, limited to the existing display reference layout's fit.</summary>
+	// [EXT:interface-scale-fit] Above 1×, limit forced text scales to UiScaling's existing reference-layout fit.
+	public int TextScale => Math.Min( Math.Max( 1, UiScale ), UiScaling.Automatic( new Point2( Width, Height ) ) );
 
 	/// <summary>Virtual-to-logical scale (pixels per virtual unit ÷ UI scale).</summary>
 	public float LogicalScale => Scale / TextScale;

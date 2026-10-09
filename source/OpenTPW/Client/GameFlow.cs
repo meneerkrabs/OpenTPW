@@ -18,6 +18,7 @@ internal sealed class GameFlow : IDisposable
 	private readonly UiBatch backgroundBatch = new();
 	private Action? pending;
 	private LobbyDefinition? lobbyDefinition;
+	private (int Requested, int Fitted)? reportedUiScale;
 
 	public GameFlow()
 	{
@@ -140,7 +141,7 @@ internal sealed class GameFlow : IDisposable
 		// Money, calendar, speed and purchases come from the park economy of original levels (Level.Park,
 		// looked up on every access so loading a park save is followed); the generic sandbox has none.
 		IHudParkStatus status = level.Park != null ? EconomyParkStatus.ForLevel( level ) : new NoEconomyStatus();
-		Hud = new ParkHud( level, Strings, status, new TotemBuildCatalog( "jungle" ), new HudHost
+		Hud = new ParkHud( level, Strings, status, new OriginalBuildCatalog( level.Objects.Catalog ), new HudHost
 		{
 			ExitToLobby = () => Queue( () => ShowFrontEnd( levelName ) ),
 			Quit = Quit,
@@ -173,7 +174,12 @@ internal sealed class GameFlow : IDisposable
 	private UiCanvas CurrentCanvas()
 	{
 		var pixels = Screen.PixelSize;
-		return new UiCanvas( Math.Max( 1, pixels.X ), Math.Max( 1, pixels.Y ), Math.Max( 1, Display.EffectiveUiScale ) );
+		var canvas = new UiCanvas( Math.Max( 1, pixels.X ), Math.Max( 1, pixels.Y ), Math.Max( 1, Display.EffectiveUiScale ) );
+		var scales = (canvas.UiScale, canvas.TextScale);
+		if ( reportedUiScale != scales && canvas.TextScale < canvas.UiScale )
+			Log.Warning( $"Interface scale {canvas.UiScale}x falls back to {canvas.TextScale}x: {canvas.Width}x{canvas.Height} drawable pixels cannot fit the {UiScaling.ReferenceWidth}x{UiScaling.ReferenceHeight} reference layout at the requested scale." );
+		reportedUiScale = scales;
+		return canvas;
 	}
 
 	public void Update()

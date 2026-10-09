@@ -103,6 +103,15 @@ theme) in 7–9 game years (test output); nothing deadlocks.
 
 ### Objectives, golden tickets, keys
 
+The supplied Windows European English manual, `theme-park-world_win_manual_europe_en_ii5.pdf`,
+PDF page 15 / printed page 28, confirms one golden key for every third earned ticket and explicitly
+preserves earned keys when buying mystery items. `PlayerProgress` uses cumulative earned tickets,
+not the spendable balance; tests cover thresholds 0/2/3/5/6, a mystery-item purchase and restoration
+of earned/spent ticket state from an OpenTPW save. This proves the earning ratio and spending
+invariant, but not the initial key count or whether entering a theme consumes keys: ECON-040 stays
+registered for those assumptions. PDF identity: SHA-256
+`c96eb25f3dc13f7f0824bbf03f9bbeb3bb94e9f4756d4d8dfa09ac71732b0668`.
+
 | Key(s) | Values | Meaning | Use |
 | --- | --- | --- | --- |
 | `Challenges[n].Type/FollowupType/TargetTime/TargetVal/TargetObj/TargetObj2/TargetStaffType/Prize/CheckAtEndOnly/Independent` | 35 definitions | Each commented ("Sell 30 Drinks in 60 days" …) | data; type meanings from comments (approx) |
@@ -110,7 +119,7 @@ theme) in 7–9 game years (test output); nothing deadlocks.
 | `Challenges.DaysUntilFirstChallenge/DaysAfterCompletedChallenge/DaysAfterDeclinedChallenge/DeclinesToForfeit/ShortTimeLeftWarningAt` | 540/270/270/2/20 | Offer timing | data (warning not raised) |
 | `GoldenTicketLocal.Visitors/PeopleInPark/Happiness/AtLeastThisManyHappyPeople/ProfitYear/RecentVisitors/RecentVisitorMonths` | jungle 100/200/75/150/15,000/350/6; space 3000/350/85/150/30,000/500/6 | Per-theme ticket thresholds; award texts TAG_SYSTEM 180–185 | data |
 | `GoldenTicketGlobal.CoasterHeight/GokartExcitement/WaterLength/MinCellsOwned/MinCellsCovered` | 105/90/50/3000/2000 | TAG_SYSTEM 186–191 (coaster, go-kart, water ride, big park, cameras, all land) | data; big park ↔ MinCellsOwned and cameras ↔ MinCellsCovered inferred |
-| `Tickets.CanEarnTicketsInTheme`, `Tickets.CanSpendTicketsInTheme`, `Keys.CostToEnter` | 1, 1, jungle 1 / hallow 1 / fantasy 3 / space 5 | Lobby: keys needed to enter (UIHELPTEXT 338) | data; key earning approx |
+| `Tickets.CanEarnTicketsInTheme`, `Tickets.CanSpendTicketsInTheme`, `Keys.CostToEnter` | 1, 1, jungle 1 / hallow 1 / fantasy 3 / space 5 | Lobby: keys needed to enter (UIHELPTEXT 338) | data; key earning manual-confirmed, initial key/entry persistence approx |
 | Advisor `GT*`, `GoldTicketNearTo*`, `Wealth*`, `InTheRed*`, `WagesHigh.*`, `Bankrupted.Score` | | Advisor message scores | unused (advisor slice) |
 
 The bankruptcy rule comes from text, not settings: TAG_SYSTEM 123–127 — "If you stay in the red for
@@ -166,7 +175,7 @@ not in the data; the save contains no staff names. The previously suspected `i64
 | Research | Items, categories, groups, costs, effort, ability, thresholds | Points per day, group opening rule, cheapest-first order, automatic Instant Action rate |
 | Challenges | Definitions, level list, timings, prizes, follow-ups | Type semantics from comments; explicit accept/decline; types 14, 22, 23, 26, 32+ unmeasured |
 | Golden tickets | All thresholds | Monthly check; tickets spent on purchases |
-| Keys/progression | Keys per theme, theme order (THEMENAMES; ascending key cost) | Start with 1 key, +1 per 4 golden tickets |
+| Keys/progression | Keys per theme, theme order (THEMENAMES; ascending key cost); +1 per 3 earned golden tickets; spending tickets preserves keys (manual p. 28) | Start with 1 key; keys persist when entering themes |
 | Park rating | — | (2 × happiness + attractions + cleanliness) / 4 |
 
 Determinism: one SplitMix64 state drives candidates and sideshow draws; time advances in whole ticks;
@@ -258,7 +267,7 @@ site, is listed in `Economy/EconomyApproximations.cs` and is logged once at star
 | ECON-037 | `Economy/ParkObjectives.cs:107` | staff skill % = grade x 25 + training points / 4 | staff skill display capture |
 | ECON-038 | `Economy/ParkObjectives.cs:281` | big park uses MinCellsOwned, cameras use MinCellsCovered | golden ticket award captures |
 | ECON-039 | `Economy/ParkObjectives.cs:262` | profit year = profit of the last 12 closed months | golden ticket award capture |
-| ECON-040 | `Economy/ParkObjectives.cs:314` | players start with 1 golden key and earn one per 4 golden tickets | lobby/progression captures |
+| ECON-040 | `Economy/ParkObjectives.cs:318` | players start with 1 golden key and keys are not consumed by entering themes | initial lobby and repeated theme-entry captures |
 | ECON-041 | `Economy/EconomyObjectCatalog.cs:93` | features-directory objects with Research.Category != 3 are fixed (non-buyable) items | buy-menu capture |
 | ECON-042 | `Economy/EconomyObjectCatalog.cs:111` | sideshow InitCostOfGoods is the cost of a prize paid per win | sideshow panel capture |
 | ECON-043 | `Economy/BalanceSettings.cs:173` | monthly wage = BaseWage[grade] x PayMultiplier[type] | staff list capture with grades |

@@ -64,6 +64,31 @@ public class OriginalUiAssetTests
 			FileSystem = originalFileSystem!;
 	}
 
+	[DataTestMethod]
+	[DataRow( "jungle" )]
+	[DataRow( "hallow" )]
+	[DataRow( "fantasy" )]
+	[DataRow( "space" )]
+	public void BuildMenuContainsEveryBuildableThemeObjectWithItsOriginalData( string theme )
+	{
+		var original = ObjectCatalog.Load( theme );
+		var menu = new OriginalBuildCatalog( original );
+		var items = Enum.GetValues<BuildCategory>().SelectMany( menu.GetItems ).ToArray();
+		CollectionAssert.AreEquivalent( original.Buildable.Select( entry => entry.InfoId ).ToArray(), items.Select( item => item.InfoId ).ToArray() );
+		Assert.IsTrue( items.Length > 3, "the menu must expose more than its first three slots" );
+		CollectionAssert.AllItemsAreUnique( items.Select( item => item.Id ).ToArray() );
+		foreach ( var item in items )
+		{
+			var entry = original.Get( item.InfoId );
+			Assert.AreSame( entry, item.Entry );
+			Assert.AreEqual( entry.WhichUIType, (int)item.Category );
+			Assert.AreEqual( (long)entry.BuildCost, item.Cost );
+			Assert.AreEqual( entry.ObjectNameIndex ?? -1, item.ObjectNameIndex );
+			Assert.AreEqual( entry.IsBonus ? null : entry.PreviewModelPath, item.PreviewModel );
+			Assert.IsFalse( entry.IsFixedItem || entry.IsTool || entry.Category == ObjectCategory.Upgrade );
+		}
+	}
+
 	[TestMethod]
 	public void EveryUiWadModelFlattensIntoTheAuthoredCanvas()
 	{

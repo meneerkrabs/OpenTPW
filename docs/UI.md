@@ -145,9 +145,14 @@ tests/headless use. Audio code should read volumes from `GameOptions.Current`
 
 The UI is built in drawable pixels in the renderer's overlay pass (after world
 upscaling, so render scale never blurs it). The canvas fits the 2048×1536 layout
-to the pixel size; BF4 text is drawn at exactly the display's integer UI scale
-(`Screen.UiScale`, automatic = 2 on a 2560×1440 drawable) and the font tier is
-picked from the logical size, so a HiDPI output shows the same layout and fonts
+to the pixel size; BF4 text uses the requested integer UI scale up to the
+existing display policy's reference-layout fit (`UiScaling`, 1280×720). An
+oversized manual request falls back to the largest fitting integer (at least
+1); the request stays saved, the fallback is logged, and options show requested
+and applied values. Thus 1280×720 with a requested 2× uses 1×; 2560×1440 uses
+2×. This is an OpenTPW extension (`EXT:interface-scale-fit`), with no claim
+about original game scaling. The font tier is picked from the fitted logical
+size, so a HiDPI output shows the same layout and fonts
 as its logical size with every glyph texel a pixel-exact 2×2 block (verified with
 `OPENTPW_TEST_PIXEL_SCALE=2`). Mouse input is converted from logical to pixel units.
 
@@ -173,17 +178,27 @@ glyph in all 14 UI fonts of each language.
   `b_map` (473): their places on the panel are approximations; only Buy works,
   the others show their disabled frame.
 - Build arm: `b_srides/b_sshop/b_sshow/b_sfeature` category buttons (521–524),
-  the category title (119–122) and up to three items with a turning preview of
+  the category title (119–122) and three-slot pages with previous/next arrows.
+  Every buildable object in the current theme is accessible, ordered by Info.Id,
+  with a turning preview of
   the original `P<name>.MD2` (CPU orthographic projection, 30° tilt, painter
   sorted — not the original 3D draw), the object name and the economy catalogue
   price; unresearched items are greyed and refused. Choosing an item starts
-  placement (message UIHELPTEXT 440); the placed ride is bought through
-  `ParkEconomy.TryBuild` (refused purchases take the placement back) and deleting it
-  sells it for its scrap value.
-- Info arm for the selected ride: name (OBJECT_NAMES), Excitement (the original
+  placement (message UIHELPTEXT 440). `Level.PlaceObject` checks the footprint,
+  purchases through `ParkEconomy.TryBuild`, creates the original object and links
+  its guest accounting; the HUD never charges again. Removing it through the
+  level's object collection sells it once for its economy scrap value. Tools,
+  fixed items and standalone upgrades are excluded by `ObjectCatalog.Buildable`.
+  Official bonus objects use their original names, but their separate-root
+  preview icons are omitted; items absent from the economy catalogue stay
+  unavailable in original levels.
+- Info arm for the selected original object (picked by occupied grid cell): name (OBJECT_NAMES), Excitement (the original
   default `UsageInfo.ExcitementLevel`, 70 for the Totem), Reliability, State of
   repair, Remaining life ("Not simulated yet"), open/close (`b_door`) and
-  delete (`b_erase`).
+  delete (`b_erase`). Open/close is disabled for non-attractions; fixed items
+  cannot be deleted. Unknown statistics remain labelled as not simulated.
+  Read-only visits disable build, open/close, delete and Save; callbacks also
+  reject direct mutation attempts using the existing localized online message.
 - Speed control (OpenTPW addition, bottom-right): pause, ×1, ×2, ×4 set the
   economy's `GameSpeed` (its clock runs Speed ticks per fixed tick); pause also
   stops rides and guests (`Level.SimulationTimeScale`).
@@ -197,9 +212,9 @@ glyph in all 14 UI fonts of each language.
 
 | Interface | Owner | Stub |
 | --- | --- | --- |
-| `Hud.IHudParkStatus` (money, date, speed, price/availability, charge placed ride, sell) | economy | `EconomyParkStatus` binds to `Level.Park` (looked up on every access, so a loaded park save is followed): balance, `IParkClock` date and speed, `TryBuild`/`Sell`; `NoEconomyStatus` for the economy-less sandbox; `StubParkStatus` for tests only |
-| `Hud.IBuildCatalog` (`BuildItem`: category = WhichUIType, OBJECT_NAMES index, cost, preview model, texture dirs) | rides/objects | `TotemBuildCatalog`: Totem, cost `Upgrades[0].CostOfUpgrade` 3,250 |
-| `Hud.ObjectInfo`/`ObjectStat` for the info arm | rides/guests/economy | `ParkHud.Describe(PrototypeRide)` |
+| `Hud.IHudParkStatus` (money, date, speed, price/availability) | economy | `EconomyParkStatus` binds to `Level.Park` (looked up on every access, so a loaded park save is followed): balance, `IParkClock` date and speed; `Level.PlaceObject`/object removal own `TryBuild`/`Sell`; `NoEconomyStatus` for the economy-less sandbox; `StubParkStatus` for tests only |
+| `Hud.IBuildCatalog` (`BuildItem`: category = WhichUIType, OBJECT_NAMES index, cost, preview model, texture dirs) | rides/objects | `OriginalBuildCatalog` adapts `Level.Objects.Catalog`, with original names, preview models and `Upgrades[0].CostOfUpgrade`; `TotemBuildCatalog` remains a test fixture |
+| `Hud.ObjectInfo`/`ObjectStat` for the info arm | rides/guests/economy | `ParkHud.SelectedInfo` follows `OriginalObject` |
 | `IDisplaySettings` (real: the renderer) | display | `StubDisplaySettings` (tests only) |
 | `GameOptions.Current` volumes | audio | — |
 
@@ -216,18 +231,24 @@ glyph in all 14 UI fonts of each language.
 - Asset tests (`OriginalUiAssetTests`): all 278 UI models flatten; full-screen
   frames span 2048×1536; button states coincide with the root; every model and
   texture the screens use exists; the four lobby islands; Totem price/category
-  and preview textures; UIStrings ids pinned against English;
+  and preview textures; all four theme menus expose every buildable catalogue entry,
+  excluding fixed items/tools/upgrades; UIStrings ids pinned against English;
   every used string has glyphs in every UI font of all six languages.
 - `--front-end --smoke-test` (Metal): lobby + menu capture, mouse click (next
   island), keys (left, Escape, Enter), options open/adjust/cancel, game mode,
   original jungle load, HUD capture with bank balance and date verified texel by
-  texel against the BF4 atlas, build arm, research availability, Totem purchase
-  (−3,250) with one economy object linked to guests, info arm, economy pause,
-  sale (+1,625), pause menu, refused save, exit to lobby. The earlier UI flow
+  texel against the BF4 atlas, build-page navigation, research refusal, Totem
+  purchase (−3,250; research marked complete as smoke setup) with one paid
+  economy object linked to guests, info arm, economy pause, sale (+1,625),
+  a second naturally researched catalogue object, exact charges, overlap refusal
+  without a charge, selected-object open/close, pause menu, refused save, lobby;
+  a prepared read-only visit verifies disabled build/open/delete/save controls
+  and their direct callbacks without mutating the park or writing a save. The earlier UI flow
   passed in all six languages; the economy integration was verified in English
-  (1280×720, UI scale 1) and Dutch (1920×932 drawable, UI scale 2, nearest
-  upscaling at 50% render scale; the desktop clamps the requested 1920×1080
-  window). Captures: `artifacts/native-smoke-<language>-*.png`.
+  (1280×720, UI scale 1) and, before reference-fit limiting, Dutch at
+  1920×932 drawable/UI scale 2 with nearest upscaling at 50% render scale
+  (the desktop clamps the requested 1920×1080 window). The smaller 1280×720 Dutch/nearest/50% case with requested UI
+  scale 2 also verifies the explicit 1× fallback and full glyph readback. Captures: `artifacts/native-smoke-<language>-*.png`.
 
 ## Approximation register
 
@@ -259,20 +280,20 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-017 | `World/LobbyCameraMode.cs:25` | lobby camera: SPINSPEED read as radians per 0.1 s, vertical field of view 60, 3/s glide between islands, ISLANDFOV unused | binary or capture of the lobby camera |
 | UI-018 | `Client/GameFlow.cs:223`, `World/Lobby/LobbyScene.cs:14` | lobby sky drawn as a flat SKYCOLOUR backdrop; flying meshes, rain, lightning, animations not drawn | binary/capture of the lobby |
 | UI-019 | `FrontEnd/LobbyDefinition.cs:92` | fallback island position (400 + index × 200, 400) when lobby.txt has none | none needed if lobby.txt is complete |
-| UI-020 | `Hud/ParkHud.cs:114` | positions of buy/info/finance/research/map buttons on the main panel (shared authored centre) | capture of the original HUD |
-| UI-021 | `Hud/ParkHud.cs:110`, `Hud/ParkHud.cs:75` | positions and fonts of the date and bank balance text; money grouped with ',' digits | capture of the original HUD; locale number format |
-| UI-022 | `Hud/HudStubs.cs:103`, `Hud/HudStubs.cs:57`, `Hud/ParkHud.cs:121` | speed control (pause, ×1, ×2, ×4) bottom-right; faster speeds only speed up the economy clock, not rides/guests | binary: original game speed options (pause only is known) |
+| UI-020 | `Hud/ParkHud.cs:119` | positions of buy/info/finance/research/map buttons on the main panel (shared authored centre) | capture of the original HUD |
+| UI-021 | `Hud/ParkHud.cs:115`, `Hud/ParkHud.cs:80` | positions and fonts of the date and bank balance text; money grouped with ',' digits | capture of the original HUD; locale number format |
+| UI-022 | `Hud/HudStubs.cs:88`, `Hud/HudStubs.cs:47`, `Hud/ParkHud.cs:126` | speed control (pause, ×1, ×2, ×4) bottom-right; faster speeds only speed up the economy clock, not rides/guests | binary: original game speed options (pause only is known) |
 | UI-023 | `Hud/HudStubs.cs:9` | test-only stub calendar (2 s/day); the game shows the economy clock (see ECON tags) | none for the game path |
-| UI-024 | `Hud/ParkHud.cs:139`, `Hud/ParkHud.cs:188` | layout inside the build and info arms (category buttons, title, three item slots, stat rows, door/erase buttons) | captures of the original arms |
+| UI-024 | `Hud/ParkHud.cs:144`, `Hud/ParkHud.cs:171`, `Hud/ParkHud.cs:207`, `Hud/HudStubs.cs:108`, `Hud/ParkHud.cs:581` | layout inside the build and info arms (category buttons, title, three-slot pages/arrows sorted by Info.Id, adaptive preview size to fit translated names/prices, stat rows, door/erase buttons) | captures of the original arms |
 | UI-025 | `Hud/ParkHud.cs:28` | message area keeps up to 3 messages for 8 s in the f_tag frame | binary/capture of the original message system |
-| UI-026 | `Hud/ParkHud.cs:548`, `Hud/PreviewIcon.cs:14` | build icons: CPU orthographic projection of P<name>.MD2 with 30° tilt, 0.8 rad/s turn, painter sorting | capture of the original build menu |
-| UI-027 | `Hud/ParkHud.cs:464` | a park click selects the ride within its footprint radius + 1 | binary: original picking |
-| UI-028 | `Hud/ParkHud.cs:270` | excitement shown as '<ExcitementLevel>%'; reliability, repair and life shown as not simulated | capture of the original ride info; simulation |
-| UI-029 | `Hud/ParkHud.cs:188` | b_door 'down' frames mean the ride is closed; b_erase used as the delete button | capture of the original ride panel |
+| UI-026 | `Hud/ParkHud.cs:586`, `Hud/PreviewIcon.cs:14` | build icons: CPU orthographic projection of P<name>.MD2 with 30° tilt, 0.8 rad/s turn, painter sorting | capture of the original build menu |
+| UI-027 | `Hud/ParkHud.cs:481` | a park click selects the original object occupying its grid cell | binary: original picking |
+| UI-028 | `Hud/ParkHud.cs:283` | excitement shown as '<ExcitementLevel>%'; reliability, repair and life shown as not simulated | capture of the original ride info; simulation |
+| UI-029 | `Hud/ParkHud.cs:207` | b_door 'down' frames mean the ride is closed; b_erase used as the delete button | capture of the original ride panel |
 | UI-030 | `UI/Original/Options/GameOptions.cs:16` | volumes in 0..10 steps, default 8; popup help default on | capture/registry defaults of the original options |
-| UI-031 | `Hud/ParkHud.cs:418` | the ride is charged through ParkEconomy.TryBuild when its placement appears and taken back if refused; delete sells it (scrap value); only one prototype ride | rides slice: real placement/purchase order |
-| UI-032 | `UI/Original/UiWidgets.cs:179` | longer labels fall back to the small font; greedy word wrap | captures of translated original screens |
-| UI-033 | `Hud/HudStubs.cs:152` | Totem price 3,250 used only when Totem.sam cannot be read (otherwise the economy/Totem.sam value) | none if the data is present |
+| UI-031 | `Hud/ParkHud.cs:350` | one placement per menu selection; Level.PlaceObject owns purchase/guest linkage and its removal handler owns scrap credits | original build-tool continuation |
+| UI-032 | `UI/Original/UiWidgets.cs:179`, `Hud/ParkHud.cs:590` | longer labels fall back to the small font; catalogue names greedily wrap in their slots | captures of translated original screens |
+| UI-033 | `Hud/HudStubs.cs:130` | test-only Totem catalogue falls back to price 3,250 when Totem.sam cannot be read; the game uses ObjectCatalog | none if the data is present |
 
 Data-backed (tagged `[DATA]`): the 2048×1536 canvas and authored rectangles of
 placed models (`ui.wad` roots/bounds), button state frames and texture order, V

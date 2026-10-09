@@ -48,7 +48,7 @@ public static class EconomyApproximations
 		("ECON-037", "staff skill % = grade x 25 + training points / 4", "staff skill display capture"),
 		("ECON-038", "big park uses MinCellsOwned, cameras use MinCellsCovered", "golden ticket award captures"),
 		("ECON-039", "profit year = profit of the last 12 closed months", "golden ticket award capture"),
-		("ECON-040", "players start with 1 golden key and earn one per 4 golden tickets", "lobby/progression captures"),
+		("ECON-040", "players start with 1 golden key and keys are not consumed by entering themes", "initial lobby and repeated theme-entry captures"),
 		("ECON-041", "features-directory objects with Research.Category != 3 are fixed (non-buyable) items", "buy-menu capture"),
 		("ECON-042", "sideshow InitCostOfGoods is the cost of a prize paid per win", "sideshow panel capture"),
 		("ECON-043", "monthly wage = BaseWage[grade] x PayMultiplier[type]", "staff list capture with grades"),

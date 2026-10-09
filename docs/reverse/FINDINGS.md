@@ -101,3 +101,104 @@ runs bypass that cache and do not use heuristic function discovery.
 
 Next evidence needed: trace the animation/calendar caller paths to these timer
 interfaces and verify conversion constants against an original runtime capture.
+
+## Direct timer-call evidence (2026-10-09 follow-up)
+
+Run the dependency-free, identity-pinned operand verifier:
+
+```sh
+python3 tools/ppc-analysis/timer_evidence.py /Users/sander/server/game-assets/mac-feral/bin
+python3 -m unittest discover -s tools/ppc-analysis -p 'test_*.py' -v
+```
+
+It verifies the three SHA-256 identities listed above, resolves transition
+vectors and selected import relocations, and checks selected branch targets,
+register operands and constants. It outputs interpreted metadata only. The
+inspection never executes original instructions and bypasses the heuristic
+function-discovery/cache layer. A locally available disassembler was used to
+review the control flow, but is not a dependency of the checked-in verifier;
+no original disassembly or binary bytes are stored here. The checks are bounded
+witnesses for these exact binaries, not a general decompiler or formal proof.
+
+| Export | Container | Transition vector (section 1) | Code entry (section 0) | TOC offset (section 1) |
+| --- | --- | ---: | ---: | ---: |
+| `LbTime_GetClock__Fv` | bullfrog_shared | `0x1d14` | `0x38bb8` | `0` |
+| `GetAbsolute__Q213SamsUtilities6UTimerFv` | sams_utils_shared | `0x11e4` | `0xa4f8` | `0` |
+| `SetRate__Q213SamsUtilities6UTimerFRCQ213SamsUtilities13UMicrosecondsUc` | sams_utils_shared | `0x11d4` | `0xa738` | `0` |
+
+**Verified local fact: the low-level clock wrapper divides a 64-bit absolute
+timer result by 1,000 and returns the low 32 bits of the integer quotient.** At
+bullfrog code `0x38bc8`, the wrapper calls import glue `0x5ad60`; its TOC slot
+`0x10` relocates to `UTimer::GetAbsolute()` from `sams utils shared`. The wrapper
+reads both result words, supplies the two-word denominator `(0, 1000)` and
+calls the local arithmetic helper at code `0x59d98` from `0x38be0`. It then
+returns the low quotient register. Static review of helper range
+`[0x59d98, 0x59e84)` identifies unsigned long division: leading-zero
+normalization, repeated carry shifts and trial subtraction of the two-word
+denominator produce quotient bits; an input smaller than the divisor returns
+zero. Its SHA-256 is
+`9a130bd65ecb0edbca64d29fd90f712e96be72cd7089a05b7e64a2fe4af41d83`.
+The helper's arithmetic meaning was reviewed manually; the verifier checks its
+identity and caller operands rather than executing or formally verifying it.
+
+**Verified conditional unit: the fallback route supplies microseconds.** In
+sams `GetAbsolute`, code `0xa664` calls glue `0x1f6cc`; TOC slot `0x2a0`
+relocates to `Microseconds` from `InterfaceLib`. That route reads the returned
+high/low words and copies them unchanged to the output at `0xa674–0xa678`.
+Apple's [Unsigned Wide Record documentation](https://developer.apple.com/library/archive/documentation/mac/OSUtilities/OSUtilities-103.html)
+defines that API's result as microseconds since system startup, with high and
+low 32-bit fields. Consequently, **when this fallback route is selected**, the
+wrapper expression is `floor(system_microseconds / 1000) modulo 2^32`, a
+millisecond counter with a wrap period of about 49.71 days. The branch is
+conditional on earlier timer capability flags/pointers; no original runtime
+was observed selecting it. This is a clock representation, not a simulation
+rate, pause policy or deterministic update schedule.
+
+Other `GetAbsolute` routes read hardware time or dynamically resolved timer
+services and apply conversions. Literal doubles in sams section 1 include
+`0x8c0 = 1000.0`, `0x8d0 = 60.15`, and `0x8d8 = 60000000.0`. The latter two
+occur in initialization/calibration involving `LMGetTicks` (its import glue
+is code `0x1f714`, TOC slot `0x1e4`). Their literal values and local arithmetic
+use are established; they do not establish animation or park-calendar Hz.
+The selected dynamic route, calibration result and environmental accuracy
+remain runtime dependencies. Apple also documents the hardware-dependent
+relationship between `Microseconds`, `UpTime` and the native Time Manager in
+[Technical Note TN1063](https://developer.apple.com/library/archive/technotes/tn/tn1063.html).
+
+**Verified application initialization: one timer receives raw interval
+100,000 and flag 1.** In `SimThemePark.data`, code `0x310–0x334` constructs
+`(2 << 16) - 0x7960 = 100000`, stores high word zero and that low word in a
+stack record, and passes it to a timer object at offset `0x5c` from the
+surrounding object's pointer. The call at `0x338` reaches import glue
+`0x1c4524`; the executable's TOC base is `0x8000`, and the relocated import
+slot is section 1 `0x6f4`. It imports the `SetRate` export above. That callee
+copies the interval words unchanged to object offsets `0x0c/0x10` and the
+flag byte to `0x08`, without a scaling operation. The verifier establishes
+the interval and field-copy fact, but the surrounding object's role and
+consumer path have not been recovered. It would be unjustified to call this
+a 10 Hz gameplay/animation update merely because 100,000 microseconds is
+one tenth of a second.
+
+Confidence: **high** for identities, transition-vector resolution, imports,
+operand values and field copies; **high, conditional** for the API-backed
+fallback millisecond interpretation; the division-helper semantics rely on
+manual static reasoning. No original execution/capture corroborates the
+selected timer route or application consumer.
+
+No `ADVISOR`, `RIDES` or `ECON` timing approximation can yet be removed.
+Concrete dependencies remain:
+
+- `RIDES-001`: connect the animation clip advancement/RSE consumers to the
+  timer values and recover their frame-index/elapsed-time conversion.
+- `ECON-001..004`: identify the park calendar and speed/pause consumers,
+  including how game days and months advance. OS clock units cannot supply
+  those game rules.
+- `ADVISOR-008`, `ADVISOR-010..013`: identify speech start, audio-consumption
+  timing and the original LIP consumer. This timer wrapper does not reveal
+  those synchronization or LIP interpretation rules.
+
+The heuristic `analyze.Analysis` path hit a false-positive traceback-table
+candidate while examining `bullfrog_shared`; it attempted an out-of-range
+name read. The evidence above uses explicit exports and loader relocations
+instead. General heuristic function boundaries remain untrusted, as already
+noted in the reader limitations.

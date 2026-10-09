@@ -1,8 +1,9 @@
 # BF4 fonts: CPU decoding and rendering evidence
 
 October 9, 2026. Status: CPU decoder implemented for the selected corpus; GPU atlas
-text renders original strings in a sandbox panel on Metal. Original UI screens and
-original visual fidelity are **not verified**; README status stays partial. No new
+text renders original strings in original-style menus and HUD on Metal. README
+marks the selected-corpus decoder implemented; original palette/alpha mapping,
+layout and visual fidelity remain **unverified**. No new
 dependency or font asset is included in the repository.
 
 `FontFile` reads the `F4FB` header, its little-endian offset table and 24-byte

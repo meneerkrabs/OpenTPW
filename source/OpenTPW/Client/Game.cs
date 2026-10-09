@@ -74,6 +74,12 @@ internal static class Game
 			}
 			return;
 		}
+		var movieName = MovieCommands.GetMovieName( args );
+		if ( movieName != null && args.Contains( "--headless" ) )
+		{
+			MovieCommands.RunHeadless( dataDirectory, movieName, !args.Contains( "--mute" ) );
+			return;
+		}
 		if ( args.Contains( "--validate-assets" ) )
 		{
 			var globalSettings = new SettingsFile( "/levels/jungle/global.sam" );
@@ -111,6 +117,11 @@ internal static class Game
 		// Init renderer
 		//
 		Render = new();
+		if ( movieName != null )
+		{
+			MovieCommands.Play( dataDirectory, movieName, !args.Contains( "--mute" ), args.Contains( "--smoke-test" ) );
+			return;
+		}
 
 		//
 		// Create level

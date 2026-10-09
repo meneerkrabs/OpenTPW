@@ -14,7 +14,7 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **135 unresolved unique APPROX IDs**, 150 APPROX occurrences, 55 EXT occurrences, 62 DATA occurrences and 9 BIN occurrences.
+Current inventory: **135 unresolved unique APPROX IDs**, 150 APPROX occurrences, 56 EXT occurrences, 62 DATA occurrences and 9 BIN occurrences.
 
 Of these, 129 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
@@ -285,10 +285,10 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-003 | `source/OpenTPW/UI/Original/UiModel.cs:60` | [APPROX:UI-003] state frames use the root pose (child translation dropped) — evidence needed: binary UI model drawing code |
 | UI-004 | `source/OpenTPW/UI/Original/UiModel.cs:124` | [APPROX:UI-004] back-to-front by Z per texture group — evidence needed: binary or capture of overlapping UI parts |
 | UI-005 | `source/OpenTPW/UI/Original/UiImages.cs:34` | [APPROX:UI-005] pink key + neighbour colour bleed for linear filtering — evidence needed: capture of UI edges at other resolutions |
-| UI-006 | `source/OpenTPW/UI/Original/UiText.cs:102` | [APPROX:UI-006] all UI text/backdrop colours — evidence needed: captures of original screens |
+| UI-006 | `source/OpenTPW/UI/Original/UiText.cs:144` | [APPROX:UI-006] all UI text/backdrop colours — evidence needed: captures of original screens |
 | UI-007 | `source/OpenTPW/UI/Original/UiWidgets.cs:96` | [APPROX:UI-007] drop shadow one text pixel down-right — evidence needed: captures of original screens |
-| UI-008 | `source/OpenTPW/UI/Original/UiWidgets.cs:252` | [APPROX:UI-008] purple_button halves for normal/focused — evidence needed: capture of the original front-end buttons |
-| UI-009 | `source/OpenTPW/UI/Original/UiWidgets.cs:290` | [APPROX:UI-009] option-row arrow/value positions — evidence needed: capture of the original options screen |
+| UI-008 | `source/OpenTPW/UI/Original/UiWidgets.cs:267` | [APPROX:UI-008] purple_button halves for normal/focused — evidence needed: capture of the original front-end buttons |
+| UI-009 | `source/OpenTPW/UI/Original/UiWidgets.cs:305` | [APPROX:UI-009] option-row arrow/value positions — evidence needed: capture of the original options screen |
 | UI-010 | `source/OpenTPW/UI/Original/UiScreen.cs:205` | [APPROX:UI-010] popup help placement/backdrop — evidence needed: capture of original popup help |
 | UI-011 | `source/OpenTPW/UI/Original/UiScreen.cs:195` | [APPROX:UI-011] modal screens dim the screens below — evidence needed: captures of original dialogs |
 | UI-012 | `source/OpenTPW/UI/Original/UiInput.cs:54` | [APPROX:UI-012] key map (arrows, Enter, Escape, P) — evidence needed: binary key handling / KEYBOARD.str |
@@ -324,7 +324,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-030 | `source/OpenTPW/UI/Original/Options/GameOptions.cs:16` | [APPROX:UI-030] 0..10 volume steps, default 8, popup help on — evidence needed: original options defaults |
 | UI-031 | `source/OpenTPW/Hud/ParkHud.cs:352` | [APPROX:UI-031] one placement per menu selection; Level owns purchase/sale — evidence needed: original build-tool continuation |
 | UI-032 | `source/OpenTPW/Hud/ParkHud.cs:595` | [APPROX:UI-032] Wrap translated catalogue names within their slot at the integer text scale. |
-| UI-032 | `source/OpenTPW/UI/Original/UiWidgets.cs:179` | [APPROX:UI-032] small-font fallback and greedy wrap for long labels — evidence needed: captures of translated original screens |
+| UI-032 | `source/OpenTPW/UI/Original/UiWidgets.cs:194` | [APPROX:UI-032] small-font fallback and greedy wrap for long labels — evidence needed: captures of translated original screens |
 
 ## Extension sites
 
@@ -374,6 +374,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | developer-prototype | `source/OpenTPW/World/Level.Objects.cs:251` | [EXT:developer-prototype] When the economy refuses the Totem (e.g. Research.Group 4 not yet researched), the developer prototype is registered uncharged (no original counterpart) |
 | developer-prototype | `source/OpenTPW/World/PrototypeRide.cs:13` | [EXT:developer-prototype] Sandbox Totem bounds check uses a 5-unit radius around its centre (no original counterpart) |
 | display | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:130` | [EXT:display] window mode, upscaling, render scale and interface scale rows are OpenTPW extensions |
+| fit-button-text | `source/OpenTPW/UI/Original/UiTextFit.cs:9` | [EXT:fit-button-text] button labels shrink to fit; the original sized its fixed strings per language by hand |
 | interface-scale-fit | `source/OpenTPW/UI/Original/UiCanvas.cs:33` | [EXT:interface-scale-fit] Above 1×, limit forced text scales to UiScaling's reference-layout fit (HiDPI-aware via PixelDensity). |
 | language | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:157` | [EXT:language] language row (original installs had one language; OpenTPW reads CD overlays) |
 | ps2-data | `source/OpenTPW/Client/Ps2Export.cs:13` | [EXT:ps2-data] viewing aid for the PS2 version's data, not original behaviour |

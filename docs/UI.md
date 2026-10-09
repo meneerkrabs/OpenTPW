@@ -120,6 +120,14 @@ screens, options), `FrontEnd/`, `Hud/`, `World/Lobby/LobbyScene.cs`,
 - Not implemented: player profiles (Create/Select New Player), online world,
   golden tickets/keys, credits, intro movies before the lobby.
 
+### Button text fitting
+
+Button labels shrink to fit their button (`UiTextFit`, `[EXT:fit-button-text]`): the role's font first,
+then smaller sizes of the same BF4 family (`MENUBIG` → `MENUMED` → `MENUSMALL`, `TITLE…`, `SESH…`,
+`GAME12AA` → `GAME10AA` → `GAME8AA`, `GAMEBOLD12` → `GAMEBOLD10`), then a lower whole text scale so the
+glyphs stay pixel-exact, and only then two lines in the smallest size. Long translations therefore
+stay inside the purple buttons instead of running over their ends.
+
 ### Options (Game Options, 314)
 
 Original rows: Screen resolution (318, values 340–346 where the size matches,

@@ -9,22 +9,23 @@ namespace OpenTPW;
 /// fit a 256-pixel-high canvas; <c>OBJECT_NAMES.str</c> begins with ride names split over two
 /// entries ("Temple"/"Of Gloom", "Sun"/"God"), matching the two slots. Which entry pair belongs to which
 /// object is not established (<c>Info.RideTypeStringIndex</c> is a ride type shared by all themes).
-/// Approximations, labelled: the canvas is 512x256 (two 256x256 halves; the original texture size
-/// is unknown), lines are centred horizontally and shrunk to fit the width, the slot colour is read
-/// from slot parameters 2..4 as RGB (unverified), the background is a caller-supplied colour (the
-/// .sgn fill/background pixel blocks are not decoded), and the horizontal-scale field is not applied.
+/// Approximations, labelled: the canvas is 512x256 (two 256x256 halves, whereas the native
+/// output has two 128x128 destinations), lines are centred horizontally and shrunk
+/// to fit the width, and the legacy tint interprets lighting coefficients as RGB. That tint is
+/// disproven and retained as COMPAT-003 until the native mask, source-image and compositing path
+/// is implemented. Bitmap metadata is available, but this renderer does not consume it.
 /// </summary>
 public static class SignCanvas
 {
-	// [APPROX:COMPAT-001] 512x256 canvas (two 256x256 halves) — evidence needed: original DIB size or a sign texture capture.
+	// [APPROX:COMPAT-001] Legacy canvas; native text DIB/mask and final 128x128 destinations have distinct dimensions.
 	public const int Width = 512;
 	public const int Height = 256;
 	public const int HalfWidth = Width / 2;
 
-	/// <summary>Slot colour from parameters 2..4 interpreted as RGB in 0..1 (clamped; unverified).</summary>
+	/// <summary>Legacy COMPAT-003 tint approximation; these parameters are lighting coefficients, not RGB.</summary>
 	public static (byte R, byte G, byte B) SlotColor( SignTextSlot slot )
 	{
-		// [APPROX:COMPAT-003] parameters 2..4 = RGB — evidence needed: binary use of the slot floats or a capture.
+		// [APPROX:COMPAT-003] Disproven RGB interpretation retained pending native surface compositing.
 		static byte Channel( float value ) => (byte)Math.Round( Math.Clamp( float.IsFinite( value ) ? value : 1, 0, 1 ) * 255 );
 		return slot.Parameters.Count >= 5 ? (Channel( slot.Parameters[2] ), Channel( slot.Parameters[3] ), Channel( slot.Parameters[4] )) : ((byte)255, (byte)255, (byte)255);
 	}
@@ -39,6 +40,10 @@ public static class SignCanvas
 		ArgumentNullException.ThrowIfNull( sign );
 		ArgumentNullException.ThrowIfNull( fonts );
 		ArgumentNullException.ThrowIfNull( lines );
+		foreach ( var diagnostic in sign.Diagnostics )
+			diagnostics?.Add( diagnostic );
+		if ( lines.Any( line => !string.IsNullOrWhiteSpace( line ) ) )
+			diagnostics?.Add( "COMPAT-003: legacy sign tint approximation is active; original parameters 2..4 are shared material coefficients, not RGB. Native source-image lighting and mask compositing are not implemented." );
 		var canvas = new byte[Width * Height * 4];
 		for ( var i = 0; i < canvas.Length; i += 4 )
 		{

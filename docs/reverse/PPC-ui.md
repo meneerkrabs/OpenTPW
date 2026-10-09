@@ -52,7 +52,7 @@ UI_EVIDENCE_MAC_MBTOUNI=/private/mac-mbtouni.dat \
 python3 -m unittest discover -s tools/ppc-analysis/lanes/ui -v
 ```
 
-The first phase passed 12 tests; the expanded lane passes **24 tests, zero
+The first phase passed 12 tests; the expanded layout lane passes **24 tests, zero
 skips**, including the identified original
 corpus and negative/truncated corpus spans, RefPack expansion/reference checks,
 relative resource offsets, node-table bounds and signed branch/operand decoding.
@@ -670,38 +670,98 @@ This integrates the root binding rule only. The 55-screen metadata reader stays
 standalone pending peer review; controller/layout/paint integration and original
 pixel verification remain open.
 
+## Native sign records and surface inputs
+
+`sign_evidence.py` identifies app SHA-256 `04809cd4…` and engine SHA-256
+`c549123f…` before checking original operands, branch targets, imported symbols
+and relocated export transition vectors. The original application is not run.
+`code:0xaba40` reads a 17-byte header: version at file 0, flag at 4, byte flag at 8,
+style selectors at 9 and 13. Calls at `0xabb34/0xabb4c` reach font reader `0xaa5a0`;
+its five reads have sizes 64, 260, 4, 4 and 60, totaling 392 bytes. Calls at
+`0xabb40/0xabb58` reach `0xaa8a4`, which reads eleven consecutive swapped words,
+44 bytes. Therefore fonts start at file 17/453, and effects at 409/845. Effect
+words are mask word +0, eight floats +4..32, stored extent +36 and origin +40.
+Runtime writes at `0xac0d8/0xac0e0` and `0xac180/0xac188` replace extent/origin with
+measured glyph bottom minus top and glyph top. Their serialized values are not
+final geometry. The legacy 13-byte/two-436-byte view accidentally includes the
+second selector as first `StyleId`, and first effect origin as second `StyleId`;
+the second effect origin falls at the front of legacy `Remainder`.
+
+For each nonzero selector, `0xabb5c..0xabd50` reads 20 bytes: four color bytes,
+one i32 mask word, one float mask parameter and two i32 offsets. Consumer
+`0xab634` passes offsets +12/+16 into `0xa9178`, where r5/r6 are used against
+bitmap width/height respectively; it separately uses mask word +4 and parameter
++8 for mask shaping. No invented style names are assigned: selectors 1/2 are
+pinned composition branches at `0xac25c..0xac49c`, 0 skips paint reading, and
+unknown selectors remain unsupported. Calls `0xac304/0xac358/0xac37c` resolve
+`Bitmap::colourblt` to engine `0x3f200`; r5 receives paint byte 3, r6..8 bytes
+0..2. The engine multiplies r5 into mask coverage and each supplied color before
+integer shifting by eight. This proves RGBA order for the paint bytes, not a
+flat final text color.
+
+Calls at `0xabd5c/0xabd6c` resolve `load__6BitmapFPv` to engine `0x3e7fc`.
+Three stream words become bitmap width +0, height +4 and bytes-per-pixel +8;
+`0x3e94c/0x3e958` multiply all three for the payload read. All **84 PC signs** have
+two **16×128×4** source images, 8192 bytes each. These serialized images are not
+the generated text masks. There are 23 flagged extra images, all version 101,
+256×128×4. The version-100 extra-image call at `0xabd94` uses raw `load`; version
+101 at `0xabdac` uses `load_wavelet__6BitmapFPvP8CWavelet`, engine `0x3e97c`.
+The new parser records its descriptor and preserves the remaining payload as
+opaque; it does not certify its internal length, decode it, or classify arbitrary
+trailing bytes inside that unsupported container. The actual four Mac lobby
+signs use identical metadata/bytes to the pinned PC lobby corpus. Mac lobby
+SHA-256 remains `b9afda6264961021aecaca882adf9ce25aa6973f48111415176ed45afd2c9ee7`.
+
+Relief helper `0xab128` calls `Bitmap::descimate` at `0xab1c8`, resolved to engine
+`0x3f338`, to transform the source image into a temporary bitmap whose height is
+the measured text extent. It samples source bytes 1/2/3 at `0xab43c..0xab444`.
+For each channel, source/255 is multiplied by parameter 2; positive normal/light
+term adds source/255 × parameter 3 × that term; positive half-vector term adds
+parameter 4 × pow(term, parameter 5), the same white contribution to all channels.
+After multiplying by 255, clamp and truncation, helper output is ARGB: output
+alpha comes from the generated mask at `0xab540/0xab54c`, not serialized source
+alpha. Parameters 0/1 feed mask/normal shaping; 6/7 feed trigonometric direction
+construction. The offline `relief_channel_reference` demonstrates selected
+channel arithmetic with synthetic source RGB, mask and spatial terms. It is
+outside production and does not implement native source filtering, normal
+construction, byte-exact float behavior, layering or final packing.
+
+`SignFile` now exposes `Effects.Material`, `Paints`, `SourceImages`, `ExtraImage`,
+`UnparsedTail` and diagnostics. It checks the full 889-byte native metadata span,
+conditional records, bitmap headers and product bounds before copying payloads;
+input and raw/declared image output have a 4 MiB cap. Unsupported effect styles,
+non-finite coefficients and image representations are preserved explicitly.
+Legacy fields/constants and font offsets remain for existing callers and the
+hash-keyed unshipped-font correction. No original payload or string is in Git.
+
+Validation: the lane now passes **30 Python tests, zero skipped**, including six
+new sign tests for identified native readers/imports, all 84 records, the four
+Mac lobby records, bitmap bounds and synthetic shared-channel math. Set
+`UI_EVIDENCE_PC_DATA` and `UI_EVIDENCE_MAC_LOBBY` alongside the earlier evidence
+paths. The C# `SignFileTests`, `CompatibilityTests` and `SignTextLayoutTests`
+pass **37 tests, zero skipped**, with the original game/language roots and
+private Mac lobby path supplied. Cases cover record-crossing traps, both extra
+image versions, opaque unknown styles/pixels, non-finite materials, truncated
+payloads, allocation bounds, stream ownership and unchanged font correction.
+Touched-source style verification and `git diff --check` pass. These are metadata
+and regression checks; original rendering is not executed or pixel-certified.
+
 ## Current sign renderer correction plan
 
-The production call path was independently checked:
-`SignTextRenderer.RenderSign -> SignCanvas.Compose -> SignCanvas.SlotColor`.
-`SlotColor` clamps `Parameters[2..4]` into independent RGB channels and passes
-them to `SignTextLayout.DrawLine`. `SignFileTests.ReadsHeaderTextSlotsAndLogFont`
-currently asserts that RGB interpretation. This tests the existing implementation,
-not the original behavior, and contradicts the established effect arithmetic.
+`SignTextRenderer.RenderSign -> SignCanvas.Compose -> SignCanvas.SlotColor`
+retains the registered COMPAT-003 legacy RGB tint for compatibility, and Compose
+now diagnoses it explicitly. Native material coefficients are available separately;
+no guessed white or replacement final tint is introduced. Font rasterization,
+canvas dimensions, background and gameplay shader ownership remain unchanged.
 
-A correction must remove that interpretation rather than rename its output:
-
-1. Preserve the slot floats as effect/material coefficients and correct the SGN
-   effect/header record boundaries with a bounded reader. Parse the original
-   per-effect source image/color blocks before assigning a final sign color.
-2. Keep glyph coverage separate from surface color. The original raster helper's
-   white text produces an 8-bit mask with integer 2×2 averaging; it does not
-   establish a flat white final sign material or a Windows hinting oracle.
-3. Apply shared base/diffuse/specular terms to the decoded source RGB, preserve
-   mask alpha, then perform the identified channel swizzle and output split/pack.
-   Validate flat and enabled-effect paths, boundary coefficients, missing blocks,
-   clipping and the 16-bit consumer separately.
-4. Replace the RGB assertion with meaningful regressions: modifying a material
-   coefficient affects the same lighting term across channels, not an arbitrarily
-   selected color channel. Use synthetic image/mask fixtures plus privately
-   identified original records; keep raw assets outside Git.
-
-No new guessed RGB or neutral-color replacement is proposed. Until the complete
-surface path is available, any mask-only preview must be explicit presentation
-policy with diagnostics; it cannot claim original final color. The binder's write
-scope does not include the sign compositor, so this plan is handed to the sign
-owner and the current contradictory runtime path remains identified as a required
-follow-up rather than being silently certified.
+The next production step requires native mask shaping/normal construction,
+source-image descimation and wavelet image decoding, plus paint/effect layer
+composition and final split/pack (including the 16-bit consumer). Keep glyph
+coverage separate from surface color: native white TextOut establishes a mask,
+not final white material. Once those prerequisites have independent fixtures,
+replace the legacy tint with the proven surface pipeline. Mac QuickDraw spacing
+and coverage still require an original-platform oracle; current OpenTPW pixels
+cannot supply that evidence. No COMPAT approximation ID is closed by this parser.
 
 ## Every UI approximation: result and concrete remaining dependency
 
@@ -752,8 +812,8 @@ Relevant compatibility IDs:
 | --- | --- |
 | COMPAT-001 | Partial replacement: two 128×128 destinations, larger masks/DIBs and dimension-preserving channel swizzle established; geometry UV orientation and full compositing still require integration. |
 | COMPAT-002 | Partial replacement: OS-measured centering and LOGFONT-width search, no evidenced eight-texel margin; trace empty/overlong/multi-line text and final texture coordinates. |
-| COMPAT-003 | Contradicted: parameters 2–4 are shared material/lighting coefficients, not RGB. Preserve source image colors and implement the evidenced effect arithmetic after correcting SGN field meanings/compositing. |
-| COMPAT-004 | Partial: SGN reader handles effect/pixel blocks and optional image path; trace/decode the background/effects and verify byte-consistent output instead of flat dark board. |
+| COMPAT-003 | Contradicted RGB mapping is retained as a diagnosed legacy approximation. Native style/material/source RGB/mask alpha metadata is pinned. Implement source descimation, normal construction and final layer composition before replacing tint. |
+| COMPAT-004 | Partial: production parser exposes original effect/paint/raw image metadata and preserves unsupported wavelet payload. Decode the wavelet background and implement layer ordering/integer blend/packing; verify output before replacing the flat board. |
 | COMPAT-005 | Open: SGN scale integer is read separately from LOGFONT width; width-search proof does not assign the 85..141 field a unit or prove it is ignored. Trace its consumers. |
 | COMPAT-006 | Partial: identified Mac sign call reaches QuickDraw StdText/StdTxMeas; no Windows GDI pair-kerning conclusion follows. Inspect backend/font settings or obtain original-platform glyph-spacing oracle. |
 | COMPAT-007 | Open: trace saved park name and resource/object-name selection into both sign text inputs. |

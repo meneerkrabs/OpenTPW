@@ -42,7 +42,7 @@ internal sealed class SandboxSmokeTest : IDisposable
 		if ( step == 30 )
 		{
 			Require( level.PlacedRide!.Script.State != RideVMState.Faulted && level.PlacedRide.Script[RideVariables.VAR_RUNNING] == 1, "original script reports the ride running" );
-			CaptureFrame( "park.png" );
+			VerifyText( CaptureFrame( "park.png" ) );
 			level.SaveSandbox();
 			level.PlacedRide!.Stop();
 			Require( !level.PlacedRide.IsOpen, "close ride" );
@@ -67,12 +67,12 @@ internal sealed class SandboxSmokeTest : IDisposable
 		{
 			Device.WaitForIdle();
 			completed = true;
-			Log.Trace( $"Native sandbox smoke test passed: {frame} frames, original ride and RSE script, script-triggered motion, close, remove, isolated save/load and GPU readback." );
+			Log.Trace( $"Native sandbox smoke test passed: {frame} frames, original ride and RSE script, script-triggered motion, close, remove, isolated save/load, BF4 text and GPU readback." );
 			Render.Window.SdlWindow.Close();
 		}
 	}
 
-	private static void CaptureFrame( string name )
+	private static (byte[] Pixels, int Width, int Height) CaptureFrame( string name )
 	{
 		var source = Render.ResolveColorTexture;
 		using var staging = Device.ResourceFactory.CreateTexture( TextureDescription.Texture2D(
@@ -99,11 +99,48 @@ internal sealed class SandboxSmokeTest : IDisposable
 			var artifactDirectory = Path.GetFullPath( "artifacts" );
 			Directory.CreateDirectory( artifactDirectory );
 			image.SaveAsPng( Path.Combine( artifactDirectory, $"native-smoke-{name}" ) );
+			return (pixels, (int)source.Width, (int)source.Height);
 		}
 		finally
 		{
 			Device.Unmap( staging );
 		}
+	}
+
+	/// <summary>
+	/// Compares the BF4 text panel in GPU readback with the CPU composite of the same quads.
+	/// </summary>
+	private void VerifyText( (byte[] Pixels, int Width, int Height) frame )
+	{
+		var overlay = level.TextOverlay;
+		var (x, y, width, height) = overlay.Bounds;
+		Require( width > 0 && x + width <= frame.Width && y + height <= frame.Height, "text panel fits the framebuffer" );
+		var expected = (byte[])frame.Pixels.Clone();
+		overlay.Batch.Composite( expected, frame.Width, frame.Height );
+		var background = expected.AsSpan( (y * frame.Width + x) * 4, 3 ).ToArray();
+		var textPixels = 0;
+		var maximumDifference = 0;
+		for ( var row = y; row < y + height; ++row )
+		{
+			for ( var column = x; column < x + width; ++column )
+			{
+				var pixel = (row * frame.Width + column) * 4;
+				for ( var channel = 0; channel < 3; ++channel )
+					maximumDifference = Math.Max( maximumDifference, Math.Abs( frame.Pixels[pixel + channel] - expected[pixel + channel] ) );
+				if ( !frame.Pixels.AsSpan( pixel, 3 ).SequenceEqual( background ) )
+					++textPixels;
+			}
+		}
+		var inkPixels = overlay.Batch.Quads.Where( quad => quad.Atlas != null ).Sum( quad =>
+			Enumerable.Range( 0, quad.Height ).Sum( row => quad.Atlas!.Alpha.AsSpan( (quad.AtlasY + row) * quad.Atlas.Width + quad.AtlasX, quad.Width ).ToArray().Count( value => value != 0 ) ) );
+		Log.Trace( $"BF4 text readback: {textPixels} text pixels in {width}x{height} panel; {inkPixels} atlas ink texels; max channel difference {maximumDifference}." );
+		Require( textPixels >= inkPixels * 9 / 10 && inkPixels > 200, "BF4 text pixels are present in GPU readback" );
+		Require( maximumDifference <= 2, "BF4 text readback matches the CPU composite" );
+		var crop = new byte[width * height * 4];
+		for ( var row = 0; row < height; ++row )
+			Array.Copy( frame.Pixels, ((y + row) * frame.Width + x) * 4, crop, row * width * 4, width * 4 );
+		using var image = Image.LoadPixelData<Bgra32>( crop, width, height );
+		image.SaveAsPng( Path.Combine( Path.GetFullPath( "artifacts" ), "native-smoke-text.png" ) );
 	}
 
 	public void VerifyCompleted() => Require( completed, "complete all native smoke-test frames" );

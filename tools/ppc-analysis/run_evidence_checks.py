@@ -19,16 +19,21 @@ its shape (a regular .TPWI file outside the checkout, longer than the container 
 8 MiB harness bound); the lanes check its identity. UI_EVIDENCE_* variables pass through unchanged.
 
 Absent fixtures never fail by themselves. --require-fixtures turns any skipped test, any harness
-"NOT RUN:" fixture line, and any supplied fixture flag none of whose variables is read by a
-ppc-analysis source (or taken by a registered harness) into a failure.
+"NOT RUN:" fixture line, and any supplied fixture flag none of whose variables was actually used
+into a failure. A variable is used when a ppc-analysis Python source reads it (every Python suite
+runs) or when a registered harness passed with its fixture argument and printed no "NOT RUN:" line.
+A harness that is present but not run (no --dotnet), absent, skipped or failed is not a consumer.
 
 --dotnet runs the lane harnesses that have a synthetic self-test, each from a temporary copy so
 that no global.json applies and no bin/obj lands in the checkout. Harnesses that need a private
 corpus, or that have no registered self-test, are reported, not run; registered harnesses missing
-from the checkout are reported as absent, so coverage is never claimed for them. A harness whose project reference targets a newer framework than
-itself is reported as an incompatible reference and not run. Failures are classified as restore
-(NU1100: targeting pack not in the cache and not downloadable), missing runtime, SDK too old, or
-incompatible reference. Passing harnesses are self-consistency checks only, not evidence of
+from the checkout are reported as absent, so coverage is never claimed for them. A harness whose
+project reference targets a newer framework than itself is reported as an incompatible reference
+and not run. The scratch copy holds only the project directory, so a registered harness with an
+item that climbs out of it is reported as linked-outside-copy and not built; an unregistered one
+names those items in its not-run reason. Failures are classified as restore (NU1100: targeting
+pack not in the cache and not downloadable), missing runtime, SDK too old, or incompatible
+reference. Passing harnesses are self-consistency checks only, not evidence of
 original runtime behavior.
 """
 from __future__ import annotations
@@ -44,6 +49,8 @@ import tempfile
 from pathlib import Path
 
 FIXTURE_VARIABLES = ('OPENTPW_PPC_BIN_ROOT', 'OPENTPW_MAC_APP', 'OPENTPW_PC_DATA', 'OPENTPW_PC_FIXTURE')
+ITEM = re.compile(r'<(Compile|ProjectReference|None|Content|EmbeddedResource)\s+[^>]*?Include="([^"]+)"')
+PROJECT_DIRECTORY = re.compile(r'^\$\((?:MSBuildThisFileDirectory|MSBuildProjectDirectory)\)[\\/]?')
 FIXTURE_FLAGS = {
     '--mac-bin': ('OPENTPW_PPC_BIN_ROOT', 'OPENTPW_MAC_APP'),
     '--pc-data': ('OPENTPW_PC_DATA',),
@@ -117,16 +124,23 @@ def environment_read(variable: str) -> re.Pattern:
     return re.compile(rf'(?:environ\.get|environ|getenv)\s*[\[(]\s*[\'"]{name}[\'"]')
 
 
-def fixture_consumers(tools: Path, variable: str) -> list[str]:
-    # Python sources that read the variable from the environment, plus present fixture-argument
-    # harnesses. Only ppc-analysis sources are read; no fixture directory is listed.
+def fixture_consumers(tools: Path, variable: str, dotnet: list[dict] = ()) -> list[str]:
+    # Python sources that read the variable from the environment, plus fixture-argument harnesses
+    # that ran with it. A present harness that never ran consumes nothing. Only ppc-analysis
+    # sources are read; no fixture directory is listed.
     read = environment_read(variable)
     runner = Path(__file__).resolve()
     sources = [str(file.relative_to(tools)) for file in sorted(tools.rglob('*.py'))
                if '__pycache__' not in file.parts and file.resolve() != runner
                and read.search(file.read_text(encoding='utf-8', errors='replace'))]
-    harnesses = [key for key in FIXTURE_ARGUMENTS if (tools / key).is_file()] if variable == 'OPENTPW_PC_FIXTURE' else []
+    harnesses = [item['project'] for item in dotnet if variable == 'OPENTPW_PC_FIXTURE' and used_fixture(item)]
     return sources + harnesses
+
+
+def used_fixture(item: dict) -> bool:
+    option = FIXTURE_ARGUMENTS.get(item['project'])
+    return (option is not None and item.get('status') == 'passed' and not item.get('fixture_skips')
+            and option in item.get('arguments', []))
 
 
 def python_suites(tools: Path) -> list[Path]:
@@ -200,6 +214,26 @@ def incompatible_references(project: Path) -> list[str]:
     return found
 
 
+def linked_outside_copy(project: Path) -> list[str]:
+    # run_dotnet copies only project.parent; any include that climbs out of it is missing there.
+    found = []
+    for kind, include in ITEM.findall(project.read_text(encoding='utf-8')):
+        depth = 0
+        for part in PROJECT_DIRECTORY.sub('', include).replace('\\', '/').split('/'):
+            depth += -1 if part == '..' else 0 if part in ('', '.') else 1
+            if depth < 0:
+                found.append(f'{kind} {include}')
+                break
+    return found
+
+
+def not_run_reason(key: str, project: Path) -> str:
+    if key in NEEDS_CORPUS:
+        return NEEDS_CORPUS[key]
+    linked = linked_outside_copy(project)
+    return 'no registered self-test' + (f"; scratch copy would lack {', '.join(linked)}" if linked else '')
+
+
 def dotnet_harnesses(tools: Path) -> list[tuple[str, Path]]:
     return sorted((str(path.relative_to(tools)), path) for path in (tools / 'lanes').rglob('*.csproj')
                   if not {'bin', 'obj'} & set(path.parts))
@@ -224,10 +258,11 @@ def run_dotnet(dotnet: Path, key: str, project: Path, env: dict | None = None,
     incompatible = incompatible_references(project)
     if incompatible:
         return {**result, 'status': 'incompatible-reference', 'reason': '; '.join(incompatible)}
-    if key in NEEDS_CORPUS:
-        return {**result, 'status': 'not-run', 'reason': NEEDS_CORPUS[key]}
-    if key not in SELF_TESTS:
-        return {**result, 'status': 'not-run', 'reason': 'no registered self-test'}
+    if key in NEEDS_CORPUS or key not in SELF_TESTS:
+        return {**result, 'status': 'not-run', 'reason': not_run_reason(key, project)}
+    linked = linked_outside_copy(project)
+    if linked:
+        return {**result, 'status': 'linked-outside-copy', 'reason': '; '.join(linked)}
     fixtures = env if env is not None else fixture_environment(dict(os.environ), None, None)
     arguments = harness_arguments(key, fixtures)
     env = {**fixtures, 'DOTNET_CLI_TELEMETRY_OPTOUT': '1', 'DOTNET_NOLOGO': '1',
@@ -267,16 +302,16 @@ def main(argv: list[str] | None = None) -> int:
         print(f'fixture error: {error}', file=sys.stderr)
         return 2
     suites = python_suites(tools)
-    consumers = {key: fixture_consumers(tools, key) for key in FIXTURE_VARIABLES if key in env}
-    unconsumed = [flag for flag, keys in FIXTURE_FLAGS.items()
-                  if keys[0] in env and not any(consumers.get(key) for key in keys)]
     harnesses = dotnet_harnesses(tools)
     if args.dotnet:
         dotnet = [run_dotnet(args.dotnet, key, path, env, args.require_fixtures) for key, path in harnesses]
     else:
         dotnet = [{'project': key, 'framework': project_framework(path), 'status': 'not-run',
-                   'reason': 'no --dotnet' if key in SELF_TESTS else
-                   NEEDS_CORPUS.get(key, 'no registered self-test')} for key, path in harnesses]
+                   'reason': 'no --dotnet' if key in SELF_TESTS and key not in NEEDS_CORPUS else
+                   not_run_reason(key, path)} for key, path in harnesses]
+    consumers = {key: fixture_consumers(tools, key, dotnet) for key in FIXTURE_VARIABLES if key in env}
+    unconsumed = [flag for flag, keys in FIXTURE_FLAGS.items()
+                  if keys[0] in env and not any(consumers.get(key) for key in keys)]
     report = {
         'fixtures': {key: env.get(key) for key in FIXTURE_VARIABLES},
         'fixture_consumers': consumers,
@@ -301,7 +336,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f'FAIL uncovered test file: {file}')
         for key in report['unconsumed_fixtures']:
             mark = 'FAIL' if args.require_fixtures else 'note'
-            print(f"{mark} {key} ({', '.join(FIXTURE_FLAGS[key])}) is set but nothing in this checkout reads it")
+            print(f"{mark} {key} ({', '.join(FIXTURE_FLAGS[key])}) is set but nothing that ran in this checkout used it")
         for item in report['dotnet']:
             mark = 'ok  ' if item['status'] in ('passed', 'not-run', 'absent') else 'FAIL'
             detail = '; '.join(item.get('fixture_skips') or []) or item.get('last_line') or item.get('reason', '')

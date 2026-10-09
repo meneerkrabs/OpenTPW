@@ -2681,3 +2681,147 @@ Unresolved objections carried forward unchanged:
 
 Review tests: 157 (138 pass and 19 skip without fixture variables; 157 pass
 with `--mac-bin --pc-data`).
+
+## 50. Round 14: runner fixture consumers closed, `34c75be` host selection, final checkpoint containment
+
+Scope: the round-13 MEDIUM runner gap (this round the review lane owns
+`run_evidence_checks.py`), plus review tests and this section. No production,
+workflow or peer tree was written. No original asset was read: the actual
+fixture paths were not supplied this round, so every fixture probe used a
+zero-filled synthetic `Easymode.TPWI` of valid shape outside the checkout. No
+asset directory was listed and no filesystem-wide search was run.
+
+Reviewed checkpoint: `46c5b6c` (last executable snapshot, contains remote
+`f4482c4`) → `0b67f02` (only `docs/reverse/APPROX-TRACE.md`, +58) → `34c75be`
+(Windows native-testhost fix; root `main`, pushed). Remote `255cc7b` descends
+from `34c75be` with 5 commits of parallel gameplay work (advisor, economy,
+research; 10 files). That is **later source, not the reviewed checkpoint**, and
+nothing below accepts it.
+
+### Runner: MEDIUM closed
+
+- **Consumers are what actually used the fixture.** `fixture_consumers` now
+  counts Python sources that read the variable (every Python suite always runs)
+  and fixture-argument harnesses whose result is `passed`, carries the fixture
+  option in `arguments`, and has no `NOT RUN:` line (`used_fixture`). A harness
+  that is present but not run (no `--dotnet`), absent, skipped, failed or
+  `fixture-skipped` is not a consumer. Consumers are computed after the .NET
+  pass, so the report reflects the run, not the tree.
+- **Dependency-copy qualification.** `linked_outside_copy` (moved from the
+  round-13 aid into the runner) lists `Compile`, `ProjectReference`, `None`,
+  `Content` and `EmbeddedResource` includes that climb out of the project
+  directory, including `$(MSBuildThisFileDirectory)`/`$(MSBuildProjectDirectory)`
+  prefixes, backslashes and multi-line elements. A *registered* harness with
+  such an item is `linked-outside-copy` (a failure) and is never built, so no
+  misleading MSB3030 `failed` appears. An *unregistered* one stays `not-run`,
+  with the reason qualified: rides `84fe814`
+  `controllers/ControllersWitness.csproj` reports `no registered self-test;
+  scratch copy would lack None ../controller-contracts.json`. It should stay
+  unregistered until the scratch copy can carry its external JSON resource.
+- **Kept:** per-lane discovery processes, stale-variable stripping (Python and
+  harness processes), no inference from `--pc-data`, `absent` for registered
+  projects missing from a tree, SDK 8 scratch copies outside the checkout with
+  no `bin`/`obj` written back.
+- Round-12 and round-13 tests that pinned the old presence-based count now pin
+  the closed behaviour. `round13_evidence.vacuous_fixture_consumers` still flags
+  a `0f4ae55`-shaped report.
+
+New `test_round14.py` (11 tests; a POSIX fake `dotnet` logs project, working
+directory, arguments and the inherited `OPENTPW_PC_FIXTURE`). Before the fix:
+7 failures and 4 errors. After: all pass. They cover:
+- no `--dotnet`: exit 1 under `--require-fixtures`, only a note without it;
+- a passing harness with `--fixture <resolved path>` is the consumer;
+- a `NOT RUN:` or failed harness is not; `--require-fixtures` turns the
+  `NOT RUN:` case into `fixture-skipped`;
+- a Python reader still consumes without `--dotnet`;
+- an absent harness is never run or counted;
+- each harness runs from its own scratch directory outside the checkout, with
+  no stale fixture inherited;
+- linked-include parsing; ControllersWitness qualified both with and without
+  `--dotnet`; an in-memory registration fails closed before any build;
+- no registered self-test in this checkout links outside its copy.
+
+### `34c75be` `ChildStartForHost`: accepted
+
+- **Identity.** `applicationHost` is `GetEntryAssembly() == typeof(Program).Assembly`.
+  Cases:
+  - application apphost (any name): host = own executable, no assembly
+    argument;
+  - `dotnet` muxer (`dotnet OpenTPW.dll`, or a testhost run via `dotnet`): host =
+    that muxer, assembly path prepended;
+  - native testhost (Windows `testhost.exe`): host = `DOTNET_HOST_PATH`, else
+    `DOTNET_ROOT/dotnet[.exe]`, else `dotnet` on `PATH`, assembly path
+    prepended.
+
+  A null entry assembly falls to the managed path, which is the safe side.
+- **Arguments.** Everything goes through `ArgumentList`: no quoting, folders
+  with spaces survive, and the picker's empty `initial` stays one empty argument.
+  `UseShellExecute` is false and stdout/stderr are redirected, as before.
+- **CI.** Run `37998226690` (head `34c75be5f8…`): ubuntu, windows and macOS
+  all succeed. Windows `OpenTPW.Tests`: 757 passed, 0 failed, 230 skipped,
+  which includes the two new regressions. The codec was not rerun.
+- **Residual, LOW and informational only.** A muxer renamed away from
+  `dotnet` (for example `dotnet-x64`) under the application entry assembly would
+  be treated as the apphost. A single-file publish has an empty
+  `Assembly.Location`, but it is always an application host, so the managed
+  path is never taken there. Neither case is a supported launch path today.
+
+### Final checkpoint containment (git objects only)
+
+| Check | `46c5b6c` | `0b67f02` | `34c75be` | `255cc7b` (later, not reviewed) |
+| --- | --- | --- | --- | --- |
+| Fixture blob prefixes `245a6743`/`816de5d1` in the object DB | absent | absent | absent | absent |
+| Blob of size 2,274,758 or 38,479 | none | none | none | none |
+| Original-asset extension paths | 0 | 0 | 0 | 0 |
+| Blobs > 1 MB | upstream `content/textures/test.png` only | same | same | same |
+| `[BIN:` aliases in `source/` | 9, all `STP-PPC` | 9 | 9 | 13, all `STP-PPC` |
+| `fidelity_register.py --check` | — | — | exit 0, 136 APPROX IDs | exit 0, 135 |
+
+Every bracket label in `source/` at `34c75be` is `APPROX`, `DATA`, `EXT`,
+`BIN:STP-PPC`, or a C# `[global::…]`/`[assembly:…]` attribute. There is no
+undeclared alias (`BINARIES = ("STP-PPC", "TPI-EXE")`).
+
+### Carried, not proven
+
+- **Clock owner: calendar host-date conflict.** In `0b67f02` `APPROX-TRACE.md`,
+  ECON-002 says the park clock "starts from the real local date and time read at
+  clock construction (`FUN_100e3c90`)". That claim was Haiku search text: the
+  skeptic was "refuted → contradicted" and there was no lead review. Section 37
+  (clock `7f8ef64`) established only that the RSE handlers at
+  `0xb2144`…`0xb2238` read host civil time, not the park calendar. Whether the
+  park calendar is seeded from host time is a hypothesis for the clock owner,
+  and it conflicts with any fixed-epoch reading. The search text is not
+  evidence, and no fidelity claim may cite it.
+- No PC or Patch 2 runtime equivalence, no channel-clock source, and no
+  SDT-device claims. All objections from round 13 carry forward unchanged.
+
+### Results
+
+| Target | Command | Result |
+| --- | --- | --- |
+| This tree | `run_evidence_checks.py` (no flags) | OK, 306 tests, 31 skipped; review 168 (19 skip) |
+| This tree | `--dotnet $DOTNET8/dotnet` (8.0.425) | OK; 6 registered harnesses pass in scratch copies; scientist `absent` |
+| `62c0a2e` archive + new runner | `--pc-fixture <synthetic> --require-fixtures`, stale var exported | **exit 1**: `FAIL --pc-fixture … nothing that ran … used it` (was exit 0) |
+| `62c0a2e` archive + new runner | same + `--dotnet` SDK 8 | exit 1: scientist rejects the synthetic file (15/16 groups) and is not counted; loans 25/25 |
+| `84fe814` archive + new runner | `--dotnet` SDK 8 | OK; ControllersWitness `not-run … would lack None ../controller-contracts.json`; AnimationWitness passes |
+| `84fe814` | ControllersWitness in-memory registration, `run_dotnet` SDK 8 | `linked-outside-copy`, no build (was MSB3030 `failed`) |
+| `34c75be` | CI run `37998226690` | success on all three OS |
+
+Not run: the actual-fixture positive path (`--pc-fixture <actual> --dotnet`),
+because no fixture path was supplied (round 12 recorded 16/16 with the actual
+file). Also not run: a codec rerun, UI corpus, original runtime and PC/Patch 2
+parity.
+
+### Handoff
+
+1. Integration: take `run_evidence_checks.py` from this lane whole. The
+   round-13 advice to always pass `--dotnet` with `--pc-fixture` is no longer
+   needed for correctness, but it is still the only way to get a consumer from
+   the scientist harness.
+2. Rides owner: keep ControllersWitness unregistered until the runner's copy
+   can carry `../controller-contracts.json`. One option is to copy the lane
+   directory and run the project at its relative path.
+3. Clock owner: settle the ECON-002 host-date seeding with a hash-pinned trace
+   of `FUN_100e3c90`, or reject it.
+4. Re-review `255cc7b` (or its successor) as a new checkpoint; it is not
+   covered here.

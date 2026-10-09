@@ -52,11 +52,14 @@ class Scratch(unittest.TestCase):
 class VacuousFixtureConsumer(Scratch):
     def test_present_but_unrun_harness_is_the_only_consumer_without_dotnet(self):
         # 62c0a2e shape: the scientist harness is present and no Python source reads the variable.
+        # Runner 0f4ae55 counted the harness and exited 0 (round 13 MEDIUM); round 14 closed it.
         self.project(SCIENTIST)
-        _, report = self.report('--pc-fixture', str(self.fixture), '--require-fixtures')
-        self.assertEqual([SCIENTIST], report['fixture_consumers']['OPENTPW_PC_FIXTURE'])
-        self.assertEqual([], report['unconsumed_fixtures'])
-        self.assertEqual(['OPENTPW_PC_FIXTURE'], r13.vacuous_fixture_consumers(report, runner.FIXTURE_ARGUMENTS))
+        code, report = self.report('--pc-fixture', str(self.fixture), '--require-fixtures')
+        self.assertEqual(1, code)
+        self.assertEqual([], report['fixture_consumers']['OPENTPW_PC_FIXTURE'])
+        self.assertEqual(['--pc-fixture'], report['unconsumed_fixtures'])
+        stale = {**report, 'fixture_consumers': {'OPENTPW_PC_FIXTURE': [SCIENTIST]}}  # 0f4ae55 report shape
+        self.assertEqual(['OPENTPW_PC_FIXTURE'], r13.vacuous_fixture_consumers(stale, runner.FIXTURE_ARGUMENTS))
 
     def test_a_python_reader_or_a_passing_fixture_run_is_not_vacuous(self):
         report = {'fixture_consumers': {'OPENTPW_PC_FIXTURE': [SCIENTIST]},

@@ -105,7 +105,7 @@ class Registration(Scratch):
         self.assertNotIn(SCIENTIST, {item['project'] for item in runner.absent_harnesses(self.tools)})
         self.assertIn(SCIENTIST, dict(runner.dotnet_harnesses(self.tools)))
 
-    def test_consumers_read_the_variable_or_are_present_fixture_harnesses(self):
+    def test_consumers_read_the_variable_or_are_fixture_harnesses_that_used_it(self):
         self.assertEqual([], runner.fixture_consumers(self.tools, 'OPENTPW_PC_FIXTURE'))
         lane = self.tools / 'lanes' / 'rides'
         lane.mkdir()
@@ -119,8 +119,11 @@ class Registration(Scratch):
         (self.tools / SCIENTIST).parent.mkdir(parents=True)
         (self.tools / SCIENTIST).write_text(NET8)
         rides = os.path.join('lanes', 'rides')
-        self.assertEqual([os.path.join(rides, 'helper.py'), os.path.join(rides, 'test_save.py'), SCIENTIST],
-                         runner.fixture_consumers(self.tools, 'OPENTPW_PC_FIXTURE'))
+        readers = [os.path.join(rides, 'helper.py'), os.path.join(rides, 'test_save.py')]
+        # Round 14: presence alone no longer counts; only a passing run with --fixture does.
+        self.assertEqual(readers, runner.fixture_consumers(self.tools, 'OPENTPW_PC_FIXTURE'))
+        ran = {'project': SCIENTIST, 'status': 'passed', 'arguments': ['--fixture', '/x.TPWI'], 'fixture_skips': []}
+        self.assertEqual([*readers, SCIENTIST], runner.fixture_consumers(self.tools, 'OPENTPW_PC_FIXTURE', [ran]))
         self.assertEqual([os.path.join(rides, 'test_other.py')], runner.fixture_consumers(self.tools, 'OPENTPW_MAC_APP'))
 
 
@@ -184,7 +187,7 @@ class MainExitCodes(Scratch):
         path = str(self.fixture())
         code, output = self.main('--pc-fixture', path)
         self.assertEqual(0, code)
-        self.assertIn('note --pc-fixture (OPENTPW_PC_FIXTURE) is set but nothing in this checkout reads it', output)
+        self.assertIn('note --pc-fixture (OPENTPW_PC_FIXTURE) is set but nothing that ran in this checkout used it', output)
         code, output = self.main('--pc-fixture', path, '--require-fixtures')
         self.assertEqual(1, code)
         self.assertIn('FAIL --pc-fixture (OPENTPW_PC_FIXTURE) is set but nothing', output)

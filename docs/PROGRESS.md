@@ -6,6 +6,59 @@ voortgang en geverifieerde code naar de fork goedgekeurd. Git-history registreer
 de gepubliceerde snapshots; originele assets, native binaries, captures en lokale
 agent-runtimebestanden blijven buiten die publicatie.
 
+## Geïntegreerde controle na hervatting
+
+Advisor/compat, frontend, rides en online zijn samengevoegd met economie,
+bezoekers en displayinstellingen. Dit kwalificeert een ontwikkelpreview; originele
+runtime-fidelity en de complete offline scope blijven open.
+
+- Volledige macOS-arm64-suite op de catalogus/online/shader-integratie: **793
+  geslaagd, 0 overgeslagen, 0 mislukt**, inclusief originele data, zes talen,
+  bonuscontent, MTR-fixtures en native shadercontroles; 10m46s.
+- Daarna is de UI-schaal-fit gecorrigeerd. Op de bijgewerkte code: **51 gerichte
+  UI/online-command-tests geslaagd, 0 overgeslagen**, Release-solution-build met
+  0 fouten. Bestaande nullable/compiler- en dependencywaarschuwingen blijven.
+- Eigen Metal-eindcontrole: Nederlands, 1280×720, Nearest 50%, gevraagde UI-schaal
+  2 met zichtbaar uitgelegde fit naar 1. **222 frames**: lobby, opties en glyphs,
+  twee verschillende catalogusobjecten elk eenmaal betaald, verkoop, overlappende
+  bouw geweigerd, terug naar lobby, opnieuw laden en alleen-lezen bezoek.
+- ShaderCompiler bewaart gecompileerde code/reflectie; native shaderobjecten zijn
+  per renderer in eigendom. De gereproduceerde Metal-crash bij levelherladen is
+  daarmee opgelost. Archief-rootlisting en hoofdletterongevoelige SDT-members
+  zijn met regressies gerepareerd. Level/GameFlow beheert level- en online-lifetime.
+- Eigen CLI export/import gevolgd door native bezoek: **8 frames**, 14 onveranderde
+  objecten, geen parkeconomie; bouwen/verwijderen/opslaan/laden/export geweigerd.
+  De volledige themacatalogus staat in het HUD; Level bezit aankoop/verkoop zodat
+  de UI niet nogmaals geld boekt. Gewijzigde gedeelde layouts zijn nog niet renderbaar.
+- [Patch 2](PATCH-2.md) is op een Windows GitHub-runner toegepast: drie native
+  patchstappen geslaagd, 43 installatieverschillen gecontroleerd. De gamedata telt
+  28 verschillen en 24 gewijzigde gedecomprimeerde WAD-members. Alleen hashes,
+  eigen beschrijvingen en analysetools zijn gepubliceerd. Tijdelijke overdracht,
+  secrets en versleuteld artifact zijn verwijderd; referentiedata staat buiten git.
+- [Mac-evidence](reverse/FINDINGS.md): 16 PEF-containers gelezen; de conditionele
+  timerfallback en de millisecondeconversie zijn met gepinde witnesses vastgelegd.
+  Dat bewijst geen animatie-, kalender- of advisorfrequentie. 16 Python-evidencetests
+  en 7 fidelity-registertests slagen; de patchvergelijker heeft synthetische tests.
+- De aangeleverde [Windows-handleiding](REFERENCE-MANUAL.md) bewijst één sleutel
+  per drie verdiende golden tickets. Die ratio is gecorrigeerd met grens-, aankoop-
+  en save-regressies; startaantal/toegangsverbruik blijven als onzekerheid gemarkeerd.
+  Eigen gerichte economiecheck: 28 geslaagd, 0 overgeslagen.
+- README onderscheidt decoderstatus van gameplay-fidelity: BF4 is geïmplementeerd
+  voor 33 fonts in elk van zes geteste talen. Alle resterende formatbeperkingen
+  staan per tabelrij vermeld; filmafhandeling en previewstatus zijn bijgewerkt.
+- Negen onafhankelijke worktrees zijn gestart voor de PowerPC-vervolganalyse en
+  TPI-vergelijking (zes native en drie app-subagents). Hun nieuwe source-/renderer-
+  wijzigingen worden afzonderlijk gereviewd en getest vóór samenvoegen.
+- [Fidelity-register](FIDELITY-REGISTER.md): **135 originele fidelity-items** plus
+  **6 online-extensieonzekerheden** blijven open. CI controleert expliciete tags en
+  registerconsistentie; vindt geen ongemarkeerde logica en bewijst geen pariteit.
+  Windows/Linux GPU/input/audio, originele captures, coastercontrollers, ontbrekende
+  script-effecten en verdere scenarioacceptatie blijven releaseblockers.
+
+Lokale logs: `/tmp/opentpw-root-final-tests.log`, `-final-ui-tests.log`,
+`-final-release-build.log`, `-final-frontend-smoke.log`, `-final-visit.log`.
+De overige secties hieronder bewaren eerdere slices en hun toenmalige controles.
+
 ## Geleverd en gecontroleerd
 
 - Native macOS arm64: SDL2-windowing, Metal-rendering, ImGui-initialisatie en

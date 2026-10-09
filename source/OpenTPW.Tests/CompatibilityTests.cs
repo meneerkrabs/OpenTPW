@@ -300,7 +300,7 @@ public class CompatibilityTests
 		// Corrected UIStrings IDs refer to real entries; only the designated Blank entry is universally empty.
 		var blank = Enum.GetValues<UIStrings>().Where( id => table.Get( (int)id, id.ToString() ).Length == 0 ).ToArray();
 		Assert.AreEqual( "Blank", string.Join( ", ", blank ) );
-		// The corrected IDs fit the shipped tables. French/German intentionally leave currency
+		// The corrected IDs fit the shipped tables. French/German leave currency
 		// prefixes blank, which this fallback wrapper reports and fills from English.
 		var expected = new List<string>();
 		if ( name is "French" or "German" )

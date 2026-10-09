@@ -34,8 +34,8 @@ Issues found by OpenTPW itself while implementing this slice:
 | Finding | Handling |
 | --- | --- |
 | `levels/space/rides/megacost.wad/megacost.sgn` text slot 1 asks for "EggIt Italic" / `EGGII___.TTF`, which `fonts.wad` does not ship (the only unresolved font of 168 slot references) | Fix `sign-font-substitution`: in-memory data correction keyed by the file's SHA-256 (`E1CCFB45…`) pointing it at `EGGITAOE.TTF`. Off in Original (line not drawn). |
-| `UIStrings.UnsentPostcardsWarning` (473) lies past the end of `UITEXT.str` in every language; `Localization.Parse` crashed on it | Shows its internal name, logged once. |
-| French `UITEXT.str[457]` (NewVisitor) is empty | Falls back to the English text, logged once. |
+| The old UI enumeration mapped `UnsentPostcardsWarning` to 473 instead of 472 | The frontend correction maps all IDs to shipped entries; the internal-name fallback remains for genuinely absent entries. |
+| French `UITEXT.str[457]` (CashDollar), and French/German `[448]` (Dollar), are empty | The generic fallback wrapper reports English fallback; the original-style UI preserves blank currency prefixes. Verified with all six language tables. |
 | None of the 17 fonts has `€` | Reported as a missing glyph (.notdef), never crashes. |
 
 ## In-world TrueType text

@@ -36,7 +36,7 @@ internal sealed class AdvisorSmokeTest : IDisposable
 		var mouth = advisor.LastRenderedMouth;
 		if ( mouth != null && (mouthSequence.Count == 0 || mouthSequence[^1] != mouth) )
 			mouthSequence.Add( mouth );
-		if ( mouth == Advisor.TalkingMouth && talkingFrame == null && frame > 10 )
+		if ( mouth != null && mouth != Advisor.ClosedMouth && talkingFrame == null && frame > 10 )
 			talkingFrame = SandboxSmokeTest.CaptureFrame( "advisor-talking.png" ).Pixels;
 		if ( mouth == Advisor.ClosedMouth && talkingFrame != null && closedFrame == null )
 			closedFrame = SandboxSmokeTest.CaptureFrame( "advisor-closed.png" ).Pixels;

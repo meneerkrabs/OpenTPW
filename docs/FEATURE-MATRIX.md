@@ -105,10 +105,10 @@ license/distribution constraints and actual results. No dependency change is imp
 | Runtime surface | Known risk / required evidence | macOS | Windows | Linux |
 | --- | --- | --- | --- | --- |
 | NAudio/Media Foundation/WaveOut | Existing Windows-audio path; explicit optional failure versus later portable audio | unverified | unverified | unverified |
-| SDL2 window/input | Native loading, window creation, resize, focus and UI-owned input | unverified | unverified | unverified |
-| SPIR-V/shader translation | Native compiler architecture, backend-specific shader output and real render | unverified | unverified | unverified |
+| SDL2 window/input | Native loading, window creation, resize, focus and UI-owned input | unverified | unverified | prototype-pass (x64: system libSDL2 window + Vulkan swapchain under Xvfb; input/resize/focus unverified) |
+| SPIR-V/shader translation | Native compiler architecture, backend-specific shader output and real render | unverified | unverified | prototype-pass (x64: native shader tests; real render with assets unverified) |
 | ImGui/fonts/editor | Native binding/font load, editor toggle and launch without unsupported-path crash | unverified | unverified | unverified |
-| Process and all native transitives | Consistent architecture; Rosetta only interim; final macOS arm64 without Rosetta | unverified | unverified | unverified |
+| Process and all native transitives | Consistent architecture; Rosetta only interim; final macOS arm64 without Rosetta | unverified | unverified | prototype-pass (linux-x64 self-contained publish starts; needs system libSDL2/libvulkan); blocked for linux-arm64 (no libveldrid-spirv/libcimgui in the packages) |
 | .NET toolchain | Pinned reproduction inputs and supported-runtime decision before release | unverified | unverified | unverified |
 
 .NET 8 support ends November 10, 2026 according to

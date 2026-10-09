@@ -221,7 +221,44 @@ public class BaseFileSystem
 			return ValidateAbsolutePath( normalizedPath );
 
 		var path = normalizedPath.TrimStart( Path.DirectorySeparatorChar );
-		return ValidateAbsolutePath( Path.Combine( basePath, path ) );
+		return MatchCase( ValidateAbsolutePath( Path.Combine( basePath, path ) ) );
+	}
+
+	/// <summary>
+	/// On case-sensitive hosts (Linux, case-sensitive macOS volumes) the original data mixes
+	/// spellings (<c>Data/global/Speech</c> on the install, <c>data/global/speech</c> on the CD)
+	/// while code requests one fixed spelling. Corrects every existing segment below the root to
+	/// its on-disk spelling; an exact match wins, and the first missing segment and everything
+	/// after it (e.g. a path inside an archive) stay as requested. Windows is case-insensitive.
+	/// </summary>
+	private string MatchCase( string absolutePath )
+	{
+		if ( OperatingSystem.IsWindows() || File.Exists( absolutePath ) || Directory.Exists( absolutePath ) )
+			return absolutePath;
+		var relativePath = Path.GetRelativePath( basePath, absolutePath );
+		if ( relativePath == "." )
+			return absolutePath;
+		var parts = relativePath.Split( Path.DirectorySeparatorChar );
+		var current = basePath;
+		for ( var index = 0; index < parts.Length; index++ )
+		{
+			var exact = Path.Combine( current, parts[index] );
+			if ( File.Exists( exact ) || Directory.Exists( exact ) )
+			{
+				current = exact;
+				continue;
+			}
+			var match = Directory.Exists( current )
+				? Directory.EnumerateFileSystemEntries( current )
+					.Where( entry => string.Equals( Path.GetFileName( entry ), parts[index], StringComparison.OrdinalIgnoreCase ) )
+					.OrderBy( entry => entry, StringComparer.Ordinal )
+					.FirstOrDefault()
+				: null;
+			if ( match == null )
+				return Path.Combine( [current, .. parts[index..]] );
+			current = match;
+		}
+		return current;
 	}
 
 	public string GetRelativePath( string absolutePath )

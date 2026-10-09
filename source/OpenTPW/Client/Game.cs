@@ -50,10 +50,9 @@ internal static class Game
 		//
 		// Check if the game data directory exists
 		//
-		var dataDirectory = Path.Combine( Settings.Default.GamePath, "data" );
-		if ( !Directory.Exists( dataDirectory ) )
-			dataDirectory = Path.Combine( Settings.Default.GamePath, "Data" );
-		if ( !Directory.Exists( dataDirectory ) )
+		// Any spelling (data, Data, DATA from a mounted CD) on case-sensitive hosts.
+		var dataDirectory = GameLanguage.FindEntry( Settings.Default.GamePath, "data", true );
+		if ( dataDirectory == null )
 			throw new DirectoryNotFoundException( $"Theme Park World data not found in '{Settings.Default.GamePath}'. Use --game-path or OPENTPW_GAME_PATH to select a directory containing data/." );
 
 		// Register game data directory

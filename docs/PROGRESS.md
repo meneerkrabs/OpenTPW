@@ -373,3 +373,23 @@ Terrein/save-slice (9 oktober 2026, worktree `terrain`):
 - Open: `OriginalLayerOneSoundEffectsDecode` met `OPENTPW_GAME_PATH` draaien
   (MPEG-versie/samplerates van de originele effecten nog onbevestigd); geluidseffecten
   worden nog nergens in het spel afgespeeld. Details: [LIPS.md](LIPS.md).
+
+## Linux-voorbereiding M7 (9 oktober 2026)
+
+Gemeten in een Ubuntu 24.04 x64-container met .NET 8.0.425, Xvfb en Mesa llvmpipe
+(software-Vulkan 1.4); zonder originele assets.
+
+- Gerepareerd: Vulkan-start faalde op elke distributie met glibc ≥ 2.34 (`vk` 1.0.25
+  laadt `libdl`, alleen `libdl.so.2` bestaat); `LinuxNativeLibraries` leidt dit om.
+  Daarna maakt de app een SDL2-venster, Vulkan-device en swapchain (1280×720).
+- Gerepareerd: hoofdlettergevoelige paden. `BaseFileSystem` corrigeert bestaande
+  segmenten naar de spelling op schijf (exacte match wint); de datamap wordt in elke
+  spelling gevonden (`data`/`Data`/`DATA`). Drie regressietests falen zonder de fix.
+- Duidelijke fouten bij ontbrekend scherm (X11/Wayland) of Vulkan-driver.
+- `dotnet publish -r linux-x64|win-x64|linux-arm64 --self-contained` slaagt; de
+  linux-x64-build start. linux-arm64 mist native `libveldrid-spirv`/`libcimgui`
+  (geblokkeerd); Windows is gebouwd maar niet uitgevoerd.
+- Tests: 605 geslaagd / 189 overgeslagen / 0 mislukt, inclusief native shadertests
+  (`OPENTPW_NATIVE_SHADER_TESTS=1`) op Linux x64.
+- Open: renderen, input en audio met originele assets op Linux; Windows uitvoeren;
+  linux-arm64-natives; packaging. Details: RUNNING.md, FEATURE-MATRIX.md.

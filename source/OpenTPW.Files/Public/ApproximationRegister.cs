@@ -14,8 +14,8 @@ public static class ApproximationRegister
 	{
 		new( "COMPAT-001", "Sign text", "Sign text canvas is 512x256 texels (two 256x256 halves for sign1/sign2); the original sign texture size is unknown (shared sign1/sign2.wct placeholders are 128x128).", "binary (CreateDIBSection size) or a capture of a sign texture" ),
 		new( "COMPAT-002", "Sign text", "Lines are centred horizontally and shrunk uniformly to fit the canvas width minus an 8-texel margin.", "binary text placement or captures of long ride names" ),
-		new( "COMPAT-003", "Sign text", ".sgn slot parameters 2..4 are read as the RGB text colour (clamped to 0..1).", "binary use of the slot floats or a capture" ),
-		new( "COMPAT-004", "Sign text", "The board behind gate text is a flat dark colour; the .sgn per-slot 32-bit pixel blocks and the BILZ extra image are not decoded.", "decoding of the .sgn remainder blocks" ),
+		new( "COMPAT-003", "Sign text", "Each line is drawn opaque in its .sgn colour block's RGB (traced); the fourth colour byte, colour modes 1 vs 2, the fill bitmaps and the slot effect words are not applied.", "the Bitmap::colourblt body and the sign effect routines" ),
+		new( "COMPAT-004", "Sign text", "The board behind gate text is a flat dark colour; the .sgn board image (a wavelet stream in every shipped sign) is read but not decoded or composed.", "the Bitmap::load_wavelet decoder and the board blit" ),
 		new( "COMPAT-005", "Sign text", "The .sgn field read as HorizontalScalePercent (85..141) is not applied.", "binary use of the field" ),
 		new( "COMPAT-006", "Sign text", "No pair kerning on signs (GDI TextOut/DrawText do not kern by default).", "binary call site of the text output function" ),
 		new( "COMPAT-007", "Sign text", "The gate shows the theme name from THEMENAMES.str until a save supplies the player's park name.", "save-format park-name field (economy slice) and a capture" ),

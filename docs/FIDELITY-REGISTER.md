@@ -14,7 +14,7 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **131 unresolved unique APPROX IDs**, 146 APPROX occurrences, 57 EXT occurrences, 62 DATA occurrences and 23 BIN occurrences.
+Current inventory: **131 unresolved unique APPROX IDs**, 146 APPROX occurrences, 57 EXT occurrences, 62 DATA occurrences and 24 BIN occurrences.
 
 Of these, 125 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
@@ -187,8 +187,8 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ADVISOR-014 | `source/OpenTPW.Files/Formats/Sound/Mp2Decoder.cs:49` | [APPROX:ADVISOR-014] Values read from the locally installed ffmpeg's data table; checked against the standard's |
 | COMPAT-001 | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:19` | [APPROX:COMPAT-001] 512x256 canvas (two 256x256 halves) — evidence needed: original DIB size or a sign texture capture. |
 | COMPAT-002 | `source/OpenTPW.Files/Formats/Font/SignTextLayout.cs:128` | [APPROX:COMPAT-002] centre and shrink-to-fit with a margin — evidence needed: original text placement / long-name captures. |
-| COMPAT-003 | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:27` | [APPROX:COMPAT-003] parameters 2..4 = RGB — evidence needed: binary use of the slot floats or a capture. |
-| COMPAT-004 | `source/OpenTPW/World/Original/OriginalGateSign.cs:19` | [APPROX:COMPAT-004] flat board colour; the .sgn pixel blocks are not decoded — evidence needed: decoding of the .sgn remainder. |
+| COMPAT-003 | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:26` | [APPROX:COMPAT-003] the line is drawn opaque in the block's RGB; the fourth colour byte, the difference between modes 1 and 2, the fill bitmaps and the slot effect words are not applied — evidence needed: the Bitmap::colourblt body (engine library) and the effect routines 0x100AAA64/0x100AAC54/0x100AB128 |
+| COMPAT-004 | `source/OpenTPW/World/Original/OriginalGateSign.cs:19` | [APPROX:COMPAT-004] flat board colour; the .sgn board image (wavelet) is read but not decoded or composed — evidence needed: the Bitmap::load_wavelet decoder and the board blit. |
 | COMPAT-005 | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:69` | [APPROX:COMPAT-005] the horizontal-scale field is not applied — evidence needed: binary use of the field. |
 | COMPAT-006 | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:68` | [APPROX:COMPAT-006] no pair kerning (GDI TextOut default) — evidence needed: binary text-output call site. |
 | COMPAT-006 | `source/OpenTPW.Files/Formats/Font/SignTextLayout.cs:18` | [APPROX:COMPAT-006]). Characters without a glyph |
@@ -453,6 +453,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | --- | --- | --- |
 | STP-PPC:0x10007434 advisor update | `source/OpenTPW.Files/Public/LipSyncTimeline.cs:53` | [BIN:STP-PPC:0x10007434 advisor update] marks are read in order until -1, divided by 1000 (µs to the ms speech clock) and each one flips the talking flag |
 | STP-PPC:0x10007434 advisor update | `source/OpenTPW/World/Advisor.cs:315` | [BIN:STP-PPC:0x10007434 advisor update] silent or no LIP data: node 1; talking: when the speech clock (ms) passes the next-change time, node = rand() % 5 + 1 and the next change is 100 ms later |
+| STP-PPC:0x100ABF14 sign compositor | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:25` | [BIN:STP-PPC:0x100ABF14 sign compositor] each line is colour-blitted with its colour block's bytes (+0x430..+0x432 for the first line, +0x444..+0x446 for the second) only when its colour mode is 1 or 2 |
 | STP-PPC:0x100C7B24 park rating | `source/OpenTPW/Economy/ParkEconomy.cs:377` | [BIN:STP-PPC:0x100C7B24 park rating] min(guests in park, 1000) × 20 / 1000; attractions of sub-kind 0 × 3 / 2 up to 20; sub-kinds 1 and 2 × 2 up to 10 each; sub-kind 3 up to 10; sub-kind 0 at upgrade level 2 or more up to 10; each of the five staff types up to 4 |
 | STP-PPC:0x100CC21C loan instalment | `source/OpenTPW/Economy/ParkEconomy.cs:299` | [BIN:STP-PPC:0x100CC21C loan instalment] a fully repaid loan clears its bought flag; 0x100CC9E8 then offers it again when the credit test passes |
 | STP-PPC:0x100CC904 loan deposit | `source/OpenTPW/Economy/ParkLedger.cs:24` | [BIN:STP-PPC:0x100CC904 loan deposit] loan proceeds are added to the "Money in" accumulator (+0x1FC90, graph toggle 0x12279 "Money in") like every other credit; instalments go to the money-out accumulator (+0x1F5A0) |

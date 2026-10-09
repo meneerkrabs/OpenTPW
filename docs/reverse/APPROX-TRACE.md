@@ -360,3 +360,46 @@ found two corrections.
   sub-kind 3 (cap 10), sub-kind 0 at upgrade level ≥ 2 (cap 10) and thing types 4–8 with
   byte +3 = 0 (cap 4 each); the maximum is 100. Sub-kind is record +0x7A8, copied from
   record +0x4C by `0x10118BBC`.
+
+## Implemented from the trace
+
+These rules now run in OpenTPW, each with a `[BIN:STP-PPC:…]` tag at its code site and a test:
+
+| Rule | What OpenTPW does now | Mac address |
+| --- | --- | --- |
+| ADVISOR-001 (part) | Mouth node `rand() % 5 + 1` every 100 ms of speech, node 1 while silent | `0x10007434` |
+| ECON-046 | Upgrades are queued without a mechanic on the staff | `0x10166F1C` |
+| ECON-017 | Research takes the first open item in table order; cost is not compared | `0x100F0EF0` |
+| ECON-027 | Park rating = capped counts of guests, attractions and staff | `0x100C7B24` |
+| ECON-033 | Golden tickets checked every 100 turns, Full Simulation only | `0x100D67F0` |
+| ECON-005 | Loans received count as money in (graph series +0x1FC90) | `0x100CC904` |
+| ECON-011 | Staff pool refills by each role's shortfall, capped, then tops up to the minimum | `0x100F6E24` |
+| ECON-037 | Staff skill = trunc(20 × (grade + training % / 100)) | `0x100F41DC` |
+| ECON-001/002/003 | One turn per 248 ms; date = 2000-01-01 + turn × 3750 s through the civil calendar | `0x101C22E0`, `0x100E4394` |
+| COMPAT-013 | Default detail preset by memory and processor thresholds | `0x10125B7C` |
+| COMPAT-003 (part) | `.sgn` read in the loader's layout; a line is coloured by its colour block, or not drawn in mode 0 | `0x100ABA40`, `0x100ABF14` |
+| ECON-039 | The profit ticket reads the year's running profit, reset by the year event | `0x100CBF50`, `0x100CC120` |
+| ECON-029 | The first copy of a ticket object costs tickets and no cash | `0x100DA874` |
+| ECON-042, ECON-043 | Confirmed through the descriptor schema (cost of goods per win; wage product) | `0x100EAAF8`, `0x100F46BC` |
+| ECON-015/016 | Research every 20 turns per researcher with the work load; cumulative group opener | `0x100F0DF0`, `0x100F15B4` |
+
+Still open, with the reason:
+
+- **ECON-031** (park closed on load): the flag is the World Structure field `mParkClosed`
+  (`0x10106708`), but its offset in `Easymode.TPWI` is not mapped yet.
+- **ECON-014** (strikes): the strike test is known (a role with at least four staff strikes
+  when average fatigue is below 15 or average happiness is 14 or less, `0x100F8410`), but
+  the rules that lower fatigue and happiness are not decoded, so a strike could never start.
+- **ECON-026** (park value): known in part. Objects add the sum of `Upgrades[0..level].CostOfUpgrade`
+  times their state of repair / 100; the eight map-cell predicates are not mapped.
+- **ECON-023** (wear): every 64 turns, scaled by `Upgrades[level].WearRate` and speed-related
+  ride terms that OpenTPW does not simulate yet.
+- **ECON-006** (loan instalment): the pow constants are not decoded in this trace; the economy
+  lane (PPC-economy.md) has a separate model.
+- **ADVISOR-009**: the local speech bank serves responses 1 and 399–402. OpenTPW plays clips
+  by number and has no response table yet.
+- **COMPAT-009**: the 2 × 2 box filter is known, but not the platform text rasterizer
+  behind it. Changing the rasterizer would also invalidate pinned Windows-data hashes.
+- **COMPAT-004**: the board image is a wavelet stream that is not decoded yet.
+- **ECON-028, ECON-038, ECON-040**: the binary rule is known only in part, or it conflicts
+  with the manual (the starting key).

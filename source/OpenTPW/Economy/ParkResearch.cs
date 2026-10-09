@@ -38,6 +38,7 @@ public sealed class ParkResearch
 		{
 			if ( !info.IsBuyable || info.Upgrades.Count == 0 )
 				continue;
+			// [APPROX:ECON-018] ride upgrade levels and add-on objects form the "upgrade" research category — evidence needed: research lab capture
 			var category = info.Kind == ParkObjectKind.Upgrade ? ResearchCategory.Upgrade : info.ResearchCategory;
 			var group = info.Kind == ParkObjectKind.Upgrade ? 0 : info.ResearchGroup;
 			items.Add( new ResearchItem( info.InfoId, 0, category, group, info.Upgrades[0].CostOfResearch, info.Kind == ParkObjectKind.Upgrade ? info.AddOnTargetId : 0 ) );
@@ -96,6 +97,7 @@ public sealed class ParkResearch
 		groupStats[(item.Category, item.Group)] = (stats.Count, stats.Done + 1);
 	}
 
+	// [APPROX:ECON-016] group g opens when PercentageForThisTech % of group g-1 of the same category is researched — evidence needed: capture of new research groups appearing
 	public bool IsGroupOpen( ResearchCategory category, int group )
 	{
 		if ( group <= 0 )
@@ -105,6 +107,7 @@ public sealed class ParkResearch
 	}
 
 	/// <summary>The item a category is currently researching, or null when nothing is researchable.</summary>
+	// [APPROX:ECON-017] items are researched cheapest first within open groups — evidence needed: capture of research order
 	public ResearchItem? Current( ResearchCategory category )
 	{
 		if ( !byCategory.TryGetValue( category, out var list ) )
@@ -125,10 +128,12 @@ public sealed class ParkResearch
 	}
 
 	/// <summary>Daily research points (×<see cref="PointScale"/>) produced by the given researchers.</summary>
+	// [APPROX:ECON-015] each researcher adds ResearchAbility points per game day, split by effort — evidence needed: capture of research progress over time
 	public long DailyPoints( IEnumerable<StaffMember> researchers, bool automatic )
 	{
 		long points = researchers.Where( member => member.State != StaffState.OnStrike ).Sum( member => (long)settings.ResearchAbility[member.Grade] );
 		if ( automatic && points == 0 )
+			// [APPROX:ECON-019] Instant Action research runs at one grade-2 researcher without staff — evidence needed: Instant Action capture
 			points = settings.ResearchAbility[2];
 		return points * PointScale;
 	}

@@ -90,6 +90,7 @@ public sealed class EconomyObjectCatalog : IEconomyObjectCatalog
 		if ( id is 101 or 102 )
 			kind = ParkObjectKind.LandTool;
 		else if ( directoryKind == ParkObjectKind.Feature && researchCategory != (int)ResearchCategory.Feature )
+			// [APPROX:ECON-041] features-directory objects with Research.Category != 3 are fixed (non-buyable) items — evidence needed: buy-menu capture
 			kind = ParkObjectKind.FixedItem; // gates, bus, lights, ferry, seaplane, end: Research.Category 0 in the features directory
 		var upgrades = new List<UpgradeLevelInfo>();
 		for ( var level = 0; level < 3; level++ )
@@ -107,6 +108,7 @@ public sealed class EconomyObjectCatalog : IEconomyObjectCatalog
 		var hasPrices = kind is ParkObjectKind.Shop or ParkObjectKind.Sideshow;
 		return new EconomyObjectInfo( id, settings.Contains( "Info.Name" ) ? settings.GetString( "Info.Name" ).Trim() : $"Info.Id {id}", kind,
 			(ResearchCategory)Math.Clamp( researchCategory, 0, 4 ), settings.GetInt( "Research.Group", 0, optional: true ), upgrades,
+			// [APPROX:ECON-042] sideshow InitCostOfGoods is the cost of a prize paid per win — evidence needed: sideshow panel capture
 			hasPrices ? Optional( "UsageInfo.InitPricePerUse" ) : null, hasPrices ? Optional( "UsageInfo.InitCostOfGoods" ) : null,
 			kind == ParkObjectKind.Sideshow ? Optional( "UsageInfo.InitChanceOfLoosing" ) : null,
 			settings.GetInt( "UsageInfo.ShopType", 0, optional: true ), settings.GetInt( "UsageInfo.SpecialIngredient", 0, optional: true ),

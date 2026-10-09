@@ -104,11 +104,13 @@ public sealed class ParkObjectives
 			var members = staff.Members.Where( member => type == null || member.Type == type ).ToList();
 			return members.Count == 0 ? 0 : (int)members.Average( member => member.Happiness );
 		}
+		// [APPROX:ECON-037] staff skill % = grade x 25 + training points / 4 — evidence needed: staff skill display capture
 		long SkillPercent( StaffType type )
 		{
 			var members = staff.OfType( type ).ToList();
 			return members.Count == 0 ? 0 : (long)members.Average( member => member.Grade * 25 + member.TrainingPoints / 4 );
 		}
+		// [APPROX:ECON-034] challenge type meanings come from Challenges.sam comments (shop types by ShopType/SpecialIngredient) — evidence needed: challenge captures per type
 		return definition.Type switch
 		{
 			1 => Sold( 2, 2 ),   // fries: food shop with salt
@@ -144,9 +146,11 @@ public sealed class ParkObjectives
 	public static bool IsCountSinceAcceptance( int type ) => type is >= 1 and <= 8 or 11 or 12 or 13 or 16 or 17 or 18 or 20 or 30 or 31 or 33;
 
 	/// <summary>Target value; build/research-and-build challenges with TargetVal 0 need one item.</summary>
+	// [APPROX:ECON-036] build challenges with TargetVal 0 need one item; type 28 needs level 3 — evidence needed: challenge captures
 	public static long Target( ChallengeDefinition definition ) => definition.Type is 18 or 30 or 31 or 33 ? Math.Max( 1, definition.TargetValue ) : definition.Type == 28 ? 3 : definition.TargetValue;
 
 	/// <summary>Daily challenge processing; returns the events to publish and the prize won (0 when none).</summary>
+	// [APPROX:ECON-035] offers wait for accept/decline; follow-ups are offered right after completion; failed challenges count as finished — evidence needed: challenge flow captures
 	public IEnumerable<(ParkEventKind Kind, int Index, long Amount, string Detail)> AdvanceDay( long day, Func<ChallengeDefinition, long> measure )
 	{
 		if ( Current == null )
@@ -255,6 +259,7 @@ public sealed class ParkObjectives
 			return won;
 		var rules = settings.GoldenTickets;
 		long MaxRecord( ParkRecordKind kind ) => counters.Values.Where( pair => pair.Key.StartsWith( $"record:{kind}:", StringComparison.Ordinal ) ).Select( pair => pair.Value ).DefaultIfEmpty( 0 ).Max();
+		// [APPROX:ECON-039] profit year = profit of the last 12 closed months — evidence needed: golden ticket award capture
 		var lastYear = history.Count >= ParkCalendar.MonthsPerYear ? history.Skip( history.Count - ParkCalendar.MonthsPerYear ).Sum( month => month.Profit ) : long.MinValue;
 		var recentMonths = Math.Max( 1, rules.RecentVisitorMonths );
 		var recent = monthlyAdmissions.Count >= recentMonths ? monthlyAdmissions.Skip( monthlyAdmissions.Count - recentMonths ).Sum() : 0;
@@ -273,6 +278,7 @@ public sealed class ParkObjectives
 		Check( GoldenTicketKind.CoasterHeight, MaxRecord( ParkRecordKind.CoasterHeight ) >= rules.CoasterHeight );
 		Check( GoldenTicketKind.GokartExcitement, MaxRecord( ParkRecordKind.GokartExcitement ) >= rules.GokartExcitement );
 		Check( GoldenTicketKind.WaterLength, MaxRecord( ParkRecordKind.WaterLength ) >= rules.WaterLength );
+		// [APPROX:ECON-038] big park uses MinCellsOwned, cameras use MinCellsCovered — evidence needed: golden ticket award captures
 		Check( GoldenTicketKind.BigPark, MaxRecord( ParkRecordKind.CellsOwned ) >= rules.MinCellsOwned );
 		Check( GoldenTicketKind.CamerasEverywhere, MaxRecord( ParkRecordKind.CellsCoveredByCameras ) >= rules.MinCellsCovered );
 		Check( GoldenTicketKind.AllLandOwned, MaxRecord( ParkRecordKind.OwnsAllLand ) > 0 );
@@ -305,8 +311,10 @@ public sealed class ParkObjectives
 /// </summary>
 public sealed class PlayerProgress
 {
+	// [APPROX:ECON-040] players start with 1 golden key and earn one per 4 golden tickets — evidence needed: lobby/progression captures
 	public const int TicketsPerKey = 4;
 	public const int StartingKeys = 1;
+	// [DATA:Language/*/THEMENAMES.str:order; levels/*/global.sam:Keys.CostToEnter]
 	public static readonly IReadOnlyList<string> ThemeOrder = new[] { "jungle", "hallow", "fantasy", "space" };
 	private readonly Dictionary<string, int> ticketsByTheme = new( StringComparer.OrdinalIgnoreCase );
 

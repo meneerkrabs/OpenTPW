@@ -8,6 +8,7 @@ public enum GameSpeed
 {
 	Paused = 0,
 	Normal = 1,
+	// [APPROX:ECON-004] Fast x2 and Fastest x4 speeds (only pause is evidenced) — evidence needed: original speed controls, if any
 	Fast = 2,
 	Fastest = 4
 }
@@ -29,9 +30,12 @@ public readonly record struct ParkDate( int Year, int Month, int Day, int Hour )
 public static class ParkCalendar
 {
 	public const int TicksPerSecond = FixedStepClock.TicksPerSecond;
+	// [APPROX:ECON-001] one game day = 240 fixed ticks (4 s at normal speed) — evidence needed: capture of the original clock against wall time
 	public const int TicksPerDay = 4 * TicksPerSecond;
+	// [APPROX:ECON-003] 24 hours per day (Clock.RSE only shows HOUR is used mod 12) — evidence needed: original HOUR range (binary or Clock.RSE trace)
 	public const int HoursPerDay = 24;
 	public const int TicksPerHour = TicksPerDay / HoursPerDay;
+	// [APPROX:ECON-002] every month has 30 days, 12 months per year — evidence needed: original calendar (binary or captured date display)
 	public const int DaysPerMonth = 30;
 	public const int MonthsPerYear = 12;
 	public const int DaysPerYear = DaysPerMonth * MonthsPerYear;

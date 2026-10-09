@@ -50,6 +50,7 @@ public sealed class ParkLedger
 	public IReadOnlyList<LedgerMonth> History => history;
 	public IReadOnlyDictionary<LedgerCategory, long> CurrentTotals => current;
 
+	// [APPROX:ECON-005] challenge prizes and scrap sales are other income; build, upgrade, goods, prizes, land are other costs; loans received are not money in — evidence needed: captured financial screen after these transactions
 	public static bool IsIncome( LedgerCategory category ) => category is LedgerCategory.GateTakings or LedgerCategory.ShopTakings or LedgerCategory.SideshowTakings or LedgerCategory.OtherIncome or LedgerCategory.LoanReceived;
 
 	public void Post( LedgerCategory category, long amount )
@@ -115,7 +116,9 @@ public static class LoanMath
 		ArgumentOutOfRangeException.ThrowIfNegativeOrZero( months );
 		ArgumentOutOfRangeException.ThrowIfNegative( amount );
 		if ( aprPercent <= 0 )
+			// [DATA:levels/jungle/Easymode.TPWI:loan table repayments = floor(amount/months) at 0 % APR]
 			return amount / months;
+		// [APPROX:ECON-006] APR > 0 repayment is an annuity at APR/12 per month, rounded down; interest accrues monthly on the balance — evidence needed: standard-mode save or capture with an outstanding loan
 		var rate = aprPercent / 1200.0;
 		return (long)Math.Floor( amount * rate / (1 - Math.Pow( 1 + rate, -months )) );
 	}

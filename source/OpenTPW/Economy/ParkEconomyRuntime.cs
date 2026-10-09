@@ -30,6 +30,7 @@ public sealed class ParkEconomyRuntime
 		Guests = new GuestEconomyBridge( () => Economy, guests );
 		guests.Payments = Guests;
 		Economy.GuestStatistics = Guests;
+		// [APPROX:ECON-031] imported parks are opened on load (open state not decoded) — evidence needed: park-open flag in the save
 		Economy.OpenPark();
 		Log.Trace( $"Park economy: guests pay the ${Economy.EntranceFee} entrance fee and shop/sideshow prices into the ledger." );
 	}
@@ -42,6 +43,7 @@ public sealed class ParkEconomyRuntime
 			Log.Trace( $"Park economy: {attraction.Name} (Info.Id {infoId}) is not in the {Economy.Settings.Theme} catalogue; its visits are not booked." );
 			return null;
 		}
+		// [APPROX:ECON-032] the prototype ride is registered uncharged — evidence needed: replace with a real catalogue purchase (rides slice)
 		var state = Economy.RegisterExisting( infoId );
 		Guests?.Link( attraction.AttractionId, state.Id );
 		return state;
@@ -61,6 +63,7 @@ public sealed class ParkEconomyRuntime
 	public static ParkEconomyRuntime ForOriginalLevel( OriginalPark park )
 	{
 		ArgumentNullException.ThrowIfNull( park );
+		EconomyApproximations.LogOnce();
 		var easy = park.Save != null && BalanceSettings.HasEasyLayer( park.LevelName );
 		var economy = ParkEconomy.CreateForTheme( park.LevelName, easy );
 		var import = park.Save != null ? OriginalEconomyImport.Apply( economy, park ) : null;

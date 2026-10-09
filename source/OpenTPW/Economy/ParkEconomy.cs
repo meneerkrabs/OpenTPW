@@ -20,9 +20,12 @@ public enum CellPurchase
 public sealed class ParkEconomy : IParkEconomy
 {
 	/// <summary>Advisor.sam <c>StaffHireMechanics1.PoorerStateThan</c>: below this state of repair a ride is worn and gets a mechanic.</summary>
+	// [DATA:Advisor/Advisor.sam:StaffHireMechanics1.PoorerStateThan]
 	public const int WornStateOfRepair = 25;
 	/// <summary>Months in the red before bankruptcy (TAG_SYSTEM 123–127: warnings at 3 and 5, bankrupt after 6).</summary>
+	// [DATA:Language/*/TAG_SYSTEM.str:123-127 (six months in the red)]
 	public const int MonthsInRedForBankruptcy = 6;
+	// [APPROX:ECON-020] a sale drops LitterEffect/100 litter items — evidence needed: capture of litter after sales
 	public const int LitterScale = 100;
 
 	private readonly SortedDictionary<int, ParkObjectState> objects = new();
@@ -104,6 +107,7 @@ public sealed class ParkEconomy : IParkEconomy
 	public void Advance( long ticks )
 	{
 		ArgumentOutOfRangeException.ThrowIfNegative( ticks );
+		// [APPROX:ECON-030] the simulation stops once bankrupt — evidence needed: capture of the bankrupt state
 		for ( long step = 0; step < ticks && !IsBankrupt; step++ )
 		{
 			Tick++;
@@ -153,6 +157,7 @@ public sealed class ParkEconomy : IParkEconomy
 		}
 		else
 		{
+			// [APPROX:ECON-024] a repair restores state of repair to 100 — evidence needed: capture after a repair
 			item.StateOfRepair = 100;
 			item.IsBrokenDown = false;
 			Raise( ParkEventKind.RideRepaired, 0, item.Id, item.InfoId );
@@ -177,6 +182,7 @@ public sealed class ParkEconomy : IParkEconomy
 				break;
 			var job = jobs[0];
 			jobs.RemoveAt( 0 );
+			// [APPROX:ECON-021] a repair takes WorkDuration game hours (x DurationOfUpgrade for upgrades); mechanics are dispatched instantly — evidence needed: capture of repair duration per grade
 			var hours = (long)role.WorkDuration[mechanic.Grade];
 			if ( job.PendingLevel > job.Level && Catalog.TryGet( job.InfoId, out var info ) && job.PendingLevel < info.Upgrades.Count )
 				hours *= Math.Max( 1, info.Upgrades[job.PendingLevel].DurationOfUpgrade );
@@ -194,6 +200,7 @@ public sealed class ParkEconomy : IParkEconomy
 			return;
 		var role = Settings[StaffType.Handyman];
 		foreach ( var handyman in Staff.OfType( StaffType.Handyman ).Where( member => member.IsAvailable ) )
+			// [APPROX:ECON-022] a handyman removes one litter item per WorkDuration game minutes, park-wide — evidence needed: capture of cleaning speed
 			LitterScaled = Math.Max( 0, LitterScaled - 60L * LitterScale / Math.Max( 1, role.WorkDuration[handyman.Grade] ) );
 	}
 
@@ -207,6 +214,7 @@ public sealed class ParkEconomy : IParkEconomy
 			if ( wear <= 0 )
 				continue;
 			var before = item.StateOfRepair;
+			// [APPROX:ECON-023] an open ride loses WearRate state of repair per game day; breakdown at 0 — evidence needed: capture of state of repair over time
 			item.StateOfRepair = Math.Max( 0, before - wear );
 			if ( item.StateOfRepair == 0 )
 			{
@@ -255,6 +263,7 @@ public sealed class ParkEconomy : IParkEconomy
 			if ( account.MonthsRemaining == 0 || account.RemainingBalance <= 0 )
 			{
 				loans.RemoveAt( index );
+				// [APPROX:ECON-007] a repaid loan offer becomes available again — evidence needed: capture of the loan screen after repayment
 				takenOffers.Remove( account.OfferIndex );
 				Raise( ParkEventKind.LoanRepaid, 0, 0, account.OfferIndex );
 			}
@@ -292,6 +301,7 @@ public sealed class ParkEconomy : IParkEconomy
 			MonthsInRed = 0;
 		var closed = Ledger.CloseMonth( nextMonthIndex, ParkRating, ParkValue );
 		Raise( ParkEventKind.MonthEnded, closed.ClosingBalance, 0, 0, $"in ${closed.MoneyIn}, out ${closed.MoneyOut}" );
+		// [APPROX:ECON-033] golden tickets are checked at each month end — evidence needed: capture of the award timing
 		foreach ( var ticket in Objectives.CheckGoldenTickets( Counters, guestStatistics, Research, Ledger.History, monthlyAdmissions ) )
 			Raise( ParkEventKind.GoldenTicketWon, (int)ticket, 0, 0, ticket.ToString() );
 		if ( nextMonthIndex % ParkCalendar.MonthsPerYear == 0 )
@@ -316,6 +326,7 @@ public sealed class ParkEconomy : IParkEconomy
 		if ( !Catalog.TryGet( item.InfoId, out var info ) || info.Upgrades.Count == 0 )
 			return 0;
 		var level = Math.Min( item.Level, info.Upgrades.Count - 1 );
+		// [APPROX:ECON-025] scrap value basis = catalogue cost of all levels up to the current one — evidence needed: capture of scrap value
 		var basis = info.Upgrades.Take( level + 1 ).Sum( upgrade => upgrade.CostOfUpgrade );
 		var year = (int)Math.Min( 3, (Tick - item.BuiltTick) / ((long)ParkCalendar.DaysPerYear * ParkCalendar.TicksPerDay) );
 		var percent = info.Upgrades[level].ScrapValuePercentByYear.Count > year ? info.Upgrades[level].ScrapValuePercentByYear[year] : 0;
@@ -323,6 +334,7 @@ public sealed class ParkEconomy : IParkEconomy
 	}
 
 	/// <summary>Park value (UITEXT 163): the sum of all scrap values — an <b>approximation</b>.</summary>
+	// [APPROX:ECON-026] park value = sum of scrap values — evidence needed: capture of the park value screen
 	public long ParkValue => objects.Values.Sum( ScrapValue );
 
 	public int LitterItems => (int)(LitterScaled / LitterScale);
@@ -339,6 +351,7 @@ public sealed class ParkEconomy : IParkEconomy
 			var attractions = Math.Min( 100, objects.Values.Where( item => item.IsOpen && !item.IsBrokenDown )
 				.Sum( item => Catalog.TryGet( item.InfoId, out var info ) ? info.AttractionValue : 0 ) / 3 );
 			var cleanliness = Math.Max( 0, 100 - LitterItems );
+			// [APPROX:ECON-027] park rating = (2 x happiness + attractions/3 + cleanliness) / 4 — evidence needed: park rating formula (binary/captures)
 			return Math.Clamp( (2 * guestStatistics.AverageHappiness + attractions + cleanliness) / 4, 0, 100 );
 		}
 	}
@@ -418,9 +431,11 @@ public sealed class ParkEconomy : IParkEconomy
 			return PurchaseResult.MissingTargetRide;
 		if ( Settings.CanSpendTickets && info.GoldenTicketCost > GoldenTicketsAvailable )
 			return PurchaseResult.NotEnoughGoldenTickets;
+		// [APPROX:ECON-028] purchases need a balance covering the cost — evidence needed: capture of building with too little money
 		if ( info.PurchaseCost > Balance )
 			return PurchaseResult.NotEnoughMoney;
 		if ( Settings.CanSpendTickets )
+			// [APPROX:ECON-029] golden tickets are spent when buying items with GoldenTicketCost — evidence needed: capture of ticket count after such a purchase
 			TicketsSpent += info.GoldenTicketCost;
 		Post( LedgerCategory.OtherCosts, info.PurchaseCost );
 		built = AddObject( info, imported: false );
@@ -504,6 +519,7 @@ public sealed class ParkEconomy : IParkEconomy
 		if ( !Research.IsAvailable( item.InfoId, level ) )
 			return PurchaseResult.NotResearched;
 		if ( !Staff.OfType( StaffType.Mechanic ).Any() )
+			// [APPROX:ECON-046] upgrades need at least one employed mechanic to be bought — evidence needed: capture (TAG_SYSTEM 151 suggests it)
 			return PurchaseResult.NoMechanics;
 		var cost = info.Upgrades[level].CostOfUpgrade;
 		if ( cost > Balance )

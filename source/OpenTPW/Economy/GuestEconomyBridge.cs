@@ -57,6 +57,7 @@ public sealed class GuestEconomyBridge : IGuestPayments, IParkGuestStatistics
 	public int CountHappierThan( int happiness ) => Guests.Guests.Count( guest => Guests.IsInPark( guest ) && guest.Happiness >= happiness );
 
 	/// <summary>Guests carry no balloons or costumes yet.</summary>
+	// [APPROX:ECON-044] balloon/costume percentages are 0 (guests carry no items yet) — evidence needed: guests slice item state
 	public int KidsWithBalloonsPercent => 0;
 
 	public int KidsWithCostumesPercent => 0;

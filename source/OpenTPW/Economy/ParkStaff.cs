@@ -21,6 +21,7 @@ public sealed class StaffMember
 	/// <summary>Training progress towards the next grade, 0–99 ("raise the training level by 1%").</summary>
 	public int TrainingPoints { get; set; }
 	public long HiredTick { get; init; }
+	// [APPROX:ECON-014] staff start at happiness 100 and it never changes (no strikes) — evidence needed: staff happiness rules (binary/captures)
 	public int Happiness { get; set; } = 100;
 	public StaffState State { get; set; } = StaffState.Idle;
 	/// <summary>Remaining ticks of the current job (repair, cleaning), 0 when free.</summary>
@@ -44,7 +45,9 @@ public sealed record StaffCandidate( int Id, StaffType Type, int NameIndex, int 
 /// </summary>
 public sealed class ParkStaff
 {
+	// [DATA:Language/English/*_NAMES.str:entry count 35]
 	public const int NameTableSize = 35; // every *_NAMES.str table of the English data has 35 entries
+	// [APPROX:ECON-008] 100 training points per grade (from Online_Standard.sam comments "costs 1000 to get up to grade 1") — evidence needed: capture of a training run
 	public const int TrainingPointsPerGrade = 100;
 	private readonly BalanceSettings settings;
 	private readonly List<StaffMember> members = new();
@@ -58,6 +61,7 @@ public sealed class ParkStaff
 	public int NextId { get; private set; } = 1;
 	public long NextPoolUpdateTick { get; private set; }
 
+	// [APPROX:ECON-010] TimeBetweenStaffUpdates/StaffTimeoutTime are seconds at normal speed — evidence needed: capture of pool refresh timing
 	public long UpdateInterval => Math.Max( 1, ParkCalendar.SecondsToTicks( settings.TimeBetweenStaffUpdates ) );
 	public long CandidateLifetime => Math.Max( 1, ParkCalendar.SecondsToTicks( settings.StaffTimeoutTime ) );
 
@@ -93,6 +97,7 @@ public sealed class ParkStaff
 		foreach ( var role in settings.Roles )
 		{
 			var count = candidates.Count( candidate => candidate.Type == role.Type );
+			// [APPROX:ECON-011] each pool slot above the minimum is filled with 50 % chance per update — evidence needed: hiring pool captures
 			while ( count < role.MinimumInPool || (count < role.MaximumInPool && added < settings.MaxNumberOfStaffPerUpdate && random.Chance( 50 )) )
 			{
 				candidates.Add( CreateCandidate( role, random, tick ) );
@@ -104,12 +109,14 @@ public sealed class ParkStaff
 
 	private StaffCandidate CreateCandidate( StaffRoleSettings role, DeterministicRandom random, long tick )
 	{
+		// [APPROX:ECON-009] candidate grade = average + 2 when "great", else average +-1 — evidence needed: hiring pool captures (grade distribution)
 		var grade = random.Chance( role.ChanceToGetGreat ) ? role.AverageGrade + 2 : role.AverageGrade + random.Next( 3 ) - 1;
 		return new StaffCandidate( NextId++, role.Type, random.Next( NameTableSize ), Math.Clamp( grade, 0, BalanceSettings.GradeCount - 1 ), tick + CandidateLifetime );
 	}
 
 	public bool CanHire( StaffType type ) => OfType( type ).Count() < settings[type].MaximumInPark;
 
+	// [APPROX:ECON-012] hiring is free; BaseCostPerStaff/CostPerQualityLevel unused — evidence needed: capture of the balance before/after hiring
 	public StaffMember Hire( int candidateId, long tick )
 	{
 		var candidate = candidates.FirstOrDefault( item => item.Id == candidateId ) ?? throw new InvalidOperationException( $"No staff candidate {candidateId}." );
@@ -129,6 +136,7 @@ public sealed class ParkStaff
 	}
 
 	/// <summary>Spends each role's training budget evenly over its employees; returns the amount spent.</summary>
+	// [APPROX:ECON-013] training budget is spent evenly over a role at month end — evidence needed: capture of training budget effects
 	public long Train()
 	{
 		long spent = 0;

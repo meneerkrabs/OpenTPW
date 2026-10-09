@@ -88,6 +88,7 @@ public sealed class SaveEconomyRecords
 		var amount = BinaryPrimitives.ReadInt64LittleEndian( payload.Slice( offset, 8 ) );
 		var months = Int( payload, offset + 8 );
 		var monthly = Int( payload, offset + 12 );
+		// [APPROX:ECON-045] loan/challenge record locators use plausibility bounds (one fixture) — evidence needed: a second TPWS/TPWI fixture
 		return amount is > 0 and <= 100_000_000 && months is > 0 and <= 600 && monthly > 0
 			&& (long)monthly * months >= amount - months && (long)monthly * months <= amount * 4;
 	}

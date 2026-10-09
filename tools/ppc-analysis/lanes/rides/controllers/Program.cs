@@ -7,7 +7,7 @@ var tests = new (string Name, Action Run)[]
     ("empty ring and missing release boundary", Empty),
     ("allocated capacity and held-count full guard", Full),
     ("cursor wrapping with observed boundaries", Wrap),
-    ("configured capacity reductions preserve signed query", CapacityChange),
+    ("configured capacity reductions retain native room floor", CapacityChange),
     ("capacity 3/3/4 and eligible car separation", Distribute),
     ("per-vehicle and total rider counts", Population),
     ("BUMP64 guard without invented allocation", BumpLimit),
@@ -54,7 +54,7 @@ static void Full()
     Status(PrimitiveStatus.Full, ring.AppendKnownVisitor(30));
     Equal(2, ring.Queued); Equal(0, ring.WriteIndex);
     var held = PassengerRing.FromSnapshot(new[] { 10, 0 }, 1, 1, 0, 1, 2);
-    Status(PrimitiveStatus.Full, held.AppendKnownVisitor(20)); Equal(0, held.QueryRoom(100));
+    Status(PrimitiveStatus.Full, held.AppendKnownVisitor(20)); Equal(100, held.QueryRoom(100));
 }
 static void Wrap()
 {
@@ -70,14 +70,20 @@ static void Wrap()
 static void CapacityChange()
 {
     var ring = PassengerRing.FromSnapshot(new[] { 10, 20, 30, 0 }, 3, 0, 0, 3, 4);
-    Equal(-1, ring.QueryRoom(100, 2));
+    Equal(100, ring.QueryRoom(100, 2));
+    Equal(0, ring.QueryRoom(0, 2));
+    Equal(1, ring.QueryRoom(0, 4));
     Status(PrimitiveStatus.UnsupportedLiveRebuild, ring.ChangeAllocatedCapacity(2));
     Equal(4, ring.Capacity); Equal(3, ring.Queued);
 }
 static void Distribute()
 {
-    var plan = CoasterVehiclePrimitives.PlanAllowance(10, 100, 100, 100, new[] { false, true, true, true, false }).RequireValue();
+    var plan = CoasterVehiclePrimitives.PlanAllowance(10, 0, 100, 100, new[] { false, true, true, true, false }).RequireValue();
     Equal("0,3,3,4,0", string.Join(',', plan.PerVehicle)); Equal(10, plan.TotalAllowance);
+    var raised = CoasterVehiclePrimitives.PlanAllowance(10, 100, 100, 100, new[] { true, true, true }).RequireValue();
+    Equal(100, raised.TotalAllowance); Equal("33,33,34", string.Join(',', raised.PerVehicle));
+    var definitionCap = CoasterVehiclePrimitives.PlanAllowance(100, 10, 50, 100, new[] { true }).RequireValue();
+    Equal(50, definitionCap.TotalAllowance);
     var reduced = CoasterVehiclePrimitives.PlanAllowance(20, 15, 10, 8, new[] { true, true, true }).RequireValue();
     Equal("2,3,3", string.Join(',', reduced.PerVehicle)); Equal(8, reduced.TotalAllowance);
     Status(PrimitiveStatus.UnsupportedSchema, CoasterVehiclePrimitives.PlanAllowance(1, 1, 1, 1, Array.Empty<bool>()));

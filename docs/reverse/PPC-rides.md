@@ -184,7 +184,7 @@ medium for the descriptive controller role:
 | COAST 2 / 3 | Calls `0x3dd14` / `0x3dd5c`, writes accumulator and optional variable output. 2 queries remaining queue admission room; 3 extracts a departing visitor. |
 | COAST 4 | Resolves input and calls `0x3ddfc`, which translates states 0,1,2 into controller flags 16,32,64. |
 | COAST 5 | Resolves input and calls close/open controller routine `0x3dec8`; conditions depend on existing flags. |
-| COAST 6 | Resolves capacity input and calls `0x3df24`, which clamps against global/config/controller limits before updating. |
+| COAST 6 | Resolves capacity input and calls `0x3df24`: MAX with the global value, then MIN with definition/train upper bounds before updating. |
 | COAST 7 | Consumes but ignores parameter; no controller call or branch-accumulator store. |
 
 The vehicle-launch routine `0x242d8` checks controller active vehicle count
@@ -391,7 +391,7 @@ ring, +0 is allocated ring capacity, +4 the storage pointer, +8 the configured
 admission limit, +12 queued count, +16 held/reserved count, +20 read cursor,
 and +24 write cursor. `0x3dbc0` admits a visitor only while queued+held is less
 than allocated ring capacity. `0x3dd14` returns
-`min(global_admission_limit, configured_limit - queued - held)`.
+`max(global_admission_minimum, configured_limit - queued - held)`.
 The read/write cursor arithmetic wraps at allocated capacity. The departing
 ring's `0x3dd5c` checks its logical boundary and count before returning a
 visitor; zero indicates no departure. The meaning of its +28 boundary and
@@ -413,8 +413,9 @@ This arithmetic does not prove that grouping equals logical seat capacity.
 
 ### Capacity and path math, with conditional schemas
 
-COAST6 (`0x3df24`) takes the minimum of the request, global limit, controller
-definition+792, and first train definition+8, then rebuilds if the result
+COAST6 (`0x3df24`) first takes the maximum of request and global minimum,
+then the minimum with controller definition+792 and first train definition+8.
+It rebuilds if the result
 differs from controller+240. The train builder `0x3ea74` uses train records128
 bytes and car records96 bytes. Front/rear cars whose type differs from the
 center type are excluded from rider capacity; eligible cars receive
@@ -532,8 +533,9 @@ guard is not a successful allocation/admission result or a proven COAST cap.
 Coaster capacity10 across three eligible cars yields3,3,4, while two observed
 cars with two/one riders contain three passengers. Reduced allowances retain
 existing riders; live teardown/redistribution and physical paired-seat/node
-binding are unsupported. Ring room can be negative after a configured-limit
-reduction. Physical capacity changes reject without discarding occupants.
+binding are unsupported. Ring room is floored by the supplied global minimum;
+with global0, negative configured-minus-occupancy returns0. Physical capacity
+changes reject without discarding occupants.
 Release-boundary and held-count transfers are supplied observations, not
 guessed control transitions.
 
@@ -723,3 +725,28 @@ their SAM hashes. These findings corroborate input-side flag selection while
 retaining the native-runtime loader as an exact dependency. Twenty Python
 cases and both308-script corpus scans pass. Production admission, seat
 binding and controller motion remain unimplemented by these evidence tools.
+
+## Independent capacity-selection correction
+
+Independent round6 review found a reversed comparator interpretation in the
+reference helper and earlier prose. The explicit branch/pointer checks now
+pin query`0x3dd48/0x3dd4c`: if global>=free it keeps the global pointer;
+otherwise`0x3dd50` selects the free-space local. This is **MAX**, so
+global100/free−1 returns100, and global0/free−1 returns0 in the helper's
+nonnegative-global domain. It is not a negative-room result or an upper cap.
+
+Capacity`0x3df4c/0x3df54` similarly chooses **MAX(request,global)**, but
+`0x3df78/0x3df7c` and`0x3dfac/0x3dfb0` choose the definition/train bound
+when the running value is>=that bound. Those latter selections are **MIN**.
+The complete scalar is `min(min(max(request,global),definition),train)`.
+Request10/global100/definition100/train100 gives100; request10/global0 with
+upper bounds100 gives10; request100/global10/definition50/train100 gives50.
+The3/3/4 distribution example therefore supplies global0 for total10, rather
+than incorrectly using global100 as an upper bound.
+
+Regressions failed against the old query and capacity implementations before
+their respective fixes. All16 reference cases now pass in Debug/Release,
+including the counterexamples and independent upper-cap checks. This repairs
+the standalone evidence tools/docs only, not production admission/controller
+behavior. Unreviewed motion, schema and physical-binding boundaries above
+remain explicit; this correction does not qualify full gameplay fidelity.

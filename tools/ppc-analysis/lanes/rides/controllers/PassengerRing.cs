@@ -35,12 +35,12 @@ public sealed class PassengerRing
         return FromSnapshot(new int[capacity], 0, 0, 0, 0, configured);
     }
 
-    /// <summary>Native query uses signed min; a reduced configured limit can yield negative room.</summary>
-    public int QueryRoom(int observedGlobalLimit, int? observedConfiguredLimit = null)
+    /// <summary>Native query floors signed free space by the supplied global minimum.</summary>
+    public int QueryRoom(int observedGlobalMinimum, int? observedConfiguredLimit = null)
     {
         var configured = observedConfiguredLimit ?? ConfiguredLimit;
-        if (observedGlobalLimit < 0 || configured < 0) throw new ArgumentException("unqualified limit domain");
-        return Math.Min(observedGlobalLimit, configured - Queued - Held);
+        if (observedGlobalMinimum < 0 || configured < 0) throw new ArgumentException("unqualified limit domain");
+        return Math.Max(observedGlobalMinimum, configured - Queued - Held);
     }
 
     /// <summary>Appends an already-supplied visitor ID; no allocation, admission or host accounting is inferred.</summary>

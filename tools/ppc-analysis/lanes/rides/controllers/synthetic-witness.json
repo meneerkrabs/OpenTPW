@@ -5,7 +5,7 @@
     "empty ring and missing release boundary",
     "allocated capacity and held-count full guard",
     "cursor wrapping with observed boundaries",
-    "configured capacity reductions preserve signed query",
+    "configured capacity reductions retain native room floor",
     "capacity 3/3/4 and eligible car separation",
     "per-vehicle and total rider counts",
     "BUMP64 guard without invented allocation",

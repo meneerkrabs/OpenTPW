@@ -17,12 +17,13 @@ public static class CoasterVehiclePrimitives
             : PrimitiveResult<int>.Reject(PrimitiveStatus.InvalidSnapshot, "total passenger count overflows the qualified signed domain");
     }
 
-    public static PrimitiveResult<CapacityPlan> PlanAllowance(int requested, int globalLimit, int definitionLimit,
+    public static PrimitiveResult<CapacityPlan> PlanAllowance(int requested, int globalMinimum, int definitionLimit,
         int trainLimit, IReadOnlyList<bool> observedEligibility)
     {
-        if (requested < 0 || globalLimit < 0 || definitionLimit < 0 || trainLimit < 0)
+        if (requested < 0 || globalMinimum < 0 || definitionLimit < 0 || trainLimit < 0)
             return PrimitiveResult<CapacityPlan>.Reject(PrimitiveStatus.InvalidSnapshot, "capacity limits require nonnegative observed inputs");
-        var total = Math.Min(Math.Min(requested, globalLimit), Math.Min(definitionLimit, trainLimit));
+        // Native0x3df54 floors the request first;0x3df7c/b0 then apply upper caps.
+        var total = Math.Min(Math.Min(Math.Max(requested, globalMinimum), definitionLimit), trainLimit);
         var eligible = observedEligibility.Count(v => v);
         if (eligible == 0 && total != 0)
             return PrimitiveResult<CapacityPlan>.Reject(PrimitiveStatus.UnsupportedSchema, "positive capacity has no observed eligible car");

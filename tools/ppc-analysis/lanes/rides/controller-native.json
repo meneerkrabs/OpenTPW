@@ -7,12 +7,14 @@
     "vehicle_passenger_head": 48,
     "vehicle_stride": 172
   },
-  "checked_instruction_count": 66,
+  "checked_instruction_count": 76,
   "coast": {
     "capacity_per_car_field": 68,
+    "capacity_selection": "min(min(max(requested, globalMinimum), definition+792), firstTrainDefinition+8)",
     "car_offset_field": 56,
     "car_stride": 96,
     "normalized_offset_field": 60,
+    "room_selection": "max(globalMinimum, configuredLimit - queued - held), signed compare",
     "track_length_field": 172,
     "train_stride": 128
   },

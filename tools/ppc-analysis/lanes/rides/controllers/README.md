@@ -28,10 +28,11 @@ The helper implements the following bounded observations:
   equal read/boundary cursors produce typed empty/blocked statuses. Missing
   boundary produces unsupported. The helper does not invent boundary/held
   transfer rules or clear native storage when logical ownership advances.
-- Room query retains the signed native minimum. Reducing a configured limit
-  below occupancy can produce a negative result; it is not clamped to zero.
-- A capacity plan clamps the request against supplied global/definition/train
-  limits and distributes passengers over explicitly observed eligible cars.
+- Room query uses signed MAX with a supplied global minimum. Global100 and
+  free−1 returns100; global0 and free−1 returns0. The append/full predicate
+  remains a separate allocated-capacity check.
+- A capacity plan computes `min(min(max(request,global),definition),train)`
+  and distributes passengers over explicitly observed eligible cars.
  10/3 gives3,3,4; excluded cars receive0. Applying a live rebuild is unsupported
   because teardown/redistribution and host callbacks are not recovered.
 - `CoasterVehicleState` separates logical rider allowance and observed rider
@@ -88,3 +89,9 @@ Per-train capacity+760 sums front/centre/rear role counts, then fleet capacity
 +792 multiplies by maximum trains. Two passenger-ID buffers per car remain
 separate from two-person seating. Native/file loader linkage, transforms and
 host visual ownership remain unsupported by this reference project.
+
+Round6 independent review corrected the earlier MIN interpretation of the
+query and first capacity selection. `controller-native.json` now pins the
+comparison registers and selected pointers. Counterexample regressions failed
+before the fixes and pass in Debug/Release, including distinct definition/train
+upper caps. Global0 is used for the10/3 distribution example.

@@ -304,6 +304,15 @@ public sealed class RideVM
 
 	internal int Effect( Opcode opcode, Operand[] operands ) => Effects.Perform( new RideEffectCall( this, opcode, operands ) );
 
+	/// <summary>An effect result is unavailable when the implementation records this call as unimplemented.</summary>
+	internal bool TryEffect( Opcode opcode, Operand[] operands, out int result )
+	{
+		unimplementedEffects.TryGetValue( opcode, out var before );
+		result = Effect( opcode, operands );
+		unimplementedEffects.TryGetValue( opcode, out var after );
+		return after == before;
+	}
+
 	/// <summary>Counts an unimplemented effect; returns true the first time for this opcode.</summary>
 	public bool RecordUnimplementedEffect( Opcode opcode )
 	{

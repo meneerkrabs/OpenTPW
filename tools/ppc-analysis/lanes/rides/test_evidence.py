@@ -9,6 +9,7 @@ import unittest
 import evidence
 import contracts
 import controller_native
+import animation_evidence
 
 
 class RideEvidenceTests(unittest.TestCase):
@@ -87,6 +88,14 @@ class RideEvidenceTests(unittest.TestCase):
         self.assertEqual(layout["tour"]["allocation_bytes"], layout["tour"]["header_bytes"]
                          + layout["tour"]["record_stride"] * layout["tour"]["record_count"])
         self.assertGreaterEqual(layout["checked_instruction_count"], 60)
+
+    @unittest.skipUnless(os.environ.get("OPENTPW_MAC_APP"), "set OPENTPW_MAC_APP for animation scalar witness")
+    def test_original_animation_scalar_paths(self):
+        result = animation_evidence.inspect(Path(os.environ["OPENTPW_MAC_APP"]))
+        self.assertEqual(set(result["signed_trigger_clamps"]), {"16", "19", "21", "23"})
+        self.assertFalse(result["waitanim_supported"])
+        self.assertIn("unsigned", result["waitanim_reason"])
+        self.assertGreaterEqual(result["checked_instruction_count"], 30)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,41 @@
+{
+  "checked_instruction_count": 41,
+  "constants": {
+    "0x516c": 30.0,
+    "0x5170": 1000.0,
+    "0x51a8": 4503599627370496.0,
+    "0x5290": 4503601774854144.0,
+    "0x52b0": 100.0,
+    "0x52c0": 1000.0,
+    "0x52d0": 0.5
+  },
+  "end_threshold": "native all-channel completion counts strictly greater; final pose/loop/mixing unqualified",
+  "frame_operation_precision": "single conversion, multiply30 single, divide1000 single, speed multiply single",
+  "schema": 1,
+  "scope": "static Mac animation scalar paths; no playback state machine",
+  "sha256": "04809cd4ccee5433c7fb0b7c93d32f6a7aa629c1849181c0b7906415e5e295f5",
+  "signed_trigger_clamps": {
+    "16": {
+      "minimum": 300,
+      "signed_compare": 719660,
+      "subtract": 719648
+    },
+    "19": {
+      "minimum": 300,
+      "signed_compare": 720536,
+      "subtract": 720524
+    },
+    "21": {
+      "minimum": 300,
+      "signed_compare": 721032,
+      "subtract": 721020
+    },
+    "23": {
+      "minimum": 300,
+      "signed_compare": 721380,
+      "subtract": 721368
+    }
+  },
+  "waitanim_reason": "unsigned conversion and unsigned clamp after speed division need separate boundary qualification",
+  "waitanim_supported": false
+}

@@ -2580,5 +2580,190 @@
         }
       ]
     }
+  ],
+  "animationOpcodeCounts": {
+    "16": 74,
+    "17": 547,
+    "18": 210,
+    "19": 133,
+    "21": 4,
+    "23": 63,
+    "25": 1,
+    "27": 15
+  },
+  "animationSpeedCalls": [
+    {
+      "path": "Data/levels/fantasy/features/gates.wad/Gates.RSE",
+      "sha256": "9be2c7035feff26046aee0778cb6a03ef5987afcb1281a276cffc13bd9d14013",
+      "word": 67,
+      "kind": "Literal",
+      "raw": 4000
+    },
+    {
+      "path": "Data/levels/hallow/features/gates.wad/Gates.RSE",
+      "sha256": "9d3d0f9cd32853a5020af09f83b70dad399fee2e8e773fa4a58db2d09937f1b5",
+      "word": 63,
+      "kind": "Literal",
+      "raw": 2000
+    },
+    {
+      "path": "Data/levels/jungle/features/gates.wad/Gates.RSE",
+      "sha256": "49cc97347e12afbacbf278073c1990656ee220475f54c65821f98a39c79fd0a2",
+      "word": 67,
+      "kind": "Literal",
+      "raw": 4000
+    },
+    {
+      "path": "Data/levels/space/features/gates.wad/Gates.RSE",
+      "sha256": "6d6a7c9eb1e61d5b50d83d8e71590602edb4c8f1db106e8a2fde92680d88e9c1",
+      "word": 112,
+      "kind": "Literal",
+      "raw": 1800
+    }
+  ],
+  "totemBindings": [
+    {
+      "path": "Data/levels/jungle/rides/totem.wad/Totem.RSE",
+      "sha256": "5e1ab461c3692c32ead298defb847eb623db24cc4068cfe9760c53dd70233aaf",
+      "word": 2,
+      "opcode": 17,
+      "category": 0,
+      "variant": 0,
+      "channel": 0,
+      "member": "totemc.MD2",
+      "memberSha256": "4c5e264e737b9efd3659e6f18c73b50397a781665544b413718a898fd2909cee"
+    },
+    {
+      "path": "Data/levels/jungle/rides/totem.wad/Totem.RSE",
+      "sha256": "5e1ab461c3692c32ead298defb847eb623db24cc4068cfe9760c53dd70233aaf",
+      "word": 92,
+      "opcode": 16,
+      "category": 5,
+      "variant": 0,
+      "channel": 0,
+      "member": "totemm1.MD2",
+      "memberSha256": "6467b35faadd40fef639c2b10f3f0bb2754675f15509172778ef399b74ae76fe"
+    },
+    {
+      "path": "Data/levels/jungle/rides/totem.wad/Totem.RSE",
+      "sha256": "5e1ab461c3692c32ead298defb847eb623db24cc4068cfe9760c53dd70233aaf",
+      "word": 242,
+      "opcode": 16,
+      "category": 9,
+      "variant": 0,
+      "channel": 0,
+      "member": "totemb1.MD2",
+      "memberSha256": "e76689b6fdc861448bd8e5779e435cbbad69aa3bacbc7f38925754cffc297bf9"
+    },
+    {
+      "path": "Data/levels/jungle/rides/totem.wad/Totem.RSE",
+      "sha256": "5e1ab461c3692c32ead298defb847eb623db24cc4068cfe9760c53dd70233aaf",
+      "word": 283,
+      "opcode": 17,
+      "category": 10,
+      "variant": 0,
+      "channel": 0,
+      "member": "totemr.MD2",
+      "memberSha256": "5fdddd1288fbef15a8713407a855c0b410ac8e27f3ffb7c18f6d0087dc0e66d0"
+    },
+    {
+      "path": "Data/levels/jungle/rides/totem.wad/Totem.RSE",
+      "sha256": "5e1ab461c3692c32ead298defb847eb623db24cc4068cfe9760c53dd70233aaf",
+      "word": 302,
+      "opcode": 23,
+      "category": 5,
+      "variant": 1,
+      "channel": 1,
+      "member": "totemm2.MD2",
+      "memberSha256": "d4f959d124f06a21175621a6dafa3ec431452bacb372281a36f954aacbe93295"
+    },
+    {
+      "path": "Data/levels/jungle/rides/totem.wad/Totem.RSE",
+      "sha256": "5e1ab461c3692c32ead298defb847eb623db24cc4068cfe9760c53dd70233aaf",
+      "word": 307,
+      "opcode": 23,
+      "category": 5,
+      "variant": 4,
+      "channel": 2,
+      "member": "totemm5.MD2",
+      "memberSha256": "9e24c1c40bd963e5856ab7bad41c45c4340b90b91590ab1c8e9ee7ababf50ce9"
+    },
+    {
+      "path": "Data/levels/jungle/rides/totem.wad/Totem.RSE",
+      "sha256": "5e1ab461c3692c32ead298defb847eb623db24cc4068cfe9760c53dd70233aaf",
+      "word": 312,
+      "opcode": 23,
+      "category": 5,
+      "variant": 7,
+      "channel": 3,
+      "member": "totemm8.MD2",
+      "memberSha256": "6a945c126fe581751f35268b57b8ad1a889ab8c6cdd60c8f6bd1edbf67721161"
+    },
+    {
+      "path": "Data/levels/jungle/rides/totem.wad/Totem.RSE",
+      "sha256": "5e1ab461c3692c32ead298defb847eb623db24cc4068cfe9760c53dd70233aaf",
+      "word": 318,
+      "opcode": 23,
+      "category": 5,
+      "variant": 2,
+      "channel": 1,
+      "member": "totemm3.MD2",
+      "memberSha256": "42cc68b9996ac06f95e49c3fb9eb767c3b1e28bf38ae4a36803744b6c73c8594"
+    },
+    {
+      "path": "Data/levels/jungle/rides/totem.wad/Totem.RSE",
+      "sha256": "5e1ab461c3692c32ead298defb847eb623db24cc4068cfe9760c53dd70233aaf",
+      "word": 323,
+      "opcode": 23,
+      "category": 5,
+      "variant": 5,
+      "channel": 2,
+      "member": "totemm6.MD2",
+      "memberSha256": "7ca4dd1d8e5a7675a0c56c67ed878ed604e53d3ba66672507e3b80f87d34cb36"
+    },
+    {
+      "path": "Data/levels/jungle/rides/totem.wad/Totem.RSE",
+      "sha256": "5e1ab461c3692c32ead298defb847eb623db24cc4068cfe9760c53dd70233aaf",
+      "word": 328,
+      "opcode": 23,
+      "category": 5,
+      "variant": 8,
+      "channel": 3,
+      "member": "totemm9.MD2",
+      "memberSha256": "713c1acbb04eb0b8900e3d419e020853c2773555f84533434e3c80827d9dcdeb"
+    },
+    {
+      "path": "Data/levels/jungle/rides/totem.wad/Totem.RSE",
+      "sha256": "5e1ab461c3692c32ead298defb847eb623db24cc4068cfe9760c53dd70233aaf",
+      "word": 334,
+      "opcode": 23,
+      "category": 5,
+      "variant": 3,
+      "channel": 1,
+      "member": "totemm4.MD2",
+      "memberSha256": "33e9c403a3efdc7ebc94710af205e918235aaa76c8553f17b757f1d084bd6e93"
+    },
+    {
+      "path": "Data/levels/jungle/rides/totem.wad/Totem.RSE",
+      "sha256": "5e1ab461c3692c32ead298defb847eb623db24cc4068cfe9760c53dd70233aaf",
+      "word": 339,
+      "opcode": 23,
+      "category": 5,
+      "variant": 6,
+      "channel": 2,
+      "member": "totemm7.MD2",
+      "memberSha256": "f9cf1fb09019f7d55d5370a1323c493f8e3fdedde976a2949de07dd0887efc0f"
+    },
+    {
+      "path": "Data/levels/jungle/rides/totem.wad/Totem.RSE",
+      "sha256": "5e1ab461c3692c32ead298defb847eb623db24cc4068cfe9760c53dd70233aaf",
+      "word": 344,
+      "opcode": 23,
+      "category": 5,
+      "variant": 9,
+      "channel": 3,
+      "member": "totemm10.MD2",
+      "memberSha256": "d5eca10df7ad9f5898d5edf9d80b902e95118b0794c7a9486fc61c09a98ba1e2"
+    }
   ]
 }

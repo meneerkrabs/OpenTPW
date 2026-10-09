@@ -1,6 +1,6 @@
 # PowerPC scenario, progression and staffing evidence
 
-2026-10-09 (three follow-up passes the same day). Scenario lane of the nine-lane PowerPC continuation. Static
+2026-10-09 (four follow-up passes the same day). Scenario lane of the nine-lane PowerPC continuation. Static
 inspection of the Feral Interactive Mac port of *SimTheme Park* (Theme Park
 World); the original program was never run. No original bytes, disassembly,
 extracted assets or manual text are stored here. A local disassembler
@@ -19,16 +19,20 @@ tests (*Progression contract*); third follow-up: player profile creation,
 enumeration, selection, persistence and deletion, where the mode is stored, the
 missing/unreadable player-file path, the key gate's refusal path, the park
 loader's header gate and its application to the PC park files, and a handoff
-for a later profile implementation (*Player profiles*, *Profile handoff*). Every finding below is a
+for a later profile implementation (*Player profiles*, *Profile handoff*); fourth follow-up: the
+complete `gms.dat` byte schema and its version gate, read-failure ordering, the
+key award's ordering against creation, where the key count comes from, and the
+saved first-time and swear-filter flags (*Player file schema and failure
+order*, *Key award and key source*). Every finding below is a
 fact about **this Mac binary** unless explicitly stated otherwise. It is not
 evidence for the PC `TP.EXE` or Patch 2 runtime (see *Mac and PC relationship*).
 
 ## Reproduce
 
 ```sh
-# instruction-field witnesses (1232 checks, identity-pinned; follow-up checks live in
-# followup_evidence.py, progression_evidence.py, park_entry_evidence.py and
-# profile_evidence.py, included in the same JSON report)
+# instruction-field witnesses (1689 checks, identity-pinned; follow-up checks live in
+# followup_evidence.py, progression_evidence.py, park_entry_evidence.py,
+# profile_evidence.py and player_file_evidence.py, included in the same JSON report)
 python3 -I tools/ppc-analysis/lanes/scenarios/scenario_evidence.py /Users/sander/server/game-assets/mac-feral/bin
 # tests (synthetic fixtures; the five corpus cases, including in-memory mutation
 # regressions, run only with OPENTPW_MAC_BIN set)
@@ -301,6 +305,107 @@ and a word at +20) and the current slot at +96 (−1 = none).
 - **State-9 fallback**: entering a park with no player loaded creates a slot-0
   player named `debug` with flag 0 (Full Simulation) when slot 0 is empty, then
   loads slot 0. It never yields an Instant Action player.
+
+### Player file schema and failure order (high)
+
+`player_file_evidence.py` (457 checks). The serializer `0x129308` has one write
+path (`0x128f5c`) and one read path (`0x129060`). Every member goes through a
+helper that calls `LbFile_Write`/`LbFile_Read` with a fixed width; multi-byte
+values are byte-swapped, so the file is **little-endian**. One exception: the
+four 8-byte settings values keep their first word unswapped (Mac native order)
+and swap only the second. No names, tags or padding are written.
+
+| # | Field | Encoding | Record offset |
+| ---: | --- | --- | ---: |
+| 1 | version | i32 | — |
+| 2 | `mEarnedGlobalTicket[0..3]` | 4 × u8 | 24 |
+| 3 | `mEarnedSecretTicket[0..1]` | 2 × u8 | 38 |
+| 4 | `mSpentTickets` | i32 | 28 |
+| 5 | `mExtraKeys` | i32 | 32 |
+| 6 | `mEasyModeUser` | u8 | 36 |
+| 7 | `mSwearFilterOn` | u8 | 37 |
+| 8 | `mFirstTimePlayer` | u8 | 72 |
+| 9 | theme count (`size`) | i32, signed loop | map +52 |
+| 10 | per theme: name length, name bytes (no terminator), theme record | i32, bytes, 160 bytes | — |
+| 11 | settings block (static object, data `0x120a14`) | 39 bytes | — |
+| 12 | mystery count, then `rideId` each | i32, n × u16 | set +40 |
+
+Theme record (`0x12a0bc`, a 188-byte object, 160 bytes on disk):
+`mEarnedLocalTicket[0..5]` (u8, +0), then for i = 0..3 `mAward[i]` (u8,
++6+i) **followed by** `mAwardScore[i]` (i32, +12+4i), then for i = 0..32
+`mSignNameA[i]` (u16, +52+2i) **followed by** `mSignNameB[i]` (u16,
++118+2i), then `mNameChanged` (u8, +184) and `mAllResearchCompleted` (u8,
++185). The pairs alternate on disk; they are not two separate arrays. Settings
+block (`0x12653c`): `SFXVolume`, `MusicVolume`, `SpeechVolume`, `MovieVolume`
+(8 bytes each, object +16/+24/+32/+40), then seven u8 flags `AdvisorOn`,
+`TutorialOn`, `TooltipsOn`, `ConfirmDeleteOn`, `RMBScrollOn`, `RMBCancelOn`,
+`IsometricOn` (+52..+58). These are game-wide settings stored in **every**
+player file: reading any `gms.dat`, including during the start-up scan,
+overwrites them. The scan order (`FindFirst`/`FindNext`) is not traced, so
+which file's settings win at start-up is not established.
+
+- **Version gate**: written as 12; the reader rejects a version **unsigned**
+  below 12 (`cmplwi`), so 13 or `0xFFFFFFFF` is read with the same layout. The
+  version is passed to the theme-record and settings serializers, which never
+  read it (register scan of both routines). There is no other layout branch.
+- **Read order**: scalar members reset (the reset does not touch the theme map
+  or the mystery set; both readers pass a newly constructed record), theme
+  records freed, open, version, then the members in file order. Any failed
+  helper returns 1 and the reader returns 0 at once. The callers ignore it
+  (*Player profiles*).
+- **Partial read**: members read before the failure keep their file values;
+  later members keep reset values. A failing integer read stores whatever bytes
+  the import delivered, unswapped (the swap is skipped). A theme whose record
+  fails, or whose name repeats an earlier one, is not inserted (the second
+  case logs a message); earlier themes stay. Settings values read before the
+  failure are already in the global settings object. Consequence for the mode:
+  `mEasyModeUser` is file byte 18, so a file of 18 bytes or fewer reads as Full
+  Simulation, while a longer file cut later keeps the mode.
+- **Only after a complete read**: if `mSwearFilterOn` is set and
+  `swears.txt`/`alloweds.txt` (`%s:Language:%s:`) cannot be loaded, the flag is
+  cleared in memory and written at the next save. The settings serializer
+  applies its values (`0x126460`) after a complete read or write of its block.
+- The reference reader `read_mac_player_file` applies these rules to bytes.
+  It is tested on synthetic bytes only. No PC player file exists, and nothing
+  here says the PC uses this layout.
+
+### Key award and key source (high)
+
+- **Creation then award are two writes**: `CreatePlayer` makes the directories
+  (and the `easymode.TPWI` copies for Instant Action), builds a reset record
+  (`mExtraKeys` 0, `mFirstTimePlayer` 1, the mode byte) and writes `gms.dat`
+  without using the result. Selection then **frees that record and reads the
+  file again** (`0x1378b4`, `0x137930`), so the mode and keys come from disk.
+  The award (`0x15cd38`, flag set by `0x15d164` after the dialog) is a separate
+  step: GameType 2 queues message 394 only; any other GameType does
+  `mExtraKeys += 1` (the only increment), writes `gms.dat` without using the
+  result, and queues 393.
+- Ordering consequences (derived from the above, not observed at runtime):
+  if the creation write fails, selection reads reset values, so even an Instant
+  Action choice runs as GameType 0 and gets the +1 key in memory (its
+  `easymode.TPWI` copies already exist). If only the award write fails, the
+  file keeps `mExtraKeys` 0. The in-memory 1 reaches disk only at the next
+  successful write (leaving a park, unload). The award cannot repeat once a
+  slot is named (*Theme entry and initial key*).
+- **Key source**: `Keys()` = `mExtraKeys` + signed `mulhw` truncation of
+  earned/3, computed on every call and never stored. Earned counts **non-zero
+  bytes** (a stored 2 counts once): 4 global bytes, the 6 local bytes of each
+  theme record **whose `global.sam` loads** (`0x12a50c`, which loads it on
+  demand and frees it with a log on failure), and 2 secret bytes. Available
+  tickets subtract `mSpentTickets`, `Keys()` does not, so spending never
+  costs keys. Eleven read-only `Keys()` callers: the theme door, the award code
+  (twice) and eight front-end sites whose presentation is not traced.
+- **Instant Action bypass**: only at the theme door (GameType 2 skips the key
+  check, *Player profiles*), and in the award (no key). Instant Action records
+  are otherwise counted the same way.
+- **Saved flags**: `mFirstTimePlayer` has one reader (`0x1c208c`) and one
+  clearer (`0x1c20d4`). After a park is loaded or resumed, if GameType ≠ 1 and
+  the flag is set, it is cleared **in memory** (no write in that block). Under
+  GameType 2 the block then posts two events (10, 0) to the object at data
+  `0x11f9bc`. Their meaning is not traced. `mSwearFilterOn` has three writers
+  (the read hook and two at `0x1af8c8`/`0x1af944`) and nine readers. The saved
+  counters are `mExtraKeys` (award +1 only), `mSpentTickets` (mystery purchase)
+  and the ticket bytes.
 
 ### Tickets and keys (high)
 
@@ -729,7 +834,14 @@ the PC runtime is unproved (*Park header gate and PC park files*).
   newest `*.TPW*` in the theme directory, which must pass the header gate;
   leaving writes `autosave.TPWS`.
 - Persistence points: creation, new-player award, leaving a park, unload.
-  Write failures are ignored by the original.
+  Write failures are ignored by the original. Selection after creation re-reads
+  the file, so a failed creation write loses the mode (*Key award and key
+  source*).
+- Player file: little-endian, version 12 (any unsigned value ≥ 12 accepted, one
+  layout), field order and widths as in *Player file schema and failure
+  order*. The file also carries the game-wide settings block. A reimplementation
+  must decide whether to keep that coupling. Keys are derived, never stored:
+  only `mExtraKeys` is saved.
 - Failure paths with an explicit choice for OpenTPW: a missing or unreadable
   player file silently becomes a Full Simulation profile with 0 keys in the
   original. OpenTPW's own save currently requires `Mode` and `Easy` and refuses
@@ -788,7 +900,7 @@ unwired reference.
 
 | ID / area | Current OpenTPW assumption | Mac binary evidence | Suggested state |
 | --- | --- | --- | --- |
-| ECON-040 | 1 starting key; keys not consumed | Not consumed: proven. Start: Full Sim gets `mExtraKeys` 1 on first lobby entry; Instant Action 0 keys but no key check; a repeat award needs front-end init, which clears the flag (player-window closure) | Mac-resolved; PC confirmation remains |
+| ECON-040 | 1 starting key; keys not consumed | Not consumed: proven. Start: Full Sim gets `mExtraKeys` 1 on first lobby entry; Instant Action 0 keys but no key check; a repeat award needs front-end init, which clears the flag (player-window closure); keys are derived (`mExtraKeys` + earned/3, earned = non-zero ticket bytes, locals only for themes whose `global.sam` loads); the award is a second `gms.dat` write after creation, and failures of both writes are ignored | Mac-resolved; PC confirmation remains |
 | `PlayerProgress.Keys` (untagged) | 1 + Σ per-theme earned / 3 | `mExtraKeys` + (player-wide globals + per-theme locals + player-wide secrets) / 3 | untagged divergence: global/secret tickets are once per player, not per theme |
 | ECON-029 | tickets spent on GoldenTicketCost purchases | first placement of a ticket-cost item spends tickets once per ID (player-wide set), no money; later copies cost the money price; online free and unrecorded | partial support; item set persistence and the cash price after uncovering are missing |
 | ECON-033 | checked at month end | every 100 `mGameTick` ticks (unsigned modulo), GameType 0 only; about 4.34 game days per check (cross-lane calendar figure) | contradicted |
@@ -829,6 +941,10 @@ unwired reference.
   under GameType 2, queued input addressed to a deleted player window, the
   profile `<base>` directory, the park header's object block (`0x109e0c`), the
   locked-door presentation and the front-end slot icon.
+- **Player file**: the `FindFirst` order (which file's settings win at start-up),
+  what the import stores on a short read, the two `mFirstTimePlayer` events
+  (data `0x11f9bc`), the settings toggles at `0x1af8c8`/`0x1af944` and the eight
+  front-end `Keys()` readers are not traced.
 - **PC profiles**: no PC player file or player save exists in the assets and the
   PC executables expose none of the profile names; the PC profile layout and
   failure behaviour are unproved.

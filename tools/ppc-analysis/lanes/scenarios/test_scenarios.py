@@ -13,6 +13,7 @@ import unittest
 import followup_evidence as followup
 import mac_data_compare as compare
 import park_entry_evidence as park_entry
+import player_file_evidence as player_file
 import profile_evidence as profile
 import progression_evidence as progression
 import scenario_evidence as evidence
@@ -253,6 +254,74 @@ class ParkHeaderTests(unittest.TestCase):
                          ['object_block_all_zero'])
 
 
+def player_file_bytes(version=12, keys=1, easy=0, themes=((b'jungle', 1),), mystery=(7,), settings=True):
+    """Synthetic player file in the traced layout (invented values)."""
+    out = struct.pack('<i', version) + bytes([1, 0, 0, 0]) + bytes([0, 1]) + struct.pack('<ii', 2, keys)
+    out += bytes([easy, 1, 0]) + struct.pack('<i', len(themes))
+    for name, local in themes:
+        out += struct.pack('<i', len(name)) + name + bytes([local, 0, 0, 0, 0, 0])
+        out += b''.join(bytes([i]) + struct.pack('<i', 100 + i) for i in range(4))
+        out += b''.join(struct.pack('<HH', 65 + i, 97 + i) for i in range(33)) + bytes([0, 1])
+    if settings:
+        out += b''.join(b'\x00\x00\x00\x01' + struct.pack('<I', 50 + i) for i in range(4)) + bytes(range(7))
+        out += struct.pack('<i', len(mystery)) + b''.join(struct.pack('<H', m) for m in mystery)
+    return out
+
+
+class PlayerFileReferenceTests(unittest.TestCase):
+    """Traced Mac read order on synthetic bytes; no PC player file exists to test against."""
+
+    def test_complete_file_reads_every_section(self):
+        raw = player_file_bytes()
+        out = player_file.read_mac_player_file(raw)
+        self.assertTrue(out['ok'])
+        self.assertEqual(out['consumed'], len(raw))
+        self.assertEqual(out['record']['mExtraKeys'], 1)
+        self.assertEqual(out['record']['mEarnedSecretTicket'], [0, 1])
+        theme = out['themes'][b'jungle']
+        self.assertEqual(theme['mAwardScore[i]'], [100, 101, 102, 103])
+        self.assertEqual((theme['mSignNameA[i]'][0], theme['mSignNameB[i]'][0]), (65, 97))
+        self.assertEqual(theme['mAllResearchCompleted'], 1)
+        self.assertEqual(out['settings']['SFXVolume'], (b'\x00\x00\x00\x01', 50))
+        self.assertEqual(out['mystery'], {7})
+
+    def test_version_gate_is_unsigned_and_has_no_layout_branch(self):
+        self.assertEqual(player_file.read_mac_player_file(player_file_bytes(version=11))['failed_at'], 'version')
+        self.assertEqual(player_file.read_mac_player_file(player_file_bytes(version=0))['failed_at'], 'version')
+        for version in (13, -1):  # -1 is 0xFFFFFFFF unsigned
+            self.assertTrue(player_file.read_mac_player_file(player_file_bytes(version=version))['ok'])
+
+    def test_truncation_keeps_members_read_before_the_failure(self):
+        raw = player_file_bytes(keys=5, easy=1)
+        # Cut inside mEasyModeUser: keys read, mode falls back to the reset value (Full Simulation).
+        out = player_file.read_mac_player_file(raw[:4 + 6 + 8])
+        self.assertFalse(out['ok'])
+        self.assertEqual(out['failed_at'], 'mEasyModeUser')
+        self.assertEqual((out['record']['mExtraKeys'], out['record']['mEasyModeUser']), (5, 0))
+        self.assertEqual(out['record']['mFirstTimePlayer'], 1)
+        # Cut after the mode byte: the Instant Action flag survives.
+        out = player_file.read_mac_player_file(raw[:4 + 6 + 8 + 1])
+        self.assertEqual((out['failed_at'], out['record']['mEasyModeUser']), ('mSwearFilterOn', 1))
+        # Cut inside the settings block: the theme is in, part of the settings already overwritten.
+        settings = len(raw) - 39 - 4 - 2  # settings, mystery count, one rideId
+        out = player_file.read_mac_player_file(raw[:settings + 3 * 8 + 4])
+        self.assertIn(b'jungle', out['themes'])
+        self.assertEqual(sorted(out['settings']), ['MusicVolume', 'SFXVolume', 'SpeechVolume'])
+        self.assertEqual(out['failed_at'], 'MovieVolume')
+
+    def test_duplicate_theme_and_negative_counts(self):
+        out = player_file.read_mac_player_file(player_file_bytes(themes=((b'space', 1), (b'space', 0))))
+        self.assertEqual(out['failed_at'], 'duplicate theme')
+        self.assertEqual(out['themes'][b'space']['mEarnedLocalTicket[i]'][0], 1)  # the first stays
+        raw = bytearray(player_file_bytes(themes=()))
+        struct.pack_into('<i', raw, 4 + 6 + 8 + 3, -2)  # signed loop: no themes
+        self.assertTrue(player_file.read_mac_player_file(bytes(raw))['ok'])
+
+    def test_register_source_scan(self):
+        e = fixture([d_word(14, 6, 0, 1), d_word(14, 29, 6, 0), d_word(36, 6, 1, 8), d_word(47, 22, 1, -40)])
+        self.assertEqual(player_file.source_reads(e, 0, 16, 6), [4, 8])
+
+
 @unittest.skipUnless(os.environ.get('OPENTPW_MAC_BIN'), 'set OPENTPW_MAC_BIN to the Feral bin directory')
 class CorpusTests(unittest.TestCase):
     def test_identified_executable_facts(self):
@@ -368,6 +437,34 @@ class CorpusTests(unittest.TestCase):
         # A second current-slot writer in the load routine.
         with self.assertRaisesRegex(pef.PEFError, 'current-slot stores'):
             profile.select_and_unload(self._mutated(0x137a44, d_word(36, 0, 27, 96)))
+
+    def test_player_file_witnesses_reject_mutations(self):
+        container = evidence.load_identified(Path(os.environ['OPENTPW_MAC_BIN']) / 'SimThemePark.data')
+        result = player_file.inspect_player_file(Evidence(container))
+        self.assertEqual(result['player_file_schema']['theme_record_bytes'], 160)
+        self.assertEqual(result['player_file_schema']['settings_bytes'], 39)
+        self.assertEqual(result['saved_profile_flags']['mSwearFilterOn']['writers'], ['0x1292ec', '0x1af8c8', '0x1af944'])
+        # Signed version compare (cmplwi -> cmpwi).
+        with self.assertRaisesRegex(pef.PEFError, 'code:0x129108'):
+            player_file.version_gate(self._mutated(0x129108, d_word(11, 0, 6, 12)))
+        # A sub-serializer starts reading the version argument.
+        with self.assertRaisesRegex(pef.PEFError, 'version argument users'):
+            player_file.version_gate(self._mutated(0x12a0e0, d_word(11, 0, 6, 13)))
+        # The int reader swaps even after a failed read.
+        with self.assertRaisesRegex(pef.PEFError, 'code:0xc3b0'):
+            player_file.io_helpers(self._mutated(0xc3b0, 18 << 26 | 0x24))
+        # mExtraKeys moved to the other side of mEasyModeUser (record offset 36).
+        with self.assertRaisesRegex(pef.PEFError, 'code:0x1293cc'):
+            player_file.player_record(self._mutated(0x1293cc, d_word(14, 4, 26, 36)))
+        # The award saves and then uses the write result.
+        with self.assertRaisesRegex(pef.PEFError, 'code:0x15ceb8'):
+            player_file.key_award(self._mutated(0x15ceb8, d_word(11, 0, 3, 0)))
+        # Keys() divides unsigned (mulhw -> mulhwu).
+        with self.assertRaisesRegex(pef.PEFError, 'code:0x128c7c'):
+            player_file.keys_source(self._mutated(0x128c7c, 31 << 26 | 3 << 21 | 0 << 16 | 5 << 11 | 11 << 1))
+        # The first-time clear writes the player file.
+        with self.assertRaisesRegex(pef.PEFError, 'player file written'):
+            player_file.saved_flags(self._mutated(0x1c20e8, 18 << 26 | ((0x137dbc - 0x1c20e8) & 0x3fffffc) | 1))
 
 if __name__ == '__main__':
     unittest.main()

@@ -27,7 +27,7 @@ public static class IntroPlaylist
 /// <summary>
 /// Skip decision of the start-up movies. The original samples the skip inputs (Esc, Space, mouse button) before
 /// starting each movie and while it plays, so an input still held after skipping one movie also skips the next.
-/// Input already held when the sequence begins is ignored until released [APPROX:UI-033], so launching the game
+/// Input already held when the sequence begins is ignored until released [APPROX:UI-035], so launching the game
 /// with a button down does not drop the intro.
 /// </summary>
 public sealed class IntroSkipGate

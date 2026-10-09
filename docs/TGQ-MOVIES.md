@@ -326,7 +326,7 @@ flag word) is set, else state 9. State 4 continues to 5, which is the logo.
   640×480 screen, with black above and below. The `.tgq` frames are 320×352, so
   the original shows them horizontally doubled (non-square pixels); OpenTPW does
   the same inside a letterboxed window. (The original stretches to the
-  window width; OpenTPW keeps the 640:352 aspect, see APPROX UI-033.)
+  window width; OpenTPW keeps the 640:352 aspect, see APPROX UI-035.)
 - Corroboration from `sound.sam` (`DefaultVolume.MOVIE 100`) and the options
   string "Movie volume:" in the data directory.
 
@@ -339,7 +339,7 @@ English `.str` tables were searched), which is why the executable was needed.
 
 `IntroPlaylist` / `IntroSequence`: every normal start plays `bf`, then the day
 trailer, then opens the front end. Esc, Space or a mouse button skips (input held
-when the window appears is ignored until released, APPROX UI-033; held input
+when the window appears is ignored until released, APPROX UI-035; held input
 also skips the next movie as above). A missing or unreadable movie is skipped.
 `--no-intro` or `OPENTPW_NO_INTRO=1` goes straight to the front end; smoke
 tests never play it; `--mute` silences it.

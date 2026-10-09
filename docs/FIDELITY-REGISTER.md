@@ -166,7 +166,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-030 | Original-fidelity area (scope unadjudicated) | volumes in 0..10 steps, default 8; popup help default on | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:41` |
 | UI-031 | Original-fidelity area (scope unadjudicated) | one placement per menu selection; Level.PlaceObject owns purchase/guest linkage and its removal handler owns scrap credits | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:42` |
 | UI-032 | Original-fidelity area (scope unadjudicated) | longer labels fall back to the small font; catalogue names greedily wrap in their slots | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:43` |
-| UI-033 | Original-fidelity area (scope unadjudicated) | start-up movies: the Mac build's order (bf, then a day-of-month trailer) is assumed for the PC .tgq files; input held at launch is ignored until released; movies are letterboxed to their aspect instead of stretched to the window width | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:44` |
+| UI-035 | Original-fidelity area (scope unadjudicated) | start-up movies: the Mac build's order (bf, then a day-of-month trailer) is assumed for the PC .tgq files; input held at launch is ignored until released; movies are letterboxed to their aspect instead of stretched to the window width | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:44` |
 
 ## Approximation sites
 
@@ -318,7 +318,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-031 | `source/OpenTPW/Hud/ParkHud.cs:352` | [APPROX:UI-031] one placement per menu selection; Level owns purchase/sale — evidence needed: original build-tool continuation |
 | UI-032 | `source/OpenTPW/Hud/ParkHud.cs:595` | [APPROX:UI-032] Wrap translated catalogue names within their slot at the integer text scale. |
 | UI-032 | `source/OpenTPW/UI/Original/UiWidgets.cs:213` | [APPROX:UI-032] small-font fallback and greedy wrap for long labels — evidence needed: captures of translated original screens |
-| UI-033 | `source/OpenTPW/Client/Movie/IntroPlaylist.cs:30` | Input already held when the sequence begins is ignored until released [APPROX:UI-033], so launching the game |
+| UI-035 | `source/OpenTPW/Client/Movie/IntroPlaylist.cs:30` | Input already held when the sequence begins is ignored until released [APPROX:UI-035], so launching the game |
 
 ## Extension sites
 

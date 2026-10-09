@@ -54,14 +54,14 @@ remain incomplete. Neither symbol certifies every variant or original-runtime pa
 |---|---|---|
 | Textures ([.WCT](https://opentpw.gu3.me/formats/wct.html)) | ✅ | Decoder loads the selected game's textures; other editions are unverified. |
 | Settings ([.SAM](https://opentpw.gu3.me/formats/sam.html)) | ✅ | Parser reads the selected game's settings; gameplay interpretation remains approximate. |
-| Sounds ([.SDT](https://opentpw.gu3.me/formats/sdt.html), .MP2) | ⚠️ | SDT containers and MPEG-2 Layer II speech/music decode (≤1 LSB vs reference); Layer I effects remain unsupported ([audio evidence](docs/LIPS.md)). |
+| Sounds ([.SDT](https://opentpw.gu3.me/formats/sdt.html), .MP2) | ✅ | SDT containers, MPEG-2 Layer II speech/music and MPEG-1/2 Layer I effects decode (≤1 LSB vs ffmpeg; Layer I on all 2,650 Mac-edition clips, the Windows corpus not rerun). Effects are not yet played in-game ([audio evidence](docs/LIPS.md)). |
 | Strings ([.BFMU](https://opentpw.gu3.me/formats/bfmu.html), [.BFST](https://opentpw.gu3.me/formats/bfst.html), [.BFUM](https://opentpw.gu3.me/formats/bfum.html)) | ✅ | 21 string tables per language decode and character tables round-trip in six verified languages; other codepages/editions are unverified ([languages](docs/LANGUAGES.md)). |
 | Models ([.MD2](https://opentpw.gu3.me/formats/m3d2.html)) | ⚠️ | 2,116/2,118 members parse; position/rotation/scale tracks decode. Two older-version members and vertex/other animation payloads remain unsupported ([models](docs/MD2-MODELS.md)). |
 | Map Data ([.MAP](https://opentpw.gu3.me/formats/map.html)) | ⚠️ | All five TP2M terrain grids parse; grid mapping and five cell bits verified. Remaining flags/header values and sound-catalog MAPs are opaque ([maps](docs/MAP.md)). |
 | Ride Scripts ([.RSE](https://opentpw.gu3.me/formats/rsse.html)) | ⚠️ | All 308 scripts parse and all 84 used opcodes have handlers; 51 route through effect hooks whose game systems/semantics remain incomplete ([VM](docs/RSE-VM.md)). |
 | Save Files ([.TPWS](https://opentpw.gu3.me/formats/tpws-ints-lays.html)) | ⚠️ | Selected TPWI container, cell grid and placed objects import; most state payloads and other save variants remain unverified/unsupported ([payload](docs/TPWS-PAYLOAD.md)). |
 | Fonts ([.BF4](https://opentpw.gu3.me/formats/bf4.html)) | ✅ | All 33 fonts in each of six verified languages decode (four-bit, RLE, monochrome); original text layout/appearance remains unverified ([fonts](docs/BF4-FONTS.md), [UI](docs/UI.md)). |
-| Lip Sync ([.LIP](https://opentpw.gu3.me/formats/lips.html)) | ⚠️ | Mark lists parse and drive speech-synced advisor mouth toggles; microsecond units/toggle meaning are audio-derived, and original mouth-shape/timing parity is unverified ([lip sync](docs/LIPS.md)). |
+| Lip Sync ([.LIP](https://opentpw.gu3.me/formats/lips.html)) | ✅ | Mark lists parse; microsecond units and the per-mark talking toggle are traced to the Mac binary. The start state is unverified, and the original's random mouth-shape choice every 100 ms is not implemented yet ([lip sync](docs/LIPS.md), [binary trace](docs/reverse/APPROX-TRACE.md)). |
 | Banner mesh companions ([.MTR](https://opentpw.gu3.me/formats/mtr.html)) | ⚠️ | Selected topology and matrices decode; original runtime purpose remains unknown ([companions](docs/MTR.md)). |
 | Video ([.TQI/.TGQ](https://opentpw.gu3.me/formats/tqi.html)) | ⚠️ | All nine movies decode and stream via `--play-movie`; audio is bit-exact, video remains close but not bit-exact ([movies](docs/TGQ-MOVIES.md)). |
 
@@ -82,10 +82,10 @@ and toilets through their scripts (approximated rules, [GUESTS](docs/GUESTS.md))
 all 274 original objects (plus the official bonus objects via `--bonus-data`) can
 be built and run their original scripts and animations, without sounds or ride
 controllers ([objects](docs/OBJECTS.md)); `.LIP` marks
-are interpreted as microsecond talking/silence toggles, inferred from the decoded
-speech audio rather than original-runtime timing. They
-drive the original advisor's mouth with SDL audio via `--advisor-say N`; the original
-mouth-shape choice is unknown. ISO-only `.MTR` files decode as topology and matrices
+are microsecond talking/silence toggles (traced to the Mac binary's advisor update).
+They drive the original advisor's mouth with SDL audio via `--advisor-say N`; the
+original picks one of five mouth shapes at random every 100 ms while talking, which
+OpenTPW does not do yet. ISO-only `.MTR` files decode as topology and matrices
 redundant with their banner `.MD2` (no material data; runtime use unknown). SDT speech
 and music (MPEG-2 Layer II) decode within 1 LSB of an external decoder; Layer I
 sound effects decode within 1 LSB of an external decoder on all 2,650 clips of the Mac

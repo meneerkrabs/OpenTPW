@@ -1,313 +1,331 @@
-# OpenTPW: plan naar een volledig werkende game
+# OpenTPW: plan to a fully working game
 
-Peildatum: 9 oktober 2026. Status: goedgekeurd voor gefaseerde uitvoering.
+Reference date: October 9, 2026. Status: approved for phased execution.
 
-## Doel en definitie van klaar
+## Goal and definition of done
 
-OpenTPW wordt een zelfstandig onderhouden herimplementatie waarmee een gebruiker
-met originele gamebestanden de volledige offline Theme Park World-game kan spelen.
-Apple Silicon/macOS is het eerste platform; Windows en Linux volgen via dezelfde
-gamekern. Een demo, ronddraaiend model, succesvolle build of native executable is
-niet gelijk aan een complete game.
+OpenTPW becomes an independently maintained reimplementation with which a user
+with original game files can play the complete offline Theme Park World game.
+Apple Silicon/macOS is the first platform; Windows and Linux follow on the same
+game core. A demo, a running model, a successful build or a native executable is
+not the same as a complete game.
 
-Volledige offline acceptatie omvat de vier werelden, scenario's en ontgrendeling,
-parkbouw, attracties en achtbanen, bezoekers, personeel, economie, research,
-adviseur, audio, UI, camera/first-person en betrouwbaar opslaan/laden. Per onderdeel
-wordt het verschil met de gekozen originele versie expliciet bijgehouden.
-Herstel van de verdwenen onlinedienst is een afzonderlijk, later project: dit was
-uitgesloten in de eerder goedgekeurde scope en wordt niet stilzwijgend toegevoegd.
-Hetzelfde geldt voor Theme Park Inc (Sim Coaster) en de sandboxmodi met TPW-, TPI- of
-gecombineerde content: doelen na de offline TPW-acceptatie, met eigen gates en
-zonder invloed op het kritieke pad hierboven (zie README en docs/THEME-PARK-INC.md).
+Full offline acceptance covers the four worlds, scenarios and unlocks, park
+building, attractions and roller coasters, visitors, staff, economy, research,
+advisor, audio, UI, camera/first-person, and reliable saving/loading. For each
+component, the difference from the chosen original version is tracked explicitly.
+Restoring the discontinued online service is a separate, later project: it was
+excluded from the previously approved scope and is not added silently. The same
+applies to Theme Park Inc (Sim Coaster) and the sandbox modes with TPW, TPI or
+combined content: goals after offline TPW acceptance, with their own gates and
+without affecting the critical path above (see README and docs/THEME-PARK-INC.md).
 
-`docs/FEATURE-MATRIX.md` scheidt implementatie, macOS-/Windows-/Linux-kwalificatie
-en originele VM-fidelity. Een tussengate mag een benoemde subset accepteren met
-expliciete unsupported-diagnostiek. Eindacceptatie vereist alle offline functies,
-attracties en benodigde opcodes van de geselecteerde editie; `missing`,
-`approximated`, onbekende vereisten en unsupported vereisten blijven blockers.
-Een passing build, zelfconsistente replay of prototype is geen reference-verificatie.
+`docs/FEATURE-MATRIX.md` separates implementation, macOS/Windows/Linux
+qualification and original VM fidelity. An intermediate gate may accept a named
+subset with explicit unsupported diagnostics. Final acceptance requires all
+offline features, attractions and required opcodes of the selected edition;
+`missing`, `approximated`, unknown requirements and unsupported requirements
+remain blockers. A passing build, self-consistent replay or prototype is not
+reference verification.
 
-## Gecontroleerde uitgangssituatie
+## Checked starting situation
 
-Dit is de inspectiebaseline van upstream `453e779`, niet de actuele status van
-gelijktijdige M0/M1-edits. Nieuwe implementatie- of testclaims vereisen verse evidence.
+This is the inspection baseline of upstream `453e779`, not the current status of
+concurrent M0/M1 edits. New implementation or test claims require fresh evidence.
 
-- Fork: https://github.com/meneerkrabs/OpenTPW; upstream `main` op `453e779`.
-- Upstream laatste commit op de peildatum: 7 september 2026, editor opnieuw aangesloten.
-- .NET 8/C#, Veldrid, eigen bestandsparsers en bestaand MSTest-project.
-- `source/OpenTPW/World/Level.cs` maakt lobby-eilanden, geen speelbaar park.
-- `source/OpenTPW.Files/Public/MapFile.cs` reconstrueert geen kaart.
-- `source/OpenTPW/World/Ride.cs` heeft geen zichtbaar attractiemodel; de VM heeft
-  onvolledige parsing en animatie-opcodes. Geen functionerende originele ritcyclus.
-- `source/OpenTPW/Client/Renderer.cs` forceert Vulkan en bevat twee buildfouten
-  bij de huidige .NET 8-toolchain. Paden worden op Windows-separators vastgezet.
-- Native SPIR-V-library in de huidige dependency is macOS x86_64, niet arm64.
-- De oude `apple-silicon`-branch is een afwijkende architectuur uit maart 2024;
-  geen veilige wholesale merge met `main`.
-- De aangeleverde ISO is lokaal gedownload en SHA-1 gecontroleerd tegen de
-  Archive.org-metadata: `e47675b295a958f82b9b21dee0546a5ad9eea1e8`.
-  Assets blijven buiten git; integratietests gebruiken `OPENTPW_GAME_PATH`.
-- Exact editielabel, locale en patchniveau zijn onbekend totdat asset-/binary-evidence
-  deze identificeert; de ISO-naam of checksum bewijst die identificatie niet.
-- Lokaal geverifieerde executable-hashes en PE-informatie staan in
-  `docs/RECOMPILATION-ASSESSMENT.md`; dit bewijst geen runnable reference of fidelity.
+- Fork: https://github.com/meneerkrabs/OpenTPW; upstream `main` at `453e779`.
+- Latest upstream commit on the reference date: September 7, 2026, editor reconnected.
+- .NET 8/C#, Veldrid, own file parsers and the existing MSTest project.
+- `source/OpenTPW/World/Level.cs` creates lobby islands, not a playable park.
+- `source/OpenTPW.Files/Public/MapFile.cs` does not reconstruct a map.
+- `source/OpenTPW/World/Ride.cs` has no visible attraction model; the VM has
+  incomplete parsing and animation opcodes. No working original ride cycle.
+- `source/OpenTPW/Client/Renderer.cs` forces Vulkan and contains two build errors
+  with the current .NET 8 toolchain. Paths are pinned to Windows separators.
+- The native SPIR-V library in the current dependency is macOS x86_64, not arm64.
+- The old `apple-silicon` branch is a divergent architecture from March 2024; no
+  safe wholesale merge with `main`.
+- The supplied ISO was downloaded locally and its SHA-1 was checked against the
+  Archive.org metadata: `e47675b295a958f82b9b21dee0546a5ad9eea1e8`. Assets stay
+  outside git; integration tests use `OPENTPW_GAME_PATH`.
+- The exact edition label, locale and patch level are unknown until asset/binary
+  evidence identifies them; the ISO name or checksum does not prove that
+  identification.
+- Locally verified executable hashes and PE information are in
+  `docs/RECOMPILATION-ASSESSMENT.md`; this proves neither a runnable reference nor
+  fidelity.
 
-## Routekeuze: herimplementatie plus gericht reverse engineering
+## Route choice: reimplementation plus targeted reverse engineering
 
-De bestaande C#-engine blijft voorlopig de basis. Gebruik de originele executable
-als gedragsreferentie, niet als ongemerkt meegeleverde runtime. Onderzoek originele
-logica gericht bij onduidelijke formaten, simulatieberekeningen en scriptopcodes.
-Vervang deze aanpak alleen na een meetbare proef die aantoonbaar werk bespaart.
+The existing C# engine remains the basis for now. Use the original executable as
+a behavioral reference, not as an unnoticed bundled runtime. Investigate original
+logic in a targeted way where formats, simulation calculations and script opcodes
+are unclear. Replace this approach only after a measurable experiment that
+demonstrably saves work.
 
-| Route | Nut | Beperking / besluit |
+| Route | Benefit | Limitation / decision |
 | --- | --- | --- |
-| OpenTPW C# herimplementatie | Bestaande parsers/rendering hergebruiken; snel verticale slices | Ontbrekende simulatie moet werkelijk worden geïmplementeerd; voorkeursroute |
-| Matching decompilation met Ghidra/reccmp | Originele functies reconstrueren en vergelijken | Compiler/ABI en binary eerst verifiëren; gericht inzetten |
-| Static recompilation originele executable | Originele machinetaal naar nieuwe native code | Windows PE/x86, imports, callbacks en graphics-runtime zijn niet opgelost door consoletools |
-| Wine/compatibility | Originele game als referentie kunnen uitvoeren | Geen voltooide OpenTPW-port; apart van productacceptatie |
-| Rosetta voor huidige Intel-Mac libraries | Snelle tijdelijke Mac-bootstrap | Niet native arm64; niet het eindproduct of langetermijnfundament |
-| .NET NativeAOT | Later startup/distributie van eigen engine verbeteren | Herstelt geen originele gamecode; reflection/native dependencies eerst kwalificeren |
+| OpenTPW C# reimplementation | Reuse existing parsers/rendering; fast vertical slices | Missing simulation must actually be implemented; preferred route |
+| Matching decompilation with Ghidra/reccmp | Reconstruct original functions and compare them | Verify compiler/ABI and binary first; deploy targeted |
+| Static recompilation of original executable | Original machine code to new native code | Windows PE/x86, imports, callbacks and graphics runtime are not solved by console tools |
+| Wine/compatibility | Run the original game as a reference | Not a completed OpenTPW port; separate from product acceptance |
+| Rosetta for current Intel Mac libraries | Fast temporary Mac bootstrap | Not native arm64; not the end product or long-term foundation |
+| .NET NativeAOT | Later improve startup/distribution of own engine | Does not restore original game code; qualify reflection/native dependencies first |
 
-### Lessen uit ontwikkelingen sinds 2024
+### Lessons from developments since 2024
 
-1. N64Recomp vertaalt MIPS/N64-code; XenonRecomp richt zich op PowerPC/XEX.
-   Het succes van deze projecten is geen bewijs dat een Windows-x86-game met
-   dezelfde tools automatisch werkt. Frontend, ABI en platform-runtime verschillen.
-2. reccmp en LEGO Island laten een bruikbaar Windows-spoor zien: bron reconstrueren,
-   functies tegen het origineel vergelijken, vervolgens platformonderdelen porten.
-   Matching accuracy en functionele compleetheid blijven aparte kwaliteitsmaten.
-3. isle-portable laat zien dat originele gameplay en vervangbare rendering/input/audio
-   afzonderlijke werkzaamheden zijn. Neem die grens over; geen onnodige engine-rewrite.
-4. SDL 3.2 kwam in januari 2025 uit, inclusief een moderne GPU-API. Dit is een kandidaat
-   voor een toekomstige backend als de bestaande Veldrid-stack aantoonbaar blokkeert,
-   geen reden om nu een functionerende parser/gamekern opnieuw te schrijven.
-5. Apple's aangekondigde algemene Rosetta-ondersteuning loopt door macOS 27;
-   daarna blijft beperktere ondersteuning voor bepaalde oudere games over.
-   Plan daarom echte arm64-native dependencies en test die apart.
-6. OpenTPW issue #31 meldt dat TGQ-video's EA TQI-payloads bevatten en met FFmpeg/VLC
-   kunnen worden gelezen. Verifieer dit met de gekozen assets voordat een nieuwe
-   videodecoder wordt gebouwd; de melding is geen reeds geleverde videofunctie.
+1. N64Recomp translates MIPS/N64 code; XenonRecomp targets PowerPC/XEX. The
+   success of these projects is no evidence that a Windows x86 game works
+   automatically with the same tools. Frontend, ABI and platform runtime differ.
+2. reccmp and LEGO Island show a usable Windows track: reconstruct source, compare
+   functions against the original, then port platform parts. Matching accuracy and
+   functional completeness remain separate quality measures.
+3. isle-portable shows that original gameplay and replaceable rendering/input/audio
+   are separate workstreams. Adopt that boundary; no unnecessary engine rewrite.
+4. SDL 3.2 was released in January 2025, including a modern GPU API. This is a
+   candidate for a future backend if the existing Veldrid stack demonstrably blocks
+   progress, not a reason to rewrite a working parser/game core now.
+5. Apple's announced general Rosetta support continues through macOS 27; after
+   that, more limited support remains for certain older games. Therefore plan for
+   genuine arm64-native dependencies and test them separately.
+6. OpenTPW issue #31 reports that TGQ videos contain EA TQI payloads and can be
+   read with FFmpeg/VLC. Verify this with the chosen assets before building a new
+   video decoder; the report is not an already delivered video feature.
 
-### Beslissende recompilation-proef
+### Decisive recompilation experiment
 
-Budget: maximaal 16 engineer-uren als beslisexperiment, geen leveringsbelofte.
-Inventariseer de originele PE/executable en imports zonder installer/crack uit te
-voeren. Selecteer één pure parser of simulatiefunctie met bekende input/output.
-Vergelijk Ghidra-assisted reconstructie en, alleen indien aantoonbaar ondersteund,
-static lifting met een implementatie in de bestaande C#-kern. Vereis reproduceerbare
-outputs, een complete runtime-afhankelijkhedenlijst en minder verwacht totaalwerk.
-Zonder dat bewijs geen pivot naar een nieuwe recompilation-toolchain.
-Verwijder of omzeil zelf geen kopieerbeveiliging als onderdeel van deze proef; zie
-"Herkomst van spelregels" voor de toegestane statische analyse.
+Budget: at most 16 engineer-hours as a decision experiment, not a delivery
+promise. Inventory the original PE/executable and imports without running the
+installer or crack. Select one pure parser or simulation function with known
+input/output. Compare Ghidra-assisted reconstruction and, only if demonstrably
+supported, static lifting with an implementation in the existing C# core. Require
+reproducible outputs, a complete runtime dependency list, and less expected total
+effort. Without that evidence, no pivot to a new recompilation toolchain. Do not
+remove or bypass copy protection yourself as part of this experiment; see
+"Provenance of game rules" for the permitted static analysis.
 
-### Herkomst van spelregels (besluit 9 oktober 2026)
+### Provenance of game rules (decision October 9, 2026)
 
-Een spelregel geldt alleen als origineel gedrag als hij herleid is naar logica in een
-originele executable: voor Theme Park World de PowerPC-executable `SimTheme Park`
-(Mac-cd, november 2000, PEF, onversleuteld) en haar gedeelde bibliotheken; voor
-Theme Park Inc `Game.exe`. Een regel die alleen uit een handleiding, website,
-community-bron of speltest komt, blijft `[APPROX]`, hoe aannemelijk ook. Databestanden
-blijven `[DATA]`-herkomst: zij bewijzen waarden, niet de regel die ze gebruikt.
+A game rule counts as original behavior only if it is traced to logic in an
+original executable: for Theme Park World the PowerPC executable `SimTheme Park`
+(Mac CD, November 2000, PEF, unencrypted) and its shared libraries; for Theme Park
+Inc `Game.exe`. A rule that comes only from a manual, website, community source or
+gameplay test remains `[APPROX]`, however plausible. Data files keep `[DATA]`
+provenance: they prove values, not the rule that uses them.
 
-De Theme Park Inc-`Game.exe` van de cd is SafeDisc-versleuteld. Op besluit van de
-projecteigenaar mag de ontsleutelde no-CD-`Game.exe` die op dezelfde cd meekomt
-(`WIN10FIX+NOCDFIX/noCD Crack/tpinc_nocd/Game.exe`, zelfde sectie-indeling als het
-origineel) voor statische analyse gebruikt worden. Grondslag: decompilatie voor
-interoperabiliteit door een rechtmatige gebruiker (art. 6 Softwarerichtlijn
-2009/24/EG, art. 45m Auteurswet). "Abandonware" is geen juridische grondslag: het
-auteursrecht ligt bij EA. Voorwaarden:
+The Theme Park Inc `Game.exe` on the CD is SafeDisc-encrypted. By decision of the
+project owner, the decrypted no-CD `Game.exe` that comes with the same CD
+(`WIN10FIX+NOCDFIX/noCD Crack/tpinc_nocd/Game.exe`, same section layout as the
+original) may be used for static analysis. Basis: decompilation for
+interoperability by a lawful user (Art. 6 Software Directive 2009/24/EC, Art. 45m
+Auteurswet, Dutch Copyright Act). "Abandonware" is not a legal basis: copyright
+lies with EA. Conditions:
 
-- Geen executable, ontsleutelde code, disassembly-dumps of crack-bestanden in git,
-  issues of artifacts; alleen eigen beschrijvingen met hash, functie-/adresverwijzing.
-- Clean-room: regels worden in eigen woorden beschreven en opnieuw geïmplementeerd;
-  geen gekopieerde of mechanisch vertaalde originele code.
-- Alleen voor interoperabiliteit van OpenTPW; OpenTPW verspreidt of vereist geen
-  no-CD-bestanden en spelers blijven hun eigen originele exemplaar nodig hebben.
-- De Windows-TPW-executable (`TP.ICD`) valt hier niet onder zolang er geen
-  vergelijkbaar besluit is.
+- No executable, decrypted code, disassembly dumps or crack files in git, issues
+  or artifacts; only own descriptions with hash and function/address references.
+- Clean-room: rules are described in own words and reimplemented; no copied or
+  mechanically translated original code.
+- Only for interoperability of OpenTPW; OpenTPW does not distribute or require
+  no-CD files, and players still need their own original copy.
+- The Windows TPW executable (`TP.ICD`) does not fall under this as long as no
+  comparable decision exists.
 
-Bewijsverwijzingen krijgen een eigen label, bijvoorbeeld
-`[BIN:STP-PPC:<functie of adres>]` en `[BIN:TPI-EXE:<functie of adres>]`, met de
-SHA-256 van de geanalyseerde executable in `RECOMPILATION-ASSESSMENT.md`. Het
-fidelity-register (`tools/fidelity_register.py`) moet dat label nog leren voordat de
-eerste regel zo wordt gemarkeerd.
+Evidence references get their own label, for example
+`[BIN:STP-PPC:<function or address>]` and `[BIN:TPI-EXE:<function or address>]`,
+with the SHA-256 of the analyzed executable in `RECOMPILATION-ASSESSMENT.md`. The
+fidelity register (`tools/fidelity_register.py`) must still learn that label
+before the first rule is marked this way.
 
-### Evidence- en determinismecontract (vereisten, nog niet geleverd)
+### Evidence and determinism contract (requirements, not yet delivered)
 
-`docs/REFERENCE-CORPUS.md` specificeert het geselecteerde corpus en de tracevelden.
-Vóór acceptatie van M3/M4-semantiek is een begrensde originele gedragstrace nodig,
-gekoppeld aan executable-/assethashes, beginstaat, acties, waarnemingen en vooraf
-bepaalde vergelijkingscriteria. Static-analysis evidence en een runtime-oracle
-blijven aparte labels; zonder uitvoerbaar origineel blijft gedrag onverifieerd.
+`docs/REFERENCE-CORPUS.md` specifies the selected corpus and the trace fields.
+Before acceptance of M3/M4 semantics, a bounded original behavior trace is
+required, linked to executable/asset hashes, initial state, actions, observations
+and comparison criteria fixed in advance. Static-analysis evidence and a runtime
+oracle remain separate labels; without a runnable original, behavior remains
+unverified.
 
-M2 moet een vaste simulatietick, stabiele update-/eventvolgorde en benoemd RNG-algoritme
-met geserialiseerde volledige state vastleggen. Rendering/framerate mag de simulatie
-niet sturen. Canonieke simulatiestate moet exact replaybaar zijn op alle doelplatforms;
-eventuele numerieke toleranties voor vergelijking met het origineel worden vooraf
-per veld gemotiveerd en mogen geen veranderde spelregels verbergen. Dit contract
-beschrijft toekomstige acceptatie, niet de huidige prototype-motion of savefunctie.
+M2 must record a fixed simulation tick, stable update/event order and a named RNG
+algorithm with fully serialized state. Rendering/frame rate must not drive the
+simulation. Canonical simulation state must be exactly replayable on all target
+platforms; any numeric tolerances for comparison with the original must be
+justified in advance per field and must not hide changed game rules. This contract
+describes future acceptance, not the current prototype motion or save function.
 
-### Runtime- en toolchainkwalificatie
+### Runtime and toolchain qualification
 
-M0 inventariseert versies, transitieve native libraries, laadpad, OS/architectuur,
-licentie/distributie en teststatus voor NAudio/Media Foundation/WaveOut, SDL2,
-SPIR-V-cross-compilation en ImGui/fonts. De bestaande Windows-audiopaden zijn geen
-macOS-audiobackend. Metal kiezen bewijst niet dat shaders, fonts, input, audio en
-editor-launch werken. M1 kwalificeert alle launch-kritieke paden; optionele paden
-mogen tijdelijk expliciet unsupported blijven, maar blokkeren latere eindacceptatie.
-Bij Rosetta moeten processarchitectuur én iedere geladen native library overeenkomen.
-M7 vereist echte arm64-kwalificatie zonder Rosetta.
+M0 inventories versions, transitive native libraries, load path, OS/architecture,
+license/distribution and test status for NAudio/Media Foundation/WaveOut, SDL2,
+SPIR-V cross-compilation and ImGui/fonts. The existing Windows audio paths are not
+a macOS audio backend. Choosing Metal does not prove that shaders, fonts, input,
+audio and editor launch work. M1 qualifies all launch-critical paths; optional
+paths may temporarily remain explicitly unsupported, but they block later final
+acceptance. With Rosetta, both the process architecture and every loaded native
+library must match. M7 requires genuine arm64 qualification without Rosetta.
 
-Leg SDK-versie, restore-inputs en reproduceercommando's vast voor M0. .NET 8-support
-eindigt op 10 november 2026 volgens Microsoft. Besluit van de projecteigenaar (9 oktober
-2026): over naar .NET 10 (LTS tot 14 november 2028), SDK 10.0.401 in `global.json`;
-NuGet-pakketten blijven ongewijzigd en zijn geen onderdeel van dit besluit. NativeAOT
-blijft een afzonderlijke, optionele kwalificatie.
+Record SDK version, restore inputs and reproduction commands for M0. .NET 8 support
+ends on November 10, 2026 according to Microsoft. Decision of the project owner
+(October 9, 2026): move to .NET 10 (LTS until November 14, 2028), SDK 10.0.401 in
+`global.json`; NuGet packages remain unchanged and are not part of this decision.
+NativeAOT remains a separate, optional qualification.
 
-## Uitvoeringsfasen en harde gates
+## Execution phases and hard gates
 
-### M0 — Reproduceerbare basis en inventarisatie
-- Leg editie/assetmanifest/hashes vast; identificeer ontbrekende bestanden.
-- Houd exact editielabel/patch onbekend zolang bewijs ontbreekt; leg locale en
-  executable-identiteit vast via `docs/RECOMPILATION-ASSESSMENT.md`.
-- Zorg voor een schone .NET-build, portable assetpaden en unit-/assettestscheiding.
-- Maak een startcommando met expliciet gamepad, logging en assetdiagnostiek.
-- Registreer compiler/binary-informatie voor het beslisexperiment.
-- Inventariseer de runtime-dependencies en leg SDK-/restore-inputs vast.
-- Gate: schone checkout bouwt; CPU-tests slagen; assettests lezen echte WAD-data;
-  ontbrekende assets geven een duidelijke fout zonder nep-success.
-- Evidence-pakket: revision/toolchain, geselecteerd manifest, benoemde texture-/model-
-  assertions en runtime-matrix. Optionele tests zonder assets zijn inconclusive,
-  geen assetbewijs. De expliciete `--validate-assets`-gate moet falen bij ontbrekende
-  vereiste bestanden, onleesbare archives of ongeldige geselecteerde fixtures.
+### M0 — Reproducible base and inventory
+- Record edition/asset manifest/hashes; identify missing files.
+- Keep the exact edition label/patch unknown while evidence is missing; record
+  locale and executable identity via `docs/RECOMPILATION-ASSESSMENT.md`.
+- Ensure a clean .NET build, portable asset paths, and separation of unit and
+  asset tests.
+- Create a start command with explicit gamepad, logging and asset diagnostics.
+- Register compiler/binary information for the decision experiment.
+- Inventory the runtime dependencies and record SDK/restore inputs.
+- Gate: a clean checkout builds; CPU tests pass; asset tests read real WAD data;
+  missing assets give a clear error without fake success.
+- Evidence package: revision/toolchain, selected manifest, named texture/model
+  assertions and runtime matrix. Optional tests without assets are inconclusive,
+  not asset evidence. The explicit `--validate-assets` gate must fail on missing
+  required files, unreadable archives or invalid selected fixtures.
 
-### M1 — Eerste zichtbare Mac-park-slice
-- Gebruik Metal op macOS; repareer cross-compilation en backendvoorwaarden.
-- Bootstrap desnoods x86_64/Rosetta, maar label dit expliciet als tijdelijk.
-- Laad een begrensde Jungle-sandbox met echte terrein- en attractie-assets.
-- Voeg camerabediening, gridplaatsing, footprintvalidatie en start/stop toe.
-- Houd eventuele tijdelijke modelanimatie zichtbaar gescheiden van originele VM-fidelity.
-- Gate: app start op deze Mac; precies één attractie plaatsbaar; beweging stopt/start;
-  UI-clicks plaatsen geen tweede attractie; screenshots/logs en tests als bewijs.
-- Bewijs backend/process/native-library-architectuur en shader-/font-/editor-/input-
-  launchpaden. Een begrensd terrein/model en procedurele beweging zijn een prototype,
-  niet gevalideerde originele MAP-semantiek, ritcyclus of VM-fidelity.
+### M1 — First visible Mac park slice
+- Use Metal on macOS; repair cross-compilation and backend requirements.
+- Bootstrap with x86_64/Rosetta if necessary, but label this explicitly as
+  temporary.
+- Load a bounded Jungle sandbox with real terrain and attraction assets.
+- Add camera controls, grid placement, footprint validation and start/stop.
+- Keep any temporary model animation visibly separate from original VM fidelity.
+- Gate: the app starts on this Mac; exactly one attraction is placeable; movement
+  stops/starts; UI clicks do not place a second attraction; screenshots/logs and
+  tests as evidence.
+- Prove backend/process/native-library architecture and shader/font/editor/input
+  launch paths. A bounded terrain/model and procedural motion are a prototype, not
+  validated original MAP semantics, ride cycle or VM fidelity.
 
-### M2 — Datamodel, kaart en persistence
-- Werk MAP/TPWS-schema's uit op basis van echte bestanden en gerichte binary-analyse.
-- Introduceer een deterministische simulatietick die onafhankelijk van rendering werkt.
-- Leg tickfrequentie, updatevolgorde, RNG-algoritme/state en canonieke replayvelden vast
-  volgens het evidencecontract; verifieer save/reload inclusief tick en RNG-state.
-- Maak eigen geversioneerd saveformaat met atomische writes en migratietests.
-- Originele saves eerst read-only import; writeback alleen na roundtrip-bewijs.
-- Gate: hetzelfde park na herstart; seed/replay reproduceren resultaten;
-  beschadigde bestanden falen gecontroleerd zonder saveverlies.
+### M2 — Data model, map and persistence
+- Develop MAP/TPWS schemas based on real files and targeted binary analysis.
+- Introduce a deterministic simulation tick that works independently of rendering.
+- Record tick frequency, update order, RNG algorithm/state and canonical replay
+  fields per the evidence contract; verify save/reload including tick and RNG
+  state.
+- Create a versioned save format of its own with atomic writes and migration tests.
+- Original saves first read-only import; writeback only after round-trip evidence.
+- Gate: the same park after restart; seed/replay reproduce results; damaged files
+  fail in a controlled way without save loss.
 
-### M3 — Eén complete gameplay-loop
-- Bouw paden, ingang, wachtrij, één attractie, winkel/toilet en personeel.
-- Bezoekers: doelen, padzoeken, wachtrij, rit, behoefteverandering en vertrek.
-- Economie: kosten, opbrengst, ticketprijs, personeel en onderhoud.
-- Gate: 30 minuten versneld headless draaien met inkomsten/uitgaven en bezoekers;
-  geen vastgelopen wachtrijen, onbereikbare doelen of negatief tijdverloop.
-- Invariants bewijzen stabiliteit, geen originele economie/bezoekerssemantiek:
-  accepteer die semantiek pas met gekoppelde originele traces en vergelijking.
+### M3 — One complete gameplay loop
+- Build paths, entrance, queue, one attraction, shop/toilet and staff.
+- Visitors: goals, path finding, queue, ride, need change and departure.
+- Economy: costs, revenue, ticket price, staff and maintenance.
+- Gate: 30 minutes of accelerated headless running with income/expenses and
+  visitors; no stuck queues, unreachable goals or negative time progression.
+- Invariants prove stability, not original economy/visitor semantics: accept those
+  semantics only with linked original traces and comparison.
 
-### M4 — Attracties, scripts en achtbanen
-- Corpus van RSE-bestanden, opcode-inventaris, VM-disassembly en golden tests.
-- Uitvoeringsbudget, foutdiagnostiek, objecthiërarchie en animatie/eventbinding.
-- Hergebruik dezelfde VM voor vaste attracties; geen aparte hardcoded hack per ride.
-- Achtbaanbouw, segmenten, terrein-/footprintconstraints, ritcamera en ritbeoordeling.
-- Gate: iedere ondersteunde attractie doorloopt load/build/run/stop/delete;
-  alle gebruikte opcodes hebben tests; onbekende opcodes worden expliciet gemeld.
-- Dit is alleen subset-acceptatie. Volledige M4-acceptatie vereist alle verplichte
-  attracties/achtbanen en benodigde opcodes, reference-traces en geen unsupported
-  vereisten; registreer originele VM-fidelity apart van procedurele animatie.
+### M4 — Attractions, scripts and roller coasters
+- Corpus of RSE files, opcode inventory, VM disassembly and golden tests.
+- Execution budget, error diagnostics, object hierarchy and animation/event binding.
+- Reuse the same VM for fixed attractions; no separate hardcoded hack per ride.
+- Roller coaster construction, segments, terrain/footprint constraints, ride camera
+  and ride assessment.
+- Gate: every supported attraction goes through load/build/run/stop/delete; all
+  opcodes used have tests; unknown opcodes are reported explicitly.
+- This is subset acceptance only. Full M4 acceptance requires all mandatory
+  attractions/roller coasters and required opcodes, reference traces and no
+  unsupported requirements; record original VM fidelity separately from procedural
+  animation.
 
-### M5 — Volledige offline progression
-- Alle vier werelden, scenario's/doelen, research, unlocks en adviseur.
-- Personeelsrollen, onderhoud/storingen, behoeften, shops en decoratie-effecten.
-- Gate: elk scenario start, doelen zijn haalbaar en voortgang overleeft save/load;
-  featurematrix heeft geen open blockers voor de afgesproken originele editie.
+### M5 — Full offline progression
+- All four worlds, scenarios/goals, research, unlocks and advisor.
+- Staff roles, maintenance/breakdowns, needs, shops and decoration effects.
+- Gate: every scenario starts, goals are achievable, and progress survives
+  save/load; the feature matrix has no open blockers for the agreed original
+  edition.
 
-### M6 — Audiovisuele en UX-pariteit
-- Fonts, lokalisatie, menu's, shortcuts, geluid/muziek, video's en first-person.
-- Reuse bestaande bewezen decoders waar mogelijk; geen eigen codec zonder noodzaak.
-- Meet rendering/resources en memory; verbeter hotspots pas na profiling.
-- Neem optionele, instelbare upscaling mee volgens `docs/UPSCALING-DESIGN.md`:
-  Native standaard, eerst portable Linear/Nearest met vaste/custom renderschaal;
-  alleen de 3D-wereld schalen, UI op outputresolutie en simulatie onaangeraakt.
-- Vendor-/temporal-upscalers en dynamische resolutie zijn latere optionele proeven,
-  geen dependencytoestemming of blocker voor native gameplay. Kwalificeer aangeboden
-  baseline-modi per backend op beeld, DPI/picking, fallback, resources en gemeten kosten.
-- Gate: referentiecaptures en replay-tests; geen ontbrekende primaire UI-functies;
-  audio/input/rendering blijven werken na resize, alt-tab en lange sessies.
+### M6 — Audiovisual and UX parity
+- Fonts, localization, menus, shortcuts, sound/music, videos and first-person.
+- Reuse existing proven decoders where possible; no own codec without need.
+- Measure rendering/resources and memory; improve hotspots only after profiling.
+- Include optional, adjustable upscaling according to `docs/UPSCALING-DESIGN.md`:
+  Native as default, first portable Linear/Nearest with fixed/custom render scale;
+  scale only the 3D world, UI at output resolution and simulation untouched.
+- Vendor/temporal upscalers and dynamic resolution are later optional experiments,
+  not dependency approval or a blocker for native gameplay. Qualify offered
+  baseline modes per backend on image, DPI/picking, fallback, resources and
+  measured cost.
+- Gate: reference captures and replay tests; no missing primary UI functions;
+  audio/input/rendering keep working after resize, alt-tab and long sessions.
 
-### M7 — Native en platformkwalificatie
-- Reproduceerbare native arm64-builds voor alle dependencies; Rosetta niet vereist.
-- Windows-/Linux-backends en distributiepakketten; CI met CPU- en assetgates.
-- Drie afzonderlijke verplichte releasegates: native macOS-arm64, native Windows
-  en native Linux. Leg voor Windows/Linux de ondersteunde OS-/CPU-targets vast;
-  verifieer op ieder doelplatform passende process- en native-library-architecturen.
-  Een Wine-/Rosetta-/andere compatibility-run vervangt geen native releasegate.
-- NativeAOT alleen behouden bij meetbare startup/geheugen/distributiewinst en groene tests.
-- Gate: macOS-arm64/Windows/Linux dezelfde simulation replay; lange sessies en
-  save/load-corpus zonder regressies; packages bevatten geen originele assets.
-- Alle vereiste matrixregels moeten reference-verified zijn met platformbewijs;
-  bevestig het supported-runtime-besluit en distributie-/native-library-inventaris.
-- Iedere native releasegate vereist package-launch, rendering/input/audio, strikte
-  assetvalidatie, dezelfde canonieke simulation replay, save/load en lange-sessietests.
-  Smoke-tests alleen zijn onvoldoende; releaseacceptatie blijft open zolang één
-  platform ongekwalificeerd is. Native betekent OS-/CPU-passende runtime/dependencies,
-  niet verplicht NativeAOT; een ondersteunde .NET JIT-runtime is toegestaan.
+### M7 — Native and platform qualification
+- Reproducible native arm64 builds for all dependencies; Rosetta not required.
+- Windows/Linux backends and distribution packages; CI with CPU and asset gates.
+- Three separate mandatory release gates: native macOS-arm64, native Windows and
+  native Linux. For Windows/Linux, record the supported OS/CPU targets; verify
+  appropriate process and native-library architectures on each target platform. A
+  Wine/Rosetta/other compatibility run does not replace a native release gate.
+- NativeAOT only retained with measurable startup/memory/distribution gains and
+  green tests.
+- Gate: macOS-arm64/Windows/Linux the same simulation replay; long sessions and
+  save/load corpus without regressions; packages contain no original assets.
+- All required matrix rules must be reference-verified with platform evidence;
+  confirm the supported-runtime decision and the distribution/native-library
+  inventory.
+- Each native release gate requires package launch, rendering/input/audio, strict
+  asset validation, the same canonical simulation replay, save/load and long-session
+  tests. Smoke tests alone are insufficient; release acceptance remains open as long
+  as one platform is unqualified. Native means an OS/CPU-appropriate runtime and
+  dependencies, not mandatory NativeAOT; a supported .NET JIT runtime is allowed.
 
-## Efficiëntie en werkwijze
+## Efficiency and way of working
 
-- Kritieke pad: assets/build → rendering → datamodel → simulatie → fidelity.
-- Parallel: parsers/corpus-tests, platformlaag, documentatie; geen gedeelde schrijfscope.
-- Kleine patches per subsystem; bestaande helpers eerst hergebruiken.
-- Geen dependency toevoegen of upgraden zonder expliciete toestemming.
-- Geen generieke ECS, multiplayer, complete renderer-rewrite of AI-bezoekerlaag vooraf.
-- Bij reverse engineering: bron/evidence per onbekende functie bewaren en golden tests
-  schrijven; AI-output telt nooit als bewijs zonder runtime-/reference-verificatie.
-- Houd demo-animatie, compatibility-uitvoering, native rendering en complete gameplay
-  als vier verschillende statussen in de voortgang bij.
-- Prioriteer regressies en bewezen decoder-/scriptkennis boven aantallen gegenereerde regels.
+- Critical path: assets/build → rendering → data model → simulation → fidelity.
+- In parallel: parsers/corpus tests, platform layer, documentation; no shared write
+  scope.
+- Small patches per subsystem; reuse existing helpers first.
+- No dependency added or upgraded without explicit permission.
+- No generic ECS, multiplayer, complete renderer rewrite or AI visitor layer up front.
+- For reverse engineering: keep source/evidence per unknown function and write
+  golden tests; AI output never counts as evidence without runtime/reference
+  verification.
+- Track demo animation, compatibility execution, native rendering and complete
+  gameplay as four different statuses in progress.
+- Prioritize regressions and proven decoder/script knowledge above counts of
+  generated lines.
 
-## Risico's en inschatting
+## Risks and assessment
 
-De meeste kosten liggen in ontbrekende simulation semantics en originele formaten,
-niet in C# naar native compileren. De volledige game is geen verantwoord uur-/dagen-
-commitment. Eerst M0/M1 meten, dan capaciteit en throughput per subsystem bepalen.
-Belangrijkste risico's: versieverschillen, gedeeltelijke VM/modelparser, shader/native
-interop, fidelity zonder werkend origineel als oracle, en savecompatibiliteit.
-Als een gate faalt, blijft die fase open; geen vervanging door een screenshot-only demo.
+Most costs lie in missing simulation semantics and original formats, not in
+compiling C# to native code. The full game is not a responsible hour/day
+commitment. First measure M0/M1, then determine capacity and throughput per
+subsystem. Main risks: version differences, partial VM/model parser, shader/native
+interop, fidelity without a working original as oracle, and save compatibility. If
+a gate fails, that phase remains open; it is not replaced by a screenshot-only demo.
 
-## Primaire bronnen voor routekeuze
+## Primary sources for route choice
 
-- https://github.com/OpenTPW/OpenTPW en issue https://github.com/OpenTPW/OpenTPW/issues/31
+- https://github.com/OpenTPW/OpenTPW and issue https://github.com/OpenTPW/OpenTPW/issues/31
 - https://github.com/N64Recomp/N64Recomp
 - https://github.com/hedge-dev/XenonRecomp
 - https://github.com/isledecomp/reccmp
-- https://github.com/isledecomp/isle en https://github.com/isledecomp/isle-portable
+- https://github.com/isledecomp/isle and https://github.com/isledecomp/isle-portable
 - https://github.com/NationalSecurityAgency/ghidra
 - https://github.com/libsdl-org/SDL/releases/tag/release-3.2.0
 - https://developer.apple.com/documentation/apple-silicon/about-the-rosetta-translation-environment
-- https://support.apple.com/en-us/102527 (Rosetta door macOS 27; beperkt vanaf macOS 28)
+- https://support.apple.com/en-us/102527 (Rosetta through macOS 27; limited from macOS 28)
 - https://learn.microsoft.com/en-us/dotnet/core/deploying/native-aot/
-- https://dotnet.microsoft.com/en-us/platform/support/policy/dotnet-core (.NET 8: 10 november 2026)
-- https://github.com/naudio/NAudio/tree/v2.2.1 (Windows-audio, gepinde generatie)
+- https://dotnet.microsoft.com/en-us/platform/support/policy/dotnet-core (.NET 8: November 10, 2026)
+- https://github.com/naudio/NAudio/tree/v2.2.1 (Windows audio, pinned generation)
 
-Bronclaims hebben peildatum 9 oktober 2026. Issue #31 rapporteert een North-American
-retail `roll.tgq`-sample; generaliseer deze melding niet naar alle video's/edities.
-Live upstream-documentatie is geen bewijs voor de lokaal gepinde runtime-versies.
+Source claims are dated October 9, 2026. Issue #31 reports a North-American retail
+`roll.tgq` sample; do not generalize this report to all videos/editions. Live
+upstream documentation is no evidence for the locally pinned runtime versions.
 
-## Voortgang bij aanvang
+## Progress at start
 
-- [x] Fork en lokale clone.
-- [x] Broninspectie en scopebevestiging.
-- [x] ISO-download en checksum; assets buiten repository.
-- [x] Lokaal .NET 8 arm64 SDK; x64 bootstrap SDK wordt gecontroleerd.
-- [ ] M0 build/assetdiagnostiek/tests.
-- [ ] M1 zichtbare Mac-park-slice.
-- [ ] Recompilation-beslisexperiment met originele executable.
-- [ ] M2–M7; niet geleverd en niet als gereed rapporteren.
+- [x] Fork and local clone.
+- [x] Source inspection and scope confirmation.
+- [x] ISO download and checksum; assets outside repository.
+- [x] Local .NET 8 arm64 SDK; x64 bootstrap SDK is being checked.
+- [ ] M0 build/asset diagnostics/tests.
+- [ ] M1 visible Mac park slice.
+- [ ] Recompilation decision experiment with original executable.
+- [ ] M2–M7; not delivered and not to be reported as done.

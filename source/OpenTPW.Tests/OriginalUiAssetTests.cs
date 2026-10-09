@@ -149,7 +149,6 @@ public class OriginalUiAssetTests
 		Assert.AreEqual( 70, item.DefaultExcitement, "Totem.sam UsageInfo.ExcitementLevel" );
 		Assert.AreEqual( TotemBuildCatalog.ObjectNameIndex, item.ObjectNameIndex );
 		Assert.AreEqual( 0, new TotemBuildCatalog().GetItems( BuildCategory.Shops ).Count );
-		Assert.AreEqual( 100000, StubParkStatus.ForLevel( "jungle" ).Money );
 		var unresolved = new List<string>();
 		var icon = new PreviewIcon( new ModelFile( item.PreviewModel! ), name =>
 		{

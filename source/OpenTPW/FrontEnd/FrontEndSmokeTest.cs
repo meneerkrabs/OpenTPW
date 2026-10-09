@@ -26,7 +26,11 @@ internal sealed class FrontEndSmokeTest : IDisposable
 	private int frame;
 	private int waitUntil;
 	private bool completed;
-	private long moneyBeforePurchase;
+	private long builtCost;
+	private bool totemLockedAtStart;
+	private long soldFor;
+	private int objectsBeforePurchase;
+	private static readonly BuildItem TotemItem = new TotemBuildCatalog().GetItems( BuildCategory.Rides ).Single();
 
 	public FrontEndSmokeTest( GameFlow flow )
 	{
@@ -107,9 +111,15 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			var capture = CaptureFrame( "hud.png" );
 			VerifyText( capture, flow.Hud!.MoneyText, "HUD bank balance" );
 			VerifyText( capture, flow.Hud.DateText, "HUD date" );
-			var status = (StubParkStatus)flow.Hud.Status;
-			Require( status.Money == 100000 + status.Earned, "starting cash is Easy_Standard.sam's 100,000 plus guest payments" );
-			moneyBeforePurchase = status.Money - status.Earned;
+			var economy = flow.Level!.Park!.Economy;
+			objectsBeforePurchase = economy.Objects.Count;
+			Require( flow.Hud.Status is EconomyParkStatus && flow.Hud.Status.Money == economy.Balance, "HUD bank balance is the park economy's" );
+			Require( flow.Hud.DateText == string.Format( flow.Strings.Extra( OpenTpwText.DateFormat ), economy.Date.Year, economy.Date.Month, economy.Date.Day ), "HUD date is the park clock" );
+			economy.EventRaised += item =>
+			{
+				if ( item.Kind == ParkEventKind.ObjectBuilt && item.InfoId == PrototypeRide.InfoId )
+					builtCost = item.Amount;
+			};
 			Click( flow.Hud.Screen, "buy" );
 		} );
 		Wait( "build arm opens", 3 );
@@ -119,6 +129,21 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			var capture = CaptureFrame( "build-arm.png" );
 			VerifyText( capture, flow.Strings[UIStrings.BuyRide], "Buy Ride title" );
 			VerifyText( capture, flow.Strings.Object( TotemBuildCatalog.ObjectNameIndex ), "Totem build item" );
+			totemLockedAtStart = !flow.Hud.Status.IsAvailable( TotemItem );
+			Click( flow.Hud.Screen, "item0" );
+		} );
+		Wait( "item chosen", 3 );
+		Do( "research gate", () =>
+		{
+			if ( !totemLockedAtStart )
+				return;
+			// The economy has not researched the Totem yet: the HUD must refuse it. Test setup then marks
+			// it researched (as if research finished) so the purchase path can be exercised.
+			Require( !flow.Level!.IsPlacing && flow.Hud!.Messages.Contains( flow.Strings.Extra( OpenTpwText.NotAvailable ) ), "an unresearched item cannot be placed" );
+			var research = flow.Level.Park!.Economy.Research;
+			research.Restore( research.Completed.Append( (PrototypeRide.InfoId, 0) ).Distinct().ToArray(), research.ProgressEntries.ToArray(), research.Effort );
+			Require( flow.Hud!.Status.IsAvailable( TotemItem ), "Totem available once researched" );
+			Log.Trace( "Front-end smoke: the Totem was not researched at the start; research marked complete for the purchase test." );
 			Click( flow.Hud.Screen, "item0" );
 		} );
 		Wait( "placing", 3 );
@@ -130,10 +155,13 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		Wait( "purchase booked", 3 );
 		Do( "purchase charged", () =>
 		{
-			var status = (StubParkStatus)flow.Hud!.Status;
-			Require( status.Money == moneyBeforePurchase - 3250 + status.Earned, "Totem costs Totem.sam's 3,250" );
-			Require( flow.Level!.Guests == null || flow.Level.Guests.Revenue <= status.Earned, "guest admissions reach the bank balance" );
-			Log.Trace( $"HUD money: {status.Money} after the Totem purchase and {status.Earned} guest payments ({flow.Level.Guests?.Admissions ?? 0} admissions)." );
+			var economy = flow.Level!.Park!.Economy;
+			var price = flow.Hud!.Status.PriceOf( TotemItem );
+			Require( builtCost > 0 && builtCost == price, $"the Totem is bought through ParkEconomy.TryBuild at its catalogue price (built {builtCost}, price {price})" );
+			Require( flow.Hud.Status.Money == economy.Balance && flow.Level.PlacedRide != null, "HUD balance follows the economy after the purchase" );
+			Require( economy.Objects.Count == objectsBeforePurchase + 1, "the charged ride replaces its uncharged placeholder" );
+			Require( flow.Level.Park.Guests!.TryGetInstance( flow.Level.PlacedRide!.Visitors.AttractionId, out var linked ) && economy.TryGetObject( linked, out var bought ) && bought.TotalSpent == builtCost, "guest payments link to the purchased ride" );
+			Log.Trace( $"HUD money: {economy.Balance} after buying the Totem for {builtCost}; park date {economy.Date}." );
 			Require( !flow.Hud.BuildArmOpen, "build arm closes after building" );
 			flow.Hud.SelectPlacedRide();
 		} );
@@ -141,9 +169,29 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		Do( "info arm", () =>
 		{
 			Require( flow.Hud!.InfoArmOpen, "selecting the ride opens the info arm" );
+			Click( flow.Hud.Screen, "speedPaused" );
 			var capture = CaptureFrame( "info-arm.png" );
 			VerifyText( capture, flow.Strings[UIStrings.Excitement], "Excitement label" );
 			VerifyText( capture, flow.Strings[UIStrings.Reliability], "Reliability label" );
+		} );
+		Wait( "pause button", 3 );
+		Do( "economy paused", () =>
+		{
+			Require( flow.Level!.Park!.Economy.Speed == GameSpeed.Paused && flow.Hud!.Status.TimeScale == 0, "the HUD pause button pauses the park economy" );
+			flow.Level.Park.Economy.Speed = GameSpeed.Normal;
+			flow.Level.Park.Economy.EventRaised += item =>
+			{
+				if ( item.Kind == ParkEventKind.ObjectSold && item.InfoId == PrototypeRide.InfoId )
+					soldFor = item.Amount;
+			};
+			Click( flow.Hud!.Screen, "deleteRide" );
+		} );
+		Wait( "ride sold", 3 );
+		Do( "ride deleted", () =>
+		{
+			Require( flow.Level!.PlacedRide == null && soldFor > 0 && flow.Hud!.Status.Money == flow.Level.Park!.Economy.Balance, $"deleting the ride sells it for its scrap value (got {soldFor})" );
+			Require( flow.Level.Park!.Economy.Objects.Count == objectsBeforePurchase, "selling removes the purchased economy object" );
+			Log.Trace( $"HUD delete sold the Totem for {soldFor}; balance {flow.Level.Park.Economy.Balance}." );
 			flow.InjectedInput = UiInput.Key( UiKeys.Back );
 		} );
 		Wait( "pause opens", 3 );
@@ -171,7 +219,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			CaptureFrame( "frontend-return.png" );
 			Device.WaitForIdle();
 			completed = true;
-			Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name} at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames, lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, Totem purchase, info arm, pause menu, exit to lobby." );
+			Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name} at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames, lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, Totem bought through the park economy, info arm, economy pause, sale, pause menu, exit to lobby." );
 			GameFlow.Quit();
 		} );
 	}

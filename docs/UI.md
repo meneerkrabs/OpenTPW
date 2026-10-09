@@ -175,14 +175,18 @@ glyph in all 14 UI fonts of each language.
 - Build arm: `b_srides/b_sshop/b_sshow/b_sfeature` category buttons (521–524),
   the category title (119–122) and up to three items with a turning preview of
   the original `P<name>.MD2` (CPU orthographic projection, 30° tilt, painter
-  sorted — not the original 3D draw), the object name and price. Choosing an
-  item starts placement (message UIHELPTEXT 440); building charges the price.
+  sorted — not the original 3D draw), the object name and the economy catalogue
+  price; unresearched items are greyed and refused. Choosing an item starts
+  placement (message UIHELPTEXT 440); the placed ride is bought through
+  `ParkEconomy.TryBuild` (refused purchases take the placement back) and deleting it
+  sells it for its scrap value.
 - Info arm for the selected ride: name (OBJECT_NAMES), Excitement (the original
   default `UsageInfo.ExcitementLevel`, 70 for the Totem), Reliability, State of
   repair, Remaining life ("Not simulated yet"), open/close (`b_door`) and
   delete (`b_erase`).
-- Speed control (OpenTPW addition, bottom-right): pause, ×1, ×2, ×4 drive
-  `Level.SimulationTimeScale`.
+- Speed control (OpenTPW addition, bottom-right): pause, ×1, ×2, ×4 set the
+  economy's `GameSpeed` (its clock runs Speed ticks per fixed tick); pause also
+  stops rides and guests (`Level.SimulationTimeScale`).
 - Pause menu (Escape): PAUSED (403) with Resume (7), Save (4), Load (3), Options
   (6), Exit To Lobby (12), Quit Game (8, confirmation 9). Original parks cannot
   be saved (message); the sandbox saves its OpenTPW JSON.
@@ -193,13 +197,13 @@ glyph in all 14 UI fonts of each language.
 
 | Interface | Owner | Stub |
 | --- | --- | --- |
-| `Hud.IHudParkStatus` (money, date, speed/time scale, spend/refund/earn) | economy/simulation | `StubParkStatus`: starting cash `BankAccountInfo.InitialCash` from `Easy_Standard.sam` (100,000) plus every guest payment from `GuestSimulation.MoneySpent` (admissions, ride prices); calendar 2 s/day, 30-day months (placeholder) |
+| `Hud.IHudParkStatus` (money, date, speed, price/availability, charge placed ride, sell) | economy | `EconomyParkStatus` binds to `Level.Park` (looked up on every access, so a loaded park save is followed): balance, `IParkClock` date and speed, `TryBuild`/`Sell`; `NoEconomyStatus` for the economy-less sandbox; `StubParkStatus` for tests only |
 | `Hud.IBuildCatalog` (`BuildItem`: category = WhichUIType, OBJECT_NAMES index, cost, preview model, texture dirs) | rides/objects | `TotemBuildCatalog`: Totem, cost `Upgrades[0].CostOfUpgrade` 3,250 |
 | `Hud.ObjectInfo`/`ObjectStat` for the info arm | rides/guests/economy | `ParkHud.Describe(PrototypeRide)` |
 | `IDisplaySettings` (real: the renderer) | display | `StubDisplaySettings` (tests only) |
 | `GameOptions.Current` volumes | audio | — |
 
-`GameFlow` builds the stubs in `StartLevel`; replace them there.
+`GameFlow.StartLevel` binds the HUD; guest admissions reach the balance through the economy's guest bridge.
 
 ## Verification
 
@@ -211,15 +215,19 @@ glyph in all 14 UI fonts of each language.
   glyph batching.
 - Asset tests (`OriginalUiAssetTests`): all 278 UI models flatten; full-screen
   frames span 2048×1536; button states coincide with the root; every model and
-  texture the screens use exists; the four lobby islands; Totem price/category,
-  starting cash and preview textures; UIStrings ids pinned against English;
+  texture the screens use exists; the four lobby islands; Totem price/category
+  and preview textures; UIStrings ids pinned against English;
   every used string has glyphs in every UI font of all six languages.
 - `--front-end --smoke-test` (Metal): lobby + menu capture, mouse click (next
   island), keys (left, Escape, Enter), options open/adjust/cancel, game mode,
   original jungle load, HUD capture with bank balance and date verified texel by
-  texel against the BF4 atlas, build arm, Totem purchase (−3,250), info arm,
-  pause menu, refused save, exit to lobby. Passed in all six languages
-  (captures `artifacts/native-smoke-<language>-*.png`).
+  texel against the BF4 atlas, build arm, research availability, Totem purchase
+  (−3,250) with one economy object linked to guests, info arm, economy pause,
+  sale (+1,625), pause menu, refused save, exit to lobby. The earlier UI flow
+  passed in all six languages; the economy integration was verified in English
+  (1280×720, UI scale 1) and Dutch (1920×932 drawable, UI scale 2, nearest
+  upscaling at 50% render scale; the desktop clamps the requested 1920×1080
+  window). Captures: `artifacts/native-smoke-<language>-*.png`.
 
 ## Approximation register
 
@@ -253,22 +261,23 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-019 | `FrontEnd/LobbyDefinition.cs:92` | fallback island position (400 + index × 200, 400) when lobby.txt has none | none needed if lobby.txt is complete |
 | UI-020 | `Hud/ParkHud.cs:114` | positions of buy/info/finance/research/map buttons on the main panel (shared authored centre) | capture of the original HUD |
 | UI-021 | `Hud/ParkHud.cs:110`, `Hud/ParkHud.cs:75` | positions and fonts of the date and bank balance text; money grouped with ',' digits | capture of the original HUD; locale number format |
-| UI-022 | `Hud/HudStubs.cs:12`, `Hud/ParkHud.cs:121` | speed control (pause, ×1, ×2, ×4) bottom-right and its multipliers | binary: original game speed options (pause only is known) |
-| UI-023 | `Hud/HudStubs.cs:12` | calendar: 2 real seconds per day, 30-day months, 12-month years, starts Month 1 Year 1 | binary/economy data: park clock |
+| UI-022 | `Hud/HudStubs.cs:103`, `Hud/HudStubs.cs:57`, `Hud/ParkHud.cs:121` | speed control (pause, ×1, ×2, ×4) bottom-right; faster speeds only speed up the economy clock, not rides/guests | binary: original game speed options (pause only is known) |
+| UI-023 | `Hud/HudStubs.cs:9` | test-only stub calendar (2 s/day); the game shows the economy clock (see ECON tags) | none for the game path |
 | UI-024 | `Hud/ParkHud.cs:139`, `Hud/ParkHud.cs:188` | layout inside the build and info arms (category buttons, title, three item slots, stat rows, door/erase buttons) | captures of the original arms |
 | UI-025 | `Hud/ParkHud.cs:28` | message area keeps up to 3 messages for 8 s in the f_tag frame | binary/capture of the original message system |
-| UI-026 | `Hud/ParkHud.cs:532`, `Hud/PreviewIcon.cs:14` | build icons: CPU orthographic projection of P<name>.MD2 with 30° tilt, 0.8 rad/s turn, painter sorting | capture of the original build menu |
-| UI-027 | `Hud/ParkHud.cs:449` | a park click selects the ride within its footprint radius + 1 | binary: original picking |
+| UI-026 | `Hud/ParkHud.cs:548`, `Hud/PreviewIcon.cs:14` | build icons: CPU orthographic projection of P<name>.MD2 with 30° tilt, 0.8 rad/s turn, painter sorting | capture of the original build menu |
+| UI-027 | `Hud/ParkHud.cs:464` | a park click selects the ride within its footprint radius + 1 | binary: original picking |
 | UI-028 | `Hud/ParkHud.cs:270` | excitement shown as '<ExcitementLevel>%'; reliability, repair and life shown as not simulated | capture of the original ride info; simulation |
 | UI-029 | `Hud/ParkHud.cs:188` | b_door 'down' frames mean the ride is closed; b_erase used as the delete button | capture of the original ride panel |
 | UI-030 | `UI/Original/Options/GameOptions.cs:16` | volumes in 0..10 steps, default 8; popup help default on | capture/registry defaults of the original options |
-| UI-031 | `Hud/ParkHud.cs:411` | price charged when the placed ride appears; only one prototype ride | economy slice / ride catalog |
+| UI-031 | `Hud/ParkHud.cs:418` | the ride is charged through ParkEconomy.TryBuild when its placement appears and taken back if refused; delete sells it (scrap value); only one prototype ride | rides slice: real placement/purchase order |
 | UI-032 | `UI/Original/UiWidgets.cs:179` | longer labels fall back to the small font; greedy word wrap | captures of translated original screens |
+| UI-033 | `Hud/HudStubs.cs:152` | Totem price 3,250 used only when Totem.sam cannot be read (otherwise the economy/Totem.sam value) | none if the data is present |
 
 Data-backed (tagged `[DATA]`): the 2048×1536 canvas and authored rectangles of
 placed models (`ui.wad` roots/bounds), button state frames and texture order, V
-flip, lobby.txt/theme files, starting cash (`Easy_Standard.sam`), Totem price
-(`Totem.sam`), build category (`Rides.sam`), excitement level (`Totem.sam`/
+flip, lobby.txt/theme files, balance, prices and research availability (the economy's
+`.sam` data), Totem price (`Totem.sam`), build category (`Rides.sam`), excitement level (`Totem.sam`/
 `Rides.sam` `UsageInfo.ExcitementLevel`), every UITEXT/UIHELPTEXT/THEMENAMES/
 OBJECT_NAMES string, BF4 fonts.
 

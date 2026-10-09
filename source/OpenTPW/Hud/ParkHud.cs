@@ -73,8 +73,8 @@ public sealed class ParkHud
 	public IReadOnlyList<string> Messages => messages.Select( message => message.Text ).ToArray();
 
 	// [DATA:UITEXT.str:448,449] currency prefix; [APPROX:UI-021] ","-grouped digits — evidence needed: locale number format of the original
-	public string MoneyText => string.Format( System.Globalization.CultureInfo.InvariantCulture, "{0}{1:#,0}", Status.Money < 0 ? strings[UIStrings.NegativeDollar] : strings[UIStrings.Dollar], Math.Abs( Status.Money ) ).Replace( "  ", " " );
-	public string DateText => string.Format( strings.Extra( OpenTpwText.DateFormat ), Status.Date.Year, Status.Date.Month, Status.Date.Day );
+	public string MoneyText => !Status.HasEconomy ? "" : string.Format( System.Globalization.CultureInfo.InvariantCulture, "{0}{1:#,0}", Status.Money < 0 ? strings[UIStrings.NegativeDollar] : strings[UIStrings.Dollar], Math.Abs( Status.Money ) ).Replace( "  ", " " );
+	public string DateText => !Status.HasEconomy ? "" : string.Format( strings.Extra( OpenTpwText.DateFormat ), Status.Date.Year, Status.Date.Month, Status.Date.Day );
 
 	public void PostMessage( string text )
 	{
@@ -303,7 +303,12 @@ public sealed class ParkHud
 			PostMessage( strings.Extra( OpenTpwText.OnlyOnePrototypeRide ) );
 			return;
 		}
-		if ( item.Cost > Status.Money )
+		if ( !Status.IsAvailable( item ) )
+		{
+			PostMessage( strings.Extra( OpenTpwText.NotAvailable ) );
+			return;
+		}
+		if ( Status.HasEconomy && (Status.PriceOf( item ) ?? item.Cost) > Status.Money )
 		{
 			PostMessage( strings.Help( 152 ) );
 			return;
@@ -325,6 +330,8 @@ public sealed class ParkHud
 
 	private void DeleteRide()
 	{
+		if ( level.PlacedRide is { } ride )
+			Status.SellPlaced( ride );
 		level.RemoveRide();
 		SetInfoArm( false );
 	}
@@ -408,13 +415,21 @@ public sealed class ParkHud
 		if ( !paused && input.Has( UiKeys.Pause ) )
 			Status.Speed = Status.Speed == GameSpeed.Paused ? GameSpeed.Normal : GameSpeed.Paused;
 
-		// [APPROX:UI-031] charge on appearance; one prototype ride — evidence needed: economy/catalog slices
+		// [APPROX:UI-031] charge on appearance; one prototype ride — evidence needed: original placement/purchase order
 		// Purchases: a ride appearing while an item is pending is charged; failures are reported.
 		var hasRide = level.PlacedRide != null;
-		if ( hasRide && !hadRide && pendingItem != null )
+		if ( hasRide && !hadRide && pendingItem != null && level.PlacedRide is { } placed )
 		{
-			if ( Status.TrySpend( pendingItem.Cost ) )
+			var charge = Status.ChargePlaced( pendingItem, placed );
+			if ( charge == BuildCharge.Charged )
 				PostMessage( string.Format( strings.Extra( OpenTpwText.Built ), strings.Object( pendingItem.ObjectNameIndex ) ) );
+			else
+			{
+				// The purchase was refused by the economy: take the placement back.
+				level.RemoveRide();
+				hasRide = false;
+				PostMessage( strings.Extra( charge == BuildCharge.NotEnoughMoney ? OpenTpwText.NotEnoughMoney : OpenTpwText.NotAvailable ) );
+			}
 			pendingItem = null;
 			SetBuildArm( false );
 		}
@@ -528,11 +543,12 @@ public sealed class ParkHud
 			Help = owner.strings.Help( 151 );
 			var rect = ScreenRect( context.Canvas );
 			var iconRect = new UiRect( rect.X, rect.Y, rect.Width, rect.Width );
-			context.Batch.AddRectangle( iconRect, focused || owner.pendingItem == item ? new RgbaByte( 255, 230, 70, 90 ) : new RgbaByte( 0, 0, 40, 90 ) );
+			var available = owner.Status.IsAvailable( item );
+			context.Batch.AddRectangle( iconRect, !available ? new RgbaByte( 60, 60, 60, 160 ) : focused || owner.pendingItem == item ? new RgbaByte( 255, 230, 70, 90 ) : new RgbaByte( 0, 0, 40, 90 ) );
 			// [APPROX:UI-026] icon turn speed 0.8 rad/s — evidence needed: capture of the original build menu
 			owner.GetIcon( item )?.Draw( context.Batch, iconRect.Inflate( -rect.Width * 0.06f ), context.Time * 0.8f );
 			var name = owner.strings.Object( item.ObjectNameIndex );
-			var price = string.Format( System.Globalization.CultureInfo.InvariantCulture, "{0}{1:#,0}", owner.strings[UIStrings.Dollar], item.Cost ).Replace( "  ", " " );
+			var price = string.Format( System.Globalization.CultureInfo.InvariantCulture, "{0}{1:#,0}", owner.strings[UIStrings.Dollar], owner.Status.PriceOf( item ) ?? item.Cost ).Replace( "  ", " " );
 			var textTop = iconRect.Bottom + 2;
 			context.DrawText( context.Fonts.Small, name, new UiRect( rect.X, textTop, rect.Width, (rect.Bottom - textTop) / 2 ), focused ? UiColors.Highlight : UiColors.Text, UiAlign.Center );
 			context.DrawText( context.Fonts.Small, price, new UiRect( rect.X, textTop + (rect.Bottom - textTop) / 2, rect.Width, (rect.Bottom - textTop) / 2 ), UiColors.Value, UiAlign.Center );

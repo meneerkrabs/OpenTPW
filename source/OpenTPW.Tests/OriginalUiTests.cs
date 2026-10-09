@@ -412,26 +412,49 @@ public class OriginalUiTests
 	}
 
 	[TestMethod]
-	public void StubParkStatusKeepsMoneyAndAnApproximateCalendar()
+	public void HudStatusFollowsTheParkEconomyAndItsReplacement()
 	{
-		var status = new StubParkStatus( 100000 );
-		Assert.AreEqual( new ParkDate( 1, 1, 1 ), status.Date );
-		Assert.IsFalse( status.TrySpend( 100001 ) );
-		Assert.IsTrue( status.TrySpend( 3250 ) );
-		Assert.AreEqual( 96750, status.Money );
-		status.Update( StubParkStatus.SecondsPerDay * 30 );
-		Assert.AreEqual( new ParkDate( 1, 2, 1 ), status.Date );
+		var first = EconomyTestData.Park( initialCash: 50000 );
+		ParkEconomy? current = first;
+		var status = new EconomyParkStatus( () => current, () => null );
+		Assert.IsTrue( status.HasEconomy );
+		Assert.AreEqual( first.Balance, status.Money );
+		Assert.AreEqual( first.Date, status.Date );
+		status.Speed = GameSpeed.Paused;
+		Assert.AreEqual( GameSpeed.Paused, first.Speed );
+		Assert.AreEqual( 0f, status.TimeScale );
+		status.Speed = GameSpeed.Fastest;
+		Assert.AreEqual( 1f, status.TimeScale, "the economy speeds up its own clock; rides keep normal speed" );
+		first.AdvanceDays( 31 );
+		Assert.AreEqual( first.Date, status.Date );
+		var item = new BuildItem( "shop", 1203, BuildCategory.Shops, 0, 999, null, Array.Empty<string>() );
+		Assert.IsTrue( first.Catalog.TryGet( 1203, out var info ) );
+		Assert.AreEqual( info.PurchaseCost, status.PriceOf( item ), "price from the economy catalogue" );
+		Assert.IsTrue( status.IsAvailable( item ) );
+		var locked = item with { InfoId = 1180 };
+		Assert.IsFalse( status.IsAvailable( locked ), "unresearched catalogue items cannot be placed" );
+		first.Research.Restore( first.Research.Completed.Append( (1180, 0) ).Distinct().ToArray(), first.Research.ProgressEntries.ToArray(), first.Research.Effort );
+		Assert.IsTrue( status.IsAvailable( locked ), "the HUD follows completed research" );
+		Assert.IsFalse( status.IsAvailable( item with { InfoId = -1 } ), "objects outside the theme catalogue cannot be placed" );
+		// Loading a park save replaces the economy object: the HUD follows the new one.
+		var loaded = EconomyTestData.Park( initialCash: 1234 );
+		current = loaded;
+		Assert.AreEqual( 1234, status.Money );
+		Assert.IsFalse( status.IsAvailable( locked ), "research follows the loaded economy too" );
+		current = null;
+		Assert.IsFalse( status.HasEconomy );
+	}
+
+	[TestMethod]
+	public void LevelsWithoutEconomyHideMoneyAndOnlyPause()
+	{
+		var status = new NoEconomyStatus();
+		Assert.IsFalse( status.HasEconomy );
+		Assert.IsNull( status.PriceOf( new BuildItem( "x", 1, BuildCategory.Rides, 0, 5, null, Array.Empty<string>() ) ) );
+		status.Speed = GameSpeed.Fast;
+		Assert.AreEqual( 1f, status.TimeScale );
 		status.Speed = GameSpeed.Paused;
 		Assert.AreEqual( 0f, status.TimeScale );
-		status.Update( 1000 );
-		Assert.AreEqual( new ParkDate( 1, 2, 1 ), status.Date );
-		status.Speed = GameSpeed.Fastest;
-		status.Update( StubParkStatus.SecondsPerDay * 330 / 4 );
-		Assert.AreEqual( new ParkDate( 2, 1, 1 ), status.Date );
-		status.Refund( 3250 );
-		Assert.AreEqual( 100000, status.Money );
-		status.Earn( 20 );
-		Assert.AreEqual( (100020L, 20L), (status.Money, status.Earned) );
 	}
 
 	[TestMethod]

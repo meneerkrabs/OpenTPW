@@ -136,9 +136,9 @@ internal sealed class GameFlow : IDisposable
 		TearDown();
 		var level = new Level( levelName, loadOriginalLevel: original ) { ShowDeveloperPanels = developerPanels };
 		Level = level;
-		var status = StubParkStatus.ForLevel( levelName );
-		if ( level.Guests != null )
-			status.Attach( level.Guests );
+		// Money, calendar, speed and purchases come from the park economy of original levels (Level.Park,
+		// looked up on every access so loading a park save is followed); the generic sandbox has none.
+		IHudParkStatus status = level.Park != null ? EconomyParkStatus.ForLevel( level ) : new NoEconomyStatus();
 		Hud = new ParkHud( level, Strings, status, new TotemBuildCatalog( "jungle" ), new HudHost
 		{
 			ExitToLobby = () => Queue( () => ShowFrontEnd( levelName ) ),

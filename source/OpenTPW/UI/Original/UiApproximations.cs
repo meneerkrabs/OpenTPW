@@ -30,8 +30,8 @@ public static class UiApproximations
 		("UI-019", "fallback island position (400 + index × 200, 400) when lobby.txt has none", "none needed if lobby.txt is complete"),
 		("UI-020", "positions of buy/info/finance/research/map buttons on the main panel (shared authored centre)", "capture of the original HUD"),
 		("UI-021", "positions and fonts of the date and bank balance text; money grouped with ',' digits", "capture of the original HUD; locale number format"),
-		("UI-022", "speed control (pause, ×1, ×2, ×4) bottom-right and its multipliers", "binary: original game speed options (pause only is known)"),
-		("UI-023", "calendar: 2 real seconds per day, 30-day months, 12-month years, starts Month 1 Year 1", "binary/economy data: park clock"),
+		("UI-022", "speed control (pause, ×1, ×2, ×4) bottom-right; faster speeds only speed up the economy clock, not rides/guests", "binary: original game speed options (pause only is known)"),
+		("UI-023", "test-only stub calendar (2 s/day); the game shows the economy clock (see ECON tags)", "none for the game path"),
 		("UI-024", "layout inside the build and info arms (category buttons, title, three item slots, stat rows, door/erase buttons)", "captures of the original arms"),
 		("UI-025", "message area keeps up to 3 messages for 8 s in the f_tag frame", "binary/capture of the original message system"),
 		("UI-026", "build icons: CPU orthographic projection of P<name>.MD2 with 30° tilt, 0.8 rad/s turn, painter sorting", "capture of the original build menu"),
@@ -39,8 +39,9 @@ public static class UiApproximations
 		("UI-028", "excitement shown as '<ExcitementLevel>%'; reliability, repair and life shown as not simulated", "capture of the original ride info; simulation"),
 		("UI-029", "b_door 'down' frames mean the ride is closed; b_erase used as the delete button", "capture of the original ride panel"),
 		("UI-030", "volumes in 0..10 steps, default 8; popup help default on", "capture/registry defaults of the original options"),
-		("UI-031", "price charged when the placed ride appears; only one prototype ride", "economy slice / ride catalog"),
+		("UI-031", "the ride is charged through ParkEconomy.TryBuild when its placement appears and taken back if refused; delete sells it (scrap value); only one prototype ride", "rides slice: real placement/purchase order"),
 		("UI-032", "longer labels fall back to the small font; greedy word wrap", "captures of translated original screens"),
+		("UI-033", "Totem price 3,250 used only when Totem.sam cannot be read (otherwise the economy/Totem.sam value)", "none if the data is present"),
 	};
 
 	private static bool logged;

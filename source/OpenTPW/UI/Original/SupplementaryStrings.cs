@@ -36,6 +36,8 @@ public enum OpenTpwText
 	NotSimulated,
 	Built,
 	OnlyOnePrototypeRide,
+	NotEnoughMoney,
+	NotAvailable,
 }
 
 public static class SupplementaryStrings
@@ -87,6 +89,8 @@ public static class SupplementaryStrings
 		[OpenTpwText.CannotBuildHere] = new[] { "You can't build here", "Du kan ikke bygge her", "U kunt hier niet bouwen", "Impossible de construire ici", "Hier kann nicht gebaut werden", "Du kan inte bygga här" },
 		[OpenTpwText.NotSimulated] = new[] { "Not simulated yet", "Endnu ikke simuleret", "Nog niet gesimuleerd", "Pas encore simulé", "Noch nicht simuliert", "Inte simulerad ännu" },
 		[OpenTpwText.Built] = new[] { "{0} built.", "{0} er bygget.", "{0} gebouwd.", "{0} construit.", "{0} gebaut.", "{0} byggd." },
+		[OpenTpwText.NotEnoughMoney] = new[] { "Not enough money", "Ikke penge nok", "Niet genoeg geld", "Pas assez d'argent", "Nicht genug Geld", "Inte tillräckligt med pengar" },
+		[OpenTpwText.NotAvailable] = new[] { "Not available yet", "Endnu ikke tilgængelig", "Nog niet beschikbaar", "Pas encore disponible", "Noch nicht verfügbar", "Inte tillgänglig ännu" },
 		[OpenTpwText.OnlyOnePrototypeRide] = new[] {
 			"Only one ride can be placed in this build",
 			"Der kan kun placeres én forlystelse i denne version",

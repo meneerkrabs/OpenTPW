@@ -98,14 +98,20 @@ with its own camera. The model has five co-located mouth meshes (`Mouth - Normal
 Talking shows `Mouth - Aah`, silence `Mouth - Normal`. Using only `Aah` is a
 presentation choice: LIP data carries no shape. Body, head, eyes, antennae and hands are
 shown; the seven hats, spatula, bow tie and blink meshes are hidden. All nodes are
-composed through the hierarchy; with the root `Position Dummy` the model is Y-up
-facing −Z. Triangle corner order is reversed for the renderer's clockwise front faces.
-No MD2 animation is played (the `Advisorm1`–`m15` animation members are not decoded;
-that is the MD2 animation track work). Mouth switching is a mesh-visibility choice
-per frame and can later be driven by decoded tracks.
+composed through the shared MD2 hierarchy code (`ModelAnimationPlayer.ComputeRestTransforms`);
+with the root `Position Dummy` the model is Y-up facing −Z. Triangle corner order is
+reversed for the renderer's clockwise front faces (the advisor does not use the Y/Z
+swap other MD2 users rely on, so there is no double flip). The model stays in its bind
+pose. All 15 `Advisorm*.MD2` clips decode, but every one has tracks with undecoded
+(non-rigid) payload: antennae, eyes, blink meshes and usually hands. So none is played.
+`Advisorm13` (330 ticks) is the only clip with tracks on all five mouth meshes. Those
+payloads are undecoded, so it is the likeliest original source of the mouth-shape
+choice. Mouth switching is a per-frame mesh-visibility choice and can later be driven
+by decoded tracks.
 
-`SpeechAudioPlayer` queues the decoded PCM on an SDL2 audio device (`SDL_QueueAudio`
-through Veldrid's SDL2 loader, no new dependency). The lip-sync position is bytes
+`SpeechAudioPlayer` queues the decoded PCM, duplicated to stereo, on the same SDL2
+queued output the movie player uses (`SdlMovieAudioOutput`, `SDL_QueueAudio` through
+Veldrid's SDL2 loader, no new dependency). Tests drive it with `SimulatedMovieAudioOutput`. The lip-sync position is bytes
 consumed from the queue, so it leads the speaker by up to one 1,024-frame buffer
 (≈46 ms). Playback starts at the first rendered advisor frame. Without an audio
 device, a wall clock drives the mouth and nothing is heard.
@@ -129,9 +135,10 @@ stay open; short nonseekable reads work). `LipSyncTimeline` applies the inferred
 Tests: `LipSyncFileTests` (12 synthetic + 5 private corpus), `LipSyncTimelineTests`
 (5 synthetic + 1 corpus loudness test), `Mp2DecoderTests` (13 synthetic incl. a unit-DC-gain
 check of the window/matrixing + 2 corpus: all 640 Layer II speech clips decode;
-`sp_001` samples and RMS match the external decoder ±1), `AdvisorTests` (8 synthetic
-incl. the 60 Hz mouth-change frames 134/169/244 for `sp_001` + 2 private: model
-orientation/co-located mouths and loading `sp_001` through the game file system).
+`sp_001` samples and RMS match the external decoder ±1), `AdvisorTests` (9 synthetic
+incl. the 60 Hz mouth-change frames 134/169/244 for `sp_001` and the speech clock on a
+simulated audio output, plus 3 private tests: model orientation/co-located mouths, no rigid-only
+`Advisorm*` clip, and loading `sp_001` through the game file system).
 Private tests are inconclusive without `OPENTPW_GAME_PATH`.
 
 ## Search method (location)
@@ -144,6 +151,6 @@ Private tests are inconclusive without `OPENTPW_GAME_PATH`.
 ## Remaining gates
 
 Original-runtime observation of the mouth shape choice while talking, global vs
-level LIP selection, advisor triggers/placement/animation and A/V latency. Decoded
-MD2 animation members (`Advisorm*.MD2`) for idle/talk poses. Layer I decoding for
+level LIP selection, advisor triggers/placement/animation and A/V latency. The undecoded
+`Advisorm*` track payloads (vertex animation/visibility) for idle/talk poses and mouth shapes. Layer I decoding for
 sound effects and `z_error`. Capture comparison before claiming original fidelity.

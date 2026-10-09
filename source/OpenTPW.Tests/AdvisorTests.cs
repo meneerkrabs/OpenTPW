@@ -57,6 +57,42 @@ public class AdvisorTests
 	}
 
 	[TestMethod]
+	public void SpeechPositionFollowsFramesTakenByTheSharedAudioOutput()
+	{
+		var audio = new Mp2Audio( 22050, 1, new short[22050], 1, 0 );
+		var output = new SimulatedMovieAudioOutput( 22050 );
+		using var player = new SpeechAudioPlayer( audio, output );
+		Assert.AreEqual( 22050, output.QueuedFrames, "mono is queued as one stereo frame per sample" );
+		Assert.IsFalse( player.IsStarted );
+		output.Advance( 0.5 );
+		Assert.AreEqual( TimeSpan.Zero, player.Position, "the device stays paused until Start" );
+		player.Start();
+		output.Advance( 0.5 );
+		Assert.AreEqual( 0.5, player.Position.TotalSeconds, 1e-4 );
+		Assert.IsFalse( player.IsFinished );
+		output.Advance( 0.6 );
+		Assert.IsTrue( player.IsFinished );
+		CollectionAssert.AreEqual( new short[] { 7, 7, -3, -3 }, SpeechAudioPlayer.ToStereo( new Mp2Audio( 22050, 1, new short[] { 7, -3 }, 1, 0 ) ) );
+	}
+
+	[TestMethod]
+	public void OriginalAdvisorClipsAreNotRigidOnly()
+	{
+		using var assets = new OriginalAssets();
+		var model = new ModelFile( $"{Advisor.ArchivePath}/Advisor.MD2" );
+		for ( var index = 1; index <= 15; index++ )
+		{
+			var clip = new ModelFile( $"{Advisor.ArchivePath}/Advisorm{index}.MD2" ).Clip;
+			Assert.IsNotNull( clip, $"Advisorm{index}" );
+			Assert.IsTrue( clip!.Tracks.Any( track => track.HasUndecodedPayload ), $"Advisorm{index} would be playable as rigid tracks" );
+		}
+		// Advisorm13 is the only clip with tracks on the five mouth meshes (payload undecoded):
+		// the likeliest source of the original mouth-shape choice.
+		var mouths = new ModelFile( $"{Advisor.ArchivePath}/Advisorm13.MD2" ).Clip!.Tracks.Select( track => model.Nodes[track.NodeIndex].Name ).Where( name => name.StartsWith( "Mouth - " ) ).OrderBy( name => name ).ToArray();
+		CollectionAssert.AreEqual( new[] { "Mouth - Aah", "Mouth - Eee", "Mouth - Normal", "Mouth - Ooh", "Mouth - Sss" }, mouths );
+	}
+
+	[TestMethod]
 	public void OriginalAdvisorStandsUprightFacingTheCameraWithCoLocatedMouths()
 	{
 		using var assets = new OriginalAssets();

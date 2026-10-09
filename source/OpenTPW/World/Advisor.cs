@@ -9,8 +9,9 @@ namespace OpenTPW;
 /// (see docs/LIPS.md). The model carries five co-located mouth meshes; the LIP data only
 /// distinguishes talking from silence, so talking shows "Mouth - Aah" and silence shows
 /// "Mouth - Normal". Which shape the original game picks while talking, how it poses the
-/// head/hands (MD2 animation members are not decoded here) and which hat it shows are not
-/// known; hats, the spatula, the bow tie and the blink meshes are hidden.
+/// head/hands (the <c>Advisorm*</c> clips carry undecoded non-rigid tracks) and which hat it shows are not
+/// known; hats, the spatula, the bow tie and the blink meshes are hidden. The model is drawn in
+/// its bind pose (see <see cref="NodeWorld"/>).
 /// </summary>
 internal sealed class Advisor : IDisposable
 {
@@ -52,6 +53,7 @@ internal sealed class Advisor : IDisposable
 	public Advisor()
 	{
 		var modelFile = new ModelFile( $"{ArchivePath}/Advisor.MD2" );
+		var restTransforms = ModelAnimationPlayer.ComputeRestTransforms( modelFile );
 		var textures = new Dictionary<string, Texture>( StringComparer.OrdinalIgnoreCase );
 		var textureFiles = FileSystem.GetFiles( $"{ArchivePath}/textures" );
 		try
@@ -60,7 +62,7 @@ internal sealed class Advisor : IDisposable
 			{
 				var mesh = modelFile.Meshes.SingleOrDefault( candidate => candidate.Name == name )
 					?? throw new InvalidDataException( $"The original advisor model has no '{name}' mesh." );
-				var vertices = ConvertMesh( mesh, NodeWorld( modelFile, mesh.NodeIndex ) );
+				var vertices = ConvertMesh( mesh, restTransforms[mesh.NodeIndex] );
 				if ( name is ClosedMouth or TalkingMouth )
 					foreach ( var vertex in vertices )
 					{
@@ -94,17 +96,13 @@ internal sealed class Advisor : IDisposable
 	}
 
 	/// <summary>
-	/// World transform of a node: its matrix composed with every ancestor's (row-vector
-	/// convention, translation in row 4). With the root "Position Dummy" applied the model
-	/// stands Y-up and faces −Z.
+	/// Model-space transform of a node from the shared MD2 hierarchy code
+	/// (<see cref="ModelAnimationPlayer.ComputeRestTransforms"/>: parent-relative, row-vector,
+	/// world = local × parent world). With the root "Position Dummy" applied the model stands
+	/// Y-up and faces −Z. The bind pose is used: every <c>Advisorm*.MD2</c> clip has tracks
+	/// with undecoded (non-rigid) payload, so none is played.
 	/// </summary>
-	internal static Matrix4x4 NodeWorld( ModelFile model, int nodeIndex )
-	{
-		var matrix = Matrix4x4.Identity;
-		for ( var index = nodeIndex; index >= 0; index = model.Nodes[index].ParentIndex )
-			matrix *= model.Nodes[index].Transform;
-		return matrix;
-	}
+	internal static Matrix4x4 NodeWorld( ModelFile model, int nodeIndex ) => ModelAnimationPlayer.ComputeRestTransforms( model )[nodeIndex];
 
 	internal static Vertex[] ConvertMesh( ModelFile.Mesh mesh, Matrix4x4 world )
 	{

@@ -29,6 +29,20 @@ public sealed class TqiFrame
 	public byte[] ToRgb24()
 	{
 		var rgb = new byte[Width * Height * 3];
+		ConvertPixels( rgb, 3 );
+		return rgb;
+	}
+
+	/// <summary>Same conversion as <see cref="ToRgb24"/>, written as opaque RGBA (4 bytes per pixel) into <paramref name="rgba"/>.</summary>
+	public void WriteRgba32( Span<byte> rgba )
+	{
+		if ( rgba.Length < Width * Height * 4 )
+			throw new ArgumentException( "RGBA buffer is too small for the frame.", nameof( rgba ) );
+		ConvertPixels( rgba, 4 );
+	}
+
+	private void ConvertPixels( Span<byte> output, int pixelBytes )
+	{
 		var chromaWidth = Width / 2;
 		for ( var row = 0; row < Height; row++ )
 		{
@@ -38,13 +52,14 @@ public sealed class TqiFrame
 				var chroma = (row / 2) * chromaWidth + column / 2;
 				var blue = Cb[chroma] - 128.0;
 				var red = Cr[chroma] - 128.0;
-				var output = (row * Width + column) * 3;
-				rgb[output] = ClampByte( luma + 1.402 * red );
-				rgb[output + 1] = ClampByte( luma - 0.344136 * blue - 0.714136 * red );
-				rgb[output + 2] = ClampByte( luma + 1.772 * blue );
+				var offset = (row * Width + column) * pixelBytes;
+				output[offset] = ClampByte( luma + 1.402 * red );
+				output[offset + 1] = ClampByte( luma - 0.344136 * blue - 0.714136 * red );
+				output[offset + 2] = ClampByte( luma + 1.772 * blue );
+				if ( pixelBytes == 4 )
+					output[offset + 3] = 255;
 			}
 		}
-		return rgb;
 	}
 
 	private static byte ClampByte( double value ) => (byte)Math.Clamp( Math.Floor( value + 0.5 ), 0, 255 );

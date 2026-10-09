@@ -143,23 +143,43 @@ public sealed class TgqMovieFile : BaseFormat
 	/// </summary>
 	public short[] DecodeAudio()
 	{
+		var total = ValidateAudio();
+		var pcm = new short[checked((int)(total * 2))];
+		var written = 0;
+		for ( var index = 0; index < audioChunks.Count; index++ )
+			written += DecodeAudioBlock( index, pcm.AsSpan( written * 2 ) );
+		return pcm;
+	}
+
+	/// <summary>
+	/// Checks the supported audio variant and that the SCDl block sample counts add up to the SCHl sample count;
+	/// returns that per-channel sample count. Lets streaming players fail before playback starts.
+	/// </summary>
+	public long ValidateAudio()
+	{
 		var header = AudioHeader;
 		if ( header.Platform != 0 || header.Compression != 7 || header.Channels != 2 || (header.CompressionRevision ?? 1) != 1 )
 			throw new NotSupportedException( "Only PC stereo EA-XA revision 1 TGQ audio is supported." );
 		long total = 0;
-		foreach ( var chunk in audioChunks )
-		{
-			total += EaXaAdpcmDecoder.ReadStereoBlockSampleCount( data.AsSpan( chunk.Offset + 8, chunk.Size - 8 ) );
-			if ( total > header.SampleCount )
-				break;
-		}
+		for ( var index = 0; index < audioChunks.Count && total <= header.SampleCount; index++ )
+			total += GetAudioBlockSampleCount( index );
 		if ( total != header.SampleCount )
 			throw new InvalidDataException( "TGQ audio blocks do not add up to the SCHl sample count." );
-		var pcm = new short[checked((int)(total * 2))];
-		var written = 0;
-		foreach ( var chunk in audioChunks )
-			written += EaXaAdpcmDecoder.DecodeStereoBlock( data.AsSpan( chunk.Offset + 8, chunk.Size - 8 ), pcm.AsSpan( written * 2 ) );
-		return pcm;
+		return total;
+	}
+
+	/// <summary>Per-channel sample count of SCDl block <paramref name="index"/> (file order).</summary>
+	public int GetAudioBlockSampleCount( int index ) => EaXaAdpcmDecoder.ReadStereoBlockSampleCount( GetAudioBlock( index ) );
+
+	/// <summary>Decodes SCDl block <paramref name="index"/> to interleaved stereo PCM; returns the sample frames written.</summary>
+	public int DecodeAudioBlock( int index, Span<short> interleavedOutput ) => EaXaAdpcmDecoder.DecodeStereoBlock( GetAudioBlock( index ), interleavedOutput );
+
+	private ReadOnlySpan<byte> GetAudioBlock( int index )
+	{
+		ArgumentOutOfRangeException.ThrowIfNegative( index );
+		ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual( index, audioChunks.Count );
+		var chunk = audioChunks[index];
+		return data.AsSpan( chunk.Offset + 8, chunk.Size - 8 );
 	}
 
 	private static TgqAudioHeader ParseAudioHeader( ReadOnlySpan<byte> payload )

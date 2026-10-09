@@ -4,9 +4,37 @@ using System.Text;
 namespace OpenTPW;
 
 /// <summary>
+/// Cell attribute bits whose meaning is supported by cross-format evidence (terrain MD2 geometry
+/// and heightfield holes in all four themes, level <c>Standard.sam</c> fixed-item positions and the
+/// Jungle <c>Easymode.TPWI</c> cell grid). See docs/MAP.md. Bit 0x04 and the remaining bits are
+/// not interpreted; use <see cref="MapFile.GetCellAt"/> for the raw value.
+/// </summary>
+[Flags]
+public enum MapCellFlags : byte
+{
+	None = 0,
+	/// <summary>Edge ring, rock/cliff/volcano features, water and entrance buildings. Never under a saved path or object.</summary>
+	Blocked = 0x01,
+	/// <summary>River/lake cells (only observed combined with <see cref="Blocked"/>, value 3).</summary>
+	Water = 0x02,
+	/// <summary>Pre-laid park path starting at FixedItemInfo.EntranceA/B; saved as path cells in Easymode.</summary>
+	InitialPath = 0x08,
+	/// <summary>
+	/// Fixed entrance complex (values 17/144/148: gates, ticket booths, bus stops), a heightfield hole covered by
+	/// entrance meshes in all four themes. One isolated value 16 in fantasy has no geometry and is unexplained.
+	/// </summary>
+	EntranceArea = 0x10,
+	/// <summary>Fixed walkways that are not blocked: the bridge deck and the entrance crossings/ticket lane.</summary>
+	FixedWalkway = 0x80,
+	AllVerified = Blocked | Water | InitialPath | EntranceArea | FixedWalkway
+}
+
+/// <summary>
 /// Terrain attribute map ("TP2M", "Theme Park 2 Attribute Map File") as stored in level
 /// <c>terrain.wad</c> archives. This is not the loose/feature sound-catalog <c>.map</c> format.
-/// Cell values are exposed as raw bytes; their gameplay meaning is not verified.
+/// The file's row index is the game X cell (Standard.sam <c>*PosX</c>, MD2 world X / 10) and its
+/// column index the game Y cell (<c>*PosY</c>, MD2 world Z / 10). Only <see cref="MapCellFlags"/>
+/// bits are interpreted; other bits stay raw.
 /// </summary>
 public sealed class MapFile : BaseFormat
 {
@@ -36,6 +64,22 @@ public sealed class MapFile : BaseFormat
 			throw new ArgumentOutOfRangeException( column >= 0 && column < Width ? nameof( row ) : nameof( column ) );
 		return Cells[row * Width + column];
 	}
+
+	/// <summary>Number of game X cells (file rows).</summary>
+	public int CellCountX => Height;
+	/// <summary>Number of game Y cells (file columns).</summary>
+	public int CellCountY => Width;
+
+	/// <summary>Raw cell at game cell (x, y): file row x, column y.</summary>
+	public byte GetCellAt( int x, int y )
+	{
+		if ( (uint)x >= (uint)Height || (uint)y >= (uint)Width )
+			throw new ArgumentOutOfRangeException( (uint)x >= (uint)Height ? nameof( x ) : nameof( y ) );
+		return Cells[x * Width + y];
+	}
+
+	/// <summary>Verified attribute bits at game cell (x, y); unverified bits are masked out.</summary>
+	public MapCellFlags GetFlagsAt( int x, int y ) => (MapCellFlags)GetCellAt( x, y ) & MapCellFlags.AllVerified;
 
 	protected override void ReadFromStream( Stream stream )
 	{

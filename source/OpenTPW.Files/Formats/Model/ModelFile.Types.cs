@@ -46,3 +46,60 @@ public sealed record ModelDummyAttribute( uint Type, uint Value, byte[] Reserved
 
 /// <summary>72-byte animation trailer kept as raw little-endian words; semantics unverified.</summary>
 public sealed record ModelAnimationTrailer( int Offset, IReadOnlyList<uint> Words );
+
+/// <summary>
+/// Terrain heightfield located by the MD2 header pointer at 0x6C (terrain <c>base.MD2</c> only).
+/// 48-byte header: four opaque words, cell size X/Z (floats), cell counts X/Z, two floats that
+/// bracket the heights (kept raw), then pointers to (CountX+1)*(CountZ+1) corner heights and
+/// CountX*CountZ per-cell words, both stored X-fastest. Corner (x, z) lies at MD2 world
+/// (x * CellSizeX, height, z * CellSizeZ). Cell word <see cref="HoleCellWord"/> marks cells
+/// without heightfield surface; other cell word bits are not interpreted. See docs/MAP.md.
+/// </summary>
+public sealed class ModelHeightfield
+{
+	public const int HeaderBytes = 48;
+	public const int MaximumCellCount = 1024;
+	public const uint HoleCellWord = 1;
+
+	private readonly float[] heights;
+	private readonly uint[] cellWords;
+
+	internal ModelHeightfield( int cellCountX, int cellCountZ, float cellSizeX, float cellSizeZ, float storedLowerHeight, float storedUpperHeight,
+		IReadOnlyList<uint> opaqueHeaderWords, float[] heights, uint[] cellWords )
+	{
+		CellCountX = cellCountX;
+		CellCountZ = cellCountZ;
+		CellSizeX = cellSizeX;
+		CellSizeZ = cellSizeZ;
+		StoredLowerHeight = storedLowerHeight;
+		StoredUpperHeight = storedUpperHeight;
+		OpaqueHeaderWords = opaqueHeaderWords;
+		this.heights = heights;
+		this.cellWords = cellWords;
+	}
+
+	public int CellCountX { get; }
+	public int CellCountZ { get; }
+	public float CellSizeX { get; }
+	public float CellSizeZ { get; }
+	/// <summary>Raw header floats; observed to bracket the heights (integer-truncated), not used for validation.</summary>
+	public float StoredLowerHeight { get; }
+	public float StoredUpperHeight { get; }
+	public IReadOnlyList<uint> OpaqueHeaderWords { get; }
+
+	public float GetCornerHeight( int x, int z )
+	{
+		if ( (uint)x > (uint)CellCountX || (uint)z > (uint)CellCountZ )
+			throw new ArgumentOutOfRangeException( (uint)x > (uint)CellCountX ? nameof( x ) : nameof( z ) );
+		return heights[z * (CellCountX + 1) + x];
+	}
+
+	public uint GetCellWord( int x, int z )
+	{
+		if ( (uint)x >= (uint)CellCountX || (uint)z >= (uint)CellCountZ )
+			throw new ArgumentOutOfRangeException( (uint)x >= (uint)CellCountX ? nameof( x ) : nameof( z ) );
+		return cellWords[z * CellCountX + x];
+	}
+
+	public bool IsHole( int x, int z ) => GetCellWord( x, z ) == HoleCellWord;
+}

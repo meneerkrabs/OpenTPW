@@ -190,6 +190,64 @@ public class MapFileTests
 	}
 
 	[DataTestMethod]
+	[DataRow( "fantasy", 192 )]
+	[DataRow( "hallow", 238 )]
+	[DataRow( "jungle", 363 )]
+	[DataRow( "space", 314 )]
+	public void OriginalHeightfieldHolesMatchVerifiedMapFlags( string level, int blockedHoles )
+	{
+		var map = new MapFile( new MemoryStream( ReadOriginalMember( level, "base.map" ) ) );
+		var field = new ModelFile( new MemoryStream( ReadOriginalMember( level, "base.MD2" ) ) ).Heightfield!;
+		Assert.AreEqual( (96, 85, 10f, 10f), (field.CellCountX, field.CellCountZ, field.CellSizeX, field.CellSizeZ) );
+		var holesOnBlockedOnly = 0;
+		for ( var x = 0; x < field.CellCountX; x++ )
+		{
+			for ( var y = 0; y < field.CellCountZ; y++ )
+			{
+				var flags = map.GetFlagsAt( x, y );
+				// The isolated value 16 at fantasy (27, 17) has no geometry and is not a hole; see docs/MAP.md.
+				if ( flags == MapCellFlags.EntranceArea )
+					Assert.AreEqual( ("fantasy", 27, 17, false), (level, x, y, field.IsHole( x, y )) );
+				else if ( (flags & (MapCellFlags.Water | MapCellFlags.EntranceArea | MapCellFlags.FixedWalkway)) != 0 )
+					Assert.IsTrue( field.IsHole( x, y ), $"{level} ({x}, {y}) {flags}" );
+				else if ( flags == MapCellFlags.Blocked )
+					holesOnBlockedOnly += field.IsHole( x, y ) ? 1 : 0;
+				else
+					Assert.IsFalse( field.IsHole( x, y ), $"{level} ({x}, {y}) {flags}" );
+			}
+		}
+		Assert.AreEqual( blockedHoles, holesOnBlockedOnly );
+	}
+
+	[DataTestMethod]
+	[DataRow( "fantasy" )]
+	[DataRow( "hallow" )]
+	[DataRow( "jungle" )]
+	[DataRow( "space" )]
+	public void OriginalFixedItemSettingsLieOnMatchingMapFlags( string level )
+	{
+		var map = new MapFile( new MemoryStream( ReadOriginalMember( level, "base.map" ) ) );
+		var settingsPath = Directory.EnumerateFiles( Path.Combine( OriginalDataPath(), "levels", level ) )
+			.FirstOrDefault( file => string.Equals( Path.GetFileName( file ), "Standard.sam", StringComparison.OrdinalIgnoreCase ) );
+		if ( settingsPath == null )
+			Assert.Inconclusive( $"Original {level} Standard.sam is missing." );
+		var settings = new SettingsFile( new MemoryStream( File.ReadAllBytes( settingsPath ) ) );
+		MapCellFlags At( string item ) => map.GetFlagsAt( int.Parse( settings[$"FixedItemInfo.{item}PosX"] ), int.Parse( settings[$"FixedItemInfo.{item}PosY"] ) );
+		Assert.AreEqual( "48", settings["MapInfo.FixedItemOriginX"] );
+		Assert.AreEqual( "17", settings["MapInfo.FixedItemOriginY"] );
+		foreach ( var side in new[] { "A", "B" } )
+		{
+			Assert.AreEqual( MapCellFlags.InitialPath, At( $"Entrance{side}" ) );
+			foreach ( var item in new[] { "TicketBooth", "CrossingParkSide", "CrossingBSSide", "BusStop" } )
+				Assert.AreEqual( MapCellFlags.EntranceArea | MapCellFlags.FixedWalkway, At( $"{item}{side}" ), $"{level} {item}{side}" );
+		}
+		var strikeX = int.Parse( settings["FixedItemInfo.StrikeAreaStartX"] );
+		var strikeY = int.Parse( settings["FixedItemInfo.StrikeAreaStartY"] );
+		for ( var x = 0; x < int.Parse( settings["FixedItemInfo.StrikeAreaSizeX"] ); x++ )
+			Assert.AreEqual( MapCellFlags.EntranceArea | MapCellFlags.FixedWalkway, map.GetFlagsAt( strikeX + x, strikeY ) );
+	}
+
+	[DataTestMethod]
 	[DataRow( "cat_rideBANK.map", 56 )]
 	[DataRow( "cat_rideSFX.map", 364 )]
 	public void OriginalSpeakerSoundCatalogMapIsNotATerrainMap( string member, int length )

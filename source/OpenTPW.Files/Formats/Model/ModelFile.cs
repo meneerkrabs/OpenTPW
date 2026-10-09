@@ -35,8 +35,10 @@ public partial class ModelFile : BaseFormat
 	public IReadOnlyList<ModelDummyAttribute> DummyAttributes { get; private set; } = Array.Empty<ModelDummyAttribute>();
 	/// <summary>Opaque 16-byte records counted by the u16 at 0x40 and located by the u32 at 0xAC.</summary>
 	public IReadOnlyList<byte[]> ExtraRecords { get; private set; } = Array.Empty<byte[]>();
-	/// <summary>Opaque block pointer at 0x6C (only observed in terrain base models); 0 when absent.</summary>
+	/// <summary>Block pointer at 0x6C (only observed in terrain base models); 0 when absent.</summary>
 	public uint UnknownBlockOffset { get; private set; }
+	/// <summary>Terrain heightfield decoded from the 0x6C block; null when the pointer is 0. See docs/MAP.md.</summary>
+	public ModelHeightfield? Heightfield { get; private set; }
 	public ModelAnimationTrailer? Animation { get; private set; }
 	/// <summary>Decoded position/rotation/scale tracks of an animation member.</summary>
 	public ModelAnimation? Clip { get; private set; }
@@ -252,8 +254,47 @@ public partial class ModelFile : BaseFormat
 		}
 		ExtraRecords = extra;
 		if ( UnknownBlockOffset != 0 )
-			Require( data, UnknownBlockOffset, 1, "0x6C block" );
+			Heightfield = ReadHeightfield( data, UnknownBlockOffset );
 	}
+
+	private static ModelHeightfield ReadHeightfield( byte[] data, uint offset )
+	{
+		Require( data, offset, ModelHeightfield.HeaderBytes, "0x6C heightfield header" );
+		var block = (int)offset;
+		var countX = U32( data, block + 24 );
+		var countZ = U32( data, block + 28 );
+		if ( countX == 0 || countZ == 0 || countX > ModelHeightfield.MaximumCellCount || countZ > ModelHeightfield.MaximumCellCount )
+			throw new InvalidDataException( "MD2 heightfield dimensions are invalid." );
+		var cellSizeX = F32( data, block + 16 );
+		var cellSizeZ = F32( data, block + 20 );
+		if ( !float.IsFinite( cellSizeX ) || !float.IsFinite( cellSizeZ ) || cellSizeX <= 0 || cellSizeZ <= 0 )
+			throw new InvalidDataException( "MD2 heightfield cell size is invalid." );
+		var heightsOffset = U32( data, block + 40 );
+		var cellsOffset = U32( data, block + 44 );
+		var heightCount = (int)((countX + 1) * (countZ + 1));
+		var cellCount = (int)(countX * countZ);
+		Require( data, heightsOffset, heightCount * 4L, "heightfield heights" );
+		Require( data, cellsOffset, cellCount * 4L, "heightfield cell words" );
+		if ( Overlaps( heightsOffset, heightCount * 4L, cellsOffset, cellCount * 4L )
+			|| Overlaps( heightsOffset, heightCount * 4L, offset, ModelHeightfield.HeaderBytes )
+			|| Overlaps( cellsOffset, cellCount * 4L, offset, ModelHeightfield.HeaderBytes ) )
+			throw new InvalidDataException( "MD2 heightfield regions overlap." );
+		var heights = new float[heightCount];
+		for ( var index = 0; index < heights.Length; index++ )
+		{
+			heights[index] = F32( data, (int)heightsOffset + index * 4 );
+			if ( !float.IsFinite( heights[index] ) )
+				throw new InvalidDataException( "MD2 heightfield contains a nonfinite height." );
+		}
+		var cells = new uint[cellCount];
+		for ( var index = 0; index < cells.Length; index++ )
+			cells[index] = U32( data, (int)cellsOffset + index * 4 );
+		var opaque = new uint[] { U32( data, block ), U32( data, block + 4 ), U32( data, block + 8 ), U32( data, block + 12 ) };
+		return new ModelHeightfield( (int)countX, (int)countZ, cellSizeX, cellSizeZ, F32( data, block + 32 ), F32( data, block + 36 ), opaque, heights, cells );
+	}
+
+	private static bool Overlaps( uint first, long firstLength, uint second, long secondLength )
+		=> first < second + secondLength && second < first + firstLength;
 
 	private void ReadNodes( byte[] data, uint[] offsets, out int[] nodeRecords )
 	{

@@ -123,6 +123,60 @@ public class Md2ModelFileTests
 	private static ModelFile Read( byte[] data ) => new( new MemoryStream( data ) );
 	private static void Rejects( byte[] data ) => Assert.ThrowsException<InvalidDataException>( () => Read( data ) );
 
+	private static byte[] CreateGeometryWithHeightfield( out int block )
+	{
+		// 2×1 cells: 3×2 corner heights, 2 cell words, then the 48-byte block.
+		var data = new byte[FileLength + 24 + 8 + 48];
+		CreateGeometry().CopyTo( data, 0 );
+		var heights = FileLength;
+		var cells = heights + 24;
+		block = cells + 8;
+		W32( data, 0x6C, block );
+		WF( data, heights, 0, 1, 2, -10, 3.5f, 60 );
+		W32( data, cells, 1 );
+		W32( data, cells + 4, 0x1B0042 );
+		W32( data, block, 0 );
+		W32( data, block + 4, 0x1FE02096 );
+		WF( data, block + 16, 10, 10 );
+		W32( data, block + 24, 2 );
+		W32( data, block + 28, 1 );
+		WF( data, block + 32, -10, 60 );
+		W32( data, block + 40, heights );
+		W32( data, block + 44, cells );
+		return data;
+	}
+
+	[TestMethod]
+	public void DecodesSyntheticTerrainHeightfieldBlock()
+	{
+		var data = CreateGeometryWithHeightfield( out var block );
+		var field = Read( data ).Heightfield!;
+		Assert.IsNull( Read( CreateGeometry() ).Heightfield );
+		Assert.AreEqual( (2, 1, 10f, 10f, -10f, 60f), (field.CellCountX, field.CellCountZ, field.CellSizeX, field.CellSizeZ, field.StoredLowerHeight, field.StoredUpperHeight) );
+		CollectionAssert.AreEqual( new uint[] { 0, 0x1FE02096, 0, 0 }, field.OpaqueHeaderWords.ToArray() );
+		Assert.AreEqual( 2f, field.GetCornerHeight( 2, 0 ) );
+		Assert.AreEqual( -10f, field.GetCornerHeight( 0, 1 ) );
+		Assert.AreEqual( 60f, field.GetCornerHeight( 2, 1 ) );
+		Assert.IsTrue( field.IsHole( 0, 0 ) );
+		Assert.IsFalse( field.IsHole( 1, 0 ) );
+		Assert.AreEqual( 0x1B0042u, field.GetCellWord( 1, 0 ) );
+		Assert.ThrowsException<ArgumentOutOfRangeException>( () => field.GetCornerHeight( 3, 0 ) );
+		Assert.ThrowsException<ArgumentOutOfRangeException>( () => field.GetCellWord( 0, 1 ) );
+
+		foreach ( var (offset, value) in new (int, uint)[] { (24, 0), (24, 2000), (28, 0), (40, 0x10), (44, 0xFFFFFFF0), (44, (uint)block) } )
+		{
+			data = CreateGeometryWithHeightfield( out block );
+			W32( data, block + offset, value );
+			Rejects( data );
+		}
+		data = CreateGeometryWithHeightfield( out block );
+		WF( data, block + 16, 0 );
+		Rejects( data );
+		data = CreateGeometryWithHeightfield( out _ );
+		WF( data, FileLength + 4, float.NaN );
+		Rejects( data );
+	}
+
 	[TestMethod]
 	public void DecodesSyntheticGeometryLayout()
 	{

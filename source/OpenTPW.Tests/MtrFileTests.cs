@@ -254,11 +254,24 @@ public class MtrFileTests
 			Assert.AreEqual( mesh.TransformMatrix, matrices[1], file );
 			Assert.AreEqual( Matrix4x4.Identity, matrices[4], file );
 			Assert.AreEqual( Matrix4x4.Identity, matrices[8], file );
+			var scale = matrices[5].M11;
+			AssertNearlyEqual( Matrix4x4.CreateScale( scale ), matrices[5], file );
+			AssertNearlyEqual( matrices[5], matrices[6], file );
+			AssertNearlyEqual( matrices[2], matrices[3], file );
+			AssertNearlyEqual( Matrix4x4.CreateScale( scale ) * mesh.TransformMatrix, matrices[2], file );
+			AssertNearlyEqual( Matrix4x4.CreateScale( scale ) * Matrix4x4.CreateTranslation( matrices[7].Translation ), matrices[7], file );
 			checkedFiles++;
 		}
 		if ( checkedFiles == 0 )
 			Assert.Inconclusive( "OPENTPW_MTR_PATH contains no .mtr file with a sibling .MD2." );
 		Console.WriteLine( $"{checkedFiles} MTR files match their paired MD2 topology and node matrix." );
+	}
+
+	private static void AssertNearlyEqual( Matrix4x4 expected, Matrix4x4 actual, string message )
+	{
+		for ( var row = 0; row < 4; row++ )
+			for ( var column = 0; column < 4; column++ )
+				Assert.AreEqual( expected[row, column], actual[row, column], 1e-3f, $"{message} [{row},{column}]" );
 	}
 
 	private sealed record Pin( string Name, int TableCount, uint[] Footer, long TableSum );

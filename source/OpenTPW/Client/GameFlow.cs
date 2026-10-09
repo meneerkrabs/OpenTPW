@@ -205,6 +205,8 @@ internal sealed class GameFlow : IDisposable
 		var logical = Screen.Size;
 		var input = InjectedInput ?? inputSource.Poll( Context.Canvas.Width / (float)Math.Max( 1, logical.X ), Context.Canvas.Height / (float)Math.Max( 1, logical.Y ) );
 		InjectedInput = null;
+		Input.TextEntryActive = false;
+		onlineSession?.Pump();
 		var imguiMouse = ImGuiNET.ImGui.GetIO().WantCaptureMouse;
 		if ( imguiMouse )
 			input = input with { LeftPressed = false, LeftReleased = false, RightPressed = false, Wheel = 0 };

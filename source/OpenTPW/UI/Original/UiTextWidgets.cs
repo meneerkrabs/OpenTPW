@@ -62,6 +62,7 @@ public sealed class UiTextField : UiElement
 public sealed class UiScrollList : UiElement
 {
 	private int first;
+	private bool following = true;
 
 	public Func<IReadOnlyList<string>> Rows { get; set; } = () => Array.Empty<string>();
 	public string? Model { get; set; }
@@ -82,6 +83,7 @@ public sealed class UiScrollList : UiElement
 	{
 		var count = Rows().Count;
 		first = Math.Clamp( first + rows, 0, Math.Max( 0, count - VisibleRows ) );
+		following = first >= count - VisibleRows;
 	}
 
 	public void Select( int index )
@@ -124,7 +126,7 @@ public sealed class UiScrollList : UiElement
 		if ( Model == null || !context.DrawModel( Model, 0, rect ) )
 			context.Batch.AddRectangle( rect, UiColors.HelpBackground );
 		var rows = Rows();
-		if ( FollowEnd && Selected < 0 )
+		if ( FollowEnd && following && Selected < 0 )
 			first = Math.Max( 0, rows.Count - VisibleRows );
 		first = Math.Clamp( first, 0, Math.Max( 0, rows.Count - VisibleRows ) );
 		var scale = rect.Height / Bounds.Height;

@@ -60,6 +60,24 @@ public class NativeWidgetTests
 	}
 
 	[TestMethod]
+	public void FocusedFieldClaimsTheKeyboardAndStillBacksOutOnRightClick()
+	{
+		var context = Context();
+		var screen = new UiScreen( "login" );
+		var backs = 0;
+		screen.Back = () => backs++;
+		var name = screen.Add( new UiTextField { Id = "name", Bounds = new UiRect( 100, 100, 600, 80 ) } );
+		Input.TextEntryActive = false;
+		screen.Update( context, UiInput.Click( Centre( context, name ) ) );
+		screen.Update( context, UiInput.Type( "wasd" ) );
+		Assert.IsTrue( Input.TextEntryActive, "The park camera must not see the typed WASD keys." );
+		Assert.AreEqual( "wasd", name.Text );
+		screen.Update( context, new UiInput( new NVector2( -1, -1 ), false, false, false, true, UiKeys.None ) );
+		Assert.AreEqual( 1, backs, "Right click backs out of a modal screen even while a field has the focus." );
+		Input.TextEntryActive = false;
+	}
+
+	[TestMethod]
 	public void ScrollListSelectsWithClicksKeysAndScrollsWithTheWheel()
 	{
 		var context = Context();

@@ -86,14 +86,12 @@ public class UiScreen
 			MoveFocus( 1, element => element is UiTextField );
 		if ( Focused is UiTextField field && field.Visible && field.Enabled )
 		{
+			Input.TextEntryActive = true;
 			field.Type( input.Text, input.Backspaces );
 			if ( input.Has( UiKeys.Accept ) && !input.Has( UiKeys.Space ) )
 				field.Activate();
-			if ( input.Has( UiKeys.Back ) )
-			{
+			if ( input.Has( UiKeys.Back ) || (input.RightPressed && Modal) )
 				Back?.Invoke();
-				consumed = true;
-			}
 			// Typed keys belong to the field, not to navigation or to the park below.
 			return true;
 		}

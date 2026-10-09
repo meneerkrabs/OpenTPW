@@ -63,8 +63,14 @@ public static class GameFilesScreen
 
 		void Browse( Action<string> target, string? initial )
 		{
-			if ( picker != null || !FolderPicker.IsAvailable )
+			if ( picker != null )
 				return;
+			// Without a platform dialog (Linux without zenity or kdialog) the path is typed instead.
+			if ( !FolderPicker.IsAvailable )
+			{
+				stack.Push( PathEntry( stack, strings, initial, target ) );
+				return;
+			}
 			pickerTarget = target;
 			var start = initial != null && Directory.Exists( initial ) ? initial : null;
 			picker = Task.Run( () => FolderPicker.Pick( strings.Extra( OpenTpwText.GameFiles ), start ) );
@@ -99,10 +105,33 @@ public static class GameFilesScreen
 				picker = null;
 				pickerTarget = null;
 			}
-			changeGame.Enabled = changeCd.Enabled = picker == null && FolderPicker.IsAvailable;
+			changeGame.Enabled = changeCd.Enabled = picker == null;
 			removeCd.Enabled = cdPath != null && picker == null;
 		};
 		screen.Focus( changeGame );
+		return screen;
+	}
+
+	/// <summary>A typed folder path, for platforms without a folder dialog.</summary>
+	private static UiScreen PathEntry( UiScreenStack stack, UiStringTable strings, string? initial, Action<string> chosen )
+	{
+		var screen = new UiScreen( "folderEntry" );
+		var window = UiDialogs.CenteredWindow( 1400, 640 );
+		UiDialogs.AddWindow( screen, window, "w_dialog", () => strings.Extra( OpenTpwText.ChangeFolder ) );
+		var field = screen.Add( new UiTextField { Id = "path", Text = initial ?? "", MaximumLength = 1024, Model = "f_text1",
+			Bounds = new UiRect( window.X + 100, window.Y + 190, window.Width - 300, 84 ), Anchor = UiAnchor.Center } );
+		void Accept()
+		{
+			stack.Pop();
+			if ( field.Text.Trim().Length > 0 )
+				chosen( field.Text.Trim() );
+		}
+		field.Submitted = Accept;
+		screen.Add( new UiButton { Id = "ok", Model = "b_okay", Clicked = Accept, Bounds = new UiRect( window.Right - 330, window.Bottom - 230, 120, 120 ), Anchor = UiAnchor.Center } );
+		screen.Add( new UiButton { Id = "back", Text = () => strings.Extra( OpenTpwText.Back ), Clicked = stack.Pop,
+			Bounds = new UiRect( window.X + 100, window.Bottom - 220, 420, 104 ), Anchor = UiAnchor.Center } );
+		screen.Back = stack.Pop;
+		screen.Focus( field );
 		return screen;
 	}
 }

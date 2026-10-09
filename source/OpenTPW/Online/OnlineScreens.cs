@@ -288,7 +288,7 @@ public sealed class OnlineScreens
 		var delete = screen.Add( new UiButton { Id = "delete", Text = () => OnlineStrings.Ui( OnlineStrings.Delete, "Delete" ),
 			Clicked = () => Guard( () =>
 			{
-				if ( list.Selected >= 0 && list.Selected < cards.Count )
+				if ( Session.Busy == 0 && list.Selected >= 0 && list.Selected < cards.Count )
 					File.Delete( cards[list.Selected].Path );
 				list.Selected = -1;
 				Reload();
@@ -298,7 +298,7 @@ public sealed class OnlineScreens
 		screen.Updating += context =>
 		{
 			send.Enabled = Session.IsLoggedIn && cards.Count > 0 && Session.Busy == 0;
-			delete.Enabled = list.Selected >= 0 && list.Selected < cards.Count;
+			delete.Enabled = list.Selected >= 0 && list.Selected < cards.Count && Session.Busy == 0;
 			// Sending removes cards from the outbox folder; re-read it now and then.
 			refreshTimer += context.Delta;
 			if ( refreshTimer > 1 )
@@ -399,6 +399,7 @@ public sealed class OnlineScreens
 		UiDialogs.AddWindow( screen, window, "w_med", () => OnlineStrings.Get( OnlineLabel.ImportFile ) );
 		var path = AddField( screen, "path", () => OnlineStrings.Get( OnlineLabel.ImportFile ), window.X + 120, window.Y + 170, window.Width - 340, 2048 );
 		path.Submitted = () => Inspect( path.Text, start: false );
+		path.Changed = _ => inspected = null;
 		screen.Add( new UiLabel { Id = "description", Wrap = true, Font = fonts => fonts.Small, Bounds = new UiRect( window.X + 120, window.Y + 360, window.Width - 340, 380 ), Anchor = UiAnchor.Center,
 			Text = () => inspected == null ? "" : ParkSharing.Describe( inspected ) } );
 		screen.Add( new UiButton { Id = "inspect", Text = () => OnlineStrings.Get( OnlineLabel.ImportFile ), Clicked = () => Inspect( path.Text, start: false ),
@@ -414,6 +415,7 @@ public sealed class OnlineScreens
 
 	private void Inspect( string path, bool start )
 	{
+		inspected = null;
 		Guard( () =>
 		{
 			inspected = ParkSharing.PrepareVisit( ParkPackage.Load( path ) );
@@ -426,7 +428,6 @@ public sealed class OnlineScreens
 
 	private void Push( UiScreen screen )
 	{
-		screen.Updating += _ => Session.Pump();
 		stack.Push( screen );
 	}
 

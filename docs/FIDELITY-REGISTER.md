@@ -289,8 +289,8 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-007 | `source/OpenTPW/UI/Original/UiWidgets.cs:96` | [APPROX:UI-007] drop shadow one text pixel down-right — evidence needed: captures of original screens |
 | UI-008 | `source/OpenTPW/UI/Original/UiWidgets.cs:252` | [APPROX:UI-008] purple_button halves for normal/focused — evidence needed: capture of the original front-end buttons |
 | UI-009 | `source/OpenTPW/UI/Original/UiWidgets.cs:290` | [APPROX:UI-009] option-row arrow/value positions — evidence needed: capture of the original options screen |
-| UI-010 | `source/OpenTPW/UI/Original/UiScreen.cs:207` | [APPROX:UI-010] popup help placement/backdrop — evidence needed: capture of original popup help |
-| UI-011 | `source/OpenTPW/UI/Original/UiScreen.cs:197` | [APPROX:UI-011] modal screens dim the screens below — evidence needed: captures of original dialogs |
+| UI-010 | `source/OpenTPW/UI/Original/UiScreen.cs:205` | [APPROX:UI-010] popup help placement/backdrop — evidence needed: capture of original popup help |
+| UI-011 | `source/OpenTPW/UI/Original/UiScreen.cs:195` | [APPROX:UI-011] modal screens dim the screens below — evidence needed: captures of original dialogs |
 | UI-012 | `source/OpenTPW/UI/Original/UiInput.cs:54` | [APPROX:UI-012] key map (arrows, Enter, Escape, P) — evidence needed: binary key handling / KEYBOARD.str |
 | UI-012 | `source/OpenTPW/UI/Original/UiScreen.cs:59` | [APPROX:UI-012] hover focus, activate on release, keyboard navigation, right click backs out — evidence needed: binary input handling |
 | UI-013 | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:101` | [APPROX:UI-013] options window size, row pitch 80, OK/Back placement — evidence needed: capture of the original options screen |
@@ -300,7 +300,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-015 | `source/OpenTPW/FrontEnd/FrontEndMenu.cs:124` | [APPROX:UI-015] Game Mode asked when entering a park (no player profiles); the original asks once when a player is created and stores it in the profile — evidence needed: player profiles |
 | UI-016 | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:79` | [DATA:lobby.wad:&lt;theme&gt;.txt ISLAND/SKYCOLOUR/FLYINGMESH/RAINY/LIGHTNING] [APPROX:UI-016] angle = yaw, height = camera target height — evidence needed: binary/capture |
 | UI-017 | `source/OpenTPW/World/LobbyCameraMode.cs:25` | [APPROX:UI-017] SPINSPEED as radians per 0.1 s, FOV 60, 3/s glide — evidence needed: binary or capture of the lobby camera |
-| UI-018 | `source/OpenTPW/Client/GameFlow.cs:235` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
+| UI-018 | `source/OpenTPW/Client/GameFlow.cs:237` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
 | UI-018 | `source/OpenTPW/World/Lobby/LobbyScene.cs:14` | [APPROX:UI-018] flying meshes, rain, lightning and island/gate animations are not drawn — evidence needed: binary/capture of the lobby |
 | UI-019 | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:92` | [APPROX:UI-019] fallback position when lobby.txt lacks ISLANDCAMERAPOSITION — evidence needed: none if lobby.txt is complete |
 | UI-020 | `source/OpenTPW/Hud/ParkHud.cs:121` | [APPROX:UI-020] panel button positions (the models share one authored centre) — evidence needed: capture of the original HUD |
@@ -439,7 +439,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | levels/jungle/Easymode.TPWI:loan table repayments = floor(amount/months) at 0 % APR | `source/OpenTPW/Economy/ParkLedger.cs:119` | [DATA:levels/jungle/Easymode.TPWI:loan table repayments = floor(amount/months) at 0 % APR] |
 | levels/space/rides/megacost.wad/megacost.sgn:slot 1 = "EggIt Italic"/EGGII___.TTF, not in fonts.wad | `source/OpenTPW.Files/Public/DataCorrections.cs:18` | [EXT:COMPAT-FIX sign-font-substitution] [DATA:levels/space/rides/megacost.wad/megacost.sgn:slot 1 = "EggIt Italic"/EGGII___.TTF, not in fonts.wad] |
 | lobby.wad:&lt;theme&gt;.txt ISLAND/SKYCOLOUR/FLYINGMESH/RAINY/LIGHTNING | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:79` | [DATA:lobby.wad:&lt;theme&gt;.txt ISLAND/SKYCOLOUR/FLYINGMESH/RAINY/LIGHTNING] [APPROX:UI-016] angle = yaw, height = camera target height — evidence needed: binary/capture |
-| lobby.wad:&lt;theme&gt;.txt SKYCOLOUR | `source/OpenTPW/Client/GameFlow.cs:235` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
+| lobby.wad:&lt;theme&gt;.txt SKYCOLOUR | `source/OpenTPW/Client/GameFlow.cs:237` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
 | lobby.wad:lobby.txt ISLANDFOV/SPINSPEED/SPINRADIUS/VERTICALOFFSET | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:31` | [DATA:lobby.wad:lobby.txt ISLANDFOV/SPINSPEED/SPINRADIUS/VERTICALOFFSET] defaults equal the shipped values |
 | low.sam/med.sam/high.sam | `source/OpenTPW.Tests/CompatibilityTests.cs:122` | [DATA:low.sam/med.sam/high.sam] in file order (TEXTUREQUALITY .. LOBBYOBJECTS). |
 | low.sam/med.sam/high.sam:comment legend | `source/OpenTPW/Compat/GraphicsSettings.cs:21` | ([DATA:low.sam/med.sam/high.sam:comment legend]). |

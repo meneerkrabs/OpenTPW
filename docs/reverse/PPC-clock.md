@@ -833,3 +833,39 @@ and reconstruction, the lifecycle selector's named meaning, indirect clock
 configuration paths, and target-platform qualification of signed timestamp
 crossings. Those gaps require separate source/caller or runtime evidence; this
 lane introduces no guessed recovery or save migration.
+
+### Cached controller clock and first saved script record
+
+Controller clock accessor `0xa3e08` selects the same callback cache as animation:
+argument zero returns global `+16400` at `0xa3e1c` (scaled); nonzero returns
+`+16408` at `0xa3e14` (unscaled). The coaster tick passes literal zero at
+`0x406bc`, then calls this accessor at `0x406c4`. Its timestamp therefore comes
+from the **scaled callback animation cache**, not a fresh getter read on every
+manager pass. The rides lane owns controller delta/countdown and tick-caller
+qualification; this clock proof supplies their selected timestamp domain.
+
+The lifecycle selector mentioned above is incoming argument **r6**, copied into
+r29 at `0x11ad04` in entry `0x11acfc`. Direct callers pass literal 1 at
+`0x112b0c` / `0x1c2008`, and literal 2 at `0x198910` / `0x1990f0`. The state9
+callback route is one of the literal-1 callers; it therefore skips the reset
+request in the `0x11b3d8` path. These numeric caller facts are now witnessed;
+user-facing names for these load modes are still not established.
+
+The identified PC manager candidate is followed by five `PAD_` words, declared
+script count14, and fixed script-record width244. Native writer `0xb3868`
+constructs the padding marker at `0xb39e4..0xb39ec` and writes width244 at
+`0xb3b84`; its subsequent traversal starts at the list head. The first record
+candidate begins at decoded offset **1595598** and its interpreted fields are:
+ID15, program word index120, header slice budget50, ordinary phase flag0,
+signed speed bias50, and zero WAIT/animation-wait/timer deadlines. The budget
+and speed bias are separate fields even when both happen to equal50.
+The ID15/nextID16 pair corroborates the native assignment path; it does not
+prove all intermediate IDs, subsequent record boundaries or reference fixups.
+
+`save_phase_evidence.py` now validates this bounded first-record span as well
+as the manager header. Synthetic cases distinguish signed PC/bias, unsigned
+deadlines, padding, nonzero record count and fixed width. **38/38** clock tests
+pass with both original-input witnesses enabled, zero skips. No original record
+bytes are emitted or stored. Full save-list reconstruction is the concrete
+remaining save dependency for a live clock/VM adapter; this witness supplies
+metadata and first-record framing, not a production importer.

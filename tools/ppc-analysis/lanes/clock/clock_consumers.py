@@ -144,6 +144,22 @@ def inspect(root: Path) -> dict:
         timer.require((rel.kind, rel.target, rel.addend), ('section', 0, target),
                       'callback state dispatch code target')
         dispatch[str(state)] = hex(target)
+    # Controller callers share the animation callback cache through this selector.
+    d(0xa3e08, 11, (0, 3, 0), 'cached clock selector input zero comparison')
+    d(0xa3e14, 32, (3, 3, 16408), 'nonzero selector returns cached unscaled clock')
+    d(0xa3e1c, 32, (3, 3, 16400), 'zero selector returns cached scaled clock')
+    condition(0xa3e10, (12, 2, 0xa3e1c), 'selector zero chooses scaled cache')
+    d(0x406bc, 14, (3, 0, 0), 'coaster controller selects scaled cached clock')
+    call(0x406c4, 0xa3e08, 'coaster controller cached timestamp source')
+    # Register transfer is an X-form OR: selector is incoming argument r6.
+    word = evidence.word_at(app.code.data, 0x11ad04)
+    timer.require((word >> 26, word >> 21 & 31, word >> 16 & 31,
+                   word >> 11 & 31, word >> 1 & 1023, word & 1),
+                  (31, 6, 29, 6, 444, 1), 'lifecycle selector argument copied from r6')
+    for at, literal, target_at in [(0x112b0c, 1, 0x112b10), (0x198910, 2, 0x198914),
+                                   (0x1990f0, 2, 0x1990f4), (0x1c2008, 1, 0x1c200c)]:
+        d(at, 14, (6, 0, literal), 'lifecycle call selector literal')
+        call(target_at, 0x11acfc, 'lifecycle entry with qualified numeric selector')
     lifecycle = {}
     for at, op, expected, meaning in [
         (0xb27b0, 36, (4, 5, 8), 'manager next script ID starts1'),
@@ -159,6 +175,9 @@ def inspect(root: Path) -> dict:
         (0xb3184, 36, (10, 27, 8), 'script ID allocator stored independently of phase'),
         (0xb3188, 36, (11, 31, 8), 'new script ID assigned manager old allocator value'),
         (0xb38c8, 14, (0, 0, 20), 'saved manager header has20bytes'),
+        (0xb39e4, 15, (4, 0, 24388), 'manager-to-script padding marker high'),
+        (0xb39ec, 14, (0, 4, 16720), 'manager-to-script padding marker low'),
+        (0xb3b84, 14, (0, 0, 244), 'saved script fixed header has244bytes'),
         (0xb3914, 32, (0, 21, 4), 'manager writer copies pass counter'),
         (0xb3928, 36, (0, 1, 568), 'manager writer stores copied pass word'),
         (0xb392c, 32, (6, 21, 8), 'manager writer copies next script ID'),
@@ -268,6 +287,7 @@ def inspect(root: Path) -> dict:
     return {'identity': timer.IDENTITIES['SimThemePark.data'], 'toc': '0x8000',
             'witnesses': records, 'arithmetic': arithmetic, 'region_sha256': hashes,
             'callback_state_dispatch': dispatch, 'animation_unsigned_bias': bias,
+            'coaster_timestamp_source': 'cached_scaled', 'lifecycle_numeric_call_selectors': [1, 2],
             'host_civil_opcodes': wall_fields, 'c_runtime_identity': clib_identity,
             'c_runtime_region_sha256': runtime_hashes, 'c_runtime_time_epoch_offset': 126144000,
             'script_lifecycle': lifecycle, 'script_lifecycle_region_sha256': lifecycle_hashes,

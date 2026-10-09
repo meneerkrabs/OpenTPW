@@ -1,7 +1,7 @@
 """Run every ppc-analysis Python suite and the standalone .NET self-test harnesses, one lane at a time.
 
 Usage: python3 -I tools/ppc-analysis/run_evidence_checks.py [--repo CHECKOUT] [--mac-bin FERAL_BIN]
-           [--pc-data TPW_DATA] [--require-fixtures] [--dotnet DOTNET_EXE] [--json]
+           [--pc-data TPW_DATA] [--pc-fixture EASYMODE_TPWI] [--require-fixtures] [--dotnet DOTNET_EXE] [--json]
 
 CI's `unittest discover -s tools/ppc-analysis` reaches only the top-level test files: lane
 directories have no __init__.py, and several lanes import a module named `evidence`, so they cannot
@@ -12,12 +12,20 @@ Fixture variables are set explicitly from the flags and stripped from the inheri
 otherwise, so a stale shell variable cannot change the result. --mac-bin is the Feral `bin`
 directory; it sets OPENTPW_PPC_BIN_ROOT to that directory and OPENTPW_MAC_APP to the
 SimThemePark.data file in it (rides wants the file, the other lanes the directory). Only those two
-paths are stat'ed; no directory is listed. UI_EVIDENCE_* variables pass through unchanged.
---require-fixtures turns any skipped test into a failure.
+paths are stat'ed; no directory is listed. --pc-fixture is the one identified PC save container
+(Data/levels/jungle/Easymode.TPWI); it sets OPENTPW_PC_FIXTURE and is passed as `--fixture` to
+harnesses registered in FIXTURE_ARGUMENTS. It is never derived from --pc-data. The runner checks only
+its shape (a regular .TPWI file outside the checkout, longer than the container header, within the
+8 MiB harness bound); the lanes check its identity. UI_EVIDENCE_* variables pass through unchanged.
+
+Absent fixtures never fail by themselves. --require-fixtures turns any skipped test, any harness
+"NOT RUN:" fixture line, and any supplied fixture flag none of whose variables is read by a
+ppc-analysis source (or taken by a registered harness) into a failure.
 
 --dotnet runs the lane harnesses that have a synthetic self-test, each from a temporary copy so
 that no global.json applies and no bin/obj lands in the checkout. Harnesses that need a private
-corpus are reported, not run. A harness whose project reference targets a newer framework than
+corpus, or that have no registered self-test, are reported, not run; registered harnesses missing
+from the checkout are reported as absent, so coverage is never claimed for them. A harness whose project reference targets a newer framework than
 itself is reported as an incompatible reference and not run. Failures are classified as restore
 (NU1100: targeting pack not in the cache and not downloadable), missing runtime, SDK too old, or
 incompatible reference. Passing harnesses are self-consistency checks only, not evidence of
@@ -35,8 +43,16 @@ import sys
 import tempfile
 from pathlib import Path
 
-FIXTURE_VARIABLES = ('OPENTPW_PPC_BIN_ROOT', 'OPENTPW_MAC_APP', 'OPENTPW_PC_DATA')
+FIXTURE_VARIABLES = ('OPENTPW_PPC_BIN_ROOT', 'OPENTPW_MAC_APP', 'OPENTPW_PC_DATA', 'OPENTPW_PC_FIXTURE')
+FIXTURE_FLAGS = {
+    '--mac-bin': ('OPENTPW_PPC_BIN_ROOT', 'OPENTPW_MAC_APP'),
+    '--pc-data': ('OPENTPW_PC_DATA',),
+    '--pc-fixture': ('OPENTPW_PC_FIXTURE',),
+}
 APP_NAME = 'SimThemePark.data'
+PC_FIXTURE_SUFFIX = '.tpwi'
+PC_FIXTURE_HEADER_BYTES = 0x629  # zlib payload starts here in the identified container
+PC_FIXTURE_MAX_BYTES = 8 * 1024 * 1024  # OriginalScientistSnapshotReader.MaximumPayloadBytes
 
 # Lane harness -> self-test arguments. Anything not listed here is reported, not run.
 SELF_TESTS = {
@@ -44,8 +60,13 @@ SELF_TESTS = {
     'lanes/economy/OriginalLoanRules.Tests.csproj': [],
     'lanes/guests/rules/GuestOriginalRules.Tests.csproj': [],
     'lanes/clock/OriginalSchedulerRules/OriginalSchedulerRules.csproj': [],
+    'lanes/economy/OriginalScientistSnapshot.Tests.csproj': [],
     'lanes/rides/animation/AnimationWitness.csproj': [],
     'lanes/ui/csharp/OriginalLayoutReader.csproj': ['--self-test'],
+}
+# Harness -> option that takes the --pc-fixture path; added only when --pc-fixture is given.
+FIXTURE_ARGUMENTS = {
+    'lanes/economy/OriginalScientistSnapshot.Tests.csproj': '--fixture',
 }
 NEEDS_CORPUS = {
     'lanes/advisor/layer1/Layer1Corpus.csproj': 'Layer I corpus comparison (private corpus, long run)',
@@ -57,7 +78,22 @@ class FixtureError(Exception):
     pass
 
 
-def fixture_environment(base: dict, mac_bin: Path | None, pc_data: Path | None) -> dict:
+def check_pc_fixture(path: Path, repo: Path | None) -> Path:
+    if not path.is_file():
+        raise FixtureError(f'--pc-fixture is not a regular file: {path}')
+    if path.suffix.lower() != PC_FIXTURE_SUFFIX:
+        raise FixtureError(f'--pc-fixture must be the Easymode.TPWI save container, not {path.name}')
+    resolved = path.resolve()
+    if repo is not None and resolved.is_relative_to(repo.resolve()):
+        raise FixtureError(f'--pc-fixture lies inside the checkout; original assets stay outside Git: {path}')
+    size = resolved.stat().st_size
+    if not PC_FIXTURE_HEADER_BYTES < size <= PC_FIXTURE_MAX_BYTES:
+        raise FixtureError(f'--pc-fixture size {size} is outside ({PC_FIXTURE_HEADER_BYTES:#x}, {PC_FIXTURE_MAX_BYTES}]')
+    return resolved
+
+
+def fixture_environment(base: dict, mac_bin: Path | None, pc_data: Path | None,
+                        pc_fixture: Path | None = None, repo: Path | None = None) -> dict:
     env = {key: value for key, value in base.items() if key not in FIXTURE_VARIABLES}
     if mac_bin is not None:
         app = mac_bin / APP_NAME
@@ -71,7 +107,26 @@ def fixture_environment(base: dict, mac_bin: Path | None, pc_data: Path | None) 
         if not pc_data.is_dir():
             raise FixtureError(f'--pc-data is not a directory: {pc_data}')
         env['OPENTPW_PC_DATA'] = str(pc_data)
+    if pc_fixture is not None:
+        env['OPENTPW_PC_FIXTURE'] = str(check_pc_fixture(pc_fixture, repo))
     return env
+
+
+def environment_read(variable: str) -> re.Pattern:
+    name = re.escape(variable)
+    return re.compile(rf'(?:environ\.get|environ|getenv)\s*[\[(]\s*[\'"]{name}[\'"]')
+
+
+def fixture_consumers(tools: Path, variable: str) -> list[str]:
+    # Python sources that read the variable from the environment, plus present fixture-argument
+    # harnesses. Only ppc-analysis sources are read; no fixture directory is listed.
+    read = environment_read(variable)
+    runner = Path(__file__).resolve()
+    sources = [str(file.relative_to(tools)) for file in sorted(tools.rglob('*.py'))
+               if '__pycache__' not in file.parts and file.resolve() != runner
+               and read.search(file.read_text(encoding='utf-8', errors='replace'))]
+    harnesses = [key for key in FIXTURE_ARGUMENTS if (tools / key).is_file()] if variable == 'OPENTPW_PC_FIXTURE' else []
+    return sources + harnesses
 
 
 def python_suites(tools: Path) -> list[Path]:
@@ -150,7 +205,21 @@ def dotnet_harnesses(tools: Path) -> list[tuple[str, Path]]:
                   if not {'bin', 'obj'} & set(path.parts))
 
 
-def run_dotnet(dotnet: Path, key: str, project: Path) -> dict:
+def absent_harnesses(tools: Path) -> list[dict]:
+    return [{'project': key, 'framework': None, 'status': 'absent',
+             'reason': 'registered, not in this checkout; no coverage claimed'}
+            for key in sorted({*SELF_TESTS, *NEEDS_CORPUS}) if not (tools / key).is_file()]
+
+
+def harness_arguments(key: str, env: dict) -> list[str]:
+    arguments = list(SELF_TESTS[key])
+    if key in FIXTURE_ARGUMENTS and env.get('OPENTPW_PC_FIXTURE'):
+        arguments += [FIXTURE_ARGUMENTS[key], env['OPENTPW_PC_FIXTURE']]
+    return arguments
+
+
+def run_dotnet(dotnet: Path, key: str, project: Path, env: dict | None = None,
+               require_fixtures: bool = False) -> dict:
     result = {'project': key, 'framework': project_framework(project)}
     incompatible = incompatible_references(project)
     if incompatible:
@@ -159,19 +228,25 @@ def run_dotnet(dotnet: Path, key: str, project: Path) -> dict:
         return {**result, 'status': 'not-run', 'reason': NEEDS_CORPUS[key]}
     if key not in SELF_TESTS:
         return {**result, 'status': 'not-run', 'reason': 'no registered self-test'}
-    env = {**os.environ, 'DOTNET_CLI_TELEMETRY_OPTOUT': '1', 'DOTNET_NOLOGO': '1',
+    fixtures = env if env is not None else fixture_environment(dict(os.environ), None, None)
+    arguments = harness_arguments(key, fixtures)
+    env = {**fixtures, 'DOTNET_CLI_TELEMETRY_OPTOUT': '1', 'DOTNET_NOLOGO': '1',
            'DOTNET_ROOT': str(dotnet.resolve().parent)}
     with tempfile.TemporaryDirectory(prefix='ppc-harness-') as scratch:
         copy = Path(scratch) / project.parent.name
         shutil.copytree(project.parent, copy, ignore=shutil.ignore_patterns('bin', 'obj'))
         version = subprocess.run([str(dotnet), '--version'], cwd=scratch, env=env,
                                  capture_output=True, text=True, timeout=60).stdout.strip()
-        process = subprocess.run([str(dotnet), 'run', '--project', str(copy / project.name), '--', *SELF_TESTS[key]],
+        process = subprocess.run([str(dotnet), 'run', '--project', str(copy / project.name), '--', *arguments],
                                  cwd=scratch, env=env, capture_output=True, text=True, timeout=600)
     output = process.stdout + process.stderr
     lines = [line for line in process.stdout.splitlines() if line.strip()]
+    skipped = [line.strip() for line in lines if line.strip().startswith('NOT RUN:')]
     status = 'passed' if process.returncode == 0 else classify_dotnet_failure(output)
-    return {**result, 'sdk': version, 'status': status, 'last_line': lines[-1] if lines else ''}
+    if status == 'passed' and require_fixtures and skipped:
+        status = 'fixture-skipped'
+    return {**result, 'sdk': version, 'status': status, 'arguments': arguments,
+            'fixture_skips': skipped, 'last_line': lines[-1] if lines else ''}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -179,6 +254,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--repo', type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument('--mac-bin', type=Path)
     parser.add_argument('--pc-data', type=Path)
+    parser.add_argument('--pc-fixture', type=Path, help='identified Data/levels/jungle/Easymode.TPWI (outside Git)')
     parser.add_argument('--require-fixtures', action='store_true')
     parser.add_argument('--dotnet', type=Path)
     parser.add_argument('--json', action='store_true')
@@ -186,19 +262,32 @@ def main(argv: list[str] | None = None) -> int:
 
     tools = args.repo.resolve() / 'tools' / 'ppc-analysis'
     try:
-        env = fixture_environment(dict(os.environ), args.mac_bin, args.pc_data)
+        env = fixture_environment(dict(os.environ), args.mac_bin, args.pc_data, args.pc_fixture, args.repo)
     except FixtureError as error:
         print(f'fixture error: {error}', file=sys.stderr)
         return 2
     suites = python_suites(tools)
+    consumers = {key: fixture_consumers(tools, key) for key in FIXTURE_VARIABLES if key in env}
+    unconsumed = [flag for flag, keys in FIXTURE_FLAGS.items()
+                  if keys[0] in env and not any(consumers.get(key) for key in keys)]
+    harnesses = dotnet_harnesses(tools)
+    if args.dotnet:
+        dotnet = [run_dotnet(args.dotnet, key, path, env, args.require_fixtures) for key, path in harnesses]
+    else:
+        dotnet = [{'project': key, 'framework': project_framework(path), 'status': 'not-run',
+                   'reason': 'no --dotnet' if key in SELF_TESTS else
+                   NEEDS_CORPUS.get(key, 'no registered self-test')} for key, path in harnesses]
     report = {
         'fixtures': {key: env.get(key) for key in FIXTURE_VARIABLES},
+        'fixture_consumers': consumers,
+        'unconsumed_fixtures': unconsumed,
         'uncovered': uncovered_test_files(tools, suites),
         'python': [run_python(suite, tools, env, args.require_fixtures) for suite in suites],
-        'dotnet': [run_dotnet(args.dotnet, key, path) for key, path in dotnet_harnesses(tools)] if args.dotnet else [],
+        'dotnet': dotnet + absent_harnesses(tools),
     }
     failed = (bool(report['uncovered']) or any(not suite['passed'] for suite in report['python'])
-              or any(item['status'] not in ('passed', 'not-run') for item in report['dotnet']))
+              or any(item['status'] not in ('passed', 'not-run', 'absent') for item in report['dotnet'])
+              or (args.require_fixtures and bool(report['unconsumed_fixtures'])))
 
     if args.json:
         print(json.dumps(report, indent=2))
@@ -210,9 +299,12 @@ def main(argv: list[str] | None = None) -> int:
                 print(f'       skip: {reason}')
         for file in report['uncovered']:
             print(f'FAIL uncovered test file: {file}')
+        for key in report['unconsumed_fixtures']:
+            mark = 'FAIL' if args.require_fixtures else 'note'
+            print(f"{mark} {key} ({', '.join(FIXTURE_FLAGS[key])}) is set but nothing in this checkout reads it")
         for item in report['dotnet']:
-            mark = 'ok  ' if item['status'] in ('passed', 'not-run') else 'FAIL'
-            detail = item.get('last_line') or item.get('reason', '')
+            mark = 'ok  ' if item['status'] in ('passed', 'not-run', 'absent') else 'FAIL'
+            detail = '; '.join(item.get('fixture_skips') or []) or item.get('last_line') or item.get('reason', '')
             print(f"{mark} dotnet {item['project']} ({item['framework']}, sdk {item.get('sdk', '-')}): {item['status']} {detail}")
         total = sum(suite['ran'] for suite in report['python'])
         skipped = sum(suite['skipped'] for suite in report['python'])

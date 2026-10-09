@@ -52,7 +52,8 @@ OPENTPW_PC_DATA=$TPW_DATA \
   python3 -I -m unittest discover -s tools/ppc-analysis/lanes/review -p 'test_*.py'
 # Every ppc-analysis Python suite, one lane per process (section 44):
 python3 -I -B tools/ppc-analysis/run_evidence_checks.py --mac-bin $FERAL_BIN \
-  [--pc-data $TPW_DATA] [--require-fixtures] [--dotnet $DOTNET8/dotnet]
+  [--pc-data $TPW_DATA] [--pc-fixture $TPW_DATA/levels/jungle/Easymode.TPWI] \
+  [--require-fixtures] [--dotnet $DOTNET8/dotnet]
 ```
 
 `round2_evidence.py` (section 4 onwards) uses the same pinned `Binary` and
@@ -2375,3 +2376,124 @@ unmodelled; TPI history blob qualification (section 38); SDT bank remap;
 Instant Action policy.
 
 Review tests: 138 without the fixture variables (119 pass, 19 skip).
+
+## 48. Round 12: `--pc-fixture` and scientist harness registration in the runner
+
+Scope: only `tools/ppc-analysis/run_evidence_checks.py`, the new
+`lanes/review/test_round12.py` and this file. No production source, workflow or
+peer tree was written. No asset directory was listed. The only original file
+read is the one supplied `Easymode.TPWI` (38,479 bytes, SHA-256
+`6d89303d…`, the identity that both the rides lane and the scientist harness
+pin). Root `main` is still `0d58bd4`, and its runner is byte-identical to this
+lane's round-9 runner, so this round applies to it unchanged. The integration
+owner has not committed the `e31c804` resolution, so that work is not inspected.
+Native UI lifecycle work (final `Dispose` stack cancellation, Linux manual path
+entry) belongs to the Native UI reviewer and is not duplicated here.
+
+### Runner changes
+
+- **`--pc-fixture PATH`** sets `OPENTPW_PC_FIXTURE`, which is now the fourth
+  entry in `FIXTURE_VARIABLES`. An inherited value is always stripped, so a
+  stale shell value never reaches a Python lane or a .NET harness. Before this
+  round, `run_dotnet` copied the full `os.environ`. It now receives the
+  stripped fixture environment.
+- **Never inferred.** `--pc-data` does not imply the fixture, even when
+  `levels/jungle/Easymode.TPWI` exists below it.
+- **Shape check only, with no hashing in the runner.** The path must be a
+  regular `.TPWI` file outside the checkout, so original assets stay out of
+  Git. Its size must be greater than `0x629` (the container header) and at
+  most 8 MiB (the scientist reader's bound). Identity stays with the lanes. A
+  failed check exits with code 2 before any lane runs.
+- **Scientist registration.** `lanes/economy/OriginalScientistSnapshot.Tests.csproj`
+  (net8.0) is in `SELF_TESTS`. `FIXTURE_ARGUMENTS` appends `--fixture PATH` to
+  its command only when `--pc-fixture` is given. As before, it runs from a
+  temporary copy outside the SDK 10 `global.json`.
+- **Honest coverage.**
+  - A registered harness that the checkout lacks is reported as `absent` (no
+    coverage claimed). This is what happens for the scientist on `main`.
+  - A harness with no registration stays `not-run` (for example the rides
+    `ControllersWitness.csproj`).
+  - Without `--dotnet`, every harness is still listed.
+  - A fixture flag counts as consumed only when the target checkout actually
+    reads it: a ppc-analysis source must read one of the flag's variables
+    through `environ[...]`, `environ.get(...)` or `getenv(...)`, or a present
+    harness must take the flag. Naming the variable in synthetic data does not
+    count. A supplied flag that nothing reads is printed as `note`.
+- **`--require-fixtures`** now fails on:
+  - any Python skip, as before;
+  - a harness `NOT RUN:` fixture line (new status `fixture-skipped`);
+  - a supplied fixture flag that nothing reads.
+
+  Without `--require-fixtures`, a fixture that was deliberately left out never
+  fails CI. A registered harness that is absent never fails either, because a
+  missing project is not a skipped fixture.
+
+### Tests (`test_round12.py`, 14, synthetic, with no assets or SDK)
+
+- Stale-value stripping, both with and without the flag.
+- `--pc-data` does not derive the fixture.
+- Rejection of a missing path, a directory, the wrong suffix, a header-only
+  file, an oversized file and a path inside the checkout.
+- `main` exits 2 on a missing path.
+- Registration invariants, and arguments added only when the fixture is
+  supplied.
+- A registered project is reported absent until it exists in the checkout.
+- Consumer detection, including a helper-module read, and synthetic dict
+  literals not counted.
+- A fake POSIX `dotnet`:
+  - shows that a stale `os.environ` value does not reach the harness;
+  - gives `fixture-skipped` only under `--require-fixtures`;
+  - receives `--fixture <resolved path>` when the fixture is supplied.
+- `main` exit codes for an unread fixture (`note` → 0, required → 1).
+- `--mac-bin` counts as consumed when either of its two variables is read.
+
+The fake-`dotnet` class is skipped on Windows.
+
+### Results (stale `OPENTPW_PC_FIXTURE=/stale/nowhere.TPWI` exported for every run)
+
+| Target | Command | Result |
+| --- | --- | --- |
+| This tree | CI (no flags) | OK, 290 tests, 31 skipped |
+| This tree | `--mac-bin --pc-data --pc-fixture --dotnet` SDK 8 | OK, 290 tests, 8 skipped (UI corpus). Review 152/152. `--pc-fixture` note: nothing here reads it |
+| `main` `0d58bd4` | CI | OK, 230 tests, 16 skipped. Scientist `absent` |
+| `main` `0d58bd4` | `--mac-bin --require-fixtures` | **FAILED**: UI 8 skips (`UI_EVIDENCE_*` not supplied). Everything else is 0 skips |
+| `main` `0d58bd4` | `--pc-data --pc-fixture --require-fixtures` | **FAILED**: nothing on `main` reads `OPENTPW_PC_DATA` or `OPENTPW_PC_FIXTURE` |
+| `ppc-economy` `62c0a2e` | `--pc-fixture --require-fixtures --dotnet` SDK 8.0.425 | OK. Scientist **16/16 groups, 1,658 assertions** with the actual fixture. Loans 25/25 |
+| `ppc-economy` `62c0a2e` | `--require-fixtures --dotnet` (no fixture) | **FAILED**, as intended: scientist `fixture-skipped` |
+| `ppc-economy` `62c0a2e` | `--dotnet` (no fixture) | OK. Scientist passes its synthetic groups and reports `NOT RUN` |
+| `ppc-rides` `84fe814` | `--mac-bin --pc-fixture --require-fixtures` | OK, rides 24/24, 0 skipped |
+
+Not covered, listed honestly:
+- `main` has no scientist project and no rides `OPENTPW_PC_FIXTURE` reader yet.
+- The UI corpus variables still pass through without a flag.
+- `Layer1Corpus` and `CorpusWitness` remain `not-run` (private corpus).
+- The rides `ControllersWitness` has no registered self-test.
+- No combined scratch merge of economy and rides onto `main` was run.
+
+The scientist pass is a self-consistency check against one identified PC
+fixture. It is not evidence of original runtime restoration (both
+`SourcePayloadRevalidated` and `CanRestoreRuntimeStaff` remain false).
+
+### Handoff to the integration owner
+
+When the economy (`62c0a2e`) and rides (`84fe814`) lanes merge, take this
+runner as a whole. CI stays without fixture flags. The private command is:
+
+```sh
+UI_EVIDENCE_BIN_ROOT=… UI_EVIDENCE_MAC_UI=… UI_EVIDENCE_MAC_UITEXT=… \
+UI_EVIDENCE_MAC_UIHELP=… UI_EVIDENCE_MAC_MBTOUNI=… UI_EVIDENCE_RESIDX=… UI_EVIDENCE_PC_UI=… \
+python3 -I -B tools/ppc-analysis/run_evidence_checks.py --mac-bin $FERAL_BIN \
+  --pc-data $TPW_DATA --pc-fixture $TPW_DATA/levels/jungle/Easymode.TPWI \
+  --require-fixtures --dotnet $DOTNET8/dotnet
+```
+
+On today's `main`, leave out `--pc-data` and `--pc-fixture`: with
+`--require-fixtures` they correctly fail as unread.
+
+Unresolved objections carried forward unchanged: no PC or Patch 2 runtime
+equivalence for Mac-derived rules; the formats per-channel clock source is
+unmodelled; SDT bank remap; TPI history blob qualification (section 38);
+Instant Action policy.
+
+Review tests: 152 (133 pass and 19 skip without fixture variables; 152 pass
+with `--mac-bin --pc-data`).

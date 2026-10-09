@@ -1,16 +1,20 @@
-# TGQ movies: container, EA-XA audio and TQI video CPU decoding evidence
+# TGQ movies: decoding evidence and playback
 
-October 9, 2026. Status: CPU container/audio/video decoding implemented for the
-nine local `Data/Movies/*.tgq` files. Audio PCM matches an external FFmpeg 8.0.1
-oracle bit-exactly (over the samples FFmpeg emits); video planes are **close but
-not bit-exact** to that oracle. No playback, A/V sync, renderer or game
-integration exists. The original player's colour conversion is not verified.
-No dependency or movie data is added to the repository.
+October 9, 2026. Status: CPU container/audio/video decoding for the nine local
+`Data/Movies/*.tgq` files, plus streaming playback (`--play-movie <name>`)
+with audio, A/V sync and GPU presentation. Audio PCM matches an external FFmpeg
+8.0.1 oracle bit-exactly (over the samples FFmpeg emits); video planes are
+**close but not bit-exact** (84–95 % identical samples, 56–61 dB). No in-game
+trigger is wired: the data does not say when the original plays which movie.
+The original player's colour conversion, pixel aspect and end-of-movie
+behaviour are not verified. No dependency or movie data is added.
 
 Code: `source/OpenTPW.Files/Formats/Video/TgqMovieFile.cs`,
 `source/OpenTPW.Files/Formats/Video/TqiDecoder.cs`,
-`source/OpenTPW.Files/Formats/Sound/EaXaAdpcmDecoder.cs`;
-tests: `source/OpenTPW.Tests/TgqMovieFileTests.cs`.
+`source/OpenTPW.Files/Formats/Video/TgqAudioReader.cs`,
+`source/OpenTPW.Files/Formats/Sound/EaXaAdpcmDecoder.cs`, playback in
+`source/OpenTPW/Client/Movie/`; tests: `source/OpenTPW.Tests/TgqMovieFileTests.cs`,
+`source/OpenTPW.Tests/MoviePlaybackTests.cs`.
 
 ## Container
 
@@ -194,12 +198,78 @@ audio decodes; other variants throw `NotSupportedException`. Caller streams stay
 open; nonseekable short reads are supported. Asset tests are inconclusive (not
 passing) without `OPENTPW_GAME_PATH`; the all-frames test takes ~1 min in Debug.
 
+## Playback
+
+`bash scripts/run.sh --game-path <install> --play-movie bf` plays
+`Data/Movies/bf.tgq` (name or `name.tgq`, case-insensitive, no paths) in the
+game window and exits when it ends; any new key press or mouse click skips.
+`--mute` plays without audio; `--headless` runs the decode-and-clock simulation
+with a simulated real-time audio device at 60 updates/s and prints statistics
+and a hash of the presented planes (no window, GPU or audio device);
+`--smoke-test` is the native GPU check below.
+
+- **Streaming / memory**: the compressed file stays in memory (≤ 64 MiB limit;
+  largest movie 25 MiB); video frames are decoded on demand, one at a time;
+  audio is decoded one SCDl block at a time (`TgqAudioReader`) and kept at most
+  0.25 s + 1,024 frames ahead of the device.
+- **Audio**: SDL2's push queue (`SDL_QueueAudio`) through the SDL2 library
+  Veldrid already loads (`Sdl2Native.LoadFunction`), s16 stereo at the movie
+  rate, SDL converting to the device format. The game had no audio backend
+  before this (NAudio is only used by the Windows-only ModKit MP2 preview). If
+  SDL audio cannot open, playback logs a warning and runs without audio.
+- **Clock**: with audio, movie time is the device's played position minus its
+  buffer latency; because the position moves a device buffer (~46 ms) at a
+  time, elapsed time fills in between steps, capped at one buffer and never
+  running backwards. Without audio (or after a shorter soundtrack drains) the
+  existing 60 Hz `FixedStepClock` advances it, so hitches longer than 16 ticks
+  lose time instead of jumping ahead.
+- **Frame policy**: the frame due at `floor(time × 30)` is decoded; frames
+  passed in between are dropped without decoding (every TQI frame is
+  intra-coded); otherwise the current frame is held. Playback ends at the later
+  of the last video frame and the end of the audio, holding the last frame:
+  `plan.tgq` shows its final frame for ~12.9 s while its audio finishes. The
+  original player's behaviour here is unknown.
+- **Presentation**: CPU BT.601 full-range conversion to RGBA, uploaded to a
+  320×352 texture and drawn with the existing fullscreen-triangle blit shader
+  into a centred viewport with square pixels (pillarboxed in a 16:9 window).
+  The `bf.tgq` Bullfrog logo looks horizontally condensed with square pixels,
+  so the original may have displayed a different pixel aspect; unverified.
+
+Measured: headless `bf` and `plan` at 60 Hz with audio decode every frame
+(255, 1,138) with no drops and end within one update after the audio; at 12 Hz
+`bf` drops > 100 frames but keeps audio time. A real run of `bf` with SDL audio
+(macOS, Metal) showed all 255 frames with 0 drops and ended at 8.84 s (audio
+8.83 s); before smoothing the stepped audio position it dropped 71.
+
+Native check: `--play-movie bf --smoke-test` (audio off for determinism) plays
+to frame 60, reads the resolved framebuffer back at frames ≥ 15 and ≥ 60 and
+requires the mean RGB inside the movie rectangle to match the CPU-converted
+frame within 6/255 per channel, black bars outside it and a changed picture
+between the two reads; it saves `artifacts/native-movie-bf-*.png`.
+
+## Where the original plays movies
+
+Searched all 18,734 files in the data directory and its WAD/SDT archives
+(Latin-1 and UTF-16) for `tgq`, `movie`, `fmv`, `intro`, `video`, `cutscene`,
+`cinematic` and the nine movie names, and decoded every English `.str` table:
+
+- `sound.sam` has `DefaultVolume.MOVIE 100`; `UITEXT.str` #323 is
+  "Movie volume:". So the game plays movies with their own volume setting.
+- No file names a movie, an intro sequence or a trigger; every other hit was an
+  incidental byte match in binary data. The executable is not available.
+- Content: `bf.tgq` is the animated Bullfrog Productions logo (likely a startup
+  logo); the other eight share an identical first frame. Which screen plays
+  them, and when, is not evidenced.
+
+Therefore no startup/intro playback is wired; movies play only from the CLI.
+
 ## Remaining gates
 
 Bit-exact IDCT (only if original-player captures prove it matters), colour
-matrix/range against original-player captures, playback clock/A-V sync
-(including `plan.tgq`'s audio tail), GPU upload/presentation and where the game
-triggers each movie. None of these are verified.
+matrix/range and pixel aspect against original-player captures, what the
+original does after the last frame (`plan.tgq` audio tail), the movie-volume
+setting, and where the game triggers each movie (needs the executable or
+captures). None of these are verified.
 
 ## Sources
 

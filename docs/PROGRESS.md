@@ -158,7 +158,9 @@ Parallelle formaat-slice (7 formaten, geïsoleerde worktrees, 9 oktober 2026):
 - MTR: alleen 11 ISO-bestanden (`Meshes/<taal>/*.mtr`); structurele lezer,
   betekenis en gebruik door de game onbekend. Tests via `OPENTPW_MTR_PATH`.
 - TQI/TGQ: alle negen films; container en EA ADPCM-audio (bit-exact t.o.v. een
-  externe referentie) en TQI-video (≈55 dB, niet bit-exact). Geen afspelen.
+  externe referentie) en TQI-video (integer-IDCT, 56–61 dB, niet bit-exact).
+  Afspelen via `--play-movie <naam>` (SDL2-audio, audioklok, frame drop/hold,
+  GPU, native smoke-test); geen in-game trigger (geen bewijs in de data).
 
 Verificatie na integratie: native assets + shaders **403 passed, 0 skipped**;
 zonder assets 339 passed, 64 skipped; Release-solution 0 errors; Metal

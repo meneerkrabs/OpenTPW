@@ -79,6 +79,19 @@ metadata and input/decoded hashes, and exits nonzero on invalid/unsupported inpu
 Limits are 64 MiB each for input and decoded output. This is **not** playable park
 import or proof of all original TPWS layouts. See SAVE-CONTAINER.md for evidence.
 
+## Movies
+
+```sh
+bash scripts/run.sh --game-path '/path/to/Theme Park World' --play-movie bf
+bash scripts/run.sh --game-path '/path/to/Theme Park World' --play-movie plan --headless
+bash scripts/run.sh --game-path '/path/to/Theme Park World' --play-movie bf --smoke-test
+```
+
+Plays `Data/Movies/<name>.tgq` with SDL2 audio (`--mute` disables it); a key
+press or click skips. `--headless` simulates decoding and the audio clock
+without a window or device. `--smoke-test` plays 60 frames with audio off and
+checks GPU readback against the CPU frame. See TGQ-MOVIES.md.
+
 ## Native integration smoke test
 
 ```sh

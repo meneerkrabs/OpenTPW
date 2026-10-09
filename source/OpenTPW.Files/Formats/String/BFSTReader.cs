@@ -1,121 +1,77 @@
-﻿using System.Text;
+﻿using System.Buffers.Binary;
+using System.Text;
 
 namespace OpenTPW;
 
-internal sealed class BFSTReader : BaseFormat
+/// <summary>
+/// Reader for <c>.str</c> string tables (magic <c>BFST</c>).
+/// </summary>
+/// <remarks>
+/// Header
+///   4 bytes: Magic number - "BFST"
+///   4 bytes: Unknown
+///   4 bytes: String count
+/// For each string
+///   4 bytes: String offset (relative to the end of the 12-byte header)
+/// For each string (at offset)
+///   1 byte  - Unknown, always 0x01
+///   3 bytes - String length, little-endian 24-bit (two shipped UITEXT.str entries exceed 255)
+///   n bytes - Each character, a 1-based index into the language's BFMU table (MBToUni.dat)
+///   Padding
+/// </remarks>
+internal sealed class BFSTReader
 {
-	private ExpandedMemoryStream memoryStream;
-	public byte[] buffer;
+	private const int HeaderLength = 12;
+	private readonly byte[] buffer;
+	private readonly BFMUReader table;
 
-	private static BFMUReader LookupTable = new BFMUReader( $"Language/English/MBToUni.dat" );
-
-	public BFSTReader( string path )
+	public BFSTReader( Stream stream, BFMUReader table )
 	{
-		ReadFromFile( path );
-	}
-
-	public BFSTReader( Stream stream )
-	{
-		ReadFromStream( stream );
-	}
-	public void Dispose()
-	{
-		memoryStream.Dispose();
-	}
-
-	protected override void ReadFromStream( Stream stream )
-	{
-		// Set up read buffer
-		var tempStreamReader = new StreamReader( stream );
-		var fileLength = (int)tempStreamReader.BaseStream.Length;
-
-		buffer = new byte[fileLength];
-		tempStreamReader.BaseStream.Read( buffer, 0, fileLength );
-		tempStreamReader.Close();
-
-		memoryStream = new ExpandedMemoryStream( buffer );
-
-		ReadFile();
+		this.table = table ?? throw new ArgumentNullException( nameof( table ) );
+		using var memory = new MemoryStream();
+		stream.CopyTo( memory );
+		buffer = memory.ToArray();
 	}
 
 	public string[] ReadFile()
 	{
-		memoryStream.Seek( 0, SeekOrigin.Begin );
+		if ( buffer.Length < HeaderLength || Encoding.ASCII.GetString( buffer, 0, 4 ) != "BFST" )
+			throw new InvalidDataException( "String table magic number did not match BFST." );
 
-		/*	
-		Header
-			4 bytes: Magic number - "BFST"
-			4 bytes: Unknown
-			4 bytes: String count
-			
-		#For each string
-			4 bytes - String offset (from the end of the string count)
-			
-		#For each string (at offset)
-			1 byte - Unknown, always 0x01
-			3 bytes - String length
-			n bytes - Each character, specified with an offset in a BFMU file.
-			4 bytes - Padding (may be longer?)
-		*/
+		var stringCount = BinaryPrimitives.ReadInt32LittleEndian( buffer.AsSpan( 8, 4 ) );
+		if ( stringCount < 0 || HeaderLength + (long)stringCount * 4 > buffer.Length )
+			throw new InvalidDataException( $"String table declares {stringCount} strings, which do not fit the file." );
 
-		var magicNumber = memoryStream.ReadString( 4 );
-
-		if ( magicNumber != "BFST" )
-			throw new Exception( $"Magic number did not match: {magicNumber}" );
-
-		//Unknown
-		_ = memoryStream.ReadInt32();
-
-
-		//String Count
-		var stringCount = memoryStream.ReadInt32();
-
-		//Save Pos and create
-		var initialMemPos = memoryStream.Position;
-		List<string> outputList = new List<string>();
-
-		for ( int i = 0; i < stringCount; i++ )
+		var characters = table.Characters;
+		var output = new string[stringCount];
+		var builder = new StringBuilder();
+		for ( var i = 0; i < stringCount; i++ )
 		{
-			// Go to next offset based on iteration
-			memoryStream.Seek( 4 * (i), SeekOrigin.Current );
+			var offset = BinaryPrimitives.ReadInt32LittleEndian( buffer.AsSpan( HeaderLength + i * 4, 4 ) );
+			var position = (long)HeaderLength + offset;
+			if ( offset < 0 || position + 4 > buffer.Length )
+				throw new InvalidDataException( $"String {i} offset {offset} is outside the file." );
 
-			// Find offset number
-			int offset = memoryStream.ReadInt32();
+			if ( buffer[position] != 1 )
+				throw new InvalidDataException( $"String {i} marker is {buffer[position]} instead of 1 at position {position}." );
 
-			// go to offset address
-			// need to account offset for inital 12 bytes
-			memoryStream.Seek( offset + 12, SeekOrigin.Begin );
+			var length = buffer[position + 1] | buffer[position + 2] << 8 | buffer[position + 3] << 16;
+			position += 4;
+			if ( position + length > buffer.Length )
+				throw new InvalidDataException( $"String {i} length {length} runs past the end of the file." );
 
-			// Unknown - we still want to verify it is 0x1
-			var unknownOne = memoryStream.ReadByte();
-			if ( unknownOne != 1 )
+			builder.Clear();
+			for ( var j = 0; j < length; j++ )
 			{
-				throw new Exception( $"String Offset not working - offset set to {unknownOne} @ Pos:{memoryStream.Position}" );
+				var index = buffer[position + j];
+				if ( index < 1 || index > characters.Count )
+					throw new InvalidDataException( $"String {i} character byte {index} is outside the {characters.Count}-entry BFMU table." );
+				builder.Append( characters[index - 1] );
 			}
 
-			// String Length
-			var stringLength = memoryStream.ReadByte();
-
-			//unused after string length
-			_ = memoryStream.ReadByte();
-			_ = memoryStream.ReadByte();
-
-			StringBuilder str = new StringBuilder();
-			// Characters
-			for ( int j = 0; j < stringLength; j++ )
-			{
-				var mtuPos = memoryStream.ReadByte();
-				var readCharacter = LookupTable.GetCharacter( mtuPos );
-				str.Append( readCharacter );
-			}
-
-			outputList.Add( str.ToString() );
-
-			// Go back to intial position
-			memoryStream.Seek( initialMemPos, SeekOrigin.Begin );
-
+			output[i] = builder.ToString();
 		}
 
-		return outputList.ToArray();
+		return output;
 	}
 }

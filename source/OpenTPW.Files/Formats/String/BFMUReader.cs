@@ -1,10 +1,20 @@
-﻿using System.Text;
+﻿using System.Buffers.Binary;
 
 namespace OpenTPW;
+
+/// <summary>
+/// Reader for the per-language <c>MBToUni.dat</c> character table (magic <c>BFMU</c>).
+/// </summary>
+/// <remarks>
+/// Layout: 4-byte magic "BFMU", 2 bytes that are zero in every shipped table, a little-endian
+/// uint16 character count, then that many UTF-16LE code units. String-table bytes are 1-based
+/// indices into this list. The table differs per language (Danish and Swedish ship 248 entries,
+/// English/French/German 249), so a string table must be decoded with the table from its own
+/// language folder.
+/// </remarks>
 public sealed class BFMUReader : BaseFormat
 {
-	private ExpandedMemoryStream memoryStream;
-	public byte[] buffer;
+	private char[] characters = Array.Empty<char>();
 
 	public BFMUReader( string path )
 	{
@@ -15,90 +25,40 @@ public sealed class BFMUReader : BaseFormat
 	{
 		ReadFromStream( stream );
 	}
-	public void Dispose()
-	{
-		memoryStream.Dispose();
-	}
+
+	/// <summary>
+	/// Characters in table order; string byte <c>n</c> maps to <c>Characters[n - 1]</c>.
+	/// </summary>
+	public IReadOnlyList<char> Characters => characters;
 
 	protected override void ReadFromStream( Stream stream )
 	{
-		// Set up read buffer
-		var tempStreamReader = new StreamReader( stream );
-		var fileLength = (int)tempStreamReader.BaseStream.Length;
+		using var memory = new MemoryStream();
+		stream.CopyTo( memory );
+		var data = memory.ToArray();
 
-		buffer = new byte[fileLength];
-		tempStreamReader.BaseStream.Read( buffer, 0, fileLength );
-		tempStreamReader.Close();
+		if ( data.Length < 8 || data[0] != 'B' || data[1] != 'F' || data[2] != 'M' || data[3] != 'U' )
+			throw new InvalidDataException( "Character table magic number did not match BFMU." );
 
-		memoryStream = new ExpandedMemoryStream( buffer );
+		var count = BinaryPrimitives.ReadUInt16LittleEndian( data.AsSpan( 6, 2 ) );
+		if ( data.Length < 8 + count * 2 )
+			throw new InvalidDataException( $"Character table declares {count} characters but holds {(data.Length - 8) / 2}." );
 
-		var magicNumber = memoryStream.ReadString( 4 );
-
-		if ( magicNumber != "BFMU" )
-			throw new Exception( $"Magic number did not match: {magicNumber}" );
-
-		//ReadFile();
-		//CharacterArray();
+		characters = new char[count];
+		for ( var i = 0; i < count; i++ )
+			characters[i] = (char)BinaryPrimitives.ReadUInt16LittleEndian( data.AsSpan( 8 + i * 2, 2 ) );
 	}
 
-	public List<char> CharacterArray()
+	public List<char> CharacterArray() => new( characters );
+
+	/// <summary>
+	/// Maps a 1-based string-table byte to its character.
+	/// </summary>
+	public char GetCharacter( int character )
 	{
-		List<char> allCharacters = new List<char>();
-
-		// Skip Header
-		memoryStream.Seek( 6, SeekOrigin.Begin );
-
-		// Read Character Length
-		var charCount = memoryStream.ReadByte();
-		
-		//Skip 0x0 unsued byte
-		_ = memoryStream.ReadByte();
-
-		for ( int i = 0; i < charCount; i++ )
-		{
-			var currentChar = memoryStream.ReadBytes(2);
-			foreach(var character in Encoding.Unicode.GetChars( currentChar ) )
-			{
-				allCharacters.Add( character );
-			}
-		}
-		return allCharacters;
-	}
-
-	public void ReadFile()
-	{
-		/*
-		
-		Header
-
-		4 bytes: Magic number - "BFMU"
-		2 bytes: Likely specifies the character encoding - usually 0x00
-		2 bytes: Character count
-
-		# For each character
-
-		2 bytes - The character itself in either Unicode or multibyte form
-
-		*/
-
-		var encoding = memoryStream.ReadBytes( 2 );
-		Log.Info($"Encoding: {encoding}", true );
-		var charCount = memoryStream.ReadBytes( 2 );
-
-		for ( int i = 0; i < memoryStream.Length - memoryStream.Position; i++ )
-		{
-			//Log.Info( $"Character: {GetCharacter( memoryStream.Position )} @ Position: {memoryStream.Position}", true );
-			_= memoryStream.ReadByte();
-		}
-
-	}
-
-	public char GetCharacter(int character)
-	{
-		var array = CharacterArray();
-		
 		// Characters are offset by 0x01 in the BFMU!
-		return array[character - 0x01];
+		if ( character < 1 || character > characters.Length )
+			throw new InvalidDataException( $"Character index {character} is outside the {characters.Length}-entry BFMU table." );
+		return characters[character - 1];
 	}
-
 }

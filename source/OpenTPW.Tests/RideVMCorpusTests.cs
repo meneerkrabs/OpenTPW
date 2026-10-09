@@ -93,6 +93,34 @@ public class RideVMCorpusTests
 	}
 
 	[TestMethod]
+	public void OriginalCorpusUsesVariableCopyDestinationsAndLiteralRandBounds()
+	{
+		var corpus = RseScriptTests.LoadCorpusBytes();
+		var copies = 0;
+		var randoms = 0;
+		foreach ( var (name, data) in corpus )
+		{
+			var script = new RideScriptFile( new MemoryStream( data ) );
+			foreach ( var instruction in script.Instructions )
+			{
+				if ( instruction.Opcode == (ushort)Opcode.COPY )
+				{
+					++copies;
+					Assert.AreEqual( RideScriptOperandKind.Variable, instruction.Operands[0].Kind, $"{name} COPY word{instruction.WordOffset}" );
+				}
+				if ( instruction.Opcode == (ushort)Opcode.RAND )
+				{
+					++randoms;
+					Assert.AreEqual( RideScriptOperandKind.Literal, instruction.Operands[1].Kind, $"{name} RAND word{instruction.WordOffset}" );
+					Assert.IsTrue( instruction.Operands[1].Value < 0x8000, "negative RAND bounds remain an unqualified native input domain" );
+				}
+			}
+		}
+		Assert.AreEqual( 1243, copies );
+		Assert.AreEqual( 56, randoms );
+	}
+
+	[TestMethod]
 	public void AllOriginalScriptsRunInTheVmWithoutFaults()
 	{
 		var (corpus, roots, children, orphans) = LoadRoots();

@@ -15,7 +15,8 @@ namespace OpenTPW;
 public static class ParkSaveFile
 {
 	public const string FormatName = "opentpw-park";
-	public const int CurrentVersion = 1;
+	/// <summary>Version 2: the clock follows the original's 248 ms turns and civil calendar, so version 1 tick counts and month indices no longer match.</summary>
+	public const int CurrentVersion = 2;
 	public const int MaximumFileSize = 16 * 1024 * 1024;
 
 	private static readonly JsonSerializerOptions Options = new()

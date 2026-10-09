@@ -9,9 +9,8 @@ public static class EconomyApproximations
 {
 	public static readonly IReadOnlyList<(string Id, string Assumption, string EvidenceNeeded)> All = new[]
 	{
-		("ECON-001", "one game day = 240 fixed ticks (4 s at normal speed)", "capture of the original clock against wall time"),
-		("ECON-002", "every month has 30 days, 12 months per year", "original calendar (binary or captured date display)"),
-		("ECON-003", "24 hours per day (Clock.RSE only shows HOUR is used mod 12)", "original HOUR range (binary or Clock.RSE trace)"),
+		("ECON-001", "OpenTPW's fixed 60 Hz clock is sampled into 248 ms turns (14.88 ticks per turn), without the original's catch-up cap and scheduler phases", "runtime turn timing under load and speed changes"),
+		("ECON-002", "the Mac OS date conversion (LongSecondsToDate, reached through 0x101C5C4C) uses the default Gregorian calendar", "the script system of an original run"),
 		("ECON-004", "Fast x2 and Fastest x4 speeds (only pause is evidenced)", "original speed controls, if any"),
 		("ECON-005", "challenge prizes and scrap sales are other income; build, upgrade, goods, prizes, land are other costs; profit leaves out loans received", "the per-category ledger routines and the annual profit field"),
 		("ECON-006", "APR > 0 repayment is an annuity at APR/12 per month, rounded down; interest accrues monthly on the balance", "standard-mode save or capture with an outstanding loan"),
@@ -32,14 +31,13 @@ public static class EconomyApproximations
 		("ECON-022", "a handyman removes one litter item per WorkDuration game minutes, park-wide", "capture of cleaning speed"),
 		("ECON-023", "an open ride loses WearRate state of repair per game day; breakdown at 0", "capture of state of repair over time"),
 		("ECON-024", "a repair restores state of repair to 100", "capture after a repair"),
-		("ECON-025", "scrap value basis = catalogue cost of all levels up to the current one", "capture of scrap value"),
+		("ECON-025", "scrap value basis = catalogue cost of all levels up to the current one; a scrap year is 365 park-clock days", "capture of scrap value"),
 		("ECON-026", "park value = sum of scrap values", "capture of the park value screen"),
 		("ECON-027", "the record sub-kinds 0–3 are rides, shops, sideshows and features, and every hired staff member counts", "the record field at +0x4C behind sub-kind +0x7A8 and the staff byte +3 tested by FUN_100C4064"),
 		("ECON-028", "purchases need a balance covering the cost", "capture of building with too little money"),
 		("ECON-029", "golden tickets are spent when buying items with GoldenTicketCost", "capture of ticket count after such a purchase"),
 		("ECON-030", "the simulation stops once bankrupt", "capture of the bankrupt state"),
 		("ECON-031", "imported parks are opened on load (open state not decoded)", "park-open flag in the save"),
-		("ECON-033", "one park tick stands for one original world update", "the world-update rate against OpenTPW's fixed tick"),
 		("ECON-034", "challenge type meanings come from Challenges.sam comments (shop types by ShopType/SpecialIngredient)", "challenge captures per type"),
 		("ECON-035", "offers wait for accept/decline; follow-ups are offered right after completion; failed challenges count as finished", "challenge flow captures"),
 		("ECON-036", "build challenges with TargetVal 0 need one item; type 28 needs level 3", "challenge captures"),

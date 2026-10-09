@@ -20,35 +20,72 @@ public readonly record struct ParkDate( int Year, int Month, int Day, int Hour )
 }
 
 /// <summary>
-/// The park calendar. The original data counts in days (challenge targets, weather, ride age),
-/// months (wages are paid "at the end of the month", loans, bankruptcy) and years (scrap value,
-/// end-of-year summary) and its clock script reads hours (<c>Clock.RSE</c>: <c>HOUR</c> mod 12).
-/// The lengths are <b>approximations</b>: the original day length and month lengths are unknown, so
-/// a day is <see cref="TicksPerDay"/> fixed 60 Hz ticks (4 s at normal speed) and every month has
-/// <see cref="DaysPerMonth"/> days.
+/// The park calendar, as in the Mac binary: the world counts park turns (<c>mGameTick</c>), one per
+/// 248 ms of scaled time, and the date is 2000-01-01 00:00 plus turn × 15000 / 4 = 3750 seconds,
+/// converted through the operating system's (Gregorian) calendar. A game day is therefore 23.04
+/// turns, about 5.7 s at normal speed, and months have their civil lengths. OpenTPW samples turns
+/// from its fixed 60 Hz clock.
 /// </summary>
 public static class ParkCalendar
 {
 	public const int TicksPerSecond = FixedStepClock.TicksPerSecond;
-	// [APPROX:ECON-001] one game day = 240 fixed ticks (4 s at normal speed) — evidence needed: capture of the original clock against wall time
-	public const int TicksPerDay = 4 * TicksPerSecond;
-	// [APPROX:ECON-003] 24 hours per day (Clock.RSE only shows HOUR is used mod 12) — evidence needed: original HOUR range (binary or Clock.RSE trace)
+	// [BIN:STP-PPC:0x101C22E0 scheduler] eight 31 ms substeps make one park turn (248 ms of scaled time); the turn counter is world +0x1DA70C (0x10105398)
+	public const int TurnMilliseconds = 248;
+	// [BIN:STP-PPC:0x100E4394 calendar conversion] seconds = turn × mFunnySecsPerRealSec (15000, set by 0x100E3C90) / 4
+	public const long SecondsPerTurn = 15000 / 4;
+	// [BIN:STP-PPC:0x100E4348 calendar start] TbTimeStamp::SetTime( 2000, 1, 1, 0, 0, 0, 0 )
+	public static readonly DateTime Epoch = new( 2000, 1, 1, 0, 0, 0, DateTimeKind.Unspecified );
+	// [APPROX:ECON-001] OpenTPW's fixed 60 Hz clock is sampled into 248 ms turns (14.88 ticks per turn), without the original's catch-up cap and scheduler phases — evidence needed: runtime turn timing under load and speed changes
+	private const long TickTurnNumerator = 1000;
+	private const long TickTurnDenominator = (long)TicksPerSecond * TurnMilliseconds;
+	// [BIN:STP-PPC:0x101C5C4C TbTimeStamp::GetTime] the hour comes from the OS LongDateRec hour field (0–23)
 	public const int HoursPerDay = 24;
-	public const int TicksPerHour = TicksPerDay / HoursPerDay;
-	// [APPROX:ECON-002] every month has 30 days, 12 months per year — evidence needed: original calendar (binary or captured date display)
-	public const int DaysPerMonth = 30;
 	public const int MonthsPerYear = 12;
-	public const int DaysPerYear = DaysPerMonth * MonthsPerYear;
+	public const long SecondsPerHour = 3600;
+	public const long SecondsPerDay = 86400;
 
-	public static long DayIndex( long tick ) => tick / TicksPerDay;
-	public static long MonthIndex( long tick ) => DayIndex( tick ) / DaysPerMonth;
+	/// <summary>The park turn reached at a fixed tick.</summary>
+	public static long Turn( long tick ) => tick * TickTurnNumerator / TickTurnDenominator;
+
+	/// <summary>The first fixed tick at which <paramref name="turn"/> is reached.</summary>
+	public static long TickOfTurn( long turn ) => (turn * TickTurnDenominator + TickTurnNumerator - 1) / TickTurnNumerator;
+
+	/// <summary>Park-clock seconds since the 2000-01-01 epoch at a fixed tick.</summary>
+	public static long Seconds( long tick ) => Turn( tick ) * SecondsPerTurn;
+
+	/// <summary>The first fixed tick whose park-clock time is at least <paramref name="seconds"/>.</summary>
+	public static long TickAtSeconds( long seconds ) => TickOfTurn( (seconds + SecondsPerTurn - 1) / SecondsPerTurn );
+
+	// [APPROX:ECON-002] the Mac OS date conversion (LongSecondsToDate, reached through 0x101C5C4C) uses the default Gregorian calendar — evidence needed: the script system of an original run
+	public static DateTime DateTimeAt( long tick ) => Epoch.AddSeconds( Seconds( tick ) );
+
+	public static long HourIndex( long tick ) => Seconds( tick ) / SecondsPerHour;
+	public static long DayIndex( long tick ) => Seconds( tick ) / SecondsPerDay;
+
+	public static long MonthIndex( long tick )
+	{
+		var date = DateTimeAt( tick );
+		return (date.Year - Epoch.Year) * MonthsPerYear + date.Month - 1;
+	}
+
+	/// <summary>The first fixed tick of a calendar day (0 = 2000-01-01).</summary>
+	public static long TickAtDay( long dayIndex ) => TickAtSeconds( dayIndex * SecondsPerDay );
+
+	/// <summary>The first fixed tick of a calendar month (0 = January 2000).</summary>
+	public static long TickAtMonth( long monthIndex )
+	{
+		var start = Epoch.AddMonths( checked((int)monthIndex) );
+		return TickAtSeconds( (long)(start - Epoch).TotalSeconds );
+	}
+
+	/// <summary>Fixed ticks that <paramref name="hours"/> park-clock hours take at normal speed (at least one).</summary>
+	public static long TicksForHours( double hours ) => Math.Max( 1, (long)Math.Round( hours * SecondsPerHour / SecondsPerTurn * TurnMilliseconds * TicksPerSecond / 1000 ) );
 
 	public static ParkDate ToDate( long tick )
 	{
 		ArgumentOutOfRangeException.ThrowIfNegative( tick );
-		var day = DayIndex( tick );
-		var month = day / DaysPerMonth;
-		return new ParkDate( (int)(month / MonthsPerYear) + 1, (int)(month % MonthsPerYear) + 1, (int)(day % DaysPerMonth) + 1, (int)(tick % TicksPerDay / TicksPerHour) );
+		var date = DateTimeAt( tick );
+		return new ParkDate( date.Year - Epoch.Year + 1, date.Month, date.Day, date.Hour );
 	}
 
 	/// <summary>Converts a duration the original files give in seconds to ticks at normal speed.</summary>

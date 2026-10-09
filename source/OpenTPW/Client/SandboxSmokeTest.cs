@@ -206,7 +206,7 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 		Require( candidate != null, "staff pool offers a mechanic" );
 		var mechanic = economy.Hire( candidate!.Id );
 		var wage = economy.Staff.MonthlyWage( mechanic );
-		var monthEnd = (ParkCalendar.MonthIndex( economy.Tick ) + 1) * ParkCalendar.DaysPerMonth * ParkCalendar.TicksPerDay;
+		var monthEnd = ParkCalendar.TickAtMonth( ParkCalendar.MonthIndex( economy.Tick ) + 1 );
 		economy.Advance( monthEnd - economy.Tick );
 		Require( economy.Tick == monthEnd && economy.Date.Day == 1 && economy.Balance == startBalance - wage, "month-end wages leave the bank account" );
 		var path = SaveFileSystem.GetAbsolutePath( "opentpw-park.json" );

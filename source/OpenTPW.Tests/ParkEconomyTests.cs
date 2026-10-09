@@ -62,9 +62,15 @@ public class ParkEconomyTests
 	public void CalendarAndSpeedAdvanceInWholeTicks()
 	{
 		Assert.AreEqual( new ParkDate( 1, 1, 1, 0 ), ParkCalendar.ToDate( 0 ) );
-		Assert.AreEqual( new ParkDate( 1, 2, 1, 0 ), ParkCalendar.ToDate( ParkCalendar.TicksPerDay * 30L ) );
-		Assert.AreEqual( new ParkDate( 2, 1, 1, 13 ), ParkCalendar.ToDate( ParkCalendar.TicksPerDay * 360L + ParkCalendar.TicksPerHour * 13 ) );
-		Assert.AreEqual( new ParkDate( 1, 12, 30, 23 ), ParkCalendar.ToDate( ParkCalendar.TicksPerDay * 360L - 1 ) );
+		Assert.AreEqual( 15, ParkCalendar.TickOfTurn( 1 ), "a 248 ms turn is 14.88 ticks" );
+		Assert.AreEqual( 3750, ParkCalendar.Seconds( ParkCalendar.TickOfTurn( 1 ) ), "one turn adds 15000 / 4 seconds" );
+		Assert.AreEqual( 0, ParkCalendar.DayIndex( ParkCalendar.TickOfTurn( 23 ) ) );
+		Assert.AreEqual( 1, ParkCalendar.DayIndex( ParkCalendar.TickOfTurn( 24 ) ), "a day is 23.04 turns" );
+		Assert.AreEqual( new ParkDate( 1, 2, 1, 0 ), ParkCalendar.ToDate( ParkCalendar.TickAtDay( 31 ) ) );
+		Assert.AreEqual( 60, ParkCalendar.DayIndex( ParkCalendar.TickAtMonth( 2 ) ), "February 2000 has 29 days" );
+		Assert.AreEqual( new ParkDate( 1, 12, 31, 23 ), ParkCalendar.ToDate( ParkCalendar.TickAtDay( 366 ) - 1 ) );
+		Assert.AreEqual( new ParkDate( 2, 1, 1, 0 ), ParkCalendar.ToDate( ParkCalendar.TickAtDay( 366 ) ) );
+		Assert.AreEqual( 12, ParkCalendar.MonthIndex( ParkCalendar.TickAtDay( 366 ) ) );
 		var park = EconomyTestData.Park();
 		park.Speed = GameSpeed.Paused;
 		park.AdvanceFixedTick();
@@ -122,7 +128,7 @@ public class ParkEconomyTests
 		Assert.AreEqual( LoanMath.MonthlyRepayment( 18000, 20, 24 ), account.MonthlyRepayment );
 		Assert.IsFalse( park.AvailableLoans.Any( offer => offer.Index == 2 ) );
 		Assert.ThrowsException<InvalidOperationException>( () => park.TakeLoan( 2 ) );
-		park.AdvanceDays( 30 * 24 );
+		park.AdvanceMonths( 24 );
 		Assert.AreEqual( 0, park.Loans.Count );
 		Assert.AreEqual( 18000 - LoanMath.TotalPayable( 18000, 20, 24 ), park.Balance );
 		Assert.AreEqual( LoanMath.TotalPayable( 18000, 20, 24 ), park.Ledger.History.Sum( month => month[LedgerCategory.LoanPayments] ) );
@@ -131,7 +137,7 @@ public class ParkEconomyTests
 
 		var early = EconomyTestData.Park( initialCash: 5000 );
 		early.TakeLoan( 1 );
-		early.AdvanceDays( 30 );
+		early.AdvanceMonths( 1 );
 		var remaining = early.Loans[0].RemainingBalance;
 		Assert.AreEqual( 50000 + LoanMath.MonthlyInterest( 50000, 20 ) - early.Loans[0].MonthlyRepayment, remaining );
 		var before = early.Balance;
@@ -149,9 +155,9 @@ public class ParkEconomyTests
 		var mechanic = EconomyTestData.HireBest( park, StaffType.Mechanic );
 		var handyman = EconomyTestData.HireBest( park, StaffType.Handyman );
 		var wages = park.Settings.GetMonthlyWage( StaffType.Mechanic, mechanic.Grade ) + park.Settings.GetMonthlyWage( StaffType.Handyman, handyman.Grade );
-		park.AdvanceDays( 29 );
+		park.Advance( ParkCalendar.TickAtMonth( 1 ) - 1 );
 		Assert.AreEqual( 50000, park.Balance );
-		park.AdvanceDays( 1 );
+		park.Advance( 1 );
 		Assert.AreEqual( 50000 - wages, park.Balance );
 		Assert.AreEqual( wages, park.Ledger.History[0][LedgerCategory.StaffCosts] );
 		park.Fire( handyman.Id );
@@ -161,10 +167,10 @@ public class ParkEconomyTests
 		var price = park.Settings[StaffType.Mechanic].PoundsPerTrainingPoint[grade];
 		park.SetTrainingBudget( StaffType.Mechanic, price * 60L );
 		var balance = park.Balance;
-		park.AdvanceDays( 30 );
+		park.AdvanceMonths( 1 );
 		Assert.AreEqual( 60, mechanic.TrainingPoints );
 		Assert.AreEqual( balance - park.Settings.GetMonthlyWage( StaffType.Mechanic, grade ) - price * 60L, park.Balance );
-		park.AdvanceDays( 30 );
+		park.AdvanceMonths( 1 );
 		Assert.AreEqual( grade + 1, mechanic.Grade );
 		Assert.AreEqual( 0, mechanic.TrainingPoints );
 	}
@@ -183,7 +189,7 @@ public class ParkEconomyTests
 		for ( var hired = 0; hired < 10; hired++ )
 		{
 			while ( !park.Staff.Candidates.Any( candidate => candidate.Type == StaffType.Guard ) )
-				park.Advance( ParkCalendar.TicksPerHour );
+				park.Advance( ParkCalendar.TicksForHours( 1 ) );
 			EconomyTestData.HireBest( park, StaffType.Guard );
 		}
 		Assert.IsFalse( park.Staff.CanHire( StaffType.Guard ) );
@@ -206,7 +212,7 @@ public class ParkEconomyTests
 	{
 		var park = EconomyTestData.Park();
 		Assert.AreEqual( 15, park.Staff.Candidates.Count, "3 of each role at the start" );
-		park.Advance( park.Staff.UpdateInterval );
+		park.Advance( park.Staff.UpdateInterval + ParkCalendar.TicksForHours( 2 ) );
 		Assert.AreEqual( 25, park.Staff.Candidates.Count, "the shortfall of 2 per role is 10, the per-update cap" );
 		foreach ( var type in Enum.GetValues<StaffType>() )
 			Assert.AreEqual( 5, park.Staff.Candidates.Count( candidate => candidate.Type == type ), $"{type} reaches Max {type}s" );
@@ -220,27 +226,27 @@ public class ParkEconomyTests
 		park.EventRaised += events.Add;
 		EconomyTestData.HireBest( park, StaffType.Researcher );
 		park.OpenPark();
-		park.AdvanceDays( 30 );
+		park.AdvanceMonths( 1 );
 		Assert.IsTrue( park.Balance < 0 );
 		Assert.AreEqual( 1, events.Count( item => item.Kind == ParkEventKind.InTheRed ) );
 		Assert.AreEqual( 1, park.MonthsInRed );
-		park.AdvanceDays( 30 * 4 );
+		park.AdvanceMonths( 4 );
 		CollectionAssert.AreEqual( new long[] { 3, 5 }, events.Where( item => item.Kind == ParkEventKind.BankruptcyWarning ).Select( item => item.Amount ).ToArray() );
 		Assert.IsFalse( park.IsBankrupt );
-		park.AdvanceDays( 30 );
+		park.AdvanceMonths( 1 );
 		Assert.IsTrue( park.IsBankrupt );
 		Assert.IsFalse( park.IsParkOpen );
 		Assert.AreEqual( 1, events.Count( item => item.Kind == ParkEventKind.Bankrupt ) );
 		var tick = park.Tick;
-		park.AdvanceDays( 30 );
+		park.AdvanceMonths( 1 );
 		Assert.AreEqual( tick, park.Tick );
 		Assert.AreEqual( ParkEconomy.PurchaseResult.Bankrupt, park.TryBuild( 1100, out _ ) );
 
 		var recovered = EconomyTestData.Park( initialCash: 100 );
 		EconomyTestData.HireBest( recovered, StaffType.Researcher );
-		recovered.AdvanceDays( 30 * 2 );
+		recovered.AdvanceMonths( 2 );
 		recovered.TakeLoan( 0 );
-		recovered.AdvanceDays( 30 );
+		recovered.AdvanceMonths( 1 );
 		Assert.AreEqual( 0, recovered.MonthsInRed );
 	}
 
@@ -293,7 +299,7 @@ public class ParkEconomyTests
 		Assert.AreEqual( wins, Winners( twin, twinSideshow!.Id ), "same seed, same draws" );
 
 		park.RecordRideUse( shop.Id );
-		park.AdvanceDays( 30 );
+		park.AdvanceMonths( 1 );
 		Assert.AreEqual( 1 + 1, shop.CustomersLastMonth );
 		Assert.AreEqual( 30, shop.TakingsLastMonth );
 		Assert.AreEqual( 0, shop.CustomersThisMonth );
@@ -314,7 +320,7 @@ public class ParkEconomyTests
 		Assert.AreEqual( 300, park.Balance );
 		Assert.AreEqual( ParkEconomy.PurchaseResult.NotEnoughMoney, park.TryBuyCells( CellPurchase.Land, 4 ) );
 		Assert.AreEqual( 250, park.ScrapValue( ride! ) );
-		park.AdvanceDays( 360 );
+		park.AdvanceDays( 365 );
 		Assert.AreEqual( 150, park.ScrapValue( ride! ) );
 		var gates = park.RegisterExisting( 1601 );
 		Assert.IsTrue( gates.Imported );
@@ -340,9 +346,9 @@ public class ParkEconomyTests
 		Assert.IsTrue( ride.IsBrokenDown );
 		Assert.AreEqual( 1, events.Count( item => item.Kind == ParkEventKind.RideBrokeDown ) );
 		var mechanic = EconomyTestData.HireBest( park, StaffType.Mechanic );
-		park.Advance( ParkCalendar.TicksPerHour );
+		park.Advance( ParkCalendar.TicksForHours( 2 ) );
 		Assert.AreEqual( mechanic.Id, ride.MechanicId );
-		park.Advance( park.Settings[StaffType.Mechanic].WorkDuration[mechanic.Grade] * (long)ParkCalendar.TicksPerHour );
+		park.Advance( ParkCalendar.TicksForHours( park.Settings[StaffType.Mechanic].WorkDuration[mechanic.Grade] + 1 ) );
 		Assert.IsFalse( ride.IsBrokenDown );
 		Assert.AreEqual( 100, ride.StateOfRepair );
 		Assert.AreEqual( 0, mechanic.AssignedInstanceId );
@@ -480,7 +486,7 @@ public class ParkEconomyTests
 		Assert.AreEqual( 1, park.Counters[ParkCounters.Researched( ResearchCategory.Ride )] );
 
 		park.SetResearchEffort( ResearchCategory.Upgrade, 100 );
-		while ( !park.Research.IsAllResearched && park.Tick < 3600L * ParkCalendar.TicksPerDay )
+		while ( !park.Research.IsAllResearched && park.Tick < ParkCalendar.TickAtDay( 3600 ) )
 			park.AdvanceDays( 1 );
 		Assert.IsTrue( park.Research.IsAllResearched );
 		Assert.IsTrue( park.Research.IsAvailable( 1500 ), "add-on after its target ride" );
@@ -554,7 +560,7 @@ public class ParkEconomyTests
 	}
 
 	[TestMethod]
-	public void GoldenTicketsAreCheckedEvery100TicksInFullSimulationOnly()
+	public void GoldenTicketsAreCheckedEvery100TurnsInFullSimulationOnly()
 	{
 		foreach ( var mode in new[] { ParkGameMode.FullSimulation, ParkGameMode.InstantAction } )
 		{
@@ -562,10 +568,10 @@ public class ParkEconomyTests
 			park.OpenPark();
 			for ( var visitor = 0; visitor < 100; visitor++ )
 				park.TryAdmitVisitor( 100, out _ );
-			park.Advance( ParkEconomy.GoldenTicketCheckInterval - 1 );
-			Assert.AreEqual( 0, park.Objectives.GoldenTickets.Count, $"{mode}: not checked before tick 100" );
+			park.Advance( ParkCalendar.TickOfTurn( ParkEconomy.GoldenTicketCheckInterval ) - 1 );
+			Assert.AreEqual( 0, park.Objectives.GoldenTickets.Count, $"{mode}: not checked before turn 100" );
 			park.Advance( 1 );
-			Assert.AreEqual( mode == ParkGameMode.FullSimulation ? 1 : 0, park.Objectives.GoldenTickets.Count, $"{mode}: checked at tick 100" );
+			Assert.AreEqual( mode == ParkGameMode.FullSimulation ? 1 : 0, park.Objectives.GoldenTickets.Count, $"{mode}: checked at turn 100" );
 		}
 	}
 
@@ -579,13 +585,13 @@ public class ParkEconomyTests
 		for ( var visitor = 0; visitor < 100; visitor++ )
 			park.TryAdmitVisitor( 100, out _ );
 		park.ReportRecord( ParkRecordKind.CoasterHeight, 0, 110 );
-		park.AdvanceDays( 30 );
+		park.AdvanceMonths( 1 );
 		CollectionAssert.AreEquivalent( new[] { GoldenTicketKind.Visitors, GoldenTicketKind.CoasterHeight }, park.Objectives.GoldenTickets.ToArray() );
 		Assert.AreEqual( 2, events.Count( item => item.Kind == ParkEventKind.GoldenTicketWon ) );
 		Assert.AreEqual( 2, park.GoldenTicketsAvailable );
 		Assert.AreEqual( ParkEconomy.PurchaseResult.NotEnoughGoldenTickets, park.TryBuild( 1112, out _ ) );
 		park.ReportRecord( ParkRecordKind.WaterLength, 0, 60 );
-		park.AdvanceDays( 30 );
+		park.AdvanceMonths( 1 );
 		var earnedProgress = new PlayerProgress();
 		earnedProgress.SetTickets( park.Settings.Theme, park.Objectives.GoldenTickets.Count );
 		Assert.AreEqual( 3, earnedProgress.TotalTickets );
@@ -712,7 +718,7 @@ public class ParkEconomyTests
 		var json = ParkSaveFile.Serialize( park );
 		void Rejects( string text ) => Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( text ) ) );
 		Rejects( json[..(json.Length / 2)] );
-		Rejects( json.Replace( "\"Version\": 1", "\"Version\": 2" ) );
+		Rejects( json.Replace( $"\"Version\": {ParkSaveFile.CurrentVersion}", "\"Version\": 1" ) );
 		Rejects( json.Replace( "\"opentpw-park\"", "\"other\"" ) );
 		Rejects( json.Replace( "\"Tick\": 0,", "\"Tick\": 0, \"Extra\": 1," ) );
 		Rejects( json.Replace( "\"EntranceFee\": 20,", "" ) );

@@ -405,8 +405,8 @@ Terrain/save slice (October 9, 2026, worktree `terrain`):
   `Easy_Standard.sam`; category → object → `Easy_` object files) with a source
   reference per value. Inventory of all economy, staff, research, and goal
   settings with meaning and use in [ECONOMY.md](ECONOMY.md).
-- `ParkEconomy`: deterministic park clock (day = 240 fixed ticks, 30-day months:
-  approximation), pause/speeds, ledger with the original UI categories, entry
+- `ParkEconomy`: deterministic park clock (first day = 240 fixed ticks with 30-day
+  months; now the traced 248 ms turns and civil calendar, see ECONOMY.md), pause/speeds, ledger with the original UI categories, entry
   price, shop and sideshow prices, build, upgrade, cell and land costs, scrap
   value, loans (LOANNAMES), bankruptcy after six months in the red (TAG_SYSTEM
   texts), staff pool, wages (BaseWage × PayMultiplier), training,

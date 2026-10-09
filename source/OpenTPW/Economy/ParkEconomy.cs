@@ -264,7 +264,7 @@ public sealed class ParkEconomy : IParkEconomy
 			if ( account.MonthsRemaining == 0 || account.RemainingBalance <= 0 )
 			{
 				loans.RemoveAt( index );
-				// [APPROX:ECON-007] a repaid loan offer becomes available again — evidence needed: capture of the loan screen after repayment
+				// [BIN:STP-PPC:0x100CC21C loan instalment] a fully repaid loan clears its bought flag; 0x100CC9E8 then offers it again when the credit test passes
 				takenOffers.Remove( account.OfferIndex );
 				Raise( ParkEventKind.LoanRepaid, 0, 0, account.OfferIndex );
 			}

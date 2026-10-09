@@ -166,7 +166,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-036 | Original-fidelity area (scope unadjudicated) | options slider: ball centre moves linearly over the track for value index 0..steps-1; click/drag sets the nearest step | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:45` |
 | UI-037 | Original-fidelity area (scope unadjudicated) | option bar label colour (16,16,48), no drop shadow | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:46` |
 | UI-038 | Original-fidelity area (scope unadjudicated) | 3D card rendering, videocard and audio quality are drawn fixed and disabled (OpenTPW has no software renderer, card choice or audio quality) | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:47` |
-| UI-039 | Original-fidelity area (scope unadjudicated) | option labels of a page share one font and scale: largest size within 65 % of the label height at which every label's widest value fits | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:48` |
+| UI-039 | Original-fidelity area (scope unadjudicated) | option label size: letter box about 58 % of the label rectangle height, shared per page; a label whose widest value does not fit drops alone to the largest size that does | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:48` |
 
 ## Approximation sites
 
@@ -276,7 +276,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-005 | `source/OpenTPW/UI/Original/UiImages.cs:70` | [APPROX:UI-005] pink key + neighbour colour bleed for linear filtering — evidence needed: capture of UI edges at other resolutions |
 | UI-006 | `source/OpenTPW/UI/Original/UiText.cs:144` | [APPROX:UI-006] all UI text/backdrop colours — evidence needed: captures of original screens |
 | UI-007 | `source/OpenTPW/UI/Original/UiWidgets.cs:73` | [APPROX:UI-007] drop shadow one text pixel down-right — evidence needed: captures of original screens |
-| UI-008 | `source/OpenTPW/UI/Original/UiWidgets.cs:387` | [APPROX:UI-008] purple_button as a mirrored end cap, upper half normal, lower half focused/pressed — evidence needed: capture of the original front-end buttons |
+| UI-008 | `source/OpenTPW/UI/Original/UiWidgets.cs:372` | [APPROX:UI-008] purple_button as a mirrored end cap, upper half normal, lower half focused/pressed — evidence needed: capture of the original front-end buttons |
 | UI-010 | `source/OpenTPW/UI/Original/UiScreen.cs:224` | [APPROX:UI-010] popup help placement/backdrop — evidence needed: capture of original popup help |
 | UI-011 | `source/OpenTPW/UI/Original/UiScreen.cs:214` | [APPROX:UI-011] modal screens dim the screens below — evidence needed: captures of original dialogs |
 | UI-012 | `source/OpenTPW/UI/Original/UiInput.cs:54` | [APPROX:UI-012] key map (arrows, Enter, Escape, P) — evidence needed: binary key handling / KEYBOARD.str |
@@ -312,13 +312,13 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-030 | `source/OpenTPW/UI/Original/Options/GameOptions.cs:45` | [APPROX:UI-030] right-column defaults: all on, 90 degs rotation (as in the supplied capture), pushscroll |
 | UI-031 | `source/OpenTPW/Hud/ParkHud.cs:352` | [APPROX:UI-031] one placement per menu selection; Level owns purchase/sale — evidence needed: original build-tool continuation |
 | UI-032 | `source/OpenTPW/Hud/ParkHud.cs:595` | [APPROX:UI-032] Wrap translated catalogue names within their slot at the integer text scale. |
-| UI-032 | `source/OpenTPW/UI/Original/UiWidgets.cs:300` | [APPROX:UI-032] small-font fallback and greedy wrap for long labels — evidence needed: captures of translated original screens |
+| UI-032 | `source/OpenTPW/UI/Original/UiWidgets.cs:285` | [APPROX:UI-032] small-font fallback and greedy wrap for long labels — evidence needed: captures of translated original screens |
 | UI-034 | `source/OpenTPW/UI/Original/UiImages.cs:64` | [APPROX:UI-034] a fully opaque texture on a transparent (flag 0x2) slot keys out black — evidence needed: the original's render state for flagged slots |
 | UI-035 | `source/OpenTPW/Client/Movie/IntroPlaylist.cs:30` | Input already held when the sequence begins is ignored until released [APPROX:UI-035], so launching the game |
-| UI-036 | `source/OpenTPW/UI/Original/UiWidgets.cs:456` | [APPROX:UI-036] linear knob travel over the track, value index 0..Steps-1 from the knob's centre — evidence needed: capture of the original slider ends / binary slider code |
+| UI-036 | `source/OpenTPW/UI/Original/UiWidgets.cs:441` | [APPROX:UI-036] linear knob travel over the track, value index 0..Steps-1 from the knob's centre — evidence needed: capture of the original slider ends / binary slider code |
 | UI-037 | `source/OpenTPW/UI/Original/UiText.cs:153` | [APPROX:UI-037] option bar label colour (16,16,48) read off a capture by eye — evidence needed: exact pixel colour from a capture or the font palette |
 | UI-038 | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:218` | [APPROX:UI-038] 3D card rendering, videocard and audio quality are shown fixed (disabled) — OpenTPW has no software renderer, video card or audio quality choice |
-| UI-039 | `source/OpenTPW/UI/Original/UiWidgets.cs:130` | [APPROX:UI-039] uniform option label size: largest family size within 0.65 of the label height at which all labels (and the widest value of each) fit — evidence needed: capture of the original option labels in several languages |
+| UI-039 | `source/OpenTPW/UI/Original/UiWidgets.cs:130` | [APPROX:UI-039] option label size: letter box about 58 % of the label rectangle height (the capture's labels are ~26 of 1536 units for 45-unit rectangles); a label whose widest value does not fit drops alone to the largest size that does — evidence needed: capture of the original option labels in several languages |
 
 ## Extension sites
 
@@ -376,7 +376,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | language | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:426` | [EXT:language] language row (original installs had one language; OpenTPW reads CD overlays) |
 | opentpw-page | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:340` | [EXT:opentpw-page] button to the OpenTPW page, in the free area left of the OK panel |
 | opentpw-page | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:369` | The OpenTPW page ([EXT:opentpw-page]): everything OpenTPW adds to the original options, built from the |
-| opentpw-page | `source/OpenTPW/UI/Original/UiWidgets.cs:532` | [EXT:opentpw-page] option-row arrow/value positions: OpenTPW's own row style for its page (the original page uses sliders and toggles) |
+| opentpw-page | `source/OpenTPW/UI/Original/UiWidgets.cs:517` | [EXT:opentpw-page] option-row arrow/value positions: OpenTPW's own row style for its page (the original page uses sliders and toggles) |
 | ps2-data | `source/OpenTPW/Client/Ps2Export.cs:13` | [EXT:ps2-data] viewing aid for the PS2 version's data, not original behaviour |
 | strings | `source/OpenTPW/UI/Original/SupplementaryStrings.cs:10` | [EXT:strings] OpenTPW supplementary labels (display/upscaling/language rows and OpenTPW messages), not original data |
 | test-stub | `source/OpenTPW/Hud/HudStubs.cs:130` | [EXT:test-stub] price shown when Totem.sam cannot be read (the economy catalogue price is used when a park economy runs) |

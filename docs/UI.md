@@ -195,13 +195,14 @@ mixes them), Advisor (the advisor speaks only from `--advisor-say`), Tutorial,
 Confirmations, RMB cancel, Rotation and Scroll. Options files from older versions get the
 defaults (all on, 90 degs, pushscroll).
 
-All option labels of a page are drawn in one common size (`UiLabelGroup`, UI-039): of the
-label font's family sizes and the whole text scales up to the current one, the largest
-whose letter box stays within 65 % of the label rectangle height (the original's label
-cap height is about half of it) and at which the widest text each label can show (all
-values of its row, in the current language) fits its rectangle; if every fitting size is
-taller the smallest fitting one is used. Because the widest variants count, the size does
-not change while a value changes. The title keeps its own font.
+Option labels share one size per page (`UiLabelGroup`, UI-039): the family size and whole text
+scale whose letter box (capitals, ascenders, descenders) is closest to 58 % of the label
+rectangle height without exceeding it - the capture's labels are about 26 of 1536 units tall in
+45-unit rectangles. A label uses it when the widest text it can show (all values of its row,
+in the current language) fits its rectangle, so the size does not change while a value changes;
+only a label that does not fit drops, alone, to the largest smaller size that does (in
+English every label has the page size, in German only a few long ones are smaller). The title
+keeps its own font.
 
 The "OpenTPW" button (purple text button left of the OK panel, `[EXT:opentpw-page]`) opens a
 second page built from the same original pieces: an `f_screen` page titled "OpenTPW"
@@ -398,7 +399,7 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-036 | `UI/Original/UiWidgets.cs` | options slider: ball centre moves linearly over the track for value index 0..steps-1; click/drag sets the nearest step | capture of the original slider ends or binary slider code |
 | UI-037 | `UI/Original/UiText.cs` | option bar label colour (16,16,48), no drop shadow | exact label colour from a capture or the font palette |
 | UI-038 | `UI/Original/Options/OptionsScreen.cs` | 3D card rendering, videocard and audio quality drawn fixed and disabled (OpenTPW has no software renderer, card choice or audio quality) | none for the game path |
-| UI-039 | `UI/Original/UiWidgets.cs` | option labels of a page share one font and scale: largest size within 65 % of the label height at which every label's widest value fits | capture of the original option labels in several languages |
+| UI-039 | `UI/Original/UiWidgets.cs` | option label size: letter box about 58 % of the label rectangle height, shared per page; a label whose widest value does not fit drops alone to the largest size that does | capture of the original option labels in several languages |
 
 Data-backed (tagged `[DATA]`): the 2048×1536 canvas and authored rectangles of
 placed models (`ui.wad` roots/bounds), button state frames and texture order, V

@@ -139,7 +139,10 @@ approximated park rating.
 ## Original save evidence (Easymode.TPWI)
 
 `SaveEconomyRecords` finds two tables in the decoded payload by structure; `OriginalEconomyImport`
-then requires them to equal the settings exactly.
+then requires loan amount/APR/term/lender metadata and challenge fields to equal settings exactly.
+Monthly repayment equality is required only for 0 % APR, using integer `amount / months`, as
+proven by this fixture. Positive-APR monthly values are preserved in the decoded records and
+reported as **unverified**, without comparing them to the runtime's annuity approximation.
 
 | Table | Offset | Layout | Cross-check |
 | --- | --- | --- | --- |
@@ -156,8 +159,12 @@ and 4-byte writes independently identify the bank prefix and eight-word loan rec
 actual PC fixture matches that order. The old `i64 amount` combined amount with APR; the old
 record's final word belonged to the next loan's available flag. Lender name index is independent
 of record order. The typed parser handles nonzero APR and reordered lenders, while import still
-requires the original settings to match. APR > 0 repayment arithmetic on PC remains unproven;
-the current runtime calculation is still the ECON-006 approximation.
+requires the original settings metadata to match. APR > 0 repayment arithmetic on PC remains
+unproven; each such saved repayment receives an `[APPROX:ECON-006]` diagnostic and is not reported
+as matched or used to restore active loans. The current runtime calculation remains the ECON-006
+approximation. A positive-APR stored value can differ from that calculation without invalidating
+otherwise matching typed data; replacing one unproved formula with the Mac formula is not part
+of validation.
 
 The decoded balance is 87,987, last balance 87,787 and annual profit −12,013, consistent with
 100,000 − 12,013. The spending history behind that profit is still unknown. This correction

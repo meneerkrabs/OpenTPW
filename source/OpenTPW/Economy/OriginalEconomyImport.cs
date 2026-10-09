@@ -3,9 +3,10 @@ namespace OpenTPW;
 /// <summary>
 /// Imports the proven economy fields of an original level save into a <see cref="ParkEconomy"/>:
 /// placed objects and fixed items (registered without charge, docs/TPWS-PAYLOAD.md), and verifies
-/// the save's loan-offer and challenge tables against the balance settings. Both tables must match
-/// the settings exactly — that is what proves their layout and that the save was made with the
-/// easy-mode balance file — and they then confirm, rather than replace, the setting-driven state.
+/// the save's loan metadata and challenge table against balance settings. Zero-APR monthly
+/// repayments are checked by integer division; positive-APR repayment arithmetic is unverified
+/// on PC and is reported without using the runtime approximation as a validity requirement.
+/// These checks confirm, rather than replace, the setting-driven state.
 /// The decoded bank prefix is reported but not imported into the simulation.
 /// </summary>
 public sealed class OriginalEconomyImport
@@ -46,17 +47,27 @@ public sealed class OriginalEconomyImport
 		var evidence = new List<string>();
 		if ( records.Loans.Count != settings.Loans.Count )
 			throw new InvalidDataException( $"The save has {records.Loans.Count} loan offers; the settings define {settings.Loans.Count}." );
+		var zeroAprRepayments = 0;
 		for ( var index = 0; index < records.Loans.Count; index++ )
 		{
 			var saved = records.Loans[index];
 			var offer = settings.Loans[index];
-			var expected = LoanMath.MonthlyRepayment( offer.Amount, offer.AprPercent, offer.Months );
 			if ( saved.Amount != offer.Amount || saved.AprPercent != offer.AprPercent || saved.Months != offer.Months
-				|| saved.MonthlyRepayment != expected || saved.LenderNameIndex != offer.LenderNameIndex )
-				throw new InvalidDataException( $"Save loan offer {index} ({saved.Amount}/{saved.AprPercent} % APR/{saved.Months} months/{saved.MonthlyRepayment} monthly/lender {saved.LenderNameIndex}) differs from LoanInfo[{offer.Index}] ({offer.Amount}/{offer.AprPercent}/{offer.Months}/{expected}/lender {offer.LenderNameIndex})." );
+				|| saved.LenderNameIndex != offer.LenderNameIndex )
+				throw new InvalidDataException( $"Save loan offer {index} ({saved.Amount}/{saved.AprPercent} % APR/{saved.Months} months/lender {saved.LenderNameIndex}) differs from LoanInfo[{offer.Index}] ({offer.Amount}/{offer.AprPercent}/{offer.Months}/lender {offer.LenderNameIndex})." );
+			if ( saved.AprPercent == 0 )
+			{
+				var expected = offer.Amount / offer.Months;
+				if ( saved.MonthlyRepayment != expected )
+					throw new InvalidDataException( $"Save loan offer {index} zero-APR monthly repayment {saved.MonthlyRepayment} differs from floor(amount/months) = {expected}." );
+				zeroAprRepayments++;
+			}
+			else
+				evidence.Add( $"[APPROX:ECON-006] Save loan offer {index} monthly repayment {saved.MonthlyRepayment} at {saved.AprPercent} % APR is unverified: original PC repayment arithmetic is not established; this stored value was not validated against the runtime approximation." );
 		}
-		var repaymentRule = settings.Loans.All( offer => offer.AprPercent == 0 ) ? "floor(amount/months), 0 % APR" : "current repayment approximation";
-		evidence.Add( $"{records.Loans.Count} loan offers match LoanInfo amounts, APR, terms, lenders and repayments ({repaymentRule})." );
+		evidence.Add( $"{records.Loans.Count} loan offers match LoanInfo amounts, APR, terms and lenders." );
+		if ( zeroAprRepayments != 0 )
+			evidence.Add( $"{zeroAprRepayments} zero-APR monthly repayments equal floor(amount/months)." );
 		var level = settings.ChallengesInThisLevel;
 		if ( records.Challenges.Count != level.Count )
 			throw new InvalidDataException( $"The save has {records.Challenges.Count} challenges; ChallengesInThisLevel lists {level.Count}." );

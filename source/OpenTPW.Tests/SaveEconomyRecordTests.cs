@@ -127,18 +127,18 @@ public class SaveEconomyRecordTests
 		}
 	}
 
-	[TestMethod]
-	public void OriginalSettingsCrossCheckRejectsAprAndLenderMismatch()
+	private static (BalanceSettings Settings, byte[] Payload) MatchingSettingsPayload( int apr = 0 )
 	{
-		var settings = EconomyTestData.Settings( apr: 0, extra: "LoanInfo[3].LoanAmount 10000\nLoanInfo[3].APRInPercent 0\nLoanInfo[3].RepaymentPeriodInMonths 36\nLoanInfo[3].Lendername 7\n" );
-		var payload = Payload( apr: 0 );
+		var settings = EconomyTestData.Settings( apr: apr, extra: $"LoanInfo[3].LoanAmount 10000\nLoanInfo[3].APRInPercent {apr}\nLoanInfo[3].RepaymentPeriodInMonths 24\nLoanInfo[3].Lendername 7\n" );
+		var payload = Payload( apr );
+		var positiveRepayments = new[] { 3000, 1500, 800, 458 };
 		for ( var index = 0; index < settings.Loans.Count; index++ )
 		{
 			var offer = settings.Loans[index];
 			var offset = LoanOffset + index * SaveEconomyRecords.LoanRecordSize;
 			Int( payload, offset + 4, checked((int)offer.Amount) );
 			Int( payload, offset + 12, offer.Months );
-			Int( payload, offset + 16, checked((int)LoanMath.MonthlyRepayment( offer.Amount, offer.AprPercent, offer.Months )) );
+			Int( payload, offset + 16, apr == 0 ? checked((int)(offer.Amount / offer.Months)) : positiveRepayments[index] );
 			Int( payload, offset + 28, offer.LenderNameIndex );
 		}
 		for ( var index = 0; index < settings.ChallengesInThisLevel.Count; index++ )
@@ -151,12 +151,60 @@ public class SaveEconomyRecordTests
 				Int( payload, offset + word * 4, words[word] );
 			payload[offset + 42] = (byte)(definition.Independent ? 1 : 0);
 		}
+		return (settings, payload);
+	}
+
+	[TestMethod]
+	public void PositiveAprRepaymentDifferentFromAnnuityKeepsExactMetadataAndReportsUncertainty()
+	{
+		var (settings, payload) = MatchingSettingsPayload( apr: 10 );
+		var records = SaveEconomyRecords.Parse( payload );
+		Assert.AreEqual( 458, records.Loans[3].MonthlyRepayment, "fixed test input, independent of LoanMath" );
+		Assert.AreNotEqual( (long)records.Loans[3].MonthlyRepayment, LoanMath.MonthlyRepayment( 10000, 10, 24 ) );
+		var economy = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
+		var imported = OriginalEconomyImport.Apply( economy, records, Array.Empty<int>(), Array.Empty<int>() );
+		Assert.AreEqual( 4, imported.Records.Loans.Count );
+		Assert.IsTrue( imported.Evidence.Any( line => line.Contains( "loan offer 3" ) && line.Contains( "458" ) && line.Contains( "[APPROX:ECON-006]" ) && line.Contains( "unverified" ) ) );
+		Assert.IsFalse( imported.Evidence.Any( line => line.Contains( "and repayments" ) ), "unknown positive-APR repayments must not be reported as matched" );
+		Assert.AreEqual( settings.InitialCash, economy.Balance );
+		Assert.IsFalse( economy.Loans.Any() );
+	}
+
+	[TestMethod]
+	public void PositiveAprRepaymentMatchingAnnuityStillHasUnverifiedProvenance()
+	{
+		var (settings, payload) = MatchingSettingsPayload( apr: 10 );
+		Int( payload, LoanOffset + 3 * SaveEconomyRecords.LoanRecordSize + 16, 461 );
+		var records = SaveEconomyRecords.Parse( payload );
+		var economy = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
+		var imported = OriginalEconomyImport.Apply( economy, records, Array.Empty<int>(), Array.Empty<int>() );
+		Assert.IsTrue( imported.Evidence.Any( line => line.Contains( "loan offer 3" ) && line.Contains( "461" ) && line.Contains( "unverified" ) ) );
+		Assert.IsFalse( imported.Evidence.Any( line => line.Contains( "zero-APR monthly repayments" ) ) );
+	}
+
+	[TestMethod]
+	public void ZeroAprMonthlyRepaymentMismatchStillRejects()
+	{
+		var (settings, payload) = MatchingSettingsPayload();
+		Int( payload, LoanOffset + 16, 2778 );
+		var records = SaveEconomyRecords.Parse( payload );
+		var economy = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
+		var error = Assert.ThrowsException<InvalidDataException>( () => OriginalEconomyImport.Apply( economy, records, Array.Empty<int>(), Array.Empty<int>() ) );
+		StringAssert.Contains( error.Message, "zero-APR monthly repayment" );
+	}
+
+	[DataTestMethod]
+	[DataRow( 0 )]
+	[DataRow( 10 )]
+	public void OriginalSettingsCrossCheckRejectsAprLenderTermAndAmountMismatch( int apr )
+	{
+		var (settings, payload) = MatchingSettingsPayload( apr );
 		var economy = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
 		var matched = OriginalEconomyImport.Apply( economy, SaveEconomyRecords.Parse( payload ), Array.Empty<int>(), Array.Empty<int>() );
 		Assert.AreEqual( 4, matched.Records.Loans.Count );
 		Assert.AreEqual( settings.InitialCash, economy.Balance );
 		Assert.IsFalse( economy.Loans.Any(), "decoded bought flags do not restore loans in this parser correction" );
-		foreach ( var (field, value) in new[] { (8, 1), (28, 99) } )
+		foreach ( var (field, value) in new[] { (8, apr + 1), (28, 99), (12, 37), (4, 100001) } )
 		{
 			var changed = payload.ToArray();
 			Int( changed, LoanOffset + field, value );

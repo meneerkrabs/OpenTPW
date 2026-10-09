@@ -159,10 +159,11 @@ duration 30 and speed 60. Because this is a freshly designed park it cannot show
 saves of one park at a known tick distance, with a ride in use, would turn the state of repair into the
 oracle for ECON-023.
 
-SYSG `kind` values 815, 865 and 826 are engine mesh-instance types. The Mac code passes them to the mesh
-creator (`0x10059f00`), and the attraction record links to its mesh through `MeshInstanceID`. SYSG therefore
-describes scene meshes, including the nested Bouncy queue-cell meshes (kind 826) inside the ride's SYSG
-record, not game-object state.
+SYSG `kind` values 815 and 865 are engine mesh-instance types: the Mac code passes them to the mesh creator
+(`0x10059f00`, from `0x100dc350`), and the attraction record links to its mesh through `MeshInstanceID`. SYSG
+therefore describes scene meshes rather than game-object state. Kind 826 appears in four functions
+(`0x1006e3d4`, `0x1006e630`, `0x1006e8bc`, `0x1006eb84`) that have not been read yet; its records sit nested
+inside the Belly Bounce SYSG record, on the queue cells.
 
 ## SYSG placed-object records
 

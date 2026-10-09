@@ -12,7 +12,8 @@ namespace OpenTPW;
 /// </summary>
 internal sealed class GameFlow : IDisposable
 {
-	private readonly UiRenderer renderer;
+	private readonly UiRenderer backgroundRenderer;
+	private readonly UiRenderer overlayRenderer;
 	private readonly UiInputSource inputSource = new();
 	private readonly UiBatch backgroundBatch = new();
 	private Action? pending;
@@ -24,9 +25,11 @@ internal sealed class GameFlow : IDisposable
 		Context = new UiContext( Strings, UiFonts.Load( GameLanguage.Current ), new UiModels() );
 		OptionsPath = SaveFileSystem.GetAbsolutePath( GameOptions.FileName );
 		GameOptions.Current = GameOptions.Load( OptionsPath );
-		var size = new DisplayResolution( Settings.Default.GameWindowSize.X, Settings.Default.GameWindowSize.Y );
-		Display = new StubDisplaySettings( GameOptions.Current, size, new DisplayResolution( (int)Screen.Width, (int)Screen.Height ), PersistResolution );
-		renderer = new UiRenderer( global::Global.Render.MultisampledFramebuffer.OutputDescription );
+		Display = IDisplaySettings.Instance ?? new StubDisplaySettings();
+		// Sky backdrop in the world pass; menus/HUD in the overlay pass at output pixels (after world upscaling).
+		backgroundRenderer = new UiRenderer( global::Global.Render.MultisampledFramebuffer.OutputDescription );
+		overlayRenderer = new UiRenderer( global::Global.Render.OutputDescription );
+		global::Global.Render.OnOverlayRender += RenderOverlay;
 	}
 
 	public UiStringTable Strings { get; }
@@ -43,14 +46,6 @@ internal sealed class GameFlow : IDisposable
 	public GameMode Mode { get; private set; } = GameMode.FullSimulation;
 	/// <summary>Raised after a queued transition ran.</summary>
 	public event Action? Transitioned;
-
-	private void PersistResolution( DisplayResolution resolution )
-	{
-		if ( !PersistSettings )
-			return;
-		Settings.Default.GameWindowSize = new System.Drawing.Point( resolution.Width, resolution.Height );
-		Settings.Default.Save();
-	}
 
 	public void Queue( Action transition ) => pending = transition;
 
@@ -140,7 +135,10 @@ internal sealed class GameFlow : IDisposable
 		TearDown();
 		var level = new Level( levelName, loadOriginalLevel: original ) { ShowDeveloperPanels = developerPanels };
 		Level = level;
-		Hud = new ParkHud( level, Strings, StubParkStatus.ForLevel( levelName ), new TotemBuildCatalog( "jungle" ), new HudHost
+		var status = StubParkStatus.ForLevel( levelName );
+		if ( level.Guests != null )
+			status.Attach( level.Guests );
+		Hud = new ParkHud( level, Strings, status, new TotemBuildCatalog( "jungle" ), new HudHost
 		{
 			ExitToLobby = () => Queue( () => ShowFrontEnd( levelName ) ),
 			Quit = Quit,
@@ -154,6 +152,7 @@ internal sealed class GameFlow : IDisposable
 	{
 		if ( Level != null )
 		{
+			Level.DetachOverlay();
 			Level.TextOverlay?.Dispose();
 			Level = null;
 			Hud = null;
@@ -169,10 +168,11 @@ internal sealed class GameFlow : IDisposable
 
 	// ---- Frame -----------------------------------------------------------------------------
 
+	/// <summary>Canvas at the output's drawable pixels with the display's integer UI scale.</summary>
 	private UiCanvas CurrentCanvas()
 	{
-		var framebuffer = global::Global.Render.MultisampledFramebuffer;
-		return new UiCanvas( (int)framebuffer.Width, (int)framebuffer.Height, Display.UiScale );
+		var pixels = Screen.PixelSize;
+		return new UiCanvas( Math.Max( 1, pixels.X ), Math.Max( 1, pixels.Y ), Math.Max( 1, Display.EffectiveUiScale ) );
 	}
 
 	public void Update()
@@ -188,8 +188,9 @@ internal sealed class GameFlow : IDisposable
 		Context.Time = Time.Now;
 		Context.Delta = Time.Delta;
 		Context.PopupHelp = GameOptions.Current.PopupHelp;
-		var window = global::Global.Render.Window.Size;
-		var input = InjectedInput ?? inputSource.Poll( Context.Canvas.Width / (float)Math.Max( 1, window.X ), Context.Canvas.Height / (float)Math.Max( 1, window.Y ) );
+		// Input is in logical window units; the UI works in drawable pixels.
+		var logical = Screen.Size;
+		var input = InjectedInput ?? inputSource.Poll( Context.Canvas.Width / (float)Math.Max( 1, logical.X ), Context.Canvas.Height / (float)Math.Max( 1, logical.Y ) );
 		InjectedInput = null;
 		var imguiMouse = ImGuiNET.ImGui.GetIO().WantCaptureMouse;
 		if ( imguiMouse )
@@ -208,9 +209,11 @@ internal sealed class GameFlow : IDisposable
 			entity.Update();
 	}
 
+	/// <summary>World pass (internal render size): the level, or the lobby sky and 3D scene.</summary>
 	public void Render()
 	{
-		renderer.BeginFrame();
+		backgroundRenderer.BeginFrame();
+		overlayRenderer.BeginFrame();
 		var framebuffer = global::Global.Render.MultisampledFramebuffer;
 		if ( Level != null )
 			Level.Render();
@@ -220,21 +223,31 @@ internal sealed class GameFlow : IDisposable
 			backgroundBatch.Clear();
 			var sky = Menu?.Selected.SkyColour ?? ((byte)40, (byte)90, (byte)160);
 			backgroundBatch.AddRectangle( new UiRect( 0, 0, framebuffer.Width, framebuffer.Height ), new RgbaByte( sky.R, sky.G, sky.B, 255 ) );
-			renderer.Draw( global::Global.Render.CommandList, backgroundBatch, framebuffer.Width, framebuffer.Height );
+			backgroundRenderer.Draw( global::Global.Render.CommandList, backgroundBatch, framebuffer.Width, framebuffer.Height );
 			foreach ( var entity in Entity.All.ToArray() )
 				entity.Render();
 		}
+		Context.Canvas = CurrentCanvas();
 		Context.Batch.Clear();
 		if ( Hud != null )
 			Hud.Draw( Context );
 		else
 			Menu?.Stack.Draw( Context );
-		renderer.Draw( global::Global.Render.CommandList, Context.Batch, framebuffer.Width, framebuffer.Height );
+	}
+
+	/// <summary>Overlay pass (output pixels, possibly twice per frame when the output is captured).</summary>
+	private void RenderOverlay()
+	{
+		var target = global::Global.Render.OverlayFramebuffer;
+		overlayRenderer.Draw( global::Global.Render.CommandList, Context.Batch, target.Width, target.Height );
 	}
 
 	public void Dispose()
 	{
+		global::Global.Render.OnOverlayRender -= RenderOverlay;
+		Level?.DetachOverlay();
 		Level?.TextOverlay?.Dispose();
-		renderer.Dispose();
+		backgroundRenderer.Dispose();
+		overlayRenderer.Dispose();
 	}
 }

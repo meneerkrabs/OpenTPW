@@ -36,6 +36,8 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		Directory.CreateDirectory( temporaryDirectory );
 		SaveFileSystem = new BaseFileSystem( temporaryDirectory );
 		flow.OptionsPath = Path.Combine( temporaryDirectory, GameOptions.FileName );
+		// Read back the composed output (world after scaling + UI at drawable pixels).
+		global::Global.Render.CaptureOutput = true;
 		Plan();
 	}
 
@@ -105,8 +107,9 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			var capture = CaptureFrame( "hud.png" );
 			VerifyText( capture, flow.Hud!.MoneyText, "HUD bank balance" );
 			VerifyText( capture, flow.Hud.DateText, "HUD date" );
-			Require( flow.Hud.MoneyText.Contains( "100,000" ), "starting cash is Easy_Standard.sam's 100,000" );
-			moneyBeforePurchase = flow.Hud.Status.Money;
+			var status = (StubParkStatus)flow.Hud.Status;
+			Require( status.Money == 100000 + status.Earned, "starting cash is Easy_Standard.sam's 100,000 plus guest payments" );
+			moneyBeforePurchase = status.Money - status.Earned;
 			Click( flow.Hud.Screen, "buy" );
 		} );
 		Wait( "build arm opens", 3 );
@@ -127,7 +130,10 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		Wait( "purchase booked", 3 );
 		Do( "purchase charged", () =>
 		{
-			Require( flow.Hud!.Status.Money == moneyBeforePurchase - 3250, "Totem costs Totem.sam's 3,250" );
+			var status = (StubParkStatus)flow.Hud!.Status;
+			Require( status.Money == moneyBeforePurchase - 3250 + status.Earned, "Totem costs Totem.sam's 3,250" );
+			Require( flow.Level!.Guests == null || flow.Level.Guests.Revenue <= status.Earned, "guest admissions reach the bank balance" );
+			Log.Trace( $"HUD money: {status.Money} after the Totem purchase and {status.Earned} guest payments ({flow.Level.Guests?.Admissions ?? 0} admissions)." );
 			Require( !flow.Hud.BuildArmOpen, "build arm closes after building" );
 			flow.Hud.SelectPlacedRide();
 		} );
@@ -165,7 +171,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			CaptureFrame( "frontend-return.png" );
 			Device.WaitForIdle();
 			completed = true;
-			Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name}: {frame} frames, lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, Totem purchase, info arm, pause menu, exit to lobby." );
+			Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name} at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames, lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, Totem purchase, info arm, pause menu, exit to lobby." );
 			GameFlow.Quit();
 		} );
 	}
@@ -236,13 +242,28 @@ internal sealed class FrontEndSmokeTest : IDisposable
 					{
 						if ( glyph.Atlas.Alpha[(glyph.AtlasY + row) * glyph.Atlas.Width + glyph.AtlasX + column] != 255 )
 							continue;
-						var x = glyph.X + column * glyph.Scale + glyph.Scale / 2;
-						var y = glyph.Y + row * glyph.Scale + glyph.Scale / 2;
-						if ( x < 0 || y < 0 || x >= frameCapture.Width || y >= frameCapture.Height )
+						// Every output pixel of the texel's scale×scale block (pixel-exact integer scaling).
+						var inside = true;
+						var exact = true;
+						for ( var dy = 0; dy < glyph.Scale; dy++ )
+						{
+							for ( var dx = 0; dx < glyph.Scale; dx++ )
+							{
+								var x = glyph.X + column * glyph.Scale + dx;
+								var y = glyph.Y + row * glyph.Scale + dy;
+								if ( x < 0 || y < 0 || x >= frameCapture.Width || y >= frameCapture.Height )
+								{
+									inside = false;
+									continue;
+								}
+								var pixel = (y * frameCapture.Width + x) * 4;
+								exact &= Math.Abs( frameCapture.Pixels[pixel] - glyph.Color.B ) <= 2 && Math.Abs( frameCapture.Pixels[pixel + 1] - glyph.Color.G ) <= 2 && Math.Abs( frameCapture.Pixels[pixel + 2] - glyph.Color.R ) <= 2;
+							}
+						}
+						if ( !inside )
 							continue;
 						checkedTexels++;
-						var pixel = (y * frameCapture.Width + x) * 4;
-						if ( Math.Abs( frameCapture.Pixels[pixel] - glyph.Color.B ) <= 2 && Math.Abs( frameCapture.Pixels[pixel + 1] - glyph.Color.G ) <= 2 && Math.Abs( frameCapture.Pixels[pixel + 2] - glyph.Color.R ) <= 2 )
+						if ( exact )
 							matching++;
 					}
 				}
@@ -257,7 +278,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 
 	private static (byte[] Pixels, int Width, int Height) CaptureFrame( string name )
 	{
-		var source = global::Global.Render.ResolveColorTexture;
+		var source = global::Global.Render.OutputCaptureTexture!;
 		using var staging = Device.ResourceFactory.CreateTexture( TextureDescription.Texture2D( source.Width, source.Height, 1, 1, source.Format, TextureUsage.Staging ) );
 		using var commands = Device.ResourceFactory.CreateCommandList();
 		commands.Begin();
@@ -272,6 +293,11 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			var pixels = new byte[checked(rowBytes * (int)source.Height)];
 			for ( var row = 0; row < source.Height; ++row )
 				Marshal.Copy( IntPtr.Add( mapped.Data, checked((int)(row * mapped.RowPitch)) ), pixels, row * rowBytes, rowBytes );
+			if ( source.Format is PixelFormat.R8_G8_B8_A8_UNorm )
+				for ( var pixel = 0; pixel < pixels.Length; pixel += 4 )
+					(pixels[pixel], pixels[pixel + 2]) = (pixels[pixel + 2], pixels[pixel]);
+			Require( source.Format is PixelFormat.B8_G8_R8_A8_UNorm or PixelFormat.R8_G8_B8_A8_UNorm, "readback format is 8-bit RGBA" );
+			Require( (int)source.Width == Screen.PixelSize.X && (int)source.Height == Screen.PixelSize.Y, "UI readback is at the drawable size" );
 			var colors = new HashSet<uint>();
 			for ( var pixel = 0; pixel < pixels.Length && colors.Count <= 32; pixel += 4 )
 				colors.Add( BitConverter.ToUInt32( pixels, pixel ) );

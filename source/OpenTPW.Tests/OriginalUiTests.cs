@@ -59,24 +59,33 @@ public class OriginalUiTests
 	}
 
 	[DataTestMethod]
-	[DataRow( 640, 480, UiFontTier.Small, 1 )]
-	[DataRow( 1024, 768, UiFontTier.Medium, 1 )]
-	[DataRow( 1280, 720, UiFontTier.Medium, 1 )]
-	[DataRow( 1920, 1080, UiFontTier.Big, 1 )]
-	[DataRow( 2560, 1440, UiFontTier.Big, 1 )]
-	[DataRow( 3840, 2160, UiFontTier.Big, 2 )]
-	public void FontTierAndTextScaleFollowTheOutputSize( int width, int height, UiFontTier tier, int textScale )
+	[DataRow( 640, 480, 1, UiFontTier.Small )]
+	[DataRow( 1024, 768, 1, UiFontTier.Medium )]
+	[DataRow( 1280, 720, 1, UiFontTier.Medium )]
+	[DataRow( 1920, 1080, 1, UiFontTier.Big )]
+	[DataRow( 2560, 1440, 2, UiFontTier.Medium )]
+	[DataRow( 3840, 2160, 3, UiFontTier.Medium )]
+	[DataRow( 1280, 720, 2, UiFontTier.Small )]
+	public void FontTierFollowsTheLogicalSizeAndTextUsesTheDisplayUiScale( int width, int height, int uiScale, UiFontTier tier )
 	{
-		var canvas = new UiCanvas( width, height );
+		var canvas = new UiCanvas( width, height, uiScale );
 		Assert.AreEqual( tier, canvas.FontTier );
-		Assert.AreEqual( textScale, canvas.TextScale );
+		Assert.AreEqual( uiScale, canvas.TextScale, "BF4 text is drawn at exactly the display's integer UI scale" );
 	}
 
 	[TestMethod]
-	public void UserUiScaleEnlargesTheLayoutWithinBounds()
+	public void HiDpiOutputsKeepTheLayoutProportionAndDoubleTheText()
 	{
-		Assert.AreEqual( 2 * new UiCanvas( 1024, 768 ).Scale, new UiCanvas( 1024, 768, 2f ).Scale, 1e-6f );
-		Assert.AreEqual( new UiCanvas( 1024, 768, 3f ).Scale, new UiCanvas( 1024, 768, 10f ).Scale, 1e-6f );
+		var logical = new UiCanvas( 1280, 720, 1 );
+		var hiDpi = new UiCanvas( 2560, 1440, 2 );
+		Assert.AreEqual( 2 * logical.Scale, hiDpi.Scale, 1e-6f );
+		Assert.AreEqual( logical.FontTier, hiDpi.FontTier );
+		var rect = new UiRect( 37.1f, 984.2f, 401.7f, 523.1f );
+		var a = logical.Map( rect, UiAnchor.BottomLeft );
+		var b = hiDpi.Map( rect, UiAnchor.BottomLeft );
+		Assert.AreEqual( 2 * a.X, b.X, 1e-3f );
+		Assert.AreEqual( 2 * a.Y, b.Y, 1e-3f );
+		Assert.AreEqual( 1, new UiCanvas( 800, 600, 0 ).TextScale, "UI scale is at least 1" );
 	}
 
 	// ---- Screens and navigation ------------------------------------------------------------
@@ -246,55 +255,40 @@ public class OriginalUiTests
 
 	// ---- Options ---------------------------------------------------------------------------
 
-	private sealed class FakeDisplay : IDisplaySettings
-	{
-		public DisplayApplyResult Result { get; set; } = DisplayApplyResult.NeedsConfirmation;
-		public int Applies, Confirms, Reverts;
-		public IReadOnlyList<DisplayResolution> AvailableResolutions { get; } = new DisplayResolution[] { new( 640, 480 ), new( 1280, 720 ), new( 2560, 1440 ) };
-		public DisplayResolution Resolution { get; set; } = new( 1280, 720 );
-		public DisplayWindowMode WindowMode { get; set; }
-		public DisplayUpscaleMethod UpscaleMethod { get; set; }
-		public IReadOnlyList<int> RenderScalePresets { get; } = new[] { 77, 67, 59, 50 };
-		public int RenderScalePercent { get; set; } = 100;
-		public float UiScale { get; set; } = 1;
-		public DisplayResolution EffectiveInternalSize => new( 1280, 720 );
-		public DisplayResolution OutputSize => new( 1280, 720 );
-		public string? FallbackReason => null;
-		public DisplayApplyResult Apply() { Applies++; return Result; }
-		public void Confirm() => Confirms++;
-		public void Revert() { Reverts++; Resolution = new( 1280, 720 ); }
-	}
-
 	[TestMethod]
 	public void OptionLabelsUseOriginalStringsWhereTheyExist()
 	{
 		var strings = FakeStrings();
-		var display = new FakeDisplay();
-		Assert.AreEqual( "ui341", OptionsScreen.ResolutionLabel( strings, new DisplayResolution( 640, 480 ) ) );
-		Assert.AreEqual( "ui346", OptionsScreen.ResolutionLabel( strings, new DisplayResolution( 400, 300 ) ) );
-		Assert.AreEqual( " 2560 x 1440", OptionsScreen.ResolutionLabel( strings, new DisplayResolution( 2560, 1440 ) ) );
+		var display = new StubDisplaySettings();
+		Assert.AreEqual( "ui341", OptionsScreen.ResolutionLabel( strings, new Point2( 640, 480 ) ) );
+		Assert.AreEqual( "ui346", OptionsScreen.ResolutionLabel( strings, new Point2( 400, 300 ) ) );
+		Assert.AreEqual( " 2560 x 1440", OptionsScreen.ResolutionLabel( strings, new Point2( 2560, 1440 ) ) );
 		Assert.AreEqual( " Native", OptionsScreen.RenderScaleLabel( strings, display, 100 ) );
 		Assert.AreEqual( " 77%", OptionsScreen.RenderScaleLabel( strings, display, 77 ) );
 		Assert.AreEqual( "ui339 85%", OptionsScreen.RenderScaleLabel( strings, display, 85 ) );
+		Assert.AreEqual( " Automatic", OptionsScreen.UiScaleLabel( strings, 0 ) );
+		Assert.AreEqual( " 2x", OptionsScreen.UiScaleLabel( strings, 2 ) );
+		Assert.AreEqual( " Full screen", OptionsScreen.WindowModeLabel( strings, WindowMode.Exclusive ) );
+		Assert.AreEqual( " Nearest neighbour", OptionsScreen.UpscaleLabel( strings, UpscaleMode.Nearest ) );
 		Assert.AreEqual( 2, OptionsScreen.Cycle( new[] { 1, 2, 3 }, 1, 1 ) );
 		Assert.AreEqual( 3, OptionsScreen.Cycle( new[] { 1, 2, 3 }, 3, 1 ), "cycling stops at the ends" );
 		Assert.AreEqual( 1, OptionsScreen.Cycle( new[] { 1, 2, 3 }, 9, -1 ) );
 	}
 
 	[TestMethod]
-	public void OptionsCancelRestoresAndAcceptConfirmsOrRevertsDisplayChanges()
+	public void OptionsCancelDiscardsAndAcceptUsesTheDisplayKeepOrRevertFlow()
 	{
 		var context = FakeContext();
 		var stack = new UiScreenStack();
 		var options = new GameOptions();
-		var display = new FakeDisplay();
+		var display = new StubDisplaySettings( DisplaySettings.Default with { Width = 1280, Height = 720 } );
 		var saves = 0;
 		var languages = new List<string>();
 		var closed = 0;
 		OptionsServices Services() => new()
 		{
 			Display = display, Options = options, Languages = new[] { "Dutch", "English" }, CurrentLanguage = "English",
-			SaveOptions = () => saves++, SaveLanguage = languages.Add, ConfirmSeconds = 1
+			SaveOptions = () => saves++, SaveLanguage = languages.Add
 		};
 		var screen = OptionsScreen.Create( stack, FakeStrings(), Services(), () => closed++ );
 		stack.Push( screen );
@@ -302,29 +296,60 @@ public class OriginalUiTests
 		Assert.AreEqual( "ui318", ((UiOptionRow)screen.Find( "resolution" )!).Label() );
 		Assert.AreEqual( "Upscaling:", ((UiOptionRow)screen.Find( "upscaling" )!).Label() );
 		((UiOptionRow)screen.Find( "effects" )!).Adjust( 1 );
+		((UiOptionRow)screen.Find( "resolution" )!).Adjust( 1 );
 		Assert.AreEqual( 9, options.SoundEffectsVolume );
 		stack.Update( context, UiInput.Key( UiKeys.Back ) );
 		Assert.AreEqual( 8, options.SoundEffectsVolume, "cancel restores the volume" );
-		Assert.AreEqual( (0, 1, 1), (saves, display.Reverts, closed) );
+		Assert.AreEqual( (0, 0, 1), (saves, display.Applies, closed), "cancel applies nothing" );
 
+		// Upscaling, render scale and UI scale apply directly.
+		screen = OptionsScreen.Create( stack, FakeStrings(), Services(), () => closed++ );
+		stack.Push( screen );
+		((UiOptionRow)screen.Find( "upscaling" )!).Adjust( 1 );
+		((UiOptionRow)screen.Find( "renderScale" )!).Adjust( 1 );
+		((UiOptionRow)screen.Find( "uiScale" )!).Adjust( 1 );
+		Assert.AreEqual( "ui339 70%", ((UiOptionRow)screen.Find( "renderScale" )!).Value() );
+		screen.Find( "ok" )!.Activate();
+		Assert.AreEqual( (UpscaleMode.Linear, 70, 1, false), (display.Current.Upscale, display.Current.RenderScale, display.Current.UiScale, display.IsConfirmationPending) );
+		Assert.AreEqual( 2, closed );
+
+		// A new size asks to keep it (UITEXT 400); "No" reverts and reports UITEXT 401.
 		screen = OptionsScreen.Create( stack, FakeStrings(), Services(), () => closed++ );
 		stack.Push( screen );
 		((UiOptionRow)screen.Find( "resolution" )!).Adjust( 1 );
-		Assert.AreEqual( new DisplayResolution( 2560, 1440 ), display.Resolution );
+		var sizes = display.GetResolutions( WindowMode.Windowed ).ToList();
+		var chosen = sizes[sizes.FindIndex( size => size.X == 1280 && size.Y == 720 ) + 1];
+		Assert.AreEqual( OptionsScreen.ResolutionLabel( FakeStrings(), chosen ), ((UiOptionRow)screen.Find( "resolution" )!).Value() );
 		screen.Find( "ok" )!.Activate();
-		Assert.AreEqual( (1, 1), (saves, display.Applies) );
+		Assert.IsTrue( display.IsConfirmationPending );
+		Assert.AreEqual( (chosen.X, chosen.Y), (display.Current.Width, display.Current.Height) );
 		Assert.AreEqual( "confirmDisplay", stack.Top!.Name );
 		StringAssert.StartsWith( ((UiLabel)stack.Top.Find( "message" )!).Text(), "ui400" );
-		// No answer within the timeout: revert and report with UITEXT 401.
-		context.Delta = 2;
-		stack.Update( context, UiInput.Idle( new NVector2( -1, -1 ) ) );
-		Assert.AreEqual( 2, display.Reverts );
+		stack.Update( context, UiInput.Key( UiKeys.Back ) );
+		Assert.AreEqual( (1280, 720), (display.Current.Width, display.Current.Height) );
 		Assert.AreEqual( "restored", stack.Top!.Name );
 		Assert.AreEqual( "ui401", ((UiLabel)stack.Top.Find( "message" )!).Text() );
 		stack.Update( context, UiInput.Key( UiKeys.Accept ) );
-		Assert.AreEqual( 2, closed );
+		Assert.AreEqual( 3, closed );
 
-		display.Result = DisplayApplyResult.Unchanged;
+		// "Yes" keeps; the display's own timeout also leads to UITEXT 401.
+		screen = OptionsScreen.Create( stack, FakeStrings(), Services(), () => closed++ );
+		stack.Push( screen );
+		((UiOptionRow)screen.Find( "windowMode" )!).Adjust( 1 );
+		screen.Find( "ok" )!.Activate();
+		stack.Update( context, UiInput.Key( UiKeys.Accept ) );
+		Assert.AreEqual( (WindowMode.Borderless, false), (display.Current.Mode, display.IsConfirmationPending) );
+		screen = OptionsScreen.Create( stack, FakeStrings(), Services(), () => closed++ );
+		stack.Push( screen );
+		((UiOptionRow)screen.Find( "windowMode" )!).Adjust( -1 );
+		screen.Find( "ok" )!.Activate();
+		display.ExpireConfirmation();
+		stack.Update( context, UiInput.Idle( new NVector2( -1, -1 ) ) );
+		Assert.AreEqual( "restored", stack.Top!.Name );
+		Assert.AreEqual( WindowMode.Borderless, display.Current.Mode );
+		stack.Pop();
+
+		// Language: stored for the next start, original RESTART GAME message (UITEXT 402).
 		screen = OptionsScreen.Create( stack, FakeStrings(), Services(), () => closed++ );
 		stack.Push( screen );
 		((UiOptionRow)screen.Find( "language" )!).Adjust( -1 );
@@ -336,37 +361,14 @@ public class OriginalUiTests
 	}
 
 	[TestMethod]
-	public void StubDisplayStoresResolutionForTheNextStart()
-	{
-		var options = new GameOptions();
-		var stored = new List<DisplayResolution>();
-		var display = new StubDisplaySettings( options, new DisplayResolution( 1280, 720 ), new DisplayResolution( 1280, 720 ), stored.Add );
-		CollectionAssert.IsSubsetOf( StubDisplaySettings.OriginalResolutions, display.AvailableResolutions.ToArray() );
-		Assert.AreEqual( DisplayApplyResult.Unchanged, display.Apply() );
-		display.Resolution = new DisplayResolution( 1024, 768 );
-		display.UpscaleMethod = DisplayUpscaleMethod.Linear;
-		display.RenderScalePercent = 50;
-		Assert.AreEqual( new DisplayResolution( 640, 360 ), display.EffectiveInternalSize );
-		Assert.IsNotNull( display.FallbackReason );
-		Assert.AreEqual( DisplayApplyResult.RestartRequired, display.Apply() );
-		CollectionAssert.AreEqual( new[] { new DisplayResolution( 1024, 768 ) }, stored );
-		display.Resolution = new DisplayResolution( 640, 480 );
-		display.UiScale = 9;
-		Assert.AreEqual( 2f, display.UiScale );
-		display.Revert();
-		Assert.AreEqual( new DisplayResolution( 1024, 768 ), display.Resolution );
-		Assert.AreEqual( 1f, display.UiScale );
-	}
-
-	[TestMethod]
 	public void GameOptionsRoundTripAndClamp()
 	{
 		var path = Path.Combine( Path.GetTempPath(), $"opentpw-options-{Guid.NewGuid():N}.json" );
 		try
 		{
-			new GameOptions { MusicVolume = 3, SoundEffectsVolume = 42, PopupHelp = false, RenderScalePercent = 10, UiScale = 1.5f }.Save( path );
+			new GameOptions { MusicVolume = 3, SoundEffectsVolume = 42, PopupHelp = false }.Save( path );
 			var loaded = GameOptions.Load( path );
-			Assert.AreEqual( (3, 10, false, 50, 1.5f), (loaded.MusicVolume, loaded.SoundEffectsVolume, loaded.PopupHelp, loaded.RenderScalePercent, loaded.UiScale) );
+			Assert.AreEqual( (3, 10, false), (loaded.MusicVolume, loaded.SoundEffectsVolume, loaded.PopupHelp) );
 			Assert.AreEqual( 0.3f, GameOptions.Gain( 3 ), 1e-6f );
 			File.WriteAllText( path, "{ not json" );
 			Assert.AreEqual( 8, GameOptions.Load( path ).MusicVolume, "corrupt files fall back to defaults" );
@@ -420,6 +422,8 @@ public class OriginalUiTests
 		Assert.AreEqual( new ParkDate( 2, 1, 1 ), status.Date );
 		status.Refund( 3250 );
 		Assert.AreEqual( 100000, status.Money );
+		status.Earn( 20 );
+		Assert.AreEqual( (100020L, 20L), (status.Money, status.Earned) );
 	}
 
 	[TestMethod]

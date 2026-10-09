@@ -13,20 +13,21 @@ public sealed class OptionsServices
 	public Action SaveOptions { get; init; } = () => { };
 	/// <summary>Persists the language for the next start.</summary>
 	public Action<string> SaveLanguage { get; init; } = _ => { };
-	/// <summary>Seconds before an unconfirmed display change is reverted.</summary>
-	public float ConfirmSeconds { get; init; } = 15;
+	/// <summary>Time to confirm a window size/mode change before it is reverted.</summary>
+	public TimeSpan ConfirmTimeout { get; init; } = TimeSpan.FromSeconds( 15 );
 }
 
 /// <summary>
 /// The Game Options screen (UITEXT 314) in the original window style: original rows (screen
 /// resolution, sound/music/speech/movie volume, popup help) and OpenTPW rows in the same style
-/// (window mode, upscaling, render scale, interface scale, language). OK applies; display changes go
-/// through the display settings' apply/confirm/revert flow with the original resolution messages.
+/// (window mode, upscaling, render scale, interface scale, language). Rows edit a pending copy of
+/// the display settings; OK applies it through <see cref="IDisplaySettings"/>: window size/mode
+/// changes use the keep-or-revert flow with the original messages (UITEXT 400 keep this setting?,
+/// 401 original setting restored), other display changes apply directly. Back discards.
 /// </summary>
 public static class OptionsScreen
 {
 	public static readonly int[] RenderScaleSteps = { 100, 95, 90, 85, 80, 77, 75, 70, 67, 65, 60, 59, 55, 50 };
-	public static readonly float[] UiScaleSteps = { 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f };
 
 	private static readonly (int Width, int Height, UIStrings Label)[] OriginalResolutionLabels =
 	{
@@ -36,15 +37,32 @@ public static class OptionsScreen
 	};
 
 	/// <summary>Original label (" 640 x 480") when the original table has the size, else the same format.</summary>
-	public static string ResolutionLabel( UiStringTable strings, DisplayResolution resolution )
+	public static string ResolutionLabel( UiStringTable strings, Point2 resolution )
 	{
-		var match = OriginalResolutionLabels.FirstOrDefault( entry => entry.Width == resolution.Width && entry.Height == resolution.Height );
-		return match.Width != 0 ? strings[match.Label] : $" {resolution.Width} x {resolution.Height}";
+		var match = OriginalResolutionLabels.FirstOrDefault( entry => entry.Width == resolution.X && entry.Height == resolution.Y );
+		return match.Width != 0 ? strings[match.Label] : $" {resolution.X} x {resolution.Y}";
 	}
 
 	public static string RenderScaleLabel( UiStringTable strings, IDisplaySettings display, int percent ) =>
-		percent == 100 ? strings.Extra( OpenTpwText.UpscaleNative )
+		percent >= 100 ? strings.Extra( OpenTpwText.UpscaleNative )
 		: display.RenderScalePresets.Contains( percent ) ? $" {percent}%" : $"{strings[UIStrings.Custom]} {percent}%";
+
+	public static string UiScaleLabel( UiStringTable strings, int scale ) =>
+		scale <= 0 ? strings.Extra( OpenTpwText.Automatic ) : $" {scale}x";
+
+	public static string WindowModeLabel( UiStringTable strings, WindowMode mode ) => strings.Extra( mode switch
+	{
+		WindowMode.Exclusive => OpenTpwText.Fullscreen,
+		WindowMode.Borderless => OpenTpwText.Borderless,
+		_ => OpenTpwText.Windowed
+	} );
+
+	public static string UpscaleLabel( UiStringTable strings, UpscaleMode mode ) => strings.Extra( mode switch
+	{
+		UpscaleMode.Linear => OpenTpwText.UpscaleLinear,
+		UpscaleMode.Nearest => OpenTpwText.UpscaleNearest,
+		_ => OpenTpwText.UpscaleNative
+	} );
 
 	public static T Cycle<T>( IReadOnlyList<T> values, T current, int direction )
 	{
@@ -61,11 +79,14 @@ public static class OptionsScreen
 		return values[Math.Clamp( index + direction, 0, values.Count - 1 )];
 	}
 
+	private static bool SameSize( Point2 a, Point2 b ) => a.X == b.X && a.Y == b.Y;
+
 	public static UiScreen Create( UiScreenStack stack, UiStringTable strings, OptionsServices services, Action closed )
 	{
 		var display = services.Display;
 		var options = services.Options;
 		var language = services.CurrentLanguage;
+		var pending = display.Current;
 		var screen = new UiScreen( "options" );
 		var window = UiDialogs.CenteredWindow( 1760, 1380 );
 		UiDialogs.AddWindow( screen, window, "w_med", () => strings[UIStrings.GameOptions] );
@@ -87,24 +108,29 @@ public static class OptionsScreen
 		static string Volume( int value ) => $" {value}";
 		static int Step( int value, int direction ) => Math.Clamp( value + direction, 0, GameOptions.MaximumVolume );
 
-		Row( "resolution", () => strings[UIStrings.ScreenResolution], () => ResolutionLabel( strings, display.Resolution ),
-			direction => display.Resolution = Cycle( display.AvailableResolutions, display.Resolution, direction ) );
-		Row( "windowMode", () => strings.Extra( OpenTpwText.WindowMode ), () => strings.Extra( display.WindowMode switch
+		Row( "resolution", () => strings[UIStrings.ScreenResolution], () => ResolutionLabel( strings, new Point2( pending.Width, pending.Height ) ), direction =>
 		{
-			DisplayWindowMode.Fullscreen => OpenTpwText.Fullscreen,
-			DisplayWindowMode.Borderless => OpenTpwText.Borderless,
-			_ => OpenTpwText.Windowed
-		} ), direction => display.WindowMode = Cycle( Enum.GetValues<DisplayWindowMode>(), display.WindowMode, direction ) );
-		Row( "upscaling", () => strings.Extra( OpenTpwText.Upscaling ), () => strings.Extra( display.UpscaleMethod switch
+			var sizes = display.GetResolutions( pending.Mode );
+			var index = sizes.ToList().FindIndex( size => SameSize( size, new Point2( pending.Width, pending.Height ) ) );
+			var next = sizes.Count == 0 ? new Point2( pending.Width, pending.Height ) : sizes[index < 0 ? 0 : Math.Clamp( index + direction, 0, sizes.Count - 1 )];
+			pending = pending with { Width = next.X, Height = next.Y };
+		} );
+		Row( "windowMode", () => strings.Extra( OpenTpwText.WindowMode ), () => WindowModeLabel( strings, pending.Mode ),
+			direction => pending = pending with { Mode = Cycle( Enum.GetValues<WindowMode>(), pending.Mode, direction ) } );
+		Row( "upscaling", () => strings.Extra( OpenTpwText.Upscaling ), () => UpscaleLabel( strings, pending.Upscale ), direction =>
 		{
-			DisplayUpscaleMethod.Linear => OpenTpwText.UpscaleLinear,
-			DisplayUpscaleMethod.Nearest => OpenTpwText.UpscaleNearest,
-			_ => OpenTpwText.UpscaleNative
-		} ), direction => display.UpscaleMethod = Cycle( Enum.GetValues<DisplayUpscaleMethod>(), display.UpscaleMethod, direction ) );
-		Row( "renderScale", () => strings.Extra( OpenTpwText.RenderScale ), () => RenderScaleLabel( strings, display, display.RenderScalePercent ),
-			direction => display.RenderScalePercent = Cycle( RenderScaleSteps, RenderScaleSteps.Contains( display.RenderScalePercent ) ? display.RenderScalePercent : 100, -direction ) );
-		Row( "uiScale", () => strings.Extra( OpenTpwText.UiScale ), () => $" {MathF.Round( display.UiScale * 100 )}%",
-			direction => display.UiScale = Cycle( UiScaleSteps, UiScaleSteps.Contains( display.UiScale ) ? display.UiScale : 1f, direction ) );
+			var mode = Cycle( Enum.GetValues<UpscaleMode>(), pending.Upscale, direction );
+			var percent = mode == UpscaleMode.Native ? 100 : pending.RenderScale >= 100 ? RenderScaling.DefaultPreset : pending.RenderScale;
+			pending = pending with { Upscale = mode, RenderScale = percent };
+		} );
+		Row( "renderScale", () => strings.Extra( OpenTpwText.RenderScale ), () => RenderScaleLabel( strings, display, pending.Upscale == UpscaleMode.Native ? 100 : pending.RenderScale ), direction =>
+		{
+			var steps = RenderScaleSteps.Where( step => step >= display.MinimumRenderScale && step <= display.MaximumRenderScale ).ToArray();
+			var percent = Cycle( steps, steps.Contains( pending.RenderScale ) ? pending.RenderScale : 100, -direction );
+			pending = pending with { RenderScale = percent, Upscale = percent >= 100 ? UpscaleMode.Native : pending.Upscale == UpscaleMode.Native ? UpscaleMode.Linear : pending.Upscale };
+		} );
+		Row( "uiScale", () => strings.Extra( OpenTpwText.UiScale ), () => UiScaleLabel( strings, pending.UiScale ),
+			direction => pending = pending with { UiScale = Math.Clamp( pending.UiScale + direction, 0, display.MaximumUiScale ) } );
 		Row( "effects", () => strings[UIStrings.SoundEffectsVolume], () => Volume( options.SoundEffectsVolume ), direction => options.SoundEffectsVolume = Step( options.SoundEffectsVolume, direction ) );
 		Row( "music", () => strings[UIStrings.MusicVolume], () => Volume( options.MusicVolume ), direction => options.MusicVolume = Step( options.MusicVolume, direction ) );
 		Row( "speech", () => strings[UIStrings.SpeechVolume], () => Volume( options.SpeechVolume ), direction => options.SpeechVolume = Step( options.SpeechVolume, direction ) );
@@ -119,10 +145,10 @@ public static class OptionsScreen
 			Id = "effective",
 			Text = () =>
 			{
-				var effective = display.EffectiveInternalSize;
-				var output = display.OutputSize;
-				var line = string.Format( strings.Extra( OpenTpwText.EffectiveSize ), effective.Width, effective.Height, output.Width, output.Height );
-				return display.FallbackReason == null ? line : line + "\n" + string.Format( strings.Extra( OpenTpwText.Fallback ), display.FallbackReason );
+				var effective = display.Effective;
+				var line = string.Format( strings.Extra( OpenTpwText.EffectiveSize ), effective.InternalSize.X, effective.InternalSize.Y, effective.OutputSize.X, effective.OutputSize.Y );
+				var reason = effective.FallbackReason ?? display.Diagnostics.LastOrDefault();
+				return reason == null ? line : line + "\n" + string.Format( strings.Extra( OpenTpwText.Fallback ), reason );
 			},
 			Font = fonts => fonts.Small,
 			Wrap = true,
@@ -134,7 +160,6 @@ public static class OptionsScreen
 		void Cancel()
 		{
 			(options.SoundEffectsVolume, options.MusicVolume, options.SpeechVolume, options.MovieVolume, options.PopupHelp) = original;
-			display.Revert();
 			stack.Pop();
 			closed();
 		}
@@ -144,11 +169,18 @@ public static class OptionsScreen
 			var languageChanged = !string.Equals( language, services.CurrentLanguage, StringComparison.OrdinalIgnoreCase );
 			if ( languageChanged )
 				services.SaveLanguage( language );
-			var result = display.Apply();
+			var current = display.Current;
+			var needsConfirmation = pending.Width != current.Width || pending.Height != current.Height || pending.Mode != current.Mode;
 			stack.Pop();
-			if ( result == DisplayApplyResult.NeedsConfirmation )
-				stack.Push( ConfirmDisplay( stack, strings, services, closed ) );
-			else if ( result == DisplayApplyResult.RestartRequired || languageChanged )
+			if ( needsConfirmation )
+			{
+				display.ApplyWithConfirmation( pending, services.ConfirmTimeout );
+				stack.Push( ConfirmDisplay( stack, strings, display, closed ) );
+				return;
+			}
+			if ( pending != current )
+				display.Apply( pending );
+			if ( languageChanged )
 				stack.Push( UiDialogs.Message( "restart", () => strings[UIStrings.RestartGame], (() => strings.Extra( OpenTpwText.Back ), () => { stack.Pop(); closed(); }) ) );
 			else
 				closed();
@@ -176,17 +208,24 @@ public static class OptionsScreen
 		return screen;
 	}
 
-	/// <summary>Original keep-this-setting question (UITEXT 400) with automatic revert (401) after the timeout.</summary>
-	private static UiScreen ConfirmDisplay( UiScreenStack stack, UiStringTable strings, OptionsServices services, Action closed )
+	/// <summary>
+	/// Original keep-this-setting question (UITEXT 400) with the display's own countdown; "No" or the
+	/// display's timeout revert and show UITEXT 401 (original setting restored).
+	/// </summary>
+	private static UiScreen ConfirmDisplay( UiScreenStack stack, UiStringTable strings, IDisplaySettings display, Action closed )
 	{
-		var remaining = services.ConfirmSeconds;
 		var done = false;
+		void ShowRestored()
+		{
+			stack.Pop();
+			stack.Push( UiDialogs.Message( "restored", () => strings[UIStrings.ChangeScreenResolutionRestored], (() => strings.Extra( OpenTpwText.Back ), () => { stack.Pop(); closed(); }) ) );
+		}
 		void Keep()
 		{
 			if ( done )
 				return;
 			done = true;
-			services.Display.Confirm();
+			display.Confirm();
 			stack.Pop();
 			closed();
 		}
@@ -195,18 +234,19 @@ public static class OptionsScreen
 			if ( done )
 				return;
 			done = true;
-			services.Display.Revert();
-			services.Display.Apply();
-			stack.Pop();
-			stack.Push( UiDialogs.Message( "restored", () => strings[UIStrings.ChangeScreenResolutionRestored], (() => strings.Extra( OpenTpwText.Back ), () => { stack.Pop(); closed(); }) ) );
+			display.Revert();
+			ShowRestored();
 		}
-		var screen = UiDialogs.Message( "confirmDisplay", () => $"{strings[UIStrings.ChangeScreenResolution]}\n\n{Math.Ceiling( Math.Max( 0, remaining ) )}",
+		var screen = UiDialogs.Message( "confirmDisplay", () => $"{strings[UIStrings.ChangeScreenResolution]}\n\n{display.ConfirmationSecondsRemaining}",
 			(() => strings.Value( UIStrings.Yes ), Keep), (() => strings.Value( UIStrings.No ), Restore) );
-		screen.Updating = context =>
+		// The display reverts by itself after its timeout; follow it.
+		screen.Updating = _ =>
 		{
-			remaining -= Math.Max( 0, context.Delta );
-			if ( remaining <= 0 )
-				Restore();
+			if ( !done && !display.IsConfirmationPending )
+			{
+				done = true;
+				ShowRestored();
+			}
 		};
 		return screen;
 	}

@@ -23,6 +23,8 @@ public interface IHudParkStatus
 	/// <summary>Charges a purchase; false when there is not enough money.</summary>
 	bool TrySpend( long amount );
 	void Refund( long amount );
+	/// <summary>Income (guest admissions and ride/shop payments).</summary>
+	void Earn( long amount );
 }
 
 /// <summary>Build-menu categories; the values are the original <c>Info.WhichUIType</c> (0 rides, 1 shops, 2 sideshows, 3 features).</summary>

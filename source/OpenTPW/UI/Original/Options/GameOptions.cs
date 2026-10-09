@@ -4,8 +4,8 @@ namespace OpenTPW;
 
 /// <summary>
 /// Player options from the original Game Options screen that have no home in the existing
-/// configuration: volumes (0–10 steps, the original sliders' resolution is unknown), popup help, and
-/// OpenTPW's pending display choices for the stub display settings. Stored as JSON next to the
+/// configuration: volumes (0–10 steps, the original sliders' resolution is unknown) and popup help
+/// (display options belong to <see cref="IDisplaySettings"/>). Stored as JSON next to the
 /// sandbox save (<c>save/opentpw-options.json</c>); audio code reads the volumes from here.
 /// </summary>
 public sealed class GameOptions
@@ -18,10 +18,6 @@ public sealed class GameOptions
 	public int SpeechVolume { get; set; } = 8;
 	public int MovieVolume { get; set; } = 8;
 	public bool PopupHelp { get; set; } = true;
-	public DisplayWindowMode WindowMode { get; set; } = DisplayWindowMode.Windowed;
-	public DisplayUpscaleMethod UpscaleMethod { get; set; } = DisplayUpscaleMethod.Native;
-	public int RenderScalePercent { get; set; } = 100;
-	public float UiScale { get; set; } = 1f;
 
 	public static GameOptions Current { get; set; } = new();
 
@@ -56,70 +52,79 @@ public sealed class GameOptions
 		MusicVolume = Math.Clamp( MusicVolume, 0, MaximumVolume );
 		SpeechVolume = Math.Clamp( SpeechVolume, 0, MaximumVolume );
 		MovieVolume = Math.Clamp( MovieVolume, 0, MaximumVolume );
-		RenderScalePercent = Math.Clamp( RenderScalePercent, 50, 100 );
-		UiScale = Math.Clamp( float.IsFinite( UiScale ) ? UiScale : 1f, 0.5f, 2f );
 		return this;
 	}
 }
 
 /// <summary>
-/// Stub <see cref="IDisplaySettings"/> until the display slice lands: offers the original
-/// resolution list (UITEXT 340–346) plus common modern sizes, stores the window size in the existing
-/// <c>GameWindowSize</c> setting and everything else in <see cref="GameOptions"/>; nothing changes
-/// live, so <see cref="Apply"/> reports <see cref="DisplayApplyResult.RestartRequired"/>.
+/// In-memory <see cref="IDisplaySettings"/> for tests and headless use (the renderer is the real
+/// implementation). Offers the original resolution list plus common sizes; applying changes nothing
+/// on screen; a confirmation stays pending until <see cref="Confirm"/>, <see cref="Revert"/> or
+/// <see cref="ExpireConfirmation"/>.
 /// </summary>
 public sealed class StubDisplaySettings : IDisplaySettings
 {
-	public static readonly DisplayResolution[] OriginalResolutions =
-	{
-		new( 400, 300 ), new( 512, 384 ), new( 640, 480 ), new( 800, 600 ), new( 1024, 768 ), new( 1280, 1024 ), new( 1600, 1200 )
-	};
+	private readonly List<string> diagnostics = new();
+	private DisplaySettings? previous;
 
-	private readonly GameOptions options;
-	private readonly Action<DisplayResolution>? persistResolution;
-	private DisplayResolution applied;
-	private (DisplayWindowMode, DisplayUpscaleMethod, int, float) appliedRest;
-
-	public StubDisplaySettings( GameOptions options, DisplayResolution current, DisplayResolution output, Action<DisplayResolution>? persistResolution )
+	public StubDisplaySettings( DisplaySettings? current = null, Point2? output = null )
 	{
-		this.options = options;
-		this.persistResolution = persistResolution;
-		applied = Resolution = current;
-		OutputSize = output;
-		appliedRest = (options.WindowMode, options.UpscaleMethod, options.RenderScalePercent, options.UiScale);
-		AvailableResolutions = OriginalResolutions.Concat( new DisplayResolution[] { new( 1280, 720 ), new( 1920, 1080 ), new( 2560, 1440 ), current } )
-			.Distinct().OrderBy( size => size.Width ).ThenBy( size => size.Height ).ToArray();
+		Current = current ?? DisplaySettings.Default;
+		Output = output ?? new Point2( Current.Width, Current.Height );
 	}
 
-	public IReadOnlyList<DisplayResolution> AvailableResolutions { get; }
-	public DisplayResolution Resolution { get; set; }
-	public DisplayWindowMode WindowMode { get => options.WindowMode; set => options.WindowMode = value; }
-	public DisplayUpscaleMethod UpscaleMethod { get => options.UpscaleMethod; set => options.UpscaleMethod = value; }
-	public IReadOnlyList<int> RenderScalePresets { get; } = new[] { 77, 67, 59, 50 };
-	public int RenderScalePercent { get => options.RenderScalePercent; set => options.RenderScalePercent = Math.Clamp( value, 50, 100 ); }
-	public float UiScale { get => options.UiScale; set => options.UiScale = Math.Clamp( value, 0.5f, 2f ); }
-	public DisplayResolution EffectiveInternalSize => UpscaleMethod == DisplayUpscaleMethod.Native ? OutputSize
-		: new DisplayResolution( Math.Max( 1, OutputSize.Width * RenderScalePercent / 100 ), Math.Max( 1, OutputSize.Height * RenderScalePercent / 100 ) );
-	public DisplayResolution OutputSize { get; }
-	public string? FallbackReason => UpscaleMethod == DisplayUpscaleMethod.Native ? null : "upscaling is not implemented in this build";
+	public Point2 Output { get; set; }
+	public DisplaySettings Current { get; private set; }
+	public int Applies { get; private set; }
+	public Point2 CurrentResolution => new( Current.Width, Current.Height );
+	public IReadOnlyList<Point2> GetResolutions( WindowMode mode ) =>
+		DisplayModes.Original.Concat( DisplayModes.Common ).Append( CurrentResolution ).GroupBy( size => (size.X, size.Y) ).Select( group => group.First() )
+			.OrderBy( size => size.X * size.Y ).ThenBy( size => size.X ).ToArray();
+	public IReadOnlyList<int> RenderScalePresets => RenderScaling.Presets;
+	public int MinimumRenderScale => DisplaySettings.MinimumRenderScale;
+	public int MaximumRenderScale => DisplaySettings.MaximumRenderScale;
+	public int MaximumUiScale => DisplaySettings.MaximumUiScale;
+	public RenderScaleResult Effective => Current.Upscale == UpscaleMode.Native
+		? new RenderScaleResult( UpscaleMode.Native, 100, UpscaleMode.Native, 100, Output, Output, null )
+		: new RenderScaleResult( Current.Upscale, Current.RenderScale, Current.Upscale, Current.RenderScale,
+			new Point2( Math.Max( 1, Output.X * Current.RenderScale / 100 ), Math.Max( 1, Output.Y * Current.RenderScale / 100 ) ), Output, null );
+	public DisplayMetrics Metrics => new( Output, Output );
+	public int EffectiveUiScale => UiScaling.Resolve( Current.UiScale, Output );
+	public IReadOnlyList<string> Diagnostics => diagnostics;
+	public bool IsConfirmationPending => previous != null;
+	public int ConfirmationSecondsRemaining => previous == null ? 0 : 15;
 
-	public DisplayApplyResult Apply()
+	public event Action? Changed;
+	public event Action<DisplaySettings>? Reverted;
+
+	public void Apply( DisplaySettings settings )
 	{
-		var rest = (options.WindowMode, options.UpscaleMethod, options.RenderScalePercent, options.UiScale);
-		if ( Resolution == applied && rest == appliedRest )
-			return DisplayApplyResult.Unchanged;
-		if ( Resolution != applied )
-			persistResolution?.Invoke( Resolution );
-		applied = Resolution;
-		appliedRest = rest;
-		return DisplayApplyResult.RestartRequired;
+		previous = null;
+		Current = settings.Validate( diagnostics );
+		Applies++;
+		Changed?.Invoke();
 	}
 
-	public void Confirm() { }
+	public void ApplyWithConfirmation( DisplaySettings settings, TimeSpan timeout )
+	{
+		var restore = previous ?? Current;
+		Apply( settings );
+		previous = restore;
+	}
+
+	public void Confirm() => previous = null;
 
 	public void Revert()
 	{
-		Resolution = applied;
-		(options.WindowMode, options.UpscaleMethod, options.RenderScalePercent, options.UiScale) = appliedRest;
+		if ( previous == null )
+			return;
+		var restore = previous;
+		previous = null;
+		Current = restore;
+		Changed?.Invoke();
+		Reverted?.Invoke( restore );
 	}
+
+	/// <summary>Simulates the confirmation timeout.</summary>
+	public void ExpireConfirmation() => Revert();
 }

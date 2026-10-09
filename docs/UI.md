@@ -120,22 +120,36 @@ screens, options), `FrontEnd/`, `Hud/`, `World/Lobby/LobbyScene.cs`,
 ### Options (Game Options, 314)
 
 Original rows: Screen resolution (318, values 340–346 where the size matches,
-otherwise the same " W x H" format), Sound effects / Music / Speech / Movie volume
-(320–323, 0–10), Popup help (326, Yes/No). OpenTPW rows in the same style:
-Window mode, Upscaling (Native/Linear/Nearest), Render scale (Native, presets
-77/67/59/50 %, other values labelled with the original " Custom"), Interface
-scale, Language. Each row is the original `f_optpanel2` bar with `b_sleft`/
-`b_sright` arrows inside the original `w_med` window; OK is `b_okay`. OK applies:
-options are saved to `save/opentpw-options.json`; display changes go through
-`IDisplaySettings.Apply()` — *NeedsConfirmation* shows UITEXT 400 with a
-15 s countdown, Yes keeps, No/timeout reverts and shows 401; *RestartRequired*
-(stub) or a language change shows 402 (RESTART GAME). Back/Escape cancels and
-restores.
+otherwise the same " W x H" format, sizes from `IDisplaySettings.GetResolutions`),
+Sound effects / Music / Speech / Movie volume (320–323, 0–10), Popup help (326,
+Yes/No). OpenTPW rows in the same style: Window mode (windowed / borderless /
+exclusive "Full screen"), Upscaling (Native/Linear/Nearest), Render scale
+(Native, presets 77/67/59/50 %, other values labelled with the original
+" Custom"), Interface scale (Automatic or 1x–8x, the display's integer UI scale),
+Language, plus the effective internal/output size and fallback reason. Each row
+is the original `f_optpanel2` bar with `b_sleft`/`b_sright` arrows inside the
+original `w_med` window; OK is `b_okay`.
 
-The display slice owns `IDisplaySettings`; `UI/Original/Options/DisplaySettingsContract.cs`
-is a placeholder copy, and `StubDisplaySettings` stores the window size in the
-existing `GameWindowSize` setting (applied at the next start). Audio code should
-read volumes from `GameOptions.Current` (`GameOptions.Gain`).
+The rows edit a pending copy of the display settings; Back/Escape discards it and
+restores the volumes. OK saves the volumes to `save/opentpw-options.json` and
+binds to the display slice's `IDisplaySettings.Instance` (the renderer):
+size/window-mode changes use `ApplyWithConfirmation` (15 s) with the original
+UITEXT 400 question showing the display's own countdown — Yes → `Confirm`, No →
+`Revert`, and on No or the display's timeout the original 401 message; upscaling,
+render scale and UI scale use `Apply`. A language change is stored for the next
+start and shows UITEXT 402 (RESTART GAME). `StubDisplaySettings` is only for
+tests/headless use. Audio code should read volumes from `GameOptions.Current`
+(`GameOptions.Gain`).
+
+### Resolution independence
+
+The UI is built in drawable pixels in the renderer's overlay pass (after world
+upscaling, so render scale never blurs it). The canvas fits the 2048×1536 layout
+to the pixel size; BF4 text is drawn at exactly the display's integer UI scale
+(`Screen.UiScale`, automatic = 2 on a 2560×1440 drawable) and the font tier is
+picked from the logical size, so a HiDPI output shows the same layout and fonts
+as its logical size with every glyph texel a pixel-exact 2×2 block (verified with
+`OPENTPW_TEST_PIXEL_SCALE=2`). Mouse input is converted from logical to pixel units.
 
 ### OpenTPW supplementary strings
 
@@ -179,10 +193,10 @@ glyph in all 14 UI fonts of each language.
 
 | Interface | Owner | Stub |
 | --- | --- | --- |
-| `Hud.IHudParkStatus` (money, date, speed/time scale, spend/refund) | economy/simulation | `StubParkStatus`: starting cash `BankAccountInfo.InitialCash` from `Easy_Standard.sam` (100,000); calendar 2 s/day, 30-day months (placeholder) |
+| `Hud.IHudParkStatus` (money, date, speed/time scale, spend/refund/earn) | economy/simulation | `StubParkStatus`: starting cash `BankAccountInfo.InitialCash` from `Easy_Standard.sam` (100,000) plus every guest payment from `GuestSimulation.MoneySpent` (admissions, ride prices); calendar 2 s/day, 30-day months (placeholder) |
 | `Hud.IBuildCatalog` (`BuildItem`: category = WhichUIType, OBJECT_NAMES index, cost, preview model, texture dirs) | rides/objects | `TotemBuildCatalog`: Totem, cost `Upgrades[0].CostOfUpgrade` 3,250 |
 | `Hud.ObjectInfo`/`ObjectStat` for the info arm | rides/guests/economy | `ParkHud.Describe(PrototypeRide)` |
-| `IDisplaySettings` | display | `StubDisplaySettings` |
+| `IDisplaySettings` (real: the renderer) | display | `StubDisplaySettings` (tests only) |
 | `GameOptions.Current` volumes | audio | — |
 
 `GameFlow` builds the stubs in `StartLevel`; replace them there.

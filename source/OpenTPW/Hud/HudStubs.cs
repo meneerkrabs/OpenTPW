@@ -4,7 +4,8 @@ namespace OpenTPW.Hud;
 
 /// <summary>
 /// Stand-in for the economy slice. Starting cash is original data (<c>BankAccountInfo.InitialCash</c>
-/// from the level's <c>Easy_Standard.sam</c>, 100,000 for the jungle); the calendar (one day per two
+/// from the level's <c>Easy_Standard.sam</c>, 100,000 for the jungle) and guest payments come from the
+/// guest simulation's <c>MoneySpent</c> event (admission fee from the .sam data); the calendar (one day per two
 /// real seconds at normal speed, 30-day months, 12 months a year) and the speed multipliers are
 /// OpenTPW placeholders, not original values.
 /// </summary>
@@ -47,6 +48,8 @@ public sealed class StubParkStatus : IHudParkStatus
 
 	public void Update( float realSeconds ) => days += Math.Max( 0, realSeconds ) * TimeScale / SecondsPerDay;
 
+	public long Earned { get; private set; }
+
 	public bool TrySpend( long amount )
 	{
 		if ( amount < 0 || amount > Money )
@@ -56,6 +59,15 @@ public sealed class StubParkStatus : IHudParkStatus
 	}
 
 	public void Refund( long amount ) => Money += Math.Max( 0, amount );
+
+	public void Earn( long amount )
+	{
+		Money += Math.Max( 0, amount );
+		Earned += Math.Max( 0, amount );
+	}
+
+	/// <summary>Credits every guest payment (admission at the gate, ride prices) to the bank balance.</summary>
+	public void Attach( GuestSimulation guests ) => guests.MoneySpent += ( _, amount, _ ) => Earn( amount );
 }
 
 /// <summary>

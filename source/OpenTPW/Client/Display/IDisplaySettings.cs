@@ -7,11 +7,11 @@ namespace OpenTPW;
 /// are recreated safely) and are persisted in the user display settings, never in saves.
 /// </summary>
 /// <remarks>
-/// "Keep these settings?" flow (original strings UIStrings.ChangeScreenResolution = 401 and
-/// UIStrings.ChangeScreenResolutionRestored = 402): call <see cref="ApplyWithConfirmation"/>, show
-/// 401 with <see cref="ConfirmationSecondsRemaining"/>, then <see cref="Confirm"/> on "yes" or
-/// <see cref="Revert"/> on "no". If nothing is called before the timeout the previous settings return
-/// automatically and <see cref="Reverted"/> fires (show 402). Unconfirmed settings are never saved.
+/// "Keep these settings?" flow (original strings UIStrings.ChangeScreenResolution = 400 and
+/// UIStrings.ChangeScreenResolutionRestored = 401, ids corrected against UITEXT): call
+/// <see cref="ApplyWithConfirmation"/>, show 400 with <see cref="ConfirmationSecondsRemaining"/>, then
+/// <see cref="Confirm"/> on "yes" or <see cref="Revert"/> on "no". If nothing is called before the
+/// timeout the previous settings return automatically and <see cref="Reverted"/> fires (show 401). Unconfirmed settings are never saved.
 /// </remarks>
 public interface IDisplaySettings
 {

@@ -44,6 +44,9 @@ python3 -I tools/ppc-analysis/lanes/review/round9_evidence.py \
   --pc-save $TPW_DATA/levels/jungle/Easymode.TPWI \
   --tpi-save $TPI_DATA/PreBuilt/prebuilt.TPWS \
   --git $ROOT_CHECKOUT
+python3 -I tools/ppc-analysis/lanes/review/round10_evidence.py \
+  --bin-root $FERAL_BIN \
+  --pc-save $TPW_DATA/levels/jungle/Easymode.TPWI
 OPENTPW_PPC_BIN_ROOT=$FERAL_BIN \
 OPENTPW_PC_DATA=$TPW_DATA \
   python3 -I -m unittest discover -s tools/ppc-analysis/lanes/review -p 'test_*.py'
@@ -2057,3 +2060,196 @@ Concrete remaining blockers:
 Unresolved objections carried forward: no PC or Patch 2 runtime equivalence for
 any Mac-derived rule; Instant Action policy (section 34); SDT bank remap
 (advisor); TPI history blob (section 38).
+
+## 46. Round 10: clock saved-script graph, rides topology gates, UI catalog events, scientist envelope
+
+Brief: as in rounds 7 to 9. This round wrote only this section, one reproduce
+line, `lanes/review/round10_evidence.py` and `lanes/review/test_round10.py`. No
+peer tree, runner, workflow or source file was written. The native UI process
+lifecycle is under separate review and is not repeated here. Peer suites ran in
+place with `python3 -I -B`. The economy .NET harness ran from a `git archive`
+copy in `/tmp` with SDK 8.0.425. No codec run and no mount scan were done.
+
+### Clock `21bd7ef` (saved-script graph): accepted, static and one-fixture
+
+Independent re-decode of reader `0xb4818` (sole caller `0x11bea8`) and writer
+`0xb3868` (`round10_evidence.py saved_script`):
+
+- **Framing.** The reader checks the `RSSE` magic (`0xb48d8/0xb48dc`). It then
+  reads a declared header size straight into the manager (`r5 = r26`,
+  `r6` = wire size). The five `PAD_` words and the count and width words are
+  read with no compare between them. The fixed record is read with the saved
+  width (`372(r1)`) into a 244-byte allocation. The lane's guards (header 20,
+  `PAD_`, width 244) are therefore stricter than native, and the lane says so
+  ("evidence-tool policy").
+- **Head insertion.** The restored head word +16 is stored (`0xb49a8`) and then
+  overwritten with zero (`0xb49ac`). Each script is inserted at the head
+  (`0xb4b1c..0xb4b38`). The fresh links captured in r20/r21 (`0xb4b48/0xb4b50`)
+  overwrite the saved tokens (`0xb4d80/0xb4d90`). The rebuilt order is the
+  reverse of the serialized order, as the lane states.
+- **ID resolution.** Lookup `0xb5758` walks from manager +16 and compares +8.
+  The child (+12), parent (+16) and secondary (+20) fields are numeric IDs at
+  the creation and cleanup sites the lane pins. Agreed.
+- **Count projection.** The writer stores header +12 as-is (`0xb3930`). The
+  record count is a separate list traversal (`0xb3b20..0xb3b3c`), and the
+  reader's outer loop is bounded by that wire count (`380(r1)`, `0xb5654`).
+  The reader restores +12 (`0xb4980`) and then adds 1 per insertion
+  (`0xb4b0c..0xb4b18`).
+- **Untraced mutation, narrowed.** The two calls that load the manager global
+  (`0xb23a0` free, `0xb2760` init) run before the count restore. None of the
+  21 direct callees after `0xb4980` loads the manager global within its
+  first-`blr` extent (21 load sites exist in the binary). The 14 + 14 = 28
+  projection therefore holds through direct-callee depth. Deeper callees and
+  code after the caller's return are still untraced. The lane's wording ("a
+  projection excluding untraced callee mutation, not a runtime bug") is
+  correct and should stay.
+
+Independent fixture walk (`script_walk`: stdlib zlib/struct only, native read
+order):
+
+- `RSSE` at 1,595,542, header size 20, initialized 1, pass 6055, nextID 16,
+  count 14.
+- 14 records with IDs `15..6,4,3,2,1`. The walk ends at **1,606,398**, where
+  the next word is `ESSR`.
+- 3 object bindings.
+- Nonzero deadlines: ID 9 WAIT 114,377,145, ID 8 WAIT 114,377,133, ID 4
+  animation 114,193,871, ID 3 WAIT 114,374,867.
+
+Every value equals the lane's.
+
+**New qualification (LOW, doc only).** After the name block, the reader also
+rewrites three fixed fields:
+- +212 is recreated via `0x18d100`/`0xbc0e0` when nonzero (`0xb54bc`).
+- +230 is forced to `0xffff` (`0xb54c8`).
+- +176 is cleared and then rebuilt from the `OBJ ` list (`0xb54d8`).
+
+The graph witness does not expose these fields, so it is not wrong. But
+"preserve the raw words" must not extend to +212/+230 in a future restore. Add
+them to the clock doc's list of load-time rewrites.
+
+Lane tests: 52/52 in place with `OPENTPW_PPC_BIN_ROOT` and
+`OPENTPW_PPC_SAVE_PATH`, zero skips.
+
+### Rides `0973fbe` (topology gates): accepted; one prerequisite to state
+
+Re-decoded (`topology_order`) and the lane's JSON reproduced byte-for-byte:
+- **Ordinal, not type.** The saver's predicate is section +0 == 2 (`0x3998c`).
+  The auxiliary block is that node's own link count (+176) and the linked
+  sections' +0 ordinals (via the +180 pointers).
+- **Filter after auxiliary.** The flag-0x10 filter (`0x39a90/0x39a94`) comes
+  after the auxiliary write in the same node iteration.
+- **Third node on load.** The loader reads the auxiliary block into
+  controller +84 → +100 → +100, the **third** list node (`0x3a344..0x3a368`).
+  It does so after the initial topology (`0x366bc`) and before the 34-byte
+  record loop (`0x3a440/0x3a444`). Both arms of the `0x3a330` header-flag-2
+  branch reach `0x3a36c`.
+- **Link resolution.** `0x41dcc` walks controller +84 by ordinal, so an
+  ordinal is a list position.
+- **Failure paths.** The nine short-I/O paths return r3 = 0 to the epilogue.
+  The load-mode global is set at `0x3a1c0` and reset only at `0x3a72c`. The
+  nested helpers' returns are untested at `0x39d84` and `0x3aa38`. The lane's
+  wording ("no rollback proved", "does not prove the application ignores
+  failures") is correct.
+
+**Prerequisite to state (MED for any decoder, not a defect in `0973fbe`).** The
+saver makes **one** list walk per controller: auxiliary check, then filter,
+then record. The loader reads the auxiliary block **before every** record. The
+streams therefore align only if:
+- every node before the ordinal-2 node is flag-0x10 filtered (or ordinal 2
+  heads the list), and
+- exactly one ordinal-2 node exists.
+
+Otherwise the saver writes records ahead of the auxiliary block that the
+loader expects first. The lane's "valid initial-node/filter invariants"
+covers this only implicitly. Write it out as an explicit stream-order
+invariant before a nonempty fixture is decoded.
+
+Tests: 24/24 in place with `OPENTPW_MAC_APP` and `OPENTPW_PC_FIXTURE`, zero
+skips. Without them: 16 pass, 8 skip. The empty fixture still corroborates
+none of the nonempty branches.
+
+### UI `917eb36` (catalog events): accepted
+
+Re-decoded (`catalog_delivery`):
+- **Synchronous delivery.** `0x170f98` calls `0x181398` only for a live target
+  (byte 0 == 0) and returns −1 otherwise.
+- **Queued delivery.** `0x170ec8` → `0x16fd80` writes the 16-byte record
+  {target, event, source, payload} at ring index +12, which counts down
+  (`0x16fdf4`).
+- **Row ID.** Accessor `0x17991c` walks from +352 via `0x17835c`. It reads the
+  record word +4 from the +324 buffer and fails for an ordinal < 0, an
+  ordinal ≥ +336, or a null buffer.
+- **Activation.** The path takes the low 16 bits (`0x1639a4`) and requires a
+  value > 0.
+- **Distinct keys.** The sort selector, the row catalog ID and the
+  root-name drawing key are distinct, as the lane states.
+
+Two precision notes (LOW, not claimed by the lane and not contradicted by it):
+1. **Queue drops.** An occupied ring slot skips the write and returns 0
+   (`0x16fd98` → `0x16fe14`), so queued 1024/1025 can be dropped under
+   overflow. A port must not promise delivery of every activation.
+2. **Unchecked row-ID status.** Both root call sites (`0x163998`, `0x163d74`)
+   read the accessor's out slot without testing r3. Native behaviour on an
+   out-of-range ordinal therefore uses an unwritten stack slot. A port should
+   reject rather than invent an ID.
+
+The sort sign is negative only when +362 == 1 exactly (`0x17a4c0`), which
+agrees with "direction bit".
+
+Tests: 9/9 catalog tests with `UI_EVIDENCE_BIN_ROOT`. Without it, 3 pass and
+6 skip.
+
+### Economy `95fd383` (scientist JSON envelope): accepted with one LOW
+
+Committed while this round ran, and the tree was clean when inspected. The
+harness ran from a scratch copy (SDK 8.0.425, Release, actual fixture) and
+passed **16/16 groups, 1,648 assertions**. The envelope is standalone and
+never touches `ParkSaveFile`. It is shape-checked at every level, and both
+`SourcePayloadRevalidated` and `CanRestoreRuntimeStaff` are always false.
+Floats are stored as raw bits and the u64 hire time as 16 hex digits.
+
+**LOW: the fixture qualification survives a reshaped prefix.** Probe (scratch
+only, not committed): take the actual fixture envelope and keep only the last
+guest and the scientist, with offsets made contiguous from the head (scientist
+header 1,386,058). `Deserialize` accepts it, and it still carries
+`IdentifiedPcEasymodeFixture`. The identified fixture's shape is fully known:
+13 rows, scientist header 1,391,921, tail 215,879, person SHA. Either pin that
+shape for this qualification, or name it a persisted claim on load. The doc
+already says provenance is a claim, so this is not a correctness blocker.
+
+Still open: the harness is not registered in `run_evidence_checks.py`
+`SELF_TESTS`. This is unchanged since round 9, and registration waits until
+the source is accepted.
+
+### Formats `ab444e3` (constructor reconciliation): seen, not re-tested
+
+The constructor is `ObjectAnimator(ModelFile, float ticksPerSecond = 30, bool
+keepsPoseOnClipChange = false)`. This adds a trailing parameter to main's
+`(model, ticksPerSecond = DefaultTicksPerSecond)`. Call sites in `ab444e3` use
+the default rate or `15`. This matches the round-9 working tree, and the
+constructor collision (round-9 blocker 1) is resolved **in a commit**. Its
+.NET tests were not re-run in this round.
+
+### Status
+
+| Item | State |
+| --- | --- |
+| Clock `21bd7ef` | Accepted (static, one fixture). +212/+230 rewrite note LOW. Count projection holds through direct callees |
+| Rides `0973fbe` | Accepted. Stream-order invariant must be explicit before a decoder |
+| UI `917eb36` | Accepted. Queue-drop and unchecked row-ID notes LOW |
+| Economy `95fd383` | Accepted (standalone). Fixture-qualification shape LOW. Not registered in the runner |
+| Formats `ab444e3` | Collision resolved in a commit. Tests not re-run this round |
+| Integration | **Pending** (`ppc_advisor`). `integration-remote` is still `f468f03` + `MERGE_HEAD` `778ea5d`. `origin/main` is now `e31c804`, past `78dfb5e`. The source-freeze verification is still pending |
+| Runner `OPENTPW_PC_FIXTURE` | **Handoff, not merged** (round 9) |
+
+Not repeated as fixed: the root `PPC-rides.md` min/max wording, the TPI
+`SaveReader` diagnosis and ECON-007. None of them is on a committed root ref
+reviewed here, and the owners' uncommitted fixes are not counted.
+
+Review tests: 132 with both variables set, zero skips. Without them: 113 pass,
+19 skip.
+
+Unresolved objections carried forward: no PC or Patch 2 runtime equivalence for
+any Mac-derived rule; formats per-channel clock source (`0xa6398` +16400/+16408)
+unmodelled; Instant Action policy (section 34); SDT bank remap (advisor); TPI
+history blob (section 38).

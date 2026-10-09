@@ -1,0 +1,101 @@
+"""Synthetic instruction-field and corpus-reader tests; no original binaries are required."""
+import struct
+import sys
+import unittest
+import zlib
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import corpus_check  # noqa: E402
+import format_witness  # noqa: E402
+from ppcfields import (WitnessError, a_form, branch_target, compare_immediate, cstring, d_form,  # noqa: E402
+                       require, rlwimi, rlwinm, rotate, rotate_mask, x_form)
+
+
+class FieldTests(unittest.TestCase):
+    def test_d_form_and_compares(self):
+        self.assertEqual(d_form((15 << 26) | (0 << 21) | (3 << 16) | (0x10000 - 7377)), (15, 0, 3, -7377))
+        self.assertEqual(compare_immediate((10 << 26) | (0 << 23) | (0 << 16) | 23878), (10, 0, 0, 23878))
+        self.assertEqual(compare_immediate((11 << 26) | (5 << 16) | 0xffff), (11, 0, 5, -1))
+
+    def test_rotate_fields_and_semantics(self):
+        w = (20 << 26) | (10 << 21) | (5 << 16) | (8 << 11) | (22 << 6) | (23 << 1)
+        self.assertEqual(rotate(w), (20, 10, 5, 8, 22, 23, 0))
+        self.assertEqual(rotate_mask(22, 23), 0x300)
+        self.assertEqual(rotate_mask(30, 1), 0xc0000003)
+        self.assertEqual(rlwimi(0x12, 0x3, 8, 22, 23), 0x312)
+        self.assertEqual(rlwinm(0xABCD, 0, 16, 31), 0xABCD)
+        self.assertEqual(rlwinm(0x80000001, 1, 0, 31), 0x3)
+
+    def test_x_and_a_forms(self):
+        srawi = (31 << 26) | (30 << 21) | (30 << 16) | (22 << 11) | (824 << 1)
+        self.assertEqual(x_form(srawi)[3:5], (22, 824))
+        fmadds = (59 << 26) | (2 << 21) | (2 << 16) | (6 << 11) | (5 << 6) | (29 << 1)
+        self.assertEqual(a_form(fmadds), (59, 2, 2, 6, 5, 29))
+
+    def test_branch_targets(self):
+        self.assertEqual(branch_target((18 << 26) | 0x100 | 1, 0x40), 0x140)
+        self.assertEqual(branch_target((18 << 26) | 0x03fffffc | 1, 0x40), 0x3c)
+        with self.assertRaises(WitnessError):
+            branch_target(18 << 26, 0)
+
+    def test_strings_and_require(self):
+        self.assertEqual(cstring(b'xx%s (Ok)\0', 2), '%s (Ok)')
+        with self.assertRaises(WitnessError):
+            cstring(b'abc', 0)
+        with self.assertRaises(WitnessError):
+            cstring(b'\x01\x02\0', 0)
+        self.assertEqual(format_witness.label_suffix('%s (DeadMesh)'), 'DeadMesh')
+        with self.assertRaises(WitnessError):
+            format_witness.label_suffix('DeadMesh')
+        with self.assertRaisesRegex(WitnessError, 'context'):
+            require(1, 2, 'context')
+
+    def test_identity_rejects_unknown_binary_before_parsing(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / 'SimThemePark.data'
+            path.write_text('synthetic input, not a game binary')
+            with self.assertRaisesRegex(WitnessError, 'identity'):
+                format_witness.Image(path)
+
+    def test_hexify_only_addresses(self):
+        self.assertEqual(format_witness.hexify({'handler': 16, 'cells': 16, 'loader_call_sites': [1, 2]}),
+                         {'handler': '0x10', 'cells': 16, 'loader_call_sites': ['0x1', '0x2']})
+
+
+class CorpusReaderTests(unittest.TestCase):
+    def test_refpack_literals_and_copy(self):
+        # Header: flags 0x10 0xfb, 3-byte size 6; one 2-byte copy command with 3 literals.
+        stream = bytes((0x10, 0xfb, 0, 0, 6)) + bytes((0x03, 0x02)) + b'abc' + bytes((0xfc,))
+        self.assertEqual(corpus_check.refpack(stream), b'abcabc')
+        with self.assertRaises(corpus_check.CorpusError):
+            corpus_check.refpack(bytes((0x10, 0xfb, 0, 0, 6)) + bytes((0x03, 0x0f)) + b'abc' + bytes((0xfc,)))
+        with self.assertRaises(corpus_check.CorpusError):
+            corpus_check.refpack(bytes((0x10, 0xfb, 0x7f, 0, 0, 0xfc)), limit=16)
+        with self.assertRaises(corpus_check.CorpusError):
+            corpus_check.refpack(b'\x10\xfb')
+
+    def test_wad_directory_bounds(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / 'x.wad'
+            header = b'DWFB' + bytes(68) + struct.pack('<IIII', 1, 88, 40, 0)
+            entry = struct.pack('<7I', 0, 128, 5, 133, 3, 0, 3) + bytes(12)
+            path.write_bytes(header + entry + b'a.md2' + b'xyz')
+            self.assertEqual(list(corpus_check.wad_members(path)), [('a.md2', b'xyz')])
+            path.write_bytes(header + struct.pack('<7I', 0, 128, 5, 133, 99, 0, 3) + bytes(12) + b'a.md2xyz')
+            with self.assertRaises(corpus_check.CorpusError):
+                list(corpus_check.wad_members(path))
+
+    def test_bounded_integer_reads(self):
+        self.assertEqual(corpus_check.u16(b'\x01\x02', 0), 0x0201)
+        with self.assertRaises(corpus_check.CorpusError):
+            corpus_check.u32(b'\0\0\0', 0)
+
+    def test_zlib_is_available_for_tpws_payloads(self):
+        self.assertEqual(zlib.decompress(zlib.compress(b'payload')), b'payload')
+
+
+if __name__ == '__main__':
+    unittest.main()

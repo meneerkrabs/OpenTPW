@@ -133,7 +133,7 @@ public sealed class ParkResearch
 	{
 		long points = researchers.Where( member => member.State != StaffState.OnStrike ).Sum( member => (long)settings.ResearchAbility[member.Grade] );
 		if ( automatic && points == 0 )
-			// [APPROX:ECON-019] Instant Action research runs at one grade-2 researcher without staff — evidence needed: Instant Action capture
+			// [APPROX:ECON-019] unused staffless Instant Action rate (ParkEconomy passes automatic: false; the Mac code has none) — evidence needed: PC confirmation before removal
 			points = settings.ResearchAbility[2];
 		return points * PointScale;
 	}

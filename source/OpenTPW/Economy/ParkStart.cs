@@ -36,10 +36,13 @@ public readonly record struct ParkStart( ParkStartKind Kind, ParkGameMode Mode, 
 	};
 
 	/// <summary>
-	/// Whether the level's shipped save should be read at all. Mac evidence: creating an Instant Action
-	/// player copies each theme's <c>easymode.TPWI</c> into the player directory (<c>0x137600</c>);
-	/// nothing copies it for Full Simulation players. The Full Simulation new-park loader itself was not
-	/// traced, so "no seed" for Full Simulation rests on that copy being Instant-Action-only.
+	/// Whether the level's shipped save should be read at all. Mac evidence (static): an offline park
+	/// entry (main-loop state 9) loads the level and balance, then only the newest <c>*.TPW*</c> in the
+	/// player's theme directory (<c>0x198e50</c>), and nothing at all when that directory has none. The
+	/// level's <c>easymode.TPWI</c> is named only by the copy made when an Instant Action player is
+	/// created (<c>0x137600</c>, easy flag only). So a Full Simulation player's first park in a theme has
+	/// no seed. OpenTPW has no player directories: every start here is that first entry (the original
+	/// resumes <c>autosave.TPWS</c> on later entries; see docs/ECONOMY.md, "Game modes").
 	/// </summary>
 	public static bool ReadsShippedSave( ParkStartKind kind ) => kind != ParkStartKind.FullSimulation;
 

@@ -120,7 +120,7 @@ public sealed class FrontEndMenu
 		return screen;
 	}
 
-	// [APPROX:UI-015] Game Mode asked when entering a park (no player profiles) instead of at player creation — evidence needed: original player/mode flow
+	// [APPROX:UI-015] Game Mode asked on every park entry and each entry starts a new park (no player profiles or per-theme autosave) — evidence needed: PC confirmation of the Mac player/autosave flow
 	public void ShowGameMode()
 	{
 		var screen = new UiScreen( "gameMode" );

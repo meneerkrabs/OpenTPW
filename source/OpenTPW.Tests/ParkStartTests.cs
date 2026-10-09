@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 
 namespace OpenTPW.Tests;
 
@@ -115,6 +116,48 @@ public class ParkStartTests
 
 		var hallow = ParkEconomyRuntime.ForOriginalLevel( OriginalPark.Load( "hallow" ), ParkStartKind.InstantAction );
 		Assert.AreEqual( new ParkStart( ParkStartKind.InstantAction, ParkGameMode.InstantAction, false, false ), hallow.Start, "no Easy_ layer or seed outside jungle; the missing layer is not an error" );
+	}
+
+	[TestMethod]
+	public void OwnSaveKeepsTheModeByNameAndNeverDefaultsIt()
+	{
+		var instant = EconomyTestData.Park( mode: ParkGameMode.InstantAction );
+		var json = ParkSaveFile.Serialize( instant );
+		StringAssert.Contains( json, "\"Mode\": \"InstantAction\"", "the economy mode is written by name, not by enum value" );
+		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( json ) ), instant.Settings, instant.Catalog );
+		Assert.AreEqual( ParkGameMode.InstantAction, restored.Mode );
+		Assert.AreEqual( ParkModeFeatures.For( ParkGameMode.InstantAction ), restored.Features, "the Instant Action gates come back with the mode" );
+		void Rejects( string text ) => Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( text ) ) );
+		Rejects( json.Replace( "\"Mode\": \"InstantAction\",", "" ) );
+		Rejects( json.Replace( "\"Mode\": \"InstantAction\"", "\"Mode\": 1" ) );
+		Rejects( json.Replace( "\"Mode\": \"InstantAction\"", "\"Mode\": \"Online\"" ) );
+	}
+
+	[TestMethod]
+	public void RunningParkRefusesASaveOfTheOtherMode()
+	{
+		UseOriginalData();
+		// hallow has no Easy_ layer, so both starts share the theme and balance and differ only in mode.
+		var instant = ParkEconomyRuntime.ForOriginalLevel( OriginalPark.Load( "hallow", false ), ParkStartKind.InstantAction );
+		var full = ParkEconomyRuntime.ForOriginalLevel( OriginalPark.Load( "hallow", false ), ParkStartKind.FullSimulation );
+		Assert.AreEqual( instant.Economy.Settings.IsEasy, full.Economy.Settings.IsEasy );
+		var directory = Path.Combine( Path.GetTempPath(), $"opentpw-park-mode-{Guid.NewGuid():N}" );
+		Directory.CreateDirectory( directory );
+		try
+		{
+			var path = Path.Combine( directory, "park.json" );
+			instant.Save( path );
+			var before = ParkSaveFile.Serialize( full.Economy );
+			Assert.ThrowsException<InvalidDataException>( () => full.Load( path ) );
+			Assert.AreEqual( before, ParkSaveFile.Serialize( full.Economy ), "a refused save leaves the running park untouched" );
+			instant.Load( path );
+			Assert.AreEqual( ParkGameMode.InstantAction, instant.Economy.Mode );
+			Assert.AreEqual( instant.Start.Mode, instant.Economy.Mode, "the start and the loaded economy agree on the mode" );
+		}
+		finally
+		{
+			Directory.Delete( directory, true );
+		}
 	}
 
 	private void UseOriginalData()

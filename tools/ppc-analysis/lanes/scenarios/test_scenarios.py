@@ -12,6 +12,7 @@ import unittest
 
 import followup_evidence as followup
 import mac_data_compare as compare
+import park_entry_evidence as park_entry
 import progression_evidence as progression
 import scenario_evidence as evidence
 from scenario_evidence import Evidence, magic, pef
@@ -202,6 +203,24 @@ class ProgressionHelperTests(unittest.TestCase):
                 progression.no_base_stores(fixture(loads + [d_word(op, 0, 26, 8)]), 0, 16, 26)
 
 
+class ParkEntryHelperTests(unittest.TestCase):
+    def test_wide_string_bounded_and_compared(self):
+        e = fixture([0])
+        e.code = ':'.encode('utf-16-be') + b'\0\0' + 'autosave'.encode('utf-16-be') + b'\0\0'
+        self.assertEqual(park_entry.wide(e, 0, ':'), ':')
+        self.assertEqual(park_entry.wide(e, 4, 'autosave'), 'autosave')
+        with self.assertRaisesRegex(pef.PEFError, 'wide identifier string'):
+            park_entry.wide(e, 4, 'restart')
+        e.code = 'x'.encode('utf-16-be') * 40
+        with self.assertRaisesRegex(pef.PEFError, 'no bounded wide string'):
+            park_entry.wide(e, 0, 'x')
+
+    def test_stores_at_matches_every_store_width_and_only_the_displacement(self):
+        words = [d_word(32, 0, 3, 1028)] + [d_word(op, 0, 3, 1028) for op in (36, 37, 38, 39, 44, 45)]
+        words.append(d_word(36, 0, 3, 1032))
+        self.assertEqual(park_entry.stores_at(fixture(words), 0, 4 * len(words), 1028), [4, 8, 12, 16, 20, 24])
+
+
 @unittest.skipUnless(os.environ.get('OPENTPW_MAC_BIN'), 'set OPENTPW_MAC_BIN to the Feral bin directory')
 class CorpusTests(unittest.TestCase):
     def test_identified_executable_facts(self):
@@ -224,6 +243,7 @@ class CorpusTests(unittest.TestCase):
         self.assertEqual(result['instant_action_ui']['loan_button_control_ids'],
                          {'0x14eeec': 324524, '0x15161c': 74367, '0x1698e8': 733})
         self.assertTrue(result['mystery_items']['purchase_result_ignored_by_placement'])
+        self.assertEqual(result['park_entry']['easymode_readers'], ['0x137608 (creation-time copy, easy flag only)'])
 
     def test_layout_rejects_a_changed_counter_start_or_anchor(self):
         container = evidence.load_identified(Path(os.environ['OPENTPW_MAC_BIN']) / 'SimThemePark.data')
@@ -265,6 +285,24 @@ class CorpusTests(unittest.TestCase):
         # Mystery placement debits money unconditionally.
         with self.assertRaisesRegex(pef.PEFError, 'code:0xdacd0'):
             progression.mystery_items(self._mutated(0xdacd0, 18 << 26 | 0x30))
+
+    def test_park_entry_witnesses_reject_mutations(self):
+        container = evidence.load_identified(Path(os.environ['OPENTPW_MAC_BIN']) / 'SimThemePark.data')
+        result = park_entry.park_entry(Evidence(container))
+        self.assertEqual(result['resume_callers'], ['0x1c2024'])
+        self.assertEqual(result['names']['autosave'], 'autosave')
+        # Resume no longer requires the startup-save flag to be clear.
+        with self.assertRaisesRegex(pef.PEFError, 'code:0x1c1f60'):
+            park_entry.park_entry(self._mutated(0x1c1f60, 18 << 26 | 0xc8))
+        # A second writer of the startup-save +1028 flag inside the main loop.
+        with self.assertRaisesRegex(pef.PEFError, r'\+1028 stores'):
+            park_entry.park_entry(self._mutated(0x1c1f44, d_word(36, 0, 3, 1028)))
+        # The newest-save search loads even when nothing was found.
+        with self.assertRaisesRegex(pef.PEFError, 'code:0x1990b0'):
+            park_entry.park_entry(self._mutated(0x1990b0, 0x60000000))
+        # The easymode copy runs without the easy flag.
+        with self.assertRaisesRegex(pef.PEFError, 'code:0x1376b4'):
+            park_entry.park_entry(self._mutated(0x1376b4, 0x60000000))
 
 
 if __name__ == '__main__':

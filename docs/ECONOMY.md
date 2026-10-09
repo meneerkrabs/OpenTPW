@@ -206,8 +206,8 @@ the original GameType, front-end exit code or main-loop state (docs/reverse/PPC-
 
 | Start | Rules | `Easy_` layer | Shipped save | Evidence |
 | --- | --- | --- | --- | --- |
-| Full Simulation (front end) | Full Simulation | no | not read | Mac: layer added for GameType 2 only (`0x10474c`); the seed is copied only when an Instant Action player is created (`0x137600`). The Full Simulation new-park loader was not traced |
-| Instant Action (front end) | Instant Action | where the theme has one (jungle) | imported where shipped (jungle) | Mac: same sites; a missing layer is not an error |
+| Full Simulation (front end) | Full Simulation | no | not read | Mac (static): layer added for GameType 2 only (`0x10474c`). An offline park entry reads the level, its balance and then only the newest `*.TPW*` in the player's theme directory (`0x198e50`); `easymode.TPWI` is named only by the copy made for Instant Action players (`0x137600`). A Full Simulation player's first park in a theme therefore has no seed |
+| Instant Action (front end) | Instant Action | where the theme has one (jungle); object files too | imported where shipped (jungle) | Mac: same sites; the copy is the newest file on the first entry; a missing layer is not an error (balance `0x10474c`, object files `0x119878`) |
 | Reference (`--load-original-level`, Load Park) | Full Simulation | when the shipped save is imported | imported where shipped | OpenTPW inspection path, unchanged; not an original GameType |
 
 Instant Action rules (`ParkModeFeatures`, Mac direct GameType tests; PC equivalence not established):
@@ -215,8 +215,20 @@ no golden-ticket checks and no challenges, no loan offers, research lab efforts 
 no ride upgrades. Research points still come only from hired researchers: the Mac code has no
 staffless research path, and the researcher the Instant Action seed ships with is not imported (staff
 records of `Easymode.TPWI` are not decoded), so an Instant Action park researches only once the player
-hires researchers. `ParkEconomy` therefore no longer calls the ECON-019 automatic rate; its code and
-register entry remain until the register is adjudicated.
+hires researchers. `ParkEconomy` therefore no longer calls the ECON-019 automatic rate; ECON-019 now
+describes that unused code, which stays with its register entry until PC behaviour confirms the Mac
+rule. The native front-end smoke run starts jungle in Instant Action from the menu and checks the
+seed, the absence of invented staff, unchanged research over 60 days and each refused gate.
+
+OpenTPW's own park save stores `Mode` by name (`"FullSimulation"`/`"InstantAction"`, integers
+rejected) and `Easy` as required members; neither has a default, so older version-1 saves already
+carry both. A running park refuses a save of the other mode. The start kind is not saved: the
+reference start is not an original state, and an imported seed is already in the saved objects.
+
+Original flow that OpenTPW does not reproduce (Mac, static; docs/reverse/PPC-scenarios.md, "Park
+entry"): leaving a park saves `<player>:<theme>:autosave.TPWS`, and the next entry resumes the
+newest save there, so each player keeps one running park per theme. A park entry also writes a
+`restart.INTS` snapshot. OpenTPW starts a new park on every front-end entry (UI-015).
 
 Not implemented: player profiles and the per-player mode choice (UI-015), theme keys and the
 Instant Action "no key check" rule (the front end has no key gate), the research and finance
@@ -291,7 +303,7 @@ site, is listed in `Economy/EconomyApproximations.cs` and is logged once at star
 | ECON-016 | `Economy/ParkResearch.cs:100` | group g opens when PercentageForThisTech % of group g-1 of the same category is researched | capture of new research groups appearing |
 | ECON-017 | `Economy/ParkResearch.cs:110` | items are researched cheapest first within open groups | capture of research order |
 | ECON-018 | `Economy/ParkResearch.cs:41` | ride upgrade levels and add-on objects form the "upgrade" research category | research lab capture |
-| ECON-019 | `Economy/ParkResearch.cs:136` | Instant Action research runs at one grade-2 researcher without staff | Instant Action capture |
+| ECON-019 | `Economy/ParkResearch.cs:136` | unused leftover: ParkResearch keeps a staffless grade-2 Instant Action rate that ParkEconomy no longer calls; the Mac code has no staffless research path | PC confirmation before the code and this entry are removed |
 | ECON-020 | `Economy/ParkEconomy.cs:28` | a sale drops LitterEffect/100 litter items | capture of litter after sales |
 | ECON-021 | `Economy/ParkEconomy.cs:187` | a repair takes WorkDuration game hours (x DurationOfUpgrade for upgrades); mechanics are dispatched instantly | capture of repair duration per grade |
 | ECON-022 | `Economy/ParkEconomy.cs:205` | a handyman removes one litter item per WorkDuration game minutes, park-wide | capture of cleaning speed |

@@ -22,10 +22,11 @@ evidence for the PC `TP.EXE` or Patch 2 runtime (see *Mac and PC relationship*).
 ## Reproduce
 
 ```sh
-# instruction-field witnesses (874 checks, identity-pinned; follow-up checks live in
-# followup_evidence.py and progression_evidence.py, included in the same JSON report)
+# instruction-field witnesses (964 checks, identity-pinned; follow-up checks live in
+# followup_evidence.py, progression_evidence.py and park_entry_evidence.py, included in
+# the same JSON report)
 python3 -I tools/ppc-analysis/lanes/scenarios/scenario_evidence.py /Users/sander/server/game-assets/mac-feral/bin
-# tests (synthetic fixtures; the two corpus cases, including in-memory mutation
+# tests (synthetic fixtures; the four corpus cases, including in-memory mutation
 # regressions, run only with OPENTPW_MAC_BIN set)
 python3 -m unittest discover -s tools/ppc-analysis/lanes/scenarios -v
 OPENTPW_MAC_BIN=/Users/sander/server/game-assets/mac-feral/bin python3 -m unittest discover -s tools/ppc-analysis/lanes/scenarios
@@ -139,6 +140,43 @@ persists only `mEasyModeUser`. Leaving a park in main state 11 while GameType
 is 1 and the 1028-byte session object (data `0x120da8`) has +1008 == 0 restores
 GameType from `mEasyModeUser` (2 or 0). Front-end exit code 2 → main state 9,
 anything else → 12.
+
+### Park entry (high)
+
+Which park file an offline park entry reads (`park_entry_evidence.py`, 90 checks
+including caller and store scans):
+
+- Main-loop state 9 (jump-table entry `0x1c1940`) selects the theme, loads the
+  level and its balance (`0x10ef9c` → `0x10474c`, where GameType 2 adds the
+  `Easy_` layer). The only save read there is one named on the command line
+  (an argument ending in `.TPWS`, flag at data `0x11f5ac` +0).
+- If the startup-save object's +1028 is 0 and GameType is not 1, state 9 calls
+  `0x198e50`. It searches `*` + `.TPW*` in `<player directory>:<theme>`
+  (`0x137c3c`; the theme is the theme object's name string), keeps the newest
+  file by `LbFile_CompareFileStamps`, and loads it with the park loader
+  `0x11acfc` (mode 2). When nothing matches, the loader is not called.
+- +1028 is stored only by the static initializer (`0x116324`, zero) among the
+  four functions that load the object's TOC slot; a store through a pointer
+  obtained elsewhere is not excluded.
+- `easymode` is referenced only at `0x137608`, inside the copy `0x137600`,
+  which `CreatePlayer` (`0x13741c`) calls with its easy-flag argument (r6 → r28
+  → r5 → r24); the copy runs only when that flag is non-zero. Creating a player
+  first deletes any old directory of that name (`0x380c`).
+- Leaving a park (state 11, GameType ≠ 1) saves
+  `<player>:<theme>:autosave.TPWS` (`0x1987dc` → `0x198960` → `0x11a5f4`).
+  State 15, entered after a park load, writes `<player>:<theme>:restart.INTS`
+  (`0x1c37b4`), which the `*.TPW*` search cannot match; state 14 reloads it.
+- Object text files add the `Easy_` file under GameType 2 and skip a missing
+  one (`0x119878`, same `%s:%s%s` pattern).
+
+So the first park of a Full Simulation player in a theme starts from the level
+and balance alone; an Instant Action player's first park is the copied
+`easymode.TPWI` where the theme ships one. Later entries resume the newest
+save in that theme directory for both modes. The other three loader callers
+are a debug QuickLoad (`0x112ab8`), a save chosen by name (`0x19882c`) and the
+online session (`0x1c200c`, GameType 1). Not established: what `0x11acfc` does
+with each file, the wildcard semantics of the imported `CFileStorage`, how a
+player starts a theme over, and PC equivalence.
 
 ### Player-global progression record (high)
 
@@ -595,10 +633,14 @@ unwired reference.
   hired researchers in both modes; `ParkEconomy` no longer uses the ECON-019
   staffless rate. The seed's staff are not decoded, so nothing is invented for
   them.
-- Assumption kept explicit: "Full Simulation starts without the seed" rests on
-  the copy at `0x137600` being Instant-Action-only; the Full Simulation new-park
-  loader was not traced. The ticket cadence (ECON-033), keys (ECON-040,
-  `PlayerProgress`), research rates and all PC behaviour are unchanged.
+- "Full Simulation starts without the seed" is now traced for the Mac (see
+  *Park entry*): it holds for a player's first park in a theme, which is the
+  only start OpenTPW has. Resuming the per-theme autosave is not reproduced
+  (UI-015). The ticket cadence (ECON-033), keys (ECON-040, `PlayerProgress`),
+  research rates and all PC behaviour are unchanged.
+- OpenTPW's own save keeps `Mode` by name and `Easy` as required members with no
+  defaults; a running park refuses a save of the other mode. The native
+  front-end smoke run covers an Instant Action start from the menu.
 
 ## Register impact (proposals; registers not edited here)
 
@@ -617,8 +659,8 @@ unwired reference.
 | ECON-015 | ResearchAbility per day split by effort | per researcher work cycle, × effort share × workload/100 (workload starts at StartingWorkLoad 85, player-set ≤ 100) | partially contradicted (cycle timing open) |
 | ECON-016 | group g opens at PercentageForThisTech[g] % of group g−1 | group g opens at PercentageForThisTech[g] (same index, layout-proven) measured **cumulatively over all groups ≤ g−1**, unsigned percentage and compare, 0 % for an empty set | partially supported: threshold index matches, percentage basis differs |
 | ECON-017 | cheapest first | item choice not traced | unresolved |
-| ECON-019 | Instant Action: virtual grade-2 researcher (code and declaration remain; `ParkEconomy` no longer calls it) | no staffless path; researcher staff only; the research panel is refused with the 'research is automatic' text | contradicted; delete code and declaration when the register is adjudicated |
-| UI-015 | mode asked per park (declaration reworded; modes now differ, see *Production mode wiring*) | mode fixed at player creation (4 slots); modes differ in balance overlay, start park, keys, tickets, challenges, research completion | per-park choice remains an approximation |
+| ECON-019 | unused leftover (declaration reworded to say so; `ParkEconomy` no longer calls it) | no staffless path; researcher staff only; the research panel is refused with the 'research is automatic' text | contradicted; delete code and declaration once PC behaviour confirms |
+| UI-015 | mode asked per park entry and every entry starts a new park (declaration reworded) | mode fixed at player creation (4 slots); each theme resumes the player's newest save (`autosave.TPWS` on leaving); modes differ in balance overlay, first park, keys, tickets, challenges, research completion | per-park choice and the missing resume remain approximations |
 | ECON-030 / bankruptcy | stops when bankrupt; 6 months in red | ≥ 6 thirty-day months since the balance went negative, checked at month end → world mode 4 (subject to one unresolved id gate) | count supported; "stops" consistent with mode 4 exit but the mode-4 consequences belong to the calendar/clock lane |
 | ECON-046 | upgrades need a mechanic | not traced (only the TAG text "can't upgrade during a mechanics' strike") | unresolved |
 | Secret 'own all land' ticket (untagged) | — | no award path in the Mac binary | do not implement as earnable without PC evidence |

@@ -140,6 +140,8 @@ screens, options), `FrontEnd/`, `Hud/`, `World/Lobby/LobbyScene.cs`,
   research lab and upgrades; Full Simulation starts without the seed
   (docs/ECONOMY.md, "Game modes"). `--load-original-level` and the Load Park
   entry keep the read-only reference start (shipped save, Full Simulation rules).
+  The original fixes the mode per player and resumes each theme's autosave; every
+  OpenTPW entry starts a new park (UI-015).
 - Load Park (202): original Easymode parks (read-only) and the OpenTPW sandbox
   save. Quit asks with the original confirmation (9).
 - Not implemented: player profiles (Create/Select New Player), online world,
@@ -271,7 +273,10 @@ glyph in all 14 UI fonts of each language.
   a second naturally researched catalogue object, exact charges, overlap refusal
   without a charge, selected-object open/close, pause menu, refused save, lobby;
   a prepared read-only visit verifies disabled build/open/delete/save controls
-  and their direct callbacks without mutating the park or writing a save. The earlier UI flow
+  and their direct callbacks without mutating the park or writing a save; the visit
+  exits to the lobby and jungle starts again in Instant Action (seed imported, no
+  staff invented, research unchanged over 60 days, loans/research effort/upgrades
+  refused, bank balance read back; English, 1280×720, 288 frames). The earlier UI flow
   passed in all six languages; the economy integration was verified in English
   (1280×720, UI scale 1) and, before reference-fit limiting, Dutch at
   1920×932 drawable/UI scale 2 with nearest upscaling at 50% render scale
@@ -303,7 +308,7 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-012 | `UI/Original/UiInput.cs:49`, `UI/Original/UiScreen.cs:59` | hover focuses, release activates, arrows/Enter/Escape navigate, P pauses, right click backs out of modal screens | binary: input handling; KEYBOARD.str meaning |
 | UI-013 | `UI/Original/Options/OptionsScreen.cs:92`, `UI/Original/UiDialogs.cs:9` | window sizes and inner layout of options, game mode, load, pause and message dialogs | captures of original dialogs |
 | UI-014 | `FrontEnd/FrontEndMenu.cs:79`, `FrontEnd/FrontEndMenu.cs:95` | positions inside the lobby panel (island name, prev/enter/next), logo/title placement, right-hand Load/Options/Quit column | capture of the original lobby screen |
-| UI-015 | `FrontEnd/FrontEndMenu.cs:123` | front-end flow without player profiles; Game Mode is asked when entering a park instead of at player creation | binary/manual: original player and mode flow |
+| UI-015 | `FrontEnd/FrontEndMenu.cs:123` | front-end flow without player profiles: Game Mode is asked on every park entry instead of fixed at player creation, and every entry starts a new park instead of resuming the player's per-theme autosave | PC confirmation of the Mac player and autosave flow (docs/reverse/PPC-scenarios.md, "Park entry") |
 | UI-016 | `FrontEnd/LobbyDefinition.cs:79` | lobby ISLAND angle = island yaw in degrees, height = camera target height | binary: lobby script interpretation or capture |
 | UI-017 | `World/LobbyCameraMode.cs:25` | lobby camera: SPINSPEED read as radians per 0.1 s, vertical field of view 60, 3/s glide between islands, ISLANDFOV unused | binary or capture of the lobby camera |
 | UI-018 | `Client/GameFlow.cs:238`, `World/Lobby/LobbyScene.cs:14` | lobby sky drawn as a flat SKYCOLOUR backdrop; flying meshes, rain, lightning, animations not drawn | binary/capture of the lobby |

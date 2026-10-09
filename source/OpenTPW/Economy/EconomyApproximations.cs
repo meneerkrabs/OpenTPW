@@ -27,7 +27,7 @@ public static class EconomyApproximations
 		("ECON-016", "group g opens when PercentageForThisTech % of group g-1 of the same category is researched", "capture of new research groups appearing"),
 		("ECON-017", "items are researched cheapest first within open groups", "capture of research order"),
 		("ECON-018", "ride upgrade levels and add-on objects form the \"upgrade\" research category", "research lab capture"),
-		("ECON-019", "Instant Action research runs at one grade-2 researcher without staff", "Instant Action capture"),
+		("ECON-019", "unused leftover: ParkResearch keeps a staffless grade-2 Instant Action rate that ParkEconomy no longer calls; the Mac code has no staffless research path", "PC confirmation before the code and this entry are removed"),
 		("ECON-020", "a sale drops LitterEffect/100 litter items", "capture of litter after sales"),
 		("ECON-021", "a repair takes WorkDuration game hours (x DurationOfUpgrade for upgrades); mechanics are dispatched instantly", "capture of repair duration per grade"),
 		("ECON-022", "a handyman removes one litter item per WorkDuration game minutes, park-wide", "capture of cleaning speed"),

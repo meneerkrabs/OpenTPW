@@ -111,7 +111,11 @@ public sealed class ParkEconomyRuntime
 
 	public void Save( string path ) => ParkSaveFile.Save( path, Economy );
 
-	/// <summary>Replaces the running economy with a saved one of the same theme and difficulty.</summary>
+	/// <summary>
+	/// Replaces the running economy with a saved one of the same theme, difficulty and game mode. The
+	/// mode is part of the save and is never defaulted; a save of the other mode is refused so the rules
+	/// cannot change under the running start.
+	/// </summary>
 	public void Load( string path )
 	{
 		var loaded = ParkSaveFile.Load( path, ( theme, easy ) =>
@@ -120,6 +124,8 @@ public sealed class ParkEconomyRuntime
 				throw new InvalidDataException( $"The park save is for {theme}, not the running {Economy.Settings.Theme} level." );
 			return (Economy.Settings, Economy.Catalog);
 		} );
+		if ( loaded.Mode != Economy.Mode )
+			throw new InvalidDataException( $"The park save is a {loaded.Mode} park, not the running {Economy.Mode} park." );
 		Economy.EventRaised -= LogEvent;
 		Economy = loaded;
 		Economy.EventRaised += LogEvent;

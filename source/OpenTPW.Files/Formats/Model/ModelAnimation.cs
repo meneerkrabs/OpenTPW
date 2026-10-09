@@ -116,9 +116,10 @@ public sealed class ModelAnimationTrack
 
 	/// <summary>
 	/// Rotation at a tick; null without keys or before the first key. The final key holds
-	/// (0xa820c pairs key i with min(i + 1, count − 1)). Interpolation is the sign-preserving slerp;
-	/// the original's choice between table slerp and a linear blend (global option bit 0x2) is a
-	/// runtime setting that was not established.
+	/// (0xa820c pairs key i with min(i + 1, count − 1)). Interpolation is the sign-preserving slerp.
+	/// The original takes a linear blend when global option bit 0x2 is set; the only store to that word
+	/// writes 0 at setup (0xa7eec from 0x54c08), so it uses its table-sine slerp 0xa7fc8, whose sine
+	/// table this does not reproduce.
 	/// </summary>
 	public Quaternion? SampleRotation( float tick )
 	{
@@ -231,7 +232,7 @@ public sealed class ModelAnimation
 	public uint TrailerFlags { get; init; }
 	/// <summary>
 	/// True when the clip update applies <see cref="TextureFrameTracks"/>; the original also requires
-	/// global option bit 0x8 to be clear (runtime value not established).
+	/// global option bit 0x8 to be clear, and the only store to that word writes 0 at setup.
 	/// </summary>
 	public bool TextureFramesEnabled => (TrailerFlags & TextureFrameFlag) != 0;
 	public IReadOnlyList<ModelTextureFrameTrack> TextureFrameTracks { get; init; } = Array.Empty<ModelTextureFrameTrack>();

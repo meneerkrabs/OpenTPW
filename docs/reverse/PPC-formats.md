@@ -110,7 +110,8 @@ Trailer (72 bytes): words 0–2 u32, 12–28 nine u16, 32–68 pointers relocate
 
 Texture-frame tracks: the clip update 0xa56f8 calls 0xa4160 only when
 **trailer word 0 bit 0x2** is set (`bt eq` skip at 0xa5768) and global option bit
-0x8 (+16396 of the global block) is **clear** (`bf eq` skip at 0xa5778). 0xa4160
+0x8 (+16396 of the global block) is **clear** (`bf eq` skip at 0xa5778; the word
+is only ever stored as 0, see "Gate inputs"). 0xa4160
 scans each track from its last key backwards and takes the first key with
 `tick ≤ trunc(time)` (so of two equal ticks the later entry wins; none found →
 slot unchanged); when the frame differs it stores it in that slot's 8-byte
@@ -181,7 +182,9 @@ the global block at data 0x1577c0) **clear** it calls table-sine slerp 0xa7fc8
 (threshold 0.001 on `1 ± dot`, no sign flip of the second quaternion); with the
 bit set the components are blended linearly, `(1 − t)·a + (t·b)`. Either result goes through 0xa7ef8, a
 quaternion-to-matrix conversion using `s = 2/|q|²`, which normalises the blended
-quaternion implicitly. The runtime value of the option bit is not established.
+quaternion implicitly. The only store to the option word writes 0 at setup
+(see "Gate inputs"), so the original uses the table slerp; OpenTPW's slerp does
+not reproduce its sine table.
 
 **Bézier** (0xa85ac): with `k = trunc(t)`, `s = t − k`, `i = base + 3k`, the
 cubic Bézier over `P[i−1], P[i], P[i+1], P[i+2]` (indices modulo the point count
@@ -230,6 +233,30 @@ confirming the existing `P0, (C, C, P)…` reading. Model: `bezier`.
   via `memcpy`) plus the four bounds words for 0x1000, and the array at +104
   (count +94, i.e. texture coordinates per corner) for 0x10000. The last is a
   lead that the 0x10000 block animates texture coordinates; it is not proven.
+- **Gate inputs** (witness `md2_copy_back_flags`). Option word +16396: of the
+  eleven displacement-16396 accesses only 0xa7eec stores it, its argument; its
+  one call (0x54c08, in setup routine 0x54be4 called from 0x1c1c44) passes 0.
+  The two address computations in the animation code are only read through, and
+  0x112230 is a range comparison. So bits 0, 0x2 and 0x8 are clear unless a bulk
+  write of the global block (not excluded) sets them. Object flags +4: the ride
+  loader 0x58a3c clears a 252-byte object (`memset`), ORs ride-flag bits into
+  +4 (ride 0x100 → 0x8, ride 0x1000 → 0x00100000; also 0x2000 → 0x02000000,
+  0x8000 → 0x10000000, 0x00800000 → 0x20000000, 0x20 → 0x01000000, 2 with 4 →
+  0x4; no other stores; the callees it hands the object to add only object
+  bit 0x10 or a header bit, and of the seven `oris …, 0x10` in the code only
+  this one reaches an object +4 word) and copies it out (`memcpy`). Its direct callers pass
+  0x50120, 8, 8 and 0, none with ride 0x1000. The builder 0x594c8 maps its r7
+  word (caller 0x200 → ride 0x100, caller 0x40000 → ride 0x1000, 12 other
+  bits) for eleven callers whose words are 0xC0, 0x01013405 (twice),
+  0x12423/0x112423, 0x10422 (twice), 0x422, 0xC0/0x40C0, 0x50C00/0x450C00,
+  0xB24A9/0x4B24A9 and 0xC0. Only 0x119ac0 passes 0x40000 without 0x200: it is
+  in the ride catalog loader 0x119328 ("Too many rides loaded"), which picks that
+  word when the ride descriptor's word +56 is non-zero and 0xB24A9 otherwise.
+  So the original copies the stored mesh back on a clip change for every object
+  except catalog rides whose descriptor +56 is set (and that are not
+  relative-animation models); those keep the replaced clip's last pose. Which
+  descriptor field +56 is (filled by the ride-record parsers, not by a direct
+  callee of 0x119328) was not traced.
 - The record +60 binding itself (where a clip's records are pointed at the
   header's records) was not found among direct stores; the sampler and the bind
   routine agree on the record layout above.
@@ -575,8 +602,10 @@ the original's scene clock reaches whole milliseconds (0xa6f70 stores the
 integer result of 0x10e844) belongs to the clock lane. A model whose meshes
 share a node is rejected (a parsed model gives mesh i node i; a track drives
 one mesh record). Showing stored positions without
-a track is an OpenTPW choice, not a proof: the original copies them back only
-under the 0xa5894 gate above and otherwise keeps the replaced clip's last pose.
+a track (proposed register entry RIDES-030) matches the original for every
+object except ride-catalog rides whose descriptor word +56 is set, which keep
+the replaced clip's last pose ("Gate inputs"). Because the catalog entries with
+that word are not identified, OpenTPW restores the stored mesh for all.
 Played: 599 of the 609 catalog clips that carry vertex tracks; the 10
 others hold only the 12-byte layout (23 tracks) and are listed in
 `VertexLimitations` with the stored mesh shown. Also listed instead of guessed:
@@ -615,8 +644,13 @@ the 0xa7960 path for set-mode models; the 0xa78ec and renderer routes are open.
 2. **Fidelity register / RIDES-001**: tick rate is proven (Mac, speed 1.0);
    the loop policy is traced (replay past the end with a carried start, see
    "Clip lifecycle"); scene-clock scaling/pause and trigger mapping remain open.
-   A register entry is needed for the stored-mesh choice when a vertex clip is
-   replaced (copy-back is conditional in the original).
+   Proposed **RIDES-030** (next free ID after RIDES-029): "a replaced vertex
+   clip restores the stored mesh for every object" — evidence needed: which
+   ride descriptors set word +56 (0x119328 → 0x119ac0 creator flags 0x50C00
+   give object flag 0x00100000 without 0x8, so 0xa5894 skips the copy-back).
+   Suggested code tag at `ObjectAnimator.UpdateVertices`, where the comment
+   names the proposal; the root adds the `RidesApproximations` entry, the
+   docs/OBJECTS.md row and regenerates the register.
 3. **TPWS** (`SavePayloadLayout`, `TPWS-PAYLOAD.md`, importer naming): treat tags
    as trailing delimiters; rename sections by owner (RideSystem holds the placed
    objects); adopt the cell schema and world-var names; the importer's offsets
@@ -649,13 +683,14 @@ the 0xa7960 path for set-mode models; the 0xa78ec and renderer routes are open.
 - Path parameter (0x200/0x400) and header 0xAC table: selection via node +82 and
   the third evaluator 0xa89f0 only partly read.
 - Clip lifecycle at run time: which objects use the object-list update (r4 = 0)
-  and carry flag 0x00400000; the meaning and setters of object flags 0x8,
-  0x18 and 0x00100000 and of global option bit 0 (copy-back gate); whether clip
-  data (group cursors) and headers are per object; game-speed scaling and pause
-  (player +12/+16/+20, scene-clock rate at 0x127cd0 object +24).
+  and carry flag 0x00400000; which ride descriptor field is word +56 (selects
+  the creator flags that skip the copy-back) and which catalog rides set it;
+  bulk writes of the global block (the option word has one direct store, 0);
+  whether clip data (group cursors) and headers are per object; game-speed
+  scaling and pause (player +12/+16/+20, scene-clock rate at 0x127cd0 object
+  +24).
 - Face-normal recomputation outside relative models: conditions of 0x567e4 and
   0x5a4b4 (0xa78ec) and the setter of mesh flag 0x10000000 (renderer 0x19ac0c).
-- Rotation interpolation and texture-frame gating: runtime values of global option bits 0x2 and 0x8 (+16396).
 - MAP bit 0x04 and the remaining cell/status bits; World sub-blocks after the
   world vars; all other subsystem payloads.
 - PC equivalence of everything above: PC `TP.ICD` code is not readable

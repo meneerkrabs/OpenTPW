@@ -261,9 +261,12 @@ public sealed class ObjectAnimator
 	/// animated groups at the clip tick). A fresh key search per sample equals the original's kept cursor
 	/// because its loop replay rebinds the clip (0xa7190 -> 0xa67d8 -> 0xa5894), which resets the cursor;
 	/// the object-list update (0x4d354, flag 8) replays without a bind and is not modelled.
-	/// Without a track the mesh shows its stored positions. That is an OpenTPW choice: the original copies
-	/// them back on a clip change only when header flag 0x4 is set or global option bit 0 is clear and the
-	/// object does not have flag 0x00100000 with 0x8 clear (0xa5894); otherwise the last pose stays.
+	/// Without a track the mesh shows its stored positions (proposed register entry RIDES-030). The
+	/// original copies them back on a clip change unless global option bit 0 is set or the object has flag
+	/// 0x00100000 with 0x8 clear, and always for header flag 0x4 (0xa5894). The option is only ever stored
+	/// as 0 (0xa7eec from 0x54c08); the object flags come from the creator's ride flags (0x594c8 -> 0x58a3c),
+	/// and only the ride catalog loader 0x119328 sets 0x00100000 without 0x8, for descriptors whose +56 word
+	/// is non-zero. Which catalog entries those are is not traced, so for them the last pose would stay.
 	/// </summary>
 	private void UpdateVertices( int mesh, Channel? channel, ModelVertexAnimation? animation )
 	{

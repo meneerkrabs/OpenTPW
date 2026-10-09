@@ -551,7 +551,7 @@ def md2_clip_lifecycle(app: Image) -> dict:
 
 
 
-STFS, LFD, FDIVS = 52, 50, 18
+STFS, LFD, FDIVS, STB, STH, STMW = 52, 50, 18, 38, 44, 47
 
 
 def md2_clip_clock(app: Image) -> dict:
@@ -597,6 +597,129 @@ def md2_clip_clock(app: Image) -> dict:
     d(app, 0xa6a10, (STFS, 0, 25, 32), 'AnimFrame after the replay')
     return {'frame': 'speed * (30 * (float)(unsigned)(now - start) / 1000), single precision; now/start whole ms',
             'replay_start': 'now - (unsigned)trunc(1000 * min(carry, duration) / 30 / speed)'}
+
+
+def md2_copy_back_flags(app: Image) -> dict:
+    """Where the bind's copy-back gate inputs come from: option word +16396 and object flags 0x8/0x00100000."""
+    sites = []
+    for offset in range(0, len(app.code) - 3, 4):
+        op, rt, ra, imm = d_form(app.w(offset))
+        if imm == 16396 and op in (LWZ, STW, ADDI, STB, STH, 34, 40, 33, 37):
+            sites.append((offset, op))
+    require(sites, [(0x58ba4, LWZ), (0xa5698, LWZ), (0xa5770, LWZ), (0xa58ac, ADDI), (0xa58cc, LWZ),
+                    (0xa5d9c, ADDI), (0xa7268, LWZ), (0xa76c8, LWZ), (0xa7ef0, STW), (0xa8244, LWZ),
+                    (0x112230, ADDI)], 'every displacement-16396 access')
+    # The two address computations in the animation code are only read through.
+    for start, end, register in ((0xa5894, 0xa5d88, 28), (0xa5d88, 0xa6100, 29)):
+        for offset in range(start, end, 4):
+            op, rt, ra, imm = d_form(app.w(offset))
+            if op in (STW, STB, STH, STMW, 37) and ra == register:
+                raise WitnessError(f'store through the option pointer at {offset:#x}')
+    xop(app, 0x112234, (31, 0, 0, 4, 0), '0x112230 is a range comparison, not a store')
+    d(app, 0xa7eec, (LWZ, 4, 2, -30340), 'option setter: global block')
+    d(app, 0xa7ef0, (STW, 3, 4, 16396), 'option setter stores its argument')
+    require(app.calls_to(0xa7eec), [0x54c08], 'option setter call sites')
+    d(app, 0x54c04, (ADDI, 3, 0, 0), 'the only setter call stores 0')
+    require(app.calls_to(0x54be4), [0x1c1c44], 'setup routine call site')
+    # Ride loader 0x58a3c builds a zeroed 252-byte object on its stack, maps ride flags into +4, copies it out.
+    d(app, 0x58a44, (ADDI, 17, 4, 0), 'ride flags argument')
+    d(app, 0x58a74, (ADDI, 3, 1, 1092), 'object on the stack')
+    d(app, 0x58a60, (ADDI, 4, 0, 0), 'fill byte 0')
+    d(app, 0x58a64, (ADDI, 5, 0, 252), 'object size')
+    require(app.glue_symbol(app.call(0x58a78)), 'memset', 'object cleared')
+    object_flag_stores = {}
+    for offset in range(0x58a3c, 0x592bc, 4):
+        if d_form(app.w(offset)) == (STW, 0, 1, 1096):
+            op, rt, ra, imm = d_form(app.w(offset - 4))
+            require((op in (ORI, ORIS), rt, ra), (True, 0, 0), f'object flags only gain bits at {offset:#x}')
+            object_flag_stores[offset] = imm << 16 if op == ORIS else imm
+    require(object_flag_stores, {0x58c90: 0x8, 0x58cf8: 0x00100000, 0x58d0c: 0x02000000, 0x58d3c: 0x10000000,
+                                 0x58d50: 0x20000000, 0x59134: 0x01000000, 0x59218: 0x4}, 'object +4 flag sources')
+    rot(app, 0x58c80, (RLWINM, 17, 0, 0, 23, 23, 1), 'ride flag 0x100 -> object 0x8')
+    rot(app, 0x58ce8, (RLWINM, 17, 0, 0, 19, 19, 1), 'ride flag 0x1000 -> object 0x00100000')
+    # Callees given the object add only +4 bit 0x10 (0xa7bb8) or a header bit (0xa67b8).
+    require([app.call(site) for site in (0x59138, 0x591b8, 0x591c0, 0x591ec)], [0xa67b8, 0x18e0b4, 0x5847c, 0xa7bb8],
+            'callees after the flags are set')
+    d(app, 0xa67cc, (ORIS, 0, 0, 8), '0xa67b8 sets header flag 0x00080000')
+    d(app, 0xa67d0, (STW, 0, 3, 48), 'header flags word')
+    d(app, 0xa7d24, (ORI, 0, 0, 16), '0xa7bb8 sets object flag 0x10')
+    d(app, 0xa7d28, (STW, 0, 31, 4), 'object flags word')
+    # Every `oris rX, rY, 0x10` in the code; only 0x58cf4 reaches an object +4 word.
+    oris = [offset for offset in range(0, len(app.code) - 3, 4) if d_form(app.w(offset))[0] == ORIS
+            and d_form(app.w(offset))[3] == 0x10]
+    require(oris, [0x24448, 0x364c0, 0x58cf4, 0x5bf48, 0x5d124, 0x6e310, 0xa6620], 'oris 0x10 sites')
+    d(app, 0xa6624, (STW, 0, 5, 0), '0xa6620: mesh-record flags')
+    d(app, 0x5d128, (STW, 0, 31, 48), '0x5d124: header flags')
+    d(app, 0x59284, (ADDI, 4, 1, 1092), 'object copied out')
+    d(app, 0x59288, (ADDI, 5, 0, 252), 'whole object')
+    require(app.glue_symbol(app.call(0x5928c)), 'memcpy', 'object copy')
+    # Direct loader calls pass constant ride flags; 0x594c8 maps its r7 word into them.
+    require(app.calls_to(0x58a3c), [0x29180, 0x4da20, 0x4da44, 0x596b0, 0x59704], 'ride loader call sites')
+    direct = {0x29180: lis_addi_constant(app, 0x29168, 0x29174, 4)}
+    d(app, 0x4da14, (ADDI, 4, 0, 8), 'ride flags at 0x4da20')
+    d(app, 0x4da38, (ADDI, 4, 0, 8), 'ride flags at 0x4da44')
+    d(app, 0x596f4, (ADDI, 4, 0, 0), 'ride flags at 0x59704')
+    direct.update({0x4da20: 8, 0x4da44: 8, 0x59704: 0})
+    d(app, 0x594e8, (ADDI, 24, 7, 0), 'builder keeps r7')
+    d(app, 0x5955c, (ADDI, 19, 0, 0), 'ride flags start empty')
+    mapping = {}
+    for test in [0x59558] + list(range(0x59568, 0x59604, 12)):
+        _, rs, _, _, mb, me, record = rotate(app.w(test))
+        require((rs, mb == me, record), (24, True, 1), f'builder flag test at {test:#x}')
+        op, rt, ra, imm = d_form(app.w(0x59564 if test == 0x59558 else test + 8))
+        require((op in (ORI, ORIS), rt, ra), (True, 19, 19), f'builder flag set after {test:#x}')
+        mapping[1 << (31 - mb)] = imm << 16 if op == ORIS else imm
+    require(len(mapping), 14, 'builder flag tests')
+    require(mapping[0x200], 0x100, 'caller 0x200 -> ride 0x100 (object 0x8)')
+    require(mapping[0x40000], 0x1000, 'caller 0x40000 -> ride 0x1000 (object 0x00100000)')
+    require([k for k, v in mapping.items() if v in (0x100, 0x1000)], [0x200, 0x40000], 'no other source of those ride bits')
+    d(app, 0x596a0, (ADDI, 4, 19, 0), 'built ride flags')
+    require(app.call(0x596b0), 0x58a3c, 'builder calls the ride loader')
+    require(app.calls_to(0x594c8), [0x303f8, 0x310d8, 0x3116c, 0x6e350, 0x6e594, 0x6e82c, 0x6eae8, 0x8eb04,
+                                     0x119ac0, 0x119b1c, 0x119cb4], 'builder call sites')
+    d(app, 0x303c0, (ADDI, 7, 0, 192), 'r7 at 0x303f8')
+    d(app, 0x119c88, (ADDI, 7, 0, 192), 'r7 at 0x119cb4')
+    d(app, 0x6ead4, (ADDI, 7, 0, 1058), 'r7 at 0x6eae8')
+    d(app, 0x6e334, (ADDI, 7, 26, 0), 'r7 at 0x6e350')
+    d(app, 0x6e310, (ORIS, 26, 26, 16), 'optional 0x00100000 at 0x6e350')
+    d(app, 0x6e578, (ADDI, 7, 27, 0), 'r7 at 0x6e594')
+    d(app, 0x6e810, (ADDI, 7, 27, 0), 'r7 at 0x6e82c')
+    d(app, 0x8eaec, (ADDI, 7, 24, 0), 'r7 at 0x8eb04')
+    d(app, 0x8eab0, (ADDI, 24, 0, 192), '0x8eb04 base')
+    d(app, 0x8eab8, (ORI, 24, 24, 16384), 'optional 0x4000 at 0x8eb04')
+    d(app, 0x119a80, (ORIS, 7, 7, 64), 'optional 0x00400000 at 0x119ac0')
+    d(app, 0x119ae4, (ORIS, 7, 7, 64), 'optional 0x00400000 at 0x119b1c')
+    words = {0x303f8: [192], 0x119cb4: [192], 0x6eae8: [1058],
+             0x310d8: [lis_addi_constant(app, 0x31098, 0x310ac, 7)],
+             0x3116c: [lis_addi_constant(app, 0x3112c, 0x31140, 7)],
+             0x6e350: [lis_addi_constant(app, 0x6e2dc, 0x6e304, 26)] * 2,
+             0x6e594: [lis_addi_constant(app, 0x6e50c, 0x6e514, 27)],
+             0x6e82c: [lis_addi_constant(app, 0x6e7a4, 0x6e7ac, 27)],
+             0x8eb04: [192, 192 | 0x4000],
+             0x119ac0: [lis_addi_constant(app, 0x119a70, 0x119a74, 7)] * 2,
+             0x119b1c: [lis_addi_constant(app, 0x119ad4, 0x119ad8, 7)] * 2}
+    words[0x6e350][1] |= 0x00100000
+    words[0x119ac0][1] |= 0x00400000
+    words[0x119b1c][1] |= 0x00400000
+    keep_pose = sorted(site for site, values in words.items()
+                       if any(value & 0x40000 and not value & 0x200 for value in values))
+    require(keep_pose, [0x119ac0], 'creators whose objects skip the copy-back')
+    require([site for site, value in direct.items() if value & 0x1000 and not value & 0x100], [], 'direct loader calls')
+    # 0x119ac0 is the ride catalog loader 0x119328; its descriptor word +56 selects that creator word.
+    require(app.toc_string(0x119350, 29)[0], 0x1d502a, 'catalog loader string pool')
+    d(app, 0x119448, (ADDI, 4, 29, 117), 'string pool + 117')
+    require(cstring(app.code, 0x1d502a + 117), 'Too many rides loaded', 'ride catalog loader message')
+    require(app.calls_to(0x119328), [0x119178, 0x119210], 'ride catalog loader call sites')
+    d(app, 0x119a5c, (LWZ, 9, 1, 15480), 'ride descriptor')
+    d(app, 0x119a60, (LWZ, 0, 9, 56), 'descriptor word +56')
+    bc(app, 0x119a68, (BT, CR_EQ, 0x119ad0), 'zero: the other creator word')
+    return {'option_bit0': 'only store: 0xa7eec(0) from setup 0x54be4 (bulk writes of the block not excluded)',
+            'object_flags': 'ride loader 0x58a3c: ride 0x100 -> 0x8, ride 0x1000 -> 0x00100000; 0x594c8: 0x200 -> 0x100, '
+                            '0x40000 -> 0x1000',
+            'skip_copy_back_creators': [f'{site:#x}' for site in keep_pose],
+            'skip_copy_back_condition': 'ride catalog loader 0x119328, descriptor +56 non-zero (field not traced)',
+            'creator_words': {f'{site:#x}': [f'{v:#x}' for v in values] for site, values in words.items()},
+            'direct_loader_words': {f'{site:#x}': f'{value:#x}' for site, value in direct.items()}}
 
 
 # ------------------------------------------------------------------ TPWS
@@ -801,6 +924,7 @@ def inspect(root: Path) -> dict:
               'md2_runtime_binding': md2_runtime_binding(app),
               'md2_clip_lifecycle': md2_clip_lifecycle(app),
               'md2_clip_clock': md2_clip_clock(app),
+              'md2_copy_back_flags': md2_copy_back_flags(app),
               'tpws_writer': tpws_writer(app),
               'tpws_schema': tpws_schema(app),
               'tpws_cells': tpws_cells(app),

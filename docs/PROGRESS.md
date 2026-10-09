@@ -6,6 +6,23 @@ voortgang en geverifieerde code naar de fork goedgekeurd. Git-history registreer
 de gepubliceerde snapshots; originele assets, native binaries, captures en lokale
 agent-runtimebestanden blijven buiten die publicatie.
 
+## Samengevoegde PowerPC-werkstromen
+
+De gereviewde klok-/PEF-, economie/save-, VM-, UI-binding-, advisor/audio-,
+bezoekers-evidence- en TPI-vergelijkingswerkstromen zijn naar main samengevoegd.
+De positieve-APR-savecontrole gebruikt geen onbewezen annuïteitsvergelijking.
+Layer I-effecten worden gedecodeerd; de oorspronkelijke PRNG, volledige controllers,
+clock/event/audio-wiring en eindfidelity blijven expliciete open punten.
+
+Eigen mergecontroles: 31 toolkit-, 7 fidelity-, 84 reviewtests; 22 save/economie-,
+41 VM-, 56 UI-, 49 audio/LIP-tests; standalone scheduler35, loan5437assertions,
+advisor52 en guest23. De eerste gezamenlijke Release-regressieselectie telt154
+gevallen zonder skips; Release-build0errors. Dit is geen volledige herkwalificatie
+van alle originele spelregels. Na samenvoegen slaagt ook de Nederlandse Metal-
+smoke: 222 frames, herladen, betalingen en alleen-lezen guards. De referentiehelpers worden niet automatisch de
+productiegame. Vertexanimatie/runtime en modewijzigingen met verdere review blijven
+vooralsnog in hun eigen worktrees.
+
 ## Geïntegreerde controle na hervatting
 
 Advisor/compat, frontend, rides en online zijn samengevoegd met economie,

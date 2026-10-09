@@ -36,7 +36,7 @@ remain incomplete. Neither symbol certifies every variant or original-runtime pa
 |---|---|---|
 | Textures ([.WCT](https://opentpw.gu3.me/formats/wct.html)) | ✅ | Decoder loads the selected game's textures; other editions are unverified. |
 | Settings ([.SAM](https://opentpw.gu3.me/formats/sam.html)) | ✅ | Parser reads the selected game's settings; gameplay interpretation remains approximate. |
-| Sounds ([.SDT](https://opentpw.gu3.me/formats/sdt.html), .MP2) | ⚠️ | SDT containers and MPEG-2 Layer II speech/music decode (≤1 LSB vs reference); Layer I effects remain unsupported ([audio evidence](docs/LIPS.md)). |
+| Sounds ([.SDT](https://opentpw.gu3.me/formats/sdt.html), .MP2) | ⚠️ | SDT containers and MPEG-1/2 Layer I effects plus Layer II speech/music decode (≤1 LSB vs reference); CRC, de-emphasis and some compatibility cases remain incomplete ([audio evidence](docs/LIPS.md)). |
 | Strings ([.BFMU](https://opentpw.gu3.me/formats/bfmu.html), [.BFST](https://opentpw.gu3.me/formats/bfst.html), [.BFUM](https://opentpw.gu3.me/formats/bfum.html)) | ✅ | 21 string tables per language decode and character tables round-trip in six verified languages; other codepages/editions are unverified ([languages](docs/LANGUAGES.md)). |
 | Models ([.MD2](https://opentpw.gu3.me/formats/m3d2.html)) | ⚠️ | 2,116/2,118 members parse; position/rotation/scale tracks decode. Two older-version members and vertex/other animation payloads remain unsupported ([models](docs/MD2-MODELS.md)). |
 | Map Data ([.MAP](https://opentpw.gu3.me/formats/map.html)) | ⚠️ | All five TP2M terrain grids parse; grid mapping and five cell bits verified. Remaining flags/header values and sound-catalog MAPs are opaque ([maps](docs/MAP.md)). |
@@ -68,9 +68,8 @@ are interpreted as microsecond talking/silence toggles, inferred from the decode
 speech audio rather than original-runtime timing. They
 drive the original advisor's mouth with SDL audio via `--advisor-say N`; the original
 mouth-shape choice is unknown. ISO-only `.MTR` files decode as topology and matrices
-redundant with their banner `.MD2` (no material data; runtime use unknown). SDT speech
-and music (MPEG-2 Layer II) decode within 1 LSB of an external decoder, but Layer I
-sound effects do not decode yet. All nine TGQ movies decode audio bit-exact and video
+redundant with their banner `.MD2` (no material data; runtime use unknown). SDT speech, music and Layer I effects now decode within 1 LSB of an external
+reference; event scheduling, CRC verification and de-emphasis remain incomplete. All nine TGQ movies decode audio bit-exact and video
 close to, not bit-identical with, an external reference; `--play-movie` streams
 the decoded video and audio. Evidence:
 [MD2](docs/MD2-MODELS.md), [MAP](docs/MAP.md), [RSE](docs/RSE-SCRIPTS.md) / [RSE VM](docs/RSE-VM.md),
@@ -90,6 +89,10 @@ others from the extracted original CD (see [languages](docs/LANGUAGES.md)). See
 [BF4 evidence](docs/BF4-FONTS.md), [format backlog](docs/FORMAT-BACKLOG.md),
 [completion plan](docs/COMPLETION-PLAN.md) and [progress](docs/PROGRESS.md).
 Format checkmarks do not qualify full gameplay or every platform/edition.
+
+The recovered PowerPC rules, independent reviews and bounded reference helpers are
+recorded in [reverse findings](docs/reverse/FINDINGS.md). [TPI comparison](docs/TPI-COMPARISON.md)
+measures shared data and parser behavior; it does not establish engine equivalence.
 
 Compatibility ([docs](docs/COMPATIBILITY.md)): the 17 sign fonts are read in memory from
 `fonts.wad` by an own TrueType rasterizer (the jungle gate shows the park name in the

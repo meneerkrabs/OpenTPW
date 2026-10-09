@@ -75,6 +75,11 @@ public sealed class MoviePlayback : IDisposable
 	public int Holds { get; private set; }
 	public bool IsFinished { get; private set; }
 	public bool WasSkipped { get; private set; }
+	/// <summary>
+	/// Linear volume 0..1 applied to the PCM before it is queued (the Movie volume option; the original maps its
+	/// percentage to QuickTime's linear 0..256 movie volume). 1 leaves the samples untouched.
+	/// </summary>
+	public float Gain { get; set; } = 1f;
 	private bool AudioDrained => audioReader!.EndOfStream && audio!.QueuedFrames == 0;
 
 	/// <summary>
@@ -156,8 +161,24 @@ public sealed class MoviePlayback : IDisposable
 			var frames = audioReader.Read( audioChunk );
 			if ( frames == 0 )
 				break;
-			audio.Queue( audioChunk.AsSpan( 0, frames * TgqAudioReader.Channels ) );
+			var samples = audioChunk.AsSpan( 0, frames * TgqAudioReader.Channels );
+			ApplyGain( samples, Gain );
+			audio.Queue( samples );
 		}
+	}
+
+	/// <summary>Scales interleaved 16-bit PCM in place by a linear gain in 0..1.</summary>
+	public static void ApplyGain( Span<short> samples, float gain )
+	{
+		if ( !(gain < 1f) )
+			return;
+		if ( !(gain > 0f) )
+		{
+			samples.Clear();
+			return;
+		}
+		for ( var i = 0; i < samples.Length; i++ )
+			samples[i] = (short)(samples[i] * gain);
 	}
 
 	private void Finish()

@@ -55,7 +55,7 @@ internal sealed class MovieSmokeTest
 		var height = (int)source.Height;
 		var pixels = ReadBack( source );
 		var presenter = screen.Presenter;
-		var (left, top, fitWidth, fitHeight) = MoviePresenter.Fit( presenter.Width, presenter.Height, width, height );
+		var (left, top, fitWidth, fitHeight) = MoviePresenter.Fit( presenter.Width, presenter.Height, width, height, presenter.DisplayAspect );
 		Require( fitWidth > 0 && fitHeight > 0, "movie rectangle fits the framebuffer" );
 
 		// Mean colour inside the movie rectangle (BGRA readback) against the CPU RGBA frame; resampling keeps means.

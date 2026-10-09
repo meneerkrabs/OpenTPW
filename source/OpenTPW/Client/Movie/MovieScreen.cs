@@ -9,9 +9,13 @@ internal sealed class MovieScreen : IDisposable
 	private readonly MoviePlayback playback;
 	private bool lastKeyDown = true;
 	private bool lastMouseDown = true;
+	private readonly bool handleSkipInput;
 
-	public MovieScreen( TgqMovieFile movie, bool withAudio )
+	/// <param name="gain">Linear audio volume 0..1 (the Movie volume option).</param>
+	/// <param name="handleSkipInput">False when the owner decides when to skip (the startup intro).</param>
+	public MovieScreen( TgqMovieFile movie, bool withAudio, float gain = 1f, bool handleSkipInput = true )
 	{
+		this.handleSkipInput = handleSkipInput;
 		IMovieAudioOutput? output = null;
 		if ( withAudio )
 		{
@@ -19,7 +23,7 @@ internal sealed class MovieScreen : IDisposable
 			if ( output == null )
 				Log.Warning( $"Movie audio unavailable ({failure}); playing video on the fixed-step clock." );
 		}
-		playback = new MoviePlayback( movie, output );
+		playback = new MoviePlayback( movie, output ) { Gain = gain };
 		Presenter = new MoviePresenter( movie.Width, movie.Height, global::Global.Render.MultisampledFramebuffer.OutputDescription );
 	}
 
@@ -32,7 +36,7 @@ internal sealed class MovieScreen : IDisposable
 		// Keys or buttons already held when the movie starts do not skip it; a fresh press does.
 		var keyDown = Input.Keyboard.KeysDown.Count > 0;
 		var mouseDown = Input.Mouse.Left || Input.Mouse.Right;
-		if ( (keyDown && !lastKeyDown) || (mouseDown && !lastMouseDown) )
+		if ( handleSkipInput && ((keyDown && !lastKeyDown) || (mouseDown && !lastMouseDown)) )
 			playback.Skip();
 		lastKeyDown = keyDown;
 		lastMouseDown = mouseDown;

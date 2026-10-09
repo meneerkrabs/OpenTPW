@@ -2,12 +2,19 @@
 
 public class ParkCameraMode : CameraMode
 {
+	public const float SandboxTargetExtent = 32f;
+	/// <summary>Half-size of the square the camera target may pan over; set by the level before the mode is created.</summary>
+	public static float TargetExtent { get; set; } = SandboxTargetExtent;
+	/// <summary>Camera target when the mode is created.</summary>
+	public static Vector3 InitialTarget { get; set; } = Vector3.Zero;
+
 	private Vector3 target = Vector3.Zero;
 	private float height = 42f;
 	private float yaw = -135f;
 
 	public ParkCameraMode()
 	{
+		target = InitialTarget;
 		FieldOfView = 55;
 		UpdateTransform();
 	}
@@ -28,11 +35,11 @@ public class ParkCameraMode : CameraMode
 		}
 		if ( !io.WantCaptureMouse )
 		{
-			height = Math.Clamp( height - Input.Mouse.Wheel * 3, 12, 100 );
+			height = Math.Clamp( height - Input.Mouse.Wheel * 3, 12, Math.Max( 100, TargetExtent * 2 ) );
 			if ( Input.Mouse.Right )
 				target += (right * Input.Mouse.Delta.X - forward * Input.Mouse.Delta.Y) * height / 500f;
 		}
-		target = new Vector3( Math.Clamp( target.X, -32, 32 ), Math.Clamp( target.Y, -32, 32 ), 0 );
+		target = new Vector3( Math.Clamp( target.X, -TargetExtent, TargetExtent ), Math.Clamp( target.Y, -TargetExtent, TargetExtent ), 0 );
 		UpdateTransform();
 	}
 

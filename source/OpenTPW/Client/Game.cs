@@ -126,7 +126,10 @@ internal static class Game
 		//
 		// Create level
 		//
-		var level = new Level( "jungle" );
+		var originalLevelIndex = Array.IndexOf( args, "--load-original-level" );
+		if ( originalLevelIndex >= 0 && (originalLevelIndex + 1 >= args.Length || args[originalLevelIndex + 1].StartsWith( "--" )) )
+			throw new ArgumentException( "--load-original-level requires a level name such as 'jungle'." );
+		var level = originalLevelIndex >= 0 ? new Level( args[originalLevelIndex + 1], loadOriginalLevel: true ) : new Level( "jungle" );
 
 		//
 		// Run game loop

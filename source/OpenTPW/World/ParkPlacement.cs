@@ -13,6 +13,13 @@ public static class ParkPlacement
 	public static bool TryGetPosition( Vector2 mousePosition, Vector2 viewportSize, Matrix4x4 view, Matrix4x4 projection, out Vector3 position )
 	{
 		position = Vector3.Zero;
+		return TryGetGroundPoint( mousePosition, viewportSize, view, projection, out var intersection ) && TrySnapToCell( intersection, out position );
+	}
+
+	/// <summary>Intersection of the mouse ray with the Z = 0 ground plane.</summary>
+	public static bool TryGetGroundPoint( Vector2 mousePosition, Vector2 viewportSize, Matrix4x4 view, Matrix4x4 projection, out Vector3 position )
+	{
+		position = Vector3.Zero;
 		if ( !float.IsFinite( viewportSize.X ) || !float.IsFinite( viewportSize.Y ) || viewportSize.X <= 0 || viewportSize.Y <= 0 )
 			return false;
 		if ( !float.IsFinite( mousePosition.X ) || !float.IsFinite( mousePosition.Y ) || mousePosition.X < 0 || mousePosition.Y < 0 || mousePosition.X > viewportSize.X || mousePosition.Y > viewportSize.Y )
@@ -29,7 +36,7 @@ public static class ParkPlacement
 
 		var origin = new Vector3( nearPoint.X / nearPoint.W, nearPoint.Y / nearPoint.W, nearPoint.Z / nearPoint.W );
 		var destination = new Vector3( farPoint.X / farPoint.W, farPoint.Y / farPoint.W, farPoint.Z / farPoint.W );
-		return TryIntersectGround( origin, destination - origin, out var intersection ) && TrySnapToCell( intersection, out position );
+		return TryIntersectGround( origin, destination - origin, out position );
 	}
 
 	public static bool TryIntersectGround( Vector3 origin, Vector3 direction, out Vector3 position )

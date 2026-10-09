@@ -25,8 +25,35 @@ internal sealed class SandboxSmokeTest : IDisposable
 		originalSaveFileSystem = SaveFileSystem;
 		Directory.CreateDirectory( temporaryDirectory );
 		SaveFileSystem = new BaseFileSystem( temporaryDirectory );
-		Require( level.PlaceRide( Vector3.Zero ), "place original Totem" );
+		if ( level.OriginalPark != null )
+			rideSite = VerifyOriginalLevel( level.OriginalPark );
+		Require( level.PlaceRide( rideSite ), "place original Totem" );
 		level.PlacedRide!.Start();
+	}
+
+	private Vector3 rideSite = Vector3.Zero;
+
+	/// <summary>Checks the import and the MAP/save build rules, and returns a buildable site.</summary>
+	private Vector3 VerifyOriginalLevel( OriginalPark park )
+	{
+		var field = park.Heightfield;
+		Require( level.OriginalTerrain != null && level.OriginalTerrain.SurfaceCellCount > 0 && level.OriginalTerrain.TerrainMeshCount > 0, "build original terrain" );
+		var cells = Enumerable.Range( 0, field.CellCountX * field.CellCountZ ).Select( index => (X: index % field.CellCountX, Y: index / field.CellCountX) ).ToArray();
+		var water = cells.First( cell => park.Map.GetFlagsAt( cell.X, cell.Y ).HasFlag( MapCellFlags.Water ) || park.Map.GetFlagsAt( cell.X, cell.Y ).HasFlag( MapCellFlags.EntranceArea ) );
+		Require( !level.PlaceRide( OriginalParkPlacement.GetCellCenter( field, water.X, water.Y ) ) && level.PlacedRide == null, "reject water/entrance cells" );
+		if ( park.Save != null )
+		{
+			Require( park.Save.PathCells.Count > 0 && park.Save.PlacedObjects.Count > 0, "import original save paths and objects" );
+			var path = park.Save.PathCells[park.Save.PathCells.Count / 2];
+			Require( !level.PlaceRide( OriginalParkPlacement.GetCellCenter( field, path.X, path.Y ) ), "reject imported path cells" );
+			var item = park.Save.PlacedObjects[0];
+			Require( !level.PlaceRide( OriginalParkPlacement.GetCellCenter( field, item.MinX, item.MinY ) ), "reject imported object footprints" );
+		}
+		// Nearest buildable site to the initial path, so the capture shows the imported park.
+		var start = cells.Where( cell => park.Map.GetFlagsAt( cell.X, cell.Y ).HasFlag( MapCellFlags.InitialPath ) ).DefaultIfEmpty( (X: field.CellCountX / 2, Y: field.CellCountZ / 2) ).First();
+		var site = cells.OrderBy( cell => Math.Abs( cell.X - start.X ) + Math.Abs( cell.Y - start.Y ) )
+			.First( cell => level.CheckOriginalPlacement( OriginalParkPlacement.GetCellCenter( field, cell.X, cell.Y ) ) == OriginalPlacementResult.Allowed );
+		return OriginalParkPlacement.GetCellCenter( field, site.X, site.Y );
 	}
 
 	public void Update()
@@ -52,18 +79,24 @@ internal sealed class SandboxSmokeTest : IDisposable
 		if ( step == 30 )
 		{
 			Require( level.PlacedRide!.Script.State != RideVMState.Faulted && level.PlacedRide.Script[RideVariables.VAR_RUNNING] == 1, "original script reports the ride running" );
-			var parkFrame = CaptureFrame( "park.png" );
+			var parkFrame = CaptureFrame( level.OriginalPark == null ? "park.png" : "original-park.png" );
 			VerifyPoseChanged( level.PlacedRide, parkFrame.Pixels );
 			VerifyText( parkFrame );
-			level.SaveSandbox();
+			if ( level.OriginalPark == null )
+				level.SaveSandbox();
 			level.PlacedRide!.Stop();
 			Require( !level.PlacedRide.IsOpen, "close ride" );
 			level.RemoveRide();
 			Require( level.PlacedRide == null, "remove ride" );
-			level.LoadSandbox();
-			Require( level.PlacedRide != null && level.PlacedRide.IsOpen, "restore open ride" );
+			if ( level.OriginalPark == null )
+			{
+				level.LoadSandbox();
+				Require( level.PlacedRide != null && level.PlacedRide.IsOpen, "restore open ride" );
+			}
+			else
+				Require( Throws( level.SaveSandbox ) && Throws( level.LoadSandbox ), "sandbox saves disabled for original levels" );
 		}
-		if ( step == 60 )
+		if ( step == 60 && level.OriginalPark == null )
 		{
 			level.RemoveRide();
 			level.SaveSandbox();
@@ -72,14 +105,16 @@ internal sealed class SandboxSmokeTest : IDisposable
 		}
 		if ( step == 65 )
 		{
-			CaptureFrame( "terrain.png" );
-			Require( level.PlaceRide( new Vector3( 10, 10, 0 ) ), "place ride again" );
+			CaptureFrame( level.OriginalPark == null ? "terrain.png" : "original-terrain.png" );
+			Require( level.PlaceRide( level.OriginalPark == null ? new Vector3( 10, 10, 0 ) : rideSite ), "place ride again" );
 		}
 		if ( step == 90 )
 		{
 			Device.WaitForIdle();
 			completed = true;
-			Log.Trace( $"Native sandbox smoke test passed: {frame} frames, original ride and RSE script, script-triggered motion, original animation readback, close, remove, isolated save/load, BF4 text and GPU readback." );
+			Log.Trace( level.OriginalPark == null
+				? $"Native sandbox smoke test passed: {frame} frames, original ride and RSE script, script-triggered motion, original animation readback, close, remove, isolated save/load, BF4 text and GPU readback."
+				: $"Native original-level smoke test passed: {frame} frames, {level.OriginalPark.LevelName} terrain/import, MAP/save build rules, original ride and RSE script, animation readback, close, remove, BF4 text and GPU readback." );
 			Render.Window.SdlWindow.Close();
 		}
 	}
@@ -166,6 +201,19 @@ internal sealed class SandboxSmokeTest : IDisposable
 			Array.Copy( frame.Pixels, ((y + row) * frame.Width + x) * 4, crop, row * width * 4, width * 4 );
 		using var image = Image.LoadPixelData<Bgra32>( crop, width, height );
 		image.SaveAsPng( Path.Combine( Path.GetFullPath( "artifacts" ), "native-smoke-text.png" ) );
+	}
+
+	private static bool Throws( Action action )
+	{
+		try
+		{
+			action();
+			return false;
+		}
+		catch ( InvalidOperationException )
+		{
+			return true;
+		}
 	}
 
 	public void VerifyCompleted() => Require( completed, "complete all native smoke-test frames" );

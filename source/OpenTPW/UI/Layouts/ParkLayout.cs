@@ -16,9 +16,12 @@ public sealed class ParkLayout
 	{
 		ImGui.SetNextWindowPos( new System.Numerics.Vector2( 16, 16 ), ImGuiCond.FirstUseEver );
 		ImGui.SetNextWindowSize( new System.Numerics.Vector2( 320, 0 ), ImGuiCond.Always );
-		if ( ImGui.Begin( "OpenTPW - Jungle sandbox", ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.AlwaysAutoResize ) )
+		var original = level.OriginalPark;
+		if ( ImGui.Begin( original == null ? "OpenTPW - Jungle sandbox" : $"OpenTPW - original {original.LevelName} level (read-only import)", ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.AlwaysAutoResize ) )
 		{
 			ImGui.TextWrapped( "Original assets. The Totem runs its original RSE script; its carriage motion is a procedural stand-in, and visitors, sounds and effects are not simulated." );
+			if ( original != null )
+				DrawOriginalImport( original );
 			ImGui.Separator();
 			if ( level.PlacedRide == null )
 			{
@@ -46,13 +49,16 @@ public sealed class ParkLayout
 			ImGui.Separator();
 			try
 			{
-				if ( ImGui.Button( "Save sandbox" ) )
+				if ( original != null )
+					ImGui.TextWrapped( "Sandbox save/load is disabled here; original saves are never written." );
+				else if ( ImGui.Button( "Save sandbox" ) )
 				{
 					level.SaveSandbox();
 					errorMessage = "";
 				}
-				ImGui.SameLine();
-				if ( ImGui.Button( "Load sandbox" ) )
+				if ( original == null )
+					ImGui.SameLine();
+				if ( original == null && ImGui.Button( "Load sandbox" ) )
 				{
 					level.LoadSandbox();
 					errorMessage = "";
@@ -71,5 +77,21 @@ public sealed class ParkLayout
 			ImGui.TextWrapped( "WASD: pan | right drag: pan | wheel: zoom | Q/E: rotate | F1: editor" );
 		}
 		ImGui.End();
+	}
+
+	private static void DrawOriginalImport( OriginalPark park )
+	{
+		ImGui.Separator();
+		if ( park.Save == null )
+		{
+			ImGui.TextWrapped( "No original Easymode save for this level; terrain and MAP rules only." );
+			return;
+		}
+		ImGui.TextWrapped( $"Easymode.TPWI: {park.Save.PathCells.Count} path cells (sand tiles), {park.Save.PlacedObjects.Count} placed objects (orange footprints)." );
+		foreach ( var item in park.Save.PlacedObjects )
+			ImGui.BulletText( $"{park.DescribeObject( item.Record.InfoId )} at ({item.Record.X}, {item.Record.Y}), {item.Record.Width}x{item.Record.Height}, {item.Record.Rotation} deg" );
+		foreach ( var item in park.Save.FixedItems )
+			ImGui.BulletText( $"Fixed item: {park.DescribeObject( item.InfoId )} ({item.X}, {item.Y})" );
+		ImGui.TextWrapped( "Not imported: money, time, guests, staff, ride state, object models, path styles." );
 	}
 }

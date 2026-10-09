@@ -10,5 +10,6 @@
   </PropertyGroup>
   <ItemGroup>
     <EmbeddedResource Include="NativeBranchRules.json" LogicalName="NativeBranchRules" />
+    <EmbeddedResource Include="NativeEpochRules.json" LogicalName="NativeEpochRules" />
   </ItemGroup>
 </Project>

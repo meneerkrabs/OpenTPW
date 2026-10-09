@@ -81,3 +81,35 @@ Mac binary. The checks interpret BO 4 as branch on EQ clear, BO 12 as branch on
 EQ set, then follow the recorded destinations to build the gate truth table and
 mode routes independently of the scheduler implementation. This corrected the
 prior inverted flag-8 gate and incorrect mode-0 suppression in `a5263bb`.
+
+## Saved shared-clock epochs
+
+`SharedClockEpochs.cs` models a separate, source-proven layer: capture/save use
+adjusted scaled and unscaled words; alignment computes `saved-currentBase`
+modulo2^32; later getters add those outer offsets modulo2^32. Base inputs must
+exclude the outer offsets being replaced. Scaled base still includes native
+forced/normal selection, pause semantics and transition offset+56; unscaled
+base is its pause-aware getter. This does not serialize or reset source doubles,
+scale, pause/forced state, scheduler counters, script IDs or deadlines.
+
+`ApplyPostLoadHook` models only the decoded numeric-selector comparison: incoming
+r6==1 skips this hook, other values invoke it. Numeric load selector, GameType,
+callback state and world state are separate fields. Complete selector1 lifecycle
+and native partial-read mutations remain unqualified. Requiring exactly8 bytes
+for `SavedClockEpochs.ReadLittleEndian` is strict evidence-tool policy, not a
+claim about original I/O errors.
+
+`NativeEpochRules.json` holds decoded BO/BI/target metadata for the regression.
+Generate it with `clock_epoch_evidence.py /path/to/mac-feral/bin --contract-rules`.
+The seven new checks cover real-word re-alignment, a restored deadline63ms away,
+unsigned offset/read wrap, saturated-base outer wrap, independently decoded
+selector truth tables, retained offsets on the skip path and exact pair width.
+The project now has42 standalone checks. No live game references this module.
+
+The later selector-lifecycle witness refines the entry-route boundary: selector0
+returns after initial header processing; selector1 returns after the generic
+prefix operation, before SSEM/KOLC/TNAV and saved-script graph reading. Both
+bypass the pre/post hooks. `AppliesPostLoadAlignment` remains the local predicate
+at its qualified call site; it must not be used alone to decide whether a full
+entry route actually executes that call. No source-zero reset follows from
+these bypasses, and generic header/prefix callee mutations remain unqualified.

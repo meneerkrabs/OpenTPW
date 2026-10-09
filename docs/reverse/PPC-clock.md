@@ -1233,3 +1233,123 @@ shared saved epochs and raw deadlines; qualify initial generic/header callees,
 partial-load mutations and target-platform execution before claiming complete
 lifecycle behavior. The specific selector1 saved-clock/deadline mismatch is
 closed by its early-return control flow, without speculative enum mapping.
+
+## Calendar epoch reconciliation: funny start versus host session start
+
+The remote search hypothesis in root `docs/reverse/APPROX-TRACE.md:289`
+(root revision34c75be) says the park's funny time starts from host local date at
+calendar construction. That conflates two fields. Independent constructor,
+setter, serializer and conversion operands establish the following distinction;
+`calendar_epoch_evidence.py` reproduces it using six bounded code hashes and
+validated imports. No search-agent verdict is used as the proof.
+
+| Calendar memory field | Fresh constructor source | Conversion/restore role |
+| --- | --- | --- |
+| `+0..+7`, `mFunnyTimeStart` | Fixed civil arguments2000/1/1/00:00:00.000 | Virtual park-date base; serialized/read independently |
+| `+8..+15`, `mSessionStart` | Host local civil time from macdoze GetLocalTime | Separate session timestamp; serialized/read independently; not the base of `0xe4394` |
+| `+28`, `mFunnySecsPerRealSec` | Literal15000 | Configured multiplier, with unsigned64 **division by4** in the turn conversion |
+
+Owner construction selects member `+672` at `0x10452c` and calls constructor
+`0xe3c90` at `0x104530`. The constructor clears the two timestamps, stores
+rate15000 at `0xe3cc0`, and calls initializer **`0xe4348`** at `0xe3cc4`.
+The initializer forwards its calendar pointer unchanged as setter receiver r4
+at `0xe434c`; registers r5..r10 and the stack argument supply
+**2000,1,1,0,0,0,0** at `0xe4358..0xe4378`. The call `0xe437c` resolves full
+CFM glue `0x1c5e2c` to bullfrog `TbTimeStamp::SetTime`. It targets calendar
+`+0`, before host time is sampled.
+
+Only afterward does the constructor sample host time: `0xe3cdc` resolves glue
+`0x1c6dd4` to macdoze `GetLocalTime`. Crucially, **`0xe3cec` sets r4 to
+calendar+8**, then `0xe3cf4..0xe3d08` copy host year/month/day/hour/minute/second
+into setter arguments, with host milliseconds read at `0xe3ce4` and passed on
+the stack at `0xe3cf0`. The setter call `0xe3d0c` therefore writes the separate
+session timestamp, not the funny start.
+
+The hidden output/status pointer must not be mistaken for the timestamp
+receiver. Bullfrog setter transition vector resolves to `0x1bb50`, TOC0.
+It copies input r4 to r31 at `0x1bb58`; on successful OS conversion it writes
+the resulting timestamp to **receiver+4 / receiver+0** at `0x1bbcc/0x1bbd0`.
+Input r3 is instead the status-output address, receiving0 or−1 at
+`0x1bbd4/0x1bbe0`. Thus the two distinct r4 destinations prove actual field
+writes, not discarded temporary return values. Constructor conversion-failure
+handling and nondefault OS calendars remain separate qualification.
+
+Macdoze identity is
+`ba11331a70bce77140ae6e7fe73145fe4e13cce5f042707a494cb77654b32f0d`.
+Its GetLocalTime vector maps to `0x40f0`, TOC0. Calls `0x410c` / `0x4124`
+resolve full InterfaceLib glues to **GetDateTime** / **LongSecondsToDate**.
+The wrapper copies the resulting date fields into SYSTEMTIME and writes
+milliseconds0 at `0x4164`. That host civil path supplies `mSessionStart`.
+It does not supply the virtual-date epoch at `+0`.
+
+### Date conversion and saved-start override
+
+Conversion `0xe4394` reads configured multiplier `+28` at `0xe43d8` and the
+world counter `+0x1da70c` at `0xe43dc` after world getter `0x10a9a4`. It forms
+an unsigned64 product, divides by4 through `0x1c4100` at `0xe4404`, and scales
+seconds to timestamp units by10000000. At **`0xe4430` r4 is calendar+0** for
+timestamp-add glue `0x1c5c34` / `0xe443c`. The session field+8 is not used by
+this conversion. For default rate, each world turn contributes3750 virtual
+seconds, not15000; neither value establishes a wall-clock frame rate.
+
+Serializer `0xe3d30` ties the field operands to relocated labels at TOC
+`data:0x3350`: `mFunnyTimeStart`, `mSessionStart`, month/day caches, and rate.
+Writer operands select `+0` at `0xe3d74` and `+8` at `0xe3d98`; reader operands
+select `+0` at `0xe3e3c` and `+8` at `0xe3e60`. Owner serializer `0xd675c`
+passes its member+672. A loaded saved funny epoch can therefore replace the
+fresh constructor value: a restore must retain that saved field, rather than
+force2000 or replace it with today's host time. The observed direct initializer
+call is from the constructor; indirect or additional timestamp mutations are
+not globally ruled out.
+
+The known PC calendar candidate at decoded offset6719 independently stores:
+funny epoch **125911584000000000**, session epoch **125850128932900000**,
+month/day cache1/2, rate15000. Under the explicitly stated default Gregorian
+FILETIME interpretation, those timestamps represent **2000-01-01 00:00:00**
+and **1999-10-21 20:54:53.290** respectively. Their inequality corroborates
+the distinct fields; equality is not forbidden in other saves. The candidate
+has28 serialized bytes (two64-bit timestamps, two signed32-bit caches, one
+unsigned32-bit rate); this differs from in-memory offsets because `+24` is
+not included in that serialized sequence. The Mac host wrapper's zero
+milliseconds also means the PC session fraction must not be used to claim
+identical platform capture behavior.
+
+The witness exposes only epoch/seconds conversion terms, not an OS-independent
+civil-date implementation or unlimited timestamp-overflow behavior. World
+turn755 and rate15000 give **2831250** added virtual seconds. The calendar
+candidate's complete preceding player framing remains the save lane's separate
+proof obligation; this is not a generally usable calendar importer.
+
+### Distinct clock domains and verdict
+
+RSE YEAR/MONTH/DAY/HOUR remain the separately proved host `time/localtime` chain
+(`0xb2144..0xb2250`, C runtime GetDateTime), not this virtual-date conversion.
+The shared SSEM millisecond epoch and saved VM deadlines likewise are not either
+of these calendar timestamps. Host session start, host civil RSE fields,
+virtual park-date start and shared elapsed-clock words are different fields
+with different consumers.
+
+The hypothesis's **host-local origin for funny time is refuted** for the normal
+constructor path by the destination operands. Its broader observation that
+month boundaries use the timestamp/OS civil conversion still needs the existing
+OS-environment qualification; refuting the origin does not prove a fixed30-day
+month. The older APPROX-TRACE row also omits divisor4 and relies on a direct-call
+"online-only" increment claim already corrected by scheduler evidence. Those
+source claims must be reconciled separately from search verdict labels.
+
+Validation: **69/69** clock Python tests with original PEF and PC fixtures enabled,
+zero skips. Eight new groups cover separate timestamp fields, session changes
+not affecting conversion input, retained custom saved epoch, divide-by4 and
+zero-rate arithmetic terms, invalid register/timestamp domains, truncated and
+unaligned candidate spans, and both original-input witnesses. Six source hashes,
+full import-glue validation, constructor/caller/serializer operands and actual
+saved fields pass. Python compilation and whitespace checks pass. No production
+clock, calendar, register, source assets or raw instructions changed.
+
+```sh
+python3 tools/ppc-analysis/lanes/clock/calendar_epoch_evidence.py /path/to/mac-feral/bin --save /path/to/Easymode.TPWI
+```
+
+Remaining: native OS conversion failure/nondefault calendar behavior, any
+untraced epoch mutation paths, complete player/save framing and target-PC
+execution. These gaps do not turn the session timestamp into the funny epoch.

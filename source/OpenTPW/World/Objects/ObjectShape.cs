@@ -23,6 +23,9 @@ public enum ObjectCellKind
 	Overlay
 }
 
+/// <summary>An entrance or exit cell of a placed object and the adjacent outside cell (queue end or path).</summary>
+public readonly record struct ObjectAccessPoint( ObjectCellKind Kind, int X, int Y, int OutsideX, int OutsideY );
+
 /// <summary>One footprint cell: local shape coordinates and its kind.</summary>
 public readonly record struct ObjectShapeCell( int U, int V, ObjectCellKind Kind, char Symbol );
 
@@ -71,7 +74,8 @@ public sealed class ObjectShape
 	public static ObjectCellKind Classify( char symbol ) => symbol switch
 	{
 		'.' or ' ' => ObjectCellKind.Free,
-		'*' => ObjectCellKind.Occupied,
+		// 'W' occurs once, in the bonus Snake ride ("****/W***/..."); its meaning is unknown, it is treated as occupied.
+		'*' or 'W' => ObjectCellKind.Occupied,
 		'2' => ObjectCellKind.Entrance,
 		'S' or 'N' or 'E' => ObjectCellKind.Exit,
 		'<' or '>' => ObjectCellKind.TrackConnection,
@@ -114,15 +118,45 @@ public static class ObjectFootprint
 		_ => throw new ArgumentOutOfRangeException( nameof( rotation ), "Rotations are multiples of 90 degrees." )
 	};
 
-	/// <summary>Grid direction an entrance at rotation 0 opens to (−Y), turned by <paramref name="rotation"/>.</summary>
-	public static (int X, int Y) FrontDirection( int rotation ) => rotation switch
+	/// <summary>Turns a local direction (du, dv) like <see cref="ToGrid(int,int,int,int,int)"/> turns offsets.</summary>
+	public static (int X, int Y) RotateDirection( int rotation, int du, int dv ) => rotation switch
 	{
-		0 => (0, -1),
-		90 => (-1, 0),
-		180 => (0, 1),
-		270 => (1, 0),
+		0 => (du, dv),
+		90 => (dv, -du),
+		180 => (-du, -dv),
+		270 => (-dv, du),
 		_ => throw new ArgumentOutOfRangeException( nameof( rotation ) )
 	};
+
+	/// <summary>
+	/// Local direction from an edge cell to the outside: the first/last row (−V/+V) before the first/last column.
+	/// Verified for Easymode entrances on the first row (queue/path at −V) and the Belly Bounce exit on the last
+	/// row (path at +V); other edges are inferred.
+	/// </summary>
+	public static (int U, int V) OutwardDirection( ObjectShape shape, ObjectShapeCell cell )
+	{
+		if ( cell.V == 0 )
+			return (0, -1);
+		if ( cell.V == shape.Height - 1 )
+			return (0, 1);
+		if ( cell.U == 0 )
+			return (-1, 0);
+		if ( cell.U == shape.Width - 1 )
+			return (1, 0);
+		return (0, -1);
+	}
+
+	/// <summary>Entrance and exit cells on the grid with the outside cell a queue or path joins.</summary>
+	public static IEnumerable<ObjectAccessPoint> GetAccessPoints( ObjectShape shape, int anchorX, int anchorY, int rotation )
+	{
+		foreach ( var cell in shape.Cells.Where( cell => cell.Kind is ObjectCellKind.Entrance or ObjectCellKind.Exit ) )
+		{
+			var (x, y) = ToGrid( anchorX, anchorY, rotation, cell.U, cell.V );
+			var (du, dv) = OutwardDirection( shape, cell );
+			var (dx, dy) = RotateDirection( rotation, du, dv );
+			yield return new ObjectAccessPoint( cell.Kind, x, y, x + dx, y + dy );
+		}
+	}
 
 	public static IEnumerable<(int X, int Y, ObjectShapeCell Cell)> GetCells( ObjectShape shape, int anchorX, int anchorY, int rotation )
 	{

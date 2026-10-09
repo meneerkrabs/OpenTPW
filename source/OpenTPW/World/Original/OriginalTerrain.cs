@@ -4,9 +4,9 @@ namespace OpenTPW;
 
 /// <summary>
 /// Renders an imported original level: the base.MD2 terrain meshes (node transforms composed up the
-/// hierarchy), the heightfield surface with its per-cell ground texture slot, and debug overlays for
-/// imported path cells (TCT PathTex entry 0) and placed-object footprints (flat colour). Overlays mark
-/// verified positions only; path orientation/variants and object models are not reproduced.
+/// hierarchy), the heightfield surface with its per-cell ground texture slot, and a debug overlay for
+/// imported path cells (TCT PathTex entry 0); path orientation/variants are not reproduced. Placed
+/// objects are drawn with their original models by <see cref="ParkObjects"/>, not as footprint markers.
 /// </summary>
 public sealed class OriginalTerrain : Entity
 {
@@ -40,7 +40,6 @@ public sealed class OriginalTerrain : Entity
 		var slots = new List<Texture>();
 		var slotIndices = new Dictionary<int, int>();
 		var pathSlot = AddSlot( slots, LoadPathTexture( textures ) );
-		var footprintSlot = AddSlot( slots, new Texture( new byte[] { 230, 140, 40, 255 }, 1, 1 ) );
 		var vertices = new List<Vertex>();
 		var indices = new List<uint>();
 		for ( var y = 0; y < field.CellCountZ; y++ )
@@ -53,8 +52,6 @@ public sealed class OriginalTerrain : Entity
 				int slot;
 				if ( IsPath( x, y ) )
 					slot = pathSlot;
-				else if ( Park.Save?.IsOccupiedByObject( x, y ) == true )
-					slot = footprintSlot;
 				else if ( !slotIndices.TryGetValue( modelSlot, out slot ) )
 				{
 					if ( slots.Count >= MaximumTextureSlots || modelSlot >= Park.TerrainModel.Textures.Count )

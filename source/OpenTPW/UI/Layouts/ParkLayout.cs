@@ -5,12 +5,14 @@ namespace OpenTPW.UI;
 public sealed class ParkLayout
 {
 	private readonly Level level;
+	private readonly ObjectBuildPanel buildPanel;
 	private string errorMessage = "";
 	private readonly DisplaySettingsPanel displayPanel = new();
 
 	public ParkLayout( Level level )
 	{
 		this.level = level;
+		buildPanel = new ObjectBuildPanel( level );
 	}
 
 	public void Draw()
@@ -20,7 +22,7 @@ public sealed class ParkLayout
 		var original = level.OriginalPark;
 		if ( ImGui.Begin( original == null ? "OpenTPW - Jungle sandbox" : $"OpenTPW - original {original.LevelName} level (read-only import)", ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.AlwaysAutoResize ) )
 		{
-			ImGui.TextWrapped( "Original assets. The Totem runs its original RSE script; its carriage motion is a procedural stand-in, and visitors, sounds and effects are not simulated." );
+			ImGui.TextWrapped( "Original assets. Every object runs its original RSE script and plays its original animations; visitors, sounds, particles and ride controllers (coasters, karts, tours) are not simulated." );
 			if ( original != null )
 				DrawOriginalImport( original );
 			ImGui.Separator();
@@ -47,6 +49,7 @@ public sealed class ParkLayout
 				if ( ImGui.Button( "Remove ride" ) )
 					level.RemoveRide();
 			}
+			buildPanel.Draw();
 			ImGui.Separator();
 			try
 			{
@@ -89,11 +92,11 @@ public sealed class ParkLayout
 			ImGui.TextWrapped( "No original Easymode save for this level; terrain and MAP rules only." );
 			return;
 		}
-		ImGui.TextWrapped( $"Easymode.TPWI: {park.Save.PathCells.Count} path cells (sand tiles), {park.Save.PlacedObjects.Count} placed objects (orange footprints)." );
+		ImGui.TextWrapped( $"Easymode.TPWI: {park.Save.PathCells.Count} path cells (sand tiles), {park.Save.PlacedObjects.Count} placed objects (original models)." );
 		foreach ( var item in park.Save.PlacedObjects )
 			ImGui.BulletText( $"{park.DescribeObject( item.Record.InfoId )} at ({item.Record.X}, {item.Record.Y}), {item.Record.Width}x{item.Record.Height}, {item.Record.Rotation} deg" );
 		foreach ( var item in park.Save.FixedItems )
 			ImGui.BulletText( $"Fixed item: {park.DescribeObject( item.InfoId )} ({item.X}, {item.Y})" );
-		ImGui.TextWrapped( "Not imported: money, time, guests, staff, ride state, object models, path styles." );
+		ImGui.TextWrapped( "Not imported: money, time, guests, staff, ride state (imported objects start open), path styles." );
 	}
 }

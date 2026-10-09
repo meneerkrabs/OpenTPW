@@ -68,7 +68,9 @@ public sealed class ObjectSettingsFile
 	public IReadOnlyDictionary<string, string> Values => values;
 	public IReadOnlyDictionary<string, IReadOnlyList<string>> Blocks => blocks;
 
-	public static ObjectSettingsFile Load( string path ) => new( FileSystem.ReadAllText( path ), path );
+	public static ObjectSettingsFile Load( string path ) => Load( FileSystem, path );
+
+	public static ObjectSettingsFile Load( BaseFileSystem fileSystem, string path ) => new( fileSystem.ReadAllText( path ), path );
 }
 
 /// <summary>

@@ -22,6 +22,14 @@ public sealed record ObjectUpgradeLevel( int Level, IReadOnlyDictionary<string, 
 }
 
 /// <summary>
+/// Economy-relevant raw .sam values: build cost (<c>Upgrades[0].CostOfUpgrade</c>), initial price per use and
+/// cost of goods (shops/sideshows), sideshow chance of losing, and every upgrade level (CostOfUpgrade,
+/// CostOfResearch, InitCapacity, InitDuration, WearRate, QueueWaitTimeConstant, ...). No upkeep field exists
+/// in the object files; running costs must come from other evidence.
+/// </summary>
+public sealed record ObjectEconomyInfo( int BuildCost, int? PricePerUse, int? CostOfGoods, int? ChanceOfLosing, IReadOnlyList<ObjectUpgradeLevel> Upgrades );
+
+/// <summary>
 /// One original object (ride, shop, sideshow, feature, fixed item or track upgrade) of a theme, built from
 /// its WAD archive and .sam layers. Values are raw original data; see docs/OBJECTS.md for what is verified.
 /// </summary>
@@ -29,8 +37,10 @@ public sealed class ObjectCatalogEntry
 {
 	internal ObjectCatalogEntry( string theme, ObjectCategory category, string archivePath, ObjectSettings settings, ObjectShape shape,
 		string modelPath, string? previewModelPath, string? scriptPath, IReadOnlyList<string> scripts, IReadOnlyList<ObjectAnimationFile> animations,
-		IReadOnlyList<string> auxiliaryModels, IReadOnlyList<string> allModels )
+		IReadOnlyList<string> auxiliaryModels, IReadOnlyList<string> allModels, BaseFileSystem fileSystem, int? bonusNumber )
 	{
+		FileSystem = fileSystem;
+		BonusNumber = bonusNumber;
 		Theme = theme;
 		Category = category;
 		ArchivePath = archivePath;
@@ -62,6 +72,11 @@ public sealed class ObjectCatalogEntry
 
 	private static readonly Regex UpgradeKey = new( @"^Upgrades\[(\d+)\]\.(.+)$", RegexOptions.CultureInvariant );
 
+	/// <summary>File system the archive is read from: the game data or the bonus-content root.</summary>
+	public BaseFileSystem FileSystem { get; }
+	/// <summary>The N of a bonus archive <c>_name_N</c> (official bonus content), else null.</summary>
+	public int? BonusNumber { get; }
+	public bool IsBonus => BonusNumber != null;
 	public string Theme { get; }
 	public ObjectCategory Category { get; }
 	/// <summary>Data-root-relative archive path, e.g. <c>/levels/jungle/rides/totem</c>.</summary>
@@ -72,7 +87,10 @@ public sealed class ObjectCatalogEntry
 	public int InfoId { get; }
 	/// <summary>The designers' English <c>Info.Name</c> from the .sam.</summary>
 	public string SettingsName { get; }
-	/// <summary>OBJECT_NAMES text when <see cref="ObjectNameIndex"/> resolved, else <see cref="SettingsName"/>.</summary>
+	/// <summary>
+	/// OBJECT_NAMES text when <see cref="ObjectNameIndex"/> resolved; for bonus objects the <c>NAME</c> of the
+	/// archive's &lt;language&gt;.txt (English as fallback); else <see cref="SettingsName"/>.
+	/// </summary>
 	public string DisplayName { get; internal set; }
 	/// <summary>Index of the first OBJECT_NAMES entry of this object (names may span two entries), or null.</summary>
 	public int? ObjectNameIndex { get; internal set; }
@@ -112,6 +130,34 @@ public sealed class ObjectCatalogEntry
 
 	public ObjectAnimationFile? ResolveAnimation( int animation, int variant ) => ObjectAnimations.Resolve( Animations, animation, variant );
 
+	/// <summary>
+	/// Build-menu preview clip: <c>Info.PreviewAnimType</c> ("m" = main loop) and <c>Info.PreviewAnimNum</c> on the
+	/// preview model (<c>Ptotemm</c>, <c>Pspiderm1</c>, <c>PlookoutM</c>), or null.
+	/// </summary>
+	public string? PreviewAnimationPath
+	{
+		get
+		{
+			if ( PreviewModelPath == null )
+				return null;
+			var type = Settings["Info.PreviewAnimType"];
+			var letter = string.IsNullOrEmpty( type ) ? 'm' : char.ToLowerInvariant( type[0] );
+			var animation = ObjectAnimations.GetAnimation( letter );
+			if ( animation == null )
+				return null;
+			var clips = ObjectAnimations.Find( Path.GetFileNameWithoutExtension( PreviewModelPath ), Models );
+			return ObjectAnimations.Resolve( clips, animation.Value, Math.Max( 0, Settings.GetInt( "Info.PreviewAnimNum", 1 ) - 1 ) )?.Path;
+		}
+	}
+
+	/// <summary>Raw economy values for the economy slice (no rules are applied here).</summary>
+	public ObjectEconomyInfo Economy => new(
+		BuildCost,
+		Settings.Has( "UsageInfo.InitPricePerUse" ) ? Settings.GetInt( "UsageInfo.InitPricePerUse" ) : null,
+		Settings.Has( "UsageInfo.InitCostOfGoods" ) ? Settings.GetInt( "UsageInfo.InitCostOfGoods" ) : null,
+		Settings.Has( "UsageInfo.InitChanceOfLoosing" ) ? Settings.GetInt( "UsageInfo.InitChanceOfLoosing" ) : null,
+		Upgrades );
+
 	public override string ToString() => $"{InfoId} {DisplayName} ({Theme}/{Category}/{ArchiveName})";
 }
 
@@ -133,6 +179,63 @@ public sealed class ObjectCatalog
 	};
 
 	private static readonly Dictionary<string, ObjectCatalog> cache = new( StringComparer.OrdinalIgnoreCase );
+	private static readonly Regex BonusArchive = new( @"^(?<stem>_.+)_(?<number>\d+)$", RegexOptions.CultureInvariant );
+	private static string? bonusDataRoot;
+	private static bool bonusFromEnvironment = true;
+
+	/// <summary>
+	/// Optional official bonus-content directory (read-only), from <c>--bonus-data</c> or <c>OPENTPW_BONUS_DATA</c>.
+	/// It may point at the directory containing <c>levels</c> or any parent up to two levels above it. Its
+	/// <c>levels/&lt;theme&gt;/&lt;category&gt;/_name_N.wad</c> archives are merged into the catalogs as if they were
+	/// dropped into the game's Data directories.
+	/// </summary>
+	public static string? BonusDataRoot
+	{
+		get
+		{
+			if ( bonusFromEnvironment )
+			{
+				var value = Environment.GetEnvironmentVariable( "OPENTPW_BONUS_DATA" );
+				return string.IsNullOrWhiteSpace( value ) ? null : value;
+			}
+			return bonusDataRoot;
+		}
+		set
+		{
+			bonusDataRoot = string.IsNullOrWhiteSpace( value ) ? null : value;
+			bonusFromEnvironment = false;
+		}
+	}
+
+	/// <summary>Finds the directory that contains <c>levels</c> (case-insensitive) at or below <paramref name="root"/>.</summary>
+	public static string? FindBonusLevelsParent( string root )
+	{
+		if ( !Directory.Exists( root ) )
+			return null;
+		var pending = new List<string> { root };
+		for ( var depth = 0; depth <= 2 && pending.Count > 0; depth++ )
+		{
+			foreach ( var directory in pending )
+			{
+				if ( Directory.EnumerateDirectories( directory ).Any( child => string.Equals( Path.GetFileName( child ), "levels", StringComparison.OrdinalIgnoreCase ) ) )
+					return directory;
+			}
+			pending = pending.SelectMany( Directory.EnumerateDirectories ).ToList();
+		}
+		return null;
+	}
+
+	private static BaseFileSystem? OpenBonusFileSystem()
+	{
+		var root = BonusDataRoot;
+		if ( root == null )
+			return null;
+		var parent = FindBonusLevelsParent( Path.GetFullPath( root ) )
+			?? throw new DirectoryNotFoundException( $"Bonus content directory '{root}' does not contain a levels directory." );
+		var fileSystem = new BaseFileSystem( parent );
+		fileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
+		return fileSystem;
+	}
 	private readonly Dictionary<int, ObjectCatalogEntry> byId;
 
 	private ObjectCatalog( string theme, IReadOnlyList<ObjectCatalogEntry> entries )
@@ -155,32 +258,63 @@ public sealed class ObjectCatalog
 	{
 		if ( string.IsNullOrWhiteSpace( theme ) || theme.IndexOfAny( new[] { '/', '\\', '.' } ) >= 0 )
 			throw new ArgumentException( "Themes are plain level directory names such as 'jungle'.", nameof( theme ) );
-		var key = $"{FileSystem.GetAbsolutePath( "/" )}|{theme}";
+		var key = $"{FileSystem.GetAbsolutePath( "/" )}|{BonusDataRoot}|{theme}";
 		lock ( cache )
 		{
 			if ( cache.TryGetValue( key, out var cached ) )
 				return cached;
-			var catalog = new ObjectCatalog( theme, LoadEntries( theme ) );
+			var entries = LoadEntries( theme, FileSystem, null );
+			var bonus = OpenBonusFileSystem();
+			if ( bonus != null )
+			{
+				foreach ( var entry in LoadEntries( theme, bonus, FileSystem ) )
+				{
+					if ( entries.Any( existing => existing.InfoId == entry.InfoId ) )
+						Log?.Warning( $"Bonus object {entry.ArchivePath} reuses Info.Id {entry.InfoId}; it is skipped." );
+					else
+						entries.Add( entry );
+				}
+			}
+			var catalog = new ObjectCatalog( theme, entries );
 			ObjectNames.Apply( catalog );
 			cache[key] = catalog;
 			return catalog;
 		}
 	}
 
-	private static List<ObjectCatalogEntry> LoadEntries( string theme )
+	/// <summary>
+	/// Reads the archives of <paramref name="fileSystem"/>. Category defaults (Rides.sam, ...) always come from
+	/// <paramref name="defaultsFileSystem"/> (the game data) when given: bonus archives are made to be dropped
+	/// next to them. Directory names are matched case-insensitively.
+	/// </summary>
+	private static List<ObjectCatalogEntry> LoadEntries( string theme, BaseFileSystem fileSystem, BaseFileSystem? defaultsFileSystem )
 	{
 		var entries = new List<ObjectCatalogEntry>();
+		var defaultsSource = defaultsFileSystem ?? fileSystem;
 		foreach ( var (directory, category, defaultsName) in CategoryDirectories )
 		{
-			var categoryPath = $"/levels/{theme}/{directory}";
-			if ( !FileSystem.DirectoryExists( categoryPath ) )
+			var categoryPath = FindDirectory( fileSystem, "/levels", theme ) is { } themePath ? FindDirectory( fileSystem, themePath, directory ) : null;
+			if ( categoryPath == null )
 				continue;
-			var defaults = FileSystem.GetFiles( categoryPath ).Select( ToRelative )
-				.FirstOrDefault( file => string.Equals( Path.GetFileName( file ), defaultsName, StringComparison.OrdinalIgnoreCase ) );
-			var defaultLayer = defaults == null ? null : ObjectSettingsFile.Load( defaults );
-			foreach ( var archive in FileSystem.GetDirectories( categoryPath ).Select( ToRelative ).OrderBy( path => path, StringComparer.OrdinalIgnoreCase ) )
+			var defaultsDirectory = defaultsFileSystem == null ? categoryPath : $"/levels/{theme}/{directory}";
+			var defaults = defaultsSource.DirectoryExists( defaultsDirectory )
+				? defaultsSource.GetFiles( defaultsDirectory ).Select( file => Relative( defaultsSource, file ) )
+					.FirstOrDefault( file => string.Equals( Path.GetFileName( file ), defaultsName, StringComparison.OrdinalIgnoreCase ) )
+				: null;
+			var defaultLayer = defaults == null ? null : ObjectSettingsFile.Load( defaultsSource, defaults );
+			foreach ( var archive in fileSystem.GetDirectories( categoryPath ).Select( file => Relative( fileSystem, file ) ).OrderBy( path => path, StringComparer.OrdinalIgnoreCase ) )
 			{
-				var entry = LoadEntry( theme, category, archive, defaultLayer );
+				ObjectCatalogEntry? entry;
+				try
+				{
+					entry = LoadEntry( theme, category, archive, defaultLayer, fileSystem );
+				}
+				catch ( Exception exception ) when ( defaultsFileSystem != null && exception is InvalidDataException or IOException )
+				{
+					// A broken bonus archive must not take the game's own catalog down.
+					Log?.Warning( $"Bonus object archive {archive} is skipped: {exception.Message}" );
+					continue;
+				}
 				if ( entry != null )
 					entries.Add( entry );
 			}
@@ -191,10 +325,30 @@ public sealed class ObjectCatalog
 		return entries;
 	}
 
-	private static ObjectCatalogEntry? LoadEntry( string theme, ObjectCategory category, string archive, ObjectSettingsFile? defaults )
+	private static string? FindDirectory( BaseFileSystem fileSystem, string parent, string name )
 	{
-		var files = FileSystem.GetFiles( archive ).Select( ToRelative ).ToArray();
+		if ( fileSystem.DirectoryExists( $"{parent}/{name}" ) )
+			return $"{parent}/{name}";
+		if ( !fileSystem.DirectoryExists( parent ) )
+			return null;
+		return fileSystem.GetDirectories( parent ).Select( directory => Relative( fileSystem, directory ) )
+			.FirstOrDefault( directory => string.Equals( Path.GetFileName( directory ), name, StringComparison.OrdinalIgnoreCase ) );
+	}
+
+	private static string Relative( BaseFileSystem fileSystem, string entry ) => fileSystem.GetRelativePath( fileSystem.GetAbsolutePath( entry ) );
+
+	private static ObjectCatalogEntry? LoadEntry( string theme, ObjectCategory category, string archive, ObjectSettingsFile? defaults, BaseFileSystem fileSystem )
+	{
+		var files = fileSystem.GetFiles( archive ).Select( file => Relative( fileSystem, file ) ).ToArray();
 		var name = Path.GetFileName( archive );
+		// Official bonus archives are named _name_N (N = bonus number); their members use _name.
+		int? bonusNumber = null;
+		var bonusMatch = BonusArchive.Match( name );
+		if ( bonusMatch.Success && !files.Any( file => string.Equals( Path.GetFileNameWithoutExtension( file ), name, StringComparison.OrdinalIgnoreCase ) && file.EndsWith( ".md2", StringComparison.OrdinalIgnoreCase ) ) )
+		{
+			bonusNumber = int.Parse( bonusMatch.Groups["number"].Value, CultureInfo.InvariantCulture );
+			name = bonusMatch.Groups["stem"].Value;
+		}
 		ObjectSettingsFile? main = null;
 		var shared = new List<ObjectSettingsFile>();
 		foreach ( var file in files.Where( file => file.EndsWith( ".sam", StringComparison.OrdinalIgnoreCase ) ) )
@@ -203,7 +357,7 @@ public sealed class ObjectCatalog
 			// Difficulty (Easy_) and online (Online_) overlays are not part of the standard game settings.
 			if ( fileName.StartsWith( "Easy_", StringComparison.OrdinalIgnoreCase ) || fileName.StartsWith( "Online_", StringComparison.OrdinalIgnoreCase ) )
 				continue;
-			var layer = ObjectSettingsFile.Load( file );
+			var layer = ObjectSettingsFile.Load( fileSystem, file );
 			if ( layer.Values.ContainsKey( "Info.Id" ) )
 			{
 				if ( main != null )
@@ -248,7 +402,10 @@ public sealed class ObjectCatalog
 			if ( candidates.Length == 1 )
 				script = candidates[0];
 		}
-		return new ObjectCatalogEntry( theme, category, archive, settings, shape, model, preview, script, scripts, animations, auxiliary, models );
+		var entry = new ObjectCatalogEntry( theme, category, archive, settings, shape, model, preview, script, scripts, animations, auxiliary, models, fileSystem, bonusNumber );
+		if ( bonusNumber != null )
+			entry.DisplayName = BonusNames.Read( entry ) ?? entry.SettingsName;
+		return entry;
 	}
 
 	// Entries inside archives come back data-root-relative, loose entries absolute.
@@ -273,7 +430,7 @@ public static class ObjectNames
 		if ( english == null )
 			return;
 		var localized = GameLanguage.IsSelected ? TryLoadCurrent() ?? english : english;
-		foreach ( var (entry, index, length) in Match( catalog.Entries, english ) )
+		foreach ( var (entry, index, length) in Match( catalog.Entries.Where( entry => !entry.IsBonus ).ToList(), english ) )
 		{
 			entry.ObjectNameIndex = index;
 			entry.ObjectNameLength = length;
@@ -365,5 +522,78 @@ public static class ObjectNames
 		{
 			return null;
 		}
+	}
+}
+
+/// <summary>
+/// Names of official bonus objects. They are not in OBJECT_NAMES; each archive ships one UTF-16 text file per
+/// language (<c>english.txt</c>, <c>German.txt</c>, ...) with <c>NAME</c>, <c>SIGNA</c> and <c>SIGNB</c>
+/// sections (the name and the two sign texts). The selected language is used, then English; a missing or
+/// unreadable file yields null and the caller keeps the .sam name.
+/// </summary>
+public static class BonusNames
+{
+	public static string? Read( ObjectCatalogEntry entry, string? language = null )
+	{
+		language ??= GameLanguage.IsSelected ? GameLanguage.Current.Name : GameLanguage.DefaultLanguage;
+		try
+		{
+			var files = entry.FileSystem.GetFiles( entry.ArchivePath ).Where( file => file.EndsWith( ".txt", StringComparison.OrdinalIgnoreCase ) ).ToArray();
+			foreach ( var wanted in new[] { language, GameLanguage.DefaultLanguage } )
+			{
+				var file = files.FirstOrDefault( candidate => string.Equals( Path.GetFileNameWithoutExtension( candidate ), wanted, StringComparison.OrdinalIgnoreCase ) );
+				if ( file == null )
+					continue;
+				var bytes = entry.FileSystem.ReadAllBytes( entry.FileSystem.GetRelativePath( entry.FileSystem.GetAbsolutePath( file ) ) );
+				var name = Parse( bytes ).GetValueOrDefault( "NAME" );
+				if ( !string.IsNullOrWhiteSpace( name ) )
+					return name;
+			}
+		}
+		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or ArgumentException or DecoderFallbackException )
+		{
+			Log?.Warning( $"Bonus object {entry.ArchivePath} name could not be read: {exception.Message}" );
+		}
+		return null;
+	}
+
+	/// <summary>Sections of a bonus text file: a section name line followed by its text line(s) up to a blank line.</summary>
+	public static IReadOnlyDictionary<string, string> Parse( byte[] bytes )
+	{
+		var text = bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE ? Encoding.Unicode.GetString( bytes, 2, bytes.Length - 2 )
+			: bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF ? Encoding.BigEndianUnicode.GetString( bytes, 2, bytes.Length - 2 )
+			: Encoding.Latin1.GetString( bytes );
+		var sections = new Dictionary<string, string>( StringComparer.OrdinalIgnoreCase );
+		string? current = null;
+		var lines = new List<string>();
+		void Close()
+		{
+			if ( current != null )
+				sections[current] = string.Join( "\n", lines ).Trim();
+			lines.Clear();
+		}
+		foreach ( var raw in text.Replace( "\r\n", "\n" ).Split( '\n' ) )
+		{
+			var line = raw.TrimEnd( '\r', '\0' );
+			if ( current == null || (lines.Count == 0 && line.Length == 0) )
+			{
+				if ( line.Trim().Length == 0 )
+					continue;
+				if ( current == null )
+				{
+					current = line.Trim();
+					continue;
+				}
+			}
+			if ( line.Trim().Length == 0 )
+			{
+				Close();
+				current = null;
+				continue;
+			}
+			lines.Add( line.Trim() );
+		}
+		Close();
+		return sections;
 	}
 }

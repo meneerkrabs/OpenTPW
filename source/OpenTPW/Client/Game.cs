@@ -78,6 +78,12 @@ internal static class Game
 		}
 		if ( GameLanguage.IsSelected )
 			Log.Trace( $"Language: {GameLanguage.Current}" );
+		// Official bonus objects (docs/OBJECTS.md): --bonus-data, else OPENTPW_BONUS_DATA.
+		var bonusData = GetOption( args, "--bonus-data", "the extracted official bonus content directory" );
+		if ( bonusData != null )
+			ObjectCatalog.BonusDataRoot = bonusData;
+		if ( ObjectCatalog.BonusDataRoot != null )
+			Log.Trace( $"Bonus content: {ObjectCatalog.BonusDataRoot}" );
 		var modelIndex = Array.IndexOf( args, "--inspect-model" );
 		if ( modelIndex >= 0 )
 		{

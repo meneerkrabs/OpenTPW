@@ -185,6 +185,7 @@ internal static class Game
 			throw new ArgumentException( "--load-original-level requires a level name such as 'jungle'." );
 		// Default: the original-style front end (docs/UI.md). --load-original-level, --sandbox and a
 		// plain --smoke-test bypass it as before; --front-end --smoke-test tests the front end.
+		GameAudio.Enabled = !args.Contains( "--mute" );
 		using var flow = new GameFlow { OnlineFolders = onlineFolders };
 		var capturePath = GetOption( args, "--capture-world", "a .png file for the world-only screenshot" );
 		var smoke = args.Contains( "--smoke-test" );
@@ -464,10 +465,13 @@ internal static class Game
 		var model = GetOption( args, "--upscale-model", "a Real-ESRGAN model name such as realesrgan-x4plus" ) ?? "realesrgan-x4plus";
 		var packDirectory = GetOption( args, "--texture-pack-dir", "a directory for the texture pack" ) ?? TexturePack.DefaultPackDirectory();
 		var subtree = GetOption( args, "--texture-pack-subtree", "a data-relative directory such as levels/jungle" ) ?? "";
-		var options = new TexturePackBuildOptions { Subtree = subtree };
-		Log.Trace( $"Building texture pack from {dataDirectory}{(subtree.Length > 0 ? $"/{subtree}" : "")} into {packDirectory}." );
+		// Interface art uses a model suited to drawn art; --texture-pack-no-interface keeps it original.
+		var interfaceModel = GetOption( args, "--interface-model", "a Real-ESRGAN model name for interface art" ) ?? "realesrgan-x4plus-anime";
+		var interfaceUpscaler = args.Contains( "--texture-pack-no-interface" ) ? null : new RealEsrganUpscaler( upscaler, interfaceModel );
+		var options = new TexturePackBuildOptions { Subtree = subtree, InterfaceOnly = args.Contains( "--texture-pack-interface-only" ), Merge = args.Contains( "--texture-pack-merge" ) };
+		Log.Trace( $"Building texture pack from {dataDirectory}{(subtree.Length > 0 ? $"/{subtree}" : "")} into {packDirectory}{(options.Merge ? " (merging)" : "")}." );
 		var manifest = TexturePackBuilder.Build( TexturePackBuilder.EnumerateGameTextures( dataDirectory, subtree ), packDirectory,
-			new RealEsrganUpscaler( upscaler, model ), options, message => Log.Trace( message ) );
+			new RealEsrganUpscaler( upscaler, model ), options, message => Log.Trace( message ), interfaceUpscaler );
 		Log.Trace( $"Done: {manifest.Textures} textures at {manifest.Scale}x. Turn on Enhanced textures in Game Options (or set EnhancedTextures in graphics.json)." );
 		if ( !string.Equals( Path.GetFullPath( packDirectory ), Path.GetFullPath( TexturePack.DefaultPackDirectory() ), StringComparison.Ordinal ) )
 			Log.Warning( $"The game only loads the pack at {TexturePack.DefaultPackDirectory()}; use this one with OPENTPW_TEXTURE_PACK={Path.Combine( packDirectory, TexturePack.TexturesDirectoryName )}." );

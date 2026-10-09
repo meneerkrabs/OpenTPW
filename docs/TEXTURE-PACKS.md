@@ -28,8 +28,14 @@ neither ships nor downloads the upscaler.
    Options: `--upscale-model <name>` (default `realesrgan-x4plus`), `--texture-pack-dir <dir>`
    (default `<config>/texture-packs/enhanced`, next to `display.json`; on macOS
    `~/Library/Application Support/OpenTPW`), `--texture-pack-subtree <data-relative dir>`
-   (e.g. `levels/jungle`, for a quick trial). The game itself only loads the default
-   location; a pack built elsewhere is used with `OPENTPW_TEXTURE_PACK=<dir>/textures`.
+   (e.g. `levels/jungle`, for a quick trial), `--interface-model <name>` (default
+   `realesrgan-x4plus-anime`, for interface art), `--texture-pack-no-interface` (keep interface
+   art original), `--texture-pack-interface-only` (build only interface art) and
+   `--texture-pack-merge` (keep the existing pack's textures and add or replace the ones built
+   now). To add interface art to a pack built before interface art was supported:
+   `--build-texture-pack --upscaler … --texture-pack-interface-only --texture-pack-merge`.
+   The game itself only loads the default location; a pack built elsewhere is used with
+   `OPENTPW_TEXTURE_PACK=<dir>/textures`.
 3. Turn on **Game Options → Enhanced textures** (or set `"EnhancedTextures": true` in
    `graphics.json`) and restart the game. Without a pack the row shows "No pack built" and
    cannot be turned on.
@@ -43,14 +49,21 @@ moving the new pack into place fails, the previous one is moved back.
 
 - Reads every `.wct` in the installation's WADs and keeps the game path the engine loads it
   by (lower case), e.g. `levels/jungle/terrain/textures/jgr_bas1.wct`.
-- Keeps these original: interface art (`ui/`, pixel art drawn at integer scales), the
-  low-detail `stexture`/`ssharete` variants, textures whose smaller side is below 32 pixels
-  (too little detail to upscale) and textures containing exact magenta (255,0,255), which
-  the renderer may treat as a chroma key.
+- Keeps these original: the low-detail `stexture`/`ssharete` variants (also `ui/stexture`),
+  fonts, textures whose smaller side is below 32 pixels (too little detail to upscale) and
+  world textures containing exact magenta (255,0,255), which the renderer may treat as a
+  chroma key.
+- Upscales interface art (`ui/textures`: buttons, panels, frames, icons) with a separate model,
+  `realesrgan-x4plus-anime` by default: it is drawn art with flat colours and hard outlines, where
+  the photographic model softens edges. Interface textures carry real alpha after decoding; the
+  model keeps it. They are edge-padded (border pixels repeated) instead of wrap-padded, because a
+  UI texture is an atlas of separate pieces (the two ends of `purple_button`, the parts of a
+  panel), not a tile. The UI loader (`UiImages`) checks the pack like `Texture` does; model UVs
+  are relative, so the 4× image drops in.
 - Wrap-pads each texture by an eighth of its smaller side (2–8 pixels) before upscaling and
   crops the padding afterwards, so tiling textures (grass, paths) stay seamless.
-- Runs the upscaler once over all textures and writes `textures/<game path>.png` plus
-  `pack.json` (format, scale, upscaler, model, counts per skip reason).
+- Runs each upscaler once over its textures and writes `textures/<game path>.png` plus
+  `pack.json` (format, scale, upscaler, model, interface model, counts per skip reason).
 
 At load time `Texture` checks the active pack before decoding a `.wct`; a missing file
 falls back to the original. `OPENTPW_TEXTURE_PACK=<pack>/textures` forces a pack for tests.
@@ -62,6 +75,10 @@ falls back to the original. `OPENTPW_TEXTURE_PACK=<pack>/textures` forces a pack
   textures (four low-detail `.wct` files the current decoder cannot read; the builder now
   skips low-detail paths before decoding, so they no longer show up). The pack is
   1.3 GB of PNG. A jungle-only trial upscaled 1,698 textures in 167 seconds.
+- Adding interface art to the existing pack with `--texture-pack-interface-only
+  --texture-pack-merge` upscaled 453 interface textures in about 13 seconds (6 below 32 pixels
+  stayed original). Buttons, the lobby panel, arrows and round edges become sharp at 2560×1440,
+  where the original 64–128-pixel art was stretched 3–5× with bilinear filtering.
 - In the 3D lobby the difference is visible on the island (grass, rock edge, the dinosaur).
   At the default park camera it is small: a texture covers only about
   100–200 screen pixels there and is sampled from a lower mip level. The gain shows when

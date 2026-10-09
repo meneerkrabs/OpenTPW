@@ -113,6 +113,27 @@ public class ParkEconomyTests
 	}
 
 	[TestMethod]
+	public void YearlyProfitRunsFromIncomeAndCostsAndResetsEachYear()
+	{
+		var park = EconomyTestData.Park( initialCash: 0 );
+		park.OpenPark();
+		park.TryAdmitVisitor( 100, out _ );
+		var entry = park.Ledger.ProfitThisYear;
+		Assert.IsTrue( entry > 0, "gate takings raise the year's profit" );
+		var account = park.TakeLoan( 2 );
+		Assert.AreEqual( entry, park.Ledger.ProfitThisYear, "a loan received is not profit" );
+		park.AdvanceMonths( 1 );
+		var interest = LoanMath.InstalmentInterest( account.MonthlyRepayment, account.Months, account.OriginalAmount );
+		Assert.AreEqual( entry - interest, park.Ledger.ProfitThisYear, "an instalment costs only its interest share" );
+		park.AdvanceMonths( 11 );
+		Assert.AreEqual( 1, park.Date.Month );
+		Assert.AreEqual( 0, park.Ledger.ProfitThisYear, "the month event (instalment) comes before the year event (reset)" );
+		park.AdvanceMonths( 1 );
+		Assert.AreEqual( -interest, park.Ledger.ProfitThisYear );
+		Assert.AreEqual( 4294967268L / 36, LoanMath.InstalmentInterest( 2777, 36, 100000 ), "(M x N - P) wraps in 32 bits when M x N < P" );
+	}
+
+	[TestMethod]
 	public void LoanRepaymentsFollowTermsAndInterest()
 	{
 		Assert.AreEqual( 2777, LoanMath.MonthlyRepayment( 100000, 0, 36 ) );
@@ -596,7 +617,12 @@ public class ParkEconomyTests
 		earnedProgress.SetTickets( park.Settings.Theme, park.Objectives.GoldenTickets.Count );
 		Assert.AreEqual( 3, earnedProgress.TotalTickets );
 		Assert.AreEqual( PlayerProgress.StartingKeys + 1, earnedProgress.Keys );
+		var cash = park.Balance;
 		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, park.TryBuild( 1112, out _ ) );
+		Assert.AreEqual( 0, park.GoldenTicketsAvailable );
+		Assert.AreEqual( cash, park.Balance, "a ticket purchase costs no cash" );
+		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, park.TryBuild( 1112, out _ ), "a second copy takes the cash path" );
+		Assert.AreEqual( cash - 2500, park.Balance );
 		Assert.AreEqual( 0, park.GoldenTicketsAvailable );
 		earnedProgress.SetTickets( park.Settings.Theme, park.Objectives.GoldenTickets.Count );
 		Assert.AreEqual( PlayerProgress.StartingKeys + 1, earnedProgress.Keys, "Spending mystery-item tickets preserves earned keys." );
@@ -604,6 +630,7 @@ public class ParkEconomyTests
 		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( ParkSaveFile.Serialize( park ) ) ), park.Settings, park.Catalog );
 		Assert.AreEqual( 0, restored.GoldenTicketsAvailable );
 		Assert.AreEqual( 3, restored.TicketsSpent );
+		CollectionAssert.AreEqual( new[] { 1112 }, restored.TicketItems.ToArray() );
 		var restoredProgress = new PlayerProgress();
 		restoredProgress.SetTickets( restored.Settings.Theme, restored.Objectives.GoldenTickets.Count );
 		Assert.AreEqual( earnedProgress.TotalTickets, restoredProgress.TotalTickets );

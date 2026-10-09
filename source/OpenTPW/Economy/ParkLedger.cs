@@ -54,6 +54,10 @@ public sealed class ParkLedger
 	// [APPROX:ECON-005] challenge prizes and scrap sales are other income; build, upgrade, goods, prizes, land are other costs; profit leaves out loans received — evidence needed: the per-category ledger routines and the annual profit field
 	public static bool IsIncome( LedgerCategory category ) => category is LedgerCategory.GateTakings or LedgerCategory.ShopTakings or LedgerCategory.SideshowTakings or LedgerCategory.OtherIncome or LedgerCategory.LoanReceived;
 
+	/// <summary>The year's running profit (<c>mProfitThisYear</c>): reset at each new calendar year.</summary>
+	public long ProfitThisYear { get; private set; }
+
+	// [BIN:STP-PPC:0x100CBF50 bank deposit] every credit raises the bank's mProfitThisYear (+0x124) and every debit (0x100CBFDC) lowers it; a loan deposit (0x100CC904) adds and removes its amount, and an instalment (0x100CC21C) nets to minus its interest share
 	public void Post( LedgerCategory category, long amount )
 	{
 		ArgumentOutOfRangeException.ThrowIfNegative( amount );
@@ -61,7 +65,17 @@ public sealed class ParkLedger
 			return;
 		Balance = checked(IsIncome( category ) ? Balance + amount : Balance - amount);
 		current[category] = checked(current.GetValueOrDefault( category ) + amount);
+		if ( category is not (LedgerCategory.LoanReceived or LedgerCategory.LoanPayments) )
+			ProfitThisYear = checked(IsIncome( category ) ? ProfitThisYear + amount : ProfitThisYear - amount);
 	}
+
+	/// <summary>Lowers the year's profit by a loan instalment's interest share.</summary>
+	public void ChargeLoanInterest( long interest ) => ProfitThisYear = checked(ProfitThisYear - interest);
+
+	// [BIN:STP-PPC:0x100CC120 bank message 13] the year event (type 13, from the calendar's year change 0x100E4148) sets mProfitThisYear to 0
+	public void StartYear() => ProfitThisYear = 0;
+
+	internal void RestoreProfitThisYear( long profit ) => ProfitThisYear = profit;
 
 	public LedgerMonth CurrentMonth( int rating, long parkValue ) => new( CurrentMonthIndex, new Dictionary<LedgerCategory, long>( current ), CurrentOpeningBalance, Balance, rating, parkValue );
 
@@ -112,6 +126,18 @@ public sealed record LoanAccount( int OfferIndex, int LenderNameIndex, long Orig
 /// </summary>
 public static class LoanMath
 {
+	/// <summary>
+	/// The interest share the original takes off the year's profit per instalment: (M × N − P) / N with the
+	/// subtraction in unsigned 32-bit arithmetic, as 0x100CC21C computes it (so it wraps when M × N &lt; P).
+	/// </summary>
+	public static long InstalmentInterest( long monthlyRepayment, int months, long principal )
+	{
+		if ( months <= 0 )
+			return 0;
+		var difference = (uint)unchecked(monthlyRepayment * months - principal);
+		return difference / (uint)months;
+	}
+
 	public static long MonthlyRepayment( long amount, int aprPercent, int months )
 	{
 		ArgumentOutOfRangeException.ThrowIfNegativeOrZero( months );

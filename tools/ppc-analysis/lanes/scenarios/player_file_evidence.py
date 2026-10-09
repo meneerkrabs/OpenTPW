@@ -435,6 +435,15 @@ class Truncated(Exception):
     pass
 
 
+def short_import(reset: int, delivered: bytes) -> int:
+    """An i32 member after a short import: FSRead stores the delivered bytes at the member's address
+    (native big-endian, so its high-order bytes) and the helper fails before the swap
+    (native_io_evidence.short_reads). Assumes FSRead stores the bytes before end of file (Mac OS)."""
+    if not 0 <= len(delivered) < 4:
+        raise ValueError('a short i32 import delivers 0..3 bytes')
+    return struct.unpack('>i', delivered + struct.pack('>i', reset)[len(delivered):])[0]
+
+
 def _take(raw: bytes, pos: int, n: int) -> tuple[bytes, int]:
     if pos + n > len(raw):
         raise Truncated(pos)
@@ -453,7 +462,8 @@ def _value(raw: bytes, pos: int, encoding: str):
 
 
 def read_mac_player_file(raw: bytes) -> dict:
-    """Traced read order and failure rules. ``ok`` mirrors the reader's return; callers ignore it."""
+    """Traced read order and failure rules. ``ok`` mirrors the reader's return; callers ignore it.
+    A short i32 player member holds the delivered bytes unswapped (``short_import``)."""
     record = {k: (list(v) if isinstance(v, list) else v) for k, v in RESET.items()}
     out = {'ok': False, 'record': record, 'themes': {}, 'settings': {}, 'mystery': set(), 'failed_at': None}
     pos = 0
@@ -466,6 +476,8 @@ def read_mac_player_file(raw: bytes) -> dict:
             key = name.removesuffix('[i]')
             for i in range(count):
                 out['failed_at'] = name
+                if encoding == 'i32le' and len(raw) - pos < 4:
+                    record[key] = short_import(record[key], raw[pos:])
                 value, pos = _value(raw, pos, encoding)
                 if count > 1:
                     record[key][i] = value

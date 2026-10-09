@@ -1,6 +1,6 @@
 # PowerPC scenario, progression and staffing evidence
 
-2026-10-09 (four follow-up passes the same day; fifth and sixth passes 2026-10-10). Scenario lane of the nine-lane PowerPC continuation. Static
+2026-10-09 (four follow-up passes the same day; fifth to seventh passes 2026-10-10). Scenario lane of the nine-lane PowerPC continuation. Static
 inspection of the Feral Interactive Mac port of *SimTheme Park* (Theme Park
 World); the original program was never run. No original bytes, disassembly,
 extracted assets or manual text are stored here. A local disassembler
@@ -28,18 +28,21 @@ order*, *Key award and key source*); fifth follow-up: the eight front-end
 tickets versus keys in mystery purchases, with a bounded reference calculation
 (*Key displays and ticket spending*); sixth follow-up: an immutable `gms.dat`
 snapshot reader, writer and JSON envelope with explicit Mac-partial and
-strict-host policies (*Profile snapshot reference*). Every finding below is a
+strict-host policies (*Profile snapshot reference*); seventh follow-up: the
+theme-key string constructor and comparator, the writer's theme/mystery order,
+where a short read stores its bytes, and a correction to the reference readers'
+partial-member rule (*Native string, order and short reads*). Every finding below is a
 fact about **this Mac binary** unless explicitly stated otherwise. It is not
 evidence for the PC `TP.EXE` or Patch 2 runtime (see *Mac and PC relationship*).
 
 ## Reproduce
 
 ```sh
-# instruction-field witnesses (1950 checks, identity-pinned; follow-up checks live in
+# instruction-field witnesses (2090 checks, identity-pinned; follow-up checks live in
 # followup_evidence.py, progression_evidence.py, park_entry_evidence.py,
-# profile_evidence.py, player_file_evidence.py, key_display_evidence.py and
-# profile_snapshot.py,
-# included in the same JSON report)
+# profile_evidence.py, player_file_evidence.py, key_display_evidence.py,
+# profile_snapshot.py and native_io_evidence.py (which also reads three
+# SHA256-pinned shared libraries under bin/libraries), included in the same JSON report)
 python3 -I tools/ppc-analysis/lanes/scenarios/scenario_evidence.py /Users/sander/server/game-assets/mac-feral/bin
 # tests (synthetic fixtures; the ten corpus cases, including in-memory mutation
 # regressions, run only with OPENTPW_MAC_BIN set)
@@ -691,10 +694,11 @@ Reader details pinned for this pass:
   length 0 reads nothing, and compares the index unsigned (`cmplw`, `0x1297d8`).
   The buffer is NUL-terminated (`0x1297e8`) and passed to
   `TbDynamicStringTemplate<c>(const char *)` (`0x1297f0`), then freed. The map key
-  therefore ends at the first NUL (inferred from the constructor's signature; its
-  body and the map comparator are not traced). Length `0xFFFFFFFF` allocates
-  0 bytes; for lengths past the end of the file the Mac outcome is not defined
-  by the trace.
+  therefore ends at the first NUL (traced in the seventh follow-up). Length
+  `0xFFFFFFFF` allocates 0 bytes and the byte loop then stores past the block,
+  which the trace does not define. Any other length past the end of the file
+  reads to the end and fails without inserting the theme, provided the
+  allocation succeeds (a failed allocation is not traced).
 - **Mystery set**: the insert result is unused (`0x129964`), so a repeated
   `rideId` is absorbed silently.
 - **Mode test**: selection tests the low byte of `mEasyModeUser` for non-zero
@@ -717,8 +721,12 @@ Module contents (synthetic bytes only):
   issue. A negative count reads nothing. Repeated `rideId`s are kept in order
   and collapse in `mystery_set`. Trailing bytes are ignored. Settings read
   before a failure are kept but `settings_complete` is false (the Mac applies
-  the block only after a complete read). A failing player member shows its
-  reset value, flagged as such, because what a short import stores is not traced.
+  the block only after a complete read). A failing player member holds what the
+  short import stored (corrected in the seventh follow-up, see *Native string,
+  order and short reads*). A one-byte member keeps its value. An `i32` member
+  holds the delivered bytes, unswapped, over its earlier bytes. A partly read
+  8-byte setting is reported as an issue only, because the snapshot does not hold
+  the game-wide object it lands in.
 - `strict-host` is a **host policy, not Mac behaviour**. It raises
   `StrictReject` with one fixed reason: `rejected-version` (< 12, as the Mac),
   `unknown-version` (13…`0xFFFFFFFF`, which the Mac reads), `truncated`,
@@ -730,8 +738,8 @@ Module contents (synthetic bytes only):
   read cycles byte-identically. It refuses partial snapshots. After a partial
   read the Mac's next write depends on the game-wide settings object, which a
   snapshot does not hold. This is not the Mac writer's order: that writer
-  iterates the theme map and the mystery set (comparators not traced) and
-  always writes version 12.
+  iterates the theme map and the mystery set in ascending order (now traced,
+  `mac_writer_order`) and always writes version 12.
 - `to_envelope`/`from_envelope`: JSON envelope
   `opentpw.reference.mac-gms-snapshot`, envelope version 1, bytes as hex,
   order kept, source identity included; unknown schema or envelope versions
@@ -741,7 +749,8 @@ Module contents (synthetic bytes only):
   (reuses `earned_tickets`/`mac_keys`/`mac_available_tickets`; `usable` over
   theme map keys is required because whether `global.sam` loads is a runtime
   fact), and `setting_words` (first word big-endian as stored, second
-  little-endian; meanings not traced).
+  little-endian; for the four volumes byte 0 is the enable test and the second
+  word the level, see the seventh follow-up).
 
 Tests cover every truncation length (partial under `mac-partial`, `truncated`
 under strict), the byte-18 mode boundary, overlay and reset of later members,
@@ -751,6 +760,73 @@ boundaries 0/11/12/13/`0x7FFFFFFF`/`0x80000000`/`0xFFFFFFFF`, byte and JSON
 cycles, writer refusals, immutability, agreement with `read_mac_player_file`,
 key counters (non-zero bytes, usable themes only, spending never lowers keys,
 negative and wrapping counters, partial records) and four witness mutations.
+
+### Native string, order and short reads (high, except one Mac OS step)
+
+Seventh follow-up (`native_io_evidence.py`, 140 more checks, 2090 in total;
+`test_profile_snapshot.py`, 11 more cases including 3 corpus cases with 8
+in-memory mutations). For the first time this lane also reads shared libraries
+the executable imports. Each is pinned by SHA256: `bullfrog_shared.data`
+(`b67b56b7…ec06`), `c_c++_shared.data` (`5e04f9c0…b27f`) and
+`macdoze_shared.data` (`ba11331a…2f0d`). Nothing was executed and no `gms.dat`
+exists; every fixture is synthetic.
+
+- **Key constructor** (`bullfrog 0xadcc`): `TbDynamicStringTemplate<c>(const char *)`
+  calls `strlen`, then virtual slot 0x10 (`AllocBuffer`: length = n, buffer[n] = 0),
+  then `strcpy`. A null pointer gives the empty string. The C library's `strlen` and
+  `strcpy` stop at the first zero byte (`0x20db8`, `0x20dd8`). **The map key is the
+  name bytes before the first NUL**, which upgrades the previous medium inference.
+- **Comparator** (`bullfrog 0xcdc0`, `TbStringBase<c>::operator<`): `strncmp` over
+  the shorter length (`cmplw`). The library's `strncmp` compares zero-extended bytes
+  (`lbzu`, `cmplw`, returns a − b). On an equal prefix the shorter string is less.
+  Keys hold no NUL, so the order is **unsigned lexicographic byte order with the
+  shorter prefix first**. Two names collide exactly when their keys are identical.
+- **Containers** (`0x12b2ac`, `0x12b5a8`, `0x12b698`, `0x12b868`, `0x116e94`): both
+  are red-black trees (left +0, right +4, parent|colour +8, value +0xc). Each caches
+  its leftmost node: the theme map at tree+0xc (tree = record+0x34), the mystery
+  set at tree+8 (tree = record+0x28). Inserts are unique and use the comparator in
+  both directions. `rideId`s are `lhz` values compared with `cmplw`.
+- **Writer order** (`0x129458`–`0x129610`): the writer starts at the leftmost node,
+  walks the in-order successor and stops at the header. Themes are therefore written
+  in ascending key order, with count = map size and name = key (`Length()` +
+  `strcpy`). A name read with an embedded NUL is written back truncated to its key.
+  `rideId`s are written ascending unsigned, with count = set size, so repeats and
+  negative counts do not survive a rewrite. `mac_writer_order(snapshot)` returns
+  this order. The byte writer `serialize_profile_snapshot` still preserves file order
+  and is not a native rewrite.
+- **Short reads**: member import → `LbFile_Read` (`bullfrog 0x994`; status =
+  returned count == requested) → the 8-byte handle `LbFile_Open` makes (vptr
+  `0x440c`, slot 0x10 forwards to the inner file's slot 0xc) → the disk-file class
+  (vptr `0x2c04`, built at `0x3d8c`; `0x368c` is bullfrog's only caller of
+  `NS_MacDoze::ReadFile`) → `ReadFile` (`macdoze 0x2ad8`: count = n,
+  `FSRead(refNum, &count, buffer)`). The buffer is the **member's own address**
+  throughout. The game-side helpers fail unless the full width arrived (`0xc398`,
+  `0x126f88`), and they fail before the swap. Consequences:
+  - one-byte members: nothing is delivered, so the member keeps its value (exact);
+  - `mSpentTickets`/`mExtraKeys`: k < 4 delivered bytes land in the high-order bytes
+    of the big-endian member. Example: a file cut one byte into `mExtraKeys`
+    holding 0x7f leaves `mExtraKeys = 0x7f000000`, and `Keys()` follows;
+  - 8-byte settings: k < 8 bytes land in the game-wide settings member, neither
+    word swapped;
+  - theme count, mystery count and `rideId`s are read into stack temporaries, and
+    the set insert follows success only, so a short read there changes no record
+    state.
+  The one step not in the assets is Mac OS `FSRead` storing the bytes before end of
+  file into the buffer, as Inside Macintosh documents. Everything above it is
+  traced.
+- **Settings apply** (`0x126460`, after a complete read only): Music, Speech, SFX,
+  then Movie. Each tests byte 0 of the raw first word for non-zero (enabled) and
+  passes the second word on as the level. The movie level is scaled
+  trunc(level × 1023 / 100). It stores nothing into the settings object, and the
+  one-byte settings are not read there.
+
+**Correction to the reference readers.** `read_profile_snapshot` (`mac-partial`)
+and `read_mac_player_file` previously showed the reset value for a short `i32`
+player member. That was not faithful. Both now apply `short_import` (delivered
+bytes over the earlier big-endian bytes, unswapped), qualified by the `FSRead`
+dependency above, and `mac-partial` records the delivered byte count as an
+issue. `strict-host` is unchanged (`truncated`). A partly read 8-byte setting is
+reported as an issue only.
 
 ### Instant Action availability (high for the gates)
 
@@ -1100,11 +1176,12 @@ unwired reference.
   profile `<base>` directory, the park header's object block (`0x109e0c`), the
   locked-door presentation and the front-end slot icon.
 - **Player file**: the `FindFirst` order (which file's settings win at start-up),
-  what the import stores on a short read, the string constructor and map
-  comparator behind theme keys, the theme-map and mystery-set iteration order
-  of the writer, the Mac outcome for theme name lengths past the file end, the two `mFirstTimePlayer` events
-  (data `0x11f9bc`) and the settings toggles at `0x1af8c8`/`0x1af944` are not
-  traced.
+  Mac OS `FSRead` storing the bytes before end of file (documented, not in the
+  assets), the outcome for theme name length `0xFFFFFFFF` and for a failed name
+  allocation, how the inner disk file is chosen by the storage registry behind
+  `LbFile_Open` (only one disk class reaches `ReadFile`), the sound setters the
+  settings apply calls, the two `mFirstTimePlayer` events (data `0x11f9bc`) and
+  the settings toggles at `0x1af8c8`/`0x1af944` are not traced.
 - **PC profiles**: no PC player file or player save exists in the assets and the
   PC executables expose none of the profile names; the PC profile layout and
   failure behaviour are unproved.

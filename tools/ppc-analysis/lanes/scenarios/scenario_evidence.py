@@ -713,6 +713,8 @@ def inspect(bin_root: Path) -> dict:
     result.update(inspect_key_display(e))
     from profile_snapshot import snapshot_witnesses  # noqa: E402 (imports this module)
     result['profile_snapshot_reader'] = snapshot_witnesses(e)
+    from native_io_evidence import inspect_native_io  # noqa: E402 (imports this module)
+    result.update(inspect_native_io(e, bin_root))
     result['instruction_checks'] = e.checked
     result['limitation'] = ('Static Mac (Feral 2000) evidence only; not PC Patch 2 or runtime proof. '
                             'Advisor speech/tag text, stat-function semantics and calendar scale remain unresolved.')

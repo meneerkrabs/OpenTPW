@@ -9,13 +9,16 @@ import os
 from pathlib import Path
 import struct
 import unittest
+from unittest import mock
 
+import native_io_evidence as native_io
 import player_file_evidence as player_file
 import profile_snapshot as snap
 import scenario_evidence as evidence
 from scenario_evidence import Evidence, pef
 
 GLOBAL, SECRET = 4, 4 + 4              # byte offsets after the version
+SPENT, EXTRA = SECRET + 2, SECRET + 2 + 4
 MODE = 4 + 6 + 8                       # mEasyModeUser is file byte 18
 THEMES = MODE + 3 + 4                  # first theme entry
 THEME_BYTES = 160
@@ -139,11 +142,41 @@ class TruncationTests(unittest.TestCase):
         self.assertEqual(snap.selection_game_type(cut, 0), 2)
 
     def test_partial_overlay_keeps_earlier_members_and_resets_later_ones(self):
-        s = read(gms(spent=4, extra=3)[:SECRET + 2 + 4 + 2])   # cut inside mExtraKeys
+        s = read(gms(spent=4, extra=3)[:EXTRA + 2])   # cut inside mExtraKeys
         self.assertEqual((s.global_tickets, s.secret_tickets, s.spent_tickets), ((1, 0, 2, 0), (0, 3), 4))
-        self.assertEqual((s.extra_keys, s.swear_filter_on, s.first_time_player), (0, 1, 1))
+        # 03 00 delivered into the big-endian member over the reset 0, swap skipped.
+        self.assertEqual((s.extra_keys, s.swear_filter_on, s.first_time_player), (0x03000000, 1, 1))
         self.assertEqual(s.fields_read, snap.PLAYER_FIELDS[:3])
-        self.assertIn('not traced', s.issues[-1])
+        self.assertIn('2 of 4 bytes delivered', s.issues[-1])
+
+    def test_short_i32_member_holds_the_delivered_bytes_unswapped(self):
+        raw = gms(spent=0x04030201)                   # 01 02 03 04 on disk
+        for k, expected in ((0, 0), (1, 0x01000000), (2, 0x01020000), (3, 0x01020300), (4, 0x04030201)):
+            with self.subTest(k=k):
+                s = read(raw[:SPENT + k])
+                self.assertEqual(s.spent_tickets, expected)
+                self.assertEqual(player_file.read_mac_player_file(raw[:SPENT + k])['record']['mSpentTickets'],
+                                 expected)
+                self.assertEqual(bool(s.issues) and 'delivered' in s.issues[-1], 0 < k < 4)
+                with self.assertRaises(snap.StrictReject):
+                    read(raw[:SPENT + k], 'strict-host')
+
+    def test_one_byte_into_extra_keys_corrupts_the_key_count(self):
+        # A file cut one byte into mExtraKeys: the low byte lands in the high-order byte.
+        for extra, held in ((0x7f, 0x7f000000), (-1, -0x01000000), (0x100, 0)):
+            with self.subTest(extra=extra):
+                s = read(gms(extra=extra)[:EXTRA + 1])
+                self.assertEqual(s.extra_keys, held)
+                self.assertEqual(snap.key_counters(s, lambda key: True)['keys'], held + 3 // 3)
+
+    def test_short_byte_member_keeps_its_value(self):
+        s = read(gms(mode=1)[:MODE])
+        self.assertEqual((s.easy_mode_user, s.failed_at, s.issues), (0, 'mEasyModeUser', ()))
+
+    def test_short_import_bounds(self):
+        self.assertEqual(player_file.short_import(0x11223344, b'\xaa'), struct.unpack('>i', b'\xaa\x22\x33\x44')[0])
+        with self.assertRaises(ValueError):
+            player_file.short_import(0, b'1234')
 
     def test_cut_theme_is_not_inserted_and_earlier_themes_stay(self):
         raw = gms()
@@ -160,6 +193,8 @@ class TruncationTests(unittest.TestCase):
         self.assertEqual([n for n, _ in s.settings], ['SFXVolume', 'MusicVolume'])
         self.assertFalse(s.settings_complete)
         self.assertEqual(s.failed_at, 'SpeechVolume')
+        self.assertIn('3 of 8 bytes delivered into the game-wide settings member', s.issues[-1])
+        self.assertEqual(read(raw[:settings_at + 8 * 2]).issues, ())
 
     def test_oversized_name_length_is_flagged_as_undefined_on_the_mac(self):
         raw = bytearray(gms())
@@ -169,6 +204,10 @@ class TruncationTests(unittest.TestCase):
         self.assertIn('not defined by the trace', s.issues[-1])
         with self.assertRaises(snap.StrictReject):
             read(bytes(raw), 'strict-host')
+        struct.pack_into('<I', raw, THEMES, 0x10000)
+        s = read(bytes(raw))
+        self.assertEqual((s.failed_at, s.themes), ('theme name', ()))
+        self.assertIn('fails without inserting the theme', s.issues[-1])
 
 
 class StructureTests(unittest.TestCase):
@@ -300,6 +339,84 @@ class KeyCounterTests(unittest.TestCase):
             self.assertEqual(snap.selection_game_type(read(gms(mode=mode)), current), expected)
         with self.assertRaises(ValueError):
             snap.selection_game_type(read(gms()), 3)
+
+
+class WriterOrderTests(unittest.TestCase):
+    def test_themes_ascend_by_key_and_mystery_ascends_unsigned(self):
+        order = snap.mac_writer_order(read(gms(mystery=(300, 7, 0x8000, 7, 0xffff, 0))))
+        self.assertEqual(order, {'themes': (b'halloween', b'jungle', b'space'), 'theme_count': 3,
+                                 'mystery': (0, 7, 300, 0x8000, 0xffff), 'mystery_count': 5})
+
+    def test_key_order_is_unsigned_bytes_with_the_shorter_prefix_first(self):
+        names = (b'zoo', b'\xe9te', b'abc', b'ab', b'Ab', b'')
+        s = read(gms(themes=tuple((n, (0,) * 6) for n in names)))
+        self.assertTrue(s.complete)
+        self.assertEqual(snap.mac_writer_order(s)['themes'], (b'', b'Ab', b'ab', b'abc', b'zoo', b'\xe9te'))
+        self.assertEqual([t.name for t in s.themes], list(names))   # the snapshot keeps file order
+
+    def test_embedded_nul_name_is_written_back_as_its_key(self):
+        s = read(gms(themes=((b'b', (0,) * 6), (b'a\0zz', (0,) * 6))))
+        self.assertEqual(snap.mac_writer_order(s)['themes'], (b'a', b'b'))
+        self.assertEqual(snap.serialize_profile_snapshot(s), gms(themes=((b'b', (0,) * 6), (b'a\0zz', (0,) * 6))))
+
+    def test_partial_read_orders_only_the_inserted_containers(self):
+        raw = gms(themes=((b'space', (0,) * 6), (b'jungle', (0,) * 6), (b'space', (0,) * 6)))
+        order = snap.mac_writer_order(read(raw))
+        self.assertEqual((order['themes'], order['mystery']), ((b'jungle', b'space'), ()))
+        negative = snap.mac_writer_order(read(gms(theme_count=-4, themes=(), mystery_count=-1, mystery=())))
+        self.assertEqual((negative['theme_count'], negative['mystery_count']), (0, 0))
+
+
+@unittest.skipUnless(os.environ.get('OPENTPW_MAC_BIN'), 'OPENTPW_MAC_BIN not set')
+class NativeIoCorpusTests(unittest.TestCase):
+    def _patched(self, ev, offset, word):
+        if offset is not None:
+            code = bytearray(ev.code)
+            struct.pack_into('>I', code, offset, word)  # in memory only
+            ev.code = bytes(code)
+            ev._calls = None
+        return ev
+
+    def _all(self, where=None, offset=None, word=None):
+        root = Path(os.environ['OPENTPW_MAC_BIN'])
+        e = Evidence(evidence.load_identified(root / 'SimThemePark.data'))
+        bf, libc, md = (native_io.load_library(root, n) for n in native_io.LIBRARIES)
+        target = {'main': e, 'bullfrog': bf, 'libc': libc, 'macdoze': md}.get(where)
+        if target is not None:
+            self._patched(target, offset, word)
+        return e, bf, libc, md
+
+    def run_all(self, e, bf, libc, md):
+        return (native_io.theme_key(bf, libc), native_io.containers(e), native_io.short_reads(e, bf, md),
+                native_io.settings_apply(e))
+
+    def test_identified_binary_and_libraries(self):
+        key, containers, short, settings = self.run_all(*self._all())
+        self.assertIn('unsigned', key['comparator'])
+        self.assertIn('ascending', containers['writer_order'])
+        self.assertIn('FSRead', short['chain'])
+        self.assertEqual(settings['order'][0], 'MusicVolume')
+
+    def test_library_identity_is_pinned(self):
+        with mock.patch.dict(native_io.LIBRARIES, {'bullfrog_shared.data': '0' * 64}):
+            with self.assertRaisesRegex(pef.PEFError, 'identity of bullfrog_shared.data'):
+                native_io.load_library(Path(os.environ['OPENTPW_MAC_BIN']), 'bullfrog_shared.data')
+
+    def test_mutations_are_rejected(self):
+        cases = [
+            ('bullfrog', 0xcde4, 31 << 26 | 3 << 16, 'code:0xcde4'),                       # cmpw lengths
+            ('libc', 0x20efc, 31 << 26 | 5 << 11, 'code:0x20efc'),                         # signed bytes
+            ('bullfrog', 0x9c0, 14 << 26 | 4 << 21 | 1 << 16 | 0x38, 'code:0x9c0'),         # buffer replaced
+            ('macdoze', 0x2b20, 14 << 26 | 5 << 21 | 1 << 16 | 0x40, 'code:0x2b20'),        # FSRead into a temp
+            ('main', 0x12b804, 36 << 26 | 29 << 21 | 24 << 16 | 0x10, 'code:0x12b804'),     # leftmost moved
+            ('main', 0x12b5e4, 31 << 26 | 3 << 16, 'code:0x12b5e4'),                       # rideIds signed
+            ('main', 0xc398, 10 << 26, 'code:0xc398'),                                    # success on 0 bytes
+            ('main', 0x126480, 36 << 26 | 3 << 21 | 31 << 16 | 0x18, 'settings stored'),   # apply writes back
+        ]
+        for where, offset, word, message in cases:
+            with self.subTest(where=where, offset=hex(offset)):
+                with self.assertRaisesRegex(pef.PEFError, message):
+                    self.run_all(*self._all(where, offset, word))
 
 
 @unittest.skipUnless(os.environ.get('OPENTPW_MAC_BIN'), 'OPENTPW_MAC_BIN not set')

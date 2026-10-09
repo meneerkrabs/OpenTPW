@@ -11,14 +11,16 @@ Two explicit read policies, no default:
 - ``mac-partial`` mirrors the Mac reader: reset values overlaid by every member
   read before the first failure, themes inserted only when complete and not a
   duplicate key, unsigned version >= 12 accepted with the one layout, trailing
-  bytes ignored. The result says whether the read was complete and where it
-  stopped.
+  bytes ignored. A short i32 player member holds the bytes delivered before the
+  end of the file, unswapped (native_io_evidence.py). The result says whether the
+  read was complete and where it stopped.
 - ``strict-host`` is a host policy, not Mac behaviour: it accepts only bytes the
   Mac writer can produce for version 12 and raises ``StrictReject`` with a fixed
   reason otherwise (including ``unknown-version`` for 13..0xFFFFFFFF, which the
   Mac reads).
 
-Snapshots are frozen; theme, settings and mystery order is file order. Derived
+Snapshots are frozen; theme, settings and mystery order is file order (the Mac
+writer's own order is ``mac_writer_order``). Derived
 values (GameType at selection, keys, available tickets) are computed on demand
 from the snapshot and caller-supplied runtime facts, never stored.
 """
@@ -33,7 +35,7 @@ from typing import Callable
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from scenario_evidence import Evidence, pef  # noqa: E402
 from key_display_evidence import _game_type, earned_tickets, mac_available_tickets, mac_keys  # noqa: E402
-from player_file_evidence import OPTION, RESET  # noqa: E402
+from player_file_evidence import OPTION, RESET, short_import  # noqa: E402
 from profile_evidence import import_at  # noqa: E402
 
 POLICIES = ('mac-partial', 'strict-host')
@@ -70,8 +72,8 @@ class ThemeSnapshot:
 
     @property
     def map_key(self) -> bytes:
-        """Inferred Mac map key: the name buffer is NUL-terminated and passed to a const char*
-        string constructor, so bytes after an embedded NUL do not reach the key."""
+        """Mac map key: the NUL-terminated name buffer goes through the const char* string
+        constructor (strlen + strcpy), so bytes from the first NUL on do not reach the key."""
         return self.name.split(b'\0', 1)[0]
 
 
@@ -216,10 +218,14 @@ def read_profile_snapshot(raw: bytes, policy: str) -> ProfileSnapshot:
             at('theme name')
             length = c.u32()
             if length > len(raw) - c.pos:
-                if not strict:
-                    issues.append(f'theme name length {length:#x} exceeds the file; the Mac allocates length+1 '
-                                  'bytes unchecked (0 for 0xffffffff) before reading, so its outcome is not '
-                                  'defined by the trace')
+                if not strict and length == 0xffffffff:
+                    issues.append('theme name length 0xffffffff: the Mac allocates length+1 = 0 bytes unchecked and '
+                                  'stores name bytes past the block until the file ends; outcome not defined by '
+                                  'the trace')
+                elif not strict:
+                    issues.append(f'theme name length {length:#x} exceeds the file: the Mac allocates length+1 bytes '
+                                  'unchecked, reads to the end of the file and fails without inserting the theme '
+                                  '(a failed allocation is not traced)')
                 raise _Short
             name = c.take(length)
             if strict and b'\0' in name:
@@ -256,9 +262,14 @@ def read_profile_snapshot(raw: bytes, policy: str) -> ProfileSnapshot:
     except _Short:
         if strict:
             reject('truncated', f'{len(raw)} bytes end inside {step[0]}')
-        if step[0] in PLAYER_FIELDS:
-            issues.append(f'{step[0]}: a failed import stores whatever it delivered, unswapped (not traced); '
-                          'reset value shown')
+        delivered = raw[start[0]:]
+        if step[0] in ('mSpentTickets', 'mExtraKeys') and delivered:
+            state[step[0]] = short_import(state[step[0]], delivered)
+            issues.append(f'{step[0]}: {len(delivered)} of 4 bytes delivered into the member, unswapped -> '
+                          f'{state[step[0]]} (assumes FSRead stores the bytes before end of file; Mac OS)')
+        elif step[0] in SETTING_NAMES and delivered:
+            issues.append(f'{step[0]}: {len(delivered)} of 8 bytes delivered into the game-wide settings member '
+                          'over bytes this snapshot does not hold, unswapped')
         return snapshot(False)
     if strict and c.pos != len(raw):
         reject('trailing-bytes', f'{len(raw) - c.pos} bytes after the mystery set', offset=c.pos)
@@ -285,8 +296,7 @@ def serialize_profile_snapshot(s: ProfileSnapshot) -> bytes:
     """Bytes in the traced layout and the snapshot's own order (raw version, raw counts, trailing bytes),
     so a complete read cycles byte-identically. Refuses partial snapshots: what the Mac would write after
     a partial read depends on the game-wide settings object, which the snapshot does not hold.
-    Not the Mac writer's order: it writes themes in map order and mystery ids in set order (comparators
-    not traced)."""
+    Not the Mac writer's order: see ``mac_writer_order``."""
     _check(s.complete, 'only a complete snapshot can be serialized')
     _check(len(s.global_tickets) == 4 and len(s.secret_tickets) == 2, 'ticket byte counts')
     _check(tuple(name for name, _ in s.settings) == SETTING_NAMES, 'settings must be the 11 members in order')
@@ -369,9 +379,21 @@ def from_envelope(env: dict) -> ProfileSnapshot:
 
 
 # -- derived values (computed, never stored) --------------------------------------------------------
+def mac_writer_order(s: ProfileSnapshot) -> dict:
+    """Container order the Mac writer would emit for the record this read built (native_io_evidence):
+    the theme map ascending by key (TbStringBase<c>::operator<: unsigned bytes, shorter prefix first,
+    which is Python bytes order for NUL-free keys), names written as the key, count = map size; the
+    mystery set ascending unsigned, count = set size. Order only: version (always 12), the swear hook and
+    later in-memory changes decide the remaining bytes of a rewrite."""
+    themes = tuple(sorted(t.map_key for t in s.themes))
+    mystery = tuple(sorted(set(s.mystery)))
+    return {'themes': themes, 'theme_count': len(themes), 'mystery': mystery, 'mystery_count': len(mystery)}
+
+
 def setting_words(raw: bytes) -> tuple[int, int]:
     """An 8-byte settings value: first word as the Mac stored it (native, big-endian), second word
-    little-endian. What the two words mean is not traced."""
+    little-endian. For the four volume members the settings apply (0x126460) tests byte 0 for non-zero
+    (enabled) and passes the second word on as the level; other uses of the words are not traced."""
     _check(isinstance(raw, bytes) and len(raw) == 8, '8-byte settings value')
     return struct.unpack('>I', raw[:4])[0], struct.unpack('<I', raw[4:])[0]
 

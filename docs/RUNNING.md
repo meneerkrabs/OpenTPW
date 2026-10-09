@@ -30,8 +30,8 @@ bash scripts/run.sh --game-path '/path/to/Theme Park World' --language German --
 ```
 
 Text uses English when installed, otherwise the installed language.
-`--language` (or `OPENTPW_LANGUAGE`) picks English, Danish, French, German or
-Swedish. Non-English languages other than the installed one come from the
+`--language` (or `OPENTPW_LANGUAGE`) picks English, Danish, Dutch, French, German
+or Swedish (Dutch comes from the Benelux CD). Non-English languages other than the installed one come from the
 original CD: extract its `<Lang>/data` and `<Lang>/Meshes` folders outside the
 repository and pass the extraction folder (or one `<Lang>/data` folder) with
 `--language-data` (or `OPENTPW_LANGUAGE_DATA`). Nothing is copied into the game
@@ -51,7 +51,7 @@ OPENTPW_GAME_PATH='/path/to/Theme Park World' dotnet test source/OpenTPW.Tests/O
 ```
 
 Set `OPENTPW_LANGUAGE_DATA` to the extracted CD language folders to also run the
-Danish/French/German/Swedish string and font tests (LANGUAGES.md).
+Danish/Dutch/French/German/Swedish string and font tests (LANGUAGES.md).
 Asset-dependent tests are inconclusive when original files are unavailable; CPU
 tests do not require them. An asset-test skip is not a compatibility pass.
 The workflow builds/tests all three host OSes, but does not qualify GPU rendering

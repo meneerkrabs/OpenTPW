@@ -1,8 +1,10 @@
 # Languages
 
-Theme Park World shipped text, fonts, speech and banner meshes in five languages:
-English, Danish, French, German and Swedish. OpenTPW can show the text of any of
-them. Original data is never part of this repository.
+Theme Park World shipped text, fonts, speech and banner meshes in at least six
+languages: English, Danish, French, German and Swedish on the European CD, and
+Dutch on the Benelux CD. OpenTPW can show the text of any of them. Language
+selection is folder-based, so other retail languages should work the same way
+once their data is available, but only these six are verified. Original data is never part of this repository.
 
 ## Where the data lives
 
@@ -18,6 +20,11 @@ them. Original data is never part of this repository.
   `French/meshes/french`), so OpenTPW matches overlay paths case-insensitively.
   Placing the CD's banner meshes inside `Language/<Name>` matches the installed
   English layout and is an inference; the installer itself was not run.
+- The Benelux CD uses the same overlay layout for Dutch: `Dutch/data/language/Dutch/`
+  (21 `.str`, 33 `.bf4`, `MBToUni.dat`, `UniToMB.dat`, `residx.dat`),
+  `Dutch/data/global/speech/` (`speechHD.SDT`, `lips.WAD`), level speech with
+  `lips/`, `Dutch/Meshes/Dutch/` (three banner `.MD2`, no `.mtr`) and
+  `Dutch/Filter/Dutch/`. Its readme is dated 22 October 1999.
 
 ## Selecting a language
 
@@ -86,12 +93,13 @@ Synthetic tests (no assets) cover the reader, the 24-bit length, per-folder
 character tables, and language resolution (defaults, case-insensitive names and
 paths, both overlay forms, mesh and speech fallbacks). With
 `OPENTPW_GAME_PATH` (installed English) and `OPENTPW_LANGUAGE_DATA` (extracted
-CD folders), for each of the five languages:
+CD folders, plus `Dutch` from the Benelux CD), for each of the six languages:
 
 - all 21 string tables / 2,358 strings decode; record lengths match the file layout;
   the non-ASCII character inventory is pinned;
 - sample strings are pinned (UITEXT `GoOnline`: "Go Online", "Gå Online",
-  "Se connecter", "Online gehen", "Koppla upp"; French "d'œuvre"; German
+  "Se connecter", "Online gehen", "Koppla upp", "On-line gaan"; Dutch "Spanning",
+  "Betrouwbaarheid", "Totempaal"; French "d'œuvre"; German
   "Unfuhg Gibsniš"; Swedish strings over 255 characters);
 - every character used by any string table has a glyph in all 33 fonts of that
   language, and every UITEXT entry lays out in GAME8AA without fallback glyphs;

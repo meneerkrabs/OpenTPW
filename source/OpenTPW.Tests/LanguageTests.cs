@@ -141,7 +141,8 @@ public class LanguageTests
 	}
 
 	// Private data: OPENTPW_GAME_PATH (installed English) and OPENTPW_LANGUAGE_DATA (a directory
-	// holding the CD's <Lang>/data and <Lang>/Meshes trees for Danish, French, German, Swedish).
+	// holding the CD's <Lang>/data and <Lang>/Meshes trees for Danish, French, German, Swedish
+	// from the European CD and Dutch from the Benelux CD).
 
 	public static IEnumerable<object[]> ShippedLanguages => GameLanguage.ShippedLanguages.Select( name => new object[] { name } );
 
@@ -178,6 +179,7 @@ public class LanguageTests
 	{
 		["English"] = "©é’",
 		["Danish"] = "ÅÆØåæéø",
+		["Dutch"] = "ºéëï",
 		["French"] = "°Çàâçèéêëîïôùûœ",
 		["German"] = "ÄÖÜßäéöüš",
 		["Swedish"] = "°ÄÅÖäåéö",
@@ -185,6 +187,7 @@ public class LanguageTests
 
 	[DataTestMethod]
 	[DataRow( "English", "Go Online", "Excitement", "Reliability", "Totem" )]
+	[DataRow( "Dutch", "On-line gaan", "Spanning", "Betrouwbaarheid", "Totempaal" )]
 	[DataRow( "Danish", "Gå Online", "Spænding", "Pålidelighed", "Totempæl" )]
 	[DataRow( "French", "Se connecter", "Excitation", "Solidité", "Inca" )]
 	[DataRow( "German", "Online gehen", "Spaßfaktor", "Zuverlässigkeit", "Totemfall" )]
@@ -203,6 +206,8 @@ public class LanguageTests
 			StringAssert.Contains( language.LoadStrings( "TAG_SYSTEM.str" )[135], "d'œuvre" );
 		if ( name == "German" )
 			Assert.AreEqual( "Unfuhg Gibsniš", language.LoadStrings( "GUARD_NAMES.str" )[25] );
+		if ( name == "Dutch" )
+			StringAssert.StartsWith( uiText[472], "Er zijn ansichtkaarten in je out-box" );
 		if ( name == "Swedish" )
 			StringAssert.StartsWith( uiText[472], "Du har ett vykort i din utkorg.\n\n Koppla upp" );
 	}

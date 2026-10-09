@@ -80,7 +80,11 @@ path texture) and 11 placed objects (orange footprints, named in the HUD by .sam
 holes and the imported paths/objects allow (see MAP.md). Sandbox save/load is
 disabled in this mode and no original file is written. Money, time, guests, staff,
 object models and path styles are not imported. Other themes load without a save.
-`--smoke-test` also works with this flag (captures `native-smoke-original-*.png`).
+Guests are simulated from scratch: kids arrive at the bus stops, pay at the ticket
+booth, walk the paths, queue for and ride an open Totem and leave
+([GUESTS.md](GUESTS.md)).
+`--smoke-test` also works with this flag (captures `native-smoke-original-*.png`;
+the smoke also checks that guests fill and leave the Totem and appear in readback).
 
 ## Read-only BF4 font inspection
 

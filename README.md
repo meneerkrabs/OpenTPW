@@ -53,7 +53,9 @@ vertex animation unverified); MAP reads the 128×128 TP2M terrain grids
 opcodes handled, 51 of them through an unimplemented-effect hook; the sandbox
 Totem runs its original script); the Jungle TPWI payload's cell grid and placed
 objects are imported read-only into an original level view
-(`--load-original-level`; money, guests and other sections opaque); `.LIP`
+(`--load-original-level`; money, guests and other sections opaque) where
+simulated guests drawn with the original kid sprites arrive, walk the paths and
+ride the Totem through its script (approximated rules, [GUESTS](docs/GUESTS.md)); `.LIP`
 lip-sync timelines and ISO-only `.MTR` files are read structurally (meaning
 unconfirmed); all nine TGQ movies decode audio bit-exact and video close to, not
 bit-identical with, an external reference, without playback. Evidence:

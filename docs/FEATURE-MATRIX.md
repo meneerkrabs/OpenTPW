@@ -75,7 +75,7 @@ adjudicate ongoing implementation or invent test results.
 | Park map, paths, entrances and construction rules | M2/M3 | unassessed | unverified | unverified | unverified | unverified | Original constraints and reference traces |
 | Fixed-tick simulation and RNG/replay | M2 | unassessed | unverified | unverified | unverified | unverified | Proposed contract; no determinism claim |
 | Versioned saves and original read-only import | M2 | unassessed | unverified | unverified | unverified | unverified | Full state, safe writes, import evidence |
-| Visitors, needs, routing and queues | M3 | unassessed | unverified | unverified | unverified | unverified | Stability plus original-behavior comparisons |
+| Visitors, needs, routing and queues | M3 | approximated | prototype-pass | unverified | unverified | approximated | [GUESTS.md](GUESTS.md): sprites/.sam/strings original, rates and formulas approximated; RSE visitor opcodes inferred from the corpus. macOS: native smoke in all four themes (Metal, arm64). Needs original-behavior comparisons |
 | Economy, shops, toilets and staffing | M3/M5 | unassessed | unverified | unverified | unverified | unverified | Reference values/events, not invented rules |
 | Every required fixed ride and original scripts | M4 | unassessed | unverified | unverified | unverified | unverified | Per-ride/per-opcode inventory and traces |
 | Coaster construction, ride behavior and rating | M4 | unassessed | unverified | unverified | unverified | unverified | All required types and constraints |

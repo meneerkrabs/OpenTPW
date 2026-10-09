@@ -170,6 +170,15 @@ Parallelle formaat-slice (7 formaten, geïsoleerde worktrees, 9 oktober 2026):
   Alle 263 startbare scripts + 44 kinderen draaien 60 s zonder fouten; de
   sandbox-Totem draait `Totem.RSE`, dat bepaalt wanneer de originele
   `totemm1.MD2`-animatie start. Slicing, milliseconden en CRIT_LOCK zijn afgeleid, niet getraced.
+- Bezoekers (benaderd, [GUESTS.md](GUESTS.md)): kinderen zijn originele sprites
+  (`esprites.wad`, ESP/FPC/TPC gedecodeerd, 8 sets × 175 frames, 5 richtingen +
+  spiegeling). Fixed-tick, geseede simulatie: aankomst via bushalte en kassa
+  (`FixedItemInfo`), entree, padzoeken met flow fields over de save-verbindingsbits,
+  behoeften, keuze met de `.sam` DecisionVar-gewichten, wachtrij en de
+  LETMEON/LETMEOFF-hostprotocol + bezoekersopcodes via `RideVisitorBridge`; de
+  Totem vult zich met echte bezoekers (start ≈3,3 s i.p.v. 11,3 s) en laat ze via
+  HOP/WALKOFF/WALKGET weer uitstappen. Snelheden, behoeftetempo's, aankomsteenheid
+  en scoreformule zijn eigen benaderingen. 600 bezoekers ≈0,06 ms per tick.
 - TPWS/TPWI: 17 unieke sectiemarkers in de enige fixture gelokaliseerd; inhoud opaque.
   Er staat geen ander TPWI/TPWS-bestand op de ISO.
 - LIPS: gevonden als `.LIP` (639 in `lips.wad` + 4 levelbestanden); strikte lezer,

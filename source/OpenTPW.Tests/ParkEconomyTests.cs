@@ -186,10 +186,20 @@ public class ParkEconomyTests
 				park.Advance( ParkCalendar.TicksPerHour );
 			EconomyTestData.HireBest( park, StaffType.Guard );
 		}
-		while ( !park.Staff.Candidates.Any( candidate => candidate.Type == StaffType.Guard ) )
-			park.Advance( ParkCalendar.TicksPerHour );
 		Assert.IsFalse( park.Staff.CanHire( StaffType.Guard ) );
-		Assert.ThrowsException<InvalidOperationException>( () => EconomyTestData.HireBest( park, StaffType.Guard ) );
+		park.Advance( ParkCalendar.SecondsToTicks( 400 ) );
+		Assert.IsFalse( park.Staff.Candidates.Any( candidate => candidate.Type == StaffType.Guard ), "no new guards once the park maximum is employed" );
+	}
+
+	[TestMethod]
+	public void StaffPoolRefillFillsEachRolesShortfallUpToTheCap()
+	{
+		var park = EconomyTestData.Park();
+		Assert.AreEqual( 15, park.Staff.Candidates.Count, "3 of each role at the start" );
+		park.Advance( park.Staff.UpdateInterval );
+		Assert.AreEqual( 25, park.Staff.Candidates.Count, "the shortfall of 2 per role is 10, the per-update cap" );
+		foreach ( var type in Enum.GetValues<StaffType>() )
+			Assert.AreEqual( 5, park.Staff.Candidates.Count( candidate => candidate.Type == type ), $"{type} reaches Max {type}s" );
 	}
 
 	[TestMethod]

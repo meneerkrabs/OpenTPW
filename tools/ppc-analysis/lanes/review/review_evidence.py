@@ -55,8 +55,8 @@ def decode(word: int, at: int = 0) -> tuple:
     rt, ra, rb = word >> 21 & 31, word >> 16 & 31, word >> 11 & 31
     if op == 10:  # cmpli: crf, ra, uimm
         return ('cmpli', rt >> 2, ra, word & 0xFFFF)
-    if op in (7, 11, 12, 14, 15, 32, 34, 36, 38, 48, 50, 52, 54):
-        names = {7: 'mulli', 11: 'cmpi', 12: 'addic', 14: 'addi', 15: 'addis', 32: 'lwz', 34: 'lbz',
+    if op in (7, 8, 11, 12, 14, 15, 32, 34, 36, 38, 48, 50, 52, 54):
+        names = {7: 'mulli', 8: 'subfic', 11: 'cmpi', 12: 'addic', 14: 'addi', 15: 'addis', 32: 'lwz', 34: 'lbz',
                  36: 'stw', 38: 'stb', 48: 'lfs', 50: 'lfd', 52: 'stfs', 54: 'stfd'}
         first = rt >> 2 if op == 11 else rt
         return (names[op], first, ra, _s16(word & 0xFFFF))

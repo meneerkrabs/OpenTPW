@@ -16,7 +16,18 @@ python3 -I tools/ppc-analysis/lanes/review/review_evidence.py /Users/sander/serv
   --pc-save /Users/sander/server/game-assets/theme-park-world/Data/levels/jungle/Easymode.TPWI
 python3 -I tools/ppc-analysis/lanes/review/reloc_audit.py /Users/sander/server/game-assets/mac-feral/bin/*.data \
   /Users/sander/server/game-assets/mac-feral/bin/libraries/*.data
+python3 -I tools/ppc-analysis/lanes/review/round2_evidence.py /Users/sander/server/game-assets/mac-feral/bin \
+  --mac-hfs /Users/sander/server/game-assets/mac-feral/hfs.img \
+  --pc-speech /Users/sander/server/game-assets/theme-park-world/Data/global/Speech
+OPENTPW_PPC_BIN_ROOT=/Users/sander/server/game-assets/mac-feral/bin \
+  python3 -I -m unittest discover -s tools/ppc-analysis/lanes/review -p 'test_*.py'
 ```
+
+`round2_evidence.py` (section 4 onwards) uses the same pinned `Binary` and
+fails closed in the same way. Its optional asset check prints only sizes,
+SHA-256 values and image offsets. With the binary variable set, all 28 lane
+tests run, with no skips. Without it, 27 run and the original-file witness
+skips.
 
 `review_evidence.py` exits non-zero if any identity, relocation, glue stub,
 operand or constant differs from the reviewed value. Unlike
@@ -216,12 +227,265 @@ statically here. What transfers is limited to:
 | 100 ms UTimer as simulation clock | Rejected as unsupported |
 | Relocation repeat semantics | Untested (no instances in corpus) |
 
-## Other lanes at review time
+## Other lanes at round-1 time
 
-At this review's commit, no domain lane had committed. Uncommitted evidence
-files were seen in guests, economy, rides, ui and advisor; they were read but
-not edited. Economy's `evidence.py` correctly states that PC SAM inputs do
-not prove PC arithmetic. Its saturating-conversion model differs as noted in
-§2. The rides lane contains a .NET witness project whose `bin/` and `obj/`
-outputs are git-ignored. At integration, root should check that it adds no
-package dependencies. Further lane findings need a follow-up review round.
+At round 1, no domain lane had committed. Round 2 below reviews their commits.
+
+# Round 2: committed domain lanes
+
+Reviewed commits: clock `126ee3e`, economy `14dff87`, guests `334c61d` +
+`f7041da`, rides `51425bd`, advisor `c08762e`. UI (`ppc-ui`) and formats are
+uncommitted, so their claims below are **tentative**. Scenarios has no files.
+Every committed helper exits 0 on the pinned binaries. Every lane's tests pass,
+including the original-file tests when their environment variable is set.
+Uncommitted edits seen in the economy, guests and rides trees were not reviewed
+as findings. None of them addresses the objections below. Nothing outside this
+lane was edited.
+
+Every address below was re-read from decoded instructions. Witnessed items
+are pinned by `round2_evidence.py`. Function extents come from prologues,
+`blr` and explicit branch targets. No heuristic boundary was used.
+
+## 4. Clock lane (`126ee3e`)
+
+**Accepted:** the catch-up loop is reached as game-state case 10 (`0x1c135c`
+bound 15, jump table `data:0x52cc8[10]` → `0x1c2264`). Its register globals
+come from the single prologue: there is no loop back to the dispatch `bctr`.
+
+- Backlog: signed `now − previous > 2000` sets `previous = now − 2000`.
+- Each substep runs `previous += 31` and `counter += 1`.
+- Even substeps call `0x63dd0`/`0xb7ac0`. Every substep where `counter & 7 == 0`
+  allows at most three park turns per callback. The cap counter `0x15c6b4` is
+  reset at `0x1c27a8`. Verified: no branch in `0x1c24d0–0x1c27a8` escapes,
+  so the reset runs on every case-10 path.
+- Forced stepping: `1000/32` with `divwu` = 31. Requested when global
+  `0x15c490 ≠ 0`; otherwise `0x10ecc0` ends forced mode.
+- Scale: unsigned ms delta. Initial value 1.0 (`data:0x5710`), steps ×/÷ 1.25
+  (`0x5708`), clamp [0.25, 2.0] (`0x5700`/`0x56f8`).
+- Animation: frame = `(now−start)·30/1000·speed`, channel flag `0x40` selects
+  the unscaled clock. Clip duration `(end−start)·1000/30` and
+  `end·1000/30` (multiply by 1000, magic-divide by 30).
+- RSE manager: budget `+148→+152` is checked **before** each opcode, the
+  ID/pass phase filter is low 3 bits, and `+184` bypasses it.
+  WAIT/WAITABS/SETTIMER/GETTIMER arithmetic as stated. Speed =
+  `0.5 + int16(+192)/100`.
+- Opcode names are native, not OpenTPW's enum. The binary holds a 106-entry
+  (name, argument-spec) table at `data:0x3ef20`. Indices 1/2/6/7/44/45/95/96
+  are CRIT_LOCK, CRIT_UNLOCK, ENDSLICE, GETTIME, WAIT, WAITABS, SETTIMER,
+  GETTIMER. This matches the dispatch range 0..105.
+
+**Additions and corrections:**
+
+1. **Unreported skip gate.** At `0x1c22f4–0x1c2308`, when
+   `!(flags 0x52e44 & 8) && (flags 0x52e40 & 1)`, the substep does **no**
+   work. However, `previous` and the substep counter have *already* advanced,
+   so the eight-phase alignment continues through skipped substeps. What the
+   two flag words mean is unresolved.
+2. **Turn increments before the mode-4 exit.** In `0x10536c`, `mGameTick++`
+   (`0x1053a0`) precedes the `world+0x1da738 == 4` early exit (`0x1053a8`).
+   In that mode the calendar, which reads the tick, keeps advancing while no
+   thing is updated. My round-1 phrase "mode 2 direct" is corrected: modes 0
+   **and** 2 call `0x10536c` directly, mode 1 uses `0x10565c`, and other modes
+   skip park work.
+3. **Zero or negative header budget executes no opcodes.** The manager checks
+   `budget > 0` before the first dispatch (`0xb28e8 → 0xb290c`). This closes
+   the clock lane's "zero/negative budget" boundary for the Mac build.
+4. The loop condition, LIP and mouth deadlines are **signed** (`cmpw`);
+   WAIT and WAITABS use unsigned `cmplw`. Wrap behaviour after 2³¹ ms is therefore
+   Mac-specific. This is not a practical concern, but it should not be
+   modelled as unsigned.
+5. With the clock lane's proofs the cadence lead from round 1 becomes
+   **accepted for the Mac build at scale 1.0**: 248 ms of scaled clock per
+   park turn, 3,750 calendar seconds per turn, and ≈ 5.71 s per game day. It
+   still depends on the scale (0.25–2.0), forced stepping, the skip gate and
+   the mode-4 tick. It is not a PC claim.
+
+## 5. Economy lane (`14dff87`)
+
+**Accepted** (re-derived): skill, research, wear, scrap, game over and event
+routing.
+
+- **Skill** `trunc(20·(grade + pct/100))`. Because the routine computes in
+  single precision, I checked every grade 0–5 with percentage 0–255; the
+  result equals `floor((100·grade + pct)/5)` on all of them (synthetic test).
+- **Research** every `turn % 20 == 0` (`0xcccccccd` magic) outside
+  states 3/4/5.
+- **Wear** is entered on `turn & 7 == 0`, with an inner `turn % 64` gate.
+  These are global-turn tests, not per-object phases: the world tick calls
+  the type dispatcher `0xfa9b0` for every live thing each turn.
+- **Scrap** divisors are exact: 365 days (`0x11ED178C6C000` × 100 ns) and
+  30 days (`0x1792F8658000`). The signed quotient's low word is compared, and
+  negative ages fall into the "other years" bucket.
+- **Game over** happens when `(now − timestamp(mTurnEnteredRed)) / 30 days ≥ 6`
+  at a month event while the balance and last balance are negative.
+- **Event routing:** the message types come from native class names and
+  getters (`0x41048/0x41024/0x41000` → `CMsgEndOfDay` 11, `CMsgEndOfMonth` 12,
+  `CMsgEndOfYear` 13). The calendar emits them at `0xe3fb0/0xe4088/0xe4148`.
+  The bank routes 12 to `0xcc21c` and resets `mProfitThisYear` on 13.
+- **Loan apply** (`0xcc904`) and the payoff amount are as stated.
+
+**Critical objection: the yearly-profit rule is wrong whenever `M·N < P`.**
+At `0xcc370–0xcc390` the month handler computes
+`profit += M − divwu(M·N − P, N)` in 32-bit arithmetic. Combined with the
+`−M` withdrawal, the net is `−divwu(M·N − P, N)`. `divwu` is **unsigned**, so
+whenever `M·N < P` the dividend wraps. The lane's "reduces yearly profit by
+`floor((M×N − P)/N)`" is correct only when `M·N ≥ P`.
+
+`M·N < P` occurs for every 0 % APR offer whose principal is not a multiple of
+its term. PC `Easy_Standard.sam` (`855ca41c…`) is 0 % for all eight offers,
+and six of them wrap:
+
+- 100,000, 50,000, 25,000 and 10,000 over 36 months each give
+  −119,304,646 per month.
+- 80,000 over 48 months gives −89,478,484.
+- 65,000 over 30 months gives −143,165,575.
+- 18,000 over 24 and 30,000 over 30 are exact, so they give 0.
+
+This is static Mac behaviour (an apparent original bug), not a PC claim.
+Whether `mProfitThisYear` is displayed or used beyond the year reset was not
+traced. Any Mac-backed model must keep the u32 wrap explicit or record a
+documented deviation. The independent model is
+`round2_evidence.loan_month_profit_delta`.
+
+Further additions:
+
+- **Batch flush before the loan loop.** The month handler first moves
+  `mBatchBalance` (`+16`, assert < 1,000,000) into balance, the game
+  statistic and `mProfitThisYear`, then zeroes it (`0xcc24c–0xcc2a0`). The
+  lane omits this.
+- **Withdrawals disabled.** The flag gates only the balance debit and the
+  `−M` profit write. `months_repaid` still increments and the `+M − q`
+  adjustment still applies, so profit *rises* each month.
+- **Payoff profit.** Because `months_repaid` is cleared before the
+  adjustment, payoff changes profit by exactly `−q·N`. That is the whole
+  loan's interest, regardless of how many months were already charged
+  (synthetic test). The lane flagged the ordering; this quantifies it. The
+  same unsigned wrap applies.
+- **Repayment termination is equality-only** (`cmplw repaid, N; bne`). With
+  N = 0, the saturated `M = 0xffffffff` debits −1 per month forever.
+  Ordinary SAMs do not trigger this.
+
+## 6. Guests lane (`334c61d`, `f7041da`)
+
+**Accepted:**
+
+- **Nested needs guard.** The ID-phase mismatch at `0xeed40` exits to `0xef164`,
+  past the mod-16 block at `0xeeeb0`. Fixed increments are toilet +1 and
+  hunger/thirst +2 (floats `data:0x55c4/0x55b4`), clamped to [0,100]. They
+  therefore need `turn % 16 == 0 ∧ id % 4 == 0`.
+- **Sequential IDs.** The allocator initialises IDs 1..10239 in ascending
+  order (two per iteration, 5,119 iterations, plus the last at `0x104f28`)
+  and pops from the head of the free list.
+- **Distance, speed and RNG domains.** The distance divisor is exactly signed
+  ÷450 (`0x91A2B3C5`, `srawi 8`). The speed setter caps at 2.0, scales by
+  0.4/0.2 × 65,536 and floors at 655. The RNG start domains are as stated.
+
+**Additions:**
+
+- **Overfull queues give a negative match.** At `0xe9400` the queue match is
+  `100 − divwu(queue·100, 4·max(f60,1))`. Within `0xe9404–0xe96d8` the only
+  other writer of r22 is the far-distance zeroing at `0xe9414`. So when
+  `queue > 4·f60` the match is negative, and the weighted sum is divided with
+  `divwu` (`0xe9714`). A negative total therefore becomes a huge score
+  instead of a low one. Whether a queue can exceed `4·f60` depends on the
+  acceptance limit (the flagged case uses 100). Needs evidence before modelling.
+- **Update order is newest first.** The allocator pushes each new slot at the
+  live-list head (`0x1052c0`), and the world tick walks from the head. This
+  replaces the open "all guests processed in list order" assumption with a
+  concrete Mac order. Save-loaded rebuild order was not traced.
+- The speed update `0xe6b28` (the lane's 99/100 decay; value not re-derived
+  here) is called at `0xeed0c`, every turn, before the ID-phase guard.
+
+## 7. Rides lane (`51425bd`)
+
+**Accepted** (re-decoded):
+
+- COPY writes the accumulator.
+- DIV and MOD with a zero divisor set the accumulator to 0. Otherwise they
+  use signed `divw` and the C remainder, and the result is stored only for a
+  variable destination.
+- Literal operands are sign-extended to 16 bits.
+- BUMP13 multiplies by 30 and BUMP14 negates.
+- The entrance coordinate is ×255.0 (`data:0x54c0`) truncated to a byte.
+- The per-mille TRIGANIMSPEED passes `script_speed × op / 1000`.
+- The .NET witness has only a project reference, no packages.
+
+**Additions:**
+
+- **Literal-destination COPY does not "discard".** It returns before fetching
+  its source operand (`0xaf604 → 0xb2354`). The next dispatch reads that
+  operand as an opcode word and fails the `0x80` tag test (`0xaf5b0`). The
+  script PC then becomes −10000 and the script stops. Before relying on any
+  generic literal-destination rule, scan the corpus for this form.
+- **RAND's bound is not resolved.** `0xb07f8` sign-extends the raw operand
+  word and never calls the resolver, so a variable bound uses its encoding
+  bits. RAND computes `labs(labs(rng>>1) % (bound+1))`. A bound of −1 divides
+  by zero (undefined on PPC).
+- **Animation waits use `max(ret − 300, 300)`.** TRIGANIM `0xafb20`, WAITANIM
+  `0xafc78` and TRIGANIMSPEED `0xb007c` all apply this. TRIGANIMSPEED's
+  deadline is `now + acc·1000/op` with signed `divw`, using the operand only
+  and not the script speed. It also stores the operand as **int16** at
+  `+228`. Neither the rides nor the clock lane states the 300 ms adjustment.
+  What `0xa6cc0` returns, and in what units, needs evidence before modelling.
+
+## 8. Advisor lane (`c08762e`)
+
+**Accepted:** LIP mark ÷1000 (signed magic `0x10624dd3`, `srawi 6`). At
+most one toggle per update, when the current time is strictly greater than
+the mark deadline. Mouth `rand() % count + 1` with a deadline of now + 100,
+so Normal is reachable. The maximum and minimum scans use strict comparisons,
+so ties keep the earliest slot.
+
+**Upgraded.** The lane pairs the Mac response table with the *PC* speech
+bank. The Mac `hfs.img` contains exactly one contiguous byte-identical copy
+each of PC `speechHD.SDT` (25,205,152 B), `lips.wad` and `cat_speechSFX.map`
+(`speech_identity`). The global sample/LIP numbering is therefore the same
+data on both platforms. Which path the Mac loader opens was not traced.
+
+**Needs evidence:** the mouth count comes from `+272`; the value 5 depends
+on all five names resolving.
+
+## 9. UI lane (uncommitted, tentative)
+
+The scale routines and clamp are confirmed (section 4). **Missing:** a third
+callback record `data:0x452f8` → vector `0x7518` → `0x1131ac` *sets* the
+scale to 1.0 (`data:0x56d8`) through `0x127c40`. So the original has
+step-down, step-up **and reset** controls. Key binding and widget mapping
+remain unresolved.
+
+## 10. Round-2 classification
+
+| Item | Status |
+| --- | --- |
+| Clock: case-10 loop, 2000 backlog, 31 ms substep, 8-phase, cap 3 per callback, forced step 31, scale 1.0/1.25/[0.25,2], 30 fps formula, RSE budget/phase/WAIT/WAITABS/SETTIMER/GETTIMER, native opcode names | Accepted (Mac) |
+| Skip gate advances counter; tick increments in mode 4; modes 0/2 direct; zero budget executes nothing | New, accepted (Mac) |
+| 248 ms/turn, 5.71 s/day at scale 1.0 | Accepted (Mac, scale 1.0); PC needs evidence |
+| Economy skill/research/wear/scrap/game-over/event types/apply/payoff amount | Accepted (Mac) |
+| Economy yearly-profit rule `floor((M·N−P)/N)` | **Rejected for M·N < P** (unsigned wrap; affects 6 of 8 PC Easy offers) |
+| Batch flush, withdrawal-disabled profit gain, payoff = −total interest, equality-only termination | New, accepted (Mac) |
+| Guests nested guard, sequential IDs, ÷450, speed setter | Accepted (Mac) |
+| Negative queue match → unsigned score | New; boundary reachability needs evidence |
+| Newest-first update order | New, accepted (Mac live list) |
+| Rides COPY/DIV/MOD/literal/BUMP/×255/TRIGANIMSPEED | Accepted (Mac) |
+| Literal-destination COPY aborts script; RAND raw bound; 300 ms anim adjustment | New, accepted (Mac); `0xa6cc0` units need evidence |
+| Advisor ÷1000, single toggle, mouth rand, strict ties | Accepted (Mac) |
+| Global speech bank identical Mac/PC | Accepted (asset identity) |
+| UI speed reset callback | New, accepted (Mac); UI binding needs evidence |
+| PC runtime equivalence of any item above | Needs evidence |
+
+## 11. Hand-offs (no source edited by this lane)
+
+- **Economy:** amend the profit rule for `M·N < P` and add the batch flush and
+  the withdrawal-disabled branch. Keep the u32 wrap explicit in any
+  Mac-behaviour model.
+- **Root/economy:** the round-1 `SaveEconomyRecords` misread is still open.
+  It needs a separate patch.
+- **Guests:** bound the queue-count domain (the acceptance-limit consumer)
+  before modelling attraction scores.
+- **Rides:** run a corpus scan for COPY with a literal destination and for
+  non-literal RAND bounds. Recover the units of `0xa6cc0`'s return.
+- **Clock:** label the flags `0x52e40`/`0x52e44` and the world `+0x1da738`
+  mode.
+- **Integration:** keep every item above tagged Mac-static. The PC
+  `TP.ICD` was not inspected, and the PEF repeat-relocation path remains
+  untested because the corpus has no instances.

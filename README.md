@@ -59,8 +59,9 @@ bit-identical with, an external reference, without playback. Evidence:
 [TGQ](docs/TGQ-MOVIES.md).
 
 The BF4 CPU decoder handles four-bit, RLE and monochrome glyphs and is tested
-against 33 selected original English fonts. Game UI integration and visual fidelity
-are still pending; this is not a complete font-rendering implementation. See
+against 33 selected original English fonts. A GPU glyph atlas draws original
+strings in a sandbox panel (Metal readback-verified); original UI screens and
+visual fidelity are still pending, so BF4 stays partial. See
 [BF4 evidence](docs/BF4-FONTS.md), [format backlog](docs/FORMAT-BACKLOG.md),
 [completion plan](docs/COMPLETION-PLAN.md) and [progress](docs/PROGRESS.md).
 Format checkmarks do not qualify full gameplay or every platform/edition.

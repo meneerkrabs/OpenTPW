@@ -91,9 +91,11 @@ procedural motion and stop/reset, removes/replaces the ride and exercises
 save/load in an isolated temporary directory. It exits nonzero on failure or
 premature window closure. GPU readback checks nonblack textured terrain and
 writes `artifacts/native-smoke-park.png` and `artifacts/native-smoke-terrain.png`
-relative to the current directory. These captures omit the UI and remain ignored;
+relative to the current directory. The BF4 text panel (original fonts and strings)
+must match its CPU composite in readback; its crop is `artifacts/native-smoke-text.png`.
+These captures omit the ImGui UI and remain ignored;
 they are not proof of interactive UI correctness or original-game visual fidelity.
-The six native shader tests verify MSL/HLSL/GLSL material binding names without
+The nine native shader tests verify MSL/HLSL/GLSL material and text binding names without
 creating a GPU device; omit the opt-in variable when matching libraries are absent.
 
 ## Development packages

@@ -30,8 +30,9 @@ online service restoration remains separately scoped.
 ## Selected edition
 
 Detailed missing/partial format work is tracked in [FORMAT-BACKLOG.md](FORMAT-BACKLOG.md).
-BF4 CPU decoding is implemented for the selected English corpus; font/UI integration,
-visual fidelity and three-platform graphics qualification remain unverified.
+BF4 CPU decoding is implemented for the selected English corpus; a BF4 text panel
+renders on Metal with readback, while original UI integration, visual fidelity and
+D3D11/Vulkan qualification remain unverified.
 MD2, MAP, RSE, TPWI-payload markers, LIP, MTR and TGQ now have bounded CPU readers
 verified against original files (see FORMAT-BACKLOG.md); none is integrated as an
 original gameplay/presentation feature, so their game-feature rows stay unchanged.

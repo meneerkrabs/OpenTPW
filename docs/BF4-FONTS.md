@@ -1,9 +1,9 @@
-# BF4 fonts: CPU decoding evidence
+# BF4 fonts: CPU decoding and rendering evidence
 
-October 9, 2026. Status: CPU decoder implemented for the selected corpus;
-game UI integration and original visual fidelity **not verified**. README status
-changes from missing to partial, not complete. No new dependency or font asset is
-included in the repository.
+October 9, 2026. Status: CPU decoder implemented for the selected corpus; GPU atlas
+text renders original strings in a sandbox panel on Metal. Original UI screens and
+original visual fidelity are **not verified**; README status stays partial. No new
+dependency or font asset is included in the repository.
 
 `FontFile` reads the `F4FB` header, its little-endian offset table and 24-byte
 glyph records. The upstream format note omits four encoding/reserved bytes in
@@ -11,7 +11,7 @@ each record; actual glyph dimensions start at record offset 16, not 12.
 Header width/height are retained as hints, not trusted as glyph bounds.
 Glyph records retain character, signed placement offsets/advance, encoding,
 dimensions and decoded coverage samples 0–15 in continuous row-major order.
-There is no implied original palette/alpha mapping or new GPU atlas yet.
+No original palette/alpha mapping is implied; see Rendering for OpenTPW's choice.
 
 Encodings:
 - 0: packed four-bit samples, high nibble first, continuous across odd-width rows.
@@ -51,12 +51,46 @@ short reads, invalid magic/offsets/sizes/flags, truncated commands, expansion/in
 aggregate limits, terminators, zero padding and implicit final zero. Asset tests
 are inconclusive without the selected private corpus, not successful asset passes.
 
+## Rendering
+
+`FontAtlas` packs the first record of each character (192 per English font; the 58
+identical space slots collapse to one) on shelves ordered by descending height,
+descending width, ascending character, with one transparent padding pixel. Width is
+the smallest power of two from 64 that keeps the packed height within it; height is
+the next power of two. Coverage maps linearly to alpha (`value × 17`, 15 → 255).
+That mapping is an OpenTPW choice: no original palette, gamma or blend mode is
+evidenced. All 33 fonts pack without overlap and every region equals its decoded
+coverage; GAME8AA (128×128) and SESHMED (256×256) atlas hashes are pinned.
+
+`TextLayout` advances the pen by each record's advance and places bitmaps at
+pen + offset X and line top + offset Y. Line height is the header height hint:
+across the corpus the lowest glyph bottom (offset Y + height) is within one pixel
+of it, and glyph tops can be negative (accents above the line box). Interpreting
+offsets relative to the line top, and the hint as line height, is inferred from
+these extents, not from original code. No kerning is applied: records contain no
+pair data. `\n`, `\r` and `\r\n` break lines (UITEXT uses `\n`); optional greedy
+wrapping at spaces and `?` fallback for missing characters are OpenTPW policy.
+Every UITEXT entry lays out in GAME8AA without fallback. Pinned layouts: UITEXT
+`Excitement` (GAME8AA, 58 px), OBJECT_NAMES `Totem` (SESHMED, 53 px) and the quit
+confirmation wrapped at 120 px.
+
+`TextRenderer` uploads atlases as R8 textures, point-samples one texel per
+framebuffer pixel at integer positions and alpha-blends vertex color by coverage.
+`SandboxTextOverlay` draws a top-right panel in the park sandbox: OBJECT_NAMES
+`Totem` in SESHMED and UITEXT ride labels/`No upgrades have` in GAME8AA. Panel
+placement, colors and backing rectangle are not an original screen. The native
+smoke test reads the resolved frame back on Metal and requires the panel to match
+a CPU composite of the same quads (observed: 2,224 ink pixels, maximum channel
+difference 0) and writes `artifacts/native-smoke-text.png`. Visual check of that
+capture: upright, legible glyphs with expected baselines and descenders.
+
 ## Remaining gates and sources
 
-Next: GPU atlas and game-text layout with original metrics; compare captures of
-actual strings, baseline/spacing/AA and supported locales against the original.
-Run actual rendering on Metal, D3D11 and Vulkan. Parsing CPU samples alone does
-not qualify fonts/UI/audio/video or the original game's audiovisual behavior.
+Next: use fonts in actual original UI screens/dialogs; compare captures of actual
+strings, baseline/spacing/AA/colors and supported locales against the original.
+Run rendering on D3D11 and Vulkan (shader cross-compilation is tested for HLSL and
+GLSL only). Parsing and rendering samples do not qualify the original UI or the
+original game's audiovisual behavior.
 
 Research sources (format references, no third-party decoder source copied):
 - OpenTPW docs `34f357fabc8a6aa064c76260c714dca8b875b148`:

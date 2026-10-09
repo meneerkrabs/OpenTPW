@@ -124,6 +124,11 @@ worden niet als volledige game- of platformkwalificatie geïnterpreteerd.
 - `--inspect-font`: read-only CPU-diagnostiek zonder assets te wijzigen of GPU
   te starten. Gepubliceerde Mac-build vanuit `/tmp`: geldig font exit 0,
   ontbrekend argument exit 1. Drie RID-pakketten opnieuw gebouwd.
+- BF4-tekst: deterministische glyphatlas (coverage × 17 → alpha), layout met
+  originele advance/offsets/regelhoogte, regelafbreking en `?`-fallback; gepind
+  op GAME8AA/SESHMED en UITEXT/OBJECT_NAMES. Sandboxpaneel tekent "Totem" en
+  ride-labels; Metal-smoketest vergelijkt readback met CPU-composiet (max.
+  verschil 0). Geen origineel UI-scherm/AA-vergelijking; D3D11/Vulkan niet gedraaid.
 - Read-only metadata-inventaris van 312 DWFB-archives: 2.118 MD2-, 308 RSE- en
   7 MAP-members. Jungle terrain bevat `base.map` en `terrain.map`; dit bewijst
   nog geen kaartsemantiek/import. Negen TGQ-video's gevonden. Geen standalone

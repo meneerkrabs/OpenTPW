@@ -186,7 +186,7 @@ public class LanguageTests
 
 	private static Dictionary<string, string[]> LoadAllStrings( GameLanguage language ) =>
 		language.EnumerateFiles().Where( file => Path.GetExtension( file ).Equals( ".str", StringComparison.OrdinalIgnoreCase ) )
-			.ToDictionary( file => Path.GetFileName( file ).ToUpperInvariant(), file => language.LoadStrings( Path.GetFileName( file ) ).Entries );
+			.ToDictionary( file => Path.GetFileName( file ).ToUpperInvariant(), file => language.LoadStrings( Path.GetFileName( file ), asStored: true ).Entries );
 
 	[DataTestMethod]
 	[DynamicData( nameof( ShippedLanguages ) )]
@@ -195,7 +195,8 @@ public class LanguageTests
 		var language = OriginalLanguage( name );
 		var tables = LoadAllStrings( language );
 		Assert.AreEqual( 21, tables.Count );
-		Assert.AreEqual( 2358, tables.Values.Sum( entries => entries.Length ) );
+		// Two editions: 2,358 entries, or 2,365 with UITEXT's extra entry 207 and six more CHAT_COMMANDS.
+		CollectionAssert.Contains( new[] { 2358, 2365 }, tables.Values.Sum( entries => entries.Length ) );
 		foreach ( var file in language.EnumerateFiles().Where( file => Path.GetExtension( file ).Equals( ".str", StringComparison.OrdinalIgnoreCase ) ) )
 			StringTableTests.AssertLengthsMatchLayout( File.ReadAllBytes( file ), tables[Path.GetFileName( file ).ToUpperInvariant()] );
 		var characters = tables.Values.SelectMany( entries => entries ).SelectMany( entry => entry ).Where( c => c > '~' ).Distinct().OrderBy( c => c );
@@ -223,8 +224,10 @@ public class LanguageTests
 	{
 		var language = OriginalLanguage( name );
 		var uiText = language.LoadStrings( "UITEXT.str" );
-		Assert.AreEqual( 473, uiText.Entries.Length );
+		Assert.AreEqual( GameLanguage.UiTextEntries, uiText.Entries.Length );
 		Assert.AreEqual( goOnline, uiText[(int)UIStrings.GoOnline] );
+		// After entry 207 (the 474-entry edition's extra message), a language-independent anchor.
+		Assert.AreEqual( " 640 x 480", uiText[(int)UIStrings.Resolution640x480] );
 		Assert.AreEqual( excitement, uiText[(int)UIStrings.Excitement] );
 		Assert.AreEqual( reliability, uiText[(int)UIStrings.Reliability] );
 		Assert.AreEqual( totem, language.LoadStrings( "OBJECT_NAMES.str" )[29] );
@@ -246,7 +249,8 @@ public class LanguageTests
 		var language = OriginalLanguage( name );
 		var used = LoadAllStrings( language ).Values.SelectMany( entries => entries ).SelectMany( entry => entry ).Where( c => c != '\n' ).ToHashSet();
 		var fonts = language.EnumerateFiles().Where( file => Path.GetExtension( file ).Equals( ".bf4", StringComparison.OrdinalIgnoreCase ) ).ToArray();
-		Assert.AreEqual( 33, fonts.Length );
+		// 33 fonts, or 37 in the 474-entry UITEXT edition, which adds DATEBIG/DATEMED/DATESMALL/DATETINY.
+		CollectionAssert.Contains( new[] { 33, 37 }, fonts.Length );
 		foreach ( var font in fonts )
 		{
 			var glyphs = language.LoadFont( Path.GetFileName( font ) ).Glyphs.Select( glyph => glyph.Character ).ToHashSet();

@@ -131,6 +131,9 @@ public sealed class ParkEconomy : IParkEconomy
 
 	private void AdvanceTurn( long previousTurn, long turn )
 	{
+		// [BIN:STP-PPC:0x100F0284 researcher update] each researcher not in an excluded state does research when the turn counter is a multiple of 20
+		if ( turn % ParkResearch.TurnsPerResearch == 0 )
+			DoResearch();
 		// [BIN:STP-PPC:0x100D67F0 world update] the golden-ticket check (0x100D31D0) runs when the turn counter is a multiple of 100, and only in Full Simulation (game type 0)
 		if ( turn % GoldenTicketCheckInterval == 0 && Mode == ParkGameMode.FullSimulation )
 			CheckGoldenTickets();
@@ -148,6 +151,23 @@ public sealed class ParkEconomy : IParkEconomy
 			EndMonth( (now.Year - ParkCalendar.Epoch.Year) * ParkCalendar.MonthsPerYear + now.Month - 1 );
 		if ( now.Year != before.Year )
 			Ledger.StartYear();
+	}
+
+	private void DoResearch()
+	{
+		var researchers = Staff.OfType( StaffType.Researcher ).Where( ParkResearch.CanResearch ).ToList();
+		var abilities = researchers.Select( member => Settings.ResearchAbility[member.Grade] ).ToList();
+		if ( abilities.Count == 0 && Mode == ParkGameMode.InstantAction )
+			// [APPROX:ECON-019] Instant Action research runs at one grade-2 researcher without staff — evidence needed: Instant Action capture
+			abilities.Add( Settings.ResearchAbility[2] );
+		foreach ( var ability in abilities )
+		{
+			foreach ( var item in Research.AddResearcherPoints( ability ) )
+			{
+				Counters.Add( ParkCounters.Researched( item.Category ), 1 );
+				Raise( ParkEventKind.ItemResearched, item.Level, 0, item.InfoId, Catalog.TryGet( item.InfoId, out var info ) ? info.Name : "" );
+			}
+		}
 	}
 
 	private void CheckGoldenTickets()
@@ -261,12 +281,6 @@ public sealed class ParkEconomy : IParkEconomy
 			}
 			else if ( before >= WornStateOfRepair && item.StateOfRepair < WornStateOfRepair )
 				Raise( ParkEventKind.RideWorn, item.StateOfRepair, item.Id, item.InfoId );
-		}
-		var points = Research.DailyPoints( Staff.OfType( StaffType.Researcher ), Mode == ParkGameMode.InstantAction );
-		foreach ( var item in Research.AdvanceDay( points ) )
-		{
-			Counters.Add( ParkCounters.Researched( item.Category ), 1 );
-			Raise( ParkEventKind.ItemResearched, item.Level, 0, item.InfoId, Catalog.TryGet( item.InfoId, out var info ) ? info.Name : "" );
 		}
 		foreach ( var (kind, index, amount, detail) in Objectives.AdvanceDay( day + 1, MeasureChallenge ).ToList() )
 		{

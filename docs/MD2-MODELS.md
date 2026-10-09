@@ -123,6 +123,14 @@ range; `Pmegacostm` exceeds `Pmegacost`'s single node and
 `c_hade/TROUGH_ROTATE`/`TROUGH_SCALE` have no prefix base. `ModelFile.Clip`
 holds the decoded `ModelAnimation`; the raw trailer stays in `Animation`.
 
+Every table pointer is checked against the payload and charged to a budget
+before its array is allocated (a vertex group's keys × vertices product reaches
+2³² − 2¹⁷ + 1 words). The budget is an OpenTPW resource limit, not original
+behaviour: tables may reuse payload bytes, but together they may read at most
+`ModelAnimation.TableBytesPerPayloadByte` (4) times the payload. No table in the
+PC baseline or Patch 2 corpus reuses bytes; their 1,278 clips read 6,010,956
+table bytes, each clip within its own payload (`ModelAnimation.TableBytes`).
+
 Trailer words (u32 unless split):
 
 | Word | Meaning | Evidence |

@@ -129,6 +129,40 @@ public class Md2VertexAnimationTests
 	private static ModelAnimation Read( byte[] data ) => new ModelFile( new MemoryStream( data ) ).Clip!;
 	private static void Rejects( byte[] data ) => Assert.ThrowsException<InvalidDataException>( () => Read( data ) );
 
+	/// <summary>Inserts <paramref name="bytes"/> zero bytes before the trailer; returns the first one's offset.</summary>
+	private static int Grow( ref byte[] data, int bytes )
+	{
+		var trailer = data.Length - 72;
+		var grown = new byte[data.Length + bytes];
+		data.AsSpan( 0, trailer ).CopyTo( grown );
+		data.AsSpan( trailer ).CopyTo( grown.AsSpan( trailer + bytes ) );
+		W32( grown, 0x98, trailer + bytes );
+		data = grown;
+		return trailer;
+	}
+
+	/// <summary>Bytes allocated on this thread while <paramref name="action"/> runs.</summary>
+	private static long Allocated( Action action )
+	{
+		var before = GC.GetAllocatedBytesForCurrentThread();
+		action();
+		return GC.GetAllocatedBytesForCurrentThread() - before;
+	}
+
+	/// <summary>
+	/// Animated group 2 with <paramref name="keys"/> increasing ticks and <paramref name="vertices"/>
+	/// indices in valid spans, but packed keys pointing at a span far smaller than keys × vertices words.
+	/// </summary>
+	private static byte[] CreateWideGroup( ushort keys, ushort vertices )
+	{
+		var data = CreateAnimation();
+		var free = Grow( ref data, keys * 2 + vertices * 2 );
+		for ( var key = 0; key < keys; key++ )
+			W16( data, free + key * 2, (ushort)key );
+		WriteGroup( data, 2, keys, vertices, free + keys * 2, free, AnimatedKeys );
+		return data;
+	}
+
 	private static NVector3[] Mesh() => Enumerable.Repeat( new NVector3( 10, 10, 10 ), 4 ).ToArray();
 
 	[TestMethod]
@@ -346,5 +380,65 @@ public class Md2VertexAnimationTests
 		data = CreateAnimation();
 		W32( data, FrameTracks + 4, Trailer - 4 );
 		Rejects( data ); // frame keys run into the trailer
+	}
+
+	[TestMethod]
+	public void WideVertexGroupsAreRejectedBeforeTheirKeysAreAllocated()
+	{
+		// 65535 × 65535 overflows a 32-bit product; the spans checked first are all valid (≈ 262 KB).
+		var data = CreateWideGroup( ushort.MaxValue, ushort.MaxValue );
+		Rejects( data );
+
+		// 2048 × 2048 words would be 16 MiB; rejection must cost about the member size, not the claimed table.
+		data = CreateWideGroup( 2048, 2048 );
+		var allocated = Allocated( () => Rejects( data ) );
+		Assert.IsTrue( allocated < 1 << 20, $"{allocated} bytes allocated" );
+
+		// The same layout with a matching span still decodes.
+		data = CreateWideGroup( 4, 2 );
+		var group = Read( data ).Tracks[0].VertexAnimation!.Groups[2];
+		Assert.AreEqual( 4, group.Ticks.Count );
+		Assert.AreEqual( 8, group.PackedKeys.Count );
+	}
+
+	/// <summary>
+	/// Groups that all reuse one large span pass every per-table check; the aggregate limit
+	/// (<see cref="ModelAnimation.TableBytesPerPayloadByte"/> × payload) bounds them.
+	/// </summary>
+	[TestMethod]
+	public void ReusedTablesAreChargedAgainstTheAggregateBudget()
+	{
+		static byte[] Aliased( int groups )
+		{
+			const int vertices = 64;
+			var data = CreateAnimation();
+			var free = Grow( ref data, groups * 20 + 4 + vertices * 2 + vertices * 8 );
+			var ticks = free + groups * 20;
+			var indices = ticks + 4;
+			var packed = indices + vertices * 2;
+			W16( data, ticks + 2, 10 );
+			W16( data, Block, 1 ); // no static group
+			W16( data, Block + 2, (ushort)groups );
+			W32( data, Block + 12, free );
+			for ( var group = 0; group < groups; group++ )
+			{
+				var entry = free + group * 20;
+				W16( data, entry, 2 );
+				W16( data, entry + 2, vertices );
+				W32( data, entry + 4, indices );
+				W32( data, entry + 8, ticks );
+				W32( data, entry + 12, packed );
+			}
+			return data;
+		}
+
+		var clip = Read( Aliased( 4 ) );
+		var payload = new ModelFile( new MemoryStream( Aliased( 4 ) ) ).Animation!.Offset - ModelFile.HeaderBytes;
+		Assert.AreEqual( 4, clip.Tracks[0].VertexAnimation!.Groups.Count );
+		Assert.IsTrue( clip.TableBytes > payload && clip.TableBytes <= ModelAnimation.TableBytesPerPayloadByte * (long)payload );
+
+		var data = Aliased( 16 );
+		var allocated = Allocated( () => Rejects( data ) );
+		Assert.IsTrue( allocated < 1 << 20, $"{allocated} bytes allocated" );
 	}
 }

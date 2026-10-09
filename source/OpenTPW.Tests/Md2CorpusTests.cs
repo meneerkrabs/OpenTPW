@@ -19,6 +19,7 @@ public class Md2CorpusTests
 			.Where( file => file.EndsWith( ".wad", StringComparison.OrdinalIgnoreCase ) ).ToArray();
 		Assert.AreEqual( 312, wads.Length );
 		int members = 0, geometry = 0, animation = 0;
+		long sharedTables = 0, tableBytes = 0;
 		long tracks = 0, trsTracks = 0, undecodedTracks = 0, bezierTracks = 0, linearTracks = 0, positionKeys = 0, rotationKeys = 0, easedKeys = 0, scaleKeys = 0;
 		long meshes = 0, nodes = 0, faces = 0, corners = 0, positions = 0, materials = 0, untextured = 0, textureSlots = 0, multiFrame = 0, extra = 0, attributes = 0;
 		var unsupported = new List<string>();
@@ -36,6 +37,9 @@ public class Md2CorpusTests
 					if ( model.Kind == ModelFileKind.Animation )
 					{
 						animation++;
+						// No table reuses payload bytes, so the decode budget leaves 4× headroom.
+						sharedTables += model.Clip!.TableBytes > model.Animation!.Offset - ModelFile.HeaderBytes ? 1 : 0;
+						tableBytes += model.Clip.TableBytes;
 						foreach ( var track in model.Clip!.Tracks )
 						{
 							tracks++;
@@ -103,6 +107,8 @@ public class Md2CorpusTests
 		Assert.AreEqual( 26233, rotationKeys );
 		Assert.AreEqual( 12451, easedKeys );
 		Assert.AreEqual( 2832, scaleKeys );
+		Assert.AreEqual( 0, sharedTables );
+		Assert.AreEqual( 6010956, tableBytes );
 	}
 
 	/// <summary>

@@ -237,19 +237,45 @@ public sealed class ModelAnimation
 	public IReadOnlyList<ModelTextureFrameTrack> TextureFrameTracks { get; init; } = Array.Empty<ModelTextureFrameTrack>();
 	/// <summary>Opaque u16 node-index list (trailer words 14 and 6); meaning unknown.</summary>
 	public IReadOnlyList<ushort> NodeList { get; init; } = Array.Empty<ushort>();
+	/// <summary>
+	/// Payload bytes the decoder read as tables, counting a span again each time a pointer reuses it.
+	/// Never more than the payload in the PC baseline and Patch 2 corpora (no table is shared).
+	/// </summary>
+	public long TableBytes { get; init; }
+
+	/// <summary>
+	/// OpenTPW resource limit, not original behaviour: tables may reuse payload spans, but all of them
+	/// together may read at most this many times the payload (the original loader has no such check).
+	/// Every table is charged before its array is allocated, so decoded arrays stay proportional to the
+	/// member size.
+	/// </summary>
+	public const int TableBytesPerPayloadByte = 4;
 
 	internal static ModelAnimation Decode( byte[] data, int trailer, uint[] words )
 	{
+		var budget = TableBytesPerPayloadByte * (long)(trailer - ModelFile.HeaderBytes);
+		long charged = 0;
+
+		// Checks one table against the payload and charges it before the caller allocates for it.
 		int Pointer( uint value, long length, string what )
 		{
-			if ( value < ModelFile.HeaderBytes || value > trailer || length > trailer - (long)value )
+			Probe( value, length, what );
+			charged += length;
+			if ( charged > budget )
+				throw new InvalidDataException( $"MD2 animation tables exceed {TableBytesPerPayloadByte}× the payload at {what}." );
+			return (int)value;
+		}
+
+		int Probe( uint value, long length, string what )
+		{
+			if ( value < ModelFile.HeaderBytes || value > trailer || length < 0 || length > trailer - (long)value )
 				throw new InvalidDataException( $"MD2 animation {what} lies outside the payload." );
 			return (int)value;
 		}
 
 		var trackCount = (int)(words[4] >> 16);
-		var tracks = new ModelAnimationTrack[trackCount];
 		var records = trackCount == 0 ? 0 : Pointer( words[11], trackCount * 64L, "record table" );
+		var tracks = new ModelAnimationTrack[trackCount];
 		long rotationKeys = 0, scaleKeys = 0, positionTracks = 0;
 		for ( var index = 0; index < trackCount; index++ )
 		{
@@ -267,7 +293,7 @@ public sealed class ModelAnimation
 			for ( var word = 9; word <= 13; word++ )
 			{
 				if ( raw[word] != 0 )
-					Pointer( raw[word], 1, $"record {index} word {word}" );
+					Probe( raw[word], 1, $"record {index} word {word}" );
 			}
 
 			ModelVertexAnimation? vertexAnimation = null;
@@ -276,10 +302,12 @@ public sealed class ModelAnimation
 				var block = Pointer( raw[10], ModelVertexAnimation.HeaderBytes, $"record {index} vertex block" );
 				vertexAnimation = ModelVertexAnimation.Decode( data, block, Pointer );
 			}
-			var toggles = new short[(flags & ModelAnimationTrack.NodeFlagToggleFlag) != 0 ? raw[5] >> 16 : 0];
-			if ( toggles.Length > 0 )
+			var toggleCount = (flags & ModelAnimationTrack.NodeFlagToggleFlag) != 0 ? (int)(raw[5] >> 16) : 0;
+			var toggles = Array.Empty<short>();
+			if ( toggleCount > 0 )
 			{
-				var offset = Pointer( raw[12], toggles.Length * 2L, $"record {index} node-flag toggles" );
+				var offset = Pointer( raw[12], toggleCount * 2L, $"record {index} node-flag toggles" );
+				toggles = new short[toggleCount];
 				for ( var entry = 0; entry < toggles.Length; entry++ )
 					toggles[entry] = BinaryPrimitives.ReadInt16LittleEndian( data.AsSpan( offset + entry * 2 ) );
 			}
@@ -319,11 +347,12 @@ public sealed class ModelAnimation
 			var scaleCount = (int)(raw[4] >> 16);
 			if ( (raw[7] == 0 && rotationCount != 0) || (raw[8] == 0 && scaleCount != 0) )
 				throw new InvalidDataException( $"MD2 animation record {index} counts keys without a key table." );
-			var rotations = new ModelRotationKey[rotationCount];
+			var rotations = Array.Empty<ModelRotationKey>();
 			var curveCount = 0;
 			if ( rotationCount > 0 )
 			{
 				var offset = Pointer( raw[7], rotationCount * 20L, "rotation keys" );
+				rotations = new ModelRotationKey[rotationCount];
 				for ( var key = 0; key < rotationCount; key++ )
 				{
 					var entry = offset + key * 20;
@@ -339,17 +368,19 @@ public sealed class ModelAnimation
 					curveCount = Math.Max( curveCount, rotations[key].Ease + 1 );
 				}
 			}
-			var curves = new byte[curveCount][];
+			var curves = Array.Empty<byte[]>();
 			if ( curveCount > 0 )
 			{
 				var offset = Pointer( raw[13], curveCount * 8L, "easing curves" );
+				curves = new byte[curveCount][];
 				for ( var curve = 0; curve < curveCount; curve++ )
 					curves[curve] = data.AsSpan( offset + curve * 8, 8 ).ToArray();
 			}
-			var scales = new ModelScaleKey[scaleCount];
+			var scales = Array.Empty<ModelScaleKey>();
 			if ( scaleCount > 0 )
 			{
 				var offset = Pointer( raw[8], scaleCount * 16L, "scale keys" );
+				scales = new ModelScaleKey[scaleCount];
 				for ( var key = 0; key < scaleCount; key++ )
 				{
 					var entry = offset + key * 16;
@@ -377,32 +408,42 @@ public sealed class ModelAnimation
 		if ( rotationKeys != (words[4] & 0xFFFF) || positionTracks != (words[3] & 0xFFFF) || scaleKeys != (words[3] >> 16) )
 			throw new InvalidDataException( "MD2 animation key totals disagree with the trailer." );
 
-		var nodeList = new ushort[words[6] >> 16];
-		if ( nodeList.Length > 0 )
+		var nodeCount = (int)(words[6] >> 16);
+		var nodeList = Array.Empty<ushort>();
+		if ( nodeCount > 0 )
 		{
-			var offset = Pointer( words[14], nodeList.Length * 2L, "node list" );
+			var offset = Pointer( words[14], nodeCount * 2L, "node list" );
+			nodeList = new ushort[nodeCount];
 			for ( var index = 0; index < nodeList.Length; index++ )
 				nodeList[index] = U16( data, offset + index * 2 );
 		}
 
-		var frameTracks = new ModelTextureFrameTrack[words[6] & 0xFFFF];
-		if ( frameTracks.Length > 0 )
+		var frameTrackCount = (int)(words[6] & 0xFFFF);
+		var frameTracks = Array.Empty<ModelTextureFrameTrack>();
+		if ( frameTrackCount > 0 )
 		{
-			var table = Pointer( words[12], frameTracks.Length * 8L, "texture-frame tracks" );
+			var table = Pointer( words[12], frameTrackCount * 8L, "texture-frame tracks" );
+			frameTracks = new ModelTextureFrameTrack[frameTrackCount];
 			for ( var index = 0; index < frameTracks.Length; index++ )
 			{
 				var entry = table + index * 8;
-				var keys = new ModelTextureFrameKey[U16( data, entry + 2 )];
-				if ( keys.Length > 0 )
+				var keyCount = U16( data, entry + 2 );
+				var keys = Array.Empty<ModelTextureFrameKey>();
+				if ( keyCount > 0 )
 				{
-					var offset = Pointer( U32( data, entry + 4 ), keys.Length * 4L, $"texture-frame track {index} keys" );
+					var offset = Pointer( U32( data, entry + 4 ), keyCount * 4L, $"texture-frame track {index} keys" );
+					keys = new ModelTextureFrameKey[keyCount];
 					for ( var key = 0; key < keys.Length; key++ )
 						keys[key] = new ModelTextureFrameKey( U16( data, offset + key * 4 ), U16( data, offset + key * 4 + 2 ) );
 				}
 				frameTracks[index] = new ModelTextureFrameTrack( U16( data, entry ), keys );
 			}
 		}
-		return new ModelAnimation { Duration = (int)words[2], Tracks = tracks, NodeList = nodeList, TrailerFlags = words[0], TextureFrameTracks = frameTracks };
+		return new ModelAnimation
+		{
+			Duration = (int)words[2], Tracks = tracks, NodeList = nodeList, TrailerFlags = words[0], TextureFrameTracks = frameTracks,
+			TableBytes = charged
+		};
 	}
 
 	private static NVector3 Finite( NVector3 value, string what )

@@ -234,25 +234,29 @@ public sealed class ModelVertexAnimation
 				throw new InvalidDataException( $"MD2 vertex group {index} has {keyCount} keys." );
 			if ( index == 0 && vertexCount < 2 )
 				throw new InvalidDataException( "MD2 vertex bounds group needs two vertices." );
-			var indices = new ushort[vertexCount];
+			// Every span is checked and charged before its array exists: keys × vertices reaches 2³² − 2¹⁷ + 1.
+			var indices = Array.Empty<ushort>();
 			if ( vertexCount > 0 )
 			{
 				var at = pointer( U32( data, entry + 4 ), vertexCount * 2L, $"vertex group {index} indices" );
+				indices = new ushort[vertexCount];
 				for ( var vertex = 0; vertex < vertexCount; vertex++ )
 					indices[vertex] = U16( data, at + vertex * 2 );
 			}
-			var ticks = new ushort[keyCount];
 			var tickAt = pointer( U32( data, entry + 8 ), keyCount * 2L, $"vertex group {index} ticks" );
+			var ticks = new ushort[keyCount];
 			for ( var key = 0; key < keyCount; key++ )
 			{
 				ticks[key] = U16( data, tickAt + key * 2 );
 				if ( key > 0 && ticks[key] <= ticks[key - 1] )
 					throw new InvalidDataException( $"MD2 vertex group {index} ticks do not increase." );
 			}
-			var packed = new uint[keyCount * vertexCount];
-			if ( packed.Length > 0 )
+			var words = (long)keyCount * vertexCount;
+			var packed = Array.Empty<uint>();
+			if ( words > 0 )
 			{
-				var at = pointer( U32( data, entry + 12 ), packed.Length * 4L, $"vertex group {index} keys" );
+				var at = pointer( U32( data, entry + 12 ), words * 4, $"vertex group {index} keys" );
+				packed = new uint[words];
 				for ( var word = 0; word < packed.Length; word++ )
 					packed[word] = U32( data, at + word * 4 );
 			}

@@ -545,6 +545,10 @@ engine's frame-to-texture use and option bit 0x8 at run time are not), the
   produces NaN), times past a vertex group's last tick, and position-time
   entries whose upper u16 is nonzero (the search reads `lhz` at +0 of each
   4-byte entry; all upper halves are zero in the corpus).
+- OpenTPW rejects animation members whose tables together read more than four
+  times the payload (shared spans counted each time) and checks each span before
+  allocating. The Mac loader has no such check; the limit is a resource bound
+  for malformed or modded input, and no corpus member comes near it.
 
 - 12-byte vertex variant (flag 0x4000), 0x10000 block and node-state bit 0x10:
   consumers not found; need a traced caller of these record fields. The node

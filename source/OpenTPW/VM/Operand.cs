@@ -1,66 +1,65 @@
-﻿namespace OpenTPW;
+namespace OpenTPW;
 
-public class Operand
+/// <summary>
+/// One operand of a loaded RSE instruction, bound to the VM that owns it.
+/// </summary>
+public sealed class Operand
 {
-	public enum Type
+	private readonly RideVM vm;
+
+	public RideScriptOperandKind Kind { get; }
+
+	/// <summary>Raw low 16 bits of the code word.</summary>
+	public ushort Raw { get; }
+
+	/// <summary>Instruction index of a branch operand's target (code-word index resolved at load time), otherwise -1.</summary>
+	public int BranchTarget { get; }
+
+	internal Operand( RideVM vm, RideScriptOperand operand, int branchTarget )
 	{
-		Variable,
-		Literal,
-		String,
-		Location
+		this.vm = vm;
+		Kind = operand.Kind;
+		Raw = operand.Value;
+		BranchTarget = branchTarget;
 	}
 
-	private int value;
-	private readonly RideVM vmInstance;
-	public readonly Type type;
-	private readonly int nameIndex;
+	public bool IsVariable => Kind == RideScriptOperandKind.Variable;
 
-	public Operand( RideVM vmInstance, Type type, int value, int nameIndex = -1 )
-	{
-		this.vmInstance = vmInstance;
-		this.type = type;
-		this.value = value;
-		this.nameIndex = nameIndex;
-	}
-
+	/// <summary>
+	/// Variables read the VM's 32-bit variable; literals are sign-extended 16-bit values
+	/// (0xFFFF is the corpus's only literal ≥ 0x8000 and is used as -1 by count-down loops such as
+	/// <c>ADD VAR_COUNT 0xFFFF; BRANCH_PV</c>). Writes to anything but a variable are discarded:
+	/// the corpus uses a literal 0 destination when only the flags are wanted (<c>MOD 0 VAR_CAPACITY 9; BRANCH_Z</c>).
+	/// </summary>
 	public int Value
 	{
-		get
+		get => Kind switch
 		{
-			switch ( type )
-			{
-				case Type.Variable:
-					return vmInstance.Variables[value];
-				default:
-					return value;
-			}
-		}
+			RideScriptOperandKind.Variable => vm.Variables[Raw],
+			RideScriptOperandKind.Literal => (short)Raw,
+			_ => Raw
+		};
 		set
 		{
-			switch ( type )
-			{
-				case Type.Variable:
-					vmInstance.Variables[this.value] = value;
-					break;
-				default:
-					this.value = value;
-					break;
-			}
+			if ( Kind == RideScriptOperandKind.Variable )
+				vm.Variables[Raw] = value;
 		}
 	}
 
-	public override string ToString()
+	/// <summary>The referenced string for string operands.</summary>
+	public string Text => Kind == RideScriptOperandKind.String
+		? vm.Script.Strings[Raw]
+		: throw new RideScriptException( $"Expected a string operand, found {Kind}." );
+
+	public int RequireBranchTarget() => Kind == RideScriptOperandKind.Branch
+		? BranchTarget
+		: throw new RideScriptException( $"Expected a branch operand, found {Kind}." );
+
+	public override string ToString() => Kind switch
 	{
-		switch ( type )
-		{
-			case Type.Variable:
-				return vmInstance.VariableNames[nameIndex];
-			case Type.Location:
-				return $"label_{Value}";
-			case Type.String:
-				return $"\"{vmInstance.Strings[value]}\"";
-			default:
-				return Value.ToString();
-		}
-	}
+		RideScriptOperandKind.Variable => vm.Script.VariableNames[Raw],
+		RideScriptOperandKind.Branch => $"label_{Raw}",
+		RideScriptOperandKind.String => $"\"{vm.Script.Strings[Raw]}\"",
+		_ => ((short)Raw).ToString()
+	};
 }

@@ -27,7 +27,7 @@ public class RseScriptTests
 		Op | 31, Branch | 0
 	};
 
-	private static byte[] CreateScript( uint[] words, string[] strings, string[] variables, int? declaredVariables = null, uint? declaredWords = null )
+	internal static byte[] CreateScript( uint[] words, string[] strings, string[] variables, int? declaredVariables = null, uint? declaredWords = null )
 	{
 		var output = new MemoryStream();
 		var writer = new BinaryWriter( output );
@@ -116,10 +116,15 @@ public class RseScriptTests
 	[TestMethod]
 	public void CurrentVmHandlerSetIsPinned()
 	{
-		var expected = new[] { "NOP", "CRIT_LOCK", "COPY", "SETLV", "SUB", "ENDSLICE", "GETTIME", "ADDOBJ", "RAND", "JSR", "RETURN",
-			"BRANCH", "BRANCH_Z", "BRANCH_NZ", "BRANCH_NV", "BRANCH_PV", "DBGMSG", "NAME", "TEST", "CMP", "ADD",
-			"BOUNCESETNODE", "BOUNCESETBASE", "BOUNCE", "UNBOUNCE", "FORCEUNBOUNCE", "BOUNCING" };
-		CollectionAssert.AreEquivalent( expected, RideScriptAnalysis.ImplementedOpcodes.Select( x => x.ToString() ).ToArray() );
+		// Every opcode the corpus uses, plus SETVARINPARENT/YEAR/MONTH/DAY (documented, unused); none of the 18 other unused names.
+		var unhandled = new[] { "SETLV", "ADDOBJ_EXT", "EVENT_EXT", "GETANIM", "FLUSHANIM_CH", "WAITANIM_CH", "TRIGWAITANIM_CH", "DBGMSG",
+			"PUSH", "POP", "WAITABS", "MULT", "END", "ENABLELIGHT", "DISABLELIGHT", "SETLIGHT", "COLOURLIGHT", "GETCUSTPTCLCODE" };
+		CollectionAssert.AreEquivalent( unhandled, Enum.GetValues<Opcode>().Where( x => !RideScriptAnalysis.HandledOpcodes.Contains( x ) ).Select( x => x.ToString() ).ToArray() );
+		Assert.AreEqual( 88, RideScriptAnalysis.HandledOpcodes.Count );
+		foreach ( var (opcode, definition) in RideOpcodes.Definitions )
+			if ( RideScriptAnalysis.DocumentedOperandCounts.TryGetValue( opcode, out var documented ) )
+				Assert.AreEqual( documented, definition.OperandCount, opcode.ToString() );
+		Assert.AreEqual( 0, RideOpcodes.Definitions[Opcode.CRIT_UNLOCK].OperandCount );
 		Assert.AreEqual( 106, Enum.GetValues<Opcode>().Length );
 		Assert.IsFalse( RideScriptAnalysis.DocumentedOperandCounts.ContainsKey( Opcode.CRIT_UNLOCK ) );
 		Assert.AreEqual( 105, RideScriptAnalysis.DocumentedOperandCounts.Count );
@@ -262,7 +267,7 @@ public class RseScriptTests
 
 	// ---- Private original corpus (skipped without OPENTPW_GAME_PATH) ----
 
-	private const string CorpusHistogram = "0:2,1:150,2:240,3:1243,5:74,6:396,7:172,8:644,10:235,11:113,12:20,13:527,15:17,16:74,17:547,18:210,19:133,21:4,23:63,25:1,27:15,28:56,29:70,30:33,31:725,32:787,33:943,34:55,35:84,37:277,38:1318,39:61,42:39,43:39,44:458,46:170,47:541,49:4,50:5,51:20,53:76,54:199,55:144,56:31,57:31,58:24,59:24,60:23,61:6,62:24,63:20,64:28,65:4,66:7,67:9,69:10,70:1,71:4,72:4,73:4,74:8,75:25,76:47,77:53,78:43,79:1,80:1,81:1,86:40,87:80,88:46,89:81,90:5,91:2,92:10,93:140,95:40,96:21,100:1,101:1,102:1,103:21,104:8,105:1";
+	internal const string CorpusHistogram = "0:2,1:150,2:240,3:1243,5:74,6:396,7:172,8:644,10:235,11:113,12:20,13:527,15:17,16:74,17:547,18:210,19:133,21:4,23:63,25:1,27:15,28:56,29:70,30:33,31:725,32:787,33:943,34:55,35:84,37:277,38:1318,39:61,42:39,43:39,44:458,46:170,47:541,49:4,50:5,51:20,53:76,54:199,55:144,56:31,57:31,58:24,59:24,60:23,61:6,62:24,63:20,64:28,65:4,66:7,67:9,69:10,70:1,71:4,72:4,73:4,74:8,75:25,76:47,77:53,78:43,79:1,80:1,81:1,86:40,87:80,88:46,89:81,90:5,91:2,92:10,93:140,95:40,96:21,100:1,101:1,102:1,103:21,104:8,105:1";
 
 	[TestMethod]
 	public void AllOriginalRseMembersParseWithStableInventory()
@@ -287,8 +292,8 @@ public class RseScriptTests
 		CollectionAssert.AreEquivalent( new ushort[] { 37, 63, 64, 90 }, inventory.StringReferences.Keys.ToArray() );
 		Assert.AreEqual( 28, inventory.StringReferences[(ushort)Opcode.SPAWNSOUND]["EventMap.rse"] );
 		Assert.AreEqual( 163, inventory.EventOperands.Count );
-		Assert.AreEqual( 59, inventory.UsedWithoutHandler.Count() );
-		CollectionAssert.AreEquivalent( new[] { Opcode.SETLV, Opcode.DBGMSG }, inventory.HandlerWithoutCorpusUse.ToArray() );
+		Assert.AreEqual( 0, inventory.UsedWithoutHandler.Count() );
+		CollectionAssert.AreEquivalent( new[] { Opcode.SETVARINPARENT, Opcode.YEAR, Opcode.MONTH, Opcode.DAY }, inventory.HandlerWithoutCorpusUse.ToArray() );
 		var dump = Environment.GetEnvironmentVariable( "OPENTPW_RSE_INVENTORY_OUT" );
 		if ( !string.IsNullOrEmpty( dump ) )
 			File.WriteAllText( dump, inventory.Format() );
@@ -335,7 +340,7 @@ public class RseScriptTests
 	private static Dictionary<string, byte[]>? cachedCorpus;
 
 	/// <summary>Key: "theme/folder/archive.wad/member.RSE" relative to Data/levels.</summary>
-	private static Dictionary<string, byte[]> LoadCorpusBytes()
+	internal static Dictionary<string, byte[]> LoadCorpusBytes()
 	{
 		if ( cachedCorpus != null )
 			return cachedCorpus;

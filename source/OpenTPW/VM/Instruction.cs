@@ -1,29 +1,29 @@
-﻿namespace OpenTPW;
+namespace OpenTPW;
 
-public struct Instruction
+/// <summary>
+/// A loaded RSE instruction: opcode word plus its operands, with its handler resolved at load time.
+/// </summary>
+public sealed class Instruction
 {
-	public readonly Operand[] operands;
-	public readonly Opcode opcode;
-	public readonly long offset;
+	public int Index { get; }
+	public int WordOffset { get; }
+	public ushort RawOpcode { get; }
+	public Opcode Opcode => (Opcode)RawOpcode;
+	public IReadOnlyList<Operand> Operands => operands;
 
-	private RideVM vmInstance;
+	internal readonly Operand[] operands;
+	internal readonly RideOpcodeDefinition? Definition;
 
-	public Instruction( RideVM vmInstance, long offset, Opcode opcode, Operand[] operands )
+	internal Instruction( int index, int wordOffset, ushort rawOpcode, Operand[] operands, RideOpcodeDefinition? definition )
 	{
-		this.offset = offset;
+		Index = index;
+		WordOffset = wordOffset;
+		RawOpcode = rawOpcode;
 		this.operands = operands;
-		this.opcode = opcode;
-
-		this.vmInstance = vmInstance;
+		Definition = definition;
 	}
 
-	public int GetCount()
-	{
-		return 1 + operands.Length;
-	}
-
-	public void Invoke()
-	{
-		vmInstance.CallOpcodeHandler( opcode, operands );
-	}
+	public override string ToString() => operands.Length == 0
+		? RideScriptAnalysis.GetOpcodeName( RawOpcode )
+		: $"{RideScriptAnalysis.GetOpcodeName( RawOpcode )} {string.Join( " ", operands.Select( x => x.ToString() ) )}";
 }

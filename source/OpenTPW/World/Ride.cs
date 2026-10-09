@@ -8,14 +8,13 @@ public class Ride : Entity
 	{
 		var rideName = Path.GetFileNameWithoutExtension( rideArchive );
 
-		VM = new RideVM( FileSystem.OpenRead( rideArchive + "\\" + rideName + ".rse" ) );
+		using var script = FileSystem.OpenRead( rideArchive + "\\" + rideName + ".rse" );
+		VM = new RideVM( script, new RideVMOptions { SourceName = rideArchive } );
 		var settingsFile = new SettingsFile( FileSystem.OpenRead( rideArchive + "\\" + rideName + ".sam" ) );
 
 		Log.Trace( $"Loaded ride {settingsFile.Entries.First( x => x.Key == "Info.Name" ).Value}" );
 	}
 
-	protected override void OnUpdate()
-	{
-		VM.Update();
-	}
+	/// <summary>Runs one fixed simulation tick of the ride script.</summary>
+	internal void Simulate( float deltaTime ) => VM.Advance( deltaTime );
 }

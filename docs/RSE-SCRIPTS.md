@@ -1,9 +1,9 @@
 # RSE scripts: container and static bytecode evidence
 
 October 9, 2026. Status: strict container/bytecode reader and static inventory
-implemented for the selected corpus; **no runtime semantics verified**. The VM
-was not rewritten and still cannot execute original scripts (see below). This
-is a file-format slice, not ride behaviour.
+implemented for the selected corpus; **no runtime semantics verified**. This is
+the file-format slice; execution in `RideVM` is described in
+[RSE-VM.md](RSE-VM.md).
 
 `RideScriptFile` (`source/OpenTPW.Files/Public/RideScriptFile.cs`) reads compiled
 `RSSEQ` scripts. `RideScriptAnalysis` (`source/OpenTPW/VM/RideScriptAnalysis.cs`)
@@ -79,23 +79,14 @@ Histogram (opcode:count), pinned by the private test:
 0:2,1:150,2:240,3:1243,5:74,6:396,7:172,8:644,10:235,11:113,12:20,13:527,15:17,16:74,17:547,18:210,19:133,21:4,23:63,25:1,27:15,28:56,29:70,30:33,31:725,32:787,33:943,34:55,35:84,37:277,38:1318,39:61,42:39,43:39,44:458,46:170,47:541,49:4,50:5,51:20,53:76,54:199,55:144,56:31,57:31,58:24,59:24,60:23,61:6,62:24,63:20,64:28,65:4,66:7,67:9,69:10,70:1,71:4,72:4,73:4,74:8,75:25,76:47,77:53,78:43,79:1,80:1,81:1,86:40,87:80,88:46,89:81,90:5,91:2,92:10,93:140,95:40,96:21,100:1,101:1,102:1,103:21,104:8,105:1
 ```
 
-### Current VM vs corpus
+### VM vs corpus
 
-The VM has handler methods for 27 opcodes; several (CRIT_LOCK, SETLV, ENDSLICE,
-GETTIME, ADDOBJ) are TODO stubs, so "handler" is not "implemented". 25 of them
-appear in the corpus (SETLV, DBGMSG never do). **59 of the 84 corpus opcodes have
-no handler**, covering 4,238 of 11,915 instructions, among them EVENT,
-WAITANIM, WAIT, WAIT4ANIM, KILLOBJ, LOOPANIM, TRIGWAITANIM, BUMP, COAST, TOUR,
-CRIT_UNLOCK, all LIMBO/WALK/SCREAM/child/remote-variable opcodes, DIV/MOD.
-22 named opcodes never occur (SETLV, ADDOBJ_EXT, EVENT_EXT, GETANIM,
-FLUSHANIM_CH, WAITANIM_CH, TRIGWAITANIM_CH, DBGMSG, PUSH, POP, WAITABS, MULT,
-END, SETVARINPARENT, the four light opcodes, GETCUSTPTCLCODE, YEAR/MONTH/DAY).
-`RideVM` logs a total of "210" opcodes; the enum and corpus support 106.
-
-`RideVM`'s constructor no longer parses its stream (the old reader call is
-commented out), so `Variables` is empty and its first indexed assignment would
-throw; `Ride` constructs a `RideVM`. Wiring this reader into the VM is a separate
-runtime change and is not claimed here.
+Superseded by [RSE-VM.md](RSE-VM.md): `RideVM` now loads `RideScriptFile`
+(variables, strings, code-word branch targets) and has a handler for each of the
+84 corpus opcodes (33 implemented, 51 hooked). Of the 22 named opcodes that
+never occur (SETLV, ADDOBJ_EXT, EVENT_EXT, GETANIM, FLUSHANIM_CH, WAITANIM_CH,
+TRIGWAITANIM_CH, DBGMSG, PUSH, POP, WAITABS, MULT, END, SETVARINPARENT, the four
+light opcodes, GETCUSTPTCLCODE, YEAR/MONTH/DAY), 18 remain without a handler.
 
 ## Golden scripts
 
@@ -121,10 +112,9 @@ full text inventory (per-opcode operand-kind signatures, strings, EVENT tuples).
 
 Unknown: semantics of most operands (see upstream "Unknown" entries), literal
 signedness, wait/time units, EVENT tuple meanings, header field effects, the
-3 bytes after `RSSEQ`. Next: original runtime traces or disassembly of the
-engine's interpreter to confirm opcode numbering and semantics before
-implementing handlers; then wire the reader into `RideVM` with branch targets
-as code-word indices. Static parsing does not qualify any ride behaviour.
+3 bytes after `RSSEQ`. Next: original runtime traces to confirm opcode numbering and the semantics
+the VM infers from corpus control flow ([RSE-VM.md](RSE-VM.md)). Static
+parsing does not qualify any ride behaviour.
 
 Sources: OpenTPW docs (`src/formats/rsse.md`, `rsse-vm.md`,
 `rsse-vm-instructions.md`, commit `34f357fabc8a6aa064c76260c714dca8b875b148`),

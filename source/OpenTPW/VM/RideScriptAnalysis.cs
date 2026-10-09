@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Text;
 
 namespace OpenTPW;
@@ -34,8 +33,8 @@ public sealed class RideScriptInventory
 	public List<string> OperandCountMismatches { get; } = new();
 	public SortedDictionary<int, int> TimeSliceValues { get; } = new();
 
-	public IEnumerable<ushort> UsedWithoutHandler => OpcodeHistogram.Keys.Where( x => !RideScriptAnalysis.ImplementedOpcodes.Contains( (Opcode)x ) );
-	public IEnumerable<Opcode> HandlerWithoutCorpusUse => RideScriptAnalysis.ImplementedOpcodes.Where( x => !OpcodeHistogram.ContainsKey( (ushort)x ) ).OrderBy( x => x );
+	public IEnumerable<ushort> UsedWithoutHandler => OpcodeHistogram.Keys.Where( x => !RideScriptAnalysis.HandledOpcodes.Contains( (Opcode)x ) );
+	public IEnumerable<Opcode> HandlerWithoutCorpusUse => RideScriptAnalysis.HandledOpcodes.Where( x => !OpcodeHistogram.ContainsKey( (ushort)x ) ).OrderBy( x => x );
 	public IEnumerable<Opcode> NamedButUnused => Enum.GetValues<Opcode>().Where( x => !OpcodeHistogram.ContainsKey( (ushort)x ) );
 
 	/// <summary>Stable "opcode:count,..." string used to pin the corpus histogram.</summary>
@@ -46,11 +45,11 @@ public sealed class RideScriptInventory
 		var builder = new StringBuilder();
 		builder.Append( $"files={FileCount} words={CodeWordCount} instructions={InstructionCount} distinct-opcodes={OpcodeHistogram.Count}" ).Append( '\n' );
 		builder.Append( "operand kinds: " + string.Join( ", ", OperandKindCounts.Select( x => $"{x.Key}={x.Value}" ) ) ).Append( '\n' );
-		builder.Append( "opcode count operands signatures handler" ).Append( '\n' );
+		builder.Append( "opcode count operands signatures vm-status" ).Append( '\n' );
 		foreach ( var (opcode, count) in OpcodeHistogram )
 		{
 			var signatures = string.Join( " ", OperandSignatures[opcode].Select( x => $"{(x.Key.Length == 0 ? "-" : x.Key)}={x.Value}" ) );
-			var handler = RideScriptAnalysis.ImplementedOpcodes.Contains( (Opcode)opcode ) ? "yes" : "no";
+			var handler = RideScriptAnalysis.IsKnownOpcode( opcode ) ? RideOpcodes.GetStatus( (Opcode)opcode ).ToString().ToLowerInvariant() : "unknown";
 			builder.Append( $"{opcode,3} {RideScriptAnalysis.GetOpcodeName( opcode ),-16} {count,5} {string.Join( "/", ObservedOperandCounts[opcode] ),3} {signatures} {handler}" ).Append( '\n' );
 		}
 		builder.Append( "unknown opcodes: " + (UnknownOpcodes.Count == 0 ? "none" : string.Join( ", ", UnknownOpcodes.Select( x => $"{x.Key}={x.Value}" ) )) ).Append( '\n' );
@@ -102,13 +101,8 @@ public static class RideScriptAnalysis
 		[Opcode.MIN] = 1, [Opcode.SEC] = 1, [Opcode.SETREVERB] = 1, [Opcode.DIPMUSIC] = 1, [Opcode.SPARK] = 4
 	};
 
-	/// <summary>Opcodes with an <see cref="OpcodeHandlerAttribute"/> method in the current VM (many are TODO stubs).</summary>
-	public static IReadOnlySet<Opcode> ImplementedOpcodes { get; } = typeof( RideVM ).Assembly.GetTypes()
-		.SelectMany( type => type.GetMethods() )
-		.Select( method => method.GetCustomAttribute<OpcodeHandlerAttribute>() )
-		.Where( attribute => attribute != null )
-		.Select( attribute => attribute!.Opcode )
-		.ToHashSet();
+	/// <summary>Opcodes the VM can execute (implemented or hooked; see <see cref="RideOpcodes"/>).</summary>
+	public static IReadOnlySet<Opcode> HandledOpcodes { get; } = RideOpcodes.Definitions.Keys.ToHashSet();
 
 	public static bool IsKnownOpcode( ushort opcode ) => Enum.IsDefined( typeof( Opcode ), (int)opcode );
 

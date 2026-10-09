@@ -132,11 +132,12 @@ class LipCursor:
             self.talking = not self.talking
             word = self.words[self.index]
             self.index += 1
-            if word == 0xFFFFFFFF:
+            converted = -1 if word == 0xFFFFFFFF else signed_mark_ms(word)
+            if converted == -1:
                 self.active = self.talking = False
                 self.deadline = -1
             else:
-                self.deadline = self.start_ms + signed_mark_ms(word)
+                self.deadline = self.start_ms + converted
         return self.talking
 
 

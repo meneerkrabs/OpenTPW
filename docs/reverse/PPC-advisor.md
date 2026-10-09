@@ -588,3 +588,54 @@ binary. Full comparison with published ISO text, DCT/arithmetic equivalence,
 rounding, clipping and all decoder formats remain distinct claims. Registry
 status and source comments should be revised only after independent integration
 review of this narrower evidence.
+
+
+## Phase three: standalone original-consumer LIP driver
+
+[OriginalAdvisorLipDriver.cs](../../tools/ppc-analysis/lanes/advisor/OriginalAdvisorLipDriver.cs)
+is a dependency-free C# transcription of the proven state transitions, kept in
+the advisor evidence lane. Its standalone .NET 8 project runs 21 synthetic
+checks with the existing SDK:
+
+```sh
+/Users/sander/.local/share/opentpw-dotnet/dotnet run --project tools/ppc-analysis/lanes/advisor/OriginalAdvisorLipDriver.csproj --configuration Release
+/Users/sander/.local/share/opentpw-dotnet/dotnet format whitespace tools/ppc-analysis/lanes/advisor/OriginalAdvisorLipDriver.csproj --verify-no-changes --no-restore
+```
+
+`BeginResponse` accepts raw `uint` words including the terminal raw −1, a
+caller-supplied signed 32-bit **pause-aware unscaled advisor clock**, and whether
+the animation sequence retained deferred speech. Empty words represent missing
+LIP. The helper preserves the initial −200 lead, retained +800 deferred deadline,
+strict LIP/mouth comparisons, one mark per update, and pending speech equality.
+`Update` returns a speech-start request and desired mouth-selector change; it
+neither plays audio nor applies mesh flags. The supplied `Func<int>` must provide
+nonnegative rand-compatible values. Choosing a .NET RNG is not an original RNG
+proof. Mouth cadence persists across response requests.
+
+The integration dependencies are explicit: reconstruct the actual unscaled
+clock subobject and its offset/freeze/compensation, retain the original response
+animation's deferred-start decision, provide the original random stream, connect
+speech events and termination, and apply the selected mouth within recovered
+animation/visibility rules. The helper has **no PCM, SDL, wall-clock, game-speed
+or existing runtime `Clock` bridge**. The current [manual advisor playback](../LIPS.md)
+continues to use its documented approximation until those dependencies are
+connected and independently verified; standalone test success does not change
+runtime fidelity status.
+
+Tests cover equality and missed frames, pause/resume using supplied frozen time,
+expired backlogs during pause, all five mouth selectors including Normal, one
+random draw after a delayed update, raw and converted negative sentinels,
+initial-negative-mark behavior, absent LIP, immediate/deferred boundaries,
+input ownership, retained cadence and bounded malformed input. The helper's
+size/terminator checks are its own input boundary, not claims about the original
+loader's validation. An early raw sentinel after the first mark stops safely
+before unused remaining words.
+
+A negative-data edge requires careful transcription: at `0x7734`, the original
+update checks the **converted** result for −1 after signed division. Thus a
+non-sentinel raw word in −1000..−1999 also ends LIP state when consumed as a next
+mark. Initial first-mark setup instead schedules base + converted mark without
+that terminal-state check. The C# tests cover both cases; the earlier Python
+`LipCursor` witness is corrected to reflect the next-mark check. Positive
+supplied LIP assets are unaffected. Python advisor witnesses now have 26 passing
+tests, alongside the 21 C# checks and 16 shared toolkit tests.

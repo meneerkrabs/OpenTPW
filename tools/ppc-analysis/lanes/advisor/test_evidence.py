@@ -55,6 +55,12 @@ class AdvisorInterpretationTests(unittest.TestCase):
         self.assertEqual(cursor.deadline, -1)
         self.assertFalse(cursor.update(10000))
 
+    def test_converted_negative_one_ends_update_path(self):
+        cursor = evidence.LipCursor((1000, 0xFFFFFC18, 0xFFFFFFFF))
+        self.assertFalse(cursor.update(2))
+        self.assertFalse(cursor.active)
+        self.assertEqual(cursor.deadline, -1)
+
     def test_fractional_mark_truncates(self):
         cursor = evidence.LipCursor((1999, 0xFFFFFFFF), start_ms=100)
         self.assertEqual(cursor.deadline, 101)

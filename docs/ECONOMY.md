@@ -93,9 +93,9 @@ Strikes, happiness and patrol areas are not simulated.
 | object `Research.Group` | 0–4 | "0 = Available initially" | data; group 0 of ride/shop/sideshow/feature starts researched |
 | object `Upgrades[n].CostOfResearch` | 0–1,250 | "research points taken for item to be researched"; levels 1–2 = ride upgrades | data |
 | `ResearchCategories[c].Effort` | 100/15/30/15/10 (easy 100/15/30/25/0) | Starting slider effort (UIHELPTEXT 244–248) | data |
-| `ResearcherConstsPerGrade[g].ResearchAbility` | 2–6 (easy 6–20) | Research ability | approx (points per researcher per day) |
+| `ResearcherConstsPerGrade[g].ResearchAbility` | 2–6 (easy 6–20) | Research ability | traced: added every 20 park turns per researcher, × effort share × work load / 100 (0x100F0DF0) |
 | `ResearchTech[g].PercentageForThisTech` | 0,0,80,85,85 | Threshold per group | approx (group g opens when this % of group g−1 of the same category is done) |
-| `Research.StartingWorkLoad` | 85 | Unknown | unused |
+| `Research.StartingWorkLoad` | 85 | The lab's work load percentage that scales research points (balance +0x540, 0x100F0854) | data |
 | `AddOn.UpgradesId`, `AddOn.UpgradeType` | ride Info.Id; 1 track, 2 other | Add-on object's ride | data (researchable once the ride is available; buildable once the ride is built) |
 
 With the standard balance and three hired researchers every theme researches all items (92–102 per
@@ -190,7 +190,7 @@ mismatches; original-data tests check the typed PC fixture.
 | Bankruptcy | Six month-ends in the red, warnings at 3 and 5 months (strings) | Advance stops when bankrupt |
 | Staff | Pool sizes, maxima, wages, training prices | Candidate grades, pool timing, free hiring, 100 points per grade, mechanic/handyman job durations |
 | Maintenance | Wear rates, upgrade durations, worn threshold 25 | Wear per open day, repair restores 100 |
-| Research | Items, categories, groups, costs, effort, ability, thresholds | Points per day, group opening rule, info-id research order, automatic Instant Action rate |
+| Research | Items, categories, groups, costs, effort, ability, thresholds, work load; traced: points every 20 turns, cumulative group opener, first open item in table order | Info-id table order, the excluded researcher states, automatic Instant Action rate |
 | Challenges | Definitions, level list, timings, prizes, follow-ups | Type semantics from comments; explicit accept/decline; types 14, 22, 23, 26, 32+ unmeasured |
 | Golden tickets | All thresholds | Checked every 100 park turns in Full Simulation only; the profit ticket reads the year's running profit (`mProfitThisYear`, reset each calendar year); the first copy of a ticket object costs tickets, not cash (all traced) |
 | Keys/progression | Keys per theme, theme order (THEMENAMES; ascending key cost); +1 per 3 earned golden tickets; spending tickets preserves keys (manual p. 28) | Start with 1 key; keys persist when entering themes |
@@ -251,27 +251,26 @@ site, is listed in `Economy/EconomyApproximations.cs` and is logged once at star
 | ECON-004 | `Economy/ParkCalendar.cs:11` | Fast x2 and Fastest x4 speeds (only pause is evidenced) | original speed controls, if any |
 | ECON-005 | `Economy/ParkLedger.cs:54` | challenge prizes and scrap sales are other income; build, upgrade, goods, prizes, land are other costs; profit leaves out loans received | the per-category ledger routines and the annual profit field |
 | ECON-006 | `Economy/ParkLedger.cs:148` | APR > 0 repayment is an annuity at APR/12 per month, rounded down; interest accrues monthly on the balance | standard-mode save or capture with an outstanding loan |
-| ECON-007 | `Economy/ParkEconomy.cs:306` | repaid loan offers reopen without the original credit-eligibility gate | implement the traced credit predicate and qualify its cross-edition behavior |
+| ECON-007 | `Economy/ParkEconomy.cs:320` | repaid loan offers reopen without the original credit-eligibility gate | implement the traced credit predicate and qualify its cross-edition behavior |
 | ECON-008 | `Economy/ParkStaff.cs:50` | 100 training points per grade (from Online_Standard.sam comments "costs 1000 to get up to grade 1") | capture of a training run |
 | ECON-009 | `Economy/ParkStaff.cs:145` | candidate grade = average + 2 when "great", else average +-1 | hiring pool captures (grade distribution) |
 | ECON-010 | `Economy/ParkStaff.cs:64` | TimeBetweenStaffUpdates/StaffTimeoutTime are seconds at normal speed | capture of pool refresh timing |
 | ECON-012 | `Economy/ParkStaff.cs:152` | hiring is free; BaseCostPerStaff/CostPerQualityLevel unused | capture of the balance before/after hiring |
 | ECON-013 | `Economy/ParkStaff.cs:172` | training budget is spent evenly over a role at month end | capture of training budget effects |
 | ECON-014 | `Economy/ParkStaff.cs:24` | staff start at happiness 100 and it never changes (no strikes) | staff happiness rules (binary/captures) |
-| ECON-015 | `Economy/ParkResearch.cs:130` | each researcher adds ResearchAbility points per game day, split by effort | capture of research progress over time |
-| ECON-016 | `Economy/ParkResearch.cs:98` | group g opens when PercentageForThisTech % of group g-1 of the same category is researched | capture of new research groups appearing |
-| ECON-017 | `Economy/ParkResearch.cs:109` | the research table is in info-id order and the player cannot step the cursor to another item | the table fill order (FUN_100c9064) and the next/previous control |
-| ECON-018 | `Economy/ParkResearch.cs:41` | ride upgrade levels and add-on objects form the "upgrade" research category | research lab capture |
-| ECON-019 | `Economy/ParkResearch.cs:135` | Instant Action research runs at one grade-2 researcher without staff | Instant Action capture |
+| ECON-015 | `Economy/ParkResearch.cs:169` | researchers on strike or picked up are the original's excluded states 3, 4 and 5 | the staff state values behind 0x100F4170 |
+| ECON-017 | `Economy/ParkResearch.cs:148` | the research table is in info-id order and the player cannot step the cursor to another item | the table fill order (FUN_100c9064) and the next/previous control |
+| ECON-018 | `Economy/ParkResearch.cs:48` | ride upgrade levels and add-on objects form the "upgrade" research category | research lab capture |
+| ECON-019 | `Economy/ParkEconomy.cs:161` | Instant Action research runs at one grade-2 researcher without staff | Instant Action capture |
 | ECON-020 | `Economy/ParkEconomy.cs:28` | a sale drops LitterEffect/100 litter items | capture of litter after sales |
-| ECON-021 | `Economy/ParkEconomy.cs:223` | a repair takes WorkDuration game hours (x DurationOfUpgrade for upgrades); mechanics are dispatched instantly | capture of repair duration per grade |
-| ECON-022 | `Economy/ParkEconomy.cs:241` | a handyman removes one litter item per WorkDuration game minutes, park-wide | capture of cleaning speed |
-| ECON-023 | `Economy/ParkEconomy.cs:255` | an open ride loses WearRate state of repair per game day; breakdown at 0 | capture of state of repair over time |
-| ECON-024 | `Economy/ParkEconomy.cs:198` | a repair restores state of repair to 100 | capture after a repair |
-| ECON-025 | `Economy/ParkEconomy.cs:366` | scrap value basis = catalogue cost of all levels up to the current one; a scrap year is 365 park-clock days | capture of scrap value |
-| ECON-026 | `Economy/ParkEconomy.cs:374` | park value = sum of scrap values | capture of the park value screen |
-| ECON-027 | `Economy/ParkEconomy.cs:389` | the record sub-kinds 0–3 are rides, shops, sideshows and features, and every hired staff member counts | the record field at +0x4C behind sub-kind +0x7A8 and the staff byte +3 tested by FUN_100C4064 |
-| ECON-028 | `Economy/ParkEconomy.cs:477` | purchases need a balance covering the cost | capture of building with too little money |
+| ECON-021 | `Economy/ParkEconomy.cs:243` | a repair takes WorkDuration game hours (x DurationOfUpgrade for upgrades); mechanics are dispatched instantly | capture of repair duration per grade |
+| ECON-022 | `Economy/ParkEconomy.cs:261` | a handyman removes one litter item per WorkDuration game minutes, park-wide | capture of cleaning speed |
+| ECON-023 | `Economy/ParkEconomy.cs:275` | an open ride loses WearRate state of repair per game day; breakdown at 0 | capture of state of repair over time |
+| ECON-024 | `Economy/ParkEconomy.cs:218` | a repair restores state of repair to 100 | capture after a repair |
+| ECON-025 | `Economy/ParkEconomy.cs:380` | scrap value basis = catalogue cost of all levels up to the current one; a scrap year is 365 park-clock days | capture of scrap value |
+| ECON-026 | `Economy/ParkEconomy.cs:388` | park value = sum of scrap values | capture of the park value screen |
+| ECON-027 | `Economy/ParkEconomy.cs:403` | the record sub-kinds 0–3 are rides, shops, sideshows and features, and every hired staff member counts | the record field at +0x4C behind sub-kind +0x7A8 and the staff byte +3 tested by FUN_100C4064 |
+| ECON-028 | `Economy/ParkEconomy.cs:491` | purchases need a balance covering the cost | capture of building with too little money |
 | ECON-030 | `Economy/ParkEconomy.cs:114` | the simulation stops once bankrupt | capture of the bankrupt state |
 | ECON-031 | `Economy/ParkEconomyRuntime.cs:33` | imported parks are opened on load (open state not decoded) | park-open flag in the save |
 | ECON-034 | `Economy/ParkObjectives.cs:113` | challenge type meanings come from Challenges.sam comments (shop types by ShopType/SpecialIngredient) | challenge captures per type |

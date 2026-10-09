@@ -341,3 +341,21 @@ Terrein/save-slice (9 oktober 2026, worktree `terrain`):
   gecontroleerd); bestaande sandbox-, jungle- en fantasy-smoketests blijven slagen.
 - Open: originele schermposities, profielen/online, cursor, animaties en geluid van knoppen,
   vergelijking met originele captures, D3D11/Vulkan.
+
+## Originele objecten: rides, winkels, sideshows, features (9 oktober 2026)
+
+- Catalogus van alle 274 objecten van de vier thema's uit WAD + `.sam`-lagen
+  (Info.Id, OBJECT_NAMES-naam voor 220, categorie, vorm/footprint, kosten- en
+  upgradewaarden ruw, model, script, animaties); 911 animaties binden aan hun model.
+- Vorm, rotatie en ingang/uitgang geverifieerd tegen Easymode (0°, 90°, 270°);
+  180° en niet-vierkante rotaties volgen uit dezelfde starre rotatie (afgeleid).
+- ANIM_* → bestandsletter/variant (c,i,l,s,m,e,u,b,r,o) afgeleid uit bestandsnamen
+  en scripts; alle 262 objectscripts draaien 60 s in één wereld zonder faults.
+- Easymode-import toont echte modellen i.p.v. oranje markers; bouwen/roteren/
+  verwijderen van elk catalogusobject in sandbox en originele levels (ImGui-paneel).
+  De Totem-prototype is nu een dunne wrapper; native smoke (beide modi) toont
+  Sun God, Crazy Ape, Tom Tom Twister en Eruption animerend.
+- Officiële bonusobjecten (35 `_name_N.wad`) via `--bonus-data`/`OPENTPW_BONUS_DATA`.
+- Niet: bezoekers (alleen `IRideVisitorBridge`), geluid/EVENT/particles,
+  coaster/kart/tour-controllers, vertex-animatie, originele bouwregels en kosten.
+  Details: [OBJECTS.md](OBJECTS.md).

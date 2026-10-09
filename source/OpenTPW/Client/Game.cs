@@ -81,6 +81,13 @@ internal static class Game
 
 		// Compatibility: --cd-data overlay, media diagnostics, profile/fixes, graphics preset (docs/COMPATIBILITY.md)
 		CompatibilityStartup.Initialize( args, dataDirectory );
+
+		// Official bonus objects (docs/OBJECTS.md): --bonus-data, else OPENTPW_BONUS_DATA.
+		var bonusData = GetOption( args, "--bonus-data", "the extracted official bonus content directory" );
+		if ( bonusData != null )
+			ObjectCatalog.BonusDataRoot = bonusData;
+		if ( ObjectCatalog.BonusDataRoot != null )
+			Log.Trace( $"Bonus content: {ObjectCatalog.BonusDataRoot}" );
 		var modelIndex = Array.IndexOf( args, "--inspect-model" );
 		if ( modelIndex >= 0 )
 		{

@@ -2,7 +2,7 @@
 
 namespace OpenTPW;
 
-public class Level
+public partial class Level
 {
 	internal static Level Current { get; set; }
 
@@ -85,12 +85,15 @@ public class Level
 			Log.Trace( $"Original {OriginalPark.LevelName} level: {OriginalTerrain.SurfaceCellCount} heightfield cells, {OriginalTerrain.TerrainMeshCount} terrain meshes"
 				+ (save == null ? "; no original save." : $"; Easymode import: {save.PathCells.Count} path cells, {save.PlacedObjects.Count} placed objects, {save.FixedItems.Count} fixed items.") );
 		}
+		SetupObjects();
 		Camera.SetCameraMode<ParkCameraMode>();
 		if ( OriginalPark != null )
 		{
 			SetupGuests( OriginalPark );
 			if ( Park != null && Guests != null )
 				Park.AttachGuests( Guests );
+			ConnectObjectsToGuests();
+			ConnectObjectsToEconomy();
 		}
 	}
 
@@ -137,7 +140,7 @@ public class Level
 		ride.Visitors.ExitCell = entrance.Value;
 		ride.Visitors.HasCells = true;
 		Guests.Register( ride.Visitors );
-		Park?.LinkAttraction( ride.Visitors, PrototypeRide.InfoId );
+		LinkPrototypeToEconomy( ride );
 		Log.Trace( $"{ride.Name}: guests queue and exit at path cell {entrance.Value} (nearest path cell; the prototype has no catalog entrance)." );
 	}
 
@@ -198,11 +201,15 @@ public class Level
 			if ( TryGetPlacementPosition( Input.Mouse.Position, new Vector2( Screen.Size.X, Screen.Size.Y ), out var position ) )
 				PlaceRide( position );
 		}
+		else if ( !wasMouseDown && Input.Mouse.Left && !ImGuiNET.ImGui.GetIO().WantCaptureMouse )
+			HandleObjectClick( Input.Mouse.Position, new Vector2( Screen.Size.X, Screen.Size.Y ) );
 		wasMouseDown = Input.Mouse.Left;
 		simulationClock.Advance( Time.Delta * SimulationTimeScale, deltaTime =>
 		{
+			SyncObjectEconomy();
 			Guests?.Tick( deltaTime );
 			PlacedRide?.Simulate( deltaTime );
+			Objects.Simulate( deltaTime );
 			Park?.FixedTick();
 		} );
 		foreach ( var entity in Entity.All.ToArray() )
@@ -224,7 +231,12 @@ public class Level
 		}
 		else if ( !ParkPlacement.IsWithinBounds( position, PrototypeRide.FootprintRadius ) )
 			return false;
-		PlacedRide = new PrototypeRide( position );
+		if ( PrototypeOverlapsObjects( position ) )
+		{
+			LastActionMessage = "Cannot build here: Occupied.";
+			return false;
+		}
+		PlacedRide = new PrototypeRide( position, Objects.ScriptWorld );
 		RegisterRideWithGuests( PlacedRide );
 		IsPlacing = false;
 		Log.Trace( $"Placed prototype ride at {position}; it runs its original Totem.RSE script." );
@@ -237,7 +249,7 @@ public class Level
 		if ( PlacedRide != null )
 		{
 			Guests?.Unregister( PlacedRide.Visitors );
-			Park?.UnlinkAttraction( PlacedRide.Visitors );
+			RemovePrototypeFromEconomy( PlacedRide );
 		}
 		PlacedRide = null;
 		IsPlacing = false;
@@ -259,7 +271,7 @@ public class Level
 		var position = new Vector3( state.RideX, state.RideY, 0 );
 		if ( state.HasRide && !ParkPlacement.IsWithinBounds( position, PrototypeRide.FootprintRadius ) )
 			throw new InvalidDataException( "Saved ride footprint is outside the park." );
-		var replacement = state.HasRide ? new PrototypeRide( position ) : null;
+		var replacement = state.HasRide ? new PrototypeRide( position, Objects.ScriptWorld ) : null;
 		if ( state.IsRunning )
 			replacement!.Start();
 		RemoveRide();

@@ -80,16 +80,22 @@ bash scripts/run.sh --game-path '/path/to/Theme Park World' --load-original-leve
 
 Renders the level's `terrain.wad/base.MD2` meshes and heightfield. For jungle it
 also imports `Easymode.TPWI` read-only: 78 path cells (drawn with the TCT's first
-path texture) and 11 placed objects (orange footprints, named in the HUD by .sam
-`Info.Id`). The prototype Totem can be placed only where MAP flags, heightfield
-holes and the imported paths/objects allow (see MAP.md). Sandbox save/load is
-disabled in this mode and no original file is written. Money, time, guests, staff,
-object models and path styles are not imported. Other themes load without a save.
+path texture) and 11 placed objects plus 3 fixed items, drawn with their original
+models and running their original scripts (see OBJECTS.md). The prototype Totem and
+any catalog object (ImGui build panel; R rotates) can be placed only where MAP flags,
+heightfield holes, the imported paths and other objects allow (see MAP.md). Sandbox
+save/load is disabled in this mode and no original file is written. Money, time,
+staff and path styles are not imported. Other themes load without a save.
 Guests are simulated from scratch: kids arrive at the bus stops, pay at the ticket
-booth, walk the paths, queue for and ride an open Totem and leave
-([GUESTS.md](GUESTS.md)).
+booth, walk the paths, queue at the real entrance cells of the rides, shops,
+sideshows and toilets (and the Totem), use them through their scripts and leave
+([GUESTS.md](GUESTS.md), [OBJECTS.md](OBJECTS.md)).
+
+Official bonus objects (`_name_N.wad`) are read from an extracted bonus directory
+with `--bonus-data <dir>` (or `OPENTPW_BONUS_DATA`); they join the build panel and
+the private tests (OBJECTS.md). Nothing is copied into the game data.
 `--smoke-test` also works with this flag (captures `native-smoke-original-*.png`;
-the smoke also checks that guests fill and leave the Totem and appear in readback).
+the smoke also checks that guests fill and leave the Totem and ride imported objects).
 
 ## Read-only BF4 font inspection
 

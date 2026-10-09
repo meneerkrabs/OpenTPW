@@ -84,6 +84,20 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 
 	public bool LeaveQueue( int guestId ) => queue.Remove( guestId );
 
+	// Scripts declare different variable subsets (e.g. features without VAR_LETMEOFF), so access by name.
+	private int Get( RideVariables variable )
+	{
+		var index = vm?.GetVariableIndex( variable.ToString() ) ?? -1;
+		return index < 0 ? 0 : vm!.Variables[index];
+	}
+
+	private void Set( RideVariables variable, int value )
+	{
+		var index = vm?.GetVariableIndex( variable.ToString() ) ?? -1;
+		if ( index >= 0 )
+			vm!.Variables[index] = value;
+	}
+
 	private bool Holds( int guestId ) => guestId == offered || onRide.Contains( guestId );
 
 	/// <summary>Host side of the protocol; call once per tick before the script advances.</summary>
@@ -99,14 +113,14 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		if ( vm.InCriticalSection )
 			return;
 
-		var off = vm[RideVariables.VAR_LETMEOFF];
+		var off = Get( RideVariables.VAR_LETMEOFF );
 		if ( off != 0 )
 		{
-			vm[RideVariables.VAR_LETMEOFF] = 0;
+			Set( RideVariables.VAR_LETMEOFF, 0 );
 			Release( off );
 		}
 
-		if ( offered != 0 && vm[RideVariables.VAR_LETMEON] != offered )
+		if ( offered != 0 && Get( RideVariables.VAR_LETMEON ) != offered )
 		{
 			var guest = offered;
 			offered = 0;
@@ -116,7 +130,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		if ( offered != 0 && !isOpen() )
 		{
 			// The script never took the guest before closing; give it back.
-			vm[RideVariables.VAR_LETMEON] = 0;
+			Set( RideVariables.VAR_LETMEON, 0 );
 			var guest = offered;
 			offered = 0;
 			Host?.OnVisitorTurnedAway( this, guest );
@@ -132,11 +146,11 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			return;
 		}
 
-		if ( offered == 0 && vm[RideVariables.VAR_LETMEON] == 0 && queue.Count > 0 )
+		if ( offered == 0 && Get( RideVariables.VAR_LETMEON ) == 0 && queue.Count > 0 )
 		{
 			offered = queue[0];
 			queue.RemoveAt( 0 );
-			vm[RideVariables.VAR_LETMEON] = offered;
+			Set( RideVariables.VAR_LETMEON, offered );
 			Host?.OnVisitorOffered( this, offered );
 		}
 	}
@@ -171,8 +185,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		{
 			var guest = offered;
 			offered = 0;
-			if ( vm != null && vm[RideVariables.VAR_LETMEON] == guest )
-				vm[RideVariables.VAR_LETMEON] = 0;
+			if ( vm != null && Get( RideVariables.VAR_LETMEON ) == guest )
+				Set( RideVariables.VAR_LETMEON, 0 );
 			Host?.OnVisitorTurnedAway( this, guest );
 		}
 		foreach ( var guest in queue.ToArray() )

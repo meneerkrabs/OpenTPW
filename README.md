@@ -53,9 +53,13 @@ vertex animation unverified); MAP reads the 128×128 TP2M terrain grids
 opcodes handled, 51 of them through an unimplemented-effect hook; the sandbox
 Totem runs its original script); the Jungle TPWI payload's cell grid and placed
 objects are imported read-only into an original level view
-(`--load-original-level`; money, guests and other sections opaque), with simulated guests
-drawn with the original kid sprites arriving, walking paths and riding the Totem
-through its script (approximated rules, [GUESTS](docs/GUESTS.md)); `.LIP` marks
+(`--load-original-level`; money, guests and other sections opaque) where the
+objects stand as their original models and simulated guests drawn with the
+original kid sprites arrive, walk the paths and use the rides, shops, sideshows
+and toilets through their scripts (approximated rules, [GUESTS](docs/GUESTS.md));
+all 274 original objects (plus the official bonus objects via `--bonus-data`) can
+be built and run their original scripts and animations, without sounds or ride
+controllers ([objects](docs/OBJECTS.md)); `.LIP` marks
 are microsecond talking/silence toggles, inferred from the decoded speech audio. They
 drive the original advisor's mouth with SDL audio via `--advisor-say N`; the original
 mouth-shape choice is unknown. ISO-only `.MTR` files decode as topology and matrices

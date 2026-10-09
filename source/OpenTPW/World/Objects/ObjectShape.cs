@@ -1,0 +1,187 @@
+namespace OpenTPW;
+
+/// <summary>Meaning of one character of an <c>Info.Shape</c> grid (docs/OBJECTS.md).</summary>
+public enum ObjectCellKind
+{
+	/// <summary><c>.</c>: inside the bounding box but not occupied.</summary>
+	Free,
+	/// <summary><c>*</c>: occupied.</summary>
+	Occupied,
+	/// <summary>
+	/// <c>2</c>: the entrance cell. Verified in Easymode: the Belly Bounce queue ends at it, and the Drinks
+	/// Shop, Jungle Spray and Staff Room paths connect to it (the only special cell of shops and toilets).
+	/// </summary>
+	Entrance,
+	/// <summary>
+	/// <c>S</c>, <c>N</c>, <c>E</c>: the exit cell. <c>S</c> verified (Belly Bounce exit joins the path);
+	/// <c>N</c> (next to <c>2</c> on track rides) and <c>E</c> (two dark rides) are inferred by analogy.
+	/// </summary>
+	Exit,
+	/// <summary><c>&lt;</c>, <c>&gt;</c>: coaster station ends where the track leaves/returns (inferred).</summary>
+	TrackConnection,
+	/// <summary><c>+</c>: track-upgrade cells laid over the parent ride's track (inferred).</summary>
+	Overlay
+}
+
+/// <summary>An entrance or exit cell of a placed object and the adjacent outside cell (queue end or path).</summary>
+public readonly record struct ObjectAccessPoint( ObjectCellKind Kind, int X, int Y, int OutsideX, int OutsideY );
+
+/// <summary>One footprint cell: local shape coordinates and its kind.</summary>
+public readonly record struct ObjectShapeCell( int U, int V, ObjectCellKind Kind, char Symbol );
+
+/// <summary>
+/// An object's <c>Info.Shape</c> grid. Local coordinates: <c>U</c> is the column (model +X), <c>V</c> counts
+/// rows from the <b>last</b> text row (model +Z). Evidence: 240 of 248 non-fixed main models span exactly
+/// [0, 10·width] × [0, 10·height] in X/Z; seat dummies of the Belly Bounce (15, 0, 5)/(15, 0, 35) and the
+/// Staff Room <c>position01</c> (15, 0, 3) sit in the <c>2</c>/<c>S</c> cells only with V counted from
+/// the last row; and in Easymode the saved footprints, queue and path connections match that orientation.
+/// </summary>
+public sealed class ObjectShape
+{
+	private readonly ObjectShapeCell[] cells;
+
+	public ObjectShape( IReadOnlyList<string> rows )
+	{
+		ArgumentNullException.ThrowIfNull( rows );
+		var trimmed = rows.Select( row => row.TrimEnd() ).ToList();
+		while ( trimmed.Count > 0 && trimmed[^1].Length == 0 )
+			trimmed.RemoveAt( trimmed.Count - 1 );
+		if ( trimmed.Count == 0 || trimmed.Any( row => row.Length == 0 ) )
+			throw new InvalidDataException( "An object shape needs at least one non-empty row." );
+		Rows = trimmed.AsReadOnly();
+		Width = trimmed.Max( row => row.Length );
+		Height = trimmed.Count;
+		var list = new List<ObjectShapeCell>();
+		for ( var row = 0; row < Height; row++ )
+		{
+			for ( var column = 0; column < trimmed[row].Length; column++ )
+			{
+				var symbol = trimmed[row][column];
+				list.Add( new ObjectShapeCell( column, Height - 1 - row, Classify( symbol ), symbol ) );
+			}
+		}
+		cells = list.ToArray();
+	}
+
+	public IReadOnlyList<string> Rows { get; }
+	public int Width { get; }
+	public int Height { get; }
+	public IReadOnlyList<ObjectShapeCell> Cells => cells;
+	public IEnumerable<ObjectShapeCell> OccupiedCells => cells.Where( cell => cell.Kind != ObjectCellKind.Free );
+	public IEnumerable<ObjectShapeCell> Entrances => cells.Where( cell => cell.Kind == ObjectCellKind.Entrance );
+	public IEnumerable<ObjectShapeCell> Exits => cells.Where( cell => cell.Kind == ObjectCellKind.Exit );
+
+	// [APPROX:RIDES-011] Meanings of N/E (exit), </> (station ends), + (upgrade cells), W (occupied) are inferred; 2, S, *, . are verified in Easymode — evidence needed: saves/captures with these rides
+	public static ObjectCellKind Classify( char symbol ) => symbol switch
+	{
+		'.' or ' ' => ObjectCellKind.Free,
+		// 'W' occurs once, in the bonus Snake ride ("****/W***/..."); its meaning is unknown, it is treated as occupied.
+		'*' or 'W' => ObjectCellKind.Occupied,
+		'2' => ObjectCellKind.Entrance,
+		'S' or 'N' or 'E' => ObjectCellKind.Exit,
+		'<' or '>' => ObjectCellKind.TrackConnection,
+		'+' => ObjectCellKind.Overlay,
+		_ => throw new InvalidDataException( $"Unknown object shape symbol '{symbol}'." )
+	};
+
+	/// <summary>A 1×1 occupied shape, used for objects without an Info.Shape.</summary>
+	public static ObjectShape Single { get; } = new( new[] { "*" } );
+}
+
+/// <summary>
+/// Placement of a shape on the park grid. The anchor (save record X/Y) is the cell of local (0, 0), and a
+/// rotation turns the local grid about it. Verified in Easymode: rotation 0 maps (u, v) → (X+u, Y+v);
+/// rotation 90 maps (u, v) → (X+v, Y−u) (Staff Room and Round Fountain footprints, the Staff Room entrance
+/// opening towards −X); rotation 270 turns the Small Toilet entrances towards +X, the inverse rotation.
+/// Rotation 180 and non-square shapes follow from the same rigid rotation but are not observed in a save.
+/// </summary>
+public static class ObjectFootprint
+{
+	public static bool IsValidRotation( int degrees ) => degrees is 0 or 90 or 180 or 270;
+
+	/// <summary>Grid cell of local cell (u, v) for an object anchored at (x, y).</summary>
+	// [APPROX:RIDES-013] Rotation 180 and non-square rotated footprints follow the rigid rotation verified for 0/90/270 squares — evidence needed: a save with such objects
+	public static (int X, int Y) ToGrid( int anchorX, int anchorY, int rotation, int u, int v ) => rotation switch
+	{
+		0 => (anchorX + u, anchorY + v),
+		90 => (anchorX + v, anchorY - u),
+		180 => (anchorX - u, anchorY - v),
+		270 => (anchorX - v, anchorY + u),
+		_ => throw new ArgumentOutOfRangeException( nameof( rotation ), "Rotations are multiples of 90 degrees." )
+	};
+
+	/// <summary>Continuous local position (in cells, model X/Z ÷ 10) to grid position, consistent with <see cref="ToGrid"/>.</summary>
+	public static System.Numerics.Vector2 ToGrid( int anchorX, int anchorY, int rotation, System.Numerics.Vector2 local ) => rotation switch
+	{
+		0 => new( anchorX + local.X, anchorY + local.Y ),
+		90 => new( anchorX + local.Y, anchorY + 1 - local.X ),
+		180 => new( anchorX + 1 - local.X, anchorY + 1 - local.Y ),
+		270 => new( anchorX + 1 - local.Y, anchorY + local.X ),
+		_ => throw new ArgumentOutOfRangeException( nameof( rotation ), "Rotations are multiples of 90 degrees." )
+	};
+
+	/// <summary>Turns a local direction (du, dv) like <see cref="ToGrid(int,int,int,int,int)"/> turns offsets.</summary>
+	public static (int X, int Y) RotateDirection( int rotation, int du, int dv ) => rotation switch
+	{
+		0 => (du, dv),
+		90 => (dv, -du),
+		180 => (-du, -dv),
+		270 => (-dv, du),
+		_ => throw new ArgumentOutOfRangeException( nameof( rotation ) )
+	};
+
+	/// <summary>
+	/// Local direction from an edge cell to the outside: the first/last row (−V/+V) before the first/last column.
+	/// Verified for Easymode entrances on the first row (queue/path at −V) and the Belly Bounce exit on the last
+	/// row (path at +V); other edges are inferred.
+	/// </summary>
+	// [APPROX:RIDES-012] Access cells open across the first/last row before the first/last column (verified only for first/last-row cells) — evidence needed: saves with side entrances
+	public static (int U, int V) OutwardDirection( ObjectShape shape, ObjectShapeCell cell )
+	{
+		if ( cell.V == 0 )
+			return (0, -1);
+		if ( cell.V == shape.Height - 1 )
+			return (0, 1);
+		if ( cell.U == 0 )
+			return (-1, 0);
+		if ( cell.U == shape.Width - 1 )
+			return (1, 0);
+		return (0, -1);
+	}
+
+	/// <summary>Entrance and exit cells on the grid with the outside cell a queue or path joins.</summary>
+	public static IEnumerable<ObjectAccessPoint> GetAccessPoints( ObjectShape shape, int anchorX, int anchorY, int rotation )
+	{
+		foreach ( var cell in shape.Cells.Where( cell => cell.Kind is ObjectCellKind.Entrance or ObjectCellKind.Exit ) )
+		{
+			var (x, y) = ToGrid( anchorX, anchorY, rotation, cell.U, cell.V );
+			var (du, dv) = OutwardDirection( shape, cell );
+			var (dx, dy) = RotateDirection( rotation, du, dv );
+			yield return new ObjectAccessPoint( cell.Kind, x, y, x + dx, y + dy );
+		}
+	}
+
+	public static IEnumerable<(int X, int Y, ObjectShapeCell Cell)> GetCells( ObjectShape shape, int anchorX, int anchorY, int rotation )
+	{
+		foreach ( var cell in shape.OccupiedCells )
+		{
+			var (x, y) = ToGrid( anchorX, anchorY, rotation, cell.U, cell.V );
+			yield return (x, y, cell);
+		}
+	}
+
+	/// <summary>Inclusive bounding box of the whole shape grid (free cells included).</summary>
+	public static (int MinX, int MinY, int MaxX, int MaxY) GetBounds( ObjectShape shape, int anchorX, int anchorY, int rotation )
+	{
+		var a = ToGrid( anchorX, anchorY, rotation, 0, 0 );
+		var b = ToGrid( anchorX, anchorY, rotation, shape.Width - 1, shape.Height - 1 );
+		return (Math.Min( a.X, b.X ), Math.Min( a.Y, b.Y ), Math.Max( a.X, b.X ), Math.Max( a.Y, b.Y ));
+	}
+
+	/// <summary>Anchor that puts the shape's bounding box at (minX, minY) for a rotation (used when building).</summary>
+	public static (int X, int Y) AnchorForBounds( ObjectShape shape, int minX, int minY, int rotation )
+	{
+		var (boxX, boxY, _, _) = GetBounds( shape, 0, 0, rotation );
+		return (minX - boxX, minY - boxY);
+	}
+}

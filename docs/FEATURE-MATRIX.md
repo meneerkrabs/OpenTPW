@@ -38,7 +38,10 @@ MD2, MAP, RSE, TPWI-payload markers, LIP, MTR and TGQ now have bounded CPU reade
 verified against original files (see FORMAT-BACKLOG.md). The MAP/heightfield and the
 Easymode path/object import feed a read-only `--load-original-level` sandbox view
 with data-grounded build rules (MAP.md, TPWS-PAYLOAD.md); that is not an original
-gameplay feature, so the game-feature rows stay unchanged.
+gameplay feature, so the game-feature rows stay unchanged. Object catalog,
+placement and script/animation execution for all 274 objects are documented in
+[OBJECTS.md](OBJECTS.md); without visitors, sounds and ride controllers that is
+VM-level evidence, so the ride rows stay unassessed.
 
 Compatibility slice ([COMPATIBILITY.md](COMPATIBILITY.md)): in-world TrueType sign text
 from `fonts.wad` (`partial`: gate demo in `--load-original-level`, ride signs need the

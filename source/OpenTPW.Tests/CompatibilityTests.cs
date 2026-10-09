@@ -219,7 +219,7 @@ public class CompatibilityTests
 		var cd = Path.Combine( root, "cd" );
 		Write( cd, "DATA/movies/JUG.TGQ", new byte[] { 2, 2 } );
 		Write( cd, "DATA/movies/bf.tgq", new byte[] { 9 } );
-		var bank = CreateBank( ("level4c.wav", new byte[] { 3 }) );
+		var bank = CreateBank( ("level4c.mp2", new byte[] { 3 }) );
 		Write( cd, "DATA/LEVELS/Jungle/music/MUSICHD.SDT", bank );
 		Write( cd, "DATA/LEVELS/Jungle/global.sam", new byte[] { 4 } );
 		var originalFileSystem = FileSystem;
@@ -312,7 +312,7 @@ public class CompatibilityTests
 
 	// ---- SDT robustness ----
 
-	private static byte[] CreateBank( params (string Name, byte[] Data)[] entries )
+	internal static byte[] CreateBank( params (string Name, byte[] Data)[] entries )
 	{
 		var output = new MemoryStream();
 		var writer = new BinaryWriter( output );
@@ -330,9 +330,12 @@ public class CompatibilityTests
 			var name = new byte[16];
 			Encoding.ASCII.GetBytes( entry.Name ).CopyTo( name, 0 );
 			writer.Write( name );
-			writer.Write( 22050 );
-			writer.Write( 16 );
-			writer.Write( 2 );
+			// Sample rate (UInt16), then bits per sample (low byte) and sound type (high byte, 36 = mono)
+			writer.Write( (ushort)22050 );
+			writer.Write( (ushort)(36 << 8 | 16) );
+			// Unknown, raw sample field, unknown
+			writer.Write( 0 );
+			writer.Write( 0 );
 			writer.Write( 0 );
 			writer.Write( entry.Data );
 		}
@@ -352,7 +355,7 @@ public class CompatibilityTests
 		try
 		{
 			var archive = new SdtArchive( new MemoryStream( bank ) );
-			CollectionAssert.AreEqual( new[] { "first.mp2", "third.mp2" }, archive.GetFiles( "" ) );
+			CollectionAssert.AreEqual( new[] { "first.wav", "third.wav" }, archive.GetFiles( "" ) );
 			Assert.AreEqual( 1, archive.SkippedEntries.Count );
 			StringAssert.Contains( messages.Single(), "entry 1" );
 			Assert.ThrowsException<FileNotFoundException>( () => archive.GetFile( "second" ) );

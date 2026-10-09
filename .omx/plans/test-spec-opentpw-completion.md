@@ -38,6 +38,11 @@ docs/FEATURE-MATRIX.md. Preserve the full offline scope.
 - A procedurally animated prototype is not an original-script-fidelity pass.
 
 ## M2–M7
+- User-prioritized missing/partial formats: follow docs/FORMAT-BACKLOG.md. BF4
+  requires raw-four-bit/RLE/monochrome samples, signed glyph metrics, bounded
+  offsets/sizes/allocation, short reads, original pinned coverage and complete
+  selected corpus decoding. CPU parsing must not claim game text/atlas fidelity;
+  original UI rendering and each native graphics backend are separate gates.
 - M6 optional upscaling: validate presets/custom bounds, dimensions/DPI rounding,
   settings persistence, Native baseline, shader bindings, final output including
   sharp UI, aspect/UV/color and unchanged picking. Exercise runtime mode switches,

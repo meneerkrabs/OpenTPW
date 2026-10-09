@@ -29,6 +29,10 @@ online service restoration remains separately scoped.
 
 ## Selected edition
 
+Detailed missing/partial format work is tracked in [FORMAT-BACKLOG.md](FORMAT-BACKLOG.md).
+BF4 CPU decoding is implemented for the selected English corpus; font/UI integration,
+visual fidelity and three-platform graphics qualification remain unverified.
+
 Optional presentation extension (requested October 9, 2026): configurable world
 upscaling, design in [UPSCALING-DESIGN.md](UPSCALING-DESIGN.md). Implementation:
 `missing`; macOS/Windows/Linux: `unverified`; original VM: `not-applicable`

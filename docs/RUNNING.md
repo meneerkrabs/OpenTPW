@@ -51,6 +51,17 @@ Use `--validate-assets --inspect-rides` for the Jungle archive inventory.
 Runtime logs are written to standard output/error. Original RSE execution and
 original TPWS import remain roadmap tasks, not features of the sandbox.
 
+## Read-only BF4 font inspection
+
+```sh
+dotnet source/OpenTPW/bin/Debug/net8.0/osx-arm64/OpenTPW.dll --inspect-font '/path/to/Theme Park World/Data/Language/English/SESHMED.bf4'
+```
+
+Use your actual build/RID DLL path. No `--game-path`, graphics or game-directory
+writes are needed. Prints entry/sample counts and encoding inventory; decoding
+errors exit nonzero. This does not integrate original fonts into the game UI.
+See BF4-FONTS.md for supported encodings, limits and private fixture evidence.
+
 ## Read-only original container inspection
 
 ```sh

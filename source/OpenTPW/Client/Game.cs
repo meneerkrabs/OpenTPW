@@ -9,6 +9,19 @@ internal static class Game
 	public static void Run( string[] args )
 	{
 		Log = new();
+		var fontIndex = Array.IndexOf( args, "--inspect-font" );
+		if ( fontIndex >= 0 )
+		{
+			if ( fontIndex + 1 >= args.Length || args[fontIndex + 1].StartsWith( "--" ) )
+				throw new ArgumentException( "--inspect-font requires a local BF4 font path." );
+			using var stream = File.OpenRead( args[fontIndex + 1] );
+			var font = new FontFile( stream );
+			Console.WriteLine( $"BF4: {font.Glyphs.Count} entries; header hints {font.HeaderWidthHint}x{font.HeaderHeightHint}; {font.Glyphs.Sum( glyph => glyph.Coverage.Length )} decoded samples." );
+			foreach ( var group in font.Glyphs.GroupBy( glyph => glyph.Encoding ).OrderBy( group => group.Key ) )
+				Console.WriteLine( $"Encoding {group.Key}: {group.Count()} entries." );
+			Console.WriteLine( "Read-only CPU font decoding: nibble samples 0–15; game UI integration and original visual fidelity remain unverified." );
+			return;
+		}
 		var saveIndex = Array.IndexOf( args, "--inspect-save" );
 		if ( saveIndex >= 0 )
 		{

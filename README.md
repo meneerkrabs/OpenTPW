@@ -38,12 +38,19 @@ OpenTPW is currently in a very early stage of development, and is not yet playab
 | Map Data ([.MAP](https://opentpw.gu3.me/formats/map.html))                    | ⚠️     |
 | Ride Scripts ([.RSE](https://opentpw.gu3.me/formats/rsse.html))                | ⚠️     |
 | Save Files ([.TPWS](https://opentpw.gu3.me/formats/tpws-ints-lays.html))                | ⚠️     |
-| Fonts ([.BF4](https://opentpw.gu3.me/formats/bf4.html))                      | ❌     |
+| Fonts ([.BF4](https://opentpw.gu3.me/formats/bf4.html))                      | ⚠️     |
 | Lip Sync ([.LIPS](https://opentpw.gu3.me/formats/lips.html))                  | ❌     |
 | Materials ([.MTR](https://opentpw.gu3.me/formats/mtr.html))                   | ❌     |
 | Video ([.TQI](https://opentpw.gu3.me/formats/tqi.html))                       | ❌     |
 
 ### Documentation
+
+The BF4 CPU decoder handles four-bit, RLE and monochrome glyphs and is tested
+against 33 selected original English fonts. Game UI integration and visual fidelity
+are still pending; this is not a complete font-rendering implementation. See
+[BF4 evidence](docs/BF4-FONTS.md), [format backlog](docs/FORMAT-BACKLOG.md),
+[completion plan](docs/COMPLETION-PLAN.md) and [progress](docs/PROGRESS.md).
+Format checkmarks do not qualify full gameplay or every platform/edition.
 
 File format information is available at the [OpenTPW formats](https://opentpw.gu3.me/formats/) website. Keep in mind that this information is a work-in-progress, and therefore might not be of incredible detail - however, upon completion, it still aims to be as useful, detailed, and as in-depth as possible.
 

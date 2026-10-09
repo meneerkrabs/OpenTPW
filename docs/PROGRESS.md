@@ -42,9 +42,9 @@ Het huidige sandbox-saveformaat start fase en clock opnieuw bij laden.
 
 ## Verse verificatie
 
-- Hele native assetsuite inclusief shader- en savecontainerregressies: **153 passed, 0 skipped,
+- Hele native assetsuite inclusief shader-, savecontainer- en fontregressies: **185 passed, 0 skipped,
   0 failed**, .NET SDK 8.0.425, `osx-arm64`.
-- Zonder originele assets/native shader-opt-in: **137 passed, 16 skipped, 0 failed**.
+- Zonder originele assets/native shader-opt-in: **165 passed, 20 skipped, 0 failed**.
 - Savecontainer-slice: **31 passed**, inclusief de gehashte originele TPWI-fixture.
 - Geïsoleerde clocktests: **12 passed**.
 - Release-solutionbuild: **0 errors**, bestaande warnings blijven aanwezig.
@@ -109,3 +109,31 @@ Geen parkpayloadschema, speelbare importer of bewijs van alle originele TPWS-lay
 Vervolgsubagents konden geen review leveren (model/account-beperking en een
 geblokkeerde reviewoproep). Tests en lokale controles zijn uitgevoerd; onafhankelijke
 review-signoff en voltooiing van de volledige game zijn niet geclaimd.
+
+## Focus op ontbrekende/gedeeltelijke formaten
+
+Op gebruikersverzoek krijgt de ❌/⚠️-lijst voorrang. `FORMAT-BACKLOG.md` scheidt
+concrete fixtures, decoderwerk en integratie/fidelity; bestaande groene tekens
+worden niet als volledige game- of platformkwalificatie geïnterpreteerd.
+
+- Nieuwe `FontFile`: begrensde BF4-header/offset-/glyphparser, raw vier-bit,
+  nibble-RLE en monochroom. Alle 33 originele Engelse fonts / 8.217 entries
+  decoderen; drie gehashte fixtures pinnen metrics en onafhankelijk berekende samples.
+- README: BF4 van ❌ naar ⚠️. Nog geen GPU-fontatlas/game-UI of oorspronkelijke
+  visuele vergelijking; geen onterechte complete-fontclaim.
+- `--inspect-font`: read-only CPU-diagnostiek zonder assets te wijzigen of GPU
+  te starten. Gepubliceerde Mac-build vanuit `/tmp`: geldig font exit 0,
+  ontbrekend argument exit 1. Drie RID-pakketten opnieuw gebouwd.
+- Read-only metadata-inventaris van 312 DWFB-archives: 2.118 MD2-, 308 RSE- en
+  7 MAP-members. Jungle terrain bevat `base.map` en `terrain.map`; dit bewijst
+  nog geen kaartsemantiek/import. Negen TGQ-video's gevonden. Geen standalone
+  MTR/LIPS/TQI-namen in deze locaties; ingebedde/differently named data blijft open.
+- Upstream formaatnotities zijn via de GitHub-docsbron teruggevonden. MTR/LIPS
+  blijven TODO; MAP-notitie gaat over sound maps, niet bewezen terreinrecords.
+
+GitHub CI van snapshot `5f23094`: macOS en Ubuntu build/CPU-tests slagen;
+Windows had één assert-fout door `UnauthorizedAccessException` in plaats van
+`IOException` bij vervangen van een directory. De test onderscheidt nu het
+OS-specifieke exceptiontype; behoud van de directory en opruiming van tijdelijke
+bestanden blijven verplicht. Windows-herverificatie blijft nodig voor deze wijziging;
+CPU-CI is geen GPU-/audio-/volledige native releasekwalificatie.

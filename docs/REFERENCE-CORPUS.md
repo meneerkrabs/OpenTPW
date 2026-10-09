@@ -62,6 +62,10 @@ These hashes inventory original files; they do not establish a tile/grid importe
 
 ### Required test modes
 
+BF4 private corpus: see [BF4-FONTS.md](BF4-FONTS.md) for the 33 English fonts,
+8,217 entries, three pinned file/sample identities, metrics and limitations.
+These are CPU decoder assertions; original text rendering remains unverified.
+
 - Asset-free tests exercise synthetic records, truncation, invalid offsets/counts,
   allocation/decompression bounds, traversal and case-sensitive resolution.
 - Optional real-asset tests without fixtures report inconclusive/skipped. Their

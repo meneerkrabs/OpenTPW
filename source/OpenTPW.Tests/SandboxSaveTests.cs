@@ -122,7 +122,10 @@ public class SandboxSaveTests
 	public void FailedReplacementCleansTemporaryFile()
 	{
 		Directory.CreateDirectory( path );
-		Assert.ThrowsException<IOException>( () => SandboxSave.Save( path, SandboxSave.CreateEmpty() ) );
+		if ( OperatingSystem.IsWindows() )
+			Assert.ThrowsException<UnauthorizedAccessException>( () => SandboxSave.Save( path, SandboxSave.CreateEmpty() ) );
+		else
+			Assert.ThrowsException<IOException>( () => SandboxSave.Save( path, SandboxSave.CreateEmpty() ) );
 		Assert.IsTrue( Directory.Exists( path ) );
 		Assert.AreEqual( 0, Directory.GetFiles( directory, "*.tmp" ).Length );
 	}

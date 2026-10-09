@@ -9,6 +9,8 @@ widget allocation and model binding evidence (see [PPC UI findings](reverse/PPC-
 Most screen/controller/rendering choices below remain OpenTPW approximations. No original
 captures were compared, so visual fidelity is **not verified**.
 
+The CD's autorun launcher window is documented separately in [AUTORUN.md](AUTORUN.md).
+
 ## Inventory
 
 All counts from read-only listings of the installed English data.

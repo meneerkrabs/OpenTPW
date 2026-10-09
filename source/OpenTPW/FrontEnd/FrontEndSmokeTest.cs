@@ -509,7 +509,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		Require( checkedTexels >= 3 && matching >= checkedTexels * 97 / 100, $"{what} text pixels match in GPU readback" );
 	}
 
-	private static (byte[] Pixels, int Width, int Height) CaptureFrame( string name )
+	internal static (byte[] Pixels, int Width, int Height) CaptureFrame( string name )
 	{
 		var source = global::Global.Render.OutputCaptureTexture!;
 		using var staging = Device.ResourceFactory.CreateTexture( TextureDescription.Texture2D( source.Width, source.Height, 1, 1, source.Format, TextureUsage.Staging ) );

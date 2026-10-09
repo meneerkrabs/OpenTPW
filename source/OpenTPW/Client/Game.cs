@@ -186,17 +186,28 @@ internal static class Game
 		// Default: the original-style front end (docs/UI.md). --load-original-level, --sandbox and a
 		// plain --smoke-test bypass it as before; --front-end --smoke-test tests the front end.
 		using var flow = new GameFlow { OnlineFolders = onlineFolders };
-		Render.OnUpdate += flow.Update;
-		Render.OnRender += flow.Render;
 		var capturePath = GetOption( args, "--capture-world", "a .png file for the world-only screenshot" );
+		var smoke = args.Contains( "--smoke-test" );
+		var startsFrontEnd = visit == null && originalLevelIndex < 0 && !args.Contains( "--advisor-say" ) && !args.Contains( "--sandbox" ) && (!smoke || args.Contains( "--front-end" ));
+		// [EXT:autorun] The CD's launcher window comes first when its Autorun folder is available (docs/AUTORUN.md).
+		var autorun = startsFrontEnd && capturePath == null ? CreateAutorun( args, bonusSettings, dataDirectory ) : null;
+		if ( autorun == null )
+		{
+			Render.OnUpdate += flow.Update;
+			Render.OnRender += flow.Render;
+		}
 		if ( capturePath != null )
 		{
 			var frames = GetOption( args, "--capture-frames", "a frame count" ) is { } text && int.TryParse( text, out var parsed ) && parsed > 0 ? parsed : 240;
 			Render.PostUpdate += new WorldCapture( capturePath, frames ).Update;
 		}
-		var smoke = args.Contains( "--smoke-test" );
-		if ( visit == null && originalLevelIndex < 0 && !args.Contains( "--advisor-say" ) && !args.Contains( "--sandbox" ) && (!smoke || args.Contains( "--front-end" )) )
+		if ( startsFrontEnd )
 		{
+			if ( autorun != null )
+			{
+				RunAutorun( flow, autorun, smoke );
+				return;
+			}
 			flow.ShowFrontEnd();
 			if ( smoke )
 			{
@@ -244,6 +255,72 @@ internal static class Game
 		}
 		else
 			Render.Run();
+	}
+
+	/// <summary>The CD launcher screen for the game's language, or null when it is disabled or the CD's Autorun files are absent.</summary>
+	private static AutorunScreen? CreateAutorun( string[] args, SetupSettings settings, string dataDirectory )
+	{
+		var cd = GetOption( args, "--cd-data", "the original CD's folder" ) ?? Environment.GetEnvironmentVariable( "OPENTPW_CD_DATA" );
+		var language = GameLanguage.IsSelected ? GameLanguage.Current.Name : GameLanguage.DefaultLanguage;
+		var assets = AutorunLauncher.FindAssets( args, settings, Settings.Default.GamePath, cd, language );
+		return assets == null ? null : AutorunLauncher.Create( assets, Settings.Default.GamePath );
+	}
+
+	/// <summary>
+	/// Shows the CD launcher, then (on Play) the front end. The hand-over runs after the frame so the front end's first
+	/// update precedes its first draw; Exit has already closed the window.
+	/// </summary>
+	private static void RunAutorun( GameFlow flow, AutorunScreen autorun, bool smoke )
+	{
+		using var screen = autorun;
+		FrontEndSmokeTest? frontEndSmokeTest = null;
+		AutorunSmokeTest? autorunSmokeTest = null;
+		Action? handOver = null;
+		handOver = () =>
+		{
+			if ( screen.Result == AutorunResult.None )
+				return;
+			Render.PostUpdate -= handOver;
+			Render.OnUpdate -= screen.Update;
+			Render.OnRender -= screen.Render;
+			if ( screen.Result != AutorunResult.Play )
+				return;
+			Render.WorldScalingAllowed = true;
+			Render.OnUpdate += flow.Update;
+			Render.OnRender += flow.Render;
+			flow.ShowFrontEnd();
+			if ( smoke )
+			{
+				frontEndSmokeTest = new FrontEndSmokeTest( flow );
+				Render.PostUpdate += frontEndSmokeTest.Update;
+			}
+		};
+		try
+		{
+			// Like movies, the launcher is not 3D world content: it renders at output size.
+			Render.WorldScalingAllowed = false;
+			Render.OnUpdate += screen.Update;
+			Render.OnRender += screen.Render;
+			if ( smoke )
+			{
+				autorunSmokeTest = new AutorunSmokeTest( screen );
+				Render.PostUpdate += autorunSmokeTest.Update;
+			}
+			Render.PostUpdate += handOver;
+			Render.Run();
+			if ( smoke )
+			{
+				autorunSmokeTest!.VerifyCompleted();
+				if ( frontEndSmokeTest == null )
+					throw new InvalidOperationException( "Native autorun smoke test failed: the front end did not start after Play." );
+				frontEndSmokeTest.VerifyCompleted();
+			}
+		}
+		finally
+		{
+			autorunSmokeTest?.Dispose();
+			frontEndSmokeTest?.Dispose();
+		}
 	}
 
 	/// <summary>

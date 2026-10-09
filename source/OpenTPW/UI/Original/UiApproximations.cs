@@ -41,6 +41,7 @@ public static class UiApproximations
 		("UI-030", "volumes in 0..10 steps, default 8; popup help default on", "capture/registry defaults of the original options"),
 		("UI-031", "one placement per menu selection; Level.PlaceObject owns purchase/guest linkage and its removal handler owns scrap credits", "original build-tool continuation"),
 		("UI-032", "longer labels fall back to the small font; catalogue names greedily wrap in their slots", "captures of translated original screens"),
+		("UI-033", "autorun launcher focus rectangle: dotted frame inverting the pixels with even x + y, 2 pixels inside the button (GDI DrawFocusRect brush phase unknown)", "capture of the original launcher with a focused button"),
 	};
 
 	private static bool logged;

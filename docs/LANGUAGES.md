@@ -71,8 +71,8 @@ and must not be run.
 
 | Data | Status |
 |---|---|
-| String tables (`*.str`) | Loaded from the language folder with that folder's own `MBToUni.dat` (`Localization`, sandbox text panel). |
-| BF4 fonts (`*.bf4`) | Loaded from the language folder (sandbox text panel). |
+| String tables (`*.str`) | Loaded from the language folder with that folder's own `MBToUni.dat` (front end, options, HUD, popup help, sandbox text panel; see UI.md). |
+| BF4 fonts (`*.bf4`) | Loaded from the language folder (UI screens in SMALL/MED/BIG tiers, sandbox text panel). |
 | Banner meshes (`bankrupt`/`congrats`/`paused.MD2`) | Resolvable via `GameLanguage.FindFile`; not drawn by the game yet. |
 | Speech banks, `lips.WAD`, level `.LIP` | Resolvable via `GameLanguage.ResolveDataFile` (overlay first); speech playback is not implemented. |
 
@@ -116,10 +116,10 @@ and its readback matches the CPU composite (max difference 0 on Metal).
 
 ## Not done
 
-- No original menu/UI screens use the strings yet; only the sandbox panel and
-  `Localization.Parse` do. Layout of longer translations in original screens is
-  unverified.
-- No in-game language switch; the language is chosen at startup.
+- The original-style screens (UI.md) use the strings; their layout is an
+  approximation, and labels the original lacks come from OpenTPW's translated
+  supplementary table. French and German leave the money prefix (UITEXT 448) empty.
+- No live language switch: the Options language row stores the choice for the next start.
 - Speech audio, lip-sync playback and banner rendering are not implemented.
 - `UniToMB.dat` (reverse table, needed for text input) is not read.
 - Only the CD in `TPWORLD.ISO` was examined; other editions/patches are unverified.

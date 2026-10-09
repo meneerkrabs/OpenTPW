@@ -81,7 +81,7 @@ adjudicate ongoing implementation or invent test results.
 | Coaster construction, ride behavior and rating | M4 | unassessed | unverified | unverified | unverified | unverified | All required types and constraints |
 | Four worlds and every offline scenario/unlock | M5 | unassessed | unverified | unverified | unverified | unverified | Per-world/scenario executable acceptance |
 | Research, adviser, breakdowns and decoration effects | M5 | unassessed | unverified | unverified | unverified | unverified | Original progression/event evidence; research, wear/repair, challenges and golden tickets are approximated in `docs/ECONOMY.md` (adviser and decoration effects missing) |
-| UI, localization, fonts and shortcuts | M6 | unassessed | unverified | unverified | unverified | unverified | Selected-locale inventory and reference captures |
+| UI, localization, fonts and shortcuts | M6 | approximated | prototype-pass | unverified | unverified | not-applicable | Original-style front end/HUD/options from ui.wad/lobby.wad and string tables, six languages, Metal readback smoke ([UI.md](UI.md)); original positions of code-placed elements, profiles/online, reference captures pending |
 | Audio, music, video and first-person/ride cameras | M6 | unassessed | unverified | unverified | unverified | unverified | Decoder/runtime evidence and reference comparisons |
 | Native dependencies, packaging and long sessions | M7 | unassessed | unverified | unverified | unverified | not-applicable | Platform qualification, not VM semantics |
 

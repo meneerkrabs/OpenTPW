@@ -91,9 +91,12 @@ world` (`ModelAnimationPlayer.ComputeRestTransforms`). Evidence:
 - Terrain: jungle `bridge_top` (local translation (0, −0.1, −15) under dummy
   `bridge01` at (530, 21.1, 575)) only lands on the MAP bridge cells when
   composed with its parent (MAP.md).
-- Open: `ui.wad` button models match the uncomposed matrices instead (116 vs 7,
-  42 neither); their bounds may be produced differently. UI models are not
-  rendered.
+- `ui.wad` models match the uncomposed matrices instead (116 vs 7, 42 neither):
+  their child nodes are alternative state frames (normal/disabled/highlight/
+  pressed) spread one button width apart in the authoring scene, and the header
+  bounds are the box of each node's matrix applied alone. They are drawn with the
+  root's pose in a 2048×1536 virtual screen (UI.md); this is inferred from the
+  data, not from code.
 
 ### Normals
 
@@ -247,7 +250,7 @@ geometry sample the layout cannot be verified, so it is not supported.
 
 Next: animation tick rate and how scripts select clips (RSE `TRIGANIM`
 family); vertex animation and the other record kinds; node list; rotation flag
-bits; texture/material flag bits from original captures; UI-model matrix space;
+bits; texture/material flag bits from original captures;
 the heightfield cell-word low bits. CPU parsing and sandbox playback do not qualify original
 rendering or animation behavior.
 

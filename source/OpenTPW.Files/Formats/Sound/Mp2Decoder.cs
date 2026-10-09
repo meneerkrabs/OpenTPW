@@ -35,6 +35,7 @@ public static class Mp2Decoder
 	// per allocation code). The 7-level entry in the first row was confirmed by the TPW
 	// corpus: every frame of the 1,089 Layer II streams consumes its payload to within
 	// 23 spare bits, which no tested alternative row achieves.
+	// [DATA:speechHD.SDT/MusicHD.sdt:all Layer II frames fit this table to ≤23 spare bits]
 	private static readonly (int Count, int Bits, int[] Classes)[] AllocationTable =
 	{
 		(4, 4, new[] { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 }),
@@ -45,6 +46,8 @@ public static class Mp2Decoder
 
 	// ISO/IEC 11172-3 Table 3-B.3 synthesis window D[0..256], in units of 2^-16
 	// (the standard's nine-decimal values are exact multiples of 1/65536).
+	// [APPROX:ADVISOR-014] Values read from the locally installed ffmpeg's data table; checked against the standard's
+	// D[1] and D[256] and by ≤1 LSB corpus output vs ffmpeg — evidence needed: full comparison with the published standard text
 	private static readonly int[] HalfWindow =
 	{
 		0, -1, -1, -1, -1, -1, -1, -2, -2, -2, -2, -3, -3, -4, -4, -5,

@@ -151,6 +151,30 @@ Private tests are inconclusive without `OPENTPW_GAME_PATH`.
   312 WADs (13,394 members): no LIP-shaped data outside `.LIP` members.
 - `7z l` of `TPWORLD.ISO` (2,989 entries): 20 `.LIP` loose files and 5 `lips.WAD`.
 
+## Approximation register
+
+Every rule below is tagged `// [APPROX:<id>]` at the listed site. `Advisor` logs each one
+once via `Log.Warning` when it is created. Values from original data are tagged `// [DATA:…]`
+(asset paths, mouth mesh names, clip range 1–637, SDT header-size word, LSF allocation
+table fit). The smoke-test thresholds are test-harness checks, not game rules.
+
+| ID | Site | Current value / rule | Evidence needed |
+| --- | --- | --- | --- |
+| ADVISOR-001 | `source/OpenTPW/World/Advisor.cs:25` | Talking always shows `Mouth - Aah`; Eee/Ooh/Sss unused | Decoded `Advisorm13` mouth-track payloads or a capture of the talking advisor |
+| ADVISOR-002 | `source/OpenTPW/World/Advisor.cs:30` | Visible: body, head, eyes, antennae, hands; hats, spatula, bow tie, ShutEye hidden | Original node-visibility rules (dummy attributes 0x401/0x411, Advisorm* tracks) or captures per advisor role |
+| ADVISOR-003 | `source/OpenTPW/World/Advisor.cs:74` | Bottom-left square viewport, ⅓ of the short screen side (min 64 px), 16 px margin | Original placement/size captures per resolution |
+| ADVISOR-004 | `source/OpenTPW/World/Advisor.cs:58` | Camera at z = −70 facing +Z, 40° FOV, near 1 / far 500 | Original advisor camera/projection (binary or capture) |
+| ADVISOR-005 | `source/OpenTPW/World/Advisor.cs:247` | Headlight at camera, light colour 0.6, `test.shader` ambient 0.4 + fog | Original advisor lighting/material captures |
+| ADVISOR-006 | `source/OpenTPW/World/Advisor.cs:94` | Bind pose; no `Advisorm*` clip played | Decoded vertex/visibility payloads of the `Advisorm*` tracks |
+| ADVISOR-007 | `source/OpenTPW/World/Advisor.cs:118` | Triangle corner order reversed for the renderer's clockwise culling (chosen from this renderer's capture) | Original MD2 front-face convention |
+| ADVISOR-008 | `source/OpenTPW/World/Advisor.cs:235` | Speech starts at the first rendered advisor frame | Original advisor trigger timing (binary or trace) |
+| ADVISOR-009 | `source/OpenTPW/World/Advisor.cs:183` | Always global `speechHD.SDT` + `lips.wad`; level `sp_001.LIP` never chosen | Original global-vs-level selection (binary or file-access trace) |
+| ADVISOR-010 | `source/OpenTPW/Client/SpeechAudioPlayer.cs:34` | Lip-sync clock = PCM consumed from the SDL queue (leads speaker by ≤ one 1,024-frame buffer, ≈46 ms) | Original A/V sync source; latency measurement |
+| ADVISOR-011 | `source/OpenTPW/Client/SpeechAudioPlayer.cs:31` | Wall clock drives the mouth without an audio device | Original behaviour without sound hardware |
+| ADVISOR-012 | `source/OpenTPW/Client/SpeechAudioPlayer.cs:62` | Mono speech duplicated to both stereo channels | Original speech channel layout/panning |
+| ADVISOR-013 | `source/OpenTPW.Files/Public/LipSyncTimeline.cs:53` | Marks = µs; talking from 0, toggle per mark (inferred from audio, see above) | Original runtime LIP consumer (binary or trace) |
+| ADVISOR-014 | `source/OpenTPW.Files/Formats/Sound/Mp2Decoder.cs:49` | Synthesis-window values read from ffmpeg's data table; two values checked against ISO, corpus ≤1 LSB | Full comparison with the published ISO/IEC 11172-3 Table 3-B.3 |
+
 ## Remaining gates
 
 Original-runtime observation of the mouth shape choice while talking, global vs

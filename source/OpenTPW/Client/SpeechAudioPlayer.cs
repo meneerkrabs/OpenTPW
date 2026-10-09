@@ -28,8 +28,10 @@ internal sealed class SpeechAudioPlayer : IDisposable
 	{
 		get
 		{
+			// [APPROX:ADVISOR-011] Wall clock when no audio device opened — evidence needed: original behaviour without sound hardware
 			if ( output == null )
 				return clock.Elapsed < duration ? clock.Elapsed : duration;
+			// [APPROX:ADVISOR-010] Lip-sync clock = frames SDL took from its queue; leads the speaker by up to one device buffer (≈46 ms) — evidence needed: original A/V sync source and latency measurement
 			return TimeSpan.FromSeconds( (double)output.PlayedFrames / sampleRate );
 		}
 	}
@@ -57,6 +59,7 @@ internal sealed class SpeechAudioPlayer : IDisposable
 
 	internal static short[] ToStereo( Mp2Audio audio )
 	{
+		// [APPROX:ADVISOR-012] Mono speech duplicated to both channels — evidence needed: original speech output channel layout/panning
 		if ( audio.Channels == 2 )
 			return audio.Samples;
 		var stereo = new short[audio.Samples.Length * 2];

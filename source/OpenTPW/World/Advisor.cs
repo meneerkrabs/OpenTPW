@@ -15,14 +15,39 @@ namespace OpenTPW;
 /// </summary>
 internal sealed class Advisor : IDisposable
 {
+	// [DATA:global/advisor.wad:Advisor.MD2]
 	internal const string ArchivePath = "/global/advisor";
+	// [DATA:global/Speech/speechHD.SDT] [DATA:global/Speech/lips.wad]
 	internal const string SpeechArchivePath = "/global/Speech/speechHD";
 	internal const string LipArchivePath = "/global/Speech/lips";
+	// [DATA:Advisor.MD2:mesh names "Mouth - Normal"/"Mouth - Aah"]
 	internal const string ClosedMouth = "Mouth - Normal";
+	// [APPROX:ADVISOR-001] Talking always shows "Mouth - Aah"; Eee/Ooh/Sss are never used — evidence needed: decoded Advisorm13 mouth tracks or a runtime capture of the talking advisor
 	internal const string TalkingMouth = "Mouth - Aah";
+	// [DATA:global/Speech/lips.wad:members sp_001–sp_637]
 	internal const int FirstClip = 1;
 	internal const int LastClip = 637;
+	// [APPROX:ADVISOR-002] Visible set: body, head, eyes, antennae, hands; hats, spatula, bow tie and ShutEye meshes hidden — evidence needed: original node visibility rules (dummy attributes 0x401/0x411, Advisorm* tracks) or captures per advisor role
 	internal static readonly string[] BodyMeshes = { "Body", "Bug Head", "Right Antennae", "Left Antennae", "Right hand", "Left Hand", "Right Eye", "Left Eye" };
+
+	/// <summary>Every unproven advisor/lip-sync rule (docs/LIPS.md "Approximation register"); logged once when an advisor is created.</summary>
+	internal static readonly (string Id, string Rule)[] Approximations =
+	{
+		("ADVISOR-001", "talking always shows Mouth - Aah"),
+		("ADVISOR-002", "hats, spatula, bow tie and blink meshes hidden"),
+		("ADVISOR-003", "bottom-left viewport, 1/3 of the short screen side, 16 px margin"),
+		("ADVISOR-004", "overlay camera at z = -70, 40° FOV, near 1, far 500"),
+		("ADVISOR-005", "headlight at the camera, light colour 0.6, shared test.shader ambient/fog"),
+		("ADVISOR-006", "bind pose; no Advisorm* clip is played"),
+		("ADVISOR-007", "triangle corner order reversed for the clockwise front-face pipeline"),
+		("ADVISOR-008", "speech starts at the first rendered advisor frame"),
+		("ADVISOR-009", "always the global speech bank and lips.wad; level sp_001.LIP never chosen"),
+		("ADVISOR-010", "lip-sync clock = PCM consumed from the SDL queue (leads output by up to one device buffer)"),
+		("ADVISOR-011", "wall clock drives the mouth when no audio device opens"),
+		("ADVISOR-012", "mono speech duplicated to both stereo channels"),
+		("ADVISOR-013", "LIP marks are microseconds, talking from 0 and toggling per mark (inferred from audio)"),
+		("ADVISOR-014", "MP2 synthesis window values read from ffmpeg's table, checked against two ISO values and ≤1 LSB corpus output"),
+	};
 
 	private readonly List<(string Name, Model Model, Material Material)> parts = new();
 	private SpeechAudioPlayer? player;
@@ -30,6 +55,7 @@ internal sealed class Advisor : IDisposable
 	private bool disposed;
 	private System.Numerics.Vector3 mouthMin = new( float.MaxValue );
 	private System.Numerics.Vector3 mouthMax = new( float.MinValue );
+	// [APPROX:ADVISOR-004] Overlay camera at z = −70 looking at the origin, 40° FOV, near 1/far 500 — evidence needed: original advisor camera/projection (binary or capture)
 	private static readonly System.Numerics.Vector3 CameraPosition = new( 0, 0, -70 );
 	private static readonly Matrix4x4 View = Matrix4x4.CreateLookAt( CameraPosition, System.Numerics.Vector3.Zero, System.Numerics.Vector3.UnitY );
 	private static readonly Matrix4x4 Projection = Matrix4x4.CreatePerspectiveFieldOfView( 40f * MathF.PI / 180f, 1f, 1f, 500f );
@@ -45,6 +71,7 @@ internal sealed class Advisor : IDisposable
 	/// <summary>Pixel rectangle of the advisor viewport for the current screen size.</summary>
 	public static (int X, int Y, int Size) ViewportRectangle()
 	{
+		// [APPROX:ADVISOR-003] Bottom-left square viewport, 1/3 of the short screen side (min 64 px), 16 px margin — evidence needed: original advisor screen placement/size captures per resolution
 		var size = Math.Max( 64, (int)(Math.Min( Screen.Width, Screen.Height ) / 3) );
 		const int margin = 16;
 		return (margin, Math.Max( 0, (int)Screen.Height - size - margin ), size);
@@ -52,6 +79,8 @@ internal sealed class Advisor : IDisposable
 
 	public Advisor()
 	{
+		foreach ( var (id, rule) in Approximations )
+			Log.Warning( $"[APPROX:{id}] {rule}" );
 		var modelFile = new ModelFile( $"{ArchivePath}/Advisor.MD2" );
 		var restTransforms = ModelAnimationPlayer.ComputeRestTransforms( modelFile );
 		var textures = new Dictionary<string, Texture>( StringComparer.OrdinalIgnoreCase );
@@ -62,6 +91,7 @@ internal sealed class Advisor : IDisposable
 			{
 				var mesh = modelFile.Meshes.SingleOrDefault( candidate => candidate.Name == name )
 					?? throw new InvalidDataException( $"The original advisor model has no '{name}' mesh." );
+				// [APPROX:ADVISOR-006] Bind pose only; every Advisorm*.MD2 clip has undecoded non-rigid tracks — evidence needed: decoded vertex/visibility track payloads
 				var vertices = ConvertMesh( mesh, restTransforms[mesh.NodeIndex] );
 				if ( name is ClosedMouth or TalkingMouth )
 					foreach ( var vertex in vertices )
@@ -85,6 +115,7 @@ internal sealed class Advisor : IDisposable
 				}
 				var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
 				material.Set( "Color", textureSlots );
+				// [APPROX:ADVISOR-007] Corner order reversed so faces survive the renderer's clockwise back-face culling (chosen from a capture of this renderer, not the original) — evidence needed: original MD2 front-face convention
 				parts.Add( (name, new Model( vertices, ReverseWinding( mesh.Indices ), material ), material) );
 			}
 		}
@@ -149,6 +180,7 @@ internal sealed class Advisor : IDisposable
 		byte[] entry;
 		byte[] lip;
 		string source;
+		// [APPROX:ADVISOR-009] Always the global bank/lips.wad; level Speech/lips/sp_001.LIP is never chosen — evidence needed: original global-vs-level speech selection (binary or file-access trace)
 		if ( language != null )
 		{
 			var bankPath = language.ResolveDataFile( "global/Speech/speechHD.SDT" )
@@ -172,6 +204,7 @@ internal sealed class Advisor : IDisposable
 		}
 		if ( entry.Length < 8 )
 			throw new InvalidDataException( $"Speech entry {name} is truncated." );
+		// [DATA:speechHD.SDT:entry word 0 = header size (40)]
 		var headerBytes = BitConverter.ToInt32( entry, 0 );
 		if ( headerBytes < 8 || headerBytes >= entry.Length )
 			throw new InvalidDataException( $"Speech entry {name} has an invalid header size." );
@@ -199,6 +232,7 @@ internal sealed class Advisor : IDisposable
 		commandList.SetScissorRect( 0, (uint)x, (uint)y, (uint)size, (uint)size );
 		commandList.ClearDepthStencil( 1 );
 
+		// [APPROX:ADVISOR-008] Speech starts at the first rendered advisor frame — evidence needed: original advisor speech trigger timing
 		player?.Start();
 		var mouth = MouthMesh;
 		foreach ( var part in parts )
@@ -210,6 +244,7 @@ internal sealed class Advisor : IDisposable
 				g_mModel = Matrix4x4.Identity,
 				g_mView = View,
 				g_mProj = Projection,
+				// [APPROX:ADVISOR-005] Headlight at the camera, colour 0.6, test.shader ambient 0.4 and fog — evidence needed: original advisor lighting/material captures
 				g_vLightPos = System.Numerics.Vector3.Zero,
 				g_vLightColor = new System.Numerics.Vector3( 0.6f ),
 				g_vCameraPos = CameraPosition,

@@ -53,6 +53,41 @@ public class ShaderTests
 		Assert.AreEqual( 3, program.Reflection.VertexElements.Length );
 	}
 
+	[TestMethod]
+	[DoNotParallelize]
+	public void NativeShaderInstancesSurviveDisposalOfAnEarlierOwner()
+	{
+		if ( Environment.GetEnvironmentVariable( "OPENTPW_NATIVE_SHADER_TESTS" ) != "1" || !OperatingSystem.IsMacOS() )
+			Assert.Inconclusive( "Set OPENTPW_NATIVE_SHADER_TESTS=1 on macOS with native Metal/SPIR-V libraries." );
+		var previousDevice = global::Global.Device;
+		using var device = Veldrid.GraphicsDevice.CreateMetal( new Veldrid.GraphicsDeviceOptions() );
+		global::Global.Device = device;
+		try
+		{
+			var path = GetShaderPath( "text.shader" );
+			var first = ShaderCompiler.CompileShader( path );
+			first.VertexShader.Dispose();
+			first.FragmentShader.Dispose();
+			var second = ShaderCompiler.CompileShader( path );
+			try
+			{
+				Assert.AreNotSame( first.VertexShader, second.VertexShader );
+				Assert.AreNotSame( first.FragmentShader, second.FragmentShader );
+				Assert.IsFalse( second.VertexShader.IsDisposed );
+				Assert.IsFalse( second.FragmentShader.IsDisposed );
+			}
+			finally
+			{
+				second.VertexShader.Dispose();
+				second.FragmentShader.Dispose();
+			}
+		}
+		finally
+		{
+			global::Global.Device = previousDevice;
+		}
+	}
+
 	private static string GetShaderPath( string shader )
 	{
 		var directory = new System.IO.DirectoryInfo( System.AppContext.BaseDirectory );

@@ -65,12 +65,26 @@ public class OriginalUiTests
 	[DataRow( 1920, 1080, 1, UiFontTier.Big )]
 	[DataRow( 2560, 1440, 2, UiFontTier.Medium )]
 	[DataRow( 3840, 2160, 3, UiFontTier.Medium )]
-	[DataRow( 1280, 720, 2, UiFontTier.Small )]
+	[DataRow( 1280, 720, 2, UiFontTier.Medium )]
 	public void FontTierFollowsTheLogicalSizeAndTextUsesTheDisplayUiScale( int width, int height, int uiScale, UiFontTier tier )
 	{
 		var canvas = new UiCanvas( width, height, uiScale );
 		Assert.AreEqual( tier, canvas.FontTier );
-		Assert.AreEqual( uiScale, canvas.TextScale, "BF4 text is drawn at exactly the display's integer UI scale" );
+		Assert.AreEqual( Math.Min( uiScale, UiScaling.Automatic( new Point2( width, height ) ) ), canvas.TextScale, "BF4 text stays integer-scaled within the display reference layout fit" );
+	}
+
+	[DataTestMethod]
+	[DataRow( 1280, 720, 2, 1 )]
+	[DataRow( 1920, 932, 2, 1 )]
+	[DataRow( 2560, 1440, 3, 2 )]
+	[DataRow( 3840, 2160, 8, 3 )]
+	public void OversizedInterfaceScaleKeepsTheReferenceLayoutWithinTheDrawable( int width, int height, int requested, int fitted )
+	{
+		var canvas = new UiCanvas( width, height, requested );
+		Assert.AreEqual( requested, canvas.UiScale, "the request is preserved so the fallback can be reported" );
+		Assert.AreEqual( fitted, canvas.TextScale );
+		Assert.IsTrue( width / canvas.TextScale >= UiScaling.ReferenceWidth && height / canvas.TextScale >= UiScaling.ReferenceHeight );
+		Assert.AreEqual( new UiCanvas( width, height, fitted ).FontTier, canvas.FontTier );
 	}
 
 	[TestMethod]
@@ -276,6 +290,18 @@ public class OriginalUiTests
 	}
 
 	[TestMethod]
+	public void OptionsReportsTheFittedInterfaceScaleWithoutChangingTheRequest()
+	{
+		var display = new StubDisplaySettings( DisplaySettings.Default with { Width = 1280, Height = 720, UiScale = 2 } );
+		var screen = OptionsScreen.Create( new UiScreenStack(), FakeStrings(), new OptionsServices
+		{
+			Display = display, Options = new GameOptions(), Languages = new[] { "English" }, CurrentLanguage = "English"
+		}, () => { } );
+		StringAssert.Contains( ((UiLabel)screen.Find( "effective" )!).Text(), "Interface scale: 2x -> 1x" );
+		Assert.AreEqual( 2, display.Current.UiScale );
+	}
+
+	[TestMethod]
 	public void OptionsCancelDiscardsAndAcceptUsesTheDisplayKeepOrRevertFlow()
 	{
 		var context = FakeContext();
@@ -416,7 +442,7 @@ public class OriginalUiTests
 	{
 		var first = EconomyTestData.Park( initialCash: 50000 );
 		ParkEconomy? current = first;
-		var status = new EconomyParkStatus( () => current, () => null );
+		var status = new EconomyParkStatus( () => current );
 		Assert.IsTrue( status.HasEconomy );
 		Assert.AreEqual( first.Balance, status.Money );
 		Assert.AreEqual( first.Date, status.Date );

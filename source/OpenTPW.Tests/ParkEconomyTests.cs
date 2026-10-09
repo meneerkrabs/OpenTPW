@@ -469,8 +469,22 @@ public class ParkEconomyTests
 		Assert.AreEqual( ParkEconomy.PurchaseResult.NotEnoughGoldenTickets, park.TryBuild( 1112, out _ ) );
 		park.ReportRecord( ParkRecordKind.WaterLength, 0, 60 );
 		park.AdvanceDays( 30 );
+		var earnedProgress = new PlayerProgress();
+		earnedProgress.SetTickets( park.Settings.Theme, park.Objectives.GoldenTickets.Count );
+		Assert.AreEqual( 3, earnedProgress.TotalTickets );
+		Assert.AreEqual( PlayerProgress.StartingKeys + 1, earnedProgress.Keys );
 		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, park.TryBuild( 1112, out _ ) );
 		Assert.AreEqual( 0, park.GoldenTicketsAvailable );
+		earnedProgress.SetTickets( park.Settings.Theme, park.Objectives.GoldenTickets.Count );
+		Assert.AreEqual( PlayerProgress.StartingKeys + 1, earnedProgress.Keys, "Spending mystery-item tickets preserves earned keys." );
+
+		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( ParkSaveFile.Serialize( park ) ) ), park.Settings, park.Catalog );
+		Assert.AreEqual( 0, restored.GoldenTicketsAvailable );
+		Assert.AreEqual( 3, restored.TicketsSpent );
+		var restoredProgress = new PlayerProgress();
+		restoredProgress.SetTickets( restored.Settings.Theme, restored.Objectives.GoldenTickets.Count );
+		Assert.AreEqual( earnedProgress.TotalTickets, restoredProgress.TotalTickets );
+		Assert.AreEqual( earnedProgress.Keys, restoredProgress.Keys );
 
 		var progress = new PlayerProgress();
 		Assert.AreEqual( 1, progress.Keys );
@@ -480,6 +494,21 @@ public class ParkEconomyTests
 		progress.SetTickets( "jungle", 3 );
 		Assert.AreEqual( 3, progress.Keys );
 		Assert.IsTrue( progress.CanEnter( 3 ) );
+	}
+
+	[DataTestMethod]
+	[DataRow( 0, 0 )]
+	[DataRow( 2, 0 )]
+	[DataRow( 3, 1 )]
+	[DataRow( 5, 1 )]
+	[DataRow( 6, 2 )]
+	public void EveryThirdEarnedTicketAwardsAKey( int tickets, int earnedKeys )
+	{
+		var progress = new PlayerProgress();
+		progress.SetTickets( "jungle", Math.Min( 2, tickets ) );
+		progress.SetTickets( "hallow", Math.Max( 0, tickets - 2 ) );
+		Assert.AreEqual( tickets, progress.TotalTickets );
+		Assert.AreEqual( earnedKeys, progress.Keys - PlayerProgress.StartingKeys );
 	}
 
 	private static void Play( ParkEconomy park, int day )

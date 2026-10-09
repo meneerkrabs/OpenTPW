@@ -23,7 +23,7 @@ OpenTPW is a re-implementation of Theme Park World, requiring an installation th
 These are goals, not current features; [Status](#status) below says what works today.
 
 1. **Theme Park World**: the complete original offline game. This is the primary goal;
-   it is in progress and not yet playable ([completion plan](docs/COMPLETION-PLAN.md)).
+   it is in progress and not yet complete ([completion plan](docs/COMPLETION-PLAN.md)).
 2. **Online play as in the original game**: sharing, visiting and voting on parks,
    postcards and chat. The original servers are gone and their protocol is not
    reconstructed, so OpenTPW provides its own opt-in, self-hostable service. Partly
@@ -38,37 +38,41 @@ These are goals, not current features; [Status](#status) below says what works t
 
 ## Status
 
-OpenTPW is currently in a very early stage of development, and is not yet playable.
+OpenTPW has a working preview: an original-style front end, options and park HUD,
+original terrain and objects, scripted rides and simulated guests. Gameplay rules
+and visual fidelity are still approximations; this is not a complete recreation
+of the original game (see [progress](docs/PROGRESS.md)).
 
 ### File Formats
 
-- ❌ - Not Implemented
-- ⚠️ - Partially Implemented
-- ✅ - Implemented
+These statuses describe file readers and decoders for the selected original-asset
+corpus, separately from gameplay, UI fidelity and compatibility with other editions.
+✅ means the observed decoding is implemented; ⚠️ means decoding or format semantics
+remain incomplete. Neither symbol certifies every variant or original-runtime parity.
 
-| Format                                                  | Status |
-|---------------------------------------------------------|--------|
-| Textures ([.WCT](https://opentpw.gu3.me/formats/wct.html))                    | ✅     |
-| Settings ([.SAM](https://opentpw.gu3.me/formats/sam.html))                    | ✅     |
-| Sounds ([.SDT](https://opentpw.gu3.me/formats/sdt.html), .MP2)         | ⚠️     |
-| Strings ([.BFMU](https://opentpw.gu3.me/formats/bfmu.html), [.BFST](https://opentpw.gu3.me/formats/bfst.html), [.BFUM](https://opentpw.gu3.me/formats/bfum.html)) | ✅     |
-| Models ([.MD2](https://opentpw.gu3.me/formats/m3d2.html))                      | ⚠️     |
-| Map Data ([.MAP](https://opentpw.gu3.me/formats/map.html))                    | ⚠️     |
-| Ride Scripts ([.RSE](https://opentpw.gu3.me/formats/rsse.html))                | ⚠️     |
-| Save Files ([.TPWS](https://opentpw.gu3.me/formats/tpws-ints-lays.html))                | ⚠️     |
-| Fonts ([.BF4](https://opentpw.gu3.me/formats/bf4.html))                      | ⚠️     |
-| Lip Sync ([.LIP](https://opentpw.gu3.me/formats/lips.html))                   | ⚠️     |
-| Banner mesh companions ([.MTR](https://opentpw.gu3.me/formats/mtr.html))      | ⚠️     |
-| Video ([.TQI/.TGQ](https://opentpw.gu3.me/formats/tqi.html))                  | ⚠️     |
+| Format | Status | Verified support / remaining limit |
+|---|---|---|
+| Textures ([.WCT](https://opentpw.gu3.me/formats/wct.html)) | ✅ | Decoder loads the selected game's textures; other editions are unverified. |
+| Settings ([.SAM](https://opentpw.gu3.me/formats/sam.html)) | ✅ | Parser reads the selected game's settings; gameplay interpretation remains approximate. |
+| Sounds ([.SDT](https://opentpw.gu3.me/formats/sdt.html), .MP2) | ⚠️ | SDT containers and MPEG-2 Layer II speech/music decode (≤1 LSB vs reference); Layer I effects remain unsupported ([audio evidence](docs/LIPS.md)). |
+| Strings ([.BFMU](https://opentpw.gu3.me/formats/bfmu.html), [.BFST](https://opentpw.gu3.me/formats/bfst.html), [.BFUM](https://opentpw.gu3.me/formats/bfum.html)) | ✅ | 21 string tables per language decode and character tables round-trip in six verified languages; other codepages/editions are unverified ([languages](docs/LANGUAGES.md)). |
+| Models ([.MD2](https://opentpw.gu3.me/formats/m3d2.html)) | ⚠️ | 2,116/2,118 members parse; position/rotation/scale tracks decode. Two older-version members and vertex/other animation payloads remain unsupported ([models](docs/MD2-MODELS.md)). |
+| Map Data ([.MAP](https://opentpw.gu3.me/formats/map.html)) | ⚠️ | All five TP2M terrain grids parse; grid mapping and five cell bits verified. Remaining flags/header values and sound-catalog MAPs are opaque ([maps](docs/MAP.md)). |
+| Ride Scripts ([.RSE](https://opentpw.gu3.me/formats/rsse.html)) | ⚠️ | All 308 scripts parse and all 84 used opcodes have handlers; 51 route through effect hooks whose game systems/semantics remain incomplete ([VM](docs/RSE-VM.md)). |
+| Save Files ([.TPWS](https://opentpw.gu3.me/formats/tpws-ints-lays.html)) | ⚠️ | Selected TPWI container, cell grid and placed objects import; most state payloads and other save variants remain unverified/unsupported ([payload](docs/TPWS-PAYLOAD.md)). |
+| Fonts ([.BF4](https://opentpw.gu3.me/formats/bf4.html)) | ✅ | All 33 fonts in each of six verified languages decode (four-bit, RLE, monochrome); original text layout/appearance remains unverified ([fonts](docs/BF4-FONTS.md), [UI](docs/UI.md)). |
+| Lip Sync ([.LIP](https://opentpw.gu3.me/formats/lips.html)) | ⚠️ | Mark lists parse and drive speech-synced advisor mouth toggles; microsecond units/toggle meaning are audio-derived, and original mouth-shape/timing parity is unverified ([lip sync](docs/LIPS.md)). |
+| Banner mesh companions ([.MTR](https://opentpw.gu3.me/formats/mtr.html)) | ⚠️ | Selected topology and matrices decode; original runtime purpose remains unknown ([companions](docs/MTR.md)). |
+| Video ([.TQI/.TGQ](https://opentpw.gu3.me/formats/tqi.html)) | ⚠️ | All nine movies decode and stream via `--play-movie`; audio is bit-exact, video remains close but not bit-exact ([movies](docs/TGQ-MOVIES.md)). |
 
 ### Documentation
 
-Every remaining ⚠️ format now has a bounded, strict CPU reader tested against the
-original files, but none is a finished game feature: MD2 parses 2,116/2,118
+The remaining ⚠️ formats have bounded CPU readers tested against selected
+original files, with runtime integration at different stages: MD2 parses 2,116/2,118
 models and decodes position/rotation/scale animation tracks (tick rate and
 vertex animation unverified); MAP reads the 128×128 TP2M terrain grids
 (five cell bits and the grid-to-world mapping verified, the rest opaque); RSE parses all 308 scripts and the VM runs them (all 84 used
-opcodes handled, 51 of them through an unimplemented-effect hook; the sandbox
+opcodes handled, 51 of them through effect hooks with incomplete game semantics; the sandbox
 Totem runs its original script); the Jungle TPWI payload's cell grid and placed
 objects are imported read-only into an original level view
 (`--load-original-level`; money, guests and other sections opaque) where the
@@ -78,24 +82,27 @@ and toilets through their scripts (approximated rules, [GUESTS](docs/GUESTS.md))
 all 274 original objects (plus the official bonus objects via `--bonus-data`) can
 be built and run their original scripts and animations, without sounds or ride
 controllers ([objects](docs/OBJECTS.md)); `.LIP` marks
-are microsecond talking/silence toggles, inferred from the decoded speech audio. They
+are interpreted as microsecond talking/silence toggles, inferred from the decoded
+speech audio rather than original-runtime timing. They
 drive the original advisor's mouth with SDL audio via `--advisor-say N`; the original
 mouth-shape choice is unknown. ISO-only `.MTR` files decode as topology and matrices
 redundant with their banner `.MD2` (no material data; runtime use unknown). SDT speech
 and music (MPEG-2 Layer II) decode within 1 LSB of an external decoder; Layer I
 sound effects decode within 1 LSB of an external decoder on all 2,650 clips of the Mac
 edition (not yet played in-game). All nine TGQ movies decode audio bit-exact and video
-close to, not bit-identical with, an external reference, without playback. Evidence:
+close to, not bit-identical with, an external reference; `--play-movie` streams
+the decoded video and audio. Evidence:
 [MD2](docs/MD2-MODELS.md), [MAP](docs/MAP.md), [RSE](docs/RSE-SCRIPTS.md) / [RSE VM](docs/RSE-VM.md),
 [TPWS payload](docs/TPWS-PAYLOAD.md), [LIPS](docs/LIPS.md), [MTR](docs/MTR.md),
 [TGQ](docs/TGQ-MOVIES.md).
 
 The BF4 CPU decoder handles four-bit, RLE and monochrome glyphs and is tested
-against the 33 original fonts of each shipped language. A GPU glyph atlas draws original
+against the 33 original fonts of each of the six verified languages. A GPU glyph atlas draws original
 strings; the default start is now an original-style front end (the 3D lobby islands, menus,
 options) and an in-game HUD built from the original `ui.wad` models and textures, string tables
 and fonts in all six languages (Metal readback-verified). Positions of code-placed elements are
-approximations and visual fidelity is unverified, so BF4 stays partial (see [UI](docs/UI.md)). Strings decode in all six
+approximations and visual fidelity is unverified (see [UI](docs/UI.md)); this is
+separate from BF4 decoding completeness for the selected corpus. Strings decode in all six
 verified languages (English, Danish, Dutch, French, German, Swedish) with each language's
 own character table; `--language` selects one and `--language-data` reads the
 others from the extracted original CD (see [languages](docs/LANGUAGES.md)). See

@@ -126,6 +126,10 @@ internal static class Game
 			return;
 		}
 
+		var onlineFolders = OnlineFolders.FromEnvironment( GetOption( args, "--online-dir", "an online folder outside the original installation" ) );
+		if ( OnlineCommands.Run( args, Settings.Default.GamePath, onlineFolders, Console.WriteLine ) )
+			return;
+
 		//
 		// Check if the save data directory exists (create if not)
 		//
@@ -147,7 +151,6 @@ internal static class Game
 		var visit = visitPath == null ? null : ParkSharing.PrepareVisit( OpenTPW.Online.Packages.ParkPackage.Load( visitPath ) );
 		if ( visit != null )
 			Log.Trace( ParkSharing.Describe( visit ) );
-		var onlineFolders = OnlineFolders.FromEnvironment( GetOption( args, "--online-dir", "an online folder outside the original installation" ) );
 		Render = DisplayStartup.CreateRenderer( args );
 		if ( movieName != null )
 		{
@@ -193,7 +196,14 @@ internal static class Game
 		using var advisor = CreateAdvisor( args );
 		if ( advisor != null )
 			Render.OnRender += advisor.Render;
-		if ( advisor != null && args.Contains( "--smoke-test" ) )
+		if ( visit != null && smoke )
+		{
+			using var visitSmokeTest = new VisitSmokeTest( level );
+			Render.PostUpdate += visitSmokeTest.Update;
+			Render.Run();
+			visitSmokeTest.VerifyCompleted();
+		}
+		else if ( advisor != null && args.Contains( "--smoke-test" ) )
 		{
 			using var advisorSmokeTest = new AdvisorSmokeTest( advisor );
 			Render.PostUpdate += advisorSmokeTest.Update;

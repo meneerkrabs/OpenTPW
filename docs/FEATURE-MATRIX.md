@@ -30,18 +30,23 @@ online service restoration remains separately scoped.
 ## Selected edition
 
 Detailed missing/partial format work is tracked in [FORMAT-BACKLOG.md](FORMAT-BACKLOG.md).
-BF4 CPU decoding is implemented for the selected English corpus and the CD's
-Danish/French/German/Swedish fonts; strings decode in all five languages and a BF4
-text panel renders on Metal with readback (English, German; see LANGUAGES.md), while original UI integration, visual fidelity and
-D3D11/Vulkan qualification remain unverified.
-MD2, MAP, RSE, TPWI-payload markers, LIP, MTR and TGQ now have bounded CPU readers
-verified against original files (see FORMAT-BACKLOG.md). The MAP/heightfield and the
-Easymode path/object import feed a read-only `--load-original-level` sandbox view
-with data-grounded build rules (MAP.md, TPWS-PAYLOAD.md); that is not an original
-gameplay feature, so the game-feature rows stay unchanged. Object catalog,
-placement and script/animation execution for all 274 objects are documented in
-[OBJECTS.md](OBJECTS.md); without visitors, sounds and ride controllers that is
-VM-level evidence, so the ride rows stay unassessed.
+BF4 decoding and strings are tested in English, Danish, Dutch, French, German
+and Swedish. Original-style lobby/HUD/options render on Metal with glyph readback;
+positions and several behaviors remain approximated ([UI.md](UI.md)). Original
+visual fidelity and D3D11/Vulkan execution remain unverified.
+MD2, MAP, RSE, TPWI, LIP, MTR and TGQ have bounded readers (FORMAT-BACKLOG.md).
+All 274 original objects and optional bonus objects enter the catalog; guests use
+rides/shops/sideshows/toilets through the visitor bridge. The economy and HUD share
+purchase/sale ownership. Missing vertex animation, sounds/particles and coaster,
+kart and tour controllers remain explicit gaps ([OBJECTS.md](OBJECTS.md)).
+
+The verified [Patch 2](PATCH-2.md) data copy is a separate reference baseline;
+28 physical Data differences and 24 WAD member differences are known. Static
+[Mac timer evidence](reverse/FINDINGS.md) does not prove gameplay tick rates.
+[The fidelity register](FIDELITY-REGISTER.md) contains 135 unresolved original-area
+IDs and six online-extension uncertainties; its CI check covers explicit tags only.
+Online file sharing/server work is an extension ([ONLINE.md](ONLINE.md)); shared
+edited layouts and exact original service behavior remain unimplemented/unverified.
 
 Compatibility slice ([COMPATIBILITY.md](COMPATIBILITY.md)): in-world TrueType sign text
 from `fonts.wad` (`partial`: gate demo in `--load-original-level`, ride signs need the
@@ -67,17 +72,19 @@ Current implementation evidence is in [PROGRESS.md](PROGRESS.md). The native
 Mac sandbox, 60 Hz prototype clock and three RID publish builds are partial
 evidence only; they do not satisfy the aggregate offline requirements below.
 
-Exact label, locale and patch: **unknown pending evidence**. The supplied ISO is
-an intake identity, not proof of an edition. Executable hashes and PE observations
-are recorded in [RECOMPILATION-ASSESSMENT.md](RECOMPILATION-ASSESSMENT.md).
+The selected PC Data baseline, six language overlays and the verified English
+EuroAmer Patch 2 copy have independent evidence. Exact runnable original edition
+and executable behavior remain unqualified; a successful data patch does not
+qualify that runtime. Executable hashes and PE observations are recorded in
+[RECOMPILATION-ASSESSMENT.md](RECOMPILATION-ASSESSMENT.md).
 Selected fixtures/traces belong in [REFERENCE-CORPUS.md](REFERENCE-CORPUS.md).
 Expand aggregate rows into every required ride, opcode, world and scenario once
 the selected edition inventory is evidenced; aggregate rows cannot conceal gaps.
 
 ## Required offline coverage
 
-All initial entries remain unassessed/unverified because this ledger does not
-adjudicate ongoing implementation or invent test results.
+Rows without complete supporting evidence remain unassessed. Prototype passes
+and approximation inventories below do not qualify the aggregate release gates.
 
 | Required area | Gate | Implementation | macOS | Windows | Linux | Original VM | Evidence / remaining requirement |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -88,7 +95,7 @@ adjudicate ongoing implementation or invent test results.
 | Versioned saves and original read-only import | M2 | unassessed | unverified | unverified | unverified | unverified | Full state, safe writes, import evidence |
 | Visitors, needs, routing and queues | M3 | approximated | prototype-pass | unverified | unverified | approximated | [GUESTS.md](GUESTS.md): sprites/.sam/strings original, rates and formulas approximated; RSE visitor opcodes inferred from the corpus. macOS: native smoke in all four themes (Metal, arm64). Needs original-behavior comparisons |
 | Economy, shops, toilets and staffing | M3/M5 | approximated | prototype-pass | unverified | unverified | not-applicable | `docs/ECONOMY.md`: settings-driven ledger, prices, loans, bankruptcy, staff wages/training, versioned park saves; formulas without original reference are labelled approximations; staff behaviour and guest spending wired to the guests slice. Evidence: `ParkEconomyTests`, `ParkEconomyOriginalDataTests`, native `--load-original-level` smoke (all four themes), macOS arm64 |
-| Every required fixed ride and original scripts | M4 | unassessed | unverified | unverified | unverified | unverified | Per-ride/per-opcode inventory and traces |
+| Every required fixed ride and original scripts | M4 | approximated | prototype-pass | unverified | unverified | approximated | [OBJECTS.md](OBJECTS.md): original catalog/scripts/models, guest/economy links and all-theme Metal smoke; vertex animation, effects, controllers and original traces remain incomplete |
 | Coaster construction, ride behavior and rating | M4 | unassessed | unverified | unverified | unverified | unverified | All required types and constraints |
 | Four worlds and every offline scenario/unlock | M5 | unassessed | unverified | unverified | unverified | unverified | Per-world/scenario executable acceptance |
 | Research, adviser, breakdowns and decoration effects | M5 | unassessed | unverified | unverified | unverified | unverified | Original progression/event evidence; research, wear/repair, challenges and golden tickets are approximated in `docs/ECONOMY.md` (adviser and decoration effects missing) |

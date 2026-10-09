@@ -1,11 +1,12 @@
 ﻿using Veldrid;
 using Veldrid.StartupUtilities;
+using System.Diagnostics;
 
 namespace OpenTPW;
 
 public partial class Renderer
 {
-	private DateTime _lastFrame;
+	private long _lastFrame;
 	public CommandList CommandList = null!;
 
 	public Window Window;
@@ -20,8 +21,8 @@ public partial class Renderer
 	public Renderer()
 	{
 		Window = new( Settings.Default.GameWindowSize.X, Settings.Default.GameWindowSize.Y, "Theme Park World", true );
-		Window?.OnResized = OnWindowResized;
-		Window?.Visible = true;
+		Window.OnResized = OnWindowResized;
+		Window.Visible = true;
 
 		CreateGraphicsDevice();
 		// Swap the buffers so that the screen isn't a mangled mess
@@ -33,7 +34,7 @@ public partial class Renderer
 		new Editor( imGuiRenderer, Device );
 
 		CommandList = Device.ResourceFactory.CreateCommandList();
-		_lastFrame = DateTime.Now;
+		_lastFrame = Stopwatch.GetTimestamp();
 	}
 
 	private void CreateMultisampledFramebuffer()
@@ -172,8 +173,9 @@ public partial class Renderer
 
 	private void Update()
 	{
-		float deltaTime = (float)(DateTime.Now - _lastFrame).TotalSeconds;
-		_lastFrame = DateTime.Now;
+		var currentFrame = Stopwatch.GetTimestamp();
+		float deltaTime = (float)Stopwatch.GetElapsedTime( _lastFrame, currentFrame ).TotalSeconds;
+		_lastFrame = currentFrame;
 
 		InputSnapshot inputSnapshot = Window.SdlWindow.PumpEvents();
 
@@ -184,6 +186,8 @@ public partial class Renderer
 			Editor.Instance.shouldRender = !Editor.Instance.shouldRender;
 		if ( Editor.Instance.shouldRender )
 			Editor.Instance.UpdateFrom( inputSnapshot );
+		else
+			imGuiRenderer.Update( Math.Clamp( deltaTime, 0.001f, 0.1f ), inputSnapshot );
 
 		PreRender();
 		PreUpdate?.Invoke();
@@ -209,7 +213,13 @@ public partial class Renderer
 		};
 
 		var swapchainSource = VeldridStartup.GetSwapchainSource( Window.SdlWindow );
-		Device = GraphicsDevice.CreateVulkan( swapchainDescription: new SwapchainDescription( swapchainSource, (uint)(Window.Size.X), (uint)(Window.Size.Y), options.SwapchainDepthFormat, options.SyncToVerticalBlank, options.SwapchainSrgbFormat ), options: options );
+		var description = new SwapchainDescription( swapchainSource, (uint)Window.Size.X, (uint)Window.Size.Y, options.SwapchainDepthFormat, options.SyncToVerticalBlank, options.SwapchainSrgbFormat );
+		Device = OperatingSystem.IsMacOS()
+			? GraphicsDevice.CreateMetal( options, description )
+			: OperatingSystem.IsWindows()
+				? GraphicsDevice.CreateD3D11( options, description )
+				: GraphicsDevice.CreateVulkan( options, description );
+		Log.Trace( $"Graphics backend: {Device.BackendType}; process: {System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}" );
 	}
 
 	public void OnWindowResized( Point2 newSize )

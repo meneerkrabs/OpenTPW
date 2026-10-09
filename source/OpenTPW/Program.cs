@@ -5,8 +5,17 @@
 /// </summary>
 public class Program
 {
-	public static void Main( string[] args )
+	public static int Main( string[] args )
 	{
-		Game.Run( args );
+		try
+		{
+			Game.Run( args );
+			return 0;
+		}
+		catch ( Exception exception )
+		{
+			Console.Error.WriteLine( exception );
+			return 1;
+		}
 	}
 }

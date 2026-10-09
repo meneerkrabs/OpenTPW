@@ -5,15 +5,13 @@ namespace OpenTPW;
 public class BaseFileSystem
 {
 	private readonly string basePath;
-	private readonly Dictionary<string, Type> archiveHandlers = new();
-	private readonly Dictionary<string, IArchive> archiveCache = new();
+	private readonly Dictionary<string, Type> archiveHandlers = new( StringComparer.OrdinalIgnoreCase );
+	private readonly Dictionary<string, IArchive> archiveCache = new( OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal );
 
 	public BaseFileSystem( string relativePath )
 	{
-		if ( !Directory.Exists( relativePath ) )
-			Directory.CreateDirectory( relativePath );
-
-		basePath = Path.GetFullPath( relativePath, Directory.GetCurrentDirectory() );
+		basePath = Path.GetFullPath( NormalizeSeparators( relativePath ) );
+		Directory.CreateDirectory( basePath );
 	}
 
 	public void RegisterArchiveHandler<T>( string extension ) where T : IArchive
@@ -126,19 +124,19 @@ public class BaseFileSystem
 		{
 			var archive = GetArchive( archivePath );
 			var entries = directories ? archive.GetDirectories( internalPath ) : archive.GetFiles( internalPath );
-			return entries.Select( entry => Path.Combine( relativePath, entry ) ).ToArray();
+			return entries.Select( entry => Path.Combine( NormalizeSeparators( relativePath ), NormalizeSeparators( entry ) ) ).ToArray();
 		}
 
 		if ( directories )
 		{
 			var fileSystemDirectories = Directory.GetDirectories( absolutePath );
-			var fileSystemArchives = Directory.GetFiles( absolutePath ).Where( x => archiveHandlers.Keys.Contains( Path.GetExtension( x ) ) ).Select( x => x[..x.LastIndexOf( "." )] );
+			var fileSystemArchives = Directory.GetFiles( absolutePath ).Where( x => archiveHandlers.ContainsKey( Path.GetExtension( x ) ) ).Select( x => x[..x.LastIndexOf( "." )] );
 
 			return fileSystemDirectories.Concat( fileSystemArchives ).ToArray();
 		}
 		else
 		{
-			return Directory.GetFiles( absolutePath ).Where( x => !archiveHandlers.Keys.Contains( Path.GetExtension( x ) ) ).ToArray();
+			return Directory.GetFiles( absolutePath ).Where( x => !archiveHandlers.ContainsKey( Path.GetExtension( x ) ) ).ToArray();
 		}
 	}
 
@@ -162,33 +160,30 @@ public class BaseFileSystem
 
 	private (string ArchivePath, string InternalPath) FindArchivePath( string path )
 	{
-		var parts = path.Split( Path.DirectorySeparatorChar );
-		var currentPath = new StringBuilder();
+		path = ValidateAbsolutePath( path );
+		var parts = Path.GetRelativePath( basePath, path ).Split( Path.DirectorySeparatorChar );
+		var currentPath = basePath;
 
 		foreach ( var part in parts )
 		{
-			if ( currentPath.Length > 0 )
+			currentPath = Path.Combine( currentPath, part );
+			var parentPath = Path.GetDirectoryName( currentPath );
+			if ( parentPath == null || !Directory.Exists( parentPath ) )
 			{
-				currentPath.Append( Path.DirectorySeparatorChar );
+				break;
 			}
 
-			currentPath.Append( part );
-
-			foreach ( var handler in archiveHandlers )
+			foreach ( var candidate in Directory.EnumerateFiles( parentPath ) )
 			{
-				var extension = handler.Key;
-				var potentialArchivePath = $"{currentPath}{extension}";
+				if ( !archiveHandlers.ContainsKey( Path.GetExtension( candidate ) ) )
+					continue;
 
-				if ( archiveHandlers.ContainsKey( extension ) && File.Exists( potentialArchivePath ) )
+				var potentialArchivePath = currentPath + Path.GetExtension( candidate );
+				if ( string.Equals( Path.GetFileNameWithoutExtension( candidate ), part, StringComparison.OrdinalIgnoreCase ) && File.Exists( potentialArchivePath ) )
 				{
-					var remainingPath = path.Substring( currentPath.Length );
-					return (potentialArchivePath, remainingPath.TrimStart( Path.DirectorySeparatorChar ));
+					var remainingPath = path[currentPath.Length..].TrimStart( Path.DirectorySeparatorChar );
+					return (potentialArchivePath, remainingPath);
 				}
-			}
-
-			if ( Directory.Exists( currentPath.ToString() ) )
-			{
-				continue;
 			}
 		}
 
@@ -197,18 +192,42 @@ public class BaseFileSystem
 
 	public string GetAbsolutePath( string relativePath )
 	{
-		return Path.Combine( basePath, relativePath.TrimStart( '/' ) ).Replace( "/", "\\" );
+		var normalizedPath = NormalizeSeparators( relativePath );
+		var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+		var rootPrefix = Path.TrimEndingDirectorySeparator( basePath ) + Path.DirectorySeparatorChar;
+		if ( string.Equals( normalizedPath, Path.TrimEndingDirectorySeparator( basePath ), comparison ) || normalizedPath.StartsWith( rootPrefix, comparison ) || (OperatingSystem.IsWindows() && Path.IsPathFullyQualified( normalizedPath )) )
+			return ValidateAbsolutePath( normalizedPath );
+
+		var path = normalizedPath.TrimStart( Path.DirectorySeparatorChar );
+		return ValidateAbsolutePath( Path.Combine( basePath, path ) );
 	}
 
 	public string GetRelativePath( string absolutePath )
 	{
-		var path = Path.GetRelativePath( basePath, absolutePath ).Replace( "\\", "/" );
+		var path = Path.GetRelativePath( basePath, ValidateAbsolutePath( absolutePath ) ).Replace( "\\", "/" );
 		return $"/{path}";
+	}
+
+	private static string NormalizeSeparators( string path )
+	{
+		return path.Replace( '\\', Path.DirectorySeparatorChar ).Replace( '/', Path.DirectorySeparatorChar );
+	}
+
+	private string ValidateAbsolutePath( string path )
+	{
+		var absolutePath = Path.GetFullPath( NormalizeSeparators( path ) );
+		var relativePath = Path.GetRelativePath( basePath, absolutePath );
+		if ( Path.IsPathRooted( relativePath ) || relativePath == ".." || relativePath.StartsWith( $"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal ) )
+			throw new ArgumentException( "Path must remain inside the filesystem root.", nameof( path ) );
+
+		return absolutePath;
 	}
 
 	public bool IsArchive( string path )
 	{
-		var (archivePath, internalPath) = FindArchivePath( path );
+		var normalizedPath = NormalizeSeparators( path );
+		var absolutePath = Path.IsPathRooted( normalizedPath ) ? ValidateAbsolutePath( normalizedPath ) : GetAbsolutePath( normalizedPath );
+		var (archivePath, _) = FindArchivePath( absolutePath );
 
 		return !string.IsNullOrEmpty( archivePath );
 	}

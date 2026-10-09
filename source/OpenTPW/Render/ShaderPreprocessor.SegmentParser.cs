@@ -66,7 +66,7 @@ partial class ShaderPreprocessor
 					var path = ConsumeWhile( x => x != '"' );
 					ConsumeChar(); // "
 
-					var contents = File.ReadAllText( path );
+					var contents = File.ReadAllText( Path.GetFullPath( path, AppContext.BaseDirectory ) );
 
 					blocks.Add( name, contents );
 				}

@@ -18,7 +18,7 @@ public class Shader : Asset
 
 	internal Shader( string path )
 	{
-		Path = path;
+		Path = System.IO.Path.GetFullPath( path, AppContext.BaseDirectory );
 		All.Add( this );
 
 		Recompile();

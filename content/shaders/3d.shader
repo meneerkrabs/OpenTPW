@@ -21,6 +21,7 @@ fragment {
     vec3 vNormal;
     vec3 vPosition;
     vec3 vPositionWs;
+    vec3 vPositionVs;
   } vs_out;
 
   //
@@ -64,14 +65,10 @@ fragment {
     vColor.z *= 1.25;
 
     vec3 fogColor = vec3( 0.28, 0.88, 1.0 );
-    float fogStart = 2.0;
-    float fogEnd = 30.0;
+    float fogStart = 80.0;
+    float fogEnd = 200.0;
 
-    // float fogAmount = ( length( vs_out.vPositionWs ) - fogStart ) / ( fogEnd - fogStart );
-    // fogAmount = clamp( fogAmount, 0.0, 1.0 );
-    // smoother fog, better looking
-    float fogAmount = ( 1.0 - exp( -length( vs_out.vPositionWs ) * 0.01 ) ) / ( 1.0 - exp( -fogEnd * 0.01 ) );
-    fogAmount = clamp( fogAmount, 0.0, 1.0 );
+    float fogAmount = clamp( ( length( vs_out.vPositionVs ) - fogStart ) / ( fogEnd - fogStart ), 0.0, 1.0 );
 
     fragColor = vec4( vLambert + vAmbient, 1.0 ) * vColor;
     fragColor = mix( fragColor, vec4( fogColor, 1.0 ), fogAmount );

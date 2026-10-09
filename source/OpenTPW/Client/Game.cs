@@ -9,17 +9,76 @@ internal static class Game
 	public static void Run( string[] args )
 	{
 		Log = new();
+		var saveIndex = Array.IndexOf( args, "--inspect-save" );
+		if ( saveIndex >= 0 )
+		{
+			if ( saveIndex + 1 >= args.Length || args[saveIndex + 1].StartsWith( "--" ) )
+				throw new ArgumentException( "--inspect-save requires a local original save-container path." );
+			using var reader = new SaveReader( args[saveIndex + 1] );
+			var header = reader.Inspect();
+			var payload = reader.ReadFile();
+			Console.WriteLine( $"Offline container: magic 0x{header.Magic:X8}; file type 0x{header.FileType:X8}; version {header.Version}; BILZ chunk {header.CompressedChunkLength} bytes; decoded {payload.Length} bytes." );
+			Console.WriteLine( $"Container SHA-256: {Convert.ToHexString( System.Security.Cryptography.SHA256.HashData( reader.buffer ) )}" );
+			Console.WriteLine( $"Decoded SHA-256: {Convert.ToHexString( System.Security.Cryptography.SHA256.HashData( payload ) )}" );
+			Console.WriteLine( "Read-only container decoding only: original park payload semantics and gameplay import remain unverified." );
+			return;
+		}
+		var gamePath = Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" );
+		var pathIndex = Array.IndexOf( args, "--game-path" );
+		if ( pathIndex >= 0 )
+		{
+			if ( pathIndex + 1 >= args.Length || args[pathIndex + 1].StartsWith( "--" ) )
+				throw new ArgumentException( "--game-path requires the original game's installation directory." );
+			gamePath = args[pathIndex + 1];
+		}
+		if ( !string.IsNullOrWhiteSpace( gamePath ) )
+			Settings.Default.GamePath = Path.GetFullPath( gamePath );
 
 		//
 		// Check if the game data directory exists
 		//
-		if ( !Path.Exists( $"{Settings.Default.GamePath}/data/" ) )
-			throw new DirectoryNotFoundException( "Theme Park World not found" );
+		var dataDirectory = Path.Combine( Settings.Default.GamePath, "data" );
+		if ( !Directory.Exists( dataDirectory ) )
+			dataDirectory = Path.Combine( Settings.Default.GamePath, "Data" );
+		if ( !Directory.Exists( dataDirectory ) )
+			throw new DirectoryNotFoundException( $"Theme Park World data not found in '{Settings.Default.GamePath}'. Use --game-path or OPENTPW_GAME_PATH to select a directory containing data/." );
 
 		// Register game data directory
-		FileSystem = new BaseFileSystem( $"{Settings.Default.GamePath}/data/" );
+		FileSystem = new BaseFileSystem( dataDirectory );
 		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
 		FileSystem.RegisterArchiveHandler<SdtArchive>( ".sdt" );
+		var modelIndex = Array.IndexOf( args, "--inspect-model" );
+		if ( modelIndex >= 0 )
+		{
+			if ( modelIndex + 1 >= args.Length )
+				throw new ArgumentException( "--inspect-model requires an asset path." );
+			var model = new ModelFile( args[modelIndex + 1] );
+			foreach ( var mesh in model.Meshes )
+			{
+				Log.Trace( $"Mesh {mesh.Name}: {mesh.Vertices.Length} vertices; {mesh.Indices.Length} indices; transform {mesh.TransformMatrix}." );
+				foreach ( var material in mesh.Materials )
+					Log.Trace( $"Material: {material.Name}" );
+			}
+			return;
+		}
+		if ( args.Contains( "--validate-assets" ) )
+		{
+			var globalSettings = new SettingsFile( "/levels/jungle/global.sam" );
+			var terrain = new TextureFile( "/levels/jungle/terrain/textures/jgr_bas1.wct" ).Data;
+			Log.Trace( $"Asset validation: {globalSettings.Entries.Count()} settings; terrain {terrain.Width}x{terrain.Height}." );
+			foreach ( var rideFile in FileSystem.GetFiles( "/levels/jungle/rides" ) )
+				Log.Trace( rideFile );
+			foreach ( var rideDirectory in FileSystem.GetDirectories( "/levels/jungle/rides" ) )
+			{
+				var relativeDirectory = FileSystem.GetRelativePath( rideDirectory );
+				Log.Trace( $"Ride archive: {relativeDirectory}" );
+				if ( !args.Contains( "--inspect-rides" ) )
+					continue;
+				foreach ( var entry in FileSystem.GetFiles( relativeDirectory ) )
+					Log.Trace( entry );
+			}
+			return;
+		}
 
 		//
 		// Check if the save data directory exists (create if not)
@@ -50,6 +109,14 @@ internal static class Game
 		//
 		Render.OnUpdate += level.Update;
 		Render.OnRender += level.Render;
-		Render.Run();
+		if ( args.Contains( "--smoke-test" ) )
+		{
+			using var smokeTest = new SandboxSmokeTest( level );
+			Render.PostUpdate += smokeTest.Update;
+			Render.Run();
+			smokeTest.VerifyCompleted();
+		}
+		else
+			Render.Run();
 	}
 }

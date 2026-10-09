@@ -225,6 +225,7 @@ public partial class Material : Asset
 			),
 
 			PrimitiveTopology = PrimitiveTopology.TriangleList,
+			ResourceBindingModel = ResourceBindingModel.Improved,
 			ResourceLayouts = [.. _resourceLayouts],
 			ShaderSet = new ShaderSetDescription( [vertexLayout], Shader.ShaderProgram ),
 			Outputs = Render.MultisampledFramebuffer.OutputDescription

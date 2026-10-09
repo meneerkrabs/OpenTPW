@@ -1,5 +1,4 @@
 ﻿using System.Diagnostics;
-using System.Text;
 using Veldrid;
 using Veldrid.SPIRV;
 
@@ -29,16 +28,6 @@ internal static class ShaderCompiler
 		};
 	}
 
-	private static byte[] GetBytes( string code )
-	{
-		return Device.ResourceFactory.BackendType switch
-		{
-			GraphicsBackend.Direct3D11 or GraphicsBackend.OpenGL or GraphicsBackend.OpenGLES or GraphicsBackend.Vulkan => Encoding.ASCII.GetBytes( code ),
-			GraphicsBackend.Metal => Encoding.UTF8.GetBytes( code ),
-			_ => throw new SpirvCompilationException( "Unknown target" ),
-		};
-	}
-
 	internal static bool HasSpirvHeader( byte[] bytes )
 	{
 		return bytes.Length > 4
@@ -48,38 +37,34 @@ internal static class ShaderCompiler
 			&& bytes[3] == 0x07;
 	}
 
-	public static ShaderInfo CompileShader( string path )
+	internal static (byte[] Vertex, byte[] Fragment, SpirvReflection Reflection) CompileProgram( string path, CrossCompileTarget target )
 	{
-		var target = GetCrossCompileTarget();
-
 		var preprocessedShader = ShaderPreprocessor.PreprocessShader( path );
 		var vertexSource = preprocessedShader.VertexShader;
 		var fragmentSource = preprocessedShader.FragmentShader;
 
-		var vertexSourceBytes = GetBytes( vertexSource );
-		var fragmentSourceBytes = GetBytes( fragmentSource );
-		var compilationResult = SpirvCompilation.CompileVertexFragment( vertexSourceBytes, fragmentSourceBytes, target );
-
-		if ( Device.ResourceFactory.BackendType != GraphicsBackend.Vulkan )
-		{
-			vertexSource = compilationResult.VertexShader;
-			fragmentSource = compilationResult.FragmentShader;
-		}
-
-		var vertexSpirv = SpirvCompilation.CompileGlslToSpirv( vertexSource, path, ShaderStages.Vertex, new() );
-		var fragmentSpirv = SpirvCompilation.CompileGlslToSpirv( fragmentSource, path, ShaderStages.Fragment, new() );
+		var compileOptions = new GlslCompileOptions( true );
+		var vertexSpirv = SpirvCompilation.CompileGlslToSpirv( vertexSource, path, ShaderStages.Vertex, compileOptions );
+		var fragmentSpirv = SpirvCompilation.CompileGlslToSpirv( fragmentSource, path, ShaderStages.Fragment, compileOptions );
+		var compilationResult = SpirvCompilation.CompileVertexFragment( vertexSpirv.SpirvBytes, fragmentSpirv.SpirvBytes, target );
 
 		Debug.Assert( HasSpirvHeader( vertexSpirv.SpirvBytes ) );
 		Debug.Assert( HasSpirvHeader( fragmentSpirv.SpirvBytes ) );
+		return (vertexSpirv.SpirvBytes, fragmentSpirv.SpirvBytes, compilationResult.Reflection);
+	}
 
-		var vertexShader = Device.ResourceFactory.CreateShader( new ShaderDescription( ShaderStages.Vertex, vertexSpirv.SpirvBytes, "main" ) );
-		var fragmentShader = Device.ResourceFactory.CreateShader( new ShaderDescription( ShaderStages.Fragment, fragmentSpirv.SpirvBytes, "main" ) );
+	public static ShaderInfo CompileShader( string path )
+	{
+		var program = CompileProgram( path, GetCrossCompileTarget() );
+		var shaders = Device.ResourceFactory.CreateFromSpirv(
+			new ShaderDescription( ShaderStages.Vertex, program.Vertex, "main" ),
+			new ShaderDescription( ShaderStages.Fragment, program.Fragment, "main" ) );
 
 		return new ShaderInfo()
 		{
-			VertexShader = vertexShader,
-			FragmentShader = fragmentShader,
-			Reflection = compilationResult.Reflection
+			VertexShader = shaders[0],
+			FragmentShader = shaders[1],
+			Reflection = program.Reflection
 		};
 	}
 }

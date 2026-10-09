@@ -24,6 +24,6 @@ void main() {
   vec4 pos = g_oUbo.g_mModel * vec4( position, 1.0 );
 
   vs_out.vPositionVs = vec3( g_oUbo.g_mView * pos );
-  vs_out.vPositionWs = vec3( g_oUbo.g_mProj * g_oUbo.g_mView * pos );
+  vs_out.vPositionWs = pos.xyz;
   gl_Position = g_oUbo.g_mProj * g_oUbo.g_mView * pos;
 }

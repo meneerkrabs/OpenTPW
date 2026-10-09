@@ -19,7 +19,24 @@
 
 	<ItemGroup>
 		<Content Include="icon.ico" />
+		<Content Include="../../content/**/*" Link="content/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
 	</ItemGroup>
+
+	<ItemGroup Condition="'$(RuntimeIdentifier)' == 'osx-arm64' Or '$(RuntimeIdentifier)' == 'osx-x64' Or ('$(RuntimeIdentifier)' == '' And $([MSBuild]::IsOSPlatform('OSX')))">
+		<Content Include="$(NuGetPackageRoot)imgui.net/1.87.2/runtimes/osx-universal/native/libcimgui.dylib" Link="libcimgui.dylib" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+	</ItemGroup>
+
+	<PropertyGroup Condition="'$(RuntimeIdentifier)' == 'osx-arm64'">
+		<SDL2NativePath Condition="'$(SDL2NativePath)' == ''">/opt/homebrew/lib/libSDL2.dylib</SDL2NativePath>
+	</PropertyGroup>
+	<ItemGroup Condition="'$(RuntimeIdentifier)' == 'osx-arm64'">
+		<Content Include="../../native/osx-arm64/libveldrid-spirv.dylib" Link="libveldrid-spirv.dylib" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+		<Content Include="$(SDL2NativePath)" Link="libsdl2.dylib" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+	</ItemGroup>
+	<Target Name="ValidateMacOSArm64Libraries" BeforeTargets="Build" Condition="'$(RuntimeIdentifier)' == 'osx-arm64'">
+		<Error Condition="!Exists('../../native/osx-arm64/libveldrid-spirv.dylib')" Text="Build the existing SPIR-V dependency first with scripts/build-macos-native.sh." />
+		<Error Condition="!Exists('$(SDL2NativePath)')" Text="Set SDL2NativePath to an existing arm64 SDL2 dylib. See docs/MACOS-NATIVE.md." />
+	</Target>
 
 	<ItemGroup>
 		<PackageReference Include="ImGui.NET" Version="1.87.2" />

@@ -12,6 +12,13 @@ public static class GameDir
 	/// <returns></returns>
 	public static string GetPath( string path )
 	{
-		return Path.Join( Settings.Default.GamePath, path ).Replace( "/", "\\" );
+		var root = Path.GetFullPath( Settings.Default.GamePath.Replace( '\\', Path.DirectorySeparatorChar ).Replace( '/', Path.DirectorySeparatorChar ) );
+		var relativePath = path.Replace( '\\', Path.DirectorySeparatorChar ).Replace( '/', Path.DirectorySeparatorChar ).TrimStart( Path.DirectorySeparatorChar );
+		var absolutePath = Path.GetFullPath( Path.Combine( root, relativePath ) );
+		var resolvedRelativePath = Path.GetRelativePath( root, absolutePath );
+		if ( Path.IsPathRooted( resolvedRelativePath ) || resolvedRelativePath == ".." || resolvedRelativePath.StartsWith( $"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal ) )
+			throw new ArgumentException( "Path must remain inside the game directory.", nameof( path ) );
+
+		return absolutePath;
 	}
 }

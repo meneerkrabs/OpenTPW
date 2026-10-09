@@ -2,62 +2,44 @@
 
 public class ParkCameraMode : CameraMode
 {
-	private Vector3 wishVelocity = new();
-	private Vector3 velocity = new();
-	private float wishYaw;
-	private bool wasPressed;
-	private Vector2 mouseAnchor;
-	private float cameraSpeed = 128f;
-	private float wishHeight = 2f;
-	private float yaw;
+	private Vector3 target = Vector3.Zero;
+	private float height = 42f;
+	private float yaw = -135f;
+
+	public ParkCameraMode()
+	{
+		FieldOfView = 55;
+		UpdateTransform();
+	}
 
 	public override void Update()
 	{
-		//
-		// Get user input
-		//
-		var wishDir = new Vector3( Input.Forward, Input.Right, 0 ).Normal;
-
-		if ( Input.Mouse.Right && !wasPressed )
+		var io = ImGuiNET.ImGui.GetIO();
+		var radians = yaw.DegreesToRadians();
+		var forward = new Vector3( -MathF.Cos( radians ), -MathF.Sin( radians ), 0 );
+		var right = new Vector3( forward.Y, -forward.X, 0 );
+		if ( !io.WantCaptureKeyboard )
 		{
-			mouseAnchor = Input.Mouse.Position;
+			target += (forward * Input.Forward + right * Input.Right) * Math.Min( Time.Delta, 0.1f ) * 24f;
+			if ( Input.Pressed( InputButton.RotateLeft ) )
+				yaw -= 45;
+			if ( Input.Pressed( InputButton.RotateRight ) )
+				yaw += 45;
 		}
-
-		if ( Input.Mouse.Right )
+		if ( !io.WantCaptureMouse )
 		{
-			var delta = mouseAnchor - Input.Mouse.Position;
-			wishDir = new Vector3( delta.Y, -delta.X, 0 ) / 512f;
+			height = Math.Clamp( height - Input.Mouse.Wheel * 3, 12, 100 );
+			if ( Input.Mouse.Right )
+				target += (right * Input.Mouse.Delta.X - forward * Input.Mouse.Delta.Y) * height / 500f;
 		}
+		target = new Vector3( Math.Clamp( target.X, -32, 32 ), Math.Clamp( target.Y, -32, 32 ), 0 );
+		UpdateTransform();
+	}
 
-		wasPressed = Input.Mouse.Right;
-
-		wishVelocity = Rotation.Forward * wishDir.X * Time.Delta * cameraSpeed;
-		wishVelocity += Rotation.Right * wishDir.Y * Time.Delta * cameraSpeed;
-		wishVelocity.Z = 0;
-
-		wishHeight += -Input.Mouse.Wheel;
-		wishHeight = wishHeight.Clamp( 1f, 10f );
-
-		if ( Input.Pressed( InputButton.RotateLeft ) )
-			wishYaw -= 90;
-		if ( Input.Pressed( InputButton.RotateRight ) )
-			wishYaw += 90;
-
-		//
-		// Apply everything
-		//
-
-		// Apply velocity
-		velocity += wishVelocity * Time.Delta;
-
-		// Apply drag
-		velocity = velocity.LerpTo( Vector3.Zero, Time.Delta * 5f );
-
-		// Rotate camera
-		yaw = yaw.LerpTo( wishYaw, 10f * Time.Delta );
-
-		// Move camera
-		Position += velocity;
-		Position = Position.WithZ( Position.Z.LerpTo( wishHeight, 10f * Time.Delta ) );
+	private void UpdateTransform()
+	{
+		var radians = yaw.DegreesToRadians();
+		Position = target + new Vector3( MathF.Cos( radians ) * height, MathF.Sin( radians ) * height, height );
+		Rotation = Rotation.LookAt( target - Position );
 	}
 }

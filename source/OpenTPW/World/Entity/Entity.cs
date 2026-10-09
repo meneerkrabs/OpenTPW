@@ -8,7 +8,7 @@ namespace OpenTPW;
 public class Entity
 {
 	public Level Level { get; set; }
-	public static List<Entity> All { get; set; } = Assembly.GetCallingAssembly().GetTypes().OfType<Entity>().ToList();
+	public static List<Entity> All { get; set; } = new();
 
 	/// <summary>
 	/// Right, Up, Forward (FLU)
@@ -54,6 +54,8 @@ public class Entity
 	}
 	public void Delete()
 	{
+		if ( !All.Remove( this ) )
+			return;
 		OnDelete();
 	}
 

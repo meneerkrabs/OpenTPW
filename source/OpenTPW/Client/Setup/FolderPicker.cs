@@ -262,7 +262,7 @@ public static class FolderPicker
 	private static extern int SHCreateItemFromParsingName( string path, IntPtr bindContext, in Guid riid, [MarshalAs( UnmanagedType.Interface )] out NativeShellItem item );
 
 	/// <summary>Not sealed, so the cast to <see cref="NativeFileDialog"/> compiles.</summary>
-	[ComImport, Guid( "DCB1F78E-2C0F-4E56-9E6F-8F6B7E66F59F" ), ClassInterface( ClassInterfaceType.None )]
+	[ComImport, Guid( "DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7" ), ClassInterface( ClassInterfaceType.None )]
 	private class NativeFileOpenDialog { }
 
 	/// <summary>IFileDialog (IFileOpenDialog derives from it); the vtable order is fixed, so unused slots stay declared.</summary>

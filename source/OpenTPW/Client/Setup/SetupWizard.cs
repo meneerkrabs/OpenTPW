@@ -21,7 +21,7 @@ internal sealed class SetupWizard : IDisposable
 	private readonly ImGuiRenderer imGui;
 	private readonly CommandList commandList;
 	private readonly IReadOnlyList<InstallationReport> detected;
-	private readonly float scale;
+	private float scale;
 
 	private Page page;
 	private string gamePath;
@@ -74,10 +74,24 @@ internal sealed class SetupWizard : IDisposable
 			if ( !window.SdlWindow.Exists )
 				break;
 			var pixels = window.PixelSize;
+			if ( pixels.X <= 0 || pixels.Y <= 0 || window.Size.X <= 0 )
+			{
+				// Minimized: nothing to draw into.
+				Thread.Sleep( 50 );
+				continue;
+			}
 			if ( pixels.X != device.MainSwapchain.Framebuffer.Width || pixels.Y != device.MainSwapchain.Framebuffer.Height )
 			{
 				device.MainSwapchain.Resize( (uint)pixels.X, (uint)pixels.Y );
 				imGui.WindowResized( pixels.X, pixels.Y );
+				// Moving to a display with another scale factor changes pixels per point.
+				var newScale = Math.Max( 1f, pixels.X / (float)window.Size.X );
+				if ( Math.Abs( newScale - scale ) > 0.01f )
+				{
+					ImGui.GetStyle().ScaleAllSizes( newScale / scale );
+					scale = newScale;
+					ImGui.GetIO().FontGlobalScale = scale * 1.25f;
+				}
 			}
 			var now = clock.Elapsed.TotalSeconds;
 			imGui.Update( (float)(now - previous), new ScaledInput( snapshot, scale ) );

@@ -132,13 +132,10 @@ internal static class Game
 			return;
 
 		//
-		// Check if the save data directory exists (create if not)
+		// Save data beside the game files, or in the user configuration directory when the game
+		// folder is read-only (a mounted CD; docs/SETUP.md)
 		//
-		if ( !Path.Exists( $"{Settings.Default.GamePath}/save/" ) )
-			Directory.CreateDirectory( $"{Settings.Default.GamePath}/save/" );
-
-		// Register save data directory
-		SaveFileSystem = new BaseFileSystem( $"{Settings.Default.GamePath}/save/" );
+		SaveFileSystem = new BaseFileSystem( GetSaveDirectory() );
 
 		//
 		// Custom OpenTPW cache directory (mainly for editor-related stuff)
@@ -243,13 +240,13 @@ internal static class Game
 				return null;
 			}
 			saved = new SetupSettings( chosen.GamePath, chosen.CdPath );
-			saved.Save( setupPath );
+			TrySave( saved, setupPath );
 			resolved = (chosen.GamePath, GamePathSource.Wizard);
 		}
 		else if ( resolved.Value.Source is GamePathSource.Legacy or GamePathSource.Detected )
 		{
 			saved = saved with { GamePath = resolved.Value.Path };
-			saved.Save( setupPath );
+			TrySave( saved, setupPath );
 		}
 		Settings.Default.GamePath = resolved.Value.Path;
 		Log.Trace( $"Game folder: {resolved.Value.Path} ({resolved.Value.Source})." );
@@ -259,6 +256,35 @@ internal static class Game
 			&& !args.Contains( "--cd-data" ) && string.IsNullOrWhiteSpace( Environment.GetEnvironmentVariable( "OPENTPW_CD_DATA" ) ) )
 			args = [.. args, "--cd-data", saved.CdPath];
 		return args;
+	}
+
+	private static void TrySave( SetupSettings settings, string path )
+	{
+		try
+		{
+			settings.Save( path );
+		}
+		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException )
+		{
+			Log.Warning( $"Could not store the game folder in {path} ({exception.Message}); setup will ask again next time." );
+		}
+	}
+
+	private static string GetSaveDirectory()
+	{
+		var beside = Path.Combine( Settings.Default.GamePath, "save" );
+		try
+		{
+			Directory.CreateDirectory( beside );
+			return beside + Path.DirectorySeparatorChar;
+		}
+		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException )
+		{
+			var fallback = Path.Combine( Path.GetDirectoryName( SetupSettings.GetDefaultPath() )!, "save" );
+			Directory.CreateDirectory( fallback );
+			Log.Warning( $"The game folder is read-only ({exception.Message}); saves go to {fallback}." );
+			return fallback + Path.DirectorySeparatorChar;
+		}
 	}
 
 	private static string? GetOption( string[] args, string name, string description )

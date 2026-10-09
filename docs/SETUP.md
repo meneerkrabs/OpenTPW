@@ -37,8 +37,8 @@ warns, without refusing, when:
   `swears.txt`, which the installer copies from the CD's language folders (some banners
   or the chat word filter may then be missing);
 - there is no `Movies` folder (the CD can be added for movies and music);
-- the folder is read-only, such as a mounted CD: saves are still written beside the
-  game data (`<game>/save`), so they cannot be stored there yet.
+- the folder is read-only, such as a mounted CD: saves then go to a `save` folder in
+  the user configuration directory instead of `<game>/save`.
 
 ## The setup window
 

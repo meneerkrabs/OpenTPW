@@ -79,6 +79,24 @@ public class SetupTests
 	}
 
 	[TestMethod]
+	public void UnreadableFoldersAreReportedNotThrown()
+	{
+		if ( OperatingSystem.IsWindows() )
+			Assert.Inconclusive( "Uses Unix permissions." );
+		var locked = CreateGame( "locked" );
+		File.SetUnixFileMode( locked, UnixFileMode.None );
+		try
+		{
+			var report = GameInstallation.Inspect( locked );
+			Assert.IsFalse( report.IsUsable );
+		}
+		finally
+		{
+			File.SetUnixFileMode( locked, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute );
+		}
+	}
+
+	[TestMethod]
 	public void DataFolderSpellingDoesNotMatter()
 	{
 		Assert.IsTrue( GameInstallation.Inspect( CreateGame( "cd-mount", dataSpelling: "DATA" ) ).IsUsable );

@@ -19,8 +19,7 @@ public static class GameInstallation
 
 	public static InstallationReport Inspect( string? path )
 	{
-		var problems = new List<string>();
-		var warnings = new List<string>();
+		var warnings = Array.Empty<string>();
 		if ( string.IsNullOrWhiteSpace( path ) )
 			return new( "", null, Array.Empty<string>(), new[] { "No folder selected." }, warnings );
 
@@ -35,6 +34,20 @@ public static class GameInstallation
 		}
 		if ( !Directory.Exists( root ) )
 			return new( root, null, Array.Empty<string>(), new[] { "This folder does not exist." }, warnings );
+		try
+		{
+			return InspectFolder( root );
+		}
+		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException or System.Security.SecurityException )
+		{
+			return new( root, null, Array.Empty<string>(), new[] { $"This folder cannot be read ({exception.Message})." }, warnings );
+		}
+	}
+
+	private static InstallationReport InspectFolder( string root )
+	{
+		var problems = new List<string>();
+		var warnings = new List<string>();
 
 		// Picking the Data folder itself is a common mistake: use the folder that contains it.
 		if ( GameLanguage.FindEntry( root, "data", true ) == null && LooksLikeDataFolder( root ) && Directory.GetParent( root ) is { } parent )
@@ -64,7 +77,7 @@ public static class GameInstallation
 		if ( GameLanguage.FindEntry( dataDirectory, "Movies", true ) == null )
 			warnings.Add( "No movies were found; add the CD in the next step to play them." );
 		if ( !IsWritable( root ) )
-			warnings.Add( "This folder is read-only (for example a mounted CD), so saved parks cannot be stored here yet." );
+			warnings.Add( "This folder is read-only (for example a mounted CD); saved parks go to the OpenTPW settings folder instead." );
 
 		return new( root, dataDirectory, languages, problems, warnings );
 	}

@@ -226,6 +226,7 @@ internal static class OriginalScientistSnapshotTests
 		Equal( 33, snapshot.InlineNameCodeUnits.Count ); Equal( true, snapshot.HasUnparsedUsedActors );
 		Equal( false, snapshot.IsCompleteWorldSnapshot ); Equal( 215879, snapshot.PayloadBytesAfterRecord );
 		OriginalScientistSnapshotEnvelopeTests.CheckRoundTrip( snapshot );
+		OriginalScientistSnapshotEnvelopeTests.CheckIdentifiedFixtureShape( snapshot );
 		using ( var compressed = new MemoryStream( container, 0x629, container.Length - 0x629, writable: false ) )
 		using ( var decoder = new ZLibStream( compressed, CompressionMode.Decompress ) )
 		{

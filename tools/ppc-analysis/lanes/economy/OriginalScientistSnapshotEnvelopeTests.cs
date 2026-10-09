@@ -53,6 +53,44 @@ internal static class OriginalScientistSnapshotEnvelopeTests
 	private static JsonObject Data( JsonObject tree ) => tree["Snapshot"]!.AsObject();
 	private static JsonObject Origin( JsonObject tree ) => Data( tree )["Provenance"]!.AsObject();
 	private static byte[] Bytes( JsonObject tree ) => Encoding.UTF8.GetBytes( tree.ToJsonString() );
+
+	internal static void CheckIdentifiedFixtureShape( OriginalScientistSnapshot fixture )
+	{
+		var shortened = Tree( fixture );
+		var originalPrefix = Data( shortened )["Prefix"]!.AsArray();
+		var first = originalPrefix[0]!.DeepClone().AsObject();
+		var last = originalPrefix[^1]!.DeepClone().AsObject();
+		first["NextUsedActorId"] = 30;
+		var lastHeader = first["EndExclusive"]!.GetValue<int>();
+		last["HeaderOffset"] = lastHeader; last["BodyOffset"] = lastHeader + 8;
+		last["EndExclusive"] = lastHeader + 8 + 501;
+		Data( shortened )["Prefix"] = new JsonArray( first, last );
+		Data( shortened )["Actor"] = last.DeepClone();
+		Data( shortened )["PayloadBytesAfterRecord"] = 1608309 - (lastHeader + 8 + 501);
+		// Review counterexample: a connected two-record prefix previously kept
+		// the identified-fixture label because only generic topology was checked.
+		Reject<InvalidDataException>( () => OriginalScientistSnapshotEnvelope.Deserialize( Bytes( shortened ) ) );
+
+		var wrongFirst = Tree( fixture );
+		Data( wrongFirst )["Prefix"]![0]!["ActorId"] = 77;
+		Reject<InvalidDataException>( () => OriginalScientistSnapshotEnvelope.Deserialize( Bytes( wrongFirst ) ) );
+		var wrongNext = Tree( fixture );
+		Data( wrongNext )["Prefix"]![12]!["NextUsedActorId"] = 99;
+		Data( wrongNext )["Actor"]!["NextUsedActorId"] = 99;
+		Reject<InvalidDataException>( () => OriginalScientistSnapshotEnvelope.Deserialize( Bytes( wrongNext ) ) );
+		var wrongTail = Tree( fixture ); Data( wrongTail )["PayloadBytesAfterRecord"] = fixture.PayloadBytesAfterRecord + 1;
+		Reject<InvalidDataException>( () => OriginalScientistSnapshotEnvelope.Deserialize( Bytes( wrongTail ) ) );
+
+		// Lower-boundary claims can preserve that same coherent shortened shape.
+		// They never gain source verification merely by retaining a known hash.
+		Origin( shortened )["Qualification"] = "CallerSuppliedPrefixBoundary";
+		Origin( shortened )["ContainerSha256"] = null; Origin( shortened )["ObservedWorldTick"] = null;
+		var caller = OriginalScientistSnapshotEnvelope.Deserialize( Bytes( shortened ) );
+		Equal( 2, caller.Snapshot.Prefix.Count ); Equal( ScientistSnapshotQualification.CallerSuppliedPrefixBoundary, caller.Snapshot.Provenance.Qualification );
+		Equal( false, caller.SourcePayloadRevalidated ); Equal( false, caller.CanRestoreRuntimeStaff );
+		var persisted = OriginalScientistSnapshotEnvelope.Deserialize( OriginalScientistSnapshotEnvelope.Serialize( fixture ) );
+		Equal( false, persisted.SourcePayloadRevalidated ); Equal( false, persisted.CanRestoreRuntimeStaff );
+	}
 	private static void Bad( Action<JsonObject> mutate )
 	{
 		var tree = Tree(); mutate( tree );

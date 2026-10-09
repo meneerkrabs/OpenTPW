@@ -44,6 +44,12 @@ the separately reviewed Mac framing reference; its citation is bounded and
 retained. Caller-boundary provenance cannot grow a container SHA or verified
 world tick. Identified-fixture provenance must keep the exact known
 container/payload identities, head boundary, role-head ID and world tick.
+It must also retain the exact identified 13-record prefix: used IDs 42..31
+then scientist 30, their recorded next links/models/offsets/sizes, final
+scientist header 1,391,921/body 1,391,929..1,392,430 and tail extent 215,879.
+These are facts scoped to the SHA-identified fixture, not a rule inferred
+for other saves. A coherent shortened prefix may only carry caller-boundary
+origin with null container/observed-clock claims.
 
 **Persisted source provenance remains a claim.** The JSON envelope contains
 neither the original container nor its decoded payload. It cannot reauthenticate
@@ -63,7 +69,11 @@ links/offsets/models, bounds/depth and preservation of existing state after
 refused loads. Roundtrip tests compare all stored representations and canonical
 JSON, with a 66-case float-bit/native-u64 boundary matrix and actual PC source
 snapshot/provenance. No source assets or generated fixture JSON are checked in.
-Release and Debug with the real fixture each pass 16 groups / 1,648 assertions.
+The review's 13-to-2 prefix counterexample reproduces a failure before the
+shape check is added; the patched reader rejects it, wrong first/next IDs and
+wrong tail extent. An explicit caller-boundary downgrade accepts the coherent
+shortened prefix while still reporting no source revalidation/restoration.
+Release and Debug with the real fixture each pass 16 groups / 1,658 assertions.
 
 The existing standalone runner includes these tests:
 

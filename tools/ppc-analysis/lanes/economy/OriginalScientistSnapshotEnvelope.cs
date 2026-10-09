@@ -223,6 +223,25 @@ public static class OriginalScientistSnapshotEnvelope
 		Require( s.Actor == s.Prefix[^1] && (!p.ExpectedFirstResearcherId.HasValue || p.ExpectedFirstResearcherId == s.Actor.ActorId), "scientist identity" );
 		Require( s.NextResearcherId == 0 || s.NextResearcherId != s.Actor.ActorId, "researcher self-cycle" );
 		Require( s.PayloadBytesAfterRecord >= 0 && offset + s.PayloadBytesAfterRecord <= OriginalScientistSnapshotReader.MaximumPayloadBytes, "unparsed tail size" );
+		if ( p.Qualification == ScientistSnapshotQualification.IdentifiedPcEasymodeFixture )
+			ValidateIdentifiedFixtureShape( s );
+	}
+
+	private static void ValidateIdentifiedFixtureShape( SnapshotData s )
+	{
+		// These are identity-bounded fixture facts from 6305d32, not a general
+		// actor inference rule. JSON still cannot reauthenticate source scalars.
+		Require( s.Prefix.Length == 13, "identified fixture requires its full recorded prefix shape" );
+		for ( var index = 0; index < 12; index++ )
+		{
+			var header = 1385525 + 533 * index;
+			var expected = new OriginalActorPrefixRecord( (uint)(42 - index), (uint)(41 - index), 1,
+				header, header + 8, 525, header + 533 );
+			Require( s.Prefix[index] == expected, "identified fixture guest-prefix shape differs" );
+		}
+		Require( s.Actor == new OriginalActorPrefixRecord( 30, 29, 8, 1391921, 1391929, 501, 1392430 ),
+			"identified fixture scientist shape differs" );
+		Require( s.PayloadBytesAfterRecord == 215879, "identified fixture tail extent differs" );
 	}
 
 	private static bool IsHex( string? value, int length ) => value != null && value.Length == length

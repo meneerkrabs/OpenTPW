@@ -77,7 +77,7 @@ group checks all interpreted scientist fields, 13 actor headers, exact offsets,
 name fingerprint, original world tick and provenance. It prints metadata/hash
 only. The same decoded fixture through the caller-boundary API retains its lower
 qualification, confirming that payload identity never silently promotes the
-origin. The combined reader/envelope runner now passes 16 groups / 1,648 assertions
+origin. The combined reader/envelope runner now passes 16 groups / 1,658 assertions
 in Release and Debug with the actual fixture. The separate persistence contract
 is documented in [SCIENTIST-ENVELOPE.md](SCIENTIST-ENVELOPE.md).
 

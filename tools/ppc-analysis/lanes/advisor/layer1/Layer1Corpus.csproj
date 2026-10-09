@@ -6,9 +6,9 @@
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
-    <AnalysisLevel>latest</AnalysisLevel>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Remove="layer1/**/*.cs" />
+    <Compile Include="../../../../../source/OpenTPW.Files/Formats/Sound/Mp2Decoder*.cs" Link="%(Filename)%(Extension)" />
+    <Compile Include="../../../../../source/OpenTPW.Tests/Layer1TestFrames.cs" Link="Layer1TestFrames.cs" />
   </ItemGroup>
 </Project>

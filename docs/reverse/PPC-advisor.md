@@ -720,3 +720,94 @@ and errors; formatting matches the repository's CRLF convention. Git whitespace
 checks recognize CRLF via a command-local setting; no global configuration is
 changed. Python advisor tests now total 27, with 16 shared toolkit tests; the
 identity-pinned descriptor/asset witnesses remain successful.
+
+
+## Phase five: Layer I runtime codec
+
+The runtime `Mp2Decoder.Decode` now dispatches Layer I frames as well as the
+existing LSF Layer II path. `Mp2Decoder.Layer1.cs` implements valid MPEG-1/2
+Layer I allocation, scalefactors, requantization and intensity stereo; shared
+synthesis/interleaving is reused with the correct per-layer channel stride.
+The legacy public name and Layer II `SamplesPerFrame` constant remain compatible;
+`LayerOneSamplesPerFrame` is 384. `MP2File.FrameData` documentation now identifies
+both layers, since the original `.mp2` suffix does not select the codec.
+No SDL, UI, game-clock or automatic-event code changes are included.
+
+Reproduce the new static and independent decoder witnesses:
+
+```sh
+python3 tools/ppc-analysis/lanes/advisor/layer1/pef_layer1_evidence.py /Users/sander/server/game-assets/mac-feral/bin
+/Users/sander/.local/share/opentpw-dotnet/dotnet run --project tools/ppc-analysis/lanes/advisor/layer1/Layer1Corpus.csproj --configuration Release -- /Users/sander/server/game-assets/theme-park-world/Data /tmp/advisor-layer1-corpus-report.json
+OPENTPW_GAME_PATH=/Users/sander/server/game-assets/theme-park-world /Users/sander/.local/share/opentpw-dotnet/dotnet test source/OpenTPW.Tests/OpenTPW.Tests.csproj --configuration Release --filter 'FullyQualifiedName~Layer1DecoderTests|FullyQualifiedName~Mp2DecoderTests|FullyQualifiedName~LipSyncTimelineTests'
+```
+
+The static witness pins the existing sound-library identity and resolves
+`Decode_Layer1` to code `0x2d0c`, transition vector data `0x994`. It verifies
+allocation width 4 (`0x2de8`), 32 subbands (`0x2df8`), scalefactor width 6
+(`0x2e20`), sample width allocation+1 (`0x2fe4`), twelve synthesis slots
+(`0x3114`), shared synthesis `0x53a0`, and normal output bytes/channel 768
+(`0x1bc0`). Original data tables `0x2c54` / `0x2cb4` match the MPEG-1/2 Layer I
+bitrate tables, and `0x2c30` / `0x2c3c` match their rate tables.
+
+The original requantizer's numerator at `0x3028–0x303c` is
+`code + 1 - (1 << allocation)`, multiplied at `0x306c` by the combined factor
+selected from data `0x2d78 + 256*(allocation+1) + 4*scalefactor`.
+Every one of its 14 × 63 valid factors exactly matches
+`float(2^(2 - scalefactor/3) / (2^(allocation+1) - 1))`. The formula is computed
+in double before conversion, matching all 882 originals rather than introducing
+the 105 one-ULP mismatches found if the scalefactor is prematurely rounded.
+Decoder-range SHA-256 (`0x2d0c–0x3144`) is
+`f8e1d76371b8da64e91ff51330a328c2a861261c6a335466dbb14d2d8d07889e`;
+the relevant combined-factor region SHA-256 is
+`2395bc2ab462d2ad135094e9574cf794f0d7a8b70b014184be3aaa79283c3158`.
+This proves interpreted static operands/table correspondence, not original
+execution or hardware output.
+
+Test-first evidence: eighteen initial generated Layer I cases failed with the
+existing decoder's Layer I rejection before production changes. Generated cases
+now cover header version/rates, silence/tone, allocation/sample widths, both PCM
+clip extremes, independent/intensity stereo, all joint boundaries, CRC/padding
+alignment, reserved values and truncated frames. Independent corpus results:
+
+| Check | Result |
+| --- | --- |
+| Physical Layer I entries / banks | 2,650 / 33 |
+| Unique private Layer I streams | 2,279: 2,270 MPEG-2 mono, four MPEG-2 stereo, five MPEG-1 mono |
+| Complete private Layer I frames | 142,278 |
+| Generated reference streams | 16 |
+| Existing Layer II regression streams | Three: global speech `sp_001` and both global music entries |
+| Compared interleaved PCM samples | 56,410,752 |
+| Reference | Installed FFmpeg 8.0.1 `mp1`/`mp2` decoder, no source/code dependency |
+| Maximum absolute PCM error | 1 signed-16-bit unit |
+| Trailing private Layer I data | One byte on every unique stream, explicitly excluded from reference complete-frame prefixes |
+
+No compressed stream or PCM fixture is committed. The report outside Git records
+bank/stream identities, actual/reference PCM hashes and error/signal totals.
+`z_error` compressed-stream SHA-256 is
+`948aa426d01917a422a7cb590a36c46f17049cf3ff56404d49c390229dbda94a`;
+its independent 9,600-sample PCM SHA-256 is
+`1e86de97c3e240d3ed363fa8fcb3303d06fba3a6755060283fbf440d6e19a48a`.
+Private tests use reference sample/RMS tolerances and bank hashes rather than
+checking original waveform contents into Git.
+
+Strict profile limits remain explicit: MPEG-1 Layer II, MPEG-2.5, Layer III,
+free format and Layer I nonzero de-emphasis are unsupported; reserved/forbidden
+values and truncated complete-frame payloads are rejected. CRC words are skipped,
+not verified. Undefined SF63 mutes in the identified Mac table but is rejected
+by this strict reader; none of 3,253,907 private parsed scale indices is 63.
+The actual original device half-rate, mixing, channel routing, full bank scheduling
+and event-to-sound dispatch remain independent runtime dependencies. Legacy
+`MP2File.SampleRate` metadata remains hardcoded at 22,050; codec callers must use
+`Mp2Audio.SampleRate` from the actual MPEG header (notably for the five 44,100-Hz
+Layer I entries). This change does not claim those bridges are solved.
+
+
+Final codec validation: 49 focused MPEG/LIP tests pass with zero skips on the
+provided private root; all 46 standalone advisor-helper checks, 27 Python lane
+checks and 16 shared toolkit checks also pass. The linked decoder-only SDK
+analyzer build is clean with warnings treated as errors. The full repository
+build/test path still emits pre-existing nullable/member-hiding and dependency
+audit warnings outside the changed codec. New C# files pass scoped formatting;
+existing source LF endings are preserved to keep the diff bounded. The static
+Layer I witness gives identical normal/optimized Python output, and the external
+PCM report meets the fixed 1-LSB acceptance limit.

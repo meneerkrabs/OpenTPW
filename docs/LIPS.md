@@ -71,10 +71,11 @@ are not known (no runtime trace; `strings tp.exe` has no `lip`/`phon`/`viseme`).
 ## Speech audio decoding
 
 The speech banks are MPEG-2 (LSF) Layer II, 22,050 Hz mono, 48 kbps (640 of 641
-global entries; `z_error` is Layer I). Music banks are LSF Layer II stereo; 2,642
-sound-effect entries are Layer I (not decoded). `Mp2Decoder`
-(`source/OpenTPW.Files/Formats/Sound/Mp2Decoder.cs`) is a clean-room LSF Layer II
-decoder written from the ISO/IEC 11172-3/13818-3 process. Its synthesis window is
+global entries; `z_error` is Layer I). Music banks are LSF Layer II stereo.
+`Mp2Decoder` now dispatches MPEG-1/2 Layer I and MPEG-2 LSF Layer II from the
+actual frame header, including sound effects whose bank-member suffix is still
+`.mp2`. The Layer I addition is in `Mp2Decoder.Layer1.cs`; both layers share the
+existing synthesis/window and signed 16-bit PCM output. Its synthesis window is
 the 257 standard Table 3-B.3 coefficients as multiples of 2⁻¹⁶ (values taken from the
 locally installed ffmpeg's data table and checked against the standard's
 D[1] = −0.000015259, D[256] = 1.144989014). The LSF allocation table's 4-bit row
@@ -83,11 +84,65 @@ payload to within 23 spare bits, unlike the tested alternatives.
 
 Verification: all 965 corpus Layer II streams that ffmpeg also decodes (speech and
 stereo music; same-name duplicates and 1-frame clips ffmpeg rejects excluded) decode to the same length as ffmpeg's `mp2` decoder with a maximum difference of
-**1 LSB** (≈81 dB SNR on speech). MPEG-1, joint stereo, free format, Layer I/III and
-MPEG-2.5 are rejected (no TPW Layer II stream uses them, so their tables would be
-unverified); CRC words are skipped, not checked. `MP2File.FrameData` slices the
+**1 LSB** (≈81 dB SNR on speech). Layer II still rejects MPEG-1 and joint stereo;
+Layer I accepts MPEG-1/2 mono, stereo, dual-channel and intensity joint stereo.
+Free format, Layer III and MPEG-2.5 remain unsupported. CRC words are skipped,
+not checked; Layer I nonzero de-emphasis is unsupported. Undefined scalefactor
+63, forbidden Layer I allocation 15 and reserved header values are rejected. `MP2File.FrameData` slices the
 entry at its header-size word; the legacy `SoundData` offset does not fit the
 40-byte speech headers.
+
+
+### Layer I decoding and verification (follow-up)
+
+Layer I produces 384 samples per channel from twelve 32-band synthesis slots.
+Allocation is four bits: zero means no samples, values 1–14 select widths 2–15,
+and 15 is forbidden. Scalefactors are six bits. Intensity stereo shares upper-band
+sample codes while retaining separate channel scalefactors; the boundary is
+`4 * (modeExtension + 1)`. These are the ISO/IEC 11172-3 Layer I rules, with the
+384-sample frame independently specified by
+[ITU-R BS.1115](https://www.itu.int/dms_pubrec/itu-r/rec/bs/R-REC-BS.1115-0-199407-S!!PDF-E.pdf).
+The primary standard's decoding clauses and tables were retrieved from a
+[published ISO text copy](https://previewnorm.com/iec/ISO%20IEC%2011172-3-1993%20PDF.pdf);
+its [official ISO catalog record](https://www.iso.org/standard/22412.html) identifies
+ISO/IEC 11172-3:1993. No external decoder implementation source was copied.
+
+The identified Mac original also establishes this path: code `0x2de8` supplies
+four-bit allocation reads, `0x2fe4` adds one to allocation for sample width,
+`0x3114` terminates after twelve synthesis calls, and normal Layer I output-size
+setup multiplies channels by 768 PCM bytes. Its centered numerator is
+`code + 1 - 2^allocation`; its combined factor is
+`float(2^(2 - scalefactor/3) / (2^(allocation+1) - 1))`. All **882** valid
+combined-factor floats match the original table exactly when computed in double
+before the float conversion. Rounding the scalefactor to float first would
+mismatch 105 table entries. Original bitrate/rate tables are also verified.
+The [bounded PowerPC witness](reverse/PPC-advisor.md#phase-five-layer-i-runtime-codec)
+reproduces these facts without original execution or binary contents in Git.
+
+The baseline Data tree has 2,650 physical Layer I entries across 33 SDT banks,
+representing 2,279 unique compressed streams: 2,270 MPEG-2 mono, four MPEG-2
+stereo and five MPEG-1 mono. The independent reference run compares all unique
+streams plus sixteen generated valid streams and three Layer II regression
+streams against installed FFmpeg 8.0.1 (`mp1`/`mp2`, used only as a reference
+executable). Across **56,410,752 PCM samples**, the maximum absolute difference
+is **1 LSB**. All private Layer I streams have one trailing byte; the comparator
+passes the complete-frame prefix to the reference and reports trailing data
+explicitly. PCM and original compressed contents stay outside Git; the external
+JSON report contains identities, decoded metadata, hashes and error totals.
+
+Generated tests cover silence, offset requantization, low/high allocations,
+scalefactor gain, clipping, mono/stereo/dual/joint modes, version/rate tables,
+padding/CRC alignment, malformed allocation/scalefactor/header values, truncated
+payloads and stream-format changes. Private tests pin `z_error` and decode all
+32 global UI entries. With the supplied fixture root, the focused Layer I,
+Layer II and LIP tests pass without skips. The addition does not connect game
+events, bank/category scheduling, audio-device output or a game clock.
+
+Compatibility boundary: the original Mac factor table has zero in undefined
+scalefactor column 63; this strict decoder rejects that input. No such index
+occurs in the 3,253,907 parsed private Layer I scalefactors. CRC verification and
+de-emphasis remain separate codec work; original runtime/device equivalence is
+not claimed by independent PCM agreement.
 
 ## Advisor runtime slice
 
@@ -136,13 +191,16 @@ stay open; short nonseekable reads work). `LipSyncTimeline` applies the inferred
 `TalkingIntervals`.
 
 Tests: `LipSyncFileTests` (12 synthetic + 5 private corpus), `LipSyncTimelineTests`
-(5 synthetic + 1 corpus loudness test), `Mp2DecoderTests` (13 synthetic incl. a unit-DC-gain
+(5 synthetic + 1 corpus loudness test), `Mp2DecoderTests` (12 synthetic incl. a unit-DC-gain
 check of the window/matrixing + 2 corpus: all 640 Layer II speech clips decode;
 `sp_001` samples and RMS match the external decoder ±1), `AdvisorTests` (private test for the German overlay bank needs `OPENTPW_LANGUAGE_DATA`; 9 synthetic
 incl. the 60 Hz mouth-change frames 134/169/244 for `sp_001` and the speech clock on a
 simulated audio output, plus 3 private tests: model orientation/co-located mouths, no rigid-only
 `Advisorm*` clip, and loading `sp_001` through the game file system).
-Private tests are inconclusive without `OPENTPW_GAME_PATH`.
+Private tests are inconclusive without `OPENTPW_GAME_PATH`. `Layer1DecoderTests`
+adds 27 generated cases and two private checks (`z_error` reference values and
+all 32 global UI-bank entries). With the supplied private root, the combined
+Layer I/Layer II/LIP filter has 49 passes and no skips.
 
 ## Search method (location)
 
@@ -179,5 +237,7 @@ table fit). The smoke-test thresholds are test-harness checks, not game rules.
 
 Original-runtime observation of the mouth shape choice while talking, global vs
 level LIP selection, advisor triggers/placement/animation and A/V latency. The undecoded
-`Advisorm*` track payloads (vertex animation/visibility) for idle/talk poses and mouth shapes. Layer I decoding for
-sound effects and `z_error`. Capture comparison before claiming original fidelity.
+`Advisorm*` track payloads (vertex animation/visibility) for idle/talk poses and mouth shapes. Original sound-bank/category scheduling,
+codec CRC/de-emphasis behavior and device latency still need verification. Layer I
+codec support is implemented; automatic sound events are not wired by that change.
+Capture comparison remains necessary before claiming original fidelity.

@@ -74,7 +74,7 @@ public sealed class OriginalParkGrid : IParkGrid
 /// The placed original objects of a level and their build rules: footprints from the catalog shape and
 /// rotation (<see cref="ObjectFootprint"/>), terrain rules from the <see cref="IParkGrid"/>, no overlap.
 /// All scripts share one <see cref="RideScriptWorld"/> (bus.RSE finds the traffic lights by name).
-/// Building is free: costs are exposed (<see cref="ObjectCatalogEntry.BuildCost"/>) for the economy slice.
+/// This low-level grid does not charge; Level.PlaceObject routes gameplay purchases through the economy.
 /// </summary>
 public sealed class ParkObjects
 {
@@ -102,7 +102,7 @@ public sealed class ParkObjects
 	public bool IsOccupied( int x, int y ) => occupied.ContainsKey( (x, y) ) || IsReserved?.Invoke( x, y ) == true;
 
 	/// <summary>Build rule for a catalog object anchored at (x, y) with a rotation.</summary>
-	// [APPROX:RIDES-018] Build rules = footprint inside grid + MAP/save terrain rules + no overlap; no slope, path, land or money rule; costs not charged — evidence needed: original build checks (binary/captures)
+	// [APPROX:RIDES-018] Build rules = footprint inside grid + MAP/save terrain rules + no overlap; no slope, path or land rule; Level.PlaceObject enforces economy purchases — evidence needed: original build checks (binary/captures)
 	public OriginalPlacementResult Check( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation )
 	{
 		if ( !ObjectFootprint.IsValidRotation( rotation ) )

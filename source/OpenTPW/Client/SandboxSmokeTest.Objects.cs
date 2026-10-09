@@ -19,20 +19,66 @@ internal sealed partial class SandboxSmokeTest
 			if ( save != null )
 				Require( level.Objects.Objects.Count == save.PlacedObjects.Count + save.FixedItems.Count, "import every Easymode object with its original model" );
 			Require( level.Objects.Objects.All( item => item.PartCount > 0 ), "every imported object has drawable parts" );
+			if ( save != null && level.Guests != null )
+			{
+				// Give every live imported attraction a visitor at its real path entrance. The normal queue,
+				// original RSE and payment bridge perform boarding; this avoids depending on which attraction
+				// the heuristic guest score happens to choose after the catalogue purchase mix changes.
+				foreach ( var item in level.Objects.Objects.Where( item => item.Visitors.HasCells && item.Runtime.IsAttraction ) )
+				{
+					var entrance = item.Visitors.EntranceCell;
+					var guest = level.Guests.SpawnInPark( entrance.X, entrance.Y );
+					guest.AttractionId = item.Visitors.AttractionId;
+					guest.State = GuestState.GoingToRide;
+				}
+			}
 			// Build the same rides at the nearest buildable sites around the Totem.
 			Require( level.TryGetGridCell( rideSite.X, rideSite.Y, out var siteX, out var siteY ), "Totem site lies on the grid" );
-			// Other themes: their non-track rides with the most original clips.
-			var choices = level.Objects.Catalog.Theme == "jungle"
-				? SmokeObjects.Select( item => (Entry: level.Objects.Catalog.Get( item.InfoId ), item.Rotation) ).ToArray()
-				: level.Objects.Catalog.Buildable.Where( entry => entry.Category == ObjectCategory.Ride && entry.AuxiliaryModels.Count <= 1 )
-					.OrderByDescending( entry => entry.Animations.Count ).ThenBy( entry => entry.InfoId ).Take( 6 ).Select( ( entry, index ) => (Entry: entry, Rotation: index % 4 * 90) ).ToArray();
-			foreach ( var (entry, rotation) in choices )
+			// Rides the park economy lets us buy (researched, affordable): the preferred jungle rides first, then
+			// objects with the most original clips (excluding multi-part track rides). Each purchase is charged through ParkEconomy.TryBuild.
+			var economy = level.Park?.Economy;
+			var preferred = SmokeObjects.Select( item => level.Objects.Catalog.Find( item.InfoId ) ).OfType<ObjectCatalogEntry>();
+			var candidates = preferred.Concat( level.Objects.Catalog.Buildable.Where( entry => entry.Animations.Count > 0 && entry.AuxiliaryModels.Count <= 1 )
+					.OrderByDescending( entry => entry.Animations.Count ).ThenBy( entry => entry.InfoId ) )
+				.Distinct().Where( entry => economy == null || economy.Research.IsAvailable( entry.InfoId ) ).Take( 6 ).ToArray();
+			var balanceBefore = economy?.Balance ?? 0;
+			var built = 0;
+			foreach ( var (entry, index) in candidates.Select( ( entry, index ) => (entry, index) ) )
 			{
-				var infoId = entry.InfoId;
-				var site = Enumerable.Range( 0, 41 * 41 ).Select( index => (X: siteX - 20 + index % 41, Y: siteY - 20 + index / 41) )
+				var rotation = index % 4 * 90;
+				var site = Enumerable.Range( 0, 41 * 41 ).Select( cellIndex => (X: siteX - 20 + cellIndex % 41, Y: siteY - 20 + cellIndex / 41) )
 					.OrderBy( cell => Math.Abs( cell.X - siteX ) + Math.Abs( cell.Y - siteY ) )
-					.FirstOrDefault( cell => cell.X >= 0 && cell.Y >= 0 && level.PlaceObject( entry, cell.X, cell.Y, rotation ) != null, (X: -1, Y: -1) );
-				Require( site.X >= 0, $"build original object {infoId} in the original level" );
+					.FirstOrDefault( cell => cell.X >= 0 && cell.Y >= 0 && level.CheckObject( entry, cell.X, cell.Y, rotation ) == OriginalPlacementResult.Allowed, (X: -1, Y: -1) );
+				if ( site.X < 0 )
+					continue;
+				var cash = economy?.Balance ?? 0;
+				var placed = level.PlaceObject( entry, site.X, site.Y, rotation );
+				if ( placed == null )
+					continue;
+				built++;
+				if ( economy == null )
+					continue;
+				Require( cash - economy.Balance == entry.BuildCost, "charge exactly the catalog build cost" );
+				Require( level.GetEconomyInstance( placed ) is int instance && economy.TryGetObject( instance, out _ ), "link built object to its economy instance" );
+				Require( level.Park!.Guests!.TryGetInstance( placed.Visitors.AttractionId, out var paymentInstance ) && paymentInstance == level.GetEconomyInstance( placed ), "link guest payments to the bought object" );
+				var afterBuild = economy.Balance;
+				Require( level.PlaceObject( entry, site.X, site.Y, rotation ) == null && economy.Balance == afterBuild, "reject overlap without charging" );
+				if ( built != 1 )
+					continue;
+				var id = level.GetEconomyInstance( placed )!.Value;
+				Require( economy.TryGetObject( id, out var bought ), "find bought object before removal" );
+				var refund = economy.ScrapValue( bought! );
+				var removalCell = placed.Cells.First();
+				Require( level.RemoveObjectAt( removalCell.X, removalCell.Y ), "remove bought object" );
+				Require( economy.Balance == afterBuild + refund && !economy.TryGetObject( id, out _ ), "credit the economy scrap value exactly once" );
+				Require( !level.Park.Guests.TryGetInstance( placed.Visitors.AttractionId, out _ ), "unlink payments after removal" );
+				Require( level.PlaceObject( entry, site.X, site.Y, rotation ) != null, "rebuild on freed footprint through the economy" );
+			}
+			Require( built >= 2, "build original objects through the park economy in the original level" );
+			if ( economy != null )
+			{
+				Log.Trace( $"Built {built} original objects for ${balanceBefore - economy.Balance} through the park economy." );
+				Require( economy.Balance < balanceBefore, "building charges the original Upgrades[0].CostOfUpgrade" );
 			}
 			return;
 		}

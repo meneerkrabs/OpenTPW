@@ -192,9 +192,11 @@ Footprint cells from the shape and rotation; per cell: inside the grid, terrain
 rule (original levels: MAP blocked/water/entrance/fixed walkway, heightfield
 holes, Easymode path cells and occupied non-object cells such as the Belly Bounce
 queue — see MAP.md), not occupied by another object or the sandbox Totem. Removing
-an imported object frees its cells. Costs are exposed but not charged. These are
+an imported object frees its cells. In original levels, building now uses `ParkEconomy.TryBuild`: research, money and
+golden-ticket checks apply, costs are charged and removal credits the economy
+scrap value. The generic sandbox still builds free. These are
 OpenTPW rules grounded in the data, not the original build checks (no slope,
-path-connection, land-ownership or money rules). The ImGui build panel lists the
+path-connection or land-ownership rules). The ImGui build panel lists the
 buildable catalog per category; R rotates, click builds centred on the cell, the
 remove tool deletes the object under the cursor. Sandbox JSON saves still contain
 only the Totem.
@@ -288,7 +290,7 @@ Original-data values are tagged `// [DATA:<file>:<field>]`.
 | RIDES-015 | World/Objects/ParkObjects.cs:190 | Imported and built objects start open | TPWS ride state, original build behaviour |
 | RIDES-016 | World/Objects/OriginalObjectRuntime.cs:62 | VAR_DURATION = raw `Upgrades[0].InitDuration` | Binary conversion by `Info.DurationUnit` |
 | RIDES-017 | World/Objects/ObjectCatalog.cs:124 | Buildable = WhichUIType 0–3, not fixed/tool/upgrade | Original build-menu contents |
-| RIDES-018 | World/Objects/ParkObjects.cs:107 | Build rules: grid, MAP/save terrain, no overlap; no slope/path/land/money; costs not charged | Original build checks |
+| RIDES-018 | World/Objects/ParkObjects.cs:107 | Build rules: grid, MAP/save terrain, no overlap; no slope/path/land; Level enforces economy purchases | Original build checks |
 | RIDES-019 | World/Objects/ParkObjects.cs:209 | Levels without save get Gates, Lights, Bus | Original fixed-item spawning |
 | RIDES-020 | World/Level.Objects.cs:81 | Sandbox Totem blocks cells inside its 6×8-unit box | None for gameplay (prototype) |
 | RIDES-021 | World/Level.Objects.cs:46 | Build centred on clicked cell; cursor ray hits Z = 0 | Original build cursor behaviour |
@@ -298,3 +300,12 @@ Original-data values are tagged `// [DATA:<file>:<field>]`.
 | RIDES-025 | World/Objects/ObjectCatalog.cs:545 | Bonus name: language file → English → .sam name | Original bonus-name lookup |
 | RIDES-026 | World/Objects/OriginalObject.cs:12 | 1 MD2 unit = 0.2 engine units | None (engine convention) |
 | RIDES-027 | World/PrototypeRide.cs:13 | Sandbox Totem 5-unit bounds radius | None for gameplay (prototype) |
+
+| RIDES-028 | World/Level.Objects.cs | Non-walkable entrance/exit outside cells use the nearest walkable path | Original queue-path joining rules |
+| RIDES-029 | World/Level.Objects.cs | Developer Totem registers uncharged when research/money refuses purchase; unpaid removal has no refund | None for gameplay (developer tool; normal building uses PlaceObject) |
+
+Imported objects share their economy instance with the guest payment bridge;
+shop/sideshow payments and ride-use statistics use that instance. Open/closed
+state is mirrored before visitor payments. Imported fixed items absent from the
+save economy register without charge. The developer Totem only links where its
+Jungle Info.Id is in the running theme catalogue.

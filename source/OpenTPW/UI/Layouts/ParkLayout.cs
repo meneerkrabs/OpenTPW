@@ -22,9 +22,11 @@ public sealed class ParkLayout
 		var original = level.OriginalPark;
 		if ( ImGui.Begin( original == null ? "OpenTPW - Jungle sandbox" : $"OpenTPW - original {original.LevelName} level (read-only import)", ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.AlwaysAutoResize ) )
 		{
-			ImGui.TextWrapped( "Original assets. Every object runs its original RSE script and plays its original animations; visitors, sounds, particles and ride controllers (coasters, karts, tours) are not simulated." );
+			ImGui.TextWrapped( "Original assets. Every object runs its original RSE script and plays its original animations; visitors use the original object scripts with approximated routing and needs. Sounds, particles and ride controllers (coasters, karts, tours) are not simulated." );
 			if ( original != null )
 				DrawOriginalImport( original );
+			if ( level.Park != null )
+				ImGui.TextWrapped( level.Park.Status );
 			ImGui.Separator();
 			if ( level.PlacedRide == null )
 			{

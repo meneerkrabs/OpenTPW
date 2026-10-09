@@ -76,9 +76,10 @@ public partial class Level
 		if ( OriginalPark != null )
 		{
 			SetupGuests( OriginalPark );
-			ConnectObjectsToGuests();
 			if ( Park != null && Guests != null )
 				Park.AttachGuests( Guests );
+			ConnectObjectsToGuests();
+			ConnectObjectsToEconomy();
 		}
 	}
 
@@ -125,7 +126,7 @@ public partial class Level
 		ride.Visitors.ExitCell = entrance.Value;
 		ride.Visitors.HasCells = true;
 		Guests.Register( ride.Visitors );
-		Park?.LinkAttraction( ride.Visitors, PrototypeRide.InfoId );
+		LinkPrototypeToEconomy( ride );
 		Log.Trace( $"{ride.Name}: guests queue and exit at path cell {entrance.Value} (nearest path cell; the prototype has no catalog entrance)." );
 	}
 
@@ -181,6 +182,7 @@ public partial class Level
 		wasMouseDown = Input.Mouse.Left;
 		simulationClock.Advance( Time.Delta, deltaTime =>
 		{
+			SyncObjectEconomy();
 			Guests?.Tick( deltaTime );
 			PlacedRide?.Simulate( deltaTime );
 			Objects.Simulate( deltaTime );
@@ -223,7 +225,7 @@ public partial class Level
 		if ( PlacedRide != null )
 		{
 			Guests?.Unregister( PlacedRide.Visitors );
-			Park?.UnlinkAttraction( PlacedRide.Visitors );
+			RemovePrototypeFromEconomy( PlacedRide );
 		}
 		PlacedRide = null;
 		IsPlacing = false;

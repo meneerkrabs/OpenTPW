@@ -25,7 +25,7 @@ public static class RidesApproximations
 		("RIDES-015", "imported and built objects start open"),
 		("RIDES-016", "VAR_DURATION = raw Upgrades[0].InitDuration"),
 		("RIDES-017", "buildable = WhichUIType 0-3, not fixed/tool/upgrade"),
-		("RIDES-018", "build rules without slope/path/land/money; costs not charged"),
+		("RIDES-018", "terrain/overlap rules without slope/path/land; Level enforces economy purchases"),
 		("RIDES-019", "levels without a save get Gates, Lights and Bus"),
 		("RIDES-020", "sandbox Totem cell blocking by model box"),
 		("RIDES-021", "build centred on clicked cell, Z = 0 cursor plane"),
@@ -34,7 +34,9 @@ public static class RidesApproximations
 		("RIDES-024", "bonus archives merge, Info.Id collisions skipped"),
 		("RIDES-025", "bonus name language fallback"),
 		("RIDES-026", "engine scale 0.2 per MD2 unit (presentation)"),
-		("RIDES-027", "sandbox Totem 5-unit bounds radius")
+		("RIDES-027", "sandbox Totem 5-unit bounds radius"),
+		("RIDES-028", "non-walkable object access cells use the nearest walkable path"),
+		("RIDES-029", "developer Totem registers uncharged when the purchase is refused")
 	};
 
 	private static bool logged;

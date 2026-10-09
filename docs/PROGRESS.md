@@ -412,3 +412,17 @@ Met de Mac-cd van Sim Theme Park (HFS, november 2000) als originele data:
   Windows-hashes en -aantallen vastpinnen falen daarop, zie THEME-PARK-INC.md.
 - Theme Park Inc vergeleken: zelfde engine-familie en identieke RSE-VM; textures
   zijn EA `SHPI`/`.fsh` i.p.v. `.wct`. Details en vervolgwerk: THEME-PARK-INC.md.
+
+## Besluit: herkomst van spelregels (9 oktober 2026)
+
+- Spelregels gelden pas als origineel wanneer ze naar logica in een originele
+  executable herleid zijn: de onversleutelde PowerPC-`SimTheme Park` (TPW) en
+  `Game.exe` (Theme Park Inc). Handleiding, websites en community-bronnen blijven
+  `[APPROX]`; voorbeeld: de Instant Action-regels uit handleiding en `UITEXT.str`.
+- Op besluit van de projecteigenaar mag de ontsleutelde no-CD-`Game.exe` van de
+  Theme Park Inc-cd statisch geanalyseerd worden (interoperabiliteit, art. 6
+  Softwarerichtlijn); niets daarvan in git. Voorwaarden in COMPLETION-PLAN.md.
+- Gecontroleerd: die `Game.exe` heeft dezelfde secties als het SafeDisc-origineel met
+  leesbare code (entropie `.text` 5,83 i.p.v. 7,92) en de importlijst van TPW's
+  `TP.ICD` (DDRAW, DINPUT, DSOUND, QMIXER, `wea*`, WSOCK32, USP10). De PE-tijdstempel
+  (1996) is door de crack herschreven en zegt niets over de build.

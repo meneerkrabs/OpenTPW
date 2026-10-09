@@ -51,9 +51,17 @@ public class InstallationFinderTests
 
 	private static List<string> Candidates( InstallationSearchContext context ) => InstallationFinder.GetCandidates( context ).ToList();
 
+	/// <summary>The macOS and Linux searches use Unix paths, which a Windows host parses differently.</summary>
+	private static void RequireUnixPaths()
+	{
+		if ( OperatingSystem.IsWindows() )
+			Assert.Inconclusive( "Simulates a macOS or Linux search with Unix paths." );
+	}
+
 	[TestMethod]
 	public void ExecutableDirectoryComesFirstFollowedByItsParent()
 	{
+		RequireUnixPaths();
 		var fileSystem = new FakeFileSystem();
 		var parent = "/home/player/Games/Theme Park World";
 		var executable = Path.Combine( parent, "OpenTPW" );
@@ -120,6 +128,7 @@ public class InstallationFinderTests
 	[TestMethod]
 	public void LinuxWinePrefixIsIncluded()
 	{
+		RequireUnixPaths();
 		var fileSystem = new FakeFileSystem();
 		var wine = Path.Combine( "/home/player", ".wine", "drive_c", "Program Files (x86)", "Bullfrog", "Theme Park World" );
 		fileSystem.Directories.Add( wine );
@@ -132,6 +141,7 @@ public class InstallationFinderTests
 	[TestMethod]
 	public void MacOsCrossOverBottleIsIncluded()
 	{
+		RequireUnixPaths();
 		var fileSystem = new FakeFileSystem();
 		var bottles = Path.Combine( "/Users/player", "Library", "Application Support", "CrossOver", "Bottles" );
 		var bottle = Path.Combine( bottles, "Theme Park" );
@@ -147,6 +157,7 @@ public class InstallationFinderTests
 	[TestMethod]
 	public void MacOsVolumeWithGameMarkersIsIncludedAndEmptyVolumeIsNot()
 	{
+		RequireUnixPaths();
 		var fileSystem = new FakeFileSystem();
 		fileSystem.Directories.Add( "/Volumes/TPW" );
 		fileSystem.Files.Add( Path.Combine( "/Volumes/TPW", "TP.ICD" ) );
@@ -184,6 +195,7 @@ public class InstallationFinderTests
 	[TestMethod]
 	public void MissingDirectoriesAreSkipped()
 	{
+		RequireUnixPaths();
 		var fileSystem = new FakeFileSystem();
 
 		var candidates = Candidates( CreateContext( InstallationPlatform.Linux, fileSystem, volumes: new[] { "/mnt/disc" } ) );
@@ -206,6 +218,7 @@ public class InstallationFinderTests
 	[TestMethod]
 	public void UnreadableVolumeDoesNotStopOtherVolumes()
 	{
+		RequireUnixPaths();
 		var fileSystem = new FakeFileSystem();
 		fileSystem.Directories.Add( "/Volumes/TPW" );
 		fileSystem.Files.Add( Path.Combine( "/Volumes/TPW", "TP.exe" ) );

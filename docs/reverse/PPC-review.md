@@ -13,7 +13,8 @@ supports them (see "Mac/PC transfer" below).
 Placeholders: `$FERAL_BIN` is the directory holding the extracted Feral `.data`
 files (with `libraries/` below it), `$FERAL_HFS` the Mac disc image, `$TPW_DATA`
 and `$PATCH2_DATA` the `Data` directories of a retail and a Patch 2 install, and
-`$RIDES_CHECKOUT` a checkout of the rides lane.
+`$RIDES_CHECKOUT` a checkout of the rides lane, and `$INTEGRATION_CHECKOUT` the
+integration checkout under review.
 
 ```sh
 python3 -I -m unittest discover -s tools/ppc-analysis/lanes/review -p 'test_*.py' -v
@@ -34,6 +35,9 @@ python3 -I tools/ppc-analysis/lanes/review/round6_evidence.py \
   --bin-root $FERAL_BIN \
   --pc-data $TPW_DATA \
   --pc-data $PATCH2_DATA
+python3 -I tools/ppc-analysis/lanes/review/round7_evidence.py \
+  --bin-root $FERAL_BIN \
+  --repo $INTEGRATION_CHECKOUT
 OPENTPW_PPC_BIN_ROOT=$FERAL_BIN \
 OPENTPW_PC_DATA=$TPW_DATA \
   python3 -I -m unittest discover -s tools/ppc-analysis/lanes/review -p 'test_*.py'
@@ -1549,3 +1553,79 @@ Merge order:
    into one model and the Instant Action research gap is registered or closed.
 7. Rides `56a9d26`, after the max/min correction (and a `PPC-rides.md` fix on
    `main`).
+
+## 43. Round 7: integration tree and lane repairs (state at review time)
+
+Brief: verify each lane against the original Mac PEF and PC data independently
+and keep every qualification. A lane's self-consistent tests are not evidence of
+original runtime behavior. This round was read-only on peer trees, with no root
+merges or pushes. Only this section and `round7_evidence.py` /
+`test_round7.py` are new.
+
+**Integration (`integration-remote`) is not committed.** It is still mid-merge
+(`MERGE_HEAD` = `origin/main` `778ea5d`, 108 staged files, 4 unstaged edits).
+Nothing below is a review of a committed integration result. Release build
+0 errors, Metal 222 frames and the full test suite were reported by the
+integration owner. This review did not rerun them, and the full suite was still
+running when reported.
+
+Fixed or no longer applicable (round 6 items):
+
+| Item | Status |
+| --- | --- |
+| Merge conflict markers | None remain in the staged tree. |
+| Duplicate Layer I | One decoder (`Layer1TestFrames`/`Layer1DecoderTests` local); no duplicate class. |
+| `CorpusWitness.csproj`, `TpiCompare.csproj` net8 → net10 | Retargeted (unstaged). |
+| Rides max/min (HIGH) | Code repaired in the rides working tree, **uncommitted**. See below. |
+| Home paths in this document | Fixed on this lane (section 41). The integration tree still has `main`'s older copy until this lane merges. |
+
+Re-verified against `SimThemePark.data` (independent decode, `round7_evidence.py`;
+round 6 already covers the selectors):
+
+- **Rides selectors.** `0x3dd48/4c` keeps the global value when
+  `global >= room`, and `0x3df4c/54` does the same for `global >= request`.
+  Both are maxima. `0x3df78/7c` (+792) and `0x3dfac/b0` (train +8) are minima.
+  The rides working tree's `PassengerRing.QueryRoom` = `max(global, room)` and
+  `PlanAllowance` = `min(min(max(request, global), def), train)` agree. With a
+  net10 override in a scratch copy, the 16 controller reference tests pass.
+  Rides Python (20 tests) passes against the identified data fork, with zero
+  skips. That run needs `OPENTPW_MAC_APP` pointing at `SimThemePark.data`; the
+  MacBinary `.bin` fails identity. Without the variable, 5 witnesses skip
+  silently. Final doc wording was mid-edit and is not reviewed.
+- **Clock `d66857e`.** `0xa3e08` returns +16400 for argument 0 and +16408
+  otherwise. Coaster tick `0x406bc` passes literal 0 to it at `0x406c4`.
+  Accepted. Clock Python: 16 pass, 1 skip (identified PC save not supplied).
+- **Advisor `be46ebe`.** `EVENT` sets `r7 = 1000` (`0xaf9e4`) before
+  `0xae930`. `EVENT_EXT` passes an operand in `r7`. `SPAWNSOUND` stores the
+  child ID at parent +20 (`0xb12a0`). Accepted for those operands. The 11
+  advisor Python tests are synthetic only; they do not touch the binary.
+  Catalog and EventMap counts were not re-measured.
+- **Formats (uncommitted).** `keepsPoseOnClipChange` for fixed items follows
+  the bind `0xa5894` reading in section 39. It is uncommitted and not
+  re-tested here.
+- **Scenarios (uncommitted).** The save already required `Mode` by name in
+  version 1 (`767f05b`, string enums, integers rejected), so the "never
+  defaulted" claim holds. ECON-019 is kept and re-described rather than
+  removed. Uncommitted, so not accepted.
+
+Remaining blockers in the integration tree (actual, verified at review time):
+
+| Blocker | Severity | Evidence |
+| --- | --- | --- |
+| `GameFlow.LoadPark` starts saved parks without `gameMode` | HIGH | `source/OpenTPW/Client/GameFlow.cs` `LoadPark` calls `StartLevel(entry.Level, original: true, …)`; `ParkLoadEntry` has no mode. An Instant Action park loads with Full Simulation rules. |
+| ECON-007 retired, with `[BIN]` claiming "offers it again when the credit test passes" | HIGH (fidelity claim) | `AvailableLoans` has no net-worth/credit test anywhere in `ParkEconomy`. The re-offer is unconditional, so the label claims more than the code does. Keep an APPROX entry until the credit test is implemented. |
+| Seven net8 lane harnesses under the SDK 10.0.401-only environment | MED | `OriginalSchedulerRules` fails restore (NU1100, `Microsoft.NETCore.App.Ref 8.0.31`). The others listed by `round7_evidence.py` are the same kind: advisor LipDriver/Layer1Corpus, economy loan rules, guests rules, rides animation, UI layout. Unmerged rides controllers and advisor `AudioEventAssets` are also net8. Their recorded results cannot be reproduced in this environment. |
+| CI Python discovery | MED | `unittest discover -s tools/ppc-analysis` runs 31 tests. 15 lane test files are unreachable (no `__init__.py`), so CI does not guard lane witnesses. |
+| Setup wizard footer | MED | Quit 90 + 2×150 + 24 logical px (plus padding) overlaps below roughly 430 px, and no minimum window size is set. The DPI recompute runs only when pixel size changes. The owner reported fixing both; that fix is not in the staged tree. |
+| Home paths in English docs | LOW | 35 lines across `SETUP.md`, `TPI-COMPARISON.md`, `PPC-advisor/economy/guests/rides.md`, plus `PPC-review.md` from `main`. Advisor `be46ebe` and rides add more, including the old `opentpw-dotnet` SDK path. |
+| `LIPS.md` unstaged edit | LOW | Cites the static Mac consumer trace and keeps runtime integration, geometry and device timing open. Acceptable wording, but it depends on `PPC-advisor.md` content being merged in the same push. |
+
+Pending (owner still editing; re-review after commit): rides `f5c77fe`/`73ec987`
+plus the max/min working-tree repair, formats animator edits, scenarios
+uncommitted mode/save/ECON-019 edits, wizard repairs, and the integration merge
+commit itself.
+
+Unresolved objections carried forward: no PC or Patch 2 runtime equivalence for
+any Mac-derived rule; the Instant Action research policy (section 34) is a Mac
+static reading only; SDT bank remap is needed before clip names (advisor);
+TPI history blob (section 38).

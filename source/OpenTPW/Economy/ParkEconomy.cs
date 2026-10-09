@@ -406,7 +406,6 @@ public sealed class ParkEconomy : IParkEconomy
 		NotEnoughMoney,
 		NotEnoughGoldenTickets,
 		Bankrupt,
-		NoMechanics,
 		NotAvailableInInstantAction,
 		AlreadyFullyUpgraded,
 		UpgradeInProgress,
@@ -520,9 +519,7 @@ public sealed class ParkEconomy : IParkEconomy
 			return PurchaseResult.AlreadyFullyUpgraded;
 		if ( !Research.IsAvailable( item.InfoId, level ) )
 			return PurchaseResult.NotResearched;
-		if ( !Staff.OfType( StaffType.Mechanic ).Any() )
-			// [APPROX:ECON-046] upgrades need at least one employed mechanic to be bought — evidence needed: capture (TAG_SYSTEM 151 suggests it)
-			return PurchaseResult.NoMechanics;
+		// [BIN:STP-PPC:0x10166F1C upgrade purchase] only the bank balance is checked; the upgrade is queued (0x100DF928) and waits for a mechanic, with or without mechanics on the staff
 		var cost = info.Upgrades[level].CostOfUpgrade;
 		if ( cost > Balance )
 			return PurchaseResult.NotEnoughMoney;

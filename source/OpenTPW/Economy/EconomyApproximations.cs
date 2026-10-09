@@ -52,7 +52,6 @@ public static class EconomyApproximations
 		("ECON-043", "monthly wage = BaseWage[grade] x PayMultiplier[type]", "staff list capture with grades"),
 		("ECON-044", "balloon/costume percentages are 0 (guests carry no items yet)", "guests slice item state"),
 		("ECON-045", "loan/challenge record locators use plausibility bounds (one fixture)", "a second TPWS/TPWI fixture"),
-		("ECON-046", "upgrades need at least one employed mechanic to be bought", "capture (TAG_SYSTEM 151 suggests it)"),
 	};
 
 	private static bool logged;

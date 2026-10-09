@@ -344,6 +344,26 @@ public class ParkEconomyTests
 	}
 
 	[TestMethod]
+	public void UpgradesAreQueuedWithoutMechanicsAndWaitForOne()
+	{
+		// STP-PPC 0x10166F1C: buying an upgrade checks money only; a mechanic installs it later.
+		var park = EconomyTestData.Park();
+		park.TryBuild( 1100, out var ride );
+		EconomyTestData.HireBest( park, StaffType.Researcher );
+		park.SetResearchEffort( ResearchCategory.Ride, 0 );
+		while ( !park.Research.IsAvailable( 1100, 1 ) )
+			park.AdvanceDays( 1 );
+		Assert.IsFalse( park.Staff.OfType( StaffType.Mechanic ).Any() );
+		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, park.TryBuyUpgrade( ride!.Id ) );
+		park.AdvanceDays( 10 );
+		Assert.AreEqual( 0, ride.Level, "nobody installs it without a mechanic" );
+		Assert.AreEqual( ParkEconomy.PurchaseResult.UpgradeInProgress, park.TryBuyUpgrade( ride.Id ) );
+		EconomyTestData.HireBest( park, StaffType.Mechanic );
+		park.AdvanceDays( 10 );
+		Assert.AreEqual( 1, ride.Level );
+	}
+
+	[TestMethod]
 	public void HandymenCleanLitter()
 	{
 		var park = EconomyTestData.Park();

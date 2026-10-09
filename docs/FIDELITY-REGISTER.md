@@ -14,9 +14,9 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **135 unresolved unique APPROX IDs**, 150 APPROX occurrences, 56 EXT occurrences, 62 DATA occurrences and 10 BIN occurrences.
+Current inventory: **134 unresolved unique APPROX IDs**, 149 APPROX occurrences, 56 EXT occurrences, 62 DATA occurrences and 11 BIN occurrences.
 
-Of these, 129 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
+Of these, 128 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
 CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.
 
@@ -26,7 +26,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | --- | ---: | ---: |
 | ADVISOR | 14 | 14 |
 | COMPAT | 13 | 14 |
-| ECON | 44 | 44 |
+| ECON | 43 | 43 |
 | ONLINE | 6 | 6 |
 | RIDES | 26 | 26 |
 | UI | 32 | 46 |
@@ -105,7 +105,6 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-043 | Original-fidelity area (scope unadjudicated) | monthly wage = BaseWage[grade] x PayMultiplier[type] | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:52` |
 | ECON-044 | Original-fidelity area (scope unadjudicated) | balloon/costume percentages are 0 (guests carry no items yet) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:53` |
 | ECON-045 | Original-fidelity area (scope unadjudicated) | loan/challenge record locators use plausibility bounds (one fixture) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:54` |
-| ECON-046 | Original-fidelity area (scope unadjudicated) | upgrades need at least one employed mechanic to be bought | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:55` |
 | ONLINE-001 | OpenTPW online extension | Word filtering uses case-insensitive substring matches in space-padded text; entry spaces act as boundaries; allowed substrings exempt matches; hit characters except spaces become asterisks. | Original word-filter code or observed original filtering behavior; the source comment says the encrypted TP.ICD implementation is unreadable. | `docs/ONLINE.md:155` |
 | ONLINE-002 | OpenTPW online extension | A leading slash introduces a chat command; other text means say. | Original chat input syntax, which is not documented in the available data. | `docs/ONLINE.md:156` |
 | ONLINE-003 | OpenTPW online extension | Response strings 102 and 110 mean failure to add an ignored player and a buddy respectively, based on nearby string blocks. | Original response-code table. | `docs/ONLINE.md:157` |
@@ -229,8 +228,8 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-025 | `source/OpenTPW/Economy/ParkEconomy.cs:330` | [APPROX:ECON-025] scrap value basis = catalogue cost of all levels up to the current one — evidence needed: capture of scrap value |
 | ECON-026 | `source/OpenTPW/Economy/ParkEconomy.cs:338` | [APPROX:ECON-026] park value = sum of scrap values — evidence needed: capture of the park value screen |
 | ECON-027 | `source/OpenTPW/Economy/ParkEconomy.cs:355` | [APPROX:ECON-027] park rating = (2 x happiness + attractions/3 + cleanliness) / 4 — evidence needed: park rating formula (binary/captures) |
-| ECON-028 | `source/OpenTPW/Economy/ParkEconomy.cs:435` | [APPROX:ECON-028] purchases need a balance covering the cost — evidence needed: capture of building with too little money |
-| ECON-029 | `source/OpenTPW/Economy/ParkEconomy.cs:439` | [APPROX:ECON-029] golden tickets are spent when buying items with GoldenTicketCost — evidence needed: capture of ticket count after such a purchase |
+| ECON-028 | `source/OpenTPW/Economy/ParkEconomy.cs:434` | [APPROX:ECON-028] purchases need a balance covering the cost — evidence needed: capture of building with too little money |
+| ECON-029 | `source/OpenTPW/Economy/ParkEconomy.cs:438` | [APPROX:ECON-029] golden tickets are spent when buying items with GoldenTicketCost — evidence needed: capture of ticket count after such a purchase |
 | ECON-030 | `source/OpenTPW/Economy/ParkEconomy.cs:111` | [APPROX:ECON-030] the simulation stops once bankrupt — evidence needed: capture of the bankrupt state |
 | ECON-031 | `source/OpenTPW/Economy/ParkEconomyRuntime.cs:33` | [APPROX:ECON-031] imported parks are opened on load (open state not decoded) — evidence needed: park-open flag in the save |
 | ECON-033 | `source/OpenTPW/Economy/ParkEconomy.cs:305` | [APPROX:ECON-033] golden tickets are checked at each month end — evidence needed: capture of the award timing |
@@ -246,7 +245,6 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-043 | `source/OpenTPW/Economy/BalanceSettings.cs:173` | [APPROX:ECON-043] monthly wage = BaseWage[grade] x PayMultiplier[type] — evidence needed: staff list capture with grades |
 | ECON-044 | `source/OpenTPW/Economy/GuestEconomyBridge.cs:60` | [APPROX:ECON-044] balloon/costume percentages are 0 (guests carry no items yet) — evidence needed: guests slice item state |
 | ECON-045 | `source/OpenTPW.Files/Formats/Save/SaveEconomyRecords.cs:91` | [APPROX:ECON-045] loan/challenge record locators use plausibility bounds (one fixture) — evidence needed: a second TPWS/TPWI fixture |
-| ECON-046 | `source/OpenTPW/Economy/ParkEconomy.cs:524` | [APPROX:ECON-046] upgrades need at least one employed mechanic to be bought — evidence needed: capture (TAG_SYSTEM 151 suggests it) |
 | ONLINE-001 | `source/OpenTPW.Online/Moderation/WordFilter.cs:86` | [APPROX:ONLINE-001] Matching rule — evidence needed: the original filter code is not |
 | ONLINE-002 | `source/OpenTPW.Online/Chat/ChatCommands.cs:180` | [APPROX:ONLINE-002] A line starting with '/' is a command, anything else is "say" — evidence |
 | ONLINE-003 | `source/OpenTPW.Online/Chat/ChatCommands.cs:34` | [APPROX:ONLINE-003] 102/110 are both "Could not add "; assigned to ignore/buddy by their position next to |
@@ -467,4 +465,5 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | STP-PPC:0x10137600 player save setup | `source/OpenTPW/World/Original/OriginalPark.cs:51` | [BIN:STP-PPC:0x10137600 player save setup] the level's easymode park is copied into a player's saves only for Instant Action players (0x1013741C passes the mode flag) |
 | STP-PPC:0x10154AA0 loans window | `source/OpenTPW/Economy/ParkEconomy.cs:84` | [BIN:STP-PPC:0x10154AA0 loans window] the Available Loans window only opens outside game type 2 (Instant Action) |
 | STP-PPC:0x1015D220 new-player dialog | `source/OpenTPW/Economy/ParkEconomyContracts.cs:7` | [BIN:STP-PPC:0x1015D220 new-player dialog] radio 0x70D "Instant Action" / 0x70E "Full Simulation"; 0x1013741C stores the choice as profile mEasyModeUser and 0x1013781C turns it into game type 2 (Instant Action) or 0 |
-| STP-PPC:0x10165A0C upgrade list | `source/OpenTPW/Economy/ParkEconomy.cs:510` | [BIN:STP-PPC:0x10165A0C upgrade list] game type 2 (Instant Action) lists no upgrades and shows UITEXT 27 instead |
+| STP-PPC:0x10165A0C upgrade list | `source/OpenTPW/Economy/ParkEconomy.cs:509` | [BIN:STP-PPC:0x10165A0C upgrade list] game type 2 (Instant Action) lists no upgrades and shows UITEXT 27 instead |
+| STP-PPC:0x10166F1C upgrade purchase | `source/OpenTPW/Economy/ParkEconomy.cs:522` | [BIN:STP-PPC:0x10166F1C upgrade purchase] only the bank balance is checked; the upgrade is queued (0x100DF928) and waits for a mechanic, with or without mechanics on the staff |

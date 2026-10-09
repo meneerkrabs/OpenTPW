@@ -9,7 +9,7 @@ import struct
 
 from corpus import span
 from phase2 import ENGINE_SHA
-from witness import APP_SHA, identified, d_form, branch, import_at, relocation, require, x_form
+from witness import APP_SHA, identified, d_form, branch, import_at, relocation, require, x_form, mask_form
 
 
 def native_sign_reader(bin_root: Path) -> dict:
@@ -103,6 +103,79 @@ def metadata(data: bytes) -> dict:
         position += 12 + payload_size
     return {'version': version, 'styles': styles, 'effects': effects,
             'images': images, 'trailing_bytes': len(data) - position}
+
+
+def native_surface(bin_root: Path) -> dict:
+    app = identified(bin_root / 'SimThemePark.data', APP_SHA)
+    engine = identified(bin_root / 'libraries/engine_shared.data', ENGINE_SHA)
+    # Horizontal and vertical channel sums are divided separately. The vertical
+    # sums additionally keep only their low sixteen bits before division.
+    for at, fields in [(0x3f6a0, (6, 6, 0)), (0x3f6a8, (7, 7, 0)),
+                       (0x3f6b8, (8, 8, 0)), (0x3f6cc, (9, 9, 0)),
+                       (0x3f908, (5, 0, 5)), (0x3f91c, (7, 4, 7))]:
+        x_form(engine, at, 459, fields)
+    for at, fields in [(0x3f6b0, (6, 4, 0)), (0x3f6c0, (7, 4, 1)),
+                       (0x3f6c8, (8, 4, 2)), (0x3f6d4, (9, 4, 3))]:
+        d_form(engine, at, 38, fields)
+    mask_form(engine, 0x3f8fc, (7, 0, 0, 16, 31, 0))
+    mask_form(engine, 0x3f904, (8, 4, 0, 16, 31, 0))
+    # Normal gradients use forward neighbours; no boundary clamping is present
+    # at these reads. Mask construction must make the accesses valid.
+    x_form(app, 0xab344, 87, (0, 30, 3))
+    d_form(app, 0xab348, 34, (4, 30, 0))
+    d_form(app, 0xab34c, 34, (3, 30, 1))
+    for at, name in [(0xab1e4, 'sin'), (0xab1f4, 'cos'), (0xab228, 'sin'),
+                     (0xab238, 'cos'), (0xab264, 'sqrt'), (0xab4bc, 'pow')]:
+        require(import_at(app, branch(app, at))['symbol'], name, 'relief MathLib input')
+    require(struct.unpack_from('>f', app.data_section.data, 0x5228)[0],
+            0.01745329238474369, 'native angle constant')
+    require(branch(app, 0xaaca8), 0xa8f7c, 'Gaussian kernel builder')
+    require(import_at(app, branch(app, 0xa9018))['symbol'], 'exp', 'Gaussian MathLib input')
+    for offset, value in [(0x5248, 2.5), (0x5258, -0.5), (0x5260, 6.2831853)]:
+        require(struct.unpack_from('>d', app.data_section.data, offset)[0], value, 'Gaussian constant')
+    # The original mask is read separately from the shape target. Empty-alpha
+    # pixels bypass the convolution; horizontal neighbours clamp at the edges.
+    for at, fields in [(0xaae14, (0, 10, 0)), (0xaaecc, (0, 11, 0))]:
+        d_form(app, at, 34 if at == 0xaae14 else 38, fields)
+    # Colour/effect lerps have signed >>8 products, not floating /255.
+    for at, fields in [(0x3f0e8, (0, 9, 0)), (0x3f108, (0, 9, 0)),
+                       (0x3f12c, (0, 9, 0)), (0x3f270, (12, 12, 9)),
+                       (0x3f2b0, (12, 31, 12))]:
+        x_form(engine, at, 235, fields)
+    for at, fields in [(0xac50c, (0, 31, 0)), (0xac534, (0, 31, 0))]:
+        d_form(app, at, 32, fields)
+    for at, fields in [(0xac518, (0, 27, 0)), (0xac540, (0, 26, 0))]:
+        d_form(app, at, 36, fields)
+    require(import_at(app, branch(app, 0xac4f4))['symbol'],
+            'swizzle_for_gimex__6BitmapFv', '32-bit output swizzle')
+    for at, fields in [(0xac5d0, (10, 3, 0)), (0xac5d8, (8, 3, 1)),
+                       (0xac5dc, (7, 3, 2)), (0xac5e4, (9, 3, 3))]:
+        d_form(app, at, 34, fields)
+    for at, fields in [(0xac5e0, (10, 10, 0, 24, 27, 0)),
+                       (0xac5e8, (8, 8, 0, 24, 27, 0)),
+                       (0xac5ec, (7, 7, 0, 24, 27, 0)),
+                       (0xac5fc, (7, 7, 4, 20, 23, 0))]:
+        mask_form(app, at, fields)
+    for at, fields in [(0xac608, (8, 7, 8, 16, 19, 0)),
+                       (0xac60c, (9, 7, 0, 24, 27, 0)),
+                       (0xac610, (10, 7, 28, 28, 31, 0))]:
+        word = int.from_bytes(app.code.data[at:at + 4], 'big')
+        require(word >> 26, 20, 'output nibble insertion')
+        require((word >> 21 & 31, word >> 16 & 31, word >> 11 & 31,
+                 word >> 6 & 31, word >> 1 & 31, word & 1), fields, 'output nibble operands')
+    for at, fields in [(0x3f0ec, (0, 0, 8)), (0x3f10c, (0, 0, 8)),
+                       (0x3f130, (0, 0, 8)), (0x3f274, (12, 12, 8)),
+                       (0x3f2b4, (12, 12, 8))]:
+        x_form(engine, at, 824, fields)
+    d_form(app, 0xac614, 44, (7, 12, 0))
+    return {'app_sha256': APP_SHA, 'engine_sha256': ENGINE_SHA,
+            'filter': 'horizontal truncation followed by vertical truncation; byte bucket counts',
+            'normal': 'normalized forward right/down gradients plus z=1',
+            'layer_lerp': 'signed product shifted right by eight; alpha=max',
+            'mode_1': 'BGRA bytes', 'mode_2': 'RGBA4444, big-endian native store',
+            'rows': 'top base-height source rows, horizontally split, reverse destination rows',
+            'unproved': ['original coverage', 'nonzero mask morphology', 'forward-gradient boundary validity', 'wavelet decode',
+                         'MathLib and PowerPC float exactness', 'GPU format and UV orientation']}
 
 
 def relief_channel_reference(source_rgb, mask_alpha, material, diffuse_dot, specular_dot):

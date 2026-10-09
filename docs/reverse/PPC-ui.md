@@ -746,6 +746,115 @@ payloads, allocation bounds, stream ownership and unchanged font correction.
 Touched-source style verification and `git diff --check` pass. These are metadata
 and regression checks; original rendering is not executed or pixel-certified.
 
+## Offline surface reference: filtering, normals, layers and packing
+
+`SignShadeReference` in `sign_shade_reference.py` implements selected proved
+arithmetic outside production. `native_surface` pins identified operands and
+imports rather than using current OpenTPW pixels as an oracle.
+
+Engine `Bitmap::descimate` (`0x3f338`) derives axis steps as
+`((source_size << 16) + 32768) / destination_size`, integer division. Consecutive
+fixed-point integer boundaries determine source bucket sizes, stored as bytes.
+It averages each channel horizontally with unsigned truncating division at
+`0x3f6a0..0x3f6cc`, then vertically truncates again at `0x3f908..0x3f93c`.
+Vertical totals are masked to 16 bits. These two truncations differ from a
+single 2D average: the synthetic 2x2 fixture with values 1/0/0/3 produces zero,
+where one global average would produce one. The reference accepts downsampling
+only with dimensions <=255; zero buckets/arbitrary upsampling are explicitly
+unsupported. All 168 private 16x128 source images are exercised to 16x64 without
+writing or printing resulting pixels.
+
+Normal construction in `0xab344..0xab3f0` uses shape differences to the next
+linear byte and the byte one bitmap-width below. With `dx=(right-current)*p0/255`
+and `dy=(below-current)*p0/255`, the normal is `(dx,dy,1)` normalized. There is no
+clamp in those forward reads; reference shading accepts supplied neighbors and
+does not invent border samples. Light angles are asymmetric: theta is **-p6**
+times float constant `0.01745329238474369`, phi is **+p7** times that constant.
+MathLib imports independently identify sin/cos/sqrt/pow. The light is normalized
+`(cos(phi)*cos(theta), -sin(phi)*cos(theta), -sin(theta))`, and the half-vector is
+normalized `(light+(0,0,1))*0.5`. Earlier casual readings that negate both angles
+must not be used. Python math is not a PowerPC float/MathLib pixel oracle.
+
+Shape helper `0xaaa64` seeds binary ink in a two-byte temporary mask and a cleared
+shape output, then performs its iteration-dependent operations before OR-ing
+binary ink into the output. Zero iteration bypass is established. Gaussian stage
+`0xaac54` calls kernel helper `0xa8f7c`; size is `int(2.5*sigma)+3`, origin is
+`(size-1)/2` truncated, so even sizes are intentional. The helper evaluates
+`exp(-0.5*(dx^2+dy^2)/sigma^2)/(6.2831853*sigma^2)` in double and renormalizes by
+the finite kernel's actual sum. Horizontal coordinates clamp to the nearest
+edge; the row ring replicates first/last rows while preserving pre-convolution
+samples. It replaces shape only where the separate original coverage is nonzero.
+The reference implements zero-iteration binary seed and this convolution stage;
+nonzero morphology is rejected. The private corpus has **78 zero-iteration and
+90 nonzero-iteration slot records**, all with a positive blur parameter. Thus
+this is a bounded supported branch, not complete mask support.
+
+Four-byte `Bitmap::alphablt` at engine `0x3efc0` stores `max(sourceA,destA)` and
+`dest + ((sourceA*(source-dest)) >> 8)` per RGB channel. The right shift is signed;
+this is not division by 255 or ordinary premultiplied-alpha GPU blending.
+`colourblt` at `0x3f200` first computes `effectiveA=(mask*paintA)>>8` and
+`targetRGB=(paintRGB*paintA)>>8`, then the same lerp with effectiveA. Native app
+ordering clears the destination, optionally blits the extra image, handles style
+2 paint masks, then handles each style-1 paint/effect pair. If both selectors are
+2, copy/max of their paint masks is colored using **paint 0's** RGBA; paint 1's
+color is not independently applied in that branch. Header flag zero selects
+pair 0 then pair 1; nonzero reverses them. Empty/unallocated effect bitmap blits
+remain part of the call sequence. No unsupported selector is given a meaning.
+
+Final mode 1 (`0xac4a4..0xac578`) calls the channel swizzle and copies BGRA words;
+mode 2 (`0xac57c..0xac6b0`) directly packs original ARGB bytes into the word
+`(R>>4)<<12 | (G>>4)<<8 | (B>>4)<<4 | (A>>4)`, stored big-endian on the native
+Mac path. Both consume the top base-height source rows, split each row into two
+base-width spans, and write destination rows in reverse order. Source lower rows
+are not included by these loops. The park caller supplies base 128x128, so these
+loops consume 256x128 of the generated 256x256 intermediate; the text DIB is
+512x512 and placement/mask scanning occur before this crop. GPU pixel format,
+model UV orientation and original glyph coverage still need separate consumers.
+
+Validation now passes **43 Python tests, zero skipped**, including Gaussian/even
+kernel shape, alpha separation, shared lighting, signed integer blend, style
+ordering, both packing modes, split/reversed rows and private corpus arithmetic
+inputs. The production source metadata remains covered by the prior **37 C#
+tests, zero skipped**. This tranche changes helpers/docs only. No final sign
+pixels or approximation IDs are certified, and no original payload is in Git.
+
+## Catalog category, row factory and font-bank bindings
+
+`ui_consumers.py` verifies buy builder lookup of actual control **504** at
+`0x16477c/0x164780`. Registration `0x164794 ->0x180264` stores callback vector
+`data:0x8088 ->code:0x163e7c` at window +272. The handler requires command 257
+and argument 1, then maps actual category buttons:
+
+| Control | Category | Mac UITEXT | Label |
+| --- | --- | --- | --- |
+| 507 | 0 | 119 | Buy Ride |
+| 509 | 1 | 120 | Buy Shop |
+| 506 | 2 | 121 | Buy Sideshow |
+| 508 | 3 | 122 | Buy Miscellaneous Items |
+
+All four branches call category setter `0x163414` and update title control 510.
+Actual language identities are checked; these bounded labels do not override
+PC enums. `0x1647a4 ->0x1781c0` receives relocated factory/initializer vectors
+`data:0x8078 ->0x164140` and `data:0x8070 ->0x164268`. Factory row height is
+selected font virtual height times 1536 divided by drawable height, plus 6,
+cached in a global. Generic list factory reads content top/bottom +318/+322 and
+row height +368, derives visible row count with integer division and stores +370,
+then creates/initializes those rows. This proves a dynamic scrolling catalog
+with actual row templates; it does not establish row data sorting or selection.
+Column setup calls `0x178070` for indexes 0/1/2 store flags in a stride-12 column
+record; no invented interpretation of those flag values is assigned.
+
+Options resolution handler `0x157e20` calls setter `0x1261a8`, which writes the
+same settings field +4 read by font-bank choice `0x11f0f8`. Handler selects Mac
+UITEXT 341..344 for enum 0..3: **512x384, 640x480, 800x600, 1024x768**. This
+joins font-bank fallback selection to actual option labels. It does not yet
+prove the display-mode creation consumer or a Windows configuration ABI. The
+positive override bank mapping and custom-display extensions remain as described
+above. Three new tests pin catalog callbacks/categories/row sizing and this
+identity-aware option/font linkage. Concrete remaining paths are category row
+fill/sort, list scroll dispatch, selected-item commands, original clipping and
+the actual display-mode creation consumer.
+
 ## Current sign renderer correction plan
 
 `SignTextRenderer.RenderSign -> SignCanvas.Compose -> SignCanvas.SlotColor`

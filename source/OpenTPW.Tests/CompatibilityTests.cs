@@ -289,15 +289,17 @@ public class CompatibilityTests
 	{
 		var language = LanguageTests.OriginalLanguagePublic( name );
 		var table = LocalizedStringTable.Load( language, GameLanguage.TryResolveEnglish( language ), "UITEXT.str" );
-		// Every UIStrings id exists and is translated (or blank in every language, e.g. EmailAddressBook).
+		// Corrected UIStrings IDs refer to real entries; only the designated Blank entry is universally empty.
 		var blank = Enum.GetValues<UIStrings>().Where( id => table.Get( (int)id, id.ToString() ).Length == 0 ).ToArray();
-		Assert.AreEqual( "Blank, EmailAddressBook, InvalidEmailAddresses, SettingsChanged, Repetitions, EstimatedPrice, OtherParksIn, NegativeDollar, CashNegativeDollar", string.Join( ", ", blank ) );
-		// Findings: UIStrings.UnsentPostcardsWarning (473) is past the end of every shipped UITEXT.str
-		// (it crashed Localization before), and French leaves NewVisitor (457) untranslated.
-		var expected = new List<string> { $"{language.Name} UITEXT.str[473] (UnsentPostcardsWarning) does not exist in any language; showing its internal name." };
+		Assert.AreEqual( "Blank", string.Join( ", ", blank ) );
+		// The corrected IDs fit the shipped tables. French/German intentionally leave currency
+		// prefixes blank, which this fallback wrapper reports and fills from English.
+		var expected = new List<string>();
+		if ( name is "French" or "German" )
+			expected.Add( $"{language.Name} UITEXT.str[448] (Dollar) is missing; using the English text." );
 		if ( name == "French" )
-			expected.Insert( 0, $"{language.Name} UITEXT.str[457] (NewVisitor) is missing; using the English text." );
-		CollectionAssert.AreEqual( expected, table.Diagnostics.ToList() );
+			expected.Add( $"{language.Name} UITEXT.str[457] (CashDollar) is missing; using the English text." );
+		CollectionAssert.AreEqual( expected, table.Diagnostics.ToList(), string.Join( " | ", table.Diagnostics ) );
 	}
 
 	// ---- SDT robustness ----

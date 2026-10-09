@@ -53,29 +53,26 @@ internal static class ShaderCompiler
 		return (vertexSpirv.SpirvBytes, fragmentSpirv.SpirvBytes, compilationResult.Reflection);
 	}
 
-	private static readonly Dictionary<(string Path, DateTime Modified, GraphicsBackend Backend), ShaderInfo> compiled = new();
+	private static readonly Dictionary<(string Path, DateTime Modified, GraphicsBackend Backend), (byte[] Vertex, byte[] Fragment, SpirvReflection Reflection)> compiled = new();
 
 	/// <summary>
-	/// Compiles a shader once per file version and backend. Every <see cref="Material"/> creates its own
-	/// <see cref="Shader"/>, so scenes with many original object meshes would otherwise recompile the
-	/// same GLSL for each mesh; the Veldrid shader objects are never disposed and can be shared.
+	/// Reuses compiled SPIR-V and reflection per file version/backend. Each caller owns fresh native
+	/// shader objects: disposing a level's text renderer must not invalidate another renderer or a
+	/// later level created from the same compiled program.
 	/// </summary>
 	public static ShaderInfo CompileShader( string path )
 	{
 		var key = (Path.GetFullPath( path ), File.GetLastWriteTimeUtc( path ), Device.ResourceFactory.BackendType);
+		(byte[] Vertex, byte[] Fragment, SpirvReflection Reflection) program;
 		lock ( compiled )
 		{
-			if ( compiled.TryGetValue( key, out var cached ) )
-				return cached;
-			var info = CompileShaderUncached( path );
-			compiled[key] = info;
-			return info;
+			if ( !compiled.TryGetValue( key, out program ) )
+			{
+				program = CompileProgram( path, GetCrossCompileTarget() );
+				compiled[key] = program;
+			}
 		}
-	}
 
-	private static ShaderInfo CompileShaderUncached( string path )
-	{
-		var program = CompileProgram( path, GetCrossCompileTarget() );
 		var shaders = Device.ResourceFactory.CreateFromSpirv(
 			new ShaderDescription( ShaderStages.Vertex, program.Vertex, "main" ),
 			new ShaderDescription( ShaderStages.Fragment, program.Fragment, "main" ) );

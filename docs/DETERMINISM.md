@@ -96,8 +96,8 @@ load keeps the running guests and scripts (DET-016).
 `WorldStateHash.Compute(WorldStateSources)` (`Level.ComputeStateHash()` for a
 level) is FNV-1a 64 over little-endian values, with floats by bit pattern. It
 follows the field order of DET-plan §4.5, restricted to what OpenTPW has. Schema
-version 4 (version 1 also hashed the sound seed; versions 3 and 4 added the
-queue state, see Tests):
+version 5 (version 1 also hashed the sound seed; versions 3 and 4 added the
+queue state, version 5 the cell map, see Tests):
 
 | DET-plan field | OpenTPW | In the hash |
 | --- | --- | --- |
@@ -118,6 +118,7 @@ queue state, see Tests):
 | `calendar_funny_start` | `ParkCalendar.Epoch` (fixed) | yes |
 | `calendar_rate` | no clock rate | **missing** |
 | `thing_table_digest` | guests in id order (every field the tick reads, including navigation and timers), including each guest's queue fields, the queue edge detectors, then attractions with queue cells, the queue list, admission state and counters, riders, limbo and bounce lists | yes (order is id order, not the original's newest first) |
+| (cell map) | `ParkCellMap` of the guest grid: every non-empty cell in row order with its type, flags, placement counter, links and queue link (paths built by the path tool included) | yes (extra, after the thing table) |
 | `script_table_digest` | every live script in id order: id, name, parent, state, PC, flags, call stack, variables, clock, wake time, timers, instruction and slice counts, seed and RNG call count | yes |
 | `economy_digest` | the park save's economy part as canonical JSON (sorted keys) | yes |
 | `input_log_cursor` | no input log | **missing** |
@@ -173,7 +174,13 @@ the same seed as well.
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0xE67AA45A94F4B20C`, schema 4: the guests' queue fields (position, join turn,
+  (`0x10A80C328A477CBE`, schema 5: the cell map digest was added when the path
+  builder made `ParkCellMap` the source of truth for path cells. The run itself
+  is unchanged (the raw guest hashes of the cross grid and the Jungle Easymode
+  run are pinned across the change), but the hashed "last seen grid version"
+  is now `ParkCellMap.Version`, which counts every cell-map write, so without
+  the digest the schema-4 fields alone give `0x2EB8B824C2984A88` instead of
+  schema 4's pin. Schema 4 (`0xE67AA45A94F4B20C`) added the guests' queue fields (position, join turn,
   last wait, move delay, called flag, standing and interlude turns, interlude
   flag, join happiness, queue cell and target index, target point, last
   state-11 turn), the guest simulation's queue edge detectors (last seen grid

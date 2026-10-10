@@ -24,6 +24,7 @@ public partial class Level : IDisposable
 	/// <summary>Park name on the gate sign of an imported original level (TrueType sign text demo).</summary>
 	public OriginalGateSign? GateSign { get; private set; }
 	private bool wasMouseDown;
+	private int renderedCellVersion;
 	/// <summary>Set each frame by the original HUD when the pointer is over it, so HUD clicks do not build.</summary>
 	public bool UiCapturesMouse { get; set; }
 	/// <summary>Simulation speed from the HUD speed control (0 = paused).</summary>
@@ -129,6 +130,13 @@ public partial class Level : IDisposable
 		if ( OriginalPark != null )
 		{
 			SetupGuests( OriginalPark );
+			SetupPaths();
+			if ( OriginalTerrain != null && Guests != null )
+			{
+				var cells = Guests.Grid.Cells;
+				OriginalTerrain.PathSource = ( x, y ) => cells.TypeAt( x, y ) is ParkCellType.Path or ParkCellType.Queue;
+				renderedCellVersion = cells.Version;
+			}
 			if ( Park != null && Guests != null )
 				Park.AttachGuests( Guests );
 			ConnectObjectsToGuests();
@@ -246,9 +254,14 @@ public partial class Level : IDisposable
 			if ( TryGetPlacementPosition( Input.Mouse.Position, new Vector2( Screen.Size.X, Screen.Size.Y ), out var position ) )
 				PlaceRide( position );
 		}
-		else if ( !wasMouseDown && Input.Mouse.Left && !ImGuiNET.ImGui.GetIO().WantCaptureMouse )
+		else if ( !wasMouseDown && Input.Mouse.Left && !UiCapturesMouse && !ImGuiNET.ImGui.GetIO().WantCaptureMouse )
 			HandleObjectClick( Input.Mouse.Position, new Vector2( Screen.Size.X, Screen.Size.Y ) );
 		wasMouseDown = Input.Mouse.Left;
+		if ( OriginalTerrain != null && Guests != null && Guests.Grid.Cells.Version != renderedCellVersion )
+		{
+			renderedCellVersion = Guests.Grid.Cells.Version;
+			OriginalTerrain.RefreshPaths();
+		}
 		simulationClock.Advance( Time.Delta * SimulationTimeScale, deltaTime =>
 		{
 			SyncObjectEconomy();

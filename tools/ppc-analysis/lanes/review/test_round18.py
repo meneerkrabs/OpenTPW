@@ -8,7 +8,7 @@
   ten-instruction interpreter, so a wrong branch condition, bound or constant fails the test. That
   interpreter shows a NaN rate is stored unchanged. The formats reference model says it becomes 0.25.
 - With OPENTPW_SCENARIOS_LANE naming ffa87c6's lanes/scenarios directory, the strict envelope decoder is
-  probed with synthetic records only. Two expected failures pin known gaps in the partial-record check.
+  probed with synthetic records only. Two probes, once expected failures, pin the partial-record gaps R18-3 closed.
 
 Nothing is executed from the original. Nothing here says anything about the PC build, PC game speed, or a
 real gms.dat.
@@ -266,7 +266,6 @@ class ScenarioEnvelopeV2(unittest.TestCase):
         self.assertEqual(snap, self.snap.loads_envelope(json.dumps(self.snap.to_envelope(snap))))
         self.assertTrue(e)
 
-    @unittest.expectedFailure
     def test_failing_u8_member_cannot_hold_short_read_bytes(self):
         # R18-3: a u8 member has no partial delivery, so failing there leaves the reset value.
         e = self.env(18)
@@ -274,7 +273,6 @@ class ScenarioEnvelopeV2(unittest.TestCase):
         e['player']['mEasyModeUser'] = 7
         self.refused(e)
 
-    @unittest.expectedFailure
     def test_failing_i32_member_keeps_its_reset_low_byte(self):
         # R18-3: fewer than 4 delivered bytes leave the low-order byte at its reset value (0).
         e = self.env(12)

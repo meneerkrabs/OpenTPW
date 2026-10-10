@@ -132,8 +132,13 @@ class Source(unittest.TestCase):
 
     def test_merge_keeps_both_parents_statements(self):
         level = read(REPO / 'source' / 'OpenTPW' / 'World' / 'Level.Objects.cs')
-        self.assertIn('new ParkObjects( ObjectCatalog.Load( theme, easy ), grid, Seed ) { IsReserved = ( x, y ) => '
-                      'IsReservedByPrototype( x, y ) || Guests?.Grid.IsQueue( x, y ) == true };', level)
+        # Both parents' parts of the ParkObjects construction survive: main's world seed and c213e81's queue-cell
+        # reservation (later nodes may add further reservations, e.g. PATH-I's built path cells).
+        construct = level[level.index('new ParkObjects( ObjectCatalog.Load( theme, easy ), grid'):]
+        construct = construct[:construct.index('};')]
+        self.assertIn('grid, Seed )', construct)
+        self.assertIn('IsReservedByPrototype( x, y )', construct)
+        self.assertIn('Guests?.Grid.IsQueue( x, y ) == true', construct)
         resolve = level[level.index('ResolveVisitorCells( IEnumerable<ObjectAccessPoint>'):]
         resolve = resolve[:resolve.index('\n\t}\n')]
         self.assertIn('WalkableNear( grid, entrance.OutsideX, entrance.OutsideY )', resolve)  # main's static form

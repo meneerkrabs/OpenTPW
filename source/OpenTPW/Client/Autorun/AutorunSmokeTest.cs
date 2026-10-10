@@ -108,6 +108,9 @@ internal sealed class AutorunSmokeTest : IDisposable
 
 	public void Update()
 	{
+		// Done: it stays attached while the front end's smoke test runs, but no longer counts frames.
+		if ( steps.Count == 0 )
+			return;
 		++frame;
 		Require( frame < MaximumFrames, $"finish within {MaximumFrames} frames" );
 		while ( steps.Count > 0 && steps.Peek().Step() )

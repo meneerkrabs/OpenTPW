@@ -67,10 +67,38 @@ public static class UiImages
 		var opaque = true;
 		for ( var pixel = 3; pixel < data.Length && opaque; pixel += 4 )
 			opaque = data[pixel] == 255;
-		// [APPROX:UI-034] a fully opaque texture on a transparent (flag 0x2) slot keys out black — evidence needed: the original's render state for flagged slots
+		// [APPROX:UI-034] a fully opaque texture on a transparent (flag 0x2) slot keys out black with a soft edge — evidence needed: the original's render state for flagged slots
 		if ( opaque )
-			KeyOut( data, width, height, ( r, g, b ) => r <= 6 && g <= 6 && b <= 6 );
+			KeyOutBlackSoft( data, width, height );
 		return (width, height, data);
+	}
+
+	/// <summary>Channel value up to which a black-keyed texel is fully transparent.</summary>
+	public const int BlackKeyClear = 6;
+	/// <summary>Channel value from which a black-keyed texel is fully opaque.</summary>
+	public const int BlackKeySolid = 48;
+
+	/// <summary>
+	/// Black key for art drawn anti-aliased against black (the lobby panel's <c>ipan</c> discs fade into black
+	/// over a few texels). A plain key leaves that dark fade as a hard, opaque rim, which shows as steps when
+	/// the texture is magnified. Here texels whose brightest channel is at most <see cref="BlackKeyClear"/>
+	/// become transparent, texels from <see cref="BlackKeySolid"/> stay opaque, and the texels between get a
+	/// proportional alpha with their colour divided by it (un-premultiplied against black).
+	/// </summary>
+	public static void KeyOutBlackSoft( byte[] rgba, int width, int height )
+	{
+		for ( var pixel = 0; pixel < rgba.Length; pixel += 4 )
+		{
+			var brightest = Math.Max( rgba[pixel], Math.Max( rgba[pixel + 1], rgba[pixel + 2] ) );
+			if ( brightest <= BlackKeyClear || brightest >= BlackKeySolid )
+				continue;
+			var alpha = (brightest - BlackKeyClear) / (float)(BlackKeySolid - BlackKeyClear);
+			for ( var channel = 0; channel < 3; channel++ )
+				rgba[pixel + channel] = (byte)Math.Min( 255, MathF.Round( rgba[pixel + channel] / alpha ) );
+			rgba[pixel + 3] = (byte)MathF.Round( alpha * 255 );
+		}
+		// The fully transparent texels take a neighbour's colour for linear filtering.
+		KeyOut( rgba, width, height, ( r, g, b ) => r <= BlackKeyClear && g <= BlackKeyClear && b <= BlackKeyClear );
 	}
 
 	// [APPROX:UI-005] pink key + neighbour colour bleed for linear filtering — evidence needed: capture of UI edges at other resolutions

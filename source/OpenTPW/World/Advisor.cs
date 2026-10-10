@@ -4,8 +4,8 @@ using Veldrid;
 namespace OpenTPW;
 
 /// <summary>
-/// The original advisor model (<c>global/advisor.wad/Advisor.MD2</c>) drawn in a corner
-/// viewport, saying one global speech clip with its mouth driven by the clip's LIP marks
+/// The original advisor model (<c>global/advisor.wad/Advisor.MD2</c>) drawn flat over the
+/// bottom-right of the screen without a camera (see <see cref="ModelTransform"/>), saying one global speech clip with its mouth driven by the clip's LIP marks
 /// (see docs/LIPS.md). The model carries five co-located mouth meshes; the LIP data only
 /// distinguishes talking from silence. As in the original, silence shows "Mouth - Normal" and
 /// talking shows a mouth picked at random every 100 ms (<see cref="AdvisorMouth"/>). How it poses the
@@ -34,11 +34,9 @@ internal sealed class Advisor : IDisposable
 	internal static readonly (string Id, string Rule)[] Approximations =
 	{
 		("ADVISOR-002", "hats, spatula, bow tie and blink meshes hidden"),
-		("ADVISOR-003", "bottom-left viewport, 1/3 of the short screen side, 16 px margin"),
-		("ADVISOR-004", "overlay camera at z = -70, 40° FOV, near 1, far 500"),
-		("ADVISOR-005", "headlight at the camera, light colour 0.6, shared test.shader ambient/fog"),
+		("ADVISOR-005", "light colour 0.6, shared test.shader ambient/fog"),
 		("ADVISOR-006", "bind pose; no Advisorm* clip is played"),
-		("ADVISOR-007", "triangle corner order reversed for the clockwise front-face pipeline"),
+		("ADVISOR-007", "MD2 triangle corner order kept as stored; front faces are clockwise once drawn unmirrored"),
 		("ADVISOR-008", "speech starts at the first rendered advisor frame"),
 		("ADVISOR-009", "--advisor-say plays global clips by number; the controller picks responses only for the five bound messages of game events 0/2/3/4"),
 		("ADVISOR-010", "lip-sync clock = PCM consumed from the SDL queue (leads output by up to one device buffer)"),
@@ -52,6 +50,8 @@ internal sealed class Advisor : IDisposable
 		("ADVISOR-019", "GeneralAdvisor.MinTimeAnyMessage and GeneralAdvisor.MinTimeSameMessage are loaded but not applied"),
 		("ADVISOR-020", "game events 2/3/4 come from the park economy's Bankrupt/ParkOpened/ParkClosed events, not proven equal to the original producers"),
 		("ADVISOR-022", "the advisor's pending advice and message history are not saved or loaded with the park"),
+		("ADVISOR-023", "the advisor's unprojected coordinates span the screen from -1 to 1"),
+		("ADVISOR-024", "outside 4:3 the advisor's width scale follows the output aspect"),
 	};
 
 	private readonly List<(string Name, Model Model, Material Material)> parts = new();
@@ -61,10 +61,25 @@ internal sealed class Advisor : IDisposable
 	private bool disposed;
 	private System.Numerics.Vector3 mouthMin = new( float.MaxValue );
 	private System.Numerics.Vector3 mouthMax = new( float.MinValue );
-	// [APPROX:ADVISOR-004] Overlay camera at z = −70 looking at the origin, 40° FOV, near 1/far 500 — evidence needed: original advisor camera/projection (binary or capture)
-	private static readonly System.Numerics.Vector3 CameraPosition = new( 0, 0, -70 );
-	private static readonly Matrix4x4 View = Matrix4x4.CreateLookAt( CameraPosition, System.Numerics.Vector3.Zero, System.Numerics.Vector3.UnitY );
-	private static readonly Matrix4x4 Projection = Matrix4x4.CreatePerspectiveFieldOfView( 40f * MathF.PI / 180f, 1f, 1f, 500f );
+	// [BIN:TPW-EXE:0x00429BA0 advisor setup] model matrix = identity with translation (0.6, -0.6, 0.2); the root node is
+	// scaled by (0.015 * 0.75, 0.001, 0.015), i.e. width, depth and height of the model as composed here (Y up).
+	// [BIN:TPW-EXE:0x0057A260 SetLocalMatrix] multiplies by diag(1, -1, 1, 1), so the stored translation is (0.6, +0.6, 0.2).
+	// [BIN:TPW-EXE:0x0057A750 mesh draw] the advisor's model flag 0x200 (set by 0x0045BED0) skips the camera, projection
+	// and screen matrix: its vertices reach the transform stage as (root scale × model matrix) only, in the screen space
+	// where the park's camera matrix ends with diag(2k, -2, 1, 1) (0x005783B0), x right and y down. Here that is clip
+	// space with y up, so the centre is (0.6, -0.6) and the model stays upright.
+	internal static readonly System.Numerics.Vector2 Centre = new( 0.6f, -0.6f );
+	internal const float Depth = 0.2f;
+	internal const float HeightScale = 0.015f;
+	internal const float DepthScale = 0.001f;
+	// The 0.75 in the width scale is the 4:3 screen's height/width, keeping the model's pixels square.
+	internal const float OriginalAspect = 0.75f;
+	// Half the side of the clip-space box the advisor is drawn in; it holds the whole model (about ±0.34 tall).
+	internal const float BoxHalfSide = 0.4f;
+	// [BIN:TPW-EXE:0x00429BA0 advisor setup] the advisor's parallel light, (26.67, -26.67, 800) in the same screen space:
+	// it shines into the screen, slightly right and up. The shader lights from a point, so the point is placed far back
+	// along that direction (y flipped for clip space).
+	private static readonly System.Numerics.Vector3 LightPosition = new System.Numerics.Vector3( -26.666668f, -26.666668f, -800f ) * 1000f;
 
 	public int? ClipNumber { get; private set; }
 	public TimeSpan Position => player?.Position ?? TimeSpan.Zero;
@@ -76,21 +91,33 @@ internal sealed class Advisor : IDisposable
 	/// <summary>Mouth mesh used by the most recent <see cref="Render"/> call.</summary>
 	public string? LastRenderedMouth { get; private set; }
 
-	/// <summary>World-target pixel rectangle of the advisor viewport.</summary>
-	public static (int X, int Y, int Size) ViewportRectangle() => ViewportRectangle(
-		Screen.Size, new Point2( (int)global::Global.Render.MultisampledFramebuffer.Width, (int)global::Global.Render.MultisampledFramebuffer.Height ) );
-
-	internal static (int X, int Y, int Size) ViewportRectangle( Point2 logicalSize, Point2 targetSize )
+	/// <summary>
+	/// Pixel rectangle (y down) of a <paramref name="target"/> covered by the clip-space box the advisor is drawn in:
+	/// <see cref="Centre"/> ± <see cref="BoxHalfSide"/>, the bottom-right of the screen.
+	/// </summary>
+	internal static (int X, int Y, int Width, int Height) BoxRectangle( Point2 target )
 	{
-		// [APPROX:ADVISOR-003] Bottom-left square viewport, 1/3 of the short screen side (min 64 logical px), 16 logical px margin — evidence needed: original advisor screen placement/size captures per resolution
-		var scaleX = (float)targetSize.X / Math.Max( 1, logicalSize.X );
-		var scaleY = (float)targetSize.Y / Math.Max( 1, logicalSize.Y );
-		var logicalSide = Math.Max( 64, Math.Min( logicalSize.X, logicalSize.Y ) / 3 );
-		var size = Math.Max( 1, (int)(logicalSide * Math.Min( scaleX, scaleY )) );
-		var marginX = (int)(16 * scaleX);
-		var marginY = (int)(16 * scaleY);
-		return (marginX, Math.Max( 0, targetSize.Y - size - marginY ), size);
+		// [APPROX:ADVISOR-023] the advisor's unprojected coordinates span the screen from −1 to 1 (as clip space) — evidence needed: the consumer of the 0x0057A750 transform output in tp.exe, or a capture of the original advisor
+		int Pixel( float clip, int size ) => (int)MathF.Round( (clip + 1f) * 0.5f * size );
+		var left = Pixel( Centre.X - BoxHalfSide, target.X );
+		var right = Math.Min( target.X, Pixel( Centre.X + BoxHalfSide, target.X ) );
+		var top = Pixel( -(Centre.Y + BoxHalfSide), target.Y );
+		var bottom = Math.Min( target.Y, Pixel( -(Centre.Y - BoxHalfSide), target.Y ) );
+		return (left, top, Math.Max( 1, right - left ), Math.Max( 1, bottom - top ));
 	}
+
+	/// <summary>
+	/// Composed model space (Y up, facing −Z) to the clip space of the <see cref="BoxRectangle"/> viewport, for an output of
+	/// <paramref name="target"/> pixels: the original's root scale and translation, divided by the box size.
+	/// </summary>
+	internal static Matrix4x4 ModelTransform( Point2 target )
+	{
+		// [APPROX:ADVISOR-024] outside 4:3 the width scale is 0.015 × height/width of the output instead of the original's fixed 0.75, so the advisor keeps its proportions — evidence needed: none for the original (4:3 only); design decision
+		var aspect = target.X > 0 && target.Y > 0 ? (float)target.Y / target.X : OriginalAspect;
+		return Matrix4x4.CreateScale( HeightScale * aspect / BoxHalfSide, HeightScale / BoxHalfSide, DepthScale ) * Matrix4x4.CreateTranslation( 0, 0, Depth );
+	}
+
+	private static Point2 WorldTargetSize => new( (int)global::Global.Render.MultisampledFramebuffer.Width, (int)global::Global.Render.MultisampledFramebuffer.Height );
 
 	public Advisor()
 	{
@@ -130,8 +157,8 @@ internal sealed class Advisor : IDisposable
 				}
 				var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
 				material.Set( "Color", textureSlots );
-				// [APPROX:ADVISOR-007] Corner order reversed so faces survive the renderer's clockwise back-face culling (chosen from a capture of this renderer, not the original) — evidence needed: original MD2 front-face convention
-				parts.Add( (name, new Model( vertices, ReverseWinding( mesh.Indices ), material ), material) );
+				// [APPROX:ADVISOR-007] MD2 corner order kept as stored: drawn without a mirroring camera, the faces are clockwise for the renderer's back-face culling (checked in a capture of this renderer, not the original) — evidence needed: original MD2 front-face convention
+				parts.Add( (name, new Model( vertices, mesh.Indices, material ), material) );
 			}
 		}
 		catch
@@ -159,19 +186,6 @@ internal sealed class Advisor : IDisposable
 			vertices[index].Normal = System.Numerics.Vector3.Normalize( System.Numerics.Vector3.TransformNormal( mesh.Normals[index].GetSystemVector3(), world ) );
 		}
 		return vertices;
-	}
-
-	/// <summary>
-	/// The renderer's pipeline treats clockwise triangles as front faces; other MD2 users
-	/// (<see cref="PrototypeRide"/>) reach that by swapping Y/Z, a reflection. The advisor keeps
-	/// its composed node space, so each triangle's corner order is reversed instead.
-	/// </summary>
-	internal static uint[] ReverseWinding( uint[] indices )
-	{
-		var reversed = (uint[])indices.Clone();
-		for ( var index = 0; index + 2 < reversed.Length; index += 3 )
-			(reversed[index + 1], reversed[index + 2]) = (reversed[index + 2], reversed[index + 1]);
-		return reversed;
 	}
 
 	internal static bool IsTalking( LipSyncTimeline? timeline, TimeSpan position ) =>
@@ -317,16 +331,90 @@ internal sealed class Advisor : IDisposable
 		Play( audio, lips, number, $"{ClipName( number )} ({source})" );
 	}
 
+	/// <summary>Draws the advisor into the world target at its <see cref="BoxRectangle"/> (no HUD; <c>--advisor-say</c>).</summary>
 	public void Render()
 	{
 		if ( disposed )
 			return;
-		var (x, y, size) = ViewportRectangle();
+		var target = WorldTargetSize;
+		var (x, y, width, height) = BoxRectangle( target );
 		var commandList = global::Global.Render.CommandList;
-		commandList.SetViewport( 0, new Viewport( x, y, size, size, 0, 1 ) );
-		commandList.SetScissorRect( 0, (uint)x, (uint)y, (uint)size, (uint)size );
+		commandList.SetViewport( 0, new Viewport( x, y, width, height, 0, 1 ) );
+		commandList.SetScissorRect( 0, (uint)x, (uint)y, (uint)width, (uint)height );
 		commandList.ClearDepthStencil( 1 );
+		DrawParts( ModelTransform( target ) );
+		commandList.SetFullViewports();
+		commandList.SetFullScissorRects();
+	}
 
+	/// <summary>The advisor drawn by the last <see cref="RenderImage"/>, owned by this advisor.</summary>
+	public Veldrid.Texture? Image { get; private set; }
+	private Framebuffer? imageTarget;
+	private Veldrid.Texture? imageColor;
+	private Veldrid.Texture? imageDepth;
+
+	/// <summary>
+	/// Draws the advisor into an image the size of its <see cref="BoxRectangle"/> on an output of <paramref name="output"/>
+	/// pixels, for the park UI to draw after the HUD, as the original draws the advisor over everything without depth
+	/// against the park. Call it in the world pass; it restores the world target afterwards.
+	/// </summary>
+	public Veldrid.Texture? RenderImage( Point2 output )
+	{
+		if ( disposed )
+			return null;
+		var world = global::Global.Render.MultisampledFramebuffer;
+		var (_, _, width, height) = BoxRectangle( output );
+		EnsureImageTarget( width, height, world );
+		var commandList = global::Global.Render.CommandList;
+		commandList.SetFramebuffer( imageTarget! );
+		commandList.SetFullViewports();
+		commandList.SetFullScissorRects();
+		commandList.ClearColorTarget( 0, RgbaFloat.Clear );
+		commandList.ClearDepthStencil( 1 );
+		DrawParts( ModelTransform( output ) );
+		commandList.ResolveTexture( imageColor!, Image! );
+		commandList.SetFramebuffer( world );
+		commandList.SetFullViewports();
+		commandList.SetFullScissorRects();
+		return Image;
+	}
+
+	/// <summary>Same formats and multisampling as the world target, so the advisor's pipelines draw into it unchanged.</summary>
+	private void EnsureImageTarget( int width, int height, Framebuffer world )
+	{
+		if ( Image != null && Image.Width == (uint)width && Image.Height == (uint)height )
+			return;
+		DisposeImageTarget();
+		var color = world.ColorTargets[0].Target;
+		var depth = world.DepthTarget!.Value.Target;
+		var factory = global::Global.Device.ResourceFactory;
+		imageColor = factory.CreateTexture( TextureDescription.Texture2D( (uint)width, (uint)height, 1, 1, color.Format, TextureUsage.RenderTarget, color.SampleCount ) );
+		imageDepth = factory.CreateTexture( TextureDescription.Texture2D( (uint)width, (uint)height, 1, 1, depth.Format, TextureUsage.DepthStencil, depth.SampleCount ) );
+		Image = factory.CreateTexture( TextureDescription.Texture2D( (uint)width, (uint)height, 1, 1, color.Format, TextureUsage.Sampled ) );
+		imageTarget = factory.CreateFramebuffer( new FramebufferDescription( imageDepth, imageColor ) );
+	}
+
+	private void DisposeImageTarget()
+	{
+		var target = imageTarget;
+		var color = imageColor;
+		var depth = imageDepth;
+		var image = Image;
+		imageTarget = null;
+		imageColor = imageDepth = Image = null;
+		if ( image == null )
+			return;
+		global::Global.Render.ScheduleDelete( () =>
+		{
+			target?.Dispose();
+			color?.Dispose();
+			depth?.Dispose();
+			image.Dispose();
+		} );
+	}
+
+	private void DrawParts( Matrix4x4 model )
+	{
 		// [APPROX:ADVISOR-008] Speech starts at the first rendered advisor frame — evidence needed: original advisor speech trigger timing
 		player?.Start();
 		var shownMouth = mouth.Update( IsTalking( timeline, Position ), (long)Position.TotalMilliseconds );
@@ -336,33 +424,33 @@ internal sealed class Advisor : IDisposable
 				continue;
 			part.Material.Set( "ObjectUniformBuffer", new ObjectUniformBuffer
 			{
-				g_mModel = Matrix4x4.Identity,
-				g_mView = View,
-				g_mProj = Projection,
-				// [APPROX:ADVISOR-005] Headlight at the camera, colour 0.6, test.shader ambient 0.4 and fog — evidence needed: original advisor lighting/material captures
-				g_vLightPos = System.Numerics.Vector3.Zero,
+				g_mModel = model,
+				g_mView = Matrix4x4.Identity,
+				g_mProj = Matrix4x4.Identity,
+				// [APPROX:ADVISOR-005] Light colour 0.6, test.shader ambient 0.4 and fog — evidence needed: original advisor light colour/material captures
+				g_vLightPos = LightPosition,
 				g_vLightColor = new System.Numerics.Vector3( 0.6f ),
-				g_vCameraPos = CameraPosition,
+				g_vCameraPos = System.Numerics.Vector3.Zero,
 				g_flTime = Time.Now,
 			} );
 			part.Model.Draw();
 		}
-		commandList.SetFullViewports();
-		commandList.SetFullScissorRects();
 		LastRenderedMouth = shownMouth;
 	}
 
-	/// <summary>Screen-pixel rectangle covering both mouth meshes in the advisor viewport.</summary>
+	/// <summary>World-target pixel rectangle covering the mouth meshes as <see cref="Render"/> draws them.</summary>
 	public (int Left, int Top, int Right, int Bottom) MouthScreenRectangle()
 	{
-		var (x, y, size) = ViewportRectangle();
+		var target = WorldTargetSize;
+		var (x, y, width, height) = BoxRectangle( target );
+		var transform = ModelTransform( target );
 		float left = float.MaxValue, top = float.MaxValue, right = float.MinValue, bottom = float.MinValue;
 		for ( var corner = 0; corner < 8; corner++ )
 		{
 			var point = new System.Numerics.Vector3( (corner & 1) == 0 ? mouthMin.X : mouthMax.X, (corner & 2) == 0 ? mouthMin.Y : mouthMax.Y, (corner & 4) == 0 ? mouthMin.Z : mouthMax.Z );
-			var clip = System.Numerics.Vector4.Transform( new System.Numerics.Vector4( point, 1 ), View * Projection );
-			var screenX = x + (clip.X / clip.W * 0.5f + 0.5f) * size;
-			var screenY = y + (0.5f - clip.Y / clip.W * 0.5f) * size;
+			var clip = System.Numerics.Vector4.Transform( new System.Numerics.Vector4( point, 1 ), transform );
+			var screenX = x + (clip.X / clip.W * 0.5f + 0.5f) * width;
+			var screenY = y + (0.5f - clip.Y / clip.W * 0.5f) * height;
 			left = MathF.Min( left, screenX );
 			right = MathF.Max( right, screenX );
 			top = MathF.Min( top, screenY );
@@ -377,6 +465,7 @@ internal sealed class Advisor : IDisposable
 			return;
 		disposed = true;
 		player?.Dispose();
+		DisposeImageTarget();
 		foreach ( var part in parts )
 		{
 			Asset.All.Remove( part.Model );

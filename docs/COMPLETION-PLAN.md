@@ -108,8 +108,8 @@ remove or bypass copy protection yourself as part of this experiment; see
 
 A game rule counts as original behavior only if it is traced to logic in an
 original executable: for Theme Park World the PowerPC executable `SimTheme Park`
-(Mac CD, November 2000, PEF, unencrypted) and its shared libraries; for Theme Park
-Inc `Game.exe`. A rule that comes only from a manual, website, community source or
+(Mac CD, November 2000, PEF, unencrypted) and its shared libraries, or the Windows
+v2.0 `tp.exe` described below (BIN prefix `TPW-EXE`); for Theme Park Inc `Game.exe`. A rule that comes only from a manual, website, community source or
 gameplay test remains `[APPROX]`, however plausible. Data files keep `[DATA]`
 provenance: they prove values, not the rule that uses them.
 
@@ -127,8 +127,12 @@ lies with EA. Conditions:
   mechanically translated original code.
 - Only for interoperability of OpenTPW; OpenTPW does not distribute or require
   no-CD files, and players still need their own original copy.
-- The Windows TPW executable (`TP.ICD`) does not fall under this as long as no
-  comparable decision exists.
+- The Windows TPW executable (`TP.ICD`) itself stays encrypted and is not
+  analysed. By a comparable decision of the project owner (October 10, 2026), the
+  decrypted Sim Theme Park World v2.0 no-CD `tp.exe` (3,734,528 bytes, SHA-256
+  `5472f97b5eb28f58b5a49f3a15f6f66adffa6b2625a623f503202c9696d1b805`, same section
+  layout as `TP.ICD`) may be analysed statically under the same basis and
+  conditions.
 
 One exception to "own descriptions only" (decision of the project owner, October 9,
 2026): `content/data/advisor-responses.toml` copies, field by field, the advisor

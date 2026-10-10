@@ -23,6 +23,8 @@ internal sealed class UiRenderer : IDisposable
 	private readonly ResourceLayout resourceLayout;
 	private readonly Pipeline pipeline;
 	private readonly Dictionary<object, (Veldrid.Texture Texture, ResourceSet Set)> textures = new();
+	// Sets for textures rendered by their owners; the textures themselves are not the UI's to dispose.
+	private readonly Dictionary<Veldrid.Texture, ResourceSet> renderedSets = new();
 	private readonly List<DeviceBuffer> buffers = new();
 	private int frameBuffers;
 	private GpuVertex[] vertices = Array.Empty<GpuVertex>();
@@ -95,6 +97,20 @@ internal sealed class UiRenderer : IDisposable
 
 	private ResourceSet? GetResourceSet( UiTexture texture )
 	{
+		if ( texture.Rendered is { } rendered )
+		{
+			if ( renderedSets.TryGetValue( rendered, out var renderedSet ) )
+				return renderedSet;
+			// A new texture usually replaces one its owner has just scheduled for disposal.
+			foreach ( var stale in renderedSets.Where( pair => pair.Key.IsDisposed ).ToList() )
+			{
+				renderedSets.Remove( stale.Key );
+				stale.Value.Dispose();
+			}
+			renderedSet = Device.ResourceFactory.CreateResourceSet( new ResourceSetDescription( resourceLayout, rendered, Device.LinearSampler ) );
+			renderedSets[rendered] = renderedSet;
+			return renderedSet;
+		}
 		var factor = texture.Atlas != null ? FontSmoothing.Factor( texture.Atlas, texture.FontScale ) : 1;
 		object key = texture.Atlas != null ? (texture.Atlas, factor) : texture.ImagePath ?? "solid";
 		if ( textures.TryGetValue( key, out var entry ) )
@@ -172,6 +188,9 @@ internal sealed class UiRenderer : IDisposable
 	public void Dispose()
 	{
 		TexturePackSwitch.PackChanged -= ReloadImages;
+		foreach ( var set in renderedSets.Values )
+			set.Dispose();
+		renderedSets.Clear();
 		foreach ( var (texture, set) in textures.Values )
 		{
 			set.Dispose();

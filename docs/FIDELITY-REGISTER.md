@@ -14,9 +14,9 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **199 unresolved unique APPROX IDs**, 215 APPROX occurrences, 101 EXT occurrences, 90 DATA occurrences and 155 BIN occurrences.
+Current inventory: **206 unresolved unique APPROX IDs**, 223 APPROX occurrences, 101 EXT occurrences, 99 DATA occurrences and 156 BIN occurrences.
 
-Of these, 193 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
+Of these, 200 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
 CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.
 
@@ -34,7 +34,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | PATH | 14 | 15 |
 | QUEUE | 19 | 19 |
 | RIDES | 27 | 27 |
-| UI | 48 | 60 |
+| UI | 55 | 68 |
 
 ## Approximation declarations
 
@@ -239,6 +239,13 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-049 | Original-fidelity area (scope unadjudicated) | buy window scroll ball travel: its top runs from the track's top (first row) to a ball height above the track's bottom (last row) | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:57` |
 | UI-050 | Original-fidelity area (scope unadjudicated) | buy list third column (1673-1724), its header button 18 and control 491 have no known content and stay empty | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:58` |
 | UI-051 | Original-fidelity area (scope unadjudicated) | i_dollar frame 1 for a negative balance, green_up frame 1 for a decrease; golden key frame 0 and ticket count from the economy (keys are not tracked, always 0) | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:59` |
+| UI-060 | Original-fidelity area (scope unadjudicated) | finance graph line colours, scaling and default selected series use the tracked monthly ledger values | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:60` |
+| UI-061 | Original-fidelity area (scope unadjudicated) | finance entry and staff-cost detail buttons are disabled until their screens are implemented | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:61` |
+| UI-062 | Original-fidelity area (scope unadjudicated) | missing loan lender-name entries use numbered fallbacks | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:62` |
+| UI-063 | Original-fidelity area (scope unadjudicated) | loan list has seven equal rows and inferred scrollbar travel; its summary uses the bounded monthly ledger rather than the original lifetime counters | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:63` |
+| UI-064 | Original-fidelity area (scope unadjudicated) | research main workload knob shows the current value with linear travel but cannot change it here | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:64` |
+| UI-065 | Original-fidelity area (scope unadjudicated) | research effort sliders use linear 0..100 travel across their authored tracks | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:65` |
+| UI-066 | Original-fidelity area (scope unadjudicated) | research progress uses a simple fill inside the fluid model cell | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:66` |
 
 ## Approximation sites
 
@@ -401,13 +408,13 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | RIDES-030 | `source/OpenTPW/World/Objects/ObjectAssets.cs:71` | [APPROX:RIDES-030] Non-finite texture coordinates (10 vertices of the Theme Park Inc natnav "subtank") are drawn as (0, 0) — evidence needed: how the original renderer treats them |
 | UI-001 | `source/OpenTPW/UI/Original/UiCanvas.cs:47` | [APPROX:UI-001] anchors keep the authored distance to the nearest edge on non-4:3 outputs — evidence needed: original widescreen behaviour / design decision |
 | UI-002 | `source/OpenTPW/UI/Original/UiCanvas.cs:43` | [APPROX:UI-002] font tier thresholds 0.36 / 0.6 of logical scale — evidence needed: binary font selection per screen mode |
-| UI-002 | `source/OpenTPW/UI/Original/UiText.cs:57` | [APPROX:UI-002] which shipped font serves which role per tier — evidence needed: binary font use / captures |
-| UI-002 | `source/OpenTPW/UI/Original/UiText.cs:70` | [APPROX:UI-002] the shipped CASHSMALL/CASHMED/CASHBIG fonts for the bank balance (the HUD builder's cash font slot 1) |
-| UI-002 | `source/OpenTPW/UI/Original/UiText.cs:75` | bank ([APPROX:UI-002] for the tier→bank pairing). Only official Patch 2 and the Mac version ship these files |
+| UI-002 | `source/OpenTPW/UI/Original/UiText.cs:61` | [APPROX:UI-002] which shipped font serves which role per tier — evidence needed: binary font use / captures |
+| UI-002 | `source/OpenTPW/UI/Original/UiText.cs:74` | [APPROX:UI-002] the shipped CASHSMALL/CASHMED/CASHBIG fonts for the bank balance (the HUD builder's cash font slot 1) |
+| UI-002 | `source/OpenTPW/UI/Original/UiText.cs:79` | bank ([APPROX:UI-002] for the tier→bank pairing). Only official Patch 2 and the Mac version ship these files |
 | UI-003 | `source/OpenTPW/UI/Original/UiModel.cs:68` | [APPROX:UI-003] state frames use the root pose (child translation dropped) — evidence needed: binary UI model drawing code |
 | UI-004 | `source/OpenTPW/UI/Original/UiModel.cs:138` | [APPROX:UI-004] back-to-front by Z per texture group — evidence needed: binary or capture of overlapping UI parts |
 | UI-005 | `source/OpenTPW/UI/Original/UiImages.cs:102` | [APPROX:UI-005] pink key + neighbour colour bleed for linear filtering — evidence needed: capture of UI edges at other resolutions |
-| UI-006 | `source/OpenTPW/UI/Original/UiText.cs:158` | [APPROX:UI-006] all UI text/backdrop colours — evidence needed: captures of original screens |
+| UI-006 | `source/OpenTPW/UI/Original/UiText.cs:162` | [APPROX:UI-006] all UI text/backdrop colours — evidence needed: captures of original screens |
 | UI-007 | `source/OpenTPW/UI/Original/UiWidgets.cs:73` | [APPROX:UI-007] drop shadow one text pixel down-right — evidence needed: captures of original screens |
 | UI-008 | `source/OpenTPW/UI/Original/UiWidgets.cs:434` | [APPROX:UI-008] purple_button as a mirrored end cap, upper half normal, lower half focused/pressed — evidence needed: capture of the original front-end buttons |
 | UI-010 | `source/OpenTPW/UI/Original/UiScreen.cs:246` | [APPROX:UI-010] popup help placement/backdrop — evidence needed: capture of original popup help |
@@ -443,7 +450,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-034 | `source/OpenTPW/UI/Original/UiImages.cs:68` | [APPROX:UI-034] a fully opaque texture on a transparent (flag 0x2) slot keys out black with a soft edge — evidence needed: the original's render state for flagged slots |
 | UI-035 | `source/OpenTPW/Client/Movie/IntroPlaylist.cs:34` | Input already held when the sequence begins is ignored until released [APPROX:UI-035], so launching the game |
 | UI-036 | `source/OpenTPW/UI/Original/UiWidgets.cs:503` | [APPROX:UI-036] linear knob travel over the track, value index 0..Steps-1 from the knob's centre — evidence needed: capture of the original slider ends / binary slider code |
-| UI-037 | `source/OpenTPW/UI/Original/UiText.cs:167` | [APPROX:UI-037] option bar label colour (16,16,48) read off a capture by eye — evidence needed: exact pixel colour from a capture or the font palette |
+| UI-037 | `source/OpenTPW/UI/Original/UiText.cs:171` | [APPROX:UI-037] option bar label colour (16,16,48) read off a capture by eye — evidence needed: exact pixel colour from a capture or the font palette |
 | UI-038 | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:252` | [APPROX:UI-038] 3D card rendering, videocard and audio quality are shown fixed (disabled) — OpenTPW has no software renderer, video card or audio quality choice |
 | UI-039 | `source/OpenTPW/UI/Original/UiWidgets.cs:130` | [APPROX:UI-039] option label size: letter box about 58 % of the label rectangle height (the capture's labels are ~26 of 1536 units for 45-unit rectangles); a label whose widest value does not fit drops alone to the largest size that does — evidence needed: capture of the original option labels in several languages |
 | UI-040 | `source/OpenTPW/Client/Autorun/AutorunView.cs:163` | [APPROX:UI-040] the exact dot phase of GDI's focus rectangle brush is not known; dots are the pixels with even x + y, inverted. |
@@ -459,6 +466,14 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-049 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:304` | [APPROX:UI-049] ball travel: top at the track top for the first row, a ball height above the track bottom for the last — evidence needed: capture of the original scroll bar ends |
 | UI-050 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:35` | [APPROX:UI-050] the third column (1673,1724) has no known content and stays empty; the unnamed controls 491 and 512 are not drawn — evidence needed: capture of the original buy window |
 | UI-051 | `source/OpenTPW/Hud/ParkHud.cs:133` | [APPROX:UI-051] i_dollar frame 1 for a negative balance and green_up frame 1 for a decrease: the two-frame models' state meaning is guessed from their art — evidence needed: capture of the original cash display |
+| UI-060 | `source/OpenTPW/Hud/ParkHud.FinanceWindow.cs:180` | [APPROX:UI-060] line colours, plot scaling and the default selected series are OpenTPW choices; original graph samples/style need a capture. |
+| UI-061 | `source/OpenTPW/Hud/ParkHud.FinanceWindow.cs:151` | [APPROX:UI-061] the entry and staff-cost detail screens are not implemented; their finance-window buttons remain disabled. |
+| UI-062 | `source/OpenTPW/Hud/ParkHud.LoansWindow.cs:162` | [APPROX:UI-062] A missing lender-name entry has a numbered fallback rather than an invented institution name. |
+| UI-063 | `source/OpenTPW/Hud/ParkHud.LoansWindow.cs:12` | [APPROX:UI-063] Seven evenly spaced rows and scrollbar travel are inferred from the authored list content/track rectangles; the original row pitch and scrolling handler need a capture. |
+| UI-063 | `source/OpenTPW/Hud/ParkHud.LoansWindow.cs:175` | [APPROX:UI-063] The original ledger uses lifetime park counters; the available ParkLedger history is bounded to 12 years, so older months can drop from these rows. |
+| UI-064 | `source/OpenTPW/Hud/ParkHud.ResearchWindow.cs:98` | [APPROX:UI-064] The table supplies the workload knob's initial rectangle and travel inset. |
+| UI-065 | `source/OpenTPW/Hud/ParkHud.ResearchWindow.cs:122` | [APPROX:UI-065] Linear 0..100 effort travel across the table's slider rectangle. The knob's |
+| UI-066 | `source/OpenTPW/Hud/ParkHud.ResearchWindow.cs:154` | [APPROX:UI-066] Draw a simple fill within the fluid cell; the model's original progress frames are untraced. |
 
 ## Extension sites
 
@@ -604,7 +619,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | Language/English/ERRORMSG.str | `source/OpenTPW/Online/OnlineStrings.cs:55` | [DATA:Language/English/ERRORMSG.str] |
 | Language/English/UITEXT.str | `source/OpenTPW/Online/OnlineStrings.cs:19` | [DATA:Language/English/UITEXT.str] (the UIStrings enum is off by one from about 206 on; these are verified). |
 | Language/English/swears.txt,alloweds.txt | `source/OpenTPW.Online/Moderation/WordFilter.cs:32` | Decodes an original list. [DATA:Language/English/swears.txt,alloweds.txt] Observed encoding: |
-| Mac UI font table (docs/reverse/PPC-ui.md):slot 3 DATETINY/DATESMALL/DATEMED/DATEBIG | `source/OpenTPW/UI/Original/UiText.cs:74` | [DATA:Mac UI font table (docs/reverse/PPC-ui.md):slot 3 DATETINY/DATESMALL/DATEMED/DATEBIG] the HUD date font, one per |
+| Mac UI font table (docs/reverse/PPC-ui.md):slot 3 DATETINY/DATESMALL/DATEMED/DATEBIG | `source/OpenTPW/UI/Original/UiText.cs:78` | [DATA:Mac UI font table (docs/reverse/PPC-ui.md):slot 3 DATETINY/DATESMALL/DATEMED/DATEBIG] the HUD date font, one per |
 | Mac buy table 0x4cd94:-2,511 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:200` | [DATA:Mac buy table 0x4cd94:-2,511] b_exit (help 2) closes; b_allstaff (help 153) opens the staff list, which OpenTPW does not have yet |
 | Mac buy table 0x4cd94:1,2 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:188` | [DATA:Mac buy table 0x4cd94:1,2] b_up / b_down at their rectangles |
 | Mac buy table 0x4cd94:16,17 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:185` | [DATA:Mac buy table 0x4cd94:16,17] column header buttons (name, price) without a model; the third (18) has no text and no action |
@@ -615,9 +630,18 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | Mac buy table 0x4cd94:504 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:33` | [DATA:Mac buy table 0x4cd94:504] content region and the three columns (command_10/command_11) |
 | Mac buy table 0x4cd94:507,506,509,508 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:24` | [DATA:Mac buy table 0x4cd94:507,506,509,508] category buttons with their help ids (command_17 140, 142, 141, 143) |
 | Mac buy table 0x4cd94:510 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:156` | [DATA:Mac buy table 0x4cd94:510] title text; the category's UITEXT 119-122 (control 512 beside it is unnamed and stays empty, [APPROX:UI-048]) |
+| Mac finance table 0x49ee4:74352,74354 | `source/OpenTPW/Hud/ParkHud.FinanceWindow.cs:121` | [DATA:Mac finance table 0x49ee4:74352,74354] w_park/window3 and f_graph/graph at their authored rectangles. |
+| Mac finance table 0x49ee4:74356-74358 | `source/OpenTPW/Hud/ParkHud.FinanceWindow.cs:127` | [DATA:Mac finance table 0x49ee4:74356-74358] three b_stoggle period buttons, 1 / 3 / 12 years. |
+| Mac finance table 0x49ee4:74359-74366 | `source/OpenTPW/Hud/ParkHud.FinanceWindow.cs:13` | [DATA:Mac finance table 0x49ee4:74359-74366] toggle controls; labels are confirmed by docs/reverse/UI-MAP.md. |
+| Mac finance table 0x49ee4:74367-74369 | `source/OpenTPW/Hud/ParkHud.FinanceWindow.cs:147` | [DATA:Mac finance table 0x49ee4:74367-74369] loans, staff-cost and entry buttons. |
+| Mac loans table 0x4a79c | `source/OpenTPW/Hud/ParkHud.LoansWindow.cs:191` | [DATA:Mac loans table 0x4a79c] Root, list frame, summary frame and table-authored controls. |
 | Mac main HUD table 0x4ab38:32,47 | `source/OpenTPW/Hud/ParkHud.cs:125` | [DATA:Mac main HUD table 0x4ab38:32,47] date text region (182,1061,383,1103) in black (font slot 3); the cash text |
 | Mac main HUD table 0x4ab38:38-43 | `source/OpenTPW/Hud/ParkHud.cs:142` | [DATA:Mac main HUD table 0x4ab38:38-43] original button rectangles: staggered along the panel's curve, plus the camera button |
 | Mac main HUD table 0x4ab38:50,48,49,51-55 | `source/OpenTPW/Hud/ParkHud.cs:132` | [DATA:Mac main HUD table 0x4ab38:50,48,49,51-55] cash extras: i_dollar left of the balance, the change text (yellow) with green_up, golden key and ticket counters |
+| Mac research table 0x4c652 | `source/OpenTPW/Hud/ParkHud.ResearchWindow.cs:10` | [DATA:Mac research table 0x4c652] Visual row order differs from ResearchCategories[n] order. |
+| Mac research table 0x4c652 | `source/OpenTPW/Hud/ParkHud.ResearchWindow.cs:93` | [DATA:Mac research table 0x4c652] Root, title, five panels and the main workload track. |
+| Mac research table 0x4c652 | `source/OpenTPW/Hud/ParkHud.ResearchWindow.cs:110` | [DATA:Mac research table 0x4c652] The next/previous controls are present but ParkResearch.Current |
+| Mac research table 0x4c652:-1 | `source/OpenTPW/Hud/ParkHud.ResearchWindow.cs:130` | [DATA:Mac research table 0x4c652:-1] b_okay exits; help 1. |
 | Rides.sam:Info.WhichUIType | `source/OpenTPW/Hud/HudStubs.cs:153` | [DATA:Rides.sam:Info.WhichUIType] |
 | Rides.sam:UsageInfo.ExcitementLevel | `source/OpenTPW/Hud/HudStubs.cs:150` | [DATA:Totem.sam:UsageInfo.ExcitementLevel] overrides [DATA:Rides.sam:UsageInfo.ExcitementLevel] |
 | Standard.sam:Costs.QueueCell | `source/OpenTPW/World/Level.Objects.cs:212` | [DATA:Standard.sam:Costs.QueueCell] charged per cell when written (ParkEconomy.TrySpendCell, PATH-plan §3.2) |
@@ -794,6 +818,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | STP-PPC:0x10137FD0 park view input | `source/OpenTPW/Hud/ParkHud.cs:437` | [BIN:STP-PPC:0x10137FD0 park view input] a button message in the park view plays cat_ui event 0x1F (0xBD when modifier flag 0x10 is set) |
 | STP-PPC:0x10139C64 park-view hover | `source/OpenTPW/World/CellBuildTool.cs:136` | [BIN:STP-PPC:0x10139C64 park-view hover] the cell under the cursor picks the help line: empty (0x85258) 441, type 1 442, type 3 444; inside the tools 443 and 445 |
 | STP-PPC:0x10139C64 park-view hover | `source/OpenTPW/World/Level.Objects.cs:120` | [BIN:STP-PPC:0x10139C64 park-view hover] empty cell: hover state 2, help 441 "build path"; path (type 1): state 1, help 442 "extend this path"; queue (type 3): help 444 |
+| STP-PPC:0x101503b0 | `source/OpenTPW/Hud/ParkHud.FinanceWindow.cs:86` | [BIN:STP-PPC:0x101503b0] bank balance/park value exclude each other and all cash-flow series; |
 | STP-PPC:0x10154AA0 loans window | `source/OpenTPW/Economy/ParkEconomy.cs:94` | [BIN:STP-PPC:0x10154AA0 loans window] the Available Loans window only opens outside game type 2 (Instant Action) |
 | STP-PPC:0x101598C4 object sign call | `source/OpenTPW/World/Objects/ObjectSigns.cs:60` | [BIN:STP-PPC:0x101598C4 object sign call] for objects built from the catalogue the sign text is that name string of the object's info record (no explicit text passed) |
 | STP-PPC:0x1015D220 new-player dialog | `source/OpenTPW/Economy/ParkEconomyContracts.cs:7` | [BIN:STP-PPC:0x1015D220 new-player dialog] radio 0x70D "Instant Action" / 0x70E "Full Simulation"; 0x1013741C stores the choice as profile mEasyModeUser and 0x1013781C turns it into game type 2 (Instant Action) or 0 |

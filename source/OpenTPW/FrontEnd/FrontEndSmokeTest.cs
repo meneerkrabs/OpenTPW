@@ -324,7 +324,55 @@ internal sealed class FrontEndSmokeTest : IDisposable
 						purchaseEvents++;
 					}
 			};
-			Click( flow.Hud.Screen, "buy" );
+			Click( flow.Hud.Screen, "finance" );
+		} );
+		Wait( "finance window opens", 3 );
+		Do( "finance window", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.FinanceWindowOpen && hud.Stack.Top?.Name == "finance", "finance button opens the original financial graph" );
+			var capture = CaptureFrame( "finance.png" );
+			VerifyText( capture, flow.Strings[UIStrings.FinancialInformation], "Financial Information title" );
+			Click( hud.Stack.Top!, "loans" );
+		} );
+		Wait( "loans window opens", 3 );
+		Do( "loans window", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.LoansWindowOpen && hud.Stack.Top?.Name == "loans", "finance loans button opens the original bank window" );
+			var capture = CaptureFrame( "loans.png" );
+			VerifyText( capture, flow.Strings[UIStrings.GraphAvailableLoans], "Available Loans title" );
+			Click( hud.Stack.Top!, "exit" );
+		} );
+		Wait( "loans window closes", 3 );
+		Do( "finance window closes", () =>
+		{
+			var hud = flow.Hud!;
+			Require( !hud.LoansWindowOpen && hud.Stack.Top?.Name == "finance", "loans exit returns to financial information" );
+			Click( hud.Stack.Top!, "exit" );
+		} );
+		Wait( "finance window closes", 3 );
+		Do( "research window opens", () =>
+		{
+			var hud = flow.Hud!;
+			Require( !hud.FinanceWindowOpen && hud.Stack.Top == hud.Screen, "finance exit returns to the HUD" );
+			Click( hud.Screen, "research" );
+		} );
+		Wait( "research window opens", 3 );
+		Do( "research window", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.ResearchWindowOpen && hud.Stack.Top?.Name == "research", "research button opens the original research lab" );
+			var capture = CaptureFrame( "research.png" );
+			VerifyText( capture, flow.Strings[UIStrings.ResearchLab], "Research Lab title" );
+			Click( hud.Stack.Top!, "exit" );
+		} );
+		Wait( "research window closes", 3 );
+		Do( "buy window opens", () =>
+		{
+			var hud = flow.Hud!;
+			Require( !hud.ResearchWindowOpen && hud.Stack.Top == hud.Screen, "research exit returns to the HUD" );
+			Click( hud.Screen, "buy" );
 		} );
 		Wait( "buy window opens", 3 );
 		Do( "buy window", () =>
@@ -624,7 +672,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		Log.Trace( $"Instant Action jungle: {level.Park.Import!.ImportedObjects} seed objects, {economy.Staff.Members.Count} staff, research advanced {start} -> {economy.Date}; loans, research effort and upgrades refused." );
 		Device.WaitForIdle();
 		completed = true;
-		Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name} at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames, lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, two distinct catalogue objects bought exactly once through the park economy, info arm, economy pause, sale, overlap refusal, open/close, Escape out of the queue tool, pause menu, exit to lobby, read-only visit build/open/delete/save guards, Instant Action return and Load Park reference start, Instant Action seed, research stand-in and gates." );
+		Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name} at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames, lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, finance/loans/research window captures and title readback, two distinct catalogue objects bought exactly once through the park economy, info arm, economy pause, sale, overlap refusal, open/close, Escape out of the queue tool, pause menu, exit to lobby, read-only visit build/open/delete/save guards, Instant Action return and Load Park reference start, Instant Action seed, research stand-in and gates." );
 		GameFlow.Quit();
 	}
 

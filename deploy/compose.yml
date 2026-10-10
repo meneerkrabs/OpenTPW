@@ -10,6 +10,9 @@ services:
     environment:
       OpenTPW__ServerName: ${OPENTPW_SERVER_NAME:-OpenTPW}
       OpenTPW__Message: ${OPENTPW_MESSAGE:-}
+      # opentpw.io reads the public news and website park list from the browser.
+      OpenTPW__WebsiteOrigins__0: https://opentpw.io
+      OpenTPW__WebsiteOrigins__1: https://www.opentpw.io
       # Caddy is the only client; let the rate limits see real addresses.
       ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
     volumes:

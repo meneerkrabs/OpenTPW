@@ -95,11 +95,12 @@ public sealed class OnlineClient : IDisposable
 		return GetJsonAsync<ParkList>( ApiRoutes.Parks + query, cancel );
 	}
 
-	public async Task<ParkSummary> UploadParkAsync( ParkPackage package, CancellationToken cancel = default )
+	/// <param name="showOnWebsite">Lists the park on the project website (opt-in; the server's public website park list).</param>
+	public async Task<ParkSummary> UploadParkAsync( ParkPackage package, CancellationToken cancel = default, bool showOnWebsite = false )
 	{
 		var content = new ByteArrayContent( package.ToBytes() );
 		content.Headers.ContentType = new MediaTypeHeaderValue( ApiRoutes.PackageMediaType );
-		using var response = await SendAsync( HttpMethod.Post, ApiRoutes.Parks, content, cancel );
+		using var response = await SendAsync( HttpMethod.Post, showOnWebsite ? ApiRoutes.Parks + "?website=true" : ApiRoutes.Parks, content, cancel );
 		return await ReadJsonAsync<ParkSummary>( response, cancel );
 	}
 

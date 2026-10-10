@@ -255,9 +255,9 @@ public sealed class OnlineSession : IDisposable
 		return list.Parks.Count == 0 ? OnlineStrings.Ui( OnlineStrings.NoSearchResults, "No search results" ) : null;
 	} );
 
-	public void Publish( ParkPackage package ) => WithClient( async client =>
+	public void Publish( ParkPackage package, bool showOnWebsite = false ) => WithClient( async client =>
 	{
-		await client.UploadParkAsync( package );
+		await client.UploadParkAsync( package, showOnWebsite: showOnWebsite );
 		return OnlineStrings.Ui( OnlineStrings.ParkPublished, "PARK PUBLISHED" ).Replace( "\n\n", " " );
 	} );
 

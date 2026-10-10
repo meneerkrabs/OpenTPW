@@ -1,6 +1,7 @@
-# Cloudflare Pages headers for opentpw.io. The site loads nothing from other addresses.
+# Cloudflare Pages headers for opentpw.io. The only other address is the official server, for news and the
+# website park list (site.js).
 /*
-  Content-Security-Policy: default-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'; connect-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'
+  Content-Security-Policy: default-src 'self'; img-src 'self' https://play.opentpw.io; style-src 'self'; script-src 'self'; connect-src https://play.opentpw.io; frame-ancestors 'none'; base-uri 'none'; form-action 'none'
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: camera=(), microphone=(), geolocation=()

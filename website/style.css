@@ -134,3 +134,18 @@ footer a { color: #fff; }
 	html { scroll-behavior: auto; }
 	.button, .gallery img { transition: none; }
 }
+
+/* News and top parks from the official server (site.js) */
+.community { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; align-items: start; }
+.community > div { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; }
+.community h3 { margin: 0 0 8px; font-size: 20px; }
+.news-text { white-space: pre-line; color: var(--muted); margin: 0 0 22px; }
+.news-text:empty { display: none; }
+.parks { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; counter-reset: park; }
+.parks li { display: grid; grid-template-columns: 2.2em 96px 1fr; gap: 12px; align-items: start; counter-increment: park; }
+.parks li::before { content: counter(park); font-weight: 800; font-size: 22px; color: var(--purple-light); }
+.parks img, .parks .no-picture { width: 96px; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 8px; background: var(--night); }
+.parks strong { display: block; }
+.parks .by { color: var(--muted); font-size: 14px; }
+.parks .about { margin: 4px 0 0; font-size: 15px; color: var(--muted); overflow-wrap: anywhere; }
+@media (max-width: 480px) { .parks li { grid-template-columns: 2em 72px 1fr; } .parks img, .parks .no-picture { width: 72px; } }

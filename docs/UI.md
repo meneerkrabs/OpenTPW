@@ -105,11 +105,14 @@ screens, options), `FrontEnd/`, `Hud/`, `World/Lobby/LobbyScene.cs`,
   distance to an anchor edge, so corner HUD parts stay in corners on wide
   screens (4:3 reproduces the authored layout exactly). BF4 fonts come in SMALL,
   MED and BIG versions; the tier is chosen by scale (< 0.36, < 0.6, larger) and
-  text is point-sampled at an integer scale (≥ 2 only above ~4K). Both are
-  inferences from the shipped files.
+  text is drawn at an integer scale (2 on HiDPI and from 2560×1440). Both are
+  inferences from the shipped files. Above 1× each glyph is magnified with
+  Catmull-Rom and its edge tightened with a contrast curve instead of doubling
+  pixels, which turns the fonts' anti-aliased edges into staircases (`FontSmoothing`,
+  UI-043); at 1× the original coverage is drawn unchanged.
 - **Rendering**: `UiBatch` (CPU triangle list) → `UiRenderer` (one alpha-blended
   pipeline; images linear filtered with the pink key bled to neighbour colours,
-  font atlases point sampled). Model frames are stretched into element rects.
+  font atlases point sampled at one texel per pixel after smoothing). Model frames are stretched into element rects.
 - **Input**: hover focuses, press+release on the same element activates
   (buttons react on release), wheel/arrows change option rows, Up/Down move
   focus, Enter activates, Escape goes back/opens the pause menu, P pauses.
@@ -432,6 +435,7 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-040 | `Client/Autorun/AutorunView.cs` | autorun launcher focus rectangle: dotted frame inverting the pixels with even x + y, 2 pixels inside the button | capture of the original launcher with a focused button |
 | UI-041 | `Client/GameFlow.cs:147` | Load Park opens a shipped park as the reference start (its own balance, Full Simulation rules) whatever Game Mode was last chosen; the original's GameType is not saved with a park but copied from the loading player's profile (`mEasyModeUser`) | player profiles and what the Mac park loader 0x11acfc reads from a park file |
 | UI-042 | `Hud/ParkHud.cs` | HUD camera button shown disabled; its camera-view action is not implemented | binary camera button handler |
+| UI-043 | `UI/Original/FontSmoothing.cs` | BF4 text drawn above 1× (HiDPI, large outputs) is magnified per glyph with Catmull-Rom and a contrast curve min(2, 0.8 × scale) instead of doubled pixels | none: the original only drew its fonts at 1×; design decision |
 
 Data-backed (tagged `[DATA]`): the 2048×1536 canvas and authored rectangles of
 placed models (`ui.wad` roots/bounds), button state frames and texture order, V

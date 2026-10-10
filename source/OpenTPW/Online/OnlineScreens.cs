@@ -61,6 +61,7 @@ public sealed class OnlineScreens
 		{
 			("login", () => Session.IsLoggedIn ? OnlineStrings.Get( OnlineLabel.LogOut ) : OnlineStrings.Ui( OnlineStrings.OnlineLogin, "Online login" ),
 				() => { if ( Session.IsLoggedIn ) Guard( () => { Session.Disconnect(); localStatus = ""; } ); else ShowLogin(); }, () => true),
+			("news", () => OnlineStrings.Get( OnlineLabel.News ), ShowNews, () => Session.Client != null),
 			("findParks", () => OnlineStrings.Ui( OnlineStrings.FindParks, "Find parks" ), ShowFindParks, () => Session.IsLoggedIn),
 			("publish", () => OnlineStrings.Ui( OnlineStrings.PublishPark, "Publish park" ), ShowPublish, () => level != null && !level.IsReadOnlyVisit),
 			("sendPostcard", () => OnlineStrings.Ui( OnlineStrings.SendPostcard, "Send postcard" ), ShowSendPostcard, () => true),
@@ -79,7 +80,7 @@ public sealed class OnlineScreens
 				Id = entry.Id,
 				Text = entry.Label,
 				Clicked = entry.Clicked,
-				Bounds = new UiRect( window.X + 200, window.Y + 180 + index * 120, window.Width - 480, 104 ),
+				Bounds = new UiRect( window.X + 200, window.Y + 170 + index * 108, window.Width - 480, 96 ),
 				Anchor = UiAnchor.Center
 			} );
 			screen.Updating += _ => button.Enabled = entry.Enabled() && Session.Busy == 0;
@@ -90,6 +91,37 @@ public sealed class OnlineScreens
 		AddStatus( screen, window );
 		AddBack( screen, window );
 		Push( screen );
+	}
+
+	// ---- News (UI-MAP "Online news panel") ------------------------------------------------------
+
+	/// <summary>
+	/// The server's Game News and System News, the two columns of the original news panel (UITEXT 267/268); the
+	/// original headed it "News from ThemeParkWorld.com", so the window uses OpenTPW's own title.
+	/// </summary>
+	public void ShowNews()
+	{
+		var screen = new UiScreen( "onlineNews" );
+		var window = UiDialogs.CenteredWindow( 1700, 1200 );
+		UiDialogs.AddWindow( screen, window, "w_big", () => OnlineStrings.Get( OnlineLabel.News ) );
+		var showSystem = false;
+		screen.Add( new UiButton { Id = "gameNews", Text = () => OnlineStrings.Ui( OnlineStrings.GameNews, "Game News" ), Clicked = () => showSystem = false,
+			Bounds = new UiRect( window.X + 100, window.Y + 170, 520, 110 ), Anchor = UiAnchor.Center } );
+		screen.Add( new UiButton { Id = "systemNews", Text = () => OnlineStrings.Ui( OnlineStrings.SystemNews, "System News" ), Clicked = () => showSystem = true,
+			Bounds = new UiRect( window.X + 660, window.Y + 170, 520, 110 ), Anchor = UiAnchor.Center } );
+		screen.Add( new UiLabel
+		{
+			Id = "text",
+			Wrap = true,
+			Font = fonts => fonts.Small,
+			Bounds = new UiRect( window.X + 100, window.Y + 320, window.Width - 280, 620 ),
+			Anchor = UiAnchor.Center,
+			Text = () => Session.News is { } news ? (showSystem ? news.System : news.Game) : ""
+		} );
+		AddStatus( screen, window );
+		AddBack( screen, window );
+		Push( screen );
+		Guard( Session.FetchNews );
 	}
 
 	// ---- Delete account (OpenTPW) --------------------------------------------------------------

@@ -82,6 +82,7 @@ public static class ServerProgram
 		app.UseCors();
 		app.UseRateLimiter();
 		Map( app, options, store, hub, filter );
+		app.Lifetime.ApplicationStopping.Register( hub.Restarting );
 		return app;
 	}
 

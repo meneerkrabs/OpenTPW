@@ -1,7 +1,7 @@
 # HTTPS on port 443 in front of the OpenTPW server (docs/SERVER.md). Port 80 is closed in the
 # firewall: there is no plain-HTTP site, and certificates are obtained and renewed over 443
 # (TLS-ALPN). Caddy passes WebSocket (chat) connections through and keeps no access log, so
-# client addresses are not stored.
+# client addresses are not stored. During a deploy it holds requests until the server is back.
 {
 	auto_https disable_redirects
 }
@@ -14,5 +14,14 @@
 	}
 	encode zstd gzip
 	header Strict-Transport-Security "max-age=63072000"
-	reverse_proxy {$OPENTPW_UPSTREAM:opentpw-server:8080}
+	# A deploy restarts the server for a few seconds. Instead of failing, requests (chat connections
+	# included) wait up to 30 s until the health check sees the new server answer.
+	reverse_proxy {$OPENTPW_UPSTREAM:opentpw-server:8080} {
+		lb_try_duration 30s
+		lb_try_interval 250ms
+		health_uri /api/v1/server
+		health_interval 1s
+		health_timeout 2s
+		fail_duration 2s
+	}
 }

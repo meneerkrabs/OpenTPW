@@ -125,6 +125,54 @@ public class OnlineIntegrationTests
 	}
 
 	[TestMethod]
+	public async Task ChatReconnectsToItsRoomAfterTheServerRestarts()
+	{
+		var server = await LoopbackServer.StartAsync();
+		var directory = server.Directory;
+		var url = server.Url;
+		var folders = Folders();
+		try
+		{
+			using var owner = await server.LoginAsync( "Bobby" );
+			var park = await owner.UploadParkAsync( OnlineFormatTests.Package() );
+			using var session = new OnlineSession( folders );
+			session.UseServer( url.ToString(), "Alice" );
+			session.Register( "Alice", "correct horse" );
+			await PumpUntilIdle( session );
+			session.RefreshParks( null );
+			await PumpUntilIdle( session );
+			session.ConnectChat();
+			await PumpUntilIdle( session );
+			var room = ChatProtocol.ParkRoom( park.Id );
+			session.JoinRoom( room );
+			await PumpUntil( session, () => session.CurrentRoom == room );
+
+			await server.DisposeAsync();
+			await using var restarted = await LoopbackServer.StartAsync( directory: directory, url: url );
+			await PumpUntil( session, () => session.ChatLines.Any( line => line == OnlineStrings.Get( OnlineLabel.ChatReconnected ) ), seconds: 20 );
+			Assert.IsTrue( session.IsLoggedIn, "the session survived the restart" );
+			await PumpUntil( session, () => session.Chat != null && session.CurrentRoom == room );
+		}
+		finally
+		{
+			Directory.Delete( folders.Root, true );
+			if ( Directory.Exists( directory ) )
+				Directory.Delete( directory, true );
+		}
+	}
+
+	private static async Task PumpUntil( OnlineSession session, Func<bool> done, int seconds = 10 )
+	{
+		var until = DateTime.UtcNow.AddSeconds( seconds );
+		while ( !done() && DateTime.UtcNow < until )
+		{
+			session.Pump();
+			await Task.Delay( 20 );
+		}
+		Assert.IsTrue( done(), session.Status );
+	}
+
+	[TestMethod]
 	public void OriginalParkExportPreparesAReadOnlyVisitWithoutEconomy()
 	{
 		var data = OriginalParkImportTests.OriginalDataPath();

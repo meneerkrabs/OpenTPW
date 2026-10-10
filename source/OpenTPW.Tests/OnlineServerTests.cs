@@ -265,6 +265,90 @@ public class OnlineServerTests
 	}
 
 	[TestMethod]
+	public async Task NewsIsPublicAndFollowsTheOperatorsFiles()
+	{
+		await using var server = await LoopbackServer.StartAsync();
+		try
+		{
+			using var client = new OnlineClient( server.Url );
+			var empty = await client.GetNewsAsync();
+			Assert.IsNotNull( empty, "served without a session" );
+			Assert.AreEqual( ("", "", (DateTimeOffset?)null), (empty!.Game, empty.System, empty.UpdatedUtc) );
+
+			var folder = Path.Combine( server.Directory, "news" );
+			Directory.CreateDirectory( folder );
+			File.WriteAllText( Path.Combine( folder, "game.txt" ), "Version 0.5 is out.\r\n" );
+			File.WriteAllText( Path.Combine( folder, "system.txt" ), new string( 'x', NewsFeed.MaximumCharacters + 10 ) );
+			var news = await client.GetNewsAsync();
+			Assert.AreEqual( "Version 0.5 is out.", news!.Game );
+			Assert.AreEqual( NewsFeed.MaximumCharacters, news.System.Length );
+			Assert.IsNotNull( news.UpdatedUtc );
+
+			File.WriteAllText( Path.Combine( folder, "game.txt" ), "Maintenance tonight." );
+			File.SetLastWriteTimeUtc( Path.Combine( folder, "game.txt" ), DateTime.UtcNow.AddMinutes( 1 ) );
+			Assert.AreEqual( "Maintenance tonight.", (await client.GetNewsAsync())!.Game );
+		}
+		finally
+		{
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
+	public async Task ServersWithoutNewsGiveNoNews()
+	{
+		var builder = Microsoft.AspNetCore.Builder.WebApplication.CreateBuilder( new[] { "--urls", "http://127.0.0.1:0", "--Logging:LogLevel:Default", "Warning" } );
+		await using var app = builder.Build();
+		await app.StartAsync();
+		var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First();
+		using var client = new OnlineClient( new Uri( address ) );
+		Assert.IsNull( await client.GetNewsAsync() );
+		await app.StopAsync();
+	}
+
+	[TestMethod]
+	public async Task OnlyParksWhoseAuthorsOptInAreListedForTheWebsite()
+	{
+		await using var server = await LoopbackServer.StartAsync( options => options.WebsiteOrigins.Add( "https://opentpw.io" ) );
+		try
+		{
+			using var ann = await server.LoginAsync( "Ann" );
+			using var bob = await server.LoginAsync( "Bob" );
+			var shown = await ann.UploadParkAsync( OnlineFormatTests.Package( "Shown" ), showOnWebsite: true );
+			var hidden = await ann.UploadParkAsync( OnlineFormatTests.Package( "Private" ) );
+			var popular = await bob.UploadParkAsync( OnlineFormatTests.Package( "Popular" ), showOnWebsite: true );
+			await ann.VoteAsync( popular.Id );
+
+			using var http = new HttpClient { BaseAddress = server.Url };
+			var list = StrictJson.Deserialize<WebsiteParkList>( await http.GetByteArrayAsync( ApiRoutes.WebsiteParks.TrimStart( '/' ) ), "test" );
+			CollectionAssert.AreEqual( new[] { "Popular", "Shown" }, list.Parks.Select( park => park.Name ).ToArray(), "opted-in parks only, most votes first, without a session" );
+			Assert.AreEqual( "Bob", list.Parks[0].Author );
+
+			Assert.AreEqual( HttpStatusCode.NotFound, (await http.GetAsync( $"{ApiRoutes.WebsiteParks.TrimStart( '/' )}/{hidden.Id}/thumbnail" )).StatusCode, "no public picture of a park not on the website" );
+			var picture = await http.GetAsync( $"{ApiRoutes.WebsiteParks.TrimStart( '/' )}/{shown.Id}/thumbnail" );
+			Assert.AreEqual( HttpStatusCode.OK, picture.StatusCode );
+			Assert.AreEqual( "image/png", picture.Content.Headers.ContentType?.MediaType );
+			Assert.IsTrue( picture.Headers.CacheControl?.Public == true, "website pictures may be cached" );
+
+			using var allowed = new HttpRequestMessage( HttpMethod.Get, ApiRoutes.WebsiteParks.TrimStart( '/' ) );
+			allowed.Headers.Add( "Origin", "https://opentpw.io" );
+			Assert.AreEqual( "https://opentpw.io", (await http.SendAsync( allowed )).Headers.GetValues( "Access-Control-Allow-Origin" ).Single() );
+			using var other = new HttpRequestMessage( HttpMethod.Get, ApiRoutes.News.TrimStart( '/' ) );
+			other.Headers.Add( "Origin", "https://example.com" );
+			Assert.IsFalse( (await http.SendAsync( other )).Headers.Contains( "Access-Control-Allow-Origin" ) );
+			using var parks = new HttpRequestMessage( HttpMethod.Get, ApiRoutes.Parks.TrimStart( '/' ) );
+			parks.Headers.Add( "Origin", "https://opentpw.io" );
+			var guarded = await http.SendAsync( parks );
+			Assert.AreEqual( HttpStatusCode.Unauthorized, guarded.StatusCode, "the full park list still needs a session" );
+			Assert.IsFalse( guarded.Headers.Contains( "Access-Control-Allow-Origin" ) );
+		}
+		finally
+		{
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
 	public async Task AuthenticationIsRateLimited()
 	{
 		await using var server = await LoopbackServer.StartAsync( options => options.AuthenticationsPerMinute = 3 );

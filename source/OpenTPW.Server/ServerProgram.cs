@@ -16,6 +16,9 @@ public static class ServerProgram
 {
 	public const string Version = "1.0";
 	public const int ProtocolVersion = 1;
+	private const string WebsitePolicy = "website";
+	/// <summary>Parks listed on the project website.</summary>
+	public const int MaximumWebsiteParks = 10;
 	private const int MaximumJsonBodyBytes = 8 * 1024;
 
 	public static async Task<int> Main( string[] args )
@@ -48,6 +51,8 @@ public static class ServerProgram
 		builder.Services.AddSingleton( store );
 		builder.Services.AddSingleton( filter );
 		builder.Services.AddSingleton( hub );
+		// [EXT:ONLINE-057] the project website reads the public news and website park list from the browser
+		builder.Services.AddCors( cors => cors.AddPolicy( WebsitePolicy, policy => policy.WithOrigins( options.WebsiteOrigins.ToArray() ).WithMethods( "GET" ) ) );
 		builder.Services.AddRateLimiter( limiter =>
 		{
 			limiter.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -72,6 +77,7 @@ public static class ServerProgram
 		if ( !string.IsNullOrWhiteSpace( options.WebClientDirectory ) )
 			app.UseWebClient( options.WebClientDirectory );
 		app.UseWebSockets( new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds( 30 ) } );
+		app.UseCors();
 		app.UseRateLimiter();
 		Map( app, options, store, hub, filter );
 		return app;
@@ -190,6 +196,23 @@ public static class ServerProgram
 		app.MapGet( ApiRoutes.Server, () => Ok( new ServerInfo( options.ServerName, Version, ProtocolVersion, options.Message, options.AllowRegistration, !filter.IsEmpty,
 			ParkPackage.MaximumPackageBytes, Postcard.MaximumCardBytes, options.MaximumParksPerPlayer, options.MaximumVotesPerDay ) ) );
 
+		// Public like the server info: news is readable before logging in.
+		var news = new NewsFeed( options.DataDirectory );
+		app.MapGet( ApiRoutes.News, () => Ok( news.Read() ) ).RequireCors( WebsitePolicy );
+
+		// [EXT:ONLINE-057] public, for the project website: only parks whose authors opted in, at most ten, cached a minute.
+		var websiteParks = new TimedCache<WebsiteParkList>( TimeSpan.FromMinutes( 1 ), () => new WebsiteParkList( store.WebsiteParks( MaximumWebsiteParks )
+			.Select( park => new WebsitePark( park.Id, park.Name, park.Description, park.Author, park.Level, park.Votes, park.Visits, park.PublishedUtc, park.HasThumbnail ) ).ToList() ) );
+		app.MapGet( ApiRoutes.WebsiteParks, () => Ok( websiteParks.Get() ) ).RequireCors( WebsitePolicy );
+		app.MapGet( ApiRoutes.WebsiteParks + "/{id}/thumbnail", ( HttpContext context, string id ) =>
+		{
+			var park = IsId( id ) ? store.FindPark( id ) : null;
+			if ( park is not { ShowOnWebsite: true, HasThumbnail: true } )
+				return Error( StatusCodes.Status404NotFound, "No such park picture." );
+			context.Response.Headers.CacheControl = "public, max-age=3600";
+			return Results.File( store.ParkFile( park.Id, ".png" ), "image/png" );
+		} );
+
 		app.MapPost( ApiRoutes.Accounts, Handler( context => Guarded( context, store, false, async _ =>
 		{
 			var credentials = await ReadJsonAsync<Credentials>( context.Request );
@@ -237,7 +260,7 @@ public static class ServerProgram
 			var package = ParkPackage.Read( bytes );
 			RequireClean( filter, package.Manifest.Park.Name, "Park name" );
 			RequireClean( filter, package.Manifest.Park.Description, "Park description" );
-			var park = store.Publish( user!, package, bytes );
+			var park = store.Publish( user!, package, bytes, context.Request.Query["website"] == "true" );
 			return Ok( store.Summarize( park, user, 0 ), StatusCodes.Status201Created );
 		} ) ) ).RequireRateLimiting( "upload" );
 

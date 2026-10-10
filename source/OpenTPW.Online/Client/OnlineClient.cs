@@ -45,6 +45,19 @@ public sealed class OnlineClient : IDisposable
 
 	public Task<ServerInfo> GetServerInfoAsync( CancellationToken cancel = default ) => GetJsonAsync<ServerInfo>( ApiRoutes.Server, cancel );
 
+	/// <summary>The server's news, or null from a server without news (older OpenTPW servers).</summary>
+	public async Task<NewsInfo?> GetNewsAsync( CancellationToken cancel = default )
+	{
+		try
+		{
+			return await GetJsonAsync<NewsInfo>( ApiRoutes.News, cancel );
+		}
+		catch ( OnlineException exception ) when ( exception.Status == HttpStatusCode.NotFound )
+		{
+			return null;
+		}
+	}
+
 	public async Task RegisterAsync( string name, string password, CancellationToken cancel = default )
 	{
 		using var response = await SendAsync( HttpMethod.Post, ApiRoutes.Accounts, Json( new Credentials( name, password ) ), cancel, authenticated: false );
@@ -82,11 +95,12 @@ public sealed class OnlineClient : IDisposable
 		return GetJsonAsync<ParkList>( ApiRoutes.Parks + query, cancel );
 	}
 
-	public async Task<ParkSummary> UploadParkAsync( ParkPackage package, CancellationToken cancel = default )
+	/// <param name="showOnWebsite">Lists the park on the project website (opt-in; the server's public website park list).</param>
+	public async Task<ParkSummary> UploadParkAsync( ParkPackage package, CancellationToken cancel = default, bool showOnWebsite = false )
 	{
 		var content = new ByteArrayContent( package.ToBytes() );
 		content.Headers.ContentType = new MediaTypeHeaderValue( ApiRoutes.PackageMediaType );
-		using var response = await SendAsync( HttpMethod.Post, ApiRoutes.Parks, content, cancel );
+		using var response = await SendAsync( HttpMethod.Post, showOnWebsite ? ApiRoutes.Parks + "?website=true" : ApiRoutes.Parks, content, cancel );
 		return await ReadJsonAsync<ParkSummary>( response, cancel );
 	}
 

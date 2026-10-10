@@ -77,8 +77,8 @@ public class UiScreen
 		if ( input.LeftPressed )
 			pressed = hit;
 		// A slider follows the mouse while it is held, wherever the pointer has drifted to.
-		if ( pressed is UiSlider { Enabled: true } slider && input.Mouse.X >= 0 && (input.LeftDown || input.LeftPressed || input.LeftReleased) )
-			slider.SetFromMouse( canvas, input.Mouse );
+		if ( pressed is { Enabled: true } and IUiDragTarget drag && input.Mouse.X >= 0 && (input.LeftDown || input.LeftPressed || input.LeftReleased) )
+			drag.DragTo( canvas, input.Mouse );
 		if ( input.LeftReleased )
 		{
 			if ( hit != null && (pressed == null || pressed == hit) )
@@ -89,7 +89,7 @@ public class UiScreen
 		}
 		if ( (hit is UiOptionRow or UiSlider || hit is UiButton { Adjusted: not null, WheelAdjusts: true }) && input.Wheel != 0 )
 			hit.Adjust( input.Wheel > 0 ? 1 : -1 );
-		if ( hit is UiScrollList wheelList && input.Wheel != 0 )
+		if ( hit is IUiRowList wheelList && input.Wheel != 0 )
 			wheelList.Scroll( input.Wheel > 0 ? -1 : 1 );
 		if ( input.Has( UiKeys.Tab ) )
 			MoveFocus( 1, element => element is UiTextField );
@@ -106,10 +106,15 @@ public class UiScreen
 			// Typed keys belong to the field, not to navigation or to the park below.
 			return true;
 		}
+		// A focused list that takes the arrow keys moves its selection instead of the focus.
 		if ( input.Has( UiKeys.Down ) )
-			MoveFocus( 1 );
+		{
+			if ( Focused is IUiRowList { ArrowsSelect: true } rows ) rows.Select( rows.Selected + 1 ); else MoveFocus( 1 );
+		}
 		if ( input.Has( UiKeys.Up ) )
-			MoveFocus( -1 );
+		{
+			if ( Focused is IUiRowList { ArrowsSelect: true } rows ) rows.Select( rows.Selected - 1 ); else MoveFocus( -1 );
+		}
 		if ( Focused != null && Focused.Visible && Focused.Focusable )
 		{
 			if ( input.Has( UiKeys.Left ) )
@@ -134,18 +139,18 @@ public class UiScreen
 		// Clicking a text field only gives it the focus; Enter submits it.
 		if ( element is UiTextField )
 			return;
-		if ( element is UiScrollList list )
+		if ( element is IUiRowList list )
 		{
 			var index = list.RowAt( canvas, point );
 			if ( index >= 0 && index == list.Selected )
-				list.Activate();
+				element.Activate();
 			else if ( index >= 0 )
 				list.Select( index );
 			return;
 		}
-		if ( element is UiSlider slider )
+		if ( element is IUiDragTarget drag )
 		{
-			slider.SetFromMouse( canvas, point );
+			drag.DragTo( canvas, point );
 			return;
 		}
 		if ( element is UiOptionRow row )

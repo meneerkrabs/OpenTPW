@@ -85,6 +85,7 @@ Settings are in `OpenTPW.Server/appsettings.json`, or environment variables name
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | `ServerName`, `Message` | | Shown in server info; the message is also sent to chat on connect |
+| `WebsiteOrigins` | none | Web pages that may read the news and website park list from a browser |
 | `DataDirectory` | `data` (`/data` in the image) | Accounts, sessions, parks, postcards and reports |
 | `WebClientDirectory` | empty (`/app/web` in the image) | The published browser game; empty serves the API only |
 | `FilterDirectory` | empty | The operator's own original language folder with `swears.txt` and `alloweds.txt` for the chat word filter |
@@ -97,6 +98,27 @@ Behind a proxy, set `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true` so the limits see
 client addresses (the compose example does).
 
 Back up the data directory (the `opentpw-data` volume) to keep accounts and shared parks.
+
+## News
+
+The game's Online World has a **News** screen with the original two columns, Game News and
+System News. The server reads them from plain-text files the operator writes in the data
+directory: `news/game.txt` and `news/system.txt` (UTF-8; at most 4,000 characters each are
+served; a missing file is empty news). They are served publicly at `GET /api/v1/news`, also
+before logging in, and re-read only when a file changes. On the official server the files are
+in `/opt/opentpw/data/news/`, which the nightly backup already covers.
+
+## The website's top parks
+
+When publishing, a player can choose **Also on the OpenTPW website** (off by default). Only
+those parks appear in the public list `GET /api/v1/parks/website`: at most ten, most votes first
+(then visits, then the earlier published), with name, description, author, theme, votes, visits
+and publish date, recomputed at most once a minute (a park removed within that minute can
+still be listed briefly, without its picture). Their pictures are public at
+`/api/v1/parks/website/{id}/thumbnail`; other parks' pictures and the full park list still need a
+login. `WebsiteOrigins` lists the web pages allowed to read the news and this list from a
+browser (CORS, GET only); the official server allows `https://opentpw.io` and
+`https://www.opentpw.io`, and a server without the setting allows none.
 
 ## How the browser game is served
 

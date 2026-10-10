@@ -188,23 +188,35 @@ public partial class Level
 		}
 		if ( Guests == null )
 			return QueueBuildResult.Refused;
+		var result = BuildQueueCell( Guests.Grid, Park?.Economy, ride, x, y, IsQueueBlocked, out var message );
+		LastActionMessage = message;
+		return result;
+	}
+
+	/// <summary>
+	/// The queue tool's per-cell build (also used by the headless M3 gate): recompute the queue,
+	/// <c>CheckQueueCell</c> (static), then <c>Costs.QueueCell</c> charged through <paramref name="economy"/>
+	/// (none: free), then <see cref="QueuePaths.TryExtend(GuestPathGrid, RideVisitorBridge, int, int, Func{int, int, bool}?)"/>.
+	/// </summary>
+	internal static QueueBuildResult BuildQueueCell( GuestPathGrid grid, ParkEconomy? economy, RideVisitorBridge ride, int x, int y, Func<int, int, bool> isBlocked, out string message )
+	{
 		// Bring the queue up to date before charging: a grid edit since the last recompute would otherwise pass the
 		// check here, be charged, and then be refused by TryExtend's own recompute.
-		ride.RecomputeQueue( Guests.Grid );
-		var check = CheckQueueCell( ride, x, y, Array.Empty<(int X, int Y)>() );
+		ride.RecomputeQueue( grid );
+		var check = CheckQueueCell( grid, economy, ride, x, y, Array.Empty<(int X, int Y)>(), isBlocked );
 		if ( check is not (QueueBuildResult.Ok or QueueBuildResult.Refused) )
 		{
-			LastActionMessage = $"Cannot build a queue here: {check}.";
+			message = $"Cannot build a queue here: {check}.";
 			return check;
 		}
 		// [DATA:Standard.sam:Costs.QueueCell] charged per cell when written (ParkEconomy.TrySpendCell, PATH-plan §3.2)
-		if ( check == QueueBuildResult.Refused || (Park != null && Park.Economy.TrySpendCell( CellPurchase.Queue ) != ParkEconomy.PurchaseResult.Ok) )
+		if ( check == QueueBuildResult.Refused || (economy != null && economy.TrySpendCell( CellPurchase.Queue ) != ParkEconomy.PurchaseResult.Ok) )
 		{
-			LastActionMessage = "Cannot build a queue: not enough money.";
+			message = "Cannot build a queue: not enough money.";
 			return QueueBuildResult.Refused;
 		}
-		var result = QueuePaths.TryExtend( Guests.Grid, ride, x, y, IsQueueBlocked );
-		LastActionMessage = $"{ride.Name}: queue is now {ride.QueueSizeInCells} cells long.";
+		var result = QueuePaths.TryExtend( grid, ride, x, y, isBlocked );
+		message = $"{ride.Name}: queue is now {ride.QueueSizeInCells} cells long.";
 		return result;
 	}
 
@@ -217,11 +229,21 @@ public partial class Level
 	{
 		if ( IsReadOnlyVisit || Guests == null )
 			return QueueBuildResult.Refused;
-		var check = QueuePaths.CheckExtend( Guests.Grid, ride, x, y, pending, IsQueueBlocked );
+		return CheckQueueCell( Guests.Grid, Park?.Economy, ride, x, y, pending, IsQueueBlocked );
+	}
+
+	/// <summary>
+	/// The queue tool's per-cell check (also used by the static <c>BuildQueueCell</c>):
+	/// <see cref="QueuePaths.CheckExtend"/> after <paramref name="pending"/>, then whether <paramref name="economy"/> (none: free)
+	/// can pay for this cell on top of the pending ones.
+	/// </summary>
+	internal static QueueBuildResult CheckQueueCell( GuestPathGrid grid, ParkEconomy? economy, RideVisitorBridge ride, int x, int y, IReadOnlyList<(int X, int Y)> pending, Func<int, int, bool> isBlocked )
+	{
+		var check = QueuePaths.CheckExtend( grid, ride, x, y, pending, isBlocked );
 		if ( check != QueueBuildResult.Ok )
 			return check;
 		// The commit spends Costs.QueueCell per cell (ParkEconomy.TrySpendCell: balance − cost ≥ 0), so this cell needs the pending cells' cost on top.
-		if ( Park != null && !Park.Economy.CanSpendCell( CellPurchase.Queue, pending.Count ) )
+		if ( economy != null && !economy.CanSpendCell( CellPurchase.Queue, pending.Count ) )
 			return QueueBuildResult.Refused;
 		return QueueBuildResult.Ok;
 	}

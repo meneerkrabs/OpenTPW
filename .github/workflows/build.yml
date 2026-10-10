@@ -60,3 +60,24 @@ jobs:
             docker tag opentpw-server "$image:$tag"
             docker push "$image:$tag"
           done
+  deploy:
+    # A release tag updates the official server once its image is published: the server's deploy route
+    # leaves a request in its data folder, and the host's opentpw-deploy.path runs the regular update
+    # (docs/SERVER.md, "Automatic deployment"). SSH stays closed to GitHub.
+    needs: server-image
+    if: github.repository == 'meneerkrabs/OpenTPW' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Ask play.opentpw.io to update
+        env:
+          DEPLOY_TOKEN: ${{ secrets.OPENTPW_DEPLOY_TOKEN }}
+        run: |
+          if [ -z "$DEPLOY_TOKEN" ]; then echo "No OPENTPW_DEPLOY_TOKEN secret; skipping."; exit 0; fi
+          status=$(curl -sS -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $DEPLOY_TOKEN" https://play.opentpw.io/api/v1/admin/deploy)
+          case "$status" in
+            202) echo "The server updates now." ;;
+            # A server from before this route updates at night instead.
+            404) echo "::warning::The server has no deploy route yet; the nightly update applies this release." ;;
+            *) echo "::error::Deploy request failed with HTTP $status."; exit 1 ;;
+          esac

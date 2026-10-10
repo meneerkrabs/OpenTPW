@@ -53,6 +53,11 @@ public sealed class ServerOptions
 	/// the browser; empty allows none. Only GET requests to those public routes are affected.
 	/// </summary>
 	public List<string> WebsiteOrigins { get; set; } = new();
+	/// <summary>
+	/// Secret for <c>POST /api/v1/admin/deploy</c>, which asks the host to update the server (docs/SERVER.md); empty
+	/// disables the route.
+	/// </summary>
+	public string? DeployToken { get; set; }
 
 	public void Validate()
 	{

@@ -17,6 +17,8 @@ public static class ServerProgram
 	public const string Version = "1.0";
 	public const int ProtocolVersion = 1;
 	private const string WebsitePolicy = "website";
+	/// <summary>File in the data folder that asks the host to update the server (deploy/opentpw-deploy.path).</summary>
+	public const string DeployRequestFile = ".deploy-requested";
 	/// <summary>Parks listed on the project website.</summary>
 	public const int MaximumWebsiteParks = 10;
 	private const int MaximumJsonBodyBytes = 8 * 1024;
@@ -197,6 +199,21 @@ public static class ServerProgram
 			ParkPackage.MaximumPackageBytes, Postcard.MaximumCardBytes, options.MaximumParksPerPlayer, options.MaximumVotesPerDay ) ) );
 
 		// Public like the server info: news is readable before logging in.
+		// [EXT:ONLINE-058] a release asks the host to update: the server only leaves a file in its data folder, which the
+		// host's opentpw-deploy.path unit turns into the regular update (deploy/). Without a DeployToken the route is absent.
+		if ( !string.IsNullOrEmpty( options.DeployToken ) )
+		{
+			var expected = System.Text.Encoding.UTF8.GetBytes( options.DeployToken );
+			app.MapPost( ApiRoutes.Deploy, ( HttpContext context ) =>
+			{
+				var token = Token( context );
+				if ( token == null || !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals( System.Text.Encoding.UTF8.GetBytes( token ), expected ) )
+					return Error( StatusCodes.Status401Unauthorized, "Authorisation failed." );
+				AtomicFile.Write( Path.Combine( store.Root, DeployRequestFile ), System.Text.Encoding.UTF8.GetBytes( DateTimeOffset.UtcNow.ToString( "O" ) ) );
+				return Results.Accepted();
+			} ).RequireRateLimiting( "auth" );
+		}
+
 		var news = new NewsFeed( options.DataDirectory );
 		app.MapGet( ApiRoutes.News, () => Ok( news.Read() ) ).RequireCors( WebsitePolicy );
 

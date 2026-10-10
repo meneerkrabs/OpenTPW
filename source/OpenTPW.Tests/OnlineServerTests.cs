@@ -349,6 +349,45 @@ public class OnlineServerTests
 	}
 
 	[TestMethod]
+	public async Task DeployRequestNeedsTheTokenAndOnlyLeavesAFile()
+	{
+		await using ( var closed = await LoopbackServer.StartAsync() )
+		{
+			try
+			{
+				using var http = new HttpClient { BaseAddress = closed.Url };
+				Assert.AreEqual( HttpStatusCode.NotFound, (await http.PostAsync( ApiRoutes.Deploy.TrimStart( '/' ), null )).StatusCode, "no route without a token" );
+			}
+			finally
+			{
+				closed.DeleteData();
+			}
+		}
+		await using var server = await LoopbackServer.StartAsync( options => options.DeployToken = "release-secret" );
+		try
+		{
+			var request = Path.Combine( server.Directory, ServerProgram.DeployRequestFile );
+			using var http = new HttpClient { BaseAddress = server.Url };
+			async Task<HttpStatusCode> Post( string? token )
+			{
+				using var message = new HttpRequestMessage( HttpMethod.Post, ApiRoutes.Deploy.TrimStart( '/' ) );
+				if ( token != null )
+					message.Headers.Authorization = new AuthenticationHeaderValue( "Bearer", token );
+				return (await http.SendAsync( message )).StatusCode;
+			}
+			Assert.AreEqual( HttpStatusCode.Unauthorized, await Post( null ) );
+			Assert.AreEqual( HttpStatusCode.Unauthorized, await Post( "release-secreT" ) );
+			Assert.IsFalse( File.Exists( request ) );
+			Assert.AreEqual( HttpStatusCode.Accepted, await Post( "release-secret" ) );
+			Assert.IsTrue( File.Exists( request ) );
+		}
+		finally
+		{
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
 	public async Task AuthenticationIsRateLimited()
 	{
 		await using var server = await LoopbackServer.StartAsync( options => options.AuthenticationsPerMinute = 3 );

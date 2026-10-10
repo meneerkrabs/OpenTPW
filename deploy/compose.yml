@@ -13,6 +13,8 @@ services:
       # opentpw.io reads the public news and website park list from the browser.
       OpenTPW__WebsiteOrigins__0: https://opentpw.io
       OpenTPW__WebsiteOrigins__1: https://www.opentpw.io
+      # A release asks for an update with this secret (docs/SERVER.md, "Automatic deployment").
+      OpenTPW__DeployToken: ${OPENTPW_DEPLOY_TOKEN:-}
       # Caddy is the only client; let the rate limits see real addresses.
       ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
     volumes:

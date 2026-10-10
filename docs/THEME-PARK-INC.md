@@ -113,7 +113,7 @@ variants of the environment, do not either); they show the clear colour. The `*_
 
 **Other open spots.** Each world has 8 to 16 heightfield ground cells textured `trans01` (only a `.tga`, in
 `Sharetex.wad`); they draw as black quadrilaterals (visible in `water` as small black patches in the
-snowfield), because the ground is drawn without blending. The mountain pits next to the entrance road
+snowfield), most likely because the ground is drawn without blending (not confirmed). The mountain pits next to the entrance road
 show black interiors in all three worlds. Esc and P in the viewer are implemented but were not
 exercised by an automated run (all checks used `--capture-world`).
 

@@ -455,6 +455,29 @@ public class ParkEconomyTests
 	}
 
 	[TestMethod]
+	public void CandidateGradesSpreadAroundTheAverageAndWrapBelowZero()
+	{
+		var grades = new HashSet<int>();
+		var park = EconomyTestData.Park();
+		for ( var step = 0; step < 40; step++ )
+		{
+			foreach ( var candidate in park.Staff.Candidates )
+				grades.Add( candidate.Grade );
+			park.Advance( park.Staff.UpdateInterval + ParkCalendar.TicksForHours( 2 ) );
+		}
+		CollectionAssert.AreEquivalent( new[] { 0, 1, 2 }, grades.ToArray(), "average 1: grades 0, 1 and 2 only, no 'great' grade" );
+		var zeroAverage = new ParkEconomy( EconomyTestData.Settings( extra: "StaffPoolInfo.AvgGradeOfHandymen 0\n" ), EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 7 );
+		var handymen = new HashSet<int>();
+		for ( var step = 0; step < 40; step++ )
+		{
+			foreach ( var candidate in zeroAverage.Staff.Candidates.Where( candidate => candidate.Type == StaffType.Handyman ) )
+				handymen.Add( candidate.Grade );
+			zeroAverage.Advance( zeroAverage.Staff.UpdateInterval + ParkCalendar.TicksForHours( 2 ) );
+		}
+		CollectionAssert.AreEquivalent( new[] { 0, 1, 4 }, handymen.ToArray(), "average 0: a raw -1 wraps to 255 and is stored as grade 4" );
+	}
+
+	[TestMethod]
 	public void HandymenCleanLitter()
 	{
 		var park = EconomyTestData.Park();
@@ -467,9 +490,12 @@ public class ParkEconomyTests
 		park.AdvanceDays( 1 );
 		Assert.AreEqual( 50, park.LitterItems );
 		var handyman = EconomyTestData.HireBest( park, StaffType.Handyman );
+		var hourBefore = ParkCalendar.HourIndex( park.Tick );
 		park.AdvanceDays( 1 );
+		var hours = ParkCalendar.HourIndex( park.Tick ) - hourBefore;
+		Assert.IsTrue( hours is 23 or 24, hours.ToString() );
 		var perHour = 60 * ParkEconomy.LitterScale / park.Settings[StaffType.Handyman].WorkDuration[handyman.Grade];
-		Assert.AreEqual( Math.Max( 0, 50 * ParkEconomy.LitterScale - 24 * perHour ), park.LitterScaled );
+		Assert.AreEqual( Math.Max( 0, 50 * ParkEconomy.LitterScale - hours * perHour ), park.LitterScaled, "one cleaning step per park-clock hour" );
 		Assert.IsTrue( park.ParkRating >= rating );
 	}
 
@@ -559,6 +585,29 @@ public class ParkEconomyTests
 			research.AddResearcherPoints( 100 );
 		Assert.IsTrue( research.IsAvailable( 1120 ) );
 		Assert.AreEqual( 1130, research.Current( ResearchCategory.Ride )!.InfoId );
+	}
+
+	[TestMethod]
+	public void BuildChallengesFollowTheBinaryHandlerTable()
+	{
+		var park = EconomyTestData.Park();
+		ChallengeDefinition Challenge( int type, int value, int target, int target2 = 0 ) => new( 0, type, 0, 60, value, target, target2, 0, 1000, false, true );
+		bool Reached( ChallengeDefinition definition ) => park.Objectives.Measure( definition, park.Counters, park.Staff, park.Objects, park.GuestStatistics ) >= ParkObjectives.Target( definition );
+		var upgrade = Challenge( 28, 2, 1100 );
+		Assert.IsFalse( Reached( upgrade ), "no ride: level -1" );
+		var ride = park.RegisterExisting( 1100 );
+		Assert.IsFalse( Reached( Challenge( 30, 0, 1180 ) ) );
+		Assert.IsTrue( Reached( Challenge( 30, 0, 1100 ) ), "an existing ride counts; TargetVal is not read" );
+		Assert.IsTrue( Reached( Challenge( 31, 5, 1100, 1180 ) ), "type 31 shares the type 30 handler: only TargetObj" );
+		Assert.IsTrue( Reached( Challenge( 32, 0, 1100 ) ) );
+		Assert.IsFalse( Reached( Challenge( 33, 0, 1100, 1180 ) ), "type 33 needs both objects" );
+		park.RegisterExisting( 1180 );
+		Assert.IsTrue( Reached( Challenge( 33, 0, 1100, 1180 ) ) );
+		Assert.IsFalse( ParkObjectives.IsCountSinceAcceptance( 30 ) || ParkObjectives.IsCountSinceAcceptance( 33 ), "built counts are absolute" );
+		ride.Level = 1;
+		Assert.IsFalse( Reached( upgrade ), "level byte 1 < TargetVal 2" );
+		ride.Level = 2;
+		Assert.IsTrue( Reached( upgrade ), "the third level (byte 2) reaches TargetVal 2" );
 	}
 
 	[TestMethod]

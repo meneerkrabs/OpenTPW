@@ -88,7 +88,12 @@ to connect the queue" end).
 2. **Same nonzero type**: the signed placement counter `cell+32` goes up by one and the call
    succeeds. **No charge.**
 3. `cost = PathCost` for type 1, `QueueCost` for type 3, else 0. When the byte `data:0x7de2d` is
-   nonzero, `cost = 0` (meaning unresolved: `APPROX:PATH-FREE`).
+   nonzero, `cost = 0`. The byte is a short-lived park-view tool flag: the hover routine sets it
+   in tool mode 4 (`0x6f5dc`/`0x6f5f4`), the click handler sets it at `0x71330` and in mode 59 at
+   `0x71cb8`, and it is cleared at `0x70ca4`, `0x71c94` and `0x722ec` (REVIEW-PATH §1; a TOC-slot
+   scan plus one r13 site, so other writers through cached registers may exist). It is never
+   raised in path or queue mode by these writers. Treating "no park economy" as free stays
+   `APPROX:PATH-FREE`.
 4. Path over queue (`new 1`, `old 3`) is remembered for step 7. Queue over path runs
    `ClearCell(cell, 0, 0)` first, with the conversion flag `data:0x84adc` raised.
 5. **Money test** only while `game+36 == 0`: `affordable = balance − cost ≥ 0` (signed, balance
@@ -150,6 +155,9 @@ path tool and mode 3 the queue tool**: the drag code writes the cell type equal 
   is written with the last-cell flag (`data:0x84b2c`) raised.
 - The first refused cell stops the walk and returns 0. Cells already written stay written, and
   stay charged.
+- A cell outside the 128 × 128 array (`0xd70d8`) is **skipped**, not refused. When the skipped
+  cell is the end, `LayLine` returns 1 with the last-cell flag left raised. The tool's snapped
+  ends are grid cells, so play never reaches this (REVIEW-PATH N1).
 - `LayLine` itself never calls Spend (negative witness over `0x84ea4..0x85174`).
 
 ### 4.3 Preview, commit, session (high for the calls; medium for the sequence)
@@ -165,9 +173,14 @@ path tool and mode 3 the queue tool**: the drag code writes the cell type equal 
   mode, no preview flag. Then clear the ghosts of the other kinds
   (`0x80, 0x82, 0x85, 0x86, 0x83, 0x81`). In mode 3 it also calls `QueueEdited`. Where the first
   vertex is pushed (`0x70f24` after the reset at `0x70f18`) was not read in detail.
-- **Session end**: when the clicked end equals the start, or when the commit `LayLine` failed,
+- **Session end**: when the clicked end equals the start with more than one vertex stored,
+  `bf eq` at `0x71084` jumps to `0x71174`, past the push and **every** `LayLine` (the commit at
+  `0x710c0` included), so the ending click lays nothing. When the clicked end equals the start,
   the start is reset to −1 and `SetMode(0)` ends the tool. Otherwise the end becomes the next
-  start. This is "click again to stop building".
+  start. This is "click again to stop building". The flag read at `0x7123c` (`sp+2380`) is
+  `cntlzw` of the **last** `LayLine` result, the ghost clear `LayLine(0x81)` at `0x71164`, not of
+  the commit; whether a refused commit ends the tool is therefore not traced
+  (`APPROX:PATH-ENDREFUSE`).
 - **Completing on a path**: when the last cell of a write lands on a cell that is already type 1
   or 3, `SetCell` sets the flag `data:0x84b34` (`0x829f0..0x82a1c`). Its consumer was not found
   outside `SetCell` (`APPROX:PATH-ENDFLAG`). The help text says such a click completes the path.
@@ -336,7 +349,10 @@ the touched cells only, and the version bump re-plans guests as today.
    `total > balance` (§3.3).
 3. **Commit** on a left click: `end = SnapEnd(Start, click)`. Push the vertex. Write every
    `LayLine` cell through `SetCellType` (charging per cell). Then:
-   - if `end == Start` or a cell was refused, end the tool (mode None);
+   - if `end == Start` with more than one vertex stored, write nothing and end the tool
+     (§4.3, `0x71084`);
+   - if `end == Start` (the first click on the start lays that one cell) or a cell was refused,
+     end the tool (mode None; the refusal case is `APPROX:PATH-ENDREFUSE`);
    - else `Start = end`, and continue.
 
    Ending on an existing path or queue also completes (`APPROX:PATH-ENDFLAG`: PATH-I ends the
@@ -345,6 +361,8 @@ the touched cells only, and the version bump re-plans guests as today.
    nothing on undo, which matches §6 for removals. `APPROX:PATH-UNDO`.
 5. **Cancel** (right click or Escape) ends the tool without writing. Escape inside the tool
    does not also open the pause menu; the next Escape does. `APPROX:PATH-CANCEL`.
+   While the pause menu is open the tool takes no clicks, neither through the HUD nor through
+   the park click; the economy's speed pause does not stop it (`APPROX:PATH-PAUSE`).
 6. **Remove** (the existing remove tool on a path cell): §6 with `a = b = 0` (forced),
    respecting NoModify. `APPROX:PATH-REMOVE`.
 
@@ -407,9 +425,11 @@ adopts its cell store and adds the fields above.
 | `PATH-SLOPE` | Any slope or height limit (none found, bounded) | none, plus `IParkGrid.CheckTerrain` |
 | `PATH-LAND` | Source of owned land in saves and MAPs | owned = terrain-allowed and in bounds |
 | `PATH-CODE8` | Validator code 8 (path over a queue end) | refuse |
-| `PATH-FREE` | Byte `data:0x7de2d` and `game+36` meanings | free only in the sandbox (no economy) |
+| `PATH-FREE` | `game+36`; byte `data:0x7de2d` is a park-view flag set in tool modes 4 and 59 (§3.2), not a sandbox switch | free only without a park economy |
 | `PATH-LEDGER` | Ledger row of path spending | `OtherCosts` |
 | `PATH-CANCEL` | Escape/Back key handling in tool modes 1 and 3 | Escape ends the tool; the next Escape opens the pause menu |
+| `PATH-ENDREFUSE` | Whether a refused commit ends the tool (`0x7123c` reads the ghost-clear `LayLine(0x81)`) | a line refused part-way ends the tool |
+| `PATH-PAUSE` | Park-view input while the game is paused | the pause menu blocks tool clicks; the speed pause does not |
 | — | Type names for 4, 9, 10, 21, 24, 30; `0x4d5d0` meaning; `+0x80`/`+0x400` flag uses | not needed for paths |
 | — | Which `.sam` layers fill the cost record per mode | `BalanceSettings` as today |
 

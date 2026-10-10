@@ -50,23 +50,45 @@ internal sealed partial class SandboxSmokeTest
 		var balance = economy?.Balance ?? 0;
 		var walkable = grid.WalkableCount;
 
+		// The developer remove tool owns the park click: the HUD does not start the path tool under it (REVIEW-PATH S1).
+		level.IsRemovingObjects = true;
+		var removeClick = hud.Update( hudContext, new UiInput( startPoint, true, true, false, false, UiKeys.None ) );
+		hud.Update( hudContext, new UiInput( startPoint, false, false, true, false, UiKeys.None ) );
+		level.IsRemovingObjects = false;
+		Require( !level.CellTool.IsActive && !removeClick, "with the remove tool on, a park click is left to Level.RemoveAt" );
+
 		hud.Update( hudContext, new UiInput( startPoint, true, true, false, false, UiKeys.None ) );
 		Require( level.CellTool.Mode == CellToolMode.Path && level.CellTool.Start == start, "a HUD click on an empty owned cell starts the path tool" );
 		Require( hudContext.HoverHelp != null, "the path tool shows its help line (UIHELPTEXT 443)" );
 		hud.Update( hudContext, new UiInput( startPoint, false, false, true, false, UiKeys.None ) );
+
+		// PATH-013: the pause menu blocks the tool's clicks, and Update reports them as captured so Level skips them too.
+		var cellVersion = grid.Cells.Version;
+		hud.OpenPauseMenu();
+		var pausedClick = hud.Update( hudContext, new UiInput( endPoint, true, true, false, false, UiKeys.None ) );
+		Require( hud.Paused && pausedClick && level.CellTool.IsActive && level.CellTool.Start == start && grid.Cells.Version == cellVersion, "the pause menu takes the click: no commit, the tool waits" );
+		hud.ClosePauseMenu();
+
+		// PATH-013: the speed pause does not stop the tool; the ghost and the commit work as at normal speed.
+		var speed = hud.Status.Speed;
+		hud.Status.Speed = GameSpeed.Paused;
 		hud.Update( hudContext, UiInput.Idle( endPoint ) );
 		Require( level.CellTool.Ghost is { Built.Count: SmokePathLength + 1 } && grid.WalkableCount == walkable, "the HUD hover previews the line without building it" );
 		hud.Update( hudContext, new UiInput( endPoint, true, true, false, false, UiKeys.None ) );
 		hud.Update( hudContext, new UiInput( endPoint, false, false, true, false, UiKeys.None ) );
+		hud.Status.Speed = speed;
 		var built = level.CellTool.LastCommit;
 		Require( built is { Completed: true, Built.Count: SmokePathLength + 1 } && grid.WalkableCount == walkable + SmokePathLength + 1, "a second HUD click lays the snapped line" );
 		Require( grid.Distance( start.X, start.Y, end.X, end.Y ) == SmokePathLength, "the built cells are linked for guests" );
 		if ( economy != null )
 			Require( balance - economy.Balance == built!.Charged && built.Charged == (SmokePathLength + 1) * economy.CellCost( CellPurchase.Path ), "each built cell is charged Costs.PathCell" );
 		Require( level.CellTool.IsActive && level.CellTool.Start == end, "the tool continues from the line's end" );
+		var endCounter = grid.Cells.PlacementCountAt( end.X, end.Y );
+		var hash = level.ComputeStateHash();
 		hud.Update( hudContext, new UiInput( endPoint, true, true, false, false, UiKeys.None ) );
 		hud.Update( hudContext, new UiInput( endPoint, false, false, true, false, UiKeys.None ) );
 		Require( !level.CellTool.IsActive, "clicking the start again ends the path tool" );
+		Require( grid.Cells.PlacementCountAt( end.X, end.Y ) == endCounter && level.ComputeStateHash() == hash, "the ending click lays nothing (0x71084)" );
 		Log.Trace( $"HUD path tool: laid {built!.Built.Count} cells {start} -> {end} for ${built.Charged} through ParkHud clicks at ({startPoint.X:F0}, {startPoint.Y:F0}) -> ({endPoint.X:F0}, {endPoint.Y:F0})." );
 	}
 }

@@ -83,7 +83,7 @@ public sealed class ParkPathBuilder : ICellLineWriter
 
 	/// <summary>Cost of one path cell (<c>Costs.PathCell</c>), or 0 without an economy.</summary>
 	// [BIN:STP-PPC:0x10082AC4 SetCellType] type 1 is priced with the path cost global (Costs.PathCell, balance +1472, loaded by 0x1010F29C)
-	// [APPROX:PATH-009] the free-build byte data:0x7de2d and the game+36 money gate are taken as "no park economy" (the generic sandbox) — evidence needed: writers of data 0x7de2d and game+36
+	// [APPROX:PATH-009] free building is taken as "no park economy"; the free-build byte data:0x7de2d is a short-lived park-view flag (set by the hover routine in tool mode 4 at 0x6f5f4 and by the click handler at 0x71330 and in mode 59 at 0x71cb8, cleared at 0x70ca4, 0x71c94, 0x722ec), not a sandbox switch — evidence needed: what tool modes 4 and 59 are, other writers of data 0x7de2d, and game+36
 	public long CellCost => Economy?.CellCost( CellPurchase.Path ) ?? 0;
 
 	// ---- LayLine ----------------------------------------------------------------------------------
@@ -141,6 +141,7 @@ public sealed class ParkPathBuilder : ICellLineWriter
 
 	private CellBuildResult Validate( int x, int y, ParkCellType type, bool lastCell, long pending )
 	{
+		// The original's LayLine skips (does not stop at) cells outside its 128 × 128 array (0xd70d8); snapped tool ends are grid cells, so only the headless API can reach this (REVIEW-PATH N1).
 		if ( !Cells.InBounds( x, y ) || x >= Terrain.Width || y >= Terrain.Height )
 			return CellBuildResult.OutsideTerrain;
 		// [BIN:STP-PPC:0x1008432C placement validator] a cell with flag 0x40 (not owned; set by map initialisation 0x10085538 on every non-InitialPath cell) is refused
@@ -305,7 +306,7 @@ public sealed class ParkPathBuilder : ICellLineWriter
 		return CellBuildResult.Ok;
 	}
 
-	/// <summary>Neighbours as <c>0x6e110</c> sees them: a linked cardinal path or queue cell.</summary>
+	/// <summary>A linked cardinal path or queue neighbour. <c>0x6e110</c> counts every set bit of the link byte instead; the two differ only for links toward non-path cells, such as the 0x0F links of imported InitialPath cells (REVIEW-PATH N3; the link writer 0x82d6c is untraced, PATH-004).</summary>
 	private bool HasPathNeighbours( int x, int y )
 	{
 		for ( var direction = 0; direction < 4; direction++ )

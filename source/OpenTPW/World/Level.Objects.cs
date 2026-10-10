@@ -141,7 +141,7 @@ public partial class Level
 			return false;
 		ride.RecomputeQueue( Guests.Grid );
 		var start = Guests.Grid.IsQueue( front.X, front.Y ) ? ride.QueueBackCell : front;
-		CellTool.Enter( new QueueLineWriter( Guests.Grid, ride, ( x, y ) => QueuePaths.CheckExtend( Guests.Grid, ride, x, y, IsQueueBlocked ),
+		CellTool.Enter( new QueueLineWriter( Guests.Grid, ride, ( x, y, pending ) => CheckQueueCell( ride, x, y, pending ),
 			( x, y ) => BuildQueueCell( ride, x, y ), RemoveQueueCell, () => Park?.Economy.CellCost( CellPurchase.Queue ) ?? 0 ), start );
 		return true;
 	}
@@ -191,14 +191,14 @@ public partial class Level
 		// Bring the queue up to date before charging: a grid edit since the last recompute would otherwise pass the
 		// check here, be charged, and then be refused by TryExtend's own recompute.
 		ride.RecomputeQueue( Guests.Grid );
-		var check = QueuePaths.CheckExtend( Guests.Grid, ride, x, y, IsQueueBlocked );
-		if ( check != QueueBuildResult.Ok )
+		var check = CheckQueueCell( ride, x, y, Array.Empty<(int X, int Y)>() );
+		if ( check is not (QueueBuildResult.Ok or QueueBuildResult.Refused) )
 		{
 			LastActionMessage = $"Cannot build a queue here: {check}.";
 			return check;
 		}
 		// [DATA:Standard.sam:Costs.QueueCell] charged per cell when written (ParkEconomy.TrySpendCell, PATH-plan §3.2)
-		if ( Park != null && Park.Economy.TrySpendCell( CellPurchase.Queue ) != ParkEconomy.PurchaseResult.Ok )
+		if ( check == QueueBuildResult.Refused || (Park != null && Park.Economy.TrySpendCell( CellPurchase.Queue ) != ParkEconomy.PurchaseResult.Ok) )
 		{
 			LastActionMessage = "Cannot build a queue: not enough money.";
 			return QueueBuildResult.Refused;
@@ -206,6 +206,24 @@ public partial class Level
 		var result = QueuePaths.TryExtend( Guests.Grid, ride, x, y, IsQueueBlocked );
 		LastActionMessage = $"{ride.Name}: queue is now {ride.QueueSizeInCells} cells long.";
 		return result;
+	}
+
+	/// <summary>
+	/// Validates (x, y) as <paramref name="ride"/>'s next queue cell after <paramref name="pending"/> (earlier cells
+	/// of the same line, taken as laid and paid for), exactly as <see cref="BuildQueueCell"/> checks before charging;
+	/// no writes. <see cref="QueueBuildResult.Refused"/> means the balance cannot pay for this cell after the pending ones.
+	/// </summary>
+	public QueueBuildResult CheckQueueCell( RideVisitorBridge ride, int x, int y, IReadOnlyList<(int X, int Y)> pending )
+	{
+		if ( IsReadOnlyVisit || Guests == null )
+			return QueueBuildResult.Refused;
+		var check = QueuePaths.CheckExtend( Guests.Grid, ride, x, y, pending, IsQueueBlocked );
+		if ( check != QueueBuildResult.Ok )
+			return check;
+		// The commit spends Costs.QueueCell per cell (ParkEconomy.TrySpendCell: balance − cost ≥ 0), so this cell needs the pending cells' cost on top.
+		if ( Park != null && !Park.Economy.CanSpendCell( CellPurchase.Queue, pending.Count ) )
+			return QueueBuildResult.Refused;
+		return QueueBuildResult.Ok;
 	}
 
 	/// <summary>
@@ -343,10 +361,11 @@ public partial class Level
 			return;
 		if ( (BuildEntry == null && !IsRemovingObjects && !CellTool.IsActive) || !TryGetGridCell( mousePosition, viewportSize, out var x, out var y ) )
 			return;
-		if ( CellTool.IsActive && BuildEntry == null )
-			CellTool.Click( (x, y) );
-		else if ( IsRemovingObjects )
+		// The remove tool comes first, so a path or queue cell under it is removed rather than built on (ParkHud stands aside for it too).
+		if ( IsRemovingObjects )
 			RemoveAt( x, y );
+		else if ( CellTool.IsActive && BuildEntry == null )
+			CellTool.Click( (x, y) );
 		else
 			PlaceObject( BuildEntry!, x, y, BuildRotation );
 	}

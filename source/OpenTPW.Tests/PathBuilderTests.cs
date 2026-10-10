@@ -398,6 +398,34 @@ public class PathBuilderTests
 	}
 
 	[TestMethod]
+	public void TheEndingClickLaysNothing()
+	{
+		// 0x71084: an end equal to the start with more than one vertex stored skips the push and every LayLine.
+		var guests = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), 5 );
+		var economy = EconomyTestData.Park();
+		var builder = new ParkPathBuilder( guests.Grid.Cells, guests.Grid, economy, new TestGrid { Width = 20, Height = 10 } );
+		var tool = new CellBuildTool();
+		var ended = 0;
+		tool.Ended += () => ended++;
+		tool.Enter( builder, (0, 0) );
+		var line = tool.Click( (3, 0) )!;
+		Assert.IsTrue( line.Completed );
+		Assert.AreEqual( (3, 0), tool.Start );
+		var counter = guests.Grid.Cells.PlacementCountAt( 3, 0 );
+		var version = guests.Grid.Cells.Version;
+		var balance = economy.Balance;
+		var hash = WorldStateHash.Compute( new WorldStateSources { Guests = guests } );
+		Assert.IsNull( tool.Click( (3, 0) ), "the ending click commits no segment" );
+		Assert.IsFalse( tool.IsActive );
+		Assert.AreEqual( 1, ended );
+		Assert.AreSame( line, tool.LastCommit );
+		Assert.AreEqual( counter, guests.Grid.Cells.PlacementCountAt( 3, 0 ), "no placement counter bump on the end cell" );
+		Assert.AreEqual( version, guests.Grid.Cells.Version );
+		Assert.AreEqual( balance, economy.Balance );
+		Assert.AreEqual( hash, WorldStateHash.Compute( new WorldStateSources { Guests = guests } ), "ending the session leaves the world hash unchanged" );
+	}
+
+	[TestMethod]
 	public void UndoRemovesTheLastSegmentWithoutARefund()
 	{
 		var rig = new Rig();
@@ -490,7 +518,7 @@ public class PathBuilderTests
 			Parameters = new QueueParameters( true, false, false, 130, 60, 60, 5, 30 )
 		};
 		var charged = 0;
-		var writer = new QueueLineWriter( grid, ride, ( x, y ) => QueuePaths.CheckExtend( grid, ride, x, y ),
+		var writer = new QueueLineWriter( grid, ride, ( x, y, pending ) => QueuePaths.CheckExtend( grid, ride, x, y, pending ),
 			( x, y ) =>
 			{
 				var result = QueuePaths.TryExtend( grid, ride, x, y );
@@ -522,11 +550,80 @@ public class PathBuilderTests
 		Assert.AreEqual( 5, ride.QueueSizeInCells, "undo removes the segment's queue cells" );
 	}
 
+	private static (GuestPathGrid Grid, RideVisitorBridge Ride) QueueRig( int height )
+	{
+		var grid = new GuestPathGrid( 12, height );
+		for ( var x = 0; x < 10; x++ )
+			grid.SetPath( x, 0, true );
+		var ride = new RideVisitorBridge( 1, "Queue ride", RideVisitorKind.Ride, 5, 55, 30 )
+		{
+			EntranceCell = (2, 0),
+			ExitCell = (2, 0),
+			QueueFrontCell = (2, 1),
+			QueueEntranceDirection = 0, // the front links up to the entrance; the queue grows down
+			Parameters = new QueueParameters( true, false, false, 130, 60, 60, 5, 30 )
+		};
+		return (grid, ride);
+	}
+
+	private static QueueLineWriter QueueWriter( GuestPathGrid grid, RideVisitorBridge ride, Func<int, int, bool>? blocked = null, ParkEconomy? economy = null ) =>
+		new( grid, ride,
+			( x, y, pending ) => QueuePaths.CheckExtend( grid, ride, x, y, pending, blocked ) is var check && check != QueueBuildResult.Ok ? check
+				: economy != null && !economy.CanSpendCell( CellPurchase.Queue, pending.Count ) ? QueueBuildResult.Refused : QueueBuildResult.Ok,
+			( x, y ) =>
+			{
+				ride.RecomputeQueue( grid );
+				var check = QueuePaths.CheckExtend( grid, ride, x, y, blocked );
+				if ( check != QueueBuildResult.Ok )
+					return check;
+				if ( economy != null && economy.TrySpendCell( CellPurchase.Queue ) != ParkEconomy.PurchaseResult.Ok )
+					return QueueBuildResult.Refused;
+				return QueuePaths.TryExtend( grid, ride, x, y, blocked );
+			}, ( x, y ) => QueuePaths.RemoveFrom( grid, ride, x, y ), () => economy?.CellCost( CellPurchase.Queue ) ?? 0 );
+
+	[TestMethod]
+	public void TheQueueGhostShowsExactlyTheCellsTheCommitLays()
+	{
+		// An object on the third cell: the ghost stops there, as the commit does (it used to pass any empty later cell).
+		var (grid, ride) = QueueRig( 12 );
+		var tool = new CellBuildTool();
+		tool.Enter( QueueWriter( grid, ride, ( x, y ) => (x, y) == (2, 3) ), (2, 1) );
+		var ghost = tool.Hover( (2, 6) )!;
+		CollectionAssert.AreEqual( new[] { (2, 1), (2, 2) }, ghost.Built.ToArray() );
+		Assert.AreEqual( (2, 3), ghost.StoppedAt );
+		Assert.AreEqual( 0, grid.QueueCellCount, "the preview writes nothing" );
+		var commit = tool.Click( (2, 6) )!;
+		CollectionAssert.AreEqual( ghost.Built.ToArray(), commit.Built.ToArray() );
+		Assert.AreEqual( ghost.StoppedAt, commit.StoppedAt );
+
+		// The length limit counts the ghost's own cells.
+		(grid, ride) = QueueRig( 40 );
+		tool.Enter( QueueWriter( grid, ride ), (2, 1) );
+		ghost = tool.Hover( (2, 35) )!;
+		Assert.AreEqual( QueuePaths.MaximumCells, ghost.Built.Count );
+		commit = tool.Click( (2, 35) )!;
+		CollectionAssert.AreEqual( ghost.Built.ToArray(), commit.Built.ToArray() );
+		Assert.AreEqual( QueuePaths.MaximumCells, ride.QueueSizeInCells );
+
+		// Money: the ghost charges the pending cells as the commit spends them, one by one.
+		(grid, ride) = QueueRig( 12 );
+		var cost = EconomyTestData.Park().CellCost( CellPurchase.Queue );
+		Assert.IsTrue( cost > 0 );
+		var economy = EconomyTestData.Park( initialCash: (int)(4 * cost - 1) );
+		tool.Enter( QueueWriter( grid, ride, economy: economy ), (2, 1) );
+		ghost = tool.Hover( (2, 8) )!;
+		Assert.AreEqual( 3, ghost.Built.Count );
+		Assert.AreEqual( CellBuildResult.NotEnoughMoney, ghost.StoppedBy );
+		commit = tool.Click( (2, 8) )!;
+		CollectionAssert.AreEqual( ghost.Built.ToArray(), commit.Built.ToArray() );
+		Assert.AreEqual( cost - 1, economy.Balance );
+	}
+
 	[TestMethod]
 	public void PathRegisterHasThePlanUnknowns()
 	{
 		var names = PathApproximations.Entries.Select( entry => entry.Rule.Split( ':' )[0] ).ToArray();
-		CollectionAssert.AreEqual( new[] { "PATH-ENTER", "PATH-UNDO", "PATH-ENDFLAG", "PATH-CONNECT", "PATH-REMOVE", "PATH-SLOPE", "PATH-LAND", "PATH-CODE8", "PATH-FREE", "PATH-LEDGER", "PATH-CANCEL" }, names );
-		CollectionAssert.AreEqual( Enumerable.Range( 1, 11 ).Select( index => $"PATH-{index:000}" ).ToArray(), PathApproximations.Entries.Select( entry => entry.Id ).ToArray() );
+		CollectionAssert.AreEqual( new[] { "PATH-ENTER", "PATH-UNDO", "PATH-ENDFLAG", "PATH-CONNECT", "PATH-REMOVE", "PATH-SLOPE", "PATH-LAND", "PATH-CODE8", "PATH-FREE", "PATH-LEDGER", "PATH-CANCEL", "PATH-ENDREFUSE", "PATH-PAUSE" }, names );
+		CollectionAssert.AreEqual( Enumerable.Range( 1, 13 ).Select( index => $"PATH-{index:000}" ).ToArray(), PathApproximations.Entries.Select( entry => entry.Id ).ToArray() );
 	}
 }

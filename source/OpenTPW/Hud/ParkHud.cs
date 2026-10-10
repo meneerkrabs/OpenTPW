@@ -530,12 +530,15 @@ public sealed class ParkHud
 
 	/// <summary>
 	/// The path/queue tool's HUD side: park-view help (441–445), the ghost line under the cursor, Backspace undo
-	/// and right-click cancel. Clicks inside the tool are committed by <see cref="Level"/> (the park click).
+	/// and right-click cancel. Clicks inside the tool are committed here; <see cref="Update"/> reports them as captured,
+	/// so <see cref="Level"/>'s park click (the same commit for input without the HUD) skips them.
 	/// </summary>
 	private bool UpdateCellTool( UiContext context, UiInput input, bool inPark, bool paused )
 	{
 		var tool = level.CellTool;
-		if ( paused || level.BuildEntry != null || level.IsPlacing )
+		// [APPROX:PATH-013] while the pause menu is open the tool takes no clicks: this returns before the commit, and Update reports the pointer as captured (overUi), so Level's park click skips it too; the economy's speed pause does not stop the tool, which keeps its ghost — evidence needed: the original park view's input handling while paused
+		// The remove tool owns the park click while it is on (Level.RemoveAt clears paths and queues too).
+		if ( paused || level.BuildEntry != null || level.IsPlacing || level.IsRemovingObjects )
 			return false;
 		if ( inPark && tool.HoverHelpId( level.Paths, cursorX, cursorY ) is int help )
 			context.HoverHelp = strings.Help( help );

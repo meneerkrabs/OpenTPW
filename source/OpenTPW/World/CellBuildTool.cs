@@ -23,8 +23,8 @@ public interface ICellLineWriter
 /// <summary>
 /// The path and queue build tool (PATH-plan §4.3, §9.4), CPU-only and shared by both modes: a start cell, the
 /// 1024-entry vertex stack, a ghost preview on cursor moves (the <c>mode | 0x100</c> LayLine) and a commit on
-/// clicks (the raw-mode LayLine). A click whose snapped end is the start, a refused cell, or a line ending on an
-/// existing path or queue ends the tool; otherwise the end becomes the next start. The HUD and tests drive it.
+/// clicks (the raw-mode LayLine). A click whose snapped end is the start (laying nothing once a line exists), a
+/// refused cell, or a line ending on an existing path or queue ends the tool; otherwise the end becomes the next start. The HUD and tests drive it.
 /// </summary>
 public sealed class CellBuildTool
 {
@@ -78,17 +78,24 @@ public sealed class CellBuildTool
 	}
 
 	/// <summary>
-	/// Click: snap, push the end when it differs from the start (or when only the first vertex is stored), commit
-	/// the line, then continue from the end or end the tool. Returns the committed segment, or null when off.
+	/// Click: snap; a click on the start with more than one vertex stored ends the tool and lays nothing (null);
+	/// otherwise push the end, commit the line, then continue from the end or end the tool. Returns the
+	/// committed segment, or null when off or when the click only ended the tool.
 	/// </summary>
-	// [BIN:STP-PPC:0x10070F84 path commit] push the snapped end unless it equals the start with more than one vertex stored, LayLine(mode, start, end), then end the tool (start −1, SetMode(0)) when end == start or LayLine failed, else continue from the end
+	// [BIN:STP-PPC:0x10070F84 path commit] push and LayLine(mode, start, end) unless the end equals the start with more than one vertex stored (0x7107c..0x71084 bf eq to 0x71174: then nothing is laid); end the tool (start −1, SetMode(0)) when end == start
 	public SegmentResult? Click( (int X, int Y) cell )
 	{
 		if ( Writer == null || Start is not { } start )
 			return null;
 		var end = ParkPathBuilder.SnapEnd( start, cell );
+		if ( end == start && vertices.Count != 1 )
+		{
+			End();
+			return null;
+		}
+		// The original ignores the push's result (0x7bcf4, whose guard is count > 1024, one past the buffer: REVIEW-PATH N2); a full stack ending the tool is an OpenTPW guard.
 		var pushed = false;
-		if ( (end != start || vertices.Count == 1) && vertices.Count < VertexCapacity )
+		if ( vertices.Count < VertexCapacity )
 		{
 			vertices.Add( end );
 			pushed = true;
@@ -98,6 +105,7 @@ public sealed class CellBuildTool
 		LastCommit = result;
 		if ( pushed )
 			segments.Add( result );
+		// [APPROX:PATH-012] a line refused part-way ends the tool (the flag read at 0x7123c is the result of the ghost-clear LayLine(0x81) at 0x71164, not of the commit LayLine at 0x710c0, so ending on the commit's refusal is not traced) — evidence needed: what LayLine(0x81) returns after a refused commit
 		// [APPROX:PATH-003] a line whose last cell was already a path or queue cell ends the tool (SetCell raises data:0x84b34 there; its consumer is not traced, the help text 443 says such a click completes the path) — evidence needed: the reader of data 0x84b34
 		if ( end == start || !result.Completed || result.EndedOnExisting || !pushed )
 			End();
@@ -168,15 +176,15 @@ public sealed class CellBuildTool
 public sealed class QueueLineWriter : ICellLineWriter
 {
 	private readonly GuestPathGrid grid;
-	private readonly Func<int, int, QueueBuildResult> check;
+	private readonly Func<int, int, IReadOnlyList<(int X, int Y)>, QueueBuildResult> check;
 	private readonly Func<int, int, QueueBuildResult> build;
 	private readonly Func<int, int, int> remove;
 	private readonly Func<long> cellCost;
 
-	/// <param name="check">Validates (x, y) as the ride's next queue cell without writing.</param>
+	/// <param name="check">Validates (x, y) as the ride's next queue cell after the ghost's earlier new cells (as if laid), without writing; the commit's <paramref name="build"/> must refuse nothing this accepts.</param>
 	/// <param name="build">Lays and charges (x, y) as the ride's next queue cell.</param>
 	/// <param name="remove">Removes a queue cell and every cell behind it (refunding as the queue rules say).</param>
-	public QueueLineWriter( GuestPathGrid grid, RideVisitorBridge ride, Func<int, int, QueueBuildResult> check, Func<int, int, QueueBuildResult> build, Func<int, int, int> remove, Func<long> cellCost )
+	public QueueLineWriter( GuestPathGrid grid, RideVisitorBridge ride, Func<int, int, IReadOnlyList<(int X, int Y)>, QueueBuildResult> check, Func<int, int, QueueBuildResult> build, Func<int, int, int> remove, Func<long> cellCost )
 	{
 		this.grid = grid;
 		Ride = ride;
@@ -214,8 +222,8 @@ public sealed class QueueLineWriter : ICellLineWriter
 				existing.Add( (x, y) );
 				continue;
 			}
-			// The preview checks the first new cell against the queue's back; later ghost cells continue the line.
-			var result = write ? build( x, y ) : built.Count == 0 ? check( x, y ) : grid.Cells.TypeAt( x, y ) == ParkCellType.Empty ? QueueBuildResult.Ok : QueueBuildResult.Blocked;
+			// The preview validates every new cell as the commit would, with the ghost's earlier new cells taken as laid.
+			var result = write ? build( x, y ) : check( x, y, built );
 			if ( result != QueueBuildResult.Ok )
 			{
 				stoppedBy = result switch

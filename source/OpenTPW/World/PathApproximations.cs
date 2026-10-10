@@ -17,8 +17,10 @@ public static class PathApproximations
 		("PATH-006", "PATH-SLOPE: no slope or height limit; the object terrain rule (water, blocked, entrance area, holes) applies"),
 		("PATH-007", "PATH-LAND: every in-bounds cell counts as owned land until the save and MAP ownership bits are decoded"),
 		("PATH-008", "PATH-CODE8: path over a queue cell is refused (the original's code 8 for a queue end is not traced)"),
-		("PATH-009", "PATH-FREE: paths are free only without a park economy (the generic sandbox)"),
+		("PATH-009", "PATH-FREE: paths are free only without a park economy (the free byte data:0x7de2d is a park-view flag set in tool modes 4 and 59, not a sandbox switch)"),
 		("PATH-010", "PATH-LEDGER: path spending is posted as other costs"),
-		("PATH-011", "PATH-CANCEL: Escape or Back inside the path or queue tool ends the tool without writing; the next Escape opens the pause menu")
+		("PATH-011", "PATH-CANCEL: Escape or Back inside the path or queue tool ends the tool without writing; the next Escape opens the pause menu"),
+		("PATH-012", "PATH-ENDREFUSE: a line refused part-way ends the tool (the original's end flag reads the ghost-clear LayLine, not the commit)"),
+		("PATH-013", "PATH-PAUSE: the pause menu blocks path and queue tool clicks; the economy's speed pause does not")
 	};
 }

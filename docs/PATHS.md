@@ -51,12 +51,14 @@ neighbours the flag is dropped and the cell is removed (PATH-005).
 (mode 3). `SnapEnd` keeps the dominant axis (a tie keeps X); `LayLine` walks
 one axis and ignores the other end coordinate. A hover previews the snapped
 line (the ghost, no writes); a click pushes the end onto the 1024-entry vertex
-stack and commits the line. The tool ends when the click's end is the start,
-when a cell is refused, or when the line ends on an existing path or queue cell
+stack and commits the line. A click back on the start ends the tool; once a
+line exists it lays nothing, as in the original. The tool also ends when a cell
+is refused (PATH-012) or when the line ends on an existing path or queue cell
 (PATH-003); otherwise the end is the next start. Backspace takes back the last
 segment without a refund (PATH-002); right click, Escape and Back cancel.
 Escape or Back inside the tool only ends the tool; the next one opens the
-pause menu (PATH-011).
+pause menu (PATH-011). While the pause menu is open the tool takes no clicks;
+the speed pause does not stop it (PATH-013).
 
 In the park view the hover help is 441 over an empty owned cell, 442 over a
 path and 444 over a queue; inside the tools it is 443 and 445. A left click on
@@ -94,6 +96,8 @@ and `Level.RemovePathCell(x, y)` wrap it with the read-only visit check.
 | PATH-006 | PATH-SLOPE | no slope limit; the object terrain rule applies |
 | PATH-007 | PATH-LAND | every in-bounds cell is owned |
 | PATH-008 | PATH-CODE8 | path over a queue cell is refused |
-| PATH-009 | PATH-FREE | free only without a park economy |
+| PATH-009 | PATH-FREE | free only without a park economy (`data:0x7de2d` is a mode 4/59 tool flag) |
 | PATH-010 | PATH-LEDGER | posted as other costs |
 | PATH-011 | PATH-CANCEL | Escape/Back ends the tool first; the next one pauses |
+| PATH-012 | PATH-ENDREFUSE | a line refused part-way ends the tool |
+| PATH-013 | PATH-PAUSE | the pause menu blocks tool clicks; the speed pause does not |

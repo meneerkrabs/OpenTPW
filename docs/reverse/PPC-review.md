@@ -3524,3 +3524,191 @@ and 54) this section was renumbered from 54 to 55.
   inside the repository.
 - A1-6: phase 9 separates the no-eligible-link exit at `0x19398` from the
   zero-sum `divwu`.
+
+## 57. Scenarios lane review S1: `9e47f37`, `cb8dca2`, `db3ae4f` and the `ffa87c6` merge onto `ae886cf`
+
+Subject: `ppc-scenarios` at `ffa87c6`, 13 commits not on `main` `ae886cf`.
+Earlier rounds covered `b8602bd`, `089ca5f`, `b093ee3` and `bac3428` (section 34),
+`1d3b8d4` (section 48), `202fd60` (52), `1dacb25` (53) and `ffa87c6` (54). No
+earlier round recorded `9e47f37`, `cb8dca2` or `db3ae4f`, and no round checked the
+range against `main` since it gained its own game-mode code (`3286a6c`).
+Mac static evidence only. Nothing original was executed.
+`test_scenarios_s1.py` decodes the sampled operands from the instruction words
+with its own field split, and runs `git merge-tree` read-only.
+
+### Merge blockers
+
+- **S1-1 (HIGH, blocks merge): 13 conflicted paths, two game-mode
+  implementations.** `git merge-tree --write-tree ae886cf ffa87c6` exits 1. The
+  conflicts are content conflicts, not line endings (every touched file is LF on
+  both sides):
+  `docs/{ECONOMY,FIDELITY-REGISTER,UI}.md`, `ParkEconomyTests.cs`, `GameFlow.cs`,
+  `ParkEconomy.cs`, `ParkEconomyRuntime.cs`, `ParkResearch.cs`, `FrontEndMenu.cs`,
+  `FrontEndSmokeTest.cs`, `UiApproximations.cs`, `Level.cs`, `OriginalPark.cs`.
+  `main` `3286a6c` added a second Instant Action path while the lane was apart:
+  `ParkGameMode?` plumbing, `includeEasymodePark`, `GameFlow.Mode`, and Easy
+  balance for every Instant Action theme. The lane uses `ParkStart`/`ParkStartKind`
+  instead. The lane owner must merge `ae886cf` into `ppc-scenarios` and resolve
+  as follows:
+  1. `GameFlow.cs`: keep the lane's `ParkStart` and `StartKind`, **and** main's
+     `if ( original ) GameAudio.EnterPark( levelName );`. Both sit in one hunk, and
+     taking either side alone drops the mixer's park music or the start record.
+  2. `GameFlow.LoadPark` merges cleanly but still passes
+     `gameMode: Mode == …`, and `Mode` is deleted by the lane. Choose one of:
+     - the lane's documented rule (Load Park = reference start): call
+       `StartLevel( entry.Level, original: true, developerPanels: false )` and
+       remove main's smoke steps from `flow.StartPark( "jungle",
+       GameMode.InstantAction )` up to "loaded mode and balance layers". Keep the
+       read-only visit setup that follows them.
+     - main's rule (reuse the remembered mode): keep a mode field, map it with
+       `ParkStart.FromFrontEnd`, and change the Load Park row in ECONOMY.md/UI.md.
+  3. `OriginalPark.cs`: the clean side keeps
+     `if ( savePath != null && includeEasymodePark )`, which does not compile
+     against the lane's `readShippedSave` signature (CS0103). Change it to
+     `if ( savePath != null )` and keep main's `BIN:STP-PPC:0x10137600` label.
+  4. `ParkResearch.cs`: take main's version. `DailyPoints` no longer exists there:
+     `06b8624` made research run every 20 turns per researcher. `ParkEconomy.cs`:
+     keep main's loan and upgrade BIN labels on the lane's `Features.*` tests.
+     Keep main's turn-based golden-ticket check (already Full Simulation only),
+     and drop the lane's month-end hunk. Keep the lane's `Features.Challenges`
+     gate on `Objectives.AdvanceDay`, because main has none.
+  5. Tests: port the lane's `ParkEconomyTests` hunk to
+     `Advance( ParkCalendar.TickOfTurn( ParkResearch.TurnsPerResearch ) )`. Port
+     main's `GameModeSelectsBalanceLayersAndEasymodePark` to
+     `OriginalPark.Load( "jungle", readShippedSave: false )` with
+     `ParkStartKind.FullSimulation` and `ParkStartKind.InstantAction`.
+  6. Docs: merge UI-015 and the research rows. Reconcile `FINDINGS.md`
+     "Instant Action rules traced so far", which still says ECON-019 stays an
+     approximation of staffless research. Then run `fidelity_register.py --write`
+     and `--check`.
+- **S1-2 (MEDIUM, blocks merge as behaviour; section 34's MEDIUM is still
+  open): merging stops Instant Action research in production.** On `main`, an
+  Instant Action park with no researchers researches at the ECON-019 rate. The
+  lane removes that call, so research needs a hired researcher. Nothing in
+  production can hire one: the only `ParkEconomy.Hire` caller outside tests is
+  `SandboxSmokeTest.cs:207`. The seed's staff records are not decoded. The new
+  smoke step pins "research does not advance" as the expected result. ECONOMY.md
+  says such a park "researches only once the player hires researchers", which a
+  player cannot do. The Mac claim behind the change holds (see below). The Mac
+  Instant Action park also ships a researcher, and its panel text 468 says
+  research is automatic. The fix is one of:
+  - keep a stand-in for the undecoded seed researcher. In
+    `ParkEconomy.DoResearch`, add one grade-2 ability while no researcher is
+    employed in an Instant Action start that imported the seed, labelled
+    `[APPROX:ECON-019] stand-in for the Instant Action seed's undecoded researcher
+    — evidence needed: Easymode.TPWI staff records`. Then flip the smoke
+    assertion. (Recommended: it matches the observable Mac result where the
+    seed exists.)
+  - or register a new APPROX ID at `DoResearch` ("seed staff not imported and no
+    hiring UI: Instant Action research does not progress"), and correct the
+    ECONOMY.md sentence.
+
+### Per-commit verdicts
+
+- **`9e47f37` (park entry, Instant Action end to end): evidence accepted;
+  merge held by S1-2.** Decoded:
+  - `CreatePlayer` `0x13741c` keeps its r6 flag in r28 and passes it as r5 to
+    `0x137600` (call at `0x137548`).
+  - The copy saves it in r24 and tests it at `0x1376b0` with `cmpwi r24,0`. When
+    the flag is zero, the branch at `0x1376b4` jumps past the `LbFile_Copy` call at
+    `0x1377b8`. The `easymode` string is the one loaded at `0x137608`.
+  - `0x198e50` has one direct caller, `0x1c2024`.
+
+  The production changes are covered:
+  - ECON-019 and UI-015 keep registered IDs with reworded texts.
+  - `ParkEconomyRuntime.Load` now refuses a save of the other mode. That is a rule
+    of OpenTPW's own format, not an original claim. It is tested, and no
+    production path calls it (only tests and the sandbox smoke run).
+  - The `ReadsShippedSave` comment now cites the traced entry.
+
+  No PC claim was made. One commit claim was not rerun: the native smoke run of
+  the Instant Action leg.
+- **`cb8dca2` (profiles, key-gate refusal, park header gate): accepted.**
+  Docs and tools only. Decoded:
+  - `0x128fc0` sets the value 12 before the write.
+  - `0x129108` is `cmplwi r6,12`: an unsigned compare.
+  - `0x12910c` branches to the member read at `0x129128` when the version is not
+    below 12. Below 12, the reader returns 0 (`0x129120`).
+
+  The PC side is bounded: the header gates are applied to PC files as Mac checks,
+  and PC profiles are "not established". **S1-3 (low):** the commit has no Lore
+  trailers (no Constraint, Confidence, Tested or Not-tested). **S1-4 (low,
+  wording):** "the PC file that Instant Action copies" in *Park header gate and PC
+  park files* states the Mac copy as a PC fact. Write instead "the PC counterpart
+  of the file the Mac Instant Action copy names".
+- **`db3ae4f` (key displays, door gate, ticket spending): accepted.** Docs and
+  tools only. Decoded:
+  - `Keys()` `0x128b60` ends by adding `mExtraKeys` (+32, at `0x128c78`) to a signed
+    multiply-high by `0x55555556` (`0x128c6c`/`0x128c74`/`0x128c7c`). It never
+    loads +28 (`mSpentTickets`) from the record before the return at `0x128ca4`.
+  - The door `0x964c4` tests GameType 2 at `0x096528`, and an Instant Action
+    player enters before any key read. Otherwise it calls `Keys()` (`0x0965cc`)
+    and the cost getter `0x12a4c8` (`0x0965d8`), then compares them with `cmpw
+    cost,keys`. The entry is skipped when `cost > keys`, so the door enters iff
+    signed cost ≤ keys.
+
+### Research claim behind S1-2 (lane side confirmed)
+
+`0xf0df0`, the research point sink, has exactly one direct caller: `0xf0788`,
+inside `0xf0728`. `0xf0728`'s only caller is `0xf02e4`, the per-researcher cycle
+`0xf0284`. Inside `0xf0728`:
+
+- `lwz 484(r3)` loads the researcher's grade, scaled by `mulli 12`.
+- `lwz r31,1052(r5)` loads that grade's `ResearchAbility`, which is passed as r4.
+
+No relocation points at either routine. So there is no staffless call path on the
+Mac, as far as a direct-call and relocation scan shows. Main's ECON-019 is an
+approximation, and this result contradicts it as a staffless rule. It does not
+contradict it as a stand-in for the seed researcher.
+
+### Merged tree (scratch clone, review resolution)
+
+The resolution follows S1-1 items 1–6. It takes the lane's Load Park rule and
+leaves out the S1-2 stand-in. It is one possible resolution, not the lane
+owner's, and nothing was committed outside this worktree.
+
+| Check | Result |
+| --- | --- |
+| SDK 10.0.401 `dotnet build -c Release` | 0 errors (after S1-1 item 3; before it, CS0103) |
+| `OpenTPW.Tests`, no assets | 858 pass, 234 skip, 0 fail (main `ae886cf` rerun here: 853/232/0; +7 tests) |
+| `OpenTPW.Tests`, `OPENTPW_GAME_PATH` | 1029 pass, 63 skip, 0 fail (stated main baseline 1022/63/0; +7) |
+| `fidelity_register.py --check` | main 138; merged (after `--write`) 138, exit 0 |
+| `diff --stat` vs `--ignore-cr-at-eol --stat`, main → merged | identical (35 files, +8204 −107); 21 CRLF `.cs` files on main and on the merged tree |
+| Lane `.cs` line endings | every `.cs` in `ae886cf...ffa87c6` keeps its merge-base ending (LF) |
+| Interaction with main's newer work | autorun, Game Options pages, advisor responses and the intro gate do not overlap. Advisor code does not subscribe to economy events, and `Game.cs` is untouched. The mixer hook is in S1-1 item 1 |
+| Windows paths in lane Python | no repo-relative `str(Path)`. `mac_data_compare.find` splits POSIX strings, and `profile_evidence` echoes CLI paths only |
+
+Lane reruns on a `ffa87c6` archive: `lanes/scenarios` unittest 98 OK with
+`OPENTPW_MAC_BIN`, and 85 run + 13 skipped without it. `scenario_evidence.py`
+exit 0, 2,090 instruction checks. These match round 18.
+
+### Open low findings
+
+- **R17-2**: `read_mac_player_file` still keys themes by the full name,
+  NUL included. Open and optional.
+- **R18-2**: `RecursionError` from a very deep envelope. Open and optional.
+- **R18-3**: the partial-record failing member is not restricted. Open and
+  optional. Its two `expectedFailure` tests in `test_round18` still fail as
+  expected.
+
+`ffa87c6` is the head round 18 reviewed, and none of these changed.
+
+### Results
+
+| Target | Command | Result |
+| --- | --- | --- |
+| review lane | `test_scenarios_s1` with `OPENTPW_PPC_BIN_ROOT`, `OPENTPW_REVIEW_REPO` | 10/10 |
+| review lane | `unittest discover` with all three env vars | 201 run, OK (3 skipped, 2 expected failures) |
+| review lane | `unittest discover` with no env vars | 201 run, OK (45 skipped) |
+
+Not run: the native front-end smoke run on the merged tree, the original
+program, and PC parity.
+
+### Handoff
+
+1. Scenarios owner: S1-1. Merge `ae886cf` and resolve per items 1–6. Rebuild,
+   then expect +7 tests over main and `--check` exit 0.
+2. Scenarios owner: S1-2. Pick the stand-in or the registered gap before the
+   merge. Rerun the native front-end smoke run, because its Instant Action
+   research assertion depends on that choice.
+3. Optional: S1-3, S1-4, R17-2, R18-2, R18-3.

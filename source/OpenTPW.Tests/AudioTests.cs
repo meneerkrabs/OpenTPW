@@ -93,6 +93,8 @@ public class AudioTests
 		Assert.AreEqual( 2, SoundEventSystem.ChooseSample( samples, 150, 1, avoidRepeat: true ), "a sentence moves on from the sample it just played" );
 		var system = new SoundEventSystem( new AudioMixer( null ), seed: 1 );
 		Assert.AreEqual( unchecked(1u * 0x19660D + 0x3C6EF35F) >> 16, system.Draw() );
+		Assert.AreEqual( unchecked(1u * 0x19660D + 0x3C6EF35F) >> 16, system.Draw(), "the successor is never stored, so every draw is the same" );
+		Assert.AreEqual( 1u, system.Seed );
 	}
 
 	[TestMethod]

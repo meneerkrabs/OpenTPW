@@ -175,7 +175,7 @@ public sealed class ParkObjectState
 	/// Second gauge of the original ride (object +0x44), 0–100: it falls with wear and by 5 per breakdown, no repair
 	/// restores it, and a ride breaks down while it is below 1 (docs/reverse/RIDE-WEAR.md).
 	/// </summary>
-	// [APPROX:ECON-047] a newly built ride starts with life gauge 100 (Easymode.TPWI stores 100 for every placed object) — evidence needed: the life gauge set when a ride is built (the constructor 0x100DA874 sets 0)
+	// [BIN:STP-PPC:0x100DAB1C object constructor] every built object starts at 100.0 (TOC −0x2B08) in +0x40, +0x44 and +0x48; the earlier 0.0 store (0x100DA90C) is overwritten on every path
 	public double LifeGauge { get; set; } = 100;
 	public bool IsBrokenDown { get; set; }
 	/// <summary>Employee repairing or upgrading the object, 0 when none.</summary>

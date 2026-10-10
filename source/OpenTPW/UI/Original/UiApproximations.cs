@@ -49,6 +49,14 @@ public static class UiApproximations
 		("UI-041", "Load Park opens a shipped park as the reference start (its own balance, Full Simulation rules) whatever Game Mode was last chosen; the original's GameType is not saved with a park but copied from the loading player's profile (mEasyModeUser)", "player profiles and what the Mac park loader 0x11acfc reads from a park file"),
 		("UI-042", "HUD camera button shown disabled; its camera-view action is not implemented", "binary camera button handler"),
 		("UI-043", "BF4 text drawn above 1× (HiDPI, large outputs) is magnified per glyph with Catmull-Rom and a contrast curve min(2, 0.8 × scale) instead of doubled pixels", "none: the original only drew its fonts at 1×; design decision"),
+		("UI-044", "buy window list rows: ten equal rows fill the table's content region (44.4 units each); the wheel scrolls one row", "capture of the original buy list"),
+		("UI-045", "a click on the Name or Price column header sorts the buy list by it (again: descending); the initial name order is the original's", "the original column header handler"),
+		("UI-046", "buy window stats: excitement gauge = UsageInfo.ExcitementLevel/100, reliability gauge = 1 - Upgrades[0].WearRate/10, safe capacity = Upgrades[0].InitCapacity, working life empty; type-9 value cells drawn as plain bar gauges", "capture of the original buy window and its gauge art"),
+		("UI-047", "the HUD cash change text stays 4 s after the last balance change and sums the changes within that time", "capture of the original cash trend display"),
+		("UI-048", "buy window control 512 (beside the title) is left empty", "capture of the original buy window"),
+		("UI-049", "buy window scroll ball travel: its top runs from the track's top (first row) to a ball height above the track's bottom (last row)", "capture of the original scroll bar ends"),
+		("UI-050", "buy list third column (1673-1724), its header button 18 and control 491 have no known content and stay empty", "capture of the original buy window"),
+		("UI-051", "i_dollar frame 1 for a negative balance, green_up frame 1 for a decrease; golden key frame 0 and ticket count from the economy (keys are not tracked, always 0)", "capture of the original cash display and key counter"),
 	};
 
 	private static bool logged;

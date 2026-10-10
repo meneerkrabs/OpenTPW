@@ -6,15 +6,17 @@
 Paste the output into the "Cloud config" field when creating the server (or pass it as user_data
 through the Hetzner API). On first boot it installs Docker, turns off SSH password logins, places
 the files of this folder in /opt/opentpw, turns on fail2ban for SSH, enables the nightly update and
-backup timers and starts the server. The firewall (only 443 for everyone, SSH only from the
+backup timers and the release deployment trigger, and starts the server. The generated .env holds a
+random OPENTPW_DEPLOY_TOKEN; copy it into the repository secret of the same name (docs/SERVER.md). The firewall (only 443 for everyone, SSH only from the
 maintainer's addresses) is set in Hetzner's Cloud Firewall, not here. See docs/SERVER.md.
 """
 import argparse
+import secrets
 import pathlib
 import re
 
 HERE = pathlib.Path(__file__).resolve().parent
-UNITS = ["opentpw-update.service", "opentpw-update.timer", "opentpw-backup.service", "opentpw-backup.timer"]
+UNITS = ["opentpw-update.service", "opentpw-update.timer", "opentpw-backup.service", "opentpw-backup.timer", "opentpw-deploy.path"]
 # The .NET images run as this user (APP_UID); it must own the data folder.
 APP_UID = 1654
 
@@ -40,7 +42,8 @@ def main() -> None:
     env = (f"OPENTPW_DOMAIN={args.domain}\n"
            f'OPENTPW_SERVER_NAME="{args.server_name}"\n'
            f'OPENTPW_MESSAGE="{args.message}"\n'
-           f"OPENTPW_IMAGE_TAG={args.image_tag}\n")
+           f"OPENTPW_IMAGE_TAG={args.image_tag}\n"
+           f"OPENTPW_DEPLOY_TOKEN={secrets.token_hex(32)}\n")
     files = [
         block("/opt/opentpw/compose.yml", (HERE / "compose.yml").read_text()),
         block("/opt/opentpw/Caddyfile", (HERE / "Caddyfile").read_text()),
@@ -63,7 +66,7 @@ def main() -> None:
         "systemctl enable fail2ban && systemctl restart fail2ban",
         f"mkdir -p /opt/opentpw/data && chown {APP_UID}:{APP_UID} /opt/opentpw/data",
         "systemctl daemon-reload",
-        "systemctl enable --now opentpw-update.timer opentpw-backup.timer",
+        "systemctl enable --now opentpw-update.timer opentpw-backup.timer opentpw-deploy.path",
         "cd /opt/opentpw && docker compose up -d",
     ]:
         print(f"  - [ sh, -c, \"{command}\" ]")

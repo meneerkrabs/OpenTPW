@@ -53,7 +53,7 @@ public sealed record WorldStateSources
 public static class WorldStateHash
 {
 	/// <summary>Bumped whenever the hashed fields or their order change.</summary>
-	public const int SchemaVersion = 6;
+	public const int SchemaVersion = 7;
 
 	public static ulong Compute( WorldStateSources sources )
 	{
@@ -71,8 +71,8 @@ public static class WorldStateHash
 		hash.Add( economy?.Random.State ?? 0 );
 		hash.Add( sources.Guests?.RandomState ?? 0 );
 		hash.Add( sources.Scripts?.RandomState ?? 0 );
-		// sound_seed is not hashed: OpenTPW's chooser advances on UI clicks and on audio-device timing (DET-012),
-		// so it is presentation state; the park save keeps it.
+		// sound_seed is not hashed: it is presentation state that draws never move (sound_shared 0x100118C8 is
+		// its only store); the park save keeps it.
 		if ( economy != null )
 		{
 			hash.Add( (int)economy.Speed );

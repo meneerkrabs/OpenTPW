@@ -28,7 +28,8 @@ public sealed class RideScriptWorld
 	internal void RestoreRandomState( ulong state ) => RandomState = state;
 
 	/// <summary>Seed for a script created without one.</summary>
-	// [APPROX:DET-013] scripts without an explicit seed get a per-VM System.Random seeded from the park's SplitMix64 stream, not draws from the original's one world generator — evidence needed: DET-I2 (RSE RAND/FINDSCRIPTRAND on the world LCG, docs/reverse/DET-plan.md §4.3)
+	// [BIN:STP-PPC:0x100B07E4 RSE RAND] RAND draws from the world LCG (0x10105328 on the world at TOC −0x7580): (|s| >> 1) mod (bound + 1); FINDSCRIPTRAND (0x100B1B8C) picks match (|s| >> 1) mod count, drawing only when there is a match
+	// [APPROX:DET-013] scripts without an explicit seed get a per-VM System.Random seeded from the park's SplitMix64 stream instead of the traced world-LCG draws — evidence needed: none; implementation waits for the DET-I2 port of the shared world generator (docs/reverse/DET-plan.md §4.3)
 	internal int NextScriptSeed()
 	{
 		var z = RandomState += 0x9E3779B97F4A7C15UL;

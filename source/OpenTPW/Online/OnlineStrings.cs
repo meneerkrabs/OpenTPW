@@ -5,7 +5,7 @@ public enum OnlineLabel
 {
 	ServerAddress, Register, LogIn, LogOut, ExportPark, ImportFile, Inbox, VisitReadOnly, Chat, ReadOnlyVisit,
 	RateLimited, NoBuddies, OnlineOff, Refresh, Vote, Report, To, PutInOutbox, SavedTo, FileSharing,
-	DeleteAccount, DeleteAccountWarning, AccountDeleted, News, NoNews,
+	DeleteAccount, DeleteAccountWarning, AccountDeleted, News, NoNews, ShownOnWebsite, NotShownOnWebsite, ChatReconnected,
 }
 
 /// <summary>
@@ -125,6 +125,8 @@ public static class OnlineStrings
 			[OnlineLabel.DeleteAccount] = "Delete account", [OnlineLabel.DeleteAccountWarning] = "This permanently deletes your account, your published parks and your inbox on this server. Enter your name and password to confirm.",
 			[OnlineLabel.AccountDeleted] = "Your account has been deleted.",
 			[OnlineLabel.News] = "News", [OnlineLabel.NoNews] = "This server has no news.",
+			[OnlineLabel.ShownOnWebsite] = "Also on the OpenTPW website: yes", [OnlineLabel.NotShownOnWebsite] = "Also on the OpenTPW website: no",
+			[OnlineLabel.ChatReconnected] = "The server restarted; chat reconnected.",
 		},
 		["Danish"] = new Dictionary<OnlineLabel, string>
 		{
@@ -140,6 +142,8 @@ public static class OnlineStrings
 			[OnlineLabel.DeleteAccount] = "Slet konto", [OnlineLabel.DeleteAccountWarning] = "Dette sletter permanent din konto, dine offentliggjorte parker og din indbakke på denne server. Indtast dit navn og din adgangskode for at bekræfte.",
 			[OnlineLabel.AccountDeleted] = "Din konto er slettet.",
 			[OnlineLabel.News] = "Nyheder", [OnlineLabel.NoNews] = "Denne server har ingen nyheder.",
+			[OnlineLabel.ShownOnWebsite] = "Også på OpenTPW-webstedet: ja", [OnlineLabel.NotShownOnWebsite] = "Også på OpenTPW-webstedet: nej",
+			[OnlineLabel.ChatReconnected] = "Serveren genstartede; chatten er forbundet igen.",
 		},
 		["Dutch"] = new Dictionary<OnlineLabel, string>
 		{
@@ -155,6 +159,8 @@ public static class OnlineStrings
 			[OnlineLabel.DeleteAccount] = "Account verwijderen", [OnlineLabel.DeleteAccountWarning] = "Dit verwijdert je account, je gepubliceerde parken en je inbox op deze server definitief. Vul je naam en wachtwoord in om te bevestigen.",
 			[OnlineLabel.AccountDeleted] = "Je account is verwijderd.",
 			[OnlineLabel.News] = "Nieuws", [OnlineLabel.NoNews] = "Deze server heeft geen nieuws.",
+			[OnlineLabel.ShownOnWebsite] = "Ook op de OpenTPW-website: ja", [OnlineLabel.NotShownOnWebsite] = "Ook op de OpenTPW-website: nee",
+			[OnlineLabel.ChatReconnected] = "De server is herstart; de chat is opnieuw verbonden.",
 		},
 		["French"] = new Dictionary<OnlineLabel, string>
 		{
@@ -170,6 +176,8 @@ public static class OnlineStrings
 			[OnlineLabel.DeleteAccount] = "Supprimer le compte", [OnlineLabel.DeleteAccountWarning] = "Ceci supprime définitivement votre compte, vos parcs publiés et votre boîte de réception sur ce serveur. Saisissez votre nom et votre mot de passe pour confirmer.",
 			[OnlineLabel.AccountDeleted] = "Votre compte a été supprimé.",
 			[OnlineLabel.News] = "Actualités", [OnlineLabel.NoNews] = "Ce serveur n'a pas d'actualités.",
+			[OnlineLabel.ShownOnWebsite] = "Aussi sur le site OpenTPW : oui", [OnlineLabel.NotShownOnWebsite] = "Aussi sur le site OpenTPW : non",
+			[OnlineLabel.ChatReconnected] = "Le serveur a redémarré ; le chat est reconnecté.",
 		},
 		["German"] = new Dictionary<OnlineLabel, string>
 		{
@@ -185,6 +193,8 @@ public static class OnlineStrings
 			[OnlineLabel.DeleteAccount] = "Konto löschen", [OnlineLabel.DeleteAccountWarning] = "Dies löscht dein Konto, deine veröffentlichten Parks und deinen Posteingang auf diesem Server endgültig. Gib zur Bestätigung deinen Namen und dein Passwort ein.",
 			[OnlineLabel.AccountDeleted] = "Dein Konto wurde gelöscht.",
 			[OnlineLabel.News] = "Neuigkeiten", [OnlineLabel.NoNews] = "Dieser Server hat keine Neuigkeiten.",
+			[OnlineLabel.ShownOnWebsite] = "Auch auf der OpenTPW-Website: ja", [OnlineLabel.NotShownOnWebsite] = "Auch auf der OpenTPW-Website: nein",
+			[OnlineLabel.ChatReconnected] = "Der Server wurde neu gestartet; der Chat ist wieder verbunden.",
 		},
 		["Swedish"] = new Dictionary<OnlineLabel, string>
 		{
@@ -200,6 +210,8 @@ public static class OnlineStrings
 			[OnlineLabel.DeleteAccount] = "Radera konto", [OnlineLabel.DeleteAccountWarning] = "Detta raderar permanent ditt konto, dina publicerade parker och din inkorg på den här servern. Ange ditt namn och lösenord för att bekräfta.",
 			[OnlineLabel.AccountDeleted] = "Ditt konto har raderats.",
 			[OnlineLabel.News] = "Nyheter", [OnlineLabel.NoNews] = "Den här servern har inga nyheter.",
+			[OnlineLabel.ShownOnWebsite] = "Även på OpenTPW-webbplatsen: ja", [OnlineLabel.NotShownOnWebsite] = "Även på OpenTPW-webbplatsen: nej",
+			[OnlineLabel.ChatReconnected] = "Servern startades om; chatten är ansluten igen.",
 		},
 	};
 }

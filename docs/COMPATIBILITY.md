@@ -16,7 +16,7 @@ belong to the original Windows executable and do not exist in a reimplementation
 
 | Reported issue (original game) | OpenTPW status |
 | --- | --- |
-| Gate and ride signs show no text; launch problems around the fonts the game unpacks to `Data/tpwfnt` and installs (the original installs them with `AddFontResourceA` and draws with GDI) | **Done.** The 17 TrueType fonts are read in memory from `Data/fonts.wad` by an own parser/rasterizer; nothing is unpacked or installed. Byte-identical to the `tpwfnt` files (pinned SHA-256). Park name drawn on the jungle gate. |
+| Gate and ride signs show no text (rides now show their name, see below); launch problems around the fonts the game unpacks to `Data/tpwfnt` and installs (the original installs them with `AddFontResourceA` and draws with GDI) | **Done.** The 17 TrueType fonts are read in memory from `Data/fonts.wad` by an own parser/rasterizer; nothing is unpacked or installed. Byte-identical to the `tpwfnt` files (pinned SHA-256). Park name drawn on the jungle gate. |
 | Movies and level music missing unless copied from the disc | **Done.** `--cd-data <dir>` mounts the extracted CD (or its `Data` folder) as a read-only, case-insensitive fallback; missing movies/music are listed at startup. |
 | Anisotropic filtering forced to 16x through a DirectDraw wrapper | **Done** as the Enhanced preset (16x); original presets use their own filter setting. |
 | `high.sam` edited for a better look | **Done** as the Enhanced preset (documented values below); the original files are never modified. |
@@ -69,8 +69,24 @@ Formats and evidence:
 - `global.sam` `ParkName.GateObjectId` names the gate object (1601/2601/3601/4601); its
   `Info.DontApplyOffset 1` makes `gates.MD2` coordinates level coordinates.
 - `OBJECT_NAMES.str` starts with ride names split into two entries ("Temple"/"Of Gloom",
-  "Sun"/"God"), matching two text slots. The object-to-entry mapping is not established
-  (`Info.RideTypeStringIndex` is a ride type shared by all themes, not this index).
+  "Sun"/"God"). Which text a sign gets is established from the Mac binary: the object
+  loader passes only the id of the object's info record, and the sign builder
+  (`[BIN:STP-PPC:0x1018E254]`) takes that record's single name string (the OBJECT_NAMES entries joined
+  by a space, `0x1011A08C`; a first entry ending in '-' is joined without space and dash) and
+  splits it at the space nearest the middle: probing `len/2`, `len/2-1`, `len/2+1`, ... for U+0020,
+  characters before it are text slot 0, after it text slot 1, no space gives one line. The
+  entry boundary and this rule agree for the ride names. Material names are matched as
+  `sign1.tga`/`sign2.tga`; the builder also accepts two explicit texts. Only rides ship an
+  `.sgn` (shops, sideshows and features have none and no sign faces); the original first
+  looks for `<archive>:<theme>_<object>.sgn` and then `<archive>:<object>.sgn`, the shipped
+  archives only contain the second form.
+- `ObjectSigns` (`World/Objects`) composes the sign per archive and text (cached): the object
+  renderer (`OriginalObject`) binds the rendered halves to the `sign1`/`sign2` slots, and
+  the buy-window preview (`PreviewIcon`) draws the same textures. Fixed items (the gate)
+  keep the placeholders; `OriginalGateSign` draws the park name over them. The name is the
+  current language's display name (approximation COMPAT-016); characters outside a font's
+  cmap are drawn as .notdef with a diagnostic. Three signs (`hallow/c_scat`, `fantasy/jelly`,
+  `space/zob`) have colour mode 0 in both slots and show the bare board (COMPAT-018).
 
 Which font the original uses where (slot 0 = first line, slot 1 = second line):
 
@@ -200,6 +216,9 @@ against loose files: `OPENTPW_TPWFNT_PATH=<tpwfnt folder>`.
 | COMPAT-007 | Sign text | Gate shows the THEMENAMES theme name until a save supplies a park name | save park-name field, capture |
 | COMPAT-008 | Sign text | Sign faces lifted 0.05 engine units along their normal | none once the gate model draws runtime textures |
 | COMPAT-009 | Sign text | 16 sub-scanline unhinted linear coverage instead of GDI ANTIALIASED_QUALITY | captures of original sign text |
+| COMPAT-016 | Sign text | Ride sign text = the object's display name (OBJECT_NAMES entries bound by English name, else the .sam name), split at the middle space | record field selecting the name entries; capture of a shop/sideshow sign |
+| COMPAT-017 | Sign text | Bonus objects' SIGNA/SIGNB are sign lines 1/2 | bonus loader's call of the sign builder |
+| COMPAT-018 | Sign text | Flat board per ride sign (cream or dark, whichever keeps the least contrasting line most readable); board/fill images not composed; colour-mode-0 signs show the bare board | wavelet decoder, board blit, capture |
 | COMPAT-010 | Graphics | TEXTUREFILTERING 0/1/2 → Veldrid point / linear+point-mip / linear+linear-mip; MIPMAP 0 → mip 0 only | binary render states or captures per detail level |
 | COMPAT-011 | Localization | Missing string → English → internal name | original behaviour for missing strings |
 | COMPAT-012 | Text input | Unrepresentable characters → `?` | binary text-input handling |
@@ -215,8 +234,8 @@ this slice (e.g. the fog formula in `test.shader`) are not listed here.
 ## Not done
 
 - Native sign destination dimensions and source-image metadata are established,
-  but original text coverage, final color and image/layer compositing are not implemented; which `OBJECT_NAMES` pair belongs to which ride is unknown, so ride signs are
-  not drawn yet (API ready for the rides slice).
+  but original text coverage, final color and image/layer compositing are not implemented;
+  ride signs draw the object's name on a flat board (COMPAT-016, COMPAT-018).
 - Most detail options have no renderer feature to drive (table above).
 - The overlay does not merge directory listings; `GameLanguage` keeps its own language overlay.
 - Only TPW (not TPI/Sim Theme Park) data was examined.

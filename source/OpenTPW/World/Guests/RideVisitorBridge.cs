@@ -20,9 +20,9 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// <summary>Guests per queue cell (positions 0..3 along the cell).</summary>
 	// [BIN:STP-PPC:0x100DDD2C queue coordinates] four positions per queue cell; the walk subtracts 4 per followed link
 	public const int PositionsPerCell = 4;
-	/// <summary>Queue limit of rides with <c>Info.HasQueue</c>.</summary>
-	// [BIN:STP-PPC:0x100DCB74 queue limit] HasQueue (flag 0x8) gives limit 100; otherwise trunc(max(QWTC × (SPEED/InitSpeed × CAP) / DUR, 4))
-	public const int HasQueueLimit = 100;
+	/// <summary>Queue limit of objects without <c>Info.HasQueue</c> (shops, toilets and sideshows: the virtual queue).</summary>
+	// [BIN:STP-PPC:0x100DCB74 queue limit] ride +46 & 0x8 (Info.HasQueue, set by the ride build 0x100DAB6C) clear gives limit 100; set gives trunc(max(QWTC × (SPEED/InitSpeed × CAP) / DUR, 4)) as a u32
+	public const uint NoQueueLimit = 100;
 	/// <summary>Excitement difference at which a guest refuses to join.</summary>
 	// [BIN:STP-PPC:0x100ECCB0 join excitement gate] |difference| ≥ 45 leaves with "ride is not exciting enough!" / "ride is too exciting!"
 	public const int ExcitementGate = 45;
@@ -36,7 +36,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	private readonly Queue<int> walkingOff = new();     // WALKOFF done, waiting for WALKGET
 	private readonly HashSet<int> hopped = new();
 	private readonly List<(int Guest, double Until)> limbo = new();
-	private readonly List<(int Guest, double Until)> bouncing = new();
+	private readonly List<(int Guest, double Until, double Start)> bouncing = new(); // BOUNCE slots: visitor, deadline, start
 	private readonly List<(int X, int Y)> queueCells = new();
 	private RideVM? vm;
 	private int called;       // ride +104: the pending visitor
@@ -135,7 +135,13 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		AddList( walkingOff );
 		AddList( hopped.Order().ToArray() );
 		AddTimed( limbo );
-		AddTimed( bouncing );
+		hash.Add( bouncing.Count );
+		foreach ( var (guest, until, start) in bouncing )
+		{
+			hash.Add( guest );
+			hash.Add( until );
+			hash.Add( start );
+		}
 		hash.Add( letMeOnWritten );
 		hash.Add( lastAdmissionTurn );
 		hash.Add( QueueFrontCell is { } front ? front.X : -1 );
@@ -174,9 +180,9 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// <summary>Physical room: four guests per queue cell.</summary>
 	public int QueueRoom => PositionsPerCell * QueueSizeInCells;
 	/// <summary>The data limit (<see cref="ComputeQueueLimit"/>).</summary>
-	public int QueueLimit => ComputeQueueLimit( Parameters );
+	public uint QueueLimit => ComputeQueueLimit( Parameters );
 	/// <summary>Most guests that can be queued now: min(<see cref="QueueRoom"/>, <see cref="QueueLimit"/>).</summary>
-	public int MaximumQueueLength => Math.Min( QueueRoom, QueueLimit );
+	public int MaximumQueueLength => (int)Math.Min( (uint)QueueRoom, QueueLimit );
 	/// <summary>Incremented whenever a recompute changed the queue cells (the original "queue edited" event).</summary>
 	public int QueueEditCount { get; private set; }
 
@@ -202,20 +208,23 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public event Action<RideVisitorBridge, AdmissionCheck>? AdmissionChecked;
 
 	/// <summary>
-	/// The queue limit of <c>0xdcb74</c>: 100 for HasQueue rides, otherwise
+	/// The queue limit of <c>0xdcb74</c>: 100 for objects without <c>Info.HasQueue</c>, and for HasQueue rides
 	/// trunc(max(QWTC × (G × CAP) / DUR, 4)) in single precision with G = SPEED / InitSpeed (1 when SPEED is 0);
-	/// a NaN quotient gives 4.
+	/// a NaN quotient gives 4. Unsigned 32-bit like the original: SPEED is read as an unsigned word and the quotient
+	/// saturates at 2³² − 1.
 	/// </summary>
-	public static int ComputeQueueLimit( QueueParameters parameters )
+	public static uint ComputeQueueLimit( QueueParameters parameters )
 	{
-		if ( parameters.HasQueue )
-			return HasQueueLimit;
-		var g = parameters.Speed == 0 ? 1f : parameters.Speed / (float)parameters.InitSpeed;
+		if ( !parameters.HasQueue )
+			return NoQueueLimit;
+		// [BIN:STP-PPC:0x100DCBB8 queue limit] SPEED is the unsigned word at ride +84; 0x101C3FBC converts the quotient to a u32, saturating at 2^32 − 1
+		var speed = (uint)parameters.Speed;
+		var g = speed == 0 ? 1f : speed / (float)parameters.InitSpeed;
 		var quotient = parameters.QueueWaitTimeConstant * (g * parameters.Capacity) / parameters.Duration;
 		if ( float.IsNaN( quotient ) )
 			return 4;
 		quotient = MathF.Max( quotient, 4f );
-		return quotient >= int.MaxValue ? int.MaxValue : (int)quotient;
+		return quotient >= 4294967296f ? uint.MaxValue : (uint)quotient;
 	}
 
 	/// <summary>Binds the bridge to the script it serves; <paramref name="open"/> reports whether the owner opened the ride.</summary>
@@ -611,14 +620,14 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 				MarkBoarded( guest );
 				var seconds = call.Argument( 1 ) > 0 ? call.Argument( 1 ) : DefaultBounceSeconds;
 				if ( onRide.Contains( guest ) && !bouncing.Any( entry => entry.Guest == guest ) )
-					bouncing.Add( (guest, now + seconds * 1000.0) );
+					bouncing.Add( (guest, now + seconds * 1000.0, now) );
 				return true;
 			}
 			case Opcode.UNBOUNCE:
 			case Opcode.FORCEUNBOUNCE:
 			{
 				// Corpus: `TEST VAR_LETMEOFF; BRANCH_NZ; UNBOUNCE VAR_LETMEOFF` writes the leaving guest into LETMEOFF.
-				var guest = TakeExpired( bouncing, now, call.Opcode == Opcode.FORCEUNBOUNCE );
+				var guest = TakeUnbounced( bouncing, now, call.Opcode == Opcode.FORCEUNBOUNCE );
 				if ( call.IsVariable( 0 ) )
 					call.SetOutput( 0, guest );
 				result = guest;
@@ -634,6 +643,28 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			default:
 				return false;
 		}
+	}
+
+	/// <summary>
+	/// UNBOUNCE (<c>0xae020</c>, BOARD-plan §5): the first slot whose deadline has passed (deadline &lt; now, strict)
+	/// inside the first 200 ms of each second since the guest bounced, trunc(((now − start) mod 1000) / 200) == 0
+	/// with a C remainder and 32-bit times in whole milliseconds. FORCEUNBOUNCE takes the first slot.
+	/// </summary>
+	// [BIN:STP-PPC:0x100AE020 UNBOUNCE] slots in index order; release needs deadline < now (cmpw, 0x100AE088) and ((now − start) mod 1000) / 200 == 0 (0x100AE040..0x100AE0B0)
+	private static int TakeUnbounced( List<(int Guest, double Until, double Start)> list, double now, bool force )
+	{
+		var clock = (long)Math.Floor( now );
+		for ( var index = 0; index < list.Count; index++ )
+		{
+			var (guest, until, start) = list[index];
+			var elapsed = unchecked( (int)(clock - (long)Math.Floor( start )) );
+			if ( force || ((long)Math.Floor( until ) < clock && elapsed % 1000 / 200 == 0) )
+			{
+				list.RemoveAt( index );
+				return guest;
+			}
+		}
+		return 0;
 	}
 
 	private static int TakeExpired( List<(int Guest, double Until)> list, double now, bool force )

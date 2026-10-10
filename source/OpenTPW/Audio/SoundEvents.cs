@@ -119,12 +119,8 @@ public sealed class SoundEventSystem
 	public void Reseed( uint value ) => seed = value;
 
 	// [BIN:STP-PPC:sound_shared 0x1000FCB4 ChooseRandomSample] draw = (seed × 0x19660D + 0x3C6EF35F) >> 16 (32-bit); the first sample whose cumulative weight is >= draw wins
-	// [APPROX:DET-012] every draw stores its successor as the new seed; unmerged advisor phase 10 reads the bundle's choosers as never storing it — evidence needed: that phase merged and re-pinned on main (docs/reverse/DET-plan.md §3 D9)
-	internal uint Draw()
-	{
-		seed = unchecked(seed * 0x19660D + 0x3C6EF35F);
-		return seed >> 16;
-	}
+	// [BIN:STP-PPC:sound_shared 0x100118C8 seed store] the successor is never stored: the only store to CAudioPlaceHolder::mRandomSeed (TOC+0x42E4) is the library init (0x100118B4, from LbTime_GetClock); the eight LCG sites only load it and no library imports the symbol, so every draw is the same until the seed is set again
+	internal uint Draw() => unchecked(seed * 0x19660D + 0x3C6EF35F) >> 16;
 
 	internal static int ChooseSample( IReadOnlyList<SoundSample> samples, uint draw, int lastIndex, bool avoidRepeat )
 	{
@@ -161,7 +157,7 @@ public sealed class SoundEventSystem
 	{
 		var low = Math.Min( sound.MinimumVolume, sound.MaximumVolume );
 		var range = Math.Abs( sound.MaximumVolume - sound.MinimumVolume );
-		return range == 0 ? low : (int)(low + unchecked(seed = seed * 0x19660D + 0x3C6EF35F) % (uint)range);
+		return range == 0 ? low : (int)(low + unchecked(seed * 0x19660D + 0x3C6EF35F) % (uint)range);
 	}
 
 	/// <summary>Decodes a sample (thread safe; short samples are cached, long ones such as music segments are not).</summary>

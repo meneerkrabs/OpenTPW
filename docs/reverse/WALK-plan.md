@@ -50,7 +50,8 @@ All results are static. Nothing original was executed.
   the link compass is pinned.
 - **Belly Bounce** (BOARD-plan §7): H = 21 + w + w₂ = **56** turns.
   `τ_max = 102 + 5·35 = 277 turns = 68.696 s`. `W(p) ≤ (p + 1)·56 + (⌊p/5⌋ + 1)·121 + 1`.
-  W_max (p = 99) = **8021 turns = 1989.208 s**; at p = 50 it is 4188 turns.
+  W_max (p = 99) = **8021 turns = 1989.208 s**; at p = 50 it is 4188 turns. With the corrected
+  queue limit (ORACLE-V F1: Qmax = 21) W_max = W(20) = **1782 turns = 441.936 s**.
   w₂ = 15 also meets BOARD-plan's interlude condition (w₂ ≤ 15, §7.1).
 - **Stall.** A walk can fail to finish under the traced rules in two cases. (a) **Slow guests,
   w₂ only**: for s ≤ 0.31 the stuck detector (6 non-improving of the last 15 steps) can fire during a
@@ -308,7 +309,7 @@ This applies to BOARD-plan §8 and does not need WALK-I.
 1. Set **w = 20** and **w₂ = 15** (`WalkTerms` constants citing WALK-plan §9; use w = 12 once the slot
    axis is pinned). This replaces `⌈d / (0.7·v·T)⌉ + 1` from `WalkSpeedCellsPerSecond`, so H = 21 + 35 =
    **56**. Report τ_max = `CAP·H + R + 1 − (DUR + 1 s)/T` = 277 turns = 68.696 s and W_max = 8021
-   turns = 1989.208 s.
+   turns = 1989.208 s (1782 turns = 441.936 s with Qmax = 21 after ORACLE-V F1).
 2. **Drop the walk APPROX.** Do not introduce BOARD-plan's narrowed tag. `[APPROX:GATE-003]` goes away
    with BOARD's spec, and no walk tag replaces it. The derivation string cites
    `walk_evidence.py` (SHA-pinned binary) and conditions W2–W4.

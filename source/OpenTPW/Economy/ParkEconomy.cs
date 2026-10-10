@@ -684,13 +684,16 @@ public sealed class ParkEconomy : IParkEconomy
 
 	/// <summary>
 	/// Whether <see cref="TrySpendCell"/> would accept one more cell after <paramref name="pending"/> earlier cells
-	/// of the same line were spent: balance − (pending + 1) × cost ≥ 0. Previews use it to match the commit.
+	/// of the same line were spent: balance − (pending + 1) × cost ≥ 0 in 32-bit arithmetic, as the original's
+	/// signed balance word computes it. Previews use it to match the commit.
 	/// </summary>
-	public bool CanSpendCell( CellPurchase kind, int pending ) => Balance - (pending + 1) * CellCost( kind ) >= 0;
+	// [BIN:STP-PPC:0x10082BC8 SetCellType money test] subf balance − cost in 32 bits, then the sign bit: balance −2^31 with cost 1 wraps to affordable, balance 2^31 − 1 with cost −1 to refused
+	public bool CanSpendCell( CellPurchase kind, int pending ) => unchecked( (int)Balance - (int)((pending + 1) * CellCost( kind )) ) >= 0;
 
 	/// <summary>
 	/// Charges one path or queue cell when it is written (<c>SetCellType</c>, PATH-plan §3.2): refused only
-	/// when balance − cost &lt; 0 (no bankruptcy test), then spent as other costs.
+	/// when balance − cost &lt; 0 (no bankruptcy test), then spent as other costs. A negative cost (modified
+	/// <c>Costs.*</c>) raises the balance by its amount, as the original's Spend of a negative amount does.
 	/// </summary>
 	// [BIN:STP-PPC:0x10082AC4 SetCellType] type 1 costs Costs.PathCell, type 3 Costs.QueueCell; refused when balance − cost < 0, else Spend per cell at write time
 	public PurchaseResult TrySpendCell( CellPurchase kind )
@@ -698,7 +701,11 @@ public sealed class ParkEconomy : IParkEconomy
 		if ( !CanSpendCell( kind, pending: 0 ) )
 			return PurchaseResult.NotEnoughMoney;
 		var cost = CellCost( kind );
-		Post( LedgerCategory.OtherCosts, cost );
+		// [APPROX:ECON-046] a negative cell cost is booked as other income (same balance and profit as the original's Spend of a negative amount; the month category is not traced) — evidence needed: the ledger category of a negative Spend
+		if ( cost >= 0 )
+			Post( LedgerCategory.OtherCosts, cost );
+		else
+			Post( LedgerCategory.OtherIncome, -cost );
 		Raise( ParkEventKind.CellsBought, cost, 0, (int)kind, $"1 {kind} cell" );
 		return PurchaseResult.Ok;
 	}

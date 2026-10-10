@@ -382,6 +382,29 @@ class EnvelopeValidationTests(unittest.TestCase):
         self.assertEqual(snap.from_envelope(cut), read(gms()[:SPENT + 2]))   # short member keeps its bytes
         self.refused({**cut, 'player': {**cut['player'], 'mExtraKeys': 1}}, 'reset')
 
+    def test_failing_member_holds_only_what_a_short_read_leaves(self):
+        # The member the read stopped inside cannot hold a value no 0..3 byte delivery can produce.
+        # How many bytes arrived is not recorded, so any delivery count the value fits is accepted.
+        easy = snap.to_envelope(read(gms()[:MODE]))       # stopped on mEasyModeUser: a u8 gets 0 bytes
+        self.assertEqual(easy['failed_at'], 'mEasyModeUser')
+        self.refused({**easy, 'player': {**easy['player'], 'mEasyModeUser': 7}})
+        swear = snap.to_envelope(read(gms()[:MODE + 1]))  # stopped on mSwearFilterOn: reset is 1, not 0
+        self.assertEqual(swear['failed_at'], 'mSwearFilterOn')
+        self.refused({**swear, 'player': {**swear['player'], 'mSwearFilterOn': 0}})
+        glob = snap.to_envelope(read(gms()[:5]))          # stopped on mEarnedGlobalTicket[1]
+        self.assertEqual(glob['failed_at'], 'mEarnedGlobalTicket')
+        self.refused({**glob, 'player': {**glob['player'], 'mEarnedGlobalTicket': [1, 0, 0, 7]}})
+        cut = snap.to_envelope(read(gms()[:SPENT + 2]))   # stopped 2 bytes into mSpentTickets
+        self.assertEqual(cut['player']['mSpentTickets'], 0x05000000)
+        for spent, accepted in ((0x05000000, True), (0x06000000, True), (0, True), (0x05000001, False),
+                                (0x12345678, False)):
+            with self.subTest(spent=hex(spent)):
+                edited = {**cut, 'player': {**cut['player'], 'mSpentTickets': spent}}
+                if accepted:                              # low byte 0: 1..3 delivered bytes can leave it
+                    self.assertEqual(snap.from_envelope(edited).spent_tickets, spent)
+                else:
+                    self.refused(edited)
+
     def test_every_partial_read_cycles_through_json(self):
         for raw in CycleTests.CASES + (gms(themes=((b'a', (0,) * 6), (b'a', (0,) * 6))),):
             for n in range(len(raw) + 1):
@@ -417,6 +440,12 @@ class EnvelopeValidationTests(unittest.TestCase):
                     text[:-1], '[]'):
             with self.subTest(bad=bad[-40:]), self.assertRaises(ValueError):
                 snap.loads_envelope(bad)
+
+    def test_deeply_nested_json_is_a_value_error_not_a_recursion_error(self):
+        # json.loads recurses once per nesting level; hostile text must still be refused as ValueError.
+        for deep in ('[' * 100000 + ']' * 100000, '{"a": ' * 50000 + '0' + '}' * 50000):
+            with self.subTest(head=deep[:1]), self.assertRaises(ValueError):
+                snap.loads_envelope(deep)
 
 
 class LargeMysteryTests(unittest.TestCase):

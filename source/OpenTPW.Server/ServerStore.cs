@@ -31,12 +31,17 @@ public sealed class ParkRecord
 	public DateTimeOffset PublishedUtc { get; set; }
 	public int Bytes { get; set; }
 	public bool HasThumbnail { get; set; }
+	/// <summary>The author chose to list this park on the project website (opt-in when publishing).</summary>
+	public bool ShowOnWebsite { get; set; }
 	public int Visits { get; set; }
 	public int Votes { get; set; }
 	public List<string> Visitors { get; set; } = new();
 	/// <summary>Player key → UTC day (yyyy-MM-dd) of that player's last vote for this park.</summary>
 	public Dictionary<string, string> LastVoteDay { get; set; } = new();
 }
+
+/// <summary>A login session: the SHA-256 hash of its token (never the token), the account and the expiry.</summary>
+public sealed record SessionRecord( string TokenHash, string Key, DateTimeOffset Expires );
 
 public sealed class PostcardRecord
 {
@@ -60,7 +65,8 @@ public sealed class StoreException : Exception
 /// <summary>
 /// [EXT:ONLINE-052] File storage: JSON indexes (accounts, parks, postcards) rewritten atomically after
 /// each change, blobs as files named by random ids, reports appended as JSON lines. One lock guards
-/// all state; meant for community-sized servers. Sessions live in memory only.
+/// all state; meant for community-sized servers. Sessions are kept as token hashes in sessions.json, so a restart
+/// (a deploy) does not log players out.
 /// </summary>
 public sealed class ServerStore
 {
@@ -84,7 +90,12 @@ public sealed class ServerStore
 		accounts = Load<List<AccountRecord>>( "accounts.json" ).ToDictionary( item => item.Key );
 		parks = Load<List<ParkRecord>>( "parks.json" ).ToDictionary( item => item.Id );
 		postcards = Load<List<PostcardRecord>>( "postcards.json" ).ToDictionary( item => item.Id );
+		foreach ( var session in Load<List<SessionRecord>>( "sessions.json" ).Where( session => session.Expires > this.clock() && accounts.ContainsKey( session.Key ) ) )
+			sessions[session.TokenHash] = (session.Key, session.Expires);
 	}
+
+	/// <summary>Call inside the lock after any change to <see cref="sessions"/>.</summary>
+	private void SaveSessions() => Save( "sessions.json", sessions.Select( pair => new SessionRecord( pair.Key, pair.Value.Key, pair.Value.Expires ) ).ToList() );
 
 	public string Root { get; }
 
@@ -157,6 +168,7 @@ public sealed class ServerStore
 			foreach ( var old in own.Take( Math.Max( 0, own.Count - options.MaximumSessionsPerPlayer + 1 ) ) )
 				sessions.Remove( old.Key );
 			sessions[tokenHash] = (account.Key, expires);
+			SaveSessions();
 		}
 		return new SessionToken( account.Name, token, expires );
 	}
@@ -173,6 +185,7 @@ public sealed class ServerStore
 			if ( session.Expires <= clock() || !accounts.TryGetValue( session.Key, out var account ) || IsBanned( account.Name ) )
 			{
 				sessions.Remove( tokenHash );
+				SaveSessions();
 				return null;
 			}
 			return account;
@@ -182,7 +195,10 @@ public sealed class ServerStore
 	public void Logout( string token )
 	{
 		lock ( gate )
-			sessions.Remove( PasswordHasher.HashToken( token ) );
+		{
+			if ( sessions.Remove( PasswordHasher.HashToken( token ) ) )
+				SaveSessions();
+		}
 	}
 
 	/// <summary>
@@ -202,6 +218,7 @@ public sealed class ServerStore
 				throw new StoreException( 404, "There is no such player." );
 			foreach ( var session in sessions.Where( pair => pair.Value.Key == account.Key ).Select( pair => pair.Key ).ToList() )
 				sessions.Remove( session );
+			SaveSessions();
 			foreach ( var other in accounts.Values )
 				other.Buddies.Remove( account.Key );
 			foreach ( var park in parks.Values.Where( park => park.OwnerKey == account.Key ).ToList() )
@@ -273,7 +290,7 @@ public sealed class ServerStore
 
 	// ---- parks ----
 
-	public ParkRecord Publish( AccountRecord owner, ParkPackage package, byte[] packageBytes )
+	public ParkRecord Publish( AccountRecord owner, ParkPackage package, byte[] packageBytes, bool showOnWebsite = false )
 	{
 		lock ( gate )
 		{
@@ -284,6 +301,7 @@ public sealed class ServerStore
 				Id = NewId(), OwnerKey = owner.Key, Author = owner.Name, Name = package.Manifest.Park.Name,
 				Description = package.Manifest.Park.Description, Level = package.Manifest.Park.Level, Language = package.Manifest.Game.Language,
 				PackageId = package.Manifest.PackageId, PublishedUtc = clock(), Bytes = packageBytes.Length, HasThumbnail = package.Thumbnail != null,
+				ShowOnWebsite = showOnWebsite,
 			};
 			AtomicFile.Write( ParkFile( park.Id, ParkPackage.FileExtension ), packageBytes );
 			if ( package.Thumbnail != null )
@@ -318,6 +336,18 @@ public sealed class ServerStore
 			};
 			return query.ToList();
 		}
+	}
+
+	/// <summary>
+	/// The most-voted parks whose authors chose to show them on the website: votes, then visits, then the earlier
+	/// published first.
+	/// </summary>
+	public IReadOnlyList<ParkRecord> WebsiteParks( int count )
+	{
+		lock ( gate )
+			return parks.Values.Where( park => park.ShowOnWebsite && !options.HiddenParks.Contains( park.Id ) )
+				.OrderByDescending( park => park.Votes ).ThenByDescending( park => park.Visits ).ThenBy( park => park.PublishedUtc ).ThenBy( park => park.Id, StringComparer.Ordinal )
+				.Take( count ).ToList();
 	}
 
 	public string ParkFile( string id, string extension ) => Path.Combine( Root, "parks", id + extension );

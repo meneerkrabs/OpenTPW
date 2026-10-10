@@ -128,14 +128,14 @@ Easymode that run starts at 6,765 and ends exactly where the `u32 42` tail begin
 | --- | --- | --- |
 | +46 | MAP attribute byte | Equals `base.map` at all 16,384 cells (and does not match `terrain.map`) |
 | +13 bit 0 | Path cell | 78 cells forming a connected network from the gate; includes all 10 MAP `InitialPath` cells; never on a MAP flag other than `InitialPath` |
-| +8 | Path connections | For all 78 path cells every cardinal path neighbour has its bit (0x01 −Y, 0x04 +X, 0x10 +Y, 0x40 −X); the 9 other set cardinal bits point at adjacent object/queue cells. Odd (diagonal) bits not interpreted |
+| +8 | Path connections | For all 78 path cells every cardinal path neighbour has its bit (0x01 −Y, 0x04 +X, 0x10 +Y, 0x40 −X); the 9 other set cardinal bits point at adjacent object/queue cells. The odd bits are the diagonals (0x02 +X−Y, 0x08 +X+Y, 0x20 −X+Y, 0x80 −X−Y) |
+| +17 | Path texture | Index into the theme's `PathTex` list; with +21 it follows from +8 on all 78 path cells (docs/PATHS.md, "Path textures") |
+| +21 | Path turn | u16, clockwise degrees: 0, 90, 180 or 270 |
 | +12 ≠ 0 | Occupied | Nonzero on all 43 footprint cells of the 11 placed objects and on 5 queue/entrance cells of the Bouncy ride, nowhere else |
 | +0 bit 2 | Extension present | Record length 94 vs 84 |
 
 Observed but **not interpreted** (kept raw in `SaveCell.Record`):
-- +17 holds values that follow `Jungle.tct` PathTex indices by topology on path
-  cells (corners 3/9 = `cnr`, junctions 4/6/7/15 = `tju`, straights 2/19 = `str`,
-  2-wide edges 10/20 = `edg`) and 55/8 elsewhere; +21 looks like an orientation.
+- +17 holds 55 or 8 on cells that are no path.
 - +2 splits the map into 0x40 cells and a 0x00 region around the park (plus 0xC0
   on the entrance, 0x20 on a few cells); possibly purchasable land — unverified.
 - Extension byte 6 forms two 11×11 decaying patterns (peaks 23 and 20) centred

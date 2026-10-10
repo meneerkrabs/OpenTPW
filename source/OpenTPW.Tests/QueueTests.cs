@@ -122,7 +122,7 @@ public class QueueTests
 		Assert.AreEqual( 6, ride.QueueSizeInCells );
 		Assert.AreEqual( (3, 0), ride.JoinCell, "guests step onto the back cell from the path" );
 		Assert.AreEqual( 24, ride.QueueRoom );
-		Assert.AreEqual( 24, ride.MaximumQueueLength, "min(4 × cells, 100)" );
+		Assert.AreEqual( 21, ride.MaximumQueueLength, "min(4 × cells, the limit trunc(130 × 5 / 30) = 21)" );
 		Assert.IsFalse( grid.IsWalkable( 3, 3 ), "queue cells are not path cells" );
 		Assert.AreEqual( -1, grid.Distance( 3, 0, 3, 3 ) );
 
@@ -162,8 +162,8 @@ public class QueueTests
 		Assert.IsTrue( Can( 3, 1 ), "path over queue" );
 		Assert.IsTrue( Can( 0, 3 ) && Can( 3, 3 ) && Can( 1, 1 ) );
 		Assert.IsTrue( Can( 1, 4 ) );
-		Assert.IsFalse( Can( 1, 3 ), "a queue goes over a path only with its last cell" );
-		Assert.IsTrue( Can( 1, 3, last: true ) );
+		Assert.IsTrue( Can( 1, 3 ), "a queue goes over a path on every cell of a line ..." );
+		Assert.IsFalse( Can( 1, 3, last: true ), "... except its last cell (data:0x84b2c set by the line tool)" );
 		Assert.IsFalse( Can( 5, 3 ) || Can( 4, 1 ) );
 	}
 
@@ -204,7 +204,7 @@ public class QueueTests
 		Assert.AreEqual( QueuePaths.MaximumCells, QueuePaths.TryExtend( grid, ride, Enumerable.Range( 1, 30 ).Select( y => (0, y) ) ) );
 		Assert.AreEqual( QueueBuildResult.TooLong, QueuePaths.CheckExtend( grid, ride, 0, 26 ) );
 		Assert.AreEqual( 25, ride.QueueSizeInCells );
-		Assert.AreEqual( 100, ride.MaximumQueueLength, "25 cells reach the HasQueue limit" );
+		Assert.AreEqual( 21, ride.MaximumQueueLength, "room 100, but the HasQueue limit trunc(130 × 5 / 30) = 21 decides" );
 	}
 
 	// ---- Joining ---------------------------------------------------------------------------------
@@ -212,16 +212,18 @@ public class QueueTests
 	[TestMethod]
 	public void QueueLimitFollowsTheTracedFormula()
 	{
-		static int Limit( bool hasQueue, float qwtc, int speed, int initSpeed, int capacity, int duration ) =>
+		static uint Limit( bool hasQueue, float qwtc, int speed, int initSpeed, int capacity, int duration ) =>
 			RideVisitorBridge.ComputeQueueLimit( new QueueParameters( hasQueue, false, false, qwtc, speed, initSpeed, capacity, duration ) );
-		Assert.AreEqual( 100, Limit( true, 130, 60, 60, 5, 30 ), "HasQueue rides: 100, the QueueWaitTimeConstant is unused" );
-		Assert.AreEqual( 21, Limit( false, 130, 60, 60, 5, 30 ), "trunc(130 × (1 × 5) / 30) = trunc(21.67)" );
-		Assert.AreEqual( 10, Limit( false, 130, 30, 60, 5, 30 ), "G = SPEED / InitSpeed = 0.5: trunc(10.83)" );
-		Assert.AreEqual( 20, Limit( false, 30, 0, 60, 2, 3 ), "SPEED 0 gives G = 1 (Rides.sam level 0: QWTC 30, CAP 2, DUR 3)" );
-		Assert.AreEqual( 4, Limit( false, 10, 60, 60, 1, 30 ), "floor of 4" );
-		Assert.AreEqual( 4, Limit( false, 0, 0, 0, 0, 0 ), "a NaN quotient becomes 4" );
-		Assert.AreEqual( int.MaxValue, Limit( false, 30, 0, 60, 2, 0 ), "DUR 0 divides to +infinity; the room still bounds the queue" );
-		Assert.AreEqual( 12, Limit( false, 3, 65, 90, 6, 1 ), "single precision: 3 × (65/90 × 6) / 1 = 12.999999f (13 in double)" );
+		Assert.AreEqual( 100u, Limit( false, 130, 60, 60, 5, 30 ), "no Info.HasQueue (shops, toilets, sideshows): 100, the QueueWaitTimeConstant is unused" );
+		Assert.AreEqual( 21u, Limit( true, 130, 60, 60, 5, 30 ), "Belly Bounce: trunc(130 × (1 × 5) / 30) = trunc(21.67)" );
+		Assert.AreEqual( 10u, Limit( true, 130, 30, 60, 5, 30 ), "G = SPEED / InitSpeed = 0.5: trunc(10.83)" );
+		Assert.AreEqual( 20u, Limit( true, 30, 0, 60, 2, 3 ), "SPEED 0 gives G = 1 (Rides.sam level 0: QWTC 30, CAP 2, DUR 3)" );
+		Assert.AreEqual( 4u, Limit( true, 10, 60, 60, 1, 30 ), "floor of 4" );
+		Assert.AreEqual( 4u, Limit( true, 0, 0, 0, 0, 0 ), "a NaN quotient becomes 4" );
+		Assert.AreEqual( uint.MaxValue, Limit( true, 30, 0, 60, 2, 0 ), "DUR 0 divides to +infinity, which saturates at 2^32 − 1; the room still bounds the queue" );
+		Assert.AreEqual( 3_000_000_000u, Limit( true, 3e9f, 0, 60, 1, 1 ), "the limit is unsigned: quotients up to 2^32 − 1 survive" );
+		Assert.AreEqual( 465_288_096u, Limit( true, 130, unchecked( (int)0x80000000 ), 100, 5, 30 ), "SPEED is an unsigned word: 2^31 / 100 × 5 × 130 / 30" );
+		Assert.AreEqual( 12u, Limit( true, 3, 65, 90, 6, 1 ), "single precision: 3 × (65/90 × 6) / 1 = 12.999999f (13 in double)" );
 	}
 
 	[TestMethod]
@@ -237,24 +239,24 @@ public class QueueTests
 		Assert.IsTrue( new[] { 2, 3, 4 }.All( ride.TryJoinQueue ) );
 		Assert.AreEqual( QueueJoinResult.NoRoom, ride.JoinQueue( 5, 90 ), "the room check comes before the excitement gate" );
 
-		// No HasQueue: two cells give room 8, but the QWTC limit is 4 (the floor).
-		var shop = new Rig( queueCells: 0, parameters: new QueueParameters( false, false, false, 10, 60, 60, 1, 30 ) );
+		// HasQueue with QWTC 10, CAP 1, DUR 30: two cells give room 8, but the QWTC limit is 4 (the floor).
+		var shop = new Rig( queueCells: 0, parameters: new QueueParameters( true, false, false, 10, 60, 60, 1, 30 ) );
 		shop.Grid.SetQueue( 2, 5, 2 );
 		shop.Grid.SetQueue( 2, 4, 2 );
 		shop.Ride.RecomputeQueue( shop.Grid );
-		Assert.AreEqual( (8, 4, 4), (shop.Ride.QueueRoom, shop.Ride.QueueLimit, shop.Ride.MaximumQueueLength) );
+		Assert.AreEqual( (8, 4u, 4), (shop.Ride.QueueRoom, shop.Ride.QueueLimit, shop.Ride.MaximumQueueLength) );
 		Assert.IsTrue( new[] { 1, 2, 3, 4 }.All( shop.Ride.TryJoinQueue ) );
 		Assert.AreEqual( QueueJoinResult.QueueTooLong, shop.Ride.JoinQueue( 5, 0 ) );
 
-		// HasQueue with 26 cells (laid directly on the grid): room 104, limit 100.
+		// HasQueue with QWTC 600 and 26 cells (laid directly on the grid): room 104, limit trunc(600 × 5 / 30) = 100.
 		var grid = new GuestPathGrid( 30, 30 );
 		for ( var y = 1; y <= 26; y++ )
 			grid.SetQueue( 1, y, 0 );
-		var big = new RideVisitorBridge( 4, "Big", RideVisitorKind.Ride, 5, 50, 10 ) { EntranceCell = (1, 0), QueueFrontCell = (1, 1), QueueEntranceDirection = 0, Parameters = rig.Ride.Parameters };
+		var big = new RideVisitorBridge( 4, "Big", RideVisitorKind.Ride, 5, 50, 10 ) { EntranceCell = (1, 0), QueueFrontCell = (1, 1), QueueEntranceDirection = 0, Parameters = rig.Ride.Parameters with { QueueWaitTimeConstant = 600 } };
 		big.Attach( IdleScript( UnimplementedRideScriptEffects.Instance ), () => true );
 		big.RecomputeQueue( grid );
 		Assert.AreEqual( 26, big.QueueSizeInCells );
-		Assert.AreEqual( (104, 100, 100), (big.QueueRoom, big.QueueLimit, big.MaximumQueueLength) );
+		Assert.AreEqual( (104, 100u, 100), (big.QueueRoom, big.QueueLimit, big.MaximumQueueLength) );
 		Assert.IsTrue( Enumerable.Range( 1, 100 ).All( big.TryJoinQueue ) );
 		Assert.AreEqual( QueueJoinResult.QueueTooLong, big.JoinQueue( 101, 0 ) );
 		Assert.AreEqual( 99, big.GetQueuePosition( 100 ) );
@@ -531,7 +533,8 @@ public class QueueTests
 	[TestMethod]
 	public void QueuedGuestsAreCalledWalkToTheStandPointAndBoard()
 	{
-		var rig = new Rig( takesGuests: true, capacity: 1 );
+		// QWTC 600: the limit trunc(600 × 1 / 30) = 20 lets all six guests queue (130 would give 4).
+		var rig = new Rig( takesGuests: true, capacity: 1, parameters: new QueueParameters( true, false, false, 600, 60, 60, 1, 30 ) );
 		var waits = new List<long>();
 		rig.Simulation.QueueWaitCompleted += ( _, _, turns ) => waits.Add( turns );
 		var notReady = 0;

@@ -321,8 +321,9 @@ and the level's queue tool (`Level.BuildQueueCell`) lay one cell at a time. The
 first cell is the front cell, linked toward the ride. Every later cell touches
 the back cell and links toward it. Only `Info.HasQueue` objects take queue
 paths, at most 25 cells. A queue cell goes only on an empty cell
-(`ParkCellMap.CanChangeCellType`, traced; the original's last cell of a line
-may also overwrite a path, which belongs to PATH-I's line tool). Object
+(`ParkCellMap.CanChangeCellType`, traced; the original's line tool may also lay
+queue over a path on every cell of a line but the last, which this tool does
+not do). Object
 footprints and terrain the object build rule refuses are blocked. Each cell is
 charged `Costs.QueueCell` (75) when it is written, refused only when
 balance − cost < 0 (`ParkEconomy.TrySpendCell`, `SetCellType` `0x82ac4`).
@@ -337,14 +338,17 @@ also block object placement. New queue cells are not drawn on the terrain yet.
 1. Room: the guest joins only while the count is below 4 × cells.
 2. Excitement: rides and sideshows refuse a guest when
    |preferred − excitement| ≥ 45 (thought Scared or Bored).
-3. Limit: the count must be below the data limit. That is 100 with
-   `Info.HasQueue`. Otherwise it is
+3. Limit: the count must be below the data limit, an unsigned 32-bit value.
+   With `Info.HasQueue` it is
    trunc(max(QWTC × (SPEED/InitSpeed × CAP) / DUR, 4)) in single precision,
    with `Upgrades[L].QueueWaitTimeConstant` at type record +436 and InitSpeed
-   at +424. `InitDuration` is +416, not +436. A NaN quotient gives 4.
+   at +424 (SPEED unsigned, the quotient saturating at 2³² − 1).
+   `InitDuration` is +416, not +436. A NaN quotient gives 4. Without
+   `Info.HasQueue` it is 100 (ORACLE-V F1 corrected the polarity).
 
-So the maximum queue length is min(100, 4 × cells) for HasQueue rides. Objects
-without a queue path (shops, toilets, sideshows) get one front cell and so 4.
+So the maximum queue length is min(limit, 4 × cells) for HasQueue rides (Belly
+Bounce: 21, six cells). Objects without a queue path (shops, toilets,
+sideshows) get one front cell and so 4.
 CAP and DUR are the clamped `InitCapacity`/`InitDuration` of level 0. The old
 OpenTPW rule "4 × capacity" is gone.
 
@@ -468,7 +472,7 @@ Not drawn: heads/costumes, balloons, thought bubbles, shadows, riders.
 ## Tests and evidence
 
 - `QueueTests` (no assets): queue-cell links and recompute after edits, build
-  refusals, both limit formulas (single precision, NaN floor, HasQueue 100),
+  refusals, both limit formulas (single precision, NaN floor, unsigned saturation, 100 without HasQueue),
   join order room → excitement → limit, guests walking queue cells to four
   positions per cell, depth bytes, move-up delays trunc(1.2 × position) with the
   gap ≤ 2 rule, no boredom exit over 2,000 turns, the unhappy/toilet/relief,

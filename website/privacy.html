@@ -15,12 +15,13 @@
 <header class="top"><div class="wrap"><a class="brand" href="/"><img src="logo.svg" alt="" width="38" height="38"><span>Open<b>TPW</b></span></a></div></header>
 <main class="wrap page">
 	<h1>Privacy</h1>
-	<p class="updated">Last updated 10 October 2026.</p>
+	<p class="updated">Last updated 10 October 2026 (news and top parks on the website).</p>
 	<p>OpenTPW is a hobby project. This page explains what opentpw.io and the official server at play.opentpw.io keep about you. The short version: very little, no tracking, and you can delete your account and everything on the server yourself.</p>
 	<p>Questions or requests: <a href="mailto:contact@opentpw.io">contact@opentpw.io</a>. The maintainer of OpenTPW is responsible for the processing described here.</p>
 
 	<h2>This website (opentpw.io)</h2>
-	<p>The website has no cookies, no analytics, no advertising and no embedded content from other sites. It is served by Cloudflare Pages; like any web host, Cloudflare processes your IP address to deliver the pages and to protect them against attacks. Downloads come from GitHub, which processes your IP address when you download a release.</p>
+	<p>The website has no cookies, no analytics and no advertising. It is served by Cloudflare Pages; like any web host, Cloudflare processes your IP address to deliver the pages and to protect them against attacks. Downloads come from GitHub, which processes your IP address when you download a release.</p>
+	<p>The home page shows news and the top parks from the official server: your browser fetches them, and the park pictures, from play.opentpw.io, without cookies. That server keeps no access logs (see below).</p>
 
 	<h2>Playing in the browser (play.opentpw.io)</h2>
 	<p>The browser version runs on your computer. The game files you choose are copied into your browser's memory only; they are never uploaded and are gone when you close the page. The server at play.opentpw.io runs in a data centre of Hetzner Online GmbH in Germany. Its web server keeps no access logs.</p>
@@ -32,9 +33,10 @@
 		<tr><td>Your player name, a salted hash of your password (never the password itself), when you registered</td><td>To let you log in</td><td>Until you delete your account</td></tr>
 		<tr><td>Your buddy list and daily vote count</td><td>For buddies and park votes</td><td>Until you delete your account</td></tr>
 		<tr><td>Parks you publish, with their name, description and preview picture</td><td>To show them to other players</td><td>Until you remove them or delete your account</td></tr>
+		<tr><td>Whether you chose to show a published park on opentpw.io (off unless you choose it)</td><td>Only then can the park appear in the website's top parks, with its name, description, picture, votes and visits and your player name, visible to anyone</td><td>Until you remove the park or delete your account</td></tr>
 		<tr><td>Postcards sent to you</td><td>To deliver them</td><td>Until you delete them or your account</td></tr>
 		<tr><td>Reports you make about parks, players or chat</td><td>For moderation</td><td>As long as needed for moderation</td></tr>
-		<tr><td>Login sessions</td><td>To keep you logged in</td><td>In memory only, at most 7 days</td></tr>
+		<tr><td>Login sessions (a hash of the session key, never the key itself)</td><td>To keep you logged in, also when the server restarts</td><td>At most 7 days, or until you log out</td></tr>
 	</table>
 	<p>Chat messages are passed on to the other players in your room and not stored. Your IP address is used in memory only, to limit how many requests one address can make; it is not stored. Postcards you send are delivered to their recipients and stay with them.</p>
 	<p>The server keeps nightly backups of its data for seven days, so deleted data is also gone from the backups within a week.</p>

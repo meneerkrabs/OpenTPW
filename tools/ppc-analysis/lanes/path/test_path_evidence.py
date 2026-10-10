@@ -31,9 +31,9 @@ class CellTypeRuleTests(unittest.TestCase):
         for occupied in (2, 4, 5, 7, 9, 10, 21, 30):
             self.assertFalse(p.can_change_cell_type(occupied, p.CELL_PATH, False), occupied)
 
-    def test_queue_over_path_needs_the_last_cell_flag(self):
-        self.assertFalse(p.can_change_cell_type(p.CELL_PATH, p.CELL_QUEUE, False))
-        self.assertTrue(p.can_change_cell_type(p.CELL_PATH, p.CELL_QUEUE, True))
+    def test_queue_over_path_is_refused_only_with_the_last_cell_flag(self):
+        self.assertTrue(p.can_change_cell_type(p.CELL_PATH, p.CELL_QUEUE, False))
+        self.assertFalse(p.can_change_cell_type(p.CELL_PATH, p.CELL_QUEUE, True))
         self.assertTrue(p.can_change_cell_type(p.CELL_EMPTY, p.CELL_QUEUE, False))
 
     def test_clearing_and_entrance_rules(self):
@@ -54,7 +54,7 @@ class ChargeTests(unittest.TestCase):
         self.assertEqual((again['ok'], again['counter'], again['charged']), (True, 3, 0))
 
     def test_queue_cells_cost_queue_cell_and_conversion_is_flagged(self):
-        queue = p.set_cell_type(p.CELL_PATH, p.CELL_QUEUE, 0, 1000, 20, 75, last_cell=True)
+        queue = p.set_cell_type(p.CELL_PATH, p.CELL_QUEUE, 0, 1000, 20, 75, last_cell=False)
         self.assertEqual((queue['charged'], queue['path_to_queue']), (75, True))
         back = p.set_cell_type(p.CELL_QUEUE, p.CELL_PATH, 0, 1000, 20, 75)
         self.assertEqual((back['charged'], back['queue_to_path']), (20, True))

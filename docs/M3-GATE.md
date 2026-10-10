@@ -102,9 +102,11 @@ remaining copies are listed under "Divergences from the player's build flow". If
    payment bridge.
 4. **Queue**: right after the ride, as in the HUD (placing a HasQueue ride switches to
    the queue tool, `BIN:STP-PPC:0x1007497C`). N = ⌈queue limit / 4 per cell⌉, capped at
-   `QueuePaths.MaximumCells` (25, `QUEUE-013`). For a HasQueue ride the limit is 100,
-   so **N = 25**: the longest queue the runtime builds. With it, the data limit, not
-   the cells, decides how many guests queue (`MaximumQueueLength` = min(100, 4N) = 100).
+   `QueuePaths.MaximumCells` (25, `QUEUE-013`). A HasQueue ride's limit is its
+   QueueWaitTimeConstant formula (QUEUE-plan §4): Belly Bounce gets trunc(130 × 5 / 30)
+   = 21, so **N = 6**. With it, the data limit, not the cells, decides how many guests
+   queue (`MaximumQueueLength` = min(21, 4N) = 21). Until ORACLE-F the runtime read the
+   flag the wrong way round (limit 100, N = 25; ORACLE-V F1).
    Each cell goes through `Level.BuildQueueCell`, the queue tool's per-cell code
    (recompute, `QueuePaths.CheckExtend`, `ParkEconomy.TrySpendCell(Queue)` at
    `Costs.QueueCell` = $75, `QueuePaths.TryExtend`). The blocked-cell test is
@@ -165,10 +167,11 @@ or on the boarding bound below:
     another 30-turn window, and the guest is called first.
   - one evaluation for the update order.
 
-  Belly Bounce (25 cells): 25 × 9 + 2 × 15 = 255; 255 + 3 + 22 + 1 = **281 turns**.
+  Belly Bounce (6 cells since ORACLE-F): 6 × 9 + 2 × 15 = 84; 84 + 3 + 22 + 1 = **110 turns**.
   One-cell queues (shop, toilet): 9 + 30 = 39; 39 + 3 + 22 + 1 = **65 turns**. Before
-  WALK-I the walk was N + 4 cells at OpenTPW's own 1 cell/s × 0.7 (194 and 50 turns,
-  `[APPROX:GATE-004]`, now retired). Like w and w₂, C needs a guest at least 15 turns
+  WALK-I the walk was N + 4 cells at OpenTPW's own 1 cell/s × 0.7 (`[APPROX:GATE-004]`,
+  now retired): 84 and 50 turns with ORACLE-F's 6 cells, 194 and 50 with the 25-cell queue
+  before it, 326 before S1. Like w and w₂, C needs a guest at least 15 turns
   old (W2): a head younger than that when it becomes head is counted
   (`headNotReadyYoungHeadsNotJudged`), not judged.
 - **Blocked handshake.** `VAR_LETMEON` is non-zero while nobody is called, with a queue,
@@ -318,39 +321,39 @@ connector) and D5 (`Level.RegisterWithGuests` applies `Runtime.IsAttraction`).
 
 ## Baseline (jungle, seed `Level.GuestSeed` = 6075451861746676596, 30 minutes)
 
-Run on October 10, 2026 against the local original data, on main (c6c19ea) with WALK-I, in
-two separate processes: the same table and exit code **0** both times, and the JSON reports
+Run on October 10, 2026 against the local original data, on main (c6c19ea) with WALK-I and
+ORACLE-F merged, in two separate processes: the same table and exit code **0** both times, and the JSON reports
 are identical apart from `wallSeconds`.
 
 | Row | Verdict | Evidence |
 | --- | --- | --- |
 | build.entrance | PASS | 10 InitialPath cells, lanes A/B valid, Bus/Gates/Lights, fee $20 |
-| build.paths | PASS | `ParkPathBuilder.BuildSegment` (47,21)→(47,35): 14 built, 1 existing (the walkway end), $280 charged by the builder and from the balance, 0 stray path cells; reached Belly Bounce (47,20), Drinks Shop (47,23), Small Toilet (47,23), queue join (47,22) |
-| build.attraction | PASS | Belly Bounce, clicked (44,20) → anchor (43,21) rot 90, queue front (42,20) (entrance cell: nearest path (47,20)), exit opens onto (47,20), $500, capacity 5 |
-| build.queue | PASS | 25 of 25 cells through `Level.BuildQueueCell`, charged $1,875 (25 × $75), front (42,20), straight back to (41,20) → back (46,22), join cell (47,22) reachable, maximum queue 100; 363 guests stood on the queue cells, 275 boarded from them |
-| build.shop | PASS | Drinks Shop at (48,23) rot 90, $650, $30 per drink |
-| build.toilet | PASS | Small Toilet at (46,23) rot 270, $100 |
+| build.paths | PASS | `ParkPathBuilder.BuildSegment` (47,21)→(47,35): 14 built, 1 existing (the walkway end), $280 charged by the builder and from the balance, 0 stray path cells; reached Belly Bounce (47,26), Drinks Shop (47,22), Small Toilet (47,24), queue join (47,28) |
+| build.attraction | PASS | Belly Bounce, clicked (49,23) → anchor (50,25) rot 180, queue front (49,26), entrance cell (47,26), exit (48,21) (snapped from (49,21)), $500, capacity 5 |
+| build.queue | PASS | 6 of 6 cells (ceil(queue limit 21 / 4)) through `Level.BuildQueueCell`, charged $450 (6 × $75), front (49,26) → back (48,28), join cell (47,28) reachable, maximum queue 21; 289 guests stood on the queue cells, 268 boarded from them |
+| build.shop | PASS | Drinks Shop at (46,22) rot 270, $650, $30 per drink |
+| build.toilet | PASS | Small Toilet at (46,24) rot 270, $100 |
 | build.staff | PASS | mechanic grade 1 ($150/month), handyman grade 3 ($80/month); no staff agents in the world |
 | time.monotonic | PASS | 0 violations; guest time 1800.000094 s (float accumulation), economy tick 108,000 |
-| economy.income-and-expenses | PASS | setup $3,405; income: gate $35,640, shops $19,440; expenses: staff $2,300, other $12,960 |
+| economy.income-and-expenses | PASS | setup $1,980; income: gate $35,660, shops $18,780; expenses: staff $2,300, other $12,520 |
 | economy.ledger-consistent | PASS | 0 violations in 108,000 samples, 10 months closed |
-| guests.flow | PASS | 1,800 arrived, 1,782 admitted, 0 turned back, 275 used the ride, 550 the shop, 151 the toilet, 1,633 left, 137 in the park at the end |
-| queues.no-stuck-queue | PASS | 0 violations; 320 waits judged (275 completed, 45 still queued at the end), 0 excluded, 0 outside W2–W4. Belly Bounce (jungle Bouncy.RSE): P 4, H 56 (21 + w 20 + w₂ 15), R 121, C 9, J 240 at p = 0 and 24 at p = 99; τ_max 277 turns = 68.696 s, W_max 8,045 turns = 1,995.16 s; closest wait 310 turns under its W(p); head to boarding ≤ 108 turns (178 for a head standing in the front cell; head walks ≤ 240); walks ≤ 8 / 3 of 20 / 15 turns, 0 walk-stalls; queue max 48/100, 275 waits, max 259.2 s, mean 215.4 s; head not ready ≤ 102 of 281 turns, 0 young heads; 0 blocked evaluations; called age ≤ 11 turns; τ measured 1.736 s. Shop/toilet (not traced BOUNCE loops: progress rules only): head not ready ≤ 11 / 12 of 65 turns (gates held or not), called age ≤ 10 / 12 turns. 47 guests left a queue without boarding |
+| guests.flow | PASS | 1,800 arrived, 1,783 admitted, 0 turned back, 267 used the ride, 506 the shop, 149 the toilet, 1,648 left, 123 in the park at the end |
+| queues.no-stuck-queue | PASS | 0 violations; 289 waits judged (268 completed, 21 still queued at the end), 0 excluded, 0 outside W2–W4. Belly Bounce (jungle Bouncy.RSE, 6 cells): P 4, H 56 (21 + w 20 + w₂ 15), R 121, C 9, J 69 at p = 0 and 24 at p = 20; τ_max 277 turns = 68.696 s, W_max 1,806 turns = 447.888 s; closest wait 215 turns under its W(p); head to boarding ≤ 94 turns (178 for a head standing in the front cell; head walks ≤ 69); walks ≤ 8 / 3 of 20 / 15 turns, 0 walk-stalls; queue max 21/21, 268 waits, max 153.76 s, mean 130.28 s; head not ready ≤ 25 of 110 turns, 0 young heads; 0 blocked evaluations; called age ≤ 11 turns; τ measured 2.356 s. Shop/toilet (not traced BOUNCE loops: progress rules only): head not ready ≤ 14 / 12 of 65 turns (gates held or not), called age ≤ 10 / 12 turns. 0 guests left a queue without boarding |
 | paths.no-unreachable-goal | PASS | all targets reachable; 0 stuck guests; 0 Confused give-ups; 0 lane-less ejections |
 | rides.scripts-run | PASS | 0 faults, 0 halted ticks (Belly Bounce, Small Toilet waiting; Drinks Shop, Bus, Gates, Lights running) |
-| staff.work | PASS | 10 wage payments ($2,300); mechanic: 4 repairs for 4 worn/broken events, longest 14.4 s within the 61-turn window, 0 pending; handyman: 324 litter items dropped, 324 cleaned, 0 missed hour updates |
-| determinism.same-seed | PASS | raw guest hash AB53F87E8322997D in both in-process runs; attraction ids 4 5 6 in both; gate hash 8E9F0A25C8ED4517; 30 minute hashes in each run, no divergent minute |
+| staff.work | PASS | 10 wage payments ($2,300); mechanic: 4 repairs for 4 worn/broken events, longest 14.4 s within the 61-turn window, 0 pending; handyman: 313 litter items dropped, 313 cleaned, 0 missed hour updates |
+| determinism.same-seed | PASS | raw guest hash AE37DF6C7DBC1081 in both in-process runs; attraction ids 4 5 6 in both; gate hash 84906295B3DAA515; 30 minute hashes in each run, no divergent minute |
 
-**WALK-I against main before it** (c6c19ea, same seed): every verdict is the same. Guests now
-walk at the traced per-guest speed (0.48–1.13 cell/s at s = 0.6–1.4, from s = 0 at spawn)
-instead of 1 cell/s, and a called guest walks into the ride's entrance cell instead of
-standing at the front cell's edge (QUEUE-007 closed). The ride is limited by its BOUNCE slots
-and changes little: 286 → 275 boarded, mean wait 213.3 → 215.4 s. One-cell queues serve one
-guest per walk, so they slow down most: called age 1 → 10 turns at the shop, shop boardings
-1,165 → 648 (894 → 550 guests), shop takings $34,950 → $19,440 and litter 582.5 → 324 items;
-the toilet 161 → 156. Admissions 1,788 → 1,782. Head not ready ≤ 106 → 102 turns (bound
-194 → 281), walks to the stand point 0 → 8 turns and move-ups 7 → 3 turns. Gate hash
-`AFDCA347E564786E` → `8E9F0A25C8ED4517`.
+**WALK-I and ORACLE-F merged** (same seed): every verdict is the same as on either branch. ORACLE-F
+(the oracle fixes F1–F5) changes the layout: Belly Bounce's queue limit is 21, so the gate lays 6 queue
+cells ($450) instead of 25, and UNBOUNCE releases with the strict deadline and the 200 ms window. WALK-I
+walks guests with the traced steering at the traced per-guest speed (0.48–1.13 cell/s at s = 0.6–1.4,
+from s = 0 at spawn), and a called guest walks into the ride's entrance cell instead of standing at the
+front cell's edge (QUEUE-007 closed). Against ORACLE-F alone (280 completed waits, mean 126.0 s, head not
+ready ≤ 26 of 84 turns, W_max 1,782 turns, gate hash `8ADCD47C727CC3F2` on 33f8584): 268 completed waits,
+mean 130.3 s, head not ready ≤ 25 of 110 turns, W_max 1,806 turns (J(20) = 24 on top). Against WALK-I
+alone (25 cells): queue max 48/100 → 21/21, mean wait 215.4 → 130.3 s, head bound 281 → 110 turns. Gate
+hash `84906295B3DAA515`.
 
 Totals: 16 pass, 0 fail, 0 unresolved; **exit code 0**. The evaluator accepts M3 under
 the approximations listed below. With `--no-determinism`: 15 pass, 0 fail, 1 unresolved,

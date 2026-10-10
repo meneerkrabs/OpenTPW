@@ -55,11 +55,28 @@ public sealed class UiTextField : UiElement
 	}
 }
 
+/// <summary>A list of selectable rows driven by the screen (click selects, second click activates, wheel scrolls).</summary>
+public interface IUiRowList
+{
+	int Selected { get; }
+	/// <summary>Whether Up/Down select rows (otherwise they move the focus).</summary>
+	bool ArrowsSelect { get; }
+	int RowAt( UiCanvas canvas, System.Numerics.Vector2 point );
+	void Select( int index );
+	void Scroll( int rows );
+}
+
+/// <summary>An element that follows the mouse while it is held (slider ball, scroll bar).</summary>
+public interface IUiDragTarget
+{
+	void DragTo( UiCanvas canvas, System.Numerics.Vector2 point );
+}
+
 /// <summary>
 /// A list of text rows inside an original list frame (list_findprks, list_outbox, list_msgs …):
 /// click or Up/Down selects, Enter or a second click activates, the wheel scrolls.
 /// </summary>
-public sealed class UiScrollList : UiElement
+public sealed class UiScrollList : UiElement, IUiRowList
 {
 	private int first;
 	private bool following = true;
@@ -76,6 +93,8 @@ public sealed class UiScrollList : UiElement
 	/// <summary>Whether new rows keep the view at the bottom (chat).</summary>
 	public bool FollowEnd { get; set; }
 	public override bool Focusable => Visible && Enabled;
+	/// <summary>Up/Down keep moving the focus between elements; Left/Right change the selection.</summary>
+	public bool ArrowsSelect => false;
 
 	public int VisibleRows => Math.Max( 1, (int)((Bounds.Height - Margin * 2) / RowHeight) );
 

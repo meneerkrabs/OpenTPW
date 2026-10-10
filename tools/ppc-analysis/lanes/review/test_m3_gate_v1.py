@@ -371,7 +371,10 @@ class Mutations(unittest.TestCase):
         self.assertEqual(('fail', 18000), (rows['rides.scripts-run']['verdict'], rows['rides.scripts-run']['firstViolationTick']))
         self.assertEqual('Belly Bounce', rows['rides.scripts-run']['evidence']['notRunningAtEnd'])
         self.assertTrue({'rides.scripts-run', 'time.monotonic'} <= self.new_fails('stall-ride'))
-        self.assertNotEqual('pass', rows['queues.no-stuck-queue']['verdict'])
+        # BOARD gate: the queue row can now pass. After the stop the ride is not open (an excluded turn, BOARD-plan A3)
+        # and nobody queues, and the waits before the stop are within the bound; the gate still exits 1 through the
+        # two rows above.
+        self.assertNotEqual('fail', rows['queues.no-stuck-queue']['verdict'])
         self.assertEqual(1, self.run_gate('stall-ride')['exit'])
 
     def test_ride_stopped_from_start(self):

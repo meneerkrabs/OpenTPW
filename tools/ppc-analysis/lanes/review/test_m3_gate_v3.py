@@ -31,6 +31,13 @@ GATE-FIX2 (review round 3, S1 to S4) flips the pins and adds:
 - S3: the end-of-run reachability check includes the queue's join cell, so ``cut-path`` lists Belly Bounce;
 - S4 (in test_m3_gate_v1.py): a second run that diverges early and converges by the end fails determinism.
 
+The BOARD gate (docs/reverse/BOARD-plan.md section 8) judges Belly Bounce's waits against
+(p + 1) H + (floor(p / CAP) + 1) R + 1 turns, every completed wait, every queued guest's age at each evaluation, and
+the head from the turn it became head (p = 0). The baseline passes (exit 0). Slots held about 5R
+(``hold-slots-much-longer``) or never released (``never-release``), and heads held 150 turns
+(``head-delayed-150-turns``), fail the row through the wait bound alone. Slots held about 2R and heads held 60 turns
+stay within the loose bound and pass (pinned).
+
 Static tests read ``OPENTPW_M3_SUBJECT`` (default ``HEAD``). Mutation tests run only with ``OPENTPW_M3_MUTATE=1``
 and ``OPENTPW_GAME_PATH``. Nothing here says anything about how the original game behaves.
 """
@@ -78,6 +85,7 @@ HOOKS_V3 = [
      '\t\treturn new SegmentResult( end, Array.Empty<(int X, int Y)>(), 0, CellBuildResult.Ok, false ) { Start = start };\n\t}\n'
      '\tprivate long stallTurn = -1;\n'
      '\tprivate long heldFromTurn = -1;\n'
+     '\tprivate readonly HashSet<int> extendedSlots = new();\n\tprivate int delayedHead;\n\tprivate long delayedSince;\n'
      '\tprivate void MutateV3( long tick )\n\t{\n'
      '\t\tvar ride = placed.FirstOrDefault( item => item.Role == "attraction" );\n'
      '\t\tvar shop = placed.FirstOrDefault( item => item.Role == "shop" );\n'
@@ -99,6 +107,21 @@ HOOKS_V3 = [
      '\t\t\tif ( heldFromTurn < 0 )\n\t\t\t\theldFromTurn = guests.ParkTurn;\n'
      '\t\t\tif ( guests.ParkTurn < heldFromTurn + 250 && guests.Find( ride.Runtime.Visitors.Queue[0] ) is { } held )\n'
      '\t\t\t{\n\t\t\t\theld.InQueueInterlude = true;\n\t\t\t\theld.InterludeTurn = guests.ParkTurn;\n\t\t\t}\n'
+     '\t\t}\n'
+     # BOARD gate: hold-slots-longer keeps every new BOUNCE slot 30 s past its deadline (a hold of about 2R),
+     # hold-slots-much-longer 120 s (about 5R), never-release forever; head-delayed-60-turns / -150-turns hold each new
+     # head in an interlude for its first 60 / 150 turns as head (more than H = 29 per boarding, below the 194-turn head
+     # bound of rule (a), so only the wait bound can catch it).
+     '\t\tif ( Mutation is "hold-slots-longer" or "hold-slots-much-longer" or "never-release" && ride != null && tick >= 18000 )\n\t\t{\n'
+     '\t\t\tvar slots = (List<(int Guest, double Until)>)typeof( RideVisitorBridge ).GetField( "bouncing", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance )!.GetValue( ride.Runtime.Visitors )!;\n'
+     '\t\t\tfor ( var index = 0; index < slots.Count; index++ )\n'
+     '\t\t\t\tif ( extendedSlots.Add( slots[index].Guest ) )\n'
+     '\t\t\t\t\tslots[index] = (slots[index].Guest, slots[index].Until + (Mutation == "hold-slots-longer" ? 30_000 : Mutation == "hold-slots-much-longer" ? 120_000 : 1e12));\n'
+     '\t\t}\n'
+     '\t\tif ( Mutation is "head-delayed-60-turns" or "head-delayed-150-turns" && ride != null && tick >= 18000 && ride.Runtime.Visitors.Queue.Count > 0 )\n\t\t{\n'
+     '\t\t\tif ( ride.Runtime.Visitors.Queue[0] != delayedHead )\n\t\t\t\t(delayedHead, delayedSince) = (ride.Runtime.Visitors.Queue[0], guests.ParkTurn);\n'
+     '\t\t\tif ( guests.ParkTurn < delayedSince + (Mutation == "head-delayed-60-turns" ? 60 : 150) && guests.Find( delayedHead ) is { } delayed )\n'
+     '\t\t\t{\n\t\t\t\tdelayed.InQueueInterlude = true;\n\t\t\t\tdelayed.InterludeTurn = guests.ParkTurn;\n\t\t\t}\n'
      '\t\t}\n'
      '\t\tif ( Mutation == "close-park" && tick == 1 )\n\t\t\teconomy.ClosePark();\n'
      '\t\tif ( Mutation == "stall-one-update" && shop != null )\n\t\t{\n'
@@ -191,8 +214,9 @@ class MutationsRound3(v1.Mutations):
         rows = self.rows('', determinism=True)
         verdicts = {key: row['verdict'] for key, row in rows.items()}
         self.assertEqual([], sorted(key for key, value in verdicts.items() if value == 'fail'))
-        self.assertEqual(['queues.no-stuck-queue'], sorted(key for key, value in verdicts.items() if value == 'unresolved'))
-        self.assertEqual(2, self.run_gate('', True)['exit'])
+        # BOARD gate: the queue row passes on the traced boarding bound, so every row passes and M3 exits 0.
+        self.assertEqual([], sorted(key for key, value in verdicts.items() if value == 'unresolved'))
+        self.assertEqual(0, self.run_gate('', True)['exit'])
         # GATE-V3: the rules, not the layout's numbers: charge = built cells x Costs.PathCell; queue cells =
         # clamp(ceil(limit / 4), 1, 25) (QUEUE-013), charged x Costs.QueueCell, maximum queue min(limit, 4N).
         paths = rows['build.paths']['evidence']
@@ -213,7 +237,19 @@ class MutationsRound3(v1.Mutations):
         stuck = rows['queues.no-stuck-queue']['evidence']
         self.assertEqual(0, stuck['violations'])
         self.assertLessEqual(stuck['attraction']['headNotReadyMaxTurns'], stuck['attraction']['headNotReadyBoundTurns'])
-        self.assertEqual(0, stuck['attraction']['waitBound']['waitsAboveBoundAtTauParameter'])
+        bound = stuck['attraction']['waitBound']
+        self.assertEqual('pass', rows['queues.no-stuck-queue']['verdict'])
+        self.assertEqual((True, 0), (bound['judged'], bound['waitsAboveBound']))
+        self.assertGreater(bound['judgedWaits'], 0)
+        # BOARD-plan section 8, rebuilt from the reported terms: H = 17 + P + w + w2; R for DUR <= 30 is 4 DUR + 1 (DUR >= 8).
+        self.assertEqual(17 + bound['loopPeriodTurns'], bound['hostLatencyTurns'])
+        self.assertEqual(bound['hostLatencyTurns'] + bound['standWalkTurns'] + bound['moveUpWalkTurns'], bound['latencyTurns'])
+        self.assertEqual(4 * bound['durationSeconds'] + 1, bound['holdTurns'])
+        cap, h, r = bound['capacity'], bound['latencyTurns'], bound['holdTurns']
+        self.assertEqual(bound['qmax'] * h + ((bound['qmax'] - 1) // cap + 1) * r + 1, bound['wMaxTurns'])
+        self.assertAlmostEqual(cap * h + r + 1 - (bound['durationSeconds'] + 1) * 1000 / 248, bound['tauMaxTurns'], places=3)
+        for role in ('shop', 'toilet'):
+            self.assertFalse(stuck[role]['waitBound']['judged'])
         self.assertEqual('pass', verdicts['staff.work'])
         self.assertEqual('none', rows['staff.work']['evidence']['problems'])
 
@@ -228,14 +264,15 @@ class MutationsRound3(v1.Mutations):
     def test_stall_that_recovers_after_one_update_does_not_fail(self):
         row = self.rows('stall-one-update')['queues.no-stuck-queue']
         self.assertEqual(1, row['evidence']['shop']['blockedMaxEvaluations'], row)
-        self.assertEqual('unresolved', row['verdict'], row)
+        self.assertEqual('pass', row['verdict'], row)  # BOARD gate: was UNRESOLVED, now judged and within the bound
         self.assertEqual(0, row['evidence']['violations'])
 
     def test_never_called_head_fails_the_queue_row(self):
         row = self.rows('never-called-head')['queues.no-stuck-queue']
         self.assertEqual('fail', row['verdict'], row)
         self.assertGreater(row['firstViolationTick'], 18000)
-        self.assertIn('not ready', row['evidence']['firstViolation'])
+        # BOARD gate: the head-to-boarding bound (151 turns) fires before rule (a) (194); rule (a) fires as well.
+        self.assertGreater(row['evidence']['attraction']['headNotReadyViolations'], 0)
         self.assertGreater(row['evidence']['attraction']['headNotReadyMaxTurns'], row['evidence']['attraction']['headNotReadyBoundTurns'])
 
     def test_mechanic_idle_after_first_repair_fails(self):
@@ -298,7 +335,7 @@ class MutationsRound3(v1.Mutations):
                 attraction = row['evidence']['attraction']
                 self.assertEqual('fail', row['verdict'], row)
                 self.assertGreater(row['firstViolationTick'], 18000)
-                self.assertIn('not ready', row['evidence']['firstViolation'])
+                self.assertGreater(attraction['headNotReadyViolations'], 0)
                 self.assertGreater(attraction['headNotReadyMaxTurns'], attraction['headNotReadyBoundTurns'])
                 self.assertEqual(1, attraction['blockedMaxEvaluations'])
                 baseline = {key for key, value in self.rows('').items() if value['verdict'] == 'fail'}
@@ -314,9 +351,45 @@ class MutationsRound3(v1.Mutations):
         row = self.rows('head-held-250-turns')['queues.no-stuck-queue']
         attraction = row['evidence']['attraction']
         self.assertEqual('fail', row['verdict'], row)
-        self.assertIn('not ready', row['evidence']['firstViolation'])
+        self.assertGreater(attraction['headNotReadyViolations'], 0)
         self.assertGreater(attraction['headNotReadyMaxTurns'], 194)
         self.assertLessEqual(attraction['headNotReadyMaxTurns'], 326)
+
+    def test_slots_held_far_longer_than_r_fail_the_wait_bound(self):
+        # BOARD gate: BOUNCE slots held 120 s past their deadline (about 5R), or never released. Heads stand ready at the
+        # front, so rules (a) and (b) stay silent; the head is not boarded within W(0) = H + R + 1 turns of becoming head.
+        for mutation in ('hold-slots-much-longer', 'never-release'):
+            with self.subTest(mutation=mutation):
+                rows = self.rows(mutation)
+                row = rows['queues.no-stuck-queue']
+                attraction = row['evidence']['attraction']
+                self.assertEqual('fail', row['verdict'], row)
+                self.assertGreater(row['firstViolationTick'], 18000)
+                self.assertIn('after becoming head > bound', row['evidence']['firstViolation'])
+                self.assertGreater(attraction['waitBound']['waitsAboveBound'], 0)
+                self.assertEqual((0, 0), (attraction['headNotReadyViolations'], attraction['blockedViolations']))
+                baseline = {key for key, value in self.rows('').items() if value['verdict'] == 'fail'}
+                self.assertEqual({'queues.no-stuck-queue'}, {key for key, value in rows.items() if value['verdict'] == 'fail'} - baseline)
+
+    def test_head_delayed_beyond_h_fails_the_wait_bound(self):
+        # BOARD gate: each new head is held 150 turns before it can be called, below the 194-turn head bound of rule (a).
+        row = self.rows('head-delayed-150-turns')['queues.no-stuck-queue']
+        attraction = row['evidence']['attraction']
+        self.assertEqual('fail', row['verdict'], row)
+        self.assertIn('after becoming head > bound', row['evidence']['firstViolation'])
+        self.assertEqual(0, attraction['headNotReadyViolations'])
+        self.assertLessEqual(attraction['headNotReadyMaxTurns'], attraction['headNotReadyBoundTurns'])
+
+    def test_slowdowns_within_the_loose_bound_pass(self):
+        # Pinned as observed: the BOARD-plan bound is loose by design (it assumes every boarding pays a full H and every
+        # CAP-th a full R). Slots held about 2R (+30 s) or heads held 60 turns slow the ride (fewer boardings than the
+        # baseline) but no head waits beyond H + R + 1 and no guest beyond W(p), so the row still passes.
+        baseline = self.rows('')['queues.no-stuck-queue']['evidence']['attraction']
+        for mutation in ('hold-slots-longer', 'head-delayed-60-turns'):
+            with self.subTest(mutation=mutation):
+                row = self.rows(mutation)['queues.no-stuck-queue']
+                self.assertEqual('pass', row['verdict'], row)
+                self.assertLess(row['evidence']['attraction']['completedWaits'], baseline['completedWaits'])
 
     def test_end_of_run_reachability_includes_the_join_cell(self):
         # GATE-FIX2 (S3): cutting spine[1] also cuts Belly Bounce's join cell; its entrance and exit cells stay reachable,

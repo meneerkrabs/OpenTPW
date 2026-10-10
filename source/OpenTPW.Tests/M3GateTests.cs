@@ -64,6 +64,30 @@ public class M3GateTests
 		Assert.AreEqual( 84L + 26, M3GateRun.HeadNotReadyBound( 25, 2.0f ).Turns );
 		StringAssert.Contains( M3GateRun.HeadNotReadyBound( 25, 1.0f ).Derivation, "2 interludes x 11" );
 	}
+
+	/// <summary>The BOUNCE boarding bound (docs/reverse/BOARD-plan.md §7, §8) from its traced rules: P, R, H₀, the walk terms and W(p).</summary>
+	[TestMethod]
+	public void BounceBoardingBoundFollowsTheTracedRules()
+	{
+		// P = 1 + ceil(WAIT 500 / 248) = 4.
+		Assert.AreEqual( 4L, M3GateRun.BounceLoopPeriodTurns( 500 ) );
+		Assert.AreEqual( 3L, M3GateRun.BounceLoopPeriodTurns( 496 ) );
+		// R from the UNBOUNCE poll rule: 4 DUR + 1 for 8 <= DUR <= 30 (121 for Belly Bounce, 41 for DUR 10); 29 for DUR <= 7.
+		Assert.AreEqual( 121L, M3GateRun.BounceHoldTurns( 30, 4 ) );
+		Assert.AreEqual( 41L, M3GateRun.BounceHoldTurns( 10, 4 ) );
+		Assert.AreEqual( 33L, M3GateRun.BounceHoldTurns( 8, 4 ) );
+		Assert.AreEqual( 29L, M3GateRun.BounceHoldTurns( 1, 4 ) );
+		// H0 = 1 removal + 3 move-up + 11 interlude + 1 call + 1 notice + P.
+		Assert.AreEqual( 21L, M3GateRun.BoardingHostTurns( 4 ) );
+		// w: 13.5/255 cell to the stand point; w2: slot 3 to slot 0, sqrt((191/255)^2 + (27/255)^2) cell; at 1.0 x 0.7 cells/s.
+		Assert.AreEqual( 2L, M3GateRun.WalkTurns( 13.5 / 255, 1.0f ) );
+		Assert.AreEqual( 6L, M3GateRun.WalkTurns( Math.Sqrt( 191.0 * 191 + 27 * 27 ) / 255, 1.0f ) );
+		// W(p) = (p + 1) H + (floor(p / CAP) + 1) R + 1: 151 at the head, 2,811 at p = 50, 5,321 at Qmax - 1 = 99.
+		Assert.AreEqual( 151L, M3GateRun.BoardingWaitBound( 0, 5, 29, 121 ) );
+		Assert.AreEqual( 2811L, M3GateRun.BoardingWaitBound( 50, 5, 29, 121 ) );
+		Assert.AreEqual( 5321L, M3GateRun.BoardingWaitBound( 99, 5, 29, 121 ) );
+		Assert.AreEqual( 4, M3GateRun.TracedBounceScripts.Count );
+	}
 }
 
 /// <summary>Short M3 gate run on original data (inconclusive without OPENTPW_GAME_PATH).</summary>

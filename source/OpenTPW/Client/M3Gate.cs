@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -839,6 +840,19 @@ internal sealed class M3GateRun
 		public long BlockedStreak, MaxBlockedStreak;
 		public readonly Violation HeadNotReady = new();
 		public readonly Violation Blocked = new();
+		/// <summary>The traced boarding bound (BOARD-plan §8), or null when the object is outside its class (<see cref="BoardingReason"/>).</summary>
+		public BoardingModel? Boarding;
+		public string BoardingReason = "";
+		/// <summary>Completed waits with the script's CAP and DUR at boarding, judged at the end of the run.</summary>
+		public readonly List<(long Tick, long EndTurn, long Turns, int Position, int Capacity, int Duration)> BoardingWaits = new();
+		/// <summary>Park turns the ride was closed or broken, or its CAP or DUR changed (BOARD-plan A3): waits overlapping one are not judged.</summary>
+		public readonly SortedSet<long> ExcludedTurns = new();
+		public int LastCapacity = -1, LastDuration = -1;
+		public readonly Violation WaitAboveBound = new();
+		/// <summary>The head the boarding bound times (any head, at the front or not) and the turn it became head.</summary>
+		public int BoardingHead;
+		public long BoardingHeadSince, MaxHeadToBoarding;
+		public readonly HashSet<int> ReportedAges = new();
 	}
 
 	private void Simulate( long ticks )
@@ -854,6 +868,8 @@ internal sealed class M3GateRun
 		var scriptTimes = placed.Select( item => item.Runtime.Script?.TimeMilliseconds ?? 0 ).ToArray();
 		long turnedAwayFromQueue = 0, confusedGiveUps = 0, ejected = 0, leftAfterAdmission = 0, turnedBackAtBooth = 0, departed = 0, vanishedFromQueue = 0;
 		var progress = placed.Select( item => new QueueProgress { HeadBound = HeadNotReadyBound( item.Runtime.Visitors.QueueSizeInCells, guests.Settings.WalkSpeedCellsPerSecond ).Turns } ).ToArray();
+		for ( var index = 0; index < placed.Count; index++ )
+			progress[index].Boarding = TraceBoarding( placed[index], out progress[index].BoardingReason );
 		var queueRide = queueBuilt ? placed.First( item => item.Role == "attraction" ).Runtime.Visitors : null;
 		var queueCells = queueRide?.QueueCells.ToHashSet() ?? new HashSet<(int X, int Y)>();
 		int stoodOnQueueCells = 0, boardedFromQueueCells = 0;
@@ -919,6 +935,8 @@ internal sealed class M3GateRun
 			state.MaxBlockedStreak = Math.Max( state.MaxBlockedStreak, state.BlockedStreak );
 			if ( state.BlockedStreak >= 2 )
 				state.Blocked.Add( currentTick, $"tick {currentTick}: {name} admission blocked for {state.BlockedStreak} evaluations with {bridge.QueueLength} queued: VAR_LETMEON {letMeOn} while nobody is called" );
+			if ( state.Boarding != null )
+				CheckBoardingAges( placed[index], state, check.HeadGuest, tracks, currentTick );
 		}
 		void OnQueueWait( Guest guest, IRideVisitorBridge ride, long turns )
 		{
@@ -927,6 +945,11 @@ internal sealed class M3GateRun
 				return;
 			var track = tracks.GetValueOrDefault( guest.Id );
 			progress[index].Waits.Add( (turns, track?.QueueJoinPosition ?? -1) );
+			var runtime = placed[index].Runtime;
+			if ( guest.Id == progress[index].BoardingHead )
+				progress[index].MaxHeadToBoarding = Math.Max( progress[index].MaxHeadToBoarding, guests.ParkTurn - progress[index].BoardingHeadSince );
+			progress[index].BoardingWaits.Add( (currentTick, guests.ParkTurn, turns, track?.QueueJoinPosition ?? -1,
+				runtime.GetVariable( RideVariables.VAR_CAPACITY ), runtime.GetVariable( RideVariables.VAR_DURATION )) );
 			if ( ride == queueRide && track?.StoodOnQueueCell == true )
 				boardedFromQueueCells++;
 		}
@@ -1068,7 +1091,10 @@ internal sealed class M3GateRun
 			}
 
 			for ( var index = 0; index < placed.Count; index++ )
+			{
 				progress[index].MaxQueue = Math.Max( progress[index].MaxQueue, placed[index].Runtime.Visitors.QueueLength );
+				SampleBoardingExclusions( placed[index], progress[index] );
+			}
 
 			// Staff: every wear or breakdown is repaired within the mechanic window.
 			for ( var index = 0; index < pendingRepairs.Count; index++ )
@@ -1098,13 +1124,15 @@ internal sealed class M3GateRun
 		foreach ( var item in placed )
 			item.Runtime.Visitors.AdmissionChecked -= OnAdmission;
 		var stillQueued = guests.Guests.Where( guest => guest.IsInQueue ).Select( guest => guests.QueueWaitTurns( guest ) ).DefaultIfEmpty( 0 ).Max();
+		var queuedAtEnd = guests.Guests.Where( guest => guest.IsInQueue && guests.QueueWaitTurns( guest ) >= 0 )
+			.Select( guest => (guest.AttractionId, Turns: guests.QueueWaitTurns( guest ), Position: tracks.GetValueOrDefault( guest.Id )?.QueueJoinPosition ?? -1) ).ToList();
 		GuestHash = guests.ComputeStateHash();
 		GateHash = ComputeGateHash();
 
 		AddTimeRow( ticks, timeViolation );
 		AddLedgerRows( startTotals, ledgerViolation );
 		AddGuestFlowRow( tracks, departed, leftAfterAdmission, turnedBackAtBooth );
-		AddQueueRow( progress, stillQueued, turnedAwayFromQueue, vanishedFromQueue );
+		AddQueueRow( progress, stillQueued, queuedAtEnd, ticks, turnedAwayFromQueue, vanishedFromQueue );
 		FinishQueueRow( stoodOnQueueCells, boardedFromQueueCells );
 		AddReachabilityRow( unreachable, confusedGiveUps, ejected );
 		AddScriptRow( faults, halted );
@@ -1140,6 +1168,195 @@ internal sealed class M3GateRun
 		const int Interludes = 2;
 		var turns = walkTurns + moveUpTurns + Interludes * (GuestSimulation.InterludeTurns + 1) + 1;
 		return (turns, FormattableString.Invariant( $"walk {cells} cells at {walkCellsPerSecond} x {TiredWalkFactor} cells/s = {walkTurns} turns + move-up wait {moveUpTurns} + {Interludes} interludes x {GuestSimulation.InterludeTurns + 1} + 1 update order = {turns} turns" ));
+	}
+
+	/// <summary>The traced boarding latency of one BOUNCE ride (docs/reverse/BOARD-plan.md §7.1, §8), in park turns.</summary>
+	internal sealed record BoardingModel( string Script, int LoopWaitMilliseconds, long PeriodTurns, long HostTurns, long StandWalkTurns, long MoveUpWalkTurns,
+		double StandDistanceCells, double MoveUpDistanceCells )
+	{
+		/// <summary>H = H₀ + w + w₂: one boarding's latency once the previous LETMEON was consumed and a slot is free.</summary>
+		public long LatencyTurns => HostTurns + StandWalkTurns + MoveUpWalkTurns;
+	}
+
+	/// <summary>
+	/// The BOUNCE scripts whose open-ride loop BOARD-R traced (BOARD-plan §4, lane <c>tools/ppc-analysis/lanes/board</c>):
+	/// SHA-256 of the RSE file, the code word of the loop WAIT that ends the release slice, and the code word of the
+	/// BOUNCE in the admission slice. Only these scripts get the wait bound; the WAIT operand is read from the script.
+	/// </summary>
+	internal static readonly IReadOnlyList<(string Sha256, string Name, int WaitWord, int BounceWord)> TracedBounceScripts = new[]
+	{
+		("7f32699cb6c511d8a9d80dd3250ae89f0b3991b2645fdfccf5cc13a68f677a35", "jungle Bouncy.RSE", 46, 93),
+		("4fd934f796328f25e3702b87bfd67dc2b9a42946cf39d6a025f6fe98e7a8ad87", "space Bouncy.RSE", 46, 93),
+		("c0150775537d5076759a4b61f1cd067e91256712a8d15f20e6138d34505865e9", "fantasy Jelly.RSE", 37, 61),
+		("cf82eaae1ba3535b96fe79b04ec721f755c087c88f92708caf7491c897deae76", "hallow Brainb.RSE", 43, 100),
+	};
+
+	/// <summary>Largest DUR (s) whose slot hold is a property of the traced rules rather than of the exact 248 ms grid (BOARD-plan §5).</summary>
+	internal const int MaximumBoundedDuration = 30;
+
+	/// <summary>
+	/// Loop period P: admission slice A (ends at CRIT_UNLOCK, which clears the budget at 0xaf5e8), release slice B (sets
+	/// the WAIT and yields, 0xb06f8..0xb0708), then the slices until the WAIT resumes at now ≥ set + trunc(operand / speed)
+	/// (0xb067c), one per park turn; script speed 1 (speed bias 50, BOARD-plan A4). Bouncy.RSE: 1 + ⌈500 / 248⌉ = 4.
+	/// </summary>
+	internal static long BounceLoopPeriodTurns( int waitMilliseconds ) => 1 + (waitMilliseconds + ParkCalendar.TurnMilliseconds - 1) / ParkCalendar.TurnMilliseconds;
+
+	/// <summary>
+	/// Slot hold R: turns from the BOUNCE (slice A at turn 0) to the UNBOUNCE that frees its slot. BOUNCE stores the
+	/// deadline start + 1000 × DUR (0xadfc8); UNBOUNCE polls in the release slices P·j + 1 turns later and frees a slot once
+	/// deadline &lt; now and (now − start) mod 1000 &lt; 200 (0xae088..0xae0bc), on the nominal 248 ms grid (BOARD-plan A1).
+	/// This is the rule itself, not its closed form: 4·DUR + 1 for 8 ≤ DUR ≤ 30, but 29 turns for DUR ≤ 7.
+	/// </summary>
+	internal static long BounceHoldTurns( int durationSeconds, long periodTurns )
+	{
+		for ( long poll = 0; poll < 100_000; poll++ )
+		{
+			var turns = periodTurns * poll + 1;
+			var elapsed = turns * ParkCalendar.TurnMilliseconds;
+			if ( elapsed > 1000L * durationSeconds && elapsed % 1000 / 200 == 0 )
+				return turns;
+		}
+		throw new InvalidOperationException( $"no UNBOUNCE release for DUR {durationSeconds} s" );
+	}
+
+	/// <summary>
+	/// Updates for one walk of <paramref name="cells"/> at the slowest walk speed (× 0.7 below 20 energy,
+	/// GuestSimulation.Speed): ⌈d / (0.7 × v × T)⌉ steps plus the update that notices the arrival (BOARD-plan §8).
+	/// </summary>
+	// [APPROX:GATE-004] the walk terms w (to the stand point) and w2 (new head to slot 0) of the BOUNCE boarding bound use OpenTPW's walk model (WalkSpeedCellsPerSecond x 0.7, the QUEUE-006 slot points and the QUEUE-007 stand point); the original's steering step has a speed cap but no traced floor — evidence needed: the steering step and velocity floor (0xfec9c, the +28 cap at 0xfed98) and the 0xde1d8 / 0xdde74 geometry
+	internal static long WalkTurns( double cells, float walkCellsPerSecond )
+	{
+		const double TiredWalkFactor = 0.7;
+		return (long)Math.Ceiling( cells / (walkCellsPerSecond * TiredWalkFactor * ParkCalendar.TurnMilliseconds / 1000.0) ) + 1;
+	}
+
+	/// <summary>
+	/// Host part H₀ of the per-boarding latency (BOARD-plan §7.1): the previous guest leaves the list (1, state 14
+	/// 0xef548), the new head's move-up wait at gap ≤ 2 and the move (trunc(1.2 × 2) + 1, 0xed4a4 / 0xed4c0), one
+	/// interlude (InterludeTurns + 1, 0xef6d8), the ride calls the ready head (1, 0xe1404), the head notices (1, 0xed2c8)
+	/// and the script's next admission slice (P).
+	/// </summary>
+	internal static long BoardingHostTurns( long periodTurns ) =>
+		1 + ((long)(GuestSimulation.MoveDelayFactor * GuestSimulation.MoveUpWaitGap) + 1) + (GuestSimulation.InterludeTurns + 1) + 1 + 1 + periodTurns;
+
+	/// <summary>BOARD-plan §7.2: a guest that joined at 0-based position p boards within (p + 1)·H + (⌊p / CAP⌋ + 1)·R + 1 turns.</summary>
+	internal static long BoardingWaitBound( int position, int capacity, long latencyTurns, long holdTurns ) =>
+		(position + 1L) * latencyTurns + (position / Math.Max( 1, capacity ) + 1L) * holdTurns + 1;
+
+	/// <summary>
+	/// The boarding model of a placed object, or null with the reason it is outside the traced class: its script must be
+	/// one of <see cref="TracedBounceScripts"/> with the loop WAIT and BOUNCE where BOARD-R found them, and the ride must
+	/// run continuously (the RUNNING gate is bypassed). DUR is checked per wait.
+	/// </summary>
+	private BoardingModel? TraceBoarding( Placed item, out string reason )
+	{
+		var visitors = item.Runtime.Visitors;
+		var file = item.Runtime.Script?.Script;
+		if ( file == null || item.Entry.ScriptPath == null )
+		{
+			reason = "no script";
+			return null;
+		}
+		string sha;
+		using ( var stream = item.Entry.FileSystem.OpenRead( item.Entry.ScriptPath ) )
+			sha = Convert.ToHexString( SHA256.HashData( stream ) ).ToLowerInvariant();
+		var pin = TracedBounceScripts.FirstOrDefault( script => script.Sha256 == sha );
+		if ( pin.Sha256 == null )
+		{
+			reason = $"script {Path.GetFileName( item.Entry.ScriptPath )} (SHA-256 {sha[..8]}) is not a BOUNCE loop traced by BOARD-R";
+			return null;
+		}
+		if ( !visitors.HasQueue || visitors.QueueSizeInCells < 1 )
+		{
+			reason = $"{pin.Name} without a queue";
+			return null;
+		}
+		if ( !visitors.Parameters.RunsContinuously )
+		{
+			reason = "RunsContinuously 0: the RUNNING gate batches admission (BOARD-plan §9)";
+			return null;
+		}
+		RideScriptInstruction? At( int word ) => file.GetInstructionIndexAtWord( word ) is var index and >= 0 ? file.Instructions[index] : null;
+		if ( At( pin.WaitWord ) is not { Opcode: (ushort)Opcode.WAIT, Operands: [{ Kind: RideScriptOperandKind.Literal } wait, ..] }
+			|| At( pin.BounceWord ) is not { Opcode: (ushort)Opcode.BOUNCE } )
+		{
+			reason = $"{pin.Name}: no WAIT literal at word {pin.WaitWord} or BOUNCE at word {pin.BounceWord}";
+			return null;
+		}
+		var period = BounceLoopPeriodTurns( wait.Value );
+		// w: from any slot-0 point (lateral byte 114..141) to the stand point; w2: from slot 3 to slot 0 (the head's last
+		// move-up under the gap <= 2 rule), over every pair of lateral bytes.
+		var stand = GuestSimulation.StandPoint( visitors );
+		double standDistance = 0, moveUpDistance = 0;
+		for ( var lateral = 114; lateral <= 141; lateral++ )
+		{
+			var front = guests.QueuePositionPoint( visitors, 0, (byte)lateral );
+			standDistance = Math.Max( standDistance, Distance( front.X, front.Y, stand.X, stand.Y ) );
+			for ( var from = 114; from <= 141; from++ )
+			{
+				var back = guests.QueuePositionPoint( visitors, RideVisitorBridge.PositionsPerCell - 1, (byte)from );
+				moveUpDistance = Math.Max( moveUpDistance, Distance( back.X, back.Y, front.X, front.Y ) );
+			}
+		}
+		var speed = guests.Settings.WalkSpeedCellsPerSecond;
+		reason = "";
+		return new BoardingModel( pin.Name, wait.Value, period, BoardingHostTurns( period ), WalkTurns( standDistance, speed ), WalkTurns( moveUpDistance, speed ),
+			standDistance, moveUpDistance );
+
+		static double Distance( float ax, float ay, float bx, float by ) => Math.Sqrt( (double)(ax - bx) * (ax - bx) + (double)(ay - by) * (ay - by) );
+	}
+
+	/// <summary>
+	/// The wait bound applied at every admission evaluation, not only to completed waits, so a guest that later gives up
+	/// is judged too: (1) every queued guest's age against W(p) for its join position p (BOARD-plan §8, assertion 3, at
+	/// each turn); (2) the head against W(0) = H + R + 1 from the turn it became head. (2) is §7.2's induction with J the
+	/// turn the guest became head and n = 1: the riders on board then free their slots within R, and the boarding takes
+	/// at most H once a slot is free. Turns overlapping an excluded turn, and DUR above 30, are not judged.
+	/// </summary>
+	private void CheckBoardingAges( Placed item, QueueProgress state, int head, Dictionary<int, GuestTrack> tracks, long tick )
+	{
+		var model = state.Boarding!;
+		var name = item.Entry.SettingsName;
+		var now = guests.ParkTurn;
+		var capacity = item.Runtime.GetVariable( RideVariables.VAR_CAPACITY );
+		var duration = item.Runtime.GetVariable( RideVariables.VAR_DURATION );
+		if ( head != state.BoardingHead )
+			(state.BoardingHead, state.BoardingHeadSince) = (head, now);
+		if ( duration is < 0 or > MaximumBoundedDuration )
+			return;
+		var hold = BounceHoldTurns( duration, model.PeriodTurns );
+		bool Excluded( long from ) => state.ExcludedTurns.GetViewBetween( from, now ).Count > 0;
+		if ( head != 0 )
+		{
+			var asHead = now - state.BoardingHeadSince;
+			var bound = BoardingWaitBound( 0, capacity, model.LatencyTurns, hold );
+			if ( asHead > bound && !Excluded( state.BoardingHeadSince ) && state.ReportedAges.Add( -head ) )
+				state.WaitAboveBound.Add( tick, $"tick {tick}: {name} head guest {head} not boarded {asHead} turns after becoming head > bound {bound} (H {model.LatencyTurns} + R {hold} + 1)" );
+		}
+		foreach ( var id in item.Runtime.Visitors.Queue )
+		{
+			if ( guests.Find( id ) is not { } guest || tracks.GetValueOrDefault( id ) is not { QueueSince: >= 0, QueueJoinPosition: >= 0 } track )
+				continue;
+			var age = guests.QueueWaitTurns( guest );
+			var bound = BoardingWaitBound( track.QueueJoinPosition, capacity, model.LatencyTurns, hold );
+			if ( age > bound && !Excluded( now - age ) && state.ReportedAges.Add( id ) )
+				state.WaitAboveBound.Add( tick, $"tick {tick}: {name} guest {id} queued {age} turns from position {track.QueueJoinPosition} > bound {bound} (H {model.LatencyTurns}, R {hold}, CAP {capacity})" );
+		}
+	}
+
+	/// <summary>BOARD-plan A3: marks the turn when the ride is closed or broken, or when its CAP or DUR changes.</summary>
+	private void SampleBoardingExclusions( Placed item, QueueProgress state )
+	{
+		if ( state.Boarding == null )
+			return;
+		var runtime = item.Runtime;
+		var capacity = runtime.GetVariable( RideVariables.VAR_CAPACITY );
+		var duration = runtime.GetVariable( RideVariables.VAR_DURATION );
+		var changed = state.LastCapacity >= 0 && (capacity != state.LastCapacity || duration != state.LastDuration);
+		(state.LastCapacity, state.LastDuration) = (capacity, duration);
+		if ( changed || !runtime.Visitors.IsOpen || runtime.Visitors.IsBroken || runtime.GetVariable( RideVariables.VAR_BREAKSTAT ) != 0
+			|| runtime.GetVariable( RideVariables.VAR_RIDECLOSED ) != 0 )
+			state.ExcludedTurns.Add( guests.ParkTurn );
 	}
 
 	/// <summary>
@@ -1249,13 +1466,15 @@ internal sealed class M3GateRun
 
 	/// <summary>
 	/// The queue row (QUEUE-plan §9). It fails on a derived progress violation: (a) the same head did not stand at
-	/// position 0 (whether or not the gates held) for longer than <see cref="HeadNotReadyBound"/>, or a queue the admission handshake cannot
-	/// move (VAR_LETMEON non-zero with nobody called on two consecutive evaluations: §9a's two-update rule).
-	/// Otherwise it stays unresolved: (b) the time from a call to boarding includes the script's consumption of
-	/// VAR_LETMEON and the Belly Bounce wait bound needs the boarding latency τ, neither of which is traced
-	/// (GATE-003), so both are reported, not judged.
+	/// position 0 (whether or not the gates held) for longer than <see cref="HeadNotReadyBound"/>; (b) a queue the
+	/// admission handshake cannot move (VAR_LETMEON non-zero with nobody called on two consecutive evaluations: §9a's
+	/// two-update rule); (c) for a BOUNCE ride of the traced class (BOARD-plan §8), a completed wait, or the age of a guest
+	/// still queued at the end, above (p + 1)·H + (⌊p / CAP⌋ + 1)·R + 1 turns for its join position p. Waits that overlap
+	/// a closed or broken turn or a CAP/DUR change are counted, not judged. It passes when no rule is violated and at least
+	/// one wait was judged; otherwise it stays unresolved. Objects outside the class are judged by (a) and (b) only.
 	/// </summary>
-	private void AddQueueRow( QueueProgress[] progress, long stillQueuedTurns, long leftWithoutBoarding, long vanished )
+	private void AddQueueRow( QueueProgress[] progress, long stillQueuedTurns, List<(int AttractionId, long Turns, int Position)> queuedAtEnd, long ticks,
+		long leftWithoutBoarding, long vanished )
 	{
 		var turnSeconds = ParkCalendar.TurnMilliseconds / 1000.0;
 		var evidence = new JsonObject
@@ -1263,8 +1482,9 @@ internal sealed class M3GateRun
 			["leftQueueWithoutBoarding"] = leftWithoutBoarding,
 			["vanishedWhileQueued"] = vanished,
 			["stillQueuedAtEndMaxSeconds"] = Math.Round( stillQueuedTurns * turnSeconds, 3 ),
-			["rule"] = "FAIL: same head not at position 0 (gates held or not) beyond its derived bound, or VAR_LETMEON non-zero with nobody called on 2 consecutive evaluations; else UNRESOLVED (call-to-boarding time and tau untraced)"
+			["rule"] = "FAIL: same head not at position 0 (gates held or not) beyond its derived bound; VAR_LETMEON non-zero with nobody called on 2 consecutive evaluations; or, for a traced BOUNCE ride (DUR <= 30, RunsContinuously), a wait or a still-queued age above (p + 1) H + (floor(p / CAP) + 1) R + 1 turns. PASS: none, and at least one wait judged; else UNRESOLVED"
 		};
+		long judged = 0;
 		for ( var index = 0; index < placed.Count; index++ )
 		{
 			var item = placed[index];
@@ -1283,49 +1503,111 @@ internal sealed class M3GateRun
 				["headNotReadyBoundTurns"] = state.HeadBound,
 				["headNotReadyBound"] = HeadNotReadyBound( visitors.QueueSizeInCells, guests.Settings.WalkSpeedCellsPerSecond ).Derivation,
 				["headNotReadyGatesHeldMaxAcrossHeads"] = visitors.MaximumHeadNotReadyStreak,
+				["headNotReadyViolations"] = state.HeadNotReady.Count,
 				["blockedMaxEvaluations"] = state.MaxBlockedStreak,
+				["blockedViolations"] = state.Blocked.Count,
 				["calledAgeMaxTurns"] = visitors.MaximumCalledAgeTurns,
 				["calledAgeAtEndTurns"] = visitors.CalledAgeTurns
 			};
-			if ( item.Role == "attraction" )
-				entry["waitBound"] = WaitBound( visitors, waits, turnSeconds );
+			entry["waitBound"] = state.Boarding == null
+				? new JsonObject { ["judged"] = false, ["reason"] = state.BoardingReason, ["rule"] = "progress rules (a) and (b) only" }
+				: JudgeWaits( item, state, queuedAtEnd.Where( guest => guest.AttractionId == visitors.AttractionId ).ToList(), ticks, turnSeconds, ref judged );
 			evidence[item.Role] = entry;
 		}
-		var violations = progress.SelectMany( state => new[] { state.HeadNotReady, state.Blocked } ).Where( violation => violation.Count > 0 ).OrderBy( violation => violation.First ).ToList();
+		var violations = progress.SelectMany( state => new[] { state.HeadNotReady, state.Blocked, state.WaitAboveBound } ).Where( violation => violation.Count > 0 ).OrderBy( violation => violation.First ).ToList();
 		evidence["violations"] = violations.Sum( violation => violation.Count );
 		evidence["firstViolation"] = violations.FirstOrDefault()?.FirstDetail;
-		AddRow( "queues.no-stuck-queue", "rides", "Queues make progress: no head stuck beyond its derived bound, no blocked admission",
-			violations.Count > 0 ? M3GateVerdict.Fail : M3GateVerdict.Unresolved, violations.FirstOrDefault()?.First, evidence );
+		evidence["judgedWaits"] = judged;
+		var verdict = violations.Count > 0 ? M3GateVerdict.Fail : judged > 0 ? M3GateVerdict.Pass : M3GateVerdict.Unresolved;
+		AddRow( "queues.no-stuck-queue", "rides", "Queues make progress: no head stuck beyond its derived bound, no blocked admission, no wait beyond the traced boarding bound",
+			verdict, violations.FirstOrDefault()?.First, evidence );
 	}
 
 	/// <summary>
-	/// QUEUE-plan §9b for a BOUNCE ride: a guest joining at position p waits at most (⌊p / CAP⌋ + 1) × (DUR + 1 s + τ),
-	/// so W_max = ⌈Qmax / CAP⌉ × (DUR + 1 s + τ). Reported with the τ parameter and the τ the run implies.
+	/// BOARD-plan §8 for one traced BOUNCE ride: every completed wait and every still-queued age, unless it overlaps an
+	/// excluded turn or its DUR is outside the bounded range, must satisfy W ≤ (p + 1)·H + (⌊p / CAP⌋ + 1)·R + 1. A guest
+	/// whose join position was not seen is judged at p = 0, the smallest bound. Reports τ_max = CAP·H + R + 1 − (DUR + 1 s) / T
+	/// (QUEUE-plan §9b form) and W_max = W(Qmax − 1), with the τ the run implies as evidence.
 	/// </summary>
-	// [APPROX:GATE-003] the Belly Bounce wait bound is reported with boarding latency tau = 0 s (a lower bound) next to the tau the run implies; it is evidence, not a pass threshold — evidence needed: the walk speed and the script loop latency between VAR_LETMEON and BOUNCE (QUEUE-plan §9b, §10)
-	private static JsonObject WaitBound( RideVisitorBridge ride, List<(long Turns, int Position)> waits, double turnSeconds )
+	private JsonObject JudgeWaits( Placed item, QueueProgress state, List<(int AttractionId, long Turns, int Position)> queuedAtEnd, long ticks, double turnSeconds, ref long judged )
 	{
-		const double TauParameterSeconds = 0;
-		var capacity = Math.Max( 1, ride.Parameters.Capacity );
-		var cycle = ride.Parameters.Duration + 1.0;
-		var qmax = ride.MaximumQueueLength;
-		var cycles = (qmax + capacity - 1) / capacity;
-		var implied = waits.Where( wait => wait.Position >= 0 ).Select( wait => (Tau: wait.Turns * turnSeconds / (wait.Position / capacity + 1) - cycle, wait.Turns, wait.Position) ).ToList();
-		var measured = implied.Count == 0 ? double.NaN : implied.Max( item => item.Tau );
-		var worst = implied.Count == 0 ? default : implied.First( item => item.Tau == measured );
+		var model = state.Boarding!;
+		var name = item.Entry.SettingsName;
+		var latency = model.LatencyTurns;
+		long excluded = 0, outsideDuration = 0, unknownPosition = 0, judgedHere = 0, worstMargin = long.MinValue;
+		bool Overlaps( long fromTurn, long toTurn ) => state.ExcludedTurns.GetViewBetween( fromTurn, toTurn ).Count > 0;
+		void Judge( long tick, long endTurn, long turns, int position, int capacity, int duration, string what )
+		{
+			if ( Overlaps( endTurn - turns, endTurn ) )
+			{
+				excluded++;
+				return;
+			}
+			if ( duration > MaximumBoundedDuration || duration < 0 )
+			{
+				outsideDuration++;
+				return;
+			}
+			if ( position < 0 )
+				unknownPosition++;
+			var p = Math.Max( 0, position );
+			var bound = BoardingWaitBound( p, capacity, latency, BounceHoldTurns( duration, model.PeriodTurns ) );
+			judgedHere++;
+			worstMargin = Math.Max( worstMargin, turns - bound );
+			if ( turns > bound )
+				state.WaitAboveBound.Add( tick, $"tick {tick}: {name} {what} {turns} turns from position {p} > bound {bound} (H {latency}, R {BounceHoldTurns( duration, model.PeriodTurns )}, CAP {capacity})" );
+		}
+		foreach ( var wait in state.BoardingWaits )
+			Judge( wait.Tick, wait.EndTurn, wait.Turns, wait.Position, wait.Capacity, wait.Duration, "wait" );
+		var runtime = item.Runtime;
+		var capacityNow = runtime.GetVariable( RideVariables.VAR_CAPACITY );
+		var durationNow = runtime.GetVariable( RideVariables.VAR_DURATION );
+		var stillQueuedJudgedFrom = judgedHere;
+		foreach ( var guest in queuedAtEnd )
+			Judge( ticks, guests.ParkTurn, guest.Turns, guest.Position, capacityNow, durationNow, "still queued at the end after" );
+		judged += judgedHere;
+
+		var hold = durationNow is >= 0 and <= MaximumBoundedDuration ? BounceHoldTurns( durationNow, model.PeriodTurns ) : -1;
+		var capacity = Math.Max( 1, capacityNow );
+		var cycleTurns = (durationNow + 1) * 1000.0 / ParkCalendar.TurnMilliseconds;
+		var tauMaxTurns = capacity * latency + hold + 1 - cycleTurns;
+		var qmax = runtime.Visitors.MaximumQueueLength;
+		var wMax = hold < 0 ? -1 : BoardingWaitBound( Math.Max( 0, qmax - 1 ), capacity, latency, hold );
+		var cycle = durationNow + 1.0;
+		var implied = state.Waits.Where( wait => wait.Position >= 0 ).Select( wait => (Tau: wait.Turns * turnSeconds / (wait.Position / capacity + 1) - cycle, wait.Turns, wait.Position) ).ToList();
+		var measured = implied.Count == 0 ? double.NaN : implied.Max( entry => entry.Tau );
+		var worst = implied.Count == 0 ? default : implied.First( entry => entry.Tau == measured );
 		return new JsonObject
 		{
-			["capacity"] = capacity,
-			["durationSeconds"] = ride.Parameters.Duration,
+			["judged"] = true,
+			["script"] = model.Script,
+			["capacity"] = capacityNow,
+			["durationSeconds"] = durationNow,
 			["qmax"] = qmax,
-			["tauParameterSeconds"] = TauParameterSeconds,
-			["wMaxAtTauParameterSeconds"] = Math.Round( cycles * (cycle + TauParameterSeconds), 3 ),
+			["loopPeriodTurns"] = model.PeriodTurns,
+			["hostLatencyTurns"] = model.HostTurns,
+			["standWalkTurns"] = model.StandWalkTurns,
+			["moveUpWalkTurns"] = model.MoveUpWalkTurns,
+			["latencyTurns"] = latency,
+			["holdTurns"] = hold,
+			["tauMaxTurns"] = Math.Round( tauMaxTurns, 3 ),
+			["tauMaxSeconds"] = Math.Round( tauMaxTurns * turnSeconds, 3 ),
+			["wMaxTurns"] = wMax,
+			["wMaxSeconds"] = Math.Round( wMax * turnSeconds, 3 ),
+			["judgedWaits"] = stillQueuedJudgedFrom,
+			["judgedStillQueued"] = judgedHere - stillQueuedJudgedFrom,
+			["excludedClosedBrokenOrChanged"] = excluded,
+			["excludedTurns"] = state.ExcludedTurns.Count,
+			["notJudgedDurationAbove30"] = outsideDuration,
+			["judgedAtPositionZeroWithoutJoinPosition"] = unknownPosition,
+			["waitsAboveBound"] = state.WaitAboveBound.Count,
+			["headToBoardingMaxTurns"] = state.MaxHeadToBoarding,
+			["headToBoardingBoundTurns"] = hold < 0 ? -1 : BoardingWaitBound( 0, capacity, latency, hold ),
+			["closestToBoundTurns"] = judgedHere == 0 ? null : worstMargin,
 			["tauMeasuredSeconds"] = double.IsNaN( measured ) ? null : Math.Round( measured, 3 ),
-			["wMaxAtTauMeasuredSeconds"] = double.IsNaN( measured ) ? null : Math.Round( cycles * (cycle + measured), 3 ),
-			["waitsAboveBoundAtTauParameter"] = waits.Count( wait => wait.Position >= 0 && wait.Turns * turnSeconds > (wait.Position / capacity + 1) * (cycle + TauParameterSeconds) ),
 			["tauMeasuredFrom"] = implied.Count == 0 ? "no boarding with a recorded join position" : FormattableString.Invariant( $"wait {Math.Round( worst.Turns * turnSeconds, 3 )} s from position {worst.Position}" ),
-			["boardingsByJoinPosition"] = implied.Count == 0 ? "none" : FormattableString.Invariant( $"p 0..{implied.Max( item => item.Position )}, mean p {Math.Round( implied.Average( item => item.Position ), 1 )}" ),
-			["derivation"] = $"W_max = ceil(Qmax {qmax} / CAP {capacity}) x (DUR {ride.Parameters.Duration} + 1 s + tau); tau measured = max over boardings of W(p) / (floor(p / CAP) + 1) - (DUR + 1 s); Qmax = min(limit {ride.QueueLimit}, 4 x {ride.QueueSizeInCells} cells)"
+			["boardingsByJoinPosition"] = implied.Count == 0 ? "none" : FormattableString.Invariant( $"p 0..{implied.Max( entry => entry.Position )}, mean p {Math.Round( implied.Average( entry => entry.Position ), 1 )}" ),
+			["derivation"] = FormattableString.Invariant( $"W(p) <= (p + 1) H + (floor(p / CAP) + 1) R + 1 turns; H = H0 {model.HostTurns} (1 removal + 3 move-up + 11 interlude + 1 call + 1 notice + P {model.PeriodTurns} = 1 + ceil(WAIT {model.LoopWaitMilliseconds} / {ParkCalendar.TurnMilliseconds})) + w {model.StandWalkTurns} (stand point {Math.Round( model.StandDistanceCells, 3 )} cells) + w2 {model.MoveUpWalkTurns} (slot 3 to 0: {Math.Round( model.MoveUpDistanceCells, 3 )} cells) at {guests.Settings.WalkSpeedCellsPerSecond} x 0.7 cells/s; R = UNBOUNCE release for DUR {durationNow}; tau_max = CAP H + R + 1 - (DUR + 1 s) / T; W_max = W(Qmax - 1)" )
 		};
 	}
 

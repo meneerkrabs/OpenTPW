@@ -69,12 +69,17 @@ public static class ObjectSigns
 	/// <summary>Cream board for signs whose text colours are dark, the gate's dark board otherwise.</summary>
 	public static readonly (byte R, byte G, byte B, byte A) LightBoard = (214, 190, 140, 255);
 
-	// [APPROX:COMPAT-018] flat board colour chosen so the stored text colours stay readable (light for dark text, else the gate's dark board); the board images (version-101 wavelet, plus two 16x128 fill images) are not decoded or composed — evidence needed: Bitmap::load_wavelet and the board blit (as COMPAT-004) and a capture of an original ride sign
+	// [APPROX:COMPAT-018] flat board colour chosen so the stored text colours stay readable (light or the gate's dark board, whichever gives the least contrasting line more contrast); the board images (version-101 wavelet, plus two 16x128 fill images) are not decoded or composed — evidence needed: Bitmap::load_wavelet and the board blit (as COMPAT-004) and a capture of an original ride sign
 	public static (byte R, byte G, byte B, byte A) Board( SignFile sign )
 	{
+		static double Luma( byte r, byte g, byte b ) => 0.299 * r + 0.587 * g + 0.114 * b;
 		var lumas = Enumerable.Range( 0, sign.Slots.Count ).Select( index => SignCanvas.SlotColor( sign, index ) )
-			.Where( colour => colour != null ).Select( colour => 0.299 * colour!.Value.R + 0.587 * colour.Value.G + 0.114 * colour.Value.B ).ToArray();
-		return lumas.Length > 0 && lumas.Max() < 100 ? LightBoard : OriginalGateSign.Background;
+			.Where( colour => colour != null ).Select( colour => Luma( colour!.Value.R, colour.Value.G, colour.Value.B ) ).ToArray();
+		if ( lumas.Length == 0 )
+			return OriginalGateSign.Background;
+		// the board on which the least contrasting line still stands out most (two coloured lines can need different boards)
+		double Worst( (byte R, byte G, byte B, byte A) board ) => lumas.Min( luma => Math.Abs( luma - Luma( board.R, board.G, board.B ) ) );
+		return Worst( LightBoard ) > Worst( OriginalGateSign.Background ) ? LightBoard : OriginalGateSign.Background;
 	}
 
 	/// <summary>

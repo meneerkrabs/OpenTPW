@@ -218,7 +218,7 @@ against loose files: `OPENTPW_TPWFNT_PATH=<tpwfnt folder>`.
 | COMPAT-009 | Sign text | 16 sub-scanline unhinted linear coverage instead of GDI ANTIALIASED_QUALITY | captures of original sign text |
 | COMPAT-016 | Sign text | Ride sign text = the object's display name (OBJECT_NAMES entries bound by English name, else the .sam name), split at the middle space | record field selecting the name entries; capture of a shop/sideshow sign |
 | COMPAT-017 | Sign text | Bonus objects' SIGNA/SIGNB are sign lines 1/2 | bonus loader's call of the sign builder |
-| COMPAT-018 | Sign text | Flat board per ride sign (cream for dark text, else dark); board/fill images not composed; colour-mode-0 signs show the bare board | wavelet decoder, board blit, capture |
+| COMPAT-018 | Sign text | Flat board per ride sign (cream or dark, whichever keeps the least contrasting line most readable); board/fill images not composed; colour-mode-0 signs show the bare board | wavelet decoder, board blit, capture |
 | COMPAT-010 | Graphics | TEXTUREFILTERING 0/1/2 → Veldrid point / linear+point-mip / linear+linear-mip; MIPMAP 0 → mip 0 only | binary render states or captures per detail level |
 | COMPAT-011 | Localization | Missing string → English → internal name | original behaviour for missing strings |
 | COMPAT-012 | Text input | Unrepresentable characters → `?` | binary text-input handling |

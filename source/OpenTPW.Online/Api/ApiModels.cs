@@ -15,6 +15,8 @@ public static class ApiRoutes
 	public const string Inbox = Postcards + "/inbox";
 	public const string Reports = Prefix + "/reports";
 	public const string News = Prefix + "/news";
+	/// <summary>The public list of parks shown on the project website, and their pictures (<c>/{id}/thumbnail</c>).</summary>
+	public const string WebsiteParks = Parks + "/website";
 	public const string Chat = global::OpenTPW.Online.Chat.ChatProtocol.Path;
 	public const string PackageMediaType = "application/vnd.opentpw.park";
 	public const string PostcardMediaType = "application/vnd.opentpw.postcard";
@@ -34,6 +36,11 @@ public sealed record ParkSummary( string Id, string Name, string Description, st
 	DateTimeOffset PublishedUtc, int Visits, int Votes, bool VisitedBefore, bool VotedFor, int PlayersAtPark, bool HasThumbnail, int Bytes );
 
 public sealed record ParkList( IReadOnlyList<ParkSummary> Parks, int Total );
+
+/// <summary>A park listed on the project website: only what its author chose to make public.</summary>
+public sealed record WebsitePark( string Id, string Name, string Description, string Author, string Level, int Votes, int Visits, DateTimeOffset PublishedUtc, bool HasThumbnail );
+
+public sealed record WebsiteParkList( IReadOnlyList<WebsitePark> Parks );
 
 public sealed record CounterResult( int Visits, int Votes, int VotesLeftToday );
 

@@ -233,6 +233,8 @@ internal sealed class GameFlow : IDisposable
 
 	public void Update()
 	{
+		// [EXT:texture-pack] the pack switch belongs to the game loop, not to its loading screen
+		TexturePackSwitch.PumpCurrent();
 		if ( pending != null )
 		{
 			var transition = pending;

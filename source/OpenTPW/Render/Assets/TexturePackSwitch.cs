@@ -36,6 +36,34 @@ public sealed class TexturePackSwitch : ITexturePackSwitch
 	private readonly TimeSpan budget;
 	private int done;
 
+	/// <summary>
+	/// The running switch. The game loop pumps it (<see cref="PumpCurrent"/>), so it completes whether or not a loading
+	/// screen is still on the UI stack; a newer switch cancels an unfinished one (it reloads every texture anyway).
+	/// </summary>
+	public static TexturePackSwitch? Current { get; private set; }
+
+	/// <summary>Does one slice of the running switch, if any (render thread, once per frame).</summary>
+	public static void PumpCurrent()
+	{
+		var current = Current;
+		if ( current == null )
+			return;
+		current.Pump();
+		if ( current.Finished && Current == current )
+			Current = null;
+	}
+
+	/// <summary>Abandons the switch: what is already swapped stays, the worker stops, <see cref="PackChanged"/> is not raised.</summary>
+	public void Cancel()
+	{
+		if ( Finished )
+			return;
+		Finished = true;
+		cancel.Cancel();
+		if ( Current == this )
+			Current = null;
+	}
+
 	public int Done => done;
 	public int Total => targets.Count;
 	public bool Finished { get; private set; }
@@ -48,8 +76,9 @@ public sealed class TexturePackSwitch : ITexturePackSwitch
 	{
 		if ( !string.IsNullOrEmpty( Environment.GetEnvironmentVariable( "OPENTPW_TEXTURE_PACK" ) ) )
 			return null;
+		Current?.Cancel();
 		TexturePack.Activate( name, diagnostics, packsDirectory );
-		return new TexturePackSwitch( Texture.ReloadTargets(), budget ?? TimeSpan.FromMilliseconds( 8 ), Texture.DecodeWct );
+		return Current = new TexturePackSwitch( Texture.ReloadTargets(), budget ?? TimeSpan.FromMilliseconds( 8 ), Texture.DecodeWct );
 	}
 
 	private readonly Func<string, (byte[] Data, int Width, int Height)> decode;

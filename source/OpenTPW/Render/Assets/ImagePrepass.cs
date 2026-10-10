@@ -31,8 +31,22 @@ public interface IImageTileModel
 /// tiling texture comes out seamless.
 /// </summary>
 // [EXT:texture-pack] Optional 1x de-artifact pre-pass for the local texture pack.
-public sealed class TiledPrepass( IImageTileModel model, string name, int margin = 32 ) : IImagePrepass
+public sealed class TiledPrepass : IImagePrepass
 {
+	private readonly IImageTileModel model;
+	private readonly string name;
+	private readonly int margin;
+
+	/// <param name="margin">Context texels around each tile's centre; reduced to a quarter of the tile for small tiles so the tiles always advance.</param>
+	public TiledPrepass( IImageTileModel model, string name, int margin = 32 )
+	{
+		if ( model.TileSize < 8 )
+			throw new ArgumentException( $"A pre-pass tile of {model.TileSize} texels is too small." );
+		this.model = model;
+		this.name = name;
+		this.margin = Math.Clamp( margin, 0, model.TileSize / 4 );
+	}
+
 	public string Model => name;
 
 	/// <summary>For each tile along one axis: where the tile starts in image coordinates (may be negative) and which output range it fills.</summary>
@@ -41,6 +55,8 @@ public sealed class TiledPrepass( IImageTileModel model, string name, int margin
 		if ( length <= tile - 2 * margin )
 			return new[] { (-(tile - length) / 2, 0, length) };
 		var stride = tile - 2 * margin;
+		if ( stride <= 0 )
+			throw new ArgumentException( $"A tile of {tile} texels cannot have a margin of {margin}." );
 		var plan = new List<(int, int, int)>();
 		for ( var from = 0; from < length; from += stride )
 			plan.Add( (from - margin, from, Math.Min( length, from + stride )) );

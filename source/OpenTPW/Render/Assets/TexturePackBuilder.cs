@@ -246,11 +246,21 @@ public static class TexturePackBuilder
 		}
 	}
 
+	/// <summary>Pack keys (lower case, forward slashes) of the hero files in <paramref name="heroDirectory"/>.</summary>
+	private static HashSet<string> HeroKeys( string heroDirectory )
+	{
+		var root = Path.GetFullPath( heroDirectory );
+		if ( !System.IO.Directory.Exists( root ) )
+			throw new DirectoryNotFoundException( $"The hero art directory {root} does not exist." );
+		return System.IO.Directory.EnumerateFiles( root, "*.png", SearchOption.AllDirectories )
+			.Select( file => Path.GetRelativePath( root, file ).Replace( '\\', '/' ).ToLowerInvariant() ).ToHashSet( StringComparer.Ordinal );
+	}
+
 	/// <summary>
 	/// Copies hero art over the pack's textures. A file counts when its name is a known texture's pack key and its aspect ratio
 	/// equals that texture's original; <paramref name="extra"/> grows by the hero textures the pack did not have yet.
 	/// </summary>
-	private static int ApplyHeroArt( string heroDirectory, string texturesRoot, Dictionary<string, Func<TextureData>> loaders, Action<string> log, ref int extra )
+	private static int ApplyHeroArt( string heroDirectory, string texturesRoot, Dictionary<string, (int Width, int Height)> originalSizes, Action<string> log, ref int extra )
 	{
 		var root = Path.GetFullPath( heroDirectory );
 		if ( !System.IO.Directory.Exists( root ) )
@@ -259,14 +269,13 @@ public static class TexturePackBuilder
 		foreach ( var file in System.IO.Directory.EnumerateFiles( root, "*.png", SearchOption.AllDirectories ).OrderBy( path => path, StringComparer.Ordinal ) )
 		{
 			var key = Path.GetRelativePath( root, file ).Replace( '\\', '/' ).ToLowerInvariant();
-			if ( !loaders.TryGetValue( key, out var load ) )
+			if ( !originalSizes.TryGetValue( key, out var original ) )
 			{
-				log( $"Hero art {key}: no such texture in this installation; skipped." );
+				log( $"Hero art {key}: no readable texture of that name in this build; skipped." );
 				continue;
 			}
 			try
 			{
-				var original = load();
 				var image = ImageResult.FromMemory( File.ReadAllBytes( file ), ColorComponents.RedGreenBlueAlpha );
 				if ( (long)image.Width * original.Height != (long)image.Height * original.Width )
 				{
@@ -346,10 +355,24 @@ public static class TexturePackBuilder
 				pending.Clear();
 			}
 			var skipped = new Dictionary<Skip, int>();
-			var loaders = new Dictionary<string, Func<TextureData>>( StringComparer.Ordinal );
+			// Hero art needs each texture's original size. The loaders of WAD members only work while their archive is open
+			// (the enumerator closes it after the last member), so the sizes are read here, while the enumeration runs.
+			var heroKeys = options.HeroDirectory.Length > 0 ? HeroKeys( options.HeroDirectory ) : new HashSet<string>();
+			var originalSizes = new Dictionary<string, (int Width, int Height)>( StringComparer.Ordinal );
 			foreach ( var (gamePath, load) in textures )
 			{
-				loaders[TexturePack.RelativeFileName( gamePath )] = load;
+				if ( heroKeys.Contains( TexturePack.RelativeFileName( gamePath ) ) )
+				{
+					try
+					{
+						var original = load();
+						originalSizes[TexturePack.RelativeFileName( gamePath )] = (original.Width, original.Height);
+					}
+					catch ( Exception exception ) when ( exception is IOException or InvalidDataException or InvalidOperationException )
+					{
+						log( $"Hero art for {gamePath}: the original could not be read ({exception.Message}); skipped." );
+					}
+				}
 				var interfaceArt = interfaceUpscaler != null && IsUpscalableInterface( gamePath );
 				var sprite = IsSpriteAtlas( gamePath );
 				if ( (options.InterfaceOnly || options.SpritesOnly) && !(options.InterfaceOnly && interfaceArt || options.SpritesOnly && sprite) )
@@ -461,7 +484,7 @@ public static class TexturePackBuilder
 				written++;
 			}
 
-			var hero = options.HeroDirectory.Length > 0 ? ApplyHeroArt( options.HeroDirectory, texturesRoot, loaders, log, ref kept ) : 0;
+			var hero = options.HeroDirectory.Length > 0 ? ApplyHeroArt( options.HeroDirectory, texturesRoot, originalSizes, log, ref kept ) : 0;
 			var manifest = new TexturePackManifest
 			{
 				Scale = upscaler.Scale,

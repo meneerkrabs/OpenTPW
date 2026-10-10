@@ -269,8 +269,8 @@ public sealed record GraphicsSettings
 	/// [EXT:texture-pack] Name of the locally built texture pack to use, a directory under <c>texture-packs</c>
 	/// (<c>enhanced</c>, <c>detailed</c>, ...; docs/TEXTURE-PACKS.md); empty = original textures. Stored as <c>"TexturePack"</c>.
 	/// </summary>
-	[JsonPropertyName( "TexturePack" )]
-	public string TexturePackName { get; init; } = "";
+	[JsonPropertyName( "TexturePack" ), JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+	public string? TexturePackName { get; init; }
 	/// <summary>Legacy boolean of earlier versions: <c>true</c> reads as <c>"enhanced"</c> (<see cref="Validate"/>); never written.</summary>
 	[JsonPropertyName( "EnhancedTextures" ), JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 	public bool? EnhancedTextures { get; init; }
@@ -288,14 +288,12 @@ public sealed record GraphicsSettings
 	public GraphicsSettings Validate( ICollection<string> diagnostics )
 	{
 		var result = this;
+		// Migration: a file without a "TexturePack" key (absent or null) takes the old boolean, which selected the one pack
+		// that existed then; an explicit "TexturePack" value, even "", wins over it.
 		if ( result.TexturePackName == null )
-			result = result with { TexturePackName = "" };
-		if ( result.EnhancedTextures != null )
-		{
-			// Migration: the old boolean selected the pack that was then the only one.
-			result = result with { TexturePackName = result.TexturePackName.Length == 0 && result.EnhancedTextures == true ? TexturePack.DefaultName : result.TexturePackName, EnhancedTextures = null };
-		}
-		if ( result.TexturePackName.Length > 0 && !TexturePack.IsValidName( result.TexturePackName ) )
+			result = result with { TexturePackName = result.EnhancedTextures == true ? TexturePack.DefaultName : "" };
+		result = result with { EnhancedTextures = null };
+		if ( result.TexturePackName!.Length > 0 && !TexturePack.IsValidName( result.TexturePackName ) )
 		{
 			diagnostics.Add( $"Texture pack name '{result.TexturePackName}' is not a plain directory name; using the original textures." );
 			result = result with { TexturePackName = "" };

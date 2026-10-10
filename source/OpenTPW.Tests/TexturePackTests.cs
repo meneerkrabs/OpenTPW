@@ -335,6 +335,7 @@ public class TexturePackTests
 		Assert.AreEqual( "detailed", GraphicsSettings.FromJson( "{\"TexturePack\": \"detailed\"}", diagnostics ).TexturePackName );
 		Assert.AreEqual( "detailed", GraphicsSettings.FromJson( "{\"TexturePack\": \"detailed\", \"EnhancedTextures\": true}", diagnostics ).TexturePackName, "the new key wins" );
 		Assert.AreEqual( "", GraphicsSettings.FromJson( "{\"TexturePack\": null}", diagnostics ).TexturePackName );
+		Assert.AreEqual( "", GraphicsSettings.FromJson( "{\"TexturePack\": \"\", \"EnhancedTextures\": true}", diagnostics ).TexturePackName, "an explicit empty TexturePack wins over the old boolean" );
 		Assert.AreEqual( 0, diagnostics.Count );
 		Assert.AreEqual( "", GraphicsSettings.FromJson( "{\"TexturePack\": \"../x\"}", diagnostics ).TexturePackName );
 		Assert.AreEqual( 1, diagnostics.Count );
@@ -782,5 +783,71 @@ public class TexturePackTests
 			innerJump += Jump( size / 2 - 1, i, size / 2, i ) + Jump( i, size / 2 - 1, i, size / 2 );
 		}
 		Assert.IsTrue( wrapJump <= innerJump * 1.5 + size, $"no seam: jump across the wrap {wrapJump}, across the middle {innerJump}" );
+	}
+
+	[TestMethod]
+	public void SmallTilesStillAdvanceAndTinyOnesAreRejected()
+	{
+		var texture = Pattern( 100, 90, 3 );
+		var model = new BoxBlurTile( 64 );
+		var result = new TiledPrepass( model, "small.onnx" ).Process( texture.Data, 100, 90, true );
+		var expected = BoxBlurReference( texture.Data, 100, 90, true );
+		Assert.IsTrue( Enumerable.Range( 0, result.Length ).All( i => Math.Abs( result[i] - expected[i] ) <= 1 ), "a 64 texel tile gets a smaller margin and still covers the image" );
+		Assert.ThrowsException<ArgumentException>( () => TiledPrepass.Plan( 100, 64, 32 ) );
+		Assert.ThrowsException<ArgumentException>( () => new TiledPrepass( new BoxBlurTile( 4 ), "tiny.onnx" ) );
+	}
+
+	[TestMethod]
+	public void HeroArtLandsForTexturesTheBuildSkipsAndLoadersThatDieWithTheirArchive()
+	{
+		var root = TemporaryDirectory();
+		var hero = Path.Combine( root, "hero" );
+		Directory.CreateDirectory( Path.Combine( hero, "ui/textures" ) );
+		File.WriteAllBytes( Path.Combine( hero, "ui/textures/tiny.wct.png" ), PngImage.EncodeRgba( 64, 64, new byte[64 * 64 * 4] ) );
+		File.WriteAllBytes( Path.Combine( hero, "ui/textures/UPPER.wct.png" ), PngImage.EncodeRgba( 32, 32, new byte[32 * 32 * 4] ) );
+		var closed = false;
+		IEnumerable<(string, Func<TextureData>)> Archive()
+		{
+			// Like EnumerateGameTextures: the loaders only work while the archive is open.
+			TextureData Read( TextureData data ) => closed ? throw new ObjectDisposedException( "archive" ) : data;
+			yield return ("ui/textures/tiny.wct", () => Read( Pattern( 16, 16 ) ));
+			yield return ("ui/textures/upper.wct", () => Read( Pattern( 16, 16 ) ));
+			closed = true;
+		}
+		var log = new List<string>();
+		var manifest = TexturePackBuilder.Build( Archive(), Path.Combine( root, "pack" ), new NearestUpscaler( 2 ), new TexturePackBuildOptions { HeroDirectory = hero }, log.Add );
+		Assert.AreEqual( 2, manifest.HeroTextures, string.Join( "\n", log ) );
+		Assert.IsTrue( File.Exists( Path.Combine( root, "pack", "textures", "ui/textures/tiny.wct.png" ) ) );
+		Assert.IsTrue( File.Exists( Path.Combine( root, "pack", "textures", "ui/textures/upper.wct.png" ) ), "hero file names are matched case-insensitively" );
+	}
+
+	[TestMethod]
+	public void PackSwitchIsOwnedByTheGameLoopAndANewOneReplacesAnUnfinishedOne()
+	{
+		var first = TexturePackSwitch.Begin( "", new List<string>() )!;
+		Assert.AreSame( first, TexturePackSwitch.Current );
+		var second = TexturePackSwitch.Begin( "", new List<string>() )!;
+		Assert.IsTrue( first.Finished, "the older switch was cancelled" );
+		Assert.AreSame( second, TexturePackSwitch.Current );
+		TexturePackSwitch.PumpCurrent();
+		Assert.IsTrue( second.Finished, "the loop alone completes it, no loading screen needed" );
+		Assert.IsNull( TexturePackSwitch.Current );
+	}
+
+	[TestMethod]
+	public void AScreenIgnoresTheRestOfTheFrameAfterItRemovedItself()
+	{
+		var stack = new UiScreenStack();
+		var screen = new UiScreen( "page" );
+		var modal = new UiScreen( "modal" );
+		screen.Back = () => { stack.Pop(); };
+		screen.Add( new UiButton { Id = "go", Bounds = new UiRect( 0, 0, 100, 100 ), Clicked = () => { stack.Pop(); stack.Push( modal ); } } );
+		screen.Focus( screen.Find( "go" ) );
+		stack.Push( screen );
+		var context = new UiContext( OriginalUiTests.FakeStrings(), null!, new UiModels( name => throw new FileNotFoundException( name ) ) );
+		// Accept activates the button (which swaps in the modal) and Back arrives in the same frame.
+		stack.Update( context, UiInput.Key( UiKeys.Accept | UiKeys.Back ) );
+		Assert.AreSame( modal, stack.Top, "Back must not pop the screen the button just opened" );
+		Assert.AreEqual( 1, stack.Screens.Count );
 	}
 }

@@ -21,6 +21,8 @@ instructions plus bounded scans). Reference arithmetic:
   follows no branch, CTR/pointer-glue call, tail branch or register flow. Any
   "only" in a scan result means *only among sites of that form*. It is never a
   claim about the only runtime route.
+- **pinned (review)**: pinned by the review test
+  `tools/ppc-analysis/lanes/review/test_det_v1.py`, not by `det_evidence.py`.
 - **cited**: proved by another lane and not re-pinned here. Commits that are
   not yet in `main` are named; DET-I must not treat them as merged.
 
@@ -54,9 +56,9 @@ RNGs with serialized state, and canonical replay fields.
 | --- | --- | --- | --- | --- | --- |
 | World RNG | world `+0x1da708` (uint32), next to `mGameTick` `+0x1da70c` | `s = s·1664525 + 1013904223`; returns wrapping signed abs of `s` | `time(NULL)` at world setup 0x10474c; **reseeded to a thing ID** at 7 sites, to an object field at 1 site | **yes**, label `mRandomSeed` (4 bytes) | pinned |
 | Coaster boarding | app global data 622280 (TOC 0xcc0) | `s = s·214013 + 2531011`; `s >> 16` logical | one C-library `rand()` at 0x54bf4 | no label found | pinned |
-| Kart object | object `+0x38` (subsystem 0x20688) | 214013/2531011; `s >> 16` arithmetic (`srawi`) | not traced | no label found | pinned |
-| Particle object | object `+0x10` (subsystem 0x9f748) | 214013/2531011; arithmetic `>> 16` | not traced | no label found | pinned |
-| Weather object | object `+0x34`, step function 0x904a8 (caller imports `gei_Rain`) | 1664525/1013904223; returns the full new state | not traced | no label found | pinned |
+| Kart object | object `+0x38` (subsystem 0x20688) | 214013/2531011; `s >> 16` arithmetic (`srawi`) | not traced | no label found | pinned (lane: state field, multiplier; review: multiplier and increment) |
+| Particle object | object `+0x10` (subsystem 0x9f748) | 214013/2531011; arithmetic `>> 16` | not traced | no label found | pinned (lane: state field, multiplier only via the 214013 site count; review: multiplier and increment) |
+| Weather object | object `+0x34`, step function 0x904a8 (caller imports `gei_Rain`) | 1664525/1013904223; returns the full new state | not traced | no label found | pinned (lane: state field, multiplier; review: multiplier and increment) |
 | C library | `c_c++_shared` data 0x544c (static 1), shared by app and `engine_shared` | `s = s·1103515245 + 12345`; `(s >> 16) & 32767` | `srand(low32(UTimer::GetAbsolute()/1000))` at 0x1c0cc0 | no label found | pinned (app/clib); engine use not traced |
 | Sound seed | sound data 0xc2e4 | candidate = `seed·1664525 + 1013904223`, **not stored back** | `LbTime_GetClock` | no | cited (unmerged) |
 
@@ -119,9 +121,11 @@ calendar update), 0x10ce68 (action recorder/replayer).
   with the elapsed time of the cached clock-A timestamp since its last frame
   (PPC-rides §"Coaster schema…"), and 0x3864c is called only once per callback.
   A scan finds exactly one direct call, 0x1c262c, outside the substep loop. In
-  the original, coaster physics therefore depends on the frame rate. This is
-  the one simulation-relevant path that is not replayable from substep inputs
-  alone.
+  the original, coaster physics therefore depends on the frame rate. Among the
+  qualified post-loop calls it is the one frame-coupled path that is not
+  replayable from substep inputs alone. The same block also calls 0xb2aac
+  (per-frame walk over all scripts) and 0x483ac, whose roles are not qualified,
+  so this is not a claim that no other frame-coupled simulation path exists.
 - **Capture mode is the original's deterministic mode.** While TOC −0x5e24 is
   set, each callback holds clock A and advances it by exactly 31 ms
   (0x10ec60(…, 32); step 0x10ed10). The same flag calls the per-frame

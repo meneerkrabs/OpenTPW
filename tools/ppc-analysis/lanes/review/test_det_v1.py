@@ -281,7 +281,7 @@ class LaneMutationsBite(unittest.TestCase):
 
 
 class CSharpSourceGuard(unittest.TestCase):
-    """Pins what d1813eb's SimulationCodeUsesNoProcessWideRandomnessOrClock catches and misses."""
+    """Pins what SimulationCodeUsesNoProcessWideRandomnessOrClock catches (d1813eb, extended for finding F3)."""
 
     @classmethod
     def setUpClass(cls):
@@ -289,12 +289,15 @@ class CSharpSourceGuard(unittest.TestCase):
         if not test.exists():
             raise unittest.SkipTest('DeterminismTests.cs not in this checkout')
         text = test.read_text(encoding='utf-8-sig')
-        pattern = re.search(r'var forbidden = new Regex\( @"(.*?)", RegexOptions', text)
+        block = re.search(r'ForbiddenInSimulation = new\((.*?)RegexOptions', text, re.S)
         folders = re.search(r'var folders = new\[\] \{ (.*?) \};', text)
-        if not pattern or not folders:
+        presentation = re.search(r'PresentationWorldFiles =\s*\{(.*?)\};', text, re.S)
+        if not block or not folders or not presentation:
             raise unittest.SkipTest('guard shape changed; re-review it')
-        cls.forbidden = re.compile(pattern.group(1).replace('""', '"'))
+        parts = re.findall(r'@"((?:[^"]|"")*)"', block.group(1))
+        cls.forbidden = re.compile(''.join(part.replace('""', '"') for part in parts))
         cls.folders = folders.group(1)
+        cls.presentation = re.findall(r'"([^"]+)"', presentation.group(1))
 
     def test_catches_the_reintroduced_sources(self):
         for line in ('private readonly Random random = new Random();', 'var r = new System.Random ( );',
@@ -302,14 +305,25 @@ class CSharpSourceGuard(unittest.TestCase):
                      'var t = Environment.TickCount;', 'DateTime.UtcNow', 'Stopwatch.StartNew()'):
             self.assertTrue(self.forbidden.search(line), line)
 
-    def test_known_gaps(self):
-        # Review finding G1: none of these is caught by the pattern.
+    def test_former_gaps_are_caught(self):
+        # Review finding F3: these forms were missed by d1813eb's pattern.
         for line in ('private readonly Random random = new();', 'private static long nextId;',
-                     'private static int counter;', 'var h = name.GetHashCode();', 'Guid.NewGuid()',
-                     'Parallel.For( 0, n, i => { } );'):
+                     'private static int counter;', 'var h = name.GetHashCode();'):
+            self.assertTrue(self.forbidden.search(line), line)
+        for line in ('private static readonly int Limit = 3;', 'private const int Limit = 3;',
+                     'private static bool logged;', 'public override int GetHashCode() => Id;'):
             self.assertIsNone(self.forbidden.search(line), line)
-        # Scanned: VM, Economy, World/Guests, World/Objects and Level.cs only (not Level.Objects.cs, Audio, Client).
+
+    def test_remaining_gaps(self):
+        # Not forbidden: Guid (temp file names in ParkSaveFile) and Parallel (no simulation use found).
+        for line in ('Guid.NewGuid()', 'Parallel.For( 0, n, i => { } );'):
+            self.assertIsNone(self.forbidden.search(line), line)
+
+    def test_scope(self):
         self.assertEqual(self.folders, '"VM", "Economy", Path.Combine( "World", "Guests" ), Path.Combine( "World", "Objects" )')
+        # Top-level World files are scanned unless listed as presentation; Level*.cs partials are scanned.
+        for name in ('Level.cs', 'Level.Objects.cs', 'Ride.cs', 'PrototypeRide.cs', 'FixedStepClock.cs'):
+            self.assertNotIn(name, self.presentation)
 
 
 if __name__ == '__main__':

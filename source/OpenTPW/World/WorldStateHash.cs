@@ -40,8 +40,6 @@ public sealed record WorldStateSources
 	public ParkEconomy? Economy { get; init; }
 	public GuestSimulation? Guests { get; init; }
 	public RideScriptWorld? Scripts { get; init; }
-	/// <summary>Sound chooser seed when a sound service runs (presentation; headless runs have none).</summary>
-	public uint? SoundSeed { get; init; }
 }
 
 /// <summary>
@@ -49,12 +47,13 @@ public sealed record WorldStateSources
 /// docs/reverse/DET-plan.md §4.5 that OpenTPW has today, in that order. Same world seed and same inputs give
 /// the same hash, in one process or in separate ones; a different seed gives a different one. Fields the
 /// original has but OpenTPW lacks (clock A, substep and manager-pass counters, the coaster and C-library
-/// streams, world state, calendar rate, input log) are listed as missing in docs/DETERMINISM.md.
+/// streams, world state, calendar rate, input log) and OpenTPW state outside the hash (sound seed, object
+/// placements and run flags, the clock's pending time) are listed in docs/DETERMINISM.md.
 /// </summary>
 public static class WorldStateHash
 {
 	/// <summary>Bumped whenever the hashed fields or their order change.</summary>
-	public const int SchemaVersion = 1;
+	public const int SchemaVersion = 2;
 
 	public static ulong Compute( WorldStateSources sources )
 	{
@@ -72,8 +71,8 @@ public static class WorldStateHash
 		hash.Add( economy?.Random.State ?? 0 );
 		hash.Add( sources.Guests?.RandomState ?? 0 );
 		hash.Add( sources.Scripts?.RandomState ?? 0 );
-		hash.Add( sources.SoundSeed.HasValue );
-		hash.Add( sources.SoundSeed ?? 0 );
+		// sound_seed is not hashed: OpenTPW's chooser advances on UI clicks and on audio-device timing (DET-012),
+		// so it is presentation state; the park save keeps it.
 		if ( economy != null )
 		{
 			hash.Add( (int)economy.Speed );

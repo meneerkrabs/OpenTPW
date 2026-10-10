@@ -332,47 +332,23 @@ public partial class Level : IDisposable
 		LastActionMessage = "Sandbox loaded; the ride script restarts from its first instruction.";
 	}
 
+	/// <summary>What the park save, load and canonical hash read from this level.</summary>
+	public ParkWorldStreams Streams => new( Seed, Park, Guests, Objects.ScriptWorld, GameAudio.Events );
+
 	/// <summary>The random streams besides the economy's, for the park save.</summary>
-	public WorldRandomState CaptureRandomState() => new( Seed.Value, Guests?.RandomState ?? Seed.GuestStream,
-		Objects.ScriptWorld.RandomState, GameAudio.Events?.Seed ?? Seed.SoundStream );
+	public WorldRandomState CaptureRandomState() => Streams.CaptureRandomState();
 
 	/// <summary>Continues the streams of a park save.</summary>
-	public void RestoreRandomState( WorldRandomState state )
-	{
-		ArgumentNullException.ThrowIfNull( state );
-		if ( state.Seed != Seed.Value )
-			Log.Warning( $"The park save was made with world seed {state.Seed}, not this level's {Seed}; its streams continue under this level's seed." );
-		Guests?.RestoreRandomState( state.GuestRandom );
-		Objects.ScriptWorld.RestoreRandomState( state.ScriptRandom );
-		GameAudio.Events?.Reseed( state.SoundSeed );
-	}
+	public void RestoreRandomState( WorldRandomState state ) => Streams.RestoreRandomState( state );
 
-	/// <summary>Canonical state hash of this level (<see cref="WorldStateHash"/>).</summary>
-	public ulong ComputeStateHash() => WorldStateHash.Compute( new WorldStateSources
-	{
-		Seed = Seed,
-		Economy = Park?.Economy,
-		Guests = Guests,
-		Scripts = Objects.ScriptWorld,
-		SoundSeed = GameAudio.Events?.Seed
-	} );
+	/// <summary>Canonical state hash of this level (<see cref="WorldStateHash"/>; the sound seed is not part of it).</summary>
+	public ulong ComputeStateHash() => Streams.ComputeStateHash();
 
 	/// <summary>Writes the park economy and every random stream to an OpenTPW park save.</summary>
-	public void SavePark( string path )
-	{
-		if ( Park == null )
-			throw new InvalidOperationException( "Only original levels have a park economy to save." );
-		Park.Save( path, CaptureRandomState() );
-	}
+	public void SavePark( string path ) => Streams.SavePark( path );
 
 	/// <summary>Loads an OpenTPW park save: the economy and, when the save has them, the random streams. Guests and object scripts keep running (DET-016).</summary>
-	public void LoadPark( string path )
-	{
-		if ( Park == null )
-			throw new InvalidOperationException( "Only original levels have a park economy to load." );
-		if ( Park.Load( path ) is { } world )
-			RestoreRandomState( world );
-	}
+	public void LoadPark( string path ) => Streams.LoadPark( path );
 
 	private void RequireSandbox()
 	{

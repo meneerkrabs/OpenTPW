@@ -53,9 +53,25 @@ approximation-log flags, read-only parsed-asset caches (`ObjectAssets`,
 and `RideScriptWorld` counters are per instance.
 
 `DeterminismTests.SimulationCodeUsesNoProcessWideRandomnessOrClock` scans `VM`,
-`Economy`, `World/Guests`, `World/Objects` and `Level.cs` for `new Random()`,
-`Random.Shared`, `RandomVector3`, `Environment.TickCount`, `DateTime.Now`,
-`Stopwatch` and `static int next…` counters.
+`Economy`, `World/Guests`, `World/Objects` and every top-level `World` file
+(including the `Level*.cs` partials) except the presentation files it lists
+(advisor, cameras, sky, sun, sandbox file I/O). It forbids:
+
+- `new Random()` and a target-typed `Random r = new();`, `Random.Shared`,
+  `RandomVector3`;
+- `Environment.TickCount`, `DateTime.Now`/`UtcNow`, `Stopwatch`;
+- mutable static numeric fields and properties of any width (`static int`,
+  `static long`, `static ulong`, `static float`, …), the form a process-wide
+  counter takes; `static readonly` and `const` are allowed;
+- `.GetHashCode(` and `HashCode.…`: .NET randomizes string hash codes per
+  process, and a regular expression cannot tell a string receiver from another,
+  so simulation code may not call them at all (`override GetHashCode`
+  declarations are fine).
+
+`SourceGuardCatchesEachForbiddenForm` checks each form against sample lines,
+and each was also checked by inserting it into a scanned source file. Not
+forbidden: `Guid.NewGuid` (temp file names) and `Parallel` (unused). Client
+code (`GameFlow`, the M3 gate) is not scanned.
 
 ## Park save
 
@@ -68,7 +84,9 @@ section:
 
 The economy stream stays in `RandomState`. `Level.SavePark` writes
 both. `Level.LoadPark` restores the economy and, when the section is present,
-continues the guest, script and sound streams. Saves without the section
+continues the guest, script and sound streams. Both delegate to
+`ParkWorldStreams` (`source/OpenTPW/World/ParkWorldStreams.cs`), which holds no
+state and needs no renderer, so tests run the same save, load and hash code. Saves without the section
 (older files and economy-only callers) still load, but those streams are not
 restored. The save does not hold guests, queues or object script state, so a
 load keeps the running guests and scripts (DET-016).
@@ -78,7 +96,7 @@ load keeps the running guests and scripts (DET-016).
 `WorldStateHash.Compute(WorldStateSources)` (`Level.ComputeStateHash()` for a
 level) is FNV-1a 64 over little-endian values, with floats by bit pattern. It
 follows the field order of DET-plan §4.5, restricted to what OpenTPW has. Schema
-version 1:
+version 2 (version 1 also hashed the sound seed):
 
 | DET-plan field | OpenTPW | In the hash |
 | --- | --- | --- |
@@ -91,7 +109,7 @@ version 1:
 | `world_rng_state` | economy, guest and script-world stream states | substitute (three streams) |
 | `coaster_rng_state` | no coaster generator | **missing** |
 | `clib_rng_state` | no C-library generator | **missing** |
-| `sound_seed` | `SoundEventSystem.Seed` when a sound service runs | yes (absent when headless) |
+| `sound_seed` | `SoundEventSystem.Seed` | **not hashed** (saved; see below) |
 | `scale` | `ParkEconomy.Speed` | yes |
 | `paused` | `Speed == Paused` | yes |
 | `game_type_mode` | `ParkEconomy.Mode` | yes |
@@ -102,6 +120,26 @@ version 1:
 | `script_table_digest` | every live script in id order: id, name, parent, state, PC, flags, call stack, variables, clock, wake time, timers, instruction and slice counts, seed and RNG call count | yes |
 | `economy_digest` | the park save's economy part as canonical JSON (sorted keys) | yes |
 | `input_log_cursor` | no input log | **missing** |
+
+The sound seed is saved with the park but is not part of the hash. OpenTPW's
+chooser stores every draw (DET-012), and it draws on UI clicks and whenever a
+music or speech segment starts, which follows the audio device's timing. Two
+runs with the same seed and the same simulation inputs would otherwise hash
+differently with sound on, and a muted or device-less run would hash
+differently from one with audio. The original's choosers do not advance the
+seed (DET-plan §3 D9), which is why §4.5 can list it as replay state.
+
+Other OpenTPW state that is **not in the hash**:
+
+| State | Why it is outside |
+| --- | --- |
+| Placed objects outside their scripts: placement list and positions, `OriginalObjectRuntime` run flags (`stopped`, `wasRunning`), animator channels | not yet part of the canonical state; the scripts and the attractions' guest-facing state (queues, riders, `IsOpen` through the guest digest) are hashed |
+| `GuestEconomyBridge` attraction → economy instance map | not yet part of the canonical state; the economy objects themselves are in the economy digest |
+| `FixedStepClock` pending time (`PendingSeconds`) | frame timing, below one tick; the substep scheduler is DET-I2 |
+| Sound chooser seed | presentation, see above |
+
+A change to any of these does not change the hash. Adding one means bumping
+`SchemaVersion` and re-pinning the fixed-run hash.
 
 `GuestSimulation.ComputeStateHash` (the "raw guest hash") is unchanged. With
 per-park attraction ids it now gives the same value for a second run in the
@@ -124,16 +162,28 @@ the same seed as well.
 - same seed twice in one process ⇒ equal hash; different seed ⇒ different hash
   (the synthetic park: economy, paying guests, a shop script, unseeded RAND
   scripts);
-- save at mid-run, scramble every saved part, load ⇒ the hash at the save point
-  is restored, and the final hash equals the uninterrupted run;
-- a pinned hash of a fixed run, checked in every test process;
+- save at mid-run, move the economy and the script stream by advancing and
+  drawing from them, load ⇒ the hash at the save point is restored, and the
+  final hash equals the uninterrupted run;
+- save, then draw from every stream (guest ticks, a script seed, sound draws),
+  load ⇒ the guest, script and sound streams equal the saved values; a
+  `RestoreRandomState` that does nothing fails this test. The scramble never
+  goes through the restore path under test;
+- sound draws do not change the hash, and a run with a sound chooser hashes like
+  a headless one;
+- a pinned hash of a fixed run, checked in every test process
+  (`0x0D8B481BB19391DC`, schema 2);
 - the default seed keeps the previous stream seeds; per-park attraction ids;
   unseeded scripts follow their world stream; `World` save section round trip
   and older saves;
 - the source guard above.
 
 `DeterminismAssetTests` (`OPENTPW_GAME_PATH`): original jungle objects get
-attraction ids 1… in each of two parks in one process, with equal script hashes.
+attraction ids 1… in each of two parks in one process, with equal script hashes;
+and `ParkWorldStreams.SavePark`/`LoadPark` (the code behind `Level.SavePark`/
+`LoadPark`) with the real jungle park runtime and guests: every stream drawn
+after the save, the load restores all of them and the saved economy. `Level`
+itself needs a renderer and is not constructed by tests.
 
 ## Approximations
 

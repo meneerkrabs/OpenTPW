@@ -145,6 +145,10 @@ public class CommandList : IDisposable
 	/// <summary>Copies into staging textures are only used for desktop readback.</summary>
 	public void CopyTexture( Texture source, Texture destination ) => throw new NotSupportedException( "The browser renderer cannot copy textures for readback." );
 
+	public void CopyTexture( Texture source, uint srcX, uint srcY, uint srcZ, uint srcMipLevel, uint srcBaseArrayLayer,
+		Texture destination, uint dstX, uint dstY, uint dstZ, uint dstMipLevel, uint dstBaseArrayLayer, uint width, uint height, uint depth, uint layerCount )
+		=> CopyTexture( source, destination );
+
 	public void PushDebugGroup( string name ) { }
 	public void PopDebugGroup() { }
 	public void InsertDebugMarker( string name ) { }

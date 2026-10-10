@@ -4,7 +4,8 @@
 	The game in the browser (docs/WEB.md): the desktop sources compiled against OpenTPW.Web.Veldrid,
 	a WebGL2 implementation of the Veldrid API the game uses. Files that only make sense on the
 	desktop (SDL display queries, the native shader compiler, ImGui developer panels) are replaced
-	by browser versions in this project or left out.
+	by browser versions in this project or left out (the texture pack builder too: it needs native
+	ONNX Runtime and an upscaler executable, and only runs from the desktop command line).
 	-->
 	<PropertyGroup>
 		<TargetFramework>net10.0</TargetFramework>
@@ -33,6 +34,8 @@
 				$(GameSources)/Program.cs;
 				$(GameSources)/Client/Game.cs;
 				$(GameSources)/Client/LinuxNativeLibraries.cs;
+				$(GameSources)/Render/Assets/TexturePackBuilder.cs;
+				$(GameSources)/Render/Assets/ImagePrepass.cs;
 				$(GameSources)/Render/ShaderCompiler.cs;
 				$(GameSources)/Client/Setup/SetupWizard.cs;
 				$(GameSources)/Client/Movie/SdlMovieAudioOutput.cs;

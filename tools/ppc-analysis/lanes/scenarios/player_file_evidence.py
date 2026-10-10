@@ -505,10 +505,13 @@ def read_mac_player_file(raw: bytes) -> dict:
                     theme[member].append(value)
             theme['mNameChanged'], pos = _value(raw, pos, 'u8')
             theme['mAllResearchCompleted'], pos = _value(raw, pos, 'u8')
-            if name in out['themes']:
+            # Map key as in ThemeSnapshot.map_key: the const char* string constructor at 0x1297f0
+            # takes strlen of the NUL-terminated buffer, so bytes from the first NUL on are not keyed.
+            key = name.split(b'\0', 1)[0]
+            if key in out['themes']:
                 out['failed_at'] = 'duplicate theme'
                 return out
-            out['themes'][name] = theme
+            out['themes'][key] = theme
         for name, _, encoding, _, _, _ in OPTION:
             out['failed_at'] = name
             out['settings'][name], pos = _value(raw, pos, encoding)

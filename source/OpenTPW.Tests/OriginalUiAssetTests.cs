@@ -26,7 +26,8 @@ public class OriginalUiAssetTests
 	{
 		"mainpanel", "gauge", "date", "b_buy", "b_info", "b_money", "b_resrch", "b_map", "panel", "b_srides", "b_sshop", "b_sshow", "b_sfeature",
 		"b_retract", "b_door", "b_erase", "f_tagl", "f_tagm", "f_tagr", "islandlobby", "f_lobbutbg", "b_lobleft", "b_entpark", "b_lobright",
-		"tpwlogo", "w_med", "w_dialog", "f_optpanel2", "b_sleft", "b_sright", "b_okay"
+		"tpwlogo", "w_med", "w_dialog", "f_optpanel2", "b_sleft", "b_sright", "b_okay",
+		"w_big", "!frame", "!slider", "f_buyitem", "b_up", "b_down", "b_scroller", "b_exit", "b_allstaff", "i_dollar", "cashtrend", "gkey", "gtick"
 	};
 
 	/// <summary>UITEXT entries drawn by the screens.</summary>
@@ -43,7 +44,7 @@ public class OriginalUiAssetTests
 	};
 
 	/// <summary>UIHELPTEXT entries used as popup help or messages.</summary>
-	public static readonly int[] UsedHelpText = { 2, 12, 15, 151, 152, 318, 343, 344, 345, 358, 359, 400, 440, 465, 469, 470, 471, 472, 473, 477, 478, 481, 521, 522, 523, 524 };
+	public static readonly int[] UsedHelpText = { 2, 12, 15, 140, 141, 142, 143, 151, 152, 153, 318, 343, 344, 345, 358, 359, 400, 440, 465, 469, 470, 471, 472, 473, 477, 478, 481, 521, 522, 523, 524 };
 
 	[TestInitialize]
 	public void Initialize()

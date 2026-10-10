@@ -1,0 +1,138 @@
+name: GLM grunt work
+# Runs one strictly bounded task with Claude Code on GLM (Z.AI coding plan) for up to ~5h50m and
+# pushes a glm/<name>-<run> branch with the result; the report goes to the job summary and the
+# pr-body artifact, and a maintainer opens the pull request. Started by hand only; never merges.
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: Task for the agent (plain text; scope, files, and the hard check it must pass)
+        required: true
+        type: string
+      name:
+        description: Short slug for the branch (glm/<name>-<run>)
+        required: true
+        type: string
+      base:
+        description: Branch or SHA to start from
+        default: main
+        type: string
+      model:
+        description: Z.AI model
+        default: glm-5.3
+        type: string
+      agent_minutes:
+        description: Minutes the agent may work (the job also needs ~20 for checks and the PR)
+        default: '330'
+        type: string
+permissions:
+  contents: write
+concurrency:
+  group: glm-${{ inputs.name }}
+  cancel-in-progress: false
+jobs:
+  grunt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ inputs.base }}
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+      - name: Prepare branch
+        env:
+          NAME: ${{ inputs.name }}
+          RUN: ${{ github.run_number }}
+        run: |
+          case "$NAME" in *[!a-z0-9-]*|'') echo "name must be a lowercase slug" >&2; exit 1;; esac
+          git config user.name "glm-grunt"
+          git config user.email "glm-grunt@users.noreply.github.com"
+          git switch -c "glm/$NAME-$RUN"
+          echo "BRANCH=glm/$NAME-$RUN" >> "$GITHUB_ENV"
+          echo "START_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - name: Run the agent
+        env:
+          ANTHROPIC_BASE_URL: https://api.z.ai/api/anthropic
+          ANTHROPIC_AUTH_TOKEN: ${{ secrets.ZAI_API_KEY }}
+          ANTHROPIC_MODEL: ${{ inputs.model }}
+          ANTHROPIC_SMALL_FAST_MODEL: ${{ inputs.model }}
+          API_TIMEOUT_MS: '600000'
+          TASK: ${{ inputs.task }}
+          MINUTES: ${{ inputs.agent_minutes }}
+        run: |
+          case "$MINUTES" in *[!0-9]*|'') echo "agent_minutes must be a number" >&2; exit 1;; esac
+          {
+            cat .github/glm/RULES.md
+            printf '\n## Your task\n\n%s\n' "$TASK"
+          } > /tmp/glm-prompt.md
+          set +e
+          timeout "${MINUTES}m" claude -p "$(cat /tmp/glm-prompt.md)" \
+            --dangerously-skip-permissions --output-format text > /tmp/glm-agent.log 2>&1
+          echo "AGENT_EXIT=$?" >> "$GITHUB_ENV"
+          tail -n 200 /tmp/glm-agent.log
+      - name: Refuse changes outside the allowed area
+        run: |
+          if git status --porcelain -- .github | grep -q . || git diff --name-only "$START_SHA" -- .github | grep -q .; then
+            echo "The agent changed .github/; refusing." >&2; exit 1
+          fi
+          if git log --format=%H "$START_SHA"..HEAD | while read -r c; do git diff-tree --no-commit-id --name-only -r "$c" -- .github; done | grep -q .; then
+            echo "A commit touched .github/; refusing." >&2; exit 1
+          fi
+      - name: Commit leftovers
+        run: |
+          [ -f GLM-REPORT.md ] && cp GLM-REPORT.md /tmp/GLM-REPORT.md
+          if git ls-files --error-unmatch GLM-REPORT.md >/dev/null 2>&1; then
+            git rm -q --cached GLM-REPORT.md && git commit -q -m "Keep the GLM report out of the branch" -m "Co-Authored-By: GLM 5.3 <noreply@z.ai>"
+          fi
+          git add -A -- . ':!GLM-REPORT.md'
+          git diff --cached --quiet || git commit -m "Commit work the GLM run left uncommitted" -m "Co-Authored-By: GLM 5.3 <noreply@z.ai>"
+      - name: Checks
+        id: checks
+        run: |
+          set +e
+          status=0
+          python tools/fidelity_register.py --check > /tmp/check.log 2>&1 || status=1
+          python -I -B tools/ppc-analysis/run_evidence_checks.py >> /tmp/check.log 2>&1 || status=1
+          dotnet build source/OpenTPW.sln --configuration Release --nologo >> /tmp/check.log 2>&1 || status=1
+          dotnet test source/OpenTPW.Tests/OpenTPW.Tests.csproj --configuration Release --no-build --nologo >> /tmp/check.log 2>&1 || status=1
+          git -c core.whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol diff --check "$START_SHA" HEAD >> /tmp/check.log 2>&1 || status=1
+          tail -n 60 /tmp/check.log
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+      - name: Push the branch and publish the report
+        env:
+          TASK: ${{ inputs.task }}
+          CHECKS: ${{ steps.checks.outputs.status }}
+        run: |
+          if [ "$(git rev-list --count "$START_SHA"..HEAD)" = 0 ]; then
+            echo "No commits; nothing to push." | tee -a "$GITHUB_STEP_SUMMARY"; exit 0
+          fi
+          report="(the agent wrote no GLM-REPORT.md)"
+          [ -f /tmp/GLM-REPORT.md ] && report="$(cat /tmp/GLM-REPORT.md)"
+          git push -u origin "$BRANCH"
+          verdict="Checks passed."
+          [ "$CHECKS" = 0 ] || verdict="**Checks failed** (see the job log). Do not merge as is."
+          {
+            printf '## Task\n\n%s\n\n## Result\n\nBranch `%s`. %s Agent exit code: %s.\n\n## Agent report\n\n%s\n\n' "$TASK" "$BRANCH" "$verdict" "$AGENT_EXIT" "$report"
+            printf 'Run: %s/%s/actions/runs/%s\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
+          } > /tmp/pr-body.md
+          cat /tmp/pr-body.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: glm-${{ inputs.name }}-${{ github.run_number }}
+          path: |
+            /tmp/pr-body.md
+            /tmp/glm-agent.log
+            /tmp/check.log
+          if-no-files-found: ignore

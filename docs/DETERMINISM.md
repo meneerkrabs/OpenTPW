@@ -22,7 +22,7 @@ derives every simulation stream from it:
 | Placed object scripts | placement ordinal XOR `ObjectScriptKey` | per-VM `System.Random(seed)` (DET-013) | `ParkObjects` |
 | Scripts without a seed (prototype ride, `Ride`) | drawn from the script world's SplitMix64 stream, start `ScriptStream` | per-VM `System.Random(seed)` (DET-013) | `RideScriptWorld` |
 | Script children (SPAWNCHILD/SPAWNSOUND) | drawn from the parent VM | per-VM `System.Random(seed)` | parent `RideVM` |
-| Sound choosers (presentation) | `SoundStream`, set by `GameAudio.EnterPark` | the original's 1664525/1013904223 LCG (DET-012) | `SoundEventSystem` |
+| Sound choosers (presentation) | `SoundStream`, set by `GameAudio.EnterPark` | the original's 1664525/1013904223 LCG; draws do not store the successor (sound_shared `0x100118C8`) | `SoundEventSystem` |
 
 The stream keys are chosen so that the default seed reproduces the seeds each
 system used before world seeds existed: guests `Level.GuestSeed`, economy 1,
@@ -123,13 +123,13 @@ queue state, version 5 the cell map, see Tests):
 | `economy_digest` | the park save's economy part as canonical JSON (sorted keys) | yes |
 | `input_log_cursor` | no input log | **missing** |
 
-The sound seed is saved with the park but is not part of the hash. OpenTPW's
-chooser stores every draw (DET-012), and it draws on UI clicks and whenever a
-music or speech segment starts, which follows the audio device's timing. Two
-runs with the same seed and the same simulation inputs would otherwise hash
-differently with sound on, and a muted or device-less run would hash
-differently from one with audio. The original's choosers do not advance the
-seed (DET-plan §3 D9), which is why §4.5 can list it as replay state.
+The sound seed is saved with the park but is not part of the hash. As in the
+original, a draw does not store its successor: the library init
+(`0x100118B4`, store at `0x100118C8`) is the only writer of
+`CAudioPlaceHolder::mRandomSeed`, the eight chooser and volume sites only read
+it, and no library imports the symbol. Draws therefore never move the seed, so
+UI clicks and audio-device timing cannot change the replay state (DET-plan §3
+D9, §4.5).
 
 Other OpenTPW state that is **not in the hash**:
 
@@ -208,7 +208,6 @@ itself needs a renderer and is not constructed by tests.
 | ID | Rule |
 | --- | --- |
 | DET-002 | explicit world seed instead of the original's time-based seeds |
-| DET-012 | sound draws store the successor seed; unmerged phase 10 says the original's choosers do not |
 | DET-013 | script RAND/FINDSCRIPTRAND use per-VM `System.Random` seeded from the park stream, not the world LCG |
 | DET-014 | guests use their own SplitMix64 stream, not the world LCG reseeded per guest id |
 | DET-015 | the economy uses its own SplitMix64 stream, not the world LCG |

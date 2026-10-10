@@ -26,7 +26,7 @@ contents follow the original online screens mapped from the Mac binary in
 | News | Online news panel: Game News and System News columns (UITEXT 267/268); the original's "News from ThemeParkWorld.com" title is replaced by News | `w_big` |
 | Online Login | Online login dialog: name and password, 16 characters each, Enter moves from name to password and submits | `w_med`, `b_login`, `f_text1` fields |
 | Find Parks | Find Parks dialog and Park details (creator, visits, votes, visited/voted) | `list_findprks`, `b_vote` |
-| Publish Park | Publish Park dialog: park name and description | `w_med` |
+| Publish Park | Publish Park dialog: park name and description; OpenTPW adds the website opt-in (off by default) | `w_med` |
 | Send Postcard | Send Postcard dialog | `w_med` |
 | Unsent Postcards | Unsent Postcards (outbox) screen | `list_outbox`, `b_sendall` |
 | Inbox | (OpenTPW) | `list_outbox` |
@@ -142,6 +142,7 @@ The package/protocol/server code owns tags 001–059. The game adapters own:
 | 064 | Chat line formatting |
 | 065 | BF4 chat overlay layout, colours and line count |
 | 066 | ImGui Online panel (developer starts only; players use the original-style screens) |
+| 067 | Publish Park's website opt-in, off by default (the server's public website list is 057) |
 | UI | Original-style online screens: window composition, places of code-positioned controls, text field art and caret, server address field, Inbox and Import screens, the News window title |
 
 ## Approximation register

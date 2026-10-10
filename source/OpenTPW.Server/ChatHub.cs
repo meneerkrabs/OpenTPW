@@ -34,6 +34,7 @@ public sealed class ChatHub
 	private readonly ServerOptions options;
 	private readonly WordFilter filter;
 	private readonly ConcurrentDictionary<string, ChatSession> sessions = new();
+	private volatile bool restarting;
 
 	public ChatHub( ServerStore store, ServerOptions options, WordFilter filter )
 	{
@@ -75,6 +76,24 @@ public sealed class ChatHub
 		public TokenBucketRateLimiter Limiter { get; }
 		/// <summary>Cancelled to end the connection from the server side (account deleted).</summary>
 		public readonly CancellationTokenSource Closed = new();
+	}
+
+	/// <summary>
+	/// The server is stopping (a deploy): ends every chat connection with <see cref="ChatProtocol.RestartingCloseStatus"/>,
+	/// so the games reconnect to the new server instead of waiting for a dead connection.
+	/// </summary>
+	public void Restarting()
+	{
+		restarting = true;
+		// The write loop sends what is queued, then the close; the client answers it and the read loop ends. Cancelling
+		// the pending receive instead would abort the socket without a close frame.
+		foreach ( var session in sessions.Values )
+		{
+			session.Outbox.Writer.TryComplete();
+			// A client that does not answer the close is dropped after a moment.
+			try { session.Closed.CancelAfter( TimeSpan.FromSeconds( 3 ) ); }
+			catch ( ObjectDisposedException ) { }
+		}
 	}
 
 	/// <summary>Ends a player's chat connection, if any (their account was deleted).</summary>
@@ -123,7 +142,7 @@ public sealed class ChatHub
 		}
 	}
 
-	private static async Task WriteLoopAsync( WebSocket socket, ChatSession session, CancellationToken cancel )
+	private async Task WriteLoopAsync( WebSocket socket, ChatSession session, CancellationToken cancel )
 	{
 		await foreach ( var item in session.Outbox.Reader.ReadAllAsync( cancel ) )
 		{
@@ -131,6 +150,8 @@ public sealed class ChatHub
 				return;
 			await socket.SendAsync( StrictJson.Serialize( item ), WebSocketMessageType.Text, true, cancel );
 		}
+		if ( restarting && socket.State == WebSocketState.Open )
+			await socket.CloseOutputAsync( (WebSocketCloseStatus)ChatProtocol.RestartingCloseStatus, "server restarting", cancel );
 	}
 
 	private async Task ReadLoopAsync( WebSocket socket, ChatSession session, CancellationToken cancel )

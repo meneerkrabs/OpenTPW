@@ -95,11 +95,12 @@ public sealed class OnlineClient : IDisposable
 		return GetJsonAsync<ParkList>( ApiRoutes.Parks + query, cancel );
 	}
 
-	public async Task<ParkSummary> UploadParkAsync( ParkPackage package, CancellationToken cancel = default )
+	/// <param name="showOnWebsite">Lists the park on the project website (opt-in; the server's public website park list).</param>
+	public async Task<ParkSummary> UploadParkAsync( ParkPackage package, CancellationToken cancel = default, bool showOnWebsite = false )
 	{
 		var content = new ByteArrayContent( package.ToBytes() );
 		content.Headers.ContentType = new MediaTypeHeaderValue( ApiRoutes.PackageMediaType );
-		using var response = await SendAsync( HttpMethod.Post, ApiRoutes.Parks, content, cancel );
+		using var response = await SendAsync( HttpMethod.Post, showOnWebsite ? ApiRoutes.Parks + "?website=true" : ApiRoutes.Parks, content, cancel );
 		return await ReadJsonAsync<ParkSummary>( response, cancel );
 	}
 
@@ -256,6 +257,9 @@ public sealed class ChatConnection : IAsyncDisposable, IDisposable
 
 	public bool IsOpen => socket.State == WebSocketState.Open;
 
+	/// <summary>Why the server closed the connection, once it has (<see cref="ChatProtocol.RestartingCloseStatus"/> on a restart).</summary>
+	public int? CloseStatus => socket.CloseStatus is { } status ? (int)status : null;
+
 	public Task SendAsync( ChatCommand command, string argument, CancellationToken cancel = default ) => SendAsync( ChatRequest.ForCommand( command, argument ), cancel );
 
 	public Task JoinAsync( string room, CancellationToken cancel = default ) => SendAsync( ChatRequest.ForJoin( room ), cancel );
@@ -285,7 +289,18 @@ public sealed class ChatConnection : IAsyncDisposable, IDisposable
 				throw new InvalidDataException( "Chat frame exceeds the size limit." );
 			var result = await socket.ReceiveAsync( buffer.AsMemory( length ), cancel );
 			if ( result.MessageType == WebSocketMessageType.Close )
+			{
+				// Complete the close handshake at once, so a restarting server need not wait for it.
+				try
+				{
+					using var timeout = new CancellationTokenSource( TimeSpan.FromSeconds( 2 ) );
+					await socket.CloseOutputAsync( WebSocketCloseStatus.NormalClosure, "bye", timeout.Token );
+				}
+				catch ( Exception exception ) when ( exception is WebSocketException or OperationCanceledException or ObjectDisposedException )
+				{
+				}
 				return null;
+			}
 			if ( result.MessageType != WebSocketMessageType.Text )
 				throw new InvalidDataException( "Chat frames must be text." );
 			length += result.Count;

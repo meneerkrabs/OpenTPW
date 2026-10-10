@@ -49,8 +49,9 @@ Online file sharing/server work is an extension ([ONLINE.md](ONLINE.md)); shared
 edited layouts and exact original service behavior remain unimplemented/unverified.
 
 Compatibility slice ([COMPATIBILITY.md](COMPATIBILITY.md)): in-world TrueType sign text
-from `fonts.wad` (`partial`: gate demo in `--load-original-level`, ride signs need the
-object-to-name mapping; sign layout values are tagged approximations), `--cd-data` media
+from `fonts.wad` (`partial`: gate demo in `--load-original-level`; ride, shop and sideshow models draw
+their name on `sign1`/`sign2` in the park and in the buy-window preview; board images and
+sign layout values are tagged approximations), `--cd-data` media
 fallback (`implemented`, macOS headless/native verified), original detail presets
 (`partial`: filtering/mipmaps applied, most options lack a renderer feature), Original /
 Recommended / Custom fix profile with save-metadata serialization (`implemented`; save

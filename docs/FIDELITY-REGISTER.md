@@ -14,7 +14,7 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **184 unresolved unique APPROX IDs**, 202 APPROX occurrences, 85 EXT occurrences, 76 DATA occurrences and 138 BIN occurrences.
+Current inventory: **184 unresolved unique APPROX IDs**, 202 APPROX occurrences, 85 EXT occurrences, 76 DATA occurrences and 139 BIN occurrences.
 
 Of these, 178 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
@@ -745,3 +745,4 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | STP-PPC:sound_shared 0x1000FF40 ChooseRandomSound | `source/OpenTPW/Audio/SoundEvents.cs:144` | [BIN:STP-PPC:sound_shared 0x1000FF40 ChooseRandomSound] sounds are chosen by the running sum of their weights (+0x1E) against the same 16-bit draw |
 | STP-PPC:sound_shared 0x100192F0 AssignSoundToNextBranch | `source/OpenTPW/Audio/SoundEvents.cs:259` | [BIN:STP-PPC:sound_shared 0x100192F0 AssignSoundToNextBranch] a branching sentence starts on the event's first sound |
 | STP-PPC:sound_shared 0x100192F0 AssignSoundToNextBranch | `source/OpenTPW/Audio/SoundEvents.cs:273` | [BIN:STP-PPC:sound_shared 0x100192F0 AssignSoundToNextBranch] links whose [byte 6, byte 7] range holds the parameter are candidates, chosen by their target sound's weight; with none the sentence waits |
+| TPI-EXE:0x0074D840 global save body | `source/OpenTPW.Files/Formats/Save/ThemeParkIncGlobalSave.cs:70` | [BIN:TPI-EXE:0x0074D840 global save body] the loader 0x0074D110 reads the world and version words, then this body and its sub-serializers (0x0074B1F0 card, 0x0074FEF0 park, 0x0045A130 options, 0x00592720, 0x00620E30 shares, 0x00622D70, 0x005BF470 ambient tags) and rejects the file when a marker (TATS, AMTA, MEHT, DTOT, RAHS, MAPS) differs |

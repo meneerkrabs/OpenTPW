@@ -31,7 +31,7 @@ internal static class Game
 			Console.WriteLine( $"SHPI: id {fsh.Id}; {fsh.Images.Count} image(s)." );
 			foreach ( var image in fsh.Images )
 				Console.WriteLine( $"Image '{image.Tag}' name '{image.Name}': {image.Width}x{image.Height}, code 0x{(image.Compressed ? 0xFB : 0x7B):X2}, palette 0x{(byte)image.PaletteFormat:X2} {image.PaletteFormat} with {image.PaletteEntries} entries; RGBA SHA-256 {Convert.ToHexString( System.Security.Cryptography.SHA256.HashData( image.Rgba ) ).ToLowerInvariant()}." );
-			Console.WriteLine( "Read-only CPU decoding of Theme Park Inc textures: the 0x24 palette is decoded opaque (approximation COMPAT-014); no comparison with the original game's rendering." );
+			Console.WriteLine( "Read-only CPU decoding of Theme Park Inc textures: 0x24 palettes are decoded opaque (approximation COMPAT-014) and the 0x2D palette as A1R5G5B5 (approximation COMPAT-015); no comparison with the original game's rendering." );
 			return;
 		}
 		var ps2Index = Array.IndexOf( args, "--export-ps2" );

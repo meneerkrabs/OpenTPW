@@ -190,3 +190,9 @@ Run in a scratch clone with `f51e874` merged with `425169c`
 - Other TPI or Sim Coaster editions, and SHPI files from other EA games.
 - The thumbnail MAE figures and the 12-pair duplicate comparison, except through
   the author's own passing tests.
+
+## Resolution on main
+
+- N1: COMPAT-014 now says "two badge textures, each shipped twice".
+- N2: the `--inspect-fsh` footer cites COMPAT-014 for 0x24 and COMPAT-015 for 0x2D.
+- N3: kept. A missing palette record is deliberately reported as an unsupported variant (`NotSupportedException`, pinned by the synthetic tests); a file truncated exactly after its image record cannot be told apart from that variant.

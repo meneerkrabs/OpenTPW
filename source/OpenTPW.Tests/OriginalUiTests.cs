@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using OpenTPW.FrontEnd;
 using OpenTPW.Hud;
@@ -178,6 +179,20 @@ public class OriginalUiTests
 	}
 
 	[TestMethod]
+	public void TheWheelAdjustsOnlyButtonsThatOptIn()
+	{
+		var context = FakeContext();
+		var screen = new UiScreen( "test" );
+		var lobby = 0;
+		var cycle = 0;
+		var island = screen.Add( new UiButton { Id = "options", Bounds = new UiRect( 200, 200, 400, 100 ), Adjusted = direction => lobby += direction } );
+		var row = screen.Add( new UiButton { Id = "cycle", Bounds = new UiRect( 200, 400, 400, 100 ), Adjusted = direction => cycle += direction, WheelAdjusts = true } );
+		screen.Update( context, new UiInput( island.ScreenRect( context.Canvas ).Center, false, false, false, false, UiKeys.None, 1 ) );
+		screen.Update( context, new UiInput( row.ScreenRect( context.Canvas ).Center, false, false, false, false, UiKeys.None, -1 ) );
+		Assert.AreEqual( (0, -1), (lobby, cycle), "the wheel over a lobby button does not turn the island" );
+	}
+
+	[TestMethod]
 	public void ModalScreensCoverTheParkAndNonModalOnlyTheirElements()
 	{
 		var canvas = new UiCanvas( 1024, 768 );
@@ -300,64 +315,184 @@ public class OriginalUiTests
 		Assert.AreEqual( 1, OptionsScreen.Cycle( new[] { 1, 2, 3 }, 9, -1 ) );
 	}
 
-	[TestMethod]
-	public void OptionsReportsTheFittedInterfaceScaleWithoutChangingTheRequest()
+	private static OptionsServices OptionsServicesFor( GameOptions options, StubDisplaySettings display, Action? saved = null, ICollection<string>? languages = null, IGraphicsSettings? graphics = null ) => new()
 	{
-		var display = new StubDisplaySettings( DisplaySettings.Default with { Width = 1280, Height = 720, UiScale = 2 } );
-		var screen = OptionsScreen.Create( new UiScreenStack(), FakeStrings(), new OptionsServices
-		{
-			Display = display, Options = new GameOptions(), Languages = new[] { "English" }, CurrentLanguage = "English"
-		}, () => { } );
-		StringAssert.Contains( ((UiLabel)screen.Find( "effective" )!).Text(), "Interface scale: 2x -> 1x" );
-		Assert.AreEqual( 2, display.Current.UiScale );
+		Display = display, Options = options, Languages = new[] { "Dutch", "English" }, CurrentLanguage = "English", Graphics = graphics,
+		SaveOptions = saved ?? ( () => { } ), SaveLanguage = language => languages?.Add( language )
+	};
+
+	/// <summary>Framebuffer position of an authored point on the 1024x768 test canvas (centre anchor).</summary>
+	private static NVector2 Pixel( UiCanvas canvas, float x, float y ) => canvas.Map( new NVector2( x, y ), UiAnchor.Center );
+
+	[TestMethod]
+	public void OptionsScreenFollowsTheOriginalLayoutAndLabels()
+	{
+		var display = new StubDisplaySettings( DisplaySettings.Default with { Width = 800, Height = 600 } );
+		var screen = OptionsScreen.Create( new UiScreenStack(), FakeStrings(), OptionsServicesFor( new GameOptions(), display ), () => { } );
+		Assert.AreEqual( "ui314", ((UiLabel)screen.Find( "title" )!).Text() );
+		Assert.AreEqual( new UiRect( 0, 0, 2048, 1536 ), screen.Find( "window" )!.Bounds, "f_screen covers the authored canvas" );
+		Assert.AreEqual( "ui315", ((UiLabel)screen.Find( "gpuLabel" )!).Text() );
+		Assert.AreEqual( "ui347ui348", ((UiLabel)screen.Find( "videocardLabel" )!).Text() );
+		Assert.AreEqual( "ui318ui342", ((UiLabel)screen.Find( "resolutionLabel" )!).Text() );
+		Assert.AreEqual( "ui319 100 %", ((UiLabel)screen.Find( "audioLabel" )!).Text() );
+		Assert.AreEqual( "ui320 80 %", ((UiLabel)screen.Find( "effectsLabel" )!).Text() );
+		Assert.AreEqual( "ui324ui334", ((UiLabel)screen.Find( "advisorLabel" )!).Text() );
+		Assert.AreEqual( "ui350ui352", ((UiLabel)screen.Find( "rotationLabel" )!).Text(), "90 degs is the default" );
+		Assert.AreEqual( "ui353ui354", ((UiLabel)screen.Find( "scrollLabel" )!).Text() );
+		foreach ( var id in new[] { "gpu", "videocard" } )
+			Assert.IsFalse( screen.Find( id )!.Enabled, id );
+		Assert.IsFalse( screen.Find( "audio" )!.Enabled );
+		Assert.AreEqual( new UiRect( 962, 331, 319, 135 ), screen.Find( "resolution" )!.Bounds, "slider hit region of the table" );
+		Assert.IsNull( screen.Find( "windowMode" ), "OpenTPW rows moved to the OpenTPW page" );
+		foreach ( var id in new[] { "ok", "cancel", "openTpw" } )
+			Assert.IsNotNull( screen.Find( id ), id );
 	}
 
 	[TestMethod]
-	public void OptionsCancelDiscardsAndAcceptUsesTheDisplayKeepOrRevertFlow()
+	public void SliderMapsKnobAndMouseLinearly()
+	{
+		var value = 0;
+		var slider = new UiSlider { Track = new UiRect( 990, 361, 258, 71 ), KnobSize = new NVector2( 67, 67 ), KnobTop = 364, Bounds = new UiRect( 962, 331, 319, 135 ), Steps = () => 11, Value = () => value, Changed = v => value = v };
+		Assert.AreEqual( 990f, slider.KnobRect( 0 ).X );
+		Assert.AreEqual( 990f + 258 - 67, slider.KnobRect( 10 ).X );
+		Assert.AreEqual( 990f + (258 - 67) / 2f, slider.KnobRect( 5 ).X, 1e-3f );
+		Assert.AreEqual( 0, slider.ValueAt( 0 ), "left of the track clamps" );
+		Assert.AreEqual( 10, slider.ValueAt( 5000 ), "right of the track clamps" );
+		Assert.AreEqual( 5, slider.ValueAt( 990 + 67 / 2f + (258 - 67) / 2f ) );
+		slider.Adjust( 1 );
+		slider.Adjust( 1 );
+		Assert.AreEqual( 2, value );
+		slider.Adjust( -5 );
+		Assert.AreEqual( 0, value, "stepping clamps at the ends" );
+		slider.Enabled = false;
+		slider.Adjust( 1 );
+		Assert.AreEqual( 0, value, "disabled sliders ignore input" );
+	}
+
+	[TestMethod]
+	public void SliderFollowsClicksDragsWheelAndKeys()
+	{
+		var context = FakeContext();
+		var options = new GameOptions();
+		var stack = new UiScreenStack();
+		var screen = OptionsScreen.Create( stack, FakeStrings(), OptionsServicesFor( options, new StubDisplaySettings() ), () => { } );
+		stack.Push( screen );
+		var slider = (UiSlider)screen.Find( "music" )!;
+		var track = slider.Track;
+		var y = slider.Bounds.Y + slider.Bounds.Height / 2;
+		float XOf( int step ) => track.X + slider.KnobSize.X / 2 + (track.Width - slider.KnobSize.X) * step / GameOptions.MaximumVolume;
+
+		stack.Update( context, UiInput.Click( Pixel( context.Canvas, XOf( 3 ), y ) ) );
+		Assert.AreEqual( 3, options.MusicVolume, "a click sets the value under the mouse" );
+
+		// Press, drag outside the hit region, release: the slider follows the mouse in x.
+		var down = new UiInput( Pixel( context.Canvas, XOf( 6 ), y ), true, true, false, false, UiKeys.None );
+		stack.Update( context, down );
+		Assert.AreEqual( 6, options.MusicVolume );
+		stack.Update( context, new UiInput( Pixel( context.Canvas, XOf( 9 ), y + 400 ), true, false, false, false, UiKeys.None ) );
+		Assert.AreEqual( 9, options.MusicVolume, "dragging past the hit region keeps following" );
+		stack.Update( context, new UiInput( Pixel( context.Canvas, XOf( 10 ) + 500, y ), false, false, true, false, UiKeys.None ) );
+		Assert.AreEqual( 10, options.MusicVolume );
+
+		stack.Update( context, new UiInput( Pixel( context.Canvas, XOf( 4 ), y ), false, false, false, false, UiKeys.None, 1 ) );
+		Assert.AreEqual( 10, options.MusicVolume, "wheel up steps up (clamped here)" );
+		stack.Update( context, new UiInput( Pixel( context.Canvas, XOf( 4 ), y ), false, false, false, false, UiKeys.None, -1 ) );
+		Assert.AreEqual( 9, options.MusicVolume );
+		stack.Update( context, UiInput.Key( UiKeys.Left ) );
+		Assert.AreEqual( 8, options.MusicVolume, "Left steps the focused slider" );
+
+		// A disabled slider (audio quality) takes no input and is not hit.
+		var audio = (UiSlider)screen.Find( "audio" )!;
+		stack.Update( context, UiInput.Click( Pixel( context.Canvas, audio.Track.X, audio.Bounds.Y + 10 ) ) );
+		Assert.AreEqual( 10, audio.Value() );
+	}
+
+	[TestMethod]
+	public void OptionsCancelDiscardsEveryEditedOptionAndOkSavesThem()
 	{
 		var context = FakeContext();
 		var stack = new UiScreenStack();
 		var options = new GameOptions();
 		var display = new StubDisplaySettings( DisplaySettings.Default with { Width = 1280, Height = 720 } );
 		var saves = 0;
+		var closed = 0;
+		UiScreen Open()
+		{
+			var screen = OptionsScreen.Create( stack, FakeStrings(), OptionsServicesFor( options, display, () => saves++ ), () => closed++ );
+			stack.Push( screen );
+			return screen;
+		}
+		var screen = Open();
+		((UiSlider)screen.Find( "effects" )!).Adjust( 1 );
+		screen.Find( "musicOn" )!.Activate();
+		screen.Find( "advisor" )!.Activate();
+		screen.Find( "tutorial" )!.Activate();
+		screen.Find( "popupHelp" )!.Activate();
+		screen.Find( "confirmations" )!.Activate();
+		screen.Find( "rmbCancel" )!.Activate();
+		screen.Find( "rotation" )!.Activate();
+		screen.Find( "scroll" )!.Activate();
+		((UiSlider)screen.Find( "resolution" )!).Adjust( 1 );
+		Assert.AreEqual( (9, false, false, false, false, false, false, RotationMode.Smooth, ScrollMode.RightButton),
+			(options.SoundEffectsVolume, options.MusicOn, options.Advisor, options.Tutorial, options.PopupHelp, options.Confirmations, options.RmbCancel, options.Rotation, options.Scroll) );
+		Assert.AreEqual( "ui320 90 %", ((UiLabel)screen.Find( "effectsLabel" )!).Text() );
+		Assert.AreEqual( "ui324ui333", ((UiLabel)screen.Find( "advisorLabel" )!).Text() );
+		stack.Update( context, UiInput.Key( UiKeys.Back ) );
+		var defaults = new GameOptions();
+		Assert.AreEqual( JsonSerializer.Serialize( defaults ), JsonSerializer.Serialize( options ), "Escape restores every field" );
+		Assert.AreEqual( (0, 0, 1, 0), (saves, display.Applies, closed, stack.Screens.Count) );
+
+		screen = Open();
+		screen.Find( "cancel" )!.Activate();
+		Assert.AreEqual( (0, 2, 0), (saves, closed, stack.Screens.Count) );
+
+		screen = Open();
+		screen.Find( "movieOn" )!.Activate();
+		screen.Find( "ok" )!.Activate();
+		Assert.AreEqual( (1, false, 3, 0), (saves, options.MovieOn, closed, stack.Screens.Count) );
+		Assert.AreEqual( 0f, options.MovieGain, "the mute toggle silences the movie volume" );
+	}
+
+	[TestMethod]
+	public void OptionsOkUsesTheDisplayKeepOrRevertFlowAndTheOpenTpwPageEditsTheSamePendingState()
+	{
+		var context = FakeContext();
+		var stack = new UiScreenStack();
+		var options = new GameOptions();
+		var display = new StubDisplaySettings( DisplaySettings.Default with { Width = 1280, Height = 720 } );
 		var languages = new List<string>();
 		var closed = 0;
-		OptionsServices Services() => new()
+		UiScreen Open()
 		{
-			Display = display, Options = options, Languages = new[] { "Dutch", "English" }, CurrentLanguage = "English",
-			SaveOptions = () => saves++, SaveLanguage = languages.Add
-		};
-		var screen = OptionsScreen.Create( stack, FakeStrings(), Services(), () => closed++ );
-		stack.Push( screen );
-		Assert.AreEqual( "ui314", ((UiLabel)screen.Find( "title" )!).Text() );
-		Assert.AreEqual( "ui318", ((UiOptionRow)screen.Find( "resolution" )!).Label() );
-		Assert.AreEqual( "Upscaling:", ((UiOptionRow)screen.Find( "upscaling" )!).Label() );
-		((UiOptionRow)screen.Find( "effects" )!).Adjust( 1 );
-		((UiOptionRow)screen.Find( "resolution" )!).Adjust( 1 );
-		Assert.AreEqual( 9, options.SoundEffectsVolume );
+			var screen = OptionsScreen.Create( stack, FakeStrings(), OptionsServicesFor( options, display, languages: languages ), () => closed++ );
+			stack.Push( screen );
+			return screen;
+		}
+		var main = Open();
+		// The OpenTPW page: display rows apply directly (no confirmation); Back keeps them pending.
+		main.Find( "openTpw" )!.Activate();
+		Assert.AreEqual( "openTpwOptions", stack.Top!.Name );
+		var page = stack.Top;
+		Assert.AreEqual( "Upscaling: Native", ((UiLabel)page.Find( "upscalingLabel" )!).Text() );
+		((UiButton)page.Find( "upscaling" )!).Activate();
+		((UiButton)page.Find( "renderScale" )!).Adjust( 1 );
+		((UiButton)page.Find( "uiScale" )!).Adjust( 1 );
+		Assert.AreEqual( "Render scale:ui339 70%", ((UiLabel)page.Find( "renderScaleLabel" )!).Text() );
+		Assert.AreEqual( 0, display.Applies, "nothing applied before OK" );
 		stack.Update( context, UiInput.Key( UiKeys.Back ) );
-		Assert.AreEqual( 8, options.SoundEffectsVolume, "cancel restores the volume" );
-		Assert.AreEqual( (0, 0, 1), (saves, display.Applies, closed), "cancel applies nothing" );
-
-		// Upscaling, render scale and UI scale apply directly.
-		screen = OptionsScreen.Create( stack, FakeStrings(), Services(), () => closed++ );
-		stack.Push( screen );
-		((UiOptionRow)screen.Find( "upscaling" )!).Adjust( 1 );
-		((UiOptionRow)screen.Find( "renderScale" )!).Adjust( 1 );
-		((UiOptionRow)screen.Find( "uiScale" )!).Adjust( 1 );
-		Assert.AreEqual( "ui339 70%", ((UiOptionRow)screen.Find( "renderScale" )!).Value() );
-		screen.Find( "ok" )!.Activate();
+		Assert.AreSame( main, stack.Top, "Back returns to the original page" );
+		Assert.AreEqual( 0, display.Applies );
+		main.Find( "ok" )!.Activate();
 		Assert.AreEqual( (UpscaleMode.Linear, 70, 1, false), (display.Current.Upscale, display.Current.RenderScale, display.Current.UiScale, display.IsConfirmationPending) );
-		Assert.AreEqual( 2, closed );
+		Assert.AreEqual( 1, closed );
 
 		// A new size asks to keep it (UITEXT 400); "No" reverts and reports UITEXT 401.
-		screen = OptionsScreen.Create( stack, FakeStrings(), Services(), () => closed++ );
-		stack.Push( screen );
-		((UiOptionRow)screen.Find( "resolution" )!).Adjust( 1 );
+		main = Open();
+		((UiSlider)main.Find( "resolution" )!).Adjust( 1 );
 		var sizes = display.GetResolutions( WindowMode.Windowed ).ToList();
 		var chosen = sizes[sizes.FindIndex( size => size.X == 1280 && size.Y == 720 ) + 1];
-		Assert.AreEqual( OptionsScreen.ResolutionLabel( FakeStrings(), chosen ), ((UiOptionRow)screen.Find( "resolution" )!).Value() );
-		screen.Find( "ok" )!.Activate();
+		Assert.AreEqual( "ui318" + OptionsScreen.ResolutionLabel( FakeStrings(), chosen ), ((UiLabel)main.Find( "resolutionLabel" )!).Text() );
+		main.Find( "ok" )!.Activate();
 		Assert.IsTrue( display.IsConfirmationPending );
 		Assert.AreEqual( (chosen.X, chosen.Y), (display.Current.Width, display.Current.Height) );
 		Assert.AreEqual( "confirmDisplay", stack.Top!.Name );
@@ -367,19 +502,21 @@ public class OriginalUiTests
 		Assert.AreEqual( "restored", stack.Top!.Name );
 		Assert.AreEqual( "ui401", ((UiLabel)stack.Top.Find( "message" )!).Text() );
 		stack.Update( context, UiInput.Key( UiKeys.Accept ) );
-		Assert.AreEqual( 3, closed );
+		Assert.AreEqual( 2, closed );
 
-		// "Yes" keeps; the display's own timeout also leads to UITEXT 401.
-		screen = OptionsScreen.Create( stack, FakeStrings(), Services(), () => closed++ );
-		stack.Push( screen );
-		((UiOptionRow)screen.Find( "windowMode" )!).Adjust( 1 );
-		screen.Find( "ok" )!.Activate();
+		// "Yes" keeps; the display's own timeout also leads to UITEXT 401. Window mode lives on the OpenTPW page.
+		main = Open();
+		main.Find( "openTpw" )!.Activate();
+		((UiButton)stack.Top!.Find( "windowMode" )!).Activate();
+		stack.Update( context, UiInput.Key( UiKeys.Back ) );
+		main.Find( "ok" )!.Activate();
 		stack.Update( context, UiInput.Key( UiKeys.Accept ) );
 		Assert.AreEqual( (WindowMode.Borderless, false), (display.Current.Mode, display.IsConfirmationPending) );
-		screen = OptionsScreen.Create( stack, FakeStrings(), Services(), () => closed++ );
-		stack.Push( screen );
-		((UiOptionRow)screen.Find( "windowMode" )!).Adjust( -1 );
-		screen.Find( "ok" )!.Activate();
+		main = Open();
+		main.Find( "openTpw" )!.Activate();
+		((UiButton)stack.Top!.Find( "windowMode" )!).Adjust( -1 );
+		stack.Update( context, UiInput.Key( UiKeys.Back ) );
+		main.Find( "ok" )!.Activate();
 		display.ExpireConfirmation();
 		stack.Update( context, UiInput.Idle( new NVector2( -1, -1 ) ) );
 		Assert.AreEqual( "restored", stack.Top!.Name );
@@ -387,26 +524,93 @@ public class OriginalUiTests
 		stack.Pop();
 
 		// Language: stored for the next start, original RESTART GAME message (UITEXT 402).
-		screen = OptionsScreen.Create( stack, FakeStrings(), Services(), () => closed++ );
-		stack.Push( screen );
-		((UiOptionRow)screen.Find( "language" )!).Adjust( -1 );
-		Assert.AreEqual( " Nederlands", ((UiOptionRow)screen.Find( "language" )!).Value() );
-		screen.Find( "ok" )!.Activate();
+		main = Open();
+		main.Find( "openTpw" )!.Activate();
+		var row = (UiButton)stack.Top!.Find( "language" )!;
+		row.Adjust( -1 );
+		Assert.AreEqual( "Language: Nederlands", ((UiLabel)stack.Top!.Find( "languageLabel" )!).Text() );
+		stack.Update( context, UiInput.Key( UiKeys.Back ) );
+		main.Find( "ok" )!.Activate();
 		CollectionAssert.AreEqual( new[] { "Dutch" }, languages );
 		Assert.AreEqual( "restart", stack.Top!.Name );
 		Assert.AreEqual( "ui402", ((UiLabel)stack.Top.Find( "message" )!).Text(), "original RESTART GAME message" );
 	}
 
 	[TestMethod]
-	public void GameOptionsRoundTripAndClamp()
+	public void OpenTpwPageButtonsCycleBothWaysWithWrapAndShareOneLabelGroup()
+	{
+		Assert.AreEqual( 1, OptionsScreen.CycleWrap( new[] { 1, 2, 3 }, 3, 1 ) );
+		Assert.AreEqual( 3, OptionsScreen.CycleWrap( new[] { 1, 2, 3 }, 1, -1 ) );
+		var context = FakeContext();
+		var stack = new UiScreenStack();
+		var main = OptionsScreen.Create( stack, FakeStrings(), OptionsServicesFor( new GameOptions(), new StubDisplaySettings() ), () => { } );
+		stack.Push( main );
+		main.Find( "openTpw" )!.Activate();
+		var page = stack.Top!;
+		var mode = (UiLabel)page.Find( "windowModeLabel" )!;
+		var button = (UiButton)page.Find( "windowMode" )!;
+		Assert.AreEqual( "Window mode: Windowed", mode.Text() );
+		var center = button.ScreenRect( context.Canvas ).Center;
+		stack.Update( context, new UiInput( center, false, false, false, false, UiKeys.None, 1 ) );
+		Assert.AreEqual( "Window mode: Borderless", mode.Text(), "wheel up cycles forward" );
+		stack.Update( context, new UiInput( center, false, false, false, false, UiKeys.None, -1 ) );
+		stack.Update( context, new UiInput( center, false, false, false, false, UiKeys.None, -1 ) );
+		Assert.AreEqual( "Window mode: Full screen", mode.Text(), "wheel down cycles back and wraps" );
+		stack.Update( context, UiInput.Click( center ) );
+		Assert.AreEqual( "Window mode: Windowed", mode.Text(), "a click cycles forward and wraps" );
+		Assert.IsTrue( page.Elements.OfType<UiLabel>().Where( label => label.Id.EndsWith( "Label" ) ).All( label => label.Group != null && label.Shadow == false ), "dark labels without shadow in one group" );
+		Assert.AreSame( ((UiLabel)page.Find( "languageLabel" )!).Group, mode.Group );
+	}
+
+	[TestMethod]
+	public void OpenTpwPageReportsTheFittedInterfaceScaleWithoutChangingTheRequest()
+	{
+		var display = new StubDisplaySettings( DisplaySettings.Default with { Width = 1280, Height = 720, UiScale = 2 } );
+		var stack = new UiScreenStack();
+		var main = OptionsScreen.Create( stack, FakeStrings(), OptionsServicesFor( new GameOptions(), display ), () => { } );
+		stack.Push( main );
+		main.Find( "openTpw" )!.Activate();
+		StringAssert.Contains( ((UiLabel)stack.Top!.Find( "effective" )!).Text(), "Interface scale: 2x -> 1x" );
+		Assert.AreEqual( 2, display.Current.UiScale );
+	}
+
+	[TestMethod]
+	public void GraphicsQualitySliderStepsThroughThePresetsAndAppliesOnOk()
+	{
+		var graphics = new GraphicsSettingsService( _ => null, GraphicsSettings.Default with { Preset = GraphicsPreset.Medium }, null, () => CompatibilityFlags.Original );
+		var steps = OptionsScreen.QualitySteps( graphics );
+		CollectionAssert.DoesNotContain( steps.ToList(), GraphicsPreset.Custom, "Custom only shows while it is current" );
+		var stack = new UiScreenStack();
+		var screen = OptionsScreen.Create( stack, FakeStrings(), OptionsServicesFor( new GameOptions(), new StubDisplaySettings(), graphics: graphics ), () => { } );
+		stack.Push( screen );
+		Assert.AreEqual( "ui317ui336", ((UiLabel)screen.Find( "qualityLabel" )!).Text() );
+		Assert.AreEqual( "ui336", OptionsScreen.QualityLabel( FakeStrings(), GraphicsPreset.Medium ) );
+		Assert.AreEqual( GraphicsPreset.Medium, graphics.Current.Preset, "nothing applied before OK" );
+	}
+
+	[TestMethod]
+	public void GameOptionsRoundTripClampAndDefaultNewFields()
 	{
 		var path = Path.Combine( Path.GetTempPath(), $"opentpw-options-{Guid.NewGuid():N}.json" );
 		try
 		{
-			new GameOptions { MusicVolume = 3, SoundEffectsVolume = 42, PopupHelp = false }.Save( path );
+			new GameOptions { MusicVolume = 3, SoundEffectsVolume = 42, PopupHelp = false, SpeechOn = false, Rotation = RotationMode.Smooth, Scroll = ScrollMode.RightButton, Tutorial = false }.Save( path );
 			var loaded = GameOptions.Load( path );
 			Assert.AreEqual( (3, 10, false), (loaded.MusicVolume, loaded.SoundEffectsVolume, loaded.PopupHelp) );
+			Assert.AreEqual( (false, RotationMode.Smooth, ScrollMode.RightButton, false), (loaded.SpeechOn, loaded.Rotation, loaded.Scroll, loaded.Tutorial) );
 			Assert.AreEqual( 0.3f, GameOptions.Gain( 3 ), 1e-6f );
+			Assert.AreEqual( 0f, loaded.SpeechGain, "a muted sound has no gain whatever its volume" );
+			Assert.AreEqual( 0.3f, loaded.MusicGain, 1e-6f );
+			Assert.AreEqual( 0f, GameOptions.Gain( 8, false ) );
+
+			// Files written before the mute toggles and gameplay switches existed get the defaults.
+			File.WriteAllText( path, "{ \"MusicVolume\": 5, \"PopupHelp\": false }" );
+			var old = GameOptions.Load( path );
+			Assert.AreEqual( (5, false), (old.MusicVolume, old.PopupHelp) );
+			Assert.IsTrue( old.SoundEffectsOn && old.MusicOn && old.SpeechOn && old.MovieOn && old.Advisor && old.Tutorial && old.Confirmations && old.RmbCancel );
+			Assert.AreEqual( (RotationMode.Ninety, ScrollMode.Pushscroll), (old.Rotation, old.Scroll) );
+			Assert.AreEqual( 0.5f, old.MusicGain, 1e-6f );
+
 			File.WriteAllText( path, "{ not json" );
 			Assert.AreEqual( 8, GameOptions.Load( path ).MusicVolume, "corrupt files fall back to defaults" );
 			Assert.AreEqual( 8, GameOptions.Load( path + ".missing" ).MusicVolume );
@@ -432,7 +636,7 @@ public class OriginalUiTests
 				var text = SupplementaryStrings.Get( key, language );
 				Assert.IsFalse( string.IsNullOrWhiteSpace( text ), $"{key} {language}" );
 				CollectionAssert.AreEqual( placeholders, System.Text.RegularExpressions.Regex.Matches( text, @"\{\d\}" ).Select( match => match.Value ).OrderBy( value => value ).ToArray(), $"{key} {language}" );
-				if ( language != "English" && key is not (OpenTpwText.UpscaleLinear or OpenTpwText.UpscaleNative) )
+				if ( language != "English" && key is not (OpenTpwText.UpscaleLinear or OpenTpwText.UpscaleNative or OpenTpwText.OpenTpwPage) )
 					Assert.AreNotEqual( english, text, $"{key} is translated to {language}" );
 			}
 		}

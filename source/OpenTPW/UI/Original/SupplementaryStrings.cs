@@ -51,6 +51,8 @@ public enum OpenTpwText
 	FolderNotUsable,
 	BonusFolder,
 	BonusNotFound,
+	EnhancedQuality,
+	OpenTpwPage,
 }
 
 public static class SupplementaryStrings
@@ -134,6 +136,8 @@ public static class SupplementaryStrings
 			"Aucun contenu bonus n'a été trouvé dans ce dossier ou fichier zip.",
 			"In diesem Ordner oder dieser ZIP-Datei wurden keine Bonusinhalte gefunden.",
 			"Inget bonusinnehåll hittades i den här mappen eller zip-filen." },
+		[OpenTpwText.EnhancedQuality] = new[] { "Enhanced", "Forbedret", "Verbeterd", "Amélioré", "Erweitert", "Förbättrad" },
+		[OpenTpwText.OpenTpwPage] = new[] { "OpenTPW", "OpenTPW", "OpenTPW", "OpenTPW", "OpenTPW", "OpenTPW" },
 		[OpenTpwText.NotAvailable] = new[] { "Not available yet", "Endnu ikke tilgængelig", "Nog niet beschikbaar", "Pas encore disponible", "Noch nicht verfügbar", "Inte tillgänglig ännu" },
 		[OpenTpwText.OnlyOnePrototypeRide] = new[] {
 			"Only one ride can be placed in this build",

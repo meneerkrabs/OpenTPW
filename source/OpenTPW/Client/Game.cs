@@ -185,39 +185,37 @@ internal static class Game
 			throw new ArgumentException( "--load-original-level requires a level name such as 'jungle'." );
 		// Default: the original-style front end (docs/UI.md). --load-original-level, --sandbox and a
 		// plain --smoke-test bypass it as before; --front-end --smoke-test tests the front end.
+		GameAudio.Enabled = !args.Contains( "--mute" );
 		using var flow = new GameFlow { OnlineFolders = onlineFolders };
+		var capturePath = GetOption( args, "--capture-world", "a .png file for the world-only screenshot" );
 		var smoke = args.Contains( "--smoke-test" );
-		var frontEndRun = visit == null && originalLevelIndex < 0 && !args.Contains( "--advisor-say" ) && !args.Contains( "--sandbox" ) && (!smoke || args.Contains( "--front-end" ));
-		// The original plays its start-up movies before the front end on every start (docs/TGQ-MOVIES.md);
-		// smoke tests, --capture-world and --no-intro / OPENTPW_NO_INTRO go straight to the front end.
-		var playIntro = IntroPlaylist.ShouldPlay( frontEndRun, smoke, args, Environment.GetEnvironmentVariable( "OPENTPW_NO_INTRO" ) );
-		if ( !playIntro )
+		var startsFrontEnd = visit == null && originalLevelIndex < 0 && !args.Contains( "--advisor-say" ) && !args.Contains( "--advisor-response" ) && !args.Contains( "--sandbox" ) && (!smoke || args.Contains( "--front-end" ));
+		// [EXT:autorun] The CD's launcher window comes first when its Autorun folder is available (docs/AUTORUN.md).
+		var autorun = startsFrontEnd && capturePath == null ? CreateAutorun( args, bonusSettings, dataDirectory ) : null;
+		// The original plays its start-up movies before the front end on every start (docs/TGQ-MOVIES.md); after
+		// the launcher's Play when it is shown. Smoke tests, --capture-world and --no-intro / OPENTPW_NO_INTRO go straight to the front end.
+		var playIntro = IntroPlaylist.ShouldPlay( startsFrontEnd, smoke, args, Environment.GetEnvironmentVariable( "OPENTPW_NO_INTRO" ) );
+		Func<IDisposable>? startIntro = playIntro ? () => StartIntro( flow, args, dataDirectory ) : null;
+		if ( autorun == null && !playIntro )
 		{
 			Render.OnUpdate += flow.Update;
 			Render.OnRender += flow.Render;
 		}
-		var capturePath = GetOption( args, "--capture-world", "a .png file for the world-only screenshot" );
 		if ( capturePath != null )
 		{
 			var frames = GetOption( args, "--capture-frames", "a frame count" ) is { } text && int.TryParse( text, out var parsed ) && parsed > 0 ? parsed : 240;
 			Render.PostUpdate += new WorldCapture( capturePath, frames ).Update;
 		}
-		if ( frontEndRun )
+		if ( startsFrontEnd )
 		{
-			if ( playIntro )
+			if ( autorun != null )
 			{
-				using var intro = new IntroSequence( dataDirectory, IntroPlaylist.For( DateTime.Now ), !args.Contains( "--mute" ), GameOptions.Gain( GameOptions.Current.MovieVolume ) );
-				Render.OnUpdate += intro.Update;
-				Render.OnRender += intro.Draw;
-				intro.Completed += () =>
-				{
-					Render.OnUpdate -= intro.Update;
-					Render.OnRender -= intro.Draw;
-					Render.OnUpdate += flow.Update;
-					Render.OnRender += flow.Render;
-					flow.DiscardHeldInput();
-					flow.ShowFrontEnd();
-				};
+				RunAutorun( flow, autorun, smoke, startIntro );
+				return;
+			}
+			if ( startIntro != null )
+			{
+				using var intro = startIntro();
 				Render.Run();
 				return;
 			}
@@ -268,6 +266,107 @@ internal static class Game
 		}
 		else
 			Render.Run();
+	}
+
+	/// <summary>The CD launcher screen for the game's language, or null when it is disabled or the CD's Autorun files are absent.</summary>
+	private static AutorunScreen? CreateAutorun( string[] args, SetupSettings settings, string dataDirectory )
+	{
+		var cd = GetOption( args, "--cd-data", "the original CD's folder" ) ?? Environment.GetEnvironmentVariable( "OPENTPW_CD_DATA" );
+		var language = GameLanguage.IsSelected ? GameLanguage.Current.Name : GameLanguage.DefaultLanguage;
+		var assets = AutorunLauncher.FindAssets( args, settings, Settings.Default.GamePath, cd, language );
+		return assets == null ? null : AutorunLauncher.Create( assets, Settings.Default.GamePath );
+	}
+
+	/// <summary>
+	/// Shows the CD launcher, then (on Play) the front end. The hand-over runs after the frame so the front end's first
+	/// update precedes its first draw; Exit has already closed the window.
+	/// </summary>
+	/// <summary>Starts the start-up movies (docs/TGQ-MOVIES.md); the front end follows when they end. Dispose after the loop.</summary>
+	private static IDisposable StartIntro( GameFlow flow, string[] args, string dataDirectory )
+	{
+		var intro = new IntroSequence( dataDirectory, IntroPlaylist.For( DateTime.Now ), !args.Contains( "--mute" ), GameOptions.Current.MovieGain );
+		Render.OnUpdate += intro.Update;
+		Render.OnRender += intro.Draw;
+		intro.Completed += () =>
+		{
+			Render.OnUpdate -= intro.Update;
+			Render.OnRender -= intro.Draw;
+			Render.OnUpdate += flow.Update;
+			Render.OnRender += flow.Render;
+			flow.DiscardHeldInput();
+			flow.ShowFrontEnd();
+		};
+		return intro;
+	}
+
+	private static void RunAutorun( GameFlow flow, AutorunScreen autorun, bool smoke, Func<IDisposable>? startIntro )
+	{
+		using var screen = autorun;
+		IDisposable? intro = null;
+		FrontEndSmokeTest? frontEndSmokeTest = null;
+		AutorunSmokeTest? autorunSmokeTest = null;
+		Action? handOver = null;
+		handOver = () =>
+		{
+			if ( screen.Result == AutorunResult.None )
+				return;
+			Render.PostUpdate -= handOver;
+			Render.OnUpdate -= screen.Update;
+			Render.OnRender -= screen.Render;
+			if ( screen.Result != AutorunResult.Play )
+				return;
+			Render.WorldScalingAllowed = true;
+			// Free the launcher's GPU resources one frame later, after its last frame was submitted.
+			Action? release = null;
+			release = () =>
+			{
+				Render.PostUpdate -= release;
+				screen.Dispose();
+			};
+			Render.PostUpdate += release;
+			if ( startIntro != null )
+			{
+				intro = startIntro();
+				return;
+			}
+			Render.OnUpdate += flow.Update;
+			Render.OnRender += flow.Render;
+			// Enter or Space held to press Play must not count again as the front end's first key.
+			flow.DiscardHeldInput();
+			flow.ShowFrontEnd();
+			if ( smoke )
+			{
+				frontEndSmokeTest = new FrontEndSmokeTest( flow );
+				Render.PostUpdate += frontEndSmokeTest.Update;
+			}
+		};
+		try
+		{
+			// Like movies, the launcher is not 3D world content: it renders at output size.
+			Render.WorldScalingAllowed = false;
+			Render.OnUpdate += screen.Update;
+			Render.OnRender += screen.Render;
+			if ( smoke )
+			{
+				autorunSmokeTest = new AutorunSmokeTest( screen );
+				Render.PostUpdate += autorunSmokeTest.Update;
+			}
+			Render.PostUpdate += handOver;
+			Render.Run();
+			if ( smoke )
+			{
+				autorunSmokeTest!.VerifyCompleted();
+				if ( frontEndSmokeTest == null )
+					throw new InvalidOperationException( "Native autorun smoke test failed: the front end did not start after Play." );
+				frontEndSmokeTest.VerifyCompleted();
+			}
+		}
+		finally
+		{
+			intro?.Dispose();
+			autorunSmokeTest?.Dispose();
+			frontEndSmokeTest?.Dispose();
+		}
 	}
 
 	/// <summary>
@@ -366,10 +465,13 @@ internal static class Game
 		var model = GetOption( args, "--upscale-model", "a Real-ESRGAN model name such as realesrgan-x4plus" ) ?? "realesrgan-x4plus";
 		var packDirectory = GetOption( args, "--texture-pack-dir", "a directory for the texture pack" ) ?? TexturePack.DefaultPackDirectory();
 		var subtree = GetOption( args, "--texture-pack-subtree", "a data-relative directory such as levels/jungle" ) ?? "";
-		var options = new TexturePackBuildOptions { Subtree = subtree };
-		Log.Trace( $"Building texture pack from {dataDirectory}{(subtree.Length > 0 ? $"/{subtree}" : "")} into {packDirectory}." );
+		// Interface art uses a model suited to drawn art; --texture-pack-no-interface keeps it original.
+		var interfaceModel = GetOption( args, "--interface-model", "a Real-ESRGAN model name for interface art" ) ?? "realesrgan-x4plus-anime";
+		var interfaceUpscaler = args.Contains( "--texture-pack-no-interface" ) ? null : new RealEsrganUpscaler( upscaler, interfaceModel );
+		var options = new TexturePackBuildOptions { Subtree = subtree, InterfaceOnly = args.Contains( "--texture-pack-interface-only" ), Merge = args.Contains( "--texture-pack-merge" ) };
+		Log.Trace( $"Building texture pack from {dataDirectory}{(subtree.Length > 0 ? $"/{subtree}" : "")} into {packDirectory}{(options.Merge ? " (merging)" : "")}." );
 		var manifest = TexturePackBuilder.Build( TexturePackBuilder.EnumerateGameTextures( dataDirectory, subtree ), packDirectory,
-			new RealEsrganUpscaler( upscaler, model ), options, message => Log.Trace( message ) );
+			new RealEsrganUpscaler( upscaler, model ), options, message => Log.Trace( message ), interfaceUpscaler );
 		Log.Trace( $"Done: {manifest.Textures} textures at {manifest.Scale}x. Turn on Enhanced textures in Game Options (or set EnhancedTextures in graphics.json)." );
 		if ( !string.Equals( Path.GetFullPath( packDirectory ), Path.GetFullPath( TexturePack.DefaultPackDirectory() ), StringComparison.Ordinal ) )
 			Log.Warning( $"The game only loads the pack at {TexturePack.DefaultPackDirectory()}; use this one with OPENTPW_TEXTURE_PACK={Path.Combine( packDirectory, TexturePack.TexturesDirectoryName )}." );
@@ -407,6 +509,15 @@ internal static class Game
 	/// </summary>
 	private static Advisor? CreateAdvisor( string[] args )
 	{
+		if ( GetOption( args, "--advisor-response", "a response ID from content/data/advisor-responses.toml" ) is { } responseText )
+		{
+			if ( !int.TryParse( responseText, out var responseId ) || !AdvisorResponses.Table.ContainsKey( responseId ) )
+				throw new ArgumentException( $"--advisor-response {responseText} is not in {AdvisorResponses.RelativePath}." );
+			var level = GetOption( args, "--load-original-level", "a level name such as 'jungle'" ) ?? "jungle";
+			var responder = new Advisor();
+			responder.SayResponse( responseId, level, GameLanguage.IsSelected ? GameLanguage.Current : null );
+			return responder;
+		}
 		var index = Array.IndexOf( args, "--advisor-say" );
 		if ( index < 0 )
 			return null;

@@ -42,6 +42,12 @@ Native dependencies must match the selected process architecture.
 Engine content is copied beside the executable; shader files/includes resolve
 from the executable directory rather than the shell's current directory.
 
+## CD launcher (autorun screen)
+
+When the game folder or the CD (`--cd-data`, saved CD) has the original `Autorun` folder, the start opens the
+CD's launcher window first (Play continues, View Read-me opens the read-me, Exit quits; see AUTORUN.md). Skip it
+with `--no-autorun`, `OPENTPW_NO_AUTORUN=1` or `"showAutorun": false` in `setup.json`.
+
 ## Language
 
 ```sh
@@ -154,7 +160,7 @@ press or click skips.
 
 A normal start (the front end, no `--smoke-test`) first plays the original's
 start-up movies: `bf`, then a trailer chosen by the day of the month, at the
-Movie volume of Game Options. Esc, Space or a mouse button skips. Use
+Movie volume of Game Options (its mute toggle silences them). Esc, Space or a mouse button skips. Use
 `--no-intro` (or set `OPENTPW_NO_INTRO=1`) to go straight to the front end.
 Any nonempty `OPENTPW_NO_INTRO` value, including `0`, disables intros.
 `--capture-world` also bypasses intros so its frame count starts with the world;
@@ -179,7 +185,7 @@ bash scripts/run.sh --game-path '/path/to/Theme Park World' --fullscreen --upsca
 | `--save-display-settings` | Also stores these values as the user's display settings. |
 | `--export-ps2 <ps2 DATA dir> <out dir>` | Lists the PS2 version's archives and exports its textures as PNG for viewing (PS2.md). |
 | `--capture-world <file.png>` | After `--capture-frames N` frames (default 240) writes the 3D world without interface at its render size and exits; for screenshots and comparisons. |
-| `--build-texture-pack --upscaler <path>` | Builds the optional enhanced texture pack from the installation with a player-supplied Real-ESRGAN executable (TEXTURE-PACKS.md); then turn on Game Options → Enhanced textures. |
+| `--build-texture-pack --upscaler <path>` | Builds the optional enhanced texture pack from the installation with a player-supplied Real-ESRGAN executable (TEXTURE-PACKS.md); then turn on Game Options → OpenTPW → Enhanced textures. |
 
 Alt+Enter or F11 toggles fullscreen at runtime; the ImGui park panel has a Display
 section with the same options and the diagnostics (method, requested/effective scale,
@@ -189,7 +195,7 @@ internal and output size, fallback reason). Settings live in `~/.config/OpenTPW/
 settings file falls back to defaults with a warning. Only the 3D world is scaled: BF4 text,
 ImGui and movies render at output size, and 4x MSAA stays on independently. The Options
 screen can use the `OpenTPW.IDisplaySettings` API (including a keep-or-revert timeout).
-Status and limits: UPSCALING-DESIGN.md.
+Window mode, upscaling, render scale and interface scale are on the OpenTPW page of Game Options. Status and limits: UPSCALING-DESIGN.md.
 
 ## Native integration smoke test
 
@@ -216,7 +222,7 @@ fullscreen-toggle changes without growing GPU resources. Combine it with the dis
 options, e.g. `--render-scale 50 --upscale linear`; `OPENTPW_TEST_PIXEL_SCALE=2` (test only)
 doubles the drawable to exercise the HiDPI path on a 1x display (1280x720 window ->
 2560x1440 output).
-`--front-end --smoke-test` instead drives the front end with injected mouse/keys
+`--front-end --smoke-test` first checks the CD launcher when available (readback, Tab focus, Play) and then drives the front end with injected mouse/keys
 into the original jungle level and checks lobby, options, HUD, build/info arms
 and pause menu text in readback (UI.md); captures are
 `artifacts/native-smoke-<language>-*.png`.

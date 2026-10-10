@@ -96,9 +96,15 @@ public sealed class UiContext
 			DrawText( candidates[fit.Index], text, rect, color, align, true, shadow );
 			return;
 		}
-		var chosen = candidates[fit.Index];
-		var box = boxes[fit.Index];
-		var scale = fit.Scale;
+		DrawTextAt( candidates[fit.Index], fit.Scale, text, rect, color, align, shadow );
+	}
+
+	/// <summary>Draws single-line text in <paramref name="chosen"/> at whole text scale <paramref name="scale"/>, placed like <see cref="DrawFittedText"/> (ink aligned horizontally, letter box centred vertically).</summary>
+	public void DrawTextAt( FontAtlas chosen, int scale, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Left, bool shadow = true )
+	{
+		if ( string.IsNullOrEmpty( text ) )
+			return;
+		var box = InkBox( chosen, text, shadow );
 		var width = (box.Right - box.Left) * scale;
 		var x = align switch
 		{
@@ -113,6 +119,44 @@ public sealed class UiContext
 		if ( shadow )
 			Batch.AddText( chosen, layout, ix + scale, iy + scale, UiColors.Shadow, scale );
 		Batch.AddText( chosen, layout, ix, iy, color, scale, text );
+	}
+
+	/// <summary>
+	/// Font and whole text scale for <paramref name="label"/> of <paramref name="group"/>. The page size is the family size
+	/// and scale (up to the current text scale) whose letter box is closest to <see cref="UiLabelGroup.TargetHeight"/> of
+	/// the shortest label rectangle without exceeding it. A label uses it when its widest variant text fits its rectangle;
+	/// otherwise it takes the largest smaller size that fits, or the smallest size when none does.
+	/// </summary>
+	// [APPROX:UI-039] option label size: letter box about 58 % of the label rectangle height (the capture's labels are ~26 of 1536 units for 45-unit rectangles); a label whose widest value does not fit drops alone to the largest size that does — evidence needed: capture of the original option labels in several languages
+	public (FontAtlas Font, int Scale) ChooseUniform( UiLabelGroup group, UiLabel label )
+	{
+		var members = group.Members.Where( member => member.Visible ).ToList();
+		var candidates = new List<FontAtlas> { group.Font( Fonts ) };
+		candidates.AddRange( Fonts.Smaller( candidates[0] ) );
+		var sizes = new List<(FontAtlas Font, int Scale, int Height)>();
+		foreach ( var candidate in candidates )
+		{
+			var box = InkBox( candidate, "x", false );
+			for ( var scale = Math.Max( 1, Canvas.TextScale ); scale >= 1; scale-- )
+				sizes.Add( (candidate, scale, (box.Bottom - box.Top) * scale) );
+		}
+		var heights = (members.Count == 0 ? new List<UiLabel> { label } : members).Select( member => member.ScreenRect( Canvas ).Height ).ToList();
+		var maximum = heights.Min();
+		var target = maximum * UiLabelGroup.TargetHeight;
+		var page = sizes.Where( size => size.Height <= maximum ).OrderBy( size => Math.Abs( size.Height - target ) ).ThenByDescending( size => size.Height ).Cast<(FontAtlas Font, int Scale, int Height)?>().FirstOrDefault()
+			?? sizes.OrderBy( size => size.Height ).First();
+		var rect = label.ScreenRect( Canvas );
+		var texts = label.Variants?.Invoke().ToList() ?? new List<string> { label.Text() };
+		bool Fits( (FontAtlas Font, int Scale, int Height) size ) => texts.All( text =>
+		{
+			var box = InkBox( size.Font, text, label.Shadow );
+			return (box.Right - box.Left) * size.Scale <= rect.Width;
+		} );
+		if ( Fits( page ) )
+			return (page.Font, page.Scale);
+		var smaller = sizes.Where( size => size.Height <= page.Height ).OrderByDescending( size => size.Height ).ToList();
+		var fit = smaller.Cast<(FontAtlas Font, int Scale, int Height)?>().FirstOrDefault( size => Fits( size!.Value ) ) ?? smaller[^1];
+		return (fit.Font, fit.Scale);
 	}
 
 	private readonly Dictionary<FontAtlas, (int Top, int Bottom)> letterBoxes = new();
@@ -197,6 +241,15 @@ public abstract class UiElement
 	public virtual void Adjust( int direction ) { }
 }
 
+/// <summary>Labels that are drawn in one common size (the option labels of a page).</summary>
+public sealed class UiLabelGroup
+{
+	/// <summary>Share of the label rectangle's height the letter box (capitals, ascenders, descenders) should have.</summary>
+	public const float TargetHeight = 0.58f;
+	public List<UiLabel> Members { get; } = new();
+	public Func<UiFonts, FontAtlas> Font { get; set; } = fonts => fonts.Label;
+}
+
 public sealed class UiLabel : UiElement
 {
 	public Func<string> Text { get; set; } = () => "";
@@ -204,17 +257,36 @@ public sealed class UiLabel : UiElement
 	public RgbaByte Color { get; set; } = UiColors.Text;
 	public UiAlign Align { get; set; } = UiAlign.Left;
 	public bool Wrap { get; set; }
+	/// <summary>Drop shadow under the text; the dark option labels have none.</summary>
+	public bool Shadow { get; set; } = true;
+	/// <summary>Fit the single line into the rectangle (smaller font, smaller scale) instead of the small-font fallback.</summary>
+	public bool Fit { get; set; }
+	/// <summary>Labels of one group share a single font and scale (<see cref="UiContext.ChooseUniform"/>).</summary>
+	public UiLabelGroup? Group { get; set; }
+	/// <summary>Every text this label can show (so a group's size does not change while values change); null = just <see cref="Text"/>.</summary>
+	public Func<IEnumerable<string>>? Variants { get; set; }
 
 	public override void Draw( UiContext context, bool focused, bool pressed )
 	{
 		var rect = ScreenRect( context.Canvas );
 		var font = Font( context.Fonts );
 		var text = Text();
+		if ( Group != null )
+		{
+			var (groupFont, scale) = context.ChooseUniform( Group, this );
+			context.DrawTextAt( groupFont, scale, text, rect, Color, Align, Shadow );
+			return;
+		}
+		if ( Fit && !Wrap )
+		{
+			context.DrawFittedText( font, text, rect, Color, Align, Shadow );
+			return;
+		}
 		// [APPROX:UI-032] small-font fallback and greedy wrap for long labels — evidence needed: captures of translated original screens
 		// Longer translations fall back to the small game font instead of overflowing the art.
 		if ( !Wrap && context.Measure( font, text ).Width > rect.Width )
 			font = context.Fonts.Small;
-		context.DrawText( font, text, rect, Color, Align, Wrap );
+		context.DrawText( font, text, rect, Color, Align, Wrap, Shadow );
 	}
 }
 
@@ -275,6 +347,8 @@ public sealed class UiButton : UiElement
 	public Action? Clicked { get; set; }
 	/// <summary>Left/right keys on the focused button (e.g. turn the lobby to the next island).</summary>
 	public Action<int>? Adjusted { get; set; }
+	/// <summary>The mouse wheel over the button also calls <see cref="Adjusted"/> (OpenTPW page cycle buttons); off elsewhere, so the wheel over a lobby button does not turn the island.</summary>
+	public bool WheelAdjusts { get; set; }
 	public Func<bool>? Selected { get; set; }
 	public UiAlign Align { get; set; } = UiAlign.Center;
 	public override bool Focusable => Visible && Enabled;
@@ -344,7 +418,82 @@ public sealed class UiButton : UiElement
 }
 
 /// <summary>
-/// An options row in the style of the original options panel (f_optpanel2 bar): label on the left,
+/// A horizontal slider in the style of the original options screen: a <c>b_scroller</c> ball on a track,
+/// <see cref="UiElement.Bounds"/> being the mouse hit region. Values are step indices 0..Steps-1.
+/// </summary>
+public sealed class UiSlider : UiElement
+{
+	public const string KnobModel = "b_scroller";
+
+	/// <summary>Authored track the ball runs along.</summary>
+	public UiRect Track { get; set; }
+	/// <summary>Authored size of the ball.</summary>
+	public NVector2 KnobSize { get; set; } = new( 67, 67 );
+	/// <summary>Authored vertical position of the ball's top.</summary>
+	public float KnobTop { get; set; }
+	public Func<int> Steps { get; set; } = () => 2;
+	public Func<int> Value { get; set; } = () => 0;
+	public Action<int>? Changed { get; set; }
+	public override bool Focusable => Visible && Enabled;
+
+	/// <summary>
+	/// Authored ball rectangle for <paramref name="value"/>: the ball's centre moves linearly from half a ball
+	/// inside the track's left end to half a ball inside its right end.
+	/// </summary>
+	// [APPROX:UI-036] linear knob travel over the track, value index 0..Steps-1 from the knob's centre — evidence needed: capture of the original slider ends / binary slider code
+	public UiRect KnobRect( int value )
+	{
+		var steps = Math.Max( 2, Steps() );
+		var fraction = Math.Clamp( value, 0, steps - 1 ) / (float)(steps - 1);
+		var left = Track.X + (Track.Width - KnobSize.X) * fraction;
+		return new UiRect( left, KnobTop, KnobSize.X, KnobSize.Y );
+	}
+
+	/// <summary>Value whose ball centre is nearest to the authored x position <paramref name="authoredX"/>.</summary>
+	public int ValueAt( float authoredX )
+	{
+		var steps = Math.Max( 2, Steps() );
+		var travel = Track.Width - KnobSize.X;
+		if ( travel <= 0 )
+			return 0;
+		var fraction = (authoredX - Track.X - KnobSize.X / 2) / travel;
+		return Math.Clamp( (int)MathF.Round( fraction * (steps - 1) ), 0, steps - 1 );
+	}
+
+	/// <summary>Sets the value from a mouse position in framebuffer pixels.</summary>
+	public void SetFromMouse( UiCanvas canvas, NVector2 point )
+	{
+		if ( !Enabled )
+			return;
+		var rect = ScreenRect( canvas );
+		if ( rect.Width <= 0 )
+			return;
+		Set( ValueAt( Bounds.X + (point.X - rect.X) / rect.Width * Bounds.Width ) );
+	}
+
+	private void Set( int value )
+	{
+		if ( value != Value() )
+			Changed?.Invoke( value );
+	}
+
+	public override void Adjust( int direction )
+	{
+		if ( Enabled )
+			Set( Math.Clamp( Value() + direction, 0, Math.Max( 2, Steps() ) - 1 ) );
+	}
+
+	public override void Draw( UiContext context, bool focused, bool pressed )
+	{
+		var knob = KnobRect( Value() );
+		var rect = context.Canvas.Map( knob, Anchor );
+		if ( !context.DrawModel( KnobModel, 0, rect ) )
+			context.Batch.AddRectangle( rect, UiColors.Value );
+	}
+}
+
+/// <summary>
+/// An options row of the OpenTPW page in the style of the original options panel (f_optpanel2 bar): label on the left,
 /// value on the right, cycled with the arrows (b_sleft/b_sright), the mouse wheel or left/right keys.
 /// </summary>
 public sealed class UiOptionRow : UiElement
@@ -367,7 +516,7 @@ public sealed class UiOptionRow : UiElement
 		var rect = ScreenRect( canvas );
 		var size = rect.Height * 0.8f;
 		var top = rect.Y + (rect.Height - size) / 2;
-		// [APPROX:UI-009] option-row arrow/value positions — evidence needed: capture of the original options screen
+		// [EXT:opentpw-page] option-row arrow/value positions: OpenTPW's own row style for its page (the original page uses sliders and toggles)
 		// The f_optpanel2 art: label lozenge up to ~58% of the frame width, then the value lozenges to the end.
 		var left = new UiRect( rect.X + rect.Width * 0.585f, top, size, size );
 		var right = new UiRect( rect.X + rect.Width * 0.975f - size, top, size, size );

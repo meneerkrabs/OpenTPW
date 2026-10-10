@@ -1,12 +1,30 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace OpenTPW;
 
+/// <summary>Camera rotation of the Rotation option (UITEXT 350-352).</summary>
+[JsonConverter( typeof( JsonStringEnumConverter ) )]
+public enum RotationMode { Smooth, Ninety }
+
+/// <summary>Camera scrolling of the Scroll option (UITEXT 353-355).</summary>
+[JsonConverter( typeof( JsonStringEnumConverter ) )]
+public enum ScrollMode { Pushscroll, RightButton }
+
 /// <summary>
 /// Player options from the original Game Options screen that have no home in the existing
-/// configuration: volumes (0–10 steps, the original sliders' resolution is unknown) and popup help
-/// (display options belong to <see cref="IDisplaySettings"/>). Stored as JSON next to the
-/// sandbox save (<c>save/opentpw-options.json</c>); audio code reads the volumes from here.
+/// configuration: volumes (0-10 steps, the original sliders' resolution is unknown) with their mute
+/// toggles, and the gameplay switches (display options belong to <see cref="IDisplaySettings"/>,
+/// the graphics preset to <see cref="IGraphicsSettings"/>). Stored as JSON next to the sandbox save
+/// (<c>save/opentpw-options.json</c>); files written by older versions lack the newer fields and
+/// get their defaults.
+/// Consumed today: <see cref="MovieVolume"/>/<see cref="MovieOn"/> (start-up movies) and
+/// <see cref="PopupHelp"/> (front end and HUD). STORED ONLY, with no effect yet: the sound effects,
+/// music and speech volumes and switches (no game audio mixes them), <see cref="Advisor"/> (the advisor
+/// only speaks from the --advisor-say debug flag; there is no in-game advisor to silence),
+/// <see cref="Tutorial"/>, <see cref="Confirmations"/>, <see cref="RmbCancel"/>, <see cref="Rotation"/>
+/// and <see cref="Scroll"/> (the camera and tools do not read them). They are kept so the options screen
+/// round-trips the original settings; each consumer must start reading them when its feature exists.
 /// </summary>
 public sealed class GameOptions
 {
@@ -19,11 +37,54 @@ public sealed class GameOptions
 	public int SpeechVolume { get; set; } = 8;
 	public int MovieVolume { get; set; } = 8;
 	public bool PopupHelp { get; set; } = true;
+	/// <summary>Mute toggles next to the four volume sliders; off means silent whatever the volume.</summary>
+	public bool SoundEffectsOn { get; set; } = true;
+	public bool MusicOn { get; set; } = true;
+	public bool SpeechOn { get; set; } = true;
+	public bool MovieOn { get; set; } = true;
+	// [APPROX:UI-030] right-column defaults: all on, 90 degs rotation (as in the supplied capture), pushscroll
+	public bool Advisor { get; set; } = true;
+	public bool Tutorial { get; set; } = true;
+	public bool Confirmations { get; set; } = true;
+	public bool RmbCancel { get; set; } = true;
+	public RotationMode Rotation { get; set; } = RotationMode.Ninety;
+	public ScrollMode Scroll { get; set; } = ScrollMode.Pushscroll;
 
 	public static GameOptions Current { get; set; } = new();
 
-	/// <summary>Volume as a 0–1 gain.</summary>
+	/// <summary>Volume as a 0-1 gain.</summary>
 	public static float Gain( int volume ) => Math.Clamp( volume, 0, MaximumVolume ) / (float)MaximumVolume;
+
+	/// <summary>Volume as a 0-1 gain; 0 while the matching sound is switched off.</summary>
+	public static float Gain( int volume, bool on ) => on ? Gain( volume ) : 0;
+
+	[JsonIgnore] public float SoundEffectsGain => Gain( SoundEffectsVolume, SoundEffectsOn );
+	[JsonIgnore] public float MusicGain => Gain( MusicVolume, MusicOn );
+	[JsonIgnore] public float SpeechGain => Gain( SpeechVolume, SpeechOn );
+	[JsonIgnore] public float MovieGain => Gain( MovieVolume, MovieOn );
+
+	/// <summary>An independent copy (the options screen restores it on Cancel).</summary>
+	public GameOptions Clone() => (GameOptions)MemberwiseClone();
+
+	/// <summary>Overwrites every field with <paramref name="other"/>'s.</summary>
+	public void CopyFrom( GameOptions other )
+	{
+		SoundEffectsVolume = other.SoundEffectsVolume;
+		MusicVolume = other.MusicVolume;
+		SpeechVolume = other.SpeechVolume;
+		MovieVolume = other.MovieVolume;
+		PopupHelp = other.PopupHelp;
+		SoundEffectsOn = other.SoundEffectsOn;
+		MusicOn = other.MusicOn;
+		SpeechOn = other.SpeechOn;
+		MovieOn = other.MovieOn;
+		Advisor = other.Advisor;
+		Tutorial = other.Tutorial;
+		Confirmations = other.Confirmations;
+		RmbCancel = other.RmbCancel;
+		Rotation = other.Rotation;
+		Scroll = other.Scroll;
+	}
 
 	public static GameOptions Load( string path )
 	{

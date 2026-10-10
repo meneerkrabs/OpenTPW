@@ -172,7 +172,10 @@ the same seed as well.
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0x0D8B481BB19391DC`, schema 2);
+  (`0xBCAB6C260DA58A4E`, schema 2; the hashed fields are unchanged since
+  `0x0D8B481BB19391DC`, but upstream 1198a93 traced staff candidate grades to
+  the binary and dropped the `ChanceToGetGreat` draw, so the economy stream's
+  draws and the run changed);
 - the default seed keeps the previous stream seeds; per-park attraction ids;
   unseeded scripts follow their world stream; `World` save section round trip
   and older saves;

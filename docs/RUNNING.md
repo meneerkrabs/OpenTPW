@@ -132,7 +132,19 @@ See BF4-FONTS.md for supported encodings, limits and private fixture evidence.
 
 Private format tests use `OPENTPW_GAME_PATH`. MTR fixtures exist only on the
 ISO; extract its `*/Meshes/*/*.mtr` files to a folder outside git and set
-`OPENTPW_MTR_PATH` to it to run the MTR fixture tests (see MTR.md).
+`OPENTPW_MTR_PATH` to it to run the MTR fixture tests (see MTR.md). Theme Park Inc
+texture tests use `OPENTPW_TPI_PATH` (a Theme Park Inc installation or its `Data`
+folder, read in place; see FSH.md).
+
+## Read-only Theme Park Inc texture inspection
+
+```sh
+dotnet source/OpenTPW/bin/Debug/net10.0/OpenTPW.dll --inspect-fsh '/path/to/TPI/Data/ui.wad!stexture/tb_camera.fsh'
+```
+
+Takes a loose `.fsh` path or `archive.wad!member/path`. Prints the image size,
+codes, palette and decoded RGBA hash; decoding errors exit nonzero. Theme Park Inc
+is not playable; see FSH.md.
 
 ## Read-only original container inspection
 

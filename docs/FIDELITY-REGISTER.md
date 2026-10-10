@@ -14,9 +14,9 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **138 unresolved unique APPROX IDs**, 154 APPROX occurrences, 67 EXT occurrences, 67 DATA occurrences and 46 BIN occurrences.
+Current inventory: **140 unresolved unique APPROX IDs**, 156 APPROX occurrences, 67 EXT occurrences, 67 DATA occurrences and 46 BIN occurrences.
 
-Of these, 132 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
+Of these, 134 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
 CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.
 
@@ -26,7 +26,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | --- | ---: | ---: |
 | ADVISOR | 14 | 15 |
 | AUDIO | 5 | 5 |
-| COMPAT | 13 | 14 |
+| COMPAT | 15 | 16 |
 | ECON | 36 | 36 |
 | ONLINE | 6 | 6 |
 | RIDES | 26 | 26 |
@@ -68,6 +68,8 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | COMPAT-011 | Original-fidelity area (scope unadjudicated) | Localization | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:25` |
 | COMPAT-012 | Original-fidelity area (scope unadjudicated) | Text input | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:26` |
 | COMPAT-013 | Original-fidelity area (scope unadjudicated) | Graphics presets | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:27` |
+| COMPAT-014 | Original-fidelity area (scope unadjudicated) | Theme Park Inc textures | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:28` |
+| COMPAT-015 | Original-fidelity area (scope unadjudicated) | Theme Park Inc textures | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:29` |
 | ECON-001 | Original-fidelity area (scope unadjudicated) | OpenTPW's fixed 60 Hz clock is sampled into 248 ms turns (14.88 ticks per turn), without the original's catch-up cap and scheduler phases | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:12` |
 | ECON-002 | Original-fidelity area (scope unadjudicated) | the Mac OS date conversion (LongSecondsToDate, reached through 0x101C5C4C) uses the default Gregorian calendar | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:13` |
 | ECON-004 | Original-fidelity area (scope unadjudicated) | Fast x2 and Fastest x4 speeds (only pause is evidenced) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:14` |
@@ -213,6 +215,8 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | COMPAT-011 | `source/OpenTPW.Files/Public/LocalizedStringTable.cs:7` | [APPROX:COMPAT-011] the fallback order is an OpenTPW choice — evidence needed: original behaviour |
 | COMPAT-012 | `source/OpenTPW.Files/Formats/String/BFUMReader.cs:106` | they are dropped ([APPROX:COMPAT-012] — evidence needed: binary text-input handling); they are |
 | COMPAT-013 | `source/OpenTPW/Compat/GraphicsSettings.cs:151` | [APPROX:COMPAT-013] the processor clock is taken as 450 MHz or faster, since .NET cannot read it portably — evidence needed: none for any machine that runs OpenTPW (all exceed 450 MHz) |
+| COMPAT-014 | `source/OpenTPW.Files/Public/FshFile.cs:240` | [APPROX:COMPAT-014] No alpha is stored, so every entry is opaque; no colour key is applied. |
+| COMPAT-015 | `source/OpenTPW.Files/Public/FshFile.cs:253` | [APPROX:COMPAT-015] A1R5G5B5 with bit 15 as alpha; one corpus file, every entry has bit 15 set. |
 | ECON-001 | `source/OpenTPW/Economy/ParkCalendar.cs:38` | [APPROX:ECON-001] OpenTPW's fixed 60 Hz clock is sampled into 248 ms turns (14.88 ticks per turn), without the original's catch-up cap and scheduler phases — evidence needed: runtime turn timing under load and speed changes |
 | ECON-002 | `source/OpenTPW/Economy/ParkCalendar.cs:59` | [APPROX:ECON-002] the Mac OS date conversion (LongSecondsToDate, reached through 0x101C5C4C) uses the default Gregorian calendar — evidence needed: the script system of an original run |
 | ECON-004 | `source/OpenTPW/Economy/ParkCalendar.cs:11` | [APPROX:ECON-004] Fast x2 and Fastest x4 speeds (only pause is evidenced) — evidence needed: original speed controls, if any |
@@ -382,7 +386,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | autorun | `source/OpenTPW/Client/Autorun/AutorunLauncher.cs:5` | [EXT:autorun] It needs the original &lt;c&gt;Autorun&lt;/c&gt; folder (&lt;c&gt;general.tre&lt;/c&gt; and the language archives) in the game |
 | autorun | `source/OpenTPW/Client/Autorun/AutorunScreen.cs:14` | with the operating system's viewer and Exit quits. [EXT:autorun] (docs/AUTORUN.md) |
 | autorun | `source/OpenTPW/Client/Autorun/AutorunView.cs:19` | and clicks. [EXT:autorun] OpenTPW reproduces the CD's autorun dialog as an optional start screen. |
-| autorun | `source/OpenTPW/Client/Game.cs:193` | [EXT:autorun] The CD's launcher window comes first when its Autorun folder is available (docs/AUTORUN.md). |
+| autorun | `source/OpenTPW/Client/Game.cs:205` | [EXT:autorun] The CD's launcher window comes first when its Autorun folder is available (docs/AUTORUN.md). |
 | bonus-content | `source/OpenTPW/Client/Setup/BonusContent.cs:14` | [EXT:bonus-content] Setup-managed copy of the official bonus WADs; the original game only had the CD and install folders |
 | developer-prototype | `source/OpenTPW/Economy/ParkEconomyRuntime.cs:46` | [EXT:developer-prototype] the developer prototype ride is registered uncharged (no original counterpart) |
 | developer-prototype | `source/OpenTPW/World/Level.Objects.cs:170` | [EXT:developer-prototype] Sandbox Totem blocks cells whose centres lie within its 6×8-unit model box (no original counterpart) |

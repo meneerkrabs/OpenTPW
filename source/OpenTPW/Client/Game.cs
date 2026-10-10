@@ -22,6 +22,18 @@ internal static class Game
 			Console.WriteLine( "Read-only CPU font decoding: nibble samples 0–15; game UI integration and original visual fidelity remain unverified." );
 			return;
 		}
+		var fshIndex = Array.IndexOf( args, "--inspect-fsh" );
+		if ( fshIndex >= 0 )
+		{
+			if ( fshIndex + 1 >= args.Length || args[fshIndex + 1].StartsWith( "--" ) )
+				throw new ArgumentException( "--inspect-fsh requires a local .fsh path or archive.wad!member/path.fsh (docs/FSH.md)." );
+			var fsh = new FshFile( new MemoryStream( ReadFileOrWadMember( args[fshIndex + 1] ) ) );
+			Console.WriteLine( $"SHPI: id {fsh.Id}; {fsh.Images.Count} image(s)." );
+			foreach ( var image in fsh.Images )
+				Console.WriteLine( $"Image '{image.Tag}' name '{image.Name}': {image.Width}x{image.Height}, code 0x{(image.Compressed ? 0xFB : 0x7B):X2}, palette 0x{(byte)image.PaletteFormat:X2} {image.PaletteFormat} with {image.PaletteEntries} entries; RGBA SHA-256 {Convert.ToHexString( System.Security.Cryptography.SHA256.HashData( image.Rgba ) ).ToLowerInvariant()}." );
+			Console.WriteLine( "Read-only CPU decoding of Theme Park Inc textures: the 0x24 palette is decoded opaque (approximation COMPAT-014); no comparison with the original game's rendering." );
+			return;
+		}
 		var ps2Index = Array.IndexOf( args, "--export-ps2" );
 		if ( ps2Index >= 0 )
 		{
@@ -526,5 +538,18 @@ internal static class Game
 		var advisor = new Advisor();
 		advisor.Say( clip, GameLanguage.IsSelected ? GameLanguage.Current : null );
 		return advisor;
+	}
+
+	/// <summary>Reads a loose file, or a member of a WAD archive given as <c>archive.wad!member/path</c> (case-insensitive member path).</summary>
+	private static byte[] ReadFileOrWadMember( string path )
+	{
+		var separator = path.IndexOf( ".wad!", StringComparison.OrdinalIgnoreCase );
+		if ( separator < 0 )
+			return File.ReadAllBytes( path );
+		using var archive = new WadArchive( path[..(separator + 4)] );
+		ArchiveItem? item = archive.Root;
+		foreach ( var part in path[(separator + 5)..].Split( '/', '\\' ) )
+			item = (item as ArchiveDirectory)?.Children.FirstOrDefault( child => string.Equals( child.Name, part, StringComparison.OrdinalIgnoreCase ) );
+		return (item as WadArchiveFile)?.GetData() ?? throw new FileNotFoundException( $"No member '{path[(separator + 5)..]}' in {path[..(separator + 4)]}." );
 	}
 }

@@ -64,6 +64,7 @@ remain incomplete. Neither symbol certifies every variant or original-runtime pa
 | Lip Sync ([.LIP](https://opentpw.gu3.me/formats/lips.html)) | ✅ | Mark lists parse; signed conversion, talking toggles, loaded-LIP start state and random mouth selection are traced to the Mac binary. The bounded original-clock helper is tested; the manual SDL presentation still uses its own timeline ([lip sync](docs/LIPS.md), [binary trace](docs/reverse/APPROX-TRACE.md)). |
 | Banner mesh companions ([.MTR](https://opentpw.gu3.me/formats/mtr.html)) | ⚠️ | Selected topology and matrices decode; original runtime purpose remains unknown ([companions](docs/MTR.md)). |
 | Video ([.TQI/.TGQ](https://opentpw.gu3.me/formats/tqi.html)) | ⚠️ | All nine movies decode and stream via `--play-movie`; audio is bit-exact, video remains close but not bit-exact ([movies](docs/TGQ-MOVIES.md)). |
+| Theme Park Inc textures (.FSH, EA `SHPI`) | ⚠️ | All 7,283 Theme Park Inc `.fsh` files/WAD members decode to RGBA (`--inspect-fsh`); nothing uses them in the game, Theme Park Inc is not playable, and opaque 24-bit palettes are an approximation ([FSH](docs/FSH.md)). |
 
 ### Documentation
 

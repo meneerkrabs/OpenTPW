@@ -14,7 +14,7 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **184 unresolved unique APPROX IDs**, 202 APPROX occurrences, 85 EXT occurrences, 76 DATA occurrences and 140 BIN occurrences.
+Current inventory: **184 unresolved unique APPROX IDs**, 201 APPROX occurrences, 85 EXT occurrences, 76 DATA occurrences and 141 BIN occurrences.
 
 Of these, 178 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
@@ -34,7 +34,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | PATH | 13 | 14 |
 | QUEUE | 19 | 19 |
 | RIDES | 25 | 25 |
-| UI | 39 | 54 |
+| UI | 39 | 53 |
 
 ## Approximation declarations
 
@@ -206,7 +206,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-021 | Original-fidelity area (scope unadjudicated) | bank balance text at the Mac table rectangle as is (the original repositions it from font extents and drawable size); money grouped with ',' digits | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:30` |
 | UI-022 | Original-fidelity area (scope unadjudicated) | speed control (pause, ×1, ×2, ×4) bottom-right; faster speeds only speed up the economy clock, not rides/guests | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:31` |
 | UI-023 | Original-fidelity area (scope unadjudicated) | test-only stub calendar (2 s/day); the game shows the economy clock (see ECON tags) | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:32` |
-| UI-024 | Original-fidelity area (scope unadjudicated) | layout inside the build and info arms (category buttons, title, three-slot pages/arrows sorted by Info.Id, adaptive preview size to fit translated names/prices, stat rows, door/erase buttons) | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:33` |
+| UI-024 | Original-fidelity area (scope unadjudicated) | layout inside the build and info arms (category buttons, title, three-slot pages/arrows, unresearched items listed and sorted under their own names where the original uses UITEXT 137, adaptive preview size to fit translated names/prices, stat rows, door/erase buttons) | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:33` |
 | UI-025 | Original-fidelity area (scope unadjudicated) | message area keeps up to 3 messages for 8 s in the f_tag frame | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:34` |
 | UI-026 | Original-fidelity area (scope unadjudicated) | build icons: CPU orthographic projection of the preview model (P&lt;name&gt;.MD2, else the main model) with 30° tilt, 0.8 rad/s turn, painter sorting | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:35` |
 | UI-027 | Original-fidelity area (scope unadjudicated) | a park click selects the original object occupying its grid cell | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:36` |
@@ -252,7 +252,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | AUDIO-001 | `source/OpenTPW/Audio/AudioMixer.cs:194` | [APPROX:AUDIO-001] the second user volume the original ducks is the effects channel — evidence needed: the names of the TbSysCommand volume commands at 0x100BB18C |
 | AUDIO-002 | `source/OpenTPW/Audio/SoundEvents.cs:66` | [APPROX:AUDIO-002] banks resolve to &lt;map folder's parent&gt;/&lt;name&gt;HD.sdt, then to global/&lt;name&gt;HD.sdt — evidence needed: TbMapStreamer::BankDoesNotExist (0x10015234) and the quality suffix rule |
 | AUDIO-003 | `source/OpenTPW/Audio/SoundEvents.cs:207` | [APPROX:AUDIO-003] pitch, delay, 3D position and reverb of a sound are not applied — evidence needed: TbSoundSampleInfo pitch units and the placeholder 3D update |
-| AUDIO-004 | `source/OpenTPW/Hud/ParkHud.cs:515` | [APPROX:AUDIO-004] the 0xBD modifier (flag 0x10 from 0x1017F618) is not mapped to a key, so the view always plays 0x1F — evidence needed: the input flag behind 0x1017F618 |
+| AUDIO-004 | `source/OpenTPW/Hud/ParkHud.cs:518` | [APPROX:AUDIO-004] the 0xBD modifier (flag 0x10 from 0x1017F618) is not mapped to a key, so the view always plays 0x1F — evidence needed: the input flag behind 0x1017F618 |
 | AUDIO-005 | `source/OpenTPW/Audio/SoundEvents.cs:320` | [APPROX:AUDIO-005] the next segment is chosen (with the parameter at that moment) when the current one starts, so it can be decoded in time — evidence needed: when CPlaceHolderSentence::SoundCallback (sound_shared 0x1001A1F0) runs relative to the end of a sample |
 | COMPAT-001 | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:19` | [APPROX:COMPAT-001] Legacy 512x256 canvas; native DIB/mask and final 128x128 destinations require integration and platform pixel verification. |
 | COMPAT-002 | `source/OpenTPW.Files/Formats/Font/SignTextLayout.cs:81` | [APPROX:COMPAT-002] lfWidth is applied with the Win32 rule (average character width = lfWidth) and fractional advances; the Mac GDI layer's rounding is not verified — evidence needed: long-name captures |
@@ -319,7 +319,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ONLINE-004 | `source/OpenTPW.Online/Chat/ChatCommands.cs:42` | [APPROX:ONLINE-004] 111-113 are all "Your buddy " (English suffix strings are empty); online/offline/removed |
 | ONLINE-005 | `source/OpenTPW.Server/ChatHub.cs:24` | [APPROX:ONLINE-005] Command semantics are inferred from the command words, response strings and |
 | ONLINE-006 | `source/OpenTPW.Server/ChatHub.cs:402` | [APPROX:ONLINE-006] A visitor inside a park must leave it first (CHAT_COMMANDS 127) — evidence needed. |
-| PATH-001 | `source/OpenTPW/Hud/ParkHud.cs:583` | [APPROX:PATH-001] ghosts are flat markers at the cell centres with the line's cost beside the cursor (the original draws ghost path pieces, LayLine mode \| 0x100) — evidence needed: captures of the original path tool |
+| PATH-001 | `source/OpenTPW/Hud/ParkHud.cs:586` | [APPROX:PATH-001] ghosts are flat markers at the cell centres with the line's cost beside the cursor (the original draws ghost path pieces, LayLine mode \| 0x100) — evidence needed: captures of the original path tool |
 | PATH-001 | `source/OpenTPW/World/Level.Objects.cs:121` | [APPROX:PATH-001] a left click on an empty owned cell or on a path cell enters mode 1 with that cell as the start; the click handler that calls SetMode(1) is not traced and no menu button exists — evidence needed: the caller of SetMode 0x1007B320 with mode 1 |
 | PATH-002 | `source/OpenTPW/World/ParkPathBuilder.cs:322` | [APPROX:PATH-002] Backspace undo removes the last segment's new cells and undoes its counter bumps, without a refund (only the help text 443 and the vertex stack are traced) — evidence needed: the BACKSPACE handler of the path tool |
 | PATH-003 | `source/OpenTPW/World/CellBuildTool.cs:109` | [APPROX:PATH-003] a line whose last cell was already a path or queue cell ends the tool (SetCell raises data:0x84b34 there; its consumer is not traced, the help text 443 says such a click completes the path) — evidence needed: the reader of data 0x84b34 |
@@ -330,9 +330,9 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | PATH-008 | `source/OpenTPW/World/ParkPathBuilder.cs:159` | [APPROX:PATH-008] path over a queue end (validator code 8) is refused like every other queue cell — evidence needed: the consumer of the validator's return code 8 |
 | PATH-009 | `source/OpenTPW/World/ParkPathBuilder.cs:86` | [APPROX:PATH-009] free building is taken as "no park economy"; the free-build byte data:0x7de2d is a short-lived park-view flag (set by the hover routine in tool mode 4 at 0x6f5f4 and by the click handler at 0x71330 and in mode 59 at 0x71cb8, cleared at 0x70ca4, 0x71c94, 0x722ec), not a sandbox switch — evidence needed: what tool modes 4 and 59 are, other writers of data 0x7de2d, and game+36 |
 | PATH-010 | `source/OpenTPW/World/ParkPathBuilder.cs:255` | [APPROX:PATH-010] path spending is posted to OtherCosts (the original adds Spend to total costs, game+0x1f5a0; its ledger row is not identified) — evidence needed: the finance screen row that shows path spending |
-| PATH-011 | `source/OpenTPW/Hud/ParkHud.cs:293` | [APPROX:PATH-011] Escape/Back inside the path or queue tool ends the tool without writing; only a Back outside it opens the pause menu (PATH-plan §9.4 cancel; the original's key handler for the tool is not traced, UI-012) — evidence needed: the original's Escape handling in tool modes 1 and 3 |
+| PATH-011 | `source/OpenTPW/Hud/ParkHud.cs:296` | [APPROX:PATH-011] Escape/Back inside the path or queue tool ends the tool without writing; only a Back outside it opens the pause menu (PATH-plan §9.4 cancel; the original's key handler for the tool is not traced, UI-012) — evidence needed: the original's Escape handling in tool modes 1 and 3 |
 | PATH-012 | `source/OpenTPW/World/CellBuildTool.cs:108` | [APPROX:PATH-012] a line refused part-way ends the tool (the flag read at 0x7123c is the result of the ghost-clear LayLine(0x81) at 0x71164, not of the commit LayLine at 0x710c0, so ending on the commit's refusal is not traced) — evidence needed: what LayLine(0x81) returns after a refused commit |
-| PATH-013 | `source/OpenTPW/Hud/ParkHud.cs:547` | [APPROX:PATH-013] while the pause menu is open the tool takes no clicks: this returns before the commit, and Update reports the pointer as captured (overUi), so Level's park click skips it too; the economy's speed pause does not stop the tool, which keeps its ghost — evidence needed: the original park view's input handling while paused |
+| PATH-013 | `source/OpenTPW/Hud/ParkHud.cs:550` | [APPROX:PATH-013] while the pause menu is open the tool takes no clicks: this returns before the commit, and Update reports the pointer as captured (overUi), so Level's park click skips it too; the economy's speed pause does not stop the tool, which keeps its ghost — evidence needed: the original park view's input handling while paused |
 | QUEUE-001 | `source/OpenTPW/World/Guests/GuestPathGrid.cs:124` | [APPROX:QUEUE-001] the queue link (+13) uses the compass of the connection bits (+12): Directions order (−Y, +X, +Y, −X) is 1, 4, 16, 64 as in SavePathConnections (78 Easymode path cells); for +13 itself this is assumed — evidence needed: the run-time neighbour offset tables (data 0xec52c..0xec5a4, zero in the file) |
 | QUEUE-002 | `source/OpenTPW/World/Guests/RideVisitorBridge.cs:257` | [APPROX:QUEUE-002] neighbours are tried in GuestPathGrid.Directions order; the original pairs run-time offsets with links 16, 1, 64, 4 whose order is not established — evidence needed: the neighbour offset tables at run time |
 | QUEUE-003 | `source/OpenTPW/World/Guests/RideVisitorBridge.cs:270` | [APPROX:QUEUE-003] guests step onto the back of the queue from the first walkable 4-neighbour (Directions order) that is not part of the queue; the original connection test 0xdd744 is not traced — evidence needed: 0xdd744 and the state-10 walk to the back cell |
@@ -400,27 +400,26 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-018 | `source/OpenTPW/Client/GameFlow.cs:309` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
 | UI-018 | `source/OpenTPW/World/Lobby/LobbyScene.cs:14` | [APPROX:UI-018] flying meshes, rain, lightning and island/gate animations are not drawn — evidence needed: binary/capture of the lobby |
 | UI-019 | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:92` | [APPROX:UI-019] fallback position when lobby.txt lacks ISLANDCAMERAPOSITION — evidence needed: none if lobby.txt is complete |
-| UI-021 | `source/OpenTPW/Hud/ParkHud.cs:89` | [DATA:UITEXT.str:448,449] currency prefix; [APPROX:UI-021] ","-grouped digits — evidence needed: locale number format of the original |
-| UI-021 | `source/OpenTPW/Hud/ParkHud.cs:129` | buttons start right below the date box. [APPROX:UI-021] the original resizes/repositions control 47 from the |
+| UI-021 | `source/OpenTPW/Hud/ParkHud.cs:92` | [DATA:UITEXT.str:448,449] currency prefix; [APPROX:UI-021] ","-grouped digits — evidence needed: locale number format of the original |
+| UI-021 | `source/OpenTPW/Hud/ParkHud.cs:132` | buttons start right below the date box. [APPROX:UI-021] the original resizes/repositions control 47 from the |
 | UI-022 | `source/OpenTPW/Hud/HudStubs.cs:47` | [APPROX:UI-022] without an economy only pause stops the rides; faster speeds run at normal speed |
 | UI-022 | `source/OpenTPW/Hud/HudStubs.cs:88` | [APPROX:UI-022] faster speeds only speed up the park clock/economy, not rides or guests — evidence needed: original speed controls |
-| UI-022 | `source/OpenTPW/Hud/ParkHud.cs:143` | [APPROX:UI-022] speed buttons and multipliers — evidence needed: binary game speed options |
+| UI-022 | `source/OpenTPW/Hud/ParkHud.cs:146` | [APPROX:UI-022] speed buttons and multipliers — evidence needed: binary game speed options |
 | UI-023 | `source/OpenTPW/Hud/HudStubs.cs:9` | [APPROX:UI-023] test-only calendar (2 s/day, 30-day months) — not used by the game |
-| UI-024 | `source/OpenTPW/Hud/HudStubs.cs:108` | [APPROX:UI-024] Catalogue pages sort by Info.Id; original build-menu order is not verified. |
-| UI-024 | `source/OpenTPW/Hud/ParkHud.cs:161` | [APPROX:UI-024] layout inside the build arm — evidence needed: capture of the original build arm |
-| UI-024 | `source/OpenTPW/Hud/ParkHud.cs:188` | [APPROX:UI-024] Three-slot pages and arrow positions are OpenTPW layout, not original menu evidence. |
-| UI-024 | `source/OpenTPW/Hud/ParkHud.cs:224` | [APPROX:UI-024] layout inside the info arm; [APPROX:UI-029] b_door down = closed, b_erase = delete — evidence needed: capture of the ride panel |
-| UI-024 | `source/OpenTPW/Hud/ParkHud.cs:694` | [APPROX:UI-024] Keep each translated name and price inside its slot; previews use the remaining height. |
+| UI-024 | `source/OpenTPW/Hud/ParkHud.cs:164` | [APPROX:UI-024] layout inside the build arm — evidence needed: capture of the original build arm |
+| UI-024 | `source/OpenTPW/Hud/ParkHud.cs:191` | [APPROX:UI-024] Three-slot pages and arrow positions are OpenTPW layout, not original menu evidence. |
+| UI-024 | `source/OpenTPW/Hud/ParkHud.cs:227` | [APPROX:UI-024] layout inside the info arm; [APPROX:UI-029] b_door down = closed, b_erase = delete — evidence needed: capture of the ride panel |
+| UI-024 | `source/OpenTPW/Hud/ParkHud.cs:697` | [APPROX:UI-024] Keep each translated name and price inside its slot; previews use the remaining height. |
 | UI-025 | `source/OpenTPW/Hud/ParkHud.cs:30` | [APPROX:UI-025] message area: 3 messages, 8 s — evidence needed: binary/capture of the message system |
-| UI-026 | `source/OpenTPW/Hud/ParkHud.cs:699` | [APPROX:UI-026] icon turn speed 0.8 rad/s — evidence needed: capture of the original build menu |
+| UI-026 | `source/OpenTPW/Hud/ParkHud.cs:702` | [APPROX:UI-026] icon turn speed 0.8 rad/s — evidence needed: capture of the original build menu |
 | UI-026 | `source/OpenTPW/Hud/PreviewIcon.cs:14` | [APPROX:UI-026] orthographic CPU projection, 30° tilt, painter sorting — evidence needed: capture of the original build menu |
-| UI-027 | `source/OpenTPW/Hud/ParkHud.cs:523` | [APPROX:UI-027] Select by occupied grid cell; original cursor picking is not verified. |
-| UI-028 | `source/OpenTPW/Hud/ParkHud.cs:307` | [APPROX:UI-028] authored excitement as a percentage; unknown simulation statistics stay unavailable. |
-| UI-029 | `source/OpenTPW/Hud/ParkHud.cs:224` | [APPROX:UI-024] layout inside the info arm; [APPROX:UI-029] b_door down = closed, b_erase = delete — evidence needed: capture of the ride panel |
+| UI-027 | `source/OpenTPW/Hud/ParkHud.cs:526` | [APPROX:UI-027] Select by occupied grid cell; original cursor picking is not verified. |
+| UI-028 | `source/OpenTPW/Hud/ParkHud.cs:310` | [APPROX:UI-028] authored excitement as a percentage; unknown simulation statistics stay unavailable. |
+| UI-029 | `source/OpenTPW/Hud/ParkHud.cs:227` | [APPROX:UI-024] layout inside the info arm; [APPROX:UI-029] b_door down = closed, b_erase = delete — evidence needed: capture of the ride panel |
 | UI-030 | `source/OpenTPW/UI/Original/Options/GameOptions.cs:33` | [APPROX:UI-030] 0..10 volume steps, default 8; the original copies its volume defaults from fields +0x38..+0x44 of the object at 0x101EC828 (0x10125B7C) — evidence needed: that object's initializer |
 | UI-030 | `source/OpenTPW/UI/Original/Options/GameOptions.cs:45` | [APPROX:UI-030] rotation 90 degs (as in the supplied capture; the defaults set IsometricOn +0x3A to 1, not proven to be this option) |
-| UI-031 | `source/OpenTPW/Hud/ParkHud.cs:377` | [APPROX:UI-031] one placement per menu selection, then the queue tool for Info.HasQueue rides; Level owns purchase/sale — evidence needed: original build-tool continuation |
-| UI-032 | `source/OpenTPW/Hud/ParkHud.cs:703` | [APPROX:UI-032] Wrap translated catalogue names within their slot at the integer text scale. |
+| UI-031 | `source/OpenTPW/Hud/ParkHud.cs:380` | [APPROX:UI-031] one placement per menu selection, then the queue tool for Info.HasQueue rides; Level owns purchase/sale — evidence needed: original build-tool continuation |
+| UI-032 | `source/OpenTPW/Hud/ParkHud.cs:706` | [APPROX:UI-032] Wrap translated catalogue names within their slot at the integer text scale. |
 | UI-032 | `source/OpenTPW/UI/Original/UiWidgets.cs:285` | [APPROX:UI-032] small-font fallback and greedy wrap for long labels — evidence needed: captures of translated original screens |
 | UI-034 | `source/OpenTPW/UI/Original/UiImages.cs:70` | [APPROX:UI-034] a fully opaque texture on a transparent (flag 0x2) slot keys out black with a soft edge — evidence needed: the original's render state for flagged slots |
 | UI-035 | `source/OpenTPW/Client/Movie/IntroPlaylist.cs:34` | Input already held when the sequence begins is ignored until released [APPROX:UI-035], so launching the game |
@@ -430,7 +429,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-039 | `source/OpenTPW/UI/Original/UiWidgets.cs:130` | [APPROX:UI-039] option label size: letter box about 58 % of the label rectangle height (the capture's labels are ~26 of 1536 units for 45-unit rectangles); a label whose widest value does not fit drops alone to the largest size that does — evidence needed: capture of the original option labels in several languages |
 | UI-040 | `source/OpenTPW/Client/Autorun/AutorunView.cs:163` | [APPROX:UI-040] the exact dot phase of GDI's focus rectangle brush is not known; dots are the pixels with even x + y, inverted. |
 | UI-041 | `source/OpenTPW/Client/GameFlow.cs:179` | [APPROX:UI-041] a loaded shipped park is the reference start whatever Game Mode was last chosen; the original takes the mode from the loading player's profile, not the park — evidence needed: player profiles and the Mac park loader 0x11acfc |
-| UI-042 | `source/OpenTPW/Hud/ParkHud.cs:140` | [APPROX:UI-042] the camera button's action (camera views) is not implemented; it is shown disabled |
+| UI-042 | `source/OpenTPW/Hud/ParkHud.cs:143` | [APPROX:UI-042] the camera button's action (camera views) is not implemented; it is shown disabled |
 
 ## Extension sites
 
@@ -500,7 +499,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ps2-data | `source/OpenTPW/Client/Ps2Export.cs:13` | [EXT:ps2-data] viewing aid for the PS2 version's data, not original behaviour |
 | sandbox | `source/OpenTPW/Client/GameFlow.cs:207` | [EXT:sandbox] the generic sandbox (not an original level) gets no automatic advisor either; only original levels raise its game events |
 | strings | `source/OpenTPW/UI/Original/SupplementaryStrings.cs:10` | [EXT:strings] OpenTPW supplementary labels (display/upscaling/language rows and OpenTPW messages), not original data |
-| test-stub | `source/OpenTPW/Hud/HudStubs.cs:131` | [EXT:test-stub] price shown when Totem.sam cannot be read (the economy catalogue price is used when a park economy runs) |
+| test-stub | `source/OpenTPW/Hud/HudStubs.cs:130` | [EXT:test-stub] price shown when Totem.sam cannot be read (the economy catalogue price is used when a park economy runs) |
 | texture-pack | `source/OpenTPW/Client/GameFlow.cs:255` | [EXT:texture-pack] the pack switch belongs to the game loop, not to its loading screen |
 | texture-pack | `source/OpenTPW/Client/GameFlow.cs:324` | [EXT:texture-pack] a running texture switch shows its progress without blocking the game |
 | texture-pack | `source/OpenTPW/Compat/GraphicsSettings.cs:269` | [EXT:texture-pack] Texture choice (docs/TEXTURE-PACKS.md): empty = original textures; &lt;c&gt;enhanced&lt;/c&gt; (the default) = the |
@@ -560,10 +559,10 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | Language/English/ERRORMSG.str | `source/OpenTPW/Online/OnlineStrings.cs:51` | [DATA:Language/English/ERRORMSG.str] |
 | Language/English/UITEXT.str | `source/OpenTPW/Online/OnlineStrings.cs:18` | [DATA:Language/English/UITEXT.str] (the UIStrings enum is off by one from about 206 on; these are verified). |
 | Language/English/swears.txt,alloweds.txt | `source/OpenTPW.Online/Moderation/WordFilter.cs:32` | Decodes an original list. [DATA:Language/English/swears.txt,alloweds.txt] Observed encoding: |
-| Mac main HUD table 0x4ab38:32,47 | `source/OpenTPW/Hud/ParkHud.cs:127` | [DATA:Mac main HUD table 0x4ab38:32,47] date text region (182,1061,383,1103) in black (font slot 3); the cash text |
-| Mac main HUD table 0x4ab38:38-43 | `source/OpenTPW/Hud/ParkHud.cs:134` | [DATA:Mac main HUD table 0x4ab38:38-43] original button rectangles: staggered along the panel's curve, plus the camera button |
-| Rides.sam:Info.WhichUIType | `source/OpenTPW/Hud/HudStubs.cs:151` | [DATA:Rides.sam:Info.WhichUIType] |
-| Rides.sam:UsageInfo.ExcitementLevel | `source/OpenTPW/Hud/HudStubs.cs:148` | [DATA:Totem.sam:UsageInfo.ExcitementLevel] overrides [DATA:Rides.sam:UsageInfo.ExcitementLevel] |
+| Mac main HUD table 0x4ab38:32,47 | `source/OpenTPW/Hud/ParkHud.cs:130` | [DATA:Mac main HUD table 0x4ab38:32,47] date text region (182,1061,383,1103) in black (font slot 3); the cash text |
+| Mac main HUD table 0x4ab38:38-43 | `source/OpenTPW/Hud/ParkHud.cs:137` | [DATA:Mac main HUD table 0x4ab38:38-43] original button rectangles: staggered along the panel's curve, plus the camera button |
+| Rides.sam:Info.WhichUIType | `source/OpenTPW/Hud/HudStubs.cs:150` | [DATA:Rides.sam:Info.WhichUIType] |
+| Rides.sam:UsageInfo.ExcitementLevel | `source/OpenTPW/Hud/HudStubs.cs:147` | [DATA:Totem.sam:UsageInfo.ExcitementLevel] overrides [DATA:Rides.sam:UsageInfo.ExcitementLevel] |
 | Standard.sam:Costs.QueueCell | `source/OpenTPW/World/Level.Objects.cs:200` | [DATA:Standard.sam:Costs.QueueCell] charged per cell when written (ParkEconomy.TrySpendCell, PATH-plan §3.2) |
 | Standard.sam:FixedItemInfo lanes | `source/OpenTPW/Client/M3Gate.cs:297` | [DATA:levels/&lt;theme&gt;/terrain/base.map:InitialPath] [DATA:Standard.sam:FixedItemInfo lanes] |
 | THEMENAMES.str:entries 0..3 | `source/OpenTPW/World/Original/OriginalGateSign.cs:46` | [DATA:THEMENAMES.str:entries 0..3] Lost Kingdom, Halloween World, Wonder Land, Space Zone. |
@@ -571,9 +570,9 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | TPWORLD.ISO and retail install:Data/Movies | `source/OpenTPW.Files/Public/DataOverlay.cs:144` | &lt;summary&gt;[DATA:TPWORLD.ISO and retail install:Data/Movies] the nine shipped movies.&lt;/summary&gt; |
 | Theme Park World Bonus Stuff/Bonus content/levels/*/*/_name_N.wad | `source/OpenTPW/Online/ParkSnapshotBuilder.cs:60` | &lt;summary&gt;[DATA:Theme Park World Bonus Stuff/Bonus content/levels/*/*/_name_N.wad] Bonus archives start with '_'.&lt;/summary&gt; |
 | Totem.sam:Info.Shape | `source/OpenTPW/World/PrototypeRide.cs:74` | [DATA:Totem.sam:Info.Shape] 3×4 cells = 30×40 MD2 units, centred |
-| Totem.sam:Upgrades[0].CostOfUpgrade | `source/OpenTPW/Hud/HudStubs.cs:144` | [DATA:Totem.sam:Upgrades[0].CostOfUpgrade] (FallbackCost only when the file is missing) |
-| Totem.sam:UsageInfo.ExcitementLevel | `source/OpenTPW/Hud/HudStubs.cs:148` | [DATA:Totem.sam:UsageInfo.ExcitementLevel] overrides [DATA:Rides.sam:UsageInfo.ExcitementLevel] |
-| UITEXT.str:448,449 | `source/OpenTPW/Hud/ParkHud.cs:89` | [DATA:UITEXT.str:448,449] currency prefix; [APPROX:UI-021] ","-grouped digits — evidence needed: locale number format of the original |
+| Totem.sam:Upgrades[0].CostOfUpgrade | `source/OpenTPW/Hud/HudStubs.cs:143` | [DATA:Totem.sam:Upgrades[0].CostOfUpgrade] (FallbackCost only when the file is missing) |
+| Totem.sam:UsageInfo.ExcitementLevel | `source/OpenTPW/Hud/HudStubs.cs:147` | [DATA:Totem.sam:UsageInfo.ExcitementLevel] overrides [DATA:Rides.sam:UsageInfo.ExcitementLevel] |
+| UITEXT.str:448,449 | `source/OpenTPW/Hud/ParkHud.cs:92` | [DATA:UITEXT.str:448,449] currency prefix; [APPROX:UI-021] ","-grouped digits — evidence needed: locale number format of the original |
 | global/Speech/lips.wad | `source/OpenTPW/World/Advisor.cs:20` | [DATA:global/Speech/speechHD.SDT] [DATA:global/Speech/lips.wad] |
 | global/Speech/lips.wad:members sp_001–sp_637 | `source/OpenTPW/World/Advisor.cs:27` | [DATA:global/Speech/lips.wad:members sp_001–sp_637] |
 | global/Speech/speechHD.SDT | `source/OpenTPW/World/Advisor.cs:20` | [DATA:global/Speech/speechHD.SDT] [DATA:global/Speech/lips.wad] |
@@ -601,7 +600,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ui.wad:f_chat.MD2,w_map.MD2 bounds | `source/OpenTPW/UI/Original/UiCanvas.cs:25` | [DATA:ui.wad:f_chat.MD2,w_map.MD2 bounds] full-screen UI frames span 2048×1536 |
 | ui.wad:f_screen | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:160` | [DATA:ui.wad:f_screen] the full-screen frame with the tiled wave background |
 | ui.wad:islandlobby.MD2,f_lobbutbg.MD2 root/bounds | `source/OpenTPW/FrontEnd/FrontEndMenu.cs:78` | [DATA:ui.wad:islandlobby.MD2,f_lobbutbg.MD2 root/bounds] authored panel rectangles |
-| ui.wad:mainpanel,gauge,date,panel MD2 roots | `source/OpenTPW/Hud/ParkHud.cs:123` | [DATA:ui.wad:mainpanel,gauge,date,panel MD2 roots] authored HUD rectangles |
+| ui.wad:mainpanel,gauge,date,panel MD2 roots | `source/OpenTPW/Hud/ParkHud.cs:126` | [DATA:ui.wad:mainpanel,gauge,date,panel MD2 roots] authored HUD rectangles |
 
 ## Binary evidence sites
 
@@ -643,12 +642,12 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | STP-PPC:0x10015100 TbMapStreamer::ReadBankDataFromMap | `source/OpenTPW.Files/Formats/Sound/SoundCatalog.cs:143` | [BIN:STP-PPC:0x10015100 TbMapStreamer::ReadBankDataFromMap] 11-byte records (rewritten at load), then per bank a u32 length and the name |
 | STP-PPC:0x10016F4C advisor balance | `source/OpenTPW/World/AdvisorController.cs:85` | [BIN:STP-PPC:0x10016F4C advisor balance] MessageGroups[g] fields at +36/+40/+44 + 12g |
 | STP-PPC:0x10016F4C advisor balance | `source/OpenTPW/World/AdvisorController.cs:92` | [BIN:STP-PPC:0x10016F4C advisor balance] GeneralAdvisor.MinTimeAnyMessage +24, MinTimeSameMessage +28, MinScoreForConsideration +32 |
-| STP-PPC:0x10059F00 mesh instance flag 0x400 | `source/OpenTPW/Hud/HudStubs.cs:109` | [BIN:STP-PPC:0x10059F00 mesh instance flag 0x400] the buy-window preview (0x10162584 -&gt; 0x10139084 -&gt; 0x1005C35C) instances the p&lt;name&gt; preview mesh when it loaded and the object's main mesh otherwise, so objects without a P model show their main model |
+| STP-PPC:0x10059F00 mesh instance flag 0x400 | `source/OpenTPW/Hud/HudStubs.cs:108` | [BIN:STP-PPC:0x10059F00 mesh instance flag 0x400] the buy-window preview (0x10162584 -&gt; 0x10139084 -&gt; 0x1005C35C) instances the p&lt;name&gt; preview mesh when it loaded and the object's main mesh otherwise, so objects without a P model show their main model |
 | STP-PPC:0x1006E228 queue link read | `source/OpenTPW/World/Guests/GuestPathGrid.cs:123` | [BIN:STP-PPC:0x1006E228 queue link read] map cell +13 holds the queue link direction; the values are 1, 4, 16 and 64 |
 | STP-PPC:0x1006F380 path preview | `source/OpenTPW/World/CellBuildTool.cs:72` | [BIN:STP-PPC:0x1006F380 path preview] in mode 1 or 3, snap the cursor and LayLine(mode \| 0x100, start, end); without a start, preview one cell |
 | STP-PPC:0x1006F380 path preview | `source/OpenTPW/World/ParkPathBuilder.cs:95` | [BIN:STP-PPC:0x1006F380 path preview] \|dx\| ≥ \|dy\| keeps X (end.y = start.y), otherwise Y; the commit 0x10070F84 snaps the same way |
 | STP-PPC:0x10070F84 path commit | `source/OpenTPW/World/CellBuildTool.cs:85` | [BIN:STP-PPC:0x10070F84 path commit] push and LayLine(mode, start, end) unless the end equals the start with more than one vertex stored (0x7107c..0x71084 bf eq to 0x71174: then nothing is laid); end the tool (start −1, SetMode(0)) when end == start |
-| STP-PPC:0x1007497C ride placement | `source/OpenTPW/Hud/ParkHud.cs:385` | [BIN:STP-PPC:0x1007497C ride placement] a placed HasQueue ride (type record +64) enters tool mode 3, the queue tool (PATH-plan §8); park clicks lay its queue until Back |
+| STP-PPC:0x1007497C ride placement | `source/OpenTPW/Hud/ParkHud.cs:388` | [BIN:STP-PPC:0x1007497C ride placement] a placed HasQueue ride (type record +64) enters tool mode 3, the queue tool (PATH-plan §8); park clicks lay its queue until Back |
 | STP-PPC:0x1007497C ride placement | `source/OpenTPW/World/Level.Objects.cs:137` | [BIN:STP-PPC:0x1007497C ride placement] a placed HasQueue ride enters tool mode 3, the queue tool (PATH-plan §8); it shares LayLine, the vertex stack and the preview/commit code with the path tool |
 | STP-PPC:0x1007B320 SetMode | `source/OpenTPW/World/CellBuildTool.cs:55` | [BIN:STP-PPC:0x1007B320 SetMode] tool mode 1 = path, 3 = queue; the drag writes the cell type equal to the mode |
 | STP-PPC:0x1007BCF4 vertex push | `source/OpenTPW/World/CellBuildTool.cs:32` | [BIN:STP-PPC:0x1007BCF4 vertex push] the path/queue vertex stack holds up to 1024 points |
@@ -729,13 +728,14 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | STP-PPC:0x10129308 options serializer | `source/OpenTPW/Client/AutomaticAdvisor.cs:110` | [BIN:STP-PPC:0x10129308 options serializer] the object at TOC −0x763C is the options object; its +0x34 is saved as "AdvisorOn" (0x1012653C) |
 | STP-PPC:0x10137600 player save setup | `source/OpenTPW/World/Original/OriginalPark.cs:50` | [BIN:STP-PPC:0x10137600 player save setup] the level's easymode park is copied into a player's saves only for Instant Action players (0x1013741C passes the mode flag) |
 | STP-PPC:0x1013781C player selection | `source/OpenTPW/Client/AutomaticAdvisor.cs:50` | [BIN:STP-PPC:0x1013781C player selection] game type 2 = Instant Action, 0 otherwise (offline) |
-| STP-PPC:0x10137FD0 park view input | `source/OpenTPW/Hud/ParkHud.cs:514` | [BIN:STP-PPC:0x10137FD0 park view input] a button message in the park view plays cat_ui event 0x1F (0xBD when modifier flag 0x10 is set) |
+| STP-PPC:0x10137FD0 park view input | `source/OpenTPW/Hud/ParkHud.cs:517` | [BIN:STP-PPC:0x10137FD0 park view input] a button message in the park view plays cat_ui event 0x1F (0xBD when modifier flag 0x10 is set) |
 | STP-PPC:0x10139C64 park-view hover | `source/OpenTPW/World/CellBuildTool.cs:136` | [BIN:STP-PPC:0x10139C64 park-view hover] the cell under the cursor picks the help line: empty (0x85258) 441, type 1 442, type 3 444; inside the tools 443 and 445 |
 | STP-PPC:0x10139C64 park-view hover | `source/OpenTPW/World/Level.Objects.cs:120` | [BIN:STP-PPC:0x10139C64 park-view hover] empty cell: hover state 2, help 441 "build path"; path (type 1): state 1, help 442 "extend this path"; queue (type 3): help 444 |
 | STP-PPC:0x10154AA0 loans window | `source/OpenTPW/Economy/ParkEconomy.cs:94` | [BIN:STP-PPC:0x10154AA0 loans window] the Available Loans window only opens outside game type 2 (Instant Action) |
 | STP-PPC:0x1015D220 new-player dialog | `source/OpenTPW/Economy/ParkEconomyContracts.cs:7` | [BIN:STP-PPC:0x1015D220 new-player dialog] radio 0x70D "Instant Action" / 0x70E "Full Simulation"; 0x1013741C stores the choice as profile mEasyModeUser and 0x1013781C turns it into game type 2 (Instant Action) or 0 |
 | STP-PPC:0x10165A0C upgrade list | `source/OpenTPW/Economy/ParkEconomy.cs:637` | [BIN:STP-PPC:0x10165A0C upgrade list] game type 2 (Instant Action) lists no upgrades and shows UITEXT 27 instead |
 | STP-PPC:0x10166F1C upgrade purchase | `source/OpenTPW/Economy/ParkEconomy.cs:650` | [BIN:STP-PPC:0x10166F1C upgrade purchase] only the bank balance is checked; the upgrade is queued (0x100DF928) and waits for a mechanic, with or without mechanics on the staff |
+| STP-PPC:0x10178768 list insert | `source/OpenTPW/Hud/ParkHud.cs:82` | [BIN:STP-PPC:0x10178768 list insert] the buy list (504, attribute 0x91 with the sorted-insert bit 0x10) inserts each row before the first row whose name is greater (wcscmp, 0x10178654); its sort word starts at 1 (column 0, the name, ascending), so equal names keep catalogue order |
 | STP-PPC:0x1019B394 node lookup | `source/OpenTPW/World/Advisor.cs:25` | [BIN:STP-PPC:0x1019B394 node lookup] mouth nodes 1–5 (stored in order by 0x10006264) are found by case-insensitive name "mouth - normal", "aah", "eee", "ooh", "sss" through the jump table at data 0x518B4; node 1 is shown while silent |
 | STP-PPC:0x101C0F40 daily start-up movie | `source/OpenTPW/Client/Movie/IntroPlaylist.cs:6` | month modulo 8 ([BIN:STP-PPC:0x101C0F40 daily start-up movie], docs/TGQ-MOVIES.md). |
 | STP-PPC:0x101C2108 main loop | `source/OpenTPW/Client/AutomaticAdvisor.cs:64` | [BIN:STP-PPC:0x101C2108 main loop] CMsgEvent 10 (history reset of variant, played flag and slaps) followed by CMsgEvent 0 at 0x101C2174 |

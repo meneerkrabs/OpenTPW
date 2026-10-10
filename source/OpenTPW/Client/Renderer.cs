@@ -373,7 +373,21 @@ public partial class Renderer : IDisplaySettings
 		Changed?.Invoke();
 	}
 
+	/// <summary>Runs frames until the window closes, then saves changed display settings.</summary>
 	public void Run()
+	{
+		Start();
+		while ( Frame() )
+		{
+		}
+		Stop();
+	}
+
+	/// <summary>
+	/// Creates the per-run pipeline state. <see cref="Run"/> calls it; a host that drives frames
+	/// itself (the browser, from requestAnimationFrame: docs/WEB.md) calls it once before <see cref="Frame"/>.
+	/// </summary>
+	public void Start()
 	{
 		var layoutDescription = new ResourceLayoutDescription(
 			new ResourceLayoutElementDescription( "g_tInput", ResourceKind.TextureReadOnly, ShaderStages.Fragment ),
@@ -400,14 +414,19 @@ public partial class Renderer : IDisplaySettings
 
 		_blitPipeline = Device.ResourceFactory.CreateGraphicsPipeline( pipelineDescription );
 		displayDirty = true;
-
-		while ( Window.SdlWindow.Exists )
-		{
-			Update();
-		}
-
-		SaveDisplaySettings();
 	}
+
+	/// <summary>Updates and draws one frame; false once the window has closed.</summary>
+	public bool Frame()
+	{
+		if ( !Window.SdlWindow.Exists )
+			return false;
+		Update();
+		return Window.SdlWindow.Exists;
+	}
+
+	/// <summary>Ends a run started with <see cref="Start"/>.</summary>
+	public void Stop() => SaveDisplaySettings();
 
 	/// <summary>Saves the confirmed settings (a pending, unconfirmed change saves what it would revert to).</summary>
 	private void SaveDisplaySettings()
@@ -506,7 +525,9 @@ public partial class Renderer : IDisplaySettings
 			ApplyDisplayChanges();
 		if ( Scaling.IsPaused || _blitResourceSet == null )
 		{
-			Thread.Sleep( 16 );
+			// The browser paces frames itself and cannot block its only thread.
+			if ( !OperatingSystem.IsBrowser() )
+				Thread.Sleep( 16 );
 			return;
 		}
 

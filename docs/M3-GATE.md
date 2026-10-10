@@ -45,7 +45,8 @@ seconds per turn; sampling into 60 Hz ticks is `APPROX:ECON-001`) turns
 108,000 ticks into 7,258 park turns, about 315 park-clock days (Year 1, month 11,
 day 11). Thirty park-clock minutes would be less than one turn (about 15 ticks),
 which cannot exercise anything. Reading "in-game minutes" as simulation minutes is
-**[APPROX:GATE-001]**.
+**[APPROX:GATE-001]**. The gate's other registered assumptions are GATE-004 and GATE-005
+(queue walking, below).
 
 ## Scripted park
 
@@ -237,10 +238,17 @@ rules only, and the row lists them with the reason.
 
 Reported: τ_max = CAP·H + R + 1 − (DUR + 1 s)/T = **277 turns = 68.696 s** (QUEUE-plan
 §9b form) and W_max = W(Qmax − 1) = **8,021 turns = 1,989.208 s**. The τ the run implies
-(`τ_measured`) is evidence, not a threshold. No term of the bound rests on OpenTPW's walk
-model any more, so it carries no approximation tag. The GATE-003 tag (τ = 0) is gone, and
-no walk tag replaces it (WALK-plan §12.2). `HeadNotReadyBound` still uses OpenTPW's walk
-speed: it is a consistency check on the runtime's own timing until WALK-I. If no wait is
+(`τ_measured`) is evidence, not a threshold. The walk terms w and w₂ come from WALK-plan
+§12 (the original's speed floor), and the GATE-003 tag (τ = 0) is gone. Two walk-related
+assumptions remain and are registered (review GATE-V4 B1/B2):
+**[APPROX:GATE-004]** `HeadNotReadyBound` (194 turns; 50 for one-cell queues) walks its
+N + 4 cells at OpenTPW's walk speed × 0.7, which has no original source (the original has
+no 0.7 factor and walks as slowly as 0.12 cell per turn), so it is not a derived bound but
+a consistency check on the runtime's own timing until WALK-I. **[APPROX:GATE-005]** H
+assumes a new head already stands at its slot, so W(p) for small p and the head check
+W(0) = H + R + 1 leave out the walk from the join cell into an empty or short queue (up to
+24 cells; the baseline's longest head-to-boarding, 108 turns, is exactly that case). Both
+checks are therefore stricter than the derivation supports and can only fail a run. If no wait is
 judged (no traced BOUNCE ride, every wait excluded, or W3/W4 failing), the row is
 **unresolved**.
 
@@ -325,6 +333,8 @@ apart from `wallSeconds`.
 | rides.scripts-run | PASS | 0 faults, 0 halted ticks (Belly Bounce, Drinks Shop, Small Toilet waiting; Bus, Gates, Lights running) |
 | staff.work | PASS | 10 wage payments ($2,100); mechanic: 17 repairs for 17 worn/broken events, longest 14.6 s within the 61-turn window, 0 pending; handyman: 582.5 litter items dropped, 582.5 cleaned, 0 missed hour updates |
 | determinism.same-seed | PASS | raw guest hash 67B41EEA7B70FD68 in both in-process runs; attraction ids 4 5 6 in both; gate hash F1666E8C69E092BE; 30 minute hashes in each run, no divergent minute |
+
+Baseline numbers above were measured on 33f8584 (the gate stack). On main, which traces ride wear and staff grades, the same run hires a grade-3 handyman ($2,300 wages), makes 4 repairs instead of 17, and has gate hash `AFDCA347E564786E`; every verdict is the same (review GATE-V4 S3).
 
 Totals: 16 pass, 0 fail, 0 unresolved; **exit code 0**. The evaluator accepts M3 under
 the approximations listed below. With `--no-determinism`: 15 pass, 0 fail, 1 unresolved,

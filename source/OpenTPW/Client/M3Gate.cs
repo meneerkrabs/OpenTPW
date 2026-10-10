@@ -1176,6 +1176,7 @@ internal sealed class M3GateRun
 	/// lateral ±0.05) and up to one tick of lost step per waypoint: under N + 4 cells for
 	/// <paramref name="queueCells"/> = N ≥ 1. The older 2 × max(1, N) + 2 cells is kept where it is smaller (N ≤ 1).
 	/// </summary>
+	// [APPROX:GATE-004] the walk term uses OpenTPW's walk speed x 0.7, not a traced original speed — evidence needed: a traced per-cell walk term for queue walking (WALK-plan section 11.7, WALK-I)
 	internal static (long Turns, string Derivation) HeadNotReadyBound( int queueCells, float walkCellsPerSecond )
 	{
 		const float TiredWalkFactor = 0.7f;
@@ -1187,7 +1188,7 @@ internal sealed class M3GateRun
 		// need another NeedsWindowTurns, and the guest is called first.
 		const int Interludes = 2;
 		var turns = walkTurns + moveUpTurns + Interludes * (GuestSimulation.InterludeTurns + 1) + 1;
-		return (turns, FormattableString.Invariant( $"walk {cells} cells at {walkCellsPerSecond} x {TiredWalkFactor} cells/s = {walkTurns} turns + move-up wait {moveUpTurns} + {Interludes} interludes x {GuestSimulation.InterludeTurns + 1} + 1 update order = {turns} turns" ));
+		return (turns, FormattableString.Invariant( $"[APPROX:GATE-004] walk {cells} cells at {walkCellsPerSecond} x {TiredWalkFactor} cells/s = {walkTurns} turns + move-up wait {moveUpTurns} + {Interludes} interludes x {GuestSimulation.InterludeTurns + 1} + 1 update order = {turns} turns" ));
 	}
 
 	/// <summary>The traced boarding latency of one BOUNCE ride (docs/reverse/BOARD-plan.md §7.1, §8), in park turns.</summary>
@@ -1266,6 +1267,7 @@ internal sealed class M3GateRun
 		1 + ((long)(GuestSimulation.MoveDelayFactor * GuestSimulation.MoveUpWaitGap) + 1) + (GuestSimulation.InterludeTurns + 1) + 1 + 1 + periodTurns;
 
 	/// <summary>BOARD-plan §7.2: a guest that joined at 0-based position p boards within (p + 1)·H + (⌊p / CAP⌋ + 1)·R + 1 turns.</summary>
+	// [APPROX:GATE-005] H assumes the new head already stands at its slot; the join-cell walk into an empty queue is not a term — evidence needed: a traced bound on that walk (WALK-plan section 11.7)
 	internal static long BoardingWaitBound( int position, int capacity, long latencyTurns, long holdTurns ) =>
 		(position + 1L) * latencyTurns + (position / Math.Max( 1, capacity ) + 1L) * holdTurns + 1;
 
@@ -1333,6 +1335,7 @@ internal sealed class M3GateRun
 	/// turn the guest became head and n = 1: the riders on board then free their slots within R, and the boarding takes
 	/// at most H once a slot is free. Turns overlapping an excluded turn, and DUR above 30, are not judged.
 	/// </summary>
+	// [APPROX:GATE-005] W(p) and W(0) leave out the join-cell walk of a guest joining an empty or short queue (see BoardingWaitBound)
 	private void CheckBoardingAges( Placed item, QueueProgress state, int head, Dictionary<int, GuestTrack> tracks, long tick )
 	{
 		var model = state.Boarding!;

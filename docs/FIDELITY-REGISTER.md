@@ -14,9 +14,9 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **183 unresolved unique APPROX IDs**, 201 APPROX occurrences, 85 EXT occurrences, 76 DATA occurrences and 139 BIN occurrences.
+Current inventory: **185 unresolved unique APPROX IDs**, 204 APPROX occurrences, 85 EXT occurrences, 76 DATA occurrences and 139 BIN occurrences.
 
-Of these, 177 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
+Of these, 179 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
 CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.
 
@@ -29,7 +29,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | COMPAT | 15 | 16 |
 | DET | 6 | 6 |
 | ECON | 35 | 35 |
-| GATE | 1 | 1 |
+| GATE | 3 | 4 |
 | ONLINE | 6 | 6 |
 | PATH | 13 | 14 |
 | QUEUE | 19 | 19 |
@@ -121,6 +121,8 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-045 | Original-fidelity area (scope unadjudicated) | loan/challenge record locators use plausibility bounds (one fixture) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:45` |
 | ECON-047 | Original-fidelity area (scope unadjudicated) | a newly built ride starts with life gauge 100 (Easymode.TPWI stores 100 for every placed object) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:46` |
 | GATE-001 | Original-fidelity area (scope unadjudicated) | an M3 in-game minute is 60 s of normal-speed simulation (3,600 fixed 60 Hz ticks), not a park-clock minute | See source annotation/runtime register | `source/OpenTPW/Client/M3GateApproximations.cs:11` |
+| GATE-004 | Original-fidelity area (scope unadjudicated) | the head-not-ready bound walks its N + 4 cells at OpenTPW's walk speed (WalkSpeedCellsPerSecond x 0.7, itself without an original source); the original has no 0.7 factor and walks as slowly as 0.12 cell per turn | See source annotation/runtime register | `source/OpenTPW/Client/M3GateApproximations.cs:12` |
+| GATE-005 | Original-fidelity area (scope unadjudicated) | the boarding bound W(p) and the head check W(0) = H + R + 1 assume a new head already stands at its slot (BOARD-plan H); the walk from the join cell into an empty or short queue (up to 24 cells) is not a term, so these checks are stricter than the derivation for small p | See source annotation/runtime register | `source/OpenTPW/Client/M3GateApproximations.cs:13` |
 | ONLINE-001 | OpenTPW online extension | Word filtering uses case-insensitive substring matches in space-padded text; entry spaces act as boundaries; allowed substrings exempt matches; hit characters except spaces become asterisks. | Original word-filter code or observed original filtering behavior; the source comment says the encrypted TP.ICD implementation is unreadable. | `docs/ONLINE.md:156` |
 | ONLINE-002 | OpenTPW online extension | A leading slash introduces a chat command; other text means say. | Original chat input syntax, which is not documented in the available data. | `docs/ONLINE.md:157` |
 | ONLINE-003 | OpenTPW online extension | Response strings 102 and 110 mean failure to add an ignored player and a buddy respectively, based on nearby string blocks. | Original response-code table. | `docs/ONLINE.md:158` |
@@ -311,6 +313,9 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-045 | `source/OpenTPW.Files/Formats/Save/SaveEconomyRecords.cs:105` | [APPROX:ECON-045] loan/challenge record locators use plausibility bounds (one fixture) — evidence needed: a second TPWS/TPWI fixture |
 | ECON-047 | `source/OpenTPW/Economy/ParkEconomyContracts.cs:178` | [APPROX:ECON-047] a newly built ride starts with life gauge 100 (Easymode.TPWI stores 100 for every placed object) — evidence needed: the life gauge set when a ride is built (the constructor 0x100DA874 sets 0) |
 | GATE-001 | `source/OpenTPW/Client/M3Gate.cs:118` | [APPROX:GATE-001] an M3 in-game minute is 60 s of normal-speed simulation (3,600 fixed 60 Hz ticks), not a park-clock minute (one 248 ms park turn already advances the park clock 3,750 s) — evidence needed: the original's notion of elapsed play time for the M3 gate |
+| GATE-004 | `source/OpenTPW/Client/M3Gate.cs:1179` | [APPROX:GATE-004] the walk term uses OpenTPW's walk speed x 0.7, not a traced original speed — evidence needed: a traced per-cell walk term for queue walking (WALK-plan section 11.7, WALK-I) |
+| GATE-005 | `source/OpenTPW/Client/M3Gate.cs:1270` | [APPROX:GATE-005] H assumes the new head already stands at its slot; the join-cell walk into an empty queue is not a term — evidence needed: a traced bound on that walk (WALK-plan section 11.7) |
+| GATE-005 | `source/OpenTPW/Client/M3Gate.cs:1338` | [APPROX:GATE-005] W(p) and W(0) leave out the join-cell walk of a guest joining an empty or short queue (see BoardingWaitBound) |
 | ONLINE-001 | `source/OpenTPW.Online/Moderation/WordFilter.cs:86` | [APPROX:ONLINE-001] Matching rule — evidence needed: the original filter code is not |
 | ONLINE-002 | `source/OpenTPW.Online/Chat/ChatCommands.cs:180` | [APPROX:ONLINE-002] A line starting with '/' is a command, anything else is "say" — evidence |
 | ONLINE-003 | `source/OpenTPW.Online/Chat/ChatCommands.cs:34` | [APPROX:ONLINE-003] 102/110 are both "Could not add "; assigned to ignore/buddy by their position next to |

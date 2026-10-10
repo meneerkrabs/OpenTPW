@@ -59,6 +59,7 @@ rules (section 7.3) never exceeded it, and reached at most about 0.6 of it.
   broken branches of the script (`FORCEUNBOUNCE`, `WAITANIM 10`) are not timed.
 - **A4 speed bias.** Script `+192` keeps its default of 50, so the script speed
   is 1. No BOUNCE script uses `TURBO`.
+- **A5 head at its slot.** H assumes a new head already stands at its slot. A guest that joins an empty or short queue first walks from the join cell to slot 0 (up to 24 cells); that walk is not a term of W(p), so W(p) for small p is not an upper bound in that case (review GATE-V4 B2; the gate registers it as GATE-005).
 
 ## 3. The host handshake (high)
 

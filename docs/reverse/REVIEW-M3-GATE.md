@@ -272,3 +272,135 @@ python3 -m unittest tools/ppc-analysis/lanes/review/test_m3_gate_v1.py          
 OPENTPW_M3_MUTATE=1 OPENTPW_GAME_PATH=/path/to/theme-park-world \
   python3 -m unittest -v tools/ppc-analysis/lanes/review/test_m3_gate_v1.py    # + 12 mutations, ~50 s
 ```
+
+---
+
+# Round 2: GATE-FIX (ea09cda, stacked on efc090d: 8fa931f, bb30770, ea09cda)
+
+Re-check of the fixes for B1, B2, the weak rows and divergences D1 to D6.
+SDK 10.0.401 (`~/.local/share/opentpw-dotnet10/dotnet`, non-symlinked path),
+Release. New tests: `tools/ppc-analysis/lanes/review/test_m3_gate_v2.py`
+(4 static, 6 mutations; it reuses the v1 hooks and adds its own).
+
+## Round 2 merge blockers
+
+**R2-B1. The stack does not compile once merged onto current main.** `origin/main`
+is now 12992e8 (advisor e28fbe9 and the scenarios merge 12992e8 are in). The
+textual merge has one conflict (below), and the merged tree then fails to build:
+
+```
+M3Gate.cs(273,44): error CS1739: The best overload for 'Load' does not have a parameter named 'includeEasymodePark'
+M3Gate.cs(274,56): error CS1503: Argument 2: cannot convert from 'OpenTPW.ParkGameMode' to 'OpenTPW.ParkStartKind'
+```
+
+The scenarios lane renamed `OriginalPark.Load(..., includeEasymodePark)` to
+`readShippedSave` and made `ParkEconomyRuntime.ForOriginalLevel` take a
+`ParkStartKind`. Exact fix in `M3GateRun.Build` (the call `Level` makes for a new
+Full Simulation park, `Level.cs:63-65`):
+
+```csharp
+park = OriginalPark.Load( options.Level, readShippedSave: ParkStart.ReadsShippedSave( ParkStartKind.FullSimulation ) );
+runtime = ParkEconomyRuntime.ForOriginalLevel( park, ParkStartKind.FullSimulation );
+```
+
+and in `docs/M3-GATE.md:52` replace `OriginalPark.Load( level, includeEasymodePark: false )`
+with the same `readShippedSave: false` wording. `ReadsShippedSave( FullSimulation )`
+is false, so the park is loaded exactly as before. Verified on a trial merge
+(origin/main + ea09cda + these two lines, register regenerated): 0 errors;
+tests without assets **915 / 244 / 0** (main + the gate's tests);
+with assets ****1088 / 71 / 0****; `--m3-gate` twice: exit 1, identical
+JSON, and every row's verdict and evidence is identical to ea09cda alone (12 pass,
+3 fail, 1 unresolved). The rename has no behavioural effect on the gate.
+
+**R2-B2 (mechanical). `docs/FIDELITY-REGISTER.md` conflicts** (main 149 IDs vs the
+stack's 142 + GATE). Fix: take either side, then `python3 tools/fidelity_register.py --write`;
+the result is 151 IDs and `--check` passes. `docs/RUNNING.md` and `Game.cs`
+merge cleanly.
+
+No blocker remains inside the stack itself: on efc090d it is correct.
+
+## Round 2 verdicts
+
+| Item | Verdict | Evidence |
+| --- | --- | --- |
+| B1 exit code | **fixed** | `ExitCode => HasFailures ? 1 : HasUnresolved ? 2 : 0`; `block-boarding` (round-1 mutation, built from ea09cda) exits 1; with path/queue builders it would exit 2 (unit test only, as the author states). |
+| B2 register | **fixed on efc090d**, recurs on current main (R2-B2) | `fidelity_register.py --check` passes at ea09cda (142 IDs). |
+| staff.work per type | **fixed, still lenient** (W1) | `no-mechanic`, `no-handyman`, `idle-mechanic`, `idle-handyman` fail. The "when needed" conditions are real: `no-wear-no-litter` (state of repair held at 100, litter zeroed, both types idle) passes with 0 needed / 0 repairs / 0 litter, so a zero-breakdown run does not fail the mechanic. |
+| rides.scripts-run | **fixed** | `stall-ride` fails from tick 18000; `halt-last-tick` (Stop() on tick 108000) fails with `firstViolationTick` 108000 and `notRunningAtEnd` Belly Bounce. RideVMState has only Running, Waiting, Halted, Faulted, so Running/Waiting is attainable (baseline: all three Waiting). |
+| build.paths | **fixed** | always FAIL, evidence `inGameBuilder` "no in-game path builder ...". |
+| D1 fixed items | **fixed** | `ConnectFixedItemsToEconomy`: RegisterExisting + Link + per-tick open sync, after AttachGuests. |
+| D2/D3/D5 build flow | **fixed** | `PlaceObject` calls `Level.GetCentredAnchor` → `ParkObjects.Check` → `economy.TryBuild` → `Level.RegisterWithGuests` → `Link`, the same order as `Level.PlaceObject` → `Objects.TryPlace` → `ObjectPlaced` → `RegisterObjectWithGuests`, then `LinkEconomy`. Belly Bounce exit snaps (42,22) → (47,22) through `WalkableNear`, as in the game. Setup cost $1,530 reproduced. |
+| Level / ParkObjects refactor | **behaviour-preserving** | Diff read line by line: the old body is split into `RegisterWithGuests` + `ResolveVisitorCells` with the same guards (Guests null, not attraction, no entrance, exit defaults to entrance, either cell unwalkable → nothing registered), `item.Visitors` is `Runtime.Visitors` (`OriginalObject.cs:86`), and the instance `Check` forwards its own `Grid`/`IsOccupied`. Asset suite 1036 / 71 / 0 at ea09cda (same as the author). Pinned by the v2 static tests. |
+| LF for new files | **consistent** | 85 of 97 `.cs` files in `Client/` and `OpenTPW.Tests/` are LF; `Level.Objects.cs` and `ParkObjects.cs` were and stay LF. `Game.cs` is CRLF (555/555 lines) and its 6 added lines are CRLF too. |
+| Exit snap / setup cost | **matches the build flow** | see D2/D3/D5. |
+
+### W1 (should fix before M3 is accepted; not a merge blocker today). One unit of work satisfies a staff type.
+
+`staff.work` needs `repairs ≥ 1` when any repair was needed and `litterCleaned > 0`
+when any litter existed. Mutations on ea09cda:
+
+| Mutation | Evidence | staff.work |
+| --- | --- | --- |
+| `idle-mechanic-after-first-repair` (mechanic PickedUp after the first `RideRepaired`) | 1 repair for 17+ needed | **pass** |
+| `idle-handyman-after-first-clean` (handyman PickedUp after the first cleaned tick) | < 2 items cleaned of > 100 dropped | **pass** |
+
+`docs/M3-GATE.md` says "removing or idling either staff type fails the row"; that
+holds only for idling the whole run. Today the gate cannot exit 0 (build.paths,
+build.queue, determinism fail), so W1 cannot cause a false M3 acceptance yet; once
+those rows pass, it could. Exact fix (keeps a zero-breakdown run passing):
+
+- mechanic: keep the instance id of each `RideWorn`/`RideBrokeDown`; fail when an
+  instance still has a need without a later `RideRepaired` for it, unless the need
+  arose within one maximum repair time of the end
+  (`max(MechanicConstsPerGrade[*].WorkDuration)` game hours plus one `UpdateHour`);
+- handyman: fail when litter stayed above 0 for longer than one cleaning interval
+  (`HandymanConstsPerGrade[grade].WorkDuration` game minutes) while a handyman was
+  hired, or equivalently require `litterCleaned ≥ litterDropped − litterAtEnd` with
+  `litterAtEnd` below one interval's drop.
+
+Either rule makes both mutations above fail and `no-wear-no-litter` still pass.
+
+### Notes
+
+- **N6 (edge, accepted).** `late-litter` (no litter all run, one item added in the
+  last tick) fails `staff.work` although no handyman could have cleaned it. The
+  baseline drops litter all run (810.5 items), so this cannot fail a legitimate
+  30-minute run; the W1 grace period above would also remove it.
+- **N7.** A fixed item whose script halts (`halt-gate`: the Gates script stopped at
+  tick 1000) is judged by no row; it only shows as `Gates Halted` in the
+  `rides.scripts-run` evidence. Correct for M3 (the row is about the player's
+  placed objects; fixed items are the level's), but the evidence line is the only
+  trace. Optional: a separate report-only note.
+- **N8.** `git diff --check efc090d ea09cda` still lists the 6 CRLF lines added to
+  `Game.cs` (a CRLF file); with `core.whitespace=cr-at-eol` it is clean. The
+  commit message's "diff --check clean" holds only with that setting.
+- N5 from round 1 is resolved (the determinism row is no longer called "report only").
+
+## Round 2 numbers (independent)
+
+| Check | Result |
+| --- | --- |
+| Build `source/OpenTPW.sln` Release at ea09cda | 0 errors |
+| `OpenTPW.Tests` without assets | **866 / 241 / 0** |
+| `OpenTPW.Tests` with `OPENTPW_GAME_PATH` | **1036 / 71 / 0** |
+| `--m3-gate` twice (separate processes) | exit 1 both; identical table and JSON apart from `wallSeconds`; 12 pass, 3 fail (`build.paths`, `build.queue`, `determinism.same-seed`), 1 unresolved (`queues.no-stuck-queue`); 286 riders, setup $1,530, 17/17 repairs, 810.5/810.5 litter |
+| `fidelity_register.py --check` and its unit tests | pass (142 IDs) |
+| `run_evidence_checks.py` | OK: 9 Python suites, 566 tests, 115 skipped |
+| `git diff efc090d --stat` vs `--ignore-cr-at-eol --stat` | identical |
+| `git diff --check` | clean with `cr-at-eol`; only `Game.cs` CRLF lines otherwise (N8) |
+| `test_m3_gate_v1.py` mutations against ea09cda | **25 / 25** |
+| `test_m3_gate_v2.py` | **10 / 10** (4 static, 6 mutations) |
+| `git merge-tree --write-tree origin/main(12992e8) ea09cda` | 1 conflict: `docs/FIDELITY-REGISTER.md`; merged tree does not compile (R2-B1) |
+| Trial merge + R2-B1 fix + register regenerated | 0 errors; 915 / 244 / 0 without assets; **1088 / 71 / 0** with assets; gate identical to ea09cda |
+
+## Round 2 merge readiness
+
+**Not merge-ready onto current main as is** (R2-B1 build break, R2-B2 register
+conflict). Both fixes are mechanical and listed above; with them the merge is
+ready. W1 should be fixed before any run is taken as M3 acceptance.
+
+```sh
+python3 -m unittest tools/ppc-analysis/lanes/review/test_m3_gate_v2.py          # static
+OPENTPW_M3_MUTATE=1 OPENTPW_GAME_PATH=/path/to/theme-park-world \
+  python3 -m unittest -v tools/ppc-analysis/lanes/review/test_m3_gate_v2.py    # + 6 mutations
+```

@@ -128,7 +128,7 @@ public class GuestAssetTests
 		var parameters = OriginalObjectRuntime.CreateQueueParameters( entry );
 		// [DATA:jungle Bouncy.sam + Rides.sam] HasQueue, RunsContinuously, CAP 5, DUR 30, InitSpeed 60, QWTC 130 (QUEUE-plan §9).
 		Assert.AreEqual( new QueueParameters( true, true, false, 130, 60, 60, 5, 30 ), parameters );
-		Assert.AreEqual( 100, RideVisitorBridge.ComputeQueueLimit( parameters ), "HasQueue: the QWTC formula is unused" );
+		Assert.AreEqual( 21u, RideVisitorBridge.ComputeQueueLimit( parameters ), "HasQueue: trunc(130 × (1 × 5) / 30), the QWTC formula of 0xdcb74" );
 
 		// A straight run of four free cells off an Easymode path cell: the ride entrance sits beyond the fourth.
 		var site = Enumerable.Range( 0, grid.CountX * grid.CountY ).Select( index => (X: index % grid.CountX, Y: index / grid.CountX) )
@@ -155,7 +155,7 @@ public class GuestAssetTests
 		Assert.AreEqual( 4, QueuePaths.TryExtend( grid, ride, queue ) );
 		CollectionAssert.AreEqual( queue, ride.QueueCells.ToArray() );
 		Assert.AreEqual( site.Path, ride.JoinCell );
-		Assert.AreEqual( 16, ride.MaximumQueueLength, "min(100, 4 × 4 cells)" );
+		Assert.AreEqual( 16, ride.MaximumQueueLength, "min(21, 4 × 4 cells)" );
 
 		var guests = Enumerable.Range( 0, 24 ).Select( _ => simulation.SpawnInPark( site.Path.X, site.Path.Y ) ).ToList();
 		foreach ( var guest in guests )

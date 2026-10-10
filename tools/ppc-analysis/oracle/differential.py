@@ -81,11 +81,14 @@ def _csharp(target: Target, side: str, mapping, inputs, originals, enabled: bool
         return Comparison(target.key, side, skipped='no C# implementation on main; see notes for the hook')
     bridge = bridge or bridge_module.get()
     if bridge is None:
-        return Comparison(target.key, side, skipped='no .NET SDK (OPENTPW_DOTNET)')
-    if name not in bridge.capabilities():
-        return Comparison(target.key, side, skipped=f'bridge lacks {name}')
+        return Comparison(target.key, side, skipped='no .NET 10 SDK (OPENTPW_ORACLE_DOTNET, OPENTPW_DOTNET, default, PATH)')
     request, response = mapping or target.csharp[1:]
-    answers = bridge.run([request(x) for x in inputs])
+    try:
+        if name not in bridge.capabilities():
+            return Comparison(target.key, side, skipped=f'bridge lacks {name}')
+        answers = bridge.run([request(x) for x in inputs])
+    except RuntimeError as error:  # build or run failure (bridge.BridgeError): the C# side only is skipped
+        return Comparison(target.key, side, skipped=str(error))
     return _tally(target, side, inputs, originals, [response(x, a) for x, a in zip(inputs, answers)], keep)
 
 

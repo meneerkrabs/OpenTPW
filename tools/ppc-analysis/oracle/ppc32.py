@@ -47,6 +47,11 @@ class Unsupported(OracleError):
     pass
 
 
+class Undefined(Unsupported):
+    """An architecturally undefined result (divw/divwu by zero, INT_MIN / -1); a target may compare it as a value.
+    Every other Unsupported (an unmodelled instruction, sc, tw, ...) is a hard error of the run."""
+
+
 class MemoryFault(OracleError):
     pass
 
@@ -189,9 +194,19 @@ def fp_arith(op: str, a: float, b: float, c: float | None = None, single: bool =
     q = _exact(op, a, b, c)
     if isinstance(q, Fraction):
         return round_rational(q, BINARY32 if single else BINARY64, mode)
+    if q == 0 and mode == RN_DOWN and op in ('add', 'sub', 'madd', 'msub'):
+        # An exact-zero sum is -0 when rounding toward -infinity, unless both terms are +0 (IEEE 754 6.3).
+        if op in ('add', 'sub'):
+            first = a
+        else:
+            first = math.copysign(0.0, a) * math.copysign(1.0, c) if a == 0 or c == 0 else a * c
+        second = -b if op in ('sub', 'msub') else b
+        positive = first == 0 and second == 0 and math.copysign(1.0, first) > 0 and math.copysign(1.0, second) > 0
+        return 0.0 if positive else -0.0
     if math.isnan(q):
-        # The architecture propagates the first NaN operand (quietened); otherwise the default QNaN.
-        for x in (a, b) if c is None else (a, c, b):
+        # The architecture propagates the first NaN operand in the order FRA, FRB, FRC (quietened);
+        # otherwise the default QNaN. For madd/msub `c` is FRC, the multiplier.
+        for x in (a, b) if c is None else (a, b, c):
             if math.isnan(x):
                 return bits_to_double(double_to_bits(x) | 0x0008000000000000)
         return bits_to_double(0x7FF8000000000000)
@@ -330,6 +345,7 @@ class Machine:
         self.executed = 0
         self.trace: list[int] | None = None
         self._decoded: dict[int, int] = {}
+        self._stop: frozenset[int] = frozenset()
 
     # ------------------------------------------------------------------ registers
     def f(self, i: int) -> float:
@@ -377,9 +393,12 @@ class Machine:
 
     def call(self, entry: int, *, lr: int = RETURN_SENTINEL, stop: frozenset[int] = frozenset()) -> None:
         """Run from entry until a return to lr (the sentinel) or until pc reaches an address in stop
-        (fragment runs); stubs run in place of their entry."""
+        (fragment runs); stubs run in place of their entry. A stop address may be reached by falling
+        through (it may then be the exclusive end of an allowed range); a branch to it must target allowed
+        code like any other transfer, so a fragment whose stop is a branch target lists it in `allowed`."""
         self.lr = lr
         self.pc = entry
+        self._stop = stop
         self._transfer(entry, from_pc=None)
         while self.pc != RETURN_SENTINEL and self.pc not in stop:
             if self.executed >= self.budget:
@@ -400,7 +419,8 @@ class Machine:
             return
         if target & 3 or not self._allowed(target):
             where = f' from {from_pc:#x}' if from_pc is not None else ''
-            raise UnknownCall(f'control transfer to {target:#x}{where} outside allowed code and stubs')
+            stop = ' (a fragment stop reached by a branch must lie in allowed code)' if target in self._stop else ''
+            raise UnknownCall(f'control transfer to {target:#x}{where} outside allowed code and stubs{stop}')
         self.pc = target
 
     def fetch(self, pc: int) -> int:
@@ -781,15 +801,15 @@ def _arith31(m, xo, rd, ra, rb, oe, rc):
         result = (s32(a) * s32(b)) >> 32
     elif xo == 11:  # mulhwu
         result = (a * b) >> 32
-    elif xo == 491:  # divw: undefined results are pinned to 0 and flagged via OV
+    elif xo == 491:  # divw: the architecture leaves x / 0 and INT_MIN / -1 undefined; they raise Undefined
         x, y = s32(a), s32(b)
         if y == 0 or (x == -0x80000000 and y == -1):
-            raise Unsupported(f'divw with undefined result ({x} / {y}) at {m.pc:#x}')
+            raise Undefined(f'divw with undefined result ({x} / {y}) at {m.pc:#x}')
         q = abs(x) // abs(y)
         result = q if (x < 0) == (y < 0) else -q
     elif xo == 459:  # divwu
         if b == 0:
-            raise Unsupported(f'divwu by zero at {m.pc:#x}')
+            raise Undefined(f'divwu by zero at {m.pc:#x}')
         result = a // b
     else:
         raise Unsupported(f'opcode 31 arithmetic xo {xo}')

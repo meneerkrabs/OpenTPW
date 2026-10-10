@@ -79,12 +79,12 @@ static JsonNode? SetCellType( JsonObject a )
 
 static JsonObject Outcome( bool ok, long charged, bool bumped ) => new() { ["ok"] = ok, ["charged"] = charged, ["bumped"] = bumped };
 
-// RideVisitorBridge.TakeExpired (the UNBOUNCE scan) through reflection: it is private and static on main.
+// RideVisitorBridge.TakeUnbounced (the UNBOUNCE scan) through reflection: it is private and static on main.
 static JsonNode? Unbounce( JsonObject a )
 {
-	var method = typeof( RideVisitorBridge ).GetMethod( "TakeExpired", BindingFlags.NonPublic | BindingFlags.Static )
-		?? throw new MissingMethodException( "RideVisitorBridge.TakeExpired" );
-	var slots = a["slots"]!.AsArray().Select( slot => ((int)slot![0]!, (double)(int)slot[1]!) ).ToList();
+	var method = typeof( RideVisitorBridge ).GetMethod( "TakeUnbounced", BindingFlags.NonPublic | BindingFlags.Static )
+		?? throw new MissingMethodException( "RideVisitorBridge.TakeUnbounced" );
+	var slots = a["slots"]!.AsArray().Select( slot => ((int)slot![0]!, (double)(int)slot[1]!, (double)(int)slot[2]!) ).ToList();
 	var guest = (int)method.Invoke( null, new object[] { slots, (double)(int)a["now"]!, false } )!;
 	return new JsonObject { ["guest"] = guest, ["remaining"] = slots.Count };
 }

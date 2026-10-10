@@ -25,8 +25,8 @@ public enum QueueBuildResult
 /// </summary>
 public static class QueuePaths
 {
-	/// <summary>Most cells one queue may have: 4 × 25 = 100 positions, the HasQueue limit.</summary>
-	// [APPROX:QUEUE-013] maximum queue length 25 cells (more cells add no room beyond the 100-guest HasQueue limit); no length limit was found in the traced build code besides the 1000-step walk guard — evidence needed: the queue tool in 0x10070B98..0x1008C7C0
+	/// <summary>Most cells one queue may have: 4 × 25 = 100 positions.</summary>
+	// [APPROX:QUEUE-013] maximum queue length 25 cells (100 positions); no length limit was found in the traced build code besides the 1000-step walk guard, and a HasQueue ride's limit is its QueueWaitTimeConstant formula (Belly Bounce 21), so the cap only shortens queues of rides whose limit exceeds 100 — evidence needed: the queue tool in 0x10070B98..0x1008C7C0
 	public const int MaximumCells = 25;
 
 	/// <summary>Checks whether (x, y) can be the next cell of <paramref name="ride"/>'s queue (no writes).</summary>
@@ -51,7 +51,7 @@ public static class QueuePaths
 		var hasCells = frontIsQueue || pending.Count > 0;
 		if ( hasCells && (frontIsQueue ? ride.QueueSizeInCells : 0) + pending.Count >= MaximumCells )
 			return QueueBuildResult.TooLong;
-		// CanChangeCellType allows a queue over an empty cell (and over a path only for a line's last cell, which this tool does not lay).
+		// CanChangeCellType allows a queue over an empty cell (and over a path except on a line's last cell); this tool also refuses path cells (QUEUE-014).
 		if ( grid.Cells.TypeAt( x, y ) != ParkCellType.Empty || !ParkCellMap.CanChangeCellType( grid.Cells.RawTypeAt( x, y ), (byte)ParkCellType.Queue, lastCell: false )
 			|| grid.IsWalkable( x, y ) || isBlocked?.Invoke( x, y ) == true || pending.Contains( (x, y) ) )
 			return QueueBuildResult.Blocked;

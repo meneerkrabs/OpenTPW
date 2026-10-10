@@ -7,8 +7,9 @@ Each target has
   main, used when the bridge lists the function (`Bridge.capabilities`);
 * `inputs(rng, n)`: n seeded random inputs plus explicit boundaries.
 
-Undefined original behaviour (e.g. `divw` by zero) surfaces as the interpreter's `Unsupported`; it is
-compared as the value UNDEFINED, which only an equally undefined reference matches.
+Architecturally undefined original behaviour (`divw` by zero, `INT_MIN / -1`) surfaces as the interpreter's
+`Undefined`; it is compared as the value UNDEFINED, which only an equally undefined reference matches. Any other
+`Unsupported` (an unmodelled instruction, `sc`, `tw`) aborts the run as an error.
 
 Stubs are listed per target with the reason they are safe; any other call aborts the run.
 """
@@ -28,7 +29,7 @@ sys.path.insert(0, str(HERE.parent / 'lanes' / 'det'))
 
 import det_model  # noqa: E402  (DET-plan's reference arithmetic)
 from harness import Image, Sandbox, f32  # noqa: E402
-from ppc32 import MASK32, Machine, Unsupported, s32  # noqa: E402
+from ppc32 import MASK32, Machine, Undefined, s32  # noqa: E402
 
 UNDEFINED = 'UNDEFINED'
 
@@ -88,7 +89,7 @@ def run_binary(target: Target, sandbox: Sandbox, x):
     target.log.clear()
     try:
         return target.binary(sandbox, x, target.log)
-    except Unsupported:
+    except Undefined:
         return UNDEFINED
 
 
@@ -184,9 +185,10 @@ def queue_binary(sb: Sandbox, x: dict, log):
     return {'limit': limits[0], 'full': r.r3 & 0xFF}
 
 
-def queue_plan(x: dict, limit_100_when_flag: bool = True):
-    """QUEUE-plan §4 step 3 (100 when ride +46 & 0x8, the plan's HasQueue); full = count ≥ limit (unsigned)."""
-    if bool(x['flag8']) == limit_100_when_flag:
+def queue_plan(x: dict):
+    """QUEUE-plan §4 step 3: 100 when ride +46 & 0x8 (Info.HasQueue) is clear, else the QWTC formula as a u32;
+    full = count ≥ limit (unsigned)."""
+    if not x['flag8']:
         limit = 100
     else:
         speed = x['speed'] & MASK32
@@ -197,11 +199,6 @@ def queue_plan(x: dict, limit_100_when_flag: bool = True):
     return {'limit': limit, 'full': int(x['count'] >= limit)}
 
 
-def queue_plan_flag_clear(x: dict):
-    """The same formula with the 100 branch taken when +46 & 0x8 is clear (the polarity of `bc 4,2` at 0xdcbac)."""
-    return queue_plan(x, limit_100_when_flag=False)
-
-
 def f32_div(a: float, b: float) -> float:
     if b == 0:
         return math.nan if a == 0 or math.isnan(a) else math.copysign(math.inf, a) * math.copysign(1.0, b)
@@ -209,7 +206,7 @@ def f32_div(a: float, b: float) -> float:
 
 
 def queue_csharp_request(x: dict) -> dict:
-    # HasQueue <-> ride +46 & 0x8, as QUEUE-plan §4 and RideVisitorBridge.ComputeQueueLimit's doc state.
+    # HasQueue <-> ride +46 & 0x8: the ride build 0xdab6c sets the bit from type record +64 (Info.HasQueue).
     return {'fn': 'queue_limit', 'has_queue': bool(x['flag8']), 'qwtc_bits': x['qwtc_bits'], 'speed': s32(x['speed']),
             'init_speed': x['init_speed'], 'capacity': x['capacity'], 'duration': x['duration']}
 
@@ -263,7 +260,7 @@ def can_change_binary(sb: Sandbox, x: tuple[int, int, int], log) -> bool:
 
 
 def can_change_plan(x: tuple[int, int, int]) -> bool:
-    """PATH-plan §3.1, with "last-cell flag set" = the word at data:0x84b2c nonzero."""
+    """PATH-plan §3.1; rule 7 allows queue over path while the last-cell flag (data:0x84b2c) is 0."""
     old, new, flag = x
     if new == 0:
         return True
@@ -277,7 +274,7 @@ def can_change_plan(x: tuple[int, int, int]) -> bool:
         return True
     if new == 4 and old == 1:
         return True
-    return new == 3 and old == 1 and flag != 0
+    return new == 3 and old == 1 and flag == 0
 
 
 def can_change_inputs(rng: random.Random, n: int) -> list:
@@ -324,14 +321,14 @@ def set_cell_binary(sb: Sandbox, x: dict, log) -> dict:
 
 
 def set_cell_plan(x: dict) -> dict:
-    """PATH-plan §3.2 with the free byte clear, game+36 == 0 and bank +276 != 0."""
+    """PATH-plan §3.2 with the free byte clear, game+36 == 0 and bank +276 != 0; the money test is 32-bit."""
     old, new = x['old'], x['type']
     if not can_change_plan((old, new, x['last_flag'])):
         return {'ok': False, 'charged': 0, 'bumped': False}
     if new != 0 and new == old:
         return {'ok': True, 'charged': 0, 'bumped': True}
     cost = x['path_cost'] if new == 1 else x['queue_cost'] if new == 3 else 0
-    if new in (1, 3) and x['balance'] - cost < 0:
+    if new in (1, 3) and s32(x['balance'] - cost) < 0:
         return {'ok': False, 'charged': 0, 'bumped': False}
     return {'ok': True, 'charged': cost if new in (1, 3) else 0, 'bumped': False}
 
@@ -423,7 +420,9 @@ def unbounce_inputs(rng: random.Random, n: int) -> list:
         return {'now': now, 'slots': slots}
     edges = [{'now': 31000, 'slots': [(7, 31000, 1000)]}, {'now': 31001, 'slots': [(7, 31000, 1000)]},
              {'now': 31200, 'slots': [(7, 31000, 1000)]}, {'now': 31199, 'slots': [(7, 31000, 1000)]},
-             {'now': 50, 'slots': [(0, 0, 0), (9, 40, 49), (8, 10, 50)]}, {'now': 0, 'slots': [(5, -1, -200)]}]
+             {'now': 50, 'slots': [(0, 0, 0), (9, 40, 49), (8, 10, 50)]}, {'now': 0, 'slots': [(5, -1, -200)]},
+             # start > now: the C remainder keeps the sign, so elapsed −150 is inside the window and −250 is not.
+             {'now': 1000, 'slots': [(5, 900, 1150)]}, {'now': 1000, 'slots': [(5, 900, 1250)]}]
     return edges + [make() for _ in range(n)]
 
 
@@ -520,6 +519,8 @@ DEF_FIELDS = {'gforce_sick': 812, 'upside_sick': 816, 'speed': 820, 'gforce_exci
 def coast_step_binary(sb: Sandbox, x: dict, log) -> dict:
     for name in ('S', 'E', 'peak_s', 'peak_e', 'e_prev'):
         sb.write(toc_pointer(sb, TOC[name]), 'f', x[name])
+    # Previous bank and force stay 0, as in the game (only the reset 0x4154c/0x41568 and the step read them), so the
+    # reference's |F|1 and |bank| equal the step's |dF|1 and |dbank| (REVIEW-ORACLE OV-7).
     sb.write(toc_pointer(sb, TOC['prev_bank']), 'f', 0.0)
     for k in range(3):
         sb.write(toc_pointer(sb, TOC['prev_force']) + 4 * k, 'f', 0.0)
@@ -662,10 +663,7 @@ RAND = Target('det-rse-rand', 'RSE RAND call site 0xb07f8..0xb0828', 'DET-plan �
                      'C# hook: bridge function "rse_rand"; main draws from System.Random per VM (DET-plan D7).'])
 QUEUE = Target('queue-limit', 'Queue limit 0xdcb74', 'QUEUE-plan §4 step 3', 0xDCB74,
                [(0xDCB74, 0xDCD34), (0x1C3FBC, 0x1C400C)], queue_stubs, queue_binary, queue_plan, queue_inputs,
-               csharp=('queue_limit', queue_csharp_request, queue_csharp_result),
-               alternatives={'plan-flag-clear': queue_plan_flag_clear},
-               csharp_variants={'csharp-flag-clear': (lambda x: {**queue_csharp_request(x), 'has_queue': not x['flag8']},
-                                                      queue_csharp_result)})
+               csharp=('queue_limit', queue_csharp_request, queue_csharp_result))
 CAN_CHANGE_TARGET = Target('path-can-change', 'CanChangeCellType 0x8408c', 'PATH-plan §3.1', 0x8408C, [CAN_CHANGE],
                            lambda t: {}, can_change_binary, can_change_plan, can_change_inputs,
                            csharp=('can_change_cell_type',

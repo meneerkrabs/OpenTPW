@@ -288,13 +288,11 @@ class FloatingPoint(unittest.TestCase):
         m = run([aform(63, 1, 2, 3, 4, 23)], fpr={2: d2b(math.nan), 3: d2b(5.0), 4: d2b(7.0)})
         self.assertEqual(b2d(m.fpr[1]), 5.0)
 
-    @unittest.expectedFailure
     def test_exact_zero_difference_is_negative_when_rounding_down(self):
         """OV-6: IEEE/PowerPC give -0 for x - x under round toward -infinity; ppc32 returns +0."""
         m = run([aform(63, 1, 2, 2, 0, 20)], fpr={2: d2b(1.5)}, fpscr=3)
         self.assertEqual(m.fpr[1], d2b(-0.0))
 
-    @unittest.expectedFailure
     def test_fmadd_propagates_frb_nan_before_frc(self):
         """OV-6: with FRA a number and FRB, FRC both NaN the architecture returns FRB; ppc32 returns FRC."""
         nb, nc = 0x7FF8000000000002, 0x7FF8000000000003
@@ -331,7 +329,6 @@ class SandboxEscapes(unittest.TestCase):
 
 
 class RunnerAndBridgeContracts(unittest.TestCase):
-    @unittest.expectedFailure
     def test_oracle_variable_is_controlled_by_the_runner(self):
         """OV-2: harness.bin_root reads OPENTPW_MAC_BIN, which run_evidence_checks neither sets nor strips."""
         harness = (ORACLE / 'harness.py').read_text(encoding='utf-8')
@@ -341,7 +338,6 @@ class RunnerAndBridgeContracts(unittest.TestCase):
             '\n', '').replace(' ', '').split(','))
         self.assertLessEqual(variables, fixture)
 
-    @unittest.expectedFailure
     def test_bridge_digest_covers_every_referenced_project(self):
         """OV-4: the cache digest omits OpenTPW.Common, .ModKit and .Online, which OpenTPW.csproj references."""
         bridge = (ORACLE / 'bridge.py').read_text(encoding='utf-8')
@@ -351,7 +347,6 @@ class RunnerAndBridgeContracts(unittest.TestCase):
         hashed = set(re.findall(r"'source' / '(OpenTPW[.A-Za-z]*)'", bridge))
         self.assertLessEqual(referenced, hashed)
 
-    @unittest.expectedFailure
     def test_unusable_sdk_skips_only_the_csharp_side(self):
         """OV-3: a bridge that cannot build (e.g. a net8-only SDK) errors the whole Oracle class, plan pins included."""
         import differential

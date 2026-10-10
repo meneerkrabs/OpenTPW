@@ -32,27 +32,19 @@ AGREE = 'agree'
 EXPECTED = {
     ('det-world-lcg', 'plan'): AGREE,
     ('det-rse-rand', 'plan'): AGREE,
-    # F1: 0xdcbac takes the constant 100 when ride +46 & 0x8 is CLEAR; QUEUE-plan and C# say when set.
-    ('queue-limit', 'plan'): (515, {'flag8': 0, 'qwtc_bits': 1097358578, 'speed': 0, 'init_speed': 305, 'capacity': 249,
-                                    'duration': 252, 'level': 3, 'count': 99}),
-    ('queue-limit', 'plan-flag-clear'): AGREE,
-    ('queue-limit', 'csharp'): (515, {'flag8': 0, 'qwtc_bits': 1097358578, 'speed': 0, 'init_speed': 305, 'capacity': 249,
-                                      'duration': 252, 'level': 3, 'count': 99}),
-    # F2: with the polarity swapped the C# formula agrees except where the quotient reaches 2^31 (C# int.MaxValue,
-    # original up to 2^32 - 1: DUR 0, InitSpeed 0, huge QWTC) and SPEED >= 2^31 (signed in C#).
-    ('queue-limit', 'csharp-flag-clear'): (6, {'flag8': 1, 'qwtc_bits': 1315859240, 'speed': 0, 'init_speed': 161,
-                                               'capacity': 255, 'duration': 1, 'level': 1, 'count': 0}),
-    # F3: 0x8408c allows queue over path (old 1, new 3) when data:0x84b2c is ZERO and refuses when nonzero.
-    ('path-can-change', 'plan'): (2, [1, 3, 0]),
-    ('path-can-change', 'csharp'): (2, [1, 3, 0]),
-    # F4 (boundary): balance − cost wraps in 32 bits in the original; C# rejects a negative cost with an exception.
-    ('path-set-cell-type', 'plan'): (2, {'old': 0, 'type': 1, 'last_flag': 0, 'balance': -2147483648, 'path_cost': 1,
-                                         'queue_cost': 75}),
-    ('path-set-cell-type', 'csharp'): (2, {'old': 0, 'type': 1, 'last_flag': 0, 'balance': -2147483648, 'path_cost': 1,
-                                           'queue_cost': 75}),
+    # F1 (fixed): 0xdcb74 gives 100 when ride +46 & 0x8 (Info.HasQueue) is CLEAR and the QWTC formula when set.
+    # F2 (fixed): the limit is a u32 (saturating at 2^32 - 1) and SPEED an unsigned word, in C# too.
+    ('queue-limit', 'plan'): AGREE,
+    ('queue-limit', 'csharp'): AGREE,
+    # F3 (fixed): 0x8408c allows queue over path (old 1, new 3) while data:0x84b2c, the last-cell flag, is ZERO.
+    ('path-can-change', 'plan'): AGREE,
+    ('path-can-change', 'csharp'): AGREE,
+    # F4 (fixed): balance − cost is a 32-bit difference; a negative cost is spent, not rejected with an exception.
+    ('path-set-cell-type', 'plan'): AGREE,
+    ('path-set-cell-type', 'csharp'): AGREE,
     ('board-unbounce', 'plan'): AGREE,
-    # F5: C# releases at deadline <= now without the 200 ms window of 0xae020 (BOARD-plan §5 not implemented on main).
-    ('board-unbounce', 'csharp'): (326, {'now': 31000, 'slots': [[7, 31000, 1000]]}),
+    # F5 (fixed): C# releases at deadline < now (strict) inside the 200 ms window of 0xae020, as BOARD-plan §5 states.
+    ('board-unbounce', 'csharp'): AGREE,
     ('walk-speed-setter', 'plan'): AGREE,
     # F6: 0xe6b28 uses fmadds (one rounding; 98 inputs differ in s) and stores boost·99 as u16 before dividing (wraps above 661).
     ('walk-smoothing', 'plan'): (99, {'s': 1.2833095788955688, 'base': 120, 'bonus': 0, 'boost': 662}),
@@ -75,6 +67,25 @@ class Identity(unittest.TestCase):
     def test_unidentified_container_is_rejected(self):
         with self.assertRaises(IdentityError):
             Image(b'Joy!peffpwpc' + bytes(64))
+
+
+class UndefinedResults(unittest.TestCase):
+    def test_only_architecturally_undefined_results_become_a_value(self):
+        """Undefined (divw by zero, INT_MIN / -1) compares as UNDEFINED; any other Unsupported aborts the run."""
+        import dataclasses
+        from ppc32 import Undefined, Unsupported
+
+        class Reset:
+            def reset(self):
+                pass
+
+        def raising(error):
+            def binary(sandbox, x, log):
+                raise error
+            return dataclasses.replace(targets.LCG, binary=binary)
+        self.assertEqual(targets.run_binary(raising(Undefined('divw by zero')), Reset(), 0), targets.UNDEFINED)
+        with self.assertRaises(Unsupported):
+            targets.run_binary(raising(Unsupported('opcode 31 xo 86')), Reset(), 0)
 
 
 @unittest.skipUnless(ROOT, 'requires the identified Feral bin directory (OPENTPW_MAC_BIN or OPENTPW_PPC_BIN_ROOT)')
@@ -114,12 +125,10 @@ class Oracle(unittest.TestCase):
         self.check(('det-rse-rand', 'plan'))
 
     def test_queue_limit(self):
-        for side in ('plan', 'plan-flag-clear'):
-            self.check(('queue-limit', side))
+        self.check(('queue-limit', 'plan'))
 
     def test_queue_limit_csharp(self):
-        for side in ('csharp', 'csharp-flag-clear'):
-            self.check(('queue-limit', side))
+        self.check(('queue-limit', 'csharp'))
 
     def test_path(self):
         for key in (('path-can-change', 'plan'), ('path-set-cell-type', 'plan')):
@@ -170,15 +179,21 @@ class Oracle(unittest.TestCase):
         self.assertGreater(comparison.mismatches, 0)
 
 
-@unittest.skipUnless(ROOT and bridge_module.dotnet(), 'requires the Feral bin directory and a .NET SDK')
+@unittest.skipUnless(ROOT and bridge_module.dotnet(), 'requires the Feral bin directory and a .NET 10 SDK')
 class CSharpMutation(unittest.TestCase):
     """Flipping one operand in a C# implementation on a scratch copy makes its oracle comparison fail."""
 
     MUTATIONS = [
-        ('queue-limit', 'csharp-flag-clear', 'source/OpenTPW/World/Guests/RideVisitorBridge.cs',
+        ('queue-limit', 'csharp', 'source/OpenTPW/World/Guests/RideVisitorBridge.cs',
          'quotient = MathF.Max( quotient, 4f );', 'quotient = MathF.Max( quotient, 5f );'),
         ('path-can-change', 'csharp', 'source/OpenTPW/World/ParkCellMap.cs',
          'if ( type == 21 && old == 21 )', 'if ( type == 21 && old == 20 )'),
+        ('path-can-change', 'csharp', 'source/OpenTPW/World/ParkCellMap.cs',
+         'return type == 3 && old == 1 && !lastCell;', 'return type == 3 && old == 1 && lastCell;'),
+        ('path-set-cell-type', 'csharp', 'source/OpenTPW/Economy/ParkEconomy.cs',
+         'unchecked( (int)Balance - (int)((pending + 1) * CellCost( kind )) ) >= 0', 'Balance - (pending + 1) * CellCost( kind ) >= 0'),
+        ('board-unbounce', 'csharp', 'source/OpenTPW/World/Guests/RideVisitorBridge.cs',
+         'elapsed % 1000 / 200 == 0', 'elapsed % 1000 / 250 == 0'),
     ]
 
     def test_mutations_are_detected(self):
@@ -190,16 +205,14 @@ class CSharpMutation(unittest.TestCase):
             shutil.copytree(REPO / 'source', scratch / 'source', ignore=ignore)
             shutil.copytree(HERE / 'dotnet', scratch / 'tools' / 'ppc-analysis' / 'oracle' / 'dotnet', ignore=ignore)
             shutil.copy2(REPO / 'global.json', scratch / 'global.json')
-            for key, side, path, before, after in self.MUTATIONS:
-                with self.subTest(target=key):
+            for index, (key, side, path, before, after) in enumerate(self.MUTATIONS):
+                with self.subTest(target=key, mutation=after):
                     file = scratch / path
                     original = file.read_text(encoding='utf-8')
                     self.assertEqual(original.count(before), 1, f'mutation anchor in {path}')
                     file.write_text(original.replace(before, after), encoding='utf-8')
                     try:
-                        mutated = bridge_module.Bridge(bridge_module.dotnet(),
-                                                       scratch / 'tools/ppc-analysis/oracle/dotnet/OracleBridge.csproj',
-                                                       scratch / f'out-{key}')
+                        mutated = bridge_module.Bridge(bridge_module.dotnet(), scratch, scratch / f'out-{index}')
                         results = {c.side: c for c in compare(by_key[key], image, DEFAULT_COUNT, bridge=mutated)}
                         baseline = EXPECTED[(key, side)]
                         baseline_count = 0 if baseline == AGREE else baseline[0]

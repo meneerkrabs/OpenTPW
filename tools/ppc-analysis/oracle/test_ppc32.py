@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import asm  # noqa: E402
 from ppc32 import (BINARY32, MASK32, RETURN_SENTINEL, BudgetExceeded, Machine, Memory, MemoryFault,  # noqa: E402
-                   UnknownCall, Unsupported, bits_to_double, double_to_bits, double_to_single_store, fctiw,
+                   Undefined, UnknownCall, Unsupported, bits_to_double, double_to_bits, double_to_single_store, fctiw,
                    round_rational, s32, single_bits_to_double)
 
 CODE, DATA, STACK = 0x10000000, 0x20000000, 0x60000000
@@ -219,8 +219,29 @@ class MemoryAndControlTests(unittest.TestCase):
         with self.assertRaises(BudgetExceeded):
             run([asm.b(0)], budget=50)
         for word in (asm.sc(), asm.fx(22, 1, 2), asm.mfspr(3, 268), asm.x(31, 0, 3, 4, 86), asm.fp(59, 24, 1, 0, 2)):
-            with self.assertRaises(Unsupported):
+            with self.assertRaises(Unsupported) as caught:
                 run([word])
+            self.assertNotIsInstance(caught.exception, Undefined, f'{word:#010x} is unmodelled, not undefined')
+        for a, b in ((5, 0), (0x80000000, MASK32)):
+            with self.assertRaises(Undefined):
+                run([asm.xo(3, 4, 5, 491)], {4: a, 5: b})
+        with self.assertRaises(Undefined):
+            run([asm.xo(3, 4, 5, 459)], {4: 5, 5: 0})
+
+    def test_fragment_stop(self):
+        """A stop reached by falling through may be the end of the allowed range; a branch to it must be allowed."""
+        m = machine([asm.li(3, 7), asm.li(3, 8)])
+        m.call(CODE, stop=frozenset({CODE + 4}))
+        self.assertEqual((m.gpr[3], m.pc), (7, CODE + 4))
+        m = machine([asm.li(3, 7)])
+        m.call(CODE, stop=frozenset({CODE + 4}))
+        self.assertEqual(m.pc, CODE + 4)
+        m = machine([asm.b(8), asm.li(3, 1), asm.li(3, 2)])
+        m.call(CODE, stop=frozenset({CODE + 8}))
+        self.assertEqual((m.gpr[3], m.pc), (0, CODE + 8))
+        m = machine([asm.b(4)])
+        with self.assertRaisesRegex(UnknownCall, 'fragment stop'):
+            m.call(CODE, stop=frozenset({CODE + 4}))
 
 
 def fpu(words: list[int], **fregs) -> Machine:

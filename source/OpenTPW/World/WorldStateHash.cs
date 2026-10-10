@@ -53,7 +53,7 @@ public sealed record WorldStateSources
 public static class WorldStateHash
 {
 	/// <summary>Bumped whenever the hashed fields or their order change.</summary>
-	public const int SchemaVersion = 5;
+	public const int SchemaVersion = 6;
 
 	public static ulong Compute( WorldStateSources sources )
 	{

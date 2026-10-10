@@ -128,12 +128,13 @@ public class M3GateAssetTests
 		Assert.AreEqual( 0, (int)paths.Evidence["strayPathCells"]! );
 		// Every row passes (the queue row on the traced boarding bound, BOARD-plan and WALK-plan): exit 0.
 		Assert.AreEqual( 0, report.ExitCode, report.ToSummary() );
-		// The queue is laid through the queue tool's code, charged per cell, and walked: 25 cells for the 100-guest limit.
+		// The queue is laid through the queue tool's code, charged per cell, and walked: 6 cells for Belly Bounce's limit
+		// trunc(130 × 5 / 30) = 21 (QUEUE-plan §4).
 		var queue = report["build.queue"];
 		Assert.AreEqual( M3GateVerdict.Pass, queue.Verdict, report.ToSummary() );
-		Assert.AreEqual( 25, (int)queue.Evidence["cellsLaid"]! );
-		Assert.AreEqual( 25L * 75, (long)queue.Evidence["charged"]! );
-		Assert.AreEqual( 100, (int)queue.Evidence["maximumQueueLength"]! );
+		Assert.AreEqual( 6, (int)queue.Evidence["cellsLaid"]! );
+		Assert.AreEqual( 6L * 75, (long)queue.Evidence["charged"]! );
+		Assert.AreEqual( 21, (int)queue.Evidence["maximumQueueLength"]! );
 		Assert.IsTrue( (int)queue.Evidence["boardedFromQueueCells"]! > 0, report.ToSummary() );
 		// No progress violation and no wait beyond W(p) with H = 56, R = 121; at least one wait judged, so the row passes.
 		var stuck = report["queues.no-stuck-queue"];

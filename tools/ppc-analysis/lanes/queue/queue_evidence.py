@@ -98,7 +98,7 @@ FIELDS = (
     (0xef6d8, 14, (0, 3, 10), 'state 8 lasts until counter > +520 + 10'),
     # Queue limit 0xdcb74 / 0xdc9d4 and physical room 0xdc988.
     (0xdcba4, 40, (0, 3, 46), 'ride flags +46'),
-    (0xdcbb0, 14, (28, 0, 100), 'HasQueue flag (bit 3) -> limit 100'),
+    (0xdcbb0, 14, (28, 0, 100), 'HasQueue flag (bit 3) clear -> limit 100'),
     (0xdcbb8, 32, (0, 29, 84), 'SPEED (+84)'),
     (0xdcbd8, 34, (0, 29, 76), 'upgrade level byte +76'),
     (0xdcbf4, 32, (0, 3, 424), 'Upgrades[level].InitSpeed'),
@@ -248,10 +248,12 @@ def queue_limit(has_queue: bool, queue_wait_time_constant: float, speed: int, in
                 capacity: int, duration: int) -> int:
     """0xdcb74/0xdc9d4: the admission limit compared with the queued count (full when count >= limit).
 
-    HasQueue objects (flag 0x8) get 100. Others get trunc(max(QWTC * (G * CAP) / DUR, 4.0)) with the
-    products and the quotient rounded to single; a NaN quotient fails the > 4.0 test and becomes 4.
+    Objects without HasQueue (flag 0x8 clear) get 100. HasQueue rides get trunc(max(QWTC * (G * CAP) / DUR, 4.0))
+    with the products and the quotient rounded to single; a NaN quotient fails the > 4.0 test and becomes 4.
+    (The polarity follows the bc at 0xdcbac and the ride build 0xdab6c, which sets 0x8 from Info.HasQueue;
+    ORACLE-V OV-1.)
     """
-    if has_queue:
+    if not has_queue:
         return 100
     g = speed_factor(speed, init_speed)
     product = f32(f32(queue_wait_time_constant) * f32(g * float(capacity)))

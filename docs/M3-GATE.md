@@ -102,9 +102,11 @@ remaining copies are listed under "Divergences from the player's build flow". If
    payment bridge.
 4. **Queue**: right after the ride, as in the HUD (placing a HasQueue ride switches to
    the queue tool, `BIN:STP-PPC:0x1007497C`). N = ⌈queue limit / 4 per cell⌉, capped at
-   `QueuePaths.MaximumCells` (25, `QUEUE-013`). For a HasQueue ride the limit is 100,
-   so **N = 25**: the longest queue the runtime builds. With it, the data limit, not
-   the cells, decides how many guests queue (`MaximumQueueLength` = min(100, 4N) = 100).
+   `QueuePaths.MaximumCells` (25, `QUEUE-013`). A HasQueue ride's limit is its
+   QueueWaitTimeConstant formula (QUEUE-plan §4): Belly Bounce gets trunc(130 × 5 / 30)
+   = 21, so **N = 6**. With it, the data limit, not the cells, decides how many guests
+   queue (`MaximumQueueLength` = min(21, 4N) = 21). Until ORACLE-F the runtime read the
+   flag the wrong way round (limit 100, N = 25; ORACLE-V F1).
    Each cell goes through `Level.BuildQueueCell`, the queue tool's per-cell code
    (recompute, `QueuePaths.CheckExtend`, `ParkEconomy.TrySpendCell(Queue)` at
    `Costs.QueueCell` = $75, `QueuePaths.TryExtend`). The blocked-cell test is
@@ -170,8 +172,9 @@ or on the boarding bound below:
     another 30-turn window, and the guest is called first.
   - one evaluation for the update order.
 
-  Belly Bounce (25 cells): 29 cells / (1.0 × 0.7 cells/s) = 41.43 s = 167.05 turns of
-  248 ms → 168; 168 + 3 + 22 + 1 = **194 turns** (326 before S1). One-cell queues (shop,
+  Belly Bounce (6 cells): 10 cells / (1.0 × 0.7 cells/s) = 14.29 s = 57.6 turns of
+  248 ms → 58; 58 + 3 + 22 + 1 = **84 turns** (194 with the 25-cell queue before
+  ORACLE-F, 326 before S1). One-cell queues (shop,
   toilet): 4 cells → 24 turns; 24 + 3 + 22 + 1 = **50 turns**.
 - **Blocked handshake.** `VAR_LETMEON` is non-zero while nobody is called, with a queue,
   on **two consecutive** evaluations (§9a's two-update rule). Only the bridge writes a
@@ -334,7 +337,12 @@ apart from `wallSeconds`.
 | staff.work | PASS | 10 wage payments ($2,100); mechanic: 17 repairs for 17 worn/broken events, longest 14.6 s within the 61-turn window, 0 pending; handyman: 582.5 litter items dropped, 582.5 cleaned, 0 missed hour updates |
 | determinism.same-seed | PASS | raw guest hash 67B41EEA7B70FD68 in both in-process runs; attraction ids 4 5 6 in both; gate hash F1666E8C69E092BE; 30 minute hashes in each run, no divergent minute |
 
-Baseline numbers above were measured on 33f8584 (the gate stack). On main, which traces ride wear and staff grades, the same run hires a grade-3 handyman ($2,300 wages), makes 4 repairs instead of 17, and has gate hash `AFDCA347E564786E`; every verdict is the same (review GATE-V4 S3).
+Baseline numbers above were measured on 33f8584 (the gate stack). ORACLE-F (the oracle fixes F1–F5) changes
+the layout: Belly Bounce's queue limit is 21, so the gate lays 6 queue cells ($450) instead of 25, and UNBOUNCE
+releases with the strict deadline and the 200 ms window. That run: 16 pass, 0 fail, 0 unresolved, exit 0; queue
+max 21/21, 280 completed waits (max 151.5 s, mean 126.0 s), 301 judged (21 still queued), 0 above the bound
+(closest 150 turns under), R 121, W_max 1,782 turns; head not ready ≤ 26 of 84 turns; gate hash `8ADCD47C727CC3F2`
+in both runs. On main, which traces ride wear and staff grades, the same run hires a grade-3 handyman ($2,300 wages), makes 4 repairs instead of 17, and has gate hash `AFDCA347E564786E`; every verdict is the same (review GATE-V4 S3).
 
 Totals: 16 pass, 0 fail, 0 unresolved; **exit code 0**. The evaluator accepts M3 under
 the approximations listed below. With `--no-determinism`: 15 pass, 0 fail, 1 unresolved,

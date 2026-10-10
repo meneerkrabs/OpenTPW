@@ -97,7 +97,7 @@ FIELDS = (
     (0x840fc, 11, (0, 0, 0), 'same type or empty cell allowed'),
     (0x84124, 11, (0, 4, 3), 'new type 3 ...'),
     (0x8412c, 11, (0, 0, 1), '... over a path cell ...'),
-    (0x84134, 32, (3, 2, -27980), '... only with the last-cell flag (TOC slot 0x12b4)'),
+    (0x84134, 32, (3, 2, -27980), '... unless the last-cell flag is set (TOC slot 0x12b4)'),
     # Validator 0x84154: line cost accumulation and land ownership.
     (0x843c0, 11, (0, 27, 1), 'type 1 prices with the path cost'),
     (0x843d0, 11, (0, 27, 3), 'type 3 prices with the queue cost'),
@@ -235,7 +235,9 @@ def can_change_cell_type(current: int, new: int, last_cell: bool) -> bool:
         return True
     if new == 4 and current == CELL_PATH:
         return True
-    return new == CELL_QUEUE and current == CELL_PATH and last_cell
+    # Rule 7: queue over path while the last-cell flag data:0x84b2c is 0 (`bne` refuses a nonzero word); the line
+    # tool raises it only for a line's last cell (ORACLE-V OV-1), so the last cell cannot turn a path into a queue.
+    return new == CELL_QUEUE and current == CELL_PATH and not last_cell
 
 
 def set_cell_type(current: int, new: int, counter: int, balance: int, path_cost: int, queue_cost: int,
@@ -243,7 +245,7 @@ def set_cell_type(current: int, new: int, counter: int, balance: int, path_cost:
     """0x82ac4: the write that charges. Returns the outcome; nothing is clamped or rounded.
 
     Same nonzero type: counter + 1, no charge. Path/queue cost a cell each, checked against the
-    balance (signed, balance >= cost) unless game +36 is set; Spend posts it afterwards.
+    balance (balance - cost >= 0 as a signed 32-bit difference) unless game +36 is set; Spend posts it afterwards.
     """
     if not can_change_cell_type(current, new, last_cell):
         return {'ok': False, 'type': current, 'counter': counter, 'charged': 0}
@@ -252,7 +254,7 @@ def set_cell_type(current: int, new: int, counter: int, balance: int, path_cost:
     cost = 0
     if not free_build:
         cost = path_cost if new == CELL_PATH else queue_cost if new == CELL_QUEUE else 0
-    affordable = economy_off or balance - cost >= 0
+    affordable = economy_off or (balance - cost + 0x80000000) % 0x100000000 - 0x80000000 >= 0
     if new in (CELL_PATH, CELL_QUEUE) and not affordable:
         return {'ok': False, 'type': current, 'counter': counter, 'charged': 0}
     return {'ok': True, 'type': new, 'counter': counter, 'charged': cost,

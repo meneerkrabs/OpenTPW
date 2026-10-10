@@ -301,7 +301,9 @@ glyph in all 14 UI fonts of each language.
   staggered along the panel's curve: `b_buy` (469), `b_info` (470), `b_money` (471), `b_resrch` (472),
   `b_map` (473) and `b_camera` (474). Only Buy works; the others show their disabled frame (the camera
   views are not implemented, UI-042).
-- The date text is drawn in black inside the date region (182,1061)-(383,1103) (table control 32). The bank
+- The date text is drawn in black inside the date region (182,1061)-(383,1103) (table control 32), in the
+  date font slot 3 (`DATETINY/SMALL/MED` by tier; only official Patch 2 and the Mac version ship these, the
+  1999 data falls back to the Small font, which is the same file as `DATESMALL`). The bank
   balance is not on the panel: the table puts it at the top left of the screen (control 47,
   (258,60)-(720,260), white cash font slot 1, drawn with the shipped `CASHSMALL/MED/BIG` fonts); the same table
   also has an `i_dollar` icon left of it, a `green_up` change arrow, and golden key/ticket counters

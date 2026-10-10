@@ -202,7 +202,7 @@ public sealed class GameLanguage
 
 		var baseDirectory = FindEntry( dataDirectory, Path.Combine( "Language", name ), true );
 		if ( baseDirectory != null )
-			return new GameLanguage( name, baseDirectory, dataDirectory, null, null );
+			return new GameLanguage( name, baseDirectory, dataDirectory, null, CopiedCdMeshes( dataDirectory, name ) );
 
 		var available = FindLanguages( dataDirectory, overlayPath );
 		throw new DirectoryNotFoundException( $"Language '{name}' not found. Available: {(available.Count == 0 ? "none" : string.Join( ", ", available ))}. " +
@@ -237,6 +237,17 @@ public sealed class GameLanguage
 		return languageRoot == null ? Enumerable.Empty<string>() : System.IO.Directory.EnumerateDirectories( languageRoot )
 			.Select( directory => CanonicalName( Path.GetFileName( directory ) ) )
 			.OrderBy( name => name, StringComparer.OrdinalIgnoreCase );
+	}
+
+	/// <summary>
+	/// A game folder copied from the CD (rather than installed) keeps the banner meshes in
+	/// <c>&lt;Lang&gt;/Meshes/&lt;Lang&gt;</c> beside <c>data</c>; the installer would have copied them into the
+	/// language folder.
+	/// </summary>
+	private static string? CopiedCdMeshes( string dataDirectory, string name )
+	{
+		var root = Path.GetDirectoryName( Path.TrimEndingDirectorySeparator( dataDirectory ) );
+		return root == null ? null : FindEntry( root, Path.Combine( name, "Meshes", name ), true );
 	}
 
 	private readonly record struct OverlayLanguage( string Name, string Directory, string DataDirectory, string? MeshDirectory );

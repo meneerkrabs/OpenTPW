@@ -118,13 +118,13 @@ class Registration(Scratch):
         (lane / 'test_synthetic.py').write_text("env = {'OPENTPW_PC_FIXTURE': '/x'}\n")
         (self.tools / SCIENTIST).parent.mkdir(parents=True)
         (self.tools / SCIENTIST).write_text(NET8)
-        rides = os.path.join('lanes', 'rides')
-        readers = [os.path.join(rides, 'helper.py'), os.path.join(rides, 'test_save.py')]
+        rides = 'lanes/rides'
+        readers = [f'{rides}/helper.py', f'{rides}/test_save.py']
         # Round 14: presence alone no longer counts; only a passing run with --fixture does.
         self.assertEqual(readers, runner.fixture_consumers(self.tools, 'OPENTPW_PC_FIXTURE'))
         ran = {'project': SCIENTIST, 'status': 'passed', 'arguments': ['--fixture', '/x.TPWI'], 'fixture_skips': []}
         self.assertEqual([*readers, SCIENTIST], runner.fixture_consumers(self.tools, 'OPENTPW_PC_FIXTURE', [ran]))
-        self.assertEqual([os.path.join(rides, 'test_other.py')], runner.fixture_consumers(self.tools, 'OPENTPW_MAC_APP'))
+        self.assertEqual([f'{rides}/test_other.py'], runner.fixture_consumers(self.tools, 'OPENTPW_MAC_APP'))
 
 
 @unittest.skipIf(os.name == 'nt', 'fake dotnet is a POSIX shell script')

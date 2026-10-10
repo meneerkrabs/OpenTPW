@@ -438,14 +438,17 @@ class Mutations(unittest.TestCase):
         self.assertEqual(1, result['exit'])
         self.assertEqual({'determinism.same-seed'}, {key for key, value in result['rows'].items() if value['verdict'] == 'fail'} - self.baseline_fails())
 
-    def test_divergence_that_converges_before_the_end_is_not_failed(self):
-        # GATE-V3 finding S3 (pre-existing, DET): the row compares only the final hashes. A second run that diverges in
-        # minute 1 (firstDivergentMinute is reported) but whose diverged guest has left by the end passes. When the
-        # row also requires firstDivergentMinute == null, this test must flip to FAIL.
-        row = self.run_gate('diverge-second-run', determinism=True)['rows']['determinism.same-seed']
+    def test_divergence_that_converges_before_the_end_fails(self):
+        # GATE-V3 finding S4 (pre-existing, DET), flipped by GATE-FIX2: the row compared only the final hashes, so a
+        # second run that diverges in minute 1 but whose diverged guest has left by the end passed. The row now also
+        # requires every minute hash (and their count) to match, and reports the divergent minute's end tick.
+        result = self.run_gate('diverge-second-run', determinism=True)
+        row = result['rows']['determinism.same-seed']
         self.assertEqual(1, row['evidence']['firstDivergentMinute'], row)
         self.assertTrue(row['evidence']['guestHashMatches'])
-        self.assertEqual('pass', row['verdict'])
+        self.assertEqual(('fail', 3600), (row['verdict'], row['firstViolationTick']), row)
+        self.assertEqual(1, result['exit'])
+        self.assertEqual({'determinism.same-seed'}, {key for key, value in result['rows'].items() if value['verdict'] == 'fail'} - self.baseline_fails())
 
 
 if __name__ == '__main__':

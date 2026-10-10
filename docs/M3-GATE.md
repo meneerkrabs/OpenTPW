@@ -127,10 +127,10 @@ Every row is sampled every tick.
 | `economy.ledger-consistent` | at every tick, balance = opening balance + Σ income − Σ expenses over every closed month and the open month | ledger history holds 144 months; the run closes about 10 |
 | `guests.flow` | at least one guest arrived, was admitted, used the attraction, the shop and the toilet (entered `Using` there), and an admitted guest left the simulation | counts per stage plus `BoardedTotal` per attraction |
 | `queues.no-stuck-queue` | **FAIL** on a derived progress violation (below); otherwise **UNRESOLVED** | per attraction: waits (from `QueueWaitCompleted`, park turns × 248 ms), queue maximum, head-not-ready streak and its bound, blocked evaluations, called age; for Belly Bounce the §9b wait bound with τ |
-| `paths.no-unreachable-goal` | every attraction's entrance and exit are reachable from the park entrance, and no guest stays in `GoingToRide` towards a join cell (the back of the queue, else the entrance cell) it cannot reach for two consecutive ticks | the existing give-up rule is `Confused` (`GuestSimulation.UpdateGoingToRide`); leaving guests without a reachable lane vanish (documented GuestSimulation simplification) and are counted |
+| `paths.no-unreachable-goal` | every attraction's entrance, exit and queue join cell are reachable from the park entrance at the end of the run (the join cell since review GATE-V3, S3), and no guest stays in `GoingToRide` towards a join cell (the back of the queue, else the entrance cell) it cannot reach for two consecutive ticks | the existing give-up rule is `Confused` (`GuestSimulation.UpdateGoingToRide`); leaving guests without a reachable lane vanish (documented GuestSimulation simplification) and are counted |
 | `rides.scripts-run` | at every tick, no placed object's script is `Faulted` or `Halted`, and each ends the run `Running` or `Waiting` | the gate opens every placed object and never closes or removes it. `RideVM` reaches `Halted` only by running past its last instruction (`RideVM.RunSlice`) or through `Stop()` (`OriginalObjectRuntime.Stop`: object removed or level torn down). Closing is `VAR_RIDECLOSED` (`OriginalObjectRuntime.Close`) and leaves the script running, so the runtime has no legitimate halted state for an open object. A completed cycle is not required (RIDES-023: BOUNCE never toggles `VAR_RUNNING`) |
 | `staff.work` | wages were paid, **and each staff type is hired and keeps doing its own work**: every `RideWorn`/`RideBrokeDown` event is followed by a `RideRepaired` for that ride within the repair window, and litter left from an earlier tick shrinks at every park-hour update (see "Staff windows"); also ≥ 1 repair if one was needed and some cleaning if litter existed | removing, idling, or idling after the first job fails the row (first violation tick); a repair whose window runs past the end is pending, not a failure; staff exist only in `ParkEconomy` |
-| `determinism.same-seed` | the DET node owns fixes, but a FAIL still sets exit code 1: the whole scenario runs twice in one process and both hashes are compared | see below |
+| `determinism.same-seed` | the DET node owns fixes, but a FAIL still sets exit code 1: the whole scenario runs twice in one process; both final hashes, **every minute hash** and the number of minute hashes must match, so a second run that diverges and converges again by the end fails (review GATE-V3, S4) | see below |
 
 **Queue progress (QUEUE-plan §9a).** The gate subscribes to
 `RideVisitorBridge.AdmissionChecked` (one evaluation per park turn) and reads the
@@ -138,13 +138,25 @@ bridge's counters (`HeadNotReadyStreak`, `MaximumCalledAgeTurns`). The old
 `AdmissionCheck.Stalled` could never become true (review QUEUE-V, S1) and is not used.
 The row **fails** on either of these:
 
-- **Head not ready beyond its bound.** The gates hold and there is a head, but it is not
-  standing at position 0 (`AdmissionCheck.HeadNotReady`). This is counted per head: the
-  streak restarts when another guest becomes head. The bound comes from the guest's
-  own state-11/12 rules (`HeadNotReadyBound`), with N the ride's queue cells:
-  - the walk of 2N + 2 cells (join step, up to N cells to its recorded position, up to N
-    back to position 0, one cell of sub-cell offsets) at the slowest walk speed
-    (`WalkSpeedCellsPerSecond` × 0.7 below 20 energy);
+- **Head not ready beyond its bound.** There is a head, but it is not standing at
+  position 0 (`!AdmissionCheck.HeadAtFront`), **whether or not the gates hold**. The
+  head's walk, move-up wait and interludes do not depend on the ride's gates, so an
+  evaluation with the gates not holding (for example one blocked `VAR_LETMEON`) does
+  not restart the count (review GATE-V3, S2). This is counted per head: the streak
+  restarts only when another guest becomes head or the head reaches position 0. The
+  bound comes from the guest's own state-11/12 rules (`HeadNotReadyBound`), with N the
+  ride's queue cells:
+  - the walk at the slowest walk speed (`WalkSpeedCellsPerSecond` × 0.7 below 20
+    energy). A head only walks **forward**: its queue position is a list index that
+    only decreases (`GetQueuePosition`), and `UpdateQueueWalk` steps `QueueCellIndex`
+    only towards the front over 4-connected cells. After becoming head it walks at most:
+    1. the join step, ≤ 1 + √2/2 cells;
+    2. N − 1 cell steps to position 0;
+    3. two sub-cell legs (depth 0 to 0.75, lateral ±0.05);
+    4. up to one tick of lost step per waypoint.
+
+    That is under N + 4 cells. For N ≤ 1 the older count of 2 × max(1, N) + 2 cells is
+    smaller, so the walk is min(2 × max(1, N) + 2, N + 4) cells (review GATE-V3, S1);
   - the move-up wait at gap ≤ 2: trunc(1.2 × 2) turns, then the move on the next update;
   - two interludes of 11 turns. Interludes start only when the guest stands at its
     recorded position: one may be running when the guest becomes head, and one may start
@@ -152,8 +164,9 @@ The row **fails** on either of these:
     another 30-turn window, and the guest is called first.
   - one evaluation for the update order.
 
-  Belly Bounce (25 cells): 300 + 3 + 22 + 1 = **326 turns**. One-cell queues (shop,
-  toilet): 24 + 3 + 22 + 1 = **50 turns**.
+  Belly Bounce (25 cells): 29 cells / (1.0 × 0.7 cells/s) = 41.43 s = 167.05 turns of
+  248 ms → 168; 168 + 3 + 22 + 1 = **194 turns** (326 before S1). One-cell queues (shop,
+  toilet): 4 cells → 24 turns; 24 + 3 + 22 + 1 = **50 turns**.
 - **Blocked handshake.** `VAR_LETMEON` is non-zero while nobody is called, with a queue,
   on **two consecutive** evaluations (§9a's two-update rule). Only the bridge writes a
   guest id into `VAR_LETMEON` (for the called guest), and the script consumes it or the
@@ -226,7 +239,7 @@ connector) and D5 (`Level.RegisterWithGuests` applies `Runtime.IsAttraction`).
 ## Baseline (jungle, seed `Level.GuestSeed` = 6075451861746676596, 30 minutes)
 
 Run on October 10, 2026 against the local original data, in two separate processes:
-the same table and exit code **1** both times, and the JSON reports are identical
+the same table and exit code **2** both times, and the JSON reports are identical
 apart from `wallSeconds`.
 
 | Row | Verdict | Evidence |
@@ -242,11 +255,11 @@ apart from `wallSeconds`.
 | economy.income-and-expenses | PASS | setup $3,405; income: gate $35,760, shops $34,860; expenses: staff $2,100, other $23,240 |
 | economy.ledger-consistent | PASS | 0 violations in 108,000 samples, 10 months closed |
 | guests.flow | PASS | 1,800 arrived, 1,788 admitted, 0 turned back, 286 used the ride, 833 the shop, 156 the toilet, 1,649 left, 134 in the park at the end |
-| queues.no-stuck-queue | UNRESOLVED | 0 violations. Belly Bounce: queue max 51/100, 286 waits, max 254.4 s, mean 213.7 s; head not ready ≤ 106 of 326 turns; 0 blocked evaluations; called age ≤ 3 turns; W_max 620 s at τ = 0, τ measured 0 s, 0 waits above W(p). Shop/toilet: head not ready ≤ 9 / 2 of 50 turns, called age ≤ 1 / 7 turns. 52 guests left a queue without boarding |
+| queues.no-stuck-queue | UNRESOLVED | 0 violations. Belly Bounce: queue max 51/100, 286 waits, max 254.4 s, mean 213.7 s; head not ready ≤ 106 of 194 turns; 0 blocked evaluations; called age ≤ 3 turns; W_max 620 s at τ = 0, τ measured 0 s, 0 waits above W(p). Shop/toilet: head not ready ≤ 13 / 11 of 50 turns (gates held or not), called age ≤ 1 / 7 turns. 52 guests left a queue without boarding |
 | paths.no-unreachable-goal | PASS | all targets reachable; 0 stuck guests; 0 Confused give-ups; 0 lane-less ejections |
 | rides.scripts-run | PASS | 0 faults, 0 halted ticks (Belly Bounce, Drinks Shop, Small Toilet waiting; Bus, Gates, Lights running) |
 | staff.work | PASS | 10 wage payments ($2,100); mechanic: 17 repairs for 17 worn/broken events, longest 14.6 s within the 61-turn window, 0 pending; handyman: 581 litter items dropped, 581 cleaned, 0 missed hour updates |
-| determinism.same-seed | PASS | raw guest hash 41F91296D1861ACD in both in-process runs; attraction ids 4 5 6 in both; gate hash E8BB1012535C346D |
+| determinism.same-seed | PASS | raw guest hash 41F91296D1861ACD in both in-process runs; attraction ids 4 5 6 in both; gate hash E8BB1012535C346D; 30 minute hashes in each run, no divergent minute |
 
 Totals: 15 pass, 0 fail, 1 unresolved; **exit code 2** (M3 not accepted). With
 `--no-determinism`: 14 pass, 0 fail, 2 unresolved, exit 2.
@@ -298,11 +311,16 @@ v1/v2 and pins the current rows:
 | `paths-direct-write` (the old stand-in: cells charged and written around the builder) | `build.paths` | **FAIL** (0 built, 14 stray path cells), the only failing row |
 | `paths-no-charge` (`ParkPathBuilder` without the economy) | `build.paths` | **FAIL** (charged $0 for 14 cells) |
 | `block-boarding` (v1: `VAR_LETMEON` = −1 from tick 18,000) | `queues.no-stuck-queue` | **FAIL** (blocked handshake), the only new failing row |
-| `never-called-head` (the head is held in an interlude from tick 18,000) | `queues.no-stuck-queue` | **FAIL** (head not ready beyond 326 turns) |
+| `never-called-head` (the head is held in an interlude from tick 18,000) | `queues.no-stuck-queue` | **FAIL** (head not ready beyond 194 turns) |
 | `stall-one-update` (shop `VAR_LETMEON` = −1 for one evaluation) | `queues.no-stuck-queue` | stays UNRESOLVED (1 blocked evaluation) |
 | `idle-mechanic-after-first-repair` (v2) | `staff.work` | **FAIL** (wear not repaired within 61 turns) |
 | `idle-handyman-after-first-clean` (v2) | `staff.work` | **FAIL** (litter not reduced at an hour update) |
 | `queue-bypass-economy` (`Level.BuildQueueCell` without the economy) | `build.queue` | **FAIL** (charged $0 for 25 cells) |
+| `never-ready-head-blips` (GATE-V3: the held head, plus one blocked evaluation every 300 turns) | `queues.no-stuck-queue` | **FAIL** at tick 20,892 (S2; was UNRESOLVED, streak ≤ 299 of 326) |
+| `never-ready-head-blips-150` (the same, every 150 turns: below the 194-turn bound) | `queues.no-stuck-queue` | **FAIL** at tick 20,892 (S2; was UNRESOLVED, streak ≤ 149) |
+| `head-held-250-turns` (the head held in an interlude for 250 turns from tick 18,000, then released) | `queues.no-stuck-queue` | **FAIL** (263 > 194 turns, S1; was UNRESOLVED, 259 ≤ 326) |
+| `cut-path` (v1) | `paths.no-unreachable-goal` | **FAIL**; the end-of-run list now includes Belly Bounce, whose join cell is cut off (S3; was "Drinks Shop, Small Toilet") |
+| `diverge-second-run` (v1: the second run diverges at tick 2,000 and converges by the end) | `determinism.same-seed` | **FAIL** at tick 3,600, minute 1 (S4; was PASS) |
 
 Static checks in v3:
 - `Level.BuildQueueCell` keeps its old steps in order;

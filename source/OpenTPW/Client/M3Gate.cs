@@ -166,8 +166,14 @@ public static class M3Gate
 		evidence["firstDivergentMinute"] = divergence < 0 ? null : (int?)(divergence + 1);
 		evidence["attractionIdsRun1"] = string.Join( " ", first.AttractionIds );
 		evidence["attractionIdsRun2"] = string.Join( " ", second.AttractionIds );
-		var matches = first.GuestHash == second.GuestHash && first.GateHash == second.GateHash;
-		long? firstTick = divergence < 0 ? null : (divergence + 1L) * TicksForMinutes( 1 );
+		evidence["minuteHashesRun1"] = first.MinuteHashes.Count;
+		evidence["minuteHashesRun2"] = second.MinuteHashes.Count;
+		// A same-seed run that differs at any recorded minute is not deterministic, even when it converges again by the
+		// end (review GATE-V3, S4): the final hashes, every minute hash and the number of minute hashes must all match.
+		var sameMinutes = divergence < 0 && first.MinuteHashes.Count == second.MinuteHashes.Count;
+		var matches = first.GuestHash == second.GuestHash && first.GateHash == second.GateHash && sameMinutes;
+		long? firstTick = divergence >= 0 ? (divergence + 1L) * TicksForMinutes( 1 )
+			: sameMinutes ? null : (Math.Min( first.MinuteHashes.Count, second.MinuteHashes.Count ) + 1L) * TicksForMinutes( 1 );
 		return new M3GateRow( "determinism.same-seed", "determinism", "Same seed gives the same state hash (report only)",
 			matches ? M3GateVerdict.Pass : M3GateVerdict.Fail, matches ? null : firstTick, evidence );
 	}
@@ -824,11 +830,11 @@ internal sealed class M3GateRun
 		public readonly List<(long Turns, int Position)> Waits = new();
 		public int MaxQueue;
 		public long Evaluations;
-		/// <summary>Bound on consecutive evaluations with the gates held and the same head not ready (<see cref="M3GateRun.HeadNotReadyBound"/>).</summary>
+		/// <summary>Bound on consecutive evaluations with the same head not standing at position 0 (<see cref="M3GateRun.HeadNotReadyBound"/>).</summary>
 		public long HeadBound;
 		public int HeadGuest;
-		/// <summary><see cref="RideVisitorBridge.HeadNotReadyStreak"/> when the current head took over (the bound is per head).</summary>
-		public long HeadStreakBase;
+		/// <summary>Consecutive evaluations the current head has not stood at position 0, whether or not the gates held.</summary>
+		public long HeadStreak;
 		public long MaxHeadStreak;
 		public long BlockedStreak, MaxBlockedStreak;
 		public readonly Violation HeadNotReady = new();
@@ -890,13 +896,15 @@ internal sealed class M3GateRun
 			var state = progress[index];
 			var name = placed[index].Entry.SettingsName;
 			state.Evaluations++;
-			// (a) The gates hold but the head is not standing at position 0 (RideVisitorBridge.HeadNotReadyStreak): bounded
-			// per head by its own walk and wait rules, so the streak restarts when another guest becomes head.
-			if ( check.HeadNotReady )
+			// (a) The head is not standing at position 0: bounded per head by its own walk and wait rules, which do not depend
+			// on the ride's gates. So every such evaluation counts, whether or not the gates hold (a blocked evaluation does
+			// not restart it, review GATE-V3 S2); the streak restarts only when another guest becomes head or the head
+			// reaches position 0.
+			if ( check.HeadGuest != 0 && !check.HeadAtFront )
 			{
 				if ( check.HeadGuest != state.HeadGuest )
-					(state.HeadGuest, state.HeadStreakBase) = (check.HeadGuest, bridge.HeadNotReadyStreak - 1);
-				var streak = bridge.HeadNotReadyStreak - state.HeadStreakBase;
+					(state.HeadGuest, state.HeadStreak) = (check.HeadGuest, 0);
+				var streak = ++state.HeadStreak;
 				state.MaxHeadStreak = Math.Max( state.MaxHeadStreak, streak );
 				if ( streak > state.HeadBound )
 					state.HeadNotReady.Add( currentTick, $"tick {currentTick}: {name} head guest {check.HeadGuest} not ready for {streak} evaluations (bound {state.HeadBound})" );
@@ -1109,18 +1117,21 @@ internal sealed class M3GateRun
 	}
 
 	/// <summary>
-	/// Most consecutive admission evaluations the same head may stand with the gates held but not ready, from the
-	/// state-11/12 rules (GuestSimulation): two interludes (<c>turn &gt; +520 + 10</c>: 11 turns each; one running when
-	/// the guest becomes head, one on arriving at position 0), the move-up wait at gap ≤ 2
-	/// (trunc(1.2 × 2) turns, then the move on the next update), and the walk: the join step plus up to
-	/// <paramref name="queueCells"/> cells to its recorded position and up to as many back to position 0, plus one
-	/// cell of sub-cell offsets, at the slowest walk speed (× 0.7 below 20 energy, GuestSimulation.Speed); plus one
+	/// Most consecutive admission evaluations the same head may stand away from position 0, from the state-11/12 rules
+	/// (GuestSimulation): two interludes (<c>turn &gt; +520 + 10</c>: 11 turns each; one running when the guest becomes
+	/// head, one on arriving at position 0), the move-up wait at gap ≤ 2 (trunc(1.2 × 2) turns, then the move on the
+	/// next update), and the walk at the slowest walk speed (× 0.7 below 20 energy, GuestSimulation.Speed); plus one
 	/// evaluation for the order of the guest and ride updates in a turn.
+	/// The walk only goes forward: the queue position is a list index that only decreases (GetQueuePosition) and
+	/// UpdateQueueWalk steps QueueCellIndex only towards the front over 4-connected cells. So after becoming head a
+	/// guest walks at most the join step (≤ 1 + √2/2 cells), N − 1 cell steps, two sub-cell legs (depth 0..0.75,
+	/// lateral ±0.05) and up to one tick of lost step per waypoint: under N + 4 cells for
+	/// <paramref name="queueCells"/> = N ≥ 1. The older 2 × max(1, N) + 2 cells is kept where it is smaller (N ≤ 1).
 	/// </summary>
 	internal static (long Turns, string Derivation) HeadNotReadyBound( int queueCells, float walkCellsPerSecond )
 	{
 		const float TiredWalkFactor = 0.7f;
-		var cells = 2 * Math.Max( 1, queueCells ) + 2;
+		var cells = Math.Min( 2 * Math.Max( 1, queueCells ) + 2, queueCells + 4 );
 		var walkTurns = (long)Math.Ceiling( cells / (walkCellsPerSecond * TiredWalkFactor) * 1000 / ParkCalendar.TurnMilliseconds );
 		var moveUpTurns = (long)(GuestSimulation.MoveDelayFactor * GuestSimulation.MoveUpWaitGap) + 1;
 		// Interludes start only when standing at the recorded position (state 11 step 7): one may be running when the guest
@@ -1237,8 +1248,8 @@ internal sealed class M3GateRun
 	}
 
 	/// <summary>
-	/// The queue row (QUEUE-plan §9). It fails on a derived progress violation: (a) the gates held while the same head
-	/// was not ready for longer than <see cref="HeadNotReadyBound"/>, or a queue the admission handshake cannot
+	/// The queue row (QUEUE-plan §9). It fails on a derived progress violation: (a) the same head did not stand at
+	/// position 0 (whether or not the gates held) for longer than <see cref="HeadNotReadyBound"/>, or a queue the admission handshake cannot
 	/// move (VAR_LETMEON non-zero with nobody called on two consecutive evaluations: §9a's two-update rule).
 	/// Otherwise it stays unresolved: (b) the time from a call to boarding includes the script's consumption of
 	/// VAR_LETMEON and the Belly Bounce wait bound needs the boarding latency τ, neither of which is traced
@@ -1252,7 +1263,7 @@ internal sealed class M3GateRun
 			["leftQueueWithoutBoarding"] = leftWithoutBoarding,
 			["vanishedWhileQueued"] = vanished,
 			["stillQueuedAtEndMaxSeconds"] = Math.Round( stillQueuedTurns * turnSeconds, 3 ),
-			["rule"] = "FAIL: same head not ready with the gates held beyond its derived bound, or VAR_LETMEON non-zero with nobody called on 2 consecutive evaluations; else UNRESOLVED (call-to-boarding time and tau untraced)"
+			["rule"] = "FAIL: same head not at position 0 (gates held or not) beyond its derived bound, or VAR_LETMEON non-zero with nobody called on 2 consecutive evaluations; else UNRESOLVED (call-to-boarding time and tau untraced)"
 		};
 		for ( var index = 0; index < placed.Count; index++ )
 		{
@@ -1271,7 +1282,7 @@ internal sealed class M3GateRun
 				["headNotReadyMaxTurns"] = state.MaxHeadStreak,
 				["headNotReadyBoundTurns"] = state.HeadBound,
 				["headNotReadyBound"] = HeadNotReadyBound( visitors.QueueSizeInCells, guests.Settings.WalkSpeedCellsPerSecond ).Derivation,
-				["headNotReadyMaxAcrossHeads"] = visitors.MaximumHeadNotReadyStreak,
+				["headNotReadyGatesHeldMaxAcrossHeads"] = visitors.MaximumHeadNotReadyStreak,
 				["blockedMaxEvaluations"] = state.MaxBlockedStreak,
 				["calledAgeMaxTurns"] = visitors.MaximumCalledAgeTurns,
 				["calledAgeAtEndTurns"] = visitors.CalledAgeTurns
@@ -1320,8 +1331,10 @@ internal sealed class M3GateRun
 
 	private void AddReachabilityRow( Violation violation, long confused, long ejected )
 	{
+		// The join cell is where guests walk to join the queue (GuestSimulation.UpdateGoingToRide), so it must be reachable too.
 		var unreachableTargets = placed.Where( item => grid.Distance( entranceCell.X, entranceCell.Y, item.Runtime.Visitors.EntranceCell.X, item.Runtime.Visitors.EntranceCell.Y ) < 0
-			|| grid.Distance( item.Runtime.Visitors.ExitCell.X, item.Runtime.Visitors.ExitCell.Y, entranceCell.X, entranceCell.Y ) < 0 ).Select( item => item.Entry.SettingsName ).ToList();
+			|| grid.Distance( item.Runtime.Visitors.ExitCell.X, item.Runtime.Visitors.ExitCell.Y, entranceCell.X, entranceCell.Y ) < 0
+			|| (item.Runtime.Visitors.JoinCell is { } join && grid.Distance( entranceCell.X, entranceCell.Y, join.X, join.Y ) < 0) ).Select( item => item.Entry.SettingsName ).ToList();
 		var evidence = new JsonObject
 		{
 			["unreachableAttractions"] = unreachableTargets.Count == 0 ? "none" : string.Join( ", ", unreachableTargets ),

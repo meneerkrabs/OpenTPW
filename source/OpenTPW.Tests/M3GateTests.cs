@@ -49,17 +49,19 @@ public class M3GateTests
 		StringAssert.Contains( summary[3], "first violation tick 7" );
 	}
 
-	/// <summary>The queue row's head bound follows the state-11/12 rules: walk 2N + 2 cells at 0.7 x walk speed, the gap-2 move-up wait, two interludes and one update.</summary>
+	/// <summary>The queue row's head bound follows the state-11/12 rules: walk min(2N + 2, N + 4) cells at 0.7 x walk speed, the gap-2 move-up wait, two interludes and one update.</summary>
 	[TestMethod]
 	public void HeadNotReadyBoundFollowsTheQueueRules()
 	{
-		// 25 cells: 52 cells / 0.7 cells/s = 74.29 s = 299.5 turns of 248 ms -> 300; + trunc(1.2 x 2) + 1 = 3; + 2 x 11; + 1.
-		Assert.AreEqual( 326L, M3GateRun.HeadNotReadyBound( 25, 1.0f ).Turns );
-		// One cell: 4 / 0.7 = 5.71 s = 23.04 turns -> 24; + 3 + 22 + 1.
+		// 25 cells: the head only walks forward, so N + 4 = 29 cells / 0.7 cells/s = 41.43 s = 167.05 turns of 248 ms -> 168;
+		// + trunc(1.2 x 2) + 1 = 3; + 2 x 11; + 1 (review GATE-V3 S1; 2N + 2 = 52 cells gave 326).
+		Assert.AreEqual( 194L, M3GateRun.HeadNotReadyBound( 25, 1.0f ).Turns );
+		StringAssert.Contains( M3GateRun.HeadNotReadyBound( 25, 1.0f ).Derivation, "walk 29 cells" );
+		// One cell: 2N + 2 = 4 is below N + 4 = 5; 4 / 0.7 = 5.71 s = 23.04 turns -> 24; + 3 + 22 + 1.
 		Assert.AreEqual( 50L, M3GateRun.HeadNotReadyBound( 1, 1.0f ).Turns );
 		Assert.AreEqual( 50L, M3GateRun.HeadNotReadyBound( 0, 1.0f ).Turns );
-		// A faster walk only shortens the walk term.
-		Assert.AreEqual( 26L + 150, M3GateRun.HeadNotReadyBound( 25, 2.0f ).Turns );
+		// A faster walk only shortens the walk term: 29 / 1.4 = 20.71 s = 83.53 turns -> 84.
+		Assert.AreEqual( 84L + 26, M3GateRun.HeadNotReadyBound( 25, 2.0f ).Turns );
 		StringAssert.Contains( M3GateRun.HeadNotReadyBound( 25, 1.0f ).Derivation, "2 interludes x 11" );
 	}
 }

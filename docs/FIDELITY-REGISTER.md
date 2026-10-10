@@ -318,7 +318,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-044 | `source/OpenTPW/Economy/GuestEconomyBridge.cs:60` | [APPROX:ECON-044] balloon/costume percentages are 0 (guests carry no items yet) — evidence needed: guests slice item state |
 | ECON-045 | `source/OpenTPW.Files/Formats/Save/SaveEconomyRecords.cs:105` | [APPROX:ECON-045] loan/challenge record locators use plausibility bounds (one fixture) — evidence needed: a second TPWS/TPWI fixture |
 | GATE-001 | `source/OpenTPW/Client/M3Gate.cs:117` | [APPROX:GATE-001] an M3 in-game minute is 60 s of normal-speed simulation (3,600 fixed 60 Hz ticks), not a park-clock minute (one 248 ms park turn already advances the park clock 3,750 s) — evidence needed: the original's notion of elapsed play time for the M3 gate |
-| GATE-003 | `source/OpenTPW/Client/M3Gate.cs:1294` | [APPROX:GATE-003] the Belly Bounce wait bound is reported with boarding latency tau = 0 s (a lower bound) next to the tau the run implies; it is evidence, not a pass threshold — evidence needed: the walk speed and the script loop latency between VAR_LETMEON and BOUNCE (QUEUE-plan §9b, §10) |
+| GATE-003 | `source/OpenTPW/Client/M3Gate.cs:1305` | [APPROX:GATE-003] the Belly Bounce wait bound is reported with boarding latency tau = 0 s (a lower bound) next to the tau the run implies; it is evidence, not a pass threshold — evidence needed: the walk speed and the script loop latency between VAR_LETMEON and BOUNCE (QUEUE-plan §9b, §10) |
 | ONLINE-001 | `source/OpenTPW.Online/Moderation/WordFilter.cs:86` | [APPROX:ONLINE-001] Matching rule — evidence needed: the original filter code is not |
 | ONLINE-002 | `source/OpenTPW.Online/Chat/ChatCommands.cs:180` | [APPROX:ONLINE-002] A line starting with '/' is a command, anything else is "say" — evidence |
 | ONLINE-003 | `source/OpenTPW.Online/Chat/ChatCommands.cs:34` | [APPROX:ONLINE-003] 102/110 are both "Could not add "; assigned to ignore/buddy by their position next to |
@@ -549,7 +549,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | Rides.sam:Info.WhichUIType | `source/OpenTPW/Hud/HudStubs.cs:150` | [DATA:Rides.sam:Info.WhichUIType] |
 | Rides.sam:UsageInfo.ExcitementLevel | `source/OpenTPW/Hud/HudStubs.cs:147` | [DATA:Totem.sam:UsageInfo.ExcitementLevel] overrides [DATA:Rides.sam:UsageInfo.ExcitementLevel] |
 | Standard.sam:Costs.QueueCell | `source/OpenTPW/World/Level.Objects.cs:212` | [DATA:Standard.sam:Costs.QueueCell] charged per cell when written (ParkEconomy.TrySpendCell, PATH-plan §3.2) |
-| Standard.sam:FixedItemInfo lanes | `source/OpenTPW/Client/M3Gate.cs:307` | [DATA:levels/&lt;theme&gt;/terrain/base.map:InitialPath] [DATA:Standard.sam:FixedItemInfo lanes] |
+| Standard.sam:FixedItemInfo lanes | `source/OpenTPW/Client/M3Gate.cs:313` | [DATA:levels/&lt;theme&gt;/terrain/base.map:InitialPath] [DATA:Standard.sam:FixedItemInfo lanes] |
 | THEMENAMES.str:entries 0..3 | `source/OpenTPW/World/Original/OriginalGateSign.cs:46` | [DATA:THEMENAMES.str:entries 0..3] Lost Kingdom, Halloween World, Wonder Land, Space Zone. |
 | TPWORLD.ISO and retail install | `source/OpenTPW.Files/Public/DataOverlay.cs:147` | &lt;summary&gt;[DATA:TPWORLD.ISO and retail install] global music and the four theme music banks.&lt;/summary&gt; |
 | TPWORLD.ISO and retail install:Data/Movies | `source/OpenTPW.Files/Public/DataOverlay.cs:144` | &lt;summary&gt;[DATA:TPWORLD.ISO and retail install:Data/Movies] the nine shipped movies.&lt;/summary&gt; |
@@ -564,7 +564,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | global/advisor.wad:Advisor.MD2 | `source/OpenTPW/World/Advisor.cs:18` | [DATA:global/advisor.wad:Advisor.MD2] |
 | jungle Bouncy.sam + Rides.sam | `source/OpenTPW.Tests/GuestAssetTests.cs:129` | [DATA:jungle Bouncy.sam + Rides.sam] HasQueue, RunsContinuously, CAP 5, DUR 30, InitSpeed 60, QWTC 130 (QUEUE-plan §9). |
 | levels/&lt;level&gt;/global.sam:ParkName.GateObjectId | `source/OpenTPW/World/Original/OriginalGateSign.cs:64` | [DATA:levels/&lt;level&gt;/global.sam:ParkName.GateObjectId] |
-| levels/&lt;theme&gt;/terrain/base.map:InitialPath | `source/OpenTPW/Client/M3Gate.cs:307` | [DATA:levels/&lt;theme&gt;/terrain/base.map:InitialPath] [DATA:Standard.sam:FixedItemInfo lanes] |
+| levels/&lt;theme&gt;/terrain/base.map:InitialPath | `source/OpenTPW/Client/M3Gate.cs:313` | [DATA:levels/&lt;theme&gt;/terrain/base.map:InitialPath] [DATA:Standard.sam:FixedItemInfo lanes] |
 | levels/Standard.sam:BankAccountInfo.* (layered) | `source/OpenTPW/Economy/BalanceSettings.cs:72` | [DATA:levels/Standard.sam:BankAccountInfo.* (layered)] |
 | levels/jungle/Easymode.TPWI:loan table repayments = floor(amount/months) at 0 % APR | `source/OpenTPW/Economy/ParkLedger.cs:146` | [DATA:levels/jungle/Easymode.TPWI:loan table repayments = floor(amount/months) at 0 % APR] |
 | levels/space/rides/megacost.wad/megacost.sgn:slot 1 = "EggIt Italic"/EGGII___.TTF, not in fonts.wad | `source/OpenTPW.Files/Public/DataCorrections.cs:18` | [EXT:COMPAT-FIX sign-font-substitution] [DATA:levels/space/rides/megacost.wad/megacost.sgn:slot 1 = "EggIt Italic"/EGGII___.TTF, not in fonts.wad] |

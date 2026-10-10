@@ -78,8 +78,8 @@ public static partial class Program
 		foreach ( var diagnostic in diagnostics )
 			Log.Warning( diagnostic );
 
-		// No sound or movies yet (docs/WEB.md).
-		GameAudio.Enabled = false;
+		// Sound plays through WebAudio (Browser/WebAudioOutput.cs); movies are not in the browser yet.
+		GameAudio.Enabled = true;
 		renderer = new Renderer( DisplaySettings.Default, null );
 		Render = renderer;
 		flow = new GameFlow { OnlineFolders = new OnlineFolders( "/online" ) };

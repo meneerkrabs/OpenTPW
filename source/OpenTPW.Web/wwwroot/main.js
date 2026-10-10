@@ -1,5 +1,6 @@
 import { dotnet } from './_framework/dotnet.js';
 import * as webgl from './opentpw-gl.js';
+import * as audio from './opentpw-audio.js';
 
 // The game in the browser (docs/WEB.md): the player's own files go into the runtime's memory, then
 // the front end runs in the canvas, one Program.Frame per animation frame.
@@ -7,15 +8,16 @@ const status = document.getElementById('status');
 const { setModuleImports, getAssemblyExports, getConfig, runMain } = await dotnet.create();
 setModuleImports('opentpw-gl', webgl);
 setModuleImports('opentpw-page', { requestLevel });
+setModuleImports('opentpw-audio', audio);
 const program = (await getAssemblyExports(getConfig().mainAssemblyName)).OpenTPW.Program;
 // runMain keeps the runtime alive after Main returns, so the exports stay callable.
 await runMain();
 status.textContent = 'Ready.';
 
-// Not copied: the movies, the start-up pictures and the sound banks (no sound or movies yet).
-const notCopied = /\/data\/(movies|init)\/|\.(sdt|sf2|mpg)$/i;
-// Copied when a park first needs them: the theme folders below levels (about 10 MB each). Their saved
-// park (Easymode.TPWI) comes at once, for the Load list.
+// Not copied: the movies and the start-up pictures (no movies in the browser yet).
+const notCopied = /\/data\/(movies|init)\/|\.(sf2|mpg)$/i;
+// Copied when a park first needs them: the theme folders below levels (about 45 MB each, most of it
+// music). Their saved park (Easymode.TPWI) comes at once, for the Load list.
 const deferred = /^\/data\/levels\/[^/]+\/(?!easymode\.tpwi$)/i;
 let levelSources = [];
 
@@ -78,7 +80,17 @@ async function start() {
 		program.Start(location.origin);
 		document.getElementById('canvas').focus();
 		const frame = () => {
-			if (program.Frame())
+			let running;
+			try {
+				running = program.Frame();
+			} catch (error) {
+				// Stop instead of freezing silently, and say why.
+				document.getElementById('setup').hidden = false;
+				status.textContent = `The game stopped: ${error.message}`;
+				console.error(error);
+				return;
+			}
+			if (running)
 				requestAnimationFrame(frame);
 		};
 		requestAnimationFrame(frame);

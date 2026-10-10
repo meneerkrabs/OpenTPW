@@ -20,7 +20,9 @@ glossy 3D cartoon style; do not redesign"; `tools/hero-art/prompts.tsv`). Matchi
 as edits of one result (door closed/open, left/right arrow; the right lobby arrow is the mirrored
 left one; the lit feature button is a recolour of the normal one). `tools/hero-art/fit.py` fits each
 result back into the original texture layout: the icon is scaled onto the original icon's bounding
-box, the outline comes from the original alpha mask, and the state variants are derived from the
+box, the outline comes from the original alpha mask (capped to the redrawn silhouette where the image model's
+white backdrop would show through), background and fully transparent texels are recoloured with the nearest
+icon colour so neither the backdrop nor texture filtering leaves a light halo, and the state variants are derived from the
 redrawn base with the original's colour change (per-channel gain for pressed and grey states, a
 fitted colour mapping for highlighted ones). For the round yellow HUD buttons and the green build-category
 buttons, `tools/hero-art/rim.py` then keeps the original rim (from the anime-upscaled original) and takes

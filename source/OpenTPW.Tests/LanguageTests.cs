@@ -54,6 +54,19 @@ public class LanguageTests
 	}
 
 	[TestMethod]
+	public void LanguagesBesideACdCopiedDataFolderAreChoosableWhenReadable()
+	{
+		CreateLanguage( "Data", "English" );
+		CreateLanguage( Path.Combine( "Danish", "data" ), "danish", "xyz" );
+		var polish = CreateLanguage( Path.Combine( "Polish", "data" ), "Polish" );
+		File.WriteAllBytes( Path.Combine( polish, "MBToUni.dat" ), new byte[] { (byte)'B', (byte)'F', (byte)'M', (byte)'U', 1, 0, 0xFF, 0x4B, 0x2A, 0 } );
+		var data = Path.Combine( root, "Data" );
+		CollectionAssert.AreEqual( new[] { "English", "Danish", "Polish" }, GameLanguage.FindLanguages( data, root ).ToArray() );
+		CollectionAssert.AreEqual( new[] { "English", "Danish" }, GameLanguage.Readable( data, root ).ToArray() );
+		Assert.AreEqual( "xyz", GameLanguage.Resolve( data, "Danish", root ).LoadStrings( "UITEXT.str" )[0] );
+	}
+
+	[TestMethod]
 	public void DefaultsToTheOnlyInstalledLanguage()
 	{
 		CreateLanguage( "Data", "danish", "xyz" );

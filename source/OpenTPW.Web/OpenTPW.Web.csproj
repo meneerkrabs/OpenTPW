@@ -59,6 +59,8 @@
 	<ItemGroup>
 		<EmbeddedResource Include="../../content/shaders/**/*" LogicalName="content/shaders/%(RecursiveDir)%(Filename)%(Extension)" />
 		<EmbeddedResource Include="../../content/data/**/*" LogicalName="content/data/%(RecursiveDir)%(Filename)%(Extension)" />
+		<!-- The HD interface art (docs/TEXTURE-PACKS.md), about 6 MB of PNGs, for the default Enhanced look. -->
+		<EmbeddedResource Include="../../content/hero-art/**/*" LogicalName="content/hero-art/%(RecursiveDir)%(Filename)%(Extension)" />
 	</ItemGroup>
 
 	<!-- The file system creates archive handlers by reflection; keep the game whole when trimming. -->

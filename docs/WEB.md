@@ -34,7 +34,7 @@ files, not symbolic links: ASP.NET reports a link's own size.
 
 | Check | Result |
 | --- | --- |
-| Download, Brotli-compressed | about 4.5 MB (15 MB uncompressed), runtime and game included |
+| Download, Brotli-compressed | about 10 MB: 4.5 MB for the runtime and game, plus the 5.8 MB of HD interface art (PNG, already compressed) |
 | Game files copied for the front end | 205 files, everything in `Data` except movies, parks, start-up pictures and sound banks |
 | Front end frame rate | 119 frames per second (the display rate) at 2048×1536 pixels, interpreter mode |
 
@@ -54,7 +54,9 @@ files, not symbolic links: ASP.NET reports a link's own size.
   | `Program.cs`, `Client/Game.cs` (command line, setup window) | `Program.cs`: `AddFile`, `Start` and `Frame` for the page |
 
   The desktop code itself only skips two things in the browser: watching shader files and
-  colouring console output.
+  colouring console output. The browser has no `graphics.json`, so it uses the default Enhanced
+  texture choice: the HD interface art from `content/hero-art`, embedded like the shaders
+  (docs/TEXTURE-PACKS.md); a locally built texture pack does not exist there.
 
 - **`source/OpenTPW.Web.Veldrid`** implements the Veldrid API the game uses over WebGL2. The
   description structs and enums have Veldrid's names, fields and values (the enums are

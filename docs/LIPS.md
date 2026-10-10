@@ -4,9 +4,10 @@ October 9, 2026. Status: strict `.LIP` reader and selected MPEG Layer I/II decod
 Mac static evidence establishes signed mark conversion, a pause-aware unscaled
 millisecond clock, loaded-LIP talking state, strict deadlines, one toggle per
 update and random mouth selection. The bounded original-clock helper is tested;
-`--advisor-say N` still renders a manual SDL-synchronized presentation with its
-own timeline. Automatic triggers, animation/pose, geometry and audio-device
-integration remain incomplete. No original data is in the repository.
+The advisor now speaks by itself for the traced game events (see "Automatic
+advice"); `--advisor-say N` still plays a single clip on demand. Its clock is the
+frame clock, not the original pause-aware clock (ADVISOR-017); the remaining
+triggers, animation/pose and geometry remain incomplete. No original data is in the repository.
 
 ## Where the data is
 

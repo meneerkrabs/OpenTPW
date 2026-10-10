@@ -41,6 +41,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 	private OriginalObject? totem;
 	private OriginalObject? secondObject;
 	private BuildItem? secondItem;
+	private bool queueToolAfterSecond;
 	private int purchaseEvents;
 
 	public FrontEndSmokeTest( GameFlow flow )
@@ -59,6 +60,100 @@ internal sealed class FrontEndSmokeTest : IDisposable
 	}
 
 	private UiContext Context => flow.Context;
+
+	private readonly string smokePacks = Path.Combine( Path.GetTempPath(), $"opentpw-frontend-smoke-packs-{Guid.NewGuid():N}" );
+	private string switchPath = "";
+	private (uint Width, uint Height, uint Pixel) switchOriginal;
+	private TexturePackSwitch? textureSwitch;
+
+	private static uint CenterPixel( Texture texture )
+	{
+		var pixels = texture.ReadPixels();
+		return BitConverter.ToUInt32( pixels, (int)((texture.Height / 2 * texture.Width + texture.Width / 2) * 4) );
+	}
+
+	/// <summary>
+	/// [EXT:texture-pack] Switches a throw-away pack on and off while the lobby runs: a lobby texture becomes the pack's solid
+	/// 96x96 image (checked by GPU readback), then the original comes back; frames keep rendering in between.
+	/// </summary>
+	private void PlanTexturePackSwitch()
+	{
+		// A pack pinned with OPENTPW_TEXTURE_PACK (e.g. to capture screens with a pack) cannot be switched.
+		if ( !string.IsNullOrEmpty( Environment.GetEnvironmentVariable( "OPENTPW_TEXTURE_PACK" ) ) )
+		{
+			Log.Trace( "Front-end smoke test: texture pack switch skipped, a pack is pinned with OPENTPW_TEXTURE_PACK." );
+			return;
+		}
+		const uint SolidPixel = 0xFF22C80C; // little-endian RGBA bytes 0C C8 22 FF
+		// Outside temporaryDirectory: a later step checks that no .json file is written there.
+		var packs = smokePacks;
+		Do( "texture pack on", () =>
+		{
+			var target = Texture.ReloadTargets().FirstOrDefault( entry => entry.Path.Contains( "lobby", StringComparison.OrdinalIgnoreCase ) );
+			Require( target.Path != null, "the lobby loaded textures from .wct files" );
+			switchPath = target.Path;
+			var texture = Texture.FindLoaded( switchPath )!;
+			switchOriginal = (texture.Width, texture.Height, CenterPixel( texture ));
+			Require( switchOriginal.Width != 96 && switchOriginal.Pixel != SolidPixel, "the original lobby texture differs from the pack's" );
+			var pack = Path.Combine( packs, "smoke" );
+			var file = Path.Combine( pack, TexturePack.TexturesDirectoryName, TexturePack.RelativeFileName( switchPath ) );
+			Directory.CreateDirectory( Path.GetDirectoryName( file )! );
+			var solid = new byte[96 * 96 * 4];
+			for ( var index = 0; index < solid.Length; index += 4 )
+				(solid[index], solid[index + 1], solid[index + 2], solid[index + 3]) = (0x0C, 0xC8, 0x22, 0xFF);
+			using ( var image = Image.LoadPixelData<Rgba32>( solid, 96, 96 ) )
+				image.SaveAsPng( file );
+			File.WriteAllText( Path.Combine( pack, TexturePack.ManifestFileName ), System.Text.Json.JsonSerializer.Serialize( new TexturePackManifest { Scale = 1 } ) );
+			var diagnostics = new List<string>();
+			textureSwitch = TexturePackSwitch.Begin( "smoke", diagnostics, packs );
+			Require( textureSwitch != null && diagnostics.Count == 0 && textureSwitch.Total > 0, "the pack switch starts with the loaded textures as its work" );
+		} );
+		// The switch runs in the background with a progress line at the top; capture it while it is still running.
+		Wait( "texture switch progress frames", 2 );
+		Do( "texture switch progress", () => { if ( !textureSwitch!.Finished ) CaptureFrame( "texture-switch-progress.png" ); } );
+		steps.Enqueue( ("texture pack loads", () => { textureSwitch!.Pump(); return textureSwitch.Finished; }) );
+		Wait( "texture pack frames", 3 );
+		Do( "texture pack on verified", () =>
+		{
+			var texture = Texture.FindLoaded( switchPath )!;
+			Require( (texture.Width, texture.Height) == (96, 96), "the live texture now has the pack's size" );
+			Require( CenterPixel( texture ) == SolidPixel, "GPU readback shows the pack's pixels" );
+			CaptureFrame( "texture-pack-on.png" );
+			var diagnostics = new List<string>();
+			textureSwitch = TexturePackSwitch.Begin( "", diagnostics, packs );
+			Require( textureSwitch != null, "switching back starts" );
+		} );
+		steps.Enqueue( ("texture pack unloads", () => { textureSwitch!.Pump(); return textureSwitch.Finished; }) );
+		Wait( "texture pack off frames", 3 );
+		Do( "texture pack off verified", () =>
+		{
+			var texture = Texture.FindLoaded( switchPath )!;
+			Require( (texture.Width, texture.Height, CenterPixel( texture )) == switchOriginal, "the original pixels came back" );
+			CaptureFrame( "texture-pack-off.png" );
+		} );
+		// Optional timing with a real pack (read only): OPENTPW_SMOKE_PACKS_DIR=<texture-packs dir> OPENTPW_SMOKE_PACK=<name>.
+		var realPacks = Environment.GetEnvironmentVariable( "OPENTPW_SMOKE_PACKS_DIR" );
+		var realPack = Environment.GetEnvironmentVariable( "OPENTPW_SMOKE_PACK" );
+		if ( !string.IsNullOrEmpty( realPacks ) && !string.IsNullOrEmpty( realPack ) )
+		{
+			var timer = new System.Diagnostics.Stopwatch();
+			long memoryBefore = 0;
+			var frames = 0;
+			foreach ( var (name, pack) in new[] { ("on", realPack), ("off", "") } )
+			{
+				Do( $"real pack {name}", () =>
+				{
+					memoryBefore = System.Diagnostics.Process.GetCurrentProcess().WorkingSet64;
+					frames = frame;
+					timer.Restart();
+					textureSwitch = TexturePackSwitch.Begin( pack, new List<string>(), realPacks );
+					Require( textureSwitch != null, "the real pack switch starts" );
+				} );
+				steps.Enqueue( ($"real pack {name} loads", () => { textureSwitch!.Pump(); return textureSwitch.Finished; } ) );
+				Do( $"real pack {name} done", () => Log.Trace( $"Texture pack switch to '{(pack.Length == 0 ? "original" : pack)}': {textureSwitch!.Total} textures in {timer.Elapsed.TotalSeconds:F1} s over {frame - frames} frames; working set {memoryBefore / 1048576} -> {System.Diagnostics.Process.GetCurrentProcess().WorkingSet64 / 1048576} MB." ) );
+			}
+		}
+	}
 
 	private void Plan()
 	{
@@ -139,6 +234,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			VerifyText( files, flow.Strings.Extra( OpenTpwText.BonusFolder ), "bonus content label" );
 			flow.Menu.Stack.Pop();
 		} );
+		PlanTexturePackSwitch();
 		Do( "open options", () => Click( flow.Menu!.Main, "options" ) );
 		Wait( "options open", 3 );
 		Do( "options render", () =>
@@ -340,6 +436,19 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		Do( "closed state", () =>
 		{
 			Require( !secondObject!.IsOpen, "HUD door closes the selected original object" );
+			var tool = flow.Level!.CellTool;
+			Require( !tool.IsActive || tool.Mode == CellToolMode.Queue, "only the queue tool may follow a catalogue placement (UI-031)" );
+			queueToolAfterSecond = tool.IsActive;
+			Log.Trace( $"Front-end smoke: {flow.Hud!.ItemName( secondItem! )} {(queueToolAfterSecond ? "left the queue tool active" : "left no tool active")} after placement." );
+			flow.InjectedInput = UiInput.Key( UiKeys.Back );
+		} );
+		Wait( "first Escape", 3 );
+		Do( "Escape leaves the queue tool", () =>
+		{
+			if ( !queueToolAfterSecond )
+				return;
+			// PATH-011: Escape inside the path/queue tool ends the tool; only the next Escape opens the pause menu.
+			Require( !flow.Level!.CellTool.IsActive && !flow.Hud!.Paused, "Escape ends the queue tool before it opens the pause menu (PATH-011)" );
 			flow.InjectedInput = UiInput.Key( UiKeys.Back );
 		} );
 		Wait( "pause opens", 3 );
@@ -464,7 +573,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		Log.Trace( $"Instant Action jungle: {level.Park.Import!.ImportedObjects} seed objects, {economy.Staff.Members.Count} staff, research advanced {start} -> {economy.Date}; loans, research effort and upgrades refused." );
 		Device.WaitForIdle();
 		completed = true;
-		Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name} at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames, lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, two distinct catalogue objects bought exactly once through the park economy, info arm, economy pause, sale, overlap refusal, open/close, pause menu, exit to lobby, read-only visit build/open/delete/save guards, Instant Action return and Load Park reference start, Instant Action seed, research stand-in and gates." );
+		Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name} at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames, lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, two distinct catalogue objects bought exactly once through the park economy, info arm, economy pause, sale, overlap refusal, open/close, Escape out of the queue tool, pause menu, exit to lobby, read-only visit build/open/delete/save guards, Instant Action return and Load Park reference start, Instant Action seed, research stand-in and gates." );
 		GameFlow.Quit();
 	}
 
@@ -640,5 +749,8 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		flow.OnlineFolders = originalOnlineFolders;
 		try { Directory.Delete( temporaryDirectory, true ); }
 		catch ( IOException ) { }
+		try { Directory.Delete( smokePacks, true ); }
+		catch ( IOException ) { }
+		catch ( UnauthorizedAccessException ) { }
 	}
 }

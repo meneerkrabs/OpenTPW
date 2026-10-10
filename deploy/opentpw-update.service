@@ -1,0 +1,11 @@
+[Unit]
+Description=Update the OpenTPW server to the latest published image
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/opentpw
+ExecStart=/usr/bin/docker compose pull --quiet
+ExecStart=/usr/bin/docker compose up -d --remove-orphans
+ExecStart=/usr/bin/docker image prune -f

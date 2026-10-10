@@ -5,6 +5,7 @@ public enum OnlineLabel
 {
 	ServerAddress, Register, LogIn, LogOut, ExportPark, ImportFile, Inbox, VisitReadOnly, Chat, ReadOnlyVisit,
 	RateLimited, NoBuddies, OnlineOff, Refresh, Vote, Report, To, PutInOutbox, SavedTo, FileSharing,
+	DeleteAccount, DeleteAccountWarning, AccountDeleted,
 }
 
 /// <summary>
@@ -118,6 +119,8 @@ public static class OnlineStrings
 			[OnlineLabel.Refresh] = "Refresh", [OnlineLabel.Vote] = "Vote", [OnlineLabel.Report] = "Report",
 			[OnlineLabel.To] = "To (player names, comma separated)", [OnlineLabel.PutInOutbox] = "Put in outbox", [OnlineLabel.SavedTo] = "Saved to: ",
 			[OnlineLabel.FileSharing] = "File sharing",
+			[OnlineLabel.DeleteAccount] = "Delete account", [OnlineLabel.DeleteAccountWarning] = "This permanently deletes your account, your published parks and your inbox on this server. Enter your name and password to confirm.",
+			[OnlineLabel.AccountDeleted] = "Your account has been deleted.",
 		},
 		["Danish"] = new Dictionary<OnlineLabel, string>
 		{
@@ -130,6 +133,8 @@ public static class OnlineStrings
 			[OnlineLabel.Refresh] = "Opdatér", [OnlineLabel.Vote] = "Stem", [OnlineLabel.Report] = "Anmeld",
 			[OnlineLabel.To] = "Til (spillernavne, adskilt med komma)", [OnlineLabel.PutInOutbox] = "Læg i udbakke", [OnlineLabel.SavedTo] = "Gemt i: ",
 			[OnlineLabel.FileSharing] = "Fildeling",
+			[OnlineLabel.DeleteAccount] = "Slet konto", [OnlineLabel.DeleteAccountWarning] = "Dette sletter permanent din konto, dine offentliggjorte parker og din indbakke på denne server. Indtast dit navn og din adgangskode for at bekræfte.",
+			[OnlineLabel.AccountDeleted] = "Din konto er slettet.",
 		},
 		["Dutch"] = new Dictionary<OnlineLabel, string>
 		{
@@ -142,6 +147,8 @@ public static class OnlineStrings
 			[OnlineLabel.Refresh] = "Vernieuwen", [OnlineLabel.Vote] = "Stemmen", [OnlineLabel.Report] = "Melden",
 			[OnlineLabel.To] = "Aan (spelersnamen, gescheiden door komma's)", [OnlineLabel.PutInOutbox] = "In Postvak UIT plaatsen", [OnlineLabel.SavedTo] = "Opgeslagen in: ",
 			[OnlineLabel.FileSharing] = "Bestanden delen",
+			[OnlineLabel.DeleteAccount] = "Account verwijderen", [OnlineLabel.DeleteAccountWarning] = "Dit verwijdert je account, je gepubliceerde parken en je inbox op deze server definitief. Vul je naam en wachtwoord in om te bevestigen.",
+			[OnlineLabel.AccountDeleted] = "Je account is verwijderd.",
 		},
 		["French"] = new Dictionary<OnlineLabel, string>
 		{
@@ -154,6 +161,8 @@ public static class OnlineStrings
 			[OnlineLabel.Refresh] = "Actualiser", [OnlineLabel.Vote] = "Voter", [OnlineLabel.Report] = "Signaler",
 			[OnlineLabel.To] = "À (noms des joueurs, séparés par des virgules)", [OnlineLabel.PutInOutbox] = "Mettre dans la boîte d'envoi", [OnlineLabel.SavedTo] = "Enregistré dans : ",
 			[OnlineLabel.FileSharing] = "Partage de fichiers",
+			[OnlineLabel.DeleteAccount] = "Supprimer le compte", [OnlineLabel.DeleteAccountWarning] = "Ceci supprime définitivement votre compte, vos parcs publiés et votre boîte de réception sur ce serveur. Saisissez votre nom et votre mot de passe pour confirmer.",
+			[OnlineLabel.AccountDeleted] = "Votre compte a été supprimé.",
 		},
 		["German"] = new Dictionary<OnlineLabel, string>
 		{
@@ -166,6 +175,8 @@ public static class OnlineStrings
 			[OnlineLabel.Refresh] = "Aktualisieren", [OnlineLabel.Vote] = "Abstimmen", [OnlineLabel.Report] = "Melden",
 			[OnlineLabel.To] = "An (Spielernamen, durch Kommas getrennt)", [OnlineLabel.PutInOutbox] = "In den Postausgang legen", [OnlineLabel.SavedTo] = "Gespeichert unter: ",
 			[OnlineLabel.FileSharing] = "Dateien teilen",
+			[OnlineLabel.DeleteAccount] = "Konto löschen", [OnlineLabel.DeleteAccountWarning] = "Dies löscht dein Konto, deine veröffentlichten Parks und deinen Posteingang auf diesem Server endgültig. Gib zur Bestätigung deinen Namen und dein Passwort ein.",
+			[OnlineLabel.AccountDeleted] = "Dein Konto wurde gelöscht.",
 		},
 		["Swedish"] = new Dictionary<OnlineLabel, string>
 		{
@@ -178,6 +189,8 @@ public static class OnlineStrings
 			[OnlineLabel.Refresh] = "Uppdatera", [OnlineLabel.Vote] = "Rösta", [OnlineLabel.Report] = "Anmäl",
 			[OnlineLabel.To] = "Till (spelarnamn, åtskilda med kommatecken)", [OnlineLabel.PutInOutbox] = "Lägg i utkorgen", [OnlineLabel.SavedTo] = "Sparad i: ",
 			[OnlineLabel.FileSharing] = "Fildelning",
+			[OnlineLabel.DeleteAccount] = "Radera konto", [OnlineLabel.DeleteAccountWarning] = "Detta raderar permanent ditt konto, dina publicerade parker och din inkorg på den här servern. Ange ditt namn och lösenord för att bekräfta.",
+			[OnlineLabel.AccountDeleted] = "Ditt konto har raderats.",
 		},
 	};
 }

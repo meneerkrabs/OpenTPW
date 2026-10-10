@@ -73,6 +73,15 @@ public sealed class ChatHub
 		public readonly ConcurrentDictionary<string, byte> Ignored = new();
 		public readonly Channel<ChatEvent> Outbox = Channel.CreateBounded<ChatEvent>( new BoundedChannelOptions( 256 ) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true } );
 		public TokenBucketRateLimiter Limiter { get; }
+		/// <summary>Cancelled to end the connection from the server side (account deleted).</summary>
+		public readonly CancellationTokenSource Closed = new();
+	}
+
+	/// <summary>Ends a player's chat connection, if any (their account was deleted).</summary>
+	public void Disconnect( string accountKey )
+	{
+		if ( sessions.TryGetValue( accountKey, out var session ) )
+			session.Closed.Cancel();
 	}
 
 	public async Task RunAsync( WebSocket socket, AccountRecord account, CancellationToken cancel )
@@ -85,6 +94,8 @@ public sealed class ChatHub
 			await socket.CloseAsync( WebSocketCloseStatus.PolicyViolation, "already connected", cancel );
 			return;
 		}
+		using var linked = CancellationTokenSource.CreateLinkedTokenSource( cancel, session.Closed.Token );
+		cancel = linked.Token;
 		var writer = Task.Run( () => WriteLoopAsync( socket, session, cancel ), cancel );
 		try
 		{
@@ -103,6 +114,7 @@ public sealed class ChatHub
 			session.Outbox.Writer.TryComplete();
 			try { await writer; } catch ( Exception exception ) when ( exception is WebSocketException or OperationCanceledException ) { }
 			session.Limiter.Dispose();
+			session.Closed.Dispose();
 			if ( socket.State == WebSocketState.Open )
 			{
 				try { await socket.CloseAsync( WebSocketCloseStatus.NormalClosure, "bye", CancellationToken.None ); }

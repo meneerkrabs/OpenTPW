@@ -355,24 +355,43 @@ public class ParkEconomyTests
 	public void RidesWearOutAndMechanicsRepairAndUpgradeThem()
 	{
 		var park = EconomyTestData.Park();
+		var rides = new EconomyTestData.RideOperations();
+		park.RideOperations = rides;
 		var events = new List<ParkEvent>();
 		park.EventRaised += events.Add;
 		park.TryBuild( 1100, out var ride );
 		Assert.AreEqual( ParkEconomy.PurchaseResult.NotResearched, park.TryBuyUpgrade( ride!.Id ) );
-		park.AdvanceDays( 15 );
-		Assert.AreEqual( 25, ride.StateOfRepair );
-		park.AdvanceDays( 1 );
+		// Five riders at speed 50 under red line 60 and capacity red line 2: s = 0.55, c = 1.0, wear = 1.55 × 0.5 × 5.
+		rides.Set( ride.Id, new RideOperation( true, 5, 50 ) );
+		const double step = 3.875;
+		EconomyTestData.AdvanceToTurn( park, ParkEconomy.WearInterval - 1 );
+		Assert.AreEqual( 100, ride.Repair, "no wear before the 64th turn" );
+		EconomyTestData.AdvanceToTurn( park, ParkEconomy.WearInterval );
+		Assert.AreEqual( 100 - step, ride.Repair, 1e-3 );
+		EconomyTestData.AdvanceToTurn( park, 19 * ParkEconomy.WearInterval );
+		Assert.AreEqual( 0, events.Count( item => item.Kind == ParkEventKind.RideWorn ) );
+		EconomyTestData.AdvanceToTurn( park, 20 * ParkEconomy.WearInterval );
+		Assert.AreEqual( 22, ride.StateOfRepair );
 		Assert.AreEqual( 1, events.Count( item => item.Kind == ParkEventKind.RideWorn ) );
-		park.AdvanceDays( 4 );
+		EconomyTestData.AdvanceToTurn( park, 26 * ParkEconomy.WearInterval - ParkEconomy.RideUpdateInterval );
+		Assert.IsFalse( ride.IsBrokenDown, "state of repair 3.125 still works" );
+		EconomyTestData.AdvanceToTurn( park, 26 * ParkEconomy.WearInterval );
 		Assert.IsTrue( ride.IsBrokenDown );
+		Assert.AreEqual( 0, ride.Repair );
+		Assert.AreEqual( 100 - 26 * 0.02 * step - ParkEconomy.BreakdownLifeLoss, ride.LifeGauge, 1e-3, "wear and the breakdown cost life" );
 		Assert.AreEqual( 1, events.Count( item => item.Kind == ParkEventKind.RideBrokeDown ) );
+		EconomyTestData.AdvanceToTurn( park, 27 * ParkEconomy.WearInterval );
+		Assert.AreEqual( 1, events.Count( item => item.Kind == ParkEventKind.RideBrokeDown ), "a broken ride does not break down again" );
 		var mechanic = EconomyTestData.HireBest( park, StaffType.Mechanic );
 		park.Advance( ParkCalendar.TicksForHours( 2 ) );
 		Assert.AreEqual( mechanic.Id, ride.MechanicId );
+		var life = ride.LifeGauge;
 		park.Advance( ParkCalendar.TicksForHours( park.Settings[StaffType.Mechanic].WorkDuration[mechanic.Grade] + 1 ) );
 		Assert.IsFalse( ride.IsBrokenDown );
-		Assert.AreEqual( 100, ride.StateOfRepair );
+		Assert.AreEqual( 100, ride.Repair );
+		Assert.AreEqual( life, ride.LifeGauge, "a repair does not restore the life gauge, and a ride under repair does not wear" );
 		Assert.AreEqual( 0, mechanic.AssignedInstanceId );
+		rides.Set( ride.Id, new RideOperation( false, 0, 50 ) );
 
 		var researcher = EconomyTestData.HireBest( park, StaffType.Researcher );
 		park.SetResearchEffort( ResearchCategory.Ride, 0 );
@@ -811,6 +830,83 @@ public class ParkEconomyTests
 		{
 			Directory.Delete( directory, true );
 		}
+	}
+
+	[TestMethod]
+	public void WearAmountFollowsTheOriginalFormula()
+	{
+		var catalog = EconomyTestData.Catalog();
+		Assert.IsTrue( catalog.TryGet( 1100, out var bouncy ) );
+		var level = bouncy.Upgrades[0];
+		Assert.AreEqual( 3.875f, ParkEconomy.WearAmount( bouncy, level, new RideOperation( true, 5, 50 ) ), 1e-5f, "under both red lines" );
+		Assert.AreEqual( (1.0f + 0.28f) * 0.5f * 5, ParkEconomy.WearAmount( bouncy, level, new RideOperation( true, 1, 100 ) ), 1e-5f, "speed over the red line: (0.9 + 1.1) × 0.5; one rider: 0.18 + 0.1" );
+		Assert.AreEqual( ParkEconomy.WearAmount( bouncy, level, new RideOperation( true, 5, 50 ) ), ParkEconomy.WearAmount( bouncy, level, new RideOperation( true, 9, 50 ) ), "riders are clamped to UsageInfo.MaxCapacity" );
+		Assert.AreEqual( (0.55f + 0.1f) * 0.5f * 5, ParkEconomy.WearAmount( bouncy with { MaxCapacity = 0 }, level, new RideOperation( true, 5, 50 ) ), 1e-5f, "no maximum capacity: rider term 0.1" );
+		var noCapacityRedLine = level with { RedLineCapacity = 0 };
+		Assert.AreEqual( (0.55f + (0.9f * 0.4f + 1.1f) * 0.5f) * 0.5f * 5, ParkEconomy.WearAmount( bouncy, noCapacityRedLine, new RideOperation( true, 2, 50 ) ), 1e-5f, "RedLineCapacity <= riders / 10" );
+	}
+
+	[TestMethod]
+	public void RidesDoNotWearWithoutARunningScriptOrRiders()
+	{
+		var park = EconomyTestData.Park();
+		park.TryBuild( 1100, out var noScript );
+		park.TryBuild( 1100, out var stopped );
+		park.TryBuild( 1100, out var empty );
+		var rides = new EconomyTestData.RideOperations();
+		rides.Set( stopped!.Id, new RideOperation( false, 5, 50 ) );
+		rides.Set( empty!.Id, new RideOperation( true, 0, 50 ) );
+		park.RideOperations = rides;
+		EconomyTestData.AdvanceToTurn( park, 10 * ParkEconomy.WearInterval );
+		Assert.AreEqual( 100, noScript!.Repair, "no linked ride script: the ride does not run" );
+		Assert.AreEqual( 100, stopped.Repair, "VAR_RUNNING 0" );
+		Assert.AreEqual( 100, empty.Repair, "VAR_ONRIDE 0" );
+	}
+
+	[TestMethod]
+	public void AClosedRideInGoodRepairNeitherWearsNorBreaksDown()
+	{
+		var park = EconomyTestData.Park();
+		park.TryBuild( 1100, out var ride );
+		ride!.IsOpen = false;
+		var rides = new EconomyTestData.RideOperations();
+		rides.Set( ride.Id, new RideOperation( false, 0, 50 ) );
+		park.RideOperations = rides;
+		EconomyTestData.AdvanceToTurn( park, 10 * ParkEconomy.WearInterval );
+		Assert.AreEqual( (100.0, 100.0, false), (ride.Repair, ride.LifeGauge, ride.IsBrokenDown) );
+	}
+
+	[TestMethod]
+	public void AnEmptyLifeGaugeBreaksARideEvenWhenRepaired()
+	{
+		var park = EconomyTestData.Park();
+		park.TryBuild( 1100, out var ride );
+		ride!.LifeGauge = 0.5;
+		EconomyTestData.AdvanceToTurn( park, ParkEconomy.RideUpdateInterval - 1 );
+		Assert.IsFalse( ride.IsBrokenDown );
+		EconomyTestData.AdvanceToTurn( park, ParkEconomy.RideUpdateInterval );
+		Assert.IsTrue( ride.IsBrokenDown, "the breakdown check runs every 8 turns" );
+		Assert.AreEqual( 100, ride.Repair );
+		Assert.AreEqual( 0.5, ride.LifeGauge, "the life gauge only pays 5 when the state of repair causes the breakdown" );
+	}
+
+	[TestMethod]
+	public void SavesKeepTheExactRepairAndLifeGauge()
+	{
+		var park = EconomyTestData.Park();
+		park.TryBuild( 1100, out var ride );
+		ride!.Repair = 42.625;
+		ride.LifeGauge = 97.5;
+		var json = ParkSaveFile.Serialize( park );
+		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( json ) ), park.Settings, park.Catalog );
+		Assert.IsTrue( restored.TryGetObject( ride.Id, out var copy ) );
+		Assert.AreEqual( (42.625, 97.5), (copy.Repair, copy.LifeGauge) );
+		var older = json.Replace( "\"Repair\": 42.625,", "" ).Replace( "\"LifeGauge\": 97.5,", "" );
+		Assert.AreNotEqual( json, older, "the test removes both fields" );
+		var fromOlder = ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( older ) ), park.Settings, park.Catalog );
+		Assert.IsTrue( fromOlder.TryGetObject( ride.Id, out var old ) );
+		Assert.AreEqual( (42.0, 100.0), (old.Repair, old.LifeGauge), "older saves use StateOfRepair and a full life gauge" );
+		Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( json.Replace( "\"Repair\": 42.625", "\"Repair\": 50.5" ) ) ) );
 	}
 
 	[TestMethod]

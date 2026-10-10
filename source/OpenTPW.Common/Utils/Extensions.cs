@@ -61,6 +61,10 @@ public static class MathExtensions
 
 	public static Vector3 Normalize( this Vector3 vector ) => vector / vector.Length;
 
+	/// <summary>
+	/// Presentation only: draws from the process-wide <see cref="Random.Shared"/>, so simulation code must never
+	/// call it (docs/DETERMINISM.md; DeterminismTests guards the simulation folders). It has no callers today.
+	/// </summary>
 	public static Vector3 RandomVector3( float min = 0.0f, float max = 1.0f )
 	{
 		float x = Random.Shared.NextSingle() * (max - min) + min;

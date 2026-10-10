@@ -19,6 +19,29 @@ public static class ChatProtocol
 		|| room != null && room.StartsWith( ParkRoomPrefix, StringComparison.Ordinal ) && room.Length is > 5 and <= 69 && room[5..].All( char.IsAsciiLetterOrDigit );
 }
 
+/// <summary>
+/// First frame of a chat connection opened without an <c>Authorization</c> header: browsers cannot set
+/// WebSocket headers, and a token in the URL would end up in logs. The server reads it before anything else.
+/// </summary>
+public sealed record ChatAuthentication( string Type, string Token )
+{
+	public const string AuthenticationType = "auth";
+	/// <summary>Largest first frame the server reads; a session token is far smaller.</summary>
+	public const int MaximumBytes = 512;
+	/// <summary>How long the server waits for the first frame.</summary>
+	public static readonly TimeSpan Timeout = TimeSpan.FromSeconds( 10 );
+
+	public static ChatAuthentication For( string token ) => new( AuthenticationType, token );
+
+	public static string ParseToken( ReadOnlySpan<byte> utf8 )
+	{
+		var authentication = StrictJson.Deserialize<ChatAuthentication>( utf8, "Chat authentication" );
+		if ( authentication.Type != AuthenticationType || string.IsNullOrEmpty( authentication.Token ) )
+			throw new InvalidDataException( "Expected chat authentication." );
+		return authentication.Token;
+	}
+}
+
 /// <summary>Client to server: <c>command</c> (canonical command + argument) or <c>join</c> (room).</summary>
 public sealed record ChatRequest( string Type, string? Command, string? Argument, string? Room )
 {

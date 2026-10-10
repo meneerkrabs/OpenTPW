@@ -67,6 +67,10 @@ public sealed class UiFonts
 		Small = Load( small );
 		Cash = Load( cash );
 		Heading = Load( heading );
+		// [APPROX:UI-002] the shipped CASHSMALL/CASHMED/CASHBIG fonts for the bank balance (the HUD builder's cash font slot 1)
+		var balance = tier switch { UiFontTier.Small => "CASHSMALL", UiFontTier.Big => "CASHBIG", _ => "CASHMED" };
+		try { Balance = Load( balance ); }
+		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or KeyNotFoundException ) { Balance = Cash; }
 	}
 
 	// Shipped BF4 families from largest to smallest; used to shrink text that does not fit (UiTextFit).
@@ -128,6 +132,8 @@ public sealed class UiFonts
 	public FontAtlas Label { get; }
 	public FontAtlas Small { get; }
 	public FontAtlas Cash { get; }
+	/// <summary>Font of the HUD bank balance (the original's dedicated cash fonts; <see cref="Cash"/> when they are missing).</summary>
+	public FontAtlas Balance { get; }
 	public FontAtlas Heading { get; }
 
 	public IEnumerable<FontAtlas> All => new[] { Title, Menu, Label, Small, Cash, Heading };

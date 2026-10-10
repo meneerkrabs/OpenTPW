@@ -40,7 +40,7 @@ low-16-bit fields; the nearby queue weight is loaded separately as a full word.
 The helper does not guess how `GuestSettings` maps to those operands.
 
 Unsigned score behavior is intentional evidence. With queue count 9, raw
-capacity field 1, and a nearby candidate, queue match is −125 as a 32-bit
+queue-size field 1 (object `+60`, the queue size in cells; QUEUE-plan §3.1), and a nearby candidate, queue match is −125 as a 32-bit
 register (`4294967171`). Distance match 100 with weights distance 1 and queue 2
 produces numerator −150 modulo 2³²; unsigned division by 3 yields `1431655715`.
 Clamping the queue term to zero would change the witnessed arithmetic. History

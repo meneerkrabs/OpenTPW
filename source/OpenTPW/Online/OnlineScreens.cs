@@ -54,7 +54,7 @@ public sealed class OnlineScreens
 	public void ShowWorld()
 	{
 		var screen = new UiScreen( "onlineWorld" );
-		var window = UiDialogs.CenteredWindow( 1200, 1360 );
+		var window = UiDialogs.CenteredWindow( 1200, 1460 );
 		UiDialogs.AddWindow( screen, window, "w_big", () => OnlineStrings.Ui( OnlineStrings.OnlineWorld, "Online world" ) );
 		var level = host.Level();
 		var entries = new List<(string Id, Func<string> Label, Action Clicked, Func<bool> Enabled)>
@@ -68,6 +68,8 @@ public sealed class OnlineScreens
 			("inbox", () => OnlineStrings.Get( OnlineLabel.Inbox ), ShowInbox, () => true),
 			("chat", () => OnlineStrings.Get( OnlineLabel.Chat ), ShowChat, () => Session.IsLoggedIn),
 			("import", () => OnlineStrings.Get( OnlineLabel.ImportFile ), ShowImport, () => true),
+			// [EXT:ONLINE-UI] OpenTPW servers let players delete their own account (docs/SERVER.md).
+			("deleteAccount", () => OnlineStrings.Get( OnlineLabel.DeleteAccount ), ShowDeleteAccount, () => Session.IsLoggedIn),
 		};
 		for ( var index = 0; index < entries.Count; index++ )
 		{
@@ -90,6 +92,42 @@ public sealed class OnlineScreens
 		Push( screen );
 	}
 
+	// ---- Delete account (OpenTPW) --------------------------------------------------------------
+
+	public void ShowDeleteAccount()
+	{
+		var screen = new UiScreen( "onlineDeleteAccount" );
+		var window = UiDialogs.CenteredWindow( 1150, 1060 );
+		UiDialogs.AddWindow( screen, window, "w_med", () => OnlineStrings.Get( OnlineLabel.DeleteAccount ) );
+		var x = window.X + 120;
+		var width = window.Width - 340;
+		screen.Add( new UiLabel { Id = "warning", Wrap = true, Font = fonts => fonts.Small, Text = () => OnlineStrings.Get( OnlineLabel.DeleteAccountWarning ),
+			Bounds = new UiRect( x, window.Y + 150, width, 190 ), Anchor = UiAnchor.Center } );
+		var name = AddField( screen, "name", () => OnlineStrings.Ui( OnlineStrings.LoginName, "Login name" ), x, window.Y + 360, width, 16 );
+		var password = AddField( screen, "password", () => OnlineStrings.Ui( OnlineStrings.Password, "Password" ), x, window.Y + 530, width, 16 );
+		password.Password = true;
+		void Delete()
+		{
+			Guard( () => Session.DeleteAccount( name.Text.Trim(), password.Text ) );
+			password.Text = "";
+		}
+		name.Submitted = () => screen.Focus( password );
+		password.Submitted = Delete;
+		var delete = screen.Add( new UiButton { Id = "delete", Text = () => OnlineStrings.Get( OnlineLabel.DeleteAccount ), Clicked = Delete,
+			Bounds = new UiRect( x, window.Y + 740, 560, 110 ), Anchor = UiAnchor.Center } );
+		// Closes once the account is gone; the Online World screen shows the outcome.
+		screen.Updating += _ =>
+		{
+			delete.Enabled = Session.IsLoggedIn && Session.Busy == 0;
+			if ( !Session.IsLoggedIn && Session.Busy == 0 && stack.Top == screen )
+				stack.Pop();
+		};
+		AddStatus( screen, window );
+		AddBack( screen, window );
+		screen.Focus( name );
+		Push( screen );
+	}
+
 	// ---- Login (UI-MAP "Online login dialog") ------------------------------------------------
 
 	public void ShowLogin()
@@ -101,7 +139,7 @@ public sealed class OnlineScreens
 		var width = window.Width - 340;
 		// [EXT:ONLINE-UI] the server address is an OpenTPW field; the original service address was built in
 		var server = AddField( screen, "server", () => OnlineStrings.Get( OnlineLabel.ServerAddress ), x, window.Y + 170, width, 256 );
-		server.Text = Session.Settings.ServerUrl ?? "";
+		server.Text = Session.Settings.ServerUrl ?? OnlineSession.SuggestedServerUrl ?? "";
 		// The original login name and password fields hold 16 characters (UI-MAP, 0x10184b48).
 		var name = AddField( screen, "name", () => OnlineStrings.Ui( OnlineStrings.LoginName, "Login name" ), x, window.Y + 340, width, 16 );
 		name.Text = Session.Settings.PlayerName ?? "";

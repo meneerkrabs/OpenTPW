@@ -38,6 +38,32 @@ public class ShaderTests
 		CollectionAssert.Contains( names, "s_Color" );
 	}
 
+	/// <summary>WebGL2 runs GLSL ES 3.00; every shader must cross-compile to it ahead of time (docs/WEB.md).</summary>
+	[DataTestMethod]
+	[DataRow( "3d.shader" )]
+	[DataRow( "blit.shader" )]
+	[DataRow( "sprite.shader" )]
+	[DataRow( "test.shader" )]
+	[DataRow( "text.shader" )]
+	[DataRow( "ui-batch.shader" )]
+	[DataRow( "ui.shader" )]
+	[DataRow( "unlit.shader" )]
+	[DataRow( "water.shader" )]
+	public void NativeShadersCrossCompileToWebGl2( string shader )
+	{
+		if ( Environment.GetEnvironmentVariable( "OPENTPW_NATIVE_SHADER_TESTS" ) != "1" )
+			Assert.Inconclusive( "Set OPENTPW_NATIVE_SHADER_TESTS=1 with architecture-matching native SPIR-V libraries." );
+		Log = new();
+		var path = GetShaderPath( shader );
+		var program = ShaderCompiler.CompileProgram( path, CrossCompileTarget.ESSL );
+		var essl = SpirvCompilation.CompileVertexFragment( program.Vertex, program.Fragment, CrossCompileTarget.ESSL );
+		foreach ( var source in new[] { essl.VertexShader, essl.FragmentShader } )
+		{
+			Assert.IsTrue( source.StartsWith( "#version 300 es" ), "{0} is not GLSL ES 3.00: {1}", shader, source.Split( '\n' )[0] );
+			Console.WriteLine( $"--- {shader}\n{source}" );
+		}
+	}
+
 	[DataTestMethod]
 	[DataRow( CrossCompileTarget.MSL )]
 	[DataRow( CrossCompileTarget.HLSL )]

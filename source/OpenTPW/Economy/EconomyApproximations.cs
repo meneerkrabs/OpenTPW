@@ -27,8 +27,7 @@ public static class EconomyApproximations
 		("ECON-020", "a sale drops LitterEffect/100 litter items", "capture of litter after sales"),
 		("ECON-021", "a repair takes WorkDuration game hours (x DurationOfUpgrade for upgrades); mechanics are dispatched instantly", "capture of repair duration per grade"),
 		("ECON-022", "a handyman removes one litter item per WorkDuration game minutes, park-wide", "capture of cleaning speed"),
-		("ECON-023", "an open ride loses WearRate state of repair per game day; breakdown at 0", "capture of state of repair over time"),
-		("ECON-024", "a repair restores state of repair to 100", "capture after a repair"),
+		("ECON-023", "the ride update's state gates (ride states 1, 3 and 4 at +0x198, +0x64 == 0, +0x2e bit 0) map only to \"a mechanic is at work\"", "the names of those ride states and flags"),
 		("ECON-025", "scrap value basis = catalogue cost of all levels up to the current one; a scrap year is 365 park-clock days", "capture of scrap value"),
 		("ECON-026", "park value = sum of scrap values", "capture of the park value screen"),
 		("ECON-027", "the record sub-kinds 0–3 are rides, shops, sideshows and features, and every hired staff member counts", "the record field at +0x4C behind sub-kind +0x7A8 and the staff byte +3 tested by FUN_100C4064"),
@@ -44,6 +43,7 @@ public static class EconomyApproximations
 		("ECON-041", "features-directory objects with Research.Category != 3 are fixed (non-buyable) items", "buy-menu capture"),
 		("ECON-044", "guests never hold a balloon or wear a costume, so both percentages are 0; the binary gives them when a guest uses a balloon or costume shop (0x100EAAF8)", "balloon lifetime (+0x214) and costume state rules"),
 		("ECON-045", "loan/challenge record locators use plausibility bounds (one fixture)", "a second TPWS/TPWI fixture"),
+		("ECON-047", "a newly built ride starts with life gauge 100 (Easymode.TPWI stores 100 for every placed object)", "the life gauge set when a ride is built (the constructor 0x100DA874 sets 0)"),
 	};
 
 	private static bool logged;

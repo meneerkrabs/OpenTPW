@@ -2,6 +2,7 @@ using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Http.Features;
 using OpenTPW.Online;
 using OpenTPW.Online.Api;
+using OpenTPW.Online.Chat;
 using OpenTPW.Online.Moderation;
 using OpenTPW.Online.Packages;
 
@@ -67,6 +68,9 @@ public static class ServerProgram
 			context.Response.Headers.CacheControl = "no-store";
 			await next();
 		} );
+		// Before the rate limiter: one page load of the browser game fetches over a hundred files.
+		if ( !string.IsNullOrWhiteSpace( options.WebClientDirectory ) )
+			app.UseWebClient( options.WebClientDirectory );
 		app.UseWebSockets( new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds( 30 ) } );
 		app.UseRateLimiter();
 		Map( app, options, store, hub, filter );
@@ -86,6 +90,34 @@ public static class ServerProgram
 	{
 		var header = context.Request.Headers.Authorization.ToString();
 		return header.StartsWith( "Bearer ", StringComparison.Ordinal ) ? header[7..].Trim() : null;
+	}
+
+	/// <summary>Reads a <see cref="ChatAuthentication"/> first frame; null when it is missing, late, too large or wrong.</summary>
+	private static async Task<AccountRecord?> AuthenticateFirstFrameAsync( System.Net.WebSockets.WebSocket socket, ServerStore store, CancellationToken aborted )
+	{
+		using var timeout = CancellationTokenSource.CreateLinkedTokenSource( aborted );
+		timeout.CancelAfter( ChatAuthentication.Timeout );
+		var buffer = new byte[ChatAuthentication.MaximumBytes];
+		var length = 0;
+		try
+		{
+			while ( true )
+			{
+				var result = await socket.ReceiveAsync( buffer.AsMemory( length ), timeout.Token );
+				if ( result.MessageType != System.Net.WebSockets.WebSocketMessageType.Text )
+					return null;
+				length += result.Count;
+				if ( result.EndOfMessage )
+					break;
+				if ( length == buffer.Length )
+					return null;
+			}
+			return store.Authenticate( ChatAuthentication.ParseToken( buffer.AsSpan( 0, length ) ) );
+		}
+		catch ( Exception exception ) when ( exception is OperationCanceledException or System.Net.WebSockets.WebSocketException or InvalidDataException or System.Text.Json.JsonException )
+		{
+			return null;
+		}
 	}
 
 	private static bool IsId( string id ) => id.Length is >= 1 and <= 64 && id.All( char.IsAsciiLetterOrDigit );
@@ -164,6 +196,17 @@ public static class ServerProgram
 			RequireClean( filter, credentials.Name ?? "", "Name" );
 			var account = store.Register( credentials.Name ?? "", credentials.Password ?? "" );
 			return Ok( new { name = account.Name }, StatusCodes.Status201Created );
+		} ) ) ).RequireRateLimiting( "auth" );
+
+		// Deleting an account asks for the password again, not just a session token.
+		app.MapDelete( ApiRoutes.Accounts, Handler( context => Guarded( context, store, true, async user =>
+		{
+			var credentials = await ReadJsonAsync<Credentials>( context.Request );
+			if ( !string.Equals( OnlineText.NormalizeName( credentials.Name ?? "" ), user!.Key, StringComparison.Ordinal ) )
+				throw new StoreException( 400, "Name the account you are deleting." );
+			store.DeleteAccount( user, credentials.Password ?? "" );
+			hub.Disconnect( user.Key );
+			return Results.NoContent();
 		} ) ) ).RequireRateLimiting( "auth" );
 
 		app.MapPost( ApiRoutes.Sessions, Handler( context => Guarded( context, store, false, async _ =>
@@ -273,6 +316,7 @@ public static class ServerProgram
 			return Results.Accepted();
 		} ) ) ).RequireRateLimiting( "upload" );
 
+		var authenticating = 0;
 		app.Map( ApiRoutes.Chat, async ( HttpContext context ) =>
 		{
 			if ( !context.WebSockets.IsWebSocketRequest )
@@ -280,14 +324,44 @@ public static class ServerProgram
 				context.Response.StatusCode = StatusCodes.Status400BadRequest;
 				return;
 			}
-			var user = store.Authenticate( Token( context ) );
-			if ( user == null )
+			// Desktop clients send the token as a header; browsers cannot, and send it as the first frame.
+			var token = Token( context );
+			var user = token == null ? null : store.Authenticate( token );
+			if ( token != null && user == null )
 			{
 				context.Response.StatusCode = StatusCodes.Status401Unauthorized;
 				return;
 			}
-			using var socket = await context.WebSockets.AcceptWebSocketAsync();
-			await hub.RunAsync( socket, user, context.RequestAborted );
+			// Unauthenticated sockets are bounded like chat connections before they are accepted.
+			var waiting = user == null;
+			if ( waiting && Interlocked.Increment( ref authenticating ) + hub.ConnectedCount > options.MaximumChatConnections )
+			{
+				Interlocked.Decrement( ref authenticating );
+				context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+				return;
+			}
+			try
+			{
+				using var socket = await context.WebSockets.AcceptWebSocketAsync();
+				user ??= await AuthenticateFirstFrameAsync( socket, store, context.RequestAborted );
+				if ( waiting )
+				{
+					waiting = false;
+					Interlocked.Decrement( ref authenticating );
+				}
+				if ( user == null )
+				{
+					if ( socket.State == System.Net.WebSockets.WebSocketState.Open )
+						await socket.CloseAsync( System.Net.WebSockets.WebSocketCloseStatus.PolicyViolation, "unauthorized", CancellationToken.None );
+					return;
+				}
+				await hub.RunAsync( socket, user, context.RequestAborted );
+			}
+			finally
+			{
+				if ( waiting )
+					Interlocked.Decrement( ref authenticating );
+			}
 		} );
 	}
 }

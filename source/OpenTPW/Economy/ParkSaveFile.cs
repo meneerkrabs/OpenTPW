@@ -7,7 +7,8 @@ namespace OpenTPW;
 /// OpenTPW's own versioned park save (JSON, <c>"Format": "opentpw-park"</c>). Original TPWS/TPWI
 /// payloads are only partly understood, so they are never written. The file stores the full
 /// simulation state — clock, RNG, ledger and history, objects, loans, staff and pool, research,
-/// challenges, golden tickets and counters — but not the original settings: those are reloaded
+/// challenges, golden tickets and counters, plus the world seed and the guest, script and sound random
+/// streams — but not the original settings: those are reloaded
 /// from the game data for the saved theme/difficulty, so a save does not freeze balance values.
 /// Writes are atomic (temporary file + move); loads are size-capped, reject unknown or missing
 /// members and validate invariants.
@@ -58,6 +59,18 @@ public static class ParkSaveFile
 		public required ResearchData Research { get; init; }
 		public required ObjectivesData Objectives { get; init; }
 		public required Dictionary<string, long> Counters { get; init; }
+		/// <summary>World seed and the guest, script and sound streams (absent in saves written before world seeds: those streams are not restored).</summary>
+		// [APPROX:DET-016] the park save persists the economy and every random stream, but not guests, queues or object script state; a load keeps the running guests and scripts — evidence needed: an OpenTPW save of the thing and script tables (docs/reverse/DET-plan.md §4.4)
+		public WorldData? World { get; init; }
+	}
+
+	/// <summary><see cref="WorldRandomState"/> as saved; the economy's own stream stays in <see cref="Data.RandomState"/>.</summary>
+	public sealed class WorldData
+	{
+		public required ulong Seed { get; init; }
+		public required ulong GuestRandom { get; init; }
+		public required ulong ScriptRandom { get; init; }
+		public required uint SoundSeed { get; init; }
 	}
 
 	public sealed class LedgerData
@@ -96,6 +109,10 @@ public static class ParkSaveFile
 		public required int ChanceOfLosingPercent { get; init; }
 		public required bool IsOpen { get; init; }
 		public required int StateOfRepair { get; init; }
+		/// <summary>Exact state of repair; absent in older saves, which then use <see cref="StateOfRepair"/>.</summary>
+		public double? Repair { get; init; }
+		/// <summary>Ride life gauge; absent in older saves, which then start at 100.</summary>
+		public double? LifeGauge { get; init; }
 		public required bool IsBrokenDown { get; init; }
 		public required int MechanicId { get; init; }
 		public required long[] Statistics { get; init; }
@@ -141,7 +158,8 @@ public static class ParkSaveFile
 		public required List<GoldenTicketKind> GoldenTickets { get; init; }
 	}
 
-	public static Data Capture( ParkEconomy park )
+	/// <param name="world">The level's other random streams (<see cref="Level.CaptureRandomState"/>); null saves the economy alone.</param>
+	public static Data Capture( ParkEconomy park, WorldRandomState? world = null )
 	{
 		ArgumentNullException.ThrowIfNull( park );
 		return new Data
@@ -196,6 +214,8 @@ public static class ParkSaveFile
 				ChanceOfLosingPercent = item.ChanceOfLosingPercent,
 				IsOpen = item.IsOpen,
 				StateOfRepair = item.StateOfRepair,
+				Repair = item.Repair,
+				LifeGauge = item.LifeGauge,
 				IsBrokenDown = item.IsBrokenDown,
 				MechanicId = item.MechanicId,
 				Statistics = new[] { item.CustomersThisMonth, item.CustomersLastMonth, item.TakingsThisMonth, item.TakingsLastMonth, item.CostsThisMonth, item.CostsLastMonth, item.WinnersThisMonth, item.WinnersLastMonth, item.TotalProfit }
@@ -238,11 +258,12 @@ public static class ParkSaveFile
 				Finished = park.Objectives.Finished.OrderBy( index => index ).ToList(),
 				GoldenTickets = park.Objectives.GoldenTickets.OrderBy( kind => kind ).ToList()
 			},
-			Counters = new Dictionary<string, long>( park.Counters.Values )
+			Counters = new Dictionary<string, long>( park.Counters.Values ),
+			World = world == null ? null : new WorldData { Seed = world.Seed, GuestRandom = world.GuestRandom, ScriptRandom = world.ScriptRandom, SoundSeed = world.SoundSeed }
 		};
 	}
 
-	public static string Serialize( ParkEconomy park ) => JsonSerializer.Serialize( Capture( park ), Options );
+	public static string Serialize( ParkEconomy park, WorldRandomState? world = null ) => JsonSerializer.Serialize( Capture( park, world ), Options );
 
 	/// <summary>Parses and validates a save; the result still needs <see cref="Restore"/> with matching settings.</summary>
 	public static Data Deserialize( ReadOnlySpan<byte> json )
@@ -284,6 +305,8 @@ public static class ParkSaveFile
 			Require( item.Id > 0 && item.Id < data.NextObjectId && ids.Add( item.Id ), $"object id {item.Id}" );
 			Require( item.Level is >= 0 and <= 2 && item.PendingLevel is >= 0 and <= 2 && item.StateOfRepair is >= 0 and <= 100 && item.Statistics.Length == 9, $"object {item.Id}" );
 			Require( item.BuiltTick <= data.Tick && item.Price >= 0 && item.CostOfGoods >= 0 && item.ChanceOfLosingPercent is >= 0 and <= 100, $"object {item.Id} values" );
+			Require( item.Repair is null || (double.IsFinite( item.Repair.Value ) && item.Repair.Value is >= 0 and <= 100 && (int)item.Repair.Value == item.StateOfRepair), $"object {item.Id} repair" );
+			Require( item.LifeGauge is null || (double.IsFinite( item.LifeGauge.Value ) && item.LifeGauge.Value is >= 0 and <= 100), $"object {item.Id} life gauge" );
 		}
 		var staffIds = new HashSet<int>();
 		foreach ( var member in data.Staff.Members )
@@ -327,7 +350,8 @@ public static class ParkSaveFile
 				CostOfGoods = item.CostOfGoods,
 				ChanceOfLosingPercent = item.ChanceOfLosingPercent,
 				IsOpen = item.IsOpen,
-				StateOfRepair = item.StateOfRepair,
+				Repair = item.Repair ?? item.StateOfRepair,
+				LifeGauge = item.LifeGauge ?? 100,
 				IsBrokenDown = item.IsBrokenDown,
 				MechanicId = item.MechanicId,
 				CustomersThisMonth = item.Statistics[0],
@@ -361,21 +385,28 @@ public static class ParkSaveFile
 		return park;
 	}
 
-	public static ParkEconomy Load( string path, Func<string, bool, (BalanceSettings Settings, IEconomyObjectCatalog Catalog)> loadTheme )
+	public static ParkEconomy Load( string path, Func<string, bool, (BalanceSettings Settings, IEconomyObjectCatalog Catalog)> loadTheme ) =>
+		LoadState( path, loadTheme ).Park;
+
+	/// <summary>Loads the economy and the saved world streams (null for saves without them).</summary>
+	public static (ParkEconomy Park, WorldRandomState? World) LoadState( string path, Func<string, bool, (BalanceSettings Settings, IEconomyObjectCatalog Catalog)> loadTheme )
 	{
 		var data = Deserialize( ReadCapped( path ) );
 		var (settings, catalog) = loadTheme( data.Theme, data.Easy );
-		return Restore( data, settings, catalog );
+		return (Restore( data, settings, catalog ), ToWorldState( data ));
 	}
+
+	public static WorldRandomState? ToWorldState( Data data ) =>
+		data.World is { } world ? new WorldRandomState( world.Seed, world.GuestRandom, world.ScriptRandom, world.SoundSeed ) : null;
 
 	/// <summary>Loads a save using the original data of its theme from the game file system.</summary>
 	public static ParkEconomy Load( string path ) => Load( path, ( theme, easy ) => (BalanceSettings.Load( theme, easy ), EconomyObjectCatalog.Load( theme, easy )) );
 
 	/// <summary>Writes atomically: a complete temporary file is moved over the destination.</summary>
-	public static void Save( string path, ParkEconomy park )
+	public static void Save( string path, ParkEconomy park, WorldRandomState? world = null )
 	{
 		var destination = GetPath( path );
-		var bytes = System.Text.Encoding.UTF8.GetBytes( Serialize( park ) );
+		var bytes = System.Text.Encoding.UTF8.GetBytes( Serialize( park, world ) );
 		var temporary = destination + "." + Guid.NewGuid().ToString( "N" ) + ".tmp";
 		var ownsTemporary = false;
 		try

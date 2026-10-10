@@ -36,6 +36,7 @@ public sealed class ParkEconomyRuntime
 		Guests = new GuestEconomyBridge( () => Economy, guests );
 		guests.Payments = Guests;
 		Economy.GuestStatistics = Guests;
+		Economy.RideOperations = Guests;
 		// [APPROX:ECON-031] imported parks are opened on load (open state not decoded) — evidence needed: park-open flag in the save
 		Economy.OpenPark();
 		Log.Trace( $"Park economy: guests pay the ${Economy.EntranceFee} entrance fee and shop/sideshow prices into the ledger." );
@@ -71,7 +72,8 @@ public sealed class ParkEconomyRuntime
 	/// <see cref="ParkStart.ReadsShippedSave"/> for <paramref name="kind"/>, so its save is present exactly
 	/// when the start imports it.
 	/// </summary>
-	public static ParkEconomyRuntime ForOriginalLevel( OriginalPark park, ParkStartKind kind = ParkStartKind.OriginalSaveReference )
+	/// <param name="seed">The park's world seed; the economy stream is <see cref="WorldSeed.EconomyStream"/> (1 for the default seed).</param>
+	public static ParkEconomyRuntime ForOriginalLevel( OriginalPark park, ParkStartKind kind = ParkStartKind.OriginalSaveReference, WorldSeed? seed = null )
 	{
 		ArgumentNullException.ThrowIfNull( park );
 		if ( park.Save != null && !ParkStart.ReadsShippedSave( kind ) )
@@ -79,7 +81,7 @@ public sealed class ParkEconomyRuntime
 		EconomyApproximations.LogOnce();
 		var start = ParkStart.Resolve( kind, park.Save != null, BalanceSettings.HasEasyLayer( park.LevelName ) );
 		var easy = start.EasyBalance;
-		var economy = ParkEconomy.CreateForTheme( park.LevelName, easy, start.Mode );
+		var economy = ParkEconomy.CreateForTheme( park.LevelName, easy, start.Mode, (seed ?? WorldSeed.Default).EconomyStream );
 		var import = start.ImportShippedSave ? OriginalEconomyImport.Apply( economy, park ) : null;
 		economy.SeedResearcherStandIn = import != null && start.Mode == ParkGameMode.InstantAction;
 		Log.Trace( $"Park economy: {kind} start, {start.Mode} rules; {park.LevelName} {(easy ? "easy" : "standard")} balance from {string.Join( ", ", economy.Settings.Standard.Sources )}; "
@@ -116,16 +118,18 @@ public sealed class ParkEconomyRuntime
 		}
 	}
 
-	public void Save( string path ) => ParkSaveFile.Save( path, Economy );
+	/// <param name="world">The level's other random streams; null saves the economy alone.</param>
+	public void Save( string path, WorldRandomState? world = null ) => ParkSaveFile.Save( path, Economy, world );
 
 	/// <summary>
 	/// Replaces the running economy with a saved one of the same theme, difficulty and game mode. The
 	/// mode is part of the save and is never defaulted; a save of the other mode is refused so the rules
 	/// cannot change under the running start.
 	/// </summary>
-	public void Load( string path )
+	/// <returns>The saved world streams for the caller to restore, or null when the save has none.</returns>
+	public WorldRandomState? Load( string path )
 	{
-		var loaded = ParkSaveFile.Load( path, ( theme, easy ) =>
+		var (loaded, world) = ParkSaveFile.LoadState( path, ( theme, easy ) =>
 		{
 			if ( !string.Equals( theme, Economy.Settings.Theme, StringComparison.OrdinalIgnoreCase ) || easy != Economy.Settings.IsEasy )
 				throw new InvalidDataException( $"The park save is for {theme}, not the running {Economy.Settings.Theme} level." );
@@ -139,6 +143,10 @@ public sealed class ParkEconomyRuntime
 		Economy.EventRaised += LogEvent;
 		Economy.EventRaised += ForwardEvent;
 		if ( Guests != null )
+		{
 			Economy.GuestStatistics = Guests;
+			Economy.RideOperations = Guests;
+		}
+		return world;
 	}
 }

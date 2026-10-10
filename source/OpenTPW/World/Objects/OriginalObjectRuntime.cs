@@ -15,13 +15,13 @@ public sealed class OriginalObjectRuntime
 	private bool wasRunning;
 	private bool stopped;
 
-	private static int nextAttractionId = 1;
-
+	/// <param name="world">The park's script world; it also allocates the attraction id. Null: a world of its own.</param>
 	public OriginalObjectRuntime( ObjectCatalogEntry entry, RideScriptWorld? world = null, int? seed = null, bool open = true )
 	{
 		ArgumentNullException.ThrowIfNull( entry );
 		Entry = entry;
-		Visitors = CreateVisitorBridge( entry, Interlocked.Increment( ref nextAttractionId ) - 1 );
+		world ??= new RideScriptWorld();
+		Visitors = CreateVisitorBridge( entry, world.AllocateAttractionId() );
 		Model = ObjectAssets.LoadModel( entry.FileSystem, entry.ModelPath );
 		if ( Model.Kind != ModelFileKind.Geometry )
 			throw new InvalidDataException( $"{entry.ModelPath} is not a geometry model." );
@@ -153,7 +153,31 @@ public sealed class OriginalObjectRuntime
 			needs |= GuestNeeds.Toilet;
 		var price = kind == RideVisitorKind.Ride ? 0 : settings.GetInt( "UsageInfo.InitPricePerUse" );
 		return new RideVisitorBridge( attractionId, entry.DisplayName, kind, entry.InitialCapacity,
-			settings.GetInt( "UsageInfo.ExcitementLevel" ), settings.GetInt( "Info.AttractionValue" ), needs, price );
+			settings.GetInt( "UsageInfo.ExcitementLevel" ), settings.GetInt( "Info.AttractionValue" ), needs, price )
+		{
+			Parameters = CreateQueueParameters( entry )
+		};
+	}
+
+	/// <summary>
+	/// Queue rules from the .sam layers (docs/reverse/QUEUE-plan.md §2, §4): HasQueue, RunsContinuously, the
+	/// capacity-test bypass, and the limit inputs. CAP and DUR are clamped like the host writes them
+	/// (<c>UsageInfo.Min/MaxCapacity</c>, <c>Min/MaxDuration</c>); SPEED starts at InitSpeed, so G = 1.
+	/// </summary>
+	// [DATA:<object>.sam:Info.HasQueue/RunsContinuously, Bumper.WhichTrackType, UsageInfo.Min/MaxCapacity, Min/MaxDuration, Upgrades[0].InitCapacity/InitDuration/InitSpeed/QueueWaitTimeConstant]
+	// [BIN:STP-PPC:0x100E149C capacity bypass] track type 3, or type record +156 (Bumper.WhichTrackType) == 2, skips the ONRIDE < CAPACITY test
+	// [APPROX:QUEUE-011] objects are treated as upgrade level 0 for QueueWaitTimeConstant/InitSpeed (OpenTPW does not apply upgrade levels to the ride record) — evidence needed: none (an OpenTPW gap: upgrades are not modelled on objects)
+	public static QueueParameters CreateQueueParameters( ObjectCatalogEntry entry )
+	{
+		var settings = entry.Settings;
+		var level = entry.Upgrades.FirstOrDefault( upgrade => upgrade.Level == 0 );
+		static int Clamp( int value, int minimum, int maximum ) => maximum >= minimum && maximum > 0 ? Math.Clamp( value, minimum, maximum ) : value;
+		var capacity = Clamp( level?.GetInt( "InitCapacity" ) ?? 0, settings.GetInt( "UsageInfo.MinCapacity" ), settings.GetInt( "UsageInfo.MaxCapacity" ) );
+		var duration = Clamp( level?.GetInt( "InitDuration" ) ?? 0, settings.GetInt( "UsageInfo.MinDuration" ), settings.GetInt( "UsageInfo.MaxDuration" ) );
+		var initSpeed = level?.GetInt( "InitSpeed" ) ?? 0;
+		var trackType = settings.GetInt( "Bumper.WhichTrackType" );
+		return new QueueParameters( entry.HasQueue, settings.GetBool( "Info.RunsContinuously" ), trackType is 2 or 3,
+			level?.GetFloat( "QueueWaitTimeConstant" ) ?? 0, initSpeed, initSpeed, capacity, duration );
 	}
 
 	private RideScriptFile? ResolveChildScript( string fileName )

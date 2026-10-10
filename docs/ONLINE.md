@@ -105,10 +105,11 @@ dotnet run --project source/OpenTPW.Server -- --urls http://127.0.0.1:5000
 ```
 
 Choose `http://127.0.0.1:5000` in the game panel and press Go online, then register or
-log in. This command is for local testing. The existing server Dockerfile and compose
-example support self-hosting; no deployment is performed by the client. Operator
-settings are in `OpenTPW.Server/appsettings.json` and use `OpenTPW__<setting>` environment
-variables. The server stores accounts, sessions, parks, postcards and reports in its
+log in. This command is for local testing; docs/SERVER.md describes hosting a server on
+the internet over HTTPS (Docker image with Caddy on port 443), optionally serving the
+browser build of the game from the same address. No deployment is performed by the client.
+Operator settings are in `OpenTPW.Server/appsettings.json` and use `OpenTPW__<setting>`
+environment variables. The server stores accounts, sessions, parks, postcards and reports in its
 configured data directory. Its optional word filter uses the operator's local original
 `swears.txt` and `alloweds.txt` files; they are not distributed.
 

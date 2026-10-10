@@ -119,6 +119,17 @@ the folder saved in Options > Game files is used, or the copy imported there int
 `--smoke-test` also works with this flag (captures `native-smoke-original-*.png`;
 the smoke also checks that guests fill and leave the Totem and ride imported objects).
 
+## Headless M3 gameplay-loop gate
+
+```sh
+dotnet source/OpenTPW/bin/Debug/net10.0/OpenTPW.dll --game-path '/path/to/Theme Park World' --m3-gate --minutes 30 --report m3-gate.json
+```
+
+Builds a fixed minimal Jungle park without a window or GPU (entrance, paths, Belly Bounce, Drinks Shop,
+Small Toilet, a mechanic and a handyman), runs 30 simulated minutes as fast as possible and prints one
+pass/fail/unresolved row per invariant. Exit code: 1 when any row fails, 2 when no row fails but at least
+one is unresolved, 0 only when every row passes. M3 is accepted only at exit code 0. See [M3-GATE.md](M3-GATE.md).
+
 ## Read-only BF4 font inspection
 
 ```sh
@@ -197,7 +208,7 @@ bash scripts/run.sh --game-path '/path/to/Theme Park World' --fullscreen --upsca
 | `--save-display-settings` | Also stores these values as the user's display settings. |
 | `--export-ps2 <ps2 DATA dir> <out dir>` | Lists the PS2 version's archives and exports its textures as PNG for viewing (PS2.md). |
 | `--capture-world <file.png>` | After `--capture-frames N` frames (default 240) writes the 3D world without interface at its render size and exits; for screenshots and comparisons. |
-| `--build-texture-pack --upscaler <path>` | Builds the optional enhanced texture pack from the installation with a player-supplied Real-ESRGAN executable (TEXTURE-PACKS.md); then turn on Game Options → OpenTPW → Enhanced textures. |
+| `--build-texture-pack --upscaler <path>` | Builds an optional texture pack from the installation with a player-supplied Real-ESRGAN executable (TEXTURE-PACKS.md). Further flags: `--texture-pack-name <name>` (default `enhanced`; `detailed` for the second variant), `--upscale-model`, `--prepass-model <onnx>` (1x de-artifact model before upscaling), `--texture-pack-dir`, `--texture-pack-subtree`, `--interface-model`, `--texture-pack-no-interface`, `--texture-pack-interface-only`, `--texture-pack-sprites-only`, `--prepass-sprites`, `--texture-pack-hero-dir <dir>`, `--texture-pack-merge`. Then choose the pack under Game Options → OpenTPW → Enhanced textures (applied at once, no restart). |
 
 Alt+Enter or F11 toggles fullscreen at runtime; the ImGui park panel has a Display
 section with the same options and the diagnostics (method, requested/effective scale,

@@ -305,3 +305,8 @@ the per-theme tickets and the two secret-ticket flags; `mSpentTickets` is not
 subtracted, so buying mystery items does not cost keys. This confirms the manual's
 "one key for every third ticket" (REFERENCE-MANUAL.md). The starting value of
 `mExtraKeys` is not traced, so `ECON-040` (one starting key) stays an approximation.
+
+## See also
+
+[RIDE-WEAR.md](RIDE-WEAR.md): SAM schema records and slot layout, and the ride wear functions found with
+Ghidra in `SimThemePark.data` (ECON-023 evidence).

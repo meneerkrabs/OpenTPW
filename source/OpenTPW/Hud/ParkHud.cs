@@ -50,6 +50,10 @@ public sealed class ParkHud
 	private BuildItem? pendingItem;
 	private OriginalObject? selectedObject;
 	private int buildPage;
+	private int cursorX = -1;
+	/// <summary>Set by a press the path/queue tool used, so its release does not select an object.</summary>
+	private bool toolPress;
+	private int cursorY = -1;
 
 	public ParkHud( Level level, UiStringTable strings, IHudParkStatus status, IBuildCatalog catalog, HudHost host )
 	{
@@ -95,16 +99,19 @@ public sealed class ParkHud
 			messages.RemoveAt( 0 );
 	}
 
-	private UiButton PanelButton( string id, string model, float x, float y, int help, Action? clicked, float size = 118.4f ) => hud.Add( new UiButton
+	private UiButton PanelButton( string id, string model, UiRect bounds, int? help, Action? clicked ) => hud.Add( new UiButton
 	{
 		Id = id,
 		Model = model,
-		Help = strings.Help( help ),
+		Help = help is { } index ? strings.Help( index ) : null,
 		Clicked = clicked,
 		Enabled = clicked != null,
-		Bounds = UiRect.FromCenter( new NVector2( x, y ), size, size ),
+		Bounds = bounds,
 		Anchor = UiAnchor.BottomLeft
 	} );
+
+	/// <summary>An authored rectangle given as (left, top, right, bottom), as the original layout tables store them.</summary>
+	private static UiRect Rect( float left, float top, float right, float bottom ) => new( left, top, right - left, bottom - top );
 
 	private void Build()
 	{
@@ -117,16 +124,21 @@ public sealed class ParkHud
 		hud.Add( new UiModelImage { Id = "mainPanel", Model = "mainpanel", Bounds = new UiRect( 37.1f, 984.2f, 401.7f, 523.1f ), Anchor = UiAnchor.BottomLeft } );
 		hud.Add( new UiModelImage { Id = "gauge", Model = "gauge", Bounds = new UiRect( 66.6f, 1080.4f, 96.6f, 264.2f ), Anchor = UiAnchor.BottomLeft, Help = strings.Help( 477 ) } );
 		hud.Add( new UiModelImage { Id = "dateDisplay", Model = "date", Bounds = new UiRect( 152.6f, 1043.6f, 251.7f, 77.5f ), Anchor = UiAnchor.BottomLeft, Help = strings.Help( 478 ) } );
-		// [APPROX:UI-021] date/money text positions and fonts — evidence needed: capture of the original HUD
-		hud.Add( new UiLabel { Id = "date", Text = () => DateText, Font = fonts => fonts.Small, Align = UiAlign.Center, Bounds = new UiRect( 170, 1050, 220, 64 ), Anchor = UiAnchor.BottomLeft } );
-		hud.Add( new UiLabel { Id = "money", Text = () => MoneyText, Font = fonts => fonts.Cash, Color = UiColors.Value, Align = UiAlign.Center, Bounds = new UiRect( 165, 1125, 240, 60 ), Anchor = UiAnchor.BottomLeft, Help = strings.Help( 465 ) } );
+		// [DATA:Mac main HUD table 0x4ab38:32,47] date text region (182,1061,383,1103) in black (font slot 3); the cash text
+		// (control 47, (258,60,720,260), white font slot 1) sits at the top left of the screen, not in the panel, whose
+		// buttons start right below the date box. [APPROX:UI-021] the original resizes/repositions control 47 from the
+		// measured font extents and the drawable size (0x156ef4); the table rectangle is used as is; ","-grouped digits.
+		hud.Add( new UiLabel { Id = "date", Text = () => DateText, Font = fonts => fonts.Small, Color = new Veldrid.RgbaByte( 0, 0, 0, 255 ), Align = UiAlign.Center, Bounds = Rect( 182, 1061, 383, 1103 ), Anchor = UiAnchor.BottomLeft } );
+		hud.Add( new UiLabel { Id = "money", Text = () => MoneyText, Font = fonts => fonts.Balance, Color = UiColors.Text, Align = UiAlign.Left, Bounds = Rect( 258, 60, 720, 260 ), Anchor = UiAnchor.TopLeft, Help = strings.Help( 465 ) } );
 
-		// [APPROX:UI-020] panel button positions (the models share one authored centre) — evidence needed: capture of the original HUD
-		PanelButton( "buy", "b_buy", 235, 1240, 469, level.IsReadOnlyVisit ? null : ToggleBuildArm ).Selected = () => BuildArmOpen;
-		PanelButton( "info", "b_info", 355, 1240, 470, null );
-		PanelButton( "finance", "b_money", 235, 1350, 471, null );
-		PanelButton( "research", "b_resrch", 355, 1350, 472, null );
-		PanelButton( "map", "b_map", 235, 1455, 473, null );
+		// [DATA:Mac main HUD table 0x4ab38:38-43] original button rectangles: staggered along the panel's curve, plus the camera button
+		PanelButton( "buy", "b_buy", Rect( 170, 1122, 288, 1240 ), 469, level.IsReadOnlyVisit ? null : ToggleBuildArm ).Selected = () => BuildArmOpen;
+		PanelButton( "info", "b_info", Rect( 287, 1133, 405, 1252 ), 470, null );
+		PanelButton( "finance", "b_money", Rect( 156, 1241, 274, 1360 ), 471, null );
+		PanelButton( "research", "b_resrch", Rect( 274, 1254, 392, 1372 ), 472, null );
+		PanelButton( "map", "b_map", Rect( 81, 1340, 200, 1458 ), 473, null );
+		// [APPROX:UI-042] the camera button's action (camera views) is not implemented; it is shown disabled
+		PanelButton( "camera", "b_camera", Rect( 202, 1355, 320, 1474 ), null, null );
 
 		// [APPROX:UI-022] speed buttons and multipliers — evidence needed: binary game speed options
 		// Speed control (OpenTPW addition; the original has pause only).
@@ -278,7 +290,14 @@ public sealed class ParkHud
 		} ) );
 
 		hud.DrawOverlay = DrawMessages;
-		hud.Back = OpenPauseMenu;
+		// [APPROX:PATH-011] Escape/Back inside the path or queue tool ends the tool without writing; only a Back outside it opens the pause menu (PATH-plan §9.4 cancel; the original's key handler for the tool is not traced, UI-012) — evidence needed: the original's Escape handling in tool modes 1 and 3
+		hud.Back = () =>
+		{
+			if ( level.CellTool.IsActive )
+				level.CellTool.Cancel();
+			else
+				OpenPauseMenu();
+		};
 	}
 
 
@@ -311,6 +330,8 @@ public sealed class ParkHud
 	public void SetBuildArm( bool open )
 	{
 		BuildArmOpen = open;
+		if ( open )
+			level.CellTool.Cancel();
 		if ( open )
 			InfoArmOpen = false;
 		if ( !open && pendingItem != null )
@@ -345,6 +366,7 @@ public sealed class ParkHud
 		}
 		if ( item.Entry is not { } entry )
 			return;
+		level.CellTool.Cancel();
 		pendingItem = item;
 		level.BuildEntry = entry;
 		level.IsRemovingObjects = false;
@@ -352,7 +374,7 @@ public sealed class ParkHud
 		PostMessage( strings.Help( 440 ) );
 	}
 
-	// [APPROX:UI-031] one placement per menu selection; Level owns purchase/sale — evidence needed: original build-tool continuation
+	// [APPROX:UI-031] one placement per menu selection, then the queue tool for Info.HasQueue rides; Level owns purchase/sale — evidence needed: original build-tool continuation
 	private void OnObjectPlaced( OriginalObject item )
 	{
 		if ( pendingItem?.Entry != item.Entry )
@@ -360,6 +382,9 @@ public sealed class ParkHud
 		// Level.PlaceObject owns the purchase and guest link; this callback only finishes the HUD tool.
 		PostMessage( string.Format( strings.Extra( OpenTpwText.Built ), ItemName( pendingItem ) ) );
 		SetBuildArm( false );
+		// [BIN:STP-PPC:0x1007497C ride placement] a placed HasQueue ride (type record +64) enters tool mode 3, the queue tool (PATH-plan §8); park clicks lay its queue until Back
+		if ( item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells && level.EnterQueueTool( item.Visitors ) )
+			PostMessage( strings.Extra( OpenTpwText.LayQueue ) );
 	}
 
 	private void ToggleRideOpen()
@@ -491,10 +516,15 @@ public sealed class ParkHud
 		if ( !overUi && !consumed && input.LeftPressed )
 			GameAudio.PlayUi( ParkViewClickEvent );
 
+		var inPark = !overUi && !consumed && level.TryGetGridCell( input.Mouse, new NVector2( context.Canvas.Width, context.Canvas.Height ), out cursorX, out cursorY );
+		if ( !inPark )
+			cursorX = cursorY = -1;
+		var toolClick = UpdateCellTool( context, input, inPark, paused );
 		// [APPROX:UI-027] Select by occupied grid cell; original cursor picking is not verified.
-		if ( !overUi && !consumed && level.BuildEntry == null && !level.IsPlacing && input.LeftReleased
-			&& level.TryGetGridCell( input.Mouse, new NVector2( context.Canvas.Width, context.Canvas.Height ), out var x, out var y ) )
-			SelectObject( level.Objects.FindAt( x, y ) );
+		if ( inPark && level.BuildEntry == null && !level.IsPlacing && !level.CellTool.IsActive && input.LeftReleased && !toolPress )
+			SelectObject( level.Objects.FindAt( cursorX, cursorY ) );
+		if ( input.LeftReleased )
+			toolPress = false;
 
 		for ( var index = messages.Count - 1; index >= 0; index-- )
 		{
@@ -503,7 +533,76 @@ public sealed class ParkHud
 				messages.RemoveAt( index );
 		}
 		Status.Update( context.Delta );
-		return overUi || consumed;
+		return overUi || consumed || toolClick;
+	}
+
+	/// <summary>
+	/// The path/queue tool's HUD side: park-view help (441–445), the ghost line under the cursor, Backspace undo
+	/// and right-click cancel. Clicks inside the tool are committed here; <see cref="Update"/> reports them as captured,
+	/// so <see cref="Level"/>'s park click (the same commit for input without the HUD) skips them.
+	/// </summary>
+	private bool UpdateCellTool( UiContext context, UiInput input, bool inPark, bool paused )
+	{
+		var tool = level.CellTool;
+		// [APPROX:PATH-013] while the pause menu is open the tool takes no clicks: this returns before the commit, and Update reports the pointer as captured (overUi), so Level's park click skips it too; the economy's speed pause does not stop the tool, which keeps its ghost — evidence needed: the original park view's input handling while paused
+		// The remove tool owns the park click while it is on (Level.RemoveAt clears paths and queues too).
+		if ( paused || level.BuildEntry != null || level.IsPlacing || level.IsRemovingObjects )
+			return false;
+		if ( inPark && tool.HoverHelpId( level.Paths, cursorX, cursorY ) is int help )
+			context.HoverHelp = strings.Help( help );
+		if ( !tool.IsActive )
+		{
+			// A left click on an empty owned cell or on a path cell starts the path tool there (help 441/442).
+			if ( !inPark || !input.LeftPressed || level.IsReadOnlyVisit || level.Objects.FindAt( cursorX, cursorY ) != null
+				|| tool.HoverHelpId( level.Paths, cursorX, cursorY ) is not (441 or 442) || !level.EnterPathTool( cursorX, cursorY ) )
+				return false;
+			PostMessage( strings.Help( 443 ) );
+			tool.Hover( (cursorX, cursorY) );
+			return toolPress = true;
+		}
+		if ( input.Backspaces > 0 )
+			tool.Undo();
+		if ( input.RightPressed && inPark )
+		{
+			tool.Cancel();
+			return true;
+		}
+		if ( !inPark )
+			return false;
+		tool.Hover( (cursorX, cursorY) );
+		if ( !input.LeftPressed )
+			return false;
+		// The commit click; Level skips it because the HUD reports the pointer as captured this frame.
+		var result = tool.Click( (cursorX, cursorY) );
+		if ( result is { Completed: false } )
+			PostMessage( strings.Extra( result.StoppedBy == CellBuildResult.NotEnoughMoney ? OpenTpwText.NotEnoughMoney : OpenTpwText.CannotBuildHere ) );
+		return toolPress = true;
+	}
+
+	/// <summary>Ghost markers for the tool's preview line: green cells it would build, grey existing cells, red where it stops; then the line's cost.</summary>
+	// [APPROX:PATH-001] ghosts are flat markers at the cell centres with the line's cost beside the cursor (the original draws ghost path pieces, LayLine mode | 0x100) — evidence needed: captures of the original path tool
+	private void DrawCellToolGhost( UiContext context )
+	{
+		if ( level.CellTool.Ghost is not { } ghost || !level.CellTool.IsActive )
+			return;
+		var viewport = new NVector2( context.Canvas.Width, context.Canvas.Height );
+		var size = 10 * context.Canvas.TextScale;
+		var built = ghost.Built.ToHashSet();
+		var existing = ghost.Existing.ToHashSet();
+		foreach ( var cell in ghost.Line )
+		{
+			if ( !level.TryProjectCell( cell.X, cell.Y, viewport, out var centre ) )
+				continue;
+			var colour = cell == ghost.StoppedAt ? new RgbaByte( 230, 40, 40, 200 )
+				: built.Contains( cell ) ? new RgbaByte( 80, 220, 80, 170 )
+				: existing.Contains( cell ) ? new RgbaByte( 200, 200, 200, 140 ) : new RgbaByte( 120, 120, 120, 90 );
+			context.Batch.AddRectangle( new UiRect( centre.X - size / 2, centre.Y - size / 2, size, size ), colour );
+		}
+		if ( Status.HasEconomy && ghost.Charged > 0 && level.TryProjectCell( ghost.SnappedEnd.X, ghost.SnappedEnd.Y, viewport, out var end ) )
+		{
+			var text = string.Format( System.Globalization.CultureInfo.InvariantCulture, "{0}{1:#,0}", strings[UIStrings.Dollar], ghost.Charged ).Replace( "  ", " " );
+			context.DrawText( context.Fonts.Small, text, new UiRect( end.X + size, end.Y - size * 2, 300 * context.Canvas.TextScale, size * 4 ), ghost.Completed ? UiColors.Value : UiColors.Highlight, UiAlign.Left );
+		}
 	}
 
 	public void SelectObject( OriginalObject? item )
@@ -531,6 +630,7 @@ public sealed class ParkHud
 			hud.DrawOverlay = null;
 		else
 			hud.DrawOverlay = DrawMessages;
+		DrawCellToolGhost( context );
 		Stack.Draw( context );
 	}
 

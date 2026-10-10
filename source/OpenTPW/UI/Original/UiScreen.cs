@@ -29,6 +29,8 @@ public class UiScreen
 	public Action? Removed { get; set; }
 	/// <summary>Whether a modal screen dims and blocks what is below it.</summary>
 	public bool Modal { get; init; } = true;
+	/// <summary>True once a stack removed this screen; it then ignores the rest of the frame's input (a click that closed it must not also act as Back on whatever it opened).</summary>
+	public bool IsRemoved { get; internal set; }
 
 	public T Add<T>( T element ) where T : UiElement
 	{
@@ -82,6 +84,8 @@ public class UiScreen
 			if ( hit != null && (pressed == null || pressed == hit) )
 				Click( canvas, hit, input.Mouse );
 			pressed = null;
+			if ( IsRemoved )
+				return true;
 		}
 		if ( (hit is UiOptionRow or UiSlider || hit is UiButton { Adjusted: not null, WheelAdjusts: true }) && input.Wheel != 0 )
 			hit.Adjust( input.Wheel > 0 ? 1 : -1 );
@@ -95,6 +99,8 @@ public class UiScreen
 			field.Type( input.Text, input.Backspaces );
 			if ( input.Has( UiKeys.Accept ) && !input.Has( UiKeys.Space ) )
 				field.Activate();
+			if ( IsRemoved )
+				return true;
 			if ( input.Has( UiKeys.Back ) || (input.RightPressed && Modal) )
 				Back?.Invoke();
 			// Typed keys belong to the field, not to navigation or to the park below.
@@ -113,6 +119,8 @@ public class UiScreen
 			if ( input.Has( UiKeys.Accept ) )
 				Focused.Activate();
 		}
+		if ( IsRemoved )
+			return true;
 		if ( input.Has( UiKeys.Back ) || (input.RightPressed && Modal) )
 		{
 			Back?.Invoke();
@@ -178,7 +186,11 @@ public sealed class UiScreenStack
 	public IReadOnlyList<UiScreen> Screens => screens;
 	public UiScreen? Top => screens.Count == 0 ? null : screens[^1];
 
-	public void Push( UiScreen screen ) => screens.Add( screen );
+	public void Push( UiScreen screen )
+	{
+		screen.IsRemoved = false;
+		screens.Add( screen );
+	}
 
 	public void Pop()
 	{
@@ -186,6 +198,7 @@ public sealed class UiScreenStack
 		{
 			var removed = screens[^1];
 			screens.RemoveAt( screens.Count - 1 );
+			removed.IsRemoved = true;
 			removed.Removed?.Invoke();
 		}
 	}
@@ -200,7 +213,11 @@ public sealed class UiScreenStack
 	{
 		var removed = screens.ToArray();
 		screens.Clear();
-		foreach ( var screen in removed ) screen.Removed?.Invoke();
+		foreach ( var screen in removed )
+		{
+			screen.IsRemoved = true;
+			screen.Removed?.Invoke();
+		}
 	}
 
 	public bool Update( UiContext context, UiInput input ) => Top?.Update( context, input ) ?? false;

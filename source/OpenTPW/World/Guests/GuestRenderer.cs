@@ -46,6 +46,35 @@ public sealed class GuestRenderer : Entity
 			slots[index] = textures[Math.Min( index, textures.Count - 1 )];
 		material = new Material<ObjectUniformBuffer>( "content/shaders/sprite.shader" );
 		material.Set( "Color", slots );
+		TexturePackSwitch.PackChanged += ReloadAtlases;
+	}
+
+	/// <summary>
+	/// [EXT:texture-pack] The texture pack changed: builds the atlas textures again from the new pack (or the originals), binds
+	/// them and deletes the old GPU textures after the current frame.
+	/// </summary>
+	private void ReloadAtlases()
+	{
+		if ( deleted || material == null || textures.Count == 0 )
+			return;
+		var old = textures.ToList();
+		textures.Clear();
+		foreach ( var atlas in atlases.Take( 8 ) )
+			textures.Add( LoadAtlas( atlas ) );
+		var slots = new Texture[8];
+		for ( var index = 0; index < slots.Length; index++ )
+			slots[index] = textures[Math.Min( index, textures.Count - 1 )];
+		material.Set( "Color", slots );
+		foreach ( var texture in old )
+			Asset.All.Remove( texture );
+		global::Global.Render.ScheduleDelete( () =>
+		{
+			foreach ( var texture in old )
+			{
+				texture.NativeTextureView.Dispose();
+				texture.NativeTexture.Dispose();
+			}
+		} );
 	}
 
 	/// <summary>
@@ -190,6 +219,7 @@ public sealed class GuestRenderer : Entity
 	protected override void OnDelete()
 	{
 		deleted = true;
+		TexturePackSwitch.PackChanged -= ReloadAtlases;
 		var buffer = vertexBuffer;
 		vertexBuffer = null;
 		if ( buffer != null )

@@ -218,13 +218,24 @@ x 1331..1964, rows at y 167/323/479, the authored right column's panel size and 
 each with a dark label in the shared size and a `b_on2` cycle button: window mode (windowed /
 borderless / exclusive "Full screen"), upscaling (Native/Linear/Nearest), render scale (Native,
 presets 77/67/59/50 %, others labelled with the original " Custom"), interface scale (Automatic
-or 1x-8x), enhanced textures and language. Clicking the button or wheel up/Right cycles
+or 1x-8x), enhanced textures (see below) and language. Clicking the button or wheel up/Right cycles
 forward, wheel down/Left backward, both wrapping. The effective internal/output size and
 fallback reason are small dark text below the rows. Game files is a purple button where the
 main page has its OpenTPW button, and Back is the `b_okay` button in the OK place on the
 `!f_plain` panel (Escape and right click also go back). It edits the same pending state: Back
 returns to the original page with the edits still pending, and OK on the original page applies
 both pages; Cancel/Escape there discards everything.
+
+The enhanced-textures row (`enhancedTextures`, `[EXT:texture-pack]`) cycles "Original" (the game's own textures),
+"Enhanced" (the default: the HD interface art shipped in `content/hero-art` plus the local `enhanced` pack
+when one is built), then every other installed texture pack (a directory under `<config>/texture-packs` with a
+valid `pack.json`; see TEXTURE-PACKS.md): `detailed` is labelled "Detailed" (translated in all six languages),
+other pack names are shown as they are. Its popup help explains the choice and that switching runs in the
+background. The choice is applied on OK, without a restart and without a loading screen: the options close
+and the game loop swaps the textures of the running game in place while the player keeps playing; a
+non-blocking line at the top centre ("Updating textures in the background... n / total" with a thin bar,
+`OptionsScreen.DrawTextureSwitchProgress`) shows the progress and disappears when the switch is done. No
+restart notice appears for a texture pack.
 
 OK saves `save/opentpw-options.json`. Size/window-mode changes use
 `ApplyWithConfirmation` (15 s) with the original UITEXT 400 question showing the display's
@@ -283,9 +294,18 @@ glyph in all 14 UI fonts of each language.
   empty; digits grouped with commas — an OpenTPW choice), the `f_tagl/m/r`
   message area (up to three recent messages, 8 s), and the `panel` arms
   (`pan_buy`, `pan_info`) with `b_retract` (481) at its authored place.
-- Panel buttons `b_buy` (469), `b_info` (470), `b_money` (471), `b_resrch` (472),
-  `b_map` (473): their places on the panel are approximations; only Buy works,
-  the others show their disabled frame.
+- Panel buttons at the original rectangles of the Mac main HUD table (`data:0x4ab38`, controls 38-43),
+  staggered along the panel's curve: `b_buy` (469), `b_info` (470), `b_money` (471), `b_resrch` (472),
+  `b_map` (473) and `b_camera` (474). Only Buy works; the others show their disabled frame (the camera
+  views are not implemented, UI-042).
+- The date text is drawn in black inside the date region (182,1061)-(383,1103) (table control 32). The bank
+  balance is not on the panel: the table puts it at the top left of the screen (control 47,
+  (258,60)-(720,260), white cash font slot 1, drawn with the shipped `CASHSMALL/MED/BIG` fonts); the same table
+  also has an `i_dollar` icon left of it, a `green_up` change arrow, and golden key/ticket counters
+  (`gkey`, `gtick`) at the top right, which OpenTPW does not draw yet.
+- The Mac build has 55 such layout tables (the buy window `data:0x4cd94`, the finance/staff/info arm contents,
+  the coaster tools, the map screen, research, ride and staff windows); OpenTPW's build arm below is its own
+  layout, not the original buy window.
 - Build arm: `b_srides/b_sshop/b_sshow/b_sfeature` category buttons (521–524),
   the category title (119–122) and three-slot pages with previous/next arrows.
   Every buildable object in the current theme is accessible, ordered by Info.Id,
@@ -391,13 +411,12 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-017 | `World/LobbyCameraMode.cs:25` | lobby camera: SPINSPEED read as radians per 0.1 s, vertical field of view 60, 3/s glide between islands, ISLANDFOV unused | binary or capture of the lobby camera |
 | UI-018 | `Client/GameFlow.cs:238`, `World/Lobby/LobbyScene.cs:14` | lobby sky drawn as a flat SKYCOLOUR backdrop; flying meshes, rain, lightning, animations not drawn | binary/capture of the lobby |
 | UI-019 | `FrontEnd/LobbyDefinition.cs:92` | fallback island position (400 + index × 200, 400) when lobby.txt has none | none needed if lobby.txt is complete |
-| UI-020 | `Hud/ParkHud.cs:119` | positions of buy/info/finance/research/map buttons on the main panel (shared authored centre) | capture of the original HUD |
-| UI-021 | `Hud/ParkHud.cs:115`, `Hud/ParkHud.cs:80` | positions and fonts of the date and bank balance text; money grouped with ',' digits | capture of the original HUD; locale number format |
+| UI-021 | `Hud/ParkHud.cs` | bank balance text at the Mac table rectangle as is (the original repositions it from font extents and drawable size); money grouped with "," digits | binary 0x156ef4 placement; locale number format |
 | UI-022 | `Hud/HudStubs.cs:88`, `Hud/HudStubs.cs:47`, `Hud/ParkHud.cs:126` | speed control (pause, ×1, ×2, ×4) bottom-right; faster speeds only speed up the economy clock, not rides/guests | binary: original game speed options (pause only is known) |
 | UI-023 | `Hud/HudStubs.cs:9` | test-only stub calendar (2 s/day); the game shows the economy clock (see ECON tags) | none for the game path |
 | UI-024 | `Hud/ParkHud.cs:144`, `Hud/ParkHud.cs:171`, `Hud/ParkHud.cs:207`, `Hud/HudStubs.cs:108`, `Hud/ParkHud.cs:581` | layout inside the build and info arms (category buttons, title, three-slot pages/arrows sorted by Info.Id, adaptive preview size to fit translated names/prices, stat rows, door/erase buttons) | captures of the original arms |
 | UI-025 | `Hud/ParkHud.cs:28` | message area keeps up to 3 messages for 8 s in the f_tag frame | binary/capture of the original message system |
-| UI-026 | `Hud/ParkHud.cs:586`, `Hud/PreviewIcon.cs:14` | build icons: CPU orthographic projection of P<name>.MD2 with 30° tilt, 0.8 rad/s turn, painter sorting | capture of the original build menu |
+| UI-026 | `Hud/ParkHud.cs:586`, `Hud/PreviewIcon.cs:14` | build icons: CPU orthographic projection of the preview model (P<name>.MD2, else the main model) with 30° tilt, 0.8 rad/s turn, painter sorting | capture of the original build menu |
 | UI-027 | `Hud/ParkHud.cs:481` | a park click selects the original object occupying its grid cell | binary: original picking |
 | UI-028 | `Hud/ParkHud.cs:283` | excitement shown as '<ExcitementLevel>%'; reliability, repair and life shown as not simulated | capture of the original ride info; simulation |
 | UI-029 | `Hud/ParkHud.cs:207` | b_door 'down' frames mean the ride is closed; b_erase used as the delete button | capture of the original ride panel |
@@ -412,6 +431,7 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-039 | `UI/Original/UiWidgets.cs` | option label size: letter box about 58 % of the label rectangle height, shared per page; a label whose widest value does not fit drops alone to the largest size that does | capture of the original option labels in several languages |
 | UI-040 | `Client/Autorun/AutorunView.cs` | autorun launcher focus rectangle: dotted frame inverting the pixels with even x + y, 2 pixels inside the button | capture of the original launcher with a focused button |
 | UI-041 | `Client/GameFlow.cs:147` | Load Park opens a shipped park as the reference start (its own balance, Full Simulation rules) whatever Game Mode was last chosen; the original's GameType is not saved with a park but copied from the loading player's profile (`mEasyModeUser`) | player profiles and what the Mac park loader 0x11acfc reads from a park file |
+| UI-042 | `Hud/ParkHud.cs` | HUD camera button shown disabled; its camera-view action is not implemented | binary camera button handler |
 
 Data-backed (tagged `[DATA]`): the 2048×1536 canvas and authored rectangles of
 placed models (`ui.wad` roots/bounds), button state frames and texture order, V

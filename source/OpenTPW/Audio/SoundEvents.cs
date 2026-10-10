@@ -112,7 +112,14 @@ public sealed class SoundEventSystem
 
 	public AudioMixer Mixer => mixer;
 
+	/// <summary>Current chooser seed (saved with the park; see <see cref="WorldRandomState"/>).</summary>
+	public uint Seed => seed;
+
+	/// <summary>Restarts the chooser from <paramref name="value"/> (a park's <see cref="WorldSeed.SoundStream"/> or a saved seed).</summary>
+	public void Reseed( uint value ) => seed = value;
+
 	// [BIN:STP-PPC:sound_shared 0x1000FCB4 ChooseRandomSample] draw = (seed × 0x19660D + 0x3C6EF35F) >> 16 (32-bit); the first sample whose cumulative weight is >= draw wins
+	// [APPROX:DET-012] every draw stores its successor as the new seed; unmerged advisor phase 10 reads the bundle's choosers as never storing it — evidence needed: that phase merged and re-pinned on main (docs/reverse/DET-plan.md §3 D9)
 	internal uint Draw()
 	{
 		seed = unchecked(seed * 0x19660D + 0x3C6EF35F);

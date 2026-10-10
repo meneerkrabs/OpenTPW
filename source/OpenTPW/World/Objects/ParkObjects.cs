@@ -81,16 +81,21 @@ public sealed class ParkObjects
 	private readonly List<OriginalObject> objects = new();
 	private readonly Dictionary<(int, int), OriginalObject> occupied = new();
 	private int nextSeed = 1;
+	private readonly int scriptKey;
 
-	public ParkObjects( ObjectCatalog catalog, IParkGrid grid )
+	/// <param name="seed">The park's world seed: object script seeds and the script world's stream derive from it.</param>
+	public ParkObjects( ObjectCatalog catalog, IParkGrid grid, WorldSeed? seed = null )
 	{
 		Catalog = catalog;
 		Grid = grid;
+		var world = seed ?? WorldSeed.Default;
+		ScriptWorld = new RideScriptWorld( world.ScriptStream );
+		scriptKey = world.ObjectScriptKey;
 	}
 
 	public ObjectCatalog Catalog { get; }
 	public IParkGrid Grid { get; }
-	public RideScriptWorld ScriptWorld { get; } = new();
+	public RideScriptWorld ScriptWorld { get; }
 	public IReadOnlyList<OriginalObject> Objects => objects;
 	/// <summary>Extra blocked cells owned by the host (the sandbox Totem prototype).</summary>
 	public Func<int, int, bool>? IsReserved { get; set; }
@@ -103,7 +108,11 @@ public sealed class ParkObjects
 
 	/// <summary>Build rule for a catalog object anchored at (x, y) with a rotation.</summary>
 	// [APPROX:RIDES-018] Build rules = footprint inside grid + MAP/save terrain rules + no overlap; no slope, path or land rule; Level.PlaceObject enforces economy purchases — evidence needed: original build checks (binary/captures)
-	public OriginalPlacementResult Check( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation )
+	public OriginalPlacementResult Check( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation ) =>
+		Check( Grid, IsOccupied, entry, anchorX, anchorY, rotation );
+
+	/// <summary>The same build rule for any grid and occupancy (the headless M3 gate has no <see cref="OriginalObject"/>s).</summary>
+	internal static OriginalPlacementResult Check( IParkGrid grid, Func<int, int, bool> isOccupied, ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation )
 	{
 		if ( !ObjectFootprint.IsValidRotation( rotation ) )
 			throw new ArgumentOutOfRangeException( nameof( rotation ) );
@@ -111,12 +120,12 @@ public sealed class ParkObjects
 			return OriginalPlacementResult.Blocked;
 		foreach ( var (x, y, _) in ObjectFootprint.GetCells( entry.Shape, anchorX, anchorY, rotation ) )
 		{
-			if ( x < 0 || y < 0 || x >= Grid.Width || y >= Grid.Height )
+			if ( x < 0 || y < 0 || x >= grid.Width || y >= grid.Height )
 				return OriginalPlacementResult.OutsideTerrain;
-			var terrain = Grid.CheckTerrain( x, y );
+			var terrain = grid.CheckTerrain( x, y );
 			if ( terrain != OriginalPlacementResult.Allowed )
 				return terrain;
-			if ( IsOccupied( x, y ) )
+			if ( isOccupied( x, y ) )
 				return OriginalPlacementResult.Occupied;
 		}
 		return OriginalPlacementResult.Allowed;
@@ -136,7 +145,7 @@ public sealed class ParkObjects
 		var placement = entry.IsFixedItem
 			? new ObjectPlacement( 0, 0, 0, Grid.Origin, 0 )
 			: new ObjectPlacement( anchorX, anchorY, rotation, Grid.Origin, GetBaseHeight( entry, anchorX, anchorY, rotation ) );
-		var item = new OriginalObject( entry, placement, ScriptWorld, nextSeed++, open );
+		var item = new OriginalObject( entry, placement, ScriptWorld, nextSeed++ ^ scriptKey, open );
 		objects.Add( item );
 		foreach ( var (x, y, _) in item.Cells )
 			occupied[(x, y)] = item;

@@ -15,7 +15,10 @@ public enum ParkObjectKind
 }
 
 /// <summary><c>Upgrades[n]</c> of an object: level 0 is the base purchase, levels 1 and 2 the ride upgrades.</summary>
-public sealed record UpgradeLevelInfo( int Level, long CostOfUpgrade, int CostOfResearch, int WearRate, int DurationOfUpgrade, IReadOnlyList<int> ScrapValuePercentByYear );
+/// <param name="RedLineSpeed"><c>Upgrades[n].RedLineSpeed</c>: at or above this speed a ride wears faster.</param>
+/// <param name="RedLineCapacity"><c>Upgrades[n].RedLineCapacity</c>, compared with riders / 10 in the wear step.</param>
+public sealed record UpgradeLevelInfo( int Level, long CostOfUpgrade, int CostOfResearch, int WearRate, int DurationOfUpgrade, IReadOnlyList<int> ScrapValuePercentByYear,
+	int RedLineSpeed = 0, int RedLineCapacity = 0 );
 
 /// <summary>
 /// The economy-relevant fields of one original object, merged from the category <c>.sam</c>, the
@@ -38,7 +41,9 @@ public sealed record EconomyObjectInfo(
 	int AddOnTargetId,
 	int LitterEffect,
 	int AttractionValue,
-	string ArchivePath )
+	string ArchivePath,
+	int MaxSpeed = 0,
+	int MaxCapacity = 0 )
 {
 	public long PurchaseCost => Upgrades.Count > 0 ? Upgrades[0].CostOfUpgrade : 0;
 	public bool IsBuyable => Kind is ParkObjectKind.Ride or ParkObjectKind.Shop or ParkObjectKind.Sideshow or ParkObjectKind.Feature or ParkObjectKind.Upgrade;
@@ -99,7 +104,8 @@ public sealed class EconomyObjectCatalog : IEconomyObjectCatalog
 				break;
 			var scrap = Enumerable.Range( 1, 4 ).Select( year => settings.GetInt( $"Upgrades[{level}].ScrapValueYear{year}", 0, optional: true ) ).ToArray();
 			upgrades.Add( new UpgradeLevelInfo( level, settings.GetLong( $"Upgrades[{level}].CostOfUpgrade", 0L ), settings.GetInt( $"Upgrades[{level}].CostOfResearch", 0, optional: true ),
-				settings.GetInt( $"Upgrades[{level}].WearRate", 0, optional: true ), settings.GetInt( $"Upgrades[{level}].DurationOfUpgrade", 0, optional: true ), scrap ) );
+				settings.GetInt( $"Upgrades[{level}].WearRate", 0, optional: true ), settings.GetInt( $"Upgrades[{level}].DurationOfUpgrade", 0, optional: true ), scrap,
+				settings.GetInt( $"Upgrades[{level}].RedLineSpeed", 0, optional: true ), settings.GetInt( $"Upgrades[{level}].RedLineCapacity", 0, optional: true ) ) );
 		}
 		// Shops and features list levels 1 and 2 with zero cost ("no upgrades possible"); keep only real upgrade levels.
 		while ( upgrades.Count > 1 && upgrades[^1].CostOfUpgrade == 0 && upgrades[^1].CostOfResearch == 0 )
@@ -113,7 +119,8 @@ public sealed class EconomyObjectCatalog : IEconomyObjectCatalog
 			kind == ParkObjectKind.Sideshow ? Optional( "UsageInfo.InitChanceOfLoosing" ) : null,
 			settings.GetInt( "UsageInfo.ShopType", 0, optional: true ), settings.GetInt( "UsageInfo.SpecialIngredient", 0, optional: true ),
 			settings.GetInt( "UsageInfo.GoldenTicketCost", 0, optional: true ), settings.GetInt( "AddOn.UpgradesId", 0, optional: true ),
-			settings.GetInt( "UsageInfo.LitterEffect", 0, optional: true ), settings.GetInt( "Info.AttractionValue", 0, optional: true ), archivePath );
+			settings.GetInt( "UsageInfo.LitterEffect", 0, optional: true ), settings.GetInt( "Info.AttractionValue", 0, optional: true ), archivePath,
+			settings.GetInt( "UsageInfo.MaxSpeed", 0, optional: true ), settings.GetInt( "UsageInfo.MaxCapacity", 0, optional: true ) );
 	}
 
 	/// <summary>

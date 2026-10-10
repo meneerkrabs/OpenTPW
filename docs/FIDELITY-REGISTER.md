@@ -14,9 +14,9 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **184 unresolved unique APPROX IDs**, 201 APPROX occurrences, 85 EXT occurrences, 76 DATA occurrences and 142 BIN occurrences.
+Current inventory: **185 unresolved unique APPROX IDs**, 202 APPROX occurrences, 85 EXT occurrences, 76 DATA occurrences and 142 BIN occurrences.
 
-Of these, 178 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
+Of these, 179 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
 CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.
 
@@ -34,7 +34,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | PATH | 13 | 14 |
 | QUEUE | 19 | 19 |
 | RIDES | 25 | 25 |
-| UI | 39 | 53 |
+| UI | 40 | 54 |
 
 ## Approximation declarations
 
@@ -224,6 +224,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-040 | Original-fidelity area (scope unadjudicated) | autorun launcher focus rectangle: dotted frame inverting the pixels with even x + y, 2 pixels inside the button (GDI DrawFocusRect brush phase unknown) | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:48` |
 | UI-041 | Original-fidelity area (scope unadjudicated) | Load Park opens a shipped park as the reference start (its own balance, Full Simulation rules) whatever Game Mode was last chosen; the original's GameType is not saved with a park but copied from the loading player's profile (mEasyModeUser) | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:49` |
 | UI-042 | Original-fidelity area (scope unadjudicated) | HUD camera button shown disabled; its camera-view action is not implemented | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:50` |
+| UI-043 | Original-fidelity area (scope unadjudicated) | BF4 text drawn above 1× (HiDPI, large outputs) is magnified per glyph with Catmull-Rom and a contrast curve min(2, 0.8 × scale) instead of doubled pixels | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:51` |
 
 ## Approximation sites
 
@@ -430,6 +431,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-040 | `source/OpenTPW/Client/Autorun/AutorunView.cs:163` | [APPROX:UI-040] the exact dot phase of GDI's focus rectangle brush is not known; dots are the pixels with even x + y, inverted. |
 | UI-041 | `source/OpenTPW/Client/GameFlow.cs:179` | [APPROX:UI-041] a loaded shipped park is the reference start whatever Game Mode was last chosen; the original takes the mode from the loading player's profile, not the park — evidence needed: player profiles and the Mac park loader 0x11acfc |
 | UI-042 | `source/OpenTPW/Hud/ParkHud.cs:143` | [APPROX:UI-042] the camera button's action (camera views) is not implemented; it is shown disabled |
+| UI-043 | `source/OpenTPW/UI/Original/FontSmoothing.cs:15` | [APPROX:UI-043] text drawn above 1× is magnified per glyph (Catmull-Rom, contrast min(2, 0.8 × factor)) instead of doubling pixels — OpenTPW choice; the original only drew its fonts at 1× |
 
 ## Extension sites
 
@@ -515,7 +517,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | texture-pack | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:354` | [EXT:texture-pack] a changed pack starts switching now, in the background: the game loop swaps the textures |
 | texture-pack | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:473` | [EXT:texture-pack] optional locally built upscaled textures: Off, then every installed pack (clean, detailed, ...) |
 | texture-pack | `source/OpenTPW/UI/Original/UiImages.cs:29` | [EXT:texture-pack] the optional local pack replaces interface art too (docs/TEXTURE-PACKS.md); UVs are relative, so a larger image drops in. |
-| texture-pack | `source/OpenTPW/UI/Original/UiRenderer.cs:149` | [EXT:texture-pack] The texture pack changed: forgets the cached interface images (they are decoded again on first use, |
+| texture-pack | `source/OpenTPW/UI/Original/UiRenderer.cs:153` | [EXT:texture-pack] The texture pack changed: forgets the cached interface images (they are decoded again on first use, |
 | texture-pack | `source/OpenTPW/World/Guests/GuestRenderer.cs:53` | [EXT:texture-pack] The texture pack changed: builds the atlas textures again from the new pack (or the originals), binds |
 | texture-pack | `source/OpenTPW/World/Guests/GuestRenderer.cs:84` | [EXT:texture-pack] upscaled guest sprites from the optional local pack |
 | upscaling | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:42` | [EXT:upscaling] render-scale steps (presets 77/67/59/50 from the display slice plus 5% steps) |

@@ -48,6 +48,7 @@ public static class UiApproximations
 		("UI-040", "autorun launcher focus rectangle: dotted frame inverting the pixels with even x + y, 2 pixels inside the button (GDI DrawFocusRect brush phase unknown)", "capture of the original launcher with a focused button"),
 		("UI-041", "Load Park opens a shipped park as the reference start (its own balance, Full Simulation rules) whatever Game Mode was last chosen; the original's GameType is not saved with a park but copied from the loading player's profile (mEasyModeUser)", "player profiles and what the Mac park loader 0x11acfc reads from a park file"),
 		("UI-042", "HUD camera button shown disabled; its camera-view action is not implemented", "binary camera button handler"),
+		("UI-043", "BF4 text drawn above 1× (HiDPI, large outputs) is magnified per glyph with Catmull-Rom and a contrast curve min(2, 0.8 × scale) instead of doubled pixels", "none: the original only drew its fonts at 1×; design decision"),
 	};
 
 	private static bool logged;

@@ -21,6 +21,10 @@ COPY source/ source/
 RUN dotnet publish source/OpenTPW.Web/OpenTPW.Web.csproj -c Release -o /web --nologo
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime-false
+# Links the published image to the repository, whose visibility it then shares.
+LABEL org.opencontainers.image.source=https://github.com/meneerkrabs/OpenTPW \
+      org.opencontainers.image.description="OpenTPW server: online play and the browser game" \
+      org.opencontainers.image.licenses=MIT
 WORKDIR /app
 COPY --from=server /app .
 ENV ASPNETCORE_URLS=http://+:8080 \

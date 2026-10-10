@@ -31,7 +31,7 @@ services:
     environment:
       OPENTPW_DOMAIN: ${OPENTPW_DOMAIN:?Set OPENTPW_DOMAIN to the server's domain name}
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../../deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
     depends_on:

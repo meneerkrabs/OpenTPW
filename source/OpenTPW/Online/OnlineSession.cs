@@ -212,6 +212,23 @@ public sealed class OnlineSession : IDisposable
 		ChatLines.Clear();
 	}
 
+	/// <summary>
+	/// Deletes the logged-in account and everything the server keeps about it (docs/SERVER.md), then
+	/// goes offline as Log out does. The server asks for the name and password again.
+	/// </summary>
+	public void DeleteAccount( string name, string password ) => WithClient( async client =>
+	{
+		await client.DeleteAccountAsync( name, password );
+		Post( () =>
+		{
+			Disconnect();
+			Settings = Settings with { PlayerName = null };
+			Folders.SaveSettings( Settings );
+			Status = OnlineStrings.Get( OnlineLabel.AccountDeleted );
+		} );
+		return null;
+	} );
+
 	private OnlineClient Require() => Client ?? throw new InvalidOperationException( OnlineStrings.Get( OnlineLabel.OnlineOff ) );
 
 	private void WithClient( Func<OnlineClient, Task<string?>> work )

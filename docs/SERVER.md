@@ -27,10 +27,34 @@ WebSocket connections through. The OpenTPW container only listens inside the Doc
 Desktop players use the same address (`https://tpw.example.org`) in the online login screen.
 
 The files are `source/OpenTPW.Server/Dockerfile`, `docker-compose.example.yml` and
-`Caddyfile`. Another TLS proxy (nginx, Traefik) works the same way: forward to port 8080 of
+`deploy/Caddyfile`. Another TLS proxy (nginx, Traefik) works the same way: forward to port 8080 of
 the container, pass WebSocket upgrades through, and keep the `Host` header.
 
 `docker build --build-arg WEB_CLIENT=false …` builds an image with the API and chat only.
+
+## The official server (`deploy/`)
+
+`play.opentpw.io` runs the published image on a small Hetzner Cloud server (x86, Ubuntu
+24.04). Everything it needs is in `deploy/`:
+
+- `compose.yml` and `Caddyfile`: the image from `ghcr.io/meneerkrabs/opentpw-server` behind
+  Caddy on ports 80 and 443; player data in `/opt/opentpw/data`; settings in `.env`
+  (`env.example`). Caddy keeps no access log.
+- `opentpw-update.timer`: every night, pull the image and restart if it changed. `latest`
+  follows releases; CI publishes it for every `v*` tag (and `main` for every push to main).
+- `opentpw-backup.timer`: every night, a copy of the data folder in `/var/backups/opentpw`,
+  kept for seven days. It is on the same disk; download it now and then, or turn on Hetzner's
+  backups, for a copy elsewhere.
+- `make-cloud-init.py`: writes the cloud-init user data that sets all of this up on the first
+  boot of a fresh server, with SSH password logins turned off:
+
+  ```sh
+  python3 deploy/make-cloud-init.py --domain play.opentpw.io > user-data.yml
+  ```
+
+Give the server a Hetzner Cloud Firewall that allows only TCP 22, 80 and 443 and UDP 443
+(Docker's published ports bypass a firewall on the server itself), and point the domain's
+DNS (A and AAAA, not proxied) at it.
 
 ## Running it locally
 
@@ -79,6 +103,29 @@ Back up the data directory (the `opentpw-data` volume) to keep accounts and shar
   page, its scripts and `dotnet.js` are revalidated on every load.
 - The page has a strict content security policy: scripts and connections only to its own
   address (WebAssembly compilation allowed), no inline scripts or styles, no framing.
+
+## What the server keeps
+
+- **Accounts:** name, password hash (PBKDF2-SHA256 with salt), creation time, buddy list and
+  vote counters.
+- **Sessions:** token hashes and expiry, in memory only.
+- **Parks:** published packages and thumbnails with their author, visits and votes.
+- **Postcards:** cards waiting in a recipient's inbox.
+- **Reports:** moderation reports (`reports.jsonl`).
+
+Client addresses are only used in memory for rate limiting; they are not stored or logged by
+the server. Chat is not stored.
+
+**Deleting an account:** the Online World screen offers *Delete account* while logged in; the
+player confirms with their name and password (`DELETE /api/v1/accounts`). The server then
+removes the account, its sessions and chat connection, its published parks with their files,
+the postcards in its inbox, and its entries in other players' buddy lists and park visitor and
+vote lists. Reports the player made name them as a deleted player; reports about them are
+kept for moderation. Postcards they already sent stay with their recipients. The name becomes
+free again.
+
+**Moderation** is by hand for now: read `reports.jsonl`, and add names to `BannedPlayers` or
+`MutedPlayers` (or park ids to `HiddenParks`) in the settings, then restart the server.
 
 ## Security
 

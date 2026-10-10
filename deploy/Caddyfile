@@ -1,0 +1,8 @@
+# HTTPS on port 443 in front of the OpenTPW server (docs/SERVER.md). Caddy obtains and renews the
+# certificate for OPENTPW_DOMAIN by itself and passes WebSocket (chat) connections through. It keeps
+# no access log, so client addresses are not stored.
+{$OPENTPW_DOMAIN} {
+	encode zstd gzip
+	header Strict-Transport-Security "max-age=31536000"
+	reverse_proxy opentpw-server:8080
+}

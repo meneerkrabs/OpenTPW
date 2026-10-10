@@ -3682,3 +3682,116 @@ worktree was only read. `test_advisor_v1.py` pins every operand cited below.
 2. Optional: decide whether non-original sandbox levels should get the automatic
    advisor (an `[EXT]` choice), and run plain `--smoke-test` with assets.
 3. Open (not blocking): whether the original saves the advisor queue/history.
+
+### 56.1 Round 2: fixes in `a626cbf`
+
+Scope: the stack `efc090d..a626cbf`. `b0562dd` is the cherry-pick of `f8375b2`, `99b23fc`
+adds this review's round 1, and `a626cbf` holds the fixes. `efc090d` is fork main
+(`origin/main`) at review time, so `a626cbf` fast-forwards it, and
+`git merge-tree --write-tree origin/main a626cbf` exits 0. Builds and tests used
+`git clone --shared` scratch copies under `/tmp` at `a626cbf`. No original code was
+executed. `test_advisor_v2.py` pins the source witnesses below. The native operands
+behind the fixes are still pinned by `test_advisor_v1.py`.
+
+**Verdict: merge-ready.** All three blockers are fixed. One fix has a test gap (V1-2b
+below), which is not a blocker.
+
+#### Blockers
+
+| Finding | Verdict | Fix and evidence | Mutation (fix reverted in a scratch copy) |
+| --- | --- | --- | --- |
+| V1-1 `--mute` | **Fixed** | `Advisor.CreatePlayer` (`Advisor.cs:304`): without a mixer, it opens a device only when `GameAudio.Enabled && AudioMixer.Current == null`. Native: `--smoke-test --mute --load-original-level jungle` logs `clock: wall clock (no audio device)` and no `Sound: SDL` line. Without `--mute`, the same run uses `game mixer (SDL audio queue)`. In the full run, `MutedSpeechKeepsTheWallClockWithoutOpeningADevice` **Passed**, not Inconclusive. | `openDevice: AudioMixer.Current == null` → that test fails |
+| V1-2a wrapper success | **Fixed** | `AdvisorController.Update` calls `play` unconditionally and completes with `playbackSucceeded: true` and `span ?? 0`. The unused `0xb7d8` revalidation is gone from the controller. `RevalidatedPlaybackScoreAccepts` stays on the queue, unchanged against the helper. | `span.HasValue` → `UnplayedResponseStillRecordsHistoryAndReservesTheMinimumAction` fails |
+| V1-2b Advisor option off | **Fixed, untested in OpenTPW.Tests** | `AutomaticAdvisor.Update`: with the option off, it silences and then runs `Controller.Update( …, _ => 0u )`, matching `0x6bb4`–`0x6bc0` and `0xbbf0`. ADVISOR-021 is narrowed to the object-identity question. `AdvisorOptionOffConsumesTheAdviceSilently` drives the **controller** with a 0-returning callback. It does not exercise `AutomaticAdvisor`. | Deleting the `Controller.Update( …, _ => 0u )` line leaves **all tests green**. `test_advisor_v2.py` now pins the line as a source witness. |
+| V1-3 event 10 | **Fixed** | `ClearHistory` resets the variant (−1), the played flag and the slap count, and keeps `SavedGameTick`. This matches the stores at `+0xe4`/`+0xe8`/`+0xec` and the absence of a store at `+0xe0`. The test now expects `RepeatDelay` after event 10, and `Eligible` one tick later. Docs reworded in `PPC-advisor.md` (61, 86, 1014) and `LIPS.md:241`. | `history.Clear()` → `RepeatIntervalUsesQuarterTicksAndEventTenKeepsTheSavedTick` fails |
+
+The mutations ran against the `Advisor|GameFlow|Sandbox` test filter (98 tests). The
+`[EXT:sandbox]` restriction (`original &&` in `GameFlow.StartLevel`) is also not covered
+by a unit test: removing it leaves the filter green. It is an extension choice, and the
+native sandbox smokes below show its effect.
+
+#### Queue port regression
+
+The round-1 differential harness was rebuilt against the `a626cbf` port and the
+unchanged helper (`f51e874`, byte-identical). It ran 2,000 seeds × 400 steps =
+800,000 operations, with one change: about 1 in 9 steps is now event 10. The port calls
+`ClearHistory()`. The helper side calls a review-only model of the `0x9dd8`–`0x9e80` loop,
+written independently: for every descriptor it sets `(saved tick kept, −1, false, 0)`.
+**All 800,000 operations matched.** This covers every result tuple, slot, history entry,
+busy flag, reservation and revalidation answer. The V1-2 semantics change only the
+controller's argument to `CompletePlaybackAttempt`. The queue API is unchanged, so the
+harness still drives both success and failure. Sensitivity: putting `history.Clear()`
+back into the port fails at seed 0, step 2. The member diff (`members()` from
+`test_advisor_v1.py`) still shows every helper member textually equal in the port.
+The only additions remain `ClearHistory`, `HasDescriptor` and `IsAttemptOutstanding`.
+
+#### Sandbox and the manual advisor
+
+`Game.CreateAdvisor` builds the manual `--advisor-say`/`--advisor-response` presentation
+from the arguments alone, outside `GameFlow`. The `original` flag does not reach it.
+Native results (macOS arm64, SDK 10, `scripts/run.sh`, scratch copy):
+
+| Command | Result |
+| --- | --- |
+| `--smoke-test --advisor-say 1` (sandbox) | Passed. `sp_001`, 4.23 s, game mixer. No automatic advisor lines. |
+| `--smoke-test --sandbox --advisor-response 1` | Passed. Response 1 → `/levels/jungle/Speech/speechHD.SDT` sample 1, 28.63 s. |
+| `--smoke-test --mute --sandbox` and plain `--smoke-test` | Sandbox smoke passed. No `Advisor scoring`/`game event`/`says` lines. |
+| `--smoke-test --mute --load-original-level jungle` | Passed. Event 0 → response 1, `clock: wall clock (no audio device)`, no SDL audio. |
+| `--smoke-test --load-original-level jungle` | Passed. Event 0 → response 1, `game mixer (SDL audio queue)`. |
+
+#### Cherry-pick `b0562dd`
+
+`f8375b2` and `b0562dd` touch the same 16 files. For every file except
+`docs/FIDELITY-REGISTER.md`, the changed lines are identical. `git range-diff` shows
+only register hunks: counts 140→147 instead of 138→145, COMPAT 15/16, and Game.cs line
+shifts from the TPI-FSH base. `fidelity_register.py --check` passes at `b0562dd` (147) and
+at `a626cbf` (148, with ADVISOR-022 added). The resolution is correct.
+
+#### Checks (independent)
+
+- Build: `OpenTPW.sln` Release, SDK 10.0.401 — 0 errors.
+- `OpenTPW.Tests` without assets: **908 passed / 241 skipped / 0 failed**.
+- With `OPENTPW_GAME_PATH`: **1078 / 71 / 0** (10 min 41 s).
+- Both test results match the author's.
+- `fidelity_register.py --check`: 148 unresolved unique APPROX IDs, exit 0.
+- Evidence runner (`--mac-bin`, `--pc-data`, SDK 8 host): OK, 9 Python suites, 555 tests,
+  39 skipped. The review lane has 233 tests, 11 skipped. The runner does not set
+  `OPENTPW_REVIEW_REPO`, so the git classes skip there. Run directly with all three
+  variables, `test_advisor_v1`+`test_advisor_v2` give 24 tests, OK.
+- Line endings: `git diff efc090d a626cbf --stat` equals `--ignore-cr-at-eol --stat`
+  (19 files, +2003/−45). Every file changed by `a626cbf` keeps its style:
+  `AdvisorControllerTests.cs`, `AutomaticAdvisor.cs`, `AdvisorController.cs` and
+  `AdvisorScoreQueue.cs` are CRLF; the docs, `Advisor.cs`, `AdvisorTests.cs` and
+  `GameFlow.cs` are LF.
+- `git -c core.whitespace=cr-at-eol diff --check efc090d a626cbf`: clean.
+
+#### Low notes
+
+- **Stale `LIPS.md` APPROX rows (pre-existing).** The rows for ADVISOR-003, 004, 005, 006, 007,
+  008, 010, 011, 012 and 014 cite a line that is not their APPROX tag. The set is identical
+  on `efc090d`. The current lines are:
+
+  | ID | Cited | Current |
+  | --- | --- | --- |
+  | ADVISOR-003 | `Advisor.cs:74` | `Advisor.cs:88` |
+  | ADVISOR-004 | `Advisor.cs:58` | `Advisor.cs:67` |
+  | ADVISOR-005 | `Advisor.cs:247` | `Advisor.cs:345` |
+  | ADVISOR-006 | `Advisor.cs:94` | `Advisor.cs:112` |
+  | ADVISOR-007 | `Advisor.cs:118` | `Advisor.cs:136` |
+  | ADVISOR-008 | `Advisor.cs:235` | `Advisor.cs:333` |
+  | ADVISOR-010 | `SpeechAudioPlayer.cs:34` | `SpeechAudioPlayer.cs:39` |
+  | ADVISOR-011 | `SpeechAudioPlayer.cs:31` | `SpeechAudioPlayer.cs:36` |
+  | ADVISOR-012 | `SpeechAudioPlayer.cs:62` | `SpeechAudioPlayer.cs:77` |
+  | ADVISOR-014 | `Mp2Decoder.cs:55` | `Mp2Decoder.cs:49` |
+
+  The rows for ADVISOR-015–022 are all current. `test_advisor_v2.py` pins that this
+  set is unchanged.
+- **V1-2b and `[EXT:sandbox]` have no unit test.** A test seam would need an
+  `AutomaticAdvisor` with an injectable controller or presentation. This is optional.
+- `--mute` now also puts the manual `--advisor-say` on the wall clock. That is
+  consistent with RUNNING.md ("opens no audio device").
+
+#### Handoff
+
+1. Merge `a626cbf` (fast-forward of `efc090d`) with this review commit on top.
+2. Optional: an `AutomaticAdvisor` test for the option-off path, and the stale LIPS rows.

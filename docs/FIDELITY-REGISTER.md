@@ -14,7 +14,7 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **149 unresolved unique APPROX IDs**, 165 APPROX occurrences, 69 EXT occurrences, 68 DATA occurrences and 81 BIN occurrences.
+Current inventory: **149 unresolved unique APPROX IDs**, 165 APPROX occurrences, 70 EXT occurrences, 68 DATA occurrences and 81 BIN occurrences.
 
 Of these, 143 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
@@ -424,9 +424,10 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | test-stub | `source/OpenTPW/Hud/HudStubs.cs:130` | [EXT:test-stub] price shown when Totem.sam cannot be read (the economy catalogue price is used when a park economy runs) |
 | texture-pack | `source/OpenTPW/Compat/GraphicsSettings.cs:268` | &lt;summary&gt;[EXT:texture-pack] Use the locally built upscaled texture pack (docs/TEXTURE-PACKS.md); off = original textures. Applies at the next start.&lt;/summary&gt; |
 | texture-pack | `source/OpenTPW/Render/Assets/TexturePack.cs:13` | [EXT:texture-pack] Upscaled replacement textures are an OpenTPW presentation option, not original behaviour. |
-| texture-pack | `source/OpenTPW/Render/Assets/TexturePackBuilder.cs:68` | [EXT:texture-pack] Builder for the optional local upscaled texture pack; original files are only read. |
+| texture-pack | `source/OpenTPW/Render/Assets/TexturePackBuilder.cs:70` | [EXT:texture-pack] Builder for the optional local upscaled texture pack; original files are only read. |
 | texture-pack | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:431` | [EXT:texture-pack] optional locally built upscaled textures; off unless a pack exists and the player turns it on |
 | texture-pack | `source/OpenTPW/UI/Original/UiImages.cs:29` | [EXT:texture-pack] the optional local pack replaces interface art too (docs/TEXTURE-PACKS.md); UVs are relative, so a larger image drops in. |
+| texture-pack | `source/OpenTPW/World/Guests/GuestRenderer.cs:55` | [EXT:texture-pack] upscaled guest sprites from the optional local pack |
 | upscaling | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:37` | [EXT:upscaling] render-scale steps (presets 77/67/59/50 from the display slice plus 5% steps) |
 | world-capture | `source/OpenTPW/Client/WorldCapture.cs:13` | [EXT:world-capture] developer/screenshot command, not original behaviour |
 

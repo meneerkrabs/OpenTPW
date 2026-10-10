@@ -199,6 +199,38 @@ public class TexturePackTests
 	}
 
 	[TestMethod]
+	public void SpriteAtlasesUseTheWorldUpscalerWithEdgePaddingAndCanBeBuiltAlone()
+	{
+		var root = TemporaryDirectory();
+		var pack = Path.Combine( root, "enhanced" );
+		var atlas = Pattern( 64, 32 );
+		var textures = new (string, Func<TextureData>)[]
+		{
+			("levels/a/textures/x.wct", () => Pattern( 32, 32 )),
+			("esprites/generic/kids/spr_be.atlas", () => atlas)
+		};
+		TexturePackBuilder.Build( textures, pack, new NearestUpscaler(), new TexturePackBuildOptions(), _ => { } );
+		var world = new NearestUpscaler();
+		var manifest = TexturePackBuilder.Build( textures, pack, world, new TexturePackBuildOptions { SpritesOnly = true, Merge = true }, _ => { } );
+		Assert.AreEqual( 1, world.Calls, "sprites go through the world model" );
+		Assert.AreEqual( 2, manifest.Textures, "one sprite atlas built, the world texture kept" );
+		var image = ImageResult.FromMemory( File.ReadAllBytes( Path.Combine( pack, "textures", "esprites/generic/kids/spr_be.atlas.png" ) ), ColorComponents.RedGreenBlueAlpha );
+		Assert.AreEqual( (128, 64), (image.Width, image.Height) );
+		CollectionAssert.AreEqual( Nearest( atlas.Data, 64, 32, 2 ), image.Data, "edge padding is cropped away exactly" );
+	}
+
+	[TestMethod]
+	public void TransparentTexelsTakeTheirNeighboursColourAndStayTransparent()
+	{
+		// 3x1: red opaque, white transparent, white transparent.
+		var rgba = new byte[] { 200, 0, 0, 255, 255, 255, 255, 0, 255, 255, 255, 0 };
+		TexturePackBuilder.BleedIntoTransparent( rgba, 3, 1, passes: 1 );
+		CollectionAssert.AreEqual( new byte[] { 200, 0, 0, 255, 200, 0, 0, 0, 255, 255, 255, 0 }, rgba, "one pass reaches one texel out; alpha stays 0" );
+		TexturePackBuilder.BleedIntoTransparent( rgba, 3, 1, passes: 2 );
+		Assert.AreEqual( (200, 0), (rgba[8], rgba[11]) );
+	}
+
+	[TestMethod]
 	public void AFailedBuildKeepsTheExistingPack()
 	{
 		var root = TemporaryDirectory();

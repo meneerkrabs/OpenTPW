@@ -419,3 +419,156 @@ non-symlinked path), Release.
 - `0x7bc70`/`0xe2424` beyond the call shape.
 - The untraced `+100`, `0xdfe34`, `0xe02ec` and `0xee8f8` paths.
 - Save/load of queue state (not stored by either stack).
+
+## Round 2: QUEUE-FIX (`025d410`, `527aa9a`, `bb45896`, `952ab0f`) on main `5ec2622`
+
+October 10, 2026. Re-review of the integration base `025d410` (merge of main
+`5ec2622` and `c213e81`), the round-1 review cherry-pick `527aa9a`, the fixes
+`bb45896` and the DET-V2 witness rewrite `952ab0f`. Same bounds as round 1:
+static decoding only, nothing original executed; behaviour claims come from
+scratch harnesses outside Git. New witness:
+`tools/ppc-analysis/lanes/review/test_queue_v2.py` (reuses `test_queue_v1`'s
+PEF reader and field decoder).
+
+**Merge-ready onto `5ec2622`: yes.** `952ab0f` descends from `5ec2622`, and
+`git merge-tree --write-tree 5ec2622 952ab0f` gives `4d4f5f3d…`, which is
+`952ab0f`'s own tree (a fast-forward). No blockers.
+
+### Round 2 verdicts
+
+| Check | Verdict |
+| --- | --- |
+| B1 merge resolution in `025d410` | **Confirmed.** `git show --remerge-diff 025d410` touches only the four conflicted files plus the re-pin, the schema bump to 3 and the DETERMINISM.md line. `RideVisitorBridge.AddCanonicalState` keeps every main line, with `offered` → `called` and `queue` → `Queue`, and adds the queue state. `Level.Objects.cs` keeps main's `ParkObjects( …, grid, Seed )` with `c213e81`'s `IsReserved` lambda. `fidelity_register.py` keeps DET, GATE and QUEUE ("nine"). `M3Gate.cs` is byte-identical to main's |
+| `ResolveVisitorCells` keeps the gate's behaviour | **Confirmed.** Entrance and exit are still `WalkableNear( grid, … )` of the outside cells, and the null condition is unchanged. The gate's only call reads `cells.Exit` and the null result. The new tuple members are the unsnapped outside cell and the direction, exactly as `c213e81` set them. Gate run: 13 pass / 2 fail / 1 unresolved, the same rows as main |
+| B1 remainder: guest queue fields hashed (schema 4) | **Fixed.** All 14 fields, `seenGridVersion` and each attraction's seen edit count are hashed. Dropping any one of 6 sampled hash lines fails the pinned-hash test. `test_queue_v2` derives the field list from `Guest.cs`, so a future queue field must be hashed too |
+| S1 `Stalled` | **Fixed.** Removed. `HeadNotReadyStreak` and `CalledAgeTurns` (with their maxima and `calledTurn`) are hashed |
+| New counters grow in a stuck scenario | **Confirmed.** With a scratch mutation that keeps every guest at position ≥ 1 (`QueuePosition = Math.Max( position, 1 )`), `HeadNotReadyStreak` = `MaximumHeadNotReadyStreak` = 601 after 600 turns (one per turn), with 0 boards. With a script that never takes the called guest, `CalledAgeTurns` = 573. Unmutated, with a taking script: streak max 27, called age max 1. Both are usable progress signals for the M3 gate |
+| S2 breakdown | **Fixed** (harness below): the queue drains 24 → 0 within 10 turns, with 0 joins while broken |
+| QUEUE-017/018 APPROX honest | **Yes.** The attraction choice and the state-10 join are not traced for a broken ride, so both stay APPROX |
+| QUEUE-019 evidence | **Confirmed, and stronger than stated** (next section). One-turn order difference and the repair path stay untraced, so APPROX remains right |
+| S3 stale fields | **Fixed** for the four fields `ClearQueueState` resets (0 guests in 10 runs). The commit message's "no queue field stays set" overstates it: 21–22 guests per run keep a non-zero `QueueCellIndex`, `QueueTargetIndex` or `QueueMoveDelay`. This is harmless: `BeginQueue` and `MoveToQueuePosition` overwrite them on the next join, and they are hashed deterministically (N2) |
+| S4 §5.3 writer list | **Fixed.** The `test_queue_v1` witness asserts the plan names all six |
+| S5 truncation | **Fixed.** Both float-compare mutations fail `NeedsWindowComparesTruncatedHappinessAndToilet` |
+| S6 recompute before charge | **Fixed.** Removing the recompute line fails `AStaleQueueIsRecomputedBeforeACellIsCharged` (source-order part) |
+| `test_det_v2` rewrite keeps DET-V2 intent | **Yes.** 9 of 9 mutations fail it: a wrong documented pin; a wrong test pin; schema 1; schema 5 without a doc update; the register word; GATE dropped from REGISTERS; a wrong totals line; the determinism row at FAIL; `SoundSeed` in the hash. What is lost is only the literal schema-2 value, which DeterminismTests itself pins |
+
+### `+408` is the object state (QUEUE-019)
+
+These were decoded independently and are asserted by `ObjectState` in `test_queue_v2.py`:
+
+- The ride update `0xe0a8c` loads ride `+408`. State 3 returns; states 1, 2 and
+  4 go to `0xe0aec`, which reads LETMEON and walks the guests in state 14.
+  Only state 0 calls `0xe1864`. Any other value reaches `0xb678` with
+  "Unknown state in CObject::ModelState".
+- The only store is in `CObject::SetState` `0xe0c3c`: `mr r28,r4` …
+  `stw r28,+408(r31)` at `0xe1308`. Its assertion string is "Unknown state in
+  CObject::SetState". The code section has exactly nine `bl 0xe0c3c` calls,
+  each loading the state with `li r4`: 0 at `0xdad24`, `0xde8e4`, `0xdf4d4`,
+  `0xdf90c` and `0xdfb08`; 3 at `0xdad34`; 2 at `0xdf990`; 1 at `0xe1908`;
+  4 at `0xe1954`.
+- `0xe1864` calls admission `0xe1404` first. It then reads script variable 7
+  (`VAR_BROKEN`). When that is non-zero, `byte(fctiwz(+68))` picks the next
+  state:
+  - non-zero: "Object %d: Setting state BROKEN_DOWN" and `SetState(1)`;
+  - zero: "Object %d: Setting state CONDEMNED" and `SetState(4)`.
+
+So a breakdown does put the ride in a non-zero object state, and admission
+stops from the next turn. The QUEUE-019 reading holds. Two differences remain,
+both untraced, so QUEUE-019 stays APPROX:
+
+- **Breakdown turn.** The original still evaluates admission on the turn it
+  first sees `VAR_BROKEN ≠ 0`; OpenTPW skips that turn.
+- **Repair.** The original returns to state 0 only through one of the five
+  `SetState(0)` callers, and these are not traced. OpenTPW admits again as soon
+  as `VAR_BROKEN = 0`.
+
+Also untraced: states 1 and 4 walk the state-14 guests (`0xe0aec`). The
+harness shows OpenTPW lets an already-called guest board while the ride is
+broken (1 board in 8 of 10 runs).
+
+Suggested register text for QUEUE-019 (non-blocking):
+
+> admission is skipped while `VAR_BROKEN ≠ 0` (traced: `0xe1864` sets object state 1/4 after `0xe1404`, and `0xe0a8c` admits only in state 0); the breakdown-turn order and the return to state 0 are not traced.
+
+### Behaviour harness (scratch, round-1 phases re-run on `952ab0f`)
+
+The setup is the same as in round 1: a 14×14 grid, a 6-cell queue up column
+x = 2, a capacity-3 shop script, seeds 1, 7, 42, 1234 and 99991, with
+RunsContinuously on and off. Each phase sends 60 guests (30 at the breakdown).
+
+The phases:
+
+1. 200 turns;
+2. extend by one cell;
+3. remove from (2,4), which takes 5 cells;
+4. re-lay 4 cells;
+5. `VAR_BROKEN = 1` for 60 turns;
+6. 200 turns;
+7. close for 5 turns;
+8. 200 turns;
+9. `Unregister` plus `ReleaseAll`.
+
+| Result (all 10 runs) | Value |
+| --- | --- |
+| joins = exits + queued, checked every tick; list = queued guests; off-cell | 0 violations / 0 mismatches / 0 |
+| Seed 1 totals | 219 joins = 128 boards + 91 left (+0 queued at the end) |
+| Breakdown | 24 → 0, with the queue at 0 from turn 10 onward; 0 joins while broken; 0–1 boards (a guest called before the breakdown) |
+| Closing / removal | 24 → 0 / 24 → 0 |
+| Guests with `QueuePosition`, `QueueJoinTurn`, `QueueCalled`, `InQueueInterlude` or a queue state after removal | 0 (round 1: 24) |
+
+**Mutations of the new tests.** Each mutation was a scratch source edit; the
+suites run were QueueTests, DeterminismTests and GuestTests. All 16 were
+killed:
+
+| Mutation | Tests that fail |
+| --- | --- |
+| No `ClearQueueState` in `Unregister`; none in `ReturnOrphanToPath` | `RemovingARide…` |
+| Choice, join or admission ignores `IsBroken` (3 mutations) | `BrokenRidesAreNotChosenJoinedOrAdmitted` |
+| Happiness or toilet compared as float (2 mutations) | `NeedsWindowCompares…` |
+| No recompute before the charge | `AStaleQueueIsRecomputed…` |
+| Streak never reset | `AdmissionCounters…`, two admission tests and the pin |
+| Called age off by one | `AdmissionCounters…` and the pin |
+| One hash line dropped (`QueueTargetY`, `InQueueInterlude`, `seenGridVersion`, seen edits, `calledTurn`, `MaximumCalledAgeTurns`) | the pinned hash |
+
+The 7 source witnesses in `test_queue_v2` were also mutation-checked
+(scratch): dropping a guest hash line (2 mutations), restoring `Stalled`,
+dropping `calledTurn`, moving the admission guard after `CheckAdmission`, using
+a snapped queue front, and dropping `Seed` from `ParkObjects`. Each fails the
+matching test.
+
+### Round 2 numbers
+
+SDK `/Users/sander/.local/share/opentpw-dotnet10/dotnet` 10.0.401, Release, `952ab0f`:
+
+- Build: 0 errors.
+- OpenTPW.Tests without assets: 950 pass / 247 skip / 0 fail.
+- With `OPENTPW_GAME_PATH`: 1126 / 71 / 0.
+- `--m3-gate --minutes 30`: 13 pass / 2 fail / 1 unresolved. `determinism.same-seed`
+  PASS. The `build.queue` row still describes the virtual queue; that is
+  GATE-UPD scope (N3).
+- `run_evidence_checks.py`: OK, 12 Python suites, 805 tests, 198 skipped; with
+  `OPENTPW_MAC_BIN`, 177 skipped (review lane 327 ran, 0 failed).
+  With `test_queue_v2.py` added, the counts are in the commit's Tested trailer.
+- `fidelity_register.py --check`: 176 unresolved unique APPROX IDs. Its unit tests pass.
+- `git diff 5ec2622 952ab0f --stat` = `--ignore-cr-at-eol --stat`: 38 files, +4,646 / −198.
+- `git diff --check 5ec2622 952ab0f`: clean.
+
+### Round 2 notes (non-blocking)
+
+- **N1. QUEUE-019 wording.** Record the `+408` decode above, and narrow the
+  "evidence needed" to the breakdown-turn order and the `SetState(0)` callers.
+- **N2. Commit wording.** In `bb45896`, "no queue field stays set" holds for
+  the four fields `ClearQueueState` resets. Three per-walk fields keep their
+  last values until the next join. Either reset them in `ClearQueueState` (this
+  changes the pin) or leave the code and read the claim as bounded.
+- **N3. GATE-UPD.** `M3Gate.BuildQueue` still reports "virtual: …
+  GuestSimulation.QueueSlot". This is unchanged from round 1's GATE-UPD item.
+
+### Round 2 not tested
+
+- The original's choice and join handling of a broken ride (QUEUE-017/018).
+- The `SetState(0)` callers.
+- The `0xe0aec` state-14 walk.
+- HUD queue-tool clicks.
+- Native smoke.
+- Windows/Linux.

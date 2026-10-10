@@ -41,12 +41,20 @@ internal sealed class Advisor : IDisposable
 		("ADVISOR-006", "bind pose; no Advisorm* clip is played"),
 		("ADVISOR-007", "triangle corner order reversed for the clockwise front-face pipeline"),
 		("ADVISOR-008", "speech starts at the first rendered advisor frame"),
-		("ADVISOR-009", "--advisor-say plays global clips by number; the advisor controller that picks response IDs is not implemented"),
+		("ADVISOR-009", "--advisor-say plays global clips by number; the controller picks responses only for the five bound messages of game events 0/2/3/4"),
 		("ADVISOR-010", "lip-sync clock = PCM consumed from the SDL queue (leads output by up to one device buffer)"),
 		("ADVISOR-011", "wall clock drives the mouth when no audio device opens"),
 		("ADVISOR-012", "mono speech duplicated to both stereo channels"),
 		("ADVISOR-013", "the mouth is talking from time 0 (the unit and per-mark toggle are traced)"),
 		("ADVISOR-014", "MP2 synthesis window values read from ffmpeg's table, checked against two ISO values and ≤1 LSB corpus output"),
+		("ADVISOR-015", "the advisor's tutorial byte +53 is the Game Options Tutorial switch (same offset; object identity unproven)"),
+		("ADVISOR-016", "returned playback span = speech length + 200 + 300 + 1000 ms (sequence and ending-clip durations not decoded)"),
+		("ADVISOR-017", "advisor controller clock = wall-clock ms since the automatic advisor started, updated once per frame; not pause-aware"),
+		("ADVISOR-018", "the automatic advisor is drawn only while its speech plays, only inside a level; leaving the level stops it"),
+		("ADVISOR-019", "GeneralAdvisor.MinTimeAnyMessage and GeneralAdvisor.MinTimeSameMessage are loaded but not applied"),
+		("ADVISOR-020", "game events 2/3/4 come from the park economy's Bankrupt/ParkOpened/ParkClosed events, not proven equal to the original producers"),
+		("ADVISOR-021", "Advisor option off: advice is still picked, consumed and recorded silently; the options byte +0x34 is the Game Options Advisor switch (same offset; object identity unproven)"),
+		("ADVISOR-022", "the advisor's pending advice and message history are not saved or loaded with the park"),
 	};
 
 	private readonly List<(string Name, Model Model, Material Material)> parts = new();
@@ -64,6 +72,8 @@ internal sealed class Advisor : IDisposable
 	public int? ClipNumber { get; private set; }
 	public TimeSpan Position => player?.Position ?? TimeSpan.Zero;
 	public bool IsSpeaking => player != null && !player.IsFinished;
+	/// <summary>Length of the clip started last.</summary>
+	public TimeSpan Duration { get; private set; }
 	public string ClockSource => player?.ClockSource ?? "none";
 	public string MouthMesh => mouth.Current;
 	/// <summary>Mouth mesh used by the most recent <see cref="Render"/> call.</summary>
@@ -188,7 +198,7 @@ internal sealed class Advisor : IDisposable
 		byte[] entry;
 		byte[] lip;
 		string source;
-		// [APPROX:ADVISOR-009] --advisor-say plays global clips by number; responses (SayResponse) follow the traced global/level selector, but the controller that picks response IDs is not implemented — evidence needed: the advisor controller (0x86BC–0x8B10) and its message-to-response mapping
+		// [APPROX:ADVISOR-009] --advisor-say plays global clips by number; responses (SayResponse) follow the traced global/level selector, and AdvisorController picks response IDs only for messages 0, 106, 128, 129 and 323 — evidence needed: the remaining 346 descriptors and their score producers
 		if ( language != null )
 		{
 			var bankPath = language.ResolveDataFile( "global/Speech/speechHD.SDT" )
@@ -282,8 +292,26 @@ internal sealed class Advisor : IDisposable
 		player?.Dispose();
 		timeline = lips;
 		ClipNumber = clipNumber;
-		player = GameAudio.EnsureStarted() && AudioMixer.Current is { } mixer ? new SpeechAudioPlayer( audio, mixer ) : new SpeechAudioPlayer( audio );
+		Duration = TimeSpan.FromSeconds( audio.DurationSeconds );
+		player = CreatePlayer( audio );
 		Log.Trace( $"Advisor says {description}: {audio.DurationSeconds:F2} s, {lips.Marks.Count} LIP marks, clock: {player.ClockSource}{(player.DeviceError == null ? "" : $" ({player.DeviceError})")}." );
+	}
+
+	/// <summary>
+	/// Speech goes through the game mixer when sound is on. Without a mixer it opens its own SDL device,
+	/// except when sound is off (<c>--mute</c>): then it keeps the wall clock and stays silent.
+	/// </summary>
+	internal static SpeechAudioPlayer CreatePlayer( Mp2Audio audio ) =>
+		GameAudio.EnsureStarted() && AudioMixer.Current is { } mixer
+			? new SpeechAudioPlayer( audio, mixer )
+			: new SpeechAudioPlayer( audio, null, openDevice: GameAudio.Enabled && AudioMixer.Current == null );
+
+	/// <summary>Stops the current speech, if any.</summary>
+	public void Silence()
+	{
+		player?.Dispose();
+		player = null;
+		timeline = null;
 	}
 
 	public void Say( int number, GameLanguage? language = null )

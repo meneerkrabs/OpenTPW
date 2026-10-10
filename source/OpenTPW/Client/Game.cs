@@ -198,7 +198,8 @@ internal static class Game
 		// Default: the original-style front end (docs/UI.md). --load-original-level, --sandbox and a
 		// plain --smoke-test bypass it as before; --front-end --smoke-test tests the front end.
 		GameAudio.Enabled = !args.Contains( "--mute" );
-		using var flow = new GameFlow { OnlineFolders = onlineFolders };
+		// --no-advisor turns automatic advice off; the manual --advisor-say/--advisor-response presentation replaces it.
+		using var flow = new GameFlow { OnlineFolders = onlineFolders, AutomaticAdvisorEnabled = !args.Contains( "--no-advisor" ) && !args.Contains( "--advisor-say" ) && !args.Contains( "--advisor-response" ) };
 		var capturePath = GetOption( args, "--capture-world", "a .png file for the world-only screenshot" );
 		var smoke = args.Contains( "--smoke-test" );
 		var startsFrontEnd = visit == null && originalLevelIndex < 0 && !args.Contains( "--advisor-say" ) && !args.Contains( "--advisor-response" ) && !args.Contains( "--sandbox" ) && (!smoke || args.Contains( "--front-end" ));

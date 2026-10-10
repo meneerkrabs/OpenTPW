@@ -58,7 +58,7 @@ start. A sample number and an advisor response ID are different identifiers.
 | Message enqueue | `0x8b78–0x8d34` | Eligibility checks, first empty slot, weakest-slot replacement |
 | Eligibility checks | `0x9008–0x92ec` | Tutorial option, repeat interval, once-only/slap and duplicate limits |
 | Minimum/maximum score scans | `0x9350–0x9418` / `0x9418–0x94dc` | Eight 24-byte pending records |
-| Game event handler | `0x94dc–0x9ea8` | Event-ID switch; event 10 clears history |
+| Game event handler | `0x94dc–0x9ea8` | Event-ID switch; event 10 resets history variant, played flag and slaps |
 | Staff event handler | `0x9ea8–0xa130` | Staff category and status select advice message |
 | Message receiver | `0xa228–0xb678` | Type-ID dispatch to advisor/research/events/staff/pranks/rides/challenges |
 | Scoring data loader | `0xcfd4–0xd054` | Loads `data:advisor:advisor.sam` |
@@ -83,8 +83,11 @@ lookup uses `(typeID - 5) * 4`.
 Research completion branches on category 0–4 and constructs advice message
 IDs 93–97. The staff handler forms `status * 5 + categoryOffset`, with category
 0–4 offsets 34, 33, 36, 35 and 37 respectively (`0x9f00–0x9f48`). Event ID 10
-selects the diagnostic identifying `RESET_FOR_EASY_MODE` and clears the 351
-history records (`0x9dcc–0x9e80`). This is specific trigger-path evidence;
+selects the diagnostic identifying `RESET_FOR_EASY_MODE` and resets the 351
+history records (`0x9dcc–0x9e80`): it stores only `+0xe4` (variant −1), `+0xe8`
+(played 0) and `+0xec` (slap count 0). The saved game tick at `+0xe0` (written
+through `0x121098`, read by the eligibility check at `0x9090`) is kept, so the
+repeat interval still applies after the event. This is specific trigger-path evidence;
 producer conditions and all scenario acceptance behavior remain unverified.
 
 Pending advice has eight 24-byte records starting at controller offset `+20`.
@@ -667,7 +670,13 @@ remain unchanged. The score helper provides separate operations:
   external score/playback wrapper runs, freeing its slot for any subsequent
   admission. `CompletePlaybackAttempt` confirms the supplied wrapper outcome;
   only success updates history and reserves returned playback span plus 1000
-  original clock units. Failure does not restore the consumed record.
+  original clock units. Failure does not restore the consumed record. On the
+  controller path the wrapper is `0xba54` (sole caller `0x89fc`); it fails only
+  for an invalid record (`0xba84`–`0xba8c`) or the missing-descriptor response
+  614 (`0xbb54`). The player `0x6b7c` result is stored only as the span
+  (`0xbb64`) and the wrapper returns 1 (`0xbbf0`), so an unplayed response, or
+  one skipped because options byte `+0x34` is clear (`0x6bb4`–`0x6bc0`), still
+  succeeds with span 0.
 
 The response dispatcher, appropriate computed-score/override wrapper,
 application game-mode conditions, remaining 135 score producers, general
@@ -1002,7 +1011,8 @@ and global speech/LIP 606. That resolution is by stored ID: native `0x6b7c`
 searches word 0 of the response table (stride 32, sentinel 9999). Response 587
 is in row 584. Indexing row 587 by position would give response 590 (speech 638,
 LIP 0). `audio_event_evidence.py` resolves every row through the same
-first-match search and pins this advice. Event 10 clears history, as established
+first-match search and pins this advice. Event 10 resets each history record's
+variant, played flag and slap count but keeps its saved tick, as established
 earlier.
 
 Concrete producer constructor calls are `0xcc464` (ID 2), `0x108fd4` (ID 3),

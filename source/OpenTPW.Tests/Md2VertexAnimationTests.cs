@@ -118,6 +118,19 @@ public class Md2VertexAnimationTests
 		return data;
 	}
 
+	/// <summary>The synthetic clip on <paramref name="node"/> with a trailer node list naming <paramref name="listed"/>.</summary>
+	internal static byte[] CreateAnimationWithNodeList( ushort node, ushort duration, params ushort[] listed )
+	{
+		var data = CreateAnimation( node, duration );
+		var list = Grow( ref data, listed.Length * 2 + 2 );
+		for ( var index = 0; index < listed.Length; index++ )
+			W16( data, list + index * 2, listed[index] );
+		var trailer = data.Length - 72;
+		W32( data, trailer + 24, 1 | (listed.Length << 16) );
+		W32( data, trailer + 56, list );
+		return data;
+	}
+
 	private static void WriteGroup( byte[] data, int group, ushort keys, ushort vertices, int indices, int ticks, int packed )
 	{
 		var entry = Groups + group * 20;
@@ -368,20 +381,165 @@ public class Md2VertexAnimationTests
 		Assert.IsFalse( Read( data ).TextureFramesEnabled );
 	}
 
+	/// <summary>The 12-byte block (flag 0x4000) is parsed but stays unsupported: no reader of its floats was traced.</summary>
 	[TestMethod]
-	public void TwelveByteVariantAndUnknownBlocksStayUnsupported()
+	public void TwelveByteBlockIsParsedButStaysUnsupported()
 	{
 		var data = CreateAnimation();
-		W32( data, Records + 4, 0x5000 );
+		var block = Grow( ref data, 12 + 4 * 4 + 4 * 12 );
+		W32( data, block, block + 12 );
+		W32( data, block + 4, 4 );
+		W32( data, block + 8, block + 28 );
+		for ( var index = 0; index < 4; index++ )
+		{
+			W32( data, block + 12 + index * 4, 3 - index );
+			WF( data, block + 28 + index * 12, index, index * 2, index * 3 );
+		}
+		W32( data, Records + 4, 0x7000 );
 		W32( data, Records + 20, 1 );
+		W32( data, Records + 40, block );
 		var track = Read( data ).Tracks[0];
 		Assert.IsNull( track.VertexAnimation );
-		Assert.AreEqual( 0x5000u, track.UnsupportedFlags );
+		CollectionAssert.AreEqual( new uint[] { 3, 2, 1, 0 }, track.VertexPose!.Indices.ToArray() );
+		Assert.AreEqual( new NVector3( 2, 4, 6 ), track.VertexPose.Positions[2] );
+		Assert.AreEqual( 0x5000u, track.UnsupportedFlags, "0x2000 is metadata, 0x4000 and its 0x1000 stay unsupported" );
+		Assert.AreEqual( 0x2000u, track.MetadataBits );
+		Assert.IsNull( track.VertexPose.GetLimitation( 4 ) );
+		Assert.AreEqual( "the 12-byte block lists 4 positions, the mesh has 5", track.VertexPose.GetLimitation( 5 ) );
+		W32( data, block + 12, 9 );
+		Assert.AreEqual( "12-byte block index 9 lies outside the 4 mesh positions", Read( data ).Tracks[0].VertexPose!.GetLimitation( 4 ) );
 
-		data = CreateAnimation();
+		W32( data, block + 8, data.Length - 60 );
+		Rejects( data ); // positions past the payload
+	}
+
+	/// <summary>Bits no animation routine reads are exporter metadata: neither unsupported nor undecoded payload.</summary>
+	[TestMethod]
+	public void UnreadRecordBitsAreMetadata()
+	{
+		Assert.AreEqual( 0x10u | 0x20 | 0x40 | 0x100 | 0x800 | 0x2000 | 0x8000, ModelAnimationTrack.MetadataFlags );
+		// 0x10/0x20/0x40/0x8000 fall inside the rotation mask and 0x100 inside the scale mask, which the decoder checks
+		// against the key pointers; the rigid synthetic record carries 0x10 and 0x100 with its rotation and scale keys.
+		var rigid = new ModelFile( new MemoryStream( Md2AnimationTests.CreateAnimation() ) ).Clip!.Tracks[0];
+		Assert.AreEqual( 0x110u, rigid.MetadataBits );
+		Assert.AreEqual( 0u, rigid.UnsupportedFlags );
+		Assert.IsFalse( rigid.HasUndecodedPayload );
+		foreach ( var bit in new uint[] { 0x800, 0x2000 } )
+		{
+			var data = CreateAnimation();
+			W32( data, Records + 4, 0x21000 | bit );
+			var track = Read( data ).Tracks[0];
+			Assert.AreEqual( 0u, track.UnsupportedFlags, $"0x{bit:X}" );
+			Assert.AreEqual( bit, track.MetadataBits, $"0x{bit:X}" );
+		}
+		var toggles = CreateAnimation();
+		W32( toggles, Records + 4, 0x20000 | 0x2000 );
+		W32( toggles, Records + 40, 0 );
+		Assert.IsTrue( Read( toggles ).Tracks[0].HasUndecodedPayload, "toggles are more than rigid tracks" );
+		Assert.AreEqual( 0x600u, ModelAnimationTrack.PathFlags );
+	}
+
+	/// <summary>
+	/// A 20-byte UV block on the synthetic record: corner 0 keys at ticks 0/4/10, corner 1 at 0/10, corners 2 and 3 at
+	/// 0/10. Returns the member and the block offset.
+	/// </summary>
+	internal static byte[] CreateUvAnimation( ushort node = 0, ushort duration = 10, uint corners = 4 )
+	{
+		var data = CreateAnimation( node, Math.Max( duration, (ushort)10 ) );
+		var keys = 3 + 2 * (int)(corners - 1);
+		var block = Grow( ref data, 20 + (int)corners * 4 + keys * 2 + keys * 8 );
+		var pairs = block + 20;
+		var ticks = pairs + (int)corners * 4;
+		var uvs = ticks + keys * 2;
+		W32( data, block, corners );
+		W32( data, block + 4, pairs );
+		W32( data, block + 8, keys );
+		W32( data, block + 12, ticks );
+		W32( data, block + 16, uvs );
+		W16( data, pairs, 0 );
+		W16( data, pairs + 2, 3 );
+		ushort[] first = { 0, 4, 10 };
+		for ( var key = 0; key < 3; key++ )
+			W16( data, ticks + key * 2, first[key] );
+		WF( data, uvs, 0, 0, 0.5f, 1, 1, 0 );
+		for ( var corner = 1; corner < corners; corner++ )
+		{
+			var start = 3 + 2 * (corner - 1);
+			W16( data, pairs + corner * 4, (ushort)start );
+			W16( data, pairs + corner * 4 + 2, 2 );
+			W16( data, ticks + start * 2 + 2, duration );
+			WF( data, uvs + start * 8, corner, corner, corner + 1, corner - 1 );
+		}
 		W32( data, Records + 4, 0x31000 );
-		W32( data, Records + 44, Block );
-		Assert.AreEqual( 0x10000u, Read( data ).Tracks[0].UnsupportedFlags );
+		W32( data, Records + 44, block );
+		return data;
+	}
+
+	[TestMethod]
+	public void UvTracksDecodeAndUseTheFirstLaterKey()
+	{
+		var track = Read( CreateUvAnimation() ).Tracks[0];
+		Assert.AreEqual( 0u, track.UnsupportedFlags );
+		var uv = track.UvAnimation!;
+		Assert.AreEqual( 4, uv.CornerCount );
+		Assert.AreEqual( 9, uv.KeyCount );
+		Assert.AreEqual( (0, 3), uv.GetTrack( 0 ) );
+		Assert.AreEqual( (3, 2), uv.GetTrack( 1 ) );
+
+		// trunc(time) = 3 < 4 ends segment 0 at key 1; the fraction uses the float time.
+		Assert.AreEqual( 0, uv.FindKey( 0, 3.5f, out var fraction ) );
+		Assert.AreEqual( 3.5f / 4, fraction );
+		// A time on a key tick starts the next segment at 0 (the vertex cursor would stay at fraction 1).
+		Assert.AreEqual( 1, uv.FindKey( 0, 4, out fraction ) );
+		Assert.AreEqual( 0f, fraction );
+		Assert.AreEqual( 1, uv.FindKey( 0, 4.9f, out fraction ) );
+		Assert.AreEqual( 0.9f / 6, fraction, 1e-7f );
+		// No later key: the last key holds with fraction 1, also past the end.
+		Assert.AreEqual( 1, uv.FindKey( 0, 10, out fraction ) );
+		Assert.AreEqual( 1f, fraction );
+		Assert.AreEqual( 1, uv.FindKey( 0, 25, out fraction ) );
+		Assert.AreEqual( 1f, fraction );
+		Assert.AreEqual( 0, uv.FindKey( 1, 9.99f, out fraction ) );
+
+		Assert.AreEqual( new System.Numerics.Vector2( 0.25f, 0.5f ), uv.Sample( 0, 2 ) );
+		Assert.AreEqual( new System.Numerics.Vector2( 0.5f, 1 ), uv.Sample( 0, 4 ) );
+		Assert.AreEqual( new System.Numerics.Vector2( 1, 0 ), uv.Sample( 0, 30 ) );
+		var inverse = 1 - 0.25f;
+		Assert.AreEqual( new System.Numerics.Vector2( MathF.FusedMultiplyAdd( inverse, 1, 0.25f * 2 ), MathF.FusedMultiplyAdd( inverse, 1, 0.25f * 0 ) ), uv.Sample( 1, 2.5f ) );
+		var all = new System.Numerics.Vector2[4];
+		uv.Apply( 0, all );
+		CollectionAssert.AreEqual( new System.Numerics.Vector2[] { new( 0, 0 ), new( 1, 1 ), new( 2, 2 ), new( 3, 3 ) }, all );
+		Assert.ThrowsException<ArgumentException>( () => uv.Apply( 0, new System.Numerics.Vector2[3] ) );
+		Assert.ThrowsException<ArgumentOutOfRangeException>( () => uv.FindKey( 0, float.NaN, out _ ) );
+	}
+
+	[TestMethod]
+	public void RejectsMalformedUvBlocks()
+	{
+		int Block( byte[] data ) => (int)BinaryPrimitives.ReadUInt32LittleEndian( data.AsSpan( Records + 44 ) );
+		var data = CreateUvAnimation();
+		W16( data, Block( data ) + 20 + 2, 1 );
+		Rejects( data ); // a track needs two keys
+		data = CreateUvAnimation();
+		W16( data, Block( data ) + 20 + 12, 8 );
+		Rejects( data ); // last track runs past the key total
+		data = CreateUvAnimation();
+		var ticks = (int)BinaryPrimitives.ReadUInt32LittleEndian( data.AsSpan( Block( data ) + 12 ) );
+		W16( data, ticks, 1 );
+		Rejects( data ); // does not start at tick 0
+		data = CreateUvAnimation();
+		W16( data, ticks + 4, 4 );
+		Rejects( data ); // ticks do not increase
+		data = CreateUvAnimation();
+		W32( data, Block( data ) + 8, 1000 );
+		Rejects( data ); // key arrays outside the payload
+		data = CreateUvAnimation();
+		var uvs = (int)BinaryPrimitives.ReadUInt32LittleEndian( data.AsSpan( Block( data ) + 16 ) );
+		WF( data, uvs + 4, float.NaN );
+		Rejects( data );
+		data = CreateUvAnimation();
+		W32( data, Records + 44, 0 );
+		Rejects( data ); // flag without a block
 	}
 
 	[TestMethod]

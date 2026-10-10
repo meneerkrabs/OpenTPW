@@ -392,3 +392,64 @@ five advisor WADs.
 - Path parameters (0x200/0x400).
 - PC executable equivalence (encrypted).
 - The 18 WADs not found contiguously in the Mac image.
+
+## 15. ANIM-I results
+
+Implemented against §13 (code: `ModelUvAnimation`, `ModelVertexPose`, `ModelAnimationTrack.MetadataFlags`,
+`ObjectAnimator`, `OpcodeHandlers.Animation`/`RideAnimationTiming`, `OriginalObjectEffects`, `OriginalObject`,
+`Advisor.AnimationClipName`). Per item:
+
+| §13 item | State | Register |
+| --- | --- | --- |
+| 1 UV tracks | decoded, validated and played per instance in set mode after the vertex pass; 0xa8304 search; copy-back on clip change under the fixed-item gate | none |
+| 2 record bits | `MetadataFlags` = 0x10/0x20/0x40/0x100/0x800/0x2000/0x8000, out of `UnsupportedFlags` and `HasUndecodedPayload`; `--inspect-model` prints decoded kinds, metadata and unsupported bits per record | none |
+| 3 12-byte block | parsed (`ModelVertexPose`, count and indices checked against the mesh), stored mesh shown | RIDES-029 |
+| 4 channel mix | ascending channel order, per component the highest writing channel wins (TRS, positions, UVs) | RIDES-002 retired |
+| 5 opcodes | all fourteen with the Mac arithmetic; GETANIM, FLUSHANIM_CH, WAITANIM_CH and TRIGWAITANIM_CH gained handlers (no corpus uses) | RIDES-004/006/007 retired; RIDES-033 (script speed 1.0) |
+| 6 clip end | AnimID 14 hold, GETANIM −1, deferred clip follows; deferral and flush in the channel model | RIDES-003 kept, now citing 0xa7498/0xa68ac/0xa694c |
+| 7 advisor | member naming and the AnimID 5 start traced and tested; bind pose kept because the sequence choice is not traced | ADVISOR-006 narrowed |
+| 8 relative models | vertex tracks play in set mode | RIDES-031 |
+| 9 node bit 0x10 | state from node lists (at every start and replay) and toggles; set hides the node's mesh; texture frames still not applied | RIDES-030, RIDES-035 |
+| 10 older versions | `NotSupportedException` names the original's `DeadMesh` refusal; MD2-MODELS and README updated | none |
+| 11 out of scope | object-list route and idle restart recorded as divergences | RIDES-032, RIDES-034 |
+
+Static reads made during ANIM-I (Mac `SimThemePark`, read-only; not yet pinned in `anim_witness.py`):
+
+- **The LOOPANIM token is reset by the plain triggers.** TRIGANIM (0xafbb4), WAITANIM (0xafcf8), TRIGWAITANIM
+  (0xaff24) and TRIGANIMSPEED (0xb00ec) store `0xFFFF` to script +168, and script creation stores `0xFFFF`
+  there too (0xb31a0, `lis 1; addi −1`). The `_CH` handlers do not touch +168, and LOOPANIM_CH (0xb037c) does
+  not read it. This corrects D7's "any other trigger in between does not reset the token"; a new script's
+  `LOOPANIM 0 0` starts its loop.
+- **TRIGWAITANIM does not yield after its trigger.** The first execution stores the token and rewinds the
+  program counter without clearing +152 (0xaff2c–0xaff34), so the check runs again in the same slice; only a
+  mismatch clears +152 and yields (0xafe20–0xafe30). With a clip that started, the script continues at once; a
+  missing member leaves the channel on its old AnimID and the script waits.
+- TRIGANIMSPEED writes `max(ms − 300, 300)` to its out operand (`stwx` at 0xb00c4), like the other triggers;
+  an equal-token LOOPANIM returns before clearing the WAIT4ANIM deadline (0xafd40).
+- Script creation sets the speed bias +192 to 50 (0xb3154/0xb318c), so the script speed is 1.0; two native
+  writers of +192 exist (0xb2a34, 0xb5b18) and are not modelled (RIDES-033).
+- 0xa65b8 has two callers, 0xa6370 (a per-channel loop whose routine was not identified) and 0xa6a28 inside
+  the start 0xa67d8, the latter only with start flag 0x8 clear: the node list applies at every clip start, and nothing in that routine
+  clears bit 0x10. In the corpus the listed nodes are never toggled by the same clip; 89 of 133 listed meshes
+  are toggled by another clip of the same model.
+
+OpenTPW policy, not original: a trigger whose effect is unimplemented (a script without an object) counts as a
+missing member (1000 ms), so waits stay finite.
+
+Determinism: the WAIT4ANIM deadline and both tokens replace the old "latest clip end" field in the script digest,
+and a root object script also hashes its animator's channel state (`WorldStateHash` schema 6, docs/DETERMINISM.md).
+
+Corpus measurements (`WaitAnimShortClipWrapIsReportedForTheCorpus`, `OriginalUvBlocksTwelveByteBlocksAndMetadataBitsHoldTheirInvariants`;
+reported, not pinned):
+
+- **WAITANIM wrap: one object script hits it.** Of 547 WAITANIM/WAITANIM_CH requests in the object scripts,
+  541 have literal operands (3 name no member, so they get 1000 ms) and 6 use variables. Exactly one resolves to
+  a clip under 300 ms: `levels/space/features/crys_a/Crys_a.RSE` word 5, `WAITANIM 5 0` → `Crys_aM.MD2`
+  (5 ticks, 166 ms), so the original script would wait INT32_MAX ms (about 24.8 days) there, and OpenTPW now
+  does the same. Two object clips in total are under 300 ms; whether a variable-operand request reaches one is
+  not determined statically.
+- 690 UV blocks, 685 on a paired mesh, 34,580 corner tracks: all match the mesh's corner count, start at 0,
+  reach the clip end and hold their last key. At tick 0, 31,142 corners (90 %) sample within one float step
+  of the stored coordinate, so "tick 0 equals the stored UVs" is not a corpus invariant and is not pinned.
+- All 30 12-byte blocks are paired and match their mesh's position count with indices in range; 3,363 records
+  carry metadata bits, each with its read parent bit; 4 of 13,159 node-list entries lie outside their model.

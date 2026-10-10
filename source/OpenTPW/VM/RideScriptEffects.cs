@@ -41,6 +41,21 @@ public interface IRideScriptEffects
 }
 
 /// <summary>
+/// Implemented by effects that own animation channels: the raw AnimID of a channel as the query 0xa7dcc reads it
+/// (12 = none, 14 = ended), for TRIGWAITANIM's resume check.
+/// </summary>
+public interface IRideAnimationQuery
+{
+	int GetAnimationId( RideVM vm, int channel );
+}
+
+/// <summary>Implemented by effects whose state later script steps read back; hashed with the root script.</summary>
+public interface IRideCanonicalEffects
+{
+	void AddCanonicalState( StateHasher hash );
+}
+
+/// <summary>
 /// Default effects: nothing in OpenTPW implements these game systems yet. Each call is counted in
 /// <see cref="RideVM.UnimplementedEffects"/>, logged once per VM and opcode, and returns 0
 /// (no visitor, no animation time, nothing queued).

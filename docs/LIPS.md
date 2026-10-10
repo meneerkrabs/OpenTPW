@@ -214,12 +214,16 @@ composed through the shared MD2 hierarchy code (`ModelAnimationPlayer.ComputeRes
 with the root `Position Dummy` the model is Y-up facing −Z. Drawn without a camera,
 nothing mirrors it, and the MD2 corner order is already clockwise for the renderer's
 front faces. The model stays in its bind
-pose. All 15 `Advisorm*.MD2` clips decode, but every one has tracks with undecoded
-(non-rigid) payload: antennae, eyes, blink meshes and usually hands. So none is played.
-`Advisorm13` (330 ticks) is the only clip with tracks on all five mouth meshes. Those
-payloads are undecoded, so it is the likeliest original source of the mouth-shape
-choice. Mouth switching is a per-frame mesh-visibility choice and can later be driven
-by decoded tracks.
+pose. All 15 `Advisorm*.MD2` clips decode completely: TRS tracks, quantised vertex
+groups and node-flag toggles (plus the never-read metadata bit 0x2000); the level
+advisors add texture-coordinate tracks and one clip with path parameters
+(docs/reverse/ANIM-plan.md §10). The original starts animation id n as
+`Advisor<level>m<n>.MD2` on channel 0 at speed 1.0 on clock B
+(`Advisor.AnimationClipName`), but which clips a generated or fixed sequence chooses
+is not traced, so none is played (ADVISOR-006). The clips' node lists set node bit
+0x10 on the hats, spatula and bow tie, which fits ADVISOR-002's hidden set.
+`Advisorm13` (330 ticks) is the only clip with tracks on all five mouth meshes, the
+likeliest original source of the mouth-shape choice.
 
 `SpeechAudioPlayer` queues the decoded PCM, duplicated to stereo, on the same SDL2
 queued output the movie player uses (`SdlMovieAudioOutput`, `SDL_QueueAudio` through
@@ -313,8 +317,8 @@ Tests: `LipSyncFileTests` (12 synthetic + 5 private corpus), `LipSyncTimelineTes
 check of the window/matrixing + 2 corpus: all 640 Layer II speech clips decode;
 `sp_001` samples and RMS match the external decoder ±1), `AdvisorTests` (private test for the German overlay bank needs `OPENTPW_LANGUAGE_DATA`; 9 synthetic
 incl. the 60 Hz mouth-change frames 134/169/244 for `sp_001` and the speech clock on a
-simulated audio output, plus 3 private tests: model orientation/co-located mouths, no rigid-only
-`Advisorm*` clip, and loading `sp_001` through the game file system).
+simulated audio output, plus 3 private tests: model orientation/co-located mouths, every
+`Advisor*m*` clip decoding and playing against its model, and loading `sp_001` through the game file system).
 Private tests are inconclusive without `OPENTPW_GAME_PATH`. `Layer1DecoderTests`
 adds 27 generated cases and two private checks (`z_error` reference values and
 all 32 global UI-bank entries). Before remote integration, the combined Layer I/Layer II/LIP filter passed
@@ -340,7 +344,7 @@ table fit). The smoke-test thresholds are test-harness checks, not game rules.
 | --- | --- | --- | --- |
 | ADVISOR-002 | `source/OpenTPW/World/Advisor.cs:30` | Visible: body, head, eyes, antennae, hands; hats, spatula, bow tie, ShutEye hidden | Original node-visibility rules (dummy attributes 0x401/0x411, Advisorm* tracks) or captures per advisor role |
 | ADVISOR-005 | `source/OpenTPW/World/Advisor.cs` | Light colour 0.6, `test.shader` ambient 0.4 + fog (the light direction is traced) | Original advisor light colour/material captures |
-| ADVISOR-006 | `source/OpenTPW/World/Advisor.cs:94` | Bind pose; no `Advisorm*` clip played | Decoded vertex/visibility payloads of the `Advisorm*` tracks |
+| ADVISOR-006 | `source/OpenTPW/World/Advisor.cs` | Bind pose; the `Advisor<level>m<n>` clips decode completely (docs/reverse/ANIM-plan.md §10) and their start is traced, but no clip is played | The sequence builders' clip choice (0x63f0–0x66ec) and the draw-path reader of node bit 0x10 |
 | ADVISOR-007 | `source/OpenTPW/World/Advisor.cs` | MD2 triangle corner order kept as stored: drawn without a mirroring camera, the faces are clockwise for the renderer's culling (checked in this renderer's capture) | Original MD2 front-face convention |
 | ADVISOR-008 | `source/OpenTPW/World/Advisor.cs:235` | Speech starts at the first rendered advisor frame | Original advisor trigger timing (binary or trace) |
 | ADVISOR-009 | `source/OpenTPW/World/Advisor.cs:201` | `--advisor-say` plays global clips by number; responses follow the traced global/level selector (`content/data/advisor-responses.toml`); the controller picks responses only for messages 0, 106, 128, 129 and 323 | The remaining 346 descriptors and their score producers |
@@ -361,8 +365,8 @@ table fit). The smoke-test thresholds are test-harness checks, not game rules.
 ## Remaining gates
 
 Original-runtime observation of the mouth shape choice while talking, the
-remaining advisor triggers and score producers, placement/animation and A/V latency. The undecoded
-`Advisorm*` track payloads (vertex animation/visibility) for idle/talk poses and mouth shapes. Original sound-bank/category scheduling,
+remaining advisor triggers and score producers, placement/animation and A/V latency. The
+sequence choice among the decoded `Advisor<level>m<n>` clips for idle/talk poses and mouth shapes. Original sound-bank/category scheduling,
 codec CRC/de-emphasis behavior and device latency still need verification. Layer I
 codec support is implemented; automatic sound events are not wired by that change.
 Capture comparison remains necessary before claiming original fidelity.

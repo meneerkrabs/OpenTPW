@@ -28,11 +28,13 @@ public readonly record struct ModelScaleKey( ushort Time, ushort Unknown, NVecto
 
 /// <summary>
 /// One 64-byte animation record bound to a base-model node. Position, rotation, scale, the
-/// quantised vertex block (flag 0x1000 without 0x4000) and the node-flag toggles (flag 0x20000)
-/// are decoded; the remaining kinds (<see cref="UnsupportedFlags"/>: path parameters 0x600, the
-/// 12-byte vertex layout 0x4000, 0x2000, the 0x10000 block) stay raw in <see cref="Words"/>.
+/// quantised vertex block (flag 0x1000 without 0x4000), the per-corner texture-coordinate tracks
+/// (flag 0x10000) and the node-flag toggles (flag 0x20000) are decoded; the 12-byte block (flag
+/// 0x4000) is parsed into <see cref="VertexPose"/> but has no traced reader. Path parameters (0x600)
+/// stay raw in <see cref="Words"/> (<see cref="UnsupportedFlags"/>). The bits in
+/// <see cref="MetadataFlags"/> are never read by the original's animation code.
 /// Sampling follows the record sampler of the Feral Mac build (SimThemePark 0xa4f68,
-/// docs/reverse/PPC-formats.md); negative times are outside the traced clock domain.
+/// docs/reverse/PPC-formats.md, docs/reverse/ANIM-plan.md); negative times are outside the traced clock domain.
 /// </summary>
 public sealed class ModelAnimationTrack
 {
@@ -42,6 +44,17 @@ public sealed class ModelAnimationTrack
 	public const uint VertexAnimationFlag = 0x1000;
 	public const uint VertexLayoutFlag = 0x4000;
 	public const uint NodeFlagToggleFlag = 0x20000;
+	/// <summary>Per-corner texture-coordinate tracks at record +44 (sampler tail 0xa56d8 → 0xa83e8).</summary>
+	public const uint UvAnimationFlag = 0x10000;
+	/// <summary>Path parameter (0x200) and derived orientation (0x400), only partly traced.</summary>
+	public const uint PathFlags = 0x600;
+	/// <summary>
+	/// Exporter metadata: bits that no animation routine of the Mac build tests (the sampler
+	/// 0xa4f68–0xa56f8, the bind 0xa3e24, the engine relocation and the clip bind 0xa5894; witness
+	/// anim_witness.py). Each occurs only with a read bit: 0x10/0x20/0x40/0x8000 with 0x8, 0x100 with
+	/// 0x80, 0x800 with 0x200 or 0x400, 0x2000 with 0x1000. They carry no payload and are not unsupported.
+	/// </summary>
+	public const uint MetadataFlags = 0x10 | 0x20 | 0x40 | 0x100 | 0x800 | 0x2000 | 0x8000;
 	/// <summary>Node-state bit set or cleared by <see cref="NodeFlagToggles"/>.</summary>
 	public const uint ToggledNodeStateBit = 0x10;
 
@@ -56,18 +69,27 @@ public sealed class ModelAnimationTrack
 	public IReadOnlyList<byte[]> EaseCurves { get; init; } = Array.Empty<byte[]>();
 	/// <summary>Quantised vertex block (record +40); null when absent or in the 12-byte layout.</summary>
 	public ModelVertexAnimation? VertexAnimation { get; init; }
+	/// <summary>The 12-byte block (record +40, flag 0x4000); parsed, not played.</summary>
+	public ModelVertexPose? VertexPose { get; init; }
+	/// <summary>Per-corner texture-coordinate tracks (record +44, flag 0x10000).</summary>
+	public ModelUvAnimation? UvAnimation { get; init; }
 	/// <summary>Signed tick entries (record +48, count u16 +22) of a flag-0x20000 record.</summary>
 	public IReadOnlyList<short> NodeFlagToggles { get; init; } = Array.Empty<short>();
 	/// <summary>The raw 16 record words.</summary>
 	public IReadOnlyList<uint> Words { get; init; } = Array.Empty<uint>();
 	/// <summary>
 	/// True when the record carries more than rigid position/rotation/scale tracks (it may still be
-	/// decoded; see <see cref="UnsupportedFlags"/>).
+	/// decoded; see <see cref="UnsupportedFlags"/>). <see cref="MetadataFlags"/> do not count.
 	/// </summary>
-	public bool HasUndecodedPayload => (Flags & ~(PositionFlag | RotationFlags | ScaleFlags)) != 0;
-	/// <summary>Flag bits whose payload this reader does not decode.</summary>
-	public uint UnsupportedFlags => Flags & ~(PositionFlag | RotationFlags | ScaleFlags | NodeFlagToggleFlag
+	public bool HasUndecodedPayload => (Flags & ~(PositionFlag | RotationFlags | ScaleFlags | MetadataFlags)) != 0;
+	/// <summary>
+	/// Flag bits whose payload this reader does not play: path parameters (0x600) and the 12-byte block
+	/// (0x4000 with its 0x1000). <see cref="MetadataFlags"/> are not counted.
+	/// </summary>
+	public uint UnsupportedFlags => Flags & ~(PositionFlag | RotationFlags | ScaleFlags | NodeFlagToggleFlag | UvAnimationFlag | MetadataFlags
 		| ((Flags & VertexLayoutFlag) == 0 ? VertexAnimationFlag : 0));
+	/// <summary>The exporter-metadata bits of this record (<see cref="MetadataFlags"/>).</summary>
+	public uint MetadataBits => Flags & MetadataFlags;
 
 	/// <summary>
 	/// Record sampler 0xa4f68: scanning from the last entry backwards, the first whose magnitude is at
@@ -227,6 +249,8 @@ public sealed class ModelAnimation
 	public const uint TextureFrameFlag = 0x2;
 
 	public int Duration { get; init; }
+	/// <summary>Trailer word 1, subtracted from <see cref="Duration"/> by the set-clip routine 0xa6398; 0 in every corpus trailer.</summary>
+	public int FirstTick { get; init; }
 	public IReadOnlyList<ModelAnimationTrack> Tracks { get; init; } = Array.Empty<ModelAnimationTrack>();
 	/// <summary>Raw trailer word 0.</summary>
 	public uint TrailerFlags { get; init; }
@@ -236,7 +260,10 @@ public sealed class ModelAnimation
 	/// </summary>
 	public bool TextureFramesEnabled => (TrailerFlags & TextureFrameFlag) != 0;
 	public IReadOnlyList<ModelTextureFrameTrack> TextureFrameTracks { get; init; } = Array.Empty<ModelTextureFrameTrack>();
-	/// <summary>Opaque u16 node-index list (trailer words 14 and 6); meaning unknown.</summary>
+	/// <summary>
+	/// u16 node-index list (trailer words 14 and 6). The clip start 0xa67d8 → 0xa65b8 sets node-state bit
+	/// <see cref="ModelAnimationTrack.ToggledNodeStateBit"/> on each listed node whose state bit 31 is clear.
+	/// </summary>
 	public IReadOnlyList<ushort> NodeList { get; init; } = Array.Empty<ushort>();
 	/// <summary>
 	/// Payload bytes the decoder read as tables, counting a span again each time a pointer reuses it.
@@ -298,10 +325,22 @@ public sealed class ModelAnimation
 			}
 
 			ModelVertexAnimation? vertexAnimation = null;
-			if ( (flags & ModelAnimationTrack.VertexAnimationFlag) != 0 && (flags & ModelAnimationTrack.VertexLayoutFlag) == 0 )
+			ModelVertexPose? vertexPose = null;
+			if ( (flags & ModelAnimationTrack.VertexLayoutFlag) != 0 )
+			{
+				var block = Pointer( raw[10], ModelVertexPose.HeaderBytes, $"record {index} 12-byte block" );
+				vertexPose = ModelVertexPose.Decode( data, block, Pointer );
+			}
+			else if ( (flags & ModelAnimationTrack.VertexAnimationFlag) != 0 )
 			{
 				var block = Pointer( raw[10], ModelVertexAnimation.HeaderBytes, $"record {index} vertex block" );
 				vertexAnimation = ModelVertexAnimation.Decode( data, block, Pointer );
+			}
+			ModelUvAnimation? uvAnimation = null;
+			if ( (flags & ModelAnimationTrack.UvAnimationFlag) != 0 )
+			{
+				var block = Pointer( raw[11], ModelUvAnimation.HeaderBytes, $"record {index} UV block" );
+				uvAnimation = ModelUvAnimation.Decode( data, block, Pointer );
 			}
 			var toggleCount = (flags & ModelAnimationTrack.NodeFlagToggleFlag) != 0 ? (int)(raw[5] >> 16) : 0;
 			var toggles = Array.Empty<short>();
@@ -402,6 +441,8 @@ public sealed class ModelAnimation
 				Scales = scales,
 				EaseCurves = curves,
 				VertexAnimation = vertexAnimation,
+				VertexPose = vertexPose,
+				UvAnimation = uvAnimation,
 				NodeFlagToggles = toggles,
 				Words = raw
 			};
@@ -442,7 +483,7 @@ public sealed class ModelAnimation
 		}
 		return new ModelAnimation
 		{
-			Duration = (int)words[2], Tracks = tracks, NodeList = nodeList, TrailerFlags = words[0], TextureFrameTracks = frameTracks,
+			Duration = (int)words[2], FirstTick = (int)words[1], Tracks = tracks, NodeList = nodeList, TrailerFlags = words[0], TextureFrameTracks = frameTracks,
 			TableBytes = charged
 		};
 	}

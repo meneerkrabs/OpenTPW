@@ -389,39 +389,6 @@ public class RideVMTests
 	}
 
 	[TestMethod]
-	public void AnimationDurationsFromEffectsDriveOutputsAndWaits()
-	{
-		var effects = new StubEffects { Result = call => call.Opcode switch { Opcode.TRIGANIM => 1000, Opcode.WAITANIM => 250, _ => 0 } };
-		var vm = Load( new Asm()
-			.I( Opcode.TRIGANIM, 5, 0, V( 0 ) )
-			.I( Opcode.WAIT4ANIM )
-			.I( Opcode.COPY, V( 1 ), 1 )
-			.I( Opcode.WAITANIM, 0, 0 )
-			.I( Opcode.COPY, V( 1 ), 2 )
-			.I( Opcode.TRIGANIM, 5, 1, 0 )
-			.I( Opcode.FLUSHANIM )
-			.I( Opcode.WAIT4ANIM )
-			.I( Opcode.COPY, V( 1 ), 3 )
-			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ), new RideVMOptions { Effects = effects } );
-		Run( vm, 1 );
-		Assert.AreEqual( 1000, vm.Variables[0] );
-		Run( vm, 58 );
-		Assert.AreEqual( 0, vm.Variables[1] );
-		Run( vm, 3 );
-		Assert.AreEqual( 1, vm.Variables[1] );
-		Run( vm, 13 );
-		Assert.AreEqual( 1, vm.Variables[1], "WAITANIM 250 ms" );
-		var ticks = 0;
-		while ( vm.Variables[1] == 1 && ticks++ < 10 )
-			Run( vm, 1 );
-		Assert.IsTrue( ticks is >= 1 and <= 3, ticks.ToString() );
-		Assert.AreEqual( 2, vm.Variables[1], "WAITANIM done; WAIT4ANIM after FLUSHANIM only yields one slice" );
-		Run( vm, 1 );
-		Assert.AreEqual( 3, vm.Variables[1], "FLUSHANIM forgets pending animation time" );
-		CollectionAssert.AreEqual( new[] { "TRIGANIM 5 0 0", "WAITANIM 0 0", "TRIGANIM 5 1 0", "FLUSHANIM" }, effects.Calls );
-	}
-
-	[TestMethod]
 	public void DefaultEffectsAreRecordedAsUnimplementedAndReturnZero()
 	{
 		var vm = Load( new Asm()

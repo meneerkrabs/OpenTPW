@@ -128,6 +128,29 @@ internal static class Game
 				foreach ( var material in mesh.Materials )
 					Log.Trace( $"Material: {material.Name}" );
 			}
+			if ( model.Clip is { } clip )
+			{
+				Log.Trace( $"Animation: {clip.Duration} ticks, {clip.Tracks.Count} records, {clip.TextureFrameTracks.Count} texture-frame tracks, {clip.NodeList.Count} listed nodes." );
+				foreach ( var track in clip.Tracks )
+				{
+					var kinds = new List<string>();
+					if ( track.Position != null )
+						kinds.Add( "position" );
+					if ( track.Rotations.Count > 0 )
+						kinds.Add( "rotation" );
+					if ( track.Scales.Count > 0 )
+						kinds.Add( "scale" );
+					if ( track.VertexAnimation != null )
+						kinds.Add( "vertex groups" );
+					if ( track.VertexPose != null )
+						kinds.Add( "12-byte block (shown as stored)" );
+					if ( track.UvAnimation != null )
+						kinds.Add( "UV tracks" );
+					if ( track.NodeFlagToggles.Count > 0 )
+						kinds.Add( "node-flag toggles" );
+					Log.Trace( $"Record node {track.NodeIndex}: flags 0x{track.Flags:X} ({string.Join( ", ", kinds )}); metadata 0x{track.MetadataBits:X}; unsupported 0x{track.UnsupportedFlags:X}." );
+				}
+			}
 			return;
 		}
 		var movieName = MovieCommands.GetMovieName( args );

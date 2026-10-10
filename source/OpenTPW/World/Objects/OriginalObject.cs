@@ -54,9 +54,10 @@ public class OriginalObject : Entity
 {
 	private readonly List<(ModelEntity Entity, int NodeIndex)> parts = new();
 	private readonly List<Model> models = new();
-	/// <summary>Parts of vertex-animated meshes: their model, own vertex array and the pose version it shows.</summary>
+	/// <summary>Parts of vertex- or UV-animated meshes: their model, own vertex array and the pose version it shows.</summary>
 	private readonly List<(Model Model, int MeshIndex, Vertex[] Vertices, int Version)> vertexParts = new();
 	private bool deleted;
+	private int hiddenVersion = -1;
 
 	public OriginalObject( ObjectCatalogEntry entry, ObjectPlacement placement, RideScriptWorld? world = null, int? seed = null, bool open = true )
 	{
@@ -165,9 +166,14 @@ public class OriginalObject : Entity
 	{
 		UpdateVertices();
 		var placement = Placement.ModelToEngine;
-		var nodes = Runtime.Animator.NodeTransforms;
+		var animator = Runtime.Animator;
+		var nodes = animator.NodeTransforms;
+		var hidden = animator.HiddenVersion != hiddenVersion;
+		hiddenVersion = animator.HiddenVersion;
 		foreach ( var (entity, node) in parts )
 		{
+			if ( hidden && node >= 0 )
+				entity.Hidden = animator.IsNodeHidden( node );
 			var transform = node < 0 ? placement : ObjectPlacement.SwapAxes( nodes[node] ) * placement;
 			entity.TransformOverride = transform;
 			entity.Position = new Vector3( transform.M41, transform.M42, transform.M43 );
@@ -184,6 +190,7 @@ public class OriginalObject : Entity
 			if ( animator.GetVertexVersion( mesh ) == version )
 				continue;
 			ObjectRenderParts.WritePositions( Runtime.Model.Meshes[mesh], animator.GetVertexPositions( mesh ), vertices );
+			ObjectRenderParts.WriteTexCoords( Runtime.Model.Meshes[mesh], animator.GetTexCoords( mesh ), vertices );
 			model.UpdateVertices( vertices );
 			vertexParts[index] = (model, mesh, vertices, animator.GetVertexVersion( mesh ));
 		}

@@ -206,32 +206,32 @@ public class RideVMCorpusTests
 	}
 
 	// 30 s of the open Inca Totem with no visitors, capacity 6, seed 1234 and every effect unimplemented:
-	// WAITANIM 0 at start, a 10 s passenger time-out, WAIT 700, one random TRIGANIM_CH set via JSR,
+	// WAITANIM 0 at start (unanswered, so a missing member: 1000 − 300 = 700 ms), a 10 s passenger time-out, WAIT 700, one random TRIGANIM_CH set via JSR,
 	// WAIT 500, the main-animation cycle, then back to the passenger loop because VAR_ONRIDE is 0.
 	private const string TotemTrace =
 		"16 WAITANIM 0 0\n" +
-		"10766 TRIGANIM_CH 5 2 0 1\n" +
-		"10766 TRIGANIM_CH 5 5 0 2\n" +
-		"10766 TRIGANIM_CH 5 8 0 3\n" +
-		"11283 TRIGANIM 5 0 0\n" +
-		"11283 ADDOBJ 3 -1 73 5\n" +
-		"11283 ADDOBJ 3 -1 90 5\n" +
-		"11283 ADDOBJ 3 -1 74 2\n" +
-		"11283 ADDOBJ 3 -1 75 2\n" +
-		"16599 EVENT 3 -1 76\n" +
-		"16599 KILLOBJ 2\n" +
-		"17599 SETREVERB 3\n" +
-		"17599 KILLOBJ 5\n" +
-		"17599 EVENT 3 -1 77\n" +
-		"17849 SINGLESCREAM 0 100\n" +
-		"17849 EVENT 3 -1 78\n" +
-		"19850 ADDOBJ 3 -1 73 5\n" +
-		"19850 ADDOBJ 3 -1 90 5\n" +
-		"19850 ADDOBJ 3 -1 74 5\n" +
-		"19850 ADDOBJ 3 -1 75 5\n" +
-		"23350 SETREVERB 0\n" +
-		"23350 KILLOBJ 5\n" +
-		"23350 EVENT 3 -1 76\n";
+		"11466 TRIGANIM_CH 5 2 0 1\n" +
+		"11466 TRIGANIM_CH 5 5 0 2\n" +
+		"11466 TRIGANIM_CH 5 8 0 3\n" +
+		"11983 TRIGANIM 5 0 0\n" +
+		"11983 ADDOBJ 3 -1 73 5\n" +
+		"11983 ADDOBJ 3 -1 90 5\n" +
+		"11983 ADDOBJ 3 -1 74 2\n" +
+		"11983 ADDOBJ 3 -1 75 2\n" +
+		"17299 EVENT 3 -1 76\n" +
+		"17299 KILLOBJ 2\n" +
+		"18299 SETREVERB 3\n" +
+		"18299 KILLOBJ 5\n" +
+		"18299 EVENT 3 -1 77\n" +
+		"18549 SINGLESCREAM 0 100\n" +
+		"18549 EVENT 3 -1 78\n" +
+		"20550 ADDOBJ 3 -1 73 5\n" +
+		"20550 ADDOBJ 3 -1 90 5\n" +
+		"20550 ADDOBJ 3 -1 74 5\n" +
+		"20550 ADDOBJ 3 -1 75 5\n" +
+		"24050 SETREVERB 0\n" +
+		"24050 KILLOBJ 5\n" +
+		"24050 EVENT 3 -1 76\n";
 
 	[TestMethod]
 	public void TotemScriptTraceIsPinned()

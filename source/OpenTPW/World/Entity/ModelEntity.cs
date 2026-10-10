@@ -9,6 +9,9 @@ public partial class ModelEntity : Entity
 	/// <summary>Explicit model matrix (e.g. an MD2 node's composed hierarchy transform); overrides Position/Rotation/Scale.</summary>
 	public System.Numerics.Matrix4x4? TransformOverride { get; set; }
 
+	/// <summary>Skips drawing (e.g. an MD2 mesh whose node-state bit 0x10 is set).</summary>
+	public bool Hidden { get; set; }
+
 	public ModelEntity()
 	{
 		Spawn();
@@ -21,7 +24,7 @@ public partial class ModelEntity : Entity
 
 	protected override void OnRender()
 	{
-		if ( Model == null )
+		if ( Model == null || Hidden )
 			return;
 
 		var uniformBuffer = new ObjectUniformBuffer

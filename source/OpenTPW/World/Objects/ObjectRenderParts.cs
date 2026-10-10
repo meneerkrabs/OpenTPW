@@ -35,6 +35,9 @@ public static class ObjectRenderParts
 				continue;
 			foreach ( var track in clip.Tracks.Where( track => track.NodeIndex < animated.Length ) )
 				animated[track.NodeIndex] = true;
+			// Listed nodes get node-state bit 0x10 at the clip's start (ObjectAnimator.IsNodeHidden), so they stay separate parts.
+			foreach ( var node in clip.NodeList.Where( node => node < animated.Length ) )
+				animated[node] = true;
 		}
 		// Children of animated nodes move with them.
 		var changed = true;
@@ -50,7 +53,7 @@ public static class ObjectRenderParts
 		return animated;
 	}
 
-	/// <summary>Meshes that a quantised vertex track of one of the object's animations moves.</summary>
+	/// <summary>Meshes whose positions or texture coordinates a vertex or UV track of one of the object's animations changes.</summary>
 	public static bool[] FindVertexAnimatedMeshes( ObjectCatalogEntry entry, ModelFile model )
 	{
 		var animated = new bool[model.Meshes.Count];
@@ -65,7 +68,7 @@ public static class ObjectRenderParts
 			{
 				continue;
 			}
-			foreach ( var track in clip?.Tracks.Where( track => track.VertexAnimation != null ) ?? Enumerable.Empty<ModelAnimationTrack>() )
+			foreach ( var track in clip?.Tracks.Where( track => track.VertexAnimation != null || track.UvAnimation != null ) ?? Enumerable.Empty<ModelAnimationTrack>() )
 			{
 				var mesh = model.Meshes.FindIndex( candidate => candidate.NodeIndex == track.NodeIndex );
 				if ( mesh >= 0 )
@@ -91,6 +94,23 @@ public static class ObjectRenderParts
 		{
 			var index = mesh.CornerPositionIndices[corner];
 			vertices[corner].Position = ObjectAssets.ConvertAxes( positions?[index] ?? mesh.Positions[index].GetSystemVector3() );
+		}
+	}
+
+	/// <summary>
+	/// Writes a mesh's texture coordinates (indexed like <see cref="ModelFile.Mesh.TexCoords"/>; null for the stored
+	/// ones) into an unbaked part's vertices, corner by corner.
+	/// </summary>
+	public static void WriteTexCoords( ModelFile.Mesh mesh, IReadOnlyList<System.Numerics.Vector2>? texCoords, Span<Vertex> vertices )
+	{
+		if ( vertices.Length != mesh.CornerPositionIndices.Length )
+			throw new ArgumentException( "A part of an unbaked mesh has one vertex per corner.", nameof( vertices ) );
+		if ( texCoords != null && texCoords.Count != mesh.TexCoords.Length )
+			throw new ArgumentException( "Texture coordinates must match the mesh's corners.", nameof( texCoords ) );
+		for ( var corner = 0; corner < vertices.Length; corner++ )
+		{
+			var value = texCoords?[corner];
+			vertices[corner].TexCoords = value is { } animated ? new Vector2( animated.X, animated.Y ) : mesh.TexCoords[corner];
 		}
 	}
 

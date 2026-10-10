@@ -156,6 +156,63 @@ public class ObjectCatalogCorpusTests
 		ObjectCatalog.BonusDataRoot = null;
 	}
 
+	/// <summary>
+	/// WAITANIM converts <c>ms − 300</c> unsigned (0xafc88), so a member returning under 300 ms (at most 8 ticks)
+	/// would make the original script wait INT32_MAX ms. This scans every WAITANIM/WAITANIM_CH of every object script
+	/// with literal operands for such a member, counts the requests whose operands are variables, and reports both
+	/// (ANIM-plan §8, "Degenerate case").
+	/// </summary>
+	[TestMethod]
+	public void WaitAnimShortClipWrapIsReportedForTheCorpus()
+	{
+		int requests = 0, literal = 0, variable = 0, missing = 0, shortClips = 0;
+		var wraps = new List<string>();
+		foreach ( var theme in ObjectCatalog.Themes )
+		{
+			foreach ( var entry in ObjectCatalog.Load( theme ).Entries )
+			{
+				foreach ( var file in entry.Animations )
+				{
+					var clip = ObjectAssets.LoadModel( entry.FileSystem, file.Path ).Clip;
+					if ( clip != null && ObjectAnimator.Fctiwz( 1000f * (clip.Duration - clip.FirstTick) / ObjectAnimator.DefaultTicksPerSecond ) < RideAnimationTiming.MinimumWaitMilliseconds )
+						shortClips++;
+				}
+				foreach ( var member in entry.Scripts )
+				{
+					RideScriptFile script;
+					using ( var stream = entry.FileSystem.OpenRead( member ) )
+						script = new RideScriptFile( stream );
+					foreach ( var instruction in script.Instructions.Where( instruction => instruction.Opcode is (ushort)Opcode.WAITANIM or (ushort)Opcode.WAITANIM_CH ) )
+					{
+						requests++;
+						if ( instruction.Operands.Take( 2 ).Any( operand => operand.Kind != RideScriptOperandKind.Literal ) )
+						{
+							variable++;
+							continue;
+						}
+						literal++;
+						var animation = (short)instruction.Operands[0].Value;
+						var variant = (short)instruction.Operands[1].Value;
+						var resolved = entry.ResolveAnimation( animation, variant );
+						var clip = resolved == null ? null : ObjectAssets.LoadModel( entry.FileSystem, resolved.Path ).Clip;
+						if ( clip == null )
+						{
+							missing++;
+							continue;
+						}
+						var milliseconds = ObjectAnimator.Fctiwz( 1000f * (clip.Duration - clip.FirstTick) / ObjectAnimator.DefaultTicksPerSecond );
+						if ( RideAnimationTiming.WaitAnimDelay( milliseconds, RideVM.ScriptSpeed ) == int.MaxValue )
+							wraps.Add( $"{member} word {instruction.WordOffset}: {(Opcode)instruction.Opcode} {animation} {variant} → {resolved!.Path} ({clip.Duration} ticks, {milliseconds} ms)" );
+					}
+				}
+			}
+		}
+		Assert.IsTrue( requests > 0 && literal > 0 );
+		Console.WriteLine( $"WAITANIM requests {requests}: {literal} literal ({missing} without a member, {wraps.Count} wrapping), {variable} with variable operands; object clips under 300 ms: {shortClips}" );
+		foreach ( var wrap in wraps )
+			Console.WriteLine( wrap );
+	}
+
 	[TestMethod]
 	public void EveryObjectScriptRunsInItsParkWithOriginalAnimations()
 	{

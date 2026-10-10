@@ -118,9 +118,22 @@ implementation against those inputs, not equivalence to an executed PC game.
 Valid hooked operations call `IRideScriptEffects.Perform(RideEffectCall)` with the
 resolved operand values. The VM writes the returned value to the opcode's
 destination where the corpus shows one (HOP, WALKGET, UNLIMBO, LIMBOSPACE,
-GETANIM_CH, HOUR, …), sets flags where branches consume them, and uses it as
-the duration in milliseconds for TRIGANIM/WAITANIM/TRIGWAITANIM/TRIGANIMSPEED
-(waits and WAIT4ANIM). TOUR/BUMP/COAST use the independently reviewed command
+GETANIM_CH, HOUR, …), sets flags where branches consume them, and for the
+animation triggers takes it as the original trigger result in milliseconds
+(the clip length, 1000 for a missing member). The animation opcodes follow the
+Feral Mac handlers (docs/reverse/ANIM-plan.md §8): TRIGANIM, TRIGWAITANIM,
+TRIGANIMSPEED and TRIGANIM_CH store `max(ms − 300, 300)` in their out operand and
+overwrite the script's single WAIT4ANIM deadline (`now + out / script speed`, or
+`out × 1000 / operand` for TRIGANIMSPEED); WAITANIM waits
+`max(unsigned(ms − 300) / speed, 300)` (a clip under 300 ms wraps to
+`INT32_MAX` ms, as in the original) and WAITANIM_CH the same without the division;
+both and LOOPANIM(_CH) zero the deadline; LOOPANIM is a no-op while its
+script-local token is unchanged, and the plain triggers reset the token;
+TRIGWAITANIM re-executes until the channel shows the triggered AnimID;
+FLUSHANIM(_CH) clears only the deferred clip; GETANIM(_CH) return the AnimID, or
+−1 once a non-looping clip ended. Without an animation host (an unimplemented
+effect) a trigger counts as a missing member, an OpenTPW policy that keeps waits
+finite for scripts without an object. TOUR/BUMP/COAST use the independently reviewed command
 contracts from [PPC-rides](reverse/PPC-rides.md) (`15313d2`): mutators preserve
 flags, supported queries set flags, and output queries write the effect's
 returned value to their parameter. BUMP13/14 use the captured original input
@@ -182,10 +195,10 @@ required/optional variable gates, supported outputs, unsupported markers and
 unknown-command safety faults.
 
 `TotemScriptTraceIsPinned` pins 30 s of Totem.RSE (seed 1234, capacity 6, no
-visitors): WAITANIM 0 at 16 ms, the 10 s passenger time-out, WAIT 700,
-VAR_RUNNING = 1, a random TRIGANIM_CH set via JSR at 10,766 ms, TRIGANIM 5 at
-11,283 ms, the sound/object timeline to 23,350 ms, then VAR_RUNNING = 0 because
-nobody boarded. A closed Totem only emits WAITANIM 0 and idles.
+visitors): WAITANIM 0 at 16 ms (unanswered, so it waits 700 ms as for a missing
+member), the 10 s passenger time-out, WAIT 700, VAR_RUNNING = 1, a random
+TRIGANIM_CH set via JSR at 11,466 ms, TRIGANIM 5 at 11,983 ms, the sound/object
+timeline to 24,050 ms, then VAR_RUNNING = 0 because nobody boarded. A closed Totem only emits WAITANIM 0 and idles.
 
 ## Sandbox Totem
 
@@ -195,9 +208,9 @@ is the .sam `Upgrades[0].InitCapacity` (6); `VAR_DURATION` has no source and
 stays 0 (one cycle per run). The script decides **when** the carriage moves:
 its `TRIGANIM 5` (`ANIM_Main` in the repository's ScriptDefs and the docs'
 `TRIGANIM ANIM_Main 0 0` example) plays the original `totemm1.MD2` clip once
-through `ModelAnimationPlayer` ([MD2-MODELS.md](MD2-MODELS.md)); its 430 ticks
-at the sandbox's unverified 30 ticks/s (14,333 ms) are reported back as the
-animation duration for the duration operand and WAIT4ANIM. Which Totem clip the
+through the object's channels ([MD2-MODELS.md](MD2-MODELS.md)); its 430 ticks
+at 30 ticks/s give the trigger result 14,333 ms, so the duration operand gets
+14,033 ms and WAIT4ANIM waits until that deadline. Which Totem clip the
 original binds to `ANIM_Main` is inferred (`totemm1` is the full cart/cog
 cycle), not traced. All other Totem effects (channel animations
 `totemm2…10`, sounds, objects, screams, reverb, visitors) are unimplemented.
@@ -309,19 +322,19 @@ handler attributes diverge.
 | 12 | `SETOBJPARAM` | 20 | hooked | docs (`slot parameter value`) |
 | 13 | `EVENT` | 527 | hooked | docs (`type unknown event`); event names are theme-dependent and not assigned |
 | 14 | `EVENT_EXT` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
-| 15 | `FLUSHANIM` | 17 | hooked | docs (stop all animations); clears pending WAIT4ANIM time |
-| 16 | `TRIGANIM` | 74 | hooked | docs example `TRIGANIM ANIM_Main 0 0`; corpus: third operand receives the duration (`TRIGANIM 5 0 VAR_TEMP; SUB VAR_TEMP VAR_TEMP 3000; WAIT VAR_TEMP; …; WAIT4ANIM`) |
-| 17 | `WAITANIM` | 547 | hooked | docs (play and wait for the end) |
-| 18 | `LOOPANIM` | 210 | hooked | docs (loop an animation); loops are not awaited by WAIT4ANIM (assumption) |
-| 19 | `TRIGWAITANIM` | 133 | hooked | name (trigger + wait); operand layout as TRIGANIM (`TRIGWAITANIM 4 0 VAR_TEMP`) |
-| 20 | `GETANIM` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
-| 21 | `TRIGANIMSPEED` | 4 | hooked | unknown upstream; corpus `TRIGANIMSPEED 6 0 VAR_TEMP 4000 … WAIT4ANIM`: returned duration is tracked for WAIT4ANIM, operands passed through |
-| 22 | `FLUSHANIM_CH` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
-| 23 | `TRIGANIM_CH` | 63 | hooked | unknown upstream; corpus (Totem `TRIGANIM_CH 5 1 0 1` …, .sam `NumSimultAnims 4`) suggests animation/variant/duration/channel; passed through |
-| 24 | `WAITANIM_CH` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
-| 25 | `LOOPANIM_CH` | 1 | hooked | unknown upstream; 1 corpus use; passed through |
-| 26 | `TRIGWAITANIM_CH` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
-| 27 | `GETANIM_CH` | 15 | hooked | unknown upstream; corpus `GETANIM_CH 0 n; BRANCH_PV x; BRANCH_Z x` → `dest channel`, result sets flags |
+| 15 | `FLUSHANIM` | 17 | hooked | STP-PPC 0xafa68 → 0xa6c90: clears only channel 0's deferred clip; the playing clip and the WAIT4ANIM deadline stay |
+| 16 | `TRIGANIM` | 74 | hooked | STP-PPC 0xafa94: trigger channel 0, flags 0; out = max(ret − 300, 300); WAIT4ANIM deadline = now + out / script speed; LOOPANIM token reset |
+| 17 | `WAITANIM` | 547 | hooked | STP-PPC 0xafbbc: trigger channel 0, flags 0; waits max(unsigned(ret − 300) / script speed, 300) (a clip under 300 ms wraps to INT32_MAX ms); zeroes the WAIT4ANIM deadline; LOOPANIM token reset |
+| 18 | `LOOPANIM` | 210 | hooked | STP-PPC 0xafd00: no-op while token anim + (sub << 16) equals script +168; else loops on channel 0 (flags 1), stores the token, zeroes the WAIT4ANIM deadline |
+| 19 | `TRIGWAITANIM` | 133 | hooked | STP-PPC 0xafd94: as TRIGANIM, then re-executes until channel 0's AnimID equals the triggered one (+188 = id + 1), yielding while it differs |
+| 20 | `GETANIM` | 0 | hooked | STP-PPC 0xaff3c: channel 0's AnimID (12 = none), −1 once its non-looping clip ended (channel flag 0x4); result sets flags |
+| 21 | `TRIGANIMSPEED` | 4 | hooked | STP-PPC 0xaffc4: trigger channel 0 at script speed × operand / 1000; out = max(ret − 300, 300); deadline = now + out × 1000 / operand (signed divw); LOOPANIM token reset |
+| 22 | `FLUSHANIM_CH` | 0 | hooked | STP-PPC 0xb00f4 → 0xa6c90: clears only the operand channel's deferred clip |
+| 23 | `TRIGANIM_CH` | 63 | hooked | STP-PPC 0xb013c: as TRIGANIM on channel operand 4 (Totem `TRIGANIM_CH 5 1 0 1`); leaves the LOOPANIM token |
+| 24 | `WAITANIM_CH` | 0 | hooked | STP-PPC 0xb0268: as WAITANIM on channel operand 3 without the speed division (unsigned max(ret − 300, 300)); zeroes the deadline |
+| 25 | `LOOPANIM_CH` | 1 | hooked | STP-PPC 0xb037c: loops on channel operand 3 (flags 1) on every call, no token check; zeroes the deadline |
+| 26 | `TRIGWAITANIM_CH` | 0 | hooked | STP-PPC 0xb0404: as TRIGWAITANIM on channel operand 4; leaves the LOOPANIM token |
+| 27 | `GETANIM_CH` | 15 | hooked | STP-PPC 0xb05b8: `GETANIM_CH dest channel`: the channel's AnimID, −1 once ended; result sets flags (corpus `GETANIM_CH 0 n; BRANCH_PV x; BRANCH_Z x`) |
 | 28 | `RAND` | 56 | implemented | Mac-static: signed raw bound word, inclusive nonnegative maximum, sets flags; host PRNG remains unqualified |
 | 29 | `JSR` | 70 | implemented | docs; corpus: every script using JSR declares stack ≥ 3, used as the return-address limit |
 | 30 | `RETURN` | 33 | implemented | docs; LIFO return stack (the old VM used a FIFO queue) |
@@ -340,7 +353,7 @@ handler attributes diverge.
 | 43 | `HOP` | 39 | hooked | unknown upstream; corpus output (`HOP VAR_TEMP2; WALKOFF VAR_TEMP2`) |
 | 44 | `WAIT` | 458 | implemented | docs; milliseconds (inferred); flags survive it (`WAIT 300; BRANCH_NZ`) |
 | 45 | `WAITABS` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
-| 46 | `WAIT4ANIM` | 170 | hooked | docs (wait for all playing animations); waits for the latest end time the effects layer reported |
+| 46 | `WAIT4ANIM` | 170 | hooked | STP-PPC 0xb07a0: deadline 0 continues; otherwise blocks while now < deadline (re-executing), then clears it |
 | 47 | `ADD` | 541 | implemented | docs (dest += value, sets flags); corpus: 115 branches consume ADD flags, e.g. `ADD VAR_SPACELEFT 0xFFFF; BRANCH_Z` |
 | 48 | `MULT` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
 | 49 | `DIV` | 4 | implemented | corpus: `DIV dest a b`; Mac-static: signed truncation, zero divisor returns 0; signed overflow retains VM wrap policy |

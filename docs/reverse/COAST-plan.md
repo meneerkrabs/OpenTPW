@@ -12,6 +12,9 @@ python3 -I tools/ppc-analysis/lanes/coast/coast_evidence.py /path/to/mac-feral/b
 python3 -I tools/ppc-analysis/run_evidence_checks.py --mac-bin /path/to/mac-feral/bin --pc-data /path/to/Data
 ```
 
+COAST-R2 (sections 12–19, with 9.7, 10.1 and 11.1) adds the curve fit, sampling, banking, build
+checks, closure, money and motion evidence. Section 19 corrects four COAST-R statements.
+
 Confidence follows the PPC-rides convention. **High** means an identity-pinned instruction,
 constant or relocation that was interpreted. **Medium** means a role inferred from callers,
 names or data. **Unresolved** means the path was not recovered. "Bounded" marks a claim that
@@ -405,6 +408,67 @@ Per coaster: definition id, node list (cell, t, pylon kind, flags, stack index),
 ride settings (speed setting → `ctl+52`), trains (position along the track, speed, riders),
 `RidersOnBoard`, rating values, and the `CoasterRng` state (DET-plan).
 
+### 9.7 Spec deltas from COAST-R2 (supersede the APPROX choices above)
+
+Evidence in sections 12–18. Each delta names the item it replaces.
+
+1. **Curve (replaces COAST-001).** Knots are the node positions (node world position from 13.2).
+   Each knot gets a unit direction `u` and the Hermite tangents `T± = ±u · fCurviness · chord±`,
+   where `chord±` is the distance to the neighbouring knot with the height difference weighted
+   by 0.7 (1.0 when there is no neighbour). Control points are `P ± T±/3`. Each knot pair is one
+   cubic Bézier (`P_i`, `P_i + T+_i/3`, `P_{i+1} − T−_{i+1}/3`, `P_{i+1}`). On a pylon-less
+   node, `u` is the normalised node forward tangent from 13.3. On a loop node it is `(0, ±1, 0)`.
+   On a pylon it is the pylon mesh's track-tag axis, which COAST-I approximates with the node
+   forward tangent (COAST-015).
+   On loop pylons, use `K` from 13.4 instead of `fCurviness`, and 1.7 toward a non-loop neighbour.
+2. **Sampling (replaces COAST-001).** Spacing is **3.0 world units**, a constant, independent of
+   COASTERSMOOTHNESS. Walk each pair with `t += 0.05`, sum the chord lengths, and emit a sample on
+   the current chord where the sum reaches 3.0. Then realign `t` to the next multiple of 0.05.
+   Sample orientation: yaw `atan2(T.x, T.z)` and pitch from the Bézier derivative, roll from the
+   second rail (13.7).
+3. **Banking (replaces COAST-010).** Node bank (when the definition has flag 0x10, i.e.
+   `bNoAutoBanking == 0` and not suspended):
+   `bank = v · (±π − θ) / 4.0 / (|prev − P| + |next − P|)`. Here θ is the signed XZ turn angle
+   (13.3), the sign of π follows θ, and `v` comes from the height-energy estimate along the nodes
+   (13.8, floor fMinSpeed, start 0). The divisor is the constant 4.0: `fAutoBankDivisor` is never
+   loaded. The bank reaches the samples through the pylon bank animation (COAST-015). COAST-I uses
+   the node bank as the knot roll. Suspended coasters (`bIsSuspendedCoaster`) have no auto-bank;
+   their roll is the swing pass (13.8), which COAST-I may keep APPROX.
+4. **Build checks (replaces COAST-002, COAST-003).** Do not enforce slope or rotation deviance.
+   Slope (`fMaxHeightDiffPerGSquareDist`), loop rotation deviance and loop height difference are
+   loaded and never read by the coaster code. `fMaxRotnAngleDeviance` only bounds the manual
+   rotate slider (yaw ± deviance, step 0.02 rad). The blocked-cell test is the level's
+   **no-ground** cell bit, frozen at game start. Paths, queues, scenery and other rides do not
+   block a pylon in the validator. Another coaster's pylon in the cell does (validator test 7).
+   A failed validation does **not** refuse the edit: it marks the node and its predecessor with
+   flag `0x4000` (shown as invalid). The bit clears when validation passes.
+5. **Closure and completion (replaces COAST-005).** Placing a pylon on the cell that holds the
+   open start node of the chain closes the circuit: no node is added, the two end nodes are
+   linked, and "circuit open" clears. Sampling then wraps from the last knot to the first knot of
+   the second node. Completion appends the station end node(s), one with `bVisibleEndPylon` and
+   two otherwise, at the station mesh tags, then rebuilds and rates. A coaster runs only when
+   complete and closed.
+6. **Money (replaces COAST-006).** When money is on: placing a pylon charges `trunc(cost)` at
+   once, with fCostPerUnit included. Moving a node, or releasing the height slider, refunds
+   `trunc` of the float cost stored at pick-up and charges `ceil` of the new cost, for the node
+   and, on a complete track, the next node. Nothing changes hands if the node returns to its own
+   cell. Cancelling a drag restores the node at no cost. Deleting pylons refunds nothing. The
+   build-cost display is `Σ ceil(new) − ceil(old)`; the coaster code never debits it (16).
+   There is no undo stack.
+7. **Motion (replaces COAST-009, part of COAST-012).** Per frame, with the DET-I delta: each
+   train advances in hops of half a sample (13.6 positions, linear between samples). One hop:
+   `v' = mod·(PerHeight·(y(s) − y(s+½))) + v`, averaged over cars. Apply friction on flag-8
+   samples. The floor is `fWinchSpeed·P` on winch (0x800) sections, otherwise `fMinSpeed·P`,
+   where `P` is the power factor (0 or 1). Then cap at `ctl+52`. A hop takes
+   `d / ((v + v')/2)` seconds, where `d` is the reference car's distance to its half-sample-ahead
+   point. The last hop of a frame is partial and interpolates the speed. After every hop,
+   `v ×= 0.95` if `v < 2`, and `v = 0` if `v < 0.01`. Station braking (17.3), for trains without
+   flag 0x40, blends toward the floor with `x⁴`.
+8. **Stop (part of COAST-012).** Switching the ride to mode 64 (COAST 4 argument 2) sets `P = 0`.
+   Both floors vanish and the trains coast and decay to a stop. Leaving mode 64 sets `P = 1`.
+9. **Speed setting.** `ctl+52 = MaxAtMin·(1 − s/100) + MaxAtMax·(s/100)`, default `s = 60`
+   (110 with the code defaults).
+
 ## 10. What stays unknown (APPROX register for COAST-I)
 
 | Id | Unknown | COAST-I default |
@@ -424,6 +488,30 @@ ride settings (speed setting → `ctl+52`), trains (position along the track, sp
 | COAST-013 | Sickness consumer for guests | Not used |
 | COAST-014 | Windows equivalence | All values are Mac-derived; PC data matches inputs only |
 
+### 10.1 Register after COAST-R2
+
+| Id | Status after COAST-R2 | COAST-I action |
+| --- | --- | --- |
+| COAST-001 | **Resolved** (13.3–13.7): Hermite/Bézier knots, chord × fCurviness tangents, 0.7 height weight, spacing 3.0, 0.05 walk | Replace the Catmull-Rom APPROX with 9.7 items 1–2; keep only COAST-015 as APPROX |
+| COAST-002 | **Resolved, bounded**: slope, loop deviance and loop height difference are never read. Rotation deviance is the rotate slider range | Remove: do not enforce |
+| COAST-003 | **Resolved**: level no-ground bit frozen at game start; other coasters' pylons block | Replace the occupancy APPROX. Residual UI checks under COAST-016 |
+| COAST-004 | Unchanged (collision points not traced) | Keep APPROX |
+| COAST-005 | **Resolved** (15) except the trigger of the completion click (COAST-016) | Replace with 9.7 item 5 |
+| COAST-006 | **Resolved** (16) | Replace with 9.7 item 6 |
+| COAST-007 | Unchanged | Keep |
+| COAST-008 | Unchanged | Keep |
+| COAST-009 | **Resolved** (17) | Replace with 9.7 item 7 |
+| COAST-010 | **Resolved** (13.8). Correction: flag 0x8 is the suspended swing, not auto-banking | Replace with 9.7 item 3; swing stays APPROX (COAST-018) |
+| COAST-011 | Unresolved (18) | Keep the front-car APPROX |
+| COAST-012 | **Partly resolved**: stop = power factor 0 (17.4). Breakdown effect on moving trains not traced | Replace the stop part with 9.7 item 8 |
+| COAST-013 | Unchanged | Keep |
+| COAST-014 | Unchanged | Keep |
+| COAST-015 | **New**: pylon mesh track tags (knot positions, axes, count per pylon) and the mapping from loft, rotate, incline and bank parameters to tag frames | Knot = node position, axis = node forward tangent, roll = node bank |
+| COAST-016 | **New**: cell action 129 in the build click (`0x73a3c`) decides between completing and adding a pylon; its semantics (and any UI-level occupancy check) live in the generic tool engine `0x80c50` | Complete when the click is on the station's entry cell (APPROX) |
+| COAST-017 | **New**: roll on pylon-less non-loop nodes (second rail offset `(−sin a, 0, −cos a)` from node +224) is not bounded | Roll 0 there |
+| COAST-018 | **New**: suspended swing formula (13.8) located but not restated | Bank from lateral force (old COAST-010 APPROX), suspended coasters only |
+| COAST-019 | **New**: closing-pair rule. The sampler stops after the first sample on the closing pair, and the final count may gain one | Emit samples on the closing pair up to the first knot of the second node |
+
 ## 11. Witness and tests
 
 `tools/ppc-analysis/lanes/coast/coast_evidence.py` pins 21 code-range digests, 171
@@ -440,3 +528,340 @@ weight 1.7, rating clamp 100) and PC catalog checks (12/4/4 track types, Chac At
 loop-capable set). A source-mutation check changed five pinned operands in the witness (15000,
 offset 156 in the validator, 1.7, offset 156 in the pylon loader, the final `fmadds` registers).
 Each one failed the suite.
+
+### 11.1 COAST-R2 witness
+
+```sh
+python3 -I tools/ppc-analysis/lanes/coast/coast_geometry_evidence.py /path/to/mac-feral/bin
+```
+
+`tools/ppc-analysis/lanes/coast/coast_geometry_evidence.py` pins 34 code-range digests, 97
+decoded D-form operands, 41 call targets, 3 import glues (`sin`, `atan2`, `__fpclassifyf`), 12
+mask shapes, 34 TOC constants, 3 relocation-checked TOC pointers (`0x66f78` snapshot,
+`0x1577c0` sine table, `0x66f74` live map) and 6 bounded whole-code scans. It also checks that the
+delete, remove, cancel, close and end-node blocks make no money call. The pure functions restate
+13–17 and 16 (pricing).
+
+`test_coast_geometry_evidence.py` (32 cases): constants linked to the decoded TOC values and
+immediates, the sine table, Bézier endpoints and Bernstein form, knot control collinearity and
+chord scaling, the 0.7 chord weight, node tangent cases, the loop factor, turn sign and bank
+scaling, the speed estimate, the sampler (uniform 3.0 on a straight; ≤ 3.0 chords and ordered
+parameters on a curve), the speed cap, flat-track `v·dt`, the hop step, the decay to a stop,
+station braking, pricing (truncated place, ceil/trunc move, same-cell no-op), node world
+position, synthetic decoder checks, and identified-binary mutations: spacing constant, 0.05
+operand, snapshot → live map pointer, a credit call inserted into the delete block, and the
+0.95 decay constant.
+
+A source-mutation check changed seven pinned items in a copy of the witness: the 0.05 operand,
+the 0.7 constant, the spacing, the credit-call scan, the decay, the snapshot operand and the
+bank divisor. Each one failed the suite.
+
+## 12. COAST-R2: method and scope
+
+COAST-R2 traces the items section 10 left open, with the same conventions and the same
+identified Mac binary. The witness is `tools/ppc-analysis/lanes/coast/coast_geometry_evidence.py`
+(11.1). Each claim names its operand or call sites. "Bounded" claims rest on the whole-code scans
+listed in the witness, which see only D-form immediates. Indexed or computed access is not
+excluded. The pure functions in the witness restate the arithmetic in single precision. They are
+bit-faithful for the Bézier evaluator, the sine table and the sampler's emission step. Elsewhere
+they follow the same operation order but are checked only to small tolerances.
+
+Rebuild order (`0x449f8`, called from the tick callback `0x3864c` and from the save loaders):
+`0x33398` node layout, tangents, angles, auto-bank, pylon animation and knots; `0x445bc` knot
+links; `0x337b4` knot angles; `0x44ff4` sampling; `0x3fc18` rating pass; then `0x3c600`,
+`0x3da2c` and the track mesh (`0x43bb8`, `0x42590`/`0x43398`, `0x426a0`).
+
+## 13. Track geometry (high unless stated)
+
+### 13.1 Nodes and knots
+
+A node is one placed pylon or one pylon-less node (descriptor flag bit 0, for example the station
+end nodes). Each node owns **knots** through node `+144 → {count, A[], B[]}` (88-byte records).
+
+- Pylon-less node (`0x3619c..0x361f4`): one knot, and `A` **aliases the node at +12**. Knot +52,
+  +64 and +76 are node +64 (backward control), +76 (position) and +88 (forward control).
+- Pylon node (`0x34078`): `count` = pylon control +60. The knots are the track **tags** of the
+  pylon mesh, looked up through `0x19b298`. After the pylon animation (`0x32014`, from loft `t`,
+  rotate = yaw/2π, incline, bank and loop-rotate), `0x32f80` sets knot +64 to the tag position
+  and the second-rail knot `B +64 = A +64 + 2 · tag axis(+16)`. The tag table builder and the tag
+  data in the pylon meshes are not traced (COAST-015).
+- `B[]` is a second rail that gives the roll (13.7). On pylon-less nodes,
+  `B = A + (−sin a, 0, −cos a)` with `a` = node +224, and `(0, 1, 0)` on loop nodes (flag 0x40).
+  The resulting roll on non-loop pylon-less nodes is not bounded (COAST-017).
+
+### 13.2 Node position (`0x33398`)
+
+The descriptor stores `+28 = 10·x`, `+36 = 10·y` and `+32` = terrain height (`0x339d8..0x33a3c`).
+The node is at the **cell centre**: `X = 10x + 5`, `Z = 10y + 5` (5.0 from the TOC, `0x333ec`).
+At stack level 0, `Y = ground + h(t)`. Stacked, `Y = Y_below + pylon(+196) + h(t)`, where `h(t)`
+is `0x369bc` (section 4.1). Nodes whose pylon has `+44 == −1`, and nodes with flag 0x2000, keep
+their position.
+
+### 13.3 Node tangents (`0x31450`)
+
+With `a = prev − P`, `b = next − P`, unit `â`, `b̂`, `C = fCurviness` (definition +8) and
+`SD = fStraightDivisor` (+12):
+
+- **Ends.** No previous node: `T+ = b/SD`, `T− = −b/SD`. No next node: `T− = a/SD`, `T+ = −a/SD`.
+  For an end node with flag 0x80 whose previous link folds back, the end case is reversed. Node
+  flag 0x80000 drops the previous link and 0x40000 the next. Flag **0x100000** makes the next
+  node the **second node of the track** (`0x314e0`); this is the closed circuit.
+- **Straight.** The straight case applies when `â·b̂ <` the pylon's `fPylonStraightDotThreshold`
+  (+176; StdPylon −0.999, LoopPylon −0.8), or `< −0.999` without a pylon. On a non-loop pylon,
+  `T− = |a|·½(â − b̂)/SD` and `T+ = |b|·½(b̂ − â)/SD`; flag 0x80 reverses both. Otherwise
+  `T− = a/SD`, `T+ = b/SD`.
+- **Folded back** (`â·b̂ > 0.999`): the same straight branch.
+- **Curve.** On a loop pylon (flag 0x4000), `T− = (â + b̂)·|a|·C` and `T+ = −(â + b̂)·|b|·C`: the
+  track leaves the loop pylon away from both neighbours. Otherwise `n = a × b`, `ŝ = (â + b̂)/|…|`
+  and `t = ŝ × n̂` (in-plane, perpendicular to the bisector), giving `T− = t·|a|·C` and
+  `T+ = −t·|b|·C`. On suspended coasters (definition 0x8), a loop node with `n.y < 0` gets flag
+  0x10000000 (inverted).
+- **Loop pylon next to another loop pylon** (straight and end branches): the tangent Y components
+  are zeroed.
+
+Stored: node +40 = `T−`, +52 = `T+`, +64 = `P + T−/3`, +88 = `P + T+/3`. Node +148 is the
+**signed XZ turn angle** `±acos(clamp(â_xz·b̂_xz))`, negative when `â.z·b̂.x − â.x·b̂.z < 0`.
+`0x420f0` turns `T+` into the node yaw (+212, and +224 when node flag 1) and pitch (+220). Those
+drive the pylon rotate and incline animation. **Only the direction of `T+` survives into the track**,
+because 13.4 rescales every knot.
+
+### 13.4 Knot tangents (`0x32cf0`, `0x32990`, `0x32298`)
+
+For each knot (both rails), `0x32990` computes the chords to the previous and next knot,
+crossing node boundaries, as `√(dx² + (0.7·dy)² + dz²)` (constant 0.7 at `0x32a34`). Without a
+neighbour the chord is 1.0. The direction `u` is the mesh tag axis (+32..+40) on a pylon,
+`(0, 1, 0)` on a loop node (`(0, −1, 0)` with flag 0x80), and otherwise the normalised node `T+`.
+Then (`0x32298`):
+
+- **Plain knot:** `T− = −u·C·chord−/|u|`, `T+ = u·C·chord+/|u|`.
+- **Loop-pylon knot:** `K = (C(1 − x²) + 2.1x²)(1 − w) + 2.1w`. Here `x = clamp(|h·r|, 0, 1)` for
+  the unit horizontal direction `h` to the next node (the previous one on flag-0x80 nodes) and the
+  yaw axis `r = (sin y, ·, cos y)` of the rotate parameter. `w = (1 + cos 2πu)/2` with
+  `u = clamp(2·fmod(loopRotate, 0.5), 0, 1)` (node +248). `K` scales the side toward a loop
+  neighbour. A side toward a plain neighbour, or with no neighbour, uses **1.7**.
+- Controls: knot +52 = `P + T−/3`, +76 = `P + T+/3`.
+
+So every segment is a cubic Hermite curve whose tangent length is `fCurviness` (1.25 by default)
+times the 0.7-weighted chord. The control arm is about 0.42 chord.
+
+### 13.5 Segment curve (`0x41b00`)
+
+`Q(t) = A64 + t·(3A76 − 3A64) + t²·(3A64 − 6A76 + 3B52) + t³·(−A64 + 3A76 − 3B52 + B64)`. That is
+the cubic Bézier with `P0 = A +64`, `P1 = A +76`, `P2 = B +52`, `P3 = B +64`, evaluated with the
+fmadds order of the witness `bezier()`. `0x41c0c` is its derivative.
+
+### 13.6 Sampling (`0x44ff4`)
+
+- **Spacing**: controller +172 = **3.0** world units. The only controller write is the
+  constructor (`0x38ab8`/`0x38abc`; bounded scan `module_stfs_172`). COASTERSMOOTHNESS does not
+  feed it.
+- The cursor walks knot pairs: `A_i → A_{i+1}` within a node, then the last knot to the next
+  node's first knot. Starting at `t = 0` (sample 0 = first knot), `t` advances by 0.05 and the
+  chord lengths `|Q(t) − previous|` are summed. When the sum reaches 3.0, the sample is placed
+  **on the current chord** at fraction `a = (3 − sum_before)/d`, and `t_s = t_prev(1 − a) + t·a`.
+  The sum restarts from the sample, and the next `t` is the next multiple of 0.05 after `t_s`.
+  The polyline length between two samples is exactly 3.0 (witness test).
+- Sample record: +4..+12 position, +16 yaw, +20 pitch, +24 roll (13.7), +44/+48 the A and B
+  knots, +52 `t`. Rating flags and speed are added by `0x3fc18`. The capacity estimate is
+  `Σ trunc(3·chord/3.0 + 1)`, grown by ×1.1.
+- **Closed circuit**: when the cursor passes the last node, the closing pair runs from the last
+  knot to the first knot of the second node (`0x44ea4`, via controller +84 → +100). The sampler
+  stops after the **first** sample on that pair, and `t` may run past 1. The last sample is
+  duplicated into slot `n`, and `n` may grow by one (`0x45858..0x45918`). COAST-019 keeps these
+  details APPROX.
+
+### 13.7 Orientation and the sine table
+
+- `0x41e24`: yaw = `atan2(T.x, T.z)` of the derivative. `T` is rotated by −yaw, then
+  pitch = `atan2(−T.y', T.z')`.
+- `0x41f80`: the second-rail point `B(t)` minus the sample position is rotated by −yaw, then
+  −pitch, and roll = `atan2(−x', y')`.
+- Rotations use a **4096-entry sine table** (`0xa3cc8`, called from `0x4b72c`, size `0x4b720`):
+  `T[k] = sin(f32(k/4096)·2π)`, `sin a = T[trunc(a·4096/2π) & 4095]`, and
+  `cos a = T[trunc((π/2 + a)·4096/2π) & 4095]`. `atan2` is the library import.
+
+### 13.8 Banking
+
+- **Auto-bank** (`0x3f548`, from `0x33630`): when definition flag **0x10** is set, node flag 0x4 is
+  set and the node has a next node,
+  `bank = v·(±π − θ) / def(+16) / (|prev − P| + |next − P|)`, with `+π` when `θ ≥ 0` and 0 when
+  `θ = 0`. Definition +16 defaults to **4.0** (`0x2d2d0`). No code reads settings offset 15060,
+  so `fAutoBankDivisor` is dead (scan `any_15060`). The speed `v` is a running estimate over the
+  nodes: `v = max(mod·(PerHeight·(y_node − y_next)) + v, fMinSpeed)` (`0x3f36c`, uphill modifier
+  when the next node is higher), starting at 0 and updated after each banked node. The bank is
+  stored in node +216. It becomes pylon animation parameter +244 = `frac(bank/2π + ½) − ½`, which
+  tilts the tag axis and so the roll.
+- **Flags**: the loader sets 0x10 when `bNoAutoBanking == 0`. `bIsSuspendedCoaster` sets 0x8
+  **and clears 0x10** (`0x30248`), so suspended coasters never auto-bank.
+- **Suspended swing** (`0x400d8..0x40438`, definition flag 0x8, after the rating loop): per sample,
+  the force vector plus gravity (+96..+104) is rotated into the sample frame. A target angle comes
+  from `atan2`, and the roll moves toward it at rate `min(|F + g|·fForceMultiplier, 1)`. Over the
+  braking zone (17.3) it fades linearly to 0. COAST-R (6.2 step 8) called this auto-banking; that
+  was wrong. The exact arithmetic is located, not restated (COAST-018).
+
+### 13.9 Loops
+
+A loop has no special geometry code. LoopPylons carry several mesh tags along the loop, and their
+knots use the loop tangent factor `K` (13.4) and the bisector tangent (13.3). Tags adjacent to plain
+track use 1.7. The loop-rotate slider (`0x462f8`) edits node +248 over `[0.15, 0.85]`, or
+`[−0.35, 0.35]` on flag-0x80 nodes, in steps of 0.01. Loop geometry is therefore data
+(LoopPylon tags) plus these factors (COAST-015).
+
+## 14. Build checks (high, bounded where stated)
+
+### 14.1 Slope and deviance are not checked
+
+- `fMaxHeightDiffPerGSquareDist` (pylon +112): no float load at displacement 112 in the coaster
+  module (scan `module_lfs_112`). The four loads elsewhere (`0x9469c`, `0xa2f0c`, `0xa3014`,
+  `0xa31a0`) are camera-object and matrix code.
+- `fMaxLoopRotnAngleDeviance` (+152): module loads at +152 are node records in `0x3d1b8` only
+  (scan `module_lfs_152`). `fMaxLoopHeightDifference` (+172): the module's +172 accesses are
+  controller spacing reads, and the only stores are the defaults and the loader.
+- `fMaxRotnAngleDeviance` (+148) is read only by the rotate slider `0x46508`: range
+  `[yaw − dev, yaw + dev]`, step 0.02. Bank and pitch sliders (`0x46718`) span ±3.14149, step 0.02.
+- Height stays clamped, not rejected (section 4.1).
+
+### 14.2 Blocked cells
+
+The validator's bit 0 test (`0x36cd0..0x36ce8`) reads the **map snapshot** `*0x66f78`, not the
+live map `*0x66f74`. The snapshot is a copy of the level map record (`0x4db9c`, at level load). It
+is refreshed from the live map once, at game start (`0x11b478 → 0x54ee0 → 0x4dcb8`), and freed
+with the level. Only six instructions load that pointer (scan `snapshot_pointer_loads`): the
+validator, create, free, the refresh, and two tile-restore paths. Bit 0 of the cell flags is the
+**no-ground** bit: the terrain height query returns FLT_MAX for it (`0x5052c..0x50538`). Tile
+painting sets it together with 0x100 (tile set 0 index 8, `0x99e18`). So the blocked set is the
+level's no-ground cells as they stood at game start. Paths, queues, scenery and rides placed in
+play do not set it, and the validator consults no other occupancy. The exception is test 7:
+another coaster's pylon in the cell, found by walking every coaster definition's descriptor list
+(`0x56bac`, desc +8 = cell index), rejects. Whether the generic tool layer (cell action 129,
+COAST-016) adds occupancy checks is unresolved.
+
+### 14.3 Failed validation marks, it does not refuse
+
+The build tick (`0x47e4c`) calls the validator on the cursor cell. On failure it sets node flag
+**0x4000** on the moved node and its predecessor (`0x48334..0x48368`); on success it clears it
+(`0x482f8..0x4832c`). The node stays where it is.
+
+## 15. Circuit closure and completion (high for the operations, medium for the UI meaning)
+
+- **Add** (`0x375c4`; from the build click via `0x45f5c` with `r5 = 0`, from save loading with
+  `r5 = 1`): if the clicked cell holds a descriptor of this coaster, controller +60 bit 1
+  ("circuit open") is set, and one of the stacked nodes on that cell is the chain's open start
+  (track +100), the call **closes the circuit** (`0x470c4`) instead of adding a node. Closing
+  clears 0x40000 on the last node and 0x80000/0x20000 on the open start node, makes the end nodes
+  adjacent (track +96 = track +88), clears controller +60 bit 1, and calls the state change
+  `0x38250(…, 2)` and `0x369d0`. Otherwise a node is created (`0x35fdc`).
+- **Complete** (`0x37ef0`): sets controller +60 bit 0 and appends the station end node(s)
+  (`0x37cc8`). That is one node with `bVisibleEndPylon` (definition 0x20), otherwise two, at the
+  station mesh tag positions, pylon-less. Of two, the first gets node flags 0x144 (loop flag 0x40
+  included), so its second rail is vertical. It then sets track
+  flags 1 and 0x1000 (rebuild, re-rate, recount trains). The build click calls it when the
+  generic cell action 129 (`0x84ea4`) returns 0 for the clicked cell, and adds a pylon otherwise
+  (`0x73a3c..0x73a9c`). What action 129 tests is in the tool engine `0x80c50` and is unresolved
+  (COAST-016).
+- **Runnable**: `0x45da4` requires bit 0 set and bit 1 clear (section 4.2), i.e. complete and
+  closed.
+- **Reopen**: deleting a range of nodes (`0x47170`) marks the cut ends open (0x50000 / 0xA0000).
+  Under the condition at `0x47508` it clears controller +60 bits 0 and 1 and calls `0x37e8c`.
+
+## 16. Money, refunds and undo (high)
+
+The debit is `0xcbfdc(bank, n)` (bank +12 −= n, plus statistics) and the credit is `0xcbf50`. All
+coaster charges are skipped when the global flag at `0x11ef3c +36` is nonzero ("money off"; its
+UI meaning is unresolved). Where `cost()` appears below, it is `0x4b168` (section 4.4), as a float.
+
+| Action | Code | Money |
+| --- | --- | --- |
+| Place a pylon (UI) | `0x37888..0x378c0` | debit `trunc(cost(node, unit charged))` at once (`0x1c3fbc` truncates, negative → 0) |
+| Cursor preview while dragging | `0x483ac` | accumulator `0x84ac4 += ceil(new) − ceil(old)`, used for the cost display and the affordability check of the tool (`0x6f664`); a negative delta is added as `delta − 0x0EEEEEEE` (meaning unresolved) |
+| Pick up a node | `0x4a1fc` | stores `cost(node)` and `cost(next)` as floats (`0x4a404`, `0x4a420`) |
+| Drop on another cell | `0x4a43c` | credit `trunc(stored node)` [+ `trunc(stored next)`], debit `ceil(cost(node))` [+ `ceil(cost(next))`]; the bracketed terms only on a complete track |
+| Drop on the same cell | `0x4a5a8..0x4a5bc` | nothing |
+| Release the height slider | `0x45fc4` | credit `trunc(stored)`, debit `ceil(new cost)` |
+| Cancel a drag | `0x4a7e4` | node restored at the pick-up cell, no money |
+| Delete pylons / reopen | `0x47170`, `0x492d8`, `0x37e8c` | **none**: the module's credit calls are exactly the four above (scan `module_credit_calls`), and the delete blocks call no money routine |
+
+There is **no undo stack**. Cancel-drag is the only revert. Because the refund truncates and the
+charge rounds up, each paid move costs up to one extra unit per node. Whole-ride demolition goes
+through the generic ride code. No coaster field accumulates the track spend, so a track refund
+there is not possible without one (bounded by these sites).
+
+## 17. Train motion per frame (`0x40650`, high for the arithmetic)
+
+### 17.1 Frame
+
+`dt = (now − last)/1000` s from the cached clock `0xa3e08` (DET-I: 31 ms per frame). Every train
+gets the budget `dt` (train +124). Car positions are sample positions `s = train(+116) +
+car(+56)/3.0`, wrapped into `[0, n)`, and linear between samples. Trains are processed from a
+queue ordered by their remaining budget.
+
+### 17.2 Hop
+
+For the queue head, per car: the point half a sample ahead is evaluated. The car's candidate is
+`v_c = max(mod·(PerHeight·(y(s) − y(s + ½))) + v, floor)`, with `mod` uphill or downhill by the
+two heights. The floor is `W = fWinchSpeed·P` (halved for trains flagged 0x80 and 0x20) when the
+sample's section has winch flag 0x800, otherwise `M = fMinSpeed·P`. `P` is the power factor at
+controller +44. The new speed is the car average. Then:
+
+1. Braking (17.3) if any car is past `ctl+308` and the train does **not** have flag 0x40. Otherwise friction:
+   `×fFrictionMultiplier` on a flag-8 sample.
+2. `max(·, W)` if any car was on a winch section (train flag 8), else `max(·, M)`.
+3. `min(·, ctl+52)`.
+4. Hop time `τ = d / ((v + v')/2)`, where `d` is the distance from the reference car (train +44)
+   to its half-sample point (`0x4316c`). If `τ <` the remaining budget: `v = v'`, the budget
+   drops by τ, `s += ½`, and the train is re-queued. Otherwise, with `α = budget/τ`:
+   `v_end = (1 − α)v + αv'`, `s = s_saved + ½·((v + v_end)/2·budget/d)`, `v = min(v_end, cap)`,
+   and the train leaves the queue.
+5. After every hop: `v ×= 0.95` if `v < 2.0`, and `v = 0` if `v < 0.01`. Then the train extents
+   (+32/+36) are updated, `0x40574` runs, and `s` wraps by `fmod(s, n)`.
+
+Accelerations are per hop, i.e. per distance (half a sample is 1.5 units), not per second. Time
+enters only through the hop count.
+
+### 17.3 Station braking
+
+`ctl+308 = max((n − 1) − v_last/3.0, 0)` samples (`0x40070..0x400d4`), where `v_last` is the rated
+speed at the last node's sample (about one second of travel before the end). For a train without
+flag 0x40, `x = (front − ctl+308)/(n − ctl+308)`, with `x = 1` outside `[0, 1]`, and
+`v = v(1 − x⁴) + W·x⁴`. A train's flag 0x40 clears while it is between `ctl+252` and `ctl+308`. Leaving mode 64 clears it on every train.
+
+### 17.4 Power factor and stopping (`0x38250`)
+
+Changing the ride mode from 16 or 32 to **64** sets `P = 0`. Changing from 64 to 16 or 32 sets
+`P = 1` and flags every train 0x80. The state step 1 → 2 in mode 64 also sets `P = 1`. COAST 4
+maps its arguments 0/1/2 to modes 16/32/64 (PPC-rides). With `P = 0` both floors are 0, so trains
+lose speed uphill, decay by 0.95 per hop below 2.0, and stop below 0.01. What a breakdown does to
+moving trains is not traced (COAST-012).
+
+### 17.5 Speed setting
+
+`0x3fb68`: `ctl+52 = fMaxSpeedAtMinSetting·(1 − s/100) + fMaxSpeedAtMaxSetting·(s/100)` for the
+integer setting `s` (controller +48). The constructor sets `s = 60` (`0x38b2c`). COAST 8 and
+`0xb2838` change it.
+
+## 18. Ride camera (unresolved, with the reason)
+
+No coaster-module function is called from camera code (bounded: direct `bl` calls only). The module's external callers
+(`0x2d000..0x4bd64`) are the tick and render callbacks `0x3864c`/`0x387e0`, the sound-channel
+setup `0x38bc0 → 0x3c21c`, save/load (`0x394b8`, `0x39f98`), the status predicates
+`0x45dfc`/`0x45e58` (ride info text `0x138a1c`), the guest predicate `0x45eac`, the COAST bridge,
+and UI entries. The graphics options live in the settings object `0x550a0` (descriptor table
+`0x393b8`). `0x4c2bc` reads the four-level view distance at +76 and applies it as far plane and
+fog (200/325/450/700 with fog 50–60/100–110/135–150/230–250). By descriptor order, this is
+FIRSTPERSONVIEWDISTANCE or its neighbour (medium). Either way it is a render distance, not a
+camera path. The camera virtual methods `0x93d08`/`0x94474` (jittered target/position objects) are the
+next lead. Evidence that would settle it: trace those methods for a "follow object" mode fed by
+car +72..+80, or capture the camera matrix during an original ride view. COAST-011 stays APPROX.
+
+## 19. Corrections to COAST-R
+
+- 6.2 step 8: definition flag 0x8 runs the **suspended swing**, not auto-banking (13.8).
+  Auto-banking happens at the node level, before sampling.
+- 3.3: sample +16/+20 are **yaw/pitch angles**, not "direction terms".
+- 4.2: "Complete … how the game joins the last node back to the station is unresolved". Closure
+  and completion are now separate operations (15).
+- 4.4: the coaster code never debits the build-cost accumulator; its charges are the direct
+  calls in 16. The generic object-placement path (`0x72bb4`, which places the station) debits
+  the accumulator and resets it per placement (`0x6f628`/`0x6f640`). Whether coaster deltas can
+  leak into that charge is not bounded.
+- 10, COAST-001: the old default spacing of 1 world unit is wrong; the spacing is 3.0.

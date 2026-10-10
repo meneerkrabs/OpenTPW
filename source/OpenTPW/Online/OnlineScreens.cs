@@ -1,5 +1,6 @@
 using OpenTPW.Online;
 using OpenTPW.Online.Api;
+using OpenTPW.Online.Client;
 using OpenTPW.Online.Packages;
 using OpenTPW.UI.Original;
 
@@ -13,6 +14,8 @@ public sealed class OnlineHost
 	public Func<Level?> Level { get; init; } = () => null;
 	/// <summary>Starts a read-only visit of a downloaded or imported park.</summary>
 	public Action<ParkVisitInfo>? Visit { get; init; }
+	/// <summary>The online globe behind the Online World screen; null where it is not shown (in a park).</summary>
+	public Func<GlobeScene?> Globe { get; init; } = () => null;
 }
 
 /// <summary>
@@ -52,11 +55,83 @@ public sealed class OnlineScreens
 
 	// ---- Online world (hub) ------------------------------------------------------------------
 
+	/// <summary>
+	/// The Online World as the original lays it out (Mac UI table data:0x523f0): the globe fills the screen, the
+	/// worldlob panel at the bottom left holds Find Parks, back to your own lobby, zoom and the four rotate arrows, and
+	/// five chat satellites sit around the edges. OpenTPW adds the login and its own online menu at the top right.
+	/// </summary>
+	// [DATA:Mac UI table data:0x523f0] root 90111 worldlob (9,620,510,1531); buttons b_findprk 90115 (49,731,202,885) help 435, b_bck2lob 90112 (49,898,202,1051) help 431, b_zoom 90118 (41,1070,143,1173) help 428/429, b_lobup 90117 (182,1077,336,1231) help 426, b_lobleft 90114 (61,1201,214,1355) help 424, b_lobright 90116 (307,1201,460,1355) help 425, b_lobdown 90113 (184,1327,337,1481) help 427; i_sat 90120–90124 help 423
 	public void ShowWorld()
 	{
-		var screen = new UiScreen( "onlineWorld" );
+		var screen = new OnlineGlobeScreen( host.Globe );
+		screen.Add( new UiModelImage { Id = "worldPanel", Model = "worldlob", Bounds = new UiRect( 9, 620, 501, 911 ), Anchor = UiAnchor.BottomLeft } );
+		// [APPROX:ONLINE-011] f_wlobbg as the button background in the panel's second rectangle (33,1057,480,1505), like f_lobbutbg in the island lobby — evidence needed: the table field that names the panel's background model
+		screen.Add( new UiModelImage { Id = "worldButtons", Model = "f_wlobbg", Bounds = new UiRect( 33, 1057, 447, 448 ), Anchor = UiAnchor.BottomLeft } );
+		UiButton PanelButton( string id, string model, float x0, float y0, float x1, float y1, int help, Action clicked ) => screen.Add( new UiButton
+		{
+			Id = id, Model = model, Help = strings.Help( help ), Clicked = clicked,
+			Bounds = new UiRect( x0, y0, x1 - x0, y1 - y0 ), Anchor = UiAnchor.BottomLeft
+		} );
+		var find = PanelButton( "findParks", "b_findprk", 49, 731, 202, 885, 435, ShowFindParks );
+		PanelButton( "ownLobby", "b_bck2lob", 49, 898, 202, 1051, 431, stack.Pop );
+		var zoom = PanelButton( "zoom", "b_zoom", 41, 1070, 143, 1173, 428, GlobeCameraMode.ToggleZoom );
+		PanelButton( "rotateUp", "b_lobup", 182, 1077, 336, 1231, 426, () => GlobeCameraMode.Turn( 0, 1 ) );
+		PanelButton( "rotateLeft", "b_lobleft", 61, 1201, 214, 1355, 424, () => GlobeCameraMode.Turn( -1, 0 ) );
+		PanelButton( "rotateRight", "b_lobright", 307, 1201, 460, 1355, 425, () => GlobeCameraMode.Turn( 1, 0 ) );
+		PanelButton( "rotateDown", "b_lobdown", 184, 1327, 337, 1481, 427, () => GlobeCameraMode.Turn( 0, -1 ) );
+		// The chat satellites: chat-only parks around the globe; OpenTPW opens a chat room for each.
+		var satellites = new (float X0, float Y0, float X1, float Y1, UiAnchor Anchor)[]
+		{
+			(131, 139, 438, 446, UiAnchor.TopLeft), (484, -51, 791, 256, UiAnchor.TopLeft), (1690, 344, 1997, 651, UiAnchor.TopRight),
+			(1743, 620, 2050, 927, UiAnchor.Right), (1335, 1199, 1643, 1506, UiAnchor.BottomRight),
+		};
+		for ( var index = 0; index < satellites.Length; index++ )
+		{
+			var (x0, y0, x1, y1, anchor) = satellites[index];
+			var room = $"satellite{index + 1}";
+			var satellite = screen.Add( new UiButton { Id = room, Model = "i_sat", Help = strings.Help( 423 ), Bounds = new UiRect( x0, y0, x1 - x0, y1 - y0 ), Anchor = anchor,
+				Clicked = () => Guard( () => { Session.JoinRoom( room ); ShowChat(); } ) } );
+			screen.Updating += _ => satellite.Enabled = Session.IsLoggedIn && Session.Busy == 0;
+		}
+		// The hovered city's name and parks (the original's labels 0x16c11/0x16c12; their place is not decoded), else the title.
+		// [APPROX:ONLINE-010] city name and park count drawn at the top centre — evidence needed: the original city labels' layout
+		screen.Add( new UiLabel { Id = "city", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center, Bounds = new UiRect( 524, 40, 1000, 90 ), Anchor = UiAnchor.Top,
+			Text = () => screen.Hovered is { } city ? city.Name : OnlineStrings.Ui( OnlineStrings.OnlineWorld, "Online world" ) } );
+		screen.Add( new UiLabel { Id = "cityParks", Font = fonts => fonts.Small, Align = UiAlign.Center, Bounds = new UiRect( 524, 130, 1000, 60 ), Anchor = UiAnchor.Top,
+			Text = () => screen.Hovered is { } city ? OnlineStrings.Ui( OnlineStrings.CityParks, "Parks: " ) + city.Parks : "" } );
+		// [EXT:ONLINE-UI] the login and OpenTPW's own online menu (news, postcards, chat, import, account)
+		var login = screen.Add( new UiButton { Id = "login", Text = () => Session.IsLoggedIn ? OnlineStrings.Get( OnlineLabel.LogOut ) : OnlineStrings.Ui( OnlineStrings.OnlineLogin, "Online login" ),
+			Clicked = () => { if ( Session.IsLoggedIn ) Guard( () => { Session.Disconnect(); localStatus = ""; } ); else ShowLogin(); },
+			Bounds = new UiRect( 1560, 40, 440, 100 ), Anchor = UiAnchor.TopRight } );
+		var menu = screen.Add( new UiButton { Id = "menu", Text = () => OnlineStrings.Get( OnlineLabel.OnlineMenu ), Clicked = ShowMenu,
+			Bounds = new UiRect( 1560, 150, 440, 100 ), Anchor = UiAnchor.TopRight } );
+		screen.Add( new UiLabel { Id = "status", Wrap = true, Font = fonts => fonts.Small, Color = UiColors.Value, Align = UiAlign.Center,
+			Bounds = new UiRect( 574, 1400, 900, 100 ), Anchor = UiAnchor.Bottom, Text = () => localStatus.Length > 0 ? localStatus : Session.Status } );
+		OnlineClient? citiesFor = null;
+		screen.Updating += _ =>
+		{
+			find.Enabled = Session.IsLoggedIn && Session.Busy == 0;
+			login.Enabled = menu.Enabled = Session.Busy == 0;
+			zoom.Help = strings.Help( GlobeCameraMode.ZoomedIn ? 429 : 428 );
+			// Each server's cities once, as soon as one is chosen (no login needed).
+			if ( Session.Client is { } client && client != citiesFor && Session.Busy == 0 )
+			{
+				citiesFor = client;
+				Guard( Session.FetchCities );
+			}
+		};
+		screen.Back = stack.Pop;
+		Push( screen );
+	}
+
+	// ---- OpenTPW online menu -------------------------------------------------------------------
+
+	/// <summary>OpenTPW's online functions that have no place on the original globe screen.</summary>
+	public void ShowMenu()
+	{
+		var screen = new UiScreen( "onlineMenu" );
 		var window = UiDialogs.CenteredWindow( 1200, 1460 );
-		UiDialogs.AddWindow( screen, window, "w_big", () => OnlineStrings.Ui( OnlineStrings.OnlineWorld, "Online world" ) );
+		UiDialogs.AddWindow( screen, window, "w_big", () => OnlineStrings.Get( OnlineLabel.OnlineMenu ) );
 		var level = host.Level();
 		var entries = new List<(string Id, Func<string> Label, Action Clicked, Func<bool> Enabled)>
 		{

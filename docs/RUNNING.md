@@ -131,6 +131,18 @@ and a handyman), runs 30 simulated minutes as fast as possible and prints one pa
 invariant. Exit code: 1 when any row fails, 2 when no row fails but at least
 one is unresolved, 0 only when every row passes. M3 is accepted only at exit code 0. See [M3-GATE.md](M3-GATE.md).
 
+## Headless M4 attraction and script gate
+
+```sh
+dotnet source/OpenTPW/bin/Debug/net10.0/OpenTPW.dll --game-path '/path/to/Theme Park World' --m4-gate --report m4-gate.json
+```
+
+Classifies every catalog object of the four themes, takes each supported one through load, build, run,
+stop and delete in its own headless park (player build code, charged), checks that every opcode of the
+original scripts has a handler and a unit test, lists the effect hooks, and reports roller-coaster
+construction, the ride camera and ride assessment. Same exit codes as the M3 gate; `--theme`, `--window`
+and `--no-determinism` shorten a run. See [M4-GATE.md](M4-GATE.md).
+
 ## Read-only BF4 font inspection
 
 ```sh

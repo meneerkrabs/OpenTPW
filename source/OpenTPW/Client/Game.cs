@@ -165,6 +165,12 @@ internal static class Game
 			Environment.ExitCode = M3Gate.RunCommand( args );
 			return;
 		}
+		// Headless M4 attraction/script gate (docs/M4-GATE.md): no window, renderer or audio.
+		if ( args.Contains( "--m4-gate" ) )
+		{
+			Environment.ExitCode = M4Gate.RunCommand( args );
+			return;
+		}
 
 		var onlineFolders = OnlineFolders.FromEnvironment( GetOption( args, "--online-dir", "an online folder outside the original installation" ) );
 		if ( OnlineCommands.Run( args, Settings.Default.GamePath, onlineFolders, Console.WriteLine ) )

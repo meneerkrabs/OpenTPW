@@ -14,13 +14,13 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **186 unresolved unique APPROX IDs**, 205 APPROX occurrences, 86 EXT occurrences, 77 DATA occurrences and 147 BIN occurrences.
+Current inventory: **188 unresolved unique APPROX IDs**, 208 APPROX occurrences, 86 EXT occurrences, 81 DATA occurrences and 148 BIN occurrences.
 
-Of these, 180 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
+Of these, 182 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
 CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.
 
-Repeated source occurrences of one ID are allowed and listed separately. Duplicate register declarations, malformed/missing ID syntax, unregistered IDs and declarations without source annotations fail the check. Register declarations are read from the ten configured C# registers (current one-entry-per-line tuple/new syntax) and the explicit three-column Approximation register table in docs/ONLINE.md; these are bounded lexical readers, not general C# or Markdown parsers. New registers must be explicitly configured. The check also compares the complete regenerated document against this file.
+Repeated source occurrences of one ID are allowed and listed separately. Duplicate register declarations, malformed/missing ID syntax, unregistered IDs and declarations without source annotations fail the check. Register declarations are read from the eleven configured C# registers (current one-entry-per-line tuple/new syntax) and the explicit three-column Approximation register table in docs/ONLINE.md; these are bounded lexical readers, not general C# or Markdown parsers. New registers must be explicitly configured. The check also compares the complete regenerated document against this file.
 
 | Area | Unique unresolved IDs | Source occurrences |
 | --- | ---: | ---: |
@@ -28,8 +28,9 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | AUDIO | 5 | 5 |
 | COMPAT | 15 | 16 |
 | DET | 6 | 6 |
-| ECON | 35 | 35 |
+| ECON | 35 | 36 |
 | GATE | 3 | 4 |
+| GATEM4 | 2 | 2 |
 | ONLINE | 6 | 6 |
 | PATH | 13 | 14 |
 | QUEUE | 19 | 19 |
@@ -123,6 +124,8 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | GATE-001 | Original-fidelity area (scope unadjudicated) | an M3 in-game minute is 60 s of normal-speed simulation (3,600 fixed 60 Hz ticks), not a park-clock minute | See source annotation/runtime register | `source/OpenTPW/Client/M3GateApproximations.cs:11` |
 | GATE-004 | Original-fidelity area (scope unadjudicated) | the head-not-ready bound walks its N + 4 cells at OpenTPW's walk speed (WalkSpeedCellsPerSecond x 0.7, itself without an original source); the original has no 0.7 factor and walks as slowly as 0.12 cell per turn | See source annotation/runtime register | `source/OpenTPW/Client/M3GateApproximations.cs:12` |
 | GATE-005 | Original-fidelity area (scope unadjudicated) | the boarding bound W(p) and the head check W(0) = H + R + 1 assume a new head already stands at its slot (BOARD-plan H); the walk from the join cell into an empty or short queue (up to 24 cells) is not a term, so these checks are stricter than the derivation for small p | See source annotation/runtime register | `source/OpenTPW/Client/M3GateApproximations.cs:13` |
+| GATEM4-001 | Original-fidelity area (scope unadjudicated) | a working attraction admits a queued guest within W, releases a boarded guest within W, and after closing releases its riders within W; W = 5 simulated minutes | See source annotation/runtime register | `source/OpenTPW/Client/M4GateApproximations.cs:11` |
+| GATEM4-002 | Original-fidelity area (scope unadjudicated) | closing ends use: no guest boards a closed attraction | See source annotation/runtime register | `source/OpenTPW/Client/M4GateApproximations.cs:12` |
 | ONLINE-001 | OpenTPW online extension | Word filtering uses case-insensitive substring matches in space-padded text; entry spaces act as boundaries; allowed substrings exempt matches; hit characters except spaces become asterisks. | Original word-filter code or observed original filtering behavior; the source comment says the encrypted TP.ICD implementation is unreadable. | `docs/ONLINE.md:157` |
 | ONLINE-002 | OpenTPW online extension | A leading slash introduces a chat command; other text means say. | Original chat input syntax, which is not documented in the available data. | `docs/ONLINE.md:158` |
 | ONLINE-003 | OpenTPW online extension | Response strings 102 and 110 mean failure to add an ignored player and a buddy respectively, based on nearby string blocks. | Original response-code table. | `docs/ONLINE.md:159` |
@@ -297,6 +300,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-021 | `source/OpenTPW/Economy/ParkEconomy.cs:320` | [APPROX:ECON-021] a repair takes WorkDuration game hours (x DurationOfUpgrade for upgrades); mechanics are dispatched instantly — evidence needed: capture of repair duration per grade |
 | ECON-022 | `source/OpenTPW/Economy/ParkEconomy.cs:338` | [APPROX:ECON-022] a handyman removes one litter item per WorkDuration game minutes, park-wide — evidence needed: capture of cleaning speed |
 | ECON-023 | `source/OpenTPW/Economy/ParkEconomy.cs:228` | [APPROX:ECON-023] the ride update skips rides in states 1, 3 and 4 (+0x198) and rides with +0x64 == 0, and the breakdown check skips +0x2e bit 0; OpenTPW maps these only to "a mechanic is at work" — evidence needed: the names of those ride states and flags |
+| ECON-025 | `source/OpenTPW/Client/M4GateRun.cs:733` | [DATA:&lt;object&gt;.sam:Upgrades[0].CostOfUpgrade, ScrapValueYear1..4] [APPROX:ECON-025] scrap = catalogue cost × ScrapValueYearN % for the object's age (365 park-clock days a year) |
 | ECON-025 | `source/OpenTPW/Economy/ParkEconomy.cs:440` | [APPROX:ECON-025] scrap value basis = catalogue cost of all levels up to the current one; a scrap year is 365 park-clock days — evidence needed: capture of scrap value |
 | ECON-026 | `source/OpenTPW/Economy/ParkEconomy.cs:456` | [APPROX:ECON-026] park value = sum of scrap values — evidence needed: capture of the park value screen |
 | ECON-027 | `source/OpenTPW/Economy/ParkEconomy.cs:471` | [APPROX:ECON-027] the record sub-kinds 0–3 are rides, shops, sideshows and features, and every hired staff member counts — evidence needed: the record field at +0x4C behind sub-kind +0x7A8 and the staff byte +3 tested by FUN_100C4064 |
@@ -317,6 +321,8 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | GATE-004 | `source/OpenTPW/Client/M3Gate.cs:1179` | [APPROX:GATE-004] the walk term uses OpenTPW's walk speed x 0.7, not a traced original speed — evidence needed: a traced per-cell walk term for queue walking (WALK-plan section 11.7, WALK-I) |
 | GATE-005 | `source/OpenTPW/Client/M3Gate.cs:1270` | [APPROX:GATE-005] H assumes the new head already stands at its slot; the join-cell walk into an empty queue is not a term — evidence needed: a traced bound on that walk (WALK-plan section 11.7) |
 | GATE-005 | `source/OpenTPW/Client/M3Gate.cs:1338` | [APPROX:GATE-005] W(p) and W(0) leave out the join-cell walk of a guest joining an empty or short queue (see BoardingWaitBound) |
+| GATEM4-001 | `source/OpenTPW/Client/M4GateRun.cs:26` | [APPROX:GATEM4-001] a working attraction admits a queued guest within W, releases a boarded guest within W, and after closing releases its riders within W; W = 5 simulated minutes (18,000 fixed ticks) by default — evidence needed: a traced bound on one ride cycle (admission, ride, unload) per ride type |
+| GATEM4-002 | `source/OpenTPW/Client/M4GateRun.cs:693` | [APPROX:GATEM4-002] closing ends use: no guest boards a closed attraction — evidence needed: a trace of the host's admission test against VAR_RIDECLOSED (QUEUE-plan) and of what happens to riders and queue on closing |
 | ONLINE-001 | `source/OpenTPW.Online/Moderation/WordFilter.cs:86` | [APPROX:ONLINE-001] Matching rule — evidence needed: the original filter code is not |
 | ONLINE-002 | `source/OpenTPW.Online/Chat/ChatCommands.cs:180` | [APPROX:ONLINE-002] A line starting with '/' is a command, anything else is "say" — evidence |
 | ONLINE-003 | `source/OpenTPW.Online/Chat/ChatCommands.cs:34` | [APPROX:ONLINE-003] 102/110 are both "Could not add "; assigned to ignore/buddy by their position next to |
@@ -489,11 +495,11 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | autorun | `source/OpenTPW/Client/Autorun/AutorunLauncher.cs:5` | [EXT:autorun] It needs the original &lt;c&gt;Autorun&lt;/c&gt; folder (&lt;c&gt;general.tre&lt;/c&gt; and the language archives) in the game |
 | autorun | `source/OpenTPW/Client/Autorun/AutorunScreen.cs:14` | with the operating system's viewer and Exit quits. [EXT:autorun] (docs/AUTORUN.md) |
 | autorun | `source/OpenTPW/Client/Autorun/AutorunView.cs:19` | and clicks. [EXT:autorun] OpenTPW reproduces the CD's autorun dialog as an optional start screen. |
-| autorun | `source/OpenTPW/Client/Game.cs:212` | [EXT:autorun] The CD's launcher window comes first when its Autorun folder is available (docs/AUTORUN.md). |
+| autorun | `source/OpenTPW/Client/Game.cs:218` | [EXT:autorun] The CD's launcher window comes first when its Autorun folder is available (docs/AUTORUN.md). |
 | bonus-content | `source/OpenTPW/Client/Setup/BonusContent.cs:14` | [EXT:bonus-content] Setup-managed copy of the official bonus WADs; the original game only had the CD and install folders |
 | developer-prototype | `source/OpenTPW/Economy/ParkEconomyRuntime.cs:53` | [EXT:developer-prototype] the developer prototype ride is registered uncharged (no original counterpart) |
 | developer-prototype | `source/OpenTPW/World/Level.Objects.cs:402` | [EXT:developer-prototype] Sandbox Totem blocks cells whose centres lie within its 6×8-unit model box (no original counterpart) |
-| developer-prototype | `source/OpenTPW/World/Level.Objects.cs:483` | [EXT:developer-prototype] When the economy refuses the Totem (e.g. Research.Group 4 not yet researched), the developer prototype is registered uncharged (no original counterpart) |
+| developer-prototype | `source/OpenTPW/World/Level.Objects.cs:491` | [EXT:developer-prototype] When the economy refuses the Totem (e.g. Research.Group 4 not yet researched), the developer prototype is registered uncharged (no original counterpart) |
 | developer-prototype | `source/OpenTPW/World/PrototypeRide.cs:13` | [EXT:developer-prototype] Sandbox Totem bounds check uses a 5-unit radius around its centre (no original counterpart) |
 | display | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:439` | [EXT:display] window mode, upscaling, render scale and interface scale rows are OpenTPW extensions |
 | fit-button-text | `source/OpenTPW/UI/Original/UiTextFit.cs:10` | [EXT:fit-button-text] button labels shrink to fit; the original sized its fixed strings per language by hand |
@@ -544,6 +550,8 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | &lt;object&gt;.sam:Info.Name | `source/OpenTPW/World/Objects/ObjectCatalog.cs:59` | [DATA:&lt;object&gt;.sam:Info.Id] [DATA:&lt;object&gt;.sam:Info.Name] |
 | &lt;object&gt;.sam:Info.Shape | `source/OpenTPW/World/Objects/ObjectCatalog.cs:395` | [DATA:&lt;object&gt;.sam:Info.Shape] |
 | &lt;object&gt;.sam:Upgrades[0].CostOfUpgrade | `source/OpenTPW/World/Objects/ObjectCatalog.cs:133` | [DATA:&lt;object&gt;.sam:Upgrades[0].CostOfUpgrade] |
+| &lt;object&gt;.sam:Upgrades[0].CostOfUpgrade, ScrapValueYear1..4 | `source/OpenTPW/Client/M4GateRun.cs:733` | [DATA:&lt;object&gt;.sam:Upgrades[0].CostOfUpgrade, ScrapValueYear1..4] [APPROX:ECON-025] scrap = catalogue cost × ScrapValueYearN % for the object's age (365 park-clock days a year) |
+| &lt;object&gt;.sam:Upgrades[0].CostOfUpgrade, UsageInfo.GoldenTicketCost | `source/OpenTPW/Client/M4GateRun.cs:383` | [DATA:&lt;object&gt;.sam:Upgrades[0].CostOfUpgrade, UsageInfo.GoldenTicketCost] [BIN:STP-PPC:0x100DA874 object purchase] a first purchase of an object with a ticket cost pays tickets, not cash |
 | &lt;object&gt;.sam:Upgrades[0].InitCapacity | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:42` | [DATA:&lt;object&gt;.sam:Upgrades[0].InitCapacity] |
 | &lt;object&gt;.sam:Upgrades[0].InitDuration | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:44` | [DATA:&lt;object&gt;.sam:Upgrades[0].InitDuration] [APPROX:RIDES-016] written raw; unit per Info.DurationUnit unverified — evidence needed: binary conversion of InitDuration |
 | &lt;object&gt;.sam:UsageInfo.ProvidesRelief/HungerEffect/ThirstEffect/InitPricePerUse/ExcitementLevel, Info.AttractionValue | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:138` | [DATA:&lt;object&gt;.sam:UsageInfo.ProvidesRelief/HungerEffect/ThirstEffect/InitPricePerUse/ExcitementLevel, Info.AttractionValue] |
@@ -573,6 +581,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | Rides.sam:UsageInfo.ExcitementLevel | `source/OpenTPW/Hud/HudStubs.cs:147` | [DATA:Totem.sam:UsageInfo.ExcitementLevel] overrides [DATA:Rides.sam:UsageInfo.ExcitementLevel] |
 | Standard.sam:Costs.QueueCell | `source/OpenTPW/World/Level.Objects.cs:212` | [DATA:Standard.sam:Costs.QueueCell] charged per cell when written (ParkEconomy.TrySpendCell, PATH-plan §3.2) |
 | Standard.sam:FixedItemInfo lanes | `source/OpenTPW/Client/M3Gate.cs:314` | [DATA:levels/&lt;theme&gt;/terrain/base.map:InitialPath] [DATA:Standard.sam:FixedItemInfo lanes] |
+| Standard.sam:FixedItemInfo lanes | `source/OpenTPW/Client/M4GateRun.cs:257` | [DATA:levels/&lt;theme&gt;/terrain/base.map:InitialPath] [DATA:Standard.sam:FixedItemInfo lanes] |
 | THEMENAMES.str:entries 0..3 | `source/OpenTPW/World/Original/OriginalGateSign.cs:46` | [DATA:THEMENAMES.str:entries 0..3] Lost Kingdom, Halloween World, Wonder Land, Space Zone. |
 | TPWORLD.ISO and retail install | `source/OpenTPW.Files/Public/DataOverlay.cs:147` | &lt;summary&gt;[DATA:TPWORLD.ISO and retail install] global music and the four theme music banks.&lt;/summary&gt; |
 | TPWORLD.ISO and retail install:Data/Movies | `source/OpenTPW.Files/Public/DataOverlay.cs:144` | &lt;summary&gt;[DATA:TPWORLD.ISO and retail install:Data/Movies] the nine shipped movies.&lt;/summary&gt; |
@@ -588,6 +597,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | jungle Bouncy.sam + Rides.sam | `source/OpenTPW.Tests/GuestAssetTests.cs:129` | [DATA:jungle Bouncy.sam + Rides.sam] HasQueue, RunsContinuously, CAP 5, DUR 30, InitSpeed 60, QWTC 130 (QUEUE-plan §9). |
 | levels/&lt;level&gt;/global.sam:ParkName.GateObjectId | `source/OpenTPW/World/Original/OriginalGateSign.cs:64` | [DATA:levels/&lt;level&gt;/global.sam:ParkName.GateObjectId] |
 | levels/&lt;theme&gt;/terrain/base.map:InitialPath | `source/OpenTPW/Client/M3Gate.cs:314` | [DATA:levels/&lt;theme&gt;/terrain/base.map:InitialPath] [DATA:Standard.sam:FixedItemInfo lanes] |
+| levels/&lt;theme&gt;/terrain/base.map:InitialPath | `source/OpenTPW/Client/M4GateRun.cs:257` | [DATA:levels/&lt;theme&gt;/terrain/base.map:InitialPath] [DATA:Standard.sam:FixedItemInfo lanes] |
 | levels/Standard.sam:BankAccountInfo.* (layered) | `source/OpenTPW/Economy/BalanceSettings.cs:72` | [DATA:levels/Standard.sam:BankAccountInfo.* (layered)] |
 | levels/jungle/Easymode.TPWI:loan table repayments = floor(amount/months) at 0 % APR | `source/OpenTPW/Economy/ParkLedger.cs:146` | [DATA:levels/jungle/Easymode.TPWI:loan table repayments = floor(amount/months) at 0 % APR] |
 | levels/space/rides/megacost.wad/megacost.sgn:slot 1 = "EggIt Italic"/EGGII___.TTF, not in fonts.wad | `source/OpenTPW.Files/Public/DataCorrections.cs:18` | [EXT:COMPAT-FIX sign-font-substitution] [DATA:levels/space/rides/megacost.wad/megacost.sgn:slot 1 = "EggIt Italic"/EGGII___.TTF, not in fonts.wad] |
@@ -691,6 +701,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | STP-PPC:0x100CE9CC challenge types 30-32 | `source/OpenTPW/Economy/ParkObjectives.cs:141` | [BIN:STP-PPC:0x100CE9CC challenge types 30-32] pass when the object control's build count of TargetObj (+0x18, raised by every Thing construction at 0x100DA874 and never lowered) is above 0; TargetVal and TargetObj2 are not read |
 | STP-PPC:0x100CEA00 challenge type 33 | `source/OpenTPW/Economy/ParkObjectives.cs:143` | [BIN:STP-PPC:0x100CEA00 challenge type 33] passes when both TargetObj and TargetObj2 have been built |
 | STP-PPC:0x100D67F0 world update | `source/OpenTPW/Economy/ParkEconomy.cs:156` | [BIN:STP-PPC:0x100D67F0 world update] the golden-ticket check (0x100D31D0) runs when the turn counter is a multiple of 100, and only in Full Simulation (game type 0) |
+| STP-PPC:0x100DA874 object purchase | `source/OpenTPW/Client/M4GateRun.cs:383` | [DATA:&lt;object&gt;.sam:Upgrades[0].CostOfUpgrade, UsageInfo.GoldenTicketCost] [BIN:STP-PPC:0x100DA874 object purchase] a first purchase of an object with a ticket cost pays tickets, not cash |
 | STP-PPC:0x100DA874 object purchase | `source/OpenTPW/Economy/ParkEconomy.cs:555` | [BIN:STP-PPC:0x100DA874 object purchase] an object with a GoldenTicketCost (+0xC4) above 0 that the park has not yet bought with tickets costs that many tickets (0x100D3000; allowed when cost &lt;= earned - spent) and no cash; it joins the owned set, and later copies and ticket-free objects take the cash path |
 | STP-PPC:0x100DC988 queue room | `source/OpenTPW/World/Guests/RideVisitorBridge.cs:319` | [BIN:STP-PPC:0x100DC988 queue room] a guest may join only while count &lt; 4 × queue size in cells (+60) |
 | STP-PPC:0x100DCB74 queue limit | `source/OpenTPW/World/Guests/RideVisitorBridge.cs:24` | [BIN:STP-PPC:0x100DCB74 queue limit] HasQueue (flag 0x8) gives limit 100; otherwise trunc(max(QWTC × (SPEED/InitSpeed × CAP) / DUR, 4)) |

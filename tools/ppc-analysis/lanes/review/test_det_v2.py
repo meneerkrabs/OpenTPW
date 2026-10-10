@@ -141,7 +141,7 @@ class MergedGateDocs(unittest.TestCase):
         self.assertIn('"GATE": "source/OpenTPW/Client/M3GateApproximations.cs",', tool)
         registers = re.search(r'^REGISTERS = \{(.*?)^\}', tool, re.S | re.M)
         self.assertIsNotNone(registers)
-        count = len(re.findall(r'^\s+"[A-Z]+": "source/', registers.group(1), re.M))
+        count = len(re.findall(r'^\s+"[A-Z][A-Z0-9]*": "source/', registers.group(1), re.M))
         words = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve']
         self.assertIn(f'the {words[count]} configured C# registers', tool)
 

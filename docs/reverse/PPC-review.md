@@ -3101,3 +3101,283 @@ runtime intro on a window, PC parity, and any filesystem scan.
 2. Scenarios owner: R16-5 wording. R16-4 and R16-6 are optional hardening.
 3. Formats `f443475`: no change needed from this review.
 4. Batch 2: pending its final SHA for the count/alias/register/containment rerun.
+
+## 53. Round 17: batch 2 final `3f87c6b` (intro lifecycle), scenarios `1dacb25` comparator and short reads, final containment
+
+Scope: the committed SHAs `3f87c6b` (integration-batch2, parent `6ec5d28`) and
+`1dacb25` (ppc-scenarios). Uncommitted scenarios edits for R16-4/5/6 were not read
+or run. Every run used a `git archive` copy under `/tmp`. The Mac bin is the
+identified `SimThemePark.data` (`04809cd4…95f5`). No PC save, original movie or
+filesystem scan was needed.
+
+### Merge blockers
+
+- **R17-1 (blocker for clean merge, no behaviour impact). `3f87c6b` converts
+  `source/OpenTPW/Client/Game.cs` from CRLF to LF.** At `6ec5d28` the file has 419
+  CRLF line ends. At `3f87c6b` it has 0 CRLF and 419 LF, with tab indentation
+  unchanged. `git diff -w --ignore-cr-at-eol` shows **one** changed line (the
+  `playIntro` line now calls `IntroPlaylist.ShouldPlay`). So the 838-line diff is
+  418 lines of line-ending churn plus that one line. It is the only line-ending
+  change in all of batch 2 against `origin/main` `7bc6c59`. `.editorconfig` asks
+  for CRLF in `*.cs`, and there is no `.gitattributes` normalisation. Game.cs was
+  one of the 19 CRLF `.cs` files in the index. Left as is, every lane that edits
+  Game.cs hits a whole-file conflict, and `git blame` loses history. Fix: amend or
+  follow up with Game.cs back in CRLF and only the one-line change. Pinned by
+  `test_round17.Batch2LineEndings` (needs `OPENTPW_REVIEW_REPO`).
+  `diff --check` with `blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol`
+  reports nothing for `6ec5d28..3f87c6b` or `origin/main..3f87c6b`.
+
+No other blocker was found.
+
+### `3f87c6b` against R16-1/2/3
+
+| Finding | Status | Evidence |
+| --- | --- | --- |
+| R16-1 post-open decode failure aborts startup | **Closed** | `Update` now wraps `Skip/Update/IsFinished` in the same recoverable filter as opening (`IOException`, `UnauthorizedAccessException`, `NotSupportedException`, `InvalidDataException`, `ArgumentException`). It releases the current movie and moves on to the next one. Review probe: four header-valid synthetic 16x16 TGQs with corrupt bitstreams (empty, all-ones ×1, all-ones ×64, zero). Each opens, and then the real `MoviePlayback.Update` → `DecodeVideoFrame` throws `InvalidDataException` ("bitstream is truncated", "DC size code is invalid" ×2, "coefficient code is invalid"). `IntroSequence` disposes the broken movie once, plays and disposes the next one, and completes. `Draw` is not wrapped, but `MovieScreen.Render` only draws and does not decode. |
+| R16-2 constructor audio leak / `UnauthorizedAccessException` | **Closed** | `CreatePlayback` disposes the audio output if `MoviePlayback` construction (or the `Gain` initializer) throws, and the playback owns it after success. A `MoviePresenter` failure disposes the playback, which disposes the audio. `UnauthorizedAccessException` is in the filter. GPU allocation failure inside the presenter is not tested (the commit says so). |
+| R16-3 `--capture-world` counted intro frames | **Closed** | `IntroPlaylist.ShouldPlay` returns false for `--capture-world`. `WorldCapture` is registered after `playIntro` is decided. |
+| `OPENTPW_NO_INTRO` docs | Closed | RUNNING.md says any nonempty value, including `0`, disables intros, and so does `--capture-world`. The Game.cs comment at line 192 still lists only smoke/`--no-intro`/env (nit). |
+| Dispose | Correct | Sets `completed`, releases the current movie, restores world scaling, and does not raise `Completed`. Game.cs's `using var intro` scope matches. |
+
+Qualified: `ArgumentException` in the filter also covers `ArgumentOutOfRangeException`,
+which `MoviePlayback.Update` throws for a non-finite `Time.Delta`. That programming
+error would be logged as a movie failure, not surfaced. This is low severity, and
+the open path already filtered the same type before this commit.
+`ProgrammingFailureIsNotHiddenAsAnUnreadableMovie` covers only
+`InvalidOperationException`.
+
+### Scenarios `1dacb25`
+
+- **Comparator and writer order: confirmed.** As traced, `operator<` (unsigned
+  `strncmp` over the shorter length, shorter string less on an equal prefix)
+  matches Python `bytes` order for all 400×400 pairs over
+  `{01,41,61,7f,80,e9,ff}`, lengths 0..3 (`test_round17`). It also matched on 20,000
+  random pairs. The earlier operand confirmation (the eqv/subfc/addze sign idiom)
+  stands. `mac_writer_order` sorts deduplicated map keys and the mystery set,
+  ascending unsigned u16.
+- **Short-read correction: confirmed for the model.** `short_import(0, b'\x7f')` =
+  `0x7f000000`. `short_import(-1, b'\x12\x34')` = `0x1234ffff`. A cut one byte into
+  `mExtraKeys` gives `0x7f000000` from both `read_mac_player_file` and
+  `read_profile_snapshot`. Only `mSpentTickets`/`mExtraKeys` are i32 player
+  members, so the scalar `record[key] = short_import(…)` path never sees a list.
+  "FSRead stores the bytes before EOF" is still an assumption about Mac OS and is
+  labelled as one.
+- **R17-2 (low, synthetic only).** `player_file_evidence.read_mac_player_file`
+  still keys themes by the raw name, embedded NUL included. Two themes
+  `a\0x`, `a\0y` are both inserted, with `ok` true. `read_profile_snapshot`
+  (`mac-partial`) stops at `duplicate theme` with key `a`. 1dacb25's own evidence
+  (strlen + strcpy constructor) says the map key ends at the first NUL, so the
+  older reader is now the inconsistent one. Key it by `name.split(b'\0',1)[0]` or
+  note the gap.
+- Lane reruns on the archive: `scenario_evidence.py <mac bin>` exit 0 with 2,090
+  instruction checks. `unittest discover lanes/scenarios` with `OPENTPW_MAC_BIN`:
+  88 tests OK, 0 skipped. Claims stay synthetic/static-Mac. No PC or real-gms claim
+  was made or tested.
+
+### Batch 2 final containment (`3f87c6b`, git objects only)
+
+| Check | `3f87c6b` |
+| --- | --- |
+| Commits ahead of `origin/main` `7bc6c59` | 56 (`origin/main`, `0829614`, review `4e173cb` and `2bef824` are ancestors) |
+| Fixture blob prefixes `245a6743`/`816de5d1` reachable | absent |
+| Blob of size 2,274,758 or 38,479 reachable | none |
+| Original-asset extension paths at tip | 0 |
+| Blobs > 1 MB introduced by batch 2 (`^origin/main`) | none. Reachable from upstream history: `content/textures/test.png`, `export.bin` (deleted upstream in `a108ee7`), `tools/tpi-compare/full-evidence.json` (`f81313a`/`18b09c5`, already on `origin/main`) |
+| `[BIN:` aliases in `source/` | 36, all `STP-PPC`; every bracket label is `APPROX`/`DATA`/`EXT`/`BIN:STP-PPC` |
+| `fidelity_register.py --check` | exit 0, 129 unresolved APPROX IDs (the round-15 staleness is resolved) |
+| ECON-002 host-date claim | corrected: APPROX-TRACE row is `contradicted`, with 2000-01-01 at `+0` and 3,750 s per turn, and no "real local date" text is left |
+| Line endings vs `origin/main` | one file changed: Game.cs CRLF→LF (R17-1) |
+
+### Results
+
+| Target | Command | Result |
+| --- | --- | --- |
+| `3f87c6b` archive | SDK 10.0.401 `dotnet test -c Release`, filter IntroSequence/Round17 probe/MoviePlayback/IntroPlaylist | 35 pass, 4 inconclusive (original movie corpus not supplied), 0 fail. Includes the 5 commit regressions and 4 review probes |
+| `1dacb25` archive | `scenario_evidence.py`; lane `unittest discover` | exit 0, 2,090 checks; 88/88 |
+| review lane | `test_round12..17`; `test_round16` with `OPENTPW_PPC_BIN_ROOT`; `test_round17` with `OPENTPW_REVIEW_REPO` | OK (35 + 4); 1/1; 4/4 |
+
+The C# probe is kept at `tools/ppc-analysis/lanes/review/round17/Round17IntroDecodeProbeTests.cs`.
+It is not compiled here, because it needs `3f87c6b`'s injected `IntroSequence`
+constructor. SDK 8 was not needed: no SDK 8 harness changed in `3f87c6b`. Not run:
+runtime intro in a window, original-movie tests, presenter GPU allocation failure,
+and PC parity.
+
+### Handoff
+
+1. Batch 2 owner: R17-1. Restore CRLF on Game.cs, keeping the one-line change, then
+   re-run `diff --ignore-cr-at-eol --stat` (expect 1 line) before pushing. Optional:
+   the Game.cs comment nit.
+2. Scenarios owner: R17-2 is optional, and so are R16-4/5/6 (in progress).
+3. After R17-1, the batch-2 containment above carries over if only Game.cs line
+   endings change.
+
+## 54. Round 18: batch 2 fix `ba70ea5`, formats `8f0e048` scene clock A and normals, scenarios `ffa87c6` envelope v2
+
+Scope: the committed SHAs `ba70ea5` (integration-batch2, parent `3f87c6b`),
+`8f0e048` (ppc-formats) and `ffa87c6` (ppc-scenarios). Every run used a
+`git archive` copy under `/tmp`. The Mac bin is the identified
+`SimThemePark.data` (`04809cd4…95f5`). Nothing original was executed, and no
+filesystem scan was run. The formats corpus counts were rerun with the lane's own
+`corpus_check.py` on the two documented PC Data paths. Those runs are a rerun of
+the lane's own check, not an independent decode.
+
+### Merge blockers
+
+None for batch 2 at `ba70ea5`. None of the findings below blocks the formats or
+scenarios lanes. Both are evidence/reference lanes with no runtime change.
+
+### Batch 2 `ba70ea5`: R17-1 resolved, merge-ready
+
+- Game.cs has 419 CRLF out of 419 line ends (as at `6ec5d28`), and the BOM is kept.
+  `git diff 6ec5d28 ba70ea5 -- Game.cs` is 2+/2− with no `--ignore-cr-at-eol`
+  needed: the comment line (adds `--capture-world`) and the `playIntro` line
+  (`IntroPlaylist.ShouldPlay`). `ba70ea5` changes only Game.cs against `3f87c6b`.
+- Line-ending style of all 46 files that batch 2 modifies against `origin/main`
+  `7bc6c59`: no change (was 1 at `3f87c6b`).
+- Small wording nit, not a blocker: the commit says "whitespace diff --check
+  clean". That holds only with `core.whitespace=cr-at-eol`. Plain `--check`
+  flags the CR on the two new lines, as it does on every CRLF line of this file.
+- `test_round17` (still pins the `3f87c6b` LF conversion) passes. `test_round18`
+  `Batch2CrlfRestored` pins the fix.
+
+Containment at `ba70ea5` (git objects only, 57 commits ahead of `origin/main`):
+
+| Check | `ba70ea5` |
+| --- | --- |
+| Fixture blob prefixes `245a6743`/`816de5d1` reachable | absent (7,052 reachable objects) |
+| Blob of size 2,274,758 or 38,479 reachable | none |
+| Original-asset extension paths at tip | 0 |
+| Blobs > 1 MB introduced by batch 2 (`^origin/main`) | none |
+| `[BIN:` aliases in `source/` | 36, all `STP-PPC` (unchanged) |
+| `fidelity_register.py --check` | exit 0, 129 unresolved APPROX IDs |
+| SDK 10.0.401 `dotnet test -c Release`, filter IntroSequence/Round17/MoviePlayback/IntroPlaylist (with the round-17 probe copied in) | 35 pass, 4 skipped (original movies not supplied), 0 fail. Same as `3f87c6b` |
+
+**Verdict: batch 2 at `ba70ea5` is merge-ready** on the checks above. Not run:
+the full test suite, the native smoke test, and runtime intro in a window (no
+behaviour change since `3f87c6b`).
+
+### Formats `8f0e048`: scene clock A, hold, pause, normal routes
+
+Independent decode (`test_round18.SceneClockAndNormals`, 7 tests) uses its own
+field split. The clamp is checked by a small interpreter that executes the
+step routines' own words (lfd/fmul/fdiv/fcmpo/bc/b/fmr/stfd/blr).
+
+- **Constants.** TOC doubles at −10504/−10496/−10488/−10480 are 2.0/0.25/1.25/1.0.
+  The reset handler 0x1131ac loads 1.0 (−10536). The init 0x127c08 (called from
+  0x10ea78 in 0x10ea5c) stores 1.0 at +0x18. **Confirmed.**
+- **Steps and clamp.** Executing 0x127c48 four times from 1.0 gives
+  1.25, 1.5625, 1.953125, 2.0. 0x127c88 from 2.0 gives 1.6, and from 0.3 gives
+  0.25. **Confirmed.**
+- **R18-1 (low, model error, not a game path).** For NaN the binary keeps the
+  rate unchanged and stores NaN. fcmpo on NaN sets only the unordered bit, so
+  `bf LT` (0x127c64) and `bf GT` (0x127c74) both branch, ending in
+  `fmr f0,f1`. The commit, the witness text (`NaN -> 0.25`) and
+  `clip_clock_reference.clamp_rate` all say it becomes 0.25. The "NaN clamp"
+  mutation test therefore pins the wrong behaviour. NaN cannot arise through the
+  three handlers (1.0 start, finite ×/÷1.25, reset to 1.0), so no traced game
+  route is affected. Fix: `clamp_rate` keeps NaN (or refuses it), and the
+  witness and doc text are corrected.
+- **Handlers.** 0x11315c/0x113184/0x1131ac load r3 from TOC −0x75d8 and call
+  0x127c88/0x127c48/0x127c40. **Confirmed.** The key-table entries 6–8 were not
+  re-decoded.
+- **Hold.** 0x10ec60 returns if +0x2c ≠ 0. Otherwise it stores
+  `divwu(1000, n)` at +0x34 (r31 = r4) and sets +0x2c. The step 0x10ed10 skips
+  when the 0x117d6c getter returns non-zero, else `+0x30 += +0x34`. The
+  main-loop call is 0x1104d8. Both hold sites load `li r4,32` (0x1c0b34 before
+  0x1c0b64; 0x1c2298 before 0x1c229c), so the step is 31 ms. **Confirmed.**
+  That 0x117d6c is "A paused" is taken from the lane, not re-derived here.
+- **0x10000000 writer.** A full-image scan finds exactly four `oris …,0x1000`
+  (0x31d68, 0x55b10, 0x58d38, 0x19aef0) and no `addis`/`lis` of 0x1000. The
+  other three store to r24+8, object +0x50 and a stack slot. 0x19aef0 sets flags
+  word 0 of `*(selected+4)`, gated by `and.` with r9 = `lis 4; addi 0x40` =
+  0x40040. The ride loader calls 0x19adf0 at 0x59274. **Confirmed**, with one
+  label caveat: the scan cannot see a 0x10000000 built any other way (shifts,
+  data loads). The lane's "one writer" is an immediate-operand scan.
+- **Placement.** 0x59f64 is `li r5,0x211f`, and 0x59f6c ORs in 0x200 under
+  placement flag 0x800 (the doc says so at line 491). 0x543f4 is
+  `rlwinm r26,r5,0,21,19`, which clears only 0x800 before the 0x53004 call. 0x5a48c
+  ORs 0x00010000 into the records (160-byte stride, 0x5a494), 0x5a4a0 sets
+  header +0x30 bit 0x40000, and 0x5a4b4 calls 0xa78ec. **Confirmed.** "Every
+  successful path" was not re-walked.
+- Corpus counts (lane tool rerun): PC base and Patch 2 both give 2,452 table
+  entries, 248 with 0x40040, 28 members, 4,914/4,914 records with 0x10000000
+  clear, and 838 geometry headers.
+- **Labelling.** The doc names the clock-object route scan "a bounded witness,
+  not a data-flow proof", and the commit marks "only route" claims as medium
+  confidence (straight-line scan, no branch following). **Adequate.** No
+  custom-TPS or PC-speed claim is made. The doc twice says a per-animator
+  ticks-per-second value is not equivalent, and that PC keys and bindings are
+  unknown. `8f0e048` touches only docs and `lanes/formats` tools (6 files).
+- Mutation check of `test_round18`: 7 single-word patches of the image
+  (`bf LT→bt`, `bf GT→bt`, `li 1000→1024`, hold `n 32→16`, writer `stw` offset,
+  `0x211f→0x201f`, `fmul→fdiv`) each fail at least one test.
+- Lane reruns on the archive: `format_witness.py` exit 0. `lanes/formats`
+  unittest: 43 OK. Shared `ppc-analysis` tests: 16 OK.
+
+### Scenarios `ffa87c6`: envelope v2 (R16-4/5/6)
+
+Synthetic probes only (`/tmp` probe scripts plus `test_round18.ScenarioEnvelopeV2`,
+6 tests):
+
+- **R16-4 (strict validation): resolved.** Refused with ValueError: bool as
+  version, bool in a ticket list, float as an i32, `"2"` or `True` as
+  `envelope_version`, a missing player member, an unknown theme field, a changed
+  `layout_source`, forged `issues` on a complete record, uppercase hex, repeated
+  JSON members (top level and nested), `NaN`, `1e400`, and a 5,000-digit integer.
+  A fuzz of 24,000 single-field mutations (wrong-type values or deleted keys)
+  over 8 base envelopes (7 `mac-partial` cuts and one `strict-host` read) raised
+  no exception other than ValueError. 1,497 were accepted. The 405 accepted
+  complete records were all self-consistent: their own bytes read back to the
+  same record. One residual: a 200,000-deep `[[[…]]]` gives `RecursionError`
+  from `json.loads`, not ValueError (R18-2, low). The doc says "never a KeyError
+  or TypeError", which still holds.
+- **R16-5 (provenance): resolved.** v2 replaces `source` with `layout_source`,
+  which says the snapshot bytes are unauthenticated. v1, and v2 with a `source`
+  field, are refused.
+- **R16-6 (linear repeats): resolved.** 60,000 rideIds over 7 values: read 0.016 s,
+  envelope roundtrip 0.054 s, 59,993 repeat issues, record equal after the
+  roundtrip. `strict-host` rejects it.
+- **No forged "complete" from a partial record.** Flipping a partial record to
+  `complete: true` (and clearing `failed_at`/`failed_offset`), relabelling it
+  `strict-host`, or adding trailing bytes are all refused. A complete record must
+  survive serialize → read under its own policy. A `mac-partial` complete record
+  relabelled `strict-host` is accepted only when those bytes are a valid
+  strict-host read (no issues). That is the same record, not a forgery.
+- **R18-3 (low, strictness gap in the partial path).** The failing member is
+  allowed any value, because "the failing member may keep short-read bytes". That
+  holds only for the i32 members and the ticket byte arrays. The decoder accepts
+  a partial record failing at `mEasyModeUser` with value 7 (a u8 read delivers no
+  bytes, so it must stay reset). It also accepts `mSpentTickets = 0x12345678` at
+  a cut inside that member (fewer than 4 delivered bytes leave the low-order
+  byte at its reset value, 0). `failed_offset` is also unchecked; the doc says so.
+  None of this lets a partial record pass as complete. Pinned as two
+  `expectedFailure` tests that flip when it is fixed.
+- **R17-2** (`read_mac_player_file` keys themes by the full NUL-containing name)
+  is still open and optional. `player_file_evidence.py` is unchanged in
+  `ffa87c6`.
+- Lane reruns on the archive: `lanes/scenarios` unittest: 98 OK with
+  `OPENTPW_MAC_BIN`, and 85 run + 13 skipped without it. `scenario_evidence.py`
+  exit 0, 2,090 instruction checks. No real gms.dat and no PC claim.
+
+### Results
+
+| Target | Command | Result |
+| --- | --- | --- |
+| `ba70ea5` archive | SDK 10.0.401 `dotnet test -c Release`, intro/movie filter | 35 pass, 4 skip, 0 fail |
+| `ba70ea5` archive | `fidelity_register.py --check` | exit 0, 129 |
+| `8f0e048` archive | `format_witness.py`; `lanes/formats` unittest; shared tests; `corpus_check.py` ×2 | exit 0; 43 OK; 16 OK; counts as above |
+| `ffa87c6` archive | lane unittest with / without bin; `scenario_evidence.py` | 98 OK; 85 + 13 skip; exit 0, 2,090 |
+| review lane | `unittest discover` with all three env vars | 191 run, OK (3 skipped, 2 expected failures) |
+| review lane | `unittest discover` with no env vars | 191 run, OK (35 skipped) |
+
+### Handoff
+
+1. Batch 2: merge-ready at `ba70ea5`. Optional: reword "diff --check clean" in
+   future commits to name `cr-at-eol`.
+2. Formats: R18-1. Make `clamp_rate` keep NaN (as the binary does) or refuse it,
+   fix the `NaN -> 0.25` witness text and the doc line, and flip the mutation
+   test. Optional: label the 0x10000000 "one writer" as an immediate-operand scan.
+3. Scenarios: R18-3 (optional): restrict the failing member to values a short
+   read can produce (u8 members reset; i32 low-order bytes reset; ticket arrays
+   a prefix). R18-2 (optional): catch `RecursionError` in `loads_envelope`.
+   R17-2 is still optional.

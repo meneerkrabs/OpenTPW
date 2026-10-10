@@ -101,6 +101,9 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			textureSwitch = TexturePackSwitch.Begin( "smoke", diagnostics, packs );
 			Require( textureSwitch != null && diagnostics.Count == 0 && textureSwitch.Total > 0, "the pack switch starts with the loaded textures as its work" );
 		} );
+		// The switch runs in the background with a progress line at the top; capture it while it is still running.
+		Wait( "texture switch progress frames", 2 );
+		Do( "texture switch progress", () => { if ( !textureSwitch!.Finished ) CaptureFrame( "texture-switch-progress.png" ); } );
 		steps.Enqueue( ("texture pack loads", () => { textureSwitch!.Pump(); return textureSwitch.Finished; }) );
 		Wait( "texture pack frames", 3 );
 		Do( "texture pack on verified", () =>

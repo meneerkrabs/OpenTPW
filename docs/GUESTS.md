@@ -135,14 +135,17 @@ the same `ComputeStateHash` (FNV-1a over all guest fields, RNG state, counters).
 **Path grid** (`GuestPathGrid`): walkable cells are save cells with the path flag,
 linked by their cardinal connection bits (`SavePathConnections`), plus MAP
 `InitialPath` cells (4-neighbour links) where no save exists (fantasy, space,
-hallow: their 10 entrance cells only). Queue cells (path-flag bit 1) are not
-walkable. Routing uses breadth-first **flow fields** cached per target cell and
+hallow: their 10 entrance cells only). The save's queue cells (path-flag bit 1)
+are not imported. Queue cells built in OpenTPW (original map cell type 3, see
+[Queues](#queues)) are kept beside the path cells and are not walkable for
+routing. Routing uses breadth-first **flow fields** cached per target cell and
 invalidated on grid edits; `FindPath` follows the field. Jungle: 78 cells, one
 network reachable from EntranceA.
 
 **States** (`KIDSTATES` indices): bus stop → crossing (0, 1) → ticket booth (2, 4:
 pays `InitialAdmissionFee` or turns back angry) → entering (5) → walking around (7)
-→ going to a ride (10) → queueing (11) → waiting to board (14) → using (16, hidden)
+→ going to a ride (10) → walking to a queue position (12) ⇄ standing in the queue
+(11) → called: walking to the stand point (13) → waiting to board (14) → using (16, hidden)
 → exiting a ride (15) → … → leaving the park (18) → crossing (19) → waiting to go
 home (21) → removed.
 
@@ -157,8 +160,7 @@ home (21) → removed.
 | Decision | every 3 s: leave if ExitLevel ≤ 0 or happiness ≤ 10; else score = AttractionValue − DistWeight·distance − QueueWeight·queue + ExcitementWeight·(25 − |preferred − excitement|) + need terms (weight · need / 4) − IllnessWeight·nausea / 4 − AttractionValue if just ridden + random 0–9; best positive score wins, otherwise wander (random link, no U-turn) |
 | Boredom | `BoredomThreshold` read as seconds since the last ride |
 | Ride outcome | ExitLevel += positive happiness change |
-| Queue length | 4 × capacity (`QueueWaitTimeConstant` not understood) |
-| Queue positions | 3 abreast, 0.28 cells apart, back along the entrance cell's first link (real queue cells are not walked yet) |
+| Queues | traced; see [Queues](#queues) and its `QUEUE-NNN` register |
 | No exit lane | guests vanish (original ejection not modelled) |
 
 An isolated [GuestOriginalRules helper](../tools/ppc-analysis/lanes/guests/rules/README.md)
@@ -193,8 +195,11 @@ Without `Payments` (unit tests) the `.sam` fee and `IRideVisitorBridge.Price` ap
 `IRideVisitorBridge` (`IRideVisitorBridge.cs`) is the attraction side guests see:
 id, name, kind, open state, capacity, `ExcitementLevel`, `AttractionValue`,
 `Satisfies` (hunger/thirst/toilet for shops), `Price`, `EntranceCell`, `ExitCell`,
-queue operations and an `IRideVisitorHost` (implemented by `GuestSimulation`) for
-callbacks: offered, boarded, released, turned away.
+the queue (cells, join cell, limits, the called guest, join/leave/present
+operations) and an `IRideVisitorHost` (implemented by `GuestSimulation`) for
+callbacks: called forward (`OnVisitorOffered`), boarded, released, turned away.
+The host also supplies the park turn, whether guests walk to the stand point,
+and whether a guest stands at position 0.
 
 `RideVisitorBridge` implements it for an RSE script. Host protocol (inferred from
 the corpus: Coconut, Totem, Gift Shop, Bouncy, Jungle Spray all follow it), run
@@ -202,9 +207,13 @@ once per tick before the script slice and never inside `CRIT_LOCK`:
 
 1. `VAR_LETMEOFF ≠ 0` → release that guest at `ExitCell`, write 0 back (scripts
    wait with `TEST VAR_LETMEOFF; BRANCH_NZ` until the host has taken the guest).
-2. A guest offered earlier whose id is no longer in `VAR_LETMEON` was taken.
-3. Ride closed → a pending offer is withdrawn and the queue turned away.
-4. `VAR_LETMEON = 0` and a queue → write the front guest's id.
+2. The called guest's id was written to `VAR_LETMEON` and is no longer there →
+   the script took it: it leaves the queue list and boards (original state 14).
+3. Ride closed → the called guest is withdrawn and the queue turned away.
+4. Once per park turn, the admission of [Queues](#queues) may call the front
+   guest forward. The guest writes its own id to `VAR_LETMEON` (only while that
+   is 0) when it reaches the stand point. Hosts that do not simulate the walk
+   (unit tests) present the guest at once.
 
 Visitor opcodes (all operate on the guests the script holds; semantics inferred):
 
@@ -233,7 +242,151 @@ excitement 70, attraction value 25 from `Totem.sam`. Its entrance/exit is the
 nearest path cell to its 5×5 footprint (the prototype has no catalog shape yet;
 jungle smoke site: cell (39, 21)). With guests near the ride the script fills at
 script time ≈3.3 s and starts (versus 11.3 s without passengers), runs one cycle
-and unloads all six through HOP/WALKOFF/WALKGET/`VAR_LETMEOFF`.
+and unloads all six through HOP/WALKOFF/WALKGET/`VAR_LETMEOFF`. (Measured before
+the traced queue; guests now pass through the one-cell path queue at its
+entrance, and the asset test still sees a full load before the 10 s time-out.)
+
+## Queues
+
+Traced from the Feral Mac binary in [QUEUE-plan](reverse/QUEUE-plan.md)
+(sections cited below). Rules marked `[BIN:…]` at their code sites follow the
+original; the rest are the `QUEUE-NNN` approximations listed at the end.
+
+**Cells** (§3.3). A queue cell is original map cell type 3 with a link byte
+(1, 4, 16 or 64) pointing back toward the ride entrance. They live in the
+shared `ParkCellMap` (`GuestPathGrid.Cells`; PATH-plan §9.1/§9.6), which holds
+per cell the original type byte (0 empty, 1 path, 3 queue), flags, the
+same-type placement counter, the cardinal links and the queue link.
+`GuestPathGrid` mirrors its path cells into the map and writes queue cells
+through `SetQueue`/`ClearQueue`; queue cells are not walkable for routing. The **front cell** is the cell outside the object's
+entrance (`QueueFrontCell`). The queue is the chain of type-3 cells whose link
+points back at the previous cell, followed from the front at most 1,000 steps
+(`RideVisitorBridge.RecomputeQueue`). That gives the back cell and the size in
+cells, at least 1. A front cell that is neither a queue nor a path cell falls
+back to the nearest walkable path cell as a one-cell queue (RIDES-028). Guests
+step onto the back cell from the **join cell**, a walkable neighbour of the
+back cell. A queue that touches no path is not connected and guests do not
+choose the ride. Every grid edit recomputes all queues. A changed queue is a
+queue edit: queued guests beyond 4 × cells or off the queue leave, and the
+others walk to their positions again.
+
+**Building** (§3.3, partly approximated). `QueuePaths.TryExtend` (headless)
+and the level's queue tool (`Level.BuildQueueCell`) lay one cell at a time. The
+first cell is the front cell, linked toward the ride. Every later cell touches
+the back cell and links toward it. Only `Info.HasQueue` objects take queue
+paths, at most 25 cells. A queue cell goes only on an empty cell
+(`ParkCellMap.CanChangeCellType`, traced; the original's last cell of a line
+may also overwrite a path, which belongs to PATH-I's line tool). Object
+footprints and terrain the object build rule refuses are blocked. Each cell is
+charged `Costs.QueueCell` (75) when it is written, refused only when
+balance − cost < 0 (`ParkEconomy.TrySpendCell`, `SetCellType` `0x82ac4`).
+`QueuePaths.RemoveFrom` / `Level.RemoveQueueCell` remove a cell and every cell
+behind it; each removed cell refunds `Costs.QueueCell` × the ride's scrap
+percentage / 100 (`ParkEconomy.RefundQueueCell`, `ClearCell` `0x85dcc`). After a HasQueue ride is
+built from the HUD, park clicks lay its queue until Back (UI-031). Queue cells
+also block object placement. New queue cells are not drawn on the terrain yet.
+
+**Joining** (§4, state 10 at the join cell), in this order:
+
+1. Room: the guest joins only while the count is below 4 × cells.
+2. Excitement: rides and sideshows refuse a guest when
+   |preferred − excitement| ≥ 45 (thought Scared or Bored).
+3. Limit: the count must be below the data limit. That is 100 with
+   `Info.HasQueue`. Otherwise it is
+   trunc(max(QWTC × (SPEED/InitSpeed × CAP) / DUR, 4)) in single precision,
+   with `Upgrades[L].QueueWaitTimeConstant` at type record +436 and InitSpeed
+   at +424. `InitDuration` is +416, not +436. A NaN quotient gives 4.
+
+So the maximum queue length is min(100, 4 × cells) for HasQueue rides. Objects
+without a queue path (shops, toilets, sideshows) get one front cell and so 4.
+CAP and DUR are the clamped `InitCapacity`/`InitDuration` of level 0. The old
+OpenTPW rule "4 × capacity" is gone.
+
+**Positions** (§3.4). Four positions per cell from the front. The depth along
+the cell is trunc(255 × 0.25 × r) = 0, 63, 127 or 191 (of 255) from the edge
+toward the previous cell. The sideways byte is 114 + (rand mod 28), drawn from
+the simulation's seeded `GuestRandom` (the world-seeded stream guests already
+use; `System.Random` is not used). Guests walk cell by cell along the queue to
+their position (state 12).
+
+**Standing** (§5, state 11, once per park turn = 248 ms of the fixed clock,
+`ParkCalendar.Turn`). On entry the move delay is trunc(1.2 × position) turns.
+Each turn, in order:
+
+1. Called forward → walk to the stand point (state 13).
+2. The ride failed (`VAR_BROKEN`) → leave.
+3. Not in the list any more → leave.
+4. The list position moved up: wait while the delay is non-zero and the gap is
+   at most 2 (one turn per decrement), else walk to the new position.
+5. Recorded position above the limit → leave.
+6. Needs window, every 30 turns after the last interlude: happiness > 80 or
+   10–19 idles for 10 turns, happiness < 10 leaves, else toilet > 80 leaves
+   unless the attraction provides relief.
+7. A 1-in-10 facing change.
+
+There is **no boredom timeout**. The original's test (`turn > +508 + 100`
+within the 30-turn window) can never fire (§5.3); the code keeps it and the
+tests show that guests stand for 2,000 turns without leaving. Guests leave a
+queue only when admitted, when unhappy (< 10), for the toilet (> 80, not when
+queueing for a toilet), when the ride fails, closes or is removed, or on a
+queue edit.
+
+**Admission** (§6, once per park turn per ride). The front guest is called when
+all of these hold:
+
+- `VAR_LETMEON = 0`;
+- `VAR_ONRIDE < VAR_CAPACITY` (skipped for `Bumper.WhichTrackType` 2/3);
+- `VAR_RUNNING = 0` or `Info.RunsContinuously`;
+- nobody is pending;
+- the head stands in state 11 at recorded position 0.
+
+The called guest walks to the stand point and writes its id to `VAR_LETMEON`
+once that is 0. It stays in the list until the script has consumed it, then
+boards. Waits are counted in park turns from joining to boarding.
+
+**Gate signals.** For the M3 gate's progress check and the BOUNCE bound
+W_max = ⌈Qmax/CAP⌉ × (DUR + 1 s + τ) (QUEUE-plan §9):
+
+- `RideVisitorBridge.AdmissionChecked` (event) and `LastAdmissionCheck` give
+  one `AdmissionCheck` per ride update. It holds the turn, whether the gates
+  held, the head guest, whether it stood at position 0, and the called guest.
+  `Stalled` means gates held and the head was ready, yet nobody was called.
+  `StalledAdmissionChecks` counts these. By construction it stays 0; the gate
+  should verify that.
+- Per ride: `QueueLength`, `MaximumQueueLength` (Qmax), `QueueLimit`,
+  `QueueRoom`, `QueueSizeInCells`, `QueueCells`, `JoinCell`, `CalledGuest`,
+  `Parameters` (CAP, DUR, HasQueue, RunsContinuously).
+- Per guest: `QueuePosition`, `QueueJoinTurn`, `GuestSimulation.QueueWaitTurns(guest)`
+  (current wait), `LastQueueWaitTurns` and the `GuestSimulation.QueueWaitCompleted`
+  event (wait at boarding), `GuestSimulation.ParkTurn`.
+
+τ (boarding latency) is not derived and must stay an explicit parameter.
+
+**Queue approximation register** (`QueueApproximations.cs`; also in
+[FIDELITY-REGISTER](FIDELITY-REGISTER.md)):
+
+| ID | OpenTPW choice | Evidence needed |
+| --- | --- | --- |
+| QUEUE-001 | The queue link (+13) uses the connection bits' compass: 1/4/16/64 = −Y/+X/+Y/−X (verified for +12 on 78 Easymode cells) | Run-time neighbour offset tables (data `0xec52c..0xec5a4`) |
+| QUEUE-002 | The next queue cell is searched in grid direction order | Same tables; the order paired with links 16, 1, 64, 4 |
+| QUEUE-003 | Guests step onto the back cell from its first walkable neighbour | `0xdd744` and the state-10 walk to the back cell |
+| QUEUE-004 | Excitement gate for rides and sideshows, using \|preferred − excitement\| | `0xe02ec`, `0xe9a84` |
+| QUEUE-005 | Queue-edit exits: beyond 4 × cells, or standing cell removed | `0xee8f8` in detail |
+| QUEUE-006 | Depth from the cell's front edge; the 4th position stays in its cell | `0xdde74` and the sub-cell axis selection |
+| QUEUE-007 | The stand point is the front cell's edge toward the ride | `0xde1d8` (`EntryCellStandPos`) |
+| QUEUE-008 | Ride failure = `VAR_BROKEN ≠ 0` | Predicate `0xdfe34` |
+| QUEUE-009 | Facing-change sign from the 1-in-10 draw | The sign selection in `0xed244` |
+| QUEUE-010 | A guest leaving a queue reappears on the join cell at once | The state-6 transition after a queue exit |
+| QUEUE-011 | Upgrade level 0 for QWTC/InitSpeed | None (OpenTPW does not apply upgrade levels to objects) |
+| QUEUE-012 | Queue cells need allowed terrain and no object | The queue tool's validity checks |
+| QUEUE-013 | At most 25 cells per queue | The queue tool (`0x70b98..0x8c7c0`) |
+| QUEUE-014 | Laid cell by cell from the front, each touching the back | The queue tool's placement rules (UI-031) |
+| QUEUE-015 | Removing a queue cell removes every cell behind it | The remove tool's route into `ClearCell` `0x859b4` |
+| QUEUE-016 | Admission and state 11 run once per park turn | Live-list eligibility of objects and guests |
+
+Not modelled: the track-type exits of step 6 (`0x45eac`, ride `+40`), ride
+state `+408`, the price check at the stand point (guests pay when boarding, see
+Money), save/load of queues, and the import of the Easymode queue cells.
 
 ## Rendering
 
@@ -248,28 +401,43 @@ Not drawn: heads/costumes, balloons, thought bubbles, shadows, riders.
 
 ## Tests and evidence
 
+- `QueueTests` (no assets): queue-cell links and recompute after edits, build
+  refusals, both limit formulas (single precision, NaN floor, HasQueue 100),
+  join order room → excitement → limit, guests walking queue cells to four
+  positions per cell, depth bytes, move-up delays trunc(1.2 × position) with the
+  gap ≤ 2 rule, no boredom exit over 2,000 turns, the unhappy/toilet/relief,
+  ride-failure and queue-edit exits, the admission gates (LETMEON, ONRIDE <
+  CAPACITY, RUNNING/RunsContinuously, capacity bypass, head at position 0,
+  one per turn), the stay-queued-until-consumed handshake, and first-come
+  first-served boarding with waits in park turns.
 - `GuestTests` (no assets): sprite RLE/palette/bounds, ESP slots, direction
   mirroring, flow fields and connection bits, shop-protocol queue order
-  (offer → board → release), queue limit and closing, LIMBO timing and header
+  (call → board → release), queue room and closing, LIMBO timing and header
   limbo size, admission and turning back, ride choice + PerfectRide/OKRide
   happiness, needs growth and a thirst shop, leaving through the lane, same seed →
   same hash (different seed → different), 600 guests with six scripted shops:
   ~0.06 ms per 60 Hz tick on an M-series Mac.
 - `GuestAssetTests`: 8 kid sets × 175 frames, slot coverage, flags; jungle
   `Standard.sam` settings; 78-cell jungle network from EntranceA; real guests on
-  the original `Totem.RSE` (full load before 10 s, all riders released);
-  deterministic 120 s jungle run.
+  the original `Totem.RSE` (full load before 10 s, all riders released); the
+  original Belly Bounce with a 4-cell queue path beside the Easymode paths
+  (its .sam queue parameters, guests standing only on queue cells and on every
+  one of them, the queue filling to 16, 30 boarded in 180 s, no stalled
+  admission); deterministic 120 s jungle run.
 - Native smoke (`--load-original-level jungle --smoke-test`, also fantasy, space,
-  hallow): guests seeded near the Totem board it, `VAR_ONRIDE` = 6 at motion start
-  before 10 s, a rider is released through `VAR_LETMEOFF`, arrivals pay admission,
-  and GPU readback with vs. without guest sprites differs (≈3,000 pixels);
-  captures `native-smoke-original-guests.png` and `-guests-hidden.png`.
+  hallow): guests seeded near the Totem board it (`VAR_ONRIDE` > 0 at motion
+  start; it was 6 before the traced queue. In a jungle run with it the Totem had
+  boarded 3 by the guest capture: its one-cell path queue holds 4 and admission
+  waits for each guest to walk up and be taken), a rider is released through `VAR_LETMEOFF`,
+  arrivals pay admission, and GPU readback with vs. without guest sprites
+  differs; captures `native-smoke-original-guests.png` and `-guests-hidden.png`.
 
 ## Open
 
 Original arrival/need/decision formulas and units; staff interaction, litter,
 vomit puddles, prankster/stinkbomb behaviour; entry-fee opinion; shops and
 toilets (need the rides/objects slice to expose catalog attractions through
-`IRideVisitorBridge`); walking real queue cells; seat attachment of riders;
+`IRideVisitorBridge`); drawing built queue cells and importing the Easymode
+queue; seat attachment of riders;
 heads, thought bubbles, balloons; save/load of guest state; which `PeepTypes`
 entry uses which kid set.

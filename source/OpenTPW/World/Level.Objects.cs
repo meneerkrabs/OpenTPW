@@ -17,7 +17,7 @@ public partial class Level
 		var theme = OriginalPark?.LevelName ?? "jungle";
 		IParkGrid grid = OriginalPark == null ? new SandboxParkGrid() : new OriginalParkGrid( OriginalPark );
 		var easy = Park?.Economy.Settings.IsEasy ?? false;
-		Objects = new ParkObjects( ObjectCatalog.Load( theme, easy ), grid, Seed ) { IsReserved = IsReservedByPrototype };
+		Objects = new ParkObjects( ObjectCatalog.Load( theme, easy ), grid, Seed ) { IsReserved = ( x, y ) => IsReservedByPrototype( x, y ) || Guests?.Grid.IsQueue( x, y ) == true };
 		if ( OriginalPark == null )
 			return;
 		var count = OriginalPark.Save != null ? Objects.ImportOriginal( OriginalPark.Save ) : Objects.AddDefaultFixedItems();
@@ -36,9 +36,9 @@ public partial class Level
 	}
 
 	/// <summary>
-	/// Guests queue at the walkable cell outside the object's entrance (shape '2') and reappear outside its exit
-	/// (shape 'S'/'N'/'E', else the entrance). Where that outside cell is not a walkable path (the Belly Bounce
-	/// queue cells are not path cells), the nearest walkable cell to it is used.
+	/// The queue's front cell is the cell outside the object's entrance (shape '2'); guests reappear outside its
+	/// exit (shape 'S'/'N'/'E', else the entrance). Until a queue path is built there (and while that cell is
+	/// not a walkable path), the nearest walkable cell serves as a one-cell queue.
 	/// </summary>
 	private void RegisterObjectWithGuests( OriginalObject item )
 	{
@@ -56,13 +56,18 @@ public partial class Level
 			return false;
 		runtime.Visitors.EntranceCell = cells.Entrance;
 		runtime.Visitors.ExitCell = cells.Exit;
+		runtime.Visitors.QueueFrontCell = cells.QueueFront;
+		runtime.Visitors.QueueEntranceDirection = cells.QueueEntranceDirection;
 		runtime.Visitors.HasCells = true;
 		guests.Register( runtime.Visitors );
 		return true;
 	}
 
-	/// <summary>Walkable entrance and exit cells for an object's access points, or null when it has no entrance or the grid no path.</summary>
-	internal static ((int X, int Y) Entrance, (int X, int Y) Exit)? ResolveVisitorCells( IEnumerable<ObjectAccessPoint> accessPoints, GuestPathGrid grid )
+	/// <summary>
+	/// Walkable entrance and exit cells for an object's access points, plus the entrance's outside cell (the queue's
+	/// front cell) and the direction from it into the entrance; null when it has no entrance or the grid no path.
+	/// </summary>
+	internal static ((int X, int Y) Entrance, (int X, int Y) Exit, (int X, int Y) QueueFront, int QueueEntranceDirection)? ResolveVisitorCells( IEnumerable<ObjectAccessPoint> accessPoints, GuestPathGrid grid )
 	{
 		var points = accessPoints.ToArray();
 		var entrance = points.FirstOrDefault( point => point.Kind == ObjectCellKind.Entrance );
@@ -73,8 +78,69 @@ public partial class Level
 			exit = entrance;
 		var entranceCell = WalkableNear( grid, entrance.OutsideX, entrance.OutsideY );
 		var exitCell = WalkableNear( grid, exit.OutsideX, exit.OutsideY );
-		return entranceCell == null || exitCell == null ? null : (entranceCell.Value, exitCell.Value);
+		if ( entranceCell == null || exitCell == null )
+			return null;
+		return (entranceCell.Value, exitCell.Value, (entrance.OutsideX, entrance.OutsideY),
+			GuestPathGrid.DirectionBetween( entrance.OutsideX, entrance.OutsideY, entrance.X, entrance.Y ));
 	}
+
+	/// <summary>The attraction whose queue path the click tool extends (set after building a ride with <c>Info.HasQueue</c>).</summary>
+	public RideVisitorBridge? QueueToolRide { get; set; }
+
+	/// <summary>
+	/// Adds one queue cell for an attraction (headless API; the queue tool calls it per click). The park
+	/// economy charges <c>Costs.QueueCell</c>; read-only visits and object/terrain-blocked cells are refused.
+	/// </summary>
+	public QueueBuildResult BuildQueueCell( RideVisitorBridge ride, int x, int y )
+	{
+		if ( IsReadOnlyVisit )
+		{
+			LastActionMessage = "Read-only visit: queue changes are disabled.";
+			return QueueBuildResult.Refused;
+		}
+		if ( Guests == null )
+			return QueueBuildResult.Refused;
+		var check = QueuePaths.CheckExtend( Guests.Grid, ride, x, y, IsQueueBlocked );
+		if ( check != QueueBuildResult.Ok )
+		{
+			LastActionMessage = $"Cannot build a queue here: {check}.";
+			return check;
+		}
+		// [DATA:Standard.sam:Costs.QueueCell] charged per cell when written (ParkEconomy.TrySpendCell, PATH-plan §3.2)
+		if ( Park != null && Park.Economy.TrySpendCell( CellPurchase.Queue ) != ParkEconomy.PurchaseResult.Ok )
+		{
+			LastActionMessage = "Cannot build a queue: not enough money.";
+			return QueueBuildResult.Refused;
+		}
+		var result = QueuePaths.TryExtend( Guests.Grid, ride, x, y, IsQueueBlocked );
+		LastActionMessage = $"{ride.Name}: queue is now {ride.QueueSizeInCells} cells long.";
+		return result;
+	}
+
+	/// <summary>
+	/// Removes the queue cell at (x, y) and every cell behind it. Each removed cell refunds
+	/// <c>Costs.QueueCell</c> × the ride's scrap percentage / 100 (<see cref="ParkEconomy.RefundQueueCell"/>).
+	/// </summary>
+	public int RemoveQueueCell( int x, int y )
+	{
+		if ( IsReadOnlyVisit || Guests == null )
+			return 0;
+		var ride = Guests.Grid.IsQueue( x, y ) ? Guests.Attractions.OfType<RideVisitorBridge>().FirstOrDefault( item => item.QueueCells.Contains( (x, y) ) ) : null;
+		if ( ride == null )
+			return 0;
+		var removed = QueuePaths.RemoveFrom( Guests.Grid, ride, x, y );
+		var owner = Objects.Objects.FirstOrDefault( item => item.Visitors == ride );
+		if ( Park != null && owner != null && GetEconomyInstance( owner ) is int instance )
+		{
+			for ( var cell = 0; cell < removed; cell++ )
+				Park.Economy.RefundQueueCell( instance );
+		}
+		return removed;
+	}
+
+	// [APPROX:QUEUE-012] queue cells need terrain the object build rule allows and no object footprint — evidence needed: the queue tool's placement validity in 0x10070B98..0x1008C7C0
+	private bool IsQueueBlocked( int x, int y ) =>
+		Objects.Grid.CheckTerrain( x, y ) != OriginalPlacementResult.Allowed || Objects.FindAt( x, y ) != null || IsReservedByPrototype( x, y );
 
 	// [APPROX:RIDES-028] A non-walkable outside cell (queue area) is replaced by the nearest walkable path cell — evidence needed: original queue-path building/joining rules
 	private static (int X, int Y)? WalkableNear( GuestPathGrid grid, int x, int y ) =>
@@ -171,9 +237,11 @@ public partial class Level
 	{
 		if ( IsReadOnlyVisit )
 			return;
-		if ( (BuildEntry == null && !IsRemovingObjects) || !TryGetGridCell( mousePosition, viewportSize, out var x, out var y ) )
+		if ( (BuildEntry == null && !IsRemovingObjects && QueueToolRide == null) || !TryGetGridCell( mousePosition, viewportSize, out var x, out var y ) )
 			return;
-		if ( IsRemovingObjects )
+		if ( QueueToolRide != null && BuildEntry == null )
+			BuildQueueCell( QueueToolRide, x, y );
+		else if ( IsRemovingObjects )
 			RemoveObjectAt( x, y );
 		else
 			PlaceObject( BuildEntry!, x, y, BuildRotation );

@@ -172,7 +172,7 @@ the same seed as well.
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0x0D8B481BB19391DC`, schema 2);
+  (`0x8E84E46AA3C8D9EE`, schema 3: queue cells, links, admission state and queue edits of each attraction were added to the attraction state when real queue cells landed; the run itself also changed because guests now queue on cells and are admitted by the original rules);
 - the default seed keeps the previous stream seeds; per-park attraction ids;
   unseeded scripts follow their world stream; `World` save section round trip
   and older saves;

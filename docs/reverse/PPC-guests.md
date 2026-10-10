@@ -272,10 +272,16 @@ The computed expression includes capacity/throughput and operating duration;
 it is not a universal `queue_limit = 4*capacity`. Full metadata bindings and
 the conversion helper's rounding are still required. A separate flagged case
 sets limit 100.
+(Completed by QUEUE-R, [QUEUE-plan](QUEUE-plan.md) §4: the limit is 100 for
+HasQueue rides, otherwise trunc(max(QWTC × (SPEED/InitSpeed × CAP) / DUR, 4))
+in single precision, with InitSpeed at `+424`; the physical room is
+4 × queue cells. Object `+60` is the queue size in cells, not a capacity.
+OpenTPW implements it; see GUESTS.md "Queues".)
 
 Standing-in-queue handler has a timeout compare at `0xed670..0xed678` against
 guest timestamp `+508 + 100`, and then leaves the queue with a boredom
-diagnostic. It also tests toilet >80 and route/admission consistency.
+diagnostic. (QUEUE-R, QUEUE-plan §5.3: this branch cannot be reached in
+game, so queues have no time-based exit.) It also tests toilet >80 and route/admission consistency.
 Units of 100 remain unresolved. Queue edits, dismissed guests, moved queue
 ends, and destination failure have dedicated paths rather than being reduced
 to OpenTPW's direct queue list and nearest-path fallback.

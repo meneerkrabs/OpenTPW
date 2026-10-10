@@ -248,7 +248,8 @@ public class GuestTests
 		Assert.AreEqual( 1, shop.Bridge.GetQueuePosition( 8 ) );
 		for ( var tick = 0; tick < 4 * 60; tick++ )
 			shop.Step();
-		CollectionAssert.AreEqual( new[] { "offer 7", "board 7", "offer 8", "release 7", "board 8", "offer 9", "release 8", "board 9", "release 9" }, host.Events );
+		// Capacity 1: the next guest is called only once VAR_ONRIDE < VAR_CAPACITY again, i.e. after the release (0xe1404).
+		CollectionAssert.AreEqual( new[] { "offer 7", "board 7", "release 7", "offer 8", "board 8", "release 8", "offer 9", "board 9", "release 9" }, host.Events, string.Join( ", ", host.Events ) );
 		Assert.AreEqual( 0, shop.Script[RideVariables.VAR_ONRIDE] );
 		Assert.AreEqual( 3, shop.Bridge.ReleasedTotal );
 	}
@@ -257,12 +258,13 @@ public class GuestTests
 	public void QueueRespectsItsLimitAndClosingTurnsGuestsAway()
 	{
 		var shop = CreateShop( 1, (0, 0) );
-		shop.Bridge.MaximumQueueLength = 2;
 		var host = new RecordingHost();
 		shop.Bridge.Host = host;
-		Assert.IsTrue( shop.Bridge.TryJoinQueue( 1 ) && shop.Bridge.TryJoinQueue( 2 ) );
-		Assert.IsFalse( shop.Bridge.TryJoinQueue( 3 ), "queue full" );
-		shop.Step(); // offers 1, script takes it
+		// A queue-less shop without a queue path: one front cell gives room for 4 (count < 4 × cells), the data limit is the floor of 4.
+		Assert.AreEqual( 4, shop.Bridge.MaximumQueueLength );
+		Assert.IsTrue( new[] { 1, 2, 3, 4 }.All( shop.Bridge.TryJoinQueue ) );
+		Assert.AreEqual( QueueJoinResult.NoRoom, shop.Bridge.JoinQueue( 5, 0 ), "queue full" );
+		shop.Step(); // calls 1, script takes it
 		shop.Step();
 		shop.Open = false;
 		shop.Step();

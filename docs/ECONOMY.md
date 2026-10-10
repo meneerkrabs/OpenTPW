@@ -185,8 +185,13 @@ A park started from a shipped save (Instant Action, or the reference start) runs
 
 Not imported and reported in `Evidence`: `mRandomSeed` (SAVE-001), guests (SAVE-002), the hiring
 pool (SAVE-004), challenge timing (SAVE-005), research (SAVE-007), batch/last balance, withdrawals
-and turn entered red (SAVE-008), training budgets unless all zero (SAVE-009) and the opaque blocks
-(SAVE-010). The ledger's category history starts empty: the save has none.
+and turn entered red (SAVE-008), training budgets unless all zero (SAVE-009), the opaque blocks,
+world state, arrivals, calendar session start, the advisor controller's presentation words and
+current record and the subsystem things without an OpenTPW counterpart (SAVE-010). Staff values
+outside OpenTPW's ranges are adjusted and each adjustment is reported (SAVE-003); an attraction
+with out-of-range values keeps the defaults and is listed. The ledger's category history starts
+empty: the save has none, and the month opens at the current balance: `mLastBalance` (87,787 in
+Easymode against 87,987) is the balance after the last debit, not a month opening (SAVE-008).
 
 The eleven saves of the second fixture set (docs/TPWS-PAYLOAD.md) corrected the challenge layout.
 Easymode's challenges have no second object, staff type or end-only check, so they could not show
@@ -218,7 +223,7 @@ PC fixture and the imported Instant Action start.
 | Bankruptcy | Six month-ends in the red, warnings at 3 and 5 months (strings) | Advance stops when bankrupt |
 | Staff | Pool sizes, maxima, wages, training prices | Candidate grades, pool timing, free hiring, 100 points per grade, mechanic/handyman job durations |
 | Maintenance | Wear rates, red lines, maxima, upgrade durations, worn threshold 25 | Traced: wear every 64 turns from the ride script's running state, riders and speed; breakdown check every 8 turns; repair restores 100 but not the life gauge. the life gauge starts at 100 (`0x100DAB1C`). Approximated: the ride-state gate (ECON-023) |
-| Research | Items, categories, groups, costs, effort, ability, thresholds, work load; traced: points every 20 turns, cumulative group opener, first open item in table order; points from researcher staff only, in both modes (Mac) | Info-id table order, the excluded researcher states, the stand-in for the Instant Action seed's researcher |
+| Research | Items, categories, groups, costs, effort, ability, thresholds, work load; traced: points every 20 turns, cumulative group opener, first open item in table order; points from researcher staff only, in both modes (Mac) | Info-id table order, the excluded researcher states |
 | Challenges | Definitions, level list, timings, prizes, follow-ups | Type semantics from comments, except the build types 28 and 30–33, traced to the handler table at `0x100CE690`; explicit accept/decline; types 14, 22, 23, 26 unmeasured (23 and 26 never pass in the binary) |
 | Golden tickets | All thresholds | Checked every 100 park turns in Full Simulation only; the profit ticket reads the year's running profit (`mProfitThisYear`, reset each calendar year); the first copy of a ticket object costs tickets, not cash (all traced) |
 | Keys/progression | Keys per theme, theme order (THEMENAMES; ascending key cost); +1 per 3 earned golden tickets; spending tickets preserves keys (manual p. 28) | Start with 1 key; keys persist when entering themes |

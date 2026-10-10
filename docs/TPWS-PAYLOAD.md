@@ -100,12 +100,16 @@ the TrackRides block, `KOLC`'s word is VanillaTime, `RYLF` holds RSSE, `SAOC`'s
 `SavePayloadLayout.Parse` (span or `SaveReader`, payload capped at 64 MiB):
 
 - reads the action-recording header (published flag 0/1, size within the payload);
-- finds each of the 17 delimiters in writer order, each exactly once after the
-  previous block; a missing, out-of-order or repeated delimiter throws;
-- checks the blocks whose writer width is traced, like the original loader:
-  Clock 8 (two clock words, `0x10e944`), VanillaTime 4 (`0x127ac8`), Camera 40
-  (`0x2cb90`), and an empty Coasters block is exactly its 16-byte count and
-  globals (the World block is checked by its thing list, below);
+- splits the payload at the 17 delimiters in writer order. A block whose writer
+  width is traced ends exactly there, like the original loader: Clock 8 (two
+  clock words, `0x10e944`), VanillaTime 4 (`0x127ac8`), Camera 40 (`0x2cb90`),
+  and an empty Coasters block is exactly its 16-byte count and globals (the
+  World block is checked by its thing list, below). The other delimiters may be
+  any later copy of their four bytes, and the payload must split in exactly one
+  way: delimiter bytes inside other blocks' data are accepted, a missing or
+  out-of-order delimiter, a broken width or an ambiguous split throws, and so
+  does a payload holding one delimiter's bytes more than 256 times. The
+  count-based original loader accepts the ambiguous cases (SAVE-011);
 - reports the 19 blocks (offset, length, delimiter offset); UI is everything
   after the AdvisorScoring delimiter. No partial result on error.
 
@@ -304,7 +308,15 @@ open flag, and the advisor's pending advice and history of bound messages. Every
 value read but not imported is reported with its SAVE approximation (SAVE-001 to
 SAVE-010 in docs/FIDELITY-REGISTER.md): the world generator state, guests, staff
 names/jobs/positions, the hiring pool, challenge timing, ride state enums and
-totals, research, unmapped bank words, training budgets and the opaque blocks.
+totals, research, unmapped bank words, training budgets, the world state,
+arrival variables and bytes, the calendar session start, the advisor
+controller's presentation words and current record, the weather, park analyser,
+tag system, mechanic HQ and UI receiver things and the opaque blocks. Staff
+values outside OpenTPW's ranges (happiness outside the traced 0–100, a 100 %
+training percentage, a state without a STAFFSTATES entry, a hire time outside
+the calendar) are adjusted and each adjustment is reported; an attraction whose
+values are out of range (including a negative cost of goods) keeps OpenTPW's
+defaults and is listed.
 Path styles, queues, extension data and object models are not imported.
 
 ## Tests

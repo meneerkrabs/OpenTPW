@@ -51,7 +51,28 @@ public class SavePayloadLayoutTests
 		(swapped[1], swapped[2]) = (swapped[2], swapped[1]);
 		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => SavePayloadLayout.Parse( SaveTestPayloads.Payload( world, tags: swapped ) ) ).Message, "PART (Particles) is out of writer order" );
 		var duplicate = SaveTestPayloads.Payload( world, blocks: new Dictionary<SaveBlock, byte[]> { [SaveBlock.Particles] = SaveTestPayloads.Stored( "SPSC" ) } );
-		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => SavePayloadLayout.Parse( duplicate ) ).Message, "more than once" );
+		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => SavePayloadLayout.Parse( duplicate ) ).Message, "splits into its blocks in more than one way: the SPSC delimiter" );
+	}
+
+	[TestMethod]
+	public void AcceptsDelimiterBytesThatCannotEndTheirBlock()
+	{
+		var world = World();
+		// SOUN and WRLD bytes inside Particles cannot end Sound or World with the other delimiters in order; KOLC inside
+		// the 8-byte Clock block is not at its traced width.
+		var particles = SaveTestPayloads.Stored( "SOUN" ).Concat( SaveTestPayloads.Stored( "WRLD" ) ).ToArray();
+		var clock = SaveTestPayloads.Stored( "CLOK" ).Concat( new byte[4] ).ToArray();
+		var payload = SaveTestPayloads.Payload( world, blocks: new Dictionary<SaveBlock, byte[]> { [SaveBlock.Particles] = particles, [SaveBlock.Clock] = clock } );
+		var layout = SavePayloadLayout.Parse( payload );
+		CollectionAssert.AreEqual( particles, layout.Slice( payload, SaveBlock.Particles ).ToArray() );
+		CollectionAssert.AreEqual( clock, layout.Slice( payload, SaveBlock.Clock ).ToArray() );
+		Assert.AreEqual( world.Length, layout[SaveBlock.World].Length );
+
+		var flooded = SaveTestPayloads.Payload( world, blocks: new Dictionary<SaveBlock, byte[]>
+		{
+			[SaveBlock.Particles] = Enumerable.Repeat( SaveTestPayloads.Stored( "SOUN" ), SavePayloadLayout.MaximumDelimiterOccurrences ).SelectMany( bytes => bytes ).ToArray(),
+		} );
+		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => SavePayloadLayout.Parse( flooded ) ).Message, $"more than {SavePayloadLayout.MaximumDelimiterOccurrences} times" );
 	}
 
 	[TestMethod]

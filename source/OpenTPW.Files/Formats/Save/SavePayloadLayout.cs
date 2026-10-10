@@ -47,9 +47,14 @@ public readonly record struct SavePayloadBlock( SaveBlock Block, string Tag, int
 /// bytes are that delimiter. Delimiters are therefore trailing length sentinels, not chunk headers.
 /// <list type="bullet">
 /// <item>ActionRecording: <c>u32 mLoadedPublishedPark, u32 size</c>, then <c>size</c> bytes.</item>
-/// <item>The 17 delimiters must each occur exactly once after the previous one, in writer order.</item>
-/// <item>Blocks whose width is traced are size-checked like the original loader (<see cref="FixedBlockBytes"/>).
-/// The World block is checked by its thing chain (<see cref="SaveWorld"/>).</item>
+/// <item>The 17 delimiters follow each other in writer order. A block whose width is traced (<see cref="FixedBlockBytes"/>)
+/// ends exactly at that width, like the original loader; the empty Coasters block ends after its 16 bytes. The World
+/// block is checked by its thing chain (<see cref="SaveWorld"/>).</item>
+/// <item>The other blocks' widths are not traced, so their delimiter may be any later occurrence of its four bytes.
+/// The payload must split into the blocks in exactly one way under these rules: delimiter bytes inside an earlier or
+/// later block's data are accepted, but a split that stays ambiguous (the bytes of a block's own delimiter inside
+/// that block, with every later delimiter still in order) is rejected, which the count-based original loader would
+/// accept (SAVE-011), as is a payload with more than <see cref="MaximumDelimiterOccurrences"/> copies of one delimiter.</item>
 /// <item>UI is everything after the AdvisorScoring delimiter.</item>
 /// </list>
 /// </summary>
@@ -60,6 +65,8 @@ public sealed class SavePayloadLayout
 	public const int ActionRecordingHeaderBytes = 8;
 	/// <summary>Coasters block with no coaster: count and three globals (rides lane, empty fixture only).</summary>
 	public const int EmptyCoastersBytes = 16;
+	/// <summary>Bound on the occurrences of one delimiter's bytes after the action recording (keeps the split search small).</summary>
+	public const int MaximumDelimiterOccurrences = 256;
 
 	/// <summary>Delimiter constants of the 17 framed blocks, in writer order (the file holds each byte-reversed).</summary>
 	public static IReadOnlyList<(SaveBlock Block, string Tag)> Delimiters { get; } = Array.AsReadOnly( new[]
@@ -122,37 +129,141 @@ public sealed class SavePayloadLayout
 		var recording = BinaryPrimitives.ReadUInt32LittleEndian( payload[4..] );
 		if ( recording > (uint)(payload.Length - ActionRecordingHeaderBytes) )
 			throw new InvalidDataException( $"Save action recording claims {recording} bytes; only {payload.Length - ActionRecordingHeaderBytes} remain." );
+		var start = ActionRecordingHeaderBytes + (int)recording;
+		// [APPROX:SAVE-011] the delimiters of blocks whose width is not traced are located by their bytes: a payload that splits into its blocks in more than one way, or holds a delimiter's bytes more than MaximumDelimiterOccurrences times, is rejected, while the count-based original loader reads each block by its own width — evidence needed: the serialized widths of the remaining blocks
+		var search = new DelimiterSearch( payload, start );
+		var splits = search.Count( 0, start );
+		if ( splits == 0 )
+		{
+			Diagnose( payload, start );
+			throw new InvalidDataException( "Save payload does not split into its writer-order blocks." );
+		}
 		var result = new SavePayloadBlock[Delimiters.Count + 2];
-		var position = ActionRecordingHeaderBytes + (int)recording;
-		result[0] = new SavePayloadBlock( SaveBlock.ActionRecording, "", 0, position, -1 );
+		result[0] = new SavePayloadBlock( SaveBlock.ActionRecording, "", 0, start, -1 );
+		var position = start;
+		for ( var index = 0; index < Delimiters.Count; index++ )
+		{
+			var (block, tag) = Delimiters[index];
+			var ends = new List<int>();
+			foreach ( var end in search.Ends( index, position ) )
+			{
+				if ( search.Count( index + 1, end + DelimiterBytes ) != 0 )
+					ends.Add( end );
+			}
+			if ( splits > 1 && ends.Count > 1 )
+				throw new InvalidDataException( $"Save payload splits into its blocks in more than one way: the {tag} delimiter occurs more than once where it could end the {block} block." );
+			result[(int)block] = new SavePayloadBlock( block, tag, position, ends[0] - position, ends[0] );
+			position = ends[0] + DelimiterBytes;
+		}
+		result[^1] = new SavePayloadBlock( SaveBlock.UI, "", position, payload.Length - position, -1 );
+		return new SavePayloadLayout( payload.Length, published != 0, result );
+	}
+
+	/// <summary>Whether a block of <paramref name="length"/> bytes at <paramref name="offset"/> meets its traced width rules.</summary>
+	private static string? WidthError( ReadOnlySpan<byte> payload, SaveBlock block, int offset, int length )
+	{
+		if ( FixedBlockBytes.TryGetValue( block, out var bytes ) && length != bytes )
+			return $"Save {block} block is {length} bytes; its writer saves exactly {bytes} (the original loader would report SAD_{block}).";
+		if ( block != SaveBlock.Coasters )
+			return null;
+		if ( length < EmptyCoastersBytes )
+			return $"Save Coasters block is {length} bytes; its count and globals alone take {EmptyCoastersBytes}.";
+		if ( BinaryPrimitives.ReadUInt32LittleEndian( payload[offset..] ) == 0 && length != EmptyCoastersBytes )
+			return $"Save Coasters block has no coaster but {length} bytes; an empty block is {EmptyCoastersBytes}.";
+		return null;
+	}
+
+	/// <summary>Names why a payload has no valid split: the first delimiter missing or out of order after the first-occurrence split, or the first width rule it breaks.</summary>
+	private static void Diagnose( ReadOnlySpan<byte> payload, int position )
+	{
 		Span<byte> stored = stackalloc byte[DelimiterBytes];
 		foreach ( var (block, tag) in Delimiters )
 		{
-			Encoding.ASCII.GetBytes( tag, stored );
-			stored.Reverse();
-			var remainder = payload[position..];
-			var found = remainder.IndexOf( stored );
+			Stored( tag, stored );
+			var found = payload[position..].IndexOf( stored );
 			if ( found < 0 )
 				throw new InvalidDataException( payload[..position].IndexOf( stored ) >= 0
 					? $"Save payload delimiter {tag} ({block}) is out of writer order."
 					: $"Save payload is missing the {tag} delimiter of the {block} block." );
-			if ( remainder[(found + 1)..].IndexOf( stored ) >= 0 )
-				throw new InvalidDataException( $"Save payload contains the {tag} delimiter more than once after the previous block; the {block} block is ambiguous." );
-			result[(int)block] = new SavePayloadBlock( block, tag, position, found, position + found );
-			position += found + DelimiterBytes;
+			var length = FixedBlockBytes.TryGetValue( block, out var bytes ) && position + bytes + DelimiterBytes <= payload.Length
+				&& payload.Slice( position + bytes, DelimiterBytes ).SequenceEqual( stored ) ? bytes : found;
+			if ( WidthError( payload, block, position, length ) is { } error )
+				throw new InvalidDataException( error );
+			position += length + DelimiterBytes;
 		}
-		result[^1] = new SavePayloadBlock( SaveBlock.UI, "", position, payload.Length - position, -1 );
-		foreach ( var (block, bytes) in FixedBlockBytes )
+	}
+
+	private static void Stored( string tag, Span<byte> stored )
+	{
+		Encoding.ASCII.GetBytes( tag, stored );
+		stored.Reverse();
+	}
+
+	/// <summary>
+	/// Counts the splits of the framed blocks (capped at 2): delimiter <c>k</c> may end its block at a fixed-width block's
+	/// traced end or, otherwise, at any later occurrence of its bytes. Memoized per (delimiter, block start), so the search
+	/// is bounded by the delimiter occurrences, not their combinations.
+	/// </summary>
+	private readonly ref struct DelimiterSearch
+	{
+		private readonly ReadOnlySpan<byte> payload;
+		private readonly List<int>[] occurrences = new List<int>[Delimiters.Count];
+		private readonly Dictionary<(int, int), int> counts = new();
+
+		public DelimiterSearch( ReadOnlySpan<byte> payload, int start )
 		{
-			if ( result[(int)block].Length != bytes )
-				throw new InvalidDataException( $"Save {block} block is {result[(int)block].Length} bytes; its writer saves exactly {bytes} (the original loader would report SAD_{block})." );
+			this.payload = payload;
+			Span<byte> stored = stackalloc byte[DelimiterBytes];
+			for ( var index = 0; index < Delimiters.Count; index++ )
+			{
+				Stored( Delimiters[index].Tag, stored );
+				occurrences[index] = new List<int>();
+				for ( var position = start; position + DelimiterBytes <= payload.Length; )
+				{
+					var found = payload[position..].IndexOf( stored );
+					if ( found < 0 )
+						break;
+					if ( occurrences[index].Count == MaximumDelimiterOccurrences )
+						throw new InvalidDataException( $"Save payload holds the {Delimiters[index].Tag} delimiter bytes more than {MaximumDelimiterOccurrences} times." );
+					occurrences[index].Add( position + found );
+					position += found + 1;
+				}
+			}
 		}
-		var coasters = result[(int)SaveBlock.Coasters];
-		if ( coasters.Length < EmptyCoastersBytes )
-			throw new InvalidDataException( $"Save Coasters block is {coasters.Length} bytes; its count and globals alone take {EmptyCoastersBytes}." );
-		if ( BinaryPrimitives.ReadUInt32LittleEndian( payload[coasters.Offset..] ) == 0 && coasters.Length != EmptyCoastersBytes )
-			throw new InvalidDataException( $"Save Coasters block has no coaster but {coasters.Length} bytes; an empty block is {EmptyCoastersBytes}." );
-		return new SavePayloadLayout( payload.Length, published != 0, result );
+
+		/// <summary>The delimiter offsets that can end block <paramref name="index"/> starting at <paramref name="offset"/>, in payload order.</summary>
+		public List<int> Ends( int index, int offset )
+		{
+			var block = Delimiters[index].Block;
+			var ends = new List<int>();
+			var first = occurrences[index].BinarySearch( offset );
+			for ( var item = first < 0 ? ~first : first; item < occurrences[index].Count; item++ )
+			{
+				var end = occurrences[index][item];
+				if ( WidthError( payload, block, offset, end - offset ) == null )
+					ends.Add( end );
+				if ( FixedBlockBytes.TryGetValue( block, out var bytes ) && end - offset >= bytes )
+					break;
+			}
+			return ends;
+		}
+
+		public int Count( int index, int offset )
+		{
+			if ( index == Delimiters.Count )
+				return 1;
+			if ( counts.TryGetValue( (index, offset), out var known ) )
+				return known;
+			var total = 0;
+			foreach ( var end in Ends( index, offset ) )
+			{
+				total = Math.Min( 2, total + Count( index + 1, end + DelimiterBytes ) );
+				if ( total == 2 )
+					break;
+			}
+			counts[(index, offset)] = total;
+			return total;
+		}
 	}
 
 	/// <summary>The bytes of <paramref name="block"/> in <paramref name="payload"/>, which must be the parsed payload.</summary>

@@ -142,8 +142,8 @@ public sealed class OriginalEconomyImport
 		// [BIN:STP-PPC:0x100CBA54 bank serializer] admission fee, balance and mProfitThisYear (+292) are the bank words of the save; bought loans keep offer, amount, APR, term, repayment and months repaid
 		economy.ImportOriginalBank( account.Balance, account.AdmissionFee, account.ProfitThisYear, bought );
 		evidence.Add( $"Bank imported: balance {account.Balance}, admission fee {account.AdmissionFee}, profit this year {account.ProfitThisYear}, {bought.Count} bought loans." );
-		// [APPROX:SAVE-008] bank words without an OpenTPW counterpart (batch balance, last balance, withdrawals flag, turn entered red) are not imported; a bought loan's outstanding balance is its monthly repayment times the months left — evidence needed: a save with a bought loan or a negative balance
-		evidence.Add( $"[APPROX:SAVE-008] Not imported: batch balance {account.BatchBalance}, last balance {account.LastBalance}, withdrawals {(account.WithdrawalsEnabled ? "enabled" : "disabled")}, turn entered red {account.TurnEnteredRed}{(account.Balance < 0 ? "; the park is in the red but its months in the red start at 0" : "")}." );
+		// [APPROX:SAVE-008] bank words without an OpenTPW counterpart (batch balance, last balance, withdrawals flag, turn entered red) are not imported; the ledger month opens at the current balance because mLastBalance, the candidate opening-balance word, is the balance after the last debit (withdrawal 0x100CBFDC), not a month opening; a bought loan's outstanding balance is its monthly repayment times the months left — evidence needed: a save with a bought loan or a negative balance, and the original's month-opening balance
+		evidence.Add( $"[APPROX:SAVE-008] Not imported: batch balance {account.BatchBalance}, last balance (mLastBalance, balance after the last debit; the month opens at the current balance {account.Balance}) {account.LastBalance}, withdrawals {(account.WithdrawalsEnabled ? "enabled" : "disabled")}, turn entered red {account.TurnEnteredRed}{(account.Balance < 0 ? "; the park is in the red but its months in the red start at 0" : "")}." );
 	}
 
 	private static (int Objects, int FixedItems) ImportObjects( ParkEconomy economy, OriginalParkImport save, List<string> evidence )
@@ -165,16 +165,16 @@ public sealed class OriginalEconomyImport
 				continue;
 			}
 			// [BIN:STP-PPC:0x100DAF04 attraction serializer] mPricePerUse, mCostOfGoods, mUpgradeLevel and the gauges at +0x40 (state of repair) and +0x44 (life gauge)
-			if ( attraction.UpgradeLevel <= 2 && attraction.StateOfRepair <= 100 && attraction.LifeGauge <= 100 )
+			if ( attraction.UpgradeLevel <= 2 && attraction.StateOfRepair <= 100 && attraction.LifeGauge <= 100 && attraction.CostOfGoods >= 0 )
 			{
 				state.Price = attraction.PricePerUse;
-				state.CostOfGoods = Math.Max( 0, attraction.CostOfGoods );
+				state.CostOfGoods = attraction.CostOfGoods;
 				state.Level = attraction.UpgradeLevel;
 				state.Repair = attraction.StateOfRepair;
 				state.LifeGauge = attraction.LifeGauge;
 			}
 			else
-				notImported.Add( $"{record.InfoId} (level {attraction.UpgradeLevel}, repair {attraction.StateOfRepair}, life {attraction.LifeGauge})" );
+				notImported.Add( $"{record.InfoId} (level {attraction.UpgradeLevel}, repair {attraction.StateOfRepair}, life {attraction.LifeGauge}, cost of goods {attraction.CostOfGoods})" );
 		}
 		evidence.Add( $"Registered {objects} placed objects and {fixedItems} fixed items without charge; {objects + fixedItems - unmatched - notImported.Count} took their attraction's price, cost of goods, upgrade level, state of repair and life gauge." );
 		if ( unmatched != 0 || notImported.Count != 0 )
@@ -188,6 +188,7 @@ public sealed class OriginalEconomyImport
 	{
 		var start = save.World.Calendar.FunnyTimeStart;
 		var imported = 0;
+		var adjusted = new List<string>();
 		foreach ( var saved in save.Staff )
 		{
 			var type = saved.Model switch
@@ -204,12 +205,26 @@ public sealed class OriginalEconomyImport
 			var seconds = (staff.HiredTimestamp - start) / TimeStampUnitsPerSecond;
 			if ( staff.HiredTimestamp >= start && seconds / ParkCalendar.SecondsPerTurn <= ParkCalendar.Turn( economy.Tick ) )
 				hired = ParkCalendar.TickOfTurn( seconds / ParkCalendar.SecondsPerTurn );
+			else
+				adjusted.Add( $"{saved.Model} thing {saved.Id} hired time stamp {staff.HiredTimestamp} lies outside the park's calendar (start {start}, turn {ParkCalendar.Turn( economy.Tick )}), imported as hired at tick 0" );
 			// [APPROX:SAVE-003] saved staff are imported with their state enum read in STAFFSTATES.str order, their inline name replaced by name index 0 and no job, patrol region, rest area or position — evidence needed: the staff state values and an inline-name field in OpenTPW's staff record
 			var state = staff.State <= (uint)StaffState.PickedUp ? (StaffState)staff.State : StaffState.Idle;
-			economy.Staff.AddImported( type, staff.Grade, Math.Min( staff.GradePercentage, ParkStaff.TrainingPointsPerGrade - 1 ), (int)Math.Clamp( staff.Happiness, 0, 255 ), state, hired );
+			if ( staff.State > (uint)StaffState.PickedUp )
+				adjusted.Add( $"{saved.Model} thing {saved.Id} state {staff.State} has no STAFFSTATES entry, imported as {StaffState.Idle}" );
+			// [BIN:STP-PPC:0x100F3D8C staff rest] happiness is clamped to [0, 100] by every rest, idle and work update
+			var happiness = (int)Math.Clamp( staff.Happiness, 0, 100 );
+			if ( happiness != staff.Happiness )
+				adjusted.Add( $"{saved.Model} thing {saved.Id} happiness {staff.Happiness} imported as {happiness} (traced range 0-100, whole numbers)" );
+			// OpenTPW keeps 0-99 training points and promotes at 100 (ECON-008), so a saved 100 % is imported as 99 and reported
+			var points = Math.Min( staff.GradePercentage, ParkStaff.TrainingPointsPerGrade - 1 );
+			if ( points != staff.GradePercentage )
+				adjusted.Add( $"{saved.Model} thing {saved.Id} grade percentage {staff.GradePercentage} imported as {points} (OpenTPW promotes at {ParkStaff.TrainingPointsPerGrade})" );
+			economy.Staff.AddImported( type, staff.Grade, points, happiness, state, hired );
 			imported++;
 		}
 		evidence.Add( $"Imported {imported} staff ({string.Join( ", ", save.Staff.Select( item => $"{item.Model} grade {item.Staff.Grade}" ) )})." );
+		foreach ( var adjustment in adjusted )
+			evidence.Add( $"[APPROX:SAVE-003] Adjusted on import: {adjustment}." );
 		if ( imported != 0 )
 			evidence.Add( $"[APPROX:SAVE-003] Staff states {string.Join( ", ", save.Staff.Select( item => item.Staff.State ) )} read in STAFFSTATES order; inline names ({string.Join( ", ", save.Staff.Select( item => item.Staff.Name ) )}), jobs, patrol regions, rest areas, energy and positions are not imported." );
 		if ( save.StaffHq is { } hq )
@@ -232,7 +247,17 @@ public sealed class OriginalEconomyImport
 		// [APPROX:SAVE-007] research projects and groups are not imported; research starts from the level settings — evidence needed: the research project and group field widths
 		if ( save.ResearchLab != null )
 			evidence.Add( $"[APPROX:SAVE-007] Research lab ({SaveResearchLab.ProjectRecords} project and {SaveResearchLab.GroupRecords} group records) is not imported." );
-		// [APPROX:SAVE-010] the opaque blocks (scripts, particles, messages, clock words, cadence, track/flying rides, RSSE, camera, coasters, advisor presentation, sound, cheats, advisor scoring, UI) and the weather, park analyser and tag system things are not imported, and of the cell map only path cells, occupancy and MAP attributes are read; object scripts restart from their archives — evidence needed: decoded block layouts and the original's post-load reconstruction
-		evidence.Add( $"[APPROX:SAVE-010] Not imported: {string.Join( ", ", save.Layout.Blocks.Where( block => block.Block is not (SaveBlock.ActionRecording or SaveBlock.World or SaveBlock.RideSystem) ).Select( block => $"{block.Block} {block.Length} bytes" ) )}; weather, park analyser and tag system things." );
+		// [APPROX:SAVE-010] the opaque blocks (scripts, particles, messages, clock words, cadence, track/flying rides, RSSE, camera, coasters, advisor presentation, sound, cheats, advisor scoring, UI), the weather, park analyser, tag system, mechanic HQ and UI message receiver things, the world state, arrival variables and arrival bytes, the calendar session start and the advisor controller's time signature, sound, three raw words, current record, mRequestedLastTutorial and mMessagePlaying are not imported, and of the cell map only path cells, occupancy and MAP attributes are read; object scripts restart from their archives — evidence needed: decoded block layouts and the original's post-load reconstruction
+		evidence.Add( $"[APPROX:SAVE-010] Not imported: {string.Join( ", ", save.Layout.Blocks.Where( block => block.Block is not (SaveBlock.ActionRecording or SaveBlock.World or SaveBlock.RideSystem) ).Select( block => $"{block.Block} {block.Length} bytes" ) )}; {Things( save.World, SaveThingModel.Weather, SaveThingModel.ParkAnalyser, SaveThingModel.TagSystem, SaveThingModel.MechanicHq, SaveThingModel.UIMsgReceiver )}." );
+		var variables = save.World.Variables;
+		evidence.Add( $"[APPROX:SAVE-010] World values not imported: world state {variables.WorldState}, arrival vehicle sizes {variables.ArrivalVehicleSize1}/{variables.ArrivalVehicleSize2}/{variables.ArrivalVehicleSize3}, current arrival vehicle thing {variables.CurrentArrivalVehicle}, arrival bytes {Convert.ToHexString( save.World.Arrivals )}, calendar session start {save.World.Calendar.SessionStart}." );
+		if ( save.Advisor is { } advisor )
+		{
+			var current = advisor.Current;
+			evidence.Add( $"[APPROX:SAVE-010] Advisor controller values not imported: time signature {advisor.TimeSignature}, sound {advisor.Sound}, raw words {string.Join( "/", advisor.RawWords.Select( word => $"0x{word:X8}" ) )}, current record ({(current.Valid ? "valid" : "free")}, message {current.MessageId}, thing {current.ThingId}, secondary {current.Secondary}, score {current.Score}, response {current.ResponseNo}), mRequestedLastTutorial 0x{advisor.RequestedLastTutorial:X2}, mMessagePlaying {advisor.MessagePlaying}." );
+		}
 	}
+
+	private static string Things( SaveWorld world, params SaveThingModel[] models ) =>
+		string.Join( ", ", models.Select( model => $"{model} things ({string.Join( ", ", world.OfModel( model ).Select( thing => thing.Id ) )})" ) );
 }

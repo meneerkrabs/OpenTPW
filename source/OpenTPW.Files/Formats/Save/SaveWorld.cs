@@ -110,13 +110,14 @@ public sealed class SaveWorld
 	public const int ThingHeaderBytes = 8;
 
 	private SaveWorld( SavePayloadBlock block, SaveWorldVariables variables, int variablesOffset, SaveCalendar calendar, int arrivalOffset,
-		SaveCellGrid cells, uint usedThingHead, IReadOnlyList<SaveThing> things )
+		byte[] arrivals, SaveCellGrid cells, uint usedThingHead, IReadOnlyList<SaveThing> things )
 	{
 		Block = block;
 		Variables = variables;
 		VariablesOffset = variablesOffset;
 		Calendar = calendar;
 		ArrivalOffset = arrivalOffset;
+		Arrivals = arrivals;
 		Cells = cells;
 		UsedThingHead = usedThingHead;
 		Things = things;
@@ -129,6 +130,8 @@ public sealed class SaveWorld
 	public int OpaqueMacroAiLength => Calendar.Offset - OpaqueMacroAiOffset;
 	public SaveCalendar Calendar { get; }
 	public int ArrivalOffset { get; }
+	/// <summary>The <see cref="ArrivalBytes"/> raw arrival bytes at <see cref="ArrivalOffset"/> (field meanings not traced).</summary>
+	public byte[] Arrivals { get; }
 	public SaveCellGrid Cells { get; }
 	public uint UsedThingHead { get; }
 	/// <summary>Used things in list order.</summary>
@@ -178,7 +181,7 @@ public sealed class SaveWorld
 		if ( calendar.FunnySecsPerRealSec <= 0 || calendar.MonthAtLastUpdate is < 0 or > 11 || calendar.DayAtLastUpdate is < 1 or > 31 )
 			throw new InvalidDataException( $"Save World calendar before the map is not a calendar (rate {calendar.FunnySecsPerRealSec}, month {calendar.MonthAtLastUpdate}, day {calendar.DayAtLastUpdate})." );
 		var (head, things) = SaveThingChain.Walk( span, cells.EndOffset, block.End );
-		var world = new SaveWorld( block, variables, block.Offset, calendar, arrival, cells, head, things );
+		var world = new SaveWorld( block, variables, block.Offset, calendar, arrival, span.Slice( arrival, ArrivalBytes ).ToArray(), cells, head, things );
 		foreach ( var (name, id, model) in variables.ThingReferences() )
 		{
 			if ( id == 0 )

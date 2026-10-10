@@ -58,10 +58,15 @@ public class OriginalSaveImportTests
 	}
 
 	/// <summary>A 3×3 park: Belly Bounce at (1, 1), the gates as a fixed item, a researcher, bank and challenges from <paramref name="settings"/>.</summary>
-	private static OriginalParkImport Park( BalanceSettings settings, byte[]? bank = null, uint parkClosed = 0, IEnumerable<(uint, uint, byte[])>? extraThings = null )
+	private static OriginalParkImport Park( BalanceSettings settings, byte[]? bank = null, uint parkClosed = 0, IEnumerable<(uint, uint, byte[])>? extraThings = null,
+		byte[]? researcher = null, byte[]? bellyBounce = null )
 	{
 		var map = OriginalParkImportTests.CreateMap( 3, 3, ( _, _ ) => 0 );
 		var things = SaveTestPayloads.ParkThings();
+		if ( researcher != null )
+			things[0] = (30, (uint)SaveThingModel.Researcher, researcher);
+		if ( bellyBounce != null )
+			things[1] = (12, (uint)SaveThingModel.Attraction, bellyBounce);
 		things[2] = (10, (uint)SaveThingModel.ChallengeSystem, Challenges( settings ));
 		things[4] = (8, (uint)SaveThingModel.Bank, bank ?? Bank( settings ));
 		things.Insert( 2, (11, (uint)SaveThingModel.Attraction, SaveTestPayloads.Attraction( new SaveTestPayloads.AttractionFields { PositionX = 128, PositionY = 128, Angle = 0, InfoId = 1601, Price = 0, Level = 0, Repair = 100, LifeGauge = 100 } )) );
@@ -108,12 +113,52 @@ public class OriginalSaveImportTests
 		foreach ( var id in new[] { "SAVE-001", "SAVE-002", "SAVE-003", "SAVE-004", "SAVE-005", "SAVE-006", "SAVE-007", "SAVE-008", "SAVE-010" } )
 			Assert.IsTrue( import.Evidence.Any( line => line.Contains( $"[APPROX:{id}]" ) ), $"{id} is reported" );
 		Assert.IsTrue( import.Evidence.Any( line => line.Contains( "0x3F416BBA" ) ), "the dropped generator state is named" );
+		Assert.IsFalse( import.Evidence.Any( line => line.Contains( "Adjusted on import" ) ), "in-range staff values are imported unchanged" );
+		AssertReportsUnimportedValues( import );
 
 		// The imported park keeps running and its save round-trips.
 		economy.AdvanceDays( 40 );
 		Assert.AreEqual( 3, economy.Date.Month );
 		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( ParkSaveFile.Serialize( economy ) ) ), settings, economy.Catalog );
 		Assert.AreEqual( (economy.Tick, economy.Balance, economy.Staff.Members.Count), (restored.Tick, restored.Balance, restored.Staff.Members.Count) );
+	}
+
+	/// <summary>Every World, thing and advisor-controller value the importer reads but does not import is named under SAVE-010 or SAVE-008.</summary>
+	private static void AssertReportsUnimportedValues( OriginalEconomyImport import )
+	{
+		string Line( string start ) => import.Evidence.Single( line => line.StartsWith( start, StringComparison.Ordinal ) );
+		var blocks = Line( "[APPROX:SAVE-010] Not imported:" );
+		foreach ( var model in new[] { "Weather", "ParkAnalyser", "TagSystem", "MechanicHq", "UIMsgReceiver" } )
+			StringAssert.Contains( blocks, $"{model} things (" );
+		var world = Line( "[APPROX:SAVE-010] World values not imported:" );
+		foreach ( var value in new[] { "world state ", "arrival vehicle sizes ", "current arrival vehicle thing ", "arrival bytes ", "calendar session start " } )
+			StringAssert.Contains( world, value );
+		var advisor = Line( "[APPROX:SAVE-010] Advisor controller values not imported:" );
+		foreach ( var value in new[] { "time signature ", "sound ", "raw words 0x", "current record (", "mRequestedLastTutorial 0x", "mMessagePlaying " } )
+			StringAssert.Contains( advisor, value );
+		StringAssert.Contains( Line( "[APPROX:SAVE-008]" ), "last balance (mLastBalance" );
+	}
+
+	[TestMethod]
+	public void ReportsEveryStaffAndAttractionValueItAdjusts()
+	{
+		var settings = Settings();
+		var economy = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
+		var save = Park( settings, researcher: SaveTestPayloads.Staff( SaveThingModel.Researcher, happiness: 150, state: 9, percentage: 100 ),
+			bellyBounce: SaveTestPayloads.Attraction( new SaveTestPayloads.AttractionFields { PositionX = 1 * 256 + 128, PositionY = 1 * 256 + 128, Angle = 0, Price = 30, Level = 0, Repair = 80, LifeGauge = 90, CostOfGoods = -4 } ) );
+		var import = OriginalEconomyImport.Apply( economy, save );
+
+		var researcher = economy.Staff.Members.Single();
+		Assert.AreEqual( (100, 99, StaffState.Idle), (researcher.Happiness, researcher.TrainingPoints, researcher.State), "clamped to the traced happiness range and OpenTPW's 0-99 points" );
+		var adjusted = import.Evidence.Where( line => line.StartsWith( "[APPROX:SAVE-003] Adjusted on import:", StringComparison.Ordinal ) ).ToArray();
+		Assert.AreEqual( 3, adjusted.Length );
+		Assert.IsTrue( adjusted.Any( line => line.Contains( "happiness 150 imported as 100" ) ) );
+		Assert.IsTrue( adjusted.Any( line => line.Contains( "grade percentage 100 imported as 99" ) ) );
+		Assert.IsTrue( adjusted.Any( line => line.Contains( "state 9 has no STAFFSTATES entry" ) ) );
+
+		var bouncy = economy.Objects.Single( item => item.InfoId == 1100 );
+		Assert.AreEqual( 100.0, bouncy.Repair, "an attraction with a negative cost of goods keeps OpenTPW's defaults (saved repair 80)" );
+		Assert.IsTrue( import.Evidence.Any( line => line.Contains( "kept at their defaults" ) && line.Contains( "cost of goods -4" ) ) );
 	}
 
 	[TestMethod]
@@ -208,6 +253,8 @@ public class OriginalSaveImportTests
 		Assert.AreEqual( AdvisorMessageHistory.Empty, controller.Queue.GetHistory( 106 ) );
 		StringAssert.Contains( report, "dropped 1 pending advice of unbound messages (200)" );
 		StringAssert.Contains( report, "1 unbound history entries" );
+		StringAssert.Contains( report, "[APPROX:ADVISOR-022]" );
+		StringAssert.Contains( report, "message 128 thing 0 secondary 0 score overridden 0" );
 
 		// The level start that follows (events 10 then 0) keeps the saved ticks and adds Welcome next to the saved advice.
 		controller.HandleGameEvent( AdvisorGameEvent.ResetForEasyMode, 755, 0, true );
@@ -244,6 +291,14 @@ public class OriginalSaveImportTests
 			var valid = save.Advisor!.Pending.Count( record => record.Valid );
 			Assert.AreEqual( valid, controller.Queue.Count + int.Parse( report.Split( "dropped " )[1].Split( ' ' )[0] ) );
 			Assert.IsTrue( controller.Queue.GetHistory( 0 ).HasBeenPlayed, "the saved Welcome history is imported" );
+			// Values read but not imported are reported (SAVE-plan §8.2, "never silently defaulted").
+			AssertReportsUnimportedValues( runtime.Import! );
+			var advisor = runtime.Import!.Evidence.Single( line => line.StartsWith( "[APPROX:SAVE-010] Advisor controller", StringComparison.Ordinal ) );
+			StringAssert.Contains( advisor, $"message {save.Advisor.Current.MessageId}," );
+			StringAssert.Contains( advisor, $"mRequestedLastTutorial 0x{save.Advisor.RequestedLastTutorial:X2}" );
+			StringAssert.Contains( advisor, $"mMessagePlaying {save.Advisor.MessagePlaying}." );
+			foreach ( var record in save.Advisor.Pending.Where( record => record.Valid && controller.Queue.HasDescriptor( (int)record.MessageId ) ) )
+				StringAssert.Contains( report, $"message {record.MessageId} thing {record.ThingId} secondary {record.Secondary}" );
 			// The researcher researches: the seed park needs no stand-in.
 			var progress = economy.Research.ProgressEntries.ToArray();
 			var completed = economy.Research.Completed.Count;

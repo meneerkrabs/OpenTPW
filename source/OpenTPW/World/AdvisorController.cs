@@ -153,6 +153,7 @@ internal sealed class AdvisorController
 		var pending = new AdvisorPendingAdvice?[AdvisorScoreQueue.Capacity];
 		var imported = 0;
 		var dropped = new List<uint>();
+		var fields = new List<string>();
 		for ( var index = 0; index < pending.Length; index++ )
 		{
 			var record = saved.Pending[index];
@@ -164,6 +165,7 @@ internal sealed class AdvisorController
 				continue;
 			}
 			pending[index] = new AdvisorPendingAdvice( (int)record.MessageId, record.Score, record.ResponseNo, record.OverrideOnlyOnce != 0 );
+			fields.Add( $"message {record.MessageId} thing {record.ThingId} secondary {record.Secondary} score overridden {record.ScoreOverridden}" );
 			imported++;
 		}
 		var history = new Dictionary<int, AdvisorMessageHistory>();
@@ -181,7 +183,7 @@ internal sealed class AdvisorController
 		}
 		Queue.Restore( pending, history );
 		// [APPROX:ADVISOR-022] OpenTPW's own park save does not store the controller, and an original save's pending advice and history of messages without a bound descriptor (only the wired game events' messages are bound) are dropped on import — evidence needed: the remaining descriptor rows and their score producers, and an OpenTPW save target for the controller
-		return $"Advisor controller imported: {imported} pending advice, history of {history.Count} bound messages; dropped {dropped.Count} pending advice of unbound messages ({string.Join( ", ", dropped )}) and {droppedHistory} unbound history entries.";
+		return $"[APPROX:ADVISOR-022] Advisor controller imported: {imported} pending advice, history of {history.Count} bound messages; dropped {dropped.Count} pending advice of unbound messages ({string.Join( ", ", dropped )}) and {droppedHistory} unbound history entries; the imported records' thing, secondary and score-overridden fields are not kept ({string.Join( "; ", fields )}); the controller's other values are reported under SAVE-010.";
 	}
 
 	/// <summary>

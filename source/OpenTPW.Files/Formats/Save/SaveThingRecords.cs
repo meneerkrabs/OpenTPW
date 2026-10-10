@@ -158,7 +158,7 @@ public sealed record SaveStaff( int Id, SaveThingModel Model, SaveThingBase Base
 		var person = reader.Bytes( SaveThingChain.PersonBytes - SaveThingBase.Bytes );
 		var staff = new SaveStaffRecord( reader.I32(), reader.F32(), reader.U32(), reader.Utf16( 33 ), reader.U32(), reader.U8(),
 			reader.U16(), reader.U32(), reader.U32(), reader.I64(), reader.F32() );
-		if ( staff.Grade is < 0 or > 4 || !float.IsFinite( staff.Happiness ) || !float.IsFinite( staff.Energy ) || staff.GradePercentage > 100 )
+		if ( staff.Grade is < 0 or > 4 || !float.IsFinite( staff.Happiness ) || !float.IsFinite( staff.Energy ) || staff.GradePercentage is < 0 or > 100 )
 			throw new InvalidDataException( $"Save {thing.Model} thing {thing.Id} has grade {staff.Grade}, percentage {staff.GradePercentage}, happiness {staff.Happiness}, energy {staff.Energy}." );
 		var role = reader.Bytes( thing.End - reader.Position - 2 );
 		return new SaveStaff( thing.Id, thing.Model, thingBase, person, staff, role, reader.U16() );

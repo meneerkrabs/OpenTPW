@@ -105,6 +105,33 @@ class FieldTests(unittest.TestCase):
         self.assertEqual(format_witness.channel_flag_0x40_stores(Words(words), 0, len(words) * 4),
                          [(4, 'set'), (28, 'clear')])
 
+    def test_register_flow(self):
+        class Words:
+            def __init__(self, words):
+                self.words = words
+
+            def w(self, offset):
+                return self.words[offset // 4]
+
+        words = [(32 << 26) | (30 << 21) | (2 << 16) | (0x10000 - 0x75d8),  # lwz r30, clock object
+                 (14 << 26) | (3 << 21) | (30 << 16) | 0x44,  # addi r3, r30, 0x44
+                 (36 << 26) | (0 << 21) | (30 << 16) | 8,  # stw r0, 8(r30): store through it
+                 (36 << 26) | (30 << 21) | (1 << 16),  # stw r30, 0(r1): the pointer escapes
+                 (18 << 26) | 8 | 1,  # bl +8 with r3 = object + 0x44; r3 dies, r30 survives
+                 (31 << 26) | (30 << 21) | (29 << 16) | (30 << 11) | (444 << 1),  # mr r29, r30
+                 (14 << 26) | (30 << 21),  # li r30, 0: r30 no longer holds it
+                 (36 << 26) | (29 << 16) | 4,  # stw r0, 4(r29): store through the copy
+                 (36 << 26) | (30 << 16) | 12,  # stw r0, 12(r30): not the object any more
+                 format_witness.BLR]
+        flow = format_witness.register_flow(Words(words), 0, 30)
+        self.assertEqual(flow, {'stores': [(8, 'stw', 8), (28, 'stw', 4)], 'escapes': [12],
+                                'calls': [(16, 24, {3: 0x44})]})
+        stmw_r29 = (47 << 26) | (29 << 21) | (1 << 16) | (0x10000 - 12)
+        self.assertEqual(format_witness.register_flow(Words(words[:1] + [stmw_r29, format_witness.BLR]), 0, 30),
+                         {'stores': [], 'escapes': [4], 'calls': []}, 'stmw r29 spills r30 too')
+        with self.assertRaises(WitnessError):
+            format_witness.register_flow(Words(words[:-1] + [0] * 4), 0, 30, limit=8)
+
     def test_hexify_only_addresses(self):
         self.assertEqual(format_witness.hexify({'handler': 16, 'cells': 16, 'loader_call_sites': [1, 2]}),
                          {'handler': '0x10', 'cells': 16, 'loader_call_sites': ['0x1', '0x2']})

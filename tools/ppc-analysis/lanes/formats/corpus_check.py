@@ -156,6 +156,37 @@ def group0_brackets(data: bytes, block: int, group_table: int, groups: int, stat
     return counts
 
 
+def normal_route_inputs(data: bytes) -> collections.Counter:
+    """Stored inputs of the face-normal routes (witness `md2_normal_recompute_routes`) in one geometry member."""
+    counts = collections.Counter()
+    meshes, records, others = u16(data, 0x44), u32(data, 0x70), u32(data, 0x74)
+    header = u32(data, 0x30)
+    counts['header_0x20000_set' if header & 0x20000 else 'header_0x20000_clear'] += 1
+    counts['header_0x40000_set' if header & 0x40000 else 'header_0x40000_clear'] += 1
+    # Placement rebases record +100 into the instance's normals only when header +0x58 is non-null.
+    counts['header_0x58_nonnull' if u32(data, 0x58) else 'header_0x58_null'] += 1
+    for m in range(meshes):
+        word = u32(data, records + 160 * m)
+        counts['records_0x00010000_set' if word & 0x00010000 else 'records_0x00010000_clear'] += 1
+        counts['records_0x10000000_set' if word & 0x10000000 else 'records_0x10000000_clear'] += 1
+    # 0x19adf0: entry i (+0x7c, 20 bytes, count +0x48) selects record +0x46 + i; with flags & 0x40040 the
+    # record at that record's +4 gets 0x10000000.
+    entries, table, first = u16(data, 0x48), u32(data, 0x7c), u16(data, 0x46)
+    marked = False
+    for i in range(entries):
+        index = first + i
+        record = records + 160 * index if index < meshes else others + 88 * (index - meshes)
+        counts['table_entries'] += 1
+        if u32(data, table + 20 * i) & 0x40040:
+            marked = True
+            counts['table_entries_0x40040_from_88_byte' if index >= meshes else 'table_entries_0x40040_from_mesh'] += 1
+            target = u32(data, record + 4)
+            counts['table_0x40040_targets_mesh_record' if records <= target < records + 160 * meshes and
+                   (target - records) % 160 == 0 else 'table_0x40040_targets_other'] += 1
+    counts['members_with_0x40040_entries'] += marked
+    return counts
+
+
 def check_md2(root: Path) -> dict:
     members = []
     for wad in sorted(root.rglob('*')):
@@ -182,6 +213,7 @@ def check_md2(root: Path) -> dict:
             meshes, records = u16(data, 0x44), u32(data, 0x70)
             geometry_checks['mesh_records_cursor_flag_clear' if all(not u32(data, records + 160 * m) & 0x00800000
                                                              for m in range(meshes)) else 'mesh_records_cursor_flag_set'] += 1
+            geometry_checks.update(normal_route_inputs(data))
     checks = collections.Counter()
     for wad, name, data in members:
         if u32(data, 4) != 221 or not u32(data, 0x98):

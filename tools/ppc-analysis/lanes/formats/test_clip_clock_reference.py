@@ -5,8 +5,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from clip_clock_reference import (FREEZE_AT_END, FREEZE_AT_START, SELECT_CLOCK_B, Channel, SceneClocks,  # noqa: E402
-                                  f32, fresh_start, instantiate, reset_channels, to_unsigned, update)
+from clip_clock_reference import (FREEZE_AT_END, FREEZE_AT_START, RATE_MAX, RATE_MIN, RATE_RESET,  # noqa: E402
+                                  SELECT_CLOCK_B, Channel, SceneClocks, clamp_rate, f32, faster, fresh_start,
+                                  instantiate, reset_channels, slower, to_unsigned, update)
 
 
 def started(flags: int, clocks: SceneClocks, duration: int = 300) -> Channel:
@@ -99,6 +100,48 @@ class FrozenChannelTests(unittest.TestCase):
                          [0, 0, 2 ** 31, 0xffffffff])
         with self.assertRaises(ValueError):
             to_unsigned(float('nan'))
+
+
+class ControlTests(unittest.TestCase):
+    def test_rate_keys_step_by_a_quarter_and_clamp(self):
+        rates = [RATE_RESET]
+        for _ in range(4):
+            rates.append(faster(rates[-1]))
+        self.assertEqual(rates, [1.0, 1.25, 1.5625, 1.953125, RATE_MAX])
+        # Clamping makes the rate path-dependent: back down from 2.0 is not the way up.
+        self.assertEqual(slower(RATE_MAX), 1.6)
+        self.assertNotIn(slower(RATE_MAX), rates)
+        rate = RATE_RESET
+        for _ in range(7):
+            rate = slower(rate)
+        self.assertEqual(rate, RATE_MIN)
+        self.assertEqual(clamp_rate(float('nan')), RATE_MIN)
+
+    def test_hold_steps_a_fixed_31_ms_per_pass(self):
+        clocks = SceneClocks.started(raw=0)
+        clocks.refresh(1000)
+        clocks.hold(1000)
+        self.assertEqual(clocks.held_step, 31, '1000 // 32 truncates 31.25')
+        channel = started(0, clocks)
+        for _ in range(10):
+            clocks.step()
+        clocks.refresh(60000)
+        self.assertEqual(clocks.clock_a, 1310, 'real time does not move a held clock A')
+        self.assertEqual(update(channel, clocks), f32(f32(30.0 * 310) / 1000))
+        self.assertEqual(clocks.clock_b, 60000, 'clock B keeps real time while A is held')
+
+    def test_paused_hold_does_not_step_and_release_continues(self):
+        clocks = SceneClocks.started(raw=0)
+        clocks.hold(500)
+        clocks.pause(500)
+        clocks.step()
+        clocks.resume(800)
+        clocks.step()
+        clocks.release(2000)
+        clocks.refresh(2000)
+        self.assertEqual(clocks.clock_a, 531)
+        clocks.refresh(2100)
+        self.assertEqual(clocks.clock_a, 631)
 
 
 class InheritanceTests(unittest.TestCase):

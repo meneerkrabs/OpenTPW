@@ -1,9 +1,11 @@
 """Reference model of the Mac MD2 channel clock and its two scene clocks (witness `md2_channel_clock_selector`).
 
 A standalone restatement of traced arithmetic for tests and review; it is not wired to the OpenTPW runtime and
-says nothing about the PC build. Inputs that the trace leaves open are explicit arguments: the raw
-`LbTime_GetClock` values, clock A's rate (+0x18), its hold (+0x2c/+0x30) and the save offsets. Who sets the
-rate, the hold and the offsets, and how the game maps its speed settings onto them, were not traced.
+says nothing about the PC build. The raw `LbTime_GetClock` values and the save offsets are explicit inputs.
+Clock A's rate starts at 1.0 and changes only through three "game" key-table handlers (witness
+`md2_scene_clock_controls`): x1.25 and /1.25 clamped to [0.25, 2.0], and back to 1.0. The hold is a fixed-step
+mode (1000 // n ms per main-loop step, n = 32 at both call sites) used while loading and while continuous
+screenshot capture is on. Which physical keys reach the handlers was not traced.
 """
 from __future__ import annotations
 
@@ -14,6 +16,8 @@ from dataclasses import dataclass
 SELECT_CLOCK_B = 0x40
 FREEZE_AT_START, FREEZE_AT_END, LOOP = 0x2, 0x4, 0x1
 TICKS_PER_SECOND, MILLISECONDS = 30.0, 1000.0
+RATE_STEP, RATE_MIN, RATE_MAX, RATE_RESET = 1.25, 0.25, 2.0, 1.0
+HOLD_STEPS_PER_SECOND = 32
 
 
 def f32(value: float) -> float:
@@ -96,13 +100,15 @@ class UnscaledTimer:
 class SceneClocks:
     """Global block +16400 (A) and +16408 (B), refreshed together by 0xa6f70; channels read the stored values.
 
-    `held`/`held_value` are A's +0x2c/+0x30; `a_offset` and `b_offset` are the restore offsets +0x3c and
-    +0x18. A's second offset +0x38 (added only when not held) is taken as 0; its setter is untraced.
+    `held`/`held_value`/`held_step` are A's +0x2c/+0x30/+0x34; `release_offset` is +0x38 (added only when not
+    held, set only by `release`); `a_offset` and `b_offset` are the restore offsets +0x3c and +0x18.
     """
     a: ScaledTimer
     b: UnscaledTimer
     held: bool = False
     held_value: int = 0
+    held_step: int = 0
+    release_offset: int = 0
     a_offset: int = 0
     b_offset: int = 0
     clock_a: int = 0
@@ -112,10 +118,31 @@ class SceneClocks:
     def started(cls, raw: int, rate: float = 1.0) -> 'SceneClocks':
         return cls(ScaledTimer(rate=rate, last_raw=raw), UnscaledTimer(last_raw=raw))
 
+    def unheld(self, raw: int) -> int:
+        """0x10ed54: the held value, or the scaled timer plus +0x38."""
+        return self.held_value if self.held else u32(self.a.read(raw) + self.release_offset)
+
     def refresh(self, raw: int) -> None:
-        a = self.held_value if self.held else self.a.read(raw)
-        self.clock_a = u32(a + self.a_offset)
+        self.clock_a = u32(self.unheld(raw) + self.a_offset)
         self.clock_b = u32(self.b.read(raw) + self.b_offset)
+
+    def hold(self, raw: int, steps_per_second: int = HOLD_STEPS_PER_SECOND) -> None:
+        """0x10ec60: freeze A at its current value and step it by 1000 // n (unsigned) ms; no-op when held."""
+        if not self.held:
+            self.held_value = self.unheld(raw)
+            self.held_step = 1000 // steps_per_second
+            self.held = True
+
+    def step(self) -> None:
+        """0x10ed10, once per main-loop pass (0x1104d8): +0x30 += +0x34 unless A is paused (held or not)."""
+        if not self.a.paused:
+            self.held_value = u32(self.held_value + self.held_step)
+
+    def release(self, raw: int) -> None:
+        """0x10ecc0: A continues from the held value (+0x38 = held - scaled timer)."""
+        if self.held:
+            self.release_offset = u32(self.held_value - self.a.read(raw))
+            self.held = False
 
     def pause(self, raw: int) -> None:
         """0x10e888 pauses both timers; 0x10e8bc resumes both. No other caller pauses either one."""
@@ -140,6 +167,23 @@ class Channel:
     no_pause_time: int = 0
     total_frames: float = 0.0
     frame: float = 0.0
+
+
+def faster(rate: float) -> float:
+    """0x127c48 (handler 0x113184): rate * 1.25, then clamped to [0.25, 2.0]."""
+    return clamp_rate(rate * RATE_STEP)
+
+
+def slower(rate: float) -> float:
+    """0x127c88 (handler 0x11315c): rate / 1.25, then the same clamp."""
+    return clamp_rate(rate / RATE_STEP)
+
+
+def clamp_rate(rate: float) -> float:
+    """`fcmpo` against 0.25 then 2.0; an unordered (NaN) rate fails the first test and becomes 0.25."""
+    if not rate >= RATE_MIN:
+        return RATE_MIN
+    return rate if rate <= RATE_MAX else RATE_MAX
 
 
 def fresh_start(channel: Channel, duration_ticks: int, clocks: SceneClocks) -> None:

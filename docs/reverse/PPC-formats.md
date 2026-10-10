@@ -23,7 +23,7 @@ OPENTPW_NATIVE_SHADER_TESTS=1 dotnet test source/OpenTPW.Tests --filter "FullyQu
 ```
 
 - `format_witness.py` refuses any container whose SHA-256 differs from the pins
-  below, then makes 1,116 checks (the clock-selector witness reruns the 130
+  below, then makes 1,539 checks (the clock-selector witness reruns the 130
   copy-back checks) of instruction fields, branch conditions, relocated TOC slots, literal
   constants and label strings at the offsets cited here, and prints interpreted
   JSON (labels, widths, constants, offsets). It never executes code and does not
@@ -283,12 +283,10 @@ confirming the existing `P0, (C, C, P)…` reading. Model: `bezier`.
   record +100, indexed by face word >> 1) from the cross product of the face's
   corner positions, normalised. It runs for mesh records with flag 0x00010000
   from 0xa7960 only for relative-animation models (header flag 0x4), from
-  0xa78ec (all meshes; called at 0x567e4 and at 0x5a4b4 in the placement
-  routine 0x59f00, conditions not traced)
-  and from the renderer at 0x19ac0c when mesh flag 0x10000000 is also set (clear
-  in all 4,914 stored records; its setter was not traced). Set-mode objects
-  therefore keep stored normals on the 0xa7960 path; the other two routes are
-  open.
+  0xa78ec (all meshes; at placement and at 0x567e4) and from the walk at
+  0x19ac0c when record flag 0x10000000 is also set. Set-mode objects keep
+  stored normals on the 0xa7960 path; for the other routes see "Face-normal
+  routes" below.
 - 0xa4a58 computes `modf(time)` and a decremented integer part on entry
   (0xa4a88–0xa4abc) that nothing reads.
 
@@ -312,8 +310,8 @@ confirming the existing `P0, (C, C, P)…` reading. Model: `bezier`.
 - One caller (0x4f888) starts a clip with speed 1.0.
 
 So, at speed 1.0 and an unscaled scene clock, MD2 ticks advance at 30 per
-second. Who sets clock A's rate and hold, and how game-speed settings map onto
-them, are not traced. Pausing is traced (below).
+second. Clock A's rate, its hold and the pause callers are traced in "Scene
+clock controls" below.
 
 ### Clock selection (proven for this build)
 
@@ -342,8 +340,9 @@ Witness `md2_channel_clock_selector` (259 checks); reference model
 - **Clock A** (timer at object +0): `LbTime_GetClock` steps (unsigned) times a
   double rate (+0x18) are accumulated in a double (+0x10, 0x127cd0) and
   truncated to whole units. Paused time (+0x24) is subtracted (flag +0x28,
-  value at pause +0x20), then offset +0x38 is added. A hold (+0x2c) returns
-  +0x30 instead of that sum. Offset +0x3c is added in both cases. The snapshot
+  value at pause +0x20), then offset +0x38 is added. While held (+0x2c), A
+  returns +0x30 instead of that sum (a fixed-step mode; see "Scene clock
+  controls"). Offset +0x3c is added in both cases. The snapshot
   0x10e9ec (caller 0x11dbac) keeps the current A in +0x40. Restore 0x10ea28
   (caller 0x11b54c, followed directly by the refresh 0xa6f70) sets +0x3c so that
   A continues from that value (0x11a5bc).
@@ -391,17 +390,95 @@ Requirements for a faithful reimplementation (Mac build; not a PC claim):
    already elapsed. The truncation also makes rate 1.5 differ from 45 ticks/s
    (both are reference tests). OpenTPW's per-animator `TicksPerSecond` is
    therefore not this mechanism, and treating it as game speed would be a
-   separate, unproven choice.
+   separate, unproven choice. The rate's setters are now known (below), but
+   that does not make a custom ticks-per-second value equal the original speed.
 5. Frozen channels (0x2/0x4) ignore the clock for AnimTime but not for
    NoPauseAnimTime.
+
+### Scene clock controls (proven for this build)
+
+Witness `md2_scene_clock_controls` (317 checks); the reference model
+`clip_clock_reference.py` adds the rate steps, the hold and the release.
+
+- **Every route to the clock object.** Only one data pointer points into the
+  clock object (0x11f340–0x11f3a3): the TOC slot −0x75d8. A straight-line scan
+  from each of its 55 loads to the next `blr` follows copies of the pointer. It
+  finds no store of the pointer. Its only direct stores are in the initializer
+  0x10ea5c (caller 0xf0, static initialization): +0x20–+0x30, +0x38, +0x3c
+  and +0x50–+0x5c are set to 0, so hold +0x2c and +0x38 start at 0. The pointer is passed (in
+  r3, at offset 0, or +0x44 for the B timer init) to 19 routines only: the A/B
+  getters, the paused-flag getter, the rate init/set/step/get, hold, release,
+  the held step, the three pause wrappers and four save routines. The scan does
+  not follow branches, so it is a bounded witness, not a data-flow proof.
+- **Rate (timer +0x18, double).** It is 1.0 at start (0x127c08). It changes only
+  in 0x127c40 (store), 0x127c48 (×1.25) and 0x127c88 (÷1.25). Both steps then
+  clamp to [0.25, 2.0] (`fcmpo`; a NaN rate becomes 0.25). With the init these
+  are all six +0x18 stores in the timer code (0x127c08–0x127d3b), and the route
+  scan above reaches the object only through them. Each has one caller, a handler that is never
+  called directly: 0x11315c (÷1.25), 0x113184 (×1.25) and 0x1131ac (= 1.0). Each
+  handler's transition vector is referenced only by entries 6, 7 and 8 of the
+  15-entry "game" key table (0x4524c, built by 0x114d50). Their key words
+  0x6d00, 0x6b00 and 0x6a00 have no character byte. Whether these are Mac key
+  codes (F10/F14/F16) or Win32 virtual keys under MacDoze (numpad −, +, *) was
+  not traced. Nor was the table dispatcher, so whether anything other than a
+  key press invokes those entries is not known. With the clamp the rate depends
+  on the path taken: 1.0 → 1.25 → 1.5625 → 1.953125 → 2.0, but ÷1.25 from 2.0
+  gives 1.6 (reference test). The rate is read directly only at
+  0xbd298/0xbd2b4/0xbd2cc, where per-pass counters add `0.4 × rate` and
+  `trunc(rate)` unless A is paused. Their meaning was not traced.
+- **Hold = fixed-step mode.** 0x10ec60(object, n) does nothing if already held.
+  Otherwise it stores the current A in +0x30 and `1000 divwu n` in +0x34, then
+  sets +0x2c. The step 0x10ed10 (one caller, 0x1104d8, once per main-loop pass
+  via 0x1162d0 ← 0x1c11b4) adds +0x34 to +0x30 unless A is paused. Release
+  0x10ecc0 sets +0x38 = held − timer, so A continues from the held value
+  without a jump. Both hold call sites pass n = 32, a step of 31 ms (31.25
+  truncated), so 0.93 MD2 ticks per pass at speed 1:
+  - 0x1c0b64, at main-loop entry. It is released at 0x1c15d0 in the same
+    routine, just before the advisor is created (0x1c1608).
+  - 0x1c229c, on each pass while the capture flag (TOC −0x5e24) is set, and
+    released on the first pass after the flag is cleared. The flag is cleared
+    at main-loop entry and toggled only by "system" key 3 (key word 0x77,
+    modifiers 0x3f0000; key 2 with the same key word and no modifiers takes one
+    shot). While set, each pass calls `CCapture::SetCapture` on the imported
+    `gei_Capture` object with `Scr%05ld.tga`.
+
+  While A is held, clock B keeps real time, so the advisor (clock B) and
+  everything else (clock A) drift apart during capture (reference test).
+- **Pause is global; frozen bits are per channel.** The only callers of the
+  pause, resume and toggle wrappers are three methods of the game-state object
+  (TOC −0x764c, data 0x11f42c): 0x110518 (pause, 8 callers), 0x110598
+  (resume, 8 callers) and 0x110604 (toggle, callers 0x1128a0 and 0x1576ec). Each acts only when that
+  object's +0x3c is 1 (other writers not traced; the main routine stores 0
+  at 0x1c1694, right after its load-end resume at 0x1c1688). The toggle at 0x1128a0 is the handler of "system" key 0,
+  named `pause` (key word 0x50). The other callers were not identified: pause
+  0xc50, seven pause and seven resume callers in 0x153000–0x1ba400, and the
+  toggle 0x1576ec. The difference:
+
+  | | Global pause (wrappers) | Hold (fixed step) | Channel bit 0x2 / 0x4 |
+  | --- | --- | --- | --- |
+  | Scope | clocks A and B, every channel | clock A only | one channel |
+  | AnimTime | stops (its clock stops) | moves 31 ms per pass | fixed at start / end |
+  | NoPauseAnimTime | stops too (it is the selected clock) | as AnimTime | follows the clock |
+  | On release | paused time subtracted, no jump | +0x38 offset, no jump | cleared by 0xa67d8 on the next clip |
+
+  "NoPauseAnimTime" therefore does not keep running through a global pause in
+  this build; it only differs from AnimTime for frozen channels.
+- **Save.** The save writes (0x10e944) and reads (0x10e998) only the two
+  snapshots, 4 bytes each (A +0x40, B +0x44 + 0x1c). The rate and the hold are
+  not saved: a loaded game keeps whatever rate the session has.
+
+Not implied: none of this sets a game speed for OpenTPW. The original range is
+0.25–2.0 in ×1.25 steps on accumulated milliseconds, behind unidentified key
+bindings. A per-animator ticks-per-second value is not equivalent (see
+requirement 4), and PC key bindings and UI routes are unknown.
 
 ### Instances and placement (proven for this build, partly)
 
 - 0x543cc (callers 0x29198 advisor, 0x4f5d8 capture, 0x59f90/0x59fa8
   placement) allocates `252 + 56 × count` bytes without zero-fill. It copies
   the whole 252-byte template (31 double words plus the word at +248), so
-  template +4 flags carry over. It then sets +0 = template, +8 = a header built
-  by 0x53004 from the template header (copy depth not traced), +16 = its own
+  template +4 flags carry over. It then sets +0 = template, +8 = an object
+  header built by 0x53004 from the template's (copy depth below), +16 = its own
   channel array right after the object, and `memcpy`s the template's channels.
   That is the only `memcpy` of a `count × 56` size in the image.
 - The ride loader allocates template and channels with 0x55b54(size, 1), which
@@ -419,9 +496,66 @@ Requirements for a faithful reimplementation (Mac build; not a PC claim):
   The catalog flags reach the instance only through the copy.
 - So a placed instance starts with its catalog object's copy-back gate bits
   (0x8, 0x00100000) and clock selector. Placement does not clear them, and 0xa7bb8
-  only adds +4 bit 0x10. Later writers of instance +4 over its lifetime,
-  0x53004's header copy depth, the +0xd0 alternate template and save
-  restoration are not traced. Placement qualification therefore remains open.
+  only adds +4 bit 0x10. Later writers of instance +4 over its lifetime, the
+  +0xd0 alternate template and save restoration are not traced. Placement
+  qualification therefore remains open.
+- Copy depth of 0x53004, partly (witness `md2_normal_recompute_routes`). The
+  constructor passes its flags minus 0x800. With placement's 0x211f the instance
+  gets its own 64-byte object header (a copy, with bit 0x1 cleared), its own
+  184-byte geometry header (object header +4) and its own copies of the 160-byte mesh records
+  (flag 0x1) and the face-normal array (+0x5c, 12 bytes each; flag 0x8). Record
+  +100 is rebased into that array only when flags 0x4 and 0x100 are set and the
+  template geometry header +0x58 is non-null (838/838 geometry members). The
+  object-header copy keeps the template's +0x28 pointer (below). Whether clip data and
+  group cursors are per instance is still not traced.
+
+### Face-normal routes (proven for this build, partly)
+
+Witness `md2_normal_recompute_routes` (106 checks); corpus counts from
+`corpus_check.py` (`geometry_checks`; PC base and Patch 2 identical).
+
+- **0xa78ec(geometry header)** runs 0xa772c on every mesh record with flag
+  0x00010000 (+0x70, count +0x44, 160-byte stride). It then clears header
+  +0x30 bit 0x40000. Its only callers are 0x5a4b4 and 0x567e4.
+- **Placement (0x5a4b4).** On every successful path of 0x59f00 (its only
+  branches past this block are the three failures returning 0, and it has no
+  early `blr`), placement ORs 0x00010000 into every mesh record of the
+  instance's own geometry header. It sets header +0x30 bit 0x40000 and calls
+  0xa78ec. So each placed object's face normals are recomputed once from its
+  vertex positions at that moment. That is after the reset and the AnimID 0/13
+  starts at 0x5a120/0x5a13c. Whether those starts have written a vertex pose by
+  then was not traced. The writes go to the instance's copies (see "Instances
+  and placement"). The flag stays set on the instance's records, so any later
+  route that tests 0x00010000 treats all of its meshes as recomputable.
+  Whether the recomputed normals differ from the stored ones was not measured.
+- **0x567e4** runs only when the geometry header has both 0x40000 and 0x20000.
+  Stored headers have neither (838/838 clear). 0x40000 is set after a vertex
+  pass (0xa5070) and by placement, and cleared by 0xa78ec and the object
+  update (0xa7b60). Setters of 0x20000
+  and the context of 0x567e4 were not traced.
+- **Record flag 0x10000000.** There are four `oris …, 0x1000` in the image and
+  no `lis`/`addis` of 0x1000. Only 0x19aef0 stores to a mesh record. It is in
+  0x19adf0, which the ride loader calls once (0x59274) for every object it
+  loads; only a load failure skips the call. If the geometry header has
+  entries (+0x48 count, +0x7c table, 20 bytes each), 0x19adf0 allocates a
+  table and stores it at object header +0x28. Entry i selects record +0x46 + i (a mesh
+  record below +0x44, else an 88-byte record at +0x74). When the entry's flags
+  have any bit of 0x40040, the record that the selected record's +4 points to
+  gets 0x10000000. Entry flags 0x30 set 0x20000000 on the selected record, and
+  then table bit 0x1. Corpus: 2,452 entries; 248 in 28 geometry members (ride
+  and feature models such as `bigapple`, `ghostshp`, `creature`, `StdPylon`)
+  have 0x40040. All 248 select an 88-byte record whose +4 is a mesh record.
+  The bit is set on the loaded file's records, so instances copy it.
+- **The walk.** 0x19b08c (callers 0x2a110, 0x3bb4c, placement 0x5a35c and the
+  object update 0xa7b9c) needs object-header bit 0x1 and table bit 0x1. It
+  then walks the nodes (0x19a65c) and recomputes records with 0x10000000 and
+  0x00010000 (0x19ac0c). The object update calls it when the table exists,
+  object +4 bit 0x20000000 (ride 0x00800000) is clear, and either r5 bit 0x8 is
+  clear or header flag 0x4 is set. Placement calls it under the same table and
+  0x20000000 tests. Because 0x53004 clears the copied header's bit 0x1, the walk
+  returns at once for a fresh instance unless something sets that bit again.
+  Setters of object-header bit 0x1 were not traced, so whether placed rides
+  ever take this route is open. 0x2a110 and 0x3bb4c were not identified.
 
 ### Clip lifecycle: loop replay and cursor reset (proven for this build)
 
@@ -781,8 +915,12 @@ the 0xa7960 path for set-mode models; the 0xa78ec and renderer routes are open.
 2. **Fidelity register / RIDES-001**: tick rate is proven (Mac, speed 1.0);
    the loop policy is traced (replay past the end with a carried start, see
    "Clip lifecycle"); clock selection is traced (only the advisor uses clock
-   B; see "Clock selection"); clock A's rate/hold setters and trigger mapping
-   remain open.
+   B; see "Clock selection"). Clock A's rate is traced: 1.0 by default, and
+   0.25–2.0 in ×1.25 steps only through three key handlers. The hold is a
+   31 ms fixed step used while loading and during screenshot capture (see
+   "Scene clock controls"). The physical keys, the dispatcher and the PC
+   bindings remain open. This is not a basis for treating a per-animator
+   ticks-per-second value as the original game speed.
    The stored-mesh rule after a vertex clip is now derived (fixed items keep
    the last pose; see "Gate inputs"), so the RIDES-030 entry proposed in
    2760acb is withdrawn; no register change is needed for it.
@@ -820,18 +958,23 @@ the 0xa7960 path for set-mode models; the 0xa78ec and renderer routes are open.
 - No-reset replay: which objects use the object-list update (r4 = 0) and carry
   flag 0x00400000 (the replay without a bind that keeps cursors).
 - Placement qualification: instances copy the catalog object and its channels
-  (0x543cc) and placement only clears +4 bit 0x1. Still open: later writers of
-  instance +4, the copy depth of 0x53004 (whether clip data, group cursors and
-  mesh records are per instance), the +0xd0 alternate template and state restored
-  from a save. Bulk writes of the global block are also open (the option word has
-  one direct store, 0).
-- Scene clocks: the setters of clock A's rate (+0x18 of the clock object) and
-  hold (+0x2c/+0x30), the callers' policy for the pause wrappers
-  (0x11055c/0x1105cc/0x110638), and stores of channel bit 0x40 outside
-  0xa3000–0xa9000 through a passed channel pointer.
-- Face-normal recomputation outside relative models (relative normals and the
-  other routes): conditions of 0x567e4 and 0x5a4b4 (0xa78ec; the latter is in
-  placement 0x59f00) and the setter of mesh flag 0x10000000 (renderer 0x19ac0c).
+  (0x543cc) and placement only clears +4 bit 0x1. The geometry header, mesh
+  records and face normals are per instance (0x53004 with 0x211f). Still open:
+  later writers of instance +4, whether clip data and group cursors are per
+  instance, the +0xd0 alternate template and state restored from a save. Bulk
+  writes of the global block are also open (the option word has one direct
+  store, 0).
+- Scene clocks: which physical keys (Mac or Win32 codes) and which dispatcher
+  reach "game" key entries 6–8; the meaning of the rate-scaled per-pass
+  counters at 0xbd298; the writers of game-state +0x3c, which gates pause and
+  resume; the identity of the 16 unidentified pause, resume and toggle callers;
+  and stores of channel bit 0x40 outside 0xa3000–0xa9000 through a passed
+  channel pointer.
+- Face-normal recomputation: whether the 0xa6cc0 starts write a pose before
+  placement's recompute; whether recomputed normals differ from the stored ones;
+  setters of geometry-header bit 0x20000 (0x567e4) and of object-header bit
+  0x1 (which gates the 0x19b08c walk for instances); the callers 0x2a110 and
+  0x3bb4c.
 - MAP bit 0x04 and the remaining cell/status bits; World sub-blocks after the
   world vars; all other subsystem payloads.
 - PC equivalence of everything above: PC `TP.ICD` code is not readable

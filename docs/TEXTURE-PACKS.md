@@ -22,7 +22,11 @@ left one; the lit feature button is a recolour of the normal one). `tools/hero-a
 result back into the original texture layout: the icon is scaled onto the original icon's bounding
 box, the outline comes from the original alpha mask, and the state variants are derived from the
 redrawn base with the original's colour change (per-channel gain for pressed and grey states, a
-fitted colour mapping for highlighted ones). The two option toggles `b_on1`/`b_on2` (multi-piece
+fitted colour mapping for highlighted ones). For the round yellow HUD buttons and the green build-category
+buttons, `tools/hero-art/rim.py` then keeps the original rim (from the anime-upscaled original) and takes
+only the inner face and symbol from the redrawn icon, so every button has the original's thin shaded rim
+instead of the heavier one the image model drew; the blue buttons, arrows, door panel and slider ball keep
+the redrawn version. The two option toggles `b_on1`/`b_on2` (multi-piece
 atlases) stay original. These images are AI recreations of the original EA/Bullfrog icons; the
 project owner chose to ship them.
 

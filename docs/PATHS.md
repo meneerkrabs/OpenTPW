@@ -89,7 +89,8 @@ u16 at +21 is a clockwise turn in degrees. Both follow from the neighbour bits a
   symmetric shapes use the smallest turn.
 - The textures have +X to the right and +Y in the top row.
 
-All 78 path cells of the Easymode save match this rule (`PathTilesTests`): every texture and turn.
+All 78 path cells of the Easymode save match this rule (`PathTilesTests`): every shape and turn. Which of
+the two straights or edges a cell has is the original's own choice and is not predicted.
 That includes cells whose extra diagonal bits the rule ignores (0x13, 0x53, 0x93, 0x9F, 0xF9). The routine
 in the original that writes these bytes was not located (no table for it exists in `TP.ICD` or the Mac
 binary), so the rule is derived from the data.

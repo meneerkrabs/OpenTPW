@@ -103,15 +103,16 @@ public static class PathTiles
 	}
 
 	/// <summary>
-	/// Texture coordinates for the cell corner (<paramref name="fx"/>, <paramref name="fy"/>) ∈ [0, 1]² of a path tile
-	/// turned <paramref name="rotation"/> degrees clockwise. The textures have +X to the right and +Y at the top row.
+	/// Vertex texture coordinates for the cell corner (<paramref name="fx"/>, <paramref name="fy"/>) ∈ [0, 1]² of a path
+	/// tile turned <paramref name="rotation"/> degrees clockwise. The textures have +X to the right and +Y at the top
+	/// row; the terrain shader flips V, so V grows with +Y here.
 	/// </summary>
 	public static (float U, float V) TextureCoordinates( float fx, float fy, int rotation )
 	{
 		var (dx, dy) = (fx - 0.5f, fy - 0.5f);
 		for ( var quarter = (rotation / 90 % 4 + 4) % 4; quarter > 0; quarter-- )
 			(dx, dy) = (dy, -dx);
-		return (dx + 0.5f, 0.5f - dy);
+		return (dx + 0.5f, dy + 0.5f);
 	}
 
 	/// <summary>The shape an index of the theme's <c>PathTex</c> list draws (variants and the duplicate centre map to their base).</summary>

@@ -40,20 +40,22 @@ public class PathTilesTests
 		var picks = Enumerable.Range( 0, 64 ).Select( index => PathTiles.Choose( 0x11, index % 8, index / 8 ).TextureIndex ).ToArray();
 		CollectionAssert.IsSubsetOf( picks.Distinct().ToArray(), new[] { 2, PathTiles.StraightVariant } );
 		Assert.AreEqual( 2, picks.Distinct().Count() );
-		Assert.AreEqual( PathTiles.Choose( 0x11, 3, 5 ), PathTiles.Choose( 0x11, 3, 5 ) );
+		// Pinned picks: a change to the hash would change built paths that players already see.
+		CollectionAssert.AreEqual( new[] { 2, 19, 19, 2 }, new[] { (0, 0), (1, 0), (0, 1), (1, 1) }.Select( cell => PathTiles.Choose( 0x11, cell.Item1, cell.Item2 ).TextureIndex ).ToArray() );
 		CollectionAssert.IsSubsetOf( Enumerable.Range( 0, 16 ).Select( index => PathTiles.Choose( 0x1F, index, 1 ).TextureIndex ).Distinct().ToArray(), new[] { 10, PathTiles.EdgeVariant } );
 	}
 
 	[TestMethod]
 	public void TurnedTexturesShowTheirSidesWhereTheMaskTurnedThem()
 	{
-		// Texture sides at rotation 0: +X is the right column (u = 1), +Y the top row (v = 0).
+		// Texture sides at rotation 0: +X is the right column (u = 1), +Y the top row, which the terrain shader's
+		// V flip (v' = 1 − v) samples at vertex v = 1.
 		Assert.AreEqual( (1f, 0.5f), PathTiles.TextureCoordinates( 1, 0.5f, 0 ), "cell +X edge shows texture +X" );
-		Assert.AreEqual( (0.5f, 0f), PathTiles.TextureCoordinates( 0.5f, 1, 0 ), "cell +Y edge shows texture +Y" );
+		Assert.AreEqual( (0.5f, 1f), PathTiles.TextureCoordinates( 0.5f, 1, 0 ), "cell +Y edge shows texture +Y" );
 		// A quarter turn moves −Y to +X, +X to +Y, +Y to −X: the cell's −X edge shows the texture's +Y side.
-		Assert.AreEqual( (0.5f, 0f), PathTiles.TextureCoordinates( 0, 0.5f, 90 ) );
+		Assert.AreEqual( (0.5f, 1f), PathTiles.TextureCoordinates( 0, 0.5f, 90 ) );
 		Assert.AreEqual( (1f, 0.5f), PathTiles.TextureCoordinates( 0.5f, 1, 90 ) );
-		Assert.AreEqual( (0.5f, 1f), PathTiles.TextureCoordinates( 1, 0.5f, 90 ) );
+		Assert.AreEqual( (0.5f, 0f), PathTiles.TextureCoordinates( 1, 0.5f, 90 ) );
 		Assert.AreEqual( PathTiles.TextureCoordinates( 0, 0, 0 ), PathTiles.TextureCoordinates( 0, 0, 360 ) );
 		for ( var mask = 0; mask < 256; mask++ )
 			Assert.AreEqual( PathTiles.Reduce( (byte)mask ), PathTiles.Reduce( PathTiles.Turn( PathTiles.Turn( PathTiles.Turn( PathTiles.Turn( (byte)mask ) ) ) ) ) );

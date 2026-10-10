@@ -43,6 +43,8 @@ public sealed class OriginalTerrain : Entity
 	public int PathCellCount { get; private set; }
 	private Dictionary<string, Texture>? heightfieldTextures;
 	private readonly List<ModelEntity> pathParts = new();
+	/// <summary>Path layer materials by texture set; reused when the layer is rebuilt, because materials are never disposed.</summary>
+	private readonly Dictionary<string, Material> pathMaterials = new();
 
 	/// <summary>Rebuilds the path layer so built and removed path cells show.</summary>
 	public void RefreshPaths()
@@ -132,11 +134,16 @@ public sealed class OriginalTerrain : Entity
 			for ( var slot = 0; slot < batch.Length; slot++ )
 				foreach ( var (x, y, rotation) in cells[batch[slot]] )
 					AddCell( vertices, indices, field, x, y, slot, rotation, lift );
-			var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
-			while ( slots.Count < MaximumTextureSlots )
-				slots.Add( slots[0] );
-			// Clamped: a repeating sampler would blend each tile's open edge with its transparent opposite edge.
-			material.Set( "Color", slots.ToArray(), SamplerType.Anisotropic );
+			var key = string.Join( ',', batch );
+			if ( !pathMaterials.TryGetValue( key, out var material ) )
+			{
+				material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
+				while ( slots.Count < MaximumTextureSlots )
+					slots.Add( slots[0] );
+				// Clamped: a repeating sampler would blend each tile's open edge with its transparent opposite edge.
+				material.Set( "Color", slots.ToArray(), SamplerType.Anisotropic );
+				pathMaterials.Add( key, material );
+			}
 			pathParts.Add( AddPart( new Model( vertices.ToArray(), indices.ToArray(), material ), $"paths {pathParts.Count}" ) );
 		}
 	}
@@ -154,8 +161,8 @@ public sealed class OriginalTerrain : Entity
 	}
 
 	/// <summary>
-	/// One cell quad. <paramref name="rotation"/> is a path texture's clockwise turn (−Y to +X); path textures have
-	/// +Y at their top row, so those quads also flip V (docs/PATHS.md, "Path textures").
+	/// One cell quad. <paramref name="rotation"/> is a path texture's clockwise turn (−Y to +X), applied through
+	/// <see cref="PathTiles.TextureCoordinates"/> (docs/PATHS.md, "Path textures"); ground quads keep their coordinates.
 	/// </summary>
 	private static void AddCell( List<Vertex> vertices, List<uint> indices, ModelHeightfield field, int x, int y, int slot, int rotation, float lift )
 	{

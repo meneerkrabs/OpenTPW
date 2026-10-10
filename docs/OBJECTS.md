@@ -191,7 +191,9 @@ TOUR/BUMP/COAST controllers, park clock, screams, reverb, light opcodes.
 Footprint cells from the shape and rotation; per cell: inside the grid, terrain
 rule (original levels: MAP blocked/water/entrance/fixed walkway, heightfield
 holes, Easymode path cells and occupied non-object cells such as the Belly Bounce
-queue — see MAP.md), not occupied by another object or the sandbox Totem. Removing
+queue — see MAP.md), not occupied by another object, a built queue cell or the
+sandbox Totem. Queue paths for `Info.HasQueue` rides are laid from the cell
+outside the entrance (`QueuePaths`, `Level.BuildQueueCell`; GUESTS.md "Queues"). Removing
 an imported object frees its cells. In original levels, building now uses `ParkEconomy.TryBuild`: research, money and
 golden-ticket checks apply, costs are charged and removal credits the economy
 scrap value. The generic sandbox still builds free. These are
@@ -296,7 +298,7 @@ Original-data values are tagged `// [DATA:<file>:<field>]`.
 | RIDES-013 | World/Objects/ObjectShape.cs:103 | 180° and non-square rotations follow the rigid rotation | Save with such objects |
 | RIDES-014 | World/Objects/ParkObjects.cs:153 | Base height = mean footprint ground height | `.hmp` format, captures on slopes |
 | RIDES-015 | World/Objects/ParkObjects.cs:190 | Imported and built objects start open | TPWS ride state, original build behaviour |
-| RIDES-016 | World/Objects/OriginalObjectRuntime.cs:62 | VAR_DURATION = raw `Upgrades[0].InitDuration` | Binary conversion by `Info.DurationUnit` |
+| RIDES-016 | World/Objects/OriginalObjectRuntime.cs:62 | VAR_DURATION = raw `Upgrades[0].InitDuration` | Binary conversion by `Info.DurationUnit` (QUEUE-plan §7: the native host writes it raw, clamped to `UsageInfo.Min/MaxDuration`; `InitDuration` is type record +416, while +436 is `QueueWaitTimeConstant`) |
 | RIDES-017 | World/Objects/ObjectCatalog.cs:124 | Buildable = WhichUIType 0–3, not fixed/tool/upgrade | Original build-menu contents |
 | RIDES-018 | World/Objects/ParkObjects.cs:107 | Build rules: grid, MAP/save terrain, no overlap; no slope/path/land; Level enforces economy purchases | Original build checks |
 | RIDES-019 | World/Objects/ParkObjects.cs:209 | Levels without save get Gates, Lights, Bus | Original fixed-item spawning |
@@ -307,7 +309,7 @@ Original-data values are tagged `// [DATA:<file>:<field>]`.
 | RIDES-025 | World/Objects/ObjectCatalog.cs:545 | Bonus name: language file → English → .sam name | Original bonus-name lookup |
 | RIDES-026 | World/Objects/OriginalObject.cs:12 | 1 MD2 unit = 0.2 engine units | None (engine convention) |
 
-| RIDES-028 | World/Level.Objects.cs | Non-walkable entrance/exit outside cells use the nearest walkable path | Original queue-path joining rules |
+| RIDES-028 | World/Level.Objects.cs | Non-walkable exit outside cells, and entrance outside cells without a queue path, use the nearest walkable path (a one-cell queue) | Original queue-path joining rules |
 
 Imported objects share their economy instance with the guest payment bridge;
 shop/sideshow payments and ride-use statistics use that instance. Open/closed

@@ -177,7 +177,7 @@ public class DeterminismTests
 	{
 		var park = new SyntheticPark( WorldSeed.Default );
 		park.Run( 3600 );
-		Assert.AreEqual( 0xBCAB6C260DA58A4EUL, park.Hash, $"0x{park.Hash:X16}" );
+		Assert.AreEqual( 0xE67AA45A94F4B20CUL, park.Hash, $"0x{park.Hash:X16}" );
 	}
 
 	[TestMethod]

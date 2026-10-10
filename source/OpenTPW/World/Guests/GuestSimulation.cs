@@ -29,14 +29,29 @@ public readonly record struct GuestStatistics( int InPark, int Walking, int Queu
 /// Park visitors on the fixed simulation tick: arrival from the bus stops through the ticket booth
 /// (.sam FixedItemInfo cells), path walking on <see cref="GuestPathGrid"/> flow fields, needs, attraction
 /// choice with the .sam decision weights, queues and rides through <see cref="IRideVisitorBridge"/>, and
-/// leaving. All randomness comes from one seeded <see cref="GuestRandom"/>; guests and attractions are
+/// leaving. Queues follow the original state 10/11/12/13/14 handlers (docs/reverse/QUEUE-plan.md): guests
+/// join at the back cell, walk the queue cells to their position, stand and move up on park turns, and
+/// are called forward by the attraction. All randomness comes from one seeded <see cref="GuestRandom"/>
+/// (also the queue positions' sideways offsets); guests and attractions are
 /// updated in id order, so the same seed and inputs give the same <see cref="ComputeStateHash"/>.
 /// Rates and thresholds without an original source are labelled approximations in
 /// <see cref="GuestSettings"/> and docs/GUESTS.md.
 /// </summary>
 public sealed class GuestSimulation : IRideVisitorHost
 {
-	public const float QueueSlotSpacing = 0.28f;
+	/// <summary>Move-up delay factor: entering state 11 sets the delay to trunc(1.2 × position) park turns.</summary>
+	// [BIN:STP-PPC:0x100EF868 state 11 entry] +508 = turn, +500 = trunc(1.2f × +497) (float data 0x55a0)
+	public const float MoveDelayFactor = 1.2f;
+	/// <summary>Largest position gap a guest waits out before moving up.</summary>
+	public const int MoveUpWaitGap = 2;
+	/// <summary>Park turns between needs checks in a queue (the interlude window).</summary>
+	// [BIN:STP-PPC:0x100ED58C queue needs window] w = turn − +520; w > 30: happiness > 80 or 10..19 idles, < 10 leaves, else toilet > 80 leaves unless ProvidesRelief; w ≤ 30: boredom test turn > +508 + 100
+	public const int NeedsWindowTurns = 30;
+	public const int BoredomTurns = 100;
+	/// <summary>Park turns an idle interlude lasts (state 8 restores the saved state once turn &gt; +520 + 10).</summary>
+	public const int InterludeTurns = 10;
+	public const float LeaveHappiness = 10;
+	public const float ToiletLeaveLevel = 80;
 	public const float TicketBoothSeconds = 1.0f;
 	public const float ExitRideSeconds = 1.0f;
 	public const float WaitForBusSeconds = 3.0f;
@@ -51,6 +66,8 @@ public sealed class GuestSimulation : IRideVisitorHost
 	private float spawnTimer;
 	private int pendingArrivals;
 	private int laneToggle;
+	private int seenGridVersion = -1;
+	private readonly Dictionary<int, int> seenQueueEdits = new();
 
 	public GuestSimulation( GuestPathGrid grid, GuestSettings settings, ulong seed )
 	{
@@ -68,6 +85,8 @@ public sealed class GuestSimulation : IRideVisitorHost
 	public IReadOnlyList<Guest> Guests => guests;
 	public IReadOnlyList<IRideVisitorBridge> Attractions => attractions;
 	public long TickCount { get; private set; }
+	/// <summary>The park turn (248 ms of the fixed clock, <see cref="ParkCalendar.Turn"/>); queue waits and delays count these.</summary>
+	public long ParkTurn => ParkCalendar.Turn( TickCount );
 	public double TimeSeconds { get; private set; }
 	public bool ArrivalsEnabled { get; set; } = true;
 	/// <summary>Where guests pay (the park economy). Null: the standalone <see cref="GuestSettings.AdmissionFee"/> and attraction prices apply and no money is booked anywhere.</summary>
@@ -79,6 +98,8 @@ public sealed class GuestSimulation : IRideVisitorHost
 	public int Departed { get; private set; }
 	/// <summary>Raised when a guest pays (guest, amount, attraction id or 0 for admission).</summary>
 	public event Action<Guest, int, int>? MoneySpent;
+	/// <summary>Raised when the script takes a queued guest: (guest, attraction, wait in park turns from joining).</summary>
+	public event Action<Guest, IRideVisitorBridge, long>? QueueWaitCompleted;
 
 	/// <summary>Continues the guest stream from a saved state.</summary>
 	public void RestoreRandomState( ulong state ) => random = new GuestRandom( state );
@@ -92,7 +113,12 @@ public sealed class GuestSimulation : IRideVisitorHost
 		attraction.Host = this;
 		attractions.Add( attraction );
 		attractions.Sort( ( a, b ) => a.AttractionId.CompareTo( b.AttractionId ) );
+		attraction.RecomputeQueue( Grid );
+		seenQueueEdits[attraction.AttractionId] = attraction.QueueEditCount;
 	}
+
+	/// <summary>Park turns the guest has waited in its current queue so far, or −1 when it is not queued.</summary>
+	public long QueueWaitTurns( Guest guest ) => guest.QueueJoinTurn < 0 ? -1 : ParkTurn - guest.QueueJoinTurn;
 
 	public void Unregister( IRideVisitorBridge attraction )
 	{
@@ -100,14 +126,16 @@ public sealed class GuestSimulation : IRideVisitorHost
 			return;
 		foreach ( var guest in guests )
 		{
-			if ( guest.AttractionId == attraction.AttractionId && guest.State is GuestState.GoingToRide or GuestState.Queueing or GuestState.WaitingToBoard or GuestState.Using )
+			if ( guest.AttractionId == attraction.AttractionId && (guest.State is GuestState.GoingToRide or GuestState.Using || guest.IsInQueue) )
 			{
 				attraction.LeaveQueue( guest.Id );
-				ReturnToPath( guest, guest.State == GuestState.Using ? attraction.ExitCell : (guest.CellX, guest.CellY) );
+				ClearQueueState( guest );
+				ReturnToPath( guest, guest.State == GuestState.Using ? attraction.ExitCell : guest.IsInQueue ? JoinCellOf( attraction ) : (guest.CellX, guest.CellY) );
 			}
 		}
 		if ( attraction.Host == this )
 			attraction.Host = null;
+		seenQueueEdits.Remove( attraction.AttractionId );
 	}
 
 	private Guest Create()
@@ -199,6 +227,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 			throw new ArgumentOutOfRangeException( nameof( deltaSeconds ) );
 		TickCount++;
 		TimeSeconds += deltaSeconds;
+		SyncQueues();
 		UpdateArrivals( deltaSeconds );
 		for ( var index = 0; index < guests.Count; index++ )
 			UpdateGuest( guests[index], deltaSeconds );
@@ -274,10 +303,16 @@ public sealed class GuestSimulation : IRideVisitorHost
 			case GuestState.GoingToRide:
 				UpdateGoingToRide( guest, dt );
 				break;
-			case GuestState.Queueing:
-			case GuestState.WaitingToBoard:
+			case GuestState.MovingUpQueue:
 			case GuestState.Boarding:
-				UpdateQueueing( guest, dt );
+				UpdateQueueWalk( guest, dt );
+				break;
+			case GuestState.Queueing:
+				UpdateStanding( guest );
+				break;
+			case GuestState.WaitingToBoard:
+				if ( FindAttraction( guest.AttractionId ) == null )
+					ReturnOrphanToPath( guest );
 				break;
 			case GuestState.ExitingRide:
 				guest.StateTimer -= dt;
@@ -539,9 +574,12 @@ public sealed class GuestSimulation : IRideVisitorHost
 		var bestScore = 0;
 		foreach ( var attraction in attractions )
 		{
-			if ( !attraction.IsOpen )
+			if ( !attraction.IsOpen || attraction.JoinCell is not { } join )
 				continue;
-			var distance = Grid.Distance( guest.CellX, guest.CellY, attraction.EntranceCell.X, attraction.EntranceCell.Y );
+			// [APPROX:QUEUE-017] guests do not choose a broken attraction (VAR_BROKEN ≠ 0); the original attraction choice is not traced for broken rides — evidence needed: the state-6 attraction choice and its test of the ride +408 state
+			if ( attraction.IsBroken )
+				continue;
+			var distance = Grid.Distance( guest.CellX, guest.CellY, join.X, join.Y );
 			if ( distance < 0 )
 				continue;
 			var score = ScoreAttraction( guest, attraction, distance );
@@ -576,16 +614,31 @@ public sealed class GuestSimulation : IRideVisitorHost
 			guest.State = GuestState.WalkingAround;
 			return;
 		}
-		var (tx, ty) = attraction.EntranceCell;
+		if ( attraction.JoinCell is not { } join )
+		{
+			guest.Thought = GuestThought.Confused;
+			guest.AttractionId = 0;
+			guest.State = GuestState.WalkingAround;
+			return;
+		}
+		var (tx, ty) = join;
 		if ( guest.CellX == tx && guest.CellY == ty )
 		{
-			if ( attraction.TryJoinQueue( guest.Id ) )
+			var type = Settings.Types[Math.Min( guest.Type, Settings.Types.Count - 1 )];
+			var result = attraction.JoinQueue( guest.Id, type.PreferredExcitement - attraction.ExcitementLevel );
+			if ( result == QueueJoinResult.Joined )
 			{
-				guest.State = GuestState.Queueing;
+				BeginQueue( guest, attraction );
 				return;
 			}
-			guest.Thought = GuestThought.QueueTooLong;
-			guest.Happiness = Math.Max( 0, guest.Happiness - Settings.SmallHappinessChange );
+			guest.Thought = result switch
+			{
+				QueueJoinResult.TooExciting => GuestThought.Scared,
+				QueueJoinResult.NotExcitingEnough => GuestThought.Bored,
+				_ => GuestThought.QueueTooLong
+			};
+			if ( result is QueueJoinResult.NoRoom or QueueJoinResult.QueueTooLong )
+				guest.Happiness = Math.Max( 0, guest.Happiness - Settings.SmallHappinessChange );
 			guest.LastAttractionId = attraction.AttractionId;
 			guest.AttractionId = 0;
 			guest.State = GuestState.WalkingAround;
@@ -602,39 +655,321 @@ public sealed class GuestSimulation : IRideVisitorHost
 		}
 	}
 
-	private void UpdateQueueing( Guest guest, float dt )
+	// ---- Queues (docs/reverse/QUEUE-plan.md §4–6) ----------------------------------------------
+
+	/// <summary>Brings every attraction's queue up to date after grid edits and re-evaluates queued guests after queue edits.</summary>
+	private void SyncQueues()
+	{
+		if ( Grid.Version != seenGridVersion )
+		{
+			seenGridVersion = Grid.Version;
+			foreach ( var attraction in attractions )
+				attraction.RecomputeQueue( Grid );
+		}
+		foreach ( var attraction in attractions )
+		{
+			if ( seenQueueEdits.TryGetValue( attraction.AttractionId, out var seen ) && seen == attraction.QueueEditCount )
+				continue;
+			seenQueueEdits[attraction.AttractionId] = attraction.QueueEditCount;
+			ReevaluateQueue( attraction );
+		}
+	}
+
+	/// <summary>
+	/// "Queue edited" (<c>0xdd57c</c>): every queued guest except the called one re-evaluates. Guests beyond the
+	/// new room leave ("queue was shortened"), guests whose cell left the queue leave ("queue edited underneath
+	/// me"), the others walk to their position again.
+	/// </summary>
+	// [APPROX:QUEUE-005] the re-evaluation exits of 0xee8f8 are reduced to "position beyond 4 × cells" and "standing cell no longer in the queue" — evidence needed: 0x100EE8F8 in detail
+	private void ReevaluateQueue( IRideVisitorBridge attraction )
+	{
+		var cells = attraction.QueueCells;
+		var room = RideVisitorBridge.PositionsPerCell * attraction.QueueSizeInCells;
+		foreach ( var guest in guests )
+		{
+			if ( guest.AttractionId != attraction.AttractionId || guest.State is not (GuestState.Queueing or GuestState.MovingUpQueue) || guest.Id == attraction.CalledGuest )
+				continue;
+			var position = attraction.GetQueuePosition( guest.Id );
+			var index = IndexOfCell( cells, guest.CellX, guest.CellY );
+			var onJoinCell = attraction.JoinCell is { } join && join == (guest.CellX, guest.CellY);
+			if ( position < 0 || position >= room )
+				LeaveQueue( guest, attraction, GuestThought.QueueTooLong );
+			else if ( index < 0 && !onJoinCell )
+				LeaveQueue( guest, attraction, GuestThought.Confused );
+			else
+			{
+				guest.QueueCellIndex = index < 0 ? cells.Count : index;
+				MoveToQueuePosition( guest, attraction );
+			}
+		}
+	}
+
+	private static int IndexOfCell( IReadOnlyList<(int X, int Y)> cells, int x, int y )
+	{
+		for ( var index = 0; index < cells.Count; index++ )
+		{
+			if ( cells[index] == (x, y) )
+				return index;
+		}
+		return -1;
+	}
+
+	private static (int X, int Y) JoinCellOf( IRideVisitorBridge attraction ) => attraction.JoinCell ?? attraction.EntranceCell;
+
+	/// <summary>The guest joined (state 10): it steps onto the back cell and walks to its position.</summary>
+	// [BIN:STP-PPC:0x100ECE58 join] +524 = happiness, append to the list, then 0xee604 (position, slot, state 12)
+	private void BeginQueue( Guest guest, IRideVisitorBridge attraction )
+	{
+		var cells = attraction.QueueCells;
+		guest.QueueJoinHappiness = guest.Happiness;
+		guest.QueueJoinTurn = ParkTurn;
+		guest.QueueCalled = false;
+		guest.InQueueInterlude = false;
+		guest.HasWaypoint = false;
+		// On a one-cell queue whose front is the path cell itself the guest already stands on the back cell.
+		guest.QueueCellIndex = cells[^1] == (guest.CellX, guest.CellY) ? cells.Count - 1 : cells.Count;
+		MoveToQueuePosition( guest, attraction );
+	}
+
+	/// <summary>The destination for the guest's list position (<c>0xee604</c>): store the position and walk there (state 12).</summary>
+	private void MoveToQueuePosition( Guest guest, IRideVisitorBridge attraction )
+	{
+		var position = attraction.GetQueuePosition( guest.Id );
+		if ( position < 0 )
+		{
+			LeaveQueue( guest, attraction, GuestThought.Confused );
+			return;
+		}
+		guest.QueuePosition = position;
+		var (index, x, y) = QueuePositionPoint( attraction, position, NextLateral() );
+		guest.QueueTargetIndex = index;
+		guest.QueueTargetX = x;
+		guest.QueueTargetY = y;
+		guest.HasWaypoint = false;
+		guest.State = GuestState.MovingUpQueue;
+	}
+
+	// [BIN:STP-PPC:0x100DDCC4 queue lateral byte] the sideways byte is rand mod 28 + 114 (114..141) from the shared RNG 0x105328; OpenTPW draws it from the simulation's seeded GuestRandom
+	private byte NextLateral() => (byte)(114 + random.Next( 28 ));
+
+	/// <summary>
+	/// Queue cell and point of a position (<c>0xddcc4</c>): follow the queue four positions per cell, then the
+	/// depth byte trunc(255 × 0.25 × remaining) (0, 63, 127, 191) along the cell from its front edge and the
+	/// sideways byte <paramref name="lateral"/> (114..141) across it.
+	/// </summary>
+	// [APPROX:QUEUE-006] depth runs from the cell's edge toward its predecessor and the lateral byte across it, and the fourth position (depth 191 > 128) stays in its cell; the original sub-cell axis per link and the 0xdde74 branch are not traced — evidence needed: 0x100DDE74 and the axis selection after it
+	public (int CellIndex, float X, float Y) QueuePositionPoint( IRideVisitorBridge attraction, int position, byte lateral )
+	{
+		var (index, depth) = QueueSlot( position, attraction.QueueSizeInCells );
+		var cell = attraction.QueueCells[Math.Min( index, attraction.QueueCells.Count - 1 )];
+		var (dx, dy) = GuestPathGrid.Directions[attraction.DirectionTowardsFront( index )];
+		var along = 0.5f - depth / 255f;
+		var across = lateral / 255f - 0.5f;
+		return (index, cell.X + 0.5f + dx * along - dy * across, cell.Y + 0.5f + dy * along + dx * across);
+	}
+
+	/// <summary>The queue cell index and depth byte of a 0-based position in a queue of <paramref name="cells"/> cells.</summary>
+	public static (int CellIndex, int Depth) QueueSlot( int position, int cells )
+	{
+		var remaining = Math.Max( 0, position );
+		var index = 0;
+		while ( remaining >= RideVisitorBridge.PositionsPerCell && index < cells - 1 )
+		{
+			remaining -= RideVisitorBridge.PositionsPerCell;
+			index++;
+		}
+		remaining = Math.Min( remaining, RideVisitorBridge.PositionsPerCell - 1 );
+		return (index, (int)(255f * (0.25f * remaining)));
+	}
+
+	/// <summary>The stand point where a called guest offers itself: the front cell's edge toward the ride entrance.</summary>
+	// [APPROX:QUEUE-007] the entry stand point (0xde1d8) is the front cell's edge toward the ride; UsageInfo.EntryCellStandPos is not used — evidence needed: 0x100DE1D8
+	public static (float X, float Y) StandPoint( IRideVisitorBridge attraction )
+	{
+		var cell = attraction.QueueCells[0];
+		var (dx, dy) = GuestPathGrid.Directions[attraction.DirectionTowardsFront( 0 )];
+		return (cell.X + 0.5f + dx * 0.5f, cell.Y + 0.5f + dy * 0.5f);
+	}
+
+	/// <summary>States 12 (walking to a queue position) and 13 (walking to the stand point): cell by cell along the queue.</summary>
+	private void UpdateQueueWalk( Guest guest, float dt )
 	{
 		var attraction = FindAttraction( guest.AttractionId );
 		if ( attraction == null )
 		{
-			ReturnToPath( guest, (guest.CellX, guest.CellY) );
+			ReturnOrphanToPath( guest );
 			return;
 		}
-		var slot = guest.State == GuestState.Queueing ? attraction.GetQueuePosition( guest.Id ) + 1 : 0;
-		var (x, y) = QueueSlot( attraction, Math.Max( 0, slot ) );
-		guest.WaypointX = x;
-		guest.WaypointY = y;
-		guest.HasWaypoint = true;
-		Move( guest, dt );
+		if ( guest.HasWaypoint && !Move( guest, dt ) )
+			return;
+		var cells = attraction.QueueCells;
+		if ( guest.QueueCellIndex > guest.QueueTargetIndex && guest.QueueCellIndex > 0 )
+		{
+			guest.QueueCellIndex = Math.Min( guest.QueueCellIndex, cells.Count ) - 1;
+			var cell = cells[guest.QueueCellIndex];
+			guest.PreviousCellX = guest.CellX;
+			guest.PreviousCellY = guest.CellY;
+			guest.CellX = cell.X;
+			guest.CellY = cell.Y;
+			guest.WaypointX = cell.X + 0.5f;
+			guest.WaypointY = cell.Y + 0.5f;
+			guest.HasWaypoint = true;
+			return;
+		}
+		if ( guest.X != guest.QueueTargetX || guest.Y != guest.QueueTargetY )
+		{
+			guest.WaypointX = guest.QueueTargetX;
+			guest.WaypointY = guest.QueueTargetY;
+			guest.HasWaypoint = true;
+			return;
+		}
+		if ( guest.State == GuestState.MovingUpQueue )
+			EnterStanding( guest );
+		else if ( attraction.PresentForBoarding( guest.Id ) )
+			guest.State = GuestState.WaitingToBoard;
 	}
 
-	/// <summary>Queue slot positions: slot 0 at the entrance cell centre, later slots back along the path.</summary>
-	public (float X, float Y) QueueSlot( IRideVisitorBridge attraction, int slot )
+	private void EnterStanding( Guest guest )
 	{
-		var (ex, ey) = attraction.EntranceCell;
-		var (bx, by) = (0, 1);
-		for ( var direction = 0; direction < 4; direction++ )
+		guest.State = GuestState.Queueing;
+		guest.QueueStandingSinceTurn = ParkTurn;
+		guest.QueueMoveDelay = (int)(MoveDelayFactor * guest.QueuePosition);
+		guest.LastQueueUpdateTurn = ParkTurn;
+	}
+
+	/// <summary>State 11 (<c>0xed244</c>), once per park turn, in the original order.</summary>
+	private void UpdateStanding( Guest guest )
+	{
+		var turn = ParkTurn;
+		if ( guest.LastQueueUpdateTurn == turn )
+			return;
+		guest.LastQueueUpdateTurn = turn;
+		var attraction = FindAttraction( guest.AttractionId );
+		if ( attraction == null )
 		{
-			if ( Grid.AreConnected( ex, ey, direction ) )
+			ReturnOrphanToPath( guest );
+			return;
+		}
+		if ( guest.InQueueInterlude )
+		{
+			if ( turn > guest.InterludeTurn + InterludeTurns )
 			{
-				(bx, by) = GuestPathGrid.Directions[direction];
-				break;
+				guest.InQueueInterlude = false;
+				EnterStanding( guest );
+			}
+			return;
+		}
+		// 1. Called forward: walk to the stand point (state 13).
+		if ( guest.QueuePosition == 0 && guest.QueueCalled && attraction.CalledGuest == guest.Id )
+		{
+			guest.QueueCalled = false;
+			var (x, y) = StandPoint( attraction );
+			guest.QueueTargetIndex = 0;
+			guest.QueueTargetX = x;
+			guest.QueueTargetY = y;
+			guest.HasWaypoint = false;
+			guest.State = GuestState.Boarding;
+			return;
+		}
+		// 3. The ride failed.
+		// [APPROX:QUEUE-008] the ride-failure exit (0xdfe34 set → thought 14, leave) is read as VAR_BROKEN ≠ 0 — evidence needed: the predicate 0x100DFE34
+		if ( attraction.IsBroken )
+		{
+			LeaveQueue( guest, attraction, GuestThought.FeelingSick );
+			return;
+		}
+		// 4. Position lookup.
+		var position = attraction.GetQueuePosition( guest.Id );
+		if ( position < 0 )
+		{
+			LeaveQueue( guest, attraction, GuestThought.Confused );
+			return;
+		}
+		// 5. Moving up: wait out the delay while the gap is at most 2, else walk to the new position.
+		if ( position != guest.QueuePosition )
+		{
+			var gap = guest.QueuePosition - position;
+			if ( guest.QueueMoveDelay != 0 && gap is >= 0 and <= MoveUpWaitGap )
+				guest.QueueMoveDelay--;
+			else
+				MoveToQueuePosition( guest, attraction );
+			return;
+		}
+		// 6. Beyond the limit.
+		if ( guest.QueuePosition > attraction.QueueLimit )
+		{
+			LeaveQueue( guest, attraction, GuestThought.QueueTooLong );
+			return;
+		}
+		// 7. Needs window, and the boredom test that cannot fire (QUEUE-plan §5.3): +508 ≥ +520 always holds here.
+		// The original truncates happiness +412 and toilet +428 to bytes (fctiwz, clrlwi 24) before comparing: "> 80" means ≥ 81.
+		var window = turn - guest.InterludeTurn;
+		if ( window > NeedsWindowTurns )
+		{
+			var happiness = (int)guest.Happiness;
+			if ( happiness > 80 || happiness is >= (int)LeaveHappiness and < 20 )
+			{
+				StartInterlude( guest );
+				return;
+			}
+			if ( happiness < (int)LeaveHappiness )
+			{
+				LeaveQueue( guest, attraction, GuestThought.Unhappy );
+				return;
+			}
+			if ( (int)guest.Toilet > (int)ToiletLeaveLevel && !attraction.ProvidesRelief )
+			{
+				LeaveQueue( guest, attraction, GuestThought.NeedToilet );
+				return;
 			}
 		}
-		var row = slot / 3;
-		var column = slot % 3 - 1;
-		return (ex + 0.5f + bx * row * QueueSlotSpacing - by * column * QueueSlotSpacing,
-			ey + 0.5f + by * row * QueueSlotSpacing + bx * column * QueueSlotSpacing);
+		else if ( turn > guest.QueueStandingSinceTurn + BoredomTurns )
+		{
+			LeaveQueue( guest, attraction, GuestThought.Bored );
+			return;
+		}
+		// 8. A 1-in-10 facing change of ±400/2048 of a turn.
+		// [APPROX:QUEUE-009] the facing change's sign comes from the same draw (0 → +400, 1 → −400 of 2048) — evidence needed: the sign selection after the 1-in-10 facing test at the end of 0x100ED244
+		var draw = random.Next( 20 );
+		if ( draw < 2 )
+		{
+			var angle = (draw == 0 ? 400 : -400) * MathF.Tau / 2048;
+			var (sin, cos) = MathF.SinCos( angle );
+			(guest.HeadingX, guest.HeadingY) = (guest.HeadingX * cos - guest.HeadingY * sin, guest.HeadingX * sin + guest.HeadingY * cos);
+		}
+	}
+
+	/// <summary>Idle interlude (<c>0xe8b74</c>): +520 = turn, state 8 until turn &gt; +520 + 10, then state 11 again.</summary>
+	private void StartInterlude( Guest guest )
+	{
+		guest.InterludeTurn = ParkTurn;
+		guest.InQueueInterlude = true;
+	}
+
+	/// <summary>The guest leaves the queue without riding and steps back onto the path at the join cell.</summary>
+	// [APPROX:QUEUE-010] a guest leaving a queue is placed on the queue's join path cell at once; the original walk out of the queue is not traced — evidence needed: the state-6 transition after a queue exit
+	private void LeaveQueue( Guest guest, IRideVisitorBridge attraction, GuestThought thought )
+	{
+		attraction.LeaveQueue( guest.Id );
+		ClearQueueState( guest );
+		guest.Thought = thought;
+		guest.LastAttractionId = attraction.AttractionId;
+		ReturnToPath( guest, JoinCellOf( attraction ) );
+	}
+
+	/// <summary>The guest's attraction is gone (removed while the guest queued or waited to be taken).</summary>
+	private void ReturnOrphanToPath( Guest guest )
+	{
+		ClearQueueState( guest );
+		ReturnToPath( guest, (guest.CellX, guest.CellY) );
+	}
+
+	private static void ClearQueueState( Guest guest )
+	{
+		guest.QueuePosition = -1;
+		guest.QueueJoinTurn = -1;
+		guest.QueueCalled = false;
+		guest.InQueueInterlude = false;
 	}
 
 	private void UpdateLeaving( Guest guest, float dt )
@@ -679,16 +1014,29 @@ public sealed class GuestSimulation : IRideVisitorHost
 		guest.DecisionTimer = Settings.DecisionIntervalSeconds;
 	}
 
+	long IRideVisitorHost.ParkTurn => ParkTurn;
+	bool IRideVisitorHost.WalksToBoard => true;
+
+	bool IRideVisitorHost.IsStandingAtFront( IRideVisitorBridge ride, int guestId ) =>
+		Find( guestId ) is { State: GuestState.Queueing, InQueueInterlude: false, QueuePosition: 0 } guest && guest.AttractionId == ride.AttractionId;
+
 	void IRideVisitorHost.OnVisitorOffered( IRideVisitorBridge ride, int guestId )
 	{
+		// Head +504 = 1; the guest notices on its next state-11 update.
 		if ( Find( guestId ) is { } guest )
-			guest.State = GuestState.WaitingToBoard;
+			guest.QueueCalled = true;
 	}
 
 	void IRideVisitorHost.OnVisitorBoarded( IRideVisitorBridge ride, int guestId )
 	{
 		if ( Find( guestId ) is not { } guest )
 			return;
+		if ( guest.QueueJoinTurn >= 0 )
+		{
+			guest.LastQueueWaitTurns = ParkTurn - guest.QueueJoinTurn;
+			QueueWaitCompleted?.Invoke( guest, ride, guest.LastQueueWaitTurns );
+		}
+		ClearQueueState( guest );
 		guest.State = GuestState.Using;
 		guest.AttractionId = ride.AttractionId;
 		guest.HasWaypoint = false;
@@ -721,8 +1069,9 @@ public sealed class GuestSimulation : IRideVisitorHost
 	{
 		if ( Find( guestId ) is not { } guest )
 			return;
+		ClearQueueState( guest );
 		guest.Thought = GuestThought.Dissatisfied;
-		ReturnToPath( guest, ride.EntranceCell );
+		ReturnToPath( guest, JoinCellOf( ride ) );
 	}
 
 	/// <summary>
@@ -766,7 +1115,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 			switch ( guest.State )
 			{
 				case GuestState.WalkingAround or GuestState.GoingToRide or GuestState.DoingNothing or GuestState.ExitingRide: walking++; break;
-				case GuestState.Queueing or GuestState.WaitingToBoard or GuestState.Boarding: queueing++; break;
+				case GuestState.Queueing or GuestState.MovingUpQueue or GuestState.WaitingToBoard or GuestState.Boarding: queueing++; break;
 				case GuestState.Using: onRides++; break;
 				case GuestState.CrossingRoad or GuestState.CrossingRoadToPark or GuestState.GoingToTicketBooth or GuestState.AtTicketBooth: arriving++; break;
 				case GuestState.LeavingPark or GuestState.CrossingRoadHome or GuestState.WaitingToGoHome: leaving++; break;
@@ -836,7 +1185,23 @@ public sealed class GuestSimulation : IRideVisitorHost
 			hash.Add( guest.LaneReversed );
 			hash.Add( guest.StateTimer );
 			hash.Add( guest.DecisionTimer );
+			hash.Add( guest.QueuePosition );
+			hash.Add( guest.QueueJoinTurn );
+			hash.Add( guest.LastQueueWaitTurns );
+			hash.Add( guest.QueueMoveDelay );
+			hash.Add( guest.QueueCalled );
+			hash.Add( guest.QueueStandingSinceTurn );
+			hash.Add( guest.InterludeTurn );
+			hash.Add( guest.InQueueInterlude );
+			hash.Add( guest.QueueJoinHappiness );
+			hash.Add( guest.QueueCellIndex );
+			hash.Add( guest.QueueTargetIndex );
+			hash.Add( guest.QueueTargetX );
+			hash.Add( guest.QueueTargetY );
+			hash.Add( guest.LastQueueUpdateTurn );
 		}
+		// The queue edge detectors decide whether the next tick recomputes queues and re-evaluates queued guests.
+		hash.Add( seenGridVersion );
 		hash.Add( attractions.Count );
 		foreach ( var attraction in attractions )
 		{
@@ -844,6 +1209,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 			hash.Add( attraction.IsOpen );
 			hash.Add( attraction.EntranceCell.X * 4096L + attraction.EntranceCell.Y );
 			hash.Add( attraction.ExitCell.X * 4096L + attraction.ExitCell.Y );
+			hash.Add( seenQueueEdits.TryGetValue( attraction.AttractionId, out var seen ) ? seen : -1 );
 			if ( attraction is RideVisitorBridge bridge )
 				bridge.AddCanonicalState( hash );
 			else
@@ -887,6 +1253,8 @@ public sealed class GuestSimulation : IRideVisitorHost
 			Add( guest.AttractionId );
 			Add( (int)guest.Thought );
 			Add( guest.CellX * 4096 + guest.CellY );
+			Add( guest.QueuePosition );
+			Add( guest.QueueMoveDelay );
 		}
 		return hash;
 	}

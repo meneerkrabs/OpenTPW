@@ -35,7 +35,7 @@ internal static class Program
 			Equal( (0u, 0u), GuestOriginalRules.QueueTerm( 3, 0, 3, 1, 7 ) );
 			Equal( (7u, 100u), GuestOriginalRules.QueueTerm( 0, 0, 0, 0, 7 ) );
 			Equal( (7u, 0u), GuestOriginalRules.QueueTerm( 0, 0, 4, 1, 7 ) );
-			Equal( (7u, 100u), GuestOriginalRules.QueueTerm( 0, 0, 4, uint.MaxValue, 7 ) ); // Raw capacity word is unsigned.
+			Equal( (7u, 100u), GuestOriginalRules.QueueTerm( 0, 0, 4, uint.MaxValue, 7 ) ); // Raw queue-size word (+60) is unsigned.
 		} );
 		Test( "overfull queue match remains wrapped", () =>
 		{

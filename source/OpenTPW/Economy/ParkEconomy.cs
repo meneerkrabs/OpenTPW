@@ -388,9 +388,17 @@ public sealed class ParkEconomy : IParkEconomy
 		var level = Math.Min( item.Level, info.Upgrades.Count - 1 );
 		// [APPROX:ECON-025] scrap value basis = catalogue cost of all levels up to the current one; a scrap year is 365 park-clock days — evidence needed: capture of scrap value
 		var basis = info.Upgrades.Take( level + 1 ).Sum( upgrade => upgrade.CostOfUpgrade );
+		return basis * ScrapPercent( item ) / 100;
+	}
+
+	/// <summary>The object's age-based scrap percentage, <c>Upgrades[level].ScrapValueYearN</c> (year 4 onwards uses year 4).</summary>
+	public int ScrapPercent( ParkObjectState item )
+	{
+		if ( !Catalog.TryGet( item.InfoId, out var info ) || info.Upgrades.Count == 0 )
+			return 0;
+		var level = Math.Min( item.Level, info.Upgrades.Count - 1 );
 		var year = (int)Math.Min( 3, (ParkCalendar.Seconds( Tick ) - ParkCalendar.Seconds( item.BuiltTick )) / (365 * ParkCalendar.SecondsPerDay) );
-		var percent = info.Upgrades[level].ScrapValuePercentByYear.Count > year ? info.Upgrades[level].ScrapValuePercentByYear[year] : 0;
-		return basis * percent / 100;
+		return info.Upgrades[level].ScrapValuePercentByYear.Count > year ? info.Upgrades[level].ScrapValuePercentByYear[year] : 0;
 	}
 
 	/// <summary>Park value (UITEXT 163): the sum of all scrap values — an <b>approximation</b>.</summary>
@@ -621,6 +629,34 @@ public sealed class ParkEconomy : IParkEconomy
 		Post( LedgerCategory.OtherCosts, cost );
 		Raise( ParkEventKind.CellsBought, cost, 0, (int)kind, $"{count} {kind} cells" );
 		return PurchaseResult.Ok;
+	}
+
+	/// <summary>
+	/// Charges one path or queue cell when it is written (<c>SetCellType</c>, PATH-plan §3.2): refused only
+	/// when balance − cost &lt; 0 (no bankruptcy test), then spent as other costs.
+	/// </summary>
+	// [BIN:STP-PPC:0x10082AC4 SetCellType] type 1 costs Costs.PathCell, type 3 Costs.QueueCell; refused when balance − cost < 0, else Spend per cell at write time
+	public PurchaseResult TrySpendCell( CellPurchase kind )
+	{
+		var cost = CellCost( kind );
+		if ( Balance - cost < 0 )
+			return PurchaseResult.NotEnoughMoney;
+		Post( LedgerCategory.OtherCosts, cost );
+		Raise( ParkEventKind.CellsBought, cost, 0, (int)kind, $"1 {kind} cell" );
+		return PurchaseResult.Ok;
+	}
+
+	/// <summary>
+	/// Refunds a removed queue cell: <c>Costs.QueueCell</c> × the ride's scrap percentage / 100
+	/// (<c>ClearCell</c> queue case, PATH-plan §6). Returns the amount credited.
+	/// </summary>
+	// [BIN:STP-PPC:0x10085DCC ClearCell queue refund] Earn(QueueCost × 0xe2424(ride) / 100), 0xe2424 = the ride's age-based scrap percentage
+	public long RefundQueueCell( int rideInstanceId )
+	{
+		var amount = TryGetObject( rideInstanceId, out var ride ) ? CellCost( CellPurchase.Queue ) * ScrapPercent( ride! ) / 100 : 0;
+		if ( amount > 0 )
+			Post( LedgerCategory.OtherIncome, amount );
+		return amount;
 	}
 
 	// ---------------------------------------------------------------- loans

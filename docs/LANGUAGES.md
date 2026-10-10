@@ -18,6 +18,8 @@ once their data is available, but only these six are verified. Original data is 
   `.MD2` plus `.mtr` except French). The CD's case is inconsistent (`danish`,
   `french`, `speech` vs installed `Speech`, `lips.WAD`, German `sp_001.lip`,
   `French/meshes/french`), so OpenTPW matches overlay paths case-insensitively.
+  A game folder copied from the CD rather than installed has no banners in
+  `Data/Language/<Lang>`; OpenTPW then uses the `<Lang>/Meshes/<Lang>` folder beside `Data`.
   Placing the CD's banner meshes inside `Language/<Name>` matches the installed
   English layout and is an inference; the installer itself was not run.
 - The Benelux CD uses the same overlay layout for Dutch: `Dutch/data/language/Dutch/`

@@ -275,10 +275,12 @@ public class RseScriptTests
 		var corpus = LoadCorpus();
 		Assert.AreEqual( 308, corpus.Count );
 		var inventory = RideScriptAnalysis.BuildInventory( corpus.Values );
-		Assert.AreEqual( 30094, inventory.CodeWordCount );
-		Assert.AreEqual( 11915, inventory.InstructionCount );
+		// Patch 2 removes two operand-free opcode-15 instructions from Jelly.RSE (docs/PATCH-2.md).
+		var patched = OriginalEdition.IsPatch2( StringTableTests.OriginalDataDirectory() );
+		Assert.AreEqual( patched ? 30092 : 30094, inventory.CodeWordCount );
+		Assert.AreEqual( patched ? 11913 : 11915, inventory.InstructionCount );
 		Assert.AreEqual( 84, inventory.OpcodeHistogram.Count );
-		Assert.AreEqual( CorpusHistogram, inventory.HistogramKey );
+		Assert.AreEqual( patched ? CorpusHistogram.Replace( ",15:17,", ",15:15," ) : CorpusHistogram, inventory.HistogramKey );
 		Assert.AreEqual( 0, inventory.UnknownOpcodes.Count );
 		Assert.AreEqual( 0, inventory.OperandCountMismatches.Count, string.Join( "; ", inventory.OperandCountMismatches ) );
 		Assert.AreEqual( 308, inventory.TimeSliceValues[50] );

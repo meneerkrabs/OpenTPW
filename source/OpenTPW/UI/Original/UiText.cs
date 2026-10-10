@@ -71,6 +71,12 @@ public sealed class UiFonts
 		var balance = tier switch { UiFontTier.Small => "CASHSMALL", UiFontTier.Big => "CASHBIG", _ => "CASHMED" };
 		try { Balance = Load( balance ); }
 		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or KeyNotFoundException ) { Balance = Cash; }
+		// [DATA:Mac UI font table (docs/reverse/PPC-ui.md):slot 3 DATETINY/DATESMALL/DATEMED/DATEBIG] the HUD date font, one per
+		// bank ([APPROX:UI-002] for the tier→bank pairing). Only official Patch 2 and the Mac version ship these files
+		// (docs/PATCH-2.md); the 1999 data falls back to Small, which in the Medium tier is the same file as DATESMALL.
+		var date = tier switch { UiFontTier.Small => "DATETINY", UiFontTier.Big => "DATEMED", _ => "DATESMALL" };
+		try { Date = Load( date ); }
+		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or KeyNotFoundException ) { Date = Small; }
 	}
 
 	// Shipped BF4 families from largest to smallest; used to shrink text that does not fit (UiTextFit).
@@ -134,6 +140,8 @@ public sealed class UiFonts
 	public FontAtlas Cash { get; }
 	/// <summary>Font of the HUD bank balance (the original's dedicated cash fonts; <see cref="Cash"/> when they are missing).</summary>
 	public FontAtlas Balance { get; }
+	/// <summary>Font of the HUD date (the original's DATE fonts; <see cref="Small"/> when they are missing).</summary>
+	public FontAtlas Date { get; }
 	public FontAtlas Heading { get; }
 
 	public IEnumerable<FontAtlas> All => new[] { Title, Menu, Label, Small, Cash, Heading };

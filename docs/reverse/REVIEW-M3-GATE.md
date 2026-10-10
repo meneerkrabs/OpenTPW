@@ -404,3 +404,199 @@ python3 -m unittest tools/ppc-analysis/lanes/review/test_m3_gate_v2.py          
 OPENTPW_M3_MUTATE=1 OPENTPW_GAME_PATH=/path/to/theme-park-world \
   python3 -m unittest -v tools/ppc-analysis/lanes/review/test_m3_gate_v2.py    # + 6 mutations
 ```
+
+# Round 3: GATE-UPD (39ccda4 on d21fb4a PATH-I, on the 952ab0f queue stack)
+
+Subject: `39ccda4`. It builds the paths with `ParkPathBuilder.BuildSegment` (GATE-002
+removed) and the queue with `Level.BuildQueueCell`, now a static helper. It judges
+`queues.no-stuck-queue` on two derived violations and puts windows on `staff.work`.
+Everything below was rebuilt and rerun independently with SDK 10 in Release.
+Mutations: `OPENTPW_M3_SUBJECT=39ccda4`, jungle, 30 minutes.
+
+## Round 3 merge blockers
+
+**None.** Every claim in the commit holds: the numbers, both gate runs, the mutations,
+the static helper, and LF/CRLF. The findings below make the gate stricter. None of
+them can cause a false M3 acceptance today, because the queue row is UNRESOLVED and the
+gate exits 2. S2 and S3 must be fixed **before the queue row is allowed to pass**,
+i.e. in the node that traces τ and the `VAR_LETMEON` latency.
+
+ESC-FIX `3d78a8a` cherry-picks onto `39ccda4` without conflict. This was checked in a
+scratch clone (`git clone --shared`, not a worktree). `FIDELITY-REGISTER.md`
+auto-merges and `--check` passes with 187 IDs (GATE-UPD's 186 plus ESC-FIX's
+PATH-011). Tests without assets: 976 / 250 / 0. The native front-end smoke passes:
+"Escape out of the queue tool" is in the passed list, and "Belly Bounce left the queue
+tool active after placement" is logged. Stacking order does not matter.
+
+## Round 3 verdicts
+
+| Item | Verdict | Evidence |
+| --- | --- | --- |
+| 326-turn head bound | **derived from runtime code timing; sound but about 2× loose** (S1) | Recomputed: `ceil(52 / (1.0 × 0.7) × 1000 / 248)` = ceil(299.5) = **300**, plus move-up `trunc(1.2 × 2) + 1` = **3** (`GuestSimulation.MoveDelayFactor`, `MoveUpWaitGap`; step 5 decrements only while gap ≤ 2, and for the head gap = its recorded position ≤ 2), plus `2 × (InterludeTurns 10 + 1)` = **22**, plus **1**: **326**. One-cell queues: ceil(23.04) = 24, so 24 + 3 + 22 + 1 = **50**. The interlude count is right. Step 7 (interlude) is reached only when position = recorded position, so none can start during the move-up wait or the walk. A second interlude can start on the turn after arrival at position 0, because the guest updates before the ride's evaluation. After it ends, the same turn's evaluation sees the head ready. The walk speed is `GuestSettings.WalkSpeedCellsPerSecond` = 1.0, marked "approximation: no original source", with ×0.7 below 20 energy (`GuestSimulation.Speed`, the only speed modifier). So this bound is a consistency check on the runtime's own timing, not an original rule. The rules allow that ("code timing"), and the doc labels it as such. |
+| Head-bound walk term | **over-counted** (S1) | The doc's "up to N cells to its recorded position and up to as many **back** to position 0" does not match the code. `GetQueuePosition` is a list index that only decreases. `UpdateQueueWalk` only steps `QueueCellIndex` towards the front, and links are 4-connected. After a guest becomes head, its total walk is at most the join step (≤ 1 + √2/2), plus N − 1 cell steps, plus ≤ 2 sub-cell legs (depth 0..0.75, lateral ±0.05), plus ≤ 1 tick of lost step per waypoint. That is less than N + 4 cells, not 2N + 2. |
+| Blocked-handshake rule (b) | **derived** | §9a's "two consecutive updates". `VAR_LETMEON ≠ 0 && CalledGuest == 0 && head ≠ 0`: the only writer of a guest id is `PresentForBoarding` (`RideVisitorBridge.cs:388`), and `Withdraw` clears it (`:371`), so the condition cannot clear itself. |
+| Staff windows | **derived** | `ParkEconomy.AdvanceTurn` runs `UpdateHour` once or twice per turn (3,750 s / 3,600 s), then `EndDay`. A wear or breakdown is raised after that turn's hour updates. The next turn's first `UpdateHour` dispatches (busy decrement before `DispatchMechanics`), and the job ends `WorkDuration` hour updates later, so by turn T + 1 + hours. With one mechanic and R rides, a job waits behind at most R − 1 others: a just-repaired ride needs another day end to re-enter, so it cannot starve the queue. The gate has R = 1: grade-1 `WorkDuration` 60 gives **61 turns**, and the measured longest is 14.6 s ≈ 59 turns. The deadline is `TickOfTurn(Turn(eventTick) + 61)`, compared against the gate tick, which equals `economy.Tick`. Litter: `CleanLitter` runs at every hour update, and the check runs only on ticks where the turn changes. Its only false-fail edge (one tick's sales exceed an hour of cleaning) makes the gate stricter. |
+| Failure conditions, mutation-checked | **hold** | `block-boarding` FAILs the queue row (blocked at tick 18,020), its only new failing row. `never-called-head` FAILs it (head 72 not ready for 327 > 326). `stall-one-update` stays UNRESOLVED (`blockedMaxEvaluations` 1). `idle-mechanic-after-first-repair` and `idle-handyman-after-first-clean` FAIL `staff.work`. `queue-bypass-economy` FAILs `build.queue` (charged 0 for 25 cells). `paths-direct-write` FAILs `build.paths` (0 built, 14 stray cells) as its only failing row. `paths-no-charge` FAILs `build.paths`. |
+| Admitted weakening (per-tick target = join cell) | **more correct; transient coverage kept; end-of-run coverage lost but masked** (S3) | `GuestSimulation.UpdateGoingToRide` walks to `attraction.JoinCell` and joins only there. The ride's `EntranceCell` (47,20) is nearest the queue front, and no guest walks to it, so v1's cut of (47,20) cut no guest's route. The per-tick check now follows the real target. New mutation `cut-target-transient` cuts the join cell (remembered, because the cut recomputes the queue) for ticks 36,000–36,600. It **FAILs** `paths.no-unreachable-goal` inside that window, and the end-of-run list is `none`. So the transient-cut coverage is preserved. The end-of-run check (`AddReachabilityRow`) still tests only `EntranceCell`/`ExitCell`, not `JoinCell`. In `cut-path`, Belly Bounce's guests cannot reach the queue, yet the list says only "Drinks Shop, Small Toilet". It is masked because the join cell (47,24) is also Small Toilet's entrance cell. |
+| `Level.BuildQueueCell` extraction | **behaviour-preserving** | Read line by line. `Guests.Grid` becomes `grid`, `Park != null && Park.Economy.TrySpendCell` becomes `economy != null && economy.TrySpendCell` (with `Park?.Economy` passed in), and `IsQueueBlocked` becomes `isBlocked`. Every path still sets `LastActionMessage` (through `out message`), and the order recompute → `CheckExtend` → `TrySpendCell(Queue)` → `TryExtend` is unchanged. `QueueTests.AStaleQueueIsRecomputedBeforeACellIsCharged` passes: it finds the single file containing `TrySpendCell( CellPurchase.Queue )` and checks `RecomputeQueue` < `CheckExtend` < charge there. v3's static test pins the order against 025d410. |
+| CRLF / whitespace | **clean** | `git diff d21fb4a 39ccda4 --stat` = `--ignore-cr-at-eol --stat` (8 files, +1007 −216); `git diff --check` is clean. |
+
+### S1 (optional strictening). The head bound can be N + 4 cells
+
+`cells = queueCells + 4` (for N ≥ 1) instead of `2 × max(1, N) + 2`. For N = 25 that is
+29 cells → ceil(167.05) = 168 turns, so the bound is 168 + 3 + 22 + 1 = **194** (now
+326). For N = 1, N + 4 is looser than the current 4 cells, so take the minimum and short
+queues stay at 50: `cells = Math.Min( 2 * Math.Max( 1, N ) + 2, N + 4 )`.
+The derivation is under "Head-bound walk term". The baseline maximum is 106 (ride), 9
+(shop) and 2 (toilet). Also fix the doc's "back to position 0" wording.
+
+### S2 (fix before the queue row may pass). A blocked evaluation resets the head streak
+
+The per-head streak counts consecutive `AdmissionCheck.HeadNotReady` evaluations, and
+that property requires `ConditionsHold`. Any evaluation with the gates not holding
+resets the streak (the bridge sets `HeadNotReadyStreak = 0`, and the gate sets
+`state.HeadGuest = 0`). New mutation `never-ready-head-blips` holds the head in an
+interlude for the whole run, as `never-called-head` does, and sets `VAR_LETMEON = −1`
+for one evaluation every 300 turns. Result on 39ccda4: **UNRESOLVED, 0 violations**.
+The streak peaked at 299 ≤ 326, blocked evaluations peaked at 1, and the ride completed
+43 waits (baseline 286). One guest was still queued after 1,709 s. Once τ and the
+latency are traced and the row can pass, this would pass.
+
+The walk, move-up and interlude terms of the bound do not depend on the ride's gates.
+A head standing at position 0 outside an interlude is `HeadAtFront` whether or not the
+gates hold. Exact fix in `OnAdmission`: count per head on `!HeadAtFront`, regardless
+of `ConditionsHold`, and reset only on a new head or `HeadAtFront`:
+
+```csharp
+if ( check.HeadGuest != 0 && !check.HeadAtFront )
+{
+	if ( check.HeadGuest != state.HeadGuest )
+		(state.HeadGuest, state.HeadStreakBase) = (check.HeadGuest, 0);
+	var streak = ++state.HeadStreakBase;   // or a dedicated field
+	... (unchanged: MaxHeadStreak, violation when streak > HeadBound)
+}
+else
+	state.HeadGuest = 0;
+```
+
+Verified on a throwaway build (the v3 harness plus this patch, outside the worktree):
+- baseline: still 0 violations, maximum 106, no failing row;
+- `never-ready-head-blips`: **FAIL** at tick 22,856, as do `never-called-head` and `block-boarding`;
+- `stall-one-update`: still UNRESOLVED.
+
+### S3 (fix before acceptance). The end-of-run reachability check ignores the join cell
+
+In `AddReachabilityRow`, add this to the per-item predicate:
+`|| (item.Runtime.Visitors.JoinCell is { } join && grid.Distance( entranceCell.X, entranceCell.Y, join.X, join.Y ) < 0)`.
+Verified the same way:
+- baseline still passes;
+- `cut-target-transient` still FAILs only through the per-tick sampler;
+- `cut-path` now lists "Belly Bounce, Drinks Shop, Small Toilet".
+
+Without it, a run whose last change cuts only the queue's join cell passes the
+end-of-run check in any layout where the join cell is not also another object's
+entrance.
+
+### S4 (pre-existing, DET; outside GATE-UPD). Determinism compares only the final hashes
+
+The retired `reset-ids` mutation is replaced by `diverge-second-run-late`: the newest
+guest's happiness is lowered by 1 at tick 107,000 of the second in-process run. It
+FAILs `determinism.same-seed` (exit 1, the only new failing row).
+`diverge-second-run` makes the same change to the oldest guest at tick 2,000. That
+guest has left by the end, so the final hashes match. The row **passes**, even though
+it reports `firstDivergentMinute` 1. Fix: also require
+`divergence < 0 && first.MinuteHashes.Count == second.MinuteHashes.Count` in
+`matches`. A same-seed run that diverges at any minute is not deterministic.
+`test_m3_gate_v1.test_divergence_that_converges_before_the_end_is_not_failed` pins the
+gap and must flip when the fix lands.
+
+### Notes
+
+- **N1.** Every gate row now has a review mutation that fails it. GATE-V3 adds:
+  - `no-gates` → `build.entrance`;
+  - `unbuyable-attraction`/`-shop`/`-toilet` → `build.attraction`/`build.shop`/`build.toilet` (and `guests.flow`);
+  - `close-park` (tick 1) → `economy.income-and-expenses`, while `economy.ledger-consistent` passes;
+  - `queue-one-short` → `build.queue` ("24 of 25 cells laid").
+- **N2 (not measured).** The ride's exit cell (47,20) is no guest's walking target.
+  `cut-exit-transient` (600 ticks) fails no row, and exit reachability is checked only
+  at the end. Pinned as observed in v3.
+- **N3.** The combined ESC-FIX tree keeps 976 / 250 / 0 without assets.
+
+## Round 3 mutation coverage (after this round)
+
+Each mutation from rounds 1, 2, GATE-UPD and 3, with the current test that covers it.
+All tests were run against 39ccda4 and pass: v1 26/26, v2 10/10, v3 18/18.
+
+| Mutation (round) | Row it must fail (or pin) | Test now |
+| --- | --- | --- |
+| `zero-step` (1) | `time.monotonic` FAIL @1000 | v1 `test_zero_guest_step_flips_time` |
+| `negative-script-step` (1) | process exits 1, no report | v1 `test_negative_script_step_is_rejected_before_the_sampler` |
+| `ledger-skew` (1) | `economy.ledger-consistent` FAIL @2000 | v1 `test_unbalanced_ledger_flips_consistency` |
+| `cut-path` (1) | `paths.no-unreachable-goal` + `guests.flow` FAIL | v1 `test_cut_path_flips_reachability_and_flow` (invariant: some target unreachable; no layout list) |
+| `cut-entrance-transient` (1) | per-tick reachability FAIL | **replaced** by `cut-target-transient` (join cell): v1 `test_transient_target_cut_flips_reachability_through_guest_sampler` |
+| `cut-entrance` (1, unused) | none | removed |
+| `block-boarding` (1) | round 1: unresolved, exit ≠ 0; now `queues.no-stuck-queue` FAIL | v1 `test_queue_that_never_boards_again_cannot_exit_zero` (exit 1, only new FAIL), v3 `test_block_boarding_now_fails_the_queue_row` |
+| `stall-ride` (1) | `rides.scripts-run` @18000, `time.monotonic` @18001 | v1 `test_stopped_ride_fails_scripts_run_and_its_frozen_script_clock` (new failures ⊇ both; queue row not pass) |
+| `stall-ride-from-start` (1) | `guests.flow`, `time.monotonic`, `rides.scripts-run` | v1 `test_ride_stopped_from_start` |
+| `close-toilet` (1) | `guests.flow` (toilet) | v1 `test_closed_toilet` |
+| `no-handyman`, `no-mechanic` (1) | `build.staff` + `staff.work` | v1 `test_staff_work_requires_each_staff_type` |
+| `idle-mechanic`, `idle-handyman` (1) | `staff.work` | v1 `test_hired_but_idle_staff_fail_staff_work` |
+| `reset-ids` (1) | determinism | **retired** (DET removed the process-wide counter, so the hook could not run). Replaced by `diverge-second-run-late` → `determinism.same-seed` FAIL (v1 `test_second_run_divergence_fails_determinism`) and `diverge-second-run` (S4 pin) |
+| `idle-mechanic-after-first-repair` (2) | round 2: pass (W1); now `staff.work` FAIL | v2 `test_mechanic_idle_after_first_repair_fails`, v3 `test_mechanic_idle_after_first_repair_fails` |
+| `idle-handyman-after-first-clean` (2) | round 2: pass (W1); now `staff.work` FAIL | v2 `test_handyman_idle_after_first_clean_fails`, v3 `test_handyman_idle_after_first_clean_fails` |
+| `no-wear-no-litter` (2) | `staff.work` PASS (needs are real) | v2 `test_zero_wear_and_zero_litter_pass_with_idle_staff` |
+| `late-litter` (2) | `staff.work` FAIL (edge, N6) | v2 `test_litter_in_last_tick_only_fails` |
+| `halt-last-tick` (2) | `rides.scripts-run` FAIL @108000 | v2 `test_halt_in_last_tick_fails_scripts_run` |
+| `halt-gate` (2) | no new failing row (N7) | v2 `test_halted_gate_fixed_item_is_judged_by_no_row` (failing rows = baseline's) |
+| `paths-direct-write`, `paths-no-charge` (GATE-UPD) | `build.paths` FAIL | v3 (counts now taken from the baseline, not 14/280) |
+| `queue-bypass-economy` (GATE-UPD) | `build.queue` FAIL | v3 |
+| `never-called-head` (GATE-UPD) | queue row FAIL (rule a) | v3 |
+| `stall-one-update` (GATE-UPD) | queue row stays UNRESOLVED | v3 |
+| `queue-one-short` (3) | `build.queue` FAIL | v3 `test_queue_one_cell_short_fails_build_queue` |
+| `cut-exit-transient` (3) | no row (N2, pinned) | v3 `test_transient_exit_cut` |
+| `never-ready-head-blips` (3) | UNRESOLVED today (S2 pin; must flip to FAIL) | v3 `test_never_ready_head_with_periodic_blocked_evaluation_is_not_failed` |
+| `no-gates` (3) | `build.entrance` FAIL | v3 `test_missing_gate_fails_build_entrance` |
+| `unbuyable-{attraction,shop,toilet}` (3) | `build.{attraction,shop,toilet}` FAIL | v3 `test_unbuyable_objects_fail_their_build_rows` |
+| `close-park` (3) | `economy.income-and-expenses` FAIL | v3 `test_closed_park_fails_income_and_expenses` |
+
+On 39ccda4 before this round, v1 failed 6 and v2 failed 3 (as the author said). The
+causes were baseline failure lists, an exact unreachable list, the round-1 queue verdict,
+the reset-ids reflection target, and the two round-2 weakness pins. Those
+expectations now pin invariants:
+- the exit code follows the verdicts;
+- a mutation's failing rows are compared with the baseline's;
+- layout counts are rebuilt from their rules (`cellsBuilt × Costs.PathCell`;
+  `clamp(⌈limit/4⌉, 1, 25)` cells; `min(limit, 4N)`).
+
+No mutation lost its row. Each round-1/2 mutation still fails, or still pins, the row it
+targeted. The only exceptions are `reset-ids` (its target is gone, replaced by a
+stronger fault) and `cut-entrance-transient` (retargeted to the cell guests walk to).
+
+## Round 3 numbers (independent)
+
+| Check | Result |
+| --- | --- |
+| Build `source/OpenTPW.sln` Release at 39ccda4 (SDK 10, `~/.local/share/opentpw-dotnet10/dotnet`) | 0 errors |
+| `OpenTPW.Tests` without assets | **976 / 250 / 0** |
+| `OpenTPW.Tests` with `OPENTPW_GAME_PATH` | **1155 / 71 / 0** |
+| `--m3-gate` twice (separate processes) | exit 2 both; JSON identical apart from `wallSeconds`, log identical apart from timestamps; **15 pass / 0 fail / 1 unresolved** (`queues.no-stuck-queue`) |
+| `fidelity_register.py --check` | pass, 186 IDs |
+| `run_evidence_checks.py` (after this round's test changes) | OK: 13 Python suites, **851** tests, 220 skipped (author: 844; +7 review tests, skipped without `OPENTPW_M3_MUTATE`) |
+| `git diff d21fb4a 39ccda4 --stat` vs `--ignore-cr-at-eol --stat` | identical (8 files, +1007 −216) |
+| `git diff --check d21fb4a 39ccda4` | clean |
+| Mutations v1 / v2 / v3 on 39ccda4 (`OPENTPW_M3_MUTATE=1`) | **26/26, 10/10, 18/18** |
+| ESC-FIX 3d78a8a on 39ccda4 (scratch clone) | no conflict; register `--check` 187 IDs; 976 / 250 / 0; native front-end smoke exit 0 |
+
+## Round 3 merge readiness
+
+**Merge-ready as a stack** (952ab0f → d21fb4a → 39ccda4, ESC-FIX in any order). M3
+is **not accepted**: the gate exits 2 because the queue row is unresolved, as the
+rules require. Before any change lets that row pass: apply S2 and S3, ideally S1, and
+S4 for the DET row. Then flip `never-ready-head-blips` and the S4 pin to FAIL.
+
+```sh
+python3 -m unittest tools/ppc-analysis/lanes/review/test_m3_gate_v3.py          # static
+OPENTPW_M3_MUTATE=1 OPENTPW_GAME_PATH=/path/to/theme-park-world OPENTPW_M3_SUBJECT=39ccda4 \
+  python3 -m unittest -v tools/ppc-analysis/lanes/review/test_m3_gate_v1.py \
+  tools/ppc-analysis/lanes/review/test_m3_gate_v2.py tools/ppc-analysis/lanes/review/test_m3_gate_v3.py
+```

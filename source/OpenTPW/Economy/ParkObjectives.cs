@@ -90,7 +90,7 @@ public sealed class ParkObjectives
 	public ChallengeDefinition? CurrentDefinition => Current == null ? null : settings.Challenges[Current.DefinitionIndex];
 
 	/// <summary>Challenge types whose progress the simulation can measure (see <see cref="Measure"/>).</summary>
-	public static bool IsSupportedType( int type ) => type is >= 1 and <= 13 or 15 or 16 or 17 or 18 or 19 or 20 or 21 or 24 or 25 or 27 or 28 or 29 or 30 or 31 or 33;
+	public static bool IsSupportedType( int type ) => type is >= 1 and <= 13 or 15 or 16 or 17 or 18 or 19 or 20 or 21 or 24 or 25 or 27 or 28 or 29 or 30 or 31 or 32 or 33;
 
 	/// <summary>The progress value of a challenge type, absolute; count-like types are compared with the acceptance baseline.</summary>
 	public long Measure( ChallengeDefinition definition, ParkCounters counters, ParkStaff staff, IReadOnlyCollection<ParkObjectState> objects, IParkGuestStatistics guests )
@@ -104,11 +104,11 @@ public sealed class ParkObjectives
 			var members = staff.Members.Where( member => type == null || member.Type == type ).ToList();
 			return members.Count == 0 ? 0 : (int)members.Average( member => member.Happiness );
 		}
-		// [APPROX:ECON-037] staff skill % = grade x 25 + training points / 4 — evidence needed: staff skill display capture
+		// [BIN:STP-PPC:0x100F41DC staff skill] skill = trunc(20 × (grade + training percentage / 100)) in single precision; grade 4 at 0 % is 80
 		long SkillPercent( StaffType type )
 		{
 			var members = staff.OfType( type ).ToList();
-			return members.Count == 0 ? 0 : (long)members.Average( member => member.Grade * 25 + member.TrainingPoints / 4 );
+			return members.Count == 0 ? 0 : (long)members.Average( member => ParkStaff.StaffSkill( member ) );
 		}
 		// [APPROX:ECON-034] challenge type meanings come from Challenges.sam comments (shop types by ShopType/SpecialIngredient) — evidence needed: challenge captures per type
 		return definition.Type switch
@@ -129,25 +129,30 @@ public sealed class ParkObjectives
 			15 => counters[ParkCounters.Record( ParkRecordKind.KartCrossroads, definition.TargetObject )],
 			16 => counters[ParkCounters.Researched( ResearchCategory.Ride )],
 			17 or 20 => counters[ParkCounters.RideUses( definition.TargetObject )],
-			18 or 30 => Built( definition.TargetObject ),
+			18 => Built( definition.TargetObject ),
 			19 => counters[ParkCounters.Record( ParkRecordKind.CoasterLoops, definition.TargetObject )],
 			21 => Built( definition.TargetObject ) > 0 ? counters[ParkCounters.Record( ParkRecordKind.KartSections, definition.TargetObject )] : 0,
 			24 => counters[ParkCounters.Record( ParkRecordKind.ToiletCleanlinessPercent, 0 )],
 			25 => AverageHappiness( null ),
 			27 => AverageHappiness( StaffType.Handyman ),
-			28 => objects.Where( item => item.InfoId == definition.TargetObject ).Select( item => item.Level + 1 ).DefaultIfEmpty( 0 ).Max(),
+			// [BIN:STP-PPC:0x100CE754 challenge type 28] passes when TargetVal <= the highest upgrade level byte (+0x4C, 0 = base) of the target rides (0x100C5740, -1 when none)
+			28 => objects.Where( item => item.InfoId == definition.TargetObject ).Select( item => (long)item.Level ).DefaultIfEmpty( -1 ).Max(),
 			29 => SkillPercent( (StaffType)Math.Clamp( definition.TargetStaffType, 0, 4 ) ),
-			31 or 33 => Built( definition.TargetObject2 != 0 ? definition.TargetObject2 : definition.TargetObject ),
+			// [BIN:STP-PPC:0x100CE9CC challenge types 30-32] pass when the object control's build count of TargetObj (+0x18, raised by every Thing construction at 0x100DA874 and never lowered) is above 0; TargetVal and TargetObj2 are not read
+			30 or 31 or 32 => Built( definition.TargetObject ) > 0 ? 1 : 0,
+			// [BIN:STP-PPC:0x100CEA00 challenge type 33] passes when both TargetObj and TargetObj2 have been built
+			33 => Built( definition.TargetObject ) > 0 && Built( definition.TargetObject2 ) > 0 ? 1 : 0,
 			_ => 0
 		};
 	}
 
 	/// <summary>Types measured as a change since acceptance rather than an absolute value.</summary>
-	public static bool IsCountSinceAcceptance( int type ) => type is >= 1 and <= 8 or 11 or 12 or 13 or 16 or 17 or 18 or 20 or 30 or 31 or 33;
+	public static bool IsCountSinceAcceptance( int type ) => type is >= 1 and <= 8 or 11 or 12 or 13 or 16 or 17 or 18 or 20;
 
-	/// <summary>Target value; build/research-and-build challenges with TargetVal 0 need one item.</summary>
-	// [APPROX:ECON-036] build challenges with TargetVal 0 need one item; type 28 needs level 3 — evidence needed: challenge captures
-	public static long Target( ChallengeDefinition definition ) => definition.Type is 18 or 30 or 31 or 33 ? Math.Max( 1, definition.TargetValue ) : definition.Type == 28 ? 3 : definition.TargetValue;
+	/// <summary>Target value; the build types 30-33 measure 1 when built.</summary>
+	// [BIN:STP-PPC:0x100CE690 challenge check] a 34-entry handler table (0x1022C794) by type; types 30-33 test "built" (1), type 28 compares TargetVal with the level
+	// [APPROX:ECON-036] type 18 needs TargetVal items built since acceptance; the binary compares TargetVal with a per-ride value from 0x100C7264 that is not identified — evidence needed: the fifth output of 0x10041A34
+	public static long Target( ChallengeDefinition definition ) => definition.Type is >= 30 and <= 33 ? 1 : definition.Type == 18 ? Math.Max( 1, definition.TargetValue ) : definition.TargetValue;
 
 	/// <summary>Daily challenge processing; returns the events to publish and the prize won (0 when none).</summary>
 	// [APPROX:ECON-035] offers wait for accept/decline; follow-ups are offered right after completion; failed challenges count as finished — evidence needed: challenge flow captures
@@ -252,15 +257,14 @@ public sealed class ParkObjectives
 	}
 
 	/// <summary>Monthly golden ticket check; returns newly won tickets.</summary>
-	public IReadOnlyList<GoldenTicketKind> CheckGoldenTickets( ParkCounters counters, IParkGuestStatistics guests, ParkResearch research, IReadOnlyList<LedgerMonth> history, IReadOnlyList<long> monthlyAdmissions )
+	public IReadOnlyList<GoldenTicketKind> CheckGoldenTickets( ParkCounters counters, IParkGuestStatistics guests, ParkResearch research, long profitThisYear, IReadOnlyList<long> monthlyAdmissions )
 	{
 		var won = new List<GoldenTicketKind>();
 		if ( !settings.CanEarnTickets )
 			return won;
 		var rules = settings.GoldenTickets;
 		long MaxRecord( ParkRecordKind kind ) => counters.Values.Where( pair => pair.Key.StartsWith( $"record:{kind}:", StringComparison.Ordinal ) ).Select( pair => pair.Value ).DefaultIfEmpty( 0 ).Max();
-		// [APPROX:ECON-039] profit year = profit of the last 12 closed months — evidence needed: golden ticket award capture
-		var lastYear = history.Count >= ParkCalendar.MonthsPerYear ? history.Skip( history.Count - ParkCalendar.MonthsPerYear ).Sum( month => month.Profit ) : long.MinValue;
+		// [APPROX:ECON-039] the profit ticket compares the running yearly profit (mProfitThisYear) with ProfitYear directly; the original (0x10013FDC) scales the threshold by a per-objective factor not yet tied to that key — evidence needed: the caller of 0x10013FDC and its factor
 		var recentMonths = Math.Max( 1, rules.RecentVisitorMonths );
 		var recent = monthlyAdmissions.Count >= recentMonths ? monthlyAdmissions.Skip( monthlyAdmissions.Count - recentMonths ).Sum() : 0;
 		var allBuilt = research.IsAllResearched && catalog.Objects.Where( info => info.IsBuyable ).All( info => counters[ParkCounters.Built( info.InfoId )] > 0 );
@@ -273,7 +277,7 @@ public sealed class ParkObjectives
 		Check( GoldenTicketKind.PeopleInPark, guests.PeopleInPark >= rules.PeopleInPark );
 		Check( GoldenTicketKind.Happiness, guests.PeopleInPark > 0 && guests.AverageHappiness >= rules.Happiness && guests.CountHappierThan( rules.Happiness ) >= rules.AtLeastThisManyHappyPeople );
 		Check( GoldenTicketKind.AllResearchedAndBuilt, allBuilt );
-		Check( GoldenTicketKind.ProfitYear, lastYear >= rules.ProfitYear );
+		Check( GoldenTicketKind.ProfitYear, profitThisYear >= rules.ProfitYear );
 		Check( GoldenTicketKind.RecentVisitors, recent >= rules.RecentVisitors );
 		Check( GoldenTicketKind.CoasterHeight, MaxRecord( ParkRecordKind.CoasterHeight ) >= rules.CoasterHeight );
 		Check( GoldenTicketKind.GokartExcitement, MaxRecord( ParkRecordKind.GokartExcitement ) >= rules.GokartExcitement );

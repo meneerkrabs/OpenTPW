@@ -9,9 +9,12 @@ public class Program
 	{
 		try
 		{
+			if ( InstallationDiscovery.RunChild( args ) is { } childExitCode )
+				return childExitCode;
 			LinuxNativeLibraries.Register();
 			Game.Run( args );
-			return 0;
+			// Headless commands such as --m3-gate report failure through the exit code.
+			return Environment.ExitCode;
 		}
 		catch ( Exception exception )
 		{

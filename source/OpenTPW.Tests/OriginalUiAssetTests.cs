@@ -84,9 +84,31 @@ public class OriginalUiAssetTests
 			Assert.AreEqual( entry.WhichUIType, (int)item.Category );
 			Assert.AreEqual( (long)entry.BuildCost, item.Cost );
 			Assert.AreEqual( entry.ObjectNameIndex ?? -1, item.ObjectNameIndex );
-			Assert.AreEqual( entry.IsBonus ? null : entry.PreviewModelPath, item.PreviewModel );
+			Assert.AreEqual( entry.IsBonus ? null : entry.PreviewModelPath ?? entry.ModelPath, item.PreviewModel );
 			Assert.IsFalse( entry.IsFixedItem || entry.IsTool || entry.Category == ObjectCategory.Upgrade );
 		}
+	}
+
+	[TestMethod]
+	public void EveryOriginalModelHasItsStoredRootDrawingKey()
+	{
+		var models = new UiModels();
+		Assert.AreEqual( 278, models.Assets.Count );
+		Assert.AreEqual( 277, models.BindingCount, "the original ordinary loader explicitly excludes w_small_shadow.MD2" );
+		foreach ( var asset in models.Assets )
+		{
+			var source = new ModelFile( FileSystem.GetFiles( "/ui" ).Single( path => Path.GetFileNameWithoutExtension( path ) == asset.Name
+				&& path.EndsWith( ".md2", StringComparison.OrdinalIgnoreCase ) ) );
+			Assert.AreEqual( source.Nodes[source.RootNodeIndex].Name, asset.RootNodeName, asset.Name );
+			Assert.AreEqual( UiModels.RootNameKey( asset.RootNodeName ), asset.DrawingKey, asset.Name );
+			Assert.AreSame( asset, models.GetAsset( asset.Name ), asset.Name );
+			if ( !UiModels.IsSpecialShadowAsset( asset ) )
+				Assert.AreSame( asset, models.GetByDrawingKey( asset.DrawingKey ), asset.Name );
+		}
+		Assert.AreEqual( "base", models.GetAsset( "mainpanel" ).RootNodeName );
+		Assert.AreEqual( "pan_money", models.GetAsset( "panel" ).RootNodeName );
+		Assert.AreEqual( "optpanel2", models.GetAsset( "f_optpanel2" ).RootNodeName );
+		Assert.AreEqual( "shadow1", models.GetByRootName( "wshadow1" ).Name );
 	}
 
 	[TestMethod]
@@ -188,6 +210,39 @@ public class OriginalUiAssetTests
 		icon.Draw( batch, new UiRect( 0, 0, 100, 100 ), 0.5f );
 		var points = batch.Draws.SelectMany( draw => draw.Vertices ).Select( vertex => vertex.Position ).ToArray();
 		Assert.IsTrue( points.All( point => point.X >= -0.5f && point.X <= 100.5f && point.Y >= -0.5f && point.Y <= 100.5f ), "icon fits its slot" );
+	}
+
+	/// <summary>
+	/// Jungle rides without a P model (bouncy, bumper, incagod, monkey, mystery, tourride, volcano) fall back to their main
+	/// model, as the original buy window does, and that model draws inside its slot with every texture resolved.
+	/// </summary>
+	[TestMethod]
+	public void BuildItemsWithoutAPreviewModelUseTheirMainModel()
+	{
+		var original = ObjectCatalog.Load( "jungle" );
+		var items = Enum.GetValues<BuildCategory>().SelectMany( new OriginalBuildCatalog( original ).GetItems ).ToArray();
+		var fallbacks = items.Where( item => item.Entry is { IsBonus: false, PreviewModelPath: null } ).ToArray();
+		Assert.IsTrue( fallbacks.Length > 0, "the jungle has rides without a P model" );
+		Assert.IsTrue( items.Where( item => item.Entry is { IsBonus: false } ).All( item => item.PreviewModel != null ), "every non-bonus item has an icon model" );
+		foreach ( var item in fallbacks )
+		{
+			Assert.AreEqual( item.Entry!.ModelPath, item.PreviewModel, item.Id );
+			// Textures are checked through the entry's own file systems: the catalogue cache is keyed by data root, so a
+			// catalogue cached by an earlier test refers to that test's file system instance.
+			var unresolved = new List<string>();
+			var icon = new PreviewIcon( new ModelFile( item.PreviewModel! ), name =>
+			{
+				if ( ObjectAssets.ResolveTexture( item.Entry, name ) == null )
+					unresolved.Add( name );
+				return null;
+			} );
+			Assert.IsTrue( icon.TriangleCount > 0, item.Id );
+			CollectionAssert.AreEqual( Array.Empty<string>(), unresolved.Distinct().ToArray(), $"{item.Id}: {string.Join( ", ", unresolved.Distinct() )}" );
+			var batch = new UiBatch();
+			icon.Draw( batch, new UiRect( 0, 0, 100, 100 ), 0.5f );
+			var points = batch.Draws.SelectMany( draw => draw.Vertices ).Select( vertex => vertex.Position ).ToArray();
+			Assert.IsTrue( points.Length > 0 && points.All( point => point.X >= -0.5f && point.X <= 100.5f && point.Y >= -0.5f && point.Y <= 100.5f ), $"{item.Id} fits its slot" );
+		}
 	}
 
 	[TestMethod]

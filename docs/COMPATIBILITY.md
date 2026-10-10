@@ -48,12 +48,20 @@ Formats and evidence:
   kern); `TrueTypeRasterizer` flattens quadratic contours (implied on-curve points,
   composite glyphs) and fills with non-zero winding and coverage anti-aliasing.
 - `*.sgn` (84 members: gates and sign1 features, ride WADs, `lobby.wad`), read by
-  `SignFile`: u32 version (100/101), u32, u8 (extra image present), u32, then two
-  436-byte text slots: u32 style id, 64-byte face name, 260-byte TTF file name, two i32
-  (85..141, and a vertical offset), a Win32 `LOGFONTA` (height, width, weight, charset 1,
-  OUT_TT_PRECIS, ANTIALIASED_QUALITY, face name equal to the slot's), u32, eight floats,
-  u32. The rest (two 12-byte headers `16, 128, 4` each followed by 8,192 bytes of 32-bit
-  pixels, and for flag 1 an extra block with a `BILZ` compressed image) is kept raw.
+  `SignFile`: the identified Mac reader proves a 17-byte packed header (version,
+  flag, extra-image byte, two style selectors), then two 392-byte font / 44-byte
+  effect pairs. Fonts store a 64-byte face, 260-byte TTF name, two i32 fields and
+  60-byte `LOGFONTA`. Effects store a mask word, eight floats and two stored bounds
+  words; the native compositor overwrites those bounds from measured text. Float
+  parameters 2..4 are shared base, diffuse and white-specular coefficients, not RGB.
+  Nonzero selectors add 20-byte paint records. Two native bitmap headers store
+  width, height and bytes per pixel; all 84 files have two 16x128x4 source images
+  (8,192 bytes each). The 23 extra images are version-101 wavelet payloads, kept
+  opaque. Unknown styles and image formats are preserved with diagnostics; invalid
+  spans and excessive allocation products are rejected. Corrected 17-byte font offsets and the existing paint API remain compatible
+  with hash-keyed corrections; raw effect words remain available. Use
+  `Effects`, `Paints` and `SourceImages` for native metadata. See
+  [the native sign evidence](reverse/PPC-ui.md#native-sign-records-and-surface-inputs).
 - Sign models have texture slots `sign1` (left half) and `sign2` (right half); the shared
   `sign1.wct`/`sign2.wct` are 128x128 placeholders reading "SIGN1"/"SIGN2", i.e. the game
   renders these textures at runtime. The binary imports `CreateFontIndirectA`,
@@ -120,7 +128,7 @@ Original values ([DATA:Data/low.sam, med.sam, high.sam]):
 | WEATHER / LOBBYOBJECTS | 0/10 | 1/70 | 1/100 | 1/100 | exposed |
 
 The Enhanced preset also stretches OpenTPW's fog distance by 2 ([EXT] view distance; the
-original presets keep scale 1). Default preset: High (APPROX COMPAT-013). Settings live in
+original presets keep scale 1). Default preset: the original's per-machine choice (traced: Low below 65 MB or 301 MHz, Medium below 192 MB or 450 MHz, otherwise High), with the processor clock taken as at least 450 MHz (APPROX COMPAT-013). Settings live in
 `graphics.json` next to `display.json`; `--graphics-preset low|medium|high|enhanced`,
 `--save-graphics-settings`. Filtering/mipmap changes reach the samplers at the next start
 (`RestartRequired`); the view distance applies immediately. Custom presets keep the
@@ -183,10 +191,10 @@ against loose files: `OPENTPW_TPWFNT_PATH=<tpwfnt folder>`.
 
 | Id | Area | Assumption | Evidence needed |
 | --- | --- | --- | --- |
-| COMPAT-001 | Sign text | Canvas 512x256 texels (two 256x256 halves for sign1/sign2); original texture size unknown | binary DIB size or a sign texture capture |
+| COMPAT-001 | Sign text | Legacy 512x256 canvas (two 256x256 halves); native path has a 512x512 text DIB, 256x256 masks and two 128x128 destinations | integrate native surface composition and final split/pack with proven UV orientation |
 | COMPAT-002 | Sign text | Lines centred horizontally and shrunk to fit the width minus 8 texels | original placement / captures of long names |
-| COMPAT-003 | Sign text | `.sgn` slot floats 2..4 read as RGB text colour (clamped) | binary use of the floats or a capture |
-| COMPAT-004 | Sign text | Flat dark board behind gate text; `.sgn` pixel blocks and BILZ image not decoded | decoding of the `.sgn` remainder |
+| COMPAT-003 | Sign text | Stored paint RGB drawn opaque as presentation; fourth colour byte, modes 1/2, fill bitmaps and material/mask effects not applied | integrate the proved native surface/compositing path and verify original-platform pixels |
+| COMPAT-004 | Sign text | Flat dark board behind gate text; the board image (wavelet) is read but not decoded or composed | `Bitmap::load_wavelet` and the board blit |
 | COMPAT-005 | Sign text | The 85..141 slot field (read as horizontal scale) is not applied | binary use of the field |
 | COMPAT-006 | Sign text | No pair kerning (GDI TextOut default) | binary text-output call site |
 | COMPAT-007 | Sign text | Gate shows the THEMENAMES theme name until a save supplies a park name | save park-name field, capture |
@@ -195,7 +203,9 @@ against loose files: `OPENTPW_TPWFNT_PATH=<tpwfnt folder>`.
 | COMPAT-010 | Graphics | TEXTUREFILTERING 0/1/2 → Veldrid point / linear+point-mip / linear+linear-mip; MIPMAP 0 → mip 0 only | binary render states or captures per detail level |
 | COMPAT-011 | Localization | Missing string → English → internal name | original behaviour for missing strings |
 | COMPAT-012 | Text input | Unrepresentable characters → `?` | binary text-input handling |
-| COMPAT-013 | Graphics | High is the default detail preset | installer/registry default |
+| COMPAT-013 | Graphics | The default preset follows the original's thresholds; the processor clock is taken as 450 MHz or faster | none for any machine that runs OpenTPW |
+| COMPAT-014 | Theme Park Inc textures | FSH palette 0x24 has no alpha and decodes opaque; no colour key (see [FSH.md](FSH.md)) | Theme Park Inc texture upload code or captures |
+| COMPAT-015 | Theme Park Inc textures | FSH palette 0x2D (one file) read as A1R5G5B5, bit 15 = opaque | Theme Park Inc palette conversion code or a capture |
 
 Extensions by design (not approximations): `[EXT:COMPAT-GFX-ENHANCED]` Enhanced preset
 values, `[EXT:COMPAT-GFX-ANISOTROPY]` anisotropy degree, `[EXT:COMPAT-GFX-VIEWDISTANCE]`
@@ -204,8 +214,8 @@ this slice (e.g. the fog formula in `test.shader`) are not listed here.
 
 ## Not done
 
-- Sign texture size, text placement, colour and the `.sgn` pixel/image blocks are not
-  decoded; which `OBJECT_NAMES` pair belongs to which ride is unknown, so ride signs are
+- Native sign destination dimensions and source-image metadata are established,
+  but original text coverage, final color and image/layer compositing are not implemented; which `OBJECT_NAMES` pair belongs to which ride is unknown, so ride signs are
   not drawn yet (API ready for the rides slice).
 - Most detail options have no renderer feature to drive (table above).
 - The overlay does not merge directory listings; `GameLanguage` keeps its own language overlay.

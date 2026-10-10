@@ -26,7 +26,7 @@ public sealed class RideVMOptions
 	/// <summary>Loads a SPAWNCHILD/SPAWNSOUND script by its file name (resolved in the parent's archive). Null if missing.</summary>
 	public Func<string, RideScriptFile?>? ResolveScript { get; init; }
 
-	/// <summary>RAND / FINDSCRIPTRAND seed; null for a nondeterministic seed.</summary>
+	/// <summary>RAND / FINDSCRIPTRAND seed; null draws one from the <see cref="RideScriptWorld"/>'s seed stream.</summary>
 	public int? Seed { get; init; }
 
 	/// <summary>Instructions per slice. Default: the script header's time slice (50 in every corpus script).</summary>
@@ -54,6 +54,9 @@ public sealed class RideVM
 	private readonly Instruction[] instructions;
 	private readonly Stack<int> callStack = new();
 	private readonly Random random;
+	// System.Random's state cannot be read, so the canonical hash takes the seed plus the number of RNG calls.
+	private readonly int seed;
+	private long randomDraws;
 	private readonly RideVMOptions options;
 	private readonly Dictionary<Opcode, int> unimplementedEffects = new();
 	private bool yieldRequested;
@@ -73,7 +76,7 @@ public sealed class RideVM
 	public RideVMState State { get; private set; } = RideVMState.Running;
 	public string? FaultMessage { get; private set; }
 
-	/// <summary>Index of the next instruction to execute.</summary>
+	/// <summary>Index of the next instruction to execute, or -10000 after a native diagnostic abort.</summary>
 	public int ProgramCounter { get; private set; }
 	public IReadOnlyList<Instruction> Instructions => instructions;
 	public int[] Variables { get; }
@@ -126,7 +129,8 @@ public sealed class RideVM
 		SourceName = options.SourceName ?? "script";
 		Effects = options.Effects ?? UnimplementedRideScriptEffects.Instance;
 		World = options.World ?? parent?.World ?? new RideScriptWorld();
-		random = options.Seed is int seed ? new Random( seed ) : new Random();
+		seed = options.Seed ?? World.NextScriptSeed();
+		random = new Random( seed );
 		SliceBudget = options.SliceBudget ?? script.TimeSlice;
 		if ( SliceBudget <= 0 )
 			throw new InvalidDataException( $"RSE slice budget {SliceBudget} is not positive." );
@@ -228,6 +232,17 @@ public sealed class RideVM
 		Log?.Warning( $"RSE '{ScriptName}' ({SourceName}) faulted: {message}" );
 	}
 
+	/// <summary>
+	/// Maps a native negative-PC diagnostic stop onto the VM's fault state.
+	/// A non-variable COPY leaves its source word to the next native dispatch;
+	/// that invalid opcode tag produces PC -10000. Parsed instructions abort directly.
+	/// </summary>
+	internal void Abort( string message )
+	{
+		ProgramCounter = -10000;
+		Fault( message );
+	}
+
 	/// <summary>Stops this script and its children and removes them from the world.</summary>
 	public void Stop()
 	{
@@ -277,6 +292,7 @@ public sealed class RideVM
 	{
 		if ( maximumInclusive < 0 )
 			throw new RideScriptException( $"RAND maximum {maximumInclusive} is negative" );
+		randomDraws++;
 		return random.Next( 0, maximumInclusive + 1 );
 	}
 
@@ -293,6 +309,15 @@ public sealed class RideVM
 
 	internal int Effect( Opcode opcode, Operand[] operands ) => Effects.Perform( new RideEffectCall( this, opcode, operands ) );
 
+	/// <summary>An effect result is unavailable when the implementation records this call as unimplemented.</summary>
+	internal bool TryEffect( Opcode opcode, Operand[] operands, out int result )
+	{
+		unimplementedEffects.TryGetValue( opcode, out var before );
+		result = Effect( opcode, operands );
+		unimplementedEffects.TryGetValue( opcode, out var after );
+		return after == before;
+	}
+
 	/// <summary>Counts an unimplemented effect; returns true the first time for this opcode.</summary>
 	public bool RecordUnimplementedEffect( Opcode opcode )
 	{
@@ -301,7 +326,44 @@ public sealed class RideVM
 		return count == 0;
 	}
 
-	internal int FindScript( string name ) => World.FindRandom( name, random );
+	internal int FindScript( string name )
+	{
+		randomDraws++;
+		return World.FindRandom( name, random );
+	}
+
+	/// <summary>Script-table part of <see cref="WorldStateHash"/>: id, position, variables, clocks, deadlines and RNG.</summary>
+	internal void AddCanonicalState( StateHasher hash )
+	{
+		hash.Add( ScriptId );
+		hash.Add( ScriptName );
+		hash.Add( Parent?.ScriptId ?? 0 );
+		hash.Add( (int)State );
+		hash.Add( ProgramCounter );
+		hash.Add( (int)Flags );
+		hash.Add( InCriticalSection );
+		hash.Add( yieldRequested );
+		hash.Add( callStack.Count );
+		foreach ( var address in callStack )
+			hash.Add( address );
+		hash.Add( Variables.Length );
+		foreach ( var value in Variables )
+			hash.Add( value );
+		hash.Add( TimeMilliseconds );
+		hash.Add( WakeTimeMilliseconds );
+		hash.Add( timerEndMilliseconds );
+		hash.Add( animationsEndMilliseconds );
+		hash.Add( ExecutedInstructions );
+		hash.Add( SliceCount );
+		hash.Add( seed );
+		hash.Add( randomDraws );
+	}
+
+	private int NextChildSeed()
+	{
+		randomDraws++;
+		return random.Next();
+	}
 
 	internal void SpawnChild( string fileName, bool sound )
 	{
@@ -312,7 +374,7 @@ public sealed class RideVM
 			Effects = options.Effects,
 			World = World,
 			ResolveScript = options.ResolveScript,
-			Seed = random.Next(),
+			Seed = NextChildSeed(),
 			SourceName = $"{SourceName} > {fileName}"
 		};
 		var child = new RideVM( script, childOptions, this );

@@ -167,4 +167,4 @@ inconclusive without `OPENTPW_GAME_PATH`.
 - The heightfield cell-word low bits (possibly triangle split; unverified) and the
   opaque block header words.
 - The original game's actual build/path rules (runtime observation needed).
-- Sound catalog `.map` schema (separate format).
+- Sound catalog `.map` schema: decoded separately, see [AUDIO.md](AUDIO.md).

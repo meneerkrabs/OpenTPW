@@ -2,12 +2,14 @@
 
 October 9, 2026. Status: CPU container/audio/video decoding for the nine local
 `Data/Movies/*.tgq` files, plus streaming playback (`--play-movie <name>`)
-with audio, A/V sync and GPU presentation. Audio PCM matches an external FFmpeg
+with audio, A/V sync and GPU presentation, and the start-up movie sequence
+(`bf`, then a trailer by day of the month) before the front end. Audio PCM matches an external FFmpeg
 8.0.1 oracle bit-exactly (over the samples FFmpeg emits); video planes are
 **close but not bit-exact** (84–95 % identical samples, 56–61 dB). No in-game
-trigger is wired: the data does not say when the original plays which movie.
-The original player's colour conversion, pixel aspect and end-of-movie
-behaviour are not verified. No dependency or movie data is added.
+The triggers come from the Mac PowerPC build (see "Where the original plays
+movies"); the PC `.tgq` flow is assumed to match. The original player's colour
+conversion and end-of-movie behaviour are not verified. No dependency or movie
+data is added.
 
 Code: `source/OpenTPW.Files/Formats/Video/TgqMovieFile.cs`,
 `source/OpenTPW.Files/Formats/Video/TqiDecoder.cs`,
@@ -231,9 +233,9 @@ and a hash of the presented planes (no window, GPU or audio device);
   original player's behaviour here is unknown.
 - **Presentation**: CPU BT.601 full-range conversion to RGBA, uploaded to a
   320×352 texture and drawn with the existing fullscreen-triangle blit shader
-  into a centred viewport with square pixels (pillarboxed in a 16:9 window).
-  The `bf.tgq` Bullfrog logo looks horizontally condensed with square pixels,
-  so the original may have displayed a different pixel aspect; unverified.
+  into a centred viewport at the original's display aspect 640:352 (the 320×352
+  frames are shown at twice their width, as the original's movie box does; see
+  below), letter/pillarboxed in other windows.
 
 Measured: headless `bf` and `plan` at 60 Hz with audio decode every frame
 (255, 1,138) with no drops and end within one update after the audio; at 12 Hz
@@ -249,27 +251,107 @@ between the two reads; it saves `artifacts/native-movie-bf-*.png`.
 
 ## Where the original plays movies
 
-Searched all 18,734 files in the data directory and its WAD/SDT archives
-(Latin-1 and UTF-16) for `tgq`, `movie`, `fmv`, `intro`, `video`, `cutscene`,
-`cinematic` and the nine movie names, and decoded every English `.str` table:
+Source: static analysis of the Mac PowerPC build (`SimThemePark`, QuickTime
+`.mov` files; Ghidra, never executed). The PC `.tgq` flow is **inferred** from
+the shared game code, not proven. Addresses are function entry points of the
+main code fragment; nothing here is decompiled text.
 
-- `sound.sam` has `DefaultVolume.MOVIE 100`; `UITEXT.str` #323 is
-  "Movie volume:". So the game plays movies with their own volume setting.
-- No file names a movie, an intro sequence or a trigger; every other hit was an
-  incidental byte match in binary data. The executable is not available.
-- Content: `bf.tgq` is the animated Bullfrog Productions logo (likely a startup
-  logo); the other eight share an identical first frame. Which screen plays
-  them, and when, is not evidenced.
+### Mechanism (proven)
 
-Therefore no startup/intro playback is wired; movies play only from the CLI.
+- One movie player routine at `0x1009B1DC` (name, target surface, x/y): it
+  resolves the file, opens it with QuickTime, binds it to the game surface,
+  sets the movie box, prerolls, sets the movie volume, runs a few
+  `MoviesTask` steps and starts it. Companions: `0x1009B404` (task + is-done),
+  `0x1009B45C` (stop and dispose), `0x1009B4D8` (`EnterMovies`, called once
+  from the start-up routine `0x101C0B28`), `0x1009B4FC` (shutdown).
+- This player has **exactly two callers** in the whole fragment (no data
+  references to it): `0x101C0DF0` (the logo) and `0x101C0F40` (the trailer).
+  Both are called from one place each, the start-up states of the main state
+  machine `0x101C1208`. No other code (theme entry, golden tickets, rides,
+  advisor) starts a movie. Indirect calls cannot be excluded statically, but no
+  movie string or QuickTime import is referenced outside this player.
+- Both callers first look the file up (`0x100036B0`); a missing movie is skipped
+  silently and the state still advances.
+
+### Start-up sequence (proven)
+
+Main state machine (`0x101C1208`, 16-entry jump table): start-up routine
+`0x101C0B28` sets state 4 when the start-up flag (bit `0x200` of the global
+flag word) is set, else state 9. State 4 continues to 5, which is the logo.
+
+| State | Does |
+|---|---|
+| 5 | if a skip input is down: go to 7; else play `Data:Movies:bf.mov` and go to 6 |
+| 6 | pump the movie; when done or a skip input is down: stop it, go to 7 |
+| 7 | if a skip input is down: go to 1 (front-end loading); else play the day trailer, go to 8 |
+| 8 | pump; when done or skip: stop it, go to 1 |
+| 1 | splash plus normal loading (game data, lobby), then on to the lobby |
+| 9 | the same loading **without** movies (flag clear), ending in the running state |
+
+- **Logo**: `bf` at every start-up (`0x101C0DF0`).
+- **Trailer** (`0x101C0F40`): `localtime()` day of the month, modulo 8, indexes
+  the eight other movies in the alphabetical order of the path table (pool
+  entries `+0x57…+0xE5` of the data block behind TOC slot `-0x3880`):
+
+| day % 8 | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|---|---|---|---|---|---|---|---|---|
+| movie | bub | buc | grav | jug | mir | plan | roc | roll |
+
+  The choice is deterministic by date (days 8, 16, 24 play `bub`; days 7, 15, 23,
+  31 `roll`), not random. All nine names are the `Data:Movies:<name>.mov` strings;
+  `bf` sits at pool offset `+0x44`.
+- **Skip** (proven): the skip inputs are Esc, Space (virtual-key style codes
+  `0x1B`, `0x20`) and the mouse button (global at `0x101EDD34`, polled through
+  `0x10171DA0`), sampled by level, not by edge, both before a movie starts and
+  while it plays. A button still held when the next movie is due therefore skips
+  that movie too: a normal click usually ends the whole intro.
+- **Every start**: no first-run or "seen" flag is read on this path. Whether it
+  plays is the start-up flag, set by default in the defaults routine
+  `0x1004CAD0` (called from `0x1004CE40` just before the start-up routine) and
+  changeable by the graphics settings block field `+0x2C` (`0x1004C2BC`, values
+  0 clear, 1 set) or the developer file named "debug options" (`0x1004BFE4`,
+  resource byte 3). **Inferred**: the settings field behind `+0x2C` is not
+  identified, so whether the player can switch the intro off in a menu is
+  unknown; the shipped default plays it.
+- **Movie volume** (proven): the player sets the QuickTime movie volume from a
+  global written only by `0x1009B4AC`, called from the sound-options apply
+  routine `0x10126460`: movie sound off gives 0, otherwise the Movie volume
+  percentage `p` (0…100) becomes `p × 1023 / 100`, then `× 256 / 1023`, i.e.
+  linear 0…256 (QuickTime full volume). That routine runs from the early
+  program start-up (`0x100002DC` → `0x10000D54` → `0x10125B7C`), before the
+  start-up states (the order is **inferred** from the call chain). OpenTPW maps
+  its 0…10 Movie volume option linearly onto 0…1.
+- **Picture box** (proven): the movie is placed at y = screen height × 64/480
+  and sized to the screen width by screen height × 352/480, i.e. 640×352 in a
+  640×480 screen, with black above and below. The `.tgq` frames are 320×352, so
+  the original shows them horizontally doubled (non-square pixels); OpenTPW does
+  the same inside a letterboxed window. (The original stretches to the
+  window width; OpenTPW keeps the 640:352 aspect, see APPROX UI-035.)
+- Corroboration from `sound.sam` (`DefaultVolume.MOVIE 100`) and the options
+  string "Movie volume:" in the data directory.
+
+### Not in the data directory
+
+No data file names a trigger (the 18,734 files, WAD and SDT archives, and all
+English `.str` tables were searched), which is why the executable was needed.
+
+### Wired in OpenTPW
+
+`IntroPlaylist` / `IntroSequence`: every normal start plays `bf`, then the day
+trailer, then opens the front end. Esc, Space or a mouse button skips (input held
+when the window appears is ignored until released, APPROX UI-035; held input
+also skips the next movie as above). A missing or unreadable movie is skipped.
+`--no-intro` or `OPENTPW_NO_INTRO=1` goes straight to the front end; smoke
+tests never play it; `--mute` silences it.
 
 ## Remaining gates
 
 Bit-exact IDCT (only if original-player captures prove it matters), colour
-matrix/range and pixel aspect against original-player captures, what the
-original does after the last frame (`plan.tgq` audio tail), the movie-volume
-setting, and where the game triggers each movie (needs the executable or
-captures). None of these are verified.
+matrix/range against original-player captures, what the original does after
+the last frame (`plan.tgq` audio tail), whether the PC build uses the same
+logo-plus-day-trailer sequence and `.tgq` names (PC executable not analysed),
+and which user-facing setting, if any, controls the start-up flag. None of
+these are verified.
 
 ## Sources
 

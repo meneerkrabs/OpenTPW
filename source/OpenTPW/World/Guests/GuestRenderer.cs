@@ -40,12 +40,65 @@ public sealed class GuestRenderer : Entity
 		if ( atlases.Count == 0 )
 			return;
 		foreach ( var atlas in atlases.Take( 8 ) )
-			textures.Add( new Texture( atlas.Pixels, atlas.Width, atlas.Height ) );
+			textures.Add( LoadAtlas( atlas ) );
 		var slots = new Texture[8];
 		for ( var index = 0; index < slots.Length; index++ )
 			slots[index] = textures[Math.Min( index, textures.Count - 1 )];
 		material = new Material<ObjectUniformBuffer>( "content/shaders/sprite.shader" );
 		material.Set( "Color", slots );
+		TexturePackSwitch.PackChanged += ReloadAtlases;
+	}
+
+	/// <summary>
+	/// [EXT:texture-pack] The texture pack changed: builds the atlas textures again from the new pack (or the originals), binds
+	/// them and deletes the old GPU textures after the current frame.
+	/// </summary>
+	private void ReloadAtlases()
+	{
+		if ( deleted || material == null || textures.Count == 0 )
+			return;
+		var old = textures.ToList();
+		textures.Clear();
+		foreach ( var atlas in atlases.Take( 8 ) )
+			textures.Add( LoadAtlas( atlas ) );
+		var slots = new Texture[8];
+		for ( var index = 0; index < slots.Length; index++ )
+			slots[index] = textures[Math.Min( index, textures.Count - 1 )];
+		material.Set( "Color", slots );
+		foreach ( var texture in old )
+			Asset.All.Remove( texture );
+		global::Global.Render.ScheduleDelete( () =>
+		{
+			foreach ( var texture in old )
+			{
+				texture.NativeTextureView.Dispose();
+				texture.NativeTexture.Dispose();
+			}
+		} );
+	}
+
+	/// <summary>
+	/// The atlas texture: the texture pack's upscaled atlas when there is one with the same aspect ratio (frame UVs are
+	/// relative, so a larger atlas drops in), else the original pixels.
+	/// </summary>
+	// [EXT:texture-pack] upscaled guest sprites from the optional local pack
+	private static Texture LoadAtlas( GuestSpriteAtlas atlas )
+	{
+		if ( TexturePack.Find( atlas.PackKey ) is { } file )
+		{
+			try
+			{
+				var image = StbImageSharp.ImageResult.FromMemory( File.ReadAllBytes( file ), StbImageSharp.ColorComponents.RedGreenBlueAlpha );
+				if ( image.Width >= atlas.Width && (long)image.Width * atlas.Height == (long)image.Height * atlas.Width )
+					return new Texture( image.Data, image.Width, image.Height );
+				Log.Warning( $"Texture pack atlas {file} is {image.Width}x{image.Height}, not a multiple of {atlas.Width}x{atlas.Height}; using the original sprites." );
+			}
+			catch ( Exception exception ) when ( exception is IOException or InvalidOperationException or UnauthorizedAccessException )
+			{
+				Log.Warning( $"Texture pack atlas {file} could not be read ({exception.Message}); using the original sprites." );
+			}
+		}
+		return new Texture( atlas.Pixels, atlas.Width, atlas.Height );
 	}
 
 	/// <summary>Engine position of a point in game-cell coordinates, on the heightfield (bilinear corner heights; holes keep their corner heights).</summary>
@@ -166,6 +219,7 @@ public sealed class GuestRenderer : Entity
 	protected override void OnDelete()
 	{
 		deleted = true;
+		TexturePackSwitch.PackChanged -= ReloadAtlases;
 		var buffer = vertexBuffer;
 		vertexBuffer = null;
 		if ( buffer != null )

@@ -185,6 +185,66 @@ public sealed class ServerStore
 			sessions.Remove( PasswordHasher.HashToken( token ) );
 	}
 
+	/// <summary>
+	/// [EXT:ONLINE-055] Deletes a player and what the server holds about them (docs/SERVER.md): the
+	/// account, its sessions, its published parks, the postcards in its inbox, and its traces in other
+	/// players' buddy lists and in park visitor and vote lists. Reports they made name them as a
+	/// deleted player; reports about them are kept for moderation. Postcards they already sent stay
+	/// with their recipients. The name becomes free again.
+	/// </summary>
+	public void DeleteAccount( AccountRecord account, string password )
+	{
+		if ( !PasswordHasher.Verify( password ?? "", account.Salt, account.Hash, account.Iterations ) )
+			throw new StoreException( 401, "Invalid username or password." );
+		lock ( gate )
+		{
+			if ( !accounts.Remove( account.Key ) )
+				throw new StoreException( 404, "There is no such player." );
+			foreach ( var session in sessions.Where( pair => pair.Value.Key == account.Key ).Select( pair => pair.Key ).ToList() )
+				sessions.Remove( session );
+			foreach ( var other in accounts.Values )
+				other.Buddies.Remove( account.Key );
+			foreach ( var park in parks.Values.Where( park => park.OwnerKey == account.Key ).ToList() )
+			{
+				parks.Remove( park.Id );
+				File.Delete( ParkFile( park.Id, ParkPackage.FileExtension ) );
+				File.Delete( ParkFile( park.Id, ".png" ) );
+			}
+			foreach ( var park in parks.Values )
+			{
+				park.Visitors.Remove( account.Key );
+				park.LastVoteDay.Remove( account.Key );
+			}
+			foreach ( var card in postcards.Values.Where( card => card.RecipientKey == account.Key ).ToList() )
+			{
+				postcards.Remove( card.Id );
+				File.Delete( PostcardFile( card.Id ) );
+			}
+			Save( "accounts.json", accounts.Values.ToList() );
+			Save( "parks.json", parks.Values.ToList() );
+			Save( "postcards.json", postcards.Values.ToList() );
+			AnonymizeReporter( account.Name );
+		}
+	}
+
+	public const string DeletedPlayer = "(deleted player)";
+
+	private void AnonymizeReporter( string name )
+	{
+		var file = Path.Combine( Root, "reports.jsonl" );
+		if ( !File.Exists( file ) )
+			return;
+		var key = OnlineText.NormalizeName( name );
+		var lines = File.ReadAllLines( file ).Select( line =>
+		{
+			var report = JsonSerializer.Deserialize<ReportRecord>( line, LineOptions );
+			return report != null && OnlineText.NormalizeName( report.Reporter ) == key
+				? JsonSerializer.Serialize( report with { Reporter = DeletedPlayer }, LineOptions )
+				: line;
+		} );
+		AtomicFile.Write( file, System.Text.Encoding.UTF8.GetBytes( string.Join( "\n", lines ) + "\n" ) );
+	}
+
 	/// <summary>Adds or removes a buddy; returns true when added.</summary>
 	public bool ToggleBuddy( AccountRecord account, AccountRecord buddy )
 	{

@@ -1,0 +1,48 @@
+{
+  "after_world_target": 1844260,
+  "branches": {
+    "application_flag8": {
+      "bi": 2,
+      "bo": 4,
+      "offset": 1843964,
+      "target": 1843980
+    },
+    "gameplay_flag1": {
+      "bi": 2,
+      "bo": 4,
+      "offset": 1843976,
+      "target": 1844416
+    },
+    "mode0": {
+      "bi": 2,
+      "bo": 12,
+      "offset": 1844104,
+      "target": 1844148
+    },
+    "mode1": {
+      "bi": 2,
+      "bo": 4,
+      "offset": 1844196,
+      "target": 1844260
+    },
+    "mode2": {
+      "bi": 2,
+      "bo": 4,
+      "offset": 1844144,
+      "target": 1844160
+    }
+  },
+  "direct_target": 1844148,
+  "fma_code_offset": 1211668,
+  "identity_sha256": "04809cd4ccee5433c7fb0b7c93d32f6a7aa629c1849181c0b7906415e5e295f5",
+  "limitations": "Decoded condition metadata, not original bytes or native execution.",
+  "mode1_check_target": 1844160,
+  "mode_comparisons": {
+    "mode0": 0,
+    "mode1": 1,
+    "mode2": 2
+  },
+  "skip_target": 1844416,
+  "work_target": 1843980,
+  "wrapper_target": 1844200
+}

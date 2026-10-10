@@ -17,8 +17,11 @@ internal sealed class GameFlow : IDisposable
 	private readonly UiInputSource inputSource = new();
 	private readonly UiBatch backgroundBatch = new();
 	private Action? pending;
+	private string? pendingLevel;
 	private LobbyDefinition? lobbyDefinition;
 	private (int Requested, int Fitted)? reportedUiScale;
+	private OnlineSession? onlineSession;
+	private UI.ChatOverlay? chatOverlay;
 
 	public GameFlow()
 	{
@@ -37,6 +40,11 @@ internal sealed class GameFlow : IDisposable
 	public UiStringTable Strings { get; }
 	public UiContext Context { get; }
 	public OnlineFolders? OnlineFolders { get; set; }
+	/// <summary>Automatic advice in original-level parks (off with <c>--no-advisor</c> and for <c>--advisor-say</c>/<c>--advisor-response</c>).</summary>
+	public bool AutomaticAdvisorEnabled { get; set; } = true;
+	/// <summary>The automatic advisor, created with the first park (null when disabled or its settings are missing).</summary>
+	public AutomaticAdvisor? Advisor { get; private set; }
+	private bool advisorUnavailable;
 	public IDisplaySettings Display { get; set; }
 	public string OptionsPath { get; set; }
 	/// <summary>When false, options are not written (smoke tests).</summary>
@@ -46,11 +54,36 @@ internal sealed class GameFlow : IDisposable
 	public FrontEndMenu? Menu { get; private set; }
 	public LobbyScene? Lobby { get; private set; }
 	public UiInput? InjectedInput { get; set; }
-	public GameMode Mode { get; private set; } = GameMode.FullSimulation;
+	/// <summary>How the current original level started; null in the front end and the generic sandbox.</summary>
+	public ParkStartKind? StartKind { get; private set; }
 	/// <summary>Raised after a queued transition ran.</summary>
 	public event Action? Transitioned;
 
-	public void Queue( Action transition ) => pending = transition;
+	public void Queue( Action transition )
+	{
+		pending = transition;
+		pendingLevel = null;
+	}
+
+	/// <summary>Queues a transition into <paramref name="level"/>; it waits until <see cref="LevelDataReady"/> says the level's files are there.</summary>
+	public void QueueLevel( string level, Action transition )
+	{
+		pending = transition;
+		pendingLevel = level;
+	}
+
+	/// <summary>
+	/// Whether a level's files can be read now. The browser build copies a level's folder from the player's
+	/// installation only when it is first played and answers false until it is in (docs/WEB.md); the lobby
+	/// keeps running meanwhile. Null on the desktop, which reads the installation directly.
+	/// </summary>
+	public static Func<string, bool>? LevelDataReady { get; set; }
+
+	/// <summary>
+	/// Records the keys and buttons held right now as already seen, so a press that skipped the start-up movies
+	/// (Space also activates a menu button) does not act on the front end's first frame.
+	/// </summary>
+	public void DiscardHeldInput() => inputSource.Poll( 1, 1 );
 
 	// ---- Front end -------------------------------------------------------------------------
 
@@ -64,12 +97,13 @@ internal sealed class GameFlow : IDisposable
 		LobbyCameraMode.SpinSpeed = lobbyDefinition.SpinSpeed;
 		Menu = new FrontEndMenu( Strings, lobbyDefinition.Islands, new FrontEndActions
 		{
-			StartPark = ( island, mode ) => Queue( () => StartPark( island.Level, mode ) ),
-			Load = entry => Queue( () => LoadPark( entry ) ),
+			StartPark = ( island, mode ) => QueueLevel( island.Level, () => StartPark( island.Level, mode ) ),
+			Load = entry => QueueLevel( entry.Level, () => LoadPark( entry ) ),
 			Quit = Quit,
 			CreateOptions = CreateOptions,
 			IslandSelected = island => LobbyCameraMode.Target = Lobby!.Target( island ),
 			LoadEntries = FindLoadEntries,
+			GoOnline = ShowOnline,
 		} );
 		Menu.SelectIsland( 0 );
 		if ( selectLevel != null )
@@ -81,8 +115,18 @@ internal sealed class GameFlow : IDisposable
 	public UiScreen CreateOptions( UiScreenStack stack, Action closed ) => OptionsScreen.Create( stack, Strings, new OptionsServices
 	{
 		Display = Display,
+		Graphics = IGraphicsSettings.Instance,
+		TexturePacks = TexturePack.InstalledPacks(),
+		BeginTexturePackSwitch = name =>
+		{
+			var diagnostics = new List<string>();
+			var textureSwitch = TexturePackSwitch.Begin( name, diagnostics );
+			foreach ( var diagnostic in diagnostics )
+				Log.Warning( $"Texture pack: {diagnostic}" );
+			return textureSwitch;
+		},
 		Options = GameOptions.Current,
-		Languages = GameLanguage.FindLanguages( GameLanguage.Current.BaseDataDirectory, GameLanguage.Current.OverlayDataDirectory ),
+		Languages = GameLanguage.Choosable(),
 		CurrentLanguage = GameLanguage.Current.Name,
 		SaveOptions = () => { if ( PersistSettings ) GameOptions.Current.Save( OptionsPath ); },
 		SaveLanguage = language =>
@@ -113,12 +157,15 @@ internal sealed class GameFlow : IDisposable
 
 	// ---- Park ------------------------------------------------------------------------------
 
-	/// <summary>New park from the lobby: the original level (terrain, MAP rules, Easymode import where shipped).</summary>
+	/// <summary>
+	/// New park from the lobby in the chosen mode: Instant Action adds the <c>Easy_</c> balance layer and
+	/// the shipped Easymode seed where the level has them; Full Simulation starts from terrain and MAP rules.
+	/// </summary>
 	public void StartPark( string levelName, GameMode mode )
 	{
-		Mode = mode;
-		StartLevel( levelName, original: true, developerPanels: false, gameMode: mode == GameMode.InstantAction ? ParkGameMode.InstantAction : ParkGameMode.FullSimulation );
-		Log.Trace( $"Started {levelName} in {mode} mode from the front end." );
+		var start = ParkStart.FromFrontEnd( mode );
+		StartLevel( levelName, original: true, developerPanels: false, start: start );
+		Log.Trace( $"Started {levelName} as a new {start} park from the front end." );
 	}
 
 	public void LoadPark( ParkLoadEntry entry )
@@ -129,15 +176,22 @@ internal sealed class GameFlow : IDisposable
 			Level!.LoadSandbox();
 		}
 		else
+			// [APPROX:UI-041] a loaded shipped park is the reference start whatever Game Mode was last chosen; the original takes the mode from the loading player's profile, not the park — evidence needed: player profiles and the Mac park loader 0x11acfc
 			StartLevel( entry.Level, original: true, developerPanels: false );
 	}
 
-	/// <summary>Creates a level with the original HUD. CLI paths keep the developer panels.</summary>
-	public Level StartLevel( string levelName, bool original, bool developerPanels, ParkVisitInfo? visit = null, ParkGameMode? gameMode = null )
+	/// <summary>
+	/// Creates a level with the original HUD. CLI paths keep the developer panels. Original levels
+	/// default to the read-only reference start (shipped save imported as it was made).
+	/// </summary>
+	public Level StartLevel( string levelName, bool original, bool developerPanels, ParkVisitInfo? visit = null, ParkStartKind start = ParkStartKind.OriginalSaveReference )
 	{
 		TearDown();
-		var level = new Level( levelName, loadOriginalLevel: original, visit: visit, onlineFolders: OnlineFolders, gameMode: gameMode ) { ShowDeveloperPanels = developerPanels };
+		var level = new Level( levelName, loadOriginalLevel: original, visit: visit, onlineFolders: OnlineFolders, start: start ) { ShowDeveloperPanels = developerPanels };
 		Level = level;
+		if ( original )
+			GameAudio.EnterPark( levelName, level.Seed.SoundStream );
+		StartKind = level.Park?.Start.Kind;
 		// Money, calendar, speed and purchases come from the park economy of original levels (Level.Park,
 		// looked up on every access so loading a park save is followed); the generic sandbox has none.
 		IHudParkStatus status = level.Park != null ? EconomyParkStatus.ForLevel( level ) : new NoEconomyStatus();
@@ -146,18 +200,32 @@ internal sealed class GameFlow : IDisposable
 			ExitToLobby = () => Queue( () => ShowFrontEnd( levelName ) ),
 			Quit = Quit,
 			CreateOptions = CreateOptions,
-			CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, Strings, FindLoadEntries(), entry => Queue( () => LoadPark( entry ) ) ),
+			CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, Strings, FindLoadEntries(), entry => QueueLevel( entry.Level, () => LoadPark( entry ) ) ),
+			GoOnline = ShowOnline,
 		} );
+		// [EXT:online-visit] read-only visits of shared parks get no advisor (the original has no visits)
+		// [EXT:sandbox] the generic sandbox (not an original level) gets no automatic advisor either; only original levels raise its game events
+		if ( AutomaticAdvisorEnabled && original && visit == null && !advisorUnavailable )
+		{
+			Advisor ??= AutomaticAdvisor.TryCreate();
+			advisorUnavailable = Advisor == null;
+			Advisor?.AttachLevel( level );
+		}
 		return level;
 	}
 
 	private void TearDown()
 	{
+		Hud?.Stack.Clear();
+		Menu?.Stack.Clear();
+		Advisor?.DetachLevel();
+		GameAudio.LeavePark();
 		if ( Level != null )
 		{
 			Level.Dispose();
 			Level = null;
 			Hud = null;
+			StartKind = null;
 			OpenTPW.Level.Current = null!;
 		}
 		foreach ( var entity in Entity.All.ToArray() )
@@ -174,7 +242,7 @@ internal sealed class GameFlow : IDisposable
 	private UiCanvas CurrentCanvas()
 	{
 		var pixels = Screen.PixelSize;
-		var canvas = new UiCanvas( Math.Max( 1, pixels.X ), Math.Max( 1, pixels.Y ), Math.Max( 1, Display.EffectiveUiScale ) );
+		var canvas = new UiCanvas( Math.Max( 1, pixels.X ), Math.Max( 1, pixels.Y ), Math.Max( 1, Display.EffectiveUiScale ), Screen.PixelDensity );
 		var scales = (canvas.UiScale, canvas.TextScale);
 		if ( reportedUiScale != scales && canvas.TextScale < canvas.UiScale )
 			Log.Warning( $"Interface scale {canvas.UiScale}x falls back to {canvas.TextScale}x: {canvas.Width}x{canvas.Height} drawable pixels cannot fit the {UiScaling.ReferenceWidth}x{UiScaling.ReferenceHeight} reference layout at the requested scale." );
@@ -184,10 +252,13 @@ internal sealed class GameFlow : IDisposable
 
 	public void Update()
 	{
-		if ( pending != null )
+		// [EXT:texture-pack] the pack switch belongs to the game loop, not to its loading screen
+		TexturePackSwitch.PumpCurrent();
+		if ( pending != null && (pendingLevel == null || LevelDataReady?.Invoke( pendingLevel ) != false) )
 		{
 			var transition = pending;
 			pending = null;
+			pendingLevel = null;
 			transition();
 			Transitioned?.Invoke();
 		}
@@ -199,6 +270,8 @@ internal sealed class GameFlow : IDisposable
 		var logical = Screen.Size;
 		var input = InjectedInput ?? inputSource.Poll( Context.Canvas.Width / (float)Math.Max( 1, logical.X ), Context.Canvas.Height / (float)Math.Max( 1, logical.Y ) );
 		InjectedInput = null;
+		Input.TextEntryActive = false;
+		onlineSession?.Pump();
 		var imguiMouse = ImGuiNET.ImGui.GetIO().WantCaptureMouse;
 		if ( imguiMouse )
 			input = input with { LeftPressed = false, LeftReleased = false, RightPressed = false, Wheel = 0 };
@@ -208,8 +281,12 @@ internal sealed class GameFlow : IDisposable
 			Level.UiCapturesMouse = Hud.Update( Context, input );
 			Level.SimulationTimeScale = Hud.Status.TimeScale;
 			Level.Update();
+			Advisor?.Update();
+			GameAudio.Update( Level.Guests?.GetStatistics().InPark );
 			return;
 		}
+		GameAudio.EnsureStarted();
+		GameAudio.Update();
 		Camera.Update();
 		Menu?.Stack.Update( Context, input );
 		foreach ( var entity in Entity.All.ToArray() )
@@ -223,7 +300,10 @@ internal sealed class GameFlow : IDisposable
 		overlayRenderer.BeginFrame();
 		var framebuffer = global::Global.Render.MultisampledFramebuffer;
 		if ( Level != null )
+		{
 			Level.Render();
+			Advisor?.Render();
+		}
 		else
 		{
 			// [DATA:lobby.wad:<theme>.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky
@@ -241,6 +321,9 @@ internal sealed class GameFlow : IDisposable
 			Hud.Draw( Context );
 		else
 			Menu?.Stack.Draw( Context );
+		// [EXT:texture-pack] a running texture switch shows its progress without blocking the game
+		if ( TexturePackSwitch.Current is { } textureSwitch )
+			OptionsScreen.DrawTextureSwitchProgress( Context, Strings, textureSwitch );
 	}
 
 	/// <summary>Overlay pass (output pixels, possibly twice per frame when the output is captured).</summary>
@@ -250,8 +333,41 @@ internal sealed class GameFlow : IDisposable
 		overlayRenderer.Draw( global::Global.Render.CommandList, Context.Batch, target.Width, target.Height );
 	}
 
+	// ---- Online ------------------------------------------------------------------------------
+
+	/// <summary>The online extension's session, created on the first Go Online and kept across parks.</summary>
+	public OnlineSession Online
+	{
+		get
+		{
+			if ( onlineSession == null )
+			{
+				onlineSession = new OnlineSession( OnlineFolders ?? global::OpenTPW.OnlineFolders.FromEnvironment() );
+				chatOverlay = new UI.ChatOverlay( onlineSession );
+				global::Global.Render.OnOverlayRender += chatOverlay.Draw;
+			}
+			return onlineSession;
+		}
+	}
+
+	/// <summary>Go Online: the original-style online screens on <paramref name="stack"/> (docs/ONLINE.md).</summary>
+	public void ShowOnline( UiScreenStack stack ) => new UI.OnlineScreens( stack, Strings, Context.Models, new UI.OnlineHost
+	{
+		Session = Online,
+		Level = () => Level,
+		Visit = visit => QueueLevel( visit.Level, () => StartLevel( visit.Level, original: !visit.IsSandbox, developerPanels: false, visit: visit ) ),
+	} ).ShowWorld();
+
 	public void Dispose()
 	{
+		Advisor?.Dispose();
+		GameAudio.Shutdown();
+		Hud?.Stack.Clear();
+		Menu?.Stack.Clear();
+		if ( chatOverlay != null )
+			global::Global.Render.OnOverlayRender -= chatOverlay.Draw;
+		chatOverlay?.Dispose();
+		onlineSession?.Dispose();
 		global::Global.Render.OnOverlayRender -= RenderOverlay;
 		Level?.DetachOverlay();
 		Level?.TextOverlay?.Dispose();

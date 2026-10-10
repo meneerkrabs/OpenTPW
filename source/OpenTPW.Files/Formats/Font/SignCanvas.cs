@@ -9,25 +9,23 @@ namespace OpenTPW;
 /// fit a 256-pixel-high canvas; <c>OBJECT_NAMES.str</c> begins with ride names split over two
 /// entries ("Temple"/"Of Gloom", "Sun"/"God"), matching the two slots. Which entry pair belongs to which
 /// object is not established (<c>Info.RideTypeStringIndex</c> is a ride type shared by all themes).
-/// Approximations, labelled: the canvas is 512x256 (two 256x256 halves; the original texture size
-/// is unknown), lines are centred horizontally and shrunk to fit the width, the slot colour is read
-/// from slot parameters 2..4 as RGB (unverified), the background is a caller-supplied colour (the
-/// .sgn fill/background pixel blocks are not decoded), and the horizontal-scale field is not applied.
+/// Approximations, labelled: the canvas is 512x256 (two 256x256 halves; native final destinations
+/// are 128x128, with distinct text/mask surfaces), lines are centred horizontally and shrunk to fit the width, the line colour is the
+/// RGB of its colour block (traced) drawn opaque, the background is a caller-supplied colour (the
+/// .sgn fill bitmaps and board image are read but not composed), and the horizontal-scale field is not applied.
 /// </summary>
 public static class SignCanvas
 {
-	// [APPROX:COMPAT-001] 512x256 canvas (two 256x256 halves) — evidence needed: original DIB size or a sign texture capture.
+	// [APPROX:COMPAT-001] Legacy 512x256 canvas; native DIB/mask and final 128x128 destinations require integration and platform pixel verification.
 	public const int Width = 512;
 	public const int Height = 256;
 	public const int HalfWidth = Width / 2;
 
-	/// <summary>Slot colour from parameters 2..4 interpreted as RGB in 0..1 (clamped; unverified).</summary>
-	public static (byte R, byte G, byte B) SlotColor( SignTextSlot slot )
-	{
-		// [APPROX:COMPAT-003] parameters 2..4 = RGB — evidence needed: binary use of the slot floats or a capture.
-		static byte Channel( float value ) => (byte)Math.Round( Math.Clamp( float.IsFinite( value ) ? value : 1, 0, 1 ) * 255 );
-		return slot.Parameters.Count >= 5 ? (Channel( slot.Parameters[2] ), Channel( slot.Parameters[3] ), Channel( slot.Parameters[4] )) : ((byte)255, (byte)255, (byte)255);
-	}
+	/// <summary>A line's text colour: the red, green and blue bytes of its colour block, or null when its colour mode is 0 and the line is not drawn.</summary>
+	// [BIN:STP-PPC:0x100ABF14 sign compositor] each line is colour-blitted with its colour block's bytes (+0x430..+0x432 for the first line, +0x444..+0x446 for the second) only when its colour mode is 1 or 2
+	// [APPROX:COMPAT-003] stored paint RGB is drawn opaque; alpha, modes 1/2, fills and material/mask effects are not applied — evidence needed: integration of the proved native surface/compositing path and original-platform pixel verification
+	public static (byte R, byte G, byte B)? SlotColor( SignFile sign, int index ) =>
+		index >= 0 && index < sign.ColourBlocks.Count && sign.ColourModes[index] is 1 or 2 && sign.ColourBlocks[index] is { } block ? (block.R, block.G, block.B) : null;
 
 	/// <summary>
 	/// Draws <paramref name="lines"/> (one per slot; null/empty lines are skipped) with each slot's
@@ -39,6 +37,9 @@ public static class SignCanvas
 		ArgumentNullException.ThrowIfNull( sign );
 		ArgumentNullException.ThrowIfNull( fonts );
 		ArgumentNullException.ThrowIfNull( lines );
+		foreach ( var diagnostic in sign.Diagnostics ) diagnostics?.Add( diagnostic );
+		if ( lines.Any( line => !string.IsNullOrWhiteSpace( line ) ) )
+			diagnostics?.Add( "COMPAT-003: stored paint RGB is drawn opaque as a presentation policy; native material lighting, mask effects and layer compositing are not implemented." );
 		var canvas = new byte[Width * Height * 4];
 		for ( var i = 0; i < canvas.Length; i += 4 )
 		{
@@ -53,6 +54,8 @@ public static class SignCanvas
 			if ( string.IsNullOrWhiteSpace( text ) )
 				continue;
 			var slot = sign.Slots[index];
+			if ( SlotColor( sign, index ) is not { } colour )
+				continue;
 			// [DATA:*.sgn:slot font file / LOGFONT face]
 			var font = fonts.Find( slot.FontFileName ) ?? fonts.Find( slot.FaceName );
 			if ( font == null )
@@ -67,7 +70,7 @@ public static class SignCanvas
 			// [DATA:*.sgn:LOGFONT lfHeight] em height; [DATA:*.sgn:slot offset] cell top (TA_TOP reading is inferred from the values).
 			// [APPROX:COMPAT-006] no pair kerning (GDI TextOut default) — evidence needed: binary text-output call site.
 			// [APPROX:COMPAT-005] the horizontal-scale field is not applied — evidence needed: binary use of the field.
-			SignTextLayout.DrawLine( canvas, Width, Height, font, text.Trim(), Math.Max( 1, slot.EmHeightPixels ), SlotColor( slot ), cellTop: slot.OffsetY, kerning: false );
+			SignTextLayout.DrawLine( canvas, Width, Height, font, text.Trim(), Math.Max( 1, slot.EmHeightPixels ), colour, cellTop: slot.OffsetY, kerning: false );
 		}
 		return canvas;
 	}

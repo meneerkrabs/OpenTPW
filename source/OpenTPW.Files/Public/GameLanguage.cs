@@ -36,6 +36,17 @@ public sealed class GameLanguage
 	/// <summary>Whether a language has been selected or resolved.</summary>
 	public static bool IsSelected => current != null;
 
+	/// <summary>
+	/// The language data the player has available besides the installation (--language-data or the CD
+	/// chosen in Game files). Kept even when the selected language comes from the installation, so the
+	/// options screen can still offer the other languages.
+	/// </summary>
+	public static string? AvailableOverlay { get; set; }
+
+	/// <summary>Languages the player can choose: the installation's plus those in <see cref="AvailableOverlay"/>.</summary>
+	public static IReadOnlyList<string> Choosable() =>
+		FindLanguages( Current.BaseDataDirectory, Current.OverlayDataDirectory ?? AvailableOverlay );
+
 	/// <summary>Language name, using the shipped capitalization (e.g. "Danish").</summary>
 	public string Name { get; }
 
@@ -98,10 +109,27 @@ public sealed class GameLanguage
 	/// <summary>Files directly inside the language folder.</summary>
 	public IEnumerable<string> EnumerateFiles() => System.IO.Directory.EnumerateFiles( Directory ).OrderBy( path => path, StringComparer.OrdinalIgnoreCase );
 
-	public StringFile LoadStrings( string fileName )
+	/// <summary>UITEXT entries in the edition OpenTPW numbers its strings by (the <c>UIStrings</c> enum).</summary>
+	public const int UiTextEntries = 473;
+
+	/// <summary>
+	/// The entry that the 474-entry UITEXT edition (the European CD's languages, including its English, and the
+	/// Mac version) has in addition: a "cannot load this park, it uses rides not yet downloaded" message at 207,
+	/// which moves every later entry up by one. All other tables agree (CHAT_COMMANDS only appends entries).
+	/// </summary>
+	public const int UiTextEditionExtraEntry = 207;
+
+	/// <summary>
+	/// Loads a string table. UITEXT from the 474-entry edition is renumbered to the 473-entry one (docs/LANGUAGES.md),
+	/// so the <c>UIStrings</c> enum indexes every language alike; <paramref name="asStored"/> keeps the file's own numbering.
+	/// </summary>
+	public StringFile LoadStrings( string fileName, bool asStored = false )
 	{
 		using var stream = OpenRead( fileName );
-		return new StringFile( stream, CharacterTable );
+		var strings = new StringFile( stream, CharacterTable );
+		if ( !asStored && string.Equals( fileName, "UITEXT.str", StringComparison.OrdinalIgnoreCase ) && strings.Entries.Length == UiTextEntries + 1 )
+			strings.RemoveEntryAt( UiTextEditionExtraEntry );
+		return strings;
 	}
 
 	public FontFile LoadFont( string fileName )

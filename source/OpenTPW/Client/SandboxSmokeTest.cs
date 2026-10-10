@@ -25,9 +25,11 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 	private readonly System.Diagnostics.Stopwatch sinceMotion = new();
 	private const double MaximumSecondsUntilRelease = 60;
 
-	public SandboxSmokeTest( Level level )
+	public SandboxSmokeTest( Level level, OpenTPW.Hud.ParkHud? hud = null, OpenTPW.UI.Original.UiContext? hudContext = null )
 	{
 		this.level = level;
+		this.hud = hud;
+		this.hudContext = hudContext;
 		originalSaveFileSystem = SaveFileSystem;
 		Directory.CreateDirectory( temporaryDirectory );
 		SaveFileSystem = new BaseFileSystem( temporaryDirectory );
@@ -93,6 +95,8 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 	public void Update()
 	{
 		++frame;
+		if ( !pathToolVerified && frame >= 3 )
+			VerifyHudPathTool();
 		if ( motionFrame == 0 )
 		{
 			// Totem.RSE waits up to 10 s for passengers before it triggers its main animation.
@@ -206,7 +210,7 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 		Require( candidate != null, "staff pool offers a mechanic" );
 		var mechanic = economy.Hire( candidate!.Id );
 		var wage = economy.Staff.MonthlyWage( mechanic );
-		var monthEnd = (ParkCalendar.MonthIndex( economy.Tick ) + 1) * ParkCalendar.DaysPerMonth * ParkCalendar.TicksPerDay;
+		var monthEnd = ParkCalendar.TickAtMonth( ParkCalendar.MonthIndex( economy.Tick ) + 1 );
 		economy.Advance( monthEnd - economy.Tick );
 		Require( economy.Tick == monthEnd && economy.Date.Day == 1 && economy.Balance == startBalance - wage, "month-end wages leave the bank account" );
 		var path = SaveFileSystem.GetAbsolutePath( "opentpw-park.json" );
@@ -371,7 +375,7 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 		Require( world.Width == scaling.InternalSize.X && world.Height == scaling.InternalSize.Y && Render.MultisampledFramebuffer.Width == world.Width, "world target has the internal size" );
 		var output = Render.OutputCaptureTexture!;
 		Require( output.Width == metrics.PixelSize.X && output.Height == metrics.PixelSize.Y, "output capture has the output size" );
-		Require( Screen.UiScale == UiScaling.Resolve( settings.UiScale, metrics.PixelSize ), "UI scale follows the output size" );
+		Require( Screen.UiScale == UiScaling.Resolve( settings.UiScale, metrics.PixelSize, metrics.IntegerPixelDensity ), "UI scale follows the output size and pixel density" );
 		displaySummary = $"output {metrics}, world {world.Width}x{world.Height} ({scaling.Mode} {scaling.EffectivePercent}%), UI scale {Screen.UiScale}";
 		Log.Trace( $"Display readback: {displaySummary}; swapchain {swapchain.Width}x{swapchain.Height}; {Render.OwnedTargetResourceCount} owned target resources." );
 	}

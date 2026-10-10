@@ -379,3 +379,8 @@ FodyWeavers.xsd
 [Ii]mgui.ini
 .opentpw
 dumps
+
+# Browser build output (docs/WEB.md)
+/out/
+# Cloudflare wrangler cache
+.wrangler/

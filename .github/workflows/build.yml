@@ -20,7 +20,7 @@ jobs:
         run: |
           python tools/fidelity_register.py --check
           python -m unittest discover -s tools -p "test_fidelity_register.py" -v
-          python -m unittest discover -s tools/ppc-analysis -p "test_*.py" -v
+          python -I -B tools/ppc-analysis/run_evidence_checks.py
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
         with:
           dotnet-version: 10.0.x
@@ -28,3 +28,35 @@ jobs:
       - run: dotnet test source/OpenTPW.Tests/OpenTPW.Tests.csproj --configuration Release --no-build --nologo
       - name: Check patch comparison tool
         run: dotnet run --project tools/patch-analysis/PatchAnalysis.csproj --configuration Release -- --self-test
+  server-image:
+    # Builds the self-hosting image, browser game included, and checks that it serves the page and the API.
+    # It is also the only place CI compiles the browser build (OpenTPW.Web is not in the solution).
+    # Pushes from main and release tags publish it to ghcr.io (docs/SERVER.md); the official server
+    # follows the latest release.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - run: docker build -f source/OpenTPW.Server/Dockerfile -t opentpw-server .
+      - name: Serve the page and the API from the image
+        run: |
+          docker run -d --name opentpw -p 127.0.0.1:8080:8080 opentpw-server
+          for attempt in $(seq 30); do curl -fsS http://127.0.0.1:8080/api/v1/server && break; sleep 1; done
+          curl -fsS http://127.0.0.1:8080/ | grep -q '<title>OpenTPW</title>'
+          curl -fsS -H 'Accept-Encoding: br' -o /dev/null -w '%{content_type} %header{content-encoding}\n' http://127.0.0.1:8080/_framework/dotnet.js
+          docker logs opentpw
+      - name: Publish to GitHub Container Registry
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        env:
+          REF: ${{ github.ref }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          image=ghcr.io/meneerkrabs/opentpw-server
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          if [ "$REF" = refs/heads/main ]; then tags="main"; else tags="$REF_NAME latest"; fi
+          for tag in $tags; do
+            docker tag opentpw-server "$image:$tag"
+            docker push "$image:$tag"
+          done

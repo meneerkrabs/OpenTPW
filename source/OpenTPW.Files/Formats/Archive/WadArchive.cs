@@ -285,10 +285,16 @@ public sealed class WadArchive : IArchive
 		return (files?.Select( x => x.Name ).ToArray() ?? Array.Empty<string>())!;
 	}
 
+	private readonly object readLock = new();
+
+	/// <summary>Seek and read are one step: a texture pack switch reads members on a worker thread while the game thread may read the same archive.</summary>
 	public byte[] GetData( int offset, int length )
 	{
-		memoryStream.Seek( offset, SeekOrigin.Begin );
-		return memoryStream.ReadBytes( length );
+		lock ( readLock )
+		{
+			memoryStream.Seek( offset, SeekOrigin.Begin );
+			return memoryStream.ReadBytes( length );
+		}
 	}
 
 	public Stream OpenFile( string path )

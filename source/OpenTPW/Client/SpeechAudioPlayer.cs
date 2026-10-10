@@ -13,13 +13,16 @@ namespace OpenTPW;
 internal sealed class SpeechAudioPlayer : IDisposable
 {
 	private readonly IMovieAudioOutput? output;
+	private readonly AudioMixer? mixer;
+	private readonly Mp2Audio? mixerAudio;
+	private AudioVoice? voice;
 	private readonly Stopwatch clock = new();
 	private readonly TimeSpan duration;
 	private readonly int sampleRate;
 
 	/// <summary>True when the clip goes to an audio output rather than the wall clock.</summary>
-	public bool HasDevice => output != null;
-	public string ClockSource => HasDevice ? "SDL audio queue" : "wall clock (no audio device)";
+	public bool HasDevice => output != null || mixer?.HasDevice == true;
+	public string ClockSource => mixer != null ? (mixer.HasDevice ? "game mixer (SDL audio queue)" : "game mixer (wall clock, no audio device)") : HasDevice ? "SDL audio queue" : "wall clock (no audio device)";
 	public string? DeviceError { get; }
 	public bool IsStarted { get; private set; }
 	public bool IsFinished => IsStarted && Position >= duration;
@@ -28,6 +31,8 @@ internal sealed class SpeechAudioPlayer : IDisposable
 	{
 		get
 		{
+			if ( mixer != null )
+				return voice == null ? TimeSpan.Zero : TimeSpan.FromSeconds( Math.Min( mixer.PlayedSeconds( voice ), duration.TotalSeconds ) );
 			// [APPROX:ADVISOR-011] Wall clock when no audio device opened — evidence needed: original behaviour without sound hardware
 			if ( output == null )
 				return clock.Elapsed < duration ? clock.Elapsed : duration;
@@ -36,7 +41,17 @@ internal sealed class SpeechAudioPlayer : IDisposable
 		}
 	}
 
-	public SpeechAudioPlayer( Mp2Audio audio ) : this( audio, null, openDevice: true ) { }
+	public SpeechAudioPlayer( Mp2Audio audio ) : this( audio, null, openDevice: AudioMixer.Current == null ) { }
+
+	/// <summary>Plays the clip on the speech channel of <paramref name="mixer"/> (the game's sound service), which also ducks music and effects.</summary>
+	internal SpeechAudioPlayer( Mp2Audio audio, AudioMixer mixer )
+	{
+		ArgumentNullException.ThrowIfNull( audio );
+		duration = TimeSpan.FromSeconds( audio.DurationSeconds );
+		sampleRate = audio.SampleRate;
+		this.mixer = mixer;
+		mixerAudio = audio;
+	}
 
 	/// <summary>Uses <paramref name="sink"/> (e.g. a simulated output in tests) instead of opening SDL audio.</summary>
 	internal SpeechAudioPlayer( Mp2Audio audio, IMovieAudioOutput? sink, bool openDevice = false )
@@ -74,7 +89,9 @@ internal sealed class SpeechAudioPlayer : IDisposable
 		if ( IsStarted )
 			return;
 		IsStarted = true;
-		if ( output != null )
+		if ( mixer != null )
+			voice = mixer.Play( mixerAudio!, AudioChannel.Speech );
+		else if ( output != null )
 			output.Play();
 		else
 			clock.Start();
@@ -82,6 +99,7 @@ internal sealed class SpeechAudioPlayer : IDisposable
 
 	public void Dispose()
 	{
+		voice?.Stop();
 		output?.Dispose();
 		clock.Stop();
 	}

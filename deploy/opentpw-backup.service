@@ -1,0 +1,6 @@
+[Unit]
+Description=Back up the OpenTPW server data (kept for seven days)
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'mkdir -p /var/backups/opentpw && tar -czf /var/backups/opentpw/data-$(date +%%Y%%m%%d).tar.gz -C /opt/opentpw data && find /var/backups/opentpw -name "data-*.tar.gz" -mtime +7 -delete'

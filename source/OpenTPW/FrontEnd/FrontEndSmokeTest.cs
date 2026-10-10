@@ -15,7 +15,8 @@ namespace OpenTPW;
 /// the original jungle level, the HUD renders with money/date text verified in readback, a Totem is
 /// bought through the catalogue build arm and charged exactly once; a second researched object is
 /// built, opened/closed and checked for overlap refusal. The game exits to the lobby, then loads a
-/// read-only visit and checks build/open/delete/save mutation boundaries. Options are never written and saves go to a temporary directory.
+/// read-only visit and checks build/open/delete/save mutation boundaries, then starts jungle again in
+/// Instant Action and checks its seed and mode gates. Options are never written and saves go to a temporary directory.
 /// </summary>
 internal sealed class FrontEndSmokeTest : IDisposable
 {
@@ -40,6 +41,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 	private OriginalObject? totem;
 	private OriginalObject? secondObject;
 	private BuildItem? secondItem;
+	private bool queueToolAfterSecond;
 	private int purchaseEvents;
 
 	public FrontEndSmokeTest( GameFlow flow )
@@ -58,6 +60,100 @@ internal sealed class FrontEndSmokeTest : IDisposable
 	}
 
 	private UiContext Context => flow.Context;
+
+	private readonly string smokePacks = Path.Combine( Path.GetTempPath(), $"opentpw-frontend-smoke-packs-{Guid.NewGuid():N}" );
+	private string switchPath = "";
+	private (uint Width, uint Height, uint Pixel) switchOriginal;
+	private TexturePackSwitch? textureSwitch;
+
+	private static uint CenterPixel( Texture texture )
+	{
+		var pixels = texture.ReadPixels();
+		return BitConverter.ToUInt32( pixels, (int)((texture.Height / 2 * texture.Width + texture.Width / 2) * 4) );
+	}
+
+	/// <summary>
+	/// [EXT:texture-pack] Switches a throw-away pack on and off while the lobby runs: a lobby texture becomes the pack's solid
+	/// 96x96 image (checked by GPU readback), then the original comes back; frames keep rendering in between.
+	/// </summary>
+	private void PlanTexturePackSwitch()
+	{
+		// A pack pinned with OPENTPW_TEXTURE_PACK (e.g. to capture screens with a pack) cannot be switched.
+		if ( !string.IsNullOrEmpty( Environment.GetEnvironmentVariable( "OPENTPW_TEXTURE_PACK" ) ) )
+		{
+			Log.Trace( "Front-end smoke test: texture pack switch skipped, a pack is pinned with OPENTPW_TEXTURE_PACK." );
+			return;
+		}
+		const uint SolidPixel = 0xFF22C80C; // little-endian RGBA bytes 0C C8 22 FF
+		// Outside temporaryDirectory: a later step checks that no .json file is written there.
+		var packs = smokePacks;
+		Do( "texture pack on", () =>
+		{
+			var target = Texture.ReloadTargets().FirstOrDefault( entry => entry.Path.Contains( "lobby", StringComparison.OrdinalIgnoreCase ) );
+			Require( target.Path != null, "the lobby loaded textures from .wct files" );
+			switchPath = target.Path;
+			var texture = Texture.FindLoaded( switchPath )!;
+			switchOriginal = (texture.Width, texture.Height, CenterPixel( texture ));
+			Require( switchOriginal.Width != 96 && switchOriginal.Pixel != SolidPixel, "the original lobby texture differs from the pack's" );
+			var pack = Path.Combine( packs, "smoke" );
+			var file = Path.Combine( pack, TexturePack.TexturesDirectoryName, TexturePack.RelativeFileName( switchPath ) );
+			Directory.CreateDirectory( Path.GetDirectoryName( file )! );
+			var solid = new byte[96 * 96 * 4];
+			for ( var index = 0; index < solid.Length; index += 4 )
+				(solid[index], solid[index + 1], solid[index + 2], solid[index + 3]) = (0x0C, 0xC8, 0x22, 0xFF);
+			using ( var image = Image.LoadPixelData<Rgba32>( solid, 96, 96 ) )
+				image.SaveAsPng( file );
+			File.WriteAllText( Path.Combine( pack, TexturePack.ManifestFileName ), System.Text.Json.JsonSerializer.Serialize( new TexturePackManifest { Scale = 1 } ) );
+			var diagnostics = new List<string>();
+			textureSwitch = TexturePackSwitch.Begin( "smoke", diagnostics, packs );
+			Require( textureSwitch != null && diagnostics.Count == 0 && textureSwitch.Total > 0, "the pack switch starts with the loaded textures as its work" );
+		} );
+		// The switch runs in the background with a progress line at the top; capture it while it is still running.
+		Wait( "texture switch progress frames", 2 );
+		Do( "texture switch progress", () => { if ( !textureSwitch!.Finished ) CaptureFrame( "texture-switch-progress.png" ); } );
+		steps.Enqueue( ("texture pack loads", () => { textureSwitch!.Pump(); return textureSwitch.Finished; }) );
+		Wait( "texture pack frames", 3 );
+		Do( "texture pack on verified", () =>
+		{
+			var texture = Texture.FindLoaded( switchPath )!;
+			Require( (texture.Width, texture.Height) == (96, 96), "the live texture now has the pack's size" );
+			Require( CenterPixel( texture ) == SolidPixel, "GPU readback shows the pack's pixels" );
+			CaptureFrame( "texture-pack-on.png" );
+			var diagnostics = new List<string>();
+			textureSwitch = TexturePackSwitch.Begin( "", diagnostics, packs );
+			Require( textureSwitch != null, "switching back starts" );
+		} );
+		steps.Enqueue( ("texture pack unloads", () => { textureSwitch!.Pump(); return textureSwitch.Finished; }) );
+		Wait( "texture pack off frames", 3 );
+		Do( "texture pack off verified", () =>
+		{
+			var texture = Texture.FindLoaded( switchPath )!;
+			Require( (texture.Width, texture.Height, CenterPixel( texture )) == switchOriginal, "the original pixels came back" );
+			CaptureFrame( "texture-pack-off.png" );
+		} );
+		// Optional timing with a real pack (read only): OPENTPW_SMOKE_PACKS_DIR=<texture-packs dir> OPENTPW_SMOKE_PACK=<name>.
+		var realPacks = Environment.GetEnvironmentVariable( "OPENTPW_SMOKE_PACKS_DIR" );
+		var realPack = Environment.GetEnvironmentVariable( "OPENTPW_SMOKE_PACK" );
+		if ( !string.IsNullOrEmpty( realPacks ) && !string.IsNullOrEmpty( realPack ) )
+		{
+			var timer = new System.Diagnostics.Stopwatch();
+			long memoryBefore = 0;
+			var frames = 0;
+			foreach ( var (name, pack) in new[] { ("on", realPack), ("off", "") } )
+			{
+				Do( $"real pack {name}", () =>
+				{
+					memoryBefore = System.Diagnostics.Process.GetCurrentProcess().WorkingSet64;
+					frames = frame;
+					timer.Restart();
+					textureSwitch = TexturePackSwitch.Begin( pack, new List<string>(), realPacks );
+					Require( textureSwitch != null, "the real pack switch starts" );
+				} );
+				steps.Enqueue( ($"real pack {name} loads", () => { textureSwitch!.Pump(); return textureSwitch.Finished; } ) );
+				Do( $"real pack {name} done", () => Log.Trace( $"Texture pack switch to '{(pack.Length == 0 ? "original" : pack)}': {textureSwitch!.Total} textures in {timer.Elapsed.TotalSeconds:F1} s over {frame - frames} frames; working set {memoryBefore / 1048576} -> {System.Diagnostics.Process.GetCurrentProcess().WorkingSet64 / 1048576} MB." ) );
+			}
+		}
+	}
 
 	private void Plan()
 	{
@@ -80,25 +176,103 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		} );
 		Wait( "keyboard previous island", 3 );
 		Do( "jungle selected", () => Require( flow.Menu!.Selected.Level == "jungle", "left key returns to the jungle island" ) );
+		// Original-style online screens (docs/ONLINE.md): Go Online, then each screen, captured offline.
+		Do( "go online", () => Click( flow.Menu!.Main, "goOnline" ) );
+		Wait( "online world opens", 3 );
+		Do( "online world renders", () =>
+		{
+			Require( flow.Menu!.Stack.Top?.Name == "onlineWorld", "Go Online opens the online world" );
+			VerifyText( CaptureFrame( "online-world.png" ), OnlineStrings.Ui( OnlineStrings.OnlineWorld, "Online world" ), "online world title" );
+			Click( flow.Menu.Stack.Top!, "login" );
+		} );
+		Wait( "login opens", 3 );
+		Do( "login typing", () =>
+		{
+			Require( flow.Menu!.Stack.Top?.Name == "onlineLogin", "the login button opens the login dialog" );
+			flow.InjectedInput = UiInput.Type( "Alice" );
+		} );
+		Wait( "login renders", 3 );
+		Do( "login capture", () =>
+		{
+			var field = flow.Menu!.Stack.Top!.Find( "name" ) as UiTextField;
+			Require( field != null && field.Text == "Alice", "typing reaches the focused login name field" );
+			VerifyText( CaptureFrame( "online-login.png" ), OnlineStrings.Ui( OnlineStrings.LoginName, "Login name" ), "login name label" );
+		} );
+		var onlineShots = new (string Name, Action<UI.OnlineScreens> Show, string Screen)[]
+		{
+			("online-find-parks.png", screens => screens.ShowFindParks(), "findParks"),
+			("online-send-postcard.png", screens => screens.ShowSendPostcard(), "sendPostcard"),
+			("online-outbox.png", screens => screens.ShowOutbox(), "outbox"),
+			("online-inbox.png", screens => screens.ShowInbox(), "inbox"),
+			("online-chat.png", screens => screens.ShowChat(), "chat"),
+			("online-import.png", screens => screens.ShowImport(), "import"),
+		};
+		foreach ( var shot in onlineShots )
+		{
+			Do( $"open {shot.Screen}", () => shot.Show( new UI.OnlineScreens( flow.Menu!.Stack, flow.Strings, Context.Models, new UI.OnlineHost { Session = flow.Online } ) ) );
+			Wait( $"{shot.Screen} renders", 3 );
+			Do( $"{shot.Screen} capture", () =>
+			{
+				Require( flow.Menu!.Stack.Top?.Name == shot.Screen, $"{shot.Screen} opens" );
+				CaptureFrame( shot.Name );
+				flow.Menu.Stack.Pop();
+			} );
+		}
+		Do( "leave online", () =>
+		{
+			while ( flow.Menu!.Stack.Screens.Count > 1 )
+				flow.Menu.Stack.Pop();
+		} );
+		// Options > Game files with a throw-away setup.json.
+		Do( "open game files", () => flow.Menu!.Stack.Push( GameFilesScreen.Create( flow.Menu.Stack, flow.Strings, Path.Combine( temporaryDirectory, SetupSettings.FileName ) ) ) );
+		Wait( "game files renders", 3 );
+		Do( "game files capture", () =>
+		{
+			Require( flow.Menu!.Stack.Top?.Name == "gameFiles", "game files screen opens" );
+			var files = CaptureFrame( "game-files.png" );
+			VerifyText( files, flow.Strings.Extra( OpenTpwText.GameFolder ), "game folder label" );
+			VerifyText( files, flow.Strings.Extra( OpenTpwText.BonusFolder ), "bonus content label" );
+			flow.Menu.Stack.Pop();
+		} );
+		PlanTexturePackSwitch();
 		Do( "open options", () => Click( flow.Menu!.Main, "options" ) );
 		Wait( "options open", 3 );
 		Do( "options render", () =>
 		{
 			Require( flow.Menu!.Stack.Top?.Name == "options", "options screen opens" );
 			var effects = GameOptions.Current.SoundEffectsVolume;
+			// A click in the middle of the slider's hit region sets the middle step.
 			Click( flow.Menu.Stack.Top!, "effects" );
 			stepState = effects;
 		} );
 		Wait( "volume changes", 3 );
 		Do( "options capture", () =>
 		{
-			Require( GameOptions.Current.SoundEffectsVolume != stepState, "clicking a volume row changes it" );
+			Require( GameOptions.Current.SoundEffectsVolume != stepState, "clicking a volume slider changes it" );
+			var options = flow.Menu!.Stack.Top!;
 			var capture = CaptureFrame( "options.png" );
 			VerifyText( capture, flow.Strings[UIStrings.GameOptions], "Game Options title" );
-			VerifyText( capture, flow.Strings[UIStrings.ScreenResolution], "screen resolution row" );
-			VerifyText( capture, flow.Strings.Extra( OpenTpwText.Upscaling ), "OpenTPW upscaling row" );
+			VerifyText( capture, ((UiLabel)options.Find( "resolutionLabel" )!).Text(), "screen resolution label" );
+			VerifyText( capture, ((UiLabel)options.Find( "effectsLabel" )!).Text(), "sound effects volume label" );
+			VerifyText( capture, ((UiLabel)options.Find( "advisorLabel" )!).Text(), "advisor label" );
+			VerifyText( capture, ((UiLabel)options.Find( "scrollLabel" )!).Text(), "scroll label" );
+			VerifyText( capture, flow.Strings.Extra( OpenTpwText.OpenTpwPage ), "OpenTPW button" );
+			Click( options, "openTpw" );
+		} );
+		Wait( "OpenTPW page opens", 3 );
+		Do( "OpenTPW page capture", () =>
+		{
+			Require( flow.Menu!.Stack.Top?.Name == "openTpwOptions", "the OpenTPW button opens its page" );
+			var capture = CaptureFrame( "options-opentpw.png" );
+			VerifyText( capture, ((UiLabel)flow.Menu.Stack.Top.Find( "upscalingLabel" )!).Text(), "OpenTPW upscaling row" );
 			if ( Context.Canvas.TextScale < flow.Display.EffectiveUiScale )
-				VerifyText( capture, ((UiLabel)flow.Menu!.Stack.Top!.Find( "effective" )!).Text(), "effective output and interface-scale fallback" );
+				VerifyText( capture, ((UiLabel)flow.Menu.Stack.Top.Find( "effective" )!).Text(), "effective output and interface-scale fallback" );
+			flow.InjectedInput = UiInput.Key( UiKeys.Back );
+		} );
+		Wait( "OpenTPW page closes", 3 );
+		Do( "back on the original page", () =>
+		{
+			Require( flow.Menu!.Stack.Top?.Name == "options", "Back returns to the original options page" );
 			flow.InjectedInput = UiInput.Key( UiKeys.Back );
 		} );
 		Wait( "options cancelled", 3 );
@@ -126,6 +300,8 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			VerifyText( capture, flow.Hud!.MoneyText, "HUD bank balance" );
 			VerifyText( capture, flow.Hud.DateText, "HUD date" );
 			var economy = flow.Level!.Park!.Economy;
+			Require( flow.StartKind == ParkStartKind.FullSimulation && economy.Mode == ParkGameMode.FullSimulation && !economy.Settings.IsEasy
+				&& flow.Level.OriginalPark!.Save == null && flow.Level.Park.Import == null, "Full Simulation starts with standard balance and without the Easymode seed" );
 			objectsBeforePurchase = economy.Objects.Count;
 			Require( flow.Hud.Status is EconomyParkStatus && flow.Hud.Status.Money == economy.Balance, "HUD bank balance is the park economy's" );
 			Require( flow.Hud.DateText == string.Format( flow.Strings.Extra( OpenTpwText.DateFormat ), economy.Date.Year, economy.Date.Month, economy.Date.Day ), "HUD date is the park clock" );
@@ -260,6 +436,19 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		Do( "closed state", () =>
 		{
 			Require( !secondObject!.IsOpen, "HUD door closes the selected original object" );
+			var tool = flow.Level!.CellTool;
+			Require( !tool.IsActive || tool.Mode == CellToolMode.Queue, "only the queue tool may follow a catalogue placement (UI-031)" );
+			queueToolAfterSecond = tool.IsActive;
+			Log.Trace( $"Front-end smoke: {flow.Hud!.ItemName( secondItem! )} {(queueToolAfterSecond ? "left the queue tool active" : "left no tool active")} after placement." );
+			flow.InjectedInput = UiInput.Key( UiKeys.Back );
+		} );
+		Wait( "first Escape", 3 );
+		Do( "Escape leaves the queue tool", () =>
+		{
+			if ( !queueToolAfterSecond )
+				return;
+			// PATH-011: Escape inside the path/queue tool ends the tool; only the next Escape opens the pause menu.
+			Require( !flow.Level!.CellTool.IsActive && !flow.Hud!.Paused, "Escape ends the queue tool before it opens the pause menu (PATH-011)" );
 			flow.InjectedInput = UiInput.Key( UiKeys.Back );
 		} );
 		Wait( "pause opens", 3 );
@@ -285,6 +474,23 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			Require( flow.Level == null && flow.Menu != null && flow.Lobby != null, "Exit To Lobby returns to the front end" );
 			Require( flow.Menu!.Selected.Level == "jungle", "lobby returns to the island of the park" );
 			CaptureFrame( "frontend-return.png" );
+			flow.StartPark( "jungle", GameMode.InstantAction );
+		} );
+		Wait( "instant action starts", 3 );
+		Do( "instant action mode before lobby", () =>
+		{
+			Require( flow.StartKind == ParkStartKind.InstantAction && flow.Level!.Park!.Economy.Mode == ParkGameMode.InstantAction,
+				"selected Instant Action reaches the park economy" );
+			flow.ShowFrontEnd( "jungle" );
+		} );
+		Wait( "instant action returns to lobby", 3 );
+		Do( "load original park after Instant Action", () => flow.LoadPark( new ParkLoadEntry( "jungle", 0, false ) ) );
+		Wait( "original park loads", 3 );
+		Do( "loaded park is the reference start", () =>
+		{
+			Require( flow.StartKind == ParkStartKind.OriginalSaveReference && flow.Level!.Park!.Economy.Mode == ParkGameMode.FullSimulation
+				&& flow.Level.Park.Economy.Settings.IsEasy && flow.Level.OriginalPark!.Save != null,
+				"Load Park opens the shipped save as the reference start whatever mode was chosen before (UI-041)" );
 			var park = OriginalPark.Load( "jungle" );
 			var snapshot = ParkSnapshotBuilder.FromOriginal( park, null );
 			readOnlyVisit = ParkSharing.PrepareVisit( ParkSharing.CreatePackage( snapshot, "HUD read-only smoke", "", "OpenTPW", park.Map ) );
@@ -321,11 +527,67 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			save.Clicked!();
 			Require( hud.Messages.Contains( OnlineStrings.Get( OnlineLabel.ReadOnlyVisit ) ) && !Directory.EnumerateFiles( temporaryDirectory, "*.json", SearchOption.AllDirectories ).Any(), "read-only save callback refuses writes" );
 			CaptureFrame( "read-only-visit.png" );
-			Device.WaitForIdle();
-			completed = true;
-			Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name} at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames, lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, two distinct catalogue objects bought exactly once through the park economy, info arm, economy pause, sale, overlap refusal, open/close, pause menu, exit to lobby, read-only visit build/open/delete/save guards." );
-			GameFlow.Quit();
+			Click( hud.Stack.Top!, nameof( UIStrings.ExitToLobby ) );
 		} );
+		Wait( "lobby after visit", 20 );
+		Do( "enter park again", () =>
+		{
+			Require( flow.Level == null && flow.Menu?.Selected.Level == "jungle", "the visit exits to the jungle island" );
+			Click( flow.Menu!.Main, "enterPark" );
+		} );
+		Wait( "game mode again", 3 );
+		Do( "choose Instant Action", () =>
+		{
+			Require( flow.Menu!.Stack.Top?.Name == "gameMode", "enter park asks for the game mode again" );
+			Click( flow.Menu.Stack.Top!, "instantAction" );
+		} );
+		Wait( "Instant Action park loads", 40 );
+		Do( "Instant Action start", PlayInstantAction );
+	}
+
+	/// <summary>
+	/// The Instant Action start from the menu: Easy_ balance and the shipped jungle seed, no staff member
+	/// invented for the seed's undecoded researcher but research by its ECON-019 stand-in, and the loan,
+	/// research effort, upgrade, ticket and challenge gates (docs/ECONOMY.md, "Game modes").
+	/// </summary>
+	private void PlayInstantAction()
+	{
+		var level = flow.Level!;
+		var economy = level.Park!.Economy;
+		Require( flow.StartKind == ParkStartKind.InstantAction && economy.Mode == ParkGameMode.InstantAction && economy.Features == ParkModeFeatures.For( ParkGameMode.InstantAction ), "Instant Action button starts an Instant Action park" );
+		Require( economy.Settings.IsEasy && level.OriginalPark!.Save != null && level.Park.Import is { ImportedObjects: > 0 }, "Instant Action jungle uses the Easy_ balance and imports the Easymode seed" );
+		Require( economy.Staff.Members.Count == 0 && economy.SeedResearcherStandIn, "the seed's staff are not decoded: no staff member is invented, research uses the ECON-019 stand-in" );
+		var capture = CaptureFrame( "instant-action-hud.png" );
+		VerifyText( capture, flow.Hud!.MoneyText, "Instant Action HUD bank balance" );
+		Require( !economy.AvailableLoans.Any(), "Instant Action offers no loans" );
+		Refused( () => economy.TakeLoan( 0 ), "taking a loan" );
+		Refused( () => economy.SetResearchEffort( ResearchCategory.Ride, 0 ), "changing research effort" );
+		var seeded = economy.Objects.First();
+		Require( economy.TryBuyUpgrade( seeded.Id ) == ParkEconomy.PurchaseResult.NotAvailableInInstantAction, "upgrades are refused" );
+		var completedItems = economy.Research.Completed.Count;
+		var progress = economy.Research.ProgressEntries.ToArray();
+		var start = economy.Date;
+		economy.AdvanceDays( 60 );
+		Require( economy.Research.Completed.Count > completedItems || !economy.Research.ProgressEntries.SequenceEqual( progress ), "research advances through the seed researcher's stand-in" );
+		Require( economy.Objectives.GoldenTickets.Count == 0 && economy.Objectives.Current == null, "no golden-ticket checks or challenges in Instant Action" );
+		Log.Trace( $"Instant Action jungle: {level.Park.Import!.ImportedObjects} seed objects, {economy.Staff.Members.Count} staff, research advanced {start} -> {economy.Date}; loans, research effort and upgrades refused." );
+		Device.WaitForIdle();
+		completed = true;
+		Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name} at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames, lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, two distinct catalogue objects bought exactly once through the park economy, info arm, economy pause, sale, overlap refusal, open/close, Escape out of the queue tool, pause menu, exit to lobby, read-only visit build/open/delete/save guards, Instant Action return and Load Park reference start, Instant Action seed, research stand-in and gates." );
+		GameFlow.Quit();
+	}
+
+	private static void Refused( Action action, string what )
+	{
+		try
+		{
+			action();
+		}
+		catch ( InvalidOperationException )
+		{
+			return;
+		}
+		Require( false, $"{what} is refused in Instant Action" );
 	}
 
 	private int stepState;
@@ -389,13 +651,13 @@ internal sealed class FrontEndSmokeTest : IDisposable
 	{
 		var batch = Context.Batch;
 		// The topmost (last drawn) occurrence: a dimmed menu button can carry the same text as a window title.
-		var drawn = batch.Texts.Where( entry => entry.Text == text ).TakeLast( 1 ).ToList();
+		var drawn = batch.TextDraws.Where( entry => entry.Text == text ).TakeLast( 1 ).ToList();
 		Require( drawn.Count > 0, $"{what} ('{text}') is drawn" );
 		var checkedTexels = 0;
 		var matching = 0;
-		foreach ( var (rect, _) in drawn )
+		foreach ( var entry in drawn )
 		{
-			foreach ( var glyph in batch.Glyphs.Where( glyph => glyph.Color.A == 255 && glyph.Color != UiColors.Shadow && Overlaps( rect, glyph ) ) )
+			foreach ( var glyph in batch.Glyphs.Skip( entry.FirstGlyph ).Take( entry.GlyphCount ).Where( glyph => glyph.Color.A == 255 && glyph.Color != UiColors.Shadow ) )
 			{
 				for ( var row = 0; row < glyph.Height / glyph.Scale; row++ )
 				{
@@ -434,10 +696,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		Require( checkedTexels >= 3 && matching >= checkedTexels * 97 / 100, $"{what} text pixels match in GPU readback" );
 	}
 
-	private static bool Overlaps( UiRect rect, UiGlyphQuad glyph ) =>
-		glyph.X < rect.Right + 2 && glyph.X + glyph.Width > rect.X - 2 && glyph.Y < rect.Bottom + 2 && glyph.Y + glyph.Height > rect.Y - 2;
-
-	private static (byte[] Pixels, int Width, int Height) CaptureFrame( string name )
+	internal static (byte[] Pixels, int Width, int Height) CaptureFrame( string name )
 	{
 		var source = global::Global.Render.OutputCaptureTexture!;
 		using var staging = Device.ResourceFactory.CreateTexture( TextureDescription.Texture2D( source.Width, source.Height, 1, 1, source.Format, TextureUsage.Staging ) );
@@ -490,5 +749,8 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		flow.OnlineFolders = originalOnlineFolders;
 		try { Directory.Delete( temporaryDirectory, true ); }
 		catch ( IOException ) { }
+		try { Directory.Delete( smokePacks, true ); }
+		catch ( IOException ) { }
+		catch ( UnauthorizedAccessException ) { }
 	}
 }

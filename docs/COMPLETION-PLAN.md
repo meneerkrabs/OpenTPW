@@ -130,6 +130,16 @@ lies with EA. Conditions:
 - The Windows TPW executable (`TP.ICD`) does not fall under this as long as no
   comparable decision exists.
 
+One exception to "own descriptions only" (decision of the project owner, October 9,
+2026): `content/data/advisor-responses.toml` copies, field by field, the advisor
+response table at initialized-data offset 0x18FF4 of the Mac application (response
+ID, speech sample, LIP number, animation, model, local-bank flag; 610 rows). It is a
+functional mapping that OpenTPW needs to play the right speech clip and is of no use
+without the original speech data. Only the fields OpenTPW uses are copied, the file
+states its source and the application's SHA-256, and
+`tools/ppc-analysis/lanes/advisor/response_table.py` regenerates or checks it from a
+local copy of the application. No other table or code from the executable is copied.
+
 Evidence references get their own label, for example
 `[BIN:STP-PPC:<function or address>]` and `[BIN:TPI-EXE:<function or address>]`,
 with the SHA-256 of the analyzed executable in `RECOMPILATION-ASSESSMENT.md`. The
@@ -218,6 +228,7 @@ NativeAOT remains a separate, optional qualification.
 - Economy: costs, revenue, ticket price, staff and maintenance.
 - Gate: 30 minutes of accelerated headless running with income/expenses and
   visitors; no stuck queues, unreachable goals or negative time progression.
+  Evaluator, bounds and current baseline: [M3-GATE.md](M3-GATE.md) (`--m3-gate`).
 - Invariants prove stability, not original economy/visitor semantics: accept those
   semantics only with linked original traces and comparison.
 

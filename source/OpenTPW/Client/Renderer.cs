@@ -329,7 +329,7 @@ public partial class Renderer : IDisplaySettings
 		var pixels = Window.PixelSize;
 		Metrics = new DisplayMetrics( logical, pixels );
 		Screen.UpdateFrom( logical, pixels );
-		Screen.UiScale = UiScaling.Resolve( DisplaySettings.UiScale, pixels );
+		Screen.UiScale = UiScaling.Resolve( DisplaySettings.UiScale, pixels, Metrics.IntegerPixelDensity );
 		var scaling = RenderScaling.Compute( pixels, DisplaySettings.Upscale, DisplaySettings.RenderScale, maximumTextureSize, worldScalingAllowed );
 		if ( scaling.IsPaused )
 		{
@@ -373,7 +373,21 @@ public partial class Renderer : IDisplaySettings
 		Changed?.Invoke();
 	}
 
+	/// <summary>Runs frames until the window closes, then saves changed display settings.</summary>
 	public void Run()
+	{
+		Start();
+		while ( Frame() )
+		{
+		}
+		Stop();
+	}
+
+	/// <summary>
+	/// Creates the per-run pipeline state. <see cref="Run"/> calls it; a host that drives frames
+	/// itself (the browser, from requestAnimationFrame: docs/WEB.md) calls it once before <see cref="Frame"/>.
+	/// </summary>
+	public void Start()
 	{
 		var layoutDescription = new ResourceLayoutDescription(
 			new ResourceLayoutElementDescription( "g_tInput", ResourceKind.TextureReadOnly, ShaderStages.Fragment ),
@@ -400,14 +414,19 @@ public partial class Renderer : IDisplaySettings
 
 		_blitPipeline = Device.ResourceFactory.CreateGraphicsPipeline( pipelineDescription );
 		displayDirty = true;
-
-		while ( Window.SdlWindow.Exists )
-		{
-			Update();
-		}
-
-		SaveDisplaySettings();
 	}
+
+	/// <summary>Updates and draws one frame; false once the window has closed.</summary>
+	public bool Frame()
+	{
+		if ( !Window.SdlWindow.Exists )
+			return false;
+		Update();
+		return Window.SdlWindow.Exists;
+	}
+
+	/// <summary>Ends a run started with <see cref="Start"/>.</summary>
+	public void Stop() => SaveDisplaySettings();
 
 	/// <summary>Saves the confirmed settings (a pending, unconfirmed change saves what it would revert to).</summary>
 	private void SaveDisplaySettings()
@@ -506,7 +525,9 @@ public partial class Renderer : IDisplaySettings
 			ApplyDisplayChanges();
 		if ( Scaling.IsPaused || _blitResourceSet == null )
 		{
-			Thread.Sleep( 16 );
+			// The browser paces frames itself and cannot block its only thread.
+			if ( !OperatingSystem.IsBrowser() )
+				Thread.Sleep( 16 );
 			return;
 		}
 
@@ -542,6 +563,13 @@ public partial class Renderer : IDisplaySettings
 
 	private void CreateGraphicsDevice()
 	{
+		Device = CreateDevice( Window );
+		Log.Trace( $"Graphics backend: {Device.BackendType}; process: {System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}" );
+	}
+
+	/// <summary>Metal on macOS, Direct3D 11 on Windows, Vulkan elsewhere, with readable errors when the platform cannot start one.</summary>
+	internal static GraphicsDevice CreateDevice( Window window )
+	{
 		var options = new GraphicsDeviceOptions()
 		{
 			PreferStandardClipSpaceYDirection = true,
@@ -555,17 +583,17 @@ public partial class Renderer : IDisplaySettings
 		SwapchainSource swapchainSource;
 		try
 		{
-			swapchainSource = Veldrid.StartupUtilities.VeldridStartup.GetSwapchainSource( Window.SdlWindow );
+			swapchainSource = Veldrid.StartupUtilities.VeldridStartup.GetSwapchainSource( window.SdlWindow );
 		}
 		catch ( PlatformNotSupportedException exception ) when ( OperatingSystem.IsLinux() )
 		{
 			throw new PlatformNotSupportedException( "SDL opened no X11 or Wayland window (is DISPLAY or WAYLAND_DISPLAY set?). Headless runs need a virtual display such as xvfb-run.", exception );
 		}
-		var pixels = Window.PixelSize;
+		var pixels = window.PixelSize;
 		var description = new SwapchainDescription( swapchainSource, (uint)Math.Max( 1, pixels.X ), (uint)Math.Max( 1, pixels.Y ), options.SwapchainDepthFormat, options.SyncToVerticalBlank, options.SwapchainSrgbFormat );
 		try
 		{
-			Device = OperatingSystem.IsMacOS()
+			return OperatingSystem.IsMacOS()
 				? GraphicsDevice.CreateMetal( options, description )
 				: OperatingSystem.IsWindows()
 					? GraphicsDevice.CreateD3D11( options, description )
@@ -576,7 +604,6 @@ public partial class Renderer : IDisplaySettings
 			// No loader (libvulkan.so.1) or no installed driver/ICD (no VK_KHR_surface).
 			throw new PlatformNotSupportedException( $"Vulkan could not be started ({exception.Message}). Install the Vulkan loader and a driver, e.g. libvulkan1 and mesa-vulkan-drivers.", exception );
 		}
-		Log.Trace( $"Graphics backend: {Device.BackendType}; process: {System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}" );
 	}
 
 	/// <summary>Window resize/fullscreen/DPI events: remembered and applied at the next frame boundary.</summary>

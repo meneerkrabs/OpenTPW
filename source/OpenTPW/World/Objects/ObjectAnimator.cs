@@ -1,4 +1,5 @@
 using System.Numerics;
+using NVector3 = System.Numerics.Vector3;
 
 namespace OpenTPW;
 
@@ -7,22 +8,35 @@ namespace OpenTPW;
 /// (<see cref="OriginalObjectEffects"/> uses one main channel for TRIGANIM/WAITANIM/LOOPANIM/... and the
 /// <c>_CH</c> opcodes' channel numbers; <c>UsageInfo.NumSimultAnims</c> allows up to 4). When several playing clips animate the same node, the
 /// most recently started one wins; a finished clip holds its last pose until its channel is replaced or
-/// flushed. Channel mixing, holding and the tick rate are OpenTPW choices (docs/OBJECTS.md).
+/// flushed. Channel mixing, holding and runtime clock binding remain qualified (docs/OBJECTS.md).
+/// Clip time follows the original channel clock (0xa6484/0xa6398/0xa67d8 in the Feral Mac build): a clip
+/// starts at a whole millisecond of this animator's clock, its frame is <c>rate × elapsed ms / 1000</c> in
+/// single precision (the original's rate is the constant 30, <see cref="DefaultTicksPerSecond"/>; other rates
+/// are an OpenTPW extension), and a looping clip replays only once that frame is strictly past the duration,
+/// restarting from the carry capped at the duration and truncated to whole milliseconds (one replay per
+/// <see cref="Advance"/>). This is the normal object update (0xa7960 with r4 ≠ 0), whose replay rebinds
+/// the clip; the object-list update (0x4d354, r4 = 0) replays without a bind and is not supported.
+/// Quantised vertex tracks of the winning clip give this instance its own mesh positions
+/// (<see cref="GetVertexPositions"/>); the shared <see cref="ModelFile"/> is never written.
 /// </summary>
 public sealed class ObjectAnimator
 {
-	/// <summary>Sandbox choice shared with the Totem prototype; the original tick rate is not verified. Default for new animators.</summary>
-	// [APPROX:RIDES-001] Animation clips play at 30 ticks/s — evidence needed: original tick rate (binary or timed capture of a ride cycle)
+	/// <summary>Default rate shared with the Totem; 30 is proved for the Feral Mac channel formula, while Windows and runtime clock selection remain unverified.</summary>
+	// [BIN:STP-PPC:0x100A70B4 channel frame arithmetic] the Feral Mac formula multiplies elapsed milliseconds by 30 and divides by 1000 before channel speed.
+	// [APPROX:RIDES-001] Mac channel rate 30 is proved; Windows rate and selection/binding of the native scaled or unscaled channel clock remain unverified.
 	public const float DefaultTicksPerSecond = 30f;
 
 	private sealed class Channel
 	{
 		public required ModelAnimationPlayer Player { get; init; }
 		public required bool[] Animates { get; init; }
+		/// <summary>Per node: the clip's vertex track when it can be played, else null.</summary>
+		public required ModelVertexAnimation?[] Vertices { get; init; }
 		public required string Clip { get; init; }
 		public bool Loop { get; init; }
 		public long Serial { get; init; }
-		public double Elapsed { get; set; }
+		/// <summary>StartAnimTime (channel +16): animator clock in whole milliseconds.</summary>
+		public long StartMilliseconds { get; set; }
 		public bool Finished { get; set; }
 	}
 
@@ -31,12 +45,25 @@ public sealed class ObjectAnimator
 	private readonly Matrix4x4[] rest;
 	private readonly Matrix4x4[] world;
 	private readonly int[] order;
+	private readonly int[] meshByNode;
+	private readonly NVector3[]?[] vertexPositions;
+	private readonly int[] vertexVersions;
+	private readonly (long Serial, float Tick)[] vertexSources;
+	private readonly SortedSet<string> vertexLimitations = new( StringComparer.Ordinal );
+	private readonly bool keepsPoseOnClipChange;
 	private long serial;
+	private double clockMilliseconds;
 
 	/// <summary>Clip ticks per second used by every channel this animator plays.</summary>
 	public float TicksPerSecond { get; }
 
-	public ObjectAnimator( ModelFile model, float ticksPerSecond = DefaultTicksPerSecond )
+	/// <param name="model">The object's geometry model, shared and never written.</param>
+	/// <param name="ticksPerSecond">Clip ticks per second of every channel; the original's clock uses 30.</param>
+	/// <param name="keepsPoseOnClipChange">
+	/// True for fixed items (<c>Info.DontApplyOffset</c>): a mesh keeps its last vertex pose when its track
+	/// ends instead of showing its stored positions, unless the model has header flag 0x4.
+	/// </param>
+	public ObjectAnimator( ModelFile model, float ticksPerSecond = DefaultTicksPerSecond, bool keepsPoseOnClipChange = false )
 	{
 		ArgumentNullException.ThrowIfNull( model );
 		if ( model.Kind != ModelFileKind.Geometry )
@@ -45,6 +72,7 @@ public sealed class ObjectAnimator
 			throw new ArgumentOutOfRangeException( nameof( ticksPerSecond ) );
 		this.model = model;
 		TicksPerSecond = ticksPerSecond;
+		this.keepsPoseOnClipChange = keepsPoseOnClipChange && (model.HeaderFlags & ModelFile.RelativeAnimationFlag) == 0;
 		rest = ModelAnimationPlayer.ComputeRestTransforms( model );
 		world = (Matrix4x4[])rest.Clone();
 		var sorted = new List<int>( model.Nodes.Count );
@@ -61,6 +89,22 @@ public sealed class ObjectAnimator
 		}
 		// Unreachable nodes (none in the corpus) keep their rest matrices.
 		order = sorted.ToArray();
+		meshByNode = new int[model.Nodes.Count];
+		Array.Fill( meshByNode, -1 );
+		for ( var mesh = 0; mesh < model.Meshes.Count; mesh++ )
+		{
+			var node = model.Meshes[mesh].NodeIndex;
+			if ( node < 0 || node >= meshByNode.Length )
+				continue;
+			// The sampler's node state is the header's mesh record, so a track drives exactly one mesh; a
+			// parsed model gives mesh i node i. Two meshes on one node would leave one without its track.
+			if ( meshByNode[node] >= 0 )
+				throw new ArgumentException( $"Meshes {meshByNode[node]} and {mesh} share node {node}; vertex tracks bind one mesh per node.", nameof( model ) );
+			meshByNode[node] = mesh;
+		}
+		vertexPositions = new NVector3[]?[model.Meshes.Count];
+		vertexVersions = new int[model.Meshes.Count];
+		vertexSources = new (long, float)[model.Meshes.Count];
 	}
 
 	public IReadOnlyList<Matrix4x4> RestTransforms => rest;
@@ -68,6 +112,22 @@ public sealed class ObjectAnimator
 	public IReadOnlyList<Matrix4x4> NodeTransforms => world;
 	public bool IsPlaying => channels.Values.Any( channel => !channel.Finished );
 	public int ActiveChannels => channels.Count;
+
+	/// <summary>
+	/// Vertex tracks that started clips carried but that play as the stored mesh, with the reason (the
+	/// 12-byte layout, relative-animation models, blocks that do not list every position once, groups
+	/// that end before the clip).
+	/// </summary>
+	public IReadOnlyCollection<string> VertexLimitations => vertexLimitations;
+
+	/// <summary>
+	/// This instance's positions of <see cref="ModelFile.Meshes"/>[<paramref name="mesh"/>] (MD2 axes,
+	/// indexed like <see cref="ModelFile.Mesh.Positions"/>), or null while the mesh shows its stored positions.
+	/// </summary>
+	public IReadOnlyList<NVector3>? GetVertexPositions( int mesh ) => vertexSources[mesh].Serial != 0 ? vertexPositions[mesh] : null;
+
+	/// <summary>Changes whenever <see cref="GetVertexPositions"/> of the mesh changes.</summary>
+	public int GetVertexVersion( int mesh ) => vertexVersions[mesh];
 
 	public bool IsChannelPlaying( int channel ) => channels.TryGetValue( channel, out var state ) && !state.Finished;
 
@@ -82,11 +142,28 @@ public sealed class ObjectAnimator
 	/// <summary>Starts <paramref name="clip"/> on a channel and returns its length in seconds.</summary>
 	public double Play( int channel, ModelAnimation clip, string clipName, bool loop )
 	{
-		var player = new ModelAnimationPlayer( model, clip, TicksPerSecond ) { Loop = loop };
+		// The channel wraps the frame itself; the player only clamps.
+		var player = new ModelAnimationPlayer( model, clip, TicksPerSecond ) { Loop = false };
 		var animates = new bool[model.Nodes.Count];
+		var vertices = new ModelVertexAnimation?[model.Nodes.Count];
 		foreach ( var track in clip.Tracks )
+		{
 			animates[track.NodeIndex] = true;
-		channels[channel] = new Channel { Player = player, Animates = animates, Clip = clipName, Loop = loop, Serial = ++serial };
+			if ( (track.Flags & ModelAnimationTrack.VertexAnimationFlag) != 0 && GetVertexLimitation( track, clip.Duration ) is { } limitation )
+				vertexLimitations.Add( $"{clipName} node {track.NodeIndex}: {limitation}" );
+			else
+				vertices[track.NodeIndex] = track.VertexAnimation;
+		}
+		channels[channel] = new Channel
+		{
+			Player = player,
+			Animates = animates,
+			Vertices = vertices,
+			Clip = clipName,
+			Loop = loop,
+			Serial = ++serial,
+			StartMilliseconds = NowMilliseconds
+		};
 		Update();
 		return clip.Duration / TicksPerSecond;
 	}
@@ -103,22 +180,81 @@ public sealed class ObjectAnimator
 		Update();
 	}
 
+	/// <summary>One object update: advances the clock, replays or finishes clips past their end, resamples.</summary>
 	public void Advance( double seconds )
 	{
 		if ( !double.IsFinite( seconds ) || seconds < 0 )
 			throw new ArgumentOutOfRangeException( nameof( seconds ) );
+		clockMilliseconds += seconds * 1000.0;
+		var now = NowMilliseconds;
 		foreach ( var channel in channels.Values )
 		{
 			if ( channel.Finished )
 				continue;
-			channel.Elapsed += seconds;
-			var tick = (float)(channel.Elapsed * TicksPerSecond);
-			channel.Player.SetTick( tick );
-			// [APPROX:RIDES-003] A finished non-looping clip holds its last pose until replaced/flushed — evidence needed: capture after a TRIGANIM clip ends
-			if ( !channel.Loop && tick >= channel.Player.Animation.Duration )
-				channel.Finished = true;
+			var frame = GetFrame( now - channel.StartMilliseconds );
+			float duration = channel.Player.Animation.Duration;
+			// 0xa7360: past the end only when strictly greater, so a frame equal to the duration samples the last key.
+			if ( frame > duration )
+			{
+				if ( channel.Loop )
+				{
+					channel.StartMilliseconds = now - GetCarryMilliseconds( frame - duration, duration );
+					frame = GetFrame( now - channel.StartMilliseconds );
+				}
+				// [APPROX:RIDES-003] A finished non-looping clip holds its last pose until replaced/flushed — evidence needed: capture after a TRIGANIM clip ends
+				else
+					channel.Finished = true;
+			}
+			channel.Player.SetTick( frame );
 		}
 		Update();
+	}
+
+	/// <summary>
+	/// The original's integer scene clock (0xa6f70 stores whole milliseconds); the epsilon absorbs binary
+	/// sums of decimal step sizes. How the scene clock itself rounds is a clock-lane dependency.
+	/// </summary>
+	private long NowMilliseconds => (long)Math.Floor( clockMilliseconds + 1e-6 );
+
+	/// <summary>
+	/// 0xa6484 at speed 1.0: <c>30 × (now − start) / 1000</c>, each step in single precision, with this
+	/// animator's rate in place of the constant 30.
+	/// </summary>
+	private float GetFrame( long milliseconds )
+	{
+		var elapsed = (float)milliseconds;
+		var ticks = TicksPerSecond * elapsed;
+		return ticks / 1000f;
+	}
+
+	/// <summary>
+	/// 0xa67d8 → 0xa6398 at speed 1.0: the carry past the end, capped at the duration, becomes
+	/// <c>1000 × carry / 30</c> milliseconds truncated by the unsigned conversion 0x1c3fbc, with this
+	/// animator's rate in place of the constant 30.
+	/// </summary>
+	private long GetCarryMilliseconds( float carry, float duration )
+	{
+		if ( carry > duration )
+			carry = duration;
+		var milliseconds = 1000f * carry;
+		milliseconds /= TicksPerSecond;
+		return (long)milliseconds;
+	}
+
+	private string? GetVertexLimitation( ModelAnimationTrack track, int duration )
+	{
+		if ( track.VertexAnimation == null )
+			return "the 12-byte vertex layout (record flag 0x4000) is not decoded";
+		// The sampler adds instead of sets under this flag (0xa4a58/0xa4f68); each update first restores the
+		// clip's channels from the base model (0xa7960 -> 0xa5894 without a new clip) and afterwards
+		// recomputes face normals (0xa772c). Not implemented; the ride loader strips the flag unless an
+		// untraced ride flag word allows it (0x58a3c), and no catalog model has it.
+		if ( (model.HeaderFlags & ModelFile.RelativeAnimationFlag) != 0 )
+			return "relative-animation model (header flag 0x4) adds vertex keys to a per-update base copy; not implemented";
+		var mesh = meshByNode[track.NodeIndex];
+		if ( mesh < 0 )
+			return "the node has no mesh";
+		return track.VertexAnimation!.GetPoseLimitation( model.Meshes[mesh].Positions.Length, duration );
 	}
 
 	private void Update()
@@ -128,16 +264,47 @@ public sealed class ObjectAnimator
 		foreach ( var node in order )
 		{
 			var local = model.Nodes[node].Transform;
+			Channel? winner = null;
 			foreach ( var channel in active )
 			{
 				if ( channel.Animates[node] )
 				{
+					winner = channel;
 					local = channel.Player.LocalTransform( node );
 					break;
 				}
 			}
 			var parent = model.Nodes[node].ParentIndex;
 			world[node] = parent < 0 ? local : local * world[parent];
+			if ( meshByNode[node] >= 0 )
+				UpdateVertices( meshByNode[node], winner, winner?.Vertices[node] );
 		}
+	}
+
+	/// <summary>
+	/// The winning clip's vertex track sets every position of the mesh (set mode, static group plus
+	/// animated groups at the clip tick). A fresh key search per sample equals the original's kept cursor
+	/// because its loop replay rebinds the clip (0xa7190 -> 0xa67d8 -> 0xa5894), which resets the cursor;
+	/// the object-list update (0x4d354, flag 8) replays without a bind and is not modelled.
+	/// When a mesh loses its track it shows its stored positions, except on fixed items, where the last
+	/// pose stays. The original's bind (0xa5894) copies the stored mesh back unless global option bit 0 is
+	/// set or the object has flag 0x00100000 with 0x8 clear, and always for header flag 0x4. The option word
+	/// is only ever stored as 0 (0xa7eec from 0x54c08). Object flags come only from the ride loader's flag
+	/// word (0x58a3c, via 0x594c8), and only the ride catalog loader 0x119328 asks for 0x00100000 without
+	/// 0x8: for a CRideBalance whose word +56 is set, which its schema (0x39b64, laid out by 0x16f4c) makes
+	/// <c>Info.DontApplyOffset</c>.
+	/// </summary>
+	private void UpdateVertices( int mesh, Channel? channel, ModelVertexAnimation? animation )
+	{
+		var source = animation == null ? (0L, 0f) : (channel!.Serial, channel.Player.Tick);
+		if ( source == vertexSources[mesh] || (animation == null && keepsPoseOnClipChange) )
+			return;
+		if ( animation != null )
+		{
+			var positions = vertexPositions[mesh] ??= new NVector3[model.Meshes[mesh].Positions.Length];
+			animation.ApplyPose( channel!.Player.Tick, positions );
+		}
+		vertexSources[mesh] = source;
+		vertexVersions[mesh]++;
 	}
 }

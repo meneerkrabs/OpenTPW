@@ -34,12 +34,19 @@ The default start is the original-style front end (3D lobby; pick an island and
 enter the park, or Load/Options/Quit Game) with the in-game HUD; see UI.md.
 `--sandbox` opens the former default jungle sandbox with its ImGui developer panel.
 
-The installation directory must contain `data` or `Data`. `OPENTPW_GAME_PATH`
-can replace `--game-path`. `DOTNET` selects a particular SDK executable.
+Without `--game-path`, OpenTPW finds the game itself or opens a setup window to
+choose the folder once (SETUP.md); `--setup` opens it again. The folder must contain
+`data` or `Data`. `OPENTPW_GAME_PATH` can replace `--game-path`. `DOTNET` selects a particular SDK executable.
 `OPENTPW_RUNTIME` selects an explicit runtime identifier.
 Native dependencies must match the selected process architecture.
 Engine content is copied beside the executable; shader files/includes resolve
 from the executable directory rather than the shell's current directory.
+
+## CD launcher (autorun screen)
+
+When the game folder or the CD (`--cd-data`, saved CD) has the original `Autorun` folder, the start opens the
+CD's launcher window first (Play continues, View Read-me opens the read-me, Exit quits; see AUTORUN.md). Skip it
+with `--no-autorun`, `OPENTPW_NO_AUTORUN=1` or `"showAutorun": false` in `setup.json`.
 
 ## Language
 
@@ -106,9 +113,22 @@ sideshows and toilets (and the Totem), use them through their scripts and leave
 
 Official bonus objects (`_name_N.wad`) are read from an extracted bonus directory
 with `--bonus-data <dir>` (or `OPENTPW_BONUS_DATA`); they join the build panel and
-the private tests (OBJECTS.md). Nothing is copied into the game data.
+the private tests (OBJECTS.md). Nothing is copied into the game data. Without a flag,
+the folder saved in Options > Game files is used, or the copy imported there into
+`<config>/bonus` (SETUP.md), so the flag is only needed for a one-off directory.
 `--smoke-test` also works with this flag (captures `native-smoke-original-*.png`;
 the smoke also checks that guests fill and leave the Totem and ride imported objects).
+
+## Headless M3 gameplay-loop gate
+
+```sh
+dotnet source/OpenTPW/bin/Debug/net10.0/OpenTPW.dll --game-path '/path/to/Theme Park World' --m3-gate --minutes 30 --report m3-gate.json
+```
+
+Builds a fixed minimal Jungle park without a window or GPU (entrance, paths, Belly Bounce, Drinks Shop,
+Small Toilet, a mechanic and a handyman), runs 30 simulated minutes as fast as possible and prints one
+pass/fail/unresolved row per invariant. Exit code: 1 when any row fails, 2 when no row fails but at least
+one is unresolved, 0 only when every row passes. M3 is accepted only at exit code 0. See [M3-GATE.md](M3-GATE.md).
 
 ## Read-only BF4 font inspection
 
@@ -123,7 +143,19 @@ See BF4-FONTS.md for supported encodings, limits and private fixture evidence.
 
 Private format tests use `OPENTPW_GAME_PATH`. MTR fixtures exist only on the
 ISO; extract its `*/Meshes/*/*.mtr` files to a folder outside git and set
-`OPENTPW_MTR_PATH` to it to run the MTR fixture tests (see MTR.md).
+`OPENTPW_MTR_PATH` to it to run the MTR fixture tests (see MTR.md). Theme Park Inc
+texture tests use `OPENTPW_TPI_PATH` (a Theme Park Inc installation or its `Data`
+folder, read in place; see FSH.md).
+
+## Read-only Theme Park Inc texture inspection
+
+```sh
+dotnet source/OpenTPW/bin/Debug/net10.0/OpenTPW.dll --inspect-fsh '/path/to/TPI/Data/ui.wad!stexture/tb_camera.fsh'
+```
+
+Takes a loose `.fsh` path or `archive.wad!member/path`. Prints the image size,
+codes, palette and decoded RGBA hash; decoding errors exit nonzero. Theme Park Inc
+is not playable; see FSH.md.
 
 ## Read-only original container inspection
 
@@ -147,7 +179,15 @@ bash scripts/run.sh --game-path '/path/to/Theme Park World' --play-movie bf --sm
 ```
 
 Plays `Data/Movies/<name>.tgq` with SDL2 audio (`--mute` disables it); a key
-press or click skips. `--headless` simulates decoding and the audio clock
+press or click skips.
+
+A normal start (the front end, no `--smoke-test`) first plays the original's
+start-up movies: `bf`, then a trailer chosen by the day of the month, at the
+Movie volume of Game Options (its mute toggle silences them). Esc, Space or a mouse button skips. Use
+`--no-intro` (or set `OPENTPW_NO_INTRO=1`) to go straight to the front end.
+Any nonempty `OPENTPW_NO_INTRO` value, including `0`, disables intros.
+`--capture-world` also bypasses intros so its frame count starts with the world;
+smoke tests never play the movies. Missing movies (no `--cd-data`) are skipped. `--headless` simulates decoding and the audio clock
 without a window or device. `--smoke-test` plays 60 frames with audio off and
 checks GPU readback against the CPU frame. See TGQ-MOVIES.md.
 
@@ -164,8 +204,11 @@ bash scripts/run.sh --game-path '/path/to/Theme Park World' --fullscreen --upsca
 | `--windowed`, `--fullscreen`, `--fullscreen-exclusive` | Window mode. `--fullscreen` is borderless at the desktop mode; exclusive switches the display mode to `--resolution` (experimental; falls back to borderless with a reason if the display does not list that mode). |
 | `--upscale native\|linear\|nearest` | How the 3D world reaches the output. Native (default) renders the world at output size. Linear/Nearest render it smaller and scale it up; Nearest is a deliberate retro look. |
 | `--render-scale <50-100>` | World size as a percentage of each output dimension (presets 77, 67, 59, 50; 50% is a quarter of the pixels). Without `--upscale` it selects Linear. Out-of-range values fall back to Native with a warning. |
-| `--ui-scale auto\|N` | Integer scale of the BF4 text UI (auto: 2 from 2560x1440, 3 at 4K). |
+| `--ui-scale auto\|N` | Integer scale of the BF4 text UI (auto: 2 from 2560x1440, 3 at 4K; on HiDPI/Retina at least the pixel density, so 2 on Retina). |
 | `--save-display-settings` | Also stores these values as the user's display settings. |
+| `--export-ps2 <ps2 DATA dir> <out dir>` | Lists the PS2 version's archives and exports its textures as PNG for viewing (PS2.md). |
+| `--capture-world <file.png>` | After `--capture-frames N` frames (default 240) writes the 3D world without interface at its render size and exits; for screenshots and comparisons. |
+| `--build-texture-pack --upscaler <path>` | Builds an optional texture pack from the installation with a player-supplied Real-ESRGAN executable (TEXTURE-PACKS.md). Further flags: `--texture-pack-name <name>` (default `enhanced`; `detailed` for the second variant), `--upscale-model`, `--prepass-model <onnx>` (1x de-artifact model before upscaling), `--texture-pack-dir`, `--texture-pack-subtree`, `--interface-model`, `--texture-pack-no-interface`, `--texture-pack-interface-only`, `--texture-pack-sprites-only`, `--prepass-sprites`, `--texture-pack-hero-dir <dir>`, `--texture-pack-merge`. Then choose the pack under Game Options → OpenTPW → Enhanced textures (applied at once, no restart). |
 
 Alt+Enter or F11 toggles fullscreen at runtime; the ImGui park panel has a Display
 section with the same options and the diagnostics (method, requested/effective scale,
@@ -175,7 +218,7 @@ internal and output size, fallback reason). Settings live in `~/.config/OpenTPW/
 settings file falls back to defaults with a warning. Only the 3D world is scaled: BF4 text,
 ImGui and movies render at output size, and 4x MSAA stays on independently. The Options
 screen can use the `OpenTPW.IDisplaySettings` API (including a keep-or-revert timeout).
-Status and limits: UPSCALING-DESIGN.md.
+Window mode, upscaling, render scale and interface scale are on the OpenTPW page of Game Options. Status and limits: UPSCALING-DESIGN.md.
 
 ## Native integration smoke test
 
@@ -202,7 +245,7 @@ fullscreen-toggle changes without growing GPU resources. Combine it with the dis
 options, e.g. `--render-scale 50 --upscale linear`; `OPENTPW_TEST_PIXEL_SCALE=2` (test only)
 doubles the drawable to exercise the HiDPI path on a 1x display (1280x720 window ->
 2560x1440 output).
-`--front-end --smoke-test` instead drives the front end with injected mouse/keys
+`--front-end --smoke-test` first checks the CD launcher when available (readback, Tab focus, Play) and then drives the front end with injected mouse/keys
 into the original jungle level and checks lobby, options, HUD, build/info arms
 and pause menu text in readback (UI.md); captures are
 `artifacts/native-smoke-<language>-*.png`.
@@ -224,7 +267,16 @@ between `Mouth - Aah` (talking) and `Mouth - Normal` from the clip's `.LIP` mark
 Without an audio device the mouth follows a wall clock silently. With `--smoke-test`
 it runs until the clip ends, checks the clock against wall time and the mouth sequence,
 and writes `artifacts/native-smoke-advisor-{talking,closed}.png`. The advisor's
-original pose, animation, mouth-shape choice and triggers are not reproduced; see LIPS.md.
+original pose and animation are not reproduced; see LIPS.md.
+
+In an original-level park (front end or `--load-original-level <level>`; not the
+generic sandbox) the advisor speaks by
+itself for the traced game events (LIPS.md, "Automatic advice"): the level-start
+welcome comes first. `--no-advisor` turns automatic advice off; `--advisor-say`
+and `--advisor-response` also turn it off. The Game Options Advisor switch
+silences it (advice is still consumed, as in the original) and the Tutorial switch
+gates tutorial advice. With `--mute` it opens no audio device. `--smoke-test
+--load-original-level jungle` logs `Advisor says response 1 … /levels/jungle/Speech/speechHD.SDT`.
 
 ## Development packages
 

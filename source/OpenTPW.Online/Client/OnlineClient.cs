@@ -57,6 +57,13 @@ public sealed class OnlineClient : IDisposable
 		return Session;
 	}
 
+	/// <summary>Deletes the logged-in account; the server asks for its name and password again.</summary>
+	public async Task DeleteAccountAsync( string name, string password, CancellationToken cancel = default )
+	{
+		using var response = await SendAsync( HttpMethod.Delete, ApiRoutes.Accounts, Json( new Credentials( name, password ) ), cancel );
+		Session = null;
+	}
+
 	public async Task LogoutAsync( CancellationToken cancel = default )
 	{
 		if ( Session == null )
@@ -87,14 +94,14 @@ public sealed class OnlineClient : IDisposable
 	{
 		using var response = await SendAsync( HttpMethod.Get, $"{ApiRoutes.Parks}/{Id( parkId )}/package", null, cancel );
 		await using var stream = await response.Content.ReadAsStreamAsync( cancel );
-		return ParkPackage.Read( stream );
+		return ParkPackage.Read( await BoundedZip.ReadBoundedAsync( stream, ParkPackage.MaximumPackageBytes, "Park package", cancel ) );
 	}
 
 	public async Task<byte[]> DownloadThumbnailAsync( string parkId, CancellationToken cancel = default )
 	{
 		using var response = await SendAsync( HttpMethod.Get, $"{ApiRoutes.Parks}/{Id( parkId )}/thumbnail", null, cancel );
 		await using var stream = await response.Content.ReadAsStreamAsync( cancel );
-		var png = BoundedZip.ReadBounded( stream, ParkPackage.MaximumThumbnailBytes, "Thumbnail" );
+		var png = await BoundedZip.ReadBoundedAsync( stream, ParkPackage.MaximumThumbnailBytes, "Thumbnail", cancel );
 		PngImage.Validate( png, ParkPackage.MaximumThumbnailDimension );
 		return png;
 	}
@@ -122,7 +129,7 @@ public sealed class OnlineClient : IDisposable
 	{
 		using var response = await SendAsync( HttpMethod.Get, $"{ApiRoutes.Postcards}/{Id( postcardId )}", null, cancel );
 		await using var stream = await response.Content.ReadAsStreamAsync( cancel );
-		return Postcard.Read( stream );
+		return Postcard.Read( await BoundedZip.ReadBoundedAsync( stream, Postcard.MaximumCardBytes, "Postcard", cancel ) );
 	}
 
 	public async Task DeletePostcardAsync( string postcardId, CancellationToken cancel = default )
@@ -140,13 +147,20 @@ public sealed class OnlineClient : IDisposable
 	{
 		var session = Session ?? throw new InvalidOperationException( "Log in before connecting to chat." );
 		var socket = new ClientWebSocket();
-		socket.Options.SetRequestHeader( "Authorization", "Bearer " + session.Token );
-		socket.Options.KeepAliveInterval = TimeSpan.FromSeconds( 30 );
+		// Browsers cannot set WebSocket headers or keep-alive; there the token is the first frame.
+		var browser = OperatingSystem.IsBrowser();
+		if ( !browser )
+		{
+			socket.Options.SetRequestHeader( "Authorization", "Bearer " + session.Token );
+			socket.Options.KeepAliveInterval = TimeSpan.FromSeconds( 30 );
+		}
 		var builder = new UriBuilder( new Uri( ServerUrl, ApiRoutes.Chat.TrimStart( '/' ) ) );
 		builder.Scheme = builder.Scheme == "https" ? "wss" : "ws";
 		try
 		{
 			await socket.ConnectAsync( builder.Uri, cancel );
+			if ( browser )
+				await socket.SendAsync( StrictJson.Serialize( ChatAuthentication.For( session.Token ) ), WebSocketMessageType.Text, true, cancel );
 		}
 		catch
 		{
@@ -196,7 +210,7 @@ public sealed class OnlineClient : IDisposable
 			try
 			{
 				await using var stream = await response.Content.ReadAsStreamAsync( cancel );
-				var body = BoundedZip.ReadBounded( stream, 16 * 1024, "Error response" );
+				var body = await BoundedZip.ReadBoundedAsync( stream, 16 * 1024, "Error response", cancel );
 				message = StrictJson.Deserialize<ApiError>( body, "Error response" ).Error;
 			}
 			catch ( Exception exception ) when ( exception is InvalidDataException or IOException )
@@ -209,7 +223,7 @@ public sealed class OnlineClient : IDisposable
 	private static async Task<T> ReadJsonAsync<T>( HttpResponseMessage response, CancellationToken cancel ) where T : class
 	{
 		await using var stream = await response.Content.ReadAsStreamAsync( cancel );
-		return StrictJson.Deserialize<T>( BoundedZip.ReadBounded( stream, MaximumJsonResponseBytes, "Server response" ), "Server response" );
+		return StrictJson.Deserialize<T>( await BoundedZip.ReadBoundedAsync( stream, MaximumJsonResponseBytes, "Server response", cancel ), "Server response" );
 	}
 
 	public void Dispose()

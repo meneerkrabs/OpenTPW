@@ -266,8 +266,12 @@ our own words.
 | Completion message | `0x1013D708` | type 2 shows UITEXT 471 (finished Instant Action, try Full Simulation) |
 | Easymode park | `0x10137600` | copied into a player's saves only for Instant Action players |
 
-Not traced: how research advances without researchers (only the message is
-traced; `ECON-019` stays an approximation), and what several type-2 branches in
+Research needs researchers in every type: the research point sink `0x100F0DF0`
+has one caller, reached only from the per-researcher cycle `0x100F0284` with the
+researcher's grade ability (docs/reverse/PPC-review.md, section 57).
+The Instant Action seed ships a researcher whose staff record is not decoded, so
+`ECON-019` stays an approximation as a stand-in for that researcher, not as a
+staffless rule. Not traced: what several type-2 branches in
 the finance, ticket-price and staff-training panels (`0x10150C54`, `0x1014EC48`,
 `0x10168D8C`) clear exactly.
 

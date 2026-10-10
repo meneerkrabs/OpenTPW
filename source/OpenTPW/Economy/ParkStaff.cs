@@ -71,6 +71,9 @@ public sealed class ParkStaff
 
 	public void SetTrainingBudget( StaffType type, long monthlyBudget ) => trainingBudget[(int)type] = Math.Max( 0, monthlyBudget );
 
+	/// <summary>Skill shown for an employee: 20 × (grade + training percentage / 100), truncated, in single precision as in the original (0x100F41DC).</summary>
+	public static int StaffSkill( StaffMember member ) => (int)(20f * (float)(member.Grade + member.TrainingPoints / 100.0));
+
 	public long MonthlyWage( StaffMember member ) => settings.GetMonthlyWage( member.Type, member.Grade );
 
 	public long TotalMonthlyWages => members.Sum( MonthlyWage );
@@ -86,32 +89,63 @@ public sealed class ParkStaff
 		NextPoolUpdateTick = tick + UpdateInterval;
 	}
 
-	/// <summary>Removes expired candidates and tops the pool up, at most <c>MaxNumberOfStaffPerUpdate</c> new candidates per update.</summary>
+	/// <summary>The original hiring pool has 32 slots.</summary>
+	public const int PoolSlots = 32;
+
+	/// <summary>
+	/// Removes expired candidates, adds up to <c>MaxNumberOfStaffPerUpdate</c> candidates with roles drawn
+	/// in proportion to each role's shortfall below <c>Max*</c> (roles at <c>Max*InPark</c> are skipped), then
+	/// adds candidates until hired plus pooled staff reach <c>Min*InPool</c> for every role.
+	/// </summary>
+	// [BIN:STP-PPC:0x100F6E24 staff pool update] draw = rand() % total shortfall picks the role whose share it falls in; each added candidate lowers that role's shortfall and the per-update cap (also limited by the 32 free slots); 0x100F65E8 drops roles whose hired count reached Max*InPark; 0x100F6790 then tops every role up to Min*InPool counting hired and pooled staff
 	public void UpdatePool( DeterministicRandom random, long tick )
 	{
 		if ( tick < NextPoolUpdateTick )
 			return;
 		NextPoolUpdateTick = tick + UpdateInterval;
 		candidates.RemoveAll( candidate => candidate.ExpiresTick <= tick );
-		var added = 0;
-		foreach ( var role in settings.Roles )
+		var roles = settings.Roles;
+		var shortfall = roles.Select( role => OfType( role.Type ).Count() >= role.MaximumInPark ? 0 : role.MaximumInPool - candidates.Count( candidate => candidate.Type == role.Type ) ).ToArray();
+		var cap = Math.Min( settings.MaxNumberOfStaffPerUpdate, PoolSlots - candidates.Count );
+		for ( var total = shortfall.Sum(); cap > 0 && total > 0 && candidates.Count < PoolSlots; total-- )
 		{
-			var count = candidates.Count( candidate => candidate.Type == role.Type );
-			// [APPROX:ECON-011] each pool slot above the minimum is filled with 50 % chance per update — evidence needed: hiring pool captures
-			while ( count < role.MinimumInPool || (count < role.MaximumInPool && added < settings.MaxNumberOfStaffPerUpdate && random.Chance( 50 )) )
+			var draw = random.Next( total );
+			var index = -1;
+			for ( var role = 0; role < shortfall.Length && index < 0; role++ )
 			{
-				candidates.Add( CreateCandidate( role, random, tick ) );
-				count++;
-				added++;
+				if ( draw < shortfall[role] )
+					index = role;
+				else
+					draw -= shortfall[role];
+			}
+			if ( index < 0 )
+				break;
+			candidates.Add( CreateCandidate( roles[index], random, tick ) );
+			cap--;
+			shortfall[index]--;
+		}
+		bool added;
+		do
+		{
+			added = false;
+			foreach ( var role in roles )
+			{
+				if ( candidates.Count < PoolSlots && OfType( role.Type ).Count() + candidates.Count( candidate => candidate.Type == role.Type ) < role.MinimumInPool )
+				{
+					candidates.Add( CreateCandidate( role, random, tick ) );
+					added = true;
+				}
 			}
 		}
+		while ( added );
 	}
 
 	private StaffCandidate CreateCandidate( StaffRoleSettings role, DeterministicRandom random, long tick )
 	{
-		// [APPROX:ECON-009] candidate grade = average + 2 when "great", else average +-1 — evidence needed: hiring pool captures (grade distribution)
-		var grade = random.Chance( role.ChanceToGetGreat ) ? role.AverageGrade + 2 : role.AverageGrade + random.Next( 3 ) - 1;
-		return new StaffCandidate( NextId++, role.Type, random.Next( NameTableSize ), Math.Clamp( grade, 0, BalanceSettings.GradeCount - 1 ), tick + CandidateLifetime );
+		// [BIN:STP-PPC:0x100F5B64 staff candidate] grade = (AvgGradeOf* + random % 3 - 1) & 0xFF, stored as 4 when above 4 (so -1 wraps to 4); ChanceToGetGreat* is never read
+		var raw = (role.AverageGrade + random.Next( 3 ) - 1) & 0xFF;
+		var grade = raw > BalanceSettings.GradeCount - 1 ? BalanceSettings.GradeCount - 1 : raw;
+		return new StaffCandidate( NextId++, role.Type, random.Next( NameTableSize ), grade, tick + CandidateLifetime );
 	}
 
 	public bool CanHire( StaffType type ) => OfType( type ).Count() < settings[type].MaximumInPark;

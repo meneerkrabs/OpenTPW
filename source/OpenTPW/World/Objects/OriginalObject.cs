@@ -54,6 +54,8 @@ public class OriginalObject : Entity
 {
 	private readonly List<(ModelEntity Entity, int NodeIndex)> parts = new();
 	private readonly List<Model> models = new();
+	/// <summary>Parts of vertex-animated meshes: their model, own vertex array and the pose version it shows.</summary>
+	private readonly List<(Model Model, int MeshIndex, Vertex[] Vertices, int Version)> vertexParts = new();
 	private bool deleted;
 
 	public OriginalObject( ObjectCatalogEntry entry, ObjectPlacement placement, RideScriptWorld? world = null, int? seed = null, bool open = true )
@@ -115,6 +117,7 @@ public class OriginalObject : Entity
 
 	private void BuildModels()
 	{
+		var vertexAnimated = ObjectRenderParts.FindVertexAnimatedMeshes( Entry, Runtime.Model );
 		foreach ( var part in ObjectRenderParts.Build( Entry, Runtime.Model ) )
 		{
 			var slots = new Texture[16];
@@ -125,8 +128,13 @@ public class OriginalObject : Entity
 			}
 			var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
 			material.Set( "Color", slots );
-			var model = new Model( part.Vertices, part.Indices, material );
+			var dynamic = part.MeshIndex >= 0 && vertexAnimated[part.MeshIndex];
+			var model = new Model( part.Vertices, part.Indices, material, dynamic );
 			models.Add( model );
+			// Build gives every object its own vertex arrays, so the part's array is this instance's to rewrite;
+			// version -1 makes the first update show the pose of a clip the script may already have started.
+			if ( dynamic )
+				vertexParts.Add( (model, part.MeshIndex, part.Vertices, -1) );
 			parts.Add( (new ModelEntity { Model = model, Name = $"{Entry.ArchiveName}:{part.Name}" }, part.NodeIndex) );
 		}
 	}
@@ -155,6 +163,7 @@ public class OriginalObject : Entity
 
 	private void UpdateTransforms()
 	{
+		UpdateVertices();
 		var placement = Placement.ModelToEngine;
 		var nodes = Runtime.Animator.NodeTransforms;
 		foreach ( var (entity, node) in parts )
@@ -162,6 +171,21 @@ public class OriginalObject : Entity
 			var transform = node < 0 ? placement : ObjectPlacement.SwapAxes( nodes[node] ) * placement;
 			entity.TransformOverride = transform;
 			entity.Position = new Vector3( transform.M41, transform.M42, transform.M43 );
+		}
+	}
+
+	/// <summary>Rewrites the parts whose mesh pose changed; the GPU copy happens when the part is next drawn.</summary>
+	private void UpdateVertices()
+	{
+		var animator = Runtime.Animator;
+		for ( var index = 0; index < vertexParts.Count; index++ )
+		{
+			var (model, mesh, vertices, version) = vertexParts[index];
+			if ( animator.GetVertexVersion( mesh ) == version )
+				continue;
+			ObjectRenderParts.WritePositions( Runtime.Model.Meshes[mesh], animator.GetVertexPositions( mesh ), vertices );
+			model.UpdateVertices( vertices );
+			vertexParts[index] = (model, mesh, vertices, animator.GetVertexVersion( mesh ));
 		}
 	}
 
@@ -182,5 +206,6 @@ public class OriginalObject : Entity
 			} );
 		}
 		models.Clear();
+		vertexParts.Clear();
 	}
 }

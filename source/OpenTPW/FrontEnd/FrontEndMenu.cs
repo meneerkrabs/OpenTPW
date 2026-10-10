@@ -3,7 +3,10 @@ using NVector2 = System.Numerics.Vector2;
 
 namespace OpenTPW.FrontEnd;
 
-/// <summary>Original game modes chosen when starting a park (UITEXT 239–241). Both currently play the same.</summary>
+/// <summary>
+/// The Game Mode buttons (UITEXT 239–241). The original chooses this once per player; OpenTPW asks per
+/// park. The game maps it to a <see cref="OpenTPW.ParkStartKind"/>; the values are not the economy's.
+/// </summary>
 public enum GameMode { InstantAction, FullSimulation }
 
 /// <summary>A park that can be loaded from the Load Park screen.</summary>
@@ -20,6 +23,8 @@ public sealed class FrontEndActions
 	/// <summary>Called when the selected island changes (moves the lobby camera).</summary>
 	public Action<LobbyIslandInfo> IslandSelected { get; init; } = _ => { };
 	public Func<IReadOnlyList<ParkLoadEntry>> LoadEntries { get; init; } = () => Array.Empty<ParkLoadEntry>();
+	/// <summary>Opens the online screens on the menu's stack (Go Online, UITEXT 1); null hides the button.</summary>
+	public Action<UiScreenStack>? GoOnline { get; init; }
 }
 
 /// <summary>
@@ -90,18 +95,20 @@ public sealed class FrontEndMenu
 		IslandButton( "nextIsland", "b_lobright", 369, 344, () => NextIsland( 1 ) );
 
 		// [APPROX:UI-014] logo/title placement and the right-hand Load/Options/Quit column — evidence needed: capture of the original lobby
-		screen.Add( new UiModelImage { Id = "logo", Model = "tpwlogo", Bounds = new UiRect( 819, 40, 410, 154 ), Anchor = UiAnchor.Top } );
+		screen.Add( new UiModelImage { Id = "logo", Model = "tpwlogo", ArtOverride = "tpw_logo", Bounds = new UiRect( 819, 40, 410, 154 ), Anchor = UiAnchor.Top } );
 		screen.Add( new UiLabel { Id = "title", Text = () => strings[UIStrings.ThemeParkWorld], Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center, Bounds = new UiRect( 624, 196, 800, 90 ), Anchor = UiAnchor.Top } );
 
 		var menu = new (string Id, UIStrings Label, Action Clicked)[]
 		{
+			("goOnline", UIStrings.GoOnline, () => actions.GoOnline?.Invoke( Stack )),
 			("load", UIStrings.Load, ShowLoad),
 			("options", UIStrings.Options, ShowOptions),
 			("quit", UIStrings.QuitGame, ShowQuit),
 		};
-		for ( var index = 0; index < menu.Length; index++ )
+		var shown = actions.GoOnline == null ? menu.Where( entry => entry.Id != "goOnline" ).ToArray() : menu;
+		for ( var index = 0; index < shown.Length; index++ )
 		{
-			var entry = menu[index];
+			var entry = shown[index];
 			screen.Add( new UiButton
 			{
 				Id = entry.Id,
@@ -117,7 +124,7 @@ public sealed class FrontEndMenu
 		return screen;
 	}
 
-	// [APPROX:UI-015] Game Mode asked when entering a park (no player profiles); the original asks once when a player is created and stores it in the profile — evidence needed: player profiles
+	// [APPROX:UI-015] Game Mode asked on every park entry and each entry starts a new park (no player profiles or per-theme autosave); the original asks once when a player is created and stores it in the profile — evidence needed: PC confirmation of the Mac player/autosave flow
 	public void ShowGameMode()
 	{
 		var screen = new UiScreen( "gameMode" );

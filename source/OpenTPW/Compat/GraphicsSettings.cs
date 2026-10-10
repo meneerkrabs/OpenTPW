@@ -140,6 +140,21 @@ public sealed record RenderQuality( TextureFilterMode Filter, int MaxAnisotropy,
 /// </summary>
 public static class GraphicsPresets
 {
+	/// <summary>The original's default detail level for a machine with <paramref name="ramMegabytes"/> of memory and a <paramref name="cpuMegahertz"/> processor.</summary>
+	// [BIN:STP-PPC:0x10125B7C default options] Gestalt 'ram ' in MB (64 when unavailable) and 'pclk' in MHz (266 when unavailable): Low below 65 MB or 301 MHz, Medium below 192 MB or 450 MHz, otherwise High
+	public static GraphicsPreset DefaultFor( long ramMegabytes, long cpuMegahertz ) =>
+		ramMegabytes < 65 || cpuMegahertz < 301 ? GraphicsPreset.Low
+		: ramMegabytes < 192 || cpuMegahertz < 450 ? GraphicsPreset.Medium
+		: GraphicsPreset.High;
+
+	/// <summary>The default for this machine: its memory as .NET reports it.</summary>
+	// [APPROX:COMPAT-013] the processor clock is taken as 450 MHz or faster, since .NET cannot read it portably — evidence needed: none for any machine that runs OpenTPW (all exceed 450 MHz)
+	public static GraphicsPreset DefaultForThisMachine()
+	{
+		var bytes = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
+		return DefaultFor( bytes > 0 ? bytes / (1024 * 1024) : 64, 450 );
+	}
+
 	public static readonly IReadOnlyDictionary<GraphicsPreset, string> OriginalFiles = new Dictionary<GraphicsPreset, string>
 	{
 		[GraphicsPreset.Low] = "/low.sam",
@@ -242,17 +257,24 @@ public sealed record GraphicsSettings
 {
 	public const string FileName = "graphics.json";
 
-	/// <summary>
-	/// [APPROX:COMPAT-013] High is the default detail level; the original picked one per machine at
-	/// setup — evidence needed: installer/registry default.
-	/// </summary>
-	public GraphicsPreset Preset { get; init; } = GraphicsPreset.High;
+	/// <summary>The default detail level is picked for this machine (<see cref="GraphicsPresets.DefaultFor"/>).</summary>
+	public GraphicsPreset Preset { get; init; } = GraphicsPresets.DefaultForThisMachine();
 	/// <summary>Only used for <see cref="GraphicsPreset.Custom"/>.</summary>
 	public OriginalDetailSettings? Detail { get; init; }
 	/// <summary>[EXT:COMPAT-GFX-ANISOTROPY] degree used when filtering is anisotropic (1..16).</summary>
 	public int Anisotropy { get; init; } = GraphicsPresets.EnhancedAnisotropy;
 	/// <summary>[EXT:COMPAT-GFX-VIEWDISTANCE] OpenTPW fog distance multiplier; 1 = unchanged.</summary>
 	public float ViewDistanceScale { get; init; } = 1;
+	/// <summary>
+	/// [EXT:texture-pack] Texture choice (docs/TEXTURE-PACKS.md): empty = original textures; <c>enhanced</c> (the default) = the
+	/// shipped HD interface art plus the locally built <c>enhanced</c> pack when there is one; other names (<c>detailed</c>, ...)
+	/// = the shipped art plus that pack under <c>texture-packs</c>. Stored as <c>"TexturePack"</c>.
+	/// </summary>
+	[JsonPropertyName( "TexturePack" ), JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+	public string? TexturePackName { get; init; }
+	/// <summary>Legacy boolean of earlier versions: <c>true</c> reads as <c>"enhanced"</c> (<see cref="Validate"/>); never written.</summary>
+	[JsonPropertyName( "EnhancedTextures" ), JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+	public bool? EnhancedTextures { get; init; }
 
 	public static GraphicsSettings Default { get; } = new();
 
@@ -267,6 +289,17 @@ public sealed record GraphicsSettings
 	public GraphicsSettings Validate( ICollection<string> diagnostics )
 	{
 		var result = this;
+		// Migration: a file without a "TexturePack" key (absent or null) takes the old boolean, which selected the one pack
+		// that existed then; an explicit "TexturePack" value, even "", wins over it.
+		// Enhanced is the default: only an explicit "EnhancedTextures": false of earlier versions selects the originals.
+		if ( result.TexturePackName == null )
+			result = result with { TexturePackName = result.EnhancedTextures == false ? "" : TexturePack.DefaultName };
+		result = result with { EnhancedTextures = null };
+		if ( result.TexturePackName!.Length > 0 && !TexturePack.IsValidName( result.TexturePackName ) )
+		{
+			diagnostics.Add( $"Texture pack name '{result.TexturePackName}' is not a plain directory name; using the original textures." );
+			result = result with { TexturePackName = "" };
+		}
 		if ( !Enum.IsDefined( Preset ) )
 		{
 			diagnostics.Add( $"Unknown graphics preset {(int)Preset}; using {Default.Preset}." );

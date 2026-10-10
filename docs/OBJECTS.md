@@ -191,7 +191,9 @@ TOUR/BUMP/COAST controllers, park clock, screams, reverb, light opcodes.
 Footprint cells from the shape and rotation; per cell: inside the grid, terrain
 rule (original levels: MAP blocked/water/entrance/fixed walkway, heightfield
 holes, Easymode path cells and occupied non-object cells such as the Belly Bounce
-queue — see MAP.md), not occupied by another object or the sandbox Totem. Removing
+queue — see MAP.md), not occupied by another object, a built queue cell or the
+sandbox Totem. Queue paths for `Info.HasQueue` rides are laid from the cell
+outside the entrance (`QueuePaths`, `Level.BuildQueueCell`; GUESTS.md "Queues"). Removing
 an imported object frees its cells. In original levels, building now uses `ParkEconomy.TryBuild`: research, money and
 golden-ticket checks apply, costs are charged and removal credits the economy
 scrap value. The generic sandbox still builds free. These are
@@ -233,6 +235,15 @@ The official bonus objects are separate WADs meant to be dropped into
 or up to two levels above it; directory names matched case-insensitively) and
 merges them into the catalogs; nothing is copied into the game data.
 
+Without a flag the root is, in order: the saved bonus folder in `setup.json`
+(`bonusPath`), then `<config>/bonus` when it holds a `levels` folder. An empty
+`bonusPath` (the player chose Remove in Options > Game files) turns the bonus
+objects off without deleting anything. Options > Game files can import the
+original "Bonus content" folder or its `.zip` into `<config>/bonus`, which copies
+only the `levels/<theme>/<category>/_name_N.wad` files (see
+[SETUP.md](SETUP.md#changing-the-folders-in-game)). The startup log names the
+source used.
+
 The supplied set has **35** archives (`_name_N.wad`): jungle 4 rides + 4
 features, hallow 4 rides + 1 sideshow + 4 features, space 3 rides + 2 sideshows
 + 5 features, fantasy 3 rides + 1 sideshow + 4 features; N runs 1…39 with gaps.
@@ -273,11 +284,10 @@ Original-data values are tagged `// [DATA:<file>:<field>]`.
 
 | Id | Site | Current value / rule | Evidence needed |
 | --- | --- | --- | --- |
-| RIDES-001 | World/Objects/ObjectAnimator.cs:15 | Clips play at 30 ticks/s | Original tick rate (binary or timed capture) |
+| RIDES-001 | Mac channel rate 30 is proved; Windows rate and native scaled/unscaled channel-clock selection remain unverified | qualify target-PC rate and connect the correct original clock input before claiming runtime equivalence |
 | RIDES-002 | World/Objects/ObjectAnimator.cs:120 | Most recently started channel wins a node | Original channel mixing |
 | RIDES-003 | World/Objects/ObjectAnimator.cs:111 | Finished clip holds its last pose | Capture after a clip ends |
 | RIDES-004 | World/Objects/OriginalObjectRuntime.cs:158 | Re-issued LOOPANIM continues the loop | Capture of the Belly Bounce idle loop |
-| RIDES-005 | World/Objects/OriginalObjectRuntime.cs:205 | Plain animation opcodes use a channel apart from `_CH` channels | Binary / sideshow capture |
 | RIDES-006 | World/Objects/OriginalObjectRuntime.cs:229 | GETANIM_CH = 1 while playing, else 0 | Binary semantics |
 | RIDES-007 | World/Objects/OriginalObjectRuntime.cs:219 | TRIGANIMSPEED ignores its 4th operand | Binary semantics |
 | RIDES-008 | World/Objects/ObjectAnimations.cs:28 | ANIM_* → letter, variant v → number v+1 | Binary member lookup |
@@ -288,7 +298,7 @@ Original-data values are tagged `// [DATA:<file>:<field>]`.
 | RIDES-013 | World/Objects/ObjectShape.cs:103 | 180° and non-square rotations follow the rigid rotation | Save with such objects |
 | RIDES-014 | World/Objects/ParkObjects.cs:153 | Base height = mean footprint ground height | `.hmp` format, captures on slopes |
 | RIDES-015 | World/Objects/ParkObjects.cs:190 | Imported and built objects start open | TPWS ride state, original build behaviour |
-| RIDES-016 | World/Objects/OriginalObjectRuntime.cs:62 | VAR_DURATION = raw `Upgrades[0].InitDuration` | Binary conversion by `Info.DurationUnit` |
+| RIDES-016 | World/Objects/OriginalObjectRuntime.cs:62 | VAR_DURATION = raw `Upgrades[0].InitDuration` | Binary conversion by `Info.DurationUnit` (QUEUE-plan §7: the native host writes it raw, clamped to `UsageInfo.Min/MaxDuration`; `InitDuration` is type record +416, while +436 is `QueueWaitTimeConstant`) |
 | RIDES-017 | World/Objects/ObjectCatalog.cs:124 | Buildable = WhichUIType 0–3, not fixed/tool/upgrade | Original build-menu contents |
 | RIDES-018 | World/Objects/ParkObjects.cs:107 | Build rules: grid, MAP/save terrain, no overlap; no slope/path/land; Level enforces economy purchases | Original build checks |
 | RIDES-019 | World/Objects/ParkObjects.cs:209 | Levels without save get Gates, Lights, Bus | Original fixed-item spawning |
@@ -299,7 +309,7 @@ Original-data values are tagged `// [DATA:<file>:<field>]`.
 | RIDES-025 | World/Objects/ObjectCatalog.cs:545 | Bonus name: language file → English → .sam name | Original bonus-name lookup |
 | RIDES-026 | World/Objects/OriginalObject.cs:12 | 1 MD2 unit = 0.2 engine units | None (engine convention) |
 
-| RIDES-028 | World/Level.Objects.cs | Non-walkable entrance/exit outside cells use the nearest walkable path | Original queue-path joining rules |
+| RIDES-028 | World/Level.Objects.cs | Non-walkable exit outside cells, and entrance outside cells without a queue path, use the nearest walkable path (a one-cell queue) | Original queue-path joining rules |
 
 Imported objects share their economy instance with the guest payment bridge;
 shop/sideshow payments and ride-use statistics use that instance. Open/closed

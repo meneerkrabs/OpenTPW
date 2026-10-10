@@ -108,7 +108,7 @@ public sealed class EconomyObjectCatalog : IEconomyObjectCatalog
 		var hasPrices = kind is ParkObjectKind.Shop or ParkObjectKind.Sideshow;
 		return new EconomyObjectInfo( id, settings.Contains( "Info.Name" ) ? settings.GetString( "Info.Name" ).Trim() : $"Info.Id {id}", kind,
 			(ResearchCategory)Math.Clamp( researchCategory, 0, 4 ), settings.GetInt( "Research.Group", 0, optional: true ), upgrades,
-			// [APPROX:ECON-042] sideshow InitCostOfGoods is the cost of a prize paid per win — evidence needed: sideshow panel capture
+			// [BIN:STP-PPC:0x100EAAF8 sideshow win] each sideshow win charges the object's cost of goods (+0x184, copied from catalogue word 0x50 = UsageInfo.InitCostOfGoods at +0x140) to its costs and the bank
 			hasPrices ? Optional( "UsageInfo.InitPricePerUse" ) : null, hasPrices ? Optional( "UsageInfo.InitCostOfGoods" ) : null,
 			kind == ParkObjectKind.Sideshow ? Optional( "UsageInfo.InitChanceOfLoosing" ) : null,
 			settings.GetInt( "UsageInfo.ShopType", 0, optional: true ), settings.GetInt( "UsageInfo.SpecialIngredient", 0, optional: true ),

@@ -1,0 +1,11 @@
+/* Kept out of index.html so the page needs no inline styles (content security policy, docs/SERVER.md). */
+:root { color-scheme: dark; }
+html, body { margin: 0; height: 100%; background: #000; color: #ddd; font: 15px system-ui, sans-serif; }
+#canvas { display: block; width: 100vw; height: 100vh; outline: none; }
+#setup { position: fixed; inset: 0; display: grid; place-content: center; gap: 12px; padding: 16px; text-align: center; background: #101418; }
+#setup[hidden] { display: none; }
+#status { min-height: 1.4em; color: #9ab; }
+label { display: inline-block; padding: 10px 18px; border-radius: 8px; background: #3b4cc0; color: #fff; cursor: pointer; }
+input { display: none; }
+#loading { position: fixed; left: 50%; bottom: 8%; transform: translateX(-50%); padding: 10px 18px; border-radius: 999px; background: rgba(16, 20, 24, .85); color: #fff; font-weight: 600; }
+#loading[hidden] { display: none; }

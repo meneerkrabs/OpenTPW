@@ -13,6 +13,11 @@ REGISTERS = {
     "RIDES": "source/OpenTPW/World/Objects/RidesApproximations.cs",
     "COMPAT": "source/OpenTPW.Files/Public/ApproximationRegister.cs",
     "ADVISOR": "source/OpenTPW/World/Advisor.cs",
+    "AUDIO": "source/OpenTPW/Audio/AudioApproximations.cs",
+    "DET": "source/OpenTPW/World/DeterminismApproximations.cs",
+    "GATE": "source/OpenTPW/Client/M3GateApproximations.cs",
+    "QUEUE": "source/OpenTPW/World/Guests/QueueApproximations.cs",
+    "PATH": "source/OpenTPW/World/PathApproximations.cs",
 }
 MARKDOWN_REGISTERS = {"ONLINE": "docs/ONLINE.md"}
 EXTENSION_SCOPE = "OpenTPW online extension"
@@ -213,7 +218,7 @@ def render(data: Inventory) -> str:
              f"Current inventory: **{len(data.unresolved)} unresolved unique APPROX IDs**, {counts['APPROX']} APPROX occurrences, {counts['EXT']} EXT occurrences, {counts['DATA']} DATA occurrences and {counts['BIN']} BIN occurrences.", "",
              f"Of these, {len(data.unresolved) - extension_count} IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and {extension_count} ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.", "",
              "CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.", "",
-             "Repeated source occurrences of one ID are allowed and listed separately. Duplicate register declarations, malformed/missing ID syntax, unregistered IDs and declarations without source annotations fail the check. Register declarations are read from the five configured existing C# registers (current one-entry-per-line tuple/new syntax) and the explicit three-column Approximation register table in docs/ONLINE.md; these are bounded lexical readers, not general C# or Markdown parsers. New registers must be explicitly configured. The check also compares the complete regenerated document against this file.", "",
+             "Repeated source occurrences of one ID are allowed and listed separately. Duplicate register declarations, malformed/missing ID syntax, unregistered IDs and declarations without source annotations fail the check. Register declarations are read from the ten configured C# registers (current one-entry-per-line tuple/new syntax) and the explicit three-column Approximation register table in docs/ONLINE.md; these are bounded lexical readers, not general C# or Markdown parsers. New registers must be explicitly configured. The check also compares the complete regenerated document against this file.", "",
              "| Area | Unique unresolved IDs | Source occurrences |", "| --- | ---: | ---: |"]
     grouped = Counter(label.rsplit("-", 1)[0] for label in data.unresolved)
     for area, count in sorted(grouped.items()):

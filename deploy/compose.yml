@@ -1,0 +1,34 @@
+# The official OpenTPW server (docs/SERVER.md): the published image behind Caddy on ports 80 and 443.
+# Settings come from .env beside this file (see env.example). Player data lives in ./data.
+services:
+  opentpw-server:
+    image: ghcr.io/meneerkrabs/opentpw-server:${OPENTPW_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    # Only Caddy, on this machine, can reach it.
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      OpenTPW__ServerName: ${OPENTPW_SERVER_NAME:-OpenTPW}
+      OpenTPW__Message: ${OPENTPW_MESSAGE:-}
+      # Caddy is the only client; let the rate limits see real addresses.
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+    volumes:
+      - ./data:/data
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    # On the host network Caddy sees players' real addresses, also over IPv6 (through Docker's
+    # port proxy every IPv6 client would look like the bridge gateway and share one rate limit).
+    network_mode: host
+    environment:
+      OPENTPW_DOMAIN: ${OPENTPW_DOMAIN:?Set OPENTPW_DOMAIN in .env}
+      OPENTPW_UPSTREAM: 127.0.0.1:8080
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - opentpw-server
+volumes:
+  caddy-data:
+  caddy-config:

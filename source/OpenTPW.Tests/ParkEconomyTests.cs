@@ -62,9 +62,15 @@ public class ParkEconomyTests
 	public void CalendarAndSpeedAdvanceInWholeTicks()
 	{
 		Assert.AreEqual( new ParkDate( 1, 1, 1, 0 ), ParkCalendar.ToDate( 0 ) );
-		Assert.AreEqual( new ParkDate( 1, 2, 1, 0 ), ParkCalendar.ToDate( ParkCalendar.TicksPerDay * 30L ) );
-		Assert.AreEqual( new ParkDate( 2, 1, 1, 13 ), ParkCalendar.ToDate( ParkCalendar.TicksPerDay * 360L + ParkCalendar.TicksPerHour * 13 ) );
-		Assert.AreEqual( new ParkDate( 1, 12, 30, 23 ), ParkCalendar.ToDate( ParkCalendar.TicksPerDay * 360L - 1 ) );
+		Assert.AreEqual( 15, ParkCalendar.TickOfTurn( 1 ), "a 248 ms turn is 14.88 ticks" );
+		Assert.AreEqual( 3750, ParkCalendar.Seconds( ParkCalendar.TickOfTurn( 1 ) ), "one turn adds 15000 / 4 seconds" );
+		Assert.AreEqual( 0, ParkCalendar.DayIndex( ParkCalendar.TickOfTurn( 23 ) ) );
+		Assert.AreEqual( 1, ParkCalendar.DayIndex( ParkCalendar.TickOfTurn( 24 ) ), "a day is 23.04 turns" );
+		Assert.AreEqual( new ParkDate( 1, 2, 1, 0 ), ParkCalendar.ToDate( ParkCalendar.TickAtDay( 31 ) ) );
+		Assert.AreEqual( 60, ParkCalendar.DayIndex( ParkCalendar.TickAtMonth( 2 ) ), "February 2000 has 29 days" );
+		Assert.AreEqual( new ParkDate( 1, 12, 31, 23 ), ParkCalendar.ToDate( ParkCalendar.TickAtDay( 366 ) - 1 ) );
+		Assert.AreEqual( new ParkDate( 2, 1, 1, 0 ), ParkCalendar.ToDate( ParkCalendar.TickAtDay( 366 ) ) );
+		Assert.AreEqual( 12, ParkCalendar.MonthIndex( ParkCalendar.TickAtDay( 366 ) ) );
 		var park = EconomyTestData.Park();
 		park.Speed = GameSpeed.Paused;
 		park.AdvanceFixedTick();
@@ -87,7 +93,7 @@ public class ParkEconomyTests
 		ledger.Post( LedgerCategory.LoanPayments, 400 );
 		Assert.AreEqual( 1000 + 200 + 50 - 300 - 25 + 10000 - 400, ledger.Balance );
 		var month = ledger.CloseMonth( 1, 40, 1234 );
-		Assert.AreEqual( 250, month.MoneyIn );
+		Assert.AreEqual( 10250, month.MoneyIn, "loans received are money in" );
 		Assert.AreEqual( 725, month.MoneyOut );
 		Assert.AreEqual( -475, month.Profit );
 		Assert.AreEqual( 1000, month.OpeningBalance );
@@ -107,6 +113,27 @@ public class ParkEconomyTests
 	}
 
 	[TestMethod]
+	public void YearlyProfitRunsFromIncomeAndCostsAndResetsEachYear()
+	{
+		var park = EconomyTestData.Park( initialCash: 0 );
+		park.OpenPark();
+		park.TryAdmitVisitor( 100, out _ );
+		var entry = park.Ledger.ProfitThisYear;
+		Assert.IsTrue( entry > 0, "gate takings raise the year's profit" );
+		var account = park.TakeLoan( 2 );
+		Assert.AreEqual( entry, park.Ledger.ProfitThisYear, "a loan received is not profit" );
+		park.AdvanceMonths( 1 );
+		var interest = LoanMath.InstalmentInterest( account.MonthlyRepayment, account.Months, account.OriginalAmount );
+		Assert.AreEqual( entry - interest, park.Ledger.ProfitThisYear, "an instalment costs only its interest share" );
+		park.AdvanceMonths( 11 );
+		Assert.AreEqual( 1, park.Date.Month );
+		Assert.AreEqual( 0, park.Ledger.ProfitThisYear, "the month event (instalment) comes before the year event (reset)" );
+		park.AdvanceMonths( 1 );
+		Assert.AreEqual( -interest, park.Ledger.ProfitThisYear );
+		Assert.AreEqual( 4294967268L / 36, LoanMath.InstalmentInterest( 2777, 36, 100000 ), "(M x N - P) wraps in 32 bits when M x N < P" );
+	}
+
+	[TestMethod]
 	public void LoanRepaymentsFollowTermsAndInterest()
 	{
 		Assert.AreEqual( 2777, LoanMath.MonthlyRepayment( 100000, 0, 36 ) );
@@ -122,16 +149,16 @@ public class ParkEconomyTests
 		Assert.AreEqual( LoanMath.MonthlyRepayment( 18000, 20, 24 ), account.MonthlyRepayment );
 		Assert.IsFalse( park.AvailableLoans.Any( offer => offer.Index == 2 ) );
 		Assert.ThrowsException<InvalidOperationException>( () => park.TakeLoan( 2 ) );
-		park.AdvanceDays( 30 * 24 );
+		park.AdvanceMonths( 24 );
 		Assert.AreEqual( 0, park.Loans.Count );
 		Assert.AreEqual( 18000 - LoanMath.TotalPayable( 18000, 20, 24 ), park.Balance );
 		Assert.AreEqual( LoanMath.TotalPayable( 18000, 20, 24 ), park.Ledger.History.Sum( month => month[LedgerCategory.LoanPayments] ) );
-		Assert.AreEqual( 0, park.Ledger.History.Sum( month => month.MoneyIn ) );
+		Assert.AreEqual( 18000, park.Ledger.History.Sum( month => month.MoneyIn ), "the loan is money in" );
 		Assert.IsTrue( park.AvailableLoans.Any( offer => offer.Index == 2 ) );
 
 		var early = EconomyTestData.Park( initialCash: 5000 );
 		early.TakeLoan( 1 );
-		early.AdvanceDays( 30 );
+		early.AdvanceMonths( 1 );
 		var remaining = early.Loans[0].RemainingBalance;
 		Assert.AreEqual( 50000 + LoanMath.MonthlyInterest( 50000, 20 ) - early.Loans[0].MonthlyRepayment, remaining );
 		var before = early.Balance;
@@ -149,9 +176,9 @@ public class ParkEconomyTests
 		var mechanic = EconomyTestData.HireBest( park, StaffType.Mechanic );
 		var handyman = EconomyTestData.HireBest( park, StaffType.Handyman );
 		var wages = park.Settings.GetMonthlyWage( StaffType.Mechanic, mechanic.Grade ) + park.Settings.GetMonthlyWage( StaffType.Handyman, handyman.Grade );
-		park.AdvanceDays( 29 );
+		park.Advance( ParkCalendar.TickAtMonth( 1 ) - 1 );
 		Assert.AreEqual( 50000, park.Balance );
-		park.AdvanceDays( 1 );
+		park.Advance( 1 );
 		Assert.AreEqual( 50000 - wages, park.Balance );
 		Assert.AreEqual( wages, park.Ledger.History[0][LedgerCategory.StaffCosts] );
 		park.Fire( handyman.Id );
@@ -161,10 +188,10 @@ public class ParkEconomyTests
 		var price = park.Settings[StaffType.Mechanic].PoundsPerTrainingPoint[grade];
 		park.SetTrainingBudget( StaffType.Mechanic, price * 60L );
 		var balance = park.Balance;
-		park.AdvanceDays( 30 );
+		park.AdvanceMonths( 1 );
 		Assert.AreEqual( 60, mechanic.TrainingPoints );
 		Assert.AreEqual( balance - park.Settings.GetMonthlyWage( StaffType.Mechanic, grade ) - price * 60L, park.Balance );
-		park.AdvanceDays( 30 );
+		park.AdvanceMonths( 1 );
 		Assert.AreEqual( grade + 1, mechanic.Grade );
 		Assert.AreEqual( 0, mechanic.TrainingPoints );
 	}
@@ -183,13 +210,33 @@ public class ParkEconomyTests
 		for ( var hired = 0; hired < 10; hired++ )
 		{
 			while ( !park.Staff.Candidates.Any( candidate => candidate.Type == StaffType.Guard ) )
-				park.Advance( ParkCalendar.TicksPerHour );
+				park.Advance( ParkCalendar.TicksForHours( 1 ) );
 			EconomyTestData.HireBest( park, StaffType.Guard );
 		}
-		while ( !park.Staff.Candidates.Any( candidate => candidate.Type == StaffType.Guard ) )
-			park.Advance( ParkCalendar.TicksPerHour );
 		Assert.IsFalse( park.Staff.CanHire( StaffType.Guard ) );
-		Assert.ThrowsException<InvalidOperationException>( () => EconomyTestData.HireBest( park, StaffType.Guard ) );
+		park.Advance( ParkCalendar.SecondsToTicks( 400 ) );
+		Assert.IsFalse( park.Staff.Candidates.Any( candidate => candidate.Type == StaffType.Guard ), "no new guards once the park maximum is employed" );
+	}
+
+	[TestMethod]
+	public void StaffSkillIsTwentyTimesGradePlusTrainingPercentage()
+	{
+		StaffMember Member( int grade, int points ) => new() { Id = 1, Type = StaffType.Handyman, NameIndex = 0, Grade = grade, TrainingPoints = points };
+		Assert.AreEqual( 0, ParkStaff.StaffSkill( Member( 0, 0 ) ) );
+		Assert.AreEqual( 80, ParkStaff.StaffSkill( Member( 4, 0 ) ) );
+		Assert.AreEqual( 27, ParkStaff.StaffSkill( Member( 1, 35 ) ) );
+		Assert.AreEqual( 99, ParkStaff.StaffSkill( Member( 4, 99 ) ) );
+	}
+
+	[TestMethod]
+	public void StaffPoolRefillFillsEachRolesShortfallUpToTheCap()
+	{
+		var park = EconomyTestData.Park();
+		Assert.AreEqual( 15, park.Staff.Candidates.Count, "3 of each role at the start" );
+		park.Advance( park.Staff.UpdateInterval + ParkCalendar.TicksForHours( 2 ) );
+		Assert.AreEqual( 25, park.Staff.Candidates.Count, "the shortfall of 2 per role is 10, the per-update cap" );
+		foreach ( var type in Enum.GetValues<StaffType>() )
+			Assert.AreEqual( 5, park.Staff.Candidates.Count( candidate => candidate.Type == type ), $"{type} reaches Max {type}s" );
 	}
 
 	[TestMethod]
@@ -200,27 +247,27 @@ public class ParkEconomyTests
 		park.EventRaised += events.Add;
 		EconomyTestData.HireBest( park, StaffType.Researcher );
 		park.OpenPark();
-		park.AdvanceDays( 30 );
+		park.AdvanceMonths( 1 );
 		Assert.IsTrue( park.Balance < 0 );
 		Assert.AreEqual( 1, events.Count( item => item.Kind == ParkEventKind.InTheRed ) );
 		Assert.AreEqual( 1, park.MonthsInRed );
-		park.AdvanceDays( 30 * 4 );
+		park.AdvanceMonths( 4 );
 		CollectionAssert.AreEqual( new long[] { 3, 5 }, events.Where( item => item.Kind == ParkEventKind.BankruptcyWarning ).Select( item => item.Amount ).ToArray() );
 		Assert.IsFalse( park.IsBankrupt );
-		park.AdvanceDays( 30 );
+		park.AdvanceMonths( 1 );
 		Assert.IsTrue( park.IsBankrupt );
 		Assert.IsFalse( park.IsParkOpen );
 		Assert.AreEqual( 1, events.Count( item => item.Kind == ParkEventKind.Bankrupt ) );
 		var tick = park.Tick;
-		park.AdvanceDays( 30 );
+		park.AdvanceMonths( 1 );
 		Assert.AreEqual( tick, park.Tick );
 		Assert.AreEqual( ParkEconomy.PurchaseResult.Bankrupt, park.TryBuild( 1100, out _ ) );
 
 		var recovered = EconomyTestData.Park( initialCash: 100 );
 		EconomyTestData.HireBest( recovered, StaffType.Researcher );
-		recovered.AdvanceDays( 30 * 2 );
+		recovered.AdvanceMonths( 2 );
 		recovered.TakeLoan( 0 );
-		recovered.AdvanceDays( 30 );
+		recovered.AdvanceMonths( 1 );
 		Assert.AreEqual( 0, recovered.MonthsInRed );
 	}
 
@@ -273,7 +320,7 @@ public class ParkEconomyTests
 		Assert.AreEqual( wins, Winners( twin, twinSideshow!.Id ), "same seed, same draws" );
 
 		park.RecordRideUse( shop.Id );
-		park.AdvanceDays( 30 );
+		park.AdvanceMonths( 1 );
 		Assert.AreEqual( 1 + 1, shop.CustomersLastMonth );
 		Assert.AreEqual( 30, shop.TakingsLastMonth );
 		Assert.AreEqual( 0, shop.CustomersThisMonth );
@@ -294,7 +341,7 @@ public class ParkEconomyTests
 		Assert.AreEqual( 300, park.Balance );
 		Assert.AreEqual( ParkEconomy.PurchaseResult.NotEnoughMoney, park.TryBuyCells( CellPurchase.Land, 4 ) );
 		Assert.AreEqual( 250, park.ScrapValue( ride! ) );
-		park.AdvanceDays( 360 );
+		park.AdvanceDays( 365 );
 		Assert.AreEqual( 150, park.ScrapValue( ride! ) );
 		var gates = park.RegisterExisting( 1601 );
 		Assert.IsTrue( gates.Imported );
@@ -320,9 +367,9 @@ public class ParkEconomyTests
 		Assert.IsTrue( ride.IsBrokenDown );
 		Assert.AreEqual( 1, events.Count( item => item.Kind == ParkEventKind.RideBrokeDown ) );
 		var mechanic = EconomyTestData.HireBest( park, StaffType.Mechanic );
-		park.Advance( ParkCalendar.TicksPerHour );
+		park.Advance( ParkCalendar.TicksForHours( 2 ) );
 		Assert.AreEqual( mechanic.Id, ride.MechanicId );
-		park.Advance( park.Settings[StaffType.Mechanic].WorkDuration[mechanic.Grade] * (long)ParkCalendar.TicksPerHour );
+		park.Advance( ParkCalendar.TicksForHours( park.Settings[StaffType.Mechanic].WorkDuration[mechanic.Grade] + 1 ) );
 		Assert.IsFalse( ride.IsBrokenDown );
 		Assert.AreEqual( 100, ride.StateOfRepair );
 		Assert.AreEqual( 0, mechanic.AssignedInstanceId );
@@ -344,6 +391,93 @@ public class ParkEconomyTests
 	}
 
 	[TestMethod]
+	public void UpgradesAreQueuedWithoutMechanicsAndWaitForOne()
+	{
+		// STP-PPC 0x10166F1C: buying an upgrade checks money only; a mechanic installs it later.
+		var park = EconomyTestData.Park();
+		park.TryBuild( 1100, out var ride );
+		EconomyTestData.HireBest( park, StaffType.Researcher );
+		park.SetResearchEffort( ResearchCategory.Ride, 0 );
+		while ( !park.Research.IsAvailable( 1100, 1 ) )
+			park.AdvanceDays( 1 );
+		Assert.IsFalse( park.Staff.OfType( StaffType.Mechanic ).Any() );
+		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, park.TryBuyUpgrade( ride!.Id ) );
+		park.AdvanceDays( 10 );
+		Assert.AreEqual( 0, ride.Level, "nobody installs it without a mechanic" );
+		Assert.AreEqual( ParkEconomy.PurchaseResult.UpgradeInProgress, park.TryBuyUpgrade( ride.Id ) );
+		EconomyTestData.HireBest( park, StaffType.Mechanic );
+		park.AdvanceDays( 10 );
+		Assert.AreEqual( 1, ride.Level );
+	}
+
+	private sealed class FixedGuests( int inPark ) : IParkGuestStatistics
+	{
+		public int PeopleInPark => inPark;
+		public int AverageHappiness => 0;
+		public int CountHappierThan( int happiness ) => 0;
+		public int KidsWithBalloonsPercent => 0;
+		public int KidsWithCostumesPercent => 0;
+	}
+
+	[TestMethod]
+	public void ParkRatingSumsCappedCountsOfGuestsAttractionsAndStaff()
+	{
+		var park = EconomyTestData.Park( initialCash: 1000000 );
+		Assert.AreEqual( 0, park.ParkRating );
+		park.GuestStatistics = new FixedGuests( 749 );
+		Assert.AreEqual( 14, park.ParkRating, "749 × 20 / 1000" );
+		park.GuestStatistics = new FixedGuests( 5000 );
+		Assert.AreEqual( 20, park.ParkRating, "guests are capped at 1000" );
+		park.GuestStatistics = NoGuestStatistics.Instance;
+
+		park.TryBuild( 1100, out var ride );
+		Assert.AreEqual( 1, park.ParkRating, "one ride × 3 / 2" );
+		ride!.IsOpen = false;
+		Assert.AreEqual( 1, park.ParkRating, "closed attractions count too" );
+		park.TryBuild( 1203, out _ );
+		park.TryBuild( 1303, out _ );
+		park.TryBuild( 1402, out _ );
+		Assert.AreEqual( 1 + 2 + 2 + 1, park.ParkRating );
+		ride.Level = 2;
+		Assert.AreEqual( 7, park.ParkRating, "a ride at upgrade level 2 adds one" );
+		for ( var i = 0; i < 20; i++ )
+			park.TryBuild( 1203, out _ );
+		Assert.AreEqual( 7 - 2 + 10, park.ParkRating, "shops are capped at 10" );
+
+		for ( var i = 0; i < 6; i++ )
+		{
+			var candidate = park.Staff.Candidates.FirstOrDefault( item => item.Type == StaffType.Handyman );
+			if ( candidate != null )
+				park.Hire( candidate.Id );
+		}
+		var handymen = park.Staff.Members.Count( member => member.Type == StaffType.Handyman );
+		Assert.AreEqual( 15 + Math.Min( handymen, 4 ), park.ParkRating, "each staff type is capped at 4" );
+	}
+
+	[TestMethod]
+	public void CandidateGradesSpreadAroundTheAverageAndWrapBelowZero()
+	{
+		var grades = new HashSet<int>();
+		var park = EconomyTestData.Park();
+		for ( var step = 0; step < 40; step++ )
+		{
+			foreach ( var candidate in park.Staff.Candidates )
+				grades.Add( candidate.Grade );
+			park.Advance( park.Staff.UpdateInterval + ParkCalendar.TicksForHours( 2 ) );
+		}
+		CollectionAssert.AreEquivalent( new[] { 0, 1, 2 }, grades.ToArray(), "average 1: grades 0, 1 and 2 only, no 'great' grade" );
+		var zeroAverage = new ParkEconomy( EconomyTestData.Settings( extra: "StaffPoolInfo.AvgGradeOfHandymen 0\n" ), EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 7 );
+		var handymen = new HashSet<int>();
+		for ( var step = 0; step < 40; step++ )
+		{
+			foreach ( var candidate in zeroAverage.Staff.Candidates.Where( candidate => candidate.Type == StaffType.Handyman ) )
+				handymen.Add( candidate.Grade );
+			zeroAverage.Advance( zeroAverage.Staff.UpdateInterval + ParkCalendar.TicksForHours( 2 ) );
+		}
+		CollectionAssert.AreEquivalent( new[] { 0, 1, 4 }, handymen.ToArray(), "average 0: a raw -1 wraps to 255 and is stored as grade 4" );
+	}
+
+	[TestMethod]
 	public void HandymenCleanLitter()
 	{
 		var park = EconomyTestData.Park();
@@ -356,9 +490,12 @@ public class ParkEconomyTests
 		park.AdvanceDays( 1 );
 		Assert.AreEqual( 50, park.LitterItems );
 		var handyman = EconomyTestData.HireBest( park, StaffType.Handyman );
+		var hourBefore = ParkCalendar.HourIndex( park.Tick );
 		park.AdvanceDays( 1 );
+		var hours = ParkCalendar.HourIndex( park.Tick ) - hourBefore;
+		Assert.IsTrue( hours is 23 or 24, hours.ToString() );
 		var perHour = 60 * ParkEconomy.LitterScale / park.Settings[StaffType.Handyman].WorkDuration[handyman.Grade];
-		Assert.AreEqual( Math.Max( 0, 50 * ParkEconomy.LitterScale - 24 * perHour ), park.LitterScaled );
+		Assert.AreEqual( Math.Max( 0, 50 * ParkEconomy.LitterScale - hours * perHour ), park.LitterScaled, "one cleaning step per park-clock hour" );
 		Assert.IsTrue( park.ParkRating >= rating );
 	}
 
@@ -379,31 +516,98 @@ public class ParkEconomyTests
 		Assert.AreEqual( 0, park.Research.GetProgress( park.Research.Current( ResearchCategory.Ride )! ), "no researchers, no progress" );
 
 		var researcher = EconomyTestData.HireBest( park, StaffType.Researcher );
-		var daily = (long)park.Settings.ResearchAbility[researcher.Grade] * ParkResearch.PointScale;
-		park.AdvanceDays( 1 );
+		var ability = park.Settings.ResearchAbility[researcher.Grade];
+		long Share( int effort, int total ) => (long)Math.Round( (float)((double)((float)ability * ((float)effort / (float)total) * 85f) / 100.0) * (double)ParkResearch.PointScale );
+		void NextResearchTurn() => park.Advance( ParkCalendar.TickOfTurn( (park.Turn / ParkResearch.TurnsPerResearch + 1) * ParkResearch.TurnsPerResearch ) - park.Tick );
+		NextResearchTurn();
 		var minecart = park.Research.Items.Single( item => item.InfoId == 1180 );
-		Assert.AreEqual( daily * 100 / 110, park.Research.GetProgress( minecart ), "ride effort 100 of 100 + upgrade 10" );
-		Assert.AreEqual( daily * 10 / 110, park.Research.GetProgress( park.Research.Current( ResearchCategory.Upgrade )! ) );
+		Assert.AreEqual( Share( 100, 110 ), park.Research.GetProgress( minecart ), "ability x ride effort 100 of 100 + upgrade 10 x work load 85 / 100" );
+		Assert.AreEqual( Share( 10, 110 ), park.Research.GetProgress( park.Research.Current( ResearchCategory.Upgrade )! ) );
+		park.Advance( 1 );
+		Assert.AreEqual( Share( 100, 110 ), park.Research.GetProgress( minecart ), "nothing between research turns" );
 
-		var days = 1;
-		while ( !park.Research.IsAvailable( 1180 ) && days++ < 2000 )
-			park.AdvanceDays( 1 );
+		var ticks = 1;
+		while ( !park.Research.IsAvailable( 1180 ) && ticks++ < 2000 )
+			NextResearchTurn();
 		Assert.IsTrue( park.Research.IsAvailable( 1180 ) );
-		Assert.AreEqual( (int)Math.Ceiling( 800.0 * ParkResearch.PointScale / (daily * 100 / 110) ), days );
+		Assert.AreEqual( (int)Math.Ceiling( 800.0 * ParkResearch.PointScale / Share( 100, 110 ) ), ticks );
 		Assert.AreEqual( 1, events.Count( item => item.Kind == ParkEventKind.ItemResearched && item.InfoId == 1180 ) );
 		Assert.IsTrue( park.Research.IsGroupOpen( ResearchCategory.Ride, 2 ) );
 		Assert.AreEqual( 1106, park.Research.Current( ResearchCategory.Ride )!.InfoId );
 		Assert.AreEqual( 1, park.Counters[ParkCounters.Researched( ResearchCategory.Ride )] );
 
 		park.SetResearchEffort( ResearchCategory.Upgrade, 100 );
-		while ( !park.Research.IsAllResearched && park.Tick < 3600L * ParkCalendar.TicksPerDay )
+		while ( !park.Research.IsAllResearched && park.Tick < ParkCalendar.TickAtDay( 3600 ) )
 			park.AdvanceDays( 1 );
 		Assert.IsTrue( park.Research.IsAllResearched );
 		Assert.IsTrue( park.Research.IsAvailable( 1500 ), "add-on after its target ride" );
 
-		var automatic = EconomyTestData.Park( mode: ParkGameMode.InstantAction );
-		automatic.AdvanceDays( 1 );
-		Assert.IsTrue( automatic.Research.GetProgress( automatic.Research.Current( ResearchCategory.Ride )! ) > 0, "Instant Action research is automatic" );
+		var instant = EconomyTestData.Park( mode: ParkGameMode.InstantAction );
+		instant.Advance( ParkCalendar.TickOfTurn( ParkResearch.TurnsPerResearch ) );
+		Assert.AreEqual( 0, instant.Research.GetProgress( instant.Research.Current( ResearchCategory.Ride )! ), "no staffless Instant Action research" );
+		EconomyTestData.HireBest( instant, StaffType.Researcher );
+		instant.Advance( ParkCalendar.TickOfTurn( ParkResearch.TurnsPerResearch ) );
+		Assert.IsTrue( instant.Research.GetProgress( instant.Research.Current( ResearchCategory.Ride )! ) > 0, "Instant Action researchers research" );
+
+		var seeded = EconomyTestData.Park( mode: ParkGameMode.InstantAction );
+		seeded.SeedResearcherStandIn = true;
+		seeded.Advance( ParkCalendar.TickOfTurn( ParkResearch.TurnsPerResearch ) );
+		Assert.IsTrue( seeded.Research.GetProgress( seeded.Research.Current( ResearchCategory.Ride )! ) > 0, "the seed's researcher stand-in researches" );
+	}
+
+	[TestMethod]
+	public void ResearchGroupsOpenOnTheShareResearchedOfAllOpenGroups()
+	{
+		var scrap = new[] { 50, 30, 20, 10 };
+		EconomyObjectInfo Ride( int id, int group, int research ) => new( id, $"Ride {id}", ParkObjectKind.Ride, ResearchCategory.Ride, group, new[] { new UpgradeLevelInfo( 0, 500, research, 1, 0, scrap ) }, null, null, null, 0, 0, 0, 0, 0, 25, $"rides/r{id}.wad" );
+		var catalog = new EconomyObjectCatalog( new[] { Ride( 1100, 0, 0 ), Ride( 1101, 0, 0 ), Ride( 1102, 0, 0 ), Ride( 1103, 0, 0 ), Ride( 1110, 1, 100 ), Ride( 1111, 1, 100 ), Ride( 1120, 2, 100 ) } );
+		var research = new ParkResearch( EconomyTestData.Settings(), catalog );
+		Assert.AreEqual( 1, research.HighestOpenGroup( ResearchCategory.Ride ), "groups <= 1: 4 of 6 researched (66 %) is below ResearchTech[2] = 80" );
+		while ( !research.IsAvailable( 1110 ) )
+			research.AddResearcherPoints( 100 );
+		Assert.IsFalse( research.IsAvailable( 1111 ) );
+		Assert.AreEqual( 2, research.HighestOpenGroup( ResearchCategory.Ride ), "5 of 6 (83 %) opens group 2 although group 1 is half done" );
+	}
+
+	[TestMethod]
+	public void ResearchFollowsTableOrderNotCost()
+	{
+		var scrap = new[] { 50, 30, 20, 10 };
+		var catalog = new EconomyObjectCatalog( new[]
+		{
+			new EconomyObjectInfo( 1100, "Belly Bounce", ParkObjectKind.Ride, ResearchCategory.Ride, 0, new[] { new UpgradeLevelInfo( 0, 500, 0, 5, 0, scrap ) }, null, null, null, 0, 0, 0, 0, 0, 25, "rides/bouncy.wad" ),
+			new EconomyObjectInfo( 1120, "Expensive", ParkObjectKind.Ride, ResearchCategory.Ride, 1, new[] { new UpgradeLevelInfo( 0, 5000, 900, 1, 0, scrap ) }, null, null, null, 0, 0, 0, 0, 0, 25, "rides/a.wad" ),
+			new EconomyObjectInfo( 1130, "Cheap", ParkObjectKind.Ride, ResearchCategory.Ride, 1, new[] { new UpgradeLevelInfo( 0, 500, 100, 1, 0, scrap ) }, null, null, null, 0, 0, 0, 0, 0, 25, "rides/b.wad" )
+		} );
+		var research = new ParkResearch( EconomyTestData.Settings(), catalog );
+		Assert.AreEqual( 1120, research.Current( ResearchCategory.Ride )!.InfoId, "the first open item in table order, although it costs more" );
+		for ( var step = 0; step < 100 && !research.IsAvailable( 1120 ); step++ )
+			research.AddResearcherPoints( 100 );
+		Assert.IsTrue( research.IsAvailable( 1120 ) );
+		Assert.AreEqual( 1130, research.Current( ResearchCategory.Ride )!.InfoId );
+	}
+
+	[TestMethod]
+	public void BuildChallengesFollowTheBinaryHandlerTable()
+	{
+		var park = EconomyTestData.Park();
+		ChallengeDefinition Challenge( int type, int value, int target, int target2 = 0 ) => new( 0, type, 0, 60, value, target, target2, 0, 1000, false, true );
+		bool Reached( ChallengeDefinition definition ) => park.Objectives.Measure( definition, park.Counters, park.Staff, park.Objects, park.GuestStatistics ) >= ParkObjectives.Target( definition );
+		var upgrade = Challenge( 28, 2, 1100 );
+		Assert.IsFalse( Reached( upgrade ), "no ride: level -1" );
+		var ride = park.RegisterExisting( 1100 );
+		Assert.IsFalse( Reached( Challenge( 30, 0, 1180 ) ) );
+		Assert.IsTrue( Reached( Challenge( 30, 0, 1100 ) ), "an existing ride counts; TargetVal is not read" );
+		Assert.IsTrue( Reached( Challenge( 31, 5, 1100, 1180 ) ), "type 31 shares the type 30 handler: only TargetObj" );
+		Assert.IsTrue( Reached( Challenge( 32, 0, 1100 ) ) );
+		Assert.IsFalse( Reached( Challenge( 33, 0, 1100, 1180 ) ), "type 33 needs both objects" );
+		park.RegisterExisting( 1180 );
+		Assert.IsTrue( Reached( Challenge( 33, 0, 1100, 1180 ) ) );
+		Assert.IsFalse( ParkObjectives.IsCountSinceAcceptance( 30 ) || ParkObjectives.IsCountSinceAcceptance( 33 ), "built counts are absolute" );
+		ride.Level = 1;
+		Assert.IsFalse( Reached( upgrade ), "level byte 1 < TargetVal 2" );
+		ride.Level = 2;
+		Assert.IsTrue( Reached( upgrade ), "the third level (byte 2) reaches TargetVal 2" );
 	}
 
 	[TestMethod]
@@ -453,6 +657,22 @@ public class ParkEconomyTests
 	}
 
 	[TestMethod]
+	public void GoldenTicketsAreCheckedEvery100TurnsInFullSimulationOnly()
+	{
+		foreach ( var mode in new[] { ParkGameMode.FullSimulation, ParkGameMode.InstantAction } )
+		{
+			var park = EconomyTestData.Park( mode: mode );
+			park.OpenPark();
+			for ( var visitor = 0; visitor < 100; visitor++ )
+				park.TryAdmitVisitor( 100, out _ );
+			park.Advance( ParkCalendar.TickOfTurn( ParkEconomy.GoldenTicketCheckInterval ) - 1 );
+			Assert.AreEqual( 0, park.Objectives.GoldenTickets.Count, $"{mode}: not checked before turn 100" );
+			park.Advance( 1 );
+			Assert.AreEqual( mode == ParkGameMode.FullSimulation ? 1 : 0, park.Objectives.GoldenTickets.Count, $"{mode}: checked at turn 100" );
+		}
+	}
+
+	[TestMethod]
 	public void GoldenTicketsAndKeys()
 	{
 		var park = EconomyTestData.Park();
@@ -462,18 +682,23 @@ public class ParkEconomyTests
 		for ( var visitor = 0; visitor < 100; visitor++ )
 			park.TryAdmitVisitor( 100, out _ );
 		park.ReportRecord( ParkRecordKind.CoasterHeight, 0, 110 );
-		park.AdvanceDays( 30 );
+		park.AdvanceMonths( 1 );
 		CollectionAssert.AreEquivalent( new[] { GoldenTicketKind.Visitors, GoldenTicketKind.CoasterHeight }, park.Objectives.GoldenTickets.ToArray() );
 		Assert.AreEqual( 2, events.Count( item => item.Kind == ParkEventKind.GoldenTicketWon ) );
 		Assert.AreEqual( 2, park.GoldenTicketsAvailable );
 		Assert.AreEqual( ParkEconomy.PurchaseResult.NotEnoughGoldenTickets, park.TryBuild( 1112, out _ ) );
 		park.ReportRecord( ParkRecordKind.WaterLength, 0, 60 );
-		park.AdvanceDays( 30 );
+		park.AdvanceMonths( 1 );
 		var earnedProgress = new PlayerProgress();
 		earnedProgress.SetTickets( park.Settings.Theme, park.Objectives.GoldenTickets.Count );
 		Assert.AreEqual( 3, earnedProgress.TotalTickets );
 		Assert.AreEqual( PlayerProgress.StartingKeys + 1, earnedProgress.Keys );
+		var cash = park.Balance;
 		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, park.TryBuild( 1112, out _ ) );
+		Assert.AreEqual( 0, park.GoldenTicketsAvailable );
+		Assert.AreEqual( cash, park.Balance, "a ticket purchase costs no cash" );
+		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, park.TryBuild( 1112, out _ ), "a second copy takes the cash path" );
+		Assert.AreEqual( cash - 2500, park.Balance );
 		Assert.AreEqual( 0, park.GoldenTicketsAvailable );
 		earnedProgress.SetTickets( park.Settings.Theme, park.Objectives.GoldenTickets.Count );
 		Assert.AreEqual( PlayerProgress.StartingKeys + 1, earnedProgress.Keys, "Spending mystery-item tickets preserves earned keys." );
@@ -481,6 +706,7 @@ public class ParkEconomyTests
 		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( ParkSaveFile.Serialize( park ) ) ), park.Settings, park.Catalog );
 		Assert.AreEqual( 0, restored.GoldenTicketsAvailable );
 		Assert.AreEqual( 3, restored.TicketsSpent );
+		CollectionAssert.AreEqual( new[] { 1112 }, restored.TicketItems.ToArray() );
 		var restoredProgress = new PlayerProgress();
 		restoredProgress.SetTickets( restored.Settings.Theme, restored.Objectives.GoldenTickets.Count );
 		Assert.AreEqual( earnedProgress.TotalTickets, restoredProgress.TotalTickets );
@@ -595,7 +821,7 @@ public class ParkEconomyTests
 		var json = ParkSaveFile.Serialize( park );
 		void Rejects( string text ) => Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( text ) ) );
 		Rejects( json[..(json.Length / 2)] );
-		Rejects( json.Replace( "\"Version\": 1", "\"Version\": 2" ) );
+		Rejects( json.Replace( $"\"Version\": {ParkSaveFile.CurrentVersion}", "\"Version\": 1" ) );
 		Rejects( json.Replace( "\"opentpw-park\"", "\"other\"" ) );
 		Rejects( json.Replace( "\"Tick\": 0,", "\"Tick\": 0, \"Extra\": 1," ) );
 		Rejects( json.Replace( "\"EntranceFee\": 20,", "" ) );
@@ -614,18 +840,18 @@ public class ParkEconomyTests
 	{
 		var payload = Enumerable.Repeat( (byte)0xCD, 4096 ).ToArray();
 		void Int( int offset, int value ) => BitConverter.GetBytes( value ).CopyTo( payload, offset );
-		var words = new[] { 25, 87987, 0, 1, 87787, 0, -12013, 0 };
-		for ( var index = 0; index < 8; index++ )
+		var words = new[] { 25, 87987, 0, 1, 87787, 0, -12013 };
+		for ( var index = 0; index < words.Length; index++ )
 			Int( 1000 + index * 4, words[index] );
 		var loans = new[] { (100000, 36), (50000, 36), (25000, 36), (18000, 24) };
 		for ( var index = 0; index < loans.Length; index++ )
 		{
-			var offset = 1032 + index * 32;
+			var offset = 1028 + index * 32;
 			Array.Clear( payload, offset, 32 );
-			Int( offset, loans[index].Item1 );
-			Int( offset + 8, loans[index].Item2 );
-			Int( offset + 12, loans[index].Item1 / loans[index].Item2 );
-			Int( offset + 24, index );
+			Int( offset + 4, loans[index].Item1 );
+			Int( offset + 12, loans[index].Item2 );
+			Int( offset + 16, loans[index].Item1 / loans[index].Item2 );
+			Int( offset + 28, index );
 		}
 		var challenges = new[] { (3, 60, 30, 0, 5000, 0, true), (18, 60, 1, 1180, 7500, 20, true), (20, 180, 200, 1180, 30000, 0, false) };
 		for ( var index = 0; index < challenges.Length; index++ )
@@ -643,8 +869,8 @@ public class ParkEconomyTests
 		}
 		var records = SaveEconomyRecords.Parse( payload );
 		Assert.AreEqual( 4, records.Loans.Count );
-		Assert.AreEqual( new SaveLoanRecord( 1064, 1, 50000, 36, 1388, 0, 0, 0 ), records.Loans[1] );
-		CollectionAssert.AreEqual( words, records.WordsBeforeLoans.ToArray() );
+		Assert.AreEqual( new SaveLoanRecord( 1060, 1, false, 50000, 0, 36, 1388, false, 0, 1 ), records.Loans[1] );
+		Assert.AreEqual( new SaveBankRecord( 1000, 25, 87987, 0, true, 87787, 0, -12013 ), records.Bank );
 		Assert.AreEqual( 3, records.Challenges.Count );
 		Assert.AreEqual( new SaveChallengeRecord( 2046, 18, 60, 1, 1180, 0, 7500, 20, true ), records.Challenges[1] );
 		Assert.IsFalse( records.Challenges[2].Independent );
@@ -653,7 +879,7 @@ public class ParkEconomyTests
 		Array.Copy( payload, 2001, duplicate, 3000, 90 );
 		Assert.ThrowsException<InvalidDataException>( () => SaveEconomyRecords.Parse( duplicate ) );
 		var missing = payload.ToArray();
-		Array.Fill( missing, (byte)0xCD, 1032, 128 );
+		Array.Fill( missing, (byte)0xCD, 1028, 128 );
 		Assert.ThrowsException<InvalidDataException>( () => SaveEconomyRecords.Parse( missing ) );
 
 		var settings = EconomyTestData.Settings( apr: 0 );

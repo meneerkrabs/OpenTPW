@@ -6,6 +6,85 @@ progress, and verified code to the fork. Git history records the published
 snapshots; original assets, native binaries, captures, and local agent runtime
 files remain outside that publication.
 
+## Merged PowerPC evidence lanes
+
+The reviewed clock/PEF, economy/save, VM, UI-binding, advisor/audio, guest
+and TPI-comparison lanes were merged into the verified local bundle. Positive-APR
+save validation does not apply an unproven annuity equation. Layer I effects
+decode; the original PRNG, complete controllers, clock/event/audio integration
+and final fidelity remain explicit open work.
+
+Before the remote integration, bounded merge checks passed: 31 toolkit,
+7 fidelity and 84 review tests; 22 save/economy, 41 VM, 56 UI and 49 audio/LIP
+checks; standalone scheduler 35, loan 5,437 assertions, advisor 52 and guest 23.
+The combined Release regression selection passed 154 cases without skips and
+the Release build had zero errors. A Dutch Metal smoke passed 222 frames,
+including reload, payments and read-only guards. These results qualify their
+bounded slices, not every original game rule. Reference helpers remain separate
+from production gameplay; vertex-animation/runtime and mode changes continue
+in their own worktrees with review.
+
+## Remote integration on .NET 10
+
+The verified local bundle was reconciled with the remote .NET 10, first-run
+setup, Linux native-library and Retina updates in an isolated integration
+worktree. The merge retains the independently validated Layer I factor math,
+both branches' codec tests, the packed 40-byte SDT header/name fixes and actual
+MPEG sample-rate/channel metadata. Repository documentation remains English.
+
+Review fixes preserve selected Instant Action mode when loading after a return
+to the lobby, qualify the still-missing original credit eligibility predicate,
+and keep setup responsive when a mounted drive stalls. Discovery/inspection
+use bounded child processes with cancellation and conservative exit ownership;
+unknown editions are not classified from generic folder trees, while the exact
+supplied unsupported Sim Coaster retail signature is rejected.
+
+Own macOS arm64 verification on SDK 10.0.401:
+
+- The full original/six-language/bonus/MTR/native suite ran **955 cases**:
+  **952 passed, one failed, two skipped**, in 7.30 minutes. The only failure was
+  the missing manual ECON-007 documentation row; it was restored and the
+  approximation consistency test then passed on its own. The skipped checks
+  require Linux libdl or a case-sensitive filesystem.
+- After the final cleanup-ownership fix, **41 setup/discovery/lifecycle and
+  approximation checks passed without skips**, including two new injected
+  kill/status-failure regressions and picker cancellation. **106 codec/metadata/SDT/economy checks passed
+  without skips**.
+- Dutch Metal smoke passed **231 frames**: the original payment/reload/read-only
+  checks plus Instant Action → lobby → load, with Easy balance layers and
+  $100,000 retained. The requested UI scale 2 fitted to 1 at 1280×720.
+- The isolated evidence runner reached **230 Python cases**, with no failures
+  and eight missing private UI-fixture skips; all six retained SDK 8 standalone
+  harnesses passed. Source-reference tools follow .NET 10; source-link-only
+  helpers retain their compatible framework.
+
+Release builds have zero errors; existing dependency, nullable/compiler and
+new SDK analyzer warnings remain. These checks qualify the merge and bounded
+regressions, not original gameplay/device fidelity or every other OS/edition.
+
+## Latest remote UI and graphics updates
+
+The integration also includes remote commit `e31c804`: optional local texture
+packs, world-only capture, original-style online screens, text input/scrolling
+and Options > Game files. First-run setup asks only for the game folder; its
+bounded inspection/picker behavior survives that simplification. In-game
+folder changes use the same cancellable children, provide explicit typed-path
+recovery and cancel owned work when screens or GameFlow are disposed.
+
+After this update, **182 focused texture/UI/online/setup/display/compatibility
+checks passed with no skips**, and the Release build had zero errors. Dutch
+Metal smoke passed **264 frames**, including the new online and folder screens
+and the earlier mode/payment/reload/read-only regressions. A world-only capture
+wrote a validated **1280×720 PNG** outside Git. Text readback now selects the
+exact glyph range of its draw; the earlier overlap heuristic incorrectly
+included covered glyphs from the underlying lobby. No threshold was relaxed.
+
+`scripts/run.sh` selects the private SDK 10 fallback before the retained SDK 8
+on the verified arm64 route and respects explicit `DOTNET`; shell syntax and
+normal selection were checked. Linux/Windows native execution, actual external
+upscaler execution and every platform's live folder dialog remain separate
+checks. No original assets, captures or native binaries are published.
+
 ## Integrated check after resumption
 
 The advisor/compat, front-end, rides, and online work has been merged with
@@ -326,8 +405,8 @@ Terrain/save slice (October 9, 2026, worktree `terrain`):
   `Easy_Standard.sam`; category → object → `Easy_` object files) with a source
   reference per value. Inventory of all economy, staff, research, and goal
   settings with meaning and use in [ECONOMY.md](ECONOMY.md).
-- `ParkEconomy`: deterministic park clock (day = 240 fixed ticks, 30-day months:
-  approximation), pause/speeds, ledger with the original UI categories, entry
+- `ParkEconomy`: deterministic park clock (first day = 240 fixed ticks with 30-day
+  months; now the traced 248 ms turns and civil calendar, see ECONOMY.md), pause/speeds, ledger with the original UI categories, entry
   price, shop and sideshow prices, build, upgrade, cell and land costs, scrap
   value, loans (LOANNAMES), bankruptcy after six months in the red (TAG_SYSTEM
   texts), staff pool, wages (BaseWage × PayMultiplier), training,
@@ -515,3 +594,36 @@ Using the Mac CD of Sim Theme Park (HFS, November 2000) as original data:
   readable code (`.text` entropy 5.83 instead of 7.92) and the import list of
   TPW's `TP.ICD` (DDRAW, DINPUT, DSOUND, QMIXER, `wea*`, WSOCK32, USP10). The PE
   timestamp (1996) was rewritten by the crack and says nothing about the build.
+
+## Final pre-push remote updates — October 10, 2026
+
+Remote commits `2160e19` and `f4482c4` are retained: read-only PS2 FKNL/SSH
+viewing/export support and button-label fitting. The generated register was
+reconciled at 136 unresolved IDs. The affected FKNL, text-fit and widget filter
+passed **16 cases**; one private PS2 corpus case was skipped because its fixture
+path was not supplied. Release build passed with zero errors, and the Dutch
+Metal smoke passed **264 frames** with strict text readback and the existing
+online/folder, mode, payment, reload and read-only guards. No wider codec or
+research batch was included in this merge.
+
+## Automatic advisor (October 10, 2026)
+
+- The advisor speaks by itself in parks for the traced game events: level start
+  (events 10 then 0: welcome response 1 from the level bank; in Instant Action
+  also advice 323 → response 587 → global 606), bankruptcy (event 2 → 274/275)
+  and park open/close (events 3/4 → 308–311). Descriptor rows for these five
+  messages are in `AdvisorTables`; responses come from the shipped table by
+  stored ID. The scored eight-slot queue, eligibility and history are a port of
+  the reviewed lane model; scores and group controls come from `Advisor.sam` at
+  runtime. Park open/close score 20 is below the minimum 25, so it queues and
+  never plays. `--no-advisor` and the Game Options Advisor/Tutorial switches are
+  honoured. Details and the seven new approximations ADVISOR-015–021: LIPS.md,
+  "Automatic advice".
+- Tests: full suite without assets 895 passed / 233 skipped, with
+  `OPENTPW_GAME_PATH` 1,065 / 63; 0 failed. Advisor subset with assets 63 / 1
+  (German overlay not supplied). Native macOS arm64 Metal `--smoke-test
+  --load-original-level jungle` passed and logged response 1 from
+  `/levels/jungle/Speech/speechHD.SDT` (28.63 s, 35 LIP marks).
+- Open: the other 346 descriptors and computed score producers, the original
+  producers' conditions for events 2/3/4, the pause-aware advisor clock, the
+  animation/deferred speech start, and listening/visual checks of the result.

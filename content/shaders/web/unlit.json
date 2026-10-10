@@ -1,0 +1,50 @@
+{
+  "fixClipSpaceZ": true,
+  "invertVertexOutputY": true,
+  "vertexElements": [
+    {
+      "name": "position",
+      "semantic": "TextureCoordinate",
+      "format": "Float3",
+      "offset": 0
+    },
+    {
+      "name": "normal",
+      "semantic": "TextureCoordinate",
+      "format": "Float3",
+      "offset": 0
+    },
+    {
+      "name": "texCoords",
+      "semantic": "TextureCoordinate",
+      "format": "Float2",
+      "offset": 0
+    }
+  ],
+  "resourceLayouts": [
+    [
+      {
+        "name": "ObjectUniformBuffer",
+        "kind": "UniformBuffer",
+        "stages": "Vertex, Fragment",
+        "options": "None"
+      }
+    ],
+    [
+      {
+        "name": "Color",
+        "kind": "TextureReadOnly",
+        "stages": "Fragment",
+        "options": "None"
+      },
+      {
+        "name": "s_Color",
+        "kind": "Sampler",
+        "stages": "Fragment",
+        "options": "None"
+      }
+    ]
+  ],
+  "vertex": "#version 300 es\n\nstruct VS_OUT\n{\n    vec2 vTexCoords;\n    vec3 vNormal;\n    vec3 vPosition;\n};\n\nlayout(std140) uniform ObjectUniformBuffer\n{\n    mat4 g_mModel;\n    mat4 g_mView;\n    mat4 g_mProj;\n    vec3 g_vLightPos;\n    vec3 g_vLightColor;\n    vec3 g_vCameraPos;\n} g_oUbo;\n\nout vec2 vdspv_fsin0_vTexCoords;\nout vec3 vdspv_fsin0_vNormal;\nout vec3 vdspv_fsin0_vPosition;\nlayout(location = 2) in vec2 texCoords;\nlayout(location = 1) in vec3 normal;\nlayout(location = 0) in vec3 position;\n\nvoid main()\n{\n    vdspv_fsin0_vTexCoords = texCoords;\n    vdspv_fsin0_vNormal = normal;\n    vdspv_fsin0_vPosition = vec3((g_oUbo.g_mModel * vec4(position, 1.0)).xyz);\n    vec4 pos = g_oUbo.g_mModel * vec4(position, 1.0);\n    gl_Position = (g_oUbo.g_mProj * g_oUbo.g_mView) * pos;\n    gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;\n    gl_Position.y = -gl_Position.y;\n}\n\n",
+  "fragment": "#version 300 es\nprecision mediump float;\nprecision highp int;\n\nstruct VS_OUT\n{\n    highp vec2 vTexCoords;\n    highp vec3 vNormal;\n    highp vec3 vPosition;\n};\n\nlayout(std140) uniform ObjectUniformBuffer\n{\n    highp mat4 g_mModel;\n    highp mat4 g_mView;\n    highp mat4 g_mProj;\n    highp vec3 g_vLightPos;\n    highp vec3 g_vLightColor;\n    highp vec3 g_vCameraPos;\n} g_oUbo;\n\nuniform highp sampler2D Color;\n\nin highp vec2 vdspv_fsin0_vTexCoords;\nin highp vec3 vdspv_fsin0_vNormal;\nin highp vec3 vdspv_fsin0_vPosition;\nlayout(location = 0) out highp vec4 fragColor;\n\nvoid main()\n{\n    highp vec4 vColor = texture(Color, vdspv_fsin0_vTexCoords);\n    fragColor = vColor;\n}\n\n"
+}

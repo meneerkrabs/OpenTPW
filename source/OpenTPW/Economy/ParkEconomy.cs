@@ -39,6 +39,7 @@ public sealed class ParkEconomy : IParkEconomy
 		Settings = settings ?? throw new ArgumentNullException( nameof( settings ) );
 		Catalog = catalog ?? throw new ArgumentNullException( nameof( catalog ) );
 		Mode = mode;
+		Features = ParkModeFeatures.For( mode );
 		Random = new DeterministicRandom( seed );
 		Ledger = new ParkLedger( settings.InitialCash );
 		Staff = new ParkStaff( settings );
@@ -55,6 +56,12 @@ public sealed class ParkEconomy : IParkEconomy
 	public BalanceSettings Settings { get; }
 	public IEconomyObjectCatalog Catalog { get; }
 	public ParkGameMode Mode { get; }
+	public ParkModeFeatures Features { get; }
+	/// <summary>
+	/// Set for an Instant Action start that imported the shipped seed park, which ships a researcher whose
+	/// staff record is not decoded; <see cref="DoResearch"/> stands in for it while no researcher is employed.
+	/// </summary>
+	public bool SeedResearcherStandIn { get; set; }
 	public DeterministicRandom Random { get; }
 	public ParkLedger Ledger { get; }
 	public ParkStaff Staff { get; }
@@ -71,6 +78,9 @@ public sealed class ParkEconomy : IParkEconomy
 	public int MonthsInRed { get; private set; }
 	public long LitterScaled { get; private set; }
 	public int TicketsSpent { get; private set; }
+	private readonly HashSet<int> ticketItems = new();
+	/// <summary>Objects bought with golden tickets; further copies are paid in cash.</summary>
+	public IReadOnlyCollection<int> TicketItems => ticketItems;
 	public int NextObjectId { get; private set; } = 1;
 	public IReadOnlyCollection<ParkObjectState> Objects => objects.Values;
 	public IReadOnlyList<LoanAccount> Loans => loans;
@@ -82,7 +92,7 @@ public sealed class ParkEconomy : IParkEconomy
 
 	/// <summary>Loan offers that can still be taken; none in Instant Action (UIHELPTEXT 493).</summary>
 	// [BIN:STP-PPC:0x10154AA0 loans window] the Available Loans window only opens outside game type 2 (Instant Action)
-	public IEnumerable<LoanOffer> AvailableLoans => Mode == ParkGameMode.InstantAction
+	public IEnumerable<LoanOffer> AvailableLoans => !Features.Loans
 		? Enumerable.Empty<LoanOffer>()
 		: Settings.Loans.Where( offer => !takenOffers.Contains( offer.Index ) );
 
@@ -104,26 +114,81 @@ public sealed class ParkEconomy : IParkEconomy
 	/// <summary>One fixed 60 Hz frame tick: advances the park by <see cref="Speed"/> ticks (0 when paused).</summary>
 	public void AdvanceFixedTick() => Advance( (int)Speed );
 
-	/// <summary>Advances the simulation by <paramref name="ticks"/> park ticks, running hourly, daily and monthly updates at their boundaries.</summary>
+	/// <summary>Advances the simulation by <paramref name="ticks"/> fixed ticks. Each new park turn runs the turn work and the hourly, daily and monthly updates for the calendar boundaries it crosses.</summary>
 	public void Advance( long ticks )
 	{
 		ArgumentOutOfRangeException.ThrowIfNegative( ticks );
 		// [APPROX:ECON-030] the simulation stops once bankrupt — evidence needed: capture of the bankrupt state
 		for ( long step = 0; step < ticks && !IsBankrupt; step++ )
 		{
+			var previousTurn = ParkCalendar.Turn( Tick );
 			Tick++;
-			if ( Tick % ParkCalendar.TicksPerHour == 0 )
-				UpdateHour();
-			if ( Tick % ParkCalendar.TicksPerDay != 0 )
-				continue;
-			var day = ParkCalendar.DayIndex( Tick );
-			EndDay( day - 1 );
-			if ( day % ParkCalendar.DaysPerMonth == 0 )
-				EndMonth( day / ParkCalendar.DaysPerMonth );
+			var turn = ParkCalendar.Turn( Tick );
+			if ( turn != previousTurn )
+				AdvanceTurn( previousTurn, turn );
 		}
 	}
 
-	public void AdvanceDays( int days ) => Advance( (long)days * ParkCalendar.TicksPerDay );
+	/// <summary>The golden-ticket check runs every 100 park turns.</summary>
+	public const int GoldenTicketCheckInterval = 100;
+	/// <summary>Staff job time is kept in tenths of a park-clock hour.</summary>
+	public const int BusyTicksPerHour = 10;
+
+	public long Turn => ParkCalendar.Turn( Tick );
+
+	private void AdvanceTurn( long previousTurn, long turn )
+	{
+		// [BIN:STP-PPC:0x100F0284 researcher update] each researcher not in an excluded state does research when the turn counter is a multiple of 20
+		if ( turn % ParkResearch.TurnsPerResearch == 0 )
+			DoResearch();
+		// [BIN:STP-PPC:0x100D67F0 world update] the golden-ticket check (0x100D31D0) runs when the turn counter is a multiple of 100, and only in Full Simulation (game type 0)
+		if ( turn % GoldenTicketCheckInterval == 0 && Mode == ParkGameMode.FullSimulation )
+			CheckGoldenTickets();
+		// [BIN:STP-PPC:0x100E3F0C calendar update] day, month and year events fire when the extracted date fields change
+		var before = ParkCalendar.Epoch.AddSeconds( previousTurn * ParkCalendar.SecondsPerTurn );
+		var now = ParkCalendar.Epoch.AddSeconds( turn * ParkCalendar.SecondsPerTurn );
+		var hourBefore = previousTurn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerHour;
+		for ( var hour = hourBefore + 1; hour <= turn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerHour && !IsBankrupt; hour++ )
+			UpdateHour();
+		var dayBefore = previousTurn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerDay;
+		var day = turn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerDay;
+		for ( var ended = dayBefore; ended < day && !IsBankrupt; ended++ )
+			EndDay( ended );
+		if ( now.Month != before.Month || now.Year != before.Year )
+			EndMonth( (now.Year - ParkCalendar.Epoch.Year) * ParkCalendar.MonthsPerYear + now.Month - 1 );
+		if ( now.Year != before.Year )
+			Ledger.StartYear();
+	}
+
+	private void DoResearch()
+	{
+		var employed = Staff.OfType( StaffType.Researcher ).ToList();
+		var abilities = employed.Where( ParkResearch.CanResearch ).Select( member => Settings.ResearchAbility[member.Grade] ).ToList();
+		// Research comes from researchers only (Mac 0xf0728 has no staffless path).
+		if ( employed.Count == 0 && SeedResearcherStandIn && Mode == ParkGameMode.InstantAction )
+			// [APPROX:ECON-019] stand-in for the Instant Action seed's undecoded researcher: one grade-2 researcher while none is employed — evidence needed: Easymode.TPWI staff records
+			abilities.Add( Settings.ResearchAbility[2] );
+		foreach ( var ability in abilities )
+		{
+			foreach ( var item in Research.AddResearcherPoints( ability ) )
+			{
+				Counters.Add( ParkCounters.Researched( item.Category ), 1 );
+				Raise( ParkEventKind.ItemResearched, item.Level, 0, item.InfoId, Catalog.TryGet( item.InfoId, out var info ) ? info.Name : "" );
+			}
+		}
+	}
+
+	private void CheckGoldenTickets()
+	{
+		foreach ( var ticket in Objectives.CheckGoldenTickets( Counters, guestStatistics, Research, Ledger.ProfitThisYear, monthlyAdmissions ) )
+			Raise( ParkEventKind.GoldenTicketWon, (int)ticket, 0, 0, ticket.ToString() );
+	}
+
+	/// <summary>Advances to the start of the calendar day <paramref name="days"/> days after the current one.</summary>
+	public void AdvanceDays( int days ) => Advance( Math.Max( 0, ParkCalendar.TickAtDay( ParkCalendar.DayIndex( Tick ) + days ) - Tick ) );
+
+	/// <summary>Advances to the start of the calendar month <paramref name="months"/> months after the current one.</summary>
+	public void AdvanceMonths( int months ) => Advance( Math.Max( 0, ParkCalendar.TickAtMonth( ParkCalendar.MonthIndex( Tick ) + months ) - Tick ) );
 
 	private void UpdateHour()
 	{
@@ -132,7 +197,7 @@ public sealed class ParkEconomy : IParkEconomy
 		{
 			if ( member.BusyTicks == 0 )
 				continue;
-			member.BusyTicks = Math.Max( 0, member.BusyTicks - ParkCalendar.TicksPerHour );
+			member.BusyTicks = Math.Max( 0, member.BusyTicks - BusyTicksPerHour );
 			if ( member.BusyTicks == 0 )
 				FinishJob( member );
 		}
@@ -187,7 +252,7 @@ public sealed class ParkEconomy : IParkEconomy
 			var hours = (long)role.WorkDuration[mechanic.Grade];
 			if ( job.PendingLevel > job.Level && Catalog.TryGet( job.InfoId, out var info ) && job.PendingLevel < info.Upgrades.Count )
 				hours *= Math.Max( 1, info.Upgrades[job.PendingLevel].DurationOfUpgrade );
-			mechanic.BusyTicks = Math.Max( 1, hours ) * ParkCalendar.TicksPerHour;
+			mechanic.BusyTicks = Math.Max( 1, hours ) * BusyTicksPerHour;
 			mechanic.AssignedInstanceId = job.Id;
 			mechanic.State = StaffState.Working;
 			job.MechanicId = mechanic.Id;
@@ -225,13 +290,8 @@ public sealed class ParkEconomy : IParkEconomy
 			else if ( before >= WornStateOfRepair && item.StateOfRepair < WornStateOfRepair )
 				Raise( ParkEventKind.RideWorn, item.StateOfRepair, item.Id, item.InfoId );
 		}
-		var points = Research.DailyPoints( Staff.OfType( StaffType.Researcher ), Mode == ParkGameMode.InstantAction );
-		foreach ( var item in Research.AdvanceDay( points ) )
-		{
-			Counters.Add( ParkCounters.Researched( item.Category ), 1 );
-			Raise( ParkEventKind.ItemResearched, item.Level, 0, item.InfoId, Catalog.TryGet( item.InfoId, out var info ) ? info.Name : "" );
-		}
-		foreach ( var (kind, index, amount, detail) in Objectives.AdvanceDay( day + 1, MeasureChallenge ).ToList() )
+		var challenges = Features.Challenges ? Objectives.AdvanceDay( day + 1, MeasureChallenge ).ToList() : new();
+		foreach ( var (kind, index, amount, detail) in challenges )
 		{
 			if ( kind == ParkEventKind.ChallengeCompleted )
 				Post( LedgerCategory.OtherIncome, amount );
@@ -260,11 +320,13 @@ public sealed class ParkEconomy : IParkEconomy
 		{
 			var (account, paid) = LoanMath.Pay( loans[index] );
 			Post( LedgerCategory.LoanPayments, paid );
+			Ledger.ChargeLoanInterest( LoanMath.InstalmentInterest( account.MonthlyRepayment, account.Months, account.OriginalAmount ) );
 			Raise( ParkEventKind.LoanPayment, paid, 0, account.OfferIndex );
 			if ( account.MonthsRemaining == 0 || account.RemainingBalance <= 0 )
 			{
 				loans.RemoveAt( index );
 				// [BIN:STP-PPC:0x100CC21C loan instalment] a fully repaid loan clears its bought flag; 0x100CC9E8 then offers it again when the credit test passes
+				// [APPROX:ECON-007] reopening has no original credit-eligibility gate — evidence needed: implement the traced credit predicate and qualify its cross-edition behavior
 				takenOffers.Remove( account.OfferIndex );
 				Raise( ParkEventKind.LoanRepaid, 0, 0, account.OfferIndex );
 			}
@@ -302,9 +364,6 @@ public sealed class ParkEconomy : IParkEconomy
 			MonthsInRed = 0;
 		var closed = Ledger.CloseMonth( nextMonthIndex, ParkRating, ParkValue );
 		Raise( ParkEventKind.MonthEnded, closed.ClosingBalance, 0, 0, $"in ${closed.MoneyIn}, out ${closed.MoneyOut}" );
-		// [APPROX:ECON-033] golden tickets are checked at each month end — evidence needed: capture of the award timing
-		foreach ( var ticket in Objectives.CheckGoldenTickets( Counters, guestStatistics, Research, Ledger.History, monthlyAdmissions ) )
-			Raise( ParkEventKind.GoldenTicketWon, (int)ticket, 0, 0, ticket.ToString() );
 		if ( nextMonthIndex % ParkCalendar.MonthsPerYear == 0 )
 		{
 			var year = Ledger.SummariseYear( nextMonthIndex / ParkCalendar.MonthsPerYear - 1 );
@@ -327,11 +386,19 @@ public sealed class ParkEconomy : IParkEconomy
 		if ( !Catalog.TryGet( item.InfoId, out var info ) || info.Upgrades.Count == 0 )
 			return 0;
 		var level = Math.Min( item.Level, info.Upgrades.Count - 1 );
-		// [APPROX:ECON-025] scrap value basis = catalogue cost of all levels up to the current one — evidence needed: capture of scrap value
+		// [APPROX:ECON-025] scrap value basis = catalogue cost of all levels up to the current one; a scrap year is 365 park-clock days — evidence needed: capture of scrap value
 		var basis = info.Upgrades.Take( level + 1 ).Sum( upgrade => upgrade.CostOfUpgrade );
-		var year = (int)Math.Min( 3, (Tick - item.BuiltTick) / ((long)ParkCalendar.DaysPerYear * ParkCalendar.TicksPerDay) );
-		var percent = info.Upgrades[level].ScrapValuePercentByYear.Count > year ? info.Upgrades[level].ScrapValuePercentByYear[year] : 0;
-		return basis * percent / 100;
+		return basis * ScrapPercent( item ) / 100;
+	}
+
+	/// <summary>The object's age-based scrap percentage, <c>Upgrades[level].ScrapValueYearN</c> (year 4 onwards uses year 4).</summary>
+	public int ScrapPercent( ParkObjectState item )
+	{
+		if ( !Catalog.TryGet( item.InfoId, out var info ) || info.Upgrades.Count == 0 )
+			return 0;
+		var level = Math.Min( item.Level, info.Upgrades.Count - 1 );
+		var year = (int)Math.Min( 3, (ParkCalendar.Seconds( Tick ) - ParkCalendar.Seconds( item.BuiltTick )) / (365 * ParkCalendar.SecondsPerDay) );
+		return info.Upgrades[level].ScrapValuePercentByYear.Count > year ? info.Upgrades[level].ScrapValuePercentByYear[year] : 0;
 	}
 
 	/// <summary>Park value (UITEXT 163): the sum of all scrap values — an <b>approximation</b>.</summary>
@@ -341,19 +408,24 @@ public sealed class ParkEconomy : IParkEconomy
 	public int LitterItems => (int)(LitterScaled / LitterScale);
 
 	/// <summary>
-	/// Park rating 0–100 (UITEXT 155). The original formula is unknown; this <b>approximation</b> averages
-	/// visitor happiness (weight 2), attractions (sum of <c>Info.AttractionValue</c> of open items / 3,
-	/// capped at 100) and cleanliness (100 minus litter items).
+	/// Park rating 0–100 (UITEXT 155): a sum of capped counts of guests, attractions and staff. It does
+	/// not use guest happiness, litter or whether an attraction is open.
 	/// </summary>
+	// [BIN:STP-PPC:0x100C7B24 park rating] min(guests in park, 1000) × 20 / 1000; attractions of sub-kind 0 × 3 / 2 up to 20; sub-kinds 1 and 2 × 2 up to 10 each; sub-kind 3 up to 10; sub-kind 0 at upgrade level 2 or more up to 10; each of the five staff types up to 4
 	public int ParkRating
 	{
 		get
 		{
-			var attractions = Math.Min( 100, objects.Values.Where( item => item.IsOpen && !item.IsBrokenDown )
-				.Sum( item => Catalog.TryGet( item.InfoId, out var info ) ? info.AttractionValue : 0 ) / 3 );
-			var cleanliness = Math.Max( 0, 100 - LitterItems );
-			// [APPROX:ECON-027] park rating = (2 x happiness + attractions/3 + cleanliness) / 4 — evidence needed: park rating formula (binary/captures)
-			return Math.Clamp( (2 * guestStatistics.AverageHappiness + attractions + cleanliness) / 4, 0, 100 );
+			var guests = Math.Min( guestStatistics.PeopleInPark, 1000 ) * 20 / 1000;
+			// [APPROX:ECON-027] the record sub-kinds 0–3 are rides, shops, sideshows and features, and every hired staff member counts — evidence needed: the record field at +0x4C behind sub-kind +0x7A8 and the staff byte +3 tested by FUN_100C4064
+			int Count( ParkObjectKind kind, int minimumLevel = 0 ) => objects.Values.Count( item => item.Kind == kind && item.Level >= minimumLevel );
+			var attractions = Math.Min( Count( ParkObjectKind.Ride ) * 3 / 2, 20 )
+				+ Math.Min( Count( ParkObjectKind.Shop ) * 2, 10 )
+				+ Math.Min( Count( ParkObjectKind.Sideshow ) * 2, 10 )
+				+ Math.Min( Count( ParkObjectKind.Feature ), 10 )
+				+ Math.Min( Count( ParkObjectKind.Ride, 2 ), 10 );
+			var staff = Enum.GetValues<StaffType>().Sum( type => Math.Min( Staff.Members.Count( member => member.Type == type ), 4 ) );
+			return guests + attractions + staff;
 		}
 	}
 
@@ -406,7 +478,6 @@ public sealed class ParkEconomy : IParkEconomy
 		NotEnoughMoney,
 		NotEnoughGoldenTickets,
 		Bankrupt,
-		NoMechanics,
 		NotAvailableInInstantAction,
 		AlreadyFullyUpgraded,
 		UpgradeInProgress,
@@ -430,18 +501,23 @@ public sealed class ParkEconomy : IParkEconomy
 			return PurchaseResult.NotResearched;
 		if ( info.Kind == ParkObjectKind.Upgrade && !objects.Values.Any( item => item.InfoId == info.AddOnTargetId ) )
 			return PurchaseResult.MissingTargetRide;
-		if ( Settings.CanSpendTickets && info.GoldenTicketCost > GoldenTicketsAvailable )
+		// [BIN:STP-PPC:0x100DA874 object purchase] an object with a GoldenTicketCost (+0xC4) above 0 that the park has not yet bought with tickets costs that many tickets (0x100D3000; allowed when cost <= earned - spent) and no cash; it joins the owned set, and later copies and ticket-free objects take the cash path
+		var payWithTickets = Settings.CanSpendTickets && info.GoldenTicketCost > 0 && !ticketItems.Contains( infoId );
+		if ( payWithTickets && info.GoldenTicketCost > GoldenTicketsAvailable )
 			return PurchaseResult.NotEnoughGoldenTickets;
 		// [APPROX:ECON-028] purchases need a balance covering the cost — evidence needed: capture of building with too little money
-		if ( info.PurchaseCost > Balance )
+		if ( !payWithTickets && info.PurchaseCost > Balance )
 			return PurchaseResult.NotEnoughMoney;
-		if ( Settings.CanSpendTickets )
-			// [APPROX:ECON-029] golden tickets are spent when buying items with GoldenTicketCost — evidence needed: capture of ticket count after such a purchase
+		var cost = payWithTickets ? 0 : info.PurchaseCost;
+		if ( payWithTickets )
+		{
 			TicketsSpent += info.GoldenTicketCost;
-		Post( LedgerCategory.OtherCosts, info.PurchaseCost );
+			ticketItems.Add( infoId );
+		}
+		Post( LedgerCategory.OtherCosts, cost );
 		built = AddObject( info, imported: false );
-		built.TotalSpent = info.PurchaseCost;
-		Raise( ParkEventKind.ObjectBuilt, info.PurchaseCost, built.Id, infoId, info.Name );
+		built.TotalSpent = cost;
+		Raise( ParkEventKind.ObjectBuilt, cost, built.Id, infoId, info.Name );
 		return PurchaseResult.Ok;
 	}
 
@@ -508,7 +584,7 @@ public sealed class ParkEconomy : IParkEconomy
 		if ( IsBankrupt )
 			return PurchaseResult.Bankrupt;
 		// [BIN:STP-PPC:0x10165A0C upgrade list] game type 2 (Instant Action) lists no upgrades and shows UITEXT 27 instead
-		if ( Mode == ParkGameMode.InstantAction )
+		if ( !Features.Upgrades )
 			return PurchaseResult.NotAvailableInInstantAction;
 		var item = RequireObject( instanceId );
 		if ( !Catalog.TryGet( item.InfoId, out var info ) || item.Kind != ParkObjectKind.Ride )
@@ -520,9 +596,7 @@ public sealed class ParkEconomy : IParkEconomy
 			return PurchaseResult.AlreadyFullyUpgraded;
 		if ( !Research.IsAvailable( item.InfoId, level ) )
 			return PurchaseResult.NotResearched;
-		if ( !Staff.OfType( StaffType.Mechanic ).Any() )
-			// [APPROX:ECON-046] upgrades need at least one employed mechanic to be bought — evidence needed: capture (TAG_SYSTEM 151 suggests it)
-			return PurchaseResult.NoMechanics;
+		// [BIN:STP-PPC:0x10166F1C upgrade purchase] only the bank balance is checked; the upgrade is queued (0x100DF928) and waits for a mechanic, with or without mechanics on the staff
 		var cost = info.Upgrades[level].CostOfUpgrade;
 		if ( cost > Balance )
 			return PurchaseResult.NotEnoughMoney;
@@ -555,6 +629,40 @@ public sealed class ParkEconomy : IParkEconomy
 		Post( LedgerCategory.OtherCosts, cost );
 		Raise( ParkEventKind.CellsBought, cost, 0, (int)kind, $"{count} {kind} cells" );
 		return PurchaseResult.Ok;
+	}
+
+	/// <summary>
+	/// Whether <see cref="TrySpendCell"/> would accept one more cell after <paramref name="pending"/> earlier cells
+	/// of the same line were spent: balance − (pending + 1) × cost ≥ 0. Previews use it to match the commit.
+	/// </summary>
+	public bool CanSpendCell( CellPurchase kind, int pending ) => Balance - (pending + 1) * CellCost( kind ) >= 0;
+
+	/// <summary>
+	/// Charges one path or queue cell when it is written (<c>SetCellType</c>, PATH-plan §3.2): refused only
+	/// when balance − cost &lt; 0 (no bankruptcy test), then spent as other costs.
+	/// </summary>
+	// [BIN:STP-PPC:0x10082AC4 SetCellType] type 1 costs Costs.PathCell, type 3 Costs.QueueCell; refused when balance − cost < 0, else Spend per cell at write time
+	public PurchaseResult TrySpendCell( CellPurchase kind )
+	{
+		if ( !CanSpendCell( kind, pending: 0 ) )
+			return PurchaseResult.NotEnoughMoney;
+		var cost = CellCost( kind );
+		Post( LedgerCategory.OtherCosts, cost );
+		Raise( ParkEventKind.CellsBought, cost, 0, (int)kind, $"1 {kind} cell" );
+		return PurchaseResult.Ok;
+	}
+
+	/// <summary>
+	/// Refunds a removed queue cell: <c>Costs.QueueCell</c> × the ride's scrap percentage / 100
+	/// (<c>ClearCell</c> queue case, PATH-plan §6). Returns the amount credited.
+	/// </summary>
+	// [BIN:STP-PPC:0x10085DCC ClearCell queue refund] Earn(QueueCost × 0xe2424(ride) / 100), 0xe2424 = the ride's age-based scrap percentage
+	public long RefundQueueCell( int rideInstanceId )
+	{
+		var amount = TryGetObject( rideInstanceId, out var ride ) ? CellCost( CellPurchase.Queue ) * ScrapPercent( ride! ) / 100 : 0;
+		if ( amount > 0 )
+			Post( LedgerCategory.OtherIncome, amount );
+		return amount;
 	}
 
 	// ---------------------------------------------------------------- loans
@@ -607,7 +715,13 @@ public sealed class ParkEconomy : IParkEconomy
 
 	public void SetTrainingBudget( StaffType type, long monthlyBudget ) => Staff.SetTrainingBudget( type, monthlyBudget );
 
-	public void SetResearchEffort( ResearchCategory category, int effort ) => Research.SetEffort( category, effort );
+	/// <summary>Research lab effort; refused in Instant Action, whose research panel does not open (UITEXT 467).</summary>
+	public void SetResearchEffort( ResearchCategory category, int effort )
+	{
+		if ( !Features.ResearchPanel )
+			throw new InvalidOperationException( "Research is automatic in Instant Action: the research lab cannot be changed." );
+		Research.SetEffort( category, effort );
+	}
 
 	public void AcceptChallenge()
 	{
@@ -704,6 +818,13 @@ public sealed class ParkEconomy : IParkEconomy
 	// ---------------------------------------------------------------- save support
 
 	internal IReadOnlyCollection<int> TakenOffers => takenOffers;
+
+	internal void RestoreTicketItems( IEnumerable<int> items )
+	{
+		ticketItems.Clear();
+		foreach ( var item in items )
+			ticketItems.Add( item );
+	}
 
 	internal void RestoreState( long tick, GameSpeed speed, bool open, int fee, bool bankrupt, int monthsInRed, long litter, int ticketsSpent, int nextObjectId,
 		long droppedAdmissions, IEnumerable<ParkObjectState> restoredObjects, IEnumerable<LoanAccount> restoredLoans, IEnumerable<int> restoredOffers, IEnumerable<long> restoredAdmissions )

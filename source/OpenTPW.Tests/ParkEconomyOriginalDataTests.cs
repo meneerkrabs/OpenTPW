@@ -92,7 +92,7 @@ public class ParkEconomyOriginalDataTests
 			for ( var hire = 0; hire < 3; hire++ )
 			{
 				while ( !park.Staff.Candidates.Any( candidate => candidate.Type == StaffType.Researcher ) )
-					park.Advance( ParkCalendar.TicksPerHour );
+					park.Advance( ParkCalendar.TicksForHours( 1 ) );
 				EconomyTestData.HireBest( park, StaffType.Researcher );
 			}
 			park.OpenPark();
@@ -100,7 +100,7 @@ public class ParkEconomyOriginalDataTests
 			{
 				for ( var visitor = 0; visitor < 1000; visitor++ )
 					park.TryAdmitVisitor( 100, out _ );
-				park.AdvanceDays( 30 );
+				park.AdvanceMonths( 1 );
 			}
 			Assert.IsTrue( park.Research.IsAllResearched, $"{theme}: all research done by year {park.Date.Year}" );
 			Console.WriteLine( $"{theme}: {park.Research.Items.Count} research items done in year {park.Date.Year} with three researchers, balance {park.Balance}." );
@@ -119,19 +119,22 @@ public class ParkEconomyOriginalDataTests
 		UseOriginalData();
 		var payload = ReadEasymode();
 		var records = SaveEconomyRecords.Parse( payload );
-		Assert.AreEqual( 1411394, records.Loans[0].Offset );
-		CollectionAssert.AreEqual( new long[] { 100000, 50000, 25000, 10000, 18000, 30000, 80000, 65000 }, records.Loans.Select( loan => loan.Amount ).ToArray() );
+		Assert.AreEqual( 1411390, records.Loans[0].Offset );
+		CollectionAssert.AreEqual( new[] { 100000, 50000, 25000, 10000, 18000, 30000, 80000, 65000 }, records.Loans.Select( loan => loan.Amount ).ToArray() );
 		CollectionAssert.AreEqual( new[] { 2777, 1388, 694, 277, 750, 1000, 1666, 2166 }, records.Loans.Select( loan => loan.MonthlyRepayment ).ToArray() );
+		CollectionAssert.AreEqual( new[] { false, false, false, true, false, false, false, false }, records.Loans.Select( loan => loan.Available ).ToArray() );
+		CollectionAssert.AreEqual( Enumerable.Range( 0, 8 ).ToArray(), records.Loans.Select( loan => loan.LenderNameIndex ).ToArray() );
+		Assert.IsTrue( records.Loans.All( loan => loan.AprPercent == 0 && !loan.Bought && loan.MonthsRepaid == 0 ) );
 		Assert.AreEqual( 1410409, records.Challenges[0].Offset );
 		CollectionAssert.AreEqual( new[] { 3, 9, 13, 15, 5, 18, 19, 20 }, records.Challenges.Select( challenge => challenge.Type ).ToArray() );
-		CollectionAssert.AreEqual( new[] { 25, 87987, 0, 1, 87787, 0, -12013, 0 }, records.WordsBeforeLoans.ToArray() );
+		Assert.AreEqual( new SaveBankRecord( 1411362, 25, 87987, 0, true, 87787, 0, -12013 ), records.Bank );
 
 		var easy = new ParkEconomy( BalanceSettings.Load( "jungle", true ), EconomyObjectCatalog.Load( "jungle", true ), ParkGameMode.FullSimulation, 1 );
 		var park = OriginalPark.Load( "jungle" );
 		var import = OriginalEconomyImport.Apply( easy, park );
 		Assert.AreEqual( 11, import.ImportedObjects );
 		Assert.AreEqual( 3, import.ImportedFixedItems );
-		Assert.AreEqual( 100000, easy.Balance, "balance stays InitialCash; the save's candidate balance is not imported" );
+		Assert.AreEqual( 100000, easy.Balance, "balance import remains outside this record-decoding correction" );
 		Assert.AreEqual( 4450, easy.Objects.Where( item => item.Kind != ParkObjectKind.FixedItem ).Sum( item => easy.Catalog.TryGet( item.InfoId, out var info ) ? info.PurchaseCost : 0 ) );
 		Assert.IsTrue( easy.Objects.All( item => item.Imported ) );
 
@@ -148,7 +151,7 @@ public class ParkEconomyOriginalDataTests
 		var repaired = 0;
 		economy.EventRaised += item => repaired += item.Kind == ParkEventKind.RideRepaired ? 1 : 0;
 		var mechanic = EconomyTestData.HireBest( economy, StaffType.Mechanic );
-		economy.AdvanceDays( 30 );
+		economy.AdvanceMonths( 1 );
 		Assert.AreEqual( new ParkDate( 1, 2, 1, 0 ), economy.Date );
 		Assert.AreEqual( 100000 - economy.Settings.GetMonthlyWage( StaffType.Mechanic, mechanic.Grade ), economy.Balance );
 		var bouncy = economy.Objects.Single( item => item.InfoId == 1100 );
@@ -164,17 +167,19 @@ public class ParkEconomyOriginalDataTests
 		// layers and the Easymode park; Full Simulation loads neither.
 		UseOriginalData();
 		Log ??= new();
-		var full = ParkEconomyRuntime.ForOriginalLevel( OriginalPark.Load( "jungle", includeEasymodePark: false ), ParkGameMode.FullSimulation );
+		var full = ParkEconomyRuntime.ForOriginalLevel( OriginalPark.Load( "jungle", readShippedSave: false ), ParkStartKind.FullSimulation );
 		Assert.IsFalse( full.Economy.Settings.IsEasy );
 		Assert.AreEqual( ParkGameMode.FullSimulation, full.Economy.Mode );
 		Assert.AreEqual( 0, full.Economy.Objects.Count( item => item.Imported ) );
+		Assert.IsFalse( full.Economy.SeedResearcherStandIn );
 		CollectionAssert.AreEqual( new[] { "/levels/Standard.sam", "/levels/jungle/Standard.sam" }, full.Economy.Settings.Standard.Sources.ToArray() );
 
-		var instant = ParkEconomyRuntime.ForOriginalLevel( OriginalPark.Load( "jungle" ), ParkGameMode.InstantAction );
+		var instant = ParkEconomyRuntime.ForOriginalLevel( OriginalPark.Load( "jungle" ), ParkStartKind.InstantAction );
 		Assert.IsTrue( instant.Economy.Settings.IsEasy );
 		Assert.AreEqual( 100000, instant.Economy.Balance );
 		Assert.IsTrue( instant.Economy.Objects.Any( item => item.Imported ) );
 		Assert.IsFalse( instant.Economy.AvailableLoans.Any() );
+		Assert.IsTrue( instant.Economy.SeedResearcherStandIn, "the seed's undecoded researcher has an ECON-019 stand-in" );
 
 		// Themes without Easy_Standard.sam still load in Instant Action, as in the original.
 		var space = BalanceSettings.Load( "space", easy: true );

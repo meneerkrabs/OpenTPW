@@ -11,6 +11,8 @@ public sealed record UiTexture( string? ImagePath, FontAtlas? Atlas )
 {
 	public static readonly UiTexture Solid = new( null, null );
 	public static UiTexture Image( string path ) => new( path, null );
+	/// <summary>An image file on the host file system, e.g. a local art override.</summary>
+	public static UiTexture HostImage( string path ) => new( UiImages.HostPrefix + path, null );
 	public static UiTexture Font( FontAtlas atlas ) => new( null, atlas );
 }
 
@@ -28,6 +30,9 @@ public sealed class UiDraw
 /// <summary>A placed glyph, kept so GPU readback of text can be checked against the atlas.</summary>
 public readonly record struct UiGlyphQuad( FontAtlas Atlas, int X, int Y, int Width, int Height, int AtlasX, int AtlasY, int Scale, RgbaByte Color );
 
+/// <summary>Associates one text draw with its exact glyph range, excluding underlying screens.</summary>
+public readonly record struct UiTextDraw( UiRect Rect, string Text, int FirstGlyph, int GlyphCount );
+
 /// <summary>
 /// CPU list of UI triangles in draw order: original model frames, images, solid rectangles and BF4
 /// text. <see cref="UiRenderer"/> draws it; tests and the smoke test inspect it without a GPU.
@@ -37,17 +42,20 @@ public sealed class UiBatch
 	private readonly List<UiDraw> draws = new();
 	private readonly List<UiGlyphQuad> glyphs = new();
 	private readonly List<(UiRect Rect, string Text)> texts = new();
+	private readonly List<UiTextDraw> textDraws = new();
 
 	public IReadOnlyList<UiDraw> Draws => draws;
 	public IReadOnlyList<UiGlyphQuad> Glyphs => glyphs;
 	/// <summary>Every text string drawn this frame with its pixel bounds (used by tests and the smoke test).</summary>
 	public IReadOnlyList<(UiRect Rect, string Text)> Texts => texts;
+	public IReadOnlyList<UiTextDraw> TextDraws => textDraws;
 
 	public void Clear()
 	{
 		draws.Clear();
 		glyphs.Clear();
 		texts.Clear();
+		textDraws.Clear();
 	}
 
 	private UiDraw Current( UiTexture texture )
@@ -115,6 +123,7 @@ public sealed class UiBatch
 	{
 		scale = Math.Max( 1, scale );
 		var texture = UiTexture.Font( atlas );
+		var firstGlyph = glyphs.Count;
 		foreach ( var glyph in layout.Glyphs )
 		{
 			var quad = new UiGlyphQuad( atlas, x + glyph.X * scale, y + glyph.Y * scale, glyph.Glyph.Width * scale, glyph.Glyph.Height * scale, glyph.Glyph.X, glyph.Glyph.Y, scale, color );
@@ -124,6 +133,10 @@ public sealed class UiBatch
 				new NVector2( (float)(glyph.Glyph.X + glyph.Glyph.Width) / atlas.Width, (float)(glyph.Glyph.Y + glyph.Glyph.Height) / atlas.Height ), color );
 		}
 		if ( text != null )
-			texts.Add( (new UiRect( x, y, layout.Width * scale, layout.Height * scale ), text) );
+		{
+			var rect = new UiRect( x, y, layout.Width * scale, layout.Height * scale );
+			texts.Add( (rect, text) );
+			textDraws.Add( new( rect, text, firstGlyph, glyphs.Count - firstGlyph ) );
+		}
 	}
 }

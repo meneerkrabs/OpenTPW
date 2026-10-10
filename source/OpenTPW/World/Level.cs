@@ -24,6 +24,7 @@ public partial class Level : IDisposable
 	/// <summary>Park name on the gate sign of an imported original level (TrueType sign text demo).</summary>
 	public OriginalGateSign? GateSign { get; private set; }
 	private bool wasMouseDown;
+	private int renderedCellVersion;
 	/// <summary>Set each frame by the original HUD when the pointer is over it, so HUD clicks do not build.</summary>
 	public bool UiCapturesMouse { get; set; }
 	/// <summary>Simulation speed from the HUD speed control (0 = paused).</summary>
@@ -34,8 +35,10 @@ public partial class Level : IDisposable
 	/// <summary>Park visitors (imported original levels only; docs/GUESTS.md).</summary>
 	public GuestSimulation? Guests { get; private set; }
 	public GuestRenderer? GuestRenderer { get; private set; }
-	/// <summary>Fixed seed so a level run is reproducible.</summary>
-	public const ulong GuestSeed = 0x5450_5747_7565_7374;
+	/// <summary>The default world seed (<see cref="WorldSeed.DefaultValue"/>); with it the guest stream keeps its old seed.</summary>
+	public const ulong GuestSeed = WorldSeed.DefaultValue;
+	/// <summary>The one seed every simulation random stream of this level derives from (docs/DETERMINISM.md).</summary>
+	public WorldSeed Seed { get; }
 
 	/// <summary>Level directory name, e.g. <c>jungle</c>.</summary>
 	public string LevelName { get; }
@@ -45,21 +48,25 @@ public partial class Level : IDisposable
 	/// </summary>
 	public ParkVisitInfo? Visit { get; }
 	public bool IsReadOnlyVisit => Visit != null;
+	// Developer tools only (--sandbox); players use the original-style online screens (OnlineScreens).
 	private OnlinePanel? onlinePanel;
+	private OnlineFolders onlineFolders = null!;
 
-	public Level( string levelName, bool loadOriginalLevel = false, ParkVisitInfo? visit = null, OnlineFolders? onlineFolders = null, ParkGameMode? gameMode = null )
+	/// <param name="start">How a writable original level starts; ignored for the sandbox and for read-only visits (which load the shipped save and run no economy).</param>
+	public Level( string levelName, bool loadOriginalLevel = false, ParkVisitInfo? visit = null, OnlineFolders? onlineFolders = null, ParkStartKind start = ParkStartKind.OriginalSaveReference, WorldSeed? seed = null )
 	{
 		if ( visit != null && visit.Level != levelName )
 			throw new ArgumentException( "The visit level must match the loaded level.", nameof( visit ) );
 		LevelName = levelName;
+		Seed = seed ?? WorldSeed.Default;
 		Visit = visit;
 		Global = new SettingsFile( $"/levels/{levelName}/global.sam" );
 		Current = this;
 		if ( visit != null ? !visit.IsSandbox : loadOriginalLevel )
 		{
-			OriginalPark = OriginalPark.Load( levelName, includeEasymodePark: gameMode != ParkGameMode.FullSimulation );
+			OriginalPark = OriginalPark.Load( levelName, readShippedSave: IsReadOnlyVisit || ParkStart.ReadsShippedSave( start ) );
 			if ( !IsReadOnlyVisit )
-				Park = ParkEconomyRuntime.ForOriginalLevel( OriginalPark, gameMode );
+				Park = ParkEconomyRuntime.ForOriginalLevel( OriginalPark, start, Seed );
 		}
 
 		SetupEntities();
@@ -78,7 +85,7 @@ public partial class Level : IDisposable
 			LastActionMessage = "The shared park's ride position is not buildable here; the ride is not shown.";
 			return;
 		}
-		PlacedRide = new PrototypeRide( position );
+		PlacedRide = new PrototypeRide( position, Objects.ScriptWorld );
 		RegisterRideWithGuests( PlacedRide );
 		if ( ride.Open )
 			PlacedRide.Start();
@@ -123,6 +130,13 @@ public partial class Level : IDisposable
 		if ( OriginalPark != null )
 		{
 			SetupGuests( OriginalPark );
+			SetupPaths();
+			if ( OriginalTerrain != null && Guests != null )
+			{
+				var cells = Guests.Grid.Cells;
+				OriginalTerrain.PathSource = ( x, y ) => cells.TypeAt( x, y ) is ParkCellType.Path or ParkCellType.Queue;
+				renderedCellVersion = cells.Version;
+			}
 			if ( Park != null && Guests != null )
 				Park.AttachGuests( Guests );
 			ConnectObjectsToGuests();
@@ -133,7 +147,7 @@ public partial class Level : IDisposable
 	private void SetupGuests( OriginalPark park )
 	{
 		var grid = GuestPathGrid.FromOriginal( park.Map, park.Save );
-		Guests = new GuestSimulation( grid, GuestSettings.Load( park.LevelName ), GuestSeed );
+		Guests = new GuestSimulation( grid, GuestSettings.Load( park.LevelName ), Seed.GuestStream );
 		var sprites = GuestSpriteAtlas.LoadKids();
 		GuestRenderer = new GuestRenderer( Guests, park.Heightfield, sprites );
 		Log.Trace( $"Guests: {grid.WalkableCount} walkable path cells, {sprites.Count} original kid sprite sets, {Guests.Settings.Types.Count} .sam peep types." );
@@ -210,7 +224,7 @@ public partial class Level : IDisposable
 		Hud = new();
 
 		parkLayout = new ParkLayout( this );
-		onlinePanel = new OnlinePanel( this, folders ?? OnlineFolders.FromEnvironment() );
+		onlineFolders = folders ?? OnlineFolders.FromEnvironment();
 		TextOverlay = new SandboxTextOverlay();
 		// BF4 UI draws at output size after the world blit, not through the world upscaler.
 		global::Global.Render.OnOverlayRender += DrawTextOverlay;
@@ -230,15 +244,24 @@ public partial class Level : IDisposable
 		Camera.Update();
 		if ( ShowDeveloperPanels )
 			parkLayout.Draw();
-		onlinePanel?.Draw();
+		if ( ShowDeveloperPanels )
+		{
+			onlinePanel ??= new OnlinePanel( this, onlineFolders );
+			onlinePanel.Draw();
+		}
 		if ( IsPlacing && !wasMouseDown && Input.Mouse.Left && !UiCapturesMouse && !ImGuiNET.ImGui.GetIO().WantCaptureMouse )
 		{
 			if ( TryGetPlacementPosition( Input.Mouse.Position, new Vector2( Screen.Size.X, Screen.Size.Y ), out var position ) )
 				PlaceRide( position );
 		}
-		else if ( !wasMouseDown && Input.Mouse.Left && !ImGuiNET.ImGui.GetIO().WantCaptureMouse )
+		else if ( !wasMouseDown && Input.Mouse.Left && !UiCapturesMouse && !ImGuiNET.ImGui.GetIO().WantCaptureMouse )
 			HandleObjectClick( Input.Mouse.Position, new Vector2( Screen.Size.X, Screen.Size.Y ) );
 		wasMouseDown = Input.Mouse.Left;
+		if ( OriginalTerrain != null && Guests != null && Guests.Grid.Cells.Version != renderedCellVersion )
+		{
+			renderedCellVersion = Guests.Grid.Cells.Version;
+			OriginalTerrain.RefreshPaths();
+		}
 		simulationClock.Advance( Time.Delta * SimulationTimeScale, deltaTime =>
 		{
 			SyncObjectEconomy();
@@ -321,6 +344,24 @@ public partial class Level : IDisposable
 		simulationClock.Reset();
 		LastActionMessage = "Sandbox loaded; the ride script restarts from its first instruction.";
 	}
+
+	/// <summary>What the park save, load and canonical hash read from this level.</summary>
+	public ParkWorldStreams Streams => new( Seed, Park, Guests, Objects.ScriptWorld, GameAudio.Events );
+
+	/// <summary>The random streams besides the economy's, for the park save.</summary>
+	public WorldRandomState CaptureRandomState() => Streams.CaptureRandomState();
+
+	/// <summary>Continues the streams of a park save.</summary>
+	public void RestoreRandomState( WorldRandomState state ) => Streams.RestoreRandomState( state );
+
+	/// <summary>Canonical state hash of this level (<see cref="WorldStateHash"/>; the sound seed is not part of it).</summary>
+	public ulong ComputeStateHash() => Streams.ComputeStateHash();
+
+	/// <summary>Writes the park economy and every random stream to an OpenTPW park save.</summary>
+	public void SavePark( string path ) => Streams.SavePark( path );
+
+	/// <summary>Loads an OpenTPW park save: the economy and, when the save has them, the random streams. Guests and object scripts keep running (DET-016).</summary>
+	public void LoadPark( string path ) => Streams.LoadPark( path );
 
 	private void RequireSandbox()
 	{

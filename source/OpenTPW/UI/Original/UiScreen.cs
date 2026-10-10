@@ -25,8 +25,12 @@ public class UiScreen
 	public Action<UiContext>? DrawOverlay { get; set; }
 	/// <summary>Called every frame before input is handled.</summary>
 	public Action<UiContext>? Updating { get; set; }
+	/// <summary>Releases screen-owned pending work after removal from its stack.</summary>
+	public Action? Removed { get; set; }
 	/// <summary>Whether a modal screen dims and blocks what is below it.</summary>
 	public bool Modal { get; init; } = true;
+	/// <summary>True once a stack removed this screen; it then ignores the rest of the frame's input (a click that closed it must not also act as Back on whatever it opened).</summary>
+	public bool IsRemoved { get; internal set; }
 
 	public T Add<T>( T element ) where T : UiElement
 	{
@@ -63,19 +67,45 @@ public class UiScreen
 		var canvas = context.Canvas;
 		var hit = HitTest( canvas, input.Mouse );
 		context.HoverHelp = hit?.Help;
-		if ( hit != null && (input.LeftPressed || input.LeftReleased || hit != Focused) && input.Mouse.X >= 0 )
+		// A text field keeps the keyboard focus while the mouse merely passes over other elements.
+		var typing = Focused is UiTextField { Visible: true, Enabled: true };
+		if ( hit != null && (input.LeftPressed || input.LeftReleased || hit != Focused && !typing) && input.Mouse.X >= 0 )
 			Focused = hit;
+		if ( input.LeftPressed && hit == null && typing && input.Mouse.X >= 0 )
+			Focused = null;
 		var consumed = hit != null;
 		if ( input.LeftPressed )
 			pressed = hit;
+		// A slider follows the mouse while it is held, wherever the pointer has drifted to.
+		if ( pressed is UiSlider { Enabled: true } slider && input.Mouse.X >= 0 && (input.LeftDown || input.LeftPressed || input.LeftReleased) )
+			slider.SetFromMouse( canvas, input.Mouse );
 		if ( input.LeftReleased )
 		{
 			if ( hit != null && (pressed == null || pressed == hit) )
 				Click( canvas, hit, input.Mouse );
 			pressed = null;
+			if ( IsRemoved )
+				return true;
 		}
-		if ( hit is UiOptionRow wheelRow && input.Wheel != 0 )
-			wheelRow.Adjust( input.Wheel > 0 ? 1 : -1 );
+		if ( (hit is UiOptionRow or UiSlider || hit is UiButton { Adjusted: not null, WheelAdjusts: true }) && input.Wheel != 0 )
+			hit.Adjust( input.Wheel > 0 ? 1 : -1 );
+		if ( hit is UiScrollList wheelList && input.Wheel != 0 )
+			wheelList.Scroll( input.Wheel > 0 ? -1 : 1 );
+		if ( input.Has( UiKeys.Tab ) )
+			MoveFocus( 1, element => element is UiTextField );
+		if ( Focused is UiTextField field && field.Visible && field.Enabled )
+		{
+			Input.TextEntryActive = true;
+			field.Type( input.Text, input.Backspaces );
+			if ( input.Has( UiKeys.Accept ) && !input.Has( UiKeys.Space ) )
+				field.Activate();
+			if ( IsRemoved )
+				return true;
+			if ( input.Has( UiKeys.Back ) || (input.RightPressed && Modal) )
+				Back?.Invoke();
+			// Typed keys belong to the field, not to navigation or to the park below.
+			return true;
+		}
 		if ( input.Has( UiKeys.Down ) )
 			MoveFocus( 1 );
 		if ( input.Has( UiKeys.Up ) )
@@ -89,6 +119,8 @@ public class UiScreen
 			if ( input.Has( UiKeys.Accept ) )
 				Focused.Activate();
 		}
+		if ( IsRemoved )
+			return true;
 		if ( input.Has( UiKeys.Back ) || (input.RightPressed && Modal) )
 		{
 			Back?.Invoke();
@@ -99,6 +131,23 @@ public class UiScreen
 
 	private static void Click( UiCanvas canvas, UiElement element, NVector2 point )
 	{
+		// Clicking a text field only gives it the focus; Enter submits it.
+		if ( element is UiTextField )
+			return;
+		if ( element is UiScrollList list )
+		{
+			var index = list.RowAt( canvas, point );
+			if ( index >= 0 && index == list.Selected )
+				list.Activate();
+			else if ( index >= 0 )
+				list.Select( index );
+			return;
+		}
+		if ( element is UiSlider slider )
+		{
+			slider.SetFromMouse( canvas, point );
+			return;
+		}
 		if ( element is UiOptionRow row )
 		{
 			var (left, right) = row.ArrowRects( canvas );
@@ -108,9 +157,9 @@ public class UiScreen
 		element.Activate();
 	}
 
-	public void MoveFocus( int direction )
+	public void MoveFocus( int direction, Func<UiElement, bool>? filter = null )
 	{
-		var focusable = FocusableElements.ToList();
+		var focusable = FocusableElements.Where( element => filter == null || filter( element ) ).ToList();
 		if ( focusable.Count == 0 )
 			return;
 		var index = Focused == null ? (direction > 0 ? -1 : 0) : focusable.IndexOf( Focused );
@@ -137,12 +186,21 @@ public sealed class UiScreenStack
 	public IReadOnlyList<UiScreen> Screens => screens;
 	public UiScreen? Top => screens.Count == 0 ? null : screens[^1];
 
-	public void Push( UiScreen screen ) => screens.Add( screen );
+	public void Push( UiScreen screen )
+	{
+		screen.IsRemoved = false;
+		screens.Add( screen );
+	}
 
 	public void Pop()
 	{
 		if ( screens.Count > 0 )
+		{
+			var removed = screens[^1];
 			screens.RemoveAt( screens.Count - 1 );
+			removed.IsRemoved = true;
+			removed.Removed?.Invoke();
+		}
 	}
 
 	public void Replace( UiScreen screen )
@@ -151,7 +209,16 @@ public sealed class UiScreenStack
 		Push( screen );
 	}
 
-	public void Clear() => screens.Clear();
+	public void Clear()
+	{
+		var removed = screens.ToArray();
+		screens.Clear();
+		foreach ( var screen in removed )
+		{
+			screen.IsRemoved = true;
+			screen.Removed?.Invoke();
+		}
+	}
 
 	public bool Update( UiContext context, UiInput input ) => Top?.Update( context, input ) ?? false;
 

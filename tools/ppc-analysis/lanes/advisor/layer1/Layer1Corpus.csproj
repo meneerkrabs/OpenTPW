@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../../../../source/OpenTPW.Files/Formats/Sound/Mp2Decoder*.cs" Link="%(Filename)%(Extension)" />
+    <Compile Include="../../../../../source/OpenTPW.Tests/Layer1TestFrames.cs" Link="Layer1TestFrames.cs" />
+  </ItemGroup>
+</Project>

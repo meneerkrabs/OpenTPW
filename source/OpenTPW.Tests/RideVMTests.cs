@@ -126,6 +126,83 @@ public class RideVMTests
 	}
 
 	[DataTestMethod]
+	[DataRow( -5, Opcode.BRANCH_NV )]
+	[DataRow( 0, Opcode.BRANCH_Z )]
+	[DataRow( 7, Opcode.BRANCH_PV )]
+	public void CopyResultControlsTheImmediatelyFollowingBranch( int value, Opcode branch )
+	{
+		var vm = Load( new Asm()
+			.I( Opcode.TEST, V( 1 ) )
+			.I( Opcode.COPY, V( 0 ), value )
+			.I( branch, "copied" )
+			.I( Opcode.COPY, V( 2 ), 99 ).I( Opcode.BRANCH, "idle" )
+			.Label( "copied" ).I( Opcode.COPY, V( 2 ), 1 )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ) );
+		vm.Variables[1] = value == 0 ? 1 : 0;
+		Run( vm, 1 );
+		Assert.AreEqual( value, vm.Variables[0] );
+		Assert.AreEqual( 1, vm.Variables[2], "COPY replaces the previous branch accumulator" );
+		Assert.AreEqual( RideVMState.Running, vm.State );
+	}
+
+	[TestMethod]
+	public void CopyToLiteralAbortsWithNativePcSentinelBeforeLaterInstructions()
+	{
+		var vm = Load( new Asm()
+			.I( Opcode.TEST, V( 1 ) )
+			.I( Opcode.COPY, 0, V( 0 ) )
+			.I( Opcode.ADD, V( 2 ), 1 )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ) );
+		vm.Variables[0] = 123;
+		vm.Variables[1] = -5;
+		Run( vm, 2 );
+		Assert.AreEqual( RideVMState.Faulted, vm.State, "the native invalid-tag diagnostic maps to a VM fault, not successful completion" );
+		Assert.AreEqual( -10000, vm.ProgramCounter );
+		CollectionAssert.AreEqual( new[] { 123, -5, 0, 0 }, vm.Variables );
+		Assert.AreEqual( RideVM.VMFlags.Sign, vm.Flags, "the rejected COPY leaves its accumulator unchanged" );
+		Assert.AreEqual( 2L, vm.ExecutedInstructions, "no subsequent parsed instruction executes" );
+		StringAssert.Contains( vm.FaultMessage, "COPY requires a variable destination" );
+	}
+
+	[DataTestMethod]
+	[DataRow( Opcode.DIV, false )]
+	[DataRow( Opcode.DIV, true )]
+	[DataRow( Opcode.MOD, false )]
+	[DataRow( Opcode.MOD, true )]
+	public void DivisionAndModuloByZeroReturnZeroAndContinue( Opcode opcode, bool literalDestination )
+	{
+		var vm = Load( new Asm()
+			.I( Opcode.TEST, V( 0 ) )
+			.I( opcode, literalDestination ? 0u : V( 1 ), V( 0 ), 0 )
+			.I( Opcode.BRANCH_Z, "zero" )
+			.I( Opcode.COPY, V( 2 ), 99 ).I( Opcode.BRANCH, "idle" )
+			.Label( "zero" ).I( Opcode.COPY, V( 2 ), 1 )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ) );
+		vm.Variables[0] = -123;
+		vm.Variables[1] = 77;
+		Run( vm, 1 );
+		Assert.AreEqual( literalDestination ? 77 : 0, vm.Variables[1] );
+		Assert.AreEqual( 1, vm.Variables[2], "zero-divisor result replaces the previous negative accumulator" );
+		Assert.AreEqual( RideVMState.Running, vm.State );
+		Assert.IsNull( vm.FaultMessage );
+	}
+
+	[TestMethod]
+	public void SignedMinimumDivisionOverflowKeepsTheExistingVmWrapPolicy()
+	{
+		var vm = Load( new Asm()
+			.I( Opcode.DIV, V( 1 ), V( 0 ), -1 )
+			.I( Opcode.MOD, V( 2 ), V( 0 ), -1 )
+			.I( Opcode.ENDSLICE ) );
+		vm.Variables[0] = int.MinValue;
+		Run( vm, 1 );
+		Assert.AreEqual( int.MinValue, vm.Variables[1] );
+		Assert.AreEqual( 0, vm.Variables[2] );
+		Assert.AreEqual( RideVM.VMFlags.Zero, vm.Flags );
+		Assert.AreEqual( RideVMState.Running, vm.State );
+	}
+
+	[DataTestMethod]
 	[DataRow( -5, 3 )]
 	[DataRow( 0, 1 )]
 	[DataRow( 7, 2 )]
@@ -188,6 +265,29 @@ public class RideVMTests
 			seen.Add( first.Variables[0] );
 		}
 		CollectionAssert.AreEquivalent( new[] { 0, 1, 2 }, seen.Distinct().ToArray() );
+	}
+
+	[DataTestMethod]
+	[DataRow( -100 )]
+	[DataRow( 100 )]
+	[DataRow( int.MaxValue )]
+	public void RandUsesTheRawBoundWordRatherThanTheReferencedVariable( int variableValue )
+	{
+		RideVM Make( object bound ) => Load( new Asm()
+			.Label( "loop" ).I( Opcode.RAND, V( 0 ), bound )
+			.I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "loop" ), new RideVMOptions { Seed = 42 } );
+		var rawVariableBound = Make( V( 2 ) );
+		var literalBound = Make( 2 );
+		rawVariableBound.Variables[2] = variableValue;
+		for ( var tick = 0; tick < 100; ++tick )
+		{
+			rawVariableBound.Advance( Tick );
+			literalBound.Advance( Tick );
+			Assert.AreEqual( RideVMState.Running, rawVariableBound.State );
+			Assert.AreEqual( literalBound.Variables[0], rawVariableBound.Variables[0], "raw variable index2 is the maximum; its contents do not affect RAND" );
+			Assert.IsTrue( rawVariableBound.Variables[0] >= 0 && rawVariableBound.Variables[0] <= 2 );
+		}
+		Assert.AreEqual( variableValue, rawVariableBound.Variables[2] );
 	}
 
 	[TestMethod]
@@ -341,6 +441,165 @@ public class RideVMTests
 	}
 
 	[TestMethod]
+	public void ControllerMutatorsPreserveFlagsDespiteEffectReturnValues()
+	{
+		var commands = new[]
+		{
+			(Opcode.COAST, 1), (Opcode.COAST, 4), (Opcode.COAST, 5), (Opcode.COAST, 6), (Opcode.COAST, 8),
+			(Opcode.BUMP, 3), (Opcode.BUMP, 6), (Opcode.BUMP, 7), (Opcode.BUMP, 8), (Opcode.BUMP, 9), (Opcode.BUMP, 10), (Opcode.BUMP, 17),
+			(Opcode.TOUR, 1), (Opcode.TOUR, 2), (Opcode.TOUR, 5), (Opcode.TOUR, 8), (Opcode.TOUR, 9), (Opcode.TOUR, 12), (Opcode.TOUR, 14), (Opcode.TOUR, 17), (Opcode.TOUR, 18)
+		};
+		foreach ( var (opcode, command) in commands )
+			foreach ( var previous in new[] { -7, 0, 7 } )
+				foreach ( var returned in new[] { -7, 0, 7 } )
+				{
+					var effects = new StubEffects { Result = _ => returned };
+					var vm = Load( new Asm().I( Opcode.TEST, V( 1 ) ).I( opcode, command, V( 0 ) ).I( Opcode.ENDSLICE ), new RideVMOptions { Effects = effects } );
+					vm.Variables[0] = 77;
+					vm.Variables[1] = previous;
+					Run( vm, 1 );
+					Assert.AreEqual( FlagsFor( previous ), vm.Flags, $"{opcode} {command} preserves the accumulator" );
+					Assert.AreEqual( 77, vm.Variables[0] );
+					Assert.AreEqual( 1, effects.Calls.Count );
+					Assert.AreEqual( RideVMState.Running, vm.State );
+				}
+	}
+
+	[TestMethod]
+	public void ControllerQueriesSetFlagsAndWriteOnlyTheirOutputParameters()
+	{
+		var commands = new[]
+		{
+			(Opcode.BUMP, 1, false), (Opcode.BUMP, 2, true), (Opcode.BUMP, 4, false), (Opcode.BUMP, 5, false),
+			(Opcode.BUMP, 11, true), (Opcode.BUMP, 12, false), (Opcode.BUMP, 16, false),
+			(Opcode.TOUR, 3, false), (Opcode.TOUR, 4, true), (Opcode.TOUR, 10, false), (Opcode.TOUR, 11, false),
+			(Opcode.TOUR, 15, false), (Opcode.TOUR, 16, true), (Opcode.COAST, 2, true), (Opcode.COAST, 3, true)
+		};
+		foreach ( var (opcode, command, output) in commands )
+			foreach ( var returned in new[] { -7, 0, 7 } )
+			{
+				var effects = new StubEffects { Result = _ => returned };
+				var vm = Load( new Asm().I( Opcode.TEST, V( 1 ) ).I( opcode, command, V( 0 ) ).I( Opcode.ENDSLICE ), new RideVMOptions { Effects = effects } );
+				vm.Variables[0] = 77;
+				vm.Variables[1] = -123;
+				Run( vm, 1 );
+				Assert.AreEqual( FlagsFor( returned ), vm.Flags, $"{opcode} {command}" );
+				Assert.AreEqual( output ? returned : 77, vm.Variables[0], $"{opcode} {command} parameter direction" );
+				Assert.AreEqual( 1, effects.Calls.Count );
+			}
+	}
+
+	[TestMethod]
+	public void ControllerVariableGatesSkipCallsAndOptionalOutputsAllowLiterals()
+	{
+		foreach ( var (opcode, command) in new[] { (Opcode.BUMP, 1), (Opcode.BUMP, 2), (Opcode.TOUR, 3), (Opcode.TOUR, 4), (Opcode.TOUR, 16) } )
+		{
+			var effects = new StubEffects { Result = _ => 7 };
+			var vm = Load( new Asm().I( Opcode.TEST, V( 1 ) ).I( opcode, command, 0 ).I( Opcode.ENDSLICE ), new RideVMOptions { Effects = effects } );
+			vm.Variables[1] = -5;
+			Run( vm, 1 );
+			Assert.AreEqual( RideVM.VMFlags.Sign, vm.Flags );
+			Assert.AreEqual( 0, effects.Calls.Count, $"{opcode} {command} requires a variable parameter" );
+			Assert.AreEqual( RideVMState.Running, vm.State );
+		}
+		foreach ( var (opcode, command) in new[] { (Opcode.BUMP, 11), (Opcode.COAST, 2), (Opcode.COAST, 3) } )
+		{
+			var effects = new StubEffects { Result = _ => -7 };
+			var vm = Load( new Asm().I( opcode, command, 0 ).I( Opcode.ENDSLICE ), new RideVMOptions { Effects = effects } );
+			Run( vm, 1 );
+			Assert.AreEqual( RideVM.VMFlags.Sign, vm.Flags );
+			Assert.AreEqual( 1, effects.Calls.Count );
+		}
+	}
+
+	[TestMethod]
+	public void BumpDurationCommandsUseOriginalInputForFlagsAndCoastSevenIsNoOp()
+	{
+		foreach ( var command in new[] { 13, 14 } )
+			foreach ( var input in new[] { -7, 0, 7 } )
+			{
+				var effects = new StubEffects { Result = _ => 123 };
+				var vm = Load( new Asm().I( Opcode.BUMP, command, V( 0 ) ).I( Opcode.ENDSLICE ), new RideVMOptions { Effects = effects } );
+				vm.Variables[0] = input;
+				Run( vm, 1 );
+				Assert.AreEqual( FlagsFor( input ), vm.Flags );
+				Assert.AreEqual( input, vm.Variables[0] );
+				Assert.AreEqual( 1, effects.Calls.Count );
+			}
+		var noOpEffects = new StubEffects { Result = _ => 0 };
+		var noOp = Load( new Asm().I( Opcode.TEST, V( 0 ) ).I( Opcode.COAST, 7, V( 0 ) ).I( Opcode.ENDSLICE ), new RideVMOptions { Effects = noOpEffects } );
+		noOp.Variables[0] = -7;
+		Run( noOp, 1 );
+		Assert.AreEqual( RideVM.VMFlags.Sign, noOp.Flags );
+		Assert.AreEqual( 0, noOpEffects.Calls.Count );
+	}
+
+	[TestMethod]
+	public void UnimplementedControllerQueriesPreserveStateAndAreRecorded()
+	{
+		foreach ( var (opcode, command) in new[] { (Opcode.BUMP, 1), (Opcode.BUMP, 2), (Opcode.BUMP, 5), (Opcode.TOUR, 4), (Opcode.COAST, 2), (Opcode.COAST, 3) } )
+		{
+			var vm = Load( new Asm().I( Opcode.TEST, V( 1 ) ).I( opcode, command, V( 0 ) ).I( Opcode.ENDSLICE ) );
+			vm.Variables[0] = 77;
+			vm.Variables[1] = -5;
+			Run( vm, 1 );
+			Assert.AreEqual( RideVM.VMFlags.Sign, vm.Flags, "unsupported query must not manufacture a zero result" );
+			Assert.AreEqual( 77, vm.Variables[0] );
+			Assert.AreEqual( 1, vm.UnimplementedEffects[opcode] );
+			Assert.AreEqual( RideVMState.Running, vm.State );
+		}
+	}
+
+	[TestMethod]
+	public void UnsupportedQueryDoesNotCommitPartialOutputAndDurationFlagsUseCapturedInput()
+	{
+		var unsupported = new StubEffects
+		{
+			Result = call =>
+			{
+				call.SetOutput( 1, 0 );
+				call.VM.RecordUnimplementedEffect( call.Opcode );
+				return 0;
+			}
+		};
+		var query = Load( new Asm().I( Opcode.TEST, V( 1 ) ).I( Opcode.COAST, 3, V( 0 ) ).I( Opcode.ENDSLICE ), new RideVMOptions { Effects = unsupported } );
+		query.Variables[0] = 77;
+		query.Variables[1] = -5;
+		Run( query, 1 );
+		Assert.AreEqual( 77, query.Variables[0] );
+		Assert.AreEqual( RideVM.VMFlags.Sign, query.Flags );
+
+		var mutatingInput = new StubEffects { Result = call => { call.SetOutput( 1, 0 ); return 123; } };
+		var duration = Load( new Asm().I( Opcode.BUMP, 13, V( 0 ) ).I( Opcode.ENDSLICE ), new RideVMOptions { Effects = mutatingInput } );
+		duration.Variables[0] = -7;
+		Run( duration, 1 );
+		Assert.AreEqual( RideVM.VMFlags.Sign, duration.Flags, "native duration handler retains the resolved input in a register before calling its controller" );
+	}
+
+	[TestMethod]
+	public void UnknownOrNonliteralControllerCommandsFaultWithoutCallingEffects()
+	{
+		foreach ( var (opcode, command) in new[] { (Opcode.COAST, 0), (Opcode.COAST, 9), (Opcode.BUMP, 0), (Opcode.BUMP, 15), (Opcode.BUMP, 18), (Opcode.TOUR, 0), (Opcode.TOUR, 6), (Opcode.TOUR, 7), (Opcode.TOUR, 13), (Opcode.TOUR, 19) } )
+		{
+			var effects = new StubEffects { Result = _ => 0 };
+			var vm = Load( new Asm().I( Opcode.TEST, V( 1 ) ).I( opcode, command, 0 ).I( Opcode.ENDSLICE ), new RideVMOptions { Effects = effects } );
+			vm.Variables[1] = -5;
+			Run( vm, 1 );
+			Assert.AreEqual( RideVMState.Faulted, vm.State );
+			Assert.AreEqual( RideVM.VMFlags.Sign, vm.Flags );
+			Assert.AreEqual( 0, effects.Calls.Count );
+			StringAssert.Contains( vm.FaultMessage, "unreviewed controller command" );
+		}
+		var variableCommand = Load( new Asm().I( Opcode.COAST, V( 0 ), 0 ) );
+		variableCommand.Variables[0] = 2;
+		Run( variableCommand, 1 );
+		Assert.AreEqual( RideVMState.Faulted, variableCommand.State );
+		StringAssert.Contains( variableCommand.FaultMessage, "literal command" );
+	}
+
+	private static RideVM.VMFlags FlagsFor( int value ) => value == 0 ? RideVM.VMFlags.Zero : value < 0 ? RideVM.VMFlags.Sign : RideVM.VMFlags.None;
+
+	[TestMethod]
 	public void CommandOpcodesLetEffectsWriteTheirParameterAndSetFlags()
 	{
 		var effects = new StubEffects
@@ -444,16 +703,12 @@ public class RideVMTests
 	}
 
 	[TestMethod]
-	public void UnknownOpcodesDivisionByZeroAndRunningOffTheEndStopTheScript()
+	public void UnknownOpcodesAndRunningOffTheEndStopTheScript()
 	{
 		var unknown = Load( new Asm().I( Opcode.PUSH, 1 ) );
 		Run( unknown, 1 );
 		Assert.AreEqual( RideVMState.Faulted, unknown.State );
 		StringAssert.Contains( unknown.FaultMessage, "PUSH" );
-
-		var divide = Load( new Asm().I( Opcode.DIV, V( 0 ), 1, V( 1 ) ) );
-		Run( divide, 1 );
-		Assert.AreEqual( RideVMState.Faulted, divide.State );
 
 		var end = Load( new Asm().I( Opcode.NOP ) );
 		Run( end, 2 );

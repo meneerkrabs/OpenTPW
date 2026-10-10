@@ -6,6 +6,10 @@ finds none of the setting names, so the formulas cannot be read from the binary.
 **built on** original data, not a reproduction of the original rules: every place where the original
 behaviour is unknown is marked *approximation* below and in the code documentation.
 
+The Mac PowerPC build does contain the setting names and its code is readable: the ride wear rule
+(ECON-023) has been read from it statically, see [reverse/RIDE-WEAR.md](reverse/RIDE-WEAR.md). The register
+below is unchanged until that evidence is checked against an oracle.
+
 Code: `source/OpenTPW/Economy/` (simulation), `source/OpenTPW.Files/Formats/Save/SaveEconomyRecords.cs`
 (original save records). Tests: `ParkEconomyTests` (synthetic, no assets) and
 `ParkEconomyOriginalDataTests` (original data, inconclusive without `OPENTPW_GAME_PATH`).

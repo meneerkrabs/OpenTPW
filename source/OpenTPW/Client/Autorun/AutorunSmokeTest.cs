@@ -108,6 +108,9 @@ internal sealed class AutorunSmokeTest : IDisposable
 
 	public void Update()
 	{
+		// After Play the front-end smoke test runs on; its frames are not the launcher's.
+		if ( completed )
+			return;
 		++frame;
 		Require( frame < MaximumFrames, $"finish within {MaximumFrames} frames" );
 		while ( steps.Count > 0 && steps.Peek().Step() )

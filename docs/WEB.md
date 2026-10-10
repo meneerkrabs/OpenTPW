@@ -89,7 +89,7 @@ copied to the canvas.
 ### What the game uses from Veldrid (measured)
 
 Measured from the member references in the compiled `OpenTPW.dll` and
-`OpenTPW.Common.dll`, not by searching the source:
+`OpenTPW.Common.dll` with `tools/AssemblySurface`, not by searching the source:
 
 | Package | References | Notes |
 | --- | --- | --- |

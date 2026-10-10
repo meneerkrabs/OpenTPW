@@ -455,6 +455,29 @@ public class ParkEconomyTests
 	}
 
 	[TestMethod]
+	public void CandidateGradesSpreadAroundTheAverageAndWrapBelowZero()
+	{
+		var grades = new HashSet<int>();
+		var park = EconomyTestData.Park();
+		for ( var step = 0; step < 40; step++ )
+		{
+			foreach ( var candidate in park.Staff.Candidates )
+				grades.Add( candidate.Grade );
+			park.Advance( park.Staff.UpdateInterval + ParkCalendar.TicksForHours( 2 ) );
+		}
+		CollectionAssert.AreEquivalent( new[] { 0, 1, 2 }, grades.ToArray(), "average 1: grades 0, 1 and 2 only, no 'great' grade" );
+		var zeroAverage = new ParkEconomy( EconomyTestData.Settings( extra: "StaffPoolInfo.AvgGradeOfHandymen 0\n" ), EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 7 );
+		var handymen = new HashSet<int>();
+		for ( var step = 0; step < 40; step++ )
+		{
+			foreach ( var candidate in zeroAverage.Staff.Candidates.Where( candidate => candidate.Type == StaffType.Handyman ) )
+				handymen.Add( candidate.Grade );
+			zeroAverage.Advance( zeroAverage.Staff.UpdateInterval + ParkCalendar.TicksForHours( 2 ) );
+		}
+		CollectionAssert.AreEquivalent( new[] { 0, 1, 4 }, handymen.ToArray(), "average 0: a raw -1 wraps to 255 and is stored as grade 4" );
+	}
+
+	[TestMethod]
 	public void HandymenCleanLitter()
 	{
 		var park = EconomyTestData.Park();
@@ -467,9 +490,12 @@ public class ParkEconomyTests
 		park.AdvanceDays( 1 );
 		Assert.AreEqual( 50, park.LitterItems );
 		var handyman = EconomyTestData.HireBest( park, StaffType.Handyman );
+		var hourBefore = ParkCalendar.HourIndex( park.Tick );
 		park.AdvanceDays( 1 );
+		var hours = ParkCalendar.HourIndex( park.Tick ) - hourBefore;
+		Assert.IsTrue( hours is 23 or 24, hours.ToString() );
 		var perHour = 60 * ParkEconomy.LitterScale / park.Settings[StaffType.Handyman].WorkDuration[handyman.Grade];
-		Assert.AreEqual( Math.Max( 0, 50 * ParkEconomy.LitterScale - 24 * perHour ), park.LitterScaled );
+		Assert.AreEqual( Math.Max( 0, 50 * ParkEconomy.LitterScale - hours * perHour ), park.LitterScaled, "one cleaning step per park-clock hour" );
 		Assert.IsTrue( park.ParkRating >= rating );
 	}
 

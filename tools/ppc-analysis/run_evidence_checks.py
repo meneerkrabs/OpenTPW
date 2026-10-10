@@ -179,6 +179,10 @@ def run_python(suite: Path, tools: Path, env: dict, require_fixtures: bool) -> d
     result['suite'] = str(suite.relative_to(tools)) if suite != tools else '.'
     result['passed'] = (process.returncode == 0 and result['ok'] and result['ran'] > 0
                         and not (require_fixtures and result['skipped']))
+    # Keep unittest's FAIL/ERROR sections so a failure on a remote host (CI) names its cause.
+    sections = process.stderr.find('\n' + '=' * 70 + '\n')
+    result['failure_details'] = ('' if result['passed'] else
+                                 (process.stderr[sections + 1:] if sections >= 0 else process.stderr)[-8000:])
     return result
 
 
@@ -335,6 +339,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{mark} python {suite['suite']}: {suite['ran']} ran, {suite['skipped']} skipped, {suite['failures']} failed")
             for reason in suite['skip_reasons']:
                 print(f'       skip: {reason}')
+            if suite.get('failure_details'):
+                print(suite['failure_details'].rstrip())
         for file in report['uncovered']:
             print(f'FAIL uncovered test file: {file}')
         for key in report['unconsumed_fixtures']:

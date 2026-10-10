@@ -103,7 +103,11 @@ public sealed class ParkObjects
 
 	/// <summary>Build rule for a catalog object anchored at (x, y) with a rotation.</summary>
 	// [APPROX:RIDES-018] Build rules = footprint inside grid + MAP/save terrain rules + no overlap; no slope, path or land rule; Level.PlaceObject enforces economy purchases — evidence needed: original build checks (binary/captures)
-	public OriginalPlacementResult Check( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation )
+	public OriginalPlacementResult Check( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation ) =>
+		Check( Grid, IsOccupied, entry, anchorX, anchorY, rotation );
+
+	/// <summary>The same build rule for any grid and occupancy (the headless M3 gate has no <see cref="OriginalObject"/>s).</summary>
+	internal static OriginalPlacementResult Check( IParkGrid grid, Func<int, int, bool> isOccupied, ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation )
 	{
 		if ( !ObjectFootprint.IsValidRotation( rotation ) )
 			throw new ArgumentOutOfRangeException( nameof( rotation ) );
@@ -111,12 +115,12 @@ public sealed class ParkObjects
 			return OriginalPlacementResult.Blocked;
 		foreach ( var (x, y, _) in ObjectFootprint.GetCells( entry.Shape, anchorX, anchorY, rotation ) )
 		{
-			if ( x < 0 || y < 0 || x >= Grid.Width || y >= Grid.Height )
+			if ( x < 0 || y < 0 || x >= grid.Width || y >= grid.Height )
 				return OriginalPlacementResult.OutsideTerrain;
-			var terrain = Grid.CheckTerrain( x, y );
+			var terrain = grid.CheckTerrain( x, y );
 			if ( terrain != OriginalPlacementResult.Allowed )
 				return terrain;
-			if ( IsOccupied( x, y ) )
+			if ( isOccupied( x, y ) )
 				return OriginalPlacementResult.Occupied;
 		}
 		return OriginalPlacementResult.Allowed;

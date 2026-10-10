@@ -31,6 +31,11 @@ public sealed record M3GateReport( M3GateOptions Options, JsonObject TimeMapping
 {
 	public bool HasFailures => Rows.Any( row => row.Verdict == M3GateVerdict.Fail );
 
+	public bool HasUnresolved => Rows.Any( row => row.Verdict == M3GateVerdict.Unresolved );
+
+	/// <summary>Process exit code: 1 when any row fails, 2 when none fails but one is unresolved, 0 only when every row passes (M3 is accepted only at 0).</summary>
+	public int ExitCode => HasFailures ? 1 : HasUnresolved ? 2 : 0;
+
 	public M3GateRow this[string id] => Rows.First( row => row.Id == id );
 
 	public JsonObject ToJsonObject()
@@ -169,7 +174,8 @@ public static class M3Gate
 
 	/// <summary>
 	/// <c>--m3-gate [--level jungle] [--seed N] [--minutes 30] [--report path.json] [--no-determinism]</c>.
-	/// Prints the summary; returns 1 when any row fails.
+	/// Prints the summary; returns <see cref="M3GateReport.ExitCode"/>: 1 when any row fails, 2 when no row fails but
+	/// one is unresolved, 0 only when every row passes. M3 is accepted only at exit code 0.
 	/// </summary>
 	public static int RunCommand( string[] args )
 	{
@@ -193,7 +199,7 @@ public static class M3Gate
 			File.WriteAllText( path, report.ToJson() + "\n" );
 			Console.WriteLine( $"Report: {path}" );
 		}
-		return report.HasFailures ? 1 : 0;
+		return report.ExitCode;
 	}
 
 	private static string? Option( string[] args, string name )
@@ -216,13 +222,13 @@ internal sealed class M3GateRun
 	private const float Tick = (float)FixedStepClock.TickDuration;
 	/// <summary>Path cells laid from the entrance into the park before objects are placed.</summary>
 	private const int SpineLength = 14;
-	/// <summary>Longest connector path from an exit to the existing paths.</summary>
-	private const int MaximumConnector = 12;
 
 	private readonly M3GateOptions options;
 	private readonly List<M3GateRow> rows = new();
 	private readonly List<Placed> placed = new();
 	private readonly List<OriginalObjectRuntime> fixedItems = new();
+	/// <summary>Every object with an economy record and its instance id (Level.economyInstances): open state is mirrored each tick.</summary>
+	private readonly List<(OriginalObjectRuntime Runtime, int Instance)> economyLinks = new();
 	private readonly HashSet<(int X, int Y)> occupied = new();
 	private readonly RideScriptWorld world = new();
 	private int nextSeed = 1;
@@ -250,7 +256,7 @@ internal sealed class M3GateRun
 	public List<ulong> MinuteHashes { get; } = new();
 	public IReadOnlyList<int> AttractionIds => placed.Select( item => item.Runtime.Visitors.AttractionId ).ToList();
 
-	private sealed record Placed( string Role, ObjectCatalogEntry Entry, int AnchorX, int AnchorY, int Rotation, OriginalObjectRuntime Runtime, int EconomyInstance, int ConnectorCells );
+	private sealed record Placed( string Role, ObjectCatalogEntry Entry, int AnchorX, int AnchorY, int Rotation, OriginalObjectRuntime Runtime, int EconomyInstance );
 
 	public static M3GateRun Execute( M3GateOptions options, long ticks )
 	{
@@ -274,6 +280,7 @@ internal sealed class M3GateRun
 		var openingBalance = economy.Balance;
 		BuildEntrance();
 		runtime.AttachGuests( guests );
+		ConnectFixedItemsToEconomy();
 		BuildPaths();
 		PlaceObject( "attraction", entry => entry.Category == ObjectCategory.Ride && entry.HasQueue );
 		PlaceObject( "shop", entry => entry.Category == ObjectCategory.Shop && OriginalObjectRuntime.CreateVisitorBridge( entry, 1 ).Satisfies != GuestNeeds.None );
@@ -289,12 +296,7 @@ internal sealed class M3GateRun
 	{
 		// [DATA:levels/<theme>/terrain/base.map:InitialPath] [DATA:Standard.sam:FixedItemInfo lanes]
 		foreach ( var entry in catalog.Entries.Where( entry => entry.IsFixedItem && entry.SettingsName is "Gates" or "Lights" or "Bus" ) )
-		{
-			var item = new OriginalObjectRuntime( entry, world, nextSeed++, open: true );
-			fixedItems.Add( item );
-			if ( economy.Catalog.TryGet( entry.InfoId, out _ ) )
-				economy.RegisterExisting( entry.InfoId );
-		}
+			fixedItems.Add( new OriginalObjectRuntime( entry, world, nextSeed++, open: true ) );
 		var lane = guests.Settings.ArrivalLaneA ?? guests.Settings.ArrivalLaneB;
 		var valid = lane is { Length: >= 2 } && grid.IsWalkable( lane[^1].X, lane[^1].Y );
 		entranceCell = valid ? lane![^1] : (-1, -1);
@@ -310,9 +312,25 @@ internal sealed class M3GateRun
 			valid && fixedItems.Any( item => item.Entry.SettingsName == "Gates" ) ? M3GateVerdict.Pass : M3GateVerdict.Fail, null, evidence );
 	}
 
+	/// <summary>Level.ConnectObjectsToEconomy for the fixed items: after AttachGuests, registered, linked and open-state synced.</summary>
+	private void ConnectFixedItemsToEconomy()
+	{
+		foreach ( var item in fixedItems.Where( item => economy.Catalog.TryGet( item.Entry.InfoId, out _ ) ) )
+		{
+			var state = economy.RegisterExisting( item.Entry.InfoId );
+			runtime.Guests?.Link( item.Visitors.AttractionId, state.Id );
+			economyLinks.Add( (item, state.Id) );
+		}
+	}
+
 	private static string Cells( (int X, int Y)[]? lane ) => lane == null ? "none" : string.Join( " ", lane.Select( cell => $"({cell.X},{cell.Y})" ) );
 
-	/// <summary>A straight path from the end of the entrance walkway into the park, bought cell by cell.</summary>
+	/// <summary>
+	/// A straight path from the end of the entrance walkway into the park, bought cell by cell. The runtime has no
+	/// path builder a player can use (no HUD path tool; nothing outside this gate calls <see cref="GuestPathGrid.SetPath"/>),
+	/// so the row fails: M3's "build paths" is not met. The cells are still laid as a scripted substitute so that the
+	/// simulation rows can be measured.
+	/// </summary>
 	// [APPROX:GATE-002] scripted paths are laid by editing the guest path grid and charging Costs.PathCell per cell (no original path build rules: slope, land ownership, connection limits) — evidence needed: original path-building rules and costs
 	private void BuildPaths()
 	{
@@ -343,14 +361,18 @@ internal sealed class M3GateRun
 			["from"] = spine.Count > 0 ? $"({spine[0].X},{spine[0].Y})" : "none",
 			["to"] = spine.Count > 0 ? $"({spine[^1].X},{spine[^1].Y})" : "none",
 			["purchase"] = refused.ToString(),
-			["builtBy"] = "GuestPathGrid.SetPath + ParkEconomy.TryBuyCells(Path); no in-game path tool exists yet"
+			["inGameBuilder"] = "no in-game path builder: no HUD path tool and no player-facing path API; GuestPathGrid.SetPath has no caller outside the gate",
+			["builtBy"] = "scripted substitute (GATE-002): GuestPathGrid.SetPath + ParkEconomy.TryBuyCells(Path)"
 		};
-		AddRow( "build.paths", "paths", "Paths from the entrance, bought through the economy",
-			pathCellsBuilt >= SpineLength / 2 && refused == ParkEconomy.PurchaseResult.Ok ? M3GateVerdict.Pass : M3GateVerdict.Fail, null, evidence );
+		// The verdict is FAIL until a player-facing path builder exists; the gate must then build through it.
+		AddRow( "build.paths", "paths", "Paths from the entrance, built with the in-game path builder", M3GateVerdict.Fail, null, evidence );
 	}
 
 	private bool CanLayPath( int x, int y ) => grid.InBounds( x, y ) && x < buildGrid.Width && y < buildGrid.Height && !grid.IsWalkable( x, y )
 		&& !occupied.Contains( (x, y) ) && buildGrid.CheckTerrain( x, y ) == OriginalPlacementResult.Allowed;
+
+	/// <summary>Cells the object build rule treats as taken: placed objects, plus the gate's own path cells (stricter than ParkObjects, which does not know them).</summary>
+	private bool IsBlocked( int x, int y ) => occupied.Contains( (x, y) ) || grid.IsWalkable( x, y );
 
 	private ParkEconomy.PurchaseResult LayPath( int x, int y )
 	{
@@ -364,9 +386,12 @@ internal sealed class M3GateRun
 	}
 
 	/// <summary>
-	/// Places the first researched, buyable catalog object matching <paramref name="match"/> beside the spine:
-	/// the footprint must pass the terrain and overlap rules, its entrance must open onto a spine cell and its
-	/// exit onto a path (a connector path is built when it does not). Bought with <see cref="ParkEconomy.TryBuild"/>.
+	/// Places the first researched, buyable catalog object matching <paramref name="match"/> beside the spine through
+	/// the HUD build flow's rules (Level.PlaceObject): a clicked cell is turned into an anchor with
+	/// <see cref="Level.GetCentredAnchor"/>, the site must pass <see cref="ParkObjects.Check(IParkGrid, Func{int, int, bool}, ObjectCatalogEntry, int, int, int)"/>,
+	/// the object is bought with <see cref="ParkEconomy.TryBuild"/> and registered with guests by
+	/// <see cref="Level.RegisterWithGuests"/> (attractions only; outside cells snapped to the nearest path, RIDES-028).
+	/// The gate's own choice is the site: its entrance must open onto a spine cell.
 	/// </summary>
 	private void PlaceObject( string role, Func<ObjectCatalogEntry, bool> match )
 	{
@@ -375,55 +400,65 @@ internal sealed class M3GateRun
 			.Where( entry => economy.Research.IsAvailable( entry.InfoId ) && economy.Catalog.TryGet( entry.InfoId, out var info ) && info.IsBuyable )
 			.OrderBy( entry => entry.InfoId ).ToList();
 		evidence["candidates"] = candidates.Count;
+		var area = role == "attraction" ? "rides" : role == "shop" ? "economy" : "guests";
 		foreach ( var entry in candidates )
 		{
 			var site = FindSite( entry );
 			if ( site == null )
 				continue;
-			var purchase = economy.TryBuild( entry.InfoId, out var bought );
+			var (clickX, clickY, rotation) = site.Value;
+			var (anchorX, anchorY) = Level.GetCentredAnchor( entry, clickX, clickY, rotation );
+			var check = ParkObjects.Check( buildGrid, IsBlocked, entry, anchorX, anchorY, rotation );
 			evidence["object"] = entry.ToString();
+			evidence["buildCheck"] = check.ToString();
+			if ( check != OriginalPlacementResult.Allowed )
+				break;
+			var purchase = economy.TryBuild( entry.InfoId, out var bought );
 			evidence["purchase"] = purchase.ToString();
 			if ( purchase != ParkEconomy.PurchaseResult.Ok )
 				break;
-			var (anchorX, anchorY, rotation, connector) = site.Value;
 			foreach ( var cell in ObjectFootprint.GetCells( entry.Shape, anchorX, anchorY, rotation ) )
 				occupied.Add( (cell.X, cell.Y) );
-			foreach ( var cell in connector )
-				LayPath( cell.X, cell.Y );
 			var item = new OriginalObjectRuntime( entry, world, nextSeed++, open: true );
 			var points = ObjectFootprint.GetAccessPoints( entry.Shape, anchorX, anchorY, rotation ).ToArray();
+			var registered = Level.RegisterWithGuests( item, points, guests );
+			runtime.Guests!.Link( item.Visitors.AttractionId, bought!.Id );
+			economyLinks.Add( (item, bought.Id) );
+			placed.Add( new Placed( role, entry, anchorX, anchorY, rotation, item, bought.Id ) );
 			var entrance = points.First( point => point.Kind == ObjectCellKind.Entrance );
 			var exit = points.FirstOrDefault( point => point.Kind == ObjectCellKind.Exit );
 			if ( exit == default )
 				exit = entrance;
-			item.Visitors.EntranceCell = (entrance.OutsideX, entrance.OutsideY);
-			item.Visitors.ExitCell = (exit.OutsideX, exit.OutsideY);
-			item.Visitors.HasCells = true;
-			guests.Register( item.Visitors );
-			runtime.Guests!.Link( item.Visitors.AttractionId, bought!.Id );
-			placed.Add( new Placed( role, entry, anchorX, anchorY, rotation, item, bought.Id, connector.Count ) );
+			evidence["clickedCell"] = $"({clickX},{clickY})";
 			evidence["anchor"] = $"({anchorX},{anchorY})";
 			evidence["rotation"] = rotation;
-			evidence["entranceCell"] = $"({entrance.OutsideX},{entrance.OutsideY})";
-			evidence["exitCell"] = $"({exit.OutsideX},{exit.OutsideY})";
-			evidence["connectorPathCells"] = connector.Count;
+			evidence["registeredWithGuests"] = registered;
+			evidence["entranceCell"] = $"({item.Visitors.EntranceCell.X},{item.Visitors.EntranceCell.Y})";
+			evidence["exitCell"] = $"({item.Visitors.ExitCell.X},{item.Visitors.ExitCell.Y})";
+			if ( item.Visitors.ExitCell != (exit.OutsideX, exit.OutsideY) )
+				evidence["exitSnappedFrom"] = $"({exit.OutsideX},{exit.OutsideY})";
 			evidence["cost"] = bought.TotalSpent;
 			evidence["capacity"] = item.Visitors.Capacity;
 			evidence["kind"] = item.Visitors.Kind.ToString();
 			evidence["satisfies"] = item.Visitors.Satisfies.ToString();
 			evidence["price"] = item.Visitors.Price;
-			var reachable = grid.Distance( entranceCell.X, entranceCell.Y, entrance.OutsideX, entrance.OutsideY ) >= 0
-				&& grid.Distance( exit.OutsideX, exit.OutsideY, entranceCell.X, entranceCell.Y ) >= 0;
+			var reachable = registered && grid.Distance( entranceCell.X, entranceCell.Y, item.Visitors.EntranceCell.X, item.Visitors.EntranceCell.Y ) >= 0
+				&& grid.Distance( item.Visitors.ExitCell.X, item.Visitors.ExitCell.Y, entranceCell.X, entranceCell.Y ) >= 0;
 			evidence["reachableFromEntrance"] = reachable;
-			AddRow( $"build.{role}", role == "attraction" ? "rides" : role == "shop" ? "economy" : "guests", $"Place one {role}",
-				reachable ? M3GateVerdict.Pass : M3GateVerdict.Fail, null, evidence );
+			evidence["placedBy"] = "Level.GetCentredAnchor + ParkObjects.Check + ParkEconomy.TryBuild + Level.RegisterWithGuests (the HUD build flow's rules)";
+			AddRow( $"build.{role}", area, $"Place one {role}", reachable ? M3GateVerdict.Pass : M3GateVerdict.Fail, null, evidence );
 			return;
 		}
-		evidence["reason"] = evidence.ContainsKey( "purchase" ) ? "purchase refused" : candidates.Count == 0 ? "no researched, buyable catalog object of this role" : "no site beside the path";
-		AddRow( $"build.{role}", role == "attraction" ? "rides" : role == "shop" ? "economy" : "guests", $"Place one {role}", M3GateVerdict.Fail, null, evidence );
+		evidence["reason"] = evidence.ContainsKey( "purchase" ) ? "purchase refused" : evidence.ContainsKey( "buildCheck" ) ? "build check refused"
+			: candidates.Count == 0 ? "no researched, buyable catalog object of this role" : "no site beside the path";
+		AddRow( $"build.{role}", area, $"Place one {role}", M3GateVerdict.Fail, null, evidence );
 	}
 
-	private (int AnchorX, int AnchorY, int Rotation, List<(int X, int Y)> Connector)? FindSite( ObjectCatalogEntry entry )
+	/// <summary>
+	/// The clicked cell and rotation that place <paramref name="entry"/> next to the spine: the build rule allows it,
+	/// its entrance opens onto a spine cell (nearest the entrance first) and its exit needs the shortest snap.
+	/// </summary>
+	private (int ClickX, int ClickY, int Rotation)? FindSite( ObjectCatalogEntry entry )
 	{
 		if ( spine.Count < 2 )
 			return null;
@@ -431,78 +466,36 @@ internal sealed class M3GateRun
 		var maxX = spine.Max( cell => cell.X ) + 8;
 		var minY = spine.Min( cell => cell.Y ) - 8;
 		var maxY = spine.Max( cell => cell.Y ) + 8;
-		(int, int, int, List<(int X, int Y)>)? best = null;
+		(int, int, int)? best = null;
 		var bestScore = (int.MaxValue, int.MaxValue);
 		foreach ( var rotation in new[] { 0, 90, 180, 270 } )
 		{
-			for ( var anchorY = minY; anchorY <= maxY; anchorY++ )
+			for ( var clickY = minY; clickY <= maxY; clickY++ )
 			{
-				for ( var anchorX = minX; anchorX <= maxX; anchorX++ )
+				for ( var clickX = minX; clickX <= maxX; clickX++ )
 				{
-					var cells = ObjectFootprint.GetCells( entry.Shape, anchorX, anchorY, rotation ).Select( cell => (cell.X, cell.Y) ).ToHashSet();
-					if ( cells.Any( cell => !CanLayPath( cell.X, cell.Y ) ) )
+					var (anchorX, anchorY) = Level.GetCentredAnchor( entry, clickX, clickY, rotation );
+					if ( ParkObjects.Check( buildGrid, IsBlocked, entry, anchorX, anchorY, rotation ) != OriginalPlacementResult.Allowed )
 						continue;
 					var points = ObjectFootprint.GetAccessPoints( entry.Shape, anchorX, anchorY, rotation ).ToArray();
 					var entrance = points.FirstOrDefault( point => point.Kind == ObjectCellKind.Entrance );
 					if ( entrance == default )
 						continue;
 					var spineIndex = spine.IndexOf( (entrance.OutsideX, entrance.OutsideY) );
-					if ( spineIndex < 1 )
+					if ( spineIndex < 1 || Level.ResolveVisitorCells( points, grid ) is not { } cells )
 						continue;
 					var exit = points.FirstOrDefault( point => point.Kind == ObjectCellKind.Exit );
-					var connector = new List<(int X, int Y)>();
-					if ( exit != default && !grid.IsWalkable( exit.OutsideX, exit.OutsideY ) )
-					{
-						var route = FindConnector( (exit.OutsideX, exit.OutsideY), cells );
-						if ( route == null )
-							continue;
-						connector = route;
-					}
-					var score = (spineIndex, connector.Count);
+					var snap = exit == default ? 0 : Math.Abs( cells.Exit.X - exit.OutsideX ) + Math.Abs( cells.Exit.Y - exit.OutsideY );
+					var score = (spineIndex, snap);
 					if ( score.CompareTo( bestScore ) < 0 )
 					{
 						bestScore = score;
-						best = (anchorX, anchorY, rotation, connector);
+						best = (clickX, clickY, rotation);
 					}
 				}
 			}
 		}
 		return best;
-	}
-
-	/// <summary>Shortest buildable route from <paramref name="start"/> to an existing path cell (excluding the path cell), or null.</summary>
-	private List<(int X, int Y)>? FindConnector( (int X, int Y) start, HashSet<(int X, int Y)> footprint )
-	{
-		bool Free( (int X, int Y) cell ) => CanLayPath( cell.X, cell.Y ) && !footprint.Contains( cell );
-		if ( !Free( start ) )
-			return null;
-		var previous = new Dictionary<(int X, int Y), (int X, int Y)> { [start] = start };
-		var frontier = new Queue<((int X, int Y) Cell, int Length)>();
-		frontier.Enqueue( (start, 1) );
-		while ( frontier.Count > 0 )
-		{
-			var (cell, length) = frontier.Dequeue();
-			foreach ( var (dx, dy) in GuestPathGrid.Directions )
-			{
-				var next = (X: cell.X + dx, Y: cell.Y + dy);
-				if ( grid.IsWalkable( next.X, next.Y ) )
-				{
-					var route = new List<(int X, int Y)>();
-					for ( var at = cell; ; at = previous[at] )
-					{
-						route.Add( at );
-						if ( at == start )
-							break;
-					}
-					return route;
-				}
-				if ( length >= MaximumConnector || previous.ContainsKey( next ) || !Free( next ) )
-					continue;
-				previous[next] = cell;
-				frontier.Enqueue( (next, length + 1) );
-			}
-		}
-		return null;
 	}
 
 	/// <summary>
@@ -592,13 +585,17 @@ internal sealed class M3GateRun
 		var maxStall = new long[placed.Count];
 		var lastBoarded = placed.Select( item => item.Runtime.Visitors.BoardedTotal ).ToArray();
 		var maxQueue = new int[placed.Count];
-		long repairs = 0, wagesPaid = 0, wagesEvents = 0;
-		long litterPeak = 0, litterCleaned = 0, previousLitter = economy.LitterScaled;
-		var faults = new List<string>();
+		long repairs = 0, repairsNeeded = 0, wagesPaid = 0, wagesEvents = 0;
+		long litterPeak = economy.LitterScaled, litterCleaned = 0, litterDropped = 0, previousLitter = economy.LitterScaled;
+		var faults = new Violation();
+		var halted = new Violation();
 		void OnEvent( ParkEvent item )
 		{
 			if ( item.Kind == ParkEventKind.RideRepaired )
 				repairs++;
+			// A ride below WornStateOfRepair or broken down is a mechanic job (ParkEconomy.DispatchMechanics).
+			if ( item.Kind is ParkEventKind.RideWorn or ParkEventKind.RideBrokeDown )
+				repairsNeeded++;
 			if ( item.Kind == ParkEventKind.WagesPaid )
 			{
 				wagesEvents++;
@@ -612,10 +609,10 @@ internal sealed class M3GateRun
 		for ( long tick = 1; tick <= ticks; tick++ )
 		{
 			// Level.Update order: SyncObjectEconomy, guests, (prototype ride), objects, economy.
-			foreach ( var item in placed )
+			foreach ( var (item, instance) in economyLinks )
 			{
-				if ( economy.TryGetObject( item.EconomyInstance, out var state ) )
-					state.IsOpen = item.Runtime.IsOpen;
+				if ( economy.TryGetObject( instance, out var state ) )
+					state.IsOpen = item.IsOpen;
 			}
 			guests.Tick( Tick );
 			foreach ( var item in fixedItems )
@@ -642,8 +639,13 @@ internal sealed class M3GateRun
 				if ( !double.IsFinite( time ) || time < 0 || time <= scriptTimes[index] )
 					timeViolation.Add( tick, $"{placed[index].Entry.SettingsName} script time {scriptTimes[index]} -> {time}" );
 				scriptTimes[index] = time;
-				if ( script.State == RideVMState.Faulted && faults.Count == 0 )
-					faults.Add( $"tick {tick}: {placed[index].Entry.SettingsName}: {script.FaultMessage}" );
+				if ( script.State == RideVMState.Faulted )
+					faults.Add( tick, $"tick {tick}: {placed[index].Entry.SettingsName}: {script.FaultMessage}" );
+				// The gate opens every placed object and never closes or removes it, so its script must keep running.
+				// RideVM reaches Halted only by running past its last instruction or by Stop() (object removed or
+				// level torn down: OriginalObjectRuntime.Stop); closing is VAR_RIDECLOSED and leaves the script running.
+				else if ( script.State == RideVMState.Halted )
+					halted.Add( tick, $"tick {tick}: {placed[index].Entry.SettingsName} script halted while open" );
 			}
 			previousGuestTime = guestTime;
 			previousEconomyTick = economy.Tick;
@@ -748,6 +750,8 @@ internal sealed class M3GateRun
 			litterPeak = Math.Max( litterPeak, economy.LitterScaled );
 			if ( economy.LitterScaled < previousLitter )
 				litterCleaned += previousLitter - economy.LitterScaled;
+			else if ( economy.LitterScaled > previousLitter )
+				litterDropped += economy.LitterScaled - previousLitter;
 			previousLitter = economy.LitterScaled;
 
 			if ( tick % minuteTicks == 0 )
@@ -764,8 +768,8 @@ internal sealed class M3GateRun
 		AddGuestFlowRow( tracks, departed, leftAfterAdmission, turnedBackAtBooth );
 		AddQueueRow( maxWait, maxWaitDetail, maxOpenWait, waits, turnedAwayFromQueue, maxStall, maxQueue );
 		AddReachabilityRow( unreachable, confusedGiveUps, ejected );
-		AddScriptRow( faults );
-		AddStaffRow( repairs, wagesEvents, wagesPaid, litterPeak, litterCleaned );
+		AddScriptRow( faults, halted );
+		AddStaffRow( repairs, repairsNeeded, wagesEvents, wagesPaid, litterPeak, litterDropped, litterCleaned );
 		foreach ( var item in fixedItems )
 			item.Stop();
 		foreach ( var item in placed )
@@ -909,30 +913,58 @@ internal sealed class M3GateRun
 			violation.Count == 0 && unreachableTargets.Count == 0 ? M3GateVerdict.Pass : M3GateVerdict.Fail, violation.First, evidence );
 	}
 
-	private void AddScriptRow( List<string> faults )
+	private void AddScriptRow( Violation faults, Violation halted )
 	{
+		var notRunning = placed.Where( item => item.Runtime.Script?.State is not (RideVMState.Running or RideVMState.Waiting) ).Select( item => item.Entry.SettingsName ).ToList();
 		var evidence = new JsonObject
 		{
 			["scripts"] = string.Join( ", ", placed.Select( item => $"{item.Entry.SettingsName} {item.Runtime.Script?.State}" ).Concat( fixedItems.Select( item => $"{item.Entry.SettingsName} {item.Script?.State}" ) ) ),
 			["attractionCycles"] = placed.FirstOrDefault( item => item.Role == "attraction" )?.Runtime.CompletedCycles ?? 0,
-			["firstFault"] = faults.FirstOrDefault()
+			["firstFault"] = faults.FirstDetail,
+			["haltedTicks"] = halted.Count,
+			["firstHalt"] = halted.FirstDetail,
+			["notRunningAtEnd"] = notRunning.Count == 0 ? "none" : string.Join( ", ", notRunning ),
+			["rule"] = "no placed object's script faults or halts while it is open (Running or Waiting every tick); completed cycles are not required (RIDES-023: BOUNCE does not toggle VAR_RUNNING)"
 		};
-		AddRow( "rides.scripts-run", "rides", "Original object scripts run without faults", faults.Count == 0 ? M3GateVerdict.Pass : M3GateVerdict.Fail, null, evidence );
+		var first = new[] { faults.First, halted.First }.Where( tick => tick != null ).Min();
+		AddRow( "rides.scripts-run", "rides", "Placed objects' original scripts keep running while open, without faults",
+			faults.Count == 0 && halted.Count == 0 && notRunning.Count == 0 ? M3GateVerdict.Pass : M3GateVerdict.Fail, first, evidence );
 	}
 
-	private void AddStaffRow( long repairs, long wageEvents, long wages, long litterPeak, long litterCleaned )
+	/// <summary>
+	/// Each hired staff type must do its own work: a mechanic must repair when a repair was needed (a ride became
+	/// worn or broke down), a handyman must clean when litter existed. A type that was not hired fails the row.
+	/// </summary>
+	private void AddStaffRow( long repairs, long repairsNeeded, long wageEvents, long wages, long litterPeak, long litterDropped, long litterCleaned )
 	{
+		bool Hired( StaffType type ) => economy.Staff.Members.Any( member => member.Type == type );
+		var problems = new List<string>();
+		if ( wageEvents == 0 )
+			problems.Add( "no wages paid" );
+		if ( !Hired( StaffType.Mechanic ) )
+			problems.Add( "no mechanic hired" );
+		else if ( repairsNeeded > 0 && repairs == 0 )
+			problems.Add( "mechanic made no repair although a ride needed one" );
+		if ( !Hired( StaffType.Handyman ) )
+			problems.Add( "no handyman hired" );
+		else if ( (litterPeak > 0 || litterDropped > 0) && litterCleaned == 0 )
+			problems.Add( "handyman cleaned no litter although litter existed" );
 		var evidence = new JsonObject
 		{
 			["wagePayments"] = wageEvents,
 			["wagesPaid"] = wages,
+			["mechanics"] = economy.Staff.Members.Count( member => member.Type == StaffType.Mechanic ),
+			["handymen"] = economy.Staff.Members.Count( member => member.Type == StaffType.Handyman ),
+			["repairsNeeded"] = repairsNeeded,
 			["repairs"] = repairs,
 			["litterPeakItems"] = litterPeak / (double)ParkEconomy.LitterScale,
+			["litterDroppedItems"] = litterDropped / (double)ParkEconomy.LitterScale,
 			["litterCleanedItems"] = litterCleaned / (double)ParkEconomy.LitterScale,
-			["attractionStateOfRepair"] = placed.FirstOrDefault( item => item.Role == "attraction" ) is { } ride && economy.TryGetObject( ride.EconomyInstance, out var state ) ? state.StateOfRepair : null
+			["attractionStateOfRepair"] = placed.FirstOrDefault( item => item.Role == "attraction" ) is { } ride && economy.TryGetObject( ride.EconomyInstance, out var state ) ? state.StateOfRepair : null,
+			["problems"] = problems.Count == 0 ? "none" : string.Join( "; ", problems )
 		};
-		AddRow( "staff.work", "staff", "Hired staff are paid and do work (repairs or cleaning)",
-			wageEvents > 0 && repairs + litterCleaned > 0 ? M3GateVerdict.Pass : M3GateVerdict.Fail, null, evidence );
+		AddRow( "staff.work", "staff", "Each hired staff type is paid and does its work (mechanic repairs, handyman cleans)",
+			problems.Count == 0 ? M3GateVerdict.Pass : M3GateVerdict.Fail, null, evidence );
 	}
 
 	/// <summary>

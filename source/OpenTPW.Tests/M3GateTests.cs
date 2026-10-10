@@ -33,6 +33,11 @@ public class M3GateTests
 		var report = new M3GateReport( new M3GateOptions { Minutes = 1 }, M3Gate.DescribeTimeMapping( 3600 ), rows, 0.5 );
 		Assert.IsTrue( report.HasFailures );
 		Assert.IsFalse( new M3GateReport( new M3GateOptions(), new JsonObject(), rows.Take( 2 ).ToArray(), 0 ).HasFailures );
+		// Exit codes: any Fail gives 1; Pass plus Unresolved gives 2; M3 is accepted only at 0 (every row passes).
+		Assert.AreEqual( 1, report.ExitCode );
+		Assert.AreEqual( 1, new M3GateReport( new M3GateOptions(), new JsonObject(), new[] { rows[0], rows[2] }, 0 ).ExitCode );
+		Assert.AreEqual( 2, new M3GateReport( new M3GateOptions(), new JsonObject(), rows.Take( 2 ).ToArray(), 0 ).ExitCode );
+		Assert.AreEqual( 0, new M3GateReport( new M3GateOptions(), new JsonObject(), rows.Take( 1 ).ToArray(), 0 ).ExitCode );
 		var json = JsonNode.Parse( report.ToJson() )!;
 		Assert.AreEqual( 3, json["rows"]!.AsArray().Count );
 		Assert.AreEqual( "unresolved", (string)json["rows"]![1]!["verdict"]! );
@@ -74,8 +79,13 @@ public class M3GateAssetTests
 		CollectionAssert.AreEquivalent( expected, report.Rows.Select( row => row.Id ).ToArray(), report.ToSummary() );
 		Assert.AreEqual( 3 * 3600L, (long)report.TimeMapping["ticks"]! );
 		// Stability invariants the evaluator must establish on any healthy run.
-		foreach ( var id in new[] { "build.entrance", "build.paths", "build.attraction", "build.shop", "build.toilet", "time.monotonic", "economy.ledger-consistent", "rides.scripts-run" } )
+		foreach ( var id in new[] { "build.entrance", "build.attraction", "build.shop", "build.toilet", "time.monotonic", "economy.ledger-consistent", "rides.scripts-run" } )
 			Assert.AreEqual( M3GateVerdict.Pass, report[id].Verdict, report.ToSummary() );
+		// No player-facing path or queue builder exists, so both build rows fail and the gate cannot exit 0.
+		Assert.AreEqual( M3GateVerdict.Fail, report["build.paths"].Verdict );
+		StringAssert.StartsWith( (string)report["build.paths"].Evidence["inGameBuilder"]!, "no in-game path builder" );
+		Assert.AreEqual( M3GateVerdict.Fail, report["build.queue"].Verdict );
+		Assert.AreEqual( 1, report.ExitCode );
 		// Without an original bound the queue row never passes.
 		Assert.AreEqual( M3GateVerdict.Unresolved, report["queues.no-stuck-queue"].Verdict );
 		Assert.IsTrue( (long)report["guests.flow"].Evidence["admitted"]! > 0, report.ToSummary() );

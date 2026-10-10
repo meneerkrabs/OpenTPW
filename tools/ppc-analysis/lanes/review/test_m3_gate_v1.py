@@ -7,10 +7,13 @@ mapping numbers follow from ParkCalendar's constants, the attraction-id counter 
 writes ``Environment.ExitCode``.
 
 Mutation tests are slow and run only with ``OPENTPW_M3_MUTATE=1`` and ``OPENTPW_GAME_PATH``. They extract the
-subject tree with ``git archive`` into a temporary folder (not a worktree), add fault-injection hooks to
+tree of the commit under test (``OPENTPW_M3_SUBJECT``, default ``HEAD``; the review ran them on f6ad99f) with
+``git archive`` into a temporary folder (not a worktree), add fault-injection hooks to
 ``M3Gate.cs`` (selected by the ``M3GATE_MUTATION`` environment variable at run time), build it once with the .NET 10
 SDK (``OPENTPW_DOTNET``, default ``~/.local/share/opentpw-dotnet10/dotnet``) and run ``--m3-gate`` once per fault.
 Each test states which row must flip. Some tests pin rows that do *not* flip, because that is the finding.
+GATE-FIX made the gate stricter; the expectations it changed are marked "GATE-FIX" below (build.paths fails,
+staff.work is per staff type, rides.scripts-run fails on a halted script, unresolved rows exit 2).
 Nothing here says anything about how the original game behaves.
 """
 from __future__ import annotations
@@ -29,6 +32,8 @@ REPO = Path(__file__).resolve().parents[4]
 SUBJECT = 'f6ad99f'
 BASE = 'efc090d'
 GATE = 'source/OpenTPW/Client/M3Gate.cs'
+# The mutation tests build the gate under test, not the reviewed commit.
+MUTATION_SUBJECT = os.environ.get('OPENTPW_M3_SUBJECT', 'HEAD')
 
 
 def git(*args: str) -> str:
@@ -69,6 +74,21 @@ class StaticFindings(unittest.TestCase):
         loop = re.sub(r'\s+', ' ', loop)
         steps = ['state.IsOpen = item.Runtime.IsOpen;', 'guests.Tick( Tick );', 'foreach ( var item in fixedItems ) item.Simulate( Tick );',
                  'foreach ( var item in placed ) item.Runtime.Simulate( Tick );', 'runtime.FixedTick();']
+        positions = [loop.find(step) for step in steps]
+        self.assertTrue(all(position >= 0 for position in positions), dict(zip(steps, positions)))
+        self.assertEqual(sorted(positions), positions)
+
+    @unittest.skipUnless(has_commit(MUTATION_SUBJECT), f'{MUTATION_SUBJECT} not in this repository')
+    def test_tick_order_matches_level_update_in_gate_under_test(self):
+        # GATE-FIX: the same drift check on the gate under test (the open-state sync now covers every economy link).
+        level = method_body(show('source/OpenTPW/World/Level.cs', MUTATION_SUBJECT), 'public void Update()')
+        level_calls = re.findall(r'(SyncObjectEconomy|Guests\?\.Tick|PlacedRide\?\.Simulate|Objects\.Simulate|Park\?\.FixedTick)', level)
+        self.assertEqual(['SyncObjectEconomy', 'Guests?.Tick', 'PlacedRide?.Simulate', 'Objects.Simulate', 'Park?.FixedTick'], level_calls)
+        loop = method_body(show(GATE, MUTATION_SUBJECT), 'private void Simulate( long ticks )')
+        loop = re.sub(r'\s+', ' ', loop[loop.index('for ( long tick = 1'):loop.index('// Time: strictly increasing')])
+        steps = ['foreach ( var (item, instance) in economyLinks )', 'state.IsOpen = item.IsOpen;', 'guests.Tick( Tick );',
+                 'foreach ( var item in fixedItems ) item.Simulate( Tick );', 'foreach ( var item in placed ) item.Runtime.Simulate( Tick );',
+                 'runtime.FixedTick();']
         positions = [loop.find(step) for step in steps]
         self.assertTrue(all(position >= 0 for position in positions), dict(zip(steps, positions)))
         self.assertEqual(sorted(positions), positions)
@@ -201,6 +221,9 @@ HOOKS = [
      '\t\t\t\tride!.Runtime.Stop();\n\t\t\t\tbreak;\n'
      '\t\t\tcase "close-toilet" when tick == 1:\n'
      '\t\t\t\ttoilet!.Runtime.Close();\n\t\t\t\tbreak;\n'
+     '\t\t\tcase "idle-mechanic":\n\t\t\tcase "idle-handyman":\n'
+     '\t\t\t\tforeach ( var member in economy.Staff.Members.Where( member => member.Type == (Mutation == "idle-mechanic" ? StaffType.Mechanic : StaffType.Handyman) ) )\n'
+     '\t\t\t\t\tmember.State = StaffState.PickedUp;\n\t\t\t\tbreak;\n'
      '\t\t}\n\t}\n\n'
      '\tprivate string AttractionName( int id )'),
     ('\t\tvar second = M3GateRun.Execute( options, ticks );\n',
@@ -223,7 +246,7 @@ GAME = os.environ.get('OPENTPW_GAME_PATH', '')
 MUTATE = os.environ.get('OPENTPW_M3_MUTATE') == '1'
 
 
-@unittest.skipUnless(MUTATE and GAME and Path(GAME).is_dir() and Path(DOTNET).exists() and has_commit(SUBJECT),
+@unittest.skipUnless(MUTATE and GAME and Path(GAME).is_dir() and Path(DOTNET).exists() and has_commit(MUTATION_SUBJECT),
                      'set OPENTPW_M3_MUTATE=1, OPENTPW_GAME_PATH and a .NET 10 SDK (OPENTPW_DOTNET)')
 class Mutations(unittest.TestCase):
     results: dict[str, dict] = {}
@@ -233,7 +256,7 @@ class Mutations(unittest.TestCase):
         # Resolve the macOS /var -> /private/var symlink: with an unresolved solution path NuGet restores every project
         # under two identities and the build writes an OpenTPW.deps.json without the project references.
         cls.tmp = Path(tempfile.mkdtemp(prefix='m3-gate-v-')).resolve()
-        archive = subprocess.run(['git', '-C', str(REPO), 'archive', SUBJECT], check=True, capture_output=True).stdout
+        archive = subprocess.run(['git', '-C', str(REPO), 'archive', MUTATION_SUBJECT], check=True, capture_output=True).stdout
         subprocess.run(['tar', '-x', '-C', str(cls.tmp)], input=archive, check=True)
         gate = cls.tmp / GATE
         gate.write_text(instrument(gate.read_text(encoding='utf-8-sig')), encoding='utf-8')
@@ -273,7 +296,9 @@ class Mutations(unittest.TestCase):
     def test_baseline(self):
         verdicts = self.verdicts('', determinism=True)
         fails = sorted(key for key, value in verdicts.items() if value == 'fail')
-        self.assertEqual(['build.queue', 'determinism.same-seed'], fails)
+        # GATE-FIX: build.paths fails (no in-game path builder).
+        self.assertEqual(['build.paths', 'build.queue', 'determinism.same-seed'], fails)
+        self.assertTrue(self.run_gate('', True)['rows']['build.paths']['evidence']['inGameBuilder'].startswith('no in-game path builder'))
         self.assertEqual(['queues.no-stuck-queue'], [key for key, value in verdicts.items() if value == 'unresolved'])
         self.assertEqual(1, self.run_gate('', True)['exit'])
 
@@ -310,27 +335,35 @@ class Mutations(unittest.TestCase):
         self.assertEqual(('fail', 36001), (row['verdict'], row['firstViolationTick']), row)
         self.assertGreater(row['evidence']['guestsHeadingToUnreachableTarget'], 0)
 
-    def test_stopped_ride_is_caught_only_by_its_frozen_script_clock(self):
+    def test_stopped_ride_fails_scripts_run_and_its_frozen_script_clock(self):
         verdicts = self.verdicts('stall-ride')
         rows = self.run_gate('stall-ride')['rows']
         self.assertEqual(('fail', 18001), (verdicts['time.monotonic'], rows['time.monotonic']['firstViolationTick']))
         self.assertEqual('unresolved', verdicts['queues.no-stuck-queue'])
-        self.assertEqual('pass', verdicts['rides.scripts-run'])  # Halted is not a fault
-        self.assertEqual(['build.queue', 'time.monotonic'], sorted(key for key, value in verdicts.items() if value == 'fail'))
+        # GATE-FIX: a Halted script on an open ride fails the row, from the tick it was stopped (review: it passed).
+        self.assertEqual(('fail', 18000), (verdicts['rides.scripts-run'], rows['rides.scripts-run']['firstViolationTick']))
+        self.assertEqual('Belly Bounce', rows['rides.scripts-run']['evidence']['notRunningAtEnd'])
+        self.assertEqual(['build.paths', 'build.queue', 'rides.scripts-run', 'time.monotonic'],
+                         sorted(key for key, value in verdicts.items() if value == 'fail'))
+        self.assertEqual(1, self.run_gate('stall-ride')['exit'])
 
     def test_ride_stopped_from_start(self):
         verdicts = self.verdicts('stall-ride-from-start')
         self.assertEqual('fail', verdicts['guests.flow'])
         self.assertEqual('fail', verdicts['time.monotonic'])
+        self.assertEqual('fail', verdicts['rides.scripts-run'])  # GATE-FIX
         self.assertEqual('unresolved', verdicts['queues.no-stuck-queue'])
 
-    def test_queue_that_never_boards_again_fails_no_row(self):
+    def test_queue_that_never_boards_again_fails_no_row_but_cannot_exit_zero(self):
         # Main finding: from minute 5 the ride's script runs and stays open, but never takes the offered guest.
         # The queue stays full and nobody boards for the last 25 minutes; the gate adds no failing row (only the
-        # baseline build.queue fails) because the queue row is unresolved by construction.
+        # baseline build rows fail) because the queue row is unresolved by construction.
+        # GATE-FIX regression: the exit code is never 0 here. Today it is 1 (build.paths, build.queue); with those
+        # fixed the unresolved queue row alone gives 2 (M3GateTests.ReportListsEveryRowAndFailsOnAnyFailure).
         verdicts = self.verdicts('block-boarding')
         evidence = self.run_gate('block-boarding')['rows']['queues.no-stuck-queue']['evidence']
-        self.assertEqual(['build.queue'], sorted(key for key, value in verdicts.items() if value == 'fail'))
+        self.assertNotEqual(0, self.run_gate('block-boarding')['exit'])
+        self.assertEqual(['build.paths', 'build.queue'], sorted(key for key, value in verdicts.items() if value == 'fail'))
         self.assertEqual('unresolved', verdicts['queues.no-stuck-queue'])
         self.assertGreater(evidence['attractionLongestStallSeconds'], 1400)
         self.assertGreater(evidence['stillQueuedAtEndMaxSeconds'], 1500)
@@ -341,21 +374,40 @@ class Mutations(unittest.TestCase):
         self.assertEqual('fail', row['verdict'], row)
         self.assertEqual('toilet', row['evidence']['missingStages'])
 
-    def test_staff_work_is_an_or_of_two_staff_types(self):
+    def test_staff_work_requires_each_staff_type(self):
         no_handyman = self.run_gate('no-handyman')['rows']
         no_mechanic = self.run_gate('no-mechanic')['rows']
         self.assertEqual('fail', no_handyman['build.staff']['verdict'])
         self.assertEqual('fail', no_mechanic['build.staff']['verdict'])
-        # Without a handyman litter is never cleaned (861.5 items peak), yet staff.work passes on repairs alone.
+        # Without a handyman litter is never cleaned. GATE-FIX: staff.work now fails (review: it passed on repairs).
         self.assertEqual(0, no_handyman['staff.work']['evidence']['litterCleanedItems'])
-        self.assertEqual('pass', no_handyman['staff.work']['verdict'])
-        # Without a mechanic nothing is repaired and the ride ends at state of repair 0, yet staff.work passes on
-        # litter alone and guests board exactly as often as in the baseline.
+        self.assertGreater(no_handyman['staff.work']['evidence']['litterPeakItems'], 0)
+        self.assertEqual('fail', no_handyman['staff.work']['verdict'])
+        self.assertIn('no handyman hired', no_handyman['staff.work']['evidence']['problems'])
+        # Without a mechanic nothing is repaired and the ride ends at state of repair 0; guests board exactly as often
+        # as in the baseline. GATE-FIX: staff.work now fails (review: it passed on litter).
         self.assertEqual(0, no_mechanic['staff.work']['evidence']['repairs'])
         self.assertEqual(0, no_mechanic['staff.work']['evidence']['attractionStateOfRepair'])
-        self.assertEqual('pass', no_mechanic['staff.work']['verdict'])
+        self.assertEqual('fail', no_mechanic['staff.work']['verdict'])
+        self.assertIn('no mechanic hired', no_mechanic['staff.work']['evidence']['problems'])
         baseline = self.run_gate('')['rows']['guests.flow']['evidence']['attractionBoarded']
         self.assertEqual(baseline, no_mechanic['guests.flow']['evidence']['attractionBoarded'])
+        self.assertEqual('pass', self.run_gate('')['rows']['staff.work']['verdict'])
+
+    def test_hired_but_idle_staff_fail_staff_work(self):
+        # GATE-FIX: hired staff that never work (held PickedUp, so never available) fail the row per type, while
+        # build.staff still passes.
+        idle_mechanic = self.run_gate('idle-mechanic')['rows']
+        self.assertEqual('pass', idle_mechanic['build.staff']['verdict'])
+        self.assertEqual(0, idle_mechanic['staff.work']['evidence']['repairs'])
+        self.assertGreater(idle_mechanic['staff.work']['evidence']['repairsNeeded'], 0)
+        self.assertEqual('fail', idle_mechanic['staff.work']['verdict'])
+        self.assertIn('mechanic made no repair', idle_mechanic['staff.work']['evidence']['problems'])
+        idle_handyman = self.run_gate('idle-handyman')['rows']
+        self.assertEqual('pass', idle_handyman['build.staff']['verdict'])
+        self.assertEqual(0, idle_handyman['staff.work']['evidence']['litterCleanedItems'])
+        self.assertEqual('fail', idle_handyman['staff.work']['verdict'])
+        self.assertIn('handyman cleaned no litter', idle_handyman['staff.work']['evidence']['problems'])
 
     def test_resetting_the_id_counter_makes_raw_hashes_match(self):
         row = self.run_gate('reset-ids', determinism=True)['rows']['determinism.same-seed']

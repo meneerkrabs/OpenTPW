@@ -127,7 +127,8 @@ dotnet source/OpenTPW/bin/Debug/net10.0/OpenTPW.dll --game-path '/path/to/Theme 
 
 Builds a fixed minimal Jungle park without a window or GPU (entrance, paths, Belly Bounce, Drinks Shop,
 Small Toilet, a mechanic and a handyman), runs 30 simulated minutes as fast as possible and prints one
-pass/fail/unresolved row per invariant; exits 1 when a row fails. See [M3-GATE.md](M3-GATE.md).
+pass/fail/unresolved row per invariant. Exit code: 1 when any row fails, 2 when no row fails but at least
+one is unresolved, 0 only when every row passes. M3 is accepted only at exit code 0. See [M3-GATE.md](M3-GATE.md).
 
 ## Read-only BF4 font inspection
 

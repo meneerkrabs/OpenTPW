@@ -1,4 +1,6 @@
 """Synthetic bounds/reference tests; no original asset bytes are included."""
+import os
+from pathlib import Path
 import struct
 import unittest
 
@@ -91,6 +93,26 @@ class CatalogTests(unittest.TestCase):
         struct.pack_into('<I', raw, 24, 65537)
         with self.assertRaises(events.common.pef.PEFError):
             events.banks(raw)
+
+
+class ResponseLookupTests(unittest.TestCase):
+    rows = [(0, 10), (1, 11), (3, 13), (2, 12), (2, 99), (9999, 0), (4, 14)]
+
+    def test_lookup_uses_stored_id_not_position(self):
+        self.assertEqual(events.response_by_id(self.rows, 2), (2, 12))
+        self.assertEqual(self.rows[2], (3, 13))
+
+    def test_first_match_wins_and_sentinel_stops_search(self):
+        self.assertEqual(events.response_by_id(self.rows, 2)[1], 12)
+        for missing in (4, 5):
+            with self.assertRaises(events.common.pef.PEFError):
+                events.response_by_id(self.rows, missing)
+
+    @unittest.skipUnless(os.environ.get('OPENTPW_PPC_BIN_ROOT'), 'supplied Mac binaries not selected')
+    def test_mode_two_advice_resolves_response_by_stored_id(self):
+        report = events.native(Path(os.environ['OPENTPW_PPC_BIN_ROOT']))
+        self.assertEqual(report['mode_two_advice'],
+                         {'advice': 323, 'call': 0x9720, 'response': 587, 'sample': 606, 'lip': 606})
 
 
 if __name__ == '__main__':

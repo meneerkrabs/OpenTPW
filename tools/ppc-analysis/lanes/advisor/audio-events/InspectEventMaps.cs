@@ -13,7 +13,10 @@ var output = Path.GetFullPath( args[1] );
 var directory = new DirectoryInfo( AppContext.BaseDirectory );
 while ( directory != null && !File.Exists( Path.Combine( directory.FullName, ".git" ) ) &&
 	!Directory.Exists( Path.Combine( directory.FullName, ".git" ) ) ) directory = directory.Parent;
-if ( directory == null || output.StartsWith( directory.FullName + Path.DirectorySeparatorChar, StringComparison.Ordinal ) )
+// Without a located checkout the output cannot be shown to lie outside it, so refuse either way.
+if ( directory == null )
+	throw new ArgumentException( "Run the tool from a Git checkout; without one the report cannot be confirmed to lie outside the repository." );
+if ( output.StartsWith( directory.FullName + Path.DirectorySeparatorChar, StringComparison.Ordinal ) )
 	throw new ArgumentException( "Write the interpreted corpus report outside the repository." );
 var results = new List<object>();
 foreach ( var path in Directory.EnumerateFiles( Path.Combine( root, "levels" ), "*.wad", SearchOption.AllDirectories ).Order( StringComparer.Ordinal ) )

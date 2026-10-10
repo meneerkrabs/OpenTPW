@@ -998,7 +998,12 @@ Rows follow the existing 351-descriptor table data `0x1f2b4` into the
 playback. Eligibility, queue score, busy-action and cyclic response rules
 still apply. Event 0 also constructs advice 323 when the global mode value is
 2 (`0x96f4–0x9720`); its `PrebuiltPark.Score` descriptor resolves response 587
-and global speech/LIP 606. Event 10 clears history, as established earlier.
+and global speech/LIP 606. That resolution is by stored ID: native `0x6b7c`
+searches word 0 of the response table (stride 32, sentinel 9999). Response 587
+is in row 584. Indexing row 587 by position would give response 590 (speech 638,
+LIP 0). `audio_event_evidence.py` resolves every row through the same
+first-match search and pins this advice. Event 10 clears history, as established
+earlier.
 
 Concrete producer constructor calls are `0xcc464` (ID 2), `0x108fd4` (ID 3),
 `0x109118` (ID 4), `0x104d2c` (ID 0), and main-loop `0x1c2108` (ID 10)
@@ -1158,11 +1163,13 @@ the native selection behavior.
 
 These are selected class consumers, not a claim that every EVENT uses the base
 class. Linear sentences, shuffles, droppable conversion and class selection
-require their own dispatch evidence. A zero eligible weight sum reaches an
-unsigned division dependency in the native branch; the pure helper reports
-that unsupported input instead of inventing a fallback. Base index models
-are bounded to at most 127 choices because native index temporaries/history
-are signed bytes. That is a helper boundary, not a proven native rejection.
+require their own dispatch evidence. With no eligible links the native branch
+leaves at `0x19398` before dividing, and the helper returns `None`. Only eligible
+links whose weights sum to zero reach the unsigned `divwu` at `0x193c4`; the
+helper raises `ValueError` for that unsupported input instead of inventing a
+fallback. Base index models are bounded to at most 127 choices because native
+index temporaries/history are signed bytes. That is a helper boundary, not a
+proven native rejection.
 Zero weights/thresholds can select on a zero draw because equality is accepted.
 
 ### Random-state ownership boundary

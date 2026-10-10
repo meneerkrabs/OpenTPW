@@ -99,6 +99,22 @@ def banks(raw: bytes):
     return paths
 
 
+RESPONSE_SENTINEL = 9999
+
+
+def response_by_id(rows, response_id: int):
+    """Native 0x6b7c: first row whose stored word 0 matches, stopping at the 9999 sentinel.
+
+    Stored IDs diverge from row positions later in the table, so callers must not index by position.
+    """
+    for row in rows:
+        if row[0] == RESPONSE_SENTINEL:
+            break
+        if row[0] == response_id:
+            return row
+    raise common.pef.PEFError(f'response ID {response_id} not found before the sentinel')
+
+
 def native(root: Path):
     app = common.pef.PEFContainer(common.identified(root / 'SimThemePark.data', common.IDENTITIES['SimThemePark.data']))
     sound = common.pef.PEFContainer(common.identified(root / 'libraries/sound_shared.data', common.IDENTITIES['sound_shared.data']))
@@ -166,16 +182,22 @@ def native(root: Path):
     triggers = [(0, 0x9548, 0x9530, 0), (2, 0x98d4, 0x98bc, 106),
                 (3, 0x9a88, 0x9a70, 128), (4, 0x9c3c, 0x9c24, 129)]
     rows = controller.descriptors(app)
-    responses = {row[0]: row for row in [struct.unpack_from('>8i', app.data_section.data, 0x18ff4 + i * 32) for i in range(610)]}
+    responses = [struct.unpack_from('>8i', app.data_section.data, 0x18ff4 + i * 32) for i in range(610)]
     trigger_rows = []
     for event, call, literal, message in triggers:
         common.require(common.d_fields(app, literal, 14), (4, 0, message), 'automatic advisor message ID')
         common.require(common.call_target(app, call), 0xb6d8, 'automatic advisor pending record constructor')
         first, count = rows[message][8:10]
-        mapped = [responses[i] for i in range(first, first + count)]
+        mapped = [response_by_id(responses, i) for i in range(first, first + count)]
         trigger_rows.append({'event': event, 'message': message, 'call': call,
                              'responses': [{'response': row[0], 'sample': row[1], 'lip': row[2],
                                             'bank': 'local' if row[4] >> 16 else 'global'} for row in mapped]})
+    # Mode-two advice 323 is the in-range witness where stored ID and row position diverge.
+    first, count = rows[323][8:10]
+    common.require((first, count), (587, 1), 'mode two advice response span')
+    common.require(response_by_id(responses, first)[:3], (587, 606, 606), 'mode two response by stored ID')
+    common.require(responses[first][0] != first, True, 'mode two response row position differs from its ID')
+    mode_two = {'advice': 323, 'call': 0x9720, 'response': 587, 'sample': 606, 'lip': 606}
     producers = [(0xcc464, 0xcc460, 2), (0x108fd4, 0x108fd0, 3), (0x109118, 0x109114, 4),
                  (0x104d2c, 0x104d28, 0), (0x1c2108, 0x1c2104, 10), (0x1c2174, 0x1c216c, 0)]
     for call, literal, identifier in producers:
@@ -187,6 +209,7 @@ def native(root: Path):
             'sound_category_routes': [{'type': type_, 'category': name, 'handle_field': offset,
                                        'load': at, 'submit': call} for type_, at, offset, name, call in routes],
             'custom_bank_type': 10, 'automatic_advisor_triggers': trigger_rows,
+            'mode_two_advice': mode_two,
             'event_producers': [{'call': call, 'literal': literal, 'event': id_} for call, literal, id_ in producers],
             'range_hashes': {f'{binary}:{lo:#x}-{hi:#x}': hashlib.sha256(c.code.data[lo:hi]).hexdigest()
                              for c, binary, lo, hi in ranges},

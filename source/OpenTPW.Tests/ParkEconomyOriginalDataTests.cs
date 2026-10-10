@@ -151,12 +151,23 @@ public class ParkEconomyOriginalDataTests
 		var repaired = 0;
 		economy.EventRaised += item => repaired += item.Kind == ParkEventKind.RideRepaired ? 1 : 0;
 		var mechanic = EconomyTestData.HireBest( economy, StaffType.Mechanic );
+		var bouncy = economy.Objects.Single( item => item.InfoId == 1100 );
+		Assert.IsTrue( economy.Catalog.TryGet( 1100, out var info ) );
+		Assert.AreEqual( 3, info.Upgrades[0].WearRate, "Easy_Bouncy.sam wear rate" );
+		Assert.AreEqual( (100, 10), (info.MaxSpeed, info.MaxCapacity), "UsageInfo: Rides.sam MaxSpeed, Bouncy.sam MaxCapacity" );
+		// The Belly Bounce runs full at speed 50 for the whole month; nothing else runs.
+		var rides = new EconomyTestData.RideOperations();
+		var operation = new RideOperation( true, info.MaxCapacity, 50 );
+		rides.Set( bouncy.Id, operation );
+		economy.RideOperations = rides;
+		var firstTurn = economy.Turn;
 		economy.AdvanceMonths( 1 );
 		Assert.AreEqual( new ParkDate( 1, 2, 1, 0 ), economy.Date );
 		Assert.AreEqual( 100000 - economy.Settings.GetMonthlyWage( StaffType.Mechanic, mechanic.Grade ), economy.Balance );
-		var bouncy = economy.Objects.Single( item => item.InfoId == 1100 );
-		Assert.AreEqual( 3, economy.Catalog.TryGet( 1100, out var info ) ? info.Upgrades[0].WearRate : 0, "Easy_Bouncy.sam wear rate" );
-		Assert.AreEqual( 1, repaired, "the worn Belly Bounce was serviced by the mechanic" );
+		var steps = economy.Turn / ParkEconomy.WearInterval - firstTurn / ParkEconomy.WearInterval;
+		Assert.IsTrue( steps > 0 );
+		Assert.AreEqual( 100 - steps * ParkEconomy.WearAmount( info, info.Upgrades[0], operation ), bouncy.Repair, 1e-3, "one original wear step per 64 turns" );
+		Assert.AreEqual( 0, repaired, "a month of use leaves the Belly Bounce above the worn threshold" );
 		Assert.IsTrue( bouncy.StateOfRepair > ParkEconomy.WornStateOfRepair );
 	}
 

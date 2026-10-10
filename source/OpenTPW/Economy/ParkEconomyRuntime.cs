@@ -36,6 +36,7 @@ public sealed class ParkEconomyRuntime
 		Guests = new GuestEconomyBridge( () => Economy, guests );
 		guests.Payments = Guests;
 		Economy.GuestStatistics = Guests;
+		Economy.RideOperations = Guests;
 		// [APPROX:ECON-031] imported parks are opened on load (open state not decoded) — evidence needed: park-open flag in the save
 		Economy.OpenPark();
 		Log.Trace( $"Park economy: guests pay the ${Economy.EntranceFee} entrance fee and shop/sideshow prices into the ledger." );
@@ -142,7 +143,10 @@ public sealed class ParkEconomyRuntime
 		Economy.EventRaised += LogEvent;
 		Economy.EventRaised += ForwardEvent;
 		if ( Guests != null )
+		{
 			Economy.GuestStatistics = Guests;
+			Economy.RideOperations = Guests;
+		}
 		return world;
 	}
 }

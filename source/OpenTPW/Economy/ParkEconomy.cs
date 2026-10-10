@@ -131,6 +131,15 @@ public sealed class ParkEconomy : IParkEconomy
 
 	/// <summary>The golden-ticket check runs every 100 park turns.</summary>
 	public const int GoldenTicketCheckInterval = 100;
+	/// <summary>The ride update (breakdown check) runs every 8 park turns.</summary>
+	public const int RideUpdateInterval = 8;
+	/// <summary>The wear step runs every 64 park turns.</summary>
+	public const int WearInterval = 64;
+	/// <summary>Life gauge lost by each breakdown that the state of repair causes.</summary>
+	public const double BreakdownLifeLoss = 5;
+
+	/// <summary>Ride scripts' running state, riders and speed for the wear step; none by default (nothing wears).</summary>
+	public IRideOperations RideOperations { get; set; } = NoRideOperations.Instance;
 	/// <summary>Staff job time is kept in tenths of a park-clock hour.</summary>
 	public const int BusyTicksPerHour = 10;
 
@@ -141,6 +150,9 @@ public sealed class ParkEconomy : IParkEconomy
 		// [BIN:STP-PPC:0x100F0284 researcher update] each researcher not in an excluded state does research when the turn counter is a multiple of 20
 		if ( turn % ParkResearch.TurnsPerResearch == 0 )
 			DoResearch();
+		// [BIN:STP-PPC:0x100E077C ride update] each ride is updated when the turn counter is a multiple of 8
+		if ( turn % RideUpdateInterval == 0 )
+			UpdateRides( turn );
 		// [BIN:STP-PPC:0x100D67F0 world update] the golden-ticket check (0x100D31D0) runs when the turn counter is a multiple of 100, and only in Full Simulation (game type 0)
 		if ( turn % GoldenTicketCheckInterval == 0 && Mode == ParkGameMode.FullSimulation )
 			CheckGoldenTickets();
@@ -205,6 +217,63 @@ public sealed class ParkEconomy : IParkEconomy
 		CleanLitter();
 	}
 
+	/// <summary>
+	/// The original ride update (docs/reverse/RIDE-WEAR.md): every 8 turns each ride runs the wear step, which acts on
+	/// every 64th turn, and then the breakdown check.
+	/// </summary>
+	private void UpdateRides( long turn )
+	{
+		foreach ( var item in objects.Values.Where( item => item.Kind == ParkObjectKind.Ride ).ToList() )
+		{
+			// [APPROX:ECON-023] the ride update skips rides in states 1, 3 and 4 (+0x198) and rides with +0x64 == 0, and the breakdown check skips +0x2e bit 0; OpenTPW maps these only to "a mechanic is at work" — evidence needed: the names of those ride states and flags
+			if ( item.MechanicId != 0 )
+				continue;
+			if ( turn % WearInterval == 0 )
+				Wear( item );
+			// [BIN:STP-PPC:0x100E077C breakdown check] a ride that is not already broken breaks down when its truncated life gauge or state of repair is 0; when only the state of repair is 0 the life gauge first loses 5 (clamped to 0..100); 0x100E09F4 then sets VAR_BREAKSTAT; there is no random roll
+			if ( item.IsBrokenDown || ((int)item.LifeGauge != 0 && (int)item.Repair != 0) )
+				continue;
+			if ( (int)item.LifeGauge != 0 )
+				item.LifeGauge = Math.Clamp( item.LifeGauge - BreakdownLifeLoss, 0, 100 );
+			item.IsBrokenDown = true;
+			Raise( ParkEventKind.RideBrokeDown, 0, item.Id, item.InfoId );
+		}
+	}
+
+	/// <summary>One original wear step (0x100DEC2C) of a ride whose script reports it running.</summary>
+	private void Wear( ParkObjectState item )
+	{
+		if ( !Catalog.TryGet( item.InfoId, out var info ) || info.Upgrades.Count == 0 )
+			return;
+		var level = info.Upgrades[Math.Min( item.Level, info.Upgrades.Count - 1 )];
+		// [BIN:STP-PPC:0x100DEC2C wear step] nothing happens when Upgrades[level].WearRate is 0, in online mode (OpenTPW has none) or when the ride script does not report VAR_RUNNING; with VAR_ONRIDE 0 the wear is 0
+		if ( level.WearRate == 0 || !RideOperations.TryGet( item.Id, out var operation ) || !operation.Running )
+			return;
+		var wear = operation.Riders == 0 ? 0 : WearAmount( info, level, operation );
+		var before = item.StateOfRepair;
+		// [BIN:STP-PPC:0x100DEC2C wear step] state of repair (+0x40) loses the wear and the life gauge (+0x44) 0.02 × the wear, each clamped to 0..100
+		item.Repair = Math.Clamp( item.Repair - wear, 0, 100 );
+		item.LifeGauge = Math.Clamp( item.LifeGauge - 0.02f * wear, 0, 100 );
+		if ( before >= WornStateOfRepair && item.StateOfRepair < WornStateOfRepair )
+			Raise( ParkEventKind.RideWorn, item.StateOfRepair, item.Id, item.InfoId );
+	}
+
+	/// <summary>
+	/// Wear of one step (0x100DE904): a speed term and a rider term, each 0.9 × value / maximum plus 0.1, or halfway to
+	/// 1.1 at or above the red line, times 0.5 × <c>WearRate</c>. Single precision, as in the original.
+	/// </summary>
+	// [BIN:STP-PPC:0x100DE904 wear amount] riders = VAR_ONRIDE clamped to 0..UsageInfo.MaxCapacity (call flag r7 = 0 at 0x100DED70); s = 0.9 speed / MaxSpeed, then (s + 1.1) × 0.5 when RedLineSpeed <= speed, else s + 0.1; c = 0.9 riders / MaxCapacity, then (c + 1.1) × 0.5 when RedLineCapacity <= riders / 10, else c + 0.1; wear = (s + c) × 0.5 × WearRate
+	public static float WearAmount( EconomyObjectInfo info, UpgradeLevelInfo level, RideOperation operation )
+	{
+		var riders = Math.Clamp( operation.Riders, 0, Math.Max( 0, info.MaxCapacity ) );
+		// A zero maximum would divide by zero in the original; no original ride has one.
+		var speedTerm = info.MaxSpeed > 0 ? 0.9f * (operation.Speed / (float)info.MaxSpeed) : 0f;
+		speedTerm = level.RedLineSpeed <= operation.Speed ? (speedTerm + 1.1f) * 0.5f : speedTerm + 0.1f;
+		var riderTerm = info.MaxCapacity > 0 ? 0.9f * (riders / (float)info.MaxCapacity) : 0f;
+		riderTerm = level.RedLineCapacity <= riders / 10f ? (riderTerm + 1.1f) * 0.5f : riderTerm + 0.1f;
+		return (speedTerm + riderTerm) * 0.5f * level.WearRate;
+	}
+
 	private void FinishJob( StaffMember member )
 	{
 		member.State = StaffState.Patrolling;
@@ -223,8 +292,8 @@ public sealed class ParkEconomy : IParkEconomy
 		}
 		else
 		{
-			// [APPROX:ECON-024] a repair restores state of repair to 100 — evidence needed: capture after a repair
-			item.StateOfRepair = 100;
+			// [BIN:STP-PPC:0x100DEF2C repair] a repair sets the state of repair to 100 and clears the worn flag; it does not restore the life gauge
+			item.Repair = 100;
 			item.IsBrokenDown = false;
 			Raise( ParkEventKind.RideRepaired, 0, item.Id, item.InfoId );
 		}
@@ -272,24 +341,6 @@ public sealed class ParkEconomy : IParkEconomy
 
 	private void EndDay( long day )
 	{
-		foreach ( var item in objects.Values.Where( item => item.Kind == ParkObjectKind.Ride && item.IsOpen && !item.IsBrokenDown && item.MechanicId == 0 ) )
-		{
-			if ( !Catalog.TryGet( item.InfoId, out var info ) || info.Upgrades.Count == 0 )
-				continue;
-			var wear = info.Upgrades[Math.Min( item.Level, info.Upgrades.Count - 1 )].WearRate;
-			if ( wear <= 0 )
-				continue;
-			var before = item.StateOfRepair;
-			// [APPROX:ECON-023] an open ride loses WearRate state of repair per game day; breakdown at 0 — evidence needed: capture of state of repair over time
-			item.StateOfRepair = Math.Max( 0, before - wear );
-			if ( item.StateOfRepair == 0 )
-			{
-				item.IsBrokenDown = true;
-				Raise( ParkEventKind.RideBrokeDown, 0, item.Id, item.InfoId );
-			}
-			else if ( before >= WornStateOfRepair && item.StateOfRepair < WornStateOfRepair )
-				Raise( ParkEventKind.RideWorn, item.StateOfRepair, item.Id, item.InfoId );
-		}
 		var challenges = Features.Challenges ? Objectives.AdvanceDay( day + 1, MeasureChallenge ).ToList() : new();
 		foreach ( var (kind, index, amount, detail) in challenges )
 		{

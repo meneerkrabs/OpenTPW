@@ -109,6 +109,10 @@ public static class ParkSaveFile
 		public required int ChanceOfLosingPercent { get; init; }
 		public required bool IsOpen { get; init; }
 		public required int StateOfRepair { get; init; }
+		/// <summary>Exact state of repair; absent in older saves, which then use <see cref="StateOfRepair"/>.</summary>
+		public double? Repair { get; init; }
+		/// <summary>Ride life gauge; absent in older saves, which then start at 100.</summary>
+		public double? LifeGauge { get; init; }
 		public required bool IsBrokenDown { get; init; }
 		public required int MechanicId { get; init; }
 		public required long[] Statistics { get; init; }
@@ -210,6 +214,8 @@ public static class ParkSaveFile
 				ChanceOfLosingPercent = item.ChanceOfLosingPercent,
 				IsOpen = item.IsOpen,
 				StateOfRepair = item.StateOfRepair,
+				Repair = item.Repair,
+				LifeGauge = item.LifeGauge,
 				IsBrokenDown = item.IsBrokenDown,
 				MechanicId = item.MechanicId,
 				Statistics = new[] { item.CustomersThisMonth, item.CustomersLastMonth, item.TakingsThisMonth, item.TakingsLastMonth, item.CostsThisMonth, item.CostsLastMonth, item.WinnersThisMonth, item.WinnersLastMonth, item.TotalProfit }
@@ -299,6 +305,8 @@ public static class ParkSaveFile
 			Require( item.Id > 0 && item.Id < data.NextObjectId && ids.Add( item.Id ), $"object id {item.Id}" );
 			Require( item.Level is >= 0 and <= 2 && item.PendingLevel is >= 0 and <= 2 && item.StateOfRepair is >= 0 and <= 100 && item.Statistics.Length == 9, $"object {item.Id}" );
 			Require( item.BuiltTick <= data.Tick && item.Price >= 0 && item.CostOfGoods >= 0 && item.ChanceOfLosingPercent is >= 0 and <= 100, $"object {item.Id} values" );
+			Require( item.Repair is null || (double.IsFinite( item.Repair.Value ) && item.Repair.Value is >= 0 and <= 100 && (int)item.Repair.Value == item.StateOfRepair), $"object {item.Id} repair" );
+			Require( item.LifeGauge is null || (double.IsFinite( item.LifeGauge.Value ) && item.LifeGauge.Value is >= 0 and <= 100), $"object {item.Id} life gauge" );
 		}
 		var staffIds = new HashSet<int>();
 		foreach ( var member in data.Staff.Members )
@@ -342,7 +350,8 @@ public static class ParkSaveFile
 				CostOfGoods = item.CostOfGoods,
 				ChanceOfLosingPercent = item.ChanceOfLosingPercent,
 				IsOpen = item.IsOpen,
-				StateOfRepair = item.StateOfRepair,
+				Repair = item.Repair ?? item.StateOfRepair,
+				LifeGauge = item.LifeGauge ?? 100,
 				IsBrokenDown = item.IsBrokenDown,
 				MechanicId = item.MechanicId,
 				CustomersThisMonth = item.Statistics[0],

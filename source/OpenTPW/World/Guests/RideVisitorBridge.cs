@@ -81,6 +81,10 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public bool IsOpen => vm != null && vm.State is (RideVMState.Running or RideVMState.Waiting) && isOpen();
 	/// <summary>The ride reports a failure (<c>VAR_BROKEN</c>); queueing guests leave.</summary>
 	public bool IsBroken => vm != null && Get( RideVariables.VAR_BROKEN ) != 0;
+	public bool IsRunning => vm != null && Get( RideVariables.VAR_RUNNING ) != 0;
+	public int RidersOnBoard => vm != null ? Get( RideVariables.VAR_ONRIDE ) : 0;
+	/// <summary>The operating speed: InitSpeed of the ride record (see <see cref="QueueParameters"/>).</summary>
+	public int Speed => Parameters.Speed;
 	/// <summary>The guest called forward (ride <c>+104</c>), 0 when none.</summary>
 	public int CalledGuest => called;
 	/// <summary>Compatibility name of <see cref="CalledGuest"/>.</summary>

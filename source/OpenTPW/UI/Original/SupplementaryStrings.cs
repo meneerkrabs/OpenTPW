@@ -112,7 +112,7 @@ public static class SupplementaryStrings
 		[OpenTpwText.EnhancedTextures] = new[] { "Enhanced textures:", "Forbedrede teksturer:", "Verbeterde textures:", "Textures améliorées :", "Verbesserte Texturen:", "Förbättrade texturer:" },
 		[OpenTpwText.TexturePackMissing] = new[] { "No pack built", "Ingen pakke bygget", "Geen pakket gebouwd", "Aucun pack créé", "Kein Paket erstellt", "Inget paket byggt" },
 		[OpenTpwText.TexturePackOriginal] = new[] { "Original", "Oprindelig", "Origineel", "D'origine", "Ursprünglich", "Ursprunglig" },
-		[OpenTpwText.TexturePackClean] = new[] { "Clean", "Ren", "Strak", "Net", "Sauber", "Ren" },
+		[OpenTpwText.TexturePackClean] = new[] { "Enhanced", "Forbedret", "Verbeterd", "Amélioré", "Verbessert", "Förbättrad" },
 		[OpenTpwText.TexturePackDetailed] = new[] { "Detailed", "Detaljeret", "Gedetailleerd", "Détaillé", "Detailliert", "Detaljerad" },
 		[OpenTpwText.LoadingTextures] = new[] { "Loading textures... {0} / {1}", "Indlæser teksturer... {0} / {1}", "Textures laden... {0} / {1}", "Chargement des textures... {0} / {1}", "Texturen werden geladen... {0} / {1}", "Läser in texturer... {0} / {1}" },
 		[OpenTpwText.GameFiles] = new[] { "Game files", "Spilfiler", "Spelbestanden", "Fichiers du jeu", "Spieldateien", "Spelfiler" },

@@ -266,8 +266,9 @@ public sealed record GraphicsSettings
 	/// <summary>[EXT:COMPAT-GFX-VIEWDISTANCE] OpenTPW fog distance multiplier; 1 = unchanged.</summary>
 	public float ViewDistanceScale { get; init; } = 1;
 	/// <summary>
-	/// [EXT:texture-pack] Name of the locally built texture pack to use, a directory under <c>texture-packs</c>
-	/// (<c>enhanced</c>, <c>detailed</c>, ...; docs/TEXTURE-PACKS.md); empty = original textures. Stored as <c>"TexturePack"</c>.
+	/// [EXT:texture-pack] Texture choice (docs/TEXTURE-PACKS.md): empty = original textures; <c>enhanced</c> (the default) = the
+	/// shipped HD interface art plus the locally built <c>enhanced</c> pack when there is one; other names (<c>detailed</c>, ...)
+	/// = the shipped art plus that pack under <c>texture-packs</c>. Stored as <c>"TexturePack"</c>.
 	/// </summary>
 	[JsonPropertyName( "TexturePack" ), JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 	public string? TexturePackName { get; init; }
@@ -290,8 +291,9 @@ public sealed record GraphicsSettings
 		var result = this;
 		// Migration: a file without a "TexturePack" key (absent or null) takes the old boolean, which selected the one pack
 		// that existed then; an explicit "TexturePack" value, even "", wins over it.
+		// Enhanced is the default: only an explicit "EnhancedTextures": false of earlier versions selects the originals.
 		if ( result.TexturePackName == null )
-			result = result with { TexturePackName = result.EnhancedTextures == true ? TexturePack.DefaultName : "" };
+			result = result with { TexturePackName = result.EnhancedTextures == false ? "" : TexturePack.DefaultName };
 		result = result with { EnhancedTextures = null };
 		if ( result.TexturePackName!.Length > 0 && !TexturePack.IsValidName( result.TexturePackName ) )
 		{

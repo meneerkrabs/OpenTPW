@@ -51,7 +51,8 @@ internal static class CompatibilityStartup
 
 		var graphicsDiagnostics = new List<string>();
 		var graphicsPath = GraphicsSettings.GetDefaultPath();
-		var graphics = smokeTest ? GraphicsSettings.Default : GraphicsSettings.Load( graphicsPath, graphicsDiagnostics );
+		// Smoke tests read back original pixels: they run on the original textures, not the enhanced default.
+		var graphics = smokeTest ? GraphicsSettings.Default with { TexturePackName = "" } : GraphicsSettings.Load( graphicsPath, graphicsDiagnostics );
 		var preset = GetOption( args, "--graphics-preset", "low, medium, high or enhanced" );
 		if ( preset != null )
 		{

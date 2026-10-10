@@ -1,7 +1,30 @@
-# Enhanced textures (optional local texture pack)
+# Enhanced textures (shipped HD interface art and optional local texture packs)
 
-October 9, 2026. Status: **optional OpenTPW extension (`[EXT:texture-pack]`), off by default.**
-Original textures are always the default; nothing here changes original behaviour.
+October 10, 2026. Status: **OpenTPW extension (`[EXT:texture-pack]`), Enhanced by default.**
+The options offer **Original** (the game's own textures, exactly as shipped) and **Enhanced** (the
+default): the HD interface art that ships with OpenTPW, plus a locally built AI texture pack when there
+is one. Original reproduces the original look unchanged.
+
+## Shipped interface art
+
+`content/hero-art/textures/ui/textures/*.wct.png` holds 48 HD replacements (8×, e.g. a 64×64 texture
+becomes 512×512) for the HUD, lobby and options buttons: buy, info, money, research, map, the build
+categories (rides, shops, shows, features), door, enter-park, erase, OK, exit, retract, the
+arrows and the slider ball, with their pressed, highlighted and disabled states. With Enhanced they
+replace the original interface art before any local pack is consulted (`TexturePack.Find`).
+
+Provenance: on October 10, 2026 each base icon was cut out of the original texture at its alpha mask,
+enlarged, and redrawn by Google Gemini's image model in the Gemini web app with a fixed prompt per icon
+("recreate exactly this icon as a crisp 1024×1024 image, same composition, colours and late-90s
+glossy 3D cartoon style; do not redesign"; `tools/hero-art/prompts.tsv`). Matching pairs were made
+as edits of one result (door closed/open, left/right arrow; the right lobby arrow is the mirrored
+left one; the lit feature button is a recolour of the normal one). `tools/hero-art/fit.py` fits each
+result back into the original texture layout: the icon is scaled onto the original icon's bounding
+box, the outline comes from the original alpha mask, and the state variants are derived from the
+redrawn base with the original's colour change (per-channel gain for pressed and grey states, a
+fitted colour mapping for highlighted ones). The two option toggles `b_on1`/`b_on2` (multi-piece
+atlases) stay original. These images are AI recreations of the original EA/Bullfrog icons; the
+project owner chose to ship them.
 
 The original textures are small: 8,375 `.wct` textures in the installed WADs, mostly
 32×32 (2,777) and 128×128 (2,352), the largest 256×128 (48.4 million pixels in total).
@@ -22,7 +45,7 @@ jungle textures at native resolution:
 
 | Pack name | Options label | Pipeline | Look |
 | --- | --- | --- | --- |
-| `enhanced` (default) | Clean | 1x DeJPG, then Real-ESRGAN `realesrgan-x4plus` | Crisp edges, keeps the original cartoony CG style |
+| `enhanced` (default) | Enhanced | 1x DeJPG, then Real-ESRGAN `realesrgan-x4plus` | Crisp edges, keeps the original cartoony CG style |
 | `detailed` | Detailed | 1x DeJPG, then `ultrasharp-4x` (4x-UltraSharp) | Most detail, some grain |
 
 Interface art always uses `realesrgan-x4plus-anime` without the pre-pass. Guest sprite atlases use
@@ -54,7 +77,7 @@ work of the original assets, so it is **never shipped, committed or uploaded**.
 2. Build (the ONNX model runs through ONNX Runtime: CoreML on macOS when available, CPU otherwise):
 
    ```sh
-   # Clean (default pack name "enhanced")
+   # Enhanced (default pack name "enhanced")
    bash scripts/run.sh --game-path '/path/to/Theme Park World' --build-texture-pack \
      --upscaler /path/to/realesrgan-ncnn-vulkan --prepass-model /path/to/dejpg.onnx
 
@@ -75,16 +98,18 @@ work of the original assets, so it is **never shipped, committed or uploaded**.
    it warns when the models differ). All of these act per pack name. The game only lists packs under the
    config directory; a pack built elsewhere is used with `OPENTPW_TEXTURE_PACK=<dir>/textures`, which pins
    the pack and overrides the setting.
-3. Choose **Game Options -> OpenTPW -> Enhanced textures** (Original, Clean, Detailed; only installed packs are listed) and press OK. The
-   textures are swapped in the running game behind a loading bar; no restart is needed. Without any pack
-   the row shows "No pack built" and cannot be changed.
+3. Choose **Game Options -> OpenTPW -> Enhanced textures** (Original, Enhanced, then Detailed and any other
+   installed pack) and press OK. The textures are swapped in the running game behind a loading bar; no
+   restart is needed. Enhanced is always offered: without a local `enhanced` pack it means the shipped
+   interface art only.
 
 ### Setting and migration
 
-`graphics.json` stores the choice as `"TexturePack": "<name>"`; `""` (the default) is the original
-textures, `"enhanced"` Clean, `"detailed"` Detailed, any other name is a pack directory of that name.
-Files from earlier versions with `"EnhancedTextures": true` are read as `"TexturePack": "enhanced"` (`false`
-as off); the old key is dropped the next time the settings are saved. If both keys exist the new one
+`graphics.json` stores the choice as `"TexturePack": "<name>"`; `""` is the original textures,
+`"enhanced"` (the default, also when the key is missing or null) is Enhanced, `"detailed"` Detailed, any
+other name is a pack directory of that name (with the shipped interface art). Files from earlier
+versions with `"EnhancedTextures": true` are read as `"TexturePack": "enhanced"`, `false` as Original;
+the old key is dropped the next time the settings are saved. Smoke tests always run on the originals. If both keys exist the new one
 wins. Names must be plain directory names (letters, digits, `-`, `_`, `.`).
 
 ### Pre-pass

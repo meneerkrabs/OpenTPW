@@ -63,9 +63,23 @@ public static class TexturePack
 		}
 	}
 
-	/// <summary>The replacement PNG for a game texture path, or null when there is none.</summary>
+	/// <summary>
+	/// HD interface art shipped with OpenTPW (<c>content/hero-art/textures</c>, same layout as a pack's textures; docs/TEXTURE-PACKS.md):
+	/// AI-redrawn HUD and menu icons, used whenever an enhanced choice is active, with or without a locally built pack.
+	/// </summary>
+	public static string ShippedDirectory { get; set; } = Path.Combine( AppContext.BaseDirectory, "content", "hero-art", "textures" );
+
+	/// <summary>True when an enhanced choice (any non-empty pack name) is active: the shipped interface art is used.</summary>
+	public static bool Enhanced { get; private set; }
+
+	/// <summary>
+	/// The replacement PNG for a game texture path, or null when there is none: with an enhanced choice the shipped interface
+	/// art first, then the active pack.
+	/// </summary>
 	public static string? Find( string gamePath )
 	{
+		if ( Enhanced && System.IO.File.Exists( Path.Combine( ShippedDirectory, RelativeFileName( gamePath ) ) ) )
+			return Path.Combine( ShippedDirectory, RelativeFileName( gamePath ) );
 		if ( string.IsNullOrEmpty( Directory ) )
 			return null;
 		var file = Path.Combine( Directory, RelativeFileName( gamePath ) );
@@ -125,6 +139,7 @@ public static class TexturePack
 		if ( !string.IsNullOrEmpty( Environment.GetEnvironmentVariable( "OPENTPW_TEXTURE_PACK" ) ) )
 			return;
 		Directory = null;
+		Enhanced = !string.IsNullOrEmpty( name );
 		if ( string.IsNullOrEmpty( name ) )
 			return;
 		if ( !IsValidName( name ) )
@@ -133,9 +148,14 @@ public static class TexturePack
 			return;
 		}
 		var packDirectory = PackDirectory( name, packsDirectory );
-		var manifest = Open( packDirectory, diagnostics );
+		// The default enhanced choice works without a local pack (shipped interface art only); other names need their pack.
+		var manifest = Open( packDirectory, name == DefaultName ? new List<string>() : diagnostics );
 		if ( manifest == null )
+		{
+			if ( name == DefaultName )
+				Log?.Trace( "Enhanced textures: shipped interface art; no local texture pack built (docs/TEXTURE-PACKS.md)." );
 			return;
+		}
 		Directory = Path.Combine( packDirectory, TexturesDirectoryName );
 		Log?.Trace( $"Texture pack '{name}': {manifest.Textures} textures at {manifest.Scale}x ({manifest.Upscaler}, model {manifest.Model}{(manifest.PrepassModel.Length > 0 ? $", pre-pass {manifest.PrepassModel}" : "")})." );
 	}

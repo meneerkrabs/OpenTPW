@@ -226,11 +226,11 @@ main page has its OpenTPW button, and Back is the `b_okay` button in the OK plac
 returns to the original page with the edits still pending, and OK on the original page applies
 both pages; Cancel/Escape there discards everything.
 
-The enhanced-textures row (`enhancedTextures`, `[EXT:texture-pack]`) cycles "Original" (the game's own textures), then every
-installed texture pack (a directory under `<config>/texture-packs` with a valid `pack.json`;
-see TEXTURE-PACKS.md): `enhanced` is labelled "Clean", `detailed` "Detailed" (translated in all six
-languages), other pack names are shown as they are. With no pack installed the row shows
-"No pack built" and does not change. The choice is applied on OK, without a restart: a modal
+The enhanced-textures row (`enhancedTextures`, `[EXT:texture-pack]`) cycles "Original" (the game's own textures),
+"Enhanced" (the default: the HD interface art shipped in `content/hero-art` plus the local `enhanced` pack
+when one is built), then every other installed texture pack (a directory under `<config>/texture-packs` with a
+valid `pack.json`; see TEXTURE-PACKS.md): `detailed` is labelled "Detailed" (translated in all six languages),
+other pack names are shown as they are. The choice is applied on OK, without a restart: a modal
 "Loading textures... n / total" screen with a progress bar (the `w_dialog` window; it takes all
 input and has no Back) swaps the textures of the running game in place while the game keeps
 rendering, then the options close. No restart notice appears for a texture pack.

@@ -280,12 +280,43 @@ public class TexturePackTests
 	}
 
 	[TestMethod]
+	public void ShippedInterfaceArtWinsOnlyWithAnEnhancedChoice()
+	{
+		var root = TemporaryDirectory();
+		var shipped = Path.Combine( root, "shipped" );
+		Directory.CreateDirectory( Path.Combine( shipped, "ui", "textures" ) );
+		File.WriteAllBytes( Path.Combine( shipped, "ui", "textures", "b_buy.wct.png" ), PngImage.EncodeRgba( 2, 2, new byte[16] ) );
+		var previous = TexturePack.ShippedDirectory;
+		try
+		{
+			TexturePack.ShippedDirectory = shipped;
+			var pack = Path.Combine( root, "enhanced" );
+			TexturePackBuilder.Build( new (string, Func<TextureData>)[] { ("ui/textures/b_buy.wct", () => Pattern( 32, 32 )), ("levels/a/textures/x.wct", () => Pattern( 32, 32 )) },
+				pack, new NearestUpscaler(), new TexturePackBuildOptions(), _ => { }, new NearestUpscaler() );
+			TexturePack.Activate( "enhanced", new List<string>(), root );
+			Assert.AreEqual( Path.Combine( shipped, "ui/textures/b_buy.wct.png" ), TexturePack.Find( "/ui/textures/B_BUY.wct" ), "shipped art before the pack" );
+			Assert.AreEqual( Path.Combine( pack, "textures", "levels/a/textures/x.wct.png" ), TexturePack.Find( "levels/a/textures/x.wct" ) );
+			TexturePack.Activate( "", new List<string>(), root );
+			Assert.IsNull( TexturePack.Find( "ui/textures/b_buy.wct" ), "Original uses neither" );
+		}
+		finally
+		{
+			TexturePack.ShippedDirectory = previous;
+			TexturePack.Activate( "", new List<string>() );
+		}
+	}
+
+	[TestMethod]
 	public void ActivationNeedsAPackNameAndAUsablePack()
 	{
 		var root = TemporaryDirectory();
 		var pack = Path.Combine( root, "enhanced" );
 		var diagnostics = new List<string>();
 		TexturePack.Activate( "enhanced", diagnostics, root );
+		Assert.IsNull( TexturePack.Directory );
+		Assert.IsTrue( TexturePack.Enhanced );
+		Assert.AreEqual( 0, diagnostics.Count, "Enhanced works without a local pack (shipped interface art only)" );
+		TexturePack.Activate( "detailed", diagnostics, root );
 		Assert.IsNull( TexturePack.Directory );
 		StringAssert.Contains( diagnostics.Single(), "--build-texture-pack" );
 
@@ -331,10 +362,10 @@ public class TexturePackTests
 		var diagnostics = new List<string>();
 		Assert.AreEqual( "enhanced", GraphicsSettings.FromJson( "{\"EnhancedTextures\": true}", diagnostics ).TexturePackName, "old true = the enhanced pack" );
 		Assert.AreEqual( "", GraphicsSettings.FromJson( "{\"EnhancedTextures\": false}", diagnostics ).TexturePackName );
-		Assert.AreEqual( "", GraphicsSettings.FromJson( "{}", diagnostics ).TexturePackName, "off by default" );
+		Assert.AreEqual( "enhanced", GraphicsSettings.FromJson( "{}", diagnostics ).TexturePackName, "Enhanced by default" );
 		Assert.AreEqual( "detailed", GraphicsSettings.FromJson( "{\"TexturePack\": \"detailed\"}", diagnostics ).TexturePackName );
 		Assert.AreEqual( "detailed", GraphicsSettings.FromJson( "{\"TexturePack\": \"detailed\", \"EnhancedTextures\": true}", diagnostics ).TexturePackName, "the new key wins" );
-		Assert.AreEqual( "", GraphicsSettings.FromJson( "{\"TexturePack\": null}", diagnostics ).TexturePackName );
+		Assert.AreEqual( "enhanced", GraphicsSettings.FromJson( "{\"TexturePack\": null}", diagnostics ).TexturePackName, "null is no choice: the default" );
 		Assert.AreEqual( "", GraphicsSettings.FromJson( "{\"TexturePack\": \"\", \"EnhancedTextures\": true}", diagnostics ).TexturePackName, "an explicit empty TexturePack wins over the old boolean" );
 		Assert.AreEqual( 0, diagnostics.Count );
 		Assert.AreEqual( "", GraphicsSettings.FromJson( "{\"TexturePack\": \"../x\"}", diagnostics ).TexturePackName );
@@ -375,7 +406,7 @@ public class TexturePackTests
 	public void OptionsRowCyclesOffThenEveryInstalledPackAndSwitchesAtOk()
 	{
 		var strings = OriginalUiTests.FakeStrings();
-		var graphics = new GraphicsSettingsService( _ => null, GraphicsSettings.Default, null, () => CompatibilityFlags.Original );
+		var graphics = new GraphicsSettingsService( _ => null, GraphicsSettings.Default with { TexturePackName = "" }, null, () => CompatibilityFlags.Original );
 		var requested = new List<string>();
 		FakeSwitch? running = null;
 		OptionsServices Services( string[] packs, bool withGraphics = true, bool withSwitch = true ) => new()
@@ -396,9 +427,11 @@ public class TexturePackTests
 		var screen = OptionsScreen.Create( stack, strings, Services( Array.Empty<string>() ), () => { } );
 		stack.Push( screen );
 		var (row, value) = Row( stack, screen );
-		Assert.AreEqual( " No pack built", value() );
+		Assert.AreEqual( " Original", value() );
 		row.Activate();
-		Assert.AreEqual( " No pack built", value(), "nothing to choose without a pack" );
+		Assert.AreEqual( " Enhanced", value(), "Enhanced is offered without a local pack (shipped interface art)" );
+		row.Activate();
+		Assert.AreEqual( " Original", value() );
 
 		var closed = 0;
 		stack = new UiScreenStack();
@@ -412,7 +445,7 @@ public class TexturePackTests
 			row.Activate();
 			seen.Add( value() );
 		}
-		CollectionAssert.AreEqual( new[] { " Clean", " Detailed", " mine", " Original" }, seen, "Original, Clean, Detailed, unknown names as they are, back to Off" );
+		CollectionAssert.AreEqual( new[] { " Enhanced", " Detailed", " mine", " Original" }, seen, "Original, Enhanced, Detailed, unknown names as they are, back to Original" );
 		row.Activate();
 		row.Activate();
 		Assert.AreEqual( " Detailed", value() );

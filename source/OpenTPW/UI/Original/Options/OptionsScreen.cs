@@ -77,7 +77,7 @@ public static class OptionsScreen
 		_ => OpenTpwText.UpscaleNative
 	} );
 
-	/// <summary>Name shown for a texture pack: <c>enhanced</c> is the clean variant, <c>detailed</c> the detailed one; other names as they are.</summary>
+	/// <summary>Name shown for a texture choice: empty = Original, <c>enhanced</c> = Enhanced, <c>detailed</c> = Detailed; other pack names as they are.</summary>
 	public static string TexturePackLabel( UiStringTable strings, string pack ) => pack.ToLowerInvariant() switch
 	{
 		"" => strings.Extra( OpenTpwText.TexturePackOriginal ),
@@ -493,19 +493,20 @@ public static class OptionsScreen
 		// [EXT:texture-pack] optional locally built upscaled textures: Off, then every installed pack (clean, detailed, ...)
 		IReadOnlyList<string> PackChoices()
 		{
-			var choices = new List<string> { "" };
-			choices.AddRange( services.TexturePacks );
+			// Original and Enhanced are always offered (Enhanced has the shipped interface art even without a local pack),
+			// then every other installed pack.
+			var choices = new List<string> { "", TexturePack.DefaultName };
+			choices.AddRange( services.TexturePacks.Where( pack => !string.Equals( pack, TexturePack.DefaultName, StringComparison.OrdinalIgnoreCase ) ) );
 			// A configured pack that is no longer installed can still be switched away from.
 			if ( state.TexturePack.Length > 0 && !choices.Contains( state.TexturePack ) )
 				choices.Add( state.TexturePack );
 			return choices;
 		}
 		string PackText( string pack ) => " " + TexturePackLabel( strings, pack );
-		string Textures() => PackChoices().Count > 1 ? PackText( state.TexturePack ) : " " + strings.Extra( OpenTpwText.TexturePackMissing );
 		if ( graphics != null )
-			Row( "enhancedTextures", () => Prefix( OpenTpwText.EnhancedTextures ) + Textures(),
-				() => PackChoices().Count > 1 ? PackChoices().Select( pack => Prefix( OpenTpwText.EnhancedTextures ) + PackText( pack ) ) : new[] { Prefix( OpenTpwText.EnhancedTextures ) + " " + strings.Extra( OpenTpwText.TexturePackMissing ) },
-				direction => { if ( PackChoices().Count > 1 ) state.TexturePack = CycleWrap( PackChoices(), state.TexturePack, direction ); } );
+			Row( "enhancedTextures", () => Prefix( OpenTpwText.EnhancedTextures ) + PackText( state.TexturePack ),
+				() => PackChoices().Select( pack => Prefix( OpenTpwText.EnhancedTextures ) + PackText( pack ) ),
+				direction => state.TexturePack = CycleWrap( PackChoices(), state.TexturePack, direction ) );
 		// [EXT:language] language row (original installs had one language; OpenTPW reads CD overlays)
 		string LanguageName( string language ) => " " + (SupplementaryStrings.LanguageNames.TryGetValue( language, out var name ) ? name : language);
 		Row( "language", () => Prefix( OpenTpwText.Language ) + LanguageName( state.Language ),

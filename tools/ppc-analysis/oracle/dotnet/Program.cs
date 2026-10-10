@@ -16,6 +16,8 @@ var functions = new Dictionary<string, Func<JsonObject, JsonNode?>>
 	["can_change_cell_type"] = CanChangeCellType,
 	["set_cell_type"] = SetCellType,
 	["unbounce"] = Unbounce,
+	["guest_speed_limits"] = GuestSpeedLimits,
+	["guest_speed_smoothing"] = GuestSpeedSmoothing,
 };
 
 using var input = new StreamReader( Console.OpenStandardInput() );
@@ -87,4 +89,19 @@ static JsonNode? Unbounce( JsonObject a )
 	var slots = a["slots"]!.AsArray().Select( slot => ((int)slot![0]!, (double)(int)slot[1]!, (double)(int)slot[2]!) ).ToList();
 	var guest = (int)method.Invoke( null, new object[] { slots, (double)(int)a["now"]!, false } )!;
 	return new JsonObject { ["guest"] = guest, ["remaining"] = slots.Count };
+}
+
+// GuestSpeed.Caps (0xffe38): max speed +28 and max force +24 for a smoothed speed s, passed as IEEE single bits.
+static JsonNode? GuestSpeedLimits( JsonObject a )
+{
+	var (speed, force) = GuestSpeed.Caps( BitConverter.Int32BitsToSingle( (int)(uint)a["s_bits"]! ) );
+	return new JsonObject { ["force"] = force, ["speed"] = speed };
+}
+
+// GuestSpeed.Update (0xe6b28 with 0xffe38): the smoothed s (as bits), the decayed boost and the caps.
+static JsonNode? GuestSpeedSmoothing( JsonObject a )
+{
+	var (s, boost, speed, force) = GuestSpeed.Update( BitConverter.Int32BitsToSingle( (int)(uint)a["s_bits"]! ), (int)a["base"]!,
+		(int)a["bonus"]!, (ushort)(int)a["boost"]! );
+	return new JsonObject { ["s_bits"] = (uint)BitConverter.SingleToInt32Bits( s ), ["boost"] = (int)boost, ["force"] = force, ["speed"] = speed };
 }

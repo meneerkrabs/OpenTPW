@@ -178,7 +178,7 @@ public class DeterminismTests
 	{
 		var park = new SyntheticPark( WorldSeed.Default );
 		park.Run( 3600 );
-		Assert.AreEqual( 0x733233EC7B25360EUL, park.Hash, $"0x{park.Hash:X16}" );
+		Assert.AreEqual( 0x082000C95B7EB3FEUL, park.Hash, $"0x{park.Hash:X16}" );
 	}
 
 	[TestMethod]
@@ -418,7 +418,10 @@ public class DeterminismAssetTests
 			var economy = ParkSaveFile.Serialize( park.Economy );
 			Run( 3000 );
 			streams.Scripts.NextScriptSeed();
+			// Since ORACLE-F a draw never stores the sound seed (sound_shared 0x100118C8), so only a reseed moves it.
+			Assert.AreEqual( saved.SoundSeed, streams.CaptureRandomState().SoundSeed, "sound draws do not move the seed" );
 			streams.Sound.Draw();
+			streams.Sound.Reseed( unchecked(saved.SoundSeed + 1) );
 			var moved = streams.CaptureRandomState();
 			Assert.IsTrue( saved.GuestRandom != moved.GuestRandom && saved.ScriptRandom != moved.ScriptRandom && saved.SoundSeed != moved.SoundSeed, "every stream was drawn after the save" );
 			Assert.AreNotEqual( economy, ParkSaveFile.Serialize( park.Economy ) );

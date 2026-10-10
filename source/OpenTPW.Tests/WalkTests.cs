@@ -164,6 +164,72 @@ public class WalkTests
 		Assert.AreEqual( 0b1011, navigation.History, "refused again, and no progress" );
 	}
 
+	/// <summary>avoid_walls (review WV-7): the edges are tried +x, −x, +y, −y and the first that pushes is the whole force.</summary>
+	[TestMethod]
+	public void AvoidWallsStopsAtTheFirstPushingEdge()
+	{
+		// Heading into the corner of a closed +x and a closed +y neighbour: only the x edge pushes.
+		var navigation = new GuestNavigation { X = One - 4000, Y = One - 4000, VelocityX = 3000, VelocityY = 3000 };
+		navigation.SetDestination( One / 2, One / 2, [(0, 0)] );
+		navigation.Arrived = true; // follow_path only brakes
+		navigation.Step( 13107, 26214, ( x, y ) => (x, y) == (0, 0) );
+		var cornered = (navigation.VelocityX, navigation.VelocityY);
+		// The same step with the +x neighbour open: now the y edge pushes.
+		var open = new GuestNavigation { X = One - 4000, Y = One - 4000, VelocityX = 3000, VelocityY = 3000 };
+		open.SetDestination( One / 2, One / 2, [(0, 0)] );
+		open.Arrived = true;
+		open.Step( 13107, 26214, ( x, y ) => (x, y) is (0, 0) or (1, 0) );
+		Assert.IsTrue( cornered.VelocityX < open.VelocityX, $"{cornered} vs ({open.VelocityX}, {open.VelocityY}): the x wall pushed" );
+		Assert.IsTrue( cornered.VelocityY > open.VelocityY, $"{cornered} vs ({open.VelocityX}, {open.VelocityY}): no y push while the x edge pushes" );
+	}
+
+	/// <summary>
+	/// separation's neighbour query and callback (<c>0x10087c</c>, <c>0xfd5f4</c>; review WV-5): neighbours within 2 × radius
+	/// in 1/256 cells, not the guest itself, not at the same 1/256 point; each pushes FixDiv(offset, octile); at most five.
+	/// </summary>
+	[TestMethod]
+	public void SeparationPushesAwayFromAtMostFiveNeighbours()
+	{
+		GuestNavigation At( int x, int y ) => new() { X = x, Y = y };
+		var self = At( 5 * One, 5 * One );
+		Assert.AreEqual( (0, 0), GuestNavigation.Separation( self, [self] ), "the guest itself" );
+		Assert.AreEqual( (0, 0), GuestNavigation.Separation( self, [At( 5 * One + 255, 5 * One )] ), "the same 1/256 point" );
+		Assert.AreEqual( (0, 0), GuestNavigation.Separation( self, [At( 5 * One + 102 * 256, 5 * One )] ), "(2 x 0.2 cell >> 8)^2 = 102^2 is outside" );
+		Assert.AreEqual( (-One, 0), GuestNavigation.Separation( self, [At( 5 * One + 101 * 256, 5 * One )] ), "a unit push away" );
+		var diagonal = GuestNavigation.Separation( self, [At( 5 * One - 6000, 5 * One - 6000 )] );
+		Assert.AreEqual( (Fixed16.Div( 6000, 9000 ), Fixed16.Div( 6000, 9000 )), diagonal, "FixDiv by the octile distance 6000 + 6000 - 3000" );
+		var crowd = Enumerable.Range( 1, 7 ).Select( index => At( 5 * One + index * 1000, 5 * One ) ).ToList();
+		Assert.AreEqual( (-5 * One, 0), GuestNavigation.Separation( self, crowd ), "the query stops after five neighbours" );
+		// Skipped neighbours do not count towards the five.
+		crowd.Insert( 0, At( 5 * One + 30000, 5 * One ) );
+		crowd.Insert( 0, self );
+		Assert.AreEqual( (-5 * One, 0), GuestNavigation.Separation( self, crowd ) );
+	}
+
+	/// <summary>Separation is off on the last segment within ONE + radius of its waypoint (<c>0xfd778</c>).</summary>
+	[TestMethod]
+	public void SeparationIsOffNearTheLastWaypoint()
+	{
+		var calls = 0;
+		(int X, int Y) Push( GuestNavigation self )
+		{
+			calls++;
+			return (0, 0);
+		}
+		var near = new GuestNavigation { X = One / 2, Y = One / 2 };
+		near.SetDestination( 5 * One / 2, One / 2, [(0, 0), (1, 0), (2, 0)] );
+		near.Step( 13107, 26214, ( _, _ ) => true, Push );
+		Assert.AreEqual( 1, calls, "not on the last segment: on" );
+		var last = new GuestNavigation { X = One / 2, Y = One / 2 };
+		last.SetDestination( One / 2 + 1000, One / 2, [(0, 0)] );
+		last.Step( 13107, 26214, ( _, _ ) => true, Push );
+		Assert.AreEqual( 1, calls, "last segment, within ONE + radius: off" );
+		var far = new GuestNavigation { X = One / 2, Y = One / 2 };
+		far.SetDestination( 3 * One, One / 2, [(3, 0)] );
+		far.Step( 13107, 26214, ( _, _ ) => true, Push );
+		Assert.AreEqual( 2, calls, "last segment, farther than ONE + radius: on" );
+	}
+
 	[TestMethod]
 	public void SubCellBytesAreOver256AndTheStandPointRotatesWithTheObject()
 	{
@@ -180,12 +246,14 @@ public class WalkTests
 
 	// ---- The simulation -----------------------------------------------------------------------------------------------
 
-	private static GuestSimulation Corridor( ulong seed = 3 )
+	private static GuestSimulation Corridor( ulong seed = 3, float? toiletPerSecond = null )
 	{
 		var grid = new GuestPathGrid( 30, 3 );
 		for ( var x = 0; x < 30; x++ )
 			grid.SetPath( x, 1, true );
-		return new GuestSimulation( grid, GuestTests.CreateSettings(), seed ) { ArrivalsEnabled = false };
+		var settings = GuestTests.CreateSettings();
+		settings.ToiletPerSecond = toiletPerSecond ?? settings.ToiletPerSecond;
+		return new GuestSimulation( grid, settings, seed ) { ArrivalsEnabled = false };
 	}
 
 	[TestMethod]
@@ -230,19 +298,33 @@ public class WalkTests
 	}
 
 	[TestMethod]
-	public void TheToiletTermAddsSpeed()
+	public void TheToiletTermAddsSpeedOnTheGuestsNeedsPhase()
 	{
-		var simulation = Corridor();
+		// +194 is written in the needs block, which runs only when park turn & 3 == the guest's id & 3 (0xeed40, review WV-8).
+		var simulation = Corridor( toiletPerSecond: 0 );
 		var guest = simulation.SpawnInPark( 1, 1 );
+		void RunUntilPhase( int phase )
+		{
+			do
+				simulation.Tick( Tick );
+			while ( (simulation.ParkTurn & 3) != phase || ParkCalendar.Turn( simulation.TickCount - 1 ) == simulation.ParkTurn );
+		}
+		guest.Toilet = 0;
+		RunUntilPhase( guest.Id & 3 );
+		Assert.AreEqual( 0, guest.ToiletBonus );
 		guest.Toilet = 81;
-		var start = simulation.ParkTurn;
-		while ( simulation.ParkTurn < start + 2 )
-			simulation.Tick( Tick );
+		RunUntilPhase( (guest.Id + 1) & 3 );
+		Assert.AreEqual( 0, guest.ToiletBonus, "off phase: unchanged" );
+		RunUntilPhase( guest.Id & 3 );
 		Assert.AreEqual( 25, guest.ToiletBonus, "+194 = 25 while toilet > 80" );
 		guest.Toilet = 80;
-		start = simulation.ParkTurn;
-		while ( simulation.ParkTurn < start + 1 )
-			simulation.Tick( Tick );
+		RunUntilPhase( (guest.Id + 2) & 3 );
+		Assert.AreEqual( 25, guest.ToiletBonus, "kept between its phases" );
+		RunUntilPhase( guest.Id & 3 );
+		Assert.AreEqual( 0, guest.ToiletBonus );
+		// The compare reads the truncated toilet's low byte unsigned (0xef0cc): 80.9 truncates to 80.
+		guest.Toilet = 80.9f;
+		RunUntilPhase( guest.Id & 3 );
 		Assert.AreEqual( 0, guest.ToiletBonus );
 	}
 

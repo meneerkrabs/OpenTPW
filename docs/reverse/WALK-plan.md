@@ -77,8 +77,8 @@ All results are static. Nothing original was executed.
   arrival radius + 2·`+28` of its slot point. That covers the arrival update's own step plus any
   braking drift. It also stands at least a radius from the strip's sides and ends, because avoid_walls
   keeps it there. Its velocity is anything up to `+28`, because route setup does not reset `+16`.
-- **W6 separation.** The separation force's direction and neighbour set are not interpreted
-  (section 6.2). Only its traced on/off rule and its magnitude bound (≤ 0.1·`+24`) are used. The
+- **W6 separation.** The enumeration does not model the neighbour set (section 6.2, traced in
+  WALK-F, section 16). Only its traced on/off rule and its magnitude bound (≤ 0.1·`+24`) are used: the
   enumeration runs with separation off and with the maximum force directly against the walk.
 
 ## 3. The steering step `0xfec9c` (high)
@@ -113,7 +113,7 @@ behaviours are registered (data `0x4477c`). They are looked up by name from the 
 | Field | Writer | Value |
 | --- | --- | --- |
 | `+192` base | constructor `0xe48d0` (data `0x4105e[rand % 5]`); `0xd2870`, `0xf2abc/0xf2ac8`, `0xf4b70/0xf4b98` read the same table | 60, 80, 100, 120, 140 |
-| `+194` bonus | constructor 0; needs block `0xef0d8/0xef0e4` every update: 25 while toilet `+428` > 80, else 0; `0xef8c4` (a state entry) 0 | 0 or 25 |
+| `+194` bonus | constructor 0; needs block `0xef0d8/0xef0e4` on the guest's needs phase only (`0xeed40`: park turn & 3 = thing id & 3, see W1): 25 while trunc(toilet `+428`) & 0xff > 80 unsigned, else 0; `0xef8c4` (a state entry) 0 | 0 or 25 |
 | `+196` boost | `0xeb0f4` adds an event-dependent amount; `0xe6bbc..0xe6bd8` decays it by trunc(×99/100) per update | ≥ 0 (u16) |
 | `+200` s | `0xe6b28`: `(3.0·s + (+192 + +194 + +196)/100)·0.25` (data `0x550c`, `0x5508`; divisor 100 = data `0x41062`) | float |
 | `+24`, `+28` | setter `0xffe38` with s (`0xe6ba8`) | see §1 |
@@ -169,8 +169,9 @@ The enumeration models them with both sides fenced and with both open.
 ### 6.2 separation `0xfd778` (high for the gate, medium for the force)
 
 It is **off** when (idx is the last segment, or arrived) and the octile distance to the current
-waypoint is ≤ ONE + radius = 1.2 cells (`0xfd7b4..0xfd840`). Otherwise it sums a callback `0xfd8a8` over
-neighbours within 2 × radius (`0x10087c`). The force goes into the sum truncated to `+24` with weight
+waypoint is ≤ ONE + radius = 1.2 cells (`0xfd7b4..0xfd840`). Otherwise it sums the callback `0xfd5f4`
+(the transition vector at data `0x7088`; `0xfd8a8` is the `0x7078` vector of another behaviour) over
+neighbours within 2 × radius (`0x10087c`); section 16 has the traced rules. The force goes into the sum truncated to `+24` with weight
 0.1, so it is at most 0.1·`+24`. In w₂ (route [Q], target in Q) it is always off. In w it can be on
 only on the first segment, toward Q's centre.
 
@@ -286,7 +287,8 @@ Goal: replace `WalkSpeedCellsPerSecond` and the 0.7 factor with the traced model
 4. **follow_path, arrival and the reroute** exactly as section 5 and section 7. The walk step returns
    arrived / still walking. A routing failure is arrived (as `0xff224`).
 5. **avoid_walls** edge branch as section 6.1. The corner branches and the separation callback stay
-   `[APPROX:WALK-002]`/`[APPROX:WALK-003]` (evidence needed: `0xfc9e0`, `0xfd8a8`, `0x10087c`).
+   `[APPROX:WALK-002]`/`[APPROX:WALK-003]` (evidence needed: `0xfc9e0`, `0xfd5f4`, `0x10087c`; WALK-F
+   ported the separation, section 16).
 6. **Geometry**: sub-cell bytes /256. Stand point = entrance cell (`+50`) at
    trunc(255·EntryCellStandPos) after rotation (`0xde1d8`). This closes QUEUE-007. QUEUE-006's axis
    keeps its tag until the link compass is pinned.
@@ -328,8 +330,9 @@ This applies to BOARD-plan §8 and does not need WALK-I.
 ## 13. Unresolved
 
 - The link-value compass (which edge depth 0 is on). It is medium here, and the gate uses the larger w.
-- The separation callback and neighbour query (`0xfd8a8`, `0x10087c`), and the corner branches of
-  avoid_walls (`0xfc9e0`).
+- The corner branches of avoid_walls (`0xfc9e0`). The separation callback `0xfd5f4` and the neighbour
+  query `0x10087c` are traced (section 16); the writers of the thing position `+4/+6` and of the
+  per-cell thing lists are not.
 - The route search `0x101c64` beyond its route-store points, and the `+164/+168` bookkeeping. The
   enumeration uses the segment-sum form of the remaining distance.
 - The `+196` boost increments (`0xeb0f4` caller) and the `+194` writer at `0x1a95fc`. These only add
@@ -382,7 +385,7 @@ WALK-I implements §11 in `source/OpenTPW/World/Guests/GuestNavigation.cs` (`Fix
 pinned worst cases exactly (`WalkTests.WorstWalksAtTheSpeedFloorMatchTheWitness`: w = 10,
 w₂ = 14 and reversed w = 17 at s = 0.59 on the 7-grid; the w₂ reroute at s = 0.2; w = 72 at
 the floor). The untraced parts are the walk register: WALK-001 (boost increments), WALK-002
-(avoid_walls' corner branches), WALK-003 (the separation force is zero) and WALK-004
+(avoid_walls' corner branches), WALK-003 (the separation force was zero until WALK-F, section 16) and WALK-004
 (OpenTPW's routes: one path cell per destination, the queue cells in order, refilled five
 waypoints at a time; the stuck reroute prepends the current cell). A queue walk also treats
 the cell ahead of its destination and the cell behind its start as walkable, as this lane's
@@ -429,3 +432,61 @@ oracle bridge's hooks map to two public seams that `GuestSimulation` itself call
 `guest_speed_limits` → `GuestSpeed.Caps(s)` (max speed `+28`, max force `+24`) and
 `guest_speed_smoothing` → `GuestSpeed.Update(s, base, bonus, boost)` (s, boost, max speed,
 max force). The bridge cases are added with the oracle after merge.
+
+## 16. WALK-F: corrections from review WALK-V
+
+Review WALK-V (docs/reverse/REVIEW-WALK.md) found the gate loosened on approximations it no longer
+named, a wrong citation for the separation force and untagged walk rules. WALK-F:
+
+- **Separation is ported** (WV-5). The behaviour `0xfd778` passes the transition vector at data
+  `0x7088`, which relocates to `0xfd5f4`, to the neighbour query `0x10087c` with range 2 × radius:
+  - the query scans the cells (x, y) ± ⌈range / ONE⌉ = ±1 around the guest's cell, rows from the
+    top, each row from the left, skipping cells outside the map (`0xd70d8`), and walks each cell's
+    thing list (`+764`, next `+10`);
+  - it keeps thing types 1 (guests; type 1 dispatches to the guest handler `0xeece4` through the
+    table at `0xfa9b0`), 4–8 and 18 (`0x100978..0x100a08`), skips the guest's own navigation
+    (`+212`), and keeps a neighbour whose 1/256-cell position (`+4/+6`) lies at a squared distance
+    0 < d² < (range >> 8)² = 102² from the guest's own (`0x100a18..0x100a3c`);
+  - it calls `0xfd5f4` for each and stops after five calls (`0x100a50..0x100a58`);
+  - `0xfd5f4` takes off = self − other (16.16, `0xfcb8c`) and d = octile(off), and adds
+    FixDiv(off, d) (`0xfd704`) to the sum at data `0xecd58` when d < r_self + r_other + ONE (data
+    `0xecd84`, set to ONE by the static initialiser `0x1002f4`) and d ≠ 0 (data `0xecd88`, set to 0).
+
+  So each neighbour within 0.4 cell pushes with about ONE, which the step truncates to `+24` and
+  weights with 0.1. OpenTPW's neighbours are the guests outside rides and shops, at their navigation
+  position, in its own list order within a cell (`[APPROX:WALK-003]`). On the test cross grid it
+  slows the guests bunched at the ticket booth (90 → 88 admissions in 120 s); a queue walk's last
+  stretch lies within ONE + radius of its last waypoint, where separation is off. The enumeration's "oppose" variant is now one virtual neighbour 0.1 cell ahead
+  of the guest on its way to follow_path's goal, which gives the same largest force against the walk.
+- **avoid_walls stops at the first pushing edge** (WV-7): +x, −x, +y, −y, each branch ending with
+  `b 0xfe5f0` (`0xfde78`, `0xfdee4`, `0xfdf64`, `0xfdfe0`). The strip of section 8 has walls on one
+  axis only, so the pinned w and w₂ do not change.
+- **The toilet term follows the needs phase** (WV-8): `0xef0bc..0xef0e8` runs only when the park
+  turn & 3 equals the thing id & 3 (`0xeed24..0xeed40`), and compares trunc(toilet) & 0xff unsigned
+  with 80 (`0xef0cc`). OpenTPW uses its guest id for the thing id (`[APPROX:WALK-010]`).
+- **The remaining untraced rules are tagged** (WV-6): walkability on the walk's own cells instead of
+  the edge flags and the commit callback (WALK-005), the queue walk's open cells ahead and behind
+  (WALK-006), no map-edit reroute (WALK-007), lane walks off the grid (WALK-008) and the progress
+  history's raw comparison (WALK-009).
+- **A redirect from the join cell starts behind the back cell** (WV-13). `QueueCellIndex` is only
+  the last queue cell the guest stood on; a guest that cut into a queue cell and drifted back onto
+  the join cell got a route whose first hop skipped cells that are walls for the walk, and never
+  arrived (`QueueTests.ARedirectFromTheJoinCellStartsBehindTheBackCell`).
+
+**The enumeration again.** With the ported separation's "oppose" variant and the first-edge rule,
+`QueueWalkTermFullEnumeration` gives the same worst cases as the table in section 15 (8, 18, 25, 33,
+42, 50, 76, 109, 143, 176, 218 updates for k = 0 … 25) with 0 failures; 420 one-crossing walks
+rerouted (573 before) and still arrived within 18. The enumeration does not cover backward walks,
+folded queues (a guest stepping across a fold onto a cell with a smaller index) or the gate's
+accounting of a walk in progress. Review WALK-V's adversarial harness covered the first two (about
+10⁹ walks, no single walk above k × 9 + 15; redirect chains up to 66 of 66 turns), and the gate now
+charges each head its walks as set up instead of its queue cell index (WV-12, docs/M3-GATE.md).
+
+**The gate** (WV-1 to WV-4, WV-11). C = 9, J(p), the head's own walk and the head-not-ready bound are
+registered as `[APPROX:GATE-006]`: they come from enumerating OpenTPW's own port, not from a proof for
+the original. The owner accepted on October 10, 2026 that the derived head-not-ready bound is looser
+than the retired GATE-005 check (110 against 84 turns for the 6-cell Belly Bounce queue, 65 against
+50 for one cell) on two conditions, both met: the registration, and stricter checks where the bound
+was blind. A head is judged from the turn it is 15 turns old (WV-2, not exempted for good), and
+each head is held to its own remaining walk + 26 where that is smaller (WV-3): a head held at
+position 0 fails after 26 turns.

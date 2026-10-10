@@ -140,6 +140,7 @@ public sealed class Guest
 	internal float StepFromY;
 	internal float StepFromDistance;
 	internal long StepTick = -1;      // tick of the last steering step (presentation)
+	internal (int X, int Y)? OccupiedCell; // the cell list separation finds the guest in (derived from Navigation, not hashed)
 	internal int CellX;
 	internal int CellY;
 	internal int PreviousCellX = -1;

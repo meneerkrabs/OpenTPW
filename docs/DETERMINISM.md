@@ -175,7 +175,10 @@ the same seed as well.
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0x733233EC7B25360E`, schema 7: WALK-I's walk state and ORACLE-F's bounce slot start, merged. Before that, on
+  (`0x082000C95B7EB3FE`, schema 7; the hashed fields are unchanged, but WALK-F ported the traced separation force
+  (guests push each other apart), stops avoid_walls at the first pushing edge and updates the toilet term only on the
+  guest's needs phase, so the run changed. Before that: `0x733233EC7B25360E`, schema 7: WALK-I's walk state and
+  ORACLE-F's bounce slot start, merged. Before that, on
   two branches: `0x714AAFDCEC083403`, schema 6: WALK-I added each guest's walk speed state (base
   speed, toilet term, boost, smoothed speed, max speed and force) and its navigation state
   (16.16 position and velocity, destination, arrived flag, waypoint index, buffer, route and

@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from fidelity_register import EXTENSION_SCOPE, REGISTERS, annotations, collect, markdown_declarations, render
+from fidelity_register import EXTENSION_SCOPE, REGISTERS, Inventory, annotations, collect, in_words, markdown_declarations, render
 
 
 class FidelityRegisterTests(unittest.TestCase):
@@ -136,6 +136,12 @@ var text = "[APPROX:TEST-002] runtime string";
             result = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(result.returncode, 1)
             self.assertIn('missing or stale', result.stderr)
+
+    def test_register_count_sentence_follows_the_configuration(self):
+        # Review WV-10: a merge that adds a register to REGISTERS must not leave a stale count in the document.
+        self.assertIn(f'read from the {in_words(len(REGISTERS))} configured C# registers', render(Inventory([], {}, [])))
+        self.assertIn('read from the three configured C# registers', render(Inventory([], {}, [], 3)))
+        self.assertEqual(('eleven', 'twelve', '21'), (in_words(11), in_words(12), in_words(21)))
 
 
 if __name__ == '__main__':

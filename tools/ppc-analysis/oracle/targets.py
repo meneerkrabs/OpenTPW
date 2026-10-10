@@ -507,6 +507,21 @@ def smoothing_inputs(rng: random.Random, n: int) -> list:
     return edges + [make() for _ in range(n)]
 
 
+def speed_setter_request(s: float) -> dict:
+    return {'fn': 'guest_speed_limits', 's_bits': bits(s)}
+
+
+def smoothing_request(x: dict) -> dict:
+    return {'fn': 'guest_speed_smoothing', 's_bits': bits(x['s']), 'base': x['base'], 'bonus': x['bonus'], 'boost': x['boost']}
+
+
+def smoothing_result(x: dict, r: dict) -> dict:
+    # The bridge returns the single as its bits, so no decimal round trip intervenes.
+    if 's_bits' not in r:
+        return r
+    return {'s': from_bits(r['s_bits']), 'boost': r['boost'], 'force': r['force'], 'speed': r['speed']}
+
+
 # ============================================================================== (f) COAST: rating step, final
 TOC = {'S': -29460, 'E': -29464, 'prev_bank': -29476, 'prev_force': -29472, 'peak_s': -29484, 'peak_e': -29480,
        'e_prev': -29496, 'normal': -29492, 'terror': -29488}
@@ -679,11 +694,13 @@ UNBOUNCE = Target('board-unbounce', 'UNBOUNCE release 0xae020', 'BOARD-plan §5'
                   csharp=('unbounce', unbounce_request, lambda x, r: r))
 SPEED_SETTER = Target('walk-speed-setter', 'Guest speed setter 0xffe38', 'WALK-plan §1', 0xFFE38, [(0xFFE38, 0xFFEB0)],
                       lambda t: {}, speed_setter_binary, speed_setter_plan, speed_setter_inputs,
-                      notes=['C# hook: bridge function "guest_speed_limits" (WALK-I).'])
+                      csharp=('guest_speed_limits', speed_setter_request, lambda s, r: r),
+                      notes=['C# hook: bridge function "guest_speed_limits" (WALK-I GuestSpeed.Caps).'])
 SMOOTHING = Target('walk-smoothing', 'Guest speed smoothing 0xe6b28', 'WALK-plan §4', 0xE6B28,
                    [(0xE6B28, 0xE6BFC), (0xFFE38, 0xFFEB0)], smoothing_stubs, smoothing_binary, smoothing_plan,
                    smoothing_inputs, equal=smoothing_equal, alternatives={'plan-fused': smoothing_fused},
-                   notes=['C# hook: bridge function "guest_speed_smoothing" (WALK-I).'])
+                   csharp=('guest_speed_smoothing', smoothing_request, smoothing_result),
+                   notes=['C# hook: bridge function "guest_speed_smoothing" (WALK-I GuestSpeed.Update).'])
 COAST_STEP = Target('coast-rating-step', 'Coaster rating step 0x415b4', 'COAST-plan §6.3 (coast-research2 32dfe49)',
                     0x415B4, [(0x415B4, 0x41900)], lambda t: {}, coast_step_binary, coast_step_plan, coast_step_inputs,
                     equal=coast_equal, alternatives={'plan-stale-fz': coast_step_plan_fz},

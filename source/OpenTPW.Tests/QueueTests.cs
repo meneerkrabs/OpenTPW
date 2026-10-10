@@ -294,6 +294,40 @@ public class QueueTests
 		Assert.AreEqual( 6, rig.Simulation.GetStatistics().Queueing );
 	}
 
+	/// <summary>
+	/// Review WV-13: a guest standing on the join cell keeps the last queue cell it stood on in QueueCellIndex (here cell
+	/// 1, as after cutting a corner into a folded queue and drifting back). A redirect must start its route at the join
+	/// cell and go over the back cell; a route from the stale index skips cells that are walls for the walk, and the
+	/// guest never arrives.
+	/// </summary>
+	[TestMethod]
+	public void ARedirectFromTheJoinCellStartsBehindTheBackCell()
+	{
+		var rig = new Rig();
+		rig.HoldAdmission();
+		var guest = rig.Send();
+		rig.RunTurns( 60 );
+		Assert.AreEqual( GuestState.Queueing, guest.State );
+		Assert.AreEqual( 0, guest.QueuePosition );
+		// Put it on the join cell (2, 0) with a stale cell index and a recorded position the list no longer has.
+		var join = rig.Ride.JoinCell!.Value;
+		(guest.Navigation.X, guest.Navigation.Y) = GuestNavigation.BytePoint( join, 127, 191 );
+		(guest.Navigation.VelocityX, guest.Navigation.VelocityY) = (0, 0);
+		(guest.CellX, guest.CellY) = join;
+		guest.QueueCellIndex = 1;
+		guest.QueuePosition = 3;
+		guest.QueueMoveDelay = 0;
+		var start = rig.Simulation.ParkTurn;
+		rig.RunTurns( 2 );
+		Assert.AreEqual( GuestState.MovingUpQueue, guest.State, "the position changed: walk to slot 0" );
+		var route = guest.Navigation.Route;
+		CollectionAssert.AreEqual( new[] { join, (2, 1), (2, 2), (2, 3), (2, 4), (2, 5) }, route, string.Join( " ", route ) );
+		rig.RunTurns( 100, () => Assert.IsTrue( guest.State is GuestState.MovingUpQueue or GuestState.Queueing, $"{guest.State}" ) );
+		Assert.AreEqual( GuestState.Queueing, guest.State, "arrived at slot 0" );
+		Assert.AreEqual( (2, 5), guest.Cell );
+		Assert.IsTrue( rig.Simulation.ParkTurn - start <= 102 );
+	}
+
 	[TestMethod]
 	public void QueueSlotsFollowTheTracedDepthBytes()
 	{

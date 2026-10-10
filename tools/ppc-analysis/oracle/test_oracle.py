@@ -46,6 +46,8 @@ EXPECTED = {
     # F5 (fixed): C# releases at deadline < now (strict) inside the 200 ms window of 0xae020, as BOARD-plan §5 states.
     ('board-unbounce', 'csharp'): AGREE,
     ('walk-speed-setter', 'plan'): AGREE,
+    ('walk-speed-setter', 'csharp'): AGREE,
+    ('walk-smoothing', 'csharp'): AGREE,
     # F6: 0xe6b28 uses fmadds (one rounding; 98 inputs differ in s) and stores boost·99 as u16 before dividing (wraps above 661).
     ('walk-smoothing', 'plan'): (99, {'s': 1.2833095788955688, 'base': 120, 'bonus': 0, 'boost': 662}),
     ('walk-smoothing', 'plan-fused'): (2, {'s': 1.2833095788955688, 'base': 120, 'bonus': 0, 'boost': 662}),
@@ -59,7 +61,7 @@ EXPECTED = {
                                            'sections': [5678, 64, 10262, 128, 64]}),
     ('coast-rating-final', 'plan-both-flags'): AGREE,
 }
-CSHARP_PENDING = {'det-world-lcg', 'det-rse-rand', 'walk-speed-setter', 'walk-smoothing', 'coast-rating-step',
+CSHARP_PENDING = {'det-world-lcg', 'det-rse-rand', 'coast-rating-step',
                   'coast-rating-final'}
 
 
@@ -148,6 +150,11 @@ class Oracle(unittest.TestCase):
         for key in (('walk-speed-setter', 'plan'), ('walk-smoothing', 'plan'), ('walk-smoothing', 'plan-fused')):
             self.check(key)
 
+    def test_walk_csharp(self):
+        # WALK-F wired GuestSpeed.Caps / GuestSpeed.Update into the bridge (WALK-plan section 15 left them for after the merge).
+        for key in (('walk-speed-setter', 'csharp'), ('walk-smoothing', 'csharp')):
+            self.check(key)
+
     def test_coast(self):
         for key in (('coast-rating-step', 'plan'), ('coast-rating-step', 'plan-stale-fz'),
                     ('coast-rating-final', 'plan'), ('coast-rating-final', 'plan-both-flags')):
@@ -194,6 +201,11 @@ class CSharpMutation(unittest.TestCase):
          'unchecked( (int)Balance - (int)((pending + 1) * CellCost( kind )) ) >= 0', 'Balance - (pending + 1) * CellCost( kind ) >= 0'),
         ('board-unbounce', 'csharp', 'source/OpenTPW/World/Guests/RideVisitorBridge.cs',
          'elapsed % 1000 / 200 == 0', 'elapsed % 1000 / 250 == 0'),
+        ('walk-smoothing', 'csharp', 'source/OpenTPW/World/Guests/GuestNavigation.cs',
+         'MathF.FusedMultiplyAdd( 3f, previous, (baseSpeed + bonus + boost) / (float)Divisor ) * 0.25f',
+         '(3f * previous + (baseSpeed + bonus + boost) / (float)Divisor) * 0.25f'),
+        ('walk-speed-setter', 'csharp', 'source/OpenTPW/World/Guests/GuestNavigation.cs',
+         'public const int Floor = 655;', 'public const int Floor = 654;'),
     ]
 
     def test_mutations_are_detected(self):

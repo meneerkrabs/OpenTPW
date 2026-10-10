@@ -32,7 +32,7 @@ internal static class WalkEnumeration
 		reroutes = 0;
 		for ( var update = 1; update <= limit; update++ )
 		{
-			var arrived = navigation.Step( maxSpeed, maxForce, isOpen, opposeSeparation );
+			var arrived = navigation.Step( maxSpeed, maxForce, isOpen, opposeSeparation ? opposing : null );
 			reroutes = navigation.Reroutes;
 			if ( reroutes > 0 && !followReroutes )
 				return -1;
@@ -40,6 +40,27 @@ internal static class WalkEnumeration
 				return update;
 		}
 		return -1;
+	}
+
+	private static readonly Func<GuestNavigation, (int X, int Y)> opposing = OpposingNeighbour;
+	[ThreadStatic] private static GuestNavigation[]? ahead;
+
+	/// <summary>
+	/// WALK-plan §9 variant "oppose": one neighbour 0.1 cell ahead on the way to follow_path's goal, so the traced
+	/// separation (<see cref="GuestNavigation.Separation"/>) pushes straight against the walk with about ONE, which the
+	/// step truncates to the max force: the largest separation force wherever the traced on/off rule leaves it on.
+	/// </summary>
+	public static (int X, int Y) OpposingNeighbour( GuestNavigation self )
+	{
+		var (goalX, goalY) = self.Goal;
+		var (dx, dy) = (goalX - self.X, goalY - self.Y);
+		var size = Fixed16.Length( dx, dy );
+		if ( size == 0 )
+			return (0, 0);
+		ahead ??= [new GuestNavigation()];
+		var scale = Fixed16.Div( One / 10, size );
+		(ahead[0].X, ahead[0].Y) = (self.X + Fixed16.Mul( dx, scale ), self.Y + Fixed16.Mul( dy, scale ));
+		return GuestNavigation.Separation( self, ahead );
 	}
 
 	public static (int X, int Y) CellOf( (int X, int Y) point ) => (point.X >> 16, point.Y >> 16);

@@ -848,9 +848,16 @@ internal sealed class M3GateRun
 		/// <summary>Consecutive evaluations the current head has not stood at position 0, whether or not the gates held.</summary>
 		public long HeadStreak;
 		public long MaxHeadStreak;
-		/// <summary>The current head was younger than <see cref="M3GateRun.MinimumWalkAgeTurns"/> when it became head (WALK-plan W2): rule (a) does not judge it.</summary>
-		public bool HeadYoung;
-		public long YoungHeadsNotJudged;
+		/// <summary>
+		/// The current head's rule (a) limit (<see cref="M3GateRun.HeadNotReadyLimit"/>), set at the first evaluation that judges
+		/// it, or −1 before. A head younger than <see cref="M3GateRun.MinimumWalkAgeTurns"/> is judged from the turn it reaches
+		/// that age (WALK-plan W2, review WV-2): until then its streak does not count (<see cref="HeadDeferred"/>).
+		/// </summary>
+		public long HeadLimit = -1;
+		public bool HeadDeferred;
+		public long YoungHeadsDeferred, HeadsOnOwnWalk;
+		/// <summary>Largest streak − limit over judged evaluations (0 or more is a violation).</summary>
+		public long ClosestToHeadLimit = long.MinValue;
 		public long BlockedStreak, MaxBlockedStreak;
 		public readonly Violation HeadNotReady = new();
 		public readonly Violation Blocked = new();
@@ -940,17 +947,29 @@ internal sealed class M3GateRun
 			if ( check.HeadGuest != 0 && !check.HeadAtFront )
 			{
 				if ( check.HeadGuest != state.HeadGuest )
+					(state.HeadGuest, state.HeadStreak, state.HeadLimit, state.HeadDeferred) = (check.HeadGuest, 0, -1, false);
+				// WALK-plan W2: the walk terms need a guest at least 15 updates old, so a younger head is judged from the turn it
+				// reaches that age, with its walk from then on; a head without a track is judged at once.
+				if ( tracks.GetValueOrDefault( check.HeadGuest ) is { } headTrack && guests.ParkTurn - headTrack.FirstSeenTurn < MinimumWalkAgeTurns )
 				{
-					(state.HeadGuest, state.HeadStreak) = (check.HeadGuest, 0);
-					// WALK-plan W2: the walk terms of the bound need a guest at least 15 updates old.
-					state.HeadYoung = tracks.GetValueOrDefault( check.HeadGuest ) is not { } headTrack || guests.ParkTurn - headTrack.FirstSeenTurn < MinimumWalkAgeTurns;
-					if ( state.HeadYoung )
-						state.YoungHeadsNotJudged++;
+					if ( !state.HeadDeferred )
+						state.YoungHeadsDeferred++;
+					state.HeadDeferred = true;
 				}
-				var streak = ++state.HeadStreak;
-				state.MaxHeadStreak = Math.Max( state.MaxHeadStreak, streak );
-				if ( streak > state.HeadBound && !state.HeadYoung )
-					state.HeadNotReady.Add( currentTick, $"tick {currentTick}: {name} head guest {check.HeadGuest} not ready for {streak} evaluations (bound {state.HeadBound})" );
+				else
+				{
+					if ( state.HeadLimit < 0 )
+					{
+						state.HeadLimit = HeadNotReadyLimit( guests.Find( check.HeadGuest ), bridge, state.HeadBound );
+						if ( state.HeadLimit < state.HeadBound )
+							state.HeadsOnOwnWalk++;
+					}
+					var streak = ++state.HeadStreak;
+					state.MaxHeadStreak = Math.Max( state.MaxHeadStreak, streak );
+					state.ClosestToHeadLimit = Math.Max( state.ClosestToHeadLimit, streak - state.HeadLimit );
+					if ( streak > state.HeadLimit )
+						state.HeadNotReady.Add( currentTick, FormattableString.Invariant( $"tick {currentTick}: {name} head guest {check.HeadGuest} not ready for {streak} evaluations (bound {state.HeadLimit}{(state.HeadLimit < state.HeadBound ? $" from its own walk; queue bound {state.HeadBound}" : "")})" ) );
+				}
 			}
 			else
 				state.HeadGuest = 0;
@@ -1183,19 +1202,40 @@ internal sealed class M3GateRun
 	/// The walk only goes forward: the queue position is a list index that only decreases (GetQueuePosition), so after
 	/// becoming head a guest makes at most two walks, the rest of the walk it is on and the move-up to position 0, which
 	/// together cross at most the N cells from the join cell to the front cell: N × C + 2 × w₂ updates
-	/// (<see cref="QueueWalkTurns"/>).
+	/// (<see cref="QueueWalkTurns"/>). Each head is also held to its own remaining walk where that is smaller
+	/// (<see cref="HeadNotReadyLimit"/>).
 	/// </summary>
+	// [APPROX:GATE-006] the walk term N x C + 2 x w2 rests on C = 9 from a bounded enumeration of OpenTPW's own port of the traced steering (WALK-002..WALK-009), not on a proof for the original; it is looser than the retired GATE-005 check (owner decision 2026-10-10) — evidence needed: the corner branches, edge flags and route search of the original traced, then C re-derived
 	internal static (long Turns, string Derivation) HeadNotReadyBound( int queueCells )
 	{
 		var cells = Math.Max( 1, queueCells );
 		var walkTurns = cells * QueueCellWalkTurns + 2 * MoveUpWalkTurns;
-		var moveUpTurns = (long)(GuestSimulation.MoveDelayFactor * GuestSimulation.MoveUpWaitGap) + 1;
-		// Interludes start only when standing at the recorded position (state 11 step 7): one may be running when the guest
-		// becomes head, one more on arriving at position 0 (the guest updates before the ride in a turn); the next would
-		// need another NeedsWindowTurns, and the guest is called first.
-		const int Interludes = 2;
-		var turns = walkTurns + moveUpTurns + Interludes * (GuestSimulation.InterludeTurns + 1) + 1;
-		return (turns, FormattableString.Invariant( $"two queue walks over {cells} cells: {cells} x C {QueueCellWalkTurns} + 2 x w2 {MoveUpWalkTurns} = {walkTurns} turns (WALK-I enumeration of the traced steering, s >= 0.59) + move-up wait {moveUpTurns} + {Interludes} interludes x {GuestSimulation.InterludeTurns + 1} + 1 update order = {turns} turns" ));
+		var turns = walkTurns + HeadWaitTurns;
+		return (turns, FormattableString.Invariant( $"[APPROX:GATE-006] two queue walks over {cells} cells: {cells} x C {QueueCellWalkTurns} + 2 x w2 {MoveUpWalkTurns} = {walkTurns} turns (enumeration of OpenTPW's port of the traced steering, s >= 0.59) + move-up wait {MoveUpWaitTurns} + {HeadInterludes} interludes x {GuestSimulation.InterludeTurns + 1} + 1 update order = {turns} turns; a head's own remaining walk replaces the walk term where smaller" ));
+	}
+
+	/// <summary>The move-up wait at gap ≤ 2: trunc(1.2 × 2) turns, then the move on the next update.</summary>
+	internal static long MoveUpWaitTurns => (long)(GuestSimulation.MoveDelayFactor * GuestSimulation.MoveUpWaitGap) + 1;
+
+	/// <summary>
+	/// Interludes start only when standing at the recorded position (state 11 step 7): one may be running when the guest
+	/// becomes head, one more on arriving at position 0 (the guest updates before the ride in a turn); the next would need
+	/// another NeedsWindowTurns, and the guest is called first.
+	/// </summary>
+	internal const int HeadInterludes = 2;
+
+	/// <summary>The head bound without its walk: the move-up wait, two interludes and one evaluation for the update order.</summary>
+	internal static long HeadWaitTurns => MoveUpWaitTurns + HeadInterludes * (GuestSimulation.InterludeTurns + 1) + 1;
+
+	/// <summary>
+	/// Rule (a)'s limit for one head: <paramref name="queueBound"/> (<see cref="HeadNotReadyBound"/>), or the head's own
+	/// remaining walk (<see cref="HeadRemainingWalkTurns"/>) plus <see cref="HeadWaitTurns"/> where that is smaller
+	/// (review WV-3: a head standing at position 0 in an interlude gets 0 + 26 turns, not the queue's whole walk).
+	/// </summary>
+	internal static long HeadNotReadyLimit( Guest? head, IRideVisitorBridge ride, long queueBound )
+	{
+		var walk = head == null ? -1 : HeadRemainingWalkTurns( head, ride );
+		return walk < 0 ? queueBound : Math.Min( queueBound, walk + HeadWaitTurns );
 	}
 
 	/// <summary>The traced boarding latency of one BOUNCE ride (docs/reverse/BOARD-plan.md §7.1, §8), in park turns.</summary>
@@ -1268,13 +1308,15 @@ internal sealed class M3GateRun
 	/// C: updates per queue cell crossed in one queue walk. One walk along the queue that crosses k cells and ends at a
 	/// slot takes at most k × C + w₂ updates (<see cref="QueueWalkTurns"/>): the bounded enumeration of OpenTPW's
 	/// steering (<see cref="GuestNavigation"/>, the traced step of WALK-plan §3–§7) in
-	/// <c>WalkTests.QueueWalkTermIsDerivedByEnumeration</c> (docs/reverse/WALK-plan.md §15): routes of 0–4 crossings
+	/// <c>WalkTests.QueueWalkTermFullEnumeration</c> (docs/reverse/WALK-plan.md §15; the reduced grid runs in every test
+	/// pass as <c>WalkTests.QueueWalkTermIsDerivedByEnumeration</c>): routes of 0–4 crossings
 	/// with every turn sequence and front direction, long straight and cornered routes up to 25 crossings, starts anywhere
 	/// in the start cell, stale velocities up to the max speed, slots on both depth axes, separation off and at its
 	/// maximum against the walk, s from 0.59 to 2.0. At s ≥ 0.59 the max speed is ≥ 7,733 (0.118 cell per update), so a
 	/// straight cell takes 65,536 / 7,733 = 8.47 updates at full speed; the enumeration's slope is 8.4–8.5, hence 9.
 	/// Holds under W2 (the guest is at least 15 updates old).
 	/// </summary>
+	// [APPROX:GATE-006] C = 9 comes from enumerating OpenTPW's port, including WALK-002 (corner branches), WALK-003 (separation neighbours, at most the max force against the walk in the enumeration), WALK-004 (routes) and the walkability rule WALK-005/006; it bounds OpenTPW's walk, and the original's only as far as those match — evidence needed: those parts traced, then C re-derived
 	internal const long QueueCellWalkTurns = 9;
 
 	/// <summary>One queue walk crossing <paramref name="cells"/> cells to a slot: k × C + w₂ updates.</summary>
@@ -1291,15 +1333,67 @@ internal sealed class M3GateRun
 	}
 
 	/// <summary>
-	/// The head's own walk beyond H's move-up w₂ when it becomes head: none when it stands in the front cell (H's w₂ is
-	/// its move-up), else the rest of its current walk and a move-up, which cross at most its queue cell index j (the
-	/// queue's length on the join cell) and take j × C + w₂ updates on top of H's w₂.
+	/// An upper bound on the walking a head still does before it stands at position 0's slot, in updates (C and w₂ per
+	/// walk, <see cref="QueueWalkTurns"/>), or −1 outside the queue walk states (called, or not queueing). It counts the
+	/// walks themselves, not <see cref="Guest.QueueCellIndex"/>: on a folded queue a guest can step across the fold onto a
+	/// cell with a smaller index while its walk still follows the long way round (review WV-12).
+	/// <list type="bullet">
+	/// <item>standing (state 11) at position 0: nothing;</item>
+	/// <item>standing elsewhere: the move-up from its own cell i to the front cell, i × C + w₂;</item>
+	/// <item>walking (state 12): the whole current walk as set up (<see cref="GuestNavigation.WalkCrossings"/>, kept by the
+	/// stuck reroute), and unless it walks to position 0, one more walk to the front cell from wherever it is then: from
+	/// at most the largest index among the walk's cells (the join cell counts as N).</item>
+	/// </list>
 	/// </summary>
-	internal static long HeadWalkTurns( Guest head, int queueCells )
+	// [APPROX:GATE-006] each walk is charged k x C + w2 from its own start, the enumerated per-walk term (OpenTPW's port, not a proof for the original) — evidence needed: as for C
+	internal static long HeadRemainingWalkTurns( Guest head, IRideVisitorBridge ride )
 	{
-		if ( head.State == GuestState.Queueing && head.QueueCellIndex == 0 )
+		var cells = ride.QueueCells;
+		if ( cells.Count == 0 )
+			return -1;
+		var entrance = cells[0];
+		var (dx, dy) = GuestPathGrid.Directions[ride.DirectionTowardsFront( 0 )];
+		entrance = (entrance.X + dx, entrance.Y + dy);
+		int IndexOf( (int X, int Y) cell )
+		{
+			for ( var index = 0; index < cells.Count; index++ )
+			{
+				if ( cells[index] == cell )
+					return index;
+			}
+			return cell == entrance ? 0 : cells.Count;
+		}
+		var navigation = head.Navigation;
+		switch ( head.State )
+		{
+			case GuestState.Queueing:
+				return head.QueuePosition == 0 ? 0 : QueueWalkTurns( IndexOf( navigation.Cell ) );
+			case GuestState.MovingUpQueue:
+				var turns = QueueWalkTurns( navigation.WalkCrossings );
+				if ( head.QueuePosition == 0 )
+					return turns;
+				var farthest = 0;
+				foreach ( var cell in navigation.Route )
+					farthest = Math.Max( farthest, IndexOf( cell ) );
+				foreach ( var cell in navigation.AlsoOpen )
+					farthest = Math.Max( farthest, IndexOf( cell ) );
+				return turns + QueueWalkTurns( farthest );
+			default:
+				return -1;
+		}
+	}
+
+	/// <summary>
+	/// The head's own walk beyond H's move-up w₂ when it becomes head: its remaining walk (<see cref="HeadRemainingWalkTurns"/>)
+	/// less the w₂ that H already holds, none once called (H holds the stand walk w), and N × C + w₂ outside the queue walk
+	/// states.
+	/// </summary>
+	internal static long HeadWalkTurns( Guest head, IRideVisitorBridge ride )
+	{
+		if ( head.State is GuestState.Boarding or GuestState.WaitingToBoard )
 			return 0;
-		return QueueWalkTurns( Math.Clamp( head.QueueCellIndex, 0, Math.Max( 1, queueCells ) ) );
+		var walk = HeadRemainingWalkTurns( head, ride );
+		return walk < 0 ? QueueWalkTurns( Math.Max( 1, ride.QueueCells.Count ) ) : Math.Max( 0, walk - MoveUpWalkTurns );
 	}
 
 	/// <summary>
@@ -1391,7 +1485,7 @@ internal sealed class M3GateRun
 		var duration = item.Runtime.GetVariable( RideVariables.VAR_DURATION );
 		var queueCells = item.Runtime.Visitors.QueueSizeInCells;
 		if ( head != state.BoardingHead )
-			(state.BoardingHead, state.BoardingHeadSince, state.BoardingHeadWalk) = (head, now, guests.Find( head ) is { } headGuest ? HeadWalkTurns( headGuest, queueCells ) : 0);
+			(state.BoardingHead, state.BoardingHeadSince, state.BoardingHeadWalk) = (head, now, guests.Find( head ) is { } headGuest ? HeadWalkTurns( headGuest, item.Runtime.Visitors ) : 0);
 		// WALK-plan W2: the head (the next guest to be called, or the called one) must be at least 15 updates old.
 		if ( head != 0 && (tracks.GetValueOrDefault( head ) is not { } headTrack || now - headTrack.FirstSeenTurn < MinimumWalkAgeTurns) )
 			state.YoungHeadTurns.Add( now );
@@ -1597,7 +1691,7 @@ internal sealed class M3GateRun
 			["leftQueueWithoutBoarding"] = leftWithoutBoarding,
 			["vanishedWhileQueued"] = vanished,
 			["stillQueuedAtEndMaxSeconds"] = Math.Round( stillQueuedTurns * turnSeconds, 3 ),
-			["rule"] = "FAIL: same head not at position 0 (gates held or not) beyond its derived bound; VAR_LETMEON non-zero with nobody called on 2 consecutive evaluations; or, for a traced BOUNCE ride (DUR <= 30, RunsContinuously), a wait or a still-queued age above J(p) + (p + 1) H + (floor(p / CAP) + 1) R + 1 turns. PASS: none, and at least one wait judged; else UNRESOLVED"
+			["rule"] = "FAIL: same head (judged from 15 turns old) not at position 0 (gates held or not) beyond its derived bound, the smaller of the queue bound and its own remaining walk + 26; VAR_LETMEON non-zero with nobody called on 2 consecutive evaluations; or, for a traced BOUNCE ride (DUR <= 30, RunsContinuously), a wait or a still-queued age above J(p) + (p + 1) H + (floor(p / CAP) + 1) R + 1 turns. PASS: none, and at least one wait judged; else UNRESOLVED"
 		};
 		long judged = 0;
 		for ( var index = 0; index < placed.Count; index++ )
@@ -1617,7 +1711,9 @@ internal sealed class M3GateRun
 				["headNotReadyMaxTurns"] = state.MaxHeadStreak,
 				["headNotReadyBoundTurns"] = state.HeadBound,
 				["headNotReadyBound"] = HeadNotReadyBound( visitors.QueueSizeInCells ).Derivation,
-				["headNotReadyYoungHeadsNotJudged"] = state.YoungHeadsNotJudged,
+				["headNotReadyYoungHeadsDeferred"] = state.YoungHeadsDeferred,
+				["headNotReadyHeadsOnOwnWalk"] = state.HeadsOnOwnWalk,
+				["headNotReadyClosestToLimitTurns"] = state.ClosestToHeadLimit == long.MinValue ? null : state.ClosestToHeadLimit,
 				["headNotReadyGatesHeldMaxAcrossHeads"] = visitors.MaximumHeadNotReadyStreak,
 				["headNotReadyViolations"] = state.HeadNotReady.Count,
 				["blockedMaxEvaluations"] = state.MaxBlockedStreak,

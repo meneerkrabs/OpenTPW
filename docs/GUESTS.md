@@ -172,14 +172,16 @@ Traced from the Feral Mac binary ([WALK-plan.md](reverse/WALK-plan.md) §11, WAL
   with the guest stream at creation. Once per park turn (248 ms), before its state
   logic, it smooths s ← (3·s + (base + toilet term + boost) / 100) · 0.25 from s = 0,
   in single precision with one fused multiply-add (`fmadds`, PPC oracle F6). The toilet
-  term (`+194`) is 25 while toilet > 80, rewritten after the speed update. The boost
-  (`+196`) decays by trunc(× 99 / 100) per turn, with the product kept to 16 bits.
+  term (`+194`) is 25 while toilet > 80 (the truncated toilet's low byte, unsigned),
+  rewritten after the speed update, but only on the guest's needs phase (park turn & 3 =
+  id & 3, `0xeed40`). The boost (`+196`) decays by trunc(× 99 / 100) per turn, with the product kept to 16 bits.
   The speed setter (`0xffe38`) gives the max speed max(655, trunc(min(s, 2) · 0.2 ·
   65536)) and the max force with 0.4, in 16.16 cells per turn: 0.48 cell/s at s = 0.6,
   0.81 cell/s at s = 1 and 1.61 cell/s at s = 2.
 - **Steering** (§3, §5–§7). Positions and velocities are 16.16 fixed point. On the
-  tick that starts a park turn, a walking guest takes one step: avoid_walls (0.9),
-  follow_path (0.5) and separation (0.1), each truncated to the max force, summed and
+  tick that starts a park turn, a walking guest takes one step: avoid_walls (0.9; the
+  first edge of +x, −x, +y, −y that pushes), follow_path (0.5) and separation (0.1),
+  each truncated to the max force, summed and
   truncated, added to the velocity, which is truncated to the max speed. The position
   is committed only when the new cell is walkable for the walk. A new destination
   keeps the velocity. Routes start with the guest's own cell; waypoints are cell
@@ -187,6 +189,10 @@ Traced from the Feral Mac binary ([WALK-plan.md](reverse/WALK-plan.md) §11, WAL
   of the exact destination, with the desired speed min(max speed, d / 2). Arrival is
   tested before the step moves. A routing failure arrives at once. Six non-improving
   steps among the last 15 reroute.
+- **Separation** (`0xfd778`, `0x10087c`, `0xfd5f4`). Off on the last segment within
+  ONE + radius of its waypoint; else every guest in the 3 × 3 cells around the walker
+  (rows from the top) whose 1/256-cell position lies within 0.4 cell pushes it away by
+  FixDiv(offset, octile(offset)), at most five of them.
 - **Geometry.** Sub-cell destination bytes are byte / 256 of a cell. Path walks go one
   path cell at a time to the guest's offset point in it; lane walks (bus stop to
   entrance) have no walls. Queue walks follow the queue cells; the cell ahead of the
@@ -203,9 +209,15 @@ Traced from the Feral Mac binary ([WALK-plan.md](reverse/WALK-plan.md) §11, WAL
 | ID | OpenTPW choice | Evidence needed |
 | --- | --- | --- |
 | WALK-001 | Nothing raises the boost `+196`; only its decay runs | The callers of `0xeb0f4` and their amounts |
-| WALK-002 | avoid_walls models its edge branch per axis, not its four diagonal-corner branches | `0xfc9e0` and `0xfdfe4..0xfe5e0` |
-| WALK-003 | The separation force is zero; guests keep OpenTPW's random sub-cell destination offsets | The callback `0xfd8a8` and the neighbour query `0x10087c` |
+| WALK-002 | avoid_walls models its edge branch (the first pushing edge of +x, −x, +y, −y), not its four diagonal-corner branches | `0xfc9e0` and `0xfdfe4..0xfe5e0` |
+| WALK-003 | Separation's neighbours are the guests outside rides and shops at their navigation position, in OpenTPW's list order within a cell | The writers of thing `+4/+6` and of the per-cell thing lists (`+764`, `+10`) |
 | WALK-004 | Routes are OpenTPW's cell sequences, refilled five waypoints at a time; the reroute prepends the current cell to the rest | The route search `0x101c64` and its `+164/+168` bookkeeping |
+| WALK-005 | A cell is walkable when it is on the current walk (its route and extra open cells); path cells beside the route are walls | The edge flags `0xd768c` reads, the `+180` mask per state and the commit callback `0xfee3c..0xfee58` |
+| WALK-006 | A queue walk may also enter the queue cell ahead of its destination and the one behind its start, and no other cell off its route | The queue cells' edge flags and the `+180` mask in states 12 and 13 |
+| WALK-007 | No map-edit reroute: the block stamp check against `+72` and the failure flag `+184` are left out | `0xd7e54` and the `+72/+184` bookkeeping (`0xfe650..0xfe6f8`) |
+| WALK-008 | Guests on the arrival lanes walk off the path grid: no wall force, every position committed | The lane cells' edge flags and the `+180` mask outside the park |
+| WALK-009 | The progress history compares raw remaining distances and skips the first step after route setup | The `+160` route length and the `+172` reset (`0xfeed8`, `0xff6fc`) |
+| WALK-010 | The needs phase that gates the toilet term compares the park turn with OpenTPW's guest id | The thing id allocator `0xfa9a4` and its order |
 
 An isolated [GuestOriginalRules helper](../tools/ppc-analysis/lanes/guests/rules/README.md)
 and 23 synthetic regression cases preserve selected Feral arithmetic: four

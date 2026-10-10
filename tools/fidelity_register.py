@@ -57,6 +57,7 @@ class Inventory:
     sites: list[Site]
     declarations: dict[str, Declaration]
     errors: list[str]
+    register_count: int = len(REGISTERS)
 
     @property
     def unresolved(self) -> list[str]:
@@ -197,11 +198,20 @@ def collect(root: Path, registers: dict[str, str] | None = None,
         errors.append(f"{label}: annotation has no declaration in the configured registers")
     for label in sorted(declarations.keys() - tagged):
         errors.append(f"{label}: declaration has no source annotation")
-    return Inventory(sites, declarations, errors)
+    return Inventory(sites, declarations, errors, len(registers))
 
 
 def escape(text: str) -> str:
     return text.replace("\\", "\\\\").replace("|", "\\|").replace("<", "&lt;").replace(">", "&gt;").replace("`", "&#96;")
+
+
+NUMBER_WORDS = ("no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve",
+                "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty")
+
+
+def in_words(count: int) -> str:
+    """A count as the document writes it: in words up to twenty, else in digits."""
+    return NUMBER_WORDS[count] if 0 <= count < len(NUMBER_WORDS) else str(count)
 
 
 def location(path: str, line: int) -> str:
@@ -219,7 +229,7 @@ def render(data: Inventory) -> str:
              f"Current inventory: **{len(data.unresolved)} unresolved unique APPROX IDs**, {counts['APPROX']} APPROX occurrences, {counts['EXT']} EXT occurrences, {counts['DATA']} DATA occurrences and {counts['BIN']} BIN occurrences.", "",
              f"Of these, {len(data.unresolved) - extension_count} IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and {extension_count} ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.", "",
              "CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.", "",
-             "Repeated source occurrences of one ID are allowed and listed separately. Duplicate register declarations, malformed/missing ID syntax, unregistered IDs and declarations without source annotations fail the check. Register declarations are read from the eleven configured C# registers (current one-entry-per-line tuple/new syntax) and the explicit three-column Approximation register table in docs/ONLINE.md; these are bounded lexical readers, not general C# or Markdown parsers. New registers must be explicitly configured. The check also compares the complete regenerated document against this file.", "",
+             f"Repeated source occurrences of one ID are allowed and listed separately. Duplicate register declarations, malformed/missing ID syntax, unregistered IDs and declarations without source annotations fail the check. Register declarations are read from the {in_words(data.register_count)} configured C# registers (current one-entry-per-line tuple/new syntax) and the explicit three-column Approximation register table in docs/ONLINE.md; these are bounded lexical readers, not general C# or Markdown parsers. New registers must be explicitly configured. The check also compares the complete regenerated document against this file.", "",
              "| Area | Unique unresolved IDs | Source occurrences |", "| --- | ---: | ---: |"]
     grouped = Counter(label.rsplit("-", 1)[0] for label in data.unresolved)
     for area, count in sorted(grouped.items()):

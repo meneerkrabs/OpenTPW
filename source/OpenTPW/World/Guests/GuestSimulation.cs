@@ -72,6 +72,10 @@ public sealed class GuestSimulation : IRideVisitorHost
 	private bool turnStarted;
 	private GuestNavigation? stepping;
 	private readonly Func<int, int, bool> isOpenForStep;
+	private readonly Func<GuestNavigation, (int X, int Y)> separationForStep;
+	/// <summary>The guests standing in each cell, for separation's neighbour query; rebuilt at the start of every park turn.</summary>
+	private readonly Dictionary<(int X, int Y), List<Guest>> occupants = new();
+	private readonly List<GuestNavigation> neighbours = new();
 
 	public GuestSimulation( GuestPathGrid grid, GuestSettings settings, ulong seed )
 	{
@@ -80,6 +84,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 		Seed = seed;
 		random = new GuestRandom( seed );
 		isOpenForStep = IsOpenForStep;
+		separationForStep = SeparationForStep;
 	}
 
 	public GuestPathGrid Grid { get; }
@@ -239,6 +244,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 		guest.HasWaypoint = false;
 		(guest.StepFromX, guest.StepFromY, guest.StepFromDistance, guest.StepTick) = (guest.X, guest.Y, guest.DistanceWalked, TickCount);
 		UpdatePresentation( guest );
+		Occupy( guest );
 	}
 
 	public void Tick( float deltaSeconds )
@@ -250,6 +256,8 @@ public sealed class GuestSimulation : IRideVisitorHost
 		turnStarted = ParkCalendar.Turn( TickCount ) != ParkCalendar.Turn( TickCount - 1 );
 		SyncQueues();
 		UpdateArrivals( deltaSeconds );
+		if ( turnStarted )
+			RebuildOccupants();
 		for ( var index = 0; index < guests.Count; index++ )
 			UpdateGuest( guests[index], deltaSeconds );
 		for ( var index = guests.Count - 1; index >= 0; index-- )
@@ -293,8 +301,11 @@ public sealed class GuestSimulation : IRideVisitorHost
 			UpdateSpeed( guest );
 		if ( InPark( guest ) )
 			UpdateNeeds( guest, dt );
-		if ( turnStarted )
-			guest.ToiletBonus = (int)guest.Toilet > GuestSpeed.ToiletBonusLevel ? GuestSpeed.ToiletBonus : 0;
+		// The needs block runs only on the guest's phase (0xeed24..0xeed40: park turn & 3 == thing id & 3), and its toilet
+		// term compares the truncated toilet's low byte unsigned (0xef0bc..0xef0e8).
+		// [APPROX:WALK-010] the needs phase compares the park turn with OpenTPW's guest id, not the original's 16-bit thing id (0xfa9a4), which numbers every thing — evidence needed: the thing id allocator and its order
+		if ( turnStarted && (ParkTurn & 3) == (guest.Id & 3) )
+			guest.ToiletBonus = ((int)guest.Toilet & 0xff) > GuestSpeed.ToiletBonusLevel ? GuestSpeed.ToiletBonus : 0;
 		UpdateState( guest, dt );
 		if ( !guest.HasWaypoint && guest.State is not GuestState.Boarding )
 			guest.IsMoving = false;
@@ -416,8 +427,9 @@ public sealed class GuestSimulation : IRideVisitorHost
 		var navigation = guest.Navigation;
 		var (x, y, distance) = (guest.X, guest.Y, guest.DistanceWalked);
 		stepping = navigation;
-		var arrived = navigation.Step( guest.MaxSpeed, guest.MaxForce, isOpenForStep );
+		var arrived = navigation.Step( guest.MaxSpeed, guest.MaxForce, isOpenForStep, separationForStep );
 		stepping = null;
+		Occupy( guest );
 		(guest.StepFromX, guest.StepFromY, guest.StepFromDistance, guest.StepTick) = (x, y, distance, TickCount);
 		var dx = guest.X - x;
 		var dy = guest.Y - y;
@@ -436,7 +448,59 @@ public sealed class GuestSimulation : IRideVisitorHost
 	/// A cell is walkable for the stepping guest (the <c>+180</c> mask) when it is on its current walk: the route cells
 	/// and, for a queue walk, the queue's next cells ahead of the destination and behind the start.
 	/// </summary>
+	// [APPROX:WALK-005] a cell is walkable when it is on the current walk (its route cells and the walk's extra open cells), so path cells beside the route are walls; the original tests the cell's edge flags against the guest's +180 mask (0xd768c) and commits the step through a transition call (0xfee3c..0xfee58) — evidence needed: the edge flags 0xd768c reads, the +180 mask per guest state and the commit callback
 	private bool IsOpenForStep( int x, int y ) => stepping!.IsOnWalk( x, y );
+
+	/// <summary>
+	/// separation's neighbours for the stepping guest (<c>0x10087c</c>): the guests standing in the 3 × 3 cells around its
+	/// cell, rows from the top and each row from the left, cells outside the map skipped (<c>0xd70d8</c>).
+	/// </summary>
+	// [APPROX:WALK-003] separation's neighbours are the guests outside rides and shops at their 16.16 navigation position (the thing's own 1/256-cell position +4/+6 is not traced); within a cell they come in OpenTPW's list order, rebuilt every park turn with movers appended, not the original's per-cell thing list (+764, +10) — evidence needed: the writers of thing +4/+6 and of the cell lists
+	private (int X, int Y) SeparationForStep( GuestNavigation self )
+	{
+		neighbours.Clear();
+		var (cellX, cellY) = self.Cell;
+		for ( var y = cellY - 1; y <= cellY + 1; y++ )
+		{
+			for ( var x = cellX - 1; x <= cellX + 1; x++ )
+			{
+				if ( x < 0 || y < 0 || x >= Grid.CountX || y >= Grid.CountY || !occupants.TryGetValue( (x, y), out var list ) )
+					continue;
+				foreach ( var other in list )
+				{
+					if ( other.State is not (GuestState.Using or GuestState.Gone) )
+						neighbours.Add( other.Navigation );
+				}
+			}
+		}
+		return GuestNavigation.Separation( self, neighbours );
+	}
+
+	/// <summary>Files every guest under its cell, in list order.</summary>
+	private void RebuildOccupants()
+	{
+		foreach ( var list in occupants.Values )
+			list.Clear();
+		foreach ( var guest in guests )
+		{
+			guest.OccupiedCell = null;
+			Occupy( guest );
+		}
+	}
+
+	/// <summary>Moves a guest to the end of its current cell's list when it changed cell.</summary>
+	private void Occupy( Guest guest )
+	{
+		var cell = guest.Navigation.Cell;
+		if ( guest.OccupiedCell == cell )
+			return;
+		if ( guest.OccupiedCell is { } previous && occupants.TryGetValue( previous, out var old ) )
+			old.Remove( guest );
+		if ( !occupants.TryGetValue( cell, out var list ) )
+			occupants[cell] = list = new List<Guest>();
+		list.Add( guest );
+		guest.OccupiedCell = cell;
+	}
 
 	/// <summary>Starts a walk to <paramref name="target"/> along <paramref name="cells"/>; the route starts at the guest's own cell.</summary>
 	private static void SetDestination( Guest guest, (int X, int Y) target, List<(int X, int Y)> cells, List<(int X, int Y)>? alsoOpen = null )
@@ -835,8 +899,16 @@ public sealed class GuestSimulation : IRideVisitorHost
 	{
 		var cells = attraction.QueueCells;
 		var route = new List<(int X, int Y)>();
-		var from = IndexOfCell( cells, guest.Navigation.Cell.X, guest.Navigation.Cell.Y );
-		if ( from < 0 )
+		// The walk starts at the guest's own cell: a queue cell by its index, the join cell behind the back cell, the entrance
+		// cell ahead of the front cell. QueueCellIndex is only the last queue cell the guest stood on, so a guest that cut
+		// into a queue cell and drifted back onto the join cell would get a route whose first hop skips cells (review WV-13).
+		var current = guest.Navigation.Cell;
+		var from = IndexOfCell( cells, current.X, current.Y );
+		if ( from < 0 && attraction.JoinCell == current )
+			from = cells.Count;
+		else if ( from < 0 && EntranceCellOf( attraction ) == current )
+			from = 0;
+		else if ( from < 0 )
 			from = Math.Min( guest.QueueCellIndex, cells.Count );
 		index = Math.Min( index, cells.Count - 1 );
 		for ( var cell = Math.Min( from, cells.Count - 1 ); cell > index; cell-- )
@@ -848,6 +920,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 			route.Add( EntranceCellOf( attraction ) );
 		// The queue goes on beyond both ends of the walk: the cell ahead of the destination (the entrance cell ahead of
 		// the front cell) and the cell behind the start (the join cell behind the back cell) are walkable too.
+		// [APPROX:WALK-006] a queue walk may also enter the queue cell ahead of its destination and the one behind its start (the entrance and the join cell at the ends), and no other cell off its route; this stands in for the original's edge flags along the queue — evidence needed: the queue cells' edge flags and the +180 mask in states 12 and 13
 		(int X, int Y)? ahead = toEntrance ? null : index > 0 ? cells[index - 1] : EntranceCellOf( attraction );
 		var behind = from + 1 < cells.Count ? cells[from + 1] : attraction.JoinCell;
 		var alsoOpen = new List<(int X, int Y)>( 2 );

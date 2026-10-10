@@ -97,6 +97,8 @@ public sealed class GuestNavigation
 	/// <summary>The whole route, from the start cell to the destination cell; <see cref="Cursor"/> is the route index of <see cref="Buffer"/>[0].</summary>
 	public (int X, int Y)[] Route = [];
 	public int Cursor;
+	/// <summary>Cell crossings of the walk as set up (route cells − 1); the stuck reroute keeps it. Bookkeeping for the M3 gate, not read by the step.</summary>
+	public int WalkCrossings;
 	/// <summary>Cells besides the route that are walkable for this walk (a queue walk's neighbours along the queue).</summary>
 	public (int X, int Y)[] AlsoOpen = [];
 	/// <summary>Progress history <c>+176</c>: one bit per step that did not improve (low 15 bits kept).</summary>
@@ -104,6 +106,7 @@ public sealed class GuestNavigation
 	/// <summary>Remaining route distance after the last step, −1 right after route setup.</summary>
 	public int PreviousRemaining = -1;
 	/// <summary>Walking off the path grid (the arrival lanes): no walls and every position is accepted.</summary>
+	// [APPROX:WALK-008] guests on the arrival lanes walk off the path grid: no wall force and every position is committed; the original walks them over map cells with the same edge-flag test as anywhere else — evidence needed: the lane cells' edge flags and the +180 mask of a guest outside the park
 	public bool OffGrid;
 	public int Reroutes;
 
@@ -114,6 +117,9 @@ public sealed class GuestNavigation
 	public static (int X, int Y) BytePoint( (int X, int Y) cell, int byteX, int byteY ) => ((cell.X << 16) + (byteX << 8), (cell.Y << 16) + (byteY << 8));
 
 	public (int X, int Y) Cell => (X >> 16, Y >> 16);
+
+	/// <summary>The point follow_path steers to: the destination on the last segment, else the current waypoint's centre.</summary>
+	public (int X, int Y) Goal => Count == 0 || OnLastSegment ? (TargetX, TargetY) : Centre( Buffer[Index] );
 
 	/// <summary>True when <paramref name="x"/>, <paramref name="y"/> is a cell of the current route or of <see cref="AlsoOpen"/>.</summary>
 	public bool IsOnWalk( int x, int y )
@@ -140,6 +146,7 @@ public sealed class GuestNavigation
 	{
 		TargetX = targetX;
 		TargetY = targetY;
+		WalkCrossings = Math.Max( 0, route.Count - 1 );
 		AlsoOpen = alsoOpen?.ToArray() ?? [];
 		var cells = new (int X, int Y)[route.Count];
 		for ( var index = 0; index < cells.Length; index++ )
@@ -202,17 +209,57 @@ public sealed class GuestNavigation
 	}
 
 	/// <summary>
-	/// One steering step. <paramref name="isOpen"/> tells whether a cell is walkable for the guest; it decides the
-	/// walls and the position commit (ignored <see cref="OffGrid"/>). Returns the walk step's result: true when the
-	/// guest has arrived, tested on the position at the start of the step (the step still moves).
-	/// <paramref name="opposeSeparation"/> applies the largest separation force against the walk wherever the traced
-	/// on/off rule leaves it on; only the bound derivation uses it (WALK-plan §9 variant "oppose").
+	/// separation's neighbour query <c>0x10087c</c> with its callback <c>0xfd5f4</c> (data <c>0x7088</c>): the push away
+	/// from the first five neighbours in <paramref name="scanOrder"/> whose 1/256-cell position lies within 2 × radius
+	/// (Euclidean, squared in 1/256 cells, <c>0x100a18..0x100a3c</c>) and is not the guest's own; each adds
+	/// FixDiv(self − other, octile(self − other)) when that octile distance is not 0 and below the two radii plus ONE.
+	/// The caller passes the guests of the 3 × 3 cells around this guest's cell, rows from the top, each row from the left.
 	/// </summary>
-	public bool Step( int maxSpeed, int maxForce, Func<int, int, bool> isOpen, bool opposeSeparation = false )
+	// [BIN:STP-PPC:0x1010087C separation neighbours] cells (x, y) +- ceil(range / ONE) with range = 2 x radius (0xfd870), row by row (0x1008f0..0x100a90); thing types 1 (guest), 4..8, 18 (0x100978..0x100a08); skip self (+212); d^2 = (dx >> 8)^2 + (dy >> 8)^2, skip 0 and >= (range >> 8)^2; the query stops after 5 callbacks (0x100a50..0x100a58)
+	// [BIN:STP-PPC:0x100FD5F4 separation callback] off = self +8 - other +8 (0xfcb8c); d = octile(off); add FixDiv(off, d) (0xfd704) to the sum at data 0xecd58 when d < self +4 + other +4 + ONE (data 0xecd84) and d != 0 (data 0xecd88)
+	public static (int X, int Y) Separation( GuestNavigation self, IEnumerable<GuestNavigation> scanOrder )
+	{
+		const int Range = 2 * Radius;
+		const int Limit = (Range >> 8) * (Range >> 8);
+		int selfX = self.X >> 8, selfY = self.Y >> 8;
+		int sumX = 0, sumY = 0, visited = 0;
+		foreach ( var other in scanOrder )
+		{
+			if ( other == self )
+				continue;
+			var dx = (other.X >> 8) - selfX;
+			var dy = (other.Y >> 8) - selfY;
+			var square = dx * dx + dy * dy;
+			if ( square == 0 || square >= Limit )
+				continue;
+			var offsetX = self.X - other.X;
+			var offsetY = self.Y - other.Y;
+			var distance = Fixed16.Octile( offsetX, offsetY );
+			if ( distance < Radius + Radius + Fixed16.One && distance != 0 )
+			{
+				sumX += Fixed16.Div( offsetX, distance );
+				sumY += Fixed16.Div( offsetY, distance );
+			}
+			if ( ++visited >= 5 )
+				break;
+		}
+		return (sumX, sumY);
+	}
+
+	/// <summary>
+	/// One steering step. <paramref name="isOpen"/> tells whether a cell is walkable for the guest; it decides the
+	/// walls and the position commit (ignored <see cref="OffGrid"/>). <paramref name="separation"/> returns the summed
+	/// neighbour push (<see cref="Separation"/>) when the traced on/off rule asks for it; null means no neighbours.
+	/// Returns the walk step's result: true when the guest has arrived, tested on the position at the start of the step
+	/// (the step still moves).
+	/// </summary>
+	public bool Step( int maxSpeed, int maxForce, Func<int, int, bool> isOpen, Func<GuestNavigation, (int X, int Y)>? separation = null )
 	{
 		// avoid_walls (0xfdc70): probe = position + velocity; a blocked edge of the probe cell in the direction of motion
-		// (zero counts as positive) within the radius pushes back with 2 x the penetration, perpendicular to the edge.
-		// [APPROX:WALK-002] only the edge branch of avoid_walls is modelled, per axis; its four diagonal-corner branches (0xfdfe4..0xfe5e0 via 0xfc9e0) are not — evidence needed: 0xfc9e0 and the corner branches
+		// (zero counts as positive) within the radius pushes back with 2 x the penetration, perpendicular to the edge. The
+		// edges are tried in the order +x, -x, +y, -y and the first that pushes is the whole force (each branch ends with
+		// b 0xfe5f0: 0xfde78, 0xfdee4, 0xfdf64, 0xfdfe0).
+		// [APPROX:WALK-002] only the edge branch of avoid_walls is modelled; its four diagonal-corner branches (0xfdfe4..0xfe5e0 via 0xfc9e0), tried when no edge pushes, are not — evidence needed: 0xfc9e0 and the corner branches
 		var probeX = X + VelocityX;
 		var probeY = Y + VelocityY;
 		int wallX = 0, wallY = 0;
@@ -232,13 +279,13 @@ public sealed class GuestNavigation
 				if ( probeX < low && !isOpen( cellX - 1, cellY ) )
 					wallX = 2 * (low - probeX);
 			}
-			if ( VelocityY >= 0 )
+			if ( wallX == 0 && VelocityY >= 0 )
 			{
 				var high = ((cellY + 1) << 16) - Radius;
 				if ( probeY > high && !isOpen( cellX, cellY + 1 ) )
 					wallY = 2 * (high - probeY);
 			}
-			else
+			else if ( wallX == 0 )
 			{
 				var low = (cellY << 16) + Radius;
 				if ( probeY < low && !isOpen( cellX, cellY - 1 ) )
@@ -247,6 +294,7 @@ public sealed class GuestNavigation
 		}
 
 		// follow_path (0xfe628).
+		// [APPROX:WALK-007] no map-edit reroute: the original compares the map's block stamp (0xd7e54) with the walk's +72 and reroutes, or sets the failure flag +184, when the map changed under the route (0xfe650..0xfe6f8); OpenTPW walks reroute only on the stuck rule — evidence needed: 0xd7e54, the +72/+184 bookkeeping and the callers that read +184
 		if ( !Arrived && Count > 0 && PreviousRemaining != 0 && StuckBits() * Fixed16.One / StuckWindow >= StuckFraction )
 			Reroute();
 		int pathX, pathY, goalX = TargetX, goalY = TargetY;
@@ -293,18 +341,15 @@ public sealed class GuestNavigation
 			}
 		}
 
-		// separation (0xfd778): off on the last segment (or once arrived) within ONE + radius of its waypoint.
-		// [APPROX:WALK-003] the separation force is zero: its neighbour query and callback (0x10087c, 0xfd8a8) are not traced; guests keep OpenTPW's random sub-cell destination offsets instead — evidence needed: 0xfd8a8 and 0x10087c
+		// separation (0xfd778): off on the last segment (or once arrived) within ONE + radius of its waypoint, else the
+		// neighbour push of the query 0x10087c over 2 x radius.
 		int pushX = 0, pushY = 0;
-		if ( opposeSeparation && Count > 0 )
+		if ( separation != null && Count > 0 )
 		{
 			var (wx, wy) = Centre( Buffer[Index] );
 			var near = Fixed16.Octile( X - wx, Y - wy ) <= Fixed16.One + Radius;
 			if ( !((OnLastSegment || Arrived) && near) )
-			{
-				var scale = Fixed16.Div( maxForce, Math.Max( 1, Fixed16.Length( goalX - X, goalY - Y ) ) );
-				(pushX, pushY) = (-Fixed16.Mul( goalX - X, scale ), -Fixed16.Mul( goalY - Y, scale ));
-			}
+				(pushX, pushY) = separation( this );
 		}
 
 		var (ax, ay) = Fixed16.Truncate( wallX, wallY, maxForce );
@@ -324,6 +369,7 @@ public sealed class GuestNavigation
 			History = ((History << 1) | 1) & 0x7fff;
 
 		// Progress (0xff738) against the current waypoint: a history bit when it did not improve.
+		// [APPROX:WALK-009] progress compares the raw remaining distance (remaining >= previous) and the first step after route setup sets no bit; the original compares progress = ONE - FixDiv(remaining, +160) with the previous one (<=, 0xfeed8) and resets +172 at route setup (0xff6fc) — evidence needed: the +160 route length and the +172 reset value
 		if ( Count > 0 )
 		{
 			var remaining = Remaining();

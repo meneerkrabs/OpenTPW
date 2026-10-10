@@ -40,7 +40,9 @@ the container, pass WebSocket upgrades through, and keep the `Host` header.
 
 - `compose.yml` and `Caddyfile`: the image from `ghcr.io/meneerkrabs/opentpw-server` behind
   Caddy on ports 80 and 443; player data in `/opt/opentpw/data`; settings in `.env`
-  (`env.example`). Caddy keeps no access log.
+  (`env.example`). Caddy keeps no access log. The Caddyfile is mounted as a single file, so
+  edit it in place (or restart Caddy after replacing it): `caddy reload` reads the mounted
+  file, which a replaced file no longer is.
 - `opentpw-update.timer`: every night, pull the image and restart if it changed. `latest`
   follows releases; CI publishes it for every `v*` tag (and `main` for every push to main).
 - `opentpw-deploy.path`: runs the same update as soon as a release asks for it (below).
@@ -84,6 +86,10 @@ few seconds. Players should not notice:
 
 - Caddy holds requests, chat connections included, for up to 30 s until its health check
   (`/api/v1/server`, every second) sees the new server answer, instead of returning errors.
+  The server runs on the host network and listens on 127.0.0.1:8080 only: Docker's port proxy
+  would accept connections while the server is still starting and then drop them, which Caddy
+  does not retry. Measured on the official server: a forced restart with a request every 100 ms
+  gave no errors, the slowest request taking 2.4 s.
 - Sessions are kept in `sessions.json`, so nobody is logged out.
 - On stopping, the server sends what is queued in chat and closes each chat connection with
   status 1012 ("service restart"); `compose.yml` gives it 20 s to stop. Clients that do not

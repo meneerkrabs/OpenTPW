@@ -15,6 +15,7 @@ import mac_data_compare as compare
 import park_entry_evidence as park_entry
 import player_file_evidence as player_file
 import profile_evidence as profile
+import profile_snapshot as snap
 import progression_evidence as progression
 import scenario_evidence as evidence
 from scenario_evidence import Evidence, magic, pef
@@ -316,6 +317,17 @@ class PlayerFileReferenceTests(unittest.TestCase):
         raw = bytearray(player_file_bytes(themes=()))
         struct.pack_into('<i', raw, 4 + 6 + 8 + 3, -2)  # signed loop: no themes
         self.assertTrue(player_file.read_mac_player_file(bytes(raw))['ok'])
+
+    def test_theme_key_stops_at_the_first_nul_and_both_readers_agree(self):
+        # a\0x and a\0y both key as 'a' (const char* constructor: strlen + strcpy), so the second
+        # is a duplicate; the snapshot reader already worked this way (R17-2).
+        raw = player_file_bytes(themes=((b'a\0x', 1), (b'a\0y', 0)))
+        out, s = player_file.read_mac_player_file(raw), snap.read_profile_snapshot(raw, 'mac-partial')
+        self.assertEqual((out['failed_at'], out['ok']), ('duplicate theme', False))
+        self.assertEqual((s.failed_at, s.complete), ('duplicate theme', False))
+        self.assertEqual(list(out['themes']), [t.map_key for t in s.themes])
+        self.assertEqual(list(out['themes']), [b'a'])
+        self.assertEqual(out['themes'][b'a']['mEarnedLocalTicket[i]'][0], 1)  # the first stays
 
     def test_register_source_scan(self):
         e = fixture([d_word(14, 6, 0, 1), d_word(14, 29, 6, 0), d_word(36, 6, 1, 8), d_word(47, 22, 1, -40)])

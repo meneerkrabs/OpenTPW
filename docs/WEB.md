@@ -67,7 +67,24 @@ also compiles and links in a real WebGL2 context (Chromium, October 2026). The o
 no `layout(binding = …)` qualifiers, which ES 3.00 lacks, so the browser renderer binds
 uniform blocks and samplers by name, using the names from `SpirvReflection`.
 `libveldrid-spirv` is native and does not run in the browser: shaders and their
-reflection are compiled ahead of time on the desktop.
+reflection are compiled ahead of time on the desktop into `content/shaders/web/<name>.json`
+(vertex and fragment source, vertex elements, resource layouts with their names).
+`WebShaderTests` fails when those files no longer match the shader sources; after changing
+a shader, regenerate them with
+
+```sh
+OPENTPW_NATIVE_SHADER_TESTS=1 OPENTPW_WRITE_WEB_SHADERS=1 dotnet test source/OpenTPW.Tests -r osx-arm64 --filter WebShaderTests
+```
+
+CI does not run the native shader tests yet, so this check is local for now.
+
+Coordinates: OpenTPW renders with Metal and Direct3D conventions (depth 0..1, row 0 at the
+top). The web shaders move depth to -1..1 (`fixClipSpaceZ`) and negate Y
+(`invertVertexOutputY`), so everything WebGL renders lands in memory with row 0 at the top,
+as on the desktop. Viewports, scissor rectangles, `gl_FragCoord` and texture uploads then
+need no conversion. Two things change instead: the negated Y reverses the winding, so the
+browser swaps the front face for culling, and the final frame is flipped once when it is
+copied to the canvas.
 
 ### What the game uses from Veldrid (measured)
 
@@ -110,8 +127,8 @@ Steps for the first milestone (the front-end lobby drawn in the browser; no deve
 panels, sound, movies or park):
 
 1. Split `Renderer.Run` into a `Frame()` that the browser calls from
-   `requestAnimationFrame`; on the desktop `Run` keeps looping over it.
-2. Precompile every shader to GLSL ES plus its reflection as a build step.
+   `requestAnimationFrame`; on the desktop `Run` keeps looping over it (done).
+2. Precompile every shader to GLSL ES plus its reflection (done: `content/shaders/web`).
 3. Write the Veldrid replacement over WebGL2.
 4. Replace the SDL window and input with the canvas and its events in the `InputSnapshot`
    shape.

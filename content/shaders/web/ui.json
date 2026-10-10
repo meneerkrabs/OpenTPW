@@ -1,0 +1,42 @@
+{
+  "fixClipSpaceZ": true,
+  "invertVertexOutputY": true,
+  "vertexElements": [
+    {
+      "name": "position",
+      "semantic": "TextureCoordinate",
+      "format": "Float3",
+      "offset": 0
+    },
+    {
+      "name": "normal",
+      "semantic": "TextureCoordinate",
+      "format": "Float3",
+      "offset": 0
+    },
+    {
+      "name": "texCoords",
+      "semantic": "TextureCoordinate",
+      "format": "Float2",
+      "offset": 0
+    }
+  ],
+  "resourceLayouts": [
+    [
+      {
+        "name": "Color",
+        "kind": "TextureReadOnly",
+        "stages": "Fragment",
+        "options": "None"
+      },
+      {
+        "name": "s_Color",
+        "kind": "Sampler",
+        "stages": "Fragment",
+        "options": "None"
+      }
+    ]
+  ],
+  "vertex": "#version 300 es\n\nstruct VS_OUT\n{\n    vec2 texCoords;\n};\n\nout vec2 vdspv_fsin0_texCoords;\nlayout(location = 2) in vec2 texCoords;\nlayout(location = 0) in vec3 position;\nlayout(location = 1) in vec3 normal;\n\nvoid main()\n{\n    vdspv_fsin0_texCoords = texCoords;\n    gl_Position = vec4(position, 1.0);\n    gl_Position.z = 0.0;\n    gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;\n    gl_Position.y = -gl_Position.y;\n}\n\n",
+  "fragment": "#version 300 es\nprecision mediump float;\nprecision highp int;\n\nstruct VS_OUT\n{\n    highp vec2 texCoords;\n};\n\nuniform highp sampler2D Color;\n\nlayout(location = 0) out highp vec4 out_color;\nin highp vec2 vdspv_fsin0_texCoords;\n\nvoid main()\n{\n    out_color = texture(Color, vec2(vdspv_fsin0_texCoords.x, 1.0 - vdspv_fsin0_texCoords.y));\n    if (out_color.w == 0.0)\n    {\n        discard;\n    }\n}\n\n"
+}

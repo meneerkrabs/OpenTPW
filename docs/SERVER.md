@@ -98,6 +98,15 @@ client addresses (the compose example does).
 
 Back up the data directory (the `opentpw-data` volume) to keep accounts and shared parks.
 
+## News
+
+The game's Online World has a **News** screen with the original two columns, Game News and
+System News. The server reads them from plain-text files the operator writes in the data
+directory: `news/game.txt` and `news/system.txt` (UTF-8; at most 4,000 characters each are
+served; a missing file is empty news). They are served publicly at `GET /api/v1/news`, also
+before logging in, and re-read only when a file changes. On the official server the files are
+in `/opt/opentpw/data/news/`, which the nightly backup already covers.
+
 ## How the browser game is served
 
 - The game's files are served before the API's rate limiter: one page load fetches over a

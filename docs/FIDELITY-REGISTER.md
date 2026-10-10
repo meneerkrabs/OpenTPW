@@ -14,7 +14,7 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **147 unresolved unique APPROX IDs**, 163 APPROX occurrences, 70 EXT occurrences, 68 DATA occurrences and 87 BIN occurrences.
+Current inventory: **147 unresolved unique APPROX IDs**, 163 APPROX occurrences, 70 EXT occurrences, 68 DATA occurrences and 88 BIN occurrences.
 
 Of these, 141 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
@@ -111,7 +111,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-039 | Original-fidelity area (scope unadjudicated) | the profit ticket compares the running yearly profit (mProfitThisYear) with ProfitYear directly; the original (0x10013FDC) scales the threshold by a per-objective factor not yet tied to that key | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:42` |
 | ECON-040 | Original-fidelity area (scope unadjudicated) | players start with 1 golden key and keys are not consumed by entering themes | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:43` |
 | ECON-041 | Original-fidelity area (scope unadjudicated) | features-directory objects with Research.Category != 3 are fixed (non-buyable) items | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:44` |
-| ECON-044 | Original-fidelity area (scope unadjudicated) | balloon/costume percentages are 0 (guests carry no items yet) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:45` |
+| ECON-044 | Original-fidelity area (scope unadjudicated) | guests never hold a balloon or wear a costume, so both percentages are 0; the binary gives them when a guest uses a balloon or costume shop (0x100EAAF8) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:45` |
 | ECON-045 | Original-fidelity area (scope unadjudicated) | loan/challenge record locators use plausibility bounds (one fixture) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:46` |
 | ONLINE-001 | OpenTPW online extension | Word filtering uses case-insensitive substring matches in space-padded text; entry spaces act as boundaries; allowed substrings exempt matches; hit characters except spaces become asterisks. | Original word-filter code or observed original filtering behavior; the source comment says the encrypted TP.ICD implementation is unreadable. | `docs/ONLINE.md:155` |
 | ONLINE-002 | OpenTPW online extension | A leading slash introduces a chat command; other text means say. | Original chat input syntax, which is not documented in the available data. | `docs/ONLINE.md:156` |
@@ -265,7 +265,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-039 | `source/OpenTPW/Economy/ParkObjectives.cs:267` | [APPROX:ECON-039] the profit ticket compares the running yearly profit (mProfitThisYear) with ProfitYear directly; the original (0x10013FDC) scales the threshold by a per-objective factor not yet tied to that key — evidence needed: the caller of 0x10013FDC and its factor |
 | ECON-040 | `source/OpenTPW/Economy/ParkObjectives.cs:323` | [APPROX:ECON-040] players start with 1 golden key and keys are not consumed by entering themes — evidence needed: initial lobby and repeated theme-entry captures |
 | ECON-041 | `source/OpenTPW/Economy/EconomyObjectCatalog.cs:93` | [APPROX:ECON-041] features-directory objects with Research.Category != 3 are fixed (non-buyable) items — evidence needed: buy-menu capture |
-| ECON-044 | `source/OpenTPW/Economy/GuestEconomyBridge.cs:60` | [APPROX:ECON-044] balloon/costume percentages are 0 (guests carry no items yet) — evidence needed: guests slice item state |
+| ECON-044 | `source/OpenTPW/Economy/GuestEconomyBridge.cs:61` | [APPROX:ECON-044] guests never hold a balloon or wear a costume, so both percentages are 0; the binary gives them when a guest uses a balloon or costume shop (0x100EAAF8) — evidence needed: balloon lifetime (+0x214) and costume state rules |
 | ECON-045 | `source/OpenTPW.Files/Formats/Save/SaveEconomyRecords.cs:105` | [APPROX:ECON-045] loan/challenge record locators use plausibility bounds (one fixture) — evidence needed: a second TPWS/TPWI fixture |
 | ONLINE-001 | `source/OpenTPW.Online/Moderation/WordFilter.cs:86` | [APPROX:ONLINE-001] Matching rule — evidence needed: the original filter code is not |
 | ONLINE-002 | `source/OpenTPW.Online/Chat/ChatCommands.cs:180` | [APPROX:ONLINE-002] A line starting with '/' is a command, anything else is "say" — evidence |
@@ -551,6 +551,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | STP-PPC:0x100CC904 loan deposit | `source/OpenTPW/Economy/ParkLedger.cs:24` | [BIN:STP-PPC:0x100CC904 loan deposit] loan proceeds are added to the "Money in" accumulator (+0x1FC90, graph toggle 0x12279 "Money in") like every other credit; instalments go to the money-out accumulator (+0x1F5A0) |
 | STP-PPC:0x100CE690 challenge check | `source/OpenTPW/Economy/ParkObjectives.cs:153` | [BIN:STP-PPC:0x100CE690 challenge check] a 34-entry handler table (0x1022C794) by type; types 30-33 test "built" (1), type 28 compares TargetVal with the level |
 | STP-PPC:0x100CE754 challenge type 28 | `source/OpenTPW/Economy/ParkObjectives.cs:138` | [BIN:STP-PPC:0x100CE754 challenge type 28] passes when TargetVal &lt;= the highest upgrade level byte (+0x4C, 0 = base) of the target rides (0x100C5740, -1 when none) |
+| STP-PPC:0x100CE7B4 challenge types 9 and 10 | `source/OpenTPW/Economy/GuestEconomyBridge.cs:60` | [BIN:STP-PPC:0x100CE7B4 challenge types 9 and 10] percent = trunc(100 × in-park guests holding a balloon (guest +0x210, 0x100C3BEC) or wearing a costume (+0x24 == 2, 0x100C3CD0) / in-park guests), 0 without guests |
 | STP-PPC:0x100CE9CC challenge types 30-32 | `source/OpenTPW/Economy/ParkObjectives.cs:141` | [BIN:STP-PPC:0x100CE9CC challenge types 30-32] pass when the object control's build count of TargetObj (+0x18, raised by every Thing construction at 0x100DA874 and never lowered) is above 0; TargetVal and TargetObj2 are not read |
 | STP-PPC:0x100CEA00 challenge type 33 | `source/OpenTPW/Economy/ParkObjectives.cs:143` | [BIN:STP-PPC:0x100CEA00 challenge type 33] passes when both TargetObj and TargetObj2 have been built |
 | STP-PPC:0x100D67F0 world update | `source/OpenTPW/Economy/ParkEconomy.cs:144` | [BIN:STP-PPC:0x100D67F0 world update] the golden-ticket check (0x100D31D0) runs when the turn counter is a multiple of 100, and only in Full Simulation (game type 0) |

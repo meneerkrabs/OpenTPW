@@ -862,11 +862,13 @@ become contingent on successful decoding.
 The existing only constructor caller is `SoundFile.GetFile`; runtime advisor
 playback reads its entry bytes directly and uses decoded `Mp2Audio` metadata.
 In the identified 40-byte banks, rate/bit-depth/type are packed at entry
-`+24/+26/+27`. The legacy `SoundFile` reads signed Int16 followed by Int32
-fields, making its type hint unreliable and 44,100 wrap negative. This bounded
-fix recognizes MPEG from its validated frame header regardless of that type.
-A full packed-container parser correction, and metadata for non-MPEG or
-unsupported formats, remain separate dependencies.
+`+24/+26/+27`. The pre-`28864fa` `SoundFile` read a signed Int16 followed by
+Int32 fields, which made its type hint unreliable and wrapped 44,100 negative.
+Integration `28864fa` now reads those packed fields as an unsigned UInt16 rate and
+bit-depth/type bytes, so the fallback for unsupported, truncated or invalid first
+headers is that unsigned container rate. A validated frame header still takes
+precedence, so MPEG is recognized regardless of the type byte. Metadata for
+non-MPEG or unsupported formats remains a separate dependency.
 
 A generated 44,100-Hz entry initially failed because the preceding constructor
 reported 22,050. Fourteen metadata cases now pass: all supported Layer I rates
@@ -940,7 +942,7 @@ native bank remap state before attaching SDT clip names. Simply indexing the
 main RideHD bank would yield the wrong names.
 
 ```sh
-/Users/sander/.local/share/opentpw-dotnet/dotnet run --project tools/ppc-analysis/lanes/advisor/audio-events/AudioEventAssets.csproj --configuration Release -- /Users/sander/server/game-assets/theme-park-world/Data /tmp/advisor-event-map-corpus-validated.json
+/Users/sander/.local/share/opentpw-dotnet10/dotnet run --project tools/ppc-analysis/lanes/advisor/audio-events/AudioEventAssets.csproj --configuration Release -- /Users/sander/server/game-assets/theme-park-world/Data /tmp/advisor-event-map-corpus-validated.json
 python3 tools/ppc-analysis/lanes/advisor/audio_event_evidence.py /Users/sander/server/game-assets/mac-feral/bin --assets /Users/sander/server/game-assets/theme-park-world/Data --event-maps /tmp/advisor-event-map-corpus-validated.json > /tmp/advisor-audio-event-evidence.json
 ```
 

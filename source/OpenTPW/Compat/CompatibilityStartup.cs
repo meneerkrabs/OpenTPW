@@ -66,7 +66,7 @@ internal static class CompatibilityStartup
 		IGraphicsSettings.Instance = service;
 		CompatibilityRuntime.RenderQuality = service.Effective;
 		service.Changed += () => CompatibilityRuntime.RenderQuality = CompatibilityRuntime.RenderQuality with { ViewDistanceScale = service.Effective.ViewDistanceScale };
-		TexturePack.Activate( service.Current.EnhancedTextures, graphicsDiagnostics );
+		TexturePack.Activate( service.Current.TexturePackName, graphicsDiagnostics );
 		foreach ( var diagnostic in graphicsDiagnostics.Concat( service.Diagnostics ) )
 			Log.Warning( $"Graphics settings: {diagnostic}" );
 

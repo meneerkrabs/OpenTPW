@@ -6,45 +6,127 @@ Original textures are always the default; nothing here changes original behaviou
 The original textures are small: 8,375 `.wct` textures in the installed WADs, mostly
 32×32 (2,777) and 128×128 (2,352), the largest 256×128 (48.4 million pixels in total).
 On a high-resolution or Retina display at native render size they are magnified a lot.
-An enhanced texture pack replaces them with AI-upscaled copies (Real-ESRGAN, 4×: 128×128
+An enhanced texture pack replaces them with AI-upscaled copies (4×: 128×128
 becomes 512×512).
+
+## Variants
+
+OpenTPW knows two world-texture variants. Each is a separate pack, a directory under
+`<config>/texture-packs/` (on macOS `~/Library/Application Support/OpenTPW/texture-packs`), and you
+can build either or both and switch between them in the options.
+
+The original `.wct` textures are lossy (wavelet) compressed, so they carry blocking and ringing
+artifacts that a 4x upscaler happily magnifies. Both variants therefore first run a 1x
+de-artifact model over every world texture and only then upscale. The lead's comparison on eight
+jungle textures at native resolution:
+
+| Pack name | Options label | Pipeline | Look |
+| --- | --- | --- | --- |
+| `enhanced` (default) | Clean | 1x DeJPG, then Real-ESRGAN `realesrgan-x4plus` | Crisp edges, keeps the original cartoony CG style |
+| `detailed` | Detailed | 1x DeJPG, then `ultrasharp-4x` (4x-UltraSharp) | Most detail, some grain |
+
+Interface art always uses `realesrgan-x4plus-anime` without the pre-pass. Guest sprite atlases use
+the variant's world model and no pre-pass by default (see "Pre-pass" below).
+
+### Models and licences
+
+You supply the models; OpenTPW ships and downloads none of them.
+
+- **Real-ESRGAN ncnn Vulkan** executable and `realesrgan-x4plus`, `realesrgan-x4plus-anime`:
+  BSD-3-Clause, https://github.com/xinntao/Real-ESRGAN/releases.
+- **4x-UltraSharp** by Kim2091 (ncnn conversion `ultrasharp-4x` from Upscayl, in its `resources/models`
+  folder, https://github.com/upscayl/upscayl): **CC-BY-NC-SA-4.0** (OpenModelDB). Non-commercial,
+  share-alike, credit required. It is for building your own local pack; do not redistribute a pack built
+  with it commercially. Put `ultrasharp-4x.param` and `.bin` into the `models` folder next to the
+  Real-ESRGAN executable.
+- **1xDeJPG (realplksr)** by Helaman/Phhofm, `1xDeJPG_realplksr_otf_fp32_fullyoptimized.onnx`:
+  CC-BY-4.0, credit required, from the Phhofm/models releases (https://github.com/Phhofm/models).
+  Fixed 1x3x256x256 float32 RGB input in 0..1.
 
 ## Building a pack
 
 The pack is built on the player's machine from their own installation. It is a derived
-work of the original assets, so it is **never shipped, committed or uploaded**; OpenTPW
-neither ships nor downloads the upscaler.
+work of the original assets, so it is **never shipped, committed or uploaded**.
 
-1. Get `realesrgan-ncnn-vulkan` for your platform from the Real-ESRGAN releases
-   (https://github.com/xinntao/Real-ESRGAN/releases, BSD-3-Clause; the macOS build is
-   universal and runs on Apple silicon through MoltenVK). Unpack it with its `models`
-   folder next to the executable.
-2. Build:
+1. Get `realesrgan-ncnn-vulkan` for your platform (the macOS build is universal and runs on Apple
+   silicon through MoltenVK). Unpack it with its `models` folder next to the executable. For the
+   Detailed pack add the Upscayl `ultrasharp-4x` model files there. Get the DeJPG ONNX file.
+2. Build (the ONNX model runs through ONNX Runtime: CoreML on macOS when available, CPU otherwise):
 
    ```sh
-   bash scripts/run.sh --game-path '/path/to/Theme Park World' --build-texture-pack --upscaler /path/to/realesrgan-ncnn-vulkan
+   # Clean (default pack name "enhanced")
+   bash scripts/run.sh --game-path '/path/to/Theme Park World' --build-texture-pack \
+     --upscaler /path/to/realesrgan-ncnn-vulkan --prepass-model /path/to/dejpg.onnx
+
+   # Detailed
+   bash scripts/run.sh --game-path '/path/to/Theme Park World' --build-texture-pack \
+     --upscaler /path/to/realesrgan-ncnn-vulkan --prepass-model /path/to/dejpg.onnx \
+     --texture-pack-name detailed --upscale-model ultrasharp-4x
    ```
 
-   Options: `--upscale-model <name>` (default `realesrgan-x4plus`), `--texture-pack-dir <dir>`
-   (default `<config>/texture-packs/enhanced`, next to `display.json`; on macOS
-   `~/Library/Application Support/OpenTPW`), `--texture-pack-subtree <data-relative dir>`
-   (e.g. `levels/jungle`, for a quick trial), `--interface-model <name>` (default
-   `realesrgan-x4plus-anime`, for interface art), `--texture-pack-no-interface` (keep interface
-   art original), `--texture-pack-interface-only` (build only interface art), `--texture-pack-sprites-only`
-   (build only the guest sprites; with `--texture-pack-interface-only` both) and
-   `--texture-pack-merge` (keep the existing pack's textures and add or replace the ones built
-   now). To add interface art to a pack built before interface art was supported:
-   `--build-texture-pack --upscaler … --texture-pack-interface-only --texture-pack-merge`.
-   The game itself only loads the default location; a pack built elsewhere is used with
-   `OPENTPW_TEXTURE_PACK=<dir>/textures`.
-3. Turn on **Game Options → Enhanced textures** (or set `"EnhancedTextures": true` in
-   `graphics.json`) and restart the game. Without a pack the row shows "No pack built" and
-   cannot be turned on.
+   Options: `--texture-pack-name <name>` (default `enhanced`; the pack goes to
+   `<config>/texture-packs/<name>`), `--upscale-model <name>` (default `realesrgan-x4plus`),
+   `--texture-pack-hero-dir <dir>` (hero art, below), `--prepass-model <onnx>` (without it there is no pre-pass and the build is exactly the old one),
+   `--prepass-sprites`, `--texture-pack-dir <dir>` (overrides the location), `--texture-pack-subtree <data-relative dir>`
+   (e.g. `levels/jungle`, for a quick trial; it selects WAD directories), `--interface-model <name>` (default
+   `realesrgan-x4plus-anime`), `--texture-pack-no-interface`, `--texture-pack-interface-only`,
+   `--texture-pack-sprites-only` (with `--texture-pack-interface-only` both) and
+   `--texture-pack-merge` (keep that pack's existing textures and add or replace the ones built now;
+   it warns when the models differ). All of these act per pack name. The game only lists packs under the
+   config directory; a pack built elsewhere is used with `OPENTPW_TEXTURE_PACK=<dir>/textures`, which pins
+   the pack and overrides the setting.
+3. Choose **Game Options -> OpenTPW -> Enhanced textures** (Original, Clean, Detailed; only installed packs are listed) and press OK. The
+   textures are swapped in the running game behind a loading bar; no restart is needed. Without any pack
+   the row shows "No pack built" and cannot be changed.
 
-Building writes to a temporary directory and replaces an existing pack only when it is
-complete; `pack.json` is written last. A failed build, including an upscaler run that
-leaves an output missing or the wrong size, leaves the previous pack untouched; if
-moving the new pack into place fails, the previous one is moved back.
+### Setting and migration
+
+`graphics.json` stores the choice as `"TexturePack": "<name>"`; `""` (the default) is the original
+textures, `"enhanced"` Clean, `"detailed"` Detailed, any other name is a pack directory of that name.
+Files from earlier versions with `"EnhancedTextures": true` are read as `"TexturePack": "enhanced"` (`false`
+as off); the old key is dropped the next time the settings are saved. If both keys exist the new one
+wins. Names must be plain directory names (letters, digits, `-`, `_`, `.`).
+
+### Pre-pass
+
+`--prepass-model` runs the 1x model over each world texture before padding and upscaling. The model has a
+fixed 256x256 input: textures up to 192 px per side are centred in one tile and wrap-padded (world
+textures tile), larger ones are cut into overlapping tiles with a 32 px margin that advance by 192 px,
+reading across the border by wrapping, so tiling textures stay seamless. Only RGB is processed; alpha
+passes through untouched. `pack.json` records the model as `PrepassModel`.
+
+Guest sprite atlases (decision): they use the variant's world model and, by default, **no** pre-pass. Trial on
+the `spr_be` atlas with `--prepass-sprites` (RGB only, edge-padded, alpha untouched) showed no fringes, but the
+gain is marginal (slightly cleaner shading), the 1024x256 atlas takes 12 model runs (about 18 s per atlas, 146 s
+for the eight kid atlases against 0 s) and tile borders can show faint steps on non-tiling art. Add
+`--prepass-sprites` to opt in.
+
+Timing: one 256x256 run takes about 1.2 s on Apple silicon through CoreML (1.9 s on CPU) and the builder
+runs four textures at once (about 0.47 s per 128x128 texture, `OPENTPW_PREPASS_PROVIDER=cpu` forces the CPU
+provider). A 128x128 texture takes one run, a 256x256 one four. A full build with the pre-pass therefore takes
+roughly an hour or more on top of the upscale; try `--texture-pack-subtree levels/jungle` first.
+
+### Hero art
+
+`--texture-pack-hero-dir <dir>` points at a directory of hand-made or redrawn replacements. A file named
+like the pack's texture, e.g. `ui/textures/b_buy.wct.png` (lower case, same layout as the pack's `textures`
+directory), is copied over the automatic result for that key, so it wins over the upscale and survives rebuilds
+and `--texture-pack-merge`. It may have any size whose aspect ratio equals the original texture's; a file with
+another aspect ratio, or for a texture that does not exist, is skipped with a warning. Hero art is applied at the
+end of every build that names the directory and counted in `pack.json` as `HeroTextures`. Keep it outside the repository.
+
+### Switching at runtime
+
+Changing the pack in the options reloads every texture the game has made from a `.wct` (a registry of
+weak references keyed by game path): the new pixels are decoded on a worker thread through a small
+bounded queue (a 4x pack would otherwise hold gigabytes in memory), uploaded on the render thread in
+slices of about 8 ms per frame, and swapped into the existing `Texture` objects. Materials look the GPU
+texture up when each draw is recorded, and the old GPU texture is deleted after the frame. A full switch is fast: in the front end, 134 loaded textures swapped to and from the real 1.4 GB
+pack in 0.5-1.3 s over 60-140 frames, with the working set unchanged (about 4 ms per texture on the render thread, so the roughly 4,200 textures of a
+fully loaded park take under half a minute). Interface images
+(UI renderer cache) and guest sprite atlases reload when the switch ends. Textures from the bonus content
+roots do not come from game `.wct` files and are not part of the pack. `OPENTPW_TEXTURE_PACK` pins the pack,
+so the options row has no effect then.
 
 ## What the builder does
 
@@ -72,8 +154,8 @@ moving the new pack into place fails, the previous one is moved back.
   in empty texels, which the upscaler would otherwise blend into a light or dark fringe.
 - Wrap-pads each texture by an eighth of its smaller side (2–8 pixels) before upscaling and
   crops the padding afterwards, so tiling textures (grass, paths) stay seamless.
-- Runs each upscaler once over its textures and writes `textures/<game path>.png` plus
-  `pack.json` (format, scale, upscaler, model, interface model, counts per skip reason).
+- Runs the optional pre-pass on world textures, then each upscaler once over its textures and writes `textures/<game path>.png` plus
+  `pack.json` (format, scale, upscaler, model, interface model, pre-pass model, counts per skip reason).
 
 At load time `Texture` checks the active pack before decoding a `.wct`; a missing file
 falls back to the original. `OPENTPW_TEXTURE_PACK=<pack>/textures` forces a pack for tests.

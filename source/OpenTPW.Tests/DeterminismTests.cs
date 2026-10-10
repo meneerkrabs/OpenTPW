@@ -220,8 +220,9 @@ public class DeterminismTests
 	}
 
 	/// <summary>
-	/// Every saved stream is moved by drawing from it (guest ticks, a script seed, sound draws), never through
-	/// RestoreRandomState, so a restore that does nothing fails here.
+	/// Every saved stream is moved by drawing from it (guest ticks, a script seed) or, for the sound chooser,
+	/// whose draws never store their successor, by reseeding it; never through RestoreRandomState, so a
+	/// restore that does nothing fails here.
 	/// </summary>
 	[TestMethod]
 	public void LoadRestoresEveryStreamDrawnAfterTheSave()
@@ -237,11 +238,12 @@ public class DeterminismTests
 			park.Sound.Draw();
 			park.Save( path );
 			var saved = park.RandomState;
-			Assert.AreNotEqual( park.Seed.SoundStream, saved.SoundSeed, "the sound seed was drawn before the save" );
+			Assert.AreEqual( park.Seed.SoundStream, saved.SoundSeed, "sound draws do not move the chooser seed (0x100118C8 is its only store)" );
 			for ( var tick = 0; tick < 600; tick++ )
 				park.Guests.Tick( Tick );
 			park.Scripts.NextScriptSeed();
 			park.Sound.Draw();
+			park.Sound.Reseed( saved.SoundSeed + 1 );
 			var moved = park.RandomState;
 			Assert.AreNotEqual( saved.GuestRandom, moved.GuestRandom, "guest ticks drew from the guest stream" );
 			Assert.AreNotEqual( saved.ScriptRandom, moved.ScriptRandom );

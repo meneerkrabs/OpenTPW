@@ -43,7 +43,6 @@ public static class EconomyApproximations
 		("ECON-041", "features-directory objects with Research.Category != 3 are fixed (non-buyable) items", "buy-menu capture"),
 		("ECON-044", "guests never hold a balloon or wear a costume, so both percentages are 0; the binary gives them when a guest uses a balloon or costume shop (0x100EAAF8)", "balloon lifetime (+0x214) and costume state rules"),
 		("ECON-045", "loan/challenge record locators use plausibility bounds (one fixture)", "a second TPWS/TPWI fixture"),
-		("ECON-047", "a newly built ride starts with life gauge 100 (Easymode.TPWI stores 100 for every placed object)", "the life gauge set when a ride is built (the constructor 0x100DA874 sets 0)"),
 	};
 
 	private static bool logged;

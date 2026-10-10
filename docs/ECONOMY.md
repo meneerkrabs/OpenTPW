@@ -8,7 +8,7 @@ behaviour is unknown is marked *approximation* below and in the code documentati
 
 The Mac PowerPC build does contain the setting names and its code is readable. The ride wear, breakdown and
 repair rules are traced there and implemented, see [reverse/RIDE-WEAR.md](reverse/RIDE-WEAR.md); only the
-ride-state gate (ECON-023) and the life gauge's start value (ECON-047) remain approximations.
+ride-state gate (ECON-023) remains an approximation; the life gauge starts at 100 (`0x100DAB1C`).
 
 Code: `source/OpenTPW/Economy/` (simulation), `source/OpenTPW.Files/Formats/Save/SaveEconomyRecords.cs`
 (original save records). Tests: `ParkEconomyTests` (synthetic, no assets) and
@@ -194,7 +194,7 @@ mismatches; original-data tests check the typed PC fixture.
 | Loans | Offers, lenders, terms; 0 % APR repayment = floor(amount/months) | Annuity formula and monthly interest for APR > 0; early repayment pays the remaining balance |
 | Bankruptcy | Six month-ends in the red, warnings at 3 and 5 months (strings) | Advance stops when bankrupt |
 | Staff | Pool sizes, maxima, wages, training prices | Candidate grades, pool timing, free hiring, 100 points per grade, mechanic/handyman job durations |
-| Maintenance | Wear rates, red lines, maxima, upgrade durations, worn threshold 25 | Traced: wear every 64 turns from the ride script's running state, riders and speed; breakdown check every 8 turns; repair restores 100 but not the life gauge. Approximated: the ride-state gate (ECON-023) and the life gauge's start value (ECON-047) |
+| Maintenance | Wear rates, red lines, maxima, upgrade durations, worn threshold 25 | Traced: wear every 64 turns from the ride script's running state, riders and speed; breakdown check every 8 turns; repair restores 100 but not the life gauge. the life gauge starts at 100 (`0x100DAB1C`). Approximated: the ride-state gate (ECON-023) |
 | Research | Items, categories, groups, costs, effort, ability, thresholds, work load; traced: points every 20 turns, cumulative group opener, first open item in table order; points from researcher staff only, in both modes (Mac) | Info-id table order, the excluded researcher states, the stand-in for the Instant Action seed's researcher |
 | Challenges | Definitions, level list, timings, prizes, follow-ups | Type semantics from comments, except the build types 28 and 30–33, traced to the handler table at `0x100CE690`; explicit accept/decline; types 14, 22, 23, 26 unmeasured (23 and 26 never pass in the binary) |
 | Golden tickets | All thresholds | Checked every 100 park turns in Full Simulation only; the profit ticket reads the year's running profit (`mProfitThisYear`, reset each calendar year); the first copy of a ticket object costs tickets, not cash (all traced) |
@@ -329,7 +329,6 @@ site, is listed in `Economy/EconomyApproximations.cs` and is logged once at star
 | ECON-041 | `Economy/EconomyObjectCatalog.cs:93` | features-directory objects with Research.Category != 3 are fixed (non-buyable) items | buy-menu capture |
 | ECON-044 | `Economy/GuestEconomyBridge.cs:61` | guests never hold a balloon or wear a costume, so both percentages are 0; the binary gives them when a guest uses a balloon or costume shop (0x100EAAF8) | balloon lifetime (+0x214) and costume state rules |
 | ECON-045 | `Files/Formats/Save/SaveEconomyRecords.cs:91` | loan/challenge record locators use plausibility bounds (one fixture) | a second TPWS/TPWI fixture |
-| ECON-047 | `Economy/ParkEconomyContracts.cs:178` | a newly built ride starts with life gauge 100 (Easymode.TPWI stores 100 for every placed object) | the life gauge set when a ride is built (the constructor 0x100DA874 sets 0) |
 
 ## Open questions
 

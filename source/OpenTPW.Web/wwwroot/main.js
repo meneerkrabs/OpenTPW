@@ -36,12 +36,13 @@ async function copy(sources) {
 document.getElementById('folder').addEventListener('change', event => copy([...event.target.files].map(file =>
 	[file.webkitRelativePath.split('/').slice(1).join('/'), () => file.arrayBuffer()])));
 
-// For local testing: ?data=<url of a game folder served next to the page, with a files.txt listing its files>.
+// For local testing: ?data=<url of a game folder served next to the page, with a files.txt listing its
+// files>. A line may name the URL to fetch after a tab (for servers that only serve known file types).
 const served = new URLSearchParams(location.search).get('data');
 if (served) {
 	const base = served.endsWith('/') ? served : `${served}/`;
-	const list = (await (await fetch(`${base}files.txt`)).text()).split('\n').filter(Boolean);
-	copy(list.map(relative => [relative, async () => (await fetch(base + relative.split('/').map(encodeURIComponent).join('/'))).arrayBuffer()]));
+	const list = (await (await fetch(`${base}files.txt`)).text()).split('\n').filter(Boolean).map(line => line.split('\t'));
+	copy(list.map(([relative, url]) => [relative, async () => (await fetch(url ?? base + relative.split('/').map(encodeURIComponent).join('/'))).arrayBuffer()]));
 }
 
 async function start() {
@@ -49,7 +50,7 @@ async function start() {
 	await new Promise(requestAnimationFrame);
 	try {
 		document.getElementById('setup').hidden = true;
-		program.Start();
+		program.Start(location.origin);
 		document.getElementById('canvas').focus();
 		const frame = () => {
 			if (program.Frame())

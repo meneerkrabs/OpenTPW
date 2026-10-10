@@ -61,6 +61,8 @@
 	<!-- The file system creates archive handlers by reflection; keep the game whole when trimming. -->
 	<ItemGroup>
 		<TrimmerRootAssembly Include="OpenTPW.Web" />
+		<!-- The online API records are read and written by reflection-based System.Text.Json. -->
+		<TrimmerRootAssembly Include="OpenTPW.Online" />
 	</ItemGroup>
 
 </Project>

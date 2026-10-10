@@ -28,12 +28,16 @@ public static partial class Program
 		File.WriteAllBytes( path, contents );
 	}
 
-	/// <summary>Mounts the copied files like <c>Game.Run</c> does and shows the front end in the canvas.</summary>
+	/// <summary>
+	/// Mounts the copied files like <c>Game.Run</c> does and shows the front end in the canvas.
+	/// <paramref name="origin"/> is the page's own address, offered as the online server.
+	/// </summary>
 	[JSExport]
-	public static void Start()
+	public static void Start( string origin )
 	{
 		try
 		{
+			OnlineSession.SuggestedServerUrl = origin;
 			StartGame();
 		}
 		catch ( Exception exception )
@@ -69,7 +73,7 @@ public static partial class Program
 		GameAudio.Enabled = false;
 		renderer = new Renderer( DisplaySettings.Default, null );
 		Render = renderer;
-		flow = new GameFlow();
+		flow = new GameFlow { OnlineFolders = new OnlineFolders( "/online" ) };
 		renderer.OnUpdate += flow.Update;
 		renderer.OnRender += flow.Render;
 		flow.ShowFrontEnd();

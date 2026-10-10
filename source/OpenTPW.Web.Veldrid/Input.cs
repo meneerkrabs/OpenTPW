@@ -58,6 +58,8 @@ namespace Veldrid
 
 		private readonly bool[] pressedThisFrame = new bool[13];
 		private readonly List<MouseButton> deferredReleases = new();
+		private readonly HashSet<Key> keysPressedThisFrame = new();
+		private readonly List<KeyEvent> deferredKeyReleases = new();
 
 		/// <summary>Starts the next frame's snapshot, applying releases held back from the last one.</summary>
 		public void Clear()
@@ -70,6 +72,30 @@ namespace Veldrid
 			foreach ( var button in deferredReleases )
 				SetButton( button, false );
 			deferredReleases.Clear();
+			keysPressedThisFrame.Clear();
+			Keys.AddRange( deferredKeyReleases );
+			deferredKeyReleases.Clear();
+		}
+
+		/// <summary>Keys get the same treatment as <see cref="SetButton"/>: a tap within one frame still counts.</summary>
+		public void AddKey( KeyEvent key )
+		{
+			if ( !key.Down && keysPressedThisFrame.Contains( key.Key ) )
+			{
+				deferredKeyReleases.Add( key );
+				return;
+			}
+			if ( key.Down )
+			{
+				var held = deferredKeyReleases.FindIndex( release => release.Key == key.Key );
+				if ( held >= 0 )
+				{
+					Keys.Add( deferredKeyReleases[held] );
+					deferredKeyReleases.RemoveAt( held );
+				}
+				keysPressedThisFrame.Add( key.Key );
+			}
+			Keys.Add( key );
 		}
 
 		/// <summary>
@@ -107,7 +133,7 @@ namespace Veldrid
 				switch ( parts[0] )
 				{
 					case "k" when parts.Length >= 5 && Enum.TryParse<Key>( parts[2], out var key ):
-						Keys.Add( new KeyEvent( key, parts[1] == "1", (ModifierKeys)int.Parse( parts[3], CultureInfo.InvariantCulture ), parts[4] == "1" ) );
+						AddKey( new KeyEvent( key, parts[1] == "1", (ModifierKeys)int.Parse( parts[3], CultureInfo.InvariantCulture ), parts[4] == "1" ) );
 						break;
 					case "b" when parts.Length >= 3:
 						SetButton( (MouseButton)int.Parse( parts[2], CultureInfo.InvariantCulture ), parts[1] == "1" );

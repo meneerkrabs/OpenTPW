@@ -330,6 +330,24 @@ public class TrueTypeFontTests
 	}
 
 	[TestMethod]
+	public void LongSignLinesAreNarrowedByTheOriginalLogFontWidthBisection()
+	{
+		var font = OriginalLibrary().Get( "YOUNIA__.TTF" );
+		Assert.IsTrue( font.AverageCharWidth > 0 );
+		float Extent( string text, int width ) => SignTextLayout.Measure( font, text, 144, SignTextLayout.LogFontHorizontalScale( font, 144, width ) ).Width;
+		Assert.AreEqual( 1f, SignTextLayout.LogFontHorizontalScale( font, 144, 0 ), "width 0 keeps the design aspect" );
+		Assert.AreEqual( 2 * Extent( "Gate", 40 ), Extent( "Gate", 80 ), 0.5f, "the extent scales with lfWidth" );
+		Assert.AreEqual( 58, SignTextLayout.FitLogFontWidth( font, "Gate", 144, 58, 512 ), "a fitting line keeps its width" );
+		const string longName = "Temple Of Gloom And Doom";
+		Assert.IsTrue( Extent( longName, 58 ) >= 512 );
+		var fitted = SignTextLayout.FitLogFontWidth( font, longName, 144, 58, 512 );
+		Assert.IsTrue( fitted < 58 && Extent( longName, fitted ) < 512, $"narrowed to {fitted}" );
+		Assert.IsTrue( Extent( longName, fitted + 3 ) >= 512, "the search stops within three units of the widest fitting width" );
+		var fromHeight = SignTextLayout.FitLogFontWidth( font, longName + longName, 144, 0, 512 );
+		Assert.IsTrue( fromHeight is > 0 and < 144 && Extent( longName + longName, fromHeight ) < 512, "lfWidth 0 searches up to the em height" );
+	}
+
+	[TestMethod]
 	public void ReadsAllSeventeenOriginalFontsFromTheWadInMemory()
 	{
 		var library = OriginalLibrary();

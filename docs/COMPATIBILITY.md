@@ -192,7 +192,7 @@ against loose files: `OPENTPW_TPWFNT_PATH=<tpwfnt folder>`.
 | Id | Area | Assumption | Evidence needed |
 | --- | --- | --- | --- |
 | COMPAT-001 | Sign text | Legacy 512x256 canvas (two 256x256 halves); native path has a 512x512 text DIB, 256x256 masks and two 128x128 destinations | integrate native surface composition and final split/pack with proven UV orientation |
-| COMPAT-002 | Sign text | Lines centred horizontally and shrunk to fit the width minus 8 texels | original placement / captures of long names |
+| COMPAT-002 | Sign text | lfWidth applied as a horizontal scale with the Win32 rule (average character width = lfWidth) and fractional advances; the width search itself is traced (`0x100A9F9C`: no margin, height unchanged, bisection over lfWidth) | captures of long names (Mac GDI width rounding) |
 | COMPAT-003 | Sign text | Stored paint RGB drawn opaque as presentation; fourth colour byte, modes 1/2, fill bitmaps and material/mask effects not applied | integrate the proved native surface/compositing path and verify original-platform pixels |
 | COMPAT-004 | Sign text | Flat dark board behind gate text; the board image (wavelet) is read but not decoded or composed | `Bitmap::load_wavelet` and the board blit |
 | COMPAT-005 | Sign text | The 85..141 slot field (read as horizontal scale) is not applied | binary use of the field |

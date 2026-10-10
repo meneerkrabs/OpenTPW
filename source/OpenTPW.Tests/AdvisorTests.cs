@@ -61,7 +61,9 @@ public class AdvisorTests
 	[TestMethod]
 	public void ApproximationRegisterIsSequentialAndUnique()
 	{
-		CollectionAssert.AreEqual( Enumerable.Range( 1, 22 ).Select( index => $"ADVISOR-{index:000}" ).ToArray(), Advisor.Approximations.Select( entry => entry.Id ).ToArray() );
+		// Traced rules leave the register; their numbers are not reused.
+		var retired = new[] { 1, 15, 21 };
+		CollectionAssert.AreEqual( Enumerable.Range( 1, 22 ).Except( retired ).Select( index => $"ADVISOR-{index:000}" ).ToArray(), Advisor.Approximations.Select( entry => entry.Id ).ToArray() );
 	}
 
 	[DataTestMethod]

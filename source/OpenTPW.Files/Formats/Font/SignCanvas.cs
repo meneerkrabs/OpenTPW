@@ -10,7 +10,7 @@ namespace OpenTPW;
 /// entries ("Temple"/"Of Gloom", "Sun"/"God"), matching the two slots. Which entry pair belongs to which
 /// object is not established (<c>Info.RideTypeStringIndex</c> is a ride type shared by all themes).
 /// Approximations, labelled: the canvas is 512x256 (two 256x256 halves; native final destinations
-/// are 128x128, with distinct text/mask surfaces), lines are centred horizontally and shrunk to fit the width, the line colour is the
+/// are 128x128, with distinct text/mask surfaces), lines are centred horizontally and narrowed to fit the width by the original's LOGFONT width bisection, the line colour is the
 /// RGB of its colour block (traced) drawn opaque, the background is a caller-supplied colour (the
 /// .sgn fill bitmaps and board image are read but not composed), and the horizontal-scale field is not applied.
 /// </summary>
@@ -70,7 +70,11 @@ public static class SignCanvas
 			// [DATA:*.sgn:LOGFONT lfHeight] em height; [DATA:*.sgn:slot offset] cell top (TA_TOP reading is inferred from the values).
 			// [APPROX:COMPAT-006] no pair kerning (GDI TextOut default) — evidence needed: binary text-output call site.
 			// [APPROX:COMPAT-005] the horizontal-scale field is not applied — evidence needed: binary use of the field.
-			SignTextLayout.DrawLine( canvas, Width, Height, font, text.Trim(), Math.Max( 1, slot.EmHeightPixels ), colour, cellTop: slot.OffsetY, kerning: false );
+			// [DATA:*.sgn:LOGFONT lfWidth] the line's width, narrowed until it fits (0x100A9F9C); centred on the canvas (the original's x = 256 - extent / 2 on its 512-wide text DC)
+			var emPixels = Math.Max( 1, slot.EmHeightPixels );
+			var line = text.Trim();
+			var logFontWidth = SignTextLayout.FitLogFontWidth( font, line, emPixels, slot.LogFont.Width, Width );
+			SignTextLayout.DrawLine( canvas, Width, Height, font, line, emPixels, colour, horizontalScale: SignTextLayout.LogFontHorizontalScale( font, emPixels, logFontWidth ), margin: 0, cellTop: slot.OffsetY, kerning: false );
 		}
 		return canvas;
 	}

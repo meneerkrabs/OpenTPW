@@ -30,23 +30,25 @@ public sealed class GameOptions
 	public const string FileName = "opentpw-options.json";
 	public const int MaximumVolume = 10;
 
-	// [APPROX:UI-030] 0..10 volume steps, default 8, popup help on — evidence needed: original options defaults
+	// [APPROX:UI-030] 0..10 volume steps, default 8; the original copies its volume defaults from fields +0x38..+0x44 of the object at 0x101EC828 (0x10125B7C) — evidence needed: that object's initializer
 	public int SoundEffectsVolume { get; set; } = 8;
 	public int MusicVolume { get; set; } = 8;
 	public int SpeechVolume { get; set; } = 8;
 	public int MovieVolume { get; set; } = 8;
+	// [BIN:STP-PPC:0x10125B7C options defaults] TooltipsOn (+0x36), AdvisorOn (+0x34), TutorialOn (+0x35), ConfirmDeleteOn (+0x37) and RMBCancelOn (+0x39) are set to 1, RMBScrollOn (+0x38) to 0 (names from the serializer 0x1012653C)
 	public bool PopupHelp { get; set; } = true;
 	/// <summary>Mute toggles next to the four volume sliders; off means silent whatever the volume.</summary>
 	public bool SoundEffectsOn { get; set; } = true;
 	public bool MusicOn { get; set; } = true;
 	public bool SpeechOn { get; set; } = true;
 	public bool MovieOn { get; set; } = true;
-	// [APPROX:UI-030] right-column defaults: all on, 90 degs rotation (as in the supplied capture), pushscroll
+	// [APPROX:UI-030] rotation 90 degs (as in the supplied capture; the defaults set IsometricOn +0x3A to 1, not proven to be this option)
 	public bool Advisor { get; set; } = true;
 	public bool Tutorial { get; set; } = true;
 	public bool Confirmations { get; set; } = true;
 	public bool RmbCancel { get; set; } = true;
 	public RotationMode Rotation { get; set; } = RotationMode.Ninety;
+	// [BIN:STP-PPC:0x10125B7C options defaults] RMBScrollOn = 0: push scrolling
 	public ScrollMode Scroll { get; set; } = ScrollMode.Pushscroll;
 
 	public static GameOptions Current { get; set; } = new();

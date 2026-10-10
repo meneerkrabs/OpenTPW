@@ -49,6 +49,8 @@ public sealed class TrueTypeFont
 	/// <summary>OS/2 usWinDescent as a positive value (falls back to -<see cref="Descender"/>).</summary>
 	public int WindowsDescent { get; }
 	public int WeightClass { get; }
+	/// <summary>OS/2 xAvgCharWidth in font units (0 when the font has no OS/2 table).</summary>
+	public int AverageCharWidth { get; }
 	public int GlyphCount { get; }
 	/// <summary>The (platform, encoding, format) of the cmap subtable in use.</summary>
 	public (int Platform, int Encoding, int Format) CharacterMapSource { get; private set; }
@@ -131,6 +133,7 @@ public sealed class TrueTypeFont
 
 		if ( tables.TryGetValue( "OS/2", out var os2 ) && os2.Length >= 78 )
 		{
+			AverageCharWidth = (short)U16( os2.Offset + 2 );
 			WeightClass = U16( os2.Offset + 4 );
 			WindowsAscent = U16( os2.Offset + 74 );
 			WindowsDescent = U16( os2.Offset + 76 );

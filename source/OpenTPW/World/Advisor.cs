@@ -22,7 +22,7 @@ internal sealed class Advisor : IDisposable
 	internal const string LipArchivePath = "/global/Speech/lips";
 	// [DATA:Advisor.MD2:mesh names "Mouth - Normal", "Mouth - Aah", "Mouth - Eee", "Mouth - Ooh", "Mouth - Sss"]
 	internal const string ClosedMouth = "Mouth - Normal";
-	// [APPROX:ADVISOR-001] The original's mouth nodes 1–5 are these meshes in this order (node 1, shown while silent, is Normal) — evidence needed: the node-lookup jump table at 0x1019B3DC or the MD2 node ids
+	// [BIN:STP-PPC:0x1019B394 node lookup] mouth nodes 1–5 (stored in order by 0x10006264) are found by case-insensitive name "mouth - normal", "aah", "eee", "ooh", "sss" through the jump table at data 0x518B4; node 1 is shown while silent
 	internal static readonly string[] Mouths = { ClosedMouth, "Mouth - Aah", "Mouth - Eee", "Mouth - Ooh", "Mouth - Sss" };
 	// [DATA:global/Speech/lips.wad:members sp_001–sp_637]
 	internal const int FirstClip = 1;
@@ -33,7 +33,6 @@ internal sealed class Advisor : IDisposable
 	/// <summary>Every unproven advisor/lip-sync rule (docs/LIPS.md "Approximation register"); logged once when an advisor is created.</summary>
 	internal static readonly (string Id, string Rule)[] Approximations =
 	{
-		("ADVISOR-001", "mouth nodes 1–5 are the Normal, Aah, Eee, Ooh and Sss meshes in that order"),
 		("ADVISOR-002", "hats, spatula, bow tie and blink meshes hidden"),
 		("ADVISOR-003", "bottom-left viewport, 1/3 of the short screen side, 16 px margin"),
 		("ADVISOR-004", "overlay camera at z = -70, 40° FOV, near 1, far 500"),
@@ -47,13 +46,11 @@ internal sealed class Advisor : IDisposable
 		("ADVISOR-012", "mono speech duplicated to both stereo channels"),
 		("ADVISOR-013", "the mouth is talking from time 0 (the unit and per-mark toggle are traced)"),
 		("ADVISOR-014", "MP2 synthesis window values read from ffmpeg's table, checked against two ISO values and ≤1 LSB corpus output"),
-		("ADVISOR-015", "the advisor's tutorial byte +53 is the Game Options Tutorial switch (same offset; object identity unproven)"),
 		("ADVISOR-016", "returned playback span = speech length + 200 + 300 + 1000 ms (sequence and ending-clip durations not decoded)"),
 		("ADVISOR-017", "advisor controller clock = wall-clock ms since the automatic advisor started, updated once per frame; not pause-aware"),
 		("ADVISOR-018", "the automatic advisor is drawn only while its speech plays, only inside a level; leaving the level stops it"),
 		("ADVISOR-019", "GeneralAdvisor.MinTimeAnyMessage and GeneralAdvisor.MinTimeSameMessage are loaded but not applied"),
 		("ADVISOR-020", "game events 2/3/4 come from the park economy's Bankrupt/ParkOpened/ParkClosed events, not proven equal to the original producers"),
-		("ADVISOR-021", "Advisor option off: advice is still picked, consumed and recorded silently; the options byte +0x34 is the Game Options Advisor switch (same offset; object identity unproven)"),
 		("ADVISOR-022", "the advisor's pending advice and message history are not saved or loaded with the park"),
 	};
 

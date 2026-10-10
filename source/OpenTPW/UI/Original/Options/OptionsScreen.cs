@@ -168,6 +168,7 @@ public static class OptionsScreen
 			Selected = model == "b_on" ? () => !isOn() : null,
 			Clicked = toggled,
 			Adjusted = adjusted,
+			WheelAdjusts = adjusted != null,
 			Enabled = enabled,
 			Bounds = rect,
 			Anchor = UiAnchor.Center
@@ -398,7 +399,17 @@ public static class OptionsScreen
 		var renderSteps = RenderScaleSteps.Where( step => step >= display.MinimumRenderScale && step <= display.MaximumRenderScale ).ToArray();
 		Row( "windowMode", () => Prefix( OpenTpwText.WindowMode ) + WindowModeLabel( strings, state.Display.Mode ),
 			() => Enum.GetValues<WindowMode>().Select( mode => Prefix( OpenTpwText.WindowMode ) + WindowModeLabel( strings, mode ) ),
-			direction => state.Display = state.Display with { Mode = CycleWrap( Enum.GetValues<WindowMode>(), state.Display.Mode, direction ) } );
+			direction =>
+			{
+				var mode = CycleWrap( Enum.GetValues<WindowMode>(), state.Display.Mode, direction );
+				// A size the new mode does not offer (exclusive full screen lists only display modes) snaps to the
+				// nearest one it does, so the resolution slider always shows a selectable size.
+				var offered = display.GetResolutions( mode );
+				var size = new Point2( state.Display.Width, state.Display.Height );
+				if ( offered.Count > 0 && !offered.Any( candidate => SameSize( candidate, size ) ) )
+					size = offered.MinBy( candidate => Math.Abs( (long)candidate.X * candidate.Y - (long)size.X * size.Y ) );
+				state.Display = state.Display with { Mode = mode, Width = size.X, Height = size.Y };
+			} );
 		Row( "upscaling", () => Prefix( OpenTpwText.Upscaling ) + UpscaleLabel( strings, state.Display.Upscale ),
 			() => Enum.GetValues<UpscaleMode>().Select( mode => Prefix( OpenTpwText.Upscaling ) + UpscaleLabel( strings, mode ) ),
 			direction =>

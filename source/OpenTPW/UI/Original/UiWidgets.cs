@@ -347,6 +347,8 @@ public sealed class UiButton : UiElement
 	public Action? Clicked { get; set; }
 	/// <summary>Left/right keys on the focused button (e.g. turn the lobby to the next island).</summary>
 	public Action<int>? Adjusted { get; set; }
+	/// <summary>The mouse wheel over the button also calls <see cref="Adjusted"/> (OpenTPW page cycle buttons); off elsewhere, so the wheel over a lobby button does not turn the island.</summary>
+	public bool WheelAdjusts { get; set; }
 	public Func<bool>? Selected { get; set; }
 	public UiAlign Align { get; set; } = UiAlign.Center;
 	public override bool Focusable => Visible && Enabled;

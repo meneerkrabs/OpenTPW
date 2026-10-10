@@ -289,7 +289,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-005 | `source/OpenTPW/UI/Original/UiImages.cs:76` | [APPROX:UI-005] pink key + neighbour colour bleed for linear filtering — evidence needed: capture of UI edges at other resolutions |
 | UI-006 | `source/OpenTPW/UI/Original/UiText.cs:144` | [APPROX:UI-006] all UI text/backdrop colours — evidence needed: captures of original screens |
 | UI-007 | `source/OpenTPW/UI/Original/UiWidgets.cs:73` | [APPROX:UI-007] drop shadow one text pixel down-right — evidence needed: captures of original screens |
-| UI-008 | `source/OpenTPW/UI/Original/UiWidgets.cs:372` | [APPROX:UI-008] purple_button as a mirrored end cap, upper half normal, lower half focused/pressed — evidence needed: capture of the original front-end buttons |
+| UI-008 | `source/OpenTPW/UI/Original/UiWidgets.cs:374` | [APPROX:UI-008] purple_button as a mirrored end cap, upper half normal, lower half focused/pressed — evidence needed: capture of the original front-end buttons |
 | UI-010 | `source/OpenTPW/UI/Original/UiScreen.cs:224` | [APPROX:UI-010] popup help placement/backdrop — evidence needed: capture of original popup help |
 | UI-011 | `source/OpenTPW/UI/Original/UiScreen.cs:214` | [APPROX:UI-011] modal screens dim the screens below — evidence needed: captures of original dialogs |
 | UI-012 | `source/OpenTPW/UI/Original/UiInput.cs:54` | [APPROX:UI-012] key map (arrows, Enter, Escape, P) — evidence needed: binary key handling / KEYBOARD.str |
@@ -328,9 +328,9 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-032 | `source/OpenTPW/UI/Original/UiWidgets.cs:285` | [APPROX:UI-032] small-font fallback and greedy wrap for long labels — evidence needed: captures of translated original screens |
 | UI-034 | `source/OpenTPW/UI/Original/UiImages.cs:70` | [APPROX:UI-034] a fully opaque texture on a transparent (flag 0x2) slot keys out black — evidence needed: the original's render state for flagged slots |
 | UI-035 | `source/OpenTPW/Client/Movie/IntroPlaylist.cs:30` | Input already held when the sequence begins is ignored until released [APPROX:UI-035], so launching the game |
-| UI-036 | `source/OpenTPW/UI/Original/UiWidgets.cs:441` | [APPROX:UI-036] linear knob travel over the track, value index 0..Steps-1 from the knob's centre — evidence needed: capture of the original slider ends / binary slider code |
+| UI-036 | `source/OpenTPW/UI/Original/UiWidgets.cs:443` | [APPROX:UI-036] linear knob travel over the track, value index 0..Steps-1 from the knob's centre — evidence needed: capture of the original slider ends / binary slider code |
 | UI-037 | `source/OpenTPW/UI/Original/UiText.cs:153` | [APPROX:UI-037] option bar label colour (16,16,48) read off a capture by eye — evidence needed: exact pixel colour from a capture or the font palette |
-| UI-038 | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:218` | [APPROX:UI-038] 3D card rendering, videocard and audio quality are shown fixed (disabled) — OpenTPW has no software renderer, video card or audio quality choice |
+| UI-038 | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:219` | [APPROX:UI-038] 3D card rendering, videocard and audio quality are shown fixed (disabled) — OpenTPW has no software renderer, video card or audio quality choice |
 | UI-039 | `source/OpenTPW/UI/Original/UiWidgets.cs:130` | [APPROX:UI-039] option label size: letter box about 58 % of the label rectangle height (the capture's labels are ~26 of 1536 units for 45-unit rectangles); a label whose widest value does not fit drops alone to the largest size that does — evidence needed: capture of the original option labels in several languages |
 | UI-040 | `source/OpenTPW/Client/Autorun/AutorunView.cs:163` | [APPROX:UI-040] the exact dot phase of GDI's focus rectangle brush is not known; dots are the pixels with even x + y, inverted. |
 
@@ -377,7 +377,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ONLINE-UI | `source/OpenTPW/Online/OnlineScreens.cs:102` | [EXT:ONLINE-UI] the server address is an OpenTPW field; the original service address was built in |
 | ONLINE-UI | `source/OpenTPW/UI/Original/UiTextWidgets.cs:46` | [EXT:ONLINE-UI] text field art and caret are OpenTPW's; the original field template is not decoded |
 | SETUP | `source/OpenTPW/UI/Original/Options/GameFilesScreen.cs:10` | [EXT:SETUP] OpenTPW setting; the original installer chose one folder and never changed it in game |
-| SETUP | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:455` | [EXT:SETUP] Game files (game folder and CD), where the main page has its OpenTPW button |
+| SETUP | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:466` | [EXT:SETUP] Game files (game folder and CD), where the main page has its OpenTPW button |
 | art-override | `source/OpenTPW/UI/Original/UiArtOverrides.cs:10` | [EXT:art-override] optional player-supplied replacement art; the original only has its own textures |
 | autorun | `source/OpenTPW/Client/Autorun/AutorunLauncher.cs:5` | [EXT:autorun] It needs the original &lt;c&gt;Autorun&lt;/c&gt; folder (&lt;c&gt;general.tre&lt;/c&gt; and the language archives) in the game |
 | autorun | `source/OpenTPW/Client/Autorun/AutorunScreen.cs:14` | with the operating system's viewer and Exit quits. [EXT:autorun] (docs/AUTORUN.md) |
@@ -388,20 +388,20 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | developer-prototype | `source/OpenTPW/World/Level.Objects.cs:170` | [EXT:developer-prototype] Sandbox Totem blocks cells whose centres lie within its 6×8-unit model box (no original counterpart) |
 | developer-prototype | `source/OpenTPW/World/Level.Objects.cs:251` | [EXT:developer-prototype] When the economy refuses the Totem (e.g. Research.Group 4 not yet researched), the developer prototype is registered uncharged (no original counterpart) |
 | developer-prototype | `source/OpenTPW/World/PrototypeRide.cs:13` | [EXT:developer-prototype] Sandbox Totem bounds check uses a 5-unit radius around its centre (no original counterpart) |
-| display | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:396` | [EXT:display] window mode, upscaling, render scale and interface scale rows are OpenTPW extensions |
+| display | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:397` | [EXT:display] window mode, upscaling, render scale and interface scale rows are OpenTPW extensions |
 | fit-button-text | `source/OpenTPW/UI/Original/UiTextFit.cs:10` | [EXT:fit-button-text] button labels shrink to fit; the original sized its fixed strings per language by hand |
 | interface-scale-fit | `source/OpenTPW/UI/Original/UiCanvas.cs:33` | [EXT:interface-scale-fit] Above 1×, limit forced text scales to UiScaling's reference-layout fit (HiDPI-aware via PixelDensity). |
-| language | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:426` | [EXT:language] language row (original installs had one language; OpenTPW reads CD overlays) |
-| opentpw-page | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:340` | [EXT:opentpw-page] button to the OpenTPW page, in the free area left of the OK panel |
-| opentpw-page | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:369` | The OpenTPW page ([EXT:opentpw-page]): everything OpenTPW adds to the original options, built from the |
-| opentpw-page | `source/OpenTPW/UI/Original/UiWidgets.cs:517` | [EXT:opentpw-page] option-row arrow/value positions: OpenTPW's own row style for its page (the original page uses sliders and toggles) |
+| language | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:437` | [EXT:language] language row (original installs had one language; OpenTPW reads CD overlays) |
+| opentpw-page | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:341` | [EXT:opentpw-page] button to the OpenTPW page, in the free area left of the OK panel |
+| opentpw-page | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:370` | The OpenTPW page ([EXT:opentpw-page]): everything OpenTPW adds to the original options, built from the |
+| opentpw-page | `source/OpenTPW/UI/Original/UiWidgets.cs:519` | [EXT:opentpw-page] option-row arrow/value positions: OpenTPW's own row style for its page (the original page uses sliders and toggles) |
 | ps2-data | `source/OpenTPW/Client/Ps2Export.cs:13` | [EXT:ps2-data] viewing aid for the PS2 version's data, not original behaviour |
 | strings | `source/OpenTPW/UI/Original/SupplementaryStrings.cs:10` | [EXT:strings] OpenTPW supplementary labels (display/upscaling/language rows and OpenTPW messages), not original data |
 | test-stub | `source/OpenTPW/Hud/HudStubs.cs:130` | [EXT:test-stub] price shown when Totem.sam cannot be read (the economy catalogue price is used when a park economy runs) |
 | texture-pack | `source/OpenTPW/Compat/GraphicsSettings.cs:268` | &lt;summary&gt;[EXT:texture-pack] Use the locally built upscaled texture pack (docs/TEXTURE-PACKS.md); off = original textures. Applies at the next start.&lt;/summary&gt; |
 | texture-pack | `source/OpenTPW/Render/Assets/TexturePack.cs:13` | [EXT:texture-pack] Upscaled replacement textures are an OpenTPW presentation option, not original behaviour. |
 | texture-pack | `source/OpenTPW/Render/Assets/TexturePackBuilder.cs:68` | [EXT:texture-pack] Builder for the optional local upscaled texture pack; original files are only read. |
-| texture-pack | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:420` | [EXT:texture-pack] optional locally built upscaled textures; off unless a pack exists and the player turns it on |
+| texture-pack | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:431` | [EXT:texture-pack] optional locally built upscaled textures; off unless a pack exists and the player turns it on |
 | texture-pack | `source/OpenTPW/UI/Original/UiImages.cs:29` | [EXT:texture-pack] the optional local pack replaces interface art too (docs/TEXTURE-PACKS.md); UVs are relative, so a larger image drops in. |
 | upscaling | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:37` | [EXT:upscaling] render-scale steps (presets 77/67/59/50 from the display slice plus 5% steps) |
 | world-capture | `source/OpenTPW/Client/WorldCapture.cs:13` | [EXT:world-capture] developer/screenshot command, not original behaviour |
@@ -465,9 +465,9 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | low.sam/med.sam/high.sam | `source/OpenTPW.Tests/CompatibilityTests.cs:133` | [DATA:low.sam/med.sam/high.sam] in file order (TEXTUREQUALITY .. LOBBYOBJECTS). |
 | low.sam/med.sam/high.sam:comment legend | `source/OpenTPW/Compat/GraphicsSettings.cs:21` | ([DATA:low.sam/med.sam/high.sam:comment legend]). |
 | low/med/high.sam:TEXTUREFILTERING, MIPMAP | `source/OpenTPW/Render/Assets/Material.cs:60` | World textures follow the graphics preset ([DATA:low/med/high.sam:TEXTUREFILTERING, MIPMAP]); see docs/COMPATIBILITY.md. |
-| options table 0x4b0dc | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:216` | [DATA:options table 0x4b0dc] control rectangles of the original page; meanings from the supplied PC capture |
+| options table 0x4b0dc | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:217` | [DATA:options table 0x4b0dc] control rectangles of the original page; meanings from the supplied PC capture |
 | options table 0x4b0dc:120020 | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:137` | [DATA:options table 0x4b0dc:120020] title text rectangle |
-| options table 0x4b0dc:120031,OK,Cancel | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:336` | [DATA:options table 0x4b0dc:120031,OK,Cancel] bottom-right panel with the OK and Cancel buttons |
+| options table 0x4b0dc:120031,OK,Cancel | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:337` | [DATA:options table 0x4b0dc:120031,OK,Cancel] bottom-right panel with the OK and Cancel buttons |
 | sound.sam:SoundInfo.DUCKINGLEVEL | `source/OpenTPW/Audio/GameAudio.cs:46` | [DATA:sound.sam:SoundInfo.DUCKINGLEVEL] the percentage music and effects keep while speech plays (38 in the shipped file) |
 | speechHD.SDT/MusicHD.sdt:all Layer II frames fit this table to ≤23 spare bits | `source/OpenTPW.Files/Formats/Sound/Mp2Decoder.cs:38` | [DATA:speechHD.SDT/MusicHD.sdt:all Layer II frames fit this table to ≤23 spare bits] |
 | speechHD.SDT:entry word 0 = header size (40) | `source/OpenTPW/World/Advisor.cs:215` | [DATA:speechHD.SDT:entry word 0 = header size (40)] |

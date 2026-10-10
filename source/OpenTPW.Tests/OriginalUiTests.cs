@@ -179,6 +179,20 @@ public class OriginalUiTests
 	}
 
 	[TestMethod]
+	public void TheWheelAdjustsOnlyButtonsThatOptIn()
+	{
+		var context = FakeContext();
+		var screen = new UiScreen( "test" );
+		var lobby = 0;
+		var cycle = 0;
+		var island = screen.Add( new UiButton { Id = "options", Bounds = new UiRect( 200, 200, 400, 100 ), Adjusted = direction => lobby += direction } );
+		var row = screen.Add( new UiButton { Id = "cycle", Bounds = new UiRect( 200, 400, 400, 100 ), Adjusted = direction => cycle += direction, WheelAdjusts = true } );
+		screen.Update( context, new UiInput( island.ScreenRect( context.Canvas ).Center, false, false, false, false, UiKeys.None, 1 ) );
+		screen.Update( context, new UiInput( row.ScreenRect( context.Canvas ).Center, false, false, false, false, UiKeys.None, -1 ) );
+		Assert.AreEqual( (0, -1), (lobby, cycle), "the wheel over a lobby button does not turn the island" );
+	}
+
+	[TestMethod]
 	public void ModalScreensCoverTheParkAndNonModalOnlyTheirElements()
 	{
 		var canvas = new UiCanvas( 1024, 768 );

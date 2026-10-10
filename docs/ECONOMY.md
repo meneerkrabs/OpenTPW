@@ -260,7 +260,11 @@ tests compare saves before/after load and after identical continuations byte for
 - `IEconomyObjectCatalog` / `EconomyObjectInfo` (rides/objects slice may supply its own catalogue);
   `ParkEconomy.TryBuild(infoId)` returns the instance id the placed object should keep;
   `RegisterExisting` for imported/fixed items; `SetObjectOpen`, `Sell`, `TryBuyUpgrade`,
-  `TryBuyCells(CellPurchase, count)` for paths, queues, tracks and land.
+  `TryBuyCells(CellPurchase, count)` for batches of paths, queues, tracks and land;
+  `TrySpendCell(CellPurchase)` charges one path/queue cell when it is written, refused only
+  when balance − cost < 0 (`SetCellType` `0x82ac4`, PATH-plan §3.2); `RefundQueueCell(ride)`
+  credits `Costs.QueueCell` × the ride's `ScrapPercent` / 100 for a removed queue cell
+  (`ClearCell` `0x85dcc`).
 - `IParkClock` (`Tick`, `Date`, `Speed`) for the frontend and for the `YEAR/MONTH/DAY/HOUR` RSE opcodes.
 - `ParkEconomyRuntime` (in `Level.Park`, original levels only): created from `OriginalPark`, ticked
   on the level's 60 Hz `FixedStepClock`, logs `Park clock: …; balance $…` per game day.

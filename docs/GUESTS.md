@@ -253,9 +253,12 @@ Traced from the Feral Mac binary in [QUEUE-plan](reverse/QUEUE-plan.md)
 original; the rest are the `QUEUE-NNN` approximations listed at the end.
 
 **Cells** (§3.3). A queue cell is original map cell type 3 with a link byte
-(1, 4, 16 or 64) pointing back toward the ride entrance. `GuestPathGrid` keeps
-them beside the path cells (`SetQueue`, `IsQueue`, `GetQueueLink`); they are
-not walkable for routing. The **front cell** is the cell outside the object's
+(1, 4, 16 or 64) pointing back toward the ride entrance. They live in the
+shared `ParkCellMap` (`GuestPathGrid.Cells`; PATH-plan §9.1/§9.6), which holds
+per cell the original type byte (0 empty, 1 path, 3 queue), flags, the
+same-type placement counter, the cardinal links and the queue link.
+`GuestPathGrid` mirrors its path cells into the map and writes queue cells
+through `SetQueue`/`ClearQueue`; queue cells are not walkable for routing. The **front cell** is the cell outside the object's
 entrance (`QueueFrontCell`). The queue is the chain of type-3 cells whose link
 points back at the previous cell, followed from the front at most 1,000 steps
 (`RideVisitorBridge.RecomputeQueue`). That gives the back cell and the size in
@@ -271,10 +274,15 @@ others walk to their positions again.
 and the level's queue tool (`Level.BuildQueueCell`) lay one cell at a time. The
 first cell is the front cell, linked toward the ride. Every later cell touches
 the back cell and links toward it. Only `Info.HasQueue` objects take queue
-paths, at most 25 cells. Path cells, queue cells, object footprints and
-terrain the object build rule refuses are blocked. Each cell costs
-`Costs.QueueCell` (75). `QueuePaths.RemoveFrom` / `Level.RemoveQueueCell` remove
-a cell and every cell behind it, without refund. After a HasQueue ride is
+paths, at most 25 cells. A queue cell goes only on an empty cell
+(`ParkCellMap.CanChangeCellType`, traced; the original's last cell of a line
+may also overwrite a path, which belongs to PATH-I's line tool). Object
+footprints and terrain the object build rule refuses are blocked. Each cell is
+charged `Costs.QueueCell` (75) when it is written, refused only when
+balance − cost < 0 (`ParkEconomy.TrySpendCell`, `SetCellType` `0x82ac4`).
+`QueuePaths.RemoveFrom` / `Level.RemoveQueueCell` remove a cell and every cell
+behind it; each removed cell refunds `Costs.QueueCell` × the ride's scrap
+percentage / 100 (`ParkEconomy.RefundQueueCell`, `ClearCell` `0x85dcc`). After a HasQueue ride is
 built from the HUD, park clicks lay its queue until Back (UI-031). Queue cells
 also block object placement. New queue cells are not drawn on the terrain yet.
 
@@ -359,7 +367,7 @@ W_max = ⌈Qmax/CAP⌉ × (DUR + 1 s + τ) (QUEUE-plan §9):
 
 | ID | OpenTPW choice | Evidence needed |
 | --- | --- | --- |
-| QUEUE-001 | Link values 1/4/16/64 map to grid directions −Y/+X/+Y/−X | Run-time neighbour offset tables (data `0xec52c..0xec5a4`) |
+| QUEUE-001 | The queue link (+13) uses the connection bits' compass: 1/4/16/64 = −Y/+X/+Y/−X (verified for +12 on 78 Easymode cells) | Run-time neighbour offset tables (data `0xec52c..0xec5a4`) |
 | QUEUE-002 | The next queue cell is searched in grid direction order | Same tables; the order paired with links 16, 1, 64, 4 |
 | QUEUE-003 | Guests step onto the back cell from its first walkable neighbour | `0xdd744` and the state-10 walk to the back cell |
 | QUEUE-004 | Excitement gate for rides and sideshows, using \|preferred − excitement\| | `0xe02ec`, `0xe9a84` |
@@ -373,7 +381,7 @@ W_max = ⌈Qmax/CAP⌉ × (DUR + 1 s + τ) (QUEUE-plan §9):
 | QUEUE-012 | Queue cells need allowed terrain and no object | The queue tool's validity checks |
 | QUEUE-013 | At most 25 cells per queue | The queue tool (`0x70b98..0x8c7c0`) |
 | QUEUE-014 | Laid cell by cell from the front, each touching the back | The queue tool's placement rules (UI-031) |
-| QUEUE-015 | `Costs.QueueCell` per laid cell; no refund on removal | The queue tool's purchase path |
+| QUEUE-015 | Removing a queue cell removes every cell behind it | The remove tool's route into `ClearCell` `0x859b4` |
 | QUEUE-016 | Admission and state 11 run once per park turn | Live-list eligibility of objects and guests |
 
 Not modelled: the track-type exits of step 6 (`0x45eac`, ride `+40`), ride

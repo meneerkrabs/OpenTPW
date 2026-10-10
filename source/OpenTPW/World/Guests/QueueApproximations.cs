@@ -9,7 +9,7 @@ public static class QueueApproximations
 {
 	public static readonly IReadOnlyList<(string Id, string Rule)> Entries = new[]
 	{
-		("QUEUE-001", "queue link values 1/4/16/64 map to the grid directions −Y/+X/+Y/−X"),
+		("QUEUE-001", "queue link values 1/4/16/64 map to −Y/+X/+Y/−X like the saved connection bits"),
 		("QUEUE-002", "the next queue cell is searched in grid direction order"),
 		("QUEUE-003", "guests step onto the back of a queue from its first walkable neighbour (the join cell)"),
 		("QUEUE-004", "the join excitement gate applies to rides and sideshows with |preferred − excitement| ≥ 45"),
@@ -23,7 +23,7 @@ public static class QueueApproximations
 		("QUEUE-012", "queue cells need allowed terrain and no object footprint"),
 		("QUEUE-013", "a queue has at most 25 cells"),
 		("QUEUE-014", "queues are laid cell by cell from the entrance's outside cell, each touching the back cell"),
-		("QUEUE-015", "each queue cell costs Costs.QueueCell when laid; removal refunds nothing"),
+		("QUEUE-015", "removing a queue cell removes every cell behind it"),
 		("QUEUE-016", "rides evaluate admission and queued guests run state 11 once per park turn")
 	};
 }

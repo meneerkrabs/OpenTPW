@@ -368,7 +368,7 @@ public sealed class ParkHud
 		// Level.PlaceObject owns the purchase and guest link; this callback only finishes the HUD tool.
 		PostMessage( string.Format( strings.Extra( OpenTpwText.Built ), ItemName( pendingItem ) ) );
 		SetBuildArm( false );
-		// UI-031 (above): the reference manual has the queue tool follow ride placement, so rides with Info.HasQueue switch the park click to laying their queue until Back.
+		// [BIN:STP-PPC:0x1007497C ride placement] a placed HasQueue ride (type record +64) enters tool mode 3, the queue tool (PATH-plan §8); park clicks lay its queue until Back
 		if ( item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells )
 		{
 			level.QueueToolRide = item.Visitors;

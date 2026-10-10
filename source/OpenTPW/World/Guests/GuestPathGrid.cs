@@ -4,8 +4,9 @@ namespace OpenTPW;
 /// Walkable path cells and their cardinal connections, with cached breadth-first flow fields per target.
 /// Built from the original save grid (path flag + connection bits, docs/TPWS-PAYLOAD.md) or, without a
 /// save, from MAP InitialPath cells (4-neighbour adjacency). Coordinates are game cells (x, y).
-/// Queue cells (original map cell type 3, docs/reverse/QUEUE-plan.md §3.3) are kept beside the path cells:
-/// they are not walkable for routing and carry a link byte that points back toward the ride entrance.
+/// The grid owns the shared <see cref="ParkCellMap"/> (PATH-plan §9.1): path cells are mirrored into it as
+/// type 1 with their links, and queue cells (type 3, docs/reverse/QUEUE-plan.md §3.3) live only there. Queue
+/// cells are not walkable for routing and carry a link byte that points back toward the ride entrance.
 /// </summary>
 public sealed class GuestPathGrid
 {
@@ -14,7 +15,6 @@ public sealed class GuestPathGrid
 
 	private readonly bool[] walkable;
 	private readonly byte[] links; // bit d = connected towards Directions[d]
-	private readonly byte[] queueLinks; // 0 = not a queue cell, else the original link value (1, 4, 16 or 64)
 	private readonly Dictionary<int, int[]> fields = new();
 
 	public int CountX { get; }
@@ -22,6 +22,8 @@ public sealed class GuestPathGrid
 	public int Version { get; private set; }
 	public int WalkableCount { get; private set; }
 	public int QueueCellCount { get; private set; }
+	/// <summary>The shared cell map of the path and queue tools.</summary>
+	public ParkCellMap Cells { get; }
 
 	/// <summary>Original map cell type of a queue cell (map cell <c>+8</c>; <c>0x851ac</c>/<c>0x851d0</c>).</summary>
 	// [BIN:STP-PPC:0x100DDA18 next queue cell] a neighbour that passes 0x851ac (type 3 or 9) and fails 0x851d0 (type 9) is a queue cell
@@ -35,7 +37,7 @@ public sealed class GuestPathGrid
 		CountY = countY;
 		walkable = new bool[countX * countY];
 		links = new byte[countX * countY];
-		queueLinks = new byte[countX * countY];
+		Cells = new ParkCellMap( countX, countY );
 	}
 
 	public bool InBounds( int x, int y ) => (uint)x < (uint)CountX && (uint)y < (uint)CountY;
@@ -48,22 +50,38 @@ public sealed class GuestPathGrid
 		if ( !InBounds( x, y ) )
 			throw new ArgumentOutOfRangeException( nameof( x ) );
 		var index = Index( x, y );
-		if ( isPath && queueLinks[index] != 0 )
-		{
-			queueLinks[index] = 0;
+		if ( isPath && IsQueue( x, y ) )
 			QueueCellCount--;
-		}
 		if ( walkable[index] != isPath )
 			WalkableCount += isPath ? 1 : -1;
 		walkable[index] = isPath;
 		links[index] = isPath ? (connections ?? 0x0F) : (byte)0;
+		if ( isPath )
+		{
+			Cells.SetType( x, y, ParkCellType.Path );
+			Cells.SetLinks( x, y, ToCellLinks( links[index] ) );
+		}
+		else if ( Cells.TypeAt( x, y ) == ParkCellType.Path )
+			Cells.SetType( x, y, ParkCellType.Empty );
 		Invalidate();
 	}
 
-	public bool IsQueue( int x, int y ) => InBounds( x, y ) && queueLinks[Index( x, y )] != 0;
+	public bool IsQueue( int x, int y ) => Cells.TypeAt( x, y ) == ParkCellType.Queue;
 
 	/// <summary>The cell's original queue link value (1, 4, 16 or 64), or 0 when it is not a queue cell.</summary>
-	public byte GetQueueLink( int x, int y ) => InBounds( x, y ) ? queueLinks[Index( x, y )] : (byte)0;
+	public byte GetQueueLink( int x, int y ) => IsQueue( x, y ) ? Cells.QueueLinkAt( x, y ) : (byte)0;
+
+	/// <summary>Maps <see cref="Directions"/>-order link bits to the original 1/4/16/64 link bits.</summary>
+	public static byte ToCellLinks( byte directionBits )
+	{
+		byte value = 0;
+		for ( var direction = 0; direction < 4; direction++ )
+		{
+			if ( (directionBits & (1 << direction)) != 0 )
+				value |= LinkValue( direction );
+		}
+		return value;
+	}
 
 	/// <summary>
 	/// Makes (x, y) a queue cell whose link points toward <see cref="Directions"/>[<paramref name="towards"/>]
@@ -80,9 +98,11 @@ public sealed class GuestPathGrid
 			links[index] = 0;
 			WalkableCount--;
 		}
-		if ( queueLinks[index] == 0 )
+		if ( !IsQueue( x, y ) )
 			QueueCellCount++;
-		queueLinks[index] = LinkValue( towards );
+		Cells.SetType( x, y, ParkCellType.Queue );
+		Cells.SetLinks( x, y, 0 );
+		Cells.SetQueueLink( x, y, LinkValue( towards ) );
 		Invalidate();
 	}
 
@@ -91,14 +111,14 @@ public sealed class GuestPathGrid
 	{
 		if ( !IsQueue( x, y ) )
 			return;
-		queueLinks[Index( x, y )] = 0;
+		Cells.SetType( x, y, ParkCellType.Empty );
 		QueueCellCount--;
 		Invalidate();
 	}
 
 	/// <summary>The original link value (map cell <c>+13</c>) for a <see cref="Directions"/> index.</summary>
 	// [BIN:STP-PPC:0x1006E228 queue link read] map cell +13 holds the queue link direction; the values are 1, 4, 16 and 64
-	// [APPROX:QUEUE-001] compass meaning of the link values: Directions order (−Y, +X, +Y, −X) is mapped to 1, 4, 16, 64 — evidence needed: the run-time neighbour offset tables (data 0xec52c..0xec5a4, zero in the file)
+	// [APPROX:QUEUE-001] the queue link (+13) uses the compass of the connection bits (+12): Directions order (−Y, +X, +Y, −X) is 1, 4, 16, 64 as in SavePathConnections (78 Easymode path cells); for +13 itself this is assumed — evidence needed: the run-time neighbour offset tables (data 0xec52c..0xec5a4, zero in the file)
 	public static byte LinkValue( int direction ) => direction is >= 0 and < 4 ? (byte)(1 << (2 * direction)) : throw new ArgumentOutOfRangeException( nameof( direction ) );
 
 	/// <summary>The <see cref="Directions"/> index a link value points to, or −1.</summary>

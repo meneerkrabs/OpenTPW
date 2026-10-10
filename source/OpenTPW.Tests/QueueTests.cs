@@ -136,6 +136,57 @@ public class QueueTests
 	}
 
 	[TestMethod]
+	public void QueueAndPathCellsShareOneParkCellMap()
+	{
+		var grid = new GuestPathGrid( 4, 3 );
+		grid.SetPath( 1, 0, true, 0b0010 ); // links +X
+		Assert.AreEqual( ParkCellType.Path, grid.Cells.TypeAt( 1, 0 ) );
+		Assert.AreEqual( (byte)SavePathConnections.PositiveX, grid.Cells.LinksAt( 1, 0 ), "the original 1/4/16/64 link bits" );
+		grid.SetQueue( 1, 1, 0 );
+		Assert.AreEqual( (ParkCellType.Queue, (byte)1, (byte)0), (grid.Cells.TypeAt( 1, 1 ), grid.Cells.QueueLinkAt( 1, 1 ), grid.Cells.LinksAt( 1, 1 )) );
+		Assert.IsTrue( grid.IsQueue( 1, 1 ) && !grid.IsWalkable( 1, 1 ) );
+		grid.ClearQueue( 1, 1 );
+		Assert.AreEqual( (ParkCellType.Empty, (byte)0), (grid.Cells.TypeAt( 1, 1 ), grid.Cells.QueueLinkAt( 1, 1 )) );
+		grid.SetPath( 1, 0, false );
+		Assert.AreEqual( ParkCellType.Empty, grid.Cells.TypeAt( 1, 0 ) );
+		Assert.AreEqual( 0, grid.QueueCellCount );
+	}
+
+	[TestMethod]
+	public void CanChangeCellTypeFollowsTheTracedRules()
+	{
+		static bool Can( int old, int type, bool last = false ) => ParkCellMap.CanChangeCellType( (byte)old, (byte)type, last );
+		Assert.IsTrue( Can( 9, 0 ), "clearing" );
+		Assert.IsFalse( Can( 4, 4 ) );
+		Assert.IsTrue( Can( 21, 21 ) );
+		Assert.IsTrue( Can( 3, 1 ), "path over queue" );
+		Assert.IsTrue( Can( 0, 3 ) && Can( 3, 3 ) && Can( 1, 1 ) );
+		Assert.IsTrue( Can( 1, 4 ) );
+		Assert.IsFalse( Can( 1, 3 ), "a queue goes over a path only with its last cell" );
+		Assert.IsTrue( Can( 1, 3, last: true ) );
+		Assert.IsFalse( Can( 5, 3 ) || Can( 4, 1 ) );
+	}
+
+	[TestMethod]
+	public void QueueCellsAreChargedPerCellAndRefundedAtTheRideScrapPercentage()
+	{
+		var economy = EconomyTestData.Park( initialCash: 100 );
+		var start = economy.Balance;
+		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, economy.TrySpendCell( CellPurchase.Queue ) );
+		Assert.AreEqual( start - 75, economy.Balance, "Costs.QueueCell when written" );
+		Assert.AreEqual( ParkEconomy.PurchaseResult.NotEnoughMoney, economy.TrySpendCell( CellPurchase.Queue ), "balance 25 − 75 < 0" );
+		Assert.AreEqual( start - 75, economy.Balance );
+
+		var park = EconomyTestData.Park();
+		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, park.TryBuild( 1100, out var ride ) );
+		var before = park.Balance;
+		Assert.AreEqual( 50, park.ScrapPercent( ride! ), "year-0 scrap percentage" );
+		Assert.AreEqual( 75 * 50 / 100, park.RefundQueueCell( ride!.Id ) );
+		Assert.AreEqual( before + 37, park.Balance );
+		Assert.AreEqual( 0, park.RefundQueueCell( 99999 ), "no ride, no refund" );
+	}
+
+	[TestMethod]
 	public void QueueBuildRulesRefuseOtherCells()
 	{
 		var rig = new Rig( queueCells: 0 );

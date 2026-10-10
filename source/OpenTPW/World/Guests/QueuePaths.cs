@@ -29,7 +29,7 @@ public static class QueuePaths
 	// [APPROX:QUEUE-013] maximum queue length 25 cells (more cells add no room beyond the 100-guest HasQueue limit); no length limit was found in the traced build code besides the 1000-step walk guard — evidence needed: the queue tool in 0x10070B98..0x1008C7C0
 	public const int MaximumCells = 25;
 
-	/// <summary>Checks whether (x, y) can be the next cell of <paramref name="ride"/>'s queue.</summary>
+	/// <summary>Checks whether (x, y) can be the next cell of <paramref name="ride"/>'s queue (no writes).</summary>
 	// [APPROX:QUEUE-014] a queue is laid cell by cell from the entrance's outside cell; each cell must touch the current back cell, must not be a path or queue cell, and is linked toward that back cell — evidence needed: the queue tool's placement rules (UI-031, 0x10070B98..0x1008C7C0)
 	public static QueueBuildResult CheckExtend( GuestPathGrid grid, RideVisitorBridge ride, int x, int y, Func<int, int, bool>? isBlocked = null )
 	{
@@ -42,7 +42,9 @@ public static class QueuePaths
 		var hasCells = grid.IsQueue( front.X, front.Y );
 		if ( hasCells && ride.QueueSizeInCells >= MaximumCells )
 			return QueueBuildResult.TooLong;
-		if ( grid.IsWalkable( x, y ) || grid.IsQueue( x, y ) || isBlocked?.Invoke( x, y ) == true )
+		// CanChangeCellType allows a queue over an empty cell (and over a path only for a line's last cell, which this tool does not lay).
+		if ( grid.Cells.TypeAt( x, y ) != ParkCellType.Empty || !ParkCellMap.CanChangeCellType( grid.Cells.RawTypeAt( x, y ), (byte)ParkCellType.Queue, lastCell: false )
+			|| grid.IsWalkable( x, y ) || isBlocked?.Invoke( x, y ) == true )
 			return QueueBuildResult.Blocked;
 		if ( !hasCells )
 			return (x, y) == front ? QueueBuildResult.Ok : QueueBuildResult.NotAtQueueEnd;
@@ -80,6 +82,7 @@ public static class QueuePaths
 	}
 
 	/// <summary>Removes queue cell (x, y) of <paramref name="ride"/> and every cell behind it; returns the number removed.</summary>
+	// [APPROX:QUEUE-015] removing a queue cell also removes every cell behind it (each one is refunded by the caller); the player's bulldozer route into ClearCell 0x859b4 is not traced — evidence needed: the remove tool's call into 0x100859B4
 	public static int RemoveFrom( GuestPathGrid grid, RideVisitorBridge ride, int x, int y )
 	{
 		ride.RecomputeQueue( grid );

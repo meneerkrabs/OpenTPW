@@ -85,8 +85,8 @@ public partial class Level
 			LastActionMessage = $"Cannot build a queue here: {check}.";
 			return check;
 		}
-		// [DATA:Standard.sam:Costs.QueueCell] [APPROX:QUEUE-015] each laid queue cell is charged Costs.QueueCell when it is laid, removal refunds nothing — evidence needed: the queue tool's purchase path
-		if ( Park != null && Park.Economy.TryBuyCells( CellPurchase.Queue, 1 ) != ParkEconomy.PurchaseResult.Ok )
+		// [DATA:Standard.sam:Costs.QueueCell] charged per cell when written (ParkEconomy.TrySpendCell, PATH-plan §3.2)
+		if ( Park != null && Park.Economy.TrySpendCell( CellPurchase.Queue ) != ParkEconomy.PurchaseResult.Ok )
 		{
 			LastActionMessage = "Cannot build a queue: not enough money.";
 			return QueueBuildResult.Refused;
@@ -96,13 +96,25 @@ public partial class Level
 		return result;
 	}
 
-	/// <summary>Removes the queue cell at (x, y) and every cell behind it (no refund).</summary>
+	/// <summary>
+	/// Removes the queue cell at (x, y) and every cell behind it. Each removed cell refunds
+	/// <c>Costs.QueueCell</c> × the ride's scrap percentage / 100 (<see cref="ParkEconomy.RefundQueueCell"/>).
+	/// </summary>
 	public int RemoveQueueCell( int x, int y )
 	{
 		if ( IsReadOnlyVisit || Guests == null )
 			return 0;
 		var ride = Guests.Grid.IsQueue( x, y ) ? Guests.Attractions.OfType<RideVisitorBridge>().FirstOrDefault( item => item.QueueCells.Contains( (x, y) ) ) : null;
-		return ride == null ? 0 : QueuePaths.RemoveFrom( Guests.Grid, ride, x, y );
+		if ( ride == null )
+			return 0;
+		var removed = QueuePaths.RemoveFrom( Guests.Grid, ride, x, y );
+		var owner = Objects.Objects.FirstOrDefault( item => item.Visitors == ride );
+		if ( Park != null && owner != null && GetEconomyInstance( owner ) is int instance )
+		{
+			for ( var cell = 0; cell < removed; cell++ )
+				Park.Economy.RefundQueueCell( instance );
+		}
+		return removed;
 	}
 
 	// [APPROX:QUEUE-012] queue cells need terrain the object build rule allows and no object footprint — evidence needed: the queue tool's placement validity in 0x10070B98..0x1008C7C0

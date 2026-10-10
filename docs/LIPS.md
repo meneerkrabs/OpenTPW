@@ -5,8 +5,8 @@ Mac static evidence establishes signed mark conversion, a pause-aware unscaled
 millisecond clock, loaded-LIP talking state, strict deadlines, one toggle per
 update and random mouth selection. The bounded original-clock helper is tested;
 The advisor now speaks by itself for the traced game events (see "Automatic
-advice"); `--advisor-say N` still plays a single clip on demand. Its clock is the
-frame clock, not the original pause-aware clock (ADVISOR-017); the remaining
+advice"); `--advisor-say N` still plays a single clip on demand. Its clock stands
+still while the pause menu is open, as the original's pause-aware clock does (ADVISOR-017 covers its start value and the other pause callers); the remaining
 triggers, animation/pose and geometry remain incomplete. No original data is in the repository.
 
 ## Where the data is
@@ -341,7 +341,7 @@ table fit). The smoke-test thresholds are test-harness checks, not game rules.
 | ADVISOR-013 | `source/OpenTPW.Files/Public/LipSyncTimeline.cs:54` | Talking from time 0 (unit and per-mark toggle traced: STP-PPC 0x10007434) | Original runtime LIP consumer (binary or trace) |
 | ADVISOR-014 | `source/OpenTPW.Files/Formats/Sound/Mp2Decoder.cs:55` | Synthesis-window values read from ffmpeg's data table; two values checked against ISO, corpus ≤1 LSB | Full comparison with the published ISO/IEC 11172-3 Table 3-B.3 |
 | ADVISOR-016 | `source/OpenTPW/Client/AutomaticAdvisor.cs:126` | Returned playback span = speech length + 200 + 300 + 1000 ms; the queue adds another 1000 | Decoded advisor sequence and ending-clip durations |
-| ADVISOR-017 | `source/OpenTPW/Client/AutomaticAdvisor.cs:13` | Controller clock = wall-clock ms since the automatic advisor started, one controller update per frame, not paused with the game | The advisor clock's offset/freeze/compensation and the update cadence |
+| ADVISOR-017 | `source/OpenTPW/Client/AutomaticAdvisor.cs:13` | Controller clock starts at 0 with the automatic advisor, one controller update per frame; it stands still while the pause menu is open (the freeze/compensation itself is traced, `0x10117C00`) | The clock's offset word (+0x18) writer, the screens that call the pause `0x10110518`, and the update cadence |
 | ADVISOR-018 | `source/OpenTPW/Client/AutomaticAdvisor.cs:64` | The automatic advisor is drawn only while a response plays and only inside a level; leaving the level stops it | Entry/exit animation and idle visibility |
 | ADVISOR-019 | `source/OpenTPW/World/AdvisorController.cs:94` | `GeneralAdvisor.MinTimeAnyMessage` (5) and `MinTimeSameMessage` (120) are loaded but not applied | Reads of balance fields +24/+28 |
 | ADVISOR-020 | `source/OpenTPW/Client/AutomaticAdvisor.cs:76` | Events 2/3/4 come from the economy's bankruptcy (six months in the red) and park open/close transitions | The producers' threshold and preconditions (`0x100CC464`, `0x10108EE4`) |

@@ -8,7 +8,8 @@ namespace OpenTPW;
 /// LOGFONT em heights (jungle gate: 144 and 119 pixels) and vertical offsets (-25 and 97)
 /// fit a 256-pixel-high canvas; <c>OBJECT_NAMES.str</c> begins with ride names split over two
 /// entries ("Temple"/"Of Gloom", "Sun"/"God"), matching the two slots. Which entry pair belongs to which
-/// object is not established (<c>Info.RideTypeStringIndex</c> is a ride type shared by all themes).
+/// object is superseded: the original derives the two lines from the object's single name by splitting it at the
+/// space nearest the middle (<see cref="SplitAtMiddleSpace"/>), which gives "Temple"/"Of Gloom" and "Sun"/"God".
 /// Approximations, labelled: the canvas is 512x256 (two 256x256 halves; native final destinations
 /// are 128x128, with distinct text/mask surfaces), lines are centred horizontally and narrowed to fit the width by the original's LOGFONT width bisection, the line colour is the
 /// RGB of its colour block (traced) drawn opaque, the background is a caller-supplied colour (the
@@ -97,12 +98,31 @@ public static class SignCanvas
 
 	/// <summary>
 	/// Entry pair <paramref name="pairIndex"/> of <c>OBJECT_NAMES.str</c> (entries 2k and 2k+1) as two
-	/// sign lines; empty strings outside the table. The object-to-pair mapping is unverified.
+	/// sign lines; empty strings outside the table. Not how objects pick their text (see <see cref="SplitAtMiddleSpace"/>).
 	/// </summary>
 	public static (string Line1, string Line2) ObjectNameLines( IReadOnlyList<string> objectNames, int pairIndex )
 	{
 		var first = pairIndex * 2;
 		string At( int index ) => index >= 0 && index < objectNames.Count ? objectNames[index] : "";
 		return (At( first ), At( first + 1 ));
+	}
+
+	/// <summary>
+	/// The two sign lines of a one-string object name: the name is split at the space nearest its middle and the
+	/// space is dropped; a name without a space is one line.
+	/// </summary>
+	// [BIN:STP-PPC:0x1018E254 sign text builder] with only one text, probes the UTF-16 string at len/2, then len/2-1, len/2+1, len/2-2, ... (len probes) for U+0020; the first hit splits it into the characters before it (line 1) and those after it (line 2); no hit leaves line 1 whole and line 2 empty
+	public static (string Line1, string Line2) SplitAtMiddleSpace( string name )
+	{
+		ArgumentNullException.ThrowIfNull( name );
+		var middle = name.Length / 2;
+		for ( var probe = 0; probe < name.Length; probe++ )
+		{
+			var offset = (probe + 1) >> 1;
+			var index = (probe & 1) == 0 ? middle + offset : middle - offset;
+			if ( index >= 0 && index < name.Length && name[index] == ' ' )
+				return (name[..index], name[(index + 1)..]);
+		}
+		return (name, "");
 	}
 }

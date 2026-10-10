@@ -259,7 +259,7 @@ public sealed partial class ParkHud
 	public string ItemName( BuildItem item ) => item.Entry == null ? strings.Object( item.ObjectNameIndex ) : EntryName( item.Entry );
 
 	private string EntryName( ObjectCatalogEntry entry ) => entry.ObjectNameIndex is int index
-		? string.Join( " ", Enumerable.Range( index, Math.Max( 1, entry.ObjectNameLength ) ).Select( strings.Object ).Where( text => text.Length > 0 ) )
+		? ObjectNames.Join( Enumerable.Range( index, Math.Max( 1, entry.ObjectNameLength ) ).Select( strings.Object ) )
 		: entry.DisplayName;
 
 
@@ -574,6 +574,15 @@ public sealed partial class ParkHud
 		Stack.Draw( context );
 	}
 
+	/// <summary>The preview shows the object's own sign text, like the object in the park (<see cref="ObjectSigns"/>).</summary>
+	private static Func<string, UiTexture?>? SignTexture( BuildItem item )
+	{
+		if ( item.Entry == null || item.Entry.IsFixedItem )
+			return null;
+		var entry = item.Entry;
+		return name => ObjectSigns.IsSignSlot( name ) && ObjectSigns.Get( entry )?.TextureFor( name ) is { } texture ? UiTexture.Of( texture.NativeTexture ) : null;
+	}
+
 	internal PreviewIcon? GetIcon( BuildItem item )
 	{
 		if ( icons.TryGetValue( item.Id, out var icon ) )
@@ -581,7 +590,8 @@ public sealed partial class ParkHud
 		try
 		{
 			icon = item.PreviewModel == null ? null : new PreviewIcon( new ModelFile( item.PreviewModel ),
-				name => item.TextureDirectories.Select( directory => UiImages.Resolve( name, directory ) ).FirstOrDefault( path => path != null ) );
+				name => item.TextureDirectories.Select( directory => UiImages.Resolve( name, directory ) ).FirstOrDefault( path => path != null ),
+				SignTexture( item ) );
 		}
 		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or NotSupportedException or InvalidOperationException )
 		{

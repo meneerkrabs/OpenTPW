@@ -100,6 +100,9 @@ public class OriginalObject : Entity
 		? Enumerable.Empty<ObjectAccessPoint>()
 		: ObjectFootprint.GetAccessPoints( Entry.Shape, Placement.X, Placement.Y, Placement.Rotation );
 
+	/// <summary>The rendered sign this object's model shows on its <c>sign1</c>/<c>sign2</c> faces, or null when it has none.</summary>
+	public ObjectSignImages? Sign { get; private set; }
+
 	public void Open() => Runtime.Open();
 	public void Close() => Runtime.Close();
 
@@ -122,9 +125,14 @@ public class OriginalObject : Entity
 		{
 			var slots = new Texture[16];
 			Array.Fill( slots, Texture.Missing );
+			// The sign1/sign2 slots show the object's name instead of the shipped placeholders. Fixed items keep them:
+			// the park gate's sign carries the park name, which OriginalGateSign draws over its faces.
+			var sign = !Entry.IsFixedItem && part.Textures.Any( ObjectSigns.IsSignSlot ) ? ObjectSigns.Get( Entry ) : null;
+			if ( sign != null )
+				Sign = sign;
 			for ( var index = 0; index < part.Textures.Length; index++ )
 			{
-				slots[index] = LoadTexture( Entry, part.Textures[index] );
+				slots[index] = sign?.TextureFor( part.Textures[index] ) ?? LoadTexture( Entry, part.Textures[index] );
 			}
 			var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
 			material.Set( "Color", slots );

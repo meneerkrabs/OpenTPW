@@ -453,8 +453,21 @@ public static class ObjectNames
 			entry.ObjectNameIndex = index;
 			entry.ObjectNameLength = length;
 			if ( index + length <= localized.Length )
-				entry.DisplayName = string.Join( " ", localized.Skip( index ).Take( length ).Where( text => text.Length > 0 ) );
+				entry.DisplayName = Join( localized.Skip( index ).Take( length ) );
 		}
+	}
+
+	/// <summary>
+	/// The object's name from its OBJECT_NAMES entries: the texts joined by a space, empty ones dropped. A first entry that
+	/// ends in '-' is joined to the next one without the space and the dash (compound words in Danish and similar).
+	/// </summary>
+	// [BIN:STP-PPC:0x1011A08C object name builder] name = first + (" " when the second is not empty) + second; when the first ends in '-' the dash is cut and the two are concatenated
+	public static string Join( IEnumerable<string> texts )
+	{
+		var parts = texts.ToArray();
+		if ( parts.Length == 2 && parts[0].EndsWith( '-' ) )
+			return parts[0][..^1] + parts[1];
+		return string.Join( " ", parts.Where( text => text.Length > 0 ) );
 	}
 
 	/// <summary>Pure matching step, exposed for tests.</summary>
@@ -573,6 +586,34 @@ public static class BonusNames
 		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or ArgumentException or DecoderFallbackException )
 		{
 			Log?.Warning( $"Bonus object {entry.ArchivePath} name could not be read: {exception.Message}" );
+		}
+		return null;
+	}
+
+	/// <summary>The <c>SIGNA</c>/<c>SIGNB</c> lines of a bonus archive's language file (same file choice as <see cref="Read"/>), or null when both are empty.</summary>
+	// [APPROX:RIDES-025] same language-file choice as the name — evidence needed: original lookup of bonus name files
+	// [APPROX:COMPAT-017] SIGNA/SIGNB taken as sign text lines 1/2 (the sign builder accepts two explicit texts; that the bonus loader passes these sections is not traced) — evidence needed: the bonus loader's call of the sign builder
+	public static (string Line1, string Line2)? ReadSignLines( ObjectCatalogEntry entry, string? language = null )
+	{
+		language ??= GameLanguage.IsSelected ? GameLanguage.Current.Name : GameLanguage.DefaultLanguage;
+		try
+		{
+			var files = entry.FileSystem.GetFiles( entry.ArchivePath ).Where( file => file.EndsWith( ".txt", StringComparison.OrdinalIgnoreCase ) ).ToArray();
+			foreach ( var wanted in new[] { language, GameLanguage.DefaultLanguage } )
+			{
+				var file = files.FirstOrDefault( candidate => string.Equals( Path.GetFileNameWithoutExtension( candidate ), wanted, StringComparison.OrdinalIgnoreCase ) );
+				if ( file == null )
+					continue;
+				var sections = Parse( entry.FileSystem.ReadAllBytes( entry.FileSystem.GetRelativePath( entry.FileSystem.GetAbsolutePath( file ) ) ) );
+				var first = sections.GetValueOrDefault( "SIGNA" ) ?? "";
+				var second = sections.GetValueOrDefault( "SIGNB" ) ?? "";
+				if ( first.Length > 0 || second.Length > 0 )
+					return (first, second);
+			}
+		}
+		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or ArgumentException or DecoderFallbackException )
+		{
+			Log?.Warning( $"Bonus object {entry.ArchivePath} sign text could not be read: {exception.Message}" );
 		}
 		return null;
 	}

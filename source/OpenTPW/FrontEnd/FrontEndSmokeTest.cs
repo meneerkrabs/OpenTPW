@@ -339,6 +339,24 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			Click( hud.Stack.Top!, "categoryRides" );
 		} );
 		Wait( "rides listed", 3 );
+		Do( "show a ride with a sign", () =>
+		{
+			var hud = flow.Hud!;
+			var aztec = hud.Catalog.GetItems( BuildCategory.Rides ).Single( item => item.Entry != null && item.Entry.ArchiveName.Equals( "tvsim", StringComparison.OrdinalIgnoreCase ) );
+			ShowItem( aztec );
+			Require( hud.SelectedBuyItem == aztec, "Aztec Mayhem is the selected item" );
+			var icon = hud.GetIcon( aztec );
+			Require( icon != null && icon.RuntimeTextureTriangleCount > 0, "the Aztec Mayhem preview draws its sign faces with the rendered sign textures, not the placeholders" );
+			var sign = ObjectSigns.Get( aztec.Entry! );
+			Require( sign != null && sign.TextPixelCount > 0 && (sign.Line1, sign.Line2) == SignCanvas.SplitAtMiddleSpace( hud.ItemName( aztec ) ), "the Aztec Mayhem sign shows its name over two lines" );
+		} );
+		Wait( "Aztec Mayhem preview renders", 3 );
+		Do( "capture the sign preview", () =>
+		{
+			CaptureFrame( "buy-window-aztec.png" );
+			flow.Hud!.SelectBuyItem( 0 );
+			Require( flow.Hud.BuyFirstRow == 0, "selecting the first row scrolls the list back" );
+		} );
 		Do( "scroll the list", () =>
 		{
 			var hud = flow.Hud!;
@@ -524,6 +542,9 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			Require( level.IsReadOnlyVisit && level.Park == null, "visited parks have no writable economy" );
 			visitedCount = level.Objects.Objects.Count;
 			visitedObject = level.Objects.Objects.First( item => item.Runtime.IsAttraction && !item.Entry.IsFixedItem );
+			var signed = level.Objects.Objects.Where( item => item.Sign != null ).ToArray();
+			Require( signed.Length > 0 && signed.All( item => item.Sign!.TextPixelCount > 0 || item.Sign.Line1.Length == 0 ), "the visited park's rides show their own rendered sign text, not the SIGN1/SIGN2 placeholders" );
+			Log.Trace( $"Ride signs in the visited park: {string.Join( ", ", signed.Select( item => $"{item.Entry.ArchiveName}: {item.Sign!.Line1} / {item.Sign.Line2}" ) )}" );
 			visitedOpen = visitedObject.IsOpen;
 			hud.BeginPlacing( hud.Catalog.GetItems( BuildCategory.Rides ).First() );
 			Require( level.BuildEntry == null && !level.IsPlacing, "read-only HUD refuses direct placement requests" );

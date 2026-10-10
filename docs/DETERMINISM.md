@@ -131,6 +131,13 @@ differently with sound on, and a muted or device-less run would hash
 differently from one with audio. The original's choosers do not advance the
 seed (DET-plan §3 D9), which is why §4.5 can list it as replay state.
 
+A park started from an original save (SAVE-I, docs/ECONOMY.md "Original save
+import") sets the economy's tick, bank, loans, objects and staff before its first
+tick. All of it is in the economy digest, and the run that the pinned hash
+covers starts no original save, so the schema and the pin are unchanged. The
+save's `mRandomSeed` is not imported (SAVE-001): OpenTPW has no world LCG yet,
+so its streams still come from the world seed.
+
 Other OpenTPW state that is **not in the hash**:
 
 | State | Why it is outside |

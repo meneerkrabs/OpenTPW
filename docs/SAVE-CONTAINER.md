@@ -69,11 +69,19 @@ checksums, dictionary/header corruption, truncated streams and trailing data.
 The optional original fixture test checks exact header and both SHA-256 hashes;
 without that licensed fixture it reports inconclusive, not a compatibility pass.
 
-The decoded payload's section markers, its per-cell grid and SYSG object records
-are documented in TPWS-PAYLOAD.md (`SavePayloadLayout`, `SaveCellGrid`,
-`SaveObjectList`, read-only `OriginalParkImport`); other contents remain opaque.
+The decoded payload's writer-order block split (17 trailing delimiters), the
+World block (variables, calendar, per-cell grid, thing list closed at the `WRLD`
+delimiter), the typed things and the RideSystem object records are documented in
+TPWS-PAYLOAD.md and reverse/SAVE-plan.md (`SavePayloadLayout`, `SaveWorld`,
+`SaveThingChain`, `SaveCellGrid`, `SaveObjectList`, read-only
+`OriginalParkImport`). A park started from the shipped save imports its turn,
+bank, objects, staff and advisor controller (`OriginalEconomyImport`; values not
+imported are reported as SAVE-001 to SAVE-010); the other blocks stay opaque.
 The four local `scape.omp` files start with `OBJ_`; this is not evidence that they
-are terrain tile grids. No playable park importer or save writer exists.
+are terrain tile grids. No save writer exists: original saves are never written,
+because round-trip evidence is missing and Easymode alone holds 18,288
+uninitialized `0xCD` bytes, so byte equality cannot be the criterion
+(SAVE-plan §8.3).
 
 The upstream format document is readable through the GitHub contents API
 (`opentpw-docs` `src/formats/tpws-ints-lays.md`). It agrees with the container

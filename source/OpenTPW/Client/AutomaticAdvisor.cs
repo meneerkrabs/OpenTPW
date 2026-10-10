@@ -60,7 +60,9 @@ internal sealed class AutomaticAdvisor : IDisposable
 		park = started.Park;
 		if ( park != null )
 			park.EventRaised += OnParkEvent;
-		// [APPROX:ADVISOR-022] The pending advice and the message history are neither saved nor loaded: loading a park save keeps whatever this session's controller holds (pending advice and history of earlier parks, empty in a fresh session) — evidence needed: whether the original park save writes the controller's pending records (record serializer 0x1000BC10) and history, and where in the save file
+		// A park started from an original save takes its saved controller first; the main loop's events follow.
+		if ( started.Park?.Import != null && started.OriginalPark?.Save?.Advisor is { } saved )
+			Log.Trace( Controller.ImportOriginal( saved ) );
 		// [BIN:STP-PPC:0x101C2108 main loop] CMsgEvent 10 (history reset of variant, played flag and slaps) followed by CMsgEvent 0 at 0x101C2174
 		Raise( AdvisorGameEvent.ResetForEasyMode );
 		Raise( AdvisorGameEvent.LevelStarted );

@@ -209,4 +209,20 @@ public sealed class ParkStaff
 	}
 
 	internal int AllocateId() => NextId++;
+
+	/// <summary>Adds an employee taken from an original save (not hired from the pool).</summary>
+	internal StaffMember AddImported( StaffType type, int grade, int trainingPoints, int happiness, StaffState state, long hiredTick )
+	{
+		var member = new StaffMember { Id = AllocateId(), Type = type, NameIndex = 0, Grade = grade, TrainingPoints = trainingPoints, Happiness = happiness, State = state, HiredTick = hiredTick };
+		members.Add( member );
+		return member;
+	}
+
+	/// <summary>Moves the pool's update and expiry times by <paramref name="ticks"/> (a new park started at a later turn).</summary>
+	internal void ShiftSchedule( long ticks )
+	{
+		NextPoolUpdateTick += ticks;
+		for ( var index = 0; index < candidates.Count; index++ )
+			candidates[index] = candidates[index] with { ExpiresTick = candidates[index].ExpiresTick + ticks };
+	}
 }

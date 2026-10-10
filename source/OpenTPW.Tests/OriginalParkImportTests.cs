@@ -11,7 +11,7 @@ namespace OpenTPW.Tests;
 [TestClass]
 public class OriginalParkImportTests
 {
-	private static byte[] CreateCellRecord( byte attributes, bool path = false, byte connections = 0, bool occupied = false, bool extension = false )
+	internal static byte[] CreateCellRecord( byte attributes, bool path = false, byte connections = 0, bool occupied = false, bool extension = false )
 	{
 		var record = new byte[extension ? 94 : 84];
 		record[0] = (byte)(extension ? 7 : 3);
@@ -49,20 +49,11 @@ public class OriginalParkImportTests
 		return record;
 	}
 
-	/// <summary>Grid prefix followed by every known section marker; SYSG carries <paramref name="sysg"/>.</summary>
-	private static byte[] CreatePayload( byte[] prefix, byte[] sysg )
-	{
-		using var output = new MemoryStream();
-		output.Write( prefix );
-		foreach ( var tag in SavePayloadLayout.ObservedEasymodeOrder )
-		{
-			output.Write( Encoding.ASCII.GetBytes( tag ) );
-			output.Write( tag == "SYSG" ? sysg : new byte[8] );
-		}
-		return output.ToArray();
-	}
+	/// <summary>A complete synthetic save on <paramref name="map"/> whose RideSystem block carries <paramref name="rideSystem"/>.</summary>
+	private static byte[] CreatePayload( MapFile map, byte[] rideSystem, Func<int, int, byte[]>? cell = null ) =>
+		SaveTestPayloads.Payload( SaveTestPayloads.World( SaveTestPayloads.ParkVariables(), SaveTestPayloads.Grid( map, cell ), SaveTestPayloads.Things( SaveTestPayloads.ParkThings() ) ), rideSystem );
 
-	private static MapFile CreateMap( int countX, int countY, Func<int, int, byte> value )
+	internal static MapFile CreateMap( int countX, int countY, Func<int, int, byte> value )
 	{
 		var cells = new byte[countX * countY];
 		for ( var x = 0; x < countX; x++ )
@@ -157,7 +148,7 @@ public class OriginalParkImportTests
 			CreateObjectRecord( 1999, 8, 1, 1, 1, SaveObject.PlacedObjectKind, 8, 0 ),
 			CreateObjectRecord( 1999, 1, 1, 1, 1, SaveObject.PlacedObjectKind, 2, 0 ),
 		}.SelectMany( bytes => bytes ).ToArray();
-		var payload = CreatePayload( CreateGrid( map ), sysg );
+		var payload = CreatePayload( map, sysg );
 		var objects = SaveObjectList.Parse( payload, SavePayloadLayout.Parse( payload ), 8, 8 );
 		CollectionAssert.AreEqual( new[] { 1, 3, 4, 5, 6 }, objects.Select( item => item.Index ).ToArray() );
 		Assert.IsTrue( objects[0].IsFixedItem );
@@ -179,11 +170,10 @@ public class OriginalParkImportTests
 	{
 		var map = CreateMap( 6, 6, ( x, y ) => (byte)(x == 0 ? 1 : x == 1 && y == 1 ? 8 : 0) );
 		var occupied = new HashSet<(int, int)> { (3, 3), (4, 3), (3, 2), (4, 2), (5, 5) };
-		var prefix = CreateGrid( map, ( x, y ) => CreateCellRecord( map.GetCellAt( x, y ), path: (x, y) is (1, 1) or (2, 1), occupied: occupied.Contains( (x, y) ) ) );
 		var sysg = CreateObjectRecord( 1411, 3, 3, 2, 2, SaveObject.PlacedObjectKind, 1, 90 )
 			.Concat( CreateObjectRecord( 1603, 4, 4, 1, 1, SaveObject.FixedItemKind, 2, 0 ) )
 			.Concat( CreateObjectRecord( 1100, 5, 5, 1, 2, SaveObject.PlacedObjectKind, 3, 90 ) ).ToArray();
-		var park = OriginalParkImport.Import( CreatePayload( prefix, sysg ), map );
+		var park = OriginalParkImport.Import( CreatePayload( map, sysg, ( x, y ) => CreateCellRecord( map.GetCellAt( x, y ), path: (x, y) is (1, 1) or (2, 1), occupied: occupied.Contains( (x, y) ) ) ), map );
 		CollectionAssert.AreEqual( new[] { (1, 1), (2, 1) }, park.PathCells.ToArray() );
 		Assert.AreEqual( 1, park.PlacedObjects.Count );
 		Assert.AreEqual( (3, 2, 4, 3), (park.PlacedObjects[0].MinX, park.PlacedObjects[0].MinY, park.PlacedObjects[0].MaxX, park.PlacedObjects[0].MaxY) );
@@ -198,10 +188,10 @@ public class OriginalParkImportTests
 	{
 		var map = CreateMap( 4, 4, ( x, _ ) => (byte)(x == 0 ? 1 : 0) );
 		var other = CreateMap( 4, 4, ( x, _ ) => (byte)(x == 3 ? 1 : 0) );
-		var payload = CreatePayload( CreateGrid( map ), Array.Empty<byte>() );
+		var payload = CreatePayload( map, Array.Empty<byte>() );
 		Assert.AreEqual( 0, OriginalParkImport.Import( payload, map ).PathCells.Count );
 		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => OriginalParkImport.Import( payload, other ) ).Message, "another map" );
-		var unoccupied = CreatePayload( CreateGrid( map ), CreateObjectRecord( 1100, 1, 1, 2, 2, SaveObject.PlacedObjectKind, 1, 0 ) );
+		var unoccupied = CreatePayload( map, CreateObjectRecord( 1100, 1, 1, 2, 2, SaveObject.PlacedObjectKind, 1, 0 ) );
 		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => OriginalParkImport.Import( unoccupied, map ) ).Message, "not occupied" );
 	}
 
@@ -296,7 +286,7 @@ public class OriginalParkImportTests
 		return file!.GetData();
 	}
 
-	private static byte[] ReadEasymodePayload()
+	internal static byte[] ReadEasymodePayload()
 	{
 		var path = Path.Combine( OriginalDataPath(), "levels", "jungle", "Easymode.TPWI" );
 		if ( !File.Exists( path ) )

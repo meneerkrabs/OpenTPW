@@ -142,6 +142,49 @@ internal sealed class AdvisorController
 	}
 
 	/// <summary>
+	/// Takes the pending records and per-message history of an original park save's advisor controller (model 11).
+	/// Free (invalid) records stay free; records and non-initial history of messages without a bound descriptor are
+	/// dropped and counted. Returns a report line for the log.
+	/// </summary>
+	// [BIN:STP-PPC:0x100082E0 advisor controller serializer] eight 21-byte pending records (0x1000BC10) from controller +20, then 351 16-byte history entries (tick, variant, played, slaps) from +224, indexed by message ID
+	public string ImportOriginal( SaveAdvisorController saved )
+	{
+		ArgumentNullException.ThrowIfNull( saved );
+		var pending = new AdvisorPendingAdvice?[AdvisorScoreQueue.Capacity];
+		var imported = 0;
+		var dropped = new List<uint>();
+		for ( var index = 0; index < pending.Length; index++ )
+		{
+			var record = saved.Pending[index];
+			if ( !record.Valid )
+				continue;
+			if ( record.MessageId > int.MaxValue || !Queue.HasDescriptor( (int)record.MessageId ) )
+			{
+				dropped.Add( record.MessageId );
+				continue;
+			}
+			pending[index] = new AdvisorPendingAdvice( (int)record.MessageId, record.Score, record.ResponseNo, record.OverrideOnlyOnce != 0 );
+			imported++;
+		}
+		var history = new Dictionary<int, AdvisorMessageHistory>();
+		var droppedHistory = 0;
+		for ( var messageId = 0; messageId < saved.History.Count; messageId++ )
+		{
+			var entry = saved.History[messageId];
+			if ( !Queue.HasDescriptor( messageId ) )
+			{
+				if ( !entry.IsInitial )
+					droppedHistory++;
+				continue;
+			}
+			history[messageId] = new AdvisorMessageHistory( entry.SavedGameTick, entry.PreviousVariant, entry.HasBeenPlayed, entry.SlapCount );
+		}
+		Queue.Restore( pending, history );
+		// [APPROX:ADVISOR-022] OpenTPW's own park save does not store the controller, and an original save's pending advice and history of messages without a bound descriptor (only the wired game events' messages are bound) are dropped on import — evidence needed: the remaining descriptor rows and their score producers, and an OpenTPW save target for the controller
+		return $"Advisor controller imported: {imported} pending advice, history of {history.Count} bound messages; dropped {dropped.Count} pending advice of unbound messages ({string.Join( ", ", dropped )}) and {droppedHistory} unbound history entries.";
+	}
+
+	/// <summary>
 	/// One controller update: when not busy, selects the best pending advice, consumes it, plays its
 	/// response through <paramref name="play"/> and records the outcome. Returns the attempted selection.
 	/// </summary>

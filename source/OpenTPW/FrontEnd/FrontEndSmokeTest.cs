@@ -547,9 +547,9 @@ internal sealed class FrontEndSmokeTest : IDisposable
 	}
 
 	/// <summary>
-	/// The Instant Action start from the menu: Easy_ balance and the shipped jungle seed, no staff member
-	/// invented for the seed's undecoded researcher but research by its ECON-019 stand-in, and the loan,
-	/// research effort, upgrade, ticket and challenge gates (docs/ECONOMY.md, "Game modes").
+	/// The Instant Action start from the menu: Easy_ balance and the shipped jungle seed with its imported bank, turn
+	/// and staff (research comes from the seed's own researcher), and the loan, research effort, upgrade, ticket and
+	/// challenge gates (docs/ECONOMY.md, "Game modes").
 	/// </summary>
 	private void PlayInstantAction()
 	{
@@ -557,7 +557,12 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		var economy = level.Park!.Economy;
 		Require( flow.StartKind == ParkStartKind.InstantAction && economy.Mode == ParkGameMode.InstantAction && economy.Features == ParkModeFeatures.For( ParkGameMode.InstantAction ), "Instant Action button starts an Instant Action park" );
 		Require( economy.Settings.IsEasy && level.OriginalPark!.Save != null && level.Park.Import is { ImportedObjects: > 0 }, "Instant Action jungle uses the Easy_ balance and imports the Easymode seed" );
-		Require( economy.Staff.Members.Count == 0 && economy.SeedResearcherStandIn, "the seed's staff are not decoded: no staff member is invented, research uses the ECON-019 stand-in" );
+		var seed = level.OriginalPark!.Save!;
+		var bank = seed.Economy.Bank;
+		// The park has run a few frames since it started: the month's opening balance and the turn show the import.
+		Require( economy.Ledger.CurrentOpeningBalance == bank.Balance && economy.EntranceFee == bank.AdmissionFee && economy.Ledger.History.Count == 0
+			&& economy.Turn >= seed.World.Variables.GameTick, "the seed's bank balance, admission fee and park turn are imported" );
+		Require( economy.Staff.Members.Count == seed.Staff.Count && economy.Staff.OfType( StaffType.Researcher ).Any(), "the seed's staff, including its researcher, are imported" );
 		var capture = CaptureFrame( "instant-action-hud.png" );
 		VerifyText( capture, flow.Hud!.MoneyText, "Instant Action HUD bank balance" );
 		Require( !economy.AvailableLoans.Any(), "Instant Action offers no loans" );
@@ -569,12 +574,12 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		var progress = economy.Research.ProgressEntries.ToArray();
 		var start = economy.Date;
 		economy.AdvanceDays( 60 );
-		Require( economy.Research.Completed.Count > completedItems || !economy.Research.ProgressEntries.SequenceEqual( progress ), "research advances through the seed researcher's stand-in" );
+		Require( economy.Research.Completed.Count > completedItems || !economy.Research.ProgressEntries.SequenceEqual( progress ), "research advances through the seed's imported researcher" );
 		Require( economy.Objectives.GoldenTickets.Count == 0 && economy.Objectives.Current == null, "no golden-ticket checks or challenges in Instant Action" );
 		Log.Trace( $"Instant Action jungle: {level.Park.Import!.ImportedObjects} seed objects, {economy.Staff.Members.Count} staff, research advanced {start} -> {economy.Date}; loans, research effort and upgrades refused." );
 		Device.WaitForIdle();
 		completed = true;
-		Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name} at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames, lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, two distinct catalogue objects bought exactly once through the park economy, info arm, economy pause, sale, overlap refusal, open/close, Escape out of the queue tool, pause menu, exit to lobby, read-only visit build/open/delete/save guards, Instant Action return and Load Park reference start, Instant Action seed, research stand-in and gates." );
+		Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name} at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames, lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, two distinct catalogue objects bought exactly once through the park economy, info arm, economy pause, sale, overlap refusal, open/close, Escape out of the queue tool, pause menu, exit to lobby, read-only visit build/open/delete/save guards, Instant Action return and Load Park reference start, Instant Action seed with imported bank, turn and staff, research and gates." );
 		GameFlow.Quit();
 	}
 

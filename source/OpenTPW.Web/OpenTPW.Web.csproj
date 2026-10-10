@@ -1,21 +1,66 @@
 <Project Sdk="Microsoft.NET.Sdk.WebAssembly">
 
+	<!--
+	The game in the browser (docs/WEB.md): the desktop sources compiled against OpenTPW.Web.Veldrid,
+	a WebGL2 implementation of the Veldrid API the game uses. Files that only make sense on the
+	desktop (SDL display queries, the native shader compiler, ImGui developer panels) are replaced
+	by browser versions in this project or left out.
+	-->
 	<PropertyGroup>
 		<TargetFramework>net10.0</TargetFramework>
 		<OutputType>Exe</OutputType>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+		<LangVersion>preview</LangVersion>
+		<!-- The settings files use reflection-based System.Text.Json, which trimming turns off by default. -->
+		<JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
+		<!-- Readable exception messages instead of resource keys. -->
+		<UseSystemResourceKeys>false</UseSystemResourceKeys>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<GameSources>../OpenTPW</GameSources>
+		<CommonSources>../OpenTPW.Common</CommonSources>
+		<FilesSources>../OpenTPW.Files</FilesSources>
 	</PropertyGroup>
 
 	<ItemGroup>
-		<ProjectReference Include="../OpenTPW.Files/OpenTPW.Files.csproj" />
+		<Compile Include="$(FilesSources)/**/*.cs" Exclude="$(FilesSources)/obj/**;$(FilesSources)/bin/**" Link="Files/%(RecursiveDir)%(Filename)%(Extension)" />
+		<Compile Include="$(CommonSources)/**/*.cs" Exclude="$(CommonSources)/obj/**;$(CommonSources)/bin/**;$(CommonSources)/Client/SdlDisplay.cs" Link="Common/%(RecursiveDir)%(Filename)%(Extension)" />
+		<Compile Include="$(GameSources)/**/*.cs" Link="Game/%(RecursiveDir)%(Filename)%(Extension)"
+			Exclude="$(GameSources)/obj/**;$(GameSources)/bin/**;$(GameSources)/Formats/Model/**;
+				$(GameSources)/Program.cs;
+				$(GameSources)/Client/Game.cs;
+				$(GameSources)/Client/LinuxNativeLibraries.cs;
+				$(GameSources)/Render/ShaderCompiler.cs;
+				$(GameSources)/Client/Setup/SetupWizard.cs;
+				$(GameSources)/Client/Movie/SdlMovieAudioOutput.cs;
+				$(GameSources)/Online/OnlinePanel.cs;
+				$(GameSources)/UI/DisplaySettingsPanel.cs;
+				$(GameSources)/UI/Layouts/ObjectBuildPanel.cs;
+				$(GameSources)/UI/Layouts/ParkLayout.cs" />
 	</ItemGroup>
 
-	<!-- The file system creates archive handlers by reflection; keep the OpenTPW libraries whole when trimming. -->
 	<ItemGroup>
-		<TrimmerRootAssembly Include="OpenTPW.Files" />
-		<TrimmerRootAssembly Include="OpenTPW.Common" />
+		<ProjectReference Include="../OpenTPW.Web.Veldrid/OpenTPW.Web.Veldrid.csproj" />
+		<ProjectReference Include="../OpenTPW.Online/OpenTPW.Online.csproj" />
+		<PackageReference Include="SharpZipLib" Version="1.4.2" />
+		<PackageReference Include="Zio" Version="0.17.0" />
+		<PackageReference Include="StbImageSharp" Version="2.27.8" />
+		<PackageReference Include="SixLabors.ImageSharp" Version="3.1.6" />
+		<PackageReference Include="System.Configuration.ConfigurationManager" Version="6.0.0" />
+	</ItemGroup>
+
+	<!-- The content files the game reads, written to the in-memory file system at start (Program.Start). -->
+	<ItemGroup>
+		<EmbeddedResource Include="../../content/shaders/**/*" LogicalName="content/shaders/%(RecursiveDir)%(Filename)%(Extension)" />
+		<EmbeddedResource Include="../../content/data/**/*" LogicalName="content/data/%(RecursiveDir)%(Filename)%(Extension)" />
+	</ItemGroup>
+
+	<!-- The file system creates archive handlers by reflection; keep the game whole when trimming. -->
+	<ItemGroup>
+		<TrimmerRootAssembly Include="OpenTPW.Web" />
 	</ItemGroup>
 
 </Project>

@@ -1,6 +1,4 @@
 ﻿using Veldrid;
-using Vortice.Direct3D11;
-using Vortice.Win32;
 
 namespace OpenTPW;
 
@@ -30,6 +28,9 @@ public class Shader : Asset
 
 	private void Watch()
 	{
+		// The browser has no file watching, and its shaders are precompiled (docs/WEB.md).
+		if ( OperatingSystem.IsBrowser() )
+			return;
 		lock ( watchers )
 		{
 			if ( !watchers.TryGetValue( Path, out var watcher ) )

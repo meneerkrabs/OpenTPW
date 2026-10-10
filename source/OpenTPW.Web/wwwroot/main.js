@@ -1,6 +1,7 @@
 import { dotnet } from './_framework/dotnet.js';
 import * as webgl from './opentpw-gl.js';
 import * as audio from './opentpw-audio.js';
+import * as storage from './opentpw-storage.js';
 
 // The game in the browser (docs/WEB.md): the player's own files go into the runtime's memory, then
 // the front end runs in the canvas, one Program.Frame per animation frame.
@@ -74,10 +75,20 @@ if (served) {
 
 async function start() {
 	status.textContent = 'Starting the game…';
+	try {
+		await storage.restore(program);
+	} catch (error) {
+		console.warn('Saved games could not be read from this browser', error);
+	}
 	await new Promise(requestAnimationFrame);
 	try {
 		document.getElementById('setup').hidden = true;
 		program.Start(location.origin);
+		// Keep saves and settings: every few seconds, and when the page is hidden or closed.
+		const keep = () => storage.sync(program).catch(error => console.warn('Saving to this browser failed', error));
+		setInterval(keep, 5000);
+		document.addEventListener('visibilitychange', () => { if (document.hidden) keep(); });
+		window.addEventListener('pagehide', keep);
 		document.getElementById('canvas').focus();
 		const frame = () => {
 			let running;

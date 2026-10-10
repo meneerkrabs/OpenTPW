@@ -336,7 +336,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-015 | `source/OpenTPW/FrontEnd/FrontEndMenu.cs:127` | [APPROX:UI-015] Game Mode asked on every park entry and each entry starts a new park (no player profiles or per-theme autosave); the original asks once when a player is created and stores it in the profile — evidence needed: PC confirmation of the Mac player/autosave flow |
 | UI-016 | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:79` | [DATA:lobby.wad:&lt;theme&gt;.txt ISLAND/SKYCOLOUR/FLYINGMESH/RAINY/LIGHTNING] [APPROX:UI-016] angle = yaw, height = camera target height — evidence needed: binary/capture |
 | UI-017 | `source/OpenTPW/World/LobbyCameraMode.cs:25` | [APPROX:UI-017] SPINSPEED as radians per 0.1 s, FOV 60, 3/s glide — evidence needed: binary or capture of the lobby camera |
-| UI-018 | `source/OpenTPW/Client/GameFlow.cs:289` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
+| UI-018 | `source/OpenTPW/Client/GameFlow.cs:309` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
 | UI-018 | `source/OpenTPW/World/Lobby/LobbyScene.cs:14` | [APPROX:UI-018] flying meshes, rain, lightning and island/gate animations are not drawn — evidence needed: binary/capture of the lobby |
 | UI-019 | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:92` | [APPROX:UI-019] fallback position when lobby.txt lacks ISLANDCAMERAPOSITION — evidence needed: none if lobby.txt is complete |
 | UI-021 | `source/OpenTPW/Hud/ParkHud.cs:85` | [DATA:UITEXT.str:448,449] currency prefix; [APPROX:UI-021] ","-grouped digits — evidence needed: locale number format of the original |
@@ -368,7 +368,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-038 | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:252` | [APPROX:UI-038] 3D card rendering, videocard and audio quality are shown fixed (disabled) — OpenTPW has no software renderer, video card or audio quality choice |
 | UI-039 | `source/OpenTPW/UI/Original/UiWidgets.cs:130` | [APPROX:UI-039] option label size: letter box about 58 % of the label rectangle height (the capture's labels are ~26 of 1536 units for 45-unit rectangles); a label whose widest value does not fit drops alone to the largest size that does — evidence needed: capture of the original option labels in several languages |
 | UI-040 | `source/OpenTPW/Client/Autorun/AutorunView.cs:163` | [APPROX:UI-040] the exact dot phase of GDI's focus rectangle brush is not known; dots are the pixels with even x + y, inverted. |
-| UI-041 | `source/OpenTPW/Client/GameFlow.cs:160` | [APPROX:UI-041] a loaded shipped park is the reference start whatever Game Mode was last chosen; the original takes the mode from the loading player's profile, not the park — evidence needed: player profiles and the Mac park loader 0x11acfc |
+| UI-041 | `source/OpenTPW/Client/GameFlow.cs:179` | [APPROX:UI-041] a loaded shipped park is the reference start whatever Game Mode was last chosen; the original takes the mode from the loading player's profile, not the park — evidence needed: player profiles and the Mac park loader 0x11acfc |
 | UI-042 | `source/OpenTPW/Hud/ParkHud.cs:136` | [APPROX:UI-042] the camera button's action (camera views) is not implemented; it is shown disabled |
 
 ## Extension sites
@@ -432,16 +432,16 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | fit-button-text | `source/OpenTPW/UI/Original/UiTextFit.cs:10` | [EXT:fit-button-text] button labels shrink to fit; the original sized its fixed strings per language by hand |
 | interface-scale-fit | `source/OpenTPW/UI/Original/UiCanvas.cs:33` | [EXT:interface-scale-fit] Above 1×, limit forced text scales to UiScaling's reference-layout fit (HiDPI-aware via PixelDensity). |
 | language | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:490` | [EXT:language] language row (original installs had one language; OpenTPW reads CD overlays) |
-| online-visit | `source/OpenTPW/Client/GameFlow.cs:187` | [EXT:online-visit] read-only visits of shared parks get no advisor (the original has no visits) |
+| online-visit | `source/OpenTPW/Client/GameFlow.cs:206` | [EXT:online-visit] read-only visits of shared parks get no advisor (the original has no visits) |
 | opentpw-page | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:381` | [EXT:opentpw-page] button to the OpenTPW page, in the free area left of the OK panel |
 | opentpw-page | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:410` | The OpenTPW page ([EXT:opentpw-page]): everything OpenTPW adds to the original options, built from the |
 | opentpw-page | `source/OpenTPW/UI/Original/UiWidgets.cs:519` | [EXT:opentpw-page] option-row arrow/value positions: OpenTPW's own row style for its page (the original page uses sliders and toggles) |
 | ps2-data | `source/OpenTPW/Client/Ps2Export.cs:13` | [EXT:ps2-data] viewing aid for the PS2 version's data, not original behaviour |
-| sandbox | `source/OpenTPW/Client/GameFlow.cs:188` | [EXT:sandbox] the generic sandbox (not an original level) gets no automatic advisor either; only original levels raise its game events |
+| sandbox | `source/OpenTPW/Client/GameFlow.cs:207` | [EXT:sandbox] the generic sandbox (not an original level) gets no automatic advisor either; only original levels raise its game events |
 | strings | `source/OpenTPW/UI/Original/SupplementaryStrings.cs:10` | [EXT:strings] OpenTPW supplementary labels (display/upscaling/language rows and OpenTPW messages), not original data |
 | test-stub | `source/OpenTPW/Hud/HudStubs.cs:130` | [EXT:test-stub] price shown when Totem.sam cannot be read (the economy catalogue price is used when a park economy runs) |
-| texture-pack | `source/OpenTPW/Client/GameFlow.cs:236` | [EXT:texture-pack] the pack switch belongs to the game loop, not to its loading screen |
-| texture-pack | `source/OpenTPW/Client/GameFlow.cs:304` | [EXT:texture-pack] a running texture switch shows its progress without blocking the game |
+| texture-pack | `source/OpenTPW/Client/GameFlow.cs:255` | [EXT:texture-pack] the pack switch belongs to the game loop, not to its loading screen |
+| texture-pack | `source/OpenTPW/Client/GameFlow.cs:324` | [EXT:texture-pack] a running texture switch shows its progress without blocking the game |
 | texture-pack | `source/OpenTPW/Compat/GraphicsSettings.cs:269` | [EXT:texture-pack] Texture choice (docs/TEXTURE-PACKS.md): empty = original textures; &lt;c&gt;enhanced&lt;/c&gt; (the default) = the |
 | texture-pack | `source/OpenTPW/FrontEnd/FrontEndSmokeTest.cs:75` | [EXT:texture-pack] Switches a throw-away pack on and off while the lobby runs: a lobby texture becomes the pack's solid |
 | texture-pack | `source/OpenTPW/Render/Assets/ImagePrepass.cs:33` | [EXT:texture-pack] Optional 1x de-artifact pre-pass for the local texture pack. |
@@ -520,7 +520,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | levels/jungle/Easymode.TPWI:loan table repayments = floor(amount/months) at 0 % APR | `source/OpenTPW/Economy/ParkLedger.cs:146` | [DATA:levels/jungle/Easymode.TPWI:loan table repayments = floor(amount/months) at 0 % APR] |
 | levels/space/rides/megacost.wad/megacost.sgn:slot 1 = "EggIt Italic"/EGGII___.TTF, not in fonts.wad | `source/OpenTPW.Files/Public/DataCorrections.cs:18` | [EXT:COMPAT-FIX sign-font-substitution] [DATA:levels/space/rides/megacost.wad/megacost.sgn:slot 1 = "EggIt Italic"/EGGII___.TTF, not in fonts.wad] |
 | lobby.wad:&lt;theme&gt;.txt ISLAND/SKYCOLOUR/FLYINGMESH/RAINY/LIGHTNING | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:79` | [DATA:lobby.wad:&lt;theme&gt;.txt ISLAND/SKYCOLOUR/FLYINGMESH/RAINY/LIGHTNING] [APPROX:UI-016] angle = yaw, height = camera target height — evidence needed: binary/capture |
-| lobby.wad:&lt;theme&gt;.txt SKYCOLOUR | `source/OpenTPW/Client/GameFlow.cs:289` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
+| lobby.wad:&lt;theme&gt;.txt SKYCOLOUR | `source/OpenTPW/Client/GameFlow.cs:309` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
 | lobby.wad:lobby.txt ISLANDFOV/SPINSPEED/SPINRADIUS/VERTICALOFFSET | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:31` | [DATA:lobby.wad:lobby.txt ISLANDFOV/SPINSPEED/SPINRADIUS/VERTICALOFFSET] defaults equal the shipped values |
 | low.sam/med.sam/high.sam | `source/OpenTPW.Tests/CompatibilityTests.cs:133` | [DATA:low.sam/med.sam/high.sam] in file order (TEXTUREQUALITY .. LOBBYOBJECTS). |
 | low.sam/med.sam/high.sam:comment legend | `source/OpenTPW/Compat/GraphicsSettings.cs:21` | ([DATA:low.sam/med.sam/high.sam:comment legend]). |

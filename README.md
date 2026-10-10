@@ -44,9 +44,9 @@ original lobby, build a park with the original objects and run it with guests, s
 
 - **In the browser:** open [play.opentpw.io](https://play.opentpw.io/) (Chrome, Edge, Firefox or
   Safari) and choose your Theme Park World folder. Nothing is installed and your files stay on your
-  computer. The browser build is the newest part of OpenTPW: the front end and online play run
-  there today, while starting a park, sound and saving are the next steps ([web build](docs/WEB.md)).
-  For the full game, use a download.
+  computer. The browser build is the newest part of OpenTPW: the front end, parks, sound and online
+  play run there, and saves and settings stay in the browser between visits; movies and the
+  developer panels are desktop-only for now ([web build](docs/WEB.md)).
 - **Download:** [pre-release builds](https://github.com/meneerkrabs/OpenTPW/releases) for Windows
   (x64, x86, ARM64), macOS (Apple silicon) and Linux (x64, ARM64). Unpack and start OpenTPW; on the
   first start it asks for your game folder ([releases](docs/RELEASES.md), [setup](docs/SETUP.md)).

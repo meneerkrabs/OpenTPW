@@ -1,13 +1,14 @@
 # OpenTPW in the browser
 
-Status, October 10, 2026: the **front end and parks run in the browser** over WebGL2. The lobby with
+Status, October 10, 2026: the **front end, parks and sound run in the browser** over WebGL2 and WebAudio. The lobby with
 its islands, the camera glide between them, the original UI (buttons, BF4 fonts, popup help)
 and the options screen draw as on the desktop, and mouse and keyboard work. **Online play
 works** against an OpenTPW server, which can also host the page itself (docs/SERVER.md):
 register, log in and chat were checked in the browser. Starting a park works too: the Lost
 Kingdom ran with its rides, guests, economy and build menu at about 97 frames per second in
-the interpreter. Sound, movies, lasting saves and the developer panels are not in the browser
-yet (see the end of this page).
+the interpreter. Sound plays through WebAudio, and saves, options, online files and settings
+stay in the browser between visits. Movies and the developer panels are not in the browser yet
+(see the end of this page).
 
 Nothing from the game is shipped or uploaded: the player chooses their own Theme Park World
 folder, and the page copies the files the front end needs into the runtime's memory.
@@ -37,8 +38,9 @@ files, not symbolic links: ASP.NET reports a link's own size.
 | Check | Result |
 | --- | --- |
 | Download, Brotli-compressed | about 10 MB: 4.5 MB for the runtime and game, plus the 5.8 MB of HD interface art (PNG, already compressed) |
-| Game files copied at start | about 200 files, everything in `Data` except movies, start-up pictures, sound banks and the theme folders below `levels` |
-| Game files copied when a park starts | its theme folder, about 110 files and 7 MB for the Lost Kingdom without its sound banks |
+| Game files copied at start | everything in `Data` except movies, start-up pictures and the theme folders below `levels` (with the speech and global sound banks) |
+| Game files copied when a park starts | its theme folder, 122 files and 39 MB for the Lost Kingdom, most of it music |
+| MP2 decoding in the interpreter | 60 to 130 times faster than real time; a 17.5 s music segment takes about 280 ms, a short stutter on the page's only thread |
 | Front end frame rate | 119 frames per second (the display rate) at 2048×1536 pixels, interpreter mode |
 
 ## How it works
@@ -90,6 +92,21 @@ or visiting a park goes through `GameFlow.QueueLevel`, which waits until
 copy that theme's folder and shows *Loading the park* while the lobby keeps running. On the
 desktop `LevelDataReady` is null and parks start at once. Each theme's saved park
 (`Easymode.TPWI`) is copied at start, so the Load list is complete.
+
+### Sound
+
+`Browser/WebAudioOutput.cs` answers to the desktop's `SdlMovieAudioOutput` name, so the game's
+mixer, speech and movie code use it unchanged. It queues 16-bit stereo PCM to an AudioWorklet
+(`opentpw-audio-worklet.js`) that plays it and reports the frames it has taken; that count is
+the clock for the mixer and the advisor's lip sync. Browsers start audio only after a click or
+key press on the page.
+
+### Saves and settings
+
+The game writes saves and options to `/save`, online files to `/online` and display and graphics
+settings to `/config` (`OPENTPW_CONFIG_DIR`). `opentpw-storage.js` mirrors those folders into
+IndexedDB every five seconds and when the page is hidden or closed, and puts them back before the
+game starts. The player's game files are not kept; the next visit asks for the folder again.
 
 ### Shaders
 
@@ -155,11 +172,10 @@ framebuffer).
 
 - **Choosing the folder again:** the files are read from the chosen folder while the page is
   open; the next visit asks for it again (a one-time copy into OPFS would remember it).
-- **Sound and movies:** the decoders already run in managed code; playback needs WebAudio in
-  place of the SDL audio stand-in.
+- **Movies:** not copied or played yet; sound is in place (see Sound below).
+- **Decoding off the frame:** music segments decode on the page's only thread; decoding them in
+  pieces across frames (or AOT compilation) would remove the short stutter.
 - **Developer panels:** they need ImGui, which is a native library.
-- **Saving:** saves, online settings and the copied game files live in the in-memory file
-  system and are lost when the page closes; browser storage (IndexedDB or OPFS) would keep them.
 - **Typing without a keyboard event**: text arrives through key presses on the canvas, so
   input methods and on-screen keyboards that only insert text do not reach the game yet.
 

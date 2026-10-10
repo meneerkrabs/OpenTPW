@@ -14,7 +14,7 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **187 unresolved unique APPROX IDs**, 205 APPROX occurrences, 85 EXT occurrences, 75 DATA occurrences and 124 BIN occurrences.
+Current inventory: **187 unresolved unique APPROX IDs**, 205 APPROX occurrences, 85 EXT occurrences, 75 DATA occurrences and 125 BIN occurrences.
 
 Of these, 181 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
@@ -211,7 +211,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-023 | Original-fidelity area (scope unadjudicated) | test-only stub calendar (2 s/day); the game shows the economy clock (see ECON tags) | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:32` |
 | UI-024 | Original-fidelity area (scope unadjudicated) | layout inside the build and info arms (category buttons, title, three-slot pages/arrows sorted by Info.Id, adaptive preview size to fit translated names/prices, stat rows, door/erase buttons) | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:33` |
 | UI-025 | Original-fidelity area (scope unadjudicated) | message area keeps up to 3 messages for 8 s in the f_tag frame | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:34` |
-| UI-026 | Original-fidelity area (scope unadjudicated) | build icons: CPU orthographic projection of P&lt;name&gt;.MD2 with 30° tilt, 0.8 rad/s turn, painter sorting | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:35` |
+| UI-026 | Original-fidelity area (scope unadjudicated) | build icons: CPU orthographic projection of the preview model (P&lt;name&gt;.MD2, else the main model) with 30° tilt, 0.8 rad/s turn, painter sorting | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:35` |
 | UI-027 | Original-fidelity area (scope unadjudicated) | a park click selects the original object occupying its grid cell | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:36` |
 | UI-028 | Original-fidelity area (scope unadjudicated) | excitement shown as '&lt;ExcitementLevel&gt;%'; reliability, repair and life shown as not simulated | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:37` |
 | UI-029 | Original-fidelity area (scope unadjudicated) | b_door 'down' frames mean the ride is closed; b_erase used as the delete button | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:38` |
@@ -506,7 +506,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ps2-data | `source/OpenTPW/Client/Ps2Export.cs:13` | [EXT:ps2-data] viewing aid for the PS2 version's data, not original behaviour |
 | sandbox | `source/OpenTPW/Client/GameFlow.cs:207` | [EXT:sandbox] the generic sandbox (not an original level) gets no automatic advisor either; only original levels raise its game events |
 | strings | `source/OpenTPW/UI/Original/SupplementaryStrings.cs:10` | [EXT:strings] OpenTPW supplementary labels (display/upscaling/language rows and OpenTPW messages), not original data |
-| test-stub | `source/OpenTPW/Hud/HudStubs.cs:130` | [EXT:test-stub] price shown when Totem.sam cannot be read (the economy catalogue price is used when a park economy runs) |
+| test-stub | `source/OpenTPW/Hud/HudStubs.cs:131` | [EXT:test-stub] price shown when Totem.sam cannot be read (the economy catalogue price is used when a park economy runs) |
 | texture-pack | `source/OpenTPW/Client/GameFlow.cs:255` | [EXT:texture-pack] the pack switch belongs to the game loop, not to its loading screen |
 | texture-pack | `source/OpenTPW/Client/GameFlow.cs:324` | [EXT:texture-pack] a running texture switch shows its progress without blocking the game |
 | texture-pack | `source/OpenTPW/Compat/GraphicsSettings.cs:269` | [EXT:texture-pack] Texture choice (docs/TEXTURE-PACKS.md): empty = original textures; &lt;c&gt;enhanced&lt;/c&gt; (the default) = the |
@@ -567,8 +567,8 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | Language/English/swears.txt,alloweds.txt | `source/OpenTPW.Online/Moderation/WordFilter.cs:32` | Decodes an original list. [DATA:Language/English/swears.txt,alloweds.txt] Observed encoding: |
 | Mac main HUD table 0x4ab38:32,47 | `source/OpenTPW/Hud/ParkHud.cs:127` | [DATA:Mac main HUD table 0x4ab38:32,47] date text region (182,1061,383,1103) in black (font slot 3); the cash text |
 | Mac main HUD table 0x4ab38:38-43 | `source/OpenTPW/Hud/ParkHud.cs:134` | [DATA:Mac main HUD table 0x4ab38:38-43] original button rectangles: staggered along the panel's curve, plus the camera button |
-| Rides.sam:Info.WhichUIType | `source/OpenTPW/Hud/HudStubs.cs:150` | [DATA:Rides.sam:Info.WhichUIType] |
-| Rides.sam:UsageInfo.ExcitementLevel | `source/OpenTPW/Hud/HudStubs.cs:147` | [DATA:Totem.sam:UsageInfo.ExcitementLevel] overrides [DATA:Rides.sam:UsageInfo.ExcitementLevel] |
+| Rides.sam:Info.WhichUIType | `source/OpenTPW/Hud/HudStubs.cs:151` | [DATA:Rides.sam:Info.WhichUIType] |
+| Rides.sam:UsageInfo.ExcitementLevel | `source/OpenTPW/Hud/HudStubs.cs:148` | [DATA:Totem.sam:UsageInfo.ExcitementLevel] overrides [DATA:Rides.sam:UsageInfo.ExcitementLevel] |
 | Standard.sam:Costs.QueueCell | `source/OpenTPW/World/Level.Objects.cs:200` | [DATA:Standard.sam:Costs.QueueCell] charged per cell when written (ParkEconomy.TrySpendCell, PATH-plan §3.2) |
 | Standard.sam:FixedItemInfo lanes | `source/OpenTPW/Client/M3Gate.cs:297` | [DATA:levels/&lt;theme&gt;/terrain/base.map:InitialPath] [DATA:Standard.sam:FixedItemInfo lanes] |
 | THEMENAMES.str:entries 0..3 | `source/OpenTPW/World/Original/OriginalGateSign.cs:46` | [DATA:THEMENAMES.str:entries 0..3] Lost Kingdom, Halloween World, Wonder Land, Space Zone. |
@@ -576,8 +576,8 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | TPWORLD.ISO and retail install:Data/Movies | `source/OpenTPW.Files/Public/DataOverlay.cs:144` | &lt;summary&gt;[DATA:TPWORLD.ISO and retail install:Data/Movies] the nine shipped movies.&lt;/summary&gt; |
 | Theme Park World Bonus Stuff/Bonus content/levels/*/*/_name_N.wad | `source/OpenTPW/Online/ParkSnapshotBuilder.cs:60` | &lt;summary&gt;[DATA:Theme Park World Bonus Stuff/Bonus content/levels/*/*/_name_N.wad] Bonus archives start with '_'.&lt;/summary&gt; |
 | Totem.sam:Info.Shape | `source/OpenTPW/World/PrototypeRide.cs:74` | [DATA:Totem.sam:Info.Shape] 3×4 cells = 30×40 MD2 units, centred |
-| Totem.sam:Upgrades[0].CostOfUpgrade | `source/OpenTPW/Hud/HudStubs.cs:143` | [DATA:Totem.sam:Upgrades[0].CostOfUpgrade] (FallbackCost only when the file is missing) |
-| Totem.sam:UsageInfo.ExcitementLevel | `source/OpenTPW/Hud/HudStubs.cs:147` | [DATA:Totem.sam:UsageInfo.ExcitementLevel] overrides [DATA:Rides.sam:UsageInfo.ExcitementLevel] |
+| Totem.sam:Upgrades[0].CostOfUpgrade | `source/OpenTPW/Hud/HudStubs.cs:144` | [DATA:Totem.sam:Upgrades[0].CostOfUpgrade] (FallbackCost only when the file is missing) |
+| Totem.sam:UsageInfo.ExcitementLevel | `source/OpenTPW/Hud/HudStubs.cs:148` | [DATA:Totem.sam:UsageInfo.ExcitementLevel] overrides [DATA:Rides.sam:UsageInfo.ExcitementLevel] |
 | UITEXT.str:448,449 | `source/OpenTPW/Hud/ParkHud.cs:89` | [DATA:UITEXT.str:448,449] currency prefix; [APPROX:UI-021] ","-grouped digits — evidence needed: locale number format of the original |
 | global/Speech/lips.wad | `source/OpenTPW/World/Advisor.cs:20` | [DATA:global/Speech/speechHD.SDT] [DATA:global/Speech/lips.wad] |
 | global/Speech/lips.wad:members sp_001–sp_637 | `source/OpenTPW/World/Advisor.cs:27` | [DATA:global/Speech/lips.wad:members sp_001–sp_637] |
@@ -647,6 +647,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | STP-PPC:0x10015100 TbMapStreamer::ReadBankDataFromMap | `source/OpenTPW.Files/Formats/Sound/SoundCatalog.cs:143` | [BIN:STP-PPC:0x10015100 TbMapStreamer::ReadBankDataFromMap] 11-byte records (rewritten at load), then per bank a u32 length and the name |
 | STP-PPC:0x10016F4C advisor balance | `source/OpenTPW/World/AdvisorController.cs:85` | [BIN:STP-PPC:0x10016F4C advisor balance] MessageGroups[g] fields at +36/+40/+44 + 12g |
 | STP-PPC:0x10016F4C advisor balance | `source/OpenTPW/World/AdvisorController.cs:92` | [BIN:STP-PPC:0x10016F4C advisor balance] GeneralAdvisor.MinTimeAnyMessage +24, MinTimeSameMessage +28, MinScoreForConsideration +32 |
+| STP-PPC:0x10059F00 mesh instance flag 0x400 | `source/OpenTPW/Hud/HudStubs.cs:109` | [BIN:STP-PPC:0x10059F00 mesh instance flag 0x400] the buy-window preview (0x10162584 -&gt; 0x10139084 -&gt; 0x1005C35C) instances the p&lt;name&gt; preview mesh when it loaded and the object's main mesh otherwise, so objects without a P model show their main model |
 | STP-PPC:0x1006E228 queue link read | `source/OpenTPW/World/Guests/GuestPathGrid.cs:123` | [BIN:STP-PPC:0x1006E228 queue link read] map cell +13 holds the queue link direction; the values are 1, 4, 16 and 64 |
 | STP-PPC:0x1006F380 path preview | `source/OpenTPW/World/CellBuildTool.cs:72` | [BIN:STP-PPC:0x1006F380 path preview] in mode 1 or 3, snap the cursor and LayLine(mode \| 0x100, start, end); without a start, preview one cell |
 | STP-PPC:0x1006F380 path preview | `source/OpenTPW/World/ParkPathBuilder.cs:95` | [BIN:STP-PPC:0x1006F380 path preview] \|dx\| ≥ \|dy\| keeps X (end.y = start.y), otherwise Y; the commit 0x10070F84 snaps the same way |

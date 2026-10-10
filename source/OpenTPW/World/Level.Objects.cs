@@ -188,23 +188,35 @@ public partial class Level
 		}
 		if ( Guests == null )
 			return QueueBuildResult.Refused;
+		var result = BuildQueueCell( Guests.Grid, Park?.Economy, ride, x, y, IsQueueBlocked, out var message );
+		LastActionMessage = message;
+		return result;
+	}
+
+	/// <summary>
+	/// The queue tool's per-cell build (also used by the headless M3 gate): recompute the queue,
+	/// <see cref="QueuePaths.CheckExtend"/>, then <c>Costs.QueueCell</c> charged through <paramref name="economy"/>
+	/// (none: free), then <see cref="QueuePaths.TryExtend(GuestPathGrid, RideVisitorBridge, int, int, Func{int, int, bool}?)"/>.
+	/// </summary>
+	internal static QueueBuildResult BuildQueueCell( GuestPathGrid grid, ParkEconomy? economy, RideVisitorBridge ride, int x, int y, Func<int, int, bool> isBlocked, out string message )
+	{
 		// Bring the queue up to date before charging: a grid edit since the last recompute would otherwise pass the
 		// check here, be charged, and then be refused by TryExtend's own recompute.
-		ride.RecomputeQueue( Guests.Grid );
-		var check = QueuePaths.CheckExtend( Guests.Grid, ride, x, y, IsQueueBlocked );
+		ride.RecomputeQueue( grid );
+		var check = QueuePaths.CheckExtend( grid, ride, x, y, isBlocked );
 		if ( check != QueueBuildResult.Ok )
 		{
-			LastActionMessage = $"Cannot build a queue here: {check}.";
+			message = $"Cannot build a queue here: {check}.";
 			return check;
 		}
 		// [DATA:Standard.sam:Costs.QueueCell] charged per cell when written (ParkEconomy.TrySpendCell, PATH-plan §3.2)
-		if ( Park != null && Park.Economy.TrySpendCell( CellPurchase.Queue ) != ParkEconomy.PurchaseResult.Ok )
+		if ( economy != null && economy.TrySpendCell( CellPurchase.Queue ) != ParkEconomy.PurchaseResult.Ok )
 		{
-			LastActionMessage = "Cannot build a queue: not enough money.";
+			message = "Cannot build a queue: not enough money.";
 			return QueueBuildResult.Refused;
 		}
-		var result = QueuePaths.TryExtend( Guests.Grid, ride, x, y, IsQueueBlocked );
-		LastActionMessage = $"{ride.Name}: queue is now {ride.QueueSizeInCells} cells long.";
+		var result = QueuePaths.TryExtend( grid, ride, x, y, isBlocked );
+		message = $"{ride.Name}: queue is now {ride.QueueSizeInCells} cells long.";
 		return result;
 	}
 

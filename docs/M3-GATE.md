@@ -58,8 +58,10 @@ resources. The gate therefore repeats `Level`'s composition: `SetupObjects` /
 `ConnectObjectsToGuests` / `ConnectObjectsToEconomy` / the `Update` tick order.
 Where the HUD build flow has a rule, the gate calls the same code instead of a copy:
 `ParkObjects.Check` (static overload over any grid and occupancy),
-`Level.GetCentredAnchor`, `ParkEconomy.TryBuild` and `Level.RegisterWithGuests` /
-`Level.ResolveVisitorCells` (the code `Level.RegisterObjectWithGuests` runs). The
+`Level.GetCentredAnchor`, `ParkEconomy.TryBuild`, `Level.RegisterWithGuests` /
+`Level.ResolveVisitorCells` (the code `Level.RegisterObjectWithGuests` runs),
+`ParkPathBuilder` (PATH-I: the path tool's code) and `Level.BuildQueueCell` (static
+overload: the queue tool's per-cell code). The
 remaining copies are listed under "Divergences from the player's build flow". If
 `Level` changes, those copies can drift from it.
 
@@ -68,14 +70,17 @@ remaining copies are listed under "Divergences from the player's build flow". If
    set). As in `Level.ConnectObjectsToEconomy`, they are registered with the economy
    after `AttachGuests`, linked to the guest payment bridge and get their open state
    mirrored every tick.
-2. **Paths**: 14 cells straight on from the end of the entrance walkway, in the
-   direction of lane A's last step, each charged `Costs.PathCell` ($20) through
-   `ParkEconomy.TryBuyCells`. **No in-game path builder exists**: there is no HUD path
-   tool and no player-facing path API, and nothing outside the gate calls
-   `GuestPathGrid.SetPath`. The gate lays the cells by editing `GuestPathGrid`
-   directly (**[APPROX:GATE-002]**) only as a scripted substitute so that the
-   simulation rows can be measured. `build.paths` therefore **fails** until a path
-   builder exists; the gate must then build through it.
+2. **Paths**: one straight segment of 14 cells from the end of the entrance walkway, in
+   the direction of lane A's last step. It is laid with PATH-I's player-facing builder,
+   `ParkPathBuilder.BuildSegment(start, end)`: the line is snapped and straight, every
+   cell goes through the path rules (owned land, `CanChangeCellType`, no path over a
+   queue cell (`PATH-008`), objects, the terrain rule, money), and `Costs.PathCell`
+   ($20) is posted to OtherCosts per new cell. The builder is constructed like
+   `Level`'s: the shared cell map, the guests' walk grid, the park economy, the object
+   build grid, and the gate's object footprints as the blocked test. The walkway's last
+   cell is the segment start, so it is reported under `Existing`, not `Built`. The
+   gate's own choice is the segment. The HUD click route is not exercised (no HUD
+   without a GPU).
 3. **Objects**: the lowest-Info.Id **researched, buyable** catalog entry per role:
    the first ride with `Info.HasQueue` (Belly Bounce, 1100), the first shop that
    satisfies a need (Drinks Shop, 1203) and the first toilet (`ProvidesRelief`:
@@ -83,13 +88,28 @@ remaining copies are listed under "Divergences from the player's build flow". If
    (`Level.PlaceObject`): the site search tries clicked cells near the path in all
    four rotations, turns each into an anchor with `Level.GetCentredAnchor` and
    keeps it only when `ParkObjects.Check` allows it. The gate's own choice is the
-   site: the entrance must open onto a built path cell (nearest the park entrance
-   first) and the exit with the shortest snap wins. The object is bought with
+   site. A shop or toilet entrance must open onto a built path cell (nearest the park
+   entrance first) and the exit with the shortest snap wins. For the HasQueue ride the
+   entrance's outside cell must instead be **free for a queue** (`QueuePaths` refuses a
+   path cell there with `NoFrontCell`), and a run of exactly N queue cells must lead from
+   it to a cell beside a path. Among those sites the exit with the shortest snap wins,
+   then the front nearest a path. The run is found depth-first in
+   `GuestPathGrid.Directions` order, so it is deterministic. The object is bought with
    `ParkEconomy.TryBuild`, registered with guests by `Level.RegisterWithGuests`
-   (attractions only; a non-path outside cell snaps to the nearest path cell,
-   `RIDES-028`) and linked to the guest payment bridge. No connector path is
-   built: the Belly Bounce exit (42,22) snaps to the path like it does in the game.
-4. **Queue**: not placeable (see results).
+   (attractions only; this sets `QueueFrontCell`/`QueueEntranceDirection`; a non-path
+   outside cell snaps to the nearest path cell, `RIDES-028`) and linked to the guest
+   payment bridge.
+4. **Queue**: right after the ride, as in the HUD (placing a HasQueue ride switches to
+   the queue tool, `BIN:STP-PPC:0x1007497C`). N = ⌈queue limit / 4 per cell⌉, capped at
+   `QueuePaths.MaximumCells` (25, `QUEUE-013`). For a HasQueue ride the limit is 100,
+   so **N = 25**: the longest queue the runtime builds. With it, the data limit, not
+   the cells, decides how many guests queue (`MaximumQueueLength` = min(100, 4N) = 100).
+   Each cell goes through `Level.BuildQueueCell`, the queue tool's per-cell code
+   (recompute, `QueuePaths.CheckExtend`, `ParkEconomy.TrySpendCell(Queue)` at
+   `Costs.QueueCell` = $75, `QueuePaths.TryExtend`). The blocked-cell test is
+   `Level.IsQueueBlocked`'s rule over the gate's park (`QUEUE-012`). Belly Bounce's
+   queue runs from the front (42,20) around the ride to the back (46,24). Guests join
+   from the spine cell (47,24).
 5. **Staff**: the first mechanic and the first handyman in the hiring pool are hired
    with `ParkEconomy.Hire`.
 
@@ -100,26 +120,83 @@ Every row is sampled every tick.
 | Row | Pass rule | Notes |
 | --- | --- | --- |
 | `build.*` | the piece was placed and bought through the player-facing build flow, and its entrance/exit is reachable from the park entrance | a piece the runtime cannot place is a FAIL row; nothing is faked |
-| `build.paths`, `build.queue` | **always FAIL today** | no player-facing path or queue-path builder exists; the gate's scripted spine (GATE-002) does not count as building paths |
+| `build.paths` | every segment laid completely by `ParkPathBuilder` (straight, snapped); the builder's charge equals built cells × `Costs.PathCell` and equals the balance drop; no path cell exists that neither the level (MAP InitialPath) nor the builder laid; and the park entrance reaches every placed object's entrance cell and the queue's join cell | decided after the objects and the queue are placed; cells written around the builder or laid without charging fail it |
+| `build.queue` | N cells laid through `Level.BuildQueueCell`, charged N × `Costs.QueueCell`, the ride's `QueueSizeInCells` = N and its cells are the ones laid, a `JoinCell` reachable from the park entrance, `MaximumQueueLength` = min(limit, 4N); **and** after the run, guests stood on the queue cells (state `Queueing` on a queue cell) and boarded from them (`GuestSimulation.QueueWaitCompleted`) | decided after the run; the HUD click route itself is not exercised (no HUD without a GPU) |
 | `time.monotonic` | guest time, economy tick and each object's script time strictly increase and are finite and ≥ 0; the park-clock seconds never decrease | the park clock moves in whole turns (every ~14.9 ticks), so it can only be non-decreasing |
 | `economy.income-and-expenses` | at least one income and one expense category got non-zero ledger amounts **during the run** (setup costs not counted) | categories are `LedgerCategory` |
 | `economy.ledger-consistent` | at every tick, balance = opening balance + Σ income − Σ expenses over every closed month and the open month | ledger history holds 144 months; the run closes about 10 |
 | `guests.flow` | at least one guest arrived, was admitted, used the attraction, the shop and the toilet (entered `Using` there), and an admitted guest left the simulation | counts per stage plus `BoardedTotal` per attraction |
-| `queues.no-stuck-queue` | **always unresolved** (see below) | raw max wait, mean, still-queued, longest stall per attraction |
-| `paths.no-unreachable-goal` | every attraction's entrance and exit are reachable from the park entrance, and no guest stays in `GoingToRide` towards an entrance it cannot reach for two consecutive ticks | the existing give-up rule is `Confused` (`GuestSimulation.UpdateGoingToRide`); leaving guests without a reachable lane vanish (documented GuestSimulation simplification) and are counted |
+| `queues.no-stuck-queue` | **FAIL** on a derived progress violation (below); otherwise **UNRESOLVED** | per attraction: waits (from `QueueWaitCompleted`, park turns × 248 ms), queue maximum, head-not-ready streak and its bound, blocked evaluations, called age; for Belly Bounce the §9b wait bound with τ |
+| `paths.no-unreachable-goal` | every attraction's entrance and exit are reachable from the park entrance, and no guest stays in `GoingToRide` towards a join cell (the back of the queue, else the entrance cell) it cannot reach for two consecutive ticks | the existing give-up rule is `Confused` (`GuestSimulation.UpdateGoingToRide`); leaving guests without a reachable lane vanish (documented GuestSimulation simplification) and are counted |
 | `rides.scripts-run` | at every tick, no placed object's script is `Faulted` or `Halted`, and each ends the run `Running` or `Waiting` | the gate opens every placed object and never closes or removes it. `RideVM` reaches `Halted` only by running past its last instruction (`RideVM.RunSlice`) or through `Stop()` (`OriginalObjectRuntime.Stop`: object removed or level torn down). Closing is `VAR_RIDECLOSED` (`OriginalObjectRuntime.Close`) and leaves the script running, so the runtime has no legitimate halted state for an open object. A completed cycle is not required (RIDES-023: BOUNCE never toggles `VAR_RUNNING`) |
-| `staff.work` | wages were paid, **and each staff type is hired and does its own work**: the mechanic made ≥ 1 repair if a ride needed one (a `RideWorn` or `RideBrokeDown` event, the jobs `ParkEconomy.DispatchMechanics` takes), and the handyman cleaned litter if litter existed (peak > 0 or any litter dropped) | removing or idling either staff type fails the row; staff exist only in `ParkEconomy` |
+| `staff.work` | wages were paid, **and each staff type is hired and keeps doing its own work**: every `RideWorn`/`RideBrokeDown` event is followed by a `RideRepaired` for that ride within the repair window, and litter left from an earlier tick shrinks at every park-hour update (see "Staff windows"); also ≥ 1 repair if one was needed and some cleaning if litter existed | removing, idling, or idling after the first job fails the row (first violation tick); a repair whose window runs past the end is pending, not a failure; staff exist only in `ParkEconomy` |
 | `determinism.same-seed` | the DET node owns fixes, but a FAIL still sets exit code 1: the whole scenario runs twice in one process and both hashes are compared | see below |
 
-**Queue bound.** No original rule for queue or ride-cycle time has been traced.
-The values the runtime has are all approximations: queue length 4 × capacity
-(`GuestSettings.QueueLengthPerCapacity`, GUESTS.md), `VAR_DURATION` written raw
-from `Upgrades[0].InitDuration` (`RIDES-016`), and BOUNCE holding a guest
-`VAR_DURATION` seconds (an inferred unit). A pass threshold built from them would be
-invented, so the row is **unresolved** and reports raw values. As a reference only,
-not a bound, it also reports `(ceil(max queue / capacity) + 1) × InitDuration`. For
-Belly Bounce that is (20 / 5 + 1) × 30 = 150 s. A queue that is non-empty but has no
-boarding is measured as the "longest stall".
+**Queue progress (QUEUE-plan §9a).** The gate subscribes to
+`RideVisitorBridge.AdmissionChecked` (one evaluation per park turn) and reads the
+bridge's counters (`HeadNotReadyStreak`, `MaximumCalledAgeTurns`). The old
+`AdmissionCheck.Stalled` could never become true (review QUEUE-V, S1) and is not used.
+The row **fails** on either of these:
+
+- **Head not ready beyond its bound.** The gates hold and there is a head, but it is not
+  standing at position 0 (`AdmissionCheck.HeadNotReady`). This is counted per head: the
+  streak restarts when another guest becomes head. The bound comes from the guest's
+  own state-11/12 rules (`HeadNotReadyBound`), with N the ride's queue cells:
+  - the walk of 2N + 2 cells (join step, up to N cells to its recorded position, up to N
+    back to position 0, one cell of sub-cell offsets) at the slowest walk speed
+    (`WalkSpeedCellsPerSecond` × 0.7 below 20 energy);
+  - the move-up wait at gap ≤ 2: trunc(1.2 × 2) turns, then the move on the next update;
+  - two interludes of 11 turns. Interludes start only when the guest stands at its
+    recorded position: one may be running when the guest becomes head, and one may start
+    on arrival at position 0 (the guest updates before the ride in a turn). A third needs
+    another 30-turn window, and the guest is called first.
+  - one evaluation for the update order.
+
+  Belly Bounce (25 cells): 300 + 3 + 22 + 1 = **326 turns**. One-cell queues (shop,
+  toilet): 24 + 3 + 22 + 1 = **50 turns**.
+- **Blocked handshake.** `VAR_LETMEON` is non-zero while nobody is called, with a queue,
+  on **two consecutive** evaluations (§9a's two-update rule). Only the bridge writes a
+  guest id into `VAR_LETMEON` (for the called guest), and the script consumes it or the
+  bridge clears it on withdrawal, so with nobody called it has no way to clear. One such
+  evaluation that recovers is not a failure. Riders and `VAR_ONRIDE` are deliberately
+  not part of the rule: a shop script keeps `VAR_ONRIDE` at capacity for a few
+  evaluations after serving a guest the bridge never saw (mutation `stall-one-update`).
+
+Otherwise the row is **unresolved**. Two quantities have no derived bound:
+
+- **Call to boarding.** This includes the script's consumption of `VAR_LETMEON`, the
+  RSE loop latency, which is untraced. `calledAgeMaxTurns` is reported (3 turns for
+  Belly Bounce).
+- **The Belly Bounce wait bound (§9b).**
+  `W(p) ≤ (⌊p/CAP⌋ + 1) × (DUR + 1 s + τ)` and `W_max = ⌈Qmax/CAP⌉ × (DUR + 1 s + τ)`,
+  with CAP = 5 and DUR = 30 from the ride's queue parameters and Qmax =
+  `MaximumQueueLength` = 100. τ, the boarding latency per slot turnover, is not traced.
+  The gate reports it with the explicit parameter τ = 0 s (**[APPROX:GATE-003]**, so
+  W_max = 20 × 31 = 620 s is a lower bound) next to the τ the run implies:
+  `τ_measured = max_p (W(p) / (⌊p/CAP⌋ + 1)) − 31 s`, from each boarding's wait and its
+  recorded join position p. In the baseline τ_measured = 0 (the worst wait is exactly one
+  31 s turnover from position 4), and no wait exceeds W(p) at τ = 0. This is evidence,
+  not a pass threshold.
+
+Waits are tracked with `Guest.IsInQueue`, which includes walking up (state 12). A
+guest that leaves the queue without boarding is counted only on an in-queue →
+not-in-queue transition that is not a boarding. Before this change, every move-up
+counted as a completed wait plus a departure.
+
+**Staff windows.** Both come from `ParkEconomy`'s staff timing. Every turn runs at
+least one park-hour update, because a turn is 3,750 park-clock seconds and an hour is
+3,600.
+
+- **Repairs.** A wear or breakdown event is raised at a day end. The next turn's hour
+  update dispatches a free mechanic, and a job takes `WorkDuration` hours (at least 1).
+  With one job per ride ahead of it, the repair must land within
+  1 + rides × max `WorkDuration` turns of the hired mechanics' grades. For the gate's
+  grade-1 mechanic: 1 + 1 × 60 = **61 turns** (~15 s). An event whose window ends after
+  the run is reported as pending.
+- **Litter.** `ParkEconomy.CleanLitter` runs at every hour update with every available
+  handyman. Litter present at the end of a tick must therefore be smaller (or zero)
+  after the next turn boundary. Sales add litter earlier in the same tick, so this can
+  misfire only if one tick's sales exceed an hour of cleaning.
 
 **Hashes.** `GuestSimulation.ComputeStateHash` (raw guest hash) includes guest
 attraction ids. Since the DET node these are allocated per park by its
@@ -137,7 +214,7 @@ M3-GATE-V, divergences D1 to D6, after the fixes above):
 | # | Divergence | Effect on the rows |
 | --- | --- | --- |
 | D2' | The object build rule also refuses the gate's own path cells (`IsBlocked`). `ParkObjects` does not know them because no in-game path exists. | Stricter only: it can refuse a site the game allows, never the reverse. |
-| D4 | Paths are laid by editing `GuestPathGrid` (GATE-002). | `build.paths` FAILS for it. The other rows are measured on these scripted paths. |
+| D7 | The queue's blocked-cell test is `Level.IsQueueBlocked`'s rule written over the gate's park (terrain check, gate occupancy); the queue cells are clicked by the gate's route search, not by a cursor. | None for the rows: every cell goes through `Level.BuildQueueCell` like a click. |
 | D6 | No `Entity.Update`, `OriginalObject.UpdateTransforms` or frame-paced `FixedStepClock` (catch-up cap, `SimulationTimeScale`). Objects are `OriginalObjectRuntime`s, not `OriginalObject`s, because `ParkObjects` creates GPU entities. | Render side only. A shared CPU-only simulation core for `Level` and the gate (review S5) would remove the copied tick order and object list. |
 | — | The clicked cell is picked by the gate's site search, not by a cursor ray (`Level.TryGetGridCell`). | None for the rows: every clicked cell goes through `Level.GetCentredAnchor` like a click. |
 
@@ -155,51 +232,44 @@ apart from `wallSeconds`.
 | Row | Verdict | Evidence |
 | --- | --- | --- |
 | build.entrance | PASS | 10 InitialPath cells, lanes A/B valid, Bus/Gates/Lights, fee $20 |
-| build.paths | **FAIL** | no in-game path builder. Scripted substitute: 14 cells (47,21)→(47,35), $280 |
-| build.attraction | PASS | Belly Bounce, clicked (44,22) → anchor (46,21) rot 270, entrance (47,22), exit (42,22) snapped to (47,22), $500, capacity 5 |
+| build.paths | PASS | `ParkPathBuilder.BuildSegment` (47,21)→(47,35): 14 built, 1 existing (the walkway end), $280 charged by the builder and from the balance, 0 stray path cells; reached Belly Bounce (47,20), Drinks Shop (47,23), Small Toilet (47,24), queue join (47,24) |
+| build.attraction | PASS | Belly Bounce, clicked (44,20) → anchor (43,21) rot 90, queue front (42,20) (entrance cell: nearest path (47,20)), exit opens onto (47,20), $500, capacity 5 |
+| build.queue | PASS | 25 of 25 cells through `Level.BuildQueueCell`, charged $1,875 (25 × $75), front (42,20) → back (46,24), join cell (47,24) reachable, maximum queue 100; 383 guests stood on the queue cells, 286 boarded from them |
 | build.shop | PASS | Drinks Shop at (48,23) rot 90, $650, $30 per drink |
 | build.toilet | PASS | Small Toilet at (48,24) rot 90, $100 |
-| build.queue | **FAIL** | no placeable queue path: guests never walk queue cells (`GuestPathGrid`), the queue is virtual (slots at the entrance cell, max 20) |
 | build.staff | PASS | mechanic grade 1 ($150/month), handyman grade 2 ($60/month); no staff agents in the world |
 | time.monotonic | PASS | 0 violations; guest time 1800.000094 s (float accumulation), economy tick 108,000 |
-| economy.income-and-expenses | PASS | setup $1,530; income: gate $35,760, shops $51,870; expenses: staff $2,100, other $34,580 |
+| economy.income-and-expenses | PASS | setup $3,405; income: gate $35,760, shops $34,860; expenses: staff $2,100, other $23,240 |
 | economy.ledger-consistent | PASS | 0 violations in 108,000 samples, 10 months closed |
-| guests.flow | PASS | 1,800 arrived, 1,788 admitted, 0 turned back, 286 used the ride, 955 the shop, 158 the toilet, 1,672 left, 105 in the park at the end |
-| queues.no-stuck-queue | UNRESOLVED | Belly Bounce: max wait 149.95 s (reference 150 s), mean wait (all queues) 23.07 s, queue full 20/20, longest stall 28 s; still queued at the end ≤ 126.8 s; shop and toilet queues full (4/4) |
+| guests.flow | PASS | 1,800 arrived, 1,788 admitted, 0 turned back, 286 used the ride, 833 the shop, 156 the toilet, 1,649 left, 134 in the park at the end |
+| queues.no-stuck-queue | UNRESOLVED | 0 violations. Belly Bounce: queue max 51/100, 286 waits, max 254.4 s, mean 213.7 s; head not ready ≤ 106 of 326 turns; 0 blocked evaluations; called age ≤ 3 turns; W_max 620 s at τ = 0, τ measured 0 s, 0 waits above W(p). Shop/toilet: head not ready ≤ 9 / 2 of 50 turns, called age ≤ 1 / 7 turns. 52 guests left a queue without boarding |
 | paths.no-unreachable-goal | PASS | all targets reachable; 0 stuck guests; 0 Confused give-ups; 0 lane-less ejections |
 | rides.scripts-run | PASS | 0 faults, 0 halted ticks (Belly Bounce, Drinks Shop, Small Toilet waiting; Bus, Gates, Lights running) |
-| staff.work | PASS | 10 wage payments ($2,100); mechanic: 17 repairs for 17 worn/broken events; handyman: 810.5 litter items dropped, 810.5 cleaned; Belly Bounce state of repair 55 at the end |
-| determinism.same-seed | PASS | raw guest hash 00E874A92846742F in both in-process runs; attraction ids 4 5 6 in both; gate hash C4D8D348D84FF042 |
+| staff.work | PASS | 10 wage payments ($2,100); mechanic: 17 repairs for 17 worn/broken events, longest 14.6 s within the 61-turn window, 0 pending; handyman: 581 litter items dropped, 581 cleaned, 0 missed hour updates |
+| determinism.same-seed | PASS | raw guest hash 41F91296D1861ACD in both in-process runs; attraction ids 4 5 6 in both; gate hash E8BB1012535C346D |
 
-Totals: 13 pass, 2 fail, 1 unresolved; **exit code 1**. With `--no-determinism`:
-12 pass, 2 fail, 2 unresolved, exit 1.
+Totals: 15 pass, 0 fail, 1 unresolved; **exit code 2** (M3 not accepted). With
+`--no-determinism`: 14 pass, 0 fail, 2 unresolved, exit 2.
 
-### Which gameplay area the failures point at
+### Which gameplay area the open rows point at
 
-- **paths: `build.paths`.** There is no player-facing path builder. Needed: a path
-  tool in the HUD build flow (with the original path rules and costs; GATE-002 lists
-  the missing evidence). The gate must then build through it.
-- **paths / guests: `build.queue`.** There is no queue-path building. Guests use
-  a virtual queue at the entrance cell and never walk queue cells. Needed: a
-  queue-path builder, walkable queue cells in `GuestPathGrid`, and queue geometry
-  from `Info.Shape` (GUESTS.md "walking real queue cells").
-- **determinism (DET node): `determinism.same-seed` — resolved.** The static
-  `OriginalObjectRuntime.nextAttractionId` made raw guest hashes depend on earlier
-  objects in the process; the DET node allocates attraction ids per park and derives
-  every simulation stream from one world seed (docs/DETERMINISM.md), so the row now
-  passes.
-- **rides / guests: `queues.no-stuck-queue` (unresolved).** All three queues
-  fill to their approximated limit. Belly Bounce guests wait up to five full
-  30-unit cycles. Deciding this needs an original queue-time or cycle-time
-  rule, the `InitDuration` unit (`RIDES-016`) and the original queue length. Even
-  with every other row passing, this row alone keeps the exit code at 2: a ride that
-  stops taking guests while its script runs (review mutation `block-boarding`) is
-  not accepted.
+- **paths: `build.paths` — resolved.** PATH-I's builder lays and charges the paths.
+- **paths: `build.queue` — resolved.** The queue is laid through the queue tool's code
+  (QUEUE-I), charged, and walked by guests.
+- **rides / guests: `queues.no-stuck-queue` (unresolved).** This row alone keeps the
+  exit code at 2. It has no progress violation, but it cannot pass until the
+  call-to-boarding time (the script's `VAR_LETMEON` consumption) and τ are traced
+  (QUEUE-plan §10). A ride that stops taking guests (`block-boarding`) or a head that is
+  never ready (`never-called-head`) fails it.
+- **determinism: `determinism.same-seed` — resolved** by the DET node.
 
-Passing rows that rest on approximations rather than original rules: arrival
-rate and needs (GUESTS.md approximation table), wear/repair/cleaning (`ECON-021` to
-`ECON-024`), opening the park on load (`ECON-031`), the entrance/exit snap
-(`RIDES-028`) and the build rule (`RIDES-018`).
+Passing rows that rest on approximations rather than original rules:
+- arrival rate and needs (GUESTS.md approximation table);
+- wear, repair and cleaning (`ECON-021` to `ECON-024`), which also set the staff windows;
+- opening the park on load (`ECON-031`);
+- the entrance/exit snap (`RIDES-028`);
+- the build rule (`RIDES-018`);
+- the queue build rules (`QUEUE-012` to `QUEUE-014`).
 
 ## Mutation evidence
 
@@ -215,8 +285,34 @@ OPENTPW_M3_MUTATE=1 OPENTPW_GAME_PATH=/path/to/theme-park-world \
 
 Every mutation exits non-zero. `no-mechanic`, `no-handyman`, `idle-mechanic` and
 `idle-handyman` fail `staff.work`; `stall-ride` and `stall-ride-from-start` fail
-`rides.scripts-run`; `block-boarding` adds no failing row (the queue row stays
-unresolved) but cannot exit 0.
+`rides.scripts-run`. The v1/v2 files pin the rows as they were at their reviews
+(for example `block-boarding` leaving the queue row unresolved). Their baseline
+expectations predate DET and GATE-UPD.
+
+`tools/ppc-analysis/lanes/review/test_m3_gate_v3.py` (GATE-UPD) adds hooks on top of
+v1/v2 and pins the current rows:
+
+| Mutation | Row | Result |
+| --- | --- | --- |
+| baseline | all | no row fails; the queue row is unresolved with 0 violations; exit 2 |
+| `paths-direct-write` (the old stand-in: cells charged and written around the builder) | `build.paths` | **FAIL** (0 built, 14 stray path cells), the only failing row |
+| `paths-no-charge` (`ParkPathBuilder` without the economy) | `build.paths` | **FAIL** (charged $0 for 14 cells) |
+| `block-boarding` (v1: `VAR_LETMEON` = −1 from tick 18,000) | `queues.no-stuck-queue` | **FAIL** (blocked handshake), the only new failing row |
+| `never-called-head` (the head is held in an interlude from tick 18,000) | `queues.no-stuck-queue` | **FAIL** (head not ready beyond 326 turns) |
+| `stall-one-update` (shop `VAR_LETMEON` = −1 for one evaluation) | `queues.no-stuck-queue` | stays UNRESOLVED (1 blocked evaluation) |
+| `idle-mechanic-after-first-repair` (v2) | `staff.work` | **FAIL** (wear not repaired within 61 turns) |
+| `idle-handyman-after-first-clean` (v2) | `staff.work` | **FAIL** (litter not reduced at an hour update) |
+| `queue-bypass-economy` (`Level.BuildQueueCell` without the economy) | `build.queue` | **FAIL** (charged $0 for 25 cells) |
+
+Static checks in v3:
+- `Level.BuildQueueCell` keeps its old steps in order;
+- the gate lays the queue only through that code and the paths only through `ParkPathBuilder` (no `SetPath`/`TryBuyCells` in the gate);
+- the queue row reads the bridge counters and never `Stalled`.
+
+```sh
+OPENTPW_M3_MUTATE=1 OPENTPW_GAME_PATH=/path/to/theme-park-world \
+  python3 -m unittest -v tools/ppc-analysis/lanes/review/test_m3_gate_v3.py
+```
 
 ## Not measured
 

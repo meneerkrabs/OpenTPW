@@ -48,6 +48,20 @@ public class M3GateTests
 		StringAssert.StartsWith( summary[3], "FAIL" );
 		StringAssert.Contains( summary[3], "first violation tick 7" );
 	}
+
+	/// <summary>The queue row's head bound follows the state-11/12 rules: walk 2N + 2 cells at 0.7 x walk speed, the gap-2 move-up wait, two interludes and one update.</summary>
+	[TestMethod]
+	public void HeadNotReadyBoundFollowsTheQueueRules()
+	{
+		// 25 cells: 52 cells / 0.7 cells/s = 74.29 s = 299.5 turns of 248 ms -> 300; + trunc(1.2 x 2) + 1 = 3; + 2 x 11; + 1.
+		Assert.AreEqual( 326L, M3GateRun.HeadNotReadyBound( 25, 1.0f ).Turns );
+		// One cell: 4 / 0.7 = 5.71 s = 23.04 turns -> 24; + 3 + 22 + 1.
+		Assert.AreEqual( 50L, M3GateRun.HeadNotReadyBound( 1, 1.0f ).Turns );
+		Assert.AreEqual( 50L, M3GateRun.HeadNotReadyBound( 0, 1.0f ).Turns );
+		// A faster walk only shortens the walk term.
+		Assert.AreEqual( 26L + 150, M3GateRun.HeadNotReadyBound( 25, 2.0f ).Turns );
+		StringAssert.Contains( M3GateRun.HeadNotReadyBound( 25, 1.0f ).Derivation, "2 interludes x 11" );
+	}
 }
 
 /// <summary>Short M3 gate run on original data (inconclusive without OPENTPW_GAME_PATH).</summary>
@@ -81,13 +95,24 @@ public class M3GateAssetTests
 		// Stability invariants the evaluator must establish on any healthy run.
 		foreach ( var id in new[] { "build.entrance", "build.attraction", "build.shop", "build.toilet", "time.monotonic", "economy.ledger-consistent", "rides.scripts-run" } )
 			Assert.AreEqual( M3GateVerdict.Pass, report[id].Verdict, report.ToSummary() );
-		// No player-facing path or queue builder exists, so both build rows fail and the gate cannot exit 0.
-		Assert.AreEqual( M3GateVerdict.Fail, report["build.paths"].Verdict );
-		StringAssert.StartsWith( (string)report["build.paths"].Evidence["inGameBuilder"]!, "no in-game path builder" );
-		Assert.AreEqual( M3GateVerdict.Fail, report["build.queue"].Verdict );
-		Assert.AreEqual( 1, report.ExitCode );
-		// Without an original bound the queue row never passes.
-		Assert.AreEqual( M3GateVerdict.Unresolved, report["queues.no-stuck-queue"].Verdict );
+		// Paths are laid by the player-facing builder (ParkPathBuilder): 14 cells, each charged $20, every entrance reached.
+		var paths = report["build.paths"];
+		Assert.AreEqual( M3GateVerdict.Pass, paths.Verdict, report.ToSummary() );
+		Assert.AreEqual( 14, (int)paths.Evidence["cellsBuilt"]! );
+		Assert.AreEqual( 14L * 20, (long)paths.Evidence["charged"]! );
+		Assert.AreEqual( 0, (int)paths.Evidence["strayPathCells"]! );
+		// The unresolved queue row keeps the gate at exit 2: M3 is not accepted.
+		Assert.AreEqual( 2, report.ExitCode, report.ToSummary() );
+		// The queue is laid through the queue tool's code, charged per cell, and walked: 25 cells for the 100-guest limit.
+		var queue = report["build.queue"];
+		Assert.AreEqual( M3GateVerdict.Pass, queue.Verdict, report.ToSummary() );
+		Assert.AreEqual( 25, (int)queue.Evidence["cellsLaid"]! );
+		Assert.AreEqual( 25L * 75, (long)queue.Evidence["charged"]! );
+		Assert.AreEqual( 100, (int)queue.Evidence["maximumQueueLength"]! );
+		Assert.IsTrue( (int)queue.Evidence["boardedFromQueueCells"]! > 0, report.ToSummary() );
+		// No derived progress violation; the call-to-boarding time and tau are untraced, so the row stays unresolved.
+		Assert.AreEqual( M3GateVerdict.Unresolved, report["queues.no-stuck-queue"].Verdict, report.ToSummary() );
+		Assert.AreEqual( M3GateVerdict.Pass, report["staff.work"].Verdict, report.ToSummary() );
 		Assert.IsTrue( (long)report["guests.flow"].Evidence["admitted"]! > 0, report.ToSummary() );
 		Assert.IsNotNull( JsonNode.Parse( report.ToJson() ) );
 	}

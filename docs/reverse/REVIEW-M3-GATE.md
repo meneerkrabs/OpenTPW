@@ -600,3 +600,282 @@ OPENTPW_M3_MUTATE=1 OPENTPW_GAME_PATH=/path/to/theme-park-world OPENTPW_M3_SUBJE
   python3 -m unittest -v tools/ppc-analysis/lanes/review/test_m3_gate_v1.py \
   tools/ppc-analysis/lanes/review/test_m3_gate_v2.py tools/ppc-analysis/lanes/review/test_m3_gate_v3.py
 ```
+
+# Round 4 (M3 acceptance candidate)
+
+Subject: the gate stack `64616cd` (round 3) → `5f2a918` (GATE-FIX2, S1–S4) → `863a6f8` (BOARD-R) → `5ce5cc4`
+(BOARD gate) → `376f5c4` (WALK-R) → `33f8584` (WALK terms w = 20 and w₂ = 15, scope conditions W2–W4, walk-stall,
+straight queue front). The author reports 16 pass / 0 fail / 0 unresolved, exit 0, identical twice. This round decides
+whether milestone M3 (COMPLETION-PLAN.md §M3) can be accepted. The rules: the gate may only become stricter, M3 is
+accepted only at exit 0, every row must have a mutation that fails it, and every bound must be traced or registered.
+Since 2026-10-10, registered approximations are allowed and hidden ones are not. Nothing original was executed. The
+binary was only decoded statically (SHA-256 `04809cd4ccee5433…`).
+
+## Round 4 decision
+
+**M3 is not acceptable at `33f8584` as it stands. It becomes acceptable once B1 and B2 below land.** Both fixes only
+register and document approximations. They change no verdict and no threshold. The merged tree (fork main `e71434d` +
+`33f8584`) passes everything else asked for: 16/0/0 at exit 0, identical twice, the full tests with and without assets,
+the three native smokes, the evidence runner, and every mutation (v1–v4).
+
+## Round 4 blockers
+
+**B1. `HeadNotReadyBound` (rule (a): 194 turns for Belly Bounce, 50 for the shop and toilet) uses an unregistered
+approximation.** The bound walks the head at `GuestSettings.WalkSpeedCellsPerSecond` = 1.0 cell/s × 0.7.
+`GuestSettings.cs:46` marks that as "approximation: no original source". It has no APPROX ID, and the register at
+`33f8584` has only GATE-001. WALK-plan §4 shows that the original has no 0.7 factor. Its floor is 0.12 cell per turn
+(0.484 cell/s at s = 0.6). With that speed the same formula gives more than 194 turns (v4
+`Arithmetic.test_head_not_ready_bound_uses_the_opentpw_walk_speed`).
+
+Rule (a) can only fail a run, so it cannot cause a false acceptance. But the row still reads "no head stuck beyond its
+**derived** bound", and for the shop and toilet rule (a) is the only bound on head readiness. M3-GATE.md mentions it
+only in prose ("a consistency check on the runtime's own timing until WALK-I"). Under the user's rule that is a hidden
+approximation. Replacing it with a bound derived from WALK is not possible yet: WALK-plan §11.7 says the per-cell term
+needs its own enumeration in WALK-I. So register it. Exact fix:
+
+- `M3GateApproximations.All`: add `("GATE-004", "the head-not-ready bound of queues.no-stuck-queue (rule (a)) walks the
+  head min(2·max(1, N) + 2, N + 4) cells at OpenTPW's GuestSettings.WalkSpeedCellsPerSecond (1.0 cell/s, no original
+  source) × 0.7 below 20 energy: a check of OpenTPW's own queue-walk timing, not an original rule", "WALK-I: the traced
+  per-cell walk bound (WALK-plan §11.7) for the walk term")`.
+- `M3Gate.HeadNotReadyBound`: add a `// [APPROX:GATE-004] … — evidence needed: …` line with the same text. Start the
+  derivation string with `[APPROX:GATE-004] OpenTPW walk timing: `.
+- M3-GATE.md:
+  - add GATE-004 to "Passing rows that rest on approximations";
+  - in the row title and in the head-not-ready bullet, say "bound from OpenTPW's walk timing (GATE-004)" instead of
+    "derived bound".
+
+**B2. The head check and W(p) at small p leave out the walk from the join cell.** BOARD-plan §7.1 starts H's
+head-ready phase with a new head that already stands at its recorded slot (state 11, gap ≤ 2: move-up wait 2 + 1, then
+w₂ for slots 1–3 → slot 0). But a guest that joins an empty or short queue appends at list position p. It then walks in
+state 12 from the back cell to the slot for p, which is up to N − 1 = 24 cells away (QUEUE-plan §4 step 4, `0xee604`).
+H has no term for that walk, so §7.2's W(p) for small p and check 3 (W(0) = H + R + 1 = 178 from the turn the guest
+became head) are not derived for such guests.
+
+The probe proves it (round-4 probe on `33f8584`: head cell index when the guest became head, against its turns from
+head to boarding). Of 286 boardings as head:
+- 285 heads became head inside cells 0–1. At most 104 turns.
+- One became head at cell index 24, in `MovingUpQueue`: the run's first joiner on the empty 25-cell queue. It took
+  **108 turns**. That is the baseline maximum "head to boarding 108 of 178".
+
+OpenTPW walks those 24 cells in about 100 turns at 1.0 cell/s = 0.248 cell per turn. The traced floor is 0.12 cell per
+turn (base 60), which needs about 200 turns for the walk alone. A faithful WALK-I would therefore fail the 178-turn
+check for slow guests.
+
+The gate is stricter than the derivation here, never more lenient, so the PASS stands. But "no term of the bound rests
+on OpenTPW's walk model any more, so it carries no approximation tag" (M3-GATE.md) is not true in effect: the walk from
+the join cell passes only because OpenTPW walks fast. Exact fix:
+
+- register `("GATE-005", "the boarding bound's head check (W(0) = H + R + 1 from the turn a guest becomes head) and
+  W(p) for small p assume the head already stands at its slot; the state-12 walk from the join cell to the slot (up to
+  N − 1 cells, QUEUE-plan §4) is not a term of H, so those waits are judged against a bound tighter than the traced
+  rules give (stricter, never more lenient)", "WALK-I's per-cell walk bound, then a join-walk term in H for the head
+  check and W(p)")`;
+- put a `// [APPROX:GATE-005]` comment at `CheckBoardingAges` and at `BoardingWaitBound`;
+- in M3-GATE.md, replace the "no approximation tag" sentence. In the baseline row, note that the 108 turns come from the
+  first joiner walking the empty queue;
+- the BOARD-R owner adds this to BOARD-plan §2 as an assumption, A5: the guest stands at its slot when it becomes head.
+  The gate does not weaken; it keeps judging these waits.
+
+With B1 and B2: `fidelity_register.py --write` gives **185** unresolved IDs on the merged tree (183 + GATE-004 +
+GATE-005), and every verdict stays the same.
+
+## Round 4 verdicts
+
+| Item | Verdict | Evidence |
+| --- | --- | --- |
+| H = 56, R = 121, P = 4, W(0) = 178, τ_max = 277 turns = 68.696 s, W_max = 8,021 turns = 1,989.208 s | **recomputed, match** | P = 1 + ⌈500/248⌉ = 4. H₀ = 1 + (trunc(1.2·2) + 1) + (10 + 1) + 1 + 1 + P = 21. H = 21 + 20 + 15. R comes from the UNBOUNCE rule (below). τ_max = 5·56 + 121 + 1 − 31,000/248 (= 125 exactly). W(99) = 100·56 + 20·121 + 1. Pinned in v4 `Arithmetic.test_terms` |
+| 194-turn head-not-ready bound | **recomputed (min(52, 29) = 29 cells / 0.7 cells/s / 0.248 s → 168; + 3 + 22 + 1 = 194); OpenTPW timing, unregistered** | B1 |
+| Decoded operands (independent, llvm-mc on the PEF code section) | **as cited** | **`0xffe38`**: `min(s, 2.0)` (float at TOC slot 0x5668 = 2.0). `+24 = fctiwz(0.4·s·65536)`, `+28 = fctiwz(0.2·s·65536)` (doubles 0x5658/0x5650/0x5660 = 0.4/0.2/65536). Each is clamped by `cmpwi 655; li 655` (`0xffe88..0xffea8`), so the floor is 655 = 0.00999 cell. Smoothing constants: 3.0 and 0.25 (0x550c, 0x5508); move-up factor 1.2 (0x55a0). **BOUNCE `0xadfb4..0xadfd8`**: deadline = `mulli r5, dur, 1000` + now → `+8`; start = now → `+12`; `+108` += 1. **UNBOUNCE `0xae020`**: `cmpw deadline, now; bf lt` skips unless deadline < now. Then (now − start) mod 1000 by `mulhw 0x10624DD3 >> 6` and `mulli 1000`, /200 by `mulhw 0x51EB851F >> 6`, and it releases only when the quotient is 0 (`add.`/`bf eq`). **`0xfe628` arrival `0xfe7ac..0xfe7d8`**: `FixMul(0x20000 − 26215 = 104857 = 1.6, +4)`, octile = a + b − min/2, `cmpw octile, r3; bf lt` → `stb 1, +96`. With radius 13107 that is 20971 = 0.32 cell. The waypoint factor is `0x20000` = 2.0 (`0xfe850`). **Interlude `0xef6d8`**: restore when `turn > +520 + 10` (11 turns). **`0xed5a0`**: `cmplwi turn − +520, 30` gates the next one. **WAIT `0xb06f8..0xb0708`**: stores the deadline at `+160`, rewinds 2 words, clears the budget |
+| Decision (a): straight queue front | **acceptable for M3; a corner front cannot be accepted silently** | The front and the cells behind it are still laid by `Level.BuildQueueCell`, the queue tool's code; only the gate's route choice changed. A straight front segment is a normal player layout. New mutation `corner-front` (v4): the route turns at the front (B (42,19) → Q (42,20)). `build.queue` still PASSes (25 cells, back (46,24), join (47,24)). `walkScope` = "front segment not straight … WALK-plan W3", 0 waits judged, queue row **UNRESOLVED**, exit **2**. M3-GATE.md states the W3 choice in "Scripted park" item 4 and in the boarding-bound section. See S2 for multi-ride parks |
+| Decision (b): every queued guest's age, every turn; the head against W(0) | **derived, apart from B2** | Ages: BOARD-plan §8 assertion 3 applied at every evaluation. A guest still queued at age > W(p) has already missed "boards within W(p)", so judging it early is sound, and it also catches guests who give up later. The head: §7.2 restarted at J′ = the turn the guest became head, n = 1. B₀ ≤ J′ (the previous guest left the list after it was consumed); F₁ ≤ J′ + R (the riders then on board); so the boarding is ≤ J′ + R + H, and the guest leaves the list ≤ 1 turn later. H's single interlude covers an interlude that is running when the slot frees. The induction still assumes the head stands at its slot: B2 |
+| Decision (c): R from the rule | **correct; the closed form is wrong in BOARD-plan §5** | `BounceHoldTurns` is the decoded rule: polls P·j + 1, elapsed > 1000·DUR, elapsed mod 1000 < 200. It gives 29 for DUR ≤ 7 (DUR 7 matches 4·7 + 1 by coincidence), 4·DUR + 1 for 7 ≤ DUR ≤ 30, and 529 for DUR 31. BOARD-plan §5's "DUR ≤ 30: R = 4·DUR + 1" is wrong for DUR ≤ 6 (v4 `test_hold_rule_versus_closed_form`). The four traced rides have DUR 10 and 30, so no judged ride is affected |
+| Decision (d): `HeadNotReadyBound` uses OpenTPW's walk speed | **yes, a hidden approximation** | B1 |
+| walk-stall (w = 20, w₂ = 15) | **both kinds fail on a fault** | `hold-move-up` (v3): move-up 16 > 15. New `hold-stand-walk` (v4): state 13 pinned 30 turns, FAIL at tick 18,362 "state 13 walk to the stand point for 21 turns > w 20". It is the only failing row; head to boarding stays 108 |
+| Slots held > R, head > W(0) | **covered; the threshold sits exactly at 178** | v3 `hold-slots-much-longer`, `never-release` and `head-delayed-170-turns` fail. New bracket (v4): when a boarding fills the last of the 5 slots after tick 18,000, every slot is set to free in exactly X turns. `freeze-slots-160`: head to boarding 165 ≤ 178, PASS. `freeze-slots-190`: FAIL at tick 20,728, "not boarded 179 turns after becoming head > bound 178 (H 56 + R 121 + 1)". Rules (a), (b) and walk-stall stay silent |
+| `hold-slots-longer` (+30 s ≈ 2R) passing | **correct under the derived bound, not a weakness** | W(0) bounds the original's worst case: a slot that frees R after the head became head, plus one full H. With a 2R hold and serial boarding the head waits for the oldest of 5 riders, about 2R/5 ≈ 48 turns in steady state. The worst case is the tick-18,000 transient, measured at 134 ≤ 178. An implementation whose waits stay inside the original's worst case cannot be failed without a tighter threshold that has not been derived. The freeze bracket shows that the head check fires at its derived value |
+| Each age check fails on its own | **yes** | `never-release-early+no-head-check`: the per-turn age check FAILs at tick 10,208, guest 9 "queued 580 turns from position 5 > bound 579". `release-at-1000+no-head-check+no-age-check`: the completed-wait check FAILs at tick 14,942, "wait 898 turns from position 5 > bound 579". The end-of-run check calls the same `Judge` as the completed-wait check. Note: W(p) for p ≈ 40–50 is about 3,800 turns, so in this park the head check carries most of the row's sensitivity. With the head check disabled, `release-at-600` passed with head to boarding 372 turns |
+| Determinism with S4 | **holds; the minute hashes cover less state than the final hash (S1)** | The minute hash is `ComputeGateHash`. It covers guest id, type, state, position, hunger, thirst, toilet, happiness, money and normalised attraction ids, plus the economy and every script's variables and clock. It does not cover the cell map, the bridges' queue order, called guest and BOUNCE slots, or the guests' RNG, energy, nausea, queue position and move delay; the raw guest hash covers those, but only at the end. `diverge-second-run-cellmap` (a placement counter at (0,0) +1 in run 2) and `diverge-second-run-energy` both **PASS**: this pins the gap. The `strict-hash` hook adds all of those to every minute hash. It **PASSes** the baseline on `33f8584` and on the merged tree, so no divergence is hidden there, and `strict-hash+diverge-second-run-cellmap` **FAILs** at minute 1 |
+| Every row has a failing mutation | **yes** | v1 26, v2 10, v3 25: 61/61 on `33f8584` and 61/61 on the merged tree. v4 14/14 on both. Row → fault: time (`zero-step`), ledger (`ledger-skew`), income (`close-park`), flow (`close-toilet`), each build row (`no-gates`, `paths-direct-write`, `queue-one-short`, `unbuyable-*`, `no-mechanic`), queue (`block-boarding`, `freeze-slots-190`, `hold-stand-walk`, …), reachability (`cut-path`, `cut-spine-start`), scripts (`stall-ride`), staff (`idle-*-after-first-*`), determinism (`diverge-second-run`, `-late`) |
+
+### S1 (should fix; not blocking). Make the minute hash cover the whole state
+
+In `ComputeGateHash`, before `return hash;`, add:
+- `guests.ComputeStateHash()`;
+- every cell of `grid.Cells` (type | flags << 8 | links << 24 | queue link << 32 | placement count << 40);
+- for each placed bridge: the `Queue` ids, `CalledGuest`, and the BOUNCE slots (guest, `Until` bits).
+
+This is v4's `strict-hash` hook word for word. Then flip `test_minute_hash_misses_cell_map_and_energy_divergence`. The
+baseline hash value changes; no verdict does.
+
+### S2 (should fix before a park with more than one traced ride). Unjudged traced rides must keep the row unresolved
+
+The verdict is PASS when no rule is violated and **any** wait was judged. A park with a straight-front BOUNCE ride and
+a corner-front one would pass, and the second ride would only be listed with its `walkScope`. For the M3 park (one ride)
+this cannot happen: `corner-front` gives UNRESOLVED. Exact fix:
+- PASS only when every object with a non-null `Boarding` has judged > 0 and an empty `WalkScope`, else UNRESOLVED;
+- add "judged only for straight front segments (WALK-plan W3); otherwise UNRESOLVED" to the row's `rule` string.
+
+### S3 (with the merge). Documentation that main makes stale
+
+The merged baseline differs from M3-GATE.md's table only where main's traced staff grades (`1198a93`) and traced ride
+wear (`3ddf2aa`, #4) change the economy:
+- handyman grade 3 ($80/month) instead of grade 2 ($60);
+- wages $2,300 instead of $2,100;
+- 4 worn/broken events and 4 repairs instead of 17, longest 14.383 s, state of repair 39;
+- gate hash `AFDCA347E564786E` instead of `F1666E8C69E092BE`.
+
+Everything else is equal: the raw guest hash `67B41EEA7B70FD68`, every queue number, the guest flow and the income.
+Also:
+- "wear, repair and cleaning (`ECON-021` to `ECON-024`)" becomes ECON-021 to ECON-023, because main resolved ECON-024;
+- BOARD-plan §8's table still lists the superseded w = 2, w₂ = 6, H = 29, τ_max = 142;
+- BOARD-plan §5's closed form needs the DUR ≤ 6 case (decision (c)).
+
+No code pins a gate hash, so no determinism pin needed re-measuring. The M3-GATE.md baseline text is the only place
+that holds one.
+
+### Notes
+
+- **N1.** OpenTPW's own stand walk takes 0 turns (it arrives within the turn of the call), and its move-up takes at
+  most 7 turns. The walk-stall thresholds come from the trace, not from these values.
+- **N2.** `notJudgedYoungHead` uses the turn the gate first saw the guest. Guests appear at the bus stop, so in practice
+  this is the turn they were created.
+- **N3.** v3's static `test_build_queue_cell_refactor_keeps_the_old_steps` now also accepts the merged form of the
+  helper: recompute → static `CheckQueueCell` (`CheckExtend` → `CanSpendCell`) → `Refused` reported as money →
+  `TrySpendCell` → `TryExtend`. On the uncommitted merge it failed only because the static tests read `HEAD` = main.
+
+## Acceptance merge (scratch clone, fork main `e71434d`)
+
+The scratch clone was made with `git clone --shared` into `/private/tmp/r4/merge` (a non-symlinked path, not a
+worktree). Fork main was fetched at **`e71434d`**, which is newer than `969914d`. It contains the queue stack, the path
+stack with PATH-FIX `267c420` and ESC-FIX `3d78a8a`, the traced ride wear (#4), the traced staff grades, and TPI global
+saves (#5).
+
+`git merge --no-ff 33f8584` conflicts in exactly two files.
+
+1. **`source/OpenTPW/World/Level.Objects.cs`**: PATH-V2's recipe (REVIEW-PATH.md, round 2). The full resolved change
+   against `e71434d` (resolved blob `ad2a1df8`):
+
+   ```diff
+   @@ public QueueBuildResult BuildQueueCell( RideVisitorBridge ride, int x, int y )
+            if ( Guests == null )
+                return QueueBuildResult.Refused;
+   +        var result = BuildQueueCell( Guests.Grid, Park?.Economy, ride, x, y, IsQueueBlocked, out var message );
+   +        LastActionMessage = message;
+   +        return result;
+   +    }
+   +
+   +    /// <summary>
+   +    /// The queue tool's per-cell build (also used by the headless M3 gate): recompute the queue,
+   +    /// <c>CheckQueueCell</c> (static), then <c>Costs.QueueCell</c> charged through <paramref name="economy"/>
+   +    /// (none: free), then <see cref="QueuePaths.TryExtend(GuestPathGrid, RideVisitorBridge, int, int, Func{int, int, bool}?)"/>.
+   +    /// </summary>
+   +    internal static QueueBuildResult BuildQueueCell( GuestPathGrid grid, ParkEconomy? economy, RideVisitorBridge ride, int x, int y, Func<int, int, bool> isBlocked, out string message )
+   +    {
+            // Bring the queue up to date before charging: …
+   -        ride.RecomputeQueue( Guests.Grid );
+   -        var check = CheckQueueCell( ride, x, y, Array.Empty<(int X, int Y)>() );
+   +        ride.RecomputeQueue( grid );
+   +        var check = CheckQueueCell( grid, economy, ride, x, y, Array.Empty<(int X, int Y)>(), isBlocked );
+            if ( check is not (QueueBuildResult.Ok or QueueBuildResult.Refused) )
+            {
+   -            LastActionMessage = $"Cannot build a queue here: {check}.";
+   +            message = $"Cannot build a queue here: {check}.";
+                return check;
+            }
+            // [DATA:Standard.sam:Costs.QueueCell] …
+   -        if ( check == QueueBuildResult.Refused || (Park != null && Park.Economy.TrySpendCell( CellPurchase.Queue ) != ParkEconomy.PurchaseResult.Ok) )
+   +        if ( check == QueueBuildResult.Refused || (economy != null && economy.TrySpendCell( CellPurchase.Queue ) != ParkEconomy.PurchaseResult.Ok) )
+            {
+   -            LastActionMessage = "Cannot build a queue: not enough money.";
+   +            message = "Cannot build a queue: not enough money.";
+                return QueueBuildResult.Refused;
+            }
+   -        var result = QueuePaths.TryExtend( Guests.Grid, ride, x, y, IsQueueBlocked );
+   -        LastActionMessage = $"{ride.Name}: queue is now {ride.QueueSizeInCells} cells long.";
+   +        var result = QueuePaths.TryExtend( grid, ride, x, y, isBlocked );
+   +        message = $"{ride.Name}: queue is now {ride.QueueSizeInCells} cells long.";
+            return result;
+        }
+   @@ public QueueBuildResult CheckQueueCell( RideVisitorBridge ride, int x, int y, IReadOnlyList<(int X, int Y)> pending )
+            if ( IsReadOnlyVisit || Guests == null )
+                return QueueBuildResult.Refused;
+   -        var check = QueuePaths.CheckExtend( Guests.Grid, ride, x, y, pending, IsQueueBlocked );
+   +        return CheckQueueCell( Guests.Grid, Park?.Economy, ride, x, y, pending, IsQueueBlocked );
+   +    }
+   +
+   +    /// <summary>
+   +    /// The queue tool's per-cell check (also used by the static <c>BuildQueueCell</c>):
+   +    /// <see cref="QueuePaths.CheckExtend"/> after <paramref name="pending"/>, then whether <paramref name="economy"/> (none: free)
+   +    /// can pay for this cell on top of the pending ones.
+   +    /// </summary>
+   +    internal static QueueBuildResult CheckQueueCell( GuestPathGrid grid, ParkEconomy? economy, RideVisitorBridge ride, int x, int y, IReadOnlyList<(int X, int Y)> pending, Func<int, int, bool> isBlocked )
+   +    {
+   +        var check = QueuePaths.CheckExtend( grid, ride, x, y, pending, isBlocked );
+            if ( check != QueueBuildResult.Ok )
+                return check;
+            // The commit spends Costs.QueueCell per cell …
+   -        if ( Park != null && !Park.Economy.CanSpendCell( CellPurchase.Queue, pending.Count ) )
+   +        if ( economy != null && !economy.CanSpendCell( CellPurchase.Queue, pending.Count ) )
+                return QueueBuildResult.Refused;
+            return QueueBuildResult.Ok;
+        }
+   ```
+
+   Tabs are shown as four spaces here. The crefs to the overloads are written as `<c>…</c>`, because a cref with a
+   tuple list would be fragile.
+2. **`docs/FIDELITY-REGISTER.md`**: take either side (`git checkout --theirs`), then run
+   `python3 tools/fidelity_register.py --write`. The result is **183** unresolved IDs: main has 184, and the stack
+   removes GATE-002 and never brings GATE-003 to main. `--check` passes. With B1 and B2 it is 185.
+
+The scratch merge commit `0dd683e` has tree `bf8ec88d`. It is local only and was never pushed.
+
+## Round 4 numbers (merged tree `0dd683e`; SDK 10 at `~/.local/share/opentpw-dotnet10/dotnet`, Release)
+
+| Check | Result |
+| --- | --- |
+| Build `source/OpenTPW.sln` Release | 0 errors |
+| `OpenTPW.Tests` without assets | **1015 / 265 / 0** (passed / skipped / failed) |
+| `OpenTPW.Tests` with `OPENTPW_GAME_PATH` | **1197 / 83 / 0** |
+| `--m3-gate` twice (separate processes) | exit **0** both; **16 pass / 0 fail / 0 unresolved**; JSON identical apart from `wallSeconds`; logs identical apart from timestamps and the report path |
+| `--m3-gate --no-determinism` | 15 / 0 / 1 (determinism skipped), exit 2 |
+| Native smokes (`scripts/run.sh --game-path …/theme-park-world <flags> --smoke-test`, `libveldrid-spirv.dylib` copied into `native/osx-arm64/`) | `--front-end`: passed, 442 frames ("Escape out of the queue tool", "Belly Bounce left the queue tool active after placement"). `--sandbox`: passed, 1109 frames. `--load-original-level jungle`: passed, 4329 frames (guests boarding/riding/released by Totem.RSE, park economy). All exit 0 |
+| `run_evidence_checks.py --mac-bin … --pc-data …/Data` | **OK: 15 Python suites, 953 tests, 152 skipped**. Before the merge was committed, 4 v3 static tests failed because they read `HEAD` = main; after the N3 test update, 0 fail |
+| `fidelity_register.py --check` | pass, 183 IDs |
+| `git diff --check e71434d` | clean |
+| `--stat` vs `--ignore-cr-at-eol --stat` | identical (17 files, +4481 −280); no file changed its line endings |
+| Mutations v1 / v2 / v3 / v4 | `33f8584`: 61/61, 14/14. Merged: 61/61, 14/14 |
+
+Merged gate table (jungle, seed 6075451861746676596, 108,000 ticks):
+
+| Row | Verdict | Key evidence |
+| --- | --- | --- |
+| build.entrance | PASS | 10 InitialPath cells, lanes A/B, Bus/Gates/Lights, fee $20 |
+| build.paths | PASS | `ParkPathBuilder` (47,21)→(47,35): 14 built, $280, 0 stray cells |
+| build.attraction | PASS | Belly Bounce, anchor (43,21) rot 90, queue front (42,20) |
+| build.queue | PASS | 25 cells via `Level.BuildQueueCell`, $1,875, back (46,22), join (47,22); 377 stood, 286 boarded |
+| build.shop | PASS | Drinks Shop (48,23) rot 90 |
+| build.toilet | PASS | Small Toilet (46,23) rot 270 |
+| build.staff | PASS | mechanic grade 1, handyman grade 3 |
+| time.monotonic | PASS | 0 violations |
+| economy.income-and-expenses | PASS | gate $35,760, shops $34,950; staff $2,300, other $23,300 |
+| economy.ledger-consistent | PASS | 108,000 samples, 10 months |
+| guests.flow | PASS | 1,800 arrived, 286 ride, 894 shop, 157 toilet, 1,654 left |
+| queues.no-stuck-queue | PASS | 330 judged (286 + 44 queued), 0 excluded/young/out of scope; H 56, R 121, head to boarding ≤ 108/178, walks ≤ 0/7 of 20/15, closest −69; rule (a) ≤ 106/194 |
+| paths.no-unreachable-goal | PASS | all reachable, 0 stuck |
+| rides.scripts-run | PASS | 0 faults, 0 halted |
+| staff.work | PASS | 4/4 repairs within 61 turns (longest 14.383 s); litter 582.5 dropped and cleaned |
+| determinism.same-seed | PASS | raw `67B41EEA7B70FD68`, gate `AFDCA347E564786E` in both runs; 30/30 minute hashes |
+
+## Round 4 reproduce
+
+```sh
+python3 -m unittest tools/ppc-analysis/lanes/review/test_m3_gate_v4.py           # arithmetic + static
+OPENTPW_M3_MUTATE=1 OPENTPW_GAME_PATH=/path/to/theme-park-world OPENTPW_M3_SUBJECT=33f8584 \
+  python3 -m unittest -v tools/ppc-analysis/lanes/review/test_m3_gate_v1.py \
+  tools/ppc-analysis/lanes/review/test_m3_gate_v2.py tools/ppc-analysis/lanes/review/test_m3_gate_v3.py \
+  tools/ppc-analysis/lanes/review/test_m3_gate_v4.py
+```
+
+To run the mutations on the merged tree, commit the merge in a scratch clone, copy the review tests there and use
+`OPENTPW_M3_SUBJECT=HEAD`. v4 builds on v3's hooks (`MutateV4` after `MutateV3`). Mutation names that combine faults use
+`+`, because the harness puts the name into the report's file name.

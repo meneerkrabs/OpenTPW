@@ -168,6 +168,15 @@ class StaticRound3(unittest.TestCase):
         instance = v1.method_body(new, 'public QueueBuildResult BuildQueueCell( RideVisitorBridge ride, int x, int y )')
         self.assertIn('BuildQueueCell( Guests.Grid, Park?.Economy, ride, x, y, IsQueueBlocked, out var message );', instance)
         helper = v1.method_body(new, 'internal static QueueBuildResult BuildQueueCell(')
+        if 'QueuePaths.CheckExtend(' not in helper:
+            # GATE-V4: after the merge with PATH-FIX (PATH-V2's recipe) the check goes through the static CheckQueueCell,
+            # which runs QueuePaths.CheckExtend and then the money check; a Refused check is reported as "not enough
+            # money" before anything is charged.
+            check = v1.method_body(new, 'internal static QueueBuildResult CheckQueueCell(')
+            self.assertLess(check.find('QueuePaths.CheckExtend('), check.find('CanSpendCell( CellPurchase.Queue'))
+            self.assertGreaterEqual(check.find('QueuePaths.CheckExtend('), 0)
+            self.assertIn('check == QueueBuildResult.Refused || (economy != null && economy.TrySpendCell( CellPurchase.Queue )', helper)
+            steps = ['ride.RecomputeQueue( grid );', 'CheckQueueCell( grid, economy, ride, x, y, ', 'TrySpendCell( CellPurchase.Queue )', 'QueuePaths.TryExtend(']
         positions = [helper.find(step) for step in steps]
         self.assertTrue(all(p >= 0 for p in positions), dict(zip(steps, positions)))
         self.assertEqual(sorted(positions), positions)

@@ -159,6 +159,12 @@ internal static class Game
 			}
 			return;
 		}
+		// Headless M3 gameplay-loop gate (docs/M3-GATE.md): no window, renderer or audio.
+		if ( args.Contains( "--m3-gate" ) )
+		{
+			Environment.ExitCode = M3Gate.RunCommand( args );
+			return;
+		}
 
 		var onlineFolders = OnlineFolders.FromEnvironment( GetOption( args, "--online-dir", "an online folder outside the original installation" ) );
 		if ( OnlineCommands.Run( args, Settings.Default.GamePath, onlineFolders, Console.WriteLine ) )

@@ -14,13 +14,13 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **149 unresolved unique APPROX IDs**, 165 APPROX occurrences, 69 EXT occurrences, 68 DATA occurrences and 81 BIN occurrences.
+Current inventory: **151 unresolved unique APPROX IDs**, 167 APPROX occurrences, 69 EXT occurrences, 70 DATA occurrences and 81 BIN occurrences.
 
-Of these, 143 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
+Of these, 145 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
 CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.
 
-Repeated source occurrences of one ID are allowed and listed separately. Duplicate register declarations, malformed/missing ID syntax, unregistered IDs and declarations without source annotations fail the check. Register declarations are read from the six configured existing C# registers (current one-entry-per-line tuple/new syntax) and the explicit three-column Approximation register table in docs/ONLINE.md; these are bounded lexical readers, not general C# or Markdown parsers. New registers must be explicitly configured. The check also compares the complete regenerated document against this file.
+Repeated source occurrences of one ID are allowed and listed separately. Duplicate register declarations, malformed/missing ID syntax, unregistered IDs and declarations without source annotations fail the check. Register declarations are read from the seven configured C# registers (current one-entry-per-line tuple/new syntax) and the explicit three-column Approximation register table in docs/ONLINE.md; these are bounded lexical readers, not general C# or Markdown parsers. New registers must be explicitly configured. The check also compares the complete regenerated document against this file.
 
 | Area | Unique unresolved IDs | Source occurrences |
 | --- | ---: | ---: |
@@ -28,6 +28,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | AUDIO | 5 | 5 |
 | COMPAT | 15 | 16 |
 | ECON | 36 | 36 |
+| GATE | 2 | 2 |
 | ONLINE | 6 | 6 |
 | RIDES | 26 | 26 |
 | UI | 39 | 53 |
@@ -114,6 +115,8 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-041 | Original-fidelity area (scope unadjudicated) | features-directory objects with Research.Category != 3 are fixed (non-buyable) items | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:45` |
 | ECON-044 | Original-fidelity area (scope unadjudicated) | balloon/costume percentages are 0 (guests carry no items yet) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:46` |
 | ECON-045 | Original-fidelity area (scope unadjudicated) | loan/challenge record locators use plausibility bounds (one fixture) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:47` |
+| GATE-001 | Original-fidelity area (scope unadjudicated) | an M3 in-game minute is 60 s of normal-speed simulation (3,600 fixed 60 Hz ticks), not a park-clock minute | See source annotation/runtime register | `source/OpenTPW/Client/M3GateApproximations.cs:11` |
+| GATE-002 | Original-fidelity area (scope unadjudicated) | scripted gate paths are laid by editing the guest path grid and charging Costs.PathCell per cell, without original path build rules | See source annotation/runtime register | `source/OpenTPW/Client/M3GateApproximations.cs:12` |
 | ONLINE-001 | OpenTPW online extension | Word filtering uses case-insensitive substring matches in space-padded text; entry spaces act as boundaries; allowed substrings exempt matches; hit characters except spaces become asterisks. | Original word-filter code or observed original filtering behavior; the source comment says the encrypted TP.ICD implementation is unreadable. | `docs/ONLINE.md:155` |
 | ONLINE-002 | OpenTPW online extension | A leading slash introduces a chat command; other text means say. | Original chat input syntax, which is not documented in the available data. | `docs/ONLINE.md:156` |
 | ONLINE-003 | OpenTPW online extension | Response strings 102 and 110 mean failure to add an ignored player and a buddy respectively, based on nearby string blocks. | Original response-code table. | `docs/ONLINE.md:157` |
@@ -270,6 +273,8 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-041 | `source/OpenTPW/Economy/EconomyObjectCatalog.cs:93` | [APPROX:ECON-041] features-directory objects with Research.Category != 3 are fixed (non-buyable) items — evidence needed: buy-menu capture |
 | ECON-044 | `source/OpenTPW/Economy/GuestEconomyBridge.cs:60` | [APPROX:ECON-044] balloon/costume percentages are 0 (guests carry no items yet) — evidence needed: guests slice item state |
 | ECON-045 | `source/OpenTPW.Files/Formats/Save/SaveEconomyRecords.cs:105` | [APPROX:ECON-045] loan/challenge record locators use plausibility bounds (one fixture) — evidence needed: a second TPWS/TPWI fixture |
+| GATE-001 | `source/OpenTPW/Client/M3Gate.cs:117` | [APPROX:GATE-001] an M3 in-game minute is 60 s of normal-speed simulation (3,600 fixed 60 Hz ticks), not a park-clock minute (one 248 ms park turn already advances the park clock 3,750 s) — evidence needed: the original's notion of elapsed play time for the M3 gate |
+| GATE-002 | `source/OpenTPW/Client/M3Gate.cs:334` | [APPROX:GATE-002] scripted paths are laid by editing the guest path grid and charging Costs.PathCell per cell (no original path build rules: slope, land ownership, connection limits) — evidence needed: original path-building rules and costs |
 | ONLINE-001 | `source/OpenTPW.Online/Moderation/WordFilter.cs:86` | [APPROX:ONLINE-001] Matching rule — evidence needed: the original filter code is not |
 | ONLINE-002 | `source/OpenTPW.Online/Chat/ChatCommands.cs:180` | [APPROX:ONLINE-002] A line starting with '/' is a command, anything else is "say" — evidence |
 | ONLINE-003 | `source/OpenTPW.Online/Chat/ChatCommands.cs:34` | [APPROX:ONLINE-003] 102/110 are both "Could not add "; assigned to ignore/buddy by their position next to |
@@ -289,19 +294,19 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | RIDES-011 | `source/OpenTPW/World/Objects/ObjectShape.cs:74` | [APPROX:RIDES-011] Meanings of N/E (exit), &lt;/&gt; (station ends), + (upgrade cells), W (occupied) are inferred; 2, S, *, . are verified in Easymode — evidence needed: saves/captures with these rides |
 | RIDES-012 | `source/OpenTPW/World/Objects/ObjectShape.cs:138` | [APPROX:RIDES-012] Access cells open across the first/last row before the first/last column (verified only for first/last-row cells) — evidence needed: saves with side entrances |
 | RIDES-013 | `source/OpenTPW/World/Objects/ObjectShape.cs:103` | [APPROX:RIDES-013] Rotation 180 and non-square rotated footprints follow the rigid rotation verified for 0/90/270 squares — evidence needed: a save with such objects |
-| RIDES-014 | `source/OpenTPW/World/Objects/ParkObjects.cs:151` | [APPROX:RIDES-014] Object base height = mean ground height of its footprint cells (.hmp ground deformation not decoded) — evidence needed: .hmp format, captures on slopes |
-| RIDES-015 | `source/OpenTPW/World/Objects/ParkObjects.cs:188` | [APPROX:RIDES-015] Imported objects start open (saved ride state not decoded); built objects open too — evidence needed: TPWS ride-state fields, original build behaviour |
+| RIDES-014 | `source/OpenTPW/World/Objects/ParkObjects.cs:155` | [APPROX:RIDES-014] Object base height = mean ground height of its footprint cells (.hmp ground deformation not decoded) — evidence needed: .hmp format, captures on slopes |
+| RIDES-015 | `source/OpenTPW/World/Objects/ParkObjects.cs:192` | [APPROX:RIDES-015] Imported objects start open (saved ride state not decoded); built objects open too — evidence needed: TPWS ride-state fields, original build behaviour |
 | RIDES-016 | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:44` | [DATA:&lt;object&gt;.sam:Upgrades[0].InitDuration] [APPROX:RIDES-016] written raw; unit per Info.DurationUnit unverified — evidence needed: binary conversion of InitDuration |
 | RIDES-017 | `source/OpenTPW/World/Objects/ObjectCatalog.cs:124` | [APPROX:RIDES-017] Buildable = WhichUIType 0–3, not fixed/tool/upgrade (DATA:Info.WhichUIType comment "4 = Not to be shown in UI") — evidence needed: original build-menu contents |
 | RIDES-018 | `source/OpenTPW/World/Objects/ParkObjects.cs:105` | [APPROX:RIDES-018] Build rules = footprint inside grid + MAP/save terrain rules + no overlap; no slope, path or land rule; Level.PlaceObject enforces economy purchases — evidence needed: original build checks (binary/captures) |
-| RIDES-019 | `source/OpenTPW/World/Objects/ParkObjects.cs:207` | [APPROX:RIDES-019] Levels without a save get Gates, Lights and Bus (the fixed items Easymode records) — evidence needed: original fixed-item spawning per level |
-| RIDES-021 | `source/OpenTPW/World/Level.Objects.cs:92` | [APPROX:RIDES-021] Built footprint is centred on the clicked cell; the cursor ray hits the Z = 0 plane — evidence needed: original build cursor behaviour |
+| RIDES-019 | `source/OpenTPW/World/Objects/ParkObjects.cs:211` | [APPROX:RIDES-019] Levels without a save get Gates, Lights and Bus (the fixed items Easymode records) — evidence needed: original fixed-item spawning per level |
+| RIDES-021 | `source/OpenTPW/World/Level.Objects.cs:107` | [APPROX:RIDES-021] Built footprint is centred on the clicked cell; the cursor ray hits the Z = 0 plane — evidence needed: original build cursor behaviour |
 | RIDES-022 | `source/OpenTPW/World/Objects/ObjectAssets.cs:119` | [APPROX:RIDES-022] Texture search: archive textures, gtexture, theme sharetex (stexture/ssharete low-detail sets unused) — evidence needed: binary texture lookup order |
 | RIDES-023 | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:115` | [APPROX:RIDES-023] A completed cycle = VAR_RUNNING 1 → 0 — evidence needed: original ride-cycle/income accounting |
 | RIDES-024 | `source/OpenTPW/World/Objects/ObjectCatalog.cs:277` | [APPROX:RIDES-024] Bonus archives merge into the theme catalog; an Info.Id collision skips the bonus entry — evidence needed: original behaviour with dropped-in WADs |
 | RIDES-025 | `source/OpenTPW/World/Objects/ObjectCatalog.cs:552` | [APPROX:RIDES-025] Bonus name: selected language file, then English, then .sam Info.Name — evidence needed: original lookup of bonus name files |
 | RIDES-026 | `source/OpenTPW/World/Objects/OriginalObject.cs:12` | [APPROX:RIDES-026] Engine units: 1 MD2 unit = 0.2 (presentation scale shared with the terrain; no game rule) — evidence needed: none (engine convention) |
-| RIDES-028 | `source/OpenTPW/World/Level.Objects.cs:64` | [APPROX:RIDES-028] A non-walkable outside cell (queue area) is replaced by the nearest walkable path cell — evidence needed: original queue-path building/joining rules |
+| RIDES-028 | `source/OpenTPW/World/Level.Objects.cs:79` | [APPROX:RIDES-028] A non-walkable outside cell (queue area) is replaced by the nearest walkable path cell — evidence needed: original queue-path building/joining rules |
 | UI-001 | `source/OpenTPW/UI/Original/UiCanvas.cs:47` | [APPROX:UI-001] anchors keep the authored distance to the nearest edge on non-4:3 outputs — evidence needed: original widescreen behaviour / design decision |
 | UI-002 | `source/OpenTPW/UI/Original/UiCanvas.cs:43` | [APPROX:UI-002] font tier thresholds 0.36 / 0.6 of logical scale — evidence needed: binary font selection per screen mode |
 | UI-002 | `source/OpenTPW/UI/Original/UiText.cs:57` | [APPROX:UI-002] which shipped font serves which role per tier — evidence needed: binary font use / captures |
@@ -404,11 +409,11 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | autorun | `source/OpenTPW/Client/Autorun/AutorunLauncher.cs:5` | [EXT:autorun] It needs the original &lt;c&gt;Autorun&lt;/c&gt; folder (&lt;c&gt;general.tre&lt;/c&gt; and the language archives) in the game |
 | autorun | `source/OpenTPW/Client/Autorun/AutorunScreen.cs:14` | with the operating system's viewer and Exit quits. [EXT:autorun] (docs/AUTORUN.md) |
 | autorun | `source/OpenTPW/Client/Autorun/AutorunView.cs:19` | and clicks. [EXT:autorun] OpenTPW reproduces the CD's autorun dialog as an optional start screen. |
-| autorun | `source/OpenTPW/Client/Game.cs:206` | [EXT:autorun] The CD's launcher window comes first when its Autorun folder is available (docs/AUTORUN.md). |
+| autorun | `source/OpenTPW/Client/Game.cs:212` | [EXT:autorun] The CD's launcher window comes first when its Autorun folder is available (docs/AUTORUN.md). |
 | bonus-content | `source/OpenTPW/Client/Setup/BonusContent.cs:14` | [EXT:bonus-content] Setup-managed copy of the official bonus WADs; the original game only had the CD and install folders |
 | developer-prototype | `source/OpenTPW/Economy/ParkEconomyRuntime.cs:52` | [EXT:developer-prototype] the developer prototype ride is registered uncharged (no original counterpart) |
-| developer-prototype | `source/OpenTPW/World/Level.Objects.cs:170` | [EXT:developer-prototype] Sandbox Totem blocks cells whose centres lie within its 6×8-unit model box (no original counterpart) |
-| developer-prototype | `source/OpenTPW/World/Level.Objects.cs:251` | [EXT:developer-prototype] When the economy refuses the Totem (e.g. Research.Group 4 not yet researched), the developer prototype is registered uncharged (no original counterpart) |
+| developer-prototype | `source/OpenTPW/World/Level.Objects.cs:185` | [EXT:developer-prototype] Sandbox Totem blocks cells whose centres lie within its 6×8-unit model box (no original counterpart) |
+| developer-prototype | `source/OpenTPW/World/Level.Objects.cs:266` | [EXT:developer-prototype] When the economy refuses the Totem (e.g. Research.Group 4 not yet researched), the developer prototype is registered uncharged (no original counterpart) |
 | developer-prototype | `source/OpenTPW/World/PrototypeRide.cs:13` | [EXT:developer-prototype] Sandbox Totem bounds check uses a 5-unit radius around its centre (no original counterpart) |
 | display | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:397` | [EXT:display] window mode, upscaling, render scale and interface scale rows are OpenTPW extensions |
 | fit-button-text | `source/OpenTPW/UI/Original/UiTextFit.cs:10` | [EXT:fit-button-text] button labels shrink to fit; the original sized its fixed strings per language by hand |
@@ -438,7 +443,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | *.sgn:LOGFONT lfHeight | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:70` | [DATA:*.sgn:LOGFONT lfHeight] em height; [DATA:*.sgn:slot offset] cell top (TA_TOP reading is inferred from the values). |
 | *.sgn:slot font file / LOGFONT face | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:59` | [DATA:*.sgn:slot font file / LOGFONT face] |
 | *.sgn:slot offset | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:70` | [DATA:*.sgn:LOGFONT lfHeight] em height; [DATA:*.sgn:slot offset] cell top (TA_TOP reading is inferred from the values). |
-| &lt;fixed item&gt;.MD2:park-space coordinates | `source/OpenTPW/World/Objects/ParkObjects.cs:135` | [DATA:Easymode.TPWI:SYSG X/Y/rotation] [DATA:&lt;fixed item&gt;.MD2:park-space coordinates] |
+| &lt;fixed item&gt;.MD2:park-space coordinates | `source/OpenTPW/World/Objects/ParkObjects.cs:139` | [DATA:Easymode.TPWI:SYSG X/Y/rotation] [DATA:&lt;fixed item&gt;.MD2:park-space coordinates] |
 | &lt;object&gt;.sam:Info.DontApplyOffset | `source/OpenTPW/World/Objects/ObjectCatalog.cs:119` | [DATA:&lt;object&gt;.sam:Info.DontApplyOffset] |
 | &lt;object&gt;.sam:Info.Id | `source/OpenTPW/World/Objects/ObjectCatalog.cs:56` | [DATA:&lt;object&gt;.sam:Info.Id] [DATA:&lt;object&gt;.sam:Info.Name] |
 | &lt;object&gt;.sam:Info.Name | `source/OpenTPW/World/Objects/ObjectCatalog.cs:56` | [DATA:&lt;object&gt;.sam:Info.Id] [DATA:&lt;object&gt;.sam:Info.Name] |
@@ -453,7 +458,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | Autorun/autorun.tre:autorun.cfg nvPlayY=61 nvInstallY=103 nvUninstallY=145 nvReinstallY=187 nvTechbuttonY=229 nvReadmeY=271 nvQuitY=313 | `source/OpenTPW/Client/Autorun/AutorunAssets.cs:27` | [DATA:Autorun/autorun.tre:autorun.cfg nvPlayY=61 nvInstallY=103 nvUninstallY=145 nvReinstallY=187 nvTechbuttonY=229 nvReadmeY=271 nvQuitY=313] |
 | CHAT_COMMANDS.str:134-151 | `source/OpenTPW.Online/Chat/ChatCommands.cs:117` | ([DATA:CHAT_COMMANDS.str:134-151] — 18 responses for the 19 mood commands; Think has none). |
 | CHAT_COMMANDS.str:43-85 | `source/OpenTPW.Online/Chat/ChatCommands.cs:5` | holds the localized command words (German "sage", "erzähle", ...) and [DATA:CHAT_COMMANDS.str:43-85] |
-| Easymode.TPWI:SYSG X/Y/rotation | `source/OpenTPW/World/Objects/ParkObjects.cs:135` | [DATA:Easymode.TPWI:SYSG X/Y/rotation] [DATA:&lt;fixed item&gt;.MD2:park-space coordinates] |
+| Easymode.TPWI:SYSG X/Y/rotation | `source/OpenTPW/World/Objects/ParkObjects.cs:139` | [DATA:Easymode.TPWI:SYSG X/Y/rotation] [DATA:&lt;fixed item&gt;.MD2:park-space coordinates] |
 | Language/*/CHAT_COMMANDS.str:0-42 | `source/OpenTPW.Online/Chat/ChatCommands.cs:4` | The original chat commands, in &lt;c&gt;CHAT_COMMANDS.str&lt;/c&gt; order. [DATA:Language/*/CHAT_COMMANDS.str:0-42] |
 | Language/*/TAG_SYSTEM.str:123-127 (six months in the red) | `source/OpenTPW/Economy/ParkEconomy.cs:26` | [DATA:Language/*/TAG_SYSTEM.str:123-127 (six months in the red)] |
 | Language/*/THEMENAMES.str | `source/OpenTPW/Online/OnlineStrings.cs:84` | Theme name of a level. [DATA:Language/*/THEMENAMES.str] order Lost Kingdom, Halloween World, Wonder Land, |
@@ -468,6 +473,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | Language/English/swears.txt,alloweds.txt | `source/OpenTPW.Online/Moderation/WordFilter.cs:32` | Decodes an original list. [DATA:Language/English/swears.txt,alloweds.txt] Observed encoding: |
 | Rides.sam:Info.WhichUIType | `source/OpenTPW/Hud/HudStubs.cs:150` | [DATA:Rides.sam:Info.WhichUIType] |
 | Rides.sam:UsageInfo.ExcitementLevel | `source/OpenTPW/Hud/HudStubs.cs:147` | [DATA:Totem.sam:UsageInfo.ExcitementLevel] overrides [DATA:Rides.sam:UsageInfo.ExcitementLevel] |
+| Standard.sam:FixedItemInfo lanes | `source/OpenTPW/Client/M3Gate.cs:297` | [DATA:levels/&lt;theme&gt;/terrain/base.map:InitialPath] [DATA:Standard.sam:FixedItemInfo lanes] |
 | THEMENAMES.str:entries 0..3 | `source/OpenTPW/World/Original/OriginalGateSign.cs:46` | [DATA:THEMENAMES.str:entries 0..3] Lost Kingdom, Halloween World, Wonder Land, Space Zone. |
 | TPWORLD.ISO and retail install | `source/OpenTPW.Files/Public/DataOverlay.cs:147` | &lt;summary&gt;[DATA:TPWORLD.ISO and retail install] global music and the four theme music banks.&lt;/summary&gt; |
 | TPWORLD.ISO and retail install:Data/Movies | `source/OpenTPW.Files/Public/DataOverlay.cs:144` | &lt;summary&gt;[DATA:TPWORLD.ISO and retail install:Data/Movies] the nine shipped movies.&lt;/summary&gt; |
@@ -481,6 +487,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | global/Speech/speechHD.SDT | `source/OpenTPW/World/Advisor.cs:20` | [DATA:global/Speech/speechHD.SDT] [DATA:global/Speech/lips.wad] |
 | global/advisor.wad:Advisor.MD2 | `source/OpenTPW/World/Advisor.cs:18` | [DATA:global/advisor.wad:Advisor.MD2] |
 | levels/&lt;level&gt;/global.sam:ParkName.GateObjectId | `source/OpenTPW/World/Original/OriginalGateSign.cs:64` | [DATA:levels/&lt;level&gt;/global.sam:ParkName.GateObjectId] |
+| levels/&lt;theme&gt;/terrain/base.map:InitialPath | `source/OpenTPW/Client/M3Gate.cs:297` | [DATA:levels/&lt;theme&gt;/terrain/base.map:InitialPath] [DATA:Standard.sam:FixedItemInfo lanes] |
 | levels/Standard.sam:BankAccountInfo.* (layered) | `source/OpenTPW/Economy/BalanceSettings.cs:72` | [DATA:levels/Standard.sam:BankAccountInfo.* (layered)] |
 | levels/jungle/Easymode.TPWI:loan table repayments = floor(amount/months) at 0 % APR | `source/OpenTPW/Economy/ParkLedger.cs:146` | [DATA:levels/jungle/Easymode.TPWI:loan table repayments = floor(amount/months) at 0 % APR] |
 | levels/space/rides/megacost.wad/megacost.sgn:slot 1 = "EggIt Italic"/EGGII___.TTF, not in fonts.wad | `source/OpenTPW.Files/Public/DataCorrections.cs:18` | [EXT:COMPAT-FIX sign-font-substitution] [DATA:levels/space/rides/megacost.wad/megacost.sgn:slot 1 = "EggIt Italic"/EGGII___.TTF, not in fonts.wad] |

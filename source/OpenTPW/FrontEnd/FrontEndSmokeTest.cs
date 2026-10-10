@@ -41,6 +41,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 	private OriginalObject? totem;
 	private OriginalObject? secondObject;
 	private BuildItem? secondItem;
+	private bool queueToolAfterSecond;
 	private int purchaseEvents;
 
 	public FrontEndSmokeTest( GameFlow flow )
@@ -454,6 +455,19 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		Do( "closed state", () =>
 		{
 			Require( !secondObject!.IsOpen, "HUD door closes the selected original object" );
+			var tool = flow.Level!.CellTool;
+			Require( !tool.IsActive || tool.Mode == CellToolMode.Queue, "only the queue tool may follow a catalogue placement (UI-031)" );
+			queueToolAfterSecond = tool.IsActive;
+			Log.Trace( $"Front-end smoke: {flow.Hud!.ItemName( secondItem! )} {(queueToolAfterSecond ? "left the queue tool active" : "left no tool active")} after placement." );
+			flow.InjectedInput = UiInput.Key( UiKeys.Back );
+		} );
+		Wait( "first Escape", 3 );
+		Do( "Escape leaves the queue tool", () =>
+		{
+			if ( !queueToolAfterSecond )
+				return;
+			// PATH-011: Escape inside the path/queue tool ends the tool; only the next Escape opens the pause menu.
+			Require( !flow.Level!.CellTool.IsActive && !flow.Hud!.Paused, "Escape ends the queue tool before it opens the pause menu (PATH-011)" );
 			flow.InjectedInput = UiInput.Key( UiKeys.Back );
 		} );
 		Wait( "pause opens", 3 );
@@ -578,7 +592,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		Log.Trace( $"Instant Action jungle: {level.Park.Import!.ImportedObjects} seed objects, {economy.Staff.Members.Count} staff, research advanced {start} -> {economy.Date}; loans, research effort and upgrades refused." );
 		Device.WaitForIdle();
 		completed = true;
-		Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name} at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames, lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, two distinct catalogue objects bought exactly once through the park economy, info arm, economy pause, sale, overlap refusal, open/close, pause menu, exit to lobby, read-only visit build/open/delete/save guards, Instant Action return and Load Park reference start, Instant Action seed, research stand-in and gates." );
+		Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name} at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames, lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, two distinct catalogue objects bought exactly once through the park economy, info arm, economy pause, sale, overlap refusal, open/close, Escape out of the queue tool, pause menu, exit to lobby, read-only visit build/open/delete/save guards, Instant Action return and Load Park reference start, Instant Action seed, research stand-in and gates." );
 		GameFlow.Quit();
 	}
 
@@ -667,40 +681,31 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		{
 			foreach ( var glyph in batch.Glyphs.Skip( entry.FirstGlyph ).Take( entry.GlyphCount ).Where( glyph => glyph.Color.A == 255 && glyph.Color != UiColors.Shadow ) )
 			{
-				for ( var row = 0; row < glyph.Height / glyph.Scale; row++ )
+				// The renderer draws the smoothed coverage one texel per pixel (FontSmoothing).
+				var factor = FontSmoothing.Factor( glyph.Atlas, glyph.Scale );
+				if ( factor != glyph.Scale )
+					continue;
+				var coverage = FontSmoothing.Coverage( glyph.Atlas, factor );
+				var stride = glyph.Atlas.Width * factor;
+				for ( var row = 0; row < glyph.Height; row++ )
 				{
-					for ( var column = 0; column < glyph.Width / glyph.Scale; column++ )
+					for ( var column = 0; column < glyph.Width; column++ )
 					{
-						if ( glyph.Atlas.Alpha[(glyph.AtlasY + row) * glyph.Atlas.Width + glyph.AtlasX + column] != 255 )
+						if ( coverage[(glyph.AtlasY * factor + row) * stride + glyph.AtlasX * factor + column] != 255 )
 							continue;
-						// Every output pixel of the texel's scale×scale block (pixel-exact integer scaling).
-						var inside = true;
-						var exact = true;
-						for ( var dy = 0; dy < glyph.Scale; dy++ )
-						{
-							for ( var dx = 0; dx < glyph.Scale; dx++ )
-							{
-								var x = glyph.X + column * glyph.Scale + dx;
-								var y = glyph.Y + row * glyph.Scale + dy;
-								if ( x < 0 || y < 0 || x >= frameCapture.Width || y >= frameCapture.Height )
-								{
-									inside = false;
-									continue;
-								}
-								var pixel = (y * frameCapture.Width + x) * 4;
-								exact &= Math.Abs( frameCapture.Pixels[pixel] - glyph.Color.B ) <= 2 && Math.Abs( frameCapture.Pixels[pixel + 1] - glyph.Color.G ) <= 2 && Math.Abs( frameCapture.Pixels[pixel + 2] - glyph.Color.R ) <= 2;
-							}
-						}
-						if ( !inside )
+						var x = glyph.X + column;
+						var y = glyph.Y + row;
+						if ( x < 0 || y < 0 || x >= frameCapture.Width || y >= frameCapture.Height )
 							continue;
+						var pixel = (y * frameCapture.Width + x) * 4;
 						checkedTexels++;
-						if ( exact )
+						if ( Math.Abs( frameCapture.Pixels[pixel] - glyph.Color.B ) <= 2 && Math.Abs( frameCapture.Pixels[pixel + 1] - glyph.Color.G ) <= 2 && Math.Abs( frameCapture.Pixels[pixel + 2] - glyph.Color.R ) <= 2 )
 							matching++;
 					}
 				}
 			}
 		}
-		Log.Trace( $"UI text readback '{text}' ({what}): {matching}/{checkedTexels} opaque glyph texels match." );
+		Log.Trace( $"UI text readback '{text}' ({what}): {matching}/{checkedTexels} opaque glyph pixels match." );
 		Require( checkedTexels >= 3 && matching >= checkedTexels * 97 / 100, $"{what} text pixels match in GPU readback" );
 	}
 

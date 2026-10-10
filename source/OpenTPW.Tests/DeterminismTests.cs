@@ -39,6 +39,7 @@ public class DeterminismTests
 			payments = new GuestEconomyBridge( () => Economy, Guests );
 			Guests.Payments = payments;
 			Economy.GuestStatistics = payments;
+			Economy.RideOperations = payments;
 			Economy.OpenPark();
 			shop = new RideVisitorBridge( Scripts.AllocateAttractionId(), "Drinks Shop", RideVisitorKind.Shop, 1, 70, 30, GuestNeeds.Thirst ) { EntranceCell = (10, 9), ExitCell = (10, 9) };
 			shopScript = GuestTests.CreateShopScript( new VisitorRideScriptEffects( shop, UnimplementedRideScriptEffects.Instance ), Scripts, seed: null );
@@ -177,7 +178,7 @@ public class DeterminismTests
 	{
 		var park = new SyntheticPark( WorldSeed.Default );
 		park.Run( 3600 );
-		Assert.AreEqual( 0xBCAB6C260DA58A4EUL, park.Hash, $"0x{park.Hash:X16}" );
+		Assert.AreEqual( 0x98BFAE5138E2A343UL, park.Hash, $"0x{park.Hash:X16}" );
 	}
 
 	[TestMethod]

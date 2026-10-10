@@ -105,11 +105,14 @@ screens, options), `FrontEnd/`, `Hud/`, `World/Lobby/LobbyScene.cs`,
   distance to an anchor edge, so corner HUD parts stay in corners on wide
   screens (4:3 reproduces the authored layout exactly). BF4 fonts come in SMALL,
   MED and BIG versions; the tier is chosen by scale (< 0.36, < 0.6, larger) and
-  text is point-sampled at an integer scale (≥ 2 only above ~4K). Both are
-  inferences from the shipped files.
+  text is drawn at an integer scale (2 on HiDPI and from 2560×1440). Both are
+  inferences from the shipped files. Above 1× each glyph is magnified with
+  Catmull-Rom and its edge tightened with a contrast curve instead of doubling
+  pixels, which turns the fonts' anti-aliased edges into staircases (`FontSmoothing`,
+  UI-043); at 1× the original coverage is drawn unchanged.
 - **Rendering**: `UiBatch` (CPU triangle list) → `UiRenderer` (one alpha-blended
   pipeline; images linear filtered with the pink key bled to neighbour colours,
-  font atlases point sampled). Model frames are stretched into element rects.
+  font atlases point sampled at one texel per pixel after smoothing). Model frames are stretched into element rects.
 - **Input**: hover focuses, press+release on the same element activates
   (buttons react on release), wheel/arrows change option rows, Up/Down move
   focus, Enter activates, Escape goes back/opens the pause menu, P pauses.
@@ -298,13 +301,15 @@ glyph in all 14 UI fonts of each language.
   staggered along the panel's curve: `b_buy` (469), `b_info` (470), `b_money` (471), `b_resrch` (472),
   `b_map` (473) and `b_camera` (474). Only Buy works; the others show their disabled frame (the camera
   views are not implemented, UI-042).
-- The date text is drawn in black inside the date region (182,1061)-(383,1103) (table control 32). The bank
+- The date text is drawn in black inside the date region (182,1061)-(383,1103) (table control 32), in the
+  date font slot 3 (`DATETINY/SMALL/MED` by tier; only official Patch 2 and the Mac version ship these, the
+  1999 data falls back to the Small font, which is the same file as `DATESMALL`). The bank
   balance is not on the panel: the table puts it at the top left of the screen (control 47,
   (258,60)-(720,260), white cash font slot 1, drawn with the shipped `CASHSMALL/MED/BIG` fonts). Beside it the same table
   places the `i_dollar` icon (50), the change text (48, yellow, right-aligned under the balance) with the `cashtrend`
-  model (root `green_up`, 49) shown for 4 s after a balance change (UI-046), and at the top right the golden
+  model (root `green_up`, 49) shown for 4 s after a balance change (UI-047), and at the top right the golden
   ticket (`gtick`, 53) and key (`gkey`, 52) icons with their counts (55, 54). The ticket count is the park economy's unspent
-  golden tickets; OpenTPW does not track golden keys, so that count is 0 (UI-050).
+  golden tickets; OpenTPW does not track golden keys, so that count is 0 (UI-051).
 - The Mac build has 55 such layout tables (the buy window `data:0x4cd94`, the finance/staff/info arm contents,
   the coaster tools, the map screen, research, ride and staff windows); only the buy window is built so far.
 - Buy window (`ParkHud.BuyWindow.cs`, Mac buy table `data:0x4cd94`): the Buy button opens the original window as a modal
@@ -314,16 +319,16 @@ glyph in all 14 UI fonts of each language.
   four category buttons `b_sride/b_sshow/b_sshop/b_sfeature` (help 140-143; the chosen one is drawn in its down frame),
   `b_up`/`b_down` and the `b_scroller` ball on the `!slider` track, and `b_exit` (help 2, also Escape and right click).
   `b_allstaff` (help 153) is shown disabled: there is no staff screen yet. The list has the three table columns: name,
-  price (the economy catalogue price) and a third column of unknown content, left empty (UI-049). Click a row to select it
-  and show its preview (the original `P<name>.MD2`, CPU projection, UI-026), name and stats; click the selected row again,
+  price (the economy catalogue price) and a third column of unknown content, left empty (UI-050). Click a row to select it
+  and show its preview (the original `P<name>.MD2` or the main model, CPU projection, UI-026), name and stats; click the selected row again,
   press Enter or double-click it to buy: the window closes and placement starts (`Level.PlaceObject` checks the footprint and
   charges through `ParkEconomy.TryBuild` exactly once). The table has no OK button, so that is OpenTPW's choice. Unresearched
   items are greyed and refused with the "not available" message. The wheel scrolls the list anywhere over the window; Up/Down
-  move the selection. The Name and Price header buttons sort (UI-044). The stats frame rows are the table's five label/value rows:
+  move the selection. The Name and Price header buttons sort (UI-045). The stats frame rows are the table's five label/value rows:
   rides show Number owned (UITEXT 125), Excitement (126), Safe capacity (127), Reliability (128) and Working life (129);
-  shops 130, sideshows 131/132 and features 133 show fewer rows (UI-045). Items are the buildable objects of the theme
-  by `Info.WhichUIType`, ordered by Info.Id. Shops and several other items have no `P<name>.MD2` preview model, so their
-  preview frame stays empty. Tools, fixed items and standalone upgrades are excluded (`ObjectCatalog.Buildable`); items absent
+  shops 130, sideshows 131/132 and features 133 show fewer rows (UI-046). Items are the buildable objects of the theme
+  by `Info.WhichUIType`, ordered by name as the original list inserts its rows (ordinal, `0x10178768`). Items without a `P<name>.MD2` preview model (shops, among others) show their
+  main model, as the original's preview does (`0x10059F00`). Tools, fixed items and standalone upgrades are excluded (`ObjectCatalog.Buildable`); items absent
   from the economy catalogue stay unavailable in original levels.
 - Info arm for the selected original object (picked by occupied grid cell): name (OBJECT_NAMES), Excitement (the original
   default `UsageInfo.ExcitementLevel`, 70 for the Totem), Reliability, State of
@@ -418,13 +423,13 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-021 | `Hud/ParkHud.cs` | bank balance text at the Mac table rectangle as is (the original repositions it from font extents and drawable size); money grouped with "," digits | binary 0x156ef4 placement; locale number format |
 | UI-022 | `Hud/HudStubs.cs:88`, `Hud/HudStubs.cs:47`, `Hud/ParkHud.cs:126` | speed control (pause, ×1, ×2, ×4) bottom-right; faster speeds only speed up the economy clock, not rides/guests | binary: original game speed options (pause only is known) |
 | UI-023 | `Hud/HudStubs.cs:9` | test-only stub calendar (2 s/day); the game shows the economy clock (see ECON tags) | none for the game path |
-| UI-024 | `Hud/ParkHud.cs:144`, `Hud/ParkHud.cs:171`, `Hud/ParkHud.cs:207`, `Hud/HudStubs.cs:108`, `Hud/ParkHud.cs:581` | layout inside the build and info arms (category buttons, title, three-slot pages/arrows sorted by Info.Id, adaptive preview size to fit translated names/prices, stat rows, door/erase buttons) | captures of the original arms |
+| UI-024 | `Hud/ParkHud.cs`, `Hud/ParkHud.BuyWindow.cs` | layout inside the info arm (stat rows, door/erase buttons); unresearched items in the buy list are listed under their own names, which the original shows and sorts as UITEXT 137 | captures of the original info arm |
 | UI-025 | `Hud/ParkHud.cs:28` | message area keeps up to 3 messages for 8 s in the f_tag frame | binary/capture of the original message system |
-| UI-026 | `Hud/ParkHud.cs:586`, `Hud/PreviewIcon.cs:14` | build icons: CPU orthographic projection of P<name>.MD2 with 30° tilt, 0.8 rad/s turn, painter sorting | capture of the original build menu |
+| UI-026 | `Hud/ParkHud.cs:586`, `Hud/PreviewIcon.cs:14` | build icons: CPU orthographic projection of the preview model (P<name>.MD2, else the main model) with 30° tilt, 0.8 rad/s turn, painter sorting | capture of the original build menu |
 | UI-027 | `Hud/ParkHud.cs:481` | a park click selects the original object occupying its grid cell | binary: original picking |
 | UI-028 | `Hud/ParkHud.cs:283` | excitement shown as '<ExcitementLevel>%'; reliability, repair and life shown as not simulated | capture of the original ride info; simulation |
 | UI-029 | `Hud/ParkHud.cs:207` | b_door 'down' frames mean the ride is closed; b_erase used as the delete button | capture of the original ride panel |
-| UI-030 | `UI/Original/Options/GameOptions.cs` | volumes in 0..10 steps (10 % each; the capture shows 75 %, so the original has finer steps), default 8; popup help, advisor, tutorial, confirmations and RMB cancel default on, rotation 90 degs, scroll pushscroll | original step count and defaults (registry/ini of the original options) |
+| UI-030 | `UI/Original/Options/GameOptions.cs` | volumes in 0..10 steps (10 % each; the capture shows 75 %, so the original has finer steps), default 8, copied in the original from fields +0x38..+0x44 of the object at `0x101EC828`; rotation 90 degs (the defaults set IsometricOn to 1, not proven to be this option). Popup help, advisor, tutorial, confirmations and RMB cancel on and push scrolling are traced (`0x10125B7C`) | the initializer of the object at `0x101EC828` and the IsometricOn consumer |
 | UI-031 | `Hud/ParkHud.cs:350` | one placement per menu selection; Level.PlaceObject owns purchase/guest linkage and its removal handler owns scrap credits | original build-tool continuation |
 | UI-032 | `UI/Original/UiWidgets.cs:179`, `Hud/ParkHud.cs:590` | longer labels fall back to the small font; catalogue names greedily wrap in their slots | captures of translated original screens |
 | UI-034 | `UI/Original/UiImages.cs` | a fully opaque texture on a transparent (flag 0x2) model slot keys out black; only `ipan` in the lobby `f_lobbutbg` panel | the original's render state for flagged texture slots |
@@ -436,14 +441,15 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-040 | `Client/Autorun/AutorunView.cs` | autorun launcher focus rectangle: dotted frame inverting the pixels with even x + y, 2 pixels inside the button | capture of the original launcher with a focused button |
 | UI-041 | `Client/GameFlow.cs:147` | Load Park opens a shipped park as the reference start (its own balance, Full Simulation rules) whatever Game Mode was last chosen; the original's GameType is not saved with a park but copied from the loading player's profile (`mEasyModeUser`) | player profiles and what the Mac park loader 0x11acfc reads from a park file |
 | UI-042 | `Hud/ParkHud.cs` | HUD camera button shown disabled; its camera-view action is not implemented | binary camera button handler |
-| UI-043 | `Hud/ParkHud.BuyWindow.cs` | buy window list rows: ten equal rows fill the table's content region (44.4 units each); the wheel scrolls one row | capture of the original buy list |
-| UI-044 | `Hud/ParkHud.BuyWindow.cs` | a click on the Name or Price column header sorts the buy list by it (again: descending) | the original column header handler |
-| UI-045 | `Hud/ParkHud.BuyWindow.cs` | buy window stats: excitement gauge = UsageInfo.ExcitementLevel/100, reliability gauge = 1 - Upgrades[0].WearRate/10, safe capacity = Upgrades[0].InitCapacity, working life empty; type-9 value cells drawn as plain bar gauges | capture of the original buy window and its gauge art |
-| UI-046 | `Hud/BuyListModel.cs` | the HUD cash change text stays 4 s after the last balance change and sums the changes within that time | capture of the original cash trend display |
-| UI-047 | `Hud/ParkHud.BuyWindow.cs` | buy window control 512 (beside the title) is left empty | capture of the original buy window |
-| UI-048 | `Hud/ParkHud.BuyWindow.cs` | buy window scroll ball travel: its top runs from the track's top (first row) to a ball height above the track's bottom (last row) | capture of the original scroll bar ends |
-| UI-049 | `Hud/ParkHud.BuyWindow.cs` | buy list third column (1673-1724), its header button 18 and control 491 have no known content and stay empty | capture of the original buy window |
-| UI-050 | `Hud/ParkHud.cs` | i_dollar frame 1 for a negative balance, green_up frame 1 for a decrease; golden key frame 0 and ticket count from the economy (keys are not tracked, always 0) | capture of the original cash display and key counter |
+| UI-043 | `UI/Original/FontSmoothing.cs` | BF4 text drawn above 1× (HiDPI, large outputs) is magnified per glyph with Catmull-Rom and a contrast curve min(2, 0.8 × scale) instead of doubled pixels | none: the original only drew its fonts at 1×; design decision |
+| UI-044 | `Hud/ParkHud.BuyWindow.cs` | buy window list rows: ten equal rows fill the table's content region (44.4 units each); the wheel scrolls one row | capture of the original buy list |
+| UI-045 | `Hud/ParkHud.BuyWindow.cs` | a click on the Name or Price column header sorts the buy list by it (again: descending); the initial name order is the original's | the original column header handler |
+| UI-046 | `Hud/ParkHud.BuyWindow.cs` | buy window stats: excitement gauge = UsageInfo.ExcitementLevel/100, reliability gauge = 1 - Upgrades[0].WearRate/10, safe capacity = Upgrades[0].InitCapacity, working life empty; type-9 value cells drawn as plain bar gauges | capture of the original buy window and its gauge art |
+| UI-047 | `Hud/BuyListModel.cs` | the HUD cash change text stays 4 s after the last balance change and sums the changes within that time | capture of the original cash trend display |
+| UI-048 | `Hud/ParkHud.BuyWindow.cs` | buy window control 512 (beside the title) is left empty | capture of the original buy window |
+| UI-049 | `Hud/ParkHud.BuyWindow.cs` | buy window scroll ball travel: its top runs from the track's top (first row) to a ball height above the track's bottom (last row) | capture of the original scroll bar ends |
+| UI-050 | `Hud/ParkHud.BuyWindow.cs` | buy list third column (1673-1724), its header button 18 and control 491 have no known content and stay empty | capture of the original buy window |
+| UI-051 | `Hud/ParkHud.cs` | i_dollar frame 1 for a negative balance, green_up frame 1 for a decrease; golden key frame 0 and ticket count from the economy (keys are not tracked, always 0) | capture of the original cash display and key counter |
 
 Data-backed (tagged `[DATA]`): the 2048×1536 canvas and authored rectangles of
 placed models (`ui.wad` roots/bounds), button state frames and texture order, V

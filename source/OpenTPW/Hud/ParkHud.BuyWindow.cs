@@ -17,9 +17,9 @@ public sealed partial class ParkHud
 {
 	/// <summary>Rows of the list that fit the content region (1037,427)-(1727,871) at <see cref="BuyRowHeight"/>.</summary>
 	public const int BuyVisibleRows = BuyListModel.VisibleRows;
-	// [APPROX:UI-043] row height: the table gives the content region (444 units high), not the row pitch; ten equal rows fill it — evidence needed: capture of the original buy list
+	// [APPROX:UI-044] row height: the table gives the content region (444 units high), not the row pitch; ten equal rows fill it — evidence needed: capture of the original buy list
 	public const float BuyRowHeight = 444f / BuyVisibleRows;
-	// [APPROX:UI-044] a header click sorts by that column (ascending, again for descending); the table only gives column header buttons 16/17 without a model — evidence needed: the original header handler
+	// [APPROX:UI-045] a header click sorts by that column (ascending, again for descending; the list starts by name ascending as the original's sort word does); the table only gives column header buttons 16/17 without a model — evidence needed: the original header handler
 
 	// [DATA:Mac buy table 0x4cd94:507,506,509,508] category buttons with their help ids (command_17 140, 142, 141, 143)
 	private static readonly (BuildCategory Category, string Model, UIStrings Title, int Help, UiRect Rect)[] BuyCategories =
@@ -32,7 +32,7 @@ public sealed partial class ParkHud
 
 	// [DATA:Mac buy table 0x4cd94:504] content region and the three columns (command_10/command_11)
 	private static readonly UiRect BuyContent = Rect( 1037, 427, 1727, 871 );
-	// [APPROX:UI-049] the third column (1673,1724) has no known content and stays empty; the unnamed controls 491 and 512 are not drawn — evidence needed: capture of the original buy window
+	// [APPROX:UI-050] the third column (1673,1724) has no known content and stays empty; the unnamed controls 491 and 512 are not drawn — evidence needed: capture of the original buy window
 	private static readonly (float Left, float Right)[] BuyColumns = { (1039, 1447), (1460, 1664), (1673, 1724) };
 	// [DATA:Mac buy table 0x4cd94:500,499,497,502,503 and 501,494,498,495,496] label/value rows of the stats frame (493)
 	private static readonly (UiRect Label, UiRect Value)[] BuyStatRows =
@@ -61,7 +61,7 @@ public sealed partial class ParkHud
 	public BuySortColumn BuySort => buy.Sort;
 	public bool BuySortDescending => buy.SortDescending;
 	public int BuyMaxFirstRow => buy.MaxFirstRow;
-	/// <summary>Items of the current category in list order (catalogue order by Info.Id unless a header sorted them).</summary>
+	/// <summary>Items of the current category in list order (by name, as the original list inserts its rows, unless a header sorted them otherwise).</summary>
 	public IReadOnlyList<BuildItem> BuyItems => buy.Items;
 
 	/// <summary>Opens the buy window over the park; a pending placement is cancelled.</summary>
@@ -70,6 +70,7 @@ public sealed partial class ParkHud
 		if ( BuyWindowOpen || RejectReadOnlyAction() )
 			return;
 		SetInfoArm( false );
+		level.CellTool.Cancel();
 		if ( pendingItem != null || level.BuildEntry != null )
 		{
 			pendingItem = null;
@@ -123,7 +124,7 @@ public sealed partial class ParkHud
 		{
 			case BuildCategory.Rides:
 				var capacity = item.Entry?.InitialCapacity ?? 0;
-				// [APPROX:UI-045] gauge rows: excitement is UsageInfo.ExcitementLevel as a share of 100, reliability is 1 - Upgrades[0].WearRate / 10 (wear rate is 'out of 10'), working life has no catalogue value and stays empty; safe capacity is Upgrades[0].InitCapacity — evidence needed: capture of the original buy window
+				// [APPROX:UI-046] gauge rows: excitement is UsageInfo.ExcitementLevel as a share of 100, reliability is 1 - Upgrades[0].WearRate / 10 (wear rate is 'out of 10'), working life has no catalogue value and stays empty; safe capacity is Upgrades[0].InitCapacity — evidence needed: capture of the original buy window
 				float? reliability = item.Entry?.Upgrades.FirstOrDefault( level => level.Level == 0 ) is { } baseLevel ? Math.Clamp( 1 - baseLevel.GetInt( "WearRate" ) / 10f, 0, 1 ) : null;
 				return new[]
 				{
@@ -152,7 +153,7 @@ public sealed partial class ParkHud
 		Model( "statsFrame", "!frame", Rect( 259, 621, 971, 902 ) );
 		Model( "listFrame", "f_buyitem", Rect( 1009, 179, 1813, 902 ) );
 
-		// [DATA:Mac buy table 0x4cd94:510] title text; the category's UITEXT 119-122 (control 512 beside it is unnamed and stays empty, [APPROX:UI-047])
+		// [DATA:Mac buy table 0x4cd94:510] title text; the category's UITEXT 119-122 (control 512 beside it is unnamed and stays empty, [APPROX:UI-048])
 		screen.Add( new UiLabel
 		{
 			Id = "title", Text = () => strings[BuyCategories.First( entry => entry.Category == buy.Category ).Title], Font = fonts => fonts.Title, Color = UiColors.Title,
@@ -260,7 +261,7 @@ public sealed partial class ParkHud
 			var gaugeRow = owner.buy.SelectedItem?.Category == BuildCategory.Rides ? row is 1 or 3 or 4 : row == 1;
 			if ( !gaugeRow )
 				return;
-			// [APPROX:UI-045] the type-9 value cells are drawn as a plain bar gauge; the original gauge art is not identified
+			// [APPROX:UI-046] the type-9 value cells are drawn as a plain bar gauge; the original gauge art is not identified
 			var track = rect.Inflate( -rect.Height * 0.2f );
 			context.Batch.AddRectangle( track, new RgbaByte( 16, 24, 60, 200 ) );
 			if ( stat.Gauge is { } fraction )
@@ -287,11 +288,8 @@ public sealed partial class ParkHud
 
 		public override void Draw( UiContext context, bool focused, bool pressed )
 		{
-			var rect = ScreenRect( context.Canvas );
-			var text = this.text();
-			if ( owner.buy.Sort == column )
-				text += owner.buy.SortDescending ? " -" : " +";
-			context.DrawFittedText( context.Fonts.Label, text, rect, focused || owner.buy.Sort == column ? UiColors.Highlight : UiColors.Text, UiAlign.Center );
+			// The header shows only its text; the original's sort state has no known marker.
+			context.DrawFittedText( context.Fonts.Label, text(), ScreenRect( context.Canvas ), focused ? UiColors.Highlight : UiColors.Text, UiAlign.Center );
 		}
 	}
 
@@ -303,7 +301,7 @@ public sealed partial class ParkHud
 		public override bool Focusable => Visible && Enabled;
 
 		/// <summary>Authored ball rectangle for the current first row: its top runs from the track's top to a ball above the track's bottom.</summary>
-		// [APPROX:UI-048] ball travel: top at the track top for the first row, a ball height above the track bottom for the last — evidence needed: capture of the original scroll bar ends
+		// [APPROX:UI-049] ball travel: top at the track top for the first row, a ball height above the track bottom for the last — evidence needed: capture of the original scroll bar ends
 		public UiRect KnobRect()
 		{
 			var travel = BuyScrollTrack.Height - BuyScrollKnob.Height;

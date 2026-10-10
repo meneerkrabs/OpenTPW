@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -112,6 +113,80 @@ public class GuestAssetTests
 		Assert.IsTrue( bridge.ReleasedTotal >= 6, "HOP/WALKOFF/WALKGET → VAR_LETMEOFF released the riders" );
 		Assert.IsTrue( simulation.Guests.Count( guest => guest.RidesTaken > 0 ) >= 6 );
 		Assert.IsTrue( simulation.Guests.All( guest => guest.State != GuestState.Using || bridge.Riders.Contains( guest.Id ) ) );
+	}
+
+	/// <summary>
+	/// The original Belly Bounce (Bouncy.RSE) with a queue path laid beside the Easymode paths: guests walk the
+	/// queue cells, stand four to a cell, are called forward through the traced gates and ride.
+	/// </summary>
+	[TestMethod]
+	public void GuestsWalkABuiltQueuePathToTheBellyBounce()
+	{
+		var (grid, settings) = LoadJungle();
+		var entry = ObjectCatalog.Load( "jungle" ).Find( 1100 );
+		Assert.IsNotNull( entry, "Belly Bounce (Info.Id 1100)" );
+		var parameters = OriginalObjectRuntime.CreateQueueParameters( entry );
+		// [DATA:jungle Bouncy.sam + Rides.sam] HasQueue, RunsContinuously, CAP 5, DUR 30, InitSpeed 60, QWTC 130 (QUEUE-plan §9).
+		Assert.AreEqual( new QueueParameters( true, true, false, 130, 60, 60, 5, 30 ), parameters );
+		Assert.AreEqual( 100, RideVisitorBridge.ComputeQueueLimit( parameters ), "HasQueue: the QWTC formula is unused" );
+
+		// A straight run of four free cells off an Easymode path cell: the ride entrance sits beyond the fourth.
+		var site = Enumerable.Range( 0, grid.CountX * grid.CountY ).Select( index => (X: index % grid.CountX, Y: index / grid.CountX) )
+			.Where( cell => grid.IsWalkable( cell.X, cell.Y ) )
+			.SelectMany( cell => Enumerable.Range( 0, 4 ).Select( direction => (Path: cell, Direction: direction) ) )
+			.First( candidate => Enumerable.Range( 1, 5 ).All( step =>
+			{
+				var (dx, dy) = GuestPathGrid.Directions[candidate.Direction];
+				var (x, y) = (candidate.Path.X + dx * step, candidate.Path.Y + dy * step);
+				return grid.InBounds( x, y ) && !grid.IsWalkable( x, y ) && GuestPathGrid.Directions.Count( d => grid.IsWalkable( x + d.DX, y + d.DY ) ) == (step == 1 ? 1 : 0);
+			} ) );
+		var (sdx, sdy) = GuestPathGrid.Directions[site.Direction];
+		var queue = Enumerable.Range( 1, 4 ).Select( step => (X: site.Path.X + sdx * step, Y: site.Path.Y + sdy * step) ).Reverse().ToArray();
+
+		var runtime = new OriginalObjectRuntime( entry, seed: 3, open: true );
+		var ride = runtime.Visitors;
+		Assert.AreEqual( parameters, ride.Parameters );
+		ride.EntranceCell = site.Path;
+		ride.ExitCell = site.Path;
+		ride.QueueFrontCell = queue[0];
+		ride.QueueEntranceDirection = site.Direction;
+		var simulation = new GuestSimulation( grid, settings, 21 ) { ArrivalsEnabled = false };
+		simulation.Register( ride );
+		Assert.AreEqual( 4, QueuePaths.TryExtend( grid, ride, queue ) );
+		CollectionAssert.AreEqual( queue, ride.QueueCells.ToArray() );
+		Assert.AreEqual( site.Path, ride.JoinCell );
+		Assert.AreEqual( 16, ride.MaximumQueueLength, "min(100, 4 × 4 cells)" );
+
+		var guests = Enumerable.Range( 0, 24 ).Select( _ => simulation.SpawnInPark( site.Path.X, site.Path.Y ) ).ToList();
+		foreach ( var guest in guests )
+		{
+			guest.AttractionId = ride.AttractionId;
+			guest.State = GuestState.GoingToRide;
+		}
+		var waits = new List<long>();
+		simulation.QueueWaitCompleted += ( _, _, turns ) => waits.Add( turns );
+		var queueCellsStoodOn = new HashSet<(int, int)>();
+		var maximumQueue = 0;
+		for ( var tick = 0; tick < 180 * 60; tick++ )
+		{
+			simulation.Tick( Tick );
+			runtime.Simulate( Tick );
+			maximumQueue = Math.Max( maximumQueue, ride.QueueLength );
+			foreach ( var guest in simulation.Guests.Where( guest => guest.State == GuestState.Queueing ) )
+			{
+				Assert.IsTrue( grid.IsQueue( guest.Cell.X, guest.Cell.Y ), $"guest {guest.Id} stands on a queue cell, not at {guest.Cell}" );
+				queueCellsStoodOn.Add( guest.Cell );
+			}
+		}
+		Console.WriteLine( $"Belly Bounce queue {string.Join( " ", queue )}: boarded {ride.BoardedTotal}, released {ride.ReleasedTotal}, max queue {maximumQueue}, "
+			+ $"waits {waits.DefaultIfEmpty().Min()}..{waits.DefaultIfEmpty().Max()} park turns (mean {(waits.Count == 0 ? 0 : waits.Average()).ToString( "F1", System.Globalization.CultureInfo.InvariantCulture )})" );
+		Assert.AreNotEqual( RideVMState.Faulted, runtime.Script!.State, runtime.Script.FaultMessage );
+		Assert.IsTrue( queueCellsStoodOn.SetEquals( queue ), $"guests stood on every queue cell: {string.Join( " ", queueCellsStoodOn )}" );
+		Assert.AreEqual( 16, maximumQueue, "the queue filled to 4 × cells" );
+		Assert.IsTrue( ride.BoardedTotal >= 10 && ride.ReleasedTotal >= 5, $"boarded {ride.BoardedTotal}, released {ride.ReleasedTotal}" );
+		Assert.AreEqual( ride.BoardedTotal, waits.Count, "every boarding guest came through the queue" );
+		Console.WriteLine( $"Admission progress: longest head-not-ready streak {ride.MaximumHeadNotReadyStreak} evaluations, longest called-not-boarded age {ride.MaximumCalledAgeTurns} park turns" );
+		runtime.Stop();
 	}
 
 	[TestMethod]

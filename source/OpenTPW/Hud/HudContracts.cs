@@ -21,6 +21,8 @@ public interface IHudParkStatus
 	int GoldenTickets => 0;
 	/// <summary>Golden keys (control 54). OpenTPW does not track keys yet, so this stays 0.</summary>
 	int GoldenKeys => 0;
+	/// <summary>The economy the balance comes from; it changes when a save replaces it, so a balance jump is not shown as income or spending.</summary>
+	object? EconomySource => null;
 	/// <summary>Purchase price shown in the build menu, null when unknown.</summary>
 	long? PriceOf( BuildItem item );
 	/// <summary>Whether the item can be bought now (researched, in the catalogue).</summary>
@@ -33,7 +35,8 @@ public enum BuildCategory { Rides = 0, Shops = 1, Sideshows = 2, Features = 3 }
 /// <summary>A buyable object in the build menu.</summary>
 /// <param name="InfoId">Original <c>Info.Id</c> of the object (economy catalogue key).</param>
 /// <param name="ObjectNameIndex">OBJECT_NAMES.str entry of the name.</param>
-/// <param name="PreviewModel">Path of the original preview model (<c>P&lt;name&gt;.MD2</c>) drawn as the icon.</param>
+/// <param name="PreviewModel">Model drawn as the icon: the original preview model (<c>P&lt;name&gt;.MD2</c>), or the object's
+/// main model when it has none, as the original buy window does (docs/reverse/BUILD-PREVIEW.md).</param>
 /// <param name="TextureDirectories">Where the preview model's textures are looked up, in order.</param>
 /// <param name="DefaultExcitement">Original <c>UsageInfo.ExcitementLevel</c> ("average excitement level by default"), if known.</param>
 public sealed record BuildItem( string Id, int InfoId, BuildCategory Category, int ObjectNameIndex, long Cost, string? PreviewModel, IReadOnlyList<string> TextureDirectories, int? DefaultExcitement = null, ObjectCatalogEntry? Entry = null );

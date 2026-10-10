@@ -13,7 +13,7 @@ public static class ApproximationRegister
 	public static readonly IReadOnlyList<Approximation> Compatibility = new Approximation[]
 	{
 		new( "COMPAT-001", "Sign text", "Sign text canvas is 512x256 texels (two 256x256 halves for sign1/sign2); the original sign texture size is unknown (shared sign1/sign2.wct placeholders are 128x128).", "binary (CreateDIBSection size) or a capture of a sign texture" ),
-		new( "COMPAT-002", "Sign text", "Lines are centred horizontally and shrunk uniformly to fit the canvas width minus an 8-texel margin.", "binary text placement or captures of long ride names" ),
+		new( "COMPAT-002", "Sign text", "The LOGFONT width is applied as a horizontal scale that makes the font's average character width (OS/2 xAvgCharWidth) equal lfWidth, with fractional advances; the width search and centring are traced (0x100A9F9C).", "captures of long ride names (the Mac GDI layer's width rounding)" ),
 		new( "COMPAT-003", "Sign text", "Each line is drawn opaque in its .sgn colour block's RGB (traced); the fourth colour byte, colour modes 1 vs 2, the fill bitmaps and the slot effect words are not applied.", "the Bitmap::colourblt body and the sign effect routines" ),
 		new( "COMPAT-004", "Sign text", "The board behind gate text is a flat dark colour; the .sgn board image (a wavelet stream in every shipped sign) is read but not decoded or composed.", "the Bitmap::load_wavelet decoder and the board blit" ),
 		new( "COMPAT-005", "Sign text", "The .sgn field read as HorizontalScalePercent (85..141) is not applied.", "binary use of the field" ),

@@ -12,9 +12,16 @@ public static partial class Program
 	private const string GameRoot = "/game";
 	private static Renderer? renderer;
 	private static GameFlow? flow;
+	private static readonly HashSet<string> loadedLevels = new( StringComparer.OrdinalIgnoreCase );
+	private static readonly HashSet<string> requestedLevels = new( StringComparer.OrdinalIgnoreCase );
+
+	/// <summary>Folders the page keeps in the browser's storage between visits (main.js): saves and options, online files, settings.</summary>
+	private static readonly string[] PersistentFolders = { "/save", "/online", "/config" };
 
 	public static void Main()
 	{
+		// Display and graphics settings go to /config, which the page keeps between visits.
+		Environment.SetEnvironmentVariable( "OPENTPW_CONFIG_DIR", "/config" );
 		Log = new Logger();
 		Console.WriteLine( "OpenTPW: runtime ready." );
 	}
@@ -76,16 +83,50 @@ public static partial class Program
 		foreach ( var diagnostic in diagnostics )
 			Log.Warning( diagnostic );
 
-		// No sound or movies yet (docs/WEB.md).
-		GameAudio.Enabled = false;
+		// Sound plays through WebAudio (Browser/WebAudioOutput.cs); movies are not in the browser yet.
+		GameAudio.Enabled = true;
 		renderer = new Renderer( DisplaySettings.Default, null );
 		Render = renderer;
 		flow = new GameFlow { OnlineFolders = new OnlineFolders( "/online" ) };
+		// Level folders are copied when a park is first started; the lobby keeps running meanwhile.
+		GameFlow.LevelDataReady = level =>
+		{
+			if ( loadedLevels.Contains( level ) )
+				return true;
+			if ( requestedLevels.Add( level ) )
+				Page.RequestLevel( level );
+			return false;
+		};
 		renderer.OnUpdate += flow.Update;
 		renderer.OnRender += flow.Render;
 		flow.ShowFrontEnd();
 		renderer.Start();
 	}
+
+	/// <summary>Puts back a file the page kept in the browser's storage (before <see cref="Start"/>).</summary>
+	[JSExport]
+	public static void RestoreFile( string path, byte[] contents )
+	{
+		if ( !PersistentFolders.Any( folder => path.StartsWith( folder + "/", StringComparison.Ordinal ) ) )
+			return;
+		Directory.CreateDirectory( Path.GetDirectoryName( path )! );
+		File.WriteAllBytes( path, contents );
+	}
+
+	/// <summary>The files to keep, one per entry as <c>path</c>, a tab and a change stamp (write time and length).</summary>
+	[JSExport]
+	public static string[] PersistentFiles() => PersistentFolders
+		.Where( Directory.Exists )
+		.SelectMany( folder => Directory.EnumerateFiles( folder, "*", SearchOption.AllDirectories ) )
+		.Select( path => $"{path}\t{File.GetLastWriteTimeUtc( path ).Ticks}:{new FileInfo( path ).Length}" )
+		.ToArray();
+
+	[JSExport]
+	public static byte[] ReadFile( string path ) => File.ReadAllBytes( path );
+
+	/// <summary>The page has copied a level's folder (or given up; the level then reports what is missing).</summary>
+	[JSExport]
+	public static void LevelLoaded( string level ) => loadedLevels.Add( level );
 
 	/// <summary>Writes the embedded content files where the game looks for them (next to the program).</summary>
 	private static void WriteContent()

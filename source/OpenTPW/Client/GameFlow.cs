@@ -17,6 +17,7 @@ internal sealed class GameFlow : IDisposable
 	private readonly UiInputSource inputSource = new();
 	private readonly UiBatch backgroundBatch = new();
 	private Action? pending;
+	private string? pendingLevel;
 	private LobbyDefinition? lobbyDefinition;
 	private (int Requested, int Fitted)? reportedUiScale;
 	private OnlineSession? onlineSession;
@@ -58,7 +59,25 @@ internal sealed class GameFlow : IDisposable
 	/// <summary>Raised after a queued transition ran.</summary>
 	public event Action? Transitioned;
 
-	public void Queue( Action transition ) => pending = transition;
+	public void Queue( Action transition )
+	{
+		pending = transition;
+		pendingLevel = null;
+	}
+
+	/// <summary>Queues a transition into <paramref name="level"/>; it waits until <see cref="LevelDataReady"/> says the level's files are there.</summary>
+	public void QueueLevel( string level, Action transition )
+	{
+		pending = transition;
+		pendingLevel = level;
+	}
+
+	/// <summary>
+	/// Whether a level's files can be read now. The browser build copies a level's folder from the player's
+	/// installation only when it is first played and answers false until it is in (docs/WEB.md); the lobby
+	/// keeps running meanwhile. Null on the desktop, which reads the installation directly.
+	/// </summary>
+	public static Func<string, bool>? LevelDataReady { get; set; }
 
 	/// <summary>
 	/// Records the keys and buttons held right now as already seen, so a press that skipped the start-up movies
@@ -78,8 +97,8 @@ internal sealed class GameFlow : IDisposable
 		LobbyCameraMode.SpinSpeed = lobbyDefinition.SpinSpeed;
 		Menu = new FrontEndMenu( Strings, lobbyDefinition.Islands, new FrontEndActions
 		{
-			StartPark = ( island, mode ) => Queue( () => StartPark( island.Level, mode ) ),
-			Load = entry => Queue( () => LoadPark( entry ) ),
+			StartPark = ( island, mode ) => QueueLevel( island.Level, () => StartPark( island.Level, mode ) ),
+			Load = entry => QueueLevel( entry.Level, () => LoadPark( entry ) ),
 			Quit = Quit,
 			CreateOptions = CreateOptions,
 			IslandSelected = island => LobbyCameraMode.Target = Lobby!.Target( island ),
@@ -181,7 +200,7 @@ internal sealed class GameFlow : IDisposable
 			ExitToLobby = () => Queue( () => ShowFrontEnd( levelName ) ),
 			Quit = Quit,
 			CreateOptions = CreateOptions,
-			CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, Strings, FindLoadEntries(), entry => Queue( () => LoadPark( entry ) ) ),
+			CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, Strings, FindLoadEntries(), entry => QueueLevel( entry.Level, () => LoadPark( entry ) ) ),
 			GoOnline = ShowOnline,
 		} );
 		// [EXT:online-visit] read-only visits of shared parks get no advisor (the original has no visits)
@@ -235,10 +254,11 @@ internal sealed class GameFlow : IDisposable
 	{
 		// [EXT:texture-pack] the pack switch belongs to the game loop, not to its loading screen
 		TexturePackSwitch.PumpCurrent();
-		if ( pending != null )
+		if ( pending != null && (pendingLevel == null || LevelDataReady?.Invoke( pendingLevel ) != false) )
 		{
 			var transition = pending;
 			pending = null;
+			pendingLevel = null;
 			transition();
 			Transitioned?.Invoke();
 		}
@@ -261,7 +281,7 @@ internal sealed class GameFlow : IDisposable
 			Level.UiCapturesMouse = Hud.Update( Context, input );
 			Level.SimulationTimeScale = Hud.Status.TimeScale;
 			Level.Update();
-			Advisor?.Update();
+			Advisor?.Update( Hud.Paused );
 			GameAudio.Update( Level.Guests?.GetStatistics().InPark );
 			return;
 		}
@@ -335,7 +355,7 @@ internal sealed class GameFlow : IDisposable
 	{
 		Session = Online,
 		Level = () => Level,
-		Visit = visit => Queue( () => StartLevel( visit.Level, original: !visit.IsSandbox, developerPanels: false, visit: visit ) ),
+		Visit = visit => QueueLevel( visit.Level, () => StartLevel( visit.Level, original: !visit.IsSandbox, developerPanels: false, visit: visit ) ),
 	} ).ShowWorld();
 
 	public void Dispose()

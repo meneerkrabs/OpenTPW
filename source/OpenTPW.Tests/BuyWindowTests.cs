@@ -34,10 +34,13 @@ public class BuyWindowTests
 		model.EnsureSelection();
 		Assert.AreEqual( BuildCategory.Rides, model.Category );
 		Assert.AreEqual( 14, model.Items.Count );
-		Assert.AreEqual( 100, model.SelectedItem!.InfoId );
+		// The list starts in the original's insert order: by name, ordinal ("Item 0-105" first).
+		var names = model.Items.Select( item => $"Item {item.InfoId % 7}-{item.InfoId}" ).ToArray();
+		CollectionAssert.AreEqual( names.OrderBy( name => name, StringComparer.Ordinal ).ToArray(), names );
+		Assert.AreEqual( 105, model.SelectedItem!.InfoId );
 		model.SelectCategory( BuildCategory.Shops );
 		Assert.AreEqual( 2, model.Items.Count );
-		Assert.AreEqual( 300, model.SelectedItem!.InfoId );
+		Assert.AreEqual( 301, model.SelectedItem!.InfoId );
 		model.SelectCategory( BuildCategory.Features );
 		Assert.AreEqual( 0, model.Items.Count );
 		Assert.IsNull( model.SelectedItem );
@@ -79,7 +82,7 @@ public class BuyWindowTests
 		model.SortBy( BuySortColumn.Name );
 		Assert.IsFalse( model.SortDescending );
 		var names = model.Items.Select( item => $"Item {item.InfoId % 7}-{item.InfoId}" ).ToArray();
-		CollectionAssert.AreEqual( names.OrderBy( name => name, StringComparer.CurrentCultureIgnoreCase ).ToArray(), names );
+		CollectionAssert.AreEqual( names.OrderBy( name => name, StringComparer.Ordinal ).ToArray(), names );
 		Assert.IsNotNull( model.SelectedItem, "sorting keeps a selection" );
 	}
 

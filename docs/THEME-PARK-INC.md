@@ -17,7 +17,9 @@ its `.fsh` textures ([FSH.md](FSH.md)); nothing uses it in the game yet.
   Windows edition the rest of OpenTPW's documentation pins (see below).
 
 Neither set is committed. Every number here comes from OpenTPW's own readers run
-over loose files and every WAD member, plus small read-only scripts.
+over loose files and every WAD member, plus small read-only scripts. The exception is the
+[Global Master Save](#global-master-save-gms) layout, which was traced in the Theme Park Inc
+executable with Ghidra (static analysis only) and then checked against three original save files.
 
 ## Summary
 
@@ -89,6 +91,9 @@ the semantics of the TPW corpus.
   inserts `01 13 00 00 00` and the ASCII string `Version: Beta_21` before the
   UTF-16 `THE SAVE GAME DATA…` banner. OpenTPW's version-133 offline layout does
   not apply.
+- **Global save.** Theme Park Inc keeps the player's progress in a Global Master Save (`.GMS`), separate from park
+  saves. `.GMI` is the same format, written for the game's internal "Refresh" snapshot. `ThemeParkIncGlobalSave`
+  reads both; see [Global Master Save](#global-master-save-gms) below.
 - **Balance settings.** `levels/Standard.sam` has 413 keys against 192 in TPW,
   156 of them shared. The additions are mainly staff simulation
   (`AllStaffConstants.*`: wages, happiness, experience, staff rooms). `Challenges.sam`
@@ -152,3 +157,50 @@ about the readers.
    duration and cite the source comments in the opcode handlers.
 3. The extended TPWS header (`Version: Beta_21`) and the new `Standard.sam` keys, if
    Theme Park Inc support ever becomes a goal.
+
+## Global Master Save (.GMS)
+
+The player's progress across the worlds lives in a Global Master Save. "GlobaMasterSave" is the name the program
+uses in its own log text. It is not a park save. The layout was traced in the Theme Park Inc executable, the scene
+noCD build of `Game.exe`, by static analysis only:
+
+- `0x0074C8F0` writes the file;
+- `0x0074D110` loads it;
+- the shared body is `0x0074D840` with its sub-serializers.
+
+The file is uncompressed and little-endian. The loader rejects it when one of six markers differs.
+
+| Part | Content |
+| --- | --- |
+| Header | `u32` world (0–2; the writer stores 3 when there is none), `u32` version 12, a `u32` and 8 bytes |
+| Card table | 256 × 16 bytes (`0x0074B1F0`): Info.Id, a level 0–2, a flag and an amount. Empty slots have flag `0x7FFFFFFF`. The observed files use 16 slots |
+| Words and bytes | including the mission number (object +0x105C; the loader then reads the world's `Miss%02d.sam`) |
+| 5 × 48 bytes, `TATS`, 15 words, `AMTA` | untraced |
+| Parks | `u32` count; per park a length-prefixed name (`arabian`, `science`, `water`, `wIntro`), then `0x0074FEF0`: two interleaved UTF-16 sign lines (`mSignNameA`/`mSignNameB`, 33 characters), `d_available`, `d_open`, `mParkNumber`, `mNameChanged`, `mAllResearchCompleted`, `mChallengesDone`, `mAllChallengesDone`, `mCurrentTechLevel` |
+| `MEHT`, options | `0x0045A130`: four volumes stored as (on, level) word pairs (the last two named SpeechVolume and MovieVolume), AdvisorOn, TutorialOn, TooltipsOn, ConfirmDeleteOn, RMBScrollOn, RMBCancelOn, IsometricOn, AnimateMenus, GameSpeed, mZoomMin, mZoomMax, mFPSClip, MusicEnabled |
+| History | `mFirstHourTime`, then 644 × 20 bytes `mHistory[i]` |
+| Tail | `0x00592720` (a word and 92 bytes), `DTOT`, the shares game (`0x00620E30`: three company slots, `mNumberOwned`, `mPctCompanySharesOwned`, `mCompanyName`, `mCurrentValue`), `RAHS`, `0x00622D70` (count, bytes, a byte and three words), `MAPS`, the ambient sound tags (`0x005BF470`: count × 16 bytes) |
+
+Three German retail saves read to their last byte with every marker in place. They are kept private and
+checked by `ThemeParkIncGlobalSaveTests` when `OPENTPW_TPI_SAVES` names their folder. Sections without a traced
+meaning are read and skipped, and nothing is written back.
+
+### `.GMI`: the refresh snapshot
+
+`.GMI` is not a separate format. One save routine, `0x00745720`, takes a flag. Without the flag it writes a
+normal save: the park as `.TPWS` and the progress as `.GMS`, and it then walks the parks (`arabian` first).
+With the flag it writes the park as `.TPWI` and the progress as `.GMI` and skips that walk. Both go through the
+same writer `0x0074C8F0`. The writer stores the flag at object +0x14EC, and the save routine later reads it there to pick
+`.TPWI` or `.TPWS` for one of its file names. The writer does not pass the flag to the body and writes version 12 either way.
+
+Only `0x00744E80` calls the save routine with the flag; its counterpart `0x00744E10` passes no flag, and the
+autosave paths (`0x007765D0`, `0x00777120`) write `.GMS`. `0x00744E80` has one caller: when the options screen
+(`0x004597C0`) applies a change that needs a reload, it saves the game as `Refresh`, re-initializes, and loads
+`Refresh.GMI` back (`0x00744DF0`, the loader `0x007451E0` with the `.GMI` extension).
+
+A second path loads a `.GMI`: the handler at `0x006A4E70` (reached through a pointer table) loads `restart.GMI`
+the same way. No code was found that writes a `restart` `.GMI`, and none ships in the game data, so where that file
+would come from is open.
+
+No `.GMI` file was available, so all of this rests on the executable. `ThemeParkIncGlobalSave` reads one like a
+`.GMS`, and the corpus test includes `.GMI` files when the folder has any.

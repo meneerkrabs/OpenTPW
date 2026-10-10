@@ -4,9 +4,10 @@ October 9, 2026. Status: strict `.LIP` reader and selected MPEG Layer I/II decod
 Mac static evidence establishes signed mark conversion, a pause-aware unscaled
 millisecond clock, loaded-LIP talking state, strict deadlines, one toggle per
 update and random mouth selection. The bounded original-clock helper is tested;
-`--advisor-say N` still renders a manual SDL-synchronized presentation with its
-own timeline. Automatic triggers, animation/pose, geometry and audio-device
-integration remain incomplete. No original data is in the repository.
+The advisor now speaks by itself for the traced game events (see "Automatic
+advice"); `--advisor-say N` still plays a single clip on demand. Its clock stands
+still while the pause menu is open, as the original's pause-aware clock does (ADVISOR-017 covers its start value and the other pause callers); the remaining
+triggers, animation/pose and geometry remain incomplete. No original data is in the repository.
 
 ## Where the data is
 
@@ -96,7 +97,7 @@ selection and random choice among all five mouth nodes. The standalone helper
 preserves those rules with explicit clock/random inputs. The advisor runtime
 picks the mouth the same way (`AdvisorMouth`: node `rand() % 5 + 1` every 100 ms
 of speech, node 1 while silent, from the advisor update at `0x10007434`).
-ADVISOR-001 covers the unrecovered node-to-mesh order. Responses use the recovered
+The node-to-mesh order is traced too: the node lookup `0x1019B394` finds nodes 1–5 by the names "mouth - normal", "aah", "eee", "ooh" and "sss". Responses use the recovered
 global/level bank policy; ADVISOR-009 now only covers the manual `--advisor-say`
 path and the unbound descriptors (see "Automatic advice").
 Geometry, cross-edition equivalence and device timing remain separate gates.
@@ -260,7 +261,7 @@ for an invalid record or the missing-descriptor response 614 and keeps the playe
 result only as the span (`0x1000BB64`, return 1 at `0x1000BBF0`). A response that
 cannot be said therefore reserves 1000. With the Game Options Advisor switch off
 the player returns 0 before speaking (`0x10006BB4`–`0x10006BC0`), so advice is
-still picked, consumed and recorded silently (ADVISOR-021). With `--mute` the
+still picked, consumed and recorded silently (`0x10006BB4`, `0x1000BBF0`). With `--mute` the
 advisor's speech keeps the wall clock and opens no audio device. Game ticks are the economy's park turns
 (`mGameTick`); the sandbox has none, so its ticks stay 0.
 
@@ -326,7 +327,6 @@ table fit). The smoke-test thresholds are test-harness checks, not game rules.
 
 | ID | Site | Current value / rule | Evidence needed |
 | --- | --- | --- | --- |
-| ADVISOR-001 | `source/OpenTPW/World/Advisor.cs:25` | Mouth nodes 1–5 are Normal, Aah, Eee, Ooh, Sss in that order (the random 100 ms choice itself is traced) | The node-lookup jump table at `0x1019B3DC` or the MD2 node ids |
 | ADVISOR-002 | `source/OpenTPW/World/Advisor.cs:30` | Visible: body, head, eyes, antennae, hands; hats, spatula, bow tie, ShutEye hidden | Original node-visibility rules (dummy attributes 0x401/0x411, Advisorm* tracks) or captures per advisor role |
 | ADVISOR-003 | `source/OpenTPW/World/Advisor.cs:74` | Bottom-left square viewport, ⅓ of the short logical screen side (min 64 logical px), 16 logical px margin; mapped to the world target for render scale/HiDPI | Original placement/size captures per resolution |
 | ADVISOR-004 | `source/OpenTPW/World/Advisor.cs:58` | Camera at z = −70 facing +Z, 40° FOV, near 1 / far 500 | Original advisor camera/projection (binary or capture) |
@@ -340,13 +340,11 @@ table fit). The smoke-test thresholds are test-harness checks, not game rules.
 | ADVISOR-012 | `source/OpenTPW/Client/SpeechAudioPlayer.cs:62` | Mono speech duplicated to both stereo channels | Original speech channel layout/panning |
 | ADVISOR-013 | `source/OpenTPW.Files/Public/LipSyncTimeline.cs:54` | Talking from time 0 (unit and per-mark toggle traced: STP-PPC 0x10007434) | Original runtime LIP consumer (binary or trace) |
 | ADVISOR-014 | `source/OpenTPW.Files/Formats/Sound/Mp2Decoder.cs:55` | Synthesis-window values read from ffmpeg's data table; two values checked against ISO, corpus ≤1 LSB | Full comparison with the published ISO/IEC 11172-3 Table 3-B.3 |
-| ADVISOR-015 | `source/OpenTPW/Client/AutomaticAdvisor.cs:47` | The eligibility check's tutorial byte +53 (`0x10009038`) is the Game Options Tutorial switch (options +0x35, default on in `0x10125B7C`) | The object behind TOC −30268 in the eligibility check |
 | ADVISOR-016 | `source/OpenTPW/Client/AutomaticAdvisor.cs:126` | Returned playback span = speech length + 200 + 300 + 1000 ms; the queue adds another 1000 | Decoded advisor sequence and ending-clip durations |
-| ADVISOR-017 | `source/OpenTPW/Client/AutomaticAdvisor.cs:13` | Controller clock = wall-clock ms since the automatic advisor started, one controller update per frame, not paused with the game | The advisor clock's offset/freeze/compensation and the update cadence |
+| ADVISOR-017 | `source/OpenTPW/Client/AutomaticAdvisor.cs:13` | Controller clock starts at 0 with the automatic advisor, one controller update per frame; it stands still while the pause menu is open (the freeze/compensation itself is traced, `0x10117C00`) | The clock's offset word (+0x18) writer, the screens that call the pause `0x10110518`, and the update cadence |
 | ADVISOR-018 | `source/OpenTPW/Client/AutomaticAdvisor.cs:64` | The automatic advisor is drawn only while a response plays and only inside a level; leaving the level stops it | Entry/exit animation and idle visibility |
 | ADVISOR-019 | `source/OpenTPW/World/AdvisorController.cs:94` | `GeneralAdvisor.MinTimeAnyMessage` (5) and `MinTimeSameMessage` (120) are loaded but not applied | Reads of balance fields +24/+28 |
 | ADVISOR-020 | `source/OpenTPW/Client/AutomaticAdvisor.cs:76` | Events 2/3/4 come from the economy's bankruptcy (six months in the red) and park open/close transitions | The producers' threshold and preconditions (`0x100CC464`, `0x10108EE4`) |
-| ADVISOR-021 | `source/OpenTPW/Client/AutomaticAdvisor.cs:104` | The response player's options byte +0x34 (`0x10006BB4`) is the Game Options Advisor switch; off, advice is picked, consumed and recorded silently | The object behind TOC −30268 (data `0x120A14`) and its +0x34 writer (same question as ADVISOR-015) |
 | ADVISOR-022 | `source/OpenTPW/Client/AutomaticAdvisor.cs:58` | Pending advice and message history are not saved or loaded with the park | Whether the original park save writes the controller's pending records (serializer `0x1000BC10`) and history, and where |
 
 ## Remaining gates

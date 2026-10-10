@@ -6,6 +6,10 @@ finds none of the setting names, so the formulas cannot be read from the binary.
 **built on** original data, not a reproduction of the original rules: every place where the original
 behaviour is unknown is marked *approximation* below and in the code documentation.
 
+The Mac PowerPC build does contain the setting names and its code is readable. The ride wear, breakdown and
+repair rules are traced there and implemented, see [reverse/RIDE-WEAR.md](reverse/RIDE-WEAR.md); only the
+ride-state gate (ECON-023) and the life gauge's start value (ECON-047) remain approximations.
+
 Code: `source/OpenTPW/Economy/` (simulation), `source/OpenTPW.Files/Formats/Save/SaveEconomyRecords.cs`
 (original save records). Tests: `ParkEconomyTests` (synthetic, no assets) and
 `ParkEconomyOriginalDataTests` (original data, inconclusive without `OPENTPW_GAME_PATH`).
@@ -78,7 +82,8 @@ Role order everywhere: handyman/cleaner, mechanic, entertainer, guard, researche
 | `Entertainer/GuardConstsPerGrade` (`WorkDuration`, `HappinessEffectOnCell`, `ActivationDistance`) | | Entertaining/pursuit | unused (guests slice) |
 | `ResearcherConstsPerGrade[g].WorkDuration` | 10–50 | "How long the researcher researches for" | unused |
 | `PerGradeStaffConsts[g].IdleDuration`, `RecuperationRate`, `HappinessRecuperationRate`; `AllStaffConstants.*` | | Rest/happiness | unused (no staff behaviour yet) |
-| `Upgrades[n].WearRate` | 0–5 "out of 10" (easy lower) | Ride wear | approx (state of repair −WearRate per open day) |
+| `Upgrades[n].WearRate` | 0–5 "out of 10" (easy lower) | Ride wear | traced: scales the wear step every 64 turns (RIDE-WEAR.md) |
+| `Upgrades[n].RedLineSpeed`, `Upgrades[n].RedLineCapacity`, `UsageInfo.MaxSpeed`, `UsageInfo.MaxCapacity` | Speed and capacity limits | Ride wear | traced: the speed and rider terms of the wear step |
 | `Upgrades[n].DurationOfUpgrade` | 0/2/4 | "time taken for mechanic to carry out the upgrade — in conjunction with mechanic's WorkDuration" | approx (multiplies WorkDuration) |
 | Advisor `StaffHireMechanics1.PoorerStateThan` | 25 | Worn-ride threshold | data (mechanic dispatch below 25) |
 
@@ -147,7 +152,7 @@ reported as **unverified**, without comparing them to the runtime's annuity appr
 | --- | --- | --- | --- |
 | Bank prefix | 1,411,362 | 7 × 32-bit words: admission fee, balance, batch balance, withdrawals enabled, last balance, entered-red tick, annual profit | Typed values: 25, 87987, 0, true, 87787, 0, −12013 |
 | Loan offers | 1,411,390 | 8 × 32 bytes: available flag, i32 amount, i32 APR, months, monthly repayment, bought flag, months repaid, lender name index | Amounts, APR, terms and lenders equal `LoanInfo[0–7]`; repayments 2777, 1388, 694, 277, 750, 1000, 1666, 2166 = floor(amount / months), i.e. 0 % APR: only `Easy_Standard.sam` matches |
-| Challenges | 1,410,409 | 8 × 45 bytes: `i32 type, time, value, object, object2, prize, follow-up`, 14 zero bytes, `u8 independent`, 2 zero bytes | Equal `Challenges[1, 15, 6, 18, 12, 7, 8, 9]` = jungle `ChallengesInThisLevel`, including the `Independent` flags (1,1,1,1,1,1,0,0) |
+| Challenges | 1,410,409 | 8 × 45 bytes: `i32 type, time, value, u16 object, u16 object2, i32 staff type, prize, follow-up, u8 check at end only`, 13 zero bytes, `u8 independent`, 2 zero bytes | Equal `Challenges[1, 15, 6, 18, 12, 7, 8, 9]` = jungle `ChallengesInThisLevel`, including the `Independent` flags (1,1,1,1,1,1,0,0) |
 
 Proven and used: the 0 % APR repayment formula, the easy balance for the jungle original level, and
 the challenge list. The placed objects and fixed items (docs/TPWS-PAYLOAD.md) are registered in the
@@ -169,7 +174,17 @@ The decoded balance is 87,987, last balance 87,787 and annual profit −12,013, 
 100,000 − 12,013. The spending history behind that profit is still unknown. This correction
 reports the typed bank values but continues to start the simulation at `InitialCash`; it does
 not restore active loans or other unimplemented original state. The locator still uses
-plausibility limits and lacks framing proof for other saves (**ECON-045**).
+plausibility limits rather than the serializer's offsets (**ECON-045**).
+
+The eleven saves of the second fixture set (docs/TPWS-PAYLOAD.md) corrected the challenge layout.
+Easymode's challenges have no second object, staff type or end-only check, so they could not show
+where those go. Every one of the 97 challenge records in those saves equals its `Challenges.sam`
+definition under one layout: both object ids share the word at +12 (first in the low 16 bits),
+`TargetStaffType` is the word at +16, and `CheckAtEndOnly` is the byte at +28. Halloween
+`Challenges[24]` (Crypt Kart plus Firepit, 2150 and 2501) is stored as `0x09C50866`; space
+`Challenges[25]` has staff type 1; fantasy `Challenges[10]` has the end-only flag. The old reading
+(a whole word per object, 14 zero bytes) rejected those records, so it found only part of the
+fantasy list and two lists in Halloween.
 
 The verified PC `Easymode.TPWI` SHA-256 is
 `6d89303d098900364bf5e80b236b64bd85976fb947e9e4609d088547f430b39a`.
@@ -189,7 +204,7 @@ mismatches; original-data tests check the typed PC fixture.
 | Loans | Offers, lenders, terms; 0 % APR repayment = floor(amount/months) | Annuity formula and monthly interest for APR > 0; early repayment pays the remaining balance |
 | Bankruptcy | Six month-ends in the red, warnings at 3 and 5 months (strings) | Advance stops when bankrupt |
 | Staff | Pool sizes, maxima, wages, training prices | Candidate grades, pool timing, free hiring, 100 points per grade, mechanic/handyman job durations |
-| Maintenance | Wear rates, upgrade durations, worn threshold 25 | Wear per open day, repair restores 100 |
+| Maintenance | Wear rates, red lines, maxima, upgrade durations, worn threshold 25 | Traced: wear every 64 turns from the ride script's running state, riders and speed; breakdown check every 8 turns; repair restores 100 but not the life gauge. Approximated: the ride-state gate (ECON-023) and the life gauge's start value (ECON-047) |
 | Research | Items, categories, groups, costs, effort, ability, thresholds, work load; traced: points every 20 turns, cumulative group opener, first open item in table order; points from researcher staff only, in both modes (Mac) | Info-id table order, the excluded researcher states, the stand-in for the Instant Action seed's researcher |
 | Challenges | Definitions, level list, timings, prizes, follow-ups | Type semantics from comments, except the build types 28 and 30–33, traced to the handler table at `0x100CE690`; explicit accept/decline; types 14, 22, 23, 26 unmeasured (23 and 26 never pass in the binary) |
 | Golden tickets | All thresholds | Checked every 100 park turns in Full Simulation only; the profit ticket reads the year's running profit (`mProfitThisYear`, reset each calendar year); the first copy of a ticket object costs tickets, not cash (all traced) |
@@ -260,7 +275,11 @@ tests compare saves before/after load and after identical continuations byte for
 - `IEconomyObjectCatalog` / `EconomyObjectInfo` (rides/objects slice may supply its own catalogue);
   `ParkEconomy.TryBuild(infoId)` returns the instance id the placed object should keep;
   `RegisterExisting` for imported/fixed items; `SetObjectOpen`, `Sell`, `TryBuyUpgrade`,
-  `TryBuyCells(CellPurchase, count)` for paths, queues, tracks and land.
+  `TryBuyCells(CellPurchase, count)` for batches of paths, queues, tracks and land;
+  `TrySpendCell(CellPurchase)` charges one path/queue cell when it is written, refused only
+  when balance − cost < 0 (`SetCellType` `0x82ac4`, PATH-plan §3.2); `RefundQueueCell(ride)`
+  credits `Costs.QueueCell` × the ride's `ScrapPercent` / 100 for a removed queue cell
+  (`ClearCell` `0x85dcc`).
 - `IParkClock` (`Tick`, `Date`, `Speed`) for the frontend and for the `YEAR/MONTH/DAY/HOUR` RSE opcodes.
 - `ParkEconomyRuntime` (in `Level.Park`, original levels only): created from `OriginalPark`, ticked
   on the level's 60 Hz `FixedStepClock`, logs `Park clock: …; balance $…` per game day.
@@ -304,8 +323,7 @@ site, is listed in `Economy/EconomyApproximations.cs` and is logged once at star
 | ECON-020 | `Economy/ParkEconomy.cs:28` | a sale drops LitterEffect/100 litter items | capture of litter after sales |
 | ECON-021 | `Economy/ParkEconomy.cs:243` | a repair takes WorkDuration game hours (x DurationOfUpgrade for upgrades); mechanics are dispatched instantly | capture of repair duration per grade |
 | ECON-022 | `Economy/ParkEconomy.cs:261` | a handyman removes one litter item per WorkDuration game minutes, park-wide | capture of cleaning speed |
-| ECON-023 | `Economy/ParkEconomy.cs:275` | an open ride loses WearRate state of repair per game day; breakdown at 0 | capture of state of repair over time |
-| ECON-024 | `Economy/ParkEconomy.cs:218` | a repair restores state of repair to 100 | capture after a repair |
+| ECON-023 | `Economy/ParkEconomy.cs:228` | the ride update's state gates (ride states 1, 3 and 4 at +0x198, +0x64 == 0, +0x2e bit 0) map only to "a mechanic is at work" | the names of those ride states and flags |
 | ECON-025 | `Economy/ParkEconomy.cs:380` | scrap value basis = catalogue cost of all levels up to the current one; a scrap year is 365 park-clock days | capture of scrap value |
 | ECON-026 | `Economy/ParkEconomy.cs:388` | park value = sum of scrap values | capture of the park value screen |
 | ECON-027 | `Economy/ParkEconomy.cs:403` | the record sub-kinds 0–3 are rides, shops, sideshows and features, and every hired staff member counts | the record field at +0x4C behind sub-kind +0x7A8 and the staff byte +3 tested by FUN_100C4064 |
@@ -320,7 +338,8 @@ site, is listed in `Economy/EconomyApproximations.cs` and is logged once at star
 | ECON-040 | `Economy/ParkObjectives.cs:318` | players start with 1 golden key and keys are not consumed by entering themes | initial lobby and repeated theme-entry captures |
 | ECON-041 | `Economy/EconomyObjectCatalog.cs:93` | features-directory objects with Research.Category != 3 are fixed (non-buyable) items | buy-menu capture |
 | ECON-044 | `Economy/GuestEconomyBridge.cs:61` | guests never hold a balloon or wear a costume, so both percentages are 0; the binary gives them when a guest uses a balloon or costume shop (0x100EAAF8) | balloon lifetime (+0x214) and costume state rules |
-| ECON-045 | `Files/Formats/Save/SaveEconomyRecords.cs:91` | loan/challenge record locators use plausibility bounds (one fixture) | a second TPWS/TPWI fixture |
+| ECON-045 | `Files/Formats/Save/SaveEconomyRecords.cs:111` | loan/challenge record locators use plausibility bounds (checked on 12 saves) | the serializer offsets of both tables |
+| ECON-047 | `Economy/ParkEconomyContracts.cs:178` | a newly built ride starts with life gauge 100 (Easymode.TPWI stores 100 for every placed object) | the life gauge set when a ride is built (the constructor 0x100DA874 sets 0) |
 
 ## Open questions
 

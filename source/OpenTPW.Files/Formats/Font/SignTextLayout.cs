@@ -74,6 +74,48 @@ public static class SignTextLayout
 	/// Rasterizes one line. <paramref name="emPixels"/> is the em height (GDI negative LOGFONT
 	/// height); <paramref name="horizontalScale"/> condenses or expands glyphs.
 	/// </summary>
+	/// <summary>
+	/// The horizontal scale a LOGFONT width selects: GDI scales a TrueType font so that its average
+	/// character width (OS/2 xAvgCharWidth) equals <paramref name="logFontWidth"/>; 0 keeps the design aspect.
+	/// </summary>
+	// [APPROX:COMPAT-002] lfWidth is applied with the Win32 rule (average character width = lfWidth) and fractional advances; the Mac GDI layer's rounding is not verified — evidence needed: long-name captures
+	public static float LogFontHorizontalScale( TrueTypeFont font, float emPixels, int logFontWidth ) =>
+		logFontWidth <= 0 || font.AverageCharWidth <= 0 ? 1 : logFontWidth / (font.AverageCharWidth * font.ScaleForEmHeight( emPixels ));
+
+	/// <summary>
+	/// The LOGFONT width a sign line is drawn with: unchanged while the text is narrower than
+	/// <paramref name="canvasWidth"/>, otherwise the result of the original's bisection over the width
+	/// (the height never changes).
+	/// </summary>
+	// [BIN:STP-PPC:0x100A9F9C sign line] fit when the extent is below the 2x canvas width; else lo = 1, hi = lfWidth (or -lfHeight when 0), mid = (hi - 1) / 2 + 1; a fitting trial sets lo = mid, mid += (hi - mid) / 2, a wide one sets hi = mid, mid = lo + (mid - lo) / 2; stop on the first fitting trial with hi - lo < 3
+	public static int FitLogFontWidth( TrueTypeFont font, string text, float emPixels, int logFontWidth, int canvasWidth, bool kerning = false )
+	{
+		float Extent( int width ) => Measure( font, text, emPixels, LogFontHorizontalScale( font, emPixels, width ), kerning ).Width;
+		if ( Extent( logFontWidth ) < canvasWidth )
+			return logFontWidth;
+		var low = 1;
+		var high = logFontWidth != 0 ? logFontWidth : (int)MathF.Round( emPixels );
+		var middle = ((high - 1) >> 1) + 1;
+		// The original loops forever when even width 1 does not fit; stop there instead.
+		for ( var step = 0; step < 64; step++ )
+		{
+			var fits = Extent( middle ) < canvasWidth;
+			if ( fits && high - low < 3 )
+				return middle;
+			if ( fits )
+			{
+				low = middle;
+				middle += (high - middle) >> 1;
+			}
+			else
+			{
+				high = middle;
+				middle = low + ((middle - low) >> 1);
+			}
+		}
+		return middle;
+	}
+
 	public static CoverageBitmap Rasterize( TrueTypeFont font, string text, float emPixels, float horizontalScale = 1, bool kerning = false )
 	{
 		if ( !(emPixels > 0) || !float.IsFinite( emPixels ) )
@@ -125,7 +167,6 @@ public static class SignTextLayout
 		if ( string.IsNullOrEmpty( text ) )
 			return emPixels;
 		var metrics = Measure( font, text, emPixels, horizontalScale, kerning );
-		// [APPROX:COMPAT-002] centre and shrink-to-fit with a margin — evidence needed: original text placement / long-name captures.
 		var available = Math.Max( 1, width - 2 * margin );
 		if ( metrics.Width > available )
 			emPixels *= available / metrics.Width;

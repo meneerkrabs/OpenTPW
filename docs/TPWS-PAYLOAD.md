@@ -4,8 +4,9 @@ Evidence date: October 9, 2026. Read-only analysis of the decoded BILZ payload
 (see SAVE-CONTAINER.md): the 17 section markers, the **per-cell grid** in the
 untagged prefix and the **placed-object records** in `SYSG` are decoded where
 cross-format evidence supports them; everything else stays opaque. A read-only
-importer (`OriginalParkImport`) uses only those parts. This is not save writing and
-not proof of general TPWS support (one fixture). No original executable was run.
+importer (`OriginalParkImport`) uses only those parts. This is not save writing.
+The layout was found on one fixture (Easymode) and later checked on eleven
+private TPWS/INTS saves ([Second fixture set](#second-fixture-set)). No original executable was run.
 
 ## Fixture inventory
 
@@ -15,8 +16,9 @@ not proof of general TPWS support (one fixture). No original executable was run.
 | `TPWORLD.ISO` (7z listing, 2,783 files) | 1: `Data/levels/jungle/Easymode.TPWI`, byte-identical to the loose copy |
 | WAD member names / ISO-wide filename strings | none observed |
 
-No TPWS, INTS or LAYS file exists in the available corpus. Every conclusion
-below therefore rests on one fixture and must be revalidated on others.
+No TPWS, INTS or LAYS file exists in the game data. The conclusions below were made on
+Easymode alone; eleven saves found later confirm the readers (next section). LAYS remains
+untested.
 
 Pinned hashes (SHA-256):
 
@@ -32,6 +34,29 @@ GitHub contents API) describes only the outer container: magic, copyright text,
 file type `00 01 22 19`, version, online flag, `BILZ` header and zlib stream.
 "INTS" and "LAYS" there are **file kinds** (initial save; `upload.LAYS` online
 save), not payload sections. It documents nothing about the decoded payload.
+
+## Second fixture set
+
+Eleven original saves, one park per theme, published on Nexus Mods as a cheat
+(all research done, large starting cash; kept private, never committed). Per theme:
+the named park save, its `autosave.TPWS` (absent for space) and `restart.INTS`;
+7 TPWS and 4 INTS. The parks are empty: no placed objects, only the entrance path.
+`OriginalSaveCorpusTests` runs every reader below over them (`OPENTPW_TPWS_SAVES`) and requires a
+TPWS and an INTS for each theme.
+
+| Check | Result on all 11 |
+| --- | --- |
+| Container | Magic 500, file type `00 01 22 19`, version 133; INTS uses the same container as TPWS |
+| Markers | All 17, in the Easymode order. Decoded payload 1,560,526–1,579,807 bytes |
+| Untagged prefix | 1,469,256 bytes (every INTS) or 1,473,869–1,475,452 (TPWS), against 1,495,462 in Easymode: the prefix length is not fixed |
+| Cell grid | Found once, starting at 5,729 (INTS) or 6,259–6,512 (TPWS); 16,384 × 84 bytes, no extension records; +46 equals the theme's `base.map` |
+| Path cells | The 10 MAP `InitialPath` cells, nothing else |
+| SYSG | No placed objects; fixed items 5 (TPWS) or 2 (INTS), all with their theme's Info.Ids (*600–*604) |
+| Attraction records | 5 in each TPWS, one per fixed item (Bus, Seaplane, Ferry, Traffic Lights and the *601 park object), none in INTS; all three gauges are 100 in all 35 records |
+| Economy | Bank prefix, 8 loan offers equal to the theme's `LoanInfo`, and the full challenge list of `ChallengesInThisLevel` (8–10 records); see docs/ECONOMY.md for the corrected challenge layout |
+
+The balances (about 1.2 billion) come from the cheat, so money is not a reference value.
+Named saves and their autosaves decode to the same layout; only small sections differ.
 
 ## Section markers
 
@@ -85,7 +110,7 @@ encoded in code beyond `SYSG` object records below.
 | --- | --- |
 | 0–6,764 | Opaque header (starts `u32` 0, 1171, 231; contains runs of `0xCD` fill) |
 | 6,765–1,385,520 | Per-cell grid: 16,384 records (16,134 × 84 bytes + 250 × 94 bytes) |
-| 1,385,521–1,495,461 | Opaque; starts with `u32` 42, 41, 1 and holds 16.16-looking values near the entrance |
+| 1,385,521–1,495,461 | Starts with `u32` 42, 41, 1 and holds 16.16-looking values near the entrance; contains the thing list with the 14 **attraction records** at 1,392,971–1,410,393 (see below); the rest is opaque |
 
 ### Cell grid (verified structure)
 
@@ -118,6 +143,52 @@ Observed but **not interpreted** (kept raw in `SaveCell.Record`):
   extensions sit on the toilets and around (47, 25). Possibly coverage data.
 - Byte +77 alternates 12/25 along lines resembling fences; +56 is a running index
   on 143 cells.
+
+## Attraction records (thing list in the prefix tail)
+
+Evidence: the Mac PowerPC build's object serializer (`0x100daf04` in `SimThemePark.data`, static
+analysis, see [reverse/RIDE-WEAR.md](reverse/RIDE-WEAR.md)) reads every field with `LbFile_Read` and then
+byte-swaps it, so the save format is little-endian on both platforms. The Mac disc ships a byte-identical
+`Easymode.TPWI` (same container SHA-256), so the Mac loader reads exactly this file. Field names below are
+the original serializer's name strings.
+
+The tail of the prefix holds a list of game objects, each stored as `u32 handle, u32 class, body`. Class 3
+is the attraction class. It covers rides, shops, sideshows, features and the fixed gates, lights and bus.
+Its body is fixed at 1,091 bytes while the history buffers hold 30 entries:
+
+| Bytes | Fields |
+| --- | --- |
+| 2 + 2 + 4 | base object: position X, Y in 1/256 cell (buildable objects: cell = position / 256, equal to the SYSG cell; fixed items store 128, 128), two opaque `u16` |
+| 4 + 2 | `mAngle` (0/90/180/270), `mId` (= Info.Id) |
+| 8 × 4 | `tv[t]`: game-time stamp year, month, day, hour, minute, second, two opaque values |
+| 4 + 2 | `MeshInstanceID` (110–125 in Easymode), `mFlags` |
+| 33 × (2 + 2) | `mNameA[i]`, `mNameB[i]` interleaved: the two UTF-16 sign lines ("Belly"/"Bounce", gates "LOST"/"Kingdom") |
+| 4 × 3 | `mRideScriptHandle`, `mTrackRideHandle`, `mState` |
+| 24 | `mTopLeft`, `mEntryPos`, `mNext`, `mAssignedStaffMember`, `mBackOfQueue` (u16), `mCanLoad` (u32), `mExitPos`, `mFirstInQ` (u16), `mIsTrackRideValid` (u32), `mUpgradeParent` (u16) |
+| 6 history buffers | each `u32` head, `u32` count, `u8` flag, `u32` first, then count × `u32`; `mNumCustomers` follows the second buffer and `mNumWalkAways` the third |
+| 1 + 1 + 4 + 2 | `mOperatingCapacity`, `mOperatingDuration`, `mOperatingSpeed`, `mPersonBeingLoaded` |
+| 6 × 4 | `mCostOfGoods`, `mQualityOfGoods`, `mChanceOfWinning`, `mPricePerUse` (the loader clamps it to 0–500), `mAmountOfSpecialIngredient`, `mQueueSizeInCells` |
+| 3 × 4 | three `float32` gauges, read into object offsets +0x48, +0x44, +0x40. +0x40 is the state of repair and +0x44 the life gauge of the wear and breakdown code. The original writes each as a whole number 0–255 |
+| 4 × 5 + 1 | `mRequestedService`, `mTimeMarkedForMaintenance`, `mTotalCosts`, `mTotalTakings`, `mUpgradeBalloonSprite`, `mUpgradeLevel` (u8) |
+
+`SaveAttractionList` finds class-3 records by signature. A candidate must parse completely inside the
+prefix and pass these bounds: handle 1–65535; non-zero Info.Id; angle a multiple of 90; a plausible
+timestamp; history buffers of at most 31 entries with flag 0/1; price at most 500; gauges finite in 0–255;
+upgrade level at most 3. Other classes (observed 2, 7 and 19 between and after the attractions) are not
+decoded.
+
+Easymode yields exactly 14 records, handles 28, 23–16 and 14–10. They are the 11 buildable objects and the 3
+fixed items of the SYSG list, with the same Info.Ids, and every buildable record has its SYSG cell. All three
+gauges are 100, upgrade levels, customers and takings are 0, and the Belly Bounce stores capacity 5,
+duration 30 and speed 60. Because this is a freshly designed park it cannot show a worn or broken ride. Two
+saves of one park at a known tick distance, with a ride in use, would turn the state of repair into the
+oracle for ECON-023.
+
+SYSG `kind` values 815 and 865 are engine mesh-instance types: the Mac code passes them to the mesh creator
+(`0x10059f00`, from `0x100dc350`), and the attraction record links to its mesh through `MeshInstanceID`. SYSG
+therefore describes scene meshes rather than game-object state. Kind 826 appears in four functions
+(`0x1006e3d4`, `0x1006e630`, `0x1006e8bc`, `0x1006eb84`) that have not been read yet; its records sit nested
+inside the Belly Bounce SYSG record, on the queue cells.
 
 ## SYSG placed-object records
 
@@ -211,14 +282,16 @@ order, missing/truncated/ambiguous runs), SYSG scanning and footprint rules,
 wrong-map and unoccupied-footprint rejection; the private fixture pins the grid
 range, 78 path cells, the connection-bit property, the 11 placed objects and 3
 fixed items, and rejection against `terrain.map`. `OriginalParkPlacementTests`
-covers Info.Id names and the build rules. Without `OPENTPW_GAME_PATH` the private
-tests are inconclusive, not passes.
+covers Info.Id names and the build rules. `SaveAttractionListTests`: synthetic records in serializer order, class skipping, a case past each upper and lower rejection bound, unbounded opaque words and large counters, and truncation at the prefix end; the private fixture pins the 14 handles, the gauges and the Belly Bounce fields, and matches every buildable SYSG record by Info.Id and cell. Without `OPENTPW_GAME_PATH` the private
+tests are inconclusive, not passes. `OriginalSaveCorpusTests` runs container, markers, grid, SYSG,
+attraction and economy readers over the second fixture set (inconclusive without `OPENTPW_TPWS_SAVES`).
 
 ## Remaining gates
 
-- Any second fixture (an actual TPWS, another TPWI, INTS or LAYS) to test the
-  grid search, field meanings and SYSG signature; online (LAYS) payloads are
-  unsupported.
-- The prefix header and tail, record fields marked opaque above, the extension
+- An online (LAYS) save; LAYS payloads are unsupported.
+- A non-empty TPWS: the second fixture set has no placed objects, extension records or
+  extra paths, so those readers are still proven on Easymode alone.
+- The prefix header and the rest of its tail (thing-list classes other than 3), record fields marked opaque above, the extension
   data, SYSG record bodies/lengths, RYLF object bodies and every other section.
+- Saves with known ride wear to confirm the attraction gauges against the original wear rule.
 - Money/time/guest state needs known-state reference saves before import.

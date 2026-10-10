@@ -10,14 +10,19 @@ namespace OpenTPW;
 /// </summary>
 internal sealed class AutomaticAdvisor : IDisposable
 {
-	// [APPROX:ADVISOR-017] Wall-clock milliseconds since the automatic advisor was created, sampled once per frame; the original's pause-aware unscaled advisor clock is not reconstructed — evidence needed: the advisor clock subobject's offset/freeze/compensation and the controller's update cadence
-	private readonly Stopwatch clock = Stopwatch.StartNew();
+	// [APPROX:ADVISOR-017] the clock starts at 0 when the automatic advisor is created (the original adds an offset word, +0x18 of its clock, whose writer is not traced), is sampled once per frame and stands still while the pause menu is open (the original's other pause callers are not mapped) — evidence needed: the clock offset writer and the screens that call 0x10110518
+	private readonly PausableClock clock;
 	private Advisor? presentation;
 	private bool presentationFailed;
 	private Level? level;
 	private ParkEconomyRuntime? park;
 
-	private AutomaticAdvisor( AdvisorController controller ) => Controller = controller;
+	private AutomaticAdvisor( AdvisorController controller )
+	{
+		Controller = controller;
+		var watch = Stopwatch.StartNew();
+		clock = new PausableClock( () => watch.ElapsedMilliseconds );
+	}
 
 	public AdvisorController Controller { get; }
 	/// <summary>The presentation, once a response has been said.</summary>
@@ -39,12 +44,12 @@ internal sealed class AutomaticAdvisor : IDisposable
 		}
 	}
 
-	private uint AdvisorClock => unchecked((uint)clock.ElapsedMilliseconds);
+	private uint AdvisorClock => clock.Milliseconds;
 	// [BIN:STP-PPC:0x10121098 history setter] history saves the world's mGameTick (+0x1DA70C), which the park economy counts as park turns
 	private uint GameTick => level?.Park is { } running ? unchecked((uint)running.Economy.Turn) : 0;
 	// [BIN:STP-PPC:0x1013781C player selection] game type 2 = Instant Action, 0 otherwise (offline)
 	private int GameType => level?.Park?.Economy.Mode == ParkGameMode.InstantAction ? 2 : 0;
-	// [APPROX:ADVISOR-015] The eligibility check's byte +53 (0x10009038) is read as the Game Options Tutorial byte (+0x35, default 1 in 0x10125B7C); that both belong to the same options object is not proven — evidence needed: the object behind TOC −30268 in the eligibility check
+	// [BIN:STP-PPC:0x10009038 eligibility check] byte +0x35 of the object at TOC −0x763C, which the options serializer (0x10129308 → 0x1012653C) writes as "TutorialOn" and the defaults (0x10125B7C) set to 1
 	private static bool TutorialEnabled => GameOptions.Current.Tutorial;
 
 	/// <summary>A level started: game event 10 then 0, as the main loop raises them.</summary>
@@ -95,13 +100,14 @@ internal sealed class AutomaticAdvisor : IDisposable
 	}
 
 	/// <summary>One controller update; call once per frame while a level runs.</summary>
-	public void Update()
+	public void Update( bool gamePaused = false )
 	{
+		clock.SetPaused( gamePaused );
 		if ( level == null )
 			return;
 		// [BIN:STP-PPC:0x10006BB4 advisor response player] options byte +0x34 clear: the player returns 0 (0x10006BC0) before saying anything
 		// [BIN:STP-PPC:0x1000BBF0 controller playback wrapper] and the wrapper still succeeds, so the advice is picked, consumed and recorded silently with span 0
-		// [APPROX:ADVISOR-021] Byte +0x34 is read as the Game Options Advisor switch; that the object behind TOC −30268 (data 0x120A14) is the Game Options object is not proven (as for ADVISOR-015) — evidence needed: the object behind TOC −30268 and its +0x34 writer
+		// [BIN:STP-PPC:0x10129308 options serializer] the object at TOC −0x763C is the options object; its +0x34 is saved as "AdvisorOn" (0x1012653C)
 		if ( !GameOptions.Current.Advisor )
 		{
 			presentation?.Silence();

@@ -61,7 +61,9 @@ public class AdvisorTests
 	[TestMethod]
 	public void ApproximationRegisterIsSequentialAndUnique()
 	{
-		CollectionAssert.AreEqual( Enumerable.Range( 1, 22 ).Select( index => $"ADVISOR-{index:000}" ).ToArray(), Advisor.Approximations.Select( entry => entry.Id ).ToArray() );
+		// Traced rules leave the register; their numbers are not reused.
+		var retired = new[] { 1, 15, 21 };
+		CollectionAssert.AreEqual( Enumerable.Range( 1, 22 ).Except( retired ).Select( index => $"ADVISOR-{index:000}" ).ToArray(), Advisor.Approximations.Select( entry => entry.Id ).ToArray() );
 	}
 
 	[DataTestMethod]
@@ -220,5 +222,22 @@ public class AdvisorTests
 		}
 
 		public void Dispose() => FileSystem = original!;
+	}
+
+	[TestMethod]
+	public void AdvisorClockStandsStillWhilePausedAndContinuesFromTheSameValue()
+	{
+		long now = 1000;
+		var clock = new PausableClock( () => now );
+		Assert.AreEqual( 1000u, clock.Milliseconds );
+		clock.SetPaused( true );
+		now = 5000;
+		Assert.AreEqual( 1000u, clock.Milliseconds, "frozen at the pause snapshot" );
+		clock.SetPaused( true );
+		now = 6000;
+		clock.SetPaused( false );
+		Assert.AreEqual( 1000u, clock.Milliseconds, "the paused 5 s are compensated" );
+		now = 6250;
+		Assert.AreEqual( 1250u, clock.Milliseconds );
 	}
 }

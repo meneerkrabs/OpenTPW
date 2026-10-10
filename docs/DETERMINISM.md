@@ -96,7 +96,8 @@ load keeps the running guests and scripts (DET-016).
 `WorldStateHash.Compute(WorldStateSources)` (`Level.ComputeStateHash()` for a
 level) is FNV-1a 64 over little-endian values, with floats by bit pattern. It
 follows the field order of DET-plan §4.5, restricted to what OpenTPW has. Schema
-version 2 (version 1 also hashed the sound seed):
+version 5 (version 1 also hashed the sound seed; versions 3 and 4 added the
+queue state, version 5 the cell map, see Tests):
 
 | DET-plan field | OpenTPW | In the hash |
 | --- | --- | --- |
@@ -116,7 +117,8 @@ version 2 (version 1 also hashed the sound seed):
 | `world_state` | no world-state field | **missing** |
 | `calendar_funny_start` | `ParkCalendar.Epoch` (fixed) | yes |
 | `calendar_rate` | no clock rate | **missing** |
-| `thing_table_digest` | guests in id order (every field the tick reads, including navigation and timers), then attractions with queues, riders, limbo and bounce lists | yes (order is id order, not the original's newest first) |
+| `thing_table_digest` | guests in id order (every field the tick reads, including navigation and timers), including each guest's queue fields, the queue edge detectors, then attractions with queue cells, the queue list, admission state and counters, riders, limbo and bounce lists | yes (order is id order, not the original's newest first) |
+| (cell map) | `ParkCellMap` of the guest grid: every non-empty cell in row order with its type, flags, placement counter, links and queue link (paths built by the path tool included) | yes (extra, after the thing table) |
 | `script_table_digest` | every live script in id order: id, name, parent, state, PC, flags, call stack, variables, clock, wake time, timers, instruction and slice counts, seed and RNG call count | yes |
 | `economy_digest` | the park save's economy part as canonical JSON (sorted keys) | yes |
 | `input_log_cursor` | no input log | **missing** |
@@ -172,10 +174,23 @@ the same seed as well.
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0xBCAB6C260DA58A4E`, schema 2; the hashed fields are unchanged since
-  `0x0D8B481BB19391DC`, but upstream 1198a93 traced staff candidate grades to
-  the binary and dropped the `ChanceToGetGreat` draw, so the economy stream's
-  draws and the run changed);
+  (`0x98BFAE5138E2A343`, schema 5; the hashed fields are unchanged, but the original ride update gave each park-save object an exact state of repair and a life gauge (`Repair`, `LifeGauge`), which the economy digest includes. Before that: `0xC0E5705C8924E49A`, where the hashed fields were unchanged since `0x10A80C328A477CBE`, but upstream 1198a93 traced staff candidate grades to the binary and dropped the `ChanceToGetGreat` draw, so the economy stream's draws and the run changed. Before that:: the cell map digest was added when the path
+  builder made `ParkCellMap` the source of truth for path cells. The run itself
+  is unchanged (the raw guest hashes of the cross grid and the Jungle Easymode
+  run are pinned across the change), but the hashed "last seen grid version"
+  is now `ParkCellMap.Version`, which counts every cell-map write, so without
+  the digest the schema-4 fields alone give `0x2EB8B824C2984A88` instead of
+  schema 4's pin. Schema 4 (`0xE67AA45A94F4B20C`) added the guests' queue fields (position, join turn,
+  last wait, move delay, called flag, standing and interlude turns, interlude
+  flag, join happiness, queue cell and target index, target point, last
+  state-11 turn), the guest simulation's queue edge detectors (last seen grid
+  version and each attraction's last seen queue edit count) and the
+  attractions' admission progress counters were added, because each of them
+  decides what a later tick does; `StalledAdmissionChecks` was removed. The
+  run also changed: broken attractions are no longer chosen, joined or
+  admitted, and the queue needs window compares truncated happiness and toilet.
+  Schema 3 (`0x8E84E46AA3C8D9EE`) added the queue cells, links, admission state
+  and queue edits of each attraction when real queue cells landed);
 - the default seed keeps the previous stream seeds; per-park attraction ids;
   unseeded scripts follow their world stream; `World` save section round trip
   and older saves;

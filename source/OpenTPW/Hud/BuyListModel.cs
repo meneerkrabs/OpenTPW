@@ -1,7 +1,7 @@
 namespace OpenTPW.Hud;
 
 /// <summary>Column of the buy window list a header button sorts by.</summary>
-public enum BuySortColumn { Default, Name, Price }
+public enum BuySortColumn { Name, Price }
 
 /// <summary>
 /// List state of the buy window: the category, its items in list order, the selection and the first visible row.
@@ -32,7 +32,7 @@ public sealed class BuyListModel
 	public int MaxFirstRow => Math.Max( 0, Items.Count - VisibleRows );
 	public int SelectedIndex => SelectedItem == null ? -1 : Items.ToList().IndexOf( SelectedItem );
 
-	/// <summary>Items of the current category: catalogue order (Info.Id) unless a header sorted them.</summary>
+	/// <summary>Items of the current category in list order: by name unless a header sorted them otherwise.</summary>
 	public IReadOnlyList<BuildItem> Items => items ??= Sorted();
 
 	/// <summary>Forgets the cached order (the catalogue or a name changed).</summary>
@@ -41,11 +41,10 @@ public sealed class BuyListModel
 	private IReadOnlyList<BuildItem> Sorted()
 	{
 		var all = catalog.GetItems( Category );
-		if ( Sort == BuySortColumn.Default )
-			return all;
+		// [BIN:STP-PPC:0x10178768 list insert] the buy list (504, attribute 0x91 with the sorted-insert bit 0x10) inserts each row before the first row whose name is greater (wcscmp, 0x10178654); its sort word starts at 1 (column 0, the name, ascending), so equal names keep catalogue order
 		var sorted = Sort == BuySortColumn.Name
-			? all.OrderBy( name, StringComparer.CurrentCultureIgnoreCase ).ThenBy( item => item.InfoId )
-			: all.OrderBy( price ).ThenBy( item => item.InfoId );
+			? all.OrderBy( name, StringComparer.Ordinal )
+			: all.OrderBy( price ).ThenBy( name, StringComparer.Ordinal );
 		return (SortDescending ? sorted.Reverse() : sorted).ToArray();
 	}
 
@@ -101,7 +100,7 @@ public sealed class BuyListModel
 /// The balance change shown beside the balance (Mac HUD table control 48): the sum of the balance changes within
 /// <see cref="Seconds"/> of the last one.
 /// </summary>
-// [APPROX:UI-046] the change text stays 4 s after the last balance change and sums the changes within that time — evidence needed: capture of the original cash trend display
+// [APPROX:UI-047] the change text stays 4 s after the last balance change and sums the changes within that time — evidence needed: capture of the original cash trend display
 public sealed class CashChangeTracker
 {
 	public const float Seconds = 4f;

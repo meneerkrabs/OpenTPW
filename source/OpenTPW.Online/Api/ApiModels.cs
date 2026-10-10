@@ -15,6 +15,8 @@ public static class ApiRoutes
 	public const string Inbox = Postcards + "/inbox";
 	public const string Reports = Prefix + "/reports";
 	public const string News = Prefix + "/news";
+	/// <summary>Operator only: asks the host to update the server (<c>DeployToken</c>).</summary>
+	public const string Deploy = Prefix + "/admin/deploy";
 	/// <summary>The public list of parks shown on the project website, and their pictures (<c>/{id}/thumbnail</c>).</summary>
 	public const string WebsiteParks = Parks + "/website";
 	public const string Chat = global::OpenTPW.Online.Chat.ChatProtocol.Path;

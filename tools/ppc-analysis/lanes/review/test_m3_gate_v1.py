@@ -14,6 +14,11 @@ SDK (``OPENTPW_DOTNET``, default ``~/.local/share/opentpw-dotnet10/dotnet``) and
 Each test states which row must flip. Some tests pin rows that do *not* flip, because that is the finding.
 GATE-FIX made the gate stricter; the expectations it changed are marked "GATE-FIX" below (build.paths fails,
 staff.work is per staff type, rides.scripts-run fails on a halted script, unresolved rows exit 2).
+Round 3 (GATE-V3) replaced the mutation expectations that pinned rows as they were at f6ad99f (baseline failures,
+exact unreachable lists and failing-row sets) with invariants that hold on every later gate: the exit code follows
+the verdicts, a mutation adds its own failing rows to the baseline's, and the transient cut hits the cell guests
+actually walk to (the queue's join cell since GATE-UPD). The reset-ids mutation is retired with the process-wide
+counter it reset (DET); diverge-second-run now proves determinism.same-seed can fail.
 Nothing here says anything about how the original game behaves.
 """
 from __future__ import annotations
@@ -201,6 +206,8 @@ HOOKS = [
      '\t\tforeach ( var type in new[] { StaffType.Mechanic, StaffType.Handyman }.Where( type => !(Mutation == "no-handyman" && type == StaffType.Handyman) && !(Mutation == "no-mechanic" && type == StaffType.Mechanic) ) )\n'),
     ('\tprivate string AttractionName( int id )',
      '\tinternal static readonly string Mutation = Environment.GetEnvironmentVariable( "M3GATE_MUTATION" ) ?? "";\n'
+     '\tinternal static bool SecondRun;\n'
+     '\tprivate (int X, int Y) cutCell;\n'
      '\tprivate void MutateAfterTick( long tick )\n\t{\n'
      '\t\tvar ride = placed.FirstOrDefault( item => item.Role == "attraction" );\n'
      '\t\tvar toilet = placed.FirstOrDefault( item => item.Role == "toilet" );\n'
@@ -209,10 +216,22 @@ HOOKS = [
      '\t\t\t\ttypeof( ParkLedger ).GetProperty( "Balance" )!.SetValue( economy.Ledger, economy.Ledger.Balance + 1 );\n\t\t\t\tbreak;\n'
      '\t\t\tcase "cut-path" when tick == 1000:\n'
      '\t\t\t\tgrid.SetPath( spine[1].X, spine[1].Y, false );\n\t\t\t\tbreak;\n'
-     '\t\t\tcase "cut-entrance" when tick == 36000:\n\t\t\tcase "cut-entrance-transient" when tick == 36000:\n'
-     '\t\t\t\tgrid.SetPath( ride!.Runtime.Visitors.EntranceCell.X, ride.Runtime.Visitors.EntranceCell.Y, false );\n\t\t\t\tbreak;\n'
-     '\t\t\tcase "cut-entrance-transient" when tick == 36600:\n'
-     '\t\t\t\tgrid.SetPath( ride!.Runtime.Visitors.EntranceCell.X, ride.Runtime.Visitors.EntranceCell.Y, true );\n\t\t\t\tbreak;\n'
+     # GATE-V3: the transient cut hits the guests' target, the queue's join cell (the entrance cell when there is no
+     # queue), as GuestSimulation.UpdateGoingToRide walks to it; cut-exit-transient cuts the ride's exit cell.
+     # The cell is remembered: the cut recomputes the queue, so its join cell can move before the repair.
+     '\t\t\tcase "cut-target-transient" when tick == 36000:\n'
+     '\t\t\t\tcutCell = ride!.Runtime.Visitors.JoinCell ?? ride.Runtime.Visitors.EntranceCell;\n'
+     '\t\t\t\tgrid.SetPath( cutCell.X, cutCell.Y, false );\n\t\t\t\tbreak;\n'
+     '\t\t\tcase "cut-target-transient" when tick == 36600:\n'
+     '\t\t\t\tgrid.SetPath( cutCell.X, cutCell.Y, true );\n\t\t\t\tbreak;\n'
+     '\t\t\tcase "cut-exit-transient" when tick == 36000 || tick == 36600:\n'
+     '\t\t\t\tgrid.SetPath( ride!.Runtime.Visitors.ExitCell.X, ride.Runtime.Visitors.ExitCell.Y, tick == 36600 );\n\t\t\t\tbreak;\n'
+     # diverge-second-run: the oldest guest's happiness - 1 at tick 2000 of the second run (that guest leaves before
+     # the end); diverge-second-run-late: the newest guest's, at tick 107,000 (in the park at the end).
+     '\t\t\tcase "diverge-second-run" when SecondRun && tick == 2000 && guests.Guests.Count > 0:\n'
+     '\t\t\t\tguests.Guests[0].Happiness = Math.Max( 0, guests.Guests[0].Happiness - 1 );\n\t\t\t\tbreak;\n'
+     '\t\t\tcase "diverge-second-run-late" when SecondRun && tick == 107000 && guests.Guests.Count > 0:\n'
+     '\t\t\t\tguests.Guests[^1].Happiness = Math.Max( 0, guests.Guests[^1].Happiness - 1 );\n\t\t\t\tbreak;\n'
      '\t\t\tcase "block-boarding" when tick >= 18000:\n'
      '\t\t\t\tride!.Runtime.SetVariable( "VAR_LETMEON", -1 );\n\t\t\t\tbreak;\n'
      '\t\t\tcase "stall-ride" when tick == 18000:\n'
@@ -226,9 +245,9 @@ HOOKS = [
      '\t\t\t\t\tmember.State = StaffState.PickedUp;\n\t\t\t\tbreak;\n'
      '\t\t}\n\t}\n\n'
      '\tprivate string AttractionName( int id )'),
+    # GATE-V3: reset-ids is retired (DET removed the process-wide counter); the second in-process run diverges instead.
     ('\t\tvar second = M3GateRun.Execute( options, ticks );\n',
-     '\t\tif ( M3GateRun.Mutation == "reset-ids" )\n'
-     '\t\t\ttypeof( OriginalObjectRuntime ).GetField( "nextAttractionId", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static )!.SetValue( null, 1 );\n'
+     '\t\tM3GateRun.SecondRun = true;\n'
      '\t\tvar second = M3GateRun.Execute( options, ticks );\n'),
 ]
 
@@ -293,14 +312,20 @@ class Mutations(unittest.TestCase):
         self.assertTrue(result['rows'], result['stderr'] or result['stdout'])
         return {key: row['verdict'] for key, row in result['rows'].items()}
 
+    def baseline_fails(self) -> set[str]:
+        return {key for key, value in self.verdicts('').items() if value == 'fail'}
+
+    def new_fails(self, mutation: str, determinism: bool = False) -> set[str]:
+        return {key for key, value in self.verdicts(mutation, determinism).items() if value == 'fail'} - self.baseline_fails()
+
     def test_baseline(self):
+        # GATE-V3: the exit code follows the verdicts (0 only when every row passes, 1 on any FAIL, else 2).
         verdicts = self.verdicts('', determinism=True)
-        fails = sorted(key for key, value in verdicts.items() if value == 'fail')
-        # GATE-FIX: build.paths fails (no in-game path builder).
-        self.assertEqual(['build.paths', 'build.queue', 'determinism.same-seed'], fails)
-        self.assertTrue(self.run_gate('', True)['rows']['build.paths']['evidence']['inGameBuilder'].startswith('no in-game path builder'))
-        self.assertEqual(['queues.no-stuck-queue'], [key for key, value in verdicts.items() if value == 'unresolved'])
-        self.assertEqual(1, self.run_gate('', True)['exit'])
+        values = set(verdicts.values())
+        expected = 1 if 'fail' in values else 0 if values == {'pass'} else 2
+        self.assertEqual(expected, self.run_gate('', True)['exit'], verdicts)
+        self.assertEqual('pass', verdicts['determinism.same-seed'])
+        self.assertEqual('unresolved', self.verdicts('')['determinism.same-seed'])  # --no-determinism skips the probe
 
     def test_zero_guest_step_flips_time(self):
         row = self.run_gate('zero-step')['rows']['time.monotonic']
@@ -322,29 +347,31 @@ class Mutations(unittest.TestCase):
         self.assertEqual('pass', verdicts['economy.income-and-expenses'])
 
     def test_cut_path_flips_reachability_and_flow(self):
-        verdicts = self.verdicts('cut-path')
+        # GATE-V3: which objects lie beyond spine[1] depends on the layout; the invariant is that some do and both rows fail.
         row = self.run_gate('cut-path')['rows']['paths.no-unreachable-goal']
         self.assertEqual('fail', row['verdict'], row)
-        self.assertEqual('Belly Bounce, Drinks Shop, Small Toilet', row['evidence']['unreachableAttractions'])
-        self.assertEqual('fail', verdicts['guests.flow'])
+        self.assertNotEqual('none', row['evidence']['unreachableAttractions'])
+        self.assertTrue({'paths.no-unreachable-goal', 'guests.flow'} <= self.new_fails('cut-path'))
 
-    def test_transient_entrance_cut_flips_reachability_through_guest_sampler(self):
+    def test_transient_target_cut_flips_reachability_through_guest_sampler(self):
         # The end-of-run target check passes again after the repair; only the per-tick guest sampler fails it.
-        row = self.run_gate('cut-entrance-transient')['rows']['paths.no-unreachable-goal']
+        # GATE-V3: the cut hits the join cell, the cell UpdateGoingToRide walks to (round 1 cut the entrance cell, which
+        # was the guests' target before the queue existed).
+        row = self.run_gate('cut-target-transient')['rows']['paths.no-unreachable-goal']
         self.assertEqual('none', row['evidence']['unreachableAttractions'])
-        self.assertEqual(('fail', 36001), (row['verdict'], row['firstViolationTick']), row)
+        self.assertEqual('fail', row['verdict'], row)
+        self.assertGreater(row['firstViolationTick'], 36000)
+        self.assertLessEqual(row['firstViolationTick'], 36600)
         self.assertGreater(row['evidence']['guestsHeadingToUnreachableTarget'], 0)
 
     def test_stopped_ride_fails_scripts_run_and_its_frozen_script_clock(self):
-        verdicts = self.verdicts('stall-ride')
         rows = self.run_gate('stall-ride')['rows']
-        self.assertEqual(('fail', 18001), (verdicts['time.monotonic'], rows['time.monotonic']['firstViolationTick']))
-        self.assertEqual('unresolved', verdicts['queues.no-stuck-queue'])
+        self.assertEqual(('fail', 18001), (rows['time.monotonic']['verdict'], rows['time.monotonic']['firstViolationTick']))
         # GATE-FIX: a Halted script on an open ride fails the row, from the tick it was stopped (review: it passed).
-        self.assertEqual(('fail', 18000), (verdicts['rides.scripts-run'], rows['rides.scripts-run']['firstViolationTick']))
+        self.assertEqual(('fail', 18000), (rows['rides.scripts-run']['verdict'], rows['rides.scripts-run']['firstViolationTick']))
         self.assertEqual('Belly Bounce', rows['rides.scripts-run']['evidence']['notRunningAtEnd'])
-        self.assertEqual(['build.paths', 'build.queue', 'rides.scripts-run', 'time.monotonic'],
-                         sorted(key for key, value in verdicts.items() if value == 'fail'))
+        self.assertTrue({'rides.scripts-run', 'time.monotonic'} <= self.new_fails('stall-ride'))
+        self.assertNotEqual('pass', rows['queues.no-stuck-queue']['verdict'])
         self.assertEqual(1, self.run_gate('stall-ride')['exit'])
 
     def test_ride_stopped_from_start(self):
@@ -352,22 +379,15 @@ class Mutations(unittest.TestCase):
         self.assertEqual('fail', verdicts['guests.flow'])
         self.assertEqual('fail', verdicts['time.monotonic'])
         self.assertEqual('fail', verdicts['rides.scripts-run'])  # GATE-FIX
-        self.assertEqual('unresolved', verdicts['queues.no-stuck-queue'])
+        self.assertNotEqual('pass', verdicts['queues.no-stuck-queue'])
 
-    def test_queue_that_never_boards_again_fails_no_row_but_cannot_exit_zero(self):
-        # Main finding: from minute 5 the ride's script runs and stays open, but never takes the offered guest.
-        # The queue stays full and nobody boards for the last 25 minutes; the gate adds no failing row (only the
-        # baseline build rows fail) because the queue row is unresolved by construction.
-        # GATE-FIX regression: the exit code is never 0 here. Today it is 1 (build.paths, build.queue); with those
-        # fixed the unresolved queue row alone gives 2 (M3GateTests.ReportListsEveryRowAndFailsOnAnyFailure).
-        verdicts = self.verdicts('block-boarding')
-        evidence = self.run_gate('block-boarding')['rows']['queues.no-stuck-queue']['evidence']
-        self.assertNotEqual(0, self.run_gate('block-boarding')['exit'])
-        self.assertEqual(['build.paths', 'build.queue'], sorted(key for key, value in verdicts.items() if value == 'fail'))
-        self.assertEqual('unresolved', verdicts['queues.no-stuck-queue'])
-        self.assertGreater(evidence['attractionLongestStallSeconds'], 1400)
-        self.assertGreater(evidence['stillQueuedAtEndMaxSeconds'], 1500)
-        self.assertEqual('20/20', evidence['attractionMaxQueue'])
+    def test_queue_that_never_boards_again_cannot_exit_zero(self):
+        # Round 1 main finding: from minute 5 the ride's script runs and stays open, but never takes the offered guest.
+        # Round 1 the queue row stayed unresolved; GATE-UPD fails it (blocked handshake), and that is its only new FAIL.
+        result = self.run_gate('block-boarding')
+        self.assertEqual(1, result['exit'])
+        self.assertEqual('fail', result['rows']['queues.no-stuck-queue']['verdict'])
+        self.assertEqual({'queues.no-stuck-queue'}, self.new_fails('block-boarding'))
 
     def test_closed_toilet(self):
         row = self.run_gate('close-toilet')['rows']['guests.flow']
@@ -409,11 +429,23 @@ class Mutations(unittest.TestCase):
         self.assertEqual('fail', idle_handyman['staff.work']['verdict'])
         self.assertIn('handyman cleaned no litter', idle_handyman['staff.work']['evidence']['problems'])
 
-    def test_resetting_the_id_counter_makes_raw_hashes_match(self):
-        row = self.run_gate('reset-ids', determinism=True)['rows']['determinism.same-seed']
-        self.assertTrue(row['evidence']['guestHashMatches'], row)
+    def test_second_run_divergence_fails_determinism(self):
+        # GATE-V3: replaces reset-ids. One guest's happiness differs by 1 late in the second in-process run only.
+        result = self.run_gate('diverge-second-run-late', determinism=True)
+        row = result['rows']['determinism.same-seed']
+        self.assertFalse(row['evidence']['guestHashMatches'], row)
+        self.assertEqual('fail', row['verdict'])
+        self.assertEqual(1, result['exit'])
+        self.assertEqual({'determinism.same-seed'}, {key for key, value in result['rows'].items() if value['verdict'] == 'fail'} - self.baseline_fails())
+
+    def test_divergence_that_converges_before_the_end_is_not_failed(self):
+        # GATE-V3 finding S3 (pre-existing, DET): the row compares only the final hashes. A second run that diverges in
+        # minute 1 (firstDivergentMinute is reported) but whose diverged guest has left by the end passes. When the
+        # row also requires firstDivergentMinute == null, this test must flip to FAIL.
+        row = self.run_gate('diverge-second-run', determinism=True)['rows']['determinism.same-seed']
+        self.assertEqual(1, row['evidence']['firstDivergentMinute'], row)
+        self.assertTrue(row['evidence']['guestHashMatches'])
         self.assertEqual('pass', row['verdict'])
-        self.assertEqual(row['evidence']['attractionIdsRun1'], row['evidence']['attractionIdsRun2'])
 
 
 if __name__ == '__main__':

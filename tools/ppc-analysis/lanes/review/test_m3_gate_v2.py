@@ -15,6 +15,9 @@ This file adds the round-2 mutations for the new rules:
 - Static: Level.RegisterObjectWithGuests and ParkObjects.Check refactors keep their old behaviour (the old bodies are
   textually the new helpers with the instance members passed in).
 
+Round 3 (GATE-V3): GATE-UPD closed both idle-after-first-job weaknesses (repair and litter windows), so those two tests
+now require the FAIL; halt-gate compares against the baseline's failing rows instead of the round-2 build failures.
+
 Mutation tests run only with ``OPENTPW_M3_MUTATE=1`` and ``OPENTPW_GAME_PATH``; they build ``OPENTPW_M3_SUBJECT``
 (default ``HEAD``) with the v1 hooks plus the hooks below. Nothing here says anything about how the original game
 behaves.
@@ -138,20 +141,20 @@ def _staff(case, mutation):
     return case.run_gate(mutation)['rows']['staff.work']
 
 
-def test_mechanic_idle_after_first_repair_still_passes(self):
+def test_mechanic_idle_after_first_repair_fails(self):
     row = _staff(self, 'idle-mechanic-after-first-repair')
     self.assertEqual(1, row['evidence']['repairs'])
     self.assertGreater(row['evidence']['repairsNeeded'], 1)
-    self.assertEqual('pass', row['verdict'], row)  # weakness: one repair satisfies the row
+    self.assertEqual('fail', row['verdict'], row)  # round 2 weakness (one repair satisfied the row), closed by GATE-UPD
 
 
-def test_handyman_idle_after_first_clean_still_passes(self):
+def test_handyman_idle_after_first_clean_fails(self):
     row = _staff(self, 'idle-handyman-after-first-clean')
     baseline = _staff(self, '')
     self.assertLess(row['evidence']['litterCleanedItems'], 2)
     self.assertGreater(row['evidence']['litterDroppedItems'], 100)
     self.assertLess(row['evidence']['litterCleanedItems'], baseline['evidence']['litterCleanedItems'])
-    self.assertEqual('pass', row['verdict'], row)  # weakness: one clean satisfies the row
+    self.assertEqual('fail', row['verdict'], row)  # round 2 weakness (one clean satisfied the row), closed by GATE-UPD
 
 
 def test_zero_wear_and_zero_litter_pass_with_idle_staff(self):
@@ -180,10 +183,11 @@ def test_halted_gate_fixed_item_is_judged_by_no_row(self):
     verdicts = {key: row['verdict'] for key, row in result['rows'].items()}
     self.assertIn('Gates Halted', result['rows']['rides.scripts-run']['evidence']['scripts'])
     self.assertEqual('pass', verdicts['rides.scripts-run'])
-    self.assertEqual(['build.paths', 'build.queue'], sorted(key for key, value in verdicts.items() if value == 'fail'))
+    baseline = {key for key, row in self.run_gate('')['rows'].items() if row['verdict'] == 'fail'}
+    self.assertEqual(baseline, {key for key, value in verdicts.items() if value == 'fail'})
 
 
-for _test in [test_mechanic_idle_after_first_repair_still_passes, test_handyman_idle_after_first_clean_still_passes,
+for _test in [test_mechanic_idle_after_first_repair_fails, test_handyman_idle_after_first_clean_fails,
               test_zero_wear_and_zero_litter_pass_with_idle_staff, test_litter_in_last_tick_only_fails,
               test_halt_in_last_tick_fails_scripts_run, test_halted_gate_fixed_item_is_judged_by_no_row]:
     setattr(MutationsRound2, _test.__name__, _test)

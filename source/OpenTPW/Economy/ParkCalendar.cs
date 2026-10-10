@@ -93,6 +93,7 @@ public static class ParkCalendar
 }
 
 /// <summary>SplitMix64: a small deterministic generator whose whole state is one saved integer.</summary>
+// [APPROX:DET-015] the economy draws from its own SplitMix64 stream seeded from the world seed, not from the original's shared world LCG (staff candidates 0xf5b64, staff gates) — evidence needed: DET-I2 port of WorldRng (docs/reverse/DET-plan.md §2.3, §4.3)
 public sealed class DeterministicRandom
 {
 	public DeterministicRandom( ulong state ) => State = state;

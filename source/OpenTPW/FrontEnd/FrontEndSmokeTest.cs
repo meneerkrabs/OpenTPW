@@ -77,6 +77,12 @@ internal sealed class FrontEndSmokeTest : IDisposable
 	/// </summary>
 	private void PlanTexturePackSwitch()
 	{
+		// A pack pinned with OPENTPW_TEXTURE_PACK (e.g. to capture screens with a pack) cannot be switched.
+		if ( !string.IsNullOrEmpty( Environment.GetEnvironmentVariable( "OPENTPW_TEXTURE_PACK" ) ) )
+		{
+			Log.Trace( "Front-end smoke test: texture pack switch skipped, a pack is pinned with OPENTPW_TEXTURE_PACK." );
+			return;
+		}
 		const uint SolidPixel = 0xFF22C80C; // little-endian RGBA bytes 0C C8 22 FF
 		// Outside temporaryDirectory: a later step checks that no .json file is written there.
 		var packs = smokePacks;

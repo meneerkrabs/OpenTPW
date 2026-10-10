@@ -63,6 +63,36 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public int BoardedTotal { get; private set; }
 	public int ReleasedTotal { get; private set; }
 
+	/// <summary>Queue and rider state for <see cref="WorldStateHash"/>.</summary>
+	internal void AddCanonicalState( StateHasher hash )
+	{
+		void AddList( IReadOnlyCollection<int> values )
+		{
+			hash.Add( values.Count );
+			foreach ( var value in values )
+				hash.Add( value );
+		}
+		void AddTimed( List<(int Guest, double Until)> values )
+		{
+			hash.Add( values.Count );
+			foreach ( var (guest, until) in values )
+			{
+				hash.Add( guest );
+				hash.Add( until );
+			}
+		}
+		hash.Add( MaximumQueueLength );
+		hash.Add( offered );
+		hash.Add( BoardedTotal );
+		hash.Add( ReleasedTotal );
+		AddList( queue );
+		AddList( onRide );
+		AddList( walkingOff );
+		AddList( hopped.Order().ToArray() );
+		AddTimed( limbo );
+		AddTimed( bouncing );
+	}
+
 	/// <summary>Binds the bridge to the script it serves; <paramref name="open"/> reports whether the owner opened the ride.</summary>
 	public void Attach( RideVM script, Func<bool> open )
 	{

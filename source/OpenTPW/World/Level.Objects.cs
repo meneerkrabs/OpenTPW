@@ -17,7 +17,7 @@ public partial class Level
 		var theme = OriginalPark?.LevelName ?? "jungle";
 		IParkGrid grid = OriginalPark == null ? new SandboxParkGrid() : new OriginalParkGrid( OriginalPark );
 		var easy = Park?.Economy.Settings.IsEasy ?? false;
-		Objects = new ParkObjects( ObjectCatalog.Load( theme, easy ), grid ) { IsReserved = IsReservedByPrototype };
+		Objects = new ParkObjects( ObjectCatalog.Load( theme, easy ), grid, Seed ) { IsReserved = IsReservedByPrototype };
 		if ( OriginalPark == null )
 			return;
 		var count = OriginalPark.Save != null ? Objects.ImportOriginal( OriginalPark.Save ) : Objects.AddDefaultFixedItems();
@@ -42,28 +42,43 @@ public partial class Level
 	/// </summary>
 	private void RegisterObjectWithGuests( OriginalObject item )
 	{
-		if ( Guests == null || !item.Runtime.IsAttraction )
-			return;
-		var points = item.AccessPoints.ToArray();
+		if ( Guests != null )
+			RegisterWithGuests( item.Runtime, item.AccessPoints, Guests );
+	}
+
+	/// <summary>
+	/// Registers a placed object's visitor bridge with <paramref name="guests"/> the way the build flow does
+	/// (also used by the headless M3 gate): attractions only, cells from <see cref="ResolveVisitorCells"/>.
+	/// </summary>
+	internal static bool RegisterWithGuests( OriginalObjectRuntime runtime, IEnumerable<ObjectAccessPoint> accessPoints, GuestSimulation guests )
+	{
+		if ( !runtime.IsAttraction || ResolveVisitorCells( accessPoints, guests.Grid ) is not { } cells )
+			return false;
+		runtime.Visitors.EntranceCell = cells.Entrance;
+		runtime.Visitors.ExitCell = cells.Exit;
+		runtime.Visitors.HasCells = true;
+		guests.Register( runtime.Visitors );
+		return true;
+	}
+
+	/// <summary>Walkable entrance and exit cells for an object's access points, or null when it has no entrance or the grid no path.</summary>
+	internal static ((int X, int Y) Entrance, (int X, int Y) Exit)? ResolveVisitorCells( IEnumerable<ObjectAccessPoint> accessPoints, GuestPathGrid grid )
+	{
+		var points = accessPoints.ToArray();
 		var entrance = points.FirstOrDefault( point => point.Kind == ObjectCellKind.Entrance );
 		if ( entrance == default )
-			return;
+			return null;
 		var exit = points.FirstOrDefault( point => point.Kind == ObjectCellKind.Exit );
 		if ( exit == default )
 			exit = entrance;
-		var entranceCell = WalkableNear( entrance.OutsideX, entrance.OutsideY );
-		var exitCell = WalkableNear( exit.OutsideX, exit.OutsideY );
-		if ( entranceCell == null || exitCell == null )
-			return;
-		item.Visitors.EntranceCell = entranceCell.Value;
-		item.Visitors.ExitCell = exitCell.Value;
-		item.Visitors.HasCells = true;
-		Guests.Register( item.Visitors );
+		var entranceCell = WalkableNear( grid, entrance.OutsideX, entrance.OutsideY );
+		var exitCell = WalkableNear( grid, exit.OutsideX, exit.OutsideY );
+		return entranceCell == null || exitCell == null ? null : (entranceCell.Value, exitCell.Value);
 	}
 
 	// [APPROX:RIDES-028] A non-walkable outside cell (queue area) is replaced by the nearest walkable path cell — evidence needed: original queue-path building/joining rules
-	private (int X, int Y)? WalkableNear( int x, int y ) =>
-		Guests!.Grid.IsWalkable( x, y ) ? (x, y) : FindRideEntrance( Guests.Grid, x, y, x, y );
+	private static (int X, int Y)? WalkableNear( GuestPathGrid grid, int x, int y ) =>
+		grid.IsWalkable( x, y ) ? (x, y) : FindRideEntrance( grid, x, y, x, y );
 
 	public void RotateBuild() => BuildRotation = (BuildRotation + 90) % 360;
 

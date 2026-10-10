@@ -1,6 +1,7 @@
 namespace OpenTPW;
 
 /// <summary>Deterministic SplitMix64 stream; independent of System.Random's implementation.</summary>
+// [APPROX:DET-014] guests draw from their own SplitMix64 stream seeded from the world seed, not from the original's shared world LCG reseeded to each new guest's id — evidence needed: DET-I2 port of WorldRng (docs/reverse/DET-plan.md §2.3, §4.3)
 public struct GuestRandom
 {
 	public ulong State;
@@ -62,6 +63,8 @@ public sealed class GuestSimulation : IRideVisitorHost
 	public GuestPathGrid Grid { get; }
 	public GuestSettings Settings { get; }
 	public ulong Seed { get; }
+	/// <summary>Current <see cref="GuestRandom"/> state (saved with the park; see <see cref="WorldRandomState"/>).</summary>
+	public ulong RandomState => random.State;
 	public IReadOnlyList<Guest> Guests => guests;
 	public IReadOnlyList<IRideVisitorBridge> Attractions => attractions;
 	public long TickCount { get; private set; }
@@ -76,6 +79,9 @@ public sealed class GuestSimulation : IRideVisitorHost
 	public int Departed { get; private set; }
 	/// <summary>Raised when a guest pays (guest, amount, attraction id or 0 for admission).</summary>
 	public event Action<Guest, int, int>? MoneySpent;
+
+	/// <summary>Continues the guest stream from a saved state.</summary>
+	public void RestoreRandomState( ulong state ) => random = new GuestRandom( state );
 
 	public Guest? Find( int id ) => byId.TryGetValue( id, out var guest ) ? guest : null;
 
@@ -773,6 +779,76 @@ public sealed class GuestSimulation : IRideVisitorHost
 			if ( thoughts[index] > thoughts[common] )
 				common = index;
 		return new GuestStatistics( inPark, walking, queueing, onRides, arriving, leaving, inPark == 0 ? 0 : happiness / inPark, (GuestThought)common, Admissions );
+	}
+
+	/// <summary>Thing-table part of <see cref="WorldStateHash"/>: every field the next tick reads, in id order.</summary>
+	internal void AddCanonicalState( StateHasher hash )
+	{
+		hash.Add( TickCount );
+		hash.Add( TimeSeconds );
+		hash.Add( nextId );
+		hash.Add( Admissions );
+		hash.Add( Departed );
+		hash.Add( arrivalTimer );
+		hash.Add( spawnTimer );
+		hash.Add( pendingArrivals );
+		hash.Add( laneToggle );
+		hash.Add( ArrivalsEnabled );
+		hash.Add( guests.Count );
+		foreach ( var guest in guests )
+		{
+			hash.Add( guest.Id );
+			hash.Add( guest.Type );
+			hash.Add( (int)guest.State );
+			hash.Add( guest.X );
+			hash.Add( guest.Y );
+			hash.Add( guest.HeadingX );
+			hash.Add( guest.HeadingY );
+			hash.Add( guest.IsMoving );
+			hash.Add( guest.DistanceWalked );
+			hash.Add( guest.Hunger );
+			hash.Add( guest.Thirst );
+			hash.Add( guest.Toilet );
+			hash.Add( guest.Energy );
+			hash.Add( guest.Nausea );
+			hash.Add( guest.Happiness );
+			hash.Add( guest.Money );
+			hash.Add( guest.ExitLevel );
+			hash.Add( guest.SecondsSinceRide );
+			hash.Add( guest.RidesTaken );
+			hash.Add( (int)guest.Thought );
+			hash.Add( guest.AttractionId );
+			hash.Add( guest.LastAttractionId );
+			hash.Add( guest.CellX );
+			hash.Add( guest.CellY );
+			hash.Add( guest.PreviousCellX );
+			hash.Add( guest.PreviousCellY );
+			hash.Add( guest.OnGrid );
+			hash.Add( guest.OffsetX );
+			hash.Add( guest.OffsetY );
+			hash.Add( guest.WaypointX );
+			hash.Add( guest.WaypointY );
+			hash.Add( guest.HasWaypoint );
+			hash.Add( guest.Lane?.Length ?? -1 );
+			foreach ( var (x, y) in guest.Lane ?? [] )
+				hash.Add( x * 4096L + y );
+			hash.Add( guest.LaneIndex );
+			hash.Add( guest.LaneReversed );
+			hash.Add( guest.StateTimer );
+			hash.Add( guest.DecisionTimer );
+		}
+		hash.Add( attractions.Count );
+		foreach ( var attraction in attractions )
+		{
+			hash.Add( attraction.AttractionId );
+			hash.Add( attraction.IsOpen );
+			hash.Add( attraction.EntranceCell.X * 4096L + attraction.EntranceCell.Y );
+			hash.Add( attraction.ExitCell.X * 4096L + attraction.ExitCell.Y );
+			if ( attraction is RideVisitorBridge bridge )
+				bridge.AddCanonicalState( hash );
+			else
+				hash.Add( attraction.QueueLength );
+		}
 	}
 
 	/// <summary>FNV-1a over every guest's simulation state, the RNG and the counters.</summary>

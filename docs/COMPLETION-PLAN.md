@@ -228,6 +228,7 @@ NativeAOT remains a separate, optional qualification.
 - Economy: costs, revenue, ticket price, staff and maintenance.
 - Gate: 30 minutes of accelerated headless running with income/expenses and
   visitors; no stuck queues, unreachable goals or negative time progression.
+  Evaluator, bounds and current baseline: [M3-GATE.md](M3-GATE.md) (`--m3-gate`).
 - Invariants prove stability, not original economy/visitor semantics: accept those
   semantics only with linked original traces and comparison.
 

@@ -1,0 +1,25 @@
+name: Website
+# Publishes website/ to Cloudflare Pages (project "opentpw", served at opentpw.io).
+# Needs the repository secret CLOUDFLARE_API_TOKEN, a token limited to Cloudflare Pages: Edit.
+# Only pushes to main deploy; forks and pull requests never see the secret.
+on:
+  push:
+    branches: [main]
+    paths: ['website/**', '.github/workflows/website.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: website
+  cancel-in-progress: true
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4.1.3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: d28e3f532f4489d9fc27a4e1baff1fe4
+          command: pages deploy website --project-name=opentpw --branch=main --commit-dirty=true

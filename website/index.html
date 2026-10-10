@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenTPW: Theme Park World for today</title>
+<meta name="description" content="OpenTPW is a free, open-source reimplementation of Theme Park World. Bring your own copy of the game and play it on Windows, macOS and Linux, or in your browser.">
+<meta property="og:title" content="OpenTPW: Theme Park World for today">
+<meta property="og:description" content="A free, open-source reimplementation of Theme Park World. Play on Windows, macOS, Linux or in your browser.">
+<meta property="og:image" content="https://opentpw.io/images/lobby.jpg">
+<meta property="og:url" content="https://opentpw.io/">
+<meta name="theme-color" content="#1d1450">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+<script src="site.js" defer></script>
+</head>
+<body>
+<header class="top">
+	<div class="wrap">
+		<a class="brand" href="/"><img src="logo.svg" alt="" width="38" height="38"><span>Open<b>TPW</b></span></a>
+		<nav aria-label="Main">
+			<a href="https://play.opentpw.io">Play</a>
+			<a href="#download">Download</a>
+			<a href="#features">Features</a>
+			<a href="#screenshots">Screenshots</a>
+			<a href="#online">Online</a>
+			<a href="#faq">FAQ</a>
+			<a href="https://github.com/meneerkrabs/OpenTPW">GitHub</a>
+		</nav>
+	</div>
+</header>
+
+<main>
+<div class="hero">
+	<img src="images/lobby.jpg" alt="The Lost Kingdom island in the OpenTPW lobby, rendered in high resolution" width="2560" height="1440">
+	<div class="wrap">
+		<span class="badge">Development preview</span>
+		<h1>Theme Park World, <span>built for today</span></h1>
+		<p>OpenTPW is a free, open-source reimplementation of the 1999 theme park game. Bring your own copy of Theme Park World and play it on modern Windows, macOS and Linux, in high resolution, or right in your browser.</p>
+		<div class="buttons">
+			<a class="button play" href="https://play.opentpw.io">▶ Play in your browser</a>
+			<a class="button download" id="primary-download" href="#download">⬇ Download</a>
+		</div>
+		<p class="small">Needs the files of an original Theme Park World installation or CD. <a href="#faq">Why?</a></p>
+	</div>
+</div>
+
+<section id="features">
+	<div class="wrap">
+		<h2>The park you remember, on the computer you have</h2>
+		<p class="lead">OpenTPW reads the original game's data and runs it with a new engine. The behaviour is traced from the original game, and every place where OpenTPW has to guess is written down.</p>
+		<div class="features">
+			<div class="feature"><div class="icon a">💻</div><h3>Modern systems</h3><p>Native builds for Windows (x64, x86, ARM64), macOS on Apple silicon and Linux (x64, ARM64). No compatibility tricks.</p></div>
+			<div class="feature"><div class="icon b">🖥️</div><h3>Sharp at any size</h3><p>Any resolution and aspect ratio, from a laptop to 4K and ultrawide, with the original interface scaled cleanly.</p></div>
+			<div class="feature"><div class="icon c">✨</div><h3>Enhanced textures</h3><p>An optional texture pack, upscaled on your own computer from your own copy, makes the parks four times as detailed.</p></div>
+			<div class="feature"><div class="icon d">🌐</div><h3>Play in the browser</h3><p>The same engine compiled to WebAssembly and WebGL2. Choose your game folder and play: nothing is installed, and your files stay on your computer.</p></div>
+			<div class="feature"><div class="icon a">💌</div><h3>Online again</h3><p>Share parks, visit other players' parks, send postcards and chat, on the official server or one you host yourself.</p></div>
+			<div class="feature"><div class="icon b">🔓</div><h3>Open source</h3><p>MIT licensed and developed in the open on GitHub. Bug reports, research and code are welcome.</p></div>
+		</div>
+	</div>
+</section>
+
+<section id="screenshots" class="band">
+	<div class="wrap">
+		<h2>Screenshots</h2>
+		<p class="lead">OpenTPW running with original game data and the optional enhanced texture pack, rendered at 4K and scaled down.</p>
+		<div class="gallery">
+			<figure class="wide"><img src="images/park-jungle.jpg" alt="A starter park in the Lost Kingdom: paths, rides, a waterfall and the jungle entrance gate" width="1600" height="900" loading="lazy"><figcaption>Lost Kingdom: the first rides and paths of a new park</figcaption></figure>
+			<figure><img src="images/park-fantasy.jpg" alt="The Wonder Land entrance: a giant pink worm in a black hat" width="1600" height="900" loading="lazy"><figcaption>Wonder Land</figcaption></figure>
+			<figure><img src="images/park-space.jpg" alt="The Space Zone entrance on purple alien ground" width="1600" height="900" loading="lazy"><figcaption>Space Zone</figcaption></figure>
+			<figure class="wide"><img src="images/park-halloween.jpg" alt="The Halloween World entrance on grey, misty ground" width="1600" height="900" loading="lazy"><figcaption>Halloween World</figcaption></figure>
+		</div>
+	</div>
+</section>
+
+<section id="download">
+	<div class="wrap">
+		<h2>Download</h2>
+		<p class="lead">The latest release for your system. Unpack it and start OpenTPW; on the first start it asks for your Theme Park World folder. <a href="https://github.com/meneerkrabs/OpenTPW/releases/latest">Release notes and older versions</a></p>
+		<div class="platforms">
+			<div class="platform" data-os="windows">
+				<h3>Windows</h3>
+				<a href="https://github.com/meneerkrabs/OpenTPW/releases/latest/download/OpenTPW-win-x64.zip">64-bit <span>(most PCs)</span></a>
+				<a href="https://github.com/meneerkrabs/OpenTPW/releases/latest/download/OpenTPW-win-arm64.zip">ARM64 <span>(Snapdragon)</span></a>
+				<a href="https://github.com/meneerkrabs/OpenTPW/releases/latest/download/OpenTPW-win-x86.zip">32-bit</a>
+			</div>
+			<div class="platform" data-os="mac">
+				<h3>macOS</h3>
+				<a href="https://github.com/meneerkrabs/OpenTPW/releases/latest/download/OpenTPW-osx-arm64.tar.gz">Apple silicon <span>(M1 and later)</span></a>
+			</div>
+			<div class="platform" data-os="linux">
+				<h3>Linux</h3>
+				<a href="https://github.com/meneerkrabs/OpenTPW/releases/latest/download/OpenTPW-linux-x64.tar.gz">x64</a>
+				<a href="https://github.com/meneerkrabs/OpenTPW/releases/latest/download/OpenTPW-linux-arm64.tar.gz">ARM64</a>
+			</div>
+			<div class="platform">
+				<h3>Browser</h3>
+				<a href="https://play.opentpw.io">Play at play.opentpw.io <span>(Chrome, Edge, Firefox, Safari)</span></a>
+			</div>
+		</div>
+		<p class="note">OpenTPW is a development preview: much of the original already works, and some parts are still missing or approximate. The <a href="https://github.com/meneerkrabs/OpenTPW/blob/main/docs/PROGRESS.md">progress notes</a> say what works today.</p>
+	</div>
+</section>
+
+<section id="online" class="band">
+	<div class="wrap split">
+		<div>
+			<h2>Theme Park World online, again</h2>
+			<p class="lead">The original's online world closed long ago. OpenTPW brings it back with its own open server.</p>
+			<ul>
+				<li>Publish your park and visit parks other players made</li>
+				<li>Send postcards to friends</li>
+				<li>Chat with the original's commands and moods</li>
+				<li>Delete your account and everything on the server at any time</li>
+			</ul>
+			<div class="buttons">
+				<a class="button play" href="https://play.opentpw.io">Go online at play.opentpw.io</a>
+				<a class="button ghost" href="https://github.com/meneerkrabs/OpenTPW/blob/main/docs/SERVER.md">Host your own server</a>
+			</div>
+			<p class="small">Please read the <a href="rules.html">community rules</a> and the <a href="privacy.html">privacy statement</a>.</p>
+		</div>
+		<img src="images/park-fantasy.jpg" alt="" width="1600" height="900" loading="lazy">
+	</div>
+</section>
+
+<section id="faq">
+	<div class="wrap">
+		<h2>Questions</h2>
+		<details open><summary>Do I need the original game?</summary><p>Yes. OpenTPW is a new engine, not the game itself: it contains none of the original's graphics, sounds or other files, and it needs them from your own copy of Theme Park World (for example the PC CD or an installed copy).</p></details>
+		<details><summary>Does the browser version upload my game files?</summary><p>No. The page copies the files it needs from the folder you choose into your browser's memory. They are never sent to a server, and they are gone when you close the page.</p></details>
+		<details><summary>Is OpenTPW made by EA or Bullfrog?</summary><p>No. OpenTPW is an independent fan project, not affiliated with or endorsed by Electronic Arts or Bullfrog Productions.</p></details>
+		<details><summary>How faithful is it?</summary><p>The aim is to behave like the original. Behaviour is traced from the original game, and every place where OpenTPW still has to guess is listed in a public register, so it can be checked and improved.</p></details>
+		<details><summary>How can I help?</summary><p>Play it and report what differs from the original, help with research, or contribute code on <a href="https://github.com/meneerkrabs/OpenTPW">GitHub</a>.</p></details>
+	</div>
+</section>
+</main>
+
+<footer>
+	<div class="wrap">
+		<nav aria-label="Footer">
+			<a href="https://github.com/meneerkrabs/OpenTPW">GitHub</a>
+			<a href="privacy.html">Privacy</a>
+			<a href="rules.html">Community rules</a>
+			<a href="mailto:contact@opentpw.io">contact@opentpw.io</a>
+		</nav>
+		<p>OpenTPW is free software under the MIT licence. Theme Park World is a trademark of Electronic Arts Inc. OpenTPW is an independent project and is not affiliated with or endorsed by Electronic Arts or Bullfrog Productions. Screenshots show OpenTPW running with original game data.</p>
+	</div>
+</footer>
+</body>
+</html>

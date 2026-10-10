@@ -4,12 +4,14 @@ using NVector2 = System.Numerics.Vector2;
 namespace OpenTPW.UI.Original;
 
 /// <summary>
-/// Texture of a UI draw: a solid colour (both null), a BF4 font atlas drawn at integer
-/// <see cref="FontScale"/> (see <see cref="FontSmoothing"/>) or an original image from the game file
-/// system (pink 255/0/255 is transparent, linear filtered).
+/// Texture of a UI draw: a solid colour (all null), a BF4 font atlas drawn at integer
+/// <see cref="FontScale"/> (see <see cref="FontSmoothing"/>), an original image from the game file
+/// system (pink 255/0/255 is transparent, linear filtered), or a texture rendered this frame by its
+/// owner (the park advisor; linear filtered, not disposed by the UI).
 /// </summary>
-public sealed record UiTexture( string? ImagePath, FontAtlas? Atlas, int FontScale = 1 )
+public sealed record UiTexture( string? ImagePath, FontAtlas? Atlas, int FontScale = 1, Veldrid.Texture? Rendered = null )
 {
+	public static UiTexture Of( Veldrid.Texture rendered ) => new( null, null, Rendered: rendered );
 	public static readonly UiTexture Solid = new( null, null );
 	public static UiTexture Image( string path ) => new( path, null );
 	/// <summary>An image file on the host file system, e.g. a local art override.</summary>

@@ -318,7 +318,10 @@ internal sealed class GameFlow : IDisposable
 		Context.Canvas = CurrentCanvas();
 		Context.Batch.Clear();
 		if ( Hud != null )
+		{
 			Hud.Draw( Context );
+			Advisor?.Draw( Context );
+		}
 		else
 			Menu?.Stack.Draw( Context );
 		// [EXT:texture-pack] a running texture switch shows its progress without blocking the game

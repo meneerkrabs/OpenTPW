@@ -55,6 +55,8 @@ stack and commits the line. The tool ends when the click's end is the start,
 when a cell is refused, or when the line ends on an existing path or queue cell
 (PATH-003); otherwise the end is the next start. Backspace takes back the last
 segment without a refund (PATH-002); right click, Escape and Back cancel.
+Escape or Back inside the tool only ends the tool; the next one opens the
+pause menu (PATH-011).
 
 In the park view the hover help is 441 over an empty owned cell, 442 over a
 path and 444 over a queue; inside the tools it is 443 and 445. A left click on
@@ -94,3 +96,4 @@ and `Level.RemovePathCell(x, y)` wrap it with the read-only visit check.
 | PATH-008 | PATH-CODE8 | path over a queue cell is refused |
 | PATH-009 | PATH-FREE | free only without a park economy |
 | PATH-010 | PATH-LEDGER | posted as other costs |
+| PATH-011 | PATH-CANCEL | Escape/Back ends the tool first; the next one pauses |

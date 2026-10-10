@@ -343,7 +343,8 @@ the touched cells only, and the version bump re-plans guests as today.
    tool there).
 4. **Undo** (Backspace): pop the last vertex and remove that segment's cells. PATH-I refunds
    nothing on undo, which matches §6 for removals. `APPROX:PATH-UNDO`.
-5. **Cancel** (right click or Escape) ends the tool without writing.
+5. **Cancel** (right click or Escape) ends the tool without writing. Escape inside the tool
+   does not also open the pause menu; the next Escape does. `APPROX:PATH-CANCEL`.
 6. **Remove** (the existing remove tool on a path cell): §6 with `a = b = 0` (forced),
    respecting NoModify. `APPROX:PATH-REMOVE`.
 
@@ -408,6 +409,7 @@ adopts its cell store and adds the fields above.
 | `PATH-CODE8` | Validator code 8 (path over a queue end) | refuse |
 | `PATH-FREE` | Byte `data:0x7de2d` and `game+36` meanings | free only in the sandbox (no economy) |
 | `PATH-LEDGER` | Ledger row of path spending | `OtherCosts` |
+| `PATH-CANCEL` | Escape/Back key handling in tool modes 1 and 3 | Escape ends the tool; the next Escape opens the pause menu |
 | — | Type names for 4, 9, 10, 21, 24, 30; `0x4d5d0` meaning; `+0x80`/`+0x400` flag uses | not needed for paths |
 | — | Which `.sam` layers fill the cost record per mode | `BalanceSettings` as today |
 

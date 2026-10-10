@@ -14,9 +14,9 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **186 unresolved unique APPROX IDs**, 203 APPROX occurrences, 69 EXT occurrences, 73 DATA occurrences and 117 BIN occurrences.
+Current inventory: **187 unresolved unique APPROX IDs**, 204 APPROX occurrences, 69 EXT occurrences, 73 DATA occurrences and 117 BIN occurrences.
 
-Of these, 180 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
+Of these, 181 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
 CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.
 
@@ -31,7 +31,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON | 36 | 36 |
 | GATE | 2 | 2 |
 | ONLINE | 6 | 6 |
-| PATH | 10 | 11 |
+| PATH | 11 | 12 |
 | QUEUE | 19 | 19 |
 | RIDES | 26 | 26 |
 | UI | 39 | 53 |
@@ -142,6 +142,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | PATH-008 | Original-fidelity area (scope unadjudicated) | PATH-CODE8: path over a queue cell is refused (the original's code 8 for a queue end is not traced) | See source annotation/runtime register | `source/OpenTPW/World/PathApproximations.cs:19` |
 | PATH-009 | Original-fidelity area (scope unadjudicated) | PATH-FREE: paths are free only without a park economy (the generic sandbox) | See source annotation/runtime register | `source/OpenTPW/World/PathApproximations.cs:20` |
 | PATH-010 | Original-fidelity area (scope unadjudicated) | PATH-LEDGER: path spending is posted as other costs | See source annotation/runtime register | `source/OpenTPW/World/PathApproximations.cs:21` |
+| PATH-011 | Original-fidelity area (scope unadjudicated) | PATH-CANCEL: Escape or Back inside the path or queue tool ends the tool without writing; the next Escape opens the pause menu | See source annotation/runtime register | `source/OpenTPW/World/PathApproximations.cs:22` |
 | QUEUE-001 | Original-fidelity area (scope unadjudicated) | queue link values 1/4/16/64 map to −Y/+X/+Y/−X like the saved connection bits | See source annotation/runtime register | `source/OpenTPW/World/Guests/QueueApproximations.cs:12` |
 | QUEUE-002 | Original-fidelity area (scope unadjudicated) | the next queue cell is searched in grid direction order | See source annotation/runtime register | `source/OpenTPW/World/Guests/QueueApproximations.cs:13` |
 | QUEUE-003 | Original-fidelity area (scope unadjudicated) | guests step onto the back of a queue from its first walkable neighbour (the join cell) | See source annotation/runtime register | `source/OpenTPW/World/Guests/QueueApproximations.cs:14` |
@@ -257,7 +258,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | AUDIO-001 | `source/OpenTPW/Audio/AudioMixer.cs:194` | [APPROX:AUDIO-001] the second user volume the original ducks is the effects channel — evidence needed: the names of the TbSysCommand volume commands at 0x100BB18C |
 | AUDIO-002 | `source/OpenTPW/Audio/SoundEvents.cs:66` | [APPROX:AUDIO-002] banks resolve to &lt;map folder's parent&gt;/&lt;name&gt;HD.sdt, then to global/&lt;name&gt;HD.sdt — evidence needed: TbMapStreamer::BankDoesNotExist (0x10015234) and the quality suffix rule |
 | AUDIO-003 | `source/OpenTPW/Audio/SoundEvents.cs:207` | [APPROX:AUDIO-003] pitch, delay, 3D position and reverb of a sound are not applied — evidence needed: TbSoundSampleInfo pitch units and the placeholder 3D update |
-| AUDIO-004 | `source/OpenTPW/Hud/ParkHud.cs:506` | [APPROX:AUDIO-004] the 0xBD modifier (flag 0x10 from 0x1017F618) is not mapped to a key, so the view always plays 0x1F — evidence needed: the input flag behind 0x1017F618 |
+| AUDIO-004 | `source/OpenTPW/Hud/ParkHud.cs:507` | [APPROX:AUDIO-004] the 0xBD modifier (flag 0x10 from 0x1017F618) is not mapped to a key, so the view always plays 0x1F — evidence needed: the input flag behind 0x1017F618 |
 | AUDIO-005 | `source/OpenTPW/Audio/SoundEvents.cs:320` | [APPROX:AUDIO-005] the next segment is chosen (with the parameter at that moment) when the current one starts, so it can be decoded in time — evidence needed: when CPlaceHolderSentence::SoundCallback (sound_shared 0x1001A1F0) runs relative to the end of a sample |
 | COMPAT-001 | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:19` | [APPROX:COMPAT-001] Legacy 512x256 canvas; native DIB/mask and final 128x128 destinations require integration and platform pixel verification. |
 | COMPAT-002 | `source/OpenTPW.Files/Formats/Font/SignTextLayout.cs:128` | [APPROX:COMPAT-002] centre and shrink-to-fit with a margin — evidence needed: original text placement / long-name captures. |
@@ -325,7 +326,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ONLINE-004 | `source/OpenTPW.Online/Chat/ChatCommands.cs:42` | [APPROX:ONLINE-004] 111-113 are all "Your buddy " (English suffix strings are empty); online/offline/removed |
 | ONLINE-005 | `source/OpenTPW.Server/ChatHub.cs:24` | [APPROX:ONLINE-005] Command semantics are inferred from the command words, response strings and |
 | ONLINE-006 | `source/OpenTPW.Server/ChatHub.cs:390` | [APPROX:ONLINE-006] A visitor inside a park must leave it first (CHAT_COMMANDS 127) — evidence needed. |
-| PATH-001 | `source/OpenTPW/Hud/ParkHud.cs:571` | [APPROX:PATH-001] ghosts are flat markers at the cell centres with the line's cost beside the cursor (the original draws ghost path pieces, LayLine mode \| 0x100) — evidence needed: captures of the original path tool |
+| PATH-001 | `source/OpenTPW/Hud/ParkHud.cs:572` | [APPROX:PATH-001] ghosts are flat markers at the cell centres with the line's cost beside the cursor (the original draws ghost path pieces, LayLine mode \| 0x100) — evidence needed: captures of the original path tool |
 | PATH-001 | `source/OpenTPW/World/Level.Objects.cs:121` | [APPROX:PATH-001] a left click on an empty owned cell or on a path cell enters mode 1 with that cell as the start; the click handler that calls SetMode(1) is not traced and no menu button exists — evidence needed: the caller of SetMode 0x1007B320 with mode 1 |
 | PATH-002 | `source/OpenTPW/World/ParkPathBuilder.cs:321` | [APPROX:PATH-002] Backspace undo removes the last segment's new cells and undoes its counter bumps, without a refund (only the help text 443 and the vertex stack are traced) — evidence needed: the BACKSPACE handler of the path tool |
 | PATH-003 | `source/OpenTPW/World/CellBuildTool.cs:101` | [APPROX:PATH-003] a line whose last cell was already a path or queue cell ends the tool (SetCell raises data:0x84b34 there; its consumer is not traced, the help text 443 says such a click completes the path) — evidence needed: the reader of data 0x84b34 |
@@ -336,6 +337,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | PATH-008 | `source/OpenTPW/World/ParkPathBuilder.cs:158` | [APPROX:PATH-008] path over a queue end (validator code 8) is refused like every other queue cell — evidence needed: the consumer of the validator's return code 8 |
 | PATH-009 | `source/OpenTPW/World/ParkPathBuilder.cs:86` | [APPROX:PATH-009] the free-build byte data:0x7de2d and the game+36 money gate are taken as "no park economy" (the generic sandbox) — evidence needed: writers of data 0x7de2d and game+36 |
 | PATH-010 | `source/OpenTPW/World/ParkPathBuilder.cs:254` | [APPROX:PATH-010] path spending is posted to OtherCosts (the original adds Spend to total costs, game+0x1f5a0; its ledger row is not identified) — evidence needed: the finance screen row that shows path spending |
+| PATH-011 | `source/OpenTPW/Hud/ParkHud.cs:285` | [APPROX:PATH-011] Escape/Back inside the path or queue tool ends the tool without writing; only a Back outside it opens the pause menu (PATH-plan §9.4 cancel; the original's key handler for the tool is not traced, UI-012) — evidence needed: the original's Escape handling in tool modes 1 and 3 |
 | QUEUE-001 | `source/OpenTPW/World/Guests/GuestPathGrid.cs:124` | [APPROX:QUEUE-001] the queue link (+13) uses the compass of the connection bits (+12): Directions order (−Y, +X, +Y, −X) is 1, 4, 16, 64 as in SavePathConnections (78 Easymode path cells); for +13 itself this is assumed — evidence needed: the run-time neighbour offset tables (data 0xec52c..0xec5a4, zero in the file) |
 | QUEUE-002 | `source/OpenTPW/World/Guests/RideVisitorBridge.cs:253` | [APPROX:QUEUE-002] neighbours are tried in GuestPathGrid.Directions order; the original pairs run-time offsets with links 16, 1, 64, 4 whose order is not established — evidence needed: the neighbour offset tables at run time |
 | QUEUE-003 | `source/OpenTPW/World/Guests/RideVisitorBridge.cs:266` | [APPROX:QUEUE-003] guests step onto the back of the queue from the first walkable 4-neighbour (Directions order) that is not part of the queue; the original connection test 0xdd744 is not traced — evidence needed: 0xdd744 and the state-10 walk to the back cell |
@@ -414,17 +416,17 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-024 | `source/OpenTPW/Hud/ParkHud.cs:153` | [APPROX:UI-024] layout inside the build arm — evidence needed: capture of the original build arm |
 | UI-024 | `source/OpenTPW/Hud/ParkHud.cs:180` | [APPROX:UI-024] Three-slot pages and arrow positions are OpenTPW layout, not original menu evidence. |
 | UI-024 | `source/OpenTPW/Hud/ParkHud.cs:216` | [APPROX:UI-024] layout inside the info arm; [APPROX:UI-029] b_door down = closed, b_erase = delete — evidence needed: capture of the ride panel |
-| UI-024 | `source/OpenTPW/Hud/ParkHud.cs:682` | [APPROX:UI-024] Keep each translated name and price inside its slot; previews use the remaining height. |
+| UI-024 | `source/OpenTPW/Hud/ParkHud.cs:683` | [APPROX:UI-024] Keep each translated name and price inside its slot; previews use the remaining height. |
 | UI-025 | `source/OpenTPW/Hud/ParkHud.cs:30` | [APPROX:UI-025] message area: 3 messages, 8 s — evidence needed: binary/capture of the message system |
-| UI-026 | `source/OpenTPW/Hud/ParkHud.cs:687` | [APPROX:UI-026] icon turn speed 0.8 rad/s — evidence needed: capture of the original build menu |
+| UI-026 | `source/OpenTPW/Hud/ParkHud.cs:688` | [APPROX:UI-026] icon turn speed 0.8 rad/s — evidence needed: capture of the original build menu |
 | UI-026 | `source/OpenTPW/Hud/PreviewIcon.cs:14` | [APPROX:UI-026] orthographic CPU projection, 30° tilt, painter sorting — evidence needed: capture of the original build menu |
-| UI-027 | `source/OpenTPW/Hud/ParkHud.cs:514` | [APPROX:UI-027] Select by occupied grid cell; original cursor picking is not verified. |
-| UI-028 | `source/OpenTPW/Hud/ParkHud.cs:298` | [APPROX:UI-028] authored excitement as a percentage; unknown simulation statistics stay unavailable. |
+| UI-027 | `source/OpenTPW/Hud/ParkHud.cs:515` | [APPROX:UI-027] Select by occupied grid cell; original cursor picking is not verified. |
+| UI-028 | `source/OpenTPW/Hud/ParkHud.cs:299` | [APPROX:UI-028] authored excitement as a percentage; unknown simulation statistics stay unavailable. |
 | UI-029 | `source/OpenTPW/Hud/ParkHud.cs:216` | [APPROX:UI-024] layout inside the info arm; [APPROX:UI-029] b_door down = closed, b_erase = delete — evidence needed: capture of the ride panel |
 | UI-030 | `source/OpenTPW/UI/Original/Options/GameOptions.cs:33` | [APPROX:UI-030] 0..10 volume steps, default 8, popup help on — evidence needed: original options defaults |
 | UI-030 | `source/OpenTPW/UI/Original/Options/GameOptions.cs:44` | [APPROX:UI-030] right-column defaults: all on, 90 degs rotation (as in the supplied capture), pushscroll |
-| UI-031 | `source/OpenTPW/Hud/ParkHud.cs:368` | [APPROX:UI-031] one placement per menu selection, then the queue tool for Info.HasQueue rides; Level owns purchase/sale — evidence needed: original build-tool continuation |
-| UI-032 | `source/OpenTPW/Hud/ParkHud.cs:691` | [APPROX:UI-032] Wrap translated catalogue names within their slot at the integer text scale. |
+| UI-031 | `source/OpenTPW/Hud/ParkHud.cs:369` | [APPROX:UI-031] one placement per menu selection, then the queue tool for Info.HasQueue rides; Level owns purchase/sale — evidence needed: original build-tool continuation |
+| UI-032 | `source/OpenTPW/Hud/ParkHud.cs:692` | [APPROX:UI-032] Wrap translated catalogue names within their slot at the integer text scale. |
 | UI-032 | `source/OpenTPW/UI/Original/UiWidgets.cs:285` | [APPROX:UI-032] small-font fallback and greedy wrap for long labels — evidence needed: captures of translated original screens |
 | UI-034 | `source/OpenTPW/UI/Original/UiImages.cs:70` | [APPROX:UI-034] a fully opaque texture on a transparent (flag 0x2) slot keys out black — evidence needed: the original's render state for flagged slots |
 | UI-035 | `source/OpenTPW/Client/Movie/IntroPlaylist.cs:34` | Input already held when the sequence begins is ignored until released [APPROX:UI-035], so launching the game |
@@ -630,7 +632,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | STP-PPC:0x1006F380 path preview | `source/OpenTPW/World/CellBuildTool.cs:72` | [BIN:STP-PPC:0x1006F380 path preview] in mode 1 or 3, snap the cursor and LayLine(mode \| 0x100, start, end); without a start, preview one cell |
 | STP-PPC:0x1006F380 path preview | `source/OpenTPW/World/ParkPathBuilder.cs:95` | [BIN:STP-PPC:0x1006F380 path preview] \|dx\| ≥ \|dy\| keeps X (end.y = start.y), otherwise Y; the commit 0x10070F84 snaps the same way |
 | STP-PPC:0x10070F84 path commit | `source/OpenTPW/World/CellBuildTool.cs:84` | [BIN:STP-PPC:0x10070F84 path commit] push the snapped end unless it equals the start with more than one vertex stored, LayLine(mode, start, end), then end the tool (start −1, SetMode(0)) when end == start or LayLine failed, else continue from the end |
-| STP-PPC:0x1007497C ride placement | `source/OpenTPW/Hud/ParkHud.cs:376` | [BIN:STP-PPC:0x1007497C ride placement] a placed HasQueue ride (type record +64) enters tool mode 3, the queue tool (PATH-plan §8); park clicks lay its queue until Back |
+| STP-PPC:0x1007497C ride placement | `source/OpenTPW/Hud/ParkHud.cs:377` | [BIN:STP-PPC:0x1007497C ride placement] a placed HasQueue ride (type record +64) enters tool mode 3, the queue tool (PATH-plan §8); park clicks lay its queue until Back |
 | STP-PPC:0x1007497C ride placement | `source/OpenTPW/World/Level.Objects.cs:137` | [BIN:STP-PPC:0x1007497C ride placement] a placed HasQueue ride enters tool mode 3, the queue tool (PATH-plan §8); it shares LayLine, the vertex stack and the preview/commit code with the path tool |
 | STP-PPC:0x1007B320 SetMode | `source/OpenTPW/World/CellBuildTool.cs:55` | [BIN:STP-PPC:0x1007B320 SetMode] tool mode 1 = path, 3 = queue; the drag writes the cell type equal to the mode |
 | STP-PPC:0x1007BCF4 vertex push | `source/OpenTPW/World/CellBuildTool.cs:32` | [BIN:STP-PPC:0x1007BCF4 vertex push] the path/queue vertex stack holds up to 1024 points |
@@ -691,7 +693,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | STP-PPC:0x10128B60 profile key count | `source/OpenTPW/Economy/ParkObjectives.cs:316` | [BIN:STP-PPC:0x10128B60 profile key count] keys = mExtraKeys + (earned global, per-theme and secret tickets) / 3, truncated; spent tickets are not subtracted |
 | STP-PPC:0x10137600 player save setup | `source/OpenTPW/World/Original/OriginalPark.cs:50` | [BIN:STP-PPC:0x10137600 player save setup] the level's easymode park is copied into a player's saves only for Instant Action players (0x1013741C passes the mode flag) |
 | STP-PPC:0x1013781C player selection | `source/OpenTPW/Client/AutomaticAdvisor.cs:45` | [BIN:STP-PPC:0x1013781C player selection] game type 2 = Instant Action, 0 otherwise (offline) |
-| STP-PPC:0x10137FD0 park view input | `source/OpenTPW/Hud/ParkHud.cs:505` | [BIN:STP-PPC:0x10137FD0 park view input] a button message in the park view plays cat_ui event 0x1F (0xBD when modifier flag 0x10 is set) |
+| STP-PPC:0x10137FD0 park view input | `source/OpenTPW/Hud/ParkHud.cs:506` | [BIN:STP-PPC:0x10137FD0 park view input] a button message in the park view plays cat_ui event 0x1F (0xBD when modifier flag 0x10 is set) |
 | STP-PPC:0x10139C64 park-view hover | `source/OpenTPW/World/CellBuildTool.cs:128` | [BIN:STP-PPC:0x10139C64 park-view hover] the cell under the cursor picks the help line: empty (0x85258) 441, type 1 442, type 3 444; inside the tools 443 and 445 |
 | STP-PPC:0x10139C64 park-view hover | `source/OpenTPW/World/Level.Objects.cs:120` | [BIN:STP-PPC:0x10139C64 park-view hover] empty cell: hover state 2, help 441 "build path"; path (type 1): state 1, help 442 "extend this path"; queue (type 3): help 444 |
 | STP-PPC:0x10154AA0 loans window | `source/OpenTPW/Economy/ParkEconomy.cs:94` | [BIN:STP-PPC:0x10154AA0 loans window] the Available Loans window only opens outside game type 2 (Instant Action) |

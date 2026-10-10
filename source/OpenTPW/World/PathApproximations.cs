@@ -18,6 +18,7 @@ public static class PathApproximations
 		("PATH-007", "PATH-LAND: every in-bounds cell counts as owned land until the save and MAP ownership bits are decoded"),
 		("PATH-008", "PATH-CODE8: path over a queue cell is refused (the original's code 8 for a queue end is not traced)"),
 		("PATH-009", "PATH-FREE: paths are free only without a park economy (the generic sandbox)"),
-		("PATH-010", "PATH-LEDGER: path spending is posted as other costs")
+		("PATH-010", "PATH-LEDGER: path spending is posted as other costs"),
+		("PATH-011", "PATH-CANCEL: Escape or Back inside the path or queue tool ends the tool without writing; the next Escape opens the pause menu")
 	};
 }

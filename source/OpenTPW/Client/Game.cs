@@ -476,22 +476,33 @@ internal static class Game
 		var upscaler = GetOption( args, "--upscaler", "the path of a realesrgan-ncnn-vulkan executable" )
 			?? throw new ArgumentException( "--build-texture-pack requires --upscaler <path of realesrgan-ncnn-vulkan> (docs/TEXTURE-PACKS.md)." );
 		var model = GetOption( args, "--upscale-model", "a Real-ESRGAN model name such as realesrgan-x4plus" ) ?? "realesrgan-x4plus";
-		var packDirectory = GetOption( args, "--texture-pack-dir", "a directory for the texture pack" ) ?? TexturePack.DefaultPackDirectory();
+		var packName = GetOption( args, "--texture-pack-name", "a pack name such as enhanced or detailed" ) ?? TexturePack.DefaultName;
+		if ( !TexturePack.IsValidName( packName ) )
+			throw new ArgumentException( $"--texture-pack-name must be a plain directory name (letters, digits, '-', '_', '.'), not '{packName}'." );
+		var packDirectory = GetOption( args, "--texture-pack-dir", "a directory for the texture pack" ) ?? TexturePack.PackDirectory( packName );
+		// Optional 1x de-artifact pass before upscaling (docs/TEXTURE-PACKS.md); without a model nothing changes.
+		var prepassModel = GetOption( args, "--prepass-model", "the path of an ONNX de-artifact model" );
+		using var prepassTiles = prepassModel == null ? null : new OnnxTileModel( prepassModel );
+		var prepass = prepassTiles == null ? null : new TiledPrepass( prepassTiles, Path.GetFileName( prepassModel! ) );
+		if ( prepassTiles != null )
+			Log.Trace( $"Pre-pass {prepass!.Model} on {prepassTiles.Provider}, {prepassTiles.TileSize}x{prepassTiles.TileSize} tiles." );
 		var subtree = GetOption( args, "--texture-pack-subtree", "a data-relative directory such as levels/jungle" ) ?? "";
 		// Interface art uses a model suited to drawn art; --texture-pack-no-interface keeps it original.
 		var interfaceModel = GetOption( args, "--interface-model", "a Real-ESRGAN model name for interface art" ) ?? "realesrgan-x4plus-anime";
 		var interfaceUpscaler = args.Contains( "--texture-pack-no-interface" ) ? null : new RealEsrganUpscaler( upscaler, interfaceModel );
 		var options = new TexturePackBuildOptions { Subtree = subtree, InterfaceOnly = args.Contains( "--texture-pack-interface-only" ),
-			SpritesOnly = args.Contains( "--texture-pack-sprites-only" ), Merge = args.Contains( "--texture-pack-merge" ) };
+			SpritesOnly = args.Contains( "--texture-pack-sprites-only" ), Merge = args.Contains( "--texture-pack-merge" ),
+			PrepassSprites = args.Contains( "--prepass-sprites" ),
+			HeroDirectory = GetOption( args, "--texture-pack-hero-dir", "a directory of hand-made replacement PNGs" ) ?? "" };
 		// Guest sprites are assembled into atlases from the sprite banks; they join the build under their pack keys.
 		var sprites = subtree.Length == 0 ? GuestSpriteAtlas.LoadKids() : new List<GuestSpriteAtlas>();
 		Log.Trace( $"Building texture pack from {dataDirectory}{(subtree.Length > 0 ? $"/{subtree}" : "")} into {packDirectory}{(options.Merge ? " (merging)" : "")}." );
 		var manifest = TexturePackBuilder.Build( TexturePackBuilder.EnumerateGameTextures( dataDirectory, subtree )
 			.Concat( sprites.Select( atlas => (atlas.PackKey, (Func<TextureData>)(() => new TextureData( atlas.Width, atlas.Height, atlas.Pixels ))) ) ), packDirectory,
-			new RealEsrganUpscaler( upscaler, model ), options, message => Log.Trace( message ), interfaceUpscaler );
-		Log.Trace( $"Done: {manifest.Textures} textures at {manifest.Scale}x. Turn on Enhanced textures in Game Options (or set EnhancedTextures in graphics.json)." );
-		if ( !string.Equals( Path.GetFullPath( packDirectory ), Path.GetFullPath( TexturePack.DefaultPackDirectory() ), StringComparison.Ordinal ) )
-			Log.Warning( $"The game only loads the pack at {TexturePack.DefaultPackDirectory()}; use this one with OPENTPW_TEXTURE_PACK={Path.Combine( packDirectory, TexturePack.TexturesDirectoryName )}." );
+			new RealEsrganUpscaler( upscaler, model ), options, message => Log.Trace( message ), interfaceUpscaler, prepass );
+		Log.Trace( $"Done: {manifest.Textures} textures at {manifest.Scale}x. Choose the pack '{packName}' under Game Options -> OpenTPW -> Enhanced textures (or set \"TexturePack\": \"{packName}\" in graphics.json)." );
+		if ( !string.Equals( Path.GetFullPath( packDirectory ), Path.GetFullPath( TexturePack.PackDirectory( packName ) ), StringComparison.Ordinal ) )
+			Log.Warning( $"The game only loads packs under {TexturePack.PacksDirectory()}; use this one with OPENTPW_TEXTURE_PACK={Path.Combine( packDirectory, TexturePack.TexturesDirectoryName )}." );
 	}
 
 	/// <summary>The --cd-data / OPENTPW_CD_DATA folder when it adds languages to the installation, else null.</summary>

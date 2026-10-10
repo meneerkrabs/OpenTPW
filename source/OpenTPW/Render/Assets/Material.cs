@@ -23,6 +23,10 @@ public partial class Material : Asset
 
 	private Dictionary<string, BindableResource> _boundResources = new();
 
+	// [EXT:texture-pack] Textures can swap their GPU texture in place (a texture pack switch); the binding follows the Texture object.
+	private readonly Dictionary<string, Texture> _boundTextures = new();
+	private readonly Dictionary<string, Texture[]> _boundTextureArrays = new();
+
 	private ResourceLayout[] _resourceLayouts;
 
 	public Material( string shaderPath, MaterialFlags flags = MaterialFlags.None )
@@ -122,6 +126,7 @@ public partial class Material : Asset
 
 	public void Set( string name, Texture[] texture )
 	{
+		_boundTextureArrays[name] = texture;
 		for ( int i = 0; i < texture.Length; i++ )
 		{
 			_boundResources[name + $"{i}"] = texture[i].NativeTexture;
@@ -134,6 +139,7 @@ public partial class Material : Asset
 
 	public void Set( string name, Texture texture )
 	{
+		_boundTextures[name] = texture;
 		_boundResources[name] = texture.NativeTexture;
 		_boundResources["s_" + name] = Samplers[(int)texture.SamplerType];
 
@@ -148,6 +154,12 @@ public partial class Material : Asset
 	internal ResourceSet[] CreateResourceSets()
 	{
 		Debug.Assert( _resourceLayouts != null );
+
+		foreach ( var (name, texture) in _boundTextures )
+			_boundResources[name] = texture.NativeTexture;
+		foreach ( var (name, textures) in _boundTextureArrays )
+			for ( var i = 0; i < textures.Length; i++ )
+				_boundResources[name + $"{i}"] = textures[i].NativeTexture;
 
 		List<ResourceSetDescription> resourceSetDescriptions = new();
 

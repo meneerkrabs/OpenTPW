@@ -265,8 +265,16 @@ public sealed record GraphicsSettings
 	public int Anisotropy { get; init; } = GraphicsPresets.EnhancedAnisotropy;
 	/// <summary>[EXT:COMPAT-GFX-VIEWDISTANCE] OpenTPW fog distance multiplier; 1 = unchanged.</summary>
 	public float ViewDistanceScale { get; init; } = 1;
-	/// <summary>[EXT:texture-pack] Use the locally built upscaled texture pack (docs/TEXTURE-PACKS.md); off = original textures. Applies at the next start.</summary>
-	public bool EnhancedTextures { get; init; }
+	/// <summary>
+	/// [EXT:texture-pack] Texture choice (docs/TEXTURE-PACKS.md): empty = original textures; <c>enhanced</c> (the default) = the
+	/// shipped HD interface art plus the locally built <c>enhanced</c> pack when there is one; other names (<c>detailed</c>, ...)
+	/// = the shipped art plus that pack under <c>texture-packs</c>. Stored as <c>"TexturePack"</c>.
+	/// </summary>
+	[JsonPropertyName( "TexturePack" ), JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+	public string? TexturePackName { get; init; }
+	/// <summary>Legacy boolean of earlier versions: <c>true</c> reads as <c>"enhanced"</c> (<see cref="Validate"/>); never written.</summary>
+	[JsonPropertyName( "EnhancedTextures" ), JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+	public bool? EnhancedTextures { get; init; }
 
 	public static GraphicsSettings Default { get; } = new();
 
@@ -281,6 +289,17 @@ public sealed record GraphicsSettings
 	public GraphicsSettings Validate( ICollection<string> diagnostics )
 	{
 		var result = this;
+		// Migration: a file without a "TexturePack" key (absent or null) takes the old boolean, which selected the one pack
+		// that existed then; an explicit "TexturePack" value, even "", wins over it.
+		// Enhanced is the default: only an explicit "EnhancedTextures": false of earlier versions selects the originals.
+		if ( result.TexturePackName == null )
+			result = result with { TexturePackName = result.EnhancedTextures == false ? "" : TexturePack.DefaultName };
+		result = result with { EnhancedTextures = null };
+		if ( result.TexturePackName!.Length > 0 && !TexturePack.IsValidName( result.TexturePackName ) )
+		{
+			diagnostics.Add( $"Texture pack name '{result.TexturePackName}' is not a plain directory name; using the original textures." );
+			result = result with { TexturePackName = "" };
+		}
 		if ( !Enum.IsDefined( Preset ) )
 		{
 			diagnostics.Add( $"Unknown graphics preset {(int)Preset}; using {Default.Preset}." );

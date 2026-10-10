@@ -17,8 +17,13 @@ public sealed class OptionsServices
 	public TimeSpan ConfirmTimeout { get; init; } = TimeSpan.FromSeconds( 15 );
 	/// <summary>Graphics settings (enhanced textures row); null hides the row.</summary>
 	public IGraphicsSettings? Graphics { get; init; }
-	/// <summary>True when a usable local texture pack exists (docs/TEXTURE-PACKS.md).</summary>
-	public bool TexturePackAvailable { get; init; }
+	/// <summary>Names of the usable local texture packs (docs/TEXTURE-PACKS.md), in cycle order; none hides nothing but shows "No pack built".</summary>
+	public IReadOnlyList<string> TexturePacks { get; init; } = Array.Empty<string>();
+	/// <summary>
+	/// Starts switching to the texture pack of that name (empty = originals) while the game runs; null when the switch
+	/// has nothing to do. The options screen then shows a loading bar until it finishes. Unset: the setting is only saved.
+	/// </summary>
+	public Func<string, ITexturePackSwitch?>? BeginTexturePackSwitch { get; init; }
 }
 
 /// <summary>
@@ -72,6 +77,57 @@ public static class OptionsScreen
 		_ => OpenTpwText.UpscaleNative
 	} );
 
+	/// <summary>Name shown for a texture choice: empty = Original, <c>enhanced</c> = Enhanced, <c>detailed</c> = Detailed; other pack names as they are.</summary>
+	public static string TexturePackLabel( UiStringTable strings, string pack ) => pack.ToLowerInvariant() switch
+	{
+		"" => strings.Extra( OpenTpwText.TexturePackOriginal ),
+		"enhanced" => strings.Extra( OpenTpwText.TexturePackClean ),
+		"detailed" => strings.Extra( OpenTpwText.TexturePackDetailed ),
+		_ => pack
+	};
+
+	/// <summary>
+	/// [EXT:texture-pack] Modal "Loading textures... n / total" screen with a progress bar. It drives the switch (one slice of
+	/// work per frame), takes all input (no Back) until the switch is done, then removes itself and calls <paramref name="done"/>.
+	/// </summary>
+	public static UiScreen TextureSwitchScreen( UiScreenStack stack, UiStringTable strings, ITexturePackSwitch textureSwitch, Action done )
+	{
+		var screen = new UiScreen( "textureSwitch" );
+		var rect = UiDialogs.CenteredWindow( 1100, 420 );
+		screen.Add( new UiModelImage { Id = "window", Model = "w_dialog", Bounds = rect, Anchor = UiAnchor.Center } );
+		screen.Add( new UiLabel
+		{
+			Id = "message",
+			Text = () => string.Format( strings.Extra( OpenTpwText.LoadingTextures ), textureSwitch.Done, textureSwitch.Total ),
+			Font = fonts => fonts.Label,
+			Align = UiAlign.Center,
+			Bounds = new UiRect( rect.X + 90, rect.Y + 90, rect.Width - 260, 90 ),
+			Anchor = UiAnchor.Center
+		} );
+		var barArea = new UiRect( rect.X + 130, rect.Y + 230, rect.Width - 340, 50 );
+		screen.DrawOverlay = context =>
+		{
+			var outer = context.Canvas.Map( barArea, UiAnchor.Center );
+			context.Batch.AddRectangle( outer, UiColors.Shadow );
+			var fraction = textureSwitch.Total == 0 ? 1f : Math.Clamp( textureSwitch.Done / (float)textureSwitch.Total, 0f, 1f );
+			var inner = outer.Inflate( -3 * context.Canvas.Scale );
+			context.Batch.AddRectangle( inner with { Width = inner.Width * fraction }, UiColors.Value );
+		};
+		var finished = false;
+		screen.Updating = _ =>
+		{
+			if ( finished )
+				return;
+			textureSwitch.Pump();
+			if ( !textureSwitch.Finished )
+				return;
+			finished = true;
+			stack.Pop();
+			done();
+		};
+		return screen;
+	}
+
 	public static T Cycle<T>( IReadOnlyList<T> values, T current, int direction )
 	{
 		if ( values.Count == 0 )
@@ -92,7 +148,7 @@ public static class OptionsScreen
 	{
 		public required DisplaySettings Display;
 		public required string Language;
-		public bool EnhancedTextures;
+		public string TexturePack = "";
 		public GraphicsPreset Preset;
 	}
 
@@ -200,7 +256,7 @@ public static class OptionsScreen
 		{
 			Display = display.Current,
 			Language = services.CurrentLanguage,
-			EnhancedTextures = graphics?.Current.EnhancedTextures ?? false,
+			TexturePack = graphics?.Current.TexturePackName ?? "",
 			Preset = graphics?.Current.Preset ?? GraphicsPreset.High
 		};
 		var snapshot = options.Clone();
@@ -304,13 +360,13 @@ public static class OptionsScreen
 			var languageChanged = !string.Equals( state.Language, services.CurrentLanguage, StringComparison.OrdinalIgnoreCase );
 			if ( languageChanged )
 				services.SaveLanguage( state.Language );
-			var texturesChanged = graphics != null && state.EnhancedTextures != graphics.Current.EnhancedTextures;
+			var texturesChanged = graphics != null && state.TexturePack != graphics.Current.TexturePackName;
 			var presetChanged = graphics != null && steps.Count > 0 && state.Preset != graphics.Current.Preset;
 			var graphicsRestart = false;
 			if ( texturesChanged || presetChanged )
 			{
-				graphics!.Apply( graphics.Current with { Preset = presetChanged ? state.Preset : graphics.Current.Preset, EnhancedTextures = state.EnhancedTextures } );
-				graphicsRestart = texturesChanged || graphics.RestartRequired;
+				graphics!.Apply( graphics.Current with { Preset = presetChanged ? state.Preset : graphics.Current.Preset, TexturePackName = state.TexturePack } );
+				graphicsRestart = graphics.RestartRequired;
 			}
 			var pending = state.Display;
 			var current = display.Current;
@@ -318,6 +374,12 @@ public static class OptionsScreen
 			// Language and graphics changes may need a restart; tell the player after any display confirmation.
 			void Finish()
 			{
+				// [EXT:texture-pack] a changed pack is applied now, behind a loading bar; the restart notice (if any) follows it.
+				if ( texturesChanged && services.BeginTexturePackSwitch?.Invoke( state.TexturePack ) is { } textureSwitch )
+				{
+					stack.Push( TextureSwitchScreen( stack, strings, textureSwitch, () => { texturesChanged = false; Finish(); } ) );
+					return;
+				}
 				if ( languageChanged || graphicsRestart )
 					stack.Push( UiDialogs.Message( "restart", () => strings[UIStrings.RestartGame], (() => strings.Extra( OpenTpwText.Back ), () => { stack.Pop(); closed(); }) ) );
 				else
@@ -428,12 +490,23 @@ public static class OptionsScreen
 		Row( "uiScale", () => Prefix( OpenTpwText.UiScale ) + UiScaleLabel( strings, state.Display.UiScale ),
 			() => Enumerable.Range( 0, display.MaximumUiScale + 1 ).Select( scale => Prefix( OpenTpwText.UiScale ) + UiScaleLabel( strings, scale ) ),
 			direction => state.Display = state.Display with { UiScale = ((state.Display.UiScale + direction) % (display.MaximumUiScale + 1) + display.MaximumUiScale + 1) % (display.MaximumUiScale + 1) } );
-		// [EXT:texture-pack] optional locally built upscaled textures; off unless a pack exists and the player turns it on
-		string Textures() => services.TexturePackAvailable || state.EnhancedTextures ? strings[state.EnhancedTextures ? UIStrings.Yes : UIStrings.No] : " " + strings.Extra( OpenTpwText.TexturePackMissing );
+		// [EXT:texture-pack] optional locally built upscaled textures: Off, then every installed pack (clean, detailed, ...)
+		IReadOnlyList<string> PackChoices()
+		{
+			// Original and Enhanced are always offered (Enhanced has the shipped interface art even without a local pack),
+			// then every other installed pack.
+			var choices = new List<string> { "", TexturePack.DefaultName };
+			choices.AddRange( services.TexturePacks.Where( pack => !string.Equals( pack, TexturePack.DefaultName, StringComparison.OrdinalIgnoreCase ) ) );
+			// A configured pack that is no longer installed can still be switched away from.
+			if ( state.TexturePack.Length > 0 && !choices.Contains( state.TexturePack ) )
+				choices.Add( state.TexturePack );
+			return choices;
+		}
+		string PackText( string pack ) => " " + TexturePackLabel( strings, pack );
 		if ( graphics != null )
-			Row( "enhancedTextures", () => Prefix( OpenTpwText.EnhancedTextures ) + Textures(),
-				() => new[] { Prefix( OpenTpwText.EnhancedTextures ) + strings[UIStrings.Yes], Prefix( OpenTpwText.EnhancedTextures ) + strings[UIStrings.No], Prefix( OpenTpwText.EnhancedTextures ) + " " + strings.Extra( OpenTpwText.TexturePackMissing ) },
-				_ => { if ( services.TexturePackAvailable || state.EnhancedTextures ) state.EnhancedTextures = !state.EnhancedTextures; } );
+			Row( "enhancedTextures", () => Prefix( OpenTpwText.EnhancedTextures ) + PackText( state.TexturePack ),
+				() => PackChoices().Select( pack => Prefix( OpenTpwText.EnhancedTextures ) + PackText( pack ) ),
+				direction => state.TexturePack = CycleWrap( PackChoices(), state.TexturePack, direction ) );
 		// [EXT:language] language row (original installs had one language; OpenTPW reads CD overlays)
 		string LanguageName( string language ) => " " + (SupplementaryStrings.LanguageNames.TryGetValue( language, out var name ) ? name : language);
 		Row( "language", () => Prefix( OpenTpwText.Language ) + LanguageName( state.Language ),

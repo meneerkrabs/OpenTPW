@@ -4,16 +4,19 @@ using NVector2 = System.Numerics.Vector2;
 namespace OpenTPW.UI.Original;
 
 /// <summary>
-/// Texture of a UI draw: a solid colour (both null), a BF4 font atlas (point sampled) or an original
-/// image from the game file system (pink 255/0/255 is transparent, linear filtered).
+/// Texture of a UI draw: a solid colour (all null), a BF4 font atlas drawn at integer
+/// <see cref="FontScale"/> (see <see cref="FontSmoothing"/>), an original image from the game file
+/// system (pink 255/0/255 is transparent, linear filtered), or a texture rendered this frame by its
+/// owner (the park advisor; linear filtered, not disposed by the UI).
 /// </summary>
-public sealed record UiTexture( string? ImagePath, FontAtlas? Atlas )
+public sealed record UiTexture( string? ImagePath, FontAtlas? Atlas, int FontScale = 1, Veldrid.Texture? Rendered = null )
 {
+	public static UiTexture Of( Veldrid.Texture rendered ) => new( null, null, Rendered: rendered );
 	public static readonly UiTexture Solid = new( null, null );
 	public static UiTexture Image( string path ) => new( path, null );
 	/// <summary>An image file on the host file system, e.g. a local art override.</summary>
 	public static UiTexture HostImage( string path ) => new( UiImages.HostPrefix + path, null );
-	public static UiTexture Font( FontAtlas atlas ) => new( null, atlas );
+	public static UiTexture Font( FontAtlas atlas, int scale = 1 ) => new( null, atlas, Math.Max( 1, scale ) );
 }
 
 /// <summary>One UI vertex in framebuffer pixels (origin top-left).</summary>
@@ -122,7 +125,7 @@ public sealed class UiBatch
 	public void AddText( FontAtlas atlas, TextLayoutResult layout, int x, int y, RgbaByte color, int scale = 1, string? text = null )
 	{
 		scale = Math.Max( 1, scale );
-		var texture = UiTexture.Font( atlas );
+		var texture = UiTexture.Font( atlas, scale );
 		var firstGlyph = glyphs.Count;
 		foreach ( var glyph in layout.Glyphs )
 		{

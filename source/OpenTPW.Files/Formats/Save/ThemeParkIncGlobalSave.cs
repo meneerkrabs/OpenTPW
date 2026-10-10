@@ -37,8 +37,9 @@ public sealed record ThemeParkIncShares( IReadOnlyList<bool> SlotsPresent, int N
 /// follows the original's load path (save writer 0x0074C8F0, loader 0x0074D110, body 0x0074D840 in the Theme Park Inc
 /// executable; docs/THEME-PARK-INC.md). The file is uncompressed little-endian and checks six markers; this reader
 /// requires every one, version 12 and the exact file length. Sections whose meaning is not traced are read and
-/// skipped.
+/// skipped. <c>.GMI</c> files (the game's "Refresh" snapshot) have the same layout.
 /// </summary>
+// [BIN:TPI-EXE:0x00745720 GMI refresh snapshot] the save routine writes .GMI instead of .GMS (and .TPWI instead of .TPWS) when its flag is set; both go through the writer 0x0074C8F0, which keeps the flag at +0x14EC and writes the same version-12 body
 public sealed class ThemeParkIncGlobalSave
 {
 	public const int SupportedVersion = 12;

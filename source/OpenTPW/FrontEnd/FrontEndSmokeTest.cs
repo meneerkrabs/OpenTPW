@@ -13,7 +13,7 @@ namespace OpenTPW;
 /// front-end menu render (GPU readback with BF4 text checked texel by texel), the menu is driven
 /// with injected mouse clicks and keys (next island, options open/cancel, enter park, game mode) into
 /// the original jungle level, the HUD renders with money/date text verified in readback, a Totem is
-/// bought through the catalogue build arm and charged exactly once; a second researched object is
+/// bought through the catalogue buy window and charged exactly once; a second researched object is
 /// built, opened/closed and checked for overlap refusal. The game exits to the lobby, then loads a
 /// read-only visit and checks build/open/delete/save mutation boundaries, then starts jungle again in
 /// Instant Action and checks its seed and mode gates. Options are never written and saves go to a temporary directory.
@@ -200,6 +200,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		} );
 		var onlineShots = new (string Name, Action<UI.OnlineScreens> Show, string Screen)[]
 		{
+			("online-news.png", screens => screens.ShowNews(), "onlineNews"),
 			("online-find-parks.png", screens => screens.ShowFindParks(), "findParks"),
 			("online-send-postcard.png", screens => screens.ShowSendPostcard(), "sendPostcard"),
 			("online-outbox.png", screens => screens.ShowOutbox(), "outbox"),
@@ -315,28 +316,65 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			};
 			Click( flow.Hud.Screen, "buy" );
 		} );
-		Wait( "build arm opens", 3 );
-		Do( "next build page", () => Click( flow.Hud!.Screen, "nextBuildPage" ) );
-		Wait( "next build page visible", 3 );
-		Do( "previous build page", () =>
+		Wait( "buy window opens", 3 );
+		Do( "buy window", () =>
 		{
-			Require( flow.Hud!.BuildPage == 1, "next page button exposes later catalogue items" );
-			Click( flow.Hud.Screen, "previousBuildPage" );
+			var hud = flow.Hud!;
+			Require( hud.BuyWindowOpen && hud.Stack.Top?.Name == "buy", "buy button opens the original buy window" );
+			Require( hud.Catalog is OriginalBuildCatalog && hud.BuyItems.Count > ParkHud.BuyVisibleRows, "the original ride catalogue spans more rows than the list shows" );
+			var capture = CaptureFrame( "buy-window.png" );
+			VerifyText( capture, flow.Strings[UIStrings.BuyRide], "Buy Ride title" );
+			VerifyText( capture, flow.Strings[UIStrings.NameAttr], "Name column header" );
+			VerifyText( capture, flow.Strings[UIStrings.Price], "Price column header" );
+			Click( hud.Stack.Top!, "categoryShops" );
 		} );
-		Wait( "previous build page visible", 3 );
-		Do( "show Totem page", () =>
+		Wait( "shops listed", 3 );
+		Do( "shops category", () =>
 		{
-			Require( flow.Hud!.BuildPage == 0, "previous page button returns to the first page" );
+			var hud = flow.Hud!;
+			Require( hud.Category == BuildCategory.Shops && hud.BuyItems.All( item => item.Category == BuildCategory.Shops ) && hud.SelectedBuyItem != null, "the shops button lists the shops and selects the first" );
+			var capture = CaptureFrame( "buy-window-shops.png" );
+			VerifyText( capture, flow.Strings[UIStrings.BuyShop], "Buy Shop title" );
+			VerifyText( capture, hud.ItemName( hud.SelectedBuyItem! ), "selected shop name" );
+			Click( hud.Stack.Top!, "categoryRides" );
+		} );
+		Wait( "rides listed", 3 );
+		Do( "show a ride with a sign", () =>
+		{
+			var hud = flow.Hud!;
+			var aztec = hud.Catalog.GetItems( BuildCategory.Rides ).Single( item => item.Entry != null && item.Entry.ArchiveName.Equals( "tvsim", StringComparison.OrdinalIgnoreCase ) );
+			ShowItem( aztec );
+			Require( hud.SelectedBuyItem == aztec, "Aztec Mayhem is the selected item" );
+			var icon = hud.GetIcon( aztec );
+			Require( icon != null && icon.RuntimeTextureTriangleCount > 0, "the Aztec Mayhem preview draws its sign faces with the rendered sign textures, not the placeholders" );
+			var sign = ObjectSigns.Get( aztec.Entry! );
+			Require( sign != null && sign.TextPixelCount > 0 && (sign.Line1, sign.Line2) == SignCanvas.SplitAtMiddleSpace( hud.ItemName( aztec ) ), "the Aztec Mayhem sign shows its name over two lines" );
+		} );
+		Wait( "Aztec Mayhem preview renders", 3 );
+		Do( "capture the sign preview", () =>
+		{
+			CaptureFrame( "buy-window-aztec.png" );
+			flow.Hud!.SelectBuyItem( 0 );
+			Require( flow.Hud.BuyFirstRow == 0, "selecting the first row scrolls the list back" );
+		} );
+		Do( "scroll the list", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.Category == BuildCategory.Rides && hud.BuyFirstRow == 0, "the rides button returns to the rides" );
+			Click( hud.Stack.Top!, "scrollDown" );
+		} );
+		Wait( "list scrolled", 3 );
+		Do( "show Totem", () =>
+		{
+			Require( flow.Hud!.BuyFirstRow == 1, "the down button scrolls the list one row" );
 			ShowItem( TotemItem );
 		} );
-		Wait( "Totem page visible", 3 );
-		Do( "build arm", () =>
+		Wait( "Totem selected", 3 );
+		Do( "buy window with Totem", () =>
 		{
-			Require( flow.Hud!.BuildArmOpen, "buy button opens the build arm" );
-			Require( flow.Hud.Catalog is OriginalBuildCatalog && flow.Hud.BuildPageCount > 1, "the original catalogue spans build-menu pages" );
-			var capture = CaptureFrame( "build-arm.png" );
-			VerifyText( capture, flow.Strings[UIStrings.BuyRide], "Buy Ride title" );
-			VerifyText( capture, flow.Hud.ItemName( TotemItem ), "Totem build item" );
+			Require( flow.Hud!.BuyWindowOpen && flow.Hud.SelectedBuyItem == TotemItem, "the Totem is the selected item" );
+			var capture = CaptureFrame( "buy-window-totem.png" );
+			VerifyText( capture, flow.Hud.ItemName( TotemItem ), "Totem name" );
 			totemLockedAtStart = !flow.Hud.Status.IsAvailable( TotemItem );
 			ClickItem( TotemItem );
 		} );
@@ -373,7 +411,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			Require( economy.Objects.Count == objectsBeforePurchase + 1, "one purchased economy object is created" );
 			Require( flow.Level.Park.Guests!.TryGetInstance( totem!.Visitors.AttractionId, out var linked ) && economy.TryGetObject( linked, out var bought ) && bought.TotalSpent == builtCost, "guest payments link to the purchased ride" );
 			Log.Trace( $"HUD money: {economy.Balance} after buying the Totem for {builtCost}; park date {economy.Date}." );
-			Require( !flow.Hud.BuildArmOpen, "build arm closes after building" );
+			Require( !flow.Hud.BuyWindowOpen, "the buy window closes when placement starts" );
 			Require( purchaseEvents == 1 && flow.Level.PlacedRide == null, "catalogue purchase bypasses the developer prototype and HUD wallet" );
 			flow.Hud.SelectObject( totem );
 		} );
@@ -404,7 +442,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			Require( totem!.IsDeleted && soldFor > 0 && flow.Hud!.Status.Money == flow.Level!.Park!.Economy.Balance, $"deleting the ride sells it for its scrap value (got {soldFor})" );
 			Require( flow.Level!.Park!.Economy.Objects.Count == objectsBeforePurchase, "selling removes the purchased economy object" );
 			Log.Trace( $"HUD delete sold the Totem for {soldFor}; balance {flow.Level.Park.Economy.Balance}." );
-			flow.Hud!.SetBuildArm( true );
+			flow.Hud!.OpenBuyWindow();
 			secondItem = flow.Hud.Catalog.GetItems( BuildCategory.Rides ).First( item => item.InfoId != PrototypeRide.InfoId && flow.Hud.Status.IsAvailable( item ) );
 			ShowItem( secondItem );
 		} );
@@ -504,6 +542,9 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			Require( level.IsReadOnlyVisit && level.Park == null, "visited parks have no writable economy" );
 			visitedCount = level.Objects.Objects.Count;
 			visitedObject = level.Objects.Objects.First( item => item.Runtime.IsAttraction && !item.Entry.IsFixedItem );
+			var signed = level.Objects.Objects.Where( item => item.Sign != null ).ToArray();
+			Require( signed.Length > 0 && signed.All( item => item.Sign!.TextPixelCount > 0 || item.Sign.Line1.Length == 0 ), "the visited park's rides show their own rendered sign text, not the SIGN1/SIGN2 placeholders" );
+			Log.Trace( $"Ride signs in the visited park: {string.Join( ", ", signed.Select( item => $"{item.Entry.ArchiveName}: {item.Sign!.Line1} / {item.Sign.Line2}" ) )}" );
 			visitedOpen = visitedObject.IsOpen;
 			hud.BeginPlacing( hud.Catalog.GetItems( BuildCategory.Rides ).First() );
 			Require( level.BuildEntry == null && !level.IsPlacing, "read-only HUD refuses direct placement requests" );
@@ -627,15 +668,18 @@ internal sealed class FrontEndSmokeTest : IDisposable
 	{
 		var hud = flow.Hud!;
 		hud.SelectCategory( item.Category );
-		var index = hud.BuildItems.ToList().IndexOf( item );
-		hud.ChangeBuildPage( index / 3 );
+		hud.SelectBuyItem( hud.BuyItems.ToList().IndexOf( item ) );
 	}
 
+	/// <summary>Clicks the list row of <paramref name="item"/>; a click on the already selected row buys it.</summary>
 	private void ClickItem( BuildItem item )
 	{
-		var index = flow.Hud!.VisibleBuildItems.ToList().IndexOf( item );
-		Require( index >= 0, "requested catalogue item is on the visible page" );
-		Click( flow.Hud.Screen, $"item{index}" );
+		var hud = flow.Hud!;
+		Require( hud.BuyWindowOpen, "the buy window is open" );
+		hud.SelectBuyItem( hud.BuyItems.ToList().IndexOf( item ) );
+		var visible = hud.SelectedBuyIndex - hud.BuyFirstRow;
+		Require( visible >= 0 && visible < ParkHud.BuyVisibleRows, "the requested catalogue item is among the visible rows" );
+		flow.InjectedInput = UiInput.Click( Context.Canvas.Map( new System.Numerics.Vector2( 1240, 427 + (visible + 0.5f) * ParkHud.BuyRowHeight ), UiAnchor.Center ) );
 	}
 
 	private static (int X, int Y) FindObjectSite( Level level, ObjectCatalogEntry entry ) =>
@@ -659,40 +703,31 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		{
 			foreach ( var glyph in batch.Glyphs.Skip( entry.FirstGlyph ).Take( entry.GlyphCount ).Where( glyph => glyph.Color.A == 255 && glyph.Color != UiColors.Shadow ) )
 			{
-				for ( var row = 0; row < glyph.Height / glyph.Scale; row++ )
+				// The renderer draws the smoothed coverage one texel per pixel (FontSmoothing).
+				var factor = FontSmoothing.Factor( glyph.Atlas, glyph.Scale );
+				if ( factor != glyph.Scale )
+					continue;
+				var coverage = FontSmoothing.Coverage( glyph.Atlas, factor );
+				var stride = glyph.Atlas.Width * factor;
+				for ( var row = 0; row < glyph.Height; row++ )
 				{
-					for ( var column = 0; column < glyph.Width / glyph.Scale; column++ )
+					for ( var column = 0; column < glyph.Width; column++ )
 					{
-						if ( glyph.Atlas.Alpha[(glyph.AtlasY + row) * glyph.Atlas.Width + glyph.AtlasX + column] != 255 )
+						if ( coverage[(glyph.AtlasY * factor + row) * stride + glyph.AtlasX * factor + column] != 255 )
 							continue;
-						// Every output pixel of the texel's scale×scale block (pixel-exact integer scaling).
-						var inside = true;
-						var exact = true;
-						for ( var dy = 0; dy < glyph.Scale; dy++ )
-						{
-							for ( var dx = 0; dx < glyph.Scale; dx++ )
-							{
-								var x = glyph.X + column * glyph.Scale + dx;
-								var y = glyph.Y + row * glyph.Scale + dy;
-								if ( x < 0 || y < 0 || x >= frameCapture.Width || y >= frameCapture.Height )
-								{
-									inside = false;
-									continue;
-								}
-								var pixel = (y * frameCapture.Width + x) * 4;
-								exact &= Math.Abs( frameCapture.Pixels[pixel] - glyph.Color.B ) <= 2 && Math.Abs( frameCapture.Pixels[pixel + 1] - glyph.Color.G ) <= 2 && Math.Abs( frameCapture.Pixels[pixel + 2] - glyph.Color.R ) <= 2;
-							}
-						}
-						if ( !inside )
+						var x = glyph.X + column;
+						var y = glyph.Y + row;
+						if ( x < 0 || y < 0 || x >= frameCapture.Width || y >= frameCapture.Height )
 							continue;
+						var pixel = (y * frameCapture.Width + x) * 4;
 						checkedTexels++;
-						if ( exact )
+						if ( Math.Abs( frameCapture.Pixels[pixel] - glyph.Color.B ) <= 2 && Math.Abs( frameCapture.Pixels[pixel + 1] - glyph.Color.G ) <= 2 && Math.Abs( frameCapture.Pixels[pixel + 2] - glyph.Color.R ) <= 2 )
 							matching++;
 					}
 				}
 			}
 		}
-		Log.Trace( $"UI text readback '{text}' ({what}): {matching}/{checkedTexels} opaque glyph texels match." );
+		Log.Trace( $"UI text readback '{text}' ({what}): {matching}/{checkedTexels} opaque glyph pixels match." );
 		Require( checkedTexels >= 3 && matching >= checkedTexels * 97 / 100, $"{what} text pixels match in GPU readback" );
 	}
 

@@ -48,6 +48,16 @@ public sealed class ServerOptions
 	public List<string> BannedPlayers { get; set; } = new();
 	public List<string> MutedPlayers { get; set; } = new();
 	public List<string> HiddenParks { get; set; } = new();
+	/// <summary>
+	/// Web pages (origins such as <c>https://opentpw.io</c>) allowed to read the public news and website park list from
+	/// the browser; empty allows none. Only GET requests to those public routes are affected.
+	/// </summary>
+	public List<string> WebsiteOrigins { get; set; } = new();
+	/// <summary>
+	/// Secret for <c>POST /api/v1/admin/deploy</c>, which asks the host to update the server (docs/SERVER.md); empty
+	/// disables the route.
+	/// </summary>
+	public string? DeployToken { get; set; }
 
 	public void Validate()
 	{

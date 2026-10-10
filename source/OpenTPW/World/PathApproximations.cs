@@ -21,6 +21,7 @@ public static class PathApproximations
 		("PATH-010", "PATH-LEDGER: path spending is posted as other costs"),
 		("PATH-011", "PATH-CANCEL: Escape or Back inside the path or queue tool ends the tool without writing; the next Escape opens the pause menu"),
 		("PATH-012", "PATH-ENDREFUSE: a line refused part-way ends the tool (the original's end flag reads the ghost-clear LayLine, not the commit)"),
-		("PATH-013", "PATH-PAUSE: the pause menu blocks path and queue tool clicks; the economy's speed pause does not")
+		("PATH-013", "PATH-PAUSE: the pause menu blocks path and queue tool clicks; the economy's speed pause does not"),
+		("PATH-014", "PATH-VARIANT: built straights and edges pick str1/str2 and edg1/edg2 by a hash of the cell; saved cells keep the saved texture")
 	};
 }

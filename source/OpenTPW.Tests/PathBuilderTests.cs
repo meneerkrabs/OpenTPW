@@ -623,7 +623,7 @@ public class PathBuilderTests
 	public void PathRegisterHasThePlanUnknowns()
 	{
 		var names = PathApproximations.Entries.Select( entry => entry.Rule.Split( ':' )[0] ).ToArray();
-		CollectionAssert.AreEqual( new[] { "PATH-ENTER", "PATH-UNDO", "PATH-ENDFLAG", "PATH-CONNECT", "PATH-REMOVE", "PATH-SLOPE", "PATH-LAND", "PATH-CODE8", "PATH-FREE", "PATH-LEDGER", "PATH-CANCEL", "PATH-ENDREFUSE", "PATH-PAUSE" }, names );
-		CollectionAssert.AreEqual( Enumerable.Range( 1, 13 ).Select( index => $"PATH-{index:000}" ).ToArray(), PathApproximations.Entries.Select( entry => entry.Id ).ToArray() );
+		CollectionAssert.AreEqual( new[] { "PATH-ENTER", "PATH-UNDO", "PATH-ENDFLAG", "PATH-CONNECT", "PATH-REMOVE", "PATH-SLOPE", "PATH-LAND", "PATH-CODE8", "PATH-FREE", "PATH-LEDGER", "PATH-CANCEL", "PATH-ENDREFUSE", "PATH-PAUSE", "PATH-VARIANT" }, names );
+		CollectionAssert.AreEqual( Enumerable.Range( 1, 14 ).Select( index => $"PATH-{index:000}" ).ToArray(), PathApproximations.Entries.Select( entry => entry.Id ).ToArray() );
 	}
 }

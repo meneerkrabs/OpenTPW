@@ -4,10 +4,12 @@ namespace OpenTPW;
 
 /// <summary>
 /// Renders an imported original level: the base.MD2 terrain meshes (node transforms composed up the
-/// hierarchy), the heightfield surface with its per-cell ground texture slot, and a debug overlay for
-/// path and queue cells (TCT PathTex entry 0); path orientation/variants are not reproduced. The overlay
-/// follows <see cref="PathSource"/> (the level's cell map) after <see cref="RefreshPaths"/>. Placed
-/// objects are drawn with their original models by <see cref="ParkObjects"/>, not as footprint markers.
+/// hierarchy), the heightfield surface with its per-cell ground texture slot, and the paths as a blended
+/// layer on that ground. Each path cell takes the theme's PathTex shape and turn for its neighbours
+/// (<see cref="PathTiles"/>; cells unchanged since the original save keep the saved ones); queue cells use
+/// PathTex entry 0. The layer follows <see cref="PathSource"/> and <see cref="QueueSource"/> (the level's cell
+/// map) after <see cref="RefreshPaths"/>. Placed objects are drawn with their original models by
+/// <see cref="ParkObjects"/>, not as footprint markers.
 /// </summary>
 public sealed class OriginalTerrain : Entity
 {
@@ -32,23 +34,32 @@ public sealed class OriginalTerrain : Entity
 	}
 
 	public OriginalPark Park { get; }
-	/// <summary>Cells drawn with the path texture; null: the MAP InitialPath and save path cells.</summary>
+	/// <summary>Path cells; null: the MAP InitialPath and save path cells.</summary>
 	public Func<int, int, bool>? PathSource { get; set; }
+	/// <summary>Queue cells, drawn with PathTex entry 0; null: none.</summary>
+	public Func<int, int, bool>? QueueSource { get; set; }
 	public int SurfaceCellCount { get; private set; }
+	/// <summary>Path and queue cells in the path layer.</summary>
+	public int PathCellCount { get; private set; }
 	private Dictionary<string, Texture>? heightfieldTextures;
-	private ModelEntity? heightfieldPart;
+	private readonly List<ModelEntity> pathParts = new();
+	/// <summary>Path layer materials by texture set; reused when the layer is rebuilt, because materials are never disposed.</summary>
+	private readonly Dictionary<string, Material> pathMaterials = new();
 
-	/// <summary>Rebuilds the heightfield surface so built and removed path cells show.</summary>
+	/// <summary>Rebuilds the path layer so built and removed path cells show.</summary>
 	public void RefreshPaths()
 	{
-		if ( heightfieldPart == null || heightfieldTextures == null )
+		if ( heightfieldTextures == null )
 			return;
-		var old = heightfieldPart;
-		parts.Remove( old );
-		old.Delete();
-		if ( old.Model is { } model && models.Remove( model ) )
-			ScheduleDispose( model );
-		BuildHeightfield( heightfieldTextures );
+		foreach ( var old in pathParts )
+		{
+			parts.Remove( old );
+			old.Delete();
+			if ( old.Model is { } model && models.Remove( model ) )
+				ScheduleDispose( model );
+		}
+		pathParts.Clear();
+		BuildPaths( heightfieldTextures );
 	}
 	public int TerrainMeshCount { get; private set; }
 
@@ -58,7 +69,6 @@ public sealed class OriginalTerrain : Entity
 		var field = Park.Heightfield;
 		var slots = new List<Texture>();
 		var slotIndices = new Dictionary<int, int>();
-		var pathSlot = AddSlot( slots, LoadPathTexture( textures ) );
 		var vertices = new List<Vertex>();
 		var indices = new List<uint>();
 		for ( var y = 0; y < field.CellCountZ; y++ )
@@ -68,17 +78,14 @@ public sealed class OriginalTerrain : Entity
 				var modelSlot = field.GetCellTextureSlot( x, y );
 				if ( modelSlot < 0 )
 					continue;
-				int slot;
-				if ( IsPath( x, y ) )
-					slot = pathSlot;
-				else if ( !slotIndices.TryGetValue( modelSlot, out slot ) )
+				if ( !slotIndices.TryGetValue( modelSlot, out var slot ) )
 				{
 					if ( slots.Count >= MaximumTextureSlots || modelSlot >= Park.TerrainModel.Textures.Count )
 						throw new InvalidDataException( "The original heightfield uses more ground textures than the renderer supports." );
 					slot = AddSlot( slots, LoadTexture( textures, Park.TerrainModel.Textures[modelSlot].FrameNames[0] ) );
 					slotIndices.Add( modelSlot, slot );
 				}
-				AddCell( vertices, indices, field, x, y, slot );
+				AddCell( vertices, indices, field, x, y, slot, PathTiles.Identity, 0 );
 			}
 		}
 		SurfaceCellCount = vertices.Count / 4;
@@ -86,11 +93,66 @@ public sealed class OriginalTerrain : Entity
 		while ( slots.Count < MaximumTextureSlots )
 			slots.Add( slots[0] );
 		material.Set( "Color", slots.ToArray() );
-		heightfieldPart = AddPart( new Model( vertices.ToArray(), indices.ToArray(), material ), "heightfield" );
+		AddPart( new Model( vertices.ToArray(), indices.ToArray(), material ), "heightfield" );
+		BuildPaths( textures );
+	}
+
+	/// <summary>The path layer: one quad per path or queue cell, batched by at most 16 PathTex textures.</summary>
+	private void BuildPaths( Dictionary<string, Texture> textures )
+	{
+		var field = Park.Heightfield;
+		var names = ReadPathTextureNames();
+		var cells = new Dictionary<int, List<(int X, int Y, int Rotation)>>();
+		for ( var y = 0; y < field.CellCountZ; y++ )
+		{
+			for ( var x = 0; x < field.CellCountX; x++ )
+			{
+				if ( field.GetCellTextureSlot( x, y ) < 0 )
+					continue;
+				PathTile tile;
+				if ( IsPath( x, y ) )
+					tile = ChoosePathTile( x, y );
+				else if ( QueueSource?.Invoke( x, y ) == true )
+					tile = new PathTile( 0, 0 );
+				else
+					continue;
+				if ( !names.ContainsKey( tile.TextureIndex ) )
+					tile = new PathTile( 0, tile.Rotation );
+				if ( !cells.TryGetValue( tile.TextureIndex, out var list ) )
+					cells.Add( tile.TextureIndex, list = new() );
+				list.Add( (x, y, tile.Rotation) );
+			}
+		}
+		PathCellCount = cells.Values.Sum( list => list.Count );
+		// Lifted a little along the cell so the blended layer never fights the ground for depth.
+		var lift = 0.01f * field.CellSizeX;
+		foreach ( var batch in cells.Keys.Order().Chunk( MaximumTextureSlots ) )
+		{
+			var slots = batch.Select( index => names.TryGetValue( index, out var name ) ? LoadTexture( textures, name, "pathtex" ) : Texture.Missing ).ToList();
+			var vertices = new List<Vertex>();
+			var indices = new List<uint>();
+			for ( var slot = 0; slot < batch.Length; slot++ )
+				foreach ( var (x, y, rotation) in cells[batch[slot]] )
+					AddCell( vertices, indices, field, x, y, slot, rotation, lift );
+			var key = string.Join( ',', batch );
+			if ( !pathMaterials.TryGetValue( key, out var material ) )
+			{
+				material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
+				while ( slots.Count < MaximumTextureSlots )
+					slots.Add( slots[0] );
+				// Clamped: a repeating sampler would blend each tile's open edge with its transparent opposite edge.
+				material.Set( "Color", slots.ToArray(), SamplerType.Anisotropic );
+				pathMaterials.Add( key, material );
+			}
+			pathParts.Add( AddPart( new Model( vertices.ToArray(), indices.ToArray(), material ), $"paths {pathParts.Count}" ) );
+		}
 	}
 
 	private bool IsPath( int x, int y ) => PathSource?.Invoke( x, y ) ??
 		Park.Map.GetFlagsAt( x, y ).HasFlag( MapCellFlags.InitialPath ) || Park.Save?.Cells[x, y].IsPath == true;
+
+	private PathTile ChoosePathTile( int x, int y ) =>
+		PathTiles.ForCell( x, y, Park.Heightfield.CellCountX, Park.Heightfield.CellCountZ, IsPath, Park.Save?.Cells );
 
 	private static int AddSlot( List<Texture> slots, Texture texture )
 	{
@@ -98,12 +160,19 @@ public sealed class OriginalTerrain : Entity
 		return slots.Count - 1;
 	}
 
-	private static void AddCell( List<Vertex> vertices, List<uint> indices, ModelHeightfield field, int x, int y, int slot )
+	/// <summary>
+	/// One cell quad. <paramref name="rotation"/> is a path texture's clockwise turn (−Y to +X), applied through
+	/// <see cref="PathTiles.TextureCoordinates"/> (docs/PATHS.md, "Path textures"); ground quads keep their coordinates.
+	/// </summary>
+	private static void AddCell( List<Vertex> vertices, List<uint> indices, ModelHeightfield field, int x, int y, int slot, int rotation, float lift )
 	{
 		var start = (uint)vertices.Count;
 		var corners = new[] { (x, y, 0f, 0f), (x + 1, y, 1f, 0f), (x, y + 1, 0f, 1f), (x + 1, y + 1, 1f, 1f) };
+		if ( rotation != PathTiles.Identity )
+			corners = corners.Select( corner => (corner.Item1, corner.Item2, PathTiles.TextureCoordinates( corner.Item3, corner.Item4, rotation )) )
+				.Select( corner => (corner.Item1, corner.Item2, corner.Item3.U, corner.Item3.V) ).ToArray();
 		var positions = corners.Select( corner => OriginalParkPlacement.ToEngine( field,
-			new System.Numerics.Vector3( corner.Item1 * field.CellSizeX, field.GetCornerHeight( corner.Item1, corner.Item2 ), corner.Item2 * field.CellSizeZ ) ) ).ToArray();
+			new System.Numerics.Vector3( corner.Item1 * field.CellSizeX, field.GetCornerHeight( corner.Item1, corner.Item2 ) + lift, corner.Item2 * field.CellSizeZ ) ) ).ToArray();
 		var normal = System.Numerics.Vector3.Normalize( System.Numerics.Vector3.Cross( positions[1] - positions[0], positions[2] - positions[0] ) );
 		if ( normal.Z < 0 )
 			normal = -normal;
@@ -201,18 +270,19 @@ public sealed class OriginalTerrain : Entity
 		return matrix;
 	}
 
-	private Texture LoadPathTexture( Dictionary<string, Texture> textures )
+	private IReadOnlyDictionary<int, string> ReadPathTextureNames()
 	{
 		var table = ListFiles( Park.TerrainDirectory ).FirstOrDefault( file => file.EndsWith( ".tct", StringComparison.OrdinalIgnoreCase ) );
-		if ( table == null )
-			return Texture.Missing;
-		var name = ReadPathTextureName( FileSystem.ReadAllText( table ) );
-		return name == null ? Texture.Missing : LoadTexture( textures, name, "pathtex" );
+		return table == null ? new Dictionary<int, string>() : ReadPathTextureNames( FileSystem.ReadAllText( table ) );
 	}
 
 	/// <summary>Entry 0 of the "PathTex" list in a theme texture correspondence table (.tct).</summary>
-	internal static string? ReadPathTextureName( string table )
+	internal static string? ReadPathTextureName( string table ) => ReadPathTextureNames( table ).GetValueOrDefault( 0 );
+
+	/// <summary>The "PathTex" list of a theme texture correspondence table (.tct): index to texture name.</summary>
+	internal static IReadOnlyDictionary<int, string> ReadPathTextureNames( string table )
 	{
+		var names = new Dictionary<int, string>();
 		var inPathList = false;
 		foreach ( var rawLine in table.Split( '\n' ) )
 		{
@@ -225,10 +295,10 @@ public sealed class OriginalTerrain : Entity
 				inPathList = string.Equals( fields[0], "PathTex", StringComparison.OrdinalIgnoreCase );
 				continue;
 			}
-			if ( inPathList && fields.Length >= 2 && fields[0] == "0" )
-				return Path.GetFileNameWithoutExtension( fields[1] );
+			if ( inPathList && fields.Length >= 2 && int.TryParse( fields[0], out var index ) )
+				names.TryAdd( index, Path.GetFileNameWithoutExtension( fields[1] ) );
 		}
-		return null;
+		return names;
 	}
 
 	private Texture LoadTexture( Dictionary<string, Texture> textures, string name, string directory = "textures" )

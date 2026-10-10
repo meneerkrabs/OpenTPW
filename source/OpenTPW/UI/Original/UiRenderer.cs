@@ -5,7 +5,8 @@ namespace OpenTPW.UI.Original;
 
 /// <summary>
 /// Draws <see cref="UiBatch"/> triangles: original images (linear filtered, straight alpha) and BF4
-/// atlases (uploaded as white RGBA with coverage alpha, point sampled) over the scene. Several
+/// atlases (uploaded as white RGBA with coverage alpha, smoothed per text scale by
+/// <see cref="FontSmoothing"/>, point sampled) over the scene. Several
 /// batches may be drawn per frame; each uses its own vertex buffer from a per-frame ring.
 /// </summary>
 internal sealed class UiRenderer : IDisposable
@@ -22,6 +23,8 @@ internal sealed class UiRenderer : IDisposable
 	private readonly ResourceLayout resourceLayout;
 	private readonly Pipeline pipeline;
 	private readonly Dictionary<object, (Veldrid.Texture Texture, ResourceSet Set)> textures = new();
+	// Sets for textures rendered by their owners; the textures themselves are not the UI's to dispose.
+	private readonly Dictionary<Veldrid.Texture, ResourceSet> renderedSets = new();
 	private readonly List<DeviceBuffer> buffers = new();
 	private int frameBuffers;
 	private GpuVertex[] vertices = Array.Empty<GpuVertex>();
@@ -94,21 +97,38 @@ internal sealed class UiRenderer : IDisposable
 
 	private ResourceSet? GetResourceSet( UiTexture texture )
 	{
-		object key = (object?)texture.Atlas ?? texture.ImagePath ?? "solid";
+		if ( texture.Rendered is { } rendered )
+		{
+			if ( renderedSets.TryGetValue( rendered, out var renderedSet ) )
+				return renderedSet;
+			// A new texture usually replaces one its owner has just scheduled for disposal.
+			foreach ( var stale in renderedSets.Where( pair => pair.Key.IsDisposed ).ToList() )
+			{
+				renderedSets.Remove( stale.Key );
+				stale.Value.Dispose();
+			}
+			renderedSet = Device.ResourceFactory.CreateResourceSet( new ResourceSetDescription( resourceLayout, rendered, Device.LinearSampler ) );
+			renderedSets[rendered] = renderedSet;
+			return renderedSet;
+		}
+		var factor = texture.Atlas != null ? FontSmoothing.Factor( texture.Atlas, texture.FontScale ) : 1;
+		object key = texture.Atlas != null ? (texture.Atlas, factor) : texture.ImagePath ?? "solid";
 		if ( textures.TryGetValue( key, out var entry ) )
 			return entry.Set;
 		if ( texture.Atlas != null )
 		{
 			var atlas = texture.Atlas;
-			var rgba = new byte[atlas.Width * atlas.Height * 4];
-			for ( var index = 0; index < atlas.Alpha.Length; index++ )
+			var coverage = FontSmoothing.Coverage( atlas, factor );
+			var rgba = new byte[coverage.Length * 4];
+			for ( var index = 0; index < coverage.Length; index++ )
 			{
 				rgba[index * 4] = 255;
 				rgba[index * 4 + 1] = 255;
 				rgba[index * 4 + 2] = 255;
-				rgba[index * 4 + 3] = atlas.Alpha[index];
+				rgba[index * 4 + 3] = coverage[index];
 			}
-			entry = Create( rgba, atlas.Width, atlas.Height, Device.PointSampler );
+			// One texel per output pixel when the factor matches the scale; a capped factor is filtered.
+			entry = Create( rgba, atlas.Width * factor, atlas.Height * factor, factor == texture.FontScale ? Device.PointSampler : Device.LinearSampler );
 		}
 		else if ( texture.ImagePath != null )
 		{
@@ -168,6 +188,9 @@ internal sealed class UiRenderer : IDisposable
 	public void Dispose()
 	{
 		TexturePackSwitch.PackChanged -= ReloadImages;
+		foreach ( var set in renderedSets.Values )
+			set.Dispose();
+		renderedSets.Clear();
 		foreach ( var (texture, set) in textures.Values )
 		{
 			set.Dispose();

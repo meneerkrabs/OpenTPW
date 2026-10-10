@@ -145,10 +145,23 @@ internal sealed class AutomaticAdvisor : IDisposable
 		}
 	}
 
-	public void Render()
+	/// <summary>The advisor image rendered this frame, or null while the advisor is silent.</summary>
+	public Veldrid.Texture? Image { get; private set; }
+
+	/// <summary>World pass: renders the speaking advisor into its own image (see <see cref="Draw"/>).</summary>
+	public void Render() =>
+		Image = presentation is { IsSpeaking: true } ? presentation.RenderImage( Screen.PixelSize ) : null;
+
+	/// <summary>
+	/// Draws the advisor image at its <see cref="Advisor.BoxRectangle"/> after the park HUD: the original draws the
+	/// advisor without the park camera, over the scene, in the bottom-right of the screen.
+	/// </summary>
+	public void Draw( UI.Original.UiContext context )
 	{
-		if ( presentation is { IsSpeaking: true } )
-			presentation.Render();
+		if ( Image == null )
+			return;
+		var (x, y, width, height) = Advisor.BoxRectangle( new Point2( context.Canvas.Width, context.Canvas.Height ) );
+		context.Batch.AddQuad( UI.Original.UiTexture.Of( Image ), new UI.Original.UiRect( x, y, width, height ), System.Numerics.Vector2.Zero, System.Numerics.Vector2.One, Veldrid.RgbaByte.White );
 	}
 
 	public void Dispose()

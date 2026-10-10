@@ -44,8 +44,25 @@ public sealed class GameLanguage
 	public static string? AvailableOverlay { get; set; }
 
 	/// <summary>Languages the player can choose: the installation's plus those in <see cref="AvailableOverlay"/>.</summary>
-	public static IReadOnlyList<string> Choosable() =>
-		FindLanguages( Current.BaseDataDirectory, Current.OverlayDataDirectory ?? AvailableOverlay );
+	public static IReadOnlyList<string> Choosable() => Readable( Current.BaseDataDirectory, Current.OverlayDataDirectory ?? AvailableOverlay );
+
+	/// <summary>
+	/// The languages of <see cref="FindLanguages"/> whose character table OpenTPW can read; the Polish CD's table uses
+	/// a different layout (docs/LANGUAGES.md), so Polish is left out rather than failing when chosen.
+	/// </summary>
+	public static IReadOnlyList<string> Readable( string dataDirectory, string? overlayPath ) =>
+		FindLanguages( dataDirectory, overlayPath ).Where( name =>
+		{
+			try
+			{
+				_ = Resolve( dataDirectory, name, overlayPath ).CharacterTable;
+				return true;
+			}
+			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or UnauthorizedAccessException )
+			{
+				return false;
+			}
+		} ).ToList();
 
 	/// <summary>Language name, using the shipped capitalization (e.g. "Danish").</summary>
 	public string Name { get; }
@@ -202,7 +219,7 @@ public sealed class GameLanguage
 
 		var baseDirectory = FindEntry( dataDirectory, Path.Combine( "Language", name ), true );
 		if ( baseDirectory != null )
-			return new GameLanguage( name, baseDirectory, dataDirectory, null, null );
+			return new GameLanguage( name, baseDirectory, dataDirectory, null, CopiedCdMeshes( dataDirectory, name ) );
 
 		var available = FindLanguages( dataDirectory, overlayPath );
 		throw new DirectoryNotFoundException( $"Language '{name}' not found. Available: {(available.Count == 0 ? "none" : string.Join( ", ", available ))}. " +
@@ -237,6 +254,17 @@ public sealed class GameLanguage
 		return languageRoot == null ? Enumerable.Empty<string>() : System.IO.Directory.EnumerateDirectories( languageRoot )
 			.Select( directory => CanonicalName( Path.GetFileName( directory ) ) )
 			.OrderBy( name => name, StringComparer.OrdinalIgnoreCase );
+	}
+
+	/// <summary>
+	/// A game folder copied from the CD (rather than installed) keeps the banner meshes in
+	/// <c>&lt;Lang&gt;/Meshes/&lt;Lang&gt;</c> beside <c>data</c>; the installer would have copied them into the
+	/// language folder.
+	/// </summary>
+	private static string? CopiedCdMeshes( string dataDirectory, string name )
+	{
+		var root = Path.GetDirectoryName( Path.TrimEndingDirectorySeparator( dataDirectory ) );
+		return root == null ? null : FindEntry( root, Path.Combine( name, "Meshes", name ), true );
 	}
 
 	private readonly record struct OverlayLanguage( string Name, string Directory, string DataDirectory, string? MeshDirectory );

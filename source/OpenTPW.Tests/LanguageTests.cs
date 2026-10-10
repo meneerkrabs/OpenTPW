@@ -43,6 +43,30 @@ public class LanguageTests
 	}
 
 	[TestMethod]
+	public void GameFolderCopiedFromTheCdFindsItsBannersBesideData()
+	{
+		CreateLanguage( "Data", "English" );
+		Assert.IsNull( GameLanguage.Resolve( Path.Combine( root, "Data" ), null, null ).FindFile( "bankrupt.md2" ), "no banners before the CD folder exists" );
+		var meshes = Path.Combine( root, "english", "Meshes", "ENGLISH" );
+		Directory.CreateDirectory( meshes );
+		File.WriteAllBytes( Path.Combine( meshes, "bankrupt.MD2" ), new byte[] { 1 } );
+		Assert.AreEqual( Path.Combine( meshes, "bankrupt.MD2" ), GameLanguage.Resolve( Path.Combine( root, "Data" ), null, null ).FindFile( "BANKRUPT.md2" ) );
+	}
+
+	[TestMethod]
+	public void LanguagesBesideACdCopiedDataFolderAreChoosableWhenReadable()
+	{
+		CreateLanguage( "Data", "English" );
+		CreateLanguage( Path.Combine( "Danish", "data" ), "danish", "xyz" );
+		var polish = CreateLanguage( Path.Combine( "Polish", "data" ), "Polish" );
+		File.WriteAllBytes( Path.Combine( polish, "MBToUni.dat" ), new byte[] { (byte)'B', (byte)'F', (byte)'M', (byte)'U', 1, 0, 0xFF, 0x4B, 0x2A, 0 } );
+		var data = Path.Combine( root, "Data" );
+		CollectionAssert.AreEqual( new[] { "English", "Danish", "Polish" }, GameLanguage.FindLanguages( data, root ).ToArray() );
+		CollectionAssert.AreEqual( new[] { "English", "Danish" }, GameLanguage.Readable( data, root ).ToArray() );
+		Assert.AreEqual( "xyz", GameLanguage.Resolve( data, "Danish", root ).LoadStrings( "UITEXT.str" )[0] );
+	}
+
+	[TestMethod]
 	public void DefaultsToTheOnlyInstalledLanguage()
 	{
 		CreateLanguage( "Data", "danish", "xyz" );

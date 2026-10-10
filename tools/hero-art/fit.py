@@ -21,6 +21,10 @@ def outline(alpha):
         hi = j + 0.5 + (p[j] - 128) / max(p[j] - (p[j + 1] if j + 1 < len(p) else 0), 1)
         return lo, hi
     (l, r), (t, b) = span(a[cy]), span(a[:, cx])
+    # Shapes that are not round (a diagonal key, a bent ticket) do not reach their extent through the centre; use the
+    # bounding box of alpha > 50% for them.
+    if r - l < 0.85 * (xs.max() + 1 - xs.min()) or b - t < 0.85 * (ys.max() + 1 - ys.min()):
+        return xs.min(), ys.min(), xs.max() + 1, ys.max() + 1
     return l, t, r, b
 orig = load(base); oa = np.asarray(orig)
 W, H = orig.size
@@ -88,6 +92,22 @@ icon = np.asarray(crop.resize((tw, th), Image.LANCZOS)).astype(np.float32)
 # Smooth outline of the redrawn icon at the target size (JPEG noise along the edge blurred away, then anti-aliased).
 sil = Image.fromarray(silhouette.astype(np.uint8) * 255).crop(box).filter(ImageFilter.GaussianBlur(2))
 sil = np.asarray(sil.point(lambda v: 255 if v >= 128 else 0).resize((tw, th), Image.BOX)).astype(np.float32) / 255
+# Backdrop enclosed by the outline (the hole of a key ring) is a hole where the original is transparent too; white
+# parts of the icon itself lie on opaque original texels and stay.
+hole = Image.fromarray((np.sqrt(((gen - bgc) ** 2).sum(axis=2)) < 60).astype(np.uint8) * 255).crop(box)
+hole = np.asarray(hole.resize((tw, th), Image.BOX)).astype(np.float32) / 255
+original_alpha = np.asarray(Image.fromarray(oa[..., 3]).resize((W * K, H * K), Image.BICUBIC)).astype(np.float32)[Y0:Y1, X0:X1] / 255
+# Decide per enclosed region (so its edge stays the redrawn one): a hole when the original is mostly transparent there.
+regions = Image.fromarray(((hole > 0.5) & (sil > 0.5)).astype(np.uint8) * 255).copy()
+label = 1
+for y, x in zip(*np.nonzero(np.asarray(regions) == 255)):
+    if regions.getpixel((int(x), int(y))) != 255: continue
+    ImageDraw.floodfill(regions, (int(x), int(y)), label)
+    inside = np.asarray(regions) == label
+    if original_alpha[inside].mean() < 0.5:
+        grown = np.asarray(Image.fromarray(inside.astype(np.uint8) * 255).filter(ImageFilter.MaxFilter(5))) > 0
+        sil = sil * (1 - np.where(grown, hole, 0))
+    label = label % 250 + 1
 # Base layer: the original texture upscaled (keeps anything outside the icon), then the redrawn icon on top.
 rgb = np.asarray(orig.convert('RGB').resize((W * K, H * K), Image.BICUBIC)).astype(np.float32)
 rgb[Y0:Y1, X0:X1] = icon

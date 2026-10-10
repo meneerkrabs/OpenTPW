@@ -18,6 +18,8 @@ once their data is available, but only these six are verified. Original data is 
   `.MD2` plus `.mtr` except French). The CD's case is inconsistent (`danish`,
   `french`, `speech` vs installed `Speech`, `lips.WAD`, German `sp_001.lip`,
   `French/meshes/french`), so OpenTPW matches overlay paths case-insensitively.
+  A game folder copied from the CD rather than installed has no banners in
+  `Data/Language/<Lang>`; OpenTPW then uses the `<Lang>/Meshes/<Lang>` folder beside `Data`.
   Placing the CD's banner meshes inside `Language/<Name>` matches the installed
   English layout and is an inference; the installer itself was not run.
 - The Benelux CD uses the same overlay layout for Dutch: `Dutch/data/language/Dutch/`
@@ -54,6 +56,11 @@ an error listing the available languages. The startup log prints the choice, e.g
 Without `--language-data`, the CD folder (`--cd-data`, `OPENTPW_CD_DATA`, or the CD chosen
 under Options → Game files) serves as the language overlay when it holds more languages than
 the installed game, so its languages appear in the options' language list.
+A game folder copied from the CD rather than installed (with `Data` beside the CD's
+`<Lang>` folders) counts as such a CD folder without being chosen separately. Only languages
+whose `MBToUni.dat` OpenTPW can read are offered: the Polish CD's table has a different layout
+(a header word 1 and 329 characters, probably two-byte codes) that is not decoded, so Polish
+is left out. Italian (Benelux/Italian CD) loads but is not among the verified languages.
 
 Two editions of `UITEXT.str` exist. The installed game examined here has 473 entries; the European
 CD's languages (its English included) and the Mac version have 474, with an extra message at entry

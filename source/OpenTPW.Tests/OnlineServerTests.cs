@@ -36,10 +36,10 @@ internal sealed class LoopbackServer : IAsyncDisposable
 	public string Directory { get; }
 	public Uri Url { get; }
 
-	public static async Task<LoopbackServer> StartAsync( Action<ServerOptions>? configure = null, string? directory = null )
+	public static async Task<LoopbackServer> StartAsync( Action<ServerOptions>? configure = null, string? directory = null, Uri? url = null )
 	{
 		directory ??= Path.Combine( Path.GetTempPath(), $"opentpw-server-{Guid.NewGuid():N}" );
-		var app = ServerProgram.Build( new[] { "--urls", "http://127.0.0.1:0", "--Logging:LogLevel:Default", "Warning" }, options =>
+		var app = ServerProgram.Build( new[] { "--urls", url?.GetLeftPart( UriPartial.Authority ) ?? "http://127.0.0.1:0", "--Logging:LogLevel:Default", "Warning" }, options =>
 		{
 			options.DataDirectory = directory;
 			options.PasswordIterations = 1000;
@@ -257,6 +257,179 @@ public class OnlineServerTests
 			Assert.AreEqual( HttpStatusCode.NotFound, (await Fails( () => sender.SendPostcardAsync( nobody ) )).Status );
 			await reader.DeletePostcardAsync( inbox.Postcards[0].Id );
 			Assert.AreEqual( 0, (await reader.GetInboxAsync()).Postcards.Count );
+		}
+		finally
+		{
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
+	public async Task NewsIsPublicAndFollowsTheOperatorsFiles()
+	{
+		await using var server = await LoopbackServer.StartAsync();
+		try
+		{
+			using var client = new OnlineClient( server.Url );
+			var empty = await client.GetNewsAsync();
+			Assert.IsNotNull( empty, "served without a session" );
+			Assert.AreEqual( ("", "", (DateTimeOffset?)null), (empty!.Game, empty.System, empty.UpdatedUtc) );
+
+			var folder = Path.Combine( server.Directory, "news" );
+			Directory.CreateDirectory( folder );
+			File.WriteAllText( Path.Combine( folder, "game.txt" ), "Version 0.5 is out.\r\n" );
+			File.WriteAllText( Path.Combine( folder, "system.txt" ), new string( 'x', NewsFeed.MaximumCharacters + 10 ) );
+			var news = await client.GetNewsAsync();
+			Assert.AreEqual( "Version 0.5 is out.", news!.Game );
+			Assert.AreEqual( NewsFeed.MaximumCharacters, news.System.Length );
+			Assert.IsNotNull( news.UpdatedUtc );
+
+			File.WriteAllText( Path.Combine( folder, "game.txt" ), "Maintenance tonight." );
+			File.SetLastWriteTimeUtc( Path.Combine( folder, "game.txt" ), DateTime.UtcNow.AddMinutes( 1 ) );
+			Assert.AreEqual( "Maintenance tonight.", (await client.GetNewsAsync())!.Game );
+		}
+		finally
+		{
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
+	public async Task ServersWithoutNewsGiveNoNews()
+	{
+		var builder = Microsoft.AspNetCore.Builder.WebApplication.CreateBuilder( new[] { "--urls", "http://127.0.0.1:0", "--Logging:LogLevel:Default", "Warning" } );
+		await using var app = builder.Build();
+		await app.StartAsync();
+		var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First();
+		using var client = new OnlineClient( new Uri( address ) );
+		Assert.IsNull( await client.GetNewsAsync() );
+		await app.StopAsync();
+	}
+
+	[TestMethod]
+	public async Task OnlyParksWhoseAuthorsOptInAreListedForTheWebsite()
+	{
+		await using var server = await LoopbackServer.StartAsync( options => options.WebsiteOrigins.Add( "https://opentpw.io" ) );
+		try
+		{
+			using var ann = await server.LoginAsync( "Ann" );
+			using var bob = await server.LoginAsync( "Bob" );
+			var shown = await ann.UploadParkAsync( OnlineFormatTests.Package( "Shown" ), showOnWebsite: true );
+			var hidden = await ann.UploadParkAsync( OnlineFormatTests.Package( "Private" ) );
+			var popular = await bob.UploadParkAsync( OnlineFormatTests.Package( "Popular" ), showOnWebsite: true );
+			await ann.VoteAsync( popular.Id );
+
+			using var http = new HttpClient { BaseAddress = server.Url };
+			var list = StrictJson.Deserialize<WebsiteParkList>( await http.GetByteArrayAsync( ApiRoutes.WebsiteParks.TrimStart( '/' ) ), "test" );
+			CollectionAssert.AreEqual( new[] { "Popular", "Shown" }, list.Parks.Select( park => park.Name ).ToArray(), "opted-in parks only, most votes first, without a session" );
+			Assert.AreEqual( "Bob", list.Parks[0].Author );
+
+			Assert.AreEqual( HttpStatusCode.NotFound, (await http.GetAsync( $"{ApiRoutes.WebsiteParks.TrimStart( '/' )}/{hidden.Id}/thumbnail" )).StatusCode, "no public picture of a park not on the website" );
+			var picture = await http.GetAsync( $"{ApiRoutes.WebsiteParks.TrimStart( '/' )}/{shown.Id}/thumbnail" );
+			Assert.AreEqual( HttpStatusCode.OK, picture.StatusCode );
+			Assert.AreEqual( "image/png", picture.Content.Headers.ContentType?.MediaType );
+			Assert.IsTrue( picture.Headers.CacheControl?.Public == true, "website pictures may be cached" );
+
+			using var allowed = new HttpRequestMessage( HttpMethod.Get, ApiRoutes.WebsiteParks.TrimStart( '/' ) );
+			allowed.Headers.Add( "Origin", "https://opentpw.io" );
+			Assert.AreEqual( "https://opentpw.io", (await http.SendAsync( allowed )).Headers.GetValues( "Access-Control-Allow-Origin" ).Single() );
+			using var other = new HttpRequestMessage( HttpMethod.Get, ApiRoutes.News.TrimStart( '/' ) );
+			other.Headers.Add( "Origin", "https://example.com" );
+			Assert.IsFalse( (await http.SendAsync( other )).Headers.Contains( "Access-Control-Allow-Origin" ) );
+			using var parks = new HttpRequestMessage( HttpMethod.Get, ApiRoutes.Parks.TrimStart( '/' ) );
+			parks.Headers.Add( "Origin", "https://opentpw.io" );
+			var guarded = await http.SendAsync( parks );
+			Assert.AreEqual( HttpStatusCode.Unauthorized, guarded.StatusCode, "the full park list still needs a session" );
+			Assert.IsFalse( guarded.Headers.Contains( "Access-Control-Allow-Origin" ) );
+		}
+		finally
+		{
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
+	public async Task DeployRequestNeedsTheTokenAndOnlyLeavesAFile()
+	{
+		await using ( var closed = await LoopbackServer.StartAsync() )
+		{
+			try
+			{
+				using var http = new HttpClient { BaseAddress = closed.Url };
+				Assert.AreEqual( HttpStatusCode.NotFound, (await http.PostAsync( ApiRoutes.Deploy.TrimStart( '/' ), null )).StatusCode, "no route without a token" );
+			}
+			finally
+			{
+				closed.DeleteData();
+			}
+		}
+		await using var server = await LoopbackServer.StartAsync( options => options.DeployToken = "release-secret" );
+		try
+		{
+			var request = Path.Combine( server.Directory, ServerProgram.DeployRequestFile );
+			using var http = new HttpClient { BaseAddress = server.Url };
+			async Task<HttpStatusCode> Post( string? token )
+			{
+				using var message = new HttpRequestMessage( HttpMethod.Post, ApiRoutes.Deploy.TrimStart( '/' ) );
+				if ( token != null )
+					message.Headers.Authorization = new AuthenticationHeaderValue( "Bearer", token );
+				return (await http.SendAsync( message )).StatusCode;
+			}
+			Assert.AreEqual( HttpStatusCode.Unauthorized, await Post( null ) );
+			Assert.AreEqual( HttpStatusCode.Unauthorized, await Post( "release-secreT" ) );
+			Assert.IsFalse( File.Exists( request ) );
+			Assert.AreEqual( HttpStatusCode.Accepted, await Post( "release-secret" ) );
+			Assert.IsTrue( File.Exists( request ) );
+		}
+		finally
+		{
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
+	public void SessionsSurviveARestartAsHashesOnly()
+	{
+		var directory = Path.Combine( Path.GetTempPath(), $"opentpw-sessions-{Guid.NewGuid():N}" );
+		try
+		{
+			var now = DateTimeOffset.UtcNow;
+			var options = new ServerOptions { DataDirectory = directory, PasswordIterations = 1000 };
+			var first = new ServerStore( options, () => now );
+			first.Register( "Ann", "correct horse" );
+			var kept = first.Login( "Ann", "correct horse" );
+			var loggedOut = first.Login( "Ann", "correct horse" );
+			first.Logout( loggedOut.Token );
+			Assert.IsFalse( File.ReadAllText( Path.Combine( directory, "sessions.json" ) ).Contains( kept.Token ), "only the token hash is stored" );
+
+			var restarted = new ServerStore( options, () => now.AddMinutes( 1 ) );
+			Assert.AreEqual( "Ann", restarted.Authenticate( kept.Token )?.Name, "a restart keeps the session" );
+			Assert.IsNull( restarted.Authenticate( loggedOut.Token ) );
+			Assert.IsNull( new ServerStore( options, () => now + options.SessionLifetime + TimeSpan.FromMinutes( 1 ) ).Authenticate( kept.Token ), "expired sessions are not loaded" );
+		}
+		finally
+		{
+			if ( Directory.Exists( directory ) )
+				Directory.Delete( directory, true );
+		}
+	}
+
+	[TestMethod]
+	public async Task StoppingTheServerTellsChatClientsItRestarts()
+	{
+		var server = await LoopbackServer.StartAsync();
+		try
+		{
+			using var ann = await server.LoginAsync( "Ann" );
+			await using var chat = await ann.ConnectChatAsync();
+			await NextAsync( chat, IsNotice( ChatNotice.WelcomeThemeParkWorld ) );
+			var stopping = server.DisposeAsync().AsTask();
+			using var timeout = new CancellationTokenSource( TimeSpan.FromSeconds( 15 ) );
+			while ( await chat.ReceiveAsync( timeout.Token ) != null )
+			{
+			}
+			Assert.AreEqual( ChatProtocol.RestartingCloseStatus, chat.CloseStatus );
+			await stopping;
 		}
 		finally
 		{

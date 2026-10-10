@@ -134,7 +134,8 @@ public partial class Level : IDisposable
 			if ( OriginalTerrain != null && Guests != null )
 			{
 				var cells = Guests.Grid.Cells;
-				OriginalTerrain.PathSource = ( x, y ) => cells.TypeAt( x, y ) is ParkCellType.Path or ParkCellType.Queue;
+				OriginalTerrain.PathSource = ( x, y ) => cells.TypeAt( x, y ) == ParkCellType.Path;
+				OriginalTerrain.QueueSource = ( x, y ) => cells.TypeAt( x, y ) == ParkCellType.Queue;
 				renderedCellVersion = cells.Version;
 			}
 			if ( Park != null && Guests != null )

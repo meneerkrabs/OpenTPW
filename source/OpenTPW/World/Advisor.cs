@@ -53,7 +53,8 @@ internal sealed class Advisor : IDisposable
 		("ADVISOR-018", "the automatic advisor is drawn only while its speech plays, only inside a level; leaving the level stops it"),
 		("ADVISOR-019", "GeneralAdvisor.MinTimeAnyMessage and GeneralAdvisor.MinTimeSameMessage are loaded but not applied"),
 		("ADVISOR-020", "game events 2/3/4 come from the park economy's Bankrupt/ParkOpened/ParkClosed events, not proven equal to the original producers"),
-		("ADVISOR-021", "Advisor option off: advice still queues, nothing is picked and current speech stops"),
+		("ADVISOR-021", "Advisor option off: advice is still picked, consumed and recorded silently; the options byte +0x34 is the Game Options Advisor switch (same offset; object identity unproven)"),
+		("ADVISOR-022", "the advisor's pending advice and message history are not saved or loaded with the park"),
 	};
 
 	private readonly List<(string Name, Model Model, Material Material)> parts = new();
@@ -292,9 +293,18 @@ internal sealed class Advisor : IDisposable
 		timeline = lips;
 		ClipNumber = clipNumber;
 		Duration = TimeSpan.FromSeconds( audio.DurationSeconds );
-		player = GameAudio.EnsureStarted() && AudioMixer.Current is { } mixer ? new SpeechAudioPlayer( audio, mixer ) : new SpeechAudioPlayer( audio );
+		player = CreatePlayer( audio );
 		Log.Trace( $"Advisor says {description}: {audio.DurationSeconds:F2} s, {lips.Marks.Count} LIP marks, clock: {player.ClockSource}{(player.DeviceError == null ? "" : $" ({player.DeviceError})")}." );
 	}
+
+	/// <summary>
+	/// Speech goes through the game mixer when sound is on. Without a mixer it opens its own SDL device,
+	/// except when sound is off (<c>--mute</c>): then it keeps the wall clock and stays silent.
+	/// </summary>
+	internal static SpeechAudioPlayer CreatePlayer( Mp2Audio audio ) =>
+		GameAudio.EnsureStarted() && AudioMixer.Current is { } mixer
+			? new SpeechAudioPlayer( audio, mixer )
+			: new SpeechAudioPlayer( audio, null, openDevice: GameAudio.Enabled && AudioMixer.Current == null );
 
 	/// <summary>Stops the current speech, if any.</summary>
 	public void Silence()

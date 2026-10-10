@@ -39,7 +39,7 @@ internal sealed class GameFlow : IDisposable
 	public UiStringTable Strings { get; }
 	public UiContext Context { get; }
 	public OnlineFolders? OnlineFolders { get; set; }
-	/// <summary>Automatic advice in parks (off with <c>--no-advisor</c> and for <c>--advisor-say</c>/<c>--advisor-response</c>).</summary>
+	/// <summary>Automatic advice in original-level parks (off with <c>--no-advisor</c> and for <c>--advisor-say</c>/<c>--advisor-response</c>).</summary>
 	public bool AutomaticAdvisorEnabled { get; set; } = true;
 	/// <summary>The automatic advisor, created with the first park (null when disabled or its settings are missing).</summary>
 	public AutomaticAdvisor? Advisor { get; private set; }
@@ -169,7 +169,8 @@ internal sealed class GameFlow : IDisposable
 			GoOnline = ShowOnline,
 		} );
 		// [EXT:online-visit] read-only visits of shared parks get no advisor (the original has no visits)
-		if ( AutomaticAdvisorEnabled && visit == null && !advisorUnavailable )
+		// [EXT:sandbox] the generic sandbox (not an original level) gets no automatic advisor either; only original levels raise its game events
+		if ( AutomaticAdvisorEnabled && original && visit == null && !advisorUnavailable )
 		{
 			Advisor ??= AutomaticAdvisor.TryCreate();
 			advisorUnavailable = Advisor == null;

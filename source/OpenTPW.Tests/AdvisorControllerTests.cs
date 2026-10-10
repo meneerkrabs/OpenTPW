@@ -163,7 +163,7 @@ public class AdvisorControllerTests
 	}
 
 	[TestMethod]
-	public void RepeatIntervalUsesQuarterTicksAndEventTenClearsHistory()
+	public void RepeatIntervalUsesQuarterTicksAndEventTenKeepsTheSavedTick()
 	{
 		var harness = new Harness();
 		harness.Raise( AdvisorGameEvent.LevelStarted );
@@ -172,7 +172,9 @@ public class AdvisorControllerTests
 		var refused = harness.Controller.HandleGameEvent( AdvisorGameEvent.LevelStarted, harness.Tick, 0, true );
 		Assert.AreEqual( AdvisorEligibility.RepeatDelay, refused[0].Admission.Eligibility, "9 of 10 groups of four ticks" );
 		harness.Raise( AdvisorGameEvent.ResetForEasyMode );
-		Assert.AreEqual( AdvisorMessageHistory.Empty, harness.Controller.Queue.GetHistory( 0 ) );
+		Assert.AreEqual( AdvisorMessageHistory.Empty with { SavedGameTick = 100 }, harness.Controller.Queue.GetHistory( 0 ), "variant, played flag and slap count reset; the saved tick stays" );
+		Assert.AreEqual( AdvisorEligibility.RepeatDelay, harness.Controller.HandleGameEvent( AdvisorGameEvent.LevelStarted, harness.Tick, 0, true )[0].Admission.Eligibility );
+		harness.Tick += 1;
 		Assert.AreEqual( AdvisorEligibility.Eligible, harness.Controller.HandleGameEvent( AdvisorGameEvent.LevelStarted, harness.Tick, 0, true )[0].Admission.Eligibility );
 	}
 
@@ -192,14 +194,35 @@ public class AdvisorControllerTests
 	}
 
 	[TestMethod]
-	public void FailedPlaybackConsumesTheAdviceWithoutHistoryOrReservation()
+	public void UnplayedResponseStillRecordsHistoryAndReservesTheMinimumAction()
 	{
+		// The original wrapper keeps the player's result only as the span and succeeds (0x1000BBF0).
 		var harness = new Harness { Span = null };
 		harness.Raise( AdvisorGameEvent.LevelStarted );
 		Assert.AreEqual( 1, harness.Update() );
 		Assert.AreEqual( 0, harness.Controller.Queue.Count );
-		Assert.AreEqual( AdvisorMessageHistory.Empty, harness.Controller.Queue.GetHistory( 0 ) );
-		Assert.IsFalse( harness.Controller.Queue.IsBusy( harness.Clock ) );
+		Assert.AreEqual( new AdvisorMessageHistory( 100, 0, true, 0 ), harness.Controller.Queue.GetHistory( 0 ) );
+		Assert.AreEqual( (1000u, 1000u), (harness.Controller.Queue.LastActionStarted, harness.Controller.Queue.LastActionDuration), "span 0 plus 1000" );
+		Assert.IsTrue( harness.Controller.Queue.IsBusy( 1999 ) );
+		Assert.IsFalse( harness.Controller.Queue.IsBusy( 2000 ) );
+	}
+
+	[TestMethod]
+	public void AdvisorOptionOffConsumesTheAdviceSilently()
+	{
+		// Option byte +0x34 clear: the player returns 0 (0x10006BC0), so the advice is still picked and recorded.
+		var harness = new Harness();
+		harness.Raise( AdvisorGameEvent.LevelStarted, 2 );
+		var said = new List<int>();
+		harness.Controller.Update( () => harness.Clock, () => harness.Tick, response =>
+		{
+			said.Add( response );
+			return 0u;
+		} );
+		CollectionAssert.AreEqual( new[] { 1 }, said );
+		Assert.IsTrue( harness.Controller.Queue.GetHistory( 0 ).HasBeenPlayed );
+		harness.Clock += 1000;
+		Assert.AreEqual( 587, harness.Update(), "the welcome is not left pending for when the option is switched on" );
 	}
 
 	[TestMethod]

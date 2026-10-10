@@ -113,7 +113,8 @@ internal sealed class AdvisorBalance
 /// The advisor controller for the wired game events: the event handler builds pending advice with
 /// its configured score, and <see cref="Update"/> picks, consumes and completes one response at a
 /// time through <see cref="AdvisorScoreQueue"/>. Playback is a callback taking the response ID and
-/// returning the action span (null when the response could not be played, e.g. absent from the table).
+/// returning the action span (null when the response could not be played, e.g. absent from the table;
+/// the attempt still succeeds, with span 0, as in the original wrapper).
 /// </summary>
 internal sealed class AdvisorController
 {
@@ -155,13 +156,12 @@ internal sealed class AdvisorController
 		uint? span = null;
 		try
 		{
-			// Configured-field scores recompute to the same value; the wrapper's check is inclusive.
-			if ( Queue.RevalidatedPlaybackScoreAccepts( Balance.ScoreOf( selection.Advice.MessageId ) ) )
-				span = play( selection.ResponseId );
+			span = play( selection.ResponseId );
 		}
 		finally
 		{
-			Queue.CompletePlaybackAttempt( selection, span.HasValue, advisorClock(), liveGameTick(), span ?? 0 );
+			// [BIN:STP-PPC:0x1000BBF0 controller playback wrapper] the wrapper (sole caller 0x100089FC) fails only for an invalid record or the missing-descriptor response 614, which the bound rows cannot produce; the player's result (0x10006B7C, stored at 0x1000BB64) is kept only as the span, so an unplayed response still records the history and reserves span + 1000 with span 0
+			Queue.CompletePlaybackAttempt( selection, playbackSucceeded: true, advisorClock(), liveGameTick(), span ?? 0 );
 		}
 		return selection;
 	}

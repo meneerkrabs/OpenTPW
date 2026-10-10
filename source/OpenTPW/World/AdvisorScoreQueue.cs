@@ -76,9 +76,16 @@ internal sealed class AdvisorScoreQueue
 		history.TryGetValue( messageId, out var value ) ? value : AdvisorMessageHistory.Empty;
 	public bool HasDescriptor( int messageId ) => descriptors.ContainsKey( messageId );
 
-	/// <summary>Game event 10 (<c>RESET_FOR_EASY_MODE</c>): every history record returns to its initial state. Pending records stay.</summary>
-	// [BIN:STP-PPC:0x10009DCC advisor event 10] clears the 351 history records
-	public void ClearHistory() => history.Clear();
+	/// <summary>
+	/// Game event 10 (<c>RESET_FOR_EASY_MODE</c>): every history record resets its variant, played flag
+	/// and slap count but keeps its saved game tick, so the repeat delay still runs. Pending records stay.
+	/// </summary>
+	// [BIN:STP-PPC:0x10009DCC advisor event 10] the loop 0x10009DD8–0x10009E80 over the 351 records stores only +0xE4 (variant −1), +0xE8 (played 0) and +0xEC (slap count 0); the saved tick +0xE0 (written through 0x10121098, read at 0x10009090) is untouched
+	public void ClearHistory()
+	{
+		foreach ( var id in history.Keys.ToArray() )
+			history[id] = AdvisorMessageHistory.Empty with { SavedGameTick = history[id].SavedGameTick };
+	}
 
 	// [BIN:STP-PPC:0x101210F8 history elapsed] (live mGameTick >> 2) − (saved >> 2), plain 32-bit subtraction
 	public static uint HistoryElapsed( uint liveGameTick, uint savedGameTick ) =>

@@ -55,7 +55,8 @@ internal sealed class AutomaticAdvisor : IDisposable
 		park = started.Park;
 		if ( park != null )
 			park.EventRaised += OnParkEvent;
-		// [BIN:STP-PPC:0x101C2108 main loop] CMsgEvent 10 (history reset) followed by CMsgEvent 0 at 0x101C2174
+		// [APPROX:ADVISOR-022] The pending advice and the message history are neither saved nor loaded: loading a park save keeps whatever this session's controller holds (pending advice and history of earlier parks, empty in a fresh session) — evidence needed: whether the original park save writes the controller's pending records (record serializer 0x1000BC10) and history, and where in the save file
+		// [BIN:STP-PPC:0x101C2108 main loop] CMsgEvent 10 (history reset of variant, played flag and slaps) followed by CMsgEvent 0 at 0x101C2174
 		Raise( AdvisorGameEvent.ResetForEasyMode );
 		Raise( AdvisorGameEvent.LevelStarted );
 	}
@@ -98,10 +99,13 @@ internal sealed class AutomaticAdvisor : IDisposable
 	{
 		if ( level == null )
 			return;
-		// [APPROX:ADVISOR-021] Advisor option off: events still reach the queue and history, but nothing is picked and current speech stops — evidence needed: the consumer of options byte +0x34
+		// [BIN:STP-PPC:0x10006BB4 advisor response player] options byte +0x34 clear: the player returns 0 (0x10006BC0) before saying anything
+		// [BIN:STP-PPC:0x1000BBF0 controller playback wrapper] and the wrapper still succeeds, so the advice is picked, consumed and recorded silently with span 0
+		// [APPROX:ADVISOR-021] Byte +0x34 is read as the Game Options Advisor switch; that the object behind TOC −30268 (data 0x120A14) is the Game Options object is not proven (as for ADVISOR-015) — evidence needed: the object behind TOC −30268 and its +0x34 writer
 		if ( !GameOptions.Current.Advisor )
 		{
 			presentation?.Silence();
+			Controller.Update( () => AdvisorClock, () => GameTick, _ => 0u );
 			return;
 		}
 		Controller.Update( () => AdvisorClock, () => GameTick, Play );

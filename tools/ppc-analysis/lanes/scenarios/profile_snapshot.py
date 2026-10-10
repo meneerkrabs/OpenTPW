@@ -536,7 +536,8 @@ def from_envelope(env: dict) -> ProfileSnapshot:
 
 def loads_envelope(text: str | bytes) -> ProfileSnapshot:
     """Parse JSON text and decode it with from_envelope. Repeated object member names, which json.loads
-    would silently collapse to the last value, are refused, as are NaN and the infinities."""
+    would silently collapse to the last value, are refused, as are NaN and the infinities and nesting
+    too deep for the parser (a RecursionError from json.loads never escapes as one)."""
     def pairs(items):
         out = {}
         for k, v in items:
@@ -550,6 +551,8 @@ def loads_envelope(text: str | bytes) -> ProfileSnapshot:
         env = json.loads(text, object_pairs_hook=pairs, parse_constant=constant)
     except json.JSONDecodeError as exc:
         raise ValueError(f'not JSON: {exc}') from None
+    except RecursionError:
+        raise ValueError('not JSON: nesting deeper than the parser can decode') from None
     return from_envelope(env)
 
 

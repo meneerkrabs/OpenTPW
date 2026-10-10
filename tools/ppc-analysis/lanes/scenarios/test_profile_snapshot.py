@@ -441,6 +441,12 @@ class EnvelopeValidationTests(unittest.TestCase):
             with self.subTest(bad=bad[-40:]), self.assertRaises(ValueError):
                 snap.loads_envelope(bad)
 
+    def test_deeply_nested_json_is_a_value_error_not_a_recursion_error(self):
+        # json.loads recurses once per nesting level; hostile text must still be refused as ValueError.
+        for deep in ('[' * 100000 + ']' * 100000, '{"a": ' * 50000 + '0' + '}' * 50000):
+            with self.subTest(head=deep[:1]), self.assertRaises(ValueError):
+                snap.loads_envelope(deep)
+
 
 class LargeMysteryTests(unittest.TestCase):
     """Repeat detection is linear: the quadratic list scan took ~1.1 s for 20k rideIds."""

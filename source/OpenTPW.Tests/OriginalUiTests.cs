@@ -710,6 +710,19 @@ public class OriginalUiTests
 	}
 
 	[TestMethod]
+	public void UiImageBlackKeyFadesTheDarkEdgeOfArtDrawnOnBlack()
+	{
+		// A row of the ipan disc's edge: black background, the dark anti-aliased fade, then the disc.
+		var rgba = new byte[] { 0, 0, 4, 255, 0, 2, 21, 255, 0, 11, 45, 255, 10, 28, 72, 255 };
+		UiImages.KeyOutBlackSoft( rgba, 4, 1 );
+		Assert.AreEqual( 0, rgba[3], "near-black background is transparent" );
+		Assert.AreEqual( 255, rgba[15], "the disc stays opaque" );
+		Assert.IsTrue( rgba[7] > 0 && rgba[7] < rgba[11] && rgba[11] < 255, "the fade becomes partly transparent, more so further out" );
+		Assert.AreEqual( 21 * 255 / rgba[7], rgba[6], 2, "fade colours are un-premultiplied against black" );
+		CollectionAssert.AreEqual( new byte[] { 10, 28, 72, 255 }, rgba[12..], "opaque texels keep their colour" );
+	}
+
+	[TestMethod]
 	public void BatchTextRecordsGlyphsAtIntegerScale()
 	{
 		var font = new FontAtlas( FontAtlasTests.CreateFont( 4, new FontAtlasTests.SyntheticGlyph( 'A', 2, 3, 0, 0, 3, Enumerable.Repeat( (byte)15, 6 ).ToArray() ) ) );

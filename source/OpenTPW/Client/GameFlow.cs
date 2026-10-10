@@ -301,6 +301,9 @@ internal sealed class GameFlow : IDisposable
 			Hud.Draw( Context );
 		else
 			Menu?.Stack.Draw( Context );
+		// [EXT:texture-pack] a running texture switch shows its progress without blocking the game
+		if ( TexturePackSwitch.Current is { } textureSwitch )
+			OptionsScreen.DrawTextureSwitchProgress( Context, Strings, textureSwitch );
 	}
 
 	/// <summary>Overlay pass (output pixels, possibly twice per frame when the output is captured).</summary>

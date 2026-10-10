@@ -10,11 +10,12 @@ players use their own installation, in the browser by choosing their game folder
 ## Running it for a server on the internet
 
 Everything runs over HTTPS on port 443: the game page, the API (`/api/v1/…`) and the chat
-WebSocket (`wss://…/api/v1/chat`). The example below puts Caddy in front of the server; Caddy
-answers on ports 80 and 443, gets and renews the certificate itself, and passes the chat's
-WebSocket connections through. The OpenTPW container only listens inside the Docker network.
+WebSocket (`wss://…/api/v1/chat`). There is no plain-HTTP site; port 80 stays closed. The example
+below puts Caddy in front of the server; Caddy gets and renews the certificate itself over port
+443 (TLS-ALPN), sends HSTS, and passes the chat's WebSocket connections through. The OpenTPW
+container only listens inside the Docker network.
 
-1. Point the domain's DNS at the machine and open ports 80 and 443.
+1. Point the domain's DNS at the machine and open port 443 (TCP, and UDP for HTTP/3).
 2. From the repository root:
 
    ```sh
@@ -52,9 +53,12 @@ the container, pass WebSocket upgrades through, and keep the `Host` header.
   python3 deploy/make-cloud-init.py --domain play.opentpw.io > user-data.yml
   ```
 
-Give the server a Hetzner Cloud Firewall that allows only TCP 22, 80 and 443 and UDP 443
-(Docker's published ports bypass a firewall on the server itself), and point the domain's
-DNS (A and AAAA, not proxied) at it.
+Give the server a Hetzner Cloud Firewall that allows TCP and UDP 443 from everywhere and TCP 22
+only from the maintainer's own addresses, and nothing else; port 80 stays closed (Docker's
+published ports bypass a firewall on the server itself, so the firewall belongs outside it).
+SSH accepts keys only, and fail2ban bans addresses after repeated failed logins. Point the
+domain's DNS (A and AAAA, not proxied) at the server. When the maintainer's address changes,
+update the firewall rule, or use Hetzner's web console to get in.
 
 ## Running it locally
 

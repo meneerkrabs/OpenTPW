@@ -69,6 +69,13 @@ public static partial class Program
 		SaveFileSystem = new BaseFileSystem( "/save" );
 		CacheFileSystem = new BaseFileSystem( "/cache" );
 
+		// The desktop picks the texture choice from graphics.json; the browser has no settings file and uses
+		// the default Enhanced choice, which without a locally built pack means the shipped interface art.
+		var diagnostics = new List<string>();
+		TexturePack.Activate( TexturePack.DefaultName, diagnostics );
+		foreach ( var diagnostic in diagnostics )
+			Log.Warning( diagnostic );
+
 		// No sound or movies yet (docs/WEB.md).
 		GameAudio.Enabled = false;
 		renderer = new Renderer( DisplaySettings.Default, null );

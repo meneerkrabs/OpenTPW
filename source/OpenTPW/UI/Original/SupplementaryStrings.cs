@@ -44,6 +44,7 @@ public enum OpenTpwText
 	TexturePackClean,
 	TexturePackDetailed,
 	LoadingTextures,
+	TexturePackHelp,
 	GameFiles,
 	GameFolder,
 	CdFolder,
@@ -114,7 +115,16 @@ public static class SupplementaryStrings
 		[OpenTpwText.TexturePackOriginal] = new[] { "Original", "Oprindelig", "Origineel", "D'origine", "Ursprünglich", "Ursprunglig" },
 		[OpenTpwText.TexturePackClean] = new[] { "Enhanced", "Forbedret", "Verbeterd", "Amélioré", "Verbessert", "Förbättrad" },
 		[OpenTpwText.TexturePackDetailed] = new[] { "Detailed", "Detaljeret", "Gedetailleerd", "Détaillé", "Detailliert", "Detaljerad" },
-		[OpenTpwText.LoadingTextures] = new[] { "Loading textures... {0} / {1}", "Indlæser teksturer... {0} / {1}", "Textures laden... {0} / {1}", "Chargement des textures... {0} / {1}", "Texturen werden geladen... {0} / {1}", "Läser in texturer... {0} / {1}" },
+		[OpenTpwText.LoadingTextures] = new[] { "Updating textures in the background... {0} / {1}", "Opdaterer teksturer i baggrunden... {0} / {1}", "Textures worden op de achtergrond bijgewerkt... {0} / {1}", "Mise à jour des textures en arrière-plan... {0} / {1}", "Texturen werden im Hintergrund aktualisiert... {0} / {1}", "Uppdaterar texturer i bakgrunden... {0} / {1}" },
+		[OpenTpwText.TexturePackHelp] = new[]
+		{
+			"Original: the game's own textures. Enhanced: sharper, AI-enhanced textures. The change starts right away in the background: keep playing while the textures update.",
+			"Oprindelig: spillets egne teksturer. Forbedret: skarpere, AI-forbedrede teksturer. Skiftet starter med det samme i baggrunden: spil bare videre, mens teksturerne opdateres.",
+			"Origineel: de eigen textures van het spel. Verbeterd: scherpere, met AI verbeterde textures. Het wisselen begint meteen op de achtergrond: speel gewoon verder terwijl de textures worden bijgewerkt.",
+			"D'origine : les textures du jeu. Amélioré : des textures plus nettes, améliorées par IA. Le changement commence aussitôt en arrière-plan : continuez à jouer pendant la mise à jour.",
+			"Ursprünglich: die Texturen des Spiels. Verbessert: schärfere, per KI verbesserte Texturen. Der Wechsel beginnt sofort im Hintergrund: einfach weiterspielen, während die Texturen aktualisiert werden.",
+			"Ursprunglig: spelets egna texturer. Förbättrad: skarpare, AI-förbättrade texturer. Bytet börjar direkt i bakgrunden: spela vidare medan texturerna uppdateras."
+		},
 		[OpenTpwText.GameFiles] = new[] { "Game files", "Spilfiler", "Spelbestanden", "Fichiers du jeu", "Spieldateien", "Spelfiler" },
 		[OpenTpwText.GameFolder] = new[] { "Game folder:", "Spilmappe:", "Spelmap:", "Dossier du jeu :", "Spielordner:", "Spelmapp:" },
 		[OpenTpwText.CdFolder] = new[] { "CD (music and movies):", "Cd (musik og film):", "Cd (muziek en films):", "CD (musique et films) :", "CD (Musik und Filme):", "Cd (musik och filmer):" },

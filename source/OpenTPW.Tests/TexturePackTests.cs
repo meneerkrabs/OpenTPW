@@ -456,18 +456,17 @@ public class TexturePackTests
 		screen.Find( "ok" )!.Activate();
 		Assert.AreEqual( "detailed", graphics.Current.TexturePackName );
 		CollectionAssert.AreEqual( new[] { "detailed" }, requested );
-		Assert.AreEqual( "textureSwitch", stack.Top!.Name, "a loading screen follows OK" );
-		Assert.IsFalse( stack.Top!.Elements.OfType<UiButton>().Any(), "nothing to click while loading" );
-		Assert.IsNull( stack.Top!.Back, "no way out while loading" );
-		var loading = stack.Top!;
-		Assert.AreEqual( "Loading textures... 0 / 5", ((UiLabel)loading.Find( "message" )!).Text() );
-		loading.Updating!( null! );
-		Assert.AreEqual( 2, running!.Done );
-		Assert.AreSame( loading, stack.Top );
-		loading.Updating!( null! );
-		loading.Updating!( null! );
-		Assert.AreEqual( 0, stack.Screens.Count, "the loading screen removes itself when done" );
+		Assert.AreEqual( 0, stack.Screens.Count, "no loading screen: the switch runs in the background while the player keeps playing" );
 		Assert.AreEqual( 1, closed, "and no restart notice is shown for a texture pack" );
+		Assert.IsFalse( running!.Finished, "the switch is still running after the options closed" );
+
+		// The background progress line disappears once the switch is done (the native smoke test draws it while running).
+		while ( !running.Finished )
+			running.Pump();
+		var context = new UiContext( strings, null!, new UiModels( name => throw new FileNotFoundException( name ) ) );
+		OptionsScreen.DrawTextureSwitchProgress( context, strings, running );
+		Assert.AreEqual( 0, context.Batch.Draws.Count, "nothing once the switch is done" );
+		StringAssert.Contains( row.Help, "background", "the row explains that the switch runs in the background" );
 
 		var hidden = new UiScreenStack();
 		var hiddenMain = OptionsScreen.Create( hidden, strings, Services( new[] { "enhanced" }, withGraphics: false ), () => { } );
@@ -490,10 +489,8 @@ public class TexturePackTests
 		combined.Pop();
 		((UiSlider)screen.Find( "resolution" )!).Adjust( 1 );
 		screen.Find( "ok" )!.Activate();
-		Assert.AreNotEqual( "textureSwitch", combined.Top!.Name, "the display confirmation comes first" );
+		Assert.AreEqual( 0, requested.Count, "the display confirmation comes first" );
 		combined.Top!.Find( "choice0" )!.Activate();
-		Assert.AreEqual( "textureSwitch", combined.Top!.Name );
-		combined.Top!.Updating!( null! );
 		Assert.AreEqual( 0, combined.Screens.Count );
 		Assert.AreEqual( 1, closed );
 		CollectionAssert.AreEqual( new[] { "" }, requested, "the switch to the originals" );

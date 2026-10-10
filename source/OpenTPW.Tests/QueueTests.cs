@@ -276,12 +276,17 @@ public class QueueTests
 		CollectionAssert.AreEqual( new[] { (2, 5), (2, 5), (2, 5), (2, 5), (2, 4), (2, 4) }, guests.Select( guest => guest.Cell ).ToArray() );
 		Assert.IsTrue( visited.SetEquals( new[] { (2, 5), (2, 4), (2, 3), (2, 2), (2, 1) } ), string.Join( " ", visited ) );
 		Assert.IsTrue( guests.All( guest => rig.Grid.IsQueue( guest.Cell.X, guest.Cell.Y ) ) );
-		// Depth 0/63/127/191 from the front edge (toward the ride at +Y), a small sideways offset.
-		var expectedY = new[] { 6f - 0 / 255f, 6f - 63 / 255f, 6f - 127 / 255f, 6f - 191 / 255f, 5f, 5f - 63 / 255f };
+		// Depth 0/63/127/191 from the front edge (toward the ride at +Y), a small sideways offset, in bytes of 1/256 cell
+		// (0xe68cc; WALK-I, was /255 with the guest snapped onto the point). The traced steering arrives within 0.32 cell
+		// (octile) of the slot and the arrival step still moves, so a guest stands within 0.32 cell + one step of it.
+		var expectedY = new[] { 5f + 255 / 256f, 5f + 192 / 256f, 5f + 128 / 256f, 5f + 64 / 256f, 4f + 255 / 256f, 4f + 192 / 256f };
 		for ( var index = 0; index < guests.Count; index++ )
 		{
-			Assert.AreEqual( expectedY[index], guests[index].Y, 1e-4, $"position {index}" );
-			Assert.IsTrue( Math.Abs( guests[index].X - 2.5f ) <= 14 / 255f + 1e-4f, $"lateral offset {guests[index].X}" );
+			var guest = guests[index];
+			Assert.AreEqual( expectedY[index], guest.QueueTargetY, 0f, $"position {index}" );
+			Assert.IsTrue( Math.Abs( guest.QueueTargetX - 2.5f ) <= 14 / 256f, $"lateral offset {guest.QueueTargetX}" );
+			var distance = MathF.Sqrt( (guest.X - guest.QueueTargetX) * (guest.X - guest.QueueTargetX) + (guest.Y - guest.QueueTargetY) * (guest.Y - guest.QueueTargetY) );
+			Assert.IsTrue( distance < (GuestNavigation.ArrivalRadius + guest.MaxSpeed) / (float)Fixed16.One, $"position {index} stands {distance} cell from its slot" );
 		}
 		Assert.AreEqual( 6, rig.Ride.QueueLength );
 		Assert.AreEqual( 6, rig.Simulation.GetStatistics().Queueing );

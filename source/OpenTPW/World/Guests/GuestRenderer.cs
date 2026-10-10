@@ -126,7 +126,7 @@ public sealed class GuestRenderer : Entity
 		if ( guest.IsMoving )
 		{
 			slot = GuestSpriteAtlas.WalkSlot;
-			step = (int)(guest.DistanceWalked * WalkFramesPerCell);
+			step = (int)(guest.DrawDistanceWalked * WalkFramesPerCell);
 		}
 		else if ( guest.State is GuestState.Queueing or GuestState.WaitingToBoard or GuestState.AtTicketBooth or GuestState.WaitingToGoHome )
 		{
@@ -162,7 +162,7 @@ public sealed class GuestRenderer : Entity
 			var (atlasIndex, frameIndex, mirror) = SelectSprite( guest, right, forward );
 			var atlas = atlases[atlasIndex];
 			var frame = atlas.Frames[frameIndex];
-			var feet = CellToEngine( field, guest.X, guest.Y );
+			var feet = CellToEngine( field, guest.DrawX, guest.DrawY );
 			var left = mirror ? -(frame.OriginX + frame.Width) : frame.OriginX;
 			var x0 = left * UnitsPerPixel;
 			var x1 = (left + frame.Width) * UnitsPerPixel;

@@ -65,14 +65,20 @@ public sealed class Guest
 	/// <summary>Index into the .sam PeepTypes and the kid sprite set.</summary>
 	public int Type { get; }
 	public GuestState State { get; internal set; }
-	public float X { get; internal set; }
-	public float Y { get; internal set; }
+	/// <summary>Simulation position in cells (<see cref="Navigation"/>, 16.16), updated once per park turn.</summary>
+	public float X => Navigation.X / (float)Fixed16.One;
+	public float Y => Navigation.Y / (float)Fixed16.One;
+	/// <summary>Presentation position: interpolated between the last two steering steps (not simulation state).</summary>
+	public float DrawX { get; internal set; }
+	public float DrawY { get; internal set; }
 	/// <summary>Unit direction of the last movement (game cells).</summary>
 	public float HeadingX { get; internal set; } = 0;
 	public float HeadingY { get; internal set; } = 1;
 	public bool IsMoving { get; internal set; }
 	/// <summary>Cells walked in total; drives the walk-cycle frame.</summary>
 	public float DistanceWalked { get; internal set; }
+	/// <summary>Presentation counterpart of <see cref="DistanceWalked"/>, interpolated like <see cref="DrawX"/>.</summary>
+	public float DrawDistanceWalked { get; internal set; }
 	public bool IsVisible => State is not (GuestState.Using or GuestState.Gone);
 
 	public float Hunger { get; internal set; }
@@ -113,7 +119,27 @@ public sealed class Guest
 	/// <summary>Happiness when the guest joined [+524].</summary>
 	public float QueueJoinHappiness { get; internal set; }
 
+	// Walk speed (docs/reverse/WALK-plan.md §4; original guest offsets in brackets)
+	/// <summary>Base speed [+192]: 60, 80, 100, 120 or 140.</summary>
+	public int BaseSpeed { get; internal set; }
+	/// <summary>Toilet speed term [+194]: 25 while toilet &gt; 80, else 0.</summary>
+	public int ToiletBonus { get; internal set; }
+	/// <summary>Decaying speed boost [+196].</summary>
+	public ushort Boost { get; internal set; }
+	/// <summary>Smoothed speed input s [+200], 0 at creation.</summary>
+	public float SmoothedSpeed { get; internal set; }
+	/// <summary>Max speed [nav +28] in 16.16 cells per park turn, from <see cref="GuestSpeed.Caps"/>.</summary>
+	public int MaxSpeed { get; internal set; } = GuestSpeed.Floor;
+	/// <summary>Max steering force [nav +24].</summary>
+	public int MaxForce { get; internal set; } = GuestSpeed.Floor;
+	/// <summary>The steering state [+212]; its position is <see cref="X"/>/<see cref="Y"/>.</summary>
+	public GuestNavigation Navigation { get; } = new();
+
 	// Navigation
+	internal float StepFromX;         // position before the last steering step (presentation)
+	internal float StepFromY;
+	internal float StepFromDistance;
+	internal long StepTick = -1;      // tick of the last steering step (presentation)
 	internal int CellX;
 	internal int CellY;
 	internal int PreviousCellX = -1;
@@ -121,9 +147,7 @@ public sealed class Guest
 	internal bool OnGrid;
 	internal float OffsetX;
 	internal float OffsetY;
-	internal float WaypointX;
-	internal float WaypointY;
-	internal bool HasWaypoint;
+	internal bool HasWaypoint;        // walking to a destination (cleared on arrival)
 	internal (int X, int Y)[]? Lane;
 	internal int LaneIndex;
 	internal bool LaneReversed;

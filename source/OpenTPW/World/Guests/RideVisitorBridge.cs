@@ -73,6 +73,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// <summary>Walkable path cell the queue falls back to when the entrance's outside cell is neither a queue nor a path cell.</summary>
 	public (int X, int Y) EntranceCell { get; set; }
 	public (int X, int Y) ExitCell { get; set; }
+	public (float X, float Y) EntryCellStandPos { get; set; } = (0.5f, 0.5f);
+	public int Rotation { get; set; }
 	public bool HasCells { get; set; }
 	/// <summary>Queue rules from the object's .sam data (<see cref="QueueParameters"/>); defaults describe a queue-less object.</summary>
 	public QueueParameters Parameters { get; set; } = QueueParameters.Default;

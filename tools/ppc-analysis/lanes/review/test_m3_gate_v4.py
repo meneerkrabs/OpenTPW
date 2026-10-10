@@ -151,22 +151,36 @@ class Arithmetic(unittest.TestCase):
         self.assertEqual(529, bounce_hold_turns(31))
 
     def test_head_not_ready_bound_uses_the_opentpw_walk_speed(self):
-        # HeadNotReadyBound: min(2 max(1, N) + 2, N + 4) cells at WalkSpeedCellsPerSecond 1.0 x 0.7, plus 3 + 22 + 1.
+        # At review: min(2 max(1, N) + 2, N + 4) cells at WalkSpeedCellsPerSecond 1.0 x 0.7, plus 3 + 22 + 1.
         def bound(cells_n, speed=1.0):
             cells = min(2 * max(1, cells_n) + 2, cells_n + 4)
             return math.ceil(cells / (speed * 0.7) * 1000 / 248) + 3 + 22 + 1
         self.assertEqual((194, 50), (bound(25), bound(1)))
         # At the traced floor (WALK-plan section 4: 0.12 cell per turn at s = 0.6, i.e. 0.484 cell/s) it would be larger:
-        # the 194 turns are OpenTPW timing, not an original-derived bound.
+        # the 194 turns were OpenTPW timing, not an original-derived bound (GATE-004).
         self.assertGreater(bound(25, speed=0.12 / 0.248 / 0.7), 194)
+
+    def test_head_not_ready_bound_after_walk_i(self):
+        # WALK-I (WALK-plan section 15) replaced the walk term: two queue walks over N cells, N x C + 2 x w2 with the
+        # enumerated per-cell term C = 9 and w2 = 15, plus the same 3 + 22 + 1. The traced floor is inside C: one cell at
+        # 0.118 cell per update takes 8.47 updates.
+        def bound(cells_n):
+            return max(1, cells_n) * 9 + 2 * 15 + 3 + 22 + 1
+        self.assertEqual((281, 65), (bound(25), bound(1)))
+        self.assertEqual(9, math.ceil(65536 / int(0.59 * 0.2 * 65536)))
 
 
 @unittest.skipUnless(v1.has_commit(SUBJECT), f'{SUBJECT} not in this repository')
 class StaticRound4(unittest.TestCase):
     def test_head_not_ready_bound_reads_the_opentpw_walk_speed(self):
+        # Round 4 pinned the walk speed read (GATE-004); WALK-I retired it for the traced per-cell term, so this now pins
+        # that the bound no longer reads an OpenTPW walk speed and uses QueueCellWalkTurns and w2.
         gate = v1.show(v1.GATE, SUBJECT)
-        self.assertIn('HeadNotReadyBound( item.Runtime.Visitors.QueueSizeInCells, guests.Settings.WalkSpeedCellsPerSecond )', gate)
-        self.assertIn('const float TiredWalkFactor = 0.7f;', gate)
+        self.assertIn('HeadNotReadyBound( item.Runtime.Visitors.QueueSizeInCells )', gate)
+        self.assertNotIn('WalkSpeedCellsPerSecond', gate)
+        self.assertNotIn('TiredWalkFactor', gate)
+        self.assertIn('var walkTurns = cells * QueueCellWalkTurns + 2 * MoveUpWalkTurns;', gate)
+        self.assertIn('internal const long QueueCellWalkTurns = 9;', gate)
 
     def test_walk_scope_failure_leaves_waits_unjudged(self):
         gate = v1.show(v1.GATE, SUBJECT)

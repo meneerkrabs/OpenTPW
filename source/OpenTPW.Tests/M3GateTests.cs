@@ -49,20 +49,49 @@ public class M3GateTests
 		StringAssert.Contains( summary[3], "first violation tick 7" );
 	}
 
-	/// <summary>The queue row's head bound follows the state-11/12 rules: walk min(2N + 2, N + 4) cells at 0.7 x walk speed, the gap-2 move-up wait, two interludes and one update.</summary>
+	/// <summary>
+	/// The queue row's head bound follows the state-11/12 rules: two queue walks over N cells (N × C + 2 × w₂, WALK-I's
+	/// per-cell term), the gap-2 move-up wait, two interludes and one update.
+	/// </summary>
 	[TestMethod]
 	public void HeadNotReadyBoundFollowsTheQueueRules()
 	{
-		// 25 cells: the head only walks forward, so N + 4 = 29 cells / 0.7 cells/s = 41.43 s = 167.05 turns of 248 ms -> 168;
-		// + trunc(1.2 x 2) + 1 = 3; + 2 x 11; + 1 (review GATE-V3 S1; 2N + 2 = 52 cells gave 326).
-		Assert.AreEqual( 194L, M3GateRun.HeadNotReadyBound( 25, 1.0f ).Turns );
-		StringAssert.Contains( M3GateRun.HeadNotReadyBound( 25, 1.0f ).Derivation, "walk 29 cells" );
-		// One cell: 2N + 2 = 4 is below N + 4 = 5; 4 / 0.7 = 5.71 s = 23.04 turns -> 24; + 3 + 22 + 1.
-		Assert.AreEqual( 50L, M3GateRun.HeadNotReadyBound( 1, 1.0f ).Turns );
-		Assert.AreEqual( 50L, M3GateRun.HeadNotReadyBound( 0, 1.0f ).Turns );
-		// A faster walk only shortens the walk term: 29 / 1.4 = 20.71 s = 83.53 turns -> 84.
-		Assert.AreEqual( 84L + 26, M3GateRun.HeadNotReadyBound( 25, 2.0f ).Turns );
-		StringAssert.Contains( M3GateRun.HeadNotReadyBound( 25, 1.0f ).Derivation, "2 interludes x 11" );
+		// WALK-I replaced the old walk term (N + 4 cells at OpenTPW's former 1 cell/s x 0.7, 194 turns for 25 cells and 50 for
+		// one cell, GATE-004) with the traced steering's: 25 x 9 + 2 x 15 = 255; + trunc(1.2 x 2) + 1 = 3; + 2 x 11; + 1.
+		Assert.AreEqual( 281L, M3GateRun.HeadNotReadyBound( 25 ).Turns );
+		StringAssert.Contains( M3GateRun.HeadNotReadyBound( 25 ).Derivation, "25 x C 9 + 2 x w2 15 = 255 turns" );
+		// One cell (shops, toilets): 9 + 30 = 39; + 3 + 22 + 1. An empty queue counts as one cell.
+		Assert.AreEqual( 65L, M3GateRun.HeadNotReadyBound( 1 ).Turns );
+		Assert.AreEqual( 65L, M3GateRun.HeadNotReadyBound( 0 ).Turns );
+		StringAssert.Contains( M3GateRun.HeadNotReadyBound( 25 ).Derivation, "2 interludes x 11" );
+	}
+
+	/// <summary>The join walk and the head's own walk (WALK-I): one queue walk over k cells takes at most k × 9 + 15 updates.</summary>
+	[TestMethod]
+	public void QueueWalkTermsFollowTheEnumeratedPerCellTerm()
+	{
+		Assert.AreEqual( 9L, M3GateRun.QueueCellWalkTurns );
+		Assert.AreEqual( 15L, M3GateRun.QueueWalkTurns( 0 ) );
+		Assert.AreEqual( 24L, M3GateRun.QueueWalkTurns( 1 ) );
+		// Joining a 25-cell queue: position 0 is in the front cell, 25 crossings from the join cell; position 50 in cell 12
+		// (13 crossings); position 99 in the back cell (1 crossing).
+		Assert.AreEqual( 240L, M3GateRun.JoinWalkTurns( 0, 25 ) );
+		Assert.AreEqual( 132L, M3GateRun.JoinWalkTurns( 50, 25 ) );
+		Assert.AreEqual( 24L, M3GateRun.JoinWalkTurns( 99, 25 ) );
+		Assert.AreEqual( 24L, M3GateRun.JoinWalkTurns( 3, 1 ) );
+		// W(p) with the join walk (GATE-005 closed): 240 + 178 = 418 at the head, 132 + 4,188 at p = 50, 24 + 8,021 at 99.
+		Assert.AreEqual( 418L, M3GateRun.BoardingWaitBound( 0, 5, 56, 121, M3GateRun.JoinWalkTurns( 0, 25 ) ) );
+		Assert.AreEqual( 4320L, M3GateRun.BoardingWaitBound( 50, 5, 56, 121, M3GateRun.JoinWalkTurns( 50, 25 ) ) );
+		Assert.AreEqual( 8045L, M3GateRun.BoardingWaitBound( 99, 5, 56, 121, M3GateRun.JoinWalkTurns( 99, 25 ) ) );
+		// The head's walk beyond H: none standing in the front cell; else j x 9 + 15 from its queue cell j.
+		var head = new Guest( 1, 0 ) { State = GuestState.Queueing, QueueCellIndex = 0 };
+		Assert.AreEqual( 0L, M3GateRun.HeadWalkTurns( head, 25 ) );
+		head.State = GuestState.MovingUpQueue;
+		Assert.AreEqual( 15L, M3GateRun.HeadWalkTurns( head, 25 ) );
+		head.QueueCellIndex = 3;
+		Assert.AreEqual( 42L, M3GateRun.HeadWalkTurns( head, 25 ) );
+		head.QueueCellIndex = 25; // still on the join cell
+		Assert.AreEqual( 240L, M3GateRun.HeadWalkTurns( head, 25 ) );
 	}
 
 	/// <summary>The BOUNCE boarding bound (docs/reverse/BOARD-plan.md §7, §8; WALK-plan §9 walk terms) from its traced rules: P, R, H₀, w, w₂ and W(p).</summary>

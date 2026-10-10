@@ -105,6 +105,10 @@ public interface IRideVisitorBridge
 	(int X, int Y) EntranceCell { get; }
 	/// <summary>Walkable path cell where released guests reappear.</summary>
 	(int X, int Y) ExitCell { get; }
+	/// <summary>.sam <c>UsageInfo.EntryCellStandPosX/Y</c>: where in its entrance cell a called guest stands (0..1 per axis).</summary>
+	(float X, float Y) EntryCellStandPos => (0.5f, 0.5f);
+	/// <summary>The object's rotation in degrees (0/90/180/270), which rotates <see cref="EntryCellStandPos"/>.</summary>
+	int Rotation => 0;
 	int QueueLength { get; }
 	/// <summary>min(4 × queue cells, the data limit).</summary>
 	int MaximumQueueLength { get; }

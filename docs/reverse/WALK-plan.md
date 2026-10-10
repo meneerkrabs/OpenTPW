@@ -373,3 +373,58 @@ discovers it.
   - the reroute rule;
   - the separation on/off rule;
   - the base-speed table slice.
+
+## 15. WALK-I: implementation and the queue walk term
+
+WALK-I implements §11 in `source/OpenTPW/World/Guests/GuestNavigation.cs` (`Fixed16`,
+`GuestNavigation`, `GuestSpeed`) and `GuestSimulation`. The C# step reproduces this lane's
+pinned worst cases exactly (`WalkTests.WorstWalksAtTheSpeedFloorMatchTheWitness`: w = 10,
+w₂ = 14 and reversed w = 17 at s = 0.59 on the 7-grid; the w₂ reroute at s = 0.2; w = 72 at
+the floor). The untraced parts are the walk register: WALK-001 (boost increments), WALK-002
+(avoid_walls' corner branches), WALK-003 (the separation force is zero) and WALK-004
+(OpenTPW's routes: one path cell per destination, the queue cells in order, refilled five
+waypoints at a time; the stuck reroute prepends the current cell). A queue walk also treats
+the cell ahead of its destination and the cell behind its start as walkable, as this lane's
+strip does (E and B are open there). QUEUE-007 is closed: the stand point is in the
+entrance cell at trunc(255 · EntryCellStandPos) after rotation.
+
+**Per-cell term (§11.7).** `WalkTests.QueueWalkTermFullEnumeration` (`OPENTPW_WALK_DERIVE=1`)
+runs OpenTPW's step on queue routes:
+
+- every turn sequence with 0–4 cell crossings and every front direction of the destination
+  cell, plus four long shapes (straight, staircase, a turn every 2 or 3 cells) with 5–25
+  crossings;
+- starts on a 5 × 5 grid over the start cell (3 × 3 for the long shapes), a radius from its
+  edges, with 17 stale velocities;
+- slots at depths 0/63/127/191 on both depth axes, laterals 114/127/141 (2 × 2 for the long
+  shapes);
+- separation off and at its maximum against the walk;
+- s = 0.59 and 0.60 … 2.00 in steps of 0.05.
+
+A walk fails only at 5,000 updates; a reroute is followed (WALK-004). About 74 million walks,
+0 failures:
+
+| Crossings k | 0 | 1 | 2 | 3 | 4 | 5 | 8 | 12 | 16 | 20 | 25 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Worst (updates) | 8 | 18 | 25 | 33 | 42 | 50 | 76 | 109 | 143 | 176 | 218 |
+| k × 9 + 15 | 15 | 24 | 33 | 42 | 51 | 60 | 87 | 123 | 159 | 195 | 240 |
+
+So one queue walk across k cells to a slot takes at most **k × C + w₂** updates with
+**C = 9**. The slope of the long routes is 8.4–8.5 updates per cell: at s ≥ 0.59 the max speed
+is ≥ 7,733, and a straight cell takes 65,536 / 7,733 = 8.47 updates at full speed. 573 walks
+with one crossing rerouted (a fast guest with a stale velocity into a fence) and still arrived
+within 18. Like w and w₂, the term needs W2. It is a bounded enumeration, not a proof, and it
+holds for OpenTPW's walk: for the original, to the extent WALK-002 to WALK-004 do. The M3 gate
+uses it for the head-not-ready bound (N × C + 2 × w₂ for two walks over N cells) and adds the
+join walk J(p) = (N − cell of p) × C + w₂ to W(p) (docs/M3-GATE.md). That retires
+`[APPROX:GATE-004]` and `[APPROX:GATE-005]`.
+
+**PPC oracle (docs/reverse/ORACLE.md, 16bb38e).** The oracle ran `0xffe38` and `0xe6b28` in
+isolation. The setter agrees with §1 on 518 inputs, including NaN → 655 and ±∞. For the
+smoothing it reported F6: `0xe6b9c` is `fmadds` (one rounding of 3·s + sum/100), and
+`boost · 99` is stored as a u16 before `/100`, so a boost above 661 wraps. WALK-I uses
+`MathF.FusedMultiplyAdd` and the u16 product (`GuestSpeed.Smooth`, `GuestSpeed.Decay`). The
+oracle bridge's hooks map to two public seams that `GuestSimulation` itself calls:
+`guest_speed_limits` → `GuestSpeed.Caps(s)` (max speed `+28`, max force `+24`) and
+`guest_speed_smoothing` → `GuestSpeed.Update(s, base, bonus, boost)` (s, boost, max speed,
+max force). The bridge cases are added with the oracle after merge.

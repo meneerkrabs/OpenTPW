@@ -289,7 +289,10 @@ public class PathBuilderTests
 
 	/// <summary>
 	/// The guests' run on the cross grid has the same raw hash before and after the cell map became the source of
-	/// truth (value recorded on 025d410 + the research commit, before the flip).
+	/// truth (value recorded on 025d410 + the research commit, before the flip: 92 admissions, 0x3622300C23D95AB8).
+	/// WALK-I re-pinned it: the guests walk with the traced per-guest speed from s = 0 (about 0.8 cell/s at the mean base
+	/// speed instead of 1 cell/s) and draw their base speed from the guest stream, so two fewer guests reach the booth in
+	/// 120 s and the hash changes. The cell map is still the only path source; the run is the same with or without it.
 	/// </summary>
 	[TestMethod]
 	public void OwnershipFlipKeepsGuestPathingIdentical()
@@ -297,8 +300,8 @@ public class PathBuilderTests
 		var simulation = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), 5 );
 		for ( var tick = 0; tick < 120 * 60; tick++ )
 			simulation.Tick( Tick );
-		Assert.AreEqual( 92, simulation.Admissions );
-		Assert.AreEqual( 0x3622300C23D95AB8UL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
+		Assert.AreEqual( 90, simulation.Admissions, $"{simulation.Admissions}" );
+		Assert.AreEqual( 0x363C3D1A51AC8DD7UL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
 	}
 
 	[TestMethod]

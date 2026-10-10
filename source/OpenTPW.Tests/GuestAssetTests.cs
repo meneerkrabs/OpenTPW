@@ -96,6 +96,7 @@ public class GuestAssetTests
 		foreach ( var cell in new[] { (39, 22), (39, 23), (40, 21), (41, 21), (39, 24), (42, 21), (39, 25), (43, 21) } )
 			simulation.SpawnInPark( cell.Item1, cell.Item2 );
 		double? runningAt = null;
+		var ridersAtStart = 0;
 		var maximumRiders = 0;
 		for ( var tick = 0; tick < 60 * 60; tick++ )
 		{
@@ -104,12 +105,17 @@ public class GuestAssetTests
 			vm.Advance( Tick );
 			maximumRiders = Math.Max( maximumRiders, vm[RideVariables.VAR_ONRIDE] );
 			if ( runningAt == null && vm[RideVariables.VAR_RUNNING] == 1 )
-				runningAt = vm.TimeMilliseconds;
+				(runningAt, ridersAtStart) = (vm.TimeMilliseconds, vm[RideVariables.VAR_ONRIDE]);
 		}
 		Assert.AreNotEqual( RideVMState.Faulted, vm.State, vm.FaultMessage );
 		Assert.AreEqual( 6, maximumRiders, "Totem.RSE boarded a full load through HUSH/WALKON" );
 		Assert.IsNotNull( runningAt );
-		Assert.IsTrue( runningAt < 10_000, $"started at {runningAt} ms, before the 10 s passenger time-out" );
+		// The first run starts with a full load, not on the 10 s passenger time-out. Since WALK-I it starts at about 17 s
+		// (was under 10 s): each called guest of this one-cell queue walks into the entrance cell to the traced stand point
+		// (about 8 park turns, QUEUE-007 closed) before the next is called, and the guests walk at their traced speed from
+		// s = 0, so the six boardings are spread over more time.
+		Assert.AreEqual( 6, ridersAtStart, $"started at {runningAt} ms with {ridersAtStart} riders" );
+		Assert.IsTrue( runningAt < 20_000, $"started at {runningAt} ms" );
 		Assert.IsTrue( bridge.ReleasedTotal >= 6, "HOP/WALKOFF/WALKGET → VAR_LETMEOFF released the riders" );
 		Assert.IsTrue( simulation.Guests.Count( guest => guest.RidesTaken > 0 ) >= 6 );
 		Assert.IsTrue( simulation.Guests.All( guest => guest.State != GuestState.Using || bridge.Riders.Contains( guest.Id ) ) );

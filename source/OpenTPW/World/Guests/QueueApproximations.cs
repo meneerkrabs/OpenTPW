@@ -15,7 +15,6 @@ public static class QueueApproximations
 		("QUEUE-004", "the join excitement gate applies to rides and sideshows with |preferred − excitement| ≥ 45"),
 		("QUEUE-005", "queue edits re-evaluate guests: beyond 4 × cells or off the queue leave, others walk to their position"),
 		("QUEUE-006", "queue positions: depth from the cell's front edge, lateral across it; the fourth position stays in its cell"),
-		("QUEUE-007", "the entry stand point is the front cell's edge toward the ride"),
 		("QUEUE-008", "the ride-failure exit is VAR_BROKEN ≠ 0"),
 		("QUEUE-009", "the queue facing change's sign comes from the 1-in-10 draw"),
 		("QUEUE-010", "guests leaving a queue reappear on its join cell at once"),

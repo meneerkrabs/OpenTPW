@@ -493,12 +493,33 @@ function modifiers(event) {
 	return (event.altKey ? 1 : 0) | (event.ctrlKey ? 2 : 0) | (event.shiftKey ? 4 : 0) | (event.metaKey ? 8 : 0);
 }
 
+const heldKeys = new Set();
+const heldButtons = new Set();
+
+// Releases everything held when the canvas loses the keyboard or the page is hidden, because
+// the matching key-up or mouse-up then never reaches the canvas.
+function releaseAll() {
+	for (const name of heldKeys)
+		events.push(`k 0 ${name} 0 0`);
+	for (const button of heldButtons)
+		events.push(`b 0 ${button}`);
+	heldKeys.clear();
+	heldButtons.clear();
+}
+
 function attachInput() {
 	canvas.tabIndex = 0;
 	const key = down => event => {
 		const name = keyName(event.code);
-		if (name)
+		if (name) {
+			if (!down && !heldKeys.has(name))
+				return;
+			if (down)
+				heldKeys.add(name);
+			else
+				heldKeys.delete(name);
 			events.push(`k ${down ? 1 : 0} ${name} ${modifiers(event)} ${event.repeat ? 1 : 0}`);
+		}
 		if (down && event.key.length === 1 && !event.ctrlKey && !event.metaKey)
 			events.push(`c ${event.key.codePointAt(0)}`);
 		// Keep Tab, Space, arrows and Backspace in the game instead of scrolling or navigating.
@@ -510,8 +531,22 @@ function attachInput() {
 	const position = event => events.push(`m ${event.offsetX} ${event.offsetY}`);
 	const button = event => event.button === 0 ? 0 : event.button === 1 ? 1 : event.button === 2 ? 2 : 3 + event.button - 3;
 	canvas.addEventListener('mousemove', position);
-	canvas.addEventListener('mousedown', event => { canvas.focus(); position(event); events.push(`b 1 ${button(event)}`); });
-	window.addEventListener('mouseup', event => events.push(`b 0 ${button(event)}`));
+	canvas.addEventListener('mousedown', event => {
+		canvas.focus();
+		position(event);
+		heldButtons.add(button(event));
+		events.push(`b 1 ${button(event)}`);
+	});
+	window.addEventListener('mouseup', event => {
+		if (heldButtons.delete(button(event)))
+			events.push(`b 0 ${button(event)}`);
+	});
+	canvas.addEventListener('blur', releaseAll);
+	window.addEventListener('blur', releaseAll);
+	document.addEventListener('visibilitychange', () => {
+		if (document.hidden)
+			releaseAll();
+	});
 	canvas.addEventListener('contextmenu', event => event.preventDefault());
 	canvas.addEventListener('wheel', event => {
 		events.push(`w ${-Math.sign(event.deltaY)}`);

@@ -84,6 +84,9 @@ namespace Veldrid
 				deferredReleases.Add( button );
 				return;
 			}
+			// Pressed again before the held-back release: it was released and pressed, and stays down.
+			if ( down && deferredReleases.Remove( button ) )
+				Mouse.Add( new MouseEvent( button, false ) );
 			if ( down )
 				pressedThisFrame[(int)button] = true;
 			buttons[(int)button] = down;

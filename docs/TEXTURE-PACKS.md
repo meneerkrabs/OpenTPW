@@ -142,7 +142,10 @@ end of every build that names the directory and counted in `pack.json` as `HeroT
 
 ### Switching at runtime
 
-Changing the pack in the options reloads every texture the game has made from a `.wct` (a registry of
+Changing the choice in the options takes effect at once, in the background: there is no loading screen
+and the player keeps playing while the textures change one by one; a small line at the top of the screen
+shows "Updating textures in the background... n / total" until the switch is done. (Building a pack is a
+separate, slow step: see "Building a pack".) Technically, the switch reloads every texture the game has made from a `.wct` (a registry of
 weak references keyed by game path): the new pixels are decoded on a worker thread through a small
 bounded queue (a 4x pack would otherwise hold gigabytes in memory), uploaded on the render thread in
 slices of about 8 ms per frame, and swapped into the existing `Texture` objects. Materials look the GPU

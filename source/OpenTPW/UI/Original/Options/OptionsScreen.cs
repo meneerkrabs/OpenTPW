@@ -87,45 +87,22 @@ public static class OptionsScreen
 	};
 
 	/// <summary>
-	/// [EXT:texture-pack] Modal "Loading textures... n / total" screen with a progress bar. It drives the switch (one slice of
-	/// work per frame), takes all input (no Back) until the switch is done, then removes itself and calls <paramref name="done"/>.
+	/// [EXT:texture-pack] Non-blocking progress line for a running texture switch, drawn over the game or the front end at the
+	/// top centre: "Updating textures in the background... n / total" with a thin bar. The switch runs from the game loop
+	/// (<see cref="TexturePackSwitch.PumpCurrent"/>); the player keeps playing while the textures change one by one.
 	/// </summary>
-	public static UiScreen TextureSwitchScreen( UiScreenStack stack, UiStringTable strings, ITexturePackSwitch textureSwitch, Action done )
+	public static void DrawTextureSwitchProgress( UiContext context, UiStringTable strings, ITexturePackSwitch textureSwitch )
 	{
-		var screen = new UiScreen( "textureSwitch" );
-		var rect = UiDialogs.CenteredWindow( 1100, 420 );
-		screen.Add( new UiModelImage { Id = "window", Model = "w_dialog", Bounds = rect, Anchor = UiAnchor.Center } );
-		screen.Add( new UiLabel
-		{
-			Id = "message",
-			Text = () => string.Format( strings.Extra( OpenTpwText.LoadingTextures ), textureSwitch.Done, textureSwitch.Total ),
-			Font = fonts => fonts.Label,
-			Align = UiAlign.Center,
-			Bounds = new UiRect( rect.X + 90, rect.Y + 90, rect.Width - 260, 90 ),
-			Anchor = UiAnchor.Center
-		} );
-		var barArea = new UiRect( rect.X + 130, rect.Y + 230, rect.Width - 340, 50 );
-		screen.DrawOverlay = context =>
-		{
-			var outer = context.Canvas.Map( barArea, UiAnchor.Center );
-			context.Batch.AddRectangle( outer, UiColors.Shadow );
-			var fraction = textureSwitch.Total == 0 ? 1f : Math.Clamp( textureSwitch.Done / (float)textureSwitch.Total, 0f, 1f );
-			var inner = outer.Inflate( -3 * context.Canvas.Scale );
-			context.Batch.AddRectangle( inner with { Width = inner.Width * fraction }, UiColors.Value );
-		};
-		var finished = false;
-		screen.Updating = _ =>
-		{
-			if ( finished )
-				return;
-			textureSwitch.Pump();
-			if ( !textureSwitch.Finished )
-				return;
-			finished = true;
-			stack.Pop();
-			done();
-		};
-		return screen;
+		if ( textureSwitch.Finished )
+			return;
+		var area = context.Canvas.Map( new UiRect( 624, 24, 800, 64 ), UiAnchor.Top );
+		context.Batch.AddRectangle( area, UiColors.HelpBackground );
+		var text = string.Format( strings.Extra( OpenTpwText.LoadingTextures ), textureSwitch.Done, textureSwitch.Total );
+		context.DrawFittedText( context.Fonts.Small, text, area with { Height = area.Height * 0.7f }, UiColors.Text );
+		var bar = new UiRect( area.X + area.Width * 0.05f, area.Y + area.Height * 0.74f, area.Width * 0.9f, area.Height * 0.12f );
+		context.Batch.AddRectangle( bar, UiColors.Shadow );
+		var fraction = textureSwitch.Total == 0 ? 1f : Math.Clamp( textureSwitch.Done / (float)textureSwitch.Total, 0f, 1f );
+		context.Batch.AddRectangle( bar with { Width = bar.Width * fraction }, UiColors.Value );
 	}
 
 	public static T Cycle<T>( IReadOnlyList<T> values, T current, int direction )
@@ -374,11 +351,12 @@ public static class OptionsScreen
 			// Language and graphics changes may need a restart; tell the player after any display confirmation.
 			void Finish()
 			{
-				// [EXT:texture-pack] a changed pack is applied now, behind a loading bar; the restart notice (if any) follows it.
-				if ( texturesChanged && services.BeginTexturePackSwitch?.Invoke( state.TexturePack ) is { } textureSwitch )
+				// [EXT:texture-pack] a changed pack starts switching now, in the background: the game loop swaps the textures
+				// while the player keeps playing, with a progress line at the top (DrawTextureSwitchProgress).
+				if ( texturesChanged )
 				{
-					stack.Push( TextureSwitchScreen( stack, strings, textureSwitch, () => { texturesChanged = false; Finish(); } ) );
-					return;
+					services.BeginTexturePackSwitch?.Invoke( state.TexturePack );
+					texturesChanged = false;
 				}
 				if ( languageChanged || graphicsRestart )
 					stack.Push( UiDialogs.Message( "restart", () => strings[UIStrings.RestartGame], (() => strings.Extra( OpenTpwText.Back ), () => { stack.Pop(); closed(); }) ) );
@@ -446,7 +424,7 @@ public static class OptionsScreen
 
 		// Two columns with the authored right column's panel size and pitch (x 1331..1964; the left column starts at 57).
 		var rowIndex = 0;
-		void Row( string id, Func<string> text, Func<IEnumerable<string>> variants, Action<int> change )
+		void Row( string id, Func<string> text, Func<IEnumerable<string>> variants, Action<int> change, string? help = null )
 		{
 			var column = rowIndex / 3;
 			var left = column == 0 ? 57f : 1331f;
@@ -454,7 +432,9 @@ public static class OptionsScreen
 			rowIndex++;
 			page.Panel( id, "f_optpanel", Rect( left, top, left + 633, top + 149 ) );
 			page.Label( id, Rect( left + 70, top + 50, left + 370, top + 95 ), text, variants );
-			page.Toggle( id, "b_on2", Rect( left + 476, top + 23, left + 579, top + 125 ), () => true, () => change( 1 ), true, change );
+			var button = page.Toggle( id, "b_on2", Rect( left + 476, top + 23, left + 579, top + 125 ), () => true, () => change( 1 ), true, change );
+			if ( help != null )
+				button.Help = help;
 		}
 		// [EXT:display] window mode, upscaling, render scale and interface scale rows are OpenTPW extensions
 		string Prefix( OpenTpwText key ) => strings.Extra( key );
@@ -506,7 +486,7 @@ public static class OptionsScreen
 		if ( graphics != null )
 			Row( "enhancedTextures", () => Prefix( OpenTpwText.EnhancedTextures ) + PackText( state.TexturePack ),
 				() => PackChoices().Select( pack => Prefix( OpenTpwText.EnhancedTextures ) + PackText( pack ) ),
-				direction => state.TexturePack = CycleWrap( PackChoices(), state.TexturePack, direction ) );
+				direction => state.TexturePack = CycleWrap( PackChoices(), state.TexturePack, direction ), strings.Extra( OpenTpwText.TexturePackHelp ) );
 		// [EXT:language] language row (original installs had one language; OpenTPW reads CD overlays)
 		string LanguageName( string language ) => " " + (SupplementaryStrings.LanguageNames.TryGetValue( language, out var name ) ? name : language);
 		Row( "language", () => Prefix( OpenTpwText.Language ) + LanguageName( state.Language ),

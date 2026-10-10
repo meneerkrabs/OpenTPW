@@ -230,10 +230,12 @@ The enhanced-textures row (`enhancedTextures`, `[EXT:texture-pack]`) cycles "Ori
 "Enhanced" (the default: the HD interface art shipped in `content/hero-art` plus the local `enhanced` pack
 when one is built), then every other installed texture pack (a directory under `<config>/texture-packs` with a
 valid `pack.json`; see TEXTURE-PACKS.md): `detailed` is labelled "Detailed" (translated in all six languages),
-other pack names are shown as they are. The choice is applied on OK, without a restart: a modal
-"Loading textures... n / total" screen with a progress bar (the `w_dialog` window; it takes all
-input and has no Back) swaps the textures of the running game in place while the game keeps
-rendering, then the options close. No restart notice appears for a texture pack.
+other pack names are shown as they are. Its popup help explains the choice and that switching runs in the
+background. The choice is applied on OK, without a restart and without a loading screen: the options close
+and the game loop swaps the textures of the running game in place while the player keeps playing; a
+non-blocking line at the top centre ("Updating textures in the background... n / total" with a thin bar,
+`OptionsScreen.DrawTextureSwitchProgress`) shows the progress and disappears when the switch is done. No
+restart notice appears for a texture pack.
 
 OK saves `save/opentpw-options.json`. Size/window-mode changes use
 `ApplyWithConfirmation` (15 s) with the original UITEXT 400 question showing the display's

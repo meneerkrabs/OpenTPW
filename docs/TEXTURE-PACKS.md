@@ -7,8 +7,8 @@ is one. Original reproduces the original look unchanged.
 
 ## Shipped interface art
 
-`content/hero-art/textures/ui/textures/*.wct.png` holds 48 HD replacements (8×, e.g. a 64×64 texture
-becomes 512×512) for the HUD, lobby and options buttons: buy, info, money, research, map, the build
+`content/hero-art/textures/ui/textures/*.wct.png` holds 50 HD replacements (8×, e.g. a 64×64 texture
+becomes 512×512) for the HUD, lobby and options buttons: buy, info, money, research, map, camera, the build
 categories (rides, shops, shows, features), door, enter-park, erase, OK, exit, retract, the
 arrows and the slider ball, with their pressed, highlighted and disabled states. With Enhanced they
 replace the original interface art before any local pack is consulted (`TexturePack.Find`).
@@ -26,13 +26,9 @@ drop shadow are removed, together with the one-pixel blend into them), the backd
 painted with the nearest outline colour before resampling and every transparent texel gets the nearest solid
 icon colour, so neither the backdrop nor texture filtering leaves a light halo, and the state variants are derived from the
 redrawn base with the original's colour change (per-channel gain for pressed and grey states, a
-fitted colour mapping for highlighted ones). For the round yellow HUD buttons and the green build-category
-buttons, `tools/hero-art/rim.py` then keeps the original rim (from the anime-upscaled original) and takes
-only the inner face and symbol from the redrawn icon, so every button has the original's thin shaded rim
-instead of the heavier one the image model drew; its outline is a clean anti-aliased ellipse on the original's
-outline (where the original's alpha crosses 50%), because the upscaled original's own alpha carries a ragged
-drop-shadow fringe; the blue buttons, arrows, door panel and slider ball keep
-the redrawn version. The two option toggles `b_on1`/`b_on2` (multi-piece
+fitted colour mapping for highlighted ones). Every button keeps the rim the image model drew (an earlier
+version kept the original rim from the anime-upscaled original, but that rim is cropped in the original texture
+and vanishes on the darker pressed states). The two option toggles `b_on1`/`b_on2` (multi-piece
 atlases) stay original. These images are AI recreations of the original EA/Bullfrog icons; the
 project owner chose to ship them.
 

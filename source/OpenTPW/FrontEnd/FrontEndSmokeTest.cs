@@ -60,6 +60,91 @@ internal sealed class FrontEndSmokeTest : IDisposable
 
 	private UiContext Context => flow.Context;
 
+	private readonly string smokePacks = Path.Combine( Path.GetTempPath(), $"opentpw-frontend-smoke-packs-{Guid.NewGuid():N}" );
+	private string switchPath = "";
+	private (uint Width, uint Height, uint Pixel) switchOriginal;
+	private TexturePackSwitch? textureSwitch;
+
+	private static uint CenterPixel( Texture texture )
+	{
+		var pixels = texture.ReadPixels();
+		return BitConverter.ToUInt32( pixels, (int)((texture.Height / 2 * texture.Width + texture.Width / 2) * 4) );
+	}
+
+	/// <summary>
+	/// [EXT:texture-pack] Switches a throw-away pack on and off while the lobby runs: a lobby texture becomes the pack's solid
+	/// 96x96 image (checked by GPU readback), then the original comes back; frames keep rendering in between.
+	/// </summary>
+	private void PlanTexturePackSwitch()
+	{
+		const uint SolidPixel = 0xFF22C80C; // little-endian RGBA bytes 0C C8 22 FF
+		// Outside temporaryDirectory: a later step checks that no .json file is written there.
+		var packs = smokePacks;
+		Do( "texture pack on", () =>
+		{
+			var target = Texture.ReloadTargets().FirstOrDefault( entry => entry.Path.Contains( "lobby", StringComparison.OrdinalIgnoreCase ) );
+			Require( target.Path != null, "the lobby loaded textures from .wct files" );
+			switchPath = target.Path;
+			var texture = Texture.FindLoaded( switchPath )!;
+			switchOriginal = (texture.Width, texture.Height, CenterPixel( texture ));
+			Require( switchOriginal.Width != 96 && switchOriginal.Pixel != SolidPixel, "the original lobby texture differs from the pack's" );
+			var pack = Path.Combine( packs, "smoke" );
+			var file = Path.Combine( pack, TexturePack.TexturesDirectoryName, TexturePack.RelativeFileName( switchPath ) );
+			Directory.CreateDirectory( Path.GetDirectoryName( file )! );
+			var solid = new byte[96 * 96 * 4];
+			for ( var index = 0; index < solid.Length; index += 4 )
+				(solid[index], solid[index + 1], solid[index + 2], solid[index + 3]) = (0x0C, 0xC8, 0x22, 0xFF);
+			using ( var image = Image.LoadPixelData<Rgba32>( solid, 96, 96 ) )
+				image.SaveAsPng( file );
+			File.WriteAllText( Path.Combine( pack, TexturePack.ManifestFileName ), System.Text.Json.JsonSerializer.Serialize( new TexturePackManifest { Scale = 1 } ) );
+			var diagnostics = new List<string>();
+			textureSwitch = TexturePackSwitch.Begin( "smoke", diagnostics, packs );
+			Require( textureSwitch != null && diagnostics.Count == 0 && textureSwitch.Total > 0, "the pack switch starts with the loaded textures as its work" );
+		} );
+		steps.Enqueue( ("texture pack loads", () => { textureSwitch!.Pump(); return textureSwitch.Finished; }) );
+		Wait( "texture pack frames", 3 );
+		Do( "texture pack on verified", () =>
+		{
+			var texture = Texture.FindLoaded( switchPath )!;
+			Require( (texture.Width, texture.Height) == (96, 96), "the live texture now has the pack's size" );
+			Require( CenterPixel( texture ) == SolidPixel, "GPU readback shows the pack's pixels" );
+			CaptureFrame( "texture-pack-on.png" );
+			var diagnostics = new List<string>();
+			textureSwitch = TexturePackSwitch.Begin( "", diagnostics, packs );
+			Require( textureSwitch != null, "switching back starts" );
+		} );
+		steps.Enqueue( ("texture pack unloads", () => { textureSwitch!.Pump(); return textureSwitch.Finished; }) );
+		Wait( "texture pack off frames", 3 );
+		Do( "texture pack off verified", () =>
+		{
+			var texture = Texture.FindLoaded( switchPath )!;
+			Require( (texture.Width, texture.Height, CenterPixel( texture )) == switchOriginal, "the original pixels came back" );
+			CaptureFrame( "texture-pack-off.png" );
+		} );
+		// Optional timing with a real pack (read only): OPENTPW_SMOKE_PACKS_DIR=<texture-packs dir> OPENTPW_SMOKE_PACK=<name>.
+		var realPacks = Environment.GetEnvironmentVariable( "OPENTPW_SMOKE_PACKS_DIR" );
+		var realPack = Environment.GetEnvironmentVariable( "OPENTPW_SMOKE_PACK" );
+		if ( !string.IsNullOrEmpty( realPacks ) && !string.IsNullOrEmpty( realPack ) )
+		{
+			var timer = new System.Diagnostics.Stopwatch();
+			long memoryBefore = 0;
+			var frames = 0;
+			foreach ( var (name, pack) in new[] { ("on", realPack), ("off", "") } )
+			{
+				Do( $"real pack {name}", () =>
+				{
+					memoryBefore = System.Diagnostics.Process.GetCurrentProcess().WorkingSet64;
+					frames = frame;
+					timer.Restart();
+					textureSwitch = TexturePackSwitch.Begin( pack, new List<string>(), realPacks );
+					Require( textureSwitch != null, "the real pack switch starts" );
+				} );
+				steps.Enqueue( ($"real pack {name} loads", () => { textureSwitch!.Pump(); return textureSwitch.Finished; } ) );
+				Do( $"real pack {name} done", () => Log.Trace( $"Texture pack switch to '{(pack.Length == 0 ? "original" : pack)}': {textureSwitch!.Total} textures in {timer.Elapsed.TotalSeconds:F1} s over {frame - frames} frames; working set {memoryBefore / 1048576} -> {System.Diagnostics.Process.GetCurrentProcess().WorkingSet64 / 1048576} MB." ) );
+			}
+		}
+	}
+
 	private void Plan()
 	{
 		Wait( "lobby settles", 30 );
@@ -139,6 +224,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			VerifyText( files, flow.Strings.Extra( OpenTpwText.BonusFolder ), "bonus content label" );
 			flow.Menu.Stack.Pop();
 		} );
+		PlanTexturePackSwitch();
 		Do( "open options", () => Click( flow.Menu!.Main, "options" ) );
 		Wait( "options open", 3 );
 		Do( "options render", () =>
@@ -640,5 +726,8 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		flow.OnlineFolders = originalOnlineFolders;
 		try { Directory.Delete( temporaryDirectory, true ); }
 		catch ( IOException ) { }
+		try { Directory.Delete( smokePacks, true ); }
+		catch ( IOException ) { }
+		catch ( UnauthorizedAccessException ) { }
 	}
 }

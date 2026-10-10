@@ -14,9 +14,9 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **157 unresolved unique APPROX IDs**, 173 APPROX occurrences, 69 EXT occurrences, 70 DATA occurrences and 81 BIN occurrences.
+Current inventory: **155 unresolved unique APPROX IDs**, 171 APPROX occurrences, 84 EXT occurrences, 70 DATA occurrences and 88 BIN occurrences.
 
-Of these, 151 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
+Of these, 149 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
 CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.
 
@@ -28,10 +28,10 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | AUDIO | 5 | 5 |
 | COMPAT | 15 | 16 |
 | DET | 6 | 6 |
-| ECON | 36 | 36 |
+| ECON | 35 | 35 |
 | GATE | 2 | 2 |
 | ONLINE | 6 | 6 |
-| RIDES | 26 | 26 |
+| RIDES | 25 | 25 |
 | UI | 39 | 53 |
 
 ## Approximation declarations
@@ -93,69 +93,67 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-006 | Original-fidelity area (scope unadjudicated) | APR &gt; 0 repayment is an annuity at APR/12 per month, rounded down; interest accrues monthly on the balance | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:16` |
 | ECON-007 | Original-fidelity area (scope unadjudicated) | repaid loan offers reopen without the original credit-eligibility gate | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:17` |
 | ECON-008 | Original-fidelity area (scope unadjudicated) | 100 training points per grade (from Online_Standard.sam comments \\"costs 1000 to get up to grade 1\\") | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:18` |
-| ECON-009 | Original-fidelity area (scope unadjudicated) | candidate grade = average + 2 when \\"great\\", else average +-1 | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:19` |
-| ECON-010 | Original-fidelity area (scope unadjudicated) | TimeBetweenStaffUpdates/StaffTimeoutTime are seconds at normal speed | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:20` |
-| ECON-012 | Original-fidelity area (scope unadjudicated) | hiring is free; BaseCostPerStaff/CostPerQualityLevel unused | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:21` |
-| ECON-013 | Original-fidelity area (scope unadjudicated) | training budget is spent evenly over a role at month end | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:22` |
-| ECON-014 | Original-fidelity area (scope unadjudicated) | staff start at happiness 100 and it never changes (no strikes) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:23` |
-| ECON-015 | Original-fidelity area (scope unadjudicated) | researchers on strike or picked up are the original's excluded states 3, 4 and 5 | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:24` |
-| ECON-017 | Original-fidelity area (scope unadjudicated) | the research table is in info-id order and the player cannot step the cursor to another item | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:25` |
-| ECON-018 | Original-fidelity area (scope unadjudicated) | ride upgrade levels and add-on objects form the \\"upgrade\\" research category | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:26` |
-| ECON-019 | Original-fidelity area (scope unadjudicated) | an Instant Action start that imported the seed park researches as one grade-2 researcher while none is employed, standing in for the seed's undecoded researcher; the Mac code has no staffless research path | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:27` |
-| ECON-020 | Original-fidelity area (scope unadjudicated) | a sale drops LitterEffect/100 litter items | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:28` |
-| ECON-021 | Original-fidelity area (scope unadjudicated) | a repair takes WorkDuration game hours (x DurationOfUpgrade for upgrades); mechanics are dispatched instantly | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:29` |
-| ECON-022 | Original-fidelity area (scope unadjudicated) | a handyman removes one litter item per WorkDuration game minutes, park-wide | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:30` |
-| ECON-023 | Original-fidelity area (scope unadjudicated) | an open ride loses WearRate state of repair per game day; breakdown at 0 | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:31` |
-| ECON-024 | Original-fidelity area (scope unadjudicated) | a repair restores state of repair to 100 | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:32` |
-| ECON-025 | Original-fidelity area (scope unadjudicated) | scrap value basis = catalogue cost of all levels up to the current one; a scrap year is 365 park-clock days | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:33` |
-| ECON-026 | Original-fidelity area (scope unadjudicated) | park value = sum of scrap values | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:34` |
-| ECON-027 | Original-fidelity area (scope unadjudicated) | the record sub-kinds 0–3 are rides, shops, sideshows and features, and every hired staff member counts | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:35` |
-| ECON-028 | Original-fidelity area (scope unadjudicated) | purchases need a balance covering the cost | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:36` |
-| ECON-030 | Original-fidelity area (scope unadjudicated) | the simulation stops once bankrupt | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:37` |
-| ECON-031 | Original-fidelity area (scope unadjudicated) | imported parks are opened on load (open state not decoded) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:38` |
-| ECON-034 | Original-fidelity area (scope unadjudicated) | challenge type meanings come from Challenges.sam comments (shop types by ShopType/SpecialIngredient) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:39` |
-| ECON-035 | Original-fidelity area (scope unadjudicated) | offers wait for accept/decline; follow-ups are offered right after completion; failed challenges count as finished | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:40` |
-| ECON-036 | Original-fidelity area (scope unadjudicated) | build challenges with TargetVal 0 need one item; type 28 needs level 3 | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:41` |
-| ECON-038 | Original-fidelity area (scope unadjudicated) | big park uses MinCellsOwned, cameras use MinCellsCovered | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:42` |
-| ECON-039 | Original-fidelity area (scope unadjudicated) | the profit ticket compares the running yearly profit (mProfitThisYear) with ProfitYear directly; the original (0x10013FDC) scales the threshold by a per-objective factor not yet tied to that key | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:43` |
-| ECON-040 | Original-fidelity area (scope unadjudicated) | players start with 1 golden key and keys are not consumed by entering themes | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:44` |
-| ECON-041 | Original-fidelity area (scope unadjudicated) | features-directory objects with Research.Category != 3 are fixed (non-buyable) items | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:45` |
-| ECON-044 | Original-fidelity area (scope unadjudicated) | balloon/costume percentages are 0 (guests carry no items yet) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:46` |
-| ECON-045 | Original-fidelity area (scope unadjudicated) | loan/challenge record locators use plausibility bounds (one fixture) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:47` |
+| ECON-010 | Original-fidelity area (scope unadjudicated) | TimeBetweenStaffUpdates/StaffTimeoutTime are seconds at normal speed | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:19` |
+| ECON-012 | Original-fidelity area (scope unadjudicated) | hiring is free; BaseCostPerStaff/CostPerQualityLevel unused | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:20` |
+| ECON-013 | Original-fidelity area (scope unadjudicated) | training budget is spent evenly over a role at month end | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:21` |
+| ECON-014 | Original-fidelity area (scope unadjudicated) | staff start at happiness 100 and it never changes (no strikes) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:22` |
+| ECON-015 | Original-fidelity area (scope unadjudicated) | researchers on strike or picked up are the original's excluded states 3, 4 and 5 | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:23` |
+| ECON-017 | Original-fidelity area (scope unadjudicated) | the research table is in info-id order and the player cannot step the cursor to another item | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:24` |
+| ECON-018 | Original-fidelity area (scope unadjudicated) | ride upgrade levels and add-on objects form the \\"upgrade\\" research category | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:25` |
+| ECON-019 | Original-fidelity area (scope unadjudicated) | an Instant Action start that imported the seed park researches as one grade-2 researcher while none is employed, standing in for the seed's undecoded researcher; the Mac code has no staffless research path | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:26` |
+| ECON-020 | Original-fidelity area (scope unadjudicated) | a sale drops LitterEffect/100 litter items | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:27` |
+| ECON-021 | Original-fidelity area (scope unadjudicated) | a repair takes WorkDuration game hours (x DurationOfUpgrade for upgrades); mechanics are dispatched instantly | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:28` |
+| ECON-022 | Original-fidelity area (scope unadjudicated) | a handyman removes one litter item per WorkDuration game minutes, park-wide | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:29` |
+| ECON-023 | Original-fidelity area (scope unadjudicated) | an open ride loses WearRate state of repair per game day; breakdown at 0 | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:30` |
+| ECON-024 | Original-fidelity area (scope unadjudicated) | a repair restores state of repair to 100 | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:31` |
+| ECON-025 | Original-fidelity area (scope unadjudicated) | scrap value basis = catalogue cost of all levels up to the current one; a scrap year is 365 park-clock days | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:32` |
+| ECON-026 | Original-fidelity area (scope unadjudicated) | park value = sum of scrap values | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:33` |
+| ECON-027 | Original-fidelity area (scope unadjudicated) | the record sub-kinds 0–3 are rides, shops, sideshows and features, and every hired staff member counts | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:34` |
+| ECON-028 | Original-fidelity area (scope unadjudicated) | purchases need a balance covering the cost | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:35` |
+| ECON-030 | Original-fidelity area (scope unadjudicated) | the simulation stops once bankrupt | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:36` |
+| ECON-031 | Original-fidelity area (scope unadjudicated) | imported parks are opened on load (open state not decoded) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:37` |
+| ECON-034 | Original-fidelity area (scope unadjudicated) | challenge type meanings come from Challenges.sam comments (shop types by ShopType/SpecialIngredient) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:38` |
+| ECON-035 | Original-fidelity area (scope unadjudicated) | offers wait for accept/decline; follow-ups are offered right after completion; failed challenges count as finished | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:39` |
+| ECON-036 | Original-fidelity area (scope unadjudicated) | type 18 needs TargetVal items built since acceptance; the binary compares TargetVal with a per-ride value from 0x100C7264 that is not identified | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:40` |
+| ECON-038 | Original-fidelity area (scope unadjudicated) | big park uses MinCellsOwned, cameras use MinCellsCovered | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:41` |
+| ECON-039 | Original-fidelity area (scope unadjudicated) | the profit ticket compares the running yearly profit (mProfitThisYear) with ProfitYear directly; the original (0x10013FDC) scales the threshold by a per-objective factor not yet tied to that key | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:42` |
+| ECON-040 | Original-fidelity area (scope unadjudicated) | players start with 1 golden key and keys are not consumed by entering themes | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:43` |
+| ECON-041 | Original-fidelity area (scope unadjudicated) | features-directory objects with Research.Category != 3 are fixed (non-buyable) items | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:44` |
+| ECON-044 | Original-fidelity area (scope unadjudicated) | guests never hold a balloon or wear a costume, so both percentages are 0; the binary gives them when a guest uses a balloon or costume shop (0x100EAAF8) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:45` |
+| ECON-045 | Original-fidelity area (scope unadjudicated) | loan/challenge record locators use plausibility bounds (one fixture) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:46` |
 | GATE-001 | Original-fidelity area (scope unadjudicated) | an M3 in-game minute is 60 s of normal-speed simulation (3,600 fixed 60 Hz ticks), not a park-clock minute | See source annotation/runtime register | `source/OpenTPW/Client/M3GateApproximations.cs:11` |
 | GATE-002 | Original-fidelity area (scope unadjudicated) | scripted gate paths are laid by editing the guest path grid and charging Costs.PathCell per cell, without original path build rules | See source annotation/runtime register | `source/OpenTPW/Client/M3GateApproximations.cs:12` |
-| ONLINE-001 | OpenTPW online extension | Word filtering uses case-insensitive substring matches in space-padded text; entry spaces act as boundaries; allowed substrings exempt matches; hit characters except spaces become asterisks. | Original word-filter code or observed original filtering behavior; the source comment says the encrypted TP.ICD implementation is unreadable. | `docs/ONLINE.md:155` |
-| ONLINE-002 | OpenTPW online extension | A leading slash introduces a chat command; other text means say. | Original chat input syntax, which is not documented in the available data. | `docs/ONLINE.md:156` |
-| ONLINE-003 | OpenTPW online extension | Response strings 102 and 110 mean failure to add an ignored player and a buddy respectively, based on nearby string blocks. | Original response-code table. | `docs/ONLINE.md:157` |
-| ONLINE-004 | OpenTPW online extension | Buddy response strings 111–113 mean online, offline and removed. | Localized variants or the original response-code table. | `docs/ONLINE.md:158` |
-| ONLINE-005 | OpenTPW online extension | Chat command semantics follow command words, response strings and weachatr.dll export names; say/emote/shout reach a room, wshout/ushout all rooms; hearing has no positional effect; blackmark creates a moderation report. | Original chat server behavior, including command reach, hearing range and blackmark handling. | `docs/ONLINE.md:159` |
-| ONLINE-006 | OpenTPW online extension | A visitor already inside a park must leave it before visiting another, inferred from CHAT_COMMANDS string 127. | Original park-visit transition behavior or an original chat/runtime trace. | `docs/ONLINE.md:160` |
+| ONLINE-001 | OpenTPW online extension | Word filtering uses case-insensitive substring matches in space-padded text; entry spaces act as boundaries; allowed substrings exempt matches; hit characters except spaces become asterisks. | Original word-filter code or observed original filtering behavior; the source comment says the encrypted TP.ICD implementation is unreadable. | `docs/ONLINE.md:156` |
+| ONLINE-002 | OpenTPW online extension | A leading slash introduces a chat command; other text means say. | Original chat input syntax, which is not documented in the available data. | `docs/ONLINE.md:157` |
+| ONLINE-003 | OpenTPW online extension | Response strings 102 and 110 mean failure to add an ignored player and a buddy respectively, based on nearby string blocks. | Original response-code table. | `docs/ONLINE.md:158` |
+| ONLINE-004 | OpenTPW online extension | Buddy response strings 111–113 mean online, offline and removed. | Localized variants or the original response-code table. | `docs/ONLINE.md:159` |
+| ONLINE-005 | OpenTPW online extension | Chat command semantics follow command words, response strings and weachatr.dll export names; say/emote/shout reach a room, wshout/ushout all rooms; hearing has no positional effect; blackmark creates a moderation report. | Original chat server behavior, including command reach, hearing range and blackmark handling. | `docs/ONLINE.md:160` |
+| ONLINE-006 | OpenTPW online extension | A visitor already inside a park must leave it before visiting another, inferred from CHAT_COMMANDS string 127. | Original park-visit transition behavior or an original chat/runtime trace. | `docs/ONLINE.md:161` |
 | RIDES-001 | Original-fidelity area (scope unadjudicated) | Mac channel rate 30 is proved; Windows rate and native scaled/unscaled clock selection remain unverified | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:11` |
 | RIDES-002 | Original-fidelity area (scope unadjudicated) | most recently started channel wins a node | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:12` |
 | RIDES-003 | Original-fidelity area (scope unadjudicated) | finished clips hold their last pose | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:13` |
 | RIDES-004 | Original-fidelity area (scope unadjudicated) | re-issued LOOPANIM continues the running loop | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:14` |
-| RIDES-005 | Original-fidelity area (scope unadjudicated) | plain animation opcodes use a channel separate from _CH channels | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:15` |
-| RIDES-006 | Original-fidelity area (scope unadjudicated) | GETANIM_CH returns 1 while playing | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:16` |
-| RIDES-007 | Original-fidelity area (scope unadjudicated) | TRIGANIMSPEED ignores its speed operand | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:17` |
-| RIDES-008 | Original-fidelity area (scope unadjudicated) | ANIM_* to member letter/variant mapping derived from names and scripts | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:18` |
-| RIDES-009 | Original-fidelity area (scope unadjudicated) | position of shared (non-Info.Id) .sam files in the object layer order | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:19` |
-| RIDES-010 | Original-fidelity area (scope unadjudicated) | OBJECT_NAMES bound by English name equality | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:20` |
-| RIDES-011 | Original-fidelity area (scope unadjudicated) | shape symbols N/E/&lt;/&gt;/+/W inferred | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:21` |
-| RIDES-012 | Original-fidelity area (scope unadjudicated) | access cells open across first/last row before columns | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:22` |
-| RIDES-013 | Original-fidelity area (scope unadjudicated) | 180 degree and non-square rotations derived | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:23` |
-| RIDES-014 | Original-fidelity area (scope unadjudicated) | base height = mean footprint ground height | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:24` |
-| RIDES-015 | Original-fidelity area (scope unadjudicated) | imported and built objects start open | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:25` |
-| RIDES-016 | Original-fidelity area (scope unadjudicated) | VAR_DURATION = raw Upgrades[0].InitDuration | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:26` |
-| RIDES-017 | Original-fidelity area (scope unadjudicated) | buildable = WhichUIType 0-3, not fixed/tool/upgrade | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:27` |
-| RIDES-018 | Original-fidelity area (scope unadjudicated) | terrain/overlap rules without slope/path/land; Level enforces economy purchases | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:28` |
-| RIDES-019 | Original-fidelity area (scope unadjudicated) | levels without a save get Gates, Lights and Bus | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:29` |
-| RIDES-021 | Original-fidelity area (scope unadjudicated) | build centred on clicked cell, Z = 0 cursor plane | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:30` |
-| RIDES-022 | Original-fidelity area (scope unadjudicated) | texture search order archive/gtexture/sharetex | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:31` |
-| RIDES-023 | Original-fidelity area (scope unadjudicated) | completed cycle = VAR_RUNNING 1 -&gt; 0 | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:32` |
-| RIDES-024 | Original-fidelity area (scope unadjudicated) | bonus archives merge, Info.Id collisions skipped | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:33` |
-| RIDES-025 | Original-fidelity area (scope unadjudicated) | bonus name language fallback | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:34` |
-| RIDES-026 | Original-fidelity area (scope unadjudicated) | engine scale 0.2 per MD2 unit (presentation) | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:35` |
-| RIDES-028 | Original-fidelity area (scope unadjudicated) | non-walkable object access cells use the nearest walkable path | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:36` |
+| RIDES-006 | Original-fidelity area (scope unadjudicated) | GETANIM_CH returns 1 while playing | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:15` |
+| RIDES-007 | Original-fidelity area (scope unadjudicated) | TRIGANIMSPEED ignores its speed operand | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:16` |
+| RIDES-008 | Original-fidelity area (scope unadjudicated) | ANIM_* to member letter/variant mapping derived from names and scripts | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:17` |
+| RIDES-009 | Original-fidelity area (scope unadjudicated) | position of shared (non-Info.Id) .sam files in the object layer order | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:18` |
+| RIDES-010 | Original-fidelity area (scope unadjudicated) | OBJECT_NAMES bound by English name equality | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:19` |
+| RIDES-011 | Original-fidelity area (scope unadjudicated) | shape symbols N/E/&lt;/&gt;/+/W inferred | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:20` |
+| RIDES-012 | Original-fidelity area (scope unadjudicated) | access cells open across first/last row before columns | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:21` |
+| RIDES-013 | Original-fidelity area (scope unadjudicated) | 180 degree and non-square rotations derived | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:22` |
+| RIDES-014 | Original-fidelity area (scope unadjudicated) | base height = mean footprint ground height | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:23` |
+| RIDES-015 | Original-fidelity area (scope unadjudicated) | imported and built objects start open | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:24` |
+| RIDES-016 | Original-fidelity area (scope unadjudicated) | VAR_DURATION = raw Upgrades[0].InitDuration | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:25` |
+| RIDES-017 | Original-fidelity area (scope unadjudicated) | buildable = WhichUIType 0-3, not fixed/tool/upgrade | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:26` |
+| RIDES-018 | Original-fidelity area (scope unadjudicated) | terrain/overlap rules without slope/path/land; Level enforces economy purchases | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:27` |
+| RIDES-019 | Original-fidelity area (scope unadjudicated) | levels without a save get Gates, Lights and Bus | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:28` |
+| RIDES-021 | Original-fidelity area (scope unadjudicated) | build centred on clicked cell, Z = 0 cursor plane | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:29` |
+| RIDES-022 | Original-fidelity area (scope unadjudicated) | texture search order archive/gtexture/sharetex | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:30` |
+| RIDES-023 | Original-fidelity area (scope unadjudicated) | completed cycle = VAR_RUNNING 1 -&gt; 0 | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:31` |
+| RIDES-024 | Original-fidelity area (scope unadjudicated) | bonus archives merge, Info.Id collisions skipped | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:32` |
+| RIDES-025 | Original-fidelity area (scope unadjudicated) | bonus name language fallback | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:33` |
+| RIDES-026 | Original-fidelity area (scope unadjudicated) | engine scale 0.2 per MD2 unit (presentation) | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:34` |
+| RIDES-028 | Original-fidelity area (scope unadjudicated) | non-walkable object access cells use the nearest walkable path | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:35` |
 | UI-001 | Original-fidelity area (scope unadjudicated) | non-4:3 outputs keep each element at its authored distance from the nearest edge (anchors) | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:12` |
 | UI-002 | Original-fidelity area (scope unadjudicated) | BF4 font size tier (SMALL/MED/BIG) chosen by logical scale thresholds 0.36 and 0.6 | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:13` |
 | UI-003 | Original-fidelity area (scope unadjudicated) | button/arm state frames drawn at the root node pose; child translations ignored | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:14` |
@@ -238,7 +236,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | COMPAT-007 | `source/OpenTPW/World/Original/OriginalGateSign.cs:45` | [APPROX:COMPAT-007] theme name as park name until a save supplies one — evidence needed: save park-name field and a capture. |
 | COMPAT-008 | `source/OpenTPW/World/Original/OriginalGateSign.cs:21` | [APPROX:COMPAT-008] depth offset for the sign faces — evidence needed: none once the full gate model draws its runtime textures. |
 | COMPAT-009 | `source/OpenTPW.Files/Formats/Font/TrueTypeRasterizer.cs:34` | [APPROX:COMPAT-009] 16 sub-scanlines, unhinted linear coverage instead of GDI ANTIALIASED_QUALITY — evidence needed: captures of original sign text. |
-| COMPAT-010 | `source/OpenTPW/Render/Assets/Material.cs:62` | [APPROX:COMPAT-010] Veldrid sampler modes stand in for the original Direct3D filter states — evidence needed: binary render-state setup or captures. |
+| COMPAT-010 | `source/OpenTPW/Render/Assets/Material.cs:66` | [APPROX:COMPAT-010] Veldrid sampler modes stand in for the original Direct3D filter states — evidence needed: binary render-state setup or captures. |
 | COMPAT-011 | `source/OpenTPW.Files/Public/LocalizedStringTable.cs:7` | [APPROX:COMPAT-011] the fallback order is an OpenTPW choice — evidence needed: original behaviour |
 | COMPAT-012 | `source/OpenTPW.Files/Formats/String/BFUMReader.cs:106` | they are dropped ([APPROX:COMPAT-012] — evidence needed: binary text-input handling); they are |
 | COMPAT-013 | `source/OpenTPW/Compat/GraphicsSettings.cs:151` | [APPROX:COMPAT-013] the processor clock is taken as 450 MHz or faster, since .NET cannot read it portably — evidence needed: none for any machine that runs OpenTPW (all exceed 450 MHz) |
@@ -257,10 +255,9 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-006 | `source/OpenTPW/Economy/ParkLedger.cs:148` | [APPROX:ECON-006] APR &gt; 0 repayment is an annuity at APR/12 per month, rounded down; interest accrues monthly on the balance — evidence needed: standard-mode save or capture with an outstanding loan |
 | ECON-007 | `source/OpenTPW/Economy/ParkEconomy.cs:329` | [APPROX:ECON-007] reopening has no original credit-eligibility gate — evidence needed: implement the traced credit predicate and qualify its cross-edition behavior |
 | ECON-008 | `source/OpenTPW/Economy/ParkStaff.cs:50` | [APPROX:ECON-008] 100 training points per grade (from Online_Standard.sam comments "costs 1000 to get up to grade 1") — evidence needed: capture of a training run |
-| ECON-009 | `source/OpenTPW/Economy/ParkStaff.cs:145` | [APPROX:ECON-009] candidate grade = average + 2 when "great", else average +-1 — evidence needed: hiring pool captures (grade distribution) |
 | ECON-010 | `source/OpenTPW/Economy/ParkStaff.cs:64` | [APPROX:ECON-010] TimeBetweenStaffUpdates/StaffTimeoutTime are seconds at normal speed — evidence needed: capture of pool refresh timing |
-| ECON-012 | `source/OpenTPW/Economy/ParkStaff.cs:152` | [APPROX:ECON-012] hiring is free; BaseCostPerStaff/CostPerQualityLevel unused — evidence needed: capture of the balance before/after hiring |
-| ECON-013 | `source/OpenTPW/Economy/ParkStaff.cs:172` | [APPROX:ECON-013] training budget is spent evenly over a role at month end — evidence needed: capture of training budget effects |
+| ECON-012 | `source/OpenTPW/Economy/ParkStaff.cs:153` | [APPROX:ECON-012] hiring is free; BaseCostPerStaff/CostPerQualityLevel unused — evidence needed: capture of the balance before/after hiring |
+| ECON-013 | `source/OpenTPW/Economy/ParkStaff.cs:173` | [APPROX:ECON-013] training budget is spent evenly over a role at month end — evidence needed: capture of training budget effects |
 | ECON-014 | `source/OpenTPW/Economy/ParkStaff.cs:24` | [APPROX:ECON-014] staff start at happiness 100 and it never changes (no strikes) — evidence needed: staff happiness rules (binary/captures) |
 | ECON-015 | `source/OpenTPW/Economy/ParkResearch.cs:169` | [APPROX:ECON-015] researchers on strike or picked up are the original's excluded states 3, 4 and 5 — evidence needed: the staff state values behind 0x100F4170 |
 | ECON-017 | `source/OpenTPW/Economy/ParkResearch.cs:148` | [APPROX:ECON-017] the research table is in info-id order and the player cannot step the cursor to another item — evidence needed: the table fill order (FUN_100c9064) and the next/previous control |
@@ -278,13 +275,13 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-030 | `source/OpenTPW/Economy/ParkEconomy.cs:121` | [APPROX:ECON-030] the simulation stops once bankrupt — evidence needed: capture of the bankrupt state |
 | ECON-031 | `source/OpenTPW/Economy/ParkEconomyRuntime.cs:39` | [APPROX:ECON-031] imported parks are opened on load (open state not decoded) — evidence needed: park-open flag in the save |
 | ECON-034 | `source/OpenTPW/Economy/ParkObjectives.cs:113` | [APPROX:ECON-034] challenge type meanings come from Challenges.sam comments (shop types by ShopType/SpecialIngredient) — evidence needed: challenge captures per type |
-| ECON-035 | `source/OpenTPW/Economy/ParkObjectives.cs:153` | [APPROX:ECON-035] offers wait for accept/decline; follow-ups are offered right after completion; failed challenges count as finished — evidence needed: challenge flow captures |
-| ECON-036 | `source/OpenTPW/Economy/ParkObjectives.cs:149` | [APPROX:ECON-036] build challenges with TargetVal 0 need one item; type 28 needs level 3 — evidence needed: challenge captures |
-| ECON-038 | `source/OpenTPW/Economy/ParkObjectives.cs:280` | [APPROX:ECON-038] big park uses MinCellsOwned, cameras use MinCellsCovered — evidence needed: golden ticket award captures |
-| ECON-039 | `source/OpenTPW/Economy/ParkObjectives.cs:262` | [APPROX:ECON-039] the profit ticket compares the running yearly profit (mProfitThisYear) with ProfitYear directly; the original (0x10013FDC) scales the threshold by a per-objective factor not yet tied to that key — evidence needed: the caller of 0x10013FDC and its factor |
-| ECON-040 | `source/OpenTPW/Economy/ParkObjectives.cs:318` | [APPROX:ECON-040] players start with 1 golden key and keys are not consumed by entering themes — evidence needed: initial lobby and repeated theme-entry captures |
+| ECON-035 | `source/OpenTPW/Economy/ParkObjectives.cs:158` | [APPROX:ECON-035] offers wait for accept/decline; follow-ups are offered right after completion; failed challenges count as finished — evidence needed: challenge flow captures |
+| ECON-036 | `source/OpenTPW/Economy/ParkObjectives.cs:154` | [APPROX:ECON-036] type 18 needs TargetVal items built since acceptance; the binary compares TargetVal with a per-ride value from 0x100C7264 that is not identified — evidence needed: the fifth output of 0x10041A34 |
+| ECON-038 | `source/OpenTPW/Economy/ParkObjectives.cs:285` | [APPROX:ECON-038] big park uses MinCellsOwned, cameras use MinCellsCovered — evidence needed: golden ticket award captures |
+| ECON-039 | `source/OpenTPW/Economy/ParkObjectives.cs:267` | [APPROX:ECON-039] the profit ticket compares the running yearly profit (mProfitThisYear) with ProfitYear directly; the original (0x10013FDC) scales the threshold by a per-objective factor not yet tied to that key — evidence needed: the caller of 0x10013FDC and its factor |
+| ECON-040 | `source/OpenTPW/Economy/ParkObjectives.cs:323` | [APPROX:ECON-040] players start with 1 golden key and keys are not consumed by entering themes — evidence needed: initial lobby and repeated theme-entry captures |
 | ECON-041 | `source/OpenTPW/Economy/EconomyObjectCatalog.cs:93` | [APPROX:ECON-041] features-directory objects with Research.Category != 3 are fixed (non-buyable) items — evidence needed: buy-menu capture |
-| ECON-044 | `source/OpenTPW/Economy/GuestEconomyBridge.cs:60` | [APPROX:ECON-044] balloon/costume percentages are 0 (guests carry no items yet) — evidence needed: guests slice item state |
+| ECON-044 | `source/OpenTPW/Economy/GuestEconomyBridge.cs:61` | [APPROX:ECON-044] guests never hold a balloon or wear a costume, so both percentages are 0; the binary gives them when a guest uses a balloon or costume shop (0x100EAAF8) — evidence needed: balloon lifetime (+0x214) and costume state rules |
 | ECON-045 | `source/OpenTPW.Files/Formats/Save/SaveEconomyRecords.cs:105` | [APPROX:ECON-045] loan/challenge record locators use plausibility bounds (one fixture) — evidence needed: a second TPWS/TPWI fixture |
 | GATE-001 | `source/OpenTPW/Client/M3Gate.cs:117` | [APPROX:GATE-001] an M3 in-game minute is 60 s of normal-speed simulation (3,600 fixed 60 Hz ticks), not a park-clock minute (one 248 ms park turn already advances the park clock 3,750 s) — evidence needed: the original's notion of elapsed play time for the M3 gate |
 | GATE-002 | `source/OpenTPW/Client/M3Gate.cs:334` | [APPROX:GATE-002] scripted paths are laid by editing the guest path grid and charging Costs.PathCell per cell (no original path build rules: slope, land ownership, connection limits) — evidence needed: original path-building rules and costs |
@@ -293,12 +290,11 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ONLINE-003 | `source/OpenTPW.Online/Chat/ChatCommands.cs:34` | [APPROX:ONLINE-003] 102/110 are both "Could not add "; assigned to ignore/buddy by their position next to |
 | ONLINE-004 | `source/OpenTPW.Online/Chat/ChatCommands.cs:42` | [APPROX:ONLINE-004] 111-113 are all "Your buddy " (English suffix strings are empty); online/offline/removed |
 | ONLINE-005 | `source/OpenTPW.Server/ChatHub.cs:24` | [APPROX:ONLINE-005] Command semantics are inferred from the command words, response strings and |
-| ONLINE-006 | `source/OpenTPW.Server/ChatHub.cs:390` | [APPROX:ONLINE-006] A visitor inside a park must leave it first (CHAT_COMMANDS 127) — evidence needed. |
+| ONLINE-006 | `source/OpenTPW.Server/ChatHub.cs:402` | [APPROX:ONLINE-006] A visitor inside a park must leave it first (CHAT_COMMANDS 127) — evidence needed. |
 | RIDES-001 | `source/OpenTPW/World/Objects/ObjectAnimator.cs:26` | [APPROX:RIDES-001] Mac channel rate 30 is proved; Windows rate and selection/binding of the native scaled or unscaled channel clock remain unverified. |
 | RIDES-002 | `source/OpenTPW/World/Objects/ObjectAnimator.cs:262` | [APPROX:RIDES-002] When several channels animate a node, the most recently started clip wins — evidence needed: original channel mixing (binary or capture of a multi-channel sideshow/Totem) |
 | RIDES-003 | `source/OpenTPW/World/Objects/ObjectAnimator.cs:204` | [APPROX:RIDES-003] A finished non-looping clip holds its last pose until replaced/flushed — evidence needed: capture after a TRIGANIM clip ends |
 | RIDES-004 | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:179` | [APPROX:RIDES-004] Re-issued LOOPANIM of the running loop continues instead of restarting — evidence needed: capture of the Belly Bounce idle loop |
-| RIDES-005 | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:227` | [APPROX:RIDES-005] Plain animation opcodes use a channel separate from the _CH channels — evidence needed: binary or sideshow capture (TRIGANIM_CH ... 0 next to LOOPANIM) |
 | RIDES-006 | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:251` | [APPROX:RIDES-006] GETANIM_CH returns 1 while the channel plays, else 0 — evidence needed: binary semantics of GETANIM_CH |
 | RIDES-007 | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:241` | [APPROX:RIDES-007] TRIGANIMSPEED plays at normal speed; its 4th operand (e.g. 4000) is ignored — evidence needed: binary semantics of TRIGANIMSPEED |
 | RIDES-008 | `source/OpenTPW/World/Objects/ObjectAnimations.cs:28` | [APPROX:RIDES-008] ANIM_* → suffix letter and variant v → number v+1 (derived from file names and scripts, no counterexample) — evidence needed: binary confirmation of the member lookup |
@@ -329,17 +325,17 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-006 | `source/OpenTPW/UI/Original/UiText.cs:144` | [APPROX:UI-006] all UI text/backdrop colours — evidence needed: captures of original screens |
 | UI-007 | `source/OpenTPW/UI/Original/UiWidgets.cs:73` | [APPROX:UI-007] drop shadow one text pixel down-right — evidence needed: captures of original screens |
 | UI-008 | `source/OpenTPW/UI/Original/UiWidgets.cs:374` | [APPROX:UI-008] purple_button as a mirrored end cap, upper half normal, lower half focused/pressed — evidence needed: capture of the original front-end buttons |
-| UI-010 | `source/OpenTPW/UI/Original/UiScreen.cs:224` | [APPROX:UI-010] popup help placement/backdrop — evidence needed: capture of original popup help |
-| UI-011 | `source/OpenTPW/UI/Original/UiScreen.cs:214` | [APPROX:UI-011] modal screens dim the screens below — evidence needed: captures of original dialogs |
+| UI-010 | `source/OpenTPW/UI/Original/UiScreen.cs:241` | [APPROX:UI-010] popup help placement/backdrop — evidence needed: capture of original popup help |
+| UI-011 | `source/OpenTPW/UI/Original/UiScreen.cs:231` | [APPROX:UI-011] modal screens dim the screens below — evidence needed: captures of original dialogs |
 | UI-012 | `source/OpenTPW/UI/Original/UiInput.cs:54` | [APPROX:UI-012] key map (arrows, Enter, Escape, P) — evidence needed: binary key handling / KEYBOARD.str |
-| UI-012 | `source/OpenTPW/UI/Original/UiScreen.cs:61` | [APPROX:UI-012] hover focus, activate on release, keyboard navigation, right click backs out — evidence needed: binary input handling |
+| UI-012 | `source/OpenTPW/UI/Original/UiScreen.cs:63` | [APPROX:UI-012] hover focus, activate on release, keyboard navigation, right click backs out — evidence needed: binary input handling |
 | UI-013 | `source/OpenTPW/UI/Original/UiDialogs.cs:9` | [APPROX:UI-013] dialog window sizes and inner layout — evidence needed: captures of original dialogs |
 | UI-014 | `source/OpenTPW/FrontEnd/FrontEndMenu.cs:81` | [APPROX:UI-014] island name and prev/enter/next button positions in the lobby panel — evidence needed: capture of the original lobby |
 | UI-014 | `source/OpenTPW/FrontEnd/FrontEndMenu.cs:97` | [APPROX:UI-014] logo/title placement and the right-hand Load/Options/Quit column — evidence needed: capture of the original lobby |
 | UI-015 | `source/OpenTPW/FrontEnd/FrontEndMenu.cs:127` | [APPROX:UI-015] Game Mode asked on every park entry and each entry starts a new park (no player profiles or per-theme autosave); the original asks once when a player is created and stores it in the profile — evidence needed: PC confirmation of the Mac player/autosave flow |
 | UI-016 | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:79` | [DATA:lobby.wad:&lt;theme&gt;.txt ISLAND/SKYCOLOUR/FLYINGMESH/RAINY/LIGHTNING] [APPROX:UI-016] angle = yaw, height = camera target height — evidence needed: binary/capture |
 | UI-017 | `source/OpenTPW/World/LobbyCameraMode.cs:25` | [APPROX:UI-017] SPINSPEED as radians per 0.1 s, FOV 60, 3/s glide — evidence needed: binary or capture of the lobby camera |
-| UI-018 | `source/OpenTPW/Client/GameFlow.cs:279` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
+| UI-018 | `source/OpenTPW/Client/GameFlow.cs:289` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
 | UI-018 | `source/OpenTPW/World/Lobby/LobbyScene.cs:14` | [APPROX:UI-018] flying meshes, rain, lightning and island/gate animations are not drawn — evidence needed: binary/capture of the lobby |
 | UI-019 | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:92` | [APPROX:UI-019] fallback position when lobby.txt lacks ISLANDCAMERAPOSITION — evidence needed: none if lobby.txt is complete |
 | UI-020 | `source/OpenTPW/Hud/ParkHud.cs:124` | [APPROX:UI-020] panel button positions (the models share one authored centre) — evidence needed: capture of the original HUD |
@@ -369,10 +365,10 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-035 | `source/OpenTPW/Client/Movie/IntroPlaylist.cs:34` | Input already held when the sequence begins is ignored until released [APPROX:UI-035], so launching the game |
 | UI-036 | `source/OpenTPW/UI/Original/UiWidgets.cs:443` | [APPROX:UI-036] linear knob travel over the track, value index 0..Steps-1 from the knob's centre — evidence needed: capture of the original slider ends / binary slider code |
 | UI-037 | `source/OpenTPW/UI/Original/UiText.cs:153` | [APPROX:UI-037] option bar label colour (16,16,48) read off a capture by eye — evidence needed: exact pixel colour from a capture or the font palette |
-| UI-038 | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:219` | [APPROX:UI-038] 3D card rendering, videocard and audio quality are shown fixed (disabled) — OpenTPW has no software renderer, video card or audio quality choice |
+| UI-038 | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:275` | [APPROX:UI-038] 3D card rendering, videocard and audio quality are shown fixed (disabled) — OpenTPW has no software renderer, video card or audio quality choice |
 | UI-039 | `source/OpenTPW/UI/Original/UiWidgets.cs:130` | [APPROX:UI-039] option label size: letter box about 58 % of the label rectangle height (the capture's labels are ~26 of 1536 units for 45-unit rectangles); a label whose widest value does not fit drops alone to the largest size that does — evidence needed: capture of the original option labels in several languages |
 | UI-040 | `source/OpenTPW/Client/Autorun/AutorunView.cs:163` | [APPROX:UI-040] the exact dot phase of GDI's focus rectangle brush is not known; dots are the pixels with even x + y, inverted. |
-| UI-041 | `source/OpenTPW/Client/GameFlow.cs:152` | [APPROX:UI-041] a loaded shipped park is the reference start whatever Game Mode was last chosen; the original takes the mode from the loading player's profile, not the park — evidence needed: player profiles and the Mac park loader 0x11acfc |
+| UI-041 | `source/OpenTPW/Client/GameFlow.cs:160` | [APPROX:UI-041] a loaded shipped park is the reference start whatever Game Mode was last chosen; the original takes the mode from the loading player's profile, not the park — evidence needed: player profiles and the Mac park loader 0x11acfc |
 
 ## Extension sites
 
@@ -385,7 +381,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | COMPAT-GFX-ENHANCED | `source/OpenTPW/Compat/GraphicsSettings.cs:165` | &lt;summary&gt;[EXT:COMPAT-GFX-ENHANCED] anisotropy used by the Enhanced preset (TEXTUREFILTERING 3 is never used by the original presets).&lt;/summary&gt; |
 | COMPAT-GFX-ENHANCED | `source/OpenTPW/Compat/GraphicsSettings.cs:167` | &lt;summary&gt;[EXT:COMPAT-GFX-ENHANCED] view distance scale of the Enhanced preset (OpenTPW fog distance multiplier).&lt;/summary&gt; |
 | COMPAT-GFX-ENHANCED | `source/OpenTPW/Compat/GraphicsSettings.cs:182` | [EXT:COMPAT-GFX-ENHANCED] user-selected deviation from the original High preset by design. |
-| COMPAT-GFX-ENHANCED | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:112` | [EXT:COMPAT-GFX-ENHANCED] the Enhanced preset is not in the original game; it is the slider's last step |
+| COMPAT-GFX-ENHANCED | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:168` | [EXT:COMPAT-GFX-ENHANCED] the Enhanced preset is not in the original game; it is the slider's last step |
 | COMPAT-GFX-VIEWDISTANCE | `source/OpenTPW/Compat/GraphicsSettings.cs:266` | &lt;summary&gt;[EXT:COMPAT-GFX-VIEWDISTANCE] OpenTPW fog distance multiplier; 1 = unchanged.&lt;/summary&gt; |
 | ONLINE-001 | `source/OpenTPW.Online/Packages/BoundedZip.cs:10` | [EXT:ONLINE-001] OpenTPW container design (the original online service used EA's servers; no |
 | ONLINE-002 | `source/OpenTPW.Online/Packages/BoundedZip.cs:18` | &lt;summary&gt;[EXT:ONLINE-002] Highest accepted uncompressed/compressed ratio for entries above 4 KiB.&lt;/summary&gt; |
@@ -404,20 +400,23 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ONLINE-050 | `source/OpenTPW.Server/ServerOptions.cs:5` | [EXT:ONLINE-050] All defaults are OpenTPW choices; the original service limits are unknown except |
 | ONLINE-051 | `source/OpenTPW.Server/PasswordHasher.cs:6` | &lt;summary&gt;[EXT:ONLINE-051] PBKDF2-SHA256 (BCL) with a random 16-byte salt; only the hash is stored.&lt;/summary&gt; |
 | ONLINE-052 | `source/OpenTPW.Server/ServerStore.cs:61` | [EXT:ONLINE-052] File storage: JSON indexes (accounts, parks, postcards) rewritten atomically after |
-| ONLINE-053 | `source/OpenTPW.Server/ChatHub.cs:257` | [EXT:ONLINE-053] No avatar positions exist, so the range is acknowledged but has no effect. |
-| ONLINE-054 | `source/OpenTPW.Server/ServerProgram.cs:11` | [EXT:ONLINE-054] Self-hostable OpenTPW server (ASP.NET Core minimal APIs). See docs/SERVER.md. |
+| ONLINE-053 | `source/OpenTPW.Server/ChatHub.cs:269` | [EXT:ONLINE-053] No avatar positions exist, so the range is acknowledged but has no effect. |
+| ONLINE-054 | `source/OpenTPW.Server/ServerProgram.cs:12` | [EXT:ONLINE-054] Self-hostable OpenTPW server (ASP.NET Core minimal APIs). See docs/SERVER.md. |
+| ONLINE-055 | `source/OpenTPW.Server/ServerStore.cs:189` | [EXT:ONLINE-055] Deletes a player and what the server holds about them (docs/SERVER.md): the |
 | ONLINE-060 | `source/OpenTPW/Online/OnlineFolders.cs:7` | [EXT:ONLINE-060] The player's online folder: exported parks, downloaded (visited) parks and the |
 | ONLINE-061 | `source/OpenTPW/Online/ParkSnapshotBuilder.cs:13` | &lt;summary&gt;[EXT:ONLINE-061] Edition label; OpenTPW cannot yet tell Theme Park World from Sim Theme Park installs.&lt;/summary&gt; |
 | ONLINE-062 | `source/OpenTPW/Online/ParkSnapshotBuilder.cs:91` | [EXT:ONLINE-062] Top-down thumbnail from the MAP grid and the snapshot (OpenTPW colours, not an original |
-| ONLINE-063 | `source/OpenTPW/Online/OnlineStrings.cs:13` | languages. [EXT:ONLINE-063] Kept in this file until the frontend slice's SupplementaryStrings lands. |
+| ONLINE-063 | `source/OpenTPW/Online/OnlineStrings.cs:14` | languages. [EXT:ONLINE-063] Kept in this file until the frontend slice's SupplementaryStrings lands. |
 | ONLINE-064 | `source/OpenTPW/Online/OnlineSession.cs:25` | [EXT:ONLINE-064] Line layouts ("name: text", "name *emote*") are OpenTPW choices; the original chat panel layout is unknown. |
 | ONLINE-065 | `source/OpenTPW/Online/ChatOverlay.cs:7` | [EXT:ONLINE-065] Font choice, position (bottom-left), colours and line count are OpenTPW choices; |
 | ONLINE-066 | `source/OpenTPW/Online/OnlinePanel.cs:6` | &lt;summary&gt;[EXT:ONLINE-066] Opt-in ImGui panel; original online panel layout is not reproduced.&lt;/summary&gt; |
 | ONLINE-UI | `source/OpenTPW/Online/OnlineScreens.cs:25` | [EXT:ONLINE-UI] native online screens; composition of the original screens and the place of code-positioned controls are OpenTPW's |
-| ONLINE-UI | `source/OpenTPW/Online/OnlineScreens.cs:102` | [EXT:ONLINE-UI] the server address is an OpenTPW field; the original service address was built in |
+| ONLINE-UI | `source/OpenTPW/Online/OnlineScreens.cs:71` | [EXT:ONLINE-UI] OpenTPW servers let players delete their own account (docs/SERVER.md). |
+| ONLINE-UI | `source/OpenTPW/Online/OnlineScreens.cs:140` | [EXT:ONLINE-UI] the server address is an OpenTPW field; the original service address was built in |
 | ONLINE-UI | `source/OpenTPW/UI/Original/UiTextWidgets.cs:46` | [EXT:ONLINE-UI] text field art and caret are OpenTPW's; the original field template is not decoded |
+| SERVER-WEB | `source/OpenTPW.Server/WebClient.cs:8` | [EXT:SERVER-WEB] Optionally serves the browser build of the game (docs/WEB.md) from the same |
 | SETUP | `source/OpenTPW/UI/Original/Options/GameFilesScreen.cs:10` | [EXT:SETUP] OpenTPW setting; the original installer chose one folder and never changed it in game |
-| SETUP | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:466` | [EXT:SETUP] Game files (game folder and CD), where the main page has its OpenTPW button |
+| SETUP | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:539` | [EXT:SETUP] Game files (game folder and CD), where the main page has its OpenTPW button |
 | art-override | `source/OpenTPW/UI/Original/UiArtOverrides.cs:10` | [EXT:art-override] optional player-supplied replacement art; the original only has its own textures |
 | autorun | `source/OpenTPW/Client/Autorun/AutorunLauncher.cs:5` | [EXT:autorun] It needs the original &lt;c&gt;Autorun&lt;/c&gt; folder (&lt;c&gt;general.tre&lt;/c&gt; and the language archives) in the game |
 | autorun | `source/OpenTPW/Client/Autorun/AutorunScreen.cs:14` | with the operating system's viewer and Exit quits. [EXT:autorun] (docs/AUTORUN.md) |
@@ -428,24 +427,36 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | developer-prototype | `source/OpenTPW/World/Level.Objects.cs:185` | [EXT:developer-prototype] Sandbox Totem blocks cells whose centres lie within its 6×8-unit model box (no original counterpart) |
 | developer-prototype | `source/OpenTPW/World/Level.Objects.cs:266` | [EXT:developer-prototype] When the economy refuses the Totem (e.g. Research.Group 4 not yet researched), the developer prototype is registered uncharged (no original counterpart) |
 | developer-prototype | `source/OpenTPW/World/PrototypeRide.cs:13` | [EXT:developer-prototype] Sandbox Totem bounds check uses a 5-unit radius around its centre (no original counterpart) |
-| display | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:397` | [EXT:display] window mode, upscaling, render scale and interface scale rows are OpenTPW extensions |
+| display | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:459` | [EXT:display] window mode, upscaling, render scale and interface scale rows are OpenTPW extensions |
 | fit-button-text | `source/OpenTPW/UI/Original/UiTextFit.cs:10` | [EXT:fit-button-text] button labels shrink to fit; the original sized its fixed strings per language by hand |
 | interface-scale-fit | `source/OpenTPW/UI/Original/UiCanvas.cs:33` | [EXT:interface-scale-fit] Above 1×, limit forced text scales to UiScaling's reference-layout fit (HiDPI-aware via PixelDensity). |
-| language | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:437` | [EXT:language] language row (original installs had one language; OpenTPW reads CD overlays) |
-| online-visit | `source/OpenTPW/Client/GameFlow.cs:179` | [EXT:online-visit] read-only visits of shared parks get no advisor (the original has no visits) |
-| opentpw-page | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:341` | [EXT:opentpw-page] button to the OpenTPW page, in the free area left of the OK panel |
-| opentpw-page | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:370` | The OpenTPW page ([EXT:opentpw-page]): everything OpenTPW adds to the original options, built from the |
+| language | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:510` | [EXT:language] language row (original installs had one language; OpenTPW reads CD overlays) |
+| online-visit | `source/OpenTPW/Client/GameFlow.cs:187` | [EXT:online-visit] read-only visits of shared parks get no advisor (the original has no visits) |
+| opentpw-page | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:403` | [EXT:opentpw-page] button to the OpenTPW page, in the free area left of the OK panel |
+| opentpw-page | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:432` | The OpenTPW page ([EXT:opentpw-page]): everything OpenTPW adds to the original options, built from the |
 | opentpw-page | `source/OpenTPW/UI/Original/UiWidgets.cs:519` | [EXT:opentpw-page] option-row arrow/value positions: OpenTPW's own row style for its page (the original page uses sliders and toggles) |
 | ps2-data | `source/OpenTPW/Client/Ps2Export.cs:13` | [EXT:ps2-data] viewing aid for the PS2 version's data, not original behaviour |
-| sandbox | `source/OpenTPW/Client/GameFlow.cs:180` | [EXT:sandbox] the generic sandbox (not an original level) gets no automatic advisor either; only original levels raise its game events |
+| sandbox | `source/OpenTPW/Client/GameFlow.cs:188` | [EXT:sandbox] the generic sandbox (not an original level) gets no automatic advisor either; only original levels raise its game events |
 | strings | `source/OpenTPW/UI/Original/SupplementaryStrings.cs:10` | [EXT:strings] OpenTPW supplementary labels (display/upscaling/language rows and OpenTPW messages), not original data |
 | test-stub | `source/OpenTPW/Hud/HudStubs.cs:130` | [EXT:test-stub] price shown when Totem.sam cannot be read (the economy catalogue price is used when a park economy runs) |
-| texture-pack | `source/OpenTPW/Compat/GraphicsSettings.cs:268` | &lt;summary&gt;[EXT:texture-pack] Use the locally built upscaled texture pack (docs/TEXTURE-PACKS.md); off = original textures. Applies at the next start.&lt;/summary&gt; |
+| texture-pack | `source/OpenTPW/Client/GameFlow.cs:236` | [EXT:texture-pack] the pack switch belongs to the game loop, not to its loading screen |
+| texture-pack | `source/OpenTPW/Compat/GraphicsSettings.cs:269` | [EXT:texture-pack] Texture choice (docs/TEXTURE-PACKS.md): empty = original textures; &lt;c&gt;enhanced&lt;/c&gt; (the default) = the |
+| texture-pack | `source/OpenTPW/FrontEnd/FrontEndSmokeTest.cs:75` | [EXT:texture-pack] Switches a throw-away pack on and off while the lobby runs: a lobby texture becomes the pack's solid |
+| texture-pack | `source/OpenTPW/Render/Assets/ImagePrepass.cs:33` | [EXT:texture-pack] Optional 1x de-artifact pre-pass for the local texture pack. |
+| texture-pack | `source/OpenTPW/Render/Assets/Material.cs:26` | [EXT:texture-pack] Textures can swap their GPU texture in place (a texture pack switch); the binding follows the Texture object. |
+| texture-pack | `source/OpenTPW/Render/Assets/Texture.cs:19` | [EXT:texture-pack] Textures made from a game &#96;.wct&#96; remember their source so a pack switch can reload them in place. |
+| texture-pack | `source/OpenTPW/Render/Assets/Texture.cs:101` | [EXT:texture-pack] pack lookup; a missing file falls back to the original. |
 | texture-pack | `source/OpenTPW/Render/Assets/TexturePack.cs:13` | [EXT:texture-pack] Upscaled replacement textures are an OpenTPW presentation option, not original behaviour. |
-| texture-pack | `source/OpenTPW/Render/Assets/TexturePackBuilder.cs:68` | [EXT:texture-pack] Builder for the optional local upscaled texture pack; original files are only read. |
-| texture-pack | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:431` | [EXT:texture-pack] optional locally built upscaled textures; off unless a pack exists and the player turns it on |
+| texture-pack | `source/OpenTPW/Render/Assets/TexturePackBuilder.cs:79` | [EXT:texture-pack] Builder for the optional local upscaled texture pack; original files are only read. |
+| texture-pack | `source/OpenTPW/Render/Assets/TexturePackSwitch.cs:25` | [EXT:texture-pack] Runtime switch of the optional local texture pack (docs/TEXTURE-PACKS.md). |
+| texture-pack | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:90` | [EXT:texture-pack] Modal "Loading textures... n / total" screen with a progress bar. It drives the switch (one slice of |
+| texture-pack | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:377` | [EXT:texture-pack] a changed pack is applied now, behind a loading bar; the restart notice (if any) follows it. |
+| texture-pack | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:493` | [EXT:texture-pack] optional locally built upscaled textures: Off, then every installed pack (clean, detailed, ...) |
 | texture-pack | `source/OpenTPW/UI/Original/UiImages.cs:29` | [EXT:texture-pack] the optional local pack replaces interface art too (docs/TEXTURE-PACKS.md); UVs are relative, so a larger image drops in. |
-| upscaling | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:37` | [EXT:upscaling] render-scale steps (presets 77/67/59/50 from the display slice plus 5% steps) |
+| texture-pack | `source/OpenTPW/UI/Original/UiRenderer.cs:149` | [EXT:texture-pack] The texture pack changed: forgets the cached interface images (they are decoded again on first use, |
+| texture-pack | `source/OpenTPW/World/Guests/GuestRenderer.cs:53` | [EXT:texture-pack] The texture pack changed: builds the atlas textures again from the new pack (or the originals), binds |
+| texture-pack | `source/OpenTPW/World/Guests/GuestRenderer.cs:84` | [EXT:texture-pack] upscaled guest sprites from the optional local pack |
+| upscaling | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:42` | [EXT:upscaling] render-scale steps (presets 77/67/59/50 from the display slice plus 5% steps) |
 | world-capture | `source/OpenTPW/Client/WorldCapture.cs:13` | [EXT:world-capture] developer/screenshot command, not original behaviour |
 
 ## Data provenance sites
@@ -474,15 +485,15 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | Easymode.TPWI:SYSG X/Y/rotation | `source/OpenTPW/World/Objects/ParkObjects.cs:144` | [DATA:Easymode.TPWI:SYSG X/Y/rotation] [DATA:&lt;fixed item&gt;.MD2:park-space coordinates] |
 | Language/*/CHAT_COMMANDS.str:0-42 | `source/OpenTPW.Online/Chat/ChatCommands.cs:4` | The original chat commands, in &lt;c&gt;CHAT_COMMANDS.str&lt;/c&gt; order. [DATA:Language/*/CHAT_COMMANDS.str:0-42] |
 | Language/*/TAG_SYSTEM.str:123-127 (six months in the red) | `source/OpenTPW/Economy/ParkEconomy.cs:26` | [DATA:Language/*/TAG_SYSTEM.str:123-127 (six months in the red)] |
-| Language/*/THEMENAMES.str | `source/OpenTPW/Online/OnlineStrings.cs:84` | Theme name of a level. [DATA:Language/*/THEMENAMES.str] order Lost Kingdom, Halloween World, Wonder Land, |
-| Language/*/THEMENAMES.str:order; levels/*/global.sam:Keys.CostToEnter | `source/OpenTPW/Economy/ParkObjectives.cs:320` | [DATA:Language/*/THEMENAMES.str:order; levels/*/global.sam:Keys.CostToEnter] |
+| Language/*/THEMENAMES.str | `source/OpenTPW/Online/OnlineStrings.cs:85` | Theme name of a level. [DATA:Language/*/THEMENAMES.str] order Lost Kingdom, Halloween World, Wonder Land, |
+| Language/*/THEMENAMES.str:order; levels/*/global.sam:Keys.CostToEnter | `source/OpenTPW/Economy/ParkObjectives.cs:325` | [DATA:Language/*/THEMENAMES.str:order; levels/*/global.sam:Keys.CostToEnter] |
 | Language/*/UniToMB.dat | `source/OpenTPW.Files/Formats/String/BFUMReader.cs:10` | Layout verified against all six shipped languages ([DATA:Language/*/UniToMB.dat]): magic |
 | Language/English/*_NAMES.str:entry count 35 | `source/OpenTPW/Economy/ParkStaff.cs:48` | [DATA:Language/English/*_NAMES.str:entry count 35] |
-| Language/English/CHAT_COMMANDS.str:160 | `source/OpenTPW/Online/OnlineStrings.cs:56` | [DATA:Language/English/CHAT_COMMANDS.str:160] "System message: " |
+| Language/English/CHAT_COMMANDS.str:160 | `source/OpenTPW/Online/OnlineStrings.cs:57` | [DATA:Language/English/CHAT_COMMANDS.str:160] "System message: " |
 | Language/English/CHAT_COMMANDS.str:43-85 | `source/OpenTPW.Online/Chat/ChatCommands.cs:84` | &lt;summary&gt;[DATA:Language/English/CHAT_COMMANDS.str:43-85] Canonical (English) command words.&lt;/summary&gt; |
 | Language/English/CHAT_COMMANDS.str:86-175 | `source/OpenTPW.Online/Chat/ChatCommands.cs:17` | Responses as indices into &lt;c&gt;CHAT_COMMANDS.str&lt;/c&gt; ([DATA:Language/English/CHAT_COMMANDS.str:86-175]). |
-| Language/English/ERRORMSG.str | `source/OpenTPW/Online/OnlineStrings.cs:50` | [DATA:Language/English/ERRORMSG.str] |
-| Language/English/UITEXT.str | `source/OpenTPW/Online/OnlineStrings.cs:17` | [DATA:Language/English/UITEXT.str] (the UIStrings enum is off by one from about 206 on; these are verified). |
+| Language/English/ERRORMSG.str | `source/OpenTPW/Online/OnlineStrings.cs:51` | [DATA:Language/English/ERRORMSG.str] |
+| Language/English/UITEXT.str | `source/OpenTPW/Online/OnlineStrings.cs:18` | [DATA:Language/English/UITEXT.str] (the UIStrings enum is off by one from about 206 on; these are verified). |
 | Language/English/swears.txt,alloweds.txt | `source/OpenTPW.Online/Moderation/WordFilter.cs:32` | Decodes an original list. [DATA:Language/English/swears.txt,alloweds.txt] Observed encoding: |
 | Rides.sam:Info.WhichUIType | `source/OpenTPW/Hud/HudStubs.cs:150` | [DATA:Rides.sam:Info.WhichUIType] |
 | Rides.sam:UsageInfo.ExcitementLevel | `source/OpenTPW/Hud/HudStubs.cs:147` | [DATA:Totem.sam:UsageInfo.ExcitementLevel] overrides [DATA:Rides.sam:UsageInfo.ExcitementLevel] |
@@ -505,21 +516,21 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | levels/jungle/Easymode.TPWI:loan table repayments = floor(amount/months) at 0 % APR | `source/OpenTPW/Economy/ParkLedger.cs:146` | [DATA:levels/jungle/Easymode.TPWI:loan table repayments = floor(amount/months) at 0 % APR] |
 | levels/space/rides/megacost.wad/megacost.sgn:slot 1 = "EggIt Italic"/EGGII___.TTF, not in fonts.wad | `source/OpenTPW.Files/Public/DataCorrections.cs:18` | [EXT:COMPAT-FIX sign-font-substitution] [DATA:levels/space/rides/megacost.wad/megacost.sgn:slot 1 = "EggIt Italic"/EGGII___.TTF, not in fonts.wad] |
 | lobby.wad:&lt;theme&gt;.txt ISLAND/SKYCOLOUR/FLYINGMESH/RAINY/LIGHTNING | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:79` | [DATA:lobby.wad:&lt;theme&gt;.txt ISLAND/SKYCOLOUR/FLYINGMESH/RAINY/LIGHTNING] [APPROX:UI-016] angle = yaw, height = camera target height — evidence needed: binary/capture |
-| lobby.wad:&lt;theme&gt;.txt SKYCOLOUR | `source/OpenTPW/Client/GameFlow.cs:279` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
+| lobby.wad:&lt;theme&gt;.txt SKYCOLOUR | `source/OpenTPW/Client/GameFlow.cs:289` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
 | lobby.wad:lobby.txt ISLANDFOV/SPINSPEED/SPINRADIUS/VERTICALOFFSET | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:31` | [DATA:lobby.wad:lobby.txt ISLANDFOV/SPINSPEED/SPINRADIUS/VERTICALOFFSET] defaults equal the shipped values |
 | low.sam/med.sam/high.sam | `source/OpenTPW.Tests/CompatibilityTests.cs:133` | [DATA:low.sam/med.sam/high.sam] in file order (TEXTUREQUALITY .. LOBBYOBJECTS). |
 | low.sam/med.sam/high.sam:comment legend | `source/OpenTPW/Compat/GraphicsSettings.cs:21` | ([DATA:low.sam/med.sam/high.sam:comment legend]). |
-| low/med/high.sam:TEXTUREFILTERING, MIPMAP | `source/OpenTPW/Render/Assets/Material.cs:60` | World textures follow the graphics preset ([DATA:low/med/high.sam:TEXTUREFILTERING, MIPMAP]); see docs/COMPATIBILITY.md. |
-| options table 0x4b0dc | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:217` | [DATA:options table 0x4b0dc] control rectangles of the original page; meanings from the supplied PC capture |
-| options table 0x4b0dc:120020 | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:137` | [DATA:options table 0x4b0dc:120020] title text rectangle |
-| options table 0x4b0dc:120031,OK,Cancel | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:337` | [DATA:options table 0x4b0dc:120031,OK,Cancel] bottom-right panel with the OK and Cancel buttons |
+| low/med/high.sam:TEXTUREFILTERING, MIPMAP | `source/OpenTPW/Render/Assets/Material.cs:64` | World textures follow the graphics preset ([DATA:low/med/high.sam:TEXTUREFILTERING, MIPMAP]); see docs/COMPATIBILITY.md. |
+| options table 0x4b0dc | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:273` | [DATA:options table 0x4b0dc] control rectangles of the original page; meanings from the supplied PC capture |
+| options table 0x4b0dc:120020 | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:193` | [DATA:options table 0x4b0dc:120020] title text rectangle |
+| options table 0x4b0dc:120031,OK,Cancel | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:399` | [DATA:options table 0x4b0dc:120031,OK,Cancel] bottom-right panel with the OK and Cancel buttons |
 | sound.sam:SoundInfo.DUCKINGLEVEL | `source/OpenTPW/Audio/GameAudio.cs:47` | [DATA:sound.sam:SoundInfo.DUCKINGLEVEL] the percentage music and effects keep while speech plays (38 in the shipped file) |
 | speechHD.SDT/MusicHD.sdt:all Layer II frames fit this table to ≤23 spare bits | `source/OpenTPW.Files/Formats/Sound/Mp2Decoder.cs:38` | [DATA:speechHD.SDT/MusicHD.sdt:all Layer II frames fit this table to ≤23 spare bits] |
 | speechHD.SDT:entry word 0 = header size (40) | `source/OpenTPW/World/Advisor.cs:225` | [DATA:speechHD.SDT:entry word 0 = header size (40)] |
-| theme-park-world_win_manual_europe_en_ii5.pdf:PDF-page-15/printed-page-28; SHA256=c96eb25f3dc13f7f0824bbf03f9bbeb3bb94e9f4756d4d8dfa09ac71732b0668 | `source/OpenTPW/Economy/ParkObjectives.cs:315` | [DATA:theme-park-world_win_manual_europe_en_ii5.pdf:PDF-page-15/printed-page-28; SHA256=c96eb25f3dc13f7f0824bbf03f9bbeb3bb94e9f4756d4d8dfa09ac71732b0668] |
+| theme-park-world_win_manual_europe_en_ii5.pdf:PDF-page-15/printed-page-28; SHA256=c96eb25f3dc13f7f0824bbf03f9bbeb3bb94e9f4756d4d8dfa09ac71732b0668 | `source/OpenTPW/Economy/ParkObjectives.cs:320` | [DATA:theme-park-world_win_manual_europe_en_ii5.pdf:PDF-page-15/printed-page-28; SHA256=c96eb25f3dc13f7f0824bbf03f9bbeb3bb94e9f4756d4d8dfa09ac71732b0668] |
 | ui.wad:button UVs v 0.42..1 vs art in the top 58% | `source/OpenTPW/UI/Original/UiModel.cs:131` | [DATA:ui.wad:button UVs v 0.42..1 vs art in the top 58%] V flipped as in the 3D shaders |
 | ui.wad:f_chat.MD2,w_map.MD2 bounds | `source/OpenTPW/UI/Original/UiCanvas.cs:25` | [DATA:ui.wad:f_chat.MD2,w_map.MD2 bounds] full-screen UI frames span 2048×1536 |
-| ui.wad:f_screen | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:127` | [DATA:ui.wad:f_screen] the full-screen frame with the tiled wave background |
+| ui.wad:f_screen | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:183` | [DATA:ui.wad:f_screen] the full-screen frame with the tiled wave background |
 | ui.wad:islandlobby.MD2,f_lobbutbg.MD2 root/bounds | `source/OpenTPW/FrontEnd/FrontEndMenu.cs:78` | [DATA:ui.wad:islandlobby.MD2,f_lobbutbg.MD2 root/bounds] authored panel rectangles |
 | ui.wad:mainpanel,gauge,date,panel MD2 roots | `source/OpenTPW/Hud/ParkHud.cs:116` | [DATA:ui.wad:mainpanel,gauge,date,panel MD2 roots] authored HUD rectangles |
 
@@ -563,6 +574,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | STP-PPC:0x10016F4C advisor balance | `source/OpenTPW/World/AdvisorController.cs:85` | [BIN:STP-PPC:0x10016F4C advisor balance] MessageGroups[g] fields at +36/+40/+44 + 12g |
 | STP-PPC:0x10016F4C advisor balance | `source/OpenTPW/World/AdvisorController.cs:92` | [BIN:STP-PPC:0x10016F4C advisor balance] GeneralAdvisor.MinTimeAnyMessage +24, MinTimeSameMessage +28, MinScoreForConsideration +32 |
 | STP-PPC:0x1009B1DC movie box | `source/OpenTPW/Client/Movie/MoviePresenter.cs:44` | shown at twice their width, with non-square pixels ([BIN:STP-PPC:0x1009B1DC movie box], docs/TGQ-MOVIES.md). |
+| STP-PPC:0x100A6CC0 animation trigger | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:227` | [BIN:STP-PPC:0x100A6CC0 animation trigger] the channel record is model +0x10 + channel × 0x38; TRIGANIM (0x100AFB10), WAITANIM (0x100AFC68), LOOPANIM (0x100AFD7C) and TRIGANIMSPEED (0x100B005C) pass channel 0, TRIGANIM_CH (0x100B01C4) its operand |
 | STP-PPC:0x100A70B4 channel frame arithmetic | `source/OpenTPW/World/Objects/ObjectAnimator.cs:25` | [BIN:STP-PPC:0x100A70B4 channel frame arithmetic] the Feral Mac formula multiplies elapsed milliseconds by 30 and divides by 1000 before channel speed. |
 | STP-PPC:0x100ABF14 sign compositor | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:25` | [BIN:STP-PPC:0x100ABF14 sign compositor] each line is colour-blitted with its colour block's bytes (+0x430..+0x432 for the first line, +0x444..+0x446 for the second) only when its colour mode is 1 or 2 |
 | STP-PPC:0x100BB18C sound service | `source/OpenTPW/Audio/AudioMixer.cs:180` | [BIN:STP-PPC:0x100BB18C sound service] while speech plays (and speech is on with a volume above 0) music and the second user volume are set to volume × SoundInfo.DUCKINGLEVEL / 100 |
@@ -571,6 +583,11 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | STP-PPC:0x100CC120 bank message 13 | `source/OpenTPW/Economy/ParkLedger.cs:75` | [BIN:STP-PPC:0x100CC120 bank message 13] the year event (type 13, from the calendar's year change 0x100E4148) sets mProfitThisYear to 0 |
 | STP-PPC:0x100CC21C loan instalment | `source/OpenTPW/Economy/ParkEconomy.cs:328` | [BIN:STP-PPC:0x100CC21C loan instalment] a fully repaid loan clears its bought flag; 0x100CC9E8 then offers it again when the credit test passes |
 | STP-PPC:0x100CC904 loan deposit | `source/OpenTPW/Economy/ParkLedger.cs:24` | [BIN:STP-PPC:0x100CC904 loan deposit] loan proceeds are added to the "Money in" accumulator (+0x1FC90, graph toggle 0x12279 "Money in") like every other credit; instalments go to the money-out accumulator (+0x1F5A0) |
+| STP-PPC:0x100CE690 challenge check | `source/OpenTPW/Economy/ParkObjectives.cs:153` | [BIN:STP-PPC:0x100CE690 challenge check] a 34-entry handler table (0x1022C794) by type; types 30-33 test "built" (1), type 28 compares TargetVal with the level |
+| STP-PPC:0x100CE754 challenge type 28 | `source/OpenTPW/Economy/ParkObjectives.cs:138` | [BIN:STP-PPC:0x100CE754 challenge type 28] passes when TargetVal &lt;= the highest upgrade level byte (+0x4C, 0 = base) of the target rides (0x100C5740, -1 when none) |
+| STP-PPC:0x100CE7B4 challenge types 9 and 10 | `source/OpenTPW/Economy/GuestEconomyBridge.cs:60` | [BIN:STP-PPC:0x100CE7B4 challenge types 9 and 10] percent = trunc(100 × in-park guests holding a balloon (guest +0x210, 0x100C3BEC) or wearing a costume (+0x24 == 2, 0x100C3CD0) / in-park guests), 0 without guests |
+| STP-PPC:0x100CE9CC challenge types 30-32 | `source/OpenTPW/Economy/ParkObjectives.cs:141` | [BIN:STP-PPC:0x100CE9CC challenge types 30-32] pass when the object control's build count of TargetObj (+0x18, raised by every Thing construction at 0x100DA874 and never lowered) is above 0; TargetVal and TargetObj2 are not read |
+| STP-PPC:0x100CEA00 challenge type 33 | `source/OpenTPW/Economy/ParkObjectives.cs:143` | [BIN:STP-PPC:0x100CEA00 challenge type 33] passes when both TargetObj and TargetObj2 have been built |
 | STP-PPC:0x100D67F0 world update | `source/OpenTPW/Economy/ParkEconomy.cs:144` | [BIN:STP-PPC:0x100D67F0 world update] the golden-ticket check (0x100D31D0) runs when the turn counter is a multiple of 100, and only in Full Simulation (game type 0) |
 | STP-PPC:0x100DA874 object purchase | `source/OpenTPW/Economy/ParkEconomy.cs:496` | [BIN:STP-PPC:0x100DA874 object purchase] an object with a GoldenTicketCost (+0xC4) above 0 that the park has not yet bought with tickets costs that many tickets (0x100D3000; allowed when cost &lt;= earned - spent) and no cash; it joins the owned set, and later copies and ticket-free objects take the cash path |
 | STP-PPC:0x100E3F0C calendar update | `source/OpenTPW/Economy/ParkEconomy.cs:147` | [BIN:STP-PPC:0x100E3F0C calendar update] day, month and year events fire when the extracted date fields change |
@@ -584,13 +601,14 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | STP-PPC:0x100F15B4 research group opener | `source/OpenTPW/Economy/ParkResearch.cs:114` | [BIN:STP-PPC:0x100F15B4 research group opener] with h the category's highest open group, the items of groups &lt;= h are counted; while done × 100 / count (unsigned) reaches ResearchTech[h + 1].PercentageForThisTech and h &lt;= 6, h rises by one |
 | STP-PPC:0x100F41DC staff skill | `source/OpenTPW/Economy/ParkObjectives.cs:107` | [BIN:STP-PPC:0x100F41DC staff skill] skill = trunc(20 × (grade + training percentage / 100)) in single precision; grade 4 at 0 % is 80 |
 | STP-PPC:0x100F46BC staff wage | `source/OpenTPW/Economy/BalanceSettings.cs:173` | [BIN:STP-PPC:0x100F46BC staff wage] monthly wage = PerGradeStaffConsts[grade].BaseWage (balance +748, stride 16) × PerTypeStaffConsts[type].PayMultiplier (+832, stride 4), unscaled |
+| STP-PPC:0x100F5B64 staff candidate | `source/OpenTPW/Economy/ParkStaff.cs:145` | [BIN:STP-PPC:0x100F5B64 staff candidate] grade = (AvgGradeOf* + random % 3 - 1) & 0xFF, stored as 4 when above 4 (so -1 wraps to 4); ChanceToGetGreat* is never read |
 | STP-PPC:0x100F6E24 staff pool update | `source/OpenTPW/Economy/ParkStaff.cs:100` | [BIN:STP-PPC:0x100F6E24 staff pool update] draw = rand() % total shortfall picks the role whose share it falls in; each added candidate lowers that role's shortfall and the per-update cap (also limited by the 32 free slots); 0x100F65E8 drops roles whose hired count reached Max*InPark; 0x100F6790 then tops every role up to Min*InPool counting hired and pooled staff |
 | STP-PPC:0x1010474C world setup | `source/OpenTPW/Economy/BalanceSettings.cs:177` | [BIN:STP-PPC:0x1010474C world setup] game type 0/2 load levels/Standard.sam then &lt;theme&gt;/Standard.sam; type 2 (Instant Action) adds &lt;theme&gt;/Easy_Standard.sam and only logs when it is missing |
 | STP-PPC:0x10119328 object loader | `source/OpenTPW/World/Objects/ObjectCatalog.cs:387` | [BIN:STP-PPC:0x10119328 object loader] In Instant Action (game type 2) Easy_&lt;object file&gt; is layered after the object file when it exists; Online_ files belong to the online game type and are not loaded offline |
 | STP-PPC:0x10121098 history setter | `source/OpenTPW/Client/AutomaticAdvisor.cs:43` | [BIN:STP-PPC:0x10121098 history setter] history saves the world's mGameTick (+0x1DA70C), which the park economy counts as park turns |
 | STP-PPC:0x101210F8 history elapsed | `source/OpenTPW/World/AdvisorScoreQueue.cs:90` | [BIN:STP-PPC:0x101210F8 history elapsed] (live mGameTick &gt;&gt; 2) − (saved &gt;&gt; 2), plain 32-bit subtraction |
 | STP-PPC:0x10125B7C default options | `source/OpenTPW/Compat/GraphicsSettings.cs:144` | [BIN:STP-PPC:0x10125B7C default options] Gestalt 'ram ' in MB (64 when unavailable) and 'pclk' in MHz (266 when unavailable): Low below 65 MB or 301 MHz, Medium below 192 MB or 450 MHz, otherwise High |
-| STP-PPC:0x10128B60 profile key count | `source/OpenTPW/Economy/ParkObjectives.cs:316` | [BIN:STP-PPC:0x10128B60 profile key count] keys = mExtraKeys + (earned global, per-theme and secret tickets) / 3, truncated; spent tickets are not subtracted |
+| STP-PPC:0x10128B60 profile key count | `source/OpenTPW/Economy/ParkObjectives.cs:321` | [BIN:STP-PPC:0x10128B60 profile key count] keys = mExtraKeys + (earned global, per-theme and secret tickets) / 3, truncated; spent tickets are not subtracted |
 | STP-PPC:0x10137600 player save setup | `source/OpenTPW/World/Original/OriginalPark.cs:50` | [BIN:STP-PPC:0x10137600 player save setup] the level's easymode park is copied into a player's saves only for Instant Action players (0x1013741C passes the mode flag) |
 | STP-PPC:0x1013781C player selection | `source/OpenTPW/Client/AutomaticAdvisor.cs:45` | [BIN:STP-PPC:0x1013781C player selection] game type 2 = Instant Action, 0 otherwise (offline) |
 | STP-PPC:0x10137FD0 park view input | `source/OpenTPW/Hud/ParkHud.cs:489` | [BIN:STP-PPC:0x10137FD0 park view input] a button message in the park view plays cat_ui event 0x1F (0xBD when modifier flag 0x10 is set) |

@@ -6,7 +6,8 @@ Reads C# sources and docs from this checkout only; needs no game data and runs n
   still misses are pinned here as known gaps, so a guard change shows up as a test change.
 - The presentation exclusion list hides no simulation code: in the excluded files the guard finds only the
   advisor's mouth-shape Random and camera tuning properties.
-- The canonical hash no longer reads the sound seed (F1), and the pinned fixed-run hash is the schema-2 value.
+- The canonical hash no longer reads the sound seed (F1), the schema is at least 2, and the pinned fixed-run
+  hash in DeterminismTests.cs is the one docs/DETERMINISM.md records (later deliberate re-pins stay consistent).
 - When docs/M3-GATE.md is present (the merged tree), its determinism row says PASS and DETERMINISM.md no
   longer says the gate is "not on main yet".
 """
@@ -92,18 +93,25 @@ class HashRound2(unittest.TestCase):
         self.test_text = read(TEST)
 
     def test_sound_seed_is_not_hashed(self):
-        self.assertIn('public const int SchemaVersion = 2;', self.hash_text)
+        schema = re.search(r'public const int SchemaVersion = (\d+);', self.hash_text)
+        self.assertIsNotNone(schema)
+        self.assertGreaterEqual(int(schema.group(1)), 2)
         self.assertNotIn('SoundSeed', self.hash_text)
         streams = read(SOURCE / 'World' / 'ParkWorldStreams.cs')
         compute = re.search(r'ComputeStateHash\(\) => WorldStateHash\.Compute\((.*?)\);', streams, re.S)
         self.assertIsNotNone(compute)
         self.assertNotIn('Sound', compute.group(1))
 
-    def test_pinned_hash_is_schema_2(self):
+    def test_pinned_hash_is_documented(self):
         # Reproduced in this review: 89f2db9 without the SeedResearcherStandIn key in the economy digest gives
         # 0x86B5046D497B900C (round 1's pin); d620fb7 with schema 1 and the two empty sound fields restored
-        # gives 0xB55E94284EBFE91B (89f2db9's pin).
-        self.assertIn('Assert.AreEqual( 0x0D8B481BB19391DCUL, park.Hash', self.test_text)
+        # gives 0xB55E94284EBFE91B (89f2db9's pin); d620fb7's own pin was 0x0D8B481BB19391DC (schema 2).
+        # Later schema bumps re-pin deliberately; the test pin and the documented current pin must agree.
+        pin = re.search(r'Assert\.AreEqual\( 0x([0-9A-F]{16})UL, park\.Hash', self.test_text)
+        self.assertIsNotNone(pin)
+        schema = re.search(r'public const int SchemaVersion = (\d+);', self.hash_text).group(1)
+        doc = read(REPO / 'docs' / 'DETERMINISM.md')
+        self.assertRegex(doc, rf'`0x{pin.group(1)}`, schema {schema}')
 
 
 class MergedGateDocs(unittest.TestCase):
@@ -117,15 +125,25 @@ class MergedGateDocs(unittest.TestCase):
         row = re.search(r'^\| determinism\.same-seed \| (.*?) \|', gate, re.M)
         self.assertIsNotNone(row)
         self.assertEqual(row.group(1), 'PASS')
-        self.assertIn('Totals: 13 pass, 2 fail, 1 unresolved; **exit code 1**.', gate)
+        # The totals line must agree with the baseline table (it changes as other rows are fixed).
+        verdicts = re.findall(r'^\| [a-z.\-]+ \| \**(PASS|FAIL|UNRESOLVED)\** \|', gate, re.M)
+        totals = re.search(r'Totals: (\d+) pass, (\d+) fail, (\d+) unresolved', gate)
+        self.assertIsNotNone(totals)
+        self.assertEqual([int(n) for n in totals.groups()],
+                         [verdicts.count('PASS'), verdicts.count('FAIL'), verdicts.count('UNRESOLVED')])
         self.assertNotIn('not on main yet', read(REPO / 'docs' / 'DETERMINISM.md'))
         self.assertNotIn('process-wide counter', read(SOURCE / 'Client' / 'M3Gate.cs'))
 
-    def test_eight_registers(self):
+    def test_register_count_matches_the_sentence(self):
+        # Round 2 merged DET and GATE ("eight"); later registers raise the count, which must stay in words.
         tool = read(REPO / 'tools' / 'fidelity_register.py')
-        self.assertIn('"DET": "source/OpenTPW/World/DeterminismApproximations.cs",\n'
-                      '    "GATE": "source/OpenTPW/Client/M3GateApproximations.cs",', tool)
-        self.assertIn('the eight configured C# registers', tool)
+        self.assertIn('"DET": "source/OpenTPW/World/DeterminismApproximations.cs",', tool)
+        self.assertIn('"GATE": "source/OpenTPW/Client/M3GateApproximations.cs",', tool)
+        registers = re.search(r'^REGISTERS = \{(.*?)^\}', tool, re.S | re.M)
+        self.assertIsNotNone(registers)
+        count = len(re.findall(r'^\s+"[A-Z]+": "source/', registers.group(1), re.M))
+        words = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve']
+        self.assertIn(f'the {words[count]} configured C# registers', tool)
 
 
 if __name__ == '__main__':

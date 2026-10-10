@@ -142,9 +142,10 @@ public sealed class ParkStaff
 
 	private StaffCandidate CreateCandidate( StaffRoleSettings role, DeterministicRandom random, long tick )
 	{
-		// [APPROX:ECON-009] candidate grade = average + 2 when "great", else average +-1 — evidence needed: hiring pool captures (grade distribution)
-		var grade = random.Chance( role.ChanceToGetGreat ) ? role.AverageGrade + 2 : role.AverageGrade + random.Next( 3 ) - 1;
-		return new StaffCandidate( NextId++, role.Type, random.Next( NameTableSize ), Math.Clamp( grade, 0, BalanceSettings.GradeCount - 1 ), tick + CandidateLifetime );
+		// [BIN:STP-PPC:0x100F5B64 staff candidate] grade = (AvgGradeOf* + random % 3 - 1) & 0xFF, stored as 4 when above 4 (so -1 wraps to 4); ChanceToGetGreat* is never read
+		var raw = (role.AverageGrade + random.Next( 3 ) - 1) & 0xFF;
+		var grade = raw > BalanceSettings.GradeCount - 1 ? BalanceSettings.GradeCount - 1 : raw;
+		return new StaffCandidate( NextId++, role.Type, random.Next( NameTableSize ), grade, tick + CandidateLifetime );
 	}
 
 	public bool CanHire( StaffType type ) => OfType( type ).Count() < settings[type].MaximumInPark;

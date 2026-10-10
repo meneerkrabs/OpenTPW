@@ -31,6 +31,7 @@ internal sealed class UiRenderer : IDisposable
 	{
 		shader = ShaderCompiler.CompileShader( Path.GetFullPath( "content/shaders/ui-batch.shader", AppContext.BaseDirectory ) );
 		resourceLayout = Device.ResourceFactory.CreateResourceLayout( shader.Reflection.ResourceLayouts.Single() );
+		TexturePackSwitch.PackChanged += ReloadImages;
 		pipeline = Device.ResourceFactory.CreateGraphicsPipeline( new GraphicsPipelineDescription(
 			BlendStateDescription.SingleAlphaBlend,
 			DepthStencilStateDescription.Disabled,
@@ -144,8 +145,29 @@ internal sealed class UiRenderer : IDisposable
 		return (texture, Device.ResourceFactory.CreateResourceSet( new ResourceSetDescription( resourceLayout, resources ) ));
 	}
 
+	/// <summary>
+	/// [EXT:texture-pack] The texture pack changed: forgets the cached interface images (they are decoded again on first use,
+	/// from the new pack) and deletes their GPU copies after the current frame.
+	/// </summary>
+	private void ReloadImages()
+	{
+		var old = textures.Where( entry => entry.Key is string ).ToList();
+		foreach ( var entry in old )
+			textures.Remove( entry.Key );
+		failedImages.Clear();
+		Render.ScheduleDelete( () =>
+		{
+			foreach ( var (_, (texture, set)) in old )
+			{
+				set.Dispose();
+				texture.Dispose();
+			}
+		} );
+	}
+
 	public void Dispose()
 	{
+		TexturePackSwitch.PackChanged -= ReloadImages;
 		foreach ( var (texture, set) in textures.Values )
 		{
 			set.Dispose();

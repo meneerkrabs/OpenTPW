@@ -208,7 +208,7 @@ bash scripts/run.sh --game-path '/path/to/Theme Park World' --fullscreen --upsca
 | `--save-display-settings` | Also stores these values as the user's display settings. |
 | `--export-ps2 <ps2 DATA dir> <out dir>` | Lists the PS2 version's archives and exports its textures as PNG for viewing (PS2.md). |
 | `--capture-world <file.png>` | After `--capture-frames N` frames (default 240) writes the 3D world without interface at its render size and exits; for screenshots and comparisons. |
-| `--build-texture-pack --upscaler <path>` | Builds the optional enhanced texture pack from the installation with a player-supplied Real-ESRGAN executable (TEXTURE-PACKS.md); then turn on Game Options → OpenTPW → Enhanced textures. |
+| `--build-texture-pack --upscaler <path>` | Builds an optional texture pack from the installation with a player-supplied Real-ESRGAN executable (TEXTURE-PACKS.md). Further flags: `--texture-pack-name <name>` (default `enhanced`; `detailed` for the second variant), `--upscale-model`, `--prepass-model <onnx>` (1x de-artifact model before upscaling), `--texture-pack-dir`, `--texture-pack-subtree`, `--interface-model`, `--texture-pack-no-interface`, `--texture-pack-interface-only`, `--texture-pack-sprites-only`, `--prepass-sprites`, `--texture-pack-hero-dir <dir>`, `--texture-pack-merge`. Then choose the pack under Game Options → OpenTPW → Enhanced textures (applied at once, no restart). |
 
 Alt+Enter or F11 toggles fullscreen at runtime; the ImGui park panel has a Display
 section with the same options and the diagnostics (method, requested/effective scale,

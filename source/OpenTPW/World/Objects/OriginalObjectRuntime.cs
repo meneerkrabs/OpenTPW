@@ -223,9 +223,9 @@ public sealed class OriginalObjectRuntime
 /// </summary>
 public sealed class OriginalObjectEffects : IRideScriptEffects
 {
-	/// <summary>Channel of the plain animation opcodes, kept apart from the numbered _CH channels (sideshows use _CH channels 0–2 next to LOOPANIM).</summary>
-	// [APPROX:RIDES-005] Plain animation opcodes use a channel separate from the _CH channels — evidence needed: binary or sideshow capture (TRIGANIM_CH ... 0 next to LOOPANIM)
-	public const int MainChannel = -1;
+	/// <summary>Channel of the plain animation opcodes: channel 0, the same record a _CH opcode addresses with channel 0.</summary>
+	// [BIN:STP-PPC:0x100A6CC0 animation trigger] the channel record is model +0x10 + channel × 0x38; TRIGANIM (0x100AFB10), WAITANIM (0x100AFC68), LOOPANIM (0x100AFD7C) and TRIGANIMSPEED (0x100B005C) pass channel 0, TRIGANIM_CH (0x100B01C4) its operand
+	public const int MainChannel = 0;
 
 	private readonly OriginalObjectRuntime ride;
 

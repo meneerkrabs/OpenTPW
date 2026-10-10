@@ -286,7 +286,6 @@ Original-data values are tagged `// [DATA:<file>:<field>]`.
 | RIDES-002 | World/Objects/ObjectAnimator.cs:120 | Most recently started channel wins a node | Original channel mixing |
 | RIDES-003 | World/Objects/ObjectAnimator.cs:111 | Finished clip holds its last pose | Capture after a clip ends |
 | RIDES-004 | World/Objects/OriginalObjectRuntime.cs:158 | Re-issued LOOPANIM continues the loop | Capture of the Belly Bounce idle loop |
-| RIDES-005 | World/Objects/OriginalObjectRuntime.cs:205 | Plain animation opcodes use a channel apart from `_CH` channels | Binary / sideshow capture |
 | RIDES-006 | World/Objects/OriginalObjectRuntime.cs:229 | GETANIM_CH = 1 while playing, else 0 | Binary semantics |
 | RIDES-007 | World/Objects/OriginalObjectRuntime.cs:219 | TRIGANIMSPEED ignores its 4th operand | Binary semantics |
 | RIDES-008 | World/Objects/ObjectAnimations.cs:28 | ANIM_* → letter, variant v → number v+1 | Binary member lookup |

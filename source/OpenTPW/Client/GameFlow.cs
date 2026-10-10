@@ -97,7 +97,15 @@ internal sealed class GameFlow : IDisposable
 	{
 		Display = Display,
 		Graphics = IGraphicsSettings.Instance,
-		TexturePackAvailable = TexturePack.IsInstalled(),
+		TexturePacks = TexturePack.InstalledPacks(),
+		BeginTexturePackSwitch = name =>
+		{
+			var diagnostics = new List<string>();
+			var textureSwitch = TexturePackSwitch.Begin( name, diagnostics );
+			foreach ( var diagnostic in diagnostics )
+				Log.Warning( $"Texture pack: {diagnostic}" );
+			return textureSwitch;
+		},
 		Options = GameOptions.Current,
 		Languages = GameLanguage.Choosable(),
 		CurrentLanguage = GameLanguage.Current.Name,
@@ -225,6 +233,8 @@ internal sealed class GameFlow : IDisposable
 
 	public void Update()
 	{
+		// [EXT:texture-pack] the pack switch belongs to the game loop, not to its loading screen
+		TexturePackSwitch.PumpCurrent();
 		if ( pending != null )
 		{
 			var transition = pending;

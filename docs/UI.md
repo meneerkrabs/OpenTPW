@@ -218,13 +218,22 @@ x 1331..1964, rows at y 167/323/479, the authored right column's panel size and 
 each with a dark label in the shared size and a `b_on2` cycle button: window mode (windowed /
 borderless / exclusive "Full screen"), upscaling (Native/Linear/Nearest), render scale (Native,
 presets 77/67/59/50 %, others labelled with the original " Custom"), interface scale (Automatic
-or 1x-8x), enhanced textures and language. Clicking the button or wheel up/Right cycles
+or 1x-8x), enhanced textures (see below) and language. Clicking the button or wheel up/Right cycles
 forward, wheel down/Left backward, both wrapping. The effective internal/output size and
 fallback reason are small dark text below the rows. Game files is a purple button where the
 main page has its OpenTPW button, and Back is the `b_okay` button in the OK place on the
 `!f_plain` panel (Escape and right click also go back). It edits the same pending state: Back
 returns to the original page with the edits still pending, and OK on the original page applies
 both pages; Cancel/Escape there discards everything.
+
+The enhanced-textures row (`enhancedTextures`, `[EXT:texture-pack]`) cycles "Original" (the game's own textures),
+"Enhanced" (the default: the HD interface art shipped in `content/hero-art` plus the local `enhanced` pack
+when one is built), then every other installed texture pack (a directory under `<config>/texture-packs` with a
+valid `pack.json`; see TEXTURE-PACKS.md): `detailed` is labelled "Detailed" (translated in all six languages),
+other pack names are shown as they are. The choice is applied on OK, without a restart: a modal
+"Loading textures... n / total" screen with a progress bar (the `w_dialog` window; it takes all
+input and has no Back) swaps the textures of the running game in place while the game keeps
+rendering, then the options close. No restart notice appears for a texture pack.
 
 OK saves `save/opentpw-options.json`. Size/window-mode changes use
 `ApplyWithConfirmation` (15 s) with the original UITEXT 400 question showing the display's

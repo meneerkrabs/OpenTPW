@@ -114,6 +114,28 @@ public static class BoundedZip
 		return output.ToArray();
 	}
 
+	/// <summary>
+	/// <see cref="ReadBounded"/> for network streams, which must be read asynchronously (the browser's
+	/// HTTP responses support nothing else).
+	/// </summary>
+	public static async Task<byte[]> ReadBoundedAsync( Stream stream, int maximumBytes, string what, CancellationToken cancel )
+	{
+		var output = new MemoryStream();
+		var chunk = new byte[81920];
+		long total = 0;
+		while ( true )
+		{
+			var count = await stream.ReadAsync( chunk.AsMemory( 0, (int)Math.Min( chunk.Length, maximumBytes + 1L - total ) ), cancel );
+			if ( count == 0 )
+				break;
+			total += count;
+			if ( total > maximumBytes )
+				throw new InvalidDataException( $"{what} exceeds the {maximumBytes}-byte limit." );
+			output.Write( chunk, 0, count );
+		}
+		return output.ToArray();
+	}
+
 	public static void ValidateEntryName( string name )
 	{
 		if ( string.IsNullOrEmpty( name ) || name.Length > 64 )

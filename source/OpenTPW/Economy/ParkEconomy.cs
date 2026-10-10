@@ -39,6 +39,7 @@ public sealed class ParkEconomy : IParkEconomy
 		Settings = settings ?? throw new ArgumentNullException( nameof( settings ) );
 		Catalog = catalog ?? throw new ArgumentNullException( nameof( catalog ) );
 		Mode = mode;
+		Features = ParkModeFeatures.For( mode );
 		Random = new DeterministicRandom( seed );
 		Ledger = new ParkLedger( settings.InitialCash );
 		Staff = new ParkStaff( settings );
@@ -55,6 +56,12 @@ public sealed class ParkEconomy : IParkEconomy
 	public BalanceSettings Settings { get; }
 	public IEconomyObjectCatalog Catalog { get; }
 	public ParkGameMode Mode { get; }
+	public ParkModeFeatures Features { get; }
+	/// <summary>
+	/// Set for an Instant Action start that imported the shipped seed park, which ships a researcher whose
+	/// staff record is not decoded; <see cref="DoResearch"/> stands in for it while no researcher is employed.
+	/// </summary>
+	public bool SeedResearcherStandIn { get; set; }
 	public DeterministicRandom Random { get; }
 	public ParkLedger Ledger { get; }
 	public ParkStaff Staff { get; }
@@ -85,7 +92,7 @@ public sealed class ParkEconomy : IParkEconomy
 
 	/// <summary>Loan offers that can still be taken; none in Instant Action (UIHELPTEXT 493).</summary>
 	// [BIN:STP-PPC:0x10154AA0 loans window] the Available Loans window only opens outside game type 2 (Instant Action)
-	public IEnumerable<LoanOffer> AvailableLoans => Mode == ParkGameMode.InstantAction
+	public IEnumerable<LoanOffer> AvailableLoans => !Features.Loans
 		? Enumerable.Empty<LoanOffer>()
 		: Settings.Loans.Where( offer => !takenOffers.Contains( offer.Index ) );
 
@@ -155,10 +162,11 @@ public sealed class ParkEconomy : IParkEconomy
 
 	private void DoResearch()
 	{
-		var researchers = Staff.OfType( StaffType.Researcher ).Where( ParkResearch.CanResearch ).ToList();
-		var abilities = researchers.Select( member => Settings.ResearchAbility[member.Grade] ).ToList();
-		if ( abilities.Count == 0 && Mode == ParkGameMode.InstantAction )
-			// [APPROX:ECON-019] Instant Action research runs at one grade-2 researcher without staff — evidence needed: Instant Action capture
+		var employed = Staff.OfType( StaffType.Researcher ).ToList();
+		var abilities = employed.Where( ParkResearch.CanResearch ).Select( member => Settings.ResearchAbility[member.Grade] ).ToList();
+		// Research comes from researchers only (Mac 0xf0728 has no staffless path).
+		if ( employed.Count == 0 && SeedResearcherStandIn && Mode == ParkGameMode.InstantAction )
+			// [APPROX:ECON-019] stand-in for the Instant Action seed's undecoded researcher: one grade-2 researcher while none is employed — evidence needed: Easymode.TPWI staff records
 			abilities.Add( Settings.ResearchAbility[2] );
 		foreach ( var ability in abilities )
 		{
@@ -282,7 +290,8 @@ public sealed class ParkEconomy : IParkEconomy
 			else if ( before >= WornStateOfRepair && item.StateOfRepair < WornStateOfRepair )
 				Raise( ParkEventKind.RideWorn, item.StateOfRepair, item.Id, item.InfoId );
 		}
-		foreach ( var (kind, index, amount, detail) in Objectives.AdvanceDay( day + 1, MeasureChallenge ).ToList() )
+		var challenges = Features.Challenges ? Objectives.AdvanceDay( day + 1, MeasureChallenge ).ToList() : new();
+		foreach ( var (kind, index, amount, detail) in challenges )
 		{
 			if ( kind == ParkEventKind.ChallengeCompleted )
 				Post( LedgerCategory.OtherIncome, amount );
@@ -567,7 +576,7 @@ public sealed class ParkEconomy : IParkEconomy
 		if ( IsBankrupt )
 			return PurchaseResult.Bankrupt;
 		// [BIN:STP-PPC:0x10165A0C upgrade list] game type 2 (Instant Action) lists no upgrades and shows UITEXT 27 instead
-		if ( Mode == ParkGameMode.InstantAction )
+		if ( !Features.Upgrades )
 			return PurchaseResult.NotAvailableInInstantAction;
 		var item = RequireObject( instanceId );
 		if ( !Catalog.TryGet( item.InfoId, out var info ) || item.Kind != ParkObjectKind.Ride )
@@ -664,7 +673,13 @@ public sealed class ParkEconomy : IParkEconomy
 
 	public void SetTrainingBudget( StaffType type, long monthlyBudget ) => Staff.SetTrainingBudget( type, monthlyBudget );
 
-	public void SetResearchEffort( ResearchCategory category, int effort ) => Research.SetEffort( category, effort );
+	/// <summary>Research lab effort; refused in Instant Action, whose research panel does not open (UITEXT 467).</summary>
+	public void SetResearchEffort( ResearchCategory category, int effort )
+	{
+		if ( !Features.ResearchPanel )
+			throw new InvalidOperationException( "Research is automatic in Instant Action: the research lab cannot be changed." );
+		Research.SetEffort( category, effort );
+	}
 
 	public void AcceptChallenge()
 	{

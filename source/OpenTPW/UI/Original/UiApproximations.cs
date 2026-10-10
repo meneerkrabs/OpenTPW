@@ -22,7 +22,7 @@ public static class UiApproximations
 		("UI-012", "hover focuses, release activates, arrows/Enter/Escape navigate, P pauses, right click backs out of modal screens", "binary: input handling; KEYBOARD.str meaning"),
 		("UI-013", "window sizes and inner layout of game mode, load, pause and message dialogs (the options page now follows the original table)", "captures of original dialogs"),
 		("UI-014", "positions inside the lobby panel (island name, prev/enter/next), logo/title placement, right-hand Load/Options/Quit column", "capture of the original lobby screen"),
-		("UI-015", "front-end flow without player profiles; Game Mode is asked when entering a park instead of once per player", "player profiles: the original stores the mode per player (STP-PPC 0x1015D220/0x1013741C)"),
+		("UI-015", "front-end flow without player profiles: Game Mode is asked on every park entry instead of fixed at player creation (the original stores it per player, STP-PPC 0x1015D220/0x1013741C), and every entry starts a new park instead of resuming the player's per-theme autosave", "PC confirmation of the Mac player and autosave flow (docs/reverse/PPC-scenarios.md, \"Park entry\")"),
 		("UI-016", "lobby ISLAND angle = island yaw in degrees, height = camera target height", "binary: lobby script interpretation or capture"),
 		("UI-017", "lobby camera: SPINSPEED read as radians per 0.1 s, vertical field of view 60, 3/s glide between islands, ISLANDFOV unused", "binary or capture of the lobby camera"),
 		("UI-018", "lobby sky drawn as a flat SKYCOLOUR backdrop; flying meshes, rain, lightning, animations not drawn", "binary/capture of the lobby"),
@@ -47,6 +47,7 @@ public static class UiApproximations
 		("UI-038", "3D card rendering, videocard and audio quality are drawn fixed and disabled (OpenTPW has no software renderer, card choice or audio quality)", "none for the game path; the original lets the player change them"),
 		("UI-039", "option label size: letter box about 58 % of the label rectangle height, shared per page; a label whose widest value does not fit drops alone to the largest size that does", "capture of the original option labels in several languages"),
 		("UI-040", "autorun launcher focus rectangle: dotted frame inverting the pixels with even x + y, 2 pixels inside the button (GDI DrawFocusRect brush phase unknown)", "capture of the original launcher with a focused button"),
+		("UI-041", "Load Park opens a shipped park as the reference start (its own balance, Full Simulation rules) whatever Game Mode was last chosen; the original's GameType is not saved with a park but copied from the loading player's profile (mEasyModeUser)", "player profiles and what the Mac park loader 0x11acfc reads from a park file"),
 	};
 
 	private static bool logged;

@@ -15,7 +15,8 @@ namespace OpenTPW;
 /// the original jungle level, the HUD renders with money/date text verified in readback, a Totem is
 /// bought through the catalogue build arm and charged exactly once; a second researched object is
 /// built, opened/closed and checked for overlap refusal. The game exits to the lobby, then loads a
-/// read-only visit and checks build/open/delete/save mutation boundaries. Options are never written and saves go to a temporary directory.
+/// read-only visit and checks build/open/delete/save mutation boundaries, then starts jungle again in
+/// Instant Action and checks its seed and mode gates. Options are never written and saves go to a temporary directory.
 /// </summary>
 internal sealed class FrontEndSmokeTest : IDisposable
 {
@@ -203,6 +204,8 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			VerifyText( capture, flow.Hud!.MoneyText, "HUD bank balance" );
 			VerifyText( capture, flow.Hud.DateText, "HUD date" );
 			var economy = flow.Level!.Park!.Economy;
+			Require( flow.StartKind == ParkStartKind.FullSimulation && economy.Mode == ParkGameMode.FullSimulation && !economy.Settings.IsEasy
+				&& flow.Level.OriginalPark!.Save == null && flow.Level.Park.Import == null, "Full Simulation starts with standard balance and without the Easymode seed" );
 			objectsBeforePurchase = economy.Objects.Count;
 			Require( flow.Hud.Status is EconomyParkStatus && flow.Hud.Status.Money == economy.Balance, "HUD bank balance is the park economy's" );
 			Require( flow.Hud.DateText == string.Format( flow.Strings.Extra( OpenTpwText.DateFormat ), economy.Date.Year, economy.Date.Month, economy.Date.Day ), "HUD date is the park clock" );
@@ -367,18 +370,18 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		Wait( "instant action starts", 3 );
 		Do( "instant action mode before lobby", () =>
 		{
-			Require( flow.Mode == GameMode.InstantAction && flow.Level!.Park!.Economy.Mode == ParkGameMode.InstantAction,
+			Require( flow.StartKind == ParkStartKind.InstantAction && flow.Level!.Park!.Economy.Mode == ParkGameMode.InstantAction,
 				"selected Instant Action reaches the park economy" );
 			flow.ShowFrontEnd( "jungle" );
 		} );
 		Wait( "instant action returns to lobby", 3 );
-		Do( "reload original park in selected mode", () => flow.LoadPark( new ParkLoadEntry( "jungle", 0, false ) ) );
-		Wait( "instant action reloads", 3 );
-		Do( "loaded mode and balance layers", () =>
+		Do( "load original park after Instant Action", () => flow.LoadPark( new ParkLoadEntry( "jungle", 0, false ) ) );
+		Wait( "original park loads", 3 );
+		Do( "loaded park is the reference start", () =>
 		{
-			Require( flow.Mode == GameMode.InstantAction && flow.Level!.Park!.Economy.Mode == ParkGameMode.InstantAction
-				&& flow.Level.Park.Economy.Settings.IsEasy && flow.Level.Park.Economy.Balance == 100000,
-				"return-to-lobby/load preserves Instant Action and Easy balance layers" );
+			Require( flow.StartKind == ParkStartKind.OriginalSaveReference && flow.Level!.Park!.Economy.Mode == ParkGameMode.FullSimulation
+				&& flow.Level.Park.Economy.Settings.IsEasy && flow.Level.OriginalPark!.Save != null,
+				"Load Park opens the shipped save as the reference start whatever mode was chosen before (UI-041)" );
 			var park = OriginalPark.Load( "jungle" );
 			var snapshot = ParkSnapshotBuilder.FromOriginal( park, null );
 			readOnlyVisit = ParkSharing.PrepareVisit( ParkSharing.CreatePackage( snapshot, "HUD read-only smoke", "", "OpenTPW", park.Map ) );
@@ -415,11 +418,67 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			save.Clicked!();
 			Require( hud.Messages.Contains( OnlineStrings.Get( OnlineLabel.ReadOnlyVisit ) ) && !Directory.EnumerateFiles( temporaryDirectory, "*.json", SearchOption.AllDirectories ).Any(), "read-only save callback refuses writes" );
 			CaptureFrame( "read-only-visit.png" );
-			Device.WaitForIdle();
-			completed = true;
-			Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name} at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames, lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, two distinct catalogue objects bought exactly once through the park economy, info arm, economy pause, sale, overlap refusal, open/close, pause menu, exit to lobby, Instant Action return/load mode and balance-layer regression, read-only visit build/open/delete/save guards." );
-			GameFlow.Quit();
+			Click( hud.Stack.Top!, nameof( UIStrings.ExitToLobby ) );
 		} );
+		Wait( "lobby after visit", 20 );
+		Do( "enter park again", () =>
+		{
+			Require( flow.Level == null && flow.Menu?.Selected.Level == "jungle", "the visit exits to the jungle island" );
+			Click( flow.Menu!.Main, "enterPark" );
+		} );
+		Wait( "game mode again", 3 );
+		Do( "choose Instant Action", () =>
+		{
+			Require( flow.Menu!.Stack.Top?.Name == "gameMode", "enter park asks for the game mode again" );
+			Click( flow.Menu.Stack.Top!, "instantAction" );
+		} );
+		Wait( "Instant Action park loads", 40 );
+		Do( "Instant Action start", PlayInstantAction );
+	}
+
+	/// <summary>
+	/// The Instant Action start from the menu: Easy_ balance and the shipped jungle seed, no staff member
+	/// invented for the seed's undecoded researcher but research by its ECON-019 stand-in, and the loan,
+	/// research effort, upgrade, ticket and challenge gates (docs/ECONOMY.md, "Game modes").
+	/// </summary>
+	private void PlayInstantAction()
+	{
+		var level = flow.Level!;
+		var economy = level.Park!.Economy;
+		Require( flow.StartKind == ParkStartKind.InstantAction && economy.Mode == ParkGameMode.InstantAction && economy.Features == ParkModeFeatures.For( ParkGameMode.InstantAction ), "Instant Action button starts an Instant Action park" );
+		Require( economy.Settings.IsEasy && level.OriginalPark!.Save != null && level.Park.Import is { ImportedObjects: > 0 }, "Instant Action jungle uses the Easy_ balance and imports the Easymode seed" );
+		Require( economy.Staff.Members.Count == 0 && economy.SeedResearcherStandIn, "the seed's staff are not decoded: no staff member is invented, research uses the ECON-019 stand-in" );
+		var capture = CaptureFrame( "instant-action-hud.png" );
+		VerifyText( capture, flow.Hud!.MoneyText, "Instant Action HUD bank balance" );
+		Require( !economy.AvailableLoans.Any(), "Instant Action offers no loans" );
+		Refused( () => economy.TakeLoan( 0 ), "taking a loan" );
+		Refused( () => economy.SetResearchEffort( ResearchCategory.Ride, 0 ), "changing research effort" );
+		var seeded = economy.Objects.First();
+		Require( economy.TryBuyUpgrade( seeded.Id ) == ParkEconomy.PurchaseResult.NotAvailableInInstantAction, "upgrades are refused" );
+		var completedItems = economy.Research.Completed.Count;
+		var progress = economy.Research.ProgressEntries.ToArray();
+		var start = economy.Date;
+		economy.AdvanceDays( 60 );
+		Require( economy.Research.Completed.Count > completedItems || !economy.Research.ProgressEntries.SequenceEqual( progress ), "research advances through the seed researcher's stand-in" );
+		Require( economy.Objectives.GoldenTickets.Count == 0 && economy.Objectives.Current == null, "no golden-ticket checks or challenges in Instant Action" );
+		Log.Trace( $"Instant Action jungle: {level.Park.Import!.ImportedObjects} seed objects, {economy.Staff.Members.Count} staff, research advanced {start} -> {economy.Date}; loans, research effort and upgrades refused." );
+		Device.WaitForIdle();
+		completed = true;
+		Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name} at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames, lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, two distinct catalogue objects bought exactly once through the park economy, info arm, economy pause, sale, overlap refusal, open/close, pause menu, exit to lobby, read-only visit build/open/delete/save guards, Instant Action return and Load Park reference start, Instant Action seed, research stand-in and gates." );
+		GameFlow.Quit();
+	}
+
+	private static void Refused( Action action, string what )
+	{
+		try
+		{
+			action();
+		}
+		catch ( InvalidOperationException )
+		{
+			return;
+		}
+		Require( false, $"{what} is refused in Instant Action" );
 	}
 
 	private int stepState;

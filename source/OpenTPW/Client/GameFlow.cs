@@ -48,7 +48,8 @@ internal sealed class GameFlow : IDisposable
 	public FrontEndMenu? Menu { get; private set; }
 	public LobbyScene? Lobby { get; private set; }
 	public UiInput? InjectedInput { get; set; }
-	public GameMode Mode { get; private set; } = GameMode.FullSimulation;
+	/// <summary>How the current original level started; null in the front end and the generic sandbox.</summary>
+	public ParkStartKind? StartKind { get; private set; }
 	/// <summary>Raised after a queued transition ran.</summary>
 	public event Action? Transitioned;
 
@@ -124,12 +125,15 @@ internal sealed class GameFlow : IDisposable
 
 	// ---- Park ------------------------------------------------------------------------------
 
-	/// <summary>New park from the lobby: the original level (terrain, MAP rules, Easymode import where shipped).</summary>
+	/// <summary>
+	/// New park from the lobby in the chosen mode: Instant Action adds the <c>Easy_</c> balance layer and
+	/// the shipped Easymode seed where the level has them; Full Simulation starts from terrain and MAP rules.
+	/// </summary>
 	public void StartPark( string levelName, GameMode mode )
 	{
-		Mode = mode;
-		StartLevel( levelName, original: true, developerPanels: false, gameMode: mode == GameMode.InstantAction ? ParkGameMode.InstantAction : ParkGameMode.FullSimulation );
-		Log.Trace( $"Started {levelName} in {mode} mode from the front end." );
+		var start = ParkStart.FromFrontEnd( mode );
+		StartLevel( levelName, original: true, developerPanels: false, start: start );
+		Log.Trace( $"Started {levelName} as a new {start} park from the front end." );
 	}
 
 	public void LoadPark( ParkLoadEntry entry )
@@ -140,18 +144,22 @@ internal sealed class GameFlow : IDisposable
 			Level!.LoadSandbox();
 		}
 		else
-			StartLevel( entry.Level, original: true, developerPanels: false,
-				gameMode: Mode == GameMode.InstantAction ? ParkGameMode.InstantAction : ParkGameMode.FullSimulation );
+			// [APPROX:UI-041] a loaded shipped park is the reference start whatever Game Mode was last chosen; the original takes the mode from the loading player's profile, not the park — evidence needed: player profiles and the Mac park loader 0x11acfc
+			StartLevel( entry.Level, original: true, developerPanels: false );
 	}
 
-	/// <summary>Creates a level with the original HUD. CLI paths keep the developer panels.</summary>
-	public Level StartLevel( string levelName, bool original, bool developerPanels, ParkVisitInfo? visit = null, ParkGameMode? gameMode = null )
+	/// <summary>
+	/// Creates a level with the original HUD. CLI paths keep the developer panels. Original levels
+	/// default to the read-only reference start (shipped save imported as it was made).
+	/// </summary>
+	public Level StartLevel( string levelName, bool original, bool developerPanels, ParkVisitInfo? visit = null, ParkStartKind start = ParkStartKind.OriginalSaveReference )
 	{
 		TearDown();
-		var level = new Level( levelName, loadOriginalLevel: original, visit: visit, onlineFolders: OnlineFolders, gameMode: gameMode ) { ShowDeveloperPanels = developerPanels };
+		var level = new Level( levelName, loadOriginalLevel: original, visit: visit, onlineFolders: OnlineFolders, start: start ) { ShowDeveloperPanels = developerPanels };
 		Level = level;
 		if ( original )
 			GameAudio.EnterPark( levelName );
+		StartKind = level.Park?.Start.Kind;
 		// Money, calendar, speed and purchases come from the park economy of original levels (Level.Park,
 		// looked up on every access so loading a park save is followed); the generic sandbox has none.
 		IHudParkStatus status = level.Park != null ? EconomyParkStatus.ForLevel( level ) : new NoEconomyStatus();
@@ -176,6 +184,7 @@ internal sealed class GameFlow : IDisposable
 			Level.Dispose();
 			Level = null;
 			Hud = null;
+			StartKind = null;
 			OpenTPW.Level.Current = null!;
 		}
 		foreach ( var entity in Entity.All.ToArray() )

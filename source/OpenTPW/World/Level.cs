@@ -49,7 +49,8 @@ public partial class Level : IDisposable
 	private OnlinePanel? onlinePanel;
 	private OnlineFolders onlineFolders = null!;
 
-	public Level( string levelName, bool loadOriginalLevel = false, ParkVisitInfo? visit = null, OnlineFolders? onlineFolders = null, ParkGameMode? gameMode = null )
+	/// <param name="start">How a writable original level starts; ignored for the sandbox and for read-only visits (which load the shipped save and run no economy).</param>
+	public Level( string levelName, bool loadOriginalLevel = false, ParkVisitInfo? visit = null, OnlineFolders? onlineFolders = null, ParkStartKind start = ParkStartKind.OriginalSaveReference )
 	{
 		if ( visit != null && visit.Level != levelName )
 			throw new ArgumentException( "The visit level must match the loaded level.", nameof( visit ) );
@@ -59,9 +60,9 @@ public partial class Level : IDisposable
 		Current = this;
 		if ( visit != null ? !visit.IsSandbox : loadOriginalLevel )
 		{
-			OriginalPark = OriginalPark.Load( levelName, includeEasymodePark: gameMode != ParkGameMode.FullSimulation );
+			OriginalPark = OriginalPark.Load( levelName, readShippedSave: IsReadOnlyVisit || ParkStart.ReadsShippedSave( start ) );
 			if ( !IsReadOnlyVisit )
-				Park = ParkEconomyRuntime.ForOriginalLevel( OriginalPark, gameMode );
+				Park = ParkEconomyRuntime.ForOriginalLevel( OriginalPark, start );
 		}
 
 		SetupEntities();

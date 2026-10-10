@@ -89,7 +89,24 @@ public static class ServerProgram
 	/// <summary>Typed handler so minimal APIs write the returned result (a bare HttpContext lambda would bind as RequestDelegate).</summary>
 	private static Delegate Handler( Func<HttpContext, Task<IResult>> handler ) => handler;
 
-	private static string Address( HttpContext context ) => context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+	private static string Address( HttpContext context ) => RateLimitKey( context.Connection.RemoteIpAddress );
+
+	/// <summary>
+	/// The rate-limit partition of a client address: IPv4 as is, IPv6 by its /64, because one host usually has a whole
+	/// /64 and could otherwise use a fresh address, and so a fresh limit, for every request.
+	/// </summary>
+	public static string RateLimitKey( System.Net.IPAddress? address )
+	{
+		if ( address == null )
+			return "unknown";
+		if ( address.IsIPv4MappedToIPv6 )
+			address = address.MapToIPv4();
+		if ( address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6 )
+			return address.ToString();
+		var bytes = address.GetAddressBytes();
+		Array.Clear( bytes, 8, 8 );
+		return new System.Net.IPAddress( bytes ) + "/64";
+	}
 
 	private static IResult Error( int status, string message ) => Results.Json( new ApiError( message ), StrictJson.Options, statusCode: status );
 
@@ -392,8 +409,7 @@ public static class ServerProgram
 				}
 				if ( user == null )
 				{
-					if ( socket.State == System.Net.WebSockets.WebSocketState.Open )
-						await socket.CloseAsync( System.Net.WebSockets.WebSocketCloseStatus.PolicyViolation, "unauthorized", CancellationToken.None );
+					await ChatHub.CloseAsync( socket, System.Net.WebSockets.WebSocketCloseStatus.PolicyViolation, "unauthorized" );
 					return;
 				}
 				await hub.RunAsync( socket, user, context.RequestAborted );

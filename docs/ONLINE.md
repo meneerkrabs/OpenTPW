@@ -118,7 +118,11 @@ The server hashes passwords with PBKDF2-SHA256, validates and bounds packages/ch
 frames, checks owners and postcard recipients, and limits authentication/uploads/chat.
 For remote use, provide HTTPS and configure the operator's storage and limits. The
 client validates server URLs and disables automatic HTTP redirects so a redirect cannot
-forward a login body to another service. HTTP remains available for local testing.
+forward a login body to another service. Plain `http://` is accepted only for a server on the same
+computer or the local network (`localhost` names and loopback, private, link-local and
+unique-local addresses written as numbers; a name such as `nas.local` could resolve to any
+address); any other address needs `https://`, so a password never crosses the internet
+unencrypted.
 Going offline disconnects local clients; issued tokens retain their server expiry.
 
 ## Verification and extension labels

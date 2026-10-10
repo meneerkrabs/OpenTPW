@@ -134,19 +134,27 @@ public sealed class ServerStore
 			throw new StoreException( 400, $"Names must be {OnlineText.MinimumNameLength}-{OnlineText.MaximumNameLength} letters, digits, spaces, '_', '-' or '.'." );
 		if ( !PasswordHasher.IsAcceptable( password ) )
 			throw new StoreException( 400, $"Passwords must be {PasswordHasher.MinimumLength}-{PasswordHasher.MaximumLength} characters." );
+		var key = OnlineText.NormalizeName( name );
+		// Cheap checks first: a taken name or a full server must not cost a password hash.
+		lock ( gate )
+			CheckRegistration( key );
 		var (salt, hash) = PasswordHasher.Hash( password, options.PasswordIterations );
 		lock ( gate )
 		{
-			var key = OnlineText.NormalizeName( name );
-			if ( accounts.ContainsKey( key ) )
-				throw new StoreException( 409, "There is already a player of that name." );
-			if ( accounts.Count >= options.MaximumAccounts )
-				throw new StoreException( 503, "This server has reached its account limit." );
+			CheckRegistration( key );
 			var account = new AccountRecord { Name = name, Key = key, Salt = salt, Hash = hash, Iterations = options.PasswordIterations, CreatedUtc = clock() };
 			accounts.Add( key, account );
 			Save( "accounts.json", accounts.Values.ToList() );
 			return account;
 		}
+	}
+
+	private void CheckRegistration( string key )
+	{
+		if ( accounts.ContainsKey( key ) )
+			throw new StoreException( 409, "There is already a player of that name." );
+		if ( accounts.Count >= options.MaximumAccounts )
+			throw new StoreException( 503, "This server has reached its account limit." );
 	}
 
 	public SessionToken Login( string name, string password )

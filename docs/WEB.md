@@ -1,11 +1,13 @@
 # OpenTPW in the browser
 
-Status, October 10, 2026: the **front end runs in the browser** over WebGL2. The lobby with
+Status, October 10, 2026: the **front end and parks run in the browser** over WebGL2. The lobby with
 its islands, the camera glide between them, the original UI (buttons, BF4 fonts, popup help)
 and the options screen draw as on the desktop, and mouse and keyboard work. **Online play
 works** against an OpenTPW server, which can also host the page itself (docs/SERVER.md):
-register, log in and chat were checked in the browser. Parks, sound, movies and the
-developer panels do not run in the browser yet (see the end of this page).
+register, log in and chat were checked in the browser. Starting a park works too: the Lost
+Kingdom ran with its rides, guests, economy and build menu at about 97 frames per second in
+the interpreter. Sound, movies, lasting saves and the developer panels are not in the browser
+yet (see the end of this page).
 
 Nothing from the game is shipped or uploaded: the player chooses their own Theme Park World
 folder, and the page copies the files the front end needs into the runtime's memory.
@@ -35,7 +37,8 @@ files, not symbolic links: ASP.NET reports a link's own size.
 | Check | Result |
 | --- | --- |
 | Download, Brotli-compressed | about 10 MB: 4.5 MB for the runtime and game, plus the 5.8 MB of HD interface art (PNG, already compressed) |
-| Game files copied for the front end | 205 files, everything in `Data` except movies, parks, start-up pictures and sound banks |
+| Game files copied at start | about 200 files, everything in `Data` except movies, start-up pictures, sound banks and the theme folders below `levels` |
+| Game files copied when a park starts | its theme folder, about 110 files and 7 MB for the Lost Kingdom without its sound banks |
 | Front end frame rate | 119 frames per second (the display rate) at 2048×1536 pixels, interpreter mode |
 
 ## How it works
@@ -77,6 +80,16 @@ assembly uses from another package:
 ```sh
 dotnet run --project tools/AssemblySurface -- path/to/OpenTPW.dll Veldrid
 ```
+
+### Game files on demand
+
+The page copies the files the front end needs when the player chooses the folder, and keeps
+the theme folders below `levels` (about 10 MB each without sound) for later. Starting, loading
+or visiting a park goes through `GameFlow.QueueLevel`, which waits until
+`GameFlow.LevelDataReady` says the level is there; the browser answers by asking the page to
+copy that theme's folder and shows *Loading the park* while the lobby keeps running. On the
+desktop `LevelDataReady` is null and parks start at once. Each theme's saved park
+(`Easymode.TPWI`) is copied at start, so the Load list is complete.
 
 ### Shaders
 
@@ -140,10 +153,8 @@ framebuffer).
 
 ## What the browser build still lacks
 
-- **Parks:** starting a park needs the `levels` folder (about 45 MB per theme); copying all of
-  it up front is slow, so it wants lazy loading (the File System Access API or a one-time copy
-  into OPFS) and a check of the simulation's speed in the interpreter (AOT is the fallback,
-  at a larger download).
+- **Choosing the folder again:** the files are read from the chosen folder while the page is
+  open; the next visit asks for it again (a one-time copy into OPFS would remember it).
 - **Sound and movies:** the decoders already run in managed code; playback needs WebAudio in
   place of the SDL audio stand-in.
 - **Developer panels:** they need ImGui, which is a native library.

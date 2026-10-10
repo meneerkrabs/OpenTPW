@@ -12,6 +12,8 @@ public static partial class Program
 	private const string GameRoot = "/game";
 	private static Renderer? renderer;
 	private static GameFlow? flow;
+	private static readonly HashSet<string> loadedLevels = new( StringComparer.OrdinalIgnoreCase );
+	private static readonly HashSet<string> requestedLevels = new( StringComparer.OrdinalIgnoreCase );
 
 	public static void Main()
 	{
@@ -81,11 +83,24 @@ public static partial class Program
 		renderer = new Renderer( DisplaySettings.Default, null );
 		Render = renderer;
 		flow = new GameFlow { OnlineFolders = new OnlineFolders( "/online" ) };
+		// Level folders are copied when a park is first started; the lobby keeps running meanwhile.
+		GameFlow.LevelDataReady = level =>
+		{
+			if ( loadedLevels.Contains( level ) )
+				return true;
+			if ( requestedLevels.Add( level ) )
+				Page.RequestLevel( level );
+			return false;
+		};
 		renderer.OnUpdate += flow.Update;
 		renderer.OnRender += flow.Render;
 		flow.ShowFrontEnd();
 		renderer.Start();
 	}
+
+	/// <summary>The page has copied a level's folder (or given up; the level then reports what is missing).</summary>
+	[JSExport]
+	public static void LevelLoaded( string level ) => loadedLevels.Add( level );
 
 	/// <summary>Writes the embedded content files where the game looks for them (next to the program).</summary>
 	private static void WriteContent()

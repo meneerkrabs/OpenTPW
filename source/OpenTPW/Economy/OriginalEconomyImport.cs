@@ -77,7 +77,8 @@ public sealed class OriginalEconomyImport
 			if ( !settings.Challenges.TryGetValue( level[index], out var definition ) )
 				throw new InvalidDataException( $"ChallengesInThisLevel[{index}] = {level[index]} is not defined." );
 			if ( saved.Type != definition.Type || saved.TargetTime != definition.TargetTime || saved.TargetValue != definition.TargetValue || saved.TargetObject != definition.TargetObject
-				|| saved.TargetObject2 != definition.TargetObject2 || saved.Prize != definition.Prize || saved.FollowupType != definition.FollowupType || saved.Independent != definition.Independent )
+				|| saved.TargetObject2 != definition.TargetObject2 || saved.TargetStaffType != definition.TargetStaffType || saved.Prize != definition.Prize
+				|| saved.FollowupType != definition.FollowupType || saved.CheckAtEndOnly != definition.CheckAtEndOnly || saved.Independent != definition.Independent )
 				throw new InvalidDataException( $"Save challenge {index} (type {saved.Type}, prize {saved.Prize}) differs from Challenges[{definition.Index}]." );
 		}
 		evidence.Add( $"{level.Count} challenge records equal Challenges[{string.Join( ", ", level )}] in ChallengesInThisLevel order." );

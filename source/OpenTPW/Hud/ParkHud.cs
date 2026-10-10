@@ -77,12 +77,15 @@ public sealed class ParkHud
 	public bool InfoArmOpen { get; private set; }
 	public BuildCategory Category { get; private set; } = BuildCategory.Rides;
 	public int BuildPage => buildPage;
-	public int BuildPageCount => Math.Max( 1, (Catalog.GetItems( Category ).Count + 2) / 3 );
+	public int BuildPageCount => Math.Max( 1, (BuildItems.Count + 2) / 3 );
+	/// <summary>The selected category's items in the original buy list's order.</summary>
+	// [BIN:STP-PPC:0x10178768 list insert] the buy list (504, attribute 0x91 with the sorted-insert bit 0x10) inserts each row before the first row whose name is greater (wcscmp, 0x10178654); its sort word starts at 1 (column 0, the name, ascending), so equal names keep catalogue order
+	public IReadOnlyList<BuildItem> BuildItems => Catalog.GetItems( Category ).OrderBy( ItemName, StringComparer.Ordinal ).ToArray();
 	/// <summary>The cat_ui event of a click in the park view.</summary>
 	public const uint ParkViewClickEvent = 0x1F;
 
 	public OriginalObject? SelectedObject => selectedObject;
-	public IReadOnlyList<BuildItem> VisibleBuildItems => Catalog.GetItems( Category ).Skip( buildPage * 3 ).Take( 3 ).ToArray();
+	public IReadOnlyList<BuildItem> VisibleBuildItems => BuildItems.Skip( buildPage * 3 ).Take( 3 ).ToArray();
 	public bool Paused => Stack.Screens.Count > 1;
 	public IReadOnlyList<string> Messages => messages.Select( message => message.Text ).ToArray();
 
@@ -128,7 +131,7 @@ public sealed class ParkHud
 		// (control 47, (258,60,720,260), white font slot 1) sits at the top left of the screen, not in the panel, whose
 		// buttons start right below the date box. [APPROX:UI-021] the original resizes/repositions control 47 from the
 		// measured font extents and the drawable size (0x156ef4); the table rectangle is used as is; ","-grouped digits.
-		hud.Add( new UiLabel { Id = "date", Text = () => DateText, Font = fonts => fonts.Small, Color = new Veldrid.RgbaByte( 0, 0, 0, 255 ), Align = UiAlign.Center, Bounds = Rect( 182, 1061, 383, 1103 ), Anchor = UiAnchor.BottomLeft } );
+		hud.Add( new UiLabel { Id = "date", Text = () => DateText, Font = fonts => fonts.Date, Color = new Veldrid.RgbaByte( 0, 0, 0, 255 ), Align = UiAlign.Center, Bounds = Rect( 182, 1061, 383, 1103 ), Anchor = UiAnchor.BottomLeft } );
 		hud.Add( new UiLabel { Id = "money", Text = () => MoneyText, Font = fonts => fonts.Balance, Color = UiColors.Text, Align = UiAlign.Left, Bounds = Rect( 258, 60, 720, 260 ), Anchor = UiAnchor.TopLeft, Help = strings.Help( 465 ) } );
 
 		// [DATA:Mac main HUD table 0x4ab38:38-43] original button rectangles: staggered along the panel's curve, plus the camera button

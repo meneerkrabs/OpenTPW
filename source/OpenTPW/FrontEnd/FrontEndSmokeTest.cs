@@ -627,7 +627,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 	{
 		var hud = flow.Hud!;
 		hud.SelectCategory( item.Category );
-		var index = hud.Catalog.GetItems( item.Category ).ToList().IndexOf( item );
+		var index = hud.BuildItems.ToList().IndexOf( item );
 		hud.ChangeBuildPage( index / 3 );
 	}
 
@@ -659,40 +659,31 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		{
 			foreach ( var glyph in batch.Glyphs.Skip( entry.FirstGlyph ).Take( entry.GlyphCount ).Where( glyph => glyph.Color.A == 255 && glyph.Color != UiColors.Shadow ) )
 			{
-				for ( var row = 0; row < glyph.Height / glyph.Scale; row++ )
+				// The renderer draws the smoothed coverage one texel per pixel (FontSmoothing).
+				var factor = FontSmoothing.Factor( glyph.Atlas, glyph.Scale );
+				if ( factor != glyph.Scale )
+					continue;
+				var coverage = FontSmoothing.Coverage( glyph.Atlas, factor );
+				var stride = glyph.Atlas.Width * factor;
+				for ( var row = 0; row < glyph.Height; row++ )
 				{
-					for ( var column = 0; column < glyph.Width / glyph.Scale; column++ )
+					for ( var column = 0; column < glyph.Width; column++ )
 					{
-						if ( glyph.Atlas.Alpha[(glyph.AtlasY + row) * glyph.Atlas.Width + glyph.AtlasX + column] != 255 )
+						if ( coverage[(glyph.AtlasY * factor + row) * stride + glyph.AtlasX * factor + column] != 255 )
 							continue;
-						// Every output pixel of the texel's scale×scale block (pixel-exact integer scaling).
-						var inside = true;
-						var exact = true;
-						for ( var dy = 0; dy < glyph.Scale; dy++ )
-						{
-							for ( var dx = 0; dx < glyph.Scale; dx++ )
-							{
-								var x = glyph.X + column * glyph.Scale + dx;
-								var y = glyph.Y + row * glyph.Scale + dy;
-								if ( x < 0 || y < 0 || x >= frameCapture.Width || y >= frameCapture.Height )
-								{
-									inside = false;
-									continue;
-								}
-								var pixel = (y * frameCapture.Width + x) * 4;
-								exact &= Math.Abs( frameCapture.Pixels[pixel] - glyph.Color.B ) <= 2 && Math.Abs( frameCapture.Pixels[pixel + 1] - glyph.Color.G ) <= 2 && Math.Abs( frameCapture.Pixels[pixel + 2] - glyph.Color.R ) <= 2;
-							}
-						}
-						if ( !inside )
+						var x = glyph.X + column;
+						var y = glyph.Y + row;
+						if ( x < 0 || y < 0 || x >= frameCapture.Width || y >= frameCapture.Height )
 							continue;
+						var pixel = (y * frameCapture.Width + x) * 4;
 						checkedTexels++;
-						if ( exact )
+						if ( Math.Abs( frameCapture.Pixels[pixel] - glyph.Color.B ) <= 2 && Math.Abs( frameCapture.Pixels[pixel + 1] - glyph.Color.G ) <= 2 && Math.Abs( frameCapture.Pixels[pixel + 2] - glyph.Color.R ) <= 2 )
 							matching++;
 					}
 				}
 			}
 		}
-		Log.Trace( $"UI text readback '{text}' ({what}): {matching}/{checkedTexels} opaque glyph texels match." );
+		Log.Trace( $"UI text readback '{text}' ({what}): {matching}/{checkedTexels} opaque glyph pixels match." );
 		Require( checkedTexels >= 3 && matching >= checkedTexels * 97 / 100, $"{what} text pixels match in GPU readback" );
 	}
 

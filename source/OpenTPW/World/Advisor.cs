@@ -47,7 +47,7 @@ internal sealed class Advisor : IDisposable
 		("ADVISOR-013", "the mouth is talking from time 0 (the unit and per-mark toggle are traced)"),
 		("ADVISOR-014", "MP2 synthesis window values read from ffmpeg's table, checked against two ISO values and ≤1 LSB corpus output"),
 		("ADVISOR-016", "returned playback span = speech length + 200 + 300 + 1000 ms (sequence and ending-clip durations not decoded)"),
-		("ADVISOR-017", "advisor controller clock = wall-clock ms since the automatic advisor started, updated once per frame; not pause-aware"),
+		("ADVISOR-017", "advisor clock starts at 0 with the automatic advisor, is sampled once per frame and stands still only while the pause menu is open"),
 		("ADVISOR-018", "the automatic advisor is drawn only while its speech plays, only inside a level; leaving the level stops it"),
 		("ADVISOR-019", "GeneralAdvisor.MinTimeAnyMessage and GeneralAdvisor.MinTimeSameMessage are loaded but not applied"),
 		("ADVISOR-020", "game events 2/3/4 come from the park economy's Bankrupt/ParkOpened/ParkClosed events, not proven equal to the original producers"),

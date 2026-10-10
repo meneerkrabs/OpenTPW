@@ -3712,3 +3712,146 @@ program, and PC parity.
    merge. Rerun the native front-end smoke run, because its Instant Action
    research assertion depends on that choice.
 3. Optional: S1-3, S1-4, R17-2, R18-2, R18-3.
+
+### 57.1 Round 2: merge `5224418`
+
+Subject: `5224418`, the merge of `ffa87c6` onto `main` `efc090d`, and `2902c7d`
+(section 57 on top). `origin/main` is still `efc090d`. Mac static evidence only.
+Nothing original was executed. `test_scenarios_s2.py` decodes the UI-041 operands
+with its own field split and checks the merge against both parents read-only.
+
+**Verdict: merge-ready.** No blocker remains. The open items below are low and
+optional.
+
+#### S1-1: resolved
+
+Each prescribed resolution was checked against both parents (`git show
+5224418` combined diff, plus a scan for lines either parent added since the
+merge base that are missing from the merge):
+
+1. `GameFlow.StartLevel` keeps `GameAudio.EnterPark( levelName )` under
+   `if ( original )` and then sets `StartKind`.
+2. `LoadPark` uses the lane's rule (reference start). It carries a new
+   `[APPROX:UI-041]` (see below). Main's smoke steps were rewritten to check
+   that Load Park after an Instant Action start gives the reference start.
+   Main's `Balance == 100000` check after the reload is gone, which follows
+   from the rule change. `GameModeSelectsBalanceLayersAndEasymodePark` still
+   checks the Instant Action balance of 100000.
+3. `OriginalPark.Load` uses `if ( savePath != null )` and keeps
+   `BIN:STP-PPC:0x10137600`. No `includeEasymodePark` is left in `source/`.
+4. `ParkResearch.cs` is byte-identical to main's. `ParkEconomy` keeps main's
+   loan and upgrade BIN labels on `!Features.Loans` and `!Features.Upgrades`. It
+   also keeps main's golden-ticket check, every 100 turns and only in Full
+   Simulation, without the lane's month-end check. The
+   `Features.Challenges` gate on `Objectives.AdvanceDay` is kept.
+5. Tests were checked line by line against both parents. The only removed
+   lines are the ones replaced by the port: main's `includeEasymodePark`/
+   `ParkGameMode` calls, main's "Instant Action research is automatic" trio
+   (now the stand-in case), and the lane's `AdvanceDays( 1 )` (now
+   `TickOfTurn( TurnsPerResearch )`). No assertion was weakened. The new
+   assertions cover the stand-in flag for each start kind, a stand-in park that
+   researches, and a save round trip.
+6. UI-015, the research row and FINDINGS.md "Instant Action rules traced so
+   far" are reconciled. The register lists 141 IDs (+UI-041). The
+   `ParkEconomy.cs:169` and `GameFlow.cs:147` locations are current.
+
+The lane lines that are not in the merge are all superseded on purpose. They are
+the month-end ticket hunk, `DailyPoints`, the ECON-019 "unused leftover" text and
+the "research does not advance" smoke assertion. The main lines that are not in
+the merge are the `gameMode`/`includeEasymodePark` plumbing and the old UI-015
+and ECON-019 texts.
+
+#### S1-2: resolved, and the condition change is justified
+
+`DoResearch` adds one grade-2 ability when three things hold: no researcher is
+**employed**, `SeedResearcherStandIn` is set, and the mode is Instant Action.
+`ParkEconomyRuntime` sets the flag only when the seed was imported in an Instant
+Action start. Hallow, Full Simulation and the reference start get no stand-in,
+and tests check each one. Main's condition was "no researcher *could* research".
+"Employed" is the wording of the section 57 recommendation, and it fits a
+stand-in for a missing staff record. With "could research", a hired researcher
+in an excluded state (ECON-015) would also bring back the stand-in, so a real
+researcher and the stand-in would take turns. Do not revert.
+
+- **S2-1 (low, optional):** on the Mac the seed's researcher would stay when the
+  player hires another one. The stand-in stops at the first hire, so such a park
+  has one researcher fewer than the Mac would. Production cannot reach this,
+  because there is still no hiring UI. The ECON-019 text already states "while
+  none is employed".
+
+#### Save compatibility
+
+`SeedResearcherStandIn` is a non-`required` `init` member. `CurrentVersion`
+stays 2, and `UnmappedMemberHandling.Disallow` only rejects unknown members. I
+checked this with a scratch program against the built `OpenTPW.dll`, which was
+not committed. A serialized Instant Action park with the flag set round-trips
+`true`. The same JSON with the member removed (the pre-merge format) loads, with
+the stand-in off and the mode Instant Action.
+
+- **S2-2 (low, informational):** an Instant Action save written by a pre-merge
+  `main` build loads without the stand-in, so its research stops. On main, the
+  same park researched without staff. The only production caller of
+  `ParkEconomyRuntime.Load` is `SandboxSmokeTest`, so no player save is
+  affected.
+
+#### UI-041 evidence (bounded, holds)
+
+Decoded from the instruction words:
+
+- The `mEasyModeUser` getter `0x128f4c` is `lbz r3,36(r3)`, and the setter
+  `0x128f54` is `stb r4,36(r3)`. The setter's two direct callers (`0x13759c`,
+  `0x1375cc`) are inside `CreatePlayer` (`0x13741c`).
+- Player selection `0x13781c` tests `cmpwi GameType,1` at `0x137954` and skips
+  the override when it is equal. Otherwise it calls the getter at `0x13798c`,
+  then `clrlwi.` and a branch on zero. On a non-zero byte it calls `li r4,2;
+  bl SetGameType` (`0x1379b4`/`0x1379bc`), and on zero `li r4,0; bl
+  SetGameType` (`0x1379e0`/`0x1379e8`).
+- `SetGameType` `0x12bbf4` has exactly the 10 direct callers listed in
+  PPC-scenarios.md. I followed every direct `bl` from the park loader
+  `0x11acfc`, treating a function as the span between two direct-call targets.
+  The closure has 2,191 functions. It contains only one function with a
+  `SetGameType` site: the GameType constructor `0x12bb64`. That constructor maps
+  the startup flag bits to 2/1/0, else 0. All 95 direct constructor calls are
+  behind a construct-once guard (`extsb.` on the guard byte, then `bf eq` past
+  the call). The loader's closure does not include selection, the online
+  entries or main-loop state 11.
+
+Bounds: indirect calls are not followed, and no store through another alias of
+the GameType object is excluded. A local scan near the 18 GameType TOC loads in
+that closure found no store through the loaded pointer, but this is not proof.
+I did not re-verify the "GameType is not saved with a park" half. UI-041 rests
+on the loader not applying a mode, and the bounded result supports that.
+
+#### Low items from round 1
+
+S1-4 is fixed: PPC-scenarios.md line 226 now reads "the PC counterpart of the
+file the Mac Instant Action copy names". S1-3 cannot be fixed without rewriting
+`cb8dca2`, which is already part of the merged history, so it stays recorded.
+The merge commit itself has full trailers. **S2-3 (trivial):** its `Tested`
+trailer says 629 evidence tests, and the rerun here reports 639. R17-2, R18-2
+and R18-3 are unchanged.
+
+#### Results (this worktree, `2902c7d`)
+
+| Check | Result |
+| --- | --- |
+| SDK 10.0.401 (`opentpw-dotnet10`, non-symlinked path) `build -c Release --no-incremental` | 0 errors |
+| `OpenTPW.Tests`, no assets | 869 pass, 242 skip, 0 fail (matches the author) |
+| `OpenTPW.Tests`, `OPENTPW_GAME_PATH` | 1040 pass, 71 skip, 0 fail (matches) |
+| `fidelity_register.py --check` | 141 IDs, exit 0 |
+| `run_evidence_checks.py` with the Mac bin | OK: 10 Python suites, 639 tests, 106 skipped; net8 harnesses not run |
+| `diff --stat` vs `--ignore-cr-at-eol --stat`, `efc090d`→`5224418` | identical (37 files, +8258 −107) |
+| `git diff --check efc090d 2902c7d` | clean |
+| `git merge-tree --write-tree origin/main 2902c7d` (after fetch, `origin/main` = `efc090d`) | exit 0, no conflicts |
+| `test_scenarios_s2` with `OPENTPW_PPC_BIN_ROOT`, `OPENTPW_REVIEW_REPO` | 7/7 (7 skipped without them) |
+| review lane `unittest discover`, all three env vars / none | 226 run OK (14 skipped) / 226 run OK (66 skipped) |
+
+Not run: the native front-end smoke run (the author reports 338 frames), the
+original program, and PC parity.
+
+#### Handoff
+
+1. Merge `2902c7d` (or `5224418` plus this review) onto `main`. It is a fast
+   forward while `main` stays at `efc090d`.
+2. Optional: S2-1 (keep the stand-in alongside hired researchers), S2-2, R17-2,
+   R18-2, R18-3.

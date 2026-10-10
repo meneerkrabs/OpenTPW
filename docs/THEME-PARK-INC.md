@@ -3,8 +3,9 @@
 Theme Park Inc (Europe, 2001; Sim Coaster in North America) is Bullfrog's follow-up
 to Theme Park World. This note records how far its data and engine match what
 OpenTPW reads, measured on October 9, 2026. It is a comparison, not a support claim:
-OpenTPW does not load Theme Park Inc. Since October 10, 2026 OpenTPW has a reader for
-its `.fsh` textures ([FSH.md](FSH.md)); nothing uses it in the game yet.
+OpenTPW does not support Theme Park Inc. Since October 10, 2026 OpenTPW has a reader for
+its `.fsh` textures ([FSH.md](FSH.md)), and since October 11, 2026 an experimental
+[level viewer](#theme-park-inc-level-viewer) that shows its worlds.
 
 ## Sources
 
@@ -44,6 +45,77 @@ TPWS container, and its balance settings grow.
 | Saves | `Easymode.TPWI` (magic 400) | `prebuilt.TPWS` (magic 500, extended header) | rejected: "version 0; expected 133" |
 | Movies | QuickTime `.mov` (Mac edition) | 2 `.tgq` (`SCHl`) | 2/2 |
 | Banner companions `.mtr` | none on the Mac CD | 7 | 0/7: header words differ from the TPW variant |
+
+## Theme Park Inc level viewer
+
+`--load-original-level arabian|science|water` with Theme Park Inc data shows that world in 3D
+(`[EXT:tpi-viewer]`, a viewing aid in the sense of the [PS2 export](PS2.md), October 11, 2026). It is
+not Theme Park Inc support: there is no Theme Park Inc interface, front end, economy, rules or
+save handling, and nothing it draws has been compared with the original game. How to extract the CD
+cabinets and start it: [RUNNING.md](RUNNING.md#theme-park-inc-level-viewer-experimental).
+
+**Edition detection.** `GameEditions.Detect` (Client/Setup/GameEdition.cs) classifies a `Data`
+folder as Theme Park Inc by the retail `levels/Standard.sam` (45,695 bytes, the SHA-256 that setup's
+negative identity already used), or, for edited copies, by structure: `Ver.txt` beside at least one
+of `levels/arabian|science|water` and none of `levels/jungle|fantasy|hallow|space`. The loaders
+switch on this (`GameEditions.IsThemeParkInc`). Setup, settings and the saved game folder keep
+rejecting Theme Park Inc (hash only, as before). A folder given through `--game-path` or
+`OPENTPW_GAME_PATH`, which skips that check, is now classified at start-up: Theme Park Inc data is
+refused unless the command is `--load-original-level` with a Theme Park Inc world and none of
+`--sandbox`, `--front-end`, `--smoke-test`, `--advisor-say`, `--advisor-response`, `--setup`.
+
+**What the viewer shows.** The base terrain (`base.MD2` heightfield and meshes), the lake, the path
+layer (`pathtex` textures), the default fixed items (gate and bus objects), the monorail (part of the
+terrain meshes), guests with their sprites, and the world's sound and music. The camera is the
+park camera (pan, rotate, zoom); Esc quits and P pauses. The sandbox developer panels are off.
+
+**What it leaves out.** No economy (`ParkEconomyRuntime` is not created: Theme Park Inc's `Standard.sam`
+has other keys, e.g. no `PerGradeStaffConsts[0].BaseWage`), so no money, calendar or building; no
+HUD (the TW panels' models are not in Theme Park Inc's `ui.wad`); no advisor (its `Advisor.sam`
+differs). The viewer logs one line saying so. The shipped park saves (`PreBuilt/*.TPWS`, magic 500)
+are not read, so a world starts empty with its fixed items only (RIDES-019): the gate and bus sit
+where Theme Park World's defaults put them, not necessarily where Theme Park Inc does. Several ride
+scripts report unimplemented effects in the log. Textures are not checked against the original
+game's alpha or colour handling (COMPAT-014/015).
+
+**Textures.** `Texture` now loads `.fsh` (first image of the SHPI file, `FshFile`) and stb images
+(`.tga`, `.png`) from the game data as well as from disk; decoding is GPU-free
+(`Texture.DecodeImage`). Terrain and object textures are looked up by name without extension
+(`OriginalTerrain.FindTexture`, `ObjectAssets.ResolveTexture`), so `.wct` and `.fsh` need no
+separate paths. Theme Park Inc never goes through the `.wct` texture packs. All terrain and object
+textures of the three worlds resolve and decode, except the build-tool markers `PathTex` 16 to 18
+(`baseblue`, `grnarrow`, `redarrow`, unused here) and six lake bed textures of `science` (below).
+A texture the data lacks is drawn plain white and named in one log line.
+
+**The `@` shape symbol.** `Info.Shape` rows of every Theme Park World object use `. * 2 S N E < > + W`.
+Theme Park Inc adds `@`, in exactly six objects, all road signs: `features/smrdsgn` ("`*@*`") and
+`lroadsgn` ("`*@@*`") in `arabian` and `water`, `signsm` ("`*@*`") and `signlrg` ("`*@@*`") in
+`science`. Each sign model spans its shape width x 10 units and consists of a base, two pillar meshes and a sign
+board, and the `.sam` marks the object `Info.OverwritePriority 1` ("Overwritable!") and
+`Info.IsChoosable 0`. The likely reading is a pillar cell at each end (`*`) and cells under the board (`@`),
+but the data does not prove it. The Theme Park Inc `Game.exe` is
+SafeDisc-encrypted, so this reading rests on the data only. The viewer classifies `@` as an occupied
+cell (RIDES-029), which is also the safe choice for placement. (The obstacles use further symbols
+`X`, `H`, `%`, which no catalog object uses and the viewer does not read.)
+
+**The science hole.** The first spike showed a black region of about 450 cells in `science`. The
+heightfield (`base.MD2`) leaves 1,462 cells open as holes, and in Theme Park World meshes of the same
+file fill them. In Theme Park Inc the lake is a separate model: `terrain.wad` holds `dlake.MD2`
+(`lake_surface`, `lake_bottom`; its extent equals the holes that no `base.MD2` mesh covers: 453
+cells, none left once it is drawn), `lake.MD2` (the same lake with hoardings, a tent, a plank and a
+shovel, so a building site) and the animation files `idle1`/`idle2`/`lakem1`/`lakem2`/`dlakem`. The
+viewer now draws `dlake.MD2` as the finished lake (COMPAT-019; `lake.MD2` and the animations are
+ignored). That was a loader gap. Open: six of its bed textures (`bed04`, `bed06`, `bed07`, `bed09`,
+`bed10`, `bed12`) are in no archive of the supplied data, so the lake's bank is drawn white. `arabian`
+has 29 more open cells in two mountain pits that no mesh covers (`4an_newenv.MD2`/`3an_newenv.MD2`,
+variants of the environment, do not either); they show the clear colour. The `*_newenv.MD2` files,
+`lake.MD2`, `lake01_alpha.fsh` (a separate water alpha image) and the `proc_tex` set are not used.
+
+**Approximations and open questions.** COMPAT-014, COMPAT-015 (palettes), COMPAT-019 (lake),
+RIDES-029 (`@`), RIDES-030 (non-finite texture coordinates in ten vertices of `science/sideshow/natnav`,
+drawn as 0, 0), RIDES-019 (default fixed items). Open: how Theme Park Inc positions the gate and
+bus; what the `*_newenv.MD2` files are for (`3ns_newenv` and `4ns_newenv` carry a heightfield and an `arrival_*` mesh set); the
+missing lake bed textures; the viewer's lighting and water transparency against the original.
 
 ## Ride-script VM: shared formats and opcode lineage
 
@@ -149,10 +221,9 @@ about the readers.
 
 1. ~~`.fsh` (`SHPI`, code `0x7B`) reader.~~ Done (October 10, 2026): `FshFile`
    decodes all 7,283 files and WAD members to RGBA, with `--inspect-fsh`; see
-   [FSH.md](FSH.md). Not done: using the textures in the game, and checking them
-   against the original game's rendering. Opaque `0x24` palettes are approximation
-   COMPAT-014. The next step is loading a Theme Park Inc level in the sandbox
-   (MD2 texture names resolved to `.fsh` members).
+   [FSH.md](FSH.md). The [level viewer](#theme-park-inc-level-viewer) uses them (October 11, 2026).
+   Not done: checking them against the original game's rendering. Opaque `0x24`
+   palettes are approximation COMPAT-014.
 2. Use the `.rss` evidence in the VM: name `LIMBO`'s second operand as the limbo
    duration and cite the source comments in the opcode handlers.
 3. The extended TPWS header (`Version: Beta_21`) and the new `Standard.sam` keys, if

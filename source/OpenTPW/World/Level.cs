@@ -65,7 +65,8 @@ public partial class Level : IDisposable
 		if ( visit != null ? !visit.IsSandbox : loadOriginalLevel )
 		{
 			OriginalPark = OriginalPark.Load( levelName, readShippedSave: IsReadOnlyVisit || ParkStart.ReadsShippedSave( start ) );
-			if ( !IsReadOnlyVisit )
+			// [EXT:tpi-viewer] Theme Park Inc has no economy here: its balance keys differ from Theme Park World's (docs/THEME-PARK-INC.md).
+			if ( !IsReadOnlyVisit && !GameEditions.IsThemeParkInc )
 				Park = ParkEconomyRuntime.ForOriginalLevel( OriginalPark, start, Seed );
 		}
 

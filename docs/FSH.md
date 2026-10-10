@@ -178,13 +178,14 @@ produced by a separate throwaway Python decoder written for this check.
 - FSH variants outside this corpus (other EA image codes, multi-image banks,
   other RefPack headers) are rejected, not supported.
 
-## Next step
+## Use in the game
 
-Step 2 is loading a TPI level in the sandbox: resolving the textures named by
-TPI's MD2 models to `.fsh` members (TPW resolves them to `.wct`), uploading
-`FshImage.Rgba` through the existing texture path, and then the TPI-specific
-data (the extended TPWS save header, the new `Standard.sam` keys). See the
-follow-up list in THEME-PARK-INC.md.
+Since October 11, 2026 the experimental Theme Park Inc level viewer loads these textures:
+`Texture` decodes `.fsh` files and WAD members through `FshFile` (first image) and uploads the RGBA
+pixels through the normal texture path, and terrain, object and path textures are found by name without
+extension, so MD2 texture names resolve to `.fsh` (or `.tga`) members. See
+[THEME-PARK-INC.md](THEME-PARK-INC.md#theme-park-inc-level-viewer). The extended TPWS save header and
+the new `Standard.sam` keys remain follow-up work.
 
 ## Sources
 

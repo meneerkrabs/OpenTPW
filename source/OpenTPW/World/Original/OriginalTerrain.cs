@@ -25,6 +25,8 @@ public sealed class OriginalTerrain : Entity
 			var textures = new Dictionary<string, Texture>( StringComparer.OrdinalIgnoreCase );
 			BuildHeightfield( textures );
 			BuildTerrainMeshes( textures );
+			if ( missingTextures.Count > 0 )
+				Log.Warning( $"Terrain textures of {park.LevelName} that the game data lacks, drawn plain white: {string.Join( ", ", missingTextures )}." );
 		}
 		catch
 		{
@@ -196,10 +198,16 @@ public sealed class OriginalTerrain : Entity
 	/// </summary>
 	private void BuildTerrainMeshes( Dictionary<string, Texture> textures )
 	{
-		var model = Park.TerrainModel;
 		var batchTextures = new List<string>();
 		var batchVertices = new List<Vertex>();
 		var batchIndices = new List<uint>();
+		foreach ( var model in new[] { Park.TerrainModel, Park.LakeModel }.OfType<ModelFile>() )
+			BuildTerrainMeshes( textures, model, batchTextures, batchVertices, batchIndices );
+		FlushBatch( textures, batchTextures, batchVertices, batchIndices );
+	}
+
+	private void BuildTerrainMeshes( Dictionary<string, Texture> textures, ModelFile model, List<string> batchTextures, List<Vertex> batchVertices, List<uint> batchIndices )
+	{
 		foreach ( var mesh in model.Meshes )
 		{
 			if ( mesh.Vertices.Length == 0 || mesh.Indices.Length == 0 || mesh.Materials.Length is 0 or > MaximumTextureSlots || mesh.Normals.Length != mesh.Vertices.Length || mesh.TexCoords.Length < mesh.Vertices.Length )
@@ -239,7 +247,6 @@ public sealed class OriginalTerrain : Entity
 				batchIndices.Add( first + index );
 			TerrainMeshCount++;
 		}
-		FlushBatch( textures, batchTextures, batchVertices, batchIndices );
 	}
 
 	private void FlushBatch( Dictionary<string, Texture> textures, List<string> names, List<Vertex> vertices, List<uint> indices )
@@ -306,12 +313,26 @@ public sealed class OriginalTerrain : Entity
 		var key = $"{directory}/{Path.GetFileNameWithoutExtension( name.TrimEnd( '\0' ) )}";
 		if ( textures.TryGetValue( key, out var texture ) )
 			return texture;
-		var path = new[] { $"{Park.TerrainDirectory}/{directory}", $"/levels/{Park.LevelName}/sharetex" }
-			.SelectMany( ListFiles )
-			.FirstOrDefault( file => string.Equals( Path.GetFileNameWithoutExtension( file ), Path.GetFileName( key ), StringComparison.OrdinalIgnoreCase ) );
+		var path = FindTexture( Park.TerrainDirectory, Park.LevelName, name, directory, ListFiles );
+		if ( path == null )
+			missingTextures.Add( Path.GetFileName( key ) );
 		texture = path == null ? Texture.Missing : new Texture( path, TextureFlags.Repeat );
 		textures.Add( key, texture );
 		return texture;
+	}
+
+	private readonly SortedSet<string> missingTextures = new( StringComparer.OrdinalIgnoreCase );
+
+	/// <summary>
+	/// The file of a terrain texture: the terrain archive's <paramref name="directory"/>, then the theme's shared textures, matched by
+	/// name without extension (`.wct` in Theme Park World, `.fsh` or `.tga` in Theme Park Inc).
+	/// </summary>
+	internal static string? FindTexture( string terrainDirectory, string levelName, string name, string directory, Func<string, string[]> listFiles )
+	{
+		var baseName = Path.GetFileNameWithoutExtension( name.TrimEnd( '\0' ) );
+		return new[] { $"{terrainDirectory}/{directory}", $"/levels/{levelName}/sharetex" }
+			.SelectMany( listFiles )
+			.FirstOrDefault( file => string.Equals( Path.GetFileNameWithoutExtension( file ), baseName, StringComparison.OrdinalIgnoreCase ) );
 	}
 
 	private readonly Dictionary<string, string[]> listings = new( StringComparer.OrdinalIgnoreCase );

@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-
 namespace OpenTPW;
 
 /// <summary>Whether a folder can serve as the original game data, and why (docs/SETUP.md).</summary>
@@ -65,14 +63,8 @@ public static class GameInstallation
 
 		// Exact negative identity for the supplied Sim Coaster retail corpus. Unknown or
 		// modified editions are not classified from generic folders or missing assets.
-		var standard = GameLanguage.FindEntry( dataDirectory, System.IO.Path.Combine( "levels", "Standard.sam" ), false );
-		if ( standard != null && new FileInfo( standard ).Length == 45695 )
-		{
-			using var input = File.OpenRead( standard );
-			if ( Convert.ToHexString( SHA256.HashData( input ) ).Equals(
-				"8966C8647104FEB1878FF3C3D43F3B2AC6DC89856570F9AA5A5A0BF040E6749E", StringComparison.Ordinal ) )
-				problems.Add( "These files match the supplied Theme Park Inc / Sim Coaster retail edition, which is not supported yet. Choose Theme Park World files." );
-		}
+		if ( GameEditions.HasKnownStandardSam( dataDirectory ) )
+			problems.Add( "These files match the supplied Theme Park Inc / Sim Coaster retail edition, which is not supported yet. Choose Theme Park World files." );
 
 		foreach ( var required in new[] { "levels", "global" } )
 			if ( GameLanguage.FindEntry( dataDirectory, required, true ) == null )

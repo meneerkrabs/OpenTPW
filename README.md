@@ -115,7 +115,8 @@ certifies every variant or original-runtime parity.
 | Lip Sync ([.LIP](https://opentpw.gu3.me/formats/lips.html)) | ✅ | Mark lists parse; signed conversion, talking toggles, loaded-LIP start state and random mouth selection are traced to the Mac binary. The advisor speaks by itself for the traced game events (park start, Instant Action, bankruptcy; open/close queue but score below the minimum) with the original mouth choice; its clock is the frame clock and does not pause (ADVISOR-017), and animation/pose remain open ([lip sync](docs/LIPS.md), [binary trace](docs/reverse/APPROX-TRACE.md)). |
 | Banner mesh companions ([.MTR](https://opentpw.gu3.me/formats/mtr.html)) | ⚠️ | Selected topology and matrices decode; original runtime purpose remains unknown ([companions](docs/MTR.md)). |
 | Video ([.TQI/.TGQ](https://opentpw.gu3.me/formats/tqi.html)) | ⚠️ | All nine movies decode and stream via `--play-movie`; audio is bit-exact, video remains close but not bit-exact ([movies](docs/TGQ-MOVIES.md)). |
-| Theme Park Inc textures (.FSH, EA `SHPI`) | ⚠️ | All 7,283 Theme Park Inc `.fsh` files/WAD members decode to RGBA (`--inspect-fsh`); nothing uses them in the game, Theme Park Inc is not playable, and opaque 24-bit palettes are an approximation ([FSH](docs/FSH.md)). |
+| Theme Park Inc textures (.FSH, EA `SHPI`) | ⚠️ | All 7,283 Theme Park Inc `.fsh` files/WAD members decode to RGBA (`--inspect-fsh`) and the experimental level viewer draws them; Theme Park Inc is not playable, and opaque 24-bit palettes are an approximation ([FSH](docs/FSH.md)). |
+| Theme Park Inc level viewer (`[EXT:tpi-viewer]`) | ⚠️ | `--load-original-level arabian\|science\|water` with Theme Park Inc data shows that world (terrain, lake, paths, gate, monorail, bus, guests, sound) with a camera only: no HUD, economy or advisor, and nothing is verified against the original game ([viewer](docs/THEME-PARK-INC.md#theme-park-inc-level-viewer)). |
 
 File format notes are also available on the [OpenTPW formats](https://opentpw.gu3.me/formats/)
 website, a work in progress from the original project.
@@ -138,7 +139,7 @@ game files never go into this repository.
    its own opt-in, self-hostable service ([online](docs/ONLINE.md)).
 3. **Theme Park Inc / Sim Coaster**: a separate, later goal. Both games share most file formats and
    closely related ride-script formats ([comparison](docs/THEME-PARK-INC.md)), but Theme Park Inc
-   is not playable yet.
+   is not playable yet; an experimental level viewer shows its worlds.
 4. **Sandbox modes** (an OpenTPW extension, not original behaviour): free building with Theme Park
    World content, Theme Park Inc content, or both. Planned; today's `--sandbox` uses Theme Park
    World content only.

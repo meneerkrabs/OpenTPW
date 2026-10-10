@@ -310,6 +310,8 @@ Original-data values are tagged `// [DATA:<file>:<field>]`.
 | RIDES-026 | World/Objects/OriginalObject.cs:12 | 1 MD2 unit = 0.2 engine units | None (engine convention) |
 
 | RIDES-028 | World/Level.Objects.cs | Non-walkable exit outside cells, and entrance outside cells without a queue path, use the nearest walkable path (a one-cell queue) | Original queue-path joining rules |
+| RIDES-029 | World/Objects/ObjectShape.cs | Shape symbol `@` (only in the Theme Park Inc road signs, "`*@*`" and "`*@@*`") is an occupied cell | TPI placement of a sign over a path (`[EXT:tpi-viewer]`, docs/THEME-PARK-INC.md) |
+| RIDES-030 | World/Objects/ObjectAssets.cs | Non-finite texture coordinates (10 vertices of the Theme Park Inc `natnav` "subtank" mesh) are drawn as (0, 0) | The original renderer's handling of them |
 
 Imported objects share their economy instance with the guest payment bridge;
 shop/sideshow payments and ride-use statistics use that instance. Open/closed

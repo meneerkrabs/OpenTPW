@@ -77,6 +77,8 @@ public sealed class ObjectShape
 		'.' or ' ' => ObjectCellKind.Free,
 		// 'W' occurs once, in the bonus Snake ride ("****/W***/..."); its meaning is unknown, it is treated as occupied.
 		'*' or 'W' => ObjectCellKind.Occupied,
+		// [APPROX:RIDES-029] '@' occurs only in the Theme Park Inc road signs ("*@*", "*@@*": a sign board between two pillar cells); treated as occupied — evidence needed: TPI placement of a sign over a path
+		'@' => ObjectCellKind.Occupied,
 		'2' => ObjectCellKind.Entrance,
 		'S' or 'N' or 'E' => ObjectCellKind.Exit,
 		'<' or '>' => ObjectCellKind.TrackConnection,

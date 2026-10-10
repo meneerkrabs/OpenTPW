@@ -14,9 +14,9 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **194 unresolved unique APPROX IDs**, 210 APPROX occurrences, 90 EXT occurrences, 90 DATA occurrences and 147 BIN occurrences.
+Current inventory: **195 unresolved unique APPROX IDs**, 211 APPROX occurrences, 90 EXT occurrences, 90 DATA occurrences and 147 BIN occurrences.
 
-Of these, 188 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
+Of these, 189 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
 CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.
 
@@ -31,7 +31,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON | 35 | 35 |
 | GATE | 3 | 4 |
 | ONLINE | 6 | 6 |
-| PATH | 13 | 14 |
+| PATH | 14 | 15 |
 | QUEUE | 19 | 19 |
 | RIDES | 25 | 25 |
 | UI | 48 | 60 |
@@ -142,6 +142,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | PATH-011 | Original-fidelity area (scope unadjudicated) | PATH-CANCEL: Escape or Back inside the path or queue tool ends the tool without writing; the next Escape opens the pause menu | See source annotation/runtime register | `source/OpenTPW/World/PathApproximations.cs:22` |
 | PATH-012 | Original-fidelity area (scope unadjudicated) | PATH-ENDREFUSE: a line refused part-way ends the tool (the original's end flag reads the ghost-clear LayLine, not the commit) | See source annotation/runtime register | `source/OpenTPW/World/PathApproximations.cs:23` |
 | PATH-013 | Original-fidelity area (scope unadjudicated) | PATH-PAUSE: the pause menu blocks path and queue tool clicks; the economy's speed pause does not | See source annotation/runtime register | `source/OpenTPW/World/PathApproximations.cs:24` |
+| PATH-014 | Original-fidelity area (scope unadjudicated) | PATH-VARIANT: built straights and edges pick str1/str2 and edg1/edg2 by a hash of the cell; saved cells keep the saved texture | See source annotation/runtime register | `source/OpenTPW/World/PathApproximations.cs:25` |
 | QUEUE-001 | Original-fidelity area (scope unadjudicated) | queue link values 1/4/16/64 map to −Y/+X/+Y/−X like the saved connection bits | See source annotation/runtime register | `source/OpenTPW/World/Guests/QueueApproximations.cs:12` |
 | QUEUE-002 | Original-fidelity area (scope unadjudicated) | the next queue cell is searched in grid direction order | See source annotation/runtime register | `source/OpenTPW/World/Guests/QueueApproximations.cs:13` |
 | QUEUE-003 | Original-fidelity area (scope unadjudicated) | guests step onto the back of a queue from its first walkable neighbour (the join cell) | See source annotation/runtime register | `source/OpenTPW/World/Guests/QueueApproximations.cs:14` |
@@ -345,6 +346,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | PATH-011 | `source/OpenTPW/Hud/ParkHud.cs:238` | [APPROX:PATH-011] Escape/Back inside the path or queue tool ends the tool without writing; only a Back outside it opens the pause menu (PATH-plan §9.4 cancel; the original's key handler for the tool is not traced, UI-012) — evidence needed: the original's Escape handling in tool modes 1 and 3 |
 | PATH-012 | `source/OpenTPW/World/CellBuildTool.cs:108` | [APPROX:PATH-012] a line refused part-way ends the tool (the flag read at 0x7123c is the result of the ghost-clear LayLine(0x81) at 0x71164, not of the commit LayLine at 0x710c0, so ending on the commit's refusal is not traced) — evidence needed: what LayLine(0x81) returns after a refused commit |
 | PATH-013 | `source/OpenTPW/Hud/ParkHud.cs:470` | [APPROX:PATH-013] while the pause menu is open the tool takes no clicks: this returns before the commit, and Update reports the pointer as captured (overUi), so Level's park click skips it too; the economy's speed pause does not stop the tool, which keeps its ghost — evidence needed: the original park view's input handling while paused |
+| PATH-014 | `source/OpenTPW/World/Original/PathTiles.cs:68` | [APPROX:PATH-014] str1/str2 and edg1/edg2 are picked by a hash of the cell, not by the original's choice (saved cells keep theirs) — evidence needed: the original routine that writes save cell byte +17 |
 | QUEUE-001 | `source/OpenTPW/World/Guests/GuestPathGrid.cs:124` | [APPROX:QUEUE-001] the queue link (+13) uses the compass of the connection bits (+12): Directions order (−Y, +X, +Y, −X) is 1, 4, 16, 64 as in SavePathConnections (78 Easymode path cells); for +13 itself this is assumed — evidence needed: the run-time neighbour offset tables (data 0xec52c..0xec5a4, zero in the file) |
 | QUEUE-002 | `source/OpenTPW/World/Guests/RideVisitorBridge.cs:257` | [APPROX:QUEUE-002] neighbours are tried in GuestPathGrid.Directions order; the original pairs run-time offsets with links 16, 1, 64, 4 whose order is not established — evidence needed: the neighbour offset tables at run time |
 | QUEUE-003 | `source/OpenTPW/World/Guests/RideVisitorBridge.cs:270` | [APPROX:QUEUE-003] guests step onto the back of the queue from the first walkable 4-neighbour (Directions order) that is not part of the queue; the original connection test 0xdd744 is not traced — evidence needed: 0xdd744 and the state-10 walk to the back cell |

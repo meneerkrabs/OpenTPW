@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 namespace OpenTPW;
 
 /// <summary>
@@ -29,6 +30,8 @@ public readonly struct SaveCell
 	public const int PathConnectionsOffset = 8;
 	public const int OccupancyOffset = 12;
 	public const int PathFlagsOffset = 13;
+	public const int PathTextureOffset = 17;
+	public const int PathRotationOffset = 21;
 
 	public SaveCell( ReadOnlyMemory<byte> record )
 	{
@@ -47,6 +50,15 @@ public readonly struct SaveCell
 	public bool IsPath => (Record.Span[PathFlagsOffset] & 1) != 0;
 
 	public SavePathConnections PathConnections => (SavePathConnections)Record.Span[PathConnectionsOffset];
+
+	/// <summary>
+	/// On path cells, the index into the theme's <c>PathTex</c> list (byte 17); all 78 Easymode path cells
+	/// match the shape their neighbour bits call for (docs/PATHS.md, "Path textures").
+	/// </summary>
+	public byte PathTexture => Record.Span[PathTextureOffset];
+
+	/// <summary>On path cells, the texture's clockwise turn in degrees (u16 at byte 21: 0, 90, 180 or 270).</summary>
+	public int PathRotation => BinaryPrimitives.ReadUInt16LittleEndian( Record.Span.Slice( PathRotationOffset, 2 ) );
 
 	/// <summary>Byte 12 is nonzero on every cell of every placed object's footprint (and its queue cells).</summary>
 	public bool IsOccupied => Record.Span[OccupancyOffset] != 0;

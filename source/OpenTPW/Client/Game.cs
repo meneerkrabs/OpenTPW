@@ -514,7 +514,9 @@ internal static class Game
 	/// <summary>The --cd-data / OPENTPW_CD_DATA folder when it adds languages to the installation, else null.</summary>
 	private static string? CdLanguageOverlay( string[] args, string dataDirectory )
 	{
-		var cd = GetOption( args, "--cd-data", "the original CD's folder" ) ?? Environment.GetEnvironmentVariable( "OPENTPW_CD_DATA" );
+		// A game folder copied from the CD keeps the other languages in <Lang>/data beside Data, as on the CD itself.
+		var cd = GetOption( args, "--cd-data", "the original CD's folder" ) ?? Environment.GetEnvironmentVariable( "OPENTPW_CD_DATA" )
+			?? Path.GetDirectoryName( Path.TrimEndingDirectorySeparator( Path.GetFullPath( dataDirectory ) ) );
 		if ( string.IsNullOrWhiteSpace( cd ) || !Directory.Exists( cd ) )
 			return null;
 		try

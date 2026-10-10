@@ -6,6 +6,8 @@ After=network-online.target docker.service
 [Service]
 Type=oneshot
 WorkingDirectory=/opt/opentpw
+# A release's request (opentpw-deploy.path) is handled by this run.
+ExecStartPre=-/bin/rm -f /opt/opentpw/data/.deploy-requested
 ExecStart=/usr/bin/docker compose pull --quiet
 ExecStart=/usr/bin/docker compose up -d --remove-orphans
 ExecStart=/usr/bin/docker image prune -f

@@ -9,7 +9,8 @@ public static class AtomicFile
 	private static FileStreamOptions CreateOptions() => new()
 	{
 		Mode = FileMode.CreateNew, Access = FileAccess.Write, Share = FileShare.None,
-		UnixCreateMode = OperatingSystem.IsWindows() ? null : UnixFileMode.UserRead | UnixFileMode.UserWrite,
+		// Not in the browser build, whose files live in the page's sandbox (and where Unix modes may not be supported).
+		UnixCreateMode = OperatingSystem.IsWindows() || OperatingSystem.IsBrowser() ? null : UnixFileMode.UserRead | UnixFileMode.UserWrite,
 	};
 
 	public static void Write( string path, ReadOnlySpan<byte> bytes )

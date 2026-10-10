@@ -31,7 +31,7 @@
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 body { margin: 0; background: var(--paper); color: var(--ink); font: 17px/1.6 var(--font); }
-img { max-width: 100%; display: block; }
+img { max-width: 100%; height: auto; display: block; }
 a { color: var(--purple-light); }
 @media (prefers-color-scheme: dark) { a { color: var(--sky); } }
 .wrap { width: min(1120px, 100% - 32px); margin-inline: auto; }

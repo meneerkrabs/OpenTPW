@@ -4,8 +4,9 @@ Evidence date: October 9, 2026. Read-only analysis of the decoded BILZ payload
 (see SAVE-CONTAINER.md): the 17 section markers, the **per-cell grid** in the
 untagged prefix and the **placed-object records** in `SYSG` are decoded where
 cross-format evidence supports them; everything else stays opaque. A read-only
-importer (`OriginalParkImport`) uses only those parts. This is not save writing and
-not proof of general TPWS support (one fixture). No original executable was run.
+importer (`OriginalParkImport`) uses only those parts. This is not save writing.
+The layout was found on one fixture (Easymode) and later checked on eleven
+private TPWS/INTS saves ([Second fixture set](#second-fixture-set)). No original executable was run.
 
 ## Fixture inventory
 
@@ -15,8 +16,9 @@ not proof of general TPWS support (one fixture). No original executable was run.
 | `TPWORLD.ISO` (7z listing, 2,783 files) | 1: `Data/levels/jungle/Easymode.TPWI`, byte-identical to the loose copy |
 | WAD member names / ISO-wide filename strings | none observed |
 
-No TPWS, INTS or LAYS file exists in the available corpus. Every conclusion
-below therefore rests on one fixture and must be revalidated on others.
+No TPWS, INTS or LAYS file exists in the game data. The conclusions below were made on
+Easymode alone; eleven saves found later confirm the readers (next section). LAYS remains
+untested.
 
 Pinned hashes (SHA-256):
 
@@ -32,6 +34,29 @@ GitHub contents API) describes only the outer container: magic, copyright text,
 file type `00 01 22 19`, version, online flag, `BILZ` header and zlib stream.
 "INTS" and "LAYS" there are **file kinds** (initial save; `upload.LAYS` online
 save), not payload sections. It documents nothing about the decoded payload.
+
+## Second fixture set
+
+Eleven original saves, one park per theme, published on Nexus Mods as a cheat
+(all research done, large starting cash; kept private, never committed). Per theme:
+the named park save, its `autosave.TPWS` (absent for space) and `restart.INTS`;
+7 TPWS and 4 INTS. The parks are empty: no placed objects, only the entrance path.
+`OriginalSaveCorpusTests` runs every reader below over them (`OPENTPW_TPWS_SAVES`) and requires a
+TPWS and an INTS for each theme.
+
+| Check | Result on all 11 |
+| --- | --- |
+| Container | Magic 500, file type `00 01 22 19`, version 133; INTS uses the same container as TPWS |
+| Markers | All 17, in the Easymode order. Decoded payload 1,560,526–1,579,807 bytes |
+| Untagged prefix | 1,469,256 bytes (every INTS) or 1,473,869–1,475,452 (TPWS), against 1,495,462 in Easymode: the prefix length is not fixed |
+| Cell grid | Found once, starting at 5,729 (INTS) or 6,259–6,512 (TPWS); 16,384 × 84 bytes, no extension records; +46 equals the theme's `base.map` |
+| Path cells | The 10 MAP `InitialPath` cells, nothing else |
+| SYSG | No placed objects; fixed items 5 (TPWS) or 2 (INTS), all with their theme's Info.Ids (*600–*604) |
+| Attraction records | 5 in each TPWS, one per fixed item (Bus, Seaplane, Ferry, Traffic Lights and the *601 park object), none in INTS; all three gauges are 100 in all 35 records |
+| Economy | Bank prefix, 8 loan offers equal to the theme's `LoanInfo`, and the full challenge list of `ChallengesInThisLevel` (8–10 records); see docs/ECONOMY.md for the corrected challenge layout |
+
+The balances (about 1.2 billion) come from the cheat, so money is not a reference value.
+Named saves and their autosaves decode to the same layout; only small sections differ.
 
 ## Section markers
 
@@ -258,13 +283,14 @@ wrong-map and unoccupied-footprint rejection; the private fixture pins the grid
 range, 78 path cells, the connection-bit property, the 11 placed objects and 3
 fixed items, and rejection against `terrain.map`. `OriginalParkPlacementTests`
 covers Info.Id names and the build rules. `SaveAttractionListTests`: synthetic records in serializer order, class skipping, a case past each upper and lower rejection bound, unbounded opaque words and large counters, and truncation at the prefix end; the private fixture pins the 14 handles, the gauges and the Belly Bounce fields, and matches every buildable SYSG record by Info.Id and cell. Without `OPENTPW_GAME_PATH` the private
-tests are inconclusive, not passes.
+tests are inconclusive, not passes. `OriginalSaveCorpusTests` runs container, markers, grid, SYSG,
+attraction and economy readers over the second fixture set (inconclusive without `OPENTPW_TPWS_SAVES`).
 
 ## Remaining gates
 
-- Any second fixture (an actual TPWS, another TPWI, INTS or LAYS) to test the
-  grid search, field meanings and SYSG signature; online (LAYS) payloads are
-  unsupported.
+- An online (LAYS) save; LAYS payloads are unsupported.
+- A non-empty TPWS: the second fixture set has no placed objects, extension records or
+  extra paths, so those readers are still proven on Easymode alone.
 - The prefix header and the rest of its tail (thing-list classes other than 3), record fields marked opaque above, the extension
   data, SYSG record bodies/lengths, RYLF object bodies and every other section.
 - Saves with known ride wear to confirm the attraction gauges against the original wear rule.

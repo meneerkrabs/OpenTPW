@@ -4,7 +4,7 @@ Usage: python3 -I tools/ppc-analysis/run_evidence_checks.py [--repo CHECKOUT] [-
            [--pc-data TPW_DATA] [--pc-fixture EASYMODE_TPWI] [--require-fixtures] [--dotnet DOTNET_EXE] [--json]
 
 CI's `unittest discover -s tools/ppc-analysis` reaches only the top-level test files: lane
-directories have no __init__.py, and several lanes import a module named `evidence`, so they cannot
+directories (and oracle/) have no __init__.py, and several lanes import a module named `evidence`, so they cannot
 share one interpreter either. This runner starts one discovery process per directory and fails if
 any test file under tools/ppc-analysis is not covered by exactly one of them.
 
@@ -149,7 +149,9 @@ def used_fixture(item: dict) -> bool:
 
 def python_suites(tools: Path) -> list[Path]:
     lanes = sorted(path for path in (tools / 'lanes').iterdir() if path.is_dir() and any(path.glob('test_*.py')))
-    return [tools, *lanes]
+    # The differential oracle (docs/reverse/ORACLE.md) is a suite of its own next to the lanes.
+    oracle = [tools / 'oracle'] if any((tools / 'oracle').glob('test_*.py')) else []
+    return [tools, *lanes, *oracle]
 
 
 def uncovered_test_files(tools: Path, suites: list[Path]) -> list[str]:

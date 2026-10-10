@@ -4,8 +4,8 @@ Evidence date: October 9, 2026. Read-only analysis of the decoded BILZ payload
 (see SAVE-CONTAINER.md): the 17 section markers, the **per-cell grid** in the
 untagged prefix and the **placed-object records** in `SYSG` are decoded where
 cross-format evidence supports them; everything else stays opaque. A read-only
-importer (`OriginalParkImport`) uses only those parts. This is not save writing and
-not save writing. The layout was found on one fixture (Easymode) and later checked on eleven
+importer (`OriginalParkImport`) uses only those parts. This is not save writing.
+The layout was found on one fixture (Easymode) and later checked on eleven
 private TPWS/INTS saves ([Second fixture set](#second-fixture-set)). No original executable was run.
 
 ## Fixture inventory
@@ -52,7 +52,7 @@ TPWS and an INTS for each theme.
 | Cell grid | Found once, starting at 5,729 (INTS) or 6,259–6,512 (TPWS); 16,384 × 84 bytes, no extension records; +46 equals the theme's `base.map` |
 | Path cells | The 10 MAP `InitialPath` cells, nothing else |
 | SYSG | No placed objects; fixed items 5 (TPWS) or 2 (INTS), all with their theme's Info.Ids (*600–*604) |
-| Attraction records | 5 in each TPWS (the fixed items, e.g. Ferry, Seaplane), none in INTS; gauges 100 |
+| Attraction records | 5 in each TPWS, one per fixed item (Bus, Seaplane, Ferry, Traffic Lights and the *601 park object), none in INTS; all three gauges are 100 in all 35 records |
 | Economy | Bank prefix, 8 loan offers equal to the theme's `LoanInfo`, and the full challenge list of `ChallengesInThisLevel` (8–10 records); see docs/ECONOMY.md for the corrected challenge layout |
 
 The balances (about 1.2 billion) come from the cheat, so money is not a reference value.

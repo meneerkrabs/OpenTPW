@@ -14,9 +14,9 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **197 unresolved unique APPROX IDs**, 213 APPROX occurrences, 89 EXT occurrences, 90 DATA occurrences and 152 BIN occurrences.
+Current inventory: **198 unresolved unique APPROX IDs**, 214 APPROX occurrences, 90 EXT occurrences, 90 DATA occurrences and 152 BIN occurrences.
 
-Of these, 191 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
+Of these, 192 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
 CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.
 
@@ -31,7 +31,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON | 35 | 35 |
 | GATE | 3 | 4 |
 | ONLINE | 6 | 6 |
-| PATH | 13 | 14 |
+| PATH | 14 | 15 |
 | QUEUE | 19 | 19 |
 | RIDES | 25 | 25 |
 | UI | 48 | 60 |
@@ -145,6 +145,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | PATH-011 | Original-fidelity area (scope unadjudicated) | PATH-CANCEL: Escape or Back inside the path or queue tool ends the tool without writing; the next Escape opens the pause menu | See source annotation/runtime register | `source/OpenTPW/World/PathApproximations.cs:22` |
 | PATH-012 | Original-fidelity area (scope unadjudicated) | PATH-ENDREFUSE: a line refused part-way ends the tool (the original's end flag reads the ghost-clear LayLine, not the commit) | See source annotation/runtime register | `source/OpenTPW/World/PathApproximations.cs:23` |
 | PATH-013 | Original-fidelity area (scope unadjudicated) | PATH-PAUSE: the pause menu blocks path and queue tool clicks; the economy's speed pause does not | See source annotation/runtime register | `source/OpenTPW/World/PathApproximations.cs:24` |
+| PATH-014 | Original-fidelity area (scope unadjudicated) | PATH-VARIANT: built straights and edges pick str1/str2 and edg1/edg2 by a hash of the cell; saved cells keep the saved texture | See source annotation/runtime register | `source/OpenTPW/World/PathApproximations.cs:25` |
 | QUEUE-001 | Original-fidelity area (scope unadjudicated) | queue link values 1/4/16/64 map to −Y/+X/+Y/−X like the saved connection bits | See source annotation/runtime register | `source/OpenTPW/World/Guests/QueueApproximations.cs:12` |
 | QUEUE-002 | Original-fidelity area (scope unadjudicated) | the next queue cell is searched in grid direction order | See source annotation/runtime register | `source/OpenTPW/World/Guests/QueueApproximations.cs:13` |
 | QUEUE-003 | Original-fidelity area (scope unadjudicated) | guests step onto the back of a queue from its first walkable neighbour (the join cell) | See source annotation/runtime register | `source/OpenTPW/World/Guests/QueueApproximations.cs:14` |
@@ -336,7 +337,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ONLINE-003 | `source/OpenTPW.Online/Chat/ChatCommands.cs:34` | [APPROX:ONLINE-003] 102/110 are both "Could not add "; assigned to ignore/buddy by their position next to |
 | ONLINE-004 | `source/OpenTPW.Online/Chat/ChatCommands.cs:42` | [APPROX:ONLINE-004] 111-113 are all "Your buddy " (English suffix strings are empty); online/offline/removed |
 | ONLINE-005 | `source/OpenTPW.Server/ChatHub.cs:24` | [APPROX:ONLINE-005] Command semantics are inferred from the command words, response strings and |
-| ONLINE-006 | `source/OpenTPW.Server/ChatHub.cs:402` | [APPROX:ONLINE-006] A visitor inside a park must leave it first (CHAT_COMMANDS 127) — evidence needed. |
+| ONLINE-006 | `source/OpenTPW.Server/ChatHub.cs:423` | [APPROX:ONLINE-006] A visitor inside a park must leave it first (CHAT_COMMANDS 127) — evidence needed. |
 | PATH-001 | `source/OpenTPW/Hud/ParkHud.cs:506` | [APPROX:PATH-001] ghosts are flat markers at the cell centres with the line's cost beside the cursor (the original draws ghost path pieces, LayLine mode \| 0x100) — evidence needed: captures of the original path tool |
 | PATH-001 | `source/OpenTPW/World/Level.Objects.cs:121` | [APPROX:PATH-001] a left click on an empty owned cell or on a path cell enters mode 1 with that cell as the start; the click handler that calls SetMode(1) is not traced and no menu button exists — evidence needed: the caller of SetMode 0x1007B320 with mode 1 |
 | PATH-002 | `source/OpenTPW/World/ParkPathBuilder.cs:322` | [APPROX:PATH-002] Backspace undo removes the last segment's new cells and undoes its counter bumps, without a refund (only the help text 443 and the vertex stack are traced) — evidence needed: the BACKSPACE handler of the path tool |
@@ -351,6 +352,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | PATH-011 | `source/OpenTPW/Hud/ParkHud.cs:238` | [APPROX:PATH-011] Escape/Back inside the path or queue tool ends the tool without writing; only a Back outside it opens the pause menu (PATH-plan §9.4 cancel; the original's key handler for the tool is not traced, UI-012) — evidence needed: the original's Escape handling in tool modes 1 and 3 |
 | PATH-012 | `source/OpenTPW/World/CellBuildTool.cs:108` | [APPROX:PATH-012] a line refused part-way ends the tool (the flag read at 0x7123c is the result of the ghost-clear LayLine(0x81) at 0x71164, not of the commit LayLine at 0x710c0, so ending on the commit's refusal is not traced) — evidence needed: what LayLine(0x81) returns after a refused commit |
 | PATH-013 | `source/OpenTPW/Hud/ParkHud.cs:470` | [APPROX:PATH-013] while the pause menu is open the tool takes no clicks: this returns before the commit, and Update reports the pointer as captured (overUi), so Level's park click skips it too; the economy's speed pause does not stop the tool, which keeps its ghost — evidence needed: the original park view's input handling while paused |
+| PATH-014 | `source/OpenTPW/World/Original/PathTiles.cs:68` | [APPROX:PATH-014] str1/str2 and edg1/edg2 are picked by a hash of the cell, not by the original's choice (saved cells keep theirs) — evidence needed: the original routine that writes save cell byte +17 |
 | QUEUE-001 | `source/OpenTPW/World/Guests/GuestPathGrid.cs:124` | [APPROX:QUEUE-001] the queue link (+13) uses the compass of the connection bits (+12): Directions order (−Y, +X, +Y, −X) is 1, 4, 16, 64 as in SavePathConnections (78 Easymode path cells); for +13 itself this is assumed — evidence needed: the run-time neighbour offset tables (data 0xec52c..0xec5a4, zero in the file) |
 | QUEUE-002 | `source/OpenTPW/World/Guests/RideVisitorBridge.cs:257` | [APPROX:QUEUE-002] neighbours are tried in GuestPathGrid.Directions order; the original pairs run-time offsets with links 16, 1, 64, 4 whose order is not established — evidence needed: the neighbour offset tables at run time |
 | QUEUE-003 | `source/OpenTPW/World/Guests/RideVisitorBridge.cs:270` | [APPROX:QUEUE-003] guests step onto the back of the queue from the first walkable 4-neighbour (Directions order) that is not part of the queue; the original connection test 0xdd744 is not traced — evidence needed: 0xdd744 and the state-10 walk to the back cell |
@@ -485,13 +487,14 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ONLINE-040 | `source/OpenTPW.Online/Api/ApiModels.cs:3` | [EXT:ONLINE-040] OpenTPW server HTTP API (JSON, camelCase via StrictJson.Options). The original |
 | ONLINE-050 | `source/OpenTPW.Server/ServerOptions.cs:5` | [EXT:ONLINE-050] All defaults are OpenTPW choices; the original service limits are unknown except |
 | ONLINE-051 | `source/OpenTPW.Server/PasswordHasher.cs:6` | &lt;summary&gt;[EXT:ONLINE-051] PBKDF2-SHA256 (BCL) with a random 16-byte salt; only the hash is stored.&lt;/summary&gt; |
-| ONLINE-052 | `source/OpenTPW.Server/ServerStore.cs:63` | [EXT:ONLINE-052] File storage: JSON indexes (accounts, parks, postcards) rewritten atomically after |
-| ONLINE-053 | `source/OpenTPW.Server/ChatHub.cs:269` | [EXT:ONLINE-053] No avatar positions exist, so the range is acknowledged but has no effect. |
+| ONLINE-052 | `source/OpenTPW.Server/ServerStore.cs:66` | [EXT:ONLINE-052] File storage: JSON indexes (accounts, parks, postcards) rewritten atomically after |
+| ONLINE-053 | `source/OpenTPW.Server/ChatHub.cs:290` | [EXT:ONLINE-053] No avatar positions exist, so the range is acknowledged but has no effect. |
 | ONLINE-054 | `source/OpenTPW.Server/ServerProgram.cs:12` | [EXT:ONLINE-054] Self-hostable OpenTPW server (ASP.NET Core minimal APIs). See docs/SERVER.md. |
-| ONLINE-055 | `source/OpenTPW.Server/ServerStore.cs:191` | [EXT:ONLINE-055] Deletes a player and what the server holds about them (docs/SERVER.md): the |
+| ONLINE-055 | `source/OpenTPW.Server/ServerStore.cs:205` | [EXT:ONLINE-055] Deletes a player and what the server holds about them (docs/SERVER.md): the |
 | ONLINE-056 | `source/OpenTPW.Server/NewsFeed.cs:10` | [EXT:ONLINE-056] the original fetched news from EA's news server; an OpenTPW server serves the operator's text files |
-| ONLINE-057 | `source/OpenTPW.Server/ServerProgram.cs:54` | [EXT:ONLINE-057] the project website reads the public news and website park list from the browser |
-| ONLINE-057 | `source/OpenTPW.Server/ServerProgram.cs:203` | [EXT:ONLINE-057] public, for the project website: only parks whose authors opted in, at most ten, cached a minute. |
+| ONLINE-057 | `source/OpenTPW.Server/ServerProgram.cs:56` | [EXT:ONLINE-057] the project website reads the public news and website park list from the browser |
+| ONLINE-057 | `source/OpenTPW.Server/ServerProgram.cs:221` | [EXT:ONLINE-057] public, for the project website: only parks whose authors opted in, at most ten, cached a minute. |
+| ONLINE-058 | `source/OpenTPW.Server/ServerProgram.cs:203` | [EXT:ONLINE-058] a release asks the host to update: the server only leaves a file in its data folder, which the |
 | ONLINE-060 | `source/OpenTPW/Online/OnlineFolders.cs:7` | [EXT:ONLINE-060] The player's online folder: exported parks, downloaded (visited) parks and the |
 | ONLINE-061 | `source/OpenTPW/Online/ParkSnapshotBuilder.cs:13` | &lt;summary&gt;[EXT:ONLINE-061] Edition label; OpenTPW cannot yet tell Theme Park World from Sim Theme Park installs.&lt;/summary&gt; |
 | ONLINE-062 | `source/OpenTPW/Online/ParkSnapshotBuilder.cs:91` | [EXT:ONLINE-062] Top-down thumbnail from the MAP grid and the snapshot (OpenTPW colours, not an original |

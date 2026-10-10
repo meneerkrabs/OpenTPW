@@ -4,15 +4,21 @@ services:
   opentpw-server:
     image: ghcr.io/meneerkrabs/opentpw-server:${OPENTPW_IMAGE_TAG:-latest}
     restart: unless-stopped
-    # Only Caddy, on this machine, can reach it.
-    ports:
-      - "127.0.0.1:8080:8080"
+    # Time to finish requests and tell chat clients to reconnect before Docker stops it.
+    stop_grace_period: 20s
+    # On the host network, listening on 127.0.0.1 only: only Caddy, on this machine, can reach it. Without
+    # Docker's port proxy in between, a restarting server refuses connections, so Caddy waits for it
+    # instead of passing on errors (docs/SERVER.md, "Deploys without interruption").
+    network_mode: host
     environment:
       OpenTPW__ServerName: ${OPENTPW_SERVER_NAME:-OpenTPW}
       OpenTPW__Message: ${OPENTPW_MESSAGE:-}
       # opentpw.io reads the public news and website park list from the browser.
       OpenTPW__WebsiteOrigins__0: https://opentpw.io
       OpenTPW__WebsiteOrigins__1: https://www.opentpw.io
+      # A release asks for an update with this secret (docs/SERVER.md, "Automatic deployment").
+      OpenTPW__DeployToken: ${OPENTPW_DEPLOY_TOKEN:-}
+      ASPNETCORE_URLS: http://127.0.0.1:8080
       # Caddy is the only client; let the rate limits see real addresses.
       ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
     volumes:

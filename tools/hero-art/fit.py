@@ -51,9 +51,48 @@ icon = np.asarray(crop.resize((tw, th), Image.LANCZOS)).astype(np.float32)
 rgb = np.asarray(orig.convert('RGB').resize((W * K, H * K), Image.BICUBIC)).astype(np.float32)
 rgb[y0 * K:y1 * K, x0 * K:x1 * K] = icon
 os.makedirs(os.path.join(out, 'ui', 'textures'), exist_ok=True)
+def shifts(a, fill):
+    # the eight 3x3 neighbours of every pixel, padded with fill
+    p = np.pad(a, [(1, 1), (1, 1)] + [(0, 0)] * (a.ndim - 2), constant_values=fill)
+    h, w = a.shape[:2]
+    return [p[1 + dy:1 + dy + h, 1 + dx:1 + dx + w] for dy in (-1, 0, 1) for dx in (-1, 0, 1) if dy or dx]
+# Generated background: pixels close to bgc that connect to the edge of the icon rectangle (white symbols enclosed by
+# the button stay). Where the original mask is wider than the redrawn silhouette, these would show white through alpha.
+dist = np.sqrt(((icon - bgc) ** 2).sum(axis=2)); near = dist < 60
+outer = np.zeros_like(near); outer[0, :] = near[0, :]; outer[-1, :] = near[-1, :]; outer[:, 0] = near[:, 0]; outer[:, -1] = near[:, -1]
+while True:
+    grown = outer.copy()
+    for n in shifts(outer, False): grown |= n
+    grown &= near
+    if (grown == outer).all(): break
+    outer = grown
+background = np.zeros((H * K, W * K), bool)
+background[y0 * K:y1 * K, x0 * K:x1 * K] = outer
+# the anti-aliased fringe between object and background is still light: widen by a few pixels (edge band only, below)
+fringe = background.copy()
+for _ in range(3):
+    for n in shifts(fringe, False): fringe = fringe | n
+# Coverage of the redrawn silhouette near the generated background: where the original mask is wider than the new
+# outline, the original alpha would keep a ragged strip of backdrop; the alpha is capped to the new outline there.
+coverage = np.ones((H * K, W * K), np.float32)
+coverage[y0 * K:y1 * K, x0 * K:x1 * K] = np.clip((dist - 40) / 40, 0, 1)
+coverage = np.where(fringe, coverage, 1)
+def bleed(rgb_img, alpha):
+    # Recolour background and fully transparent texels with the nearest object colour, so neither the white backdrop
+    # nor linear filtering of alpha-0 texels lightens the edge. Alpha is kept.
+    known = ~(background | (fringe & (alpha < 0.999)) | (alpha <= 0))
+    col = np.where(known[..., None], rgb_img, 0).astype(np.float32)
+    while not known.all():
+        acc = np.zeros_like(col); cnt = np.zeros(known.shape, np.float32)
+        for c, k in zip(shifts(col, 0), shifts(known, False)):
+            acc += c * k[..., None]; cnt += k
+        new = ~known & (cnt > 0)
+        if not new.any(): break
+        col[new] = acc[new] / cnt[new][:, None]; known = known | new
+    return col
 def write(name, rgb_img, alpha_small):
-    alpha = crisp_alpha(alpha_small, (W * K, H * K))
-    rgba = np.dstack([np.clip(rgb_img, 0, 255), alpha * 255]).astype(np.uint8)
+    alpha = np.minimum(crisp_alpha(alpha_small, (W * K, H * K)), coverage)
+    rgba = np.dstack([np.clip(bleed(rgb_img, alpha), 0, 255), alpha * 255]).astype(np.uint8)
     Image.fromarray(rgba, 'RGBA').save(os.path.join(out, 'ui', 'textures', name + '.wct.png'))
 write(base, rgb, oa[..., 3])
 # Variants: same layout, recoloured. Fit a smooth colour mapping base -> variant (quadratic in RGB) on the original

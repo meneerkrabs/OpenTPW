@@ -39,6 +39,11 @@ internal sealed class GameFlow : IDisposable
 	public UiStringTable Strings { get; }
 	public UiContext Context { get; }
 	public OnlineFolders? OnlineFolders { get; set; }
+	/// <summary>Automatic advice in original-level parks (off with <c>--no-advisor</c> and for <c>--advisor-say</c>/<c>--advisor-response</c>).</summary>
+	public bool AutomaticAdvisorEnabled { get; set; } = true;
+	/// <summary>The automatic advisor, created with the first park (null when disabled or its settings are missing).</summary>
+	public AutomaticAdvisor? Advisor { get; private set; }
+	private bool advisorUnavailable;
 	public IDisplaySettings Display { get; set; }
 	public string OptionsPath { get; set; }
 	/// <summary>When false, options are not written (smoke tests).</summary>
@@ -48,7 +53,8 @@ internal sealed class GameFlow : IDisposable
 	public FrontEndMenu? Menu { get; private set; }
 	public LobbyScene? Lobby { get; private set; }
 	public UiInput? InjectedInput { get; set; }
-	public GameMode Mode { get; private set; } = GameMode.FullSimulation;
+	/// <summary>How the current original level started; null in the front end and the generic sandbox.</summary>
+	public ParkStartKind? StartKind { get; private set; }
 	/// <summary>Raised after a queued transition ran.</summary>
 	public event Action? Transitioned;
 
@@ -124,12 +130,15 @@ internal sealed class GameFlow : IDisposable
 
 	// ---- Park ------------------------------------------------------------------------------
 
-	/// <summary>New park from the lobby: the original level (terrain, MAP rules, Easymode import where shipped).</summary>
+	/// <summary>
+	/// New park from the lobby in the chosen mode: Instant Action adds the <c>Easy_</c> balance layer and
+	/// the shipped Easymode seed where the level has them; Full Simulation starts from terrain and MAP rules.
+	/// </summary>
 	public void StartPark( string levelName, GameMode mode )
 	{
-		Mode = mode;
-		StartLevel( levelName, original: true, developerPanels: false, gameMode: mode == GameMode.InstantAction ? ParkGameMode.InstantAction : ParkGameMode.FullSimulation );
-		Log.Trace( $"Started {levelName} in {mode} mode from the front end." );
+		var start = ParkStart.FromFrontEnd( mode );
+		StartLevel( levelName, original: true, developerPanels: false, start: start );
+		Log.Trace( $"Started {levelName} as a new {start} park from the front end." );
 	}
 
 	public void LoadPark( ParkLoadEntry entry )
@@ -140,18 +149,22 @@ internal sealed class GameFlow : IDisposable
 			Level!.LoadSandbox();
 		}
 		else
-			StartLevel( entry.Level, original: true, developerPanels: false,
-				gameMode: Mode == GameMode.InstantAction ? ParkGameMode.InstantAction : ParkGameMode.FullSimulation );
+			// [APPROX:UI-041] a loaded shipped park is the reference start whatever Game Mode was last chosen; the original takes the mode from the loading player's profile, not the park — evidence needed: player profiles and the Mac park loader 0x11acfc
+			StartLevel( entry.Level, original: true, developerPanels: false );
 	}
 
-	/// <summary>Creates a level with the original HUD. CLI paths keep the developer panels.</summary>
-	public Level StartLevel( string levelName, bool original, bool developerPanels, ParkVisitInfo? visit = null, ParkGameMode? gameMode = null )
+	/// <summary>
+	/// Creates a level with the original HUD. CLI paths keep the developer panels. Original levels
+	/// default to the read-only reference start (shipped save imported as it was made).
+	/// </summary>
+	public Level StartLevel( string levelName, bool original, bool developerPanels, ParkVisitInfo? visit = null, ParkStartKind start = ParkStartKind.OriginalSaveReference )
 	{
 		TearDown();
-		var level = new Level( levelName, loadOriginalLevel: original, visit: visit, onlineFolders: OnlineFolders, gameMode: gameMode ) { ShowDeveloperPanels = developerPanels };
+		var level = new Level( levelName, loadOriginalLevel: original, visit: visit, onlineFolders: OnlineFolders, start: start ) { ShowDeveloperPanels = developerPanels };
 		Level = level;
 		if ( original )
 			GameAudio.EnterPark( levelName );
+		StartKind = level.Park?.Start.Kind;
 		// Money, calendar, speed and purchases come from the park economy of original levels (Level.Park,
 		// looked up on every access so loading a park save is followed); the generic sandbox has none.
 		IHudParkStatus status = level.Park != null ? EconomyParkStatus.ForLevel( level ) : new NoEconomyStatus();
@@ -163,6 +176,14 @@ internal sealed class GameFlow : IDisposable
 			CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, Strings, FindLoadEntries(), entry => Queue( () => LoadPark( entry ) ) ),
 			GoOnline = ShowOnline,
 		} );
+		// [EXT:online-visit] read-only visits of shared parks get no advisor (the original has no visits)
+		// [EXT:sandbox] the generic sandbox (not an original level) gets no automatic advisor either; only original levels raise its game events
+		if ( AutomaticAdvisorEnabled && original && visit == null && !advisorUnavailable )
+		{
+			Advisor ??= AutomaticAdvisor.TryCreate();
+			advisorUnavailable = Advisor == null;
+			Advisor?.AttachLevel( level );
+		}
 		return level;
 	}
 
@@ -170,12 +191,14 @@ internal sealed class GameFlow : IDisposable
 	{
 		Hud?.Stack.Clear();
 		Menu?.Stack.Clear();
+		Advisor?.DetachLevel();
 		GameAudio.LeavePark();
 		if ( Level != null )
 		{
 			Level.Dispose();
 			Level = null;
 			Hud = null;
+			StartKind = null;
 			OpenTPW.Level.Current = null!;
 		}
 		foreach ( var entity in Entity.All.ToArray() )
@@ -228,6 +251,7 @@ internal sealed class GameFlow : IDisposable
 			Level.UiCapturesMouse = Hud.Update( Context, input );
 			Level.SimulationTimeScale = Hud.Status.TimeScale;
 			Level.Update();
+			Advisor?.Update();
 			GameAudio.Update( Level.Guests?.GetStatistics().InPark );
 			return;
 		}
@@ -246,7 +270,10 @@ internal sealed class GameFlow : IDisposable
 		overlayRenderer.BeginFrame();
 		var framebuffer = global::Global.Render.MultisampledFramebuffer;
 		if ( Level != null )
+		{
 			Level.Render();
+			Advisor?.Render();
+		}
 		else
 		{
 			// [DATA:lobby.wad:<theme>.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky
@@ -300,6 +327,7 @@ internal sealed class GameFlow : IDisposable
 
 	public void Dispose()
 	{
+		Advisor?.Dispose();
 		GameAudio.Shutdown();
 		Hud?.Stack.Clear();
 		Menu?.Stack.Clear();

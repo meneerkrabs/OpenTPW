@@ -208,6 +208,65 @@ var checks = new (string Name, Action Run)[]
 	{
 		CheckBoundary( new( 0x7fffffff, 1, 2, 3 ), 0x80000000, UnsupportedBoundary.SignedTimestampBoundary );
 	} ),
+	( "saved shared epochs align independently without zero origins", () =>
+	{
+		var saved = new SavedClockEpochs( 114374804, 114876286 );
+		var bases = new ClockBaseWords( 1000, 2000 );
+		var offsets = SharedClockEpochs.Align( saved, bases );
+		Equal( new ClockEpochOffsets( 114373804, 114874286 ), offsets );
+		Equal( new SharedClockWords( 114374804, 114876286 ), SharedClockEpochs.Read( offsets, bases ) );
+	} ),
+	( "restored deadline remains sixty three milliseconds ahead", () =>
+	{
+		var offsets = SharedClockEpochs.Align( new( 114374804, 114876286 ), new( 1000, 2000 ) );
+		var now = SharedClockEpochs.Read( offsets, new( 1005, 2005 ) );
+		Equal( 58u, unchecked(114374867u - now.ScaledMilliseconds) );
+		Equal( 114876291u, now.UnscaledMilliseconds );
+	} ),
+	( "epoch alignment and reads wrap word arithmetic", () =>
+	{
+		var saved = new SavedClockEpochs( 10, 20 );
+		var bases = new ClockBaseWords( 0xfffffff0, uint.MaxValue );
+		var offsets = SharedClockEpochs.Align( saved, bases );
+		Equal( new ClockEpochOffsets( 26, 21 ), offsets );
+		Equal( new SharedClockWords( 10, 20 ), SharedClockEpochs.Read( offsets, bases ) );
+		Equal( new SharedClockWords( 31, 21 ), SharedClockEpochs.Read( offsets, new( 5, 0 ) ) );
+	} ),
+	( "outer epoch does not saturate with its underlying source", () =>
+	{
+		var saturated = OriginalElapsedClock.SaturatingWord( 4294967296d );
+		Equal( new SharedClockWords( 1, 4 ), SharedClockEpochs.Read( new( 2, 5 ), new( saturated, saturated ) ) );
+	} ),
+	( "numeric load hook matches decoded native branch truth table", () =>
+	{
+		using var stream = typeof( SharedClockEpochs ).Assembly.GetManifestResourceStream( "NativeEpochRules" )
+			?? throw new InvalidOperationException( "missing native epoch fixture" );
+		using var metadata = JsonDocument.Parse( stream );
+		var root = metadata.RootElement;
+		Equal( "04809cd4ccee5433c7fb0b7c93d32f6a7aa629c1849181c0b7906415e5e295f5", root.GetProperty( "identity_sha256" ).GetString() );
+		var branch = root.GetProperty( "post_load_skip_branch" );
+		Equal( root.GetProperty( "skip_target" ).GetUInt32(), branch.GetProperty( "target" ).GetUInt32() );
+		foreach ( var selector in new[] { -1, 0, 1, 2, int.MaxValue } )
+		{
+			var skips = NativeBranchTaken( branch, selector == root.GetProperty( "post_load_selector_comparison" ).GetInt32() );
+			Equal( !skips, SharedClockEpochs.AppliesPostLoadAlignment( selector ) );
+		}
+	} ),
+	( "selector one preserves previous offsets at this hook", () =>
+	{
+		var prior = new ClockEpochOffsets( 19, 23 );
+		Equal( prior, SharedClockEpochs.ApplyPostLoadHook( prior, new( 100, 200 ), new( 10, 20 ), 1 ) );
+		Equal( new ClockEpochOffsets( 90, 180 ), SharedClockEpochs.ApplyPostLoadHook( prior, new( 100, 200 ), new( 10, 20 ), 2 ) );
+	} ),
+	( "saved clock pair requires exact width and preserves unsigned words", () =>
+	{
+		Span<byte> words = stackalloc byte[8];
+		System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian( words, 0x80000001 );
+		System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian( words[4..], uint.MaxValue );
+		Equal( new SavedClockEpochs( 0x80000001, uint.MaxValue ), SavedClockEpochs.ReadLittleEndian( words ) );
+		foreach ( var size in new[] { 0, 4, 7, 9 } )
+			Throws<ArgumentException>( () => SavedClockEpochs.ReadLittleEndian( new byte[size] ) );
+	} ),
 	( "signed overshoot crossing is explicitly unsupported", () =>
 	{
 		CheckBoundary( new( 0x7ffffffe, 1, 2, 3 ), 0x7fffffff, UnsupportedBoundary.SignedTimestampBoundary );

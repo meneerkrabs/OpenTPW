@@ -7,6 +7,10 @@ namespace OpenTPW;
 /// </summary>
 public static class IntroPlaylist
 {
+	/// <summary>Automation captures count world frames; any nonempty environment override bypasses intros.</summary>
+	internal static bool ShouldPlay( bool frontEndRun, bool smoke, IReadOnlyCollection<string> args, string? noIntroEnvironment ) =>
+		frontEndRun && !smoke && !args.Contains( "--no-intro" ) && !args.Contains( "--capture-world" ) && string.IsNullOrEmpty( noIntroEnvironment );
+
 	/// <summary>The movie played first at every start-up.</summary>
 	public const string Logo = "bf";
 

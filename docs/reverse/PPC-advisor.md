@@ -58,7 +58,7 @@ start. A sample number and an advisor response ID are different identifiers.
 | Message enqueue | `0x8b78–0x8d34` | Eligibility checks, first empty slot, weakest-slot replacement |
 | Eligibility checks | `0x9008–0x92ec` | Tutorial option, repeat interval, once-only/slap and duplicate limits |
 | Minimum/maximum score scans | `0x9350–0x9418` / `0x9418–0x94dc` | Eight 24-byte pending records |
-| Game event handler | `0x94dc–0x9ea8` | Event-ID switch; event 10 clears history |
+| Game event handler | `0x94dc–0x9ea8` | Event-ID switch; event 10 resets history variant, played flag and slaps |
 | Staff event handler | `0x9ea8–0xa130` | Staff category and status select advice message |
 | Message receiver | `0xa228–0xb678` | Type-ID dispatch to advisor/research/events/staff/pranks/rides/challenges |
 | Scoring data loader | `0xcfd4–0xd054` | Loads `data:advisor:advisor.sam` |
@@ -83,8 +83,11 @@ lookup uses `(typeID - 5) * 4`.
 Research completion branches on category 0–4 and constructs advice message
 IDs 93–97. The staff handler forms `status * 5 + categoryOffset`, with category
 0–4 offsets 34, 33, 36, 35 and 37 respectively (`0x9f00–0x9f48`). Event ID 10
-selects the diagnostic identifying `RESET_FOR_EASY_MODE` and clears the 351
-history records (`0x9dcc–0x9e80`). This is specific trigger-path evidence;
+selects the diagnostic identifying `RESET_FOR_EASY_MODE` and resets the 351
+history records (`0x9dcc–0x9e80`): it stores only `+0xe4` (variant −1), `+0xe8`
+(played 0) and `+0xec` (slap count 0). The saved game tick at `+0xe0` (written
+through `0x121098`, read by the eligibility check at `0x9090`) is kept, so the
+repeat interval still applies after the event. This is specific trigger-path evidence;
 producer conditions and all scenario acceptance behavior remain unverified.
 
 Pending advice has eight 24-byte records starting at controller offset `+20`.
@@ -667,7 +670,13 @@ remain unchanged. The score helper provides separate operations:
   external score/playback wrapper runs, freeing its slot for any subsequent
   admission. `CompletePlaybackAttempt` confirms the supplied wrapper outcome;
   only success updates history and reserves returned playback span plus 1000
-  original clock units. Failure does not restore the consumed record.
+  original clock units. Failure does not restore the consumed record. On the
+  controller path the wrapper is `0xba54` (sole caller `0x89fc`); it fails only
+  for an invalid record (`0xba84`–`0xba8c`) or the missing-descriptor response
+  614 (`0xbb54`). The player `0x6b7c` result is stored only as the span
+  (`0xbb64`) and the wrapper returns 1 (`0xbbf0`), so an unplayed response, or
+  one skipped because options byte `+0x34` is clear (`0x6bb4`–`0x6bc0`), still
+  succeeds with span 0.
 
 The response dispatcher, appropriate computed-score/override wrapper,
 application game-mode conditions, remaining 135 score producers, general
@@ -847,3 +856,507 @@ audit warnings outside the changed codec. New C# files pass scoped formatting;
 existing source LF endings are preserved to keep the diff bounded. The static
 Layer I witness gives identical normal/optimized Python output, and the external
 PCM report meets the fixed 1-LSB acceptance limit.
+
+## Phase 6: validated compressed-entry format metadata
+
+`MP2File` now reads sample rate and channel count through the existing MPEG
+header parser at the declared entry `Header` offset. A supported, complete first
+frame overrides legacy container hints; it does not decode PCM or establish
+that subsequent frames or payload allocations are valid. The new `Channels`
+property reports that header count. Unsupported, truncated or invalid first
+headers preserve the supplied container rate and any mono/stereo type hint;
+channels are zero when neither is known. Archive listing therefore does not
+become contingent on successful decoding.
+
+The existing only constructor caller is `SoundFile.GetFile`; runtime advisor
+playback reads its entry bytes directly and uses decoded `Mp2Audio` metadata.
+In the identified 40-byte banks, rate/bit-depth/type are packed at entry
+`+24/+26/+27`. The pre-`28864fa` `SoundFile` read a signed Int16 followed by
+Int32 fields, which made its type hint unreliable and wrapped 44,100 negative.
+Integration `28864fa` now reads those packed fields as an unsigned UInt16 rate and
+bit-depth/type bytes, so the fallback for unsupported, truncated or invalid first
+headers is that unsigned container rate. A validated frame header still takes
+precedence, so MPEG is recognized regardless of the type byte. Metadata for
+non-MPEG or unsupported formats remains a separate dependency.
+
+A generated 44,100-Hz entry initially failed because the preceding constructor
+reported 22,050. Fourteen metadata cases now pass: all supported Layer I rates
+and channel modes, supported Layer II rates/mono/stereo, mismatched container
+hints and fixed-offset `SoundData`, invalid/truncated/unsupported headers,
+invalid entry offsets, and actual private `SfxHD.sdt/keyexplode` (44,100 Hz) and
+`speechHD.SDT/sp_001` (22,050 Hz). The private checks compare metadata to decoded
+format. The combined focused MPEG/LIP/metadata run passes 63 cases with zero
+skips, preserving all preceding 49 codec/LIP checks. No original stream or PCM
+bytes are committed; the previous full-corpus PCM comparison remains unchanged.
+
+## Phase 7: sound catalog routes and automatic advisor speech bindings
+
+The new `audio_event_evidence.py` pins the two existing binary identities,
+relocations, selected call/field operands and bounded code-range hashes. It
+never runs original instructions. Its packed catalog reader derives strides
+from the sound library: category 24 bytes at `0x162d8`, sound 20 bytes at
+`0x1642c`, event 42 bytes at `0x165fc`, sample choice 16 bytes and child link
+8 bytes. Flags, thresholds, event spans and scheduling policies remain opaque.
+The reader bounds counts, consumes the entire input and validates one-based
+child-element references. It is an evidence reader, not a runtime scheduler.
+
+### RSE sound events use category IDs, distinct from advisor game events
+
+App `0xaf9e8` (opcode 13, `EVENT`) and `0xafa60` (opcode 14, `EVENT_EXT`)
+call the effect dispatcher `0xae930`. `EVENT` supplies final control argument
+1000. The relocated switch is data `0x3f278`. Types 3–9 submit through audio
+wrapper `0xbb4fc`, using the category-handle array at data `0x97f8c`:
+
+| RSE type | Category selected | Handle-array offset | Load / submit, app code |
+| ---: | --- | ---: | --- |
+| 3 | Local `cat_rides` | +28 | `0xaeba0` / `0xaebc0` |
+| 4 | Local `cat_ambient` | +24 | `0xaec04` / `0xaec24` |
+| 5 | Global `cat_rides` | +8 | `0xaee54` / `0xaee74` |
+| 6 | Global `cat_kids` | +4 | `0xaeeb8` / `0xaeed8` |
+| 7 | Global `cat_staff` | +16 | `0xaed8c` / `0xaedac` |
+| 8 | Global `cat_ambient` | +0 | `0xaed28` / `0xaed48` |
+| 9 | Global `cat_ui` | +12 | `0xaedf0` / `0xaee10` |
+
+Global names are grounded in registration `0xbc6f0–0xbc864`; local registration
+`0xbc864–0xbc9a0` places ambient/rides/speech/music at +24/+28/+32/+36. Type 10
+at `0xaec2c` resolves the current thing's custom bank and submits it at
+`0xaecd4`; failure reaches the missing-custom-bank diagnostic at `0xaece0`.
+Types 1/2 take separate non-audio branches; type 0 is the unsupported/default
+route. These are numeric dispatch meanings, not invented event aliases.
+
+`SPAWNSOUND` stores the child script ID at parent script +20 (`0xb12a0`).
+The sound-variable accessor `0xb5c5c–0xb5da4` resolves parent and child IDs,
+checks variable index against child +140 and reads child variable-array +28.
+Wrapper `0xbcaf8` passes its variable-index argument to that accessor at
+`0xbcb20`; a zero result suppresses submission at `0xbcb28`, otherwise it
+passes the resolved catalog ID to `0xbb4fc` at `0xbcb40`.
+
+Train initialization `0x3bb6c` reads sound-child indices 5–8 into train
++84/+88/+92/+96 and creates handles at +100/+104 through `0xbcaf8`, with
+indices 0 and 1 respectively. Train identity is established by the rides lane's
+caller `0x3efd0`: it passes the train in r4 after a separate car loop of stride
+96; sound refresh `0x3c21c` advances train records by 128. These train sound
+fields must not be confused with car +84/+88/+92 projected coordinates.
+
+The SDK-only asset command below uses existing `WadArchive`/`RideScriptFile`
+readers and parses all 28 supplied baseline EventMaps without running scripts.
+It writes only interpreted variable indices, SET literals and identities to
+an external report. For baseline `b_drip`, `c_hade` and `coaster1`, indices 5–8
+are `VAR_PAR0–3`; for the bumper maps they are `VAR_EVT5–8`. Variable indices
+therefore cannot receive universal event names. The three coaster `VAR_EVT0`
+values 145/175/204 identify local catalog records with 6/6/5 elements; their
+sample choices reference bank IDs 3/2/3. Sound-library `ReadSounds` rebases
+that field through its bank-fixup array at `0x16af4–0x16b04`. Resolving those bank IDs requires the
+native bank remap state before attaching SDT clip names. Simply indexing the
+main RideHD bank would yield the wrong names.
+
+```sh
+/Users/sander/.local/share/opentpw-dotnet10/dotnet run --project tools/ppc-analysis/lanes/advisor/audio-events/AudioEventAssets.csproj --configuration Release -- /Users/sander/server/game-assets/theme-park-world/Data /tmp/advisor-event-map-corpus-validated.json
+python3 tools/ppc-analysis/lanes/advisor/audio_event_evidence.py /Users/sander/server/game-assets/mac-feral/bin --assets /Users/sander/server/game-assets/theme-park-world/Data --event-maps /tmp/advisor-event-map-corpus-validated.json > /tmp/advisor-audio-event-evidence.json
+```
+
+The bounded reader consumes all 31 loose supplied SFX catalogs exactly,
+covering 1,267 catalog IDs. A sample-choice bank ID is its packed field +12
+(sound placeholder `0xf5d0`), while the sample ID is +0 (`0xf5e8`); bank lookup
+subtracts one from a sample index at sound code `0x6fa4`. This establishes
+one-based SDT member indexing only after the bank is resolved.
+
+### Local music uses catalog 2, with a multi-sample bank definition
+
+App `0xbc144` submits catalog ID 2 through local music handle-array +36 at
+`0xbc174`, then calls the audio interface parameter wrapper `0xbaf70` with
+control 4 and argument 0 at `0xbc188`. It is called during main-loop transitions
+at `0x1c1c40`. During updates, `0x1c246c` calls `0xbc1d4`, which applies
+control 4 with the supplied argument to the retained music handle. Exit
+`0x1c2994` calls `0xbc1a4`, passing that handle to `0xbba58`. Complete
+play/stop/fade semantics of those interface/control operations are not
+established here.
+
+The supplied fantasy `cat_musicSFX.map` contains exactly catalog ID 2, with 89
+sample references across its elements. Every reference selects bank 1 and is
+within the supplied 89-entry music bank. `cat_musicBANK.map`, whose 11-byte
+record stride is grounded at sound code `0x15194`, names family `Music\Music`.
+The first listed reference is sample 44, `Level1-a.mp2`, in `Music/MusicHD.sdt`.
+Catalog selection, random thresholds, sentence chaining and playlist ordering
+are separate mechanisms; these records do not prove a simple sequential or
+uniform-random playlist.
+
+| Selected asset | SHA-256 |
+| --- | --- |
+| Fantasy `Music/cat_musicSFX.map` | `bdd080f8bece1d03df33cf2868ef82d4433b62543f0994b9d24e59fefda8b65e` |
+| Fantasy `Music/cat_musicBANK.map` | `ad45ce6ab74cef5c284f2ae6e7be5780d99a3e9fae1608990672b305528328b4` |
+| Fantasy `Music/MusicHD.sdt` | `6d35cd515ba59027be57d492eb9803554e1ff51ffc231381a5f09e0ca07a0852` |
+
+### Actual CMsgEvent producers reach selected speech and LIP records
+
+`CMsgEvent` constructor `0x116528` installs RTTI table data `0x408a4` and
+stores its event-ID argument at object +8 (`0x116540`). Advisor reception reads
+that field at `0xad40` and calls `0x94dc` at `0xad48`. Its switch table is
+**data `0x1e0f4`**, independent of the RSE sound switch and catalog namespace.
+The table routes IDs 0/2/3/4 to concrete advice records:
+
+| CMsgEvent ID | Pending advice ID / construct call | Configured score field | Descriptor response IDs | Bank / speech and LIP IDs |
+| ---: | --- | --- | --- | --- |
+| 0 | 0 / `0x9548` | `Welcome.Score` | 1 | Local / 1 |
+| 2 | 106 / `0x98d4` | `Bankrupted.Score` | 274, 275 | Global / 424, 425 |
+| 3 | 128 / `0x9a88` | `ParkNowOpen.Score` | 308, 309 | Global / 342, 343 |
+| 4 | 129 / `0x9c3c` | `ParkNowClosed.Score` | 310, 311 | Global / 344, 345 |
+
+Rows follow the existing 351-descriptor table data `0x1f2b4` into the
+610-response table data `0x18ff4`; they identify candidates, not unconditional
+playback. Eligibility, queue score, busy-action and cyclic response rules
+still apply. Event 0 also constructs advice 323 when the global mode value is
+2 (`0x96f4–0x9720`); its `PrebuiltPark.Score` descriptor resolves response 587
+and global speech/LIP 606. That resolution is by stored ID: native `0x6b7c`
+searches word 0 of the response table (stride 32, sentinel 9999). Response 587
+is in row 584. Indexing row 587 by position would give response 590 (speech 638,
+LIP 0). `audio_event_evidence.py` resolves every row through the same
+first-match search and pins this advice. Event 10 resets each history record's
+variant, played flag and slap count but keeps its saved tick, as established
+earlier.
+
+Concrete producer constructor calls are `0xcc464` (ID 2), `0x108fd4` (ID 3),
+`0x109118` (ID 4), `0x104d2c` (ID 0), and main-loop `0x1c2108` (ID 10)
+followed by `0x1c2174` (ID 0). In `0x108ee4`, the ID 3 branch changes game
+field +0x1da710 from nonzero to zero at `0x108f50`; the ID 4 branch changes
+it from zero to one at `0x109044`. The matching score properties corroborate
+park open/closed messaging, while transition preconditions and the financial
+threshold at the ID 2 producer remain owned gameplay proofs. No RSE audio
+callback is established as a producer of these advisor messages.
+
+Verification: eleven new synthetic catalog/bank bounds and reference cases pass,
+bringing the lane Python total to 38. The native operand/relocation witness and
+31-catalog corpus scan pass. The C# asset command parses all 28 EventMaps; the
+standalone advisor helpers retain all 52 passing cases. No original code,
+compressed audio, PCM, script bytes or disassembly is committed. Remaining
+runtime blockers are category/bank remap state, event element selection and
+parameter semantics, full music sequencing, environmental priorities/voice
+limits, plus game-message/score and pause-aware clock integration.
+
+## Phase 8: category bank ordinals resolve to SDT members
+
+`bank_remap_evidence.py` advances the earlier bank-remap dependency with
+identity-pinned native operands and actual selected PC/Mac assets. The transient
+map belongs to a **category registration**, while the loaded-bank registry is
+shared. A catalog ID, a serialized bank ordinal, a global loaded-bank index,
+a sample ordinal and an SDT entry name are separate identities.
+
+### Native registration and fixup lifetime
+
+| Native sound-library evidence | Established role |
+| --- | --- |
+| `0x14bc0 → 0x15d4c → 0x157d0 → 0x15100` | Register category BANK definitions before reading SFX definitions. |
+| `0x15194`, `0x15208` | Bank records occupy 11 bytes and are processed in stored order. |
+| `0x151dc`, `0x151e8`, `0x151cc` | Reset serialized handle/cache fields and replace the serialized string pointer. These stored pointer-shaped words do not supply an SDT filename or a stable runtime handle. |
+| `0x15b8c–0x15b94`, `0x15c24–0x15c30` | A newly registered bank takes the next logical counter at streamer +52 and stores its global registry index in vector +44. |
+| `0x15590–0x15598`, `0x15628–0x15638` | A reused loaded bank also takes the next logical counter and appends its existing registry index. Reuse does not collapse or skip a BANK-file ordinal. |
+| `0x14c00 → 0x161c0 → 0x15f00 → 0x162bc` | Read the SFX catalog after the logical bank map has been built. |
+| `0x16a58`, `0x16af4–0x16b04` | Read the packed sample-choice bank at +12; for nonzero values, index `bankOrdinal - 1` into streamer +44 and overwrite that field with the global registry index. |
+| `0x14c10–0x14c34`, `0x14fa0–0x14fc8` | Free/reset the transient vector, capacity +48 and logical counter +52 after registration. The lifetime is BANK load → SFX fixup → temporary-map teardown. |
+| `0xf5d0`, `0xf5e8` | The placeholder resolves the rewritten bank while retaining sample ID at choice +0. |
+| `0x6fa4` | `TbMMFileBank::GetSamplePosition` subtracts one before indexing its entry-position array: sample IDs are one-based. |
+| `0x6a64` | Identified `TbFileBank::GetSampleName` returns zero. This path does not establish playback by stored SDT name. |
+
+Bank zero is a native special branch that skips this remap. The bounded resolver
+rejects zero or out-of-range ordinals instead of silently assigning the first
+bank. Registration success, alternate-root flags, filename quality selection
+and mixer/device policy remain separate dependencies. The corpus command takes
+`HD.sdt` explicitly; matching that supplied family is not proof that every
+original runtime always chooses HD data. Selected BANK flag bytes contain no
+0x20 alternate-root route, which the bounded corpus check refuses to invent.
+
+### Actual corpus resolution
+
+The existing BANK reader bounds every path string, record count and end of
+input. `bank_records` keeps file order and registration flags while ignoring
+serialized cache/pointer fields. Each SFX sample choice first resolves its
+BANK-file ordinal, then its SDT sample ordinal. Names are preserved exactly as
+stored in the fixed 16-byte SDT name field; no suffix repair, prefix matching,
+case folding or duplicate-name collapse is applied to entries.
+
+| Corpus | Catalogs | Logical BANK records | Referenced SDT paths | Resolved sample choices |
+| --- | ---: | ---: | ---: | ---: |
+| Supplied PC baseline `Data` tree | 31 | 53 | 47 | 3,631 |
+| Selected Mac HFS copies: global UI and fantasy/hallow/jungle rides | 4 | 13 | 13 | 1,105 |
+
+The UI lane copied 21 original Mac data forks read-only to
+`/tmp/ppc-advisor-mac-Data`, preserving case and recording source paths,
+lengths and SHA-256 outside Git. The HFS image remained unchanged at SHA-256
+`46edf2f94ce9a36834f7760ef3e3852e623863a8a8ef99ef629872b15d599365` and was
+unmounted afterward. No HFS global state was modified by this advisor lane.
+The four selected BANK/SFX pairs are byte-identical between these supplied
+PC and Mac copies; their resolved choices agree. This is selected asset
+correspondence, not Windows executable or device parity.
+
+| Catalog context / ID | BANK ordinal / family | SDT ordinals / actual stored names |
+| --- | --- | --- |
+| Global `cat_ui` / 31 | 1 / `Sound\sfUi` | 10 / `BUTTON01.mp2` |
+| Fantasy `cat_rides` / 145 | 3 / `Sound\xRide` | 15–20 / `dull_crmbl1.mp2`, `dull_crmbl2.mp2`, `dull_crmbl3.mp2`, `dull_crmbl5.mp2`, `dull_crmbl6.mp2`, `dull_crmbl7.mp2` |
+| Hallow `cat_rides` / 175 | 2 / `Sound\xRide` | 8–13 / `mt_crmbl1.mp2` through `mt_crmbl6.mp2` |
+| Jungle `cat_rides` / 204 | 3 / `Sound\xRide` | 8–12 / `wd_crmbl1e.mp2`, `wd_crmbl2e.mp2`, `wd_crmbl3e.mp2`, `wd_crmbl5e.mp2`, `wd_crmbl7e.mp2` |
+
+Fantasy and jungle list banks `[Ride, sRide, xRide]`; hallow lists
+`[ride, xRide, sRide]`. Thus bank 2/3 have context-dependent meanings. Likewise,
+Jungle catalog 145 resolves to `Sound\Ride` sample 217, `fallz2.mp2`, while
+Fantasy catalog 145 resolves to the six xRide members above. A number alone
+cannot receive a global event or clip alias.
+
+Stored names also cannot replace numeric identities: global `UIHD.sdt` has
+two entries named `tp_balloon_pop_`; Jungle `AmbientHD.sdt` has two each named
+`TP STRANGE DEEP` and `TP STRANGELY DE`. They remain distinct ordinal/offset
+records even when their truncated strings coincide. The current production
+SDT reader's packed-field/natural-name fixes were integrated separately; this
+lane adds no gameplay or archive-lookup changes.
+
+### Role in EVENT and SPAWNSOUND
+
+The recovered RSE `EVENT` category selector chooses local/global registered
+categories as shown in phase 7. Its catalog ID selects a sound definition;
+that definition's sample choices use the category BANK map before reaching
+loaded-bank/sample positions. `SPAWNSOUND` loads the child script; its variable
+getter and wrapper resolve a variable to that catalog ID, with zero suppressing
+submission. Neither operation supplies an SDT name directly. The mappings above
+now attach concrete names to selected numeric choices without treating the
+EventMap variable, sound catalog record and SDT ordinal as interchangeable.
+
+```sh
+OPENTPW_PPC_BIN_ROOT=/Users/sander/server/game-assets/mac-feral/bin OPENTPW_PC_DATA=/Users/sander/server/game-assets/theme-park-world/Data OPENTPW_MAC_DATA=/tmp/ppc-advisor-mac-Data python3 -m unittest discover -s tools/ppc-analysis/lanes/advisor -p 'test_*.py' -v
+python3 tools/ppc-analysis/lanes/advisor/bank_remap_evidence.py /Users/sander/server/game-assets/mac-feral/bin --pc-data /Users/sander/server/game-assets/theme-park-world/Data --mac-data /tmp/ppc-advisor-mac-Data > /tmp/advisor-bank-remap-pc-mac.json
+```
+
+All 48 lane Python checks pass with the selected fixtures. Ten new cases cover
+record order, ignored cache words, bank-before-sample resolution, duplicate
+truncated names, invalid ordinals/paths/quality suffixes, context-specific IDs
+and actual native/PC/Mac operands and mappings. Confidence is high for these
+identities and bounds. Phase 9 below recovers selected element weighting and
+parameter consumers. Exact filename quality/root policy, environmental priority and audio
+output scheduling remain unimplemented dependencies; no PCM-clock LIP bridge
+or original runtime parity is inferred.
+
+## Phase 9: loaded weights, selection state and sound parameters
+
+`sound_selection_evidence.py` adds identity-pinned operands and bounded pure
+selection algebra. It accepts a seed snapshot, explicit descriptors and
+parameter values. It does not advance shared random state or schedule output.
+All addresses below are code section 0 or explicitly named data section 1 in
+the same identified Mac sound PEF used above, with TOC `0x8000`.
+
+### Disk weights are not always runtime weights
+
+`IsSFXHeaderValid` reads header word +16 at `0x15e60`; zero sets streamer byte
++60 to one at `0x15e70–0x15e7c`. `RegisterSFXData` repeats that conversion at
+`0x15f98–0x15fac`. `ReadEvents` (`0x165b0`) then visits the loaded 42-byte
+event array. With that flag set, `0x16654–0x16660` replaces event word +30
+with `(currentStored - previousStored) mod 2^32`, initially previous zero.
+With the flag clear it retains the stored word. Child event references are
+linked afterward, so branch selection also sees the converted weights.
+
+The supplied PC tree contains 31 SFX catalogs: 26 request this differencing,
+while the four level music catalogs and global speech catalog do not. All
+four selected Mac UI/ride catalogs request differencing and remain
+byte-identical to their selected PC copies. For Fantasy catalog 145,
+stored values 10922, 21844, 32766, 43688, 54610 and 65532 become six weights
+of 10922. For Jungle catalog 204, five cumulative values become five weights
+of 13107. Directly summing the serialized cumulative values would change
+the native selection behavior.
+
+### Base and branching selection consumers
+
+| Consumer | Native operands and behavior |
+| --- | --- |
+| `CAudioPlaceHolder::ChooseRandomSound`, `0xff40` | Event count at sound +4, array +8, stride 42. Sum loaded event words +30 in unsigned 32-bit arithmetic; choose first sum **greater than or equal to** candidate high 16 bits (`0xffb8–0xffc4`). Exhaustion selects the first event at `0x10130`, preserving previous-index history and skipping parameter-selector refresh. |
+| `CAudioPlaceHolder::ChooseRandomSample`, `0xfcb4` | Sample count is event word +0 low 16 bits, array +8, stride 16. Choose first sample threshold word +4 **greater than or equal to** candidate high 16 bits (`0xfd10–0xfd18`). Exhaustion returns null (`0xfd9c`), without history update. The sample threshold is not differenced by the event-weight conversion. |
+| Base singletons | A count of one selects the first array entry directly. It bypasses random arithmetic, previous-index storage and, for events, parameter-selector refresh. Sample count zero returns null. The helper refuses an empty event array instead of modelling the native first-pointer fallback as a valid record. |
+| Base anti-repeat | Only when the boolean is enabled and count is **greater than two**, equality with signed-byte history increments the selected index and takes unsigned modulo count. Event history is object byte +80 (`0x10010`, `0x10058`); sample history is +81 (`0xfd44`, `0xfd88`). This is a next-entry substitution, not another random draw. |
+| `CPlaceHolderBranchingSentence::AssignSoundToNextBranch`, `0x192f0` | The current event's linked-child array is at +38, count +4, stride 8. Link bytes +6/+7 are inclusive low/high bounds for the supplied unsigned branch parameter (`0x19364–0x19378`). Sum the eligible linked events' loaded weights +30, take the full candidate modulo that total, then choose first eligible cumulative sum >= remainder (`0x1939c–0x19418`). |
+| `CPlaceHolderOneShotBranchingSentenceElement::ChooseRandomSound`, `0x18028` | Reads the parent parameter byte from parameter structure +4, filters the same inclusive link ranges (`0x180c0–0x180d4`) and weights the linked events (`0x180e0`, `0x1815c`). It updates both its own and the parent's selected event pointer. |
+
+These are selected class consumers, not a claim that every EVENT uses the base
+class. Linear sentences, shuffles, droppable conversion and class selection
+require their own dispatch evidence. With no eligible links the native branch
+leaves at `0x19398` before dividing, and the helper returns `None`. Only eligible
+links whose weights sum to zero reach the unsigned `divwu` at `0x193c4`; the
+helper raises `ValueError` for that unsupported input instead of inventing a
+fallback. Base index models are bounded to at most 127 choices because native
+index temporaries/history are signed bytes. That is a helper boundary, not a
+proven native rejection.
+Zero weights/thresholds can select on a zero draw because equality is accepted.
+
+### Random-state ownership boundary
+
+All nine direct TOC address constructions for sound data `0xc2e4` occur at
+`0xf404`, `0xf548`, `0xf764`, `0xf988`, `0xfce0`, `0xff80`, `0x118c8`,
+`0x180f8` and `0x1939c`. The selected draw blocks read this shared sound-module
+word and calculate
+
+```
+candidate = (seed * 1664525 + 1013904223) mod 2^32
+```
+
+The base event/sample choices use its high 16 bits. Volume, pitch and branch
+choices use the full unsigned candidate modulo their range/weight span.
+The draw blocks do not store the successor back into shared state. One pitch
+fill variant spills the unchanged seed to its stack; that is not advancement.
+
+Initializer `0x118b4` calls imported `LbTime_GetClock` at `0x118c0` and stores
+its return into that word at `0x118cc`; the static constructor list calls it
+at `0x3c`. Thus this selected RNG state belongs to the sound module and its
+initial value comes from the clock, separately from the game's advisor-mouth
+random call. Data relocation slot `0x348` also points to the seed word;
+phase 10 below resolves its export/linkage ownership. The witnesses establish
+direct consumers and initializer, not an original runtime sequence. Do not
+turn these pure functions into an advancing per-draw RNG without finding a
+native state writer.
+
+### Volume, pitch and parameter codes
+
+| Packed event field | Proven selected consumer |
+| --- | --- |
+| +12/+13, unsigned bytes | Volume range, `GetRandomVolume` at `0xf32c`. Reversed bounds are swapped in the loaded event. With no matching parameter: `low + candidate % (high-low)`, or low for equal bounds. The high endpoint is excluded for a nonzero span. Missing event returns 100. |
+| +14/+15, signed bytes | Pitch-index range, `GetRandomPitch` at `0xf45c`; explicit sign extensions `0xf48c`, `0xf490`. Same swap/range rule, with missing event returning zero. Stored byte 232 means −24. |
+| +22/+26, unsigned shorts | External parameter selector codes. Normal base event selection loads them then truncates into parameter structure byte +1/+2 (`0x100d8–0x100ec`), resetting +3 to zero. These codes are not volume/pitch values or globally established EventMap names. |
+| +24/+28, unsigned shorts | Destination masks. `GetParameterValue`, `0xf2e0`, first tests +24 against requested bit and returns parameter byte +5; otherwise +28 can return +6. First matching mask wins. Volume requests bit 1 at `0xf3bc`; pitch requests bit 2 at `0xf4fc`. The sentence-element override `0x187fc` reads those value bytes from its parent. |
+
+`UpdateParameter` (`0xe9c0`) truncates incoming code and value to bytes and
+updates **all** matching slots among four selector/value pairs. A match in
+slot zero alone does not request dependent recomputation. Other matches call
+the dependent-update virtual slot unless object flag `0x4000` inhibits it
+(`0xea94–0xeaac`). No inferred speed/distance label is attached to codes 19/20.
+
+When the requested parameter exists, volume/pitch use
+`low + floor(((span * parameter) mod 2^32) / 100)`. At parameter 100 this
+includes the high endpoint, unlike the random range. Values are byte-sized
+on the proved storage path but are not clamped to 100 by these consumers.
+`UpdateParameterDepandants` (`0xead4`) requires an active handle and manager;
+it passes volume to `TbSoundSampleInfo::SetVolume` at `0xeb54→0x9400` and
+pitch to `SetPitch` at `0xeb6c→0x9428`. Flag `0x400` inhibits its volume
+recalculation. Sample-info setters store volume word +28, pitch word +36,
+and the distinct `SetFrequency(float)` API stores float +32 at `0x943c`.
+
+The exported `TbSoundSystemModule::ConvertPitchIndexToFrequency` (`0xbbf8`)
+has a zero special case of 1.0. Its positive branch adds one to the index,
+divides by float 96 and calls MathLib `pow(2, exponent)`; its negative branch
+uses `(1-index)/96` and returns the reciprocal. The mathematical ratios are
+therefore `2^((index+1)/96)` for positive indices and
+`2^((index-1)/96)` for negative indices. Constants are data +0x668 (float
+96), +0x670 (double 2) and +0x678 (float 1). This API evidence does not
+establish every mixer call site, absolute sample frequency, MathLib bit-exact
+rounding, or audio-device output parity. The pure expression test is an
+algebra check, not an original device test.
+
+### Selected corpus and verification
+
+| Corpus | Sounds / events | Sample choices / child links | Variable volume / pitch ranges | Multi-sample arrays ending below 65535 |
+| --- | ---: | ---: | ---: | ---: |
+| Supplied PC baseline, 31 catalogs | 1,267 / 1,595 | 3,631 / 3,306 | 180 / 238 | 201 |
+| Selected Mac copies, 4 catalogs | 336 / 400 | 1,105 / 277 | 31 / 46 | 73 |
+
+These last-column arrays have a concrete possible high-draw exhaustion
+dependency in the selected sample chooser; no fallback or normalization is
+invented. Both supplied sets have zero nonmonotone sample-threshold arrays.
+Fantasy 145 uses volume 17–85, pitch indices −24–36 and selector
+19 with mask 3, so the same external byte can interpolate both ranges.
+Jungle 204 has those ranges with selector 20/mask 3. Global UI 31 remains
+volume 100 and pitch zero. Catalog context and IDs retain the identities
+from phase 8; these parameter codes do not supply new event names.
+
+```sh
+python3 tools/ppc-analysis/lanes/advisor/sound_selection_evidence.py /Users/sander/server/game-assets/mac-feral/bin --pc-data /Users/sander/server/game-assets/theme-park-world/Data --mac-data /tmp/ppc-advisor-mac-Data > /tmp/advisor-sound-selection.json
+OPENTPW_PPC_BIN_ROOT=/Users/sander/server/game-assets/mac-feral/bin OPENTPW_PC_DATA=/Users/sander/server/game-assets/theme-park-world/Data OPENTPW_MAC_DATA=/tmp/ppc-advisor-mac-Data python3 -m unittest discover -s tools/ppc-analysis/lanes/advisor -p 'test_*.py' -v
+```
+
+All 67 advisor Python cases pass with the supplied binary/PC/Mac fixtures,
+with zero skips. The 19 new cases cover loader differencing/wrap, threshold and weight equality,
+exhaustion, singleton bypasses, anti-repeat, inclusive branches, zero-divisor
+dependencies, signed pitch, reversed bounds, random/parameter endpoints,
+byte truncation/masks, frequency algebra, native operands and private PC/Mac
+metadata. Confidence is high for the selected static consumers and supplied
+record interpretations. External RNG mutation, complete class dispatch,
+parameter producers, scheduling and device behavior remain separate handoffs.
+
+## Phase 10: seed alias ownership and advancement qualification
+
+`sound_seed_evidence.py` identifies all 16 supplied Mac PEF containers by
+SHA-256 before examining their imports, exports, relocations and selected
+operands. Its result is a linkage witness, not execution of the original game.
+
+### What slot 0x348 owns
+
+The sound export `mRandomSeed__17CAudioPlaceHolder` has symbol class **1
+(data)**, data section 1, offset `0xc2e4`. Slot `data0x348` is the sole
+relocation to that exported word; its target is section 1 at `0xc2e4`.
+It is a TOC pointer to the static seed, not a function pointer, transition
+vector, scheduler callback or second seed. The sound code has no direct
+D-form load/store/address construction via `r2` accessing that slot with its
+TOC `0x8000`, and no relocation points to the slot itself. Indexed pointer
+flow is not inferred solely from that operand scan.
+
+The nine direct seed-address constructions from phase 9 are independently
+checked. Eight belong to selection/range calculation blocks; their address
+consumers load the seed value and use it as an arithmetic input. For the
+sample chooser, `0xfcf0` reads through `r6`, then `0xfcf4` replaces `r6` with
+the sample-array pointer. For the event chooser, `0xff90` reads through `r5`,
+then `0xff98` replaces `r5` with the event-array pointer. The one-shot branch
+consumer `0x18108` overwrites `r6` with the loaded integer, and the other
+branch consumer reads it at `0x193ac` before replacing the pointer register
+at `0x193b0`. Volume/pitch consumers load the integer through `r4`; their
+selected arithmetic blocks do not pass the seed address to another routine
+or write a successor. The ninth site is the initializer's clock-return
+store at `0x118cc`, reached through the PEF initializer and constructor list.
+
+### Imported and dynamically resolved ownership
+
+None of the 16 identified containers imports the seed symbol. Its exact
+symbol-name literal also occurs in none of their code/data payloads, where a
+dynamic lookup name would be supplied; the export's loader metadata remains
+the identified owner. The exact bundle set is checked so missing libraries
+cannot silently support an exhaustive import claim.
+
+The supplied containers have one `FindSymbol` import, in
+`sams_utils_shared.data`, import index 193. That library uses TOC **0**, unlike
+the sound library. Glue `0x1f6fc` has one direct caller at `0xa86c`, inside
+resolver helper `0xa808`. The helper calls `GetSharedLibrary` at `0xa840`
+and forwards the caller's symbol name to `FindSymbol`. No relocation supplies
+an indirect entry to that helper. Its only direct
+callers, `0xa0b4` and `0xa0d0`, load these bounded Pascal strings:
+
+| Call | Library | Symbol |
+| --- | --- | --- |
+| `0xa0b4` | `DriverServicesLib` | `UpTime` |
+| `0xa0d0` | `DriverServicesLib` | `AbsoluteToNanoseconds` |
+
+Their base is the code-section literal pointer at Sams TOC slot 2040,
+relocated to `code0x212e1`; symbol offsets are +18 and +25. Thus the recovered
+dynamic lookup path resolves clock facilities, not an indirect sound-seed
+writer. No seed setter import or seed lookup caller was identified in this
+bundle. External system libraries are not disassembled by this witness.
+
+### Result and limits
+
+The recovered bundle selection path **does not advance the seed**. Its
+choosers calculate a successor candidate from the same sound-owned word;
+the identified initialization path writes the clock-derived starting value.
+Between initialization and any external mutation, repeated calculations
+with that seed reuse the same candidate. Anti-repeat history and branch
+parameters can still change the selected record without advancing this seed.
+
+This qualification rests on export/relocation ownership, all identified
+bundle imports, the selected dynamic lookup callers and the local seed
+consumers—not only an absent direct store. Because the seed is exported
+data, a module outside the identified bundle or deliberate external access
+could mutate it. The evidence does not rule that out, establish a whole-game
+runtime trace, or prove the Windows build uses the same seed policy. It
+supports retaining the pure helper's explicit snapshot dependency rather
+than introducing an advancing random generator into production audio.
+
+Six added cases check data versus executable ownership, wrong relocation
+targets, TOC rebasing, indirect pointers to the alias cell, bounded Pascal
+lookup strings, repeated/explicitly changed seed snapshots and the actual
+16-container native linkage. All **73** advisor Python tests pass with the
+supplied binary/PC/Mac fixtures, zero skips; `git diff --check` passes.
+Confidence is high for identities, ownership and selected call chains;
+the fixed-between-writes statement is qualified to the recovered bundle.
+
+```sh
+python3 tools/ppc-analysis/lanes/advisor/sound_seed_evidence.py /Users/sander/server/game-assets/mac-feral/bin > /tmp/advisor-sound-seed.json
+```

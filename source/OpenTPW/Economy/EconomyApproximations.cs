@@ -23,7 +23,7 @@ public static class EconomyApproximations
 		("ECON-015", "researchers on strike or picked up are the original's excluded states 3, 4 and 5", "the staff state values behind 0x100F4170"),
 		("ECON-017", "the research table is in info-id order and the player cannot step the cursor to another item", "the table fill order (FUN_100c9064) and the next/previous control"),
 		("ECON-018", "ride upgrade levels and add-on objects form the \"upgrade\" research category", "research lab capture"),
-		("ECON-019", "Instant Action research runs at one grade-2 researcher without staff", "Instant Action capture"),
+		("ECON-019", "an Instant Action start that imported the seed park researches as one grade-2 researcher while none is employed, standing in for the seed's undecoded researcher; the Mac code has no staffless research path", "Easymode.TPWI staff records"),
 		("ECON-020", "a sale drops LitterEffect/100 litter items", "capture of litter after sales"),
 		("ECON-021", "a repair takes WorkDuration game hours (x DurationOfUpgrade for upgrades); mechanics are dispatched instantly", "capture of repair duration per grade"),
 		("ECON-022", "a handyman removes one litter item per WorkDuration game minutes, park-wide", "capture of cleaning speed"),

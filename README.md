@@ -64,6 +64,7 @@ remain incomplete. Neither symbol certifies every variant or original-runtime pa
 | Lip Sync ([.LIP](https://opentpw.gu3.me/formats/lips.html)) | ✅ | Mark lists parse; signed conversion, talking toggles, loaded-LIP start state and random mouth selection are traced to the Mac binary. The bounded original-clock helper is tested; the manual SDL presentation still uses its own timeline ([lip sync](docs/LIPS.md), [binary trace](docs/reverse/APPROX-TRACE.md)). |
 | Banner mesh companions ([.MTR](https://opentpw.gu3.me/formats/mtr.html)) | ⚠️ | Selected topology and matrices decode; original runtime purpose remains unknown ([companions](docs/MTR.md)). |
 | Video ([.TQI/.TGQ](https://opentpw.gu3.me/formats/tqi.html)) | ⚠️ | All nine movies decode and stream via `--play-movie`; audio is bit-exact, video remains close but not bit-exact ([movies](docs/TGQ-MOVIES.md)). |
+| Theme Park Inc textures (.FSH, EA `SHPI`) | ⚠️ | All 7,283 Theme Park Inc `.fsh` files/WAD members decode to RGBA (`--inspect-fsh`); nothing uses them in the game, Theme Park Inc is not playable, and opaque 24-bit palettes are an approximation ([FSH](docs/FSH.md)). |
 
 ### Documentation
 
@@ -83,10 +84,16 @@ all 274 original objects (plus the official bonus objects via `--bonus-data`) ca
 be built and run their original scripts and animations, without sounds or ride
 controllers ([objects](docs/OBJECTS.md)); `.LIP` marks
 are microsecond talking/silence marks, traced through the Mac advisor's signed
-conversion to a pause-aware millisecond clock. They drive the manual advisor
-slice with SDL audio via `--advisor-say N`. The original chooses one of five
-mouth shapes at random after each strict 100 ms deadline while talking; that
-behavior is recovered in a bounded helper and is not wired to this runtime.
+conversion to a pause-aware millisecond clock. In a park the advisor now speaks
+automatically for the traced game events: level start says the welcome from the
+level's own speech bank (and, in Instant Action, the prebuilt-park advice), and
+bankruptcy and park open/close are queued through the original's scored
+eight-slot queue with `Advisor.sam` scores (park open/close score 20, below the
+minimum 25, so they never play). Every other advice message is not wired yet;
+`--no-advisor` turns it off and `--advisor-say N` / `--advisor-response N` still
+play one clip by hand. While talking the mouth is one of five shapes chosen at
+random every 100 ms, as in the original (`AdvisorMouth`); pose, animation,
+placement and timing remain registered approximations ([LIPS](docs/LIPS.md)).
 ISO-only `.MTR` files decode as topology and matrices redundant with their banner
 `.MD2` (no material data; runtime use unknown). SDT speech, music and Layer I
 effects decode within 1 LSB of independent references on selected corpora;

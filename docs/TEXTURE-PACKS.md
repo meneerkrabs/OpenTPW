@@ -30,7 +30,8 @@ neither ships nor downloads the upscaler.
    `~/Library/Application Support/OpenTPW`), `--texture-pack-subtree <data-relative dir>`
    (e.g. `levels/jungle`, for a quick trial), `--interface-model <name>` (default
    `realesrgan-x4plus-anime`, for interface art), `--texture-pack-no-interface` (keep interface
-   art original), `--texture-pack-interface-only` (build only interface art) and
+   art original), `--texture-pack-interface-only` (build only interface art), `--texture-pack-sprites-only`
+   (build only the guest sprites; with `--texture-pack-interface-only` both) and
    `--texture-pack-merge` (keep the existing pack's textures and add or replace the ones built
    now). To add interface art to a pack built before interface art was supported:
    `--build-texture-pack --upscaler … --texture-pack-interface-only --texture-pack-merge`.
@@ -60,6 +61,15 @@ moving the new pack into place fails, the previous one is moved back.
   UI texture is an atlas of separate pieces (the two ends of `purple_button`, the parts of a
   panel), not a tile. The UI loader (`UiImages`) checks the pack like `Texture` does; model UVs
   are relative, so the 4× image drops in.
+- Upscales the guest sprites. Guests are pre-rendered 2D sprites (`esprites.wad/Generic/Kids/SPR_xx.FPC`
+  with `.ESP` animations), not `.wct` textures; OpenTPW packs each set into a 1024×256 RGBA atlas at
+  load time. The builder builds the same atlases and upscales them with the world model
+  (`realesrgan-x4plus`: the sprites are rendered 3D figures, and the anime model drew outlines around
+  hair and faces), edge-padded, under the pack key `esprites/generic/kids/<set>.atlas`. The guest
+  renderer uses the pack's atlas when its aspect ratio matches; frame UVs are relative.
+- Before upscaling interface art and sprites, fully transparent texels take the colour of their
+  opaque neighbours (up to four texels out, alpha stays 0). The decoded textures leave white or black
+  in empty texels, which the upscaler would otherwise blend into a light or dark fringe.
 - Wrap-pads each texture by an eighth of its smaller side (2–8 pixels) before upscaling and
   crops the padding afterwards, so tiling textures (grass, paths) stay seamless.
 - Runs each upscaler once over its textures and writes `textures/<game path>.png` plus
@@ -75,6 +85,9 @@ falls back to the original. `OPENTPW_TEXTURE_PACK=<pack>/textures` forces a pack
   textures (four low-detail `.wct` files the current decoder cannot read; the builder now
   skips low-detail paths before decoding, so they no longer show up). The pack is
   1.3 GB of PNG. A jungle-only trial upscaled 1,698 textures in 167 seconds.
+- Adding the guest sprites (and rebuilding interface art with the fringe fix) to that pack with
+  `--texture-pack-interface-only --texture-pack-sprites-only --texture-pack-merge` took about a
+  minute: 8 sprite atlases and 453 interface textures.
 - Adding interface art to the existing pack with `--texture-pack-interface-only
   --texture-pack-merge` upscaled 453 interface textures in about 13 seconds (6 below 32 pixels
   stayed original). Buttons, the lobby panel, arrows and round edges become sharp at 2560×1440,

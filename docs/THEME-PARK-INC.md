@@ -3,7 +3,8 @@
 Theme Park Inc (Europe, 2001; Sim Coaster in North America) is Bullfrog's follow-up
 to Theme Park World. This note records how far its data and engine match what
 OpenTPW reads, measured on October 9, 2026. It is a comparison, not a support claim:
-OpenTPW does not load Theme Park Inc.
+OpenTPW does not load Theme Park Inc. Since October 10, 2026 OpenTPW has a reader for
+its `.fsh` textures ([FSH.md](FSH.md)); nothing uses it in the game yet.
 
 ## Sources
 
@@ -36,7 +37,7 @@ TPWS container, and its balance settings grow.
 | Lip sync `.lip` | 641 | 1,136 | 1,136/1,136 |
 | Strings `.str` (`BFST`), `BFMU`/`BFUM` tables | 21 | 185 | same magic (not parsed in this run) |
 | Sound banks `.sdt` | 48 | 28 | 26/28; the 2 failures are truncated music banks, see below |
-| Textures | 8,712 `.wct` | 34 `.wct` (intro only), 7,283 `.fsh`, 2,856 `.tga`, 172 `.png` | `.wct` 34/34; `.fsh` has no reader |
+| Textures | 8,712 `.wct` | 34 `.wct` (intro only), 7,283 `.fsh`, 2,856 `.tga`, 172 `.png` | `.wct` 34/34; `.fsh` 7,283/7,283 decode to RGBA ([FSH.md](FSH.md)) |
 | Terrain/attribute maps `.map` (`TP2M`) | 5 | 4 | 4/4; the other `.map` files are sound catalogs in both games |
 | Saves | `Easymode.TPWI` (magic 400) | `prebuilt.TPWS` (magic 500, extended header) | rejected: "version 0; expected 133" |
 | Movies | QuickTime `.mov` (Mac edition) | 2 `.tgq` (`SCHl`) | 2/2 |
@@ -80,9 +81,10 @@ the semantics of the TPW corpus.
 ## Differences
 
 - **Textures.** Theme Park Inc stores level, UI and advisor textures as one-image
-  EA `SHPI` files: all 7,283 have directory id `G231` and record code `0x7B` (8-bit
-  palette). Most are 32×32, 64×64 or 128×128. `.wct` remains only in `levels/wIntro`.
-  An `.fsh` reader would be the main new decoder for Theme Park Inc assets.
+  EA `SHPI` files: all 7,283 have directory id `G231` and an 8-bit palette image
+  (code `0x7B`; 6,736 of them RefPack-compressed as `0xFB`) with a 24-bit (4,308),
+  32-bit (2,974) or 16-bit (1) palette. Most are 32×32, 64×64 or 128×128. `.wct`
+  remains only in `levels/wIntro`. `FshFile` decodes all of them; see [FSH.md](FSH.md).
 - **Saves.** `prebuilt.TPWS` starts with magic 500 (TPWS), like TPW saves, but then
   inserts `01 13 00 00 00` and the ASCII string `Version: Beta_21` before the
   UTF-16 `THE SAVE GAME DATA…` banner. OpenTPW's version-133 offline layout does
@@ -140,8 +142,12 @@ about the readers.
 
 ## Possible follow-up work
 
-1. `.fsh` (`SHPI`, code `0x7B`) reader, the main step toward reading Theme Park Inc
-   assets.
+1. ~~`.fsh` (`SHPI`, code `0x7B`) reader.~~ Done (October 10, 2026): `FshFile`
+   decodes all 7,283 files and WAD members to RGBA, with `--inspect-fsh`; see
+   [FSH.md](FSH.md). Not done: using the textures in the game, and checking them
+   against the original game's rendering. Opaque `0x24` palettes are approximation
+   COMPAT-014. The next step is loading a Theme Park Inc level in the sandbox
+   (MD2 texture names resolved to `.fsh` members).
 2. Use the `.rss` evidence in the VM: name `LIMBO`'s second operand as the limbo
    duration and cite the source comments in the opcode handlers.
 3. The extended TPWS header (`Version: Beta_21`) and the new `Standard.sam` keys, if

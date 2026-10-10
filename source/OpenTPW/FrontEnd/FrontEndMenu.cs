@@ -3,7 +3,10 @@ using NVector2 = System.Numerics.Vector2;
 
 namespace OpenTPW.FrontEnd;
 
-/// <summary>Original game modes chosen when starting a park (UITEXT 239–241). Both currently play the same.</summary>
+/// <summary>
+/// The Game Mode buttons (UITEXT 239–241). The original chooses this once per player; OpenTPW asks per
+/// park. The game maps it to a <see cref="OpenTPW.ParkStartKind"/>; the values are not the economy's.
+/// </summary>
 public enum GameMode { InstantAction, FullSimulation }
 
 /// <summary>A park that can be loaded from the Load Park screen.</summary>
@@ -121,7 +124,7 @@ public sealed class FrontEndMenu
 		return screen;
 	}
 
-	// [APPROX:UI-015] Game Mode asked when entering a park (no player profiles); the original asks once when a player is created and stores it in the profile — evidence needed: player profiles
+	// [APPROX:UI-015] Game Mode asked on every park entry and each entry starts a new park (no player profiles or per-theme autosave); the original asks once when a player is created and stores it in the profile — evidence needed: PC confirmation of the Mac player/autosave flow
 	public void ShowGameMode()
 	{
 		var screen = new UiScreen( "gameMode" );

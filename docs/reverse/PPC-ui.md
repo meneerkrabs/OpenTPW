@@ -52,7 +52,7 @@ UI_EVIDENCE_MAC_MBTOUNI=/private/mac-mbtouni.dat \
 python3 -m unittest discover -s tools/ppc-analysis/lanes/ui -v
 ```
 
-The first phase passed 12 tests; the expanded lane passes **24 tests, zero
+The first phase passed 12 tests; the expanded layout lane passes **24 tests, zero
 skips**, including the identified original
 corpus and negative/truncated corpus spans, RefPack expansion/reference checks,
 relative resource offsets, node-table bounds and signed branch/operand decoding.
@@ -461,8 +461,10 @@ the original loader reads two effect/style integers at source offsets 9 and
 13 before reading the first font record at 17. Its effect reader consumes
 **11 words / 44 bytes** after each 392-byte font record. The second font record
 therefore starts at 453. Current `SignFile` reaches the same face/LOGFONT
-offsets, but its `HeaderCount` / per-slot `StyleId` interpretation cuts the
-record boundaries differently. Four SGNs from the identified Mac/PC-identical
+offsets. The earlier 13-byte `HeaderCount` / per-slot `StyleId` interpretation
+cut record boundaries differently; integration now preserves the corrected
+17-byte font offsets, raw effect words and independent typed effect metadata.
+Four SGNs from the identified Mac/PC-identical
 lobby archive confirm these offsets and have nonzero effect extents. This is
 an evidence-backed semantic correction dependency, not permission to silently
 reinterpret the public reader or every field's units.
@@ -671,38 +673,302 @@ This integrates the root binding rule only. The 55-screen metadata reader stays
 standalone pending peer review; controller/layout/paint integration and original
 pixel verification remain open.
 
+## Native sign records and surface inputs
+
+`sign_evidence.py` identifies app SHA-256 `04809cd4…` and engine SHA-256
+`c549123f…` before checking original operands, branch targets, imported symbols
+and relocated export transition vectors. The original application is not run.
+`code:0xaba40` reads a 17-byte header: version at file 0, flag at 4, byte flag at 8,
+style selectors at 9 and 13. Calls at `0xabb34/0xabb4c` reach font reader `0xaa5a0`;
+its five reads have sizes 64, 260, 4, 4 and 60, totaling 392 bytes. Calls at
+`0xabb40/0xabb58` reach `0xaa8a4`, which reads eleven consecutive swapped words,
+44 bytes. Therefore fonts start at file 17/453, and effects at 409/845. Effect
+words are mask word +0, eight floats +4..32, stored extent +36 and origin +40.
+Runtime writes at `0xac0d8/0xac0e0` and `0xac180/0xac188` replace extent/origin with
+measured glyph bottom minus top and glyph top. Their serialized values are not
+final geometry. The legacy 13-byte/two-436-byte view accidentally includes the
+second selector as first `StyleId`, and first effect origin as second `StyleId`;
+the second effect origin falls at the front of legacy `Remainder`.
+
+For each nonzero selector, `0xabb5c..0xabd50` reads 20 bytes: four color bytes,
+one i32 mask word, one float mask parameter and two i32 offsets. Consumer
+`0xab634` passes offsets +12/+16 into `0xa9178`, where r5/r6 are used against
+bitmap width/height respectively; it separately uses mask word +4 and parameter
++8 for mask shaping. No invented style names are assigned: selectors 1/2 are
+pinned composition branches at `0xac25c..0xac49c`, 0 skips paint reading, and
+unknown selectors remain unsupported. Calls `0xac304/0xac358/0xac37c` resolve
+`Bitmap::colourblt` to engine `0x3f200`; r5 receives paint byte 3, r6..8 bytes
+0..2. The engine multiplies r5 into mask coverage and each supplied color before
+integer shifting by eight. This proves RGBA order for the paint bytes, not a
+flat final text color.
+
+Calls at `0xabd5c/0xabd6c` resolve `load__6BitmapFPv` to engine `0x3e7fc`.
+Three stream words become bitmap width +0, height +4 and bytes-per-pixel +8;
+`0x3e94c/0x3e958` multiply all three for the payload read. All **84 PC signs** have
+two **16×128×4** source images, 8192 bytes each. These serialized images are not
+the generated text masks. There are 23 flagged extra images, all version 101,
+256×128×4. The version-100 extra-image call at `0xabd94` uses raw `load`; version
+101 at `0xabdac` uses `load_wavelet__6BitmapFPvP8CWavelet`, engine `0x3e97c`.
+The new parser records its descriptor and preserves the remaining payload as
+opaque; it does not certify its internal length, decode it, or classify arbitrary
+trailing bytes inside that unsupported container. The actual four Mac lobby
+signs use identical metadata/bytes to the pinned PC lobby corpus. Mac lobby
+SHA-256 remains `b9afda6264961021aecaca882adf9ce25aa6973f48111415176ed45afd2c9ee7`.
+
+Relief helper `0xab128` calls `Bitmap::descimate` at `0xab1c8`, resolved to engine
+`0x3f338`, to transform the source image into a temporary bitmap whose height is
+the measured text extent. It samples source bytes 1/2/3 at `0xab43c..0xab444`.
+For each channel, source/255 is multiplied by parameter 2; positive normal/light
+term adds source/255 × parameter 3 × that term; positive half-vector term adds
+parameter 4 × pow(term, parameter 5), the same white contribution to all channels.
+After multiplying by 255, clamp and truncation, helper output is ARGB: output
+alpha comes from the generated mask at `0xab540/0xab54c`, not serialized source
+alpha. Parameters 0/1 feed mask/normal shaping; 6/7 feed trigonometric direction
+construction. The offline `relief_channel_reference` demonstrates selected
+channel arithmetic with synthetic source RGB, mask and spatial terms. It is
+outside production and does not implement native source filtering, normal
+construction, byte-exact float behavior, layering or final packing.
+
+`SignFile` now exposes `Effects.Material`, `Paints`, `SourceImages`, `ExtraImage`,
+`UnparsedTail` and diagnostics. It checks the full 889-byte native metadata span,
+conditional records, bitmap headers and product bounds before copying payloads;
+input and raw/declared image output have a 4 MiB cap. Unsupported effect styles,
+non-finite coefficients and image representations are preserved explicitly.
+Legacy fields/constants and font offsets remain for existing callers and the
+hash-keyed unshipped-font correction. No original payload or string is in Git.
+
+Validation: the lane now passes **30 Python tests, zero skipped**, including six
+new sign tests for identified native readers/imports, all 84 records, the four
+Mac lobby records, bitmap bounds and synthetic shared-channel math. Set
+`UI_EVIDENCE_PC_DATA` and `UI_EVIDENCE_MAC_LOBBY` alongside the earlier evidence
+paths. The C# `SignFileTests`, `CompatibilityTests` and `SignTextLayoutTests`
+pass **37 tests, zero skipped**, with the original game/language roots and
+private Mac lobby path supplied. Cases cover record-crossing traps, both extra
+image versions, opaque unknown styles/pixels, non-finite materials, truncated
+payloads, allocation bounds, stream ownership and unchanged font correction.
+Touched-source style verification and `git diff --check` pass. These are metadata
+and regression checks; original rendering is not executed or pixel-certified.
+
+## Offline surface reference: filtering, normals, layers and packing
+
+`SignShadeReference` in `sign_shade_reference.py` implements selected proved
+arithmetic outside production. `native_surface` pins identified operands and
+imports rather than using current OpenTPW pixels as an oracle.
+
+Engine `Bitmap::descimate` (`0x3f338`) derives axis steps as
+`((source_size << 16) + 32768) / destination_size`, integer division. Consecutive
+fixed-point integer boundaries determine source bucket sizes, stored as bytes.
+It averages each channel horizontally with unsigned truncating division at
+`0x3f6a0..0x3f6cc`, then vertically truncates again at `0x3f908..0x3f93c`.
+Vertical totals are masked to 16 bits. These two truncations differ from a
+single 2D average: the synthetic 2x2 fixture with values 1/0/0/3 produces zero,
+where one global average would produce one. The reference accepts downsampling
+only with dimensions <=255; zero buckets/arbitrary upsampling are explicitly
+unsupported. All 168 private 16x128 source images are exercised to 16x64 without
+writing or printing resulting pixels.
+
+Normal construction in `0xab344..0xab3f0` uses shape differences to the next
+linear byte and the byte one bitmap-width below. With `dx=(right-current)*p0/255`
+and `dy=(below-current)*p0/255`, the normal is `(dx,dy,1)` normalized. There is no
+clamp in those forward reads; reference shading accepts supplied neighbors and
+does not invent border samples. Light angles are asymmetric: theta is **-p6**
+times float constant `0.01745329238474369`, phi is **+p7** times that constant.
+MathLib imports independently identify sin/cos/sqrt/pow. The light is normalized
+`(cos(phi)*cos(theta), -sin(phi)*cos(theta), -sin(theta))`, and the half-vector is
+normalized `(light+(0,0,1))*0.5`. Earlier casual readings that negate both angles
+must not be used. Python math is not a PowerPC float/MathLib pixel oracle.
+
+Shape helper `0xaaa64` seeds binary ink in a two-byte temporary mask and a cleared
+shape output, then performs its iteration-dependent operations before OR-ing
+binary ink into the output. Zero iteration bypass is established. Gaussian stage
+`0xaac54` calls kernel helper `0xa8f7c`; size is `int(2.5*sigma)+3`, origin is
+`(size-1)/2` truncated, so even sizes are intentional. The helper evaluates
+`exp(-0.5*(dx^2+dy^2)/sigma^2)/(6.2831853*sigma^2)` in double and renormalizes by
+the finite kernel's actual sum. Horizontal coordinates clamp to the nearest
+edge; the row ring replicates first/last rows while preserving pre-convolution
+samples. It replaces shape only where the separate original coverage is nonzero.
+The reference implements zero-iteration binary seed and this convolution stage;
+nonzero morphology is rejected. The private corpus has **78 zero-iteration and
+90 nonzero-iteration slot records**, all with a positive blur parameter. Thus
+this is a bounded supported branch, not complete mask support.
+
+Four-byte `Bitmap::alphablt` at engine `0x3efc0` stores `max(sourceA,destA)` and
+`dest + ((sourceA*(source-dest)) >> 8)` per RGB channel. The right shift is signed;
+this is not division by 255 or ordinary premultiplied-alpha GPU blending.
+`colourblt` at `0x3f200` first computes `effectiveA=(mask*paintA)>>8` and
+`targetRGB=(paintRGB*paintA)>>8`, then the same lerp with effectiveA. Native app
+ordering clears the destination, optionally blits the extra image, handles style
+2 paint masks, then handles each style-1 paint/effect pair. If both selectors are
+2, copy/max of their paint masks is colored using **paint 0's** RGBA; paint 1's
+color is not independently applied in that branch. Header flag zero selects
+pair 0 then pair 1; nonzero reverses them. Empty/unallocated effect bitmap blits
+remain part of the call sequence. No unsupported selector is given a meaning.
+
+Final mode 1 (`0xac4a4..0xac578`) calls the channel swizzle and copies BGRA words;
+mode 2 (`0xac57c..0xac6b0`) directly packs original ARGB bytes into the word
+`(R>>4)<<12 | (G>>4)<<8 | (B>>4)<<4 | (A>>4)`, stored big-endian on the native
+Mac path. Both consume the top base-height source rows, split each row into two
+base-width spans, and write destination rows in reverse order. Source lower rows
+are not included by these loops. The park caller supplies base 128x128, so these
+loops consume 256x128 of the generated 256x256 intermediate; the text DIB is
+512x512 and placement/mask scanning occur before this crop. GPU pixel format,
+model UV orientation and original glyph coverage still need separate consumers.
+
+Validation now passes **43 Python tests, zero skipped**, including Gaussian/even
+kernel shape, alpha separation, shared lighting, signed integer blend, style
+ordering, both packing modes, split/reversed rows and private corpus arithmetic
+inputs. The production source metadata remains covered by the prior **37 C#
+tests, zero skipped**. This tranche changes helpers/docs only. No final sign
+pixels or approximation IDs are certified, and no original payload is in Git.
+
+## Catalog category, row factory and font-bank bindings
+
+`ui_consumers.py` verifies buy builder lookup of actual control **504** at
+`0x16477c/0x164780`. Registration `0x164794 ->0x180264` stores callback vector
+`data:0x8088 ->code:0x163e7c` at window +272. The handler requires command 257
+and argument 1, then maps actual category buttons:
+
+| Control | Category | Mac UITEXT | Label |
+| --- | --- | --- | --- |
+| 507 | 0 | 119 | Buy Ride |
+| 509 | 1 | 120 | Buy Shop |
+| 506 | 2 | 121 | Buy Sideshow |
+| 508 | 3 | 122 | Buy Miscellaneous Items |
+
+All four branches call category setter `0x163414` and update title control 510.
+Actual language identities are checked; these bounded labels do not override
+PC enums. `0x1647a4 ->0x1781c0` receives relocated factory/initializer vectors
+`data:0x8078 ->0x164140` and `data:0x8070 ->0x164268`. Factory row height is
+selected font virtual height times 1536 divided by drawable height, plus 6,
+cached in a global. Generic list factory reads content top/bottom +318/+322 and
+row height +368, derives visible row count with integer division and stores +370,
+then creates/initializes those rows. This proves a dynamic scrolling catalog
+with actual row templates; it does not establish row data sorting or selection.
+Column setup calls `0x178070` for indexes 0/1/2 store flags in a stride-12 column
+record; no invented interpretation of those flag values is assigned.
+
+Options resolution handler `0x157e20` calls setter `0x1261a8`, which writes the
+same settings field +4 read by font-bank choice `0x11f0f8`. Handler selects Mac
+UITEXT 341..344 for enum 0..3: **512x384, 640x480, 800x600, 1024x768**. This
+joins font-bank fallback selection to actual option labels. It does not yet
+prove the display-mode creation consumer or a Windows configuration ABI. The
+positive override bank mapping and custom-display extensions remain as described
+above. Three new tests pin catalog callbacks/categories/row sizing and this
+identity-aware option/font linkage. Concrete remaining paths are category row
+fill/sort, list scroll dispatch, selected-item commands, original clipping and
+the actual display-mode creation consumer.
+
+## Catalog scroll, sort and activation event boundaries
+
+`catalog_events.py` adds a bounded native operand/relocation witness under the
+same identified application SHA-256. These common UI procedures are in the main
+PEF; no separately named UI library or original execution is assumed. A method
+name alone does not establish input semantics. The witness joins runtime RTTI,
+constructor bindings, the embedded allocation table, registration vectors,
+conditional predicates and actual caller targets.
+
+List RTTI header `data:0x4fef4` identifies **InterfaceListControl2**, whose type
+method `code:0x1773f0` returns 7. This matches original control 504's table type
+7 and attributes **0x91**. The constructor binds that table at +280 and default
+callback vector `data:0x8600 ->code:0x17a5fc` to both +272 and +276. The buy
+builder replaces +272 with `0x163e7c` while leaving +276 for explicit delegation
+through `0x181370`. The outer/root window has a separate callback,
+`data:0x8090 ->code:0x163748`: `0x181aac` installs the r5 callback into the
+allocated root's +272. Generic dispatch `0x181398` calls +272 or returns -1 if
+it is missing. Root and list handlers are therefore separate boundaries, not
+aliases inferred from current OpenTPW widgets.
+
+The actual layout supplies sort buttons **16,17,18** parented to list 504 and
+scrollbar child **1**, type 3. Its RTTI is **InterfaceScrollBar** at
+`data:0x48054`; type slot returns 3, and value getter `0x17b9d4` reads +320.
+Sort header command **256** goes from default list handler `0x17a5fc` into
+`0x17a444`, which subtracts 16 from the child ID, checks column count +356 and
+requires attribute bit **0x10**. Repeated header selection toggles direction
+word +362; changed column stores +360. This is distinct from category command
+**257**, whose custom handler additionally requires argument 1. Do not assign
+physical press/release names to either merely from their numbers.
+
+| Native message | Established payload/delivery | Consumer |
+| --- | --- | --- |
+| 1030 sort state | signed `+(column+1)` for direction bit 0, negative for bit 1; synchronous `0x170f98` | root handler stores the word at `data:0x4d1dc` |
+| 2048 scrollbar value | child control value changed, synchronous `0x170f98` | list queries actual child 1's value |
+| 1029 range changed | r5 first visible; r6 `min(first+visible_count,total-1)`, synchronous `0x170f98` | parent callback boundary; inclusive/exclusive range meaning is not invented |
+| 1025 selection changed | source list control ID and selected row ordinal; queued `0x170ec8` | root resolves row identity and updates selection/preview state |
+| 1024 activation | source list control ID and selected row ordinal; queued `0x170ec8` | root enters the item/purchase-command path |
+
+Sort word initial value is **1**. Builder `0x164800` calls `0x17a2a8`, which
+sets column from `abs(word)-1` and direction from its sign. Root handler's 1030
+branch at `0x163db4/0x163db8` persists this word without performing an item/model
+lookup. The three column descriptor flags are **0,1,1** at
+`0x1647ac..0x1647d4`, stored at stride-12 record +10. Generic sort `0x1773f8`
+uses flag 1 for signed integer comparisons; other column data follows text
+comparison helper `0x17abf0`, whose imported **wmemcmp** compares UTF-16 units
+and resolves equal prefixes by length. This is not an evidenced localized or
+case-folded comparator. Final linked-list ordering, special row markers and tie
+stability remain open; the sign of a selector is recorded as a direction bit,
+not prematurely labeled ascending/descending.
+
+Scrollbar setter emits 2048 only when +320 changes. Its list consumer at
+`0x17aa34..0x17aa98` queries child 1 via its value getter, compares first visible
++340, updates it and refreshes rows only on a change, then emits 1029. A separate
+input branch **0x11008** at `0x17aac4..0x17ab04` gets that child value and calls
+its setter with **current minus input delta**. This proves a delta-scroll path;
+which physical wheel/gesture produces this input is not yet pinned. Visible row
+count +370 and total row count +336 feed the range operands. Generic keyboard
+branch recognizes encoded keys 0x2300/0x2400/0x2600/0x2800 to request last/first/
+previous/next selection, but gates on attribute **0x200**. Authored catalog
+attributes 0x91 lack that bit; the runtime writer enabling it is untraced, so
+this does not certify active catalog arrow-key behavior.
+
+Queued delivery is not synchronous invocation: `0x170ec8` calls `0x16fd80`,
+which writes a **16-byte event record** containing target pointer, event, source
+and payload at +0/+4/+8/+12. Queue draining later reaches `0x181398`.
+Synchronous `0x170f98` directly reaches that callback dispatcher. Null/missing
+callback and conditional input predicates are checked by negative tests. The
+selected activation branch at `0x17aa0c..0x17aa2c` requires source argument zero
+and a nonnegative selected row before emitting 1024; no physical-key name is
+assigned to its incoming 0x1000d code.
+
+The root's 1024/1025 paths call row identity accessor **0x17991c**, which reads
+record **+4** after following the list's row links. The positive activation path
+at `0x1639a4/0x1639ac` takes its **low 16 bits** into the catalog item consumers.
+That is separate from the signed 32-bit root-node-name XOR/multiply-47 drawing
+key used by layout/model registration. Binding a UI model cannot itself execute
+a purchase, and sort state is neither a drawing key nor an item ID. Category
+rebuild `0x162308` targets actual list 504, appends typed row data/item IDs through
+`0x178768` and refreshes via `0x177d44`; it does not convert names to drawing
+hashes. The full purchase affordability/research checks and final tool commit
+are separate dependencies.
+
+Validation: **52 Python tests, zero skipped** with private identities supplied.
+Nine new cases cover RTTI/default-versus-override/root callbacks, distinct
+scroll/sort/selection/activation delivery, bounded metadata decoders, and
+mutated private RTTI/operand/conditional/call/relocation rejection. Reference
+sort/header/range decoders reject unsupported domains; those diagnostics do
+not assert how the original responds to arbitrary invalid values. No original
+bytes, disassembly or full layout/string tables are committed, and no production
+UI code is changed. Remaining dependencies are the physical input producers,
+linked sort order/ties/special markers, keyboard-enable writer, purchase business
+logic/tool commit and final clipping/pixels. No approximation ID is closed.
+
 ## Current sign renderer correction plan
 
-The production call path was independently checked:
-`SignTextRenderer.RenderSign -> SignCanvas.Compose -> SignCanvas.SlotColor`.
-`SlotColor` clamps `Parameters[2..4]` into independent RGB channels and passes
-them to `SignTextLayout.DrawLine`. `SignFileTests.ReadsHeaderTextSlotsAndLogFont`
-currently asserts that RGB interpretation. This tests the existing implementation,
-not the original behavior, and contradicts the established effect arithmetic.
+`SignTextRenderer.RenderSign -> SignCanvas.Compose -> SignCanvas.SlotColor`
+uses the corrected stored paint RGB API as an opaque presentation policy for
+supported styles 1/2, and Compose diagnoses the remaining COMPAT-003 limitation.
+The former lighting-coefficients-as-RGB tint is removed; native material
+coefficients are independent metadata and never used as a tint. No original
+final shaded text RGB or guessed white fallback is claimed. Font rasterization,
+canvas dimensions, background and gameplay shader ownership remain unchanged.
 
-A correction must remove that interpretation rather than rename its output:
-
-1. Preserve the slot floats as effect/material coefficients and correct the SGN
-   effect/header record boundaries with a bounded reader. Parse the original
-   per-effect source image/color blocks before assigning a final sign color.
-2. Keep glyph coverage separate from surface color. The original raster helper's
-   white text produces an 8-bit mask with integer 2×2 averaging; it does not
-   establish a flat white final sign material or a Windows hinting oracle.
-3. Apply shared base/diffuse/specular terms to the decoded source RGB, preserve
-   mask alpha, then perform the identified channel swizzle and output split/pack.
-   Validate flat and enabled-effect paths, boundary coefficients, missing blocks,
-   clipping and the 16-bit consumer separately.
-4. Replace the RGB assertion with meaningful regressions: modifying a material
-   coefficient affects the same lighting term across channels, not an arbitrarily
-   selected color channel. Use synthetic image/mask fixtures plus privately
-   identified original records; keep raw assets outside Git.
-
-No new guessed RGB or neutral-color replacement is proposed. Until the complete
-surface path is available, any mask-only preview must be explicit presentation
-policy with diagnostics; it cannot claim original final color. The binder's write
-scope does not include the sign compositor, so this plan is handed to the sign
-owner and the current contradictory runtime path remains identified as a required
-follow-up rather than being silently certified.
+The next production step requires native mask shaping/normal construction,
+source-image descimation and wavelet image decoding, plus paint/effect layer
+composition and final split/pack (including the 16-bit consumer). Keep glyph
+coverage separate from surface color: native white TextOut establishes a mask,
+not final white material. Once those prerequisites have independent fixtures,
+replace the opaque presentation policy with the proven surface pipeline. Mac QuickDraw spacing
+and coverage still require an original-platform oracle; current OpenTPW pixels
+cannot supply that evidence. No COMPAT approximation ID is closed by this parser.
 
 ## Every UI approximation: result and concrete remaining dependency
 
@@ -736,7 +1002,7 @@ values to stay available.
 | UI-021 | Partial replacement: cash/date rectangles, font slots and constructor colors established, including DATETINY tier. | Complete measured cash repositioning, date baseline and locale grouping/formatting; table bounds alone are insufficient. |
 | UI-022 | Contradicted subclaims: scalar uses 1.25 steps, .25..2 and affects scheduler/animation/scripts. | Resolve callbacks' input dispatch, displayed control and pause behavior; integrate clock-lane consumer proofs. |
 | UI-023 | Test-only value, no original evidence required for game path. | Keep fixture calendar separate and audit all runtime consumers for accidental use. |
-| UI-024 | Partial replacement: original buy window with preview/three-column scrolling catalogue and separate ride-status window decoded. | Trace catalogue row contents/sort/selection/category controller, coordinate inheritance, translated labels and final arm/window state. |
+| UI-024 | Partial replacement: original buy window with preview/three-column scrolling catalogue and separate ride-status window decoded. | Scroll/sort/selection/activation callback boundaries are now pinned; finish linked sort order/ties, row value semantics, physical inputs, coordinate inheritance and purchase/tool commit. |
 | UI-025 | Open. | Identify tag queue enqueue/dequeue, capacity/expiry clock and `msgtag`/`f_tag*` allocation; distinguish advisor from UI queue. |
 | UI-026 | Preview meshes are original data; projection/turn/sort open. | Follow catalogue preview draw object's model rotation, animation selection, camera projection and queue ordering. |
 | UI-027 | Open. | Trace original hit/pick mode and geometry/grid query before selection notification; ground-cell occupancy alone is insufficient. |
@@ -753,8 +1019,8 @@ Relevant compatibility IDs:
 | --- | --- |
 | COMPAT-001 | Partial replacement: two 128×128 destinations, larger masks/DIBs and dimension-preserving channel swizzle established; geometry UV orientation and full compositing still require integration. |
 | COMPAT-002 | Partial replacement: OS-measured centering and LOGFONT-width search, no evidenced eight-texel margin; trace empty/overlong/multi-line text and final texture coordinates. |
-| COMPAT-003 | Contradicted: parameters 2–4 are shared material/lighting coefficients, not RGB. Preserve source image colors and implement the evidenced effect arithmetic after correcting SGN field meanings/compositing. |
-| COMPAT-004 | Partial: SGN reader handles effect/pixel blocks and optional image path; trace/decode the background/effects and verify byte-consistent output instead of flat dark board. |
+| COMPAT-003 | Former lighting-as-RGB mapping is removed. Stored paint RGB remains an opaque presentation policy with a diagnostic; final shaded text RGB is unverified. Native style/material/source RGB/mask alpha metadata is pinned. Integrate source descimation, normal construction and final layer composition, then verify original-platform pixels. |
+| COMPAT-004 | Partial: production parser exposes original effect/paint/raw image metadata and preserves unsupported wavelet payload. Decode the wavelet background and implement layer ordering/integer blend/packing; verify output before replacing the flat board. |
 | COMPAT-005 | Open: SGN scale integer is read separately from LOGFONT width; width-search proof does not assign the 85..141 field a unit or prove it is ignored. Trace its consumers. |
 | COMPAT-006 | Partial: identified Mac sign call reaches QuickDraw StdText/StdTxMeas; no Windows GDI pair-kerning conclusion follows. Inspect backend/font settings or obtain original-platform glyph-spacing oracle. |
 | COMPAT-007 | Open: trace saved park name and resource/object-name selection into both sign text inputs. |

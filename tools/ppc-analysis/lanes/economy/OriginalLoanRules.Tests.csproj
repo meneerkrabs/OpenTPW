@@ -10,5 +10,7 @@
   <ItemGroup>
     <Compile Include="OriginalLoanRules.cs" />
     <Compile Include="OriginalLoanRulesTests.cs" />
+    <Compile Include="OriginalParkRatingRules.cs" />
+    <Compile Include="OriginalParkRatingRulesTests.cs" />
   </ItemGroup>
 </Project>

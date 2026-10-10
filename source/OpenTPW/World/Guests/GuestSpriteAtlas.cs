@@ -26,6 +26,8 @@ public sealed class GuestSpriteAtlas
 	public int Height { get; }
 	/// <summary>RGBA8, row-major.</summary>
 	public byte[] Pixels { get; }
+	/// <summary>Key of this atlas in the optional texture pack (docs/TEXTURE-PACKS.md); not a file in the game data.</summary>
+	public string PackKey => $"esprites/generic/kids/{Name.ToLowerInvariant()}.atlas";
 
 	public GuestSpriteAtlas( string name, SpriteBankFile bank, SpriteAnimationFile animations )
 	{

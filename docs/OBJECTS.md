@@ -282,7 +282,7 @@ Original-data values are tagged `// [DATA:<file>:<field>]`.
 
 | Id | Site | Current value / rule | Evidence needed |
 | --- | --- | --- | --- |
-| RIDES-001 | World/Objects/ObjectAnimator.cs:15 | Clips play at 30 ticks/s | Original tick rate (binary or timed capture) |
+| RIDES-001 | Mac channel rate 30 is proved; Windows rate and native scaled/unscaled channel-clock selection remain unverified | qualify target-PC rate and connect the correct original clock input before claiming runtime equivalence |
 | RIDES-002 | World/Objects/ObjectAnimator.cs:120 | Most recently started channel wins a node | Original channel mixing |
 | RIDES-003 | World/Objects/ObjectAnimator.cs:111 | Finished clip holds its last pose | Capture after a clip ends |
 | RIDES-004 | World/Objects/OriginalObjectRuntime.cs:158 | Re-issued LOOPANIM continues the loop | Capture of the Belly Bounce idle loop |

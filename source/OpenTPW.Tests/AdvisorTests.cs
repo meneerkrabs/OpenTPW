@@ -61,7 +61,7 @@ public class AdvisorTests
 	[TestMethod]
 	public void ApproximationRegisterIsSequentialAndUnique()
 	{
-		CollectionAssert.AreEqual( Enumerable.Range( 1, 14 ).Select( index => $"ADVISOR-{index:000}" ).ToArray(), Advisor.Approximations.Select( entry => entry.Id ).ToArray() );
+		CollectionAssert.AreEqual( Enumerable.Range( 1, 22 ).Select( index => $"ADVISOR-{index:000}" ).ToArray(), Advisor.Approximations.Select( entry => entry.Id ).ToArray() );
 	}
 
 	[DataTestMethod]
@@ -106,6 +106,28 @@ public class AdvisorTests
 		output.Advance( 0.6 );
 		Assert.IsTrue( player.IsFinished );
 		CollectionAssert.AreEqual( new short[] { 7, 7, -3, -3 }, SpeechAudioPlayer.ToStereo( new Mp2Audio( 22050, 1, new short[] { 7, -3 }, 1, 0 ) ) );
+	}
+
+	[TestMethod]
+	public void MutedSpeechKeepsTheWallClockWithoutOpeningADevice()
+	{
+		if ( GameAudio.Events != null )
+			Assert.Inconclusive( "Game audio was already started in this process." );
+		var enabled = GameAudio.Enabled;
+		GameAudio.Enabled = false;
+		try
+		{
+			using var player = Advisor.CreatePlayer( new Mp2Audio( 22050, 1, new short[2205], 1, 0 ) );
+			Assert.AreEqual( "wall clock (no audio device)", player.ClockSource );
+			Assert.IsNull( player.DeviceError, "no SDL device was attempted" );
+			Assert.IsNull( AudioMixer.Current );
+			player.Start();
+			Assert.IsTrue( player.Position >= TimeSpan.Zero );
+		}
+		finally
+		{
+			GameAudio.Enabled = enabled;
+		}
 	}
 
 	[TestMethod]

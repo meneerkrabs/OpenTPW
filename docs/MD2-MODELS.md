@@ -3,10 +3,13 @@
 October 9, 2026. Status: bounded CPU reader for the version 221.203 layout;
 geometry, texture slots and node hierarchy are verified against the whole local
 WAD corpus. Node matrices are parent-relative (corpus evidence below).
-Animation members decode into position/rotation/scale tracks, validated over all
-1,278 members; the sandbox Totem plays its original `totemm1.MD2` cycle. The
-animation **tick rate**, vertex animation and several other record kinds are
-**not verified/decoded**; original rendering fidelity is not verified. These are
+Animation members decode into position/rotation/scale tracks, quantised vertex
+groups, node-flag toggles and texture-frame tracks, validated over all 1,278
+members; the sandbox Totem plays its original `totemm1.MD2` cycle and placed
+objects play their vertex tracks. Decoder mechanics and the 30 ticks/s clock are
+read from the Feral Mac PowerPC build (`docs/reverse/PPC-formats.md`); PC
+equivalence, the 12-byte vertex layout and other record kinds are **not
+verified/decoded**; original rendering fidelity is not verified. These are
 not Quake II MD2 files. No dependency or original asset is added to the repository.
 
 `ModelFile` (`source/OpenTPW.Files/Formats/Model/`) reads the whole member into a
@@ -29,7 +32,7 @@ Header, 0xB8 bytes:
 | 0x04/0x08 | version 221/203 (2 members: 207/201, different layout, rejected) | all |
 | 0x0C, 0x10, 0x14, 0x2C | opaque words (0x14 looks like a 1999 Unix time; 0x2C is a few bytes below file length) | not interpreted |
 | 0x18 | 20-byte source name, NUL-padded (92 differ from the member name) | `SourceName` |
-| 0x30 | opaque flags (geometry 1/3/5/9/13/25; animation 0/4/8/16/32/34) | `HeaderFlags` |
+| 0x30 | flags (geometry 1/3/5/9/13/25; animation 0/4/8/16/32/34); bit 0x4 of a geometry model is "relative animation" (Mac sampler adds instead of sets; 27 geometry members, all coaster pylons/carts/track, none in the object catalog); other bits opaque | `HeaderFlags`, `RelativeAnimationFlag` |
 | 0x36 | texture slots; 0x38 position blocks (×4); 0x3A UV blocks (×4); 0x3C materials; 0x3E faces | totals re-summed per mesh |
 | 0x40 | extra 16-byte records (pointer at 0xAC); 0x42 nodes; 0x44 meshes | |
 | 0x46 | opaque (equals mesh count in 254 files, 0xFFFF in 493) | `Unknown46` |
@@ -120,17 +123,26 @@ range; `Pmegacostm` exceeds `Pmegacost`'s single node and
 `c_hade/TROUGH_ROTATE`/`TROUGH_SCALE` have no prefix base. `ModelFile.Clip`
 holds the decoded `ModelAnimation`; the raw trailer stays in `Animation`.
 
+Every table pointer is checked against the payload and charged to a budget
+before its array is allocated (a vertex group's keys × vertices product reaches
+2³² − 2¹⁷ + 1 words). The budget is an OpenTPW resource limit, not original
+behaviour: tables may reuse payload bytes, but together they may read at most
+`ModelAnimation.TableBytesPerPayloadByte` (4) times the payload. No table in the
+PC baseline or Patch 2 corpus reuses bytes; their 1,278 clips read 6,010,956
+table bytes, each clip within its own payload (`ModelAnimation.TableBytes`).
+
 Trailer words (u32 unless split):
 
 | Word | Meaning | Evidence |
 | --- | --- | --- |
-| 0 | opaque (0–21) | |
+| 0 | flags (0–21); bit 0x2 enables the texture-frame tracks (set exactly in the 229 files that have them) | `TrailerFlags` |
 | 2 | clip duration in ticks (1–860) | loop length |
 | 3 | u16 position-track count, u16 total scale keys | equal in all 1,278 |
 | 4 | u16 total rotation keys, u16 record count | equal in all 1,278 |
-| 6 | u16 opaque, u16 node-list count | |
+| 6 | u16 texture-frame track count, u16 node-list count | `TextureFrameTracks` |
 | 8, 10 | first position header / rotation key (informational) | |
 | 11 | record table (64 bytes per record) | |
+| 12 | texture-frame tracks: 8 bytes `u16 slot, u16 count, ptr→count × (u16 tick, u16 frame)` | `ModelTextureFrameTrack` |
 | 14 | node list (u16 node indices, meaning unknown; 874 files) | `NodeList` |
 | 15 | first easing table (informational) | |
 | 1, 7, 13, 16, 17 | zero throughout | |
@@ -172,15 +184,36 @@ Decoded kinds:
   final 0 may be a wrapped 256), so exact original evaluation is unverified.
 - **Scale**: 16-byte keys `u16` tick, `u16` 0, 3 floats; linear (2,832 keys).
 
-Timing: ticks before the first key hold it, after the last hold the last. Key
-ends equal the record duration for 3,732 key tracks, 10 end earlier and 1,157
-extend past it; the clip loops at trailer word 2, so later keys are unreachable. The tick rate
-is not known; the sandbox uses 30 ticks/s (Totem cycle 430 ticks ≈ 14.3 s).
+Timing (Mac key search 0xa3ff0): before a channel's first key the original
+leaves the channel unchanged, so the player keeps the stored node component;
+after the last key position, rotation and scale hold the last. Key ends equal the
+record duration for 3,732 key tracks, 10 end earlier and 1,157 extend past it;
+clips loop at trailer word 2, so later keys are unreachable. Placed objects
+follow the original replay (below); the Totem prototype's `ModelAnimationPlayer`
+still wraps with `tick % duration`. 30 ticks/s at speed 1.0 is proven for the
+Mac build (Totem cycle 430 ticks ≈ 14.3 s); scene-clock scaling and pause are not.
 
-Not decoded: 4,082 records carry other kinds (vertex animation 0x1000 on the
-advisor's face and similar, per-frame float blocks 0x600 with `duration + 1`
-samples, 0x10000 offset lists, 0x20000 u16 lists), the node list and the
-rotation flag bits. `ModelAnimationTrack.HasUndecodedPayload` marks them.
+- **Vertex animation** (flag 0x1000 without 0x4000; 1,736 records): a 44-byte
+  block `u16 flags, u16 groups, …, ptr groups (+12), vec3 offset (+20), vec3
+  scale (+32)` and 20-byte groups `u16 keys, u16 vertices, ptr indices, ptr
+  ticks, ptr keys × vertices packed words (key-major), u32 runtime cursor`.
+  Words are signed 10:10:10 (bits 30–31 unused), `value = q × scale + offset`.
+  Group 0 holds two virtual vertices just past the mesh (a padded per-key
+  bounding box, not geometry); with block flag 0x2 group 1 is static (key 0);
+  the other groups interpolate mesh positions linearly between keys. In all
+  1,735 paired blocks the static and animated groups list every position of the
+  node's mesh exactly once. `ModelVertexAnimation`.
+- **Node-flag toggles** (flag 0x20000; 2,536 lists): signed `i16` ticks; the last
+  entry with `|value| ≤ trunc(tick)` sets (≤ 0) or clears (> 0) node-state bit
+  0x10, whose consumer is not traced. `SampleNodeFlag`.
+- **Texture-frame tracks** (trailer word 12): the last key with `tick ≤
+  trunc(time)` selects a frame of the slot. `ModelTextureFrameTrack`.
+
+Not decoded (`ModelAnimationTrack.UnsupportedFlags`, 1,122 records): the
+12-byte vertex layout (0x4000, 30 records), per-frame float/path blocks 0x600,
+the 0x10000 block and 0x2000. The node list's role and the rotation flag bits
+are open. `HasUndecodedPayload` still marks every record with more than rigid
+tracks.
 
 Totem (`totemm1.MD2`, 3 records): `tp_cart` Bézier position (9 keys at
 0, 177, 185, 211, 214, 257, 280, 380, 430; lifts to Y ≈ 47.6 above the rest
@@ -192,7 +225,8 @@ separate Python decoder): cart Y at ticks 50/177/300 = 8.4123/47.5655/−33.5249
 ## Renderer and player
 
 `ModelAnimationPlayer` validates node indices against the base model, samples
-each track (missing components keep the decomposed rest matrix), composes
+each track (missing components, and components before their first key, keep the
+decomposed rest matrix), composes
 local × parent world, and loops or clamps at the clip duration. `PrototypeRide`
 draws each Totem mesh with its composed node matrix (Y/Z swapped on both sides,
 footprint centred, ×0.2) via `ModelEntity.TransformOverride`, and samples
@@ -200,8 +234,48 @@ footprint centred, ×0.2) via `ModelEntity.TransformOverride`, and samples
 the clip length (14,333 ms at 30 ticks/s) to the script; otherwise the rest pose
 is shown. The native smoke test reads back frames 10 and 30 after the
 script-triggered motion starts and requires the animation tick, at least 3 node matrices (observed 16: cart, its 13 children, two cogs) and
-over 100 pixels to change. Animation is rigid per node; vertex animation is not
-played. `LobbyIsland` (not instantiated by the game yet) uses the composed
+over 100 pixels to change. The Totem prototype plays rigid tracks only.
+
+Placed objects (`OriginalObject`) also play quantised vertex tracks.
+`ObjectAnimator` keeps per instance a position array for every mesh whose
+winning clip (the same most-recent-channel rule as the node matrices) has a
+playable vertex track, and fills it in set mode: static group key 0, then the
+animated groups at the clip tick. This equals the Mac sampler's result after
+the set-mode passes since the clip was bound, because the groups list every
+position once and the static group is applied once per bind (node-state flag
+0x00800000). Each sample searches keys from key 0; the original keeps a cursor,
+but its loop replay past the clip end rebinds the clip (0xa7190 → 0xa67d8 →
+0xa5894), which resets it, so both agree on the normal object update. Its
+object-list update replays without a bind and is not supported
+(`docs/reverse/PPC-formats.md`, "Clip lifecycle"). Clip time follows the
+original channel clock at speed 1.0: a clip starts at a whole millisecond of the
+instance's clock, its frame is `30 × elapsed ms / 1000` in single precision, a
+frame equal to the duration shows the last key, and a looping clip replays only
+once the frame is strictly past the duration, restarting from the carry capped
+at the duration and truncated to whole milliseconds, at most once per update. So
+a 10-tick clip restarts every 334 ms, not every 333.3 ms, and one update far
+past the end lands at the duration rather than at `time mod duration`. A
+non-looping clip counts as finished only past its end. Without such a track the mesh
+shows its stored positions, except on fixed items (`Info.DontApplyOffset 1`),
+which keep the last pose. That is the original's bind (0xa5894): it copies the
+stored mesh back unless the object has flag 0x00100000 with 0x8 clear, which only
+the ride catalog loader requests, for descriptors whose word +56, by the
+`CRideBalance` schema `Info.DontApplyOffset`, is set (the option word that could
+also skip it is only ever stored as 0). In the catalog only the fantasy gates'
+three clips are affected. The parsed, cached `ModelFile` is never written, so instances of one
+asset keep independent poses. Unplayable tracks are listed in
+`VertexLimitations` and leave the stored mesh: the 12-byte layout (10 catalog
+clips, 23 tracks), relative-animation models, blocks that do not list every
+position exactly once, and groups that end before the clip. All 599 other
+catalog clips with vertex tracks play. `ObjectRenderParts.WritePositions` maps
+positions through the corner order into the part's own vertex array (engine
+axes); stored normals are kept. The original's object update recomputes face
+normals after a vertex pass only for relative-animation models (0xa772c); two
+other recomputation routes have untraced conditions. Those parts use a fixed-size `Dynamic` vertex buffer
+that `Model.UpdateVertices` refreshes through the frame command list when the
+pose version changes. Not played yet: group-0 bounds (no consumer traced),
+node-flag toggles and texture-frame tracks (their runtime bindings to visibility
+and texture slots are not proven), and the add mode. `LobbyIsland` (not instantiated by the game yet) uses the composed
 hierarchy, swaps normal axes like positions, and renders untextured materials
 white instead of requesting `lobby/terrain/textures/.wct`.
 
@@ -275,9 +349,11 @@ count and offset fields, but that does not verify the rest of its layout.
 
 ## Remaining gates and sources
 
-Next: animation tick rate and how scripts select clips (RSE `TRIGANIM`
-family); vertex animation and the other record kinds; node list; rotation flag
-bits; texture/material flag bits from original captures;
+Next: how scripts select clips (RSE `TRIGANIM` family), the object-list replay
+without a bind, and game-speed scaling of the scene clock;
+the 12-byte vertex layout and the other record kinds; node list; rotation flag
+bits; consumers of the toggle bit, the group-0 box and texture frames;
+texture/material flag bits from original captures;
 the heightfield cell-word low bits. CPU parsing and sandbox playback do not qualify original
 rendering or animation behavior.
 

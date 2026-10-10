@@ -10,9 +10,89 @@ import evidence
 import contracts
 import controller_native
 import animation_evidence
+import motion_evidence
+import seat_evidence
+import save_evidence
+import save_control_evidence
 
 
 class RideEvidenceTests(unittest.TestCase):
+    def test_scalar_descriptor_offsets_expand_arrays_and_skip_strings(self):
+        records = [(2, "", 0), (7, "x", 0), (7, "y", 0), (3, "points", 3),
+                   (0, "", 0), (1, "filename", 0), (7, "speed", 0), (12, "", 0)]
+        self.assertEqual(motion_evidence.scalar_offsets(records), {1: ("x", 12), 2: ("y", 16), 6: ("speed", 40)})
+
+    def test_scalar_descriptor_offsets_reject_unsupported_shapes(self):
+        for records in ([(3, "orphan", 2), (12, "", 0)], [(2, "", 0), (12, "", 0)],
+                        [(2, "", 0), (2, "nested", 0), (3, "end", 2), (12, "", 0)],
+                        [(11, "unknown", 0), (12, "", 0)], [(7, "unfinished", 0)]):
+            with self.assertRaises(evidence.pef.PEFError): motion_evidence.scalar_offsets(records)
+
+    def test_save_fixture_identity_rejected_before_inflation(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "foreign.TPWI"
+            path.write_bytes(b"not the known container")
+            with self.assertRaisesRegex(evidence.pef.PEFError, "container identity"):
+                save_evidence.fixture_metadata(path)
+
+    @unittest.skipUnless(os.environ.get("OPENTPW_PC_FIXTURE"), "set OPENTPW_PC_FIXTURE for the known empty coaster body")
+    def test_known_save_fixture_empty_body(self):
+        result = save_evidence.fixture_metadata(Path(os.environ["OPENTPW_PC_FIXTURE"]))
+        self.assertEqual(result["body_bytes"], 16)
+        self.assertEqual(result["coaster_count"], 0)
+        self.assertEqual(result["unqualified_global_values"], (0, 0, 1))
+
+    @unittest.skipUnless(os.environ.get("OPENTPW_MAC_APP"), "set OPENTPW_MAC_APP for native coaster serializer")
+    def test_original_coaster_serialized_fields(self):
+        result = save_evidence.inspect(Path(os.environ["OPENTPW_MAC_APP"]))
+        self.assertEqual(result["boundary"]["trailing_marker"], "SAOC")
+        self.assertFalse(result["boundary"]["markers_are_prefixes"])
+        self.assertEqual(result["controller_header"]["bytes"], 32)
+        self.assertEqual(result["section_record"]["bytes"], 34)
+        floats = [v["wire_offset"] for v in result["section_record"]["fields"] if v["wire_type"] == "f32-le"]
+        self.assertEqual(floats, [13, 17, 21, 25, 29])
+        self.assertIn("insertion ordinal", result["section_record"]["byte_selector"])
+        self.assertGreaterEqual(result["checked_instruction_count"], 120)
+
+    @unittest.skipUnless(os.environ.get("OPENTPW_MAC_APP"), "set OPENTPW_MAC_APP for native topology I/O control flow")
+    def test_original_topology_auxiliary_and_failure_paths(self):
+        result = save_control_evidence.inspect(Path(os.environ["OPENTPW_MAC_APP"]))
+        self.assertTrue(result["ordinal2_auxiliary"]["always_read_per_controller"])
+        self.assertIn("not type enum", result["ordinal2_auxiliary"]["predicate"])
+        self.assertTrue(result["filter"]["count_excludes"])
+        self.assertTrue(result["ordering_precondition"]["exactly_one_ordinal2_required"])
+        self.assertTrue(result["ordering_precondition"]["all_prior_nodes_filtered_required"])
+        self.assertFalse(result["ordering_precondition"]["native_construction_guarantees_proved"])
+        self.assertEqual(result["record_gate"]["builder_output_gate"], 0x3a4f4)
+        self.assertEqual(result["link_resolution"]["helper"], 0x41dcc)
+        self.assertEqual(len(result["failure_paths"]), 9)
+        self.assertEqual({p["failure_result"] for p in result["failure_paths"]}, {0})
+        self.assertGreaterEqual(result["checked_instruction_count"], 100)
+
+    @unittest.skipUnless(os.environ.get("OPENTPW_MAC_APP"), "set OPENTPW_MAC_APP for coaster motion witness")
+    def test_original_motion_schema_and_boarding(self):
+        result = motion_evidence.inspect(Path(os.environ["OPENTPW_MAC_APP"]))
+        settings = {entry["name"]: entry["definition_field"] for entry in result["settings"]["mapping"]}
+        self.assertEqual(settings["fWinchSpeed"], 68)
+        self.assertEqual(settings["fMinSpeed"], 72)
+        self.assertEqual(settings["fUphillAccelModifier"], 40)
+        self.assertEqual(result["motion"]["path_stride"], 56)
+        self.assertEqual(result["tour_unload"]["raw_command"], 14)
+        self.assertEqual(result["sound_output"]["record"], "train, not car")
+        self.assertGreaterEqual(result["checked_instruction_count"], 150)
+
+    @unittest.skipUnless(os.environ.get("OPENTPW_MAC_APP"), "set OPENTPW_MAC_APP for boarding socket witness")
+    def test_original_boarding_socket_producer(self):
+        result = seat_evidence.inspect(Path(os.environ["OPENTPW_MAC_APP"]))
+        self.assertEqual(result["producer"]["attribute_mask"], 128)
+        self.assertEqual(result["producer"]["runtime_attribute_stride"], 20)
+        self.assertEqual(result["producer"]["raw_index_array_field"], 44)
+        self.assertEqual(result["passenger_buffers"]["original_fields"], [32, 36])
+        self.assertEqual(result["binding"]["attach"], 0x19b56c)
+        self.assertEqual(result["capacity"]["per_train_socket_count"], 760)
+        self.assertEqual(result["capacity"]["fleet_socket_count"], 792)
+        self.assertGreaterEqual(result["checked_instruction_count"], 80)
+
     def fixture(self, code=b"\0" * 16, relocations=None):
         return SimpleNamespace(code=SimpleNamespace(index=0, data=bytearray(code)),
                                data_section=SimpleNamespace(index=1, data=bytearray(16)),

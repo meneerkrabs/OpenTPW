@@ -4,7 +4,7 @@ namespace OpenTPW;
 /// Plays one movie in the game window: playback clock and frame selection from <see cref="MoviePlayback"/>,
 /// GPU presentation through <see cref="MoviePresenter"/>, skip on any new key press or mouse click.
 /// </summary>
-internal sealed class MovieScreen : IDisposable
+internal sealed class MovieScreen : IIntroMovie
 {
 	private readonly MoviePlayback playback;
 	private bool lastKeyDown = true;
@@ -23,9 +23,27 @@ internal sealed class MovieScreen : IDisposable
 			if ( output == null )
 				Log.Warning( $"Movie audio unavailable ({failure}); playing video on the fixed-step clock." );
 		}
-		playback = new MoviePlayback( movie, output ) { Gain = gain };
-		Presenter = new MoviePresenter( movie.Width, movie.Height, global::Global.Render.MultisampledFramebuffer.OutputDescription );
+		playback = CreatePlayback( movie, output, gain );
+		try
+		{
+			Presenter = new MoviePresenter( movie.Width, movie.Height, global::Global.Render.MultisampledFramebuffer.OutputDescription );
+		}
+		catch
+		{
+			playback.Dispose();
+			throw;
+		}
 	}
+
+	/// <summary>Audio ownership transfers only after playback construction succeeds.</summary>
+	internal static MoviePlayback CreatePlayback( TgqMovieFile movie, IMovieAudioOutput? output, float gain )
+	{
+		try { return new MoviePlayback( movie, output ) { Gain = gain }; }
+		catch { output?.Dispose(); throw; }
+	}
+
+	bool IIntroMovie.IsFinished => playback.IsFinished;
+	void IIntroMovie.Skip() => playback.Skip();
 
 	public MoviePlayback Playback => playback;
 	public MoviePresenter Presenter { get; }

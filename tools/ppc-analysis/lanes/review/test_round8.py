@@ -57,7 +57,7 @@ class Discovery(Scratch):
         (self.root / 'lanes/empty').mkdir()
         suites = runner.python_suites(self.root)
         self.assertEqual([self.root, self.root / 'lanes/a', self.root / 'lanes/b'], suites)
-        self.assertEqual([os.path.join('lanes', 'b', 'deep', 'test_hidden.py')],
+        self.assertEqual(['lanes/b/deep/test_hidden.py'],
                          runner.uncovered_test_files(self.root, suites))
 
     def test_parse_unittest_counts_skips_and_failures(self):

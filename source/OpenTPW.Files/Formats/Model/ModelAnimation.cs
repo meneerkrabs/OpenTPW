@@ -27,15 +27,23 @@ public readonly record struct ModelRotationKey( ushort Time, short Ease, Quatern
 public readonly record struct ModelScaleKey( ushort Time, ushort Unknown, NVector3 Scale );
 
 /// <summary>
-/// One 64-byte animation record bound to a base-model node. Only position, rotation and scale
-/// are decoded; the other payload kinds (flag bits 0x600, 0x7000, 0x10000, 0x20000) are
-/// identified by their pointers in <see cref="Words"/> but not interpreted.
+/// One 64-byte animation record bound to a base-model node. Position, rotation, scale, the
+/// quantised vertex block (flag 0x1000 without 0x4000) and the node-flag toggles (flag 0x20000)
+/// are decoded; the remaining kinds (<see cref="UnsupportedFlags"/>: path parameters 0x600, the
+/// 12-byte vertex layout 0x4000, 0x2000, the 0x10000 block) stay raw in <see cref="Words"/>.
+/// Sampling follows the record sampler of the Feral Mac build (SimThemePark 0xa4f68,
+/// docs/reverse/PPC-formats.md); negative times are outside the traced clock domain.
 /// </summary>
 public sealed class ModelAnimationTrack
 {
 	public const uint PositionFlag = 0x1;
 	public const uint RotationFlags = 0x78;
 	public const uint ScaleFlags = 0x180;
+	public const uint VertexAnimationFlag = 0x1000;
+	public const uint VertexLayoutFlag = 0x4000;
+	public const uint NodeFlagToggleFlag = 0x20000;
+	/// <summary>Node-state bit set or cleared by <see cref="NodeFlagToggles"/>.</summary>
+	public const uint ToggledNodeStateBit = 0x10;
 
 	public int NodeIndex { get; init; }
 	public uint Flags { get; init; }
@@ -46,18 +54,53 @@ public sealed class ModelAnimationTrack
 	public IReadOnlyList<ModelScaleKey> Scales { get; init; } = Array.Empty<ModelScaleKey>();
 	/// <summary>8-byte easing curves referenced by <see cref="ModelRotationKey.Ease"/>.</summary>
 	public IReadOnlyList<byte[]> EaseCurves { get; init; } = Array.Empty<byte[]>();
+	/// <summary>Quantised vertex block (record +40); null when absent or in the 12-byte layout.</summary>
+	public ModelVertexAnimation? VertexAnimation { get; init; }
+	/// <summary>Signed tick entries (record +48, count u16 +22) of a flag-0x20000 record.</summary>
+	public IReadOnlyList<short> NodeFlagToggles { get; init; } = Array.Empty<short>();
 	/// <summary>The raw 16 record words.</summary>
 	public IReadOnlyList<uint> Words { get; init; } = Array.Empty<uint>();
-	/// <summary>True when the record carries payload kinds this reader does not decode.</summary>
+	/// <summary>
+	/// True when the record carries more than rigid position/rotation/scale tracks (it may still be
+	/// decoded; see <see cref="UnsupportedFlags"/>).
+	/// </summary>
 	public bool HasUndecodedPayload => (Flags & ~(PositionFlag | RotationFlags | ScaleFlags)) != 0;
+	/// <summary>Flag bits whose payload this reader does not decode.</summary>
+	public uint UnsupportedFlags => Flags & ~(PositionFlag | RotationFlags | ScaleFlags | NodeFlagToggleFlag
+		| ((Flags & VertexLayoutFlag) == 0 ? VertexAnimationFlag : 0));
 
+	/// <summary>
+	/// Record sampler 0xa4f68: scanning from the last entry backwards, the first whose magnitude is at
+	/// most the truncated time decides; a positive entry clears <see cref="ToggledNodeStateBit"/>
+	/// (false), zero or negative sets it (true); null leaves it unchanged. What the bit controls
+	/// was not traced (the entries are usually read as visibility toggles).
+	/// </summary>
+	public bool? SampleNodeFlag( float time )
+	{
+		var tick = TruncateTick( time );
+		for ( var index = NodeFlagToggles.Count - 1; index >= 0; index-- )
+		{
+			// abs() of the sign-extended entry, compared unsigned: -32768 stays 0xFFFF8000.
+			var magnitude = (uint)(int)(short)Math.Abs( (int)NodeFlagToggles[index] );
+			if ( magnitude <= tick )
+				return NodeFlagToggles[index] <= 0;
+		}
+		return null;
+	}
+
+	/// <summary>
+	/// Position at a tick; null without a position track or before its first key (the original
+	/// leaves the channel unchanged). In the corpus the last key is never before the clip end.
+	/// </summary>
 	public NVector3? SampleTranslation( float tick )
 	{
 		if ( Position == null )
 			return null;
 		var times = Position.Times;
 		var points = Position.Points;
-		var segment = FindSegment( times.Count, index => times[index], tick, out var fraction );
+		var segment = FindKey( times.Count, index => times[index], tick, out var fraction );
+		if ( segment < 0 )
+			return null;
 		if ( Position.IsBezier )
 		{
 			if ( fraction <= 0 )
@@ -71,11 +114,20 @@ public sealed class ModelAnimationTrack
 		return fraction <= 0 ? points[segment] : NVector3.Lerp( points[segment], points[segment + 1], fraction );
 	}
 
+	/// <summary>
+	/// Rotation at a tick; null without keys or before the first key. The final key holds
+	/// (0xa820c pairs key i with min(i + 1, count − 1)). Interpolation is the sign-preserving slerp.
+	/// The original takes a linear blend when global option bit 0x2 is set; the only store to that word
+	/// writes 0 at setup (0xa7eec from 0x54c08), so it uses its table-sine slerp 0xa7fc8, whose sine
+	/// table this does not reproduce.
+	/// </summary>
 	public Quaternion? SampleRotation( float tick )
 	{
 		if ( Rotations.Count == 0 )
 			return null;
-		var segment = FindSegment( Rotations.Count, index => Rotations[index].Time, tick, out var fraction );
+		var segment = FindKey( Rotations.Count, index => Rotations[index].Time, tick, out var fraction );
+		if ( segment < 0 )
+			return null;
 		var key = Rotations[segment];
 		if ( fraction <= 0 )
 			return key.Rotation;
@@ -84,25 +136,51 @@ public sealed class ModelAnimationTrack
 		return Slerp( key.Rotation, Rotations[segment + 1].Rotation, fraction );
 	}
 
+	/// <summary>Per-axis scale at a tick; null without keys or before the first key; the last key holds.</summary>
 	public NVector3? SampleScale( float tick )
 	{
 		if ( Scales.Count == 0 )
 			return null;
-		var segment = FindSegment( Scales.Count, index => Scales[index].Time, tick, out var fraction );
-		return fraction <= 0 ? Scales[segment].Scale : NVector3.Lerp( Scales[segment].Scale, Scales[segment + 1].Scale, fraction );
+		var segment = FindKey( Scales.Count, index => Scales[index].Time, tick, out var fraction );
+		if ( segment < 0 )
+			return null;
+		if ( fraction <= 0 )
+			return Scales[segment].Scale;
+		// (1 − t) × a + (t × b), the second product rounded first (0xa4f68 fmuls/fmadds).
+		var from = Scales[segment].Scale;
+		var to = Scales[segment + 1].Scale;
+		var inverse = 1 - fraction;
+		return new NVector3( MathF.FusedMultiplyAdd( inverse, from.X, fraction * to.X ), MathF.FusedMultiplyAdd( inverse, from.Y, fraction * to.Y ),
+			MathF.FusedMultiplyAdd( inverse, from.Z, fraction * to.Z ) );
 	}
 
+	/// <summary>Literal of SimThemePark 0xa50d4 (TOC 0x5198): the fraction is scaled by this, not by 9.</summary>
+	public const float EaseScale = 8.999995f;
+
 	/// <summary>
-	/// Maps a segment fraction through an easing curve: the eight bytes are the slerp fraction
-	/// ×255 at s = 1/9 … 8/9, with implied end points 0 and 1; values in between are linear.
+	/// Easing of 0xa50d4: <c>s = fraction × 8.999995</c>, segment <c>i = trunc(s)</c> (negative → 0),
+	/// then linear between 0 and b0 (i = 0), b[i−1] and b[i] (1 ≤ i ≤ 7) or b7 and 1 (i ≥ 8), bytes
+	/// divided by 255; so fraction 1 ends just short of 1.
 	/// </summary>
 	public static float Ease( byte[] curve, float fraction )
 	{
-		var position = Math.Clamp( fraction, 0f, 1f ) * 9;
-		var index = Math.Min( (int)position, 8 );
-		var from = index == 0 ? 0f : curve[index - 1] / 255f;
-		var to = index == 8 ? 1f : curve[index] / 255f;
-		return from + (to - from) * (position - index);
+		ArgumentNullException.ThrowIfNull( curve );
+		if ( curve.Length < 8 )
+			throw new ArgumentException( "An easing curve has eight samples.", nameof( curve ) );
+		var scaled = fraction * EaseScale;
+		var segment = TruncateTick( scaled );
+		var local = scaled - segment;
+		var from = segment == 0 ? 0f : segment < 8 ? curve[segment - 1] / 255f : curve[7] / 255f;
+		var to = segment < 8 ? curve[segment] / 255f : 1f;
+		return MathF.FusedMultiplyAdd( 1 - local, from, local * to );
+	}
+
+	/// <summary>Runtime double → unsigned conversion (0x1c3fbc) of a tick: truncates, negative → 0.</summary>
+	internal static uint TruncateTick( float time )
+	{
+		if ( float.IsNaN( time ) )
+			throw new ArgumentOutOfRangeException( nameof( time ) );
+		return time <= 0 ? 0 : time >= uint.MaxValue ? uint.MaxValue : (uint)time;
 	}
 
 	/// <summary>
@@ -122,44 +200,83 @@ public sealed class ModelAnimationTrack
 		return Quaternion.Normalize( result );
 	}
 
-	// Returns the segment start key; fraction is 0 when the tick is clamped to a key.
-	private static int FindSegment( int count, Func<int, uint> time, float tick, out float fraction )
+	// Key search 0xa3ff0: the last key (scanning forward) whose tick is at most trunc(time), or -1
+	// before the first key. Fraction is 0 at the last key, where every channel here holds.
+	private static int FindKey( int count, Func<int, uint> time, float tick, out float fraction )
 	{
+		if ( !(tick >= 0) )
+			throw new ArgumentOutOfRangeException( nameof( tick ), "Negative or NaN ticks are outside the traced clock domain." );
+		var whole = TruncateTick( tick );
+		var key = -1;
+		while ( key + 1 < count && time( key + 1 ) <= whole )
+			key++;
 		fraction = 0;
-		if ( count == 1 || tick <= time( 0 ) )
-			return 0;
-		if ( tick >= time( count - 1 ) )
-			return count - 1;
-		var segment = 0;
-		while ( segment + 1 < count - 1 && tick >= time( segment + 1 ) )
-			segment++;
-		var start = time( segment );
-		var end = time( segment + 1 );
-		fraction = end > start ? (tick - start) / (end - start) : 0;
-		return segment;
+		if ( key >= 0 && key + 1 < count )
+		{
+			float start = time( key );
+			fraction = (tick - start) / (time( key + 1 ) - start);
+		}
+		return key;
 	}
 }
 
-/// <summary>Decoded animation member: duration in ticks and per-node tracks.</summary>
+/// <summary>Decoded animation member: duration in ticks, per-node tracks and texture-frame tracks.</summary>
 public sealed class ModelAnimation
 {
+	/// <summary>Trailer word 0 bit that enables <see cref="TextureFrameTracks"/> (clip update 0xa56f8).</summary>
+	public const uint TextureFrameFlag = 0x2;
+
 	public int Duration { get; init; }
 	public IReadOnlyList<ModelAnimationTrack> Tracks { get; init; } = Array.Empty<ModelAnimationTrack>();
+	/// <summary>Raw trailer word 0.</summary>
+	public uint TrailerFlags { get; init; }
+	/// <summary>
+	/// True when the clip update applies <see cref="TextureFrameTracks"/>; the original also requires
+	/// global option bit 0x8 to be clear, and the only store to that word writes 0 at setup.
+	/// </summary>
+	public bool TextureFramesEnabled => (TrailerFlags & TextureFrameFlag) != 0;
+	public IReadOnlyList<ModelTextureFrameTrack> TextureFrameTracks { get; init; } = Array.Empty<ModelTextureFrameTrack>();
 	/// <summary>Opaque u16 node-index list (trailer words 14 and 6); meaning unknown.</summary>
 	public IReadOnlyList<ushort> NodeList { get; init; } = Array.Empty<ushort>();
+	/// <summary>
+	/// Payload bytes the decoder read as tables, counting a span again each time a pointer reuses it.
+	/// Never more than the payload in the PC baseline and Patch 2 corpora (no table is shared).
+	/// </summary>
+	public long TableBytes { get; init; }
+
+	/// <summary>
+	/// OpenTPW resource limit, not original behaviour: tables may reuse payload spans, but all of them
+	/// together may read at most this many times the payload (the original loader has no such check).
+	/// Every table is charged before its array is allocated, so decoded arrays stay proportional to the
+	/// member size.
+	/// </summary>
+	public const int TableBytesPerPayloadByte = 4;
 
 	internal static ModelAnimation Decode( byte[] data, int trailer, uint[] words )
 	{
+		var budget = TableBytesPerPayloadByte * (long)(trailer - ModelFile.HeaderBytes);
+		long charged = 0;
+
+		// Checks one table against the payload and charges it before the caller allocates for it.
 		int Pointer( uint value, long length, string what )
 		{
-			if ( value < ModelFile.HeaderBytes || value > trailer || length > trailer - (long)value )
+			Probe( value, length, what );
+			charged += length;
+			if ( charged > budget )
+				throw new InvalidDataException( $"MD2 animation tables exceed {TableBytesPerPayloadByte}× the payload at {what}." );
+			return (int)value;
+		}
+
+		int Probe( uint value, long length, string what )
+		{
+			if ( value < ModelFile.HeaderBytes || value > trailer || length < 0 || length > trailer - (long)value )
 				throw new InvalidDataException( $"MD2 animation {what} lies outside the payload." );
 			return (int)value;
 		}
 
 		var trackCount = (int)(words[4] >> 16);
-		var tracks = new ModelAnimationTrack[trackCount];
 		var records = trackCount == 0 ? 0 : Pointer( words[11], trackCount * 64L, "record table" );
+		var tracks = new ModelAnimationTrack[trackCount];
 		long rotationKeys = 0, scaleKeys = 0, positionTracks = 0;
 		for ( var index = 0; index < trackCount; index++ )
 		{
@@ -177,7 +294,23 @@ public sealed class ModelAnimation
 			for ( var word = 9; word <= 13; word++ )
 			{
 				if ( raw[word] != 0 )
-					Pointer( raw[word], 1, $"record {index} word {word}" );
+					Probe( raw[word], 1, $"record {index} word {word}" );
+			}
+
+			ModelVertexAnimation? vertexAnimation = null;
+			if ( (flags & ModelAnimationTrack.VertexAnimationFlag) != 0 && (flags & ModelAnimationTrack.VertexLayoutFlag) == 0 )
+			{
+				var block = Pointer( raw[10], ModelVertexAnimation.HeaderBytes, $"record {index} vertex block" );
+				vertexAnimation = ModelVertexAnimation.Decode( data, block, Pointer );
+			}
+			var toggleCount = (flags & ModelAnimationTrack.NodeFlagToggleFlag) != 0 ? (int)(raw[5] >> 16) : 0;
+			var toggles = Array.Empty<short>();
+			if ( toggleCount > 0 )
+			{
+				var offset = Pointer( raw[12], toggleCount * 2L, $"record {index} node-flag toggles" );
+				toggles = new short[toggleCount];
+				for ( var entry = 0; entry < toggles.Length; entry++ )
+					toggles[entry] = BinaryPrimitives.ReadInt16LittleEndian( data.AsSpan( offset + entry * 2 ) );
 			}
 
 			ModelPositionKeys? position = null;
@@ -215,11 +348,12 @@ public sealed class ModelAnimation
 			var scaleCount = (int)(raw[4] >> 16);
 			if ( (raw[7] == 0 && rotationCount != 0) || (raw[8] == 0 && scaleCount != 0) )
 				throw new InvalidDataException( $"MD2 animation record {index} counts keys without a key table." );
-			var rotations = new ModelRotationKey[rotationCount];
+			var rotations = Array.Empty<ModelRotationKey>();
 			var curveCount = 0;
 			if ( rotationCount > 0 )
 			{
 				var offset = Pointer( raw[7], rotationCount * 20L, "rotation keys" );
+				rotations = new ModelRotationKey[rotationCount];
 				for ( var key = 0; key < rotationCount; key++ )
 				{
 					var entry = offset + key * 20;
@@ -235,17 +369,19 @@ public sealed class ModelAnimation
 					curveCount = Math.Max( curveCount, rotations[key].Ease + 1 );
 				}
 			}
-			var curves = new byte[curveCount][];
+			var curves = Array.Empty<byte[]>();
 			if ( curveCount > 0 )
 			{
 				var offset = Pointer( raw[13], curveCount * 8L, "easing curves" );
+				curves = new byte[curveCount][];
 				for ( var curve = 0; curve < curveCount; curve++ )
 					curves[curve] = data.AsSpan( offset + curve * 8, 8 ).ToArray();
 			}
-			var scales = new ModelScaleKey[scaleCount];
+			var scales = Array.Empty<ModelScaleKey>();
 			if ( scaleCount > 0 )
 			{
 				var offset = Pointer( raw[8], scaleCount * 16L, "scale keys" );
+				scales = new ModelScaleKey[scaleCount];
 				for ( var key = 0; key < scaleCount; key++ )
 				{
 					var entry = offset + key * 16;
@@ -265,20 +401,50 @@ public sealed class ModelAnimation
 				Rotations = rotations,
 				Scales = scales,
 				EaseCurves = curves,
+				VertexAnimation = vertexAnimation,
+				NodeFlagToggles = toggles,
 				Words = raw
 			};
 		}
 		if ( rotationKeys != (words[4] & 0xFFFF) || positionTracks != (words[3] & 0xFFFF) || scaleKeys != (words[3] >> 16) )
 			throw new InvalidDataException( "MD2 animation key totals disagree with the trailer." );
 
-		var nodeList = new ushort[words[6] >> 16];
-		if ( nodeList.Length > 0 )
+		var nodeCount = (int)(words[6] >> 16);
+		var nodeList = Array.Empty<ushort>();
+		if ( nodeCount > 0 )
 		{
-			var offset = Pointer( words[14], nodeList.Length * 2L, "node list" );
+			var offset = Pointer( words[14], nodeCount * 2L, "node list" );
+			nodeList = new ushort[nodeCount];
 			for ( var index = 0; index < nodeList.Length; index++ )
 				nodeList[index] = U16( data, offset + index * 2 );
 		}
-		return new ModelAnimation { Duration = (int)words[2], Tracks = tracks, NodeList = nodeList };
+
+		var frameTrackCount = (int)(words[6] & 0xFFFF);
+		var frameTracks = Array.Empty<ModelTextureFrameTrack>();
+		if ( frameTrackCount > 0 )
+		{
+			var table = Pointer( words[12], frameTrackCount * 8L, "texture-frame tracks" );
+			frameTracks = new ModelTextureFrameTrack[frameTrackCount];
+			for ( var index = 0; index < frameTracks.Length; index++ )
+			{
+				var entry = table + index * 8;
+				var keyCount = U16( data, entry + 2 );
+				var keys = Array.Empty<ModelTextureFrameKey>();
+				if ( keyCount > 0 )
+				{
+					var offset = Pointer( U32( data, entry + 4 ), keyCount * 4L, $"texture-frame track {index} keys" );
+					keys = new ModelTextureFrameKey[keyCount];
+					for ( var key = 0; key < keys.Length; key++ )
+						keys[key] = new ModelTextureFrameKey( U16( data, offset + key * 4 ), U16( data, offset + key * 4 + 2 ) );
+				}
+				frameTracks[index] = new ModelTextureFrameTrack( U16( data, entry ), keys );
+			}
+		}
+		return new ModelAnimation
+		{
+			Duration = (int)words[2], Tracks = tracks, NodeList = nodeList, TrailerFlags = words[0], TextureFrameTracks = frameTracks,
+			TableBytes = charged
+		};
 	}
 
 	private static NVector3 Finite( NVector3 value, string what )

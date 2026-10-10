@@ -19,10 +19,9 @@ public enum ScrollMode { Pushscroll, RightButton }
 /// (<c>save/opentpw-options.json</c>); files written by older versions lack the newer fields and
 /// get their defaults.
 /// Consumed today: <see cref="MovieVolume"/>/<see cref="MovieOn"/> (start-up movies) and
-/// <see cref="PopupHelp"/> (front end and HUD). STORED ONLY, with no effect yet: the sound effects,
-/// music and speech volumes and switches (no game audio mixes them), <see cref="Advisor"/> (the advisor
-/// only speaks from the --advisor-say debug flag; there is no in-game advisor to silence),
-/// <see cref="Tutorial"/>, <see cref="Confirmations"/>, <see cref="RmbCancel"/>, <see cref="Rotation"/>
+/// <see cref="PopupHelp"/> (front end and HUD), <see cref="Advisor"/> and <see cref="Tutorial"/> (the automatic
+/// advisor, <see cref="AutomaticAdvisor"/>). STORED ONLY, with no effect yet: the sound effects,
+/// music and speech volumes and switches (no game audio mixes them), <see cref="Confirmations"/>, <see cref="RmbCancel"/>, <see cref="Rotation"/>
 /// and <see cref="Scroll"/> (the camera and tools do not read them). They are kept so the options screen
 /// round-trips the original settings; each consumer must start reading them when its feature exists.
 /// </summary>

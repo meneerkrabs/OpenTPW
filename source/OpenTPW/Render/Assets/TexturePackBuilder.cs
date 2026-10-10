@@ -53,6 +53,8 @@ public sealed record TexturePackBuildOptions
 	public string Subtree { get; init; } = "";
 	/// <summary>Only interface art (needs an interface upscaler); world textures are left out.</summary>
 	public bool InterfaceOnly { get; init; }
+	/// <summary>Only guest sprite atlases; combined with <see cref="InterfaceOnly"/> both kinds are built.</summary>
+	public bool SpritesOnly { get; init; }
 	/// <summary>Keep the existing pack's textures and add or replace the ones built now.</summary>
 	public bool Merge { get; init; }
 }
@@ -69,6 +71,57 @@ public sealed record TexturePackBuildOptions
 public static class TexturePackBuilder
 {
 	public enum Skip { None, Interface, LowDetail, Small, ChromaKey, Unreadable, NotSelected }
+
+	/// <summary>A guest sprite atlas key (<c>esprites/…/*.atlas</c>), assembled from the original sprite banks rather than read from a <c>.wct</c>.</summary>
+	public static bool IsSpriteAtlas( string gamePath )
+	{
+		var path = gamePath.Replace( '\\', '/' ).TrimStart( '/' ).ToLowerInvariant();
+		return path.StartsWith( "esprites/", StringComparison.Ordinal ) && path.EndsWith( ".atlas", StringComparison.Ordinal );
+	}
+
+	/// <summary>
+	/// Gives fully transparent texels the colour of their opaque neighbours (up to <paramref name="passes"/> texels out),
+	/// keeping alpha 0. The upscaler blends colour across edges, so the white or black of empty texels would otherwise
+	/// show as a light or dark fringe around sprites and UI pieces.
+	/// </summary>
+	public static void BleedIntoTransparent( byte[] rgba, int width, int height, int passes = 4 )
+	{
+		var filled = new bool[width * height];
+		for ( var index = 0; index < filled.Length; index++ )
+			filled[index] = rgba[index * 4 + 3] != 0;
+		for ( var pass = 0; pass < passes; pass++ )
+		{
+			var next = (bool[])filled.Clone();
+			for ( var y = 0; y < height; y++ )
+				for ( var x = 0; x < width; x++ )
+				{
+					if ( filled[y * width + x] )
+						continue;
+					int r = 0, g = 0, b = 0, count = 0;
+					for ( var dy = -1; dy <= 1; dy++ )
+						for ( var dx = -1; dx <= 1; dx++ )
+						{
+							var nx = x + dx;
+							var ny = y + dy;
+							if ( nx < 0 || ny < 0 || nx >= width || ny >= height || !filled[ny * width + nx] )
+								continue;
+							var source = (ny * width + nx) * 4;
+							r += rgba[source];
+							g += rgba[source + 1];
+							b += rgba[source + 2];
+							count++;
+						}
+					if ( count == 0 )
+						continue;
+					var target = (y * width + x) * 4;
+					rgba[target] = (byte)(r / count);
+					rgba[target + 1] = (byte)(g / count);
+					rgba[target + 2] = (byte)(b / count);
+					next[y * width + x] = true;
+				}
+			filled = next;
+		}
+	}
 
 	/// <summary>Interface art an interface upscaler may enlarge: <c>ui/</c> textures except the low-detail variants and fonts.</summary>
 	public static bool IsUpscalableInterface( string gamePath )
@@ -191,7 +244,7 @@ public static class TexturePackBuilder
 	{
 		if ( interfaceUpscaler != null && interfaceUpscaler.Scale != upscaler.Scale )
 			throw new ArgumentException( $"The interface upscaler's scale ({interfaceUpscaler.Scale}) must match the world upscaler's ({upscaler.Scale})." );
-		if ( options.InterfaceOnly && interfaceUpscaler == null )
+		if ( options.InterfaceOnly && !options.SpritesOnly && interfaceUpscaler == null )
 			throw new ArgumentException( "An interface-only texture pack build needs an interface upscaler." );
 		var work = Path.Combine( Path.GetTempPath(), $"opentpw-texture-pack-{Guid.NewGuid():N}" );
 		var input = Path.Combine( work, "in" );
@@ -210,12 +263,13 @@ public static class TexturePackBuilder
 			foreach ( var (gamePath, load) in textures )
 			{
 				var interfaceArt = interfaceUpscaler != null && IsUpscalableInterface( gamePath );
-				if ( options.InterfaceOnly && !interfaceArt )
+				var sprite = IsSpriteAtlas( gamePath );
+				if ( (options.InterfaceOnly || options.SpritesOnly) && !(options.InterfaceOnly && interfaceArt || options.SpritesOnly && sprite) )
 				{
 					skipped[Skip.NotSelected] = skipped.GetValueOrDefault( Skip.NotSelected ) + 1;
 					continue;
 				}
-				if ( !interfaceArt && ClassifyPath( gamePath ) is var byPath and not Skip.None )
+				if ( !interfaceArt && !sprite && ClassifyPath( gamePath ) is var byPath and not Skip.None )
 				{
 					skipped[byPath] = skipped.GetValueOrDefault( byPath ) + 1;
 					continue;
@@ -239,7 +293,7 @@ public static class TexturePackBuilder
 					continue;
 				}
 				// Interface textures carry real alpha after decoding, so the chroma-key rule is for world textures only.
-				var skip = interfaceArt ? (Math.Min( texture.Width, texture.Height ) < options.MinimumSize ? Skip.Small : Skip.None)
+				var skip = interfaceArt || sprite ? (Math.Min( texture.Width, texture.Height ) < options.MinimumSize ? Skip.Small : Skip.None)
 					: Classify( gamePath, texture, options.MinimumSize );
 				if ( skip != Skip.None )
 				{
@@ -248,7 +302,16 @@ public static class TexturePackBuilder
 				}
 				var padding = Padding( texture.Width, texture.Height );
 				var flat = $"t{queued.Count:D6}.png";
-				var padded = interfaceArt ? ClampPad( texture.Data, texture.Width, texture.Height, padding ) : WrapPad( texture.Data, texture.Width, texture.Height, padding );
+				byte[] padded;
+				if ( interfaceArt || sprite )
+				{
+					// Atlases of separate pieces: no wrap, and empty texels take their neighbours' colour.
+					var pixels = (byte[])texture.Data.Clone();
+					BleedIntoTransparent( pixels, texture.Width, texture.Height );
+					padded = ClampPad( pixels, texture.Width, texture.Height, padding );
+				}
+				else
+					padded = WrapPad( texture.Data, texture.Width, texture.Height, padding );
 				File.WriteAllBytes( Path.Combine( interfaceArt ? interfaceInput : input, flat ), PngImage.EncodeRgba( texture.Width + 2 * padding, texture.Height + 2 * padding, padded ) );
 				queued.Add( (flat, gamePath, texture.Width, texture.Height, padding, interfaceArt) );
 			}

@@ -332,7 +332,9 @@ are 0, `2^32`, and `2^31` at `data:0x52e24/0x52e2c/0x52e34`.
 For finite input it returns 0 below zero, `0xffffffff` at or above `2^32`, and
 otherwise truncates toward zero, using a `2^31` subtraction/reconstruction for
 the upper unsigned half. The double accumulator itself continues increasing;
-**the returned clock saturates instead of wrapping**. Pause offsets, forced
+**the source conversion saturates instead of wrapping**. The outer saved-epoch
+offset additions described below remain modulo-32-bit operations; the fully
+adjusted clock can wrap. Pause offsets, forced
 clock additions and the park/substep counters use 32-bit word arithmetic and
 can wrap independently. A direct scale setter `0x127c40` stores its argument
 without the UI callbacks' clamps; its complete caller/load validation remains
@@ -606,3 +608,748 @@ and existing catalog/advisor behavior. It does **not** exercise the large-count
 allocation order above, prove complete renderer state isolation, or provide
 original-game visual/clock traces. Passing valid corpus inputs cannot clear the
 allocation objection.
+
+## Consumer dependencies after the scheduler review
+
+This follow-up uses the identified application above and C runtime
+`c_c++_shared.data`, SHA-256
+`5e04f9c00c922dc78a787d1b93067c75d37a3e65b0a0202e50c2f449f131b27f`,
+code section 0 and TOC data section 1 `0x8000`. The live-source map was read
+from root commit `9e40f52b7a43825c943393b27d754ab00df5c236`; it describes
+connections required for future integration, not production changes.
+
+### Three distinct mode/state domains
+
+The callback dispatch at `0x1c1358..0x1c1374` uses state word
+`data:0x15c488`, reached through TOC `data:0x988`, and a 16-entry code-pointer
+table at `data:0x52cc8` through TOC `data:0x4770`. Callback state **4** dispatches
+`0x1c1378`, sets state **5**, then leaves the body. Callback state **10**
+dispatches `0x1c2264`, the active scheduler. These are distinct from the
+GameType selector **0/1/2** and from world field `+0x1da738`.
+
+The latter world field is tested against **4** at `0x1053a4..0x1053ac`,
+after `mGameTick` has already incremented at `0x105398..0x1053a0`. Its equality
+branch targets `0x105470`, bypassing normal thing iteration (`0x1053b0..0x10546c`).
+The common tail still calls player update `0xd67f0` at `0x10563c`; that updater
+calls calendar `0xe3f0c` at `0xd6818` using player member `+672`. Therefore world
+state 4 alone does **not** stop the virtual calendar or advisor turn history.
+The scenarios lane's bankruptcy-to-state-4 path must be combined with any
+subsequent callback/pause transition before claiming that bankruptcy freezes
+time. It does prevent the bypassed regular guest/thing update on this path.
+The same world-state-4 comparison also zeros two periodic aggregate operands
+at `0x1c2460..0x1c2468` and `0x1c24ac..0x1c24b4`; their full downstream meaning
+remains separate from clock units.
+
+### Manager initialization, sample time and signed timer boundaries
+
+Manager initialization `0xb2760` sets manager `+0 = 1`, `+8 = 1`, list head
+`+16 = 0`, and pass counter `+4 = 0` at `0xb27a0..0xb27c0`. The manager at
+`0xb2838` checks initialized state `+0` at `0xb2870..0xb2878`; the zero path
+bypasses incrementing `+4`. Its initialized path increments the counter before
+reading list `+16`, so an initialized **empty** list still advances the pass
+phase. Shutdown `0xb2b18` clears initialized state at `0xb2b68`. The standalone
+`SchedulerRules.ScriptPassCounter` assumes the manager is initialized during
+allowed work; its `ScriptManagerPasses` counts calls and cannot by itself prove
+a manager counter advance while initialization is false. Script IDs require
+manager-owned allocation, independently of attraction and guest IDs.
+
+Animation cache update `0xa6f70` is called at `0x1c22ac`, before the scheduler
+samples its loop's current word at `0x1c22b4`. It fills global animation
+`+16400` with the selected scaled clock and `+16408` with the unscaled clock.
+The per-channel frame formula reads those cached words. In contrast, RSE
+GETTIME/WAIT/SETTIMER/GETTIMER call the clock getter again at their instructions.
+A catch-up pass is **not** an instruction to advance all clocks by 31 ms.
+Injected timestamp reads must preserve this distinction between cached callback
+samples, direct getter samples, and scheduled previous time.
+
+SETTIMER `0xb1fd0` stores wrapped word `now + resolved_operand` in script `+196`.
+GETTIMER `0xb1ffc` subtracts the current word at `0xb2014`, stores raw difference
+in accumulator `+72`, and uses a **signed** compare/clamp at `0xb2020..0xb202c`.
+Thus deadline `0x80000010`, now 0 gives remaining 0; deadline `0x10`, now
+`0xfffffff0` gives 32. This differs from WAIT's unsigned now/deadline comparison
+and from the live VM's wide double deadline with a ceiling/nonnegative clamp.
+The new witness separately verifies BO/BI/target of the negative clamp branch.
+
+Animation elapsed `0xa70a4` is a wrapped subtraction interpreted **unsigned**:
+the conversion uses high word `0x4330` without a signed XOR and subtracts
+`2^52` from the constructed double (`data:0x51a8`). It then rounds to binary32
+before separately rounded multiplication by 30, division by 1000, and
+multiplication by channel speed (`0xa70b4..0xa70c4`). Backward timestamps are
+not clamped here. For now 100/start 200/speed 1, the bounded formula gives
+128849016 frames after the unsigned word rounds to `2^32`; this is an
+arithmetic edge witness, not a claim that normal playback reaches that state.
+
+Scheduler reset `0x1c3520` samples the current selected clock into previous
+scheduled time and two other cadence stamps (`0x1c3538..0x1c3568`), then clears
+substep phase at `0x1c3570`. Its only direct linked call in this identified
+code is `0x1c2274`, behind a nonzero reset request at TOC `data:0x1864` (pointer to
+`data:0x15c468`). Lifecycle routine `0x11b4f4` sets that request to 1 at
+`0x11b540..0x11b548`; the scheduler clears it at `0x1c227c..0x1c2280`. The
+complete caller mapping of that lifecycle routine and indirect entry paths
+remains unresolved. No automatic near-`2^31` reset is established; the signed crossing
+remains unsupported in the bounded scheduler contract.
+
+### RSE civil time is an independent clock domain
+
+The RSE dispatch table binds YEAR 97 to `0xb2144`, MONTH 98 to `0xb2194`, DAY
+99 to `0xb21e8`, and HOUR 100 to `0xb2238`. Every handler invokes app glue
+`0x1c6474` importing C runtime **time**, then `0x1c648c` importing **localtime**.
+Their return fields are:
+
+| Opcode | Native result | Load/adjust address |
+| --- | --- | --- |
+| YEAR 97 | `tm_year` directly, with no addition of 1900 | `0xb215c` reads `+20` |
+| MONTH 98 | `tm_mon + 1` | `0xb21ac` reads `+16`; `0xb21b4` adds 1 |
+| DAY 99 | `tm_mday` | `0xb2200` reads `+12` |
+| HOUR 100 | `tm_hour` | `0xb2250` reads `+8` |
+
+C runtime transition vector `data:0x1dcc` maps time to `0x23200`; vector
+`data:0x1dac` maps localtime to `0x23974`. Time calls wrapper `0x248a8`, which
+invokes full validated import glue `0x2bf30` for InterfaceLib **GetDateTime** at
+`0x248b8`. The wrapper adds 126144000 to the returned word at `0x248c4..0x248c8`.
+Apple defines this OS input as current seconds since January 1, 1904.
+[Apple, Getting the Current Date and Time](https://developer.apple.com/library/archive/documentation/mac/OSUtilities/OSUtilities-105.html)
+The offset is the 1461 days from January 1, 1900 to January 1, 1904. Localtime
+passes that word to converter `0x22d00`; the year-count loop starts at zero
+(`0x22d3c`), increments at `0x22de8`, and stores the count directly at `+20`
+(`0x22df0`). This native chain supports the year-minus-1900 interpretation,
+without relying only on the export name or a modern runtime's ABI.
+
+These opcodes use host civil time, independently of scale, scheduler turn
+count, virtual epoch and pause offset. They sample host time only when an
+eligible script executes. The native OS timezone, invalid/rollover dates,
+clock edits, imported runtime loading, and Windows/Patch 2 implementation still
+need qualification. They must not be connected to `ParkCalendar.ToDate` merely
+because `Clock.RSE` uses HOUR. Flags/destination-fetch ordering are not approved
+by this clock-domain witness.
+
+### Live integration map
+
+| Live consumer at the pinned root version | Required original input/state | Connection dependency |
+| --- | --- | --- |
+| `Level.Update` → `FixedStepClock.Advance` | Callback state10; selected `u32` source; previous scheduled word; outer phase; reset request; binary flag gates; cap reset | One scheduler owner supplies allowed work and world turns. Current 60 Hz/16-step frame loop does not implement the 31 ms ceiling/2000 ms/3-turn rules. |
+| `RideVM.Advance`, `Handlers/Scheduling.GetTime` | Shared selected clock word; manager initialized state/phase; stable script ID; `+184` phase override; header `+148` budget | Supply shared clock samples and eligible slices separately. A VM's creation time, `TimeMilliseconds`, or recursive per-child elapsed update cannot substitute for the manager clock/ID list. |
+| `WAIT`, `WAITABS`, `SETTIMER`, `GETTIMER`, animation waits | Separate raw word deadline fields `+160/+164/+196`, zero sentinel, first-encounter yield; signed bias `+192` | Preserve each opcode's conversion and comparison. Do not normalize all deadlines to one wide monotonic/nonnegative duration API. |
+| `OriginalObjectRuntime.Simulate` → `ObjectAnimator.Advance`; `PrototypeRide` | Callback animation caches; channel `+16` start word, `+12` speed, flag `0x40` source selection, `+32` binary32 frame | Feed selected timestamps, then native frame arithmetic. Local double elapsed totals and multiplying the same per-object seconds by 30 omit alternate clock, reset, wrap and callback-cache behavior. Playback/loop/end options remain the formats/rides contract. |
+| `ParkEconomyRuntime.FixedTick` → `ParkEconomy.AdvanceFixedTick` / `ParkCalendar.ToDate` | Actual world counter `+0x1da70c`, serialized epoch/rate, calendar previous fields and day/month/year messages | Advance the original world counter once per admitted turn, then compute virtual date. Do not reapply `GameSpeed` after the scheduler scales time. World state4 suppresses regular things but still reaches calendar update. Existing 60 Hz/30-day persisted port `Tick` is a different field and cannot be silently reinterpreted. |
+| `Handlers/Effects.Year/Month/Day/Hour` → effect hook | Host civil `time/localtime` field snapshot, sampled at instruction execution | A separate host-date provider is required. `IParkClock`'s virtual date is the wrong domain for this Mac path; these hooks currently lack a demonstrated original binding. |
+| `Advisor.Render` / `SpeechAudioPlayer.Position` / `LipSyncTimeline` | Unscaled pause-aware elapsed word, speech-start stamp, one-mark-per-update strict deadline, independent mouth-choice elapsed state | LIP driver's elapsed source is independent of PCM queue position and selected simulation speed. Do not wire it to scheduler phase or virtual turn; native audio pause/completion callbacks remain separate. |
+| Native advisor queue/repeat history (standalone helper, no live root binding) | World counter sampled/stored raw; elapsed `(current >> 2) - (saved >> 2)` with word arithmetic | Supply actual world counter, including cap/gates/state4 behavior. A wall-second cooldown or LIP elapsed value does not reproduce history units. |
+
+The adapter boundary therefore needs explicit raw clock reads, a scaled/pause
+wrapper, an unscaled/pause wrapper, callback animation samples, scheduler
+previous/phase/cap state, manager initialization/pass/IDs, and original world
+counter. Live source ownership and save migration require a separate integration
+change. The current standalone C# scheduler intentionally excludes unqualified
+signed timestamp crossings; it must expose that diagnostic to its caller rather
+than inventing native recovery.
+
+Reproduction:
+
+```sh
+python3 tools/ppc-analysis/lanes/clock/clock_consumers.py /path/to/mac-feral/bin
+OPENTPW_PPC_BIN_ROOT=/path/to/mac-feral/bin python3 -m unittest discover -s tools/ppc-analysis/lanes/clock -p test_clock_consumers.py -v
+```
+
+Validation: **9/9** new tests with the identified-input witness enabled; eight
+bounded application hashes and four C runtime hashes; full six-instruction
+import-glue validation for both RSE time imports and the OS host-clock import.
+Synthetic examples qualify finite arithmetic only. No original instructions
+were executed and no game source or original bytes were added.
+
+### Script creation and reload phase follow-up
+
+The script loader `0xb2ba0` maintains a manager-owned list count at `+12`
+(`0xb2cb0..0xb2cc0`), separate from initialized state `+0` and pass `+4`.
+New script `+0` points to the former head, former head `+4` points back to the
+new script when nonnull, and manager `+16` becomes the new script
+(`0xb2cc4..0xb2ce0`). Normal traversal therefore starts in reverse creation
+order; sorting live VMs by attraction ID would change that order.
+
+The next-script-ID word is manager `+8`, initialized to 1 at `0xb27b0`.
+The loader reads it at `0xb3174`, increments and writes it at `0xb3180..0xb3184`,
+and writes the prior value into new script `+8` at `0xb3188`. There is no
+attraction/guest-ID lookup in this assignment. Manager pass `+4`, script ID
+`+8`, and outer scheduler substep phase are three separate counters. Loader
+creation does not itself establish an elapsed-clock origin for GETTIME.
+A scan of aligned direct linked calls finds interpreter `0xaf534` only at
+manager `0xb28f0`; indirect execution paths are not ruled out by that scan.
+In particular, the live `RideVM.Child.Advance` recursion cannot be justified
+as native manager ordering solely from the parent/child relationship.
+
+Manager state writer `0xb3868` writes a 20-byte header size at `0xb38c8` and
+copies initialized/pass/allocator/count/head words at `0xb390c..0xb3940`.
+Reader `0xb4818` invokes manager initialization at `0xb48a4`, then restores
+these words from the state block. Its pass-counter byte-reversed store is
+`0xb495c`; the allocator word is separately reversed and stored at
+`0xb4960..0xb4974`. The saved phase and next ID therefore override fresh
+initialization on this reader path. The five-word header includes a list
+reference requiring subsequent reconstruction; this is **not** a complete
+production save framing or pointer-restoration recipe. Actual original-save
+script records and matching load order remain the necessary integration proof.
+
+The scheduler reset-request routine `0x11b4f4` has a direct caller at
+`0x11b3d8`. This caller skips that routine when its saved argument in `r29`
+is **1** (`0x11b3cc..0x11b3d0`). Consequently the reset cannot be assumed for
+every transition through this caller. The argument's named load/restore mode
+and indirect callers remain unresolved; no unconditional long-session signed
+timestamp recovery was established. The new witness pins the selector's
+comparison, BO/BI/target, reset call, four lifecycle hashes, ID assignment and
+actual manager-header byte-swap fields. The clock suite remains **30/30** with
+local identified inputs enabled.
+
+The identified PC Jungle `Easymode.TPWI` contains one matching manager-header
+candidate in its decoded payload at offset **1595542**. Container SHA-256 is
+`6d89303d098900364bf5e80b236b64bd85976fb947e9e4609d088547f430b39a`;
+1,608,309-byte decoded payload SHA-256 is
+`a3c9a28252c37ad49a8eb78e4a0c5e1d5229d01548fa35801db67015d2589173`.
+The `RSSE` marker is followed by length20 and these interpreted header fields:
+
+| Header member | Fixture value | Mac field correspondence |
+| --- | ---: | --- |
+| Initialized word | 1 | manager `+0` |
+| Pass counter | 6055 | manager `+4` |
+| Next script ID | 16 | manager `+8` |
+| List cardinality | 14 | manager `+12` |
+| Opaque head reference | 80650884 | manager `+16`; subsequent list reconstruction required |
+
+The three independent counts are present in a real save. The economy lane's
+world-prefix tick755 must not be substituted for manager phase6055; this pair
+does not establish the number of earlier drops or excluded callbacks. The
+candidate agrees with the pinned Mac header layout, while its preceding framing,
+serialized script-record boundaries and reference reconstruction remain
+unqualified. It provides asset-structure corroboration, not proof of PC runtime
+cadence or a generally usable save importer. Save inspection is bounded and
+identity-pinned; output contains interpreted metadata only.
+
+```sh
+python3 tools/ppc-analysis/lanes/clock/save_phase_evidence.py /path/to/Data/levels/jungle/Easymode.TPWI
+OPENTPW_PPC_BIN_ROOT=/path/to/mac-feral/bin OPENTPW_PPC_SAVE_PATH=/path/to/Easymode.TPWI python3 -m unittest discover -s tools/ppc-analysis/lanes/clock -p 'test_*.py' -v
+```
+
+Validation for this follow-up: **35/35** clock Python tests with both original
+fixtures enabled, no skips; malformed/truncated synthetic headers; four
+additional native lifecycle hashes; Python compilation and whitespace checks.
+A complete production connection is specifically blocked on save-list framing
+and reconstruction, the lifecycle selector's named meaning, indirect clock
+configuration paths, and target-platform qualification of signed timestamp
+crossings. Those gaps require separate source/caller or runtime evidence; this
+lane introduces no guessed recovery or save migration.
+
+### Cached controller clock and first saved script record
+
+Controller clock accessor `0xa3e08` selects the same callback cache as animation:
+argument zero returns global `+16400` at `0xa3e1c` (scaled); nonzero returns
+`+16408` at `0xa3e14` (unscaled). The coaster tick passes literal zero at
+`0x406bc`, then calls this accessor at `0x406c4`. Its timestamp therefore comes
+from the **scaled callback animation cache**, not a fresh getter read on every
+manager pass. The rides lane owns controller delta/countdown and tick-caller
+qualification; this clock proof supplies their selected timestamp domain.
+
+The lifecycle selector mentioned above is incoming argument **r6**, copied into
+r29 at `0x11ad04` in entry `0x11acfc`. Direct callers pass literal 1 at
+`0x112b0c` / `0x1c2008`, and literal 2 at `0x198910` / `0x1990f0`. The state9
+callback route is one of the literal-1 callers; it therefore skips the reset
+request in the `0x11b3d8` path. These numeric caller facts are now witnessed;
+user-facing names for these load modes are still not established.
+
+The identified PC manager candidate is followed by five `PAD_` words, declared
+script count14, and fixed script-record width244. Native writer `0xb3868`
+constructs the padding marker at `0xb39e4..0xb39ec` and writes width244 at
+`0xb3b84`; its subsequent traversal starts at the list head. The first record
+candidate begins at decoded offset **1595598** and its interpreted fields are:
+ID15, program word index120, header slice budget50, ordinary phase flag0,
+signed speed bias50, and zero WAIT/animation-wait/timer deadlines. The budget
+and speed bias are separate fields even when both happen to equal50.
+The ID15/nextID16 pair corroborates the native assignment path; it does not
+prove all intermediate IDs, subsequent record boundaries or reference fixups.
+
+`save_phase_evidence.py` now validates this bounded first-record span as well
+as the manager header. Synthetic cases distinguish signed PC/bias, unsigned
+deadlines, padding, nonzero record count and fixed width. **38/38** clock tests
+pass with both original-input witnesses enabled, zero skips. No original record
+bytes are emitted or stored. Full save-list reconstruction is the concrete
+remaining save dependency for a live clock/VM adapter; this witness supplies
+metadata and first-record framing, not a production importer.
+
+## Saved-script framing and reference reconstruction
+
+The source-backed graph witness is `saved_script_native.py`; the bounded
+metadata reader is `saved_script_graph.py`. They use the same identified Mac
+application and PC fixture above, retain five complete functional-region hashes,
+and execute no original instructions. The exact native reader entry is
+**`0xb4818`** (earlier `0xb4824` citations were an instruction inside its prologue).
+The producer is `0xb3868`, and global script-ID lookup is `0xb5758`.
+
+### Serialized widths and endpoints
+
+For an initialized manager, the producer writes the manager header20, five
+`PAD_` words, an independently traversed script-record count, and fixed-record
+width244. Each script consists of that fixed record followed by these framed
+regions in order:
+
+| Region | Fixed script field | Framing / source width |
+| --- | ---: | --- |
+| Code words | count `+80`, pointer `+24` | u32 byte length, then count×4 bytes |
+| Label-word region | count `+84`, pointer `+32` | u32 byte length, then count×4 bytes |
+| Variable words | count `+140`, pointer `+28` | u32 byte length, then count×4 bytes |
+| Literal-byte region | byte length `+144`, pointer `+52` | u32 byte length, then that many bytes |
+| Opaque metadata8 | count `+88`, pointer `+36` | u32 byte length, then count×8 bytes |
+| Opaque metadata16 | count `+100`, pointer `+40` | u32 byte length, then count×16 bytes |
+| Opaque metadata32 | count `+124`, pointer `+44` | u32 **record count**, then count×32 bytes |
+| Auxiliary words | count `+76`, pointer `+48` | u32 byte length, then count×4 bytes |
+| Saved name bytes | pointer `+56` | u32 byte length, then that many bytes |
+| Object bindings | list pointer `+176` | `OBJ ` marker, u32 count, u32 width28, then count×28 bytes |
+
+The witness pins producer shifts at `0xb3fd4`, `0xb4064`, `0xb40f4`,
+`0xb41ec`, `0xb4280`, `0xb435c`, and `0xb446c`, paired with consumer shifts
+at `0xb4e24`, `0xb4ed8`, `0xb4f8c`, `0xb50d8`, `0xb5188`,
+`0xb51f0/0xb5244`, and `0xb5310`. Fixed record output is244 bytes at
+`0xb3fb8`; object-binding allocation is28 bytes at `0xb5574`.
+The opaque metadata names express widths only: this does not decode their
+complete variable/type/model semantics or turn them into COS records.
+
+All14 records in the identified PC fixture frame without gaps or guessed
+searching between records. The manager block starts at **1595542** and ends at
+**1606398**, leaving the following payload region untouched. Serialized script
+IDs, in traversal order, are:
+
+`15,14,13,12,11,10,9,8,7,6,4,3,2,1`.
+
+The witness preserves raw signed PC/bias and unsigned deadline words. It emits
+only field metadata and span offsets/lengths; code, strings, variables and other
+opaque payload bytes remain outside Git and are neither emitted nor executed.
+Unaligned file offsets caused by variable byte regions are supported; native
+word I/O does not make every serialized record start four-byte aligned.
+
+### Addresses are discarded; script-ID references survive
+
+The native reader inserts every new script at its current list head at
+`0xb4b1c..0xb4b38`. It captures those freshly built next/previous pointers in
+r20/r21 at `0xb4b48/0xb4b50`, reads the fixed record, then restores the fresh
+pointers over the serialized tokens at `0xb4d80/0xb4d90`. The saved manager
+head token and serialized script next/previous tokens are therefore not host
+addresses to restore. The supported metadata reader checks their serialized
+consistency as **tool policy**, without dereferencing any token; the original
+reader's handling of malformed tokens is not reproduced.
+
+Because the writer traverses head→tail and the reader repeatedly inserts at the
+head, the rebuilt order is the reverse of serialized order. For the fixture:
+
+`1,2,3,4,6,7,8,9,10,11,12,13,14,15`.
+
+IDs are read from fixed script `+8`; loading these records does not renumber
+them through the fresh-script allocator. Manager pass6055 and nextID16 remain
+separate restored words. All fixture phase-override bytes `+184` are0. Given
+a subsequent initialized-manager pass6057, ordinary eligible IDs1/9 would be
+visited in rebuilt order **1 then9**, not serialized order9 then1. This is a
+scheduling consequence of the decoded list/phase rules, not an original run.
+
+Script references are numeric IDs rather than these intrusive list pointers:
+
+| Field | Native producer / consumer proof |
+| --- | --- |
+| `+12` child ID | Loader result stored at `0xb11f8`; lookup at `0xb1208`; cleanup resolves it at `0xb3808` |
+| `+16` parent ID | Parent's `+8` copied to child's `+16` at `0xb120c..0xb1210`; parent-variable lookup at `0xb13ec`; cleanup resolves it at `0xb3824` and clears parent's `+12` at `0xb3828` |
+| `+20` secondary script ID | Loader result stored at `0xb12a0`; cleanup resolves it at `0xb37f0`; its full sound/owner role remains separate |
+
+Global lookup `0xb5758` starts at manager `+16`, follows rebuilt script `+0`,
+and compares each stored `+8` ID against the requested ID at `0xb5790..0xb5798`.
+It does not translate a serialized address. All three reference fields are zero
+in the available fixture, so actual nonzero-edge persistence is not corpus
+qualified. Synthetic graphs cover forward/backward ID references and unresolved
+IDs; the native creation/consumer paths supply the independent field proof.
+
+Object-binding nodes have a separate28-byte list. Their reader likewise
+rebuilds next/previous and overwrites saved tokens at `0xb5594..0xb55ac` /
+`0xb5620..0xb5628`. The available fixture contains three object-binding records.
+This graph witness bounds/skips those opaque records; host object/model/audio
+reference reconstruction is not implemented or inferred from script IDs.
+
+### Stored count and clock words must remain separate
+
+There is an observed counter subtlety. The reader restores the manager header's
+count word `+12` (`0xb4980` byte-reversed store), then increments the same word
+for each inserted script (`0xb4b0c..0xb4b18`, pointer established at `0xb4938`).
+No direct clear of that count was found in the traced reader body. Thus the
+explicit insertion arithmetic projects headerCount14 + recordCount14 to28,
+while the physical rebuilt list has14 nodes. This projection excludes any
+untraced callee mutation; it is not an observed runtime bug or permission to
+normalize the original field. The metadata reader deliberately keeps serialized
+count, physical record count and that projection distinct and accepts a
+mismatch between the first two. Inactive-manager serialization is outside this
+bounded profile; initialized empty-list framing is covered.
+
+WAIT/animation-wait/timer deadlines at `+160/+164/+196` are restored by the
+word byte-swap helper `0xb4764` (calls `0xb4ce0`, `0xb4ce8`, `0xb4d2c`).
+There is no clock-origin subtraction or rebasing in those calls. Actual fixture
+nonzero deadlines include WAIT words114377145/114377133 for IDs9/8, animation
+wait114193871 for ID4, and WAIT114374867 for ID3. Copying such words into a
+fresh per-VM clock starting at0 would change their meaning. A future restore
+must qualify the separate shared-clock state and retain timer comparisons and
+variable-word interpretation; it must not invent a per-script creation epoch.
+
+The production clock-restore dependency remaining after this slice is the
+shared elapsed-clock restore/lifecycle and host object-reference binding.
+Complete script metadata payload interpretation, runtime callee effects,
+ID rollover, exceptional inputs and Windows/Patch2 execution remain unqualified.
+This source witness and explicit-offset reader are outside live game code and
+are not a general save importer.
+
+Reproduction:
+
+```sh
+python3 tools/ppc-analysis/lanes/clock/saved_script_native.py /path/to/mac-feral/bin
+python3 tools/ppc-analysis/lanes/clock/saved_script_graph.py /path/to/Easymode.TPWI
+OPENTPW_PPC_BIN_ROOT=/path/to/mac-feral/bin OPENTPW_PPC_SAVE_PATH=/path/to/Easymode.TPWI python3 -m unittest discover -s tools/ppc-analysis/lanes/clock -p 'test_*.py' -v
+```
+
+Validation: **52/52** clock tests with both original fixtures enabled, zero skips.
+New cases cover nonzero synthetic ID edges, duplicate/null/dangling IDs,
+serialized token cycles and broken previous chains, truncated fixed/blob/object
+spans, coherent oversized declarations, wrong strides/count limits, preserved
+signed/unsigned fields, empty initialized lists, and distinct stored/physical
+counts. Five source-region hashes and explicit producer/consumer operands pass;
+Python compilation and whitespace checks pass. No original payload or raw
+instructions were added to the repository.
+
+## Shared saved epochs and clock-restore lifecycle
+
+`clock_epoch_evidence.py` pins the actual shared-clock writer, reader, getter
+and alignment path on the identified Mac binary, plus ten functional-region
+hashes. It cross-references the same identified PC save. The implemented
+`SharedClockEpochs.cs` is a typed word-arithmetic contract outside production;
+source accumulators and live clock wiring are untouched.
+
+### Capture, wire words and outer offsets
+
+Capture hook `0x11db9c` calls `0x10e9ec` at `0x11dbac`. The save entry reaches
+this hook at `0x11a800`, before state writing. Capture samples the **adjusted**
+scaled getter `0x11a588` at `0x10ea00` and stores its word at clock `+64`.
+It then samples the adjusted unscaled getter `0x11a428` at `0x10ea0c` using
+embedded member `+68`, storing at overall clock `+96` (embedded `+28`). These
+are distinct reads, not an assumption of one simultaneous hardware sample.
+
+Pair writer `0x10e944` calls scaled writer `0x11a494` first (`0x10e960`), then
+unscaled writer `0x11a334` (`0x10e97c`). Each emits one four-byte saved word.
+The corresponding pair reader `0x10e998` calls `0x11a514` then `0x11a3b4`
+(`0x10e9b4/0x10e9d0`), restoring the respective words with byte reversal.
+The source state reader reaches it at `0x11b9f4`; the writer at `0x11cfe8`.
+The surrounding wire marker is `SSEM`, constructed at `0x11cf20..0x11cf28`
+and checked at `0x11b9cc..0x11b9d0`.
+
+Alignment `0x10ea28` calls scaled alignment `0x11a5bc` at `0x10ea3c`, then
+unscaled alignment `0x11a45c` at `0x10ea44`:
+
+| Clock | Saved adjusted word | Base query used for alignment | New outer offset | Subsequent public reading |
+| --- | --- | --- | --- | --- |
+| Scaled/RSE | overall `+64` | `0x10ed54`, excluding outer offset | `+60 = saved-currentBase` at `0x11a5d8..0x11a5dc` | `0x11a588`: currentBase + `+60` at `0x11a5a4` |
+| Unscaled/advisor | embedded `+28` / overall `+96` | `0x117c00`, excluding outer offset | embedded `+24` / overall `+92 = saved-currentBase` at `0x11a478..0x11a47c` | `0x11a428`: currentBase + embedded `+24` at `0x11a444` |
+
+Subtraction and addition use word arithmetic, modulo2^32. The current bases must
+**exclude the outer epoch offsets being replaced**; passing an already adjusted
+public reading as a base would apply the wrong origin. Scaled base `0x10ed54`
+still includes its forced/normal selection: normal reads add transition offset
+`+56` (`0x10ed84..0x10ed88`), and forced reads use `+48`. Forced exit computes
+`+56 = forcedWord-currentScaledPauseAwareWord` at `0x10ece8..0x10ecf4` to keep
+that separate transition continuous. None of these offsets is a park turn or
+a per-VM creation timestamp.
+
+The lower source's double→u32 conversion saturates, but these outer additions
+wrap. A saturated base `0xffffffff` plus outer offset2 returns1. Treating the
+final adjusted clock as unconditionally saturating or monotonic would change
+this arithmetic. Signed scheduler crossing, unsigned WAIT comparisons and
+zero-deadline sentinels remain separate contracts.
+
+### Actual saved words and near deadlines
+
+The PC payload has one `SSEM` marker at **1577444**, followed immediately by
+scaled word **114374804** at1577448 and unscaled word **114876286** at1577452.
+`KOLC` follows at1577456. Its separate writer `0x127ac8` / reader `0x127b64`
+are reached at `0x11d0c8` / `0x11bac0`; they sample the raw `LbTime_GetClock`
+import at `0x127adc` / `0x127bcc`. The fixture's corresponding raw-clock word
+is114938044. That continuity record is not the two adjusted `SSEM` words;
+its broader consumer lifecycle is not inferred by this contract.
+
+`TNAV` follows at1577464, routed to outer cadence writer `0x1c2e00` at
+`0x11d1a4` and reader `0x1c31f4` at `0x11bb88`. Its first three cadence stamps
+and outer phase are **114374806,114374775,114374589,6055**. The first stamp is
+2ms beyond captured scaled time, and the next two are31/217ms behind that first stamp,
+consistent with the independently pinned ceiling step and cadence masks.
+The saved outer phase happens to match manager pass6055 in this fixture;
+they remain separate fields and have different reset paths. These are static
+input correspondences, not wall-time measurements or a PC runtime proof.
+
+Against the saved scaled word, restored script ID3's WAIT deadline114374867 is
+only **63ms** ahead. ID8/9 WAIT deadlines114377133/114377145 are2329/2341ms ahead;
+ID4 animation-wait114193871 is behind. The reported distances are diagnostic
+signed modular differences within this fixture's ordinary range; they do not
+replace WAIT's native unsigned comparison. A fresh per-VM epoch0 would turn
+the first deadline into a delay of roughly31.8hours. Offset alignment instead
+retains the original word meaning, without modifying the deadlines.
+
+### Numeric load selector and requested cadence reset
+
+Incoming load-entry r6 is copied to r29 at `0x11ad04`. Post-load caller
+`0x11b3cc..0x11b3d8` tests literal1: BO12/BI2 at `0x11b3d0` skips hook
+`0x11b4f4` when equal. The known literal1 callers are `0x112b10` and state9
+callback call `0x1c200c`; literal2 callers are `0x198914` / `0x1990f4`.
+These numbers must not be conflated with GameType0/1/2 or world state4.
+The follow-up below proves selector1 returns before the later saved-clock and
+script-state readers. Its generic initial prefix/header callees still require
+separate side-effect qualification; the typed contract models only this hook.
+
+For the hook path, `0x11b4f4` stores reset-request1 at `0x11b548`, then calls
+pair alignment at `0x11b54c`. On the next active callback, `0x1c2274` invokes
+`0x1c3520`: previous scheduled time becomes the **current adjusted** shared
+clock (`0x1c3538..0x1c3540`), and outer substep phase is cleared at `0x1c3570`.
+Thus the saved outer stamps/phase are not blindly continued on that path.
+The independently restored manager pass/allocator remain separate; this reset
+does not normalize script IDs or the observed count-word projection14→28.
+Untraced callee mutations and native partial-load effects remain explicit gaps.
+
+### Typed contract and validation
+
+`SavedClockEpochs` distinguishes the two saved adjusted words;
+`ClockBaseWords` requires the two already-qualified base readings excluding
+outer epoch offsets; `ClockEpochOffsets` contains only the resulting outer
+word offsets. `SharedClockEpochs.Align` and `Read` implement the decoded
+subtraction/addition. `ApplyPostLoadHook` retains prior offsets for selector1
+and aligns them for other selectors, without interpreting their user-facing
+mode names. It does not reset source doubles, scale, pause state, forced-step
+state, counters, IDs, variables or deadlines. Exact8-byte span validation is a
+new evidence-tool guard, not a claim about native transactional I/O: a native
+partial read may already have mutated one saved word.
+
+Validation: **42/42** standalone .NET checks, Release build zero warnings/errors,
+whitespace verification, **54/54** Python clock tests with both original
+fixtures enabled and no skips. Seven new .NET groups cover captured-word
+alignment, the63ms deadline example, offset/read wrap, saturated-base outer
+wrap, selector truth tables interpreted independently from decoded BO/BI,
+skip-path offset retention and malformed pair widths. Python witnesses verify
+ten source hashes, field/call/arithmetic operands and the actual clock words.
+No production clock or original payload bytes changed.
+
+```sh
+python3 tools/ppc-analysis/lanes/clock/clock_epoch_evidence.py /path/to/mac-feral/bin --save /path/to/Easymode.TPWI
+python3 tools/ppc-analysis/lanes/clock/clock_epoch_evidence.py /path/to/mac-feral/bin --contract-rules
+```
+
+Remaining qualification: the broader raw-clock record and selector1 lifecycle,
+source scale/pause/forced state across full restore, native partial-load/callee
+side effects, signed timestamp recovery, host object references and target-PC
+execution. The standalone contract establishes word alignment; it does not
+claim a complete game-clock restore.
+
+## Selector1 bypass: a prefix return, not an unaligned full restore
+
+`selector_lifecycle.py` resolves the earlier provisional gap using raw selector
+register transfers, exact BO/BI/targets, return literals, caller relationships
+and four functional-region hashes. The existing `selector!=1` post-hook
+arithmetic contract is retained; no new mode names or live clock changes are
+introduced.
+
+Incoming entry argument r6 is copied to r29 at `0x11ad04`. After initial header
+processing through `0x11c880` (call `0x11aeb4`), the entry forwards this selector
+as argument r5 at `0x11b3a4` into state reader `0x11b5ac` (`0x11b3ac`). The
+reader copies r5 to r23 at `0x11b5b8`. It performs a generic prefix operation
+through `0x10bc1c` at `0x11b610`, using argument5=0 / argument6=1 / argument7=0
+(`0x11b600/0x11b608/0x11b60c`). Successful continuation requires that initial
+operation to return0; its nonzero failure branch returns before either route.
+
+Then `0x11b658` compares r23 with1. Conditional branch `0x11b660` is **BO4,
+BI2**, so EQ-clear jumps to the full reader body at `0x11b674`. With selector1,
+EQ is set: it falls through, calls `0x11db8c` at `0x11b668` (the callee consists
+of literal return1 and return), sets r3=1 at `0x11b66c`, and jumps directly to
+reader epilogue `0x11c46c` at `0x11b670`. That epilogue retains r3 and returns.
+This is a source-proven early-success path, not a full load of old deadlines
+without epoch alignment.
+
+| Later full-reader consumer | Call site / target | Selector1 consequence after successful prefix |
+| --- | --- | --- |
+| `SSEM` adjusted shared-clock saved words | `0x11b9f4` → `0x10e998` | Not reached; neither scaled `+64` nor unscaled overall `+96` is read by this call |
+| `KOLC` raw-clock continuity record | `0x11bac0` → `0x127b64` | Not reached |
+| `TNAV` outer cadence state | `0x11bb88` → `0x1c31f4` | Not reached |
+| `RSSE` script manager/IDs/deadlines | `0x11bea8` → `0xb4818` | Not reached; the114377xxx fixture deadlines are not consumed here |
+
+The entry also skips both lifecycle hooks for selector1. Comparison
+`0x11b390` and BO12/BI2 branch `0x11b394` skip pre-hook `0x11b478`, called
+at `0x11b39c` otherwise. That pre-hook includes script-manager shutdown
+`0xb2b18` at `0x11b4cc`. Comparison `0x11b3cc` and BO12/BI2 branch `0x11b3d0`
+skip post-hook `0x11b4f4`, called at `0x11b3d8` otherwise. The latter hook
+contains saved-epoch alignment at `0x11b54c` and the reset-request store
+already traced. Thus this selector1 path neither uses those full-state readers
+nor invokes their explicit cleanup/alignment/reset hook chain.
+
+Selector0 has a separate earlier return after header processing:
+`0x11aefc` compares r29 with0; BO4/BI2 at `0x11af00` continues only if unequal.
+Equality falls through to literal success1 at `0x11af14` and jumps to entry
+epilogue `0x11b464` at `0x11af18`. The graph/state reader and both hooks are
+not reached. This further distinguishes an **entry route** from the local
+post-hook predicate: `SharedClockEpochs.AppliesPostLoadAlignment(0)` expresses
+what that particular comparison would do if reached; selector0's entry never
+reaches it on this successful header path.
+
+No user-facing meaning for selectors0/1/2 is inferred. Known literal1 callers
+remain `0x112b10` / state9 call `0x1c200c`, and literal2 callers remain
+`0x198914` / `0x1990f4`. Other selector values allow the later reader body
+only after earlier validation succeeds; the source's literal2 container-header
+checks and all later failure branches still apply. The tool's route projection
+is explicitly conditional on successful initial header/prefix operations.
+
+The adjusted public getters and their base getters do not intrinsically perform
+saved-epoch alignment: `0x10e844` → `0x11a588` adds the scaled outer offset;
+`0x10e864` → `0x11a428` adds the unscaled outer offset; the respective base
+queries are `0x10ed54` / `0x117c00`. Selector1 does not reach their explicit saved
+word reader/alignment calls through this route. It is therefore incorrect to
+force the template's saved deadlines into those getters or reset the live
+clock to0 to compensate. This does **not** prove that all clock/base state is
+unchanged: generic header processing and `0x10bc1c` contain further callees and
+virtual calls whose side effects remain unqualified. Current-time queries may
+also naturally advance during loading.
+
+For non1 routes that reach the state reader, the entry invokes the conditional
+post-hook **before** checking the reader result at `0x11b3dc`. This preserves
+the earlier partial-load/callee-mutation caveat; the bounded typed contract is
+not a claim that the original rolls back failed reads or only aligns complete
+snapshots. The independent serialized count / physical list / explicit14→28
+insertion projection is unaffected.
+
+Validation: **61/61** Python clock tests with original Mac and PC fixtures enabled,
+zero skips; seven new groups cover successful selector0/1/full-body routes,
+register-width limits, independently decoded EQ-set/EQ-clear truth tables,
+malformed LT/CTR lookalikes and truncated instruction input, plus the identified
+native witness. Four region hashes and exact register/call/branch/return
+relationships pass; Python compilation and whitespace checks pass. The existing
+42-case typed epoch/scheduler contract is unchanged by this evidence-only slice.
+
+```sh
+python3 tools/ppc-analysis/lanes/clock/selector_lifecycle.py /path/to/mac-feral/bin
+OPENTPW_PPC_BIN_ROOT=/path/to/mac-feral/bin OPENTPW_PPC_SAVE_PATH=/path/to/Easymode.TPWI python3 -m unittest discover -s tools/ppc-analysis/lanes/clock -p 'test_*.py' -v
+```
+
+Actual remaining restore dependency: integrate only the full-state routes with
+shared saved epochs and raw deadlines; qualify initial generic/header callees,
+partial-load mutations and target-platform execution before claiming complete
+lifecycle behavior. The specific selector1 saved-clock/deadline mismatch is
+closed by its early-return control flow, without speculative enum mapping.
+
+## Calendar epoch reconciliation: funny start versus host session start
+
+The remote search hypothesis in root `docs/reverse/APPROX-TRACE.md:289`
+(root revision34c75be) says the park's funny time starts from host local date at
+calendar construction. That conflates two fields. Independent constructor,
+setter, serializer and conversion operands establish the following distinction;
+`calendar_epoch_evidence.py` reproduces it using six bounded code hashes and
+validated imports. No search-agent verdict is used as the proof.
+
+| Calendar memory field | Fresh constructor source | Conversion/restore role |
+| --- | --- | --- |
+| `+0..+7`, `mFunnyTimeStart` | Fixed civil arguments2000/1/1/00:00:00.000 | Virtual park-date base; serialized/read independently |
+| `+8..+15`, `mSessionStart` | Host local civil time from macdoze GetLocalTime | Separate session timestamp; serialized/read independently; not the base of `0xe4394` |
+| `+28`, `mFunnySecsPerRealSec` | Literal15000 | Configured multiplier, with unsigned64 **division by4** in the turn conversion |
+
+Owner construction selects member `+672` at `0x10452c` and calls constructor
+`0xe3c90` at `0x104530`. The constructor clears the two timestamps, stores
+rate15000 at `0xe3cc0`, and calls initializer **`0xe4348`** at `0xe3cc4`.
+The initializer forwards its calendar pointer unchanged as setter receiver r4
+at `0xe434c`; registers r5..r10 and the stack argument supply
+**2000,1,1,0,0,0,0** at `0xe4358..0xe4378`. The call `0xe437c` resolves full
+CFM glue `0x1c5e2c` to bullfrog `TbTimeStamp::SetTime`. It targets calendar
+`+0`, before host time is sampled.
+
+Only afterward does the constructor sample host time: `0xe3cdc` resolves glue
+`0x1c6dd4` to macdoze `GetLocalTime`. Crucially, **`0xe3cec` sets r4 to
+calendar+8**, then `0xe3cf4..0xe3d08` copy host year/month/day/hour/minute/second
+into setter arguments, with host milliseconds read at `0xe3ce4` and passed on
+the stack at `0xe3cf0`. The setter call `0xe3d0c` therefore writes the separate
+session timestamp, not the funny start.
+
+The hidden output/status pointer must not be mistaken for the timestamp
+receiver. Bullfrog setter transition vector resolves to `0x1bb50`, TOC0.
+It copies input r4 to r31 at `0x1bb58`; on successful OS conversion it writes
+the resulting timestamp to **receiver+4 / receiver+0** at `0x1bbcc/0x1bbd0`.
+Input r3 is instead the status-output address, receiving0 or−1 at
+`0x1bbd4/0x1bbe0`. Thus the two distinct r4 destinations prove actual field
+writes, not discarded temporary return values. Constructor conversion-failure
+handling and nondefault OS calendars remain separate qualification.
+
+Macdoze identity is
+`ba11331a70bce77140ae6e7fe73145fe4e13cce5f042707a494cb77654b32f0d`.
+Its GetLocalTime vector maps to `0x40f0`, TOC0. Calls `0x410c` / `0x4124`
+resolve full InterfaceLib glues to **GetDateTime** / **LongSecondsToDate**.
+The wrapper copies the resulting date fields into SYSTEMTIME and writes
+milliseconds0 at `0x4164`. That host civil path supplies `mSessionStart`.
+It does not supply the virtual-date epoch at `+0`.
+
+### Date conversion and saved-start override
+
+Conversion `0xe4394` reads configured multiplier `+28` at `0xe43d8` and the
+world counter `+0x1da70c` at `0xe43dc` after world getter `0x10a9a4`. It forms
+an unsigned64 product, divides by4 through `0x1c4100` at `0xe4404`, and scales
+seconds to timestamp units by10000000. At **`0xe4430` r4 is calendar+0** for
+timestamp-add glue `0x1c5c34` / `0xe443c`. The session field+8 is not used by
+this conversion. For default rate, each world turn contributes3750 virtual
+seconds, not15000; neither value establishes a wall-clock frame rate.
+
+Serializer `0xe3d30` ties the field operands to relocated labels at TOC
+`data:0x3350`: `mFunnyTimeStart`, `mSessionStart`, month/day caches, and rate.
+Writer operands select `+0` at `0xe3d74` and `+8` at `0xe3d98`; reader operands
+select `+0` at `0xe3e3c` and `+8` at `0xe3e60`. Owner serializer `0xd675c`
+passes its member+672. A loaded saved funny epoch can therefore replace the
+fresh constructor value: a restore must retain that saved field, rather than
+force2000 or replace it with today's host time. The observed direct initializer
+call is from the constructor; indirect or additional timestamp mutations are
+not globally ruled out.
+
+The known PC calendar candidate at decoded offset6719 independently stores:
+funny epoch **125911584000000000**, session epoch **125850128932900000**,
+month/day cache1/2, rate15000. Under the explicitly stated default Gregorian
+FILETIME interpretation, those timestamps represent **2000-01-01 00:00:00**
+and **1999-10-21 20:54:53.290** respectively. Their inequality corroborates
+the distinct fields; equality is not forbidden in other saves. The candidate
+has28 serialized bytes (two64-bit timestamps, two signed32-bit caches, one
+unsigned32-bit rate); this differs from in-memory offsets because `+24` is
+not included in that serialized sequence. The Mac host wrapper's zero
+milliseconds also means the PC session fraction must not be used to claim
+identical platform capture behavior.
+
+The witness exposes only epoch/seconds conversion terms, not an OS-independent
+civil-date implementation or unlimited timestamp-overflow behavior. World
+turn755 and rate15000 give **2831250** added virtual seconds. The calendar
+candidate's complete preceding player framing remains the save lane's separate
+proof obligation; this is not a generally usable calendar importer.
+
+### Distinct clock domains and verdict
+
+RSE YEAR/MONTH/DAY/HOUR remain the separately proved host `time/localtime` chain
+(`0xb2144..0xb2250`, C runtime GetDateTime), not this virtual-date conversion.
+The shared SSEM millisecond epoch and saved VM deadlines likewise are not either
+of these calendar timestamps. Host session start, host civil RSE fields,
+virtual park-date start and shared elapsed-clock words are different fields
+with different consumers.
+
+The hypothesis's **host-local origin for funny time is refuted** for the normal
+constructor path by the destination operands. Its broader observation that
+month boundaries use the timestamp/OS civil conversion still needs the existing
+OS-environment qualification; refuting the origin does not prove a fixed30-day
+month. The older APPROX-TRACE row also omits divisor4 and relies on a direct-call
+"online-only" increment claim already corrected by scheduler evidence. Those
+source claims must be reconciled separately from search verdict labels.
+
+Validation: **69/69** clock Python tests with original PEF and PC fixtures enabled,
+zero skips. Eight new groups cover separate timestamp fields, session changes
+not affecting conversion input, retained custom saved epoch, divide-by4 and
+zero-rate arithmetic terms, invalid register/timestamp domains, truncated and
+unaligned candidate spans, and both original-input witnesses. Six source hashes,
+full import-glue validation, constructor/caller/serializer operands and actual
+saved fields pass. Python compilation and whitespace checks pass. No production
+clock, calendar, register, source assets or raw instructions changed.
+
+```sh
+python3 tools/ppc-analysis/lanes/clock/calendar_epoch_evidence.py /path/to/mac-feral/bin --save /path/to/Easymode.TPWI
+```
+
+Remaining: native OS conversion failure/nondefault calendar behavior, any
+untraced epoch mutation paths, complete player/save framing and target-PC
+execution. These gaps do not turn the session timestamp into the funny epoch.

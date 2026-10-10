@@ -10,23 +10,50 @@ supports them (see "Mac/PC transfer" below).
 
 ## Reproduce
 
+Placeholders: `$FERAL_BIN` is the directory holding the extracted Feral `.data`
+files (with `libraries/` below it), `$FERAL_HFS` the Mac disc image, `$TPW_DATA`
+and `$PATCH2_DATA` the `Data` directories of a retail and a Patch 2 install, and
+`$RIDES_CHECKOUT` a checkout of the rides lane, `$INTEGRATION_CHECKOUT` the
+integration checkout under review, `$TPI_DATA` the `Data` directory of the
+supplied TPI retail install, and `$ROOT_CHECKOUT` the root repository.
+
 ```sh
 python3 -I -m unittest discover -s tools/ppc-analysis/lanes/review -p 'test_*.py' -v
-python3 -I tools/ppc-analysis/lanes/review/review_evidence.py /Users/sander/server/game-assets/mac-feral/bin \
-  --pc-save /Users/sander/server/game-assets/theme-park-world/Data/levels/jungle/Easymode.TPWI
-python3 -I tools/ppc-analysis/lanes/review/reloc_audit.py /Users/sander/server/game-assets/mac-feral/bin/*.data \
-  /Users/sander/server/game-assets/mac-feral/bin/libraries/*.data
-python3 -I tools/ppc-analysis/lanes/review/round2_evidence.py /Users/sander/server/game-assets/mac-feral/bin \
-  --mac-hfs /Users/sander/server/game-assets/mac-feral/hfs.img \
-  --pc-speech /Users/sander/server/game-assets/theme-park-world/Data/global/Speech
-python3 -I tools/ppc-analysis/lanes/review/round3_evidence.py /Users/sander/server/game-assets/mac-feral/bin
-python3 -I tools/ppc-analysis/lanes/review/round4_evidence.py /Users/sander/server/game-assets/mac-feral/bin
-python3 -I tools/ppc-analysis/lanes/review/round5_evidence.py /Users/sander/server/game-assets/mac-feral/bin \
-  --pc-data /Users/sander/server/game-assets/theme-park-world/Data \
-  --pc-data /Users/sander/server/game-assets/theme-park-world-patch2/Data \
-  --rides-root /Users/sander/server/opentpw-worktrees/ppc-rides
-OPENTPW_PPC_BIN_ROOT=/Users/sander/server/game-assets/mac-feral/bin \
+python3 -I tools/ppc-analysis/lanes/review/review_evidence.py $FERAL_BIN \
+  --pc-save $TPW_DATA/levels/jungle/Easymode.TPWI
+python3 -I tools/ppc-analysis/lanes/review/reloc_audit.py $FERAL_BIN/*.data \
+  $FERAL_BIN/libraries/*.data
+python3 -I tools/ppc-analysis/lanes/review/round2_evidence.py $FERAL_BIN \
+  --mac-hfs $FERAL_HFS \
+  --pc-speech $TPW_DATA/global/Speech
+python3 -I tools/ppc-analysis/lanes/review/round3_evidence.py $FERAL_BIN
+python3 -I tools/ppc-analysis/lanes/review/round4_evidence.py $FERAL_BIN
+python3 -I tools/ppc-analysis/lanes/review/round5_evidence.py $FERAL_BIN \
+  --pc-data $TPW_DATA \
+  --pc-data $PATCH2_DATA \
+  --rides-root $RIDES_CHECKOUT
+python3 -I tools/ppc-analysis/lanes/review/round6_evidence.py \
+  --bin-root $FERAL_BIN \
+  --pc-data $TPW_DATA \
+  --pc-data $PATCH2_DATA
+python3 -I tools/ppc-analysis/lanes/review/round7_evidence.py \
+  --bin-root $FERAL_BIN \
+  --repo $INTEGRATION_CHECKOUT
+python3 -I tools/ppc-analysis/lanes/review/round9_evidence.py \
+  --bin-root $FERAL_BIN \
+  --pc-save $TPW_DATA/levels/jungle/Easymode.TPWI \
+  --tpi-save $TPI_DATA/PreBuilt/prebuilt.TPWS \
+  --git $ROOT_CHECKOUT
+python3 -I tools/ppc-analysis/lanes/review/round10_evidence.py \
+  --bin-root $FERAL_BIN \
+  --pc-save $TPW_DATA/levels/jungle/Easymode.TPWI
+OPENTPW_PPC_BIN_ROOT=$FERAL_BIN \
+OPENTPW_PC_DATA=$TPW_DATA \
   python3 -I -m unittest discover -s tools/ppc-analysis/lanes/review -p 'test_*.py'
+# Every ppc-analysis Python suite, one lane per process (section 44):
+python3 -I -B tools/ppc-analysis/run_evidence_checks.py --mac-bin $FERAL_BIN \
+  [--pc-data $TPW_DATA] [--pc-fixture $TPW_DATA/levels/jungle/Easymode.TPWI] \
+  [--require-fixtures] [--dotnet $DOTNET8/dotnet]
 ```
 
 `round2_evidence.py` (section 4 onwards) uses the same pinned `Binary` and
@@ -36,9 +63,11 @@ additionally pins `engine_shared.data` and `ltms_shared.data`; `round4_evidence.
 (section 18 onwards) reuses those pins, and `round5_evidence.py` (section 24
 onwards) adds `sound_shared.data`. Its optional `--pc-data` check reads LoanInfo
 numbers from the install at run time, and `--rides-root` compares a rides
-checkout's dispatch table with that lane's contract JSON. With the binary
-variable set, all 84 lane tests run, with no skips. Without it, 80 pass and the
-four original-file witnesses skip.
+checkout's dispatch table with that lane's contract JSON. `round6_evidence.py`
+(section 32 onwards) reuses the `SimThemePark.data` pin for the rides selector
+routines and reads SDT entry headers from each `--pc-data` install, printing
+counts only. With both variables set, all 95 lane tests run, with no skips.
+Without them, 89 pass and the six original-file witnesses skip.
 
 `review_evidence.py` exits non-zero if any identity, relocation, glue stub,
 operand or constant differs from the reviewed value. Unlike
@@ -1152,3 +1181,2948 @@ Merge order from current root:
 
 Scenarios' uncommitted `GameFlow.cs`/`ParkEconomy.cs` edits, formats'
 uncommitted repair and TPI's `pal8.py` are tentative and outside this verdict.
+
+## 32. Root `main` `9e40f52`: combined tree verified
+
+`9e40f52` merges `7b6b46e` into `75a3380`. The second parent adds only
+`lanes/clock/review-native-contracts.md`. `75a3380` already carried the
+temporary-history repair inside the guest merge, so `main`'s
+`lanes/guests/rules`, `GUESTS.md` and `PPC-guests.md` are identical to
+`7b6b46e` (`git diff --quiet 7b6b46e 9e40f52 -- …` is clean). The two guest
+lineages (`00a6393` and its rebased copy `be42615`) write the same paths, so no
+duplicated helper exists. Every C# type name defined twice is either a partial
+class or lives in a separate assembly (`CompatibilityFlags` in Online and in
+Compat, unchanged since `6a69e3f`). The only cross-tree compilation is the
+advisor's `Layer1Corpus.csproj`, which compiles production `Mp2Decoder*.cs` and
+`Layer1TestFrames.cs` by link. That is intended, and the project builds with
+zero warnings. No lane helper is referenced from `source/`.
+
+Run on a `git archive` export of `9e40f52`:
+
+| Check | Result |
+| --- | --- |
+| `dotnet test source/OpenTPW.Tests -c Release` with `OPENTPW_GAME_PATH`, `OPENTPW_LANGUAGE_DATA`, `OPENTPW_BONUS_DATA` | 864 passed, 0 failed, 12 skipped (all opt-in native-shader tests), 22.5 min |
+| Scheduler / guests / advisor / rides animation / UI layout helpers (`dotnet run -c Release`) | 35 / 23 / 52 / 11 / 19, all pass |
+| Economy `OriginalLoanRules.Tests.csproj` (`dotnet run`; `dotnet test` discovers nothing) | 15/15 groups, 5,437 assertions |
+| Python: `tools/ppc-analysis` and each lane (`OPENTPW_PPC_BIN_ROOT` set) | 222 run, 11 skipped (lane-specific env vars), 0 failed |
+| `Layer1Corpus`, rides `CorpusWitness`, `PatchAnalysis` builds | 0 errors |
+
+## 33. Rides: `56a9d26` blocked (HIGH); `b7df1a0` accepted with limits
+
+**`56a9d26`, HIGH (both items decoded by me and pinned in `round6_evidence.py`).**
+`PassengerRing.QueryRoom` and `PlanAllowance` take a minimum where the native
+code takes a maximum.
+
+- **Room query (`0x3dd14`):** diff = config `+184` − (`+188` + `+192`), using
+  32-bit wrapping arithmetic. `cmpw global,diff` / `bf lt` keeps the global's
+  address unless global < diff. The result is therefore `max(global, diff)`.
+  With global 100, configured 2 and 3 queued, native returns 100 and the helper
+  returns −1.
+- **Capacity plan (`0x3df24`):** the first select is the same max over
+  (global, request). Two min selects follow, against definition `+792` and
+  against the train limit. `0x3ea74` is called only when the result differs from
+  `+240`. With (10, 100, 100, 100), native gives 100 and the helper gives 10. The
+  lane's 3/3/4 split test passes only because of that min.
+
+Medium findings:
+
+- The builder at `0x3eb1c` substitutes train definition `+8` when the total is
+  0, whereas the helper returns zeros.
+- `main`'s `PPC-rides.md` already states both min readings, at the `0x3dd14`
+  paragraph and in the COAST6 sentence. It needs correcting.
+
+Production is unaffected, because COAST still goes through the
+unimplemented-effects path.
+
+Confirmed by the delegated decode: the BUMP guard (`0x24364`) is a signed,
+strict less-than against `+100` and against 64. Ring append uses an unsigned
+compare and wraps the cursor with an unsigned divide. Low findings not modelled:
+the fallback ring at `+208`, and the car-eligibility counting rule. The helper
+builds, 11/11 checks pass, the JSON regenerates identically, and merge-tree
+with `main` is clean.
+
+**`b7df1a0` (already merged): accepted with limits.** It touches only the
+standalone rides lane and its doc. VM and animator behaviour is unchanged, so
+"WAITANIM unsupported" describes the helper, not production. The four trigger
+sites take a signed `max(ret−300, 300)`. WAITANIM (`0xafc78`) compares unsigned
+after the division, so marking it unsupported is right. Low: opcode 16's
+accumulator and variable writes are not modelled. Rides/VM tests on `main`:
+113 passed, 0 skipped with `OPENTPW_GAME_PATH`.
+
+## 34. Scenarios `b093ee3` accepted; `bac3428` accepted with one medium gap
+
+Natively confirmed on `SimThemePark.data`:
+
+- Mode values: lazy constructor `0x12bb64` → `SetGameType` `0x12bbf4`, which
+  maps startup flags to 2/1/0.
+- Feature gates:
+  - tickets: `0xd2f1c` runs only when GameType == 0, and its caller only when
+    `tick % 100 == 0`;
+  - challenges: `0xcfef4`;
+  - bank panel: `0x154aa0`;
+  - research panel text 468: `0x161910`;
+  - upgrades: `0x165a0c`;
+  - `Easy_` balance layer: `0x10474c`.
+- Keys = `mExtraKeys` + earned ÷ 3 (`0x128b60`). The new-player award gives
+  response 394 for GameType 2, and otherwise increments `mExtraKeys` and gives
+  response 393 (`0x128f3c`).
+- The Easymode copy is the only code reference to "easymode" (`0x137600`), and
+  it is gated on the easy flag.
+
+Answers to the open concerns:
+
+- **(a) Not inferred.** The mode comes from the explicit front-end button
+  (`FrontEndMenu` → `GameFlow.StartPark` → `ParkStart.FromFrontEnd`). File
+  presence decides only the `Easy_` layer and the seed, matching the gates
+  above.
+- **The original `.TPWI` has no mode field.** GameType is not serialized; only
+  `mEasyModeUser` is saved. OpenTPW's own save stores `Mode`.
+- **(b) Saved researchers.** Researchers restored from an OpenTPW save research
+  in both modes.
+- **(c) Not covered.** The Instant Action start has unit and asset tests only;
+  there is no native smoke run.
+
+Findings:
+
+- **MEDIUM:** in production, Instant Action research never progresses. The
+  seed's researcher is not imported, the staffless rate (ECON-019) is no longer
+  called, and nothing can hire staff (`Hire` is called only from the sandbox
+  smoke test). A delegated scratch test ran 365 days with zero research
+  progress. Natively, the seeded researcher (identified by economy `6305d32`,
+  section 35) would research. Register this as "seed staff not imported" or
+  block it in the UI.
+- **LOW–MEDIUM:** `FIDELITY-REGISTER.md`, `EconomyApproximations.cs` and the
+  runtime log still describe ECON-019 as active, though the code path is now
+  dead.
+- **LOW:** the start record goes stale after loading a save in a different
+  mode. Only the sandbox can reach this.
+- **LOW:** `FIDELITY-REGISTER.md` conflicts with `main`. The conflict is only
+  regenerated line numbers; `fidelity_register.py --write` and then `--check`
+  pass.
+
+Merged tree with the register regenerated: 827 passed, 0 failed, 54 skipped.
+Lane Python: 19 OK. Contract: 23/23. `scenario_evidence.py`: 874 checks pass.
+
+## 35. Economy `974f546`, `1c53e14`, `6305d32`: accepted (standalone)
+
+**`974f546`.** All 11 cap compares in `0xc7b24` are signed `cmpwi` against the
+literals 1000/20/10/10/10/10/4/4/4/4/4. Visitor arithmetic is cap × 20, then a
+signed truncating ÷ 1000; ride arithmetic is × 3, then a truncating ÷ 2. The
+skill chain `0xf41dc` runs in this order:
+
+1. `fdiv` (double) for the percentage ÷ 100;
+2. single-precision grade;
+3. double add, then `frsp`;
+4. `fmuls` × 20, with no fused multiply-add;
+5. `0x1c3fbc`: `fctiwz` with unsigned saturation.
+
+Inputs that separate the readings, all checked against the helper:
+
+| Input | Native and helper | Competing reading |
+| --- | --- | --- |
+| skill(−1, 115) | 3 | 2 (double port) |
+| skill(16777217, 0) | 335544320 | 335544340 (double) |
+| skill(−1, 105) | 1 | 0 (all-single) |
+| rides(−3) | −4 | −5 (floor) |
+| visitors(−49) | 0 | −1 (floor) |
+
+**`1c53e14`.** The save is `jungle/Easymode.TPWI`; Patch 2's copy is
+identical. The witness checks the world prefix at 1179, bank 8 and tick 755.
+Tick 755 maps to 2000-02-02, which agrees with the saved month and day caches.
+Limit: bank offset 1411362 is pinned rather than parsed.
+
+**`6305d32`.** This is a real next-ID chain walk (42 → … → 30), not a pattern
+match. The researcher's ID agrees with the world FirstResearcher field. The walk
+stays aligned past the researcher, and the header pattern occurs only once.
+Native `0xf2ca0`/`0xf2e60` store `fctiwz`, then the low byte, then f32. Only the
+name's SHA is committed. Limit: the start offset 1,385,521 comes from the formats
+lane's map and was not re-derived. These commits claim no production import.
+
+Low: `evidence.py` needs its sibling `schema` module on `sys.path` and fails
+under `python3 -I`; it passes with `-E -s`. Python: 16 OK at `6305d32`. Loan
+helper at `1c53e14`: 25/25 groups, 11,183 assertions. Merge-tree with `main` is
+clean, touching lane paths only.
+
+## 36. Advisor `2b8e4bf` (`MP2File` format metadata): accepted
+
+`MP2File` now reports the rate and channels of the first complete frame instead
+of a fixed 22050. `round6_evidence.py --pc-data` checks this with an MPEG header
+reader written from ISO 11172-3/13818-3, independent of `Mp2Decoder`:
+
+- PC and Patch 2 have identical banks: 47 banks, 3,739 entries.
+- Every entry has a complete supported first frame; the fallback is reached 0
+  times.
+- Exactly 5 entries are Layer I 44.1 kHz mono, and the fixed 22050 was wrong
+  for exactly those 5.
+
+**Low:** when the frame is invalid, `SampleRate` falls back to the legacy reader's
+int16 at entry `+24`, which reads 44100 as −21436. Prefer 0 ("unknown").
+
+Merge-tree with `main` is clean. On the merged tree, the
+`MP2FileMetadata|Layer1Decoder|Mp2Decoder|LipSyncTimeline` tests give 66
+passed, 0 skipped, and `Layer1Corpus` builds with `-warnaserror`. The advisor's
+uncommitted `audio-events/` work is not reviewed.
+
+## 37. UI `68be372` / `0c5739b` and clock `7f8ef64`: accepted with limits
+
+**UI `68be372`.**
+
+- PC has 84 `.sgn` members in 81 WADs. Each is a 17-byte header, then two
+  font+effect pairs, then 20-byte paint records, then exactly two 16×128×4
+  bitmaps. Trailing bytes are zero.
+- 23 version-101 files add a 256×128 wavelet.
+- Mac `lobby.wad` is byte-identical to PC, so the Mac lobby check adds nothing.
+  A scan of every WAD in `hfs.img` found 94 Mac signs with the same layout.
+- The reader `0xabac0` and the relief function's base/diffuse/specular
+  coefficients are confirmed.
+- The coordinator's "1717 / 39244" is not a count. The nearest figures are file
+  sizes: 17,337 bytes for 60 signs, and 39,842 for the largest.
+- Low: the parser's minimum size rose from 885 to 889 bytes. No shipped file is
+  affected.
+
+**UI `0c5739b`.**
+
+- `alphablt`/`colourblt` compute `d + ((a·(s−d)) >> 8)` with signed `srawi`,
+  and alpha is max(src, dst).
+- Mode 1 byte-reverses through `swizzle_for_gimex`. Mode 2 packs nibbles R:G:B:A
+  as a big-endian `sth`. Destination rows are reversed.
+- With zero iterations the Gaussian loop never runs, so the binary ink passes
+  through unchanged.
+- The `descimate` step is a signed `divw`.
+- The reference matches all of these.
+
+Remaining UI items, all LOW:
+
+- Duplicate root names are still detected at the first draw, not at load.
+- `test_phase2`/`test_witness` raise `KeyError` when only `UI_EVIDENCE_BIN_ROOT`
+  is set.
+
+UI Python with all `UI_EVIDENCE_*` set: 43 OK, 0 skipped. The round-5
+shadow-name qualification is already in `main`, through `ae788a3`.
+
+**Clock `7f8ef64`.**
+
+- The RSE handlers at `0xb2144`, `0xb2194`, `0xb21e8` and `0xb2238` call
+  `time` and then `localtime` through complete glue stubs. The C runtime backs
+  `time` with `InterfaceLib:GetDateTime` plus 126,144,000. So these handlers
+  read host civil time, not the park calendar.
+- World state 4 increments the world counter, skips the first object loop and
+  still reaches `0xd67f0` → `0xe3f0c`.
+- Low: the commit message says state 4 skips "thing iteration", but a second
+  list loop (`0x105470`–`0x105618`) still runs. The doc's narrower wording is
+  correct.
+- The `SchedulerRules.cs` change adds comments only. 35/35 checks pass, and 30
+  Python tests pass with no skips.
+
+## 38. TPI `11203fe`: accepted with limits
+
+`18b09c5` replaces the 2.7 MB `full-evidence.json` with a 95 KB compact audit
+that pins the full report's size and SHA. `11203fe` commits PAL8:
+
+- index plane plus raw palette records for formats 0x7b/0xfb;
+- the same 7,283 occurrences and 5,568 unique files in an independent scan;
+- 60 sampled images agree with an independent RefPack decode.
+
+The JSON holds hashes, counts and sizes only, and exports refuse to write into a
+git repository.
+
+- **MEDIUM:** local `main` merged `18b09c5` (not `11203fe`) in `ee373cd`, so
+  `7f2a6b2`'s 2,745,817-byte blob is now in `main`'s unpushed history. It
+  contains metadata only, so this is a size decision, not a content one.
+  Rewriting is possible only before the push.
+- **LOW–MEDIUM:** the pinned `Visitors.cs`/`Math.cs` hashes are stale against
+  `main`, but nothing checks them. Regeneration shows 0 opcode-status
+  differences.
+
+24 Python tests OK; `--self-test` 14/14; merge-tree with `main` is clean. No
+engine-equivalence claim is made.
+
+## 39. Formats `dbcb859` + `6382736`: HIGH resolved; accepted with limits
+
+**Allocation (round-5 HIGH): resolved.** At `6382736`, every array in
+`ModelAnimation.Decode` and `ModelVertexAnimation.Decode` whose size comes from
+the file is checked before it is allocated. Each check covers offset ≥ `0xB8`,
+offset ≤ trailer, and 64-bit length ≤ trailer − offset, and each charges the
+4×payload budget. The trailer is pinned to `length − 72`, and members are capped
+at 16 MiB. A delegated scratch test set every counted table to 65535 and used
+wrapping pointers `0xFFFFFFF0`/`0xFFFFFFFF` and a vertex block running into the
+trailer. All 14 hostile inputs threw `InvalidDataException` after allocating
+about 20 KB. The corpus still parses: 1,735 paired blocks, 1,278 clips and
+6,010,956 table bytes, on both baseline and Patch 2.
+
+Low: the budget counts table bytes, not managed objects. Records sharing one
+rotation key with ease 32767 allocate about 22× the file size before rejection,
+which extrapolates to about 370 MB for a 16 MiB member. That is bounded and
+linear. A single slab array for the curves would remove it.
+
+**Loop replay (`6382736`): confirmed by independent decode.**
+
+- `0xa7960` passes r4 to `0xa7190` as r27. The wrap is `fcmpo`/`bf gt`, so it
+  wraps only when AnimFrame > total, and only for deferred clip ≠ 12 with object
+  `+4 & 0x18 == 0`. With channel bit 0x1 set, it calls `0xa67d8` with the same
+  clip and flags `(r27 ? 0 : 8) | 1`.
+- `0xa67d8` carries AnimFrame − total (`fsubs`) and binds through `0xa5894` only
+  when `flags & 0xC == 0`. Replaying the same clip copies nothing back
+  (`andc` = 0).
+- The object-list update `0x4d354` calls with (r4 = 0, flags 8). Its samples
+  then depend on object flag `0x00400000`.
+- The copy-back gate matches bit for bit: (header +48 & 0x4) ∨ (option bit 0
+  clear ∧ ¬(obj & 0x8 == 0 ∧ obj & 0x00100000)).
+- Relative models rebind with clip 0. `0xa772c` then recomputes face normals and
+  clears `0x00010000`.
+
+**Exact end:** native code holds the last key at time == length, whereas the C#
+`tick % duration` samples tick 0. This is documented as not modelled, not
+claimed.
+
+Open, all LOW:
+
+- There is no register entry or `[APPROX:]` tag for the copy-back choice or the
+  exact-end wrap. The lane hands this to the root.
+- Doc nits:
+  - copy-back moves six bounds words (+120..+140), not four;
+  - the `0x10000` copy is `(n+3)/4 × 32` bytes;
+  - the bind also clears node bit 0x10 (the toggle bit) when object flag 0x8 is
+    set.
+- Closed: the round-5 "more than one mesh per node" case cannot occur, because
+  mesh *i* is node *i*.
+
+Runs:
+
+- Full suite at `6382736`: 769 passed, 0 failed, 55 skipped.
+- Merged with `ee373cd`: 842 passed, 0 failed, 55 skipped.
+- MD2 subset: 77/0/2 on both corpora.
+- Lane Python: 26 OK. `format_witness.py` and `corpus_check.py`: exit 0.
+- Merge-tree is clean.
+
+The lane's uncommitted `ObjectAnimator.cs` and test edits are not reviewed.
+
+## 40. Newer heads seen during this round (not reviewed)
+
+These appeared while round 6 was running: rides `f5c77fe`, clock `f95c694` and
+`d66857e`, advisor `be46ebe`, scenarios merge `0f5492a` (plus 15 uncommitted
+paths), formats' uncommitted animator edits, and TPI `11203fe` (PAL8, which is
+not in `main`). Root `main` also advanced to `f468f03`, which merges TPI
+`18b09c5`; see section 41.
+
+## 41. Root `main` `f468f03` and the diverged `origin/main` (second push)
+
+`f468f03` (`9e40f52` → TPI `18b09c5` → progress note) changes no `source/`
+files. TPI tests (15) and `fidelity_register.py --check` (141 unresolved) pass
+on an export.
+
+**Local `main` and `origin/main` (`778ea5d`) have diverged: 57 commits only on
+local `main`, 53 only on `origin/main`.** `merge-tree` reports conflicts in
+`README.md`, `FIDELITY-REGISTER.md`, `LIPS.md`, `PROGRESS.md`, `MP2File.cs` and
+`Mp2Decoder.cs`. Upstream pins .NET 10 (`global.json` 10.0.401). Only SDK 8 is
+installed here, so **the combined tree has not been built or tested**; nothing
+below is a combined-tree pass. The delegated net8 probes used local `main` with
+either side's decoder.
+
+| Risk | Severity | What a correct resolution keeps |
+| --- | --- | --- |
+| Two Layer I decoders (upstream `f080218` in `Mp2Decoder.cs`, local `58538df` in `Mp2Decoder.Layer1.cs`) | HIGH | Local hunks. Delete upstream `DecodeLayerOneFrame`/`Requantize`/`Mpeg1LayerOneBitrates`; keep upstream tests. Naive resolutions fail to compile (duplicate or missing members), so this is loud rather than a silent alias. Semantics differ: upstream rounds the requantizer twice in float (local folds once in double, matching the 882 Mac factors) and ignores emphasis. Two local Layer I tests fail against the upstream decoder. |
+| Two game-mode models (upstream `3286a6c` `ParkGameMode?` + `Easy_<object>.sam` overlay; scenarios `bac3428` `ParkStart`/`ParkStartKind`) | HIGH when scenarios lands | One model (`ParkStart`), feeding upstream's catalog/balance `easy` flag from game type 2, not from layer presence. Research policy must be chosen once: upstream keeps automatic Instant Action research, while scenarios is staff-only (section 34 medium). Scenarios + upstream conflicts in 13 files. |
+| `ObjectAnimator.TicksPerSecond` became an instance property upstream (`47c1554`); formats `6382736` tests use it statically | MED (inferred CS0120) | Upstream instance property; update the formats tests. |
+| SDT header widths (upstream `28864fa`: UInt16 rate, byte bits/type, `RawSampleField`) vs advisor `2b8e4bf`/`be46ebe` | MED | Upstream constructor body, plus the advisor's `Channels` and `TryReadFrameFormat`. With `28864fa`, the advisor's container fallback (section 36 low) becomes correct. Stale text: `MP2File` doc comment, `PPC-advisor.md` "hardcoded at 22,050". |
+| net8 lane tools under the .NET 10 pin | MED (inferred) | `CorpusWitness.csproj` and `TpiCompare.csproj` reference `OpenTPW.Files` and need retargeting (NU1201). Other lane tools still need a net8 runtime to run. None are in the solution, so CI will not notice. |
+| Upstream policies: English-only repo files (`2d3ce02`), no home paths or `.omx` (`b612f0c`) | MED | Translate the Dutch `PROGRESS.md` section added in `f468f03`. Replace home-directory paths in `PPC-advisor/economy/guests/rides.md`, `TPI-COMPARISON.md`, `tools/tpi-compare/README.md` and `full-evidence.json` (this doc is fixed in this round). The `.omx` files drop out cleanly. |
+| Fidelity register | LOW | Resolve sources first, then `--write`. That gives 135 unresolved with no ID collisions. Upstream retired ECON-007/032, RIDES-020/027/029 and UI-033, and unmerged lanes still carry some of those tags. |
+| CI Python discovery | LOW | `unittest discover -s tools/ppc-analysis` finds none of the 17 lane test files (no `__init__.py`). Run each lane explicitly. |
+
+## 42. Round-6 classification and integration order
+
+| Item | Status | Severity / owner |
+| --- | --- | --- |
+| Root `9e40f52` / `f468f03` combined local tree | Verified (864/0/12 full suite; helpers; Python) | — |
+| Local `main` vs `origin/main` | **Hold the push** until a real merge is resolved and built on .NET 10 | HIGH: Layer I duplicate / root |
+| Formats `dbcb859` + `6382736` | Accepted with limits; HIGH resolved | Low: object amplification, register entry, doc nits / formats; MED test fix after upstream merge |
+| Rides `56a9d26` | **Blocked**: QueryRoom and PlanAllowance take a min where native takes a max | HIGH / rides; MED: `PPC-rides.md` on `main` states min |
+| Rides `b7df1a0` (in `main`) | Accepted with limits (helper only) | Low |
+| Scenarios `b093ee3` | Accepted | — |
+| Scenarios `bac3428` | Accepted with limits | MED: Instant Action research stalls / scenarios; low–med: stale ECON-019; HIGH merge interaction with upstream `3286a6c` |
+| Economy `974f546`, `1c53e14`, `6305d32` | Accepted (standalone) | Low: `-I` import, pinned offsets |
+| Advisor `2b8e4bf` | Accepted | Low: fallback value; resolve with upstream `28864fa` |
+| UI `68be372`, `0c5739b` | Accepted with limits | Low: lazy duplicate detection, test skip guards |
+| Clock `7f8ef64` | Accepted | Low: commit wording |
+| TPI `18b09c5` (in `main`) / `11203fe` | Accepted with limits | MED: 2.7 MB blob in unpushed history |
+| Rides `f5c77fe`, clock `f95c694`/`d66857e`, advisor `be46ebe`, scenarios `0f5492a`, formats uncommitted edits | Not reviewed | — |
+| Any PC/Patch 2 runtime equivalence | Needs evidence | — |
+
+Merge order:
+
+1. Resolve local `main` with `origin/main` first, since every lane below must
+   then rebase onto .NET 10 and the upstream decoder, header and mode work. Keep
+   local Layer I. Take upstream SDT widths and the animator instance clock.
+   Translate the Dutch section, replace home paths, regenerate the register, and
+   build and test on SDK 10.0.401. This lane (`ppc-review-lane`) merges without
+   conflict either way.
+2. Economy `974f546` → `1c53e14` → `6305d32` (lane paths only).
+3. Clock `7f8ef64`; UI `68be372` → `0c5739b` (lane paths only).
+4. Advisor `2b8e4bf`, resolved against upstream `28864fa` as in section 41.
+5. Formats `b0935b4` → … → `6382736`, with the static `TicksPerSecond` test use
+   updated after step 1, plus a register entry for copy-back and exact-end.
+6. Scenarios `bac3428`, only after it is unified with upstream `ParkGameMode`
+   into one model and the Instant Action research gap is registered or closed.
+7. Rides `56a9d26`, after the max/min correction (and a `PPC-rides.md` fix on
+   `main`).
+
+## 43. Round 7: integration tree and lane repairs (state at review time)
+
+Brief: verify each lane against the original Mac PEF and PC data independently
+and keep every qualification. A lane's self-consistent tests are not evidence of
+original runtime behavior. This round was read-only on peer trees, with no root
+merges or pushes. Only this section and `round7_evidence.py` /
+`test_round7.py` are new.
+
+**Integration (`integration-remote`) is not committed.** It is still mid-merge
+(`MERGE_HEAD` = `origin/main` `778ea5d`, 108 staged files, 4 unstaged edits).
+Nothing below is a review of a committed integration result. Release build
+0 errors, Metal 222 frames and the full test suite were reported by the
+integration owner. This review did not rerun them, and the full suite was still
+running when reported.
+
+Fixed or no longer applicable (round 6 items):
+
+| Item | Status |
+| --- | --- |
+| Merge conflict markers | None remain in the staged tree. |
+| Duplicate Layer I | One decoder (`Layer1TestFrames`/`Layer1DecoderTests` local); no duplicate class. |
+| `CorpusWitness.csproj`, `TpiCompare.csproj` net8 → net10 | Retargeted (unstaged). |
+| Rides max/min (HIGH) | Code repaired in the rides working tree, **uncommitted**. See below. |
+| Home paths in this document | Fixed on this lane (section 41). The integration tree still has `main`'s older copy until this lane merges. |
+
+Re-verified against `SimThemePark.data` (independent decode, `round7_evidence.py`;
+round 6 already covers the selectors):
+
+- **Rides selectors.** `0x3dd48/4c` keeps the global value when
+  `global >= room`, and `0x3df4c/54` does the same for `global >= request`.
+  Both are maxima. `0x3df78/7c` (+792) and `0x3dfac/b0` (train +8) are minima.
+  The rides working tree's `PassengerRing.QueryRoom` = `max(global, room)` and
+  `PlanAllowance` = `min(min(max(request, global), def), train)` agree. With a
+  net10 override in a scratch copy, the 16 controller reference tests pass.
+  Rides Python (20 tests) passes against the identified data fork, with zero
+  skips. That run needs `OPENTPW_MAC_APP` pointing at `SimThemePark.data`; the
+  MacBinary `.bin` fails identity. Without the variable, 5 witnesses skip
+  silently. Final doc wording was mid-edit and is not reviewed.
+- **Clock `d66857e`.** `0xa3e08` returns +16400 for argument 0 and +16408
+  otherwise. Coaster tick `0x406bc` passes literal 0 to it at `0x406c4`.
+  Accepted. Clock Python: 16 pass, 1 skip (identified PC save not supplied).
+- **Advisor `be46ebe`.** `EVENT` sets `r7 = 1000` (`0xaf9e4`) before
+  `0xae930`. `EVENT_EXT` passes an operand in `r7`. `SPAWNSOUND` stores the
+  child ID at parent +20 (`0xb12a0`). Accepted for those operands. The 11
+  advisor Python tests are synthetic only; they do not touch the binary.
+  Catalog and EventMap counts were not re-measured.
+- **Formats (uncommitted).** `keepsPoseOnClipChange` for fixed items follows
+  the bind `0xa5894` reading in section 39. It is uncommitted and not
+  re-tested here.
+- **Scenarios (uncommitted).** The save already required `Mode` by name in
+  version 1 (`767f05b`, string enums, integers rejected), so the "never
+  defaulted" claim holds. ECON-019 is kept and re-described rather than
+  removed. Uncommitted, so not accepted.
+
+Remaining blockers in the integration tree (actual, verified at review time):
+
+| Blocker | Severity | Evidence |
+| --- | --- | --- |
+| `GameFlow.LoadPark` starts saved parks without `gameMode` | HIGH | `source/OpenTPW/Client/GameFlow.cs` `LoadPark` calls `StartLevel(entry.Level, original: true, …)`; `ParkLoadEntry` has no mode. An Instant Action park loads with Full Simulation rules. |
+| ECON-007 retired, with `[BIN]` claiming "offers it again when the credit test passes" | HIGH (fidelity claim) | `AvailableLoans` has no net-worth/credit test anywhere in `ParkEconomy`. The re-offer is unconditional, so the label claims more than the code does. Keep an APPROX entry until the credit test is implemented. |
+| Seven net8 lane harnesses under the SDK 10.0.401-only environment | MED | `OriginalSchedulerRules` fails restore (NU1100, `Microsoft.NETCore.App.Ref 8.0.31`). The others listed by `round7_evidence.py` are the same kind: advisor LipDriver/Layer1Corpus, economy loan rules, guests rules, rides animation, UI layout. Unmerged rides controllers and advisor `AudioEventAssets` are also net8. Their recorded results cannot be reproduced in this environment. |
+| CI Python discovery | MED | `unittest discover -s tools/ppc-analysis` runs 31 tests. 15 lane test files are unreachable (no `__init__.py`), so CI does not guard lane witnesses. |
+| Setup wizard footer | MED | Quit 90 + 2×150 + 24 logical px (plus padding) overlaps below roughly 430 px, and no minimum window size is set. The DPI recompute runs only when pixel size changes. The owner reported fixing both; that fix is not in the staged tree. |
+| Home paths in English docs | LOW | 35 lines across `SETUP.md`, `TPI-COMPARISON.md`, `PPC-advisor/economy/guests/rides.md`, plus `PPC-review.md` from `main`. Advisor `be46ebe` and rides add more, including the old `opentpw-dotnet` SDK path. |
+| `LIPS.md` unstaged edit | LOW | Cites the static Mac consumer trace and keeps runtime integration, geometry and device timing open. Acceptable wording, but it depends on `PPC-advisor.md` content being merged in the same push. |
+
+Pending (owner still editing; re-review after commit): rides `f5c77fe`/`73ec987`
+plus the max/min working-tree repair, formats animator edits, scenarios
+uncommitted mode/save/ECON-019 edits, wizard repairs, and the integration merge
+commit itself.
+
+Unresolved objections carried forward: no PC or Patch 2 runtime equivalence for
+any Mac-derived rule; the Instant Action research policy (section 34) is a Mac
+static reading only; SDT bank remap is needed before clip names (advisor);
+TPI history blob (section 38).
+
+## 44. Round 8: reproducible lane discovery and the .NET 8 harness strategy
+
+Brief: as in round 7. Verify each lane against the original Mac PEF and PC data
+independently, and keep every qualification. A self-consistent test is not
+evidence of original runtime behavior. This round touched only this section,
+the reproduce block above, `tools/ppc-analysis/run_evidence_checks.py` (new)
+and `lanes/review/test_round8.py` (new). No workflow or source file changed, no
+peer tree was written, no asset directory was listed or scanned, and the Layer I
+corpus run was not repeated.
+
+**Integration is still not committed** (`integration-remote` at `f468f03` with
+`MERGE_HEAD` present). Mode persistence, ECON-007, the wizard DPI/width fix and
+the stalled installation scan are the integration owner's open work. None of it
+is re-reviewed or counted as fixed here. Rides `8f27b00` (max room, max
+request/global, then min definition/train) is detached and not on any branch.
+Round 7 already confirmed its selectors. Its tree passes 20/20 rides Python
+tests with zero skips under the runner below, but it is still **pending merge**,
+together with the untracked `save_evidence.py` in that tree and the root
+`PPC-rides.md` wording fix.
+
+### Python discovery
+
+`unittest discover -s tools/ppc-analysis` reaches only the two top-level test
+files (31 tests). The lane directories have no `__init__.py`. Advisor, economy,
+guests and rides each import a different module named `evidence`, so the lanes
+cannot share one interpreter either. In this tree, 18 lane test files
+(214 tests) are outside CI's discovery. The integration tree has a different
+count (15 files in round 7) because it lacks this lane's review files.
+
+`run_evidence_checks.py` starts one `python -I -B -m unittest discover -s <dir>
+-t <dir>` process per directory: the root and each `lanes/<lane>` that has test
+files. It fails if any `test_*.py` under `tools/ppc-analysis` is not directly in
+one of those directories, if a suite runs zero tests, or (with
+`--require-fixtures`) if any test is skipped. Fixture variables come only from
+flags. Inherited `OPENTPW_*` values are stripped, so a stale shell variable
+cannot change a result. `--mac-bin` is the Feral `bin` directory. It sets
+`OPENTPW_PPC_BIN_ROOT` to that directory and `OPENTPW_MAC_APP` to the
+`SimThemePark.data` file inside it. The two variables have different shapes:
+rides wants the file, the other lanes want the directory. Swapping them gives
+`IsADirectoryError` (rides, 3 errors) or `NotADirectoryError` (guests), so a
+wrong value fails loudly rather than skipping. The runner rejects both shapes up
+front, and also rejects a directory without the data fork (the MacBinary `.bin`
+fails identity). Only those two paths are stat'ed.
+
+Measured on this tree (Python 3.14.2):
+
+| Fixtures | Suites | Tests | Skipped | Remaining skips |
+| --- | --- | --- | --- | --- |
+| none | 8 | 245 | 19 | Mac binary witnesses, PC data, private UI corpus |
+| `--mac-bin $FERAL_BIN` | 8 | 245 | 9 | `OPENTPW_PC_DATA` (1, not supplied: no asset scan this round); `UI_EVIDENCE_*` (8, private UI corpus) |
+
+With `--mac-bin`, all Mac-binary witnesses in guests, rides and review ran and
+passed against the identified `SimThemePark.data`. These are static operand and
+identity checks only. Running the advisor, clock and economy Python lanes needs
+no binary: they are synthetic.
+
+### .NET 8 harnesses under the .NET 10 pin
+
+All 8 lane harnesses are `net8.0`. With `--dotnet`, the runner copies
+each registered self-test harness to a temporary directory (no `global.json`
+applies, and no `bin`/`obj` lands in the checkout), runs it, and classifies a
+failure. It does not run the corpus harnesses (`Layer1Corpus`, `CorpusWitness`).
+It reports a harness whose `ProjectReference` targets a newer framework as an
+incompatible reference, before anything else. Scratch reproductions (copies
+outside every checkout):
+
+| Case | Result | Class |
+| --- | --- | --- |
+| SDK 8.0.425 (retained root), 6 self-test harnesses | All pass: advisor 52, clock 35, economy 15 groups / 5437 assertions, guests 23, rides animation 11, UI 19 | — |
+| SDK 10.0.401 only, same 6 harnesses, packs cached | Build succeeds; every run fails (`Microsoft.NETCore.App` 8.0 not installed; only 10.0.12) | missing runtime |
+| SDK 10.0.401, empty `NUGET_PACKAGES`, no package source | `NU1100` for `Microsoft.NETCore.App.Ref`, `AspNetCore.App.Ref`, `App.Host.osx-arm64` 8.0.31 | restore: targeting pack unavailable |
+| SDK 8.0.425, same empty cache and no source | Build succeeds (packs ship with SDK 8) | — |
+| net8 `CorpusWitness` → net10 `OpenTPW.Files` (integration copy), SDK 10 | "targets 'net10.0'. It cannot be referenced by a project that targets net8.0" | incompatible reference |
+| Same, SDK 8 | `NETSDK1045` | SDK too old |
+| SDK 8 with the working directory inside a checkout pinned to 10.0.401 | `sdk-not-found` (`global.json`) | — |
+
+Conclusions:
+
+- Round 7's `NU1100` was a real restore failure, but it was environmental. SDK 10
+  needs the 8.0 targeting packs from a package source or the cache, and
+  neither was available then. It is not a project incompatibility. **Side
+  effect of this round:** one SDK 10 scratch build downloaded
+  `microsoft.netcore.app.ref` 8.0.31 into the user NuGet cache (23:04). Since
+  then, `NU1100` no longer reproduces from that cache, and the next failure
+  for SDK-10-only runs is the missing 8.0 runtime.
+- The standalone harnesses (advisor driver, clock, economy, guests, rides
+  animation, UI reader) need no upgrade. The retained SDK 8 root runs them all
+  when invoked from outside the pinned checkout. Retargeting them to net10
+  would add churn and prove nothing new.
+- Only harnesses with a `ProjectReference` into `source/` must follow the
+  source framework. Of the harnesses in this tree, that is just
+  `CorpusWitness`, which integration has already retargeted (still unstaged).
+  `tools/patch-analysis` is the same kind, but it is outside the lanes and is
+  built by CI.
+- Passing harnesses are self-consistent. They do not show original runtime
+  behavior.
+
+### CI handoff (integration owner; not applied here)
+
+Once this lane is merged, replace line 23 of `.github/workflows/build.yml`
+(`python -m unittest discover -s tools/ppc-analysis -p "test_*.py" -v`) with:
+
+```sh
+python -I -B tools/ppc-analysis/run_evidence_checks.py
+```
+
+CI has no fixtures, so expect skips there and do not pass
+`--require-fixtures`. For the lane harnesses, an optional step is to install
+both SDK bands and pass the resulting host:
+
+```yaml
+- uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
+  with:
+    dotnet-version: |
+      8.0.x
+      10.0.x
+- run: python -I -B tools/ppc-analysis/run_evidence_checks.py --dotnet "$(command -v dotnet)"
+```
+
+This combined single-root layout is **inferred, not run**. Locally the two SDKs
+live in separate roots, and only the explicit SDK 8 root was exercised. The
+runner's scratch directory has no `global.json`, so the newest SDK builds the
+net8 harnesses using the 8.0 packs installed by the 8.0 band, and runs them on
+the 8.0 runtime. Locally, the verified command is:
+
+```sh
+python3 -I -B tools/ppc-analysis/run_evidence_checks.py --mac-bin $FERAL_BIN --dotnet $DOTNET8/dotnet
+```
+
+where `$DOTNET8` is the retained SDK 8 root. Expect 245 tests with 9 skips and
+6 harnesses passing.
+
+### Status
+
+| Item | Status |
+| --- | --- |
+| CI Python discovery (round 7 MED) | Runner and tests provided on this lane. The CI change is **pending** with the integration owner. |
+| net8 harnesses under SDK 10 (round 7 MED) | Reclassified: standalone harnesses run with the retained SDK 8 (verified). `NU1100` is environmental. Only project-reference harnesses must retarget. A CI step for net8 is **pending** and its layout is untested. |
+| Integration merge commit, mode persistence, ECON-007, wizard, installation scan | **Pending** (uncommitted; not reviewed this round) |
+| Rides `8f27b00` | Accepted (round 7 selectors; 20/20 with fixtures). **Pending merge** and root doc fix |
+| Formats, scenarios | Still in progress with their owners; not reviewed |
+| UI private-corpus witnesses, `OPENTPW_PC_DATA` SDT audit | Not run this round (private inputs; no asset scan) |
+
+Unresolved objections carried forward: no PC or Patch 2 runtime equivalence for
+any Mac-derived rule. The Instant Action research policy (section 34) is a Mac
+static reading only. The SDT bank remap is needed before clip names (advisor).
+The TPI history blob (section 38) remains.
+
+## 45. Round 9: formats clock and pose, economy scientist, rides save boundary, TPI header
+
+Brief: as in rounds 7 and 8. This round wrote only this section, the reproduce
+block above, `lanes/review/round9_evidence.py` and `lanes/review/test_round9.py`.
+No peer tree, runner, workflow or source file was written. Peer suites ran from
+scratch copies (`git archive` or `rsync` without `bin`/`obj`) or in place with
+`python -I -B`. Asset access was limited to the files named below, read by exact
+path. No codec run took longer than a few seconds.
+
+### Formats `c546a24` (channel clock): accepted, Mac static, speed 1.0 only
+
+Independent decode (`round9_evidence.py channel_clock`):
+
+- `0xa6484`: `frame = speed(+12) × (30 × (float)(u32)(now(+20) − start(+16)) / 1000)`.
+  Every step is single precision, and speed is applied last. The bias at TOC
+  `0x51a8` is the unsigned 2^52 pattern, and the constants are 30.0 and 1000.0.
+- `0xa7360`: `fcmpo frame, duration` and a branch on "not greater". So a
+  frame equal to the duration is not past the end.
+- `0xa6398` (carry path): the carry is capped at the duration, then
+  `1000 × c / 30 / speed` in single precision, then the truncating unsigned
+  converter `0x1c3fbc` (`fctiwz`, top half via `addis 0x8000`). Finally
+  `start = now − ms`.
+
+`ObjectAnimator.GetFrame` / `GetCarryMilliseconds` match this at speed 1.0. The
+review's float32 model (`Channel`) reproduces the lane's 30 Hz cases:
+999/1000/1100 ms give 29.97/30/3, one 2,500 ms update gives 30, and a 10-tick
+clip at 334/667 ms gives 0/9.99.
+
+Qualifications kept:
+- Speed ≠ 1.0 and the object-list update `0x4d354` are unsupported, as the lane
+  states.
+- **New:** on a fresh bind, `0xa6398` takes the start time from the global
+  block at +16408 when channel flag 0x40 is set and at +16400 otherwise. Those
+  are the two clocks of round 7's `0xa3e08`. OpenTPW gives every channel one
+  animator clock. Which clock the caller passes as `now` to `0xa6484` was not
+  traced. This matters for game speeds other than 1×.
+- `RIDES-001` still says "original tick rate not verified". The Mac constant is
+  now proven statically, so the entry should be re-described as "30 in the Mac
+  channel clock; PC unverified" rather than left as an open question.
+  Register edit (root owner).
+
+### Formats `2760acb` + `2d3442f` (copy-back gate, fixed-item pose): accepted with one limit
+
+Re-decoded:
+- Bind `0xa5894` loads the option word +16396 and object flags +4. Flag 0x8
+  set skips to the per-mesh 0x10 clear loop. With 0x8 clear and 0x00100000
+  set, it executes `ori r27,r27,1` (keep the pose). Header flag 0x4 is tested
+  next.
+- The option word's only store is at `0xa7eec`, and setup `0x54c08` calls it
+  with `r3 = 0`.
+- Builder `0x594c8` maps caller 0x200 to ride 0x100 and caller 0x40000 to
+  ride 0x1000. Loader `0x58a3c` maps ride 0x100 to object 0x8 and ride 0x1000
+  to object 0x00100000.
+- Catalog loader `0x119a60`: descriptor +56 ≠ 0 gives caller flags 0x50c00
+  (0x40000 set, 0x200 clear), plus 0x400000 when +132 ≠ 0. It then calls
+  `0x594c8` at `0x119ac0`.
+
+`IsFixedItem` is `GetInt("Info.DontApplyOffset") != 0`, which equals the
+native non-zero test. The `+56 = DontApplyOffset` schema layout (`0x16f4c`)
+was not re-derived here. It is accepted on the lane's 113 checks.
+
+**Limit (kept, not a blocker):** the gate reads flags from the object passed to
+the bind. Only the catalog-built object is shown to carry 0x00100000. How a
+placed instance's bind object relates to it was not traced. OpenTPW applies the
+catalog entry's value to each placed instance. Also, a bulk write that sets
+option-word bit 0 is not excluded.
+
+### Formats round-6 working tree (instance rate): pending, uncommitted
+
+The formats tree is at `2d3442f` plus an uncommitted edit to `ObjectAnimator`,
+`PrototypeRide`, `Md2AnimationTests` and `ObjectVertexAnimationTests`. Tested
+snapshot: diff SHA-256 `59ac2d84…` over all four files, copied at the same moment. The
+edit makes the constructor
+`ObjectAnimator(ModelFile, float ticksPerSecond = 30, bool keepsPoseOnClipChange = false)`
+and substitutes the instance rate for both 30s.
+
+**Constructor collision (real, repaired only in the working tree):**
+- `origin/main` `778ea5d` (and the staged integration) has
+  `ObjectAnimator(ModelFile, float ticksPerSecond)` and tests `new ObjectAnimator(model, 15)`.
+- Committed `2d3442f` has `ObjectAnimator(ModelFile, bool keepsPoseOnClipChange)`
+  and the positional call `new ObjectAnimator(model, entry.IsFixedItem)` at
+  `ObjectVertexAnimationTests.cs:276`.
+- Merging `2d3442f` as committed gives a compile error (`bool` does not convert
+  to `float`) or a silently dropped parameter, depending on how the conflict is
+  resolved.
+- The working tree uses named `keepsPoseOnClipChange:` everywhere, and
+  `OriginalObjectRuntime` passes no rate (30).
+
+**Integration must take the reconciled commit, not `2d3442f`.**
+
+New 15 Hz tests:
+- 2,000 ms is the endpoint and 2,100 ms replays from a carry of 1.5 ticks =
+  100 ms.
+- One 5,000 ms update lands at 30.
+- 10 ticks at 667 ms truncate to a 0 ms carry.
+- A fixed item finishes only past 2,000 ms and keeps its pose through a
+  matrix-only clip.
+
+`clock_cases` recomputes every one of these from the decoded formula with 15 in
+place of both constants, and they agree. They are **self-consistency of an
+OpenTPW extension**: the original has no rate parameter. Affected .NET tests on
+the scratch copy (SDK 8, lane pin 8.0.425) passed 12, failed 0, skipped 3
+(asset-bound). Re-review after commit.
+
+### Economy `abbb52c` (standalone scientist snapshot): accepted
+
+Serializer re-decode (`scientist_tail`):
+- The staff tail `0xf2c7c..` writes, in order, these runtime fields with these
+  name strings (from the code string table at TOC `0x34ec`):
+
+  | Runtime field | Name / content | Width |
+  | --- | --- | --- |
+  | +484 | `mCurrentPayGrade` | 4 |
+  | +500 | happiness | 4 |
+  | +512 | `mJobsDone` | 4 |
+  | +416 | `mName[i]` | 33 × 2 |
+  | +518, +520 | `mPatrolRegionBL/TR` | 2 + 2 |
+  | +488 | `mPercentageThroughGrade` | 1 |
+  | +516 | `mRestArea` | 2 |
+  | +412 | `mState` | 4 |
+  | +508 | `mTimeStartedIdling` | 4 |
+  | +492 | `mTimeHired` | 8 |
+  | +504 | energy | 4 |
+
+  The total is 105 bytes.
+- The researcher tail writes +528 `mTimeStartedResearching` (4) and +524
+  `mNext` (2).
+- Happiness and energy go through `fctiwz` → low byte → float before the
+  write. Keeping the saved bits is therefore correct, and the reader must not
+  truncate again.
+
+Every reader offset (0/4/8/12/78/80/82/83/85/89/93/101, then 105/109) matches.
+
+Fixture walk (`scientist_walk`, stdlib zlib, independent of the lane's C#):
+- World offset 1179, FirstResearcher 30.
+- From head offset 1,385,521: 12 guests, then scientist 30 at header 1,391,921,
+  body 1,391,929..1,392,430.
+- Grade 2, state 1, research tick 697, next researcher 0, next used actor 29.
+
+The lane's harness on a scratch copy (SDK 8, Release, actual fixture) passed
+10/10 groups and 1,157 assertions.
+
+Cycle, truncation and ID bounds:
+- Back-links and self-links in the used chain are rejected before the next
+  header is read.
+- Header and body truncation are checked against the exact remaining length.
+- The model allowlist is {1, 8}, records are limited to 1..64, and payloads to
+  8 MiB.
+- The researcher self-link is rejected.
+- A caller boundary never gains the fixture qualification.
+
+Kept limits:
+- Cycles entirely inside the unparsed suffix are not detected.
+- Head offset 1,385,521 is the lane's fixture constant (formats map-end
+  evidence), not re-derived here. Reaching FirstResearcher 30 from it is
+  corroboration only.
+- The harness is net8 and is not in `run_evidence_checks.py` `SELF_TESTS`, so
+  the runner reports it but does not run it. See the handoff below.
+
+### Rides `3d9a01c` (coaster save boundary, byte 12): accepted, empty fixture only
+
+Re-decoded (`coaster_save`):
+- Load: compare with `EMAK` (`addis −0x4b41` / `cmplwi 0x4d45`), loader
+  `0x39f98`, `LbFile_Read`, compare with `SAOC` (`addis −0x434f`).
+- Save: saver `0x394b8`, then `0x434f4153` is built and written with
+  `LbFile_Write`.
+- So SAOC is a trailing marker.
+- Byte 12: `clrlwi` and `cmplwi 255` at `0x377bc` (255 takes a computed value),
+  then `r10` → `0x36020 r28` (the only assignment) → `0x36514 r6` →
+  `0x34d90 r26`. The value lands in `section+4` at `0x34f74`, with the cell
+  array +52 [ordinal] = section, section +256 = cell, cell +48 incremented and
+  shifted sections renumbered at `0x34f48`.
+- It is an insertion ordinal, not Direction.
+
+PC fixture (`coaster_body`): one EMAK, one SAOC, body 1,606,446..1,606,462,
+16 bytes, words 0/0/0/1, body SHA `741939cc…`. The lane's suite on a
+`git archive` of `3d9a01c` passed 23/23 with `OPENTPW_MAC_APP` and
+`OPENTPW_PC_FIXTURE`.
+
+Kept: no nonempty track or train fixture, no codec, and the 34-byte record
+layout is not checked beyond the lane's 132 pins.
+
+Pending:
+- The rides tree has further uncommitted work (`save_control_evidence.py`,
+  edits to `save_evidence.py`, the JSON and the doc; 24 tests pass in place).
+  Not reviewed.
+- **Runner gap:** the new skip uses a fourth variable, `OPENTPW_PC_FIXTURE`
+  (a file). `run_evidence_checks.py` neither sets nor strips it. After this
+  merges, `--require-fixtures` fails with one skip, and a stale shell value
+  would pass through. Resolve it either way:
+  - rides reads `$OPENTPW_PC_DATA/levels/jungle/Easymode.TPWI`, or
+  - the runner derives `OPENTPW_PC_FIXTURE` from `--pc-data` and adds it to
+    `FIXTURE_VARIABLES`.
+
+### TPI `0930182` (shifted header, edition identities): accepted with qualifications
+
+`tpi_header` on the identified TPI `prebuilt.TPWS`:
+- magic 500, byte 4 = 1, label length 19, shift 24.
+- Shifted version byte 133, offline byte 0, BILZ at `0x625`.
+- At the legacy fixed offsets: `0x608` = 0, `0x609` = 0, no BILZ at `0x60d`.
+
+The committed `SaveReader` (root `f468f03`) checks `container[0x608]` before
+BILZ. It therefore rejects this file as **"Unsupported save container version 0;
+expected 133"**. Rejecting it is correct, but the stated reason is wrong: the
+inner version is 133.
+
+Recommendation (MED, root owner): check the length-prefixed profile before the
+version byte and report "unsupported TPI length-prefixed profile". Otherwise
+setup and import messages misdiagnose TPI saves.
+
+Allowlist qualification:
+- `KNOWN_STANDARD` / `KNOWN_SAVE` are two exact hashes per supplied family. The
+  doc correctly says they are not a universal allowlist.
+- The recommendation "TPW setup requires positive TPW identity" would, if
+  applied in production, reject every other TPW edition, locale or
+  modification (Mac, other retail prints).
+- It must stay a corpus witness until each of those has its own identity
+  profile.
+- `theme-park-world-nl` here is a language overlay without `Standard.sam`, so
+  it gives no evidence either way.
+- `byte4 == 1` is a heuristic profile switch. A legacy save whose first banner
+  byte is 1 would be parsed as labelled and then fail the label checks. It
+  fails closed, so the outcome is acceptable.
+
+29/29 TPI Python cases pass in place.
+
+LOW: `tools/tpi-compare/README.md` adds a home-directory path, the same class
+as the round-7 item.
+
+### Root docs: min/max correction (committed trees only)
+
+`rides_doc_status`:
+
+| Ref | `PPC-rides.md` capacity wording |
+| --- | --- |
+| root `main` `f468f03` | **old `min(global_admission_limit, …)` (wrong)** |
+| `origin/main` `78dfb5e` | no `PPC-rides.md` |
+| rides `8f27b00`, `3d9a01c` | corrected: max(request, global), then min(definition, train) |
+
+The correction exists only on detached rides commits. It is not on any root
+branch.
+
+### Status
+
+| Item | State |
+| --- | --- |
+| Formats `c546a24`, `2760acb`, `2d3442f` | Accepted (Mac static, speed 1.0; placed-instance flags and per-channel clock source open) |
+| Formats instance-rate / constructor reconciliation | **Pending** (uncommitted; scratch run 12 passed / 3 skipped) |
+| Economy `abbb52c` | Accepted (standalone; not registered in the runner) |
+| Rides `3d9a01c` | Accepted (empty PC body only). Further rides edits **pending** |
+| TPI `0930182` | Accepted as a corpus witness. `SaveReader` diagnosis MED; allowlist must not become a setup gate |
+| Root `PPC-rides.md` min/max | **Not fixed** on any committed root ref |
+| Integration | **Pending.** `integration-remote` is still `f468f03` + `MERGE_HEAD` `778ea5d`, 116 changed paths, and `origin/main` is now 4 commits past that (`127d9e6..78dfb5e`), so the merge base is stale |
+| CI runner switch (round 8) | **Pending** with the integration owner, plus the two runner gaps above (`OPENTPW_PC_FIXTURE`, scientist harness) |
+
+Fixed since round 8: none on a committed root ref. Stale: round 8's
+"245 tests". This tree now runs 258 Python tests (8 skipped with fixtures,
+24 without).
+
+Concrete remaining blockers:
+1. The formats reconciliation commit (constructor collision).
+2. Root `PPC-rides.md` min/max wording.
+3. Integration merge onto current `origin/main`, with mode persistence,
+   ECON-007 and the wizard (round 7).
+4. The runner's `OPENTPW_PC_FIXTURE` handling before `--require-fixtures` is
+   used in CI.
+
+Unresolved objections carried forward: no PC or Patch 2 runtime equivalence for
+any Mac-derived rule; Instant Action policy (section 34); SDT bank remap
+(advisor); TPI history blob (section 38).
+
+## 46. Round 10: clock saved-script graph, rides topology gates, UI catalog events, scientist envelope
+
+Brief: as in rounds 7 to 9. This round wrote only this section, one reproduce
+line, `lanes/review/round10_evidence.py` and `lanes/review/test_round10.py`. No
+peer tree, runner, workflow or source file was written. The native UI process
+lifecycle is under separate review and is not repeated here. Peer suites ran in
+place with `python3 -I -B`. The economy .NET harness ran from a `git archive`
+copy in `/tmp` with SDK 8.0.425. No codec run and no mount scan were done.
+
+### Clock `21bd7ef` (saved-script graph): accepted, static and one-fixture
+
+Independent re-decode of reader `0xb4818` (sole caller `0x11bea8`) and writer
+`0xb3868` (`round10_evidence.py saved_script`):
+
+- **Framing.** The reader checks the `RSSE` magic (`0xb48d8/0xb48dc`). It then
+  reads a declared header size straight into the manager (`r5 = r26`,
+  `r6` = wire size). The five `PAD_` words and the count and width words are
+  read with no compare between them. The fixed record is read with the saved
+  width (`372(r1)`) into a 244-byte allocation. The lane's guards (header 20,
+  `PAD_`, width 244) are therefore stricter than native, and the lane says so
+  ("evidence-tool policy").
+- **Head insertion.** The restored head word +16 is stored (`0xb49a8`) and then
+  overwritten with zero (`0xb49ac`). Each script is inserted at the head
+  (`0xb4b1c..0xb4b38`). The fresh links captured in r20/r21 (`0xb4b48/0xb4b50`)
+  overwrite the saved tokens (`0xb4d80/0xb4d90`). The rebuilt order is the
+  reverse of the serialized order, as the lane states.
+- **ID resolution.** Lookup `0xb5758` walks from manager +16 and compares +8.
+  The child (+12), parent (+16) and secondary (+20) fields are numeric IDs at
+  the creation and cleanup sites the lane pins. Agreed.
+- **Count projection.** The writer stores header +12 as-is (`0xb3930`). The
+  record count is a separate list traversal (`0xb3b20..0xb3b3c`), and the
+  reader's outer loop is bounded by that wire count (`380(r1)`, `0xb5654`).
+  The reader restores +12 (`0xb4980`) and then adds 1 per insertion
+  (`0xb4b0c..0xb4b18`).
+- **Untraced mutation, narrowed.** The two calls that load the manager global
+  (`0xb23a0` free, `0xb2760` init) run before the count restore. None of the
+  21 direct callees after `0xb4980` loads the manager global within its
+  first-`blr` extent (21 load sites exist in the binary). The 14 + 14 = 28
+  projection therefore holds through direct-callee depth. Deeper callees and
+  code after the caller's return are still untraced. The lane's wording ("a
+  projection excluding untraced callee mutation, not a runtime bug") is
+  correct and should stay.
+
+Independent fixture walk (`script_walk`: stdlib zlib/struct only, native read
+order):
+
+- `RSSE` at 1,595,542, header size 20, initialized 1, pass 6055, nextID 16,
+  count 14.
+- 14 records with IDs `15..6,4,3,2,1`. The walk ends at **1,606,398**, where
+  the next word is `ESSR`.
+- 3 object bindings.
+- Nonzero deadlines: ID 9 WAIT 114,377,145, ID 8 WAIT 114,377,133, ID 4
+  animation 114,193,871, ID 3 WAIT 114,374,867.
+
+Every value equals the lane's.
+
+**New qualification (LOW, doc only).** After the name block, the reader also
+rewrites three fixed fields:
+- +212 is recreated via `0x18d100`/`0xbc0e0` when nonzero (`0xb54bc`).
+- +230 is forced to `0xffff` (`0xb54c8`).
+- +176 is cleared and then rebuilt from the `OBJ ` list (`0xb54d8`).
+
+The graph witness does not expose these fields, so it is not wrong. But
+"preserve the raw words" must not extend to +212/+230 in a future restore. Add
+them to the clock doc's list of load-time rewrites.
+
+Lane tests: 52/52 in place with `OPENTPW_PPC_BIN_ROOT` and
+`OPENTPW_PPC_SAVE_PATH`, zero skips.
+
+### Rides `0973fbe` (topology gates): accepted; one prerequisite to state
+
+Re-decoded (`topology_order`) and the lane's JSON reproduced byte-for-byte:
+- **Ordinal, not type.** The saver's predicate is section +0 == 2 (`0x3998c`).
+  The auxiliary block is that node's own link count (+176) and the linked
+  sections' +0 ordinals (via the +180 pointers).
+- **Filter after auxiliary.** The flag-0x10 filter (`0x39a90/0x39a94`) comes
+  after the auxiliary write in the same node iteration.
+- **Third node on load.** The loader reads the auxiliary block into
+  controller +84 → +100 → +100, the **third** list node (`0x3a344..0x3a368`).
+  It does so after the initial topology (`0x366bc`) and before the 34-byte
+  record loop (`0x3a440/0x3a444`). Both arms of the `0x3a330` header-flag-2
+  branch reach `0x3a36c`.
+- **Link resolution.** `0x41dcc` walks controller +84 by ordinal, so an
+  ordinal is a list position.
+- **Failure paths.** The nine short-I/O paths return r3 = 0 to the epilogue.
+  The load-mode global is set at `0x3a1c0` and reset only at `0x3a72c`. The
+  nested helpers' returns are untested at `0x39d84` and `0x3aa38`. The lane's
+  wording ("no rollback proved", "does not prove the application ignores
+  failures") is correct.
+
+**Prerequisite to state (MED for any decoder, not a defect in `0973fbe`).** The
+saver makes **one** list walk per controller: auxiliary check, then filter,
+then record. The loader reads the auxiliary block **before every** record. The
+streams therefore align only if:
+- every node before the ordinal-2 node is flag-0x10 filtered (or ordinal 2
+  heads the list), and
+- exactly one ordinal-2 node exists.
+
+Otherwise the saver writes records ahead of the auxiliary block that the
+loader expects first. The lane's "valid initial-node/filter invariants"
+covers this only implicitly. Write it out as an explicit stream-order
+invariant before a nonempty fixture is decoded.
+
+Tests: 24/24 in place with `OPENTPW_MAC_APP` and `OPENTPW_PC_FIXTURE`, zero
+skips. Without them: 16 pass, 8 skip. The empty fixture still corroborates
+none of the nonempty branches.
+
+### UI `917eb36` (catalog events): accepted
+
+Re-decoded (`catalog_delivery`):
+- **Synchronous delivery.** `0x170f98` calls `0x181398` only for a live target
+  (byte 0 == 0) and returns −1 otherwise.
+- **Queued delivery.** `0x170ec8` → `0x16fd80` writes the 16-byte record
+  {target, event, source, payload} at ring index +12, which counts down
+  (`0x16fdf4`).
+- **Row ID.** Accessor `0x17991c` walks from +352 via `0x17835c`. It reads the
+  record word +4 from the +324 buffer and fails for an ordinal < 0, an
+  ordinal ≥ +336, or a null buffer.
+- **Activation.** The path takes the low 16 bits (`0x1639a4`) and requires a
+  value > 0.
+- **Distinct keys.** The sort selector, the row catalog ID and the
+  root-name drawing key are distinct, as the lane states.
+
+Two precision notes (LOW, not claimed by the lane and not contradicted by it):
+1. **Queue drops.** An occupied ring slot skips the write and returns 0
+   (`0x16fd98` → `0x16fe14`), so queued 1024/1025 can be dropped under
+   overflow. A port must not promise delivery of every activation.
+2. **Unchecked row-ID status.** Both root call sites (`0x163998`, `0x163d74`)
+   read the accessor's out slot without testing r3. Native behaviour on an
+   out-of-range ordinal therefore uses an unwritten stack slot. A port should
+   reject rather than invent an ID.
+
+The sort sign is negative only when +362 == 1 exactly (`0x17a4c0`), which
+agrees with "direction bit".
+
+Tests: 9/9 catalog tests with `UI_EVIDENCE_BIN_ROOT`. Without it, 3 pass and
+6 skip.
+
+### Economy `95fd383` (scientist JSON envelope): accepted with one LOW
+
+Committed while this round ran, and the tree was clean when inspected. The
+harness ran from a scratch copy (SDK 8.0.425, Release, actual fixture) and
+passed **16/16 groups, 1,648 assertions**. The envelope is standalone and
+never touches `ParkSaveFile`. It is shape-checked at every level, and both
+`SourcePayloadRevalidated` and `CanRestoreRuntimeStaff` are always false.
+Floats are stored as raw bits and the u64 hire time as 16 hex digits.
+
+**LOW: the fixture qualification survives a reshaped prefix.** Probe (scratch
+only, not committed): take the actual fixture envelope and keep only the last
+guest and the scientist, with offsets made contiguous from the head (scientist
+header 1,386,058). `Deserialize` accepts it, and it still carries
+`IdentifiedPcEasymodeFixture`. The identified fixture's shape is fully known:
+13 rows, scientist header 1,391,921, tail 215,879, person SHA. Either pin that
+shape for this qualification, or name it a persisted claim on load. The doc
+already says provenance is a claim, so this is not a correctness blocker.
+
+Still open: the harness is not registered in `run_evidence_checks.py`
+`SELF_TESTS`. This is unchanged since round 9, and registration waits until
+the source is accepted.
+
+### Formats `ab444e3` (constructor reconciliation): seen, not re-tested
+
+The constructor is `ObjectAnimator(ModelFile, float ticksPerSecond = 30, bool
+keepsPoseOnClipChange = false)`. This adds a trailing parameter to main's
+`(model, ticksPerSecond = DefaultTicksPerSecond)`. Call sites in `ab444e3` use
+the default rate or `15`. This matches the round-9 working tree, and the
+constructor collision (round-9 blocker 1) is resolved **in a commit**. Its
+.NET tests were not re-run in this round.
+
+### Status
+
+| Item | State |
+| --- | --- |
+| Clock `21bd7ef` | Accepted (static, one fixture). +212/+230 rewrite note LOW. Count projection holds through direct callees |
+| Rides `0973fbe` | Accepted. Stream-order invariant must be explicit before a decoder |
+| UI `917eb36` | Accepted. Queue-drop and unchecked row-ID notes LOW |
+| Economy `95fd383` | Accepted (standalone). Fixture-qualification shape LOW. Not registered in the runner |
+| Formats `ab444e3` | Collision resolved in a commit. Tests not re-run this round |
+| Integration | **Pending** (`ppc_advisor`). `integration-remote` is still `f468f03` + `MERGE_HEAD` `778ea5d`. `origin/main` is now `e31c804`, past `78dfb5e`. The source-freeze verification is still pending |
+| Runner `OPENTPW_PC_FIXTURE` | **Handoff, not merged** (round 9) |
+
+Not repeated as fixed: the root `PPC-rides.md` min/max wording, the TPI
+`SaveReader` diagnosis and ECON-007. None of them is on a committed root ref
+reviewed here, and the owners' uncommitted fixes are not counted.
+
+Review tests: 132 with both variables set, zero skips. Without them: 113 pass,
+19 skip.
+
+Unresolved objections carried forward: no PC or Patch 2 runtime equivalence for
+any Mac-derived rule; formats per-channel clock source (`0xa6398` +16400/+16408)
+unmodelled; Instant Action policy (section 34); SDT bank remap (advisor); TPI
+history blob (section 38).
+
+## 47. Round 11: origin `e31c804` against the committed integration `0d58bd4`
+
+Scope: the eight origin commits `778ea5d..e31c804`: texture pack (`127d9e6`,
+`88edd7d`, `5c592c9`), world capture (`78dfb5e`), text fields and scrolling
+(`4b21e61`), online screens (`1e31596`), game and CD folders (`05a25e8`) and
+input focus (`e31c804`). They are checked against the root side
+(`1441ead..f468f03`) and the owner's committed merge. During this round the
+owner committed the `778ea5d` merge as **`0d58bd4`** (parents `f468f03`,
+`778ea5d`). `integration-remote` now has `MERGE_HEAD` `e31c804` with two
+unmerged paths. That pending resolution is **not accepted** here. All results
+come from committed objects (`git show` and `git merge-tree`) plus a scratch
+copy in `/tmp`. Nothing was written to the owner's tree. Native UI process
+cleanup and the PATH/picker lifecycle belong to the Native UI lane and are not
+re-audited.
+
+### Merge shape
+
+`git merge-tree 0d58bd4 e31c804` conflicts in exactly two files:
+`docs/FIDELITY-REGISTER.md` and `source/OpenTPW/Client/Setup/SetupWizard.cs`.
+The six README, LIPS, PROGRESS and MP2 conflicts from the `778ea5d` merge are
+gone because `0d58bd4` resolved them. The new commits touch none of those files.
+
+### Findings
+
+1. **HIGH: the SetupWizard conflict compiles with neither side.** The auto-merge
+   takes `05a25e8`'s `enum Page { Welcome, GameFolder, Done }` and removes the
+   `cdPath` field. Non-conflicting lines from `0d58bd4`'s bounded inspection
+   still use the CD path: `inspectingCd ? cdPath : gamePath`,
+   `if ( inspectingCd ) cdReport = report;` and
+   `page == Page.Cd ? cdReport?.Path`.
+   - Taking "ours" brings back `Page.Cd`, `DrawCd` and `SetCdPath`.
+   - Taking "theirs" keeps those stale lines. It also brings back the in-process
+     `Directory.Exists( dropped )` that `0d58bd4` deliberately removed ("File/directory
+     inspection happens in the bounded child").
+
+   Verified resolution, compiled in a scratch copy:
+   - hunk 1: `Task<InstallationDiscoveryResult>? picker` without `cdReport`;
+   - hunk 2: ours (`pendingInspection = (false, gamePath)`);
+   - hunk 3: `var folder = dropped;` then `SetGamePath`/`Page.GameFolder`, with no CD branch;
+   - hunks 4 and 5: theirs (`Done` and `savedCd`);
+   - hunk 6: drop `SetCdPath`.
+
+   Then remove `inspectingCd` (field and assignment), its two uses, and the
+   `Page.Cd` branch in Browse. Result: OpenTPW.Tests builds with 0 errors. The
+   full suite has 972 tests: 750 pass, 222 skip without original assets, 0 fail.
+   The 6 affected classes (NativeWidget, OriginalUi, TexturePack,
+   UiModelBinding, Setup/Installation, Online/ParkSharing) have 150 tests:
+   135 pass, 15 asset skips.
+2. **MEDIUM: the new in-game Game files screen bypasses the bounded child.**
+   `GameFilesScreen.cs` (`05a25e8`) calls `GameInstallation.Inspect( path )`
+   twice, synchronously on the render/update thread. It also calls
+   `Task.Run( () => FolderPicker.Pick(...) )` in-process. On `0d58bd4`,
+   `InstallationDiscovery` provides `InspectAsync`/`PickAsync` (a child process,
+   with `DefaultTimeout` of 3 s) for exactly this case. The setup window uses
+   them; the options screen would not. This is a textual no-conflict, so it
+   merges silently. It is handed off to the Native UI owner to bind to
+   `InspectAsync`/`PickAsync`. Its lifecycle is not audited here.
+3. **LOW: regenerate the register instead of hand-merging it.**
+   `FIDELITY-REGISTER.md` is generated with line numbers. On the scratch merge,
+   `tools/fidelity_register.py --write` followed by `--check` passes with 136
+   unresolved APPROX IDs. The new `EXT:SETUP`, `EXT:texture-pack` and
+   `EXT:world-capture` rows need no declaration edits.
+
+### Checked, no hazard
+
+- **Input focus:** `GameFlow.Update` sets `Input.TextEntryActive = false`
+  before `Hud.Update` or `Menu.Stack.Update`. A focused `UiTextField` sets the
+  flag and returns `true`. `Input` WASD (4 sites) and `Bindings` (`isPressed = !TextEntryActive`)
+  read the previous frame's flag, which is a one-frame lag only.
+  `Renderer`'s `EditorToggle` goes through `Bindings`. ParkHud's
+  `P` pause toggle runs only when `!Paused`, and online screens push onto the
+  stack, so `Paused` is true while typing. No root-side commit adds raw keyboard reads.
+- **Read-only visits:** Publish is enabled only for
+  `level != null && !level.IsReadOnlyVisit`, and `ParkSharing.ExportLevel`
+  still throws on a visit. The new Visit goes through `StartLevel(..., visit)`.
+- **UI models:** the root (`ae788a3`/`864f82d`) moves `UiModels` to
+  `UiModels.cs`, with root-name keys and strict collisions. Origin still has
+  the old class in `UiWidgets.cs`. The deletion auto-merges and leaves no
+  duplicate type. New callers use `Context.Models.Get(name)`, whose
+  case-insensitive alias fallback still resolves `f_text1`. Tests that use the
+  throwing loader get `null` (fallback drawing) and never hit `Register`
+  collisions. Not qualified: whether any new widget name exactly equals a
+  *different* asset's root name. That needs ui.wad.
+- **Render ownership:** `WorldCapture` reads `ResolveColorTexture` (`Own(...)`,
+  `B8_G8_R8_A8_UNorm` on `0d58bd4`) through its own `using` staging texture.
+  The texture pack only redirects `UpdateFromWct` to `UpdateFromStb` for an
+  existing PNG. The builder skips interface textures. The pack is built locally
+  from the player's install, is never shipped, and is off by default. Original
+  assets are untouched.
+- **Economy/catalog:** the new commits do not touch economy, VM or save files.
+
+### Test handoff
+
+`tools/ppc-analysis/lanes/review/test_round11.py` has six git-object bindings,
+covering the conflict set, the both-sides-fail evidence, the GameFiles bypass,
+focus gating, the read-only publish gate and the UiModels move. They need no
+assets and skip when the commits are absent. Supplementary tests for the owner
+(generated fixtures, no originals):
+- GameFilesScreen through a stubbed `InspectAsync` that never completes, to
+  show the UI stays responsive;
+- a `UiTextField` focused in ParkHud while `P` and `Escape` are pressed;
+- `Input.TextEntryActive` reset after a Visit transition.
+
+`OPENTPW_PC_FIXTURE` and the scientist runner registration are still a future
+handoff after the lanes merge.
+
+### Status
+
+| Item | State |
+| --- | --- |
+| `0d58bd4` (`778ea5d` merge) | Committed by owner. Not re-tested here beyond the scratch merge |
+| `e31c804` merge | **Pending**. Two unmerged paths. HIGH 1 must be hand-resolved |
+| GameFilesScreen bounded inspection | Handoff to Native UI (MEDIUM 2) |
+| Register | Regenerate (LOW 3) |
+
+Unresolved objections carried forward unchanged: no PC or Patch 2 runtime
+equivalence for Mac-derived rules; the formats per-channel clock source is
+unmodelled; TPI history blob qualification (section 38); SDT bank remap;
+Instant Action policy.
+
+Review tests: 138 without the fixture variables (119 pass, 19 skip).
+
+## 48. Round 12: `--pc-fixture` and scientist harness registration in the runner
+
+Scope: only `tools/ppc-analysis/run_evidence_checks.py`, the new
+`lanes/review/test_round12.py` and this file. No production source, workflow or
+peer tree was written. No asset directory was listed. The only original file
+read is the one supplied `Easymode.TPWI` (38,479 bytes, SHA-256
+`6d89303d…`, the identity that both the rides lane and the scientist harness
+pin). Root `main` is still `0d58bd4`, and its runner is byte-identical to this
+lane's round-9 runner, so this round applies to it unchanged. The integration
+owner has not committed the `e31c804` resolution, so that work is not inspected.
+Native UI lifecycle work (final `Dispose` stack cancellation, Linux manual path
+entry) belongs to the Native UI reviewer and is not duplicated here.
+
+### Runner changes
+
+- **`--pc-fixture PATH`** sets `OPENTPW_PC_FIXTURE`, which is now the fourth
+  entry in `FIXTURE_VARIABLES`. An inherited value is always stripped, so a
+  stale shell value never reaches a Python lane or a .NET harness. Before this
+  round, `run_dotnet` copied the full `os.environ`. It now receives the
+  stripped fixture environment.
+- **Never inferred.** `--pc-data` does not imply the fixture, even when
+  `levels/jungle/Easymode.TPWI` exists below it.
+- **Shape check only, with no hashing in the runner.** The path must be a
+  regular `.TPWI` file outside the checkout, so original assets stay out of
+  Git. Its size must be greater than `0x629` (the container header) and at
+  most 8 MiB (the scientist reader's bound). Identity stays with the lanes. A
+  failed check exits with code 2 before any lane runs.
+- **Scientist registration.** `lanes/economy/OriginalScientistSnapshot.Tests.csproj`
+  (net8.0) is in `SELF_TESTS`. `FIXTURE_ARGUMENTS` appends `--fixture PATH` to
+  its command only when `--pc-fixture` is given. As before, it runs from a
+  temporary copy outside the SDK 10 `global.json`.
+- **Honest coverage.**
+  - A registered harness that the checkout lacks is reported as `absent` (no
+    coverage claimed). This is what happens for the scientist on `main`.
+  - A harness with no registration stays `not-run` (for example the rides
+    `ControllersWitness.csproj`).
+  - Without `--dotnet`, every harness is still listed.
+  - A fixture flag counts as consumed only when the target checkout actually
+    reads it: a ppc-analysis source must read one of the flag's variables
+    through `environ[...]`, `environ.get(...)` or `getenv(...)`, or a present
+    harness must take the flag. Naming the variable in synthetic data does not
+    count. A supplied flag that nothing reads is printed as `note`.
+- **`--require-fixtures`** now fails on:
+  - any Python skip, as before;
+  - a harness `NOT RUN:` fixture line (new status `fixture-skipped`);
+  - a supplied fixture flag that nothing reads.
+
+  Without `--require-fixtures`, a fixture that was deliberately left out never
+  fails CI. A registered harness that is absent never fails either, because a
+  missing project is not a skipped fixture.
+
+### Tests (`test_round12.py`, 14, synthetic, with no assets or SDK)
+
+- Stale-value stripping, both with and without the flag.
+- `--pc-data` does not derive the fixture.
+- Rejection of a missing path, a directory, the wrong suffix, a header-only
+  file, an oversized file and a path inside the checkout.
+- `main` exits 2 on a missing path.
+- Registration invariants, and arguments added only when the fixture is
+  supplied.
+- A registered project is reported absent until it exists in the checkout.
+- Consumer detection, including a helper-module read, and synthetic dict
+  literals not counted.
+- A fake POSIX `dotnet`:
+  - shows that a stale `os.environ` value does not reach the harness;
+  - gives `fixture-skipped` only under `--require-fixtures`;
+  - receives `--fixture <resolved path>` when the fixture is supplied.
+- `main` exit codes for an unread fixture (`note` → 0, required → 1).
+- `--mac-bin` counts as consumed when either of its two variables is read.
+
+The fake-`dotnet` class is skipped on Windows.
+
+### Results (stale `OPENTPW_PC_FIXTURE=/stale/nowhere.TPWI` exported for every run)
+
+| Target | Command | Result |
+| --- | --- | --- |
+| This tree | CI (no flags) | OK, 290 tests, 31 skipped |
+| This tree | `--mac-bin --pc-data --pc-fixture --dotnet` SDK 8 | OK, 290 tests, 8 skipped (UI corpus). Review 152/152. `--pc-fixture` note: nothing here reads it |
+| `main` `0d58bd4` | CI | OK, 230 tests, 16 skipped. Scientist `absent` |
+| `main` `0d58bd4` | `--mac-bin --require-fixtures` | **FAILED**: UI 8 skips (`UI_EVIDENCE_*` not supplied). Everything else is 0 skips |
+| `main` `0d58bd4` | `--pc-data --pc-fixture --require-fixtures` | **FAILED**: nothing on `main` reads `OPENTPW_PC_DATA` or `OPENTPW_PC_FIXTURE` |
+| `ppc-economy` `62c0a2e` | `--pc-fixture --require-fixtures --dotnet` SDK 8.0.425 | OK. Scientist **16/16 groups, 1,658 assertions** with the actual fixture. Loans 25/25 |
+| `ppc-economy` `62c0a2e` | `--require-fixtures --dotnet` (no fixture) | **FAILED**, as intended: scientist `fixture-skipped` |
+| `ppc-economy` `62c0a2e` | `--dotnet` (no fixture) | OK. Scientist passes its synthetic groups and reports `NOT RUN` |
+| `ppc-rides` `84fe814` | `--mac-bin --pc-fixture --require-fixtures` | OK, rides 24/24, 0 skipped |
+
+Not covered, listed honestly:
+- `main` has no scientist project and no rides `OPENTPW_PC_FIXTURE` reader yet.
+- The UI corpus variables still pass through without a flag.
+- `Layer1Corpus` and `CorpusWitness` remain `not-run` (private corpus).
+- The rides `ControllersWitness` has no registered self-test.
+- No combined scratch merge of economy and rides onto `main` was run.
+
+The scientist pass is a self-consistency check against one identified PC
+fixture. It is not evidence of original runtime restoration (both
+`SourcePayloadRevalidated` and `CanRestoreRuntimeStaff` remain false).
+
+### Handoff to the integration owner
+
+When the economy (`62c0a2e`) and rides (`84fe814`) lanes merge, take this
+runner as a whole. CI stays without fixture flags. The private command is:
+
+```sh
+UI_EVIDENCE_BIN_ROOT=… UI_EVIDENCE_MAC_UI=… UI_EVIDENCE_MAC_UITEXT=… \
+UI_EVIDENCE_MAC_UIHELP=… UI_EVIDENCE_MAC_MBTOUNI=… UI_EVIDENCE_RESIDX=… UI_EVIDENCE_PC_UI=… \
+python3 -I -B tools/ppc-analysis/run_evidence_checks.py --mac-bin $FERAL_BIN \
+  --pc-data $TPW_DATA --pc-fixture $TPW_DATA/levels/jungle/Easymode.TPWI \
+  --require-fixtures --dotnet $DOTNET8/dotnet
+```
+
+On today's `main`, leave out `--pc-data` and `--pc-fixture`: with
+`--require-fixtures` they correctly fail as unread.
+
+Unresolved objections carried forward unchanged: no PC or Patch 2 runtime
+equivalence for Mac-derived rules; the formats per-channel clock source is
+unmodelled; SDT bank remap; TPI history blob qualification (section 38);
+Instant Action policy.
+
+Review tests: 152 (133 pass and 19 skip without fixture variables; 152 pass
+with `--mac-bin --pc-data`).
+
+## 49. Round 13: runner `0f4ae55` fixture trust, formats `ab444e3`, clock selector and snapshot state
+
+Scope: own files only (`lanes/review/round13_evidence.py`, `test_round13.py`
+and this section). No production, workflow or peer tree was written. The only
+original files read were the two supplied fixtures, each by stat and hash
+(`SimThemePark.data` 2,274,758 bytes; `Easymode.TPWI` 38,479 bytes, SHA-256
+`6d89303d…`). No asset directory was listed. Root `main` is still `0d58bd4`,
+and no integration commit after it exists, so the **final integration snapshot
+is pending**. Its checks below were run on `0d58bd4` and the lane heads. Native
+UI lifecycle work (mixed CD remnants, bounded `GameFilesScreen`, `Dispose`
+cancellation, manual path actions, busy-state typed actions) belongs to the
+Native UI reviewer and is not duplicated here.
+
+### Runner `0f4ae55`: one MEDIUM, one LOW (latent), the rest holds
+
+**MEDIUM: `--require-fixtures` passes with a fixture nothing consumed when
+`--dotnet` is omitted.** `fixture_consumers` counts a *present* fixture-argument
+harness as a consumer, whether or not it runs. Probe: scratch `git archive` of
+`ppc-economy` `62c0a2e`, stale `OPENTPW_PC_FIXTURE` exported, then
+`--pc-fixture <actual> --require-fixtures` with no `--dotnet`. Result: **exit
+0**. The scientist harness is `not-run no --dotnet`, no Python source in that
+tree reads the variable, and `unconsumed_fixtures` is empty. With `--dotnet`
+the same tree is correct: the harness passes with `--fixture` (round 12), or
+fails as `fixture-skipped`. Fix options (runner owner's choice):
+- under `--require-fixtures`, fail when `--pc-fixture` is supplied without
+  `--dotnet` and no Python reader exists; or
+- count a harness as a consumer only after it reports `passed` with the
+  fixture argument.
+
+`round13_evidence.vacuous_fixture_consumers(report, FIXTURE_ARGUMENTS)` flags
+this case from a `--json` report. It flags `OPENTPW_PC_FIXTURE` for the
+`62c0a2e` probe and nothing once a Python reader or a passing fixture run
+exists.
+
+**LOW (latent): linked harness items fail in the scratch copy.** `run_dotnet`
+copies only `project.parent`. Rides `84fe814`'s unregistered
+`controllers/ControllersWitness.csproj` has `None Include="../controller-contracts.json"`
+with `CopyToOutputDirectory`. Probe: register it in memory only, then run it
+with SDK 8.0.425. Result: `MSB3030 Could not copy … controller-contracts.json`,
+classified as generic `failed`. This fails closed, but it is misleading. If the
+owner registers that witness, the copy must preserve the lane-relative layout,
+or the runner must report `linked-outside-copy`. `Layer1Corpus` (links
+`source/…` files) and `CorpusWitness` (references `OpenTPW.Files`) are
+`NEEDS_CORPUS` and never copied. `linked_outside_copy` was applied to every
+present `SELF_TESTS` project in `0d58bd4`, `62c0a2e`, `84fe814`, `1d3b8d4` and
+`6d1b8d9`: no include climbs out. A test pins this for the current checkout.
+
+Holds under realistic absences:
+- Registered projects missing from a tree are `absent`, never coverage and
+  never consumers. This was checked on the economy-only archive: seven absent,
+  and the scientist is counted only when present.
+- Stale `OPENTPW_PC_FIXTURE` is stripped for both Python lanes and harness
+  processes.
+- The fixture is never inferred from `--pc-data`. The review lane's own
+  round-10 walk derives the path from `OPENTPW_PC_DATA`, but pins both the
+  container and payload SHA-256, so it cannot pass on another file.
+- No SDK 8 registered harness references a newer project. `CorpusWitness`:
+  rides `84fe814` only adds a `Compile Remove` line, and main's `net10.0` hunk
+  does not overlap it, so a 3-way merge keeps `net10.0` and no
+  `incompatible-reference` failure appears.
+- Scenarios `1d3b8d4` adds `OriginalProgressionContract.Tests.csproj`, which is
+  unregistered and therefore `not-run`. Coverage is not claimed for it.
+
+### Caller metadata and original-source reauthentication (economy `62c0a2e`)
+
+`PersistedOriginalScientistSnapshot.SourcePayloadRevalidated` and
+`CanRestoreRuntimeStaff` are constant `false`. No JSON field can set them, and
+unknown members are rejected. So caller metadata **cannot claim reauthentication**
+through the wrapper. Round 10's LOW is fixed: the identified label now requires
+the exact 13-row prefix, scientist record and tail 215,879.
+
+Residual qualification (not a blocker): under `IdentifiedPcEasymodeFixture`,
+`Validate` pins provenance and shape but not the scalars. `GradeWord`,
+`RawStateWord`, happiness/energy bits, ticks, `PersonRecordSha256` and the
+inline name are not pinned. The name only has to match its own digest. So a
+caller envelope with altered scalars keeps the identified label on
+`persisted.Snapshot.Provenance.Qualification`. That inner object has the same
+type a direct reader produces. Consumers must gate on the wrapper, not on the
+inner label. This is a static finding: no SDK build was run for it. Since the
+label names one file, the cheap fix is to pin every scalar to the values that
+`ActualFixture` already asserts. The alternative is to downgrade the label on
+load.
+
+### Formats `ab444e3` (per-animator rate): accepted with qualifications
+
+- **Rate compatibility.** The constructor is `(model, ticksPerSecond = 30,
+  keepsPoseOnClipChange = false)`, a superset of main's `(model, ticksPerSecond
+  = 30)`. Main's rate test is carried verbatim. A positional `bool` cannot bind
+  to `float`, so old call sites fail at compile time instead of silently
+  changing. `git merge-tree 0d58bd4 ab444e3` leaves **one conflict** in
+  `ObjectAnimator.cs`: the constructor line and the `keepsPoseOnClipChange`
+  assignment. The resolution takes `ab444e3`. The merged `GetFrame` and carry
+  use the instance rate once, and `Play` and the player use it consistently.
+  At 30 the single-precision steps match the `0xa6484`/`0xa6398` formulas.
+- **15 ticks/s test scope.** I recomputed the arithmetic by hand:
+  - endpoint 2000 ms → 30, not past the end;
+  - +100 ms → carry 1.5 ticks → 100 ms (the 30-rate formula would give 50 ms);
+  - a far-past update caps at the duration;
+  - 10 ticks at 667 ms → 0.333 ms truncates to 0;
+  - the fixed-item pose holds through a matrix-only clip.
+
+  This is internal consistency of an OpenTPW extension, not original
+  evidence. The doc says so. A rate other than 30 must not be presented as
+  game-speed emulation. The original scales the selected clock's milliseconds
+  and keeps `1000 × carry / 30`, so truncation happens in different units.
+- **Two channel clocks: limitation preserved, not modelled.** `0xa6398` picks
+  the bind start from +16408 (channel flag 0x40) or +16400. One animator clock
+  per object remains, and which clock feeds `now` in `0xa6484` is still
+  untraced.
+- **Docs/register freshness.**
+  - `OBJECTS.md` still says "30 ticks/s (unverified)", while `MD2-MODELS.md`
+    says Mac speed 1.0 is proven. `RIDES-001` still reads "original tick rate
+    not verified". These carry forward from round 9.
+  - `fidelity_register.py --check` fails on `ab444e3` (RIDES-001/002/003 lines
+    move to 25/256/198), and already failed on its parent `2d3442f` (older
+    base). `main` `0d58bd4` passes (136 IDs).
+  - CI runs `--check`, so the integration must regenerate the register after
+    merging formats.
+
+### Clock selector1 correction: pending (not committed)
+
+`ppc-clock` is clean at `6d1b8d9`. That commit still says "Both visible paths
+can reach saved-word/state reading". `ApplyPostLoadHook(existing, saved, bases,
+1)` returns `existing` but takes `saved` words that a source early-success path
+would never read. Pending owner edits were not inspected or accepted. To accept
+the committed correction:
+- it cites the early-success branch, with a hash-pinned region;
+- the doc sentence is replaced;
+- the selector1 contract no longer implies the SSEM/RSE words were read;
+- a test covers the no-load path;
+- "selector1 is not GameType1" and "full lifecycle unqualified" stay.
+
+### Integration snapshot checks (on `0d58bd4`; final snapshot pending)
+
+- **Original assets.** Neither fixture's git blob hash (`245a6743…`,
+  `816de5d1…`) exists in the object database, and no blob has either exact
+  size. No asset-extension paths are in `0d58bd4`, `62c0a2e`, `84fe814`,
+  `ab444e3`, `6d1b8d9`, `1d3b8d4` or `0f4ae55`. The only tree blob over 1 MB is
+  upstream `content/textures/test.png` (2022).
+- **Source aliases.** `0d58bd4` uses only the declared `[BIN:STP-PPC` alias (9
+  sites), and the lane heads add none.
+- **Register.** `0d58bd4` is fresh. `ab444e3` needs regeneration on merge, as
+  above.
+
+### Results
+
+| Target | Command | Result |
+| --- | --- | --- |
+| This tree | CI (no flags, stale fixture exported) | OK, 295 tests, 31 skipped; review 157 (19 skip) |
+| This tree | `--mac-bin --pc-data` | OK, 295 tests, 8 skipped (UI corpus); review 157/157 |
+| `62c0a2e` archive | `--pc-fixture --require-fixtures` (no `--dotnet`) | **exit 0**, `vacuous_fixture_consumers = [OPENTPW_PC_FIXTURE]` (MEDIUM) |
+| `84fe814` archive | `ControllersWitness` in-memory registration, SDK 8.0.425 | `failed` (MSB3030 linked file) (LOW, latent) |
+
+Not run: a full codec rerun, a combined economy+rides+formats scratch merge
+build, the UI corpus, original runtime and PC/Patch 2 parity.
+
+Unresolved objections carried forward unchanged:
+- no PC or Patch 2 runtime equivalence for Mac-derived rules;
+- the formats per-channel clock source (two clocks) is unmodelled;
+- SDT bank remap;
+- TPI history blob qualification (section 38);
+- Instant Action policy.
+
+### Handoff
+
+1. Runner owner: close the MEDIUM gap before relying on
+   `--require-fixtures --pc-fixture` without `--dotnet`. Until then, always pass
+   `--dotnet $DOTNET8/dotnet` with `--pc-fixture`. Take the round-12 runner
+   whole when economy and rides merge, as before.
+2. Integration owner, after merging formats `ab444e3`:
+   - resolve the `ObjectAnimator.cs` constructor conflict toward `ab444e3`;
+   - run `python3 tools/fidelity_register.py --write`;
+   - re-describe RIDES-001 as "30 in the Mac channel clock at speed 1.0; PC and
+     clock selection unverified".
+3. Economy owner: optionally pin the identified-label scalars, or downgrade the
+   label on load.
+4. Clock owner: commit the selector1 correction with the criteria above. Review
+   will accept it only from a commit.
+5. Re-run this section's snapshot checks (asset blobs, aliases,
+   `fidelity_register.py --check`) on the final integration commit.
+
+Review tests: 157 (138 pass and 19 skip without fixture variables; 157 pass
+with `--mac-bin --pc-data`).
+
+## 50. Round 14: runner fixture consumers closed, `34c75be` host selection, final checkpoint containment
+
+Scope: the round-13 MEDIUM runner gap (this round the review lane owns
+`run_evidence_checks.py`), plus review tests and this section. No production,
+workflow or peer tree was written. No original asset was read: the actual
+fixture paths were not supplied this round, so every fixture probe used a
+zero-filled synthetic `Easymode.TPWI` of valid shape outside the checkout. No
+asset directory was listed and no filesystem-wide search was run.
+
+Reviewed checkpoint: `46c5b6c` (last executable snapshot, contains remote
+`f4482c4`) → `0b67f02` (only `docs/reverse/APPROX-TRACE.md`, +58) → `34c75be`
+(Windows native-testhost fix; root `main`, pushed). Remote `255cc7b` descends
+from `34c75be` with 5 commits of parallel gameplay work (advisor, economy,
+research; 10 files). That is **later source, not the reviewed checkpoint**, and
+nothing below accepts it.
+
+### Runner: MEDIUM closed
+
+- **Consumers are what actually used the fixture.** `fixture_consumers` now
+  counts Python sources that read the variable (every Python suite always runs)
+  and fixture-argument harnesses whose result is `passed`, carries the fixture
+  option in `arguments`, and has no `NOT RUN:` line (`used_fixture`). A harness
+  that is present but not run (no `--dotnet`), absent, skipped, failed or
+  `fixture-skipped` is not a consumer. Consumers are computed after the .NET
+  pass, so the report reflects the run, not the tree.
+- **Dependency-copy qualification.** `linked_outside_copy` (moved from the
+  round-13 aid into the runner) lists `Compile`, `ProjectReference`, `None`,
+  `Content` and `EmbeddedResource` includes that climb out of the project
+  directory, including `$(MSBuildThisFileDirectory)`/`$(MSBuildProjectDirectory)`
+  prefixes, backslashes and multi-line elements. A *registered* harness with
+  such an item is `linked-outside-copy` (a failure) and is never built, so no
+  misleading MSB3030 `failed` appears. An *unregistered* one stays `not-run`,
+  with the reason qualified: rides `84fe814`
+  `controllers/ControllersWitness.csproj` reports `no registered self-test;
+  scratch copy would lack None ../controller-contracts.json`. It should stay
+  unregistered until the scratch copy can carry its external JSON resource.
+- **Kept:** per-lane discovery processes, stale-variable stripping (Python and
+  harness processes), no inference from `--pc-data`, `absent` for registered
+  projects missing from a tree, SDK 8 scratch copies outside the checkout with
+  no `bin`/`obj` written back.
+- Round-12 and round-13 tests that pinned the old presence-based count now pin
+  the closed behaviour. `round13_evidence.vacuous_fixture_consumers` still flags
+  a `0f4ae55`-shaped report.
+
+New `test_round14.py` (11 tests; a POSIX fake `dotnet` logs project, working
+directory, arguments and the inherited `OPENTPW_PC_FIXTURE`). Before the fix:
+7 failures and 4 errors. After: all pass. They cover:
+- no `--dotnet`: exit 1 under `--require-fixtures`, only a note without it;
+- a passing harness with `--fixture <resolved path>` is the consumer;
+- a `NOT RUN:` or failed harness is not; `--require-fixtures` turns the
+  `NOT RUN:` case into `fixture-skipped`;
+- a Python reader still consumes without `--dotnet`;
+- an absent harness is never run or counted;
+- each harness runs from its own scratch directory outside the checkout, with
+  no stale fixture inherited;
+- linked-include parsing; ControllersWitness qualified both with and without
+  `--dotnet`; an in-memory registration fails closed before any build;
+- no registered self-test in this checkout links outside its copy.
+
+### `34c75be` `ChildStartForHost`: accepted
+
+- **Identity.** `applicationHost` is `GetEntryAssembly() == typeof(Program).Assembly`.
+  Cases:
+  - application apphost (any name): host = own executable, no assembly
+    argument;
+  - `dotnet` muxer (`dotnet OpenTPW.dll`, or a testhost run via `dotnet`): host =
+    that muxer, assembly path prepended;
+  - native testhost (Windows `testhost.exe`): host = `DOTNET_HOST_PATH`, else
+    `DOTNET_ROOT/dotnet[.exe]`, else `dotnet` on `PATH`, assembly path
+    prepended.
+
+  A null entry assembly falls to the managed path, which is the safe side.
+- **Arguments.** Everything goes through `ArgumentList`: no quoting, folders
+  with spaces survive, and the picker's empty `initial` stays one empty argument.
+  `UseShellExecute` is false and stdout/stderr are redirected, as before.
+- **CI.** Run `37998226690` (head `34c75be5f8…`): ubuntu, windows and macOS
+  all succeed. Windows `OpenTPW.Tests`: 757 passed, 0 failed, 230 skipped,
+  which includes the two new regressions. The codec was not rerun.
+- **Residual, LOW and informational only.** A muxer renamed away from
+  `dotnet` (for example `dotnet-x64`) under the application entry assembly would
+  be treated as the apphost. A single-file publish has an empty
+  `Assembly.Location`, but it is always an application host, so the managed
+  path is never taken there. Neither case is a supported launch path today.
+
+### Final checkpoint containment (git objects only)
+
+| Check | `46c5b6c` | `0b67f02` | `34c75be` | `255cc7b` (later, not reviewed) |
+| --- | --- | --- | --- | --- |
+| Fixture blob prefixes `245a6743`/`816de5d1` in the object DB | absent | absent | absent | absent |
+| Blob of size 2,274,758 or 38,479 | none | none | none | none |
+| Original-asset extension paths | 0 | 0 | 0 | 0 |
+| Blobs > 1 MB | upstream `content/textures/test.png` only | same | same | same |
+| `[BIN:` aliases in `source/` | 9, all `STP-PPC` | 9 | 9 | 13, all `STP-PPC` |
+| `fidelity_register.py --check` | — | — | exit 0, 136 APPROX IDs | exit 0, 135 |
+
+Every bracket label in `source/` at `34c75be` is `APPROX`, `DATA`, `EXT`,
+`BIN:STP-PPC`, or a C# `[global::…]`/`[assembly:…]` attribute. There is no
+undeclared alias (`BINARIES = ("STP-PPC", "TPI-EXE")`).
+
+### Carried, not proven
+
+- **Clock owner: calendar host-date conflict.** In `0b67f02` `APPROX-TRACE.md`,
+  ECON-002 says the park clock "starts from the real local date and time read at
+  clock construction (`FUN_100e3c90`)". That claim was Haiku search text: the
+  skeptic was "refuted → contradicted" and there was no lead review. Section 37
+  (clock `7f8ef64`) established only that the RSE handlers at
+  `0xb2144`…`0xb2238` read host civil time, not the park calendar. Whether the
+  park calendar is seeded from host time is a hypothesis for the clock owner,
+  and it conflicts with any fixed-epoch reading. The search text is not
+  evidence, and no fidelity claim may cite it.
+- No PC or Patch 2 runtime equivalence, no channel-clock source, and no
+  SDT-device claims. All objections from round 13 carry forward unchanged.
+
+### Results
+
+| Target | Command | Result |
+| --- | --- | --- |
+| This tree | `run_evidence_checks.py` (no flags) | OK, 306 tests, 31 skipped; review 168 (19 skip) |
+| This tree | `--dotnet $DOTNET8/dotnet` (8.0.425) | OK; 6 registered harnesses pass in scratch copies; scientist `absent` |
+| `62c0a2e` archive + new runner | `--pc-fixture <synthetic> --require-fixtures`, stale var exported | **exit 1**: `FAIL --pc-fixture … nothing that ran … used it` (was exit 0) |
+| `62c0a2e` archive + new runner | same + `--dotnet` SDK 8 | exit 1: scientist rejects the synthetic file (15/16 groups) and is not counted; loans 25/25 |
+| `84fe814` archive + new runner | `--dotnet` SDK 8 | OK; ControllersWitness `not-run … would lack None ../controller-contracts.json`; AnimationWitness passes |
+| `84fe814` | ControllersWitness in-memory registration, `run_dotnet` SDK 8 | `linked-outside-copy`, no build (was MSB3030 `failed`) |
+| `34c75be` | CI run `37998226690` | success on all three OS |
+
+Not run: the actual-fixture positive path (`--pc-fixture <actual> --dotnet`),
+because no fixture path was supplied (round 12 recorded 16/16 with the actual
+file). Also not run: a codec rerun, UI corpus, original runtime and PC/Patch 2
+parity.
+
+### Handoff
+
+1. Integration: take `run_evidence_checks.py` from this lane whole. The
+   round-13 advice to always pass `--dotnet` with `--pc-fixture` is no longer
+   needed for correctness, but it is still the only way to get a consumer from
+   the scientist harness.
+2. Rides owner: keep ControllersWitness unregistered until the runner's copy
+   can carry `../controller-contracts.json`. One option is to copy the lane
+   directory and run the project at its relative path.
+3. Clock owner: settle the ECON-002 host-date seeding with a hash-pinned trace
+   of `FUN_100e3c90`, or reject it.
+4. Re-review `255cc7b` (or its successor) as a new checkpoint; it is not
+   covered here.
+
+## 51. Round 15: batch 2 partial integration, runner save-path variable, unmerged UI/rides/economy tips
+
+Scope: `integration-batch2` as committed at **`ef6ff14`** (base `f635468`;
+formats `ab444e3` → `2175677`, clock `b52dcff` → `5cb584c`, economy `62c0a2e` →
+`76e7700`, rides `84fe814` → `ef6ff14`), plus unmerged tips UI `f51cc05` and
+`b7bead5`, rides `c6b0906` and economy `60d86de`. The UI merge of `917eb36` was
+still in progress (four files with conflict markers: `COMPATIBILITY.md`,
+`SignCanvas.cs`, `SignFile.cs`, `SignFileTests.cs`), and review `4e173cb` was not
+merged. Those resolutions are **pending**, not reviewed. The sign conflict audit
+belongs to the UI owner and is not repeated here. Every check ran on `git archive`
+copies under `/tmp`. Nothing was built or written in the batch-2 worktree.
+
+### Committed batch 2 resolutions
+
+| Merge | Conflict | Verdict |
+| --- | --- | --- |
+| `2175677` formats | `ObjectAnimator` constructor | Correct. It keeps main's `ticksPerSecond` finite/positive validation and `TicksPerSecond` assignment, together with the format lane's `keepsPoseOnClipChange` parameter, field and `RelativeAnimationFlag` mask. `OriginalObjectRuntime` passes `entry.IsFixedItem`. |
+| `5cb584c` clock | none | Clean. |
+| `76e7700` economy | none | Clean. No lab reader (`60d86de`) or RNG ancestry. Scientist harness is 16 groups / 1,658 assertions here, not 22 / 8,305. |
+| `ef6ff14` rides | `PPC-rides.md` integration note | Correct. The rewritten note says that the helper through `84fe814` includes the capacity correction. `CoasterVehicleState.PlanAllowance` is `min(min(max(requested, globalMin), definition), train)`, and `PassengerRing.QueryRoom` floors by the global minimum, as the note says. |
+
+`git diff --check f635468 ef6ff14` is clean. No later clock, RNG or lab commit is
+an ancestor of `ef6ff14`.
+
+### New finding R15-1 (corrected in this lane): clock real-save witnesses were never run by the runner
+
+Four clock tests (`test_clock_epoch`, `test_calendar_epoch`, `test_save_phase`,
+`test_saved_script_graph`) read the identified save as
+**`OPENTPW_PPC_SAVE_PATH`**. The runner neither set that variable from
+`--pc-fixture` nor stripped it from the environment. So on `ef6ff14`, the run
+with `--pc-fixture <actual>` skipped all four (69 ran, 4 skipped). With
+`--require-fixtures` the run would fail. If a stale shell value was present, the
+tests ran against whatever file it named. Run directly with the actual
+`Easymode.TPWI`, they pass: 69/69 with no skips. The witnesses were correct, but
+the runner never exercised them.
+
+Fix: `--pc-fixture` now sets both `OPENTPW_PC_FIXTURE` and
+`OPENTPW_PPC_SAVE_PATH` from the one shape-checked path. Both are in
+`FIXTURE_VARIABLES`, so both are stripped when the flag is absent. Consumer
+accounting now credits clock. `test_round15.py` covers set, strip, the
+`--require-fixtures` skip failure and the mapping; it fails 4/4 against the
+`4e173cb` runner. The two round-12 message assertions now name both variables.
+`UI_EVIDENCE_*` remains a documented pass-through and is unchanged.
+
+### Unmerged lane tips
+
+- **UI `f51cc05` stable catalog sort.** `linked_sort` does a strict
+  first-extreme head selection, then strict insertion, recomputing the ordinal
+  predecessor after each relink. I compared it against Python's stable `sorted`
+  in 4,000 random trials: 0–12 rows, both directions, duplicate signed and text
+  keys, item IDs −2/−1/0/5/7 and shuffled links. Every result matched. Marker −1
+  versus item ID −1/−2 stays separate, and hierarchical rows and high-bit UTF-16
+  are rejected. Accepted as a flat-root reference only.
+- **UI `b7bead5` key/mouse/queue/invalid-row witnesses.** `QueueReference` is
+  FIFO on descending indexes. It rejects a full slot without overwriting it.
+  `emit_normal` reports success independently of enqueue, so a reported success
+  is not a delivery. An invalid nonempty ordinal returns the head, and the false
+  path yields `None`, not an invented ID. Native witnesses with only
+  `UI_EVIDENCE_BIN_ROOT=<Feral bin>`: `test_catalog_sort`, `test_catalog_input`
+  and `test_catalog_events` give 26 tests, 0 skipped. The full UI lane without the
+  private ui.wad/residx/str extractions gives 69 tests, 27 skipped. The commit's
+  "zero skips" holds only with those private paths, which were not located here.
+  No filesystem scan was done to find them.
+- **Rides `c6b0906` RNG streams.** The context LCG (1664525/1013904223, wrapping
+  signed abs), stdlib (1103515245/12345, 15-bit) and COAST (214013/2531011, high
+  16 bits) generators stay separate. The RSE projection does a logical >>1, then
+  a remainder by signed16 bound + 1. The −2/−3/−32768 rows of `rand-native.json`
+  follow from the C# arithmetic. Bound −1 (divisor 0) and controller count 0 are
+  rejected as unqualified. TOUR on the signed minimum gives −48. Only reference
+  helpers and witnesses change; there is no production RNG. The seed source is
+  recorded as `time(NULL)` and `UTimer` with clock ownership, and seed, reset,
+  interleaving and restore are listed as unresolved. ControllersWitness, run with
+  the lane-relative `controller-contracts.json` under SDK 8 Debug and Release:
+  25/25. Rides Python with `OPENTPW_MAC_APP` and the actual fixture: 26/26. This
+  is a projection reference, **not** seed or stream restoration.
+- **Economy `60d86de` lab reader.** `ReadIdentifiedPcCandidate` gates on the
+  container SHA, decoded length, payload SHA and fixed world-reference words
+  before the three local frames. It returns
+  `LocallyFramedIdentifiedPcCandidate`, and `IsCompleteWorldSnapshot` and
+  `CanRestoreLiveResearch` are both constant `false`. Harness under SDK 8 with
+  `--fixture <actual>`: 22/22 groups, 8,305 assertions, in both Debug and
+  Release. Without the fixture: 21/21 groups, 8,140 assertions, with a
+  `NOT RUN: actual PC fixture` line. The qualification is explicit and accepted.
+
+### Freshness (committed `ef6ff14` only; final batch commit pending)
+
+| Check | `ef6ff14` |
+| --- | --- |
+| Fixture blob prefixes `245a6743`/`816de5d1` in object DB | absent |
+| Blob of size 2,274,758 or 38,479 | none |
+| Original-asset extension paths | 0 |
+| Blobs > 1 MB | upstream `content/textures/test.png` only |
+| `[BIN:` aliases in `source/` | 29, all `STP-PPC` |
+| `fidelity_register.py --check` | **exit 1, stale** (base `f635468` exit 0, 129 IDs) |
+
+The stale register is line drift only. `--write` on a copy changes the RIDES-001…007,
+RIDES-016, RIDES-023 and `.sam` DATA row line numbers, which moved with
+`ObjectAnimator.cs`/`OriginalObjectRuntime.cs` in `2175677`. The ID rows are
+identical, and `--check` then passes with 129 IDs. This is the same class as the
+earlier `ab444e3` finding. `origin/main` has since moved to `0829614`, which
+changes production `ParkResearch`/`ParkEconomy` and the CD UITEXT numbering.
+Batch 2 is based on `f635468`, so that drift must be merged or explicitly deferred.
+
+### ECON-002 host-date claim: source refutation present, correction pending
+
+`ef6ff14` `docs/reverse/APPROX-TRACE.md:289` still says the funny clock starts
+from host local time at `FUN_100e3c90` and adds tick × 15000. The merged clock
+section "Calendar epoch reconciliation" (`b52dcff`) contradicts both claims:
+
+- `0xe4348` sets `+0` `mFunnyTimeStart` to fixed 2000/1/1. The host
+  `GetLocalTime` writes only `+8` `mSessionStart`.
+- Conversion `0xe4394` divides rate × counter by 4, which gives 3,750 virtual
+  seconds per turn.
+
+`FUN_100e3c90` is probably the same Mac constructor `0xe3c90` at a 0x10000000
+image base. This is an inference and is not verified here. The planned
+APPROX-TRACE correction is **not in `ef6ff14`**. It is a blocker for the final
+batch commit, not a corrected finding. It covers the Mac PEF only. No PC or
+Patch 2 calendar claim follows from it.
+
+### Old findings status
+
+- Corrected earlier and confirmed again: round-14 fixture consumers. The batch-2
+  `ef6ff14` runner is still pre-`4e173cb`, so it lands only when review is merged.
+- Corrected this round: R15-1 (save-path variable).
+- Pending: the UI merge resolution, merging review `4e173cb`+R15-1, regenerating
+  the register, the ECON-002 correction, and the final-commit count/alias/register/
+  containment rerun. `origin/main` `0829614` drift is also pending.
+- Carried unchanged: no PC/Patch 2 runtime equivalence, no channel-clock source,
+  and no SDT-device claim. Self-tests are not runtime parity.
+  ControllersWitness stays unregistered.
+
+### Results
+
+| Target | Command | Result |
+| --- | --- | --- |
+| `ef6ff14` archive | `dotnet test` SDK 10.0.401, filter Md2/ObjectVertexAnimation/ObjectCatalog | build OK; 88 pass, 3 skip (ISO/bonus/GPU), 0 fail |
+| `ef6ff14` archive | 4e173cb runner, `--mac-bin --pc-fixture <actual> --dotnet` SDK 8 | exit 0; 6 harnesses pass, scientist 16/16 with fixture; clock 4 skipped |
+| `ef6ff14` archive | R15 runner, same + `--require-fixtures`, `OPENTPW_PPC_SAVE_PATH=/nonexistent` exported | clock 69/0 skip (stale value stripped); exit 1 only for UI's 8 private-corpus skips |
+| `ef6ff14` archive | same with SDK 10 `--dotnet` | harnesses `missing-runtime` (net8.0); SDK 8 is required for lane harnesses |
+| review lane | `test_round12..15` | 34 OK; `test_round15` against `4e173cb` runner: 4 failures |
+| `b7bead5`, `c6b0906`, `60d86de` | as above | UI native 26/0; rides 26 + Controllers 25; lab 22/8,305 |
+
+Not run: the full codec or corpus reruns, the UI private corpus, the original
+runtime, PC/Patch 2 parity, and any filesystem or mount scan.
+
+### Handoff
+
+1. Batch 2 integrator (`nativeppc_guests`): finish the `917eb36` merge under the
+   UI owner's sign audit. Merge review with this round's runner taken whole.
+   Run `tools/fidelity_register.py --write` after the last source merge. Land the
+   ECON-002 APPROX-TRACE correction, limited to the Mac PEF. Then hand the final
+   SHA back for the count/alias/register/containment rerun.
+2. Run the runner with `--dotnet` on SDK 8 (`opentpw-dotnet`), not SDK 10. Lane
+   harnesses are net8.0.
+3. UI owner: either record the private UI paths needed for "zero skips", or
+   qualify the claim as "with private extractions".
+4. Decide on merging or deferring `origin/main` `0829614` (production research
+   cadence) before batch 2 is pushed.
+
+## 52. Round 16: origin `7bc6c59` start-up movies, formats `f443475` clock selector, scenarios `202fd60` profile snapshot
+
+Scope: the committed `origin/main` start-up movie delta (`aa4674b`, `0b8577f`,
+`7bc6c59`), and the unmerged lane tips formats `f443475` and scenarios `202fd60`.
+The owner merges `7bc6c59` as a separate checkpoint, so nothing here touches batch 2.
+Batch 2 final checks stay **pending** until its final SHA is supplied. The sign audit
+belongs to the UI owner and is not repeated. All checks ran on `git archive`
+copies under `/tmp`.
+
+### `7bc6c59` start-up movies: control flow (no blocker)
+
+| Path | Verdict |
+| --- | --- |
+| Setup child IPC | `InstallationDiscovery.RunChild` returns in `Program.Main` before `Game.Run`. No intro, no window. |
+| Wizard closed | `ResolveGameFolder` returns null before any renderer or intro is created. |
+| `--play-movie` | Headless and windowed both return before `frontEndRun` is computed. Intro never plays. |
+| `--front-end --smoke-test`, plain `--smoke-test`, `--sandbox`, `--load-original-level`, `--visit-park`, `--advisor-say` | `playIntro` is false. Unchanged behaviour. |
+| Default and plain `--front-end` | Intro plays, then the front end. `--no-intro` or any non-empty `OPENTPW_NO_INTRO` skips it (including `0`; worth a line in `RUNNING.md`). |
+| No `Movies` folder / missing `.tgq` | `DirectoryNotFoundException` / `FileNotFoundException` are caught in `TryOpen`, logged, and the movie is skipped. The front end follows. |
+| Window closed mid-intro | `Render.Run` returns. The intro (`using`) and flow are disposed. `Completed` never fires. |
+| Handoff | `Render.OnUpdate` is a delegate field, so removing and adding handlers inside `Completed` works on an invocation snapshot. `DiscardHeldInput` stops a held Esc, Space or click from reaching the lobby. |
+| Register | Code tag `[APPROX:UI-035]` matches the `UiApproximations`, UI.md and FIDELITY-REGISTER rows. `0b8577f` moved the tag off the taken UI-033. |
+
+Findings:
+
+- **R16-1 (medium, origin owner).** Only open-time errors are caught. Frame and
+  audio decoding run lazily in `MoviePlayback.Update` (`DecodeVideoFrame`,
+  `DecodeAudioBlock` through `FillAudio`). That is called from
+  `IntroSequence.Update`, which has no catch. So a truncated or damaged `.tgq`
+  that opens cleanly throws from inside `Render.Run`. `Program.Main` then exits
+  with code 1 before the front end appears. This contradicts the class comment
+  ("a missing or unreadable movie is skipped silently"). Fix: wrap
+  `current.Update()` in the same exception filter, dispose the movie and continue.
+- **R16-2 (low).** `MovieScreen`'s constructor opens the SDL audio output before
+  `new MoviePlayback`. If that throws (`NotSupportedException` for a missing or
+  out-of-range frame rate, or an `ArgumentException` sample-rate mismatch), the
+  intro catches it but the output is never disposed. `UnauthorizedAccessException`
+  (not an `IOException`) is not caught.
+- **R16-3 (low).** `--capture-world` with the default front end now starts
+  counting frames during the intro. Add `capturePath == null` to `playIntro`, or
+  document `--no-intro`.
+
+Fidelity: the Mac order (`bf`, then `day % 8` into an eight-entry table) is
+recorded as UI-035, with the PC order assumed. This round did not re-trace
+`0x101C0F40`.
+
+### Formats `f443475`: channel clock selector
+
+`format_witness.py` exits 0 on the identified `SimThemePark.data`
+(`04809cd4…`). Lane tests `test_clip_clock_reference` and `test_formats_witness`
+pass 24/24. The new `test_round16.py` decodes the nine words at
+`0xa63e8..0xa63fc`, `0xa7288..0xa729c` and `0xa7070..0xa7084` with its own field
+split. It finds `lwz rX,0(ch)`, then `rlwinm. rX,rX,0,25,25` (0x40), then `beq`
+to the `+16400` load (A), with a fall-through `+16408` load (B) and a `b` over it.
+Both clocks load from the same base. Swapping the constants fails 3/3. The doc's
+wording holds:
+
+- "rate is not a ticks-per-second value" is shown only by the reference model's
+  tests.
+- `TicksPerSecond` is called a separate, unproven choice.
+- The model makes no Global.Time wiring or PC claim.
+
+Not independently re-checked: the claim that the advisor is the only
+`use_b = 1` caller, the 252-byte instance copy, the pause wrapper callers, and
+the "channel 0 tested once per channel" quirk. These remain the witness's own.
+The `b52` fixed-2000 epoch and the separate host session are unaffected. Actor
+graph, PC arithmetic and device equivalence stay qualified.
+
+### Scenarios `202fd60`: synthetic gms.dat snapshot
+
+`test_profile_snapshot` passes 31/31 with `OPENTPW_MAC_BIN`.
+`scenario_evidence.py` exits 0. Synthetic probes:
+
+- A complete v12 file round-trips byte-identically.
+- Negative counts cycle under `mac-partial` and give `negative-count` under strict.
+- Version `0xFFFFFFFF` is accepted with an issue under `mac-partial`.
+- A name length of `0xFFFFFFFF` stops at `theme name` (offset 25) without
+  allocating.
+- A partial snapshot whose envelope is forged to `complete: true` is refused by
+  the serializer (settings, then count checks).
+
+The commit and the module make no real-gms or PC parser claim.
+
+- **R16-4 (low).** `from_envelope` checks schema, version and policy only. Other
+  members are not type-checked (a string `version` is accepted). A missing member
+  raises `KeyError`, not `ValueError`. `complete` and `failed_at` are not
+  cross-checked. The serializer still refuses the inconsistent cases tried.
+- **R16-5 (low, wording).** The envelope's `source` field names the Mac executable
+  SHA and the static trace for every snapshot, including ones read from synthetic
+  bytes. It describes where the layout comes from, not where the bytes come from.
+  Rename it to `layout_source`, or add a caller-supplied `bytes_source`, so an
+  envelope is not read as proof of authenticity.
+- **R16-6 (low, efficiency).** The repeated-rideId check is `ride in mystery` on a
+  list, so it is quadratic. 20,000 ids take 1.1 s. Real files are tiny, but a set
+  alongside the list keeps hostile input linear.
+
+### Results
+
+| Target | Command | Result |
+| --- | --- | --- |
+| `7bc6c59` archive | `dotnet test` SDK 10.0.401, filter IntroPlaylist/MoviePlayback/UiApproximation | 26 pass, 4 skip (original movies not supplied), 0 fail |
+| `f443475` archive | `format_witness.py <mac bin>`; lane tests | exit 0; 24/24 |
+| `202fd60` archive | `scenario_evidence.py <mac bin>`; `test_profile_snapshot` | exit 0; 31/31 |
+| review lane | `test_round12..16`; `test_round16` with `OPENTPW_PPC_BIN_ROOT` | OK; 1/1, skipped without the variable |
+
+Not run: the full codec or corpus reruns, the original-movie headless tests, the
+runtime intro on a window, PC parity, and any filesystem scan.
+
+### Handoff
+
+1. Origin owner: R16-1 before or with the `7bc6c59` checkpoint merge. R16-2 and
+   R16-3 can follow.
+2. Scenarios owner: R16-5 wording. R16-4 and R16-6 are optional hardening.
+3. Formats `f443475`: no change needed from this review.
+4. Batch 2: pending its final SHA for the count/alias/register/containment rerun.
+
+## 53. Round 17: batch 2 final `3f87c6b` (intro lifecycle), scenarios `1dacb25` comparator and short reads, final containment
+
+Scope: the committed SHAs `3f87c6b` (integration-batch2, parent `6ec5d28`) and
+`1dacb25` (ppc-scenarios). Uncommitted scenarios edits for R16-4/5/6 were not read
+or run. Every run used a `git archive` copy under `/tmp`. The Mac bin is the
+identified `SimThemePark.data` (`04809cd4…95f5`). No PC save, original movie or
+filesystem scan was needed.
+
+### Merge blockers
+
+- **R17-1 (blocker for clean merge, no behaviour impact). `3f87c6b` converts
+  `source/OpenTPW/Client/Game.cs` from CRLF to LF.** At `6ec5d28` the file has 419
+  CRLF line ends. At `3f87c6b` it has 0 CRLF and 419 LF, with tab indentation
+  unchanged. `git diff -w --ignore-cr-at-eol` shows **one** changed line (the
+  `playIntro` line now calls `IntroPlaylist.ShouldPlay`). So the 838-line diff is
+  418 lines of line-ending churn plus that one line. It is the only line-ending
+  change in all of batch 2 against `origin/main` `7bc6c59`. `.editorconfig` asks
+  for CRLF in `*.cs`, and there is no `.gitattributes` normalisation. Game.cs was
+  one of the 19 CRLF `.cs` files in the index. Left as is, every lane that edits
+  Game.cs hits a whole-file conflict, and `git blame` loses history. Fix: amend or
+  follow up with Game.cs back in CRLF and only the one-line change. Pinned by
+  `test_round17.Batch2LineEndings` (needs `OPENTPW_REVIEW_REPO`).
+  `diff --check` with `blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol`
+  reports nothing for `6ec5d28..3f87c6b` or `origin/main..3f87c6b`.
+
+No other blocker was found.
+
+### `3f87c6b` against R16-1/2/3
+
+| Finding | Status | Evidence |
+| --- | --- | --- |
+| R16-1 post-open decode failure aborts startup | **Closed** | `Update` now wraps `Skip/Update/IsFinished` in the same recoverable filter as opening (`IOException`, `UnauthorizedAccessException`, `NotSupportedException`, `InvalidDataException`, `ArgumentException`). It releases the current movie and moves on to the next one. Review probe: four header-valid synthetic 16x16 TGQs with corrupt bitstreams (empty, all-ones ×1, all-ones ×64, zero). Each opens, and then the real `MoviePlayback.Update` → `DecodeVideoFrame` throws `InvalidDataException` ("bitstream is truncated", "DC size code is invalid" ×2, "coefficient code is invalid"). `IntroSequence` disposes the broken movie once, plays and disposes the next one, and completes. `Draw` is not wrapped, but `MovieScreen.Render` only draws and does not decode. |
+| R16-2 constructor audio leak / `UnauthorizedAccessException` | **Closed** | `CreatePlayback` disposes the audio output if `MoviePlayback` construction (or the `Gain` initializer) throws, and the playback owns it after success. A `MoviePresenter` failure disposes the playback, which disposes the audio. `UnauthorizedAccessException` is in the filter. GPU allocation failure inside the presenter is not tested (the commit says so). |
+| R16-3 `--capture-world` counted intro frames | **Closed** | `IntroPlaylist.ShouldPlay` returns false for `--capture-world`. `WorldCapture` is registered after `playIntro` is decided. |
+| `OPENTPW_NO_INTRO` docs | Closed | RUNNING.md says any nonempty value, including `0`, disables intros, and so does `--capture-world`. The Game.cs comment at line 192 still lists only smoke/`--no-intro`/env (nit). |
+| Dispose | Correct | Sets `completed`, releases the current movie, restores world scaling, and does not raise `Completed`. Game.cs's `using var intro` scope matches. |
+
+Qualified: `ArgumentException` in the filter also covers `ArgumentOutOfRangeException`,
+which `MoviePlayback.Update` throws for a non-finite `Time.Delta`. That programming
+error would be logged as a movie failure, not surfaced. This is low severity, and
+the open path already filtered the same type before this commit.
+`ProgrammingFailureIsNotHiddenAsAnUnreadableMovie` covers only
+`InvalidOperationException`.
+
+### Scenarios `1dacb25`
+
+- **Comparator and writer order: confirmed.** As traced, `operator<` (unsigned
+  `strncmp` over the shorter length, shorter string less on an equal prefix)
+  matches Python `bytes` order for all 400×400 pairs over
+  `{01,41,61,7f,80,e9,ff}`, lengths 0..3 (`test_round17`). It also matched on 20,000
+  random pairs. The earlier operand confirmation (the eqv/subfc/addze sign idiom)
+  stands. `mac_writer_order` sorts deduplicated map keys and the mystery set,
+  ascending unsigned u16.
+- **Short-read correction: confirmed for the model.** `short_import(0, b'\x7f')` =
+  `0x7f000000`. `short_import(-1, b'\x12\x34')` = `0x1234ffff`. A cut one byte into
+  `mExtraKeys` gives `0x7f000000` from both `read_mac_player_file` and
+  `read_profile_snapshot`. Only `mSpentTickets`/`mExtraKeys` are i32 player
+  members, so the scalar `record[key] = short_import(…)` path never sees a list.
+  "FSRead stores the bytes before EOF" is still an assumption about Mac OS and is
+  labelled as one.
+- **R17-2 (low, synthetic only).** `player_file_evidence.read_mac_player_file`
+  still keys themes by the raw name, embedded NUL included. Two themes
+  `a\0x`, `a\0y` are both inserted, with `ok` true. `read_profile_snapshot`
+  (`mac-partial`) stops at `duplicate theme` with key `a`. 1dacb25's own evidence
+  (strlen + strcpy constructor) says the map key ends at the first NUL, so the
+  older reader is now the inconsistent one. Key it by `name.split(b'\0',1)[0]` or
+  note the gap.
+- Lane reruns on the archive: `scenario_evidence.py <mac bin>` exit 0 with 2,090
+  instruction checks. `unittest discover lanes/scenarios` with `OPENTPW_MAC_BIN`:
+  88 tests OK, 0 skipped. Claims stay synthetic/static-Mac. No PC or real-gms claim
+  was made or tested.
+
+### Batch 2 final containment (`3f87c6b`, git objects only)
+
+| Check | `3f87c6b` |
+| --- | --- |
+| Commits ahead of `origin/main` `7bc6c59` | 56 (`origin/main`, `0829614`, review `4e173cb` and `2bef824` are ancestors) |
+| Fixture blob prefixes `245a6743`/`816de5d1` reachable | absent |
+| Blob of size 2,274,758 or 38,479 reachable | none |
+| Original-asset extension paths at tip | 0 |
+| Blobs > 1 MB introduced by batch 2 (`^origin/main`) | none. Reachable from upstream history: `content/textures/test.png`, `export.bin` (deleted upstream in `a108ee7`), `tools/tpi-compare/full-evidence.json` (`f81313a`/`18b09c5`, already on `origin/main`) |
+| `[BIN:` aliases in `source/` | 36, all `STP-PPC`; every bracket label is `APPROX`/`DATA`/`EXT`/`BIN:STP-PPC` |
+| `fidelity_register.py --check` | exit 0, 129 unresolved APPROX IDs (the round-15 staleness is resolved) |
+| ECON-002 host-date claim | corrected: APPROX-TRACE row is `contradicted`, with 2000-01-01 at `+0` and 3,750 s per turn, and no "real local date" text is left |
+| Line endings vs `origin/main` | one file changed: Game.cs CRLF→LF (R17-1) |
+
+### Results
+
+| Target | Command | Result |
+| --- | --- | --- |
+| `3f87c6b` archive | SDK 10.0.401 `dotnet test -c Release`, filter IntroSequence/Round17 probe/MoviePlayback/IntroPlaylist | 35 pass, 4 inconclusive (original movie corpus not supplied), 0 fail. Includes the 5 commit regressions and 4 review probes |
+| `1dacb25` archive | `scenario_evidence.py`; lane `unittest discover` | exit 0, 2,090 checks; 88/88 |
+| review lane | `test_round12..17`; `test_round16` with `OPENTPW_PPC_BIN_ROOT`; `test_round17` with `OPENTPW_REVIEW_REPO` | OK (35 + 4); 1/1; 4/4 |
+
+The C# probe is kept at `tools/ppc-analysis/lanes/review/round17/Round17IntroDecodeProbeTests.cs`.
+It is not compiled here, because it needs `3f87c6b`'s injected `IntroSequence`
+constructor. SDK 8 was not needed: no SDK 8 harness changed in `3f87c6b`. Not run:
+runtime intro in a window, original-movie tests, presenter GPU allocation failure,
+and PC parity.
+
+### Handoff
+
+1. Batch 2 owner: R17-1. Restore CRLF on Game.cs, keeping the one-line change, then
+   re-run `diff --ignore-cr-at-eol --stat` (expect 1 line) before pushing. Optional:
+   the Game.cs comment nit.
+2. Scenarios owner: R17-2 is optional, and so are R16-4/5/6 (in progress).
+3. After R17-1, the batch-2 containment above carries over if only Game.cs line
+   endings change.
+
+## 54. Round 18: batch 2 fix `ba70ea5`, formats `8f0e048` scene clock A and normals, scenarios `ffa87c6` envelope v2
+
+Scope: the committed SHAs `ba70ea5` (integration-batch2, parent `3f87c6b`),
+`8f0e048` (ppc-formats) and `ffa87c6` (ppc-scenarios). Every run used a
+`git archive` copy under `/tmp`. The Mac bin is the identified
+`SimThemePark.data` (`04809cd4…95f5`). Nothing original was executed, and no
+filesystem scan was run. The formats corpus counts were rerun with the lane's own
+`corpus_check.py` on the two documented PC Data paths. Those runs are a rerun of
+the lane's own check, not an independent decode.
+
+### Merge blockers
+
+None for batch 2 at `ba70ea5`. None of the findings below blocks the formats or
+scenarios lanes. Both are evidence/reference lanes with no runtime change.
+
+### Batch 2 `ba70ea5`: R17-1 resolved, merge-ready
+
+- Game.cs has 419 CRLF out of 419 line ends (as at `6ec5d28`), and the BOM is kept.
+  `git diff 6ec5d28 ba70ea5 -- Game.cs` is 2+/2− with no `--ignore-cr-at-eol`
+  needed: the comment line (adds `--capture-world`) and the `playIntro` line
+  (`IntroPlaylist.ShouldPlay`). `ba70ea5` changes only Game.cs against `3f87c6b`.
+- Line-ending style of all 46 files that batch 2 modifies against `origin/main`
+  `7bc6c59`: no change (was 1 at `3f87c6b`).
+- Small wording nit, not a blocker: the commit says "whitespace diff --check
+  clean". That holds only with `core.whitespace=cr-at-eol`. Plain `--check`
+  flags the CR on the two new lines, as it does on every CRLF line of this file.
+- `test_round17` (still pins the `3f87c6b` LF conversion) passes. `test_round18`
+  `Batch2CrlfRestored` pins the fix.
+
+Containment at `ba70ea5` (git objects only, 57 commits ahead of `origin/main`):
+
+| Check | `ba70ea5` |
+| --- | --- |
+| Fixture blob prefixes `245a6743`/`816de5d1` reachable | absent (7,052 reachable objects) |
+| Blob of size 2,274,758 or 38,479 reachable | none |
+| Original-asset extension paths at tip | 0 |
+| Blobs > 1 MB introduced by batch 2 (`^origin/main`) | none |
+| `[BIN:` aliases in `source/` | 36, all `STP-PPC` (unchanged) |
+| `fidelity_register.py --check` | exit 0, 129 unresolved APPROX IDs |
+| SDK 10.0.401 `dotnet test -c Release`, filter IntroSequence/Round17/MoviePlayback/IntroPlaylist (with the round-17 probe copied in) | 35 pass, 4 skipped (original movies not supplied), 0 fail. Same as `3f87c6b` |
+
+**Verdict: batch 2 at `ba70ea5` is merge-ready** on the checks above. Not run:
+the full test suite, the native smoke test, and runtime intro in a window (no
+behaviour change since `3f87c6b`).
+
+### Formats `8f0e048`: scene clock A, hold, pause, normal routes
+
+Independent decode (`test_round18.SceneClockAndNormals`, 7 tests) uses its own
+field split. The clamp is checked by a small interpreter that executes the
+step routines' own words (lfd/fmul/fdiv/fcmpo/bc/b/fmr/stfd/blr).
+
+- **Constants.** TOC doubles at −10504/−10496/−10488/−10480 are 2.0/0.25/1.25/1.0.
+  The reset handler 0x1131ac loads 1.0 (−10536). The init 0x127c08 (called from
+  0x10ea78 in 0x10ea5c) stores 1.0 at +0x18. **Confirmed.**
+- **Steps and clamp.** Executing 0x127c48 four times from 1.0 gives
+  1.25, 1.5625, 1.953125, 2.0. 0x127c88 from 2.0 gives 1.6, and from 0.3 gives
+  0.25. **Confirmed.**
+- **R18-1 (low, model error, not a game path).** For NaN the binary keeps the
+  rate unchanged and stores NaN. fcmpo on NaN sets only the unordered bit, so
+  `bf LT` (0x127c64) and `bf GT` (0x127c74) both branch, ending in
+  `fmr f0,f1`. The commit, the witness text (`NaN -> 0.25`) and
+  `clip_clock_reference.clamp_rate` all say it becomes 0.25. The "NaN clamp"
+  mutation test therefore pins the wrong behaviour. NaN cannot arise through the
+  three handlers (1.0 start, finite ×/÷1.25, reset to 1.0), so no traced game
+  route is affected. Fix: `clamp_rate` keeps NaN (or refuses it), and the
+  witness and doc text are corrected.
+- **Handlers.** 0x11315c/0x113184/0x1131ac load r3 from TOC −0x75d8 and call
+  0x127c88/0x127c48/0x127c40. **Confirmed.** The key-table entries 6–8 were not
+  re-decoded.
+- **Hold.** 0x10ec60 returns if +0x2c ≠ 0. Otherwise it stores
+  `divwu(1000, n)` at +0x34 (r31 = r4) and sets +0x2c. The step 0x10ed10 skips
+  when the 0x117d6c getter returns non-zero, else `+0x30 += +0x34`. The
+  main-loop call is 0x1104d8. Both hold sites load `li r4,32` (0x1c0b34 before
+  0x1c0b64; 0x1c2298 before 0x1c229c), so the step is 31 ms. **Confirmed.**
+  That 0x117d6c is "A paused" is taken from the lane, not re-derived here.
+- **0x10000000 writer.** A full-image scan finds exactly four `oris …,0x1000`
+  (0x31d68, 0x55b10, 0x58d38, 0x19aef0) and no `addis`/`lis` of 0x1000. The
+  other three store to r24+8, object +0x50 and a stack slot. 0x19aef0 sets flags
+  word 0 of `*(selected+4)`, gated by `and.` with r9 = `lis 4; addi 0x40` =
+  0x40040. The ride loader calls 0x19adf0 at 0x59274. **Confirmed**, with one
+  label caveat: the scan cannot see a 0x10000000 built any other way (shifts,
+  data loads). The lane's "one writer" is an immediate-operand scan.
+- **Placement.** 0x59f64 is `li r5,0x211f`, and 0x59f6c ORs in 0x200 under
+  placement flag 0x800 (the doc says so at line 491). 0x543f4 is
+  `rlwinm r26,r5,0,21,19`, which clears only 0x800 before the 0x53004 call. 0x5a48c
+  ORs 0x00010000 into the records (160-byte stride, 0x5a494), 0x5a4a0 sets
+  header +0x30 bit 0x40000, and 0x5a4b4 calls 0xa78ec. **Confirmed.** "Every
+  successful path" was not re-walked.
+- Corpus counts (lane tool rerun): PC base and Patch 2 both give 2,452 table
+  entries, 248 with 0x40040, 28 members, 4,914/4,914 records with 0x10000000
+  clear, and 838 geometry headers.
+- **Labelling.** The doc names the clock-object route scan "a bounded witness,
+  not a data-flow proof", and the commit marks "only route" claims as medium
+  confidence (straight-line scan, no branch following). **Adequate.** No
+  custom-TPS or PC-speed claim is made. The doc twice says a per-animator
+  ticks-per-second value is not equivalent, and that PC keys and bindings are
+  unknown. `8f0e048` touches only docs and `lanes/formats` tools (6 files).
+- Mutation check of `test_round18`: 7 single-word patches of the image
+  (`bf LT→bt`, `bf GT→bt`, `li 1000→1024`, hold `n 32→16`, writer `stw` offset,
+  `0x211f→0x201f`, `fmul→fdiv`) each fail at least one test.
+- Lane reruns on the archive: `format_witness.py` exit 0. `lanes/formats`
+  unittest: 43 OK. Shared `ppc-analysis` tests: 16 OK.
+
+### Scenarios `ffa87c6`: envelope v2 (R16-4/5/6)
+
+Synthetic probes only (`/tmp` probe scripts plus `test_round18.ScenarioEnvelopeV2`,
+6 tests):
+
+- **R16-4 (strict validation): resolved.** Refused with ValueError: bool as
+  version, bool in a ticket list, float as an i32, `"2"` or `True` as
+  `envelope_version`, a missing player member, an unknown theme field, a changed
+  `layout_source`, forged `issues` on a complete record, uppercase hex, repeated
+  JSON members (top level and nested), `NaN`, `1e400`, and a 5,000-digit integer.
+  A fuzz of 24,000 single-field mutations (wrong-type values or deleted keys)
+  over 8 base envelopes (7 `mac-partial` cuts and one `strict-host` read) raised
+  no exception other than ValueError. 1,497 were accepted. The 405 accepted
+  complete records were all self-consistent: their own bytes read back to the
+  same record. One residual: a 200,000-deep `[[[…]]]` gives `RecursionError`
+  from `json.loads`, not ValueError (R18-2, low). The doc says "never a KeyError
+  or TypeError", which still holds.
+- **R16-5 (provenance): resolved.** v2 replaces `source` with `layout_source`,
+  which says the snapshot bytes are unauthenticated. v1, and v2 with a `source`
+  field, are refused.
+- **R16-6 (linear repeats): resolved.** 60,000 rideIds over 7 values: read 0.016 s,
+  envelope roundtrip 0.054 s, 59,993 repeat issues, record equal after the
+  roundtrip. `strict-host` rejects it.
+- **No forged "complete" from a partial record.** Flipping a partial record to
+  `complete: true` (and clearing `failed_at`/`failed_offset`), relabelling it
+  `strict-host`, or adding trailing bytes are all refused. A complete record must
+  survive serialize → read under its own policy. A `mac-partial` complete record
+  relabelled `strict-host` is accepted only when those bytes are a valid
+  strict-host read (no issues). That is the same record, not a forgery.
+- **R18-3 (low, strictness gap in the partial path).** The failing member is
+  allowed any value, because "the failing member may keep short-read bytes". That
+  holds only for the i32 members and the ticket byte arrays. The decoder accepts
+  a partial record failing at `mEasyModeUser` with value 7 (a u8 read delivers no
+  bytes, so it must stay reset). It also accepts `mSpentTickets = 0x12345678` at
+  a cut inside that member (fewer than 4 delivered bytes leave the low-order
+  byte at its reset value, 0). `failed_offset` is also unchecked; the doc says so.
+  None of this lets a partial record pass as complete. Pinned as two
+  `expectedFailure` tests that flip when it is fixed.
+- **R17-2** (`read_mac_player_file` keys themes by the full NUL-containing name)
+  is still open and optional. `player_file_evidence.py` is unchanged in
+  `ffa87c6`.
+- Lane reruns on the archive: `lanes/scenarios` unittest: 98 OK with
+  `OPENTPW_MAC_BIN`, and 85 run + 13 skipped without it. `scenario_evidence.py`
+  exit 0, 2,090 instruction checks. No real gms.dat and no PC claim.
+
+### Results
+
+| Target | Command | Result |
+| --- | --- | --- |
+| `ba70ea5` archive | SDK 10.0.401 `dotnet test -c Release`, intro/movie filter | 35 pass, 4 skip, 0 fail |
+| `ba70ea5` archive | `fidelity_register.py --check` | exit 0, 129 |
+| `8f0e048` archive | `format_witness.py`; `lanes/formats` unittest; shared tests; `corpus_check.py` ×2 | exit 0; 43 OK; 16 OK; counts as above |
+| `ffa87c6` archive | lane unittest with / without bin; `scenario_evidence.py` | 98 OK; 85 + 13 skip; exit 0, 2,090 |
+| review lane | `unittest discover` with all three env vars | 191 run, OK (3 skipped, 2 expected failures) |
+| review lane | `unittest discover` with no env vars | 191 run, OK (35 skipped) |
+
+### Handoff
+
+1. Batch 2: merge-ready at `ba70ea5`. Optional: reword "diff --check clean" in
+   future commits to name `cr-at-eol`.
+2. Formats: R18-1. Make `clamp_rate` keep NaN (as the binary does) or refuse it,
+   fix the `NaN -> 0.25` witness text and the doc line, and flip the mutation
+   test. Optional: label the 0x10000000 "one writer" as an immediate-operand scan.
+3. Scenarios: R18-3 (optional): restrict the failing member to values a short
+   read can produce (u8 members reset; i32 low-order bytes reset; ticket arrays
+   a prefix). R18-2 (optional): catch `RecursionError` in `loads_envelope`.
+   R17-2 is still optional.
+
+## 55. Advisor lane review A1: ppc-advisor `a479cff..526e2bf` (phases 6–10)
+
+Scope: the five commits `2b8e4bf`, `be46ebe`, `00d5c9c`, `1af929b` and `526e2bf`
+on ppc-advisor, with merge-base `a479cff` against integration. Every build and test
+used a `git archive` copy under `/tmp`. The Mac containers are the identified
+`SimThemePark.data` (`04809cd4…95f5`) and `sound_shared.data` (`7132c2f1…b94f`).
+The PC data is the supplied `Data` tree. The Mac data is the UI lane's existing
+read-only copy in `/tmp/ppc-advisor-mac-Data`. No original code was executed, no
+filesystem or mount was scanned, and the other worktrees were only read.
+
+### Merge blockers
+
+- **A1-1 (blocker: post-merge build break).** `be46ebe` adds
+  `tools/ppc-analysis/lanes/advisor/audio-events/AudioEventAssets.csproj`, which
+  targets `net8.0` and has a `ProjectReference` to `source/OpenTPW.Files`. At
+  integration `ba70ea5`, `OpenTPW.Files` targets `net10.0`. `0d58bd4` says
+  "source-project references must follow net10". On a merged copy (`ba70ea5` plus
+  the 526e2bf advisor lane), SDK 10.0.401 fails with `NU1201: Project OpenTPW.Files
+  is not compatible with net8.0`. Changing only the TFM is not enough: the tool's
+  `TreatWarningsAsErrors` then turns the NuGet audit warnings for `OpenTPW.Files`'
+  transitive `Newtonsoft.Json` 9.0.1 (NU1903) and `Zio` 0.17.0 (NU1901) into errors.
+  **Fix (verified):** use `net10.0` and add
+  `<WarningsNotAsErrors>NU1901;NU1903</WarningsNotAsErrors>`. The build then
+  succeeds, and the 28-EventMap report is byte-identical to the SDK 8 run on the
+  `526e2bf` tree. Also update the phase-7 command to the SDK 10 `dotnet`. The
+  standalone `OriginalAdvisorLipDriver.csproj` is self-contained, so it can stay
+  net8 (52/52 under SDK 8.0.425).
+- **A1-2 (blocker: conflicts).** `git merge-tree --write-tree ba70ea5 526e2bf`
+  conflicts in `source/OpenTPW.Files/Formats/Sound/MP2File.cs` and
+  `docs/reverse/PPC-advisor.md`. The cause is that `2b8e4bf`'s production change is
+  already on integration. `Mp2Decoder.cs` and `MP2FileMetadataTests.cs` are
+  identical at `526e2bf` and `ba70ea5`. `MP2File.cs` on integration is a superset:
+  `28864fa` renames `Samples` to `RawSampleField`, takes `BitsPerSample` from the
+  entry, and keeps the `TryReadFrameFormat` override. **Resolution:** take
+  `ba70ea5`'s `MP2File.cs` as is. Keep `ba70ea5`'s phase-5 paragraph. Keep the
+  phase 6–10 appendix, but correct phase 6's sentence about the "legacy
+  `SoundFile` reads signed Int16 … 44,100 wrap negative". That is stale after
+  `28864fa`, which reads the unsigned packed fields. The cleanest route is to drop
+  `2b8e4bf` and rebase `be46ebe..526e2bf` onto `ba70ea5`.
+- **Scope note.** `2b8e4bf` is the only commit that touches anything outside the
+  lane: three production C# files. `be46ebe..526e2bf` touches only
+  `tools/ppc-analysis/lanes/advisor/**` and `docs/reverse/PPC-advisor.md`. No root
+  docs changed. After A1-2 is resolved, the range adds no production change.
+
+### For the production port of `OriginalAdvisorScoreQueue`/`LipDriver`
+
+No defect was found in the recovered helper rules. The range does not modify
+`OriginalAdvisorScoreQueue.cs`, `OriginalAdvisorLipDriver.cs` or their tests. The
+only change is a `Compile Remove="audio-events/**"` line. The CMsgEvent → advice →
+response → speech mapping for events 0/2/3/4 and 10 checks out independently (see
+`be46ebe` below). **There is one porting hazard.** The queue returns
+`ResponseId = FirstResponseId + variant`, which is a stored **ID**. Native
+`0x6b7c` resolves it by searching table `0x18ff4` on word 0 (stride 32, until
+sentinel 9999), not by row position. From row 393 on, 216 of the 610 rows have an
+ID that differs from their position. Events 0/2/3/4 use rows below 393, so they
+are unaffected. The event-0 mode-2 advice 323, however, gives first response 587,
+which resolves **by ID** to row 584: speech/LIP 606. Indexing **by position** would
+give row 587: response 590, speech 638, LIP 0. A port that indexes the response
+array directly would play the wrong clip for 323 and for any later response.
+`test_advisor_a1.NativeAdvisor` pins this.
+
+### Per-commit verdicts
+
+| Commit | Verdict | Independently decoded (sample) | Reruns |
+| --- | --- | --- | --- |
+| `2b8e4bf` metadata | Code correct, **superseded**: already on integration (A1-2). Out of lane. | `TryReadFrameFormat` reuses `Header.Parse` and requires a complete first frame. The only constructor caller is `SoundFile.GetFile`. No production consumer reads `MP2File.SampleRate`: `SpeechAudioPlayer` uses decoded `Mp2Audio`. | Focused MPEG/LIP/metadata filter with `OPENTPW_GAME_PATH`: 61 pass, 6 inconclusive (other-language tests outside the commit's filter). `MP2FileMetadataTests`, including both private clips: pass. Full `OpenTPW.Tests` on the 526e2bf tree: **791 pass, 54 skip, 0 fail** (SDK 8.0.425). |
+| `be46ebe` identities | **Confirmed.** Blocker A1-1. | CMsgEvent ctor `0x116540` `stw r4,8(r3)`. Receiver `0xad40` `lwz r4,8(r29)` → `bl 0x94dc`. `cmpli r4,10`. TOC slot `0x2354` → data `0x1e0f4`. Table: 0→`0x9524`, 2→`0x98b0`, 3→`0x9a64`, 4→`0x9c18`, 10→`0x9dcc` (loads a TOC object, adds 122 and calls `0xa90`; the doc's earlier history-clear reading was not re-derived), other entries → `0x9e84`. Literals 0/106/128/129 → `bl 0xb6d8`. Advice 323 at `0x9708` behind `cmpi r0,2`. Response rows 1 / 274–275 / 308–311 / 587 → speech 1 / 424–425 / 342–345 / 606 by ID. | `audio_event_evidence.py`: exit 0. `AudioEventAssets`: 28 EventMaps. Corpus: 31 catalogs and 1,267 IDs, as stated. |
+| `00d5c9c` bank ordinals | **Confirmed.** | `0x16af4` `addi r0,r28,-1`, `lwz r3,44(r31)`, `slwi 2`, `lwzx`, `sth r0,12(r25)`. `0x6fa4` `addi r0,r4,-1`. New bank `0x15b8c–0x15b94` increments +52. `0x15c24–0x15c30` `stwx` into vector +44. | `bank_remap_evidence.py`: exit 0. 3,631 PC and 1,105 Mac choices resolved. |
+| `1af929b` selection | **Confirmed.** Bounded: these are explicit-input algebra helpers, not a scheduler. | Event chooser `0xff40`: LCG `0x19660d`/`0x3c6ef35f`, `>>16`, `cmpl sum,draw` + `blt` continues, so the first sum ≥ draw is chosen. Exhaustion `0x10130` stores the first event. Count-1 bypass. Anti-repeat `cmpli count,2`/`ble` skips, history +80. Sample chooser `0xfcb4`: threshold +4, the same ≥ rule, exhaustion → null, history +81. Branch bounds `0x19364–0x19378` are inclusive. `divwu` by the eligible weight sum at `0x193c4`. Parameter value `mulhwu 0x51eb851f`, `>>5` = unsigned /100. Masks `0xf2e0`: +24 → byte +5, +28 → byte +6. Differencing `0x16654–0x16660`. | `sound_selection_evidence.py`: exit 0. Counts as stated: 26/31 cumulative, 201/73 arrays below the draw domain, 0 nonmonotone. |
+| `526e2bf` seed ownership | **Confirmed. The qualification is correct.** | All nine `addi rX,r2,0x42e4` sites match. A forward scan from each site to the first kill or branch finds only one store, the initializer's `0x118cc`. Initializer `0x118b4` has a single caller at `0x3c`. The neighbouring data exports are `mChannelState` at `0xc2d8`, a 4-byte float at `0xc2e0`, and `mpSoundManager` at `0xc2e8`, so no adjacent object spans `0xc2e4`. | `sound_seed_evidence.py`: exit 0 over 16 identified containers. |
+
+All lane claims stay bounded. None asserts PC or whole-runtime parity. Weights
+come from the disk catalogs plus the native differencing rule. The seed is the
+clock value, and no sequence is invented. Phase 10 explicitly leaves external
+mutation of the exported seed open.
+
+### Lower-severity notes
+
+- **A1-3 (low, `2b8e4bf`, only relevant at `a479cff`).** The invalid-frame fallback
+  changed from a constant 22,050 to the legacy signed-`Int16` container rate. The
+  commit's own doc says that rate wraps 44,100 negative. This has no consumer
+  impact, and it is moot on `ba70ea5`, where `SoundFile` reads the unsigned field.
+- **A1-4 (low, test coverage).** `audio_event_evidence.py` pins the advice-323
+  literal and constructor, but not its response/speech row. The doc's 587 → 606 is
+  correct only because the native lookup is by ID (see above). That lookup is now
+  pinned in the review test.
+- **A1-5 (nit).** `InspectEventMaps` looks for a `.git` ancestor. From an archive
+  copy, it throws "Write the interpreted corpus report outside the repository"
+  even when the output is outside. It fails closed, but the message is misleading.
+- **A1-6 (nit).** For the branching sentence, zero eligible links branch away at
+  `0x19398` before the division. Only nonzero links with zero total weight reach
+  `divwu`. The helper (`None` with no eligible links, `ValueError` for a zero sum)
+  matches this. The phase 9 wording could say so.
+- **Containment (git objects only).** The largest added blob is 87 KB (the
+  advisor doc). Hex content is limited to SHA-256 identities, code/data offsets
+  and synthetic test words. No original stream, PCM, script bytes or disassembly
+  listing is added. The new lane C# files and `MP2FileMetadataTests.cs` are CRLF,
+  which matches `.editorconfig`. Plain `git diff --check` reports them, while the
+  Python/Markdown diff is clean.
+
+### Results
+
+| Target | Command | Result |
+| --- | --- | --- |
+| `526e2bf` (worktree at HEAD, read-only) | lane `unittest discover` with bin/PC/Mac fixtures; without fixtures | 73 OK, 0 skipped; 73 OK, 7 skipped |
+| `526e2bf` | shared toolkit `unittest discover tools/ppc-analysis` | 16 OK |
+| `526e2bf` | the four evidence scripts | exit 0 |
+| `526e2bf` archive, SDK 8.0.425 | `OriginalAdvisorLipDriver`; `AudioEventAssets` build+run | 52/52; 28 EventMaps |
+| merged copy, SDK 10.0.401 | `AudioEventAssets` as-is; with net10 + NU1901/NU1903 fix | NU1201 fail; build OK, identical report |
+| review lane | `test_advisor_a1` with `OPENTPW_PPC_BIN_ROOT` and `OPENTPW_REVIEW_REPO`; without | 10 OK; 1 OK, 9 skipped |
+
+Not run: original audio or advisor runtime, PC executable comparison, Windows
+seed policy, and a real merge commit (only `merge-tree` was run).
+
+### Handoff
+
+1. Advisor owner: fix A1-1 (TFM plus audit-warning carve-out, and the doc command).
+   Resolve A1-2 by dropping `2b8e4bf` and rebasing onto `ba70ea5`, then update
+   phase 6's stale `SoundFile` sentence.
+2. Production port owner: resolve `ResponseId` by stored ID (native `0x6b7c`), not
+   by array index. Advice 323 is the in-range witness.
+3. Optional: A1-4 to A1-6.
+
+### Resolution on integration
+
+The range was rebased onto integration `6c58be0` as `be46ebe`, `00d5c9c`,
+`1af929b` and `526e2bf`; `2b8e4bf` was dropped, and integration's `MP2File.cs`
+is unchanged. On merge into main (after rounds 17 and 18 landed as sections 53
+and 54) this section was renumbered from 54 to 55.
+
+- A1-1: `AudioEventAssets` targets `net10.0` with
+  `<WarningsNotAsErrors>NU1901;NU1903</WarningsNotAsErrors>`, the phase-7 command
+  uses the SDK 10 `dotnet`, and the evidence runner registers the tool as a
+  private-corpus harness (reported as not-run).
+- A1-2: phase 6 now describes `28864fa`'s unsigned packed-field reader.
+- A1-3: moot. It applied only to `2b8e4bf`'s fallback, which was not brought in.
+- A1-4: `audio_event_evidence.py` resolves responses with native first-match
+  stored-ID search and requires advice 323 → response 587 → speech/LIP 606.
+- A1-5: `InspectEventMaps` reports a missing checkout separately from an output
+  inside the repository.
+- A1-6: phase 9 separates the no-eligible-link exit at `0x19398` from the
+  zero-sum `divwu`.
+
+## 56. Advisor runtime review V1: production `f8375b2` (automatic advisor)
+
+Scope: `f8375b2` ("Let the advisor speak by itself …", parent `be05bb1`) from the
+advisor-runtime worktree, judged against fork main `f51e874`. The merge is clean
+(`git merge-tree --write-tree f51e874 f8375b2` exits 0). Builds and tests used a
+`git clone --shared` scratch copy under `/tmp` with `f8375b2` merged onto `f51e874`.
+The Mac container is the identified `SimThemePark.data` (`04809cd4…95f5`). The PC
+data is the supplied `Data` tree (`Advisor/Advisor.sam`, `e905df3d…0df3`). No
+original code was executed, no filesystem or mount was scanned, and the subject
+worktree was only read. `test_advisor_v1.py` pins every operand cited below.
+
+### Merge blockers
+
+- **V1-1 (blocker: speech plays when muted).** `--mute` only sets
+  `GameAudio.Enabled = false`. Then `GameAudio.EnsureStarted()` returns false and
+  `AudioMixer.Current` stays null. `Advisor.Play` (`Advisor.cs:295`) falls back to
+  `new SpeechAudioPlayer( audio )`, which passes `openDevice: AudioMixer.Current == null`
+  (`SpeechAudioPlayer.cs:44`) and so opens its own SDL device. Before this commit,
+  that path was reachable only from `--advisor-say`/`--advisor-response`. Now every
+  park start reaches it: a muted game says the welcome aloud. `--smoke-test
+  --load-original-level` also opens a device unless `--no-advisor` is given.
+  **Fix:** at `Advisor.cs:295`, make the fallback
+  `new SpeechAudioPlayer( audio, null, openDevice: GameAudio.Enabled && AudioMixer.Current == null )`.
+  It keeps the wall clock (ADVISOR-011). Add a test that sets `GameAudio.Enabled = false`,
+  says a clip and asserts `ClockSource` is the wall clock.
+- **V1-2 (blocker: playback success does not follow the traced wrapper; ADVISOR-021 is
+  answerable).** The controller update calls only wrapper `0xba54`: its single caller is
+  `0x89fc`, while `0xb7d8` has no direct caller. `0xba54` fails in only two cases: an
+  invalid record (`0xba84`–`0xba8c`, return 0 at `0xbbf8`) and the missing-descriptor
+  response 614 (`0xbb54`, return 0 at `0xbbe4`). Otherwise it calls player `0x6b7c`
+  (`0xbb60`) and stores its result **only as the span** (`stw r3,0(r25)` at `0xbb64`;
+  `r25` is the out-parameter, `0xba68`). `mr r3,r26` at `0xbb68` overwrites that result
+  without testing it, and `0xbbf0` returns 1. The controller then saves the history and
+  reserves span + 1000 (`0x8a00`–`0x8a10`). The player `0x6b7c` first reads options byte
+  `+0x34` of the object at TOC −30268 (data `0x120a14`, `0x6b84`/`0x6bb4`) and
+  returns 0 when it is clear (`0x6bc0` → epilogue `0x7054`). A response missing from
+  the ID search also returns 0 (`0x6c20`–`0x6c28`). The eligibility check reads byte
+  `+0x35` of the same object (`0x9010`/`0x9038`). So with the Advisor option off, the
+  original still picks and consumes the best advice. It marks the advice played,
+  advances the variant and reserves 1000 clock units, all without speech. The port
+  instead returns before `Controller.Update` (`AutomaticAdvisor.cs:102`). The pending
+  advice then waits, and when the option is switched on later it plays stale advice,
+  for example the welcome in the middle of a game. Port failures (response not in the
+  table, I/O error, no presentation) likewise return `null` and skip the history and
+  reservation, where the original records success with span 0. The `0xb7d8` revalidation
+  (`AdvisorController.cs:159`) is not on this path. It has no effect today, because a
+  selected score is already strictly above the minimum. **Fix:**
+  1. In `AdvisorController.Update`, drop the revalidation and complete with
+     `playbackSucceeded: true` and `span ?? 0`. The only failure is a missing
+     descriptor, which the bound rows cannot produce.
+  2. In `AutomaticAdvisor.Update`, when `!GameOptions.Current.Advisor`, silence and
+     then run `Controller.Update( () => AdvisorClock, () => GameTick, _ => 0u )`.
+     Cite `[BIN:STP-PPC:0x10006BB4]` and `[BIN:STP-PPC:0x1000BBF0]`.
+  3. Replace `FailedPlaybackConsumesTheAdviceWithoutHistoryOrReservation` with a test
+     that expects the history to be saved and the 1000 reservation to apply.
+  4. Reword ADVISOR-021 to the remaining question only: that byte `+0x34` is the Game
+     Options Advisor switch. This is the same object-identity question as ADVISOR-015.
+- **V1-3 (blocker: cited operand contradicts the port).** `ClearHistory() => history.Clear()`
+  (`AdvisorScoreQueue.cs:81`, tagged `[BIN:STP-PPC:0x10009DCC]`) also zeroes the saved
+  tick. The event-10 body (`0x9dd8`–`0x9e80`: `ctr` 43 × 8 records from `r31` =
+  controller, then the remainder up to `0x15f` = 351) stores only at
+  `+0xe4` (variant −1), `+0xe8` (played 0) and `+0xec` (slap count 0). It never stores at
+  `+0xe0`. `+0xe0` is the saved tick: `0x8a20` passes controller `+0xe0 + 16·message` to
+  setter `0x121098`, which stores world `+0x1da70c` (`0x1210a0`–`0x1210a8`), and the
+  eligibility check reads the same base (`0x9090`). `0x8e28`–`0x8e30` (slap increment)
+  and `0x9198` (limit check) confirm `+0xec`. The `0xa90` call at `0x9dd4` only spills
+  arguments. Effect: after event 10 the original keeps the repeat delay. The test
+  `RepeatIntervalUsesQuarterTicksAndEventTenClearsHistory` asserts the opposite
+  (Eligible). **Fix:** keep `SavedGameTick` and reset the other three fields:
+  `foreach ( var id in history.Keys.ToArray() ) history[id] = AdvisorMessageHistory.Empty with { SavedGameTick = history[id].SavedGameTick };`.
+  Expect `RepeatDelay` after event 10 in that test. Reword "clears history" in
+  `PPC-advisor.md` (lines 61, 86, 1005) and `LIPS.md:241`. The practical effect today
+  is small, because the welcome is saved at turns 0–3, which is the zero-quarter
+  sentinel.
+
+### Author's claims
+
+| Claim | Verdict | Evidence |
+| --- | --- | --- |
+| Every park start raises 10 then 0 → advice 0 → response 1 → level bank sample 1 | **Confirmed** (mapping). The runtime glue raises them in `AttachLevel`. | `0x1c2104` `li r4,10`, `0x1c2108` → `0x116528`; `0x1c216c` `li r4,0`, `0x1c2174` → `0x116528`. Descriptor 0: group 0, limit 1, first 1, count 1. `advisor-responses.toml` id 1 → sample 1, local. |
+| Instant Action also gives advice 323 → 587 → global 606; `0x96F0` and `0x13781C` read the same global, set to 2 for Instant Action | **Confirmed.** | Both load TOC −30136 (`0x94e8` into `r25`, `0x13782c` into `r29`) → data `0x53d98`. `0x96f0` `lwz r0,0(r25)`, `0x96f4` `cmpwi r0,2`. The selector keeps 1 (online, `0x137954`), otherwise reads `mEasyModeUser` (`0x128f4c` `lbz r3,0x24(r3)`) and stores 2 (`0x1379b4`) or 0 (`0x1379e0`) through `0x12bbf4` (`stw r30,0(r29)` at `0x12bc40`). The port derives game type 2 from `ParkGameMode.InstantAction`, which rests on the existing UI-015. Descriptor 323: group 1, first 587, count 1. ID 587 → sample/LIP 606, while row 587 is ID 590 (sample 638). |
+| Event 2 → 274/275 alternating "as in the original" | **Alternation confirmed. Producer equivalence remains ADVISOR-020.** | Mode word +40 is 2 for all 351 descriptors. `0x8974` `lwz r3,0xe4` → `0x8978` `+1`. `0x89d4` count (`0xd5ec`) → `0x89d8`–`0x89e0` reset to 0. `0x8a3c` stores the variant on success. Descriptor 106: first 274, count 2. Event 10 resets the variant, so each level starts with 274. The port's queue alternates correctly (`BankruptcyCyclesThroughItsTwoResponses`). In a live park, however, the economy raises `Bankrupt` once: the day loop stops at `IsBankrupt` (`ParkEconomy.cs`). So only 274 is said until a reload, and that reload's event 10 resets the variant again. |
+| Events 3/4 → 308–311, but score 20 < minimum 25, so they never play | **Confirmed.** | `Advisor.sam`: `ParkNowOpen.Score 20`, `ParkNowClosed.Score 20`, `MinScoreForConsideration 25`. Selection needs strictly greater (`AdvisorScoreQueue.SelectNext`, native `0x8850`). The records stay queued: duplicate limit 1 keeps one of each. |
+| Responses are looked up by stored ID; regression test for 587 | **Confirmed.** | `AdvisorResponses.Table` is a dictionary keyed by `id`, and the 610 rows have no duplicates. `PrebuiltParkResolvesItsStoredResponseIdNotATableRow` pins 587 versus row 590. |
+
+### Checks
+
+1. **Queue port equals the reviewed helper.** After normalization (comments, names,
+   access modifiers, wrapping), every helper member is textually equal in the port. The
+   port adds only `IsAttemptOutstanding`, `HasDescriptor` and `ClearHistory` (V1-3). A
+   scratch differential harness compiled both classes into one assembly and ran
+   identical random operation streams: 2,000 seeds × 400 steps = 800,000 operations,
+   covering descriptors with wrap-edge intervals and slap limits, prior histories,
+   overrides, tutorial flags, full queues, begin/complete with success and failure, and
+   clocks at the busy boundary. Every result tuple, slot, history, busy flag and
+   reservation matched. Sensitivity: each of the mutations `<` → `<=` (minimum scan),
+   `<` → `<=` (busy) and variant `+1` → `+2` was caught within 360 steps. The 31 lane
+   cases are kept in `AdvisorScoreQueueTests`.
+2. **Operands decoded independently:** `0x96f0`/`0x13781c` (shared TOC −30136), event
+   10 (`0x9dcc`), the variant cycle, wrapper `0xba54`, the player option gate (`0x6bb4`)
+   and the main loop's 10/0. See above.
+3. **APPROX coverage.**
+   - ADVISOR-015, 016, 018 and 020 are honest open questions.
+   - ADVISOR-016's sum agrees with native: `0x6b7c` adds 1000 at `0x7048` and the
+     controller adds another 1000 at `0x8a10`.
+   - **ADVISOR-017** (wall clock, not pause-aware) is correctly an approximation:
+     neither the helper nor the lane traces the clock's freeze or compensation.
+   - **ADVISOR-019** is correctly an approximation, not a defect. The helper does not
+     apply `+24`/`+28`. In a bounded scan, none of the 13 functions called with the
+     balance object (`0x53dc0`, sole TOC slot −30116) in `r3` loads `+0x18`/`+0x1c`, and
+     neither does any direct TOC load of it within 600 instructions. Group intervals
+     come from `0xd8f8` (`+0x24 + 12·group`). This does not prove that no reader exists
+     elsewhere.
+   - **ADVISOR-021** is not an untraced behaviour (V1-2).
+   - No invented threshold or timing was found. The game tick is the economy turn,
+     world `+0x1da70c`, as in the register.
+4. **Runtime safety.**
+   - Attach and detach follow `StartLevel`/`TearDown` (front end, load, reload) and
+     `Dispose`.
+   - `ParkEconomyRuntime.Load` re-subscribes `ForwardEvent`. `Level.Park` is set only in
+     the constructor, so a loaded save stays connected.
+   - Neither the queue nor the history is saved. Whether the original saves them (the
+     record serializer is at `0xbc10`) was not established here. They are not
+     registered.
+   - Precedence: `--no-advisor`, `--advisor-say` and `--advisor-response` each disable
+     the automatic advisor (`Game.cs:190`). The manual paths are unchanged.
+   - Missing `Advisor.sam`: `TryCreate` logs and disables. Missing speech: `Play` logs
+     and fails (see V1-2 for the success semantics).
+   - Muted: fails (V1-1).
+   - Non-original sandbox levels (`--sandbox`, plain `--smoke-test`, and the sandbox
+     load entry) also attach the advisor. Only visits are excluded. The welcome there
+     is response 1 from the `jungle` level bank. Plain `--smoke-test` captures were not
+     re-run here; the author ran only `--load-original-level jungle`.
+   - Headless movie paths are unaffected.
+5. **Build and tests** (SDK 10.0.401, Release, merged copy):
+   - Build: 0 errors.
+   - `OpenTPW.Tests` without assets: **895 passed / 233 skipped / 0 failed**, which is
+     main's 853/232/0 plus 42 passed and 1 skipped.
+   - With `OPENTPW_GAME_PATH`: **1065 passed / 63 skipped / 0 failed** (8 min 25 s).
+   - `fidelity_register.py --check`: 145 unresolved unique APPROX IDs, exit 0.
+   - Evidence runner (`--mac-bin`, `--pc-data`, SDK 8 host for the net8 harnesses):
+     OK, 9 Python suites, 536 tests, 34 skipped (review lane 214/6/0). With the SDK 10
+     host, the net8 harnesses report `missing-runtime`, as in section 52.
+   - Line endings: `git diff --stat` equals `--ignore-cr-at-eol --stat` (16 files,
+     +1440/−39). `Advisor.cs`, `GameFlow.cs`, `ParkEconomyRuntime.cs`, `AdvisorTests.cs`,
+     `GameOptions.cs` and the docs are LF before and after. `Game.cs` stays CRLF. The
+     five new C# files are CRLF.
+   - The commit adds no Python, so the `as_posix` rule does not apply. The new review
+     test builds no path strings for output.
+
+### Handoff
+
+1. Runtime owner: fix V1-1, V1-2 and V1-3 as above, then re-run the advisor tests and
+   `fidelity_register.py --check`.
+2. Optional: decide whether non-original sandbox levels should get the automatic
+   advisor (an `[EXT]` choice), and run plain `--smoke-test` with assets.
+3. Open (not blocking): whether the original saves the advisor queue/history.
+
+### 56.1 Round 2: fixes in `a626cbf`
+
+Scope: the stack `efc090d..a626cbf`. `b0562dd` is the cherry-pick of `f8375b2`, `99b23fc`
+adds this review's round 1, and `a626cbf` holds the fixes. `efc090d` is fork main
+(`origin/main`) at review time, so `a626cbf` fast-forwards it, and
+`git merge-tree --write-tree origin/main a626cbf` exits 0. Builds and tests used
+`git clone --shared` scratch copies under `/tmp` at `a626cbf`. No original code was
+executed. `test_advisor_v2.py` pins the source witnesses below. The native operands
+behind the fixes are still pinned by `test_advisor_v1.py`.
+
+**Verdict: merge-ready.** All three blockers are fixed. One fix has a test gap (V1-2b
+below), which is not a blocker.
+
+#### Blockers
+
+| Finding | Verdict | Fix and evidence | Mutation (fix reverted in a scratch copy) |
+| --- | --- | --- | --- |
+| V1-1 `--mute` | **Fixed** | `Advisor.CreatePlayer` (`Advisor.cs:304`): without a mixer, it opens a device only when `GameAudio.Enabled && AudioMixer.Current == null`. Native: `--smoke-test --mute --load-original-level jungle` logs `clock: wall clock (no audio device)` and no `Sound: SDL` line. Without `--mute`, the same run uses `game mixer (SDL audio queue)`. In the full run, `MutedSpeechKeepsTheWallClockWithoutOpeningADevice` **Passed**, not Inconclusive. | `openDevice: AudioMixer.Current == null` → that test fails |
+| V1-2a wrapper success | **Fixed** | `AdvisorController.Update` calls `play` unconditionally and completes with `playbackSucceeded: true` and `span ?? 0`. The unused `0xb7d8` revalidation is gone from the controller. `RevalidatedPlaybackScoreAccepts` stays on the queue, unchanged against the helper. | `span.HasValue` → `UnplayedResponseStillRecordsHistoryAndReservesTheMinimumAction` fails |
+| V1-2b Advisor option off | **Fixed, untested in OpenTPW.Tests** | `AutomaticAdvisor.Update`: with the option off, it silences and then runs `Controller.Update( …, _ => 0u )`, matching `0x6bb4`–`0x6bc0` and `0xbbf0`. ADVISOR-021 is narrowed to the object-identity question. `AdvisorOptionOffConsumesTheAdviceSilently` drives the **controller** with a 0-returning callback. It does not exercise `AutomaticAdvisor`. | Deleting the `Controller.Update( …, _ => 0u )` line leaves **all tests green**. `test_advisor_v2.py` now pins the line as a source witness. |
+| V1-3 event 10 | **Fixed** | `ClearHistory` resets the variant (−1), the played flag and the slap count, and keeps `SavedGameTick`. This matches the stores at `+0xe4`/`+0xe8`/`+0xec` and the absence of a store at `+0xe0`. The test now expects `RepeatDelay` after event 10, and `Eligible` one tick later. Docs reworded in `PPC-advisor.md` (61, 86, 1014) and `LIPS.md:241`. | `history.Clear()` → `RepeatIntervalUsesQuarterTicksAndEventTenKeepsTheSavedTick` fails |
+
+The mutations ran against the `Advisor|GameFlow|Sandbox` test filter (98 tests). The
+`[EXT:sandbox]` restriction (`original &&` in `GameFlow.StartLevel`) is also not covered
+by a unit test: removing it leaves the filter green. It is an extension choice, and the
+native sandbox smokes below show its effect.
+
+#### Queue port regression
+
+The round-1 differential harness was rebuilt against the `a626cbf` port and the
+unchanged helper (`f51e874`, byte-identical). It ran 2,000 seeds × 400 steps =
+800,000 operations, with one change: about 1 in 9 steps is now event 10. The port calls
+`ClearHistory()`. The helper side calls a review-only model of the `0x9dd8`–`0x9e80` loop,
+written independently: for every descriptor it sets `(saved tick kept, −1, false, 0)`.
+**All 800,000 operations matched.** This covers every result tuple, slot, history entry,
+busy flag, reservation and revalidation answer. The V1-2 semantics change only the
+controller's argument to `CompletePlaybackAttempt`. The queue API is unchanged, so the
+harness still drives both success and failure. Sensitivity: putting `history.Clear()`
+back into the port fails at seed 0, step 2. The member diff (`members()` from
+`test_advisor_v1.py`) still shows every helper member textually equal in the port.
+The only additions remain `ClearHistory`, `HasDescriptor` and `IsAttemptOutstanding`.
+
+#### Sandbox and the manual advisor
+
+`Game.CreateAdvisor` builds the manual `--advisor-say`/`--advisor-response` presentation
+from the arguments alone, outside `GameFlow`. The `original` flag does not reach it.
+Native results (macOS arm64, SDK 10, `scripts/run.sh`, scratch copy):
+
+| Command | Result |
+| --- | --- |
+| `--smoke-test --advisor-say 1` (sandbox) | Passed. `sp_001`, 4.23 s, game mixer. No automatic advisor lines. |
+| `--smoke-test --sandbox --advisor-response 1` | Passed. Response 1 → `/levels/jungle/Speech/speechHD.SDT` sample 1, 28.63 s. |
+| `--smoke-test --mute --sandbox` and plain `--smoke-test` | Sandbox smoke passed. No `Advisor scoring`/`game event`/`says` lines. |
+| `--smoke-test --mute --load-original-level jungle` | Passed. Event 0 → response 1, `clock: wall clock (no audio device)`, no SDL audio. |
+| `--smoke-test --load-original-level jungle` | Passed. Event 0 → response 1, `game mixer (SDL audio queue)`. |
+
+#### Cherry-pick `b0562dd`
+
+`f8375b2` and `b0562dd` touch the same 16 files. For every file except
+`docs/FIDELITY-REGISTER.md`, the changed lines are identical. `git range-diff` shows
+only register hunks: counts 140→147 instead of 138→145, COMPAT 15/16, and Game.cs line
+shifts from the TPI-FSH base. `fidelity_register.py --check` passes at `b0562dd` (147) and
+at `a626cbf` (148, with ADVISOR-022 added). The resolution is correct.
+
+#### Checks (independent)
+
+- Build: `OpenTPW.sln` Release, SDK 10.0.401 — 0 errors.
+- `OpenTPW.Tests` without assets: **908 passed / 241 skipped / 0 failed**.
+- With `OPENTPW_GAME_PATH`: **1078 / 71 / 0** (10 min 41 s).
+- Both test results match the author's.
+- `fidelity_register.py --check`: 148 unresolved unique APPROX IDs, exit 0.
+- Evidence runner (`--mac-bin`, `--pc-data`, SDK 8 host): OK, 9 Python suites, 555 tests,
+  39 skipped. The review lane has 233 tests, 11 skipped. The runner does not set
+  `OPENTPW_REVIEW_REPO`, so the git classes skip there. Run directly with all three
+  variables, `test_advisor_v1`+`test_advisor_v2` give 24 tests, OK.
+- Line endings: `git diff efc090d a626cbf --stat` equals `--ignore-cr-at-eol --stat`
+  (19 files, +2003/−45). Every file changed by `a626cbf` keeps its style:
+  `AdvisorControllerTests.cs`, `AutomaticAdvisor.cs`, `AdvisorController.cs` and
+  `AdvisorScoreQueue.cs` are CRLF; the docs, `Advisor.cs`, `AdvisorTests.cs` and
+  `GameFlow.cs` are LF.
+- `git -c core.whitespace=cr-at-eol diff --check efc090d a626cbf`: clean.
+
+#### Low notes
+
+- **Stale `LIPS.md` APPROX rows (pre-existing).** The rows for ADVISOR-003, 004, 005, 006, 007,
+  008, 010, 011, 012 and 014 cite a line that is not their APPROX tag. The set is identical
+  on `efc090d`. The current lines are:
+
+  | ID | Cited | Current |
+  | --- | --- | --- |
+  | ADVISOR-003 | `Advisor.cs:74` | `Advisor.cs:88` |
+  | ADVISOR-004 | `Advisor.cs:58` | `Advisor.cs:67` |
+  | ADVISOR-005 | `Advisor.cs:247` | `Advisor.cs:345` |
+  | ADVISOR-006 | `Advisor.cs:94` | `Advisor.cs:112` |
+  | ADVISOR-007 | `Advisor.cs:118` | `Advisor.cs:136` |
+  | ADVISOR-008 | `Advisor.cs:235` | `Advisor.cs:333` |
+  | ADVISOR-010 | `SpeechAudioPlayer.cs:34` | `SpeechAudioPlayer.cs:39` |
+  | ADVISOR-011 | `SpeechAudioPlayer.cs:31` | `SpeechAudioPlayer.cs:36` |
+  | ADVISOR-012 | `SpeechAudioPlayer.cs:62` | `SpeechAudioPlayer.cs:77` |
+  | ADVISOR-014 | `Mp2Decoder.cs:55` | `Mp2Decoder.cs:49` |
+
+  The rows for ADVISOR-015–022 are all current. `test_advisor_v2.py` pins that this
+  set is unchanged.
+- **V1-2b and `[EXT:sandbox]` have no unit test.** A test seam would need an
+  `AutomaticAdvisor` with an injectable controller or presentation. This is optional.
+- `--mute` now also puts the manual `--advisor-say` on the wall clock. That is
+  consistent with RUNNING.md ("opens no audio device").
+
+#### Handoff
+
+1. Merge `a626cbf` (fast-forward of `efc090d`) with this review commit on top.
+2. Optional: an `AutomaticAdvisor` test for the option-off path, and the stale LIPS rows.
+
+## 57. Scenarios lane review S1: `9e47f37`, `cb8dca2`, `db3ae4f` and the `ffa87c6` merge onto `ae886cf`
+
+Subject: `ppc-scenarios` at `ffa87c6`, 13 commits not on `main` `ae886cf`.
+Earlier rounds covered `b8602bd`, `089ca5f`, `b093ee3` and `bac3428` (section 34),
+`1d3b8d4` (section 48), `202fd60` (52), `1dacb25` (53) and `ffa87c6` (54). No
+earlier round recorded `9e47f37`, `cb8dca2` or `db3ae4f`, and no round checked the
+range against `main` since it gained its own game-mode code (`3286a6c`).
+Mac static evidence only. Nothing original was executed.
+`test_scenarios_s1.py` decodes the sampled operands from the instruction words
+with its own field split, and runs `git merge-tree` read-only.
+
+### Merge blockers
+
+- **S1-1 (HIGH, blocks merge): 13 conflicted paths, two game-mode
+  implementations.** `git merge-tree --write-tree ae886cf ffa87c6` exits 1. The
+  conflicts are content conflicts, not line endings (every touched file is LF on
+  both sides):
+  `docs/{ECONOMY,FIDELITY-REGISTER,UI}.md`, `ParkEconomyTests.cs`, `GameFlow.cs`,
+  `ParkEconomy.cs`, `ParkEconomyRuntime.cs`, `ParkResearch.cs`, `FrontEndMenu.cs`,
+  `FrontEndSmokeTest.cs`, `UiApproximations.cs`, `Level.cs`, `OriginalPark.cs`.
+  `main` `3286a6c` added a second Instant Action path while the lane was apart:
+  `ParkGameMode?` plumbing, `includeEasymodePark`, `GameFlow.Mode`, and Easy
+  balance for every Instant Action theme. The lane uses `ParkStart`/`ParkStartKind`
+  instead. The lane owner must merge `ae886cf` into `ppc-scenarios` and resolve
+  as follows:
+  1. `GameFlow.cs`: keep the lane's `ParkStart` and `StartKind`, **and** main's
+     `if ( original ) GameAudio.EnterPark( levelName );`. Both sit in one hunk, and
+     taking either side alone drops the mixer's park music or the start record.
+  2. `GameFlow.LoadPark` merges cleanly but still passes
+     `gameMode: Mode == …`, and `Mode` is deleted by the lane. Choose one of:
+     - the lane's documented rule (Load Park = reference start): call
+       `StartLevel( entry.Level, original: true, developerPanels: false )` and
+       remove main's smoke steps from `flow.StartPark( "jungle",
+       GameMode.InstantAction )` up to "loaded mode and balance layers". Keep the
+       read-only visit setup that follows them.
+     - main's rule (reuse the remembered mode): keep a mode field, map it with
+       `ParkStart.FromFrontEnd`, and change the Load Park row in ECONOMY.md/UI.md.
+  3. `OriginalPark.cs`: the clean side keeps
+     `if ( savePath != null && includeEasymodePark )`, which does not compile
+     against the lane's `readShippedSave` signature (CS0103). Change it to
+     `if ( savePath != null )` and keep main's `BIN:STP-PPC:0x10137600` label.
+  4. `ParkResearch.cs`: take main's version. `DailyPoints` no longer exists there:
+     `06b8624` made research run every 20 turns per researcher. `ParkEconomy.cs`:
+     keep main's loan and upgrade BIN labels on the lane's `Features.*` tests.
+     Keep main's turn-based golden-ticket check (already Full Simulation only),
+     and drop the lane's month-end hunk. Keep the lane's `Features.Challenges`
+     gate on `Objectives.AdvanceDay`, because main has none.
+  5. Tests: port the lane's `ParkEconomyTests` hunk to
+     `Advance( ParkCalendar.TickOfTurn( ParkResearch.TurnsPerResearch ) )`. Port
+     main's `GameModeSelectsBalanceLayersAndEasymodePark` to
+     `OriginalPark.Load( "jungle", readShippedSave: false )` with
+     `ParkStartKind.FullSimulation` and `ParkStartKind.InstantAction`.
+  6. Docs: merge UI-015 and the research rows. Reconcile `FINDINGS.md`
+     "Instant Action rules traced so far", which still says ECON-019 stays an
+     approximation of staffless research. Then run `fidelity_register.py --write`
+     and `--check`.
+- **S1-2 (MEDIUM, blocks merge as behaviour; section 34's MEDIUM is still
+  open): merging stops Instant Action research in production.** On `main`, an
+  Instant Action park with no researchers researches at the ECON-019 rate. The
+  lane removes that call, so research needs a hired researcher. Nothing in
+  production can hire one: the only `ParkEconomy.Hire` caller outside tests is
+  `SandboxSmokeTest.cs:207`. The seed's staff records are not decoded. The new
+  smoke step pins "research does not advance" as the expected result. ECONOMY.md
+  says such a park "researches only once the player hires researchers", which a
+  player cannot do. The Mac claim behind the change holds (see below). The Mac
+  Instant Action park also ships a researcher, and its panel text 468 says
+  research is automatic. The fix is one of:
+  - keep a stand-in for the undecoded seed researcher. In
+    `ParkEconomy.DoResearch`, add one grade-2 ability while no researcher is
+    employed in an Instant Action start that imported the seed, labelled
+    `[APPROX:ECON-019] stand-in for the Instant Action seed's undecoded researcher
+    — evidence needed: Easymode.TPWI staff records`. Then flip the smoke
+    assertion. (Recommended: it matches the observable Mac result where the
+    seed exists.)
+  - or register a new APPROX ID at `DoResearch` ("seed staff not imported and no
+    hiring UI: Instant Action research does not progress"), and correct the
+    ECONOMY.md sentence.
+
+### Per-commit verdicts
+
+- **`9e47f37` (park entry, Instant Action end to end): evidence accepted;
+  merge held by S1-2.** Decoded:
+  - `CreatePlayer` `0x13741c` keeps its r6 flag in r28 and passes it as r5 to
+    `0x137600` (call at `0x137548`).
+  - The copy saves it in r24 and tests it at `0x1376b0` with `cmpwi r24,0`. When
+    the flag is zero, the branch at `0x1376b4` jumps past the `LbFile_Copy` call at
+    `0x1377b8`. The `easymode` string is the one loaded at `0x137608`.
+  - `0x198e50` has one direct caller, `0x1c2024`.
+
+  The production changes are covered:
+  - ECON-019 and UI-015 keep registered IDs with reworded texts.
+  - `ParkEconomyRuntime.Load` now refuses a save of the other mode. That is a rule
+    of OpenTPW's own format, not an original claim. It is tested, and no
+    production path calls it (only tests and the sandbox smoke run).
+  - The `ReadsShippedSave` comment now cites the traced entry.
+
+  No PC claim was made. One commit claim was not rerun: the native smoke run of
+  the Instant Action leg.
+- **`cb8dca2` (profiles, key-gate refusal, park header gate): accepted.**
+  Docs and tools only. Decoded:
+  - `0x128fc0` sets the value 12 before the write.
+  - `0x129108` is `cmplwi r6,12`: an unsigned compare.
+  - `0x12910c` branches to the member read at `0x129128` when the version is not
+    below 12. Below 12, the reader returns 0 (`0x129120`).
+
+  The PC side is bounded: the header gates are applied to PC files as Mac checks,
+  and PC profiles are "not established". **S1-3 (low):** the commit has no Lore
+  trailers (no Constraint, Confidence, Tested or Not-tested). **S1-4 (low,
+  wording):** "the PC file that Instant Action copies" in *Park header gate and PC
+  park files* states the Mac copy as a PC fact. Write instead "the PC counterpart
+  of the file the Mac Instant Action copy names".
+- **`db3ae4f` (key displays, door gate, ticket spending): accepted.** Docs and
+  tools only. Decoded:
+  - `Keys()` `0x128b60` ends by adding `mExtraKeys` (+32, at `0x128c78`) to a signed
+    multiply-high by `0x55555556` (`0x128c6c`/`0x128c74`/`0x128c7c`). It never
+    loads +28 (`mSpentTickets`) from the record before the return at `0x128ca4`.
+  - The door `0x964c4` tests GameType 2 at `0x096528`, and an Instant Action
+    player enters before any key read. Otherwise it calls `Keys()` (`0x0965cc`)
+    and the cost getter `0x12a4c8` (`0x0965d8`), then compares them with `cmpw
+    cost,keys`. The entry is skipped when `cost > keys`, so the door enters iff
+    signed cost ≤ keys.
+
+### Research claim behind S1-2 (lane side confirmed)
+
+`0xf0df0`, the research point sink, has exactly one direct caller: `0xf0788`,
+inside `0xf0728`. `0xf0728`'s only caller is `0xf02e4`, the per-researcher cycle
+`0xf0284`. Inside `0xf0728`:
+
+- `lwz 484(r3)` loads the researcher's grade, scaled by `mulli 12`.
+- `lwz r31,1052(r5)` loads that grade's `ResearchAbility`, which is passed as r4.
+
+No relocation points at either routine. So there is no staffless call path on the
+Mac, as far as a direct-call and relocation scan shows. Main's ECON-019 is an
+approximation, and this result contradicts it as a staffless rule. It does not
+contradict it as a stand-in for the seed researcher.
+
+### Merged tree (scratch clone, review resolution)
+
+The resolution follows S1-1 items 1–6. It takes the lane's Load Park rule and
+leaves out the S1-2 stand-in. It is one possible resolution, not the lane
+owner's, and nothing was committed outside this worktree.
+
+| Check | Result |
+| --- | --- |
+| SDK 10.0.401 `dotnet build -c Release` | 0 errors (after S1-1 item 3; before it, CS0103) |
+| `OpenTPW.Tests`, no assets | 858 pass, 234 skip, 0 fail (main `ae886cf` rerun here: 853/232/0; +7 tests) |
+| `OpenTPW.Tests`, `OPENTPW_GAME_PATH` | 1029 pass, 63 skip, 0 fail (stated main baseline 1022/63/0; +7) |
+| `fidelity_register.py --check` | main 138; merged (after `--write`) 138, exit 0 |
+| `diff --stat` vs `--ignore-cr-at-eol --stat`, main → merged | identical (35 files, +8204 −107); 21 CRLF `.cs` files on main and on the merged tree |
+| Lane `.cs` line endings | every `.cs` in `ae886cf...ffa87c6` keeps its merge-base ending (LF) |
+| Interaction with main's newer work | autorun, Game Options pages, advisor responses and the intro gate do not overlap. Advisor code does not subscribe to economy events, and `Game.cs` is untouched. The mixer hook is in S1-1 item 1 |
+| Windows paths in lane Python | no repo-relative `str(Path)`. `mac_data_compare.find` splits POSIX strings, and `profile_evidence` echoes CLI paths only |
+
+Lane reruns on a `ffa87c6` archive: `lanes/scenarios` unittest 98 OK with
+`OPENTPW_MAC_BIN`, and 85 run + 13 skipped without it. `scenario_evidence.py`
+exit 0, 2,090 instruction checks. These match round 18.
+
+### Open low findings
+
+- **R17-2**: `read_mac_player_file` still keys themes by the full name,
+  NUL included. Open and optional.
+- **R18-2**: `RecursionError` from a very deep envelope. Open and optional.
+- **R18-3**: the partial-record failing member is not restricted. Open and
+  optional. Its two `expectedFailure` tests in `test_round18` still fail as
+  expected.
+
+`ffa87c6` is the head round 18 reviewed, and none of these changed.
+
+### Results
+
+| Target | Command | Result |
+| --- | --- | --- |
+| review lane | `test_scenarios_s1` with `OPENTPW_PPC_BIN_ROOT`, `OPENTPW_REVIEW_REPO` | 10/10 |
+| review lane | `unittest discover` with all three env vars | 201 run, OK (3 skipped, 2 expected failures) |
+| review lane | `unittest discover` with no env vars | 201 run, OK (45 skipped) |
+
+Not run: the native front-end smoke run on the merged tree, the original
+program, and PC parity.
+
+### Handoff
+
+1. Scenarios owner: S1-1. Merge `ae886cf` and resolve per items 1–6. Rebuild,
+   then expect +7 tests over main and `--check` exit 0.
+2. Scenarios owner: S1-2. Pick the stand-in or the registered gap before the
+   merge. Rerun the native front-end smoke run, because its Instant Action
+   research assertion depends on that choice.
+3. Optional: S1-3, S1-4, R17-2, R18-2, R18-3.
+
+### 57.1 Round 2: merge `5224418`
+
+Subject: `5224418`, the merge of `ffa87c6` onto `main` `efc090d`, and `2902c7d`
+(section 57 on top). `origin/main` is still `efc090d`. Mac static evidence only.
+Nothing original was executed. `test_scenarios_s2.py` decodes the UI-041 operands
+with its own field split and checks the merge against both parents read-only.
+
+**Verdict: merge-ready.** No blocker remains. The open items below are low and
+optional.
+
+#### S1-1: resolved
+
+Each prescribed resolution was checked against both parents (`git show
+5224418` combined diff, plus a scan for lines either parent added since the
+merge base that are missing from the merge):
+
+1. `GameFlow.StartLevel` keeps `GameAudio.EnterPark( levelName )` under
+   `if ( original )` and then sets `StartKind`.
+2. `LoadPark` uses the lane's rule (reference start). It carries a new
+   `[APPROX:UI-041]` (see below). Main's smoke steps were rewritten to check
+   that Load Park after an Instant Action start gives the reference start.
+   Main's `Balance == 100000` check after the reload is gone, which follows
+   from the rule change. `GameModeSelectsBalanceLayersAndEasymodePark` still
+   checks the Instant Action balance of 100000.
+3. `OriginalPark.Load` uses `if ( savePath != null )` and keeps
+   `BIN:STP-PPC:0x10137600`. No `includeEasymodePark` is left in `source/`.
+4. `ParkResearch.cs` is byte-identical to main's. `ParkEconomy` keeps main's
+   loan and upgrade BIN labels on `!Features.Loans` and `!Features.Upgrades`. It
+   also keeps main's golden-ticket check, every 100 turns and only in Full
+   Simulation, without the lane's month-end check. The
+   `Features.Challenges` gate on `Objectives.AdvanceDay` is kept.
+5. Tests were checked line by line against both parents. The only removed
+   lines are the ones replaced by the port: main's `includeEasymodePark`/
+   `ParkGameMode` calls, main's "Instant Action research is automatic" trio
+   (now the stand-in case), and the lane's `AdvanceDays( 1 )` (now
+   `TickOfTurn( TurnsPerResearch )`). No assertion was weakened. The new
+   assertions cover the stand-in flag for each start kind, a stand-in park that
+   researches, and a save round trip.
+6. UI-015, the research row and FINDINGS.md "Instant Action rules traced so
+   far" are reconciled. The register lists 141 IDs (+UI-041). The
+   `ParkEconomy.cs:169` and `GameFlow.cs:147` locations are current.
+
+The lane lines that are not in the merge are all superseded on purpose. They are
+the month-end ticket hunk, `DailyPoints`, the ECON-019 "unused leftover" text and
+the "research does not advance" smoke assertion. The main lines that are not in
+the merge are the `gameMode`/`includeEasymodePark` plumbing and the old UI-015
+and ECON-019 texts.
+
+#### S1-2: resolved, and the condition change is justified
+
+`DoResearch` adds one grade-2 ability when three things hold: no researcher is
+**employed**, `SeedResearcherStandIn` is set, and the mode is Instant Action.
+`ParkEconomyRuntime` sets the flag only when the seed was imported in an Instant
+Action start. Hallow, Full Simulation and the reference start get no stand-in,
+and tests check each one. Main's condition was "no researcher *could* research".
+"Employed" is the wording of the section 57 recommendation, and it fits a
+stand-in for a missing staff record. With "could research", a hired researcher
+in an excluded state (ECON-015) would also bring back the stand-in, so a real
+researcher and the stand-in would take turns. Do not revert.
+
+- **S2-1 (low, optional):** on the Mac the seed's researcher would stay when the
+  player hires another one. The stand-in stops at the first hire, so such a park
+  has one researcher fewer than the Mac would. Production cannot reach this,
+  because there is still no hiring UI. The ECON-019 text already states "while
+  none is employed".
+
+#### Save compatibility
+
+`SeedResearcherStandIn` is a non-`required` `init` member. `CurrentVersion`
+stays 2, and `UnmappedMemberHandling.Disallow` only rejects unknown members. I
+checked this with a scratch program against the built `OpenTPW.dll`, which was
+not committed. A serialized Instant Action park with the flag set round-trips
+`true`. The same JSON with the member removed (the pre-merge format) loads, with
+the stand-in off and the mode Instant Action.
+
+- **S2-2 (low, informational):** an Instant Action save written by a pre-merge
+  `main` build loads without the stand-in, so its research stops. On main, the
+  same park researched without staff. The only production caller of
+  `ParkEconomyRuntime.Load` is `SandboxSmokeTest`, so no player save is
+  affected.
+
+#### UI-041 evidence (bounded, holds)
+
+Decoded from the instruction words:
+
+- The `mEasyModeUser` getter `0x128f4c` is `lbz r3,36(r3)`, and the setter
+  `0x128f54` is `stb r4,36(r3)`. The setter's two direct callers (`0x13759c`,
+  `0x1375cc`) are inside `CreatePlayer` (`0x13741c`).
+- Player selection `0x13781c` tests `cmpwi GameType,1` at `0x137954` and skips
+  the override when it is equal. Otherwise it calls the getter at `0x13798c`,
+  then `clrlwi.` and a branch on zero. On a non-zero byte it calls `li r4,2;
+  bl SetGameType` (`0x1379b4`/`0x1379bc`), and on zero `li r4,0; bl
+  SetGameType` (`0x1379e0`/`0x1379e8`).
+- `SetGameType` `0x12bbf4` has exactly the 10 direct callers listed in
+  PPC-scenarios.md. I followed every direct `bl` from the park loader
+  `0x11acfc`, treating a function as the span between two direct-call targets.
+  The closure has 2,191 functions. It contains only one function with a
+  `SetGameType` site: the GameType constructor `0x12bb64`. That constructor maps
+  the startup flag bits to 2/1/0, else 0. All 95 direct constructor calls are
+  behind a construct-once guard (`extsb.` on the guard byte, then `bf eq` past
+  the call). The loader's closure does not include selection, the online
+  entries or main-loop state 11.
+
+Bounds: indirect calls are not followed, and no store through another alias of
+the GameType object is excluded. A local scan near the 18 GameType TOC loads in
+that closure found no store through the loaded pointer, but this is not proof.
+I did not re-verify the "GameType is not saved with a park" half. UI-041 rests
+on the loader not applying a mode, and the bounded result supports that.
+
+#### Low items from round 1
+
+S1-4 is fixed: PPC-scenarios.md line 226 now reads "the PC counterpart of the
+file the Mac Instant Action copy names". S1-3 cannot be fixed without rewriting
+`cb8dca2`, which is already part of the merged history, so it stays recorded.
+The merge commit itself has full trailers. **S2-3 (trivial):** its `Tested`
+trailer says 629 evidence tests, and the rerun here reports 639. R17-2, R18-2
+and R18-3 are unchanged.
+
+#### Results (this worktree, `2902c7d`)
+
+| Check | Result |
+| --- | --- |
+| SDK 10.0.401 (`opentpw-dotnet10`, non-symlinked path) `build -c Release --no-incremental` | 0 errors |
+| `OpenTPW.Tests`, no assets | 869 pass, 242 skip, 0 fail (matches the author) |
+| `OpenTPW.Tests`, `OPENTPW_GAME_PATH` | 1040 pass, 71 skip, 0 fail (matches) |
+| `fidelity_register.py --check` | 141 IDs, exit 0 |
+| `run_evidence_checks.py` with the Mac bin | OK: 10 Python suites, 639 tests, 106 skipped; net8 harnesses not run |
+| `diff --stat` vs `--ignore-cr-at-eol --stat`, `efc090d`→`5224418` | identical (37 files, +8258 −107) |
+| `git diff --check efc090d 2902c7d` | clean |
+| `git merge-tree --write-tree origin/main 2902c7d` (after fetch, `origin/main` = `efc090d`) | exit 0, no conflicts |
+| `test_scenarios_s2` with `OPENTPW_PPC_BIN_ROOT`, `OPENTPW_REVIEW_REPO` | 7/7 (7 skipped without them) |
+| review lane `unittest discover`, all three env vars / none | 226 run OK (14 skipped) / 226 run OK (66 skipped) |
+
+Not run: the native front-end smoke run (the author reports 338 frames), the
+original program, and PC parity.
+
+#### Handoff
+
+1. Merge `2902c7d` (or `5224418` plus this review) onto `main`. It is a fast
+   forward while `main` stays at `efc090d`.
+2. Optional: S2-1 (keep the stand-in alongside hired researchers), S2-2, R17-2,
+   R18-2, R18-3.

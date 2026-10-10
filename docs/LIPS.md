@@ -96,8 +96,9 @@ selection and random choice among all five mouth nodes. The standalone helper
 preserves those rules with explicit clock/random inputs. The advisor runtime
 picks the mouth the same way (`AdvisorMouth`: node `rand() % 5 + 1` every 100 ms
 of speech, node 1 while silent, from the advisor update at `0x10007434`).
-ADVISOR-001 covers the unrecovered node-to-mesh order; ADVISOR-009 remains a
-runtime-integration limitation (global speech rather than the recovered policy).
+ADVISOR-001 covers the unrecovered node-to-mesh order. Responses use the recovered
+global/level bank policy; ADVISOR-009 now only covers the manual `--advisor-say`
+path and the unbound descriptors (see "Automatic advice").
 Geometry, cross-edition equivalence and device timing remain separate gates.
 
 ## Speech audio decoding
@@ -223,6 +224,70 @@ pixels in the projected mouth rectangle between the talking/closed captures
 5.4 ms interval is shorter than a frame and is not seen). Original visual fidelity
 (lighting, scale, placement, idle animation) is not compared.
 
+## Automatic advice
+
+`AutomaticAdvisor` (`source/OpenTPW/Client/AutomaticAdvisor.cs`) runs the original
+controller for the game events OpenTPW has. Each identity stays separate: a
+`CMsgEvent` ID builds pending **advice** (message ID) with its configured score;
+the message's **descriptor** gives the first response and response count; the
+**response** (`content/data/advisor-responses.toml`) gives the global or level
+**sample** and LIP. Sources: docs/reverse/PPC-advisor.md ("Actual CMsgEvent
+producers", "Phase two", "Phase four"); the queue is a port of the reviewed lane
+model `OriginalAdvisorScoreQueue` and keeps all 31 of its cases as
+`AdvisorScoreQueueTests`.
+
+| Game event | Producer in OpenTPW | Advice (score key) | Responses → sample |
+| --- | --- | --- | --- |
+| 10 then 0 | Every original-level start (main loop `0x101C2108`/`0x101C2174`) | 10: resets each history's variant, played flag and slaps; the saved tick stays | — |
+| 0 | Level start | 0 (`Welcome.Score`) | 1 → **level** bank sample 1, `Speech/lips/sp_001.LIP` |
+| 0, game type 2 | Level start in Instant Action (the game-type global, TOC −30136, is the one the player selector `0x1013781C` sets to 2) | 323 (`PrebuiltPark.Score`, tutorial group 1) | 587 → global 606 |
+| 2 | `ParkEconomy` bankruptcy (ADVISOR-020) | 106 (`Bankrupted.Score`) | 274/275 → global 424/425 |
+| 3 | `ParkEconomy.OpenPark` transition (ADVISOR-020) | 128 (`ParkNowOpen.Score`) | 308/309 → global 342/343 |
+| 4 | `ParkEconomy.ClosePark` transition (ADVISOR-020) | 129 (`ParkNowClosed.Score`) | 310/311 → global 344/345 |
+
+`Advisor/Advisor.sam` is read at runtime with the bounded `.sam` reader (≤ 1 MiB):
+`MinScoreForConsideration`, the group repeat/once/slap controls and the five
+scores. Queue rules: eight records; admission checks tutorial option, repeat
+interval in quarter game ticks (`(tick >> 2) − (saved >> 2)`, saved ticks 0–3
+skip it, equality passes), once-only, slaps and the pending-duplicate limit,
+then takes the first free slot or replaces the earliest weakest record only for a
+strictly higher score; selection waits while `now < start + duration`
+(unsigned), takes the earliest strictly highest score strictly above the minimum
+and the next cyclic variant (so bankruptcy alternates 274, 275); the record is
+consumed before playback, and the history is saved and the returned span + 1000
+reserved whatever the player returns: the original wrapper `0x1000BA54` fails only
+for an invalid record or the missing-descriptor response 614 and keeps the player's
+result only as the span (`0x1000BB64`, return 1 at `0x1000BBF0`). A response that
+cannot be said therefore reserves 1000. With the Game Options Advisor switch off
+the player returns 0 before speaking (`0x10006BB4`–`0x10006BC0`), so advice is
+still picked, consumed and recorded silently (ADVISOR-021). With `--mute` the
+advisor's speech keeps the wall clock and opens no audio device. Game ticks are the economy's park turns
+(`mGameTick`); the sandbox has none, so its ticks stay 0.
+
+With the shipped `Advisor.sam` (minimum 25) the welcome (100,000) plays at once,
+the prebuilt-park advice (1,000) follows in Instant Action after the reservation,
+bankruptcy (100,000) plays, and park open/close (20) stay pending and never play.
+Imported parks are opened during level construction (ECON-031), before the
+advisor attaches, so that load-time opening raises no event.
+
+Not wired: the other 346 descriptors, the 135 computed score producers and the
+background score scan, research/staff/prank/ride/challenge messages, slaps and
+the presentation's deferred speech start, animation sequences and the recovered
+`OriginalAdvisorLipDriver` timing (it needs the original pause-aware advisor
+clock, which OpenTPW does not reconstruct). The bankruptcy and open/close
+producers use the economy's existing conditions; the original producers'
+thresholds and preconditions are not traced (ADVISOR-020). Read-only visits of
+shared parks (online extension) and the generic sandbox (`--sandbox`, plain
+`--smoke-test`, sandbox saves) have no automatic advisor. The pending advice and
+history are not saved with the park (ADVISOR-022).
+
+Native check (macOS arm64 Metal, October 10, 2026): `--smoke-test
+--load-original-level jungle` passed and logged `Advisor game event 0
+(LevelStarted): advice 0 Eligible in slot 0` and `Advisor says response 1
+(sample 1, /levels/jungle/Speech/speechHD.SDT): 28,63 s, 35 LIP marks, clock:
+game mixer (SDL audio queue)`. Audibility and on-screen appearance were not
+inspected.
+
 ## Reader and tests
 
 `LipSyncFile` returns raw `Marks` (input cap 64 KiB; rejects lengths that are not
@@ -269,17 +334,25 @@ table fit). The smoke-test thresholds are test-harness checks, not game rules.
 | ADVISOR-006 | `source/OpenTPW/World/Advisor.cs:94` | Bind pose; no `Advisorm*` clip played | Decoded vertex/visibility payloads of the `Advisorm*` tracks |
 | ADVISOR-007 | `source/OpenTPW/World/Advisor.cs:118` | Triangle corner order reversed for the renderer's clockwise culling (chosen from this renderer's capture) | Original MD2 front-face convention |
 | ADVISOR-008 | `source/OpenTPW/World/Advisor.cs:235` | Speech starts at the first rendered advisor frame | Original advisor trigger timing (binary or trace) |
-| ADVISOR-009 | `source/OpenTPW/World/Advisor.cs:191` | `--advisor-say` plays global clips by number; responses follow the traced global/level selector (`content/data/advisor-responses.toml`), but the controller that picks response IDs is not implemented | The advisor controller (`0x86BC–0x8B10`) and its message-to-response mapping |
+| ADVISOR-009 | `source/OpenTPW/World/Advisor.cs:201` | `--advisor-say` plays global clips by number; responses follow the traced global/level selector (`content/data/advisor-responses.toml`); the controller picks responses only for messages 0, 106, 128, 129 and 323 | The remaining 346 descriptors and their score producers |
 | ADVISOR-010 | `source/OpenTPW/Client/SpeechAudioPlayer.cs:34` | Lip-sync clock = PCM consumed from the SDL queue (leads speaker by ≤ one 1,024-frame buffer, ≈46 ms) | Original A/V sync source; latency measurement |
 | ADVISOR-011 | `source/OpenTPW/Client/SpeechAudioPlayer.cs:31` | Wall clock drives the mouth without an audio device | Original behaviour without sound hardware |
 | ADVISOR-012 | `source/OpenTPW/Client/SpeechAudioPlayer.cs:62` | Mono speech duplicated to both stereo channels | Original speech channel layout/panning |
 | ADVISOR-013 | `source/OpenTPW.Files/Public/LipSyncTimeline.cs:54` | Talking from time 0 (unit and per-mark toggle traced: STP-PPC 0x10007434) | Original runtime LIP consumer (binary or trace) |
 | ADVISOR-014 | `source/OpenTPW.Files/Formats/Sound/Mp2Decoder.cs:55` | Synthesis-window values read from ffmpeg's data table; two values checked against ISO, corpus ≤1 LSB | Full comparison with the published ISO/IEC 11172-3 Table 3-B.3 |
+| ADVISOR-015 | `source/OpenTPW/Client/AutomaticAdvisor.cs:47` | The eligibility check's tutorial byte +53 (`0x10009038`) is the Game Options Tutorial switch (options +0x35, default on in `0x10125B7C`) | The object behind TOC −30268 in the eligibility check |
+| ADVISOR-016 | `source/OpenTPW/Client/AutomaticAdvisor.cs:126` | Returned playback span = speech length + 200 + 300 + 1000 ms; the queue adds another 1000 | Decoded advisor sequence and ending-clip durations |
+| ADVISOR-017 | `source/OpenTPW/Client/AutomaticAdvisor.cs:13` | Controller clock = wall-clock ms since the automatic advisor started, one controller update per frame, not paused with the game | The advisor clock's offset/freeze/compensation and the update cadence |
+| ADVISOR-018 | `source/OpenTPW/Client/AutomaticAdvisor.cs:64` | The automatic advisor is drawn only while a response plays and only inside a level; leaving the level stops it | Entry/exit animation and idle visibility |
+| ADVISOR-019 | `source/OpenTPW/World/AdvisorController.cs:94` | `GeneralAdvisor.MinTimeAnyMessage` (5) and `MinTimeSameMessage` (120) are loaded but not applied | Reads of balance fields +24/+28 |
+| ADVISOR-020 | `source/OpenTPW/Client/AutomaticAdvisor.cs:76` | Events 2/3/4 come from the economy's bankruptcy (six months in the red) and park open/close transitions | The producers' threshold and preconditions (`0x100CC464`, `0x10108EE4`) |
+| ADVISOR-021 | `source/OpenTPW/Client/AutomaticAdvisor.cs:104` | The response player's options byte +0x34 (`0x10006BB4`) is the Game Options Advisor switch; off, advice is picked, consumed and recorded silently | The object behind TOC −30268 (data `0x120A14`) and its +0x34 writer (same question as ADVISOR-015) |
+| ADVISOR-022 | `source/OpenTPW/Client/AutomaticAdvisor.cs:58` | Pending advice and message history are not saved or loaded with the park | Whether the original park save writes the controller's pending records (serializer `0x1000BC10`) and history, and where |
 
 ## Remaining gates
 
-Original-runtime observation of the mouth shape choice while talking, global vs
-level LIP selection, advisor triggers/placement/animation and A/V latency. The undecoded
+Original-runtime observation of the mouth shape choice while talking, the
+remaining advisor triggers and score producers, placement/animation and A/V latency. The undecoded
 `Advisorm*` track payloads (vertex animation/visibility) for idle/talk poses and mouth shapes. Original sound-bank/category scheduling,
 codec CRC/de-emphasis behavior and device latency still need verification. Layer I
 codec support is implemented; automatic sound events are not wired by that change.

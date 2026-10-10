@@ -22,6 +22,18 @@ internal static class Game
 			Console.WriteLine( "Read-only CPU font decoding: nibble samples 0–15; game UI integration and original visual fidelity remain unverified." );
 			return;
 		}
+		var fshIndex = Array.IndexOf( args, "--inspect-fsh" );
+		if ( fshIndex >= 0 )
+		{
+			if ( fshIndex + 1 >= args.Length || args[fshIndex + 1].StartsWith( "--" ) )
+				throw new ArgumentException( "--inspect-fsh requires a local .fsh path or archive.wad!member/path.fsh (docs/FSH.md)." );
+			var fsh = new FshFile( new MemoryStream( ReadFileOrWadMember( args[fshIndex + 1] ) ) );
+			Console.WriteLine( $"SHPI: id {fsh.Id}; {fsh.Images.Count} image(s)." );
+			foreach ( var image in fsh.Images )
+				Console.WriteLine( $"Image '{image.Tag}' name '{image.Name}': {image.Width}x{image.Height}, code 0x{(image.Compressed ? 0xFB : 0x7B):X2}, palette 0x{(byte)image.PaletteFormat:X2} {image.PaletteFormat} with {image.PaletteEntries} entries; RGBA SHA-256 {Convert.ToHexString( System.Security.Cryptography.SHA256.HashData( image.Rgba ) ).ToLowerInvariant()}." );
+			Console.WriteLine( "Read-only CPU decoding of Theme Park Inc textures: 0x24 palettes are decoded opaque (approximation COMPAT-014) and the 0x2D palette as A1R5G5B5 (approximation COMPAT-015); no comparison with the original game's rendering." );
+			return;
+		}
 		var ps2Index = Array.IndexOf( args, "--export-ps2" );
 		if ( ps2Index >= 0 )
 		{
@@ -186,15 +198,16 @@ internal static class Game
 		// Default: the original-style front end (docs/UI.md). --load-original-level, --sandbox and a
 		// plain --smoke-test bypass it as before; --front-end --smoke-test tests the front end.
 		GameAudio.Enabled = !args.Contains( "--mute" );
-		using var flow = new GameFlow { OnlineFolders = onlineFolders };
+		// --no-advisor turns automatic advice off; the manual --advisor-say/--advisor-response presentation replaces it.
+		using var flow = new GameFlow { OnlineFolders = onlineFolders, AutomaticAdvisorEnabled = !args.Contains( "--no-advisor" ) && !args.Contains( "--advisor-say" ) && !args.Contains( "--advisor-response" ) };
 		var capturePath = GetOption( args, "--capture-world", "a .png file for the world-only screenshot" );
 		var smoke = args.Contains( "--smoke-test" );
 		var startsFrontEnd = visit == null && originalLevelIndex < 0 && !args.Contains( "--advisor-say" ) && !args.Contains( "--advisor-response" ) && !args.Contains( "--sandbox" ) && (!smoke || args.Contains( "--front-end" ));
 		// [EXT:autorun] The CD's launcher window comes first when its Autorun folder is available (docs/AUTORUN.md).
 		var autorun = startsFrontEnd && capturePath == null ? CreateAutorun( args, bonusSettings, dataDirectory ) : null;
 		// The original plays its start-up movies before the front end on every start (docs/TGQ-MOVIES.md); after
-		// the launcher's Play when it is shown. Smoke tests and --no-intro / OPENTPW_NO_INTRO go straight to the front end.
-		var playIntro = startsFrontEnd && !smoke && capturePath == null && !args.Contains( "--no-intro" ) && string.IsNullOrEmpty( Environment.GetEnvironmentVariable( "OPENTPW_NO_INTRO" ) );
+		// the launcher's Play when it is shown. Smoke tests, --capture-world and --no-intro / OPENTPW_NO_INTRO go straight to the front end.
+		var playIntro = IntroPlaylist.ShouldPlay( startsFrontEnd, smoke, args, Environment.GetEnvironmentVariable( "OPENTPW_NO_INTRO" ) );
 		Func<IDisposable>? startIntro = playIntro ? () => StartIntro( flow, args, dataDirectory ) : null;
 		if ( autorun == null && !playIntro )
 		{
@@ -468,9 +481,13 @@ internal static class Game
 		// Interface art uses a model suited to drawn art; --texture-pack-no-interface keeps it original.
 		var interfaceModel = GetOption( args, "--interface-model", "a Real-ESRGAN model name for interface art" ) ?? "realesrgan-x4plus-anime";
 		var interfaceUpscaler = args.Contains( "--texture-pack-no-interface" ) ? null : new RealEsrganUpscaler( upscaler, interfaceModel );
-		var options = new TexturePackBuildOptions { Subtree = subtree, InterfaceOnly = args.Contains( "--texture-pack-interface-only" ), Merge = args.Contains( "--texture-pack-merge" ) };
+		var options = new TexturePackBuildOptions { Subtree = subtree, InterfaceOnly = args.Contains( "--texture-pack-interface-only" ),
+			SpritesOnly = args.Contains( "--texture-pack-sprites-only" ), Merge = args.Contains( "--texture-pack-merge" ) };
+		// Guest sprites are assembled into atlases from the sprite banks; they join the build under their pack keys.
+		var sprites = subtree.Length == 0 ? GuestSpriteAtlas.LoadKids() : new List<GuestSpriteAtlas>();
 		Log.Trace( $"Building texture pack from {dataDirectory}{(subtree.Length > 0 ? $"/{subtree}" : "")} into {packDirectory}{(options.Merge ? " (merging)" : "")}." );
-		var manifest = TexturePackBuilder.Build( TexturePackBuilder.EnumerateGameTextures( dataDirectory, subtree ), packDirectory,
+		var manifest = TexturePackBuilder.Build( TexturePackBuilder.EnumerateGameTextures( dataDirectory, subtree )
+			.Concat( sprites.Select( atlas => (atlas.PackKey, (Func<TextureData>)(() => new TextureData( atlas.Width, atlas.Height, atlas.Pixels ))) ) ), packDirectory,
 			new RealEsrganUpscaler( upscaler, model ), options, message => Log.Trace( message ), interfaceUpscaler );
 		Log.Trace( $"Done: {manifest.Textures} textures at {manifest.Scale}x. Turn on Enhanced textures in Game Options (or set EnhancedTextures in graphics.json)." );
 		if ( !string.Equals( Path.GetFullPath( packDirectory ), Path.GetFullPath( TexturePack.DefaultPackDirectory() ), StringComparison.Ordinal ) )
@@ -526,5 +543,18 @@ internal static class Game
 		var advisor = new Advisor();
 		advisor.Say( clip, GameLanguage.IsSelected ? GameLanguage.Current : null );
 		return advisor;
+	}
+
+	/// <summary>Reads a loose file, or a member of a WAD archive given as <c>archive.wad!member/path</c> (case-insensitive member path).</summary>
+	private static byte[] ReadFileOrWadMember( string path )
+	{
+		var separator = path.IndexOf( ".wad!", StringComparison.OrdinalIgnoreCase );
+		if ( separator < 0 )
+			return File.ReadAllBytes( path );
+		using var archive = new WadArchive( path[..(separator + 4)] );
+		ArchiveItem? item = archive.Root;
+		foreach ( var part in path[(separator + 5)..].Split( '/', '\\' ) )
+			item = (item as ArchiveDirectory)?.Children.FirstOrDefault( child => string.Equals( child.Name, part, StringComparison.OrdinalIgnoreCase ) );
+		return (item as WadArchiveFile)?.GetData() ?? throw new FileNotFoundException( $"No member '{path[(separator + 5)..]}' in {path[..(separator + 4)]}." );
 	}
 }

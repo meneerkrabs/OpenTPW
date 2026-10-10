@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<OutputType>Exe</OutputType>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="../OpenTPW.Files/OpenTPW.Files.csproj" />
+	</ItemGroup>
+
+	<!-- The file system creates archive handlers by reflection; keep the OpenTPW libraries whole when trimming. -->
+	<ItemGroup>
+		<TrimmerRootAssembly Include="OpenTPW.Files" />
+		<TrimmerRootAssembly Include="OpenTPW.Common" />
+	</ItemGroup>
+
+</Project>

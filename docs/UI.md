@@ -136,11 +136,16 @@ screens, options), `FrontEnd/`, `Hud/`, `World/Lobby/LobbyScene.cs`,
   on the original `purple_button` art. Positions inside the panel and of the
   right-hand buttons are approximations.
 - Enter park → Game Mode window (239; Instant Action 240 / Full Simulation 241,
-  tooltips 358/359) → loads the original level of the island
-  (`--load-original-level` equivalent). Instant Action loads the `Easy_` balance
-  layers and the Easymode park and disables loans and upgrades; Full Simulation starts
-  with the standard balance and no Easymode park (traced in the Mac binary, see
-  reverse/FINDINGS.md). The original asks once per player, not per park (UI-015).
+  tooltips 358/359) → starts a new park on the original level of the island.
+  Instant Action adds the `Easy_` balance layer and the shipped `Easymode.TPWI`
+  seed where the level has them and gates tickets, challenges, loans, the
+  research lab and upgrades; Full Simulation starts with the standard balance
+  and no seed (traced in the Mac binary, see reverse/FINDINGS.md and
+  docs/ECONOMY.md, "Game modes"). `--load-original-level` and the Load Park
+  entry keep the read-only reference start (shipped save, Full Simulation rules)
+  whatever mode was chosen before (UI-041).
+  The original fixes the mode per player and resumes each theme's autosave; every
+  OpenTPW entry starts a new park (UI-015).
 - Load Park (202): original Easymode parks (read-only) and the OpenTPW sandbox
   save. Quit asks with the original confirmation (9).
 - Not implemented: player profiles (Create/Select New Player), online world,
@@ -347,7 +352,10 @@ glyph in all 14 UI fonts of each language.
   a second naturally researched catalogue object, exact charges, overlap refusal
   without a charge, selected-object open/close, pause menu, refused save, lobby;
   a prepared read-only visit verifies disabled build/open/delete/save controls
-  and their direct callbacks without mutating the park or writing a save. The earlier UI flow
+  and their direct callbacks without mutating the park or writing a save; the visit
+  exits to the lobby and jungle starts again in Instant Action (seed imported, no
+  staff invented, research unchanged over 60 days, loans/research effort/upgrades
+  refused, bank balance read back; English, 1280×720, 288 frames). The earlier UI flow
   passed in all six languages; the economy integration was verified in English
   (1280×720, UI scale 1) and, before reference-fit limiting, Dutch at
   1920×932 drawable/UI scale 2 with nearest upscaling at 50% render scale
@@ -378,10 +386,10 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-012 | `UI/Original/UiInput.cs:49`, `UI/Original/UiScreen.cs:59` | hover focuses, release activates, arrows/Enter/Escape navigate, P pauses, right click backs out of modal screens | binary: input handling; KEYBOARD.str meaning |
 | UI-013 | `UI/Original/UiDialogs.cs:9` | window sizes and inner layout of game mode, load, pause and message dialogs (the options page now follows the original table) | captures of original dialogs |
 | UI-014 | `FrontEnd/FrontEndMenu.cs:76`, `FrontEnd/FrontEndMenu.cs:92` | positions inside the lobby panel (island name, prev/enter/next), logo/title placement, right-hand Load/Options/Quit column | capture of the original lobby screen |
-| UI-015 | `FrontEnd/FrontEndMenu.cs:120` | front-end flow without player profiles; Game Mode is asked when entering a park instead of once per player | player profiles: the original stores the mode per player (STP-PPC 0x1015D220/0x1013741C) |
+| UI-015 | `FrontEnd/FrontEndMenu.cs:127` | front-end flow without player profiles: Game Mode is asked on every park entry instead of fixed at player creation (the original stores it per player, STP-PPC 0x1015D220/0x1013741C), and every entry starts a new park instead of resuming the player's per-theme autosave | PC confirmation of the Mac player and autosave flow (docs/reverse/PPC-scenarios.md, "Park entry") |
 | UI-016 | `FrontEnd/LobbyDefinition.cs:79` | lobby ISLAND angle = island yaw in degrees, height = camera target height | binary: lobby script interpretation or capture |
 | UI-017 | `World/LobbyCameraMode.cs:25` | lobby camera: SPINSPEED read as radians per 0.1 s, vertical field of view 60, 3/s glide between islands, ISLANDFOV unused | binary or capture of the lobby camera |
-| UI-018 | `Client/GameFlow.cs:223`, `World/Lobby/LobbyScene.cs:14` | lobby sky drawn as a flat SKYCOLOUR backdrop; flying meshes, rain, lightning, animations not drawn | binary/capture of the lobby |
+| UI-018 | `Client/GameFlow.cs:238`, `World/Lobby/LobbyScene.cs:14` | lobby sky drawn as a flat SKYCOLOUR backdrop; flying meshes, rain, lightning, animations not drawn | binary/capture of the lobby |
 | UI-019 | `FrontEnd/LobbyDefinition.cs:92` | fallback island position (400 + index × 200, 400) when lobby.txt has none | none needed if lobby.txt is complete |
 | UI-020 | `Hud/ParkHud.cs:119` | positions of buy/info/finance/research/map buttons on the main panel (shared authored centre) | capture of the original HUD |
 | UI-021 | `Hud/ParkHud.cs:115`, `Hud/ParkHud.cs:80` | positions and fonts of the date and bank balance text; money grouped with ',' digits | capture of the original HUD; locale number format |
@@ -403,6 +411,7 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-038 | `UI/Original/Options/OptionsScreen.cs` | 3D card rendering, videocard and audio quality drawn fixed and disabled (OpenTPW has no software renderer, card choice or audio quality) | none for the game path |
 | UI-039 | `UI/Original/UiWidgets.cs` | option label size: letter box about 58 % of the label rectangle height, shared per page; a label whose widest value does not fit drops alone to the largest size that does | capture of the original option labels in several languages |
 | UI-040 | `Client/Autorun/AutorunView.cs` | autorun launcher focus rectangle: dotted frame inverting the pixels with even x + y, 2 pixels inside the button | capture of the original launcher with a focused button |
+| UI-041 | `Client/GameFlow.cs:147` | Load Park opens a shipped park as the reference start (its own balance, Full Simulation rules) whatever Game Mode was last chosen; the original's GameType is not saved with a park but copied from the loading player's profile (`mEasyModeUser`) | player profiles and what the Mac park loader 0x11acfc reads from a park file |
 
 Data-backed (tagged `[DATA]`): the 2048×1536 canvas and authored rectangles of
 placed models (`ui.wad` roots/bounds), button state frames and texture order, V

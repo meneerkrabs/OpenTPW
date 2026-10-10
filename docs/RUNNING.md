@@ -132,7 +132,19 @@ See BF4-FONTS.md for supported encodings, limits and private fixture evidence.
 
 Private format tests use `OPENTPW_GAME_PATH`. MTR fixtures exist only on the
 ISO; extract its `*/Meshes/*/*.mtr` files to a folder outside git and set
-`OPENTPW_MTR_PATH` to it to run the MTR fixture tests (see MTR.md).
+`OPENTPW_MTR_PATH` to it to run the MTR fixture tests (see MTR.md). Theme Park Inc
+texture tests use `OPENTPW_TPI_PATH` (a Theme Park Inc installation or its `Data`
+folder, read in place; see FSH.md).
+
+## Read-only Theme Park Inc texture inspection
+
+```sh
+dotnet source/OpenTPW/bin/Debug/net10.0/OpenTPW.dll --inspect-fsh '/path/to/TPI/Data/ui.wad!stexture/tb_camera.fsh'
+```
+
+Takes a loose `.fsh` path or `archive.wad!member/path`. Prints the image size,
+codes, palette and decoded RGBA hash; decoding errors exit nonzero. Theme Park Inc
+is not playable; see FSH.md.
 
 ## Read-only original container inspection
 
@@ -161,7 +173,9 @@ press or click skips.
 A normal start (the front end, no `--smoke-test`) first plays the original's
 start-up movies: `bf`, then a trailer chosen by the day of the month, at the
 Movie volume of Game Options (its mute toggle silences them). Esc, Space or a mouse button skips. Use
-`--no-intro` (or set `OPENTPW_NO_INTRO=1`) to go straight to the front end;
+`--no-intro` (or set `OPENTPW_NO_INTRO=1`) to go straight to the front end.
+Any nonempty `OPENTPW_NO_INTRO` value, including `0`, disables intros.
+`--capture-world` also bypasses intros so its frame count starts with the world;
 smoke tests never play the movies. Missing movies (no `--cd-data`) are skipped. `--headless` simulates decoding and the audio clock
 without a window or device. `--smoke-test` plays 60 frames with audio off and
 checks GPU readback against the CPU frame. See TGQ-MOVIES.md.
@@ -242,7 +256,16 @@ between `Mouth - Aah` (talking) and `Mouth - Normal` from the clip's `.LIP` mark
 Without an audio device the mouth follows a wall clock silently. With `--smoke-test`
 it runs until the clip ends, checks the clock against wall time and the mouth sequence,
 and writes `artifacts/native-smoke-advisor-{talking,closed}.png`. The advisor's
-original pose, animation, mouth-shape choice and triggers are not reproduced; see LIPS.md.
+original pose and animation are not reproduced; see LIPS.md.
+
+In an original-level park (front end or `--load-original-level <level>`; not the
+generic sandbox) the advisor speaks by
+itself for the traced game events (LIPS.md, "Automatic advice"): the level-start
+welcome comes first. `--no-advisor` turns automatic advice off; `--advisor-say`
+and `--advisor-response` also turn it off. The Game Options Advisor switch
+silences it (advice is still consumed, as in the original) and the Tutorial switch
+gates tutorial advice. With `--mute` it opens no audio device. `--smoke-test
+--load-original-level jungle` logs `Advisor says response 1 … /levels/jungle/Speech/speechHD.SDT`.
 
 ## Development packages
 

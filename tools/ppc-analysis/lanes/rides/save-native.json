@@ -1,0 +1,212 @@
+{
+  "additional_payload": [
+    "section-ordinal2 auxiliary u32 count/u16 list",
+    "filtered linked sections",
+    "train/car/passenger payload via0x38da4"
+  ],
+  "boundary": {
+    "load": 237464,
+    "load_call": 1163320,
+    "markers_are_prefixes": false,
+    "previous_marker": "EMAK",
+    "save": 234680,
+    "save_call": 1169096,
+    "trailing_marker": "SAOC"
+  },
+  "checked_instruction_count": 132,
+  "controller_header": {
+    "bytes": 32,
+    "fields": [
+      {
+        "source": "packed controller flags; remapping not decoded",
+        "wire_offset": 0,
+        "wire_type": "u32-le"
+      },
+      {
+        "controller_field": 8,
+        "wire_offset": 4,
+        "wire_type": "u32-le"
+      },
+      {
+        "controller_field": 12,
+        "wire_offset": 8,
+        "wire_type": "u16-le"
+      },
+      {
+        "controller_field": 16,
+        "wire_offset": 10,
+        "wire_type": "u16-le"
+      },
+      {
+        "controller_field": 20,
+        "wire_offset": 12,
+        "wire_type": "u16-le"
+      },
+      {
+        "controller_field": 28,
+        "wire_offset": 14,
+        "wire_type": "u16-le"
+      },
+      {
+        "controller_field": 32,
+        "wire_offset": 16,
+        "wire_type": "u16-le"
+      },
+      {
+        "controller_field": 44,
+        "wire_offset": 18,
+        "wire_type": "f32-le"
+      },
+      {
+        "source": "count sections excluding descriptor+4 flag0x10",
+        "wire_offset": 22,
+        "wire_type": "u16-le"
+      },
+      {
+        "controller_field": 244,
+        "wire_offset": 24,
+        "wire_type": "u16-le"
+      },
+      {
+        "controller_field": 240,
+        "wire_offset": 26,
+        "wire_type": "u16-le"
+      },
+      {
+        "controller_field": 320,
+        "wire_offset": 28,
+        "wire_type": "u32-le"
+      }
+    ]
+  },
+  "imports": {
+    "LbFile_Read__FPvPvUlPUl": {
+      "glue": 1854244,
+      "import_index": 380,
+      "library": "bullfrog shared",
+      "toc_slot": 1364
+    },
+    "LbFile_Write__FPvPCvUlPUl": {
+      "glue": 1854292,
+      "import_index": 349,
+      "library": "bullfrog shared",
+      "toc_slot": 1256
+    }
+  },
+  "pc_fixture": {
+    "body_bytes": 16,
+    "body_end": 1606462,
+    "body_sha256": "741939ccb979df0dbf391a6548f88fd9d1873aa3fb996f1df39abc6a66df7025",
+    "body_start": 1606446,
+    "coaster_count": 0,
+    "container_sha256": "6d89303d098900364bf5e80b236b64bd85976fb947e9e4609d088547f430b39a",
+    "payload_sha256": "a3c9a28252c37ad49a8eb78e4a0c5e1d5229d01548fa35801db67015d2589173",
+    "qualification": "empty prefix only; no nonempty track/train fixture or TPI COS linkage",
+    "unqualified_global_values": [
+      0,
+      0,
+      1
+    ]
+  },
+  "prefix": {
+    "bytes": 16,
+    "fields": [
+      "coaster count",
+      "unqualified global1",
+      "unqualified global2",
+      "unqualified global3"
+    ]
+  },
+  "schema": 1,
+  "scope": "original TPW native save/load field contracts, no full codec/TPI COS layout or motion",
+  "section_record": {
+    "byte_selector": "cell stack insertion ordinal;255 selects computed fallback; not Direction",
+    "bytes": 34,
+    "fields": [
+      {
+        "source": "packed section flags; full remapping unqualified",
+        "wire_offset": 0,
+        "wire_type": "u32-le"
+      },
+      {
+        "meaning": "section field",
+        "native_field": 112,
+        "wire_offset": 4,
+        "wire_type": "u32-le"
+      },
+      {
+        "meaning": "section descriptor grid X",
+        "native_field": 12,
+        "wire_offset": 8,
+        "wire_type": "u16-le"
+      },
+      {
+        "meaning": "section descriptor grid Y",
+        "native_field": 16,
+        "wire_offset": 10,
+        "wire_type": "u16-le"
+      },
+      {
+        "meaning": "cell stack insertion ordinal, not Direction",
+        "native_field": 4,
+        "wire_offset": 12,
+        "wire_type": "u8"
+      },
+      {
+        "meaning": "section field",
+        "native_field": 232,
+        "wire_offset": 13,
+        "wire_type": "f32-le"
+      },
+      {
+        "meaning": "section field",
+        "native_field": 216,
+        "wire_offset": 17,
+        "wire_type": "f32-le"
+      },
+      {
+        "meaning": "section field",
+        "native_field": 220,
+        "wire_offset": 21,
+        "wire_type": "f32-le"
+      },
+      {
+        "meaning": "section field",
+        "native_field": 224,
+        "wire_offset": 25,
+        "wire_type": "f32-le"
+      },
+      {
+        "meaning": "section field",
+        "native_field": 248,
+        "wire_offset": 29,
+        "wire_type": "f32-le"
+      },
+      {
+        "meaning": "number of following u16 link values",
+        "native_field": 176,
+        "wire_offset": 33,
+        "wire_type": "u8"
+      }
+    ],
+    "followed_by": "count*u16-le link values",
+    "link_count_domain": "native list loop uses full+176; byte33 is narrowed; values above255 unqualified",
+    "ordinal_consumer": {
+      "cell_count": 48,
+      "cell_pointer_in_section": 256,
+      "cell_section_array_field": 52,
+      "function": 216464,
+      "section_field": 4
+    }
+  },
+  "sha256": "04809cd4ccee5433c7fb0b7c93d32f6a7aa629c1849181c0b7906415e5e295f5",
+  "unresolved": [
+    "nonempty PC save fixture",
+    "full section flags/float meanings",
+    "complete topology/train codec",
+    "TrackInfo.Direction axis/enum",
+    "type4 binding",
+    "TPI COS format linkage",
+    "full motion/runtime qualification"
+  ]
+}

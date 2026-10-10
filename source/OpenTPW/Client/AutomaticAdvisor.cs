@@ -10,14 +10,19 @@ namespace OpenTPW;
 /// </summary>
 internal sealed class AutomaticAdvisor : IDisposable
 {
-	// [APPROX:ADVISOR-017] Wall-clock milliseconds since the automatic advisor was created, sampled once per frame; the original's pause-aware unscaled advisor clock is not reconstructed — evidence needed: the advisor clock subobject's offset/freeze/compensation and the controller's update cadence
-	private readonly Stopwatch clock = Stopwatch.StartNew();
+	// [APPROX:ADVISOR-017] the clock starts at 0 when the automatic advisor is created (the original adds an offset word, +0x18 of its clock, whose writer is not traced), is sampled once per frame and stands still while the pause menu is open (the original's other pause callers are not mapped) — evidence needed: the clock offset writer and the screens that call 0x10110518
+	private readonly PausableClock clock;
 	private Advisor? presentation;
 	private bool presentationFailed;
 	private Level? level;
 	private ParkEconomyRuntime? park;
 
-	private AutomaticAdvisor( AdvisorController controller ) => Controller = controller;
+	private AutomaticAdvisor( AdvisorController controller )
+	{
+		Controller = controller;
+		var watch = Stopwatch.StartNew();
+		clock = new PausableClock( () => watch.ElapsedMilliseconds );
+	}
 
 	public AdvisorController Controller { get; }
 	/// <summary>The presentation, once a response has been said.</summary>
@@ -39,7 +44,7 @@ internal sealed class AutomaticAdvisor : IDisposable
 		}
 	}
 
-	private uint AdvisorClock => unchecked((uint)clock.ElapsedMilliseconds);
+	private uint AdvisorClock => clock.Milliseconds;
 	// [BIN:STP-PPC:0x10121098 history setter] history saves the world's mGameTick (+0x1DA70C), which the park economy counts as park turns
 	private uint GameTick => level?.Park is { } running ? unchecked((uint)running.Economy.Turn) : 0;
 	// [BIN:STP-PPC:0x1013781C player selection] game type 2 = Instant Action, 0 otherwise (offline)
@@ -95,8 +100,9 @@ internal sealed class AutomaticAdvisor : IDisposable
 	}
 
 	/// <summary>One controller update; call once per frame while a level runs.</summary>
-	public void Update()
+	public void Update( bool gamePaused = false )
 	{
+		clock.SetPaused( gamePaused );
 		if ( level == null )
 			return;
 		// [BIN:STP-PPC:0x10006BB4 advisor response player] options byte +0x34 clear: the player returns 0 (0x10006BC0) before saying anything

@@ -223,4 +223,21 @@ public class AdvisorTests
 
 		public void Dispose() => FileSystem = original!;
 	}
+
+	[TestMethod]
+	public void AdvisorClockStandsStillWhilePausedAndContinuesFromTheSameValue()
+	{
+		long now = 1000;
+		var clock = new PausableClock( () => now );
+		Assert.AreEqual( 1000u, clock.Milliseconds );
+		clock.SetPaused( true );
+		now = 5000;
+		Assert.AreEqual( 1000u, clock.Milliseconds, "frozen at the pause snapshot" );
+		clock.SetPaused( true );
+		now = 6000;
+		clock.SetPaused( false );
+		Assert.AreEqual( 1000u, clock.Milliseconds, "the paused 5 s are compensated" );
+		now = 6250;
+		Assert.AreEqual( 1250u, clock.Milliseconds );
+	}
 }

@@ -627,7 +627,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 	{
 		var hud = flow.Hud!;
 		hud.SelectCategory( item.Category );
-		var index = hud.Catalog.GetItems( item.Category ).ToList().IndexOf( item );
+		var index = hud.BuildItems.ToList().IndexOf( item );
 		hud.ChangeBuildPage( index / 3 );
 	}
 

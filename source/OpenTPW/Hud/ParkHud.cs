@@ -77,12 +77,15 @@ public sealed class ParkHud
 	public bool InfoArmOpen { get; private set; }
 	public BuildCategory Category { get; private set; } = BuildCategory.Rides;
 	public int BuildPage => buildPage;
-	public int BuildPageCount => Math.Max( 1, (Catalog.GetItems( Category ).Count + 2) / 3 );
+	public int BuildPageCount => Math.Max( 1, (BuildItems.Count + 2) / 3 );
+	/// <summary>The selected category's items in the original buy list's order.</summary>
+	// [BIN:STP-PPC:0x10178768 list insert] the buy list (504, attribute 0x91 with the sorted-insert bit 0x10) inserts each row before the first row whose name is greater (wcscmp, 0x10178654); its sort word starts at 1 (column 0, the name, ascending), so equal names keep catalogue order
+	public IReadOnlyList<BuildItem> BuildItems => Catalog.GetItems( Category ).OrderBy( ItemName, StringComparer.Ordinal ).ToArray();
 	/// <summary>The cat_ui event of a click in the park view.</summary>
 	public const uint ParkViewClickEvent = 0x1F;
 
 	public OriginalObject? SelectedObject => selectedObject;
-	public IReadOnlyList<BuildItem> VisibleBuildItems => Catalog.GetItems( Category ).Skip( buildPage * 3 ).Take( 3 ).ToArray();
+	public IReadOnlyList<BuildItem> VisibleBuildItems => BuildItems.Skip( buildPage * 3 ).Take( 3 ).ToArray();
 	public bool Paused => Stack.Screens.Count > 1;
 	public IReadOnlyList<string> Messages => messages.Select( message => message.Text ).ToArray();
 

@@ -459,7 +459,7 @@ public class QueueTests
 		Assert.IsTrue( ride.TryJoinQueue( 1 ) && ride.TryJoinQueue( 2 ) );
 
 		var check = NextTurn( ride, host );
-		Assert.AreEqual( (true, 1, false, 0, false), (check.ConditionsHold, check.HeadGuest, check.HeadAtFront, check.CalledGuest, check.Stalled), "the head is not standing at position 0 yet" );
+		Assert.AreEqual( (true, 1, false, 0, true), (check.ConditionsHold, check.HeadGuest, check.HeadAtFront, check.CalledGuest, check.HeadNotReady), "the head is not standing at position 0 yet" );
 		ride.HostStep();
 		Assert.AreEqual( 1, checks, "one evaluation per park turn" );
 
@@ -482,7 +482,7 @@ public class QueueTests
 		check = NextTurn( ride, host );
 		CollectionAssert.AreEqual( new[] { "call 1", "board 1", "call 2" }, host.Events );
 		Assert.AreEqual( 2, check.CalledGuest, "ONRIDE 1 < CAPACITY 2" );
-		Assert.AreEqual( 0, ride.StalledAdmissionChecks );
+		Assert.AreEqual( (0L, 1L), (ride.HeadNotReadyStreak, ride.MaximumHeadNotReadyStreak), "one evaluation with the head not ready, then calls" );
 
 		// Capacity gate.
 		ride.PresentForBoarding( 2 );
@@ -529,8 +529,8 @@ public class QueueTests
 		var rig = new Rig( takesGuests: true, capacity: 1 );
 		var waits = new List<long>();
 		rig.Simulation.QueueWaitCompleted += ( _, _, turns ) => waits.Add( turns );
-		var stalled = 0;
-		rig.Ride.AdmissionChecked += ( _, check ) => stalled += check.Stalled ? 1 : 0;
+		var notReady = 0;
+		rig.Ride.AdmissionChecked += ( _, check ) => notReady += check.HeadNotReady ? 1 : 0;
 		var guests = Enumerable.Range( 0, 6 ).Select( _ => rig.Send() ).ToList();
 		var sawBoarding = false;
 		var maximumQueue = 0;
@@ -549,8 +549,172 @@ public class QueueTests
 		var first = waits.Take( 6 ).ToArray();
 		Assert.IsTrue( first.Zip( first.Skip( 1 ) ).All( pair => pair.First < pair.Second ), "first come, first served: " + string.Join( ", ", first ) );
 		Assert.IsTrue( guests.All( guest => guest.LastQueueWaitTurns > 0 ), "every guest has a completed wait in park turns" );
-		Assert.AreEqual( 0, stalled );
-		Assert.AreEqual( 0, rig.Ride.StalledAdmissionChecks );
+		// The guests walk up to position 0 and the called guest walks to the stand point: both progress counters move and stay bounded.
+		Assert.IsTrue( rig.Ride.MaximumHeadNotReadyStreak is > 0 and < 100 && rig.Ride.MaximumHeadNotReadyStreak <= notReady, $"head-not-ready streak {rig.Ride.MaximumHeadNotReadyStreak}, evaluations {notReady}" );
+		Assert.IsTrue( rig.Ride.MaximumCalledAgeTurns is > 0 and < 100, $"called-not-boarded age {rig.Ride.MaximumCalledAgeTurns}" );
+	}
+
+	[TestMethod]
+	public void AdmissionCountersGrowWhileTheHeadIsNotReadyAndWhileTheCalledGuestHasNotBoarded()
+	{
+		var (ride, script, host) = CreateAdmission();
+		Assert.IsTrue( ride.TryJoinQueue( 1 ) && ride.TryJoinQueue( 2 ) );
+		for ( var turn = 1; turn <= 5; turn++ )
+		{
+			Assert.IsTrue( NextTurn( ride, host ).HeadNotReady );
+			Assert.AreEqual( (long)turn, ride.HeadNotReadyStreak, "one per evaluation with the gates held and the head not at position 0" );
+		}
+		Assert.AreEqual( 5L, ride.MaximumHeadNotReadyStreak );
+
+		host.AtFront.Add( 1 );
+		var calledAt = host.Turn + 1;
+		Assert.AreEqual( 1, NextTurn( ride, host ).CalledGuest );
+		Assert.AreEqual( (0L, 5L, 0L), (ride.HeadNotReadyStreak, ride.MaximumHeadNotReadyStreak, ride.CalledAgeTurns), "calling the head ends the streak" );
+		for ( var age = 1; age <= 3; age++ )
+		{
+			NextTurn( ride, host );
+			Assert.AreEqual( (long)age, ride.CalledAgeTurns, "park turns since the call without boarding" );
+		}
+		Assert.AreEqual( 0L, ride.HeadNotReadyStreak, "a pending visitor fails the gates, so it is no head-not-ready evaluation" );
+
+		Assert.IsTrue( ride.PresentForBoarding( 1 ) );
+		script[RideVariables.VAR_LETMEON] = 0; // the script takes the guest
+		var check = NextTurn( ride, host );
+		Assert.AreEqual( 4, host.Turn - calledAt, "boarded on the fourth turn after the call" );
+		CollectionAssert.Contains( host.Events, "board 1" );
+		Assert.AreEqual( (0L, 3L), (ride.CalledAgeTurns, ride.MaximumCalledAgeTurns), "boarding ends the age; the maximum stays" );
+		Assert.IsTrue( check.HeadNotReady, "guest 2 is the new head and is not standing yet" );
+		Assert.AreEqual( (1L, 5L), (ride.HeadNotReadyStreak, ride.MaximumHeadNotReadyStreak), "a new streak; the maximum stays" );
+	}
+
+	[TestMethod]
+	public void BrokenRidesAreNotChosenJoinedOrAdmitted()
+	{
+		// Admission: a broken ride does not call its ready head (APPROX:QUEUE-019).
+		var (ride, script, host) = CreateAdmission();
+		Assert.IsTrue( ride.TryJoinQueue( 1 ) );
+		host.AtFront.Add( 1 );
+		script[RideVariables.VAR_BROKEN] = 1;
+		var checks = 0;
+		ride.AdmissionChecked += ( _, _ ) => checks++;
+		NextTurn( ride, host );
+		Assert.AreEqual( (0, 0), (checks, ride.CalledGuest), "no admission evaluation while broken" );
+		// Joining: a broken ride refuses like a closed one (APPROX:QUEUE-018).
+		Assert.AreEqual( QueueJoinResult.Closed, ride.JoinQueue( 2, 0 ) );
+		script[RideVariables.VAR_BROKEN] = 0;
+		Assert.AreEqual( 1, NextTurn( ride, host ).CalledGuest, "repaired: the head is called again" );
+		Assert.AreEqual( QueueJoinResult.Joined, ride.JoinQueue( 2, 0 ) );
+
+		// Choosing: walking guests skip a broken attraction (APPROX:QUEUE-017).
+		foreach ( var broken in new[] { false, true } )
+		{
+			var rig = new Rig( excitement: 25 );
+			rig.Script[RideVariables.VAR_BROKEN] = broken ? 1 : 0;
+			var guests = Enumerable.Range( 0, 10 ).Select( _ => rig.Simulation.SpawnInPark( 2, 0 ) ).ToList();
+			var chose = 0;
+			rig.RunTurns( 4, () => chose += guests.Count( guest => guest.AttractionId == RideId ) );
+			Assert.AreEqual( broken, chose == 0, $"broken {broken}: {chose} guest-ticks heading for the ride" );
+		}
+	}
+
+	[TestMethod]
+	public void RemovingARideClearsTheQueueStateOfEveryGuest()
+	{
+		var rig = new Rig();
+		var guests = Enumerable.Range( 0, 6 ).Select( _ => rig.Send() ).ToList();
+		// The idle script never takes the called guest: the head waits to be taken (state 14), the others queue.
+		rig.RunTurns( 120 );
+		Assert.AreEqual( GuestState.WaitingToBoard, guests[0].State );
+		Assert.IsTrue( guests.Skip( 1 ).All( guest => guest.State == GuestState.Queueing ) );
+		Assert.IsTrue( guests.All( guest => guest.QueuePosition >= 0 && guest.QueueJoinTurn >= 0 ) );
+
+		rig.Simulation.Unregister( rig.Ride );
+		rig.Ride.ReleaseAll();
+		rig.RunTurns( 2 );
+		foreach ( var guest in guests )
+		{
+			Assert.IsFalse( guest.IsInQueue, $"guest {guest.Id}: {guest.State}" );
+			Assert.AreEqual( (-1, -1L, false, false, 0), (guest.QueuePosition, guest.QueueJoinTurn, guest.QueueCalled, guest.InQueueInterlude, guest.AttractionId), $"guest {guest.Id}" );
+		}
+
+		// A guest left waiting for an attraction that is no longer registered (the orphaned state-14 path).
+		var orphan = rig.Simulation.SpawnInPark( 2, 0 );
+		orphan.AttractionId = 99;
+		orphan.State = GuestState.WaitingToBoard;
+		orphan.QueuePosition = 0;
+		orphan.QueueJoinTurn = rig.Simulation.ParkTurn;
+		orphan.QueueCalled = true;
+		rig.Step();
+		Assert.AreEqual( (GuestState.WalkingAround, -1, -1L, false), (orphan.State, orphan.QueuePosition, orphan.QueueJoinTurn, orphan.QueueCalled) );
+	}
+
+	[TestMethod]
+	public void NeedsWindowComparesTruncatedHappinessAndToilet()
+	{
+		// trunc(happiness) > 80: 80.9 does not start an interlude, 81 does.
+		foreach ( var (happiness, idles) in new[] { (80.9f, false), (81f, true) } )
+		{
+			var rig = new Rig();
+			rig.HoldAdmission();
+			var guest = rig.Send( happiness );
+			var interlude = false;
+			rig.RunTurns( 40, () => interlude |= guest.InQueueInterlude );
+			Assert.AreEqual( idles, interlude, $"happiness {happiness}" );
+			Assert.IsTrue( guest.IsInQueue );
+		}
+		// trunc(toilet) > 80: 80.9 stays, 81 leaves.
+		foreach ( var (toilet, leaves) in new[] { (80.9f, false), (81f, true) } )
+		{
+			var rig = new Rig();
+			rig.HoldAdmission();
+			var guest = rig.Send();
+			guest.Toilet = toilet;
+			rig.RunTurns( 40 );
+			Assert.AreEqual( leaves, !guest.IsInQueue, $"toilet {toilet}" );
+		}
+		// trunc(happiness) < 10: 9.9 leaves; 10.5 idles (10..19).
+		foreach ( var (happiness, leaves) in new[] { (9.9f, true), (10.5f, false) } )
+		{
+			var rig = new Rig();
+			rig.HoldAdmission();
+			var guest = rig.Send( happiness );
+			rig.RunTurns( 40 );
+			Assert.AreEqual( leaves, !guest.IsInQueue, $"happiness {happiness}" );
+		}
+	}
+
+	[TestMethod]
+	public void AStaleQueueIsRecomputedBeforeACellIsCharged()
+	{
+		var rig = new Rig();
+		var economy = EconomyTestData.Park();
+		var balance = economy.Balance;
+		// A path laid over the back cell (2, 1) shortens the queue; nothing has recomputed it yet.
+		rig.Grid.SetPath( 2, 1, true );
+		Assert.AreEqual( (2, 1), rig.Ride.QueueBackCell, "stale back cell" );
+		Assert.AreEqual( QueueBuildResult.Ok, QueuePaths.CheckExtend( rig.Grid, rig.Ride, 3, 1 ), "the stale queue accepts a neighbour of the old back cell" );
+		Assert.AreEqual( QueueBuildResult.NotAtQueueEnd, QueuePaths.TryExtend( rig.Grid, rig.Ride, 3, 1 ), "laying recomputes and refuses it" );
+
+		// Level.BuildQueueCell's order: recompute, check, charge, lay. The refused cell is not charged.
+		rig.Ride.RecomputeQueue( rig.Grid );
+		var check = QueuePaths.CheckExtend( rig.Grid, rig.Ride, 3, 1 );
+		if ( check == QueueBuildResult.Ok )
+			economy.TrySpendCell( CellPurchase.Queue );
+		Assert.AreEqual( QueueBuildResult.NotAtQueueEnd, check );
+		Assert.AreEqual( balance, economy.Balance );
+
+		// The level recomputes before it checks and charges, wherever the queue tool's body lives.
+		var root = new DirectoryInfo( AppContext.BaseDirectory );
+		while ( root != null && !Directory.Exists( Path.Combine( root.FullName, "source", "OpenTPW", "World" ) ) )
+			root = root.Parent;
+		if ( root == null )
+			Assert.Inconclusive( "Repository sources are not next to the test binaries." );
+		var charge = Directory.EnumerateFiles( Path.Combine( root!.FullName, "source", "OpenTPW" ), "*.cs", SearchOption.AllDirectories )
+			.Select( File.ReadAllText ).Single( text => text.Contains( "TrySpendCell( CellPurchase.Queue )" ) );
+		var spend = charge.IndexOf( "TrySpendCell( CellPurchase.Queue )", StringComparison.Ordinal );
+		var checkAt = charge.LastIndexOf( "QueuePaths.CheckExtend(", spend, StringComparison.Ordinal );
+		var recompute = charge.LastIndexOf( ".RecomputeQueue(", spend, StringComparison.Ordinal );
+		Assert.IsTrue( checkAt >= 0 && recompute >= 0 && recompute < checkAt, "RecomputeQueue precedes CheckExtend and the charge" );
 	}
 
 	[TestMethod]

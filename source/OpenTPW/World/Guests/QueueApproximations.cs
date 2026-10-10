@@ -24,6 +24,9 @@ public static class QueueApproximations
 		("QUEUE-013", "a queue has at most 25 cells"),
 		("QUEUE-014", "queues are laid cell by cell from the entrance's outside cell, each touching the back cell"),
 		("QUEUE-015", "removing a queue cell removes every cell behind it"),
-		("QUEUE-016", "rides evaluate admission and queued guests run state 11 once per park turn")
+		("QUEUE-016", "rides evaluate admission and queued guests run state 11 once per park turn"),
+		("QUEUE-017", "guests do not choose a broken attraction (VAR_BROKEN ≠ 0)"),
+		("QUEUE-018", "a broken attraction refuses joins as if closed"),
+		("QUEUE-019", "a broken attraction skips admission (VAR_BROKEN ≠ 0 read as ride +408 ≠ 0)")
 	};
 }

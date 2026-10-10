@@ -100,6 +100,9 @@ public partial class Level
 		}
 		if ( Guests == null )
 			return QueueBuildResult.Refused;
+		// Bring the queue up to date before charging: a grid edit since the last recompute would otherwise pass the
+		// check here, be charged, and then be refused by TryExtend's own recompute.
+		ride.RecomputeQueue( Guests.Grid );
 		var check = QueuePaths.CheckExtend( Guests.Grid, ride, x, y, IsQueueBlocked );
 		if ( check != QueueBuildResult.Ok )
 		{

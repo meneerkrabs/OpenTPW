@@ -42,6 +42,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	private int called;       // ride +104: the pending visitor
 	private bool letMeOnWritten;
 	private long lastAdmissionTurn = long.MinValue;
+	private long calledTurn = -1;
 	private Func<bool> isOpen = () => true;
 
 	public RideVisitorBridge( int attractionId, string name, RideVisitorKind kind, int capacity, int excitementLevel, int attractionValue,
@@ -143,7 +144,11 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		hash.Add( JoinCell is { } join ? join.X : -1 );
 		hash.Add( JoinCell is { } joinCell ? joinCell.Y : -1 );
 		hash.Add( QueueEditCount );
-		hash.Add( StalledAdmissionChecks );
+		hash.Add( calledTurn );
+		hash.Add( HeadNotReadyStreak );
+		hash.Add( MaximumHeadNotReadyStreak );
+		hash.Add( CalledAgeTurns );
+		hash.Add( MaximumCalledAgeTurns );
 	}
 
 	// ---- Queue geometry ----------------------------------------------------------------------
@@ -173,8 +178,20 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 
 	/// <summary>The last admission evaluation (one per park turn).</summary>
 	public AdmissionCheck LastAdmissionCheck { get; private set; }
-	/// <summary>Admission evaluations whose gates held with the head standing at position 0 but nobody was called.</summary>
-	public long StalledAdmissionChecks { get; private set; }
+	/// <summary>
+	/// Consecutive admission evaluations, up to the last one, whose gates held with a head guest that did not yet stand
+	/// at position 0 (<see cref="AdmissionCheck.HeadNotReady"/>); 0 once the head is called or a gate fails.
+	/// </summary>
+	public long HeadNotReadyStreak { get; private set; }
+	/// <summary>Longest <see cref="HeadNotReadyStreak"/> so far.</summary>
+	public long MaximumHeadNotReadyStreak { get; private set; }
+	/// <summary>
+	/// Park turns since the current <see cref="CalledGuest"/> was called without having boarded (or been withdrawn), as of
+	/// the last admission evaluation; 0 when nobody is called or the host has no park turn.
+	/// </summary>
+	public long CalledAgeTurns { get; private set; }
+	/// <summary>Largest <see cref="CalledAgeTurns"/> so far.</summary>
+	public long MaximumCalledAgeTurns { get; private set; }
 	/// <summary>Raised after every admission evaluation.</summary>
 	public event Action<RideVisitorBridge, AdmissionCheck>? AdmissionChecked;
 
@@ -288,6 +305,9 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public QueueJoinResult JoinQueue( int guestId, int excitementDifference )
 	{
 		if ( guestId <= 0 || !IsOpen )
+			return QueueJoinResult.Closed;
+		// [APPROX:QUEUE-018] a broken ride (VAR_BROKEN ≠ 0) refuses joins as if closed; the state-10 join checks of 0xeccb0 are traced without a breakdown test, and how a broken ride keeps guests out of state 10 is not — evidence needed: the ride +408 state and the state-6/state-10 handling of a broken ride
+		if ( IsBroken )
 			return QueueJoinResult.Closed;
 		if ( links.ContainsKey( guestId ) || Holds( guestId ) )
 			return QueueJoinResult.AlreadyQueued;
@@ -433,6 +453,9 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		if ( turn >= 0 && turn == lastAdmissionTurn )
 			return;
 		lastAdmissionTurn = turn;
+		// [APPROX:QUEUE-019] admission is skipped while VAR_BROKEN ≠ 0: the ride update calls 0xe1864 → 0xe1404 only when ride +408 == 0, and a breakdown is read as +408 ≠ 0 — evidence needed: the ride +408 state names and their writers
+		if ( IsBroken )
+			return;
 		CheckAdmission( turn );
 	}
 
@@ -459,6 +482,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		if ( conditions && atFront )
 		{
 			called = head;
+			calledTurn = turn;
 			letMeOnWritten = false;
 			calledNow = head;
 			Host?.OnVisitorOffered( this, head );
@@ -467,8 +491,10 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 				PresentForBoarding( calledNow );
 		}
 		var check = new AdmissionCheck( turn, conditions, front, atFront, calledNow );
-		if ( check.Stalled )
-			StalledAdmissionChecks++;
+		HeadNotReadyStreak = check.HeadNotReady ? HeadNotReadyStreak + 1 : 0;
+		MaximumHeadNotReadyStreak = Math.Max( MaximumHeadNotReadyStreak, HeadNotReadyStreak );
+		CalledAgeTurns = called != 0 && turn >= 0 && calledTurn >= 0 ? turn - calledTurn : 0;
+		MaximumCalledAgeTurns = Math.Max( MaximumCalledAgeTurns, CalledAgeTurns );
 		LastAdmissionCheck = check;
 		AdmissionChecked?.Invoke( this, check );
 	}

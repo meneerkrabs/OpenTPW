@@ -218,7 +218,10 @@ It needs `turn − +520 ≤ 30` **and** `turn − +508 > 100`. In state 11,
 `+508 ≥ +520`, because every write of `+520` is followed by state 8 and then a
 state-11 re-entry that writes `+508`. That makes the two conditions
 contradictory (`turn − +520 ≥ turn − +508 > 100 > 30`). The writer enumeration
-covers every D-form store with displacement 508/520:
+below is bounded: it lists the D-form stores (base not r1) whose bytes overlap
+`+508..511` or `+520..523` that were found by a whole-code-section scan
+(REVIEW-QUEUE S4: 28 sites, no `stmw`). By context, only the first five belong
+to the guest class:
 
 - Guest constructor `0xe7644`.
 - State-6 handler `0xebbd0`.
@@ -227,6 +230,14 @@ covers every D-form store with displacement 508/520:
 - Interlude `0xe8b74`.
 - Copy/restore routines `0x191ca0` and `0x1be890`, which copy both fields.
 - Staff-class code `0xf29fc..0xf39f8`, which is a different object class.
+- `0xf3ac0` (`stw 0,+508` in `0xf39f8`, called from `0xf8dc4`), just past the
+  staff range above; same class by context.
+- `0x5ec80` (`stfs +508`), an 84-byte record initialiser in `0x5eb20`; not a
+  guest.
+- `0xf4e54` and `0xf4e8c` (`sth +520`), setters of a `+518/+520` pair; not
+  guest code by context.
+- `0x1461b0` and `0x14636c` (`sth +510`, which overlaps `+508`); not guest
+  code by context.
 
 No `stmw` with a base other than r1 covers these offsets. There are no
 indexed stores in `0xe4000..0xf0000`. The 0x6xxxx writers of `+520` belong

@@ -329,7 +329,15 @@ within the 30-turn window) can never fire (§5.3); the code keeps it and the
 tests show that guests stand for 2,000 turns without leaving. Guests leave a
 queue only when admitted, when unhappy (< 10), for the toilet (> 80, not when
 queueing for a toilet), when the ride fails, closes or is removed, or on a
-queue edit.
+queue edit. Happiness and toilet are compared after truncation to whole
+numbers, as the original does (`fctiwz`): "> 80" means at least 81.
+
+**Breakdown.** While `VAR_BROKEN ≠ 0`, queued guests leave on their next
+state-11 turn (QUEUE-008), and nobody new joins: walking guests do not choose
+the ride (QUEUE-017), joins are refused as if it were closed (QUEUE-018), and
+admission does not call the head (QUEUE-019). Only the leaving is traced
+(step 3 of state 11); the other three are approximations, because the ride
+`+408` state is not traced.
 
 **Admission** (§6, once per park turn per ride). The front guest is called when
 all of these hold:
@@ -350,9 +358,19 @@ W_max = ⌈Qmax/CAP⌉ × (DUR + 1 s + τ) (QUEUE-plan §9):
 - `RideVisitorBridge.AdmissionChecked` (event) and `LastAdmissionCheck` give
   one `AdmissionCheck` per ride update. It holds the turn, whether the gates
   held, the head guest, whether it stood at position 0, and the called guest.
-  `Stalled` means gates held and the head was ready, yet nobody was called.
-  `StalledAdmissionChecks` counts these. By construction it stays 0; the gate
-  should verify that.
+  Admission calls the head whenever the gates hold and it stands at position
+  0, so "gates held, head ready, nobody called" cannot happen and is not a
+  signal. The progress signals are two counters:
+  - `HeadNotReadyStreak`: consecutive evaluations with the gates held, a head
+    guest, and that head not yet standing at position 0
+    (`AdmissionCheck.HeadNotReady`); `MaximumHeadNotReadyStreak` is its
+    largest value so far.
+  - `CalledAgeTurns`: park turns since the current `CalledGuest` was called
+    without boarding or being withdrawn; `MaximumCalledAgeTurns` is its
+    largest value so far.
+
+  Neither has a traced bound. The gate must compare them against explicit
+  bounds of its own.
 - Per ride: `QueueLength`, `MaximumQueueLength` (Qmax), `QueueLimit`,
   `QueueRoom`, `QueueSizeInCells`, `QueueCells`, `JoinCell`, `CalledGuest`,
   `Parameters` (CAP, DUR, HasQueue, RunsContinuously).
@@ -383,10 +401,13 @@ W_max = ⌈Qmax/CAP⌉ × (DUR + 1 s + τ) (QUEUE-plan §9):
 | QUEUE-014 | Laid cell by cell from the front, each touching the back | The queue tool's placement rules (UI-031) |
 | QUEUE-015 | Removing a queue cell removes every cell behind it | The remove tool's route into `ClearCell` `0x859b4` |
 | QUEUE-016 | Admission and state 11 run once per park turn | Live-list eligibility of objects and guests |
+| QUEUE-017 | Guests do not choose a broken attraction | The state-6 attraction choice and its test of ride `+408` |
+| QUEUE-018 | A broken attraction refuses joins as if closed | Ride `+408` and the state-6/10 handling of a broken ride |
+| QUEUE-019 | A broken attraction skips admission (`VAR_BROKEN ≠ 0` read as ride `+408 ≠ 0`) | Ride `+408` state names and writers |
 
 Not modelled: the track-type exits of step 6 (`0x45eac`, ride `+40`), ride
-state `+408`, the price check at the stand point (guests pay when boarding, see
-Money), save/load of queues, and the import of the Easymode queue cells.
+state `+408` (beyond the QUEUE-019 reading), the price check at the stand
+point (guests pay when boarding, see Money), save/load of queues, and the import of the Easymode queue cells.
 
 ## Rendering
 

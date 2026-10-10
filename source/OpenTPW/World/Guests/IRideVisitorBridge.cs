@@ -36,12 +36,14 @@ public enum QueueJoinResult
 }
 
 /// <summary>
-/// One admission evaluation of a ride update (one per park turn). <see cref="Stalled"/> is the M3 gate's
-/// progress signal: the admission gates held and the head stood at position 0, yet nobody was called.
+/// One admission evaluation of a ride update (one per park turn). Admission calls the head whenever the gates hold
+/// and it stands at position 0, so the progress signals are <see cref="HeadNotReady"/> (counted by
+/// <see cref="RideVisitorBridge.HeadNotReadyStreak"/>) and the called guest's age (<see cref="RideVisitorBridge.CalledAgeTurns"/>).
 /// </summary>
 public readonly record struct AdmissionCheck( long Turn, bool ConditionsHold, int HeadGuest, bool HeadAtFront, int CalledGuest )
 {
-	public bool Stalled => ConditionsHold && HeadAtFront && CalledGuest == 0;
+	/// <summary>The gates held and there is a head guest, but it does not yet stand in state 11 at position 0.</summary>
+	public bool HeadNotReady => ConditionsHold && HeadGuest != 0 && !HeadAtFront;
 }
 
 /// <summary>

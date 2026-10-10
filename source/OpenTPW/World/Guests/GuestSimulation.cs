@@ -129,6 +129,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 			if ( guest.AttractionId == attraction.AttractionId && (guest.State is GuestState.GoingToRide or GuestState.Using || guest.IsInQueue) )
 			{
 				attraction.LeaveQueue( guest.Id );
+				ClearQueueState( guest );
 				ReturnToPath( guest, guest.State == GuestState.Using ? attraction.ExitCell : guest.IsInQueue ? JoinCellOf( attraction ) : (guest.CellX, guest.CellY) );
 			}
 		}
@@ -311,7 +312,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 				break;
 			case GuestState.WaitingToBoard:
 				if ( FindAttraction( guest.AttractionId ) == null )
-					ReturnToPath( guest, (guest.CellX, guest.CellY) );
+					ReturnOrphanToPath( guest );
 				break;
 			case GuestState.ExitingRide:
 				guest.StateTimer -= dt;
@@ -575,6 +576,9 @@ public sealed class GuestSimulation : IRideVisitorHost
 		{
 			if ( !attraction.IsOpen || attraction.JoinCell is not { } join )
 				continue;
+			// [APPROX:QUEUE-017] guests do not choose a broken attraction (VAR_BROKEN ≠ 0); the original attraction choice is not traced for broken rides — evidence needed: the state-6 attraction choice and its test of the ride +408 state
+			if ( attraction.IsBroken )
+				continue;
 			var distance = Grid.Distance( guest.CellX, guest.CellY, join.X, join.Y );
 			if ( distance < 0 )
 				continue;
@@ -793,7 +797,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 		var attraction = FindAttraction( guest.AttractionId );
 		if ( attraction == null )
 		{
-			ReturnToPath( guest, (guest.CellX, guest.CellY) );
+			ReturnOrphanToPath( guest );
 			return;
 		}
 		if ( guest.HasWaypoint && !Move( guest, dt ) )
@@ -843,7 +847,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 		var attraction = FindAttraction( guest.AttractionId );
 		if ( attraction == null )
 		{
-			ReturnToPath( guest, (guest.CellX, guest.CellY) );
+			ReturnOrphanToPath( guest );
 			return;
 		}
 		if ( guest.InQueueInterlude )
@@ -898,20 +902,22 @@ public sealed class GuestSimulation : IRideVisitorHost
 			return;
 		}
 		// 7. Needs window, and the boredom test that cannot fire (QUEUE-plan §5.3): +508 ≥ +520 always holds here.
+		// The original truncates happiness +412 and toilet +428 to bytes (fctiwz, clrlwi 24) before comparing: "> 80" means ≥ 81.
 		var window = turn - guest.InterludeTurn;
 		if ( window > NeedsWindowTurns )
 		{
-			if ( guest.Happiness > 80 || guest.Happiness is >= LeaveHappiness and < 20 )
+			var happiness = (int)guest.Happiness;
+			if ( happiness > 80 || happiness is >= (int)LeaveHappiness and < 20 )
 			{
 				StartInterlude( guest );
 				return;
 			}
-			if ( guest.Happiness < LeaveHappiness )
+			if ( happiness < (int)LeaveHappiness )
 			{
 				LeaveQueue( guest, attraction, GuestThought.Unhappy );
 				return;
 			}
-			if ( guest.Toilet > ToiletLeaveLevel && !attraction.ProvidesRelief )
+			if ( (int)guest.Toilet > (int)ToiletLeaveLevel && !attraction.ProvidesRelief )
 			{
 				LeaveQueue( guest, attraction, GuestThought.NeedToilet );
 				return;
@@ -949,6 +955,13 @@ public sealed class GuestSimulation : IRideVisitorHost
 		guest.Thought = thought;
 		guest.LastAttractionId = attraction.AttractionId;
 		ReturnToPath( guest, JoinCellOf( attraction ) );
+	}
+
+	/// <summary>The guest's attraction is gone (removed while the guest queued or waited to be taken).</summary>
+	private void ReturnOrphanToPath( Guest guest )
+	{
+		ClearQueueState( guest );
+		ReturnToPath( guest, (guest.CellX, guest.CellY) );
 	}
 
 	private static void ClearQueueState( Guest guest )
@@ -1172,7 +1185,23 @@ public sealed class GuestSimulation : IRideVisitorHost
 			hash.Add( guest.LaneReversed );
 			hash.Add( guest.StateTimer );
 			hash.Add( guest.DecisionTimer );
+			hash.Add( guest.QueuePosition );
+			hash.Add( guest.QueueJoinTurn );
+			hash.Add( guest.LastQueueWaitTurns );
+			hash.Add( guest.QueueMoveDelay );
+			hash.Add( guest.QueueCalled );
+			hash.Add( guest.QueueStandingSinceTurn );
+			hash.Add( guest.InterludeTurn );
+			hash.Add( guest.InQueueInterlude );
+			hash.Add( guest.QueueJoinHappiness );
+			hash.Add( guest.QueueCellIndex );
+			hash.Add( guest.QueueTargetIndex );
+			hash.Add( guest.QueueTargetX );
+			hash.Add( guest.QueueTargetY );
+			hash.Add( guest.LastQueueUpdateTurn );
 		}
+		// The queue edge detectors decide whether the next tick recomputes queues and re-evaluates queued guests.
+		hash.Add( seenGridVersion );
 		hash.Add( attractions.Count );
 		foreach ( var attraction in attractions )
 		{
@@ -1180,6 +1209,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 			hash.Add( attraction.IsOpen );
 			hash.Add( attraction.EntranceCell.X * 4096L + attraction.EntranceCell.Y );
 			hash.Add( attraction.ExitCell.X * 4096L + attraction.ExitCell.Y );
+			hash.Add( seenQueueEdits.TryGetValue( attraction.AttractionId, out var seen ) ? seen : -1 );
 			if ( attraction is RideVisitorBridge bridge )
 				bridge.AddCanonicalState( hash );
 			else

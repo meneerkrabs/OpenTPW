@@ -358,8 +358,8 @@ class Binary(unittest.TestCase):
                 self.assertFalse(d <= 523 and d + 4 * (32 - c.d_form(at)[1]) > 508, f'stmw at {at:#x}')
         self.assertEqual(EXPECTED_WRITERS, found)
         plan = (REPO / 'docs/reverse/QUEUE-plan.md').read_text(encoding='utf-8')
-        for at in UNLISTED_WRITERS:
-            self.assertNotIn(f'0x{at:x}', plan)
+        for at in UNLISTED_WRITERS:  # S4 (fixed by QUEUE-FIX): the plan now lists them
+            self.assertIn(f'0x{at:x}', plan)
 
     def test_refund_clear_cell(self):
         c = self.c

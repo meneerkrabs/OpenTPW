@@ -25,6 +25,8 @@ public static class ApproximationRegister
 		new( "COMPAT-011", "Localization", "A missing localized string falls back to the English table, then to the internal identifier.", "original behaviour for missing strings (the game may show blanks)" ),
 		new( "COMPAT-012", "Text input", "Characters that UniToMB.dat cannot represent are replaced by '?' (or dropped when '?' is unmappable).", "binary text-input handling" ),
 		new( "COMPAT-013", "Graphics presets", "The default detail preset follows the original's memory and processor thresholds, with the processor clock taken as 450 MHz or faster.", "none for any machine that runs OpenTPW (all exceed 450 MHz)" ),
+		new( "COMPAT-014", "Theme Park Inc textures", "FSH palette record 0x24 stores no alpha, so its 4,308 images decode fully opaque; no colour key or transparent index is applied (four grey badges ship 32-bit TGA thumbnails whose alpha is 0 everywhere).", "Theme Park Inc's texture upload code or captures of 0x24 textures in the game" ),
+		new( "COMPAT-015", "Theme Park Inc textures", "FSH palette record 0x2D (one file, water snowtrac.wad icewall1.fsh) is read as little-endian A1R5G5B5 with bit 15 as opaque/transparent; every entry has bit 15 set and the mean colour matches the sibling icewall textures.", "Theme Park Inc's palette conversion code or a capture of that texture" ),
 	};
 
 	/// <summary>Logs every approximation once.</summary>

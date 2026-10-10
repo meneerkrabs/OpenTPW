@@ -180,6 +180,8 @@ and rendered pixel correctness remain unqualified. The unique type-45 example
 is water `snowtrac.wad!stexture/icewall1.fsh`, SHA-256
 `1a3ecb2f79537ad8d23091fa049e64d98c40ea8aff746ef258a48359f02f6dd0`.
 Do not infer a complete FSH decoder from these metadata constraints.
+(Later, October 10, 2026: a decoder now exists and its evidence is in
+[FSH.md](FSH.md).)
 
 ### COS body grouping and original controller boundaries
 

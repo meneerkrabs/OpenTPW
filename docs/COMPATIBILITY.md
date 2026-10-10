@@ -204,6 +204,8 @@ against loose files: `OPENTPW_TPWFNT_PATH=<tpwfnt folder>`.
 | COMPAT-011 | Localization | Missing string → English → internal name | original behaviour for missing strings |
 | COMPAT-012 | Text input | Unrepresentable characters → `?` | binary text-input handling |
 | COMPAT-013 | Graphics | The default preset follows the original's thresholds; the processor clock is taken as 450 MHz or faster | none for any machine that runs OpenTPW |
+| COMPAT-014 | Theme Park Inc textures | FSH palette 0x24 has no alpha and decodes opaque; no colour key (see [FSH.md](FSH.md)) | Theme Park Inc texture upload code or captures |
+| COMPAT-015 | Theme Park Inc textures | FSH palette 0x2D (one file) read as A1R5G5B5, bit 15 = opaque | Theme Park Inc palette conversion code or a capture |
 
 Extensions by design (not approximations): `[EXT:COMPAT-GFX-ENHANCED]` Enhanced preset
 values, `[EXT:COMPAT-GFX-ANISOTROPY]` anisotropy degree, `[EXT:COMPAT-GFX-VIEWDISTANCE]`

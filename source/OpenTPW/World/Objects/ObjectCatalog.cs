@@ -591,7 +591,7 @@ public static class BonusNames
 	}
 
 	/// <summary>The <c>SIGNA</c>/<c>SIGNB</c> lines of a bonus archive's language file (same file choice as <see cref="Read"/>), or null when both are empty.</summary>
-	// [APPROX:RIDES-025] same language-file choice as the name — evidence needed: original lookup of bonus name files
+	// Same language-file choice as the name (RIDES-025).
 	// [APPROX:COMPAT-017] SIGNA/SIGNB taken as sign text lines 1/2 (the sign builder accepts two explicit texts; that the bonus loader passes these sections is not traced) — evidence needed: the bonus loader's call of the sign builder
 	public static (string Line1, string Line2)? ReadSignLines( ObjectCatalogEntry entry, string? language = null )
 	{

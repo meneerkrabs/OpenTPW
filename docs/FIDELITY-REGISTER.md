@@ -14,7 +14,7 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **197 unresolved unique APPROX IDs**, 214 APPROX occurrences, 89 EXT occurrences, 90 DATA occurrences and 152 BIN occurrences.
+Current inventory: **197 unresolved unique APPROX IDs**, 213 APPROX occurrences, 89 EXT occurrences, 90 DATA occurrences and 152 BIN occurrences.
 
 Of these, 191 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
@@ -33,7 +33,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ONLINE | 6 | 6 |
 | PATH | 13 | 14 |
 | QUEUE | 19 | 19 |
-| RIDES | 25 | 26 |
+| RIDES | 25 | 25 |
 | UI | 48 | 60 |
 
 ## Approximation declarations
@@ -393,7 +393,6 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | RIDES-023 | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:115` | [APPROX:RIDES-023] A completed cycle = VAR_RUNNING 1 → 0 — evidence needed: original ride-cycle/income accounting |
 | RIDES-024 | `source/OpenTPW/World/Objects/ObjectCatalog.cs:280` | [APPROX:RIDES-024] Bonus archives merge into the theme catalog; an Info.Id collision skips the bonus entry — evidence needed: original behaviour with dropped-in WADs |
 | RIDES-025 | `source/OpenTPW/World/Objects/ObjectCatalog.cs:568` | [APPROX:RIDES-025] Bonus name: selected language file, then English, then .sam Info.Name — evidence needed: original lookup of bonus name files |
-| RIDES-025 | `source/OpenTPW/World/Objects/ObjectCatalog.cs:594` | [APPROX:RIDES-025] same language-file choice as the name — evidence needed: original lookup of bonus name files |
 | RIDES-026 | `source/OpenTPW/World/Objects/OriginalObject.cs:12` | [APPROX:RIDES-026] Engine units: 1 MD2 unit = 0.2 (presentation scale shared with the terrain; no game rule) — evidence needed: none (engine convention) |
 | RIDES-028 | `source/OpenTPW/World/Level.Objects.cs:276` | [APPROX:RIDES-028] A non-walkable outside cell (queue area) is replaced by the nearest walkable path cell — evidence needed: original queue-path building/joining rules |
 | UI-001 | `source/OpenTPW/UI/Original/UiCanvas.cs:47` | [APPROX:UI-001] anchors keep the authored distance to the nearest edge on non-4:3 outputs — evidence needed: original widescreen behaviour / design decision |

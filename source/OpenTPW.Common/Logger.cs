@@ -31,7 +31,9 @@ public class Logger
 		if( quiet )
 			QuietLog?.Invoke( severity, str );
 
-		Console.ForegroundColor = SeverityToConsoleColor( severity );
+		// The browser console has no colours (docs/WEB.md).
+		if ( !OperatingSystem.IsBrowser() )
+			Console.ForegroundColor = SeverityToConsoleColor( severity );
 		Console.WriteLine( $"[{DateTime.Now.ToLongTimeString()}] {str}" );
 
 		OnLog?.Invoke( severity, str );

@@ -101,7 +101,7 @@ public sealed class OnlineScreens
 		var width = window.Width - 340;
 		// [EXT:ONLINE-UI] the server address is an OpenTPW field; the original service address was built in
 		var server = AddField( screen, "server", () => OnlineStrings.Get( OnlineLabel.ServerAddress ), x, window.Y + 170, width, 256 );
-		server.Text = Session.Settings.ServerUrl ?? "";
+		server.Text = Session.Settings.ServerUrl ?? OnlineSession.SuggestedServerUrl ?? "";
 		// The original login name and password fields hold 16 characters (UI-MAP, 0x10184b48).
 		var name = AddField( screen, "name", () => OnlineStrings.Ui( OnlineStrings.LoginName, "Login name" ), x, window.Y + 340, width, 16 );
 		name.Text = Session.Settings.PlayerName ?? "";

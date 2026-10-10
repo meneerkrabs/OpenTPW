@@ -1,0 +1,50 @@
+{
+  "fixClipSpaceZ": true,
+  "invertVertexOutputY": true,
+  "vertexElements": [
+    {
+      "name": "position",
+      "semantic": "TextureCoordinate",
+      "format": "Float3",
+      "offset": 0
+    },
+    {
+      "name": "normal",
+      "semantic": "TextureCoordinate",
+      "format": "Float3",
+      "offset": 0
+    },
+    {
+      "name": "texCoords",
+      "semantic": "TextureCoordinate",
+      "format": "Float2",
+      "offset": 0
+    }
+  ],
+  "resourceLayouts": [
+    [
+      {
+        "name": "ObjectUniformBuffer",
+        "kind": "UniformBuffer",
+        "stages": "Vertex, Fragment",
+        "options": "None"
+      }
+    ],
+    [
+      {
+        "name": "Color",
+        "kind": "TextureReadOnly",
+        "stages": "Fragment",
+        "options": "None"
+      },
+      {
+        "name": "s_Color",
+        "kind": "Sampler",
+        "stages": "Fragment",
+        "options": "None"
+      }
+    ]
+  ],
+  "vertex": "#version 300 es\n\nstruct VS_OUT\n{\n    vec2 vTexCoords;\n    vec3 vNormal;\n    vec3 vPosition;\n    vec3 vPositionWs;\n    vec3 vPositionVs;\n};\n\nlayout(std140) uniform ObjectUniformBuffer\n{\n    mat4 g_mModel;\n    mat4 g_mView;\n    mat4 g_mProj;\n    vec3 g_vLightPos;\n    vec3 g_vLightColor;\n    vec3 g_vCameraPos;\n} g_oUbo;\n\nout vec2 vdspv_fsin0_vTexCoords;\nout vec3 vdspv_fsin0_vNormal;\nout vec3 vdspv_fsin0_vPosition;\nout vec3 vdspv_fsin0_vPositionWs;\nout vec3 vdspv_fsin0_vPositionVs;\nlayout(location = 2) in vec2 texCoords;\nlayout(location = 1) in vec3 normal;\nlayout(location = 0) in vec3 position;\n\nvoid main()\n{\n    vdspv_fsin0_vTexCoords = texCoords;\n    vdspv_fsin0_vNormal = normal;\n    vdspv_fsin0_vPosition = vec3((g_oUbo.g_mModel * vec4(position, 1.0)).xyz);\n    vec4 pos = g_oUbo.g_mModel * vec4(position, 1.0);\n    vdspv_fsin0_vPositionVs = vec3((g_oUbo.g_mView * pos).xyz);\n    vdspv_fsin0_vPositionWs = pos.xyz;\n    gl_Position = (g_oUbo.g_mProj * g_oUbo.g_mView) * pos;\n    gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;\n    gl_Position.y = -gl_Position.y;\n}\n\n",
+  "fragment": "#version 300 es\nprecision mediump float;\nprecision highp int;\n\nstruct VS_OUT\n{\n    highp vec2 vTexCoords;\n    highp vec3 vNormal;\n    highp vec3 vPosition;\n    highp vec3 vPositionWs;\n    highp vec3 vPositionVs;\n};\n\nlayout(std140) uniform ObjectUniformBuffer\n{\n    highp mat4 g_mModel;\n    highp mat4 g_mView;\n    highp mat4 g_mProj;\n    highp vec3 g_vLightPos;\n    highp vec3 g_vLightColor;\n    highp vec3 g_vCameraPos;\n} g_oUbo;\n\nuniform highp sampler2D Color;\n\nin highp vec2 vdspv_fsin0_vTexCoords;\nin highp vec3 vdspv_fsin0_vNormal;\nin highp vec3 vdspv_fsin0_vPosition;\nin highp vec3 vdspv_fsin0_vPositionWs;\nin highp vec3 vdspv_fsin0_vPositionVs;\nlayout(location = 0) out highp vec4 fragColor;\n\nhighp vec3 lambert(highp vec3 vLightDir, highp vec3 vNormal)\n{\n    return g_oUbo.g_vLightColor * dot(normalize(vLightDir), normalize(vNormal));\n}\n\nhighp vec3 ambient(highp vec3 vLightColor)\n{\n    return vLightColor * 0.20000000298023223876953125;\n}\n\nhighp vec3 specular(highp vec3 vLightDir, highp vec3 vNormal, highp vec3 vCameraDir, highp float fShininess)\n{\n    highp vec3 vReflection = reflect(normalize(-vLightDir), normalize(vNormal));\n    return g_oUbo.g_vLightColor * pow(max(dot(normalize(vCameraDir), vReflection), 0.0), fShininess);\n}\n\nvoid main()\n{\n    highp vec3 vLightDir = normalize(g_oUbo.g_vLightPos - vdspv_fsin0_vPosition);\n    highp vec3 param = vLightDir;\n    highp vec3 param_1 = vdspv_fsin0_vNormal;\n    highp vec3 vLambert = lambert(param, param_1);\n    highp vec3 param_2 = g_oUbo.g_vLightColor;\n    highp vec3 vAmbient = ambient(param_2);\n    highp vec3 vCameraDir = normalize(g_oUbo.g_vCameraPos - vdspv_fsin0_vPosition);\n    highp vec3 param_3 = vLightDir;\n    highp vec3 param_4 = vdspv_fsin0_vNormal;\n    highp vec3 param_5 = vCameraDir;\n    highp float param_6 = 32.0;\n    highp vec3 vSpecular = specular(param_3, param_4, param_5, param_6);\n    highp vec4 vColor = texture(Color, vdspv_fsin0_vTexCoords) * 0.75;\n    vColor.z *= 1.25;\n    highp vec3 fogColor = vec3(0.2800000011920928955078125, 0.87999999523162841796875, 1.0);\n    highp float fogStart = 80.0;\n    highp float fogEnd = 200.0;\n    highp float fogAmount = clamp((length(vdspv_fsin0_vPositionVs) - fogStart) / (fogEnd - fogStart), 0.0, 1.0);\n    fragColor = vec4(vLambert \u002B vAmbient, 1.0) * vColor;\n    fragColor = mix(fragColor, vec4(fogColor, 1.0), vec4(fogAmount));\n    if (fragColor.w \u003C 0.100000001490116119384765625)\n    {\n        discard;\n    }\n}\n\n"
+}

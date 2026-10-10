@@ -20,6 +20,11 @@ public sealed class ServerOptions
 	/// <summary>Optional message of the day, sent to chat on connect and shown in server info.</summary>
 	public string? Message { get; set; }
 	public bool AllowRegistration { get; set; } = true;
+	/// <summary>
+	/// The published browser build of the game (the <c>wwwroot</c> of OpenTPW.Web), served at the site
+	/// root next to the API; empty serves the API only. It holds only OpenTPW code (docs/SERVER.md).
+	/// </summary>
+	public string? WebClientDirectory { get; set; }
 	/// <summary>PBKDF2-SHA256 iterations for new password hashes.</summary>
 	public int PasswordIterations { get; set; } = 600_000;
 	public TimeSpan SessionLifetime { get; set; } = TimeSpan.FromDays( 7 );

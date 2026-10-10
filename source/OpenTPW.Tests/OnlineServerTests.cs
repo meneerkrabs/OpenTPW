@@ -295,6 +295,106 @@ public class OnlineServerTests
 
 	private static Func<ChatEvent, bool> IsNotice( ChatNotice notice ) => item => item.Kind == ChatEventKind.Notice && item.Notice == (int)notice;
 
+	/// <summary>Opens the chat socket the way a browser must: no Authorization header, the token as the first frame.</summary>
+	private static async Task<System.Net.WebSockets.ClientWebSocket> ConnectWithoutHeaderAsync( LoopbackServer server, byte[] firstFrame )
+	{
+		var socket = new System.Net.WebSockets.ClientWebSocket();
+		var url = new UriBuilder( new Uri( server.Url, ApiRoutes.Chat.TrimStart( '/' ) ) ) { Scheme = "ws" }.Uri;
+		await socket.ConnectAsync( url, CancellationToken.None );
+		await socket.SendAsync( firstFrame, System.Net.WebSockets.WebSocketMessageType.Text, true, CancellationToken.None );
+		return socket;
+	}
+
+	private static async Task<(System.Net.WebSockets.WebSocketMessageType Type, string Text)> ReceiveAsync( System.Net.WebSockets.ClientWebSocket socket )
+	{
+		using var timeout = new CancellationTokenSource( TimeSpan.FromSeconds( 15 ) );
+		var buffer = new byte[ChatProtocol.MaximumFrameBytes];
+		var result = await socket.ReceiveAsync( buffer, timeout.Token );
+		return (result.MessageType, Encoding.UTF8.GetString( buffer, 0, result.Count ));
+	}
+
+	[TestMethod]
+	public async Task ChatAcceptsTheTokenAsTheFirstFrameForBrowsers()
+	{
+		await using var server = await LoopbackServer.StartAsync();
+		try
+		{
+			using var client = await server.LoginAsync( "Ann" );
+			using ( var socket = await ConnectWithoutHeaderAsync( server, StrictJson.Serialize( ChatAuthentication.For( client.Session!.Token ) ) ) )
+			{
+				var (type, text) = await ReceiveAsync( socket );
+				Assert.AreEqual( System.Net.WebSockets.WebSocketMessageType.Text, type );
+				Assert.AreEqual( (int)ChatNotice.WelcomeThemeParkWorld, StrictJson.Deserialize<ChatEvent>( Encoding.UTF8.GetBytes( text ), "event" ).Notice );
+			}
+
+			// A wrong token or any other first frame closes the socket without a word.
+			foreach ( var frame in new[] {
+				StrictJson.Serialize( ChatAuthentication.For( "not-a-session" ) ),
+				StrictJson.Serialize( ChatRequest.ForJoin( ChatProtocol.LobbyRoom ) ),
+				Encoding.UTF8.GetBytes( new string( 'x', ChatAuthentication.MaximumBytes + 10 ) ) } )
+			{
+				using var socket = await ConnectWithoutHeaderAsync( server, frame );
+				var (type, _) = await ReceiveAsync( socket );
+				Assert.AreEqual( System.Net.WebSockets.WebSocketMessageType.Close, type );
+				Assert.AreEqual( System.Net.WebSockets.WebSocketCloseStatus.PolicyViolation, socket.CloseStatus );
+			}
+		}
+		finally
+		{
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
+	public async Task ServesTheBrowserGameBesideTheApi()
+	{
+		var web = Path.Combine( Path.GetTempPath(), $"opentpw-web-{Guid.NewGuid():N}" );
+		Directory.CreateDirectory( Path.Combine( web, "_framework" ) );
+		File.WriteAllText( Path.Combine( web, "index.html" ), "<!doctype html><title>OpenTPW</title>" );
+		File.WriteAllBytes( Path.Combine( web, "index.html.br" ), [0x0b, 0x01, 0x80] );
+		File.WriteAllText( Path.Combine( web, "_framework", "dotnet.js" ), "// boot" );
+		File.WriteAllBytes( Path.Combine( web, "_framework", "dotnet.native.abcde12345.wasm" ), [0, 0x61, 0x73, 0x6d] );
+		await using var server = await LoopbackServer.StartAsync( options =>
+		{
+			options.WebClientDirectory = web;
+			options.RequestsPerMinute = 3;
+		} );
+		try
+		{
+			using var http = new HttpClient( new HttpClientHandler { AutomaticDecompression = DecompressionMethods.None } ) { BaseAddress = server.Url };
+			using var page = await http.GetAsync( "/" );
+			Assert.AreEqual( HttpStatusCode.OK, page.StatusCode );
+			Assert.AreEqual( "text/html", page.Content.Headers.ContentType!.MediaType );
+			StringAssert.Contains( page.Headers.CacheControl!.ToString(), "no-cache" );
+			StringAssert.Contains( string.Join( ";", page.Headers.GetValues( "Content-Security-Policy" ) ), "'wasm-unsafe-eval'" );
+
+			using var request = new HttpRequestMessage( HttpMethod.Get, "/index.html" );
+			request.Headers.AcceptEncoding.ParseAdd( "gzip, br" );
+			using var compressed = await http.SendAsync( request );
+			Assert.AreEqual( "br", compressed.Content.Headers.ContentEncoding.Single() );
+			Assert.AreEqual( "text/html", compressed.Content.Headers.ContentType!.MediaType );
+			CollectionAssert.AreEqual( new byte[] { 0x0b, 0x01, 0x80 }, await compressed.Content.ReadAsByteArrayAsync() );
+
+			using var runtime = await http.GetAsync( "/_framework/dotnet.native.abcde12345.wasm" );
+			Assert.AreEqual( "application/wasm", runtime.Content.Headers.ContentType!.MediaType );
+			StringAssert.Contains( runtime.Headers.CacheControl!.ToString(), "immutable" );
+			using var boot = await http.GetAsync( "/_framework/dotnet.js" );
+			StringAssert.Contains( boot.Headers.CacheControl!.ToString(), "no-cache" );
+
+			// A page load fetches many files; the API's per-address limit does not count them.
+			for ( var index = 0; index < 10; index++ )
+				using ( var again = await http.GetAsync( "/_framework/dotnet.js" ) )
+					Assert.AreEqual( HttpStatusCode.OK, again.StatusCode );
+			using var info = await http.GetAsync( ApiRoutes.Server );
+			Assert.AreEqual( HttpStatusCode.OK, info.StatusCode );
+		}
+		finally
+		{
+			server.DeleteData();
+			Directory.Delete( web, true );
+		}
+	}
+
 	[TestMethod]
 	public async Task ChatRunsTheOriginalCommands()
 	{

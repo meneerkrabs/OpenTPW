@@ -76,6 +76,12 @@ public sealed class OnlineSession : IDisposable
 
 	public OnlineFolders Folders { get; }
 	public OnlineSettings Settings { get; private set; }
+
+	/// <summary>
+	/// Offered in the server field while no server has been chosen: the browser build sets the
+	/// address it was loaded from, which serves the API too (docs/WEB.md). Null on the desktop.
+	/// </summary>
+	public static string? SuggestedServerUrl { get; set; }
 	public ChatCommandTable Commands { get; }
 	public OnlineClient? Client { get; private set; }
 	public ChatConnection? Chat { get; private set; }
@@ -134,6 +140,12 @@ public sealed class OnlineSession : IDisposable
 			catch ( HttpRequestException exception ) { message = OnlineStrings.Error( OnlineStrings.ErrorConnect, "Error: Couldn't connect to server" ) + $" ({exception.Message})"; }
 			catch ( Exception exception ) when ( exception is InvalidDataException or IOException or TaskCanceledException or ArgumentException or InvalidOperationException or System.Net.WebSockets.WebSocketException or ObjectDisposedException )
 			{ message = exception.Message; }
+			// Anything else must still end the operation, or every online button stays disabled.
+			catch ( Exception exception )
+			{
+				Log.Warning( $"Online operation failed: {exception}" );
+				message = exception.Message;
+			}
 			Post( () =>
 			{
 				Busy--;

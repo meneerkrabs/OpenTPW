@@ -1,0 +1,6 @@
+# HTTPS on port 443 in front of the OpenTPW server (docs/SERVER.md). Caddy obtains and renews the
+# certificate for OPENTPW_DOMAIN by itself and passes WebSocket (chat) connections through.
+{$OPENTPW_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy opentpw-server:8080
+}

@@ -193,16 +193,27 @@ arithmetic pinned to all 882 original Mac factors and the separately recorded
 selected language (`GameLanguage.ResolveDataFile`, overlay first; e.g. `--language German
 --language-data <CD extraction>` plays German `sp_001` with German marks 3,272,743 /
 3,767,619 / 6,915,192). It adds `Advisor` (`source/OpenTPW/World/Advisor.cs`) to the
-park scene: `global/advisor.wad/Advisor.MD2` is drawn in a bottom-left viewport
-with its own camera. The model has five co-located mouth meshes (`Mouth - Normal`,
+park scene: `global/advisor.wad/Advisor.MD2` is drawn in the bottom-right of the screen
+without a camera. In the Windows v2.0 executable (`tp.exe`, docs/COMPLETION-PLAN.md) the
+advisor setup `0x00429BA0` gives the model the translation (0.6, −0.6, 0.2) and scales its root
+node by (0.015 × 0.75, 0.001, 0.015); `SetLocalMatrix` (`0x0057A260`) flips y; and the mesh draw
+`0x0057A750` skips the camera, projection and screen matrix for the advisor (model flag 0x200,
+set by `0x0045BED0`). So the model reaches the transform stage in screen space, x right and y
+down, with its centre at (0.6, 0.6), height 0.015 per model unit and width 0.75 of that (the 4:3
+screen's height/width), and the depth squeezed to 0.001. OpenTPW reads that space as −1..1 across
+the screen (ADVISOR-023): the advisor's box is x 0.2..1.0, y −1.0..−0.2 in clip space, about
+x 420–595 and y 302–460 of a 640×480 screen for the model itself. In the park it is rendered into
+an image and drawn after the HUD, as the original draws it over the scene; outside 4:3 the width
+scale follows the output's aspect (ADVISOR-024). The advisor's parallel light (26.67, −26.67, 800)
+from the same setup shines into the screen. The model has five co-located mouth meshes (`Mouth - Normal`,
 `- Aah`, `- Eee`, `- Ooh`, `- Sss`, textures `Mouth1a`–`e`) and `ShutEye` blink meshes.
 Silence shows `Mouth - Normal`; talking shows one of the five mouths, picked at
 random every 100 ms as in the original (the LIP data carries no shape). Body, head, eyes, antennae and hands are
 shown; the seven hats, spatula, bow tie and blink meshes are hidden. All nodes are
 composed through the shared MD2 hierarchy code (`ModelAnimationPlayer.ComputeRestTransforms`);
-with the root `Position Dummy` the model is Y-up facing −Z. Triangle corner order is
-reversed for the renderer's clockwise front faces (the advisor does not use the Y/Z
-swap other MD2 users rely on, so there is no double flip). The model stays in its bind
+with the root `Position Dummy` the model is Y-up facing −Z. Drawn without a camera,
+nothing mirrors it, and the MD2 corner order is already clockwise for the renderer's
+front faces. The model stays in its bind
 pose. All 15 `Advisorm*.MD2` clips decode, but every one has tracks with undecoded
 (non-rigid) payload: antennae, eyes, blink meshes and usually hands. So none is played.
 `Advisorm13` (330 ticks) is the only clip with tracks on all five mouth meshes. Those
@@ -328,11 +339,9 @@ table fit). The smoke-test thresholds are test-harness checks, not game rules.
 | ID | Site | Current value / rule | Evidence needed |
 | --- | --- | --- | --- |
 | ADVISOR-002 | `source/OpenTPW/World/Advisor.cs:30` | Visible: body, head, eyes, antennae, hands; hats, spatula, bow tie, ShutEye hidden | Original node-visibility rules (dummy attributes 0x401/0x411, Advisorm* tracks) or captures per advisor role |
-| ADVISOR-003 | `source/OpenTPW/World/Advisor.cs:74` | Bottom-left square viewport, ⅓ of the short logical screen side (min 64 logical px), 16 logical px margin; mapped to the world target for render scale/HiDPI | Original placement/size captures per resolution |
-| ADVISOR-004 | `source/OpenTPW/World/Advisor.cs:58` | Camera at z = −70 facing +Z, 40° FOV, near 1 / far 500 | Original advisor camera/projection (binary or capture) |
-| ADVISOR-005 | `source/OpenTPW/World/Advisor.cs:247` | Headlight at camera, light colour 0.6, `test.shader` ambient 0.4 + fog | Original advisor lighting/material captures |
+| ADVISOR-005 | `source/OpenTPW/World/Advisor.cs` | Light colour 0.6, `test.shader` ambient 0.4 + fog (the light direction is traced) | Original advisor light colour/material captures |
 | ADVISOR-006 | `source/OpenTPW/World/Advisor.cs:94` | Bind pose; no `Advisorm*` clip played | Decoded vertex/visibility payloads of the `Advisorm*` tracks |
-| ADVISOR-007 | `source/OpenTPW/World/Advisor.cs:118` | Triangle corner order reversed for the renderer's clockwise culling (chosen from this renderer's capture) | Original MD2 front-face convention |
+| ADVISOR-007 | `source/OpenTPW/World/Advisor.cs` | MD2 triangle corner order kept as stored: drawn without a mirroring camera, the faces are clockwise for the renderer's culling (checked in this renderer's capture) | Original MD2 front-face convention |
 | ADVISOR-008 | `source/OpenTPW/World/Advisor.cs:235` | Speech starts at the first rendered advisor frame | Original advisor trigger timing (binary or trace) |
 | ADVISOR-009 | `source/OpenTPW/World/Advisor.cs:201` | `--advisor-say` plays global clips by number; responses follow the traced global/level selector (`content/data/advisor-responses.toml`); the controller picks responses only for messages 0, 106, 128, 129 and 323 | The remaining 346 descriptors and their score producers |
 | ADVISOR-010 | `source/OpenTPW/Client/SpeechAudioPlayer.cs:34` | Lip-sync clock = PCM consumed from the SDL queue (leads speaker by ≤ one 1,024-frame buffer, ≈46 ms) | Original A/V sync source; latency measurement |
@@ -346,6 +355,8 @@ table fit). The smoke-test thresholds are test-harness checks, not game rules.
 | ADVISOR-019 | `source/OpenTPW/World/AdvisorController.cs:94` | `GeneralAdvisor.MinTimeAnyMessage` (5) and `MinTimeSameMessage` (120) are loaded but not applied | Reads of balance fields +24/+28 |
 | ADVISOR-020 | `source/OpenTPW/Client/AutomaticAdvisor.cs:76` | Events 2/3/4 come from the economy's bankruptcy (six months in the red) and park open/close transitions | The producers' threshold and preconditions (`0x100CC464`, `0x10108EE4`) |
 | ADVISOR-022 | `source/OpenTPW/Client/AutomaticAdvisor.cs:58` | Pending advice and message history are not saved or loaded with the park | Whether the original park save writes the controller's pending records (serializer `0x1000BC10`) and history, and where |
+| ADVISOR-023 | `source/OpenTPW/World/Advisor.cs` | The advisor's unprojected coordinates (centre (0.6, 0.6), y down) span the screen from −1 to 1, as clip space | The consumer of the `0x0057A750` transform output in `tp.exe`, or a capture of the original advisor |
+| ADVISOR-024 | `source/OpenTPW/World/Advisor.cs` | Outside 4:3 the width scale is 0.015 × height/width of the output (the original fixes 0.75) | None for the original (4:3 only); design decision |
 
 ## Remaining gates
 

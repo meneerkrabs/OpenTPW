@@ -95,16 +95,19 @@ public sealed class ParkHud
 			messages.RemoveAt( 0 );
 	}
 
-	private UiButton PanelButton( string id, string model, float x, float y, int help, Action? clicked, float size = 118.4f ) => hud.Add( new UiButton
+	private UiButton PanelButton( string id, string model, UiRect bounds, int? help, Action? clicked ) => hud.Add( new UiButton
 	{
 		Id = id,
 		Model = model,
-		Help = strings.Help( help ),
+		Help = help is { } index ? strings.Help( index ) : null,
 		Clicked = clicked,
 		Enabled = clicked != null,
-		Bounds = UiRect.FromCenter( new NVector2( x, y ), size, size ),
+		Bounds = bounds,
 		Anchor = UiAnchor.BottomLeft
 	} );
+
+	/// <summary>An authored rectangle given as (left, top, right, bottom), as the original layout tables store them.</summary>
+	private static UiRect Rect( float left, float top, float right, float bottom ) => new( left, top, right - left, bottom - top );
 
 	private void Build()
 	{
@@ -117,16 +120,21 @@ public sealed class ParkHud
 		hud.Add( new UiModelImage { Id = "mainPanel", Model = "mainpanel", Bounds = new UiRect( 37.1f, 984.2f, 401.7f, 523.1f ), Anchor = UiAnchor.BottomLeft } );
 		hud.Add( new UiModelImage { Id = "gauge", Model = "gauge", Bounds = new UiRect( 66.6f, 1080.4f, 96.6f, 264.2f ), Anchor = UiAnchor.BottomLeft, Help = strings.Help( 477 ) } );
 		hud.Add( new UiModelImage { Id = "dateDisplay", Model = "date", Bounds = new UiRect( 152.6f, 1043.6f, 251.7f, 77.5f ), Anchor = UiAnchor.BottomLeft, Help = strings.Help( 478 ) } );
-		// [APPROX:UI-021] date/money text positions and fonts — evidence needed: capture of the original HUD
-		hud.Add( new UiLabel { Id = "date", Text = () => DateText, Font = fonts => fonts.Small, Align = UiAlign.Center, Bounds = new UiRect( 170, 1050, 220, 64 ), Anchor = UiAnchor.BottomLeft } );
-		hud.Add( new UiLabel { Id = "money", Text = () => MoneyText, Font = fonts => fonts.Cash, Color = UiColors.Value, Align = UiAlign.Center, Bounds = new UiRect( 165, 1125, 240, 60 ), Anchor = UiAnchor.BottomLeft, Help = strings.Help( 465 ) } );
+		// [DATA:Mac main HUD table 0x4ab38:32,47] date text region (182,1061,383,1103) in black (font slot 3); the cash text
+		// (control 47, (258,60,720,260), white font slot 1) sits at the top left of the screen, not in the panel, whose
+		// buttons start right below the date box. [APPROX:UI-021] the original resizes/repositions control 47 from the
+		// measured font extents and the drawable size (0x156ef4); the table rectangle is used as is; ","-grouped digits.
+		hud.Add( new UiLabel { Id = "date", Text = () => DateText, Font = fonts => fonts.Small, Color = new Veldrid.RgbaByte( 0, 0, 0, 255 ), Align = UiAlign.Center, Bounds = Rect( 182, 1061, 383, 1103 ), Anchor = UiAnchor.BottomLeft } );
+		hud.Add( new UiLabel { Id = "money", Text = () => MoneyText, Font = fonts => fonts.Balance, Color = UiColors.Text, Align = UiAlign.Left, Bounds = Rect( 258, 60, 720, 260 ), Anchor = UiAnchor.TopLeft, Help = strings.Help( 465 ) } );
 
-		// [APPROX:UI-020] panel button positions (the models share one authored centre) — evidence needed: capture of the original HUD
-		PanelButton( "buy", "b_buy", 235, 1240, 469, level.IsReadOnlyVisit ? null : ToggleBuildArm ).Selected = () => BuildArmOpen;
-		PanelButton( "info", "b_info", 355, 1240, 470, null );
-		PanelButton( "finance", "b_money", 235, 1350, 471, null );
-		PanelButton( "research", "b_resrch", 355, 1350, 472, null );
-		PanelButton( "map", "b_map", 235, 1455, 473, null );
+		// [DATA:Mac main HUD table 0x4ab38:38-43] original button rectangles: staggered along the panel's curve, plus the camera button
+		PanelButton( "buy", "b_buy", Rect( 170, 1122, 288, 1240 ), 469, level.IsReadOnlyVisit ? null : ToggleBuildArm ).Selected = () => BuildArmOpen;
+		PanelButton( "info", "b_info", Rect( 287, 1133, 405, 1252 ), 470, null );
+		PanelButton( "finance", "b_money", Rect( 156, 1241, 274, 1360 ), 471, null );
+		PanelButton( "research", "b_resrch", Rect( 274, 1254, 392, 1372 ), 472, null );
+		PanelButton( "map", "b_map", Rect( 81, 1340, 200, 1458 ), 473, null );
+		// [APPROX:UI-042] the camera button's action (camera views) is not implemented; it is shown disabled
+		PanelButton( "camera", "b_camera", Rect( 202, 1355, 320, 1474 ), null, null );
 
 		// [APPROX:UI-022] speed buttons and multipliers — evidence needed: binary game speed options
 		// Speed control (OpenTPW addition; the original has pause only).

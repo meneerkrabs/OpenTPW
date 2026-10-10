@@ -15,13 +15,13 @@ public sealed class OriginalObjectRuntime
 	private bool wasRunning;
 	private bool stopped;
 
-	private static int nextAttractionId = 1;
-
+	/// <param name="world">The park's script world; it also allocates the attraction id. Null: a world of its own.</param>
 	public OriginalObjectRuntime( ObjectCatalogEntry entry, RideScriptWorld? world = null, int? seed = null, bool open = true )
 	{
 		ArgumentNullException.ThrowIfNull( entry );
 		Entry = entry;
-		Visitors = CreateVisitorBridge( entry, Interlocked.Increment( ref nextAttractionId ) - 1 );
+		world ??= new RideScriptWorld();
+		Visitors = CreateVisitorBridge( entry, world.AllocateAttractionId() );
 		Model = ObjectAssets.LoadModel( entry.FileSystem, entry.ModelPath );
 		if ( Model.Kind != ModelFileKind.Geometry )
 			throw new InvalidDataException( $"{entry.ModelPath} is not a geometry model." );

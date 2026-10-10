@@ -99,7 +99,7 @@ public class GuestTests
 	// ---- Path grid ------------------------------------------------------------------------------
 
 	/// <summary>Row y = 5 from x = 0..19 and column x = 10 from y = 0..9.</summary>
-	private static GuestPathGrid CreateCross()
+	internal static GuestPathGrid CreateCross()
 	{
 		var grid = new GuestPathGrid( 20, 10 );
 		for ( var x = 0; x < 20; x++ )
@@ -160,7 +160,7 @@ public class GuestTests
 	private const int PeepId = 12;
 
 	/// <summary>The corpus shop protocol (Coconut.RSE shape): take LETMEON, hold the guest 1 s, hand it back via LETMEOFF.</summary>
-	internal static RideVM CreateShopScript( IRideScriptEffects effects )
+	internal static RideVM CreateShopScript( IRideScriptEffects effects, RideScriptWorld? world = null, int? seed = 3 )
 	{
 		var on = V( (int)RideVariables.VAR_LETMEON );
 		var off = V( (int)RideVariables.VAR_LETMEOFF );
@@ -185,7 +185,7 @@ public class GuestTests
 			.I( Opcode.CRIT_UNLOCK )
 			.I( Opcode.ENDSLICE )
 			.I( Opcode.BRANCH, "loop" );
-		return new RideVM( new RideScriptFile( new MemoryStream( asm.Build( ShopVariables ) ) ), new RideVMOptions { Effects = effects, Seed = 3 } );
+		return new RideVM( new RideScriptFile( new MemoryStream( asm.Build( ShopVariables ) ) ), new RideVMOptions { Effects = effects, World = world, Seed = seed } );
 	}
 
 	private sealed class ScriptedAttraction

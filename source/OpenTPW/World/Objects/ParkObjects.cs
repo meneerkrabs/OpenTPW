@@ -81,16 +81,21 @@ public sealed class ParkObjects
 	private readonly List<OriginalObject> objects = new();
 	private readonly Dictionary<(int, int), OriginalObject> occupied = new();
 	private int nextSeed = 1;
+	private readonly int scriptKey;
 
-	public ParkObjects( ObjectCatalog catalog, IParkGrid grid )
+	/// <param name="seed">The park's world seed: object script seeds and the script world's stream derive from it.</param>
+	public ParkObjects( ObjectCatalog catalog, IParkGrid grid, WorldSeed? seed = null )
 	{
 		Catalog = catalog;
 		Grid = grid;
+		var world = seed ?? WorldSeed.Default;
+		ScriptWorld = new RideScriptWorld( world.ScriptStream );
+		scriptKey = world.ObjectScriptKey;
 	}
 
 	public ObjectCatalog Catalog { get; }
 	public IParkGrid Grid { get; }
-	public RideScriptWorld ScriptWorld { get; } = new();
+	public RideScriptWorld ScriptWorld { get; }
 	public IReadOnlyList<OriginalObject> Objects => objects;
 	/// <summary>Extra blocked cells owned by the host (the sandbox Totem prototype).</summary>
 	public Func<int, int, bool>? IsReserved { get; set; }
@@ -136,7 +141,7 @@ public sealed class ParkObjects
 		var placement = entry.IsFixedItem
 			? new ObjectPlacement( 0, 0, 0, Grid.Origin, 0 )
 			: new ObjectPlacement( anchorX, anchorY, rotation, Grid.Origin, GetBaseHeight( entry, anchorX, anchorY, rotation ) );
-		var item = new OriginalObject( entry, placement, ScriptWorld, nextSeed++, open );
+		var item = new OriginalObject( entry, placement, ScriptWorld, nextSeed++ ^ scriptKey, open );
 		objects.Add( item );
 		foreach ( var (x, y, _) in item.Cells )
 			occupied[(x, y)] = item;

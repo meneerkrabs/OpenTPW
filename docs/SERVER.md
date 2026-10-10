@@ -39,10 +39,11 @@ the container, pass WebSocket upgrades through, and keep the `Host` header.
 24.04). Everything it needs is in `deploy/`:
 
 - `compose.yml` and `Caddyfile`: the image from `ghcr.io/meneerkrabs/opentpw-server` behind
-  Caddy on ports 80 and 443; player data in `/opt/opentpw/data`; settings in `.env`
-  (`env.example`). Caddy keeps no access log. The Caddyfile is mounted as a single file, so
-  edit it in place (or restart Caddy after replacing it): `caddy reload` reads the mounted
-  file, which a replaced file no longer is.
+  Caddy on port 443; player data in `/opt/opentpw/data`; settings in `.env`
+  (`env.example`). Caddy keeps no access log. Its admin API is off (`admin off`): both
+  containers share the host network, so the game server could otherwise reconfigure Caddy
+  through `localhost:2019`. To apply a changed Caddyfile, run `docker compose restart caddy`.
+  Docker keeps at most 3 × 10 MB of each container's output.
 - `opentpw-update.timer`: every night, pull the image and restart if it changed. `latest`
   follows releases; CI publishes it for every `v*` tag (and `main` for every push to main).
 - `opentpw-deploy.path`: runs the same update as soon as a release asks for it (below).

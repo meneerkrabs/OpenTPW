@@ -4,6 +4,9 @@
 # client addresses are not stored. During a deploy it holds requests until the server is back.
 {
 	auto_https disable_redirects
+	# No admin API: on the host network any local process, the game server included, could reach it on
+	# localhost:2019 and reconfigure Caddy. Restart Caddy to apply a changed Caddyfile.
+	admin off
 }
 
 {$OPENTPW_DOMAIN} {

@@ -108,9 +108,11 @@ public sealed class ChatHub
 		var session = new ChatSession( account, options );
 		if ( sessions.Count >= options.MaximumChatConnections || !sessions.TryAdd( account.Key, session ) )
 		{
+			session.Limiter.Dispose();
+			session.Closed.Dispose();
 			var notice = sessions.ContainsKey( account.Key ) ? ChatNotice.NameAlreadyOnline : ChatNotice.ParkFull;
 			await socket.SendAsync( StrictJson.Serialize( ChatEvent.ForNotice( notice, account.Name ) ), WebSocketMessageType.Text, true, cancel );
-			await socket.CloseAsync( WebSocketCloseStatus.PolicyViolation, "already connected", cancel );
+			await CloseAsync( socket, WebSocketCloseStatus.PolicyViolation, "already connected" );
 			return;
 		}
 		using var linked = CancellationTokenSource.CreateLinkedTokenSource( cancel, session.Closed.Token );
@@ -136,8 +138,7 @@ public sealed class ChatHub
 			session.Closed.Dispose();
 			if ( socket.State == WebSocketState.Open )
 			{
-				try { await socket.CloseAsync( WebSocketCloseStatus.NormalClosure, "bye", CancellationToken.None ); }
-				catch ( WebSocketException ) { }
+				await CloseAsync( socket, WebSocketCloseStatus.NormalClosure, "bye" );
 			}
 		}
 	}
@@ -166,7 +167,7 @@ public sealed class ChatHub
 			{
 				if ( length == buffer.Length )
 				{
-					await socket.CloseAsync( WebSocketCloseStatus.MessageTooBig, "frame too large", cancel );
+					await CloseAsync( socket, WebSocketCloseStatus.MessageTooBig, "frame too large" );
 					return;
 				}
 				var result = await socket.ReceiveAsync( buffer.AsMemory( length ), cancel );
@@ -174,7 +175,7 @@ public sealed class ChatHub
 					return;
 				if ( result.MessageType != WebSocketMessageType.Text )
 				{
-					await socket.CloseAsync( WebSocketCloseStatus.InvalidMessageType, "text only", cancel );
+					await CloseAsync( socket, WebSocketCloseStatus.InvalidMessageType, "text only" );
 					return;
 				}
 				length += result.Count;
@@ -191,7 +192,7 @@ public sealed class ChatHub
 				Send( session, ChatEvent.ForNotice( ChatNotice.NoSuchCommand ) );
 				if ( ++invalid >= 20 )
 				{
-					await socket.CloseAsync( WebSocketCloseStatus.PolicyViolation, "too many invalid requests", cancel );
+					await CloseAsync( socket, WebSocketCloseStatus.PolicyViolation, "too many invalid requests" );
 					return;
 				}
 				continue;
@@ -224,8 +225,55 @@ public sealed class ChatHub
 		Execute( session, command, request.Argument ?? "" );
 	}
 
-	private ChatEvent RoomEvent( string room ) => new( ChatEventKind.Room, Room: room,
-		Args: sessions.Values.Where( other => other.Room == room ).Select( other => other.Name ).OrderBy( name => name, StringComparer.OrdinalIgnoreCase ).ToArray() );
+	private ChatEvent RoomEvent( string room ) => RosterEvent( room,
+		sessions.Values.Where( other => other.Room == room ).Select( other => other.Name ).OrderBy( name => name, StringComparer.OrdinalIgnoreCase ).ToArray() );
+
+	/// <summary>
+	/// The room event with as many names as fit one chat frame, and "+N" for the rest: clients reject frames over
+	/// <see cref="ChatProtocol.MaximumFrameBytes"/>, so a full roster of a busy lobby would cut every client off.
+	/// </summary>
+	public static ChatEvent RosterEvent( string room, IReadOnlyList<string> names )
+	{
+		ChatEvent With( int count ) => new( ChatEventKind.Room, Room: room,
+			Args: count == names.Count ? names.ToArray() : names.Take( count ).Append( $"+{names.Count - count}" ).ToArray() );
+		bool Fits( int count ) => (count == names.Count ? count : count + 1) <= ChatProtocol.MaximumArguments
+			&& StrictJson.Serialize( With( count ) ).Length <= ChatProtocol.MaximumFrameBytes - 256;
+		if ( Fits( names.Count ) )
+			return With( names.Count );
+		var (low, high) = (0, names.Count - 1);
+		while ( low < high )
+		{
+			var middle = (low + high + 1) / 2;
+			if ( Fits( middle ) )
+				low = middle;
+			else
+				high = middle - 1;
+		}
+		return With( low );
+	}
+
+	/// <summary>
+	/// Sends a close frame and waits at most two seconds for the peer's reply, then drops the connection: a peer that
+	/// never answers the close handshake cannot hold the socket open.
+	/// </summary>
+	internal static async Task CloseAsync( WebSocket socket, WebSocketCloseStatus status, string reason )
+	{
+		using var timeout = new CancellationTokenSource( TimeSpan.FromSeconds( 2 ) );
+		try
+		{
+			if ( socket.State is WebSocketState.Open or WebSocketState.CloseReceived )
+				await socket.CloseOutputAsync( status, reason, timeout.Token );
+			var discard = new byte[256];
+			while ( socket.State == WebSocketState.CloseSent )
+			{
+				if ( (await socket.ReceiveAsync( discard, timeout.Token )).MessageType == WebSocketMessageType.Close )
+					break;
+			}
+		}
+		catch ( Exception exception ) when ( exception is WebSocketException or OperationCanceledException ) { }
+		if ( socket.State != WebSocketState.Closed )
+			socket.Abort();
+	}
 
 	private void Execute( ChatSession session, ChatCommand command, string argument )
 	{

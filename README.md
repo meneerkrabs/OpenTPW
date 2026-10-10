@@ -28,7 +28,8 @@ For now our website is **[opentpw.io](https://opentpw.io/)**.
 
 OpenTPW runs Theme Park World on modern systems with a new engine. It reads the data of your own
 copy of the original game: no game files are part of this repository, its releases or the
-website, and nothing is uploaded when you play in the browser.
+website (apart from the HD interface icons described under [Legal](#legal)), and nothing is
+uploaded when you play in the browser.
 
 **To run OpenTPW you need a full, legal copy of the original game** (an installation or the CD).
 
@@ -38,12 +39,14 @@ the [fidelity register](docs/FIDELITY-REGISTER.md).
 
 ## Getting started
 
-OpenTPW is a **development preview**: it is playable, but far from complete (see [Status](#status)).
+OpenTPW is a **development preview**, but most of the game already works: pick a world in the
+original lobby, build a park with the original objects and run it with guests, staff and money.
 
 - **In the browser:** open [play.opentpw.io](https://play.opentpw.io/) (Chrome, Edge, Firefox or
-  Safari) and choose your Theme Park World folder. The browser build runs the front end (the 3D
-  lobby, menus and options) and the online features; starting a park, sound, movies and saving
-  do not run in the browser yet ([web build](docs/WEB.md)).
+  Safari) and choose your Theme Park World folder. Nothing is installed and your files stay on your
+  computer. The browser build is the newest part of OpenTPW: the front end and online play run
+  there today, while starting a park, sound and saving are the next steps ([web build](docs/WEB.md)).
+  For the full game, use a download.
 - **Download:** [pre-release builds](https://github.com/meneerkrabs/OpenTPW/releases) for Windows
   (x64, x86, ARM64), macOS (Apple silicon) and Linux (x64, ARM64). Unpack and start OpenTPW; on the
   first start it asks for your game folder ([releases](docs/RELEASES.md), [setup](docs/SETUP.md)).
@@ -58,30 +61,38 @@ OpenTPW is a **development preview**: it is playable, but far from complete (see
 
 ## Status
 
-What works today, with original game data:
+What works today, with your own original game data:
 
-- **Front end and HUD:** the original-style 3D lobby, menus, options and in-game HUD, built from
-  the original models, textures, fonts and strings in six languages ([UI](docs/UI.md),
-  [languages](docs/LANGUAGES.md)).
-- **Parks:** the four worlds load their original terrain; all 274 original objects can be built
-  and run their original ride scripts and animations ([objects](docs/OBJECTS.md),
-  [ride scripts](docs/RSE-VM.md)).
+- **Start-up as on the CD:** the CD's autorun launcher (Play, View Read-me, Exit) and the original
+  start-up movies, Bullfrog logo included ([autorun](docs/AUTORUN.md); `--no-autorun`, `--no-intro`).
+- **Front end and HUD:** the original 3D lobby with its islands, menus, the original-layout Game
+  Options screen (OpenTPW's own settings sit on a separate page) and the in-game HUD, built from the
+  original models, textures, fonts and strings ([UI](docs/UI.md)).
+- **Languages:** English, Danish, Dutch, French, German and Swedish, and every European language on
+  your CD once you choose its folder ([languages](docs/LANGUAGES.md)).
+- **Parks:** the four worlds with their original terrain; all 274 original objects can be built
+  and run their original ride scripts and animations, and the official bonus objects can be added
+  ([objects](docs/OBJECTS.md), [ride scripts](docs/RSE-VM.md)).
 - **Guests, economy and staff:** guests arrive, walk the paths and use rides, shops, sideshows and
-  toilets; money, loans, wages, research and objectives run on the original settings files. Most
-  rules are still registered approximations ([guests](docs/GUESTS.md), [economy](docs/ECONOMY.md)).
-- **Advisor, music and movies:** the advisor speaks for the traced game events with lip sync,
-  the park plays its original music, and all nine movies decode and play ([audio](docs/AUDIO.md),
+  toilets; money, loans, wages, research, objectives, golden tickets and keys run on the original
+  settings files ([guests](docs/GUESTS.md), [economy](docs/ECONOMY.md)).
+- **Advisor, music and movies:** the advisor speaks for the traced game events with lip sync, the
+  park plays its original music, and all nine movies play ([audio](docs/AUDIO.md),
   [lip sync](docs/LIPS.md), [movies](docs/TGQ-MOVIES.md)).
-- **Online:** park sharing, visiting, voting, postcards and chat through an opt-in OpenTPW server,
-  official or self-hosted ([online](docs/ONLINE.md), [server](docs/SERVER.md)).
-- **Modern systems:** native builds for Windows, macOS and Linux at any resolution (so far only
-  macOS on Apple silicon is verified on real hardware), an optional
-  enhanced texture pack generated locally from your own copy ([texture packs](docs/TEXTURE-PACKS.md)),
-  and compatibility fixes ([compatibility](docs/COMPATIBILITY.md)).
+- **Online again:** accounts, park sharing, visiting, voting, postcards and chat, on the official
+  server or one you host yourself ([online](docs/ONLINE.md), [server](docs/SERVER.md)).
+- **Modern systems:** native builds for Windows, macOS and Linux; any resolution and aspect ratio
+  with a HiDPI-aware interface scale; button labels fitted per language; compatibility fixes from
+  the community ([compatibility](docs/COMPATIBILITY.md)).
+- **Enhanced textures:** choose Original or Enhanced (the default) in the options and switch live,
+  without a restart. Enhanced adds HD interface icons and, optionally, a texture pack that OpenTPW
+  builds on your own computer from your own copy with AI upscaling ([texture packs](docs/TEXTURE-PACKS.md)).
+- **Extras:** viewing and exporting the PlayStation 2 disc data (`--export-ps2`, [PS2](docs/PS2.md)).
 
-Not done yet: coaster construction, the full scenario and unlock progression, most ride, ambient and
-interface sounds, park play in the browser, and the exact original rules in many places. The [completion plan](docs/COMPLETION-PLAN.md), [feature matrix](docs/FEATURE-MATRIX.md)
-and [progress](docs/PROGRESS.md) track what remains.
+Not done yet: roller coaster construction, part of the ride, ambient and interface sounds, and the
+exact original rules in places where OpenTPW still uses a documented approximation. The
+[completion plan](docs/COMPLETION-PLAN.md), [feature matrix](docs/FEATURE-MATRIX.md) and
+[progress](docs/PROGRESS.md) track what remains.
 
 ### File formats
 
@@ -148,7 +159,11 @@ your own edition of the game.
 
 OpenTPW is not affiliated with or endorsed by Electronic Arts or Bullfrog Productions. Theme Park
 World and Sim Theme Park are trademarks of their respective owners. OpenTPW contains no original
-game code or assets; you need your own legal copy of the game to play.
+game code or game files; you need your own legal copy of the game to play. The one exception to
+shipping only our own art: the 48 HD interface icons in `content/hero-art` are AI recreations of the
+original icons, made with Google Gemini and fitted to the original layout
+([texture packs](docs/TEXTURE-PACKS.md)). The optional texture pack is built locally from your own
+copy and is never distributed.
 
 ## License
 

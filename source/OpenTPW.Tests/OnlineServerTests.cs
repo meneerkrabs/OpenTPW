@@ -197,6 +197,44 @@ public class OnlineServerTests
 	}
 
 	[TestMethod]
+	public async Task PlayersCanDeleteTheirAccountAndWhatTheServerKeepsAboutThem()
+	{
+		await using var server = await LoopbackServer.StartAsync();
+		try
+		{
+			using var ann = await server.LoginAsync( "Ann" );
+			using var bob = await server.LoginAsync( "Bob" );
+			var park = await ann.UploadParkAsync( OnlineFormatTests.Package() );
+			await bob.SendPostcardAsync( Postcard.Create( "Bob", new[] { "Ann" }, "Hi", "Nice park", "English" ) );
+			await ann.ReportAsync( ReportKinds.Park, "abc", "Rude park name" );
+			Assert.IsTrue( File.Exists( Path.Combine( server.Directory, "parks", park.Id + ParkPackage.FileExtension ) ) );
+
+			// The password is asked again, and for the logged-in account only.
+			Assert.AreEqual( HttpStatusCode.Unauthorized, (await Fails( () => ann.DeleteAccountAsync( "Ann", "wrong password" ) )).Status );
+			Assert.AreEqual( HttpStatusCode.BadRequest, (await Fails( () => ann.DeleteAccountAsync( "Bob", "correct horse" ) )).Status );
+			Assert.AreEqual( 1, (await bob.ListParksAsync()).Total, "A refused deletion removes nothing." );
+
+			await ann.DeleteAccountAsync( "Ann", "correct horse" );
+			Assert.AreEqual( 0, (await bob.ListParksAsync()).Total );
+			Assert.IsFalse( File.Exists( Path.Combine( server.Directory, "parks", park.Id + ParkPackage.FileExtension ) ) );
+			Assert.IsFalse( File.ReadAllText( Path.Combine( server.Directory, "postcards.json" ) ).Contains( "\"ann\"" ), "Her inbox is gone." );
+			var reports = File.ReadAllText( Path.Combine( server.Directory, "reports.jsonl" ) );
+			Assert.IsFalse( reports.Contains( "Ann" ) );
+			StringAssert.Contains( reports, "(deleted player)" );
+			using ( var oldSession = new OnlineClient( server.Url ) )
+				Assert.AreEqual( HttpStatusCode.Unauthorized, (await Fails( () => oldSession.LoginAsync( "Ann", "correct horse" ) )).Status );
+
+			// The name is free again.
+			using var newAnn = await server.LoginAsync( "Ann", "another password" );
+			Assert.AreEqual( 0, (await newAnn.GetInboxAsync()).Postcards.Count );
+		}
+		finally
+		{
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
 	public async Task PostcardsAreDeliveredToInboxes()
 	{
 		await using var server = await LoopbackServer.StartAsync();

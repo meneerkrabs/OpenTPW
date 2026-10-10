@@ -198,6 +198,17 @@ public static class ServerProgram
 			return Ok( new { name = account.Name }, StatusCodes.Status201Created );
 		} ) ) ).RequireRateLimiting( "auth" );
 
+		// Deleting an account asks for the password again, not just a session token.
+		app.MapDelete( ApiRoutes.Accounts, Handler( context => Guarded( context, store, true, async user =>
+		{
+			var credentials = await ReadJsonAsync<Credentials>( context.Request );
+			if ( !string.Equals( OnlineText.NormalizeName( credentials.Name ?? "" ), user!.Key, StringComparison.Ordinal ) )
+				throw new StoreException( 400, "Name the account you are deleting." );
+			store.DeleteAccount( user, credentials.Password ?? "" );
+			hub.Disconnect( user.Key );
+			return Results.NoContent();
+		} ) ) ).RequireRateLimiting( "auth" );
+
 		app.MapPost( ApiRoutes.Sessions, Handler( context => Guarded( context, store, false, async _ =>
 		{
 			var credentials = await ReadJsonAsync<Credentials>( context.Request );

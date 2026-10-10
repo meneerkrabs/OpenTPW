@@ -80,6 +80,29 @@ Back up the data directory (the `opentpw-data` volume) to keep accounts and shar
 - The page has a strict content security policy: scripts and connections only to its own
   address (WebAssembly compilation allowed), no inline scripts or styles, no framing.
 
+## What the server keeps
+
+- **Accounts:** name, password hash (PBKDF2-SHA256 with salt), creation time, buddy list and
+  vote counters.
+- **Sessions:** token hashes and expiry, in memory only.
+- **Parks:** published packages and thumbnails with their author, visits and votes.
+- **Postcards:** cards waiting in a recipient's inbox.
+- **Reports:** moderation reports (`reports.jsonl`).
+
+Client addresses are only used in memory for rate limiting; they are not stored or logged by
+the server. Chat is not stored.
+
+**Deleting an account:** the Online World screen offers *Delete account* while logged in; the
+player confirms with their name and password (`DELETE /api/v1/accounts`). The server then
+removes the account, its sessions and chat connection, its published parks with their files,
+the postcards in its inbox, and its entries in other players' buddy lists and park visitor and
+vote lists. Reports the player made name them as a deleted player; reports about them are
+kept for moderation. Postcards they already sent stay with their recipients. The name becomes
+free again.
+
+**Moderation** is by hand for now: read `reports.jsonl`, and add names to `BannedPlayers` or
+`MutedPlayers` (or park ids to `HiddenParks`) in the settings, then restart the server.
+
 ## Security
 
 - Passwords are hashed with PBKDF2-SHA256; login returns a session token.

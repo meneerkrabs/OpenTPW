@@ -57,6 +57,13 @@ public sealed class OnlineClient : IDisposable
 		return Session;
 	}
 
+	/// <summary>Deletes the logged-in account; the server asks for its name and password again.</summary>
+	public async Task DeleteAccountAsync( string name, string password, CancellationToken cancel = default )
+	{
+		using var response = await SendAsync( HttpMethod.Delete, ApiRoutes.Accounts, Json( new Credentials( name, password ) ), cancel );
+		Session = null;
+	}
+
 	public async Task LogoutAsync( CancellationToken cancel = default )
 	{
 		if ( Session == null )

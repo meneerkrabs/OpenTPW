@@ -4,5 +4,5 @@
 {$OPENTPW_DOMAIN} {
 	encode zstd gzip
 	header Strict-Transport-Security "max-age=31536000"
-	reverse_proxy opentpw-server:8080
+	reverse_proxy {$OPENTPW_UPSTREAM:opentpw-server:8080}
 }

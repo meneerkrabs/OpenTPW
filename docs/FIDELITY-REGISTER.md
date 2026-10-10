@@ -14,9 +14,9 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **140 unresolved unique APPROX IDs**, 156 APPROX occurrences, 67 EXT occurrences, 67 DATA occurrences and 46 BIN occurrences.
+Current inventory: **147 unresolved unique APPROX IDs**, 163 APPROX occurrences, 68 EXT occurrences, 68 DATA occurrences and 78 BIN occurrences.
 
-Of these, 134 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
+Of these, 141 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
 CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.
 
@@ -24,7 +24,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 
 | Area | Unique unresolved IDs | Source occurrences |
 | --- | ---: | ---: |
-| ADVISOR | 14 | 15 |
+| ADVISOR | 21 | 22 |
 | AUDIO | 5 | 5 |
 | COMPAT | 15 | 16 |
 | ECON | 36 | 36 |
@@ -44,12 +44,19 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ADVISOR-006 | Original-fidelity area (scope unadjudicated) | bind pose; no Advisorm* clip is played | See source annotation/runtime register | `source/OpenTPW/World/Advisor.cs:41` |
 | ADVISOR-007 | Original-fidelity area (scope unadjudicated) | triangle corner order reversed for the clockwise front-face pipeline | See source annotation/runtime register | `source/OpenTPW/World/Advisor.cs:42` |
 | ADVISOR-008 | Original-fidelity area (scope unadjudicated) | speech starts at the first rendered advisor frame | See source annotation/runtime register | `source/OpenTPW/World/Advisor.cs:43` |
-| ADVISOR-009 | Original-fidelity area (scope unadjudicated) | --advisor-say plays global clips by number; the advisor controller that picks response IDs is not implemented | See source annotation/runtime register | `source/OpenTPW/World/Advisor.cs:44` |
+| ADVISOR-009 | Original-fidelity area (scope unadjudicated) | --advisor-say plays global clips by number; the controller picks responses only for the five bound messages of game events 0/2/3/4 | See source annotation/runtime register | `source/OpenTPW/World/Advisor.cs:44` |
 | ADVISOR-010 | Original-fidelity area (scope unadjudicated) | lip-sync clock = PCM consumed from the SDL queue (leads output by up to one device buffer) | See source annotation/runtime register | `source/OpenTPW/World/Advisor.cs:45` |
 | ADVISOR-011 | Original-fidelity area (scope unadjudicated) | wall clock drives the mouth when no audio device opens | See source annotation/runtime register | `source/OpenTPW/World/Advisor.cs:46` |
 | ADVISOR-012 | Original-fidelity area (scope unadjudicated) | mono speech duplicated to both stereo channels | See source annotation/runtime register | `source/OpenTPW/World/Advisor.cs:47` |
 | ADVISOR-013 | Original-fidelity area (scope unadjudicated) | the mouth is talking from time 0 (the unit and per-mark toggle are traced) | See source annotation/runtime register | `source/OpenTPW/World/Advisor.cs:48` |
 | ADVISOR-014 | Original-fidelity area (scope unadjudicated) | MP2 synthesis window values read from ffmpeg's table, checked against two ISO values and ≤1 LSB corpus output | See source annotation/runtime register | `source/OpenTPW/World/Advisor.cs:49` |
+| ADVISOR-015 | Original-fidelity area (scope unadjudicated) | the advisor's tutorial byte +53 is the Game Options Tutorial switch (same offset; object identity unproven) | See source annotation/runtime register | `source/OpenTPW/World/Advisor.cs:50` |
+| ADVISOR-016 | Original-fidelity area (scope unadjudicated) | returned playback span = speech length + 200 + 300 + 1000 ms (sequence and ending-clip durations not decoded) | See source annotation/runtime register | `source/OpenTPW/World/Advisor.cs:51` |
+| ADVISOR-017 | Original-fidelity area (scope unadjudicated) | advisor controller clock = wall-clock ms since the automatic advisor started, updated once per frame; not pause-aware | See source annotation/runtime register | `source/OpenTPW/World/Advisor.cs:52` |
+| ADVISOR-018 | Original-fidelity area (scope unadjudicated) | the automatic advisor is drawn only while its speech plays, only inside a level; leaving the level stops it | See source annotation/runtime register | `source/OpenTPW/World/Advisor.cs:53` |
+| ADVISOR-019 | Original-fidelity area (scope unadjudicated) | GeneralAdvisor.MinTimeAnyMessage and GeneralAdvisor.MinTimeSameMessage are loaded but not applied | See source annotation/runtime register | `source/OpenTPW/World/Advisor.cs:54` |
+| ADVISOR-020 | Original-fidelity area (scope unadjudicated) | game events 2/3/4 come from the park economy's Bankrupt/ParkOpened/ParkClosed events, not proven equal to the original producers | See source annotation/runtime register | `source/OpenTPW/World/Advisor.cs:55` |
+| ADVISOR-021 | Original-fidelity area (scope unadjudicated) | Advisor option off: advice still queues, nothing is picked and current speech stops | See source annotation/runtime register | `source/OpenTPW/World/Advisor.cs:56` |
 | AUDIO-001 | Original-fidelity area (scope unadjudicated) | the second user volume the original ducks during speech is the effects channel | See source annotation/runtime register | `source/OpenTPW/Audio/AudioApproximations.cs:8` |
 | AUDIO-002 | Original-fidelity area (scope unadjudicated) | banks resolve to &lt;map folder's parent&gt;/&lt;name&gt;HD.sdt, then to global/&lt;name&gt;HD.sdt | See source annotation/runtime register | `source/OpenTPW/Audio/AudioApproximations.cs:9` |
 | AUDIO-003 | Original-fidelity area (scope unadjudicated) | pitch, delay, 3D position and reverb of a sound are not applied | See source annotation/runtime register | `source/OpenTPW/Audio/AudioApproximations.cs:10` |
@@ -183,19 +190,26 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | --- | --- | --- |
 | ADVISOR-001 | `source/OpenTPW/World/Advisor.cs:25` | [APPROX:ADVISOR-001] The original's mouth nodes 1–5 are these meshes in this order (node 1, shown while silent, is Normal) — evidence needed: the node-lookup jump table at 0x1019B3DC or the MD2 node ids |
 | ADVISOR-002 | `source/OpenTPW/World/Advisor.cs:30` | [APPROX:ADVISOR-002] Visible set: body, head, eyes, antennae, hands; hats, spatula, bow tie and ShutEye meshes hidden — evidence needed: original node visibility rules (dummy attributes 0x401/0x411, Advisorm* tracks) or captures per advisor role |
-| ADVISOR-003 | `source/OpenTPW/World/Advisor.cs:78` | [APPROX:ADVISOR-003] Bottom-left square viewport, 1/3 of the short screen side (min 64 logical px), 16 logical px margin — evidence needed: original advisor screen placement/size captures per resolution |
-| ADVISOR-004 | `source/OpenTPW/World/Advisor.cs:59` | [APPROX:ADVISOR-004] Overlay camera at z = −70 looking at the origin, 40° FOV, near 1/far 500 — evidence needed: original advisor camera/projection (binary or capture) |
-| ADVISOR-005 | `source/OpenTPW/World/Advisor.cs:317` | [APPROX:ADVISOR-005] Headlight at the camera, colour 0.6, test.shader ambient 0.4 and fog — evidence needed: original advisor lighting/material captures |
-| ADVISOR-006 | `source/OpenTPW/World/Advisor.cs:102` | [APPROX:ADVISOR-006] Bind pose only; every Advisorm*.MD2 clip has undecoded non-rigid tracks — evidence needed: decoded vertex/visibility track payloads |
-| ADVISOR-007 | `source/OpenTPW/World/Advisor.cs:126` | [APPROX:ADVISOR-007] Corner order reversed so faces survive the renderer's clockwise back-face culling (chosen from a capture of this renderer, not the original) — evidence needed: original MD2 front-face convention |
-| ADVISOR-008 | `source/OpenTPW/World/Advisor.cs:305` | [APPROX:ADVISOR-008] Speech starts at the first rendered advisor frame — evidence needed: original advisor speech trigger timing |
-| ADVISOR-009 | `source/OpenTPW/World/Advisor.cs:191` | [APPROX:ADVISOR-009] --advisor-say plays global clips by number; responses (SayResponse) follow the traced global/level selector, but the controller that picks response IDs is not implemented — evidence needed: the advisor controller (0x86BC–0x8B10) and its message-to-response mapping |
+| ADVISOR-003 | `source/OpenTPW/World/Advisor.cs:87` | [APPROX:ADVISOR-003] Bottom-left square viewport, 1/3 of the short screen side (min 64 logical px), 16 logical px margin — evidence needed: original advisor screen placement/size captures per resolution |
+| ADVISOR-004 | `source/OpenTPW/World/Advisor.cs:66` | [APPROX:ADVISOR-004] Overlay camera at z = −70 looking at the origin, 40° FOV, near 1/far 500 — evidence needed: original advisor camera/projection (binary or capture) |
+| ADVISOR-005 | `source/OpenTPW/World/Advisor.cs:335` | [APPROX:ADVISOR-005] Headlight at the camera, colour 0.6, test.shader ambient 0.4 and fog — evidence needed: original advisor lighting/material captures |
+| ADVISOR-006 | `source/OpenTPW/World/Advisor.cs:111` | [APPROX:ADVISOR-006] Bind pose only; every Advisorm*.MD2 clip has undecoded non-rigid tracks — evidence needed: decoded vertex/visibility track payloads |
+| ADVISOR-007 | `source/OpenTPW/World/Advisor.cs:135` | [APPROX:ADVISOR-007] Corner order reversed so faces survive the renderer's clockwise back-face culling (chosen from a capture of this renderer, not the original) — evidence needed: original MD2 front-face convention |
+| ADVISOR-008 | `source/OpenTPW/World/Advisor.cs:323` | [APPROX:ADVISOR-008] Speech starts at the first rendered advisor frame — evidence needed: original advisor speech trigger timing |
+| ADVISOR-009 | `source/OpenTPW/World/Advisor.cs:200` | [APPROX:ADVISOR-009] --advisor-say plays global clips by number; responses (SayResponse) follow the traced global/level selector, and AdvisorController picks response IDs only for messages 0, 106, 128, 129 and 323 — evidence needed: the remaining 346 descriptors and their score producers |
 | ADVISOR-010 | `source/OpenTPW/Client/SpeechAudioPlayer.cs:39` | [APPROX:ADVISOR-010] Lip-sync clock = frames SDL took from its queue; leads the speaker by up to one device buffer (≈46 ms) — evidence needed: original A/V sync source and latency measurement |
 | ADVISOR-011 | `source/OpenTPW/Client/SpeechAudioPlayer.cs:36` | [APPROX:ADVISOR-011] Wall clock when no audio device opened — evidence needed: original behaviour without sound hardware |
 | ADVISOR-012 | `source/OpenTPW/Audio/AudioMixer.cs:65` | [APPROX:ADVISOR-012] Mono samples are duplicated to both channels — evidence needed: original output channel layout/panning |
 | ADVISOR-012 | `source/OpenTPW/Client/SpeechAudioPlayer.cs:77` | [APPROX:ADVISOR-012] Mono speech duplicated to both channels — evidence needed: original speech output channel layout/panning |
 | ADVISOR-013 | `source/OpenTPW.Files/Public/LipSyncTimeline.cs:54` | [APPROX:ADVISOR-013] talking from time 0 (inferred from decoded audio, 31 dB talking/silent contrast) — evidence needed: the talking flag's value when speech starts |
 | ADVISOR-014 | `source/OpenTPW.Files/Formats/Sound/Mp2Decoder.cs:49` | [APPROX:ADVISOR-014] Values read from the locally installed ffmpeg's data table; checked against the standard's |
+| ADVISOR-015 | `source/OpenTPW/Client/AutomaticAdvisor.cs:47` | [APPROX:ADVISOR-015] The eligibility check's byte +53 (0x10009038) is read as the Game Options Tutorial byte (+0x35, default 1 in 0x10125B7C); that both belong to the same options object is not proven — evidence needed: the object behind TOC −30268 in the eligibility check |
+| ADVISOR-016 | `source/OpenTPW/Client/AutomaticAdvisor.cs:122` | [APPROX:ADVISOR-016] Returned span = speech length + 200 + 300 (the animation budget from audio length) + 1000; the original returns sequence + ending-clip duration + 1000 — evidence needed: decoded advisor sequence and ending-clip durations |
+| ADVISOR-017 | `source/OpenTPW/Client/AutomaticAdvisor.cs:13` | [APPROX:ADVISOR-017] Wall-clock milliseconds since the automatic advisor was created, sampled once per frame; the original's pause-aware unscaled advisor clock is not reconstructed — evidence needed: the advisor clock subobject's offset/freeze/compensation and the controller's update cadence |
+| ADVISOR-018 | `source/OpenTPW/Client/AutomaticAdvisor.cs:63` | [APPROX:ADVISOR-018] The advisor is only drawn while a response plays and only inside a level; leaving the level stops its speech — evidence needed: the advisor's entry/exit animation and idle visibility |
+| ADVISOR-019 | `source/OpenTPW/World/AdvisorController.cs:94` | [APPROX:ADVISOR-019] Loaded but not applied: the eligibility path compares the group repeat interval, and no consumer of the general intervals (+24/+28) is traced — evidence needed: the reads of balance fields +24 and +28 |
+| ADVISOR-020 | `source/OpenTPW/Client/AutomaticAdvisor.cs:75` | [APPROX:ADVISOR-020] The economy's bankruptcy (six months in the red) and park open/close transitions stand in for the original CMsgEvent 2/3/4 producers (0x100CC464, 0x10108FD4, 0x10109118) — evidence needed: the producers' financial threshold and transition preconditions |
+| ADVISOR-021 | `source/OpenTPW/Client/AutomaticAdvisor.cs:101` | [APPROX:ADVISOR-021] Advisor option off: events still reach the queue and history, but nothing is picked and current speech stops — evidence needed: the consumer of options byte +0x34 |
 | AUDIO-001 | `source/OpenTPW/Audio/AudioMixer.cs:194` | [APPROX:AUDIO-001] the second user volume the original ducks is the effects channel — evidence needed: the names of the TbSysCommand volume commands at 0x100BB18C |
 | AUDIO-002 | `source/OpenTPW/Audio/SoundEvents.cs:66` | [APPROX:AUDIO-002] banks resolve to &lt;map folder's parent&gt;/&lt;name&gt;HD.sdt, then to global/&lt;name&gt;HD.sdt — evidence needed: TbMapStreamer::BankDoesNotExist (0x10015234) and the quality suffix rule |
 | AUDIO-003 | `source/OpenTPW/Audio/SoundEvents.cs:200` | [APPROX:AUDIO-003] pitch, delay, 3D position and reverb of a sound are not applied — evidence needed: TbSoundSampleInfo pitch units and the placeholder 3D update |
@@ -243,7 +257,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-027 | `source/OpenTPW/Economy/ParkEconomy.cs:403` | [APPROX:ECON-027] the record sub-kinds 0–3 are rides, shops, sideshows and features, and every hired staff member counts — evidence needed: the record field at +0x4C behind sub-kind +0x7A8 and the staff byte +3 tested by FUN_100C4064 |
 | ECON-028 | `source/OpenTPW/Economy/ParkEconomy.cs:491` | [APPROX:ECON-028] purchases need a balance covering the cost — evidence needed: capture of building with too little money |
 | ECON-030 | `source/OpenTPW/Economy/ParkEconomy.cs:114` | [APPROX:ECON-030] the simulation stops once bankrupt — evidence needed: capture of the bankrupt state |
-| ECON-031 | `source/OpenTPW/Economy/ParkEconomyRuntime.cs:33` | [APPROX:ECON-031] imported parks are opened on load (open state not decoded) — evidence needed: park-open flag in the save |
+| ECON-031 | `source/OpenTPW/Economy/ParkEconomyRuntime.cs:37` | [APPROX:ECON-031] imported parks are opened on load (open state not decoded) — evidence needed: park-open flag in the save |
 | ECON-034 | `source/OpenTPW/Economy/ParkObjectives.cs:113` | [APPROX:ECON-034] challenge type meanings come from Challenges.sam comments (shop types by ShopType/SpecialIngredient) — evidence needed: challenge captures per type |
 | ECON-035 | `source/OpenTPW/Economy/ParkObjectives.cs:153` | [APPROX:ECON-035] offers wait for accept/decline; follow-ups are offered right after completion; failed challenges count as finished — evidence needed: challenge flow captures |
 | ECON-036 | `source/OpenTPW/Economy/ParkObjectives.cs:149` | [APPROX:ECON-036] build challenges with TargetVal 0 need one item; type 28 needs level 3 — evidence needed: challenge captures |
@@ -304,7 +318,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-015 | `source/OpenTPW/FrontEnd/FrontEndMenu.cs:124` | [APPROX:UI-015] Game Mode asked when entering a park (no player profiles); the original asks once when a player is created and stores it in the profile — evidence needed: player profiles |
 | UI-016 | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:79` | [DATA:lobby.wad:&lt;theme&gt;.txt ISLAND/SKYCOLOUR/FLYINGMESH/RAINY/LIGHTNING] [APPROX:UI-016] angle = yaw, height = camera target height — evidence needed: binary/capture |
 | UI-017 | `source/OpenTPW/World/LobbyCameraMode.cs:25` | [APPROX:UI-017] SPINSPEED as radians per 0.1 s, FOV 60, 3/s glide — evidence needed: binary or capture of the lobby camera |
-| UI-018 | `source/OpenTPW/Client/GameFlow.cs:252` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
+| UI-018 | `source/OpenTPW/Client/GameFlow.cs:269` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
 | UI-018 | `source/OpenTPW/World/Lobby/LobbyScene.cs:14` | [APPROX:UI-018] flying meshes, rain, lightning and island/gate animations are not drawn — evidence needed: binary/capture of the lobby |
 | UI-019 | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:92` | [APPROX:UI-019] fallback position when lobby.txt lacks ISLANDCAMERAPOSITION — evidence needed: none if lobby.txt is complete |
 | UI-020 | `source/OpenTPW/Hud/ParkHud.cs:124` | [APPROX:UI-020] panel button positions (the models share one authored centre) — evidence needed: capture of the original HUD |
@@ -325,8 +339,8 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-027 | `source/OpenTPW/Hud/ParkHud.cs:494` | [APPROX:UI-027] Select by occupied grid cell; original cursor picking is not verified. |
 | UI-028 | `source/OpenTPW/Hud/ParkHud.cs:288` | [APPROX:UI-028] authored excitement as a percentage; unknown simulation statistics stay unavailable. |
 | UI-029 | `source/OpenTPW/Hud/ParkHud.cs:212` | [APPROX:UI-024] layout inside the info arm; [APPROX:UI-029] b_door down = closed, b_erase = delete — evidence needed: capture of the ride panel |
-| UI-030 | `source/OpenTPW/UI/Original/Options/GameOptions.cs:34` | [APPROX:UI-030] 0..10 volume steps, default 8, popup help on — evidence needed: original options defaults |
-| UI-030 | `source/OpenTPW/UI/Original/Options/GameOptions.cs:45` | [APPROX:UI-030] right-column defaults: all on, 90 degs rotation (as in the supplied capture), pushscroll |
+| UI-030 | `source/OpenTPW/UI/Original/Options/GameOptions.cs:33` | [APPROX:UI-030] 0..10 volume steps, default 8, popup help on — evidence needed: original options defaults |
+| UI-030 | `source/OpenTPW/UI/Original/Options/GameOptions.cs:44` | [APPROX:UI-030] right-column defaults: all on, 90 degs rotation (as in the supplied capture), pushscroll |
 | UI-031 | `source/OpenTPW/Hud/ParkHud.cs:355` | [APPROX:UI-031] one placement per menu selection; Level owns purchase/sale — evidence needed: original build-tool continuation |
 | UI-032 | `source/OpenTPW/Hud/ParkHud.cs:603` | [APPROX:UI-032] Wrap translated catalogue names within their slot at the integer text scale. |
 | UI-032 | `source/OpenTPW/UI/Original/UiWidgets.cs:285` | [APPROX:UI-032] small-font fallback and greedy wrap for long labels — evidence needed: captures of translated original screens |
@@ -386,9 +400,9 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | autorun | `source/OpenTPW/Client/Autorun/AutorunLauncher.cs:5` | [EXT:autorun] It needs the original &lt;c&gt;Autorun&lt;/c&gt; folder (&lt;c&gt;general.tre&lt;/c&gt; and the language archives) in the game |
 | autorun | `source/OpenTPW/Client/Autorun/AutorunScreen.cs:14` | with the operating system's viewer and Exit quits. [EXT:autorun] (docs/AUTORUN.md) |
 | autorun | `source/OpenTPW/Client/Autorun/AutorunView.cs:19` | and clicks. [EXT:autorun] OpenTPW reproduces the CD's autorun dialog as an optional start screen. |
-| autorun | `source/OpenTPW/Client/Game.cs:205` | [EXT:autorun] The CD's launcher window comes first when its Autorun folder is available (docs/AUTORUN.md). |
+| autorun | `source/OpenTPW/Client/Game.cs:206` | [EXT:autorun] The CD's launcher window comes first when its Autorun folder is available (docs/AUTORUN.md). |
 | bonus-content | `source/OpenTPW/Client/Setup/BonusContent.cs:14` | [EXT:bonus-content] Setup-managed copy of the official bonus WADs; the original game only had the CD and install folders |
-| developer-prototype | `source/OpenTPW/Economy/ParkEconomyRuntime.cs:46` | [EXT:developer-prototype] the developer prototype ride is registered uncharged (no original counterpart) |
+| developer-prototype | `source/OpenTPW/Economy/ParkEconomyRuntime.cs:50` | [EXT:developer-prototype] the developer prototype ride is registered uncharged (no original counterpart) |
 | developer-prototype | `source/OpenTPW/World/Level.Objects.cs:170` | [EXT:developer-prototype] Sandbox Totem blocks cells whose centres lie within its 6×8-unit model box (no original counterpart) |
 | developer-prototype | `source/OpenTPW/World/Level.Objects.cs:251` | [EXT:developer-prototype] When the economy refuses the Totem (e.g. Research.Group 4 not yet researched), the developer prototype is registered uncharged (no original counterpart) |
 | developer-prototype | `source/OpenTPW/World/PrototypeRide.cs:13` | [EXT:developer-prototype] Sandbox Totem bounds check uses a 5-unit radius around its centre (no original counterpart) |
@@ -396,6 +410,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | fit-button-text | `source/OpenTPW/UI/Original/UiTextFit.cs:10` | [EXT:fit-button-text] button labels shrink to fit; the original sized its fixed strings per language by hand |
 | interface-scale-fit | `source/OpenTPW/UI/Original/UiCanvas.cs:33` | [EXT:interface-scale-fit] Above 1×, limit forced text scales to UiScaling's reference-layout fit (HiDPI-aware via PixelDensity). |
 | language | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:437` | [EXT:language] language row (original installs had one language; OpenTPW reads CD overlays) |
+| online-visit | `source/OpenTPW/Client/GameFlow.cs:171` | [EXT:online-visit] read-only visits of shared parks get no advisor (the original has no visits) |
 | opentpw-page | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:341` | [EXT:opentpw-page] button to the OpenTPW page, in the free area left of the OK panel |
 | opentpw-page | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:370` | The OpenTPW page ([EXT:opentpw-page]): everything OpenTPW adds to the original options, built from the |
 | opentpw-page | `source/OpenTPW/UI/Original/UiWidgets.cs:519` | [EXT:opentpw-page] option-row arrow/value positions: OpenTPW's own row style for its page (the original page uses sliders and toggles) |
@@ -428,6 +443,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | &lt;object&gt;.sam:Upgrades[0].InitDuration | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:44` | [DATA:&lt;object&gt;.sam:Upgrades[0].InitDuration] [APPROX:RIDES-016] written raw; unit per Info.DurationUnit unverified — evidence needed: binary conversion of InitDuration |
 | &lt;object&gt;.sam:UsageInfo.ProvidesRelief/HungerEffect/ThirstEffect/InitPricePerUse/ExcitementLevel, Info.AttractionValue | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:138` | [DATA:&lt;object&gt;.sam:UsageInfo.ProvidesRelief/HungerEffect/ThirstEffect/InitPricePerUse/ExcitementLevel, Info.AttractionValue] |
 | Advisor.MD2:mesh names "Mouth - Normal", "Mouth - Aah", "Mouth - Eee", "Mouth - Ooh", "Mouth - Sss" | `source/OpenTPW/World/Advisor.cs:23` | [DATA:Advisor.MD2:mesh names "Mouth - Normal", "Mouth - Aah", "Mouth - Eee", "Mouth - Ooh", "Mouth - Sss"] |
+| Advisor/Advisor.sam | `source/OpenTPW/World/AdvisorController.cs:63` | [DATA:Advisor/Advisor.sam] loaded by the scoring data loader (STP-PPC 0x1000CFD4) |
 | Advisor/Advisor.sam:StaffHireMechanics1.PoorerStateThan | `source/OpenTPW/Economy/ParkEconomy.cs:23` | [DATA:Advisor/Advisor.sam:StaffHireMechanics1.PoorerStateThan] |
 | Autorun/autorun.tre:autorun.cfg nvPlayY=61 nvInstallY=103 nvUninstallY=145 nvReinstallY=187 nvTechbuttonY=229 nvReadmeY=271 nvQuitY=313 | `source/OpenTPW/Client/Autorun/AutorunAssets.cs:27` | [DATA:Autorun/autorun.tre:autorun.cfg nvPlayY=61 nvInstallY=103 nvUninstallY=145 nvReinstallY=187 nvTechbuttonY=229 nvReadmeY=271 nvQuitY=313] |
 | CHAT_COMMANDS.str:134-151 | `source/OpenTPW.Online/Chat/ChatCommands.cs:117` | ([DATA:CHAT_COMMANDS.str:134-151] — 18 responses for the 19 mood commands; Think has none). |
@@ -464,7 +480,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | levels/jungle/Easymode.TPWI:loan table repayments = floor(amount/months) at 0 % APR | `source/OpenTPW/Economy/ParkLedger.cs:146` | [DATA:levels/jungle/Easymode.TPWI:loan table repayments = floor(amount/months) at 0 % APR] |
 | levels/space/rides/megacost.wad/megacost.sgn:slot 1 = "EggIt Italic"/EGGII___.TTF, not in fonts.wad | `source/OpenTPW.Files/Public/DataCorrections.cs:18` | [EXT:COMPAT-FIX sign-font-substitution] [DATA:levels/space/rides/megacost.wad/megacost.sgn:slot 1 = "EggIt Italic"/EGGII___.TTF, not in fonts.wad] |
 | lobby.wad:&lt;theme&gt;.txt ISLAND/SKYCOLOUR/FLYINGMESH/RAINY/LIGHTNING | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:79` | [DATA:lobby.wad:&lt;theme&gt;.txt ISLAND/SKYCOLOUR/FLYINGMESH/RAINY/LIGHTNING] [APPROX:UI-016] angle = yaw, height = camera target height — evidence needed: binary/capture |
-| lobby.wad:&lt;theme&gt;.txt SKYCOLOUR | `source/OpenTPW/Client/GameFlow.cs:252` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
+| lobby.wad:&lt;theme&gt;.txt SKYCOLOUR | `source/OpenTPW/Client/GameFlow.cs:269` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
 | lobby.wad:lobby.txt ISLANDFOV/SPINSPEED/SPINRADIUS/VERTICALOFFSET | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:31` | [DATA:lobby.wad:lobby.txt ISLANDFOV/SPINSPEED/SPINRADIUS/VERTICALOFFSET] defaults equal the shipped values |
 | low.sam/med.sam/high.sam | `source/OpenTPW.Tests/CompatibilityTests.cs:133` | [DATA:low.sam/med.sam/high.sam] in file order (TEXTUREQUALITY .. LOBBYOBJECTS). |
 | low.sam/med.sam/high.sam:comment legend | `source/OpenTPW/Compat/GraphicsSettings.cs:21` | ([DATA:low.sam/med.sam/high.sam:comment legend]). |
@@ -474,7 +490,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | options table 0x4b0dc:120031,OK,Cancel | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:337` | [DATA:options table 0x4b0dc:120031,OK,Cancel] bottom-right panel with the OK and Cancel buttons |
 | sound.sam:SoundInfo.DUCKINGLEVEL | `source/OpenTPW/Audio/GameAudio.cs:46` | [DATA:sound.sam:SoundInfo.DUCKINGLEVEL] the percentage music and effects keep while speech plays (38 in the shipped file) |
 | speechHD.SDT/MusicHD.sdt:all Layer II frames fit this table to ≤23 spare bits | `source/OpenTPW.Files/Formats/Sound/Mp2Decoder.cs:38` | [DATA:speechHD.SDT/MusicHD.sdt:all Layer II frames fit this table to ≤23 spare bits] |
-| speechHD.SDT:entry word 0 = header size (40) | `source/OpenTPW/World/Advisor.cs:215` | [DATA:speechHD.SDT:entry word 0 = header size (40)] |
+| speechHD.SDT:entry word 0 = header size (40) | `source/OpenTPW/World/Advisor.cs:224` | [DATA:speechHD.SDT:entry word 0 = header size (40)] |
 | theme-park-world_win_manual_europe_en_ii5.pdf:PDF-page-15/printed-page-28; SHA256=c96eb25f3dc13f7f0824bbf03f9bbeb3bb94e9f4756d4d8dfa09ac71732b0668 | `source/OpenTPW/Economy/ParkObjectives.cs:315` | [DATA:theme-park-world_win_manual_europe_en_ii5.pdf:PDF-page-15/printed-page-28; SHA256=c96eb25f3dc13f7f0824bbf03f9bbeb3bb94e9f4756d4d8dfa09ac71732b0668] |
 | ui.wad:button UVs v 0.42..1 vs art in the top 58% | `source/OpenTPW/UI/Original/UiModel.cs:131` | [DATA:ui.wad:button UVs v 0.42..1 vs art in the top 58%] V flipped as in the 3D shaders |
 | ui.wad:f_chat.MD2,w_map.MD2 bounds | `source/OpenTPW/UI/Original/UiCanvas.cs:25` | [DATA:ui.wad:f_chat.MD2,w_map.MD2 bounds] full-screen UI frames span 2048×1536 |
@@ -486,10 +502,38 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 
 | Label | Location | Source comment context |
 | --- | --- | --- |
-| STP-PPC:0x10006B7C advisor playback | `source/OpenTPW/World/Advisor.cs:228` | [BIN:STP-PPC:0x10006B7C advisor playback] the response record's +16 high half selects the current level's speech folder and bank instead of Data:Global; +4 is the sample and +8 the sp_%03d.lip number |
+| STP-PPC:0x10006B7C advisor playback | `source/OpenTPW/World/Advisor.cs:237` | [BIN:STP-PPC:0x10006B7C advisor playback] the response record's +16 high half selects the current level's speech folder and bank instead of Data:Global; +4 is the sample and +8 the sp_%03d.lip number |
 | STP-PPC:0x10007434 advisor update | `source/OpenTPW.Files/Public/LipSyncTimeline.cs:53` | [BIN:STP-PPC:0x10007434 advisor update] marks are read in order until -1, divided by 1000 (µs to the ms speech clock) and each one flips the talking flag |
-| STP-PPC:0x10007434 advisor update | `source/OpenTPW/World/Advisor.cs:377` | [BIN:STP-PPC:0x10007434 advisor update] silent or no LIP data: node 1; talking: when the speech clock (ms) passes the next-change time, node = rand() % 5 + 1 and the next change is 100 ms later |
+| STP-PPC:0x10007434 advisor update | `source/OpenTPW/World/Advisor.cs:395` | [BIN:STP-PPC:0x10007434 advisor update] silent or no LIP data: node 1; talking: when the speech clock (ms) passes the next-change time, node = rand() % 5 + 1 and the next change is 100 ms later |
+| STP-PPC:0x100087C8 controller update | `source/OpenTPW/World/AdvisorScoreQueue.cs:155` | [BIN:STP-PPC:0x100087C8 controller update] a busy action exits before queued advice is picked |
+| STP-PPC:0x10008850 minimum score | `source/OpenTPW/World/AdvisorScoreQueue.cs:163` | [BIN:STP-PPC:0x10008850 minimum score] the candidate must be strictly above MinScoreForConsideration |
+| STP-PPC:0x10008974 cyclic variant | `source/OpenTPW/World/AdvisorScoreQueue.cs:171` | [BIN:STP-PPC:0x10008974 cyclic variant] previous variant + 1 (wrapping signed add), reset to 0 unless below the count |
+| STP-PPC:0x10008A10 action reservation | `source/OpenTPW/World/AdvisorScoreQueue.cs:218` | [BIN:STP-PPC:0x10008A10 action reservation] returned playback span plus 1000 |
+| STP-PPC:0x10008A28 history update | `source/OpenTPW/World/AdvisorScoreQueue.cs:210` | [BIN:STP-PPC:0x10008A28 history update] raw game tick, retained variant and played flag after wrapper success |
+| STP-PPC:0x10008B78 advisor enqueue | `source/OpenTPW/World/AdvisorScoreQueue.cs:130` | [BIN:STP-PPC:0x10008B78 advisor enqueue] no minimum-score gate on admission; first empty slot |
+| STP-PPC:0x10008CD8 replacement | `source/OpenTPW/World/AdvisorScoreQueue.cs:142` | [BIN:STP-PPC:0x10008CD8 replacement] the weakest record is replaced only by a strictly higher score |
+| STP-PPC:0x10008D10 advisor enqueue | `source/OpenTPW/World/AdvisorScoreQueue.cs:29` | [BIN:STP-PPC:0x10008D10 advisor enqueue] an eligible advice is acknowledged even when a full queue keeps it out |
+| STP-PPC:0x10009038 advisor eligibility | `source/OpenTPW/World/AdvisorScoreQueue.cs:102` | [BIN:STP-PPC:0x10009038 advisor eligibility] tutorial option byte +53 is tested first; with it clear, group-1 (tutorial) messages are refused (reviewed lane model) |
+| STP-PPC:0x100090A4 repeat gate | `source/OpenTPW/World/AdvisorScoreQueue.cs:105` | [BIN:STP-PPC:0x100090A4 repeat gate] saved ticks 0–3 (zero saved quarter) skip the interval; strictly fewer groups than the interval refuse |
+| STP-PPC:0x10009100 once override | `source/OpenTPW/World/AdvisorScoreQueue.cs:109` | [BIN:STP-PPC:0x10009100 once override] an override skips the once-only and slap checks only |
+| STP-PPC:0x10009230 duplicate limit | `source/OpenTPW/World/AdvisorScoreQueue.cs:119` | [BIN:STP-PPC:0x10009230 duplicate limit] pending copies must stay strictly below the descriptor's low-byte maximum |
+| STP-PPC:0x100093D0 minimum scan | `source/OpenTPW/World/AdvisorScoreQueue.cs:137` | [BIN:STP-PPC:0x100093D0 minimum scan] only a strictly smaller score moves the weakest slot, so ties keep the earliest |
+| STP-PPC:0x10009494 maximum scan | `source/OpenTPW/World/AdvisorScoreQueue.cs:158` | [BIN:STP-PPC:0x10009494 maximum scan] only a strictly greater score moves the choice, so ties keep the earliest valid slot |
+| STP-PPC:0x10009548 advisor event 0 | `source/OpenTPW/World/AdvisorController.cs:45` | [BIN:STP-PPC:0x10009548 advisor event 0] advice 0 (Welcome); then advice 323 (PrebuiltPark) when the game type at TOC −30136 is 2 (0x100096F0–0x10009720; the player selector 0x1013781C writes 2 there for Instant Action) |
+| STP-PPC:0x100098D4 advisor event 2 | `source/OpenTPW/World/AdvisorController.cs:47` | [BIN:STP-PPC:0x100098D4 advisor event 2] advice 106 (Bankrupted) |
+| STP-PPC:0x10009A88 advisor event 3 | `source/OpenTPW/World/AdvisorController.cs:49` | [BIN:STP-PPC:0x10009A88 advisor event 3] advice 128 (ParkNowOpen) |
+| STP-PPC:0x10009C3C advisor event 4 | `source/OpenTPW/World/AdvisorController.cs:51` | [BIN:STP-PPC:0x10009C3C advisor event 4] advice 129 (ParkNowClosed) |
+| STP-PPC:0x10009DCC advisor event 10 | `source/OpenTPW/World/AdvisorScoreQueue.cs:80` | [BIN:STP-PPC:0x10009DCC advisor event 10] clears the 351 history records |
+| STP-PPC:0x1000A154 advisor busy | `source/OpenTPW/World/AdvisorScoreQueue.cs:87` | [BIN:STP-PPC:0x1000A154 advisor busy] 32-bit start + duration, unsigned now &lt; end; equality releases |
+| STP-PPC:0x1000B7D8 playback wrapper | `source/OpenTPW/World/AdvisorScoreQueue.cs:185` | [BIN:STP-PPC:0x1000B7D8 playback wrapper] the pending record is invalidated before playback is attempted |
+| STP-PPC:0x1000B858 playback revalidation | `source/OpenTPW/World/AdvisorScoreQueue.cs:94` | [BIN:STP-PPC:0x1000B858 playback revalidation] recomputed score &gt;= minimum passes |
+| STP-PPC:0x1000B8C8 response wrapper | `source/OpenTPW/World/AdvisorScoreQueue.cs:176` | [BIN:STP-PPC:0x1000B8C8 response wrapper] an out-of-range requested variant plays the first response; history keeps the request (0x10008A3C) |
+| STP-PPC:0x1000BC10 advisor record serialization | `source/OpenTPW/World/AdvisorScoreQueue.cs:46` | [BIN:STP-PPC:0x1000BC10 advisor record serialization] eight 24-byte pending records from controller +20 |
+| STP-PPC:0x1000D468 descriptor accessors | `source/OpenTPW/World/AdvisorController.cs:29` | [BIN:STP-PPC:0x1000D468 descriptor accessors] rows of the 351-record descriptor table (data section 0x1F2B4): message, first response (+32, 0x1000D468), response count (+36, 0x1000D5EC), group (+8), pending-duplicate limit (+28 low byte, 0x1000D770); all use cyclic mode 2 and game-mode selector 2 (always eligible) |
+| STP-PPC:0x1000E0FC slap limit | `source/OpenTPW/World/AdvisorScoreQueue.cs:114` | [BIN:STP-PPC:0x1000E0FC slap limit] signed comparison of the stored 32-bit count against a nonzero limit |
 | STP-PPC:0x10015100 TbMapStreamer::ReadBankDataFromMap | `source/OpenTPW.Files/Formats/Sound/SoundCatalog.cs:143` | [BIN:STP-PPC:0x10015100 TbMapStreamer::ReadBankDataFromMap] 11-byte records (rewritten at load), then per bank a u32 length and the name |
+| STP-PPC:0x10016F4C advisor balance | `source/OpenTPW/World/AdvisorController.cs:85` | [BIN:STP-PPC:0x10016F4C advisor balance] MessageGroups[g] fields at +36/+40/+44 + 12g |
+| STP-PPC:0x10016F4C advisor balance | `source/OpenTPW/World/AdvisorController.cs:92` | [BIN:STP-PPC:0x10016F4C advisor balance] GeneralAdvisor.MinTimeAnyMessage +24, MinTimeSameMessage +28, MinScoreForConsideration +32 |
 | STP-PPC:0x1009B1DC movie box | `source/OpenTPW/Client/Movie/MoviePresenter.cs:44` | shown at twice their width, with non-square pixels ([BIN:STP-PPC:0x1009B1DC movie box], docs/TGQ-MOVIES.md). |
 | STP-PPC:0x100A70B4 channel frame arithmetic | `source/OpenTPW/World/Objects/ObjectAnimator.cs:25` | [BIN:STP-PPC:0x100A70B4 channel frame arithmetic] the Feral Mac formula multiplies elapsed milliseconds by 30 and divides by 1000 before channel speed. |
 | STP-PPC:0x100ABF14 sign compositor | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:25` | [BIN:STP-PPC:0x100ABF14 sign compositor] each line is colour-blitted with its colour block's bytes (+0x430..+0x432 for the first line, +0x444..+0x446 for the second) only when its colour mode is 1 or 2 |
@@ -515,15 +559,19 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | STP-PPC:0x100F6E24 staff pool update | `source/OpenTPW/Economy/ParkStaff.cs:100` | [BIN:STP-PPC:0x100F6E24 staff pool update] draw = rand() % total shortfall picks the role whose share it falls in; each added candidate lowers that role's shortfall and the per-update cap (also limited by the 32 free slots); 0x100F65E8 drops roles whose hired count reached Max*InPark; 0x100F6790 then tops every role up to Min*InPool counting hired and pooled staff |
 | STP-PPC:0x1010474C world setup | `source/OpenTPW/Economy/BalanceSettings.cs:177` | [BIN:STP-PPC:0x1010474C world setup] game type 0/2 load levels/Standard.sam then &lt;theme&gt;/Standard.sam; type 2 (Instant Action) adds &lt;theme&gt;/Easy_Standard.sam and only logs when it is missing |
 | STP-PPC:0x10119328 object loader | `source/OpenTPW/World/Objects/ObjectCatalog.cs:387` | [BIN:STP-PPC:0x10119328 object loader] In Instant Action (game type 2) Easy_&lt;object file&gt; is layered after the object file when it exists; Online_ files belong to the online game type and are not loaded offline |
+| STP-PPC:0x10121098 history setter | `source/OpenTPW/Client/AutomaticAdvisor.cs:43` | [BIN:STP-PPC:0x10121098 history setter] history saves the world's mGameTick (+0x1DA70C), which the park economy counts as park turns |
+| STP-PPC:0x101210F8 history elapsed | `source/OpenTPW/World/AdvisorScoreQueue.cs:83` | [BIN:STP-PPC:0x101210F8 history elapsed] (live mGameTick &gt;&gt; 2) − (saved &gt;&gt; 2), plain 32-bit subtraction |
 | STP-PPC:0x10125B7C default options | `source/OpenTPW/Compat/GraphicsSettings.cs:144` | [BIN:STP-PPC:0x10125B7C default options] Gestalt 'ram ' in MB (64 when unavailable) and 'pclk' in MHz (266 when unavailable): Low below 65 MB or 301 MHz, Medium below 192 MB or 450 MHz, otherwise High |
 | STP-PPC:0x10128B60 profile key count | `source/OpenTPW/Economy/ParkObjectives.cs:316` | [BIN:STP-PPC:0x10128B60 profile key count] keys = mExtraKeys + (earned global, per-theme and secret tickets) / 3, truncated; spent tickets are not subtracted |
 | STP-PPC:0x10137600 player save setup | `source/OpenTPW/World/Original/OriginalPark.cs:51` | [BIN:STP-PPC:0x10137600 player save setup] the level's easymode park is copied into a player's saves only for Instant Action players (0x1013741C passes the mode flag) |
+| STP-PPC:0x1013781C player selection | `source/OpenTPW/Client/AutomaticAdvisor.cs:45` | [BIN:STP-PPC:0x1013781C player selection] game type 2 = Instant Action, 0 otherwise (offline) |
 | STP-PPC:0x10137FD0 park view input | `source/OpenTPW/Hud/ParkHud.cs:489` | [BIN:STP-PPC:0x10137FD0 park view input] a button message in the park view plays cat_ui event 0x1F (0xBD when modifier flag 0x10 is set) |
 | STP-PPC:0x10154AA0 loans window | `source/OpenTPW/Economy/ParkEconomy.cs:87` | [BIN:STP-PPC:0x10154AA0 loans window] the Available Loans window only opens outside game type 2 (Instant Action) |
 | STP-PPC:0x1015D220 new-player dialog | `source/OpenTPW/Economy/ParkEconomyContracts.cs:7` | [BIN:STP-PPC:0x1015D220 new-player dialog] radio 0x70D "Instant Action" / 0x70E "Full Simulation"; 0x1013741C stores the choice as profile mEasyModeUser and 0x1013781C turns it into game type 2 (Instant Action) or 0 |
 | STP-PPC:0x10165A0C upgrade list | `source/OpenTPW/Economy/ParkEconomy.cs:569` | [BIN:STP-PPC:0x10165A0C upgrade list] game type 2 (Instant Action) lists no upgrades and shows UITEXT 27 instead |
 | STP-PPC:0x10166F1C upgrade purchase | `source/OpenTPW/Economy/ParkEconomy.cs:582` | [BIN:STP-PPC:0x10166F1C upgrade purchase] only the bank balance is checked; the upgrade is queued (0x100DF928) and waits for a mechanic, with or without mechanics on the staff |
 | STP-PPC:0x101C0F40 daily start-up movie | `source/OpenTPW/Client/Movie/IntroPlaylist.cs:6` | month modulo 8 ([BIN:STP-PPC:0x101C0F40 daily start-up movie], docs/TGQ-MOVIES.md). |
+| STP-PPC:0x101C2108 main loop | `source/OpenTPW/Client/AutomaticAdvisor.cs:58` | [BIN:STP-PPC:0x101C2108 main loop] CMsgEvent 10 (history reset) followed by CMsgEvent 0 at 0x101C2174 |
 | STP-PPC:0x101C22E0 scheduler | `source/OpenTPW/Economy/ParkCalendar.cs:32` | [BIN:STP-PPC:0x101C22E0 scheduler] eight 31 ms substeps make one park turn (248 ms of scaled time); the turn counter is world +0x1DA70C (0x10105398) |
 | STP-PPC:0x101C2444 park turn | `source/OpenTPW/Audio/GameAudio.cs:87` | [BIN:STP-PPC:0x101C2444 park turn] music parameter = min(min(guests in park / 2, 100), 89), or 0 when the world state is 4 |
 | STP-PPC:0x101C5C4C TbTimeStamp::GetTime | `source/OpenTPW/Economy/ParkCalendar.cs:41` | [BIN:STP-PPC:0x101C5C4C TbTimeStamp::GetTime] the hour comes from the OS LongDateRec hour field (0–23) |

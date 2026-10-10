@@ -39,6 +39,11 @@ internal sealed class GameFlow : IDisposable
 	public UiStringTable Strings { get; }
 	public UiContext Context { get; }
 	public OnlineFolders? OnlineFolders { get; set; }
+	/// <summary>Automatic advice in parks (off with <c>--no-advisor</c> and for <c>--advisor-say</c>/<c>--advisor-response</c>).</summary>
+	public bool AutomaticAdvisorEnabled { get; set; } = true;
+	/// <summary>The automatic advisor, created with the first park (null when disabled or its settings are missing).</summary>
+	public AutomaticAdvisor? Advisor { get; private set; }
+	private bool advisorUnavailable;
 	public IDisplaySettings Display { get; set; }
 	public string OptionsPath { get; set; }
 	/// <summary>When false, options are not written (smoke tests).</summary>
@@ -163,6 +168,13 @@ internal sealed class GameFlow : IDisposable
 			CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, Strings, FindLoadEntries(), entry => Queue( () => LoadPark( entry ) ) ),
 			GoOnline = ShowOnline,
 		} );
+		// [EXT:online-visit] read-only visits of shared parks get no advisor (the original has no visits)
+		if ( AutomaticAdvisorEnabled && visit == null && !advisorUnavailable )
+		{
+			Advisor ??= AutomaticAdvisor.TryCreate();
+			advisorUnavailable = Advisor == null;
+			Advisor?.AttachLevel( level );
+		}
 		return level;
 	}
 
@@ -170,6 +182,7 @@ internal sealed class GameFlow : IDisposable
 	{
 		Hud?.Stack.Clear();
 		Menu?.Stack.Clear();
+		Advisor?.DetachLevel();
 		GameAudio.LeavePark();
 		if ( Level != null )
 		{
@@ -228,6 +241,7 @@ internal sealed class GameFlow : IDisposable
 			Level.UiCapturesMouse = Hud.Update( Context, input );
 			Level.SimulationTimeScale = Hud.Status.TimeScale;
 			Level.Update();
+			Advisor?.Update();
 			GameAudio.Update( Level.Guests?.GetStatistics().InPark );
 			return;
 		}
@@ -246,7 +260,10 @@ internal sealed class GameFlow : IDisposable
 		overlayRenderer.BeginFrame();
 		var framebuffer = global::Global.Render.MultisampledFramebuffer;
 		if ( Level != null )
+		{
 			Level.Render();
+			Advisor?.Render();
+		}
 		else
 		{
 			// [DATA:lobby.wad:<theme>.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky
@@ -300,6 +317,7 @@ internal sealed class GameFlow : IDisposable
 
 	public void Dispose()
 	{
+		Advisor?.Dispose();
 		GameAudio.Shutdown();
 		Hud?.Stack.Clear();
 		Menu?.Stack.Clear();

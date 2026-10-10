@@ -84,10 +84,16 @@ all 274 original objects (plus the official bonus objects via `--bonus-data`) ca
 be built and run their original scripts and animations, without sounds or ride
 controllers ([objects](docs/OBJECTS.md)); `.LIP` marks
 are microsecond talking/silence marks, traced through the Mac advisor's signed
-conversion to a pause-aware millisecond clock. They drive the manual advisor
-slice with SDL audio via `--advisor-say N`. The original chooses one of five
-mouth shapes at random after each strict 100 ms deadline while talking; that
-behavior is recovered in a bounded helper and is not wired to this runtime.
+conversion to a pause-aware millisecond clock. In a park the advisor now speaks
+automatically for the traced game events: level start says the welcome from the
+level's own speech bank (and, in Instant Action, the prebuilt-park advice), and
+bankruptcy and park open/close are queued through the original's scored
+eight-slot queue with `Advisor.sam` scores (park open/close score 20, below the
+minimum 25, so they never play). Every other advice message is not wired yet;
+`--no-advisor` turns it off and `--advisor-say N` / `--advisor-response N` still
+play one clip by hand. While talking the mouth is one of five shapes chosen at
+random every 100 ms, as in the original (`AdvisorMouth`); pose, animation,
+placement and timing remain registered approximations ([LIPS](docs/LIPS.md)).
 ISO-only `.MTR` files decode as topology and matrices redundant with their banner
 `.MD2` (no material data; runtime use unknown). SDT speech, music and Layer I
 effects decode within 1 LSB of independent references on selected corpora;

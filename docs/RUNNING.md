@@ -256,7 +256,14 @@ between `Mouth - Aah` (talking) and `Mouth - Normal` from the clip's `.LIP` mark
 Without an audio device the mouth follows a wall clock silently. With `--smoke-test`
 it runs until the clip ends, checks the clock against wall time and the mouth sequence,
 and writes `artifacts/native-smoke-advisor-{talking,closed}.png`. The advisor's
-original pose, animation, mouth-shape choice and triggers are not reproduced; see LIPS.md.
+original pose and animation are not reproduced; see LIPS.md.
+
+In a park (front end or `--load-original-level <level>`) the advisor speaks by
+itself for the traced game events (LIPS.md, "Automatic advice"): the level-start
+welcome comes first. `--no-advisor` turns automatic advice off; `--advisor-say`
+and `--advisor-response` also turn it off. The Game Options Advisor switch stops
+it and the Tutorial switch gates tutorial advice. `--smoke-test
+--load-original-level jungle` logs `Advisor says response 1 … /levels/jungle/Speech/speechHD.SDT`.
 
 ## Development packages
 

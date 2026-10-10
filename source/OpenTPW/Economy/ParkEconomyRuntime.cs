@@ -13,7 +13,11 @@ public sealed class ParkEconomyRuntime
 		Economy = economy;
 		Import = import;
 		Economy.EventRaised += LogEvent;
+		Economy.EventRaised += ForwardEvent;
 	}
+
+	/// <summary>Events of the running economy, followed across <see cref="Load"/>.</summary>
+	public event Action<ParkEvent>? EventRaised;
 
 	public ParkEconomy Economy { get; private set; }
 	public OriginalEconomyImport? Import { get; }
@@ -79,6 +83,8 @@ public sealed class ParkEconomyRuntime
 	/// <summary>Called once per 60 Hz fixed simulation tick.</summary>
 	public void FixedTick() => Economy.AdvanceFixedTick();
 
+	private void ForwardEvent( ParkEvent item ) => EventRaised?.Invoke( item );
+
 	private void LogEvent( ParkEvent item )
 	{
 		switch ( item.Kind )
@@ -113,8 +119,10 @@ public sealed class ParkEconomyRuntime
 			return (Economy.Settings, Economy.Catalog);
 		} );
 		Economy.EventRaised -= LogEvent;
+		Economy.EventRaised -= ForwardEvent;
 		Economy = loaded;
 		Economy.EventRaised += LogEvent;
+		Economy.EventRaised += ForwardEvent;
 		if ( Guests != null )
 			Economy.GuestStatistics = Guests;
 	}

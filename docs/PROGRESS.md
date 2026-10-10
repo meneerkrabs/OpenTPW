@@ -605,3 +605,25 @@ path was not supplied. Release build passed with zero errors, and the Dutch
 Metal smoke passed **264 frames** with strict text readback and the existing
 online/folder, mode, payment, reload and read-only guards. No wider codec or
 research batch was included in this merge.
+
+## Automatic advisor (October 10, 2026)
+
+- The advisor speaks by itself in parks for the traced game events: level start
+  (events 10 then 0: welcome response 1 from the level bank; in Instant Action
+  also advice 323 → response 587 → global 606), bankruptcy (event 2 → 274/275)
+  and park open/close (events 3/4 → 308–311). Descriptor rows for these five
+  messages are in `AdvisorTables`; responses come from the shipped table by
+  stored ID. The scored eight-slot queue, eligibility and history are a port of
+  the reviewed lane model; scores and group controls come from `Advisor.sam` at
+  runtime. Park open/close score 20 is below the minimum 25, so it queues and
+  never plays. `--no-advisor` and the Game Options Advisor/Tutorial switches are
+  honoured. Details and the seven new approximations ADVISOR-015–021: LIPS.md,
+  "Automatic advice".
+- Tests: full suite without assets 895 passed / 233 skipped, with
+  `OPENTPW_GAME_PATH` 1,065 / 63; 0 failed. Advisor subset with assets 63 / 1
+  (German overlay not supplied). Native macOS arm64 Metal `--smoke-test
+  --load-original-level jungle` passed and logged response 1 from
+  `/levels/jungle/Speech/speechHD.SDT` (28.63 s, 35 LIP marks).
+- Open: the other 346 descriptors and computed score producers, the original
+  producers' conditions for events 2/3/4, the pause-aware advisor clock, the
+  animation/deferred speech start, and listening/visual checks of the result.

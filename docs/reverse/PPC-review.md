@@ -3101,3 +3101,126 @@ runtime intro on a window, PC parity, and any filesystem scan.
 2. Scenarios owner: R16-5 wording. R16-4 and R16-6 are optional hardening.
 3. Formats `f443475`: no change needed from this review.
 4. Batch 2: pending its final SHA for the count/alias/register/containment rerun.
+
+## 54. Advisor lane review A1: ppc-advisor `a479cff..526e2bf` (phases 6–10)
+
+Scope: the five commits `2b8e4bf`, `be46ebe`, `00d5c9c`, `1af929b` and `526e2bf`
+on ppc-advisor, with merge-base `a479cff` against integration. Every build and test
+used a `git archive` copy under `/tmp`. The Mac containers are the identified
+`SimThemePark.data` (`04809cd4…95f5`) and `sound_shared.data` (`7132c2f1…b94f`).
+The PC data is the supplied `Data` tree. The Mac data is the UI lane's existing
+read-only copy in `/tmp/ppc-advisor-mac-Data`. No original code was executed, no
+filesystem or mount was scanned, and the other worktrees were only read.
+
+### Merge blockers
+
+- **A1-1 (blocker: post-merge build break).** `be46ebe` adds
+  `tools/ppc-analysis/lanes/advisor/audio-events/AudioEventAssets.csproj`, which
+  targets `net8.0` and has a `ProjectReference` to `source/OpenTPW.Files`. At
+  integration `ba70ea5`, `OpenTPW.Files` targets `net10.0`. `0d58bd4` says
+  "source-project references must follow net10". On a merged copy (`ba70ea5` plus
+  the 526e2bf advisor lane), SDK 10.0.401 fails with `NU1201: Project OpenTPW.Files
+  is not compatible with net8.0`. Changing only the TFM is not enough: the tool's
+  `TreatWarningsAsErrors` then turns the NuGet audit warnings for `OpenTPW.Files`'
+  transitive `Newtonsoft.Json` 9.0.1 (NU1903) and `Zio` 0.17.0 (NU1901) into errors.
+  **Fix (verified):** use `net10.0` and add
+  `<WarningsNotAsErrors>NU1901;NU1903</WarningsNotAsErrors>`. The build then
+  succeeds, and the 28-EventMap report is byte-identical to the SDK 8 run on the
+  `526e2bf` tree. Also update the phase-7 command to the SDK 10 `dotnet`. The
+  standalone `OriginalAdvisorLipDriver.csproj` is self-contained, so it can stay
+  net8 (52/52 under SDK 8.0.425).
+- **A1-2 (blocker: conflicts).** `git merge-tree --write-tree ba70ea5 526e2bf`
+  conflicts in `source/OpenTPW.Files/Formats/Sound/MP2File.cs` and
+  `docs/reverse/PPC-advisor.md`. The cause is that `2b8e4bf`'s production change is
+  already on integration. `Mp2Decoder.cs` and `MP2FileMetadataTests.cs` are
+  identical at `526e2bf` and `ba70ea5`. `MP2File.cs` on integration is a superset:
+  `28864fa` renames `Samples` to `RawSampleField`, takes `BitsPerSample` from the
+  entry, and keeps the `TryReadFrameFormat` override. **Resolution:** take
+  `ba70ea5`'s `MP2File.cs` as is. Keep `ba70ea5`'s phase-5 paragraph. Keep the
+  phase 6–10 appendix, but correct phase 6's sentence about the "legacy
+  `SoundFile` reads signed Int16 … 44,100 wrap negative". That is stale after
+  `28864fa`, which reads the unsigned packed fields. The cleanest route is to drop
+  `2b8e4bf` and rebase `be46ebe..526e2bf` onto `ba70ea5`.
+- **Scope note.** `2b8e4bf` is the only commit that touches anything outside the
+  lane: three production C# files. `be46ebe..526e2bf` touches only
+  `tools/ppc-analysis/lanes/advisor/**` and `docs/reverse/PPC-advisor.md`. No root
+  docs changed. After A1-2 is resolved, the range adds no production change.
+
+### For the production port of `OriginalAdvisorScoreQueue`/`LipDriver`
+
+No defect was found in the recovered helper rules. The range does not modify
+`OriginalAdvisorScoreQueue.cs`, `OriginalAdvisorLipDriver.cs` or their tests. The
+only change is a `Compile Remove="audio-events/**"` line. The CMsgEvent → advice →
+response → speech mapping for events 0/2/3/4 and 10 checks out independently (see
+`be46ebe` below). **There is one porting hazard.** The queue returns
+`ResponseId = FirstResponseId + variant`, which is a stored **ID**. Native
+`0x6b7c` resolves it by searching table `0x18ff4` on word 0 (stride 32, until
+sentinel 9999), not by row position. From row 393 on, 216 of the 610 rows have an
+ID that differs from their position. Events 0/2/3/4 use rows below 393, so they
+are unaffected. The event-0 mode-2 advice 323, however, gives first response 587,
+which resolves **by ID** to row 584: speech/LIP 606. Indexing **by position** would
+give row 587: response 590, speech 638, LIP 0. A port that indexes the response
+array directly would play the wrong clip for 323 and for any later response.
+`test_advisor_a1.NativeAdvisor` pins this.
+
+### Per-commit verdicts
+
+| Commit | Verdict | Independently decoded (sample) | Reruns |
+| --- | --- | --- | --- |
+| `2b8e4bf` metadata | Code correct, **superseded**: already on integration (A1-2). Out of lane. | `TryReadFrameFormat` reuses `Header.Parse` and requires a complete first frame. The only constructor caller is `SoundFile.GetFile`. No production consumer reads `MP2File.SampleRate`: `SpeechAudioPlayer` uses decoded `Mp2Audio`. | Focused MPEG/LIP/metadata filter with `OPENTPW_GAME_PATH`: 61 pass, 6 inconclusive (other-language tests outside the commit's filter). `MP2FileMetadataTests`, including both private clips: pass. Full `OpenTPW.Tests` on the 526e2bf tree: **791 pass, 54 skip, 0 fail** (SDK 8.0.425). |
+| `be46ebe` identities | **Confirmed.** Blocker A1-1. | CMsgEvent ctor `0x116540` `stw r4,8(r3)`. Receiver `0xad40` `lwz r4,8(r29)` → `bl 0x94dc`. `cmpli r4,10`. TOC slot `0x2354` → data `0x1e0f4`. Table: 0→`0x9524`, 2→`0x98b0`, 3→`0x9a64`, 4→`0x9c18`, 10→`0x9dcc` (loads a TOC object, adds 122 and calls `0xa90`; the doc's earlier history-clear reading was not re-derived), other entries → `0x9e84`. Literals 0/106/128/129 → `bl 0xb6d8`. Advice 323 at `0x9708` behind `cmpi r0,2`. Response rows 1 / 274–275 / 308–311 / 587 → speech 1 / 424–425 / 342–345 / 606 by ID. | `audio_event_evidence.py`: exit 0. `AudioEventAssets`: 28 EventMaps. Corpus: 31 catalogs and 1,267 IDs, as stated. |
+| `00d5c9c` bank ordinals | **Confirmed.** | `0x16af4` `addi r0,r28,-1`, `lwz r3,44(r31)`, `slwi 2`, `lwzx`, `sth r0,12(r25)`. `0x6fa4` `addi r0,r4,-1`. New bank `0x15b8c–0x15b94` increments +52. `0x15c24–0x15c30` `stwx` into vector +44. | `bank_remap_evidence.py`: exit 0. 3,631 PC and 1,105 Mac choices resolved. |
+| `1af929b` selection | **Confirmed.** Bounded: these are explicit-input algebra helpers, not a scheduler. | Event chooser `0xff40`: LCG `0x19660d`/`0x3c6ef35f`, `>>16`, `cmpl sum,draw` + `blt` continues, so the first sum ≥ draw is chosen. Exhaustion `0x10130` stores the first event. Count-1 bypass. Anti-repeat `cmpli count,2`/`ble` skips, history +80. Sample chooser `0xfcb4`: threshold +4, the same ≥ rule, exhaustion → null, history +81. Branch bounds `0x19364–0x19378` are inclusive. `divwu` by the eligible weight sum at `0x193c4`. Parameter value `mulhwu 0x51eb851f`, `>>5` = unsigned /100. Masks `0xf2e0`: +24 → byte +5, +28 → byte +6. Differencing `0x16654–0x16660`. | `sound_selection_evidence.py`: exit 0. Counts as stated: 26/31 cumulative, 201/73 arrays below the draw domain, 0 nonmonotone. |
+| `526e2bf` seed ownership | **Confirmed. The qualification is correct.** | All nine `addi rX,r2,0x42e4` sites match. A forward scan from each site to the first kill or branch finds only one store, the initializer's `0x118cc`. Initializer `0x118b4` has a single caller at `0x3c`. The neighbouring data exports are `mChannelState` at `0xc2d8`, a 4-byte float at `0xc2e0`, and `mpSoundManager` at `0xc2e8`, so no adjacent object spans `0xc2e4`. | `sound_seed_evidence.py`: exit 0 over 16 identified containers. |
+
+All lane claims stay bounded. None asserts PC or whole-runtime parity. Weights
+come from the disk catalogs plus the native differencing rule. The seed is the
+clock value, and no sequence is invented. Phase 10 explicitly leaves external
+mutation of the exported seed open.
+
+### Lower-severity notes
+
+- **A1-3 (low, `2b8e4bf`, only relevant at `a479cff`).** The invalid-frame fallback
+  changed from a constant 22,050 to the legacy signed-`Int16` container rate. The
+  commit's own doc says that rate wraps 44,100 negative. This has no consumer
+  impact, and it is moot on `ba70ea5`, where `SoundFile` reads the unsigned field.
+- **A1-4 (low, test coverage).** `audio_event_evidence.py` pins the advice-323
+  literal and constructor, but not its response/speech row. The doc's 587 → 606 is
+  correct only because the native lookup is by ID (see above). That lookup is now
+  pinned in the review test.
+- **A1-5 (nit).** `InspectEventMaps` looks for a `.git` ancestor. From an archive
+  copy, it throws "Write the interpreted corpus report outside the repository"
+  even when the output is outside. It fails closed, but the message is misleading.
+- **A1-6 (nit).** For the branching sentence, zero eligible links branch away at
+  `0x19398` before the division. Only nonzero links with zero total weight reach
+  `divwu`. The helper (`None` with no eligible links, `ValueError` for a zero sum)
+  matches this. The phase 9 wording could say so.
+- **Containment (git objects only).** The largest added blob is 87 KB (the
+  advisor doc). Hex content is limited to SHA-256 identities, code/data offsets
+  and synthetic test words. No original stream, PCM, script bytes or disassembly
+  listing is added. The new lane C# files and `MP2FileMetadataTests.cs` are CRLF,
+  which matches `.editorconfig`. Plain `git diff --check` reports them, while the
+  Python/Markdown diff is clean.
+
+### Results
+
+| Target | Command | Result |
+| --- | --- | --- |
+| `526e2bf` (worktree at HEAD, read-only) | lane `unittest discover` with bin/PC/Mac fixtures; without fixtures | 73 OK, 0 skipped; 73 OK, 7 skipped |
+| `526e2bf` | shared toolkit `unittest discover tools/ppc-analysis` | 16 OK |
+| `526e2bf` | the four evidence scripts | exit 0 |
+| `526e2bf` archive, SDK 8.0.425 | `OriginalAdvisorLipDriver`; `AudioEventAssets` build+run | 52/52; 28 EventMaps |
+| merged copy, SDK 10.0.401 | `AudioEventAssets` as-is; with net10 + NU1901/NU1903 fix | NU1201 fail; build OK, identical report |
+| review lane | `test_advisor_a1` with `OPENTPW_PPC_BIN_ROOT` and `OPENTPW_REVIEW_REPO`; without | 10 OK; 1 OK, 9 skipped |
+
+Not run: original audio or advisor runtime, PC executable comparison, Windows
+seed policy, and a real merge commit (only `merge-tree` was run).
+
+### Handoff
+
+1. Advisor owner: fix A1-1 (TFM plus audit-warning carve-out, and the doc command).
+   Resolve A1-2 by dropping `2b8e4bf` and rebasing onto `ba70ea5`, then update
+   phase 6's stale `SoundFile` sentence.
+2. Production port owner: resolve `ResponseId` by stored ID (native `0x6b7c`), not
+   by array index. Advice 323 is the in-range witness.
+3. Optional: A1-4 to A1-6.

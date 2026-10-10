@@ -166,6 +166,46 @@ public class AnimationOpcodeTests
 	}
 
 	/// <summary>
+	/// WAITANIM_CH adds its unsigned wait to the 32-bit clock without fctiwz (0xb035c): a 166 ms clip gives
+	/// 2³² − 134, so at a clock of 10 s the deadline is 134 ms in the past and the script continues next slice. Only a
+	/// clock below 134 ms leaves the sum unwrapped (a wait of about 49.7 days), and a sum of exactly 0 reads as "not
+	/// waiting", so the next execution triggers again. WAITANIM saturates the same clip to INT32_MAX instead.
+	/// </summary>
+	[TestMethod]
+	public void WaitAnimChannelWrapsAShortClipIntoThePast()
+	{
+		Assert.AreEqual( 4294967162u, RideAnimationTiming.WaitAnimChannelDelay( 166 ) );
+		Assert.AreEqual( int.MaxValue, RideAnimationTiming.WaitAnimDelay( 166, RideVM.ScriptSpeed ), "WAITANIM's fctiwz saturates" );
+
+		var host = new Host { Result = _ => 166 };
+		var vm = Load( Idle( new Asm().I( Opcode.WAIT, 10000 ).I( Opcode.WAITANIM_CH, 5, 0, 3 ).I( Opcode.COPY, V( 0 ), 1 ) ), host );
+		Run( vm, 1 );
+		while ( host.Calls.Count == 0 )
+			Run( vm, 1 );
+		Assert.IsTrue( vm.TimeMilliseconds >= 10000, vm.TimeMilliseconds.ToString() );
+		Assert.AreEqual( RideVMState.Running, vm.State, "a deadline in the past only yields" );
+		Assert.AreEqual( 0, vm.Variables[0] );
+		Run( vm, 1 );
+		Assert.AreEqual( 1, vm.Variables[0], "the next slice finds the deadline passed and continues" );
+		CollectionAssert.AreEqual( new[] { "WAITANIM_CH 5 0 3" }, host.Calls, "one trigger" );
+
+		var early = Load( Idle( new Asm().I( Opcode.WAITANIM_CH, 5, 0, 3 ).I( Opcode.COPY, V( 0 ), 1 ) ), new Host { Result = _ => 166 } );
+		Run( early, 1 );
+		Assert.AreEqual( RideVMState.Waiting, early.State, "at 16 ms the sum does not wrap" );
+		Assert.AreEqual( early.TimeMilliseconds + 4294967162d, early.WakeTimeMilliseconds, 1e-3 );
+
+		host = new Host { Result = _ => 50 };
+		var zero = Load( Idle( new Asm().I( Opcode.WAITANIM_CH, 5, 0, 3 ).I( Opcode.COPY, V( 0 ), 1 ) ), host );
+		zero.Advance( 0.25 );
+		Assert.AreEqual( 250u, zero.ClockMilliseconds32 );
+		Assert.AreEqual( RideVMState.Running, zero.State );
+		zero.Advance( 0.25 );
+		Assert.AreEqual( 2, host.Calls.Count, "250 + (2³² − 250) = 0 is \"not waiting\": the next execution triggers again" );
+		zero.Advance( 0.25 );
+		Assert.AreEqual( 1, zero.Variables[0] );
+	}
+
+	/// <summary>
 	/// LOOPANIM keeps a script-local token: an equal token is a no-op (also for the deadline), the plain triggers
 	/// reset it to 0xFFFF, and the _CH opcodes neither test nor reset it.
 	/// </summary>
@@ -264,9 +304,14 @@ public class AnimationOpcodeTests
 		Assert.AreEqual( 700, vm.Variables[0], "the out variable is not speed-scaled" );
 		Assert.AreEqual( vm.TimeMilliseconds + 175, vm.Wait4AnimDeadline, 1e-9 );
 		CollectionAssert.AreEqual( new[] { "TRIGANIMSPEED 6 0 0 4000" }, host.Calls );
+		Assert.AreEqual( -175, RideAnimationTiming.SpeedTriggerDelay( 700, -4000 ), "divw is signed: a negative speed puts the deadline before now" );
 		var zero = Load( Idle( new Asm().I( Opcode.TRIGANIMSPEED, 6, 0, V( 0 ), 0 ) ), new Host() );
 		Run( zero, 1 );
-		Assert.AreEqual( RideVMState.Faulted, zero.State, "speed 0 has no traced contract" );
+		Assert.AreEqual( RideVMState.Faulted, zero.State, "speed 0 divides by zero (undefined divw)" );
+		var negative = Load( Idle( new Asm().I( Opcode.TRIGANIMSPEED, 6, 0, V( 0 ), 0xF060 ) ), new Host() );
+		Run( negative, 1 );
+		Assert.AreEqual( RideVMState.Faulted, negative.State, "a negative speed is defined in the original, but its channel playback is not traced (RIDES-038)" );
+		StringAssert.Contains( negative.FaultMessage, "RIDES-038" );
 	}
 
 	/// <summary>FLUSHANIM only asks the host to drop the deferred clip: the deadline stays.</summary>
@@ -300,16 +345,31 @@ public class AnimationOpcodeTests
 		Assert.AreEqual( 4, none.Variables[0] );
 	}
 
-	/// <summary>Without an animation host a trigger counts as a missing clip (1000 ms), so waits stay finite.</summary>
+	/// <summary>
+	/// Without an animation host the script has no object: every trigger handler uses ret = 0 (li r3,0 at 0xafb1c,
+	/// 0xafc74, 0xafe88, 0xb0078, 0xb01d4, 0xb032c, 0xb0510). The triggers write 300, WAITANIM waits INT32_MAX ms,
+	/// WAITANIM_CH wraps like any clip under 300 ms, and TRIGWAITANIM never finds its AnimID.
+	/// </summary>
 	[TestMethod]
-	public void UnansweredTriggersCountAsMissingClips()
+	public void ScriptsWithoutAnObjectTriggerWithZeroMilliseconds()
 	{
-		var vm = Load( Idle( new Asm().I( Opcode.TRIGANIM, 5, 0, V( 0 ) ).I( Opcode.WAITANIM, 5, 0 ).I( Opcode.TRIGWAITANIM, 5, 0, V( 1 ) ).I( Opcode.COPY, V( 2 ), 1 ) ) );
+		var vm = Load( Idle( new Asm().I( Opcode.TRIGANIM, 5, 0, V( 0 ) ).I( Opcode.TRIGANIMSPEED, 5, 0, V( 1 ), 2000 ).I( Opcode.WAITANIM, 5, 0 ).I( Opcode.COPY, V( 2 ), 1 ) ) );
 		Run( vm, 1 );
-		Assert.AreEqual( 700, vm.Variables[0] );
-		Assert.AreEqual( vm.TimeMilliseconds + 700, vm.WakeTimeMilliseconds, 1e-6 );
-		Run( vm, 43 );
-		Assert.AreEqual( (700, 1), (vm.Variables[1], vm.Variables[2]), "TRIGWAITANIM has no channel to wait for" );
+		Assert.AreEqual( (300, 300), (vm.Variables[0], vm.Variables[1]) );
+		Assert.AreEqual( RideVMState.Waiting, vm.State );
+		Assert.AreEqual( vm.TimeMilliseconds + int.MaxValue, vm.WakeTimeMilliseconds, 1e-3, "WAITANIM waits about 24.8 days" );
+
+		var channel = Load( Idle( new Asm().I( Opcode.WAIT, 1000 ).I( Opcode.WAITANIM_CH, 5, 0, 1 ).I( Opcode.COPY, V( 2 ), 1 ) ) );
+		Run( channel, 70 );
+		Assert.AreEqual( 1, channel.Variables[2], "WAITANIM_CH's 2³² − 300 wraps into the past once the clock is past 300 ms" );
+
+		var wait = Load( Idle( new Asm().I( Opcode.TRIGWAITANIM, 5, 0, V( 1 ) ).I( Opcode.COPY, V( 2 ), 1 ) ) );
+		Run( wait, 120 );
+		Assert.AreEqual( 300, wait.Variables[1] );
+		Assert.AreEqual( 0, wait.Variables[2], "without an object the token compare never matches" );
+		Assert.AreEqual( 6, wait.TriggerWaitToken );
+		Assert.AreEqual( RideVMState.Running, wait.State, "it re-executes every slice" );
+		Assert.AreEqual( 1, wait.UnimplementedEffects[Opcode.TRIGWAITANIM], "and triggers only once" );
 	}
 
 	/// <summary>The deadline, the LOOPANIM token and the TRIGWAITANIM token decide later steps, so the canonical hash reads them.</summary>

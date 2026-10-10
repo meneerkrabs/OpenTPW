@@ -8,8 +8,8 @@ public static partial class OpcodeHandlers
 	/// returns the trigger's millisecond result (<c>ret</c>: the clip length, 1000 for a missing clip, never
 	/// speed-scaled). The VM turns <c>ret</c> into the script's waits: each TRIGANIM-family opcode overwrites the
 	/// script's single WAIT4ANIM deadline (script +164), WAITANIM/LOOPANIM zero it, and the plain triggers reset the
-	/// LOOPANIM token (+168). Without an animation host (an effect recorded as unimplemented) a trigger counts as
-	/// a missing clip, an OpenTPW policy for scripts that run without an object.
+	/// LOOPANIM token (+168). Without an animation host (an effect recorded as unimplemented) the script has no
+	/// object (+200 null): every trigger handler then skips the trigger and uses <c>ret</c> = 0, as the original does.
 	/// </summary>
 	public static class Animation
 	{
@@ -25,13 +25,13 @@ public static partial class OpcodeHandlers
 			vm.LoopAnimationToken = RideAnimationTiming.NoLoopToken;
 		}
 
-		[OpcodeHandler( Opcode.WAITANIM, RideOpcodeStatus.Hooked, "STP-PPC 0xafbbc: trigger channel 0, flags 0; waits max(unsigned(ret − 300) / script speed, 300) (a clip under 300 ms wraps to INT32_MAX ms); zeroes the WAIT4ANIM deadline; LOOPANIM token reset" )]
+		[OpcodeHandler( Opcode.WAITANIM, RideOpcodeStatus.Hooked, "STP-PPC 0xafbbc: trigger channel 0, flags 0; waits max(unsigned(ret − 300) / script speed, 300) (a clip under 300 ms saturates to INT32_MAX ms) on a u32 deadline; zeroes the WAIT4ANIM deadline; LOOPANIM token reset" )]
 		public static void WaitAnim( RideVM vm, Operand animation, Operand variant )
 		{
 			var wait = RideAnimationTiming.WaitAnimDelay( Trigger( vm, Opcode.WAITANIM, new[] { animation, variant } ), RideVM.ScriptSpeed );
 			vm.Wait4AnimDeadline = 0;
 			vm.LoopAnimationToken = RideAnimationTiming.NoLoopToken;
-			vm.WaitFor( wait );
+			WaitUntilDeadline( vm, unchecked((uint)wait) );
 		}
 
 		[OpcodeHandler( Opcode.LOOPANIM, RideOpcodeStatus.Hooked, "STP-PPC 0xafd00: no-op while token anim + (sub << 16) equals script +168; else loops on channel 0 (flags 1), stores the token, zeroes the WAIT4ANIM deadline" )]
@@ -57,9 +57,12 @@ public static partial class OpcodeHandlers
 		public static void TrigAnimSpeed( RideVM vm, Operand animation, Operand variant, Operand duration, Operand perMille )
 		{
 			var speed = perMille.Value;
-			// Zero and negative speeds have no traced contract (divw by zero is undefined on PowerPC); the corpus uses 1800–4000.
+			// Zero is undefined (divw by zero on PowerPC); the corpus uses 1800–4000.
+			// [APPROX:RIDES-038] A TRIGANIMSPEED speed operand below 0 faults the script: the original defines it (signed divw gives a deadline before now, the channel gets a negative speed), but how the channel frame 0xa6484 and the clip-end test 0xa7190 behave with a negative speed is not traced — evidence needed: the channel update with a negative speed
 			if ( speed <= 0 )
-				throw new RideScriptException( $"TRIGANIMSPEED speed {speed} per mille is outside the traced domain" );
+				throw new RideScriptException( speed == 0
+					? "TRIGANIMSPEED speed 0 divides by zero (undefined divw)"
+					: $"TRIGANIMSPEED speed {speed} per mille: negative speeds are defined in the original but their channel playback is not traced (RIDES-038)" );
 			var adjusted = RideAnimationTiming.AdjustTriggerReturn( Trigger( vm, Opcode.TRIGANIMSPEED, new[] { animation, variant, duration, perMille } ) );
 			duration.Value = adjusted;
 			vm.Wait4AnimDeadline = vm.TimeMilliseconds + RideAnimationTiming.SpeedTriggerDelay( adjusted, speed );
@@ -80,12 +83,12 @@ public static partial class OpcodeHandlers
 			vm.Wait4AnimDeadline = vm.TimeMilliseconds + RideAnimationTiming.TriggerDelay( adjusted, RideVM.ScriptSpeed );
 		}
 
-		[OpcodeHandler( Opcode.WAITANIM_CH, RideOpcodeStatus.Hooked, "STP-PPC 0xb0268: as WAITANIM on channel operand 3 without the speed division (unsigned max(ret − 300, 300)); zeroes the deadline" )]
+		[OpcodeHandler( Opcode.WAITANIM_CH, RideOpcodeStatus.Hooked, "STP-PPC 0xb0268: as WAITANIM on channel operand 3 without the speed division or fctiwz: unsigned max(ret − 300, 300) added to the clock as a wrapping u32 (0xb035c), so a clip under 300 ms gives a deadline in the past and the script continues next slice; zeroes the deadline" )]
 		public static void WaitAnimChannel( RideVM vm, Operand animation, Operand variant, Operand channel )
 		{
 			var wait = RideAnimationTiming.WaitAnimChannelDelay( Trigger( vm, Opcode.WAITANIM_CH, new[] { animation, variant, channel } ) );
 			vm.Wait4AnimDeadline = 0;
-			vm.WaitFor( wait );
+			WaitUntilDeadline( vm, wait );
 		}
 
 		[OpcodeHandler( Opcode.LOOPANIM_CH, RideOpcodeStatus.Hooked, "STP-PPC 0xb037c: loops on channel operand 3 (flags 1) on every call, no token check; zeroes the deadline" )]
@@ -117,9 +120,38 @@ public static partial class OpcodeHandlers
 			vm.Wait4AnimDeadline = 0;
 		}
 
-		/// <summary>Runs a trigger effect; <c>ret</c>, or the missing-clip result when no animation host answers.</summary>
+		/// <summary><c>ret</c> of a script without an object (+200 null): <c>li r3,0</c> instead of the trigger.</summary>
+		// [BIN:STP-PPC:0x100AFB1C no object] TRIGANIM, WAITANIM (0x100AFC74), TRIGWAITANIM (0x100AFE88), TRIGANIMSPEED (0x100B0078), TRIGANIM_CH (0x100B01D4), WAITANIM_CH (0x100B032C) and TRIGWAITANIM_CH (0x100B0510) skip the trigger and use 0 when script +200 is null
+		public const int NoObjectMilliseconds = 0;
+
+		/// <summary>Runs a trigger effect; <c>ret</c>, or 0 when no animation host answers (a script without an object).</summary>
 		private static int Trigger( RideVM vm, Opcode opcode, Operand[] operands ) =>
-			vm.TryEffect( opcode, operands, out var result ) ? result : ObjectAnimator.MissingClipMilliseconds;
+			vm.TryEffect( opcode, operands, out var result ) ? result : NoObjectMilliseconds;
+
+		/// <summary>
+		/// WAITANIM(_CH)'s wait (0xafcc4/0xb034c): the deadline +160 is the 32-bit clock plus the wait as a wrapping
+		/// add, and each later execution continues once <c>now ≥ deadline</c> (unsigned, 0xafc04/0xb02bc). A wrapped
+		/// deadline is already past: the script yields and continues at its next slice (the re-execution that finds the
+		/// deadline passed is folded into that yield, as the re-executions of an ordinary wait are). A deadline of exactly
+		/// 0 reads as "not waiting", so the next execution triggers again.
+		/// </summary>
+		private static void WaitUntilDeadline( RideVM vm, uint wait )
+		{
+			var now = vm.ClockMilliseconds32;
+			var deadline = unchecked(now + wait);
+			if ( deadline == 0 )
+			{
+				vm.RepeatInstruction();
+				vm.EndSlice();
+				return;
+			}
+			if ( deadline <= now )
+			{
+				vm.EndSlice();
+				return;
+			}
+			vm.WaitFor( wait );
+		}
 
 		private static void Query( RideVM vm, Opcode opcode, Operand[] operands, Operand dest )
 		{
@@ -133,15 +165,20 @@ public static partial class OpcodeHandlers
 		/// <summary>
 		/// TRIGWAITANIM(_CH): the first execution triggers, sets the out variable and deadline and stores the
 		/// wait token AnimID + 1 (+188), then executes again at once (no yield, 0xaff30). A later execution reads
-		/// the channel's AnimID (0xa7dcc): equal → clears the token and continues; different → executes again
-		/// next slice (0xafe28, +152 cleared). A clip without a member leaves the channel unchanged, so the
-		/// script then waits until the channel shows that AnimID.
+		/// the channel's AnimID (0xa7dcc) into the stack word that holds the out operand's code word: equal →
+		/// clears the token and continues; different → executes again next slice (0xafe28, +152 cleared). A clip
+		/// without a member leaves the channel unchanged, so the script then waits until the channel shows that
+		/// AnimID. Without an object the query is skipped (0xafde8) and the compare reads the out operand's code
+		/// word + 1, which for a variable carries the tag 0xC0 in its top byte (0xae6ec) and never equals the token:
+		/// the script re-executes every slice for good.
 		/// </summary>
 		private static void TriggerAndWait( RideVM vm, Opcode opcode, Operand[] operands, Operand animation, Operand duration, int channel, bool resetLoopToken )
 		{
 			if ( vm.TriggerWaitToken != 0 )
 			{
-				if ( vm.Effects is IRideAnimationQuery query && query.GetAnimationId( vm, channel ) + 1 != vm.TriggerWaitToken )
+				// [APPROX:RIDES-037] Without an object TRIGWAITANIM(_CH) compares its token with the out operand's code word + 1; OpenTPW treats a literal out operand like a variable (never equal), as the in-memory word of a literal is not traced — evidence needed: the RSE loader's literal operand encoding
+				var matched = vm.Effects is IRideAnimationQuery query && query.GetAnimationId( vm, channel ) + 1 == vm.TriggerWaitToken;
+				if ( !matched )
 				{
 					vm.RepeatInstruction();
 					vm.EndSlice();
@@ -150,15 +187,11 @@ public static partial class OpcodeHandlers
 				vm.TriggerWaitToken = 0;
 				return;
 			}
-			var answered = vm.TryEffect( opcode, operands, out var result );
-			var adjusted = RideAnimationTiming.AdjustTriggerReturn( answered ? result : ObjectAnimator.MissingClipMilliseconds );
+			var adjusted = RideAnimationTiming.AdjustTriggerReturn( Trigger( vm, opcode, operands ) );
 			duration.Value = adjusted;
 			vm.Wait4AnimDeadline = vm.TimeMilliseconds + RideAnimationTiming.TriggerDelay( adjusted, RideVM.ScriptSpeed );
 			if ( resetLoopToken )
 				vm.LoopAnimationToken = RideAnimationTiming.NoLoopToken;
-			// Without an animation host there is no channel to wait for.
-			if ( !answered || vm.Effects is not IRideAnimationQuery )
-				return;
 			vm.TriggerWaitToken = animation.Value + 1;
 			vm.RepeatInstruction();
 		}
@@ -209,7 +242,10 @@ public static class RideAnimationTiming
 		return unchecked((uint)value) >= MinimumWaitMilliseconds ? value : MinimumWaitMilliseconds;
 	}
 
-	/// <summary>WAITANIM_CH (0xb0330): unsigned <c>max(ret − 300, 300)</c> without the speed division.</summary>
+	/// <summary>
+	/// WAITANIM_CH (0xb0330): unsigned <c>max(ret − 300, 300)</c> without the speed division and without
+	/// <c>fctiwz</c>, so a <c>ret</c> below 300 ms gives 2³² − (300 − ret), which the deadline add wraps into the past.
+	/// </summary>
 	public static uint WaitAnimChannelDelay( int returned )
 	{
 		var unsigned = unchecked((uint)(returned - MinimumWaitMilliseconds));

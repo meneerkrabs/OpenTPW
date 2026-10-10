@@ -9,7 +9,7 @@ public static class RidesApproximations
 	public static readonly IReadOnlyList<(string Id, string Rule)> Entries = new[]
 	{
 		("RIDES-001", "Mac channel rate 30 is proved; Windows rate and native scaled/unscaled clock selection remain unverified"),
-		("RIDES-003", "finished clips hold their last pose (AnimID 14 path traced; object flags 0x8/0x10 untraced)"),
+		("RIDES-003", "finished clips hold their last pose (AnimID 14 path traced; object flags 0x8/0x10 and the AnimID-14 copy-back slot untraced)"),
 		("RIDES-008", "ANIM_* to member letter/variant mapping derived from names and scripts"),
 		("RIDES-009", "position of shared (non-Info.Id) .sam files in the object layer order"),
 		("RIDES-010", "OBJECT_NAMES bound by English name equality"),
@@ -31,11 +31,14 @@ public static class RidesApproximations
 		("RIDES-028", "non-walkable object access cells use the nearest walkable path"),
 		("RIDES-029", "12-byte vertex block (record flag 0x4000) shown as the stored mesh; no reader of its floats traced"),
 		("RIDES-030", "node-state bit 0x10 (clip node lists, toggles) hides the node's mesh"),
-		("RIDES-031", "relative-animation models play set mode; add mode behind ride-loader argument 0x20000 not modelled"),
+		("RIDES-031", "relative-animation models play vertex and UV tracks in set mode; add mode behind ride-loader argument 0x20000 not modelled"),
 		("RIDES-032", "every placed instance takes the callback update route; the object-list route (no posing, no-reset replay) is not modelled"),
 		("RIDES-033", "script speed fixed at 1.0 (initial bias 50); native writers of the bias not modelled"),
 		("RIDES-034", "no idle restart of AnimID 5 on objects with +4 & 0x8004 clear"),
-		("RIDES-035", "MD2 texture-frame tracks not applied")
+		("RIDES-035", "MD2 texture-frame tracks not applied"),
+		("RIDES-036", "UV pass always runs: global option bit 0x10 and node bit 0x4000 taken as clear (setters untraced)"),
+		("RIDES-037", "TRIGWAITANIM without an object treats a literal out operand like a variable (never resumes)"),
+		("RIDES-038", "TRIGANIMSPEED speed below 0 faults; negative channel playback untraced")
 	};
 
 	private static bool logged;

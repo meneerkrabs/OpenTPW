@@ -295,7 +295,7 @@ Original-data values are tagged `// [DATA:<file>:<field>]`.
 | Id | Site | Current value / rule | Evidence needed |
 | --- | --- | --- | --- |
 | RIDES-001 | Mac channel rate 30 is proved; Windows rate and native scaled/unscaled channel-clock selection remain unverified | qualify target-PC rate and connect the correct original clock input before claiming runtime equivalence |
-| RIDES-003 | World/Objects/ObjectAnimator.cs | Finished clip holds its last pose (AnimID 14 path traced: 0xa7498, 0xa68ac, 0xa694c) | Capture after a clip ends; the ride-data sources of object flags 0x8 (stop) and 0x10 (hold) |
+| RIDES-003 | World/Objects/ObjectAnimator.cs | Finished clip holds its last pose (AnimID 14 path traced: 0xa7498, 0xa68ac, 0xa694c); the next trigger restores against the ended clip, while the original passes the AnimID-14 slot as the old clip (0xa692c–0xa6948) | Capture after a clip ends; the object's AnimID-14 table slot; the ride-data sources of object flags 0x8 (stop) and 0x10 (hold) |
 | RIDES-008 | World/Objects/ObjectAnimations.cs:28 | ANIM_* → letter, variant v → number v+1 | Binary member lookup |
 | RIDES-009 | World/Objects/ObjectCatalog.cs:381 | shared (non-Info.Id) .sam files sit between category defaults and the object file; `Easy_<file>` is layered last in Instant Action (traced, STP-PPC 0x10119328) | which base file the binary's object loader is given |
 | RIDES-010 | World/Objects/ObjectCatalog.cs:451 | OBJECT_NAMES index by English name equality | Binary name-index table |
@@ -318,11 +318,14 @@ Original-data values are tagged `// [DATA:<file>:<field>]`.
 | RIDES-028 | World/Level.Objects.cs | Non-walkable exit outside cells, and entrance outside cells without a queue path, use the nearest walkable path (a one-cell queue) | Original queue-path joining rules |
 | RIDES-029 | World/Objects/ObjectAnimator.cs | 12-byte vertex block (record flag 0x4000) parsed, stored mesh shown | A reader of the record +40 floats or of node bit 0x800 |
 | RIDES-030 | World/Objects/ObjectAnimator.cs | Node-state bit 0x10 (node lists at clip start, toggles ≤ 0) hides the node's mesh | The draw-path reader of node bit 0x10, or captures |
-| RIDES-031 | World/Objects/ObjectAnimator.cs | Relative-animation models (header flag 0x4) play set mode, as the default ride load strips the flag | The ride-data source of the 0x594c8 flag word allowing 0x20000 |
+| RIDES-031 | World/Objects/ObjectAnimator.cs | Relative-animation models (header flag 0x4) play their vertex and UV tracks in set mode, as the default ride load strips the flag (with it, both add: 0xa4a58/0xa4f68, UV 0xa56d4/0xa8420) | The ride-data source of the 0x594c8 flag word allowing 0x20000 |
 | RIDES-032 | World/Objects/ObjectAnimator.cs | Every instance takes the callback route (0xa7960, r4 = 1); the object-list route (no posing, no-reset replay) is not modelled | The engine's call condition for the render-record callback (0x5a3bc) and the setter of object flag 0x00400000 |
 | RIDES-033 | VM/RideVM.cs | Script speed 1.0 (creation bias 50) | What the native bias writers 0xb2a34/0xb5b18 store |
 | RIDES-034 | World/Objects/ObjectAnimator.cs | No idle restart of AnimID 5/0 (0xa798c) | Which placed objects keep +4 & 0x8004 clear |
 | RIDES-035 | World/Objects/ObjectAnimator.cs | Texture-frame tracks decoded, not applied | The reader of a texture slot's current frame |
+| RIDES-036 | World/Objects/ObjectAnimator.cs | The UV pass always runs: global option +16396 bit 0x10 and node bit 0x4000 (gate 0xa5698–0xa56b8) taken as clear | The writers of option bit 0x10 and node bit 0x4000 |
+| RIDES-037 | VM/Handlers/Animation.cs | TRIGWAITANIM(_CH) without an object never resumes; for a literal out operand this assumes its in-memory code word, like a variable's (tag 0xC0), never equals the token | The RSE loader's in-memory literal operand encoding |
+| RIDES-038 | VM/Handlers/Animation.cs | TRIGANIMSPEED with a speed operand below 0 faults (0 is undefined `divw`) | The channel update with a negative speed (0xa6484, 0xa7190) |
 
 Imported objects share their economy instance with the guest payment bridge;
 shop/sideshow payments and ride-use statistics use that instance. Open/closed

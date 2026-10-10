@@ -125,15 +125,21 @@ Feral Mac handlers (docs/reverse/ANIM-plan.md §8): TRIGANIM, TRIGWAITANIM,
 TRIGANIMSPEED and TRIGANIM_CH store `max(ms − 300, 300)` in their out operand and
 overwrite the script's single WAIT4ANIM deadline (`now + out / script speed`, or
 `out × 1000 / operand` for TRIGANIMSPEED); WAITANIM waits
-`max(unsigned(ms − 300) / speed, 300)` (a clip under 300 ms wraps to
-`INT32_MAX` ms, as in the original) and WAITANIM_CH the same without the division;
-both and LOOPANIM(_CH) zero the deadline; LOOPANIM is a no-op while its
+`max(unsigned(ms − 300) / speed, 300)` (a clip under 300 ms saturates to
+`INT32_MAX` ms, as in the original) and WAITANIM_CH `max(unsigned(ms − 300), 300)`
+without the division or saturation, added to the 32-bit clock as a wrapping add,
+so a clip under 300 ms gives a deadline in the past and the script continues at
+its next slice; both and LOOPANIM(_CH) zero the deadline; LOOPANIM is a no-op while its
 script-local token is unchanged, and the plain triggers reset the token;
 TRIGWAITANIM re-executes until the channel shows the triggered AnimID;
 FLUSHANIM(_CH) clears only the deferred clip; GETANIM(_CH) return the AnimID, or
 −1 once a non-looping clip ended. Without an animation host (an unimplemented
-effect) a trigger counts as a missing member, an OpenTPW policy that keeps waits
-finite for scripts without an object. TOUR/BUMP/COAST use the independently reviewed command
+effect) the script has no object, and every trigger uses 0 ms as the original's
+null-object path does (`li r3,0` at 0xafb1c, 0xafc74, 0xafe88, 0xb0078, 0xb01d4,
+0xb032c, 0xb0510): the triggers write 300, WAITANIM waits `INT32_MAX` ms, and
+TRIGWAITANIM never resumes (RIDES-037 for a literal out operand). Game objects
+always have a host (`OriginalObjectEffects`); only headless VMs reach this.
+TOUR/BUMP/COAST use the independently reviewed command
 contracts from [PPC-rides](reverse/PPC-rides.md) (`15313d2`): mutators preserve
 flags, supported queries set flags, and output queries write the effect's
 returned value to their parameter. BUMP13/14 use the captured original input
@@ -171,12 +177,18 @@ CreatureFX.RSE`, is an orphan copy of hoverbot's "Driod Anim Child" that reads
 its parent but is never spawned. All 263 roots run in one shared world for
 3,600 ticks (60 s), twice:
 
-1. default effects, `VAR_CAPACITY` 6, ride open: 23.8 M instructions, no
-   faults, no halts, 216 running/47 waiting at the end; 34 hooked opcodes
-   reached (e.g. WAITANIM in 229 scripts, ADDOBJ 109, LOOPANIM 105, EVENT 48);
-2. "chaos" effects (seeded random results and animation durations, random
-   pokes of LETMEON/LETMEOFF/RIDECLOSED/BREAKSTAT/WORN/TRIGGER/COMMAND):
-   no faults, no halts.
+1. default effects, `VAR_CAPACITY` 6, ride open: each script has an object
+   without clips (every animation trigger returns the missing-member 1000 ms and
+   the channel stays on AnimID 12; everything else unimplemented): 20.4 M
+   instructions, no faults, no halts, 222 running/41 waiting at the end;
+2. "chaos" effects (seeded random results and animation durations, channels
+   that show the last TRIGWAITANIM AnimID, random pokes of
+   LETMEON/LETMEOFF/RIDECLOSED/BREAKSTAT/WORN/TRIGGER/COMMAND): 14.6 M
+   instructions, no faults, no halts.
+
+Since ANIM-F a script without any host has no object and, like the original,
+waits `INT32_MAX` ms on its first WAITANIM, so the corpus run gives the default
+pass the clip-less object above; the figures below predate that change.
 
 Together the runs execute 83 of the 84 corpus opcodes (GETREMOTEVAR is never
 reached; it is covered by a synthetic test) and start all 44 child scripts.
@@ -194,11 +206,16 @@ runtime equivalence. Focused tests cover all 39 reviewed command roles,
 required/optional variable gates, supported outputs, unsupported markers and
 unknown-command safety faults.
 
-`TotemScriptTraceIsPinned` pins 30 s of Totem.RSE (seed 1234, capacity 6, no
-visitors): WAITANIM 0 at 16 ms (unanswered, so it waits 700 ms as for a missing
-member), the 10 s passenger time-out, WAIT 700, VAR_RUNNING = 1, a random
-TRIGANIM_CH set via JSR at 11,466 ms, TRIGANIM 5 at 11,983 ms, the sound/object
-timeline to 24,050 ms, then VAR_RUNNING = 0 because nobody boarded. A closed Totem only emits WAITANIM 0 and idles.
+`TotemScriptTraceWithItsObjectIsPinned` pins 30 s of Totem.RSE run as the placed
+original object (`OriginalObjectRuntime`, seed 1234, capacity 6, no visitors), so
+the animation opcodes have their real host: WAITANIM 0 at 16 ms plays AnimID 0 and
+waits its length less 300 ms (to 4,516 ms), then the 10 s passenger time-out,
+WAIT 700, VAR_RUNNING = 1, a random TRIGANIM_CH set via JSR at 15,216 ms,
+TRIGANIM 5 at 15,733 ms, the sound/object timeline to 27,783 ms, then WAIT4ANIM
+and VAR_RUNNING = 0 because nobody boarded. All five clip requests resolve.
+`TotemWithoutAnObjectWaitsOnItsFirstWaitAnim` pins the same script with no host:
+like the original's null-object path its first WAITANIM gets 0 ms and waits
+`INT32_MAX` ms, so nothing else happens.
 
 ## Sandbox Totem
 
@@ -324,14 +341,14 @@ handler attributes diverge.
 | 14 | `EVENT_EXT` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
 | 15 | `FLUSHANIM` | 17 | hooked | STP-PPC 0xafa68 → 0xa6c90: clears only channel 0's deferred clip; the playing clip and the WAIT4ANIM deadline stay |
 | 16 | `TRIGANIM` | 74 | hooked | STP-PPC 0xafa94: trigger channel 0, flags 0; out = max(ret − 300, 300); WAIT4ANIM deadline = now + out / script speed; LOOPANIM token reset |
-| 17 | `WAITANIM` | 547 | hooked | STP-PPC 0xafbbc: trigger channel 0, flags 0; waits max(unsigned(ret − 300) / script speed, 300) (a clip under 300 ms wraps to INT32_MAX ms); zeroes the WAIT4ANIM deadline; LOOPANIM token reset |
+| 17 | `WAITANIM` | 547 | hooked | STP-PPC 0xafbbc: trigger channel 0, flags 0; waits max(unsigned(ret − 300) / script speed, 300) (a clip under 300 ms saturates to INT32_MAX ms) on a u32 deadline; zeroes the WAIT4ANIM deadline; LOOPANIM token reset |
 | 18 | `LOOPANIM` | 210 | hooked | STP-PPC 0xafd00: no-op while token anim + (sub << 16) equals script +168; else loops on channel 0 (flags 1), stores the token, zeroes the WAIT4ANIM deadline |
 | 19 | `TRIGWAITANIM` | 133 | hooked | STP-PPC 0xafd94: as TRIGANIM, then re-executes until channel 0's AnimID equals the triggered one (+188 = id + 1), yielding while it differs |
 | 20 | `GETANIM` | 0 | hooked | STP-PPC 0xaff3c: channel 0's AnimID (12 = none), −1 once its non-looping clip ended (channel flag 0x4); result sets flags |
 | 21 | `TRIGANIMSPEED` | 4 | hooked | STP-PPC 0xaffc4: trigger channel 0 at script speed × operand / 1000; out = max(ret − 300, 300); deadline = now + out × 1000 / operand (signed divw); LOOPANIM token reset |
 | 22 | `FLUSHANIM_CH` | 0 | hooked | STP-PPC 0xb00f4 → 0xa6c90: clears only the operand channel's deferred clip |
 | 23 | `TRIGANIM_CH` | 63 | hooked | STP-PPC 0xb013c: as TRIGANIM on channel operand 4 (Totem `TRIGANIM_CH 5 1 0 1`); leaves the LOOPANIM token |
-| 24 | `WAITANIM_CH` | 0 | hooked | STP-PPC 0xb0268: as WAITANIM on channel operand 3 without the speed division (unsigned max(ret − 300, 300)); zeroes the deadline |
+| 24 | `WAITANIM_CH` | 0 | hooked | STP-PPC 0xb0268: as WAITANIM on channel operand 3 without the speed division or fctiwz: unsigned max(ret − 300, 300) added to the clock as a wrapping u32 (0xb035c), so a clip under 300 ms gives a deadline in the past and the script continues next slice; zeroes the deadline |
 | 25 | `LOOPANIM_CH` | 1 | hooked | STP-PPC 0xb037c: loops on channel operand 3 (flags 1) on every call, no token check; zeroes the deadline |
 | 26 | `TRIGWAITANIM_CH` | 0 | hooked | STP-PPC 0xb0404: as TRIGWAITANIM on channel operand 4; leaves the LOOPANIM token |
 | 27 | `GETANIM_CH` | 15 | hooked | STP-PPC 0xb05b8: `GETANIM_CH dest channel`: the channel's AnimID, −1 once ended; result sets flags (corpus `GETANIM_CH 0 n; BRANCH_PV x; BRANCH_Z x`) |

@@ -335,7 +335,7 @@ public sealed class ObjectAnimator
 				else
 				{
 					// [BIN:STP-PPC:0x100A7498 clip end] a non-looping clip with nothing deferred restarts as AnimID 14, which sets channel flags 0x14 (0x100A68AC) and branches past the bind (0x100A694C): frozen on the last frame, no copy-back, GETANIM -1
-					// [APPROX:RIDES-003] A finished non-looping clip holds its last pose until replaced — evidence needed: capture after a TRIGANIM clip ends (the AnimID 14 path is traced; the object flags 0x8/0x10 that stop or hold instead come from untraced ride data)
+					// [APPROX:RIDES-003] A finished non-looping clip holds its last pose until replaced, and the next trigger restores stored components against the ended clip; the original's start passes the channel's AnimID 14, sub 0 entry as the old clip to the copy-back (0xa692c–0xa6948, 0xa69a4: only AnimID 12 skips it), and what that slot holds is not traced — evidence needed: capture after a TRIGANIM clip ends, the object's AnimID-14 table slot, and the ride-data sources of object flags 0x8/0x10 that stop or hold instead
 					channel.Ended = true;
 					frame = duration;
 				}
@@ -367,7 +367,8 @@ public sealed class ObjectAnimator
 				else if ( track.UvAnimation.CornerCount != model.Meshes[mesh].TexCoords.Length )
 					vertexLimitations.Add( $"{clip.Name} node {track.NodeIndex}: UV block animates {track.UvAnimation.CornerCount} corners, the mesh has {model.Meshes[mesh].TexCoords.Length}" );
 				else
-					// The sampler runs the UV pass when header flag 0x4 is set or node bit 0x4000 is clear (0xa56bc); nothing in OpenTPW sets 0x4000.
+					// The sampler runs the UV pass when global option +16396 bit 0x10 and node bit 0x4000 are both clear, or header flag 0x4 is set (0xa5698–0xa56b8).
+					// [APPROX:RIDES-036] The UV pass always runs: global option +16396 bit 0x10 and node bit 0x4000 are taken as clear, as their setters are not traced (ANIM-plan §14) — evidence needed: the writers of option bit 0x10 and node bit 0x4000
 					uvs[track.NodeIndex] = track.UvAnimation;
 			}
 		}
@@ -459,7 +460,7 @@ public sealed class ObjectAnimator
 		// Header flag 0x4 (relative animation) makes the sampler add vertex keys and translations to a per-update base copy
 		// (0xa4a58/0xa4f68, 0xa7a30) and recompute face normals (0xa772c), but the ride loader clears it unless its argument
 		// has 0x20000 (0x58a3c), so on the default load path these models animate in set mode with their stored normals.
-		// [APPROX:RIDES-031] Relative-animation models (header flag 0x4) play their vertex tracks in set mode, as the default ride load path strips the flag; add mode behind the ride-loader argument 0x20000 is not modelled — evidence needed: the ride-data source of the 0x594c8 flag word that allows 0x20000
+		// [APPROX:RIDES-031] Relative-animation models (header flag 0x4) play their vertex and UV tracks in set mode, as the default ride load path strips the flag; add mode behind the ride-loader argument 0x20000 (vertex keys 0xa4a58/0xa4f68; UV keys with r5 = header & 4 at 0xa56d4, add loop 0xa8420) is not modelled — evidence needed: the ride-data source of the 0x594c8 flag word that allows 0x20000
 		return track.VertexAnimation.GetPoseLimitation( model.Meshes[mesh].Positions.Length, duration );
 	}
 

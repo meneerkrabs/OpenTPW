@@ -87,6 +87,9 @@ public sealed class RideVM
 
 	/// <summary>Script clock: milliseconds since this VM was created (GETTIME).</summary>
 	public double TimeMilliseconds { get; private set; }
+
+	/// <summary>The script clock as the original's 32-bit millisecond word (truncated, wrapping after about 49.7 days).</summary>
+	internal uint ClockMilliseconds32 => unchecked((uint)(ulong)TimeMilliseconds);
 	public double WakeTimeMilliseconds { get; private set; }
 	public long ExecutedInstructions { get; private set; }
 	public long SliceCount { get; private set; }

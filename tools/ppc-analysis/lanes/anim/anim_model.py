@@ -142,12 +142,24 @@ def wait4anim_deadline(now_ms: int, returned_ms: int, script_speed: float) -> in
 def waitanim_wait(returned_ms: int, script_speed: float) -> int:
     """WAITANIM (0xafc78): (returned - 300) converted UNSIGNED, / speed, truncated, then max(·, 300) unsigned.
 
-    A returned length below 300 ms wraps to ~4.29e9, which saturates to INT32_MAX: the
-    script then waits about 24.8 days. WAITANIM_CH (0xb0330) does the same without the speed division.
+    A returned length below 300 ms wraps to ~4.29e9, which fctiwz saturates to INT32_MAX: the
+    script then waits about 24.8 days. WAITANIM_CH differs: see waitanim_ch_deadline.
     """
     unsigned = (returned_ms - 300) & 0xffffffff
     value = fctiwz(f32(f32(float(unsigned)) / script_speed))
     return value if value & 0xffffffff >= 300 else 300
+
+
+def waitanim_ch_deadline(now_ms: int, returned_ms: int) -> int:
+    """WAITANIM_CH (0xb0330-0xb0360): max(unsigned(returned - 300), 300) with no float step and no
+    fctiwz, added to the 32-bit clock as a wrapping add (script +160). A returned length below 300 ms
+    gives 2^32 - (300 - returned), so the deadline lands 300 - returned ms before now; the resume
+    compare (cmplw now, deadline at 0xb02bc) then continues at the next execution.
+    """
+    wait = (returned_ms - 300) & 0xffffffff
+    if wait < 300:
+        wait = 300
+    return (now_ms + wait) & 0xffffffff
 
 
 def triganimspeed_deadline(now_ms: int, returned_ms: int, operand: int) -> int:

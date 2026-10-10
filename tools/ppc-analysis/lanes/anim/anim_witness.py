@@ -38,7 +38,7 @@ class WitnessError(Exception):
 
 
 # ------------------------------------------------------------------ encoders
-OPS = {'mulli': 7, 'cmpli': 10, 'cmpi': 11, 'addi': 14, 'bc': 16, 'b': 18, 'rlwinm': 21, 'ori': 24, 'oris': 25,
+OPS = {'mulli': 7, 'cmpli': 10, 'cmpi': 11, 'addi': 14, 'addis': 15, 'bc': 16, 'b': 18, 'rlwinm': 21, 'ori': 24, 'oris': 25,
        'andi.': 28, 'x': 31, 'lwz': 32, 'stw': 36, 'lhz': 40, 'lfs': 48, 'lfd': 50, 'stfs': 52, 'xoris': 27}
 
 
@@ -272,6 +272,42 @@ CHECKS: tuple[Check, ...] = (
     C('rse_wait4', 0xb07a0, 'd', ('lwz', 0, 31, 164), 'WAIT4ANIM: deadline 0 = no wait'),
     C('rse_wait4', 0xb07c4, 'd', ('stw', 0, 31, 164), 'deadline reached: cleared'),
     C('rse_wait4', 0xb07d4, 'd', ('addi', 3, 3, -1), 'otherwise re-execute'),
+    # ---- ANIM-I static reads (ANIM-plan §15), pinned after review ANIM-V ----------------------------
+    C('rse_loop_token', 0xafb78, 'd', ('addis', 4, 0, 1), 'TRIGANIM: lis 1 ...'),
+    C('rse_loop_token', 0xafb88, 'd', ('addi', 0, 4, -1), '... - 1 = 0xFFFF'),
+    C('rse_loop_token', 0xafbb4, 'd', ('stw', 0, 31, 168), 'TRIGANIM resets the LOOPANIM token (+168)'),
+    C('rse_loop_token', 0xafcd0, 'd', ('addis', 4, 0, 1), 'WAITANIM: lis 1 ...'),
+    C('rse_loop_token', 0xafcd8, 'd', ('addi', 0, 4, -1), '... - 1 = 0xFFFF'),
+    C('rse_loop_token', 0xafcf8, 'd', ('stw', 0, 31, 168), 'WAITANIM resets the LOOPANIM token'),
+    C('rse_loop_token', 0xafee4, 'd', ('addis', 4, 0, 1), 'TRIGWAITANIM: lis 1 ...'),
+    C('rse_loop_token', 0xafef4, 'd', ('addi', 4, 4, -1), '... - 1 = 0xFFFF'),
+    C('rse_loop_token', 0xaff24, 'd', ('stw', 4, 31, 168), 'TRIGWAITANIM resets the LOOPANIM token'),
+    C('rse_loop_token', 0xb00d4, 'd', ('addis', 4, 0, 1), 'TRIGANIMSPEED: lis 1 ...'),
+    C('rse_loop_token', 0xb00d8, 'd', ('addi', 0, 4, -1), '... - 1 = 0xFFFF'),
+    C('rse_loop_token', 0xb00ec, 'd', ('stw', 0, 31, 168), 'TRIGANIMSPEED resets the LOOPANIM token'),
+    C('rse_loop_token', 0xb3150, 'd', ('addis', 3, 0, 1), 'script creation: lis 1 ...'),
+    C('rse_loop_token', 0xb316c, 'd', ('addi', 5, 3, -1), '... - 1 = 0xFFFF'),
+    C('rse_loop_token', 0xb31a0, 'd', ('stw', 5, 31, 168), 'script creation stores the LOOPANIM token'),
+    C('rse_loop', 0xafd40, 'd', ('bc', 12, 2, 0xb2354 - 0xafd40), 'equal token: common exit, before the deadline store'),
+    C('rse_loop', 0xb03fc, 'd', ('stw', 0, 31, 164), 'LOOPANIM_CH clears the WAIT4ANIM deadline on every call'),
+    C('rse_trigwait', 0xaff30, 'd', ('addi', 0, 3, -4), 'first execution rewinds 4 words ...'),
+    C('rse_trigwait', 0xaff34, 'd', ('stw', 0, 31, 60), '... and exits without clearing +152 (no yield)'),
+    C('rse_trigwait', 0xafde8, 'd', ('cmpli', 0, 0, 0), 'resume: no object (+200 null) ...'),
+    C('rse_trigwait', 0xafdec, 'd', ('bc', 12, 2, 0x20), '... skips the AnimID query; the compare reads the operand word'),
+    C('rse_speed', 0xb0088, 'd', ('cmpi', 0, 0, 300), 'TRIGANIMSPEED out = max(ms - 300, 300), signed ...'),
+    C('rse_speed', 0xb00c4, 'x', (4, 3, 0, 151), '... stored to the out variable (stwx)'),
+    C('rse_wait_ch', 0xb0330, 'd', ('addi', 0, 3, -300), 'WAITANIM_CH: wait = ms - 300 (no float step) ...'),
+    C('rse_wait_ch', 0xb033c, 'd', ('cmpli', 0, 0, 300), '... at least 300 (unsigned)'),
+    C('rse_wait_ch', 0xb035c, 'x', (3, 4, 3, 266), 'deadline = wait + now: a wrapping 32-bit add'),
+    C('rse_wait_ch', 0xb0360, 'd', ('stw', 3, 31, 160), 'stored in script +160'),
+    C('rse_wait_ch', 0xb02bc, 'x', (0, 3, 0, 32), 'resume: now >= deadline (unsigned cmplw) continues'),
+    C('rse_no_object', 0xafb1c, 'd', ('addi', 3, 0, 0), 'TRIGANIM without an object: ret 0'),
+    C('rse_no_object', 0xafc74, 'd', ('addi', 3, 0, 0), 'WAITANIM without an object: ret 0'),
+    C('rse_no_object', 0xafe88, 'd', ('addi', 3, 0, 0), 'TRIGWAITANIM without an object: ret 0'),
+    C('rse_no_object', 0xb0078, 'd', ('addi', 3, 0, 0), 'TRIGANIMSPEED without an object: ret 0'),
+    C('rse_no_object', 0xb01d4, 'd', ('addi', 3, 0, 0), 'TRIGANIM_CH without an object: ret 0'),
+    C('rse_no_object', 0xb032c, 'd', ('addi', 3, 0, 0), 'WAITANIM_CH without an object: ret 0'),
+    C('rse_no_object', 0xb0510, 'd', ('addi', 3, 0, 0), 'TRIGWAITANIM_CH without an object: ret 0'),
     # ---- advisor clip starts ------------------------------------------------------------------
     C('advisor', 0x29414, 'd', ('addi', 5, 30, -1), 'start helper: sub = animation id - 1'),
     C('advisor', 0x29418, 'd', ('addi', 4, 0, 5), 'AnimID 5 (suffix m)'),
@@ -319,6 +355,9 @@ SWITCH_CHECKS = tuple(Check('rse_switch', APP, SWITCH_TABLE + 4 * op, 'switch', 
 # never read there (exporter metadata).
 READ_RECORD_BITS = frozenset({0x1, 0x8, 0x80, 0x200, 0x400, 0x1000, 0x4000, 0x10000, 0x20000})
 UNREAD_RECORD_BITS = frozenset({0x10, 0x20, 0x40, 0x100, 0x800, 0x2000, 0x8000})
+# The _CH handlers neither read nor write the LOOPANIM token (script +168, r31): no lwz/stw +168 in their ranges.
+TOKEN_SCANS = ((0xb013c, 0xb0268, 'TRIGANIM_CH'), (0xb0268, 0xb037c, 'WAITANIM_CH'), (0xb037c, 0xb0404, 'LOOPANIM_CH'),
+               (0xb0404, 0xb05b8, 'TRIGWAITANIM_CH'))
 RECORD_SCANS = ((APP, 0xa4f68, 0xa56f8, 28, READ_RECORD_BITS),
                 (APP, 0xa3e24, 0xa3f68, 30, frozenset({0x4000})),
                 (ENGINE, 0x3f9d8, 0x42200, 3, frozenset({0x4000})))
@@ -428,8 +467,18 @@ def single_bit_tests(image, start: int, end: int) -> set[int]:
     return found
 
 
+def loop_token_accesses(image, start: int, end: int) -> list[int]:
+    """Offsets of lwz/stw with base r31 and displacement 168 (the LOOPANIM token) in a range."""
+    return [offset for offset in range(start, end, 4)
+            if (image.w(offset) >> 26) in (OPS['lwz'], OPS['stw'])
+            and image.w(offset) >> 16 & 31 == 31 and image.w(offset) & 0xffff == 168]
+
+
 def run(images: dict) -> dict:
     facts = [verify(check, images[check.container]) for check in CHECKS + SWITCH_CHECKS]
+    for start, end, name in TOKEN_SCANS:
+        if accesses := loop_token_accesses(images[APP], start, end):
+            raise WitnessError(f'{name} accesses the LOOPANIM token at {", ".join(map(hex, accesses))}')
     scans = {}
     for container, start, end, register, expected in RECORD_SCANS:
         masks = record_flag_masks(images[container], start, end, register)
@@ -440,7 +489,7 @@ def run(images: dict) -> dict:
     for fact in facts:
         by_fact[fact['fact']] = by_fact.get(fact['fact'], 0) + 1
     return {
-        'checks': len(facts) + len(RECORD_SCANS),
+        'checks': len(facts) + len(RECORD_SCANS) + len(TOKEN_SCANS),
         'checks_by_fact': by_fact,
         'record_flag_scans': scans,
         'read_record_bits': sorted(hex(m) for m in READ_RECORD_BITS),

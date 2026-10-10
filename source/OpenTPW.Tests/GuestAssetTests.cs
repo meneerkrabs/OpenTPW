@@ -79,16 +79,22 @@ public class GuestAssetTests
 		Assert.AreEqual( 78, reachable, "every Easymode path cell is reachable from the entrance" );
 	}
 
-	/// <summary>Real guests ride the original Totem.RSE headlessly (no models): it fills before its 10 s time-out and releases its riders.</summary>
+	/// <summary>
+	/// Real guests ride the original Totem.RSE headlessly (no GPU models): it fills before its 10 s time-out and releases
+	/// its riders. The Totem object's animation channels answer the animation opcodes; a script without an object would
+	/// wait INT32_MAX ms on its first WAITANIM, as in the original.
+	/// </summary>
 	[TestMethod]
 	public void GuestsRideTheOriginalTotemScript()
 	{
 		var (grid, settings) = LoadJungle();
 		var simulation = new GuestSimulation( grid, settings, 99 ) { ArrivalsEnabled = false };
 		var bridge = new RideVisitorBridge( 1, "Inca Totem", RideVisitorKind.Ride, 6, 70, 25 ) { EntranceCell = (39, 21), ExitCell = (39, 21) };
+		// Only the object's channels are used; its own copy of the script is never advanced.
+		var totem = new OriginalObjectRuntime( ObjectCatalog.Load( "jungle" ).Entries.Single( entry => entry.ScriptPath != null && entry.ScriptPath.EndsWith( "Totem.RSE", StringComparison.OrdinalIgnoreCase ) ) );
 		RideVM vm;
 		using ( var stream = FileSystem.OpenRead( "/levels/jungle/rides/totem/Totem.RSE" ) )
-			vm = new RideVM( stream, new RideVMOptions { Effects = new VisitorRideScriptEffects( bridge, UnimplementedRideScriptEffects.Instance ), Seed = 4 } );
+			vm = new RideVM( stream, new RideVMOptions { Effects = new VisitorRideScriptEffects( bridge, new OriginalObjectEffects( totem ) ), Seed = 4 } );
 		vm[RideVariables.VAR_CAPACITY] = 6;
 		vm[RideVariables.VAR_RIDECLOSED] = 0;
 		bridge.Attach( vm, () => vm[RideVariables.VAR_RIDECLOSED] == 0 );
@@ -96,12 +102,22 @@ public class GuestAssetTests
 		foreach ( var cell in new[] { (39, 22), (39, 23), (40, 21), (41, 21), (39, 24), (42, 21), (39, 25), (43, 21) } )
 			simulation.SpawnInPark( cell.Item1, cell.Item2 );
 		double? runningAt = null;
+		// The 10 s passenger time-out starts after the opening WAITANIM, which plays the Totem's AnimID 0 clip.
+		double? openedAt = null;
+		var waitedForTheClip = false;
+		vm.InstructionExecuting = ( script, instruction ) =>
+		{
+			if ( waitedForTheClip )
+				openedAt ??= script.TimeMilliseconds;
+			waitedForTheClip |= instruction.Opcode == Opcode.WAITANIM;
+		};
 		var maximumRiders = 0;
 		for ( var tick = 0; tick < 60 * 60; tick++ )
 		{
 			simulation.Tick( Tick );
 			bridge.HostStep();
 			vm.Advance( Tick );
+			totem.Animator.Advance( Tick );
 			maximumRiders = Math.Max( maximumRiders, vm[RideVariables.VAR_ONRIDE] );
 			if ( runningAt == null && vm[RideVariables.VAR_RUNNING] == 1 )
 				runningAt = vm.TimeMilliseconds;
@@ -109,7 +125,8 @@ public class GuestAssetTests
 		Assert.AreNotEqual( RideVMState.Faulted, vm.State, vm.FaultMessage );
 		Assert.AreEqual( 6, maximumRiders, "Totem.RSE boarded a full load through HUSH/WALKON" );
 		Assert.IsNotNull( runningAt );
-		Assert.IsTrue( runningAt < 10_000, $"started at {runningAt} ms, before the 10 s passenger time-out" );
+		Assert.IsNotNull( openedAt );
+		Assert.IsTrue( runningAt < openedAt + 10_000, $"started at {runningAt} ms, before the 10 s passenger time-out from {openedAt} ms" );
 		Assert.IsTrue( bridge.ReleasedTotal >= 6, "HOP/WALKOFF/WALKGET → VAR_LETMEOFF released the riders" );
 		Assert.IsTrue( simulation.Guests.Count( guest => guest.RidesTaken > 0 ) >= 6 );
 		Assert.IsTrue( simulation.Guests.All( guest => guest.State != GuestState.Using || bridge.Riders.Contains( guest.Id ) ) );

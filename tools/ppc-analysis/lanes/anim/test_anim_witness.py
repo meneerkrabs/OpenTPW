@@ -97,6 +97,8 @@ class SyntheticWitnessTests(unittest.TestCase):
             'start length divides by 25': replace(find(0xa6c38), fields=(0, 0x516c, 25.0)),
             'loader gate compares with 222': replace(find(0x3fc78, aw.ENGINE), fields=('cmpli', 0, 0, 222)),
             'channel stride 48': replace(find(0xa7a60), fields=('addi', 27, 27, 48)),
+            'WAITANIM_CH adds with carry (addc) instead of add': replace(find(0xb035c), fields=(3, 4, 3, 10)),
+            'no-object path returns 1000': replace(find(0xafb1c), fields=('addi', 3, 0, 1000)),
             'opcode 15 handled by TRIGANIM': replace(find(aw.SWITCH_TABLE + 4 * 15), fields=(15, 0xafa94, 'FLUSHANIM')),
         }
         for name, check in wrong.items():
@@ -121,8 +123,13 @@ class SyntheticWitnessTests(unittest.TestCase):
                                                      31 - (bit.bit_length() - 1), True)
                 at += 8
         report = aw.run(images)
-        self.assertEqual(report['checks'], len(ALL) + len(aw.RECORD_SCANS))
+        self.assertEqual(report['checks'], len(ALL) + len(aw.RECORD_SCANS) + len(aw.TOKEN_SCANS))
         self.assertTrue(app and engine)
+        # A _CH handler that stores the LOOPANIM token breaks the run.
+        app.words[0xb0400] = aw.d_word('stw', 0, 31, 168)
+        with self.assertRaisesRegex(aw.WitnessError, 'LOOPANIM_CH'):
+            aw.run(images)
+        del app.words[0xb0400]
         # An unread bit tested in the sampler range breaks the run.
         app.words[0xa4f68 + 0x400] = aw.d_word('lwz', 9, 28, 4)
         app.words[0xa4f68 + 0x404] = aw.rlwinm_word(9, 0, 0, 18, 18, True)  # 0x2000
@@ -165,7 +172,7 @@ class OriginalBinaryTests(unittest.TestCase):
     def test_identity_pinned_witness(self):
         images = aw.load_images(Path(os.environ['OPENTPW_PPC_BIN_ROOT']))
         report = aw.run(images)
-        self.assertEqual(report['checks'], len(ALL) + len(aw.RECORD_SCANS))
+        self.assertEqual(report['checks'], len(ALL) + len(aw.RECORD_SCANS) + len(aw.TOKEN_SCANS))
         self.assertEqual(set(report['record_flag_scans'][f'{aw.APP}:0xa4f68']),
                          {hex(bit) for bit in aw.READ_RECORD_BITS})
         # The same mutation must fail against the real words too.

@@ -42,7 +42,8 @@ public interface IRideScriptEffects
 
 /// <summary>
 /// Implemented by effects that own animation channels: the raw AnimID of a channel as the query 0xa7dcc reads it
-/// (12 = none, 14 = ended), for TRIGWAITANIM's resume check.
+/// (12 = none, 14 = ended), for TRIGWAITANIM's resume check. Effects without it have no channels to read, so
+/// TRIGWAITANIM resumes as for a script without an object (the query is skipped and the wait never ends).
 /// </summary>
 public interface IRideAnimationQuery
 {

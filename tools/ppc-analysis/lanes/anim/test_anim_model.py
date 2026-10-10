@@ -100,6 +100,13 @@ class ScriptWaitTests(unittest.TestCase):
         self.assertEqual(m.waitanim_wait(14333, 1.0), 14033)
         self.assertEqual(m.waitanim_wait(400, 1.0), 300)
         self.assertEqual(m.waitanim_wait(299, 1.0), m.INT32_MAX)
+        self.assertEqual(m.waitanim_wait(166, 1.0), m.INT32_MAX, 'WAITANIM saturates')
+
+    def test_waitanim_ch_wraps_into_the_past(self):
+        self.assertEqual(m.waitanim_ch_deadline(10000, 1000), 10700)
+        self.assertEqual(m.waitanim_ch_deadline(10000, 166), 10000 - 134, 'a 166 ms clip: 134 ms in the past')
+        self.assertFalse(m.wait4anim_blocks(m.waitanim_ch_deadline(10000, 166), 10016))
+        self.assertEqual(m.waitanim_ch_deadline(16, 166), 16 + 2**32 - 134, 'no wrap below 134 ms')
 
     def test_triganimspeed(self):
         self.assertEqual(m.triganimspeed_speed(1.0, 4000), 4.0)

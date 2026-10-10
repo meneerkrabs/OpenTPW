@@ -386,7 +386,16 @@ five advisor WADs.
 
 - A reader of the 12-byte floats and of node bit 0x800.
 - The draw consumer of node bit 0x10 (visibility not proven).
-- Setters of node bit 0x4000 and object flag 0x00400000.
+- Setters of node bit 0x4000 and object flag 0x00400000, and of global option +16396 bit 0x10 (both gate
+  the UV pass; OpenTPW takes them as clear, RIDES-036).
+- The copy-back after a clip ended: the start 0xa67d8 passes the channel's current AnimID/sub as the old clip
+  (0xa692c–0xa6948: object table entry `AnimID × 12`, `+32`, then `sub × 8`, `+4`) and only AnimID 12 skips the
+  copy-back 0xa5894 (0xa6984). After an end the channel holds AnimID 14, sub 0, so the next trigger's copy-back
+  reads the object's AnimID-14 slot with no existence check. What that slot holds (an object without such a
+  member, or a table shorter than 15 entries) is not traced; OpenTPW restores against the ended clip
+  (registered under RIDES-003).
+- The in-memory code word of a literal RSE operand (variables carry tag 0xC0 in the top byte, 0xae6ec): it
+  decides whether TRIGWAITANIM without an object can resume (RIDES-037).
 - The engine's condition for the placement callback (which instances take the r4 = 0 route).
 - Which objects keep the idle restart.
 - Path parameters (0x200/0x400).
@@ -433,8 +442,16 @@ Static reads made during ANIM-I (Mac `SimThemePark`, read-only; not yet pinned i
   clears bit 0x10. In the corpus the listed nodes are never toggled by the same clip; 89 of 133 listed meshes
   are toggled by another clip of the same model.
 
-OpenTPW policy, not original: a trigger whose effect is unimplemented (a script without an object) counts as a
-missing member (1000 ms), so waits stay finite.
+A trigger whose effect is unimplemented is a script without an object (+200 null). As in the original, every
+trigger handler then uses 0 ms (`li r3,0` at 0xafb1c, 0xafc74, 0xafe88, 0xb0078, 0xb01d4, 0xb032c, 0xb0510): the
+triggers write 300, WAITANIM waits INT32_MAX ms, and TRIGWAITANIM compares its token with the out operand's code
+word + 1 (the query is skipped at 0xafde8), so it never resumes (ANIM-F; the earlier "missing member, 1000 ms"
+policy was review finding AV-2).
+
+WAITANIM_CH (ANIM-F, review AV-1): `max(unsigned(ret − 300), 300)` has no float step and no `fctiwz`, and the
+deadline +160 is `now + wait` as a wrapping 32-bit add (0xb035c), resumed by `cmplw now, deadline` (0xb02bc). A
+clip under 300 ms gives a deadline `300 − ret` ms in the past: the script continues at its next execution. Only
+WAITANIM saturates to INT32_MAX (the Crys_a case).
 
 Determinism: the WAIT4ANIM deadline and both tokens replace the old "latest clip end" field in the script digest,
 and a root object script also hashes its animator's channel state (`WorldStateHash` schema 6, docs/DETERMINISM.md).

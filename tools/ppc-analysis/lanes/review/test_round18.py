@@ -8,7 +8,7 @@
   ten-instruction interpreter, so a wrong branch condition, bound or constant fails the test. That
   interpreter shows a NaN rate is stored unchanged. The formats reference model says it becomes 0.25.
 - With OPENTPW_SCENARIOS_LANE naming ffa87c6's lanes/scenarios directory, the strict envelope decoder is
-  probed with synthetic records only. Two expected failures pin known gaps in the partial-record check.
+  probed with synthetic records only. Two probes, once expected failures, pin the partial-record gaps R18-3 closed.
 
 Nothing is executed from the original. Nothing here says anything about the PC build, PC game speed, or a
 real gms.dat.

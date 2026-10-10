@@ -152,7 +152,7 @@ reported as **unverified**, without comparing them to the runtime's annuity appr
 | --- | --- | --- | --- |
 | Bank prefix | 1,411,362 | 7 × 32-bit words: admission fee, balance, batch balance, withdrawals enabled, last balance, entered-red tick, annual profit | Typed values: 25, 87987, 0, true, 87787, 0, −12013 |
 | Loan offers | 1,411,390 | 8 × 32 bytes: available flag, i32 amount, i32 APR, months, monthly repayment, bought flag, months repaid, lender name index | Amounts, APR, terms and lenders equal `LoanInfo[0–7]`; repayments 2777, 1388, 694, 277, 750, 1000, 1666, 2166 = floor(amount / months), i.e. 0 % APR: only `Easy_Standard.sam` matches |
-| Challenges | 1,410,409 | 8 × 45 bytes: `i32 type, time, value, object, object2, prize, follow-up`, 14 zero bytes, `u8 independent`, 2 zero bytes | Equal `Challenges[1, 15, 6, 18, 12, 7, 8, 9]` = jungle `ChallengesInThisLevel`, including the `Independent` flags (1,1,1,1,1,1,0,0) |
+| Challenges | 1,410,409 | 8 × 45 bytes: `i32 type, time, value, u16 object, u16 object2, i32 staff type, prize, follow-up, u8 check at end only`, 13 zero bytes, `u8 independent`, 2 zero bytes | Equal `Challenges[1, 15, 6, 18, 12, 7, 8, 9]` = jungle `ChallengesInThisLevel`, including the `Independent` flags (1,1,1,1,1,1,0,0) |
 
 Proven and used: the 0 % APR repayment formula, the easy balance for the jungle original level, and
 the challenge list. The placed objects and fixed items (docs/TPWS-PAYLOAD.md) are registered in the
@@ -174,7 +174,17 @@ The decoded balance is 87,987, last balance 87,787 and annual profit −12,013, 
 100,000 − 12,013. The spending history behind that profit is still unknown. This correction
 reports the typed bank values but continues to start the simulation at `InitialCash`; it does
 not restore active loans or other unimplemented original state. The locator still uses
-plausibility limits and lacks framing proof for other saves (**ECON-045**).
+plausibility limits rather than the serializer's offsets (**ECON-045**).
+
+The eleven saves of the second fixture set (docs/TPWS-PAYLOAD.md) corrected the challenge layout.
+Easymode's challenges have no second object, staff type or end-only check, so they could not show
+where those go. Every one of the 97 challenge records in those saves equals its `Challenges.sam`
+definition under one layout: both object ids share the word at +12 (first in the low 16 bits),
+`TargetStaffType` is the word at +16, and `CheckAtEndOnly` is the byte at +28. Halloween
+`Challenges[24]` (Crypt Kart plus Firepit, 2150 and 2501) is stored as `0x09C50866`; space
+`Challenges[25]` has staff type 1; fantasy `Challenges[10]` has the end-only flag. The old reading
+(a whole word per object, 14 zero bytes) rejected those records, so it found only part of the
+fantasy list and two lists in Halloween.
 
 The verified PC `Easymode.TPWI` SHA-256 is
 `6d89303d098900364bf5e80b236b64bd85976fb947e9e4609d088547f430b39a`.
@@ -328,7 +338,7 @@ site, is listed in `Economy/EconomyApproximations.cs` and is logged once at star
 | ECON-040 | `Economy/ParkObjectives.cs:318` | players start with 1 golden key and keys are not consumed by entering themes | initial lobby and repeated theme-entry captures |
 | ECON-041 | `Economy/EconomyObjectCatalog.cs:93` | features-directory objects with Research.Category != 3 are fixed (non-buyable) items | buy-menu capture |
 | ECON-044 | `Economy/GuestEconomyBridge.cs:61` | guests never hold a balloon or wear a costume, so both percentages are 0; the binary gives them when a guest uses a balloon or costume shop (0x100EAAF8) | balloon lifetime (+0x214) and costume state rules |
-| ECON-045 | `Files/Formats/Save/SaveEconomyRecords.cs:91` | loan/challenge record locators use plausibility bounds (one fixture) | a second TPWS/TPWI fixture |
+| ECON-045 | `Files/Formats/Save/SaveEconomyRecords.cs:111` | loan/challenge record locators use plausibility bounds (checked on 12 saves) | the serializer offsets of both tables |
 | ECON-047 | `Economy/ParkEconomyContracts.cs:178` | a newly built ride starts with life gauge 100 (Easymode.TPWI stores 100 for every placed object) | the life gauge set when a ride is built (the constructor 0x100DA874 sets 0) |
 
 ## Open questions

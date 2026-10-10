@@ -89,6 +89,45 @@ public class SaveEconomyRecordTests
 		Assert.AreEqual( 4, records.Loans.Count );
 	}
 
+	[TestMethod]
+	public void ChallengeTargetsShareOneWordAndTheTailCarriesCheckAtEndOnly()
+	{
+		// Halloween Challenges[24] (type 33): TargetObj 2150 and TargetObj2 2501 are saved as 0x09C50866, staff type in the next word.
+		var payload = Payload();
+		Int( payload, ChallengeOffset + 12, 2150 | 2501 << 16 );
+		Int( payload, ChallengeOffset + 16, 1 );
+		payload[ChallengeOffset + 28] = 1;
+		var records = SaveEconomyRecords.Parse( payload );
+		Assert.AreEqual( 2, records.Challenges.Count );
+		Assert.AreEqual( new SaveChallengeRecord( ChallengeOffset, 3, 60, 30, 2150, 2501, 1, 5000, 0, true, true ), records.Challenges[0] );
+	}
+
+	[DataTestMethod]
+	[DataRow( 28, 2 )]
+	[DataRow( 29, 1 )]
+	[DataRow( 41, 1 )]
+	public void NonBooleanEndCheckOrNonZeroPaddingRejectsTheChallenge( int position, int value )
+	{
+		var payload = Payload();
+		payload[ChallengeOffset + position] = (byte)value;
+		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => SaveEconomyRecords.Parse( payload ) ).Message, "no challenge table" );
+	}
+
+	[DataTestMethod]
+	[DataRow( 16 )]
+	[DataRow( 28 )]
+	public void ImportRejectsAChallengeWhoseStaffTypeOrEndCheckDiffers( int field )
+	{
+		var (settings, payload) = MatchingSettingsPayload();
+		if ( field == 16 )
+			Int( payload, ChallengeOffset + 16, 1 );
+		else
+			payload[ChallengeOffset + 28] = 1;
+		var economy = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
+		var error = Assert.ThrowsException<InvalidDataException>( () => OriginalEconomyImport.Apply( economy, SaveEconomyRecords.Parse( payload ), Array.Empty<int>(), Array.Empty<int>() ) );
+		StringAssert.Contains( error.Message, "differs from Challenges" );
+	}
+
 	[DataTestMethod]
 	[DataRow( 0, 2 )]
 	[DataRow( 0, -1 )]
@@ -146,9 +185,11 @@ public class SaveEconomyRecordTests
 			var definition = settings.Challenges[settings.ChallengesInThisLevel[index]];
 			var offset = ChallengeOffset + index * SaveEconomyRecords.ChallengeRecordSize;
 			Array.Clear( payload, offset, SaveEconomyRecords.ChallengeRecordSize );
-			var words = new[] { definition.Type, definition.TargetTime, definition.TargetValue, definition.TargetObject, definition.TargetObject2, checked((int)definition.Prize), definition.FollowupType };
+			var words = new[] { definition.Type, definition.TargetTime, definition.TargetValue, definition.TargetObject | definition.TargetObject2 << 16,
+				definition.TargetStaffType, checked((int)definition.Prize), definition.FollowupType };
 			for ( var word = 0; word < words.Length; word++ )
 				Int( payload, offset + word * 4, words[word] );
+			payload[offset + 28] = (byte)(definition.CheckAtEndOnly ? 1 : 0);
 			payload[offset + 42] = (byte)(definition.Independent ? 1 : 0);
 		}
 		return (settings, payload);

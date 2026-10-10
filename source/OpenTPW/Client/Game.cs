@@ -189,7 +189,7 @@ internal static class Game
 		var smoke = args.Contains( "--smoke-test" );
 		var frontEndRun = visit == null && originalLevelIndex < 0 && !args.Contains( "--advisor-say" ) && !args.Contains( "--sandbox" ) && (!smoke || args.Contains( "--front-end" ));
 		// The original plays its start-up movies before the front end on every start (docs/TGQ-MOVIES.md);
-		// smoke tests and --no-intro / OPENTPW_NO_INTRO go straight to the front end.
+		// smoke tests, --capture-world and --no-intro / OPENTPW_NO_INTRO go straight to the front end.
 		var playIntro = IntroPlaylist.ShouldPlay( frontEndRun, smoke, args, Environment.GetEnvironmentVariable( "OPENTPW_NO_INTRO" ) );
 		if ( !playIntro )
 		{

@@ -3101,3 +3101,112 @@ runtime intro on a window, PC parity, and any filesystem scan.
 2. Scenarios owner: R16-5 wording. R16-4 and R16-6 are optional hardening.
 3. Formats `f443475`: no change needed from this review.
 4. Batch 2: pending its final SHA for the count/alias/register/containment rerun.
+
+## 53. Round 17: batch 2 final `3f87c6b` (intro lifecycle), scenarios `1dacb25` comparator and short reads, final containment
+
+Scope: the committed SHAs `3f87c6b` (integration-batch2, parent `6ec5d28`) and
+`1dacb25` (ppc-scenarios). Uncommitted scenarios edits for R16-4/5/6 were not read
+or run. Every run used a `git archive` copy under `/tmp`. The Mac bin is the
+identified `SimThemePark.data` (`04809cd4…95f5`). No PC save, original movie or
+filesystem scan was needed.
+
+### Merge blockers
+
+- **R17-1 (blocker for clean merge, no behaviour impact). `3f87c6b` converts
+  `source/OpenTPW/Client/Game.cs` from CRLF to LF.** At `6ec5d28` the file has 419
+  CRLF line ends. At `3f87c6b` it has 0 CRLF and 419 LF, with tab indentation
+  unchanged. `git diff -w --ignore-cr-at-eol` shows **one** changed line (the
+  `playIntro` line now calls `IntroPlaylist.ShouldPlay`). So the 838-line diff is
+  418 lines of line-ending churn plus that one line. It is the only line-ending
+  change in all of batch 2 against `origin/main` `7bc6c59`. `.editorconfig` asks
+  for CRLF in `*.cs`, and there is no `.gitattributes` normalisation. Game.cs was
+  one of the 19 CRLF `.cs` files in the index. Left as is, every lane that edits
+  Game.cs hits a whole-file conflict, and `git blame` loses history. Fix: amend or
+  follow up with Game.cs back in CRLF and only the one-line change. Pinned by
+  `test_round17.Batch2LineEndings` (needs `OPENTPW_REVIEW_REPO`).
+  `diff --check` with `blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol`
+  reports nothing for `6ec5d28..3f87c6b` or `origin/main..3f87c6b`.
+
+No other blocker was found.
+
+### `3f87c6b` against R16-1/2/3
+
+| Finding | Status | Evidence |
+| --- | --- | --- |
+| R16-1 post-open decode failure aborts startup | **Closed** | `Update` now wraps `Skip/Update/IsFinished` in the same recoverable filter as opening (`IOException`, `UnauthorizedAccessException`, `NotSupportedException`, `InvalidDataException`, `ArgumentException`). It releases the current movie and moves on to the next one. Review probe: four header-valid synthetic 16x16 TGQs with corrupt bitstreams (empty, all-ones ×1, all-ones ×64, zero). Each opens, and then the real `MoviePlayback.Update` → `DecodeVideoFrame` throws `InvalidDataException` ("bitstream is truncated", "DC size code is invalid" ×2, "coefficient code is invalid"). `IntroSequence` disposes the broken movie once, plays and disposes the next one, and completes. `Draw` is not wrapped, but `MovieScreen.Render` only draws and does not decode. |
+| R16-2 constructor audio leak / `UnauthorizedAccessException` | **Closed** | `CreatePlayback` disposes the audio output if `MoviePlayback` construction (or the `Gain` initializer) throws, and the playback owns it after success. A `MoviePresenter` failure disposes the playback, which disposes the audio. `UnauthorizedAccessException` is in the filter. GPU allocation failure inside the presenter is not tested (the commit says so). |
+| R16-3 `--capture-world` counted intro frames | **Closed** | `IntroPlaylist.ShouldPlay` returns false for `--capture-world`. `WorldCapture` is registered after `playIntro` is decided. |
+| `OPENTPW_NO_INTRO` docs | Closed | RUNNING.md says any nonempty value, including `0`, disables intros, and so does `--capture-world`. The Game.cs comment at line 192 still lists only smoke/`--no-intro`/env (nit). |
+| Dispose | Correct | Sets `completed`, releases the current movie, restores world scaling, and does not raise `Completed`. Game.cs's `using var intro` scope matches. |
+
+Qualified: `ArgumentException` in the filter also covers `ArgumentOutOfRangeException`,
+which `MoviePlayback.Update` throws for a non-finite `Time.Delta`. That programming
+error would be logged as a movie failure, not surfaced. This is low severity, and
+the open path already filtered the same type before this commit.
+`ProgrammingFailureIsNotHiddenAsAnUnreadableMovie` covers only
+`InvalidOperationException`.
+
+### Scenarios `1dacb25`
+
+- **Comparator and writer order: confirmed.** As traced, `operator<` (unsigned
+  `strncmp` over the shorter length, shorter string less on an equal prefix)
+  matches Python `bytes` order for all 400×400 pairs over
+  `{01,41,61,7f,80,e9,ff}`, lengths 0..3 (`test_round17`). It also matched on 20,000
+  random pairs. The earlier operand confirmation (the eqv/subfc/addze sign idiom)
+  stands. `mac_writer_order` sorts deduplicated map keys and the mystery set,
+  ascending unsigned u16.
+- **Short-read correction: confirmed for the model.** `short_import(0, b'\x7f')` =
+  `0x7f000000`. `short_import(-1, b'\x12\x34')` = `0x1234ffff`. A cut one byte into
+  `mExtraKeys` gives `0x7f000000` from both `read_mac_player_file` and
+  `read_profile_snapshot`. Only `mSpentTickets`/`mExtraKeys` are i32 player
+  members, so the scalar `record[key] = short_import(…)` path never sees a list.
+  "FSRead stores the bytes before EOF" is still an assumption about Mac OS and is
+  labelled as one.
+- **R17-2 (low, synthetic only).** `player_file_evidence.read_mac_player_file`
+  still keys themes by the raw name, embedded NUL included. Two themes
+  `a\0x`, `a\0y` are both inserted, with `ok` true. `read_profile_snapshot`
+  (`mac-partial`) stops at `duplicate theme` with key `a`. 1dacb25's own evidence
+  (strlen + strcpy constructor) says the map key ends at the first NUL, so the
+  older reader is now the inconsistent one. Key it by `name.split(b'\0',1)[0]` or
+  note the gap.
+- Lane reruns on the archive: `scenario_evidence.py <mac bin>` exit 0 with 2,090
+  instruction checks. `unittest discover lanes/scenarios` with `OPENTPW_MAC_BIN`:
+  88 tests OK, 0 skipped. Claims stay synthetic/static-Mac. No PC or real-gms claim
+  was made or tested.
+
+### Batch 2 final containment (`3f87c6b`, git objects only)
+
+| Check | `3f87c6b` |
+| --- | --- |
+| Commits ahead of `origin/main` `7bc6c59` | 56 (`origin/main`, `0829614`, review `4e173cb` and `2bef824` are ancestors) |
+| Fixture blob prefixes `245a6743`/`816de5d1` reachable | absent |
+| Blob of size 2,274,758 or 38,479 reachable | none |
+| Original-asset extension paths at tip | 0 |
+| Blobs > 1 MB introduced by batch 2 (`^origin/main`) | none. Reachable from upstream history: `content/textures/test.png`, `export.bin` (deleted upstream in `a108ee7`), `tools/tpi-compare/full-evidence.json` (`f81313a`/`18b09c5`, already on `origin/main`) |
+| `[BIN:` aliases in `source/` | 36, all `STP-PPC`; every bracket label is `APPROX`/`DATA`/`EXT`/`BIN:STP-PPC` |
+| `fidelity_register.py --check` | exit 0, 129 unresolved APPROX IDs (the round-15 staleness is resolved) |
+| ECON-002 host-date claim | corrected: APPROX-TRACE row is `contradicted`, with 2000-01-01 at `+0` and 3,750 s per turn, and no "real local date" text is left |
+| Line endings vs `origin/main` | one file changed: Game.cs CRLF→LF (R17-1) |
+
+### Results
+
+| Target | Command | Result |
+| --- | --- | --- |
+| `3f87c6b` archive | SDK 10.0.401 `dotnet test -c Release`, filter IntroSequence/Round17 probe/MoviePlayback/IntroPlaylist | 35 pass, 4 inconclusive (original movie corpus not supplied), 0 fail. Includes the 5 commit regressions and 4 review probes |
+| `1dacb25` archive | `scenario_evidence.py`; lane `unittest discover` | exit 0, 2,090 checks; 88/88 |
+| review lane | `test_round12..17`; `test_round16` with `OPENTPW_PPC_BIN_ROOT`; `test_round17` with `OPENTPW_REVIEW_REPO` | OK (35 + 4); 1/1; 4/4 |
+
+The C# probe is kept at `tools/ppc-analysis/lanes/review/round17/Round17IntroDecodeProbeTests.cs`.
+It is not compiled here, because it needs `3f87c6b`'s injected `IntroSequence`
+constructor. SDK 8 was not needed: no SDK 8 harness changed in `3f87c6b`. Not run:
+runtime intro in a window, original-movie tests, presenter GPU allocation failure,
+and PC parity.
+
+### Handoff
+
+1. Batch 2 owner: R17-1. Restore CRLF on Game.cs, keeping the one-line change, then
+   re-run `diff --ignore-cr-at-eol --stat` (expect 1 line) before pushing. Optional:
+   the Game.cs comment nit.
+2. Scenarios owner: R17-2 is optional, and so are R16-4/5/6 (in progress).
+3. After R17-1, the batch-2 containment above carries over if only Game.cs line
+   endings change.

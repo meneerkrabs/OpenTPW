@@ -281,7 +281,7 @@ internal sealed class GameFlow : IDisposable
 			Level.UiCapturesMouse = Hud.Update( Context, input );
 			Level.SimulationTimeScale = Hud.Status.TimeScale;
 			Level.Update();
-			Advisor?.Update();
+			Advisor?.Update( Hud.Paused );
 			GameAudio.Update( Level.Guests?.GetStatistics().InPark );
 			return;
 		}

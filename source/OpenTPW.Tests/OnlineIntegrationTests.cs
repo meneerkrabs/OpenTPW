@@ -103,9 +103,13 @@ public class OnlineIntegrationTests
 			Assert.AreEqual( 1, folders.List( folders.Sent ).Count );
 			Assert.AreEqual( 1, (await recipient.GetInboxAsync()).Postcards.Count );
 			await recipient.SendPostcardAsync( Postcard.Create( "Bobby", new[] { "Alice" }, "Reply", "Hello", "English" ) );
+			// Two cards that reuse one card id (a sender's choice) must both arrive instead of blocking the inbox.
+			var reused = Guid.NewGuid();
+			await recipient.SendPostcardAsync( Postcard.Create( "Bobby", new[] { "Alice" }, "One", "first", "English", cardId: reused ) );
+			await recipient.SendPostcardAsync( Postcard.Create( "Bobby", new[] { "Alice" }, "Two", "second", "English", cardId: reused ) );
 			session.FetchInbox();
 			await PumpUntilIdle( session );
-			Assert.AreEqual( 1, folders.List( folders.Inbox ).Count );
+			Assert.AreEqual( 3, folders.List( folders.Inbox ).Count, session.Status );
 			Assert.AreEqual( 0, (await session.Client!.GetInboxAsync()).Postcards.Count );
 			Assert.IsFalse( File.ReadAllText( folders.SettingsFile ).Contains( "correct horse" ) );
 			session.ConnectChat();
@@ -219,5 +223,15 @@ public class OnlineIntegrationTests
 		foreach ( var url in new[] { "file:///tmp/server", "https://user:pass@example.test", "https://example.test/?token=a", "https://example.test/#other" } )
 			Assert.ThrowsException<ArgumentException>( () => OnlineClient.ValidateServerUrl( new Uri( url ) ) );
 		Assert.AreEqual( "https://example.test/sub/", OnlineClient.ValidateServerUrl( new Uri( "https://example.test/sub" ) ).ToString() );
+	}
+
+	[TestMethod]
+	public void PlainHttpIsOnlyForThisComputerAndTheLocalNetwork()
+	{
+		foreach ( var url in new[] { "http://localhost:8080", "http://127.0.0.1:5000", "http://[::1]:8080", "http://dev.localhost", "http://192.168.1.20",
+			"http://10.0.0.5", "http://172.20.1.1", "http://[fd00::5]", "http://[fe80::1]" } )
+			Assert.AreEqual( "http", OnlineClient.ValidateServerUrl( new Uri( url ) ).Scheme, url );
+		foreach ( var url in new[] { "http://play.opentpw.io", "http://example.test", "http://8.8.8.8", "http://172.32.0.1", "http://[2001:db8::1]", "http://localhost.evil.test", "http://nas.local" } )
+			Assert.ThrowsException<ArgumentException>( () => OnlineClient.ValidateServerUrl( new Uri( url ) ), url );
 	}
 }

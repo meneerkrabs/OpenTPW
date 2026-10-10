@@ -1,4 +1,4 @@
-# The official OpenTPW server (docs/SERVER.md): the published image behind Caddy on ports 80 and 443.
+# The official OpenTPW server (docs/SERVER.md): the published image behind Caddy on port 443.
 # Settings come from .env beside this file (see env.example). Player data lives in ./data.
 services:
   opentpw-server:
@@ -23,6 +23,12 @@ services:
       ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
     volumes:
       - ./data:/data
+    logging: &logging
+      # Bounded: Docker's default json-file log never shrinks, and error lines can hold client addresses.
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "3"
   caddy:
     image: caddy:2
     restart: unless-stopped
@@ -36,6 +42,7 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
+    logging: *logging
     depends_on:
       - opentpw-server
 volumes:

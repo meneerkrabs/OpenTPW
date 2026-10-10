@@ -34,13 +34,39 @@ public sealed class OnlineClient : IDisposable
 	public Uri ServerUrl { get; }
 	public SessionToken? Session { get; private set; }
 
-	/// <summary>http(s) only, no credentials or query in the URL.</summary>
+	/// <summary>
+	/// https, or http for a server on this machine or the local network (passwords and tokens would otherwise cross the
+	/// internet unencrypted); no credentials, query or fragment in the URL.
+	/// </summary>
 	public static Uri ValidateServerUrl( Uri url )
 	{
 		if ( !url.IsAbsoluteUri || url.Scheme is not ("http" or "https") || !string.IsNullOrEmpty( url.UserInfo ) || !string.IsNullOrEmpty( url.Query ) || !string.IsNullOrEmpty( url.Fragment ) )
 			throw new ArgumentException( "The server URL must be an http:// or https:// address without credentials, query or fragment." );
+		if ( url.Scheme == "http" && !IsLocalHost( url.Host ) )
+			throw new ArgumentException( "Use an https:// address: http:// is only for a server on this computer or the local network." );
 		var text = url.ToString();
 		return new Uri( text.EndsWith( '/' ) ? text : text + "/" );
+	}
+
+	/// <summary>
+	/// <c>localhost</c> and <c>.localhost</c> names (which always resolve to this machine) and loopback, private,
+	/// link-local or unique-local address literals. Other names, <c>.local</c> included, can resolve to a public address.
+	/// </summary>
+	public static bool IsLocalHost( string host )
+	{
+		host = host.Trim( '[', ']' ).TrimEnd( '.' );
+		if ( host.Equals( "localhost", StringComparison.OrdinalIgnoreCase ) || host.EndsWith( ".localhost", StringComparison.OrdinalIgnoreCase ) )
+			return true;
+		if ( !System.Net.IPAddress.TryParse( host, out var address ) )
+			return false;
+		if ( address.IsIPv4MappedToIPv6 )
+			address = address.MapToIPv4();
+		if ( System.Net.IPAddress.IsLoopback( address ) )
+			return true;
+		var bytes = address.GetAddressBytes();
+		if ( address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork )
+			return bytes[0] == 10 || (bytes[0] == 172 && bytes[1] is >= 16 and <= 31) || (bytes[0] == 192 && bytes[1] == 168) || (bytes[0] == 169 && bytes[1] == 254);
+		return address.IsIPv6LinkLocal || (bytes[0] & 0xFE) == 0xFC;
 	}
 
 	public Task<ServerInfo> GetServerInfoAsync( CancellationToken cancel = default ) => GetJsonAsync<ServerInfo>( ApiRoutes.Server, cancel );
@@ -92,7 +118,7 @@ public sealed class OnlineClient : IDisposable
 			query += $"&search={Uri.EscapeDataString( search )}";
 		if ( !string.IsNullOrEmpty( author ) )
 			query += $"&author={Uri.EscapeDataString( author )}";
-		return GetJsonAsync<ParkList>( ApiRoutes.Parks + query, cancel );
+		return RequireListAsync( GetJsonAsync<ParkList>( ApiRoutes.Parks + query, cancel ), list => list.Parks, "park list" );
 	}
 
 	/// <param name="showOnWebsite">Lists the park on the project website (opt-in; the server's public website park list).</param>
@@ -137,7 +163,21 @@ public sealed class OnlineClient : IDisposable
 		return await ReadJsonAsync<PostcardSent>( response, cancel );
 	}
 
-	public Task<PostcardInbox> GetInboxAsync( CancellationToken cancel = default ) => GetJsonAsync<PostcardInbox>( ApiRoutes.Inbox, cancel );
+	public Task<PostcardInbox> GetInboxAsync( CancellationToken cancel = default ) =>
+		RequireListAsync( GetJsonAsync<PostcardInbox>( ApiRoutes.Inbox, cancel ), inbox => inbox.Postcards, "inbox" );
+
+	/// <summary>Most items one list response may hold; servers send at most a few hundred.</summary>
+	public const int MaximumListItems = 1000;
+
+	/// <summary>Rejects a response whose list is missing, holds null entries or is implausibly long (a hostile or broken server).</summary>
+	private static async Task<T> RequireListAsync<T, TItem>( Task<T> response, Func<T, IReadOnlyList<TItem>?> items, string name ) where TItem : class
+	{
+		var value = await response;
+		var list = items( value );
+		if ( list == null || list.Count > MaximumListItems || list.Any( item => item == null ) )
+			throw new InvalidDataException( $"The server sent an invalid {name}." );
+		return value;
+	}
 
 	public async Task<Postcard> DownloadPostcardAsync( string postcardId, CancellationToken cancel = default )
 	{

@@ -303,14 +303,24 @@ public sealed class OnlineSession : IDisposable
 	public void FetchInbox() => WithClient( async client =>
 	{
 		var inbox = await client.GetInboxAsync();
+		var failed = 0;
 		foreach ( var summary in inbox.Postcards )
 		{
-			var card = await client.DownloadPostcardAsync( summary.Id );
-			Folders.Store( Folders.Inbox, card );
-			await client.DeletePostcardAsync( summary.Id );
+			// Each card is stored under its server delivery id, not the sender-chosen card id, so two cards
+			// with one card id cannot block each other; a card that fails stays on the server and the rest still arrive.
+			try
+			{
+				var card = await client.DownloadPostcardAsync( summary.Id );
+				Folders.Store( Folders.Inbox, card, $"inbox-{summary.Id}" );
+				await client.DeletePostcardAsync( summary.Id );
+			}
+			catch ( Exception exception ) when ( exception is InvalidDataException or OnlineException )
+			{
+				failed++;
+			}
 		}
 		Post( () => Inbox = inbox.Postcards );
-		return $"{OnlineStrings.Get( OnlineLabel.Inbox )}: {inbox.Postcards.Count}";
+		return $"{OnlineStrings.Get( OnlineLabel.Inbox )}: {inbox.Postcards.Count}" + (failed > 0 ? $" (!{failed})" : "");
 	} );
 
 	public void ConnectChat() => WithClient( async client =>

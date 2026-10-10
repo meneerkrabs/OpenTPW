@@ -27,10 +27,34 @@ WebSocket connections through. The OpenTPW container only listens inside the Doc
 Desktop players use the same address (`https://tpw.example.org`) in the online login screen.
 
 The files are `source/OpenTPW.Server/Dockerfile`, `docker-compose.example.yml` and
-`Caddyfile`. Another TLS proxy (nginx, Traefik) works the same way: forward to port 8080 of
+`deploy/Caddyfile`. Another TLS proxy (nginx, Traefik) works the same way: forward to port 8080 of
 the container, pass WebSocket upgrades through, and keep the `Host` header.
 
 `docker build --build-arg WEB_CLIENT=false …` builds an image with the API and chat only.
+
+## The official server (`deploy/`)
+
+`play.opentpw.io` runs the published image on a small Hetzner Cloud server (x86, Ubuntu
+24.04). Everything it needs is in `deploy/`:
+
+- `compose.yml` and `Caddyfile`: the image from `ghcr.io/meneerkrabs/opentpw-server` behind
+  Caddy on ports 80 and 443; player data in `/opt/opentpw/data`; settings in `.env`
+  (`env.example`). Caddy keeps no access log.
+- `opentpw-update.timer`: every night, pull the image and restart if it changed. `latest`
+  follows releases; CI publishes it for every `v*` tag (and `main` for every push to main).
+- `opentpw-backup.timer`: every night, a copy of the data folder in `/var/backups/opentpw`,
+  kept for seven days. It is on the same disk; download it now and then, or turn on Hetzner's
+  backups, for a copy elsewhere.
+- `make-cloud-init.py`: writes the cloud-init user data that sets all of this up on the first
+  boot of a fresh server, with SSH password logins turned off:
+
+  ```sh
+  python3 deploy/make-cloud-init.py --domain play.opentpw.io > user-data.yml
+  ```
+
+Give the server a Hetzner Cloud Firewall that allows only TCP 22, 80 and 443 and UDP 443
+(Docker's published ports bypass a firewall on the server itself), and point the domain's
+DNS (A and AAAA, not proxied) at it.
 
 ## Running it locally
 

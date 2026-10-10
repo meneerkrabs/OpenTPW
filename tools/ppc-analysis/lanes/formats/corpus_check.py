@@ -193,7 +193,7 @@ def check_md2(root: Path) -> dict:
         if wad.suffix.lower() == '.wad' and wad.is_file():
             for name, data in wad_members(wad):
                 if name.lower().endswith('.md2'):
-                    members.append((str(wad.relative_to(root)), name, data))
+                    members.append((wad.relative_to(root).as_posix(), name, data))
     versions = collections.Counter()
     statuses = collections.Counter()
     geometry = collections.defaultdict(list)

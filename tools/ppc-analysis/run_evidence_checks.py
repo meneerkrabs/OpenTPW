@@ -78,6 +78,7 @@ FIXTURE_ARGUMENTS = {
     'lanes/economy/OriginalScientistSnapshot.Tests.csproj': '--fixture',
 }
 NEEDS_CORPUS = {
+    'lanes/advisor/audio-events/AudioEventAssets.csproj': 'EventMap corpus report (private PC Data, external output)',
     'lanes/advisor/layer1/Layer1Corpus.csproj': 'Layer I corpus comparison (private corpus, long run)',
     'lanes/rides/CorpusWitness.csproj': 'PC data witness (private install)',
 }

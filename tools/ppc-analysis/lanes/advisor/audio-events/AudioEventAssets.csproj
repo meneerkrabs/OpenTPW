@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- OpenTPW.Files brings audited Newtonsoft.Json/Zio versions; keep the audit warnings visible, not fatal. -->
+    <WarningsNotAsErrors>NU1901;NU1903</WarningsNotAsErrors>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="InspectEventMaps.cs" />
+    <ProjectReference Include="../../../../../source/OpenTPW.Files/OpenTPW.Files.csproj" />
+  </ItemGroup>
+</Project>

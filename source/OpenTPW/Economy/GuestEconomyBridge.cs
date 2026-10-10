@@ -57,7 +57,8 @@ public sealed class GuestEconomyBridge : IGuestPayments, IParkGuestStatistics
 	public int CountHappierThan( int happiness ) => Guests.Guests.Count( guest => Guests.IsInPark( guest ) && guest.Happiness >= happiness );
 
 	/// <summary>Guests carry no balloons or costumes yet.</summary>
-	// [APPROX:ECON-044] balloon/costume percentages are 0 (guests carry no items yet) — evidence needed: guests slice item state
+	// [BIN:STP-PPC:0x100CE7B4 challenge types 9 and 10] percent = trunc(100 × in-park guests holding a balloon (guest +0x210, 0x100C3BEC) or wearing a costume (+0x24 == 2, 0x100C3CD0) / in-park guests), 0 without guests
+	// [APPROX:ECON-044] guests never hold a balloon or wear a costume, so both percentages are 0; the binary gives them when a guest uses a balloon or costume shop (0x100EAAF8) — evidence needed: balloon lifetime (+0x214) and costume state rules
 	public int KidsWithBalloonsPercent => 0;
 
 	public int KidsWithCostumesPercent => 0;

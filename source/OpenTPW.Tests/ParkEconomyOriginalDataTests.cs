@@ -167,17 +167,19 @@ public class ParkEconomyOriginalDataTests
 		// layers and the Easymode park; Full Simulation loads neither.
 		UseOriginalData();
 		Log ??= new();
-		var full = ParkEconomyRuntime.ForOriginalLevel( OriginalPark.Load( "jungle", includeEasymodePark: false ), ParkGameMode.FullSimulation );
+		var full = ParkEconomyRuntime.ForOriginalLevel( OriginalPark.Load( "jungle", readShippedSave: false ), ParkStartKind.FullSimulation );
 		Assert.IsFalse( full.Economy.Settings.IsEasy );
 		Assert.AreEqual( ParkGameMode.FullSimulation, full.Economy.Mode );
 		Assert.AreEqual( 0, full.Economy.Objects.Count( item => item.Imported ) );
+		Assert.IsFalse( full.Economy.SeedResearcherStandIn );
 		CollectionAssert.AreEqual( new[] { "/levels/Standard.sam", "/levels/jungle/Standard.sam" }, full.Economy.Settings.Standard.Sources.ToArray() );
 
-		var instant = ParkEconomyRuntime.ForOriginalLevel( OriginalPark.Load( "jungle" ), ParkGameMode.InstantAction );
+		var instant = ParkEconomyRuntime.ForOriginalLevel( OriginalPark.Load( "jungle" ), ParkStartKind.InstantAction );
 		Assert.IsTrue( instant.Economy.Settings.IsEasy );
 		Assert.AreEqual( 100000, instant.Economy.Balance );
 		Assert.IsTrue( instant.Economy.Objects.Any( item => item.Imported ) );
 		Assert.IsFalse( instant.Economy.AvailableLoans.Any() );
+		Assert.IsTrue( instant.Economy.SeedResearcherStandIn, "the seed's undecoded researcher has an ECON-019 stand-in" );
 
 		// Themes without Easy_Standard.sam still load in Instant Action, as in the original.
 		var space = BalanceSettings.Load( "space", easy: true );

@@ -190,11 +190,51 @@ mismatches; original-data tests check the typed PC fixture.
 | Bankruptcy | Six month-ends in the red, warnings at 3 and 5 months (strings) | Advance stops when bankrupt |
 | Staff | Pool sizes, maxima, wages, training prices | Candidate grades, pool timing, free hiring, 100 points per grade, mechanic/handyman job durations |
 | Maintenance | Wear rates, upgrade durations, worn threshold 25 | Wear per open day, repair restores 100 |
-| Research | Items, categories, groups, costs, effort, ability, thresholds, work load; traced: points every 20 turns, cumulative group opener, first open item in table order | Info-id table order, the excluded researcher states, automatic Instant Action rate |
+| Research | Items, categories, groups, costs, effort, ability, thresholds, work load; traced: points every 20 turns, cumulative group opener, first open item in table order; points from researcher staff only, in both modes (Mac) | Info-id table order, the excluded researcher states, the stand-in for the Instant Action seed's researcher |
 | Challenges | Definitions, level list, timings, prizes, follow-ups | Type semantics from comments; explicit accept/decline; types 14, 22, 23, 26, 32+ unmeasured |
 | Golden tickets | All thresholds | Checked every 100 park turns in Full Simulation only; the profit ticket reads the year's running profit (`mProfitThisYear`, reset each calendar year); the first copy of a ticket object costs tickets, not cash (all traced) |
 | Keys/progression | Keys per theme, theme order (THEMENAMES; ascending key cost); +1 per 3 earned golden tickets; spending tickets preserves keys (manual p. 28) | Start with 1 key; keys persist when entering themes |
 | Park rating | — (traced: Mac binary 0x100C7B24) | Capped counts: guests in park × 20 / 1000 (max 20), rides × 1.5 (max 20), shops and sideshows × 2 (max 10 each), features (max 10), rides at upgrade level 2 (max 10), each staff type (max 4); the sub-kind to object-kind mapping is approximate |
+
+### Game modes
+
+A park start (`ParkStart`, `Economy/ParkStart.cs`) keeps three decisions apart: the economy rules
+(`ParkGameMode`), the `Easy_` balance layer and importing the level's shipped `Easymode.TPWI`. The
+front-end Game Mode button (`FrontEnd.GameMode`) is mapped to a start kind explicitly; neither enum is
+the original GameType, front-end exit code or main-loop state (docs/reverse/PPC-scenarios.md).
+
+| Start | Rules | `Easy_` layer | Shipped save | Evidence |
+| --- | --- | --- | --- | --- |
+| Full Simulation (front end) | Full Simulation | no | not read | Mac (static): layer added for GameType 2 only (`0x10474c`). An offline park entry reads the level, its balance and then only the newest `*.TPW*` in the player's theme directory (`0x198e50`); `easymode.TPWI` is named only by the copy made for Instant Action players (`0x137600`). A Full Simulation player's first park in a theme therefore has no seed |
+| Instant Action (front end) | Instant Action | where the theme has one (jungle); object files too | imported where shipped (jungle) | Mac: same sites; the copy is the newest file on the first entry; a missing layer is not an error (balance `0x10474c`, object files `0x119878`) |
+| Reference (`--load-original-level`, Load Park) | Full Simulation | when the shipped save is imported | imported where shipped | OpenTPW inspection path, unchanged; not an original GameType. Load Park ignores the last Game Mode choice (UI-041): the Mac saves no GameType with a park and takes it from the loading player's profile, which OpenTPW does not have |
+
+Instant Action rules (`ParkModeFeatures`, Mac direct GameType tests; PC equivalence not established):
+no golden-ticket checks and no challenges, no loan offers, research lab efforts cannot be changed,
+no ride upgrades. Research points come only from researchers: the Mac code has no staffless research
+path. The Instant Action seed ships with a researcher, but the staff records of `Easymode.TPWI` are not
+decoded, so it is not imported, and production OpenTPW has no hiring UI. An Instant Action start that
+imported the seed therefore researches as one grade-2 researcher while no researcher is employed
+(ECON-019, a stand-in for the seed's researcher; `ParkEconomy.SeedResearcherStandIn`). A start without a
+seed (Full Simulation, or an Instant Action theme that ships none) has no stand-in. The native front-end
+smoke run starts jungle in Instant Action from the menu and checks the seed, the absence of invented
+staff, research advancing through the stand-in over 60 days and each refused gate.
+
+OpenTPW's own park save stores `Mode` by name (`"FullSimulation"`/`"InstantAction"`, integers
+rejected) and `Easy` as required members; neither has a default, so older version-1 saves already
+carry both. A running park refuses a save of the other mode. The start kind is not saved: the
+reference start is not an original state, and an imported seed is already in the saved objects. The
+seed researcher's stand-in is saved as the optional `SeedResearcherStandIn` (absent: off).
+
+Original flow that OpenTPW does not reproduce (Mac, static; docs/reverse/PPC-scenarios.md, "Park
+entry"): leaving a park saves `<player>:<theme>:autosave.TPWS`, and the next entry resumes the
+newest save there, so each player keeps one running park per theme. A park entry also writes a
+`restart.INTS` snapshot. OpenTPW starts a new park on every front-end entry (UI-015).
+
+Not implemented: player profiles and the per-player mode choice (UI-015), theme keys and the
+Instant Action "no key check" rule (the front end has no key gate), the research and finance
+panels themselves (the HUD buttons have no panel, so the UITEXT 467 refusal is not shown), the
+Instant Action completion message (UITEXT 470), and the advisor rule filter by mode.
 
 Determinism: one SplitMix64 state drives candidates and sideshow draws; time advances in whole ticks;
 tests compare saves before/after load and after identical continuations byte for byte.
@@ -261,7 +301,7 @@ site, is listed in `Economy/EconomyApproximations.cs` and is logged once at star
 | ECON-015 | `Economy/ParkResearch.cs:169` | researchers on strike or picked up are the original's excluded states 3, 4 and 5 | the staff state values behind 0x100F4170 |
 | ECON-017 | `Economy/ParkResearch.cs:148` | the research table is in info-id order and the player cannot step the cursor to another item | the table fill order (FUN_100c9064) and the next/previous control |
 | ECON-018 | `Economy/ParkResearch.cs:48` | ride upgrade levels and add-on objects form the "upgrade" research category | research lab capture |
-| ECON-019 | `Economy/ParkEconomy.cs:161` | Instant Action research runs at one grade-2 researcher without staff | Instant Action capture |
+| ECON-019 | `Economy/ParkEconomy.cs:169` | an Instant Action start that imported the seed park researches as one grade-2 researcher while none is employed, standing in for the seed's undecoded researcher; the Mac code has no staffless research path | `Easymode.TPWI` staff records |
 | ECON-020 | `Economy/ParkEconomy.cs:28` | a sale drops LitterEffect/100 litter items | capture of litter after sales |
 | ECON-021 | `Economy/ParkEconomy.cs:243` | a repair takes WorkDuration game hours (x DurationOfUpgrade for upgrades); mechanics are dispatched instantly | capture of repair duration per grade |
 | ECON-022 | `Economy/ParkEconomy.cs:261` | a handyman removes one litter item per WorkDuration game minutes, park-wide | capture of cleaning speed |

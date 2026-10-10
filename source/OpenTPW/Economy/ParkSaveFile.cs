@@ -34,6 +34,8 @@ public static class ParkSaveFile
 		public required string Theme { get; init; }
 		public required bool Easy { get; init; }
 		public required ParkGameMode Mode { get; init; }
+		/// <summary><see cref="ParkEconomy.SeedResearcherStandIn"/> (absent in older saves: off).</summary>
+		public bool SeedResearcherStandIn { get; init; }
 		public required long Tick { get; init; }
 		public required GameSpeed Speed { get; init; }
 		public required ulong RandomState { get; init; }
@@ -149,6 +151,7 @@ public static class ParkSaveFile
 			Theme = park.Settings.Theme,
 			Easy = park.Settings.IsEasy,
 			Mode = park.Mode,
+			SeedResearcherStandIn = park.SeedResearcherStandIn,
 			Tick = park.Tick,
 			Speed = park.Speed,
 			RandomState = park.Random.State,
@@ -303,7 +306,7 @@ public static class ParkSaveFile
 		ArgumentNullException.ThrowIfNull( data );
 		if ( !string.Equals( settings.Theme, data.Theme, StringComparison.OrdinalIgnoreCase ) || settings.IsEasy != data.Easy )
 			throw new InvalidDataException( $"Park save is for {data.Theme}{(data.Easy ? " (easy)" : "")}, not {settings.Theme}{(settings.IsEasy ? " (easy)" : "")}." );
-		var park = new ParkEconomy( settings, catalog, data.Mode, 0 );
+		var park = new ParkEconomy( settings, catalog, data.Mode, 0 ) { SeedResearcherStandIn = data.SeedResearcherStandIn };
 		park.Random.Restore( data.RandomState );
 		park.Ledger.Restore( data.Ledger.Balance, data.Ledger.OpeningBalance, data.Ledger.MonthIndex, data.Ledger.CurrentTotals,
 			data.Ledger.History.Select( month => new LedgerMonth( month.MonthIndex, month.Totals, month.OpeningBalance, month.ClosingBalance, month.ParkRating, month.ParkValue ) ) );

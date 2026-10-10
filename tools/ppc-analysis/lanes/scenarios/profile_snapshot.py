@@ -417,13 +417,27 @@ def _theme_from(t, i: int) -> ThemeSnapshot:
         all_research_completed=_u(t['mAllResearchCompleted'], 8, f'{what}.mAllResearchCompleted'))
 
 
+def _short_read_can_leave(name: str, value, reset) -> bool:
+    """Whether a read that stopped inside player member ``name`` can leave it holding ``value``
+    (read_profile_snapshot's short-read model): a u8 element is delivered whole or not at all, so the
+    element the read stopped on, and every array element after it, keeps its reset value; an i32 member
+    holds the 0..3 bytes FSRead delivered in its high-order end, unswapped (short_import), so however
+    many arrived its lowest byte keeps the reset value's lowest."""
+    if name in ('mEarnedGlobalTicket', 'mEarnedSecretTicket'):
+        return any(value[j:] == reset[j:] for j in range(len(value)))
+    if name in ('mSpentTickets', 'mExtraKeys'):
+        return value & 0xff == reset & 0xff
+    return value == reset
+
+
 def from_envelope(env: dict) -> ProfileSnapshot:
     """Inverse of to_envelope. Every field is checked for presence, type and range, unknown fields and
     schemas are refused, and the record must be one the named policy's read could have produced; any
     failure is a ValueError raised before a snapshot exists. A complete record is re-read from its own
     bytes under its policy and must come back equal. A partial record is checked stage by stage (members
-    after the failing step at their reset values, containers no longer than their counts, no repeated
-    theme keys); its failed_offset and issues cannot be re-derived without the bytes and are taken as given."""
+    after the failing step at their reset values, the failing member only at a value a short read
+    stopped inside it can leave, containers no longer than their counts, no repeated theme keys); its
+    failed_offset and issues cannot be re-derived without the bytes and are taken as given."""
     _check(type(env) is dict, 'envelope must be an object')
     _check(env.get('schema') == ENVELOPE_SCHEMA, f'unknown schema {env.get("schema")!r}')
     version_field = env.get('envelope_version')
@@ -458,8 +472,13 @@ def from_envelope(env: dict) -> ProfileSnapshot:
         else:
             value = _s32(p[name], name) if name in ('mSpentTickets', 'mExtraKeys') else _u(p[name], 8, name)
             reset = RESET[name]
-        # The failing member may hold the bytes a short read delivered (see short_import); later ones reset.
-        _check(stage >= 1 + i or value == reset, f'{name} was not read, so it must hold its reset value')
+        # How many bytes a short read delivered into the failing member is not recorded, so it can hold
+        # any value that some 0..width-1 byte delivery can leave (see short_import); later ones reset.
+        if stage < 1 + i:
+            _check(value == reset, f'{name} was not read, so it must hold its reset value')
+        elif stage == 1 + i:
+            _check(_short_read_can_leave(name, value, reset),
+                   f'{name} is where the read stopped, so it can hold only what a short read leaves')
         player[name] = value
     read_in_full = min(max(stage - 1, 0), len(PLAYER_FIELDS))
     fields_read = tuple(_list(env['fields_read'], 'fields_read'))

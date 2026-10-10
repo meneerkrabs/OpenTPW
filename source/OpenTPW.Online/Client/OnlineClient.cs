@@ -140,13 +140,20 @@ public sealed class OnlineClient : IDisposable
 	{
 		var session = Session ?? throw new InvalidOperationException( "Log in before connecting to chat." );
 		var socket = new ClientWebSocket();
-		socket.Options.SetRequestHeader( "Authorization", "Bearer " + session.Token );
-		socket.Options.KeepAliveInterval = TimeSpan.FromSeconds( 30 );
+		// Browsers cannot set WebSocket headers or keep-alive; there the token is the first frame.
+		var browser = OperatingSystem.IsBrowser();
+		if ( !browser )
+		{
+			socket.Options.SetRequestHeader( "Authorization", "Bearer " + session.Token );
+			socket.Options.KeepAliveInterval = TimeSpan.FromSeconds( 30 );
+		}
 		var builder = new UriBuilder( new Uri( ServerUrl, ApiRoutes.Chat.TrimStart( '/' ) ) );
 		builder.Scheme = builder.Scheme == "https" ? "wss" : "ws";
 		try
 		{
 			await socket.ConnectAsync( builder.Uri, cancel );
+			if ( browser )
+				await socket.SendAsync( StrictJson.Serialize( ChatAuthentication.For( session.Token ) ), WebSocketMessageType.Text, true, cancel );
 		}
 		catch
 		{

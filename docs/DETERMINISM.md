@@ -174,7 +174,7 @@ the same seed as well.
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0xC0E5705C8924E49A`, schema 5; the hashed fields are unchanged since `0x10A80C328A477CBE`, but upstream 1198a93 traced staff candidate grades to the binary and dropped the `ChanceToGetGreat` draw, so the economy stream's draws and the run changed. Before that:: the cell map digest was added when the path
+  (`0x98BFAE5138E2A343`, schema 5; the hashed fields are unchanged, but the original ride update gave each park-save object an exact state of repair and a life gauge (`Repair`, `LifeGauge`), which the economy digest includes. Before that: `0xC0E5705C8924E49A`, where the hashed fields were unchanged since `0x10A80C328A477CBE`, but upstream 1198a93 traced staff candidate grades to the binary and dropped the `ChanceToGetGreat` draw, so the economy stream's draws and the run changed. Before that:: the cell map digest was added when the path
   builder made `ParkCellMap` the source of truth for path cells. The run itself
   is unchanged (the raw guest hashes of the cross grid and the Jungle Easymode
   run are pinned across the change), but the hashed "last seen grid version"

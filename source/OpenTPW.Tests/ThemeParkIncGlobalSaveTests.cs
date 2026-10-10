@@ -140,25 +140,27 @@ public class ThemeParkIncGlobalSaveTests
 	}
 
 	/// <summary>
-	/// <c>OPENTPW_TPI_SAVES</c>: a folder with original Theme Park Inc <c>.GMS</c> files (kept private). Each must read to its
-	/// last byte with every marker in place.
+	/// <c>OPENTPW_TPI_SAVES</c>: a folder with original Theme Park Inc <c>.GMS</c> files and any <c>.GMI</c> files (kept private).
+	/// Each must read to its last byte with every marker in place.
 	/// </summary>
 	[TestMethod]
 	public void OriginalGlobalSavesReadToTheirLastByte()
 	{
 		var folder = Environment.GetEnvironmentVariable( "OPENTPW_TPI_SAVES" );
 		if ( string.IsNullOrWhiteSpace( folder ) || !Directory.Exists( folder ) )
-			Assert.Inconclusive( "Set OPENTPW_TPI_SAVES to a folder with Theme Park Inc .GMS files." );
-		var files = Directory.EnumerateFiles( folder!, "*.GMS", SearchOption.AllDirectories ).ToList();
+			Assert.Inconclusive( "Set OPENTPW_TPI_SAVES to a folder with Theme Park Inc .GMS or .GMI files." );
+		var files = Directory.EnumerateFiles( folder!, "*", SearchOption.AllDirectories )
+			.Where( file => Path.GetExtension( file ).ToUpperInvariant() is ".GMS" or ".GMI" ).ToList();
 		if ( files.Count == 0 )
-			Assert.Inconclusive( "The OPENTPW_TPI_SAVES folder has no .GMS files." );
+			Assert.Inconclusive( "The OPENTPW_TPI_SAVES folder has no .GMS or .GMI files." );
 		foreach ( var file in files )
 		{
 			var save = ThemeParkIncGlobalSave.Read( File.ReadAllBytes( file ) );
 			Assert.AreEqual( ThemeParkIncGlobalSave.SupportedVersion, save.Version, file );
 			Assert.IsTrue( save.Parks.Count > 0, file );
 			Assert.IsTrue( save.Parks.All( park => park.Name.Length > 0 ), file );
-			Assert.IsTrue( save.Cards.Any( card => !card.IsEmpty ), file );
+			if ( Path.GetExtension( file ).Equals( ".GMS", StringComparison.OrdinalIgnoreCase ) )
+				Assert.IsTrue( save.Cards.Any( card => !card.IsEmpty ), file );
 		}
 	}
 }

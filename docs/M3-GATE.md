@@ -107,9 +107,13 @@ remaining copies are listed under "Divergences from the player's build flow". If
    Each cell goes through `Level.BuildQueueCell`, the queue tool's per-cell code
    (recompute, `QueuePaths.CheckExtend`, `ParkEconomy.TrySpendCell(Queue)` at
    `Costs.QueueCell` = $75, `QueuePaths.TryExtend`). The blocked-cell test is
-   `Level.IsQueueBlocked`'s rule over the gate's park (`QUEUE-012`). Belly Bounce's
-   queue runs from the front (42,20) around the ride to the back (46,24). Guests join
-   from the spine cell (47,24).
+   `Level.IsQueueBlocked`'s rule over the gate's park (`QUEUE-012`). The route search
+   keeps the cell behind the front in line with the ride's entrance cell and the front
+   (a straight front segment, the condition W3 of the boarding bound's walk terms,
+   [WALK-plan.md](reverse/WALK-plan.md) §12). This is the gate's own layout choice, like
+   the site; the queue tool also allows a corner there. Belly Bounce's queue runs from
+   the front (42,20) straight back to (41,20), then around the ride to the back (46,22).
+   Guests join from the spine cell (47,22).
 5. **Staff**: the first mechanic and the first handyman in the hiring pool are hired
    with `ParkEconomy.Hire`.
 
@@ -194,23 +198,35 @@ DUR ≤ 30 s. Every term is read at run time:
 | P (loop period) | 1 + ⌈500 / 248⌉ = **4** | the operand of the loop WAIT, read from the script (speed 1, BOARD-plan A4) |
 | R (slot hold) | **121** | the UNBOUNCE rule: polls P·j + 1 turns after the BOUNCE; free once deadline < now and (now − start) mod 1000 < 200. For 8 ≤ DUR ≤ 30 this is 4·DUR + 1; for DUR ≤ 7 it is 29 turns, so the gate uses the rule, not the closed form |
 | H₀ | 1 + 3 + 11 + 1 + 1 + P = **21** | removal, move-up wait and move, one interlude, call, notice, next admission slice (BOARD-plan §7.1; `GuestSimulation` constants) |
-| w | **2** | ⌈d / (0.7 × v × T)⌉ + 1. d is the largest distance from a slot-0 point (`QueuePositionPoint`, lateral 114..141) to `StandPoint` (0.053 cell), and v = `WalkSpeedCellsPerSecond` |
-| w₂ | **6** | the same formula, slot 3 to slot 0 (0.756 cell) |
-| H | 21 + 2 + 6 = **29** | H₀ + w + w₂ |
+| w | **20** | the original's state-13 walk from slot 0 to the stand point, from its traced steering ([WALK-plan.md](reverse/WALK-plan.md) §9, `tools/ppc-analysis/lanes/walk/walk_evidence.py`): 12 with slot 0 at the entrance edge, 20 with the slot axis reversed; the link compass is not pinned, so the larger |
+| w₂ | **15** | the original's state-12 move-up from slots 1–3 to slot 0 (WALK-plan §9) |
+| H | 21 + 20 + 15 = **56** | H₀ + w + w₂ |
+
+The walk terms rest on the speed floor at `0xffe38` (max speed ≥ 655 = 0.01 cell per
+update; the base speed `+192` is one of 60..140, so s ≥ 0.59 after 15 updates) and on
+arrival within 0.32 cell (`0xfe628`). The enumeration found 0 failures. They hold under
+three conditions (WALK-plan W2–W4), which the gate checks:
+- **W2:** the head is at least 15 turns old. A wait that overlaps a turn with a younger
+  head is counted (`notJudgedYoungHead`), not judged.
+- **W3:** the entrance cell, the front cell and the next queue cell lie in a line.
+- **W4:** the ride's `EntryCellStandPos` is (0.5, 0.5).
+
+If W3 or W4 fails, no wait of that ride is judged (`notJudgedWalkScope`, with the reason
+in `walkScope`).
 
 The gate checks the bound four ways:
 
 1. every completed wait, against its join position;
 2. at every admission evaluation, the age of every queued guest against its join
    position, so a guest that gives up later is still judged;
-3. the head, against W(0) = H + R + 1 = **151 turns** from the turn it became head;
+3. the head, against W(0) = H + R + 1 = **178 turns** from the turn it became head;
 4. at the end of the run, every guest still queued.
 
 Check 3 is §7.2's induction with J = the turn the guest became head and n = 1. The
 riders then on board free their slots within R, and the boarding takes at most H once a
 slot is free. Without checks 2 and 3, the jungle queue could not fail the bound. Guests
-join at p ≈ 40–49, where W(p) ≈ 2,500 turns (≈ 630 s), but they give up after about
-300 s. A ride that never released its riders therefore passed: `never-release` passed
+join at p ≈ 40–49, where W(p) ≈ 2,500 turns (≈ 630 s) with H = 29 and ≈ 3,800 turns with
+H = 56, but they give up after about 300 s. A ride that never released its riders therefore passed: `never-release` passed
 before checks 2 and 3 were added.
 
 Waits that overlap an excluded turn (BOARD-plan A3) are counted, not judged. A turn is
@@ -219,15 +235,26 @@ excluded when the ride is not open, broken (`VAR_BROKEN`, `VAR_BREAKSTAT`), clos
 toilets, other ride types, RunsContinuously 0, DUR ≥ 31) are judged by the two progress
 rules only, and the row lists them with the reason.
 
-Reported: τ_max = CAP·H + R + 1 − (DUR + 1 s)/T = **142 turns = 35.216 s** (QUEUE-plan
-§9b form) and W_max = W(Qmax − 1) = **5,321 turns = 1,319.608 s**. The τ the run implies
-(`τ_measured`) is evidence, not a threshold.
+Reported: τ_max = CAP·H + R + 1 − (DUR + 1 s)/T = **277 turns = 68.696 s** (QUEUE-plan
+§9b form) and W_max = W(Qmax − 1) = **8,021 turns = 1,989.208 s**. The τ the run implies
+(`τ_measured`) is evidence, not a threshold. No term of the bound rests on OpenTPW's walk
+model any more, so it carries no approximation tag. The GATE-003 tag (τ = 0) is gone, and
+no walk tag replaces it (WALK-plan §12.2). `HeadNotReadyBound` still uses OpenTPW's walk
+speed: it is a consistency check on the runtime's own timing until WALK-I. If no wait is
+judged (no traced BOUNCE ride, every wait excluded, or W3/W4 failing), the row is
+**unresolved**.
 
-Only w and w₂ rest on OpenTPW's own walk model, under **[APPROX:GATE-004]**. The
-original's steering step has a speed cap but no traced floor. Evidence needed: the
-steering step and velocity floor (`0xfec9c`, the `+28` cap at `0xfed98`) and the
-`0xde1d8`/`0xdde74` geometry. `HeadNotReadyBound` uses the same walk speed. If no wait
-is judged (no traced BOUNCE ride, or every wait excluded), the row is **unresolved**.
+**walk-stall (WALK-plan §12.4).** The traced steering finishes:
+- the walk to the stand point within w = 20 updates;
+- the move-up from slots 1–3 to slot 0 within w₂ = 15 updates.
+
+The row **fails** with `walk-stall` when, for a traced ride, a guest stays in either walk
+for more consecutive turns:
+- OpenTPW's `Boarding` (state 13);
+- `MovingUpQueue` (state 12) towards position 0 from inside the front cell.
+
+A stall outside W2–W4 is counted (`walkStallsOutsideScope`), not judged. In the baseline,
+OpenTPW's own walks last at most 0 turns (stand point) and 7 turns (move-up).
 
 Waits are tracked with `Guest.IsInQueue`, which includes walking up (state 12). A
 guest that leaves the queue without boarding is counted only on an in-queue →
@@ -283,21 +310,21 @@ apart from `wallSeconds`.
 | Row | Verdict | Evidence |
 | --- | --- | --- |
 | build.entrance | PASS | 10 InitialPath cells, lanes A/B valid, Bus/Gates/Lights, fee $20 |
-| build.paths | PASS | `ParkPathBuilder.BuildSegment` (47,21)→(47,35): 14 built, 1 existing (the walkway end), $280 charged by the builder and from the balance, 0 stray path cells; reached Belly Bounce (47,20), Drinks Shop (47,23), Small Toilet (47,24), queue join (47,24) |
+| build.paths | PASS | `ParkPathBuilder.BuildSegment` (47,21)→(47,35): 14 built, 1 existing (the walkway end), $280 charged by the builder and from the balance, 0 stray path cells; reached Belly Bounce (47,20), Drinks Shop (47,23), Small Toilet (47,23), queue join (47,22) |
 | build.attraction | PASS | Belly Bounce, clicked (44,20) → anchor (43,21) rot 90, queue front (42,20) (entrance cell: nearest path (47,20)), exit opens onto (47,20), $500, capacity 5 |
-| build.queue | PASS | 25 of 25 cells through `Level.BuildQueueCell`, charged $1,875 (25 × $75), front (42,20) → back (46,24), join cell (47,24) reachable, maximum queue 100; 383 guests stood on the queue cells, 286 boarded from them |
+| build.queue | PASS | 25 of 25 cells through `Level.BuildQueueCell`, charged $1,875 (25 × $75), front (42,20), straight back to (41,20) → back (46,22), join cell (47,22) reachable, maximum queue 100; 377 guests stood on the queue cells, 286 boarded from them |
 | build.shop | PASS | Drinks Shop at (48,23) rot 90, $650, $30 per drink |
-| build.toilet | PASS | Small Toilet at (48,24) rot 90, $100 |
+| build.toilet | PASS | Small Toilet at (46,23) rot 270, $100 |
 | build.staff | PASS | mechanic grade 1 ($150/month), handyman grade 2 ($60/month); no staff agents in the world |
 | time.monotonic | PASS | 0 violations; guest time 1800.000094 s (float accumulation), economy tick 108,000 |
-| economy.income-and-expenses | PASS | setup $3,405; income: gate $35,760, shops $34,860; expenses: staff $2,100, other $23,240 |
+| economy.income-and-expenses | PASS | setup $3,405; income: gate $35,760, shops $34,950; expenses: staff $2,100, other $23,300 |
 | economy.ledger-consistent | PASS | 0 violations in 108,000 samples, 10 months closed |
-| guests.flow | PASS | 1,800 arrived, 1,788 admitted, 0 turned back, 286 used the ride, 833 the shop, 156 the toilet, 1,649 left, 134 in the park at the end |
-| queues.no-stuck-queue | PASS | 0 violations; 331 waits judged (286 completed, 45 still queued at the end), 0 excluded. Belly Bounce (jungle Bouncy.RSE): P 4, H 29 (21 + w 2 + w₂ 6), R 121; τ_max 142 turns = 35.216 s, W_max 5,321 turns = 1,319.608 s; closest wait 42 turns under its W(p); head to boarding ≤ 108 of 151 turns; queue max 51/100, 286 waits, max 254.4 s, mean 213.7 s; head not ready ≤ 106 of 194 turns; 0 blocked evaluations; called age ≤ 3 turns; τ measured 0 s. Shop/toilet (not traced BOUNCE loops: progress rules only): head not ready ≤ 13 / 11 of 50 turns (gates held or not), called age ≤ 1 / 7 turns. 52 guests left a queue without boarding |
+| guests.flow | PASS | 1,800 arrived, 1,788 admitted, 0 turned back, 286 used the ride, 894 the shop, 157 the toilet, 1,654 left, 126 in the park at the end |
+| queues.no-stuck-queue | PASS | 0 violations; 330 waits judged (286 completed, 44 still queued at the end), 0 excluded, 0 outside W2–W4. Belly Bounce (jungle Bouncy.RSE): P 4, H 56 (21 + w 20 + w₂ 15), R 121; τ_max 277 turns = 68.696 s, W_max 8,021 turns = 1,989.208 s; closest wait 69 turns under its W(p); head to boarding ≤ 108 of 178 turns; walks ≤ 0 / 7 of 20 / 15 turns, 0 walk-stalls; queue max 50/100, 286 waits, max 260.4 s, mean 213.3 s; head not ready ≤ 106 of 194 turns; 0 blocked evaluations; called age ≤ 3 turns; τ measured −0.248 s. Shop/toilet (not traced BOUNCE loops: progress rules only): head not ready ≤ 14 / 11 of 50 turns (gates held or not), called age ≤ 1 / 7 turns. 50 guests left a queue without boarding |
 | paths.no-unreachable-goal | PASS | all targets reachable; 0 stuck guests; 0 Confused give-ups; 0 lane-less ejections |
 | rides.scripts-run | PASS | 0 faults, 0 halted ticks (Belly Bounce, Drinks Shop, Small Toilet waiting; Bus, Gates, Lights running) |
-| staff.work | PASS | 10 wage payments ($2,100); mechanic: 17 repairs for 17 worn/broken events, longest 14.6 s within the 61-turn window, 0 pending; handyman: 581 litter items dropped, 581 cleaned, 0 missed hour updates |
-| determinism.same-seed | PASS | raw guest hash 41F91296D1861ACD in both in-process runs; attraction ids 4 5 6 in both; gate hash E8BB1012535C346D; 30 minute hashes in each run, no divergent minute |
+| staff.work | PASS | 10 wage payments ($2,100); mechanic: 17 repairs for 17 worn/broken events, longest 14.6 s within the 61-turn window, 0 pending; handyman: 582.5 litter items dropped, 582.5 cleaned, 0 missed hour updates |
+| determinism.same-seed | PASS | raw guest hash 67B41EEA7B70FD68 in both in-process runs; attraction ids 4 5 6 in both; gate hash F1666E8C69E092BE; 30 minute hashes in each run, no divergent minute |
 
 Totals: 16 pass, 0 fail, 0 unresolved; **exit code 0**. The evaluator accepts M3 under
 the approximations listed below. With `--no-determinism`: 15 pass, 0 fail, 1 unresolved,
@@ -309,11 +336,13 @@ exit 2.
 - **paths: `build.queue` — resolved.** The queue is laid through the queue tool's code
   (QUEUE-I), charged, and walked by guests.
 - **rides / guests: `queues.no-stuck-queue` — resolved** by BOARD-R's traced boarding
-  bound (call to boarding and τ, BOARD-plan §7). Only its walk terms w and w₂ are
-  approximations (GATE-004). A ride that stops taking guests (`block-boarding`), a head
-  that is never ready (`never-called-head`), slots held far beyond R
-  (`hold-slots-much-longer`, `never-release`) and a head held beyond H
-  (`head-delayed-150-turns`) all fail it.
+  bound (call to boarding and τ, BOARD-plan §7) with WALK-R's traced walk terms
+  (WALK-plan §9, §12). These ride types fail it:
+  - a ride that stops taking guests (`block-boarding`);
+  - a head that is never ready (`never-called-head`);
+  - slots held far beyond R (`hold-slots-much-longer`, `never-release`);
+  - a head held beyond H (`head-delayed-170-turns`);
+  - a move-up held beyond w₂ (`hold-move-up`, walk-stall).
 - **determinism: `determinism.same-seed` — resolved** by the DET node.
 
 Passing rows that rest on approximations rather than original rules:
@@ -323,9 +352,9 @@ Passing rows that rest on approximations rather than original rules:
 - the entrance/exit snap (`RIDES-028`);
 - the build rule (`RIDES-018`);
 - the queue build rules (`QUEUE-012` to `QUEUE-014`);
-- the walk terms w and w₂ of the boarding bound (`GATE-004`: OpenTPW's walk speed and
-  the `QUEUE-006`/`QUEUE-007` slot and stand points), and the nominal 248 ms clock and
-  per-turn cadence the bound assumes (BOARD-plan A1, A2).
+- the boarding bound's assumptions: the nominal 248 ms clock and per-turn cadence
+  (BOARD-plan A1, A2, WALK-plan W1). Its walk terms are traced (WALK-plan §9) under
+  W2–W4, which the gate checks. W3 holds because the gate lays a straight front segment.
 
 ## Mutation evidence
 
@@ -354,20 +383,21 @@ v1/v2 and pins the current rows:
 | `paths-direct-write` (the old stand-in: cells charged and written around the builder) | `build.paths` | **FAIL** (0 built, 14 stray path cells), the only failing row |
 | `paths-no-charge` (`ParkPathBuilder` without the economy) | `build.paths` | **FAIL** (charged $0 for 14 cells) |
 | `block-boarding` (v1: `VAR_LETMEON` = −1 from tick 18,000) | `queues.no-stuck-queue` | **FAIL** (blocked handshake), the only new failing row |
-| `never-called-head` (the head is held in an interlude from tick 18,000) | `queues.no-stuck-queue` | **FAIL** at tick 20,267: the head is not boarded within 151 turns of becoming head; rule (a) also fails it (head not ready beyond 194 turns) |
+| `never-called-head` (the head is held in an interlude from tick 18,000) | `queues.no-stuck-queue` | **FAIL** at tick 20,639: the head is not boarded within 178 turns of becoming head; rule (a) also fails it (head not ready beyond 194 turns) |
 | `stall-one-update` (shop `VAR_LETMEON` = −1 for one evaluation) | `queues.no-stuck-queue` | not failed (1 blocked evaluation); PASS since the boarding bound |
 | `idle-mechanic-after-first-repair` (v2) | `staff.work` | **FAIL** (wear not repaired within 61 turns) |
 | `idle-handyman-after-first-clean` (v2) | `staff.work` | **FAIL** (litter not reduced at an hour update) |
 | `queue-bypass-economy` (`Level.BuildQueueCell` without the economy) | `build.queue` | **FAIL** (charged $0 for 25 cells) |
-| `never-ready-head-blips` (GATE-V3: the held head, plus one blocked evaluation every 300 turns) | `queues.no-stuck-queue` | **FAIL**: rule (a) from tick 20,892 (S2; was UNRESOLVED, streak ≤ 299 of 326); the boarding bound first, at 20,267 |
-| `never-ready-head-blips-150` (the same, every 150 turns: below the 194-turn bound) | `queues.no-stuck-queue` | **FAIL**: rule (a) from tick 20,892 (S2; was UNRESOLVED, streak ≤ 149); the boarding bound first, at 20,267 |
-| `head-held-250-turns` (the head held in an interlude for 250 turns from tick 18,000, then released) | `queues.no-stuck-queue` | **FAIL**: rule (a), 263 > 194 turns (S1; was UNRESOLVED, 259 ≤ 326); the boarding bound first, at 20,267 |
-| `hold-slots-much-longer` (every new BOUNCE slot held 120 s past its deadline, about 5R) | `queues.no-stuck-queue` | **FAIL** at tick 20,267 (head not boarded within 151 turns); rules (a) and (b) silent |
-| `never-release` (BOUNCE slots never released from tick 18,000) | `queues.no-stuck-queue` | **FAIL** at tick 20,267, as above (it passed with only the join-anchored checks) |
-| `head-delayed-150-turns` (each new head held 150 turns before it can be called) | `queues.no-stuck-queue` | **FAIL** at tick 20,267 (36 bound violations); head not ready ≤ 163 of 194, so rule (a) is silent |
-| `hold-slots-longer` (+30 s, about 2R), `head-delayed-60-turns` | `queues.no-stuck-queue` | PASS (pinned): the slowdowns stay within the loose bound (head to boarding ≤ 126 of 151) |
+| `never-ready-head-blips` (GATE-V3: the held head, plus one blocked evaluation every 300 turns) | `queues.no-stuck-queue` | **FAIL**: rule (a) (S2; was UNRESOLVED, streak ≤ 299 of 326); the boarding bound first, at 20,639 |
+| `never-ready-head-blips-150` (the same, every 150 turns: below the 194-turn bound) | `queues.no-stuck-queue` | **FAIL**: rule (a) (S2; was UNRESOLVED, streak ≤ 149); the boarding bound first, at 20,639 |
+| `head-held-250-turns` (the head held in an interlude for 250 turns from tick 18,000, then released) | `queues.no-stuck-queue` | **FAIL**: rule (a), 261 > 194 turns (S1; was UNRESOLVED, 259 ≤ 326); the boarding bound first, at 20,639 |
+| `hold-slots-much-longer` (every new BOUNCE slot held 120 s past its deadline, about 5R) | `queues.no-stuck-queue` | **FAIL** at tick 20,639 (head not boarded within 178 turns); rules (a) and (b) silent |
+| `never-release` (BOUNCE slots never released from tick 18,000) | `queues.no-stuck-queue` | **FAIL** at tick 20,639, as above (it passed with only the join-anchored checks) |
+| `head-delayed-170-turns` (each new head held 170 turns before it can be called) | `queues.no-stuck-queue` | **FAIL** at tick 20,639 (32 bound violations, head to boarding 187 > 178); head not ready ≤ 185 of 194, so rule (a) is silent |
+| `hold-move-up` (the first guest moving up to slot 0 inside the front cell from tick 18,000 is held in place for 30 turns) | `queues.no-stuck-queue` | **FAIL** at tick 18,228: `walk-stall`, move-up for 16 > w₂ 15 turns; every other queue rule silent (passed on 5ce5cc4) |
+| `hold-slots-longer` (+30 s, about 2R), `head-delayed-60-turns` | `queues.no-stuck-queue` | PASS (pinned): the slowdowns stay within the loose bound (head to boarding ≤ 134 of 178) |
 | `stall-ride` (v1) | `queues.no-stuck-queue` | not failed: after the stop the ride is not open (excluded) and nobody queues; the gate still exits 1 through `rides.scripts-run` and `time.monotonic` |
-| `cut-path` (v1) | `paths.no-unreachable-goal` | **FAIL**; the end-of-run list now includes Belly Bounce, whose join cell is cut off (S3; was "Drinks Shop, Small Toilet") |
+| `cut-spine-start` (the segment's first cell (47,21) cut at tick 1,000: Belly Bounce's entrance and exit stay reachable, its join cell does not) | `paths.no-unreachable-goal` | **FAIL**, listing "Belly Bounce, Drinks Shop, Small Toilet" (S3; on 64616cd "Drinks Shop, Small Toilet") |
 | `diverge-second-run` (v1: the second run diverges at tick 2,000 and converges by the end) | `determinism.same-seed` | **FAIL** at tick 3,600, minute 1 (S4; was PASS) |
 
 Static checks in v3:

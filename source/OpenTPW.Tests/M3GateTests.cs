@@ -65,7 +65,7 @@ public class M3GateTests
 		StringAssert.Contains( M3GateRun.HeadNotReadyBound( 25, 1.0f ).Derivation, "2 interludes x 11" );
 	}
 
-	/// <summary>The BOUNCE boarding bound (docs/reverse/BOARD-plan.md §7, §8) from its traced rules: P, R, H₀, the walk terms and W(p).</summary>
+	/// <summary>The BOUNCE boarding bound (docs/reverse/BOARD-plan.md §7, §8; WALK-plan §9 walk terms) from its traced rules: P, R, H₀, w, w₂ and W(p).</summary>
 	[TestMethod]
 	public void BounceBoardingBoundFollowsTheTracedRules()
 	{
@@ -79,13 +79,12 @@ public class M3GateTests
 		Assert.AreEqual( 29L, M3GateRun.BounceHoldTurns( 1, 4 ) );
 		// H0 = 1 removal + 3 move-up + 11 interlude + 1 call + 1 notice + P.
 		Assert.AreEqual( 21L, M3GateRun.BoardingHostTurns( 4 ) );
-		// w: 13.5/255 cell to the stand point; w2: slot 3 to slot 0, sqrt((191/255)^2 + (27/255)^2) cell; at 1.0 x 0.7 cells/s.
-		Assert.AreEqual( 2L, M3GateRun.WalkTurns( 13.5 / 255, 1.0f ) );
-		Assert.AreEqual( 6L, M3GateRun.WalkTurns( Math.Sqrt( 191.0 * 191 + 27 * 27 ) / 255, 1.0f ) );
-		// W(p) = (p + 1) H + (floor(p / CAP) + 1) R + 1: 151 at the head, 2,811 at p = 50, 5,321 at Qmax - 1 = 99.
-		Assert.AreEqual( 151L, M3GateRun.BoardingWaitBound( 0, 5, 29, 121 ) );
-		Assert.AreEqual( 2811L, M3GateRun.BoardingWaitBound( 50, 5, 29, 121 ) );
-		Assert.AreEqual( 5321L, M3GateRun.BoardingWaitBound( 99, 5, 29, 121 ) );
+		// w = 20 and w2 = 15 from the traced steering (WALK-plan section 9), so H = 21 + 20 + 15 = 56.
+		Assert.AreEqual( 56L, M3GateRun.BoardingHostTurns( 4 ) + M3GateRun.StandWalkTurns + M3GateRun.MoveUpWalkTurns );
+		// W(p) = (p + 1) H + (floor(p / CAP) + 1) R + 1: 178 at the head, 4,188 at p = 50, 8,021 at Qmax - 1 = 99 (WALK-plan section 1).
+		Assert.AreEqual( 178L, M3GateRun.BoardingWaitBound( 0, 5, 56, 121 ) );
+		Assert.AreEqual( 4188L, M3GateRun.BoardingWaitBound( 50, 5, 56, 121 ) );
+		Assert.AreEqual( 8021L, M3GateRun.BoardingWaitBound( 99, 5, 56, 121 ) );
 		Assert.AreEqual( 4, M3GateRun.TracedBounceScripts.Count );
 	}
 }
@@ -127,8 +126,8 @@ public class M3GateAssetTests
 		Assert.AreEqual( 14, (int)paths.Evidence["cellsBuilt"]! );
 		Assert.AreEqual( 14L * 20, (long)paths.Evidence["charged"]! );
 		Assert.AreEqual( 0, (int)paths.Evidence["strayPathCells"]! );
-		// The unresolved queue row keeps the gate at exit 2: M3 is not accepted.
-		Assert.AreEqual( 2, report.ExitCode, report.ToSummary() );
+		// Every row passes (the queue row on the traced boarding bound, BOARD-plan and WALK-plan): exit 0.
+		Assert.AreEqual( 0, report.ExitCode, report.ToSummary() );
 		// The queue is laid through the queue tool's code, charged per cell, and walked: 25 cells for the 100-guest limit.
 		var queue = report["build.queue"];
 		Assert.AreEqual( M3GateVerdict.Pass, queue.Verdict, report.ToSummary() );
@@ -136,8 +135,11 @@ public class M3GateAssetTests
 		Assert.AreEqual( 25L * 75, (long)queue.Evidence["charged"]! );
 		Assert.AreEqual( 100, (int)queue.Evidence["maximumQueueLength"]! );
 		Assert.IsTrue( (int)queue.Evidence["boardedFromQueueCells"]! > 0, report.ToSummary() );
-		// No derived progress violation; the call-to-boarding time and tau are untraced, so the row stays unresolved.
-		Assert.AreEqual( M3GateVerdict.Unresolved, report["queues.no-stuck-queue"].Verdict, report.ToSummary() );
+		// No progress violation and no wait beyond W(p) with H = 56, R = 121; at least one wait judged, so the row passes.
+		var stuck = report["queues.no-stuck-queue"];
+		Assert.AreEqual( M3GateVerdict.Pass, stuck.Verdict, report.ToSummary() );
+		Assert.AreEqual( 56L, (long)stuck.Evidence["attraction"]!["waitBound"]!["latencyTurns"]! );
+		Assert.AreEqual( 0L, (long)stuck.Evidence["attraction"]!["waitBound"]!["walkStalls"]! );
 		Assert.AreEqual( M3GateVerdict.Pass, report["staff.work"].Verdict, report.ToSummary() );
 		Assert.IsTrue( (long)report["guests.flow"].Evidence["admitted"]! > 0, report.ToSummary() );
 		Assert.IsNotNull( JsonNode.Parse( report.ToJson() ) );

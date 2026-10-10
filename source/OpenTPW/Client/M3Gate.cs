@@ -556,7 +556,7 @@ internal sealed class M3GateRun
 		var maxY = spine.Max( cell => cell.Y ) + 8;
 		(int, int, int)? best = null;
 		var bestScore = (int.MaxValue, int.MaxValue);
-		var queueSites = new List<(int Snap, int Distance, int ClickX, int ClickY, int Rotation, (int X, int Y) Front, HashSet<(int X, int Y)> Footprint)>();
+		var queueSites = new List<(int Snap, int Distance, int ClickX, int ClickY, int Rotation, (int X, int Y) Front, (int DX, int DY) Back, HashSet<(int X, int Y)> Footprint)>();
 		var goalDistance = queueCells > 0 ? QueueGoalDistances() : null;
 		foreach ( var rotation in new[] { 0, 90, 180, 270 } )
 		{
@@ -582,7 +582,9 @@ internal sealed class M3GateRun
 						if ( distance < 0 || distance > queueCells - 1 || Level.ResolveVisitorCells( points, grid ) is not { } resolved )
 							continue;
 						var exitSnap = exit == default ? 0 : Math.Abs( resolved.Exit.X - exit.OutsideX ) + Math.Abs( resolved.Exit.Y - exit.OutsideY );
-						queueSites.Add( (exitSnap, distance, clickX, clickY, rotation, front, footprint) );
+						// WALK-plan W3: the cell behind the front continues the line from the ride's entrance cell through the front.
+						var back = (DX: entrance.OutsideX - entrance.X, DY: entrance.OutsideY - entrance.Y);
+						queueSites.Add( (exitSnap, distance, clickX, clickY, rotation, front, back, footprint) );
 						continue;
 					}
 					var spineIndex = spine.IndexOf( (entrance.OutsideX, entrance.OutsideY) );
@@ -603,7 +605,7 @@ internal sealed class M3GateRun
 			// OrderBy is stable: equal scores keep the scan order (rotation, then row, then column).
 			foreach ( var site in queueSites.OrderBy( site => site.Snap ).ThenBy( site => site.Distance ) )
 			{
-				if ( FindQueueRoute( site.Front, queueCells, site.Footprint, goalDistance! ) is { } route )
+				if ( FindQueueRoute( site.Front, site.Back, queueCells, site.Footprint, goalDistance! ) is { } route )
 					return (site.ClickX, site.ClickY, site.Rotation, route);
 			}
 			return null;
@@ -651,9 +653,12 @@ internal sealed class M3GateRun
 	/// <summary>
 	/// A run of exactly <paramref name="length"/> free queue cells from <paramref name="front"/>, each touching the one
 	/// before (QueuePaths' rule), whose last cell lies beside a path so guests can join. Depth-first in
-	/// <see cref="GuestPathGrid.Directions"/> order, so the route is deterministic; null when none is found.
+	/// <see cref="GuestPathGrid.Directions"/> order, so the route is deterministic; null when none is found. The second cell
+	/// lies straight behind the front, in direction <paramref name="back"/> away from the ride, so the entrance cell, the
+	/// front cell and the next queue cell are in a line: the walk terms of the boarding bound are derived for a straight
+	/// front segment (WALK-plan W3). A layout choice of the gate, like the site; the queue tool allows corners there too.
 	/// </summary>
-	private List<(int X, int Y)>? FindQueueRoute( (int X, int Y) front, int length, HashSet<(int X, int Y)> footprint, int[] goalDistance )
+	private List<(int X, int Y)>? FindQueueRoute( (int X, int Y) front, (int DX, int DY) back, int length, HashSet<(int X, int Y)> footprint, int[] goalDistance )
 	{
 		var route = new List<(int X, int Y)> { front };
 		var used = new HashSet<(int X, int Y)> { front };
@@ -667,7 +672,7 @@ internal sealed class M3GateRun
 			foreach ( var (dx, dy) in GuestPathGrid.Directions )
 			{
 				var next = (X: cell.X + dx, Y: cell.Y + dy);
-				if ( used.Contains( next ) || footprint.Contains( next ) || !IsQueueCellFree( next.X, next.Y ) )
+				if ( used.Contains( next ) || footprint.Contains( next ) || !IsQueueCellFree( next.X, next.Y ) || (cell == front && (dx, dy) != back) )
 					continue;
 				var distance = goalDistance[next.Y * grid.Cells.Width + next.X];
 				if ( distance < 0 || distance > remaining - 1 )
@@ -806,6 +811,12 @@ internal sealed class M3GateRun
 		public bool StoodOnQueueCell;
 		public long UnreachableSince = -1;
 		public bool UsedRide, UsedShop, UsedToilet;
+		/// <summary>Park turn the guest was first seen (the tick it spawned), for WALK-plan's age condition W2.</summary>
+		public long FirstSeenTurn;
+		/// <summary>The queue walk being timed for walk-stall: 13 (to the stand point), 12 (move-up to slot 0) or 0.</summary>
+		public int WalkKind;
+		public long WalkSince;
+		public bool WalkReported;
 	}
 
 	private sealed class Violation
@@ -853,6 +864,10 @@ internal sealed class M3GateRun
 		public int BoardingHead;
 		public long BoardingHeadSince, MaxHeadToBoarding;
 		public readonly HashSet<int> ReportedAges = new();
+		/// <summary>Turns whose head was younger than <see cref="M3GateRun.MinimumWalkAgeTurns"/> (WALK-plan W2): waits overlapping one are not judged.</summary>
+		public readonly SortedSet<long> YoungHeadTurns = new();
+		public readonly Violation WalkStall = new();
+		public long MaxStandWalk, MaxMoveUpWalk, StandWalks, MoveUpWalks, StallsOutsideScope;
 	}
 
 	private void Simulate( long ticks )
@@ -870,6 +885,7 @@ internal sealed class M3GateRun
 		var progress = placed.Select( item => new QueueProgress { HeadBound = HeadNotReadyBound( item.Runtime.Visitors.QueueSizeInCells, guests.Settings.WalkSpeedCellsPerSecond ).Turns } ).ToArray();
 		for ( var index = 0; index < placed.Count; index++ )
 			progress[index].Boarding = TraceBoarding( placed[index], out progress[index].BoardingReason );
+		var boardingRides = Enumerable.Range( 0, placed.Count ).Where( index => progress[index].Boarding != null ).ToDictionary( index => placed[index].Runtime.Visitors.AttractionId );
 		var queueRide = queueBuilt ? placed.First( item => item.Role == "attraction" ).Runtime.Visitors : null;
 		var queueCells = queueRide?.QueueCells.ToHashSet() ?? new HashSet<(int X, int Y)>();
 		int stoodOnQueueCells = 0, boardedFromQueueCells = 0;
@@ -1019,7 +1035,7 @@ internal sealed class M3GateRun
 			foreach ( var guest in guests.Guests )
 			{
 				if ( !tracks.TryGetValue( guest.Id, out var track ) )
-					tracks[guest.Id] = track = new GuestTrack { State = guest.State };
+					tracks[guest.Id] = track = new GuestTrack { State = guest.State, FirstSeenTurn = guests.ParkTurn };
 				track.Seen = true;
 				if ( guests.IsInPark( guest ) && guest.State != GuestState.LeavingPark )
 					track.Admitted = true;
@@ -1037,6 +1053,10 @@ internal sealed class M3GateRun
 						turnedAwayFromQueue++;
 					track.QueueSince = -1;
 				}
+				if ( boardingRides.TryGetValue( guest.AttractionId, out var walkIndex ) )
+					CheckWalkStall( placed[walkIndex], progress[walkIndex], guest, track, tick );
+				else
+					track.WalkKind = 0;
 				if ( guest.State == GuestState.Queueing && queueRide != null && guest.AttractionId == queueRide.AttractionId && queueCells.Contains( guest.Cell ) && !track.StoodOnQueueCell )
 				{
 					track.StoodOnQueueCell = true;
@@ -1171,8 +1191,9 @@ internal sealed class M3GateRun
 	}
 
 	/// <summary>The traced boarding latency of one BOUNCE ride (docs/reverse/BOARD-plan.md §7.1, §8), in park turns.</summary>
-	internal sealed record BoardingModel( string Script, int LoopWaitMilliseconds, long PeriodTurns, long HostTurns, long StandWalkTurns, long MoveUpWalkTurns,
-		double StandDistanceCells, double MoveUpDistanceCells )
+	/// <param name="WalkScope">Empty when WALK-plan's straight-front (W3) and stand-position (W4) conditions hold; otherwise
+	/// why the walk terms, and so every wait of this ride, are not judged.</param>
+	internal sealed record BoardingModel( string Script, int LoopWaitMilliseconds, long PeriodTurns, long HostTurns, string WalkScope )
 	{
 		/// <summary>H = H₀ + w + w₂: one boarding's latency once the previous LETMEON was consumed and a slot is free.</summary>
 		public long LatencyTurns => HostTurns + StandWalkTurns + MoveUpWalkTurns;
@@ -1220,15 +1241,20 @@ internal sealed class M3GateRun
 	}
 
 	/// <summary>
-	/// Updates for one walk of <paramref name="cells"/> at the slowest walk speed (× 0.7 below 20 energy,
-	/// GuestSimulation.Speed): ⌈d / (0.7 × v × T)⌉ steps plus the update that notices the arrival (BOARD-plan §8).
+	/// w: updates of the original's state-13 walk from slot 0 to the stand point, from its traced steering
+	/// (docs/reverse/WALK-plan.md §9, <c>tools/ppc-analysis/lanes/walk/walk_evidence.py</c> on the SHA-pinned binary):
+	/// the speed floor at 0xffe38 (max speed ≥ 655 = 0.01 cell per update, base speed +192 ∈ 60..140, so s ≥ 0.59 after
+	/// 15 updates) and arrival within 0.32 cell (0xfe628). Enumerated with 0 failures: 12 with slot 0 at the entrance edge,
+	/// 20 with the slot axis reversed; the link compass is not pinned, so the larger. Holds under W2 (the guest is at least
+	/// 15 updates old), W3 (a straight front segment) and W4 (EntryCellStandPos (0.5, 0.5)).
 	/// </summary>
-	// [APPROX:GATE-004] the walk terms w (to the stand point) and w2 (new head to slot 0) of the BOUNCE boarding bound use OpenTPW's walk model (WalkSpeedCellsPerSecond x 0.7, the QUEUE-006 slot points and the QUEUE-007 stand point); the original's steering step has a speed cap but no traced floor — evidence needed: the steering step and velocity floor (0xfec9c, the +28 cap at 0xfed98) and the 0xde1d8 / 0xdde74 geometry
-	internal static long WalkTurns( double cells, float walkCellsPerSecond )
-	{
-		const double TiredWalkFactor = 0.7;
-		return (long)Math.Ceiling( cells / (walkCellsPerSecond * TiredWalkFactor * ParkCalendar.TurnMilliseconds / 1000.0) ) + 1;
-	}
+	internal const long StandWalkTurns = 20;
+
+	/// <summary>w₂: updates of the original's state-12 move-up from slots 1–3 to slot 0 (WALK-plan §9, same conditions).</summary>
+	internal const long MoveUpWalkTurns = 15;
+
+	/// <summary>Updates a guest must have lived for the speed floor s ≥ 0.59 behind w and w₂ (WALK-plan W2).</summary>
+	internal const long MinimumWalkAgeTurns = 15;
 
 	/// <summary>
 	/// Host part H₀ of the per-boarding latency (BOARD-plan §7.1): the previous guest leaves the list (1, state 14
@@ -1284,27 +1310,21 @@ internal sealed class M3GateRun
 			return null;
 		}
 		var period = BounceLoopPeriodTurns( wait.Value );
-		// w: from any slot-0 point (lateral byte 114..141) to the stand point; w2: from slot 3 to slot 0 (the head's last
-		// move-up under the gap <= 2 rule), over every pair of lateral bytes.
-		var stand = GuestSimulation.StandPoint( visitors );
-		double standDistance = 0, moveUpDistance = 0;
-		for ( var lateral = 114; lateral <= 141; lateral++ )
-		{
-			var front = guests.QueuePositionPoint( visitors, 0, (byte)lateral );
-			standDistance = Math.Max( standDistance, Distance( front.X, front.Y, stand.X, stand.Y ) );
-			for ( var from = 114; from <= 141; from++ )
-			{
-				var back = guests.QueuePositionPoint( visitors, RideVisitorBridge.PositionsPerCell - 1, (byte)from );
-				moveUpDistance = Math.Max( moveUpDistance, Distance( back.X, back.Y, front.X, front.Y ) );
-			}
-		}
-		var speed = guests.Settings.WalkSpeedCellsPerSecond;
+		// WALK-plan W3: the entrance cell E, the front cell Q and the next queue cell B lie in a line (E is Q's neighbour
+		// towards the ride). W4: the ride's EntryCellStandPos is (0.5, 0.5).
+		var front = visitors.QueueCells[0];
+		var (toRideX, toRideY) = GuestPathGrid.Directions[visitors.DirectionTowardsFront( 0 )];
+		var behind = visitors.QueueCells.Count > 1 ? visitors.QueueCells[1] : visitors.JoinCell ?? front;
+		var straight = (front.X - behind.X, front.Y - behind.Y) == (toRideX, toRideY);
+		var settings = item.Entry.Settings;
+		var standX = settings.Has( "UsageInfo.EntryCellStandPosX" ) ? settings.GetFloat( "UsageInfo.EntryCellStandPosX" ) : float.NaN;
+		var standY = settings.Has( "UsageInfo.EntryCellStandPosY" ) ? settings.GetFloat( "UsageInfo.EntryCellStandPosY" ) : float.NaN;
+		var scope = !straight ? $"front segment not straight (B {behind} -> Q {front} -> ride {(toRideX, toRideY)}; WALK-plan W3)"
+			: standX != 0.5f || standY != 0.5f ? FormattableString.Invariant( $"EntryCellStandPos ({standX}, {standY}) is not (0.5, 0.5) (WALK-plan W4)" ) : "";
 		reason = "";
-		return new BoardingModel( pin.Name, wait.Value, period, BoardingHostTurns( period ), WalkTurns( standDistance, speed ), WalkTurns( moveUpDistance, speed ),
-			standDistance, moveUpDistance );
-
-		static double Distance( float ax, float ay, float bx, float by ) => Math.Sqrt( (double)(ax - bx) * (ax - bx) + (double)(ay - by) * (ay - by) );
+		return new BoardingModel( pin.Name, wait.Value, period, BoardingHostTurns( period ), scope );
 	}
+
 
 	/// <summary>
 	/// The wait bound applied at every admission evaluation, not only to completed waits, so a guest that later gives up
@@ -1322,10 +1342,13 @@ internal sealed class M3GateRun
 		var duration = item.Runtime.GetVariable( RideVariables.VAR_DURATION );
 		if ( head != state.BoardingHead )
 			(state.BoardingHead, state.BoardingHeadSince) = (head, now);
-		if ( duration is < 0 or > MaximumBoundedDuration )
+		// WALK-plan W2: the head (the next guest to be called, or the called one) must be at least 15 updates old.
+		if ( head != 0 && (tracks.GetValueOrDefault( head ) is not { } headTrack || now - headTrack.FirstSeenTurn < MinimumWalkAgeTurns) )
+			state.YoungHeadTurns.Add( now );
+		if ( duration is < 0 or > MaximumBoundedDuration || model.WalkScope.Length > 0 )
 			return;
 		var hold = BounceHoldTurns( duration, model.PeriodTurns );
-		bool Excluded( long from ) => state.ExcludedTurns.GetViewBetween( from, now ).Count > 0;
+		bool Excluded( long from ) => state.ExcludedTurns.GetViewBetween( from, now ).Count > 0 || state.YoungHeadTurns.GetViewBetween( from, now ).Count > 0;
 		if ( head != 0 )
 		{
 			var asHead = now - state.BoardingHeadSince;
@@ -1342,6 +1365,45 @@ internal sealed class M3GateRun
 			if ( age > bound && !Excluded( now - age ) && state.ReportedAges.Add( id ) )
 				state.WaitAboveBound.Add( tick, $"tick {tick}: {name} guest {id} queued {age} turns from position {track.QueueJoinPosition} > bound {bound} (H {model.LatencyTurns}, R {hold}, CAP {capacity})" );
 		}
+	}
+
+	/// <summary>
+	/// walk-stall (WALK-plan §12.4): the traced steering completes the walk to the stand point within w = 20 updates and
+	/// the move-up from slots 1–3 to slot 0 within w₂ = 15. A guest of a traced ride in OpenTPW's <see cref="GuestState.Boarding"/>
+	/// (state 13), or in <see cref="GuestState.MovingUpQueue"/> (state 12) towards position 0 from inside the front cell,
+	/// for more consecutive turns fails the row; outside W2–W4 the stall is counted, not judged.
+	/// </summary>
+	private void CheckWalkStall( Placed item, QueueProgress state, Guest guest, GuestTrack track, long tick )
+	{
+		var now = guests.ParkTurn;
+		var kind = guest.State == GuestState.Boarding ? 13
+			: guest.State == GuestState.MovingUpQueue && guest.QueuePosition == 0 && (track.WalkKind == 12 || guest.QueueCellIndex == 0) ? 12 : 0;
+		if ( kind != track.WalkKind )
+		{
+			(track.WalkKind, track.WalkSince, track.WalkReported) = (kind, now, false);
+			if ( kind == 13 )
+				state.StandWalks++;
+			else if ( kind == 12 )
+				state.MoveUpWalks++;
+		}
+		if ( kind == 0 )
+			return;
+		var turns = now - track.WalkSince;
+		var bound = kind == 13 ? StandWalkTurns : MoveUpWalkTurns;
+		if ( kind == 13 )
+			state.MaxStandWalk = Math.Max( state.MaxStandWalk, turns );
+		else
+			state.MaxMoveUpWalk = Math.Max( state.MaxMoveUpWalk, turns );
+		if ( turns <= bound || track.WalkReported )
+			return;
+		track.WalkReported = true;
+		if ( state.Boarding!.WalkScope.Length > 0 || track.WalkSince - track.FirstSeenTurn < MinimumWalkAgeTurns )
+		{
+			state.StallsOutsideScope++;
+			return;
+		}
+		var walk = kind == 13 ? "state 13 walk to the stand point" : "state 12 move-up to slot 0";
+		state.WalkStall.Add( tick, $"walk-stall: tick {tick}: {item.Entry.SettingsName} guest {guest.Id} {walk} for {turns} turns > {(kind == 13 ? "w" : "w2")} {bound} (WALK-plan §9)" );
 	}
 
 	/// <summary>BOARD-plan A3: marks the turn when the ride is closed or broken, or when its CAP or DUR changes.</summary>
@@ -1468,10 +1530,12 @@ internal sealed class M3GateRun
 	/// The queue row (QUEUE-plan §9). It fails on a derived progress violation: (a) the same head did not stand at
 	/// position 0 (whether or not the gates held) for longer than <see cref="HeadNotReadyBound"/>; (b) a queue the
 	/// admission handshake cannot move (VAR_LETMEON non-zero with nobody called on two consecutive evaluations: §9a's
-	/// two-update rule); (c) for a BOUNCE ride of the traced class (BOARD-plan §8), a completed wait, or the age of a guest
-	/// still queued at the end, above (p + 1)·H + (⌊p / CAP⌋ + 1)·R + 1 turns for its join position p. Waits that overlap
-	/// a closed or broken turn or a CAP/DUR change are counted, not judged. It passes when no rule is violated and at least
-	/// one wait was judged; otherwise it stays unresolved. Objects outside the class are judged by (a) and (b) only.
+	/// two-update rule); (c) for a BOUNCE ride of the traced class (BOARD-plan §8), a completed wait, a queued guest's age
+	/// at any evaluation, or the head's time since becoming head, above (p + 1)·H + (⌊p / CAP⌋ + 1)·R + 1 turns for its
+	/// join position p (p = 0 for the head), with w and w₂ from WALK-plan §9; (d) walk-stall (WALK-plan §12.4). Waits
+	/// that overlap a closed or broken turn, a CAP/DUR change or a head younger than 15 turns, and every wait of a ride
+	/// outside WALK-plan W3/W4, are counted, not judged. It passes when no rule is violated and at least one wait was
+	/// judged; otherwise it stays unresolved. Objects outside the class are judged by (a) and (b) only.
 	/// </summary>
 	private void AddQueueRow( QueueProgress[] progress, long stillQueuedTurns, List<(int AttractionId, long Turns, int Position)> queuedAtEnd, long ticks,
 		long leftWithoutBoarding, long vanished )
@@ -1514,7 +1578,7 @@ internal sealed class M3GateRun
 				: JudgeWaits( item, state, queuedAtEnd.Where( guest => guest.AttractionId == visitors.AttractionId ).ToList(), ticks, turnSeconds, ref judged );
 			evidence[item.Role] = entry;
 		}
-		var violations = progress.SelectMany( state => new[] { state.HeadNotReady, state.Blocked, state.WaitAboveBound } ).Where( violation => violation.Count > 0 ).OrderBy( violation => violation.First ).ToList();
+		var violations = progress.SelectMany( state => new[] { state.HeadNotReady, state.Blocked, state.WaitAboveBound, state.WalkStall } ).Where( violation => violation.Count > 0 ).OrderBy( violation => violation.First ).ToList();
 		evidence["violations"] = violations.Sum( violation => violation.Count );
 		evidence["firstViolation"] = violations.FirstOrDefault()?.FirstDetail;
 		evidence["judgedWaits"] = judged;
@@ -1534,13 +1598,22 @@ internal sealed class M3GateRun
 		var model = state.Boarding!;
 		var name = item.Entry.SettingsName;
 		var latency = model.LatencyTurns;
-		long excluded = 0, outsideDuration = 0, unknownPosition = 0, judgedHere = 0, worstMargin = long.MinValue;
-		bool Overlaps( long fromTurn, long toTurn ) => state.ExcludedTurns.GetViewBetween( fromTurn, toTurn ).Count > 0;
+		long excluded = 0, youngHead = 0, outsideWalkScope = 0, outsideDuration = 0, unknownPosition = 0, judgedHere = 0, worstMargin = long.MinValue;
 		void Judge( long tick, long endTurn, long turns, int position, int capacity, int duration, string what )
 		{
-			if ( Overlaps( endTurn - turns, endTurn ) )
+			if ( model.WalkScope.Length > 0 )
+			{
+				outsideWalkScope++;
+				return;
+			}
+			if ( state.ExcludedTurns.GetViewBetween( endTurn - turns, endTurn ).Count > 0 )
 			{
 				excluded++;
+				return;
+			}
+			if ( state.YoungHeadTurns.GetViewBetween( endTurn - turns, endTurn ).Count > 0 )
+			{
+				youngHead++;
 				return;
 			}
 			if ( duration > MaximumBoundedDuration || duration < 0 )
@@ -1586,8 +1659,9 @@ internal sealed class M3GateRun
 			["qmax"] = qmax,
 			["loopPeriodTurns"] = model.PeriodTurns,
 			["hostLatencyTurns"] = model.HostTurns,
-			["standWalkTurns"] = model.StandWalkTurns,
-			["moveUpWalkTurns"] = model.MoveUpWalkTurns,
+			["standWalkTurns"] = StandWalkTurns,
+			["moveUpWalkTurns"] = MoveUpWalkTurns,
+			["walkScope"] = model.WalkScope.Length == 0 ? "W2-W4 hold (straight front, EntryCellStandPos (0.5, 0.5)); W2 checked per head" : model.WalkScope,
 			["latencyTurns"] = latency,
 			["holdTurns"] = hold,
 			["tauMaxTurns"] = Math.Round( tauMaxTurns, 3 ),
@@ -1599,6 +1673,15 @@ internal sealed class M3GateRun
 			["excludedClosedBrokenOrChanged"] = excluded,
 			["excludedTurns"] = state.ExcludedTurns.Count,
 			["notJudgedDurationAbove30"] = outsideDuration,
+			["notJudgedYoungHead"] = youngHead,
+			["notJudgedWalkScope"] = outsideWalkScope,
+			["youngHeadTurns"] = state.YoungHeadTurns.Count,
+			["walkStalls"] = state.WalkStall.Count,
+			["walkStallsOutsideScope"] = state.StallsOutsideScope,
+			["standWalks"] = state.StandWalks,
+			["standWalkMaxTurns"] = state.MaxStandWalk,
+			["moveUpWalksToSlotZero"] = state.MoveUpWalks,
+			["moveUpWalkMaxTurns"] = state.MaxMoveUpWalk,
 			["judgedAtPositionZeroWithoutJoinPosition"] = unknownPosition,
 			["waitsAboveBound"] = state.WaitAboveBound.Count,
 			["headToBoardingMaxTurns"] = state.MaxHeadToBoarding,
@@ -1607,7 +1690,7 @@ internal sealed class M3GateRun
 			["tauMeasuredSeconds"] = double.IsNaN( measured ) ? null : Math.Round( measured, 3 ),
 			["tauMeasuredFrom"] = implied.Count == 0 ? "no boarding with a recorded join position" : FormattableString.Invariant( $"wait {Math.Round( worst.Turns * turnSeconds, 3 )} s from position {worst.Position}" ),
 			["boardingsByJoinPosition"] = implied.Count == 0 ? "none" : FormattableString.Invariant( $"p 0..{implied.Max( entry => entry.Position )}, mean p {Math.Round( implied.Average( entry => entry.Position ), 1 )}" ),
-			["derivation"] = FormattableString.Invariant( $"W(p) <= (p + 1) H + (floor(p / CAP) + 1) R + 1 turns; H = H0 {model.HostTurns} (1 removal + 3 move-up + 11 interlude + 1 call + 1 notice + P {model.PeriodTurns} = 1 + ceil(WAIT {model.LoopWaitMilliseconds} / {ParkCalendar.TurnMilliseconds})) + w {model.StandWalkTurns} (stand point {Math.Round( model.StandDistanceCells, 3 )} cells) + w2 {model.MoveUpWalkTurns} (slot 3 to 0: {Math.Round( model.MoveUpDistanceCells, 3 )} cells) at {guests.Settings.WalkSpeedCellsPerSecond} x 0.7 cells/s; R = UNBOUNCE release for DUR {durationNow}; tau_max = CAP H + R + 1 - (DUR + 1 s) / T; W_max = W(Qmax - 1)" )
+			["derivation"] = FormattableString.Invariant( $"W(p) <= (p + 1) H + (floor(p / CAP) + 1) R + 1 turns; H = H0 {model.HostTurns} (1 removal + 3 move-up + 11 interlude + 1 call + 1 notice + P {model.PeriodTurns} = 1 + ceil(WAIT {model.LoopWaitMilliseconds} / {ParkCalendar.TurnMilliseconds})) + w {StandWalkTurns} + w2 {MoveUpWalkTurns} (WALK-plan section 9: traced steering, walk_evidence.py, under W2-W4); R = UNBOUNCE release for DUR {durationNow}; tau_max = CAP H + R + 1 - (DUR + 1 s) / T; W_max = W(Qmax - 1)" )
 		};
 	}
 

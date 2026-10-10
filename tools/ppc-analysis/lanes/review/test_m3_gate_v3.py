@@ -28,14 +28,15 @@ GATE-FIX2 (review round 3, S1 to S4) flips the pins and adds:
 - S2: the per-head streak counts every evaluation the head is not at position 0, gates held or not, so
   ``never-ready-head-blips`` fails, and so does ``never-ready-head-blips-150`` (a blocked evaluation every 150
   turns, below the 194-turn bound, so only the S2 counting can catch it);
-- S3: the end-of-run reachability check includes the queue's join cell, so ``cut-path`` lists Belly Bounce;
+- S3: the end-of-run reachability check includes the queue's join cell, so ``cut-spine-start`` (entrance and exit
+  reachable, join cell not) lists Belly Bounce;
 - S4 (in test_m3_gate_v1.py): a second run that diverges early and converges by the end fails determinism.
 
 The BOARD gate (docs/reverse/BOARD-plan.md section 8) judges Belly Bounce's waits against
 (p + 1) H + (floor(p / CAP) + 1) R + 1 turns, every completed wait, every queued guest's age at each evaluation, and
 the head from the turn it became head (p = 0). The baseline passes (exit 0). Slots held about 5R
-(``hold-slots-much-longer``) or never released (``never-release``), and heads held 150 turns
-(``head-delayed-150-turns``), fail the row through the wait bound alone. Slots held about 2R and heads held 60 turns
+(``hold-slots-much-longer``) or never released (``never-release``), and heads held 170 turns
+(``head-delayed-170-turns``), fail the row through the wait bound alone. Slots held about 2R and heads held 60 turns
 stay within the loose bound and pass (pinned).
 
 Static tests read ``OPENTPW_M3_SUBJECT`` (default ``HEAD``). Mutation tests run only with ``OPENTPW_M3_MUTATE=1``
@@ -85,6 +86,7 @@ HOOKS_V3 = [
      '\t\treturn new SegmentResult( end, Array.Empty<(int X, int Y)>(), 0, CellBuildResult.Ok, false ) { Start = start };\n\t}\n'
      '\tprivate long stallTurn = -1;\n'
      '\tprivate long heldFromTurn = -1;\n'
+     '\tprivate int heldWalker;\n\tprivate long heldWalkerTurn;\n\tprivate float heldX, heldY;\n'
      '\tprivate readonly HashSet<int> extendedSlots = new();\n\tprivate int delayedHead;\n\tprivate long delayedSince;\n'
      '\tprivate void MutateV3( long tick )\n\t{\n'
      '\t\tvar ride = placed.FirstOrDefault( item => item.Role == "attraction" );\n'
@@ -109,8 +111,8 @@ HOOKS_V3 = [
      '\t\t\t{\n\t\t\t\theld.InQueueInterlude = true;\n\t\t\t\theld.InterludeTurn = guests.ParkTurn;\n\t\t\t}\n'
      '\t\t}\n'
      # BOARD gate: hold-slots-longer keeps every new BOUNCE slot 30 s past its deadline (a hold of about 2R),
-     # hold-slots-much-longer 120 s (about 5R), never-release forever; head-delayed-60-turns / -150-turns hold each new
-     # head in an interlude for its first 60 / 150 turns as head (more than H = 29 per boarding, below the 194-turn head
+     # hold-slots-much-longer 120 s (about 5R), never-release forever; head-delayed-60-turns / -170-turns hold each new
+     # head in an interlude for its first 60 / 170 turns as head (more than H = 29 per boarding, below the 194-turn head
      # bound of rule (a), so only the wait bound can catch it).
      '\t\tif ( Mutation is "hold-slots-longer" or "hold-slots-much-longer" or "never-release" && ride != null && tick >= 18000 )\n\t\t{\n'
      '\t\t\tvar slots = (List<(int Guest, double Until)>)typeof( RideVisitorBridge ).GetField( "bouncing", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance )!.GetValue( ride.Runtime.Visitors )!;\n'
@@ -118,11 +120,22 @@ HOOKS_V3 = [
      '\t\t\t\tif ( extendedSlots.Add( slots[index].Guest ) )\n'
      '\t\t\t\t\tslots[index] = (slots[index].Guest, slots[index].Until + (Mutation == "hold-slots-longer" ? 30_000 : Mutation == "hold-slots-much-longer" ? 120_000 : 1e12));\n'
      '\t\t}\n'
-     '\t\tif ( Mutation is "head-delayed-60-turns" or "head-delayed-150-turns" && ride != null && tick >= 18000 && ride.Runtime.Visitors.Queue.Count > 0 )\n\t\t{\n'
+     '\t\tif ( Mutation is "head-delayed-60-turns" or "head-delayed-170-turns" && ride != null && tick >= 18000 && ride.Runtime.Visitors.Queue.Count > 0 )\n\t\t{\n'
      '\t\t\tif ( ride.Runtime.Visitors.Queue[0] != delayedHead )\n\t\t\t\t(delayedHead, delayedSince) = (ride.Runtime.Visitors.Queue[0], guests.ParkTurn);\n'
-     '\t\t\tif ( guests.ParkTurn < delayedSince + (Mutation == "head-delayed-60-turns" ? 60 : 150) && guests.Find( delayedHead ) is { } delayed )\n'
+     '\t\t\tif ( guests.ParkTurn < delayedSince + (Mutation == "head-delayed-60-turns" ? 60 : 170) && guests.Find( delayedHead ) is { } delayed )\n'
      '\t\t\t{\n\t\t\t\tdelayed.InQueueInterlude = true;\n\t\t\t\tdelayed.InterludeTurn = guests.ParkTurn;\n\t\t\t}\n'
      '\t\t}\n'
+     # WALK gate: hold-move-up freezes the first guest that moves up to slot 0 inside the front cell (from tick 18,000)
+     # at its position for 30 turns: over w2 = 15, under the 178-turn head and 194-turn head-not-ready bounds.
+     '\t\tif ( Mutation == "hold-move-up" && ride != null && tick >= 18000 )\n\t\t{\n'
+     '\t\t\tif ( heldWalker == 0 && guests.Guests.FirstOrDefault( guest => guest.AttractionId == ride.Runtime.Visitors.AttractionId && guest.State == GuestState.MovingUpQueue && guest.QueuePosition == 0 && guest.QueueCellIndex == 0 ) is { } walker )\n'
+     '\t\t\t\t(heldWalker, heldWalkerTurn, heldX, heldY) = (walker.Id, guests.ParkTurn, walker.X, walker.Y);\n'
+     '\t\t\tif ( heldWalker != 0 && guests.ParkTurn < heldWalkerTurn + 30 && guests.Find( heldWalker ) is { State: GuestState.MovingUpQueue } held )\n'
+     '\t\t\t\t(held.X, held.Y) = (heldX, heldY);\n'
+     '\t\t}\n'
+     # GATE-FIX2 (S3): cut the first path cell of the segment (between the park entrance and the queue's join cell) at
+     # tick 1,000: the ride's entrance and exit cells stay reachable, its join cell does not.
+     '\t\tif ( Mutation == "cut-spine-start" && tick == 1000 )\n\t\t\tgrid.SetPath( spine[0].X, spine[0].Y, false );\n'
      '\t\tif ( Mutation == "close-park" && tick == 1 )\n\t\t\teconomy.ClosePark();\n'
      '\t\tif ( Mutation == "stall-one-update" && shop != null )\n\t\t{\n'
      '\t\t\tvar visitors = shop.Runtime.Visitors;\n'
@@ -250,6 +263,10 @@ class MutationsRound3(v1.Mutations):
         self.assertAlmostEqual(cap * h + r + 1 - (bound['durationSeconds'] + 1) * 1000 / 248, bound['tauMaxTurns'], places=3)
         for role in ('shop', 'toilet'):
             self.assertFalse(stuck[role]['waitBound']['judged'])
+        # WALK-plan section 12: w = 20, w2 = 15 from the traced steering, the scope conditions hold, every wait judged.
+        self.assertEqual((20, 15), (bound['standWalkTurns'], bound['moveUpWalkTurns']))
+        self.assertTrue(bound['walkScope'].startswith('W2-W4 hold'), bound['walkScope'])
+        self.assertEqual((0, 0, 0), (bound['notJudgedWalkScope'], bound['notJudgedYoungHead'], bound['walkStalls']))
         self.assertEqual('pass', verdicts['staff.work'])
         self.assertEqual('none', rows['staff.work']['evidence']['problems'])
 
@@ -372,13 +389,30 @@ class MutationsRound3(v1.Mutations):
                 self.assertEqual({'queues.no-stuck-queue'}, {key for key, value in rows.items() if value['verdict'] == 'fail'} - baseline)
 
     def test_head_delayed_beyond_h_fails_the_wait_bound(self):
-        # BOARD gate: each new head is held 150 turns before it can be called, below the 194-turn head bound of rule (a).
-        row = self.rows('head-delayed-150-turns')['queues.no-stuck-queue']
+        # BOARD gate: each new head is held 170 turns before it can be called: beyond W(0) = H + R + 1 = 178 turns once its
+        # boarding follows, below the 194-turn head bound of rule (a).
+        row = self.rows('head-delayed-170-turns')['queues.no-stuck-queue']
         attraction = row['evidence']['attraction']
         self.assertEqual('fail', row['verdict'], row)
         self.assertIn('after becoming head > bound', row['evidence']['firstViolation'])
         self.assertEqual(0, attraction['headNotReadyViolations'])
         self.assertLessEqual(attraction['headNotReadyMaxTurns'], attraction['headNotReadyBoundTurns'])
+
+    def test_move_up_held_beyond_w2_fails_walk_stall(self):
+        # WALK gate (WALK-plan section 12.4): the traced steering finishes the move-up to slot 0 within w2 = 15 updates.
+        # A guest held 30 turns in that walk fails the queue row as walk-stall, before any other queue rule.
+        row = self.rows('hold-move-up')['queues.no-stuck-queue']
+        bound = row['evidence']['attraction']['waitBound']
+        self.assertEqual('fail', row['verdict'], row)
+        self.assertTrue(row['evidence']['firstViolation'].startswith('walk-stall:'), row['evidence']['firstViolation'])
+        self.assertIn('move-up to slot 0', row['evidence']['firstViolation'])
+        self.assertEqual(1, bound['walkStalls'])
+        self.assertGreater(bound['moveUpWalkMaxTurns'], bound['moveUpWalkTurns'])
+        self.assertEqual((0, 0), (row['evidence']['attraction']['headNotReadyViolations'], row['evidence']['attraction']['blockedViolations']))
+        baseline = self.rows('')['queues.no-stuck-queue']['evidence']['attraction']['waitBound']
+        self.assertEqual(0, baseline['walkStalls'])
+        self.assertLessEqual(baseline['moveUpWalkMaxTurns'], baseline['moveUpWalkTurns'])
+        self.assertLessEqual(baseline['standWalkMaxTurns'], baseline['standWalkTurns'])
 
     def test_slowdowns_within_the_loose_bound_pass(self):
         # Pinned as observed: the BOARD-plan bound is loose by design (it assumes every boarding pays a full H and every
@@ -392,11 +426,13 @@ class MutationsRound3(v1.Mutations):
                 self.assertLess(row['evidence']['attraction']['completedWaits'], baseline['completedWaits'])
 
     def test_end_of_run_reachability_includes_the_join_cell(self):
-        # GATE-FIX2 (S3): cutting spine[1] also cuts Belly Bounce's join cell; its entrance and exit cells stay reachable,
-        # so before the fix the end-of-run list was only "Drinks Shop, Small Toilet".
-        row = self.rows('cut-path')['paths.no-unreachable-goal']
+        # GATE-FIX2 (S3): cutting the segment's first cell leaves Belly Bounce's entrance and exit cells reachable but not
+        # its join cell; only the join-cell check lists it (against 64616cd the list lacks it).
+        rows = self.rows('cut-spine-start')
+        row = rows['paths.no-unreachable-goal']
         self.assertEqual('fail', row['verdict'], row)
         self.assertIn('Belly Bounce', row['evidence']['unreachableAttractions'].split(', '))
+        self.assertTrue(rows['build.attraction']['evidence']['reachableFromEntrance'])
 
     def test_missing_gate_fails_build_entrance(self):
         rows = self.rows('no-gates')

@@ -91,9 +91,9 @@ the semantics of the TPW corpus.
   inserts `01 13 00 00 00` and the ASCII string `Version: Beta_21` before the
   UTF-16 `THE SAVE GAME DATA…` banner. OpenTPW's version-133 offline layout does
   not apply.
-- **Global save.** Theme Park Inc keeps the player's progress in a Global Master Save (`.GMS`, with `.GMI` in
-  the same extension table), separate from park saves. `ThemeParkIncGlobalSave` reads it; see
-  [Global Master Save](#global-master-save-gms) below.
+- **Global save.** Theme Park Inc keeps the player's progress in a Global Master Save (`.GMS`), separate from park
+  saves. `.GMI` is the same format, written only for the game's internal "Refresh" snapshot. `ThemeParkIncGlobalSave`
+  reads both; see [Global Master Save](#global-master-save-gms) below.
 - **Balance settings.** `levels/Standard.sam` has 413 keys against 192 in TPW,
   156 of them shared. The additions are mainly staff simulation
   (`AllStaffConstants.*`: wages, happiness, experience, staff rooms). `Challenges.sam`
@@ -184,3 +184,17 @@ The file is uncompressed and little-endian. The loader rejects it when one of si
 Three German retail saves read to their last byte with every marker in place. They are kept private and
 checked by `ThemeParkIncGlobalSaveTests` when `OPENTPW_TPI_SAVES` names their folder. Sections without a traced
 meaning are read and skipped, and nothing is written back.
+
+### `.GMI`: the refresh snapshot
+
+`.GMI` is not a separate format. One save routine, `0x00745720`, takes a flag. Without the flag it writes a
+normal save: the park as `.TPWS` and the progress as `.GMS`, and it then walks the parks (`arabian` first).
+With the flag it writes the park as `.TPWI` and the progress as `.GMI` and skips that walk. Both go through the
+same writer `0x0074C8F0`. The writer stores the flag at object +0x14EC, and the save routine later reads it there to pick
+`.TPWI` or `.TPWS` for one of its file names. The writer does not pass the flag to the body and writes version 12 either way.
+
+The flag is set in one place. When the options screen (`0x004597C0`) applies a change that needs a reload, it saves
+the game as `Refresh` (`0x00744E80`), re-initializes, and loads `Refresh.GMI` back (`0x00744DF0`, the loader
+`0x007451E0` with the `.GMI` extension). A `.GMI` file is therefore a short-lived copy of the progress, made and read
+by the game itself. No `.GMI` file was available, so this rests on the executable alone; `ThemeParkIncGlobalSave`
+reads one like a `.GMS`, and the corpus test includes `.GMI` files when the folder has any.

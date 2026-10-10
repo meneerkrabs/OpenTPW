@@ -968,7 +968,7 @@ public class ParkEconomyTests
 		Assert.AreEqual( new SaveLoanRecord( 1060, 1, false, 50000, 0, 36, 1388, false, 0, 1 ), records.Loans[1] );
 		Assert.AreEqual( new SaveBankRecord( 1000, 25, 87987, 0, true, 87787, 0, -12013 ), records.Bank );
 		Assert.AreEqual( 3, records.Challenges.Count );
-		Assert.AreEqual( new SaveChallengeRecord( 2046, 18, 60, 1, 1180, 0, 7500, 20, true ), records.Challenges[1] );
+		Assert.AreEqual( new SaveChallengeRecord( 2046, 18, 60, 1, 1180, 0, 0, 7500, 20, false, true ), records.Challenges[1] );
 		Assert.IsFalse( records.Challenges[2].Independent );
 
 		var duplicate = payload.ToArray();

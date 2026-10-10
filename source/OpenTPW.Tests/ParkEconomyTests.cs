@@ -588,6 +588,29 @@ public class ParkEconomyTests
 	}
 
 	[TestMethod]
+	public void BuildChallengesFollowTheBinaryHandlerTable()
+	{
+		var park = EconomyTestData.Park();
+		ChallengeDefinition Challenge( int type, int value, int target, int target2 = 0 ) => new( 0, type, 0, 60, value, target, target2, 0, 1000, false, true );
+		bool Reached( ChallengeDefinition definition ) => park.Objectives.Measure( definition, park.Counters, park.Staff, park.Objects, park.GuestStatistics ) >= ParkObjectives.Target( definition );
+		var upgrade = Challenge( 28, 2, 1100 );
+		Assert.IsFalse( Reached( upgrade ), "no ride: level -1" );
+		var ride = park.RegisterExisting( 1100 );
+		Assert.IsFalse( Reached( Challenge( 30, 0, 1180 ) ) );
+		Assert.IsTrue( Reached( Challenge( 30, 0, 1100 ) ), "an existing ride counts; TargetVal is not read" );
+		Assert.IsTrue( Reached( Challenge( 31, 5, 1100, 1180 ) ), "type 31 shares the type 30 handler: only TargetObj" );
+		Assert.IsTrue( Reached( Challenge( 32, 0, 1100 ) ) );
+		Assert.IsFalse( Reached( Challenge( 33, 0, 1100, 1180 ) ), "type 33 needs both objects" );
+		park.RegisterExisting( 1180 );
+		Assert.IsTrue( Reached( Challenge( 33, 0, 1100, 1180 ) ) );
+		Assert.IsFalse( ParkObjectives.IsCountSinceAcceptance( 30 ) || ParkObjectives.IsCountSinceAcceptance( 33 ), "built counts are absolute" );
+		ride.Level = 1;
+		Assert.IsFalse( Reached( upgrade ), "level byte 1 < TargetVal 2" );
+		ride.Level = 2;
+		Assert.IsTrue( Reached( upgrade ), "the third level (byte 2) reaches TargetVal 2" );
+	}
+
+	[TestMethod]
 	public void ChallengesAreOfferedCompletedFollowedUpAndForfeited()
 	{
 		var park = EconomyTestData.Park();

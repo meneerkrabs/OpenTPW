@@ -37,7 +37,7 @@ public static class EconomyApproximations
 		("ECON-031", "imported parks are opened on load (open state not decoded)", "park-open flag in the save"),
 		("ECON-034", "challenge type meanings come from Challenges.sam comments (shop types by ShopType/SpecialIngredient)", "challenge captures per type"),
 		("ECON-035", "offers wait for accept/decline; follow-ups are offered right after completion; failed challenges count as finished", "challenge flow captures"),
-		("ECON-036", "build challenges with TargetVal 0 need one item; type 28 needs level 3", "challenge captures"),
+		("ECON-036", "type 18 needs TargetVal items built since acceptance; the binary compares TargetVal with a per-ride value from 0x100C7264 that is not identified", "the fifth output of 0x10041A34"),
 		("ECON-038", "big park uses MinCellsOwned, cameras use MinCellsCovered", "golden ticket award captures"),
 		("ECON-039", "the profit ticket compares the running yearly profit (mProfitThisYear) with ProfitYear directly; the original (0x10013FDC) scales the threshold by a per-objective factor not yet tied to that key", "the caller of 0x10013FDC and its factor"),
 		("ECON-040", "players start with 1 golden key and keys are not consumed by entering themes", "initial lobby and repeated theme-entry captures"),

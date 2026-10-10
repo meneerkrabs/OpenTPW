@@ -191,7 +191,7 @@ mismatches; original-data tests check the typed PC fixture.
 | Staff | Pool sizes, maxima, wages, training prices | Candidate grades, pool timing, free hiring, 100 points per grade, mechanic/handyman job durations |
 | Maintenance | Wear rates, upgrade durations, worn threshold 25 | Wear per open day, repair restores 100 |
 | Research | Items, categories, groups, costs, effort, ability, thresholds, work load; traced: points every 20 turns, cumulative group opener, first open item in table order; points from researcher staff only, in both modes (Mac) | Info-id table order, the excluded researcher states, the stand-in for the Instant Action seed's researcher |
-| Challenges | Definitions, level list, timings, prizes, follow-ups | Type semantics from comments; explicit accept/decline; types 14, 22, 23, 26, 32+ unmeasured |
+| Challenges | Definitions, level list, timings, prizes, follow-ups | Type semantics from comments, except the build types 28 and 30–33, traced to the handler table at `0x100CE690`; explicit accept/decline; types 14, 22, 23, 26 unmeasured (23 and 26 never pass in the binary) |
 | Golden tickets | All thresholds | Checked every 100 park turns in Full Simulation only; the profit ticket reads the year's running profit (`mProfitThisYear`, reset each calendar year); the first copy of a ticket object costs tickets, not cash (all traced) |
 | Keys/progression | Keys per theme, theme order (THEMENAMES; ascending key cost); +1 per 3 earned golden tickets; spending tickets preserves keys (manual p. 28) | Start with 1 key; keys persist when entering themes |
 | Park rating | — (traced: Mac binary 0x100C7B24) | Capped counts: guests in park × 20 / 1000 (max 20), rides × 1.5 (max 20), shops and sideshows × 2 (max 10 each), features (max 10), rides at upgrade level 2 (max 10), each staff type (max 4); the sub-kind to object-kind mapping is approximate |
@@ -314,7 +314,7 @@ site, is listed in `Economy/EconomyApproximations.cs` and is logged once at star
 | ECON-031 | `Economy/ParkEconomyRuntime.cs:33` | imported parks are opened on load (open state not decoded) | park-open flag in the save |
 | ECON-034 | `Economy/ParkObjectives.cs:113` | challenge type meanings come from Challenges.sam comments (shop types by ShopType/SpecialIngredient) | challenge captures per type |
 | ECON-035 | `Economy/ParkObjectives.cs:153` | offers wait for accept/decline; follow-ups are offered right after completion; failed challenges count as finished | challenge flow captures |
-| ECON-036 | `Economy/ParkObjectives.cs:149` | build challenges with TargetVal 0 need one item; type 28 needs level 3 | challenge captures |
+| ECON-036 | `Economy/ParkObjectives.cs:154` | type 18 needs TargetVal items built since acceptance; the binary compares TargetVal with a per-ride value from 0x100C7264 that is not identified | the fifth output of 0x10041A34 |
 | ECON-038 | `Economy/ParkObjectives.cs:280` | big park uses MinCellsOwned, cameras use MinCellsCovered | golden ticket award captures |
 | ECON-039 | `Economy/ParkObjectives.cs:262` | the profit ticket compares the running yearly profit (mProfitThisYear) with ProfitYear directly; the original (0x10013FDC) scales the threshold by a per-objective factor not yet tied to that key | the caller of 0x10013FDC and its factor |
 | ECON-040 | `Economy/ParkObjectives.cs:318` | players start with 1 golden key and keys are not consumed by entering themes | initial lobby and repeated theme-entry captures |

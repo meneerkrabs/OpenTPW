@@ -382,7 +382,8 @@ public class DeterminismAssetTests
 {
 	/// <summary>
 	/// Level.SavePark/LoadPark delegate to <see cref="ParkWorldStreams"/>; this runs that path with the real
-	/// jungle park runtime and guests (Level itself needs a renderer). Every stream is moved by drawing.
+	/// jungle park runtime and guests (Level itself needs a renderer). Every stream is moved by drawing, except the
+	/// sound chooser, whose draws never store their successor (0x100118C8 is its only store), which is reseeded.
 	/// </summary>
 	[TestMethod]
 	public void ParkSaveAndLoadThroughTheLevelPathRestoreEveryStream()
@@ -419,6 +420,7 @@ public class DeterminismAssetTests
 			Run( 3000 );
 			streams.Scripts.NextScriptSeed();
 			streams.Sound.Draw();
+			streams.Sound.Reseed( saved.SoundSeed + 1 );
 			var moved = streams.CaptureRandomState();
 			Assert.IsTrue( saved.GuestRandom != moved.GuestRandom && saved.ScriptRandom != moved.ScriptRandom && saved.SoundSeed != moved.SoundSeed, "every stream was drawn after the save" );
 			Assert.AreNotEqual( economy, ParkSaveFile.Serialize( park.Economy ) );

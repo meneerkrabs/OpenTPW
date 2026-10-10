@@ -1,6 +1,6 @@
 # Example: OPENTPW_DOMAIN=tpw.example.org docker compose -f source/OpenTPW.Server/docker-compose.example.yml up -d --build
 # (run from the repository root). Point the domain's DNS at this machine first: Caddy answers on
-# ports 80 and 443 and gets the HTTPS certificate itself. The game, the API and the chat are then
+# port 443 only (no plain HTTP) and gets the HTTPS certificate itself over it. The game, the API and the chat are then
 # all at https://tpw.example.org/ (docs/SERVER.md).
 services:
   opentpw-server:
@@ -25,7 +25,6 @@ services:
     image: caddy:2
     restart: unless-stopped
     ports:
-      - "80:80"
       - "443:443"
       - "443:443/udp"
     environment:

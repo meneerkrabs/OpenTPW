@@ -6,9 +6,10 @@ namespace OpenTPW;
 /// until changed, and its open/closed state), shop and sideshow visits through <see cref="ParkEconomy.TryBuy"/>
 /// and <see cref="ParkEconomy.PlaySideshow"/>, ride visits through <see cref="ParkEconomy.RecordRideUse"/>.
 /// Attractions are matched to economy objects with <see cref="Link"/>; unlinked attractions are free.
-/// It also supplies <see cref="IParkGuestStatistics"/> from the guests for rating, tickets and challenges.
+/// It also supplies <see cref="IParkGuestStatistics"/> from the guests for rating, tickets and challenges, and
+/// <see cref="IRideOperations"/> from the linked rides' scripts for the wear step.
 /// </summary>
-public sealed class GuestEconomyBridge : IGuestPayments, IParkGuestStatistics
+public sealed class GuestEconomyBridge : IGuestPayments, IParkGuestStatistics, IRideOperations
 {
 	private readonly Dictionary<int, int> instances = new();
 
@@ -27,6 +28,24 @@ public sealed class GuestEconomyBridge : IGuestPayments, IParkGuestStatistics
 	public void Unlink( int attractionId ) => instances.Remove( attractionId );
 
 	public bool TryGetInstance( int attractionId, out int instanceId ) => instances.TryGetValue( attractionId, out instanceId );
+
+	/// <summary>The running state, riders and speed of the ride linked to an economy object, read from its script.</summary>
+	// [BIN:STP-PPC:0x100B5BE0 ride script variable] the wear step reads script variables 9 (VAR_RUNNING), 5 (VAR_ONRIDE), 2 and 3 and the script's speed (+0xC0, 0x100B5B40); 0x100B57D4 writes 4 (VAR_BREAKSTAT) and 8 (VAR_WORN)
+	public bool TryGet( int instanceId, out RideOperation operation )
+	{
+		foreach ( var (attractionId, linked) in instances )
+		{
+			if ( linked != instanceId )
+				continue;
+			var attraction = Guests.Attractions.FirstOrDefault( candidate => candidate.AttractionId == attractionId );
+			if ( attraction == null )
+				break;
+			operation = new RideOperation( attraction.IsRunning, attraction.RidersOnBoard, attraction.Speed );
+			return true;
+		}
+		operation = default;
+		return false;
+	}
 
 	public int AdmissionFee => Economy().EntranceFee;
 

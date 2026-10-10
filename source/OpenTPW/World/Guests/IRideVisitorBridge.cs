@@ -114,6 +114,12 @@ public interface IRideVisitorBridge
 	bool ProvidesRelief { get; }
 	/// <summary>The ride reports a failure; queueing guests leave.</summary>
 	bool IsBroken { get; }
+	/// <summary>The ride script's <c>VAR_RUNNING</c> is non-zero.</summary>
+	bool IsRunning { get; }
+	/// <summary>The ride script's <c>VAR_ONRIDE</c>.</summary>
+	int RidersOnBoard { get; }
+	/// <summary>The ride's operating speed.</summary>
+	int Speed { get; }
 	/// <summary>Queue cells from the front (index 0) to the back.</summary>
 	IReadOnlyList<(int X, int Y)> QueueCells { get; }
 	int QueueSizeInCells { get; }

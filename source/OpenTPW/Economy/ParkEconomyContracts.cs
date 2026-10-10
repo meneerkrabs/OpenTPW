@@ -71,6 +71,30 @@ public enum ParkRecordKind
 }
 
 /// <summary>Guest-side statistics the economy needs (park rating, golden tickets, challenges). Implemented by the guests slice.</summary>
+/// <summary>
+/// What a ride's script reports for the original wear step: <c>VAR_RUNNING</c>, <c>VAR_ONRIDE</c> and the ride speed
+/// (docs/reverse/RIDE-WEAR.md). The Mac wear step reads these through the ride's script variables.
+/// </summary>
+public readonly record struct RideOperation( bool Running, int Riders, int Speed );
+
+/// <summary>Supplies <see cref="RideOperation"/> per economy object; objects it does not know do not run.</summary>
+public interface IRideOperations
+{
+	bool TryGet( int instanceId, out RideOperation operation );
+}
+
+/// <summary>No ride scripts (economy-only parks and tests): no ride runs, so nothing wears.</summary>
+public sealed class NoRideOperations : IRideOperations
+{
+	public static readonly NoRideOperations Instance = new();
+
+	public bool TryGet( int instanceId, out RideOperation operation )
+	{
+		operation = default;
+		return false;
+	}
+}
+
 public interface IParkGuestStatistics
 {
 	int PeopleInPark { get; }
@@ -143,8 +167,16 @@ public sealed class ParkObjectState
 	public int CostOfGoods { get; set; }
 	public int ChanceOfLosingPercent { get; set; }
 	public bool IsOpen { get; set; } = true;
-	/// <summary>State of repair 0–100 (UITEXT 21).</summary>
-	public int StateOfRepair { get; set; } = 100;
+	/// <summary>Exact state of repair, 0–100. The original keeps a float and compares its truncated value.</summary>
+	public double Repair { get; set; } = 100;
+	/// <summary>State of repair 0–100 (UITEXT 21): the truncated <see cref="Repair"/>.</summary>
+	public int StateOfRepair { get => (int)Repair; set => Repair = value; }
+	/// <summary>
+	/// Second gauge of the original ride (object +0x44), 0–100: it falls with wear and by 5 per breakdown, no repair
+	/// restores it, and a ride breaks down while it is below 1 (docs/reverse/RIDE-WEAR.md).
+	/// </summary>
+	// [APPROX:ECON-047] a newly built ride starts with life gauge 100 (Easymode.TPWI stores 100 for every placed object) — evidence needed: the life gauge set when a ride is built (the constructor 0x100DA874 sets 0)
+	public double LifeGauge { get; set; } = 100;
 	public bool IsBrokenDown { get; set; }
 	/// <summary>Employee repairing or upgrading the object, 0 when none.</summary>
 	public int MechanicId { get; set; }

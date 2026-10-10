@@ -1,4 +1,4 @@
-# SAM schema layout, ride wear and breakdown (ECON-023/024 evidence)
+# SAM schema layout, ride wear and breakdown (ECON-023/024)
 
 2026-10-09. Static analysis only; no original program was run. Original binaries, decompiler output and
 disassembly stay outside this repository; this page records addresses, field offsets and the conclusions
@@ -161,25 +161,53 @@ Verified since: the object serializer `0x100daf04` writes the three floats as wh
 `SaveAttractionList` decodes them from original saves (see
 [TPWS-PAYLOAD.md](../TPWS-PAYLOAD.md#attraction-records-thing-list-in-the-prefix-tail)). In Easymode all three are 100.
 
-## Consequences for ECON-023 and ECON-024
+## Ride statistics are the ride script's variables
 
-OpenTPW currently assumes that "an open ride loses WearRate state of repair per game day; breakdown at 0", and
-that "a repair restores state of repair to 100".
+The statistics the wear and breakdown code reads and writes are the variables of the ride's script (RSE).
+`0x100B5758` finds the ride's script instance, and `0x100B5BE0`/`0x100B57D4` read and write
+`variables[index]` with a bounds check against the variable count. The indices match OpenTPW's
+`RideVariables`:
 
-| Assumption | Mac code |
+| Index | Use in the Mac code | Variable |
+| --- | --- | --- |
+| 2, 3 | passed to the wear amount (unused on the path the wear step takes) | `VAR_CAPACITY`, `VAR_DURATION` |
+| 4 | set to 1 by the breakdown (`0x100E09F4`) | `VAR_BREAKSTAT` |
+| 5 | riders; 0 means no wear | `VAR_ONRIDE` |
+| 7 | checked by the repair job (`0x100D9E04`) | `VAR_BROKEN` |
+| 8 | set to 1 below 20, cleared by a repair | `VAR_WORN` |
+| 9 | non-zero while the ride runs | `VAR_RUNNING` |
+
+The speed is the script's own field `+0xC0` (`0x100B5B40`). The wear step calls `0x100DE904` with `r7 = 0`
+(`0x100DED70`), so the rider term uses `VAR_ONRIDE`, clamped to `UsageInfo.MaxCapacity`.
+
+## In OpenTPW
+
+`ParkEconomy` follows the original ride update (`UpdateRides`, `Wear`, `WearAmount`):
+
+- Every 8 park turns each ride gets the breakdown check. On every 64th turn the wear step runs first. The park
+  turn is the original world counter `+0x1DA70C`, so no conversion is needed.
+- The wear step reads `VAR_RUNNING`, `VAR_ONRIDE` and the speed through `IRideOperations`. In the game,
+  `GuestEconomyBridge` supplies them from the linked ride's script; the speed is the ride record's InitSpeed,
+  because OpenTPW has no speed control. Objects without a linked running script do not wear.
+- The state of repair (`Repair`, shown truncated as `StateOfRepair`) and the life gauge (`LifeGauge`) are kept
+  exactly and saved in OpenTPW's park save.
+- A breakdown happens when the truncated life gauge or state of repair is 0. Repair sets 100 and does not
+  restore the life gauge.
+
+Still approximations:
+
+| ID | What |
 | --- | --- |
-| Loss per game day | Use-weighted loss once per 64 ticks: `0.1` to about `1.05` times `WearRate`, zero without riders |
-| Breakdown at 0 | Holds for the state of repair (below 1, deterministic, checked every 8 ticks). A second gauge (`+0x44`) can also trigger it, and every breakdown costs that gauge 5 |
-| Repair restores 100 | Holds (`0x100def2c`). Repair does not restore the second gauge |
-| Not in OpenTPW | Warning flag below 20, a message when repair crosses below 10, and no wear in online mode |
+| ECON-023 | The ride update skips rides in states 1, 3 and 4 (`+0x198`) and rides with `+0x64 == 0`, and the breakdown check skips `+0x2E` bit 0. OpenTPW maps these only to "a mechanic is at work". |
+| ECON-047 | A newly built ride starts with life gauge 100. Easymode stores 100, but the constructor sets 0 and the code that fills it in was not traced. |
 
-These items stay open:
-- the duration of a tick, and so of a game day (ECON-001);
-- the meaning of ride statistics 2, 3 and 5, of ride states 1–4 and of bit 0 of `+0x2e`;
-- the start value of the second gauge after construction;
-- agreement with an oracle. The decoder exists (`SaveAttractionList`); what is missing is two original saves of
-  one park at a known tick distance, with a ride in use.
+Not in OpenTPW yet:
 
-The repo's acceptance rule for the original-binary route needs one bounded original function plus
-reproducible agreement with a reference oracle. The first part is met (`0x100dec2c`, `0x100de904`, `0x100e077c`);
-the oracle part is not.
+- The breakdown and worn state reaching the ride script (`VAR_BREAKSTAT`, `VAR_WORN`). Guests and queues still
+  read `VAR_BROKEN` only.
+- The message when the state of repair crosses below 10.
+- Online mode, which OpenTPW does not have.
+- OpenTPW's own `RideWorn` event and mechanic dispatch keep the Advisor.sam threshold 25.
+
+Remaining evidence: two original saves of one park at a known turn distance, with a ride in use. They would
+check the implementation against the original; `SaveAttractionList` can read them.

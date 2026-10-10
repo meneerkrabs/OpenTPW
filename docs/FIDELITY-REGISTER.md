@@ -14,9 +14,9 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **155 unresolved unique APPROX IDs**, 172 APPROX occurrences, 85 EXT occurrences, 72 DATA occurrences and 88 BIN occurrences.
+Current inventory: **163 unresolved unique APPROX IDs**, 177 APPROX occurrences, 85 EXT occurrences, 85 DATA occurrences and 88 BIN occurrences.
 
-Of these, 149 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
+Of these, 157 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
 CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.
 
@@ -32,7 +32,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | GATE | 2 | 2 |
 | ONLINE | 6 | 6 |
 | RIDES | 25 | 25 |
-| UI | 39 | 54 |
+| UI | 47 | 59 |
 
 ## Approximation declarations
 
@@ -193,6 +193,14 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-040 | Original-fidelity area (scope unadjudicated) | autorun launcher focus rectangle: dotted frame inverting the pixels with even x + y, 2 pixels inside the button (GDI DrawFocusRect brush phase unknown) | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:48` |
 | UI-041 | Original-fidelity area (scope unadjudicated) | Load Park opens a shipped park as the reference start (its own balance, Full Simulation rules) whatever Game Mode was last chosen; the original's GameType is not saved with a park but copied from the loading player's profile (mEasyModeUser) | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:49` |
 | UI-042 | Original-fidelity area (scope unadjudicated) | HUD camera button shown disabled; its camera-view action is not implemented | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:50` |
+| UI-043 | Original-fidelity area (scope unadjudicated) | buy window list rows: ten equal rows fill the table's content region (44.4 units each); the wheel scrolls one row | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:51` |
+| UI-044 | Original-fidelity area (scope unadjudicated) | a click on the Name or Price column header sorts the buy list by it (again: descending) | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:52` |
+| UI-045 | Original-fidelity area (scope unadjudicated) | buy window stats: excitement gauge = UsageInfo.ExcitementLevel/100, reliability gauge = 1 - Upgrades[0].WearRate/10, safe capacity = Upgrades[0].InitCapacity, working life empty; type-9 value cells drawn as plain bar gauges | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:53` |
+| UI-046 | Original-fidelity area (scope unadjudicated) | the HUD cash change text stays 4 s after the last balance change and sums the changes within that time | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:54` |
+| UI-047 | Original-fidelity area (scope unadjudicated) | buy window control 512 (beside the title) is left empty | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:55` |
+| UI-048 | Original-fidelity area (scope unadjudicated) | buy window scroll ball travel: its top runs from the track's top (first row) to a ball height above the track's bottom (last row) | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:56` |
+| UI-049 | Original-fidelity area (scope unadjudicated) | buy list third column (1673-1724), its header button 18 and control 491 have no known content and stay empty | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:57` |
+| UI-050 | Original-fidelity area (scope unadjudicated) | i_dollar frame 1 for a negative balance, green_up frame 1 for a decrease; golden key frame 0 and ticket count from the economy (keys are not tracked, always 0) | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:58` |
 
 ## Approximation sites
 
@@ -224,7 +232,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | AUDIO-001 | `source/OpenTPW/Audio/AudioMixer.cs:194` | [APPROX:AUDIO-001] the second user volume the original ducks is the effects channel — evidence needed: the names of the TbSysCommand volume commands at 0x100BB18C |
 | AUDIO-002 | `source/OpenTPW/Audio/SoundEvents.cs:66` | [APPROX:AUDIO-002] banks resolve to &lt;map folder's parent&gt;/&lt;name&gt;HD.sdt, then to global/&lt;name&gt;HD.sdt — evidence needed: TbMapStreamer::BankDoesNotExist (0x10015234) and the quality suffix rule |
 | AUDIO-003 | `source/OpenTPW/Audio/SoundEvents.cs:207` | [APPROX:AUDIO-003] pitch, delay, 3D position and reverb of a sound are not applied — evidence needed: TbSoundSampleInfo pitch units and the placeholder 3D update |
-| AUDIO-004 | `source/OpenTPW/Hud/ParkHud.cs:498` | [APPROX:AUDIO-004] the 0xBD modifier (flag 0x10 from 0x1017F618) is not mapped to a key, so the view always plays 0x1F — evidence needed: the input flag behind 0x1017F618 |
+| AUDIO-004 | `source/OpenTPW/Hud/ParkHud.cs:421` | [APPROX:AUDIO-004] the 0xBD modifier (flag 0x10 from 0x1017F618) is not mapped to a key, so the view always plays 0x1F — evidence needed: the input flag behind 0x1017F618 |
 | AUDIO-005 | `source/OpenTPW/Audio/SoundEvents.cs:320` | [APPROX:AUDIO-005] the next segment is chosen (with the parameter at that moment) when the current one starts, so it can be decoded in time — evidence needed: when CPlaceHolderSentence::SoundCallback (sound_shared 0x1001A1F0) runs relative to the end of a sample |
 | COMPAT-001 | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:19` | [APPROX:COMPAT-001] Legacy 512x256 canvas; native DIB/mask and final 128x128 destinations require integration and platform pixel verification. |
 | COMPAT-002 | `source/OpenTPW.Files/Formats/Font/SignTextLayout.cs:128` | [APPROX:COMPAT-002] centre and shrink-to-fit with a margin — evidence needed: original text placement / long-name captures. |
@@ -326,8 +334,8 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-006 | `source/OpenTPW/UI/Original/UiText.cs:150` | [APPROX:UI-006] all UI text/backdrop colours — evidence needed: captures of original screens |
 | UI-007 | `source/OpenTPW/UI/Original/UiWidgets.cs:73` | [APPROX:UI-007] drop shadow one text pixel down-right — evidence needed: captures of original screens |
 | UI-008 | `source/OpenTPW/UI/Original/UiWidgets.cs:374` | [APPROX:UI-008] purple_button as a mirrored end cap, upper half normal, lower half focused/pressed — evidence needed: capture of the original front-end buttons |
-| UI-010 | `source/OpenTPW/UI/Original/UiScreen.cs:241` | [APPROX:UI-010] popup help placement/backdrop — evidence needed: capture of original popup help |
-| UI-011 | `source/OpenTPW/UI/Original/UiScreen.cs:231` | [APPROX:UI-011] modal screens dim the screens below — evidence needed: captures of original dialogs |
+| UI-010 | `source/OpenTPW/UI/Original/UiScreen.cs:246` | [APPROX:UI-010] popup help placement/backdrop — evidence needed: capture of original popup help |
+| UI-011 | `source/OpenTPW/UI/Original/UiScreen.cs:236` | [APPROX:UI-011] modal screens dim the screens below — evidence needed: captures of original dialogs |
 | UI-012 | `source/OpenTPW/UI/Original/UiInput.cs:54` | [APPROX:UI-012] key map (arrows, Enter, Escape, P) — evidence needed: binary key handling / KEYBOARD.str |
 | UI-012 | `source/OpenTPW/UI/Original/UiScreen.cs:63` | [APPROX:UI-012] hover focus, activate on release, keyboard navigation, right click backs out — evidence needed: binary input handling |
 | UI-013 | `source/OpenTPW/UI/Original/UiDialogs.cs:9` | [APPROX:UI-013] dialog window sizes and inner layout — evidence needed: captures of original dialogs |
@@ -339,27 +347,23 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-018 | `source/OpenTPW/Client/GameFlow.cs:289` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
 | UI-018 | `source/OpenTPW/World/Lobby/LobbyScene.cs:14` | [APPROX:UI-018] flying meshes, rain, lightning and island/gate animations are not drawn — evidence needed: binary/capture of the lobby |
 | UI-019 | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:92` | [APPROX:UI-019] fallback position when lobby.txt lacks ISLANDCAMERAPOSITION — evidence needed: none if lobby.txt is complete |
-| UI-021 | `source/OpenTPW/Hud/ParkHud.cs:85` | [DATA:UITEXT.str:448,449] currency prefix; [APPROX:UI-021] ","-grouped digits — evidence needed: locale number format of the original |
-| UI-021 | `source/OpenTPW/Hud/ParkHud.cs:125` | buttons start right below the date box. [APPROX:UI-021] the original resizes/repositions control 47 from the |
+| UI-021 | `source/OpenTPW/Hud/ParkHud.cs:76` | [DATA:UITEXT.str:448,449] currency prefix; [APPROX:UI-021] ","-grouped digits — evidence needed: locale number format of the original |
+| UI-021 | `source/OpenTPW/Hud/ParkHud.cs:121` | buttons start right below the date box. [APPROX:UI-021] the original resizes/repositions control 47 from the |
 | UI-022 | `source/OpenTPW/Hud/HudStubs.cs:47` | [APPROX:UI-022] without an economy only pause stops the rides; faster speeds run at normal speed |
 | UI-022 | `source/OpenTPW/Hud/HudStubs.cs:88` | [APPROX:UI-022] faster speeds only speed up the park clock/economy, not rides or guests — evidence needed: original speed controls |
-| UI-022 | `source/OpenTPW/Hud/ParkHud.cs:139` | [APPROX:UI-022] speed buttons and multipliers — evidence needed: binary game speed options |
+| UI-022 | `source/OpenTPW/Hud/ParkHud.cs:145` | [APPROX:UI-022] speed buttons and multipliers — evidence needed: binary game speed options |
 | UI-023 | `source/OpenTPW/Hud/HudStubs.cs:9` | [APPROX:UI-023] test-only calendar (2 s/day, 30-day months) — not used by the game |
-| UI-024 | `source/OpenTPW/Hud/HudStubs.cs:108` | [APPROX:UI-024] Catalogue pages sort by Info.Id; original build-menu order is not verified. |
-| UI-024 | `source/OpenTPW/Hud/ParkHud.cs:157` | [APPROX:UI-024] layout inside the build arm — evidence needed: capture of the original build arm |
-| UI-024 | `source/OpenTPW/Hud/ParkHud.cs:184` | [APPROX:UI-024] Three-slot pages and arrow positions are OpenTPW layout, not original menu evidence. |
-| UI-024 | `source/OpenTPW/Hud/ParkHud.cs:220` | [APPROX:UI-024] layout inside the info arm; [APPROX:UI-029] b_door down = closed, b_erase = delete — evidence needed: capture of the ride panel |
-| UI-024 | `source/OpenTPW/Hud/ParkHud.cs:602` | [APPROX:UI-024] Keep each translated name and price inside its slot; previews use the remaining height. |
-| UI-025 | `source/OpenTPW/Hud/ParkHud.cs:30` | [APPROX:UI-025] message area: 3 messages, 8 s — evidence needed: binary/capture of the message system |
-| UI-026 | `source/OpenTPW/Hud/ParkHud.cs:607` | [APPROX:UI-026] icon turn speed 0.8 rad/s — evidence needed: capture of the original build menu |
+| UI-024 | `source/OpenTPW/Hud/HudStubs.cs:110` | [APPROX:UI-024] Catalogue pages sort by Info.Id; original build-menu order is not verified. |
+| UI-024 | `source/OpenTPW/Hud/ParkHud.cs:163` | [APPROX:UI-024] layout inside the info arm; [APPROX:UI-029] b_door down = closed, b_erase = delete — evidence needed: capture of the ride panel |
+| UI-025 | `source/OpenTPW/Hud/ParkHud.cs:31` | [APPROX:UI-025] message area: 3 messages, 8 s — evidence needed: binary/capture of the message system |
+| UI-026 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:239` | [APPROX:UI-026] icon turn speed 0.8 rad/s — evidence needed: capture of the original build menu |
 | UI-026 | `source/OpenTPW/Hud/PreviewIcon.cs:14` | [APPROX:UI-026] orthographic CPU projection, 30° tilt, painter sorting — evidence needed: capture of the original build menu |
-| UI-027 | `source/OpenTPW/Hud/ParkHud.cs:502` | [APPROX:UI-027] Select by occupied grid cell; original cursor picking is not verified. |
-| UI-028 | `source/OpenTPW/Hud/ParkHud.cs:296` | [APPROX:UI-028] authored excitement as a percentage; unknown simulation statistics stay unavailable. |
-| UI-029 | `source/OpenTPW/Hud/ParkHud.cs:220` | [APPROX:UI-024] layout inside the info arm; [APPROX:UI-029] b_door down = closed, b_erase = delete — evidence needed: capture of the ride panel |
+| UI-027 | `source/OpenTPW/Hud/ParkHud.cs:425` | [APPROX:UI-027] Select by occupied grid cell; original cursor picking is not verified. |
+| UI-028 | `source/OpenTPW/Hud/ParkHud.cs:239` | [APPROX:UI-028] authored excitement as a percentage; unknown simulation statistics stay unavailable. |
+| UI-029 | `source/OpenTPW/Hud/ParkHud.cs:163` | [APPROX:UI-024] layout inside the info arm; [APPROX:UI-029] b_door down = closed, b_erase = delete — evidence needed: capture of the ride panel |
 | UI-030 | `source/OpenTPW/UI/Original/Options/GameOptions.cs:33` | [APPROX:UI-030] 0..10 volume steps, default 8, popup help on — evidence needed: original options defaults |
 | UI-030 | `source/OpenTPW/UI/Original/Options/GameOptions.cs:44` | [APPROX:UI-030] right-column defaults: all on, 90 degs rotation (as in the supplied capture), pushscroll |
-| UI-031 | `source/OpenTPW/Hud/ParkHud.cs:363` | [APPROX:UI-031] one placement per menu selection; Level owns purchase/sale — evidence needed: original build-tool continuation |
-| UI-032 | `source/OpenTPW/Hud/ParkHud.cs:611` | [APPROX:UI-032] Wrap translated catalogue names within their slot at the integer text scale. |
+| UI-031 | `source/OpenTPW/Hud/ParkHud.cs:285` | [APPROX:UI-031] one placement per menu selection; Level owns purchase/sale — evidence needed: original build-tool continuation |
 | UI-032 | `source/OpenTPW/UI/Original/UiWidgets.cs:285` | [APPROX:UI-032] small-font fallback and greedy wrap for long labels — evidence needed: captures of translated original screens |
 | UI-034 | `source/OpenTPW/UI/Original/UiImages.cs:70` | [APPROX:UI-034] a fully opaque texture on a transparent (flag 0x2) slot keys out black with a soft edge — evidence needed: the original's render state for flagged slots |
 | UI-035 | `source/OpenTPW/Client/Movie/IntroPlaylist.cs:34` | Input already held when the sequence begins is ignored until released [APPROX:UI-035], so launching the game |
@@ -369,7 +373,16 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-039 | `source/OpenTPW/UI/Original/UiWidgets.cs:130` | [APPROX:UI-039] option label size: letter box about 58 % of the label rectangle height (the capture's labels are ~26 of 1536 units for 45-unit rectangles); a label whose widest value does not fit drops alone to the largest size that does — evidence needed: capture of the original option labels in several languages |
 | UI-040 | `source/OpenTPW/Client/Autorun/AutorunView.cs:163` | [APPROX:UI-040] the exact dot phase of GDI's focus rectangle brush is not known; dots are the pixels with even x + y, inverted. |
 | UI-041 | `source/OpenTPW/Client/GameFlow.cs:160` | [APPROX:UI-041] a loaded shipped park is the reference start whatever Game Mode was last chosen; the original takes the mode from the loading player's profile, not the park — evidence needed: player profiles and the Mac park loader 0x11acfc |
-| UI-042 | `source/OpenTPW/Hud/ParkHud.cs:136` | [APPROX:UI-042] the camera button's action (camera views) is not implemented; it is shown disabled |
+| UI-042 | `source/OpenTPW/Hud/ParkHud.cs:142` | [APPROX:UI-042] the camera button's action (camera views) is not implemented; it is shown disabled |
+| UI-043 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:20` | [APPROX:UI-043] row height: the table gives the content region (444 units high), not the row pitch; ten equal rows fill it — evidence needed: capture of the original buy list |
+| UI-044 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:22` | [APPROX:UI-044] a header click sorts by that column (ascending, again for descending); the table only gives column header buttons 16/17 without a model — evidence needed: the original header handler |
+| UI-045 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:126` | [APPROX:UI-045] gauge rows: excitement is UsageInfo.ExcitementLevel as a share of 100, reliability is 1 - Upgrades[0].WearRate / 10 (wear rate is 'out of 10'), working life has no catalogue value and stays empty; safe capacity is Upgrades[0].InitCapacity — evidence needed: capture of the original buy window |
+| UI-045 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:263` | [APPROX:UI-045] the type-9 value cells are drawn as a plain bar gauge; the original gauge art is not identified |
+| UI-046 | `source/OpenTPW/Hud/BuyListModel.cs:104` | [APPROX:UI-046] the change text stays 4 s after the last balance change and sums the changes within that time — evidence needed: capture of the original cash trend display |
+| UI-047 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:155` | [DATA:Mac buy table 0x4cd94:510] title text; the category's UITEXT 119-122 (control 512 beside it is unnamed and stays empty, [APPROX:UI-047]) |
+| UI-048 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:306` | [APPROX:UI-048] ball travel: top at the track top for the first row, a ball height above the track bottom for the last — evidence needed: capture of the original scroll bar ends |
+| UI-049 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:35` | [APPROX:UI-049] the third column (1673,1724) has no known content and stays empty; the unnamed controls 491 and 512 are not drawn — evidence needed: capture of the original buy window |
+| UI-050 | `source/OpenTPW/Hud/ParkHud.cs:127` | [APPROX:UI-050] i_dollar frame 1 for a negative balance and green_up frame 1 for a decrease: the two-frame models' state meaning is guessed from their art — evidence needed: capture of the original cash display |
 
 ## Extension sites
 
@@ -435,11 +448,11 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | online-visit | `source/OpenTPW/Client/GameFlow.cs:187` | [EXT:online-visit] read-only visits of shared parks get no advisor (the original has no visits) |
 | opentpw-page | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:381` | [EXT:opentpw-page] button to the OpenTPW page, in the free area left of the OK panel |
 | opentpw-page | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:410` | The OpenTPW page ([EXT:opentpw-page]): everything OpenTPW adds to the original options, built from the |
-| opentpw-page | `source/OpenTPW/UI/Original/UiWidgets.cs:519` | [EXT:opentpw-page] option-row arrow/value positions: OpenTPW's own row style for its page (the original page uses sliders and toggles) |
+| opentpw-page | `source/OpenTPW/UI/Original/UiWidgets.cs:521` | [EXT:opentpw-page] option-row arrow/value positions: OpenTPW's own row style for its page (the original page uses sliders and toggles) |
 | ps2-data | `source/OpenTPW/Client/Ps2Export.cs:13` | [EXT:ps2-data] viewing aid for the PS2 version's data, not original behaviour |
 | sandbox | `source/OpenTPW/Client/GameFlow.cs:188` | [EXT:sandbox] the generic sandbox (not an original level) gets no automatic advisor either; only original levels raise its game events |
 | strings | `source/OpenTPW/UI/Original/SupplementaryStrings.cs:10` | [EXT:strings] OpenTPW supplementary labels (display/upscaling/language rows and OpenTPW messages), not original data |
-| test-stub | `source/OpenTPW/Hud/HudStubs.cs:130` | [EXT:test-stub] price shown when Totem.sam cannot be read (the economy catalogue price is used when a park economy runs) |
+| test-stub | `source/OpenTPW/Hud/HudStubs.cs:132` | [EXT:test-stub] price shown when Totem.sam cannot be read (the economy catalogue price is used when a park economy runs) |
 | texture-pack | `source/OpenTPW/Client/GameFlow.cs:236` | [EXT:texture-pack] the pack switch belongs to the game loop, not to its loading screen |
 | texture-pack | `source/OpenTPW/Client/GameFlow.cs:304` | [EXT:texture-pack] a running texture switch shows its progress without blocking the game |
 | texture-pack | `source/OpenTPW/Compat/GraphicsSettings.cs:269` | [EXT:texture-pack] Texture choice (docs/TEXTURE-PACKS.md): empty = original textures; &lt;c&gt;enhanced&lt;/c&gt; (the default) = the |
@@ -497,19 +510,32 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | Language/English/ERRORMSG.str | `source/OpenTPW/Online/OnlineStrings.cs:51` | [DATA:Language/English/ERRORMSG.str] |
 | Language/English/UITEXT.str | `source/OpenTPW/Online/OnlineStrings.cs:18` | [DATA:Language/English/UITEXT.str] (the UIStrings enum is off by one from about 206 on; these are verified). |
 | Language/English/swears.txt,alloweds.txt | `source/OpenTPW.Online/Moderation/WordFilter.cs:32` | Decodes an original list. [DATA:Language/English/swears.txt,alloweds.txt] Observed encoding: |
-| Mac main HUD table 0x4ab38:32,47 | `source/OpenTPW/Hud/ParkHud.cs:123` | [DATA:Mac main HUD table 0x4ab38:32,47] date text region (182,1061,383,1103) in black (font slot 3); the cash text |
-| Mac main HUD table 0x4ab38:38-43 | `source/OpenTPW/Hud/ParkHud.cs:130` | [DATA:Mac main HUD table 0x4ab38:38-43] original button rectangles: staggered along the panel's curve, plus the camera button |
-| Rides.sam:Info.WhichUIType | `source/OpenTPW/Hud/HudStubs.cs:150` | [DATA:Rides.sam:Info.WhichUIType] |
-| Rides.sam:UsageInfo.ExcitementLevel | `source/OpenTPW/Hud/HudStubs.cs:147` | [DATA:Totem.sam:UsageInfo.ExcitementLevel] overrides [DATA:Rides.sam:UsageInfo.ExcitementLevel] |
+| Mac buy table 0x4cd94:-2,511 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:199` | [DATA:Mac buy table 0x4cd94:-2,511] b_exit (help 2) closes; b_allstaff (help 153) opens the staff list, which OpenTPW does not have yet |
+| Mac buy table 0x4cd94:1,2 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:187` | [DATA:Mac buy table 0x4cd94:1,2] b_up / b_down at their rectangles |
+| Mac buy table 0x4cd94:16,17 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:184` | [DATA:Mac buy table 0x4cd94:16,17] column header buttons (name, price) without a model; the third (18) has no text and no action |
+| Mac buy table 0x4cd94:489,490,493,504 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:149` | [DATA:Mac buy table 0x4cd94:489,490,493,504] w_big root window4, two !frame panels and the f_buyitem list frame at their authored rectangles |
+| Mac buy table 0x4cd94:490 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:167` | [DATA:Mac buy table 0x4cd94:490] preview content region (437,202)-(797,565) |
+| Mac buy table 0x4cd94:492 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:161` | [DATA:Mac buy table 0x4cd94:492] item name line at the top of the preview frame |
+| Mac buy table 0x4cd94:500,499,497,502,503 and 501,494,498,495,496 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:37` | [DATA:Mac buy table 0x4cd94:500,499,497,502,503 and 501,494,498,495,496] label/value rows of the stats frame (493) |
+| Mac buy table 0x4cd94:504 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:33` | [DATA:Mac buy table 0x4cd94:504] content region and the three columns (command_10/command_11) |
+| Mac buy table 0x4cd94:507,506,509,508 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:24` | [DATA:Mac buy table 0x4cd94:507,506,509,508] category buttons with their help ids (command_17 140, 142, 141, 143) |
+| Mac buy table 0x4cd94:510 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:155` | [DATA:Mac buy table 0x4cd94:510] title text; the category's UITEXT 119-122 (control 512 beside it is unnamed and stays empty, [APPROX:UI-047]) |
+| Mac main HUD table 0x4ab38:32,47 | `source/OpenTPW/Hud/ParkHud.cs:119` | [DATA:Mac main HUD table 0x4ab38:32,47] date text region (182,1061,383,1103) in black (font slot 3); the cash text |
+| Mac main HUD table 0x4ab38:38-43 | `source/OpenTPW/Hud/ParkHud.cs:136` | [DATA:Mac main HUD table 0x4ab38:38-43] original button rectangles: staggered along the panel's curve, plus the camera button |
+| Mac main HUD table 0x4ab38:50,48,49,51-55 | `source/OpenTPW/Hud/ParkHud.cs:126` | [DATA:Mac main HUD table 0x4ab38:50,48,49,51-55] cash extras: i_dollar left of the balance, the change text (yellow) with green_up, golden key and ticket counters |
+| Rides.sam:Info.WhichUIType | `source/OpenTPW/Hud/HudStubs.cs:152` | [DATA:Rides.sam:Info.WhichUIType] |
+| Rides.sam:UsageInfo.ExcitementLevel | `source/OpenTPW/Hud/HudStubs.cs:149` | [DATA:Totem.sam:UsageInfo.ExcitementLevel] overrides [DATA:Rides.sam:UsageInfo.ExcitementLevel] |
 | Standard.sam:FixedItemInfo lanes | `source/OpenTPW/Client/M3Gate.cs:297` | [DATA:levels/&lt;theme&gt;/terrain/base.map:InitialPath] [DATA:Standard.sam:FixedItemInfo lanes] |
 | THEMENAMES.str:entries 0..3 | `source/OpenTPW/World/Original/OriginalGateSign.cs:46` | [DATA:THEMENAMES.str:entries 0..3] Lost Kingdom, Halloween World, Wonder Land, Space Zone. |
 | TPWORLD.ISO and retail install | `source/OpenTPW.Files/Public/DataOverlay.cs:147` | &lt;summary&gt;[DATA:TPWORLD.ISO and retail install] global music and the four theme music banks.&lt;/summary&gt; |
 | TPWORLD.ISO and retail install:Data/Movies | `source/OpenTPW.Files/Public/DataOverlay.cs:144` | &lt;summary&gt;[DATA:TPWORLD.ISO and retail install:Data/Movies] the nine shipped movies.&lt;/summary&gt; |
 | Theme Park World Bonus Stuff/Bonus content/levels/*/*/_name_N.wad | `source/OpenTPW/Online/ParkSnapshotBuilder.cs:60` | &lt;summary&gt;[DATA:Theme Park World Bonus Stuff/Bonus content/levels/*/*/_name_N.wad] Bonus archives start with '_'.&lt;/summary&gt; |
 | Totem.sam:Info.Shape | `source/OpenTPW/World/PrototypeRide.cs:74` | [DATA:Totem.sam:Info.Shape] 3×4 cells = 30×40 MD2 units, centred |
-| Totem.sam:Upgrades[0].CostOfUpgrade | `source/OpenTPW/Hud/HudStubs.cs:143` | [DATA:Totem.sam:Upgrades[0].CostOfUpgrade] (FallbackCost only when the file is missing) |
-| Totem.sam:UsageInfo.ExcitementLevel | `source/OpenTPW/Hud/HudStubs.cs:147` | [DATA:Totem.sam:UsageInfo.ExcitementLevel] overrides [DATA:Rides.sam:UsageInfo.ExcitementLevel] |
-| UITEXT.str:448,449 | `source/OpenTPW/Hud/ParkHud.cs:85` | [DATA:UITEXT.str:448,449] currency prefix; [APPROX:UI-021] ","-grouped digits — evidence needed: locale number format of the original |
+| Totem.sam:Upgrades[0].CostOfUpgrade | `source/OpenTPW/Hud/HudStubs.cs:145` | [DATA:Totem.sam:Upgrades[0].CostOfUpgrade] (FallbackCost only when the file is missing) |
+| Totem.sam:UsageInfo.ExcitementLevel | `source/OpenTPW/Hud/HudStubs.cs:149` | [DATA:Totem.sam:UsageInfo.ExcitementLevel] overrides [DATA:Rides.sam:UsageInfo.ExcitementLevel] |
+| UITEXT.str:125-133 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:49` | [DATA:UITEXT.str:125-133] stats-frame labels per category (the enum names these by their other uses) |
+| UITEXT.str:125-133 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:120` | [DATA:UITEXT.str:125-133] the labels per category (rides list five values, as the five rows of frame 493) |
+| UITEXT.str:448,449 | `source/OpenTPW/Hud/ParkHud.cs:76` | [DATA:UITEXT.str:448,449] currency prefix; [APPROX:UI-021] ","-grouped digits — evidence needed: locale number format of the original |
 | global/Speech/lips.wad | `source/OpenTPW/World/Advisor.cs:20` | [DATA:global/Speech/speechHD.SDT] [DATA:global/Speech/lips.wad] |
 | global/Speech/lips.wad:members sp_001–sp_637 | `source/OpenTPW/World/Advisor.cs:27` | [DATA:global/Speech/lips.wad:members sp_001–sp_637] |
 | global/Speech/speechHD.SDT | `source/OpenTPW/World/Advisor.cs:20` | [DATA:global/Speech/speechHD.SDT] [DATA:global/Speech/lips.wad] |
@@ -536,7 +562,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ui.wad:f_chat.MD2,w_map.MD2 bounds | `source/OpenTPW/UI/Original/UiCanvas.cs:25` | [DATA:ui.wad:f_chat.MD2,w_map.MD2 bounds] full-screen UI frames span 2048×1536 |
 | ui.wad:f_screen | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:160` | [DATA:ui.wad:f_screen] the full-screen frame with the tiled wave background |
 | ui.wad:islandlobby.MD2,f_lobbutbg.MD2 root/bounds | `source/OpenTPW/FrontEnd/FrontEndMenu.cs:78` | [DATA:ui.wad:islandlobby.MD2,f_lobbutbg.MD2 root/bounds] authored panel rectangles |
-| ui.wad:mainpanel,gauge,date,panel MD2 roots | `source/OpenTPW/Hud/ParkHud.cs:119` | [DATA:ui.wad:mainpanel,gauge,date,panel MD2 roots] authored HUD rectangles |
+| ui.wad:mainpanel,gauge,date,panel MD2 roots | `source/OpenTPW/Hud/ParkHud.cs:115` | [DATA:ui.wad:mainpanel,gauge,date,panel MD2 roots] authored HUD rectangles |
 
 ## Binary evidence sites
 
@@ -615,7 +641,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | STP-PPC:0x10128B60 profile key count | `source/OpenTPW/Economy/ParkObjectives.cs:321` | [BIN:STP-PPC:0x10128B60 profile key count] keys = mExtraKeys + (earned global, per-theme and secret tickets) / 3, truncated; spent tickets are not subtracted |
 | STP-PPC:0x10137600 player save setup | `source/OpenTPW/World/Original/OriginalPark.cs:50` | [BIN:STP-PPC:0x10137600 player save setup] the level's easymode park is copied into a player's saves only for Instant Action players (0x1013741C passes the mode flag) |
 | STP-PPC:0x1013781C player selection | `source/OpenTPW/Client/AutomaticAdvisor.cs:45` | [BIN:STP-PPC:0x1013781C player selection] game type 2 = Instant Action, 0 otherwise (offline) |
-| STP-PPC:0x10137FD0 park view input | `source/OpenTPW/Hud/ParkHud.cs:497` | [BIN:STP-PPC:0x10137FD0 park view input] a button message in the park view plays cat_ui event 0x1F (0xBD when modifier flag 0x10 is set) |
+| STP-PPC:0x10137FD0 park view input | `source/OpenTPW/Hud/ParkHud.cs:420` | [BIN:STP-PPC:0x10137FD0 park view input] a button message in the park view plays cat_ui event 0x1F (0xBD when modifier flag 0x10 is set) |
 | STP-PPC:0x10154AA0 loans window | `source/OpenTPW/Economy/ParkEconomy.cs:94` | [BIN:STP-PPC:0x10154AA0 loans window] the Available Loans window only opens outside game type 2 (Instant Action) |
 | STP-PPC:0x1015D220 new-player dialog | `source/OpenTPW/Economy/ParkEconomyContracts.cs:7` | [BIN:STP-PPC:0x1015D220 new-player dialog] radio 0x70D "Instant Action" / 0x70E "Full Simulation"; 0x1013741C stores the choice as profile mEasyModeUser and 0x1013781C turns it into game type 2 (Instant Action) or 0 |
 | STP-PPC:0x10165A0C upgrade list | `source/OpenTPW/Economy/ParkEconomy.cs:578` | [BIN:STP-PPC:0x10165A0C upgrade list] game type 2 (Instant Action) lists no upgrades and shows UITEXT 27 instead |

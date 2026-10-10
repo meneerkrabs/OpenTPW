@@ -88,6 +88,8 @@ public sealed class EconomyParkStatus : IHudParkStatus
 	// [APPROX:UI-022] faster speeds only speed up the park clock/economy, not rides or guests — evidence needed: original speed controls
 	public float TimeScale => Speed == GameSpeed.Paused ? 0 : 1;
 
+	public int GoldenTickets => Math.Max( 0, Economy?.GoldenTicketsAvailable ?? 0 );
+
 	public void Update( float realSeconds ) { }
 
 	public long? PriceOf( BuildItem item ) =>

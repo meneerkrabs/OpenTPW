@@ -13,7 +13,7 @@ namespace OpenTPW;
 /// front-end menu render (GPU readback with BF4 text checked texel by texel), the menu is driven
 /// with injected mouse clicks and keys (next island, options open/cancel, enter park, game mode) into
 /// the original jungle level, the HUD renders with money/date text verified in readback, a Totem is
-/// bought through the catalogue build arm and charged exactly once; a second researched object is
+/// bought through the catalogue buy window and charged exactly once; a second researched object is
 /// built, opened/closed and checked for overlap refusal. The game exits to the lobby, then loads a
 /// read-only visit and checks build/open/delete/save mutation boundaries, then starts jungle again in
 /// Instant Action and checks its seed and mode gates. Options are never written and saves go to a temporary directory.
@@ -314,28 +314,47 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			};
 			Click( flow.Hud.Screen, "buy" );
 		} );
-		Wait( "build arm opens", 3 );
-		Do( "next build page", () => Click( flow.Hud!.Screen, "nextBuildPage" ) );
-		Wait( "next build page visible", 3 );
-		Do( "previous build page", () =>
+		Wait( "buy window opens", 3 );
+		Do( "buy window", () =>
 		{
-			Require( flow.Hud!.BuildPage == 1, "next page button exposes later catalogue items" );
-			Click( flow.Hud.Screen, "previousBuildPage" );
+			var hud = flow.Hud!;
+			Require( hud.BuyWindowOpen && hud.Stack.Top?.Name == "buy", "buy button opens the original buy window" );
+			Require( hud.Catalog is OriginalBuildCatalog && hud.BuyItems.Count > ParkHud.BuyVisibleRows, "the original ride catalogue spans more rows than the list shows" );
+			var capture = CaptureFrame( "buy-window.png" );
+			VerifyText( capture, flow.Strings[UIStrings.BuyRide], "Buy Ride title" );
+			VerifyText( capture, flow.Strings[UIStrings.NameAttr], "Name column header" );
+			VerifyText( capture, flow.Strings[UIStrings.Price], "Price column header" );
+			Click( hud.Stack.Top!, "categoryShops" );
 		} );
-		Wait( "previous build page visible", 3 );
-		Do( "show Totem page", () =>
+		Wait( "shops listed", 3 );
+		Do( "shops category", () =>
 		{
-			Require( flow.Hud!.BuildPage == 0, "previous page button returns to the first page" );
+			var hud = flow.Hud!;
+			Require( hud.Category == BuildCategory.Shops && hud.BuyItems.All( item => item.Category == BuildCategory.Shops ) && hud.SelectedBuyItem != null, "the shops button lists the shops and selects the first" );
+			var capture = CaptureFrame( "buy-window-shops.png" );
+			VerifyText( capture, flow.Strings[UIStrings.BuyShop], "Buy Shop title" );
+			VerifyText( capture, hud.ItemName( hud.SelectedBuyItem! ), "selected shop name" );
+			Click( hud.Stack.Top!, "categoryRides" );
+		} );
+		Wait( "rides listed", 3 );
+		Do( "scroll the list", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.Category == BuildCategory.Rides && hud.BuyFirstRow == 0, "the rides button returns to the rides" );
+			Click( hud.Stack.Top!, "scrollDown" );
+		} );
+		Wait( "list scrolled", 3 );
+		Do( "show Totem", () =>
+		{
+			Require( flow.Hud!.BuyFirstRow == 1, "the down button scrolls the list one row" );
 			ShowItem( TotemItem );
 		} );
-		Wait( "Totem page visible", 3 );
-		Do( "build arm", () =>
+		Wait( "Totem selected", 3 );
+		Do( "buy window with Totem", () =>
 		{
-			Require( flow.Hud!.BuildArmOpen, "buy button opens the build arm" );
-			Require( flow.Hud.Catalog is OriginalBuildCatalog && flow.Hud.BuildPageCount > 1, "the original catalogue spans build-menu pages" );
-			var capture = CaptureFrame( "build-arm.png" );
-			VerifyText( capture, flow.Strings[UIStrings.BuyRide], "Buy Ride title" );
-			VerifyText( capture, flow.Hud.ItemName( TotemItem ), "Totem build item" );
+			Require( flow.Hud!.BuyWindowOpen && flow.Hud.SelectedBuyItem == TotemItem, "the Totem is the selected item" );
+			var capture = CaptureFrame( "buy-window-totem.png" );
+			VerifyText( capture, flow.Hud.ItemName( TotemItem ), "Totem name" );
 			totemLockedAtStart = !flow.Hud.Status.IsAvailable( TotemItem );
 			ClickItem( TotemItem );
 		} );
@@ -372,7 +391,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			Require( economy.Objects.Count == objectsBeforePurchase + 1, "one purchased economy object is created" );
 			Require( flow.Level.Park.Guests!.TryGetInstance( totem!.Visitors.AttractionId, out var linked ) && economy.TryGetObject( linked, out var bought ) && bought.TotalSpent == builtCost, "guest payments link to the purchased ride" );
 			Log.Trace( $"HUD money: {economy.Balance} after buying the Totem for {builtCost}; park date {economy.Date}." );
-			Require( !flow.Hud.BuildArmOpen, "build arm closes after building" );
+			Require( !flow.Hud.BuyWindowOpen, "the buy window closes when placement starts" );
 			Require( purchaseEvents == 1 && flow.Level.PlacedRide == null, "catalogue purchase bypasses the developer prototype and HUD wallet" );
 			flow.Hud.SelectObject( totem );
 		} );
@@ -403,7 +422,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			Require( totem!.IsDeleted && soldFor > 0 && flow.Hud!.Status.Money == flow.Level!.Park!.Economy.Balance, $"deleting the ride sells it for its scrap value (got {soldFor})" );
 			Require( flow.Level!.Park!.Economy.Objects.Count == objectsBeforePurchase, "selling removes the purchased economy object" );
 			Log.Trace( $"HUD delete sold the Totem for {soldFor}; balance {flow.Level.Park.Economy.Balance}." );
-			flow.Hud!.SetBuildArm( true );
+			flow.Hud!.OpenBuyWindow();
 			secondItem = flow.Hud.Catalog.GetItems( BuildCategory.Rides ).First( item => item.InfoId != PrototypeRide.InfoId && flow.Hud.Status.IsAvailable( item ) );
 			ShowItem( secondItem );
 		} );
@@ -613,15 +632,18 @@ internal sealed class FrontEndSmokeTest : IDisposable
 	{
 		var hud = flow.Hud!;
 		hud.SelectCategory( item.Category );
-		var index = hud.Catalog.GetItems( item.Category ).ToList().IndexOf( item );
-		hud.ChangeBuildPage( index / 3 );
+		hud.SelectBuyItem( hud.BuyItems.ToList().IndexOf( item ) );
 	}
 
+	/// <summary>Clicks the list row of <paramref name="item"/>; a click on the already selected row buys it.</summary>
 	private void ClickItem( BuildItem item )
 	{
-		var index = flow.Hud!.VisibleBuildItems.ToList().IndexOf( item );
-		Require( index >= 0, "requested catalogue item is on the visible page" );
-		Click( flow.Hud.Screen, $"item{index}" );
+		var hud = flow.Hud!;
+		Require( hud.BuyWindowOpen, "the buy window is open" );
+		hud.SelectBuyItem( hud.BuyItems.ToList().IndexOf( item ) );
+		var visible = hud.SelectedBuyIndex - hud.BuyFirstRow;
+		Require( visible >= 0 && visible < ParkHud.BuyVisibleRows, "the requested catalogue item is among the visible rows" );
+		flow.InjectedInput = UiInput.Click( Context.Canvas.Map( new System.Numerics.Vector2( 1240, 427 + (visible + 0.5f) * ParkHud.BuyRowHeight ), UiAnchor.Center ) );
 	}
 
 	private static (int X, int Y) FindObjectSite( Level level, ObjectCatalogEntry entry ) =>

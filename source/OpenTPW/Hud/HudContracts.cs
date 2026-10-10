@@ -17,6 +17,10 @@ public interface IHudParkStatus
 	float TimeScale { get; }
 	/// <summary>Advances by real seconds (stubs only; the economy runs on the level's fixed clock).</summary>
 	void Update( float realSeconds );
+	/// <summary>Golden tickets the park has earned and not spent (the HUD counter, Mac main HUD table control 55); 0 without an economy.</summary>
+	int GoldenTickets => 0;
+	/// <summary>Golden keys (control 54). OpenTPW does not track keys yet, so this stays 0.</summary>
+	int GoldenKeys => 0;
 	/// <summary>Purchase price shown in the build menu, null when unknown.</summary>
 	long? PriceOf( BuildItem item );
 	/// <summary>Whether the item can be bought now (researched, in the catalogue).</summary>

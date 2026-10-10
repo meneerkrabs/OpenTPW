@@ -421,7 +421,7 @@ public sealed class UiButton : UiElement
 /// A horizontal slider in the style of the original options screen: a <c>b_scroller</c> ball on a track,
 /// <see cref="UiElement.Bounds"/> being the mouse hit region. Values are step indices 0..Steps-1.
 /// </summary>
-public sealed class UiSlider : UiElement
+public sealed class UiSlider : UiElement, IUiDragTarget
 {
 	public const string KnobModel = "b_scroller";
 
@@ -459,6 +459,8 @@ public sealed class UiSlider : UiElement
 		var fraction = (authoredX - Track.X - KnobSize.X / 2) / travel;
 		return Math.Clamp( (int)MathF.Round( fraction * (steps - 1) ), 0, steps - 1 );
 	}
+
+	void IUiDragTarget.DragTo( UiCanvas canvas, NVector2 point ) => SetFromMouse( canvas, point );
 
 	/// <summary>Sets the value from a mouse position in framebuffer pixels.</summary>
 	public void SetFromMouse( UiCanvas canvas, NVector2 point )

@@ -6,12 +6,14 @@ namespace OpenTPW.Online;
 /// </summary>
 public static class AtomicFile
 {
-	private static FileStreamOptions CreateOptions() => new()
+	private static FileStreamOptions CreateOptions()
 	{
-		Mode = FileMode.CreateNew, Access = FileAccess.Write, Share = FileShare.None,
-		// Not in the browser build, whose files live in the page's sandbox (and where Unix modes may not be supported).
-		UnixCreateMode = OperatingSystem.IsWindows() || OperatingSystem.IsBrowser() ? null : UnixFileMode.UserRead | UnixFileMode.UserWrite,
-	};
+		var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write, Share = FileShare.None };
+		// Windows throws on any assignment, even null; the browser build's files live in the page's sandbox.
+		if ( !OperatingSystem.IsWindows() && !OperatingSystem.IsBrowser() )
+			options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+		return options;
+	}
 
 	public static void Write( string path, ReadOnlySpan<byte> bytes )
 	{

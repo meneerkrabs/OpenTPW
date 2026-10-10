@@ -23,8 +23,8 @@ public enum ParkCellFlags : ushort
 /// <summary>
 /// The CPU-only park cell map shared by the path and queue tools (PATH-plan §9.1/§9.6): per cell the
 /// original type byte, flags, the same-type placement counter, the cardinal links (1, 4, 16, 64) and the
-/// queue link. <see cref="GuestPathGrid"/> owns one and keeps it in step with its walkable cells; queue
-/// cells live only here.
+/// queue link. It is the source of truth for path and queue cells: <see cref="GuestPathGrid"/> is a view
+/// that derives the guests' walk graph from it (path cells are walkable, their links are the connections).
 /// </summary>
 public sealed class ParkCellMap
 {
@@ -33,6 +33,7 @@ public sealed class ParkCellMap
 	private readonly short[] placements;
 	private readonly byte[] links;
 	private readonly byte[] queueLinks;
+	private readonly int[] typeCounts = new int[256];
 
 	public ParkCellMap( int width, int height )
 	{
@@ -45,12 +46,49 @@ public sealed class ParkCellMap
 		placements = new short[width * height];
 		links = new byte[width * height];
 		queueLinks = new byte[width * height];
+		typeCounts[0] = width * height;
+	}
+
+	/// <summary>
+	/// The map of an original level (PATH-plan §9.1): Easymode save path cells with their saved links, else MAP
+	/// InitialPath cells linked to every cardinal neighbour; MAP InitialPath path cells carry NoModify (§5.4).
+	/// </summary>
+	// [BIN:STP-PPC:0x10085538 map initialisation] MAP attribute bit 0x08 (InitialPath) makes the cell type 1 with flag 0x20 (NOMODIFY)
+	// [APPROX:PATH-007] no cell gets flag 0x40 (Unowned): the original sets it on every non-InitialPath cell and Buy Land clears it, but the starting park's owned land is not decoded from the save or MAP, so every in-bounds cell counts as owned — evidence needed: the save/MAP ownership bits and which of the 24 clear sites (0x84aa4(cell, 0x40)) mark the starting park
+	public static ParkCellMap FromOriginal( MapFile map, OriginalParkImport? save )
+	{
+		var cells = new ParkCellMap( map.CellCountX, map.CellCountY );
+		for ( var y = 0; y < map.CellCountY; y++ )
+		{
+			for ( var x = 0; x < map.CellCountX; x++ )
+			{
+				var initial = map.GetFlagsAt( x, y ).HasFlag( MapCellFlags.InitialPath );
+				if ( save != null && save.Cells[x, y].IsPath )
+					cells.SetPath( x, y, GuestPathGrid.ToCellLinks( GuestPathGrid.ToLinks( save.Cells[x, y].PathConnections ) ) );
+				else if ( initial )
+					cells.SetPath( x, y, GuestPathGrid.ToCellLinks( 0x0F ) );
+				else
+					continue;
+				if ( initial )
+					cells.SetFlags( x, y, ParkCellFlags.NoModify );
+			}
+		}
+		return cells;
+	}
+
+	private void SetPath( int x, int y, byte cellLinks )
+	{
+		SetType( x, y, ParkCellType.Path );
+		SetLinks( x, y, cellLinks );
 	}
 
 	public int Width { get; }
 	public int Height { get; }
 	/// <summary>Incremented by every write.</summary>
 	public int Version { get; private set; }
+
+	/// <summary>Number of cells whose type byte is <paramref name="type"/>.</summary>
+	public int CountOf( ParkCellType type ) => typeCounts[(byte)type];
 
 	public bool InBounds( int x, int y ) => (uint)x < (uint)Width && (uint)y < (uint)Height;
 	private int Index( int x, int y ) => InBounds( x, y ) ? y * Width + x : throw new ArgumentOutOfRangeException( nameof( x ) );
@@ -69,6 +107,8 @@ public sealed class ParkCellMap
 	public void SetType( int x, int y, byte type )
 	{
 		var index = Index( x, y );
+		typeCounts[types[index]]--;
+		typeCounts[type]++;
 		types[index] = type;
 		if ( type != (byte)ParkCellType.Queue )
 			queueLinks[index] = 0;
@@ -104,6 +144,30 @@ public sealed class ParkCellMap
 	{
 		placements[Index( x, y )] = value;
 		Version++;
+	}
+
+	/// <summary>Marks the map changed without a cell write (cached walk fields are rebuilt).</summary>
+	public void Touch() => Version++;
+
+	/// <summary>
+	/// Cell-map part of <see cref="WorldStateHash"/>: every non-empty cell in row order with its type, flags,
+	/// placement counter, links and queue link (the cells guests walk and queue on, and the build tools read).
+	/// </summary>
+	internal void AddCanonicalState( StateHasher hash )
+	{
+		hash.Add( Width );
+		hash.Add( Height );
+		var count = 0;
+		for ( var index = 0; index < types.Length; index++ )
+			count += types[index] != 0 || flags[index] != 0 || placements[index] != 0 || links[index] != 0 || queueLinks[index] != 0 ? 1 : 0;
+		hash.Add( count );
+		for ( var index = 0; index < types.Length; index++ )
+		{
+			if ( types[index] == 0 && flags[index] == 0 && placements[index] == 0 && links[index] == 0 && queueLinks[index] == 0 )
+				continue;
+			hash.Add( index );
+			hash.Add( types[index] | flags[index] << 8 | (long)links[index] << 24 | (long)queueLinks[index] << 32 | (long)(ushort)placements[index] << 40 );
+		}
 	}
 
 	/// <summary>

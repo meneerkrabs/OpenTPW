@@ -5,7 +5,8 @@ namespace OpenTPW;
 /// <summary>
 /// Renders an imported original level: the base.MD2 terrain meshes (node transforms composed up the
 /// hierarchy), the heightfield surface with its per-cell ground texture slot, and a debug overlay for
-/// imported path cells (TCT PathTex entry 0); path orientation/variants are not reproduced. Placed
+/// path and queue cells (TCT PathTex entry 0); path orientation/variants are not reproduced. The overlay
+/// follows <see cref="PathSource"/> (the level's cell map) after <see cref="RefreshPaths"/>. Placed
 /// objects are drawn with their original models by <see cref="ParkObjects"/>, not as footprint markers.
 /// </summary>
 public sealed class OriginalTerrain : Entity
@@ -31,11 +32,29 @@ public sealed class OriginalTerrain : Entity
 	}
 
 	public OriginalPark Park { get; }
+	/// <summary>Cells drawn with the path texture; null: the MAP InitialPath and save path cells.</summary>
+	public Func<int, int, bool>? PathSource { get; set; }
 	public int SurfaceCellCount { get; private set; }
+	private Dictionary<string, Texture>? heightfieldTextures;
+	private ModelEntity? heightfieldPart;
+
+	/// <summary>Rebuilds the heightfield surface so built and removed path cells show.</summary>
+	public void RefreshPaths()
+	{
+		if ( heightfieldPart == null || heightfieldTextures == null )
+			return;
+		var old = heightfieldPart;
+		parts.Remove( old );
+		old.Delete();
+		if ( old.Model is { } model && models.Remove( model ) )
+			ScheduleDispose( model );
+		BuildHeightfield( heightfieldTextures );
+	}
 	public int TerrainMeshCount { get; private set; }
 
 	private void BuildHeightfield( Dictionary<string, Texture> textures )
 	{
+		heightfieldTextures = textures;
 		var field = Park.Heightfield;
 		var slots = new List<Texture>();
 		var slotIndices = new Dictionary<int, int>();
@@ -67,10 +86,10 @@ public sealed class OriginalTerrain : Entity
 		while ( slots.Count < MaximumTextureSlots )
 			slots.Add( slots[0] );
 		material.Set( "Color", slots.ToArray() );
-		AddPart( new Model( vertices.ToArray(), indices.ToArray(), material ), "heightfield" );
+		heightfieldPart = AddPart( new Model( vertices.ToArray(), indices.ToArray(), material ), "heightfield" );
 	}
 
-	private bool IsPath( int x, int y ) =>
+	private bool IsPath( int x, int y ) => PathSource?.Invoke( x, y ) ??
 		Park.Map.GetFlagsAt( x, y ).HasFlag( MapCellFlags.InitialPath ) || Park.Save?.Cells[x, y].IsPath == true;
 
 	private static int AddSlot( List<Texture> slots, Texture texture )
@@ -243,10 +262,22 @@ public sealed class OriginalTerrain : Entity
 		return files;
 	}
 
-	private void AddPart( Model model, string name )
+	private ModelEntity AddPart( Model model, string name )
 	{
 		models.Add( model );
-		parts.Add( new ModelEntity { Model = model, Name = name } );
+		var part = new ModelEntity { Model = model, Name = name };
+		parts.Add( part );
+		return part;
+	}
+
+	private static void ScheduleDispose( Model model )
+	{
+		Asset.All.Remove( model );
+		global::Global.Render.ScheduleDelete( () =>
+		{
+			model.VertexBuffer.Dispose();
+			model.IndexBuffer?.Dispose();
+		} );
 	}
 
 	protected override void OnDelete()
@@ -255,14 +286,7 @@ public sealed class OriginalTerrain : Entity
 			part.Delete();
 		parts.Clear();
 		foreach ( var model in models )
-		{
-			Asset.All.Remove( model );
-			global::Global.Render.ScheduleDelete( () =>
-			{
-				model.VertexBuffer.Dispose();
-				model.IndexBuffer?.Dispose();
-			} );
-		}
+			ScheduleDispose( model );
 		models.Clear();
 	}
 }

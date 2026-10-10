@@ -17,7 +17,8 @@ public partial class Level
 		var theme = OriginalPark?.LevelName ?? "jungle";
 		IParkGrid grid = OriginalPark == null ? new SandboxParkGrid() : new OriginalParkGrid( OriginalPark );
 		var easy = Park?.Economy.Settings.IsEasy ?? false;
-		Objects = new ParkObjects( ObjectCatalog.Load( theme, easy ), grid, Seed ) { IsReserved = ( x, y ) => IsReservedByPrototype( x, y ) || Guests?.Grid.IsQueue( x, y ) == true };
+		// Objects keep off built path and queue cells; imported path cells are refused by the terrain rule as before.
+		Objects = new ParkObjects( ObjectCatalog.Load( theme, easy ), grid, Seed ) { IsReserved = ( x, y ) => IsReservedByPrototype( x, y ) || Guests?.Grid.IsQueue( x, y ) == true || Guests?.Grid.IsWalkable( x, y ) == true };
 		if ( OriginalPark == null )
 			return;
 		var count = OriginalPark.Save != null ? Objects.ImportOriginal( OriginalPark.Save ) : Objects.AddDefaultFixedItems();
@@ -84,8 +85,95 @@ public partial class Level
 			GuestPathGrid.DirectionBetween( entrance.OutsideX, entrance.OutsideY, entrance.X, entrance.Y ));
 	}
 
-	/// <summary>The attraction whose queue path the click tool extends (set after building a ride with <c>Info.HasQueue</c>).</summary>
-	public RideVisitorBridge? QueueToolRide { get; set; }
+	/// <summary>The headless path builder over the level's cell map (original levels; null in the generic sandbox).</summary>
+	public ParkPathBuilder? Paths { get; private set; }
+	/// <summary>The path and queue build tool the park view drives (PATH-plan §9.4).</summary>
+	public CellBuildTool CellTool { get; } = new();
+
+	/// <summary>The attraction whose queue the build tool lays (set after building a ride with <c>Info.HasQueue</c>).</summary>
+	public RideVisitorBridge? QueueToolRide
+	{
+		get => CellTool.Writer is QueueLineWriter queue ? queue.Ride : null;
+		set
+		{
+			if ( value == null )
+			{
+				if ( CellTool.Mode == CellToolMode.Queue )
+					CellTool.Cancel();
+			}
+			else
+				EnterQueueTool( value );
+		}
+	}
+
+	private void SetupPaths()
+	{
+		if ( Guests == null )
+			return;
+		Paths = new ParkPathBuilder( Guests.Grid.Cells, Guests.Grid, () => Park?.Economy, Objects.Grid, IsPathBlocked );
+	}
+
+	// Objects, fixed items (the gate and entrance included) and the sandbox Totem block paths like their original cell types do.
+	private bool IsPathBlocked( int x, int y ) => Objects.FindAt( x, y ) != null || IsReservedByPrototype( x, y );
+
+	/// <summary>Starts the path tool at (x, y) (a click in the park view on an empty owned cell or a path cell).</summary>
+	// [BIN:STP-PPC:0x10139C64 park-view hover] empty cell: hover state 2, help 441 "build path"; path (type 1): state 1, help 442 "extend this path"; queue (type 3): help 444
+	// [APPROX:PATH-001] a left click on an empty owned cell or on a path cell enters mode 1 with that cell as the start; the click handler that calls SetMode(1) is not traced and no menu button exists — evidence needed: the caller of SetMode 0x1007B320 with mode 1
+	public bool EnterPathTool( int x, int y )
+	{
+		if ( IsReadOnlyVisit || Paths == null )
+			return false;
+		var check = Paths.CheckCell( x, y );
+		if ( check is not (CellBuildResult.Ok or CellBuildResult.Existing) )
+		{
+			LastActionMessage = $"Cannot build a path here: {check}.";
+			return false;
+		}
+		CellTool.Enter( Paths, (x, y) );
+		return true;
+	}
+
+	/// <summary>Starts the queue tool for <paramref name="ride"/> at its entrance's outside cell (or the queue's back cell).</summary>
+	// [BIN:STP-PPC:0x1007497C ride placement] a placed HasQueue ride enters tool mode 3, the queue tool (PATH-plan §8); it shares LayLine, the vertex stack and the preview/commit code with the path tool
+	public bool EnterQueueTool( RideVisitorBridge ride )
+	{
+		if ( IsReadOnlyVisit || Guests == null || ride.QueueFrontCell is not { } front )
+			return false;
+		ride.RecomputeQueue( Guests.Grid );
+		var start = Guests.Grid.IsQueue( front.X, front.Y ) ? ride.QueueBackCell : front;
+		CellTool.Enter( new QueueLineWriter( Guests.Grid, ride, ( x, y, pending ) => CheckQueueCell( ride, x, y, pending ),
+			( x, y ) => BuildQueueCell( ride, x, y ), RemoveQueueCell, () => Park?.Economy.CellCost( CellPurchase.Queue ) ?? 0 ), start );
+		return true;
+	}
+
+	/// <summary>
+	/// Lays the snapped straight path from <paramref name="from"/> toward <paramref name="to"/> (headless API; the
+	/// path tool commits through the same builder). Read-only visits and the generic sandbox lay nothing.
+	/// </summary>
+	public SegmentResult? BuildPath( (int X, int Y) from, (int X, int Y) to )
+	{
+		if ( IsReadOnlyVisit || Paths == null )
+		{
+			LastActionMessage = "Read-only visit: path changes are disabled.";
+			return null;
+		}
+		var result = Paths.BuildSegment( from, to );
+		LastActionMessage = result.Completed
+			? $"Built {result.Built.Count} path cells for ${result.Charged}."
+			: $"Cannot build a path here: {result.StoppedBy}.";
+		return result;
+	}
+
+	/// <summary>Removes the path cell at (x, y) (forced, no refund; fixed InitialPath cells stay).</summary>
+	public CellBuildResult RemovePathCell( int x, int y )
+	{
+		if ( IsReadOnlyVisit || Paths == null )
+			return CellBuildResult.NotPath;
+		var result = Paths.Remove( x, y );
+		if ( result == CellBuildResult.Ok )
+			LastActionMessage = "Removed a path cell.";
+		return result;
+	}
 
 	/// <summary>
 	/// Adds one queue cell for an attraction (headless API; the queue tool calls it per click). The park
@@ -103,14 +191,14 @@ public partial class Level
 		// Bring the queue up to date before charging: a grid edit since the last recompute would otherwise pass the
 		// check here, be charged, and then be refused by TryExtend's own recompute.
 		ride.RecomputeQueue( Guests.Grid );
-		var check = QueuePaths.CheckExtend( Guests.Grid, ride, x, y, IsQueueBlocked );
-		if ( check != QueueBuildResult.Ok )
+		var check = CheckQueueCell( ride, x, y, Array.Empty<(int X, int Y)>() );
+		if ( check is not (QueueBuildResult.Ok or QueueBuildResult.Refused) )
 		{
 			LastActionMessage = $"Cannot build a queue here: {check}.";
 			return check;
 		}
 		// [DATA:Standard.sam:Costs.QueueCell] charged per cell when written (ParkEconomy.TrySpendCell, PATH-plan §3.2)
-		if ( Park != null && Park.Economy.TrySpendCell( CellPurchase.Queue ) != ParkEconomy.PurchaseResult.Ok )
+		if ( check == QueueBuildResult.Refused || (Park != null && Park.Economy.TrySpendCell( CellPurchase.Queue ) != ParkEconomy.PurchaseResult.Ok) )
 		{
 			LastActionMessage = "Cannot build a queue: not enough money.";
 			return QueueBuildResult.Refused;
@@ -118,6 +206,24 @@ public partial class Level
 		var result = QueuePaths.TryExtend( Guests.Grid, ride, x, y, IsQueueBlocked );
 		LastActionMessage = $"{ride.Name}: queue is now {ride.QueueSizeInCells} cells long.";
 		return result;
+	}
+
+	/// <summary>
+	/// Validates (x, y) as <paramref name="ride"/>'s next queue cell after <paramref name="pending"/> (earlier cells
+	/// of the same line, taken as laid and paid for), exactly as <see cref="BuildQueueCell"/> checks before charging;
+	/// no writes. <see cref="QueueBuildResult.Refused"/> means the balance cannot pay for this cell after the pending ones.
+	/// </summary>
+	public QueueBuildResult CheckQueueCell( RideVisitorBridge ride, int x, int y, IReadOnlyList<(int X, int Y)> pending )
+	{
+		if ( IsReadOnlyVisit || Guests == null )
+			return QueueBuildResult.Refused;
+		var check = QueuePaths.CheckExtend( Guests.Grid, ride, x, y, pending, IsQueueBlocked );
+		if ( check != QueueBuildResult.Ok )
+			return check;
+		// The commit spends Costs.QueueCell per cell (ParkEconomy.TrySpendCell: balance − cost ≥ 0), so this cell needs the pending cells' cost on top.
+		if ( Park != null && !Park.Economy.CanSpendCell( CellPurchase.Queue, pending.Count ) )
+			return QueueBuildResult.Refused;
+		return QueueBuildResult.Ok;
 	}
 
 	/// <summary>
@@ -158,6 +264,19 @@ public partial class Level
 		if ( !ParkPlacement.TryGetGroundPoint( mousePosition, viewportSize, Camera.ViewMatrix, Camera.ProjMatrix, out var ground ) )
 			return false;
 		return TryGetGridCell( ground.X, ground.Y, out x, out y );
+	}
+
+	/// <summary>Screen position of cell (x, y)'s centre on the Z = 0 plane the cursor picks on (for build ghosts).</summary>
+	public bool TryProjectCell( int x, int y, System.Numerics.Vector2 viewportSize, out System.Numerics.Vector2 screen )
+	{
+		var origin = Objects.Grid.Origin;
+		var point = new System.Numerics.Vector4( origin.X + (x + 0.5f) * ObjectPlacement.CellSize, origin.Y + (y + 0.5f) * ObjectPlacement.CellSize, 0, 1 );
+		var clip = System.Numerics.Vector4.Transform( point, Camera.ViewMatrix * Camera.ProjMatrix );
+		screen = default;
+		if ( clip.W <= 0 )
+			return false;
+		screen = new System.Numerics.Vector2( (clip.X / clip.W + 1) / 2 * viewportSize.X, (1 - clip.Y / clip.W) / 2 * viewportSize.Y );
+		return float.IsFinite( screen.X ) && float.IsFinite( screen.Y );
 	}
 
 	public bool TryGetGridCell( float engineX, float engineY, out int x, out int y )
@@ -240,15 +359,20 @@ public partial class Level
 	{
 		if ( IsReadOnlyVisit )
 			return;
-		if ( (BuildEntry == null && !IsRemovingObjects && QueueToolRide == null) || !TryGetGridCell( mousePosition, viewportSize, out var x, out var y ) )
+		if ( (BuildEntry == null && !IsRemovingObjects && !CellTool.IsActive) || !TryGetGridCell( mousePosition, viewportSize, out var x, out var y ) )
 			return;
-		if ( QueueToolRide != null && BuildEntry == null )
-			BuildQueueCell( QueueToolRide, x, y );
-		else if ( IsRemovingObjects )
-			RemoveObjectAt( x, y );
+		// The remove tool comes first, so a path or queue cell under it is removed rather than built on (ParkHud stands aside for it too).
+		if ( IsRemovingObjects )
+			RemoveAt( x, y );
+		else if ( CellTool.IsActive && BuildEntry == null )
+			CellTool.Click( (x, y) );
 		else
 			PlaceObject( BuildEntry!, x, y, BuildRotation );
 	}
+
+	/// <summary>The remove tool: the object under the cursor, else a queue cell, else a path cell.</summary>
+	public bool RemoveAt( int x, int y ) =>
+		RemoveObjectAt( x, y ) || RemoveQueueCell( x, y ) > 0 || RemovePathCell( x, y ) == CellBuildResult.Ok;
 
 	/// <summary>Cells covered by the prototype Totem (its 6×8-unit model centred on its position).</summary>
 	private bool IsReservedByPrototype( int x, int y ) => PlacedRide != null && PrototypeCovers( PlacedRide.Position, x, y );

@@ -632,15 +632,21 @@ public sealed class ParkEconomy : IParkEconomy
 	}
 
 	/// <summary>
+	/// Whether <see cref="TrySpendCell"/> would accept one more cell after <paramref name="pending"/> earlier cells
+	/// of the same line were spent: balance − (pending + 1) × cost ≥ 0. Previews use it to match the commit.
+	/// </summary>
+	public bool CanSpendCell( CellPurchase kind, int pending ) => Balance - (pending + 1) * CellCost( kind ) >= 0;
+
+	/// <summary>
 	/// Charges one path or queue cell when it is written (<c>SetCellType</c>, PATH-plan §3.2): refused only
 	/// when balance − cost &lt; 0 (no bankruptcy test), then spent as other costs.
 	/// </summary>
 	// [BIN:STP-PPC:0x10082AC4 SetCellType] type 1 costs Costs.PathCell, type 3 Costs.QueueCell; refused when balance − cost < 0, else Spend per cell at write time
 	public PurchaseResult TrySpendCell( CellPurchase kind )
 	{
-		var cost = CellCost( kind );
-		if ( Balance - cost < 0 )
+		if ( !CanSpendCell( kind, pending: 0 ) )
 			return PurchaseResult.NotEnoughMoney;
+		var cost = CellCost( kind );
 		Post( LedgerCategory.OtherCosts, cost );
 		Raise( ParkEventKind.CellsBought, cost, 0, (int)kind, $"1 {kind} cell" );
 		return PurchaseResult.Ok;

@@ -31,7 +31,15 @@ public static class QueuePaths
 
 	/// <summary>Checks whether (x, y) can be the next cell of <paramref name="ride"/>'s queue (no writes).</summary>
 	// [APPROX:QUEUE-014] a queue is laid cell by cell from the entrance's outside cell; each cell must touch the current back cell, must not be a path or queue cell, and is linked toward that back cell — evidence needed: the queue tool's placement rules (UI-031, 0x10070B98..0x1008C7C0)
-	public static QueueBuildResult CheckExtend( GuestPathGrid grid, RideVisitorBridge ride, int x, int y, Func<int, int, bool>? isBlocked = null )
+	public static QueueBuildResult CheckExtend( GuestPathGrid grid, RideVisitorBridge ride, int x, int y, Func<int, int, bool>? isBlocked = null ) =>
+		CheckExtend( grid, ride, x, y, Array.Empty<(int X, int Y)>(), isBlocked );
+
+	/// <summary>
+	/// Checks (x, y) as the next queue cell after <paramref name="pending"/>, the cells a ghost line has already
+	/// accepted in order, as if they were laid (no writes): they count toward the length, the last one is the back
+	/// cell, and none of them can be laid again. The queue tool's preview validates every cell this way.
+	/// </summary>
+	public static QueueBuildResult CheckExtend( GuestPathGrid grid, RideVisitorBridge ride, int x, int y, IReadOnlyList<(int X, int Y)> pending, Func<int, int, bool>? isBlocked = null )
 	{
 		if ( !grid.InBounds( x, y ) )
 			return QueueBuildResult.OutOfBounds;
@@ -39,16 +47,17 @@ public static class QueuePaths
 			return QueueBuildResult.NoQueue;
 		if ( ride.QueueFrontCell is not { } front || ride.QueueEntranceDirection < 0 || grid.IsWalkable( front.X, front.Y ) )
 			return QueueBuildResult.NoFrontCell;
-		var hasCells = grid.IsQueue( front.X, front.Y );
-		if ( hasCells && ride.QueueSizeInCells >= MaximumCells )
+		var frontIsQueue = grid.IsQueue( front.X, front.Y );
+		var hasCells = frontIsQueue || pending.Count > 0;
+		if ( hasCells && (frontIsQueue ? ride.QueueSizeInCells : 0) + pending.Count >= MaximumCells )
 			return QueueBuildResult.TooLong;
 		// CanChangeCellType allows a queue over an empty cell (and over a path only for a line's last cell, which this tool does not lay).
 		if ( grid.Cells.TypeAt( x, y ) != ParkCellType.Empty || !ParkCellMap.CanChangeCellType( grid.Cells.RawTypeAt( x, y ), (byte)ParkCellType.Queue, lastCell: false )
-			|| grid.IsWalkable( x, y ) || isBlocked?.Invoke( x, y ) == true )
+			|| grid.IsWalkable( x, y ) || isBlocked?.Invoke( x, y ) == true || pending.Contains( (x, y) ) )
 			return QueueBuildResult.Blocked;
 		if ( !hasCells )
 			return (x, y) == front ? QueueBuildResult.Ok : QueueBuildResult.NotAtQueueEnd;
-		var back = ride.QueueBackCell;
+		var back = pending.Count > 0 ? pending[^1] : ride.QueueBackCell;
 		return GuestPathGrid.DirectionBetween( x, y, back.X, back.Y ) >= 0 ? QueueBuildResult.Ok : QueueBuildResult.NotAtQueueEnd;
 	}
 

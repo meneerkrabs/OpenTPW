@@ -25,9 +25,11 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 	private readonly System.Diagnostics.Stopwatch sinceMotion = new();
 	private const double MaximumSecondsUntilRelease = 60;
 
-	public SandboxSmokeTest( Level level )
+	public SandboxSmokeTest( Level level, OpenTPW.Hud.ParkHud? hud = null, OpenTPW.UI.Original.UiContext? hudContext = null )
 	{
 		this.level = level;
+		this.hud = hud;
+		this.hudContext = hudContext;
 		originalSaveFileSystem = SaveFileSystem;
 		Directory.CreateDirectory( temporaryDirectory );
 		SaveFileSystem = new BaseFileSystem( temporaryDirectory );
@@ -93,6 +95,8 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 	public void Update()
 	{
 		++frame;
+		if ( !pathToolVerified && frame >= 3 )
+			VerifyHudPathTool();
 		if ( motionFrame == 0 )
 		{
 			// Totem.RSE waits up to 10 s for passengers before it triggers its main animation.

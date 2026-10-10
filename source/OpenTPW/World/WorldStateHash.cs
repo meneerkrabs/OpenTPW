@@ -53,7 +53,7 @@ public sealed record WorldStateSources
 public static class WorldStateHash
 {
 	/// <summary>Bumped whenever the hashed fields or their order change.</summary>
-	public const int SchemaVersion = 4;
+	public const int SchemaVersion = 5;
 
 	public static ulong Compute( WorldStateSources sources )
 	{
@@ -83,6 +83,8 @@ public static class WorldStateHash
 		// thing_table_digest: guests in id order, then the registered attractions.
 		hash.Add( sources.Guests != null );
 		sources.Guests?.AddCanonicalState( hash );
+		// cell_map_digest: the park cell map (path and queue cells, flags, placement counters, links) guests walk on.
+		sources.Guests?.Grid.Cells.AddCanonicalState( hash );
 		// script_table_digest: every live script in id order.
 		hash.Add( sources.Scripts != null );
 		if ( sources.Scripts != null )

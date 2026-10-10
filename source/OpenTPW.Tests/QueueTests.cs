@@ -712,9 +712,12 @@ public class QueueTests
 		var charge = Directory.EnumerateFiles( Path.Combine( root!.FullName, "source", "OpenTPW" ), "*.cs", SearchOption.AllDirectories )
 			.Select( File.ReadAllText ).Single( text => text.Contains( "TrySpendCell( CellPurchase.Queue )" ) );
 		var spend = charge.IndexOf( "TrySpendCell( CellPurchase.Queue )", StringComparison.Ordinal );
-		var checkAt = charge.LastIndexOf( "QueuePaths.CheckExtend(", spend, StringComparison.Ordinal );
+		// BuildQueueCell checks through CheckQueueCell, the queue tool preview's validator, which calls CheckExtend.
+		var checkAt = charge.LastIndexOf( "CheckQueueCell(", spend, StringComparison.Ordinal );
 		var recompute = charge.LastIndexOf( ".RecomputeQueue(", spend, StringComparison.Ordinal );
-		Assert.IsTrue( checkAt >= 0 && recompute >= 0 && recompute < checkAt, "RecomputeQueue precedes CheckExtend and the charge" );
+		Assert.IsTrue( checkAt >= 0 && recompute >= 0 && recompute < checkAt, "RecomputeQueue precedes the check and the charge" );
+		var validator = charge.IndexOf( "public QueueBuildResult CheckQueueCell(", StringComparison.Ordinal );
+		Assert.IsTrue( validator >= 0 && charge.IndexOf( "QueuePaths.CheckExtend(", validator, StringComparison.Ordinal ) > validator, "CheckQueueCell runs CheckExtend" );
 	}
 
 	[TestMethod]

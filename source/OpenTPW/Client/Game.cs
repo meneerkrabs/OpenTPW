@@ -278,7 +278,7 @@ internal static class Game
 		}
 		else if ( args.Contains( "--smoke-test" ) )
 		{
-			using var smokeTest = new SandboxSmokeTest( level );
+			using var smokeTest = new SandboxSmokeTest( level, flow.Hud, flow.Context );
 			Render.PostUpdate += smokeTest.Update;
 			Render.Run();
 			smokeTest.VerifyCompleted();

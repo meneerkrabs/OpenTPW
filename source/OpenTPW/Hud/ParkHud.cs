@@ -50,6 +50,10 @@ public sealed class ParkHud
 	private BuildItem? pendingItem;
 	private OriginalObject? selectedObject;
 	private int buildPage;
+	private int cursorX = -1;
+	/// <summary>Set by a press the path/queue tool used, so its release does not select an object.</summary>
+	private bool toolPress;
+	private int cursorY = -1;
 
 	public ParkHud( Level level, UiStringTable strings, IHudParkStatus status, IBuildCatalog catalog, HudHost host )
 	{
@@ -286,10 +290,11 @@ public sealed class ParkHud
 		} ) );
 
 		hud.DrawOverlay = DrawMessages;
+		// [APPROX:PATH-011] Escape/Back inside the path or queue tool ends the tool without writing; only a Back outside it opens the pause menu (PATH-plan §9.4 cancel; the original's key handler for the tool is not traced, UI-012) — evidence needed: the original's Escape handling in tool modes 1 and 3
 		hud.Back = () =>
 		{
-			if ( level.QueueToolRide != null )
-				level.QueueToolRide = null;
+			if ( level.CellTool.IsActive )
+				level.CellTool.Cancel();
 			else
 				OpenPauseMenu();
 		};
@@ -326,7 +331,7 @@ public sealed class ParkHud
 	{
 		BuildArmOpen = open;
 		if ( open )
-			level.QueueToolRide = null;
+			level.CellTool.Cancel();
 		if ( open )
 			InfoArmOpen = false;
 		if ( !open && pendingItem != null )
@@ -361,6 +366,7 @@ public sealed class ParkHud
 		}
 		if ( item.Entry is not { } entry )
 			return;
+		level.CellTool.Cancel();
 		pendingItem = item;
 		level.BuildEntry = entry;
 		level.IsRemovingObjects = false;
@@ -377,11 +383,8 @@ public sealed class ParkHud
 		PostMessage( string.Format( strings.Extra( OpenTpwText.Built ), ItemName( pendingItem ) ) );
 		SetBuildArm( false );
 		// [BIN:STP-PPC:0x1007497C ride placement] a placed HasQueue ride (type record +64) enters tool mode 3, the queue tool (PATH-plan §8); park clicks lay its queue until Back
-		if ( item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells )
-		{
-			level.QueueToolRide = item.Visitors;
+		if ( item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells && level.EnterQueueTool( item.Visitors ) )
 			PostMessage( strings.Extra( OpenTpwText.LayQueue ) );
-		}
 	}
 
 	private void ToggleRideOpen()
@@ -513,10 +516,15 @@ public sealed class ParkHud
 		if ( !overUi && !consumed && input.LeftPressed )
 			GameAudio.PlayUi( ParkViewClickEvent );
 
+		var inPark = !overUi && !consumed && level.TryGetGridCell( input.Mouse, new NVector2( context.Canvas.Width, context.Canvas.Height ), out cursorX, out cursorY );
+		if ( !inPark )
+			cursorX = cursorY = -1;
+		var toolClick = UpdateCellTool( context, input, inPark, paused );
 		// [APPROX:UI-027] Select by occupied grid cell; original cursor picking is not verified.
-		if ( !overUi && !consumed && level.BuildEntry == null && !level.IsPlacing && level.QueueToolRide == null && input.LeftReleased
-			&& level.TryGetGridCell( input.Mouse, new NVector2( context.Canvas.Width, context.Canvas.Height ), out var x, out var y ) )
-			SelectObject( level.Objects.FindAt( x, y ) );
+		if ( inPark && level.BuildEntry == null && !level.IsPlacing && !level.CellTool.IsActive && input.LeftReleased && !toolPress )
+			SelectObject( level.Objects.FindAt( cursorX, cursorY ) );
+		if ( input.LeftReleased )
+			toolPress = false;
 
 		for ( var index = messages.Count - 1; index >= 0; index-- )
 		{
@@ -525,7 +533,76 @@ public sealed class ParkHud
 				messages.RemoveAt( index );
 		}
 		Status.Update( context.Delta );
-		return overUi || consumed;
+		return overUi || consumed || toolClick;
+	}
+
+	/// <summary>
+	/// The path/queue tool's HUD side: park-view help (441–445), the ghost line under the cursor, Backspace undo
+	/// and right-click cancel. Clicks inside the tool are committed here; <see cref="Update"/> reports them as captured,
+	/// so <see cref="Level"/>'s park click (the same commit for input without the HUD) skips them.
+	/// </summary>
+	private bool UpdateCellTool( UiContext context, UiInput input, bool inPark, bool paused )
+	{
+		var tool = level.CellTool;
+		// [APPROX:PATH-013] while the pause menu is open the tool takes no clicks: this returns before the commit, and Update reports the pointer as captured (overUi), so Level's park click skips it too; the economy's speed pause does not stop the tool, which keeps its ghost — evidence needed: the original park view's input handling while paused
+		// The remove tool owns the park click while it is on (Level.RemoveAt clears paths and queues too).
+		if ( paused || level.BuildEntry != null || level.IsPlacing || level.IsRemovingObjects )
+			return false;
+		if ( inPark && tool.HoverHelpId( level.Paths, cursorX, cursorY ) is int help )
+			context.HoverHelp = strings.Help( help );
+		if ( !tool.IsActive )
+		{
+			// A left click on an empty owned cell or on a path cell starts the path tool there (help 441/442).
+			if ( !inPark || !input.LeftPressed || level.IsReadOnlyVisit || level.Objects.FindAt( cursorX, cursorY ) != null
+				|| tool.HoverHelpId( level.Paths, cursorX, cursorY ) is not (441 or 442) || !level.EnterPathTool( cursorX, cursorY ) )
+				return false;
+			PostMessage( strings.Help( 443 ) );
+			tool.Hover( (cursorX, cursorY) );
+			return toolPress = true;
+		}
+		if ( input.Backspaces > 0 )
+			tool.Undo();
+		if ( input.RightPressed && inPark )
+		{
+			tool.Cancel();
+			return true;
+		}
+		if ( !inPark )
+			return false;
+		tool.Hover( (cursorX, cursorY) );
+		if ( !input.LeftPressed )
+			return false;
+		// The commit click; Level skips it because the HUD reports the pointer as captured this frame.
+		var result = tool.Click( (cursorX, cursorY) );
+		if ( result is { Completed: false } )
+			PostMessage( strings.Extra( result.StoppedBy == CellBuildResult.NotEnoughMoney ? OpenTpwText.NotEnoughMoney : OpenTpwText.CannotBuildHere ) );
+		return toolPress = true;
+	}
+
+	/// <summary>Ghost markers for the tool's preview line: green cells it would build, grey existing cells, red where it stops; then the line's cost.</summary>
+	// [APPROX:PATH-001] ghosts are flat markers at the cell centres with the line's cost beside the cursor (the original draws ghost path pieces, LayLine mode | 0x100) — evidence needed: captures of the original path tool
+	private void DrawCellToolGhost( UiContext context )
+	{
+		if ( level.CellTool.Ghost is not { } ghost || !level.CellTool.IsActive )
+			return;
+		var viewport = new NVector2( context.Canvas.Width, context.Canvas.Height );
+		var size = 10 * context.Canvas.TextScale;
+		var built = ghost.Built.ToHashSet();
+		var existing = ghost.Existing.ToHashSet();
+		foreach ( var cell in ghost.Line )
+		{
+			if ( !level.TryProjectCell( cell.X, cell.Y, viewport, out var centre ) )
+				continue;
+			var colour = cell == ghost.StoppedAt ? new RgbaByte( 230, 40, 40, 200 )
+				: built.Contains( cell ) ? new RgbaByte( 80, 220, 80, 170 )
+				: existing.Contains( cell ) ? new RgbaByte( 200, 200, 200, 140 ) : new RgbaByte( 120, 120, 120, 90 );
+			context.Batch.AddRectangle( new UiRect( centre.X - size / 2, centre.Y - size / 2, size, size ), colour );
+		}
+		if ( Status.HasEconomy && ghost.Charged > 0 && level.TryProjectCell( ghost.SnappedEnd.X, ghost.SnappedEnd.Y, viewport, out var end ) )
+		{
+			var text = string.Format( System.Globalization.CultureInfo.InvariantCulture, "{0}{1:#,0}", strings[UIStrings.Dollar], ghost.Charged ).Replace( "  ", " " );
+			context.DrawText( context.Fonts.Small, text, new UiRect( end.X + size, end.Y - size * 2, 300 * context.Canvas.TextScale, size * 4 ), ghost.Completed ? UiColors.Value : UiColors.Highlight, UiAlign.Left );
+		}
 	}
 
 	public void SelectObject( OriginalObject? item )
@@ -553,6 +630,7 @@ public sealed class ParkHud
 			hud.DrawOverlay = null;
 		else
 			hud.DrawOverlay = DrawMessages;
+		DrawCellToolGhost( context );
 		Stack.Draw( context );
 	}
 

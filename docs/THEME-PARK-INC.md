@@ -111,6 +111,12 @@ has 29 more open cells in two mountain pits that no mesh covers (`4an_newenv.MD2
 variants of the environment, do not either); they show the clear colour. The `*_newenv.MD2` files,
 `lake.MD2`, `lake01_alpha.fsh` (a separate water alpha image) and the `proc_tex` set are not used.
 
+**Other open spots.** Each world has 8 to 16 heightfield ground cells textured `trans01` (only a `.tga`, in
+`Sharetex.wad`); they draw as black quadrilaterals (visible in `water` as small black patches in the
+snowfield), because the ground is drawn without blending. The mountain pits next to the entrance road
+show black interiors in all three worlds. Esc and P in the viewer are implemented but were not
+exercised by an automated run (all checks used `--capture-world`).
+
 **Approximations and open questions.** COMPAT-014, COMPAT-015 (palettes), COMPAT-019 (lake),
 RIDES-029 (`@`), RIDES-030 (non-finite texture coordinates in ten vertices of `science/sideshow/natnav`,
 drawn as 0, 0), RIDES-019 (default fixed items). Open: how Theme Park Inc positions the gate and

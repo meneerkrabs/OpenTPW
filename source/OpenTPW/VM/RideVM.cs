@@ -208,6 +208,7 @@ public sealed class RideVM
 			++executed;
 			++ExecutedInstructions;
 			InstructionExecuting?.Invoke( this, instruction );
+			RideOpcodeRecorder.Current?.Record( this, instruction );
 			if ( instruction.Definition == null )
 			{
 				Fault( $"opcode {RideScriptAnalysis.GetOpcodeName( instruction.RawOpcode )} at word {instruction.WordOffset} has no evidence-backed semantics" );

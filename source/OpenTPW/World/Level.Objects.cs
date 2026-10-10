@@ -446,13 +446,21 @@ public partial class Level
 		}
 		Objects.ObjectRemoved += item =>
 		{
-			Park.Guests?.Unlink( item.Visitors.AttractionId );
-			if ( economyInstances.Remove( item, out var instance ) && Park.Economy.TryGetObject( instance, out _ ) )
-			{
-				var credit = Park.Economy.Sell( instance );
+			if ( SellRemovedObject( Park, item.Visitors.AttractionId, economyInstances.Remove( item, out var instance ) ? instance : null ) is { } credit )
 				LastActionMessage = $"Removed {item.Entry.DisplayName}; scrap value ${credit} credited.";
-			}
 		};
+	}
+
+	/// <summary>
+	/// The economy side of removing a placed object (the remove tool; also used by the headless M4 gate): unlinks its guest
+	/// payments and sells its economy record for <see cref="ParkEconomy.ScrapValue"/>. Null when it had no record.
+	/// </summary>
+	internal static long? SellRemovedObject( ParkEconomyRuntime park, int attractionId, int? instance )
+	{
+		park.Guests?.Unlink( attractionId );
+		if ( instance is not int id || !park.Economy.TryGetObject( id, out _ ) )
+			return null;
+		return park.Economy.Sell( id );
 	}
 
 	private void LinkEconomy( OriginalObject item, int instance )

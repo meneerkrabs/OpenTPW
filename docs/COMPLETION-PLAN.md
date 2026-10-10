@@ -244,6 +244,7 @@ NativeAOT remains a separate, optional qualification.
   and ride assessment.
 - Gate: every supported attraction goes through load/build/run/stop/delete; all
   opcodes used have tests; unknown opcodes are reported explicitly.
+  Evaluator, criteria and current baseline: [M4-GATE.md](M4-GATE.md) (`--m4-gate`).
 - This is subset acceptance only. Full M4 acceptance requires all mandatory
   attractions/roller coasters and required opcodes, reference traces and no
   unsupported requirements; record original VM fidelity separately from procedural

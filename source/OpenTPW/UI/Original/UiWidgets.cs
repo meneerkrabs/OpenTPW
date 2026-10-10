@@ -316,6 +316,66 @@ public sealed class UiModelImage : UiElement
 	}
 }
 
+/// <summary>
+/// [EXT:online-two-step] A QR code (for an authenticator app's <c>otpauth://</c> URI): black modules on a white panel with
+/// the standard four-module quiet zone, drawn as rectangles at a whole number of pixels per module so scanners read it.
+/// </summary>
+public sealed class UiQrCode : UiElement
+{
+	private string text = "";
+	private bool[,] modules = new bool[0, 0];
+
+	public string Text
+	{
+		get => text;
+		set
+		{
+			text = value;
+			modules = Modules( value );
+		}
+	}
+
+	/// <summary>The module grid of <paramref name="text"/> at medium error correction; [x, y], true is dark.</summary>
+	public static bool[,] Modules( string text )
+	{
+		if ( text.Length == 0 )
+			return new bool[0, 0];
+		var code = Net.Codecrete.QrCodeGenerator.QrCode.EncodeText( text, Net.Codecrete.QrCodeGenerator.QrCode.Ecc.Medium );
+		var grid = new bool[code.Size, code.Size];
+		for ( var y = 0; y < code.Size; y++ )
+			for ( var x = 0; x < code.Size; x++ )
+				grid[x, y] = code.GetModule( x, y );
+		return grid;
+	}
+
+	public override void Draw( UiContext context, bool focused, bool pressed )
+	{
+		var size = modules.GetLength( 0 );
+		if ( size == 0 )
+			return;
+		var rect = ScreenRect( context.Canvas );
+		var span = size + 8;
+		var module = MathF.Max( 1, MathF.Floor( MathF.Min( rect.Width, rect.Height ) / span ) );
+		var x0 = MathF.Round( rect.X + (rect.Width - module * span) / 2 );
+		var y0 = MathF.Round( rect.Y + (rect.Height - module * span) / 2 );
+		context.Batch.AddRectangle( new UiRect( x0, y0, module * span, module * span ), new RgbaByte( 255, 255, 255, 255 ) );
+		var black = new RgbaByte( 0, 0, 0, 255 );
+		for ( var y = 0; y < size; y++ )
+		{
+			for ( var x = 0; x < size; x++ )
+			{
+				if ( !modules[x, y] )
+					continue;
+				var run = 1;
+				while ( x + run < size && modules[x + run, y] )
+					run++;
+				context.Batch.AddRectangle( new UiRect( x0 + (x + 4) * module, y0 + (y + 4) * module, run * module, module ), black );
+				x += run - 1;
+			}
+		}
+	}
+}
+
 /// <summary>An original image (.wct) drawn as decoration.</summary>
 public sealed class UiImageElement : UiElement
 {

@@ -94,6 +94,10 @@ public sealed class OnlineSession : IDisposable
 	public List<string> ChatLines { get; } = new();
 	public string CurrentRoom { get; private set; } = ChatProtocol.LobbyRoom;
 	public bool IsLoggedIn => Client?.Session != null;
+	/// <summary>A two-step setup waiting for its first code (after registering, or a login after an operator reset).</summary>
+	public TotpEnrollment? Enrollment { get; internal set; }
+	/// <summary>The last login asked for an authenticator code (missing or wrong).</summary>
+	public bool CodeRequested { get; private set; }
 
 	public void Pump()
 	{
@@ -169,19 +173,62 @@ public sealed class OnlineSession : IDisposable
 		Folders.SaveSettings( Settings );
 	}
 
+	/// <summary>Registers; on a server with two-step login this leaves an <see cref="Enrollment"/> to confirm with a code.</summary>
 	public void Register( string name, string password ) => WithClient( async client =>
 	{
-		await client.RegisterAsync( name, password );
-		return await LoginCore( client, name, password );
+		var enrollment = await client.RegisterAsync( name, password );
+		if ( enrollment != null )
+			return Enroll( enrollment );
+		return await LoginCore( client, name, password, null );
 	} );
 
-	public void Login( string name, string password ) => WithClient( client => LoginCore( client, name, password ) );
+	public void Login( string name, string password, string? code = null ) => WithClient( client => LoginCore( client, name, password, code ) );
 
-	private async Task<string?> LoginCore( OnlineClient client, string name, string password )
+	/// <summary>Finishes <see cref="Enrollment"/> with the first code from the authenticator app.</summary>
+	public void ConfirmEnrollment( string code ) => WithClient( async client =>
 	{
-		var session = await client.LoginAsync( name, password );
+		var enrollment = Enrollment ?? throw new InvalidOperationException( "No two-step setup is waiting." );
+		try
+		{
+			var session = await client.ConfirmEnrollmentAsync( enrollment, code );
+			Post( () => Enrollment = null );
+			return LoggedIn( session );
+		}
+		catch ( OnlineException exception ) when ( exception.Reason == null && exception.Status == System.Net.HttpStatusCode.BadRequest )
+		{
+			// The setup expired or was replaced: start again from the login dialog.
+			Post( () => Enrollment = null );
+			throw;
+		}
+	} );
+
+	public void CancelEnrollment() => Enrollment = null;
+
+	private string? Enroll( TotpEnrollment enrollment )
+	{
+		Post( () => { Enrollment = enrollment; CodeRequested = false; } );
+		return OnlineStrings.Get( OnlineLabel.TwoStepLogin );
+	}
+
+	private async Task<string?> LoginCore( OnlineClient client, string name, string password, string? code )
+	{
+		LoginResult result;
+		try { result = await client.LoginAsync( name, password, code ); }
+		catch ( OnlineException exception ) when ( exception.Reason is ApiErrorReasons.TotpRequired or ApiErrorReasons.TotpInvalid )
+		{
+			Post( () => CodeRequested = true );
+			throw;
+		}
+		if ( result.Enrollment != null )
+			return Enroll( result.Enrollment );
+		return LoggedIn( result.Session! );
+	}
+
+	private string LoggedIn( SessionToken session )
+	{
 		Post( () =>
 		{
+			CodeRequested = false;
 			Settings = Settings with { PlayerName = session.Name };
 			Folders.SaveSettings( Settings );
 		} );
@@ -201,6 +248,9 @@ public sealed class OnlineSession : IDisposable
 		foreach ( var cleanup in discarded )
 			cleanup();
 		Busy = 0;
+		// A setup or a code request belongs to the server it came from.
+		Enrollment = null;
+		CodeRequested = false;
 		chatCancel?.Cancel();
 		chatCancel?.Dispose();
 		chatCancel = null;

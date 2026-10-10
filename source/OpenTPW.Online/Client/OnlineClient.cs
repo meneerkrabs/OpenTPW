@@ -10,9 +10,14 @@ namespace OpenTPW.Online.Client;
 
 public sealed class OnlineException : Exception
 {
-	public OnlineException( HttpStatusCode status, string message ) : base( message ) => Status = status;
+	public OnlineException( HttpStatusCode status, string message, string? reason = null ) : base( message ) => (Status, Reason) = (status, reason);
 	public HttpStatusCode Status { get; }
+	/// <summary>The server's <see cref="ApiErrorReasons"/> value, or null.</summary>
+	public string? Reason { get; }
 }
+
+/// <summary>A login: a session, or the two-step setup the account needs first (<see cref="OnlineClient.ConfirmEnrollmentAsync"/>).</summary>
+public sealed record LoginResult( SessionToken? Session, TotpEnrollment? Enrollment );
 
 /// <summary>
 /// HTTP + WebSocket client for an OpenTPW server. The server URL is chosen by the user (opt-in);
@@ -84,16 +89,41 @@ public sealed class OnlineClient : IDisposable
 		}
 	}
 
-	public async Task RegisterAsync( string name, string password, CancellationToken cancel = default )
+	/// <summary>Registers; returns the two-step setup when the server requires one (the account exists only after it), else null.</summary>
+	public async Task<TotpEnrollment?> RegisterAsync( string name, string password, CancellationToken cancel = default )
 	{
 		using var response = await SendAsync( HttpMethod.Post, ApiRoutes.Accounts, Json( new Credentials( name, password ) ), cancel, authenticated: false );
+		return response.StatusCode == HttpStatusCode.Accepted ? ValidEnrollment( await ReadJsonAsync<TotpEnrollment>( response, cancel ) ) : null;
 	}
 
-	public async Task<SessionToken> LoginAsync( string name, string password, CancellationToken cancel = default )
+	/// <summary>Logs in; <paramref name="code"/> is the authenticator code for accounts with two-step login.</summary>
+	public async Task<LoginResult> LoginAsync( string name, string password, string? code = null, CancellationToken cancel = default )
 	{
-		using var response = await SendAsync( HttpMethod.Post, ApiRoutes.Sessions, Json( new Credentials( name, password ) ), cancel, authenticated: false );
+		using var response = await SendAsync( HttpMethod.Post, ApiRoutes.Sessions, Json( new Credentials( name, password, code ) ), cancel, authenticated: false );
+		if ( response.StatusCode == HttpStatusCode.Accepted )
+			return new LoginResult( null, ValidEnrollment( await ReadJsonAsync<TotpEnrollment>( response, cancel ) ) );
+		Session = await ReadJsonAsync<SessionToken>( response, cancel );
+		return new LoginResult( Session, null );
+	}
+
+	/// <summary>Finishes a two-step setup with the first code from the authenticator app and logs in.</summary>
+	public async Task<SessionToken> ConfirmEnrollmentAsync( TotpEnrollment enrollment, string code, CancellationToken cancel = default )
+	{
+		using var response = await SendAsync( HttpMethod.Post, ApiRoutes.AccountConfirmation, Json( new TotpConfirmation( enrollment.Name, enrollment.Ticket, code ) ), cancel, authenticated: false );
 		Session = await ReadJsonAsync<SessionToken>( response, cancel );
 		return Session;
+	}
+
+	/// <summary>A secret of plausible length in base32 and an otpauth URI that carries it.</summary>
+	private static TotpEnrollment ValidEnrollment( TotpEnrollment enrollment )
+	{
+		byte[] secret;
+		try { secret = Totp.FromBase32( enrollment.Secret ?? "" ); }
+		catch ( FormatException ) { throw new InvalidDataException( "The server sent an invalid two-step secret." ); }
+		if ( secret.Length is < 10 or > 64 || enrollment.Uri?.StartsWith( "otpauth://totp/", StringComparison.Ordinal ) != true || enrollment.Uri.Length > 512
+			|| enrollment.Ticket is not { Length: > 0 and <= 128 } )
+			throw new InvalidDataException( "The server sent an invalid two-step secret." );
+		return enrollment;
 	}
 
 	/// <summary>Deletes the logged-in account; the server asks for its name and password again.</summary>
@@ -261,16 +291,19 @@ public sealed class OnlineClient : IDisposable
 		using ( response )
 		{
 			var message = response.ReasonPhrase ?? "Request failed";
+			string? reason = null;
 			try
 			{
 				await using var stream = await response.Content.ReadAsStreamAsync( cancel );
 				var body = await BoundedZip.ReadBoundedAsync( stream, 16 * 1024, "Error response", cancel );
-				message = StrictJson.Deserialize<ApiError>( body, "Error response" ).Error;
+				var error = StrictJson.Deserialize<ApiError>( body, "Error response" );
+				message = error.Error;
+				reason = error.Reason;
 			}
 			catch ( Exception exception ) when ( exception is InvalidDataException or IOException )
 			{
 			}
-			throw new OnlineException( response.StatusCode, $"{(int)response.StatusCode}: {message}" );
+			throw new OnlineException( response.StatusCode, $"{(int)response.StatusCode}: {message}", reason );
 		}
 	}
 

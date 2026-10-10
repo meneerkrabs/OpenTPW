@@ -9,7 +9,7 @@ internal sealed class OnlinePanel : IDisposable
 	private readonly Level level;
 	private readonly OnlineSession session;
 	private readonly ChatOverlay overlay;
-	private string server = "", name = "", password = "", parkName = "My park", search = "", importPath = "", chatLine = "";
+	private string server = "", name = "", password = "", code = "", parkName = "My park", search = "", importPath = "", chatLine = "";
 	private string recipients = "", title = "", message = "", localStatus = "";
 	private ParkVisitInfo? inspected;
 
@@ -64,16 +64,29 @@ internal sealed class OnlinePanel : IDisposable
 		ImGui.InputText( OnlineStrings.Get( OnlineLabel.ServerAddress ), ref server, 1024 );
 		ImGui.InputText( OnlineStrings.Ui( OnlineStrings.LoginName, "Login name" ), ref name, 64 );
 		ImGui.InputText( OnlineStrings.Ui( OnlineStrings.Password, "Password" ), ref password, 256, ImGuiInputTextFlags.Password );
+		ImGui.InputText( OnlineStrings.Get( OnlineLabel.AuthenticatorCode ), ref code, 8 );
 		if ( ImGui.Button( OnlineStrings.Ui( OnlineStrings.GoOnline, "Go online" ) ) )
 			session.UseServer( server, name );
 		if ( session.Client == null )
 			ImGui.TextWrapped( OnlineStrings.Get( OnlineLabel.OnlineOff ) );
+		else if ( session.Enrollment is { } enrollment )
+		{
+			// Two-step setup: the key to type into an authenticator app (the game's own screen also shows a QR code).
+			ImGui.TextWrapped( OnlineStrings.Get( OnlineLabel.TwoStepInstructions ) );
+			ImGui.TextUnformatted( OpenTPW.Online.Totp.Grouped( enrollment.Secret ) );
+			if ( ImGui.Button( OnlineStrings.Get( OnlineLabel.Confirm ) ) )
+			{
+				session.ConfirmEnrollment( code.Trim() );
+				code = "";
+			}
+		}
 		else if ( !session.IsLoggedIn )
 		{
 			if ( ImGui.Button( OnlineStrings.Get( OnlineLabel.LogIn ) ) )
 			{
-				session.Login( name, password );
-				password = "";
+				// The password stays until logged in, so a login that asks for a code only needs the code.
+				session.Login( name, password, code.Trim().Length == 0 ? null : code.Trim() );
+				code = "";
 			}
 			ImGui.SameLine();
 			if ( ImGui.Button( OnlineStrings.Get( OnlineLabel.Register ) ) )
@@ -82,6 +95,8 @@ internal sealed class OnlinePanel : IDisposable
 				password = "";
 			}
 		}
+		if ( session.IsLoggedIn )
+			password = "";
 		if ( session.Client != null && ImGui.Button( OnlineStrings.Ui( OnlineStrings.GoOffline, "Go offline" ) ) )
 		{
 			session.Disconnect();

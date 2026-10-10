@@ -65,7 +65,7 @@ def framework_mismatches(repo: Path, major: int | None) -> list[str]:
             continue
         found = FRAMEWORK.search(project.read_text(errors='replace'))
         if found and major is not None and int(found.group(1)) != major:
-            out.append(f'{project.relative_to(repo)}: net{found.group(1)}')
+            out.append(f'{project.relative_to(repo).as_posix()}: net{found.group(1)}')
     return out
 
 
@@ -82,7 +82,7 @@ def undiscovered_tests(repo: Path, start: str = 'tools/ppc-analysis') -> list[st
                 break
             parent = parent.parent
         if not reachable:
-            out.append(str(test.relative_to(repo)))
+            out.append(test.relative_to(repo).as_posix())
     return out
 
 
@@ -91,7 +91,7 @@ def home_paths(repo: Path) -> list[str]:
     for doc in sorted((repo / 'docs').rglob('*.md')):
         for number, line in enumerate(doc.read_text(errors='replace').splitlines(), 1):
             if HOME.search(line):
-                out.append(f'{doc.relative_to(repo)}:{number}')
+                out.append(f'{doc.relative_to(repo).as_posix()}:{number}')
     return out
 
 

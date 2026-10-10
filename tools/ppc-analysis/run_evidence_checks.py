@@ -133,7 +133,7 @@ def fixture_consumers(tools: Path, variable: str, dotnet: list[dict] = ()) -> li
     # sources are read; no fixture directory is listed.
     read = environment_read(variable)
     runner = Path(__file__).resolve()
-    sources = [str(file.relative_to(tools)) for file in sorted(tools.rglob('*.py'))
+    sources = [file.relative_to(tools).as_posix() for file in sorted(tools.rglob('*.py'))
                if '__pycache__' not in file.parts and file.resolve() != runner
                and read.search(file.read_text(encoding='utf-8', errors='replace'))]
     harnesses = [item['project'] for item in dotnet if variable == 'OPENTPW_PC_FIXTURE' and used_fixture(item)]
@@ -155,7 +155,7 @@ def uncovered_test_files(tools: Path, suites: list[Path]) -> list[str]:
     # Without __init__.py, discovery reaches only test files directly inside the start directory.
     covered = {file for suite in suites for file in suite.glob('test_*.py')}
     every = {file for file in tools.rglob('test_*.py') if '__pycache__' not in file.parts}
-    return sorted(str(file.relative_to(tools)) for file in every - covered)
+    return sorted(file.relative_to(tools).as_posix() for file in every - covered)
 
 
 def parse_unittest(output: str) -> dict:
@@ -176,7 +176,7 @@ def run_python(suite: Path, tools: Path, env: dict, require_fixtures: bool) -> d
                               '-t', str(suite), '-p', 'test_*.py', '-v'],
                              env=env, cwd=suite, capture_output=True, text=True, timeout=600)
     result = parse_unittest(process.stderr)
-    result['suite'] = str(suite.relative_to(tools)) if suite != tools else '.'
+    result['suite'] = suite.relative_to(tools).as_posix() if suite != tools else '.'
     result['passed'] = (process.returncode == 0 and result['ok'] and result['ran'] > 0
                         and not (require_fixtures and result['skipped']))
     # Keep unittest's FAIL/ERROR sections so a failure on a remote host (CI) names its cause.
@@ -242,7 +242,7 @@ def not_run_reason(key: str, project: Path) -> str:
 
 
 def dotnet_harnesses(tools: Path) -> list[tuple[str, Path]]:
-    return sorted((str(path.relative_to(tools)), path) for path in (tools / 'lanes').rglob('*.csproj')
+    return sorted((path.relative_to(tools).as_posix(), path) for path in (tools / 'lanes').rglob('*.csproj')
                   if not {'bin', 'obj'} & set(path.parts))
 
 

@@ -2,8 +2,10 @@
 
 Status, October 10, 2026: the **front end runs in the browser** over WebGL2. The lobby with
 its islands, the camera glide between them, the original UI (buttons, BF4 fonts, popup help)
-and the options screen draw as on the desktop, and mouse and keyboard work. Parks, sound,
-movies and the developer panels do not run in the browser yet (see the end of this page).
+and the options screen draw as on the desktop, and mouse and keyboard work. **Online play
+works** against an OpenTPW server, which can also host the page itself (docs/SERVER.md):
+register, log in and chat were checked in the browser. Parks, sound, movies and the
+developer panels do not run in the browser yet (see the end of this page).
 
 Nothing from the game is shipped or uploaded: the player chooses their own Theme Park World
 folder, and the page copies the files the front end needs into the runtime's memory.
@@ -18,9 +20,15 @@ Serve `out/web/wwwroot` over http (WebAssembly needs a server, not `file://`), o
 `index.html` and choose the game folder (the one that holds `Data`). No extra .NET workload
 is needed: the build runs .NET in interpreter mode.
 
+An OpenTPW server can serve the published `wwwroot` itself, beside its API
+(`OpenTPW:WebClientDirectory`, docs/SERVER.md). The page then offers its own address as the
+online server, and everything runs over one HTTPS address.
+
 For local testing without the folder dialog, put a `files.txt` (one path per line, such as
 `Data/ui.wad`) next to a copy or link of the game's `Data` folder, serve both from the same
-server and open `index.html?data=<that folder's URL>`.
+server and open `index.html?data=<that folder's URL>`. A line may give the URL to fetch after
+a tab, for servers that only serve known file types (the OpenTPW server does). Serve real
+files, not symbolic links: ASP.NET reports a link's own size.
 
 ## Measurements (Apple Silicon, Chromium, local server)
 
@@ -109,9 +117,9 @@ framebuffer).
 - **Base vertex**: WebGL2 cannot offset indices; `DrawIndexed` offsets the attribute pointers.
 - **`Map`/`Unmap` and `CopyTexture`**: only used to read back smoke-test and capture images on
   the desktop; the browser throws `NotSupportedException`.
-- **Clicks within one frame**: the game reads mouse button state once per frame. A click
-  that starts and ends within one browser frame stays down for that frame and is released in
-  the next.
+- **Clicks and key taps within one frame**: the game reads button and key state once per
+  frame. A press that starts and ends within one browser frame stays down for that frame and
+  is released in the next. Held keys and buttons are released when the canvas loses focus.
 
 ### Pitfalls found
 
@@ -121,6 +129,10 @@ framebuffer).
 - **`dotnet.run()` exits the runtime** when `Main` returns; `runMain()` keeps the exports
   callable.
 - **`Console.ForegroundColor` throws** in the browser.
+- **The browser's HTTP responses only support asynchronous reads**; the online client reads
+  them with `ReadAsync`.
+- **Browsers cannot set WebSocket headers**, so the chat sends its session token as the first
+  frame instead of an `Authorization` header (docs/SERVER.md).
 - **The window asks for its size before the device exists**, so the page's canvas is looked up
   when `opentpw-gl.js` loads.
 
@@ -133,8 +145,10 @@ framebuffer).
 - **Sound and movies:** the decoders already run in managed code; playback needs WebAudio in
   place of the SDL audio stand-in.
 - **Developer panels:** they need ImGui, which is a native library.
-- **Saving:** saves go to the in-memory file system and are lost when the page closes.
-- **Online play** works over `fetch` and WebSockets once the server allows the page's origin.
+- **Saving:** saves, online settings and the copied game files live in the in-memory file
+  system and are lost when the page closes; browser storage (IndexedDB or OPFS) would keep them.
+- **Typing without a keyboard event**: text arrives through key presses on the canvas, so
+  input methods and on-screen keyboards that only insert text do not reach the game yet.
 
 ## Background: what the game uses from Veldrid
 

@@ -93,6 +93,10 @@ public class ThemeParkIncViewerTests
 		Assert.IsNull( GameEditions.ViewerRefusal( new[] { "--load-original-level", "arabian" } ) );
 		Assert.IsNull( GameEditions.ViewerRefusal( new[] { "--game-path", "x", "--load-original-level", "Science", "--capture-world", "a.png" } ) );
 		StringAssert.Contains( GameEditions.ViewerRefusal( Array.Empty<string>() )!, "--load-original-level" );
+		// read-only inspection of Theme Park Inc assets stays possible
+		Assert.IsNull( GameEditions.ViewerRefusal( new[] { "--inspect-model", "/levels/arabian/terrain/base.MD2" } ) );
+		Assert.IsNull( GameEditions.ViewerRefusal( new[] { "--play-movie", "intro", "--headless" } ) );
+		Assert.IsNotNull( GameEditions.ViewerRefusal( new[] { "--play-movie", "intro" } ) );
 		StringAssert.Contains( GameEditions.ViewerRefusal( new[] { "--load-original-level", "jungle" } )!, "arabian, science or water" );
 		StringAssert.Contains( GameEditions.ViewerRefusal( new[] { "--load-original-level", "--smoke-test" } )!, "--load-original-level" );
 		StringAssert.Contains( GameEditions.ViewerRefusal( new[] { "--load-original-level", "arabian", "--sandbox" } )!, "drop --sandbox" );

@@ -80,11 +80,14 @@ public static class GameEditions
 	private static readonly string[] ViewerIncompatibleOptions = { "--sandbox", "--front-end", "--smoke-test", "--advisor-say", "--advisor-response", "--setup" };
 
 	/// <summary>
-	/// Why a start on Theme Park Inc data is refused, or null when it is the viewer: <c>--load-original-level</c> with a Theme Park Inc
-	/// world and none of the options that need a playable game.
+	/// Why a start on Theme Park Inc data is refused, or null when it is the viewer (<c>--load-original-level</c> with a Theme Park Inc
+	/// world and none of the options that need a playable game) or a read-only inspection.
 	/// </summary>
 	public static string? ViewerRefusal( string[] args )
 	{
+		// Read-only inspection reads assets without starting a game: --inspect-model, and a headless movie decode.
+		if ( args.Contains( "--inspect-model" ) || (args.Contains( "--play-movie" ) && args.Contains( "--headless" )) )
+			return null;
 		var index = Array.IndexOf( args, "--load-original-level" );
 		var level = index >= 0 && index + 1 < args.Length && !args[index + 1].StartsWith( "--" ) ? args[index + 1] : null;
 		var unsupported = ViewerIncompatibleOptions.FirstOrDefault( args.Contains );

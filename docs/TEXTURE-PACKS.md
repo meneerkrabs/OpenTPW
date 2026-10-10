@@ -7,10 +7,11 @@ is one. Original reproduces the original look unchanged.
 
 ## Shipped interface art
 
-`content/hero-art/textures/ui/textures/*.wct.png` holds 50 HD replacements (8×, e.g. a 64×64 texture
+`content/hero-art/textures/ui/textures/*.wct.png` holds 55 HD replacements (8×, e.g. a 64×64 texture
 becomes 512×512) for the HUD, lobby and options buttons: buy, info, money, research, map, camera, the build
 categories (rides, shops, shows, features), door, enter-park, erase, OK, exit, retract, the
-arrows and the slider ball, with their pressed, highlighted and disabled states. With Enhanced they
+arrows and the slider ball, with their pressed, highlighted and disabled states, and the golden ticket
+and golden key counters at the top right. With Enhanced they
 replace the original interface art before any local pack is consulted (`TexturePack.Find`).
 
 Provenance: on October 10, 2026 each base icon was cut out of the original texture at its alpha mask,
@@ -28,7 +29,10 @@ icon colour, so neither the backdrop nor texture filtering leaves a light halo, 
 redrawn base with the original's colour change (per-channel gain for pressed and grey states, a
 fitted colour mapping for highlighted ones). Every button keeps the rim the image model drew (an earlier
 version kept the original rim from the anime-upscaled original, but that rim is cropped in the original texture
-and vanishes on the darker pressed states). The two option toggles `b_on1`/`b_on2` (multi-piece
+and vanishes on the darker pressed states). The golden key's progress frames (`gkey0`-`gkey2`: see-through, gold
+ring, gold ring and lower shaft) are derived from the redrawn full key `gkey3` by `tools/hero-art/keyfill.py`, cut
+straight across the key where each original frame's gold ends. Backdrop enclosed by an outline (the key ring's hole)
+becomes transparent where the original is transparent there. The two option toggles `b_on1`/`b_on2` (multi-piece
 atlases) stay original. These images are AI recreations of the original EA/Bullfrog icons; the
 project owner chose to ship them.
 

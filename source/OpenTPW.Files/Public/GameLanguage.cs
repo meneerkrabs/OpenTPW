@@ -44,8 +44,25 @@ public sealed class GameLanguage
 	public static string? AvailableOverlay { get; set; }
 
 	/// <summary>Languages the player can choose: the installation's plus those in <see cref="AvailableOverlay"/>.</summary>
-	public static IReadOnlyList<string> Choosable() =>
-		FindLanguages( Current.BaseDataDirectory, Current.OverlayDataDirectory ?? AvailableOverlay );
+	public static IReadOnlyList<string> Choosable() => Readable( Current.BaseDataDirectory, Current.OverlayDataDirectory ?? AvailableOverlay );
+
+	/// <summary>
+	/// The languages of <see cref="FindLanguages"/> whose character table OpenTPW can read; the Polish CD's table uses
+	/// a different layout (docs/LANGUAGES.md), so Polish is left out rather than failing when chosen.
+	/// </summary>
+	public static IReadOnlyList<string> Readable( string dataDirectory, string? overlayPath ) =>
+		FindLanguages( dataDirectory, overlayPath ).Where( name =>
+		{
+			try
+			{
+				_ = Resolve( dataDirectory, name, overlayPath ).CharacterTable;
+				return true;
+			}
+			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or UnauthorizedAccessException )
+			{
+				return false;
+			}
+		} ).ToList();
 
 	/// <summary>Language name, using the shipped capitalization (e.g. "Danish").</summary>
 	public string Name { get; }

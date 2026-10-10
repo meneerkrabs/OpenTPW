@@ -14,6 +14,7 @@ public static class ApiRoutes
 	public const string Postcards = Prefix + "/postcards";
 	public const string Inbox = Postcards + "/inbox";
 	public const string Reports = Prefix + "/reports";
+	public const string News = Prefix + "/news";
 	public const string Chat = global::OpenTPW.Online.Chat.ChatProtocol.Path;
 	public const string PackageMediaType = "application/vnd.opentpw.park";
 	public const string PostcardMediaType = "application/vnd.opentpw.postcard";
@@ -21,6 +22,9 @@ public static class ApiRoutes
 
 public sealed record ServerInfo( string Name, string Version, int ProtocolVersion, string? Message, bool RegistrationOpen, bool WordFilterLoaded,
 	int MaximumParkBytes, int MaximumPostcardBytes, int MaximumParksPerPlayer, int MaximumVotesPerDay );
+
+/// <summary>The server's Game News and System News; empty text when the operator wrote none.</summary>
+public sealed record NewsInfo( string Game, string System, DateTimeOffset? UpdatedUtc );
 
 public sealed record Credentials( string Name, string Password );
 

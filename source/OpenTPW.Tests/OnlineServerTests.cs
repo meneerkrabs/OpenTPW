@@ -265,6 +265,48 @@ public class OnlineServerTests
 	}
 
 	[TestMethod]
+	public async Task NewsIsPublicAndFollowsTheOperatorsFiles()
+	{
+		await using var server = await LoopbackServer.StartAsync();
+		try
+		{
+			using var client = new OnlineClient( server.Url );
+			var empty = await client.GetNewsAsync();
+			Assert.IsNotNull( empty, "served without a session" );
+			Assert.AreEqual( ("", "", (DateTimeOffset?)null), (empty!.Game, empty.System, empty.UpdatedUtc) );
+
+			var folder = Path.Combine( server.Directory, "news" );
+			Directory.CreateDirectory( folder );
+			File.WriteAllText( Path.Combine( folder, "game.txt" ), "Version 0.5 is out.\r\n" );
+			File.WriteAllText( Path.Combine( folder, "system.txt" ), new string( 'x', NewsFeed.MaximumCharacters + 10 ) );
+			var news = await client.GetNewsAsync();
+			Assert.AreEqual( "Version 0.5 is out.", news!.Game );
+			Assert.AreEqual( NewsFeed.MaximumCharacters, news.System.Length );
+			Assert.IsNotNull( news.UpdatedUtc );
+
+			File.WriteAllText( Path.Combine( folder, "game.txt" ), "Maintenance tonight." );
+			File.SetLastWriteTimeUtc( Path.Combine( folder, "game.txt" ), DateTime.UtcNow.AddMinutes( 1 ) );
+			Assert.AreEqual( "Maintenance tonight.", (await client.GetNewsAsync())!.Game );
+		}
+		finally
+		{
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
+	public async Task ServersWithoutNewsGiveNoNews()
+	{
+		var builder = Microsoft.AspNetCore.Builder.WebApplication.CreateBuilder( new[] { "--urls", "http://127.0.0.1:0", "--Logging:LogLevel:Default", "Warning" } );
+		await using var app = builder.Build();
+		await app.StartAsync();
+		var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First();
+		using var client = new OnlineClient( new Uri( address ) );
+		Assert.IsNull( await client.GetNewsAsync() );
+		await app.StopAsync();
+	}
+
+	[TestMethod]
 	public async Task AuthenticationIsRateLimited()
 	{
 		await using var server = await LoopbackServer.StartAsync( options => options.AuthenticationsPerMinute = 3 );

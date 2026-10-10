@@ -14,7 +14,7 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **186 unresolved unique APPROX IDs**, 205 APPROX occurrences, 85 EXT occurrences, 77 DATA occurrences and 147 BIN occurrences.
+Current inventory: **186 unresolved unique APPROX IDs**, 205 APPROX occurrences, 86 EXT occurrences, 77 DATA occurrences and 147 BIN occurrences.
 
 Of these, 180 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
@@ -123,12 +123,12 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | GATE-001 | Original-fidelity area (scope unadjudicated) | an M3 in-game minute is 60 s of normal-speed simulation (3,600 fixed 60 Hz ticks), not a park-clock minute | See source annotation/runtime register | `source/OpenTPW/Client/M3GateApproximations.cs:11` |
 | GATE-004 | Original-fidelity area (scope unadjudicated) | the head-not-ready bound walks its N + 4 cells at OpenTPW's walk speed (WalkSpeedCellsPerSecond x 0.7, itself without an original source); the original has no 0.7 factor and walks as slowly as 0.12 cell per turn | See source annotation/runtime register | `source/OpenTPW/Client/M3GateApproximations.cs:12` |
 | GATE-005 | Original-fidelity area (scope unadjudicated) | the boarding bound W(p) and the head check W(0) = H + R + 1 assume a new head already stands at its slot (BOARD-plan H); the walk from the join cell into an empty or short queue (up to 24 cells) is not a term, so these checks are stricter than the derivation for small p | See source annotation/runtime register | `source/OpenTPW/Client/M3GateApproximations.cs:13` |
-| ONLINE-001 | OpenTPW online extension | Word filtering uses case-insensitive substring matches in space-padded text; entry spaces act as boundaries; allowed substrings exempt matches; hit characters except spaces become asterisks. | Original word-filter code or observed original filtering behavior; the source comment says the encrypted TP.ICD implementation is unreadable. | `docs/ONLINE.md:156` |
-| ONLINE-002 | OpenTPW online extension | A leading slash introduces a chat command; other text means say. | Original chat input syntax, which is not documented in the available data. | `docs/ONLINE.md:157` |
-| ONLINE-003 | OpenTPW online extension | Response strings 102 and 110 mean failure to add an ignored player and a buddy respectively, based on nearby string blocks. | Original response-code table. | `docs/ONLINE.md:158` |
-| ONLINE-004 | OpenTPW online extension | Buddy response strings 111–113 mean online, offline and removed. | Localized variants or the original response-code table. | `docs/ONLINE.md:159` |
-| ONLINE-005 | OpenTPW online extension | Chat command semantics follow command words, response strings and weachatr.dll export names; say/emote/shout reach a room, wshout/ushout all rooms; hearing has no positional effect; blackmark creates a moderation report. | Original chat server behavior, including command reach, hearing range and blackmark handling. | `docs/ONLINE.md:160` |
-| ONLINE-006 | OpenTPW online extension | A visitor already inside a park must leave it before visiting another, inferred from CHAT_COMMANDS string 127. | Original park-visit transition behavior or an original chat/runtime trace. | `docs/ONLINE.md:161` |
+| ONLINE-001 | OpenTPW online extension | Word filtering uses case-insensitive substring matches in space-padded text; entry spaces act as boundaries; allowed substrings exempt matches; hit characters except spaces become asterisks. | Original word-filter code or observed original filtering behavior; the source comment says the encrypted TP.ICD implementation is unreadable. | `docs/ONLINE.md:157` |
+| ONLINE-002 | OpenTPW online extension | A leading slash introduces a chat command; other text means say. | Original chat input syntax, which is not documented in the available data. | `docs/ONLINE.md:158` |
+| ONLINE-003 | OpenTPW online extension | Response strings 102 and 110 mean failure to add an ignored player and a buddy respectively, based on nearby string blocks. | Original response-code table. | `docs/ONLINE.md:159` |
+| ONLINE-004 | OpenTPW online extension | Buddy response strings 111–113 mean online, offline and removed. | Localized variants or the original response-code table. | `docs/ONLINE.md:160` |
+| ONLINE-005 | OpenTPW online extension | Chat command semantics follow command words, response strings and weachatr.dll export names; say/emote/shout reach a room, wshout/ushout all rooms; hearing has no positional effect; blackmark creates a moderation report. | Original chat server behavior, including command reach, hearing range and blackmark handling. | `docs/ONLINE.md:161` |
+| ONLINE-006 | OpenTPW online extension | A visitor already inside a park must leave it before visiting another, inferred from CHAT_COMMANDS string 127. | Original park-visit transition behavior or an original chat/runtime trace. | `docs/ONLINE.md:162` |
 | PATH-001 | Original-fidelity area (scope unadjudicated) | PATH-ENTER: the path tool starts from a park-view click on an empty owned cell or a path cell (no menu button); ghosts are flat cell markers | See source annotation/runtime register | `source/OpenTPW/World/PathApproximations.cs:12` |
 | PATH-002 | Original-fidelity area (scope unadjudicated) | PATH-UNDO: Backspace pops the last vertex and removes the cells that segment built, without a refund | See source annotation/runtime register | `source/OpenTPW/World/PathApproximations.cs:13` |
 | PATH-003 | Original-fidelity area (scope unadjudicated) | PATH-ENDFLAG: a segment whose last cell lands on an existing path or queue cell ends the tool | See source annotation/runtime register | `source/OpenTPW/World/PathApproximations.cs:14` |
@@ -470,6 +470,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ONLINE-053 | `source/OpenTPW.Server/ChatHub.cs:269` | [EXT:ONLINE-053] No avatar positions exist, so the range is acknowledged but has no effect. |
 | ONLINE-054 | `source/OpenTPW.Server/ServerProgram.cs:12` | [EXT:ONLINE-054] Self-hostable OpenTPW server (ASP.NET Core minimal APIs). See docs/SERVER.md. |
 | ONLINE-055 | `source/OpenTPW.Server/ServerStore.cs:189` | [EXT:ONLINE-055] Deletes a player and what the server holds about them (docs/SERVER.md): the |
+| ONLINE-056 | `source/OpenTPW.Server/NewsFeed.cs:10` | [EXT:ONLINE-056] the original fetched news from EA's news server; an OpenTPW server serves the operator's text files |
 | ONLINE-060 | `source/OpenTPW/Online/OnlineFolders.cs:7` | [EXT:ONLINE-060] The player's online folder: exported parks, downloaded (visited) parks and the |
 | ONLINE-061 | `source/OpenTPW/Online/ParkSnapshotBuilder.cs:13` | &lt;summary&gt;[EXT:ONLINE-061] Edition label; OpenTPW cannot yet tell Theme Park World from Sim Theme Park installs.&lt;/summary&gt; |
 | ONLINE-062 | `source/OpenTPW/Online/ParkSnapshotBuilder.cs:91` | [EXT:ONLINE-062] Top-down thumbnail from the MAP grid and the snapshot (OpenTPW colours, not an original |
@@ -478,8 +479,8 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ONLINE-065 | `source/OpenTPW/Online/ChatOverlay.cs:7` | [EXT:ONLINE-065] Font choice, position (bottom-left), colours and line count are OpenTPW choices; |
 | ONLINE-066 | `source/OpenTPW/Online/OnlinePanel.cs:6` | &lt;summary&gt;[EXT:ONLINE-066] Opt-in ImGui panel; original online panel layout is not reproduced.&lt;/summary&gt; |
 | ONLINE-UI | `source/OpenTPW/Online/OnlineScreens.cs:25` | [EXT:ONLINE-UI] native online screens; composition of the original screens and the place of code-positioned controls are OpenTPW's |
-| ONLINE-UI | `source/OpenTPW/Online/OnlineScreens.cs:71` | [EXT:ONLINE-UI] OpenTPW servers let players delete their own account (docs/SERVER.md). |
-| ONLINE-UI | `source/OpenTPW/Online/OnlineScreens.cs:140` | [EXT:ONLINE-UI] the server address is an OpenTPW field; the original service address was built in |
+| ONLINE-UI | `source/OpenTPW/Online/OnlineScreens.cs:72` | [EXT:ONLINE-UI] OpenTPW servers let players delete their own account (docs/SERVER.md). |
+| ONLINE-UI | `source/OpenTPW/Online/OnlineScreens.cs:172` | [EXT:ONLINE-UI] the server address is an OpenTPW field; the original service address was built in |
 | ONLINE-UI | `source/OpenTPW/UI/Original/UiTextWidgets.cs:46` | [EXT:ONLINE-UI] text field art and caret are OpenTPW's; the original field template is not decoded |
 | SERVER-WEB | `source/OpenTPW.Server/WebClient.cs:8` | [EXT:SERVER-WEB] Optionally serves the browser build of the game (docs/WEB.md) from the same |
 | SETUP | `source/OpenTPW/UI/Original/Options/GameFilesScreen.cs:10` | [EXT:SETUP] OpenTPW setting; the original installer chose one folder and never changed it in game |
@@ -555,14 +556,14 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | Easymode.TPWI:SYSG X/Y/rotation | `source/OpenTPW/World/Objects/ParkObjects.cs:144` | [DATA:Easymode.TPWI:SYSG X/Y/rotation] [DATA:&lt;fixed item&gt;.MD2:park-space coordinates] |
 | Language/*/CHAT_COMMANDS.str:0-42 | `source/OpenTPW.Online/Chat/ChatCommands.cs:4` | The original chat commands, in &lt;c&gt;CHAT_COMMANDS.str&lt;/c&gt; order. [DATA:Language/*/CHAT_COMMANDS.str:0-42] |
 | Language/*/TAG_SYSTEM.str:123-127 (six months in the red) | `source/OpenTPW/Economy/ParkEconomy.cs:26` | [DATA:Language/*/TAG_SYSTEM.str:123-127 (six months in the red)] |
-| Language/*/THEMENAMES.str | `source/OpenTPW/Online/OnlineStrings.cs:85` | Theme name of a level. [DATA:Language/*/THEMENAMES.str] order Lost Kingdom, Halloween World, Wonder Land, |
+| Language/*/THEMENAMES.str | `source/OpenTPW/Online/OnlineStrings.cs:88` | Theme name of a level. [DATA:Language/*/THEMENAMES.str] order Lost Kingdom, Halloween World, Wonder Land, |
 | Language/*/THEMENAMES.str:order; levels/*/global.sam:Keys.CostToEnter | `source/OpenTPW/Economy/ParkObjectives.cs:325` | [DATA:Language/*/THEMENAMES.str:order; levels/*/global.sam:Keys.CostToEnter] |
 | Language/*/UniToMB.dat | `source/OpenTPW.Files/Formats/String/BFUMReader.cs:10` | Layout verified against all six shipped languages ([DATA:Language/*/UniToMB.dat]): magic |
 | Language/English/*_NAMES.str:entry count 35 | `source/OpenTPW/Economy/ParkStaff.cs:48` | [DATA:Language/English/*_NAMES.str:entry count 35] |
-| Language/English/CHAT_COMMANDS.str:160 | `source/OpenTPW/Online/OnlineStrings.cs:57` | [DATA:Language/English/CHAT_COMMANDS.str:160] "System message: " |
+| Language/English/CHAT_COMMANDS.str:160 | `source/OpenTPW/Online/OnlineStrings.cs:60` | [DATA:Language/English/CHAT_COMMANDS.str:160] "System message: " |
 | Language/English/CHAT_COMMANDS.str:43-85 | `source/OpenTPW.Online/Chat/ChatCommands.cs:84` | &lt;summary&gt;[DATA:Language/English/CHAT_COMMANDS.str:43-85] Canonical (English) command words.&lt;/summary&gt; |
 | Language/English/CHAT_COMMANDS.str:86-175 | `source/OpenTPW.Online/Chat/ChatCommands.cs:17` | Responses as indices into &lt;c&gt;CHAT_COMMANDS.str&lt;/c&gt; ([DATA:Language/English/CHAT_COMMANDS.str:86-175]). |
-| Language/English/ERRORMSG.str | `source/OpenTPW/Online/OnlineStrings.cs:51` | [DATA:Language/English/ERRORMSG.str] |
+| Language/English/ERRORMSG.str | `source/OpenTPW/Online/OnlineStrings.cs:54` | [DATA:Language/English/ERRORMSG.str] |
 | Language/English/UITEXT.str | `source/OpenTPW/Online/OnlineStrings.cs:18` | [DATA:Language/English/UITEXT.str] (the UIStrings enum is off by one from about 206 on; these are verified). |
 | Language/English/swears.txt,alloweds.txt | `source/OpenTPW.Online/Moderation/WordFilter.cs:32` | Decodes an original list. [DATA:Language/English/swears.txt,alloweds.txt] Observed encoding: |
 | Mac UI font table (docs/reverse/PPC-ui.md):slot 3 DATETINY/DATESMALL/DATEMED/DATEBIG | `source/OpenTPW/UI/Original/UiText.cs:74` | [DATA:Mac UI font table (docs/reverse/PPC-ui.md):slot 3 DATETINY/DATESMALL/DATEMED/DATEBIG] the HUD date font, one per |

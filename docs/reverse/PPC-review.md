@@ -3224,3 +3224,23 @@ seed policy, and a real merge commit (only `merge-tree` was run).
 2. Production port owner: resolve `ResponseId` by stored ID (native `0x6b7c`), not
    by array index. Advice 323 is the in-range witness.
 3. Optional: A1-4 to A1-6.
+
+### Resolution on integration
+
+The range was rebased onto integration `6c58be0` as `be46ebe`, `00d5c9c`,
+`1af929b` and `526e2bf`; `2b8e4bf` was dropped, and integration's `MP2File.cs`
+is unchanged. Section 53 is reserved for round 17 on the review lane, which is
+not yet on integration.
+
+- A1-1: `AudioEventAssets` targets `net10.0` with
+  `<WarningsNotAsErrors>NU1901;NU1903</WarningsNotAsErrors>`, the phase-7 command
+  uses the SDK 10 `dotnet`, and the evidence runner registers the tool as a
+  private-corpus harness (reported as not-run).
+- A1-2: phase 6 now describes `28864fa`'s unsigned packed-field reader.
+- A1-3: moot. It applied only to `2b8e4bf`'s fallback, which was not brought in.
+- A1-4: `audio_event_evidence.py` resolves responses with native first-match
+  stored-ID search and requires advice 323 → response 587 → speech/LIP 606.
+- A1-5: `InspectEventMaps` reports a missing checkout separately from an output
+  inside the repository.
+- A1-6: phase 9 separates the no-eligible-link exit at `0x19398` from the
+  zero-sum `divwu`.

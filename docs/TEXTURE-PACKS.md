@@ -19,16 +19,19 @@ enlarged, and redrawn by Google Gemini's image model in the Gemini web app with 
 glossy 3D cartoon style; do not redesign"; `tools/hero-art/prompts.tsv`). Matching pairs were made
 as edits of one result (door closed/open, left/right arrow; the right lobby arrow is the mirrored
 left one; the lit feature button is a recolour of the normal one). `tools/hero-art/fit.py` fits each
-result back into the original texture layout: the icon is scaled onto the original icon's bounding
-box, the outline comes from the original alpha mask capped to the redrawn silhouette (the image model's white
-backdrop and soft grey drop shadow are removed, together with the one-pixel blend into them), the backdrop is
+result back into the original texture layout: the icon is scaled onto the original icon's
+outline (where the original's alpha crosses 50% through its centre, not its bounding box, which includes the
+original's soft drop shadow), the alpha is the redrawn silhouette (the image model's white backdrop and soft grey
+drop shadow are removed, together with the one-pixel blend into them), the backdrop is
 painted with the nearest outline colour before resampling and every transparent texel gets the nearest solid
 icon colour, so neither the backdrop nor texture filtering leaves a light halo, and the state variants are derived from the
 redrawn base with the original's colour change (per-channel gain for pressed and grey states, a
 fitted colour mapping for highlighted ones). For the round yellow HUD buttons and the green build-category
 buttons, `tools/hero-art/rim.py` then keeps the original rim (from the anime-upscaled original) and takes
 only the inner face and symbol from the redrawn icon, so every button has the original's thin shaded rim
-instead of the heavier one the image model drew; the blue buttons, arrows, door panel and slider ball keep
+instead of the heavier one the image model drew; its outline is a clean anti-aliased ellipse on the original's
+outline (where the original's alpha crosses 50%), because the upscaled original's own alpha carries a ragged
+drop-shadow fringe; the blue buttons, arrows, door panel and slider ball keep
 the redrawn version. The two option toggles `b_on1`/`b_on2` (multi-piece
 atlases) stay original. These images are AI recreations of the original EA/Bullfrog icons; the
 project owner chose to ship them.

@@ -9,17 +9,23 @@ for l in open(mapfile):
     png, path, _ = l.rstrip('\n').split('\t')
     if path.startswith('ui/textures/'): m[os.path.splitext(os.path.basename(path))[0].lower()] = png
 def load(n): return Image.open(os.path.join(uitex, m[n])).convert('RGBA')
-def island(a):
-    mask = a[..., 3] > 128
-    ys, xs = np.nonzero(mask)
-    # the largest blob: restrict to the bounding box of the biggest connected run (textures here hold one icon)
-    return xs.min(), ys.min(), xs.max() + 1, ys.max() + 1
-def crisp_alpha(alpha_small, size):
-    big = np.asarray(Image.fromarray(alpha_small).resize(size, Image.BICUBIC)).astype(np.float32) / 255
-    # steepen the soft upscaled edge around 0.5 so the outline is sharp but anti-aliased
-    return np.clip((big - 0.5) * 3 + 0.5, 0, 1)
+def outline(alpha):
+    """The original shape's extent (left, top, right, bottom) in texels, where its alpha crosses 50% along the row and
+    column through its centre. A bounding box of alpha > 50% would include the soft drop shadow some originals carry
+    at the bottom right, stretching the redrawn icon past the original outline."""
+    a = alpha.astype(np.float32)
+    ys, xs = np.nonzero(a > 128); cy, cx = int(round(ys.mean())), int(round(xs.mean()))
+    def span(p):
+        inside = np.nonzero(p > 128)[0]; i, j = inside.min(), inside.max()
+        lo = i + 0.5 - (p[i] - 128) / max(p[i] - (p[i - 1] if i > 0 else 0), 1)
+        hi = j + 0.5 + (p[j] - 128) / max(p[j] - (p[j + 1] if j + 1 < len(p) else 0), 1)
+        return lo, hi
+    (l, r), (t, b) = span(a[cy]), span(a[:, cx])
+    return l, t, r, b
 orig = load(base); oa = np.asarray(orig)
-W, H = orig.size; x0, y0, x1, y1 = island(oa)
+W, H = orig.size
+# the icon rectangle in output pixels
+X0, Y0, X1, Y1 = [int(round(v * K)) for v in outline(oa[..., 3])]
 mirror = gen_path.endswith(':mirror')
 gen_img = Image.open(gen_path[:-7] if mirror else gen_path).convert('RGB')
 if mirror: gen_img = gen_img.transpose(Image.FLIP_LEFT_RIGHT)
@@ -77,28 +83,28 @@ for _ in range(pad):
     region[new] = acc[new] / cnt[new][:, None]; known = known | new
 painted = gen.copy(); painted[by0:by1, bx0:bx1] = region
 crop = Image.fromarray(np.clip(painted, 0, 255).astype(np.uint8)).crop(box)
-tw, th = (x1 - x0) * K, (y1 - y0) * K
+tw, th = X1 - X0, Y1 - Y0
 icon = np.asarray(crop.resize((tw, th), Image.LANCZOS)).astype(np.float32)
 # Smooth outline of the redrawn icon at the target size (JPEG noise along the edge blurred away, then anti-aliased).
 sil = Image.fromarray(silhouette.astype(np.uint8) * 255).crop(box).filter(ImageFilter.GaussianBlur(2))
 sil = np.asarray(sil.point(lambda v: 255 if v >= 128 else 0).resize((tw, th), Image.BOX)).astype(np.float32) / 255
 # Base layer: the original texture upscaled (keeps anything outside the icon), then the redrawn icon on top.
 rgb = np.asarray(orig.convert('RGB').resize((W * K, H * K), Image.BICUBIC)).astype(np.float32)
-rgb[y0 * K:y1 * K, x0 * K:x1 * K] = icon
+rgb[Y0:Y1, X0:X1] = icon
 os.makedirs(os.path.join(out, 'ui', 'textures'), exist_ok=True)
 def shifts(a, fill):
     # the eight 3x3 neighbours of every pixel, padded with fill
     p = np.pad(a, [(1, 1), (1, 1)] + [(0, 0)] * (a.ndim - 2), constant_values=fill)
     h, w = a.shape[:2]
     return [p[1 + dy:1 + dy + h, 1 + dx:1 + dx + w] for dy in (-1, 0, 1) for dx in (-1, 0, 1) if dy or dx]
-# Coverage = the redrawn outline. The alpha is the original mask capped to it: where the
-# original mask is wider than the new outline, the backdrop or shadow would otherwise show through.
-coverage = np.zeros((H * K, W * K), np.float32)  # outside the icon rectangle only faint edge texels of the original
-coverage[y0 * K:y1 * K, x0 * K:x1 * K] = sil
+# Alpha = the redrawn outline, placed on the original outline. (Capping it with the original mask cut into the new rim
+# wherever the two outlines differ by a texel.)
+coverage = np.zeros((H * K, W * K), np.float32)
+coverage[Y0:Y1, X0:X1] = sil
 def bleed(rgb_img, alpha):
     # Recolour every texel outside the solid outline with the nearest solid icon colour, so neither the backdrop nor
     # linear filtering of alpha-0 texels lightens the edge. Alpha is kept.
-    known = (alpha >= 0.999) & (coverage >= 0.999)
+    known = alpha >= 0.999
     col = np.where(known[..., None], rgb_img, 0).astype(np.float32)
     while not known.all():
         acc = np.zeros_like(col); cnt = np.zeros(known.shape, np.float32)
@@ -108,11 +114,10 @@ def bleed(rgb_img, alpha):
         if not new.any(): break
         col[new] = acc[new] / cnt[new][:, None]; known = known | new
     return col
-def write(name, rgb_img, alpha_small):
-    alpha = np.minimum(crisp_alpha(alpha_small, (W * K, H * K)), coverage)
-    rgba = np.dstack([np.clip(bleed(rgb_img, alpha), 0, 255), alpha * 255]).astype(np.uint8)
+def write(name, rgb_img):
+    rgba = np.dstack([np.clip(bleed(rgb_img, coverage), 0, 255), coverage * 255]).astype(np.uint8)
     Image.fromarray(rgba, 'RGBA').save(os.path.join(out, 'ui', 'textures', name + '.wct.png'))
-write(base, rgb, oa[..., 3])
+write(base, rgb)
 # Variants: same layout, recoloured. Fit a smooth colour mapping base -> variant (quadratic in RGB) on the original
 # pixels both share, and apply it to the redrawn base; a global mapping carries "darker" or "lit background" without
 # local blotches.
@@ -139,5 +144,5 @@ for v in variants:
     else:
         coef, *_ = np.linalg.lstsq(X, Y, rcond=None)
         mapped = np.clip(features(rgb) @ coef, 0, 1) * 255
-    write(v, mapped, va[..., 3])
+    write(v, mapped)
 print('wrote', base, variants)

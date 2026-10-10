@@ -356,6 +356,8 @@ public sealed class OnlineSession : IDisposable
 		catch ( Exception exception ) when ( exception is System.Net.WebSockets.WebSocketException or OperationCanceledException or InvalidDataException or ObjectDisposedException )
 		{
 		}
+		// A server restart (a deploy) or a dropped connection is not the player leaving: reconnect to the same room.
+		var lost = !cancel.IsCancellationRequested && chat.CloseStatus is null or ChatProtocol.RestartingCloseStatus or (int)System.Net.WebSockets.WebSocketCloseStatus.EndpointUnavailable;
 		Post( () =>
 		{
 			chat.Dispose();
@@ -364,6 +366,55 @@ public sealed class OnlineSession : IDisposable
 				Chat = null;
 				chatCancel?.Dispose();
 				chatCancel = null;
+				if ( lost && IsLoggedIn && Client is { } client )
+					ReconnectChat( client, CurrentRoom );
+			}
+		} );
+	}
+
+	/// <summary>Waits between attempts to reconnect the chat after a server restart.</summary>
+	internal static readonly TimeSpan[] ReconnectDelays = { TimeSpan.FromSeconds( 1 ), TimeSpan.FromSeconds( 2 ), TimeSpan.FromSeconds( 4 ), TimeSpan.FromSeconds( 8 ), TimeSpan.FromSeconds( 15 ), TimeSpan.FromSeconds( 30 ) };
+
+	private void ReconnectChat( OnlineClient client, string room )
+	{
+		var startedGeneration = generation;
+		_ = Task.Run( async () =>
+		{
+			operationGeneration.Value = startedGeneration;
+			foreach ( var delay in ReconnectDelays )
+			{
+				await Task.Delay( delay );
+				if ( disposed || startedGeneration != generation || Client != client || !IsLoggedIn )
+					return;
+				ChatConnection chat;
+				try
+				{
+					chat = await client.ConnectChatAsync();
+				}
+				catch ( Exception exception ) when ( exception is OnlineException or HttpRequestException or System.Net.WebSockets.WebSocketException or IOException or InvalidDataException or TaskCanceledException )
+				{
+					continue;
+				}
+				if ( room != ChatProtocol.LobbyRoom )
+				{
+					try { await chat.JoinAsync( room ); }
+					catch ( Exception exception ) when ( exception is System.Net.WebSockets.WebSocketException or IOException ) { }
+				}
+				var cancel = new CancellationTokenSource();
+				Post( () =>
+				{
+					if ( Chat != null )
+					{
+						cancel.Dispose();
+						chat.Dispose();
+						return;
+					}
+					Chat = chat;
+					chatCancel = cancel;
+					AddChatLine( OnlineStrings.Get( OnlineLabel.ChatReconnected ) );
+					_ = Task.Run( () => ReceiveLoopAsync( chat, cancel.Token ) );
+				}, () => { cancel.Dispose(); chat.Dispose(); } );
+				return;
 			}
 		} );
 	}

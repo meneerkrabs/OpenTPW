@@ -77,6 +77,23 @@ The token lives only in the server's `.env` (`OPENTPW_DEPLOY_TOKEN`, generated b
 `openssl rand -hex 32`, put it in both places, and run `docker compose up -d` in `/opt/opentpw`.
 Without the secret the job skips the request; the nightly update still happens.
 
+### Deploys without interruption
+
+The server is a single process, so an update stops it and starts the new one, which takes a
+few seconds. Players should not notice:
+
+- Caddy holds requests, chat connections included, for up to 30 s until its health check
+  (`/api/v1/server`, every second) sees the new server answer, instead of returning errors.
+- Sessions are kept in `sessions.json`, so nobody is logged out.
+- On stopping, the server sends what is queued in chat and closes each chat connection with
+  status 1012 ("service restart"); `compose.yml` gives it 20 s to stop. Clients that do not
+  answer are dropped after 3 s.
+- The game then reconnects the chat by itself (after 1, 2, 4, 8, 15 and 30 s), rejoins the room
+  it was in and shows "The server restarted; chat reconnected."
+
+Running two servers side by side (blue-green) would need a shared database instead of the
+JSON files; at this scale the few seconds of held requests are the simpler choice.
+
 ## Running it locally
 
 ```sh
@@ -152,7 +169,8 @@ browser (CORS, GET only); the official server allows `https://opentpw.io` and
 
 - **Accounts:** name, password hash (PBKDF2-SHA256 with salt), creation time, buddy list and
   vote counters.
-- **Sessions:** token hashes and expiry, in memory only.
+- **Sessions:** token hashes (SHA-256, never the token) and expiry in `sessions.json`, so a restart
+  does not log players out; expired sessions are dropped.
 - **Parks:** published packages and thumbnails with their author, visits and votes.
 - **Postcards:** cards waiting in a recipient's inbox.
 - **Reports:** moderation reports (`reports.jsonl`).

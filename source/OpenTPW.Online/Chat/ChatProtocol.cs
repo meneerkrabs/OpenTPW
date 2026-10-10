@@ -12,6 +12,8 @@ public static class ChatProtocol
 	public const int MaximumFrameBytes = 4096;
 	public const string LobbyRoom = "lobby";
 	public const string ParkRoomPrefix = "park:";
+	/// <summary>WebSocket close status "Service Restart": the server is being updated; clients reconnect.</summary>
+	public const int RestartingCloseStatus = 1012;
 
 	public static string ParkRoom( string parkId ) => ParkRoomPrefix + parkId;
 

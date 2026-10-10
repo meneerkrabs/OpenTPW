@@ -4,6 +4,8 @@ services:
   opentpw-server:
     image: ghcr.io/meneerkrabs/opentpw-server:${OPENTPW_IMAGE_TAG:-latest}
     restart: unless-stopped
+    # Time to finish requests and tell chat clients to reconnect before Docker stops it.
+    stop_grace_period: 20s
     # Only Caddy, on this machine, can reach it.
     ports:
       - "127.0.0.1:8080:8080"

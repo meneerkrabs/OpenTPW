@@ -36,7 +36,7 @@
 		<tr><td>Whether you chose to show a published park on opentpw.io (off unless you choose it)</td><td>Only then can the park appear in the website's top parks, with its name, description, picture, votes and visits and your player name, visible to anyone</td><td>Until you remove the park or delete your account</td></tr>
 		<tr><td>Postcards sent to you</td><td>To deliver them</td><td>Until you delete them or your account</td></tr>
 		<tr><td>Reports you make about parks, players or chat</td><td>For moderation</td><td>As long as needed for moderation</td></tr>
-		<tr><td>Login sessions</td><td>To keep you logged in</td><td>In memory only, at most 7 days</td></tr>
+		<tr><td>Login sessions (a hash of the session key, never the key itself)</td><td>To keep you logged in, also when the server restarts</td><td>At most 7 days, or until you log out</td></tr>
 	</table>
 	<p>Chat messages are passed on to the other players in your room and not stored. Your IP address is used in memory only, to limit how many requests one address can make; it is not stored. Postcards you send are delivered to their recipients and stay with them.</p>
 	<p>The server keeps nightly backups of its data for seven days, so deleted data is also gone from the backups within a week.</p>

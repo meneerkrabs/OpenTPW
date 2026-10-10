@@ -3524,3 +3524,161 @@ and 54) this section was renumbered from 54 to 55.
   inside the repository.
 - A1-6: phase 9 separates the no-eligible-link exit at `0x19398` from the
   zero-sum `divwu`.
+
+## 56. Advisor runtime review V1: production `f8375b2` (automatic advisor)
+
+Scope: `f8375b2` ("Let the advisor speak by itself …", parent `be05bb1`) from the
+advisor-runtime worktree, judged against fork main `f51e874`. The merge is clean
+(`git merge-tree --write-tree f51e874 f8375b2` exits 0). Builds and tests used a
+`git clone --shared` scratch copy under `/tmp` with `f8375b2` merged onto `f51e874`.
+The Mac container is the identified `SimThemePark.data` (`04809cd4…95f5`). The PC
+data is the supplied `Data` tree (`Advisor/Advisor.sam`, `e905df3d…0df3`). No
+original code was executed, no filesystem or mount was scanned, and the subject
+worktree was only read. `test_advisor_v1.py` pins every operand cited below.
+
+### Merge blockers
+
+- **V1-1 (blocker: speech plays when muted).** `--mute` only sets
+  `GameAudio.Enabled = false`. Then `GameAudio.EnsureStarted()` returns false and
+  `AudioMixer.Current` stays null. `Advisor.Play` (`Advisor.cs:295`) falls back to
+  `new SpeechAudioPlayer( audio )`, which passes `openDevice: AudioMixer.Current == null`
+  (`SpeechAudioPlayer.cs:44`) and so opens its own SDL device. Before this commit,
+  that path was reachable only from `--advisor-say`/`--advisor-response`. Now every
+  park start reaches it: a muted game says the welcome aloud. `--smoke-test
+  --load-original-level` also opens a device unless `--no-advisor` is given.
+  **Fix:** at `Advisor.cs:295`, make the fallback
+  `new SpeechAudioPlayer( audio, null, openDevice: GameAudio.Enabled && AudioMixer.Current == null )`.
+  It keeps the wall clock (ADVISOR-011). Add a test that sets `GameAudio.Enabled = false`,
+  says a clip and asserts `ClockSource` is the wall clock.
+- **V1-2 (blocker: playback success does not follow the traced wrapper; ADVISOR-021 is
+  answerable).** The controller update calls only wrapper `0xba54`: its single caller is
+  `0x89fc`, while `0xb7d8` has no direct caller. `0xba54` fails in only two cases: an
+  invalid record (`0xba84`–`0xba8c`, return 0 at `0xbbf8`) and the missing-descriptor
+  response 614 (`0xbb54`, return 0 at `0xbbe4`). Otherwise it calls player `0x6b7c`
+  (`0xbb60`) and stores its result **only as the span** (`stw r3,0(r25)` at `0xbb64`;
+  `r25` is the out-parameter, `0xba68`). `mr r3,r26` at `0xbb68` overwrites that result
+  without testing it, and `0xbbf0` returns 1. The controller then saves the history and
+  reserves span + 1000 (`0x8a00`–`0x8a10`). The player `0x6b7c` first reads options byte
+  `+0x34` of the object at TOC −30268 (data `0x120a14`, `0x6b84`/`0x6bb4`) and
+  returns 0 when it is clear (`0x6bc0` → epilogue `0x7054`). A response missing from
+  the ID search also returns 0 (`0x6c20`–`0x6c28`). The eligibility check reads byte
+  `+0x35` of the same object (`0x9010`/`0x9038`). So with the Advisor option off, the
+  original still picks and consumes the best advice. It marks the advice played,
+  advances the variant and reserves 1000 clock units, all without speech. The port
+  instead returns before `Controller.Update` (`AutomaticAdvisor.cs:102`). The pending
+  advice then waits, and when the option is switched on later it plays stale advice,
+  for example the welcome in the middle of a game. Port failures (response not in the
+  table, I/O error, no presentation) likewise return `null` and skip the history and
+  reservation, where the original records success with span 0. The `0xb7d8` revalidation
+  (`AdvisorController.cs:159`) is not on this path. It has no effect today, because a
+  selected score is already strictly above the minimum. **Fix:**
+  1. In `AdvisorController.Update`, drop the revalidation and complete with
+     `playbackSucceeded: true` and `span ?? 0`. The only failure is a missing
+     descriptor, which the bound rows cannot produce.
+  2. In `AutomaticAdvisor.Update`, when `!GameOptions.Current.Advisor`, silence and
+     then run `Controller.Update( () => AdvisorClock, () => GameTick, _ => 0u )`.
+     Cite `[BIN:STP-PPC:0x10006BB4]` and `[BIN:STP-PPC:0x1000BBF0]`.
+  3. Replace `FailedPlaybackConsumesTheAdviceWithoutHistoryOrReservation` with a test
+     that expects the history to be saved and the 1000 reservation to apply.
+  4. Reword ADVISOR-021 to the remaining question only: that byte `+0x34` is the Game
+     Options Advisor switch. This is the same object-identity question as ADVISOR-015.
+- **V1-3 (blocker: cited operand contradicts the port).** `ClearHistory() => history.Clear()`
+  (`AdvisorScoreQueue.cs:81`, tagged `[BIN:STP-PPC:0x10009DCC]`) also zeroes the saved
+  tick. The event-10 body (`0x9dd8`–`0x9e80`: `ctr` 43 × 8 records from `r31` =
+  controller, then the remainder up to `0x15f` = 351) stores only at
+  `+0xe4` (variant −1), `+0xe8` (played 0) and `+0xec` (slap count 0). It never stores at
+  `+0xe0`. `+0xe0` is the saved tick: `0x8a20` passes controller `+0xe0 + 16·message` to
+  setter `0x121098`, which stores world `+0x1da70c` (`0x1210a0`–`0x1210a8`), and the
+  eligibility check reads the same base (`0x9090`). `0x8e28`–`0x8e30` (slap increment)
+  and `0x9198` (limit check) confirm `+0xec`. The `0xa90` call at `0x9dd4` only spills
+  arguments. Effect: after event 10 the original keeps the repeat delay. The test
+  `RepeatIntervalUsesQuarterTicksAndEventTenClearsHistory` asserts the opposite
+  (Eligible). **Fix:** keep `SavedGameTick` and reset the other three fields:
+  `foreach ( var id in history.Keys.ToArray() ) history[id] = AdvisorMessageHistory.Empty with { SavedGameTick = history[id].SavedGameTick };`.
+  Expect `RepeatDelay` after event 10 in that test. Reword "clears history" in
+  `PPC-advisor.md` (lines 61, 86, 1005) and `LIPS.md:241`. The practical effect today
+  is small, because the welcome is saved at turns 0–3, which is the zero-quarter
+  sentinel.
+
+### Author's claims
+
+| Claim | Verdict | Evidence |
+| --- | --- | --- |
+| Every park start raises 10 then 0 → advice 0 → response 1 → level bank sample 1 | **Confirmed** (mapping). The runtime glue raises them in `AttachLevel`. | `0x1c2104` `li r4,10`, `0x1c2108` → `0x116528`; `0x1c216c` `li r4,0`, `0x1c2174` → `0x116528`. Descriptor 0: group 0, limit 1, first 1, count 1. `advisor-responses.toml` id 1 → sample 1, local. |
+| Instant Action also gives advice 323 → 587 → global 606; `0x96F0` and `0x13781C` read the same global, set to 2 for Instant Action | **Confirmed.** | Both load TOC −30136 (`0x94e8` into `r25`, `0x13782c` into `r29`) → data `0x53d98`. `0x96f0` `lwz r0,0(r25)`, `0x96f4` `cmpwi r0,2`. The selector keeps 1 (online, `0x137954`), otherwise reads `mEasyModeUser` (`0x128f4c` `lbz r3,0x24(r3)`) and stores 2 (`0x1379b4`) or 0 (`0x1379e0`) through `0x12bbf4` (`stw r30,0(r29)` at `0x12bc40`). The port derives game type 2 from `ParkGameMode.InstantAction`, which rests on the existing UI-015. Descriptor 323: group 1, first 587, count 1. ID 587 → sample/LIP 606, while row 587 is ID 590 (sample 638). |
+| Event 2 → 274/275 alternating "as in the original" | **Alternation confirmed. Producer equivalence remains ADVISOR-020.** | Mode word +40 is 2 for all 351 descriptors. `0x8974` `lwz r3,0xe4` → `0x8978` `+1`. `0x89d4` count (`0xd5ec`) → `0x89d8`–`0x89e0` reset to 0. `0x8a3c` stores the variant on success. Descriptor 106: first 274, count 2. Event 10 resets the variant, so each level starts with 274. The port's queue alternates correctly (`BankruptcyCyclesThroughItsTwoResponses`). In a live park, however, the economy raises `Bankrupt` once: the day loop stops at `IsBankrupt` (`ParkEconomy.cs`). So only 274 is said until a reload, and that reload's event 10 resets the variant again. |
+| Events 3/4 → 308–311, but score 20 < minimum 25, so they never play | **Confirmed.** | `Advisor.sam`: `ParkNowOpen.Score 20`, `ParkNowClosed.Score 20`, `MinScoreForConsideration 25`. Selection needs strictly greater (`AdvisorScoreQueue.SelectNext`, native `0x8850`). The records stay queued: duplicate limit 1 keeps one of each. |
+| Responses are looked up by stored ID; regression test for 587 | **Confirmed.** | `AdvisorResponses.Table` is a dictionary keyed by `id`, and the 610 rows have no duplicates. `PrebuiltParkResolvesItsStoredResponseIdNotATableRow` pins 587 versus row 590. |
+
+### Checks
+
+1. **Queue port equals the reviewed helper.** After normalization (comments, names,
+   access modifiers, wrapping), every helper member is textually equal in the port. The
+   port adds only `IsAttemptOutstanding`, `HasDescriptor` and `ClearHistory` (V1-3). A
+   scratch differential harness compiled both classes into one assembly and ran
+   identical random operation streams: 2,000 seeds × 400 steps = 800,000 operations,
+   covering descriptors with wrap-edge intervals and slap limits, prior histories,
+   overrides, tutorial flags, full queues, begin/complete with success and failure, and
+   clocks at the busy boundary. Every result tuple, slot, history, busy flag and
+   reservation matched. Sensitivity: each of the mutations `<` → `<=` (minimum scan),
+   `<` → `<=` (busy) and variant `+1` → `+2` was caught within 360 steps. The 31 lane
+   cases are kept in `AdvisorScoreQueueTests`.
+2. **Operands decoded independently:** `0x96f0`/`0x13781c` (shared TOC −30136), event
+   10 (`0x9dcc`), the variant cycle, wrapper `0xba54`, the player option gate (`0x6bb4`)
+   and the main loop's 10/0. See above.
+3. **APPROX coverage.**
+   - ADVISOR-015, 016, 018 and 020 are honest open questions.
+   - ADVISOR-016's sum agrees with native: `0x6b7c` adds 1000 at `0x7048` and the
+     controller adds another 1000 at `0x8a10`.
+   - **ADVISOR-017** (wall clock, not pause-aware) is correctly an approximation:
+     neither the helper nor the lane traces the clock's freeze or compensation.
+   - **ADVISOR-019** is correctly an approximation, not a defect. The helper does not
+     apply `+24`/`+28`. In a bounded scan, none of the 13 functions called with the
+     balance object (`0x53dc0`, sole TOC slot −30116) in `r3` loads `+0x18`/`+0x1c`, and
+     neither does any direct TOC load of it within 600 instructions. Group intervals
+     come from `0xd8f8` (`+0x24 + 12·group`). This does not prove that no reader exists
+     elsewhere.
+   - **ADVISOR-021** is not an untraced behaviour (V1-2).
+   - No invented threshold or timing was found. The game tick is the economy turn,
+     world `+0x1da70c`, as in the register.
+4. **Runtime safety.**
+   - Attach and detach follow `StartLevel`/`TearDown` (front end, load, reload) and
+     `Dispose`.
+   - `ParkEconomyRuntime.Load` re-subscribes `ForwardEvent`. `Level.Park` is set only in
+     the constructor, so a loaded save stays connected.
+   - Neither the queue nor the history is saved. Whether the original saves them (the
+     record serializer is at `0xbc10`) was not established here. They are not
+     registered.
+   - Precedence: `--no-advisor`, `--advisor-say` and `--advisor-response` each disable
+     the automatic advisor (`Game.cs:190`). The manual paths are unchanged.
+   - Missing `Advisor.sam`: `TryCreate` logs and disables. Missing speech: `Play` logs
+     and fails (see V1-2 for the success semantics).
+   - Muted: fails (V1-1).
+   - Non-original sandbox levels (`--sandbox`, plain `--smoke-test`, and the sandbox
+     load entry) also attach the advisor. Only visits are excluded. The welcome there
+     is response 1 from the `jungle` level bank. Plain `--smoke-test` captures were not
+     re-run here; the author ran only `--load-original-level jungle`.
+   - Headless movie paths are unaffected.
+5. **Build and tests** (SDK 10.0.401, Release, merged copy):
+   - Build: 0 errors.
+   - `OpenTPW.Tests` without assets: **895 passed / 233 skipped / 0 failed**, which is
+     main's 853/232/0 plus 42 passed and 1 skipped.
+   - With `OPENTPW_GAME_PATH`: **1065 passed / 63 skipped / 0 failed** (8 min 25 s).
+   - `fidelity_register.py --check`: 145 unresolved unique APPROX IDs, exit 0.
+   - Evidence runner (`--mac-bin`, `--pc-data`, SDK 8 host for the net8 harnesses):
+     OK, 9 Python suites, 536 tests, 34 skipped (review lane 214/6/0). With the SDK 10
+     host, the net8 harnesses report `missing-runtime`, as in section 52.
+   - Line endings: `git diff --stat` equals `--ignore-cr-at-eol --stat` (16 files,
+     +1440/−39). `Advisor.cs`, `GameFlow.cs`, `ParkEconomyRuntime.cs`, `AdvisorTests.cs`,
+     `GameOptions.cs` and the docs are LF before and after. `Game.cs` stays CRLF. The
+     five new C# files are CRLF.
+   - The commit adds no Python, so the `as_posix` rule does not apply. The new review
+     test builds no path strings for output.
+
+### Handoff
+
+1. Runtime owner: fix V1-1, V1-2 and V1-3 as above, then re-run the advisor tests and
+   `fidelity_register.py --check`.
+2. Optional: decide whether non-original sandbox levels should get the automatic
+   advisor (an `[EXT]` choice), and run plain `--smoke-test` with assets.
+3. Open (not blocking): whether the original saves the advisor queue/history.

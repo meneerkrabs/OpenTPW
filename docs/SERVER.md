@@ -132,6 +132,7 @@ Settings are in `OpenTPW.Server/appsettings.json`, or environment variables name
 | `WebClientDirectory` | empty (`/app/web` in the image) | The published browser game; empty serves the API only |
 | `FilterDirectory` | empty | The operator's own original language folder with `swears.txt` and `alloweds.txt` for the chat word filter |
 | `AllowRegistration` | `true` | Whether new accounts can be made |
+| `RequireTotp` | `true` | New accounts must set up two-step login with an authenticator app (docs/ONLINE.md, "Two-step login"); older accounts are not affected |
 | `RequestsPerMinute`, `AuthenticationsPerMinute`, `UploadsPerHour` | 240, 10, 30 | Limits per client address |
 | `MaximumParksPerPlayer`, `MaximumVotesPerDay`, `MaximumInboxPostcards`, `MaximumChatConnections` | 5, 10, 200, 1000 | Per-player and server limits |
 | `BannedPlayers`, `MutedPlayers`, `HiddenParks` | empty | Moderation lists |
@@ -175,7 +176,15 @@ browser (CORS, GET only); the official server allows `https://opentpw.io` and
 ## What the server keeps
 
 - **Accounts:** name, password hash (PBKDF2-SHA256 with salt), creation time, buddy list and
-  vote counters.
+  vote counters, and for two-step login the authenticator secret. The secret has to be readable
+  to check codes, so it is stored as is in `accounts.json`; `totp-steps.json` holds the last code
+  step each account used, so a code stays used after a restart. The server makes its data
+  directory and the files it writes readable by itself only (0700 and 0600) and logs a warning
+  when it cannot; the backups are readable by root only. A registration waiting for its first
+  code is kept in memory only.
+- **Do not roll back** to a server version without two-step login: it ignores the secrets, lets
+  those accounts log in with their password alone and drops the secrets the next time it saves
+  `accounts.json`.
 - **Sessions:** token hashes (SHA-256, never the token) and expiry in `sessions.json`, so a restart
   does not log players out; expired sessions are dropped.
 - **Parks:** published packages and thumbnails with their author, visits and votes.
@@ -196,9 +205,22 @@ free again.
 **Moderation** is by hand for now: read `reports.jsonl`, and add names to `BannedPlayers` or
 `MutedPlayers` (or park ids to `HiddenParks`) in the settings, then restart the server.
 
+**Resetting two-step login** (a player lost their phone): put a file holding the player's name in
+the `totp-reset` folder of the data directory, one file per request, for example
+`echo "Player Name" > /opt/opentpw/data/totp-reset/player-name.txt`. No restart is needed. At the
+player's next login with the right password the server removes the secret and then the file,
+and the game shows the setup screen with a new secret. A request counts only if the file was
+written after the account was made and after its last reset, and is not the request applied last
+time, so a leftover file (one the server could not delete, or one for a deleted account of the same
+name) is never used again. The setup
+can only finish the same account: if the account is deleted, a waiting setup is dropped. Check who is asking before you do this: whoever knows the password can then set up the
+account's two-step login.
+
 ## Security
 
-- Passwords are hashed with PBKDF2-SHA256; login returns a session token.
+- Passwords are hashed with PBKDF2-SHA256; login returns a session token. New accounts also need a
+  code from an authenticator app (RFC 6238) at every login; codes work once, and five wrong codes
+  block codes for an account for fifteen minutes.
 - The chat WebSocket takes the token from the `Authorization` header (desktop) or, because
   browsers cannot set WebSocket headers, from a first `{"type":"auth","token":"…"}` frame.
   The token never appears in a URL. A socket without a valid first frame within ten seconds

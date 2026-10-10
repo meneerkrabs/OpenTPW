@@ -1,8 +1,17 @@
 namespace OpenTPW.Online;
 
-/// <summary>Write-to-temporary-then-rename so readers never see a half-written file.</summary>
+/// <summary>
+/// Write-to-temporary-then-rename so readers never see a half-written file. On Unix the file is readable and writable
+/// by its owner only (0600): the server's files hold password hashes and authenticator secrets.
+/// </summary>
 public static class AtomicFile
 {
+	private static FileStreamOptions CreateOptions() => new()
+	{
+		Mode = FileMode.CreateNew, Access = FileAccess.Write, Share = FileShare.None,
+		UnixCreateMode = OperatingSystem.IsWindows() ? null : UnixFileMode.UserRead | UnixFileMode.UserWrite,
+	};
+
 	public static void Write( string path, ReadOnlySpan<byte> bytes )
 	{
 		var destination = Path.GetFullPath( path );
@@ -12,7 +21,7 @@ public static class AtomicFile
 		var temporary = destination + "." + Guid.NewGuid().ToString( "N" ) + ".tmp";
 		try
 		{
-			using ( var stream = new FileStream( temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None ) )
+			using ( var stream = new FileStream( temporary, CreateOptions() ) )
 			{
 				stream.Write( bytes );
 				stream.Flush( true );

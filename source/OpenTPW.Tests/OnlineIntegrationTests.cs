@@ -12,9 +12,9 @@ namespace OpenTPW.Tests;
 [TestClass]
 public class OnlineIntegrationTests
 {
-	private static OnlineFolders Folders() => new( Path.Combine( Path.GetTempPath(), "opentpw-online-" + Guid.NewGuid().ToString( "N" ) ) );
+	internal static OnlineFolders Folders() => new( Path.Combine( Path.GetTempPath(), "opentpw-online-" + Guid.NewGuid().ToString( "N" ) ) );
 
-	private static async Task PumpUntilIdle( OnlineSession session )
+	internal static async Task PumpUntilIdle( OnlineSession session )
 	{
 		var until = DateTime.UtcNow.AddSeconds( 10 );
 		while ( session.Busy > 0 && DateTime.UtcNow < until )

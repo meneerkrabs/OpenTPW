@@ -15,7 +15,8 @@ namespace OpenTPW.Server;
 public static class ServerProgram
 {
 	public const string Version = "1.0";
-	public const int ProtocolVersion = 1;
+	/// <summary>2: registration may answer 202 with a two-step setup (docs/ONLINE.md, "Two-step login").</summary>
+	public const int ProtocolVersion = 2;
 	private const string WebsitePolicy = "website";
 	/// <summary>File in the data folder that asks the host to update the server (deploy/opentpw-deploy.path).</summary>
 	public const string DeployRequestFile = ".deploy-requested";
@@ -68,6 +69,8 @@ public static class ServerProgram
 
 		var app = builder.Build();
 		app.Logger.LogInformation( "OpenTPW server data in {Directory}; word filter: {Swears} entries, {Alloweds} exceptions.", store.Root, filter.SwearCount, filter.AllowedCount );
+		if ( !store.DataDirectoryIsPrivate )
+			app.Logger.LogWarning( "The data directory {Directory} may be readable by other users (it could not be restricted or checked); it holds password hashes and authenticator secrets.", store.Root );
 		app.Use( async ( context, next ) =>
 		{
 			context.Response.Headers.XContentTypeOptions = "nosniff";
@@ -196,7 +199,7 @@ public static class ServerProgram
 		}
 		catch ( StoreException exception )
 		{
-			return Error( exception.Status, exception.Message );
+			return Results.Json( new ApiError( exception.Message, exception.Reason ), StrictJson.Options, statusCode: exception.Status );
 		}
 		catch ( InvalidDataException exception )
 		{
@@ -252,8 +255,17 @@ public static class ServerProgram
 		{
 			var credentials = await ReadJsonAsync<Credentials>( context.Request );
 			RequireClean( filter, credentials.Name ?? "", "Name" );
+			// With two-step login the account exists only after the first code: 202 and the authenticator secret.
+			if ( options.RequireTotp )
+				return Ok( store.BeginRegistration( credentials.Name ?? "", credentials.Password ?? "" ), StatusCodes.Status202Accepted );
 			var account = store.Register( credentials.Name ?? "", credentials.Password ?? "" );
 			return Ok( new { name = account.Name }, StatusCodes.Status201Created );
+		} ) ) ).RequireRateLimiting( "auth" );
+
+		app.MapPost( ApiRoutes.AccountConfirmation, Handler( context => Guarded( context, store, false, async _ =>
+		{
+			var confirmation = await ReadJsonAsync<TotpConfirmation>( context.Request );
+			return Ok( store.ConfirmEnrollment( confirmation.Name ?? "", confirmation.Ticket ?? "", confirmation.Code ?? "" ), StatusCodes.Status201Created );
 		} ) ) ).RequireRateLimiting( "auth" );
 
 		// Deleting an account asks for the password again, not just a session token.
@@ -270,7 +282,8 @@ public static class ServerProgram
 		app.MapPost( ApiRoutes.Sessions, Handler( context => Guarded( context, store, false, async _ =>
 		{
 			var credentials = await ReadJsonAsync<Credentials>( context.Request );
-			return Ok( store.Login( credentials.Name ?? "", credentials.Password ?? "" ) );
+			var outcome = store.Login( credentials.Name ?? "", credentials.Password ?? "", credentials.Code );
+			return outcome.Enrollment != null ? Ok( outcome.Enrollment, StatusCodes.Status202Accepted ) : Ok( outcome.Session! );
 		} ) ) ).RequireRateLimiting( "auth" );
 
 		app.MapDelete( ApiRoutes.Sessions, Handler( context => Guarded( context, store, true, _ =>

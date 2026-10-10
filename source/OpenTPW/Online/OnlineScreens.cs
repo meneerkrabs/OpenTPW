@@ -1,3 +1,4 @@
+using OpenTPW.Online;
 using OpenTPW.Online.Api;
 using OpenTPW.Online.Packages;
 using OpenTPW.UI.Original;
@@ -165,7 +166,7 @@ public sealed class OnlineScreens
 	public void ShowLogin()
 	{
 		var screen = new UiScreen( "onlineLogin" );
-		var window = UiDialogs.CenteredWindow( 1150, 1000 );
+		var window = UiDialogs.CenteredWindow( 1150, 1170 );
 		UiDialogs.AddWindow( screen, window, "w_med", () => OnlineStrings.Ui( OnlineStrings.OnlineLogin, "Online login" ) );
 		var x = window.X + 120;
 		var width = window.Width - 340;
@@ -177,6 +178,8 @@ public sealed class OnlineScreens
 		name.Text = Session.Settings.PlayerName ?? "";
 		var password = AddField( screen, "password", () => OnlineStrings.Ui( OnlineStrings.Password, "Password" ), x, window.Y + 510, width, 16 );
 		password.Password = true;
+		// [EXT:online-two-step] the authenticator code is an OpenTPW field; accounts without two-step login leave it empty.
+		var code = AddField( screen, "code", () => OnlineStrings.Get( OnlineLabel.AuthenticatorCode ), x, window.Y + 680, 420, Totp.Digits );
 		void Submit( bool register )
 		{
 			try
@@ -185,33 +188,99 @@ public sealed class OnlineScreens
 				if ( register )
 					Session.Register( name.Text.Trim(), password.Text );
 				else
-					Session.Login( name.Text.Trim(), password.Text );
+					Session.Login( name.Text.Trim(), password.Text, code.Text.Trim().Length == 0 ? null : code.Text.Trim() );
 				localStatus = "";
 			}
 			catch ( Exception exception ) when ( exception is ArgumentException or InvalidOperationException or UriFormatException or InvalidDataException )
 			{
 				localStatus = exception.Message;
 			}
-			password.Text = "";
+			// The password stays while the dialog is open, so a login that asks for a code only needs the code.
+			code.Text = "";
 		}
 		// Enter moves from the name to the password and submits from there (UI-MAP, 0x10184924).
 		server.Submitted = () => screen.Focus( name );
 		name.Submitted = () => screen.Focus( password );
 		password.Submitted = () => Submit( register: false );
-		var buttonY = window.Y + 690;
+		code.Submitted = () => Submit( register: false );
+		var buttonY = window.Y + 860;
 		screen.Add( new UiButton { Id = "login", Model = "b_login", Text = () => OnlineStrings.Get( OnlineLabel.LogIn ), Clicked = () => Submit( register: false ),
 			Bounds = new UiRect( window.X + 120, buttonY, 400, 110 ), Anchor = UiAnchor.Center } );
 		screen.Add( new UiButton { Id = "register", Text = () => OnlineStrings.Get( OnlineLabel.Register ), Clicked = () => Submit( register: true ),
 			Bounds = new UiRect( window.X + 560, buttonY, 400, 110 ), Anchor = UiAnchor.Center } );
-		// Closes itself once the login succeeded.
+		// Closes itself once the login succeeded; opens the two-step setup when the server sends one; moves to the code
+		// field when the server asks for a code.
+		var codeRequested = false;
 		screen.Updating += _ =>
 		{
-			if ( Session.IsLoggedIn && stack.Top == screen )
+			if ( stack.Top != screen )
+				return;
+			if ( Session.IsLoggedIn )
+			{
+				password.Text = "";
 				stack.Pop();
+			}
+			else if ( Session.Enrollment != null )
+				ShowEnrollment();
+			else if ( Session.CodeRequested && !codeRequested )
+				screen.Focus( code );
+			codeRequested = Session.CodeRequested;
 		};
 		AddStatus( screen, window );
 		AddBack( screen, window );
 		screen.Focus( name.Text.Length == 0 ? name : password );
+		Push( screen );
+	}
+
+	// ---- Two-step setup (OpenTPW) -------------------------------------------------------------
+
+	/// <summary>
+	/// [EXT:online-two-step] Shows the authenticator secret of <see cref="OnlineSession.Enrollment"/> as a QR code and as
+	/// text, and confirms it with the first code; the account exists (or its reset ends) only after that.
+	/// </summary>
+	public void ShowEnrollment()
+	{
+		var enrollment = Session.Enrollment;
+		if ( enrollment == null )
+			return;
+		var screen = new UiScreen( "twoStepSetup" );
+		var window = UiDialogs.CenteredWindow( 1500, 1450 );
+		UiDialogs.AddWindow( screen, window, "w_med", () => OnlineStrings.Get( OnlineLabel.TwoStepLogin ) );
+		var x = window.X + 120;
+		screen.Add( new UiLabel { Id = "instructions", Wrap = true, Font = fonts => fonts.Small, Text = () => OnlineStrings.Get( OnlineLabel.TwoStepInstructions ),
+			Bounds = new UiRect( x, window.Y + 140, window.Width - 300, 170 ), Anchor = UiAnchor.Center } );
+		screen.Add( new UiQrCode { Id = "qr", Text = enrollment.Uri, Bounds = new UiRect( x, window.Y + 330, 600, 600 ), Anchor = UiAnchor.Center } );
+		var right = x + 660;
+		var rightWidth = window.Right - 180 - right;
+		screen.Add( new UiLabel { Id = "keyLabel", Text = () => enrollment.Name, Bounds = new UiRect( right, window.Y + 340, rightWidth, 60 ), Anchor = UiAnchor.Center } );
+		// The key in the label font and the plain text colour: it is typed over by hand when scanning is not possible.
+		screen.Add( new UiLabel { Id = "key", Wrap = true, Text = () => Totp.Grouped( enrollment.Secret ),
+			Bounds = new UiRect( right, window.Y + 420, rightWidth, 200 ), Anchor = UiAnchor.Center } );
+		var code = AddField( screen, "code", () => OnlineStrings.Get( OnlineLabel.AuthenticatorCode ), right, window.Y + 650, 420, Totp.Digits );
+		void Confirm()
+		{
+			Guard( () => Session.ConfirmEnrollment( code.Text.Trim() ) );
+			code.Text = "";
+		}
+		code.Submitted = Confirm;
+		screen.Add( new UiButton { Id = "confirm", Text = () => OnlineStrings.Get( OnlineLabel.Confirm ), Clicked = Confirm,
+			Bounds = new UiRect( right, window.Y + 860, 400, 110 ), Anchor = UiAnchor.Center } );
+		void Cancel()
+		{
+			Session.CancelEnrollment();
+			stack.Pop();
+		}
+		screen.Updating += _ =>
+		{
+			// Done (logged in) or given up by the server (expired setup): back to the login dialog, which closes itself on success.
+			if ( stack.Top == screen && (Session.IsLoggedIn || Session.Enrollment == null) )
+				stack.Pop();
+		};
+		AddStatus( screen, window );
+		screen.Add( new UiButton { Id = "back", Model = "b_listpark", Text = () => strings.Extra( OpenTpwText.Back ), Clicked = Cancel,
+			Bounds = new UiRect( window.Right - 540, window.Bottom - 175, 320, 110 ), Anchor = UiAnchor.Center } );
+		screen.Back = Cancel;
+		screen.Focus( code );
 		Push( screen );
 	}
 

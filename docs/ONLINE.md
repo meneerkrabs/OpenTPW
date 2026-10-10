@@ -125,6 +125,40 @@ address); any other address needs `https://`, so a password never crosses the in
 unencrypted.
 Going offline disconnects local clients; issued tokens retain their server expiry.
 
+## Two-step login
+
+[EXT:online-two-step] The original online service had no second step; this is an OpenTPW
+addition. A server with `RequireTotp` (the default) asks every new account to set up an
+authenticator app (Google Authenticator, Microsoft Authenticator, Aegis, 1Password and others;
+RFC 6238: HMAC-SHA1, 30-second steps, six digits).
+
+1. *Register* sends name and password. The server answers `202` with a new secret (base32) and
+   its `otpauth://` URI and keeps the registration **in memory only**, for ten minutes; nothing is
+   stored and the name is not taken yet.
+2. The game shows the *Two-step login* screen: a QR code of the URI (black on white, with a
+   quiet zone, so phones can scan it on the dark dialog) and the key as text in groups of four.
+3. The player enters the first code. `POST /api/v1/accounts/confirm` sends it with a one-time
+   ticket from step 1, creates the account with the secret and logs in. Without the ticket a
+   code is refused, so seeing someone's code is not enough, and only the registering player's own
+   attempts count against the limit below. A newer registration of the same name replaces a
+   waiting one.
+
+Logging in then needs the password **and** a code: the login dialog has a third field. Without a
+code the server answers `401` with the reason `totp-required`, and the dialog moves to the code
+field and keeps the password. A code works once (each 30-second step at most once per account), the
+server accepts one step of clock difference either way, and five wrong codes block codes for
+that account (or that setup) for fifteen minutes. Accounts made before two-step login keep logging in with their
+password alone. The secret is never stored on the player's machine.
+
+There are no recovery codes: a player who lost their phone asks the server's operator, who resets
+the account (docs/SERVER.md). The next login with the right password then shows the setup screen
+again with a new secret.
+
+Servers with two-step login report protocol version 2. Games from before it can still log in to
+accounts without two-step login, but cannot register on such a server or log in to an account
+that has it: they need an OpenTPW version with this screen. A registration that is waiting for
+its code keeps its name: registering it again works only with the same password.
+
 ## Verification and extension labels
 
 CPU and loopback tests cover malformed containers/manifests/payloads, image validation,

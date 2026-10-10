@@ -43,6 +43,8 @@ internal sealed class LoopbackServer : IAsyncDisposable
 		{
 			options.DataDirectory = directory;
 			options.PasswordIterations = 1000;
+			// Most tests are about other features; TwoStepLoginTests turns two-step login on.
+			options.RequireTotp = false;
 			configure?.Invoke( options );
 		} );
 		await app.StartAsync();
@@ -96,7 +98,7 @@ public class OnlineServerTests
 		{
 			using var client = new OnlineClient( server.Url );
 			var info = await client.GetServerInfoAsync();
-			Assert.AreEqual( 1, info.ProtocolVersion );
+			Assert.AreEqual( 2, info.ProtocolVersion );
 			Assert.IsFalse( info.WordFilterLoaded );
 			await client.RegisterAsync( "Alice", "correct horse" );
 			Assert.AreEqual( HttpStatusCode.Conflict, (await Fails( () => client.RegisterAsync( "ALICE", "another one" ) )).Status );
@@ -105,7 +107,7 @@ public class OnlineServerTests
 			Assert.AreEqual( HttpStatusCode.Unauthorized, (await Fails( () => client.LoginAsync( "Alice", "wrong password" ) )).Status );
 			Assert.AreEqual( HttpStatusCode.Unauthorized, (await Fails( () => client.LoginAsync( "Nobody", "correct horse" ) )).Status );
 			Assert.AreEqual( HttpStatusCode.Unauthorized, (await Fails( () => client.ListParksAsync() )).Status );
-			var session = await client.LoginAsync( "alice", "correct horse" );
+			var session = (await client.LoginAsync( "alice", "correct horse" )).Session!;
 			Assert.AreEqual( "Alice", session.Name );
 			Assert.AreEqual( 0, (await client.ListParksAsync()).Total );
 			var accounts = File.ReadAllText( Path.Combine( server.Directory, "accounts.json" ) );
@@ -397,8 +399,8 @@ public class OnlineServerTests
 			var options = new ServerOptions { DataDirectory = directory, PasswordIterations = 1000 };
 			var first = new ServerStore( options, () => now );
 			first.Register( "Ann", "correct horse" );
-			var kept = first.Login( "Ann", "correct horse" );
-			var loggedOut = first.Login( "Ann", "correct horse" );
+			var kept = first.Login( "Ann", "correct horse" ).Session!;
+			var loggedOut = first.Login( "Ann", "correct horse" ).Session!;
 			first.Logout( loggedOut.Token );
 			Assert.IsFalse( File.ReadAllText( Path.Combine( directory, "sessions.json" ) ).Contains( kept.Token ), "only the token hash is stored" );
 

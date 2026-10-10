@@ -1,5 +1,7 @@
 using System.Runtime.InteropServices;
 using OpenTPW.FrontEnd;
+using OpenTPW.Online;
+using OpenTPW.Online.Api;
 using OpenTPW.Hud;
 using OpenTPW.UI.Original;
 using SixLabors.ImageSharp;
@@ -207,6 +209,13 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			("online-inbox.png", screens => screens.ShowInbox(), "inbox"),
 			("online-chat.png", screens => screens.ShowChat(), "chat"),
 			("online-import.png", screens => screens.ShowImport(), "import"),
+			// A fixed example secret; the capture is checked by decoding its QR code (docs/ONLINE.md, "Two-step login").
+			("online-two-step.png", screens =>
+			{
+				flow.Online.Enrollment = new TotpEnrollment( "Alice", "smoke-ticket", "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP",
+					Totp.Uri( "OpenTPW", "Alice", "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP" ), DateTimeOffset.UtcNow.AddMinutes( 10 ) );
+				screens.ShowEnrollment();
+			}, "twoStepSetup"),
 		};
 		foreach ( var shot in onlineShots )
 		{
@@ -216,6 +225,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			{
 				Require( flow.Menu!.Stack.Top?.Name == shot.Screen, $"{shot.Screen} opens" );
 				CaptureFrame( shot.Name );
+				flow.Online.Enrollment = null;
 				flow.Menu.Stack.Pop();
 			} );
 		}

@@ -286,3 +286,148 @@ Tools: .NET SDK 10.0.401 at `/Users/sander/.local/share/opentpw-dotnet10`
 | Python paths | `path_evidence.py` uses `relative_to(REPO).as_posix()` | — |
 | Determinism guard | The source-guard tests pass. They scan top-level `World/*.cs`, which holds the new files. New code has no `Random`, clock or `GetHashCode`. The `HashSet`/`Dictionary` uses are render-only lookups | — |
 | `test_path_v1.py` | 21 tests OK with `OPENTPW_MAC_BIN`; 11 run (10 binary skipped) without it. Evidence runner with the witness: OK, 853 tests, 118 skipped (the runner does not export `OPENTPW_MAC_BIN`, as for the earlier review witnesses) | — |
+
+## Round 2: the fixes on 267c420
+
+October 10, 2026. Re-review of `3d78a8a` (ESC-FIX, PATH-011) and `267c420`
+(fixes for B2 and S1–S5), on top of the round-1 commit `ea10b25`. The same rules
+apply: static reading only, nothing original was executed, and every claim is
+bounded to the sites, scratch runs and checks listed here. Scratch copies
+(`git archive` of `267c420` and of the merge tree) live outside the repository.
+New witness: `tools/ppc-analysis/lanes/review/test_path_v2.py`. It reuses the
+round-1 witness's own PEF reader and decoder.
+
+**Merge-ready: yes.** Every round-1 blocker and finding is fixed or answered.
+The notes below need no change before merge. The gate stack (`39ccda4`)
+conflicts in two files; the recipe is at the end of this section.
+
+### Verdicts
+
+| Finding | Verdict | Evidence |
+| --- | --- | --- |
+| B1 front-end smoke | **Fixed** by `3d78a8a` | Native front-end smoke passes, 342 frames, "Escape out of the queue tool". `QueueToolRide` is read through `CellTool.Writer`, which is the same check as the one proposed in round 1 |
+| B2 ending click lays a line | **Fixed** | `Click` returns `null` before the push and `Commit` when `end == start` and the count is not 1. Operands re-decoded (below). `TheEndingClickLaysNothing` passes. Mutation: restoring the commit and deleting every other assertion (`IsNull`, `LastCommit`, counter, version, balance) still fails, on the **hash assertion alone** (`6101474226486134394` ≠ `18094232359882903757`). The jungle smoke asserts the end counter and the state hash too |
+| S1 remove tool | **Fixed** | `UpdateCellTool` stands aside for `IsRemovingObjects`. Mutation: removing that guard fails the jungle smoke with "with the remove tool on, a park click is left to Level.RemoveAt". The extra `HandleObjectClick` reorder (remove before the cell tool) only differs when the remove tool and the cell tool are both on. Placement keeps working: the setters keep `BuildEntry` and `IsRemovingObjects` exclusive (`ObjectBuildPanel.cs:41-44`, `:59-63`; `ParkHud.cs:361-364`). All three smokes pass, including placement, sale, removal and the queue tool. The reorder itself has no test (N2-3) |
+| S2 end flag | **Fixed** (relabelled) | BIN comment, PATH-plan §4.3 and PATHS.md now say the flag is the ghost-clear `LayLine(0x81)`. The refusal rule is `APPROX:PATH-012` |
+| S3 PATH-009 citations | **Fixed** | `ParkPathBuilder.cs`, the register text and PATH-plan §3.2/§10 cite `0x6f5f4`, `0x71330` (mode 4 hover / click), `0x71cb8` (mode 59), and the clears at `0x70ca4`, `0x71c94`, `0x722ec`. These match the round-1 decode, which re-ran here (`test_free_byte_is_a_transient_tool_flag`). The scan bound is stated |
+| S4 queue ghost | **Fixed** | Every preview cell goes through `check( x, y, built )`, which is `Level.CheckQueueCell` → `QueuePaths.CheckExtend` with the pending cells plus `CanSpendCell( Queue, pending )`. `BuildQueueCell` runs the same check with no pending cells after `RecomputeQueue`, then `TrySpendCell`. Mutations, run with `PathBuilderTests` + `QueueTests` (81 tests): restoring the old preview fails the new test; so do ignoring pending cells in the length limit (25 ≠ 35), using the ride's back cell instead of the last pending one (two tests), and ignoring pending cells in `CanSpendCell` (3 ≠ 8). Removing `pending.Contains` survives (N2-1) |
+| S5 paused clicks | **Author is right; my round-1 premise was wrong** | Since `d21fb4a`, `ParkHud.Update` sets `overUi = … \|\| Stack.Screens.Count > 1` and returns it. `GameFlow` stores that in `Level.UiCapturesMouse`, and `Level.Update` calls `HandleObjectClick` only when it is false. So an open pause menu already blocked the park click. Only the economy's speed pause lets tool clicks through, and that is now an explicit choice (`APPROX:PATH-013`, asserted by the sandbox part of the jungle smoke) |
+| PATH-012 / PATH-013 honesty | **Honest** | Both are APPROX entries with evidence-needed text, and neither claims a trace. PATH-012 could add that the flag is read only when `end != start` (`0x7121c..0x71238`, below); this changes no behaviour |
+
+### Operands (independent decode, `test_path_v2.py`)
+
+- **Compare at `0x7105c..0x71078`.** It loads `*r30` (start x) against `sp+2536`
+  (end x), `cmpw`, and `bf eq` to `0x71088` (the push). It does the same for
+  `*r31` / `sp+2540` (y). The roles are fixed by the commit's arguments:
+  `0x710b0..0x710bc` pass `*r30`, `*r31` as `x0`, `y0` and `sp+2536`, `sp+2540`
+  as `&x1`, `&y1`.
+- **Count test.** `0x7107c` `bl 0x7bce8` (count), `0x71080` `cmpwi r3, 1`, and
+  `0x71084` `bf eq` to `0x71174`. The push at `0x71088..0x71090` loads the end
+  and calls `0x7bcf4`. This agrees with the author's reading and with the C#.
+- **The commit block calls `LayLine` eight times.** The calls are at `0x710a8`
+  (mode `0x87`), `0x710c0` (the raw mode, from the getter `0x7b878`), then
+  `0x80`, `0x82`, `0x85`, `0x86`, `0x83` and `0x81` (`0x71164`).
+  - The flag is `cntlzw` then `rlwinm 27,24,31`, i.e. `result == 0`. It is
+    stored at `0x71170`.
+  - `sp+2380` has exactly two uses in `0x70f84..0x71304`: that store and the
+    read at `0x7123c`.
+- **End test at `0x7121c..0x71238`.** If x differs, read the flag. If x and y
+  are both equal, `bt eq` goes to `0x71248`, which stores start −1, and the flag
+  is never read. So the skip path (B2) never sees an unwritten flag. The flag
+  decides the end only after a line that moved.
+- PATH-009's writers: confirmed again by the round-1 test, unchanged.
+
+### Re-run of the round-1 probes
+
+- **P3 ending click.** Now no counter bump, no hash change (the new unit test
+  plus the smoke's `PlacementCountAt`/state-hash check).
+- **B1.** Front-end smoke green, as above.
+- **S1.** Smoke step plus mutation, as above.
+- **S4.** New test plus four mutations, as above.
+- **P1, P2, P4–P7.** Code paths unchanged by `267c420` (`ParkPathBuilder` only
+  gained comments). Covered by the unchanged author tests, which pass.
+
+### Notes (no change needed for merge)
+
+- **N2-1.** `pending.Contains( (x, y) )` in `CheckExtend` cannot be reached from
+  the tool, because a snapped line never repeats a cell. The mutation that
+  removes it survives. It is harmless as a guard for the headless API.
+- **N2-2.** `Level.CheckQueueCell` is not called by any unit test. The new test
+  builds its own `CheckExtend` + `CanSpendCell` composition, and the `QueueTests`
+  source scan only checks the call order. After the gate merge, the static
+  `CheckQueueCell` below can be tested directly.
+- **N2-3.** Turning on the developer remove tool while the path or queue tool
+  is active leaves the tool active, with a stale ghost, until the remove tool is
+  turned off. No test covers the reorder in `HandleObjectClick`, because the
+  smokes drive the HUD. This is developer-panel only.
+- **N2-4.** The commit block's `LayLine(0x87)` before the commit, and the
+  `*r19` reset between `0x82` and `0x85` (`0x710f4..0x71104`), are not
+  described in PATH-plan. Nothing in PATH-I depends on them.
+
+### Merge with the gate stack (GATE-FIX2 `39ccda4`, on `d21fb4a`)
+
+`git merge-tree --write-tree 267c420 39ccda4` gives tree `e757b694`, with
+conflicts in exactly two files.
+
+1. **`source/OpenTPW/World/Level.Objects.cs`.** There are two hunks, both in the
+   new static `BuildQueueCell( grid, economy, ride, x, y, isBlocked, out message )`.
+   - Keep the gate's static helper and the instance wrapper.
+   - Make the queue check static too:
+
+     ```csharp
+     public QueueBuildResult CheckQueueCell( RideVisitorBridge ride, int x, int y, IReadOnlyList<(int X, int Y)> pending )
+     {
+         if ( IsReadOnlyVisit || Guests == null )
+             return QueueBuildResult.Refused;
+         return CheckQueueCell( Guests.Grid, Park?.Economy, ride, x, y, pending, IsQueueBlocked );
+     }
+
+     internal static QueueBuildResult CheckQueueCell( GuestPathGrid grid, ParkEconomy? economy, RideVisitorBridge ride, int x, int y, IReadOnlyList<(int X, int Y)> pending, Func<int, int, bool> isBlocked )
+     {
+         var check = QueuePaths.CheckExtend( grid, ride, x, y, pending, isBlocked );
+         if ( check != QueueBuildResult.Ok )
+             return check;
+         if ( economy != null && !economy.CanSpendCell( CellPurchase.Queue, pending.Count ) )
+             return QueueBuildResult.Refused;
+         return QueueBuildResult.Ok;
+     }
+     ```
+
+   - In the static `BuildQueueCell`, resolve the two hunks as:
+
+     ```csharp
+     ride.RecomputeQueue( grid );
+     var check = CheckQueueCell( grid, economy, ride, x, y, Array.Empty<(int X, int Y)>(), isBlocked );
+     if ( check is not (QueueBuildResult.Ok or QueueBuildResult.Refused) )
+     …
+     if ( check == QueueBuildResult.Refused || (economy != null && economy.TrySpendCell( CellPurchase.Queue ) != ParkEconomy.PurchaseResult.Ok) )
+     ```
+
+   - Point the helper's `<see cref="QueuePaths.CheckExtend"/>` at
+     `CheckQueueCell`.
+   - The `QueueTests` source scan still holds: the instance `CheckQueueCell`
+     comes before the static one, which calls `CheckExtend`, and `RecomputeQueue`
+     → `CheckQueueCell(` → `TrySpendCell` stay in order.
+2. **`docs/FIDELITY-REGISTER.md`.** Only line numbers conflict. Take either side,
+   then run `python3 tools/fidelity_register.py --write`. That gives **189**:
+   186 + PATH-011..013, with GATE-002 → GATE-003 count-neutral. `--check` passes.
+
+Tested on the resolved scratch tree: Release build, and `OpenTPW.Tests` without
+assets **978 / 250 / 0**. The extra test is the gate's. Not run on the merged
+tree: the assets tests, the smokes and `--m3-gate`.
+
+### Builds, tests and checks (267c420)
+
+| Check | Result | Author |
+| --- | --- | --- |
+| `OpenTPW.Tests`, no assets (SDK 10, Release) | 977 / 250 / 0 | 977/250/0 |
+| `OpenTPW.Tests`, `OPENTPW_GAME_PATH` | 1156 / 71 / 0 (11 min 49 s) | 1156/71/0 |
+| Native front-end smoke | passed, 342 frames | 342 |
+| Native sandbox smoke | passed, 1108 frames | 1108 |
+| Native jungle smoke (`--load-original-level jungle`) | passed, 4328 frames; "laid 6 cells (52, 14) -> (52, 19) for $120" | 4318 (frame counts vary run to run) |
+| Evidence runner (`--mac-bin`, `--pc-data`) | OK: 13 Python suites, 861 tests, 119 skipped. `lanes/review` ran 356 tests, 78 skipped. Includes `test_path_v2.py` (8 tests; its `Binary` class skips because the runner does not export `OPENTPW_MAC_BIN`) | — |
+| `test_path_v2.py` with `OPENTPW_MAC_BIN` | 11 tests OK | — |
+| `fidelity_register.py --check` | OK, 189 | 189 |
+| CRLF | `git diff d21fb4a --stat` = `--ignore-cr-at-eol --stat` (16 files, +1093/−87) | — |
+| Whitespace | `git diff d21fb4a --check` empty; no added line ends in a space or tab | — |
+| `libveldrid-spirv.dylib` | already in the ignored `native/osx-arm64/`; copied into the scratch tree only | — |

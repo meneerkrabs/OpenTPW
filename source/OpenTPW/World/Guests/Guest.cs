@@ -11,8 +11,13 @@ public enum GuestState : byte
 	DoingNothing = 6,
 	WalkingAround = 7,
 	GoingToRide = 10,
+	/// <summary>Standing in a queue (original state 11).</summary>
 	Queueing = 11,
+	/// <summary>Walking to a queue position (original state 12; KIDSTATES gives it the same text as 11).</summary>
+	MovingUpQueue = 12,
+	/// <summary>Called forward: walking to the stand point and offering itself to the script (original state 13).</summary>
 	Boarding = 13,
+	/// <summary>Waiting until the script takes the guest from VAR_LETMEON (original state 14).</summary>
 	WaitingToBoard = 14,
 	ExitingRide = 15,
 	Using = 16,
@@ -86,6 +91,28 @@ public sealed class Guest
 	public int AttractionId { get; internal set; }
 	public int LastAttractionId { get; internal set; }
 
+	// Queue (docs/reverse/QUEUE-plan.md §3.2; original guest offsets in brackets)
+	/// <summary>True while the guest is in an attraction's queue list (walking up, standing, called or waiting to be taken).</summary>
+	public bool IsInQueue => State is GuestState.MovingUpQueue or GuestState.Queueing or GuestState.Boarding or GuestState.WaitingToBoard;
+	/// <summary>Recorded queue position, 0 = front [+497]; −1 outside a queue.</summary>
+	public int QueuePosition { get; internal set; } = -1;
+	/// <summary>Park turn at which the guest joined its current queue, or −1.</summary>
+	public long QueueJoinTurn { get; internal set; } = -1;
+	/// <summary>Park turns from joining to being taken by the script, for the last completed queue (−1: none yet).</summary>
+	public long LastQueueWaitTurns { get; internal set; } = -1;
+	/// <summary>Remaining move-up delay in park turns [+500].</summary>
+	public int QueueMoveDelay { get; internal set; }
+	/// <summary>Called forward by the attraction [+504].</summary>
+	public bool QueueCalled { get; internal set; }
+	/// <summary>Park turn of the last entry into state 11 [+508].</summary>
+	public long QueueStandingSinceTurn { get; internal set; }
+	/// <summary>Park turn of the last idle interlude [+520].</summary>
+	public long InterludeTurn { get; internal set; }
+	/// <summary>In an idle interlude (original state 8, entered from state 11 and restored to it).</summary>
+	public bool InQueueInterlude { get; internal set; }
+	/// <summary>Happiness when the guest joined [+524].</summary>
+	public float QueueJoinHappiness { get; internal set; }
+
 	// Navigation
 	internal int CellX;
 	internal int CellY;
@@ -102,6 +129,11 @@ public sealed class Guest
 	internal bool LaneReversed;
 	internal float StateTimer;
 	internal float DecisionTimer;
+	internal int QueueCellIndex;      // index of the queue cell the guest is on (cell count = still on the join cell)
+	internal int QueueTargetIndex;    // queue cell of the destination slot
+	internal float QueueTargetX;
+	internal float QueueTargetY;
+	internal long LastQueueUpdateTurn = -1;
 
 	public (int X, int Y) Cell => (CellX, CellY);
 }

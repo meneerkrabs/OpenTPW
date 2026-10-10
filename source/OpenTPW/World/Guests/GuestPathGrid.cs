@@ -4,6 +4,8 @@ namespace OpenTPW;
 /// Walkable path cells and their cardinal connections, with cached breadth-first flow fields per target.
 /// Built from the original save grid (path flag + connection bits, docs/TPWS-PAYLOAD.md) or, without a
 /// save, from MAP InitialPath cells (4-neighbour adjacency). Coordinates are game cells (x, y).
+/// Queue cells (original map cell type 3, docs/reverse/QUEUE-plan.md §3.3) are kept beside the path cells:
+/// they are not walkable for routing and carry a link byte that points back toward the ride entrance.
 /// </summary>
 public sealed class GuestPathGrid
 {
@@ -12,12 +14,18 @@ public sealed class GuestPathGrid
 
 	private readonly bool[] walkable;
 	private readonly byte[] links; // bit d = connected towards Directions[d]
+	private readonly byte[] queueLinks; // 0 = not a queue cell, else the original link value (1, 4, 16 or 64)
 	private readonly Dictionary<int, int[]> fields = new();
 
 	public int CountX { get; }
 	public int CountY { get; }
 	public int Version { get; private set; }
 	public int WalkableCount { get; private set; }
+	public int QueueCellCount { get; private set; }
+
+	/// <summary>Original map cell type of a queue cell (map cell <c>+8</c>; <c>0x851ac</c>/<c>0x851d0</c>).</summary>
+	// [BIN:STP-PPC:0x100DDA18 next queue cell] a neighbour that passes 0x851ac (type 3 or 9) and fails 0x851d0 (type 9) is a queue cell
+	public const int QueueCellType = 3;
 
 	public GuestPathGrid( int countX, int countY )
 	{
@@ -27,6 +35,7 @@ public sealed class GuestPathGrid
 		CountY = countY;
 		walkable = new bool[countX * countY];
 		links = new byte[countX * countY];
+		queueLinks = new byte[countX * countY];
 	}
 
 	public bool InBounds( int x, int y ) => (uint)x < (uint)CountX && (uint)y < (uint)CountY;
@@ -39,11 +48,71 @@ public sealed class GuestPathGrid
 		if ( !InBounds( x, y ) )
 			throw new ArgumentOutOfRangeException( nameof( x ) );
 		var index = Index( x, y );
+		if ( isPath && queueLinks[index] != 0 )
+		{
+			queueLinks[index] = 0;
+			QueueCellCount--;
+		}
 		if ( walkable[index] != isPath )
 			WalkableCount += isPath ? 1 : -1;
 		walkable[index] = isPath;
 		links[index] = isPath ? (connections ?? 0x0F) : (byte)0;
 		Invalidate();
+	}
+
+	public bool IsQueue( int x, int y ) => InBounds( x, y ) && queueLinks[Index( x, y )] != 0;
+
+	/// <summary>The cell's original queue link value (1, 4, 16 or 64), or 0 when it is not a queue cell.</summary>
+	public byte GetQueueLink( int x, int y ) => InBounds( x, y ) ? queueLinks[Index( x, y )] : (byte)0;
+
+	/// <summary>
+	/// Makes (x, y) a queue cell whose link points toward <see cref="Directions"/>[<paramref name="towards"/>]
+	/// (its predecessor, i.e. toward the ride entrance). A path cell stops being walkable.
+	/// </summary>
+	public void SetQueue( int x, int y, int towards )
+	{
+		if ( !InBounds( x, y ) )
+			throw new ArgumentOutOfRangeException( nameof( x ) );
+		var index = Index( x, y );
+		if ( walkable[index] )
+		{
+			walkable[index] = false;
+			links[index] = 0;
+			WalkableCount--;
+		}
+		if ( queueLinks[index] == 0 )
+			QueueCellCount++;
+		queueLinks[index] = LinkValue( towards );
+		Invalidate();
+	}
+
+	/// <summary>Removes a queue cell (the cell becomes plain ground).</summary>
+	public void ClearQueue( int x, int y )
+	{
+		if ( !IsQueue( x, y ) )
+			return;
+		queueLinks[Index( x, y )] = 0;
+		QueueCellCount--;
+		Invalidate();
+	}
+
+	/// <summary>The original link value (map cell <c>+13</c>) for a <see cref="Directions"/> index.</summary>
+	// [BIN:STP-PPC:0x1006E228 queue link read] map cell +13 holds the queue link direction; the values are 1, 4, 16 and 64
+	// [APPROX:QUEUE-001] compass meaning of the link values: Directions order (−Y, +X, +Y, −X) is mapped to 1, 4, 16, 64 — evidence needed: the run-time neighbour offset tables (data 0xec52c..0xec5a4, zero in the file)
+	public static byte LinkValue( int direction ) => direction is >= 0 and < 4 ? (byte)(1 << (2 * direction)) : throw new ArgumentOutOfRangeException( nameof( direction ) );
+
+	/// <summary>The <see cref="Directions"/> index a link value points to, or −1.</summary>
+	public static int LinkDirection( byte link ) => link switch { 1 => 0, 4 => 1, 16 => 2, 64 => 3, _ => -1 };
+
+	/// <summary>Direction index from (x, y) to the 4-neighbour (nx, ny), or −1 when they are not adjacent.</summary>
+	public static int DirectionBetween( int x, int y, int nx, int ny )
+	{
+		for ( var direction = 0; direction < 4; direction++ )
+		{
+			if ( x + Directions[direction].DX == nx && y + Directions[direction].DY == ny )
+				return direction;
+		}
+		return -1;
 	}
 
 	public void Invalidate()

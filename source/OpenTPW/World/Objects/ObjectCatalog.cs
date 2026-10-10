@@ -19,6 +19,9 @@ public sealed record ObjectUpgradeLevel( int Level, IReadOnlyDictionary<string, 
 {
 	public int GetInt( string field, int fallback = 0 ) =>
 		Values.TryGetValue( field, out var value ) && int.TryParse( value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var result ) ? result : fallback;
+
+	public float GetFloat( string field, float fallback = 0 ) =>
+		Values.TryGetValue( field, out var value ) && float.TryParse( value, NumberStyles.Float, CultureInfo.InvariantCulture, out var result ) ? result : fallback;
 }
 
 /// <summary>

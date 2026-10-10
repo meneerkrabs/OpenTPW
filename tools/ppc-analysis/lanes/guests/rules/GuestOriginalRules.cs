@@ -28,16 +28,18 @@ public static class GuestOriginalRules
 
 	/// <summary>
 	/// Active queue weight and match at code 0xe93c0..0xe9420. A far queue removes its weight too.
-	/// More than four visitors per capacity produces a wrapped negative match; it is not clamped.
+	/// The denominator is four positions per queue cell: object <c>+60</c> is the queue size in cells
+	/// (docs/reverse/QUEUE-plan.md §3.1), not the ride capacity. More than four visitors per queue cell
+	/// produces a wrapped negative match; it is not clamped.
 	/// </summary>
-	public static (uint Weight, uint Match) QueueTerm( int dx, int dy, uint queueCount, uint capacityField, uint weight )
+	public static (uint Weight, uint Match) QueueTerm( int dx, int dy, uint queueCount, uint queueCellsField, uint weight )
 	{
 		if ( SquaredDistance( dx, dy ) > 8 )
 			return (0, 0);
-		var capacity = capacityField == 0 ? 1u : capacityField;
-		var denominator = unchecked(capacity * 4);
+		var cells = queueCellsField == 0 ? 1u : queueCellsField;
+		var denominator = unchecked(cells * 4);
 		if ( denominator == 0 )
-			throw new ArgumentException( "Capacity produces an unsupported zero DIVWU denominator.", nameof( capacityField ) );
+			throw new ArgumentException( "The queue size produces an unsupported zero DIVWU denominator.", nameof( queueCellsField ) );
 		var queuePercent = unchecked(queueCount * 100) / denominator;
 		return (weight, unchecked(100u - queuePercent));
 	}

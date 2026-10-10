@@ -56,7 +56,6 @@ public sealed class GuestSettings
 	public float NeedThoughtLevel { get; set; } = 70;
 	public float DecisionIntervalSeconds { get; set; } = 3;
 	public int StartingHappiness { get; set; } = 60;
-	public int QueueLengthPerCapacity { get; set; } = 4;
 	public int MaximumGuests { get; set; } = 1000;
 
 	/// <summary>Loads the theme balance: <c>levels/Standard.sam</c> overridden by <c>levels/&lt;theme&gt;/Standard.sam</c>.</summary>

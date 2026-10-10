@@ -278,7 +278,13 @@ public sealed class ParkHud
 		} ) );
 
 		hud.DrawOverlay = DrawMessages;
-		hud.Back = OpenPauseMenu;
+		hud.Back = () =>
+		{
+			if ( level.QueueToolRide != null )
+				level.QueueToolRide = null;
+			else
+				OpenPauseMenu();
+		};
 	}
 
 
@@ -311,6 +317,8 @@ public sealed class ParkHud
 	public void SetBuildArm( bool open )
 	{
 		BuildArmOpen = open;
+		if ( open )
+			level.QueueToolRide = null;
 		if ( open )
 			InfoArmOpen = false;
 		if ( !open && pendingItem != null )
@@ -352,7 +360,7 @@ public sealed class ParkHud
 		PostMessage( strings.Help( 440 ) );
 	}
 
-	// [APPROX:UI-031] one placement per menu selection; Level owns purchase/sale — evidence needed: original build-tool continuation
+	// [APPROX:UI-031] one placement per menu selection, then the queue tool for Info.HasQueue rides; Level owns purchase/sale — evidence needed: original build-tool continuation
 	private void OnObjectPlaced( OriginalObject item )
 	{
 		if ( pendingItem?.Entry != item.Entry )
@@ -360,6 +368,12 @@ public sealed class ParkHud
 		// Level.PlaceObject owns the purchase and guest link; this callback only finishes the HUD tool.
 		PostMessage( string.Format( strings.Extra( OpenTpwText.Built ), ItemName( pendingItem ) ) );
 		SetBuildArm( false );
+		// UI-031 (above): the reference manual has the queue tool follow ride placement, so rides with Info.HasQueue switch the park click to laying their queue until Back.
+		if ( item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells )
+		{
+			level.QueueToolRide = item.Visitors;
+			PostMessage( strings.Extra( OpenTpwText.LayQueue ) );
+		}
 	}
 
 	private void ToggleRideOpen()
@@ -492,7 +506,7 @@ public sealed class ParkHud
 			GameAudio.PlayUi( ParkViewClickEvent );
 
 		// [APPROX:UI-027] Select by occupied grid cell; original cursor picking is not verified.
-		if ( !overUi && !consumed && level.BuildEntry == null && !level.IsPlacing && input.LeftReleased
+		if ( !overUi && !consumed && level.BuildEntry == null && !level.IsPlacing && level.QueueToolRide == null && input.LeftReleased
 			&& level.TryGetGridCell( input.Mouse, new NVector2( context.Canvas.Width, context.Canvas.Height ), out var x, out var y ) )
 			SelectObject( level.Objects.FindAt( x, y ) );
 

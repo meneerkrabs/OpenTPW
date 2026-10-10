@@ -122,9 +122,9 @@ Belly Bounce that is (20 / 5 + 1) × 30 = 150 s. A queue that is non-empty but h
 boarding is measured as the "longest stall".
 
 **Hashes.** `GuestSimulation.ComputeStateHash` (raw guest hash) includes guest
-attraction ids. These come from a process-wide counter in `OriginalObjectRuntime`,
-so a second scenario in the same process gets other ids (run 1: 4 5 6; run 2: 10
-11 12). The gate hash replaces attraction ids by placement index. It also covers
+attraction ids. Since the DET node these are allocated per park by its
+`RideScriptWorld`, so a second scenario in the same process gets the same ids (4 5 6
+in both runs). The gate hash still replaces attraction ids by placement index. It also covers
 the economy (tick, balance, RNG state, ledger, litter, staff) and every object
 script's variables and clock. A hash is also recorded every simulated minute, to
 locate the first divergent minute.
@@ -169,9 +169,9 @@ apart from `wallSeconds`.
 | paths.no-unreachable-goal | PASS | all targets reachable; 0 stuck guests; 0 Confused give-ups; 0 lane-less ejections |
 | rides.scripts-run | PASS | 0 faults, 0 halted ticks (Belly Bounce, Drinks Shop, Small Toilet waiting; Bus, Gates, Lights running) |
 | staff.work | PASS | 10 wage payments ($2,100); mechanic: 17 repairs for 17 worn/broken events; handyman: 810.5 litter items dropped, 810.5 cleaned; Belly Bounce state of repair 55 at the end |
-| determinism.same-seed | **FAIL** | raw guest hash differs in-process (00E874A92846742F vs F9AB11FDA4D90B0F; attraction ids 4 5 6 vs 10 11 12); gate hash matches (C4D8D348D84FF042); no divergent minute |
+| determinism.same-seed | PASS | raw guest hash 00E874A92846742F in both in-process runs; attraction ids 4 5 6 in both; gate hash C4D8D348D84FF042 |
 
-Totals: 12 pass, 3 fail, 1 unresolved; **exit code 1**. With `--no-determinism`:
+Totals: 13 pass, 2 fail, 1 unresolved; **exit code 1**. With `--no-determinism`:
 12 pass, 2 fail, 2 unresolved, exit 1.
 
 ### Which gameplay area the failures point at
@@ -183,12 +183,11 @@ Totals: 12 pass, 3 fail, 1 unresolved; **exit code 1**. With `--no-determinism`:
   a virtual queue at the entrance cell and never walk queue cells. Needed: a
   queue-path builder, walkable queue cells in `GuestPathGrid`, and queue geometry
   from `Info.Shape` (GUESTS.md "walking real queue cells").
-- **determinism (DET node): `determinism.same-seed`.**
-  `OriginalObjectRuntime.nextAttractionId` is static, so the attraction ids, and
-  with them the raw guest hash, depend on how many objects were created earlier in
-  the process. The simulation itself is reproducible: the normalised gate hash and
-  cross-process raw hashes match. The fix belongs to the DET node (per-park id
-  allocation).
+- **determinism (DET node): `determinism.same-seed` — resolved.** The static
+  `OriginalObjectRuntime.nextAttractionId` made raw guest hashes depend on earlier
+  objects in the process; the DET node allocates attraction ids per park and derives
+  every simulation stream from one world seed (docs/DETERMINISM.md), so the row now
+  passes.
 - **rides / guests: `queues.no-stuck-queue` (unresolved).** All three queues
   fill to their approximated limit. Belly Bounce guests wait up to five full
   30-unit cycles. Deciding this needs an original queue-time or cycle-time

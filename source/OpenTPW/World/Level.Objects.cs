@@ -17,7 +17,7 @@ public partial class Level
 		var theme = OriginalPark?.LevelName ?? "jungle";
 		IParkGrid grid = OriginalPark == null ? new SandboxParkGrid() : new OriginalParkGrid( OriginalPark );
 		var easy = Park?.Economy.Settings.IsEasy ?? false;
-		Objects = new ParkObjects( ObjectCatalog.Load( theme, easy ), grid ) { IsReserved = IsReservedByPrototype };
+		Objects = new ParkObjects( ObjectCatalog.Load( theme, easy ), grid, Seed ) { IsReserved = IsReservedByPrototype };
 		if ( OriginalPark == null )
 			return;
 		var count = OriginalPark.Save != null ? Objects.ImportOriginal( OriginalPark.Save ) : Objects.AddDefaultFixedItems();

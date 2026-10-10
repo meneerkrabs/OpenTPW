@@ -35,6 +35,7 @@ public static class GameAudio
 		AudioApproximations.LogOnce();
 		var mixer = AudioMixer.Open();
 		AudioMixer.Current = mixer;
+		// Clock seed like the original's LbTime_GetClock; it only colours front-end sounds, since EnterPark reseeds from the park's world seed.
 		events = new SoundEventSystem( mixer, (uint)Environment.TickCount );
 		mixer.DuckingLevel = ReadDuckingLevel() / 100f;
 		Ui = SoundCategory.TryLoad( FileSystem, "/global/sound", "cat_ui" );
@@ -61,11 +62,14 @@ public static class GameAudio
 	}
 
 	/// <summary>Loads a level's categories and starts its park music.</summary>
-	public static void EnterPark( string level )
+	/// <param name="seed">The park's sound seed (<see cref="WorldSeed.SoundStream"/>); null keeps the running chooser.</param>
+	public static void EnterPark( string level, uint? seed = null )
 	{
 		if ( !EnsureStarted() )
 			return;
 		LeavePark();
+		if ( seed is uint value )
+			events!.Reseed( value );
 		LevelMusic = SoundCategory.TryLoad( FileSystem, $"/levels/{level}/Music", "cat_music" );
 		LevelSpeech = SoundCategory.TryLoad( FileSystem, $"/levels/{level}/Speech", "cat_speech" );
 		music = events!.StartSentence( LevelMusic, ParkMusicEvent, AudioChannel.Music );

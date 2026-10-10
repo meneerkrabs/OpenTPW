@@ -968,8 +968,8 @@ internal sealed class M3GateRun
 	}
 
 	/// <summary>
-	/// FNV-1a over guest state with attraction ids replaced by their placement index (the bridge ids come from a
-	/// process-wide counter), the economy (tick, balance, RNG, ledger, litter, staff) and every script's variables.
+	/// FNV-1a over guest state with attraction ids replaced by their placement index (kept so the hash does not depend
+	/// on id allocation), the economy (tick, balance, RNG, ledger, litter, staff) and every script's variables.
 	/// </summary>
 	private ulong ComputeGateHash()
 	{

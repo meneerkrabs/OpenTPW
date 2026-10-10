@@ -22,6 +22,7 @@ derives every simulation stream from it:
 | Placed object scripts | placement ordinal XOR `ObjectScriptKey` | per-VM `System.Random(seed)` (DET-013) | `ParkObjects` |
 | Scripts without a seed (prototype ride, `Ride`) | drawn from the script world's SplitMix64 stream, start `ScriptStream` | per-VM `System.Random(seed)` (DET-013) | `RideScriptWorld` |
 | Script children (SPAWNCHILD/SPAWNSOUND) | drawn from the parent VM | per-VM `System.Random(seed)` | parent `RideVM` |
+| Coaster boarding (`CoasterRng`) | `ScriptStream` XOR a fixed key, folded to 32 bits (COAST-024) | the original's 214013/2531011 LCG (`CoasterRandom`) | `RideScriptWorld.Coasters` |
 | Sound choosers (presentation) | `SoundStream`, set by `GameAudio.EnterPark` | the original's 1664525/1013904223 LCG (DET-012) | `SoundEventSystem` |
 
 The stream keys are chosen so that the default seed reproduces the seeds each
@@ -53,7 +54,7 @@ approximation-log flags, read-only parsed-asset caches (`ObjectAssets`,
 and `RideScriptWorld` counters are per instance.
 
 `DeterminismTests.SimulationCodeUsesNoProcessWideRandomnessOrClock` scans `VM`,
-`Economy`, `World/Guests`, `World/Objects` and every top-level `World` file
+`Economy`, `World/Guests`, `World/Objects`, `World/Coasters` and every top-level `World` file
 (including the `Level*.cs` partials) except the presentation files it lists
 (advisor, cameras, sky, sun, sandbox file I/O). It forbids:
 
@@ -89,15 +90,16 @@ continues the guest, script and sound streams. Both delegate to
 state and needs no renderer, so tests run the same save, load and hash code. Saves without the section
 (older files and economy-only callers) still load, but those streams are not
 restored. The save does not hold guests, queues or object script state, so a
-load keeps the running guests and scripts (DET-016).
+load keeps the running guests and scripts (DET-016). Coaster tracks, trains and
+the coaster generator are not saved either (COAST-022).
 
 ## Canonical state hash
 
 `WorldStateHash.Compute(WorldStateSources)` (`Level.ComputeStateHash()` for a
 level) is FNV-1a 64 over little-endian values, with floats by bit pattern. It
 follows the field order of DET-plan §4.5, restricted to what OpenTPW has. Schema
-version 5 (version 1 also hashed the sound seed; versions 3 and 4 added the
-queue state, version 5 the cell map, see Tests):
+version 6 (version 1 also hashed the sound seed; versions 3 and 4 added the
+queue state, version 5 the cell map, version 6 the coasters, see Tests):
 
 | DET-plan field | OpenTPW | In the hash |
 | --- | --- | --- |
@@ -108,7 +110,7 @@ queue state, version 5 the cell map, see Tests):
 | `manager_pass_counter` | no RSE manager pass; per-VM `SliceCount` is in the script digest | **missing** |
 | `park_turn` | `ParkEconomy.Turn` | yes |
 | `world_rng_state` | economy, guest and script-world stream states | substitute (three streams) |
-| `coaster_rng_state` | no coaster generator | **missing** |
+| `coaster_rng_state` | `CoasterWorld.Random` (the original's `s·214013 + 2531011` LCG, started from the world seed, COAST-024) | yes (after the script digest, with the coasters) |
 | `clib_rng_state` | no C-library generator | **missing** |
 | `sound_seed` | `SoundEventSystem.Seed` | **not hashed** (saved; see below) |
 | `scale` | `ParkEconomy.Speed` | yes |
@@ -120,6 +122,7 @@ queue state, version 5 the cell map, see Tests):
 | `thing_table_digest` | guests in id order (every field the tick reads, including navigation and timers), including each guest's queue fields, the queue edge detectors, then attractions with queue cells, the queue list, admission state and counters, riders, limbo and bounce lists | yes (order is id order, not the original's newest first) |
 | (cell map) | `ParkCellMap` of the guest grid: every non-empty cell in row order with its type, flags, placement counter, links and queue link (paths built by the path tool included) | yes (extra, after the thing table) |
 | `script_table_digest` | every live script in id order: id, name, parent, state, PC, flags, call stack, variables, clock, wake time, timers, instruction and slice counts, seed and RNG call count | yes |
+| (coasters) | `RideScriptWorld.Coasters`: the coaster generator, then every coaster in creation order: station ends, closed and complete flags, nodes (cell, height, t, pylon kind, stack index, station end, flags, bank), controller state (initialised, closed, ride mode, speed setting, seats, speed cap, net track money, time, last departure, braking start), samples (flags, height, roll, speed), rating, winch sections, trains (position, speed, state, boarding time, riders per car) and riders waiting to leave | yes (extra, after the script digest) |
 | `economy_digest` | the park save's economy part as canonical JSON (sorted keys) | yes |
 | `input_log_cursor` | no input log | **missing** |
 
@@ -174,7 +177,11 @@ the same seed as well.
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0x98BFAE5138E2A343`, schema 5; the hashed fields are unchanged, but the original ride update gave each park-save object an exact state of repair and a life gauge (`Repair`, `LifeGauge`), which the economy digest includes. Before that: `0xC0E5705C8924E49A`, where the hashed fields were unchanged since `0x10A80C328A477CBE`, but upstream 1198a93 traced staff candidate grades to the binary and dropped the `ChanceToGetGreat` draw, so the economy stream's draws and the run changed. Before that:: the cell map digest was added when the path
+  (`0x5E1198F70F3F2B55`, schema 6; the coaster digest was added after the
+  script digest when player-built coasters landed (COAST-I). The run is
+  unchanged: the synthetic park has no coaster, so the digest holds only the
+  coaster generator's start state and a count of 0. Before that:
+  `0x98BFAE5138E2A343`, schema 5; the hashed fields are unchanged, but the original ride update gave each park-save object an exact state of repair and a life gauge (`Repair`, `LifeGauge`), which the economy digest includes. Before that: `0xC0E5705C8924E49A`, where the hashed fields were unchanged since `0x10A80C328A477CBE`, but upstream 1198a93 traced staff candidate grades to the binary and dropped the `ChanceToGetGreat` draw, so the economy stream's draws and the run changed. Before that:: the cell map digest was added when the path
   builder made `ParkCellMap` the source of truth for path cells. The run itself
   is unchanged (the raw guest hashes of the cross grid and the Jungle Easymode
   run are pinned across the change), but the hashed "last seen grid version"

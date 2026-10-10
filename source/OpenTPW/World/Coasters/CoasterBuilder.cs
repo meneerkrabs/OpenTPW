@@ -1,0 +1,227 @@
+namespace OpenTPW;
+
+/// <summary>
+/// The headless coaster build API (COAST-plan §9.2, §9.7), CPU-only like <see cref="ParkPathBuilder"/>: the level's
+/// coaster tool and tests both drive it. It places pylons (a failed validation marks them invalid instead of refusing
+/// them), charges each pylon at once, settles moves and height changes, closes the circuit, completes and reopens the
+/// track and deletes it.
+/// </summary>
+public sealed class CoasterBuilder
+{
+	private readonly Func<ParkEconomy?> economy;
+	private readonly Func<int?> economyInstance;
+	private float height;
+
+	/// <param name="economy">The park economy that pays for the track, or null (money off: the generic sandbox and tests).</param>
+	/// <param name="economyInstance">The station's economy instance, whose total spent the track cost joins.</param>
+	public CoasterBuilder( CoasterRide ride, CoasterSite site, Func<ParkEconomy?>? economy = null, Func<int?>? economyInstance = null )
+	{
+		Ride = ride ?? throw new ArgumentNullException( nameof( ride ) );
+		Site = site ?? throw new ArgumentNullException( nameof( site ) );
+		ride.Site = site;
+		this.economy = economy ?? (() => null);
+		this.economyInstance = economyInstance ?? (() => null);
+		height = ride.Definition.InitialPylonLoftHeight;
+	}
+
+	public CoasterRide Ride { get; }
+	public CoasterSite Site { get; }
+	public CoasterTrack Track => Ride.Track;
+	public ParkEconomy? Economy => economy();
+	/// <summary>The loop edit mode (bit 0x40): new pylons are LoopPylons.</summary>
+	public bool LoopMode { get; set; }
+	/// <summary>The requested height of the next pylon (world units above the ground; clamped when placed).</summary>
+	// [DATA:coaster.sam:sCoasterType.fInitialPylonLoftHeight] the height a new pylon starts at (10 by default, 20 for several PC coasters)
+	public float Height
+	{
+		get => height;
+		set => height = float.IsFinite( value ) ? value : height;
+	}
+
+	/// <summary>The station ends of a coaster station footprint: the '&gt;' cell (depart) and the '&lt;' cell (return).</summary>
+	public static ((int X, int Y) Depart, (int X, int Y) Return)? StationEnds( ObjectShape shape, int anchorX, int anchorY, int rotation )
+	{
+		(int X, int Y)? depart = null, back = null;
+		foreach ( var (x, y, cell) in ObjectFootprint.GetCells( shape, anchorX, anchorY, rotation ) )
+		{
+			if ( cell.Symbol == '>' )
+				depart = (x, y);
+			else if ( cell.Symbol == '<' )
+				back = (x, y);
+		}
+		return depart is { } d && back is { } r ? (d, r) : null;
+	}
+
+	/// <summary>Starts the track at a station (removing any pylons).</summary>
+	public void SetStation( (int X, int Y) depart, (int X, int Y) @return )
+	{
+		Ride.ClearTrains();
+		Track.SetStation( depart, @return );
+	}
+
+	/// <summary>What the validator says about a pylon on (x, y) after the last node now (no writes).</summary>
+	public CoasterPlaceResult Check( int x, int y ) => Track.CheckPlacement( Site, Ride.World, Ride, x, y, LoopMode );
+
+	/// <summary>The float cost a pylon on (x, y) would have (what placing it charges, truncated).</summary>
+	public float PreviewCost( int x, int y ) => Track.PreviewCost( x, y, Height, LoopMode );
+
+	/// <summary>The build-cost display change of moving the cursor from one candidate cost to another: ceil(new) − ceil(old).</summary>
+	// [BIN:STP-PPC:0x100483AC build cursor] the accumulator data:0x84ac4 += ceil(new) − ceil(old) for the cost display and the tool's affordability check (0x1006F664); the coaster code never debits it
+	public static long PreviewDelta( float oldCost, float newCost ) => CoasterTrack.RoundUp( newCost ) - CoasterTrack.RoundUp( oldCost );
+
+	/// <summary>
+	/// A click in the build tool (<c>0x375c4</c>): on the open start of a chain (the station's end cells) it closes the
+	/// circuit; otherwise it adds a pylon at <see cref="Height"/> and charges trunc(cost) at once. A pylon that fails
+	/// the validator is still placed and marked invalid (with its predecessor); only structural refusals (outside the
+	/// map, a complete or closed track, no loop pylon, no money) leave the track unchanged. Returns the validator's verdict.
+	/// </summary>
+	// [BIN:STP-PPC:0x100375C4 add node] a click on a cell holding the chain's open start closes the circuit (0x100470C4); otherwise a node is created (0x10035FDC)
+	// [BIN:STP-PPC:0x10037888 place charge] placing a pylon debits trunc(cost(node, unit charged)) at once (0x101C3FBC truncates); all coaster charges are skipped while money is off
+	public CoasterPlaceResult Place( int x, int y )
+	{
+		if ( Track.IsChainStart( x, y ) && !Track.IsClosed && !Track.IsComplete )
+			return Close() ? CoasterPlaceResult.Ok : CoasterPlaceResult.NotEditable;
+		var result = Check( x, y );
+		if ( result is CoasterPlaceResult.OutsideMap or CoasterPlaceResult.NotEditable or CoasterPlaceResult.NoLoopPylon )
+			return result;
+		var charge = CoasterTrack.Truncate( PreviewCost( x, y ) );
+		if ( !Spend( charge ) )
+			return CoasterPlaceResult.NotEnoughMoney;
+		Track.Append( Ride.World, Ride, x, y, Height, LoopMode );
+		Track.Revalidate( Site, Ride.World, Ride );
+		return result;
+	}
+
+	/// <summary>Closes the circuit (no node is added).</summary>
+	public bool Close()
+	{
+		if ( !Track.Close() )
+			return false;
+		Track.Revalidate( Site, Ride.World, Ride );
+		return true;
+	}
+
+	/// <summary>
+	/// Drops pylon <paramref name="index"/> on (x, y) (<c>0x4a43c</c>): the same cell changes nothing; otherwise the pick-up
+	/// costs (the node and, on a complete track, the next node) are refunded truncated and the new costs charged
+	/// rounded up. The validator verdict is returned; the node is marked, not refused.
+	/// </summary>
+	// [BIN:STP-PPC:0x1004A43C drop node] dropping on another cell credits trunc(stored node cost) [+ trunc(stored next)] and debits ceil(cost(node)) [+ ceil(cost(next))], the bracketed terms only on a complete track; the same cell (0x1004A5A8..0x1004A5BC) moves no money
+	// [BIN:STP-PPC:0x1004A228 pick up node] the station node (descriptor flag 2) cannot be picked up
+	public CoasterPlaceResult Move( int index, int x, int y )
+	{
+		if ( index <= 0 || index >= Track.Nodes.Count || Track.Nodes[index].IsPylonless || (Track.IsComplete && Ride.RidersOnBoard != 0) )
+			return CoasterPlaceResult.NotEditable;
+		var node = Track.Nodes[index];
+		if ( (node.X, node.Y) == (x, y) )
+			return CoasterPlaceResult.Ok;
+		if ( x < 0 || y < 0 || x >= Site.Width || y >= Site.Height )
+			return CoasterPlaceResult.OutsideMap;
+		var result = Track.CheckPlacement( Site, Ride.World, Ride, x, y, node.LoopPylon, moving: index );
+		var stack = Ride.World.PylonsAt( x, y ).Count( pylon => !ReferenceEquals( pylon.Node, node ) );
+		Settle( index, () => Track.Replace( index, node with { X = x, Y = y, StackIndex = stack } ) );
+		if ( Track.IsComplete )
+			Ride.Rebuild();
+		return result;
+	}
+
+	/// <summary>Releases the height slider of pylon <paramref name="index"/> (<c>0x45fc4</c>): refunds trunc(old cost), charges ceil(new cost).</summary>
+	// [BIN:STP-PPC:0x10045FC4 height slider] releasing the height slider credits trunc(stored cost) and debits ceil(new cost)
+	public bool SetHeight( int index, float requested )
+	{
+		if ( index <= 0 || index >= Track.Nodes.Count || Track.Nodes[index].IsPylonless || (Track.IsComplete && Ride.RidersOnBoard != 0) )
+			return false;
+		var node = Track.Nodes[index];
+		var (clamped, t) = CoasterTrack.ClampHeight( Track.Definition.Pylon( node.LoopPylon ), requested );
+		Settle( index, () => Track.Replace( index, node with { Height = clamped, T = t } ), includeNext: false );
+		if ( Track.IsComplete )
+			Ride.Rebuild();
+		return true;
+	}
+
+	private void Settle( int index, Action edit, bool includeNext = true )
+	{
+		var next = includeNext && Track.IsComplete && index + 1 < Track.Nodes.Count ? index + 1 : (int?)null;
+		var refund = CoasterTrack.Truncate( Track.NodeCost( index ) ) + (next is int n ? CoasterTrack.Truncate( Track.NodeCost( n ) ) : 0);
+		edit();
+		var charge = CoasterTrack.RoundUp( Track.NodeCost( index ) ) + (next is int m ? CoasterTrack.RoundUp( Track.NodeCost( m ) ) : 0);
+		Refund( refund );
+		Spend( charge, force: true );
+		Track.Revalidate( Site, Ride.World, Ride );
+	}
+
+	/// <summary>Removes the last pylon of an open chain. Nothing is refunded and there is no undo stack.</summary>
+	// [BIN:STP-PPC:0x10047170 delete nodes] deleting pylons calls no money routine; the coaster module credits only on drops and the height slider
+	public bool RemoveLast()
+	{
+		if ( !Track.RemoveLast() )
+			return false;
+		Track.Revalidate( Site, Ride.World, Ride );
+		return true;
+	}
+
+	/// <summary>The build-cost display: the rounded-up cost of every pylon (<c>data:0x84ac4</c>).</summary>
+	public long BuildCost => Track.BuildCost;
+
+	/// <summary>Whether completion would succeed now: the circuit is closed and no node is marked invalid.</summary>
+	public CoasterPlaceResult CheckComplete() => Track.IsComplete ? CoasterPlaceResult.NotEditable
+		: !Track.IsClosed ? CoasterPlaceResult.NotClosed
+		: Track.HasInvalidNodes ? CoasterPlaceResult.InvalidNodes : CoasterPlaceResult.Ok;
+
+	/// <summary>
+	/// Completes a closed track (<c>0x37ef0</c>): appends the station end nodes, then fits the curve, rates the track and
+	/// places the trains. Completion moves no money.
+	/// </summary>
+	// [APPROX:COAST-016] completion is refused while a node is marked invalid (flag 0x4000), and the build click completes on a station end cell of a closed circuit; the original's click decision is cell action 129 (0x10084EA4 via 0x10073A3C) of the generic tool engine 0x10080C50, whose test is not decoded — evidence needed: cell action 129 in 0x10080C50 and what the original does with invalid nodes on completion
+	public CoasterPlaceResult Complete()
+	{
+		var check = CheckComplete();
+		if ( check != CoasterPlaceResult.Ok )
+			return check;
+		Track.Complete();
+		Ride.Rebuild();
+		return CoasterPlaceResult.Ok;
+	}
+
+	/// <summary>Reopens a completed track for editing (removes the station end nodes, opens the circuit); refused while riders are on board.</summary>
+	// [BIN:STP-PPC:0x10045EAC rider predicate] the guest predicate requires riders +320 == 0
+	public bool Reopen()
+	{
+		if ( !Track.IsComplete || Ride.RidersOnBoard != 0 )
+			return false;
+		Ride.ClearTrains();
+		Track.Reopen();
+		Track.Revalidate( Site, Ride.World, Ride );
+		return true;
+	}
+
+	/// <summary>Removes the track and every pylon (the station stays) without a refund; riders on board are let off through <c>COAST 3</c>.</summary>
+	public void Delete()
+	{
+		Ride.ClearTrains();
+		Track.Clear();
+		Ride.RaiseTrackChanged();
+	}
+
+	// [BIN:STP-PPC:0x100CBFDC bank debit] coaster charges debit the bank (+12) directly; credits go through 0x100CBF50
+	private bool Spend( long amount, bool force = false )
+	{
+		if ( amount <= 0 )
+			return true;
+		if ( Economy is { } park )
+		{
+			if ( park.TrySpendCoasterTrack( amount, economyInstance(), force ) != ParkEconomy.PurchaseResult.Ok )
+				return false;
+		}
+		Ride.PaidCost += amount;
+		return true;
+	}
+
+	private void Refund( long amount )
+	{
+		if ( amount <= 0 )
+			return;
+		Economy?.CreditCoasterTrack( amount, economyInstance() );
+		Ride.PaidCost -= amount;
+	}
+}

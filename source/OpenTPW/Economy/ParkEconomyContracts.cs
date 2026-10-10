@@ -43,7 +43,8 @@ public enum ParkEventKind
 	ChallengeDeclined,
 	ChallengeCompleted,
 	ChallengeFailed,
-	GoldenTicketWon
+	GoldenTicketWon,
+	CoasterTrackBuilt
 }
 
 /// <summary>

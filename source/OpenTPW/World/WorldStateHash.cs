@@ -46,14 +46,14 @@ public sealed record WorldStateSources
 /// Canonical state hash of a park run (docs/DETERMINISM.md): the subset of the replay fields of
 /// docs/reverse/DET-plan.md §4.5 that OpenTPW has today, in that order. Same world seed and same inputs give
 /// the same hash, in one process or in separate ones; a different seed gives a different one. Fields the
-/// original has but OpenTPW lacks (clock A, substep and manager-pass counters, the coaster and C-library
-/// streams, world state, calendar rate, input log) and OpenTPW state outside the hash (sound seed, object
+/// original has but OpenTPW lacks (clock A, substep and manager-pass counters, the C-library stream, world
+/// state, calendar rate, input log) and OpenTPW state outside the hash (sound seed, object
 /// placements and run flags, the clock's pending time) are listed in docs/DETERMINISM.md.
 /// </summary>
 public static class WorldStateHash
 {
 	/// <summary>Bumped whenever the hashed fields or their order change.</summary>
-	public const int SchemaVersion = 5;
+	public const int SchemaVersion = 6;
 
 	public static ulong Compute( WorldStateSources sources )
 	{
@@ -93,6 +93,8 @@ public static class WorldStateHash
 			hash.Add( sources.Scripts.Scripts.Count );
 			foreach ( var script in sources.Scripts.Scripts.OrderBy( script => script.ScriptId ) )
 				script.AddCanonicalState( hash );
+			// coaster_rng_state and the coasters (tracks, samples, ratings, trains and riders) in creation order.
+			sources.Scripts.Coasters.AddCanonicalState( hash );
 		}
 		// economy_digest: everything the park save stores, with object keys sorted.
 		if ( economy != null )

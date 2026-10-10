@@ -704,6 +704,34 @@ public sealed class ParkEconomy : IParkEconomy
 	}
 
 	/// <summary>
+	/// Charges coaster track money (a placed pylon, or the charge side of a move) as other costs, adding it to the
+	/// station's total spent. Without <paramref name="force"/> it is refused when bankrupt or when the balance cannot
+	/// cover it (the build tool's affordability check); a forced charge always debits, as the original's drop does.
+	/// </summary>
+	public PurchaseResult TrySpendCoasterTrack( long cost, int? stationInstanceId = null, bool force = false )
+	{
+		ArgumentOutOfRangeException.ThrowIfNegative( cost );
+		if ( !force && IsBankrupt )
+			return PurchaseResult.Bankrupt;
+		if ( !force && cost > Balance )
+			return PurchaseResult.NotEnoughMoney;
+		Post( LedgerCategory.OtherCosts, cost );
+		if ( stationInstanceId is int instance && objects.TryGetValue( instance, out var station ) )
+			station.TotalSpent += cost;
+		Raise( ParkEventKind.CoasterTrackBuilt, cost, stationInstanceId ?? 0, 0, "coaster track" );
+		return PurchaseResult.Ok;
+	}
+
+	/// <summary>Credits the refund side of a coaster pylon move or height change as other income.</summary>
+	public void CreditCoasterTrack( long amount, int? stationInstanceId = null )
+	{
+		ArgumentOutOfRangeException.ThrowIfNegative( amount );
+		Post( LedgerCategory.OtherIncome, amount );
+		if ( stationInstanceId is int instance && objects.TryGetValue( instance, out var station ) )
+			station.TotalSpent = Math.Max( 0, station.TotalSpent - amount );
+	}
+
+	/// <summary>
 	/// Refunds a removed queue cell: <c>Costs.QueueCell</c> × the ride's scrap percentage / 100
 	/// (<c>ClearCell</c> queue case, PATH-plan §6). Returns the amount credited.
 	/// </summary>

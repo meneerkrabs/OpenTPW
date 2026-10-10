@@ -97,6 +97,9 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 		++frame;
 		if ( !pathToolVerified && frame >= 3 )
 			VerifyHudPathTool();
+		if ( pathToolVerified && !coasterToolVerified && frame >= 4 )
+			VerifyHudCoasterTool();
+		UpdateCoasterPhase();
 		if ( motionFrame == 0 )
 		{
 			// Totem.RSE waits up to 10 s for passengers before it triggers its main animation.
@@ -177,7 +180,7 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 		}
 		if ( step >= 66 && !displayChangesDone )
 			displayChangesDone = StepDisplayChanges();
-		if ( step >= 90 && displayChangesDone && !completed )
+		if ( step >= 90 && displayChangesDone && !completed && smokeStation == null )
 		{
 			if ( level.Park != null )
 				VerifyParkEconomy( level.Park, level.Guests );
@@ -185,7 +188,7 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 			completed = true;
 			Log.Trace( level.OriginalPark == null
 				? $"Native sandbox smoke test passed: {frame} frames, original ride and RSE script, script-triggered motion, original animation readback, close, remove, isolated save/load, BF4 text and GPU readback; {displaySummary}."
-				: $"Native original-level smoke test passed: {frame} frames, {level.OriginalPark.LevelName} terrain/import, MAP/save build rules, original ride and RSE script, guests boarding/riding/released by Totem.RSE, guest sprite readback, animation readback, close, remove, BF4 text, park economy and GPU readback; {displaySummary}." );
+				: $"Native original-level smoke test passed: {frame} frames, {level.OriginalPark.LevelName} terrain/import, MAP/save build rules, original ride and RSE script, guests boarding/riding/released by Totem.RSE, a HUD-built coaster, guest sprite readback, animation readback, close, remove, BF4 text, park economy and GPU readback; {displaySummary}." );
 			Render.Window.SdlWindow.Close();
 		}
 	}

@@ -13,9 +13,16 @@ public sealed class RideScriptWorld
 	private int nextAttractionId = 1;
 
 	/// <param name="seed">Start state of the seed stream for scripts without an explicit seed (<see cref="WorldSeed.ScriptStream"/>).</param>
-	public RideScriptWorld( ulong seed = 0 ) => RandomState = seed;
+	public RideScriptWorld( ulong seed = 0 )
+	{
+		RandomState = seed;
+		Coasters = new CoasterWorld( seed );
+	}
 
 	public IReadOnlyCollection<RideVM> Scripts => scripts.Values;
+
+	/// <summary>The park's coaster controllers and their shared boarding generator.</summary>
+	public CoasterWorld Coasters { get; }
 
 	/// <summary>SplitMix64 state of the seed stream (saved with the park; see <see cref="WorldRandomState"/>).</summary>
 	public ulong RandomState { get; private set; }

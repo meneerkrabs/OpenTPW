@@ -56,16 +56,36 @@ namespace Veldrid
 		public float WheelDelta { get; set; }
 		public bool IsMouseDown( MouseButton button ) => buttons[(int)button];
 
+		private readonly bool[] pressedThisFrame = new bool[13];
+		private readonly List<MouseButton> deferredReleases = new();
+
+		/// <summary>Starts the next frame's snapshot, applying releases held back from the last one.</summary>
 		public void Clear()
 		{
 			Keys.Clear();
 			Mouse.Clear();
 			Characters.Clear();
 			WheelDelta = 0;
+			Array.Clear( pressedThisFrame );
+			foreach ( var button in deferredReleases )
+				SetButton( button, false );
+			deferredReleases.Clear();
 		}
 
+		/// <summary>
+		/// The game reads button state once per frame. A click whose press and release land in the
+		/// same frame (likely with slow interpreted frames) stays down for this frame and is
+		/// released in the next, so it is never lost.
+		/// </summary>
 		public void SetButton( MouseButton button, bool down )
 		{
+			if ( !down && pressedThisFrame[(int)button] )
+			{
+				deferredReleases.Add( button );
+				return;
+			}
+			if ( down )
+				pressedThisFrame[(int)button] = true;
 			buttons[(int)button] = down;
 			Mouse.Add( new MouseEvent( button, down ) );
 		}

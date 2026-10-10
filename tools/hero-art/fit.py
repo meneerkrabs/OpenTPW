@@ -2,7 +2,7 @@
 usage: fit.py <uitex dir> <map.tsv> <generated image> <base name> <out dir> <scale> [variant names...]
 Writes <out>/ui/textures/<name>.wct.png for the base and every variant."""
 import sys, os, numpy as np
-from PIL import Image, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter
 uitex, mapfile, gen_path, base, out, scale = sys.argv[1:7]; variants = sys.argv[7:]; K = int(scale)
 m = {}
 for l in open(mapfile):
@@ -24,14 +24,25 @@ mirror = gen_path.endswith(':mirror')
 gen_img = Image.open(gen_path[:-7] if mirror else gen_path).convert('RGB')
 if mirror: gen_img = gen_img.transpose(Image.FLIP_LEFT_RIGHT)
 gen = np.asarray(gen_img).astype(np.float32)
-# Background = median of the four corner patches (Gemini uses white or light grey); soft drop shadows stay below the threshold.
+# Background = median of the four corner patches (Gemini uses white or light grey).
 corners = np.concatenate([gen[:24, :24].reshape(-1, 3), gen[:24, -24:].reshape(-1, 3), gen[-24:, :24].reshape(-1, 3), gen[-24:, -24:].reshape(-1, 3)])
 bgc = np.median(corners, axis=0)
-nonwhite = np.sqrt(((gen - bgc) ** 2).sum(axis=2)) > 60
+# Backdrop = everything reachable from the image border through pixels that are near bgc or part of the soft grey drop
+# shadow the image model draws under an icon (unsaturated, not dark). Enclosed white or grey parts of the icon are not
+# reachable and stay. The rest is the redrawn silhouette.
+chroma = gen.max(axis=2) - gen.min(axis=2)
+backdropish = (np.sqrt(((gen - bgc) ** 2).sum(axis=2)) < 60) | ((chroma < 28) & (gen.mean(axis=2) > 110))
+fill = Image.fromarray(np.where(backdropish, 255, 0).astype(np.uint8)).copy()  # writable copy for floodfill
+gh, gw = backdropish.shape
+for sx, sy in [(0, 0), (gw - 1, 0), (0, gh - 1), (gw - 1, gh - 1), (gw // 2, 0), (gw // 2, gh - 1), (0, gh // 2), (gw - 1, gh // 2)]:
+    if fill.getpixel((sx, sy)) == 255: ImageDraw.floodfill(fill, (sx, sy), 128)
+silhouette = np.asarray(fill) != 128
+# Drop the outermost pixel (the anti-aliased blend of the outline into the backdrop) and, with it, JPEG ringing specks
+# that touch the outline only through such pixels.
+silhouette = np.asarray(Image.fromarray(silhouette.astype(np.uint8) * 255).filter(ImageFilter.MinFilter(3))) > 0
 # keep the largest connected blob (the button), dropping stray marks
 from collections import deque
-lab = np.zeros(nonwhite.shape, np.int32); best = (0, 0); cur = 0
-small = nonwhite[::4, ::4]; lab = np.zeros(small.shape, np.int32)
+small = silhouette[::4, ::4]; lab = np.zeros(small.shape, np.int32); best = (0, 0); cur = 0
 for y0_ in range(small.shape[0]):
     for x0_ in range(small.shape[1]):
         if small[y0_, x0_] and not lab[y0_, x0_]:
@@ -43,10 +54,34 @@ for y0_ in range(small.shape[0]):
                     if 0 <= ny < small.shape[0] and 0 <= nx < small.shape[1] and small[ny, nx] and not lab[ny, nx]:
                         lab[ny, nx] = cur; q.append((ny, nx))
             if n > best[1]: best = (cur, n)
-ys, xs = np.nonzero(lab == best[0]); ys = ys * 4; xs = xs * 4
-crop = Image.fromarray(gen.astype(np.uint8)).crop((xs.min(), ys.min(), xs.max() + 1, ys.max() + 1))
+seed_y, seed_x = [int(v[0]) * 4 for v in np.nonzero(lab == best[0])]
+blob = Image.fromarray(silhouette.astype(np.uint8) * 255).copy()
+ImageDraw.floodfill(blob, (seed_x, seed_y), 128)
+silhouette = np.asarray(blob) == 128
+ys, xs = np.nonzero(silhouette)
+box = (xs.min(), ys.min(), xs.max() + 1, ys.max() + 1)
+# Paint the backdrop around the silhouette with the nearest outline colour before resampling, so the downscale cannot
+# mix white into the edge texels.
+pad = 24
+bx0, by0, bx1, by1 = max(box[0] - pad, 0), max(box[1] - pad, 0), min(box[2] + pad, gw), min(box[3] + pad, gh)
+region = gen[by0:by1, bx0:bx1].copy(); known = silhouette[by0:by1, bx0:bx1].copy()
+def neighbours(a, fill):
+    p = np.pad(a, [(1, 1), (1, 1)] + [(0, 0)] * (a.ndim - 2), constant_values=fill)
+    h, w = a.shape[:2]
+    return [p[1 + dy:1 + dy + h, 1 + dx:1 + dx + w] for dy in (-1, 0, 1) for dx in (-1, 0, 1) if dy or dx]
+for _ in range(pad):
+    acc = np.zeros_like(region); cnt = np.zeros(known.shape, np.float32)
+    for c, k in zip(neighbours(np.where(known[..., None], region, 0), 0), neighbours(known, False)):
+        acc += c * k[..., None]; cnt += k
+    new = ~known & (cnt > 0)
+    region[new] = acc[new] / cnt[new][:, None]; known = known | new
+painted = gen.copy(); painted[by0:by1, bx0:bx1] = region
+crop = Image.fromarray(np.clip(painted, 0, 255).astype(np.uint8)).crop(box)
 tw, th = (x1 - x0) * K, (y1 - y0) * K
 icon = np.asarray(crop.resize((tw, th), Image.LANCZOS)).astype(np.float32)
+# Smooth outline of the redrawn icon at the target size (JPEG noise along the edge blurred away, then anti-aliased).
+sil = Image.fromarray(silhouette.astype(np.uint8) * 255).crop(box).filter(ImageFilter.GaussianBlur(2))
+sil = np.asarray(sil.point(lambda v: 255 if v >= 128 else 0).resize((tw, th), Image.BOX)).astype(np.float32) / 255
 # Base layer: the original texture upscaled (keeps anything outside the icon), then the redrawn icon on top.
 rgb = np.asarray(orig.convert('RGB').resize((W * K, H * K), Image.BICUBIC)).astype(np.float32)
 rgb[y0 * K:y1 * K, x0 * K:x1 * K] = icon
@@ -56,31 +91,14 @@ def shifts(a, fill):
     p = np.pad(a, [(1, 1), (1, 1)] + [(0, 0)] * (a.ndim - 2), constant_values=fill)
     h, w = a.shape[:2]
     return [p[1 + dy:1 + dy + h, 1 + dx:1 + dx + w] for dy in (-1, 0, 1) for dx in (-1, 0, 1) if dy or dx]
-# Generated background: pixels close to bgc that connect to the edge of the icon rectangle (white symbols enclosed by
-# the button stay). Where the original mask is wider than the redrawn silhouette, these would show white through alpha.
-dist = np.sqrt(((icon - bgc) ** 2).sum(axis=2)); near = dist < 60
-outer = np.zeros_like(near); outer[0, :] = near[0, :]; outer[-1, :] = near[-1, :]; outer[:, 0] = near[:, 0]; outer[:, -1] = near[:, -1]
-while True:
-    grown = outer.copy()
-    for n in shifts(outer, False): grown |= n
-    grown &= near
-    if (grown == outer).all(): break
-    outer = grown
-background = np.zeros((H * K, W * K), bool)
-background[y0 * K:y1 * K, x0 * K:x1 * K] = outer
-# the anti-aliased fringe between object and background is still light: widen by a few pixels (edge band only, below)
-fringe = background.copy()
-for _ in range(3):
-    for n in shifts(fringe, False): fringe = fringe | n
-# Coverage of the redrawn silhouette near the generated background: where the original mask is wider than the new
-# outline, the original alpha would keep a ragged strip of backdrop; the alpha is capped to the new outline there.
-coverage = np.ones((H * K, W * K), np.float32)
-coverage[y0 * K:y1 * K, x0 * K:x1 * K] = np.clip((dist - 40) / 40, 0, 1)
-coverage = np.where(fringe, coverage, 1)
+# Coverage = the redrawn outline. The alpha is the original mask capped to it: where the
+# original mask is wider than the new outline, the backdrop or shadow would otherwise show through.
+coverage = np.zeros((H * K, W * K), np.float32)  # outside the icon rectangle only faint edge texels of the original
+coverage[y0 * K:y1 * K, x0 * K:x1 * K] = sil
 def bleed(rgb_img, alpha):
-    # Recolour background and fully transparent texels with the nearest object colour, so neither the white backdrop
-    # nor linear filtering of alpha-0 texels lightens the edge. Alpha is kept.
-    known = ~(background | (fringe & (alpha < 0.999)) | (alpha <= 0))
+    # Recolour every texel outside the solid outline with the nearest solid icon colour, so neither the backdrop nor
+    # linear filtering of alpha-0 texels lightens the edge. Alpha is kept.
+    known = (alpha >= 0.999) & (coverage >= 0.999)
     col = np.where(known[..., None], rgb_img, 0).astype(np.float32)
     while not known.all():
         acc = np.zeros_like(col); cnt = np.zeros(known.shape, np.float32)

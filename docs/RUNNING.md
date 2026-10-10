@@ -119,6 +119,16 @@ the folder saved in Options > Game files is used, or the copy imported there int
 `--smoke-test` also works with this flag (captures `native-smoke-original-*.png`;
 the smoke also checks that guests fill and leave the Totem and ride imported objects).
 
+## Headless M3 gameplay-loop gate
+
+```sh
+dotnet source/OpenTPW/bin/Debug/net10.0/OpenTPW.dll --game-path '/path/to/Theme Park World' --m3-gate --minutes 30 --report m3-gate.json
+```
+
+Builds a fixed minimal Jungle park without a window or GPU (entrance, paths, Belly Bounce, Drinks Shop,
+Small Toilet, a mechanic and a handyman), runs 30 simulated minutes as fast as possible and prints one
+pass/fail/unresolved row per invariant; exits 1 when a row fails. See [M3-GATE.md](M3-GATE.md).
+
 ## Read-only BF4 font inspection
 
 ```sh

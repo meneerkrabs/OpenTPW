@@ -11,14 +11,33 @@ namespace OpenTPW.Tests;
 public class AdvisorTests
 {
 	[DataTestMethod]
-	[DataRow( 1024, 768, 16, 496, 256 )]
-	[DataRow( 512, 384, 8, 248, 128 )]
-	[DataRow( 2048, 1536, 32, 992, 512 )]
-	public void AdvisorViewportMapsLogicalPlacementIntoTheWorldTarget( int width, int height, int x, int y, int size )
+	[DataRow( 640, 480, 384, 288, 256, 192 )]
+	[DataRow( 2560, 1440, 1536, 864, 1024, 576 )]
+	public void AdvisorBoxIsTheBottomRightOfTheScreen( int width, int height, int x, int y, int boxWidth, int boxHeight )
 	{
-		var viewport = Advisor.ViewportRectangle( new Point2( 1024, 768 ), new Point2( width, height ) );
-		Assert.AreEqual( (x, y, size), viewport );
-		Assert.IsTrue( viewport.X + viewport.Size <= width && viewport.Y + viewport.Size <= height );
+		var box = Advisor.BoxRectangle( new Point2( width, height ) );
+		Assert.AreEqual( (x, y, boxWidth, boxHeight), box );
+		Assert.AreEqual( (width, height), (box.X + box.Width, box.Y + box.Height) );
+	}
+
+	[TestMethod]
+	public void AdvisorTransformMatchesTheOriginalAt4By3()
+	{
+		// Composed model point → clip space of the whole 640×480 screen (box clip × box half side + centre).
+		var transform = Advisor.ModelTransform( new Point2( 640, 480 ) );
+		System.Numerics.Vector3 Screen( System.Numerics.Vector3 point )
+		{
+			var box = System.Numerics.Vector3.Transform( point, transform );
+			return new( box.X * Advisor.BoxHalfSide + Advisor.Centre.X, box.Y * Advisor.BoxHalfSide + Advisor.Centre.Y, box.Z );
+		}
+		var origin = Screen( System.Numerics.Vector3.Zero );
+		Assert.AreEqual( 0.6f, origin.X, 1e-6f );
+		Assert.AreEqual( -0.6f, origin.Y, 1e-6f );
+		Assert.AreEqual( 0.2f, origin.Z, 1e-6f );
+		var unit = Screen( System.Numerics.Vector3.One ) - origin;
+		Assert.AreEqual( 0.015f * 0.75f, unit.X, 1e-6f );
+		Assert.AreEqual( 0.015f, unit.Y, 1e-6f );
+		Assert.AreEqual( 0.001f, unit.Z, 1e-6f );
 	}
 
 	[TestMethod]
@@ -62,8 +81,8 @@ public class AdvisorTests
 	public void ApproximationRegisterIsSequentialAndUnique()
 	{
 		// Traced rules leave the register; their numbers are not reused.
-		var retired = new[] { 1, 15, 21 };
-		CollectionAssert.AreEqual( Enumerable.Range( 1, 22 ).Except( retired ).Select( index => $"ADVISOR-{index:000}" ).ToArray(), Advisor.Approximations.Select( entry => entry.Id ).ToArray() );
+		var retired = new[] { 1, 3, 4, 15, 21 };
+		CollectionAssert.AreEqual( Enumerable.Range( 1, 24 ).Except( retired ).Select( index => $"ADVISOR-{index:000}" ).ToArray(), Advisor.Approximations.Select( entry => entry.Id ).ToArray() );
 	}
 
 	[DataTestMethod]
@@ -83,13 +102,6 @@ public class AdvisorTests
 		Assert.ThrowsException<ArgumentOutOfRangeException>( () => Advisor.ClipName( number ) );
 	}
 
-	[TestMethod]
-	public void ReversesTriangleWindingWithoutTouchingInput()
-	{
-		var indices = new uint[] { 0, 1, 2, 3, 4, 5 };
-		CollectionAssert.AreEqual( new uint[] { 0, 2, 1, 3, 5, 4 }, Advisor.ReverseWinding( indices ) );
-		CollectionAssert.AreEqual( new uint[] { 0, 1, 2, 3, 4, 5 }, indices );
-	}
 
 	[TestMethod]
 	public void SpeechPositionFollowsFramesTakenByTheSharedAudioOutput()
@@ -166,7 +178,7 @@ public class AdvisorTests
 		var eye = Bounds( "Left Eye" );
 		var mouth = Bounds( Advisor.ClosedMouth );
 		Assert.IsTrue( antenna.Min.Y > head.Min.Y && body.Max.Y < head.Min.Y + 1, "Y is up after composing the node hierarchy" );
-		Assert.IsTrue( eye.Max.Z < head.Min.Z && mouth.Min.Z < head.Min.Z, "the face is on the −Z side, towards the overlay camera" );
+		Assert.IsTrue( eye.Max.Z < head.Min.Z && mouth.Min.Z < head.Min.Z, "the face is on the −Z side, towards the viewer (nearer depth)" );
 		foreach ( var name in Advisor.Mouths.Skip( 1 ) )
 		{
 			var other = Bounds( name );
@@ -174,6 +186,17 @@ public class AdvisorTests
 		}
 		foreach ( var name in Advisor.BodyMeshes )
 			Assert.IsTrue( model.Meshes.Any( mesh => mesh.Name == name ), name );
+		// The whole model fits the box it is drawn in, on 4:3 and on wider screens.
+		foreach ( var output in new[] { new Point2( 640, 480 ), new Point2( 2560, 1080 ) } )
+		{
+			var transform = Advisor.ModelTransform( output );
+			foreach ( var mesh in model.Meshes )
+				foreach ( var vertex in Advisor.ConvertMesh( mesh, Advisor.NodeWorld( model, mesh.NodeIndex ) ) )
+				{
+					var box = NumericVector.Transform( vertex.Position.GetSystemVector3(), transform );
+					Assert.IsTrue( MathF.Abs( box.X ) < 1 && MathF.Abs( box.Y ) < 1 && box.Z > 0 && box.Z < 1, $"{mesh.Name} at {output.X}x{output.Y}: {box}" );
+				}
+		}
 	}
 
 	[TestMethod]

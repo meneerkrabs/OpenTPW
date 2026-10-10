@@ -190,6 +190,10 @@ public static class ServerProgram
 		app.MapGet( ApiRoutes.Server, () => Ok( new ServerInfo( options.ServerName, Version, ProtocolVersion, options.Message, options.AllowRegistration, !filter.IsEmpty,
 			ParkPackage.MaximumPackageBytes, Postcard.MaximumCardBytes, options.MaximumParksPerPlayer, options.MaximumVotesPerDay ) ) );
 
+		// Public like the server info: news is readable before logging in.
+		var news = new NewsFeed( options.DataDirectory );
+		app.MapGet( ApiRoutes.News, () => Ok( news.Read() ) );
+
 		app.MapPost( ApiRoutes.Accounts, Handler( context => Guarded( context, store, false, async _ =>
 		{
 			var credentials = await ReadJsonAsync<Credentials>( context.Request );

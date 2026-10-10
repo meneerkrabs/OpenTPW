@@ -200,6 +200,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		} );
 		var onlineShots = new (string Name, Action<UI.OnlineScreens> Show, string Screen)[]
 		{
+			("online-news.png", screens => screens.ShowNews(), "onlineNews"),
 			("online-find-parks.png", screens => screens.ShowFindParks(), "findParks"),
 			("online-send-postcard.png", screens => screens.ShowSendPostcard(), "sendPostcard"),
 			("online-outbox.png", screens => screens.ShowOutbox(), "outbox"),

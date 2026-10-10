@@ -89,6 +89,8 @@ public sealed class OnlineSession : IDisposable
 	public int Busy { get; private set; }
 	public IReadOnlyList<ParkSummary> Parks { get; private set; } = Array.Empty<ParkSummary>();
 	public IReadOnlyList<PostcardSummary> Inbox { get; private set; } = Array.Empty<PostcardSummary>();
+	/// <summary>News fetched from the current server; null before fetching or when the server has none.</summary>
+	public NewsInfo? News { get; private set; }
 	public List<string> ChatLines { get; } = new();
 	public string CurrentRoom { get; private set; } = ChatProtocol.LobbyRoom;
 	public bool IsLoggedIn => Client?.Session != null;
@@ -208,6 +210,7 @@ public sealed class OnlineSession : IDisposable
 		Client = null;
 		Parks = Array.Empty<ParkSummary>();
 		Inbox = Array.Empty<PostcardSummary>();
+		News = null;
 		CurrentRoom = ChatProtocol.LobbyRoom;
 		ChatLines.Clear();
 	}
@@ -236,6 +239,14 @@ public sealed class OnlineSession : IDisposable
 		var client = Require();
 		Run( () => work( client ) );
 	}
+
+	/// <summary>Fetches Game News and System News; no login needed.</summary>
+	public void FetchNews() => WithClient( async client =>
+	{
+		var news = await client.GetNewsAsync();
+		Post( () => News = news );
+		return news == null || (news.Game.Length == 0 && news.System.Length == 0) ? OnlineStrings.Get( OnlineLabel.NoNews ) : null;
+	} );
 
 	public void RefreshParks( string? search, string sort = "recent" ) => WithClient( async client =>
 	{

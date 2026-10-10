@@ -306,6 +306,30 @@ subtracted, so buying mystery items does not cost keys. This confirms the manual
 "one key for every third ticket" (REFERENCE-MANUAL.md). The starting value of
 `mExtraKeys` is not traced, so `ECON-040` (one starting key) stays an approximation.
 
+## Advisor drawing in the Windows executable (2026-10-10)
+
+`BIN:TPW-EXE` labels cite the decrypted Windows Sim Theme Park World v2.0 `tp.exe`
+(SHA-256 `5472f97b…1b805`, docs/COMPLETION-PLAN.md), analysed statically in Ghidra. The
+Mac application links the advisor's light, not its mesh, into the scene manager and
+leaves the mesh draw path unresolved; the Windows build has the engine linked in, so the
+whole path can be followed:
+
+- `0x00429BA0` sets up both advisor slots (stride 0xB0): identity model matrix with
+  translation (0.6, −0.6, 0.2), root node scaled by (0.01125, 0.001, 0.015), parallel light
+  (26.67, −26.67, 800). `0x0045BED0` sets model flag 0x200; the model is loaded with
+  flags 0x50120, whose 0x100 sets instance bit 8, so `0x004732A0` links the mesh into
+  scene layer 0x10 when an animation starts.
+- `0x0057A260` (SetLocalMatrix) stores m · diag(1, −1, 1, 1).
+- `0x0057A750` draws a mesh with local × camera-to-screen matrix Q, except with model flag
+  0x200, where only the local matrix is used. Q = view · projection · diag(2k, −2, 1, 1)
+  (`0x005783B0`); the transform stage (`0x00579250`, SIMD `0x005F4F81`) computes v · M with
+  no divide or viewport.
+
+So the advisor is placed in the screen space that follows Q, x right and y down. The scale
+k and the consumer of the transformed vertices are not traced; OpenTPW reads that space as
+−1..1 across the screen (`ADVISOR-023`), which puts the model in the bottom right at about a
+third of the screen height (docs/LIPS.md).
+
 ## See also
 
 [RIDE-WEAR.md](RIDE-WEAR.md): SAM schema records and slot layout, and the ride wear functions found with

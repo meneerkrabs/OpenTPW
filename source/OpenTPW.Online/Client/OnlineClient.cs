@@ -45,6 +45,19 @@ public sealed class OnlineClient : IDisposable
 
 	public Task<ServerInfo> GetServerInfoAsync( CancellationToken cancel = default ) => GetJsonAsync<ServerInfo>( ApiRoutes.Server, cancel );
 
+	/// <summary>The server's news, or null from a server without news (older OpenTPW servers).</summary>
+	public async Task<NewsInfo?> GetNewsAsync( CancellationToken cancel = default )
+	{
+		try
+		{
+			return await GetJsonAsync<NewsInfo>( ApiRoutes.News, cancel );
+		}
+		catch ( OnlineException exception ) when ( exception.Status == HttpStatusCode.NotFound )
+		{
+			return null;
+		}
+	}
+
 	public async Task RegisterAsync( string name, string password, CancellationToken cancel = default )
 	{
 		using var response = await SendAsync( HttpMethod.Post, ApiRoutes.Accounts, Json( new Credentials( name, password ) ), cancel, authenticated: false );

@@ -5,7 +5,7 @@ It does not connect to the original Theme Park World service and is not a recons
 of its network protocol. No service address is configured and no network request occurs
 until the player selects a server and an action in the online screens.
 
-The online screens support account registration/login, park export/publish/search/download,
+The online screens support the server's Game News and System News, account registration/login, park export/publish/search/download,
 voting, read-only visits, local postcard composition, sending the outbox, fetching the
 inbox, and chat. Chat commands use the selected original `CHAT_COMMANDS.str` words;
 original text is used where verified and supplementary labels cover the six supported
@@ -23,6 +23,7 @@ contents follow the original online screens mapped from the Mac binary in
 | Screen | Original counterpart (UI-MAP) | Original art |
 | --- | --- | --- |
 | Online World | Secondary menu, Go Online | `w_big`, `i_mail` (authored place) |
+| News | Online news panel: Game News and System News columns (UITEXT 267/268); the original's "News from ThemeParkWorld.com" title is replaced by News | `w_big` |
 | Online Login | Online login dialog: name and password, 16 characters each, Enter moves from name to password and submits | `w_med`, `b_login`, `f_text1` fields |
 | Find Parks | Find Parks dialog and Park details (creator, visits, votes, visited/voted) | `list_findprks`, `b_vote` |
 | Publish Park | Publish Park dialog: park name and description | `w_med` |
@@ -141,7 +142,7 @@ The package/protocol/server code owns tags 001–059. The game adapters own:
 | 064 | Chat line formatting |
 | 065 | BF4 chat overlay layout, colours and line count |
 | 066 | ImGui Online panel (developer starts only; players use the original-style screens) |
-| UI | Original-style online screens: window composition, places of code-positioned controls, text field art and caret, server address field, Inbox and Import screens |
+| UI | Original-style online screens: window composition, places of code-positioned controls, text field art and caret, server address field, Inbox and Import screens, the News window title |
 
 ## Approximation register
 

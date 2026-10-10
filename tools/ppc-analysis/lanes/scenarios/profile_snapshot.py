@@ -27,7 +27,9 @@ from the snapshot and caller-supplied runtime facts, never stored.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
+import re
 import struct
 import sys
 from typing import Callable
@@ -48,9 +50,12 @@ PLAYER_FIELDS = ('mEarnedGlobalTicket', 'mEarnedSecretTicket', 'mSpentTickets', 
 STRICT_REASONS = ('rejected-version', 'unknown-version', 'truncated', 'negative-count', 'duplicate-theme',
                   'nul-in-theme-name', 'duplicate-ride-id', 'trailing-bytes')
 ENVELOPE_SCHEMA = 'opentpw.reference.mac-gms-snapshot'
-ENVELOPE_VERSION = 1
-SOURCE = ('Feral Mac SimThemePark.data 04809cd4ccee5433c7fb0b7c93d32f6a7aa629c1849181c0b7906415e5e295f5, '
-          'static trace (docs/reverse/PPC-scenarios.md); not a PC format')
+ENVELOPE_VERSION = 2       # 1 carried 'source', which read as a claim about the bytes; refused now
+# Where the layout and read rules come from. It says nothing about the snapshot bytes, which are
+# unauthenticated: synthetic or caller-supplied, never checked against a real gms.dat.
+LAYOUT_SOURCE = ('layout-reference/1: gms.dat version-12 layout and read rules traced statically from Feral Mac '
+                 'SimThemePark.data 04809cd4ccee5433c7fb0b7c93d32f6a7aa629c1849181c0b7906415e5e295f5 '
+                 '(docs/reverse/PPC-scenarios.md); not a PC format; snapshot bytes unauthenticated')
 
 
 class StrictReject(ValueError):
@@ -163,6 +168,7 @@ def read_profile_snapshot(raw: bytes, policy: str) -> ProfileSnapshot:
     keys: set[bytes] = set()
     settings: list[tuple[str, bytes]] = []
     mystery: list[int] = []
+    rides: set[int] = set()                      # rideIds seen: linear repeat detection
     fields_read: list[str] = []
     issues: list[str] = []
     counts = {'theme': None, 'mystery': None}
@@ -254,10 +260,11 @@ def read_profile_snapshot(raw: bytes, policy: str) -> ProfileSnapshot:
         for _ in range(max(counts['mystery'], 0)):
             at('rideId')
             ride = c.u16()
-            if ride in mystery:
+            if ride in rides:
                 if strict:
                     reject('duplicate-ride-id', f'rideId {ride} repeats; the Mac writer iterates a set')
                 issues.append(f'rideId {ride} repeats; the Mac set insert ignores it (result unchecked)')
+            rides.add(ride)
             mystery.append(ride)
     except _Short:
         if strict:
@@ -333,7 +340,8 @@ def serialize_profile_snapshot(s: ProfileSnapshot) -> bytes:
 def to_envelope(s: ProfileSnapshot) -> dict:
     """JSON-safe reference envelope; bytes as hex, order preserved, derived values omitted."""
     return {
-        'schema': ENVELOPE_SCHEMA, 'envelope_version': ENVELOPE_VERSION, 'source': SOURCE, 'policy': s.policy,
+        'schema': ENVELOPE_SCHEMA, 'envelope_version': ENVELOPE_VERSION, 'layout_source': LAYOUT_SOURCE,
+        'policy': s.policy,
         'complete': s.complete, 'failed_at': s.failed_at, 'failed_offset': s.failed_offset,
         'version': s.version,
         'player': {'mEarnedGlobalTicket': list(s.global_tickets), 'mEarnedSecretTicket': list(s.secret_tickets),
@@ -352,30 +360,178 @@ def to_envelope(s: ProfileSnapshot) -> dict:
     }
 
 
+_TOP = ('schema', 'envelope_version', 'layout_source', 'policy', 'complete', 'failed_at', 'failed_offset', 'version',
+        'player', 'fields_read', 'theme_count', 'themes', 'settings', 'mystery_count', 'mystery', 'trailing_hex',
+        'issues')
+_THEME = ('name_hex', 'mEarnedLocalTicket', 'mAward_mAwardScore', 'mSignNameA_mSignNameB', 'mNameChanged',
+          'mAllResearchCompleted')
+# Read steps in file order; the three theme steps share one stage.
+_STAGE = {'version': 0, **{n: 1 + i for i, n in enumerate(PLAYER_FIELDS)}, 'theme count': 8,
+          'theme name': 9, 'theme record': 9, 'duplicate theme': 9,
+          **{n: 10 + i for i, n in enumerate(SETTING_NAMES)}, 'mystery count': 21, 'rideId': 22}
+_DONE = 23
+_HEX = re.compile(r'(?:[0-9a-f]{2})*')
+
+
+def _fields(obj, keys: tuple, what: str) -> dict:
+    _check(type(obj) is dict, f'{what} must be an object')
+    _check(all(type(k) is str for k in obj), f'{what} keys must be strings')
+    missing, unknown = [k for k in keys if k not in obj], sorted(set(obj) - set(keys))
+    _check(not missing, f'{what} lacks {missing}')
+    _check(not unknown, f'{what} has unknown fields {unknown}')
+    return obj
+
+
+def _list(value, what: str, length: int | None = None) -> list:
+    _check(type(value) is list, f'{what} must be a list')
+    _check(length is None or len(value) == length, f'{what} must hold {length} entries, got {len(value)}')
+    return value
+
+
+def _hex(value, what: str) -> bytes:
+    _check(type(value) is str and _HEX.fullmatch(value) is not None, f'{what} must be lowercase hex pairs')
+    return bytes.fromhex(value)
+
+
+def _opt(value, check, what: str):
+    return None if value is None else check(value, what)
+
+
+def _theme_from(t, i: int) -> ThemeSnapshot:
+    what = f'themes[{i}]'
+    _fields(t, _THEME, what)
+    pairs = []
+    for key, n, widths in (('mAward_mAwardScore', 4, (8, None)), ('mSignNameA_mSignNameB', 33, (16, 16))):
+        out = []
+        for j, pair in enumerate(_list(t[key], f'{what}.{key}', n)):
+            a, b = _list(pair, f'{what}.{key}[{j}]', 2)
+            out.append((_u(a, widths[0], f'{what}.{key}[{j}][0]'),
+                        _s32(b, f'{what}.{key}[{j}][1]') if widths[1] is None else
+                        _u(b, widths[1], f'{what}.{key}[{j}][1]')))
+        pairs.append(tuple(out))
+    return ThemeSnapshot(
+        name=_hex(t['name_hex'], f'{what}.name_hex'),
+        local_tickets=tuple(_u(v, 8, f'{what}.mEarnedLocalTicket') for v in
+                            _list(t['mEarnedLocalTicket'], f'{what}.mEarnedLocalTicket', 6)),
+        awards=pairs[0], sign_names=pairs[1], name_changed=_u(t['mNameChanged'], 8, f'{what}.mNameChanged'),
+        all_research_completed=_u(t['mAllResearchCompleted'], 8, f'{what}.mAllResearchCompleted'))
+
+
 def from_envelope(env: dict) -> ProfileSnapshot:
-    """Inverse of to_envelope; unknown schema or envelope versions are refused, not guessed."""
-    _check(isinstance(env, dict) and env.get('schema') == ENVELOPE_SCHEMA, f'unknown schema {env.get("schema")!r}')
-    _check(env.get('envelope_version') == ENVELOPE_VERSION,
-           f'unknown envelope_version {env.get("envelope_version")!r}')
-    _check(env.get('policy') in POLICIES, 'policy')
-    p = env['player']
-    _check(set(p) == {'mEarnedGlobalTicket', 'mEarnedSecretTicket', *PLAYER_FIELDS[2:]}, 'player members')
-    themes = tuple(ThemeSnapshot(
-        name=bytes.fromhex(t['name_hex']), local_tickets=tuple(t['mEarnedLocalTicket']),
-        awards=tuple(tuple(x) for x in t['mAward_mAwardScore']),
-        sign_names=tuple(tuple(x) for x in t['mSignNameA_mSignNameB']),
-        name_changed=t['mNameChanged'], all_research_completed=t['mAllResearchCompleted']) for t in env['themes'])
-    settings = tuple((name, bytes.fromhex(h)) for name, h in env['settings'])
-    _check(tuple(n for n, _ in settings) == SETTING_NAMES[:len(settings)], 'settings order')
-    return ProfileSnapshot(
-        policy=env['policy'], version=env['version'], global_tickets=tuple(p['mEarnedGlobalTicket']),
-        secret_tickets=tuple(p['mEarnedSecretTicket']), spent_tickets=p['mSpentTickets'],
-        extra_keys=p['mExtraKeys'], easy_mode_user=p['mEasyModeUser'], swear_filter_on=p['mSwearFilterOn'],
-        first_time_player=p['mFirstTimePlayer'], theme_count=env['theme_count'], themes=themes,
-        settings=settings, mystery_count=env['mystery_count'], mystery=tuple(env['mystery']),
-        complete=env['complete'], failed_at=env['failed_at'], failed_offset=env['failed_offset'],
-        fields_read=tuple(env['fields_read']), trailing=bytes.fromhex(env['trailing_hex']),
-        issues=tuple(env['issues']))
+    """Inverse of to_envelope. Every field is checked for presence, type and range, unknown fields and
+    schemas are refused, and the record must be one the named policy's read could have produced; any
+    failure is a ValueError raised before a snapshot exists. A complete record is re-read from its own
+    bytes under its policy and must come back equal. A partial record is checked stage by stage (members
+    after the failing step at their reset values, containers no longer than their counts, no repeated
+    theme keys); its failed_offset and issues cannot be re-derived without the bytes and are taken as given."""
+    _check(type(env) is dict, 'envelope must be an object')
+    _check(env.get('schema') == ENVELOPE_SCHEMA, f'unknown schema {env.get("schema")!r}')
+    version_field = env.get('envelope_version')
+    _check(type(version_field) is int and version_field == ENVELOPE_VERSION,
+           f'unknown envelope_version {version_field!r}')
+    _fields(env, _TOP, 'envelope')
+    _check(env['layout_source'] == LAYOUT_SOURCE, 'unknown layout_source')
+    policy = env['policy']
+    _check(type(policy) is str and policy in POLICIES, f'policy must be one of {POLICIES}')
+    complete = env['complete']
+    _check(type(complete) is bool, 'complete must be a bool')
+    failed_at, failed_offset = env['failed_at'], env['failed_offset']
+    if complete:
+        _check(failed_at is None and failed_offset is None, 'a complete record has no failure')
+        stage = _DONE
+    else:
+        _check(type(failed_at) is str and failed_at in _STAGE, f'unknown failed_at {failed_at!r}')
+        _check(type(failed_offset) is int and failed_offset >= 0, 'failed_offset must be a non-negative int')
+        stage = _STAGE[failed_at]
+    version = _opt(env['version'], lambda v, w: _u(v, 32, w), 'version')
+    if stage == 0:
+        _check(version is None or version < MIN_VERSION, 'a read failing at the version holds none or one < 12')
+    else:
+        _check(version is not None and version >= MIN_VERSION, 'a read past the version holds one >= 12')
+
+    p = _fields(env['player'], PLAYER_FIELDS, 'player')
+    player = {}
+    for i, name in enumerate(PLAYER_FIELDS):
+        if name in ('mEarnedGlobalTicket', 'mEarnedSecretTicket'):
+            value = tuple(_u(v, 8, name) for v in _list(p[name], name, len(RESET[name])))
+            reset = tuple(RESET[name])
+        else:
+            value = _s32(p[name], name) if name in ('mSpentTickets', 'mExtraKeys') else _u(p[name], 8, name)
+            reset = RESET[name]
+        # The failing member may hold the bytes a short read delivered (see short_import); later ones reset.
+        _check(stage >= 1 + i or value == reset, f'{name} was not read, so it must hold its reset value')
+        player[name] = value
+    read_in_full = min(max(stage - 1, 0), len(PLAYER_FIELDS))
+    fields_read = tuple(_list(env['fields_read'], 'fields_read'))
+    _check(fields_read == PLAYER_FIELDS[:read_in_full], 'fields_read does not match the failing step')
+
+    theme_count = _opt(env['theme_count'], _s32, 'theme_count')
+    _check((theme_count is None) == (stage <= 8), 'theme_count is present exactly when it was read')
+    themes = tuple(_theme_from(t, i) for i, t in enumerate(_list(env['themes'], 'themes')))
+    wanted = max(theme_count or 0, 0)
+    _check(len(themes) == wanted if stage > 9 else len(themes) < wanted if stage == 9 else not themes,
+           f'{len(themes)} themes do not fit theme_count {theme_count} at this step')
+    keys: set[bytes] = set()
+    for t in themes:
+        _check(t.map_key not in keys, f'theme key {t.map_key!r} repeats; the Mac map never holds it twice')
+        keys.add(t.map_key)
+
+    settings = []
+    for i, entry in enumerate(_list(env['settings'], 'settings')):
+        name, value = _list(entry, f'settings[{i}]', 2)
+        _check(i < len(SETTING_NAMES) and name == SETTING_NAMES[i], f'settings[{i}] out of order')
+        raw = _hex(value, f'settings[{i}]')
+        _check(len(raw) == SETTING_WIDTH[name], f'{name} width')
+        settings.append((name, raw))
+    _check(len(settings) == min(max(stage - 10, 0), len(SETTING_NAMES)), 'settings do not match the failing step')
+
+    mystery_count = _opt(env['mystery_count'], _s32, 'mystery_count')
+    _check((mystery_count is None) == (stage <= 21), 'mystery_count is present exactly when it was read')
+    mystery = tuple(_u(r, 16, 'rideId') for r in _list(env['mystery'], 'mystery'))
+    wanted = max(mystery_count or 0, 0)
+    _check(len(mystery) == wanted if stage == _DONE else len(mystery) < wanted if stage == 22 else not mystery,
+           f'{len(mystery)} rideIds do not fit mystery_count {mystery_count} at this step')
+    trailing = _hex(env['trailing_hex'], 'trailing_hex')
+    _check(complete or not trailing, 'a partial record holds no trailing bytes')
+    issues = tuple(_list(env['issues'], 'issues'))
+    _check(all(type(i) is str for i in issues), 'issues must be strings')
+
+    s = ProfileSnapshot(
+        policy=policy, version=version, global_tickets=player['mEarnedGlobalTicket'],
+        secret_tickets=player['mEarnedSecretTicket'], spent_tickets=player['mSpentTickets'],
+        extra_keys=player['mExtraKeys'], easy_mode_user=player['mEasyModeUser'],
+        swear_filter_on=player['mSwearFilterOn'], first_time_player=player['mFirstTimePlayer'],
+        theme_count=theme_count, themes=themes, settings=tuple(settings), mystery_count=mystery_count,
+        mystery=mystery, complete=complete, failed_at=failed_at, failed_offset=failed_offset,
+        fields_read=fields_read, trailing=trailing, issues=issues)
+    if not complete:
+        _check(policy == 'mac-partial', 'strict-host never yields a partial record')
+        return s
+    try:
+        again = read_profile_snapshot(serialize_profile_snapshot(s), policy)
+    except StrictReject as exc:
+        raise ValueError(f'record is not one a strict-host read accepts: {exc.reason}') from None
+    _check(again == s, f'record is not what a {policy} read of its own bytes produces')
+    return s
+
+
+def loads_envelope(text: str | bytes) -> ProfileSnapshot:
+    """Parse JSON text and decode it with from_envelope. Repeated object member names, which json.loads
+    would silently collapse to the last value, are refused, as are NaN and the infinities."""
+    def pairs(items):
+        out = {}
+        for k, v in items:
+            _check(k not in out, f'repeated JSON member {k!r}')
+            out[k] = v
+        return out
+
+    def constant(name):
+        raise ValueError(f'JSON constant {name} is not allowed')
+    try:
+        env = json.loads(text, object_pairs_hook=pairs, parse_constant=constant)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f'not JSON: {exc}') from None
+    return from_envelope(env)
 
 
 # -- derived values (computed, never stored) --------------------------------------------------------

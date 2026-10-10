@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import struct
+import time
 import unittest
 from unittest import mock
 
@@ -285,8 +286,9 @@ class CycleTests(unittest.TestCase):
 
     def test_envelope_refuses_unknown_versions(self):
         env = snap.to_envelope(read(gms()))
-        for key, value in (('schema', 'other'), ('envelope_version', 2)):
-            with self.assertRaises(ValueError):
+        for key, value in (('schema', 'other'), ('envelope_version', 1), ('envelope_version', 3),
+                           ('envelope_version', '2'), ('envelope_version', 2.0), ('envelope_version', True)):
+            with self.subTest(key=key, value=value), self.assertRaises(ValueError):
                 snap.from_envelope({**env, key: value})
 
     def test_partial_and_malformed_snapshots_are_not_serialized(self):
@@ -299,6 +301,147 @@ class CycleTests(unittest.TestCase):
             with self.subTest(change=list(change)):
                 with self.assertRaises(ValueError):
                     snap.serialize_profile_snapshot(dataclasses.replace(s, **change))
+
+
+class EnvelopeValidationTests(unittest.TestCase):
+    """Every bad envelope is a ValueError raised before a snapshot exists (no KeyError/TypeError)."""
+
+    def setUp(self):
+        self.env = json.loads(json.dumps(snap.to_envelope(read(gms()))))
+
+    def refused(self, env, msg=None):
+        with self.assertRaises(ValueError) as cm:
+            snap.from_envelope(env)
+        self.assertNotIsInstance(cm.exception, (KeyError, TypeError))
+        if msg:
+            self.assertIn(msg, str(cm.exception))
+
+    def edited(self, edit):
+        env = json.loads(json.dumps(self.env))
+        edit(env)
+        return env
+
+    def test_missing_fields_are_value_errors(self):
+        for key in self.env:
+            if key in ('schema', 'envelope_version'):
+                continue
+            with self.subTest(key=key):
+                self.refused({k: v for k, v in self.env.items() if k != key}, 'lacks')
+        for key in self.env['player']:
+            with self.subTest(player=key):
+                self.refused(self.edited(lambda e: e['player'].pop(key)), 'lacks')
+        for key in self.env['themes'][0]:
+            with self.subTest(theme=key):
+                self.refused(self.edited(lambda e: e['themes'][0].pop(key)), 'lacks')
+
+    def test_unknown_fields_are_refused(self):
+        self.refused({**self.env, 'extra': 1}, 'unknown fields')
+        self.refused(self.edited(lambda e: e['player'].update(mKeys=3)), 'unknown fields')
+        self.refused(self.edited(lambda e: e['themes'][0].update(keys=3)), 'unknown fields')
+
+    def test_wrong_types_and_ranges_are_refused(self):
+        for path, value in ((('version',), '12'), (('version',), 12.0), (('version',), 2 ** 32), (('version',), -1),
+                            (('complete',), 'true'), (('complete',), 1), (('policy',), None), (('policy',), 'mac'),
+                            (('player', 'mEasyModeUser'), 256), (('player', 'mEasyModeUser'), True),
+                            (('player', 'mSpentTickets'), 2 ** 31), (('player', 'mEarnedGlobalTicket'), [1, 0, 2]),
+                            (('player', 'mEarnedSecretTicket'), 'ab'), (('theme_count',), '3'),
+                            (('mystery',), [7, '300']), (('mystery',), [7, -1]), (('mystery',), [7, 65536]),
+                            (('trailing_hex',), 'ABCD'), (('trailing_hex',), 'abc'), (('issues',), [1]),
+                            (('settings',), {}), (('themes',), None), (('fields_read',), 'mExtraKeys'),
+                            (('failed_offset',), 3)):
+            def edit(e, path=path, value=value):
+                target = e
+                for key in path[:-1]:
+                    target = target[key]
+                target[path[-1]] = value
+            with self.subTest(path=path, value=value):
+                self.refused(self.edited(edit))
+        self.refused(self.edited(lambda e: e['themes'][0].update(name_hex='JUNGLE')))
+        self.refused(self.edited(lambda e: e['themes'][0]['mAward_mAwardScore'][0].append(1)))
+        self.refused(self.edited(lambda e: e['themes'][0]['mSignNameA_mSignNameB'][0].__setitem__(1, 65536)))
+        self.refused(self.edited(lambda e: e['settings'][0].__setitem__(1, '00')), 'width')
+        self.refused(['not', 'an', 'object'])
+        self.refused({**self.env, 'envelope_version': None})
+
+    def test_records_no_read_could_produce_are_refused(self):
+        self.refused(self.edited(lambda e: e['mystery'].append(9)), 'mystery_count')
+        self.refused(self.edited(lambda e: e.update(theme_count=4)), 'theme_count')
+        self.refused(self.edited(lambda e: e['issues'].append('made up')), 'own bytes')
+        flipped = snap.from_envelope(self.edited(lambda e: e['themes'].reverse()))   # any file order is a file
+        self.assertEqual([t.name for t in flipped.themes], [b'space', b'halloween', b'jungle'])
+        self.refused(self.edited(lambda e: e['themes'].__setitem__(1, e['themes'][0])), 'repeats')
+        self.refused(self.edited(lambda e: e.update(policy='strict-host', trailing_hex='00')), 'strict-host')
+        partial = snap.to_envelope(read(gms()[:THEMES + 50]))
+        self.assertEqual(snap.from_envelope(partial).failed_at, 'theme record')
+        self.refused({**partial, 'policy': 'strict-host'}, 'partial')
+        self.refused({**partial, 'trailing_hex': '00'})
+        self.refused({**partial, 'failed_at': 'rideId'})
+        self.refused({**partial, 'settings': [['MusicVolume', '0000000000000000']]})
+        cut = snap.to_envelope(read(gms()[:SPENT + 2]))
+        self.assertEqual(cut['failed_at'], 'mSpentTickets')
+        self.assertEqual(snap.from_envelope(cut), read(gms()[:SPENT + 2]))   # short member keeps its bytes
+        self.refused({**cut, 'player': {**cut['player'], 'mExtraKeys': 1}}, 'reset')
+
+    def test_every_partial_read_cycles_through_json(self):
+        for raw in CycleTests.CASES + (gms(themes=((b'a', (0,) * 6), (b'a', (0,) * 6))),):
+            for n in range(len(raw) + 1):
+                s = read(raw[:n])
+                with self.subTest(size=len(raw), cut=n):
+                    self.assertEqual(snap.loads_envelope(json.dumps(snap.to_envelope(s))), s)
+
+    def test_strict_host_envelope_cycles_and_is_rechecked(self):
+        s = read(gms(version=12), 'strict-host')
+        env = json.loads(json.dumps(snap.to_envelope(s)))
+        self.assertEqual(snap.from_envelope(env), s)
+        self.refused({**env, 'version': 13}, 'strict-host')          # strict refuses unknown versions
+        mac = json.loads(json.dumps(snap.to_envelope(read(gms(version=13)))))
+        self.assertEqual(snap.from_envelope(mac).version, 13)                # the Mac's unsigned >= 12 gate
+        self.refused({**mac, 'policy': 'strict-host'}, 'unknown-version')
+        self.refused({**mac, 'issues': []}, 'own bytes')
+
+    def test_layout_source_names_the_layout_not_the_bytes(self):
+        self.assertNotIn('source', self.env)
+        self.assertEqual(self.env['envelope_version'], 2)
+        self.assertTrue(self.env['layout_source'].startswith('layout-reference/1: '))
+        self.assertIn('snapshot bytes unauthenticated', self.env['layout_source'])
+        self.refused({**self.env, 'layout_source': 'Feral Mac gms.dat captured from a real install'}, 'layout_source')
+        legacy = {k: v for k, v in self.env.items() if k != 'layout_source'}
+        self.refused({**legacy, 'envelope_version': 1, 'source': snap.LAYOUT_SOURCE}, 'envelope_version')
+        self.refused({**legacy, 'source': snap.LAYOUT_SOURCE})
+
+    def test_json_text_with_repeated_members_or_constants_is_refused(self):
+        text = json.dumps(self.env)
+        self.assertEqual(snap.loads_envelope(text), read(gms()))
+        self.assertEqual(snap.loads_envelope(text.encode()), read(gms()))
+        for bad in (text[:-1] + ', "policy": "strict-host"}', text.replace('"version": 12', '"version": NaN'),
+                    text[:-1], '[]'):
+            with self.subTest(bad=bad[-40:]), self.assertRaises(ValueError):
+                snap.loads_envelope(bad)
+
+
+class LargeMysteryTests(unittest.TestCase):
+    """Repeat detection is linear: the quadratic list scan took ~1.1 s for 20k rideIds."""
+
+    def test_large_repeated_set_keeps_order_and_policy_split(self):
+        rides = tuple(i % 20000 for i in range(60000))
+        raw = gms(mystery=rides)
+        start = time.perf_counter()
+        s = read(raw)
+        self.assertLess(time.perf_counter() - start, 1.0)
+        self.assertEqual((s.complete, s.mystery, len(s.mystery_set), len(s.issues)), (True, rides, 20000, 40000))
+        self.assertEqual(snap.serialize_profile_snapshot(s), raw)
+        self.assertEqual(s.issues[0], 'rideId 0 repeats; the Mac set insert ignores it (result unchecked)')
+        with self.assertRaises(snap.StrictReject) as cm:
+            read(raw, 'strict-host')
+        self.assertEqual(cm.exception.reason, 'duplicate-ride-id')
+        self.assertIn('rideId 0 repeats', str(cm.exception))
+
+    def test_unique_large_set_passes_strict(self):
+        rides = tuple(range(65535, 5535, -1))
+        start = time.perf_counter()
+        s = read(gms(mystery=rides), 'strict-host')
+        self.assertLess(time.perf_counter() - start, 1.0)
+        self.assertEqual((s.mystery, s.issues), (rides, ()))
 
 
 class KeyCounterTests(unittest.TestCase):

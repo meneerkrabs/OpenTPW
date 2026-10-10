@@ -741,9 +741,10 @@ Module contents (synthetic bytes only):
   iterates the theme map and the mystery set in ascending order (now traced,
   `mac_writer_order`) and always writes version 12.
 - `to_envelope`/`from_envelope`: JSON envelope
-  `opentpw.reference.mac-gms-snapshot`, envelope version 1, bytes as hex,
-  order kept, source identity included; unknown schema or envelope versions
-  are refused. Derived values are not stored.
+  `opentpw.reference.mac-gms-snapshot`, bytes as hex, order kept; unknown
+  schema or envelope versions are refused. Derived values are not stored.
+  Envelope version 2 and its strict validation are described under *Envelope
+  validation* below.
 - Derived on demand: `selection_game_type(snapshot, current_game_type)` (1 stays
   1, else 2 iff the mode byte is non-zero), `key_counters(snapshot, usable)`
   (reuses `earned_tickets`/`mac_keys`/`mac_available_tickets`; `usable` over
@@ -827,6 +828,54 @@ bytes over the earlier big-endian bytes, unswapped), qualified by the `FSRead`
 dependency above, and `mac-partial` records the delivered byte count as an
 issue. `strict-host` is unchanged (`truncated`). A partly read 8-byte setting is
 reported as an issue only.
+
+### Envelope validation and provenance (reference tooling only)
+
+Eighth follow-up (`profile_snapshot.py`; `test_profile_snapshot.py`, 10 more
+synthetic cases, 52 in total with 5 corpus cases). No new binary facts and no new
+instruction checks (still 2090). Everything here is about the Python reference,
+not the Mac or PC game.
+
+- **Envelope version 2.** Version 1 had a `source` field naming the Mac
+  executable. That read as a claim about where the snapshot bytes came from.
+  Version 2 replaces it with `layout_source`, a versioned layout reference
+  (`layout-reference/1: …`). It names where the layout and read rules were traced
+  and states that the snapshot bytes are unauthenticated. Every snapshot in this
+  lane is synthetic: no real `gms.dat` has been read. Version 1 envelopes, and
+  envelopes that still carry `source`, are refused rather than migrated.
+- **`from_envelope` validation.** Before a snapshot is built it checks every field
+  for presence, exact JSON type (no string, float or bool where an integer
+  belongs), width range (u8/u16/u32/i32, list lengths, lowercase hex pairs,
+  setting widths) and unknown names, at the top level, in `player` and in each
+  theme. Any failure is a `ValueError`, never a `KeyError` or `TypeError`. It then
+  checks that the record is one the named policy could have produced:
+  - a complete record is serialized and read again under its own policy, and the
+    result must match. This catches repeated theme keys, counts that disagree with
+    their containers, invented or missing issue lines, and a `strict-host` record
+    holding a version above 12 or trailing bytes;
+  - a partial record must be `mac-partial`. Its `failed_at` must name a read step,
+    and the members after that step must hold their reset values. The failing
+    member itself may hold short-read bytes. `fields_read`, settings and
+    container sizes must fit the step, and it must have no trailing bytes. Its
+    `failed_offset` and issue text cannot be derived again without the bytes, so
+    they are accepted as given.
+- **`loads_envelope(text)`** parses JSON and refuses repeated object member names
+  (which `json.loads` would quietly reduce to the last value) and
+  `NaN`/`Infinity`.
+- **Repeated `rideId`s** are found with a set, in linear time. The earlier list
+  scan was quadratic: about 1.1 s for 20k ids. File order, the `mac-partial`
+  issue per repeat, the `strict-host` `duplicate-ride-id` reject at the first
+  repeat, and byte-identical rewrite are unchanged. A 60 000-id file with 40 000
+  repeats reads in well under the 1 s the test allows.
+
+Policies stay explicit (no default). `serialize_profile_snapshot` still refuses
+partial records and still writes in file order, not the native sorted order. The
+Mac's unsigned `version >= 12` acceptance and the `strict-host` `unknown-version`
+reject still differ on purpose. The tests are synthetic. They cover every
+truncation of seven fixtures cycling through JSON text, plus type, range,
+missing-field, unknown-field, provenance and consistency refusals and the large
+repeat sets. They show that the reference is consistent with itself. They do not
+show that any real `gms.dat` matches.
 
 ### Instant Action availability (high for the gates)
 

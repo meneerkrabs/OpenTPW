@@ -351,3 +351,134 @@ Nothing from the game data or binaries is committed. Scratch work used
 entries were created at the start by mistake; they were removed and pruned
 before any build ran. `git merge-tree --write-tree` wrote unreferenced objects
 to the shared object store. No refs were created.
+
+# Round 2: fixes d620fb7 and the merge onto main 8a88379
+
+October 10, 2026. Review of the rebased stack `b27babc` → `89f2db9` → `e4b256c`
+(this review's round 1) → `d620fb7` (fixes) on main `12992e8`, and of its merge
+onto the current main `8a88379` (the M3 gate evaluator). Scratch clones under
+/private/tmp (`git clone --shared`; no worktrees). SDK 10 at
+`/Users/sander/.local/share/opentpw-dotnet10/dotnet`, Release, built and run from
+the non-symlinked `/private/tmp` path. Claims are bounded to .NET 10 on one arm64
+Mac and to the code named. Nothing from the original was executed.
+
+## Round 2 merge blockers
+
+**None.** `d620fb7` merges onto `8a88379` with the two expected conflicts
+(round 1's B1) and needs the doc updates of round 1's B2. With the resolution
+below, the build, both test runs, the register, the evidence runner, the gate,
+CRLF and whitespace all pass. One correction to the author's Directive: the
+run-2 raw guest hash on `8a88379` is **00E874A92846742F**, not 634BC7756C8C6326
+(that value belonged to the earlier gate base `ea09cda`), and the totals are
+**13 / 2 / 1**, not 14 / 1 / 1, because main's gate already had 12 / 3 / 1.
+
+### Exact resolution for the merge onto 8a88379
+
+1. `git merge --no-ff d620fb7` (or the review head on top of it) on `8a88379`.
+   Conflicts: `tools/fidelity_register.py`, `docs/FIDELITY-REGISTER.md`. Every
+   other file auto-merges (`Level.Objects.cs` and `ParkObjects.cs` included).
+2. `tools/fidelity_register.py` `REGISTERS`: keep both lines, DET then GATE:
+   `"DET": "source/OpenTPW/World/DeterminismApproximations.cs",`
+   `"GATE": "source/OpenTPW/Client/M3GateApproximations.cs",`.
+   In `render()`, change `from the seven configured C# registers` to `from the
+   eight configured C# registers` (git keeps "seven" from both sides).
+3. `docs/FIDELITY-REGISTER.md`: take either side, then
+   `python3 tools/fidelity_register.py --write` and `--check`:
+   **157 unresolved unique APPROX IDs** (173 APPROX, 69 EXT, 70 DATA, 81 BIN;
+   DET 6, GATE 2).
+4. `docs/M3-GATE.md`:
+   - "Hashes" paragraph: the attraction ids are allocated per park by the park's
+     `RideScriptWorld`, so a second scenario gets the same ids (4 5 6 in both
+     runs), instead of "a process-wide counter in `OriginalObjectRuntime` …
+     (run 1: 4 5 6; run 2: 10 11 12)".
+   - Baseline row: `| determinism.same-seed | PASS | raw guest hash matches
+     in-process (00E874A92846742F both runs; attraction ids 4 5 6 in both,
+     allocated per park); gate hash matches (C4D8D348D84FF042); no divergent
+     minute |`.
+   - Totals: `Totals: 13 pass, 2 fail, 1 unresolved; **exit code 1**.` The
+     `--no-determinism` sentence stays (12 / 2 / 2, exit 1, re-run).
+   - "Which gameplay area the failures point at": rewrite the determinism
+     bullet as resolved (it failed while `nextAttractionId` was static; run 2
+     had ids 10 11 12 and raw hash F9AB11FDA4D90B0F; ids are now per park).
+5. `docs/DETERMINISM.md` "For the M3 gate": drop ", not on main yet" and say
+   the row passes.
+6. `source/OpenTPW/Client/M3Gate.cs` `ComputeGateHash` summary: "(the bridge
+   ids come from a process-wide counter)" is stale; say the ids are allocated
+   per park and the placement index only keeps the gate hash independent of
+   their allocation. Comment only.
+
+`test_det_v2.MergedGateDocs` checks steps 2, 4 (row and totals), 5 and 6 when
+docs/M3-GATE.md is present.
+
+## Round 2 verdicts
+
+| Check | Verdict |
+| --- | --- |
+| F1 sound seed out of the hash | **Fixed.** `WorldStateSources` has no sound field, `SchemaVersion` is 2, `ParkWorldStreams.ComputeStateHash` passes no sound. Mutation "sound seed XORed back into the hash" fails `SoundDrawsDoNotChangeTheCanonicalHash` |
+| F2 save/load tests bite | **Fixed.** Each mutation below fails at least one test; a LoadPark that skips the stream restore fails only the asset-gated test, as the author states |
+| F3 guard | **Fixed for every round-1 form** (target-typed `new()`, `Level.Objects.cs`, static counters of any width, `GetHashCode`/`HashCode`). Inserted into real scanned files, each fails the guard. New known gaps, none present in the code today: N1 |
+| Presentation exclusion list | **Hides no simulation code.** In the 11 excluded files the guard finds only `Advisor.cs` `new AdvisorMouth( new Random() )` (mouth mesh only; BIN 0x10007434 uses `rand()` there) and four camera tuning properties in `LobbyCameraMode.cs`/`ParkCameraMode.cs`. None of them names `RideScriptWorld`, `WorldSeed`, `GuestSimulation` or `ParkWorldStreams` |
+| Rebase resolutions (`89f2db9` vs `d1813eb`, `git range-diff`) | **Both sides kept.** `Level(…, ParkStartKind start, WorldSeed? seed)` passes `start` and `Seed` to `ParkEconomyRuntime.ForOriginalLevel( OriginalPark, start, Seed )`; `ForOriginalLevel` keeps main's `ParkStart.Resolve`/`ImportShippedSave`/`SeedResearcherStandIn` flow and adds only the economy seed; `Load` keeps main's mode check and `ForwardEvent` and returns the world streams; `GameFlow` keeps `start:` and `StartKind = level.Park?.Start.Kind` and adds the sound seed to `EnterPark`. `b27babc` and `e4b256c` are identical to `471e4bb` and `68e80d2` |
+| Pinned hash change in `89f2db9` | **Justified, reproduced.** `89f2db9` with the `SeedResearcherStandIn` key left out of the economy digest's canonical JSON gives exactly `0x86B5046D497B900C`. `d620fb7` with schema 1 and the two empty sound fields restored gives exactly `0xB55E94284EBFE91B`. So the chain old → `89f2db9` → `d620fb7` has no other cause |
+| `ParkWorldStreams` extraction | **Behaviour-preserving.** Capture, restore, save and load bodies are the old `Level` bodies with `Objects.ScriptWorld` → `Scripts` and `GameAudio.Events` → `Sound`; `Level.Streams` reads both at call time as before. The only intended change is the hash (F1). `Level.SavePark`/`LoadPark` still have no caller outside tests |
+| Merge onto `8a88379` | **Merge-ready** with the resolution above |
+| `--m3-gate` on the merge | **13 pass / 2 fail / 1 unresolved, exit 1, twice**; reports identical apart from `wallSeconds`. Every row except `determinism.same-seed` has the same verdict and evidence as main's run on `8a88379` (12 / 3 / 1, gate hash C4D8D348D84FF042, also run twice here) |
+
+### C# mutations (fix head, rebuilt each time; `DeterminismTests` + `DeterminismAssetTests`)
+
+| Mutation | Without assets | With assets |
+| --- | --- | --- |
+| guest restore no-op (`ParkWorldStreams`) | fails `LoadRestoresEveryStream…` | + `ParkSaveAndLoadThroughTheLevelPath…` |
+| script restore no-op | fails `LoadRestores…`, `SaveAndLoadMidRun…` | + level-path test |
+| sound reseed no-op | fails `LoadRestores…` | + level-path test |
+| `LoadPark` skips the stream restore | **passes** | fails level-path test |
+| sound seed back in the hash | fails `SoundDrawsDoNotChange…` | same |
+| capture takes the sound seed from `WorldSeed` | fails `LoadRestores…` | + level-path test |
+| `System.Random r = new();` in `Level.Objects.cs` | fails guard | same |
+| `private static long counter;` in `WorldSeed.cs` | fails guard | same |
+| `s.GetHashCode()` in `ParkWorldStreams.cs` | fails guard | same |
+| `public static int Next { get; set; }` in `Level.cs` | fails guard | same |
+
+Baseline without mutation: 12 pass / 2 skip without assets, 14 / 0 with.
+
+### N1. Guard forms still not caught (not blocking)
+
+`ForbiddenInSimulation` at `d620fb7` does not match: a static `Random` field,
+seeded or not, `readonly` or not (one stream shared by every park in the
+process); mutable static collections and arrays (`static List<int>`,
+`static int[]`); static enum or struct fields (`static GameSpeed speed;`); any
+line that contains the word `readonly` elsewhere, e.g. in a trailing comment;
+`RandomNumberGenerator`; `DateTime.Today`. A search of the scanned files at
+`d620fb7` finds none of these in use (the only static members are get-only or
+`readonly` tables, and the only `Guid.NewGuid` is `ParkSaveFile`'s temporary
+file name). DETERMINISM.md lists only `Guid.NewGuid` and `Parallel` as not
+forbidden. Fix when convenient: forbid `static (readonly )?(System\.)?Random\b`,
+widen the static-field rule to any non-`readonly` static field except `bool`
+flags (or list allowed types), strip `//` comments before matching, and list
+the remaining gaps in DETERMINISM.md. `test_det_v2.GuardRound2.test_known_gaps_after_round2`
+pins the current behaviour so the fix shows up as a test change.
+
+## Round 2 numbers
+
+| Tree | OpenTPW.Tests without assets | With `OPENTPW_GAME_PATH` |
+| --- | --- | --- |
+| `d620fb7` | **925 / 245 / 0** (author: same) | **1099 / 71 / 0** (author: same) |
+| main `8a88379` | 915 / 244 / 0 | 1088 / 71 / 0 |
+| merge `8a88379` + `d620fb7` (resolved as above) | 927 / 246 / 0 | 1102 / 71 / 0 |
+
+Pass / skip / fail. Build of `OpenTPW.sln`: 0 errors on all three trees.
+
+| Check (merge unless noted) | Result |
+| --- | --- |
+| `fidelity_register.py --write` / `--check` | 157 IDs; `test_fidelity_register.py` OK |
+| `run_evidence_checks.py --mac-bin … --dotnet <net8 SDK>` | OK: 11 Python suites, 758 tests, 106 skipped (includes `test_det_v2.py`) |
+| `test_det_v1.py` with `OPENTPW_PPC_BIN_ROOT` (`d620fb7` + this review) | 13 / 13 |
+| `test_det_v2.py` | 7 / 7 on the merge; 5 pass, 2 skip (no M3 gate) on `d620fb7`. Mutations: a `Random r = new()` in excluded `Sky.cs`, the gate row back to FAIL, and `SchemaVersion = 1` each fail it |
+| `--m3-gate` (30 min, two processes each) | merge 13 / 2 / 1 exit 1; main 12 / 3 / 1 exit 1; `--no-determinism` on the merge 12 / 2 / 2 |
+| `git diff --check 8a88379` (merge) | clean |
+| `git diff --stat` vs `--ignore-cr-at-eol --stat` against `8a88379` | identical (34 files, +3246 / −68, including this review's test); no file's CR count changed |
+
+Not tested: Windows/Linux and x64 hashes; a real audio device;
+`Level.SavePark`/`LoadPark` on a constructed `Level` (needs a renderer; the
+one-line delegation is read, and `ParkWorldStreams` is tested); Client/ code
+for unseeded randomness (not scanned by the guard).

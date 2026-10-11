@@ -11,9 +11,9 @@ opens the attractions. Original levels only; read-only visits and the sandbox ha
 **Evidence.** The door routine is the Feral Mac function at `0x108ee4` (`[BIN:STP-PPC:0x108ee4]`). Its
 prologue and the split on its second argument match the maexah/OpenTPW lead (`docs/exe/park-gate.md`, PC
 `FUN_00519ef0`, runtime addresses): a nonzero second argument is the end-of-park path, a zero one the
-ordinary door. The fork's PC addresses are not in the static `tp.exe` image: its `.txt` section is an
-encrypted stub and the code at its addresses is unpacked at run time, so only the Mac binary was checked
-here. The world field the routine reads is at Mac `world+0x1DA710` (decoded from `addis 0x1E0000` and
+ordinary door. The fork's PC function exists in the decrypted no-CD `tp.exe` that COMPLETION-PLAN.md allows for
+analysis (`0x519ef0` starts a normal SEH-framed function); its body was not compared here, so the Mac
+binary is the checked source. The world field the routine reads is at Mac `world+0x1DA710` (decoded from `addis 0x1E0000` and
 `-0x58F0`).
 
 **Opening** (`DoorMoved(closed: false)`): the gate's command variable `VAR_COMMAND` becomes 1, and every

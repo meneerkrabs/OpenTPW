@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -185,7 +186,9 @@ public sealed class ObjectCatalog
 		("upgrades", ObjectCategory.Upgrade, "Upgrades.sam")
 	};
 
-	private static readonly Dictionary<string, ObjectCatalog> cache = new( StringComparer.OrdinalIgnoreCase );
+	// Keyed by the file system instance, not its root: entries keep the instance they were read from, and
+	// a replaced FileSystem (setup, tests) with the same root must not hand out entries of the old one.
+	private static readonly ConditionalWeakTable<BaseFileSystem, Dictionary<string, ObjectCatalog>> cache = new();
 	private static readonly Regex BonusArchive = new( @"^(?<stem>_.+)_(?<number>\d+)$", RegexOptions.CultureInvariant );
 	private static string? bonusDataRoot;
 	private static bool bonusFromEnvironment = true;
@@ -266,16 +269,18 @@ public sealed class ObjectCatalog
 	{
 		if ( string.IsNullOrWhiteSpace( theme ) || theme.IndexOfAny( new[] { '/', '\\', '.' } ) >= 0 )
 			throw new ArgumentException( "Themes are plain level directory names such as 'jungle'.", nameof( theme ) );
-		var key = $"{FileSystem.GetAbsolutePath( "/" )}|{BonusDataRoot}|{theme}|{easy}";
+		var fileSystem = FileSystem;
+		var key = $"{BonusDataRoot}|{theme}|{easy}";
 		lock ( cache )
 		{
-			if ( cache.TryGetValue( key, out var cached ) )
+			var catalogs = cache.GetValue( fileSystem, _ => new Dictionary<string, ObjectCatalog>( StringComparer.OrdinalIgnoreCase ) );
+			if ( catalogs.TryGetValue( key, out var cached ) )
 				return cached;
-			var entries = LoadEntries( theme, FileSystem, null, easy );
+			var entries = LoadEntries( theme, fileSystem, null, easy );
 			var bonus = OpenBonusFileSystem();
 			if ( bonus != null )
 			{
-				foreach ( var entry in LoadEntries( theme, bonus, FileSystem, easy ) )
+				foreach ( var entry in LoadEntries( theme, bonus, fileSystem, easy ) )
 				{
 					// [APPROX:RIDES-024] Bonus archives merge into the theme catalog; an Info.Id collision skips the bonus entry — evidence needed: original behaviour with dropped-in WADs
 					if ( entries.Any( existing => existing.InfoId == entry.InfoId ) )
@@ -287,7 +292,7 @@ public sealed class ObjectCatalog
 			var catalog = new ObjectCatalog( theme, entries );
 			RidesApproximations.LogOnce();
 			ObjectNames.Apply( catalog );
-			cache[key] = catalog;
+			catalogs[key] = catalog;
 			return catalog;
 		}
 	}

@@ -9,6 +9,7 @@ public enum OnlineLabel
 	TwoStepLogin, TwoStepInstructions, AuthenticatorCode, Confirm, OnlineMenu,
 	EmailAddress, SendCode, EmailCode, EmailCodeSent, ForgotPassword, AccountRecovery, NameOrEmail, NewPassword,
 	KeepTwoStep, ResetTwoStep, RecoveryCodeSent, PasswordChanged,
+	Ride, LeaveRide, PublishedOn, PublishedStatsNote,
 }
 
 /// <summary>
@@ -173,6 +174,8 @@ public static class OnlineStrings
 			[OnlineLabel.ResetTwoStep] = "Two-step login: set up again",
 			[OnlineLabel.RecoveryCodeSent] = "If this account has an e-mail address, a code has been sent to it.",
 			[OnlineLabel.PasswordChanged] = "Your password has been changed. Log in with the new password.",
+			[OnlineLabel.Ride] = "Ride", [OnlineLabel.LeaveRide] = "Leave ride",
+			[OnlineLabel.PublishedOn] = "Published: ", [OnlineLabel.PublishedStatsNote] = "The owner's published figures; nothing runs here.",
 		},
 		["Danish"] = new Dictionary<OnlineLabel, string>
 		{
@@ -205,6 +208,8 @@ public static class OnlineStrings
 			[OnlineLabel.ResetTwoStep] = "Totrinslogin: opsæt igen",
 			[OnlineLabel.RecoveryCodeSent] = "Har kontoen en e-mailadresse, er der sendt en kode til den.",
 			[OnlineLabel.PasswordChanged] = "Din adgangskode er ændret. Log ind med den nye adgangskode.",
+			[OnlineLabel.Ride] = "Tur", [OnlineLabel.LeaveRide] = "Stå af",
+			[OnlineLabel.PublishedOn] = "Udgivet: ", [OnlineLabel.PublishedStatsNote] = "Ejerens udgivne tal; intet kører her.",
 		},
 		["Dutch"] = new Dictionary<OnlineLabel, string>
 		{
@@ -237,6 +242,8 @@ public static class OnlineStrings
 			[OnlineLabel.ResetTwoStep] = "Inloggen in twee stappen: opnieuw instellen",
 			[OnlineLabel.RecoveryCodeSent] = "Als dit account een e-mailadres heeft, is daar een code naartoe gestuurd.",
 			[OnlineLabel.PasswordChanged] = "Je wachtwoord is gewijzigd. Log in met het nieuwe wachtwoord.",
+			[OnlineLabel.Ride] = "Rit", [OnlineLabel.LeaveRide] = "Stap uit",
+			[OnlineLabel.PublishedOn] = "Gepubliceerd: ", [OnlineLabel.PublishedStatsNote] = "De door de eigenaar gepubliceerde cijfers; hier draait niets.",
 		},
 		["French"] = new Dictionary<OnlineLabel, string>
 		{
@@ -269,6 +276,8 @@ public static class OnlineStrings
 			[OnlineLabel.ResetTwoStep] = "Connexion en deux étapes : reconfigurer",
 			[OnlineLabel.RecoveryCodeSent] = "Si ce compte a une adresse e-mail, un code y a été envoyé.",
 			[OnlineLabel.PasswordChanged] = "Votre mot de passe a été modifié. Connectez-vous avec le nouveau mot de passe.",
+			[OnlineLabel.Ride] = "Tour", [OnlineLabel.LeaveRide] = "Descendre",
+			[OnlineLabel.PublishedOn] = "Publié : ", [OnlineLabel.PublishedStatsNote] = "Les chiffres publiés par le propriétaire ; rien ne tourne ici.",
 		},
 		["German"] = new Dictionary<OnlineLabel, string>
 		{
@@ -301,6 +310,8 @@ public static class OnlineStrings
 			[OnlineLabel.ResetTwoStep] = "Zweistufige Anmeldung: neu einrichten",
 			[OnlineLabel.RecoveryCodeSent] = "Wenn dieses Konto eine E-Mail-Adresse hat, wurde ein Code dorthin gesendet.",
 			[OnlineLabel.PasswordChanged] = "Dein Passwort wurde geändert. Melde dich mit dem neuen Passwort an.",
+			[OnlineLabel.Ride] = "Fahrt", [OnlineLabel.LeaveRide] = "Aussteigen",
+			[OnlineLabel.PublishedOn] = "Veröffentlicht: ", [OnlineLabel.PublishedStatsNote] = "Die vom Besitzer veröffentlichten Zahlen; hier läuft nichts.",
 		},
 		["Swedish"] = new Dictionary<OnlineLabel, string>
 		{
@@ -333,6 +344,8 @@ public static class OnlineStrings
 			[OnlineLabel.ResetTwoStep] = "Tvåstegsinloggning: ställ in igen",
 			[OnlineLabel.RecoveryCodeSent] = "Om kontot har en e-postadress har en kod skickats dit.",
 			[OnlineLabel.PasswordChanged] = "Ditt lösenord har ändrats. Logga in med det nya lösenordet.",
+			[OnlineLabel.Ride] = "Tur", [OnlineLabel.LeaveRide] = "Stig av",
+			[OnlineLabel.PublishedOn] = "Publicerad: ", [OnlineLabel.PublishedStatsNote] = "Ägarens publicerade siffror; ingenting körs här.",
 		},
 	};
 }

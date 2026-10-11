@@ -525,6 +525,9 @@ public sealed class OnlineScreens
 			Text = () => Selected() is { } park
 				? $"{park.Name}\n{OnlineStrings.Ui( OnlineStrings.CreatedBy, "Created by" )} {park.Author}\n{OnlineStrings.Theme( park.Level )}\n" +
 				  $"{OnlineStrings.Ui( OnlineStrings.NumberOfVisits, "Visits" )} {park.Visits}\n{OnlineStrings.Ui( OnlineStrings.NumberOfVotes, "Votes" )} {park.Votes}\n" +
+				  // [DATA:mac-feral/manuals/STP_Manual.pdf:p.65 "Online Park Info"] the original showed the date the
+				  // park was published beside its creator, visits and votes; the server's publish date/time fills it.
+				  $"{OnlineStrings.Get( OnlineLabel.PublishedOn )}{park.PublishedUtc.LocalDateTime:g}\n" +
 				  (park.VisitedBefore ? OnlineStrings.Ui( OnlineStrings.VisitedBefore, "Visited before" ) + "\n" : "") +
 				  (park.VotedFor ? OnlineStrings.Ui( OnlineStrings.VotedFor, "Voted for" ) + "\n" : "") + park.Description
 				: ""

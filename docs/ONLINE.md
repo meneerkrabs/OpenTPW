@@ -134,18 +134,51 @@ no economy runtime, rejected object/prototype building and removal, rejected sav
 and export, followed by eight rendered frames and a GPU capture at
 `artifacts/native-smoke-online-visit.png`. It uses no sandbox build/save smoke steps.
 
-A visit cannot place/remove rides or save/load the sandbox. It creates no economy
-runtime and therefore cannot charge visitors or advance a park's economy. Version 1
-contains only the original level's imported path/object records and the prototype
-Totem state. It has `read-only-visit` and `no-economy` flags. Visitors and the ride can
-animate locally; those simulations are not synchronized multiplayer.
+### The version 2 package and what a visit does
 
-The original imported paths/footprints can be drawn; an edited shared path/object
-layout cannot yet be applied. The panel and startup log explicitly report mismatches,
-missing objects/bonus archives and terrain hash differences. Missing content is never
-downloaded automatically. Original textures/models/audio and executable code are
-never embedded in these sharing files. Economy, staff, research, live multiplayer,
-original server behavior and original online panel visual parity remain unsupported.
+A published park is the park **as the player built it** (package format 2, payload
+version 2): every non-empty cell of the park cell map (paths and queues with their
+links, queue links and flags), every placed object with its anchor, rotation, open
+state, price and state of repair, every player-built coaster track with its pylons,
+and the park's published statistics (rating, value, balance, visitors, entrance fee,
+open state, in-game date). The manifest carries the park's name, description, author
+and created date/time — the fields the original's publish request sent with the park
+file and the website showed per park (docs/reverse/ONLINE-VISIT.md). A layout digest
+(FNV-1a 64 over cells, objects and coasters) is part of the payload: the publisher
+writes it from the live park and the visit recomputes it from what it built, so
+"the visitor sees the owner's park" is checked, not assumed. Version 1 packages from
+OpenTPW 0.7 (the original level's imported path/object records and the prototype
+Totem) still import unchanged; they carry no built layout, so a visit of one draws the
+shipped level import and says so.
+
+A visit applies the published layout read-only and behaves as the original's visit
+evidence shows (docs/reverse/ONLINE-VISIT.md, from the Mac online code, the manual and
+the archived official pages):
+
+- **Walk**: the visitor views and walks the rebuilt park with the normal park camera.
+- **Ride**: the object panel of a visit offers *Ride* for a completed coaster or the
+  prototype ride; the camera rides the front car along the published track (or the
+  Totem's carriage motion). Escape, a right click or the button leaves the ride.
+  Flat rides have no traced seat motion in OpenTPW yet and cannot be ridden here.
+- **Inspect**: an object's panel shows its published state of repair (never simulated
+  values), and the park information window shows the park's **published statistics**
+  read-only — rating, value, balance, visitors and the published in-game date — with a
+  note that nothing runs in the visit. No economy, staff or research is created or
+  advanced, ever.
+- **Report and vote**: downloading a park to visit it sends one visit report to the
+  server (`POST /api/v1/parks/{id}/visits`), the counterpart of the original client's
+  MarkParkVisited message per park entry; each report counts one visit for the park
+  (docs/SERVER.md). Voting stays a separate action from Find Parks or the city lobby.
+
+Visitors and rides animate locally (the visited park's own scripts run); those
+simulations are not synchronized multiplayer, and no other players appear in the park
+(the original's chat parks with online persons are not implemented). A visit cannot
+place or remove rides, build paths or save, load or export the sandbox. The panel and
+startup log explicitly report mismatches, missing objects/bonus archives and terrain
+hash differences. Missing content is never downloaded automatically. Original
+textures/models/audio and executable code are never embedded in these sharing files.
+Live multiplayer, original server behavior and original online panel visual parity
+remain unsupported.
 
 ## Local server
 
@@ -251,6 +284,10 @@ The package/protocol/server code owns tags 001–059. The game adapters own:
 | 065 | BF4 chat overlay layout, colours and line count |
 | 066 | ImGui Online panel (developer starts only; players use the original-style screens) |
 | 067 | Publish Park's website opt-in, off by default (the server's public website list is 057) |
+| 068 | The version 2 layout digest: FNV-1a 64 over the payload's cells, objects and coasters, written by the publisher and recomputed by the visit |
+| 069 | The visit's Ride action in the object panel (coasters and the prototype ride) and its exits |
+| 070 | The visit's park information window showing the published statistics read-only |
+| 071 | The visit counter counts accepted visit reports, one per visit |
 | UI | Original-style online screens: window composition, places of code-positioned controls, text field art and caret, server address field, Inbox and Import screens, the News window title |
 
 ## Approximation register
@@ -279,3 +316,4 @@ are not claims that the original online protocol or service has been recovered.
 | ONLINE-015 | `f_lobbutbg` is the city panel's button background in its second rectangle (67,1273,438,1484). | The table field that names it. |
 | ONLINE-017 | The publish globe reuses the Online World's panel (back, zoom, rotate) without Find Parks and the satellites, with UITEXT 419 at the top. | The publish globe's layout table. |
 | ONLINE-016 | Each city-lobby island is the island of its park's theme. | The argument mapping of `tp.exe` 0x005E27B0 (what the top-10 list entry passes to 0x005E3210). |
+| ONLINE-018 | The ride camera's view: the eye half a car above the front car's sample (coaster) or on the prototype's carriage height, looking along the track's direction or the entry heading, entered from the visit's object panel and left with Escape, a right click or the button. Riding itself is evidenced (manual "Ride any ride", visitors rode published parks, the Mac `CMMFirstPersonTarget`/`CMMCoaster` camera-mode classes exist); the view details are OpenTPW's. | The first-person target and coaster camera modes of the Mac binary (their Update bodies), and the original's ride entry and exit input. |

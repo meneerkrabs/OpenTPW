@@ -172,7 +172,9 @@ public class OnlineServerTests
 			CollectionAssert.AreEqual( package.Thumbnail, await visitor.DownloadThumbnailAsync( published.Id ) );
 
 			Assert.AreEqual( 1, (await visitor.RecordVisitAsync( published.Id )).Visits );
-			Assert.AreEqual( 1, (await visitor.RecordVisitAsync( published.Id )).Visits );
+			// Each visit report counts one visit (the client sends one per visit; every visit earned the owner
+			// Platinum Tickets in the original, so the count must be per visit, not once per visitor).
+			Assert.AreEqual( 2, (await visitor.RecordVisitAsync( published.Id )).Visits );
 			var vote = await visitor.VoteAsync( published.Id );
 			Assert.AreEqual( (1, 9), (vote.Votes, vote.VotesLeftToday) );
 			Assert.AreEqual( HttpStatusCode.Conflict, (await Fails( () => visitor.VoteAsync( published.Id ) )).Status );

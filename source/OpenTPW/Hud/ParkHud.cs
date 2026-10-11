@@ -41,6 +41,8 @@ public sealed partial class ParkHud
 	private string lastLevelMessage = "";
 	private BuildItem? pendingItem;
 	private OriginalObject? selectedObject;
+	/// <summary>The park view to return to after the ride camera (the visitor's view when boarding).</summary>
+	private CameraMode? previousMode;
 	private CashChangeTracker cashTracker;
 	private object? cashSource;
 	private readonly List<UiElement> economyElements = new();
@@ -233,12 +235,26 @@ public sealed partial class ParkHud
 			Anchor = UiAnchor.BottomLeft,
 			Visible = false
 		} ) );
+		// [EXT:ONLINE-069] a read-only visit can ride the inspected ride (the original's visitors could ride the
+		// published park's rides; docs/reverse/ONLINE-VISIT.md). The button lives in the object panel.
+		infoElements.Add( hud.Add( new UiButton
+		{
+			Id = "rideView",
+			Text = () => OnlineStrings.Get( IsRiding ? OnlineLabel.LeaveRide : OnlineLabel.Ride ),
+			Font = fonts => fonts.Label,
+			Clicked = () => { if ( IsRiding ) StopRide(); else StartRide( selectedObject ); },
+			Bounds = UiRect.FromCenter( new NVector2( 875, 1425 ), 200, 100 ),
+			Anchor = UiAnchor.BottomLeft,
+			Visible = false
+		} ) );
 
 		hud.DrawOverlay = DrawMessages;
 		// [APPROX:PATH-011] Escape/Back inside the path or queue tool ends the tool without writing; only a Back outside it opens the pause menu (PATH-plan §9.4 cancel; the original's key handler for the tool is not traced, UI-012) — evidence needed: the original's Escape handling in tool modes 1 and 3
 		hud.Back = () =>
 		{
-			if ( level.IsCoasterToolActive )
+			if ( IsRiding )
+				StopRide();
+			else if ( level.IsCoasterToolActive )
 				level.ExitCoasterTool();
 			else if ( level.CellTool.IsActive )
 				level.CellTool.Cancel();
@@ -356,6 +372,32 @@ public sealed partial class ParkHud
 		return true;
 	}
 
+	/// <summary>True while the visitor rides a ride of the shared park (the ride camera is active).</summary>
+	public bool IsRiding => Camera.Mode is RideCameraMode;
+
+	/// <summary>
+	/// Boards a placed ride of the visited park: the camera becomes the ride's view, keeping the heading the visitor
+	/// had. The original's visitors could ride the published park's rides (docs/reverse/ONLINE-VISIT.md); only a
+	/// read-only visit offers it here, and building/selling stays impossible while riding.
+	/// </summary>
+	public void StartRide( OriginalObject? item )
+	{
+		if ( !level.IsReadOnlyVisit || item is not { IsDeleted: false } candidate || !RideCameraMode.CanRide( candidate ) || IsRiding )
+			return;
+		previousMode = Camera.Mode;
+		Camera.Mode = new RideCameraMode( candidate, previousMode.Rotation.Forward );
+		PostMessage( OnlineStrings.Get( OnlineLabel.Ride ) + ": " + EntryName( candidate.Entry ) );
+	}
+
+	/// <summary>Leaves the ride: the park view returns where it was.</summary>
+	public void StopRide()
+	{
+		if ( !IsRiding )
+			return;
+		Camera.Mode = previousMode ?? new ParkCameraMode();
+		previousMode = null;
+	}
+
 	public void OpenPauseMenu()
 	{
 		if ( Paused )
@@ -441,6 +483,8 @@ public sealed partial class ParkHud
 			openButton.Enabled = !level.IsReadOnlyVisit && SelectedInfo?.CanOpen == true;
 		if ( hud.Find( "deleteRide" ) is UiButton deleteButton )
 			deleteButton.Enabled = !level.IsReadOnlyVisit && selectedObject is { IsDeleted: false } item && !item.Entry.IsFixedItem;
+		if ( hud.Find( "rideView" ) is UiButton rideButton )
+			rideButton.Enabled = level.IsReadOnlyVisit && (IsRiding || (selectedObject is { IsDeleted: false } candidate && RideCameraMode.CanRide( candidate )));
 
 		TrackCashChange( context.Delta );
 		var paused = Paused;
@@ -470,6 +514,13 @@ public sealed partial class ParkHud
 		if ( !inPark )
 			cursorX = cursorY = -1;
 		var toolClick = UpdateCoasterTool( input, inPark, paused ) || UpdateCellTool( context, input, inPark, paused );
+		// While riding, park clicks and the right button leave the ride instead of reaching the park.
+		if ( IsRiding && !overUi && !consumed && (input.RightPressed || input.LeftPressed) )
+		{
+			if ( input.RightPressed && GameOptions.Current.RmbCancel )
+				StopRide();
+			toolClick = true;
+		}
 		// [APPROX:UI-027] Select by occupied grid cell; original cursor picking is not verified.
 		if ( inPark && level.BuildEntry == null && !level.IsPlacing && !level.CellTool.IsActive && !level.IsCoasterToolActive && input.LeftReleased && !toolPress )
 			SelectObject( level.Objects.FindAt( cursorX, cursorY ) );

@@ -821,17 +821,23 @@ public sealed class ServerStore
 		}
 	}
 
+	/// <summary>
+	/// One visit report: counts one visit for the park. The client sends exactly one report per visit (it
+	/// downloads the park and enters it), like the original client, which sent its MarkParkVisited message once
+	/// per park entry — every visit is what earned the owner Platinum Tickets, voted or not
+	/// (docs/reverse/ONLINE-VISIT.md). <see cref="ParkRecord.Visitors"/> stays the distinct-visitor list the
+	/// park summaries mark "visited before" with.
+	/// </summary>
+	// [EXT:ONLINE-071] the visit counter counts accepted visit reports; a ticket award hooked here sees one call per visit.
 	public CounterResult Visit( AccountRecord visitor, string id )
 	{
 		lock ( gate )
 		{
 			var park = FindPark( id ) ?? throw new StoreException( 404, "Park ID is invalid." );
 			if ( !park.Visitors.Contains( visitor.Key ) )
-			{
 				park.Visitors.Add( visitor.Key );
-				park.Visits++;
-				Save( "parks.json", parks.Values.ToList() );
-			}
+			park.Visits++;
+			Save( "parks.json", parks.Values.ToList() );
 			return new CounterResult( park.Visits, park.Votes, VotesLeft( visitor ) );
 		}
 	}

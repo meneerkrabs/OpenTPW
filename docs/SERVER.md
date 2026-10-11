@@ -165,6 +165,28 @@ others; replace it with `cities.json` in the data directory, an array of
 `{"id", "name", "description", "latitude", "longitude"}`. It is re-read when the file
 changes; invalid entries are left out.
 
+## Parks, packages and visits
+
+Parks are published as `.tpwpark` packages (`POST /api/v1/parks`, `MaximumParksPerPlayer`
+at once — publishing more is refused until one is unpublished with `DELETE
+/api/v1/parks/{id}`; the original allowed ten parks on show and treated publishing and
+removing as separate actions). The server validates every upload as a package: the
+container and manifest, the payload's size (`ParkPackage.MaximumPackageBytes`) and
+digest, and the payload itself, including its version. **Package format 2** (payload
+version 2) carries the complete built park (docs/ONLINE.md); **format 1** packages from
+OpenTPW 0.7 are still accepted, stored and served unchanged, so old clients and old
+parks keep working. Every listing and the download carry the park's publish date/time
+(`PublishedUtc`), visitor count and vote count — the fields the original's "My Theme
+Park" page showed per park.
+
+`POST /api/v1/parks/{id}/visits` is the **visit report**: the client sends exactly one
+per visit, with the download it enters the park from, as the original client sent its
+MarkParkVisited message once per park entry. Each accepted report counts one visit;
+this is the hook a Platinum Ticket award uses (every visit earned the park's owner
+tickets in the original, voted or not — the award itself is not implemented yet). The
+distinct-visitor list stays separate for the "visited before" flag, and voting
+(`POST /api/v1/parks/{id}/votes`) is its own action with its own limits.
+
 ## The website's top parks
 
 When publishing, a player can choose **Also on the OpenTPW website** (off by default). Only

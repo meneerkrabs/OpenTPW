@@ -85,6 +85,70 @@ public class AudioIntegrationTests
 	}
 
 	[TestMethod]
+	public void InvalidChainPlacementNeverPoisonsTheFollowingPump()
+	{
+		foreach ( var invalid in new[] { float.NaN, float.PositiveInfinity, float.NegativeInfinity } )
+		{
+			Assert.ThrowsException<ArgumentOutOfRangeException>( () => system.StartChain( GameAudio.Kids, 71, AudioChannel.Effects, 50, new Vector3( invalid, 0, 0 ) ) );
+			Assert.ThrowsException<ArgumentOutOfRangeException>( () => system.StartChain( GameAudio.Kids, 71, AudioChannel.Effects, 50, null, invalid ) );
+		}
+		Assert.ThrowsException<ArgumentOutOfRangeException>( () => system.StartChain( GameAudio.Kids, 71, AudioChannel.Effects, 50, null, -1 ) );
+		var sounds = (IList<SoundEntry>)GameAudio.Kids!.Catalog.Find( 71 )!.Sounds;
+		var original = sounds[0];
+		try
+		{
+			sounds[0] = original with { Rolloff = float.NaN };
+			Assert.ThrowsException<ArgumentOutOfRangeException>( () => system.StartChain( GameAudio.Kids, 71, AudioChannel.Effects, 50, null ) );
+		}
+		finally { sounds[0] = original; }
+		system.Pump();
+		Assert.AreEqual( 0, mixer!.Voices.Count, "validation happens before the first child is registered" );
+		Assert.IsNotNull( system.StartChain( GameAudio.Kids, 71, AudioChannel.Effects, 50, null ) );
+		Assert.IsTrue( MixUntilAudible(), "valid audio still reaches PCM after rejected starts" );
+	}
+
+	[TestMethod]
+	public void AFailedChainStartStopsItsAlreadyCreatedChild()
+	{
+		var sounds = (IList<SoundEntry>)GameAudio.Kids!.Catalog.Find( 71 )!.Sounds;
+		var original = sounds[0];
+		try
+		{
+			// Fail the link walk after the first decoded child has been created.
+			sounds[0] = original with { Links = null! };
+			Assert.ThrowsException<ArgumentNullException>( () => system.StartChain( GameAudio.Kids, 71, AudioChannel.Effects, 50, null ) );
+			Assert.IsTrue( mixer!.Voices.Count > 0 );
+			Assert.IsTrue( mixer.Voices.All( voice => voice.IsFinished ), "startup failure stops its partially created children" );
+			system.Pump();
+		}
+		finally { sounds[0] = original; }
+		Assert.IsNotNull( system.StartChain( GameAudio.Kids, 71, AudioChannel.Effects, 50, null ) );
+		Assert.IsTrue( MixUntilAudible() );
+	}
+
+	[TestMethod]
+	public void AFailedDeferredChildStopsOnlyItsChainAndIsNotRetriedEveryFrame()
+	{
+		var failing = system.StartChain( GameAudio.Kids, 71, AudioChannel.Effects, 50, null )!;
+		var survivor = system.StartChain( GameAudio.Kids, 74, AudioChannel.Effects, 50, null )!;
+		var sounds = (IList<SoundEntry>)GameAudio.Kids!.Catalog.Find( 71 )!.Sounds;
+		var original = sounds[0];
+		try
+		{
+			// Force a later child due now, then fail its successor walk after creating it.
+			typeof( SoundChain ).GetField( "nextChildAt", BindingFlags.NonPublic | BindingFlags.Instance )!.SetValue( failing, 0L );
+			typeof( SoundChain ).GetField( "soundIndex", BindingFlags.NonPublic | BindingFlags.Instance )!.SetValue( failing, 0 );
+			sounds[0] = original with { Links = null! };
+			Assert.ThrowsException<ArgumentNullException>( () => system.Pump() );
+			Assert.IsTrue( failing.IsStopped );
+			Assert.IsFalse( survivor.IsStopped );
+			system.Pump();
+			Assert.IsTrue( MixUntilAudible(), "unrelated chain audio survives and the failed chain is not retried" );
+		}
+		finally { sounds[0] = original; }
+	}
+
+	[TestMethod]
 	public void WeatherRainAndDueThunderReachTheDecodedMix()
 	{
 		var keys = new SamSettings( new[] { SamDocument.Parse(

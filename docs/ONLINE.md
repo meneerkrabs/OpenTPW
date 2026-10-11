@@ -66,8 +66,20 @@ around the edges. What is traced:
 - The 24 globe textures form an equirectangular world map, so a city at latitude φ and
   longitude L stands at atan2(x, z) = 30° − L, sin φ up the model's +Y axis.
 
-Not yet built: entering a city (its top-10 islands), choosing a city when publishing,
-and the satellites' player counts. OpenTPW's own functions (login, news, postcards,
+A click on a city's pin opens its lobby (below). Not yet built: choosing a city when
+publishing, and the satellites' player counts.
+
+### City lobby
+
+A city's lobby (Mac table `data:0x50172`) shows its ten most-voted parks as islands, in
+the same lobby as your own islands: rank *i* stands at ISLANDCAMERAPOSITION slot *i* as
+the island of the park's theme (`<theme>.txt` ISLAND), the way the original builds lobby
+islands from a theme entry at a slot counter (`tp.exe` 0x005E3210). The `citylob` panel
+holds other parks in this city (Find Parks filtered by the city, by votes), back to your
+own lobby, the online world, enter this park (download and visit) and previous/next
+island; the selected park's rank shows at the top and its name at the bottom (the item
+detail overlay, labels 0x49D9/0x49DA). The list comes from `GET /api/v1/parks?city=`,
+which needs a login, as the original's city server did. OpenTPW's own functions (login, news, postcards,
 chat, import, account) are behind **OpenTPW online** at the top right.
 
 The ImGui Online panel remains as a developer tool in `--sandbox` and other developer
@@ -234,3 +246,6 @@ are not claims that the original online protocol or service has been recovered.
 | ONLINE-011 | `f_wlobbg` is the panel's button background in its second rectangle (33,1057,480,1505). | The table field that names the panel's background model. |
 | ONLINE-012 | Edge steering starts once the cursor has moved on the globe screen. | Whether the original steers from the first frame. |
 | ONLINE-013 | Pins are twice the decoded (s, s, p) scale and stand on the mesh surface (radius 119.7). | The scale of the original flag node's parent and a capture of the original globe. |
+| ONLINE-014 | A click on a city's pin enters its lobby; elsewhere on the globe a click zooms. | The consumer of the selected city (`tp.exe` DAT_00f82888). |
+| ONLINE-015 | `f_lobbutbg` is the city panel's button background in its second rectangle (67,1273,438,1484). | The table field that names it. |
+| ONLINE-016 | The rank is a plain number (the city's name while no park is selected). | The format string used by 0x101834A0. |

@@ -265,6 +265,7 @@ public sealed class OnlineSession : IDisposable
 		Inbox = Array.Empty<PostcardSummary>();
 		News = null;
 		Cities = Array.Empty<CityInfo>();
+		CityParks = null;
 		CurrentRoom = ChatProtocol.LobbyRoom;
 		ChatLines.Clear();
 	}
@@ -294,6 +295,18 @@ public sealed class OnlineSession : IDisposable
 		Run( () => work( client ) );
 	}
 
+	/// <summary>Parks of the city whose lobby is open, most votes first; null while they are being fetched.</summary>
+	public IReadOnlyList<ParkSummary>? CityParks { get; private set; }
+
+	/// <summary>Fetches a city's parks for its lobby (the top ten become islands, the rest are listed).</summary>
+	public void FetchCityParks( int cityId ) => WithClient( async client =>
+	{
+		Post( () => CityParks = null );
+		var list = await client.ListParksAsync( sort: "votes", cityId: cityId );
+		Post( () => CityParks = list.Parks );
+		return list.Parks.Count == 0 ? OnlineStrings.Ui( OnlineStrings.NoSearchResults, "No search results" ) : null;
+	} );
+
 	/// <summary>Fetches the cities for the globe; no login needed. Older servers have none.</summary>
 	public void FetchCities() => WithClient( async client =>
 	{
@@ -310,9 +323,9 @@ public sealed class OnlineSession : IDisposable
 		return news == null || (news.Game.Length == 0 && news.System.Length == 0) ? OnlineStrings.Get( OnlineLabel.NoNews ) : null;
 	} );
 
-	public void RefreshParks( string? search, string sort = "recent" ) => WithClient( async client =>
+	public void RefreshParks( string? search, string sort = "recent", int? cityId = null ) => WithClient( async client =>
 	{
-		var list = await client.ListParksAsync( search, sort );
+		var list = await client.ListParksAsync( search, sort, cityId: cityId );
 		Post( () => Parks = list.Parks );
 		return list.Parks.Count == 0 ? OnlineStrings.Ui( OnlineStrings.NoSearchResults, "No search results" ) : null;
 	} );

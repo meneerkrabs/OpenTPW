@@ -93,9 +93,12 @@ public sealed class LobbyDefinition
 	}
 
 	/// <summary>Island centre in MD2 lobby coordinates (x, z), from ISLANDCAMERAPOSITION.</summary>
-	public (float X, float Z) PositionOf( LobbyIslandInfo island ) =>
+	public (float X, float Z) PositionOf( LobbyIslandInfo island ) => PositionOf( island.Index );
+
+	/// <summary>Centre of ISLANDCAMERAPOSITION slot <paramref name="slot"/> (0–9) in MD2 lobby coordinates (x, z).</summary>
+	public (float X, float Z) PositionOf( int slot ) =>
 		// [APPROX:UI-019] fallback position when lobby.txt lacks ISLANDCAMERAPOSITION — evidence needed: none if lobby.txt is complete
-		IslandPositions.TryGetValue( island.Index, out var position ) ? position : (400 + island.Index * 200, 400);
+		IslandPositions.TryGetValue( slot, out var position ) ? position : (400 + slot * 200, 400);
 
 	private static float Number( IReadOnlyList<string> arguments, int index ) =>
 		index < arguments.Count && float.TryParse( arguments[index], NumberStyles.Float, CultureInfo.InvariantCulture, out var value ) ? value : 0;

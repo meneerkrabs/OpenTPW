@@ -300,11 +300,11 @@ public static class ServerProgram
 			return Task.FromResult( Results.NoContent() );
 		} ) ) );
 
-		app.MapGet( ApiRoutes.Parks, ( HttpContext context, string? search, string? author, string? sort, int? offset, int? limit ) => Guarded( context, store, true, user =>
+		app.MapGet( ApiRoutes.Parks, ( HttpContext context, string? search, string? author, string? sort, int? offset, int? limit, int? city ) => Guarded( context, store, true, user =>
 		{
 			if ( search?.Length > 64 || author?.Length > OnlineText.MaximumNameLength )
 				throw new StoreException( StatusCodes.Status400BadRequest, "Search text is too long." );
-			var parks = store.ListParks( search, author, sort ?? "recent" );
+			var parks = store.ListParks( search, author, sort ?? "recent", city );
 			var page = parks.Skip( Math.Clamp( offset ?? 0, 0, int.MaxValue ) ).Take( Math.Clamp( limit ?? 50, 1, 100 ) )
 				.Select( park => store.Summarize( park, user, hub.PlayersIn( Online.Chat.ChatProtocol.ParkRoom( park.Id ) ) ) ).ToList();
 			return Task.FromResult( Ok( new ParkList( page, parks.Count ) ) );

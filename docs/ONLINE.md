@@ -226,7 +226,8 @@ if it has an address, a code arrives there (valid fifteen minutes, five tries, a
 hour). The code and a new password set the password; with *Two-step login: set up again* the next
 login also shows the setup screen with a new secret, for a lost phone. Either way every session of
 the account ends and a notice goes to the address. Mails are in the game's language. Accounts made
-before e-mail have no address and still recover only through the operator.
+before e-mail have no address and still recover only through the operator. A server without account e-mail
+answers *Send code* with an error that tells the player to ask its operator.
 
 ## Verification and extension labels
 

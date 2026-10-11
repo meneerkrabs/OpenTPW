@@ -224,6 +224,19 @@ public class EmailRecoveryTests
 	}
 
 	[TestMethod]
+	public async Task AServerWithoutMailSaysSoInsteadOfPromisingAnEmail()
+	{
+		await using var server = await LoopbackServer.StartAsync();
+		try
+		{
+			using var client = new OnlineClient( server.Url );
+			var refused = await Assert.ThrowsExceptionAsync<OnlineException>( () => client.RequestRecoveryAsync( "Anyone" ) );
+			Assert.AreEqual( HttpStatusCode.NotFound, refused.Status );
+		}
+		finally { server.DeleteData(); }
+	}
+
+	[TestMethod]
 	public void EveryEmailExistsInEveryLanguageAndAddressesAreChecked()
 	{
 		foreach ( var (kind, texts) in EmailTexts.All )

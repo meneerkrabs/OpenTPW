@@ -300,10 +300,13 @@ public static class ServerProgram
 
 		app.MapPost( ApiRoutes.Recovery, Handler( context => Guarded( context, store, false, async _ =>
 		{
+			// Without mail there is no recovery: that tells about the server, not about any account.
+			if ( emailSender == null )
+				return Error( StatusCodes.Status404NotFound, "This server does not send e-mail; ask its operator." );
 			var request = await ReadJsonAsync<RecoveryRequest>( context.Request );
 			// The same answer whether the name or address exists, has an address, or hit the e-mail limit.
 			// The e-mail goes out in the background, so the answer takes as long either way.
-			if ( emailSender != null && store.PrepareRecovery( request.NameOrEmail ?? "", request.Language ) is { } message )
+			if ( store.PrepareRecovery( request.NameOrEmail ?? "", request.Language ) is { } message )
 			{
 				var sending = Task.Run( async () =>
 				{

@@ -1,4 +1,5 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using OpenTPW.Hud;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -112,6 +113,44 @@ public class ObjectSettingsTests
 		Assert.IsNull( ObjectAnimations.Resolve( animations, 2, 0 ) );
 		foreach ( var value in Enum.GetValues<ScriptDefs.Animations>() )
 			Assert.AreEqual( (int)value, ObjectAnimations.GetAnimation( ObjectAnimations.GetLetter( (int)value )!.Value ) );
+	}
+}
+
+/// <summary>Catalog cache behaviour on a synthetic data root (no game data needed).</summary>
+[TestClass]
+[DoNotParallelize]
+public class ObjectCatalogCacheTests
+{
+	[TestMethod]
+	public void ReplacingTheFileSystemWithTheSameRootLoadsEntriesFromTheNewInstance()
+	{
+		var root = Path.Combine( Path.GetTempPath(), "opentpw-catalog-" + Guid.NewGuid().ToString( "N" ) );
+		var archive = Path.Combine( root, "levels", "jungle", "rides", "totem" );
+		Directory.CreateDirectory( Path.Combine( archive, "textures" ) );
+		Directory.CreateDirectory( Path.Combine( root, "levels", "jungle", "sharetex" ) );
+		File.WriteAllText( Path.Combine( archive, "totem.sam" ), "Info.Id\t1110\nInfo.Name\t\"Inca Totem\"\nInfo.WhichUIType\t0\nUpgrades[0].CostOfUpgrade\t3250\n" );
+		File.WriteAllBytes( Path.Combine( archive, "totem.MD2" ), Array.Empty<byte>() );
+		var previous = FileSystem;
+		try
+		{
+			ObjectCatalog.BonusDataRoot = null;
+			foreach ( var pass in new[] { "first", "replaced" } )
+			{
+				// Tests and setup changes install a new instance with the same root; entries must follow it.
+				FileSystem = new BaseFileSystem( root );
+				var entry = ObjectCatalog.Load( "jungle" ).Get( 1110 );
+				Assert.AreSame( FileSystem, entry.FileSystem, $"{pass} file system" );
+				var item = new OriginalBuildCatalog( ObjectCatalog.Load( "jungle" ) ).GetItems( BuildCategory.Rides ).Single();
+				CollectionAssert.Contains( item.TextureDirectories.ToArray(), "/levels/jungle/rides/totem/textures", $"{pass} file system" );
+				CollectionAssert.Contains( item.TextureDirectories.ToArray(), "/levels/jungle/sharetex", $"{pass} file system" );
+			}
+		}
+		finally
+		{
+			FileSystem = previous;
+			ObjectCatalog.BonusDataRoot = null;
+			Directory.Delete( root, true );
+		}
 	}
 }
 

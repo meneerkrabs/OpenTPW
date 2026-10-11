@@ -272,6 +272,8 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 	public const int MainChannel = OpcodeHandlers.Animation.MainChannel;
 
 	private readonly OriginalObjectRuntime ride;
+	/// <summary>The ride script's held scream (the original's handle, refused while one is held).</summary>
+	private SoundChain? screamChain;
 
 	public OriginalObjectEffects( OriginalObjectRuntime ride ) => this.ride = ride;
 
@@ -311,6 +313,23 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 		if ( ride.Visitors.TryPerform( call, out var visitorResult ) )
 			return visitorResult;
 		// Sound effects play, but their non-audio parts (reverb, 3D position) remain unimplemented effects.
+		// [BIN:STP-PPC:0x100B19DC STARTSCREAM] the scream is held by the ride's script (the handle at the VM's +208); STOPSCREAM stops the handle, SINGLESCREAM is a one-shot with no handle
+		if ( call.Opcode == Opcode.STARTSCREAM )
+		{
+			screamChain = GameAudio.StartScream( () => screamChain, call.Argument( 0 ), call.Argument( 1 ), null );
+			return UnimplementedRideScriptEffects.Instance.Perform( call );
+		}
+		if ( call.Opcode == Opcode.STOPSCREAM )
+		{
+			screamChain?.Stop();
+			screamChain = null;
+			return UnimplementedRideScriptEffects.Instance.Perform( call );
+		}
+		if ( call.Opcode == Opcode.SINGLESCREAM )
+		{
+			GameAudio.SingleScream( call.Argument( 0 ), (short)call.Argument( 1 ), null );
+			return UnimplementedRideScriptEffects.Instance.Perform( call );
+		}
 		if ( call.Opcode == Opcode.EVENT )
 		{
 			// [BIN:STP-PPC:0x100AE930 RSE EVENT effect switch] the type operand selects the sound category (3 level rides, 4 level ambient, 5 global rides, 6 global kids, 7 global staff, 8 global ambient, 9 global UI) and the id operand the event, submitted at the object's position

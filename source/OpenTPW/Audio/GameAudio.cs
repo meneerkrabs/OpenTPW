@@ -157,6 +157,7 @@ public static class GameAudio
 		SetCrowd( 0 );
 		SetRain( 0 );
 		StopPlacedAmbients();
+		events?.StopChains();
 		staffTurn = -1;
 	}
 
@@ -350,9 +351,11 @@ public static class GameAudio
 	/// script's speed) its parameter. Returns the chain, or null when the band is zero (nothing plays) or a scream is
 	/// already held — the original refuses then, logs its line, and leaves the held chain screaming unreferenced.
 	/// </summary>
-	// [BIN:STP-PPC:0x100ACA38 scream submit] band 0 plays nothing; 1 plays cat_kids 71, 2-3 play 72, 4-7 play 73, 8 and above play 74 (each submitted at the ride's box middle)
-	// [BIN:STP-PPC:0x100ACB7C scream parameter] parameter 6 = (level operand + script speed) >> 1, clamped to 0..100; the speed is the script's signed word at +0xC0 (loader default 50)
-	// [BIN:STP-PPC:0x100B1A60 refusal] a script already holding a scream handle (script +0xD0) refuses: the engine logs "Started screaming without stopping first." and stores 0 over +0xD0
+	// [BIN:STP-PPC:0x100B19DC STARTSCREAM] operand 1 is the band itself (no visitor lookup), operand 2 the level; the handle is kept in the ride's VM at +208
+	// [BIN:STP-PPC:0x100ACA38 scream event] band 0 plays nothing; 1 plays cat_kids 71; 2-3 play 72 (negative bands too); 4-7 play 73; 8 and above play 74
+	// [BIN:STP-PPC:0x100ACB7C scream parameter] parameter = (level + speed) / 2 clamped to 0..100 (signed shift); the speed is the ride VM's word at +192, default 50 (0x100B3154, 0x100B318C)
+	// [BIN:STP-PPC:0x100B19DC refusal] a ride already holding a scream handle refuses: the engine logs "Started screaming without stopping first." and overwrites the handle with 0, so the held chain screams on unreferenced
+	// [APPROX:AUDIO-032] the scream's place is the ride's box middle in the original (0x100AC71C, midpoints of two floats and the object's height at +68); OpenTPW plays it flat — evidence needed: the box-middle mapping onto OpenTPW's ride objects
 	// [APPROX:AUDIO-016] OpenTPW has no per-script speed word; the loader's default 50 stands — evidence needed: the RSE loader's speed field beside RideVM's timing
 	public static SoundChain? StartScream( Func<SoundChain?> held, int band, int level, Vector3? position )
 	{
@@ -372,9 +375,10 @@ public static class GameAudio
 	}
 
 	/// <summary>The held-chain event a scream's band operand picks (Mac <c>0x100ACA38</c>: 0 nothing, 1 → 71, 2–3 → 72, 4–7 → 73, 8+ → 74), or null for band 0.</summary>
-	public static uint? ScreamBandEvent( int band ) => band <= 0 ? null : band < 2 ? 71u : band < 4 ? 72u : band < 8 ? 73u : 74u;
+	public static uint? ScreamBandEvent( int band ) => band == 0 ? null : band == 1 ? 71u : band >= 8 ? 74u : band >= 4 ? 73u : 72u;
 
 	/// <summary>A scream's parameter: (level + script speed) / 2 clamped to 0..100 (Mac <c>0x100ACB7C</c>; the speed word's default 50).</summary>
+	// [APPROX:AUDIO-016] OpenTPW keeps no per-script speed word, so the default 50 stands for every ride
 	public static int ScreamParameter( int level, int scriptSpeed = 50 ) => Math.Clamp( (level + scriptSpeed) / 2, 0, 100 );
 
 	/// <summary>

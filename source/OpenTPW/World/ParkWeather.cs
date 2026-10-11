@@ -6,6 +6,7 @@ namespace OpenTPW;
 /// rain's target, lightning strikes count down and thunder follows a strike a few turns later. Only the sound side is
 /// reproduced; the drops and bolts are not drawn.
 /// </summary>
+// [APPROX:AUDIO-031] the rain drops, the snow, the lightning bolt and the forecast's warning are not drawn or shown — evidence needed: the weather renderer (FUN_0057d300 family) and the forecast's message handler
 /// <remarks>
 /// The sim advances once per park turn (248 ms, <see cref="ParkCalendar.Turn"/>), and the day is the calendar's
 /// (<see cref="ParkCalendar.DayIndex"/>). The Mac binary's weather-tick gate is not located; the turn is the cadence

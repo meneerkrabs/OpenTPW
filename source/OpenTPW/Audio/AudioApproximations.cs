@@ -20,7 +20,7 @@ public static class AudioApproximations
 		("AUDIO-013", "de-emphasis is a first-order bilinear-transform shelf of the published 50/15 µs and J.17 curves at the stream's rate"),
 		("AUDIO-014", "a failed frame CRC is counted while the frame still decodes; no shipped frame carries a CRC word"),
 		("AUDIO-015", "only the level-driven rain voice is built; the weather thing's own rain voice (thing +0x54) is not, and whether the original's second voice is audible is not established"),
-		("AUDIO-016", "a scream's speed is the loader's default 50; the RSE loader's speed field beside RideVM's timing is not traced"),
+		("AUDIO-016", "a scream's speed is the default 50 (the Mac's ride VM word at +192, set at 0x100B3154/0x100B318C); OpenTPW keeps no per-script speed word, so every scream uses 50"),
 		("AUDIO-017", "the lobby island one-shots (cat_locallobbysfx 3, 4, 5) are timed by a uniform 5-15 s gap; the original's timer distribution is not traced"),
 		("AUDIO-018", "the constant-power pan of a positioned voice follows the source's bearing; the original's pan law (QSound's processing) is not read"),
 		("AUDIO-019", "a positioned one-shot whose event has flag 0x8 loops its sample; a flat one-shot with 0x8 is not looped"),
@@ -35,7 +35,8 @@ public static class AudioApproximations
 		("AUDIO-028", "a snow quality's drops target is 0 (no rain voice); the snow branch's target is not traced"),
 		("AUDIO-029", "thunder whose countdown computes to 0 plays at the strike; the Mac's countdown test beside 0x10103438 is not fully traced"),
 		("AUDIO-030", "the weather's random draws come from the park's weather stream, not the Mac's world LCG; the seed source is not traced"),
-		("AUDIO-031", "weather is simulated for sound only: rain drops, snow, the lightning bolt and the forecast are not drawn or shown"),
+		("AUDIO-032", "a ride's scream plays flat: the original places it at the ride's box middle, which OpenTPW's ride objects do not map to yet"),
+		("AUDIO-031","weather is simulated for sound only: rain drops, snow, the lightning bolt and the forecast are not drawn or shown"),
 	};
 
 	private static bool logged;

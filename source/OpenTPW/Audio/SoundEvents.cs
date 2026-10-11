@@ -242,6 +242,14 @@ public sealed class SoundEventSystem
 		return sentence;
 	}
 
+	/// <summary>Stops every held chain still running (a park ends with its screams).</summary>
+	public void StopChains()
+	{
+		foreach ( var chain in chains )
+			chain.Stop();
+		chains.Clear();
+	}
+
 	/// <summary>Starts a held-chain event (a scream) at a place; null when the event is missing.</summary>
 	public SoundChain? StartChain( SoundCategory? category, uint eventId, AudioChannel channel, int parameter, Vector3? position, float? range = null )
 	{

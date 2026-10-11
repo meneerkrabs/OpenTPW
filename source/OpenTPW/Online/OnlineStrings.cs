@@ -66,17 +66,31 @@ public static class OnlineStrings
 	public const int SystemMessage = 160;
 
 	private static StringFile? uiText, errors, chat, themes;
-	private static bool loadFailed;
+	private static GameLanguage? loadedFor;
+	private static readonly HashSet<string> unavailable = new();
 
+	/// <summary>
+	/// A table of the selected language; null (so callers use their fallbacks) when no language is selected or
+	/// it lacks the file. The caches belong to the language they were read from and are dropped when another is selected.
+	/// </summary>
 	private static string[]? Table( ref StringFile? cache, string name )
 	{
-		if ( cache == null && !loadFailed && GameLanguage.IsSelected )
+		if ( !GameLanguage.IsSelected )
+			return null;
+		var language = GameLanguage.Current;
+		if ( !ReferenceEquals( language, loadedFor ) )
 		{
-			try { cache = GameLanguage.Current.LoadStrings( name ); }
-			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or FileNotFoundException )
+			uiText = errors = chat = themes = null;
+			unavailable.Clear();
+			loadedFor = language;
+		}
+		if ( cache == null && !unavailable.Contains( name ) )
+		{
+			try { cache = language.LoadStrings( name ); }
+			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or UnauthorizedAccessException )
 			{
-				loadFailed = true;
-				Log.Warning( $"Online strings: {name} unavailable ({exception.Message})." );
+				unavailable.Add( name );
+				Log?.Warning( $"Online strings: {name} unavailable ({exception.Message})." );
 			}
 		}
 		return cache?.Entries;

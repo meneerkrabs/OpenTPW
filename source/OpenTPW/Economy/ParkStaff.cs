@@ -28,6 +28,11 @@ public sealed class StaffMember
 	public long BusyTicks { get; set; }
 	/// <summary>Object instance the employee works on, 0 when none.</summary>
 	public int AssignedInstanceId { get; set; }
+	/// <summary>Actual host actor position in cell units; null until attached to a world. Native saves use X/Y divided by 256.</summary>
+	public float? CellX { get; set; }
+	public float? CellY { get; set; }
+	/// <summary>Fraction of the host's next one-cell movement interval, persisted across loads.</summary>
+	public double TravelSeconds { get; set; }
 	public bool IsAvailable => BusyTicks == 0 && State != StaffState.OnStrike && State != StaffState.PickedUp;
 }
 

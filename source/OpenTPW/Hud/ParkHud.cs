@@ -141,12 +141,12 @@ public sealed partial class ParkHud
 
 		// [DATA:Mac main HUD table 0x4ab38:38-43] original button rectangles: staggered along the panel's curve, plus the camera button
 		PanelButton( "buy", "b_buy", Rect( 170, 1122, 288, 1240 ), 469, level.IsReadOnlyVisit ? null : OpenBuyWindow );
-		PanelButton( "info", "b_info", Rect( 287, 1133, 405, 1252 ), 470, null );
+		PanelButton( "info", "b_info", Rect( 287, 1133, 405, 1252 ), 470, OpenParkInfoWindow );
 		PanelButton( "finance", "b_money", Rect( 156, 1241, 274, 1360 ), 471, OpenFinanceWindow );
 		PanelButton( "research", "b_resrch", Rect( 274, 1254, 392, 1372 ), 472, OpenResearchWindow );
 		PanelButton( "map", "b_map", Rect( 81, 1340, 200, 1458 ), 473, OpenMapWindow );
-		// [APPROX:UI-042] the camera button's action (camera views) is not implemented; it is shown disabled
-		PanelButton( "camera", "b_camera", Rect( 202, 1355, 320, 1474 ), null, null );
+		// [APPROX:UI-042] camera button cycles host park views; original camera-view action remains unqualified
+		PanelButton( "camera", "b_camera", Rect( 202, 1355, 320, 1474 ), null, CycleCameraView );
 
 		// [APPROX:UI-022] speed buttons and multipliers — evidence needed: binary game speed options
 		// Speed control (OpenTPW addition; the original has pause only).
@@ -324,10 +324,20 @@ public sealed partial class ParkHud
 	{
 		if ( RejectReadOnlyAction() )
 			return;
-		if ( selectedObject is { IsDeleted: false } item && !item.Entry.IsFixedItem )
-			level.Objects.Remove( item ); // The level's removal handler sells/unlinks exactly once.
-		selectedObject = null;
-		SetInfoArm( false );
+		if ( selectedObject is not { IsDeleted: false } item || item.Entry.IsFixedItem )
+			return;
+		void Remove()
+		{
+			if ( !level.IsReadOnlyVisit && !item.IsDeleted )
+				level.Objects.Remove( item ); // Removal sells and unlinks exactly once.
+			selectedObject = null;
+			SetInfoArm( false );
+		}
+		if ( GameOptions.Current.Confirmations )
+			Stack.Push( UiDialogs.Message( "confirmDelete", () => strings[UIStrings.DeleteItem],
+				(() => strings.Value( UIStrings.Yes ), () => { Stack.Pop(); Remove(); }),
+				(() => strings.Value( UIStrings.No ), Stack.Pop) ) );
+		else Remove();
 	}
 
 	private bool RejectReadOnlyAction()
@@ -424,6 +434,11 @@ public sealed partial class ParkHud
 		var paused = Paused;
 		var overUi = Stack.Covers( context.Canvas, input.Mouse ) || Stack.Screens.Count > 1;
 		var consumed = Stack.Update( context, input );
+		if ( Camera.Mode is ParkCameraMode camera )
+		{
+			camera.UiCapturesKeyboard = Input.TextEntryActive || Stack.Screens.Count > 1;
+			camera.ModalOpen = Stack.Screens.Any( screen => screen != hud && screen.Modal );
+		}
 		if ( !paused && input.Has( UiKeys.Pause ) )
 			Status.Speed = Status.Speed == GameSpeed.Paused ? GameSpeed.Normal : GameSpeed.Paused;
 
@@ -485,7 +500,7 @@ public sealed partial class ParkHud
 		}
 		if ( input.Backspaces > 0 )
 			tool.Undo();
-		if ( input.RightPressed && inPark )
+		if ( input.RightPressed && inPark && GameOptions.Current.RmbCancel )
 		{
 			tool.Cancel();
 			return true;

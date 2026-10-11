@@ -53,6 +53,8 @@ public sealed partial class ParkHud
 		financeScreen ??= CreateFinanceScreen();
 		if ( financeScreen.Find( "loans" ) is UiButton loans )
 			loans.Enabled = FinanceEconomy?.Features.Loans == true;
+		foreach ( var id in new[] { "entry", "staffCosts" } )
+			if ( financeScreen.Find( id ) is UiButton detail ) detail.Enabled = FinanceEconomy != null;
 		Stack.Push( financeScreen );
 	}
 
@@ -148,10 +150,10 @@ public sealed partial class ParkHud
 		screen.Add( new UiButton { Id = "loans", Model = "b_loans", Help = strings.Help( 219 ),
 			Clicked = OpenLoansWindow, Enabled = FinanceEconomy?.Features.Loans == true,
 			Bounds = Rect( 1688, 575, 1790, 677 ), Anchor = UiAnchor.Center } );
-		// [APPROX:UI-061] the entry and staff-cost detail screens are not implemented; their finance-window buttons remain disabled.
-		screen.Add( new UiButton { Id = "staffCosts", Model = "b_staffcost", Help = strings.Help( 218 ), Enabled = false,
+		// Management extensions reuse the original finance navigation icons.
+		screen.Add( new UiButton { Id = "staffCosts", Model = "b_staffcost", Help = strings.Help( 218 ), Clicked = OpenStaffCostsWindow, Enabled = FinanceEconomy != null,
 			Bounds = Rect( 1688, 467, 1790, 570 ), Anchor = UiAnchor.Center } );
-		screen.Add( new UiButton { Id = "entry", Model = "b_entry", Help = strings.Help( 217 ), Enabled = false,
+		screen.Add( new UiButton { Id = "entry", Model = "b_entry", Help = strings.Help( 217 ), Clicked = OpenEntryPriceWindow, Enabled = FinanceEconomy != null,
 			Bounds = Rect( 1688, 360, 1790, 462 ), Anchor = UiAnchor.Center } );
 		screen.Add( new UiButton { Id = "exit", Model = "b_exit", Help = strings.Help( 1 ), Clicked = CloseFinanceWindow,
 			Bounds = Rect( 1711, 820, 1794, 903 ), Anchor = UiAnchor.Center } );

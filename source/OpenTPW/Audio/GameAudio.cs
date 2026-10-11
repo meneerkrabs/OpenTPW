@@ -98,9 +98,7 @@ public static class GameAudio
 			return;
 		var mixer = events.Mixer;
 		var options = GameOptions.Current;
-		mixer.SetChannelGain( AudioChannel.Effects, GameOptions.Gain( options.SoundEffectsVolume ) );
-		mixer.SetChannelGain( AudioChannel.Music, GameOptions.Gain( options.MusicVolume ) );
-		mixer.SetChannelGain( AudioChannel.Speech, GameOptions.Gain( options.SpeechVolume ) );
+		ApplyOptions( mixer, options );
 		if ( music != null && guestsInPark is { } guests )
 		{
 			var parameter = MusicParameter( guests );
@@ -112,6 +110,13 @@ public static class GameAudio
 		}
 		events.Pump();
 		mixer.Pump();
+	}
+
+	internal static void ApplyOptions( AudioMixer mixer, GameOptions options )
+	{
+		mixer.SetChannelGain( AudioChannel.Effects, options.SoundEffectsGain );
+		mixer.SetChannelGain( AudioChannel.Music, options.MusicGain );
+		mixer.SetChannelGain( AudioChannel.Speech, options.SpeechGain );
 	}
 
 	/// <summary>Plays a <c>cat_ui</c> event (button and view clicks).</summary>

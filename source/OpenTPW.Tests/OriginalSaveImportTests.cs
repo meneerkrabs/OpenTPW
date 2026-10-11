@@ -84,6 +84,22 @@ public class OriginalSaveImportTests
 	}
 
 	[TestMethod]
+	public void StaffNativeSubCellPositionsSurviveImportAndOwnedSave()
+	{
+		var settings = Settings();
+		var researcher = SaveTestPayloads.Staff( SaveThingModel.Researcher );
+		BinaryPrimitives.WriteUInt16LittleEndian( researcher.AsSpan( 0, 2 ), 321 );
+		BinaryPrimitives.WriteUInt16LittleEndian( researcher.AsSpan( 2, 2 ), 777 );
+		var economy = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
+		OriginalEconomyImport.Apply( economy, Park( settings, researcher: researcher ) );
+		var member = economy.Staff.Members.Single();
+		Assert.AreEqual( (321 / 256f, 777 / 256f), (member.CellX!.Value, member.CellY!.Value) );
+		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( ParkSaveFile.Serialize( economy ) ) ), settings, economy.Catalog );
+		var loaded = restored.Staff.Members.Single();
+		Assert.AreEqual( (member.CellX, member.CellY), (loaded.CellX, loaded.CellY) );
+	}
+
+	[TestMethod]
 	public void ImportsTurnBankObjectsAndStaff()
 	{
 		var settings = Settings();

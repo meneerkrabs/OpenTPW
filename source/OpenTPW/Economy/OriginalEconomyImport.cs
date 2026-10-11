@@ -235,7 +235,7 @@ public sealed class OriginalEconomyImport
 			}
 			else
 				adjusted.Add( $"{saved.Model} thing {saved.Id} hired time stamp {staff.HiredTimestamp} lies outside the park's calendar (start {start}, turn {ParkCalendar.Turn( economy.Tick )}), imported as hired at tick 0" );
-			// [APPROX:SAVE-003] saved staff are imported with their state enum read in STAFFSTATES.str order, their inline name replaced by name index 0, their hire time stamp rounded down to its park turn and no job, patrol region, rest area, energy, idle tick, role suffix or position — evidence needed: the staff state values and an inline-name field in OpenTPW's staff record
+			// [APPROX:SAVE-003] saved staff are imported with their state enum read in STAFFSTATES.str order, their inline name replaced by name index 0, their hire time stamp rounded down to its park turn and no job, patrol region, rest area, energy, idle tick, role suffix — evidence needed: the staff state values and an inline-name field in OpenTPW's staff record
 			var state = staff.State <= (uint)StaffState.PickedUp ? (StaffState)staff.State : StaffState.Idle;
 			if ( staff.State > (uint)StaffState.PickedUp )
 				adjusted.Add( $"{saved.Model} thing {saved.Id} state {staff.State} has no STAFFSTATES entry, imported as {StaffState.Idle}" );
@@ -247,7 +247,10 @@ public sealed class OriginalEconomyImport
 			var points = Math.Min( staff.GradePercentage, ParkStaff.TrainingPointsPerGrade - 1 );
 			if ( points != staff.GradePercentage )
 				adjusted.Add( $"{saved.Model} thing {saved.Id} grade percentage {staff.GradePercentage} imported as {points} (OpenTPW promotes at {ParkStaff.TrainingPointsPerGrade})" );
-			economy.Staff.AddImported( type, staff.Grade, points, happiness, state, hired );
+			var member = economy.Staff.AddImported( type, staff.Grade, points, happiness, state, hired );
+			// [DATA:SaveThingBase] exact base position is in 1/256-cell units, including the sub-cell offset.
+			member.CellX = saved.Base.X / 256f;
+			member.CellY = saved.Base.Y / 256f;
 			imported++;
 		}
 		evidence.Add( $"Imported {imported} staff ({string.Join( ", ", save.Staff.Select( item => $"{item.Model} grade {item.Staff.Grade}" ) )})." );
@@ -255,7 +258,7 @@ public sealed class OriginalEconomyImport
 			evidence.Add( $"[APPROX:SAVE-003] Adjusted on import: {adjustment}." );
 		if ( imported != 0 )
 		{
-			evidence.Add( $"[APPROX:SAVE-003] Staff states {string.Join( ", ", save.Staff.Select( item => item.Staff.State ) )} read in STAFFSTATES order; inline names ({string.Join( ", ", save.Staff.Select( item => item.Staff.Name ) )}), jobs, patrol regions, rest areas, energy, idle ticks, role suffixes and positions are not imported." );
+			evidence.Add( $"[APPROX:SAVE-003] Staff states {string.Join( ", ", save.Staff.Select( item => item.Staff.State ) )} read in STAFFSTATES order; inline names ({string.Join( ", ", save.Staff.Select( item => item.Staff.Name ) )}), jobs, patrol regions, rest areas, energy, idle ticks, role suffixes are not imported." );
 			foreach ( var saved in save.Staff )
 				evidence.Add( $"[APPROX:SAVE-003] {saved.Model} thing {saved.Id} values not imported: jobs 0x{saved.Staff.Jobs:X8}, patrol region {saved.Staff.PatrolRegion}, rest area {saved.Staff.RestAreaId}, energy {saved.Staff.Energy}, idle tick {saved.Staff.IdleTick}, role bytes {Convert.ToHexString( saved.RoleBytes )}, role next ID {saved.RoleNextId}." );
 		}

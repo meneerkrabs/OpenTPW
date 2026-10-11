@@ -143,6 +143,7 @@ public partial class Level : IDisposable
 				Park.AttachGuests( Guests );
 			ConnectObjectsToGuests();
 			ConnectObjectsToEconomy();
+			SetupStaff();
 		}
 	}
 
@@ -243,6 +244,7 @@ public partial class Level : IDisposable
 
 	public void Update()
 	{
+		StaffWorld?.Synchronize();
 		Camera.Update();
 		if ( ShowDeveloperPanels )
 			parkLayout.Draw();
@@ -271,6 +273,7 @@ public partial class Level : IDisposable
 			PlacedRide?.Simulate( deltaTime );
 			Objects.Simulate( deltaTime );
 			Park?.FixedTick();
+			StaffWorld?.Tick( deltaTime );
 		} );
 		foreach ( var entity in Entity.All.ToArray() )
 			entity.Update();

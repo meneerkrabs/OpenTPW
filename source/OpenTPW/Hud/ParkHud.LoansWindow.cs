@@ -224,9 +224,9 @@ public sealed partial class ParkHud
 		}
 		screen.Add( new UiButton { Id = "finance", Model = "b_finance", Clicked = CloseLoansWindow,
 			Bounds = Rect( 1866, 360, 1969, 462 ), Anchor = UiAnchor.Center } );
-		screen.Add( new UiButton { Id = "entry", Model = "b_entry", Enabled = false,
+		screen.Add( new UiButton { Id = "entry", Model = "b_entry", Clicked = OpenEntryPriceWindow, Enabled = LoansEconomy != null,
 			Bounds = Rect( 1866, 467, 1969, 570 ), Anchor = UiAnchor.Center } );
-		screen.Add( new UiButton { Id = "staffCosts", Model = "b_staffcost", Enabled = false,
+		screen.Add( new UiButton { Id = "staffCosts", Model = "b_staffcost", Clicked = OpenStaffCostsWindow, Enabled = LoansEconomy != null,
 			Bounds = Rect( 1866, 575, 1969, 677 ), Anchor = UiAnchor.Center } );
 		screen.Add( new UiButton { Id = "exit", Model = "b_exit", Help = strings.Help( 2 ), Clicked = CloseLoansWindow,
 			Bounds = Rect( 1889, 820, 1972, 903 ), Anchor = UiAnchor.Center } );

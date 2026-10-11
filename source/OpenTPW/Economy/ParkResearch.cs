@@ -26,6 +26,7 @@ public sealed class ParkResearch
 	private readonly HashSet<(int InfoId, int Level)> completed = new();
 	private readonly Dictionary<(int InfoId, int Level), long> progress = new();
 	private readonly int[] effort;
+	private readonly Dictionary<ResearchCategory, ResearchItem> selected = new();
 	private readonly HashSet<(int InfoId, int Level)> itemKeys = new();
 	private readonly Dictionary<ResearchCategory, List<ResearchItem>> byCategory = new();
 	private readonly Dictionary<(ResearchCategory Category, int Group), (int Count, int Done)> groupStats = new();
@@ -145,18 +146,39 @@ public sealed class ParkResearch
 
 	/// <summary>The item a category is currently researching, or null when nothing is researchable.</summary>
 	// [BIN:STP-PPC:0x100F0EF0 research cursor] each category researches the first item in table order whose group is open and which is not yet researched; cost is never compared
-	// [APPROX:ECON-017] the research table is in info-id order and the player cannot step the cursor to another item — evidence needed: the table fill order (FUN_100c9064) and the next/previous control
+	// [APPROX:ECON-017] the research table is in info-id order — evidence needed: the table fill order (FUN_100c9064) and the next/previous control
+	// Host UI selection below retains the native default cursor; correspondence with native player selection remains unverified.
 	public ResearchItem? Current( ResearchCategory category )
 	{
-		if ( !byCategory.TryGetValue( category, out var list ) )
-			return null;
-		foreach ( var item in list )
-		{
-			if ( !completed.Contains( (item.InfoId, item.Level) ) && IsGroupOpen( category, item.Group ) && PrerequisiteMet( item ) )
-				return item;
-		}
-		return null;
+		if ( selected.TryGetValue( category, out var item ) && IsSelectable( item ) )
+			return item;
+		selected.Remove( category );
+		return byCategory.TryGetValue( category, out var list ) ? list.FirstOrDefault( IsSelectable ) : null;
 	}
+
+	/// <summary>Unfinished projects with an open group and available prerequisites, in table order.</summary>
+	public IReadOnlyList<ResearchItem> SelectableItems( ResearchCategory category ) =>
+		byCategory.TryGetValue( category, out var list ) ? list.Where( IsSelectable ).ToArray() : Array.Empty<ResearchItem>();
+
+	/// <summary>Steps the active project with wraparound, retaining every project's accumulated points.</summary>
+	public bool MoveCurrent( ResearchCategory category, int direction )
+	{
+		var choices = SelectableItems( category );
+		if ( direction == 0 || choices.Count < 2 )
+			return false;
+		var current = Current( category );
+		var index = 0;
+		while ( index < choices.Count && choices[index] != current )
+			index++;
+		var next = (int)(((long)index + direction % choices.Count + choices.Count) % choices.Count);
+		if ( choices[next] == current )
+			return false;
+		selected[category] = choices[next];
+		return true;
+	}
+
+	private bool IsSelectable( ResearchItem item ) =>
+		!completed.Contains( (item.InfoId, item.Level) ) && IsGroupOpen( item.Category, item.Group ) && PrerequisiteMet( item );
 
 	private bool PrerequisiteMet( ResearchItem item )
 	{
@@ -225,8 +247,9 @@ public sealed class ParkResearch
 		while ( changed );
 	}
 
-	internal void Restore( IEnumerable<(int InfoId, int Level)> restoredCompleted, IEnumerable<((int InfoId, int Level) Key, long Points)> restoredProgress, IReadOnlyList<int> restoredEffort )
+	internal void Restore( IEnumerable<(int InfoId, int Level)> restoredCompleted, IEnumerable<((int InfoId, int Level) Key, long Points)> restoredProgress, IReadOnlyList<int> restoredEffort, IEnumerable<(ResearchCategory Category, int InfoId, int Level)>? restoredCurrent = null )
 	{
+		selected.Clear();
 		completed.Clear();
 		foreach ( var key in restoredCompleted )
 		{
@@ -242,7 +265,17 @@ public sealed class ParkResearch
 			progress[key] = points;
 		for ( var index = 0; index < effort.Length; index++ )
 			effort[index] = Math.Clamp( restoredEffort[index], 0, 100 );
+		foreach ( var (category, infoId, level) in restoredCurrent ?? Enumerable.Empty<(ResearchCategory, int, int)>() )
+		{
+			var item = items.FirstOrDefault( item => item.Category == category && item.InfoId == infoId && item.Level == level );
+			if ( item == null || !IsSelectable( item ) || !selected.TryAdd( category, item ) )
+				throw new InvalidDataException( $"Saved research cursor refers to an invalid project {infoId} level {level}." );
+		}
 	}
+
+	internal IEnumerable<(ResearchCategory Category, int InfoId, int Level)> CurrentEntries =>
+		selected.Where( entry => IsSelectable( entry.Value ) ).OrderBy( entry => entry.Key )
+			.Select( entry => (entry.Key, entry.Value.InfoId, entry.Value.Level) );
 
 	internal IEnumerable<((int InfoId, int Level) Key, long Points)> ProgressEntries => progress.Select( pair => (pair.Key, pair.Value) );
 }

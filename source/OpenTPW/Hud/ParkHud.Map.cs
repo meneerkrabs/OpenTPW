@@ -11,6 +11,21 @@ public sealed partial class ParkHud
 	private UiScreen? mapScreen;
 	private MapViewState mapView = MapViewState.Default;
 	private BuildCategory? mapCategory;
+	private readonly HashSet<StaffType> mapStaff = new();
+	public bool MapStaffRole( StaffType type ) => mapStaff.Contains( type );
+	public void ToggleMapStaff( StaffType type ) { if ( !mapStaff.Remove( type ) ) mapStaff.Add( type ); }
+	private bool mapVisitors;
+	private bool mapHappiness;
+	private bool mapSatisfaction;
+	private bool mapExcitement;
+	public bool MapSatisfaction => mapSatisfaction;
+	public bool MapExcitement => mapExcitement;
+	public void ToggleMapSatisfaction() => mapSatisfaction = !mapSatisfaction;
+	public void ToggleMapExcitement() => mapExcitement = !mapExcitement;
+	public bool MapVisitors => mapVisitors;
+	public bool MapHappiness => mapHappiness;
+	public void ToggleMapVisitors() => mapVisitors = !mapVisitors;
+	public void ToggleMapHappiness() => mapHappiness = !mapHappiness;
 
 	public bool MapWindowOpen => mapScreen != null && Stack.Screens.Contains( mapScreen );
 	public float MapZoom => mapView.Zoom;
@@ -56,7 +71,7 @@ public sealed partial class ParkHud
 
 	private UiScreen CreateMapScreen()
 	{
-		var screen = new UiScreen( "map" );
+		var screen = new MapScreen( this );
 		void Model( string id, string model, UiRect rect ) => screen.Add( new UiModelImage { Id = id, Model = model, Bounds = rect, Anchor = UiAnchor.Center } );
 		void Button( string id, string model, int help, UiRect rect, Action action ) => screen.Add( new UiButton
 		{
@@ -81,19 +96,22 @@ public sealed partial class ParkHud
 		CategoryButton( "sideshows", "b_sshow", BuildCategory.Sideshows, 271, Rect( 184, 1409, 286, 1512 ) );
 		CategoryButton( "shops", "b_sshop", BuildCategory.Shops, 269, Rect( 303, 1409, 406, 1512 ) );
 		CategoryButton( "features", "b_sfeature", BuildCategory.Features, 273, Rect( 423, 1409, 525, 1512 ) );
-		// [DATA:Mac map table 0x5265e:2441,2435,2444-2447,2455-2457] these layers have no per-cell location or metric data yet.
+		// [DATA:Mac map table 0x5265e:2441,2435,2444-2447,2455-2457] track, actor and metric controls.
 		// [APPROX:UI-088] controls for unavailable live layers remain visible but disabled.
 		Disabled( "tracks", "b_strack", 275, Rect( 542, 1409, 644, 1512 ) );
-		Disabled( "visitors", "b_svisit", 277, Rect( 1390, 1409, 1493, 1512 ) );
-		Disabled( "handymen", "b_shandy", 279, Rect( 1883, 443, 1985, 546 ) );
-		Disabled( "mechanics", "b_smech", 281, Rect( 1883, 592, 1985, 694 ) );
-		Disabled( "entertainers", "b_senter", 285, Rect( 1883, 740, 1985, 842 ) );
-		Disabled( "guards", "b_sguard", 283, Rect( 1883, 885, 1985, 987 ) );
-		Disabled( "satisfaction", "b_ssatis", 291, Rect( 1526, 1409, 1629, 1512 ) );
-		Disabled( "happiness", "b_shap", 287, Rect( 1646, 1409, 1748, 1512 ) );
-		Disabled( "excitement", "b_sexcit", 289, Rect( 1766, 1409, 1868, 1512 ) );
+		Layer( "visitors", "b_svisit", 277, Rect( 1390, 1409, 1493, 1512 ), ToggleMapVisitors, () => mapVisitors );
+		StaffLayer( "handymen", "b_shandy", 279, Rect( 1883, 443, 1985, 546 ), StaffType.Handyman );
+		StaffLayer( "mechanics", "b_smech", 281, Rect( 1883, 592, 1985, 694 ), StaffType.Mechanic );
+		StaffLayer( "entertainers", "b_senter", 285, Rect( 1883, 740, 1985, 842 ), StaffType.Entertainer );
+		StaffLayer( "guards", "b_sguard", 283, Rect( 1883, 885, 1985, 987 ), StaffType.Guard );
+		MetricLayer( "satisfaction", "b_ssatis", 291, Rect( 1526, 1409, 1629, 1512 ), ToggleMapSatisfaction, () => mapSatisfaction );
+		Layer( "happiness", "b_shap", 287, Rect( 1646, 1409, 1748, 1512 ), ToggleMapHappiness, () => mapHappiness );
+		MetricLayer( "excitement", "b_sexcit", 289, Rect( 1766, 1409, 1868, 1512 ), ToggleMapExcitement, () => mapExcitement );
 		// [DATA:Mac map table 0x5265e:-1] b_okay closes the map (help 1).
 		Button( "close", "b_okay", 1, Rect( 1941, 1339, 2024, 1422 ), CloseMapWindow );
+		// [PROVISIONAL:MAP] Host metric legend qualifies observed thoughts and attraction ratings; original legend handler is untraced.
+		screen.Add( new UiLabel { Id = "metricLegend", Text = MapMetricLegend, Font = fonts => fonts.Label, Fit = true,
+			Bounds = Rect( 700, 1400, 1340, 1520 ), Anchor = UiAnchor.Center } );
 		screen.Back = CloseMapWindow;
 		return screen;
 
@@ -102,10 +120,48 @@ public sealed partial class ParkHud
 			Id = id, Model = model, Help = strings.Help( help ), Bounds = rect, Anchor = UiAnchor.Center,
 			Clicked = () => mapCategory = mapCategory == category ? null : category, Selected = () => mapCategory == category
 		} );
+		void MetricLayer( string id, string model, int help, UiRect rect, Action action, Func<bool> selected ) => screen.Add( new UiButton
+		{ Id = id, Model = model, Help = strings.Help( help ), Bounds = rect, Anchor = UiAnchor.Center, Clicked = action, Selected = selected } );
+		void StaffLayer( string id, string model, int help, UiRect rect, StaffType role ) => screen.Add( new UiButton
+		{
+			Id = id, Model = model, Help = strings.Help( help ), Bounds = rect, Anchor = UiAnchor.Center,
+			Clicked = () => ToggleMapStaff( role ), Selected = () => MapStaffRole( role ), Enabled = level.StaffWorld != null
+		} );
+		void Layer( string id, string model, int help, UiRect rect, Action action, Func<bool> selected ) => screen.Add( new UiButton
+		{
+			Id = id, Model = model, Help = strings.Help( help ), Bounds = rect, Anchor = UiAnchor.Center,
+			Clicked = action, Selected = selected, Enabled = level.Guests != null
+		} );
 		void Disabled( string id, string model, int help, UiRect rect ) => screen.Add( new UiButton
 		{
 			Id = id, Model = model, Help = strings.Help( help ), Bounds = rect, Anchor = UiAnchor.Center, Enabled = false
 		} );
+	}
+
+	private string MapMetricLegend()
+	{
+		var text = new List<string>();
+		if ( mapSatisfaction )
+		{
+			var outcomes = ParkMapMetrics.Outcomes( level.Guests?.Guests ?? Array.Empty<Guest>(), level.Objects.Grid.Width, level.Objects.Grid.Height ).ToArray();
+			text.Add( strings.Extra( OpenTpwText.MapRecordedVisitorReactions ) + "\n" + (outcomes.Length == 0 ? strings.Extra( OpenTpwText.MapNoObservations ) :
+				string.Format( strings.Extra( OpenTpwText.MapReactionLegend ), outcomes.Sum( cell => cell.Pleased ), outcomes.Sum( cell => cell.Dissatisfied ) )) );
+		}
+		if ( mapExcitement ) text.Add( strings.Extra( OpenTpwText.MapAttractionExcitement ) + "\n" +
+			strings.Extra( level.Guests?.Attractions.Count > 0 ? OpenTpwText.MapExcitementLegend : OpenTpwText.MapNoObservations ) );
+		return string.Join( "\n", text );
+	}
+
+	private sealed class MapScreen( ParkHud owner ) : UiScreen( "map" )
+	{
+		public override bool Update( UiContext context, UiInput input )
+		{
+			foreach ( var id in new[] { "visitors", "happiness" } )
+				if ( Find( id ) is UiButton button ) button.Enabled = owner.level.Guests != null;
+			foreach ( var id in new[] { "handymen", "mechanics", "entertainers", "guards" } )
+				if ( Find( id ) is UiButton button ) button.Enabled = owner.level.StaffWorld != null;
+			return base.Update( context, input );
+		}
 	}
 
 	private sealed class ParkMapView : UiElement
@@ -174,6 +230,24 @@ public sealed partial class ParkHud
 				(owner.mapCategory == null || item.Entry.WhichUIType == (int)owner.mapCategory) ) )
 				foreach ( var cell in item.Cells )
 					Mark( cell.X, cell.Y, new RgbaByte( 207, 67, 198, 235 ) );
+			// [PROVISIONAL:MAP] Attraction ratings use registered bridge data, never visitor preference or a synthetic scalar.
+			if ( owner.mapExcitement )
+				foreach ( var item in owner.level.Objects.Objects.Where( item => !item.IsDeleted && owner.level.Guests?.Attractions.Contains( item.Visitors ) == true ) )
+					foreach ( var cell in item.Cells ) Mark( cell.X, cell.Y, ParkMapMetrics.ExcitementColor( item.Visitors.ExcitementLevel ) );
+			if ( owner.mapExcitement && owner.level.PlacedRide is { } ride && owner.level.OriginalPark is { } original && owner.level.Guests?.Attractions.Contains( ride.Visitors ) == true &&
+				OriginalParkPlacement.TryGetCell( original.Heightfield, ride.Position.X, ride.Position.Y, out var rideX, out var rideY ) )
+				Mark( rideX, rideY, ParkMapMetrics.ExcitementColor( ride.Visitors.ExcitementLevel ) );
+			foreach ( var actor in owner.level.StaffWorld?.Snapshots ?? Array.Empty<StaffWorldSnapshot>() )
+				if ( owner.mapStaff.Contains( actor.Type ) && float.IsFinite( actor.CellX ) && float.IsFinite( actor.CellY ) && actor.CellX >= 0 && actor.CellY >= 0 && actor.CellX < width && actor.CellY < height )
+					Mark( (int)MathF.Floor( actor.CellX ), (int)MathF.Floor( actor.CellY ), new RgbaByte( 255, 255, 255, 245 ) );
+			// [PROVISIONAL:MAP] Live visitor cells and mean happiness use real simulation values; original overlay colouring is untraced.
+			if ( owner.mapVisitors || owner.mapHappiness )
+				foreach ( var cell in ParkMapGuestLayers.Cells( owner.level.Guests?.Guests ?? Array.Empty<Guest>(), width, height ) )
+					Mark( cell.X, cell.Y, owner.mapHappiness ? ParkMapGuestLayers.HappinessColor( cell.Happiness ) : new RgbaByte( 75, 180, 255, 240 ) );
+			// [PROVISIONAL:MAP] A thought outcome is an observation proxy, not the original game's satisfaction score.
+			if ( owner.mapSatisfaction )
+				foreach ( var cell in ParkMapMetrics.Outcomes( owner.level.Guests?.Guests ?? Array.Empty<Guest>(), width, height ) )
+					Mark( cell.X, cell.Y, cell.Pleased > 0 && cell.Dissatisfied > 0 ? new RgbaByte( 255, 165, 35, 240 ) : cell.Pleased > 0 ? new RgbaByte( 35, 235, 35, 240 ) : new RgbaByte( 235, 35, 35, 240 ) );
 		}
 	}
 }
@@ -208,4 +282,23 @@ internal static class ParkMapGeometry
 		return new UiRect( (ImagePixels - width * cellWidth) / 2 + x * cellWidth,
 			(ImagePixels - height * cellHeight) / 2 + y * cellHeight, cellWidth, cellHeight );
 	}
+}
+
+internal static class ParkMapGuestLayers
+{
+	public static IEnumerable<(int X, int Y, float Happiness)> Cells( IEnumerable<Guest> guests, int width, int height ) =>
+		guests.Where( guest => guest.IsVisible && float.IsFinite( guest.X ) && float.IsFinite( guest.Y ) && guest.X >= 0 && guest.Y >= 0 && guest.X < width && guest.Y < height )
+			.GroupBy( guest => ((int)MathF.Floor( guest.X ), (int)MathF.Floor( guest.Y )) )
+			.Select( group => (group.Key.Item1, group.Key.Item2, group.Average( guest => guest.Happiness )) );
+	public static RgbaByte HappinessColor( float happiness ) => new( (byte)(255 * (1 - Math.Clamp( happiness, 0, 100 ) / 100)), (byte)(255 * Math.Clamp( happiness, 0, 100 ) / 100), 35, 235 );
+}
+
+internal static class ParkMapMetrics
+{
+	public static IEnumerable<(int X, int Y, int Pleased, int Dissatisfied)> Outcomes( IEnumerable<Guest> guests, int width, int height ) =>
+		guests.Where( guest => guest.IsVisible && guest.Thought is GuestThought.Pleased or GuestThought.Dissatisfied &&
+			float.IsFinite( guest.X ) && float.IsFinite( guest.Y ) && guest.X >= 0 && guest.Y >= 0 && guest.X < width && guest.Y < height )
+			.GroupBy( guest => ((int)MathF.Floor( guest.X ), (int)MathF.Floor( guest.Y )) )
+			.Select( group => (group.Key.Item1, group.Key.Item2, group.Count( guest => guest.Thought == GuestThought.Pleased ), group.Count( guest => guest.Thought == GuestThought.Dissatisfied )) );
+	public static RgbaByte ExcitementColor( int rating ) => ParkMapGuestLayers.HappinessColor( rating );
 }

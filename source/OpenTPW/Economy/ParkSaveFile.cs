@@ -142,6 +142,12 @@ public static class ParkSaveFile
 		public required StaffState State { get; init; }
 		public required long BusyTicks { get; init; }
 		public required int AssignedInstanceId { get; init; }
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public float? CellX { get; init; }
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public float? CellY { get; init; }
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public double TravelSeconds { get; init; }
 	}
 
 	public sealed class ResearchData
@@ -149,6 +155,10 @@ public static class ParkSaveFile
 		public required List<int[]> Completed { get; init; }
 		public required List<long[]> Progress { get; init; }
 		public required List<int> Effort { get; init; }
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public List<int[]>? Current { get; init; }
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public int? Workload { get; init; }
 	}
 
 	public sealed class ObjectivesData
@@ -239,7 +249,10 @@ public static class ParkSaveFile
 					Happiness = member.Happiness,
 					State = member.State,
 					BusyTicks = member.BusyTicks,
-					AssignedInstanceId = member.AssignedInstanceId
+					AssignedInstanceId = member.AssignedInstanceId,
+					CellX = member.CellX,
+					CellY = member.CellY,
+					TravelSeconds = member.TravelSeconds
 				} ).ToList(),
 				Candidates = park.Staff.Candidates.ToList(),
 				TrainingBudgets = Enum.GetValues<StaffType>().Select( park.Staff.GetTrainingBudget ).ToList(),
@@ -250,7 +263,9 @@ public static class ParkSaveFile
 			{
 				Completed = park.Research.Completed.OrderBy( key => key.InfoId ).ThenBy( key => key.Level ).Select( key => new[] { key.InfoId, key.Level } ).ToList(),
 				Progress = park.Research.ProgressEntries.OrderBy( entry => entry.Key.InfoId ).ThenBy( entry => entry.Key.Level ).Select( entry => new[] { entry.Key.InfoId, entry.Key.Level, entry.Points } ).ToList(),
-				Effort = park.Research.Effort.ToList()
+				Effort = park.Research.Effort.ToList(),
+				Current = park.Research.CurrentEntries.Any() ? park.Research.CurrentEntries.Select( entry => new[] { (int)entry.Category, entry.InfoId, entry.Level } ).ToList() : null,
+				Workload = park.Research.Workload == Math.Clamp( park.Settings.ResearchStartingWorkLoad, 0, 100 ) ? null : park.Research.Workload
 			},
 			Objectives = new ObjectivesData
 			{
@@ -317,11 +332,12 @@ public static class ParkSaveFile
 			Require( member.Id > 0 && member.Id < data.Staff.NextId && staffIds.Add( member.Id ), $"staff id {member.Id}" );
 			Require( Enum.IsDefined( member.Type ) && member.Grade is >= 0 and < BalanceSettings.GradeCount && member.TrainingPoints is >= 0 and < ParkStaff.TrainingPointsPerGrade, $"staff {member.Id}" );
 			Require( member.BusyTicks >= 0 && (member.AssignedInstanceId == 0 || ids.Contains( member.AssignedInstanceId )), $"staff {member.Id} job" );
+			Require( member.CellX.HasValue == member.CellY.HasValue && (!member.CellX.HasValue || (float.IsFinite( member.CellX.Value ) && float.IsFinite( member.CellY!.Value ))) && double.IsFinite( member.TravelSeconds ) && member.TravelSeconds >= 0 && member.TravelSeconds < StaffWorldSimulation.SecondsPerCell, $"staff {member.Id} position" );
 		}
 		foreach ( var candidate in data.Staff.Candidates )
 			Require( candidate.Id > 0 && candidate.Id < data.Staff.NextId && staffIds.Add( candidate.Id ) && candidate.Grade is >= 0 and < BalanceSettings.GradeCount, $"candidate {candidate.Id}" );
 		Require( data.Staff.TrainingBudgets.Count == BalanceSettings.StaffTypeCount && data.Staff.TrainingBudgets.All( value => value >= 0 ), "training budgets" );
-		Require( data.Research.Effort.Count == 5 && data.Research.Completed.All( key => key.Length == 2 ) && data.Research.Progress.All( entry => entry.Length == 3 && entry[2] >= 0 ), "research" );
+		Require( (data.Research.Workload == null || data.Research.Workload is >= 0 and <= 100) && (data.Research.Current == null || data.Research.Current.All( entry => entry.Length == 3 && Enum.IsDefined( (ResearchCategory)entry[0] ) )) && data.Research.Effort.Count == 5 && data.Research.Completed.All( key => key.Length == 2 ) && data.Research.Progress.All( entry => entry.Length == 3 && entry[2] >= 0 ), "research" );
 		foreach ( var loan in data.Loans )
 			Require( loan.MonthsRemaining > 0 && loan.RemainingBalance >= 0 && data.TakenLoanOffers.Contains( loan.OfferIndex ), $"loan {loan.OfferIndex}" );
 	}
@@ -379,10 +395,16 @@ public static class ParkSaveFile
 			Happiness = member.Happiness,
 			State = member.State,
 			BusyTicks = member.BusyTicks,
-			AssignedInstanceId = member.AssignedInstanceId
+			AssignedInstanceId = member.AssignedInstanceId,
+			CellX = member.CellX,
+			CellY = member.CellY,
+			TravelSeconds = member.TravelSeconds
 		} ), data.Staff.Candidates, data.Staff.TrainingBudgets, data.Staff.NextId, data.Staff.NextPoolUpdateTick );
 		park.Research.Restore( data.Research.Completed.Select( key => (key[0], key[1]) ),
-			data.Research.Progress.Select( entry => (((int)entry[0], (int)entry[1]), entry[2]) ), data.Research.Effort );
+			data.Research.Progress.Select( entry => (((int)entry[0], (int)entry[1]), entry[2]) ), data.Research.Effort,
+			data.Research.Current?.Select( entry => ((ResearchCategory)entry[0], entry[1], entry[2]) ) );
+		if ( data.Research.Workload is int workload )
+			park.Research.SetWorkload( workload );
 		park.Objectives.Restore( data.Objectives.NextOfferDay, data.Objectives.NextListPosition, data.Objectives.Current, data.Objectives.Declines, data.Objectives.Finished, data.Objectives.GoldenTickets );
 		park.Counters.Restore( data.Counters );
 		return park;

@@ -60,6 +60,11 @@ public enum OpenTpwText
 	BonusNotFound,
 	EnhancedQuality,
 	OpenTpwPage,
+	MapRecordedVisitorReactions,
+	MapAttractionExcitement,
+	MapNoObservations,
+	MapReactionLegend,
+	MapExcitementLegend,
 }
 
 public static class SupplementaryStrings
@@ -165,6 +170,11 @@ public static class SupplementaryStrings
 			"In diesem Ordner oder dieser ZIP-Datei wurden keine Bonusinhalte gefunden.",
 			"Inget bonusinnehåll hittades i den här mappen eller zip-filen." },
 		[OpenTpwText.EnhancedQuality] = new[] { "Enhanced", "Forbedret", "Verbeterd", "Amélioré", "Erweitert", "Förbättrad" },
+		[OpenTpwText.MapRecordedVisitorReactions] = new[] { "Recorded visitor reactions", "Registrerede gæstereaktioner", "Waargenomen bezoekersreacties", "Réactions des visiteurs observées", "Beobachtete Besucherreaktionen", "Registrerade besökarreaktioner" },
+		[OpenTpwText.MapAttractionExcitement] = new[] { "Attraction excitement", "Forlystelsens spænding", "Attractiespanning", "Sensations de l'attraction", "Nervenkitzel der Attraktion", "Attraktionens spänning" },
+		[OpenTpwText.MapNoObservations] = new[] { "No observations yet", "Ingen observationer endnu", "Nog geen waarnemingen", "Aucune observation pour le moment", "Noch keine Beobachtungen", "Inga observationer ännu" },
+		[OpenTpwText.MapReactionLegend] = new[] { "Green: pleased {0}; red: dissatisfied {1}; orange: mixed", "Grøn: tilfredse {0}; rød: utilfredse {1}; orange: blandet", "Groen: tevreden {0}; rood: ontevreden {1}; oranje: gemengd", "Vert : satisfaits {0} ; rouge : insatisfaits {1} ; orange : mixte", "Grün: zufrieden {0}; rot: unzufrieden {1}; orange: gemischt", "Grön: nöjda {0}; röd: missnöjda {1}; orange: blandat" },
+		[OpenTpwText.MapExcitementLegend] = new[] { "Red: 0; green: 100", "Rød: 0; grøn: 100", "Rood: 0; groen: 100", "Rouge : 0 ; vert : 100", "Rot: 0; grün: 100", "Röd: 0; grön: 100" },
 		[OpenTpwText.OpenTpwPage] = new[] { "OpenTPW", "OpenTPW", "OpenTPW", "OpenTPW", "OpenTPW", "OpenTPW" },
 		[OpenTpwText.NotAvailable] = new[] { "Not available yet", "Endnu ikke tilgængelig", "Nog niet beschikbaar", "Pas encore disponible", "Noch nicht verfügbar", "Inte tillgänglig ännu" },
 		[OpenTpwText.OnlyOnePrototypeRide] = new[] {

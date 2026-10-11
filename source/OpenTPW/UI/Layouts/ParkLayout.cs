@@ -85,7 +85,7 @@ public sealed class ParkLayout
 				ImGui.TextWrapped( level.LastActionMessage );
 			ImGui.Separator();
 			displayPanel.Draw();
-			ImGui.TextWrapped( "WASD: pan | right drag: pan | wheel: zoom | Q/E: rotate | F1: editor" );
+			ImGui.TextWrapped( "WASD: pan | edges/right drag: scroll option | wheel: zoom | arrows: rotate | `: editor" );
 		}
 		ImGui.End();
 	}

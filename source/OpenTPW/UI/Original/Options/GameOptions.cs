@@ -18,12 +18,9 @@ public enum ScrollMode { Pushscroll, RightButton }
 /// the graphics preset to <see cref="IGraphicsSettings"/>). Stored as JSON next to the sandbox save
 /// (<c>save/opentpw-options.json</c>); files written by older versions lack the newer fields and
 /// get their defaults.
-/// Consumed today: <see cref="MovieVolume"/>/<see cref="MovieOn"/> (start-up movies) and
-/// <see cref="PopupHelp"/> (front end and HUD), <see cref="Advisor"/> and <see cref="Tutorial"/> (the automatic
-/// advisor, <see cref="AutomaticAdvisor"/>). STORED ONLY, with no effect yet: the sound effects,
-/// music and speech volumes and switches (no game audio mixes them), <see cref="Confirmations"/>, <see cref="RmbCancel"/>, <see cref="Rotation"/>
-/// and <see cref="Scroll"/> (the camera and tools do not read them). They are kept so the options screen
-/// round-trips the original settings; each consumer must start reading them when its feature exists.
+/// Volumes and mute toggles control the mixer and movies. Advisor/tutorial/help control their
+/// respective consumers. Camera rotation and scroll modes, deletion confirmations and tool
+/// right-click cancellation are applied by the park camera and HUD.
 /// </summary>
 public sealed class GameOptions
 {

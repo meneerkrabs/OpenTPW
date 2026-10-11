@@ -80,6 +80,19 @@ public sealed partial class ParkHud
 		return item.Cost <= 0 ? 1 : Math.Clamp( economy.Research.GetProgress( item ) / (item.Cost * (float)ParkResearch.PointScale), 0, 1 );
 	}
 
+	public static bool TrySetResearchWorkload( ParkEconomy? economy, bool readOnly, int workload )
+	{
+		if ( readOnly || economy is not { Features.ResearchPanel: true } ) return false;
+		economy.Research.SetWorkload( workload );
+		return true;
+	}
+
+	public static bool TryMoveResearchCurrent( ParkEconomy? economy, bool readOnly, ResearchCategory category, int direction )
+	{
+		if ( readOnly || economy is not { Features.ResearchPanel: true } || !Enum.IsDefined( category ) ) return false;
+		return economy.Research.MoveCurrent( category, direction );
+	}
+
 	private void SetResearchEffort( ResearchCategory category, int effort )
 	{
 		if ( !level.IsReadOnlyVisit && ResearchEconomy is { Features: { ResearchPanel: true } } economy )
@@ -107,11 +120,12 @@ public sealed partial class ParkHud
 			var cells = ResearchCells[row];
 			Model( $"panel{index}", "research", panel );
 			Model( $"icon{index}", icon, cells.Icon );
-			// [DATA:Mac research table 0x4c652] The next/previous controls are present but ParkResearch.Current
-			// always chooses the first open item and exposes no cursor adjustment.
+			// [EXTENSION:UI] Cursor arrows select eligible research targets using the economy model.
 			screen.Add( new UiButton { Id = $"previous{index}", Model = "b_sleft", Enabled = false,
+				Clicked = () => TryMoveResearchCurrent( ResearchEconomy, level.IsReadOnlyVisit, category, -1 ),
 				Bounds = cells.Previous, Anchor = UiAnchor.Center } );
 			screen.Add( new UiButton { Id = $"next{index}", Model = "b_sright", Enabled = false,
+				Clicked = () => TryMoveResearchCurrent( ResearchEconomy, level.IsReadOnlyVisit, category, 1 ),
 				Bounds = cells.Next, Anchor = UiAnchor.Center } );
 			screen.Add( new UiLabel { Id = $"item{index}", Text = () => ResearchItemName( category ), Font = fonts => fonts.Label,
 				Color = UiColors.Text, Align = UiAlign.Center, Fit = true,
@@ -133,8 +147,14 @@ public sealed partial class ParkHud
 		screen.Updating = _ =>
 		{
 			var editable = !level.IsReadOnlyVisit && ResearchEconomy is { Features: { ResearchPanel: true } };
+			if ( screen.Find( "workloadKnob" ) is UiElement workload ) workload.Enabled = editable;
 			foreach ( var index in Enumerable.Range( 0, ResearchRows.Length ) )
+				{
 				if ( screen.Find( $"effort{index}" ) is UiSlider effort ) effort.Enabled = editable;
+				var canSelect = editable && ResearchEconomy!.Research.SelectableItems( ResearchRows[index].Category ).Count > 1;
+				if ( screen.Find( $"previous{index}" ) is UiButton previous ) previous.Enabled = canSelect;
+				if ( screen.Find( $"next{index}" ) is UiButton next ) next.Enabled = canSelect;
+			}
 		};
 		screen.Back = CloseResearchWindow;
 		return screen;
@@ -157,10 +177,22 @@ public sealed partial class ParkHud
 		}
 	}
 
-	private sealed class ResearchWorkloadKnob : UiElement
+	private sealed class ResearchWorkloadKnob : UiElement, IUiDragTarget
 	{
 		private readonly ParkHud owner;
 		public ResearchWorkloadKnob( ParkHud owner ) => this.owner = owner;
+		public override bool Focusable => Visible && Enabled;
+		public override void Adjust( int direction ) => TrySetResearchWorkload( owner.ResearchEconomy, owner.level.IsReadOnlyVisit,
+			(owner.ResearchEconomy?.Research.Workload ?? 0) + direction );
+		public void DragTo( UiCanvas canvas, NVector2 point )
+		{
+			if ( !Enabled ) return;
+			var rect = ScreenRect( canvas );
+			if ( rect.Height <= 0 ) return;
+			var y = Bounds.Y + (point.Y - rect.Y) / rect.Height * Bounds.Height;
+			TrySetResearchWorkload( owner.ResearchEconomy, owner.level.IsReadOnlyVisit,
+				(int)MathF.Round( (1 - (y - 220 - 33.5f) / (701 - 220 - 67)) * 100 ) );
+		}
 		public override void Draw( UiContext context, bool focused, bool pressed )
 		{
 			var workload = owner.ResearchEconomy?.Research.Workload ?? 0;

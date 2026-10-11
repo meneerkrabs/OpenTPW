@@ -329,7 +329,7 @@ public sealed partial class ParkHud
 		// [DATA:Mac staff-button table 0x4e45c:2397-2404] Locate-role and locate-visitor buttons at the authored HUD rectangles.
 		Model( "staffLocateFrame", "!f_plain", Rect( 526, 1191, 893, 1439 ) );
 		Model( "visitorLocateFrame", "!f_plain", Rect( 12, 1191, 379, 1439 ) );
-		// [APPROX:UI-091] Locate controls are disabled until employees and visitors have world positions to target.
+		// [PROVISIONAL:LOCATE] Locate controls focus live actors; role lookup prefers the selected employee, otherwise cycles IDs.
 		var locate = new (string Model, int Help, UiRect Rect)[]
 		{
 			("b_shandy", 482, Rect( 546, 1207, 649, 1310 )),
@@ -342,8 +342,9 @@ public sealed partial class ParkHud
 		for ( var index = 0; index < locate.Length; index++ )
 		{
 			var button = locate[index];
+			var role = index < 5 ? StaffRoles[index].Type : (StaffType?)null;
 			screen.Add( new UiButton { Id = $"locate{index}", Model = button.Model, Help = strings.Help( button.Help ),
-				Enabled = false, Bounds = button.Rect, Anchor = UiAnchor.Center } );
+				Enabled = role is { } type ? CanLocateStaff( type ) : CanLocateVisitor, Clicked = () => { if ( role is { } type ) LocateStaff( type ); else LocateVisitor(); }, Bounds = button.Rect, Anchor = UiAnchor.Center } );
 		}
 		screen.Add( new UiButton { Id = "exit", Model = "b_exit", Help = strings.Help( 2 ), Clicked = CloseStaffWindow,
 			Bounds = Rect( 1889, 818, 1972, 901 ), Anchor = UiAnchor.Center } );
@@ -358,6 +359,9 @@ public sealed partial class ParkHud
 		public override bool Update( UiContext context, UiInput input )
 		{
 			owner.EnsureStaffSelection();
+			if ( Find( "locate5" ) is UiButton visitor ) visitor.Enabled = owner.CanLocateVisitor;
+			for ( var index = 0; index < StaffRoles.Length; index++ )
+				if ( Find( $"locate{index}" ) is UiButton staff ) staff.Enabled = owner.CanLocateStaff( StaffRoles[index].Type );
 			if ( input.Wheel != 0 )
 			{
 				owner.ScrollStaff( input.Wheel > 0 ? -1 : 1 );

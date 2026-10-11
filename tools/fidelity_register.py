@@ -19,6 +19,7 @@ REGISTERS = {
     "QUEUE": "source/OpenTPW/World/Guests/QueueApproximations.cs",
     "PATH": "source/OpenTPW/World/PathApproximations.cs",
     "WALK": "source/OpenTPW/World/Guests/WalkApproximations.cs",
+    "SAVE": "source/OpenTPW/Economy/SaveApproximations.cs",
 }
 MARKDOWN_REGISTERS = {"ONLINE": "docs/ONLINE.md"}
 EXTENSION_SCOPE = "OpenTPW online extension"

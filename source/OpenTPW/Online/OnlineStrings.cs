@@ -6,6 +6,7 @@ public enum OnlineLabel
 	ServerAddress, Register, LogIn, LogOut, ExportPark, ImportFile, Inbox, VisitReadOnly, Chat, ReadOnlyVisit,
 	RateLimited, NoBuddies, OnlineOff, Refresh, Vote, Report, To, PutInOutbox, SavedTo, FileSharing,
 	DeleteAccount, DeleteAccountWarning, AccountDeleted, News, NoNews, ShownOnWebsite, NotShownOnWebsite, ChatReconnected,
+	TwoStepLogin, TwoStepInstructions, AuthenticatorCode, Confirm,
 }
 
 /// <summary>
@@ -127,6 +128,8 @@ public static class OnlineStrings
 			[OnlineLabel.News] = "News", [OnlineLabel.NoNews] = "This server has no news.",
 			[OnlineLabel.ShownOnWebsite] = "Also on the OpenTPW website: yes", [OnlineLabel.NotShownOnWebsite] = "Also on the OpenTPW website: no",
 			[OnlineLabel.ChatReconnected] = "The server restarted; chat reconnected.",
+			[OnlineLabel.TwoStepLogin] = "Two-step login", [OnlineLabel.TwoStepInstructions] = "Scan this code with an authenticator app (or type the key), then enter the 6-digit code it shows. Lost your phone? Ask the server's operator.",
+			[OnlineLabel.AuthenticatorCode] = "Authenticator code", [OnlineLabel.Confirm] = "Confirm",
 		},
 		["Danish"] = new Dictionary<OnlineLabel, string>
 		{
@@ -144,6 +147,8 @@ public static class OnlineStrings
 			[OnlineLabel.News] = "Nyheder", [OnlineLabel.NoNews] = "Denne server har ingen nyheder.",
 			[OnlineLabel.ShownOnWebsite] = "Også på OpenTPW-webstedet: ja", [OnlineLabel.NotShownOnWebsite] = "Også på OpenTPW-webstedet: nej",
 			[OnlineLabel.ChatReconnected] = "Serveren genstartede; chatten er forbundet igen.",
+			[OnlineLabel.TwoStepLogin] = "Totrinslogin", [OnlineLabel.TwoStepInstructions] = "Scan koden med en godkendelsesapp (eller indtast nøglen), og indtast derefter den 6-cifrede kode, den viser. Mistet din telefon? Spørg serverens administrator.",
+			[OnlineLabel.AuthenticatorCode] = "Godkendelseskode", [OnlineLabel.Confirm] = "Bekræft",
 		},
 		["Dutch"] = new Dictionary<OnlineLabel, string>
 		{
@@ -161,6 +166,8 @@ public static class OnlineStrings
 			[OnlineLabel.News] = "Nieuws", [OnlineLabel.NoNews] = "Deze server heeft geen nieuws.",
 			[OnlineLabel.ShownOnWebsite] = "Ook op de OpenTPW-website: ja", [OnlineLabel.NotShownOnWebsite] = "Ook op de OpenTPW-website: nee",
 			[OnlineLabel.ChatReconnected] = "De server is herstart; de chat is opnieuw verbonden.",
+			[OnlineLabel.TwoStepLogin] = "Inloggen in twee stappen", [OnlineLabel.TwoStepInstructions] = "Scan deze code met een authenticator-app (of typ de sleutel over) en vul de 6-cijferige code in die de app toont. Telefoon kwijt? Vraag de beheerder van de server.",
+			[OnlineLabel.AuthenticatorCode] = "Code uit de app", [OnlineLabel.Confirm] = "Bevestigen",
 		},
 		["French"] = new Dictionary<OnlineLabel, string>
 		{
@@ -178,6 +185,8 @@ public static class OnlineStrings
 			[OnlineLabel.News] = "Actualités", [OnlineLabel.NoNews] = "Ce serveur n'a pas d'actualités.",
 			[OnlineLabel.ShownOnWebsite] = "Aussi sur le site OpenTPW : oui", [OnlineLabel.NotShownOnWebsite] = "Aussi sur le site OpenTPW : non",
 			[OnlineLabel.ChatReconnected] = "Le serveur a redémarré ; le chat est reconnecté.",
+			[OnlineLabel.TwoStepLogin] = "Connexion en deux étapes", [OnlineLabel.TwoStepInstructions] = "Scannez ce code avec une application d'authentification (ou saisissez la clé), puis entrez le code à 6 chiffres affiché. Téléphone perdu ? Contactez l'administrateur du serveur.",
+			[OnlineLabel.AuthenticatorCode] = "Code d'authentification", [OnlineLabel.Confirm] = "Confirmer",
 		},
 		["German"] = new Dictionary<OnlineLabel, string>
 		{
@@ -195,6 +204,8 @@ public static class OnlineStrings
 			[OnlineLabel.News] = "Neuigkeiten", [OnlineLabel.NoNews] = "Dieser Server hat keine Neuigkeiten.",
 			[OnlineLabel.ShownOnWebsite] = "Auch auf der OpenTPW-Website: ja", [OnlineLabel.NotShownOnWebsite] = "Auch auf der OpenTPW-Website: nein",
 			[OnlineLabel.ChatReconnected] = "Der Server wurde neu gestartet; der Chat ist wieder verbunden.",
+			[OnlineLabel.TwoStepLogin] = "Zweistufige Anmeldung", [OnlineLabel.TwoStepInstructions] = "Scanne diesen Code mit einer Authenticator-App (oder tippe den Schlüssel ab) und gib dann den 6-stelligen Code ein. Handy verloren? Wende dich an den Serverbetreiber.",
+			[OnlineLabel.AuthenticatorCode] = "Code aus der App", [OnlineLabel.Confirm] = "Bestätigen",
 		},
 		["Swedish"] = new Dictionary<OnlineLabel, string>
 		{
@@ -212,6 +223,8 @@ public static class OnlineStrings
 			[OnlineLabel.News] = "Nyheter", [OnlineLabel.NoNews] = "Den här servern har inga nyheter.",
 			[OnlineLabel.ShownOnWebsite] = "Även på OpenTPW-webbplatsen: ja", [OnlineLabel.NotShownOnWebsite] = "Även på OpenTPW-webbplatsen: nej",
 			[OnlineLabel.ChatReconnected] = "Servern startades om; chatten är ansluten igen.",
+			[OnlineLabel.TwoStepLogin] = "Tvåstegsinloggning", [OnlineLabel.TwoStepInstructions] = "Skanna koden med en autentiseringsapp (eller skriv in nyckeln) och ange sedan den 6-siffriga koden som visas. Tappat bort telefonen? Kontakta serverns administratör.",
+			[OnlineLabel.AuthenticatorCode] = "Autentiseringskod", [OnlineLabel.Confirm] = "Bekräfta",
 		},
 	};
 }

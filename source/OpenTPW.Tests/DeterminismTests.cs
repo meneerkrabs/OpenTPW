@@ -382,7 +382,8 @@ public class DeterminismAssetTests
 {
 	/// <summary>
 	/// Level.SavePark/LoadPark delegate to <see cref="ParkWorldStreams"/>; this runs that path with the real
-	/// jungle park runtime and guests (Level itself needs a renderer). Every stream is moved by drawing.
+	/// jungle park runtime and guests (Level itself needs a renderer). Every stream is moved by drawing, except the
+	/// sound chooser, whose draws never store their successor (0x100118C8 is its only store), which is reseeded.
 	/// </summary>
 	[TestMethod]
 	public void ParkSaveAndLoadThroughTheLevelPathRestoreEveryStream()

@@ -15,7 +15,8 @@ namespace OpenTPW.Server;
 public static class ServerProgram
 {
 	public const string Version = "1.0";
-	public const int ProtocolVersion = 1;
+	/// <summary>2: registration may answer 202 with a two-step setup (docs/ONLINE.md, "Two-step login").</summary>
+	public const int ProtocolVersion = 2;
 	private const string WebsitePolicy = "website";
 	/// <summary>File in the data folder that asks the host to update the server (deploy/opentpw-deploy.path).</summary>
 	public const string DeployRequestFile = ".deploy-requested";
@@ -68,6 +69,8 @@ public static class ServerProgram
 
 		var app = builder.Build();
 		app.Logger.LogInformation( "OpenTPW server data in {Directory}; word filter: {Swears} entries, {Alloweds} exceptions.", store.Root, filter.SwearCount, filter.AllowedCount );
+		if ( !store.DataDirectoryIsPrivate )
+			app.Logger.LogWarning( "The data directory {Directory} may be readable by other users (it could not be restricted or checked); it holds password hashes and authenticator secrets.", store.Root );
 		app.Use( async ( context, next ) =>
 		{
 			context.Response.Headers.XContentTypeOptions = "nosniff";
@@ -89,7 +92,24 @@ public static class ServerProgram
 	/// <summary>Typed handler so minimal APIs write the returned result (a bare HttpContext lambda would bind as RequestDelegate).</summary>
 	private static Delegate Handler( Func<HttpContext, Task<IResult>> handler ) => handler;
 
-	private static string Address( HttpContext context ) => context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+	private static string Address( HttpContext context ) => RateLimitKey( context.Connection.RemoteIpAddress );
+
+	/// <summary>
+	/// The rate-limit partition of a client address: IPv4 as is, IPv6 by its /64, because one host usually has a whole
+	/// /64 and could otherwise use a fresh address, and so a fresh limit, for every request.
+	/// </summary>
+	public static string RateLimitKey( System.Net.IPAddress? address )
+	{
+		if ( address == null )
+			return "unknown";
+		if ( address.IsIPv4MappedToIPv6 )
+			address = address.MapToIPv4();
+		if ( address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6 )
+			return address.ToString();
+		var bytes = address.GetAddressBytes();
+		Array.Clear( bytes, 8, 8 );
+		return new System.Net.IPAddress( bytes ) + "/64";
+	}
 
 	private static IResult Error( int status, string message ) => Results.Json( new ApiError( message ), StrictJson.Options, statusCode: status );
 
@@ -179,7 +199,7 @@ public static class ServerProgram
 		}
 		catch ( StoreException exception )
 		{
-			return Error( exception.Status, exception.Message );
+			return Results.Json( new ApiError( exception.Message, exception.Reason ), StrictJson.Options, statusCode: exception.Status );
 		}
 		catch ( InvalidDataException exception )
 		{
@@ -235,8 +255,17 @@ public static class ServerProgram
 		{
 			var credentials = await ReadJsonAsync<Credentials>( context.Request );
 			RequireClean( filter, credentials.Name ?? "", "Name" );
+			// With two-step login the account exists only after the first code: 202 and the authenticator secret.
+			if ( options.RequireTotp )
+				return Ok( store.BeginRegistration( credentials.Name ?? "", credentials.Password ?? "" ), StatusCodes.Status202Accepted );
 			var account = store.Register( credentials.Name ?? "", credentials.Password ?? "" );
 			return Ok( new { name = account.Name }, StatusCodes.Status201Created );
+		} ) ) ).RequireRateLimiting( "auth" );
+
+		app.MapPost( ApiRoutes.AccountConfirmation, Handler( context => Guarded( context, store, false, async _ =>
+		{
+			var confirmation = await ReadJsonAsync<TotpConfirmation>( context.Request );
+			return Ok( store.ConfirmEnrollment( confirmation.Name ?? "", confirmation.Ticket ?? "", confirmation.Code ?? "" ), StatusCodes.Status201Created );
 		} ) ) ).RequireRateLimiting( "auth" );
 
 		// Deleting an account asks for the password again, not just a session token.
@@ -253,7 +282,8 @@ public static class ServerProgram
 		app.MapPost( ApiRoutes.Sessions, Handler( context => Guarded( context, store, false, async _ =>
 		{
 			var credentials = await ReadJsonAsync<Credentials>( context.Request );
-			return Ok( store.Login( credentials.Name ?? "", credentials.Password ?? "" ) );
+			var outcome = store.Login( credentials.Name ?? "", credentials.Password ?? "", credentials.Code );
+			return outcome.Enrollment != null ? Ok( outcome.Enrollment, StatusCodes.Status202Accepted ) : Ok( outcome.Session! );
 		} ) ) ).RequireRateLimiting( "auth" );
 
 		app.MapDelete( ApiRoutes.Sessions, Handler( context => Guarded( context, store, true, _ =>
@@ -392,8 +422,7 @@ public static class ServerProgram
 				}
 				if ( user == null )
 				{
-					if ( socket.State == System.Net.WebSockets.WebSocketState.Open )
-						await socket.CloseAsync( System.Net.WebSockets.WebSocketCloseStatus.PolicyViolation, "unauthorized", CancellationToken.None );
+					await ChatHub.CloseAsync( socket, System.Net.WebSockets.WebSocketCloseStatus.PolicyViolation, "unauthorized" );
 					return;
 				}
 				await hub.RunAsync( socket, user, context.RequestAborted );

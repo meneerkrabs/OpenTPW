@@ -132,6 +132,13 @@ it, and no library imports the symbol. Draws therefore never move the seed, so
 UI clicks and audio-device timing cannot change the replay state (DET-plan §3
 D9, §4.5).
 
+A park started from an original save (SAVE-I, docs/ECONOMY.md "Original save
+import") sets the economy's tick, bank, loans, objects and staff before its first
+tick. All of it is in the economy digest, and the run that the pinned hash
+covers starts no original save, so the schema and the pin are unchanged. The
+save's `mRandomSeed` is not imported (SAVE-001): OpenTPW has no world LCG yet,
+so its streams still come from the world seed.
+
 Other OpenTPW state that is **not in the hash**:
 
 | State | Why it is outside |

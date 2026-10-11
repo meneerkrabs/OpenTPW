@@ -21,6 +21,11 @@ public sealed class ServerOptions
 	public string? Message { get; set; }
 	public bool AllowRegistration { get; set; } = true;
 	/// <summary>
+	/// New accounts must set up two-step login with an authenticator app (RFC 6238) before they exist; accounts made
+	/// before this keep logging in with their password alone.
+	/// </summary>
+	public bool RequireTotp { get; set; } = true;
+	/// <summary>
 	/// The published browser build of the game (the <c>wwwroot</c> of OpenTPW.Web), served at the site
 	/// root next to the API; empty serves the API only. It holds only OpenTPW code (docs/SERVER.md).
 	/// </summary>

@@ -10,6 +10,8 @@ public static class ChatProtocol
 {
 	public const string Path = "/api/v1/chat";
 	public const int MaximumFrameBytes = 4096;
+	/// <summary>Most arguments one chat event may carry.</summary>
+	public const int MaximumArguments = 256;
 	public const string LobbyRoom = "lobby";
 	public const string ParkRoomPrefix = "park:";
 	/// <summary>WebSocket close status "Service Restart": the server is being updated; clients reconnect.</summary>
@@ -110,7 +112,7 @@ public sealed record ChatEvent(
 	public static ChatEvent Parse( ReadOnlySpan<byte> utf8 )
 	{
 		var value = StrictJson.Deserialize<ChatEvent>( utf8, "Chat event" );
-		if ( value.Notice is < 0 or > 1000 || value.Args?.Count > 256 )
+		if ( value.Notice is < 0 or > 1000 || value.Args?.Count > ChatProtocol.MaximumArguments || value.Args?.Any( arg => arg == null ) == true )
 			throw new InvalidDataException( "Chat event is out of range." );
 		return value;
 	}

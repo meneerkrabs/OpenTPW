@@ -32,7 +32,9 @@ public static class RidesApproximations
 		("RIDES-024", "bonus archives merge, Info.Id collisions skipped"),
 		("RIDES-025", "bonus name language fallback"),
 		("RIDES-026", "engine scale 0.2 per MD2 unit (presentation)"),
-		("RIDES-028", "non-walkable object access cells use the nearest walkable path")
+		("RIDES-028", "non-walkable object access cells use the nearest walkable path"),
+		("RIDES-030", "non-finite object texture coordinates drawn as (0, 0)"),
+		("RIDES-031", "Theme Park Inc shape symbol @ (road sign span) treated as occupied")
 	};
 
 	private static bool logged;

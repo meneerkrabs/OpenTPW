@@ -66,13 +66,17 @@ public static class ObjectAssets
 				if ( normal.LengthSquared() > 0 )
 					normal = System.Numerics.Vector3.Normalize( normal );
 			}
-			if ( !IsFinite( position ) || !IsFinite( normal ) || !float.IsFinite( mesh.TexCoords[vertexIndex].X ) || !float.IsFinite( mesh.TexCoords[vertexIndex].Y ) )
+			if ( !IsFinite( position ) || !IsFinite( normal ) )
 				throw new InvalidDataException( $"Nonfinite object mesh vertex: {mesh.Name}" );
+			// [APPROX:RIDES-030] Non-finite texture coordinates (10 vertices of the Theme Park Inc natnav "subtank") are drawn as (0, 0) — evidence needed: how the original renderer treats them
+			var texCoords = mesh.TexCoords[vertexIndex];
+			if ( !float.IsFinite( texCoords.X ) || !float.IsFinite( texCoords.Y ) )
+				texCoords = default;
 			vertices[vertexIndex] = new Vertex
 			{
 				Position = ConvertAxes( position ),
 				Normal = ConvertAxes( normal ),
-				TexCoords = mesh.TexCoords[vertexIndex],
+				TexCoords = texCoords,
 				TexIndex = (int)sourceVertex.TextureIndex,
 				MatFlags = mesh.Materials[(int)sourceVertex.TextureIndex].Flags
 			};

@@ -35,7 +35,7 @@ public partial class Texture : Asset
 			UpdateFromWct( path, flags );
 		}
 		else
-			UpdateFromStb( path, flags );
+			UpdateFromImage( path, flags );
 	}
 
 	/// <summary>
@@ -62,18 +62,40 @@ public partial class Texture : Asset
 	}
 
 	/// <summary>
-	/// Update from an image format supported by the STB library (jpg, png, gif, tga, etc.)
+	/// Update from a loose file, or from a game-archive member: an EA `.fsh` or an image format supported by the STB
+	/// library (jpg, png, gif, tga, etc.). A texture already made from this path is shared.
 	/// </summary>
-	private void UpdateFromStb( string path, TextureFlags flags )
+	private void UpdateFromImage( string path, TextureFlags flags )
 	{
-		var fileData = File.ReadAllBytes( path );
+		if ( TryGetCachedTexture( path, out var cached ) )
+		{
+			NativeTexture = cached!.NativeTexture;
+			NativeTextureView = cached.NativeTextureView;
+			Width = cached.Width;
+			Height = cached.Height;
+			return;
+		}
+
+		var (data, width, height) = DecodeImage( path );
+		CreateTexture( path, data, (uint)width, (uint)height, flags );
+	}
+
+	/// <summary>
+	/// Decodes a texture that is not a `.wct`: an EA `.fsh` or an stb image (png, tga, ...), from disk when the path
+	/// exists there, else from the game data (Theme Park Inc keeps `.tga` textures inside its WADs). No GPU access, so
+	/// workers may call it.
+	/// </summary>
+	// [EXT:tpi-viewer] `.fsh` textures exist only in Theme Park Inc data. Opaque 0x24 palettes: see COMPAT-014.
+	internal static (byte[] Data, int Width, int Height) DecodeImage( string path )
+	{
+		if ( path.HasExtension( ".fsh" ) )
+		{
+			var fsh = new FshFile( path ).Images[0];
+			return (fsh.Rgba, fsh.Width, fsh.Height);
+		}
+		var fileData = File.Exists( path ) ? File.ReadAllBytes( path ) : FileSystem.ReadAllBytes( path );
 		var image = ImageResult.FromMemory( fileData, ColorComponents.RedGreenBlueAlpha );
-
-		var data = image.Data;
-		var width = (uint)image.Width;
-		var height = (uint)image.Height;
-
-		CreateTexture( path, data, width, height, flags );
+		return (image.Data, image.Width, image.Height);
 	}
 
 	/// <summary>

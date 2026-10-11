@@ -49,7 +49,7 @@ internal sealed class Advisor : IDisposable
 		("ADVISOR-018", "the automatic advisor is drawn only while its speech plays, only inside a level; leaving the level stops it"),
 		("ADVISOR-019", "GeneralAdvisor.MinTimeAnyMessage and GeneralAdvisor.MinTimeSameMessage are loaded but not applied"),
 		("ADVISOR-020", "game events 2/3/4 come from the park economy's Bankrupt/ParkOpened/ParkClosed events, not proven equal to the original producers"),
-		("ADVISOR-022", "the advisor's pending advice and message history are not saved or loaded with the park"),
+		("ADVISOR-022", "OpenTPW's own park save does not store the advisor's pending advice and history; an original save's records and history of messages without a bound descriptor are dropped on import"),
 		("ADVISOR-023", "the advisor's unprojected coordinates span the screen from -1 to 1"),
 		("ADVISOR-024", "outside 4:3 the advisor's width scale follows the output aspect"),
 	};

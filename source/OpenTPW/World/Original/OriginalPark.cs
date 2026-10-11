@@ -15,9 +15,13 @@ public sealed class OriginalPark
 	private static readonly System.Text.RegularExpressions.Regex InfoIdPattern = new( @"^\s*Info\.Id\s+(\d+)", System.Text.RegularExpressions.RegexOptions.Multiline );
 	private static readonly System.Text.RegularExpressions.Regex InfoNamePattern = new( "^\\s*Info\\.Name\\s+\"([^\"\\r\\n]*)\"", System.Text.RegularExpressions.RegexOptions.Multiline );
 
-	private OriginalPark( string levelName, MapFile map, ModelFile terrainModel, OriginalParkImport? save, IReadOnlyDictionary<int, OriginalObjectInfo> catalog )
+	/// <summary>The finished lake of a Theme Park Inc world; it fills the heightfield holes that <c>base.MD2</c> leaves open.</summary>
+	public const string LakeModelName = "dlake.MD2";
+
+	private OriginalPark( string levelName, MapFile map, ModelFile terrainModel, ModelFile? lakeModel, OriginalParkImport? save, IReadOnlyDictionary<int, OriginalObjectInfo> catalog )
 	{
 		LevelName = levelName;
+		LakeModel = lakeModel;
 		Map = map;
 		TerrainModel = terrainModel;
 		Heightfield = terrainModel.Heightfield ?? throw new InvalidDataException( $"The {levelName} terrain model has no heightfield block." );
@@ -28,6 +32,8 @@ public sealed class OriginalPark
 	public string LevelName { get; }
 	public MapFile Map { get; }
 	public ModelFile TerrainModel { get; }
+	/// <summary>Theme Park Inc's <c>dlake.MD2</c> (lake surface and bed), or null: Theme Park World has no lake model.</summary>
+	public ModelFile? LakeModel { get; }
 	public ModelHeightfield Heightfield { get; }
 	public OriginalParkImport? Save { get; }
 	public IReadOnlyDictionary<int, OriginalObjectInfo> Catalog { get; }
@@ -43,6 +49,9 @@ public sealed class OriginalPark
 			throw new ArgumentException( "Original level names are plain directory names such as 'jungle'.", nameof( levelName ) );
 		var map = new MapFile( $"/levels/{levelName}/terrain/base.map" );
 		var model = new ModelFile( $"/levels/{levelName}/terrain/base.MD2" );
+		// [APPROX:COMPAT-019] Theme Park Inc ships its lake as a separate model; the finished lake (dlake.MD2, not lake.MD2 with its building site) is drawn
+		var lakePath = FileSystem.GetFiles( $"/levels/{levelName}/terrain" ).FirstOrDefault( path => string.Equals( Path.GetFileName( path ), LakeModelName, StringComparison.OrdinalIgnoreCase ) );
+		var lake = lakePath == null ? null : new ModelFile( ToRelative( lakePath ) );
 		var catalog = LoadCatalog( levelName );
 		OriginalParkImport? save = null;
 		var savePath = !readShippedSave ? null : FileSystem.GetFiles( $"/levels/{levelName}" )
@@ -59,7 +68,7 @@ public sealed class OriginalPark
 					throw new InvalidDataException( $"Original save object {item.Index} has Info.Id {item.InfoId}, which no {levelName} object archive declares." );
 			}
 		}
-		return new OriginalPark( levelName, map, model, save, catalog );
+		return new OriginalPark( levelName, map, model, lake, save, catalog );
 	}
 
 	/// <summary>Reads Info.Id and Info.Name from every object archive's .sam under the level.</summary>

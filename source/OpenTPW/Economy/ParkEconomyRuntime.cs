@@ -28,8 +28,8 @@ public sealed class ParkEconomyRuntime
 
 	/// <summary>
 	/// Routes guest admission, shop/sideshow purchases and ride use through the economy, feeds guest
-	/// statistics to the park rating, tickets and challenges, and opens the park (the original open
-	/// state is not decoded from the save; OpenTPW opens imported parks).
+	/// statistics to the park rating, tickets and challenges, and opens the park unless the imported
+	/// save's <c>mParkClosed</c> says it is closed.
 	/// </summary>
 	public void AttachGuests( GuestSimulation guests )
 	{
@@ -37,8 +37,11 @@ public sealed class ParkEconomyRuntime
 		guests.Payments = Guests;
 		Economy.GuestStatistics = Guests;
 		Economy.RideOperations = Guests;
-		// [APPROX:ECON-031] imported parks are opened on load (open state not decoded) — evidence needed: park-open flag in the save
-		Economy.OpenPark();
+		if ( Import is { ParkClosed: true } )
+			Log.Trace( "Park economy: the imported park is closed, as saved." );
+		else
+			// [APPROX:ECON-031] a park started without an original save is opened when guests attach (an imported park follows its saved mParkClosed) — evidence needed: the open state of a new original park
+			Economy.OpenPark();
 		Log.Trace( $"Park economy: guests pay the ${Economy.EntranceFee} entrance fee and shop/sideshow prices into the ledger." );
 	}
 
@@ -83,7 +86,6 @@ public sealed class ParkEconomyRuntime
 		var easy = start.EasyBalance;
 		var economy = ParkEconomy.CreateForTheme( park.LevelName, easy, start.Mode, (seed ?? WorldSeed.Default).EconomyStream );
 		var import = start.ImportShippedSave ? OriginalEconomyImport.Apply( economy, park ) : null;
-		economy.SeedResearcherStandIn = import != null && start.Mode == ParkGameMode.InstantAction;
 		Log.Trace( $"Park economy: {kind} start, {start.Mode} rules; {park.LevelName} {(easy ? "easy" : "standard")} balance from {string.Join( ", ", economy.Settings.Standard.Sources )}; "
 			+ $"cash ${economy.Balance}, entrance fee ${economy.EntranceFee}, {economy.Catalog.Objects.Count} catalogue objects, {economy.Research.Items.Count} research items." );
 		foreach ( var line in import?.Evidence ?? Array.Empty<string>() )

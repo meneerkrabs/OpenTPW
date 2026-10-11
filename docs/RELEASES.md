@@ -2,7 +2,7 @@
 
 `.github/workflows/release.yml` publishes self-contained builds (no .NET install
 needed) for six runtimes on every `v*` tag, and attaches them to a GitHub
-pre-release. Original game files are never part of a release: start the game with
+release. Versions with a suffix, or the preview checkbox, are pre-releases. Original game files are never part of a release: start the game with
 `--game-path` pointing at an installed Theme Park World (see RUNNING.md).
 
 | Runtime | Archive | Graphics | Notes |
@@ -17,6 +17,23 @@ pre-release. Original game files are never part of a release: start the game wit
 `linux-x86` is not built: .NET (8 and 10 alike) has no 32-bit x86 Linux runtime, so
 `dotnet publish -r linux-x86` cannot succeed. Intel macOS (`osx-x64`) is not in the
 list either.
+
+## Publish from GitHub Actions
+
+Open **Actions → Release builds → Run workflow**, select `main`, and enter a new
+version such as `v0.7.2`. Leave **Mark as preview** unchecked to publish the latest
+download used by the website. A `-preview.1` suffix also selects preview mode.
+The selected commit is fixed for the entire run; later changes to `main` are not
+included. The tag must be unused or already point at that exact commit.
+
+Publication waits for all six builds. New or incomplete releases remain drafts
+until all archives and `SHA256SUMS.txt` are uploaded. Retrying the same commit and
+version repairs an incomplete release; a complete published release is left
+unchanged. Original game data is never included.
+
+To deploy the website separately, use **Actions → Website → Run workflow** on
+`main`. A normal (non-preview) release updates the existing latest-download links
+without requiring a website code change.
 
 ## Native libraries
 

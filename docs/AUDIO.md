@@ -57,6 +57,25 @@ does not repeat the sample it just played when there are more than two
 (`ChooseRandomSample` `0x1000FCB4`), and a volume in the sound's range
 (`GetRandomVolume` `0x1000F32C`).
 
+The identified Mac library leaves its chooser seed unchanged after a draw. Applying
+that fixed draw to ongoing crowd ambience made OpenTPW alternate between just two
+clips even though the shipped crowd sections contain 7–52 samples. Crowd sample
+selection now uses its own advancing, seeded presentation stream (AUDIO-035). The
+crowd event, branching rules, sample weights and timing stay the same; music and
+other sounds keep their existing chooser. The effects option still controls the mix. This presentation
+stream does not consume gameplay random draws, and starts again on park entry rather
+than persisting across saves. Its variation policy is not claimed as original-game
+behaviour.
+
+The crowd also sends its nearby-visitor count as parameter 7 (Mac game
+`0x100BC298–0x100BC2A0`). For crowd sections whose volume mask selects that parameter,
+the sentence now applies the original `low + floor((high - low) × parameter / 100)`
+interpolation (`sound_shared` `0x1000F32C`, `0x1000F3C8–0x1000F3F4`), using the first
+volume-mask slot (`0x1000F2E0`). The shipped crowd bounds are 14–22 percent. Sections
+without that selector retain their range-based volume, and the other parameter
+producers remain outside this crowd fix. Gain is evaluated when a segment starts;
+propagation into an already-playing child remains unverified (AUDIO-036).
+
 ## Park music
 
 When a park starts, the game sends event 2 of the level's `cat_music` category
@@ -194,6 +213,8 @@ implemented yet.
 | AUDIO-032 | A ride's scream plays flat; the original places it at the ride's box middle | The box-middle mapping onto OpenTPW's ride objects |
 | AUDIO-033 | Distance gain uses the fork's QMixer lead: minimum 2 and exponent 0.8 | Independent original mixer verification; the local PC executable is packed |
 | AUDIO-034 | Held-chain child timing, first-sound selection and child hard stop follow fork-only PC leads | The Mac held-voice tick, variation and stop routines |
+| AUDIO-035 | Crowd sample selection uses an independent advancing host SplitMix64 stream seeded from the sound seed XOR ASCII `CROW`; its state is not persisted on save/load | The original source of crowd variation and presentation-stream continuity |
+| AUDIO-036 | Crowd parameter-controlled volume is evaluated at PCM segment start | The original propagation into already-playing sentence children |
 | AUDIO-013 | De-emphasis is a first-order bilinear-transform shelf of the published 50/15 µs and J.17 curves at the stream's rate | The original decoder's filter realization or an emphasised original stream |
 | AUDIO-014 | A failed frame CRC is counted while the frame still decodes; no shipped frame carries a CRC word | The original player's behaviour on a failed frame CRC |
 

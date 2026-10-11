@@ -39,6 +39,8 @@ public static class AudioApproximations
 		("AUDIO-031","weather is simulated for sound only: rain drops, snow, the lightning bolt and the forecast are not drawn or shown"),
 		("AUDIO-033", "the distance mapping uses minimum 2 and exponent 0.8 from the fork's QMixer lead; the packed local PC executable does not independently verify this law"),
 		("AUDIO-034", "held-chain child timing, first-sound selection and child hard stop follow fork-only PC leads, not independently traced Mac routines"),
+		("AUDIO-035", "crowd sample choices use an independent advancing host SplitMix64 stream seeded from the sound seed XOR CROW; the original source of crowd variation is unverified and this presentation stream is not persisted on save/load"),
+		("AUDIO-036", "crowd parameter-controlled volume is evaluated when a PCM segment starts; the original propagation into already-playing sentence children is not established"),
 	};
 
 	private static bool logged;

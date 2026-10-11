@@ -81,7 +81,7 @@ public sealed class SoundCategory
 }
 
 /// <summary>
-/// Plays catalogue events the way the original's placeholders do: a sound is chosen among the event's
+/// Plays catalogue events the way the original's placeholders do: by default a sound is chosen among the event's
 /// sounds and a sample among the sound's samples by cumulative weight, using the top 16 bits of the
 /// library's linear congruential generator; the volume is a random percentage in the sound's range.
 /// One-shot events play once; sentence events chain samples, and branching sentences (music) follow
@@ -168,10 +168,22 @@ public sealed class SoundEventSystem
 	}
 
 	// [BIN:STP-PPC:sound_shared 0x1000F32C GetRandomVolume] volume = min + random % (max - min), in percent
-	internal int Volume( SoundEntry sound )
+	internal int Volume( SoundEntry sound, byte? parameterCode = null, int parameter = 0 )
 	{
 		var low = Math.Min( sound.MinimumVolume, sound.MaximumVolume );
 		var range = Math.Abs( sound.MaximumVolume - sound.MinimumVolume );
+		// [BIN:STP-PPC:sound_shared 0x1000F2E0 GetParameterValue] the first slot whose +24/+28 mask contains bit 1 supplies volume; selectors +22/+26 are truncated to bytes when loaded (0x100100D8–0x100100EC)
+		byte? volumeCode = null;
+		if ( sound.Raw.Length >= 30 )
+		{
+			if ( (sound.Raw[24] & 1) != 0 )
+				volumeCode = sound.Raw[22];
+			else if ( (sound.Raw[28] & 1) != 0 )
+				volumeCode = sound.Raw[26];
+		}
+		// [BIN:STP-PPC:sound_shared 0x1000F3C8–0x1000F3F4 GetRandomVolume] a matching parameter yields low + floor((high-low) * byte value / 100), including the high endpoint at 100
+		if ( parameterCode != null && volumeCode == parameterCode )
+			return low + range * unchecked((byte)parameter) / 100;
 		return range == 0 ? low : (int)(low + unchecked(seed * 0x19660D + 0x3C6EF35F) % (uint)range);
 	}
 
@@ -241,13 +253,14 @@ public sealed class SoundEventSystem
 		return voice;
 	}
 
-	/// <summary>Starts a sentence event (music); null when the event is missing.</summary>
-	public SoundSentence? StartSentence( SoundCategory? category, uint eventId, AudioChannel channel )
+	/// <summary>Starts a sentence event; an optional chooser replaces only its sample draws. Null when the event is missing.</summary>
+	/// <param name="sampleDraw">Optional 16-bit sample chooser; does not alter sound selection, branch links or volume parameters.</param>
+	public SoundSentence? StartSentence( SoundCategory? category, uint eventId, AudioChannel channel, Func<uint>? sampleDraw = null )
 	{
 		var soundEvent = category?.Catalog.Find( eventId );
 		if ( category == null || soundEvent == null || soundEvent.Sounds.Count == 0 )
 			return null;
-		var sentence = new SoundSentence( this, category, soundEvent, channel );
+		var sentence = new SoundSentence( this, category, soundEvent, channel, sampleDraw );
 		sentences.Add( sentence );
 		sentence.Start();
 		return sentence;
@@ -299,23 +312,28 @@ public sealed class SoundSentence
 	private readonly SoundCategory category;
 	private readonly SoundEvent soundEvent;
 	private readonly AudioChannel channel;
+	private readonly Func<uint> sampleDraw;
 	private int soundIndex;
 	private int lastSample = -1;
 	private AudioVoice? voice;
 	private Task<(int Sound, int Sample, Mp2Audio? Audio)>? next;
 	private bool waiting;
 
-	internal SoundSentence( SoundEventSystem system, SoundCategory category, SoundEvent soundEvent, AudioChannel channel )
+	internal SoundSentence( SoundEventSystem system, SoundCategory category, SoundEvent soundEvent, AudioChannel channel, Func<uint>? sampleDraw = null )
 	{
 		this.system = system;
 		this.category = category;
 		this.soundEvent = soundEvent;
 		this.channel = channel;
+		this.sampleDraw = sampleDraw ?? system.Draw;
 	}
 
 	/// <summary>The value branching links are matched against (the original's parameter 4; for park music the guest count / 2, capped).</summary>
 	public int Parameter { get; set; }
+	/// <summary>The known native code of <see cref="Parameter"/>; only the crowd's code 7 is currently wired.</summary>
+	public byte? ParameterCode { get; set; }
 	public int CurrentSound => soundIndex;
+	internal int CurrentSample => lastSample;
 	public bool IsPlaying => voice is { IsFinished: false };
 	public bool IsStopped { get; private set; }
 	public SoundEvent Event => soundEvent;
@@ -361,7 +379,7 @@ public sealed class SoundSentence
 	private void Prefetch( int sound )
 	{
 		var samples = soundEvent.Sounds[sound].Samples;
-		var sample = SoundEventSystem.ChooseSample( samples, system.Draw(), sound == soundIndex ? lastSample : -1, avoidRepeat: sound == soundIndex && lastSample >= 0 );
+		var sample = SoundEventSystem.ChooseSample( samples, sampleDraw(), sound == soundIndex ? lastSample : -1, avoidRepeat: sound == soundIndex && lastSample >= 0 );
 		next = sample < 0 ? null : Task.Run( () => (sound, sample, system.Decode( category, samples[sample] )) );
 	}
 
@@ -381,7 +399,8 @@ public sealed class SoundSentence
 			return true;
 		soundIndex = sound;
 		lastSample = sample;
-		voice = system.Mixer.Play( audio, channel, system.Volume( soundEvent.Sounds[sound] ) / 100f );
+		// [APPROX:AUDIO-036] density-controlled crowd gain is evaluated when a segment starts; native parameter propagation into an already-playing sentence child is unverified
+		voice = system.Mixer.Play( audio, channel, system.Volume( soundEvent.Sounds[sound], ParameterCode, Parameter ) / 100f );
 		voice.Completed += _ => OnCompleted();
 		// [APPROX:AUDIO-005] the next segment is chosen (with the parameter at that moment) when the current one starts, so it can be decoded in time — evidence needed: when CPlaceHolderSentence::SoundCallback (sound_shared 0x1001A1F0) runs relative to the end of a sample
 		var successor = Successor();

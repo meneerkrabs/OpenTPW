@@ -60,6 +60,7 @@ public static class GameAudio
 	private static SoundSentence? rain;
 	private static long staffTurn = -1;
 	private static DeterministicRandom staffRandom = new( 1 );
+	private static DeterministicRandom crowdRandom = new( 1 );
 	private static bool staffVoiceLogged;
 	private static IReadOnlyList<AudioVoice>? placedAmbients;
 
@@ -139,6 +140,8 @@ public static class GameAudio
 		if ( seed is uint value )
 			events!.Reseed( value );
 		staffRandom = new DeterministicRandom( events!.Seed ^ 0x53544146u );
+		// [APPROX:AUDIO-035] crowd sample choices advance an independent host stream seeded from the sound seed XOR ASCII CROW; the original source of variation is unverified, and this presentation stream is not persisted
+		crowdRandom = new DeterministicRandom( events.Seed ^ 0x43524F57u );
 		LevelMusic = SoundCategory.TryLoad( FileSystem, $"/levels/{level}/Music", "cat_music" );
 		LevelSpeech = SoundCategory.TryLoad( FileSystem, $"/levels/{level}/Speech", "cat_speech" );
 		// [BIN:STP-PPC:0x100BC864 level registration] the level's cat_ambient and cat_rides registered at sound-manager offsets 24 and 28
@@ -292,12 +295,14 @@ public static class GameAudio
 		{
 			if ( crowd == null )
 			{
-				crowd = events.StartSentence( Kids, CrowdEvent, AudioChannel.Effects );
+				crowd = events.StartSentence( Kids, CrowdEvent, AudioChannel.Effects, () => (uint)crowdRandom.Next( 1 << 16 ) );
 				if ( crowd != null )
 					Log.Trace( $"Sound: crowd sentence started ({guestsNearCamera} guests within {GameFlow.CrowdRadiusCells} cells of the camera)." );
 			}
 			if ( crowd != null )
 			{
+				// [BIN:STP-PPC:0x100BC298–0x100BC29C crowd update] the capped nearby count is sent with parameter code 7 to 0x100BAF70
+				crowd.ParameterCode = 7;
 				crowd.Parameter = parameter;
 				crowd.Resume();
 			}

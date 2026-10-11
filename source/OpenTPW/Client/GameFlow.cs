@@ -51,8 +51,6 @@ internal sealed class GameFlow : IDisposable
 	public string OptionsPath { get; set; }
 	/// <summary>When false, options are not written (smoke tests).</summary>
 	public bool PersistSettings { get; set; } = true;
-	/// <summary>Desktop release pack preparation, attached after a rendered lobby or park exists.</summary>
-	public Action<UiScreenStack>? PrepareStartupTexturePack { get; set; }
 	/// <summary>True when selecting a pack opens its download page instead of an immediate texture switch.</summary>
 	public Func<UiScreenStack, string, bool>? PrepareTexturePack { get; set; }
 	public Level? Level { get; private set; }
@@ -128,7 +126,6 @@ internal sealed class GameFlow : IDisposable
 			Menu.SelectLevel( selectLevel );
 		Camera.SetCameraMode<LobbyCameraMode>();
 		Log.Trace( $"Front end: lobby with {Lobby.IslandCount} islands ({Lobby.PartCount} draw batches)." );
-		PrepareStartupTexturePack?.Invoke( Menu.Stack );
 	}
 
 	public UiScreen CreateOptions( UiScreenStack stack, Action closed ) => OptionsScreen.Create( stack, Strings, new OptionsServices
@@ -253,7 +250,6 @@ internal sealed class GameFlow : IDisposable
 			import.Report( dropped );
 			Log.Trace( dropped );
 		}
-		PrepareStartupTexturePack?.Invoke( Hud.Stack );
 		return level;
 	}
 

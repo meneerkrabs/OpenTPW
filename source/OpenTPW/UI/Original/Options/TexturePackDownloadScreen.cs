@@ -1,6 +1,6 @@
 namespace OpenTPW.UI.Original;
 
-/// <summary>A responsive first-run download page. The player can retry, or cancel and keep playing offline.</summary>
+/// <summary>A responsive download page reached through Options. The player can retry, or cancel and keep playing offline.</summary>
 // [EXT:texture-pack] A release download, not an original-game dialog.
 public static class TexturePackDownloadScreen
 {

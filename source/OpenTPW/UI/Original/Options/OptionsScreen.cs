@@ -132,6 +132,7 @@ public static class OptionsScreen
 		public required DisplaySettings Display;
 		public required string Language;
 		public string TexturePack = "";
+		public bool TexturePackSelected;
 		public GraphicsPreset Preset;
 	}
 
@@ -364,10 +365,11 @@ public static class OptionsScreen
 			{
 				// [EXT:texture-pack] a changed pack starts switching now, in the background: the game loop swaps the textures
 				// while the player keeps playing, with a progress line at the top (DrawTextureSwitchProgress).
-				if ( texturesChanged )
+				if ( texturesChanged || state.TexturePackSelected )
 				{
 					services.BeginTexturePackSwitch?.Invoke( state.TexturePack );
 					texturesChanged = false;
+					state.TexturePackSelected = false;
 				}
 				if ( graphicsRestart || (languageChanged && languageNow == null) )
 					stack.Push( UiDialogs.Message( "restart", () => strings[UIStrings.RestartGame], (() => strings.Extra( OpenTpwText.Back ), () => { stack.Pop(); closed(); }) ) );
@@ -498,7 +500,7 @@ public static class OptionsScreen
 		if ( graphics != null )
 			Row( "enhancedTextures", () => Prefix( OpenTpwText.EnhancedTextures ) + PackText( state.TexturePack ),
 				() => PackChoices().Select( pack => Prefix( OpenTpwText.EnhancedTextures ) + PackText( pack ) ),
-				direction => state.TexturePack = CycleWrap( PackChoices(), state.TexturePack, direction ), strings.Extra( OpenTpwText.TexturePackHelp ) );
+				direction => { state.TexturePackSelected = true; state.TexturePack = CycleWrap( PackChoices(), state.TexturePack, direction ); }, strings.Extra( OpenTpwText.TexturePackHelp ) );
 		// [EXT:language] language row (original installs had one language; OpenTPW reads CD overlays)
 		string LanguageName( string language ) => " " + (SupplementaryStrings.LanguageNames.TryGetValue( language, out var name ) ? name : language);
 		Row( "language", () => Prefix( OpenTpwText.Language ) + LanguageName( state.Language ),

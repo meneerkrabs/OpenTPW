@@ -106,6 +106,25 @@ public sealed class TexturePackDownload
 		return name is "CON" or "PRN" or "AUX" or "NUL" || name.Length == 4 && (name.StartsWith( "COM" ) || name.StartsWith( "LPT" )) && name[3] is >= '1' and <= '9';
 	}
 
+	/// <summary>The same whitelist validation is used for extraction and for read-only release layout checks.</summary>
+	internal static TexturePackDownloadFile? ValidateEntry( ZipArchiveEntry entry, IReadOnlyDictionary<string, TexturePackDownloadFile> expected, ISet<string> extracted )
+	{
+		const string prefix = "content/texture-packs/clarity-enhanced/";
+		var mode = (entry.ExternalAttributes >> 16) & 0xF000;
+		if ( mode != 0 && mode is not (0x8000 or 0x4000) || (entry.ExternalAttributes & (int)FileAttributes.ReparsePoint) != 0 )
+			throw new InvalidDataException( "The texture archive contains a link or special file." );
+		var name = entry.FullName;
+		if ( name.EndsWith( '/' ) )
+		{
+			if ( !SafeRelativePath( name.TrimEnd( '/' ) ) || entry.Length != 0 )
+				throw new InvalidDataException( "Invalid archive directory." );
+			return null;
+		}
+		if ( !name.StartsWith( prefix, StringComparison.Ordinal ) || !SafeRelativePath( name ) || !expected.TryGetValue( name[prefix.Length..], out var file ) || !extracted.Add( file.Path ) || entry.Length != file.Size )
+			throw new InvalidDataException( "The archive contains an unexpected, duplicate or incorrectly sized file." );
+		return file;
+	}
+
 	/// <summary>Installs textures only; optional replacement movies remain a separate manual download.</summary>
 	public async Task InstallAsync( TexturePackDistribution distribution, string packsDirectory, Action<TexturePackDownloadProgress>? progress = null, CancellationToken cancellation = default )
 	{
@@ -149,19 +168,8 @@ public sealed class TexturePackDownload
 				foreach ( var entry in zip.Entries )
 				{
 					cancellation.ThrowIfCancellationRequested();
-					const string prefix = "content/texture-packs/clarity-enhanced/";
-					var mode = (entry.ExternalAttributes >> 16) & 0xF000;
-					if ( mode != 0 && mode is not (0x8000 or 0x4000) || (entry.ExternalAttributes & (int)FileAttributes.ReparsePoint) != 0 )
-						throw new InvalidDataException( "The texture archive contains a link or special file." );
-					var name = entry.FullName;
-					if ( name.EndsWith( '/' ) )
-					{
-						if ( !SafeRelativePath( name.TrimEnd( '/' ) ) || entry.Length != 0 )
-							throw new InvalidDataException( "Invalid archive directory." );
-						continue;
-					}
-					if ( !name.StartsWith( prefix, StringComparison.Ordinal ) || !SafeRelativePath( name ) || !expected.TryGetValue( name[prefix.Length..], out var file ) || !extracted.Add( file.Path ) || entry.Length != file.Size )
-						throw new InvalidDataException( "The archive contains an unexpected, duplicate or incorrectly sized file." );
+					var file = ValidateEntry( entry, expected, extracted );
+					if ( file == null ) continue;
 					progress?.Invoke( new( "verify", file.Path, extracted.Count - 1, expected.Count ) );
 					using var input = entry.Open();
 					if ( file.Path == TexturePack.ManifestFileName )

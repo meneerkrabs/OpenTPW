@@ -336,4 +336,77 @@ public class TexturePackDownloadTests
 		stack.Clear();
 		Assert.IsTrue( cancellation.IsCancellationRequested );
 	}
+
+	[TestMethod]
+	public async Task StartupActivationAndUntouchedOptionsMakeNoRequestsButExplicitSelectionStartsDownload()
+	{
+		var root = TemporaryDirectory();
+		var previousDirectory = TexturePack.Directory;
+		try
+		{
+			foreach ( var initialChoice in new[] { "", TexturePack.DefaultName } )
+			{
+				using var handler = new Handler( ( request, call ) => Response( Png ) );
+				using var client = new HttpClient( handler );
+				var graphics = new GraphicsSettingsService( _ => null, new GraphicsSettings { TexturePackName = initialChoice }, null, () => CompatibilityFlags.Original );
+				// The actual startup activation only resolves local/bundled art; it has no downloader callback.
+				TexturePack.Activate( graphics.Current.TexturePackName, new List<string>(), root, root );
+				Assert.AreEqual( 0, handler.Calls );
+				Assert.AreEqual( initialChoice, graphics.Current.TexturePackName, "startup does not rewrite an existing choice" );
+				var stack = new UiScreenStack();
+				OptionsServices Services() => new()
+				{
+					Display = new StubDisplaySettings( DisplaySettings.Default ), Options = new GameOptions(), Languages = new[] { "English" }, CurrentLanguage = "English", Graphics = graphics,
+					BeginTexturePackSwitch = name =>
+					{
+						Assert.AreEqual( TexturePack.DefaultName, name );
+						stack.Push( TexturePackDownloadScreen.Create( stack, Strings(), async ( progress, token ) =>
+						{
+							using var response = await client.GetAsync( "https://example.test/explicit-only", token );
+							response.EnsureSuccessStatusCode();
+						}, _ => { } ) );
+						return null;
+					}
+				};
+				var screen = OptionsScreen.Create( stack, Strings(), Services(), () => { } );
+				stack.Push( screen );
+				screen.Find( "ok" )!.Activate();
+				Assert.AreEqual( 0, handler.Calls, "accepting untouched options does not opt into a network download" );
+				Assert.IsNull( stack.Top );
+				screen = OptionsScreen.Create( stack, Strings(), Services(), () => { } );
+				stack.Push( screen );
+				screen.Find( "openTpw" )!.Activate();
+				var row = (UiButton)stack.Top!.Find( "enhancedTextures" )!;
+				// A missing saved Clarity can be explicitly re-selected even when its final value is unchanged.
+				for ( var step = 0; step < (initialChoice == TexturePack.DefaultName ? 3 : 1); step++ ) row.Activate();
+				Assert.AreEqual( 0, handler.Calls, "changing the pending row does not start a download before OK" );
+				stack.Pop();
+				screen.Find( "ok" )!.Activate();
+				Assert.AreEqual( "texturePackDownload", stack.Top?.Name );
+				await PumpUntil( stack.Top!, () => handler.Calls == 1 );
+				Assert.AreEqual( TexturePack.DefaultName, graphics.Current.TexturePackName );
+				stack.Clear();
+			}
+		}
+		finally { TexturePack.Directory = previousDirectory; Directory.Delete( root, recursive: true ); }
+	}
+
+	[TestMethod]
+	public void RealReleaseDescriptorAndEveryArchiveEntryUseTheSameInstallerWhitelist()
+	{
+		var index = Environment.GetEnvironmentVariable( "OPENTPW_CLARITY_DISTRIBUTION_PATH" );
+		if ( string.IsNullOrEmpty( index ) ) Assert.Inconclusive( "Set OPENTPW_CLARITY_DISTRIBUTION_PATH to a locally staged distribution.json; no network is used." );
+		var directory = Path.GetDirectoryName( index )!;
+		var distribution = TexturePackDownload.LoadBundled( directory );
+		var files = distribution.Files.ToDictionary( file => file.Path, StringComparer.Ordinal );
+		var seen = new HashSet<string>( StringComparer.OrdinalIgnoreCase );
+		foreach ( var archive in distribution.Archives.Where( archive => archive.Kind == "textures" ) )
+		{
+			using var zip = ZipFile.OpenRead( Path.Combine( directory, archive.Name ) );
+			foreach ( var entry in zip.Entries ) TexturePackDownload.ValidateEntry( entry, files, seen );
+		}
+		CollectionAssert.AreEquivalent( files.Keys.ToArray(), seen.ToArray() );
+		Assert.IsTrue( files.ContainsKey( "textures/ui/textures/b_rideit!.wct.png" ) );
+		Assert.IsTrue( files.ContainsKey( "textures/ui/textures/b_rideit!d.wct.png" ) );
+	}
 }

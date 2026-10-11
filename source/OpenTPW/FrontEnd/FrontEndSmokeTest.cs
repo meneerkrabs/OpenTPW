@@ -244,6 +244,13 @@ internal sealed class FrontEndSmokeTest : IDisposable
 					Totp.Uri( "OpenTPW", "Alice", "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP" ), DateTimeOffset.UtcNow.AddMinutes( 10 ) );
 				screens.ShowEnrollment();
 			}, "twoStepSetup"),
+			("online-two-step-email.png", screens =>
+			{
+				flow.Online.Enrollment = new TotpEnrollment( "Alice", "smoke-ticket", "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP",
+					Totp.Uri( "OpenTPW", "Alice", "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP" ), DateTimeOffset.UtcNow.AddMinutes( 10 ), EmailRequired: true );
+				screens.ShowEnrollment();
+			}, "twoStepSetup"),
+			("online-recovery.png", screens => screens.ShowRecovery( "Alice" ), "recovery"),
 		};
 		foreach ( var shot in onlineShots )
 		{

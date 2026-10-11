@@ -103,7 +103,7 @@ public sealed class ChatHub
 			session.Closed.Cancel();
 	}
 
-	public async Task RunAsync( WebSocket socket, AccountRecord account, CancellationToken cancel )
+	public async Task RunAsync( WebSocket socket, AccountRecord account, CancellationToken cancel, Func<bool>? stillAuthenticated = null )
 	{
 		var session = new ChatSession( account, options );
 		if ( sessions.Count >= options.MaximumChatConnections || !sessions.TryAdd( account.Key, session ) )
@@ -115,6 +115,8 @@ public sealed class ChatHub
 			await CloseAsync( socket, WebSocketCloseStatus.PolicyViolation, "already connected" );
 			return;
 		}
+		if ( stillAuthenticated != null && !stillAuthenticated() )
+			session.Closed.Cancel();
 		using var linked = CancellationTokenSource.CreateLinkedTokenSource( cancel, session.Closed.Token );
 		cancel = linked.Token;
 		var writer = Task.Run( () => WriteLoopAsync( socket, session, cancel ), cancel );

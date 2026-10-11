@@ -449,6 +449,17 @@ public sealed partial class ParkHud
 		if ( !paused && input.Has( UiKeys.Pause ) )
 			Status.Speed = Status.Speed == GameSpeed.Paused ? GameSpeed.Normal : GameSpeed.Paused;
 
+		// The park door's keyboard shortcuts, named by the door button's help rows (UIHELPTEXT 193/194: Ctrl-O/Ctrl-C).
+		// [DATA:UIHELPTEXT 193 "Left-click to open the park (Ctrl-O)", 194 "Left-click to close the park (Ctrl-C)"]
+		// [EXT:maexah/OpenTPW park-engine.md] the original's shortcut table row 9 maps Ctrl-C to the close-park handler (PC 0x0040c410)
+		if ( !Input.TextEntryActive && FinanceEconomy is { } doorEconomy && !level.IsReadOnlyVisit )
+		{
+			if ( Input.Pressed( InputButton.OpenPark ) && !doorEconomy.IsParkOpen )
+				doorEconomy.OpenPark();
+			if ( Input.Pressed( InputButton.ClosePark ) && doorEconomy.IsParkOpen )
+				doorEconomy.ClosePark();
+		}
+
 		if ( level.LastActionMessage != lastLevelMessage )
 		{
 			lastLevelMessage = level.LastActionMessage;

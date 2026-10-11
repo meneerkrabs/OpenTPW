@@ -21,6 +21,12 @@ public partial class Level : IDisposable
 	/// <summary>Park management simulation (money, clock, staff, research); original levels only for now.</summary>
 	public ParkEconomyRuntime? Park { get; private set; }
 
+	/// <summary>
+	/// The park door of an original level: the entrance gate's script and the open/close walk over the
+	/// attractions. Null for the sandbox and read-only visits.
+	/// </summary>
+	public ParkGate? Gate { get; private set; }
+
 	/// <summary>Park name on the gate sign of an imported original level (TrueType sign text demo).</summary>
 	public OriginalGateSign? GateSign { get; private set; }
 	private bool wasMouseDown;
@@ -145,6 +151,7 @@ public partial class Level : IDisposable
 			ConnectObjectsToGuests();
 			ConnectObjectsToEconomy();
 			SetupStaff();
+			SetupParkGate();
 		}
 	}
 
@@ -155,6 +162,26 @@ public partial class Level : IDisposable
 		var sprites = GuestSpriteAtlas.LoadKids();
 		GuestRenderer = new GuestRenderer( Guests, park.Heightfield, sprites );
 		Log.Trace( $"Guests: {grid.WalkableCount} walkable path cells, {sprites.Count} original kid sprite sets, {Guests.Settings.Types.Count} .sam peep types." );
+	}
+
+	/// <summary>
+	/// Wires the park door (docs/GATES.md): the economy's open/close events command the entrance gate's script
+	/// and close or open the attractions, and the gate's deferred-close retry runs with the economy tick.
+	/// </summary>
+	private void SetupParkGate()
+	{
+		if ( Park == null )
+			return;
+		Gate = ParkGate.ForLevel( Park.Economy, Objects, Guests, () => Park.Economy.Staff.Members );
+		// A park that starts open commands its gate open once at setup, the way the original's gate lookup
+		// writes the command from mParkClosed (Mac 0x104500 writes the gate handle and the closed flag together);
+		// the initial OpenPark of AttachGuests raises its event before this wiring, so it commands nothing.
+		Gate.InitializeFromParkState();
+		Park.Economy.EventRaised += item =>
+		{
+			if ( item.Kind is ParkEventKind.ParkOpened or ParkEventKind.ParkClosed )
+				Gate.DoorMoved( item.Kind == ParkEventKind.ParkClosed );
+		};
 	}
 
 	/// <summary>Walkable path cell next to (or nearest to) a footprint; the prototype Totem has no catalog entrance cell yet.</summary>
@@ -274,6 +301,8 @@ public partial class Level : IDisposable
 			PlacedRide?.Simulate( deltaTime );
 			Objects.Simulate( deltaTime );
 			Park?.FixedTick();
+			// The deferred gate-close retry runs after the thing sweep, as the original's world sweep does (Mac 0x10536c).
+			Gate?.Tick();
 			StaffWorld?.Tick( deltaTime );
 		} );
 		foreach ( var entity in Entity.All.ToArray() )

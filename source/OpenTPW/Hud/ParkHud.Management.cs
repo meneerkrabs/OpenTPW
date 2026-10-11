@@ -37,6 +37,21 @@ public sealed partial class ParkHud
 		return true;
 	}
 
+	/// <summary>
+	/// Moves the park's door: open when closed, closed when open. The economy's open/close events command the
+	/// entrance gate's script and close or open the park's attractions (<see cref="Level.Gate"/>); a closed park
+	/// stops admissions at the booth.
+	/// </summary>
+	public void ToggleParkDoor()
+	{
+		if ( RejectReadOnlyAction() || FinanceEconomy is not { } economy )
+			return;
+		if ( economy.IsParkOpen )
+			economy.ClosePark();
+		else
+			economy.OpenPark();
+	}
+
 	/// <summary>Changes the model's monthly training allocation without charging money early.</summary>
 	public static bool TrySetStaffTrainingBudget( ParkEconomy? economy, bool readOnly, StaffType role, long budget )
 	{
@@ -66,11 +81,27 @@ public sealed partial class ParkHud
 				adjustmentButtons.Add( (button, () => delta < 0 ? value() > 0 : value() < (id == "entryPrice" ? int.MaxValue : long.MaxValue)) );
 			}
 		}
+		UiButton? door = null;
 		if ( id == "entryPrice" )
 		{
 			Label( "priceLabel", () => strings[UIStrings.TicketPrice], Rect( 370, 300, 1000, 380 ) );
 			Adjustment( "price", 300, () => FinanceEconomy?.EntranceFee ?? 0,
 				value => TrySetEntryPrice( FinanceEconomy, level.IsReadOnlyVisit, (int)value ) );
+			// The door: whether the park is open to visitors at all. The original's entryprice screen builds it
+			// as b_door at (1350,678)-(1555,847) with help row 194, shown down for a closed park; its handler calls
+			// the door routine with the switch's new state. [EXT:maexah/OpenTPW ParkEntryPriceScreen.cs (PC 0x00498d33, 0x00498fc3)]
+			// [DATA:ui.wad b_door] [DATA:UIHELPTEXT 193/194] the help names the action the click performs (open when closed, close when open)
+			door = screen.Add( new UiButton
+			{
+				Id = "door",
+				Model = "b_door",
+				Help = strings.Help( 194 ),
+				Clicked = () => ToggleParkDoor(),
+				Selected = () => FinanceEconomy is { IsParkOpen: false },
+				Bounds = Rect( 1350, 678, 1555, 847 ),
+				Anchor = UiAnchor.Center
+			} );
+			adjustmentButtons.Add( (door, () => true) );
 		}
 		else
 		{
@@ -89,7 +120,13 @@ public sealed partial class ParkHud
 		void Close() { if ( Stack.Top == screen ) Stack.Pop(); }
 		screen.Add( new UiButton { Id = "exit", Model = "b_exit", Help = strings.Help( 1 ), Clicked = Close,
 			Bounds = Rect( 1889, 820, 1972, 903 ), Anchor = UiAnchor.Center } );
-		void Refresh() { foreach ( var (button, available) in adjustmentButtons ) button.Enabled = !level.IsReadOnlyVisit && FinanceEconomy != null && available(); }
+		void Refresh()
+		{
+			foreach ( var (button, available) in adjustmentButtons )
+				button.Enabled = !level.IsReadOnlyVisit && FinanceEconomy != null && available();
+			if ( door != null )
+				door.Help = strings.Help( FinanceEconomy is { IsParkOpen: true } ? 194 : 193 );
+		}
 		Refresh();
 		screen.Updating = _ => Refresh();
 		screen.Back = Close;

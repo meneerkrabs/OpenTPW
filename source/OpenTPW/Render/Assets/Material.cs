@@ -50,6 +50,29 @@ public partial class Material : Asset
 
 	private DeviceBuffer ScratchBuffer;
 
+	private bool released;
+
+	/// <summary>Releases a renderer-owned material after its last submitted frame, including its own shader.</summary>
+	internal void ReleaseOwnedResources()
+	{
+		if ( released )
+			return;
+		released = true;
+		Asset.All.Remove( this );
+		Shader.OnRecompile = null!;
+		Render.ScheduleDelete( () =>
+		{
+			Pipeline.Dispose();
+			ScratchBuffer.Dispose();
+			foreach ( var layout in _resourceLayouts )
+				layout.Dispose();
+			_boundResources.Clear();
+			_boundTextures.Clear();
+			_boundTextureArrays.Clear();
+		} );
+		Shader.ReleaseOwnedResources();
+	}
+
 	private static readonly Sampler[] Samplers =
 	[
 		CreateSampler( SamplerType.Anisotropic ),

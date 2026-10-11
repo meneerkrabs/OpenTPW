@@ -68,6 +68,64 @@ internal sealed class FrontEndSmokeTest : IDisposable
 	private string switchPath = "";
 	private (uint Width, uint Height, uint Pixel) switchOriginal;
 	private TexturePackSwitch? textureSwitch;
+	private Asset[] firstParkHeadAssets = Array.Empty<Asset>();
+	private Asset[] secondParkHeadAssets = Array.Empty<Asset>();
+
+	private static bool HeadAssetsReleased( IEnumerable<Asset> assets ) => assets.All( asset => !Asset.All.Contains( asset ) && asset switch
+	{
+		Texture texture => texture.NativeTexture.IsDisposed && HeadAtlasViewReleased( texture ),
+		Material material => material.Pipeline.IsDisposed,
+		Shader shader => shader.ShaderProgram.All( program => program.IsDisposed ),
+		_ => false
+	} );
+
+	private static bool HeadAtlasViewReleased( Texture texture )
+	{
+		var view = texture.NativeTextureView;
+		// Veldrid 4.9.0 MTLTextureView.Dispose does nothing for a full alias: no separate Metal object is owned,
+		// so IsDisposed stays false. Accept that exact alias only after its target texture has been disposed.
+		// https://github.com/veldrid/veldrid/blob/v4.9.0/src/Veldrid/MTL/MTLTextureView.cs#L15
+		return view.IsDisposed || (Device.BackendType == GraphicsBackend.Metal && texture.NativeTexture.IsDisposed
+			&& view.Target == texture.NativeTexture && view.BaseMipLevel == 0 && view.MipLevels == view.Target.MipLevels
+			&& view.BaseArrayLayer == 0 && view.ArrayLayers == view.Target.ArrayLayers && view.Format == view.Target.Format);
+	}
+
+	/// <summary>Real pack-change notifications replace live park head atlases without retaining the previous GPU copies.</summary>
+	private void PlanParkHeadTextureSwitch()
+	{
+		if ( !string.IsNullOrEmpty( Environment.GetEnvironmentVariable( "OPENTPW_TEXTURE_PACK" ) ) )
+			return;
+		foreach ( var name in new[] { "smoke", "" } )
+		{
+			Asset[] before = Array.Empty<Asset>();
+			byte[][] beforePixels = Array.Empty<byte[]>();
+			Do( $"park head pack '{name}' begins", () =>
+			{
+				before = flow.Level!.RideHeadRenderer!.OwnedAssets.ToArray();
+				beforePixels = before.OfType<Texture>().Select( texture => texture.ReadPixels() ).ToArray();
+				Require( before.OfType<Texture>().Count() == 8, "the park owns eight head atlases before switching" );
+				textureSwitch = TexturePackSwitch.Begin( name, new List<string>(), smokePacks );
+				Require( textureSwitch != null, "the live park texture switch starts" );
+			} );
+			steps.Enqueue( ($"park head pack '{name}' completes", () => { textureSwitch!.Pump(); return textureSwitch.Finished; }) );
+			Wait( $"park head pack '{name}' deletion frames", 3 );
+			Do( $"park head pack '{name}' releases old atlases", () =>
+			{
+				var after = flow.Level!.RideHeadRenderer!.OwnedAssets.ToArray();
+				Require( before.Length == after.Length && before.OfType<Material>().Single() == after.OfType<Material>().Single(),
+					"a head atlas reload keeps the owned asset count and material stable" );
+				Device.WaitForIdle();
+				Require( HeadAssetsReleased( before.OfType<Texture>() ), "the replaced head atlases leave Asset.All and release their native resources" );
+				Require( after.All( Asset.All.Contains ), "replacement head atlases and material remain live" );
+				var afterPixels = after.OfType<Texture>().Select( texture => texture.ReadPixels() ).ToArray();
+				Require( beforePixels.Zip( afterPixels ).All( pair => pair.First.AsSpan().SequenceEqual( pair.Second ) ),
+					"a pack without head replacements reloads the same head GPU pixels" );
+				firstParkHeadAssets = after;
+				Log.Trace( $"Ride head lifecycle: pack '{name}' released eight old atlases; {after.Length} owned assets live, head GPU pixels retained." );
+			} );
+		}
+	}
+
 
 	private static uint CenterPixel( Texture texture )
 	{
@@ -350,6 +408,8 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			var capture = CaptureFrame( "hud.png" );
 			VerifyText( capture, flow.Hud!.MoneyText, "HUD bank balance" );
 			VerifyText( capture, flow.Hud.DateText, "HUD date" );
+			firstParkHeadAssets = flow.Level!.RideHeadRenderer!.OwnedAssets.ToArray();
+			Require( firstParkHeadAssets.Length == 10, "the park owns eight head atlas textures, its material and shader" );
 			var economy = flow.Level!.Park!.Economy;
 			Require( flow.StartKind == ParkStartKind.FullSimulation && economy.Mode == ParkGameMode.FullSimulation && !economy.Settings.IsEasy
 				&& flow.Level.OriginalPark!.Save == null && flow.Level.Park.Import == null, "Full Simulation starts with standard balance and without the Easymode seed" );
@@ -366,6 +426,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			};
 			Click( flow.Hud.Screen, "map" );
 		} );
+		PlanParkHeadTextureSwitch();
 		Wait( "map window opens", 3 );
 		Do( "map window", () =>
 		{
@@ -699,6 +760,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		Do( "back in lobby", () =>
 		{
 			Require( flow.Level == null && flow.Menu != null && flow.Lobby != null, "Exit To Lobby returns to the front end" );
+			Require( HeadAssetsReleased( firstParkHeadAssets ), "exit releases every head atlas, material and shader from the first park" );
 			if ( parkLanguage != null )
 				Require( string.Equals( GameLanguage.Current.Name, parkLanguage, StringComparison.OrdinalIgnoreCase ) && flow.Strings.Language == parkLanguage,
 					"a language chosen in the park applies once the park is left" );
@@ -711,13 +773,16 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		{
 			Require( flow.StartKind == ParkStartKind.InstantAction && flow.Level!.Park!.Economy.Mode == ParkGameMode.InstantAction,
 				"selected Instant Action reaches the park economy" );
+			secondParkHeadAssets = flow.Level!.RideHeadRenderer!.OwnedAssets.ToArray();
 			flow.ShowFrontEnd( "jungle" );
+			Require( secondParkHeadAssets.All( asset => !Asset.All.Contains( asset ) ), "second park exit also removes every owned head asset" );
 		} );
 		Wait( "instant action returns to lobby", 3 );
 		Do( "load original park after Instant Action", () => flow.LoadPark( new ParkLoadEntry( "jungle", 0, false ) ) );
 		Wait( "original park loads", 3 );
 		Do( "loaded park is the reference start", () =>
 		{
+			Require( HeadAssetsReleased( secondParkHeadAssets ), "second park exit completes scheduled native head asset disposal" );
 			Require( flow.StartKind == ParkStartKind.OriginalSaveReference && flow.Level!.Park!.Economy.Mode == ParkGameMode.FullSimulation
 				&& flow.Level.Park.Economy.Settings.IsEasy && flow.Level.OriginalPark!.Save != null,
 				"Load Park opens the shipped save as the reference start whatever mode was chosen before (UI-041)" );

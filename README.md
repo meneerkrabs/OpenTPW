@@ -75,7 +75,9 @@ What works today, with your own original game data:
   players build their own roller coasters ([objects](docs/OBJECTS.md), [ride scripts](docs/RSE-VM.md),
   [coasters](docs/COASTERS.md)).
 - **Guests, economy and staff:** guests arrive, walk the paths and use rides, shops, sideshows and
-  toilets; money, loans, wages, research, objectives, golden tickets and keys run on the original
+  toilets; riders on the rides whose scripts place heads (ADDHEAD: 31 scripts in the fantasy, hallow,
+  jungle and space themes) show their head on the ride, while coaster and tour cars do not yet; money,
+  loans, wages, research, objectives, golden tickets and keys run on the original
   settings files ([guests](docs/GUESTS.md), [economy](docs/ECONOMY.md)).
 - **Park door and rides:** the park door (the entry-price screen's door button, Ctrl-O and Ctrl-C) opens
   and closes the park: admissions stop at the booth, the rides close, and the entrance gate shuts once

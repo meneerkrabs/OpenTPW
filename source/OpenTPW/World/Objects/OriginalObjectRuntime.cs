@@ -22,7 +22,8 @@ public sealed class OriginalObjectRuntime
 		ArgumentNullException.ThrowIfNull( entry );
 		Entry = entry;
 		world ??= new RideScriptWorld();
-		Visitors = CreateVisitorBridge( entry, world.AllocateAttractionId() );
+		var attractionId = world.AllocateAttractionId();
+		Visitors = CreateVisitorBridge( entry, attractionId );
 		if ( CoasterDefinition.IsCoaster( entry.Settings ) )
 		{
 			Coaster = new CoasterRide( CoasterDefinition.FromSettings( entry.Settings ), world.Coasters, entry.DisplayName );
@@ -31,6 +32,7 @@ public sealed class OriginalObjectRuntime
 		Model = ObjectAssets.LoadModel( entry.FileSystem, entry.ModelPath );
 		if ( Model.Kind != ModelFileKind.Geometry )
 			throw new InvalidDataException( $"{entry.ModelPath} is not a geometry model." );
+		Visitors.Heads = RideHeadSpace.Create( Model, attractionId );
 		// Fixed items keep their last vertex pose when a clip ends (ObjectAnimator.UpdateVertices).
 		Animator = new ObjectAnimator( Model, keepsPoseOnClipChange: entry.IsFixedItem );
 		effects = new OriginalObjectEffects( this );

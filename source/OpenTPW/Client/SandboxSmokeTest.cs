@@ -99,6 +99,9 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 	{
 		++frame;
 		TrackObjectMotion();
+		TrackRideHeads();
+		if ( StepRideHeadReadback() )
+			return;
 		if ( !pathToolVerified && frame >= 3 )
 			VerifyHudPathTool();
 		if ( pathToolVerified && !coasterToolVerified && frame >= 4 )
@@ -191,10 +194,12 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 			if ( level.Park != null )
 				VerifyParkEconomy( level.Park, level.Guests );
 			Device.WaitForIdle();
+			if ( level.OriginalPark != null )
+				VerifyRideHeads();
 			completed = true;
 			Log.Trace( level.OriginalPark == null
 				? $"Native sandbox smoke test passed: {frame} frames, original ride and RSE script, script-triggered motion, original animation readback, close, remove, isolated save/load, BF4 text and GPU readback; {displaySummary}."
-				: $"Native original-level smoke test passed: {frame} frames, {level.OriginalPark.LevelName} terrain/import, MAP/save build rules, original ride and RSE script, guests boarding/riding/released by Totem.RSE, a HUD-built coaster, guest sprite readback, animation readback, close, remove, BF4 text, park economy and GPU readback; {displaySummary}." );
+				: $"Native original-level smoke test passed: {frame} frames, {level.OriginalPark.LevelName} terrain/import, MAP/save build rules, original ride and RSE script, guests boarding/riding/released by Totem.RSE, a HUD-built coaster, guest sprite readback, isolated rider-head GPU readback on a frozen identified ADDHEAD ride, animation readback, close, remove, BF4 text, park economy and GPU readback; {displaySummary}." );
 			Render.Window.SdlWindow.Close();
 		}
 	}
@@ -659,6 +664,7 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 
 	public void Dispose()
 	{
+		RestoreRideHeadReadback();
 		watchdog.Dispose();
 		Render.PostUpdate -= Update;
 		SaveFileSystem = originalSaveFileSystem;

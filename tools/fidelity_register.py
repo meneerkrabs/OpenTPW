@@ -21,6 +21,7 @@ REGISTERS = {
     "PATH": "source/OpenTPW/World/PathApproximations.cs",
     "COAST": "source/OpenTPW/World/Coasters/CoasterApproximations.cs",
     "WALK": "source/OpenTPW/World/Guests/WalkApproximations.cs",
+    "HEADS": "source/OpenTPW/World/Guests/HeadApproximations.cs",
     "SAVE": "source/OpenTPW/Economy/SaveApproximations.cs",
 }
 MARKDOWN_REGISTERS = {"ONLINE": "docs/ONLINE.md"}

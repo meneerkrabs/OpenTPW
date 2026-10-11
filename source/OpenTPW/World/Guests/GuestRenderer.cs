@@ -82,7 +82,7 @@ public sealed class GuestRenderer : Entity
 	/// relative, so a larger atlas drops in), else the original pixels.
 	/// </summary>
 	// [EXT:texture-pack] upscaled guest sprites from the optional local pack
-	private static Texture LoadAtlas( GuestSpriteAtlas atlas )
+	internal static Texture LoadAtlas( GuestSpriteAtlas atlas )
 	{
 		if ( TexturePack.Find( atlas.PackKey ) is { } file )
 		{

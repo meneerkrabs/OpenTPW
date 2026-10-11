@@ -5,6 +5,7 @@ namespace OpenTPW;
 public class Shader : Asset
 {
 	private ShaderInfo shaderInfo;
+	private bool released;
 
 	public VertexElementDescription[] VertexElements => shaderInfo.Reflection.VertexElements;
 	public ResourceLayoutDescription[] ResourceLayouts => shaderInfo.Reflection.ResourceLayouts;
@@ -70,6 +71,24 @@ public class Shader : Asset
 		}
 	}
 
+	/// <summary>Stops this shader's watcher subscription and releases its independently owned native shader objects.</summary>
+	internal void ReleaseOwnedResources()
+	{
+		if ( released )
+			return;
+		released = true;
+		Asset.All.Remove( this );
+		lock ( watchers )
+			if ( watchers.TryGetValue( Path, out var watcher ) && watcher != null )
+				watcher.Changed -= OnWatcherChanged;
+		var program = ShaderProgram;
+		Render.ScheduleDelete( () =>
+		{
+			foreach ( var shader in program )
+				shader.Dispose();
+		} );
+	}
+
 	public static bool IsFileReady( string path )
 	{
 		try
@@ -85,12 +104,13 @@ public class Shader : Asset
 
 	private void OnWatcherChanged( object sender, FileSystemEventArgs e )
 	{
-		IsDirty = true;
+		if ( !released )
+			IsDirty = true;
 	}
 
 	public void Recompile()
 	{
-		if ( !IsFileReady( Path ) )
+		if ( released || !IsFileReady( Path ) )
 			return;
 
 		shaderInfo = ShaderCompiler.CompileShader( Path );

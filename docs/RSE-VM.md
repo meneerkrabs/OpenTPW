@@ -174,6 +174,8 @@ Supported admission/query values still come exclusively from the effect
 implementation. It does not create visitors, vehicles, capacities, queues,
 or success responses. Original controller systems remain unimplemented.
 
+The head table binding is qualified separately: the Mac ADDHEAD/DELHEAD handler reads the calling script table. OpenTPW shares an attraction table with resolved child/sound VMs (HEADS-005); none of the 46 associated child/sound scripts in the shipped four-theme catalog uses a head opcode. See the full inventory and pixel proof in GUESTS.md.
+
 ## Corpus run (`RideVMCorpusTests`)
 
 Roots are the 263 scripts not started by another script; 44 are children (28

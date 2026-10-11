@@ -279,12 +279,15 @@ public sealed partial class ParkHud
 			return;
 		if ( !Status.IsAvailable( item ) )
 		{
+			// [BIN:STP-PPC:0x10139A40 error feedback] the buy window's rejected purchase plays cat_ui event 0x1D (buy window callers 0x10163AFC/0x10163BFC)
 			PostMessage( strings.Extra( OpenTpwText.NotAvailable ) );
+			GameAudio.PlayUi( GameAudio.ErrorEvent );
 			return;
 		}
 		if ( Status.HasEconomy && (Status.PriceOf( item ) ?? item.Cost) > Status.Money )
 		{
 			PostMessage( strings.Help( 152 ) );
+			GameAudio.PlayUi( GameAudio.ErrorEvent );
 			return;
 		}
 		if ( item.Entry is not { } entry )
@@ -453,11 +456,16 @@ public sealed partial class ParkHud
 		{
 			lastLevelMessage = level.LastActionMessage;
 			if ( lastLevelMessage.StartsWith( "Cannot build", StringComparison.Ordinal ) )
+			{
+				// [BIN:STP-PPC:0x10139A40 error feedback] a rejected action plays cat_ui event 0x1D (called from the buy window at 0x10163AFC/0x10163BFC and the checkbox dialog at 0x1013B7A4)
+				// [APPROX:AUDIO-009] the traced 0x1D callers are the buy window and dialog errors; the placement rejection plays it too — evidence needed: the original's build-tool rejection path
 				PostMessage( strings.Extra( OpenTpwText.CannotBuildHere ) );
+				GameAudio.PlayUi( GameAudio.ErrorEvent );
+			}
 		}
 
-		// [BIN:STP-PPC:0x10137FD0 park view input] a button message in the park view plays cat_ui event 0x1F (0xBD when modifier flag 0x10 is set)
-		// [APPROX:AUDIO-004] the 0xBD modifier (flag 0x10 from 0x1017F618) is not mapped to a key, so the view always plays 0x1F — evidence needed: the input flag behind 0x1017F618
+		// [BIN:STP-PPC:0x10137FD0 park view input] a 0x100 (activated) message in the park view plays cat_ui event 0x1F (0xBD when the message's control flag word, read at 0x1017F618, has a bit set outside 24-26)
+		// [APPROX:AUDIO-004] the 0xBD variant is not mapped to any OpenTPW control, so the view always plays 0x1F — evidence needed: the meaning of the flag bits in the control's +0x44 word
 		if ( !overUi && !consumed && input.LeftPressed )
 			GameAudio.PlayUi( ParkViewClickEvent );
 

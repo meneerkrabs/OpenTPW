@@ -109,7 +109,13 @@ internal sealed class GameFlow : IDisposable
 			Load = entry => QueueLevel( entry.Level, () => LoadPark( entry ) ),
 			Quit = Quit,
 			CreateOptions = CreateOptions,
-			IslandSelected = island => LobbyCameraMode.Target = Lobby!.Target( island ),
+			IslandSelected = island =>
+			{
+				LobbyCameraMode.Target = Lobby!.Target( island );
+				// [BIN:STP-PPC:0x1009598C lobby audio start] the front end starts the selected island's theme lobby music (cat_locallobbymusic 1) and looping ambience (cat_locallobbysfx 2)
+				// [APPROX:AUDIO-010] the sentences restart on every island selection; when the original switches them is not traced
+				GameAudio.EnterLobby( island.Level );
+			},
 			LoadEntries = FindLoadEntries,
 			GoOnline = ShowOnline,
 		} );
@@ -243,12 +249,37 @@ internal sealed class GameFlow : IDisposable
 		return level;
 	}
 
+	/// <summary>
+	/// Guests whose cell is within four cells of the camera's ground target — the crowd sentence's parameter
+	/// (<c>cat_kids</c> 0x5B, capped at 100). The original's park turn counts them the same way each turn.
+	/// </summary>
+	// [BIN:STP-PPC:0x101C2490 park turn] guests within four cells of the camera are counted (0x100C313C, radius argument 4) for the crowd sentence
+	// [APPROX:AUDIO-006] cells are counted by rectangle (Chebyshev distance); the original's area shape inside the radius is not traced
+	private static int GuestsNearCamera( Level level )
+	{
+		if ( level.Guests == null || Camera.Mode is not ParkCameraMode camera )
+			return 0;
+		if ( !level.TryGetGridCell( camera.Target.X, camera.Target.Y, out var x, out var y ) )
+			return 0;
+		var count = 0;
+		foreach ( var guest in level.Guests.Guests )
+		{
+			if ( Math.Max( Math.Abs( guest.Cell.X - x ), Math.Abs( guest.Cell.Y - y ) ) <= CrowdRadiusCells )
+				count++;
+		}
+		return count;
+	}
+
+	/// <summary>The crowd count's radius in cells (<c>0x101C2490</c> passes 4 to the guest counter).</summary>
+	public const int CrowdRadiusCells = 4;
+
 	private void TearDown()
 	{
 		Hud?.Stack.Clear();
 		Menu?.Stack.Clear();
 		Advisor?.DetachLevel();
 		GameAudio.LeavePark();
+		GameAudio.LeaveLobby();
 		if ( Level != null )
 		{
 			Level.Dispose();
@@ -322,6 +353,7 @@ internal sealed class GameFlow : IDisposable
 			Level.Update();
 			Advisor?.Update( Hud.Paused );
 			GameAudio.Update( Level.Guests?.GetStatistics().InPark );
+			GameAudio.SetCrowd( GuestsNearCamera( Level ) );
 			return;
 		}
 		if ( Level != null && ViewerLevel == Level )

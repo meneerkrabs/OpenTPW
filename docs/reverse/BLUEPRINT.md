@@ -64,6 +64,28 @@ The ghost branch:
 `0x10080C50` is the same per-cell ghost routine for other build modes; its validator is `0x10084154`, and
 `0x10075618` calls it for many cells (object footprints).
 
+## Which markers the build modes use
+
+2026-10-12, same binary and tools. `AddFace` has four callers: the two per-cell ghost routines
+`0x100866B8` (`SetCell`) and `0x10080C50`, and `0x1006BC38` and `0x100E5EE0`, which each add one flat red
+face (code 0, texture 1).
+
+- **`SetCell` default texture** (`0x10086778`/`0x10086784`): the first face takes the chooser's result, or,
+  when that is 0, the value in r17. r17 is 0 (blue) except for track cells (types 0xB and 0x10), where it
+  can be 5 (`m_direct`).
+- **`0x10084154`**, the validator of `0x10080C50`, returns 0, 1, 2 (`orange`, mode 0x1F), 8 (`m_link`),
+  0xB (`m_end`) and 0xD (`m_erase`, mode 0x3A) as constants. One branch returns a byte of the cell itself
+  (`0x1006E0E4`: the cell's +0xC byte, or +0x22 for a cell whose +2 byte is 2 while the global at
+  `_DAT_101ECF68` is set). It never returns 3, 4 or 7 as a constant.
+- In modes 1 and 3 that routine first reads `0x1007BC58`/`0x1007BC70`. These are not texture indices: they
+  are the path and queue cell costs, set through `0x1007BC4C`/`0x1007BC64` by the cost loader `0x1010F29C`.
+
+So in the routines read, the entrance and exit symbols (`m_enter`, `m_exit`, `m_inout`) and `m_front`,
+`m_cross` and `m_nocash` are never chosen as constants, and nothing marks an object's entrance or exit
+cell. The arrow symbols that do appear belong to track building (`m_direct`, `m_link`, `m_end`,
+`m_break`, `m_erase`). The only open source of other codes is the cell byte returned by `0x1006E0E4`.
+OpenTPW therefore draws an object footprint in blue or red only, without entrance or exit arrows.
+
 ## In OpenTPW
 
 `BlueprintMarkers` (a `ModelEntity`) builds this geometry for a list of cells with the `blue` and `red`
@@ -78,5 +100,6 @@ Open points (`BlueprintApproximations`):
   (`0x101ED3D4`) rotated by the face's direction code.
 - BLUEPRINT-003: which cells get which marker. Existing path cells of a line are drawn blue, and a footprint
   is red when the build rule or the purchase refuses it; the chooser's exact result for existing cells and
-  the footprint caller `0x10075618` were not read in full. The `m_*` symbols (entrance/exit arrows, track
-  markers) and the arrow models `garrow.MD2`/`rarrow.MD2` are not drawn yet.
+  the footprint caller `0x10075618` were not read in full. The track symbols (`m_direct`, `m_link`, `m_end`,
+  `m_break`, `m_erase`) and the arrow models `garrow.MD2`/`rarrow.MD2` are not drawn yet; entrance and exit
+  arrows are not drawn because no routine read chooses them (see above).

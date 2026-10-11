@@ -19,9 +19,10 @@ namespace OpenTPW;
 /// <para>
 /// The census counts guests (thing kind 1) standing on a cell of type 0, 1, 3, 9 or 10 (Mac
 /// predicates <c>0x85190</c>–<c>0x85258</c>): empty park ground, path, queue, entrance and exit
-/// cells — not the type-30 approach road outside the gate. The world sweep routine at Mac
+/// cells — not the type-30 approach road outside the gate. OpenTPW applies these predicates to its reduced
+/// imported guest grid, whose missing cell types remain qualified by ECON-050. The world sweep routine at Mac
 /// <c>0x10536c</c> (PC <c>FUN_00516380</c>) increments <c>mGameTick</c> and retries a close every 30
-/// ticks, additionally waiting for live staff (kinds 4–8) to be inside the park.
+/// park turns, additionally waiting for live staff (kinds 4–8) to be inside the park.
 /// </para>
 /// <para>
 /// The gate itself is the level's <c>Gates</c> fixed item; its script declares <c>VAR_COMMAND</c>
@@ -41,14 +42,15 @@ public sealed class ParkGate
 	/// <summary>What <see cref="StatusVariable"/> reports while the gate stands open.</summary>
 	public const int GateIsOpen = 1;
 
-	/// <summary>The deferred-close retry period, in economy ticks (Mac <c>0x105398</c>–<c>0x1053a0</c>: <c>mGameTick++</c>, retried at tick % 30).</summary>
-	public const long RetryPeriodTicks = 30;
+	/// <summary>The deferred-close retry period, in 248 ms park turns (Mac <c>0x105398</c>–<c>0x1053a0</c>: <c>mGameTick++</c>, retried at turn % 30).</summary>
+	public const long RetryPeriodTurns = 30;
 
 	private readonly ParkEconomy economy;
 	private readonly Func<OriginalObjectRuntime?> gate;
 	private readonly Func<IEnumerable<OriginalObjectRuntime>> attractions;
 	private readonly GuestSimulation? guests;
 	private readonly Func<IEnumerable<StaffMember>>? staff;
+	private long lastObservedTurn;
 
 	/// <param name="gate">The level's entrance gate runtime (its <c>Gates</c> fixed item), or null when the level has none.</param>
 	/// <param name="attractions">The park's placed objects; those guests may be offered take the open/close walk.</param>
@@ -61,15 +63,28 @@ public sealed class ParkGate
 		this.attractions = attractions;
 		this.guests = guests;
 		this.staff = staff;
+		lastObservedTurn = economy.Turn;
 	}
 
-	/// <summary>The gate of a running level: its <c>Gates</c> fixed item and every placed object.</summary>
-	public static ParkGate ForLevel( ParkEconomy economy, ParkObjects objects, GuestSimulation? guests = null, Func<IEnumerable<StaffMember>>? staff = null )
+	/// <summary>The gate of a running level: its <c>Gates</c> fixed item, every placed object and its separately owned prototype ride.</summary>
+	/// <param name="prototype">Reads the current prototype runtime when the door moves, including a prototype placed after gate setup.</param>
+	public static ParkGate ForLevel( ParkEconomy economy, ParkObjects objects, GuestSimulation? guests = null, Func<IEnumerable<StaffMember>>? staff = null, Func<OriginalObjectRuntime?>? prototype = null )
 		=> new( economy,
 			() => objects.Objects.FirstOrDefault( item => item.Entry.SettingsName.Equals( "Gates", StringComparison.OrdinalIgnoreCase ) )?.Runtime,
-			() => objects.Objects.Select( item => item.Runtime ),
+			() => WithPrototype( objects.Objects.Select( item => item.Runtime ), prototype?.Invoke() ),
 			guests,
 			staff );
+
+	private static IEnumerable<OriginalObjectRuntime> WithPrototype( IEnumerable<OriginalObjectRuntime> placed, OriginalObjectRuntime? prototype )
+	{
+		foreach ( var runtime in placed )
+			yield return runtime;
+		if ( prototype != null )
+			yield return prototype;
+	}
+
+	/// <summary>The current attractions, with aliased runtimes visited once.</summary>
+	internal IEnumerable<OriginalObjectRuntime> Attractions => attractions().Distinct().Where( item => item.IsAttraction );
 
 	/// <summary>The entrance gate's runtime, or null when the level has none.</summary>
 	public OriginalObjectRuntime? Gate => gate();
@@ -108,7 +123,7 @@ public sealed class ParkGate
 	{
 		CommandGate( closed );
 
-		foreach ( var item in attractions().Where( item => item.IsAttraction ) )
+		foreach ( var item in Attractions )
 		{
 			if ( closed )
 			{
@@ -125,13 +140,19 @@ public sealed class ParkGate
 	}
 
 	/// <summary>
-	/// The deferred closure retry (Mac <c>0x10536c</c> / PC <c>FUN_00516380</c>): every 30 economy ticks,
+	/// The deferred closure retry (Mac <c>0x10536c</c> / PC <c>FUN_00516380</c>): every 30 park turns (7.44 s of scaled time),
 	/// a closed park whose gate still stands open commands the gate shut once the guest census is zero
 	/// and no live staff stands outside the counted cell types.
 	/// </summary>
 	public void Tick()
 	{
-		if ( !economy.IsParkOpen && economy.Tick % RetryPeriodTicks == 0 && GateStatusIsOpen && GuestCensus == 0 && StaffOutside == 0 )
+		var turn = economy.Turn;
+		var previous = lastObservedTurn;
+		lastObservedTurn = turn;
+		// Sample crossed multiples, rather than every fixed tick in a qualifying turn. This also handles
+		// faster speeds, skipped updates and a restored clock moving backwards without duplicate retries.
+		if ( turn > previous && turn / RetryPeriodTurns > previous / RetryPeriodTurns
+			&& !economy.IsParkOpen && GateStatusIsOpen && GuestCensus == 0 && StaffOutside == 0 )
 			CommandGate( closed: true );
 	}
 
@@ -150,8 +171,8 @@ public sealed class ParkGate
 	}
 
 	/// <summary>
-	/// Guests standing where the original's census counts them: on a cell of type 0, 1, 3, 9 or 10
-	/// (Mac <c>0xc3684</c>). Guests on the approach road or outside the park do not count, a rider
+	/// Guests standing on the imported grid's counted cell types (type provenance is incomplete, ECON-050):
+	/// type 0, 1, 3, 9 or 10 (Mac <c>0xc3684</c>). Preserved approach-road and outside types do not count; a rider
 	/// counts at their stored cell (not because they are riding), and a guest that has left is not a
 	/// thing on the map at all.
 	/// </summary>
@@ -170,7 +191,14 @@ public sealed class ParkGate
 
 	/// <summary>Whether the cell at a guest's or staff member's position has a census-counted type.</summary>
 	// [BIN:STP-PPC:0xc3684 cell predicates 0x85190–0x85258] types 0, 1, 3, 9 and 10 count; OpenTPW only writes 0, 1 and 3 today.
-	private bool CountsCellOf( float cellX, float cellY ) => CountsCellType( guests!.Grid.Cells.RawTypeAt( (int)cellX, (int)cellY ) );
+	// [APPROX:ECON-050] the imported guest grid preserves paths but not every original outside/approach/footprint cell type, so its census can overcount empty imported cells — evidence needed: preserve original cell-type provenance when importing the guest grid
+	private bool CountsCellOf( float cellX, float cellY )
+	{
+		var cells = guests!.Grid.Cells;
+		if ( !float.IsFinite( cellX ) || !float.IsFinite( cellY ) || cellX < 0 || cellY < 0 || cellX >= cells.Width || cellY >= cells.Height )
+			return false;
+		return CountsCellType( cells.RawTypeAt( (int)MathF.Floor( cellX ), (int)MathF.Floor( cellY ) ) );
+	}
 
 	internal static bool CountsCellType( byte type ) => type is 0 or 1 or 3 or 9 or 10;
 

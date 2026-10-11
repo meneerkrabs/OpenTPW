@@ -530,8 +530,10 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 	private void VerifyRideViewAndDoor()
 	{
 		var parkCamera = Camera.Mode;
+		VerifyParkShortcutGuards();
 		Require( level.EnterRideView( level.PlacedRide! ) && Camera.Mode is RideCameraMode, "ride the Totem in the first-person ride view" );
 		Require( !level.EnterRideView( level.PlacedRide! ), "a second ride view is refused while one is open" );
+		VerifyArmedToolsInRideView();
 		Camera.Update();
 		level.ExitRideView();
 		Require( ReferenceEquals( Camera.Mode, parkCamera ) && level.RideView == null, "leaving the ride view restores the park camera" );
@@ -542,7 +544,78 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 		// A refused admission books nothing, so the admissions counter still matches the economy's own ledger.
 		park.Economy.ClosePark();
 		Require( !park.Economy.TryAdmitVisitor( long.MaxValue, out _ ), "a closed park refuses admissions at the booth" );
+		Require( !level.PlacedRide!.IsOpen && !level.PlacedRide.Visitors.IsOpen, "closing the park also closes the separately owned Totem and stops its admissions" );
 		park.Economy.OpenPark();
+		Require( level.PlacedRide!.IsOpen, "reopening the park reopens the Totem" );
+	}
+
+	/// <summary>Exercise the Level world-input path with both pending placement and removal while the ride camera owns the world.</summary>
+	private void VerifyArmedToolsInRideView()
+	{
+		var viewport = new Vector2( Screen.Size.X, Screen.Size.Y );
+		var removable = level.Objects.Objects.First( item => !item.Entry.IsFixedItem );
+		var cell = removable.Cells.First();
+		Require( level.TryProjectCell( cell.X, cell.Y, viewport, out var mouse ), "project a removable object for the ride-view click guard" );
+		Require( level.TryGetGridCell( mouse, viewport, out var x, out var y ) && x == cell.X && y == cell.Y, "the test click would hit the removable object in the park camera" );
+		var oldPlacing = level.IsPlacing;
+		var oldRemoving = level.IsRemovingObjects;
+		var oldEntry = level.BuildEntry;
+		var oldCount = level.Objects.Objects.Count;
+		level.IsPlacing = true;
+		level.UpdateWorldInput( false, false, mouse, viewport );
+		level.UpdateWorldInput( true, false, mouse, viewport );
+		Require( level.IsPlacing && level.PlacedRide != null, "a pending prototype tool stays suspended while riding" );
+		level.IsPlacing = false;
+		level.BuildEntry = null;
+		level.IsRemovingObjects = true;
+		level.UpdateWorldInput( false, false, mouse, viewport );
+		level.UpdateWorldInput( true, false, mouse, viewport );
+		Require( !removable.IsDeleted && level.Objects.Objects.Count == oldCount, "a fresh uncaptured left click cannot remove an object while riding" );
+		level.UpdateWorldInput( false, false, mouse, viewport );
+		level.IsPlacing = oldPlacing;
+		level.IsRemovingObjects = oldRemoving;
+		level.BuildEntry = oldEntry;
+		Log.Trace( "Ride view: armed prototype and remove tools ignore world clicks." );
+	}
+
+	/// <summary>Actual HUD shortcut dispatch leaves the ride and park state unchanged behind a modal or ImGui keyboard capture.</summary>
+	private void VerifyParkShortcutGuards()
+	{
+		if ( hud == null || hudContext == null )
+			return;
+		var previousKeys = Input.KeysDown;
+		var previousLastKeys = Input.LastKeysDown;
+		var io = ImGuiNET.ImGui.GetIO();
+		var previousCapture = io.WantCaptureKeyboard;
+		var previousSelection = hud.SelectedObject;
+		var previousInfoArm = hud.InfoArmOpen;
+		hud.SelectObject( level.PlacedRide );
+		level.Park?.Economy.OpenPark();
+		try
+		{
+			Input.KeysDown = new() { InputButton.RideView, InputButton.ClosePark };
+			Input.LastKeysDown = new();
+			var modal = new OpenTPW.UI.Original.UiScreen( "park-shortcut-guard" ) { Modal = true };
+			hud.Stack.Push( modal );
+			try
+			{
+				hud.Update( hudContext, OpenTPW.UI.Original.UiInput.Idle( new System.Numerics.Vector2( -1, -1 ) ) );
+				Require( level.RideView == null && (level.Park?.Economy.IsParkOpen ?? true), "modal HUD blocks Ride It and close-park shortcuts" );
+			}
+			finally { hud.Stack.Pop(); }
+			io.WantCaptureKeyboard = true;
+			hud.Update( hudContext, OpenTPW.UI.Original.UiInput.Idle( new System.Numerics.Vector2( -1, -1 ) ) );
+			Require( level.RideView == null && (level.Park?.Economy.IsParkOpen ?? true), "ImGui keyboard capture blocks Ride It and close-park shortcuts" );
+			Log.Trace( "Park shortcuts: modal and ImGui keyboard capture suppress ride and door actions." );
+		}
+		finally
+		{
+			Input.KeysDown = previousKeys;
+			Input.LastKeysDown = previousLastKeys;
+			io.WantCaptureKeyboard = previousCapture;
+			hud.SelectObject( previousSelection );
+			hud.SetInfoArm( previousInfoArm );
+		}
 	}
 
 	private static bool Throws( Action action )

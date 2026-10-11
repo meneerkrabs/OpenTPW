@@ -4,7 +4,8 @@ The park door is the park's open and closed switch: the entry-price screen's doo
 193/194), and the keyboard shortcuts Ctrl-O and Ctrl-C (`InputButton.OpenPark`, `ClosePark`). It drives the
 economy (`ParkEconomy.OpenPark`/`ClosePark`, which raise `ParkOpened`/`ParkClosed`) and the level's
 `ParkGate` (`source/OpenTPW/World/ParkGate.cs`), which commands the entrance gate's script and closes or
-opens the attractions. Original levels only; read-only visits and the sandbox have no gate.
+opens the attractions, including the separately owned prototype ride. Original levels only; read-only visits and the sandbox have no gate.
+The door and ride-view shortcuts wait while a HUD menu, text field or keyboard-capturing developer UI owns input.
 
 ## What the original does
 
@@ -24,13 +25,17 @@ ECON-049 for what is not modelled).
 flag `+0x2E` bit 4). The gate is commanded shut (`VAR_COMMAND` 0) only when the gate reports itself open
 (`VAR_STATUS` 1) and no guest stands inside. Otherwise the gate stays open and the closure is retried.
 
-**The retry** (`ParkGate.Tick`, every 30 economy ticks, Mac `0x10536c`, PC `FUN_00516380`): a closed park
-whose gate still stands open commands the gate shut once the guest census is zero and no live staff stands
-outside the counted cells (staff of kinds 4 to 8 on a cell that is not of type 0, 1, 3, 9 or 10). The fork
-records that the immediate close does not run this staff scan.
+**The retry** (`ParkGate.Tick`, at crossed multiples of 30 park turns, Mac `0x10536c`, PC `FUN_00516380`):
+one park turn is 248 ms, so the interval is 7.44 seconds of scaled time
+([DET-plan §2.1](reverse/DET-plan.md#21-substep-order-pinned), `det_evidence.py` `TURN_THIRTY`).
+It commands a closed park's still-open gate shut once the guest census is zero and no live staff stands
+outside the counted cells (staff of kinds 4 to 8 on a cell that is not of type 0, 1, 3, 9 or 10).
+Calls during the same qualifying turn cannot repeat the command; faster speeds and skipped fixed updates
+still detect the crossed boundary. The fork records that the immediate close does not run this staff scan.
 
-**The census** counts guests on cells of type 0, 1, 3, 9 and 10 (Mac predicates `0x85190`–`0x85258`). Guests
-on the approach road, outside the park or already gone do not count. A rider counts at their stored cell.
+**The census** applies the original predicate to the guest grid: it counts guests on cells of type 0, 1, 3, 9 and 10 (Mac predicates `0x85190`–`0x85258`).
+Preserved approach-road and outside types, out-of-bounds positions and departed guests do not count. A rider counts at their stored cell.
+The reduced imported guest grid does not yet preserve every original cell type: unpreserved outside, approach or footprint cells remain type 0 and can be overcounted (ECON-050).
 
 ## What closing does to guests
 
@@ -46,6 +51,7 @@ on the approach road, outside the park or already gone do not count. A rider cou
 
 - `ECON-049`: the reopen guard checks only `VAR_BROKEN`. The upgrade and condemned states and the back-of-queue
   path test (`FUN_004de4a0`) are not modelled.
+- `ECON-050`: the guest-grid import preserves paths, but not all original outside, approach-road and footprint cell types. The census predicate is traced; the imported type provenance is incomplete.
 - The ticket booth closes at once; the original's booth state and the closed-ride queue turn-away are not
   traced here.
 - The keyboard shortcuts are the door button's own help rows; the original's shortcut table row for Ctrl-C
@@ -54,5 +60,9 @@ on the approach road, outside the park or already gone do not count. A rider cou
 ## Tests
 
 `ParkGateTests` covers the census cell types, the door's gate command and rides, the populated closure's hold
-until the last guest leaves, the 30-tick retry, and the staff blocker. The gate-script tests need
+until the last guest leaves, the 30-turn retry across normal/fast speeds and skipped updates, single retries per boundary, duplicate attraction aliases, and the staff blocker (including fractional and out-of-bounds positions).
+`ParkInputGuardTests` checks armed tools and held/captured mouse edges, plus shortcut capture. The native
+jungle smoke calls the actual level input path with armed tools while riding, checks actual HUD shortcut
+dispatch behind a modal and ImGui capture, and checks that closing the park closes the prototype
+and stops its admissions. The gate-script tests need
 `OPENTPW_GAME_PATH` and are skipped without it.

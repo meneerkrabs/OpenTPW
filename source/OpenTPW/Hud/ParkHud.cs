@@ -426,6 +426,10 @@ public sealed partial class ParkHud
 		ClosePauseMenu();
 	}
 
+	/// <summary>Park shortcuts wait while a pause/menu, text field or keyboard-capturing developer UI owns input.</summary>
+	internal static bool ParkShortcutsAllowed( bool paused, bool overlayOpen, bool textEntry, bool keyboardCaptured ) =>
+		!paused && !overlayOpen && !textEntry && !keyboardCaptured;
+
 	/// <summary>
 	/// One frame: HUD input first (so clicks on the HUD never reach the park), then park selection,
 	/// purchase bookkeeping and messages. Returns true when the pointer is over the UI.
@@ -454,9 +458,12 @@ public sealed partial class ParkHud
 		if ( !paused && input.Has( UiKeys.Pause ) )
 			Status.Speed = Status.Speed == GameSpeed.Paused ? GameSpeed.Normal : GameSpeed.Paused;
 
+		var io = ImGuiNET.ImGui.GetIO();
+		var shortcutsAllowed = ParkShortcutsAllowed( paused, Stack.Screens.Count > 1, Input.TextEntryActive, io.WantCaptureKeyboard || io.WantTextInput );
+
 		// Ride It (E) rides the selected ride; a right click (RMB cancel on) or E again leaves the ride view.
 		// [APPROX:UI-093] the key stands in for the ride window's "Ride it!" button (gui_CameraFlags 4), whose art is not in the repository
-		if ( !Input.TextEntryActive )
+		if ( shortcutsAllowed )
 		{
 			if ( level.RideView != null && (Input.Pressed( InputButton.RideView ) || (input.RightPressed && GameOptions.Current.RmbCancel)) )
 				level.ExitRideView();
@@ -467,7 +474,7 @@ public sealed partial class ParkHud
 		// The park door's keyboard shortcuts, named by the door button's help rows (UIHELPTEXT 193/194: Ctrl-O/Ctrl-C).
 		// [DATA:UIHELPTEXT 193 "Left-click to open the park (Ctrl-O)", 194 "Left-click to close the park (Ctrl-C)"]
 		// [EXT:maexah/OpenTPW park-engine.md] the original's shortcut table row 9 maps Ctrl-C to the close-park handler (PC 0x0040c410)
-		if ( !Input.TextEntryActive && FinanceEconomy is { } doorEconomy && !level.IsReadOnlyVisit )
+		if ( shortcutsAllowed && FinanceEconomy is { } doorEconomy && !level.IsReadOnlyVisit )
 		{
 			if ( Input.Pressed( InputButton.OpenPark ) && !doorEconomy.IsParkOpen )
 				doorEconomy.OpenPark();

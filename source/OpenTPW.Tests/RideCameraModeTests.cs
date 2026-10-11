@@ -27,6 +27,18 @@ public class RideCameraModeTests
 	}
 
 	[TestMethod]
+	public void WorldTranslationDoesNotChangeTheRideViewDirection()
+	{
+		var heading = new Vector3( 3, 4, 0 ).Normal;
+		var (eye, look) = RideCameraMode.PrototypeFrame( new Vector3( 1, 2, 3 ), 4, heading );
+		var offset = new Vector3( 100, -250, 80 );
+		var original = RideCameraMode.FrameRotation( eye, look ).Forward;
+		var translated = RideCameraMode.FrameRotation( eye + offset, look + offset ).Forward;
+		Assert.AreEqual( 0f, (heading - original).Length, 0.0001f );
+		Assert.AreEqual( 0f, (original - translated).Length, 0.0001f, "a look target is relative to the eye, not the world origin" );
+	}
+
+	[TestMethod]
 	public void PrototypeFieldOfViewIsTheParkViewsDefault()
 	{
 		var camera = new RideCameraMode( null!, Vector3.Forward );

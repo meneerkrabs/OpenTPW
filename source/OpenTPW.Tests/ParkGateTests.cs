@@ -112,18 +112,19 @@ public class ParkGateTests
 		Assert.AreEqual( 1, gateObject.GetVariableByName( ParkGate.CommandVariable ), "a guest inside holds the gate open" );
 		Assert.IsFalse( totem.IsOpen, "the rides still close at once" );
 
-		// The retry (Mac 0x10536c) only fires every 30 ticks and only once the census is empty.
+		// The retry (Mac 0x10536c) only fires every 30 park turns (248 ms each) and only once the census is empty.
 		inside.State = GuestState.Gone;
 		Assert.AreEqual( 0, populated.GuestCensus );
-		for ( var tick = 0; tick < 29; tick++ )
+		var retryTick = ParkCalendar.TickOfTurn( ParkGate.RetryPeriodTurns );
+		for ( var tick = 0; tick < retryTick - 1; tick++ )
 		{
 			economy.Advance( 1 );
 			populated.Tick();
 		}
-		Assert.AreEqual( 1, gateObject.GetVariableByName( ParkGate.CommandVariable ), "tick 29: not a retry tick" );
+		Assert.AreEqual( 1, gateObject.GetVariableByName( ParkGate.CommandVariable ), "before park turn 30: not a retry boundary" );
 		economy.Advance( 1 );
 		populated.Tick();
-		Assert.AreEqual( 0, gateObject.GetVariableByName( ParkGate.CommandVariable ), "tick 30: the retry closes the gate" );
+		Assert.AreEqual( 0, gateObject.GetVariableByName( ParkGate.CommandVariable ), "park turn 30: the retry closes the gate" );
 	}
 
 	[TestMethod]
@@ -141,19 +142,122 @@ public class ParkGateTests
 
 		var blocked = new ParkGate( economy, () => gateObject, () => new[] { totem }, simulation,
 			() => new[] { Staff( 40f, 40f ) } );
-		economy.Advance( 30 );
+		economy.Advance( ParkCalendar.TickOfTurn( ParkGate.RetryPeriodTurns ) );
 		blocked.Tick();
 		Assert.AreEqual( 1, gateObject.GetVariableByName( ParkGate.CommandVariable ), "staff outside blocks the close" );
 		Assert.AreEqual( 1, blocked.StaffOutside );
 
 		var unblocked = new ParkGate( economy, () => gateObject, () => new[] { totem }, simulation,
 			() => new[] { Staff( 2f, 0f ) } );
+		economy.Advance( ParkCalendar.TickOfTurn( 2 * ParkGate.RetryPeriodTurns ) - economy.Tick );
 		unblocked.Tick();
 		Assert.AreEqual( 0, gateObject.GetVariableByName( ParkGate.CommandVariable ), "staff inside does not block" );
 
 		var nowhere = new ParkGate( economy, () => gateObject, () => new[] { totem }, simulation, () => new[] { Staff( null, null ) } );
 		nowhere.Tick();
 		Assert.AreEqual( 0, nowhere.StaffOutside, "a staff member without a cell stands nowhere, not outside" );
+	}
+
+	[TestMethod]
+	public void LevelDoorReadsTheCurrentPrototypeAfterSetup()
+	{
+		UseOriginalData();
+		var (_, _, totem, economy) = Park();
+		var objects = new ParkObjects( ObjectCatalog.Load( "jungle" ), new SandboxParkGrid() );
+		OriginalObjectRuntime? prototype = null;
+		var gate = ParkGate.ForLevel( economy, objects, prototype: () => prototype );
+		Assert.AreEqual( 0, gate.Attractions.Count() );
+		prototype = totem;
+		economy.OpenPark();
+		economy.ClosePark();
+		gate.DoorMoved( closed: true );
+		Assert.IsFalse( totem.IsOpen, "the prototype is outside ParkObjects but still closes" );
+		Assert.IsFalse( totem.Visitors.IsOpen, "the prototype stops admitting guests" );
+		economy.OpenPark();
+		gate.DoorMoved( closed: false );
+		Assert.IsTrue( totem.IsOpen );
+		prototype = null;
+		Assert.AreEqual( 0, gate.Attractions.Count(), "a removed prototype is no longer visited" );
+	}
+
+	[TestMethod]
+	public void AttractionWalkDeduplicatesRuntimeAliases()
+	{
+		UseOriginalData();
+		var (_, gates, totem, economy) = Park();
+		var gate = new ParkGate( economy, () => gates, () => new[] { totem, totem, gates } );
+		Assert.AreEqual( 1, gate.Attractions.Count(), "duplicate references and non-attraction gate are filtered" );
+	}
+
+	[DataTestMethod]
+	[DataRow( GameSpeed.Normal )]
+	[DataRow( GameSpeed.Fast )]
+	[DataRow( GameSpeed.Fastest )]
+	public void RetryUsesCrossedParkTurnsAtEverySpeedAndOnlyOncePerBoundary( GameSpeed speed )
+	{
+		UseOriginalData();
+		var (gate, gates, _, economy) = Park();
+		economy.Speed = speed;
+		gates.SetVariable( ParkGate.StatusVariable, ParkGate.GateIsOpen );
+		gates.SetVariable( ParkGate.CommandVariable, 1 );
+		while ( economy.Turn < ParkGate.RetryPeriodTurns )
+		{
+			economy.AdvanceFixedTick();
+			gate.Tick();
+			if ( economy.Turn < ParkGate.RetryPeriodTurns )
+				Assert.AreEqual( 1, gates.GetVariableByName( ParkGate.CommandVariable ), $"speed {speed}, turn {economy.Turn}: no early retry" );
+		}
+		Assert.AreEqual( 0, gates.GetVariableByName( ParkGate.CommandVariable ), "first crossed 30-turn boundary closes" );
+		gates.SetVariable( ParkGate.CommandVariable, 1 );
+		gate.Tick();
+		Assert.AreEqual( 1, gates.GetVariableByName( ParkGate.CommandVariable ), "repeated calls at the same tick do not duplicate the retry" );
+		economy.Speed = GameSpeed.Paused;
+		economy.AdvanceFixedTick();
+		gate.Tick();
+		Assert.AreEqual( 1, gates.GetVariableByName( ParkGate.CommandVariable ), "pause at the retry boundary cannot reissue commands" );
+		economy.Advance( ParkCalendar.TickOfTurn( ParkGate.RetryPeriodTurns + 1 ) - economy.Tick );
+		gate.Tick();
+		Assert.AreEqual( 1, gates.GetVariableByName( ParkGate.CommandVariable ), "the rest of the qualifying turn does not retry" );
+	}
+
+	[TestMethod]
+	public void RetryFindsBoundaryWhenUpdatesSkipItsFirstFixedTick()
+	{
+		UseOriginalData();
+		var (gate, gates, _, economy) = Park();
+		gates.SetVariable( ParkGate.StatusVariable, ParkGate.GateIsOpen );
+		gates.SetVariable( ParkGate.CommandVariable, 1 );
+		economy.Advance( ParkCalendar.TickOfTurn( ParkGate.RetryPeriodTurns + 1 ) );
+		gate.Tick();
+		Assert.AreEqual( 0, gates.GetVariableByName( ParkGate.CommandVariable ), "turn 30 was crossed although no call landed on its first fixed tick" );
+	}
+
+	[TestMethod]
+	public void CensusRejectsPositionsOutsideTheMapBeforeReadingTypeZeroFallback()
+	{
+		var (simulation, grid) = InsideGuests();
+		var guest = simulation.SpawnInPark( 2, 0 );
+		var economy = new ParkEconomy( EconomyTestData.Settings(), EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 7 );
+		var gate = new ParkGate( economy, () => null, () => Array.Empty<OriginalObjectRuntime>(), simulation );
+		foreach ( var cell in new[] { (-1, 0), (0, -1), (grid.CountX, 0), (0, grid.CountY) } )
+		{
+			guest.CellX = cell.Item1;
+			guest.CellY = cell.Item2;
+			Assert.AreEqual( 0, gate.GuestCensus, $"{cell} is outside, despite RawTypeAt returning counted type 0" );
+		}
+	}
+
+	[TestMethod]
+	public void StaffFractionalAndNonFinitePositionsCannotAliasCountedCells()
+	{
+		var (simulation, grid) = InsideGuests();
+		grid.Cells.SetType( 1, 0, (byte)7 );
+		var economy = new ParkEconomy( EconomyTestData.Settings(), EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 7 );
+		var positions = new[] { Staff( -0.25f, 0 ), Staff( 0, -0.25f ), Staff( grid.CountX, 0 ),
+			Staff( 0, grid.CountY ), Staff( float.NaN, 0 ), Staff( 0, float.PositiveInfinity ),
+			Staff( 1.75f, 0.5f ), Staff( 0.75f, 0.5f ), Staff( null, null ) };
+		var gate = new ParkGate( economy, () => null, () => Array.Empty<OriginalObjectRuntime>(), simulation, () => positions );
+		Assert.AreEqual( 7, gate.StaffOutside, "seven invalid/outside cells block; one valid path cell and one unplaced member do not" );
 	}
 
 	private static StaffMember Staff( float? x, float? y ) =>

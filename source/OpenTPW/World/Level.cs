@@ -172,7 +172,7 @@ public partial class Level : IDisposable
 	{
 		if ( Park == null )
 			return;
-		Gate = ParkGate.ForLevel( Park.Economy, Objects, Guests, () => Park.Economy.Staff.Members );
+		Gate = ParkGate.ForLevel( Park.Economy, Objects, Guests, () => Park.Economy.Staff.Members, () => PlacedRide?.Runtime );
 		// A park that starts open commands its gate open once at setup, the way the original's gate lookup
 		// writes the command from mParkClosed (Mac 0x104500 writes the gate handle and the closed flag together);
 		// the initial OpenPark of AttachGuests raises its event before this wiring, so it commands nothing.
@@ -281,14 +281,8 @@ public partial class Level : IDisposable
 			onlinePanel ??= new OnlinePanel( this, onlineFolders );
 			onlinePanel.Draw();
 		}
-		if ( IsPlacing && !wasMouseDown && Input.Mouse.Left && !UiCapturesMouse && !ImGuiNET.ImGui.GetIO().WantCaptureMouse )
-		{
-			if ( TryGetPlacementPosition( Input.Mouse.Position, new Vector2( Screen.Size.X, Screen.Size.Y ), out var position ) )
-				PlaceRide( position );
-		}
-		else if ( !wasMouseDown && Input.Mouse.Left && !UiCapturesMouse && !ImGuiNET.ImGui.GetIO().WantCaptureMouse )
-			HandleObjectClick( Input.Mouse.Position, new Vector2( Screen.Size.X, Screen.Size.Y ) );
-		wasMouseDown = Input.Mouse.Left;
+		UpdateWorldInput( Input.Mouse.Left, UiCapturesMouse || ImGuiNET.ImGui.GetIO().WantCaptureMouse,
+			Input.Mouse.Position, new Vector2( Screen.Size.X, Screen.Size.Y ) );
 		if ( OriginalTerrain != null && Guests != null && Guests.Grid.Cells.Version != renderedCellVersion )
 		{
 			renderedCellVersion = Guests.Grid.Cells.Version;
@@ -307,6 +301,29 @@ public partial class Level : IDisposable
 		} );
 		foreach ( var entity in Entity.All.ToArray() )
 			entity.Update();
+	}
+
+	internal enum WorldClickAction { None, PlacePrototype, UseTool }
+
+	/// <summary>World input stays suspended in the ride view, including tools armed through the HUD.</summary>
+	internal static WorldClickAction WorldClick( bool riding, bool leftDown, bool previousLeftDown, bool mouseCaptured, bool placing ) =>
+		riding || !leftDown || previousLeftDown || mouseCaptured ? WorldClickAction.None
+			: placing ? WorldClickAction.PlacePrototype : WorldClickAction.UseTool;
+
+	internal void UpdateWorldInput( bool leftDown, bool mouseCaptured, Vector2 mousePosition, Vector2 viewportSize )
+	{
+		switch ( WorldClick( RideView != null, leftDown, wasMouseDown, mouseCaptured, IsPlacing ) )
+		{
+			case WorldClickAction.PlacePrototype:
+				if ( TryGetPlacementPosition( mousePosition, viewportSize, out var position ) )
+					PlaceRide( position );
+				break;
+			case WorldClickAction.UseTool:
+				HandleObjectClick( mousePosition, viewportSize );
+				break;
+		}
+		// Track the button in both cameras: a held click must not build when the player leaves a ride.
+		wasMouseDown = leftDown;
 	}
 
 	public bool PlaceRide( Vector3 position )

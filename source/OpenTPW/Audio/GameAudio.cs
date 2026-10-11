@@ -39,7 +39,7 @@ public static class GameAudio
 	public const uint RepairStopSecondEvent = 211;
 	/// <summary>The rain loop of the global <c>cat_ambient</c> (<c>0x10103C4C</c> mode 0: effect 0x21 submitted flat, the handle kept at the weather thing's +0x54).</summary>
 	public const uint RainEvent = 0x21;
-	/// <summary>The thunder one-shot of the global <c>cat_ambient</c> (<c>0x1034D8</c>–<c>0x103518</c>: event 0x20 submitted at the last bolt's top, the weather thing's +0x48..+0x50).</summary>
+	/// <summary>The thunder one-shot of the global <c>cat_ambient</c> (<c>0x101034D8</c>–<c>0x10103518</c>: event 0x20 submitted at the last bolt's top, the weather thing's +0x48..+0x50).</summary>
 	public const uint ThunderEvent = 0x20;
 	/// <summary>The rain sentence's parameter id (<c>0x100BC388</c> sets parameter 8 of the global rain voice to the drop-percentage level, as the music uses 4 and the crowd 7).</summary>
 	public const int RainParameterId = 8;
@@ -59,6 +59,7 @@ public static class GameAudio
 	private static SoundSentence? lobbyAmbience;
 	private static SoundSentence? rain;
 	private static long staffTurn = -1;
+	private static DeterministicRandom staffRandom = new( 1 );
 	private static bool staffVoiceLogged;
 	private static IReadOnlyList<AudioVoice>? placedAmbients;
 
@@ -137,6 +138,7 @@ public static class GameAudio
 		LeavePark();
 		if ( seed is uint value )
 			events!.Reseed( value );
+		staffRandom = new DeterministicRandom( events!.Seed ^ 0x53544146u );
 		LevelMusic = SoundCategory.TryLoad( FileSystem, $"/levels/{level}/Music", "cat_music" );
 		LevelSpeech = SoundCategory.TryLoad( FileSystem, $"/levels/{level}/Speech", "cat_speech" );
 		// [BIN:STP-PPC:0x100BC864 level registration] the level's cat_ambient and cat_rides registered at sound-manager offsets 24 and 28
@@ -389,7 +391,8 @@ public static class GameAudio
 	public static int ScreamParameter( int level, int scriptSpeed = 50 ) => Math.Clamp( (level + scriptSpeed) / 2, 0, 100 );
 
 	/// <summary>
-	/// A ride script's <c>SINGLESCREAM</c>: a one-shot at the ride's box middle. A non-negative second operand takes
+	/// A ride script's <c>SINGLESCREAM</c>: the original places it at the ride's box middle; the host plays it flat
+	/// while that mapping is missing (AUDIO-032). A non-negative second operand takes
 	/// the 4×4 grid (the band's row crossed with (level + speed) / 50 clamped to 0..3); a negative one picks on the
 	/// band alone. The second operand is read as a short, so the corpus's literal 65535 is −1.
 	/// </summary>
@@ -409,7 +412,9 @@ public static class GameAudio
 			eventId = ScreamSingleEvent( row );
 		if ( eventId == 0 )
 			return null;
-		var voice = events.PlayAt( Kids, eventId, AudioChannel.Effects, position ?? Vector3.Zero );
+		var voice = position is { } place
+			? events.PlayAt( Kids, eventId, AudioChannel.Effects, place )
+			: events.Play( Kids, eventId, AudioChannel.Effects );
 		Log.Trace( $"Sound: single scream cat_kids {eventId} {(voice == null ? "not available" : "played")}." );
 		return voice;
 	}
@@ -435,10 +440,10 @@ public static class GameAudio
 
 	/// <summary>
 	/// The staff voices of one park turn: each member draws once, and a draw whose low four bits are clear plays its
-	/// walking or idle voice at its cell (sound units: a cell is ten). Runs once per turn; the draw is the sound stream's.
+	/// walking or idle voice at its cell (sound units: a cell is ten). Runs once per turn with an independent host stream.
 	/// </summary>
 	// [BIN:STP-PPC:0x100D2CE0 staff voices] the entertainer handler draws the world random at each walking/idle turn and plays at (draw & 0xF) == 0 — the gate is traced for all roles (0x100D5EAC, 0x100D6434, 0x100D9BAC, 0x100D9F10, 0x100D2DDC, 0x100D2E44, 0x100D4EF0, 0x100D4E18, 0x100F0460, 0x100F0630)
-	// [APPROX:AUDIO-024] the turn is the park turn; the draw is the sound stream's top 16 bits, not the world LCG's low four bits the Mac tests; a member's walking turn is its travelling flag — evidence needed: the handlers' turn boundary and the world draw order
+	// [APPROX:AUDIO-024] the turn is the park turn; draws advance an independent host SplitMix64 stream seeded from the sound seed XOR ASCII STAF, not the Mac's shared world LCG; walking is the travelling flag — evidence needed: the handlers' turn boundary and world draw order
 	public static void UpdateStaffVoices( IReadOnlyList<StaffWorldSnapshot> staff, long turn )
 	{
 		if ( events == null || turn == staffTurn )
@@ -446,7 +451,7 @@ public static class GameAudio
 		staffTurn = turn;
 		foreach ( var member in staff )
 		{
-			if ( (events.Draw() & 15) != 0 )
+			if ( staffRandom.Next( 16 ) != 0 )
 				continue;
 			if ( !staffVoiceLogged )
 			{
@@ -593,17 +598,19 @@ public static class GameAudio
 	}
 
 	/// <summary>
-	/// Places the listener for the frame, from the camera the park is seen through: the original hears a park from the
-	/// midpoint of the camera's eye and the point it looks at (a lobby from a fixed spot). The place is given in the
-	/// engine's coordinates (X/Y ground, Z up) and moved into the original's sound units (cell edges are 10, so five
-	/// engine units per sound unit at the model scale 0.2).
+	/// Places the listener for the frame: the host follows the fork's proposed camera eye/target midpoint,
+	/// whose exact mapping is not independently verified. The place is given in the
+	/// engine's coordinates (X/Y ground, Z up) and moved into the original's sound units (five sound units per
+	/// engine unit at model scale 0.2), undoing the heightfield's centering for imported parks.
 	/// </summary>
-	// [BIN:TPW-EXE:0x0054F9E4 listener] the park listener is the midpoint of the camera eye and its look-at point, lerped 0.5 (maexah/OpenTPW docs/exe/audio.md, "The listener"); the Mac's per-frame update is 0x10051C1D0 with the camera globals
-	public static void UpdateListener( System.Numerics.Vector3 ear, System.Numerics.Vector3 forward )
+	// [LEAD:maexah/OpenTPW docs/exe/audio.md "The listener", PC 0x0054F9E4] camera eye/target midpoint; packed PC exe prevents local verification and the prior nine-digit Mac address was malformed and is withdrawn
+	// [APPROX:AUDIO-021] the camera midpoint follows the fork's listener lead; the Mac listener's exact position and placement units are not traced together
+	public static void UpdateListener( System.Numerics.Vector3 ear, System.Numerics.Vector3 forward, ModelHeightfield? heightfield = null )
 	{
 		const float soundUnitsPerEngineUnit = 1f / OriginalParkPlacement.ModelScale;
+		var origin = heightfield == null ? System.Numerics.Vector2.Zero : OriginalParkPlacement.GetOrigin( heightfield );
 		AudioListener.Update(
-			new Vector3( ear.X * soundUnitsPerEngineUnit, ear.Z * soundUnitsPerEngineUnit, ear.Y * soundUnitsPerEngineUnit ),
+			new Vector3( (ear.X + origin.X) * soundUnitsPerEngineUnit, ear.Z * soundUnitsPerEngineUnit, (ear.Y + origin.Y) * soundUnitsPerEngineUnit ),
 			new Vector3( forward.X, 0, forward.Y ) );
 	}
 

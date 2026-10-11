@@ -60,24 +60,19 @@ public sealed class AudioVoice
 		var total = gain * Gain;
 		var leftScale = 1f;
 		var rightScale = 1f;
-		if ( Position is { } place )
+		if ( Position is { } place && Range > 0 )
 		{
 			var (distanceGain, pan) = AudioListener.Placement( place, Range );
-			if ( distanceGain <= 0 )
-			{
-				// Out of range: the original's service gives the voice's channel up; the voice is over.
-				IsFinished = true;
-				return frames;
-			}
+			// [APPROX:AUDIO-019] inaudible positioned voices advance silently; loops remain available when the listener returns, without recreating the event
 			// [APPROX:AUDIO-018] constant-power pan by the source's bearing against the listener — the original's pan law (QSound's processing) is not read
-			var angle = (pan + 1) * MathF.PI / 2;
+			var angle = (pan + 1) * MathF.PI / 4;
 			leftScale = distanceGain * MathF.Cos( angle );
 			rightScale = distanceGain * MathF.Sin( angle );
 		}
 		for ( var frame = 0; frame < frames; frame++ )
 		{
-			if ( Loops && position >= Frames )
-				position -= Frames;
+			if ( Loops && Frames > 0 && position >= Frames )
+				position %= Frames;
 			var index = (int)position;
 			if ( IsFinished || index >= Frames )
 			{
@@ -178,10 +173,14 @@ public sealed class AudioMixer : IDisposable
 	/// <summary>
 	/// Plays a positioned voice: the gain follows the distance law against the listener over the range
 	/// (see <see cref="AudioListener.RangeGain"/>), the pan the source's bearing. A null position or a
-	/// zero range plays flat, as the original's unpositioned submits do.
+	/// zero range plays flat. The distance and pan laws are host approximations.
 	/// </summary>
 	public AudioVoice Play( Mp2Audio audio, AudioChannel channel, float gain, Vector3? position, float range )
 	{
+		if ( position is { } place )
+			AudioListener.ValidatePosition( place, nameof( position ) );
+		if ( !float.IsFinite( range ) || range < 0 )
+			throw new ArgumentOutOfRangeException( nameof( range ) );
 		var voice = Play( audio, channel, gain );
 		voice.Position = position;
 		voice.Range = range;

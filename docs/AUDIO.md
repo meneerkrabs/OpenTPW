@@ -11,6 +11,16 @@ silent: the positioned ride loops (RSE EVENT types 1 and 2), the weather's visua
 path tool's link-end and undo sounds, the visitor click and the lobby's global effects
 (see "Traced but not triggered"). No original data is in the repository.
 
+The integration regressions force a rainy storm, pass its rain level and due thunder
+through the live audio callbacks, and assert nonzero decoded PCM. They also exercise
+staff turn gating, a flat single scream away from the world origin, terrain-to-listener
+coordinate conversion, and ride removal with both held and refused scream chains.
+These checks require `OPENTPW_GAME_PATH`; they use a mixer without an SDL device.
+The earlier native front-end and jungle smoke runs did not reach rain, thunder or
+staff chatter, so those runs do not verify their natural gameplay triggers. The
+weather cadence, staff presentation stream, listener mapping and held-chain timing
+retain the qualifications in the approximation register.
+
 ## Sound catalogues (`cat_*SFX.map`, `cat_*BANK.map`)
 
 Every sound the original plays is an *event* of a sound category. A category is a pair of
@@ -154,7 +164,7 @@ implemented yet.
 | --- | --- | --- |
 | AUDIO-001 | The second user volume the original ducks during speech is the effects channel | Names of the `TbSysCommand` volume commands at `0x100BB18C` |
 | AUDIO-002 | Banks resolve to `<map folder's parent>/<name>HD.sdt`, then `global/<name>HD.sdt` | `TbMapStreamer::BankDoesNotExist` (`0x10015234`) and the quality suffix rule |
-| AUDIO-003 | Pitch, delay, 3D position and reverb of a sound are not applied | `TbSoundSampleInfo` pitch units and the placeholder 3D update |
+| AUDIO-003 | Pitch, delay and reverb are not applied; position is applied only by the positioned playback path | `TbSoundSampleInfo` pitch units and the placeholder 3D update |
 | AUDIO-004 | The park view's 0xBD click plays for controls whose flag word (`0x1017F618` reads control+0x44) has a bit set outside 24–26; no key or control property is mapped to it | The meaning of the flag bits in the control's +0x44 word |
 | AUDIO-005 | A sentence's next segment is chosen when the current one starts | When `CPlaceHolderSentence::SoundCallback` (`0x1001A1F0`) runs relative to the end of a sample |
 | AUDIO-006 | Guests within four cells of the camera are counted by cell rectangle | The area shape inside the radius of the guest counter (`0x100C313C`) |
@@ -168,12 +178,12 @@ implemented yet.
 | AUDIO-016 | A scream's speed is the default 50 (the ride VM word at `+192`); OpenTPW keeps no per-script speed | The ride VM's speed word and the RSE loader's field |
 | AUDIO-017 | The lobby island one-shots play on a uniform 5–15 s gap | The timers armed at `0x100953F8` |
 | AUDIO-018 | The positioned voice's pan is constant-power by bearing, not the original's pan law | QSound's processing |
-| AUDIO-019 | A positioned one-shot whose event has flag `0x8` loops; a flat one-shot with `0x8` does not | The flat path's flag test beside `0x0051C130` |
+| AUDIO-019 | A positioned one-shot whose event has flag `0x8` loops; flat one-shots do not; inaudible loops advance silently and become audible when the listener returns | The original flag tests and out-of-range loop lifecycle |
 | AUDIO-020 | A placed effect that is a sentence plays its first sound once | The placed sentence's player on the Mac |
-| AUDIO-021 | `scape.omp` places and the listener share the park's sound units | The Mac's placement units traced together |
+| AUDIO-021 | `scape.omp` places and the camera-midpoint listener share the park's sound units after undoing terrain centering; the midpoint follows a fork lead | The Mac's listener position and placement units traced together |
 | AUDIO-022 | A refused path-tool commit plays `cat_ui` 175; the Mac site is gated and its mapping to a refusal is inferred | The tool latch `obj+36` and the refusal path |
 | AUDIO-023 | The link-end sound (`cat_ui` 139) is not played; no undo sound is traced | The link-end condition; the Backspace handler |
-| AUDIO-024 | A staff member's walking/idle voice draws once per park turn from the sound stream's top bits, not the world LCG's low four bits | The handlers' turn boundary and the world draw order |
+| AUDIO-024 | A staff member's walking/idle voice draws once per park turn from a separate advancing host SplitMix64 stream seeded from the sound seed XOR ASCII `STAF`; its state is not persisted on save/load | The handlers' turn boundary, shared world draw order and presentation-stream continuity |
 | AUDIO-025 | The December season row reads past the four-season table; the fork's reading is used | The Mac's row address for index 4 |
 | AUDIO-026 | The forecast applies DaysOfWarning after the roll, on day indices | The Mac's day comparison units (`now` against `+0x20`) |
 | AUDIO-027 | The first quality is rolled at park entry; drops start at 0 | The Mac's initial roll |
@@ -182,6 +192,8 @@ implemented yet.
 | AUDIO-030 | The weather's draws come from the park's weather stream, not the world LCG | The Mac's seed source |
 | AUDIO-031 | Weather is simulated for sound only: no drops, snow, bolt or forecast warning is drawn | The weather renderer and the forecast's handler |
 | AUDIO-032 | A ride's scream plays flat; the original places it at the ride's box middle | The box-middle mapping onto OpenTPW's ride objects |
+| AUDIO-033 | Distance gain uses the fork's QMixer lead: minimum 2 and exponent 0.8 | Independent original mixer verification; the local PC executable is packed |
+| AUDIO-034 | Held-chain child timing, first-sound selection and child hard stop follow fork-only PC leads | The Mac held-voice tick, variation and stop routines |
 | AUDIO-013 | De-emphasis is a first-order bilinear-transform shelf of the published 50/15 µs and J.17 curves at the stream's rate | The original decoder's filter realization or an emphasised original stream |
 | AUDIO-014 | A failed frame CRC is counted while the frame still decodes; no shipped frame carries a CRC word | The original player's behaviour on a failed frame CRC |
 

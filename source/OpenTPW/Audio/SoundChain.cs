@@ -10,9 +10,8 @@ namespace OpenTPW;
 /// the next one. <see cref="Stop"/> stops every live child, as the original's held-voice stop does.
 /// </summary>
 // [BIN:STP-PPC:sound_shared 0x10011F20 CreatePlaceHolder] the event flags 0x404 (cat_kids 71-74, the screams) make a voice that chains one-shot children
-// [BIN:TPW-EXE:0x006BDAE0 held voice tick] each pass, a new child once the clock passes the newest child's time; the wait is min + draw % (max - min) from the sound's delay pair (0x100BC2D0), counted from the child's start
-// [BIN:TPW-EXE:0x006C3E00 child variation] the first child takes the effect's first sound whatever the parameter; later children pick by the links' parameter ranges
-// [BIN:TPW-EXE:0x006BD9B0 held stop] a held parent's stop hard-stops each child still in its chain
+// [LEAD:maexah/OpenTPW docs/exe/audio.md, PC 0x006BDAE0/0x006C3E00/0x006BD9B0] child scheduling from start time, first-sound selection and hard stop; packed local PC exe prevents independent verification
+// [APPROX:AUDIO-034] held-chain child timing, first-sound selection and child hard stop follow fork-only PC leads — evidence needed: the Mac held-voice tick, variation and stop routines
 public sealed class SoundChain
 {
 	private readonly SoundEventSystem system;

@@ -83,14 +83,14 @@ public sealed class PlacedObjectsFile
 			return;
 		var count = BinaryPrimitives.ReadInt32LittleEndian( data.AsSpan( 4, 4 ) );
 		var size = BinaryPrimitives.ReadUInt32LittleEndian( data.AsSpan( 8, 4 ) );
-		if ( count is < 0 or > 256 || size is < 4 or > 1024 )
+		if ( count is < 0 or > 256 || size is < 4 or > 1024 || size % 4 != 0 )
 			throw new InvalidDataException( $"Placed objects file claims {count} records of {size} bytes." );
 		var kept = (int)Math.Min( size, WordsKept * 4 );
-		for ( long at = 12, index = 0; index < count && at + kept <= data.Length; ++index, at += size )
+		for ( long at = 12, index = 0; index < count && at + size <= data.Length; ++index, at += size )
 		{
 			var words = new int[WordsKept];
-			for ( var word = 0; word < WordsKept; word++ )
-				words[word] = ( at + word * 4 + 4 <= data.Length ) ? BinaryPrimitives.ReadInt32LittleEndian( data.AsSpan( (int)at + word * 4, 4 ) ) : 0;
+			for ( var word = 0; word < kept / 4; word++ )
+				words[word] = BinaryPrimitives.ReadInt32LittleEndian( data.AsSpan( (int)at + word * 4, 4 ) );
 			records.Add( new Record( words ) );
 		}
 	}

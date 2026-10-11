@@ -34,6 +34,28 @@ public class PlacedAmbientTests
 	}
 
 	[TestMethod]
+	public void ShortRecordsDoNotReadTheirNeighboursOrTheIncludeTail()
+	{
+		var bytes = Build( new[] { new[] { 1, 20 }, new[] { 2, 30 } }, size: 8 );
+		BinaryPrimitives.WriteUInt32LittleEndian( bytes.AsSpan( bytes.Length - 4 ), 0x4C434E49 );
+		var file = new PlacedObjectsFile( bytes );
+		Assert.AreEqual( 2, file.Records.Count );
+		CollectionAssert.AreEqual( new[] { 1, 20 }.Concat( new int[13] ).ToArray(), file.Records[0].Words );
+		CollectionAssert.AreEqual( new[] { 2, 30 }.Concat( new int[13] ).ToArray(), file.Records[1].Words );
+		Assert.AreEqual( 1, new PlacedObjectsFile( bytes[..^(4 + 1)] ).Records.Count, "a partial final record is not read" );
+	}
+
+	[TestMethod]
+	public void RecordSizesMustContainWholeWordsAndExtendedRecordsMustBeComplete()
+	{
+		var malformed = Build( new[] { new[] { 1 } } );
+		BinaryPrimitives.WriteInt32LittleEndian( malformed.AsSpan( 8 ), 7 );
+		Assert.ThrowsException<InvalidDataException>( () => new PlacedObjectsFile( malformed ) );
+		var extended = Build( new[] { new[] { 1 }, new[] { 2 } }, size: 64, tail: 0 );
+		Assert.AreEqual( 1, new PlacedObjectsFile( extended[..^1] ).Records.Count, "the full stride is needed, including the skipped words" );
+	}
+
+	[TestMethod]
 	public void ARangedSoundRecordIsReadWithItsCategoryEffectPlaceAndRange()
 	{
 		// word 1 the category (0 global), word 2 the effect, words 3-5 the place, word 6 the range (x2/1024 in park units)

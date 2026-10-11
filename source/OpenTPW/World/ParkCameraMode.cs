@@ -116,5 +116,7 @@ public class ParkCameraMode : CameraMode
 		var radians = Yaw.DegreesToRadians();
 		Position = Target + new Vector3( MathF.Cos( radians ) * Height, MathF.Sin( radians ) * Height, Height );
 		Rotation = Rotation.LookAt( Target - Position );
+		GameAudio.UpdateListener( ((Position + Target) * 0.5f).GetSystemVector3(),
+			(Target - Position).GetSystemVector3(), Level.Current?.OriginalPark?.Heightfield );
 	}
 }

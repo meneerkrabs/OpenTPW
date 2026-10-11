@@ -1,20 +1,23 @@
 namespace OpenTPW;
 
 /// <summary>
-/// The one place the park is heard from. The original updates the listener per frame from the camera
-/// (a park through the midpoint of the camera's eye and the point it looks at, a lobby at a fixed spot),
+/// The one place the park is heard from. The host follows the fork's camera midpoint listener lead,
 /// and every voice given a range is turned down over its distance from it.
 /// </summary>
 public static class AudioListener
 {
-	/// <summary>The mapping's minimum distance: a voice this close is at full gain (the original's 2.0, written by the release exe's voice channel set-up beside the voice's own range).</summary>
-	// [BIN:TPW-EXE:QMixer distance mapping] the release tp.exe's channel set-up writes {2.0, the voice's range, 0.8} to QMixer's SetDistanceMapping (maexah/OpenTPW docs/exe/audio.md, "The mixer's distance law", measured live in the original to four places)
+	/// <summary>The fork's proposed minimum distance: a voice this close is at full gain.</summary>
+	// [LEAD:maexah/OpenTPW docs/exe/audio.md "The mixer's distance law"] the fork reports {2.0, range, 0.8} for QMixer; the locally available PC exe is packed, so this is not independently verified
 	public const float MinimumDistance = 2f;
 
-	/// <summary>The distance gain of a voice of <paramref name="range"/> at <paramref name="distance"/> over all three axes: 1 at or inside the minimum, 0 at or past the range, between them the linear arm of the original's mapping, ((range − d) / (range − 2))^0.8.</summary>
-	// [BIN:TPW-EXE:QMixer distance law] QMixer.dll applies the mapping as ((max − d) / (max − min))^scale over the three-axis distance with min 2.0 and scale 0.8; every channel the game enables carries the flag that selects this arm
+	/// <summary>Host distance gain: 1 inside the minimum, 0 past the range, otherwise ((range − d) / (range − 2))^0.8.</summary>
+	// [APPROX:AUDIO-033] the fork's QMixer minimum 2 and exponent 0.8 are used without local binary verification — evidence needed: the original mixer mapping and distance law
 	public static float RangeGain( float range, float distance )
 	{
+		if ( !float.IsFinite( range ) || range < 0 )
+			throw new ArgumentOutOfRangeException( nameof( range ) );
+		if ( float.IsNaN( distance ) || distance < 0 )
+			throw new ArgumentOutOfRangeException( nameof( distance ) );
 		if ( range <= 0 || distance <= MinimumDistance )
 			return 1;
 		if ( distance >= range )
@@ -31,14 +34,20 @@ public static class AudioListener
 
 	public static void Update( Vector3 position, Vector3 forward )
 	{
+		ValidatePosition( position, nameof( position ) );
+		ValidatePosition( forward, nameof( forward ) );
 		Position = position;
-		if ( forward.LengthSquared > 0 )
-			Forward = forward.Normal;
+		if ( forward.X != 0 || forward.Z != 0 )
+		{
+			var heading = MathF.Atan2( forward.X, forward.Z );
+			Forward = new Vector3( MathF.Sin( heading ), 0, MathF.Cos( heading ) );
+		}
 	}
 
 	/// <summary>The gain and pan of a source at <paramref name="position"/> with <paramref name="range"/>: the distance law over the three-axis distance, and −1..1 by the source's bearing around the forward heading.</summary>
 	public static (float Gain, float Pan) Placement( Vector3 position, float range )
 	{
+		ValidatePosition( position, nameof( position ) );
 		var offset = position - Position;
 		var distance = offset.Length;
 		var gain = RangeGain( range, distance );
@@ -46,7 +55,13 @@ public static class AudioListener
 			return (0, 0);
 		// The ground plane is the sound space's x/z; height only makes the source farther.
 		var right = new Vector3( Forward.Z, 0, -Forward.X );
-		var pan = range > 0 ? Math.Clamp( (offset.X * right.X + offset.Z * right.Z) / distance, -1f, 1f ) : 0;
+		var pan = range > 0 && distance > 0 ? Math.Clamp( (offset.X * right.X + offset.Z * right.Z) / distance, -1f, 1f ) : 0;
 		return (gain, pan);
+	}
+
+	internal static void ValidatePosition( Vector3 position, string parameter )
+	{
+		if ( !float.IsFinite( position.X ) || !float.IsFinite( position.Y ) || !float.IsFinite( position.Z ) )
+			throw new ArgumentOutOfRangeException( parameter );
 	}
 }

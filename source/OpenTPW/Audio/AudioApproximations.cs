@@ -7,7 +7,7 @@ public static class AudioApproximations
 	{
 		("AUDIO-001", "the second user volume the original ducks during speech is the effects channel"),
 		("AUDIO-002", "banks resolve to <map folder's parent>/<name>HD.sdt, then to global/<name>HD.sdt"),
-		("AUDIO-003", "pitch, delay, 3D position and reverb of a sound are not applied"),
+		("AUDIO-003", "pitch, delay and reverb of a sound are not applied; position is applied only by the positioned playback path"),
 		("AUDIO-004", "the park view's 0xBD click plays for controls whose flag word (0x1017F618 reads control+0x44) has a bit set outside 24-26; no key is mapped to it"),
 		("AUDIO-005", "a sentence's next segment is chosen when the current one starts"),
 		("AUDIO-006", "guests within four cells of the camera are counted by cell rectangle; the original's area shape inside the radius (0x100C313C) is not traced"),
@@ -23,12 +23,12 @@ public static class AudioApproximations
 		("AUDIO-016", "a scream's speed is the default 50 (the Mac's ride VM word at +192, set at 0x100B3154/0x100B318C); OpenTPW keeps no per-script speed word, so every scream uses 50"),
 		("AUDIO-017", "the lobby island one-shots (cat_locallobbysfx 3, 4, 5) are timed by a uniform 5-15 s gap; the original's timer distribution is not traced"),
 		("AUDIO-018", "the constant-power pan of a positioned voice follows the source's bearing; the original's pan law (QSound's processing) is not read"),
-		("AUDIO-019", "a positioned one-shot whose event has flag 0x8 loops its sample; a flat one-shot with 0x8 is not looped"),
+		("AUDIO-019", "a positioned one-shot whose event has flag 0x8 loops its sample; flat one-shots do not loop; inaudible loops advance silently and resume when the listener returns"),
 		("AUDIO-020", "a placed scape.omp effect that is a sentence plays its first sound once rather than as the original's placed sentence"),
-		("AUDIO-021", "scape.omp places and the listener share the park's sound units; the Mac's placement units are not traced in one place"),
+		("AUDIO-021", "scape.omp places and the camera-midpoint listener share the park's sound units after undoing terrain centering; the listener midpoint is a fork lead and the Mac's placement units are not traced together"),
 		("AUDIO-022", "a refused path-tool commit plays cat_ui 175; the Mac site is gated by the tool latch and its mapping to a refusal is inferred, not fully traced"),
 		("AUDIO-023", "the path tool's link-end sound (cat_ui 139) is not played; its trigger is inferred and no undo sound is traced"),
-		("AUDIO-024", "a staff member's walking or idle voice draws once per park turn from the sound stream's top bits, not the world LCG's low four bits the Mac tests"),
+		("AUDIO-024", "a staff member's walking or idle voice draws once per park turn from a separate advancing host SplitMix64 stream seeded from the sound seed XOR STAF, not the Mac's shared world LCG; save/load continuity of this presentation stream is not implemented"),
 		("AUDIO-025", "the December season row reads past the four-season table; this follows the fork's reading (Avg 4, Tolerance DaysOfWarning, Chance DaysBetweenChanges)"),
 		("AUDIO-026", "a forecast applies on its day index DaysOfWarning after the roll, and the roll is taken on the first turn of its day; the Mac's day comparison units are not traced"),
 		("AUDIO-027", "the first quality is rolled at park entry from the entry day's season and the drops start at 0; the Mac's initial roll is not traced"),
@@ -37,6 +37,8 @@ public static class AudioApproximations
 		("AUDIO-030", "the weather's random draws come from the park's weather stream, not the Mac's world LCG; the seed source is not traced"),
 		("AUDIO-032", "a ride's scream plays flat: the original places it at the ride's box middle, which OpenTPW's ride objects do not map to yet"),
 		("AUDIO-031","weather is simulated for sound only: rain drops, snow, the lightning bolt and the forecast are not drawn or shown"),
+		("AUDIO-033", "the distance mapping uses minimum 2 and exponent 0.8 from the fork's QMixer lead; the packed local PC executable does not independently verify this law"),
+		("AUDIO-034", "held-chain child timing, first-sound selection and child hard stop follow fork-only PC leads, not independently traced Mac routines"),
 	};
 
 	private static bool logged;

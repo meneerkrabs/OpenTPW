@@ -805,7 +805,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		var first = GameLanguage.Current.Name;
 		var index = languages.ToList().FindIndex( name => string.Equals( name, first, StringComparison.OrdinalIgnoreCase ) );
 		var other = languages[(index + 1) % languages.Count];
-		var firstTitle = flow.Strings[UIStrings.GameOptions];
+		var firstStrings = flow.Strings;
 		foreach ( var (from, to) in new[] { (first, other), (other, first) } )
 		{
 			Do( $"language {to}: open options", () =>
@@ -841,8 +841,10 @@ internal sealed class FrontEndSmokeTest : IDisposable
 				Require( flow.Strings.Language == GameLanguage.Current.Name, "the string table follows the language" );
 				var capture = CaptureFrame( $"language-{to.ToLowerInvariant()}.png" );
 				VerifyText( capture, flow.Strings[UIStrings.GameOptions], $"Game Options title in {to}" );
-				if ( to == other && flow.Strings[UIStrings.GameOptions] == firstTitle )
-					Log.Trace( $"Front-end smoke test: {first} and {to} share the Game Options title." );
+				// The tables of the two languages must differ somewhere visible, or this check would pass on a stale table.
+				var shown = new[] { UIStrings.GameOptions, UIStrings.Options, UIStrings.ExitToLobby, UIStrings.Paused };
+				if ( to == other )
+					Require( shown.Any( id => flow.Strings[id] != firstStrings[id] ), $"{first} and {to} differ in the checked labels" );
 				flow.InjectedInput = UiInput.Key( UiKeys.Back );
 			} );
 			Wait( $"language {to}: options closed", 3 );

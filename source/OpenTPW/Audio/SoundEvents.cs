@@ -104,7 +104,18 @@ public sealed class SoundEventSystem
 			sentence.Pump();
 		sentences.RemoveAll( sentence => sentence.IsStopped );
 		foreach ( var chain in chains.ToArray() )
-			chain.Pump();
+		{
+			try
+			{
+				chain.Pump();
+			}
+			catch
+			{
+				chain.Stop();
+				chains.Remove( chain );
+				throw;
+			}
+		}
 		chains.RemoveAll( chain => chain.IsStopped );
 	}
 
@@ -256,9 +267,22 @@ public sealed class SoundEventSystem
 		var soundEvent = category?.Catalog.Find( eventId );
 		if ( category == null || soundEvent == null || soundEvent.Sounds.Count == 0 )
 			return null;
-		var chain = new SoundChain( this, category, soundEvent, channel, parameter, position, range ?? soundEvent.Sounds[0].Rolloff );
+		var effectiveRange = range ?? soundEvent.Sounds[0].Rolloff;
+		if ( position is { } place )
+			AudioListener.ValidatePosition( place, nameof( position ) );
+		if ( !float.IsFinite( effectiveRange ) || effectiveRange < 0 )
+			throw new ArgumentOutOfRangeException( nameof( range ) );
+		var chain = new SoundChain( this, category, soundEvent, channel, parameter, position, effectiveRange );
+		try
+		{
+			chain.Start();
+		}
+		catch
+		{
+			chain.Stop();
+			throw;
+		}
 		chains.Add( chain );
-		chain.Start();
 		return chain;
 	}
 }

@@ -9,6 +9,8 @@ internal static class Game
 	public static void Run( string[] args )
 	{
 		Log = new();
+		if ( args.Contains( "--shader-hot-reload" ) )
+			Shader.HotReload = true;
 		var fontIndex = Array.IndexOf( args, "--inspect-font" );
 		if ( fontIndex >= 0 )
 		{

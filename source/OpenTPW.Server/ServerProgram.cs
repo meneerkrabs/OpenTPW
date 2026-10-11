@@ -235,6 +235,14 @@ public static class ServerProgram
 			} ).RequireRateLimiting( "auth" );
 		}
 
+		var cities = new CityDirectory( options.DataDirectory );
+		app.MapGet( ApiRoutes.Cities, () =>
+		{
+			var counts = store.ParksPerCity();
+			return Ok( new CityList( cities.Read().Select( city => new CityInfo( city.Id, city.Name, city.Description, city.Latitude, city.Longitude,
+				counts.GetValueOrDefault( city.Id ) ) ).ToList() ) );
+		} );
+
 		var news = new NewsFeed( options.DataDirectory );
 		app.MapGet( ApiRoutes.News, () => Ok( news.Read() ) ).RequireCors( WebsitePolicy );
 
@@ -292,11 +300,11 @@ public static class ServerProgram
 			return Task.FromResult( Results.NoContent() );
 		} ) ) );
 
-		app.MapGet( ApiRoutes.Parks, ( HttpContext context, string? search, string? author, string? sort, int? offset, int? limit ) => Guarded( context, store, true, user =>
+		app.MapGet( ApiRoutes.Parks, ( HttpContext context, string? search, string? author, string? sort, int? offset, int? limit, int? city ) => Guarded( context, store, true, user =>
 		{
 			if ( search?.Length > 64 || author?.Length > OnlineText.MaximumNameLength )
 				throw new StoreException( StatusCodes.Status400BadRequest, "Search text is too long." );
-			var parks = store.ListParks( search, author, sort ?? "recent" );
+			var parks = store.ListParks( search, author, sort ?? "recent", city );
 			var page = parks.Skip( Math.Clamp( offset ?? 0, 0, int.MaxValue ) ).Take( Math.Clamp( limit ?? 50, 1, 100 ) )
 				.Select( park => store.Summarize( park, user, hub.PlayersIn( Online.Chat.ChatProtocol.ParkRoom( park.Id ) ) ) ).ToList();
 			return Task.FromResult( Ok( new ParkList( page, parks.Count ) ) );
@@ -308,7 +316,10 @@ public static class ServerProgram
 			var package = ParkPackage.Read( bytes );
 			RequireClean( filter, package.Manifest.Park.Name, "Park name" );
 			RequireClean( filter, package.Manifest.Park.Description, "Park description" );
-			var park = store.Publish( user!, package, bytes, context.Request.Query["website"] == "true" );
+			var city = int.TryParse( context.Request.Query["city"], out var cityId ) ? cityId : 0;
+			if ( city != 0 && cities.Find( city ) == null )
+				throw new StoreException( StatusCodes.Status400BadRequest, "Unknown city." );
+			var park = store.Publish( user!, package, bytes, context.Request.Query["website"] == "true", city );
 			return Ok( store.Summarize( park, user, 0 ), StatusCodes.Status201Created );
 		} ) ) ).RequireRateLimiting( "upload" );
 

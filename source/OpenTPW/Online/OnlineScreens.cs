@@ -1,5 +1,6 @@
 using OpenTPW.Online;
 using OpenTPW.Online.Api;
+using OpenTPW.Online.Client;
 using OpenTPW.Online.Packages;
 using OpenTPW.UI.Original;
 
@@ -13,6 +14,8 @@ public sealed class OnlineHost
 	public Func<Level?> Level { get; init; } = () => null;
 	/// <summary>Starts a read-only visit of a downloaded or imported park.</summary>
 	public Action<ParkVisitInfo>? Visit { get; init; }
+	/// <summary>The online globe behind the Online World screen; null where it is not shown (in a park).</summary>
+	public Func<GlobeScene?> Globe { get; init; } = () => null;
 }
 
 /// <summary>
@@ -52,11 +55,150 @@ public sealed class OnlineScreens
 
 	// ---- Online world (hub) ------------------------------------------------------------------
 
+	/// <summary>
+	/// The Online World as the original lays it out (Mac UI table data:0x523f0): the globe fills the screen, the
+	/// worldlob panel at the bottom left holds Find Parks, back to your own lobby, zoom and the four rotate arrows, and
+	/// five chat satellites sit around the edges. OpenTPW adds the login and its own online menu at the top right.
+	/// </summary>
+	// [DATA:Mac UI table data:0x523f0] root 90111 worldlob (9,620,510,1531); buttons b_findprk 90115 (49,731,202,885) help 435, b_bck2lob 90112 (49,898,202,1051) help 431, b_zoom 90118 (41,1070,143,1173) help 428/429, b_lobup 90117 (182,1077,336,1231) help 426, b_lobleft 90114 (61,1201,214,1355) help 424, b_lobright 90116 (307,1201,460,1355) help 425, b_lobdown 90113 (184,1327,337,1481) help 427; i_sat 90120–90124 help 423
 	public void ShowWorld()
 	{
-		var screen = new UiScreen( "onlineWorld" );
+		var screen = new OnlineGlobeScreen( host.Globe );
+		screen.CityClicked = ShowCityLobby;
+		var (find, zoom) = AddGlobePanel( screen, stack.Pop, ShowFindParks );
+		// The chat satellites: chat-only parks around the globe; OpenTPW opens a chat room for each.
+		var satellites = new (float X0, float Y0, float X1, float Y1, UiAnchor Anchor)[]
+		{
+			(131, 139, 438, 446, UiAnchor.TopLeft), (484, -51, 791, 256, UiAnchor.TopLeft), (1690, 344, 1997, 651, UiAnchor.TopRight),
+			(1743, 620, 2050, 927, UiAnchor.Right), (1335, 1199, 1643, 1506, UiAnchor.BottomRight),
+		};
+		for ( var index = 0; index < satellites.Length; index++ )
+		{
+			var (x0, y0, x1, y1, anchor) = satellites[index];
+			var room = $"satellite{index + 1}";
+			var satellite = screen.Add( new UiButton { Id = room, Model = "i_sat", Help = strings.Help( 423 ), Bounds = new UiRect( x0, y0, x1 - x0, y1 - y0 ), Anchor = anchor,
+				Clicked = () => Guard( () => { Session.JoinRoom( room ); ShowChat(); } ) } );
+			screen.Updating += _ => satellite.Enabled = Session.IsLoggedIn && Session.Busy == 0;
+		}
+		// The hovered city's name and parks (the original's labels 0x16c11/0x16c12; their place is not decoded), else the title.
+		// [APPROX:ONLINE-010] city name and park count drawn at the top centre — evidence needed: the original city labels' layout
+		screen.Add( new UiLabel { Id = "city", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center, Bounds = new UiRect( 524, 40, 1000, 90 ), Anchor = UiAnchor.Top,
+			Text = () => screen.Hovered is { } city ? city.Name : OnlineStrings.Ui( OnlineStrings.OnlineWorld, "Online world" ) } );
+		screen.Add( new UiLabel { Id = "cityParks", Font = fonts => fonts.Small, Align = UiAlign.Center, Bounds = new UiRect( 524, 130, 1000, 60 ), Anchor = UiAnchor.Top,
+			Text = () => screen.Hovered is { } city ? OnlineStrings.Ui( OnlineStrings.CityParks, "Parks: " ) + city.Parks : "" } );
+		// [EXT:ONLINE-UI] the login and OpenTPW's own online menu (news, postcards, chat, import, account)
+		var login = screen.Add( new UiButton { Id = "login", Text = () => Session.IsLoggedIn ? OnlineStrings.Get( OnlineLabel.LogOut ) : OnlineStrings.Ui( OnlineStrings.OnlineLogin, "Online login" ),
+			Clicked = () => { if ( Session.IsLoggedIn ) Guard( () => { Session.Disconnect(); localStatus = ""; } ); else ShowLogin(); },
+			Bounds = new UiRect( 1560, 40, 440, 100 ), Anchor = UiAnchor.TopRight } );
+		var menu = screen.Add( new UiButton { Id = "menu", Text = () => OnlineStrings.Get( OnlineLabel.OnlineMenu ), Clicked = ShowMenu,
+			Bounds = new UiRect( 1560, 150, 440, 100 ), Anchor = UiAnchor.TopRight } );
+		screen.Add( new UiLabel { Id = "status", Wrap = true, Font = fonts => fonts.Small, Color = UiColors.Value, Align = UiAlign.Center,
+			Bounds = new UiRect( 574, 1400, 900, 100 ), Anchor = UiAnchor.Bottom, Text = () => localStatus.Length > 0 ? localStatus : Session.Status } );
+		OnlineClient? citiesFor = null;
+		screen.Updating += _ =>
+		{
+			find!.Enabled = Session.IsLoggedIn && Session.Busy == 0;
+			login.Enabled = menu.Enabled = Session.Busy == 0;
+			zoom.Help = strings.Help( GlobeCameraMode.ZoomedIn ? 429 : 428 );
+			// Each server's cities once, as soon as one is chosen (no login needed).
+			if ( Session.Client is { } client && client != citiesFor && Session.Busy == 0 )
+			{
+				citiesFor = client;
+				Guard( Session.FetchCities );
+			}
+		};
+		screen.Back = stack.Pop;
+		Push( screen );
+	}
+
+	/// <summary>
+	/// The worldlob panel of the globe screens: Find Parks (when <paramref name="find"/> is given), back, zoom and the four
+	/// rotate arrows (Mac table data:0x523f0). Returns Find Parks (null without it) and zoom.
+	/// </summary>
+	private (UiButton? Find, UiButton Zoom) AddGlobePanel( UiScreen screen, Action back, Action? find )
+	{
+		screen.Add( new UiModelImage { Id = "worldPanel", Model = "worldlob", Bounds = new UiRect( 9, 620, 501, 911 ), Anchor = UiAnchor.BottomLeft } );
+		// [APPROX:ONLINE-011] f_wlobbg as the button background in the panel's second rectangle (33,1057,480,1505), like f_lobbutbg in the island lobby — evidence needed: the table field that names the panel's background model
+		screen.Add( new UiModelImage { Id = "worldButtons", Model = "f_wlobbg", Bounds = new UiRect( 33, 1057, 447, 448 ), Anchor = UiAnchor.BottomLeft } );
+		UiButton PanelButton( string id, string model, float x0, float y0, float x1, float y1, int help, Action clicked ) => screen.Add( new UiButton
+		{
+			Id = id, Model = model, Help = strings.Help( help ), Clicked = clicked,
+			Bounds = new UiRect( x0, y0, x1 - x0, y1 - y0 ), Anchor = UiAnchor.BottomLeft
+		} );
+		var findButton = find == null ? null : PanelButton( "findParks", "b_findprk", 49, 731, 202, 885, 435, find );
+		PanelButton( "ownLobby", "b_bck2lob", 49, 898, 202, 1051, 431, back );
+		var zoom = PanelButton( "zoom", "b_zoom", 41, 1070, 143, 1173, 428, GlobeCameraMode.ToggleZoom );
+		PanelButton( "rotateUp", "b_lobup", 182, 1077, 336, 1231, 426, () => GlobeCameraMode.Turn( 0, 1 ) );
+		PanelButton( "rotateLeft", "b_lobleft", 61, 1201, 214, 1355, 424, () => GlobeCameraMode.Turn( -1, 0 ) );
+		PanelButton( "rotateRight", "b_lobright", 307, 1201, 460, 1355, 425, () => GlobeCameraMode.Turn( 1, 0 ) );
+		PanelButton( "rotateDown", "b_lobdown", 184, 1327, 337, 1481, 427, () => GlobeCameraMode.Turn( 0, -1 ) );
+		return (findButton, zoom);
+	}
+
+	// ---- City lobby (Mac UI table data:0x50172) -----------------------------------------------
+
+	/// <summary>
+	/// The lobby of <paramref name="city"/>: its ten most-voted parks as islands, with the citylob panel (other parks,
+	/// back to your own lobby, the online world, enter this park, previous/next island), the selected park's rank at the
+	/// top and its name at the bottom.
+	/// </summary>
+	// [DATA:Mac UI table data:0x50172] root 18900 citylob (28,541,476,1521); b_listpark 18901 (66,642,219,795) help 349, b_bck2lob 18902 (66,799,219,953) help 348, b_worldview 18903 (66,957,219,1110) help 346, b_entpark 18904 (66,1113,219,1267) help 345, b_lobleft 18907 (95,1299,249,1453) help 343, b_lobright 18908 (260,1299,413,1453) help 344; labels 0x49D9 name (477,1282,1571,1457) and 0x49DA rank (844,118,1204,253)
+	public void ShowCityLobby( CityInfo city )
+	{
+		if ( !Session.IsLoggedIn )
+		{
+			localStatus = OnlineStrings.Ui( OnlineStrings.OnlineLogin, "Online login" );
+			ShowLogin();
+			return;
+		}
+		var screen = new CityLobbyScreen( city );
+		screen.Add( new UiModelImage { Id = "cityPanel", Model = "citylob", Bounds = new UiRect( 28, 541, 448, 980 ), Anchor = UiAnchor.BottomLeft } );
+		// [APPROX:ONLINE-015] f_lobbutbg as the button background in the panel's second rectangle (67,1273,438,1484), as in the island lobby — evidence needed: the table field that names it
+		screen.Add( new UiModelImage { Id = "cityButtons", Model = "f_lobbutbg", Bounds = new UiRect( 67, 1273, 371, 211 ), Anchor = UiAnchor.BottomLeft } );
+		UiButton PanelButton( string id, string model, float x0, float y0, float x1, float y1, int help, Action clicked ) => screen.Add( new UiButton
+		{
+			Id = id, Model = model, Help = strings.Help( help ), Clicked = clicked,
+			Bounds = new UiRect( x0, y0, x1 - x0, y1 - y0 ), Anchor = UiAnchor.BottomLeft
+		} );
+		PanelButton( "otherParks", "b_listpark", 66, 642, 219, 795, 349, () => ShowFindParks( city.Id ) );
+		PanelButton( "ownLobby", "b_bck2lob", 66, 799, 219, 953, 348, () => { while ( stack.Top != null && stack.Top.Name is "cityLobby" or "onlineWorld" ) stack.Pop(); } );
+		PanelButton( "worldView", "b_worldview", 66, 957, 219, 1110, 346, stack.Pop );
+		var enter = PanelButton( "enterPark", "b_entpark", 66, 1113, 219, 1267, 345,
+			() => { if ( screen.SelectedPark is { } park ) Guard( () => Session.Download( park, path => Inspect( path, start: true ) ) ); } );
+		PanelButton( "previousIsland", "b_lobleft", 95, 1299, 249, 1453, 343, () => screen.Step( -1 ) );
+		PanelButton( "nextIsland", "b_lobright", 260, 1299, 413, 1453, 344, () => screen.Step( 1 ) );
+		// [BIN:STP-PPC:0x101834A0 item detail overlay] label 0x49D9: the selected item's name, font slot 5, colour (252,232,7); label 0x49DA: "%d" of its index + 1, font slot 0; both hidden without a selection
+		var name = screen.Add( new UiLabel { Id = "parkName", Font = fonts => fonts.Title, Color = new Veldrid.RgbaByte( 252, 232, 7, 255 ), Align = UiAlign.Center,
+			Bounds = new UiRect( 477, 1282, 1094, 175 ), Anchor = UiAnchor.Bottom, Text = () => screen.SelectedPark?.Name ?? "" } );
+		var rank = screen.Add( new UiLabel { Id = "rank", Font = fonts => fonts.Menu, Color = UiColors.Text, Align = UiAlign.Center, Bounds = new UiRect( 844, 118, 360, 135 ), Anchor = UiAnchor.Top,
+			Text = () => (screen.Selected + 1).ToString( System.Globalization.CultureInfo.InvariantCulture ) } );
+		// [EXT:ONLINE-UI] the city's name and the fetch status while no park is shown
+		var status = screen.Add( new UiLabel { Id = "cityStatus", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center, Bounds = new UiRect( 524, 118, 1000, 135 ), Anchor = UiAnchor.Top,
+			Text = () => $"{city.Name}\n{(localStatus.Length > 0 ? localStatus : Session.Status)}" } );
+		screen.Updating += _ =>
+		{
+			enter.Enabled = screen.SelectedPark != null && Session.Busy == 0 && host.Visit != null;
+			name.Visible = rank.Visible = screen.SelectedPark != null;
+			status.Visible = screen.SelectedPark == null;
+			if ( Session.CityParks is { } parks && !ReferenceEquals( parks, screen.Parks ) )
+			{
+				screen.Parks = parks;
+				screen.Selected = 0;
+			}
+		};
+		screen.Back = stack.Pop;
+		Guard( () => Session.FetchCityParks( city.Id ) );
+		Push( screen );
+	}
+
+	// ---- OpenTPW online menu -------------------------------------------------------------------
+
+	/// <summary>OpenTPW's online functions that have no place on the original globe screen.</summary>
+	public void ShowMenu()
+	{
+		var screen = new UiScreen( "onlineMenu" );
 		var window = UiDialogs.CenteredWindow( 1200, 1460 );
-		UiDialogs.AddWindow( screen, window, "w_big", () => OnlineStrings.Ui( OnlineStrings.OnlineWorld, "Online world" ) );
+		UiDialogs.AddWindow( screen, window, "w_big", () => OnlineStrings.Get( OnlineLabel.OnlineMenu ) );
 		var level = host.Level();
 		var entries = new List<(string Id, Func<string> Label, Action Clicked, Func<bool> Enabled)>
 		{
@@ -286,14 +428,18 @@ public sealed class OnlineScreens
 
 	// ---- Find Parks with park details (UI-MAP "Find Parks", "Park details dialog") --------------
 
-	public void ShowFindParks()
+	/// <summary>Find Parks; with <paramref name="cityId"/>, the parks of that city by votes (the city lobby's "other parks").</summary>
+	public void ShowFindParks() => ShowFindParks( null );
+
+	public void ShowFindParks( int? cityId )
 	{
 		var screen = new UiScreen( "findParks" );
 		var window = UiDialogs.CenteredWindow( 1900, 1300 );
 		UiDialogs.AddWindow( screen, window, "w_big", () => OnlineStrings.Ui( OnlineStrings.FindParks, "Find parks" ) );
 		var search = AddField( screen, "search", () => OnlineStrings.Ui( OnlineStrings.SearchName, "Search name" ), window.X + 100, window.Y + 160, 760, 64 );
-		search.Submitted = () => Guard( () => Session.RefreshParks( search.Text ) );
-		screen.Add( new UiButton { Id = "refresh", Text = () => OnlineStrings.Get( OnlineLabel.Refresh ), Clicked = () => Guard( () => Session.RefreshParks( search.Text ) ),
+		void Refresh() => Guard( () => Session.RefreshParks( search.Text, cityId == null ? "recent" : "votes", cityId ) );
+		search.Submitted = Refresh;
+		screen.Add( new UiButton { Id = "refresh", Text = () => OnlineStrings.Get( OnlineLabel.Refresh ), Clicked = Refresh,
 			Bounds = new UiRect( window.X + 900, window.Y + 225, 380, 104 ), Anchor = UiAnchor.Center } );
 		var list = screen.Add( new UiScrollList
 		{
@@ -340,6 +486,8 @@ public sealed class OnlineScreens
 		};
 		AddStatus( screen, window );
 		AddBack( screen, window );
+		if ( cityId != null )
+			Refresh();
 		if ( Session.IsLoggedIn )
 			Guard( () => Session.RefreshParks( null ) );
 		screen.Focus( search );
@@ -348,14 +496,62 @@ public sealed class OnlineScreens
 
 	// ---- Publish Park (UI-MAP "Publish Park dialog") -----------------------------------------
 
+	/// <summary>
+	/// Publish Park: first the globe to choose the city to publish in (the original's PublishGlobe, UITEXT 419), then the
+	/// park's name and description. A server without cities goes straight to the form.
+	/// </summary>
 	public void ShowPublish()
+	{
+		if ( host.Level() == null )
+			return;
+		if ( Session.Client == null )
+		{
+			ShowPublishForm( null );
+			return;
+		}
+		ShowPublishGlobe();
+	}
+
+	// [BIN:STP-PPC:CLBScreenComponentPublishGlobe] a click on a hovered city's pin stores that city (Mac DAT_101ED220) and opens the Publish Park dialog (0x1018CE80)
+	// [APPROX:ONLINE-017] the publish globe reuses the Online World's panel (back, zoom, rotate) without Find Parks and the satellites, with UITEXT 419 at the top — evidence needed: the publish globe's layout table
+	private void ShowPublishGlobe()
+	{
+		var screen = new OnlineGlobeScreen( host.Globe, "publishGlobe" );
+		screen.CityClicked = city => { stack.Pop(); ShowPublishForm( city ); };
+		var (_, zoom) = AddGlobePanel( screen, stack.Pop, null );
+		screen.Add( new UiLabel { Id = "city", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center, Bounds = new UiRect( 524, 40, 1000, 90 ), Anchor = UiAnchor.Top,
+			Text = () => screen.Hovered is { } city ? city.Name : OnlineStrings.Ui( OnlineStrings.ChooseCityToPublish, "Choose the city to publish in" ) } );
+		screen.Add( new UiLabel { Id = "cityParks", Font = fonts => fonts.Small, Align = UiAlign.Center, Bounds = new UiRect( 524, 130, 1000, 60 ), Anchor = UiAnchor.Top,
+			Text = () => screen.Hovered is { } city ? OnlineStrings.Ui( OnlineStrings.CityParks, "Parks: " ) + city.Parks : "" } );
+		OnlineClient? citiesFor = null;
+		screen.Updating += _ =>
+		{
+			zoom.Help = strings.Help( GlobeCameraMode.ZoomedIn ? 429 : 428 );
+			if ( Session.Client is { } client && client != citiesFor && Session.Busy == 0 )
+			{
+				citiesFor = client;
+				Guard( Session.FetchCities );
+			}
+			// A server without cities (older OpenTPW servers): publish without one.
+			else if ( citiesFor != null && Session.Busy == 0 && Session.Cities.Count == 0 && stack.Top == screen )
+			{
+				stack.Pop();
+				ShowPublishForm( null );
+			}
+		};
+		screen.Back = stack.Pop;
+		Push( screen );
+	}
+
+	/// <summary>The park's name and description, published into <paramref name="city"/> (none on servers without cities).</summary>
+	private void ShowPublishForm( CityInfo? city )
 	{
 		var level = host.Level();
 		if ( level == null )
 			return;
 		var screen = new UiScreen( "publishPark" );
 		var window = UiDialogs.CenteredWindow( 1300, 1000 );
-		UiDialogs.AddWindow( screen, window, "w_med", () => OnlineStrings.Ui( OnlineStrings.PublishPark, "Publish park" ) );
+		UiDialogs.AddWindow( screen, window, "w_med", () => city == null ? OnlineStrings.Ui( OnlineStrings.PublishPark, "Publish park" ) : $"{OnlineStrings.Ui( OnlineStrings.PublishPark, "Publish park" )}: {city.Name}" );
 		var name = AddField( screen, "parkName", () => OnlineStrings.Ui( OnlineStrings.ParkName, "Park name" ), window.X + 120, window.Y + 170, window.Width - 340, 64 );
 		name.Text = "My park";
 		var description = AddField( screen, "description", () => OnlineStrings.Ui( OnlineStrings.Description, "Description" ), window.X + 120, window.Y + 340, window.Width - 340, 400 );
@@ -364,7 +560,7 @@ public sealed class OnlineScreens
 		screen.Add( new UiButton { Id = "website", Text = () => OnlineStrings.Get( showOnWebsite ? OnlineLabel.ShownOnWebsite : OnlineLabel.NotShownOnWebsite ),
 			Clicked = () => showOnWebsite = !showOnWebsite, Bounds = new UiRect( window.X + 120, window.Y + 510, window.Width - 340, 100 ), Anchor = UiAnchor.Center } );
 		var publish = screen.Add( new UiButton { Id = "publish", Text = () => OnlineStrings.Ui( OnlineStrings.PublishPark, "Publish park" ),
-			Clicked = () => Guard( () => Session.Publish( ParkSharing.ExportLevel( level, name.Text, Session.Settings.PlayerName ?? "", description.Text ), showOnWebsite ) ),
+			Clicked = () => Guard( () => Session.Publish( ParkSharing.ExportLevel( level, name.Text, Session.Settings.PlayerName ?? "", description.Text ), showOnWebsite, city?.Id ?? 0 ) ),
 			Bounds = new UiRect( window.X + 120, window.Bottom - 360, 480, 110 ), Anchor = UiAnchor.Center } );
 		screen.Add( new UiButton { Id = "export", Text = () => OnlineStrings.Get( OnlineLabel.ExportPark ),
 			Clicked = () => Guard( () =>

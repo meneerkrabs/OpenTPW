@@ -58,6 +58,9 @@ internal sealed class GameFlow : IDisposable
 	private Level? ViewerLevel { get; set; }
 	public FrontEndMenu? Menu { get; private set; }
 	public LobbyScene? Lobby { get; private set; }
+	/// <summary>The online world's globe, created when the Online World first opens in the lobby.</summary>
+	public GlobeScene? Globe { get; private set; }
+	private IReadOnlyList<Online.Api.CityInfo>? shownCities;
 	public UiInput? InjectedInput { get; set; }
 	/// <summary>How the current original level started; null in the front end and the generic sandbox.</summary>
 	public ParkStartKind? StartKind { get; private set; }
@@ -258,6 +261,12 @@ internal sealed class GameFlow : IDisposable
 		foreach ( var entity in Entity.All.ToArray() )
 			entity.Delete();
 		Lobby = null;
+		Globe = null;
+		parkCamera = null;
+		shownCities = null;
+		cityScene = null;
+		cityKey = null;
+		backdrop = Backdrop.Lobby;
 		Menu = null;
 		// Leaving a park (to the lobby or straight into another park) applies a language chosen inside it.
 		ApplyPendingLanguage();
@@ -308,6 +317,7 @@ internal sealed class GameFlow : IDisposable
 		if ( Level != null && Hud != null )
 		{
 			Level.UiCapturesMouse = Hud.Update( Context, input );
+			UpdateParkGlobe( Hud );
 			Level.SimulationTimeScale = Hud.Status.TimeScale;
 			Level.Update();
 			Advisor?.Update( Hud.Paused );
@@ -321,6 +331,7 @@ internal sealed class GameFlow : IDisposable
 		}
 		GameAudio.EnsureStarted();
 		GameAudio.Update();
+		UpdateGlobeView();
 		Camera.Update();
 		Menu?.Stack.Update( Context, input );
 		foreach ( var entity in Entity.All.ToArray() )
@@ -379,6 +390,169 @@ internal sealed class GameFlow : IDisposable
 	}
 
 	private bool viewerPaused;
+
+	/// <summary>
+	/// While the Online World is open in the lobby, the 3D background is the online globe instead of the islands
+	/// (docs/ONLINE.md); closing it brings the lobby and its camera back.
+	/// </summary>
+	/// <summary>The park's camera while the online globe is shown over the park.</summary>
+	private CameraMode? parkCamera;
+
+	/// <summary>
+	/// In a park, the online globe screens (the Online World, choosing a city to publish in) draw the globe instead of the
+	/// park and the HUD, with the globe camera; closing them restores the park's camera.
+	/// </summary>
+	private void UpdateParkGlobe( ParkHud hud )
+	{
+		var wanted = hud.Stack.Screens.Any( screen => screen is UI.OnlineGlobeScreen );
+		if ( wanted == (parkCamera != null) )
+		{
+			if ( wanted && Globe != null && onlineSession != null && !ReferenceEquals( onlineSession.Cities, shownCities ) )
+			{
+				shownCities = onlineSession.Cities;
+				Globe.SetCities( shownCities );
+			}
+			return;
+		}
+		if ( wanted )
+		{
+			try
+			{
+				Globe ??= new GlobeScene();
+			}
+			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or InvalidOperationException )
+			{
+				Log.Warning( $"Online globe unavailable: {exception.Message}" );
+				return;
+			}
+			var definition = LobbyDefinitionOrNull();
+			if ( definition != null )
+			{
+				GlobeCameraMode.RadiusOut = definition.GlobeRadiusOut;
+				GlobeCameraMode.RadiusIn = definition.GlobeRadiusIn;
+			}
+			GlobeCameraMode.Reset();
+			parkCamera = Camera.Mode;
+			Camera.SetCameraMode<GlobeCameraMode>();
+			Globe.Visible = true;
+			shownCities = null;
+		}
+		else
+		{
+			Camera.Mode = parkCamera!;
+			parkCamera = null;
+			if ( Globe != null )
+				Globe.Visible = false;
+		}
+	}
+
+	private LobbyDefinition? LobbyDefinitionOrNull()
+	{
+		try
+		{
+			return LobbyDefinition.Load();
+		}
+		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or InvalidOperationException )
+		{
+			return null;
+		}
+	}
+
+	private enum Backdrop { Lobby, Globe, City }
+
+	private Backdrop backdrop = Backdrop.Lobby;
+	/// <summary>The open city lobby's islands (a lobby scene with the city's parks at the island slots).</summary>
+	private LobbyScene? cityScene;
+	/// <summary>Islands of the open city lobby (front-end smoke test).</summary>
+	internal int CityIslandCount => cityScene?.IslandCount ?? 0;
+	private string? cityKey;
+
+	/// <summary>
+	/// The 3D background follows the topmost online screen in the lobby: the online globe for the Online World, the
+	/// city's park islands for a city lobby (docs/ONLINE.md), else the own lobby with its camera.
+	/// </summary>
+	private void UpdateGlobeView()
+	{
+		var top = Lobby == null ? null : Menu?.Stack.Screens.LastOrDefault( screen => screen is UI.OnlineGlobeScreen or UI.CityLobbyScreen );
+		var wanted = top switch { UI.CityLobbyScreen => Backdrop.City, UI.OnlineGlobeScreen => Backdrop.Globe, _ => Backdrop.Lobby };
+		// The server's cities, whenever the session fetched a new list.
+		if ( wanted == Backdrop.Globe && Globe != null && onlineSession != null && !ReferenceEquals( onlineSession.Cities, shownCities ) )
+		{
+			shownCities = onlineSession.Cities;
+			Globe.SetCities( shownCities );
+		}
+		if ( top is UI.CityLobbyScreen city )
+			UpdateCityScene( city );
+		if ( wanted == backdrop )
+			return;
+		if ( wanted == Backdrop.Globe )
+		{
+			try
+			{
+				Globe ??= new GlobeScene();
+			}
+			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or InvalidOperationException )
+			{
+				Log.Warning( $"Online globe unavailable: {exception.Message}" );
+				return;
+			}
+			GlobeCameraMode.RadiusOut = Lobby!.Definition.GlobeRadiusOut;
+			GlobeCameraMode.RadiusIn = Lobby.Definition.GlobeRadiusIn;
+			if ( backdrop == Backdrop.Lobby )
+				GlobeCameraMode.Reset();
+			Camera.SetCameraMode<GlobeCameraMode>();
+		}
+		else
+		{
+			if ( wanted == Backdrop.Lobby && Lobby != null && Menu != null )
+			{
+				LobbyCameraMode.Target = Lobby.Target( Menu.Selected );
+				cityScene?.Delete();
+				cityScene = null;
+				cityKey = null;
+			}
+			Camera.SetCameraMode<LobbyCameraMode>();
+		}
+		backdrop = wanted;
+		if ( Globe != null )
+			Globe.Visible = wanted == Backdrop.Globe;
+		if ( cityScene != null )
+			cityScene.Visible = wanted == Backdrop.City;
+		if ( Lobby != null )
+			Lobby.Visible = wanted == Backdrop.Lobby;
+	}
+
+	/// <summary>Rebuilds the city's islands when its park list changes and points the lobby camera at the selected island.</summary>
+	private void UpdateCityScene( UI.CityLobbyScreen city )
+	{
+		var islands = city.Islands;
+		var key = $"{city.City.Id}:{string.Join( ",", islands.Select( park => park.Id ) )}";
+		if ( key != cityKey )
+		{
+			cityScene?.Delete();
+			cityScene = null;
+			cityKey = key;
+			// [BIN:TPW-EXE:0x005E27B0 city islands] the top-10 completion builds one lobby island per list entry with a running slot counter
+			// [APPROX:ONLINE-016] each park stands as its theme's island (as the own lobby builds its four) — evidence needed: what 0x005E27B0 passes to 0x005E3210 per entry
+			// A park of an unknown theme leaves its slot empty.
+			var themes = islands.Select( park => Lobby!.Definition.Islands.FirstOrDefault( island => string.Equals( island.Level, park.Level, StringComparison.OrdinalIgnoreCase ) ) ).ToList();
+			try
+			{
+				cityScene = new LobbyScene( Lobby!.Definition, themes );
+				cityScene.Visible = backdrop == Backdrop.City;
+			}
+			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or InvalidOperationException )
+			{
+				Log.Warning( $"City lobby unavailable: {exception.Message}" );
+			}
+		}
+		if ( cityScene != null )
+		{
+			var selected = cityScene.Slots.FirstOrDefault( entry => entry.Slot == city.Selected );
+			if ( selected.Island != null )
+				LobbyCameraMode.Target = cityScene.Target( selected.Island, selected.Slot );
+		}
+	}
 
 	/// <summary>World pass (internal render size): the level, or the lobby sky and 3D scene.</summary>
 	public void Render()
@@ -446,6 +620,7 @@ internal sealed class GameFlow : IDisposable
 		Session = Online,
 		Level = () => Level,
 		Visit = visit => QueueLevel( visit.Level, () => StartLevel( visit.Level, original: !visit.IsSandbox, developerPanels: false, visit: visit ) ),
+		Globe = () => Globe,
 	} ).ShowWorld();
 
 	public void Dispose()

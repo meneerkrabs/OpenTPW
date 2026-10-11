@@ -4,14 +4,15 @@ Usage: python3 -I tools/ppc-analysis/run_evidence_checks.py [--repo CHECKOUT] [-
            [--pc-data TPW_DATA] [--pc-fixture EASYMODE_TPWI] [--require-fixtures] [--dotnet DOTNET_EXE] [--json]
 
 CI's `unittest discover -s tools/ppc-analysis` reaches only the top-level test files: lane
-directories have no __init__.py, and several lanes import a module named `evidence`, so they cannot
+directories (and oracle/) have no __init__.py, and several lanes import a module named `evidence`, so they cannot
 share one interpreter either. This runner starts one discovery process per directory and fails if
 any test file under tools/ppc-analysis is not covered by exactly one of them.
 
 Fixture variables are set explicitly from the flags and stripped from the inherited environment
 otherwise, so a stale shell variable cannot change the result. --mac-bin is the Feral `bin`
-directory; it sets OPENTPW_PPC_BIN_ROOT to that directory and OPENTPW_MAC_APP to the
-SimThemePark.data file in it (rides wants the file, the other lanes the directory). Only those two
+directory; it sets OPENTPW_PPC_BIN_ROOT and OPENTPW_MAC_BIN (the review lanes' and the oracle's
+name) to that directory and OPENTPW_MAC_APP to the SimThemePark.data file in it (rides wants the
+file, the other lanes the directory). Only those two
 paths are stat'ed; no directory is listed. --pc-fixture is the one identified PC save container
 (Data/levels/jungle/Easymode.TPWI); it sets OPENTPW_PC_FIXTURE and OPENTPW_PPC_SAVE_PATH (clock's
 name for the same save) and is passed as `--fixture` to
@@ -35,7 +36,9 @@ item that climbs out of it is reported as linked-outside-copy and not built; an 
 names those items in its not-run reason. Failures are classified as restore (NU1100: targeting
 pack not in the cache and not downloadable), missing runtime, SDK too old, or incompatible
 reference. Passing harnesses are self-consistency checks only, not evidence of
-original runtime behavior.
+original runtime behavior. --dotnet is also offered to the oracle's C# bridge as
+OPENTPW_ORACLE_DOTNET (stripped otherwise); the bridge uses it when it has a .NET 10 SDK and
+otherwise falls back to its own SDK search (oracle/bridge.py), building in a scratch copy as well.
 """
 from __future__ import annotations
 
@@ -49,12 +52,13 @@ import sys
 import tempfile
 from pathlib import Path
 
-FIXTURE_VARIABLES = ('OPENTPW_PPC_BIN_ROOT', 'OPENTPW_MAC_APP', 'OPENTPW_PC_DATA', 'OPENTPW_PC_FIXTURE',
-                     'OPENTPW_PPC_SAVE_PATH')
+FIXTURE_VARIABLES = ('OPENTPW_PPC_BIN_ROOT', 'OPENTPW_MAC_BIN', 'OPENTPW_MAC_APP', 'OPENTPW_PC_DATA',
+                     'OPENTPW_PC_FIXTURE', 'OPENTPW_PPC_SAVE_PATH')
+ORACLE_DOTNET = 'OPENTPW_ORACLE_DOTNET'
 ITEM = re.compile(r'<(Compile|ProjectReference|None|Content|EmbeddedResource)\s+[^>]*?Include="([^"]+)"')
 PROJECT_DIRECTORY = re.compile(r'^\$\((?:MSBuildThisFileDirectory|MSBuildProjectDirectory)\)[\\/]?')
 FIXTURE_FLAGS = {
-    '--mac-bin': ('OPENTPW_PPC_BIN_ROOT', 'OPENTPW_MAC_APP'),
+    '--mac-bin': ('OPENTPW_PPC_BIN_ROOT', 'OPENTPW_MAC_BIN', 'OPENTPW_MAC_APP'),
     '--pc-data': ('OPENTPW_PC_DATA',),
     '--pc-fixture': ('OPENTPW_PC_FIXTURE', 'OPENTPW_PPC_SAVE_PATH'),
 }
@@ -111,7 +115,7 @@ def fixture_environment(base: dict, mac_bin: Path | None, pc_data: Path | None,
             raise FixtureError(f'--mac-bin is not a directory: {mac_bin}')
         if not app.is_file():
             raise FixtureError(f'--mac-bin has no {APP_NAME} data fork (MacBinary .bin does not pass identity)')
-        env['OPENTPW_PPC_BIN_ROOT'] = str(mac_bin)
+        env['OPENTPW_PPC_BIN_ROOT'] = env['OPENTPW_MAC_BIN'] = str(mac_bin)
         env['OPENTPW_MAC_APP'] = str(app)
     if pc_data is not None:
         if not pc_data.is_dir():
@@ -149,7 +153,9 @@ def used_fixture(item: dict) -> bool:
 
 def python_suites(tools: Path) -> list[Path]:
     lanes = sorted(path for path in (tools / 'lanes').iterdir() if path.is_dir() and any(path.glob('test_*.py')))
-    return [tools, *lanes]
+    # The differential oracle (docs/reverse/ORACLE.md) is a suite of its own next to the lanes.
+    oracle = [tools / 'oracle'] if any((tools / 'oracle').glob('test_*.py')) else []
+    return [tools, *lanes, *oracle]
 
 
 def uncovered_test_files(tools: Path, suites: list[Path]) -> list[str]:
@@ -309,6 +315,9 @@ def main(argv: list[str] | None = None) -> int:
     except FixtureError as error:
         print(f'fixture error: {error}', file=sys.stderr)
         return 2
+    env.pop(ORACLE_DOTNET, None)
+    if args.dotnet:
+        env[ORACLE_DOTNET] = str(args.dotnet)
     suites = python_suites(tools)
     harnesses = dotnet_harnesses(tools)
     if args.dotnet:

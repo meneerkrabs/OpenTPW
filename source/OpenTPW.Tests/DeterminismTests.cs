@@ -178,7 +178,7 @@ public class DeterminismTests
 	{
 		var park = new SyntheticPark( WorldSeed.Default );
 		park.Run( 3600 );
-		Assert.AreEqual( 0x98BFAE5138E2A343UL, park.Hash, $"0x{park.Hash:X16}" );
+		Assert.AreEqual( 0x082000C95B7EB3FEUL, park.Hash, $"0x{park.Hash:X16}" );
 	}
 
 	[TestMethod]
@@ -303,7 +303,7 @@ public class DeterminismTests
 	private static readonly string[] PresentationWorldFiles =
 	{
 		"Advisor.cs", "AdvisorController.cs", "AdvisorResponses.cs", "AdvisorScoreQueue.cs", "Camera.cs", "CameraMode.cs",
-		"LobbyCameraMode.cs", "ParkCameraMode.cs", "SandboxSave.cs", "Sky.cs", "Sun.cs"
+		"GlobeCameraMode.cs", "LobbyCameraMode.cs", "ParkCameraMode.cs", "SandboxSave.cs", "Sky.cs", "Sun.cs"
 	};
 
 	/// <summary>Simulation folders must not reach process-wide or unseeded randomness or the wall clock.</summary>
@@ -419,8 +419,10 @@ public class DeterminismAssetTests
 			var economy = ParkSaveFile.Serialize( park.Economy );
 			Run( 3000 );
 			streams.Scripts.NextScriptSeed();
+			// Since ORACLE-F a draw never stores the sound seed (sound_shared 0x100118C8), so only a reseed moves it.
+			Assert.AreEqual( saved.SoundSeed, streams.CaptureRandomState().SoundSeed, "sound draws do not move the seed" );
 			streams.Sound.Draw();
-			streams.Sound.Reseed( saved.SoundSeed + 1 );
+			streams.Sound.Reseed( unchecked(saved.SoundSeed + 1) );
 			var moved = streams.CaptureRandomState();
 			Assert.IsTrue( saved.GuestRandom != moved.GuestRandom && saved.ScriptRandom != moved.ScriptRandom && saved.SoundSeed != moved.SoundSeed, "every stream was drawn after the save" );
 			Assert.AreNotEqual( economy, ParkSaveFile.Serialize( park.Economy ) );

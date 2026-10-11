@@ -440,6 +440,40 @@ public class OnlineServerTests
 	}
 
 	[TestMethod]
+	public async Task CitiesArePublicCountParksAndCanBeReplacedByTheOperator()
+	{
+		await using var server = await LoopbackServer.StartAsync();
+		try
+		{
+			using var anonymous = new OnlineClient( server.Url );
+			var defaults = (await anonymous.GetCitiesAsync())!.Cities;
+			Assert.AreEqual( "North Pole", defaults[0].Name, "the Bullfrog city comes first" );
+			CollectionAssert.IsSubsetOf( new[] { "Hong Kong", "Ulaanbaatar", "Timbuktu", "San Francisco" }, defaults.Select( city => city.Name ).ToArray() );
+			Assert.IsTrue( defaults.All( city => city.Name.Length <= CityDirectory.MaximumNameLength && city.Parks == 0 ) );
+
+			using var ann = await server.LoginAsync( "Ann" );
+			var timbuktu = defaults.Single( city => city.Name == "Timbuktu" ).Id;
+			await ann.UploadParkAsync( OnlineFormatTests.Package( "Sand Castle" ), cityId: timbuktu );
+			Assert.AreEqual( 1, (await anonymous.GetCitiesAsync())!.Cities.Single( city => city.Id == timbuktu ).Parks );
+			await ann.UploadParkAsync( OnlineFormatTests.Package( "Elsewhere" ) );
+			var inCity = await ann.ListParksAsync( sort: "votes", cityId: timbuktu );
+			CollectionAssert.AreEqual( new[] { "Sand Castle" }, inCity.Parks.Select( park => park.Name ).ToArray(), "the city lobby lists only that city's parks" );
+			Assert.AreEqual( timbuktu, inCity.Parks[0].CityId );
+			Assert.AreEqual( HttpStatusCode.BadRequest, (await Fails( () => ann.UploadParkAsync( OnlineFormatTests.Package( "Nowhere" ), cityId: 999 ) )).Status );
+
+			File.WriteAllText( Path.Combine( server.Directory, "cities.json" ),
+				"[{\"id\":7,\"name\":\"A very long city name indeed\",\"description\":\"x\",\"latitude\":10,\"longitude\":20},{\"id\":8,\"name\":\"Bad\",\"latitude\":95,\"longitude\":0}]" );
+			var replaced = (await anonymous.GetCitiesAsync())!.Cities;
+			Assert.AreEqual( 1, replaced.Count, "invalid cities are left out" );
+			Assert.AreEqual( CityDirectory.MaximumNameLength, replaced[0].Name.Length );
+		}
+		finally
+		{
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
 	public async Task AuthenticationIsRateLimited()
 	{
 		await using var server = await LoopbackServer.StartAsync( options => options.AuthenticationsPerMinute = 3 );

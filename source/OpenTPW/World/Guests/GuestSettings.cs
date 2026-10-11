@@ -43,8 +43,7 @@ public sealed class GuestSettings
 	public (int X, int Y)[]? ArrivalLaneA { get; set; }
 	public (int X, int Y)[]? ArrivalLaneB { get; set; }
 
-	// approximation: no original source
-	public float WalkSpeedCellsPerSecond { get; set; } = 1.0f;
+	// approximation: no original source (the walk speed is per guest and traced: GuestSpeed, docs/reverse/WALK-plan.md)
 	/// <summary>Arrival.TimeBetweenArrivals is read as tenths of a second (unverified unit).</summary>
 	public float ArrivalTimeUnitSeconds { get; set; } = 0.1f;
 	public float HungerPerSecond { get; set; } = 0.35f;

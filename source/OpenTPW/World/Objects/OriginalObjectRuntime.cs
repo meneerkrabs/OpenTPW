@@ -155,9 +155,14 @@ public sealed class OriginalObjectRuntime
 		return new RideVisitorBridge( attractionId, entry.DisplayName, kind, entry.InitialCapacity,
 			settings.GetInt( "UsageInfo.ExcitementLevel" ), settings.GetInt( "Info.AttractionValue" ), needs, price )
 		{
-			Parameters = CreateQueueParameters( entry )
+			Parameters = CreateQueueParameters( entry ),
+			// [DATA:<object>.sam:UsageInfo.EntryCellStandPosX/Y] the jungle Rides.sam default is (0.5, 0.5); 0xde1d8 checks the range [0, 1] (a value outside it keeps the default here)
+			EntryCellStandPos = (StandFraction( settings, "UsageInfo.EntryCellStandPosX" ), StandFraction( settings, "UsageInfo.EntryCellStandPosY" ))
 		};
 	}
+
+	private static float StandFraction( ObjectSettings settings, string key ) =>
+		settings.Has( key ) && settings.GetFloat( key ) is var value and >= 0 and <= 1 ? value : 0.5f;
 
 	/// <summary>
 	/// Queue rules from the .sam layers (docs/reverse/QUEUE-plan.md §2, §4): HasQueue, RunsContinuously, the

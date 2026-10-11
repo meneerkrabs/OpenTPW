@@ -41,6 +41,8 @@ public sealed class ParkRecord
 	public bool HasThumbnail { get; set; }
 	/// <summary>The author chose to list this park on the project website (opt-in when publishing).</summary>
 	public bool ShowOnWebsite { get; set; }
+	/// <summary>City of the online world the park is published in (<see cref="CityDirectory"/>); 0 for parks from before cities.</summary>
+	public int CityId { get; set; }
 	public int Visits { get; set; }
 	public int Votes { get; set; }
 	public List<string> Visitors { get; set; } = new();
@@ -534,7 +536,7 @@ public sealed class ServerStore
 
 	// ---- parks ----
 
-	public ParkRecord Publish( AccountRecord owner, ParkPackage package, byte[] packageBytes, bool showOnWebsite = false )
+	public ParkRecord Publish( AccountRecord owner, ParkPackage package, byte[] packageBytes, bool showOnWebsite = false, int cityId = 0 )
 	{
 		lock ( gate )
 		{
@@ -545,7 +547,7 @@ public sealed class ServerStore
 				Id = NewId(), OwnerKey = owner.Key, Author = owner.Name, Name = package.Manifest.Park.Name,
 				Description = package.Manifest.Park.Description, Level = package.Manifest.Park.Level, Language = package.Manifest.Game.Language,
 				PackageId = package.Manifest.PackageId, PublishedUtc = clock(), Bytes = packageBytes.Length, HasThumbnail = package.Thumbnail != null,
-				ShowOnWebsite = showOnWebsite,
+				ShowOnWebsite = showOnWebsite, CityId = cityId,
 			};
 			AtomicFile.Write( ParkFile( park.Id, ParkPackage.FileExtension ), packageBytes );
 			if ( package.Thumbnail != null )
@@ -562,13 +564,15 @@ public sealed class ServerStore
 			return parks.TryGetValue( id, out var park ) && !options.HiddenParks.Contains( id ) ? park : null;
 	}
 
-	public IReadOnlyList<ParkRecord> ListParks( string? search, string? author, string sort )
+	public IReadOnlyList<ParkRecord> ListParks( string? search, string? author, string sort, int? cityId = null )
 	{
 		lock ( gate )
 		{
 			IEnumerable<ParkRecord> query = parks.Values.Where( park => !options.HiddenParks.Contains( park.Id ) );
 			if ( !string.IsNullOrWhiteSpace( search ) )
 				query = query.Where( park => park.Name.Contains( search, StringComparison.OrdinalIgnoreCase ) );
+			if ( cityId is { } city )
+				query = query.Where( park => park.CityId == city );
 			if ( !string.IsNullOrWhiteSpace( author ) )
 				query = query.Where( park => OnlineText.NormalizeName( park.Author ) == OnlineText.NormalizeName( author ) );
 			query = sort switch
@@ -592,6 +596,13 @@ public sealed class ServerStore
 			return parks.Values.Where( park => park.ShowOnWebsite && !options.HiddenParks.Contains( park.Id ) )
 				.OrderByDescending( park => park.Votes ).ThenByDescending( park => park.Visits ).ThenBy( park => park.PublishedUtc ).ThenBy( park => park.Id, StringComparer.Ordinal )
 				.Take( count ).ToList();
+	}
+
+	/// <summary>Published, not hidden parks per city id.</summary>
+	public IReadOnlyDictionary<int, int> ParksPerCity()
+	{
+		lock ( gate )
+			return parks.Values.Where( park => !options.HiddenParks.Contains( park.Id ) ).GroupBy( park => park.CityId ).ToDictionary( group => group.Key, group => group.Count() );
 	}
 
 	public string ParkFile( string id, string extension ) => Path.Combine( Root, "parks", id + extension );
@@ -658,7 +669,7 @@ public sealed class ServerStore
 		lock ( gate )
 		{
 			return new ParkSummary( park.Id, park.Name, park.Description, park.Author, park.Level, park.Language, park.PublishedUtc, park.Visits, park.Votes,
-				viewer != null && park.Visitors.Contains( viewer.Key ), viewer != null && park.LastVoteDay.ContainsKey( viewer.Key ), playersAtPark, park.HasThumbnail, park.Bytes );
+				viewer != null && park.Visitors.Contains( viewer.Key ), viewer != null && park.LastVoteDay.ContainsKey( viewer.Key ), playersAtPark, park.HasThumbnail, park.Bytes, park.CityId );
 		}
 	}
 

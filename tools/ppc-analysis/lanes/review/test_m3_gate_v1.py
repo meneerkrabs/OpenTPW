@@ -226,10 +226,13 @@ HOOKS = [
      '\t\t\t\tgrid.SetPath( cutCell.X, cutCell.Y, true );\n\t\t\t\tbreak;\n'
      '\t\t\tcase "cut-exit-transient" when tick == 36000 || tick == 36600:\n'
      '\t\t\t\tgrid.SetPath( ride!.Runtime.Visitors.ExitCell.X, ride.Runtime.Visitors.ExitCell.Y, tick == 36600 );\n\t\t\t\tbreak;\n'
-     # diverge-second-run: the oldest guest's happiness - 1 at tick 2000 of the second run (that guest leaves before
-     # the end); diverge-second-run-late: the newest guest's, at tick 107,000 (in the park at the end).
+     # diverge-second-run: the oldest guest's hunger + 0.001 at tick 2000 of the second run (that guest leaves before
+     # the end); diverge-second-run-late: the newest guest's happiness - 1, at tick 107,000 (in the park at the end).
+     # WALK-F: the early divergence was happiness - 1 too, but since guests push each other apart (traced separation) a
+     # change to one guest's decisions spreads to the others and the run never converges. The gate hash holds hunger,
+     # and a thousandth of a point changes no decision in this run, so it converges once that guest has left.
      '\t\t\tcase "diverge-second-run" when SecondRun && tick == 2000 && guests.Guests.Count > 0:\n'
-     '\t\t\t\tguests.Guests[0].Happiness = Math.Max( 0, guests.Guests[0].Happiness - 1 );\n\t\t\t\tbreak;\n'
+     '\t\t\t\tguests.Guests[0].Hunger += 0.001f;\n\t\t\t\tbreak;\n'
      '\t\t\tcase "diverge-second-run-late" when SecondRun && tick == 107000 && guests.Guests.Count > 0:\n'
      '\t\t\t\tguests.Guests[^1].Happiness = Math.Max( 0, guests.Guests[^1].Happiness - 1 );\n\t\t\t\tbreak;\n'
      '\t\t\tcase "block-boarding" when tick >= 18000:\n'

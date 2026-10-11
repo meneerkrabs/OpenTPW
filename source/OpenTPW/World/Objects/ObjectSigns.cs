@@ -15,11 +15,11 @@ public sealed class ObjectSignImages
 
 	public string Line1 { get; }
 	public string Line2 { get; }
-	/// <summary>RGBA of the <c>sign1</c> texture (<see cref="SignCanvas.HalfWidth"/> x <see cref="SignCanvas.Height"/>).</summary>
+	/// <summary>RGBA of the <c>sign1</c> texture (<see cref="SignSurfaceComposer.HalfWidth"/> x <see cref="SignSurfaceComposer.Height"/>).</summary>
 	public byte[] Left { get; }
 	/// <summary>RGBA of the <c>sign2</c> texture.</summary>
 	public byte[] Right { get; }
-	/// <summary>Pixels the text changed against the board colour (0: nothing was drawn).</summary>
+	/// <summary>Nonzero text-mask pixels, independent of the board image.</summary>
 	public int TextPixelCount { get; }
 	public IReadOnlyList<string> Diagnostics { get; }
 
@@ -27,9 +27,9 @@ public sealed class ObjectSignImages
 	private Texture? rightTexture;
 
 	/// <summary>GPU texture of the <c>sign1</c> half (created on first use, shared by every object of the type).</summary>
-	public Texture LeftTexture => leftTexture ??= new Texture( Left, SignCanvas.HalfWidth, SignCanvas.Height );
+	public Texture LeftTexture => leftTexture ??= new Texture( Left, SignSurfaceComposer.HalfWidth, SignSurfaceComposer.Height );
 	/// <summary>GPU texture of the <c>sign2</c> half.</summary>
-	public Texture RightTexture => rightTexture ??= new Texture( Right, SignCanvas.HalfWidth, SignCanvas.Height );
+	public Texture RightTexture => rightTexture ??= new Texture( Right, SignSurfaceComposer.HalfWidth, SignSurfaceComposer.Height );
 
 	/// <summary>The texture for a material slot name (<c>sign1</c>/<c>sign2</c>, with or without extension), or null.</summary>
 	public Texture? TextureFor( string textureName ) => ObjectSigns.SlotOf( textureName ) switch { 0 => LeftTexture, 1 => RightTexture, _ => null };
@@ -66,22 +66,6 @@ public static class ObjectSigns
 		return SignCanvas.SplitAtMiddleSpace( entry.DisplayName.Trim() );
 	}
 
-	/// <summary>Cream board for signs whose text colours are dark, the gate's dark board otherwise.</summary>
-	public static readonly (byte R, byte G, byte B, byte A) LightBoard = (214, 190, 140, 255);
-
-	// [APPROX:COMPAT-018] flat board colour chosen so the stored text colours stay readable (light or the gate's dark board, whichever gives the least contrasting line more contrast); the board images (version-101 wavelet, plus two 16x128 fill images) are not decoded or composed — evidence needed: Bitmap::load_wavelet and the board blit (as COMPAT-004) and a capture of an original ride sign
-	public static (byte R, byte G, byte B, byte A) Board( SignFile sign )
-	{
-		static double Luma( byte r, byte g, byte b ) => 0.299 * r + 0.587 * g + 0.114 * b;
-		var lumas = Enumerable.Range( 0, sign.Slots.Count ).Select( index => SignCanvas.SlotColor( sign, index ) )
-			.Where( colour => colour != null ).Select( colour => Luma( colour!.Value.R, colour.Value.G, colour.Value.B ) ).ToArray();
-		if ( lumas.Length == 0 )
-			return OriginalGateSign.Background;
-		// the board on which the least contrasting line still stands out most (two coloured lines can need different boards)
-		double Worst( (byte R, byte G, byte B, byte A) board ) => lumas.Min( luma => Math.Abs( luma - Luma( board.R, board.G, board.B ) ) );
-		return Worst( LightBoard ) > Worst( OriginalGateSign.Background ) ? LightBoard : OriginalGateSign.Background;
-	}
-
 	/// <summary>
 	/// The CPU-composed sign of an object (cached per archive and text), or null when the object has no <c>.sgn</c> or no
 	/// text. Drawing problems (missing glyphs or fonts) are logged once, not thrown.
@@ -102,7 +86,7 @@ public static class ObjectSigns
 				var sign = SignTextRenderer.LoadSignFile( entry.ArchivePath, entry.FileSystem );
 				if ( sign != null )
 				{
-					var composed = SignTextRenderer.Shared.ComposeSign( sign, new[] { line1, line2 }, Board( sign ) );
+					var composed = SignTextRenderer.Shared.ComposeSign( sign, new[] { line1, line2 }, default );
 					foreach ( var diagnostic in composed.Diagnostics.Where( diagnostic => !diagnostic.StartsWith( "COMPAT-003", StringComparison.Ordinal ) ).Distinct() )
 						Log?.Warning( $"Sign of {entry.ArchiveName}: {diagnostic}" );
 					images = new ObjectSignImages( line1, line2, composed.Left, composed.Right, composed.TextPixelCount, composed.Diagnostics );

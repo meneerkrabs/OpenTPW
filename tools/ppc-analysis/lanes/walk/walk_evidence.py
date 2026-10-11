@@ -548,7 +548,7 @@ def walk_varying(position, velocity, target, route, speeds, rounding='nearest'):
 
 def implementation_walk_turns(distance_cells: float, speed_cells_s: float = 1.0, turn_ms: int = TURN_MS,
                               slow_factor: float = 0.7) -> int:
-    """OpenTPW's walk (GuestSimulation.Speed, APPROX): straight line at the slowest speed plus one turn."""
+    """OpenTPW's walk before WALK-I (1 cell/s x 0.7, removed): straight line at the slowest speed plus one turn."""
     return math.ceil(distance_cells / (speed_cells_s * slow_factor * turn_ms / 1000)) + 1
 
 

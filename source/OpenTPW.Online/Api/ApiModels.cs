@@ -16,6 +16,8 @@ public static class ApiRoutes
 	public const string Inbox = Postcards + "/inbox";
 	public const string Reports = Prefix + "/reports";
 	public const string News = Prefix + "/news";
+	/// <summary>The online world's cities (the globe's flags), public.</summary>
+	public const string Cities = Prefix + "/cities";
 	/// <summary>Operator only: asks the host to update the server (<c>DeployToken</c>).</summary>
 	public const string Deploy = Prefix + "/admin/deploy";
 	/// <summary>The public list of parks shown on the project website, and their pictures (<c>/{id}/thumbnail</c>).</summary>
@@ -27,6 +29,11 @@ public static class ApiRoutes
 
 public sealed record ServerInfo( string Name, string Version, int ProtocolVersion, string? Message, bool RegistrationOpen, bool WordFilterLoaded,
 	int MaximumParkBytes, int MaximumPostcardBytes, int MaximumParksPerPlayer, int MaximumVotesPerDay );
+
+/// <summary>A city of the online world: a flag on the globe at its latitude and longitude, with its number of parks.</summary>
+public sealed record CityInfo( int Id, string Name, string Description, float Latitude, float Longitude, int Parks );
+
+public sealed record CityList( IReadOnlyList<CityInfo> Cities );
 
 /// <summary>The server's Game News and System News; empty text when the operator wrote none.</summary>
 public sealed record NewsInfo( string Game, string System, DateTimeOffset? UpdatedUtc );
@@ -48,7 +55,7 @@ public sealed record TotpConfirmation( string Name, string Ticket, string Code )
 public sealed record SessionToken( string Name, string Token, DateTimeOffset ExpiresUtc );
 
 public sealed record ParkSummary( string Id, string Name, string Description, string Author, string Level, string Language,
-	DateTimeOffset PublishedUtc, int Visits, int Votes, bool VisitedBefore, bool VotedFor, int PlayersAtPark, bool HasThumbnail, int Bytes );
+	DateTimeOffset PublishedUtc, int Visits, int Votes, bool VisitedBefore, bool VotedFor, int PlayersAtPark, bool HasThumbnail, int Bytes, int CityId = 0 );
 
 public sealed record ParkList( IReadOnlyList<ParkSummary> Parks, int Total );
 

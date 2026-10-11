@@ -153,7 +153,6 @@ home (21) → removed.
 
 | Item | OpenTPW choice |
 | --- | --- |
-| Walking speed | 1.0 cell/s (0.7× below 20 energy) |
 | Arrival units | `TimeBetweenArrivals` read as tenths of a second (150 → a bus every 15 s) carrying `max(MinPeople, FixedRate)` guests, spawned 0.4 s apart, lanes A/B alternating; cap 1,000 guests |
 | Needs | hunger +0.35/s, thirst +0.45/s, toilet +0.3/s, energy −0.15/s walking / +1/s resting or riding, nausea −0.2/s; thoughts from level 70 |
 | Starting happiness | 60 of 100 |
@@ -161,7 +160,64 @@ home (21) → removed.
 | Boredom | `BoredomThreshold` read as seconds since the last ride |
 | Ride outcome | ExitLevel += positive happiness change |
 | Queues | traced; see [Queues](#queues) and its `QUEUE-NNN` register |
+| Walking | traced; see [Walking](#walking) and its `WALK-NNN` register |
 | No exit lane | guests vanish (original ejection not modelled) |
+
+### Walking
+
+Traced from the Feral Mac binary ([WALK-plan.md](reverse/WALK-plan.md) §11, WALK-I;
+`GuestNavigation`, `GuestSpeed`). There is no global walk speed and no energy factor.
+
+- **Speed** (§4). Each guest draws a base speed (`+192`) from {60, 80, 100, 120, 140}
+  with the guest stream at creation. Once per park turn (248 ms), before its state
+  logic, it smooths s ← (3·s + (base + toilet term + boost) / 100) · 0.25 from s = 0,
+  in single precision with one fused multiply-add (`fmadds`, PPC oracle F6). The toilet
+  term (`+194`) is 25 while toilet > 80 (the truncated toilet's low byte, unsigned),
+  rewritten after the speed update, but only on the guest's needs phase (park turn & 3 =
+  id & 3, `0xeed40`). The boost (`+196`) decays by trunc(× 99 / 100) per turn, with the product kept to 16 bits.
+  The speed setter (`0xffe38`) gives the max speed max(655, trunc(min(s, 2) · 0.2 ·
+  65536)) and the max force with 0.4, in 16.16 cells per turn: 0.48 cell/s at s = 0.6,
+  0.81 cell/s at s = 1 and 1.61 cell/s at s = 2.
+- **Steering** (§3, §5–§7). Positions and velocities are 16.16 fixed point. On the
+  tick that starts a park turn, a walking guest takes one step: avoid_walls (0.9; the
+  first edge of +x, −x, +y, −y that pushes), follow_path (0.5) and separation (0.1),
+  each truncated to the max force, summed and
+  truncated, added to the velocity, which is truncated to the max speed. The position
+  is committed only when the new cell is walkable for the walk. A new destination
+  keeps the velocity. Routes start with the guest's own cell; waypoints are cell
+  centres, passed at octile < 0.4 cell; the last segment arrives at octile < 0.32 cell
+  of the exact destination, with the desired speed min(max speed, d / 2). Arrival is
+  tested before the step moves. A routing failure arrives at once. Six non-improving
+  steps among the last 15 reroute.
+- **Separation** (`0xfd778`, `0x10087c`, `0xfd5f4`). Off on the last segment within
+  ONE + radius of its waypoint; else every guest in the 3 × 3 cells around the walker
+  (rows from the top) whose 1/256-cell position lies within 0.4 cell pushes it away by
+  FixDiv(offset, octile(offset)), at most five of them.
+- **Geometry.** Sub-cell destination bytes are byte / 256 of a cell. Path walks go one
+  path cell at a time to the guest's offset point in it; lane walks (bus stop to
+  entrance) have no walls. Queue walks follow the queue cells; the cell ahead of the
+  destination and the cell behind the start are walkable too. The stand point is in
+  the ride's entrance cell at trunc(255 × `EntryCellStandPos`) after rotating it with
+  the object (`0xde1d8`): (0.5, 0.5) gives (127, 127).
+- **Presentation.** The drawn position and walk distance interpolate between the last
+  two steps over a turn (`Guest.DrawX`, `DrawY`, `DrawDistanceWalked`); they are not
+  simulation state.
+
+**Walk approximation register** (`WalkApproximations.cs`; also in
+[FIDELITY-REGISTER](FIDELITY-REGISTER.md)):
+
+| ID | OpenTPW choice | Evidence needed |
+| --- | --- | --- |
+| WALK-001 | Nothing raises the boost `+196`; only its decay runs | The callers of `0xeb0f4` and their amounts |
+| WALK-002 | avoid_walls models its edge branch (the first pushing edge of +x, −x, +y, −y), not its four diagonal-corner branches | `0xfc9e0` and `0xfdfe4..0xfe5e0` |
+| WALK-003 | Separation's neighbours are the guests outside rides and shops at their navigation position, in OpenTPW's list order within a cell; the original's query `0x10087c` also keeps thing types 4–8 and 18, which are not neighbours in OpenTPW | The writers of thing `+4/+6` and of the per-cell thing lists (`+764`, `+10`) |
+| WALK-004 | Routes are OpenTPW's cell sequences, refilled five waypoints at a time; the reroute prepends the current cell to the rest | The route search `0x101c64` and its `+164/+168` bookkeeping |
+| WALK-005 | A cell is walkable when it is on the current walk (its route and extra open cells); path cells beside the route are walls | The edge flags `0xd768c` reads, the `+180` mask per state and the commit callback `0xfee3c..0xfee58` |
+| WALK-006 | A queue walk may also enter the queue cell ahead of its destination and the one behind its start, and no other cell off its route | The queue cells' edge flags and the `+180` mask in states 12 and 13 |
+| WALK-007 | No map-edit reroute: the block stamp check against `+72` and the failure flag `+184` are left out | `0xd7e54` and the `+72/+184` bookkeeping (`0xfe650..0xfe6f8`) |
+| WALK-008 | Guests on the arrival lanes walk off the path grid: no wall force, every position committed | The lane cells' edge flags and the `+180` mask outside the park |
+| WALK-009 | The progress history compares raw remaining distances and skips the first step after route setup | The `+160` route length and the `+172` reset (`0xfeed8`, `0xff6fc`) |
+| WALK-010 | The needs phase that gates the toilet term compares the park turn with OpenTPW's guest id | The thing id allocator `0xfa9a4` and its order |
 
 An isolated [GuestOriginalRules helper](../tools/ppc-analysis/lanes/guests/rules/README.md)
 and 23 synthetic regression cases preserve selected Feral arithmetic: four
@@ -244,7 +300,9 @@ jungle smoke site: cell (39, 21)). With guests near the ride the script fills at
 script time ≈3.3 s and starts (versus 11.3 s without passengers), runs one cycle
 and unloads all six through HOP/WALKOFF/WALKGET/`VAR_LETMEOFF`. (Measured before
 the traced queue; guests now pass through the one-cell path queue at its
-entrance, and the asset test still sees a full load before the 10 s time-out.)
+entrance. Since WALK-I each called guest also walks into the entrance cell to the
+traced stand point before the next is called, so the asset test's first run starts
+with a full load at about 17 s instead of before 10 s.)
 
 ## Queues
 
@@ -275,8 +333,9 @@ and the level's queue tool (`Level.BuildQueueCell`) lay one cell at a time. The
 first cell is the front cell, linked toward the ride. Every later cell touches
 the back cell and links toward it. Only `Info.HasQueue` objects take queue
 paths, at most 25 cells. A queue cell goes only on an empty cell
-(`ParkCellMap.CanChangeCellType`, traced; the original's last cell of a line
-may also overwrite a path, which belongs to PATH-I's line tool). Object
+(`ParkCellMap.CanChangeCellType`, traced; the original's line tool may also lay
+queue over a path on every cell of a line but the last, which this tool does
+not do). Object
 footprints and terrain the object build rule refuses are blocked. Each cell is
 charged `Costs.QueueCell` (75) when it is written, refused only when
 balance − cost < 0 (`ParkEconomy.TrySpendCell`, `SetCellType` `0x82ac4`).
@@ -291,23 +350,26 @@ also block object placement. New queue cells are not drawn on the terrain yet.
 1. Room: the guest joins only while the count is below 4 × cells.
 2. Excitement: rides and sideshows refuse a guest when
    |preferred − excitement| ≥ 45 (thought Scared or Bored).
-3. Limit: the count must be below the data limit. That is 100 with
-   `Info.HasQueue`. Otherwise it is
+3. Limit: the count must be below the data limit, an unsigned 32-bit value.
+   With `Info.HasQueue` it is
    trunc(max(QWTC × (SPEED/InitSpeed × CAP) / DUR, 4)) in single precision,
    with `Upgrades[L].QueueWaitTimeConstant` at type record +436 and InitSpeed
-   at +424. `InitDuration` is +416, not +436. A NaN quotient gives 4.
+   at +424 (SPEED unsigned, the quotient saturating at 2³² − 1).
+   `InitDuration` is +416, not +436. A NaN quotient gives 4. Without
+   `Info.HasQueue` it is 100 (ORACLE-V F1 corrected the polarity).
 
-So the maximum queue length is min(100, 4 × cells) for HasQueue rides. Objects
-without a queue path (shops, toilets, sideshows) get one front cell and so 4.
+So the maximum queue length is min(limit, 4 × cells) for HasQueue rides (Belly
+Bounce: 21, six cells). Objects without a queue path (shops, toilets,
+sideshows) get one front cell and so 4.
 CAP and DUR are the clamped `InitCapacity`/`InitDuration` of level 0. The old
 OpenTPW rule "4 × capacity" is gone.
 
 **Positions** (§3.4). Four positions per cell from the front. The depth along
-the cell is trunc(255 × 0.25 × r) = 0, 63, 127 or 191 (of 255) from the edge
-toward the previous cell. The sideways byte is 114 + (rand mod 28), drawn from
+the cell is trunc(255 × 0.25 × r) = 0, 63, 127 or 191 from the edge toward the
+previous cell, in bytes of 1/256 cell. The sideways byte is 114 + (rand mod 28), drawn from
 the simulation's seeded `GuestRandom` (the world-seeded stream guests already
-use; `System.Random` is not used). Guests walk cell by cell along the queue to
-their position (state 12).
+use; `System.Random` is not used). Guests walk along the queue cells to their
+position (state 12) with the traced steering ([Walking](#walking)).
 
 **Standing** (§5, state 11, once per park turn = 248 ms of the fixed clock,
 `ParkCalendar.Turn`). On entry the move delay is trunc(1.2 × position) turns.
@@ -391,7 +453,6 @@ W_max = ⌈Qmax/CAP⌉ × (DUR + 1 s + τ) (QUEUE-plan §9):
 | QUEUE-004 | Excitement gate for rides and sideshows, using \|preferred − excitement\| | `0xe02ec`, `0xe9a84` |
 | QUEUE-005 | Queue-edit exits: beyond 4 × cells, or standing cell removed | `0xee8f8` in detail |
 | QUEUE-006 | Depth from the cell's front edge; the 4th position stays in its cell | `0xdde74` and the sub-cell axis selection |
-| QUEUE-007 | The stand point is the front cell's edge toward the ride | `0xde1d8` (`EntryCellStandPos`) |
 | QUEUE-008 | Ride failure = `VAR_BROKEN ≠ 0` | Predicate `0xdfe34` |
 | QUEUE-009 | Facing-change sign from the 1-in-10 draw | The sign selection in `0xed244` |
 | QUEUE-010 | A guest leaving a queue reappears on the join cell at once | The state-6 transition after a queue exit |
@@ -404,6 +465,7 @@ W_max = ⌈Qmax/CAP⌉ × (DUR + 1 s + τ) (QUEUE-plan §9):
 | QUEUE-017 | Guests do not choose a broken attraction | The state-6 attraction choice and its test of ride `+408` |
 | QUEUE-018 | A broken attraction refuses joins as if closed | Ride `+408` and the state-6/10 handling of a broken ride |
 | QUEUE-019 | A broken attraction skips admission (`VAR_BROKEN ≠ 0` read as ride `+408 ≠ 0`) | Ride `+408` state names and writers |
+| QUEUE-020 | BOUNCE takes one script-clock reading for the deadline's base and the slot's start; the original calls its millisecond clock twice (`0xadfb0`, `0xadfcc`), so its start can lie 1 ms later | None for the reading; OpenTPW's stepped script clock cannot tick between the two calls |
 
 Not modelled: the track-type exits of step 6 (`0x45eac`, ride `+40`), ride
 state `+408` (beyond the QUEUE-019 reading), the price check at the stand
@@ -423,7 +485,7 @@ Not drawn: heads/costumes, balloons, thought bubbles, shadows, riders.
 ## Tests and evidence
 
 - `QueueTests` (no assets): queue-cell links and recompute after edits, build
-  refusals, both limit formulas (single precision, NaN floor, HasQueue 100),
+  refusals, both limit formulas (single precision, NaN floor, unsigned saturation, 100 without HasQueue),
   join order room → excitement → limit, guests walking queue cells to four
   positions per cell, depth bytes, move-up delays trunc(1.2 × position) with the
   gap ≤ 2 rule, no boredom exit over 2,000 turns, the unhappy/toilet/relief,
@@ -440,7 +502,7 @@ Not drawn: heads/costumes, balloons, thought bubbles, shadows, riders.
   ~0.06 ms per 60 Hz tick on an M-series Mac.
 - `GuestAssetTests`: 8 kid sets × 175 frames, slot coverage, flags; jungle
   `Standard.sam` settings; 78-cell jungle network from EntranceA; real guests on
-  the original `Totem.RSE` (full load before 10 s, all riders released); the
+  the original `Totem.RSE` (the first run starts with a full load, all riders released); the
   original Belly Bounce with a 4-cell queue path beside the Easymode paths
   (its .sam queue parameters, guests standing only on queue cells and on every
   one of them, the queue filling to 16, 30 boarded in 180 s, no stalled

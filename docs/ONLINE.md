@@ -22,7 +22,8 @@ contents follow the original online screens mapped from the Mac binary in
 
 | Screen | Original counterpart (UI-MAP) | Original art |
 | --- | --- | --- |
-| Online World | Secondary menu, Go Online | `w_big`, `i_mail` (authored place) |
+| Online World | The online globe (Mac UI table `data:0x523f0`, globe code in the Windows v2.0 `tp.exe`): see below | `worldlob`, `f_wlobbg`, `b_findprk`, `b_bck2lob`, `b_zoom`, `b_lobup/left/right/down`, `i_sat`; `lobby.wad/globe` |
+| OpenTPW online (menu) | (OpenTPW) login, news, postcards, chat, import, account, behind a button on the globe | `w_big`, `i_mail` (authored place) |
 | News | Online news panel: Game News and System News columns (UITEXT 267/268); the original's "News from ThemeParkWorld.com" title is replaced by News | `w_big` |
 | Online Login | Online login dialog: name and password, 16 characters each, Enter moves from name to password and submits | `w_med`, `b_login`, `f_text1` fields |
 | Find Parks | Find Parks dialog and Park details (creator, visits, votes, visited/voted) | `list_findprks`, `b_vote` |
@@ -41,6 +42,55 @@ the Mac code builds each dialog from a template it looks up at run time
 therefore use OpenTPW layouts ([EXT:ONLINE-UI]); the server address field and the
 Inbox and Import screens have no original counterpart. Visits start directly from Find
 Parks or Import file instead of needing `--visit-park` and a restart.
+
+### The online globe
+
+**Go Online** opens the online world as the original draws it: the globe from
+`lobby.wad/globe` fills the screen behind the UI (the lobby islands are hidden while it
+is open), with the original `worldlob` panel at the bottom left and five chat satellites
+around the edges. What is traced:
+
+- Layout (Mac table `data:0x523f0`): panel `worldlob` (9,620)-(510,1531) with Find Parks,
+  back to your own lobby, zoom and the four rotate arrows, help texts 424–431 and 435;
+  five `i_sat` satellites (help 423) with a small label area each.
+- Camera (`tp.exe` 0x005DC860/0x005DCFE0): the globe stands still and the camera circles
+  it at GLOBERADIUSOUT (475) or, after the zoom button, GLOBERADIUSIN (200); field of view 60, pitch limited to ±1.5 rad; arrow keys, the
+  panel arrows, the cursor at a screen edge and the right button held turn it, and the
+  turn dies away (zoomed out: step 0.15, damping 0.5; in: 0.075, 0.25). It does not spin
+  by itself, and the plane and `Lpin` models in the folder are not used by the game.
+- Cities: the server's list (`GET /api/v1/cities`, docs/SERVER.md). Each city gets a pin
+  (`Hpin`; `Bullfrog` for the city named "North Pole") standing on the globe, taller the
+  more parks it holds (0x005DC3E0); the cursor ray picks the city within 10 units of where
+  it meets a sphere of radius 116, and its name and "Parks: n" (UITEXT 461) show at the top.
+- The 24 globe textures form an equirectangular world map, so a city at latitude φ and
+  longitude L stands at atan2(x, z) = 30° − L, sin φ up the model's +Y axis.
+
+A click on a city's pin selects it and opens its lobby (below; `tp.exe` 0x005DD530 sets the
+selected city that the lobby's top-10 request reads, 0x005E23F0). The globe also shows over a
+park (Go Online from the pause menu): it replaces the park and the HUD, and closing it restores the
+park's camera.
+
+**Publish Park** starts on the globe as the original's PublishGlobe does: "Choose the city to
+publish in" (UITEXT 419) at the top, the panel's back, zoom and rotate buttons, and a click on a
+city's pin opens the name and description form for that city (Mac: the hovered city is stored and
+the Publish Park dialog opens, 0x1018CE80). A server without cities skips the globe. Not yet
+built: the satellites' player counts.
+
+### City lobby
+
+A city's lobby (Mac table `data:0x50172`) shows its ten most-voted parks as islands, in
+the same lobby as your own islands: rank *i* stands at ISLANDCAMERAPOSITION slot *i* as
+the island of the park's theme (`<theme>.txt` ISLAND), the way the original builds lobby
+islands from a theme entry at a slot counter (`tp.exe` 0x005E3210). The `citylob` panel
+holds other parks in this city (Find Parks filtered by the city, by votes), back to your
+own lobby, the online world, enter this park (download and visit) and previous/next
+island; the selected park's rank (`"%d"`, font slot 0) shows at the top and its name
+(font slot 5, yellow) at the bottom (the item detail overlay, labels 0x49D9/0x49DA,
+`0x101834A0`). The top-10 request's completion builds one island per park with a running
+slot counter (0x005E23C0 → 0x005E27B0 → 0x005E3210); that each park uses its theme's
+island is inferred from the own lobby, which builds its four islands the same way. The list comes from `GET /api/v1/parks?city=`,
+which needs a login, as the original's city server did. OpenTPW's own functions (login, news, postcards,
+chat, import, account) are behind **OpenTPW online** at the top right.
 
 The ImGui Online panel remains as a developer tool in `--sandbox` and other developer
 starts. The front-end smoke test walks the screens and captures
@@ -199,3 +249,13 @@ are not claims that the original online protocol or service has been recovered.
 | ONLINE-004 | Buddy response strings 111–113 mean online, offline and removed. | Localized variants or the original response-code table. |
 | ONLINE-005 | Chat command semantics follow command words, response strings and weachatr.dll export names; say/emote/shout reach a room, wshout/ushout all rooms; hearing has no positional effect; blackmark creates a moderation report. | Original chat server behavior, including command reach, hearing range and blackmark handling. |
 | ONLINE-006 | A visitor already inside a park must leave it before visiting another, inferred from CHAT_COMMANDS string 127. | Original park-visit transition behavior or an original chat/runtime trace. |
+| ONLINE-007 | The globe camera's rates, steps and damping are applied per tick at 30 ticks per second. | The tick length of the online world's update (`tp.exe` 0x005DC860). |
+| ONLINE-008 | The globe first faces Europe and the Atlantic from 30° north. | The original's starting yaw and pitch. |
+| ONLINE-009 | Edge and right-button steering add rate × offset × step per tick to the turn velocity. | The input branches of 0x005DC860. |
+| ONLINE-010 | The hovered city's name and park count are drawn at the top centre. | The layout of the original city labels 0x16c11/0x16c12. |
+| ONLINE-011 | `f_wlobbg` is the panel's button background in its second rectangle (33,1057,480,1505). | The table field that names the panel's background model. |
+| ONLINE-012 | Edge steering starts once the cursor has moved on the globe screen. | Whether the original steers from the first frame. |
+| ONLINE-013 | Pins are twice the decoded (s, s, p) scale and stand on the mesh surface (radius 119.7). | The scale of the original flag node's parent and a capture of the original globe. |
+| ONLINE-015 | `f_lobbutbg` is the city panel's button background in its second rectangle (67,1273,438,1484). | The table field that names it. |
+| ONLINE-017 | The publish globe reuses the Online World's panel (back, zoom, rotate) without Find Parks and the satellites, with UITEXT 419 at the top. | The publish globe's layout table. |
+| ONLINE-016 | Each city-lobby island is the island of its park's theme. | The argument mapping of `tp.exe` 0x005E27B0 (what the top-10 list entry passes to 0x005E3210). |

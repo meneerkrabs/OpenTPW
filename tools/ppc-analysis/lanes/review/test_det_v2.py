@@ -70,6 +70,14 @@ class GuardRound2(unittest.TestCase):
                       for line in read(world / name).splitlines() if self.forbidden.search(line))
         self.assertEqual(hits, [
             'Advisor.cs: private readonly AdvisorMouth mouth = new( new Random() );',
+            # Online-globe camera state (4d671cf): driven only by the globe screen's buttons and keys.
+            'GlobeCameraMode.cs: private static float pitch = 0.5f;',
+            'GlobeCameraMode.cs: private static float pitchVelocity;',
+            'GlobeCameraMode.cs: private static float radius = 475f;',
+            'GlobeCameraMode.cs: private static float yaw = 70f * MathF.PI / 180f;',
+            'GlobeCameraMode.cs: private static float yawVelocity;',
+            'GlobeCameraMode.cs: public static float RadiusIn { get; set; } = 200f;',
+            'GlobeCameraMode.cs: public static float RadiusOut { get; set; } = 475f;',
             'LobbyCameraMode.cs: public static float Radius { get; set; } = 70f;',
             'LobbyCameraMode.cs: public static float SpinSpeed { get; set; } = 0.02f;',
             'LobbyCameraMode.cs: public static float VerticalOffset { get; set; } = 20f;',

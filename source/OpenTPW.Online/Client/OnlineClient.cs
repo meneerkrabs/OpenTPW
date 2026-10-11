@@ -154,13 +154,16 @@ public sealed class OnlineClient : IDisposable
 		Session = null;
 	}
 
-	public Task<ParkList> ListParksAsync( string? search = null, string sort = "recent", string? author = null, CancellationToken cancel = default )
+	/// <param name="cityId">Only parks published in this city (the city lobby).</param>
+	public Task<ParkList> ListParksAsync( string? search = null, string sort = "recent", string? author = null, CancellationToken cancel = default, int? cityId = null )
 	{
 		var query = $"?sort={Uri.EscapeDataString( sort )}";
 		if ( !string.IsNullOrEmpty( search ) )
 			query += $"&search={Uri.EscapeDataString( search )}";
 		if ( !string.IsNullOrEmpty( author ) )
 			query += $"&author={Uri.EscapeDataString( author )}";
+		if ( cityId is { } city )
+			query += $"&city={city.ToString( System.Globalization.CultureInfo.InvariantCulture )}";
 		return RequireListAsync( GetJsonAsync<ParkList>( ApiRoutes.Parks + query, cancel ), list => list.Parks, "park list" );
 	}
 

@@ -64,6 +64,7 @@ public sealed class OnlineScreens
 	public void ShowWorld()
 	{
 		var screen = new OnlineGlobeScreen( host.Globe );
+		screen.CityClicked = ShowCityLobby;
 		screen.Add( new UiModelImage { Id = "worldPanel", Model = "worldlob", Bounds = new UiRect( 9, 620, 501, 911 ), Anchor = UiAnchor.BottomLeft } );
 		// [APPROX:ONLINE-011] f_wlobbg as the button background in the panel's second rectangle (33,1057,480,1505), like f_lobbutbg in the island lobby — evidence needed: the table field that names the panel's background model
 		screen.Add( new UiModelImage { Id = "worldButtons", Model = "f_wlobbg", Bounds = new UiRect( 33, 1057, 447, 448 ), Anchor = UiAnchor.BottomLeft } );
@@ -121,6 +122,62 @@ public sealed class OnlineScreens
 			}
 		};
 		screen.Back = stack.Pop;
+		Push( screen );
+	}
+
+	// ---- City lobby (Mac UI table data:0x50172) -----------------------------------------------
+
+	/// <summary>
+	/// The lobby of <paramref name="city"/>: its ten most-voted parks as islands, with the citylob panel (other parks,
+	/// back to your own lobby, the online world, enter this park, previous/next island), the selected park's rank at the
+	/// top and its name at the bottom.
+	/// </summary>
+	// [DATA:Mac UI table data:0x50172] root 18900 citylob (28,541,476,1521); b_listpark 18901 (66,642,219,795) help 349, b_bck2lob 18902 (66,799,219,953) help 348, b_worldview 18903 (66,957,219,1110) help 346, b_entpark 18904 (66,1113,219,1267) help 345, b_lobleft 18907 (95,1299,249,1453) help 343, b_lobright 18908 (260,1299,413,1453) help 344; labels 0x49D9 name (477,1282,1571,1457) and 0x49DA rank (844,118,1204,253)
+	public void ShowCityLobby( CityInfo city )
+	{
+		if ( !Session.IsLoggedIn )
+		{
+			localStatus = OnlineStrings.Ui( OnlineStrings.OnlineLogin, "Online login" );
+			ShowLogin();
+			return;
+		}
+		var screen = new CityLobbyScreen( city );
+		screen.Add( new UiModelImage { Id = "cityPanel", Model = "citylob", Bounds = new UiRect( 28, 541, 448, 980 ), Anchor = UiAnchor.BottomLeft } );
+		// [APPROX:ONLINE-015] f_lobbutbg as the button background in the panel's second rectangle (67,1273,438,1484), as in the island lobby — evidence needed: the table field that names it
+		screen.Add( new UiModelImage { Id = "cityButtons", Model = "f_lobbutbg", Bounds = new UiRect( 67, 1273, 371, 211 ), Anchor = UiAnchor.BottomLeft } );
+		UiButton PanelButton( string id, string model, float x0, float y0, float x1, float y1, int help, Action clicked ) => screen.Add( new UiButton
+		{
+			Id = id, Model = model, Help = strings.Help( help ), Clicked = clicked,
+			Bounds = new UiRect( x0, y0, x1 - x0, y1 - y0 ), Anchor = UiAnchor.BottomLeft
+		} );
+		PanelButton( "otherParks", "b_listpark", 66, 642, 219, 795, 349, () => ShowFindParks( city.Id ) );
+		PanelButton( "ownLobby", "b_bck2lob", 66, 799, 219, 953, 348, () => { while ( stack.Top != null && stack.Top.Name is "cityLobby" or "onlineWorld" ) stack.Pop(); } );
+		PanelButton( "worldView", "b_worldview", 66, 957, 219, 1110, 346, stack.Pop );
+		var enter = PanelButton( "enterPark", "b_entpark", 66, 1113, 219, 1267, 345,
+			() => { if ( screen.SelectedPark is { } park ) Guard( () => Session.Download( park, path => Inspect( path, start: true ) ) ); } );
+		PanelButton( "previousIsland", "b_lobleft", 95, 1299, 249, 1453, 343, () => screen.Step( -1 ) );
+		PanelButton( "nextIsland", "b_lobright", 260, 1299, 413, 1453, 344, () => screen.Step( 1 ) );
+		// [BIN:STP-PPC:0x101834A0 item detail overlay] label 0x49D9: the selected item's name, font slot 5, colour (252,232,7); label 0x49DA: "%d" of its index + 1, font slot 0; both hidden without a selection
+		var name = screen.Add( new UiLabel { Id = "parkName", Font = fonts => fonts.Title, Color = new Veldrid.RgbaByte( 252, 232, 7, 255 ), Align = UiAlign.Center,
+			Bounds = new UiRect( 477, 1282, 1094, 175 ), Anchor = UiAnchor.Bottom, Text = () => screen.SelectedPark?.Name ?? "" } );
+		var rank = screen.Add( new UiLabel { Id = "rank", Font = fonts => fonts.Menu, Color = UiColors.Text, Align = UiAlign.Center, Bounds = new UiRect( 844, 118, 360, 135 ), Anchor = UiAnchor.Top,
+			Text = () => (screen.Selected + 1).ToString( System.Globalization.CultureInfo.InvariantCulture ) } );
+		// [EXT:ONLINE-UI] the city's name and the fetch status while no park is shown
+		var status = screen.Add( new UiLabel { Id = "cityStatus", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center, Bounds = new UiRect( 524, 118, 1000, 135 ), Anchor = UiAnchor.Top,
+			Text = () => $"{city.Name}\n{(localStatus.Length > 0 ? localStatus : Session.Status)}" } );
+		screen.Updating += _ =>
+		{
+			enter.Enabled = screen.SelectedPark != null && Session.Busy == 0 && host.Visit != null;
+			name.Visible = rank.Visible = screen.SelectedPark != null;
+			status.Visible = screen.SelectedPark == null;
+			if ( Session.CityParks is { } parks && !ReferenceEquals( parks, screen.Parks ) )
+			{
+				screen.Parks = parks;
+				screen.Selected = 0;
+			}
+		};
+		screen.Back = stack.Pop;
+		Guard( () => Session.FetchCityParks( city.Id ) );
 		Push( screen );
 	}
 
@@ -361,14 +418,18 @@ public sealed class OnlineScreens
 
 	// ---- Find Parks with park details (UI-MAP "Find Parks", "Park details dialog") --------------
 
-	public void ShowFindParks()
+	/// <summary>Find Parks; with <paramref name="cityId"/>, the parks of that city by votes (the city lobby's "other parks").</summary>
+	public void ShowFindParks() => ShowFindParks( null );
+
+	public void ShowFindParks( int? cityId )
 	{
 		var screen = new UiScreen( "findParks" );
 		var window = UiDialogs.CenteredWindow( 1900, 1300 );
 		UiDialogs.AddWindow( screen, window, "w_big", () => OnlineStrings.Ui( OnlineStrings.FindParks, "Find parks" ) );
 		var search = AddField( screen, "search", () => OnlineStrings.Ui( OnlineStrings.SearchName, "Search name" ), window.X + 100, window.Y + 160, 760, 64 );
-		search.Submitted = () => Guard( () => Session.RefreshParks( search.Text ) );
-		screen.Add( new UiButton { Id = "refresh", Text = () => OnlineStrings.Get( OnlineLabel.Refresh ), Clicked = () => Guard( () => Session.RefreshParks( search.Text ) ),
+		void Refresh() => Guard( () => Session.RefreshParks( search.Text, cityId == null ? "recent" : "votes", cityId ) );
+		search.Submitted = Refresh;
+		screen.Add( new UiButton { Id = "refresh", Text = () => OnlineStrings.Get( OnlineLabel.Refresh ), Clicked = Refresh,
 			Bounds = new UiRect( window.X + 900, window.Y + 225, 380, 104 ), Anchor = UiAnchor.Center } );
 		var list = screen.Add( new UiScrollList
 		{
@@ -415,6 +476,8 @@ public sealed class OnlineScreens
 		};
 		AddStatus( screen, window );
 		AddBack( screen, window );
+		if ( cityId != null )
+			Refresh();
 		if ( Session.IsLoggedIn )
 			Guard( () => Session.RefreshParks( null ) );
 		screen.Focus( search );

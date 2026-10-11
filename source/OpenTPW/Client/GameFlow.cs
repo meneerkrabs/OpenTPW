@@ -253,6 +253,9 @@ internal sealed class GameFlow : IDisposable
 		Lobby = null;
 		Globe = null;
 		shownCities = null;
+		cityScene = null;
+		cityKey = null;
+		backdrop = Backdrop.Lobby;
 		Menu = null;
 	}
 
@@ -343,18 +346,34 @@ internal sealed class GameFlow : IDisposable
 	/// While the Online World is open in the lobby, the 3D background is the online globe instead of the islands
 	/// (docs/ONLINE.md); closing it brings the lobby and its camera back.
 	/// </summary>
+	private enum Backdrop { Lobby, Globe, City }
+
+	private Backdrop backdrop = Backdrop.Lobby;
+	/// <summary>The open city lobby's islands (a lobby scene with the city's parks at the island slots).</summary>
+	private LobbyScene? cityScene;
+	/// <summary>Islands of the open city lobby (front-end smoke test).</summary>
+	internal int CityIslandCount => cityScene?.IslandCount ?? 0;
+	private string? cityKey;
+
+	/// <summary>
+	/// The 3D background follows the topmost online screen in the lobby: the online globe for the Online World, the
+	/// city's park islands for a city lobby (docs/ONLINE.md), else the own lobby with its camera.
+	/// </summary>
 	private void UpdateGlobeView()
 	{
-		var wanted = Lobby != null && Menu?.Stack.Screens.Any( screen => screen.Name == "onlineWorld" ) == true;
+		var top = Lobby == null ? null : Menu?.Stack.Screens.LastOrDefault( screen => screen is UI.OnlineGlobeScreen or UI.CityLobbyScreen );
+		var wanted = top switch { UI.CityLobbyScreen => Backdrop.City, UI.OnlineGlobeScreen => Backdrop.Globe, _ => Backdrop.Lobby };
 		// The server's cities, whenever the session fetched a new list.
-		if ( wanted && Globe != null && onlineSession != null && !ReferenceEquals( onlineSession.Cities, shownCities ) )
+		if ( wanted == Backdrop.Globe && Globe != null && onlineSession != null && !ReferenceEquals( onlineSession.Cities, shownCities ) )
 		{
 			shownCities = onlineSession.Cities;
 			Globe.SetCities( shownCities );
 		}
-		if ( wanted == (Globe?.Visible == true) )
+		if ( top is UI.CityLobbyScreen city )
+			UpdateCityScene( city );
+		if ( wanted == backdrop )
 			return;
-		if ( wanted )
+		if ( wanted == Backdrop.Globe )
 		{
 			try
 			{
@@ -365,19 +384,61 @@ internal sealed class GameFlow : IDisposable
 				Log.Warning( $"Online globe unavailable: {exception.Message}" );
 				return;
 			}
-			Globe.Visible = true;
-			Lobby!.Visible = false;
-			GlobeCameraMode.RadiusOut = Lobby.Definition.GlobeRadiusOut;
+			GlobeCameraMode.RadiusOut = Lobby!.Definition.GlobeRadiusOut;
 			GlobeCameraMode.RadiusIn = Lobby.Definition.GlobeRadiusIn;
-			GlobeCameraMode.Reset();
+			if ( backdrop == Backdrop.Lobby )
+				GlobeCameraMode.Reset();
 			Camera.SetCameraMode<GlobeCameraMode>();
 		}
 		else
 		{
-			Globe!.Visible = false;
-			if ( Lobby != null )
-				Lobby.Visible = true;
+			if ( wanted == Backdrop.Lobby && Lobby != null && Menu != null )
+			{
+				LobbyCameraMode.Target = Lobby.Target( Menu.Selected );
+				cityScene?.Delete();
+				cityScene = null;
+				cityKey = null;
+			}
 			Camera.SetCameraMode<LobbyCameraMode>();
+		}
+		backdrop = wanted;
+		if ( Globe != null )
+			Globe.Visible = wanted == Backdrop.Globe;
+		if ( cityScene != null )
+			cityScene.Visible = wanted == Backdrop.City;
+		if ( Lobby != null )
+			Lobby.Visible = wanted == Backdrop.Lobby;
+	}
+
+	/// <summary>Rebuilds the city's islands when its park list changes and points the lobby camera at the selected island.</summary>
+	private void UpdateCityScene( UI.CityLobbyScreen city )
+	{
+		var islands = city.Islands;
+		var key = $"{city.City.Id}:{string.Join( ",", islands.Select( park => park.Id ) )}";
+		if ( key != cityKey )
+		{
+			cityScene?.Delete();
+			cityScene = null;
+			cityKey = key;
+			// [BIN:TPW-EXE:0x005E27B0 city islands] the top-10 completion builds one lobby island per list entry with a running slot counter
+			// [APPROX:ONLINE-016] each park stands as its theme's island (as the own lobby builds its four) — evidence needed: what 0x005E27B0 passes to 0x005E3210 per entry
+			// A park of an unknown theme leaves its slot empty.
+			var themes = islands.Select( park => Lobby!.Definition.Islands.FirstOrDefault( island => string.Equals( island.Level, park.Level, StringComparison.OrdinalIgnoreCase ) ) ).ToList();
+			try
+			{
+				cityScene = new LobbyScene( Lobby!.Definition, themes );
+				cityScene.Visible = backdrop == Backdrop.City;
+			}
+			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or InvalidOperationException )
+			{
+				Log.Warning( $"City lobby unavailable: {exception.Message}" );
+			}
+		}
+		if ( cityScene != null )
+		{
+			var selected = cityScene.Slots.FirstOrDefault( entry => entry.Slot == city.Selected );
+			if ( selected.Island != null )
+				LobbyCameraMode.Target = cityScene.Target( selected.Island, selected.Slot );
 		}
 	}
 

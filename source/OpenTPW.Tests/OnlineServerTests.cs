@@ -455,6 +455,10 @@ public class OnlineServerTests
 			var timbuktu = defaults.Single( city => city.Name == "Timbuktu" ).Id;
 			await ann.UploadParkAsync( OnlineFormatTests.Package( "Sand Castle" ), cityId: timbuktu );
 			Assert.AreEqual( 1, (await anonymous.GetCitiesAsync())!.Cities.Single( city => city.Id == timbuktu ).Parks );
+			await ann.UploadParkAsync( OnlineFormatTests.Package( "Elsewhere" ) );
+			var inCity = await ann.ListParksAsync( sort: "votes", cityId: timbuktu );
+			CollectionAssert.AreEqual( new[] { "Sand Castle" }, inCity.Parks.Select( park => park.Name ).ToArray(), "the city lobby lists only that city's parks" );
+			Assert.AreEqual( timbuktu, inCity.Parks[0].CityId );
 			Assert.AreEqual( HttpStatusCode.BadRequest, (await Fails( () => ann.UploadParkAsync( OnlineFormatTests.Package( "Nowhere" ), cityId: 999 ) )).Status );
 
 			File.WriteAllText( Path.Combine( server.Directory, "cities.json" ),

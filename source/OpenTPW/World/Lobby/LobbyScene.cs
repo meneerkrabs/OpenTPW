@@ -18,18 +18,28 @@ public sealed class LobbyScene : OriginalModelScene
 
 	protected override string TextureDirectory => $"{TerrainDirectory}/textures";
 
-	public LobbyScene( LobbyDefinition definition )
+	/// <summary>
+	/// The lobby with the four theme islands, or with <paramref name="slots"/>: the theme island to stand at each
+	/// ISLANDCAMERAPOSITION slot (the city lobby shows a city's top-10 parks by rank this way; null leaves a slot empty).
+	/// </summary>
+	// [BIN:TPW-EXE:0x005E3210 lobby island] islands are built from a theme's ISLAND entry at the caller's slot counter, at that slot's ISLANDCAMERAPOSITION and the ISLAND height and angle
+	public LobbyScene( LobbyDefinition definition, IReadOnlyList<LobbyIslandInfo?>? slots = null )
 	{
 		Definition = definition;
+		var placed = slots == null
+			? definition.Islands.Select( island => (Island: (LobbyIslandInfo?)island, Slot: island.Index) ).ToList()
+			: slots.Select( ( island, slot ) => (Island: island, Slot: slot) ).ToList();
 		try
 		{
 			var terrain = new ModelFile( $"{TerrainDirectory}/Base.MD2" );
 			AddModel( terrain, NMatrix4x4.Identity );
 			if ( terrain.Heightfield != null )
 				AddHeightfield( terrain );
-			foreach ( var island in definition.Islands )
+			foreach ( var (candidate, slot) in placed )
 			{
-				var (x, z) = definition.PositionOf( island );
+				if ( candidate is not { } island )
+					continue;
+				var (x, z) = definition.PositionOf( slot );
 				var placement = NMatrix4x4.CreateRotationY( island.Angle * MathF.PI / 180 ) * NMatrix4x4.CreateTranslation( x, 0, z );
 				foreach ( var name in new[] { island.IslandModel, island.GateModel } )
 				{
@@ -38,6 +48,7 @@ public sealed class LobbyScene : OriginalModelScene
 						AddModel( new ModelFile( file ), placement );
 				}
 				IslandCount++;
+				Slots.Add( (island, slot) );
 			}
 		}
 		catch
@@ -49,11 +60,16 @@ public sealed class LobbyScene : OriginalModelScene
 
 	public LobbyDefinition Definition { get; }
 	public int IslandCount { get; private set; }
+	/// <summary>The islands drawn and the slot each stands at.</summary>
+	public List<(LobbyIslandInfo Island, int Slot)> Slots { get; } = new();
 
 	/// <summary>Engine-space centre of an island's camera orbit (its position at the ISLAND height).</summary>
-	public Vector3 Target( LobbyIslandInfo island )
+	public Vector3 Target( LobbyIslandInfo island ) => Target( island, island.Index );
+
+	/// <summary>Engine-space centre of the camera orbit around <paramref name="island"/> standing at <paramref name="slot"/>.</summary>
+	public Vector3 Target( LobbyIslandInfo island, int slot )
 	{
-		var (x, z) = Definition.PositionOf( island );
+		var (x, z) = Definition.PositionOf( slot );
 		return new Vector3( x, z, island.Height );
 	}
 

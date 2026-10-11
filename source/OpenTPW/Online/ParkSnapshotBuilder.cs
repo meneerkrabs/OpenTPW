@@ -32,7 +32,10 @@ public static class ParkSnapshotBuilder
 	/// <summary>
 	/// A shipped original level, captured as the visitor will see it: the cell map its save or MAP initial
 	/// paths describe (the same view <see cref="GuestPathGrid.FromOriginal"/> builds) and its object records.
-	/// Used by the offline export command; the in-game publish path captures the live level instead.
+	/// Used by the offline export command; the in-game publish path captures the live level instead. Fixed items
+	/// are recorded at the origin: their models are authored in park space, so a level places them at (0, 0)
+	/// whatever anchors the save's SYSG entries carry (ParkObjects.Add), and a payload must describe what a
+	/// visit can rebuild — the visit's digest check compares against exactly that.
 	/// </summary>
 	public static ParkSnapshot FromOriginalLevel( OriginalPark park )
 	{
@@ -42,7 +45,7 @@ public static class ParkSnapshotBuilder
 		{
 			objects.AddRange( save.PlacedObjects.Select( item => ToRecord( item.Record ) ) );
 			objects.AddRange( save.UnresolvedObjects.Select( ToRecord ) );
-			objects.AddRange( save.FixedItems.Select( ToRecord ) );
+			objects.AddRange( save.FixedItems.Select( item => new ParkObjectRecord( item.InfoId, 0, 0, item.Width, item.Height, 0, true ) ) );
 		}
 		var cells = SharedParkLayout.CaptureCells( ParkCellMap.FromOriginal( park.Map, save ) );
 		var payload = LayoutPayload( park, cells, objects, Array.Empty<CoasterTrackRecord>(), null, null );

@@ -189,8 +189,12 @@ public class SharedParkTests
 			var rebuilt = SharedParkLayout.CaptureCells( SharedParkLayout.BuildCellMap( park.Map.CellCountX, park.Map.CellCountY, payload.Cells! ) );
 			Assert.AreEqual( payload.LayoutDigest, ParkLayoutDigest.Compute( rebuilt, payload.Objects, payload.Coasters ?? Array.Empty<CoasterTrackRecord>() ) );
 			Assert.AreEqual( park.Save!.PathCells.Count, payload.PathCells.Count );
-			// Shipped objects round-trip: every imported object record is placed at its saved anchor.
+			// Shipped objects round-trip: every imported object record is placed at its saved anchor…
 			Assert.AreEqual( park.Save.PlacedObjects.Count + park.Save.UnresolvedObjects.Count + park.Save.FixedItems.Count, payload.Objects.Count );
+			// …except fixed items, which a level places at the origin (their models are authored in park
+			// space): the payload must describe what a visit can rebuild, or its digest check fails.
+			foreach ( var fixedItem in payload.Objects.Where( item => item.Fixed ) )
+				Assert.AreEqual( (0, 0, 0), (fixedItem.X, fixedItem.Y, fixedItem.Rotation), $"fixed item {fixedItem.InfoId} is recorded where a level places it" );
 		}
 		finally { OpenTPW.Common.GlobalNamespace.FileSystem = previous; Directory.Delete( root, true ); }
 	}

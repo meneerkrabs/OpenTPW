@@ -627,8 +627,10 @@ def page(title: str, body: str, depth: int, source: str | None) -> str:
 <header class="top"><div class="wrap"><a class="brand" href="{up}../"><img src="{up}../logo.svg" alt="" width="40" height="40"><span>Open<b>TPW</b></span></a>
 <nav aria-label="Main"><a href="{up}../install.html">Install</a><a href="{up}index.html">Docs</a><a href="{up}../#download">Download</a><a href="https://github.com/meneerkrabs/OpenTPW">GitHub</a></nav></div></header>
 <main id="main" class="wrap page doc">
+<!--email_off-->
 {body}
 {edit}
+<!--/email_off-->
 </main>
 <footer><div class="wrap"><nav aria-label="Footer"><a href="https://github.com/meneerkrabs/OpenTPW">GitHub</a><a href="{up}../privacy.html">Privacy</a><a href="{up}../rules.html">Community rules</a></nav>
 <p>OpenTPW is free software under the MIT licence. Theme Park World is a trademark of Electronic Arts Inc. OpenTPW is an independent project and is not affiliated with or endorsed by Electronic Arts or Bullfrog Productions.</p></div></footer>

@@ -7,6 +7,8 @@ public enum OnlineLabel
 	RateLimited, NoBuddies, OnlineOff, Refresh, Vote, Report, To, PutInOutbox, SavedTo, FileSharing,
 	DeleteAccount, DeleteAccountWarning, AccountDeleted, News, NoNews, ShownOnWebsite, NotShownOnWebsite, ChatReconnected,
 	TwoStepLogin, TwoStepInstructions, AuthenticatorCode, Confirm, OnlineMenu,
+	EmailAddress, SendCode, EmailCode, EmailCodeSent, ForgotPassword, AccountRecovery, NameOrEmail, NewPassword,
+	KeepTwoStep, ResetTwoStep, RecoveryCodeSent, PasswordChanged,
 }
 
 /// <summary>
@@ -66,27 +68,37 @@ public static class OnlineStrings
 	public const int SystemMessage = 160;
 
 	private static StringFile? uiText, errors, chat, themes;
-	private static GameLanguage? loadedFor;
 	private static readonly HashSet<string> unavailable = new();
+	private static int loadedVersion = -1;
 
-	/// <summary>
-	/// A table of the selected language; null (so callers use their fallbacks) when no language is selected or
-	/// it lacks the file. The caches belong to the language they were read from and are dropped when another is selected.
-	/// </summary>
+	private static readonly object tablesLock = new();
+
+	// Read from the game thread and the chat receiver: one lock, so a reset after a language switch cannot be overwritten
+	// by a load of the previous language.
 	private static string[]? Table( ref StringFile? cache, string name )
 	{
-		if ( !GameLanguage.IsSelected )
-			return null;
-		var language = GameLanguage.Current;
-		if ( !ReferenceEquals( language, loadedFor ) )
+		lock ( tablesLock )
+			return TableLocked( ref cache, name );
+	}
+
+	/// <summary>
+	/// A table of the selected language; null (so callers use their fallbacks) when no language is selected or it lacks
+	/// the file. A missing file is remembered per file and language, so the other tables still load.
+	/// </summary>
+	private static string[]? TableLocked( ref StringFile? cache, string name )
+	{
+		// A language change drops every table (and the files the previous language lacked).
+		if ( loadedVersion != GameLanguage.Version )
 		{
 			uiText = errors = chat = themes = null;
 			unavailable.Clear();
-			loadedFor = language;
+			loadedVersion = GameLanguage.Version;
 		}
+		if ( !GameLanguage.IsSelected )
+			return null;
 		if ( cache == null && !unavailable.Contains( name ) )
 		{
-			try { cache = language.LoadStrings( name ); }
+			try { cache = GameLanguage.Current.LoadStrings( name ); }
 			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or UnauthorizedAccessException )
 			{
 				unavailable.Add( name );
@@ -147,8 +159,20 @@ public static class OnlineStrings
 			[OnlineLabel.ShownOnWebsite] = "Also on the OpenTPW website: yes", [OnlineLabel.NotShownOnWebsite] = "Also on the OpenTPW website: no",
 			[OnlineLabel.OnlineMenu] = "OpenTPW online",
 			[OnlineLabel.ChatReconnected] = "The server restarted; chat reconnected.",
-			[OnlineLabel.TwoStepLogin] = "Two-step login", [OnlineLabel.TwoStepInstructions] = "Scan this code with an authenticator app (or type the key), then enter the 6-digit code it shows. Lost your phone? Ask the server's operator.",
+			[OnlineLabel.TwoStepLogin] = "Two-step login", [OnlineLabel.TwoStepInstructions] = "Scan this code with an authenticator app (or type the key), then enter the 6-digit code it shows. Lost your phone? Use \"Forgot password?\" when logging in, or ask the server's operator.",
 			[OnlineLabel.AuthenticatorCode] = "Authenticator code", [OnlineLabel.Confirm] = "Confirm",
+			[OnlineLabel.EmailAddress] = "E-mail address",
+			[OnlineLabel.SendCode] = "Send code",
+			[OnlineLabel.EmailCode] = "Code from the e-mail",
+			[OnlineLabel.EmailCodeSent] = "A code has been sent to this address.",
+			[OnlineLabel.ForgotPassword] = "Forgot password?",
+			[OnlineLabel.AccountRecovery] = "Account recovery",
+			[OnlineLabel.NameOrEmail] = "Name or e-mail address",
+			[OnlineLabel.NewPassword] = "New password",
+			[OnlineLabel.KeepTwoStep] = "Two-step login: keep",
+			[OnlineLabel.ResetTwoStep] = "Two-step login: set up again",
+			[OnlineLabel.RecoveryCodeSent] = "If this account has an e-mail address, a code has been sent to it.",
+			[OnlineLabel.PasswordChanged] = "Your password has been changed. Log in with the new password.",
 		},
 		["Danish"] = new Dictionary<OnlineLabel, string>
 		{
@@ -167,8 +191,20 @@ public static class OnlineStrings
 			[OnlineLabel.ShownOnWebsite] = "Også på OpenTPW-webstedet: ja", [OnlineLabel.NotShownOnWebsite] = "Også på OpenTPW-webstedet: nej",
 			[OnlineLabel.OnlineMenu] = "OpenTPW online",
 			[OnlineLabel.ChatReconnected] = "Serveren genstartede; chatten er forbundet igen.",
-			[OnlineLabel.TwoStepLogin] = "Totrinslogin", [OnlineLabel.TwoStepInstructions] = "Scan koden med en godkendelsesapp (eller indtast nøglen), og indtast derefter den 6-cifrede kode, den viser. Mistet din telefon? Spørg serverens administrator.",
+			[OnlineLabel.TwoStepLogin] = "Totrinslogin", [OnlineLabel.TwoStepInstructions] = "Scan koden med en godkendelsesapp (eller indtast nøglen), og indtast derefter den 6-cifrede kode, den viser. Mistet din telefon? Brug \"Glemt adgangskode?\" ved login, eller spørg serverens administrator.",
 			[OnlineLabel.AuthenticatorCode] = "Godkendelseskode", [OnlineLabel.Confirm] = "Bekræft",
+			[OnlineLabel.EmailAddress] = "E-mailadresse",
+			[OnlineLabel.SendCode] = "Send kode",
+			[OnlineLabel.EmailCode] = "Kode fra e-mailen",
+			[OnlineLabel.EmailCodeSent] = "Der er sendt en kode til denne adresse.",
+			[OnlineLabel.ForgotPassword] = "Glemt adgangskode?",
+			[OnlineLabel.AccountRecovery] = "Gendan konto",
+			[OnlineLabel.NameOrEmail] = "Navn eller e-mailadresse",
+			[OnlineLabel.NewPassword] = "Ny adgangskode",
+			[OnlineLabel.KeepTwoStep] = "Totrinslogin: behold",
+			[OnlineLabel.ResetTwoStep] = "Totrinslogin: opsæt igen",
+			[OnlineLabel.RecoveryCodeSent] = "Har kontoen en e-mailadresse, er der sendt en kode til den.",
+			[OnlineLabel.PasswordChanged] = "Din adgangskode er ændret. Log ind med den nye adgangskode.",
 		},
 		["Dutch"] = new Dictionary<OnlineLabel, string>
 		{
@@ -187,8 +223,20 @@ public static class OnlineStrings
 			[OnlineLabel.ShownOnWebsite] = "Ook op de OpenTPW-website: ja", [OnlineLabel.NotShownOnWebsite] = "Ook op de OpenTPW-website: nee",
 			[OnlineLabel.OnlineMenu] = "OpenTPW online",
 			[OnlineLabel.ChatReconnected] = "De server is herstart; de chat is opnieuw verbonden.",
-			[OnlineLabel.TwoStepLogin] = "Inloggen in twee stappen", [OnlineLabel.TwoStepInstructions] = "Scan deze code met een authenticator-app (of typ de sleutel over) en vul de 6-cijferige code in die de app toont. Telefoon kwijt? Vraag de beheerder van de server.",
+			[OnlineLabel.TwoStepLogin] = "Inloggen in twee stappen", [OnlineLabel.TwoStepInstructions] = "Scan deze code met een authenticator-app (of typ de sleutel over) en vul de 6-cijferige code in die de app toont. Telefoon kwijt? Gebruik \"Wachtwoord vergeten?\" bij het inloggen, of vraag de beheerder van de server.",
 			[OnlineLabel.AuthenticatorCode] = "Code uit de app", [OnlineLabel.Confirm] = "Bevestigen",
+			[OnlineLabel.EmailAddress] = "E-mailadres",
+			[OnlineLabel.SendCode] = "Code sturen",
+			[OnlineLabel.EmailCode] = "Code uit de e-mail",
+			[OnlineLabel.EmailCodeSent] = "Er is een code naar dit adres gestuurd.",
+			[OnlineLabel.ForgotPassword] = "Wachtwoord vergeten?",
+			[OnlineLabel.AccountRecovery] = "Account herstellen",
+			[OnlineLabel.NameOrEmail] = "Naam of e-mailadres",
+			[OnlineLabel.NewPassword] = "Nieuw wachtwoord",
+			[OnlineLabel.KeepTwoStep] = "Inloggen in twee stappen: behouden",
+			[OnlineLabel.ResetTwoStep] = "Inloggen in twee stappen: opnieuw instellen",
+			[OnlineLabel.RecoveryCodeSent] = "Als dit account een e-mailadres heeft, is daar een code naartoe gestuurd.",
+			[OnlineLabel.PasswordChanged] = "Je wachtwoord is gewijzigd. Log in met het nieuwe wachtwoord.",
 		},
 		["French"] = new Dictionary<OnlineLabel, string>
 		{
@@ -207,8 +255,20 @@ public static class OnlineStrings
 			[OnlineLabel.ShownOnWebsite] = "Aussi sur le site OpenTPW : oui", [OnlineLabel.NotShownOnWebsite] = "Aussi sur le site OpenTPW : non",
 			[OnlineLabel.OnlineMenu] = "OpenTPW en ligne",
 			[OnlineLabel.ChatReconnected] = "Le serveur a redémarré ; le chat est reconnecté.",
-			[OnlineLabel.TwoStepLogin] = "Connexion en deux étapes", [OnlineLabel.TwoStepInstructions] = "Scannez ce code avec une application d'authentification (ou saisissez la clé), puis entrez le code à 6 chiffres affiché. Téléphone perdu ? Contactez l'administrateur du serveur.",
+			[OnlineLabel.TwoStepLogin] = "Connexion en deux étapes", [OnlineLabel.TwoStepInstructions] = "Scannez ce code avec une application d'authentification (ou saisissez la clé), puis entrez le code à 6 chiffres affiché. Téléphone perdu ? Utilisez \"Mot de passe oublié ?\" à la connexion, ou contactez l'administrateur du serveur.",
 			[OnlineLabel.AuthenticatorCode] = "Code d'authentification", [OnlineLabel.Confirm] = "Confirmer",
+			[OnlineLabel.EmailAddress] = "Adresse e-mail",
+			[OnlineLabel.SendCode] = "Envoyer le code",
+			[OnlineLabel.EmailCode] = "Code de l'e-mail",
+			[OnlineLabel.EmailCodeSent] = "Un code a été envoyé à cette adresse.",
+			[OnlineLabel.ForgotPassword] = "Mot de passe oublié ?",
+			[OnlineLabel.AccountRecovery] = "Récupération du compte",
+			[OnlineLabel.NameOrEmail] = "Nom ou adresse e-mail",
+			[OnlineLabel.NewPassword] = "Nouveau mot de passe",
+			[OnlineLabel.KeepTwoStep] = "Connexion en deux étapes : conserver",
+			[OnlineLabel.ResetTwoStep] = "Connexion en deux étapes : reconfigurer",
+			[OnlineLabel.RecoveryCodeSent] = "Si ce compte a une adresse e-mail, un code y a été envoyé.",
+			[OnlineLabel.PasswordChanged] = "Votre mot de passe a été modifié. Connectez-vous avec le nouveau mot de passe.",
 		},
 		["German"] = new Dictionary<OnlineLabel, string>
 		{
@@ -227,8 +287,20 @@ public static class OnlineStrings
 			[OnlineLabel.ShownOnWebsite] = "Auch auf der OpenTPW-Website: ja", [OnlineLabel.NotShownOnWebsite] = "Auch auf der OpenTPW-Website: nein",
 			[OnlineLabel.OnlineMenu] = "OpenTPW online",
 			[OnlineLabel.ChatReconnected] = "Der Server wurde neu gestartet; der Chat ist wieder verbunden.",
-			[OnlineLabel.TwoStepLogin] = "Zweistufige Anmeldung", [OnlineLabel.TwoStepInstructions] = "Scanne diesen Code mit einer Authenticator-App (oder tippe den Schlüssel ab) und gib dann den 6-stelligen Code ein. Handy verloren? Wende dich an den Serverbetreiber.",
+			[OnlineLabel.TwoStepLogin] = "Zweistufige Anmeldung", [OnlineLabel.TwoStepInstructions] = "Scanne diesen Code mit einer Authenticator-App (oder tippe den Schlüssel ab) und gib dann den 6-stelligen Code ein. Handy verloren? Nutze \"Passwort vergessen?\" bei der Anmeldung oder wende dich an den Serverbetreiber.",
 			[OnlineLabel.AuthenticatorCode] = "Code aus der App", [OnlineLabel.Confirm] = "Bestätigen",
+			[OnlineLabel.EmailAddress] = "E-Mail-Adresse",
+			[OnlineLabel.SendCode] = "Code senden",
+			[OnlineLabel.EmailCode] = "Code aus der E-Mail",
+			[OnlineLabel.EmailCodeSent] = "An diese Adresse wurde ein Code gesendet.",
+			[OnlineLabel.ForgotPassword] = "Passwort vergessen?",
+			[OnlineLabel.AccountRecovery] = "Konto wiederherstellen",
+			[OnlineLabel.NameOrEmail] = "Name oder E-Mail-Adresse",
+			[OnlineLabel.NewPassword] = "Neues Passwort",
+			[OnlineLabel.KeepTwoStep] = "Zweistufige Anmeldung: behalten",
+			[OnlineLabel.ResetTwoStep] = "Zweistufige Anmeldung: neu einrichten",
+			[OnlineLabel.RecoveryCodeSent] = "Wenn dieses Konto eine E-Mail-Adresse hat, wurde ein Code dorthin gesendet.",
+			[OnlineLabel.PasswordChanged] = "Dein Passwort wurde geändert. Melde dich mit dem neuen Passwort an.",
 		},
 		["Swedish"] = new Dictionary<OnlineLabel, string>
 		{
@@ -247,8 +319,20 @@ public static class OnlineStrings
 			[OnlineLabel.ShownOnWebsite] = "Även på OpenTPW-webbplatsen: ja", [OnlineLabel.NotShownOnWebsite] = "Även på OpenTPW-webbplatsen: nej",
 			[OnlineLabel.OnlineMenu] = "OpenTPW online",
 			[OnlineLabel.ChatReconnected] = "Servern startades om; chatten är ansluten igen.",
-			[OnlineLabel.TwoStepLogin] = "Tvåstegsinloggning", [OnlineLabel.TwoStepInstructions] = "Skanna koden med en autentiseringsapp (eller skriv in nyckeln) och ange sedan den 6-siffriga koden som visas. Tappat bort telefonen? Kontakta serverns administratör.",
+			[OnlineLabel.TwoStepLogin] = "Tvåstegsinloggning", [OnlineLabel.TwoStepInstructions] = "Skanna koden med en autentiseringsapp (eller skriv in nyckeln) och ange sedan den 6-siffriga koden som visas. Tappat bort telefonen? Använd \"Glömt lösenordet?\" vid inloggningen, eller kontakta serverns administratör.",
 			[OnlineLabel.AuthenticatorCode] = "Autentiseringskod", [OnlineLabel.Confirm] = "Bekräfta",
+			[OnlineLabel.EmailAddress] = "E-postadress",
+			[OnlineLabel.SendCode] = "Skicka kod",
+			[OnlineLabel.EmailCode] = "Kod från mejlet",
+			[OnlineLabel.EmailCodeSent] = "En kod har skickats till den här adressen.",
+			[OnlineLabel.ForgotPassword] = "Glömt lösenordet?",
+			[OnlineLabel.AccountRecovery] = "Återställ konto",
+			[OnlineLabel.NameOrEmail] = "Namn eller e-postadress",
+			[OnlineLabel.NewPassword] = "Nytt lösenord",
+			[OnlineLabel.KeepTwoStep] = "Tvåstegsinloggning: behåll",
+			[OnlineLabel.ResetTwoStep] = "Tvåstegsinloggning: ställ in igen",
+			[OnlineLabel.RecoveryCodeSent] = "Om kontot har en e-postadress har en kod skickats dit.",
+			[OnlineLabel.PasswordChanged] = "Ditt lösenord har ändrats. Logga in med det nya lösenordet.",
 		},
 	};
 }

@@ -29,6 +29,8 @@ public sealed class OptionsServices
 	/// has nothing to do. The options screen then shows a loading bar until it finishes. Unset: the setting is only saved.
 	/// </summary>
 	public Func<string, ITexturePackSwitch?>? BeginTexturePackSwitch { get; init; }
+	/// <summary>Reloads local HUD/icons after their independent choice changes; never requests a world pack download.</summary>
+	public Func<bool, ITexturePackSwitch?>? BeginInterfaceSwitch { get; init; }
 }
 
 /// <summary>
@@ -132,6 +134,7 @@ public static class OptionsScreen
 		public required DisplaySettings Display;
 		public required string Language;
 		public string TexturePack = "";
+		public bool EnhancedInterface;
 		public GraphicsPreset Preset;
 	}
 
@@ -240,6 +243,7 @@ public static class OptionsScreen
 			Display = display.Current,
 			Language = services.CurrentLanguage,
 			TexturePack = graphics?.Current.TexturePackName ?? "",
+			EnhancedInterface = graphics?.Current.EnhancedInterface != false,
 			Preset = graphics?.Current.Preset ?? GraphicsPreset.High
 		};
 		var snapshot = options.Clone();
@@ -349,11 +353,12 @@ public static class OptionsScreen
 				languageNow = services.ApplyLanguage?.Invoke( state.Language );
 			}
 			var texturesChanged = graphics != null && state.TexturePack != graphics.Current.TexturePackName;
+			var interfaceChanged = graphics != null && state.EnhancedInterface != graphics.Current.EnhancedInterface;
 			var presetChanged = graphics != null && steps.Count > 0 && state.Preset != graphics.Current.Preset;
 			var graphicsRestart = false;
-			if ( texturesChanged || presetChanged )
+			if ( texturesChanged || interfaceChanged || presetChanged )
 			{
-				graphics!.Apply( graphics.Current with { Preset = presetChanged ? state.Preset : graphics.Current.Preset, TexturePackName = state.TexturePack } );
+				graphics!.Apply( graphics.Current with { Preset = presetChanged ? state.Preset : graphics.Current.Preset, TexturePackName = state.TexturePack, EnhancedInterface = state.EnhancedInterface } );
 				graphicsRestart = graphics.RestartRequired;
 			}
 			var pending = state.Display;
@@ -368,6 +373,11 @@ public static class OptionsScreen
 				{
 					services.BeginTexturePackSwitch?.Invoke( state.TexturePack );
 					texturesChanged = false;
+				}
+				if ( interfaceChanged )
+				{
+					services.BeginInterfaceSwitch?.Invoke( state.EnhancedInterface );
+					interfaceChanged = false;
 				}
 				if ( graphicsRestart || (languageChanged && languageNow == null) )
 					stack.Push( UiDialogs.Message( "restart", () => strings[UIStrings.RestartGame], (() => strings.Extra( OpenTpwText.Back ), () => { stack.Pop(); closed(); }) ) );
@@ -439,9 +449,9 @@ public static class OptionsScreen
 		var rowIndex = 0;
 		void Row( string id, Func<string> text, Func<IEnumerable<string>> variants, Action<int> change, string? help = null )
 		{
-			var column = rowIndex / 3;
+			var column = rowIndex < 3 ? 0 : 1;
 			var left = column == 0 ? 57f : 1331f;
-			var top = 167f + rowIndex % 3 * 156f;
+			var top = 167f + (column == 0 ? rowIndex : rowIndex - 3) * 156f;
 			rowIndex++;
 			page.Panel( id, "f_optpanel", Rect( left, top, left + 633, top + 149 ) );
 			page.Label( id, Rect( left + 70, top + 50, left + 370, top + 95 ), text, variants );
@@ -504,6 +514,11 @@ public static class OptionsScreen
 		Row( "language", () => Prefix( OpenTpwText.Language ) + LanguageName( state.Language ),
 			() => services.Languages.Select( language => Prefix( OpenTpwText.Language ) + LanguageName( language ) ),
 			direction => state.Language = CycleWrap( services.Languages, state.Language, direction ) );
+		if ( graphics != null )
+			Row( "enhancedInterface", () => Prefix( OpenTpwText.EnhancedInterface ) + InterfaceText( state.EnhancedInterface ),
+				() => new[] { false, true }.Select( enhanced => Prefix( OpenTpwText.EnhancedInterface ) + InterfaceText( enhanced ) ),
+				_ => state.EnhancedInterface = !state.EnhancedInterface, strings.Extra( OpenTpwText.EnhancedInterfaceHelp ) );
+		string InterfaceText( bool enhanced ) => " " + strings.Extra( enhanced ? OpenTpwText.EnhancedQuality : OpenTpwText.TexturePackOriginal );
 
 		// Effective size and fallback reason as small dark text in the free area below the rows.
 		screen.Add( new UiLabel
@@ -523,7 +538,7 @@ public static class OptionsScreen
 			Color = UiColors.OptionText,
 			Shadow = false,
 			Wrap = true,
-			Bounds = Rect( 57, 700, 1964, 900 ),
+			Bounds = Rect( 57, graphics == null ? 700 : 835, 1964, graphics == null ? 900 : 1035 ),
 			Anchor = UiAnchor.Center
 		} );
 

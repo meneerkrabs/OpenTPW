@@ -1,12 +1,16 @@
 # Texture packs (Clarity, Enhanced and Original)
 
-October 11, 2026. Status: **OpenTPW extension (`[EXT:texture-pack]`), Original selected by default.**
-The options offer **Original** (the game's own textures), **Enhanced (Clarity)** (`clarity-enhanced`),
+October 11, 2026. Status: **OpenTPW extension (`[EXT:texture-pack]`), Original world textures and Enhanced HUD/icons by default.**
+The world-texture options offer **Original** (the game's own textures), **Enhanced (Clarity)** (`clarity-enhanced`),
 **Enhanced (legacy)** (the previous `enhanced` choice), and other installed packs. An explicit saved
-choice is preserved. A fresh installation starts with Original and does not download an enhanced
-pack at startup. Downloading enhanced content requires explicitly selecting Enhanced in the options.
+choice is preserved. A fresh installation uses Original world textures plus the HD HUD and menu
+icons included with OpenTPW. This interface art needs no download. Downloading a world-texture pack
+requires explicitly selecting Enhanced in the options.
 Clarity uses its own replacements, including interface art; a missing replacement falls back to the
-shipped HD interface icons or the original world texture. Original reproduces the original look unchanged.
+shipped HD interface icons or the original world texture. The separate **HUD and icons** option
+selects Enhanced or Original interface art. To reproduce every original texture, choose Original for
+both world textures and HUD/icons. Original HUD/icons excludes pack UI replacements even while
+Enhanced (Clarity) world textures remain selected.
 
 ## Clarity and bundled packs
 
@@ -25,14 +29,15 @@ For a named pack, OpenTPW checks these locations in order:
 Each pack needs a supported `pack.json` and a `textures` directory. An invalid local manifest is
 reported and a valid bundle of the same name is tried. The options list usable packs from both
 locations once, with Clarity, Enhanced and Detailed first. If Clarity is unavailable, the game reports
-the missing pack and continues with the shipped interface art and original world textures.
+the missing pack and continues with original world textures; the independent HUD choice determines
+whether its icons come from shipped HD art or the original game.
 
 Desktop publishing already copies `content/**/*`, so a pack staged in the second location travels
 with the executable and works offline. This runtime support does not fetch packs or include their
 binary content by itself. The web build must separately supply the same files to its virtual file
 system; desktop content copying does not automatically bundle the pack in the browser.
 
-Clarity's interface replacements take precedence over shipped hero art. Enhanced and other older
+With Enhanced HUD/icons enabled, Clarity's interface replacements take precedence over shipped hero art. Enhanced and other older
 choices retain their existing priority: shipped hero icons, then the selected pack. An explicit
 `OPENTPW_TEXTURE_PACK=<pack>/textures` override pins that directory and takes precedence over both
 the saved choice and shipped icons.
@@ -44,7 +49,8 @@ becomes 512×512) for the HUD, lobby and options buttons: buy, info, money, rese
 categories (rides, shops, shows, features), door, enter-park, erase, OK, exit, retract, the
 arrows and the slider ball, with their pressed, highlighted and disabled states, and the golden ticket
 and golden key counters at the top right. With Enhanced they
-replace the original interface art before its pack is consulted (`TexturePack.Find`). With Clarity
+replace the original interface art before its pack is consulted (`TexturePack.Find`) when Enhanced
+HUD/icons is enabled. The same shipped icons work with Original world textures. With Clarity
 they provide fallback icons wherever that pack has no replacement.
 
 Provenance: on October 10, 2026 each base icon was cut out of the original texture at its alpha mask,
@@ -88,7 +94,7 @@ jungle textures at native resolution:
 
 | Pack name | Options label | Pipeline | Look |
 | --- | --- | --- | --- |
-| `enhanced` (builder default) | Enhanced | 1x DeJPG, then Real-ESRGAN `realesrgan-x4plus` | Crisp edges, keeps the original cartoony CG style |
+| `enhanced` (builder default) | Enhanced (legacy) | 1x DeJPG, then Real-ESRGAN `realesrgan-x4plus` | Crisp edges, keeps the original cartoony CG style |
 | `detailed` | Detailed | 1x DeJPG, then `ultrasharp-4x` (4x-UltraSharp) | Most detail, some grain |
 
 Interface art always uses `realesrgan-x4plus-anime` without the pre-pass. Guest sprite atlases use
@@ -158,10 +164,18 @@ versions with `"EnhancedTextures": true` are read as `"TexturePack": "enhanced"`
 the old key is dropped the next time the settings are saved. Smoke tests always run on the originals. If both keys exist the new one
 wins. Names must be plain directory names (letters, digits, `-`, `_`, `.`).
 
+`"EnhancedInterface": true` selects HD HUD/icons and `false` selects original interface textures,
+independently of `TexturePack`. Fresh settings use `true`. Older files containing an explicit
+`"TexturePack": ""` or legacy `"EnhancedTextures": false` without an explicit named world pack retain their previous all-original look
+by inferring `EnhancedInterface: false`; an explicit new flag always wins. Earlier enhanced choices
+infer `true`. The inferred choice is written when graphics settings are next saved. Native smoke
+tests set both world and interface choices to Original for original-pixel checks.
+
 `TexturePack.DefaultName` names the preferred Enhanced pack (`clarity-enhanced`); it is not the
 startup graphics choice. Reading settings, finding installed packs, and activating local files do
 not download content. Downloads belong to the explicit options action; a saved enhanced choice
 can use already-installed replacements on subsequent starts without requesting a startup download.
+Changing only HUD/icons uses the local texture-reload callback and never requests a world pack.
 
 ### Pre-pass
 

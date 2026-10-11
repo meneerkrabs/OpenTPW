@@ -272,11 +272,14 @@ public sealed record GraphicsSettings
 	/// </summary>
 	[JsonPropertyName( "TexturePack" ), JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 	public string? TexturePackName { get; init; }
+	/// <summary>Independent HD HUD/icons choice; fresh settings use shipped interface art without downloading a world pack.</summary>
+	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+	public bool? EnhancedInterface { get; init; }
 	/// <summary>Legacy boolean of earlier versions: <c>true</c> reads as <c>"enhanced"</c> (<see cref="Validate"/>); never written.</summary>
 	[JsonPropertyName( "EnhancedTextures" ), JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 	public bool? EnhancedTextures { get; init; }
 
-	public static GraphicsSettings Default { get; } = new() { TexturePackName = "" };
+	public static GraphicsSettings Default { get; } = new() { TexturePackName = "", EnhancedInterface = true };
 
 	private static readonly JsonSerializerOptions JsonOptions = new()
 	{
@@ -289,6 +292,13 @@ public sealed record GraphicsSettings
 	public GraphicsSettings Validate( ICollection<string> diagnostics )
 	{
 		var result = this;
+		// Earlier Original choices disabled every replacement, including the interface. Preserve that explicit intent;
+		// files with no texture choice are fresh defaults. An explicit independent interface choice always wins.
+		if ( result.EnhancedInterface == null )
+		{
+			var previousOriginal = result.TexturePackName == "" || (result.TexturePackName == null && result.EnhancedTextures == false);
+			result = result with { EnhancedInterface = !previousOriginal };
+		}
 		// Migration: a file without a "TexturePack" key (absent or null) takes the old boolean, which selected the one pack
 		// that existed then; an explicit "TexturePack" value, even "", wins over it.
 		// Keep both legacy choices: true selected enhanced, false selected originals. A missing choice stays Original.

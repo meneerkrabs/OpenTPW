@@ -72,7 +72,7 @@ public class TexturePackTests
 	}
 
 	[TestCleanup]
-	public void ResetActivePack() => TexturePack.Activate( "", new List<string>() );
+	public void ResetActivePack() => TexturePack.Activate( "", new List<string>(), enhancedInterface: false );
 
 	private static string FixturePack( string root, string name, params string[] gamePaths )
 	{
@@ -140,11 +140,11 @@ public class TexturePackTests
 			Assert.IsNull( TexturePack.Directory );
 			Assert.AreEqual( Path.Combine( hero, "textures", "ui/textures/b_buy.wct.png" ), TexturePack.Find( "ui/textures/b_buy.wct" ), "a missing default pack keeps the shipped interface art" );
 			StringAssert.Contains( diagnostics.Single(), "original world textures" );
-			TexturePack.Activate( "../clarity-enhanced", new List<string>(), local, bundled );
+			TexturePack.Activate( "../clarity-enhanced", new List<string>(), local, bundled, enhancedInterface: false );
 			Assert.IsFalse( TexturePack.Enhanced, "invalid names cannot activate fallback art" );
 			Assert.IsNull( TexturePack.Find( "ui/textures/b_buy.wct" ) );
-			TexturePack.Activate( "", new List<string>(), local, bundled );
-			Assert.IsNull( TexturePack.Find( "ui/textures/b_buy.wct" ), "an explicit Original choice uses neither pack nor hero art" );
+			TexturePack.Activate( "", new List<string>(), local, bundled, enhancedInterface: false );
+			Assert.IsNull( TexturePack.Find( "ui/textures/b_buy.wct" ), "Original world and Original interface use neither pack nor hero art" );
 		}
 		finally
 		{
@@ -243,7 +243,121 @@ public class TexturePackTests
 		Assert.AreEqual( 0, requested.Count, "opening and accepting fresh options does not request enhanced content" );
 		TexturePack.Activate( graphics.Current.TexturePackName, new List<string>() );
 		Assert.IsNull( TexturePack.Directory );
-		Assert.IsFalse( TexturePack.Enhanced, "Original does not select a pack or shipped enhanced icons" );
+		Assert.IsFalse( TexturePack.Enhanced, "Original does not select a world pack" );
+		Assert.IsTrue( TexturePack.EnhancedInterface, "fresh HUD/icons are enhanced independently" );
+	}
+
+	[TestMethod]
+	public void FreshOriginalWorldUsesOnlyBundledHudArt()
+	{
+		var root = TemporaryDirectory();
+		var previous = TexturePack.ShippedDirectory;
+		try
+		{
+			var hero = FixturePack( root, "hero", "ui/textures/b_buy.wct", "levels/jungle/textures/grass.wct" );
+			TexturePack.ShippedDirectory = Path.Combine( hero, "textures" );
+			var settings = GraphicsSettings.FromJson( "{}", new List<string>() );
+			var diagnostics = new List<string>();
+			TexturePack.Activate( settings.TexturePackName, diagnostics, Path.Combine( root, "missing-config" ), Path.Combine( root, "missing-bundle" ), settings.EnhancedInterface == true );
+			Assert.AreEqual( Path.Combine( hero, "textures", "ui/textures/b_buy.wct.png" ), TexturePack.Find( "/UI/textures/B_BUY.wct" ), "fresh HUD art comes from files included with the executable" );
+			Assert.IsNull( TexturePack.Directory, "no world pack is selected or requested" );
+			Assert.IsNull( TexturePack.Find( "levels/jungle/textures/grass.wct" ), "the HUD option cannot enhance world art" );
+			Assert.AreEqual( 0, diagnostics.Count, "fresh Original world needs no pack manifest" );
+		}
+		finally
+		{
+			TexturePack.ShippedDirectory = previous;
+			Directory.Delete( root, recursive: true );
+		}
+	}
+
+	[TestMethod]
+	public void ClarityWorldCanKeepTheOriginalInterfaceAndSwitchingWorldPreservesIt()
+	{
+		var root = TemporaryDirectory();
+		try
+		{
+			var pack = FixturePack( root, TexturePack.DefaultName, "ui/textures/b_buy.wct", "levels/jungle/textures/grass.wct" );
+			TexturePack.Activate( TexturePack.DefaultName, new List<string>(), root, Path.Combine( root, "missing-bundle" ), enhancedInterface: false );
+			Assert.IsNull( TexturePack.Find( "ui/textures/b_buy.wct" ), "Original interface excludes both Clarity's UI and hero art" );
+			Assert.AreEqual( Path.Combine( pack, "textures", "levels/jungle/textures/grass.wct.png" ), TexturePack.Find( "levels/jungle/textures/grass.wct" ) );
+			var original = TexturePackSwitch.Begin( "", new List<string>(), root )!;
+			Assert.IsFalse( TexturePack.EnhancedInterface, "changing only world textures preserves the HUD choice" );
+			original.Cancel();
+			var enhancedHud = TexturePackSwitch.Begin( "", new List<string>(), root, enhancedInterface: true )!;
+			Assert.IsTrue( TexturePack.EnhancedInterface );
+			Assert.IsNull( TexturePack.Directory, "changing the HUD does not select a world pack" );
+			enhancedHud.Cancel();
+		}
+		finally
+		{
+			Directory.Delete( root, recursive: true );
+		}
+	}
+
+	[DataTestMethod]
+	[DataRow( "{}", true )]
+	[DataRow( "{\"TexturePack\":null}", true )]
+	[DataRow( "{\"EnhancedTextures\":false}", false )]
+	[DataRow( "{\"EnhancedTextures\":true}", true )]
+	[DataRow( "{\"TexturePack\":\"\"}", false )]
+	[DataRow( "{\"TexturePack\":\"enhanced\"}", true )]
+	[DataRow( "{\"TexturePack\":\"clarity-enhanced\",\"EnhancedTextures\":false}", true )]
+	[DataRow( "{\"TexturePack\":\"\",\"EnhancedInterface\":true}", true )]
+	[DataRow( "{\"EnhancedTextures\":false,\"EnhancedInterface\":true}", true )]
+	[DataRow( "{\"TexturePack\":\"clarity-enhanced\",\"EnhancedInterface\":false}", false )]
+	[DataRow( "{\"EnhancedInterface\":false}", false )]
+	public void InterfaceChoicePreservesOldOriginalIntentAndExplicitNewChoices( string json, bool expected )
+	{
+		var diagnostics = new List<string>();
+		var settings = GraphicsSettings.FromJson( json, diagnostics );
+		Assert.AreEqual( expected, settings.EnhancedInterface );
+		Assert.AreEqual( expected, GraphicsSettings.FromJson( settings.ToJson(), diagnostics ).EnhancedInterface, "the inferred or explicit choice is persisted" );
+		Assert.AreEqual( 0, diagnostics.Count );
+	}
+
+	[TestMethod]
+	public void HudOptionsApplyLocallyWithoutRequestingAWorldPackAndCancelDiscardsEdits()
+	{
+		foreach ( var world in new[] { "", TexturePack.DefaultName } )
+		{
+			var graphics = new GraphicsSettingsService( _ => null, GraphicsSettings.Default with { TexturePackName = world }, null, () => CompatibilityFlags.Original );
+			var worlds = new List<string>();
+			var interfaces = new List<bool>();
+			OptionsServices services = new()
+			{
+				Display = new StubDisplaySettings( DisplaySettings.Default ), Options = new GameOptions(),
+				Languages = new[] { "English" }, CurrentLanguage = "English", Graphics = graphics,
+				BeginTexturePackSwitch = name => { worlds.Add( name ); return null; },
+				BeginInterfaceSwitch = enhanced => { interfaces.Add( enhanced ); return null; }
+			};
+			var stack = new UiScreenStack();
+			var screen = OptionsScreen.Create( stack, OriginalUiTests.FakeStrings(), services, () => { } );
+			stack.Push( screen );
+			screen.Find( "openTpw" )!.Activate();
+			var hudPage = stack.Top!;
+			Assert.AreEqual( "HUD and icons: Enhanced", ((UiLabel)hudPage.Find( "enhancedInterfaceLabel" )!).Text() );
+			Assert.IsTrue( hudPage.Find( "languagePanel" )!.Bounds.Bottom <= hudPage.Find( "enhancedInterfacePanel" )!.Bounds.Y, "the extra row does not overlap the language row" );
+			Assert.IsTrue( hudPage.Find( "enhancedInterfacePanel" )!.Bounds.Bottom <= hudPage.Find( "effective" )!.Bounds.Y, "the extra row does not overlap display information" );
+			hudPage.Find( "enhancedInterface" )!.Activate();
+			Assert.AreEqual( "HUD and icons: Original", ((UiLabel)hudPage.Find( "enhancedInterfaceLabel" )!).Text() );
+			stack.Pop();
+			screen.Find( "ok" )!.Activate();
+			Assert.AreEqual( world, graphics.Current.TexturePackName );
+			Assert.AreEqual( false, graphics.Current.EnhancedInterface );
+			Assert.AreEqual( 0, worlds.Count, "HUD-only changes cannot request a world download" );
+			CollectionAssert.AreEqual( new[] { false }, interfaces );
+
+			screen = OptionsScreen.Create( stack, OriginalUiTests.FakeStrings(), services, () => { } );
+			stack.Push( screen );
+			screen.Find( "openTpw" )!.Activate();
+			stack.Top!.Find( "enhancedInterface" )!.Activate();
+			stack.Pop();
+			screen.Back!();
+			Assert.AreEqual( false, graphics.Current.EnhancedInterface, "Cancel keeps the saved HUD choice" );
+			Assert.AreEqual( 1, interfaces.Count );
+			Assert.AreEqual( 0, worlds.Count );
+		}
 	}
 
 	[TestMethod]
@@ -468,8 +582,8 @@ public class TexturePackTests
 			TexturePack.Activate( "enhanced", new List<string>(), root );
 			Assert.AreEqual( Path.Combine( shipped, "ui/textures/b_buy.wct.png" ), TexturePack.Find( "/ui/textures/B_BUY.wct" ), "shipped art before the pack" );
 			Assert.AreEqual( Path.Combine( pack, "textures", "levels/a/textures/x.wct.png" ), TexturePack.Find( "levels/a/textures/x.wct" ) );
-			TexturePack.Activate( "", new List<string>(), root );
-			Assert.IsNull( TexturePack.Find( "ui/textures/b_buy.wct" ), "Original uses neither" );
+			TexturePack.Activate( "", new List<string>(), root, enhancedInterface: false );
+			Assert.IsNull( TexturePack.Find( "ui/textures/b_buy.wct" ), "Original interface uses neither" );
 		}
 		finally
 		{

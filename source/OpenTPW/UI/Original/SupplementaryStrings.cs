@@ -41,6 +41,8 @@ public enum OpenTpwText
 	NotEnoughMoney,
 	NotAvailable,
 	EnhancedTextures,
+	EnhancedInterface,
+	EnhancedInterfaceHelp,
 	TexturePackMissing,
 	TexturePackOriginal,
 	TexturePackClarity,
@@ -127,6 +129,16 @@ public static class SupplementaryStrings
 		[OpenTpwText.LayQueue] = new[] { "Lay the queue from the entrance; press Back when done.", "Læg køen fra indgangen; tryk på Tilbage, når du er færdig.", "Leg de wachtrij vanaf de ingang; druk op Terug als je klaar bent.", "Posez la file depuis l'entrée ; appuyez sur Retour pour terminer.", "Lege die Warteschlange ab dem Eingang; drücke Zurück, wenn du fertig bist.", "Lägg kön från ingången; tryck på Tillbaka när du är klar." },
 		[OpenTpwText.NotEnoughMoney] = new[] { "Not enough money", "Ikke penge nok", "Niet genoeg geld", "Pas assez d'argent", "Nicht genug Geld", "Inte tillräckligt med pengar" },
 		[OpenTpwText.EnhancedTextures] = new[] { "Enhanced textures:", "Forbedrede teksturer:", "Verbeterde textures:", "Textures améliorées :", "Verbesserte Texturen:", "Förbättrade texturer:" },
+		[OpenTpwText.EnhancedInterface] = new[] { "HUD and icons:", "HUD og ikoner:", "HUD en pictogrammen:", "HUD et icônes :", "HUD und Symbole:", "HUD och ikoner:" },
+		[OpenTpwText.EnhancedInterfaceHelp] = new[]
+		{
+			"Enhanced uses the HD HUD and menu icons included with OpenTPW. Original uses the game's own interface. This choice is separate from world textures.",
+			"Forbedret bruger HD-HUD og menuikoner, der følger med OpenTPW. Oprindelig bruger spillets egen brugerflade. Dette valg er uafhængigt af verdensteksturer.",
+			"Verbeterd gebruikt de HD-HUD en menupictogrammen die bij OpenTPW zitten. Origineel gebruikt de eigen interface van het spel. Deze keuze staat los van de wereldtextures.",
+			"Amélioré utilise le HUD HD et les icônes de menu inclus avec OpenTPW. D'origine utilise l'interface du jeu. Ce choix est indépendant des textures du monde.",
+			"Erweitert nutzt das HD-HUD und die mit OpenTPW gelieferten Menüsymbole. Ursprünglich nutzt die Oberfläche des Spiels. Diese Auswahl ist unabhängig von den Welttexturen.",
+			"Förbättrad använder HD-HUD och menyikoner som följer med OpenTPW. Ursprunglig använder spelets eget gränssnitt. Detta val är separat från världens texturer."
+		},
 		[OpenTpwText.TexturePackMissing] = new[] { "No pack built", "Ingen pakke bygget", "Geen pakket gebouwd", "Aucun pack créé", "Kein Paket erstellt", "Inget paket byggt" },
 		[OpenTpwText.TexturePackOriginal] = new[] { "Original", "Oprindelig", "Origineel", "D'origine", "Ursprünglich", "Ursprunglig" },
 		[OpenTpwText.TexturePackClarity] = new[] { "Enhanced (Clarity)", "Forbedret (Clarity)", "Verbeterd (Clarity)", "Amélioré (Clarity)", "Verbessert (Clarity)", "Förbättrad (Clarity)" },

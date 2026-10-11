@@ -48,6 +48,10 @@ public partial class Level : IDisposable
 	/// </summary>
 	public ParkVisitInfo? Visit { get; }
 	public bool IsReadOnlyVisit => Visit != null;
+	/// <summary>The version 2 layout a visit applies instead of the shipped level import; null for version 1 packages and own parks.</summary>
+	private readonly OpenTPW.Online.Packages.MinimalParkPayload? visitLayout;
+	/// <summary>The visit's placed objects, one entry per payload record (null where content was missing); coaster stations are looked up here.</summary>
+	private IReadOnlyList<OriginalObject?>? visitedObjects;
 	// Developer tools only (--sandbox); players use the original-style online screens (OnlineScreens).
 	private OnlinePanel? onlinePanel;
 	private OnlineFolders onlineFolders = null!;
@@ -60,6 +64,7 @@ public partial class Level : IDisposable
 		LevelName = levelName;
 		Seed = seed ?? WorldSeed.Default;
 		Visit = visit;
+		visitLayout = visit != null && visit.Payload.HasBuiltLayout && !visit.IsSandbox ? visit.Payload : null;
 		Global = new SettingsFile( $"/levels/{levelName}/global.sam" );
 		Current = this;
 		if ( visit != null ? !visit.IsSandbox : loadOriginalLevel )
@@ -72,8 +77,36 @@ public partial class Level : IDisposable
 
 		SetupEntities();
 		SetupHud( onlineFolders );
+		if ( visitLayout != null )
+			ApplyVisitedLayout();
 		if ( visit?.Payload.PrototypeRide is { } ride )
 			RestoreVisitedRide( ride );
+	}
+
+	/// <summary>
+	/// Applies a version 2 shared layout: coaster tracks onto their stations, then a digest check that what this
+	/// visit built is the park the owner published (docs/ONLINE.md "Local files and visits"). Cells and objects are
+	/// applied inside <see cref="SetupEntities"/> so guests and bridges see them from the start.
+	/// </summary>
+	private void ApplyVisitedLayout()
+	{
+		var skipped = new List<string>();
+		if ( visitLayout!.Coasters != null && visitedObjects != null )
+		{
+			foreach ( var coaster in visitLayout.Coasters )
+			{
+				var station = coaster.Station < visitedObjects.Count ? visitedObjects[coaster.Station] : null;
+				if ( station == null || !SharedParkLayout.RestoreCoaster( this, station, coaster.Nodes, coaster.Closed, coaster.Complete ) )
+					skipped.Add( $"coaster at object {coaster.Station}" );
+			}
+		}
+		var digest = SharedParkLayout.DigestOf( this );
+		if ( digest != visitLayout.LayoutDigest )
+			Log.Warning( $"Shared park layout check failed: built {digest}, published {visitLayout.LayoutDigest}; the visit may differ from the owner's park." );
+		else
+			Log.Trace( $"Shared park layout applied and verified (digest {digest}: {visitLayout.Cells?.Count ?? 0} cells, {visitLayout.Objects.Count} objects, {visitLayout.Coasters?.Count ?? 0} coasters)." );
+		foreach ( var item in skipped )
+			Log.Warning( $"Shared park {item} could not be rebuilt and is not shown." );
 	}
 
 	/// <summary>Shows the shared park's prototype ride; the visitor cannot move or remove it.</summary>
@@ -118,13 +151,16 @@ public partial class Level : IDisposable
 			var paths = save?.PathCells.ToList() ?? Enumerable.Range( 0, field.CellCountX * field.CellCountZ )
 				.Select( index => (X: index % field.CellCountX, Y: index / field.CellCountX) )
 				.Where( cell => OriginalPark.Map.GetFlagsAt( cell.X, cell.Y ).HasFlag( MapCellFlags.InitialPath ) ).ToList();
+			if ( visitLayout?.PathCells.Count > 0 )
+				paths = visitLayout.PathCells.Select( cell => (X: cell.X, Y: cell.Y) ).ToList();
 			var focus = paths.Count > 0
 				? (X: (int)paths.Average( cell => cell.X ), Y: (int)paths.Average( cell => cell.Y ))
 				: (X: field.CellCountX / 2, Y: field.CellCountZ / 2);
 			var center = OriginalParkPlacement.GetCellCenter( OriginalPark.Heightfield, focus.X, focus.Y );
 			ParkCameraMode.InitialTarget = new Vector3( center.X, center.Y, 0 );
 			Log.Trace( $"Original {OriginalPark.LevelName} level: {OriginalTerrain.SurfaceCellCount} heightfield cells, {OriginalTerrain.TerrainMeshCount} terrain meshes"
-				+ (save == null ? "; no original save." : $"; Easymode import: {save.PathCells.Count} path cells, {save.PlacedObjects.Count} placed objects, {save.FixedItems.Count} fixed items.") );
+				+ (save == null ? "; no original save." : $"; Easymode import: {save.PathCells.Count} path cells, {save.PlacedObjects.Count} placed objects, {save.FixedItems.Count} fixed items.")
+				+ (visitLayout != null ? $"; shared layout: {visitLayout.Cells?.Count ?? 0} cells, {visitLayout.Objects.Count} objects, {visitLayout.Coasters?.Count ?? 0} coasters." : "") );
 		}
 		SetupObjects();
 		SetupCoasters();
@@ -150,7 +186,10 @@ public partial class Level : IDisposable
 
 	private void SetupGuests( OriginalPark park )
 	{
-		var grid = GuestPathGrid.FromOriginal( park.Map, park.Save );
+		// A version 2 visit walks the shared park's own cell map (the owner's built paths and queues), not the shipped import.
+		var grid = visitLayout?.Cells != null
+			? new GuestPathGrid( SharedParkLayout.BuildCellMap( park.Map.CellCountX, park.Map.CellCountY, visitLayout.Cells ) )
+			: GuestPathGrid.FromOriginal( park.Map, park.Save );
 		Guests = new GuestSimulation( grid, GuestSettings.Load( park.LevelName ), Seed.GuestStream );
 		var sprites = GuestSpriteAtlas.LoadKids();
 		GuestRenderer = new GuestRenderer( Guests, park.Heightfield, sprites );
@@ -197,6 +236,21 @@ public partial class Level : IDisposable
 
 	/// <summary>Footprint of the prototype ride in original cells: a square around the clicked cell.</summary>
 	public const int OriginalRideFootprintRadiusCells = 2;
+
+	/// <summary>
+	/// The published record of a placed object during a version 2 visit (open state, price, state of repair as
+	/// the owner left them), matched by Info.Id, anchor and rotation; null outside visits or for unknown objects.
+	/// </summary>
+	public OpenTPW.Online.Packages.ParkObjectRecord? PublishedObjectState( OriginalObject item )
+	{
+		if ( Visit?.Payload.Objects == null || item.Entry.IsFixedItem )
+			return null;
+		return Visit.Payload.Objects.FirstOrDefault( record =>
+			record.InfoId == item.Entry.InfoId && record.X == item.Placement.X && record.Y == item.Placement.Y && record.Rotation == item.Placement.Rotation );
+	}
+
+	/// <summary>The park's published statistics of a version 2 package, for read-only display; null otherwise.</summary>
+	public OpenTPW.Online.Packages.ParkStatsRecord? PublishedParkStats => Visit?.Payload.Stats;
 
 	public bool TryGetPlacementPosition( Vector2 mousePosition, Vector2 viewportSize, out Vector3 position )
 	{

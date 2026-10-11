@@ -254,7 +254,8 @@ public sealed partial class ParkHud
 			// [APPROX:UI-028] authored excitement as a percentage; unknown simulation statistics stay unavailable.
 			new ObjectStat( UIStrings.Excitement, item.Entry.Settings.Has( "UsageInfo.ExcitementLevel" ) ? $"{item.Entry.Settings.GetInt( "UsageInfo.ExcitementLevel" )}%" : null ),
 			new ObjectStat( UIStrings.Reliability, null ),
-			new ObjectStat( UIStrings.StateOfRepair, null ),
+			// A version 2 visit shows the object's published state of repair (the owner's value, never simulated).
+			new ObjectStat( UIStrings.StateOfRepair, level.PublishedObjectState( item )?.Repair is { } repair ? $"{(int)Math.Round( repair )}%" : null ),
 			new ObjectStat( UIStrings.RemainingLife, null ),
 		}, EntryName( item.Entry ) ) : null;
 
@@ -373,6 +374,10 @@ public sealed partial class ParkHud
 			(UIStrings.QuitGame, () => Stack.Push( UiDialogs.Message( "confirmQuit", () => strings[UIStrings.ConfirmQuit],
 				(() => strings.Value( UIStrings.Yes ), host.Quit), (() => strings.Value( UIStrings.No ), Stack.Pop) ) )),
 		};
+		// [BIN:STP-PPC:0x10197D90 online pause menu] the online game type's pause menu offers only Resume Game, Exit To Lobby
+		// and Quit Game; a read-only visit of a shared park uses it (no Save, Load, Options or Go Online).
+		if ( level.IsReadOnlyVisit )
+			entries.RemoveAll( entry => entry.Label is not (UIStrings.ResumeGame or UIStrings.ExitToLobby or UIStrings.QuitGame) );
 		if ( host.GoOnline == null )
 			entries.RemoveAll( entry => entry.Label == UIStrings.GoOnline );
 		for ( var index = 0; index < entries.Count; index++ )

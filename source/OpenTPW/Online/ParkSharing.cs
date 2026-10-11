@@ -74,13 +74,13 @@ public static class ParkSharing
 		if ( payload.Source == MinimalParkPayload.SourceSandbox && (payload.PathCells.Count > 0 || payload.Objects.Count > 0) )
 			warnings.Add( "Shared sandbox path/object layouts cannot be drawn by this build; only the prototype ride is shown." );
 		var matches = false;
-		if ( payload.Source == MinimalParkPayload.SourceOriginalLevel )
+		if ( payload.Source == MinimalParkPayload.SourceOriginalLevel && !payload.HasBuiltLayout )
 		{
 			var local = ParkSnapshotBuilder.FromOriginal( OriginalPark.Load( payload.Level ), payload.PrototypeRide );
 			var localPayload = MinimalParkPayload.FromSnapshot( local );
 			matches = localPayload.PathCells.SequenceEqual( payload.PathCells ) && localPayload.Objects.SequenceEqual( payload.Objects );
 			if ( !matches )
-				warnings.Add( "This park's paths/objects differ from the original level import. This build draws the original import and lists the shared layout in the Online panel; edited layout rendering is not implemented." );
+				warnings.Add( "This version 1 park's paths/objects differ from the original level import. This build draws the original import and lists the shared layout in the Online panel; ask the owner to republish for the built layout." );
 		}
 		return new ParkVisitInfo( package, payload, missing, warnings, matches );
 	}
@@ -88,12 +88,20 @@ public static class ParkSharing
 	public static string Describe( ParkVisitInfo visit )
 	{
 		var manifest = visit.Package.Manifest;
+		var payload = visit.Payload;
 		var lines = new List<string>
 		{
 			$"Park '{manifest.Park.Name}' by {(manifest.Park.Author.Length > 0 ? manifest.Park.Author : "unknown")} ({manifest.Park.Level}, {manifest.Game.Language}), created {manifest.CreatedUtc:u}.",
-			$"Payload {manifest.Payload.Format} v{manifest.Payload.Version}: {visit.Payload.PathCells.Count} path cells, {visit.Payload.Objects.Count} objects"
-				+ (visit.Payload.PrototypeRide != null ? ", prototype ride" : "") + "; flags: " + string.Join( ", ", manifest.Flags ) + ".",
+			$"Payload {manifest.Payload.Format} v{manifest.Payload.Version}: {payload.PathCells.Count} path cells, {payload.Objects.Count} objects"
+				+ (payload.PrototypeRide != null ? ", prototype ride" : "") + "; flags: " + string.Join( ", ", manifest.Flags ) + ".",
 		};
+		if ( payload.HasBuiltLayout )
+		{
+			var queues = payload.Cells!.Count( cell => cell.Type == (byte)ParkCellType.Queue );
+			lines.Add( $"Built layout: {payload.Cells.Count - queues} path cells and {queues} queue cells, {payload.Coasters?.Count ?? 0} coaster(s), digest {payload.LayoutDigest}." );
+			if ( payload.Stats is { } stats )
+				lines.Add( $"Published park: rating {stats.Rating}, value ${stats.Value}, balance ${stats.Balance}, {stats.Visitors} visitors, {stats.Date}; shown read-only." );
+		}
 		if ( visit.MissingContent.Count > 0 )
 			lines.Add( $"Missing content ({visit.MissingContent.Count}): " + string.Join( ", ", visit.MissingContent.Select( item => $"{item.Kind} {item.Id}" ) ) );
 		lines.AddRange( visit.Warnings );

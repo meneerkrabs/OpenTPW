@@ -4,9 +4,10 @@ using OpenTPW.Online.Packages;
 namespace OpenTPW;
 
 /// <summary>
-/// Builds the version 1 park snapshot (<see cref="MinimalParkPayload"/>) from what main can load:
-/// the level, the imported original Easymode path cells and object records, and the prototype ride.
-/// Economy state is not captured (owned by the economy slice; see docs/ONLINE.md).
+/// Builds the park snapshot (<see cref="MinimalParkPayload"/> version 2) from what main can load: the
+/// level, the complete built layout — cell map (paths and queues with links and flags), placed objects with
+/// their published state, coaster tracks — and the park's published statistics. The economy itself is not
+/// captured (a visit runs no economy; see docs/ONLINE.md); only the read-only statistics a visitor may see.
 /// </summary>
 public static class ParkSnapshotBuilder
 {
@@ -28,17 +29,64 @@ public static class ParkSnapshotBuilder
 		return payload.ToSnapshot( RequiredContent( park.LevelName, objects.Select( item => item.InfoId ), park.Catalog ) );
 	}
 
+	/// <summary>
+	/// A shipped original level, captured as the visitor will see it: the cell map its save or MAP initial
+	/// paths describe (the same view <see cref="GuestPathGrid.FromOriginal"/> builds) and its object records.
+	/// Used by the offline export command; the in-game publish path captures the live level instead.
+	/// </summary>
+	public static ParkSnapshot FromOriginalLevel( OriginalPark park )
+	{
+		var save = park.Save;
+		var objects = new List<ParkObjectRecord>();
+		if ( save != null )
+		{
+			objects.AddRange( save.PlacedObjects.Select( item => ToRecord( item.Record ) ) );
+			objects.AddRange( save.UnresolvedObjects.Select( ToRecord ) );
+			objects.AddRange( save.FixedItems.Select( ToRecord ) );
+		}
+		var cells = SharedParkLayout.CaptureCells( ParkCellMap.FromOriginal( park.Map, save ) );
+		var payload = LayoutPayload( park, cells, objects, Array.Empty<CoasterTrackRecord>(), null, null );
+		return payload.ToSnapshot( RequiredContent( park.LevelName, payload.Objects.Select( item => item.InfoId ), park.Catalog ) );
+	}
+
 	public static ParkSnapshot FromSandbox( string levelName, PrototypeRideState? ride )
 	{
 		var payload = new MinimalParkPayload( levelName, MinimalParkPayload.SourceSandbox, Array.Empty<CellRef>(), Array.Empty<ParkObjectRecord>(), ride, null );
 		return payload.ToSnapshot( RequiredContent( levelName, Array.Empty<int>(), new Dictionary<int, OriginalObjectInfo>() ) );
 	}
 
-	/// <summary>Live level: the imported original park or the sandbox, with the placed prototype ride.</summary>
+	/// <summary>Live level: the complete built park (v2) for an original level, or the sandbox with the placed prototype ride.</summary>
 	public static ParkSnapshot FromLevel( Level level )
 	{
 		var ride = level.PlacedRide == null ? null : new PrototypeRideState( level.PlacedRide.Position.X, level.PlacedRide.Position.Y, level.PlacedRide.IsOpen );
-		return level.OriginalPark != null ? FromOriginal( level.OriginalPark, ride ) : FromSandbox( level.LevelName, ride );
+		if ( level.OriginalPark == null )
+			return FromSandbox( level.LevelName, ride );
+		var cells = level.Guests != null ? SharedParkLayout.CaptureCells( level.Guests.Grid.Cells ) : new List<ParkCellRecord>();
+		var objects = SharedParkLayout.CaptureObjects( level );
+		var coasters = SharedParkLayout.CaptureCoasters( level, objects );
+		var payload = LayoutPayload( level.OriginalPark, cells, objects, coasters, ride, CapturedStats( level ) );
+		return payload.ToSnapshot( RequiredContent( level.LevelName, payload.Objects.Select( item => item.InfoId ), level.OriginalPark.Catalog ) );
+	}
+
+	private static MinimalParkPayload LayoutPayload( OriginalPark park, IReadOnlyList<ParkCellRecord> cells, IReadOnlyList<ParkObjectRecord> objects,
+		IReadOnlyList<CoasterTrackRecord> coasters, PrototypeRideState? ride, ParkStatsRecord? stats )
+	{
+		var pathCells = cells.Where( cell => cell.Type == (byte)ParkCellType.Path ).Select( cell => new CellRef( cell.X, cell.Y ) ).ToList();
+		var payload = new MinimalParkPayload( park.LevelName, MinimalParkPayload.SourceOriginalLevel, pathCells, objects, ride, null,
+			cells, coasters, stats, null );
+		// The digest covers exactly the members written above; compute it on the finished payload.
+		return payload with { LayoutDigest = payload.ComputeLayoutDigest() };
+	}
+
+	/// <summary>The park's published statistics: what a visitor may see of the owner's economy, read-only.</summary>
+	private static ParkStatsRecord? CapturedStats( Level level )
+	{
+		if ( level.Park?.Economy is not { } economy )
+			return null;
+		var date = ParkCalendar.ToDate( economy.Tick );
+		return new ParkStatsRecord( economy.ParkRating, economy.ParkValue, economy.Ledger.Balance,
+			economy.GuestStatistics.PeopleInPark, economy.EntranceFee, economy.IsParkOpen,
+			$"Year {date.Year}, {new DateTime( 2000, date.Month, 1 ).ToString( "MMMM", System.Globalization.CultureInfo.InvariantCulture )}" );
 	}
 
 	private static ParkObjectRecord ToRecord( SaveObject record ) =>

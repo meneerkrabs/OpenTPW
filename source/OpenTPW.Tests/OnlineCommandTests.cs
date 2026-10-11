@@ -86,7 +86,10 @@ public class OnlineCommandTests
 			var folders = new OnlineFolders( Path.Combine( root, "online" ) );
 			Assert.IsTrue( OnlineCommands.Run( new[] { "--export-park", output, "--load-original-level", "jungle" }, data, folders, _ => { } ) );
 			var imported = OnlineCommands.Import( output, data, folders );
-			Assert.IsTrue( imported.Visit.MatchesOriginalImport );
+			// The offline export now carries the built layout (payload version 2); a visit would rebuild it.
+			Assert.IsTrue( imported.Visit.Payload.HasBuiltLayout );
+			Assert.IsFalse( imported.Visit.MatchesOriginalImport );
+			Assert.AreEqual( 0, imported.Visit.MissingContent.Count );
 			Assert.IsTrue( File.Exists( imported.Path ) );
 			StringAssert.StartsWith( imported.Path, Path.Combine( folders.Root, "visited" ) + Path.DirectorySeparatorChar );
 			Assert.IsNull( imported.Visit.Payload.Economy );

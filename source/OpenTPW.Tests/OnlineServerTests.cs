@@ -126,6 +126,29 @@ public class OnlineServerTests
 	}
 
 	[TestMethod]
+	public async Task ServerAcceptsBothParkPackageVersions()
+	{
+		await using var server = await LoopbackServer.StartAsync();
+		try
+		{
+			using var owner = await server.LoginAsync( "Owner" );
+			// A version 2 package (the built layout) publishes, lists and downloads as itself…
+			var v2 = await owner.UploadParkAsync( SharedParkTests.LayoutPackage() );
+			var downloaded = await owner.DownloadParkAsync( v2.Id );
+			Assert.AreEqual( 2, downloaded.Manifest.FormatVersion );
+			Assert.IsTrue( MinimalParkPayload.FromSnapshot( downloaded.ToSnapshot() ).HasBuiltLayout );
+			// …and a version 1 package from an OpenTPW 0.7 client is still accepted and served unchanged.
+			var v1 = await owner.UploadParkAsync( SharedParkTests.V1Package() );
+			Assert.AreEqual( 1, (await owner.DownloadParkAsync( v1.Id )).Manifest.FormatVersion );
+			Assert.AreEqual( 2, (await owner.ListParksAsync()).Total );
+		}
+		finally
+		{
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
 	public async Task ParksUploadListDownloadVisitAndVote()
 	{
 		await using var server = await LoopbackServer.StartAsync( options => options.MaximumParksPerPlayer = 2 );

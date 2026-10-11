@@ -23,6 +23,7 @@ REGISTERS = {
     "WALK": "source/OpenTPW/World/Guests/WalkApproximations.cs",
     "HEADS": "source/OpenTPW/World/Guests/HeadApproximations.cs",
     "SAVE": "source/OpenTPW/Economy/SaveApproximations.cs",
+    "BLUEPRINT": "source/OpenTPW/World/Original/BlueprintApproximations.cs",
 }
 MARKDOWN_REGISTERS = {"ONLINE": "docs/ONLINE.md"}
 EXTENSION_SCOPE = "OpenTPW online extension"

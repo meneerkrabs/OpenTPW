@@ -74,6 +74,8 @@ internal sealed partial class SandboxSmokeTest
 		hud.Status.Speed = GameSpeed.Paused;
 		hud.Update( hudContext, UiInput.Idle( endPoint ) );
 		Require( level.CellTool.Ghost is { Built.Count: SmokePathLength + 1 } && grid.WalkableCount == walkable, "the HUD hover previews the line without building it" );
+		Require( level.Blueprint is { } blueprint && blueprint.Cells.Count == SmokePathLength + 1 && blueprint.Cells.All( cell => cell.Marker == BlueprintMarker.Allowed ),
+			"the previewed line shows as blue blueprint markers" );
 		hud.Update( hudContext, new UiInput( endPoint, true, true, false, false, UiKeys.None ) );
 		hud.Update( hudContext, new UiInput( endPoint, false, false, true, false, UiKeys.None ) );
 		hud.Status.Speed = speed;

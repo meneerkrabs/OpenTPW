@@ -534,23 +534,11 @@ public sealed class ParkEconomy : IParkEconomy
 	public PurchaseResult TryBuild( int infoId, out ParkObjectState? built )
 	{
 		built = null;
-		if ( IsBankrupt )
-			return PurchaseResult.Bankrupt;
-		if ( !Catalog.TryGet( infoId, out var info ) )
-			return PurchaseResult.UnknownObject;
-		if ( !info.IsBuyable )
-			return PurchaseResult.NotBuyable;
-		if ( !Research.IsAvailable( infoId ) )
-			return PurchaseResult.NotResearched;
-		if ( info.Kind == ParkObjectKind.Upgrade && !objects.Values.Any( item => item.InfoId == info.AddOnTargetId ) )
-			return PurchaseResult.MissingTargetRide;
-		// [BIN:STP-PPC:0x100DA874 object purchase] an object with a GoldenTicketCost (+0xC4) above 0 that the park has not yet bought with tickets costs that many tickets (0x100D3000; allowed when cost <= earned - spent) and no cash; it joins the owned set, and later copies and ticket-free objects take the cash path
-		var payWithTickets = Settings.CanSpendTickets && info.GoldenTicketCost > 0 && !ticketItems.Contains( infoId );
-		if ( payWithTickets && info.GoldenTicketCost > GoldenTicketsAvailable )
-			return PurchaseResult.NotEnoughGoldenTickets;
-		// [APPROX:ECON-028] purchases need a balance covering the cost — evidence needed: capture of building with too little money
-		if ( !payWithTickets && info.PurchaseCost > Balance )
-			return PurchaseResult.NotEnoughMoney;
+		var check = CheckBuild( infoId );
+		if ( check != PurchaseResult.Ok )
+			return check;
+		Catalog.TryGet( infoId, out var info );
+		var payWithTickets = PaysWithTickets( info );
 		var cost = payWithTickets ? 0 : info.PurchaseCost;
 		if ( payWithTickets )
 		{
@@ -563,6 +551,32 @@ public sealed class ParkEconomy : IParkEconomy
 		Raise( ParkEventKind.ObjectBuilt, cost, built.Id, infoId, info.Name );
 		return PurchaseResult.Ok;
 	}
+
+	/// <summary>The purchase rules of <see cref="TryBuild"/> without buying (the build tool's ghost uses it).</summary>
+	public PurchaseResult CheckBuild( int infoId )
+	{
+		if ( IsBankrupt )
+			return PurchaseResult.Bankrupt;
+		if ( !Catalog.TryGet( infoId, out var info ) )
+			return PurchaseResult.UnknownObject;
+		if ( !info.IsBuyable )
+			return PurchaseResult.NotBuyable;
+		if ( !Research.IsAvailable( infoId ) )
+			return PurchaseResult.NotResearched;
+		if ( info.Kind == ParkObjectKind.Upgrade && !objects.Values.Any( item => item.InfoId == info.AddOnTargetId ) )
+			return PurchaseResult.MissingTargetRide;
+		var payWithTickets = PaysWithTickets( info );
+		if ( payWithTickets && info.GoldenTicketCost > GoldenTicketsAvailable )
+			return PurchaseResult.NotEnoughGoldenTickets;
+		// [APPROX:ECON-028] purchases need a balance covering the cost — evidence needed: capture of building with too little money
+		if ( !payWithTickets && info.PurchaseCost > Balance )
+			return PurchaseResult.NotEnoughMoney;
+		return PurchaseResult.Ok;
+	}
+
+	// [BIN:STP-PPC:0x100DA874 object purchase] an object with a GoldenTicketCost (+0xC4) above 0 that the park has not yet bought with tickets costs that many tickets (0x100D3000; allowed when cost <= earned - spent) and no cash; it joins the owned set, and later copies and ticket-free objects take the cash path
+	private bool PaysWithTickets( EconomyObjectInfo info ) =>
+		Settings.CanSpendTickets && info.GoldenTicketCost > 0 && !ticketItems.Contains( info.InfoId );
 
 	/// <summary>Registers an object that already exists (imported original save, fixed item) without charging.</summary>
 	public ParkObjectState RegisterExisting( int infoId )

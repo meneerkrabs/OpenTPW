@@ -66,8 +66,15 @@ around the edges. What is traced:
   longitude L stands at atan2(x, z) = 30° − L, sin φ up the model's +Y axis.
 
 A click on a city's pin selects it and opens its lobby (below; `tp.exe` 0x005DD530 sets the
-selected city that the lobby's top-10 request reads, 0x005E23F0). Not yet built: choosing a city when
-publishing, and the satellites' player counts.
+selected city that the lobby's top-10 request reads, 0x005E23F0). The globe also shows over a
+park (Go Online from the pause menu): it replaces the park and the HUD, and closing it restores the
+park's camera.
+
+**Publish Park** starts on the globe as the original's PublishGlobe does: "Choose the city to
+publish in" (UITEXT 419) at the top, the panel's back, zoom and rotate buttons, and a click on a
+city's pin opens the name and description form for that city (Mac: the hovered city is stored and
+the Publish Park dialog opens, 0x1018CE80). A server without cities skips the globe. Not yet
+built: the satellites' player counts.
 
 ### City lobby
 
@@ -250,4 +257,5 @@ are not claims that the original online protocol or service has been recovered.
 | ONLINE-012 | Edge steering starts once the cursor has moved on the globe screen. | Whether the original steers from the first frame. |
 | ONLINE-013 | Pins are twice the decoded (s, s, p) scale and stand on the mesh surface (radius 119.7). | The scale of the original flag node's parent and a capture of the original globe. |
 | ONLINE-015 | `f_lobbutbg` is the city panel's button background in its second rectangle (67,1273,438,1484). | The table field that names it. |
+| ONLINE-017 | The publish globe reuses the Online World's panel (back, zoom, rotate) without Find Parks and the satellites, with UITEXT 419 at the top. | The publish globe's layout table. |
 | ONLINE-016 | Each city-lobby island is the island of its park's theme. | The argument mapping of `tp.exe` 0x005E27B0 (what the top-10 list entry passes to 0x005E3210). |

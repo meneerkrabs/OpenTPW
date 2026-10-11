@@ -330,9 +330,9 @@ public sealed class OnlineSession : IDisposable
 		return list.Parks.Count == 0 ? OnlineStrings.Ui( OnlineStrings.NoSearchResults, "No search results" ) : null;
 	} );
 
-	public void Publish( ParkPackage package, bool showOnWebsite = false ) => WithClient( async client =>
+	public void Publish( ParkPackage package, bool showOnWebsite = false, int cityId = 0 ) => WithClient( async client =>
 	{
-		await client.UploadParkAsync( package, showOnWebsite: showOnWebsite );
+		await client.UploadParkAsync( package, showOnWebsite: showOnWebsite, cityId: cityId );
 		return OnlineStrings.Ui( OnlineStrings.ParkPublished, "PARK PUBLISHED" ).Replace( "\n\n", " " );
 	} );
 

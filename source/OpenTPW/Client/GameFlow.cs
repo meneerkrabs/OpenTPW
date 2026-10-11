@@ -252,6 +252,7 @@ internal sealed class GameFlow : IDisposable
 			entity.Delete();
 		Lobby = null;
 		Globe = null;
+		parkCamera = null;
 		shownCities = null;
 		cityScene = null;
 		cityKey = null;
@@ -304,6 +305,7 @@ internal sealed class GameFlow : IDisposable
 		if ( Level != null && Hud != null )
 		{
 			Level.UiCapturesMouse = Hud.Update( Context, input );
+			UpdateParkGlobe( Hud );
 			Level.SimulationTimeScale = Hud.Status.TimeScale;
 			Level.Update();
 			Advisor?.Update( Hud.Paused );
@@ -346,6 +348,69 @@ internal sealed class GameFlow : IDisposable
 	/// While the Online World is open in the lobby, the 3D background is the online globe instead of the islands
 	/// (docs/ONLINE.md); closing it brings the lobby and its camera back.
 	/// </summary>
+	/// <summary>The park's camera while the online globe is shown over the park.</summary>
+	private CameraMode? parkCamera;
+
+	/// <summary>
+	/// In a park, the online globe screens (the Online World, choosing a city to publish in) draw the globe instead of the
+	/// park and the HUD, with the globe camera; closing them restores the park's camera.
+	/// </summary>
+	private void UpdateParkGlobe( ParkHud hud )
+	{
+		var wanted = hud.Stack.Screens.Any( screen => screen is UI.OnlineGlobeScreen );
+		if ( wanted == (parkCamera != null) )
+		{
+			if ( wanted && Globe != null && onlineSession != null && !ReferenceEquals( onlineSession.Cities, shownCities ) )
+			{
+				shownCities = onlineSession.Cities;
+				Globe.SetCities( shownCities );
+			}
+			return;
+		}
+		if ( wanted )
+		{
+			try
+			{
+				Globe ??= new GlobeScene();
+			}
+			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or InvalidOperationException )
+			{
+				Log.Warning( $"Online globe unavailable: {exception.Message}" );
+				return;
+			}
+			var definition = LobbyDefinitionOrNull();
+			if ( definition != null )
+			{
+				GlobeCameraMode.RadiusOut = definition.GlobeRadiusOut;
+				GlobeCameraMode.RadiusIn = definition.GlobeRadiusIn;
+			}
+			GlobeCameraMode.Reset();
+			parkCamera = Camera.Mode;
+			Camera.SetCameraMode<GlobeCameraMode>();
+			Globe.Visible = true;
+			shownCities = null;
+		}
+		else
+		{
+			Camera.Mode = parkCamera!;
+			parkCamera = null;
+			if ( Globe != null )
+				Globe.Visible = false;
+		}
+	}
+
+	private LobbyDefinition? LobbyDefinitionOrNull()
+	{
+		try
+		{
+			return LobbyDefinition.Load();
+		}
+		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or InvalidOperationException )
+		{
+			return null;
+		}
+	}
+
 	private enum Backdrop { Lobby, Globe, City }
 
 	private Backdrop backdrop = Backdrop.Lobby;
@@ -508,7 +573,7 @@ internal sealed class GameFlow : IDisposable
 		Session = Online,
 		Level = () => Level,
 		Visit = visit => QueueLevel( visit.Level, () => StartLevel( visit.Level, original: !visit.IsSandbox, developerPanels: false, visit: visit ) ),
-		Globe = () => Level == null ? Globe : null,
+		Globe = () => Globe,
 	} ).ShowWorld();
 
 	public void Dispose()

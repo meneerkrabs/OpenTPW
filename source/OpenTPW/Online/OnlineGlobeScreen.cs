@@ -21,7 +21,7 @@ public sealed class OnlineGlobeScreen : UiScreen
 	private NVector2? firstMouse;
 	private bool mouseMoved;
 
-	public OnlineGlobeScreen( Func<GlobeScene?> globe ) : base( "onlineWorld" )
+	public OnlineGlobeScreen( Func<GlobeScene?> globe, string name = "onlineWorld" ) : base( name )
 	{
 		this.globe = globe;
 		HidesBelow = true;
@@ -69,7 +69,9 @@ public sealed class OnlineGlobeScreen : UiScreen
 		}
 		// Arrow keys turn the globe instead of moving the focus; the right button steers instead of going back.
 		var forwarded = input with { Pressed = input.Pressed & ~(UiKeys.Left | UiKeys.Right | UiKeys.Up | UiKeys.Down), RightPressed = false };
-		return base.Update( context, forwarded );
+		base.Update( context, forwarded );
+		// The globe covers the whole screen: nothing below (a park) gets the input.
+		return true;
 	}
 
 	/// <summary>World-space ray through a canvas pixel, from the current camera.</summary>

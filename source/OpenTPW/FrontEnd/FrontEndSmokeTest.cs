@@ -655,7 +655,26 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			flow.Hud.OpenPauseMenu();
 		} );
 		Wait( "pause again", 3 );
-		Do( "exit to lobby", () => Click( flow.Hud!.Stack.Top!, nameof( UIStrings.ExitToLobby ) ) );
+		// The online globe over a park: it replaces the park and the HUD, and closing it restores the park camera.
+		CameraMode? parkCamera = null;
+		Do( "online globe in the park", () =>
+		{
+			parkCamera = Camera.Mode;
+			flow.ShowOnline( flow.Hud!.Stack );
+		} );
+		Wait( "park globe renders", 3 );
+		Do( "park globe", () =>
+		{
+			Require( flow.Globe is { Visible: true } && Camera.Mode is GlobeCameraMode, "Go Online in a park shows the globe with its camera" );
+			CaptureFrame( "online-park-globe.png" );
+			flow.Hud!.Stack.Pop();
+		} );
+		Wait( "park returns", 3 );
+		Do( "exit to lobby", () =>
+		{
+			Require( ReferenceEquals( Camera.Mode, parkCamera ) && flow.Globe is { Visible: false }, "closing the globe restores the park's camera" );
+			Click( flow.Hud!.Stack.Top!, nameof( UIStrings.ExitToLobby ) );
+		} );
 		Wait( "lobby again", 20 );
 		Do( "back in lobby", () =>
 		{

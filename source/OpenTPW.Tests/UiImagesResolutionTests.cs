@@ -55,7 +55,7 @@ public sealed class UiImagesResolutionTests
 			Assert.AreEqual( LegacyResolve( name, expectedFiles ), UiImages.Resolve( name, directory ), name );
 			Assert.AreEqual( LegacyResolve( name, expectedFiles ), UiImages.Resolve( name, directory.ToUpperInvariant() ), name );
 		}
-		Assert.AreEqual( Path.Combine( directory, "B_OKAY.WCT" ), UiImages.Resolve( "b_okay", directory ) );
+		Assert.AreEqual( expectedFiles[0], UiImages.Resolve( "b_okay", directory ) );
 		Assert.AreEqual( 1, ResolutionArchive.EnumerationCount, "all warm lookups share one directory listing, including different directory casing" );
 	}
 

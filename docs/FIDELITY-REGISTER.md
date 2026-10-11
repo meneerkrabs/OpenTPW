@@ -948,7 +948,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | texture-pack | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:498` | [EXT:texture-pack] Original, Clarity, the legacy Enhanced choice, then every other usable pack. |
 | texture-pack | `source/OpenTPW/UI/Original/Options/TexturePackDownloadScreen.cs:4` | [EXT:texture-pack] A release download, not an original-game dialog. |
 | texture-pack | `source/OpenTPW/UI/Original/UiImages.cs:29` | [EXT:texture-pack] the optional local pack replaces interface art too (docs/TEXTURE-PACKS.md); UVs are relative, so a larger image drops in. |
-| texture-pack | `source/OpenTPW/UI/Original/UiRenderer.cs:170` | [EXT:texture-pack] The texture pack changed: forgets the cached interface images (they are decoded again on first use, |
+| texture-pack | `source/OpenTPW/UI/Original/UiRenderer.cs:175` | [EXT:texture-pack] The texture pack changed: forgets the cached interface images (they are decoded again on first use, |
 | texture-pack | `source/OpenTPW/World/Guests/GuestRenderer.cs:57` | [EXT:texture-pack] The texture pack changed: builds the atlas textures again from the new pack (or the originals), binds |
 | texture-pack | `source/OpenTPW/World/Guests/GuestRenderer.cs:101` | [EXT:texture-pack] upscaled guest sprites from the optional local pack |
 | tpi-viewer | `source/OpenTPW/Client/Game.cs:81` | [EXT:tpi-viewer] Theme Park Inc data (docs/THEME-PARK-INC.md): refused for normal starts, viewable with --load-original-level. |

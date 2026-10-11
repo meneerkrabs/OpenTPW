@@ -196,19 +196,15 @@ public class SharedParkTests
 			// describe what a visit can rebuild, or its digest check fails.
 			foreach ( var fixedItem in payload.Objects.Where( item => item.Fixed ) )
 				Assert.AreEqual( (0, 0, 0), (fixedItem.X, fixedItem.Y, fixedItem.Rotation), $"fixed item {fixedItem.InfoId} is recorded where a level places it" );
-			// The placement round trip a visit performs: placing the payload's records through the level's
-			// own ParkObjects lands every object where its record says (the fixed-item rule above), so the
-			// digest the visit recomputes from the placements equals the published one.
-			var objects = new ParkObjects( ObjectCatalog.Load( "jungle", easy: false ), new OriginalParkGrid( park ) );
-			var (placed, skipped) = SharedParkLayout.PlaceObjects( objects, payload.Objects );
-			Assert.AreEqual( 0, skipped.Count, string.Join( ", ", skipped ) );
-			for ( var index = 0; index < payload.Objects.Count; index++ )
+			// Actual OriginalObject placement allocates textures and models. The rendered round trip is
+			// verified by --visit-park --smoke-test; this CPU test checks its catalog and footprint inputs.
+			var catalog = ObjectCatalog.Load( "jungle", easy: false );
+			foreach ( var record in payload.Objects )
 			{
-				var record = payload.Objects[index];
-				Assert.IsNotNull( placed[index], $"object {record.InfoId} placed" );
-				Assert.AreEqual( (record.Fixed ? (0, 0, 0) : (record.X, record.Y, record.Rotation)),
-					(placed[index]!.Placement.X, placed[index]!.Placement.Y, placed[index]!.Placement.Rotation),
-					$"object {record.InfoId} is placed where its record says" );
+				var entry = catalog.Find( record.InfoId );
+				Assert.IsNotNull( entry, $"object {record.InfoId} is present in the local catalog" );
+				Assert.IsTrue( SharedParkLayout.FitsLevel( entry!, record, park.Map.CellCountX, park.Map.CellCountY ),
+					$"object {record.InfoId} fits the level map" );
 			}
 		}
 		finally { OpenTPW.Common.GlobalNamespace.FileSystem = previous; Directory.Delete( root, true ); }
@@ -225,19 +221,16 @@ public class SharedParkTests
 		try
 		{
 			var grid = new SandboxParkGrid();
-			var objects = new ParkObjects( ObjectCatalog.Load( "jungle" ), grid );
-			var buildable = objects.Catalog.Buildable.First( entry => entry.Shape.Width > 1 || entry.Shape.Height > 1 );
+			var buildable = ObjectCatalog.Load( "jungle" ).Buildable.First( entry => entry.Shape.Width > 1 || entry.Shape.Height > 1 );
 			// A payload record may name any cell up to 1023; the level's own map is smaller, and a footprint that
 			// leaves it is skipped and reported rather than placed (as the original import rejects such records).
-			var (placed, skipped) = SharedParkLayout.PlaceObjects( objects, new[]
-			{
-				new ParkObjectRecord( buildable.InfoId, grid.Width - 1, grid.Height - 1, buildable.Shape.Width, buildable.Shape.Height, 0, false ),
-				new ParkObjectRecord( buildable.InfoId, 0, 0, buildable.Shape.Width, buildable.Shape.Height, 0, false ),
-			} );
-			Assert.IsNull( placed[0] );
-			Assert.IsNotNull( placed[1] );
-			Assert.AreEqual( 1, skipped.Count );
-			StringAssert.Contains( skipped[0], "outside the level map" );
+			var outside = new ParkObjectRecord( buildable.InfoId, grid.Width - 1, grid.Height - 1,
+				buildable.Shape.Width, buildable.Shape.Height, 0, false );
+			var inside = outside with { X = 0, Y = 0 };
+			Assert.IsFalse( SharedParkLayout.FitsLevel( buildable, outside, grid.Width, grid.Height ) );
+			Assert.IsTrue( SharedParkLayout.FitsLevel( buildable, inside, grid.Width, grid.Height ) );
+			// Published width/height are untrusted; clipping uses the local shape instead.
+			Assert.IsFalse( SharedParkLayout.FitsLevel( buildable, outside with { Width = 0, Height = 0 }, grid.Width, grid.Height ) );
 		}
 		finally { OpenTPW.Common.GlobalNamespace.FileSystem = previous; }
 	}

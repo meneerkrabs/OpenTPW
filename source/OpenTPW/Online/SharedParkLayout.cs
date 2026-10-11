@@ -123,8 +123,7 @@ public static class SharedParkLayout
 				skipped.Add( $"object {record.InfoId}" );
 				continue;
 			}
-			if ( ObjectFootprint.GetCells( entry.Shape, record.X, record.Y, record.Rotation )
-				.Any( cell => cell.X < 0 || cell.Y < 0 || cell.X >= objects.Grid.Width || cell.Y >= objects.Grid.Height ) )
+			if ( !FitsLevel( entry, record, objects.Grid.Width, objects.Grid.Height ) )
 			{
 				placed.Add( null );
 				skipped.Add( $"object {record.InfoId} at ({record.X}, {record.Y}) outside the level map" );
@@ -134,6 +133,11 @@ public static class SharedParkLayout
 		}
 		return (placed, skipped);
 	}
+
+	/// <summary>Checks the local catalog footprint, including rotation, without creating graphics resources.</summary>
+	internal static bool FitsLevel( ObjectCatalogEntry entry, ParkObjectRecord record, int width, int height ) =>
+		ObjectFootprint.GetCells( entry.Shape, record.X, record.Y, record.Rotation )
+			.All( cell => cell.X >= 0 && cell.Y >= 0 && cell.X < width && cell.Y < height );
 
 	/// <summary>
 	/// Rebuilds a published coaster on its placed station: each pylon is appended at its published height (the

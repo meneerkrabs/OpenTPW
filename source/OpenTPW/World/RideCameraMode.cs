@@ -46,8 +46,11 @@ public sealed class RideCameraMode : CameraMode
 	{
 		var (eye, look) = Frame( ride, heading );
 		Position = eye;
-		Rotation = Rotation.LookAt( look );
+		Rotation = FrameRotation( eye, look );
 	}
+
+	/// <summary>The look target is a world position; rotation follows its direction relative to the eye.</summary>
+	internal static Rotation FrameRotation( Vector3 eye, Vector3 look ) => Rotation.LookAt( look - eye );
 
 	/// <summary>Whether a placed ride can be ridden: the prototype ride, or a coaster whose track is complete.</summary>
 	public static bool CanRide( OriginalObject ride ) => ride is PrototypeRide || CanRide( ride.Runtime );

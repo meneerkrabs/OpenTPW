@@ -5,8 +5,9 @@ visited it, traced statically in the Feral Mac application `mac-feral/bin/SimThe
 (SHA-256 `04809cd4…295f5`, see [PPC-ui.md](PPC-ui.md)) and its online library
 `mac-feral/bin/libraries/online_shared.data` (SHA-256 `05c21d2e…9b2cb`, PEF, exports listed below).
 The Windows v2.0 `tp.exe` cited in earlier lanes (decrypted, SHA-256 `5472f97b…1b805`) was not available
-this round; the Mac build carries the same online client code (its imports from `online shared` are the
-Windows DLL's exports by name), so Mac addresses are cited here. Outside facts (archived official site,
+this round. The Mac build imports an online client API with names corresponding to the Windows DLL's
+exports; that does not establish identical implementation. The addresses below support the Mac build
+only. Outside facts (archived official site,
 official FAQ, FreeSO threads) are in [ONLINE-SOURCES.md](ONLINE-SOURCES.md); where both exist, the trace
 wins. No original executable was run; disassembly stayed outside Git.
 
@@ -136,3 +137,28 @@ absence is an observation of the traced flows, not proof: nothing here shows a b
   Totem on its modelled motion), inspects objects (published open state, price, state of repair) and
   the park's published statistics read-only, and votes through the existing vote endpoint. Chat and
   other players in the park are not implemented (the chat-park lane).
+
+## Verification of the shared-park lane
+
+The finishing pass on October 11 ran the online, shared-layout and ride-camera tests with the local
+original PC installation: **71 passed, none skipped or failed**. This includes version 1 compatibility,
+malformed payload rejection, server-side validation, repeated/self-visit counting, the CPU coaster
+rebuild, and a camera regression proving that translating a ride leaves its viewing direction unchanged.
+The camera's rotation consumes `look - eye`; the look target is a world position, not a direction.
+Object footprint tests use the local catalog shape without allocating GPU resources. Actual rendered
+object placement is checked separately by the native visit test.
+
+A fresh offline Jungle export was loaded in a native read-only visit: **78 cells, 14 objects, no
+coasters**, layout digest `5381d1ab76f0f12b` matched the rebuilt world, eight rendered frames and a
+1280 × 720 GPU capture. Build, remove, save, load and re-export were refused. This shipped fixture has
+no completed coaster or prototype ride, so that run did **not** exercise the native ride-camera step;
+the original-data CPU test exercises the front-car camera moving with a running coaster.
+
+The native front-end smoke passed **514 frames** with the online pause-menu expectation and read-only
+object guards. It sold the bought Totem for **$1,625**; the earlier reported zero-refund failure did not
+reproduce in this run. Both native runs used `--mute --no-advisor`, so they do not verify audio or automatic
+advice. The full suite without original assets passed **1,317 tests, 312 skipped, none failed**; the
+complete original-asset suite was not rerun in this finishing pass. The Web build and the fidelity-register
+check passed. The evidence runner passed 20 Python
+suites (1,267 tests, 361 skipped); unavailable private binaries and optional .NET evidence projects
+remain unverified by that run. No claim of PC binary equivalence follows from these tests.

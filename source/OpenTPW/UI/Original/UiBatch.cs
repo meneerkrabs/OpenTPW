@@ -13,7 +13,9 @@ public sealed record UiTexture( string? ImagePath, FontAtlas? Atlas, int FontSca
 {
 	public static UiTexture Of( Veldrid.Texture rendered ) => new( null, null, Rendered: rendered );
 	public static readonly UiTexture Solid = new( null, null );
-	public static UiTexture Image( string path ) => new( path, null );
+	public static UiTexture Image( string path ) => images.GetOrAdd( path, static path => new( path, null ) );
+	// Interface models name their images every frame; one record per path keeps that allocation-free.
+	private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, UiTexture> images = new();
 	/// <summary>An image file on the host file system, e.g. a local art override.</summary>
 	public static UiTexture HostImage( string path ) => new( UiImages.HostPrefix + path, null );
 	public static UiTexture Font( FontAtlas atlas, int scale = 1 ) => new( null, atlas, Math.Max( 1, scale ) );
@@ -26,8 +28,15 @@ public readonly record struct UiVertex( NVector2 Position, NVector2 TexCoords, R
 public sealed class UiDraw
 {
 	public UiDraw( UiTexture texture ) => Texture = texture;
-	public UiTexture Texture { get; }
+	public UiTexture Texture { get; private set; }
 	public List<UiVertex> Vertices { get; } = new();
+
+	/// <summary>Reuses this draw (and its vertex list's capacity) for another texture.</summary>
+	internal void Reset( UiTexture texture )
+	{
+		Texture = texture;
+		Vertices.Clear();
+	}
 }
 
 /// <summary>A placed glyph, kept so GPU readback of text can be checked against the atlas.</summary>
@@ -43,6 +52,8 @@ public readonly record struct UiTextDraw( UiRect Rect, string Text, int FirstGly
 public sealed class UiBatch
 {
 	private readonly List<UiDraw> draws = new();
+	// Draws of earlier frames, reused in order so the vertex lists keep their capacity from frame to frame.
+	private readonly List<UiDraw> pool = new();
 	private readonly List<UiGlyphQuad> glyphs = new();
 	private readonly List<(UiRect Rect, string Text)> texts = new();
 	private readonly List<UiTextDraw> textDraws = new();
@@ -65,7 +76,17 @@ public sealed class UiBatch
 	{
 		if ( draws.Count > 0 && Equals( draws[^1].Texture, texture ) )
 			return draws[^1];
-		var draw = new UiDraw( texture );
+		UiDraw draw;
+		if ( draws.Count < pool.Count )
+		{
+			draw = pool[draws.Count];
+			draw.Reset( texture );
+		}
+		else
+		{
+			draw = new UiDraw( texture );
+			pool.Add( draw );
+		}
 		draws.Add( draw );
 		return draw;
 	}

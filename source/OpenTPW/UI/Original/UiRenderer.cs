@@ -7,7 +7,8 @@ namespace OpenTPW.UI.Original;
 /// Draws <see cref="UiBatch"/> triangles: original images (linear filtered, straight alpha) and BF4
 /// atlases (uploaded as white RGBA with coverage alpha, smoothed per text scale by
 /// <see cref="FontSmoothing"/>, point sampled) over the scene. Several
-/// batches may be drawn per frame; each uses its own vertex buffer from a per-frame ring.
+/// batches may be drawn per frame; each uses its own vertex buffer of the frame slot
+/// (<see cref="Renderer.FramesInFlight"/>), written directly rather than through the command list.
 /// </summary>
 internal sealed class UiRenderer : IDisposable
 {
@@ -25,7 +26,7 @@ internal sealed class UiRenderer : IDisposable
 	private readonly Dictionary<object, (Veldrid.Texture Texture, ResourceSet Set)> textures = new();
 	// Sets for textures rendered by their owners; the textures themselves are not the UI's to dispose.
 	private readonly Dictionary<Veldrid.Texture, ResourceSet> renderedSets = new();
-	private readonly List<DeviceBuffer> buffers = new();
+	private readonly List<DeviceBuffer>[] buffers = Enumerable.Range( 0, Renderer.FramesInFlight ).Select( _ => new List<DeviceBuffer>() ).ToArray();
 	private int frameBuffers;
 	private GpuVertex[] vertices = Array.Empty<GpuVertex>();
 	private readonly HashSet<string> failedImages = new( StringComparer.OrdinalIgnoreCase );
@@ -52,7 +53,9 @@ internal sealed class UiRenderer : IDisposable
 
 	public void Draw( CommandList commands, UiBatch batch, uint framebufferWidth, uint framebufferHeight )
 	{
-		var count = batch.Draws.Sum( draw => draw.Vertices.Count );
+		var count = 0;
+		foreach ( var draw in batch.Draws )
+			count += draw.Vertices.Count;
 		if ( count == 0 )
 			return;
 		if ( vertices.Length < count )
@@ -68,16 +71,18 @@ internal sealed class UiRenderer : IDisposable
 			}
 		}
 		var bytes = (uint)(count * Marshal.SizeOf<GpuVertex>());
-		if ( frameBuffers == buffers.Count )
-			buffers.Add( CreateBuffer( bytes ) );
-		else if ( buffers[frameBuffers].SizeInBytes < bytes )
+		// Written straight into GPU memory: an update recorded into the command list would end the render pass on Metal.
+		var slot = buffers[Renderer.SlotOf( Render.FrameNumber )];
+		if ( frameBuffers == slot.Count )
+			slot.Add( CreateBuffer( bytes ) );
+		else if ( slot[frameBuffers].SizeInBytes < bytes )
 		{
-			var old = buffers[frameBuffers];
+			var old = slot[frameBuffers];
 			Render.ScheduleDelete( old.Dispose );
-			buffers[frameBuffers] = CreateBuffer( bytes );
+			slot[frameBuffers] = CreateBuffer( bytes );
 		}
-		var buffer = buffers[frameBuffers++];
-		commands.UpdateBuffer( buffer, 0, ref vertices[0], bytes );
+		var buffer = slot[frameBuffers++];
+		Device.UpdateBuffer( buffer, 0, ref vertices[0], bytes );
 		commands.SetPipeline( pipeline );
 		commands.SetVertexBuffer( 0, buffer );
 		var start = 0u;
@@ -208,9 +213,12 @@ internal sealed class UiRenderer : IDisposable
 			texture.Dispose();
 		}
 		textures.Clear();
-		foreach ( var buffer in buffers )
-			buffer.Dispose();
-		buffers.Clear();
+		foreach ( var slot in buffers )
+		{
+			foreach ( var buffer in slot )
+				buffer.Dispose();
+			slot.Clear();
+		}
 		pipeline.Dispose();
 		resourceLayout.Dispose();
 		shader.VertexShader.Dispose();

@@ -58,7 +58,8 @@ public sealed class OnlineScreens
 	/// <summary>
 	/// The Online World as the original lays it out (Mac UI table data:0x523f0): the globe fills the screen, the
 	/// worldlob panel at the bottom left holds Find Parks, back to your own lobby, zoom and the four rotate arrows, and
-	/// five chat satellites sit around the edges. OpenTPW adds the login and its own online menu at the top right.
+	/// five chat satellites sit around the edges, each showing the number of players in its chat park. OpenTPW adds
+	/// the login and its own online menu at the top right.
 	/// </summary>
 	// [DATA:Mac UI table data:0x523f0] root 90111 worldlob (9,620,510,1531); buttons b_findprk 90115 (49,731,202,885) help 435, b_bck2lob 90112 (49,898,202,1051) help 431, b_zoom 90118 (41,1070,143,1173) help 428/429, b_lobup 90117 (182,1077,336,1231) help 426, b_lobleft 90114 (61,1201,214,1355) help 424, b_lobright 90116 (307,1201,460,1355) help 425, b_lobdown 90113 (184,1327,337,1481) help 427; i_sat 90120–90124 help 423
 	public void ShowWorld()
@@ -66,18 +67,26 @@ public sealed class OnlineScreens
 		var screen = new OnlineGlobeScreen( host.Globe );
 		screen.CityClicked = ShowCityLobby;
 		var (find, zoom) = AddGlobePanel( screen, stack.Pop, ShowFindParks );
-		// The chat satellites: chat-only parks around the globe; OpenTPW opens a chat room for each.
+		// The chat satellites (data:0x523f0, controls 90120–90124): each is a chat park, shows the players in its
+		// room and enters it on a click (the original's "chatellite" connector, 0x1b8808; manual: "The number
+		// displayed next to each satellite is the number of people currently in this chat park").
 		var satellites = new (float X0, float Y0, float X1, float Y1, UiAnchor Anchor)[]
 		{
 			(131, 139, 438, 446, UiAnchor.TopLeft), (484, -51, 791, 256, UiAnchor.TopLeft), (1690, 344, 1997, 651, UiAnchor.TopRight),
 			(1743, 620, 2050, 927, UiAnchor.Right), (1335, 1199, 1643, 1506, UiAnchor.BottomRight),
 		};
-		for ( var index = 0; index < satellites.Length; index++ )
+		for ( var index = 0; index < satellites.Length && index < Online.Chat.ChatProtocol.SatelliteRoomCount; index++ )
 		{
 			var (x0, y0, x1, y1, anchor) = satellites[index];
-			var room = $"satellite{index + 1}";
-			var satellite = screen.Add( new UiButton { Id = room, Model = "i_sat", Help = strings.Help( 423 ), Bounds = new UiRect( x0, y0, x1 - x0, y1 - y0 ), Anchor = anchor,
+			var number = index + 1;
+			var room = Online.Chat.ChatProtocol.SatelliteRoom( number );
+			var satellite = screen.Add( new UiButton { Id = $"satellite{number}", Model = "i_sat", Help = strings.Help( 423 ), Bounds = new UiRect( x0, y0, x1 - x0, y1 - y0 ), Anchor = anchor,
 				Clicked = () => Guard( () => { Session.JoinRoom( room ); ShowChat(); } ) } );
+			// [APPROX:ONLINE-018] the count is drawn at the satellite's bottom-right corner; the original wrote it
+			// into the satellite control itself (0x1b96d8), whose text placement is not decoded
+			var count = screen.Add( new UiLabel { Id = $"satellite{number}Count", Font = fonts => fonts.Menu, Color = UiColors.Value, Align = UiAlign.Center,
+				Bounds = new UiRect( x1 - 150, y1 - 50, 140, 90 ), Anchor = anchor,
+				Text = () => Session.ChatParks.Count >= number ? Session.ChatParks[number - 1].Players.ToString( System.Globalization.CultureInfo.InvariantCulture ) : "" } );
 			screen.Updating += _ => satellite.Enabled = Session.IsLoggedIn && Session.Busy == 0;
 		}
 		// The hovered city's name and parks (the original's labels 0x16c11/0x16c12; their place is not decoded), else the title.
@@ -92,19 +101,30 @@ public sealed class OnlineScreens
 			Bounds = new UiRect( 1560, 40, 440, 100 ), Anchor = UiAnchor.TopRight } );
 		var menu = screen.Add( new UiButton { Id = "menu", Text = () => OnlineStrings.Get( OnlineLabel.OnlineMenu ), Clicked = ShowMenu,
 			Bounds = new UiRect( 1560, 150, 440, 100 ), Anchor = UiAnchor.TopRight } );
-		screen.Add( new UiLabel { Id = "status", Wrap = true, Font = fonts => fonts.Small, Color = UiColors.Value, Align = UiAlign.Center,
-			Bounds = new UiRect( 574, 1400, 900, 100 ), Anchor = UiAnchor.Bottom, Text = () => localStatus.Length > 0 ? localStatus : Session.Status } );
-		OnlineClient? citiesFor = null;
-		screen.Updating += _ =>
+		// The online status box (Mac UI table data:0x5011c): the original's progress message at the bottom right
+		// while an online request runs, here showing the screen's own status line.
+		screen.Add( new UiLabel { Id = "status", Wrap = true, Font = fonts => fonts.Small, Color = UiColors.Value, Align = UiAlign.Left,
+			Bounds = new UiRect( 1349, 1418, 630, 60 ), Anchor = UiAnchor.BottomRight, Text = () => localStatus.Length > 0 ? localStatus : Session.Status } );
+		OnlineClient? worldListed = null;
+		var chatParkTimer = 0f;
+		screen.Updating += context =>
 		{
 			find!.Enabled = Session.IsLoggedIn && Session.Busy == 0;
 			login.Enabled = menu.Enabled = Session.Busy == 0;
 			zoom.Help = strings.Help( GlobeCameraMode.ZoomedIn ? 429 : 428 );
-			// Each server's cities once, as soon as one is chosen (no login needed).
-			if ( Session.Client is { } client && client != citiesFor && Session.Busy == 0 )
+			// Each server's cities and chat parks once, as soon as one is chosen (no login needed).
+			if ( Session.Client is { } client && client != worldListed && Session.Busy == 0 )
 			{
-				citiesFor = client;
+				worldListed = client;
 				Guard( Session.FetchCities );
+				Guard( Session.FetchChatParks );
+			}
+			// The satellites' player counts come from the server; refresh them now and then.
+			chatParkTimer += context.Delta;
+			if ( chatParkTimer > 15 && Session.Busy == 0 && Session.Client != null )
+			{
+				chatParkTimer = 0;
+				Guard( Session.FetchChatParks );
 			}
 		};
 		screen.Back = stack.Pop;
@@ -160,7 +180,7 @@ public sealed class OnlineScreens
 			Id = id, Model = model, Help = strings.Help( help ), Clicked = clicked,
 			Bounds = new UiRect( x0, y0, x1 - x0, y1 - y0 ), Anchor = UiAnchor.BottomLeft
 		} );
-		PanelButton( "otherParks", "b_listpark", 66, 642, 219, 795, 349, () => ShowFindParks( city.Id ) );
+		PanelButton( "otherParks", "b_listpark", 66, 642, 219, 795, 349, () => ShowOtherParks( city ) );
 		PanelButton( "ownLobby", "b_bck2lob", 66, 799, 219, 953, 348, () => { while ( stack.Top != null && stack.Top.Name is "cityLobby" or "onlineWorld" ) stack.Pop(); } );
 		PanelButton( "worldView", "b_worldview", 66, 957, 219, 1110, 346, stack.Pop );
 		var enter = PanelButton( "enterPark", "b_entpark", 66, 1113, 219, 1267, 345,
@@ -230,6 +250,11 @@ public sealed class OnlineScreens
 		}
 		// The original mail icon (i_mail) at its authored place while postcards wait in the inbox.
 		screen.Add( new UiModelImage { Id = "mail", Model = "i_mail", Bounds = Authored( "i_mail", new UiRect( 1500, 1180, 120, 110 ) ), Anchor = UiAnchor.BottomRight } );
+		// [DATA:Language/English/UITEXT.str:472] the original reminded the player of unsent postcards before going online
+		screen.Add( new UiLabel { Id = "waiting", Wrap = true, Font = fonts => fonts.Small, Align = UiAlign.Center,
+			Bounds = new UiRect( window.X + 120, window.Bottom - 290, window.Width - 240, 100 ), Anchor = UiAnchor.Center,
+			Text = () => Session.Folders.List( Session.Folders.Outbox ).Any( entry => entry.Card != null )
+				? OnlineStrings.Ui( OnlineStrings.OutboxWaiting, "You have postcards in your outbox, waiting to be sent." ) : "" } );
 		screen.Updating += _ => screen.Find( "mail" )!.Visible = Session.Inbox.Count > 0;
 		AddStatus( screen, window );
 		AddBack( screen, window );
@@ -239,30 +264,37 @@ public sealed class OnlineScreens
 	// ---- News (UI-MAP "Online news panel") ------------------------------------------------------
 
 	/// <summary>
-	/// The server's Game News and System News, the two columns of the original news panel (UITEXT 267/268); the
-	/// original headed it "News from ThemeParkWorld.com", so the window uses OpenTPW's own title.
+	/// The online news panel in its original composition (Mac UI table data:0x50738): a window (186,30)-(2018,1007)
+	/// titled "News from ThemeParkWorld.com" (0x5b84, UITEXT 266), the news body (0x5b7f) at (375,197)-(1733,939)
+	/// with its scroll bar (0x5b80) at the right edge, and the two column tabs (0x5b82 Game News 0x5b83 System News)
+	/// at (1024,224)-(1348,294) and (1372,224)-(1695,294) inside the body's top right corner.
 	/// </summary>
 	public void ShowNews()
 	{
 		var screen = new UiScreen( "onlineNews" );
-		var window = UiDialogs.CenteredWindow( 1700, 1200 );
-		UiDialogs.AddWindow( screen, window, "w_big", () => OnlineStrings.Get( OnlineLabel.News ) );
+		var window = new UiRect( 186, 30, 1832, 977 );
+		screen.Add( new UiModelImage { Id = "window", Model = "w_big", Bounds = window, Anchor = UiAnchor.Center } );
+		screen.Add( new UiLabel { Id = "title", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center,
+			Bounds = new UiRect( 822, 98, 473, 79 ), Anchor = UiAnchor.Center,
+			// [DATA:Language/English/UITEXT.str:266] the original news panel's heading
+			Text = () => OnlineStrings.Ui( OnlineStrings.NewsFromThemeParkWorld, "News from ThemeParkWorld.com" ) } );
 		var showSystem = false;
 		screen.Add( new UiButton { Id = "gameNews", Text = () => OnlineStrings.Ui( OnlineStrings.GameNews, "Game News" ), Clicked = () => showSystem = false,
-			Bounds = new UiRect( window.X + 100, window.Y + 170, 520, 110 ), Anchor = UiAnchor.Center } );
+			Bounds = new UiRect( 1024, 224, 324, 70 ), Anchor = UiAnchor.Center } );
 		screen.Add( new UiButton { Id = "systemNews", Text = () => OnlineStrings.Ui( OnlineStrings.SystemNews, "System News" ), Clicked = () => showSystem = true,
-			Bounds = new UiRect( window.X + 660, window.Y + 170, 520, 110 ), Anchor = UiAnchor.Center } );
+			Bounds = new UiRect( 1372, 224, 323, 70 ), Anchor = UiAnchor.Center } );
 		screen.Add( new UiLabel
 		{
 			Id = "text",
 			Wrap = true,
 			Font = fonts => fonts.Small,
-			Bounds = new UiRect( window.X + 100, window.Y + 320, window.Width - 280, 620 ),
+			Bounds = new UiRect( 375, 197, 1358, 742 ),
 			Anchor = UiAnchor.Center,
 			Text = () => Session.News is { } news ? (showSystem ? news.System : news.Game) : ""
 		} );
+		AddCloseButton( screen, 1889, 820 );
 		AddStatus( screen, window );
-		AddBack( screen, window );
+		screen.Back = stack.Pop;
 		Push( screen );
 		Guard( Session.FetchNews );
 	}
@@ -305,23 +337,35 @@ public sealed class OnlineScreens
 
 	// ---- Login (UI-MAP "Online login dialog") ------------------------------------------------
 
+	/// <summary>
+	/// The original login dialog's composition (Mac UI table data:0x505f4): a window (500,233)-(1516,830) with the
+	/// Login title (0x4d) at (606,304)-(1333,384), the 16-character name field (0x49) and password field (0x4b) with
+	/// their labels (0x4a/0x4c) inside them, and two buttons at the right edge (-1 at (1376,524)-(1460,608), -2 at
+	/// (1387,613)-(1470,696)). Enter moves from the name to the password and submits from there (0x10184924).
+	/// OpenTPW's own additions (server address, authenticator code, register, recovery) sit below the original
+	/// window ([EXT:ONLINE-UI]).
+	/// </summary>
 	public void ShowLogin()
 	{
 		var screen = new UiScreen( "onlineLogin" );
-		var window = UiDialogs.CenteredWindow( 1150, 1170 );
-		UiDialogs.AddWindow( screen, window, "w_med", () => OnlineStrings.Ui( OnlineStrings.OnlineLogin, "Online login" ) );
-		var x = window.X + 120;
-		var width = window.Width - 340;
-		// [EXT:ONLINE-UI] the server address is an OpenTPW field; the original service address was built in
-		var server = AddField( screen, "server", () => OnlineStrings.Get( OnlineLabel.ServerAddress ), x, window.Y + 170, width, 256 );
-		server.Text = Session.Settings.ServerUrl ?? OnlineSession.SuggestedServerUrl ?? "";
-		// The original login name and password fields hold 16 characters (UI-MAP, 0x10184b48).
-		var name = AddField( screen, "name", () => OnlineStrings.Ui( OnlineStrings.LoginName, "Login name" ), x, window.Y + 340, width, 16 );
+		var window = new UiRect( 500, 233, 1016, 597 );
+		screen.Add( new UiModelImage { Id = "window", Model = "w_med", Bounds = window, Anchor = UiAnchor.Center } );
+		screen.Add( new UiLabel { Id = "title", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center,
+			Bounds = new UiRect( 606, 304, 727, 80 ), Anchor = UiAnchor.Center, Text = () => OnlineStrings.Ui( OnlineStrings.OnlineLogin, "Online login" ) } );
+		// The original fields: 16 characters each, labels inside the field's frame (data:0x505f4).
+		var name = screen.Add( new UiTextField { Id = "name", MaximumLength = 16, Model = "f_text1", Bounds = new UiRect( 632, 463, 675, 93 ), Anchor = UiAnchor.Center, TextInset = 322 } );
 		name.Text = Session.Settings.PlayerName ?? "";
-		var password = AddField( screen, "password", () => OnlineStrings.Ui( OnlineStrings.Password, "Password" ), x, window.Y + 510, width, 16 );
-		password.Password = true;
-		// [EXT:online-two-step] the authenticator code is an OpenTPW field; accounts without two-step login leave it empty.
-		var code = AddField( screen, "code", () => OnlineStrings.Get( OnlineLabel.AuthenticatorCode ), x, window.Y + 680, 420, Totp.Digits );
+		var password = screen.Add( new UiTextField { Id = "password", MaximumLength = 16, Model = "f_text1", Password = true, Bounds = new UiRect( 632, 593, 675, 92 ), Anchor = UiAnchor.Center, TextInset = 322 } );
+		screen.Add( new UiLabel { Id = "nameLabel", Text = () => OnlineStrings.Ui( OnlineStrings.LoginName, "Login name" ),
+			Bounds = new UiRect( 656, 487, 290, 45 ), Anchor = UiAnchor.Center } );
+		screen.Add( new UiLabel { Id = "passwordLabel", Text = () => OnlineStrings.Ui( OnlineStrings.Password, "Password" ),
+			Bounds = new UiRect( 656, 617, 290, 44 ), Anchor = UiAnchor.Center } );
+		// [EXT:ONLINE-UI] below the original window: the server address (the original service address was built in),
+		// the authenticator code of two-step login, register and recovery.
+		var server = AddField( screen, "server", () => OnlineStrings.Get( OnlineLabel.ServerAddress ), 560, 856, 900, 256 );
+		server.Text = Session.Settings.ServerUrl ?? OnlineSession.SuggestedServerUrl ?? "";
+		// [EXT:online-two-step] accounts without two-step login leave the code empty.
+		var code = AddField( screen, "code", () => OnlineStrings.Get( OnlineLabel.AuthenticatorCode ), 560, 1006, 420, Totp.Digits );
 		void Submit( bool register )
 		{
 			try
@@ -340,20 +384,20 @@ public sealed class OnlineScreens
 			// The password stays while the dialog is open, so a login that asks for a code only needs the code.
 			code.Text = "";
 		}
-		// Enter moves from the name to the password and submits from there (UI-MAP, 0x10184924).
 		server.Submitted = () => screen.Focus( name );
 		name.Submitted = () => screen.Focus( password );
 		password.Submitted = () => Submit( register: false );
 		code.Submitted = () => Submit( register: false );
-		var buttonY = window.Y + 860;
 		screen.Add( new UiButton { Id = "login", Model = "b_login", Text = () => OnlineStrings.Get( OnlineLabel.LogIn ), Clicked = () => Submit( register: false ),
-			Bounds = new UiRect( window.X + 120, buttonY, 400, 110 ), Anchor = UiAnchor.Center } );
+			Bounds = new UiRect( 1376, 524, 84, 84 ), Anchor = UiAnchor.Center } );
+		screen.Add( new UiButton { Id = "close", Model = "b_bck2lob", Text = () => strings.Extra( OpenTpwText.Back ), Clicked = stack.Pop,
+			Bounds = new UiRect( 1387, 613, 83, 83 ), Anchor = UiAnchor.Center } );
 		screen.Add( new UiButton { Id = "register", Text = () => OnlineStrings.Get( OnlineLabel.Register ), Clicked = () => Submit( register: true ),
-			Bounds = new UiRect( window.X + 560, buttonY, 400, 110 ), Anchor = UiAnchor.Center } );
+			Bounds = new UiRect( 560, 1170, 420, 100 ), Anchor = UiAnchor.Center } );
 		// [EXT:online-email] recovery by e-mail; the server answers the same whether the account exists
 		screen.Add( new UiButton { Id = "forgot", Text = () => OnlineStrings.Get( OnlineLabel.ForgotPassword ),
 			Clicked = () => Guard( () => { Session.UseServer( server.Text.Trim(), name.Text.Trim() ); ShowRecovery( name.Text.Trim() ); } ),
-			Bounds = new UiRect( window.X + 580, window.Y + 735, 400, 90 ), Anchor = UiAnchor.Center } );
+			Bounds = new UiRect( 1020, 1170, 420, 100 ), Anchor = UiAnchor.Center } );
 		// Closes itself once the login succeeded; opens the two-step setup when the server sends one; moves to the code
 		// field when the server asks for a code.
 		var codeRequested = false;
@@ -373,7 +417,7 @@ public sealed class OnlineScreens
 			codeRequested = Session.CodeRequested;
 		};
 		AddStatus( screen, window );
-		AddBack( screen, window );
+		screen.Back = stack.Pop;
 		screen.Focus( name.Text.Length == 0 ? name : password );
 		Push( screen );
 	}
@@ -490,72 +534,181 @@ public sealed class OnlineScreens
 
 	// ---- Find Parks with park details (UI-MAP "Find Parks", "Park details dialog") --------------
 
-	/// <summary>Find Parks; with <paramref name="cityId"/>, the parks of that city by votes (the city lobby's "other parks").</summary>
+	/// <summary>
+	/// Find Parks in its original composition (Mac UI table data:0x50f84): a window (108,30)-(1940,1007) titled
+	/// "Find Parks" (0xe05c), the six-column results list (0xe05b) at (196,164)-(1735,800) with the header buttons
+	/// Name/Theme/City/Position/Visits/Votes at their authored places, the player-name search field (0xe05a) at
+	/// (380,839)-(1122,938), the Search button (0xe059) at (1179,810)-(1332,964) and the close button (-2) at
+	/// (1808,820)-(1891,903). Selecting a row opens the park details dialog.
+	/// </summary>
 	public void ShowFindParks() => ShowFindParks( null );
 
 	public void ShowFindParks( int? cityId )
 	{
 		var screen = new UiScreen( "findParks" );
-		var window = UiDialogs.CenteredWindow( 1900, 1300 );
-		UiDialogs.AddWindow( screen, window, "w_big", () => OnlineStrings.Ui( OnlineStrings.FindParks, "Find parks" ) );
-		var search = AddField( screen, "search", () => OnlineStrings.Ui( OnlineStrings.SearchName, "Search name" ), window.X + 100, window.Y + 160, 760, 64 );
-		void Refresh() => Guard( () => Session.RefreshParks( search.Text, cityId == null ? "recent" : "votes", cityId ) );
+		var window = new UiRect( 108, 30, 1832, 977 );
+		screen.Add( new UiModelImage { Id = "window", Model = "w_big", Bounds = window, Anchor = UiAnchor.Center } );
+		screen.Add( new UiLabel { Id = "title", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center,
+			Bounds = new UiRect( 758, 74, 472, 80 ), Anchor = UiAnchor.Center, Text = () => OnlineStrings.Ui( OnlineStrings.FindParks, "Find Parks" ) } );
+		// The original search field (0xe05a) holds the player whose parks are listed and starts with the player's own name.
+		var search = screen.Add( new UiTextField { Id = "search", MaximumLength = 64, Model = "f_text1", Bounds = new UiRect( 380, 839, 742, 99 ), Anchor = UiAnchor.Center } );
+		search.Text = cityId == null ? Session.Settings.PlayerName ?? "" : "";
+		void Refresh() => Guard( () => Session.RefreshParks( null, cityId == null ? "recent" : "votes", cityId,
+			search.Text.Trim().Length == 0 ? null : search.Text.Trim() ) );
 		search.Submitted = Refresh;
-		screen.Add( new UiButton { Id = "refresh", Text = () => OnlineStrings.Get( OnlineLabel.Refresh ), Clicked = Refresh,
-			Bounds = new UiRect( window.X + 900, window.Y + 225, 380, 104 ), Anchor = UiAnchor.Center } );
+		screen.Add( new UiButton { Id = "searchButton", Text = () => OnlineStrings.Ui( OnlineStrings.SearchName, "Search name" ), Clicked = Refresh,
+			Bounds = new UiRect( 1179, 810, 153, 154 ), Anchor = UiAnchor.Center } );
+		// [DATA:Mac UI table data:0x50f84] the six column headers (ids 16-21) at their authored x extents
+		var columns = new (float Offset, int Text)[]
+		{
+			(225 - 196, OnlineStrings.Name), (565 - 196, OnlineStrings.ThemeLabel), (881 - 196, OnlineStrings.City),
+			(1175 - 196, OnlineStrings.Position), (1377 - 196, OnlineStrings.Visits), (1509 - 196, OnlineStrings.Votes),
+		};
 		var list = screen.Add( new UiScrollList
 		{
 			Id = "parks",
 			Model = "list_findprks",
-			Bounds = new UiRect( window.X + 100, window.Y + 360, 1100, 680 ),
+			Bounds = new UiRect( 196, 164, 1539, 636 ),
 			Anchor = UiAnchor.Center,
+			RowHeight = 84,
+			Columns = columns.Select( column => ((float Offset, Func<string> Text))(column.Offset, () => OnlineStrings.Ui( column.Text, "" )) ).ToArray(),
 			Rows = () => Session.Parks.Count == 0
-				? new[] { OnlineStrings.Ui( OnlineStrings.NoSearchResults, "No parks found" ) }
-				: Session.Parks.Select( park => $"{park.Name} - {park.Author}" ).ToArray(),
+				? new[] { OnlineStrings.Ui( OnlineStrings.NoSearchResults, "No search results" ) }
+				: Session.Parks.Select( ( park, index ) => $"{park.Name}\t{OnlineStrings.Theme( park.Level )}\t{CityName( park.CityId )}\t{index + 1}\t{park.Visits}\t{park.Votes}" ).ToArray(),
 		} );
 		ParkSummary? Selected() => list.Selected >= 0 && list.Selected < Session.Parks.Count ? Session.Parks[list.Selected] : null;
-		// Park details (UI-MAP "Park details dialog"): creator, visits and votes beside the list.
-		screen.Add( new UiLabel
-		{
-			Id = "details",
-			Wrap = true,
-			Font = fonts => fonts.Small,
-			Bounds = new UiRect( window.X + 1240, window.Y + 360, window.Width - 1400, 520 ),
-			Anchor = UiAnchor.Center,
-			Text = () => Selected() is { } park
-				? $"{park.Name}\n{OnlineStrings.Ui( OnlineStrings.CreatedBy, "Created by" )} {park.Author}\n{OnlineStrings.Theme( park.Level )}\n" +
-				  $"{OnlineStrings.Ui( OnlineStrings.NumberOfVisits, "Visits" )} {park.Visits}\n{OnlineStrings.Ui( OnlineStrings.NumberOfVotes, "Votes" )} {park.Votes}\n" +
-				  // [DATA:mac-feral/manuals/STP_Manual.pdf:p.65 "Online Park Info"] the original showed the date the
-				  // park was published beside its creator, visits and votes; the server's publish date/time fills it.
-				  $"{OnlineStrings.Get( OnlineLabel.PublishedOn )}{park.PublishedUtc.LocalDateTime:g}\n" +
-				  (park.VisitedBefore ? OnlineStrings.Ui( OnlineStrings.VisitedBefore, "Visited before" ) + "\n" : "") +
-				  (park.VotedFor ? OnlineStrings.Ui( OnlineStrings.VotedFor, "Voted for" ) + "\n" : "") + park.Description
-				: ""
-		} );
-		var visit = screen.Add( new UiButton { Id = "visit", Text = () => OnlineStrings.Get( OnlineLabel.VisitReadOnly ),
-			Clicked = () => { if ( Selected() is { } park ) Guard( () => Session.Download( park, path => Inspect( path, start: true ) ) ); },
-			Font = fonts => fonts.Label, Bounds = new UiRect( window.X + 1240, window.Y + 900, 560, 104 ), Anchor = UiAnchor.Center } );
-		var vote = screen.Add( new UiButton { Id = "vote", Model = "b_vote", Text = () => OnlineStrings.Get( OnlineLabel.Vote ),
-			Clicked = () => { if ( Selected() is { } park ) Guard( () => Session.Vote( park ) ); },
-			Bounds = new UiRect( window.X + 1240, window.Y + 1020, 230, 104 ), Anchor = UiAnchor.Center } );
-		var chat = screen.Add( new UiButton { Id = "parkChat", Text = () => OnlineStrings.Get( OnlineLabel.Chat ),
-			Clicked = () => { if ( Selected() is { } park ) Guard( () => { Session.JoinRoom( OpenTPW.Online.Chat.ChatProtocol.ParkRoom( park.Id ) ); ShowChat(); } ); },
-			Bounds = new UiRect( window.X + 1490, window.Y + 1020, 230, 104 ), Anchor = UiAnchor.Center } );
-		list.RowActivated = _ => visit.Activate();
-		screen.Updating += _ =>
-		{
-			var ready = Selected() != null && Session.Busy == 0;
-			visit.Enabled = ready && host.Visit != null;
-			vote.Enabled = ready && Selected()?.VotedFor == false;
-			chat.Enabled = ready && Session.Chat != null;
-		};
+		// Selecting a result opens the park details dialog (notify 0x400 → 0x1018b474).
+		list.RowActivated = index => { if ( Selected() is { } park ) ShowParkDetails( park, index ); };
+		list.SelectionChanged = _ => { if ( Selected() is { } park ) ShowParkDetails( park, list.Selected ); };
+		// [EXT:ONLINE-070] the original's Platinum Tickets, won when others visit the player's published parks
+		// (manual p. 62): the server awards one per recorded visit, whatever list is open here.
+		screen.Add( new UiLabel { Id = "platinum", Font = fonts => fonts.Label, Color = UiColors.Value, Align = UiAlign.Right,
+			Bounds = new UiRect( 1300, 74, 560, 70 ), Anchor = UiAnchor.Center,
+			Text = () => Session.Profile is { } profile ? $"{OnlineStrings.Get( OnlineLabel.PlatinumTickets )}: " +
+				profile.PlatinumTickets.ToString( System.Globalization.CultureInfo.InvariantCulture ) : "" } );
+		AddCloseButton( screen, 1808, 820 );
 		AddStatus( screen, window );
-		AddBack( screen, window );
+		screen.Back = stack.Pop;
 		if ( cityId != null )
 			Refresh();
-		if ( Session.IsLoggedIn )
+		else if ( Session.IsLoggedIn )
 			Guard( () => Session.RefreshParks( null ) );
+		if ( Session.IsLoggedIn && Session.Profile == null )
+			Guard( Session.FetchProfile );
 		screen.Focus( search );
+		Push( screen );
+	}
+
+	/// <summary>The city's name in the Find Parks list; the server's cities hold it.</summary>
+	private string CityName( int cityId ) => Session.Cities.FirstOrDefault( city => city.Id == cityId )?.Name ?? "";
+
+	/// <summary>
+	/// Park details in its original composition (Mac UI table data:0x51150): a window (248,30)-(1800,1007) with the
+	/// park's name (0xe5931) at (512,75)-(1536,155), eight label rows (0xe5937 created by, 0xe5934 date published,
+	/// 0xe5939 theme, 0xe5936 email, 0xe593a chart position, 0xe5938 votes, 0xe5933 visits, 0xe5935 the last row) in
+	/// the left column at x 380-861, the description (0xe5930) at (922,207)-(1602,655), the enter-park button
+	/// (0xe592e) at (1481,800)-(1635,953), the owner action (0xe592f) at (1322,800)-(1476,953) and the close button
+	/// (-2) at (1671,820)-(1754,903).
+	/// </summary>
+	public void ShowParkDetails( ParkSummary park, int chartPosition )
+	{
+		var screen = new UiScreen( "parkDetails" );
+		// One details dialog at a time: selecting another row replaces it.
+		stack.RemoveWhere( other => other.Name == "parkDetails" );
+		var window = new UiRect( 248, 30, 1552, 977 );
+		screen.Add( new UiModelImage { Id = "window", Model = "w_big", Bounds = window, Anchor = UiAnchor.Center } );
+		screen.Add( new UiLabel { Id = "parkName", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center,
+			Bounds = new UiRect( 512, 75, 1024, 80 ), Anchor = UiAnchor.Center, Text = () => park.Name } );
+		// The eight original label rows, top to bottom (data:0x51150); each shows its original UITEXT label.
+		var rows = new (float Y, Func<string> Label, Func<string> Value)[]
+		{
+			(233, () => OnlineStrings.Ui( OnlineStrings.CreatedBy, "Created by" ), () => park.Author),
+			(283, () => OnlineStrings.Ui( OnlineStrings.DatePublished, "Date published" ), () => park.PublishedUtc.LocalDateTime.ToShortDateString()),
+			(333, () => OnlineStrings.Ui( OnlineStrings.ThemeLabel, "Theme" ), () => OnlineStrings.Theme( park.Level )),
+			(382, () => OnlineStrings.Ui( OnlineStrings.Email, "Email" ),
+				// The original fell back to "None supplied" (UITEXT 283); OpenTPW never publishes players' addresses.
+				() => OnlineStrings.Ui( OnlineStrings.NoneSupplied, "None supplied" )),
+			(432, () => OnlineStrings.Ui( OnlineStrings.ChartPosition, "Chart position" ),
+				() => chartPosition.ToString( System.Globalization.CultureInfo.InvariantCulture )),
+			(482, () => OnlineStrings.Ui( OnlineStrings.NumberOfVotes, "Number of Votes" ), () => park.Votes.ToString( System.Globalization.CultureInfo.InvariantCulture )),
+			(532, () => OnlineStrings.Ui( OnlineStrings.NumberOfVisits, "Number of visits" ), () => park.Visits.ToString( System.Globalization.CultureInfo.InvariantCulture )),
+			// [APPROX:ONLINE-020] the original's last row showed the Instant action mode flag, which the package does
+			// not record; OpenTPW shows the players currently in the park's chat room (UITEXT 273)
+			(582, () => OnlineStrings.Ui( OnlineStrings.PlayersAtThePark, "Players at the park" ), () => park.PlayersAtPark.ToString( System.Globalization.CultureInfo.InvariantCulture )),
+		};
+		foreach ( var row in rows )
+		{
+			var current = row;
+			screen.Add( new UiLabel { Id = $"row{(int)current.Y}", Text = current.Label, Font = fonts => fonts.Label,
+				Bounds = new UiRect( 380, current.Y, 481, 45 ), Anchor = UiAnchor.Center } );
+			screen.Add( new UiLabel { Id = $"row{(int)current.Y}Value", Text = current.Value, Font = fonts => fonts.Label, Color = UiColors.Value,
+				Bounds = new UiRect( 380, current.Y, 481, 45 ), Anchor = UiAnchor.Center, Align = UiAlign.Right } );
+		}
+		screen.Add( new UiLabel { Id = "description", Wrap = true, Font = fonts => fonts.Small,
+			Bounds = new UiRect( 922, 207, 680, 448 ), Anchor = UiAnchor.Center, Text = () => park.Description } );
+		var visit = screen.Add( new UiButton { Id = "visit", Text = () => OnlineStrings.Get( OnlineLabel.VisitReadOnly ),
+			Clicked = () => Guard( () => Session.Download( park, path => Inspect( path, start: true ) ) ),
+			Font = fonts => fonts.Label, Bounds = new UiRect( 1481, 800, 154, 153 ), Anchor = UiAnchor.Center } );
+		// The owner action button is enabled only for the player's own parks (0x1018b474); OpenTPW unpublishes.
+		var unpublish = screen.Add( new UiButton { Id = "unpublish", Text = () => OnlineStrings.Get( OnlineLabel.Unpublish ),
+			Clicked = () => Guard( () => { Session.Unpublish( park ); stack.Pop(); } ),
+			Font = fonts => fonts.Label, Bounds = new UiRect( 1322, 800, 154, 153 ), Anchor = UiAnchor.Center } );
+		var vote = screen.Add( new UiButton { Id = "vote", Model = "b_vote", Text = () => OnlineStrings.Get( OnlineLabel.Vote ),
+			Clicked = () => Guard( () => Session.Vote( park ) ), Bounds = new UiRect( 922, 700, 230, 110 ), Anchor = UiAnchor.Center } );
+		var chat = screen.Add( new UiButton { Id = "parkChat", Text = () => OnlineStrings.Get( OnlineLabel.Chat ),
+			Clicked = () => Guard( () => { Session.JoinRoom( OpenTPW.Online.Chat.ChatProtocol.ParkRoom( park.Id ) ); ShowChat(); } ),
+			Bounds = new UiRect( 1170, 700, 230, 110 ), Anchor = UiAnchor.Center } );
+		AddCloseButton( screen, 1671, 820 );
+		AddStatus( screen, window );
+		screen.Updating += _ =>
+		{
+			visit.Enabled = Session.Busy == 0 && host.Visit != null;
+			vote.Enabled = !park.VotedFor && Session.Busy == 0;
+			chat.Enabled = Session.IsLoggedIn;
+			unpublish.Enabled = Session.IsLoggedIn && Session.Busy == 0
+				&& string.Equals( park.Author, Session.Settings.PlayerName, StringComparison.OrdinalIgnoreCase );
+		};
+		screen.Back = stack.Pop;
+		Push( screen );
+	}
+
+	/// <summary>
+	/// "Other Parks In &lt;city&gt;" (UITEXT 446), the city lobby's list of the parks outside its top 10: the original
+	/// chart window (Mac UI table data:0x5137e) with its five columns Name/Theme/Position/Visits/Votes.
+	/// </summary>
+	public void ShowOtherParks( CityInfo city )
+	{
+		var screen = new UiScreen( "otherParks" );
+		var window = new UiRect( 248, 30, 1552, 977 );
+		screen.Add( new UiModelImage { Id = "window", Model = "w_big", Bounds = window, Anchor = UiAnchor.Center } );
+		// [DATA:Language/English/UITEXT.str:446] "Other Parks In " + the location name (0x1018c880)
+		screen.Add( new UiLabel { Id = "title", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center,
+			Bounds = new UiRect( 767, 67, 472, 79 ), Anchor = UiAnchor.Center,
+			Text = () => OnlineStrings.Ui( OnlineStrings.OtherParksIn, "Other Parks In " ) + city.Name } );
+		var columns = new (float Offset, int Text)[]
+		{
+			(372 - 349, OnlineStrings.ListParksName), (707 - 349, OnlineStrings.ListParksTheme), (1022 - 349, OnlineStrings.ListParksPosition),
+			(1225 - 349, OnlineStrings.ListParksVisits), (1360 - 349, OnlineStrings.ListParksVotes),
+		};
+		var list = screen.Add( new UiScrollList
+		{
+			Id = "parks",
+			Model = "list_findprks",
+			Bounds = new UiRect( 349, 192, 1235, 636 ),
+			Anchor = UiAnchor.Center,
+			RowHeight = 105,
+			Columns = columns.Select( column => ((float Offset, Func<string> Text))(column.Offset, () => OnlineStrings.Ui( column.Text, "" )) ).ToArray(),
+			Rows = () => (Session.CityParks ?? Array.Empty<ParkSummary>()).Count == 0
+				? new[] { OnlineStrings.Ui( OnlineStrings.NoSearchResults, "No search results" ) }
+				: (Session.CityParks ?? Array.Empty<ParkSummary>()).Select( ( park, index ) => $"{park.Name}\t{OnlineStrings.Theme( park.Level )}\t{index + 1}\t{park.Visits}\t{park.Votes}" ).ToArray(),
+		} );
+		var parks = Session.CityParks ?? Array.Empty<ParkSummary>();
+		ParkSummary? Selected() => list.Selected >= 0 && list.Selected < parks.Count ? parks[list.Selected] : null;
+		list.RowActivated = index => { if ( Selected() is { } park ) ShowParkDetails( park, index ); };
+		list.SelectionChanged = _ => { if ( Selected() is { } park ) ShowParkDetails( park, list.Selected ); };
+		AddCloseButton( screen, 1671, 820 );
+		AddStatus( screen, window );
+		screen.Back = stack.Pop;
 		Push( screen );
 	}
 
@@ -609,24 +762,36 @@ public sealed class OnlineScreens
 	}
 
 	/// <summary>The park's name and description, published into <paramref name="city"/> (none on servers without cities).</summary>
+	/// <summary>
+	/// The Publish Park form in its original composition (Mac UI table data:0x514de): a window (248,30)-(1800,1007)
+	/// titled "Publish Park" (0x11e5) at (788,75)-(1260,155), the park-name field (0x11e4) at (682,279)-(1366,372),
+	/// the description field (0x11e3) at (684,444)-(1364,892), the check button (-1) at (1660,731)-(1743,815) and
+	/// the close button (-2) at (1671,820)-(1754,903).
+	/// </summary>
 	private void ShowPublishForm( CityInfo? city )
 	{
 		var level = host.Level();
 		if ( level == null )
 			return;
 		var screen = new UiScreen( "publishPark" );
-		var window = UiDialogs.CenteredWindow( 1300, 1000 );
-		UiDialogs.AddWindow( screen, window, "w_med", () => city == null ? OnlineStrings.Ui( OnlineStrings.PublishPark, "Publish park" ) : $"{OnlineStrings.Ui( OnlineStrings.PublishPark, "Publish park" )}: {city.Name}" );
-		var name = AddField( screen, "parkName", () => OnlineStrings.Ui( OnlineStrings.ParkName, "Park name" ), window.X + 120, window.Y + 170, window.Width - 340, 64 );
+		var window = new UiRect( 248, 30, 1552, 977 );
+		screen.Add( new UiModelImage { Id = "window", Model = "w_med", Bounds = window, Anchor = UiAnchor.Center } );
+		screen.Add( new UiLabel { Id = "title", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center,
+			Bounds = new UiRect( 788, 75, 472, 80 ), Anchor = UiAnchor.Center,
+			Text = () => city == null ? OnlineStrings.Ui( OnlineStrings.PublishPark, "Publish Park" ) : $"{OnlineStrings.Ui( OnlineStrings.PublishPark, "Publish Park" )}: {city.Name}" } );
+		// The original name field (0x11e4) starts with the park's own name; the description field (0x11e3) is the
+		// multi-line area below it.
+		var name = screen.Add( new UiTextField { Id = "parkName", MaximumLength = 64, Model = "f_text1", Bounds = new UiRect( 682, 279, 684, 93 ), Anchor = UiAnchor.Center } );
 		name.Text = "My park";
-		var description = AddField( screen, "description", () => OnlineStrings.Ui( OnlineStrings.Description, "Description" ), window.X + 120, window.Y + 340, window.Width - 340, 400 );
+		var description = screen.Add( new UiTextField { Id = "description", MaximumLength = 1024, Model = "f_text1", Bounds = new UiRect( 684, 444, 680, 448 ), Anchor = UiAnchor.Center } );
 		// [EXT:ONLINE-067] off unless the player chooses it: the website list makes the park and the player name public on the web.
 		var showOnWebsite = false;
 		screen.Add( new UiButton { Id = "website", Text = () => OnlineStrings.Get( showOnWebsite ? OnlineLabel.ShownOnWebsite : OnlineLabel.NotShownOnWebsite ),
-			Clicked = () => showOnWebsite = !showOnWebsite, Bounds = new UiRect( window.X + 120, window.Y + 510, window.Width - 340, 100 ), Anchor = UiAnchor.Center } );
-		var publish = screen.Add( new UiButton { Id = "publish", Text = () => OnlineStrings.Ui( OnlineStrings.PublishPark, "Publish park" ),
+			Clicked = () => showOnWebsite = !showOnWebsite, Bounds = new UiRect( 500, 950, 1000, 100 ), Anchor = UiAnchor.Center } );
+		// The original check button (-1) submits; the export-to-file action is OpenTPW's own beside it.
+		var publish = screen.Add( new UiButton { Id = "publish", Text = () => OnlineStrings.Ui( OnlineStrings.PublishPark, "Publish Park" ),
 			Clicked = () => Guard( () => Session.Publish( ParkSharing.ExportLevel( level, name.Text, Session.Settings.PlayerName ?? "", description.Text ), showOnWebsite, city?.Id ?? 0 ) ),
-			Bounds = new UiRect( window.X + 120, window.Bottom - 360, 480, 110 ), Anchor = UiAnchor.Center } );
+			Bounds = new UiRect( 1660, 731, 83, 84 ), Anchor = UiAnchor.Center } );
 		screen.Add( new UiButton { Id = "export", Text = () => OnlineStrings.Get( OnlineLabel.ExportPark ),
 			Clicked = () => Guard( () =>
 			{
@@ -635,10 +800,11 @@ public sealed class OnlineScreens
 				package.Save( path );
 				localStatus = OnlineStrings.Get( OnlineLabel.SavedTo ) + path;
 			} ),
-			Bounds = new UiRect( window.X + 640, window.Bottom - 360, 480, 110 ), Anchor = UiAnchor.Center } );
+			Bounds = new UiRect( 500, 1080, 480, 110 ), Anchor = UiAnchor.Center } );
+		AddCloseButton( screen, 1671, 820 );
 		screen.Updating += _ => publish.Enabled = Session.IsLoggedIn && Session.Busy == 0;
 		AddStatus( screen, window );
-		AddBack( screen, window );
+		screen.Back = stack.Pop;
 		screen.Focus( name );
 		Push( screen );
 	}
@@ -655,11 +821,30 @@ public sealed class OnlineScreens
 		var to = AddField( screen, "to", () => OnlineStrings.Get( OnlineLabel.To ), x, window.Y + 170, width, 256 );
 		var title = AddField( screen, "title", () => OnlineStrings.Ui( OnlineStrings.MessageTitle, "Title" ), x, window.Y + 340, width, 64 );
 		var message = AddField( screen, "message", () => OnlineStrings.Ui( OnlineStrings.MessageText, "Message" ), x, window.Y + 510, width, 1000 );
+		// The original attached a photo of the park the card is sent from (manual p. 51/67); OpenTPW attaches the
+		// park's map view. [APPROX:ONLINE-022] the camcorder snapshot is not reproduced, and no park reference is
+		// attached because the live level has no package identity.
+		byte[]? ParkImage()
+		{
+			var level = host.Level();
+			if ( level == null )
+				return null;
+			try
+			{
+				var payload = MinimalParkPayload.FromSnapshot( ParkSnapshotBuilder.FromLevel( level ) );
+				return ParkSnapshotBuilder.RenderThumbnail( level.OriginalPark?.Map, payload, level.OriginalPark == null ? null : ( px, py ) =>
+					OriginalParkPlacement.TryGetCell( level.OriginalPark.Heightfield, px, py, out var cx, out var cy ) ? (cx, cy) : null );
+			}
+			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or InvalidOperationException or ArgumentException )
+			{
+				return null;
+			}
+		}
 		screen.Add( new UiButton { Id = "outbox", Text = () => OnlineStrings.Get( OnlineLabel.PutInOutbox ),
 			Clicked = () => Guard( () =>
 			{
 				var card = Postcard.Create( Session.Settings.PlayerName ?? "", to.Text.Split( ',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries ),
-					title.Text, message.Text, GameLanguage.IsSelected ? GameLanguage.Current.Name : GameLanguage.DefaultLanguage );
+					title.Text, message.Text, GameLanguage.IsSelected ? GameLanguage.Current.Name : GameLanguage.DefaultLanguage, image: ParkImage() );
 				localStatus = OnlineStrings.Get( OnlineLabel.SavedTo ) + Session.Folders.Store( Session.Folders.Outbox, card );
 				title.Text = message.Text = "";
 			} ),
@@ -670,25 +855,90 @@ public sealed class OnlineScreens
 		Push( screen );
 	}
 
+	/// <summary>
+	/// Unsent Postcards in its original composition (Mac UI table data:0x508bc): a window (186,30)-(2018,1007)
+	/// titled "Unsent Postcards" (0xee9) at (809,66)-(1281,146), the card's picture (0xee2) at (246,154)-(777,404),
+	/// its preview (0xee4) at (246,425)-(772,782), the three bulk buttons (0xee5 mark all send, 0xee6 mark all
+	/// delete, 0xee7 unmark all) at (265/438/610,792)-(419/591/764,945) and the four-column list (0xee8) at
+	/// (793,151)-(1823,944) with its Title/Date/Send/Delete headers (ids 16-19).
+	/// </summary>
 	public void ShowOutbox()
 	{
 		var screen = new UiScreen( "outbox" );
-		var window = UiDialogs.CenteredWindow( 1500, 1200 );
-		UiDialogs.AddWindow( screen, window, "w_big", () => OnlineStrings.Ui( OnlineStrings.UnsentPostcards, "Unsent postcards" ) );
+		var window = new UiRect( 186, 30, 1832, 977 );
+		screen.Add( new UiModelImage { Id = "window", Model = "w_big", Bounds = window, Anchor = UiAnchor.Center } );
+		screen.Add( new UiLabel { Id = "title", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center,
+			Bounds = new UiRect( 809, 66, 472, 80 ), Anchor = UiAnchor.Center, Text = () => OnlineStrings.Ui( OnlineStrings.UnsentPostcards, "Unsent Postcards" ) } );
+		var marks = new Dictionary<string, int>(); // path -> 1 send, 2 delete
 		IReadOnlyList<(string Path, Postcard? Card, string? Error)> cards = Array.Empty<(string, Postcard?, string?)>();
 		void Reload() => cards = Session.Folders.List( Session.Folders.Outbox );
 		Reload();
+		// [DATA:Mac UI table data:0x508bc] the four columns (ids 16-19); the send/delete columns are narrow
+		var columns = new (float Offset, Func<string> Text)[]
+		{
+			(816 - 793, () => OnlineStrings.Ui( OnlineStrings.MessageTitle, "Title" )),
+			(1194 - 793, () => OnlineStrings.Ui( OnlineStrings.DateLabel, "Date" )),
+			(1491 - 793, () => OnlineStrings.Ui( OnlineStrings.Send, "Send" )),
+			(1608 - 793, () => OnlineStrings.Ui( OnlineStrings.Delete, "Delete" )),
+		};
 		var list = screen.Add( new UiScrollList
 		{
 			Id = "cards",
 			Model = "list_outbox",
-			Bounds = new UiRect( window.X + 100, window.Y + 170, window.Width - 300, 700 ),
+			Bounds = new UiRect( 793, 151, 1030, 793 ),
 			Anchor = UiAnchor.Center,
-			Rows = () => cards.Select( entry => entry.Card is { } card ? $"{string.Join( ", ", card.Manifest.To )}: {card.Manifest.Title}" : entry.Error ?? "?" ).ToArray(),
+			RowHeight = 76,
+			Columns = columns,
+			Rows = () => cards.Select( entry => entry.Card is { } card
+				? $"{string.Join( ", ", card.Manifest.To )}\t{card.Manifest.CreatedUtc.LocalDateTime.ToShortDateString()}\t" +
+					(marks.GetValueOrDefault( entry.Path ) == 1 ? "X" : "") + "\t" + (marks.GetValueOrDefault( entry.Path ) == 2 ? "X" : "")
+				: entry.Error ?? "?" ).ToArray(),
 		} );
+		// The selected card's picture area (0xee2) and preview (0xee4): the card's sender and text.
+		screen.Add( new UiLabel { Id = "picture", Wrap = true, Font = fonts => fonts.Small, Align = UiAlign.Center,
+			Bounds = new UiRect( 246, 154, 531, 250 ), Anchor = UiAnchor.Center,
+			Text = () => Selected() is { } card ? string.Join( "\n", card.Manifest.To ) : "" } );
+		screen.Add( new UiLabel { Id = "preview", Wrap = true, Font = fonts => fonts.Small,
+			Bounds = new UiRect( 246, 425, 526, 357 ), Anchor = UiAnchor.Center,
+			Text = () => Selected() is { } card ? $"{card.Manifest.Title}\n\n{card.Manifest.Text}" : "" } );
+		Postcard? Selected() => list.Selected >= 0 && list.Selected < cards.Count ? cards[list.Selected].Card : null;
+		// Marking one card for sending clears its delete mark and the other way around (0x10185d5c).
+		void Mark( int mark )
+		{
+			if ( list.Selected < 0 || list.Selected >= cards.Count )
+				return;
+			var path = cards[list.Selected].Path;
+			marks[path] = marks.GetValueOrDefault( path ) == mark ? 0 : mark;
+		}
+		var markSend = screen.Add( new UiButton { Id = "markSend", Text = () => OnlineStrings.Get( OnlineLabel.MarkAllSend ), Clicked = () => Mark( 1 ),
+			Bounds = new UiRect( 380, 1040, 340, 90 ), Anchor = UiAnchor.Center } );
+		var markDelete = screen.Add( new UiButton { Id = "markDelete", Text = () => OnlineStrings.Get( OnlineLabel.MarkAllDelete ), Clicked = () => Mark( 2 ),
+			Bounds = new UiRect( 740, 1040, 340, 90 ), Anchor = UiAnchor.Center } );
+		// The three original bulk buttons (0xee5-0xee7).
+		screen.Add( new UiButton { Id = "markAllSend", Text = () => OnlineStrings.Get( OnlineLabel.MarkAllSend ),
+			Clicked = () => { foreach ( var entry in cards ) marks[entry.Path] = 1; }, Bounds = new UiRect( 265, 792, 154, 153 ), Anchor = UiAnchor.Center } );
+		screen.Add( new UiButton { Id = "markAllDelete", Text = () => OnlineStrings.Get( OnlineLabel.MarkAllDelete ),
+			Clicked = () => { foreach ( var entry in cards ) marks[entry.Path] = 2; }, Bounds = new UiRect( 438, 792, 153, 153 ), Anchor = UiAnchor.Center } );
+		screen.Add( new UiButton { Id = "unmarkAll", Text = () => OnlineStrings.Get( OnlineLabel.UnmarkAll ),
+			Clicked = () => marks.Clear(), Bounds = new UiRect( 610, 792, 154, 153 ), Anchor = UiAnchor.Center } );
+		// The Send action sends the marked cards (all of them when none is marked) and deletes the marked-deleted ones;
+		// "Sending mails from outbox, please wait ..." is UITEXT 313.
 		var send = screen.Add( new UiButton { Id = "sendAll", Model = "b_sendall", Text = () => OnlineStrings.Ui( OnlineStrings.Send, "Send" ),
-			Clicked = () => Guard( () => { Session.SendOutbox(); localStatus = OnlineStrings.Ui( OnlineStrings.SendingOutbox, "Sending" ); } ),
-			Bounds = new UiRect( window.X + 100, window.Y + 910, 420, 110 ), Anchor = UiAnchor.Center } );
+			Clicked = () => Guard( () =>
+			{
+				foreach ( var entry in cards.Where( entry => marks.GetValueOrDefault( entry.Path ) == 2 ).ToList() )
+				{
+					File.Delete( entry.Path );
+					cards = cards.Where( item => item.Path != entry.Path ).ToList();
+					marks.Remove( entry.Path );
+				}
+				var markedForSending = cards.Where( entry => marks.GetValueOrDefault( entry.Path ) == 1 ).Select( entry => entry.Path ).ToList();
+				var sendable = markedForSending.Count > 0 ? markedForSending
+					: cards.Where( entry => entry.Card != null && marks.GetValueOrDefault( entry.Path ) != 2 ).Select( entry => entry.Path ).ToList();
+				Session.SendOutbox( sendable );
+				localStatus = OnlineStrings.Ui( OnlineStrings.SendingOutbox, "Sending mails from outbox, please wait ..." );
+			} ),
+			Bounds = new UiRect( 500, 1160, 480, 110 ), Anchor = UiAnchor.Center } );
 		var delete = screen.Add( new UiButton { Id = "delete", Text = () => OnlineStrings.Ui( OnlineStrings.Delete, "Delete" ),
 			Clicked = () => Guard( () =>
 			{
@@ -697,12 +947,13 @@ public sealed class OnlineScreens
 				list.Selected = -1;
 				Reload();
 			} ),
-			Bounds = new UiRect( window.X + 560, window.Y + 910, 420, 110 ), Anchor = UiAnchor.Center } );
+			Bounds = new UiRect( 1020, 1160, 480, 110 ), Anchor = UiAnchor.Center } );
 		var refreshTimer = 0f;
 		screen.Updating += context =>
 		{
 			send.Enabled = Session.IsLoggedIn && cards.Count > 0 && Session.Busy == 0;
 			delete.Enabled = list.Selected >= 0 && list.Selected < cards.Count && Session.Busy == 0;
+			markSend.Enabled = markDelete.Enabled = list.Selected >= 0 && list.Selected < cards.Count;
 			// Sending removes cards from the outbox folder; re-read it now and then.
 			refreshTimer += context.Delta;
 			if ( refreshTimer > 1 )
@@ -711,8 +962,9 @@ public sealed class OnlineScreens
 				Reload();
 			}
 		};
+		AddCloseButton( screen, 1889, 820 );
 		AddStatus( screen, window );
-		AddBack( screen, window );
+		screen.Back = stack.Pop;
 		Push( screen );
 	}
 
@@ -757,26 +1009,90 @@ public sealed class OnlineScreens
 		Push( screen );
 	}
 
-	// ---- Chat (f_chat with the list_msgs message list) ----------------------------------------
+	// ---- Chat (the original chat overlay, Mac UI table data:0x50b2c) ---------------------------
 
+	/// <summary>
+	/// The chat overlay in its original composition (Mac UI table data:0x50b2c): the people-in-park list at the left
+	/// (61,30)-(539,1333) with its two tabs — the people in this park and the online buddies (799014/799015 at
+	/// (129,28)-(232,130) and (244,28)-(347,130)) — three player buttons under it (799018/799017/799016 at
+	/// (29/187/346,1357)-(183/341/500,1511)), the message list (799019) at (543,1150)-(2005,1426) and the text entry
+	/// (799020) at (561,1441)-(1979,1486). The park itself fills the area above the messages: the players' relayed
+	/// positions in the chat park view. The top action bar (data:0x50d1a, six buttons at their authored places)
+	/// carries the manual's chat actions.
+	/// </summary>
+	// [APPROX:ONLINE-021] which action each original button carried is not decoded: the bar is vote, earmuffs,
+	// postcards, goto, page, locate; the list buttons are buddy, ignore, blackmark (manual pp. 67-70 names them all)
 	public void ShowChat()
 	{
 		if ( Session.Chat == null && Session.IsLoggedIn )
 			Guard( Session.ConnectChat );
 		var screen = new UiScreen( "chat" );
-		var window = UiDialogs.CenteredWindow( 1800, 1400 );
-		UiDialogs.AddWindow( screen, window, "w_big", () => OnlineStrings.Get( OnlineLabel.Chat ) );
-		screen.Add( new UiScrollList
+		// The park view over which the original drew its chat overlay; [APPROX:ONLINE-019] the original chat park was
+		// a three-dimensional park, whose scene is not decoded.
+		var view = screen.Add( new UiChatParkView( Session ) { Id = "park", Bounds = new UiRect( 543, 30, 1462, 1120 ), Anchor = UiAnchor.TopLeft } );
+		// The two tabs of the people panel: the park's players and the online buddies.
+		var buddies = false;
+		screen.Add( new UiButton { Id = "peopleTab", Text = () => OnlineStrings.Ui( OnlineStrings.PlayersAtThePark, "Players at the park" ),
+			Clicked = () => buddies = false, Bounds = new UiRect( 129, 28, 103, 102 ), Anchor = UiAnchor.TopLeft } );
+		screen.Add( new UiButton { Id = "buddyTab", Text = () => OnlineStrings.Get( OnlineLabel.BuddyList ),
+			Clicked = () => { buddies = true; Guard( Session.AskBuddies ); }, Bounds = new UiRect( 244, 28, 103, 102 ), Anchor = UiAnchor.TopLeft } );
+		var people = screen.Add( new UiScrollList
+		{
+			Id = "people",
+			Bounds = new UiRect( 61, 135, 478, 1198 ),
+			Anchor = UiAnchor.TopLeft,
+			RowHeight = 52,
+			Rows = () => buddies
+				? Session.Buddies.Select( buddy => buddy.Name ).ToArray()
+				: Session.RoomPlayers.Where( name => !name.StartsWith( "+", StringComparison.Ordinal ) ).ToArray(),
+		} );
+		people.Selected = -1;
+		string? Selected() => people.Selected >= 0 && people.Selected < people.Rows().Count ? people.Rows()[people.Selected] : null;
+		void Command( string command, string argument )
+		{
+			var name = Selected();
+			if ( name == null )
+				return;
+			Guard( () => Session.SendChatLine( $"/{command} {name}" ) );
+		}
+		// The three player buttons under the people list: the manual's right-click actions on a name.
+		screen.Add( new UiButton { Id = "buddy", Text = () => OnlineStrings.Get( OnlineLabel.AddBuddy ), Clicked = () => Command( "buddy", "" ),
+			Bounds = new UiRect( 29, 1357, 154, 154 ), Anchor = UiAnchor.TopLeft } );
+		screen.Add( new UiButton { Id = "ignore", Text = () => OnlineStrings.Get( OnlineLabel.IgnorePlayer ), Clicked = () => Command( "ignore", "" ),
+			Bounds = new UiRect( 187, 1357, 154, 154 ), Anchor = UiAnchor.TopLeft } );
+		screen.Add( new UiButton { Id = "blackmark", Text = () => OnlineStrings.Get( OnlineLabel.Blackmark ), Clicked = () => Command( "mark", "" ),
+			Bounds = new UiRect( 346, 1357, 154, 154 ), Anchor = UiAnchor.TopLeft } );
+		// The action bar across the top (data:0x50d1a): vote (a park, never a chat satellite — the manual's note),
+		// earmuffs, postcards, and the three buddy commands of the manual's buddy panel.
+		screen.Add( new UiButton { Id = "vote", Model = "b_vote", Text = () => OnlineStrings.Get( OnlineLabel.Vote ),
+			Clicked = () => Guard( () => Session.SendChatLine( "/vote" ) ), Bounds = new UiRect( 29, 22, 154, 154 ), Anchor = UiAnchor.TopLeft } );
+		var earmuffs = screen.Add( new UiButton { Id = "earmuffs", Text = () => OnlineStrings.Get( OnlineLabel.Earmuffs ),
+			Clicked = () => Guard( () => Session.SendChatLine( "/earmuffs" ) ), Bounds = new UiRect( 199, 22, 154, 154 ), Anchor = UiAnchor.TopLeft } );
+		screen.Add( new UiButton { Id = "postcards", Text = () => OnlineStrings.Ui( OnlineStrings.SendPostcard, "Send postcard" ), Clicked = ShowSendPostcard,
+			Bounds = new UiRect( 369, 22, 154, 154 ), Anchor = UiAnchor.TopLeft } );
+		screen.Add( new UiButton { Id = "goto", Text = () => OnlineStrings.Get( OnlineLabel.GotoPlayer ), Clicked = () => Command( "goto", "" ),
+			Bounds = new UiRect( 538, 22, 154, 154 ), Anchor = UiAnchor.TopLeft } );
+		screen.Add( new UiButton { Id = "page", Text = () => OnlineStrings.Get( OnlineLabel.PagePlayer ), Clicked = () => Command( "page", "" ),
+			Bounds = new UiRect( 708, 22, 154, 154 ), Anchor = UiAnchor.TopLeft } );
+		screen.Add( new UiButton { Id = "locate", Text = () => OnlineStrings.Get( OnlineLabel.LocateBuddy ), Clicked = () => Command( "locate", "" ),
+			Bounds = new UiRect( 978, 22, 154, 154 ), Anchor = UiAnchor.TopLeft } );
+		// The room's name over the park view, where the original showed the park it sat on.
+		screen.Add( new UiLabel { Id = "room", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center,
+			Bounds = new UiRect( 543, 1050, 1462, 90 ), Anchor = UiAnchor.TopLeft, Text = () => Session.CurrentRoomName } );
+		var messages = screen.Add( new UiScrollList
 		{
 			Id = "messages",
 			Model = "list_msgs",
-			Bounds = new UiRect( window.X + 100, window.Y + 170, window.Width - 300, 780 ),
-			Anchor = UiAnchor.Center,
+			Bounds = new UiRect( 543, 1150, 1462, 276 ),
+			Anchor = UiAnchor.TopLeft,
 			RowHeight = 40,
 			FollowEnd = true,
 			Rows = () => Session.ChatLines,
 		} );
-		var line = AddField( screen, "line", () => "", window.X + 100, window.Y + 1000, window.Width - 760, 400 );
+		messages.Selected = -1;
+		// The original text entry (799020) at its authored place.
+		var line = screen.Add( new UiTextField { Id = "line", MaximumLength = Online.Chat.ChatCommands.MaximumLineLength, Model = "f_text1",
+			Bounds = new UiRect( 561, 1441, 1418, 45 ), Anchor = UiAnchor.TopLeft } );
 		void Send()
 		{
 			if ( line.Text.Trim().Length == 0 )
@@ -785,16 +1101,19 @@ public sealed class OnlineScreens
 			line.Text = "";
 		}
 		line.Submitted = Send;
-		var send = screen.Add( new UiButton { Id = "send", Text = () => OnlineStrings.Ui( OnlineStrings.Send, "Send" ), Clicked = Send,
-			Bounds = new UiRect( window.Right - 600, window.Y + 1060, 380, 104 ), Anchor = UiAnchor.Center } );
-		screen.Updating += _ => send.Enabled = line.Enabled = Session.Chat != null;
-		AddStatus( screen, window );
-		AddBack( screen, window );
-		screen.Focus( line );
+		screen.Add( new UiButton { Id = "send", Text = () => OnlineStrings.Ui( OnlineStrings.Send, "Send" ), Clicked = Send,
+			Bounds = new UiRect( 1990, 1425, 400, 90 ), Anchor = UiAnchor.TopLeft } );
+		screen.Updating += context =>
+		{
+			view.Enabled = earmuffs.Enabled = line.Enabled = Session.Chat != null;
+			view.Walk( context.Delta );
+		};
+		screen.Back = stack.Pop;
 		Push( screen );
+		screen.Focus( line );
 	}
 
-	// ---- Import a local park file ---------------------------------------------------------------
+// ---- Import a local park file ---------------------------------------------------------------
 
 	public void ShowImport()
 	{
@@ -860,6 +1179,16 @@ public sealed class OnlineScreens
 		screen.Add( new UiButton { Id = "back", Model = "b_listpark", Text = () => strings.Extra( OpenTpwText.Back ), Clicked = stack.Pop,
 			Bounds = new UiRect( window.Right - 540, window.Bottom - 175, 320, 110 ), Anchor = UiAnchor.Center } );
 		screen.Back = stack.Pop;
+	}
+
+	/// <summary>
+	/// The original dialogs' close button (-1/-2): a small button at the window's bottom right corner, at the authored
+	/// place of the decoded dialog tables (e.g. data:0x50784 at (1889,820)-(1972,903)).
+	/// </summary>
+	private void AddCloseButton( UiScreen screen, float x, float y )
+	{
+		screen.Add( new UiButton { Id = "close", Model = "b_listpark", Text = () => strings.Extra( OpenTpwText.Back ), Clicked = stack.Pop,
+			Bounds = new UiRect( x, y, 83, 83 ), Anchor = UiAnchor.Center } );
 	}
 
 	private void Guard( Action action )

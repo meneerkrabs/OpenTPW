@@ -89,6 +89,38 @@ public sealed class OnlineClient : IDisposable
 		}
 	}
 
+	/// <summary>The online world's chat parks with their player counts, or null from a server without them.</summary>
+	public async Task<ChatParkList?> GetChatParksAsync( CancellationToken cancel = default )
+	{
+		try
+		{
+			return await GetJsonAsync<ChatParkList>( ApiRoutes.ChatParks, cancel );
+		}
+		catch ( OnlineException exception ) when ( exception.Status == HttpStatusCode.NotFound )
+		{
+			return null;
+		}
+	}
+
+	/// <summary>
+	/// A player's page: their published parks with visitors, votes, publish date, current and highest rank, and their
+	/// Platinum Tickets (the original website's "My Theme Park", docs/reverse/ONLINE-SOURCES.md S1). Without a login
+	/// only parks the author shows on the website are listed.
+	/// </summary>
+	public Task<PlayerProfile> GetPlayerProfileAsync( string name, CancellationToken cancel = default ) =>
+		GetJsonAsync<PlayerProfile>( ApiRoutes.Players + "/" + Uri.EscapeDataString( name.Trim() ), cancel );
+
+	/// <summary>The public top-parks chart (the original website's Top 10 parks page, S1).</summary>
+	public Task<ChartParkList> GetChartParksAsync( CancellationToken cancel = default ) => GetJsonAsync<ChartParkList>( ApiRoutes.ChartParks, cancel );
+
+	/// <summary>The public player charts: Top 10 players by votes, or the richest by Platinum Tickets (S1).</summary>
+	public Task<ChartPlayerList> GetChartPlayersAsync( bool richest, CancellationToken cancel = default ) =>
+		GetJsonAsync<ChartPlayerList>( richest ? ApiRoutes.ChartRichest : ApiRoutes.ChartPlayers, cancel );
+
+	/// <summary>Searches players by name; the original capped the website's search at 50 results (S1).</summary>
+	public Task<PlayerSearchResult> SearchPlayersAsync( string search, CancellationToken cancel = default ) =>
+		GetJsonAsync<PlayerSearchResult>( ApiRoutes.Players + "?search=" + Uri.EscapeDataString( search.Trim() ), cancel );
+
 	/// <summary>The server's news, or null from a server without news (older OpenTPW servers).</summary>
 	public async Task<NewsInfo?> GetNewsAsync( CancellationToken cancel = default )
 	{
@@ -379,6 +411,9 @@ public sealed class ChatConnection : IAsyncDisposable, IDisposable
 	public Task SendAsync( ChatCommand command, string argument, CancellationToken cancel = default ) => SendAsync( ChatRequest.ForCommand( command, argument ), cancel );
 
 	public Task JoinAsync( string room, CancellationToken cancel = default ) => SendAsync( ChatRequest.ForJoin( room ), cancel );
+
+	/// <summary>Moves the player's avatar in the chat park: a position in the park, both axes 0 to 1.</summary>
+	public Task MoveAsync( float x, float y, CancellationToken cancel = default ) => SendAsync( ChatRequest.ForMove( x, y ), cancel );
 
 	public async Task SendAsync( ChatRequest request, CancellationToken cancel = default )
 	{

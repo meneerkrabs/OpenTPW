@@ -4,7 +4,7 @@ October 9, 2026. Status: **every original ride, shop, sideshow, feature, fixed
 item and track upgrade of the four themes is catalogued, every one can be
 placed with its original model, and every object script runs in the RSE VM
 with its original animations.** This is not original gameplay: visitors,
-sounds/particles/EVENTs, ride-type controllers (coasters, karts, tours,
+particles/EVENT objects, ride-type controllers (coasters, karts, tours,
 bumpers) and the economy are not implemented, so many rides
 only play their create/idle clips. Everything below is read-only analysis of
 the local original files; the original executable is encrypted (`TP.ICD`
@@ -192,9 +192,10 @@ scripts declare different subsets.
 
 Corpus run (`EveryObjectScriptRunsInItsParkWithOriginalAnimations`): all 262
 scripted objects, every theme in one shared world, 60 s at 60 Hz: no faults,
-258 played original clips (1,451 plays). Not implemented (unimplemented-effect
-hook): sounds/EVENT/SPAWNSOUND output, ADDOBJ/KILLOBJ particles and objects,
-TOUR/BUMP/COAST controllers, park clock, screams, reverb, light opcodes.
+258 played original clips (1,451 plays). EVENT and REPAIREFFECT play their
+original sounds ([AUDIO.md](AUDIO.md)); their other effects stay unimplemented
+(the unimplemented-effect hook still records them): ADDOBJ/KILLOBJ particles and
+objects, TOUR/BUMP/COAST controllers, park clock, screams, reverb, light opcodes.
 
 ## Building (`ParkObjects`)
 
@@ -279,7 +280,7 @@ bonus root is set (observed: Dizzy Dinos animating).
 
 ## Remaining gates
 
-The 12-byte vertex block (0x4000), path parameters and texture frames; sounds/EVENT/particle objects;
+The 12-byte vertex block (0x4000), path parameters and texture frames; EVENT objects/particles (their sounds play, [AUDIO.md](AUDIO.md));
 TOUR/BUMP/COAST controllers and track building (coasters, karts, water rides,
 track upgrades); visitor simulation behind the bridge; `.hmp` ground deformation;
 original build rules and costs; animation tick rate; the meaning of `W`, `N`,

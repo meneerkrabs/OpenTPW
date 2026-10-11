@@ -45,7 +45,11 @@ public sealed class ServerOptions
 	public int PasswordIterations { get; set; } = 600_000;
 	public TimeSpan SessionLifetime { get; set; } = TimeSpan.FromDays( 7 );
 	public int MaximumSessionsPerPlayer { get; set; } = 8;
-	public int MaximumParksPerPlayer { get; set; } = 5;
+	/// <summary>
+	/// The original allowed ten parks on show at once (online FAQ, docs/reverse/ONLINE-SOURCES.md S2: a further
+	/// publish was told to un-publish one first). [EXT:ONLINE-050] an operator may lower it.
+	/// </summary>
+	public int MaximumParksPerPlayer { get; set; } = 10;
 	public int MaximumVotesPerDay { get; set; } = 10;
 	public int MaximumInboxPostcards { get; set; } = 200;
 	public int MaximumBuddies { get; set; } = 50;
@@ -59,6 +63,9 @@ public sealed class ServerOptions
 	/// <summary>Chat: burst size and refill per second of each connection's message bucket.</summary>
 	public int ChatBurst { get; set; } = 8;
 	public int ChatMessagesPerSecond { get; set; } = 1;
+	/// <summary>Chat parks: burst size and refill per second of each connection's walking-position bucket.</summary>
+	public int MovementBurst { get; set; } = 30;
+	public int MovementsPerSecond { get; set; } = 10;
 	public int MaximumChatConnections { get; set; } = 1000;
 	/// <summary>Moderation: players that cannot log in, players that cannot speak in chat, parks hidden from lists.</summary>
 	public List<string> BannedPlayers { get; set; } = new();
@@ -80,7 +87,8 @@ public sealed class ServerOptions
 		if ( string.IsNullOrWhiteSpace( DataDirectory ) )
 			throw new InvalidOperationException( "OpenTPW:DataDirectory is required." );
 		if ( PasswordIterations < 1000 || MaximumParksPerPlayer < 0 || MaximumVotesPerDay < 0 || RequestsPerMinute < 1
-			|| AuthenticationsPerMinute < 1 || UploadsPerHour < 1 || ChatBurst < 1 || ChatMessagesPerSecond < 1 || SessionLifetime <= TimeSpan.Zero )
+			|| AuthenticationsPerMinute < 1 || UploadsPerHour < 1 || ChatBurst < 1 || ChatMessagesPerSecond < 1
+			|| MovementBurst < 1 || MovementsPerSecond < 1 || SessionLifetime <= TimeSpan.Zero )
 			throw new InvalidOperationException( "OpenTPW server limits must be positive." );
 		if ( RequireEmail && (string.IsNullOrWhiteSpace( ResendApiKey ) || string.IsNullOrWhiteSpace( EmailFrom )) )
 			throw new InvalidOperationException( "OpenTPW:RequireEmail needs OpenTPW:ResendApiKey and OpenTPW:EmailFrom." );

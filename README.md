@@ -71,18 +71,20 @@ What works today, with your own original game data:
 - **Languages:** English, Danish, Dutch, French, German and Swedish, and every European language on
   your CD once you choose its folder ([languages](docs/LANGUAGES.md)).
 - **Parks:** the four worlds with their original terrain; all 274 original objects can be built
-  and run their original ride scripts and animations, and the official bonus objects can be added
-  ([objects](docs/OBJECTS.md), [ride scripts](docs/RSE-VM.md)).
+  and run their original ride scripts and animations, and the official bonus objects can be added;
+  players build their own roller coasters ([objects](docs/OBJECTS.md), [ride scripts](docs/RSE-VM.md),
+  [coasters](docs/COASTERS.md)).
 - **Guests, economy and staff:** guests arrive, walk the paths and use rides, shops, sideshows and
   toilets; money, loans, wages, research, objectives, golden tickets and keys run on the original
   settings files ([guests](docs/GUESTS.md), [economy](docs/ECONOMY.md)).
 - **Advisor, music and movies:** the advisor speaks for the traced game events with lip sync, the
-  park plays its original music, and all nine movies play ([audio](docs/AUDIO.md),
+  park and the front-end lobby play their original music, rides, the crowd and the interface play
+  their original sounds, and all nine movies play ([audio](docs/AUDIO.md),
   [lip sync](docs/LIPS.md), [movies](docs/TGQ-MOVIES.md)).
-- **Online again:** accounts, park sharing, visiting, voting, postcards and chat, on the official
-  server or one you host yourself. A shared park is the park as its owner built it — paths, queues,
-  objects, player-built coasters and published statistics — and a visit walks it read-only, rides
-  its rides and votes, as the original's visits did ([online](docs/ONLINE.md),
+- **Online again:** accounts, park sharing, visiting, voting, postcards and chat parks, on the
+  official server or one you host yourself. A shared park is the park as its owner built it (paths,
+  queues, objects, player-built coasters and published statistics), and a visit walks it read-only,
+  rides its rides and votes, as the original's visits did ([online](docs/ONLINE.md),
   [server](docs/SERVER.md)).
 - **Modern systems:** native builds for Windows, macOS and Linux; any resolution and aspect ratio
   with a HiDPI-aware interface scale; button labels fitted per language; compatibility fixes from
@@ -92,8 +94,9 @@ What works today, with your own original game data:
   builds on your own computer from your own copy with AI upscaling ([texture packs](docs/TEXTURE-PACKS.md)).
 - **Extras:** viewing and exporting the PlayStation 2 disc data (`--export-ps2`, [PS2](docs/PS2.md)).
 
-Not done yet: roller coaster construction, part of the ride, ambient and interface sounds, and the
-exact original rules in places where OpenTPW still uses a documented approximation. The
+Not done yet: go-kart and water ride tracks, part of the ride, the remaining ambient, guest, staff
+and path-tool sounds, and the exact original rules in places where OpenTPW still uses a documented
+approximation. The
 [completion plan](docs/COMPLETION-PLAN.md), [feature matrix](docs/FEATURE-MATRIX.md) and
 [progress](docs/PROGRESS.md) track what remains.
 
@@ -108,7 +111,7 @@ certifies every variant or original-runtime parity.
 |---|---|---|
 | Textures ([.WCT](https://opentpw.gu3.me/formats/wct.html)) | ✅ | Decoder loads the selected game's textures; other editions are unverified. |
 | Settings ([.SAM](https://opentpw.gu3.me/formats/sam.html)) | ✅ | Parser reads the selected game's settings; gameplay interpretation remains approximate. |
-| Sounds ([.SDT](https://opentpw.gu3.me/formats/sdt.html), .MP2) | ⚠️ | SDT containers, MPEG-1/2 Layer I effects and MPEG-2 Layer II speech/music decode (≤1 LSB vs independent reference on selected corpora); the `cat_*SFX.map`/`cat_*BANK.map` sound catalogues are read and the park plays its original music (busier sections as guests arrive), the park view click and the advisor through one mixer; ambient, ride and most UI sounds are not triggered yet, and CRC verification and de-emphasis remain incomplete ([sound](docs/AUDIO.md), [audio evidence](docs/LIPS.md)). |
+| Sounds ([.SDT](https://opentpw.gu3.me/formats/sdt.html), .MP2) | ⚠️ | SDT containers, MPEG-1/2 Layer I effects and MPEG-2 Layer II speech/music decode (≤1 LSB vs independent reference on selected corpora); the `cat_*SFX.map`/`cat_*BANK.map` sound catalogues are read and the game plays its original park music (busier sections as guests arrive), lobby music and ambience, UI clicks, drawer and error feedback, ride-script sounds (RSE `EVENT`/`REPAIREFFECT`), the crowd by the camera and the advisor through one mixer; rain/thunder, placed ambient, guest, staff and path-tool sounds are traced but not triggered yet; CRC check words are verified (mismatches counted, not concealed) and the 50/15 µs / CCITT J.17 emphasis indications decode through a de-emphasis shelf, although no shipped frame uses either ([sound](docs/AUDIO.md), [audio evidence](docs/LIPS.md)). |
 | Strings ([.BFMU](https://opentpw.gu3.me/formats/bfmu.html), [.BFST](https://opentpw.gu3.me/formats/bfst.html), [.BFUM](https://opentpw.gu3.me/formats/bfum.html)) | ✅ | 21 string tables per language decode and character tables round-trip in six verified languages; other codepages/editions are unverified ([languages](docs/LANGUAGES.md)). |
 | Models ([.MD2](https://opentpw.gu3.me/formats/m3d2.html)) | ⚠️ | 2,116/2,118 WAD members parse; the two others (207.201) and the two loose 24.23 arrows are refused by the original loader too. Animation members decode into position/rotation/scale tracks, quantised vertex groups, per-corner texture-coordinate tracks, node-flag toggles, the 12-byte block and texture-frame tracks (all 1,278 checked; unread record bits are exporter metadata); placed objects and the Totem play them. The 12-byte block is shown as the stored mesh (no original reader traced), path parameters and texture frames are not applied, PC executable equivalence is unverified, and rendering fidelity is unverified ([models](docs/MD2-MODELS.md)). |
 | Map Data ([.MAP](https://opentpw.gu3.me/formats/map.html)) | ⚠️ | All five TP2M terrain grids parse; grid mapping and five cell bits verified. Remaining flags/header values are opaque; the sound-catalog MAPs are a separate, decoded format ([maps](docs/MAP.md), [sound](docs/AUDIO.md)). |
@@ -117,7 +120,7 @@ certifies every variant or original-runtime parity.
 | Fonts ([.BF4](https://opentpw.gu3.me/formats/bf4.html)) | ✅ | All 33 fonts in each of six verified languages decode (four-bit, RLE, monochrome); original text layout/appearance remains unverified ([fonts](docs/BF4-FONTS.md), [UI](docs/UI.md)). |
 | Lip Sync ([.LIP](https://opentpw.gu3.me/formats/lips.html)) | ✅ | Mark lists parse; signed conversion, talking toggles, loaded-LIP start state and random mouth selection are traced to the Mac binary. The advisor speaks by itself for the traced game events (park start, Instant Action, bankruptcy; open/close queue but score below the minimum) with the original mouth choice; its clock is the frame clock and does not pause (ADVISOR-017), and animation/pose remain open ([lip sync](docs/LIPS.md), [binary trace](docs/reverse/APPROX-TRACE.md)). |
 | Banner mesh companions ([.MTR](https://opentpw.gu3.me/formats/mtr.html)) | ⚠️ | Selected topology and matrices decode; original runtime purpose remains unknown ([companions](docs/MTR.md)). |
-| Video ([.TQI/.TGQ](https://opentpw.gu3.me/formats/tqi.html)) | ⚠️ | All nine movies decode and stream via `--play-movie`; audio is bit-exact, video remains close but not bit-exact ([movies](docs/TGQ-MOVIES.md)). |
+| Video ([.TQI/.TGQ](https://opentpw.gu3.me/formats/tqi.html)) | ⚠️ | All nine movies decode and stream via `--play-movie`; audio is bit-exact, video remains close but not bit-exact (84–95 % identical samples against FFmpeg; the original IDCT is only partly located, and the Mac build holds no TQI decoder (its movies are Sorenson Video), see [movies](docs/TGQ-MOVIES.md)). |
 | Theme Park Inc textures (.FSH, EA `SHPI`) | ⚠️ | All 7,283 Theme Park Inc `.fsh` files/WAD members decode to RGBA (`--inspect-fsh`) and the experimental level viewer draws them; Theme Park Inc is not playable, and opaque 24-bit palettes are an approximation ([FSH](docs/FSH.md)). |
 | Theme Park Inc level viewer (`[EXT:tpi-viewer]`) | ⚠️ | `--load-original-level arabian\|science\|water` with Theme Park Inc data shows that world (terrain, lake, paths, gate, monorail, bus, guests, sound) with a camera only: no HUD, economy or advisor, and nothing is verified against the original game ([viewer](docs/THEME-PARK-INC.md#theme-park-inc-level-viewer)). |
 
@@ -138,8 +141,9 @@ game files never go into this repository.
 1. **Theme Park World**: the complete original offline game. This is the primary goal; it is in
    progress and not yet complete ([completion plan](docs/COMPLETION-PLAN.md)).
 2. **Online play as in the original game**: sharing, visiting and voting on parks, postcards and
-   chat. The original servers are gone and their protocol is not reconstructed, so OpenTPW provides
-   its own opt-in, self-hostable service ([online](docs/ONLINE.md)).
+   chat parks with live presence, movement and the original chat commands. The original servers are
+   gone and their protocol is not reconstructed, so OpenTPW provides its own opt-in, self-hostable
+   service ([online](docs/ONLINE.md), [what the original had](docs/reverse/ONLINE-FEATURES.md)).
 3. **Theme Park Inc / Sim Coaster**: a separate, later goal. Both games share most file formats and
    closely related ride-script formats ([comparison](docs/THEME-PARK-INC.md)), but Theme Park Inc
    is not playable yet; an experimental level viewer shows its worlds.

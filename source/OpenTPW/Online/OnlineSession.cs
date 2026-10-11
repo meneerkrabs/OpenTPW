@@ -32,7 +32,7 @@ public static class ChatFormatter
 			ChatEventKind.WorldShout => $"{item.From} [{Word( item.Command ?? "wshout" )}]: {item.Text}",
 			ChatEventKind.Emote when item.Text != null => $"{item.From} {item.Text}",
 			ChatEventKind.Emote => $"{item.From} *{Word( item.Command )}*",
-			ChatEventKind.Page => $"{item.From} [{Word( "page" )}]",
+			ChatEventKind.Page => item.Text is { Length: > 0 } text ? $"{item.From} [{Word( "page" )}]: {text}" : $"{item.From} [{Word( "page" )}]",
 			ChatEventKind.Notice when item.Notice == (int)ChatNotice.Commands =>
 				Notice( item.Notice.Value, null ) + " " + string.Join( ", ", (item.Args ?? Array.Empty<string>()).Select( Word ) ),
 			ChatEventKind.Notice when item.Notice == (int)ChatNotice.ThePark && item.Args is { Count: 2 } args =>
@@ -41,6 +41,9 @@ public static class ChatFormatter
 			ChatEventKind.Notice => Notice( item.Notice ?? 0, item.Args ),
 			ChatEventKind.System when item.Text == "rate-limited" => label( OnlineLabel.RateLimited ),
 			ChatEventKind.System when item.Text == "buddy-list" => label( OnlineLabel.NoBuddies ),
+			// [APPROX:ONLINE-024] the original notification's string is not recovered; the wording is OpenTPW's own
+			ChatEventKind.System when item.Text == "buddy-enters" && item.Args is { Count: 2 } enters =>
+				string.Format( label( OnlineLabel.BuddyEnters ), enters[0], enters[1] ),
 			ChatEventKind.System when item.Text == "server-message" => Notice( OnlineStrings.SystemMessage, item.Args ),
 			ChatEventKind.System => item.Text ?? "",
 			ChatEventKind.Room => $"{roomName( item.Room ?? "" )}: {string.Join( ", ", item.Args ?? Array.Empty<string>() )}",
@@ -104,11 +107,35 @@ public sealed class OnlineSession : IDisposable
 	public IReadOnlyList<PostcardSummary> Inbox { get; private set; } = Array.Empty<PostcardSummary>();
 	/// <summary>Cities of the current server's online world; empty before fetching or when the server has none.</summary>
 	public IReadOnlyList<CityInfo> Cities { get; private set; } = Array.Empty<CityInfo>();
+	/// <summary>
+	/// The chat parks of the current server's online world (the globe's five satellites), each with the players
+	/// currently in its room; empty before fetching or when the server has none.
+	/// </summary>
+	public IReadOnlyList<ChatParkInfo> ChatParks { get; private set; } = Array.Empty<ChatParkInfo>();
 
 	/// <summary>News fetched from the current server; null before fetching or when the server has none.</summary>
 	public NewsInfo? News { get; private set; }
 	public List<string> ChatLines { get; } = new();
 	public string CurrentRoom { get; private set; } = ChatProtocol.LobbyRoom;
+	/// <summary>The players in the current room, from the room's roster events ("who" in the original chat).</summary>
+	public IReadOnlyList<string> RoomPlayers { get; private set; } = Array.Empty<string>();
+	/// <summary>
+	/// Where each player in the current chat park stands (both axes 0-1 within the park), from the server's relayed
+	/// movement; the player's own position is set by <see cref="MoveTo"/>. Empty in a room nobody moved in.
+	/// </summary>
+	public IReadOnlyDictionary<string, (float X, float Y)> RoomPositions => positions;
+	private readonly Dictionary<string, (float X, float Y)> positions = new( StringComparer.OrdinalIgnoreCase );
+	/// <summary>
+	/// The logged-in player's own page (published parks, ranks, Platinum Tickets) or null before
+	/// <see cref="FetchProfile"/> ran.
+	/// </summary>
+	public PlayerProfile? Profile { get; private set; }
+	/// <summary>
+	/// The buddies of the last <c>/buddy</c> answer and whether each was online then (the manual's buddy list: "Lists
+	/// your park buddies who are currently online"); empty before the first answer.
+	/// </summary>
+	public IReadOnlyList<(string Name, bool Online)> Buddies => buddies;
+	private readonly List<(string Name, bool Online)> buddies = new();
 	public bool IsLoggedIn => Client?.Session != null;
 	/// <summary>A two-step setup waiting for its first code (after registering, or a login after an operator reset).</summary>
 	public TotpEnrollment? Enrollment { get; internal set; }
@@ -307,8 +334,12 @@ public sealed class OnlineSession : IDisposable
 		Inbox = Array.Empty<PostcardSummary>();
 		News = null;
 		Cities = Array.Empty<CityInfo>();
+		ChatParks = Array.Empty<ChatParkInfo>();
 		CityParks = null;
 		CurrentRoom = ChatProtocol.LobbyRoom;
+		RoomPlayers = Array.Empty<string>();
+		positions.Clear();
+		Profile = null;
 		ChatLines.Clear();
 	}
 
@@ -343,7 +374,8 @@ public sealed class OnlineSession : IDisposable
 	/// <summary>Fetches a city's parks for its lobby (the top ten become islands, the rest are listed).</summary>
 	public void FetchCityParks( int cityId ) => WithClient( async client =>
 	{
-		Post( () => CityParks = null );
+		// [DATA:Language/English/UITEXT.str:249] the original showed "Getting Top 10 Park List" while this ran
+		Post( () => { CityParks = null; Status = OnlineStrings.Ui( OnlineStrings.GettingTop10ParkList, "Getting Top 10 Park List" ); } );
 		var list = await client.ListParksAsync( sort: "votes", cityId: cityId );
 		Post( () => CityParks = list.Parks );
 		return list.Parks.Count == 0 ? OnlineStrings.Ui( OnlineStrings.NoSearchResults, "No search results" ) : null;
@@ -352,28 +384,56 @@ public sealed class OnlineSession : IDisposable
 	/// <summary>Fetches the cities for the globe; no login needed. Older servers have none.</summary>
 	public void FetchCities() => WithClient( async client =>
 	{
+		// [DATA:Language/English/UITEXT.str:248] the original showed "Getting City List" while this ran
+		Post( () => Status = OnlineStrings.Ui( OnlineStrings.GettingCityList, "Getting City List" ) );
 		var cities = await client.GetCitiesAsync();
 		Post( () => Cities = cities?.Cities ?? Array.Empty<CityInfo>() );
-		return null;
+		return "";
+	} );
+
+	/// <summary>
+	/// Fetches the chat parks with their player counts for the globe's satellites (the original's "Chat Satellite
+	/// List", UITEXT 252); no login needed. Older servers have none.
+	/// </summary>
+	public void FetchChatParks() => WithClient( async client =>
+	{
+		Post( () => Status = OnlineStrings.Ui( OnlineStrings.GettingChatSatelliteList, "Getting Chat Satellite List" ) );
+		var parks = await client.GetChatParksAsync();
+		Post( () => ChatParks = parks?.ChatParks ?? Array.Empty<ChatParkInfo>() );
+		return "";
 	} );
 
 	/// <summary>Fetches Game News and System News; no login needed.</summary>
 	public void FetchNews() => WithClient( async client =>
 	{
+		// [DATA:Language/English/UITEXT.str:245/246] "Getting Game News" / "Getting System News"
+		Post( () => Status = OnlineStrings.Ui( OnlineStrings.GettingGameNews, "Getting Game News" ) );
 		var news = await client.GetNewsAsync();
 		Post( () => News = news );
 		return news == null || (news.Game.Length == 0 && news.System.Length == 0) ? OnlineStrings.Get( OnlineLabel.NoNews ) : null;
 	} );
 
-	public void RefreshParks( string? search, string sort = "recent", int? cityId = null ) => WithClient( async client =>
+	public void RefreshParks( string? search, string sort = "recent", int? cityId = null, string? author = null ) => WithClient( async client =>
 	{
-		var list = await client.ListParksAsync( search, sort, cityId: cityId );
+		// [DATA:Language/English/UITEXT.str:250/251] "Getting All Park List" / "Getting Player's Park List"
+		Post( () => Status = OnlineStrings.Ui( search == null && author == null ? OnlineStrings.GettingAllParkList : OnlineStrings.GettingPlayersParkList,
+			search == null && author == null ? "Getting All Park List" : "Getting Player's Park List" ) );
+		var list = await client.ListParksAsync( search, sort, author, cityId: cityId );
 		Post( () => Parks = list.Parks );
 		return list.Parks.Count == 0 ? OnlineStrings.Ui( OnlineStrings.NoSearchResults, "No search results" ) : null;
 	} );
 
+	/// <summary>Unpublishes one of the player's own parks (the owner action of the original park details).</summary>
+	public void Unpublish( ParkSummary park ) => WithClient( async client =>
+	{
+		await client.UnpublishParkAsync( park.Id );
+		Post( () => Parks = Parks.Where( item => item.Id != park.Id ).ToList() );
+		return null;
+	} );
+
 	public void Publish( ParkPackage package, bool showOnWebsite = false, int cityId = 0 ) => WithClient( async client =>
 	{
+		Post( () => Status = OnlineStrings.Ui( OnlineStrings.PublishingPark, "Publishing Park" ) );
 		await client.UploadParkAsync( package, showOnWebsite: showOnWebsite, cityId: cityId );
 		return OnlineStrings.Ui( OnlineStrings.ParkPublished, "PARK PUBLISHED" ).Replace( "\n\n", " " );
 	} );
@@ -381,6 +441,7 @@ public sealed class OnlineSession : IDisposable
 	/// <summary>Downloads a park into the visited folder and records the visit; returns via status the file to visit.</summary>
 	public void Download( ParkSummary park, Action<string> onDownloaded ) => WithClient( async client =>
 	{
+		Post( () => Status = OnlineStrings.Ui( OnlineStrings.DownloadingPark, "Downloading Park" ) );
 		var package = await client.DownloadParkAsync( park.Id );
 		var path = Path.Combine( Folders.Visited, park.Id + ParkPackage.FileExtension );
 		package.Save( path );
@@ -401,13 +462,17 @@ public sealed class OnlineSession : IDisposable
 		return OnlineStrings.Get( OnlineLabel.Report ) + " OK";
 	} );
 
-	/// <summary>Sends every outbox postcard ("Sending mails from outbox", UITEXT 313) and moves sent cards to the sent folder.</summary>
-	public void SendOutbox() => WithClient( async client =>
+	/// <summary>
+	/// Sends the outbox postcards ("Sending mails from outbox", UITEXT 313) and moves sent cards to the sent folder.
+	/// The original's outbox sent the cards marked for sending (0x101862ac); with <paramref name="files"/> empty every
+	/// card goes out, which is what a player without marks expects.
+	/// </summary>
+	public void SendOutbox( IReadOnlyList<string>? files = null ) => WithClient( async client =>
 	{
 		var sent = 0;
 		foreach ( var (file, card, error) in Folders.List( Folders.Outbox ) )
 		{
-			if ( card == null )
+			if ( card == null || (files != null && files.Count > 0 && !files.Contains( file )) )
 				continue;
 			await client.SendPostcardAsync( card );
 			File.Move( file, Path.Combine( Folders.Sent, Path.GetFileName( file ) ), true );
@@ -475,8 +540,24 @@ public sealed class OnlineSession : IDisposable
 					if ( Chat != chat )
 						return;
 					if ( item.Kind == ChatEventKind.Room && item.Room != null )
+					{
 						CurrentRoom = item.Room;
-					AddChatLine( line );
+						RoomPlayers = item.Args ?? Array.Empty<string>();
+						// The new room's places arrive with the player's first movement there; the old room's
+						// places mean nothing in it.
+						positions.Clear();
+					}
+					else if ( item.Kind == ChatEventKind.Move && item.From != null )
+						positions[item.From] = (item.X ?? 0, item.Y ?? 0);
+					else if ( item.Kind == ChatEventKind.Notice && item.Notice is (int)ChatNotice.YourBuddyOnline or (int)ChatNotice.YourBuddyOffline
+						&& item.Args is { Count: >= 1 } args )
+					{
+						// A /buddy answer: remember it for the chat overlay's buddy tab.
+						buddies.RemoveAll( entry => entry.Name.Equals( args[0], StringComparison.OrdinalIgnoreCase ) );
+						buddies.Add( (args[0], item.Notice == (int)ChatNotice.YourBuddyOnline) );
+					}
+					if ( item.Kind != ChatEventKind.Move )
+						AddChatLine( line );
 				} );
 			}
 		}
@@ -546,9 +627,13 @@ public sealed class OnlineSession : IDisposable
 		} );
 	}
 
+	/// <summary>The name of the room the player is in: the Online World, a chat park or a published park.</summary>
+	public string CurrentRoomName => RoomName( CurrentRoom );
+
 	private string RoomName( string room ) => room == ChatProtocol.LobbyRoom || room.Length == 0
 		? OnlineStrings.Ui( OnlineStrings.OnlineWorld, "Online World" )
-		: Parks.FirstOrDefault( park => ChatProtocol.ParkRoom( park.Id ) == room )?.Name ?? room;
+		: ChatParks.FirstOrDefault( park => ChatProtocol.SatelliteRoom( park.Id ) == room )?.Name
+			?? Parks.FirstOrDefault( park => ChatProtocol.ParkRoom( park.Id ) == room )?.Name ?? room;
 
 	public void AddChatLine( string line )
 	{
@@ -587,6 +672,40 @@ public sealed class OnlineSession : IDisposable
 				return null;
 			} );
 	}
+
+	/// <summary>
+	/// Walks the player's avatar to a place in the chat park (manual p. 68: "Left click to walk to destination;
+	/// Double click to teleport"): the server relays the position to everyone in the park. The player's own place is
+	/// recorded at once, so the view moves even before the server answers.
+	/// </summary>
+	public void MoveTo( float x, float y )
+	{
+		var chat = Chat;
+		if ( chat == null )
+			return;
+		var name = Settings.PlayerName;
+		if ( name != null )
+			positions[name] = (x, y);
+		Run( async () =>
+		{
+			await chat.MoveAsync( x, y );
+			return null;
+		} );
+	}
+
+	/// <summary>Asks the server for the buddy list (the original's <c>/buddy</c> answer lists each buddy as online or offline).</summary>
+	public void AskBuddies() => SendChatLine( "/" + ChatCommands.CanonicalName( ChatCommand.Buddy ) );
+
+	/// <summary>Fetches the logged-in player's own page: their parks, their ranks and their Platinum Tickets.</summary>
+	public void FetchProfile() => WithClient( async client =>
+	{
+		var name = Settings.PlayerName;
+		if ( name == null )
+			return null;
+		var profile = await client.GetPlayerProfileAsync( name );
+		Post( () => Profile = profile );
+		return null;
+	} );
 
 	public void Dispose()
 	{

@@ -12,6 +12,8 @@ public sealed class UiTextField : UiElement
 	public string Text { get; set; } = "";
 	public int MaximumLength { get; set; } = 64;
 	public bool Password { get; set; }
+	/// <summary>Left inset of the typed text in authored units; the original login fields carry their labels inside (data:0x505f4).</summary>
+	public float TextInset { get; set; }
 	/// <summary>Background model frame; null draws the plain help-box colour.</summary>
 	public string? Model { get; set; }
 	/// <summary>Called with Enter.</summary>
@@ -50,8 +52,9 @@ public sealed class UiTextField : UiElement
 		// The caret blinks twice a second while the field has the focus.
 		if ( focused && Enabled && (int)(context.Time * 2) % 2 == 0 )
 			shown += "_";
-		var pad = rect.Height * 0.25f;
-		context.DrawText( context.Fonts.Label, shown, new UiRect( rect.X + pad, rect.Y, rect.Width - pad * 2, rect.Height ), Enabled ? UiColors.Value : UiColors.Disabled );
+		var scale = rect.Height / Bounds.Height;
+		var inset = MathF.Max( rect.Height * 0.25f, TextInset * scale );
+		context.DrawText( context.Fonts.Label, shown, new UiRect( rect.X + inset, rect.Y, rect.Width - inset - rect.Height * 0.25f, rect.Height ), Enabled ? UiColors.Value : UiColors.Disabled );
 	}
 }
 
@@ -87,6 +90,11 @@ public sealed class UiScrollList : UiElement, IUiRowList
 	public float RowHeight { get; set; } = 44;
 	/// <summary>Inner margin between the frame art and the rows, in authored units.</summary>
 	public float Margin { get; set; } = 24;
+	/// <summary>
+	/// Column headers of a multi-column list, drawn above the rows: each entry is (offset from the list's left
+	/// edge in authored units, header text). Rows then split on tabs and each piece lands at its column's offset.
+	/// </summary>
+	public IReadOnlyList<(float Offset, Func<string> Text)>? Columns { get; set; }
 	public int Selected { get; set; } = -1;
 	public Action<int>? SelectionChanged { get; set; }
 	public Action<int>? RowActivated { get; set; }
@@ -151,13 +159,37 @@ public sealed class UiScrollList : UiElement, IUiRowList
 		var scale = rect.Height / Bounds.Height;
 		var margin = Margin * scale;
 		var height = RowHeight * scale;
+		var top = rect.Y + margin;
+		if ( Columns != null )
+		{
+			foreach ( var column in Columns )
+			{
+				var width = Bounds.Width - column.Offset - Margin;
+				var header = new UiRect( rect.X + column.Offset * scale, top, width * scale, height );
+				context.DrawText( context.Fonts.Small, column.Text(), header, UiColors.Value );
+			}
+			top += height;
+		}
 		for ( var index = 0; index < VisibleRows && first + index < rows.Count; index++ )
 		{
-			var row = new UiRect( rect.X + margin, rect.Y + margin + index * height, rect.Width - margin * 2, height );
+			var row = new UiRect( rect.X + margin, top + index * height, rect.Width - margin * 2, height );
 			var selected = first + index == Selected;
 			if ( selected )
 				context.Batch.AddRectangle( row, new RgbaByte( 60, 90, 200, focused ? (byte)170 : (byte)110 ) );
-			context.DrawText( context.Fonts.Small, rows[first + index], row, selected ? UiColors.Highlight : UiColors.Text );
+			var text = rows[first + index];
+			if ( Columns == null )
+				context.DrawText( context.Fonts.Small, text, row, selected ? UiColors.Highlight : UiColors.Text );
+			else
+			{
+				// A tab-separated row: each piece is drawn at its column's offset.
+				var pieces = text.Split( '\t' );
+				for ( var column = 0; column < Columns.Count && column < pieces.Length; column++ )
+				{
+					var cell = new UiRect( rect.X + Columns[column].Offset * scale, top + index * height,
+						(Bounds.Width - Columns[column].Offset - Margin) * scale, height );
+					context.DrawText( context.Fonts.Small, pieces[column], cell, selected ? UiColors.Highlight : UiColors.Text );
+				}
+			}
 		}
 		// A thin position bar when not all rows fit.
 		if ( rows.Count > VisibleRows )

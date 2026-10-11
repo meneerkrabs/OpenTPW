@@ -50,9 +50,13 @@ public static class ServerProgram
 
 		var filter = string.IsNullOrWhiteSpace( options.FilterDirectory ) ? WordFilter.Empty : WordFilter.LoadDirectory( options.FilterDirectory );
 		var store = new ServerStore( options );
-		var hub = new ChatHub( store, options, filter );
+		var chatParks = new ChatParkDirectory( options.DataDirectory );
+		var cities = new CityDirectory( options.DataDirectory );
+		var hub = new ChatHub( store, options, filter, chatParks, cities );
 		builder.Services.AddSingleton( options );
 		builder.Services.AddSingleton( store );
+		builder.Services.AddSingleton( chatParks );
+		builder.Services.AddSingleton( cities );
 		builder.Services.AddSingleton( filter );
 		builder.Services.AddSingleton( hub );
 		// [EXT:ONLINE-057] the project website reads the public news and website park list from the browser
@@ -88,7 +92,7 @@ public static class ServerProgram
 		// [EXT:online-email] account e-mails go through Resend when a key is set; without one, e-mail is off
 		emailSender ??= string.IsNullOrWhiteSpace( options.ResendApiKey ) || string.IsNullOrWhiteSpace( options.EmailFrom )
 			? null : new ResendEmailSender( options.ResendApiKey, options.EmailFrom, options.EmailReplyTo );
-		Map( app, options, store, hub, filter, emailSender );
+		Map( app, options, store, hub, chatParks, cities, filter, emailSender );
 		app.Lifetime.ApplicationStopping.Register( hub.Restarting );
 		return app;
 	}
@@ -219,7 +223,21 @@ public static class ServerProgram
 			throw new StoreException( StatusCodes.Status400BadRequest, $"{what} contains words blocked by this server's filter." );
 	}
 
-	private static void Map( WebApplication app, ServerOptions options, ServerStore store, ChatHub hub, WordFilter filter, IEmailSender? emailSender )
+	/// <summary>
+	/// A player's page: every published park with its visitors, votes, publish date, current rank and highest rank, and
+	/// the player's Platinum Tickets (docs/reverse/ONLINE-SOURCES.md S1). A player name is 50 characters at most, like
+	/// the server's own name checks.
+	/// </summary>
+	private static PlayerProfile Profile( ServerStore store, string name, AccountRecord? viewer, CityDirectory cities )
+	{
+		if ( name.Length > OnlineText.MaximumNameLength )
+			throw new StoreException( StatusCodes.Status400BadRequest, "Player name is too long." );
+		var (author, platinum, parks) = store.PlayerParks( name, viewer );
+		return new PlayerProfile( author, platinum, parks.Select( entry => new PlayerPark(
+			entry.Park.Name, entry.Park.Visits, entry.Park.Votes, entry.Park.PublishedUtc, entry.Rank, entry.Park.HighestRank ) ).ToList() );
+	}
+
+	private static void Map( WebApplication app, ServerOptions options, ServerStore store, ChatHub hub, ChatParkDirectory chatParks, CityDirectory cities, WordFilter filter, IEmailSender? emailSender )
 	{
 		app.MapGet( ApiRoutes.Server, () => Ok( new ServerInfo( options.ServerName, Version, ProtocolVersion, options.Message, options.AllowRegistration, !filter.IsEmpty,
 			ParkPackage.MaximumPackageBytes, Postcard.MaximumCardBytes, options.MaximumParksPerPlayer, options.MaximumVotesPerDay ) ) );
@@ -240,12 +258,50 @@ public static class ServerProgram
 			} ).RequireRateLimiting( "auth" );
 		}
 
-		var cities = new CityDirectory( options.DataDirectory );
 		app.MapGet( ApiRoutes.Cities, () =>
 		{
 			var counts = store.ParksPerCity();
 			return Ok( new CityList( cities.Read().Select( city => new CityInfo( city.Id, city.Name, city.Description, city.Latitude, city.Longitude,
 				counts.GetValueOrDefault( city.Id ) ) ).ToList() ) );
+		} );
+
+		// The globe's five chat satellites: each chat park's room and the players in it (docs/SERVER.md).
+		app.MapGet( ApiRoutes.ChatParks, () => Ok( new ChatParkList( chatParks.WithPlayers( hub.PlayersIn ) ) ) );
+
+		// The original website's pages (docs/reverse/ONLINE-SOURCES.md S1), as public, privacy-respecting endpoints:
+		// only parks whose authors chose to show them on the website appear without a login.
+		app.MapGet( ApiRoutes.ChartParks, () => Ok( new ChartParkList( store.TopParks( 10 )
+			.Select( entry => new ChartParkEntry( entry.Rank, entry.Name, entry.Player ) ).ToList() ) ) ).RequireCors( WebsitePolicy );
+		app.MapGet( ApiRoutes.ChartPlayers, () => Ok( new ChartPlayerList( store.PlayerChart( 10, byPlatinum: false )
+			.Select( ( entry, index ) => new ChartPlayerEntry( index + 1, entry.Name, entry.Score ) ).ToList() ) ) ).RequireCors( WebsitePolicy );
+		app.MapGet( ApiRoutes.ChartRichest, () => Ok( new ChartPlayerList( store.PlayerChart( 10, byPlatinum: true )
+			.Select( ( entry, index ) => new ChartPlayerEntry( index + 1, entry.Name, entry.Score ) ).ToList() ) ) ).RequireCors( WebsitePolicy );
+		app.MapGet( ApiRoutes.Players, ( HttpContext context, string? search ) =>
+		{
+			if ( string.IsNullOrWhiteSpace( search ) || search.Length > OnlineText.MaximumNameLength )
+				return Ok( new PlayerSearchResult( Array.Empty<string>(), More: false ) );
+			try
+			{
+				var (names, more) = store.SearchPlayers( search.Trim(), store.Authenticate( Token( context ) ) );
+				return Ok( new PlayerSearchResult( names, more ) );
+			}
+			catch ( StoreException exception )
+			{
+				return Error( exception.Status, exception.Message );
+			}
+		} ).RequireCors( WebsitePolicy );
+		// The page is public, but a logged-in reader sees every published park of the player, not only the website ones.
+		app.MapGet( ApiRoutes.Players + "/{name}", ( HttpContext context, string name ) =>
+		{
+			try
+			{
+				var viewer = store.Authenticate( Token( context ) );
+				return Task.FromResult( Ok( Profile( store, name, viewer, cities ) ) );
+			}
+			catch ( StoreException exception )
+			{
+				return Task.FromResult( Error( exception.Status, exception.Message ) );
+			}
 		} );
 
 		var news = new NewsFeed( options.DataDirectory );
@@ -371,7 +427,9 @@ public static class ServerProgram
 			// The payload is validated as a park payload too (format, version, sizes, digest over its layout):
 			// clients check on visit, but a publish is the last place to refuse a package no client could enter.
 			MinimalParkPayload.FromSnapshot( package.ToSnapshot() );
-			RequireClean( filter, package.Manifest.Park.Name, "Park name" );
+			// [APPROX:ONLINE-023] the original showed swear words in park names as asterisks (FAQ, S2), so the name is
+			// masked, not refused; the description keeps the refusal (an OpenTPW moderation choice).
+			package = package with { Manifest = package.Manifest with { Park = package.Manifest.Park with { Name = filter.Apply( package.Manifest.Park.Name ) } } };
 			RequireClean( filter, package.Manifest.Park.Description, "Park description" );
 			var city = int.TryParse( context.Request.Query["city"], out var cityId ) ? cityId : 0;
 			if ( city != 0 && cities.Find( city ) == null )

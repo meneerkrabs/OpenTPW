@@ -165,10 +165,11 @@ public class Layer1DecoderTests
 	}
 
 	[TestMethod]
-	public void LayerOneRejectsUnsupportedDeemphasisAndReservedLayer()
+	public void LayerOneRejectsReservedEmphasisAndReservedLayer()
 	{
-		Assert.ThrowsException<NotSupportedException>( () => Mp2Decoder.Decode( Frame( emphasis: 1 ) ) );
-		Assert.ThrowsException<NotSupportedException>( () => Mp2Decoder.Decode( Frame( emphasis: 3 ) ) );
+		// Emphasis '01' (50/15 µs) and '11' (CCITT J.17) decode with the de-emphasis filter
+		// (Mp2ErrorProtectionTests); only the reserved value '10' is rejected.
+		Assert.ThrowsException<InvalidDataException>( () => Mp2Decoder.Decode( Frame( emphasis: 2 ) ) );
 		var reservedLayer = Frame(); reservedLayer[1] &= 0xF9;
 		Assert.ThrowsException<InvalidDataException>( () => Mp2Decoder.Decode( reservedLayer ) );
 	}

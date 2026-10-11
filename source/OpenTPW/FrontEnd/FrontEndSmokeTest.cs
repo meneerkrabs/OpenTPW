@@ -228,29 +228,31 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			Require( field != null && field.Text == "Alice", "typing reaches the focused login name field" );
 			VerifyText( CaptureFrame( "online-login.png" ), OnlineStrings.Ui( OnlineStrings.LoginName, "Login name" ), "login name label" );
 		} );
-		var onlineShots = new (string Name, Action<UI.OnlineScreens> Show, string Screen)[]
+		var onlineShots = new (string Name, Action<UI.OnlineScreens> Show, string Screen, string? Verify)[]
 		{
-			("online-news.png", screens => screens.ShowNews(), "onlineNews"),
-			("online-find-parks.png", screens => screens.ShowFindParks(), "findParks"),
-			("online-send-postcard.png", screens => screens.ShowSendPostcard(), "sendPostcard"),
-			("online-outbox.png", screens => screens.ShowOutbox(), "outbox"),
-			("online-inbox.png", screens => screens.ShowInbox(), "inbox"),
-			("online-chat.png", screens => screens.ShowChat(), "chat"),
-			("online-import.png", screens => screens.ShowImport(), "import"),
+			("online-news.png", screens => screens.ShowNews(), "onlineNews", null),
+			("online-find-parks.png", screens => screens.ShowFindParks(), "findParks", null),
+			("online-send-postcard.png", screens => screens.ShowSendPostcard(), "sendPostcard", null),
+			("online-outbox.png", screens => screens.ShowOutbox(), "outbox", null),
+			("online-inbox.png", screens => screens.ShowInbox(), "inbox", null),
+			("online-chat.png", screens => screens.ShowChat(), "chat",
+				// The original chat overlay (data:0x50b2c): the park view answers a click with a walk.
+				OnlineStrings.Get( OnlineLabel.WalkHint )),
+			("online-import.png", screens => screens.ShowImport(), "import", null),
 			// A fixed example secret; the capture is checked by decoding its QR code (docs/ONLINE.md, "Two-step login").
 			("online-two-step.png", screens =>
 			{
 				flow.Online.Enrollment = new TotpEnrollment( "Alice", "smoke-ticket", "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP",
 					Totp.Uri( "OpenTPW", "Alice", "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP" ), DateTimeOffset.UtcNow.AddMinutes( 10 ) );
 				screens.ShowEnrollment();
-			}, "twoStepSetup"),
+			}, "twoStepSetup", null),
 			("online-two-step-email.png", screens =>
 			{
 				flow.Online.Enrollment = new TotpEnrollment( "Alice", "smoke-ticket", "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP",
 					Totp.Uri( "OpenTPW", "Alice", "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP" ), DateTimeOffset.UtcNow.AddMinutes( 10 ), EmailRequired: true );
 				screens.ShowEnrollment();
-			}, "twoStepSetup"),
-			("online-recovery.png", screens => screens.ShowRecovery( "Alice" ), "recovery"),
+			}, "twoStepSetup", null),
+			("online-recovery.png", screens => screens.ShowRecovery( "Alice" ), "recovery", null),
 		};
 		foreach ( var shot in onlineShots )
 		{
@@ -259,7 +261,9 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			Do( $"{shot.Screen} capture", () =>
 			{
 				Require( flow.Menu!.Stack.Top?.Name == shot.Screen, $"{shot.Screen} opens" );
-				CaptureFrame( shot.Name );
+				var frame = CaptureFrame( shot.Name );
+				if ( shot.Verify != null )
+					VerifyText( frame, shot.Verify, $"{shot.Screen} text" );
 				flow.Online.Enrollment = null;
 				flow.Menu.Stack.Pop();
 			} );
@@ -593,6 +597,13 @@ internal sealed class FrontEndSmokeTest : IDisposable
 					soldFor = item.Amount;
 			};
 			Click( flow.Hud!.Screen, "deleteRide" );
+		} );
+		Wait( "delete confirmation opens", 3 );
+		Do( "confirm ride deletion", () =>
+		{
+			// Game Options' Confirmations is on by default, so the delete button asks first.
+			Require( flow.Hud!.Stack.Top?.Name == "confirmDelete", "deleting a ride asks for confirmation" );
+			Click( flow.Hud.Stack.Top!, "choice0" );
 		} );
 		Wait( "ride sold", 3 );
 		Do( "ride deleted", () =>

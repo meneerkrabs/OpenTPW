@@ -355,6 +355,9 @@ internal sealed class GameFlow : IDisposable
 			GameAudio.Update( Level.Guests?.GetStatistics().InPark );
 			GameAudio.SetCrowd( GuestsNearCamera( Level ) );
 			GameAudio.UpdateStaffVoices( Level.StaffWorld?.Snapshots ?? Array.Empty<StaffWorldSnapshot>(), Level.Park?.Economy.Turn ?? -1 );
+			GameAudio.SetRain( Level.Weather?.RainLevel ?? 0 );
+			foreach ( var strike in Level.Weather?.TakeThunder() ?? Array.Empty<Vector3>() )
+				GameAudio.PlayThunder( strike );
 			return;
 		}
 		if ( Level != null && ViewerLevel == Level )

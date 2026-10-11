@@ -312,7 +312,7 @@ public static class GameAudio
 	/// starts a second, unmodulated voice of its own that OpenTPW does not reproduce.
 	/// </summary>
 	// [BIN:STP-PPC:0x100BC388 rain level] above 0 the global rain voice (cat_ambient 0x21, submitted flat) is started once and given parameter 8 = the level; 0 stops it with 0x100BBA58
-	// [BIN:STP-PPC:0x103394 level source] the level is the weather thing's current drop count × 100 / MaxRaindrops (600)
+	// [BIN:STP-PPC:0x10103394 level source] the level is the weather thing's current drop count × 100 / MaxRaindrops (the Mac's rain tick; the fork's +0x34 target reading is refuted)
 	// [APPROX:AUDIO-015] only the level-driven rain voice is built; the weather thing's own +0x54 voice (0x10103C4C mode 0) is not — whether the original's second voice is audible is not established
 	public static void SetRain( int level )
 	{
@@ -342,7 +342,7 @@ public static class GameAudio
 	}
 
 	/// <summary>Plays the thunder one-shot at a strike's position (the original passes the top of the last bolt, height 300).</summary>
-	// [BIN:STP-PPC:0x1034D8 thunder submit] when the weather thing's thunder countdown (+0x44) reaches 0, cat_ambient 0x20 is submitted at the last lightning location (+0x48..+0x50), truncated to whole numbers
+	// [BIN:STP-PPC:0x101034C8-0x10103518 thunder submit] when the weather thing's thunder countdown (+0x44) reaches 0, cat_ambient 0x20 is submitted at the last lightning location (+0x48..+0x50)
 	public static AudioVoice? PlayThunder( Vector3 position ) => events?.PlayAt( Ambient, ThunderEvent, AudioChannel.Effects, position );
 
 	/// <summary>

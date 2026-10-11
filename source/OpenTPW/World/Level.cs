@@ -20,6 +20,8 @@ public partial class Level : IDisposable
 	public OriginalTerrain? OriginalTerrain { get; private set; }
 	/// <summary>Park management simulation (money, clock, staff, research); original levels only for now.</summary>
 	public ParkEconomyRuntime? Park { get; private set; }
+	/// <summary>The park's weather, created on the first simulation step of a park; null without a park economy.</summary>
+	public ParkWeather? Weather { get; private set; }
 
 	/// <summary>Park name on the gate sign of an imported original level (TrueType sign text demo).</summary>
 	public OriginalGateSign? GateSign { get; private set; }
@@ -274,6 +276,11 @@ public partial class Level : IDisposable
 			PlacedRide?.Simulate( deltaTime );
 			Objects.Simulate( deltaTime );
 			Park?.FixedTick();
+			if ( Park != null && Guests != null )
+			{
+				Weather ??= new ParkWeather( Park.Economy.Settings.Standard, Seed.WeatherStream, Guests.Grid.Cells.Width, Guests.Grid.Cells.Height );
+				Weather.AdvanceTo( Park.Economy.Tick );
+			}
 			StaffWorld?.Tick( deltaTime );
 		} );
 		foreach ( var entity in Entity.All.ToArray() )

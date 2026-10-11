@@ -28,6 +28,14 @@ public static class AudioApproximations
 		("AUDIO-021", "scape.omp places and the listener share the park's sound units; the Mac's placement units are not traced in one place"),
 		("AUDIO-022", "a refused path-tool commit plays cat_ui 175; the Mac site is gated by the tool latch and its mapping to a refusal is inferred, not fully traced"),
 		("AUDIO-023", "the path tool's link-end sound (cat_ui 139) is not played; its trigger is inferred and no undo sound is traced"),
+		("AUDIO-024", "a staff member's walking or idle voice draws once per park turn from the sound stream's top bits, not the world LCG's low four bits the Mac tests"),
+		("AUDIO-025", "the December season row reads past the four-season table; this follows the fork's reading (Avg 4, Tolerance DaysOfWarning, Chance DaysBetweenChanges)"),
+		("AUDIO-026", "a forecast applies on its day index DaysOfWarning after the roll, and the roll is taken on the first turn of its day; the Mac's day comparison units are not traced"),
+		("AUDIO-027", "the first quality is rolled at park entry from the entry day's season and the drops start at 0; the Mac's initial roll is not traced"),
+		("AUDIO-028", "a snow quality's drops target is 0 (no rain voice); the snow branch's target is not traced"),
+		("AUDIO-029", "thunder whose countdown computes to 0 plays at the strike; the Mac's countdown test beside 0x10103438 is not fully traced"),
+		("AUDIO-030", "the weather's random draws come from the park's weather stream, not the Mac's world LCG; the seed source is not traced"),
+		("AUDIO-031", "weather is simulated for sound only: rain drops, snow, the lightning bolt and the forecast are not drawn or shown"),
 	};
 
 	private static bool logged;

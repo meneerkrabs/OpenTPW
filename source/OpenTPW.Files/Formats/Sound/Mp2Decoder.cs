@@ -128,7 +128,7 @@ public static partial class Mp2Decoder
 				// [APPROX:AUDIO-007] A CRC mismatch is counted and the frame still decodes; ISO/IEC 11172-3 2.4.3.1 only
 				// recommends concealment (muting or repeating), and no shipped TPW frame carries a CRC word — evidence
 				// needed: the original player's behaviour on a failed frame CRC
-				if ( !VerifyCrc( data.Slice( offset, header.FrameBytes ), header.ProtectedBits ) )
+				if ( !VerifyCrc( data.Slice( offset, header.FrameBytes ), header ) )
 					crcFailures++;
 			}
 			if ( header.Layer == 1 )
@@ -146,16 +146,12 @@ public static partial class Mp2Decoder
 	/// <summary>
 	/// ISO/IEC 11172-3 2.4.3.1: CRC-16 with G(x) = x¹⁶ + x¹⁵ + x² + 1, all-ones start,
 	/// over header bits 16-31 (bit_rate_index through emphasis) and the first
-	/// <paramref name="protectedBits"/> audio_data bits after the check word. The counts
-	/// are fixed per layer and mode by Annex B Table 3-B.5: Layer I 128 (single channel)
-	/// or 256 (other modes) allocation bits. The Layer II count is the allocation table's
-	/// nbal bits plus its maximum scfsi bits; the only supported table, MPEG-2 LSF
-	/// (13818-3 Table B.1, sblimit 30, 75 nbal bits per channel), gives 135/270. That LSF
-	/// row is not published: 13818-3 2.4.2.4 defers Layers I and II to ISO/IEC 11172-3,
-	/// whose table lists only the MPEG-1 allocation tables B.2a-d.
+	/// <see cref="ProtectedBits"/> audio_data bits after the check word. The counts are
+	/// fixed per layer and mode by Annex B Table 3-B.5; see <see cref="ProtectedBits"/>.
 	/// </summary>
-	private static bool VerifyCrc( ReadOnlySpan<byte> frame, int protectedBits )
+	private static bool VerifyCrc( ReadOnlySpan<byte> frame, Header header )
 	{
+		var protectedBits = ProtectedBits( header );
 		if ( 48 + protectedBits > frame.Length * 8 )
 			throw new InvalidDataException( "MP2 frame is too short for its CRC-protected bits." );
 		var crc = 0xFFFF;
@@ -163,6 +159,19 @@ public static partial class Mp2Decoder
 		StepCrc( ref crc, frame, 48, protectedBits );
 		return crc == (frame[4] << 8 | frame[5]);
 	}
+
+	/// <summary>
+	/// ISO/IEC 11172-3 Annex B Table 3-B.5, protected audio_data bits. Layer I fixes
+	/// 128 (single channel) or 256 (other modes) allocation bits. Layer II is the
+	/// allocation table's Σnbal plus 2 × sblimit maximum scfsi bits - the four MPEG-1
+	/// rows confirm the rule (B.2a 88+54=142, B.2b 94+60=154, B.2c 26+16=42,
+	/// B.2d 38+24=62). The only supported Layer II table is MPEG-2 LSF (13818-3
+	/// Table B.1, sblimit 30, Σnbal 75), whose row no table publishes: 13818-3 2.4.2.4
+	/// defers Layers I and II to ISO/IEC 11172-3, whose table lists only the MPEG-1
+	/// allocation tables B.2a-d. 75 + 60 gives 135/270.
+	/// </summary>
+	private static int ProtectedBits( Header header ) =>
+		(header.Layer == 1 ? 128 : AllocationTable.Sum( row => row.Count * row.Bits ) + 2 * SubbandLimit) * header.Channels;
 
 	private static void StepCrc( ref int crc, ReadOnlySpan<byte> frame, int start, int count )
 	{
@@ -198,7 +207,7 @@ public static partial class Mp2Decoder
 	}
 
 	private readonly record struct Header( bool Crc, int SampleRate, int Mode, int ModeExtension, int Layer, int FrameBytes,
-		int Emphasis, int ProtectedBits )
+		int Emphasis )
 	{
 		public int Channels => Mode == 3 ? 1 : 2;
 
@@ -237,12 +246,8 @@ public static partial class Mp2Decoder
 			var frameBytes = layer == 3
 				? (12 * bitrate * 1000 / sampleRate + padding) * 4
 				: 144 * bitrate * 1000 / sampleRate + padding;
-			// ISO/IEC 11172-3 Annex B Table 3-B.5 protected audio_data bits: Layer I 128/256
-			// allocation bits; Layer II allocation plus maximum scfsi bits (the LSF table
-			// gives 75 + 2 × 30 per channel; see VerifyCrc for the derivation and source gap).
-			var protectedBits = (layer == 3 ? 128 : 135) * (mode == 3 ? 1 : 2);
 			return new Header( (word & 0x10000) == 0, sampleRate, mode, (int)(word >> 4) & 3,
-				layer == 3 ? 1 : 2, frameBytes, emphasis, protectedBits );
+				layer == 3 ? 1 : 2, frameBytes, emphasis );
 		}
 	}
 

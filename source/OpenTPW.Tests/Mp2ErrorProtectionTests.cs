@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -15,35 +14,30 @@ namespace OpenTPW.Tests;
 [TestClass]
 public class Mp2ErrorProtectionTests
 {
-	private sealed class BitWriter
-	{
-		private readonly List<bool> bits = new();
-		public void Write( int value, int count )
-		{
-			for ( var index = count - 1; index >= 0; index-- )
-				bits.Add( ((value >> index) & 1) != 0 );
-		}
-		public byte[] ToFrame( int length )
-		{
-			var data = new byte[length];
-			for ( var index = 0; index < bits.Count; index++ )
-				if ( bits[index] )
-					data[index / 8] |= (byte)(0x80 >> (index % 8));
-			return data;
-		}
-	}
-
 	// ISO/IEC 11172-3 2.4.3.1: CRC-16, G(x) = x^16 + x^15 + x^2 + 1, all-ones start,
 	// bits consumed most significant first. The byte-aligned form is the published
 	// catalogue algorithm CRC-16/MPEG-2 (check value 0xAEE7 for ASCII "123456789").
-	private static ushort ComputeCrc16( byte[] data, int startBit, int count )
+	private static void StepCrc( ref int crc, byte[] data, int startBit, int count )
 	{
-		var crc = 0xFFFF;
 		for ( var index = startBit; index < startBit + count; index++ )
 		{
 			crc ^= ((data[index >> 3] >> (7 - (index & 7))) & 1) << 15;
 			crc = (crc & 0x8000) != 0 ? (crc << 1 ^ 0x8005) & 0xFFFF : crc << 1 & 0xFFFF;
 		}
+	}
+
+	private static ushort ComputeCrc16( byte[] data, int startBit, int count )
+	{
+		var crc = 0xFFFF;
+		StepCrc( ref crc, data, startBit, count );
+		return (ushort)crc;
+	}
+
+	private static ushort ChainCrc16( byte[] data, int firstBit, int firstCount, int secondBit, int secondCount )
+	{
+		var crc = 0xFFFF;
+		StepCrc( ref crc, data, firstBit, firstCount );
+		StepCrc( ref crc, data, secondBit, secondCount );
 		return (ushort)crc;
 	}
 
@@ -54,22 +48,6 @@ public class Mp2ErrorProtectionTests
 		var chained = ChainCrc16( frame, 16, 16, 48, protectedBits );
 		frame[4] = (byte)(chained >> 8);
 		frame[5] = (byte)(chained & 0xFF);
-	}
-
-	private static ushort ChainCrc16( byte[] data, int firstBit, int firstCount, int secondBit, int secondCount )
-	{
-		var crc = 0xFFFF;
-		void Step( int startBit, int count )
-		{
-			for ( var index = startBit; index < startBit + count; index++ )
-			{
-				crc ^= ((data[index >> 3] >> (7 - (index & 7))) & 1) << 15;
-				crc = (crc & 0x8000) != 0 ? (crc << 1 ^ 0x8005) & 0xFFFF : crc << 1 & 0xFFFF;
-			}
-		}
-		Step( firstBit, firstCount );
-		Step( secondBit, secondCount );
-		return (ushort)crc;
 	}
 
 	private static byte[] WithEmphasis( byte[] frame, int emphasis )
@@ -116,7 +94,7 @@ public class Mp2ErrorProtectionTests
 				for ( var channel = 0; channel < channels; channel++ )
 					if ( subband == 0 )
 						writer.Write( 26, 5 ); // grouped code: three samples of +2/3 units
-		var frame = writer.ToFrame( 144 * 48000 / 22050 );
+		var frame = writer.Finish( 144 * 48000 / 22050 );
 		PatchFrameCrc( frame, 135 * channels );
 		return frame;
 	}
@@ -362,7 +340,10 @@ public class Mp2ErrorProtectionTests
 			var @protected = 0;
 			var failures = 0;
 			var emphasis = new int[4];
-			var bitrates = new[] { 0, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256 };
+			int[] layerOneLsf = { 0, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256 };
+			int[] layerOneMpeg1 = { 0, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448 };
+			int[] layerTwoLsf = { 0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160 };
+			int[] rates = { 22050, 24000, 16000 };
 			var offset = 0;
 			while ( data.Length - offset >= 4 )
 			{
@@ -373,14 +354,16 @@ public class Mp2ErrorProtectionTests
 				var layer = (word >> 17) & 3;
 				var bitrateIndex = (word >> 12) & 15;
 				var rateIndex = (word >> 10) & 3;
-				if ( version == 1 || layer == 0 || bitrateIndex is 0 or 15 || rateIndex == 3 )
+				if ( version is 0 or 1 || layer is not (2 or 3) || bitrateIndex is 0 or 15 || rateIndex == 3 )
 					break;
+				if ( layer == 2 && (version != 2 || ((word >> 6) & 3) == 1) )
+					break; // only MPEG-2 LSF Layer II is supported; joint stereo is rejected
+				if ( (word & 3) == 2 )
+					break; // reserved emphasis
 				var bitrate = layer == 3
-					? bitrates[bitrateIndex]
-					: new[] { 0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160 }[bitrateIndex];
-				if ( version == 3 && layer == 3 )
-					bitrate = new[] { 0, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448 }[bitrateIndex];
-				var sampleRate = new[] { 22050, 24000, 16000 }[rateIndex] * (version == 3 ? 2 : 1);
+					? (version == 3 ? layerOneMpeg1[bitrateIndex] : layerOneLsf[bitrateIndex])
+					: layerTwoLsf[bitrateIndex];
+				var sampleRate = rates[rateIndex] * (version == 3 ? 2 : 1);
 				var frameBytes = layer == 3
 					? (12 * bitrate * 1000 / sampleRate + ((word >> 9) & 1)) * 4
 					: 144 * bitrate * 1000 / sampleRate + ((word >> 9) & 1);
@@ -391,22 +374,8 @@ public class Mp2ErrorProtectionTests
 				if ( (word & 0x10000) == 0 )
 				{
 					@protected++;
-					var protectedBits = (layer == 3 ? 128 : 135) * channels;
 					var frame = data[offset..(offset + frameBytes)];
-					// Chain the header range and the protected audio_data range; the
-					// stored word at bits 32-47 lies between them and is not included.
-					var chained = 0xFFFF;
-					void Step( int start, int count )
-					{
-						for ( var index = start; index < start + count; index++ )
-						{
-							chained ^= ((frame[index >> 3] >> (7 - (index & 7))) & 1) << 15;
-							chained = (chained & 0x8000) != 0 ? (chained << 1 ^ 0x8005) & 0xFFFF : chained << 1 & 0xFFFF;
-						}
-					}
-					Step( 16, 16 );
-					Step( 48, protectedBits );
-					if ( chained != (frame[4] << 8 | frame[5]) )
+					if ( ChainCrc16( frame, 16, 16, 48, (layer == 3 ? 128 : 135) * channels ) != (frame[4] << 8 | frame[5]) )
 						failures++;
 				}
 				offset += frameBytes;

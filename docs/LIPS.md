@@ -204,7 +204,9 @@ table's Σnbal plus 2×sblimit maximum scfsi bits — the MPEG-1 rows confirm th
 rule (B.2a 88+54=142, B.2b 94+60=154, B.2c 26+16=42, B.2d 38+24=62), and the only
 supported Layer II table, LSF Table B.1 (13818-3: sblimit 30, Σnbal 75), gives
 135/270. No table publishes the LSF row itself; the derivation applies the
-verified MPEG-1 rule and is pinned by the generated tests. A mismatch is counted
+verified MPEG-1 rule, and the generated Layer II frames are self-consistent by
+construction — the external anchors are the catalogue check value, the Layer I
+rows and the four MPEG-1 rows, not the Layer II tests. A mismatch is counted
 (`Mp2Audio.CrcChecks`/`CrcFailures`) and the frame still decodes: 2.4.3.1 only
 *recommends* concealment (muting or repetition), and no shipped frame carries a
 CRC word at all, so the policy cannot regress the corpus (AUDIO-007).
@@ -231,7 +233,7 @@ skips without `OPENTPW_GAME_PATH`):
 | `mac-feral` (HFS data forks) | 47 | 417,681 | 0 | — | 0 |
 | `theme-park-world-bonus` | 0 | — | — | — | — |
 
-1,339,201 frames in total, every one with protection_bit = 1 and emphasis '00';
+1,339,301 frames in total, every one with protection_bit = 1 and emphasis '00';
 no non-MPEG entries. The Mac banks were read read-only with `hfsutils`
 (`hcopy -r` of the data forks; the HFS image stayed unchanged and was unmounted
 afterwards). Emphasis and CRC are therefore exercised only by the generated

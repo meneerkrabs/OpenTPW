@@ -106,6 +106,11 @@ class SiteDocsTests(unittest.TestCase):
             self.assertIn('View image: Figure', result)
             self.assertNotIn('<img', result)
 
+    def test_website_screenshots_use_the_existing_static_asset(self) -> None:
+        self.write("website/images/shot.png", "fixture")
+        self.assertEqual(self.converter("README.md").link_target("website/images/shot.png", image=True), "../images/shot.png")
+        self.assertEqual(self.converter("docs/reverse/EVIDENCE.md").link_target("../../website/images/shot.png", image=True), "../../images/shot.png")
+
     def test_existing_public_images_and_source_links(self) -> None:
         converter = self.converter()
         self.assertEqual(converter.link_target("../images/logo.png", image=True), "https://raw.githubusercontent.com/meneerkrabs/OpenTPW/main/images/logo.png")

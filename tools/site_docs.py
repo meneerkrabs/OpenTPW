@@ -239,6 +239,8 @@ class Converter:
             if not actual.is_file() or actual.suffix.lower() not in SAFE_IMAGE_SUFFIXES:
                 self.unavailable(target, "missing or unsupported image")
                 return None
+            if resolved.startswith("website/"):
+                return quote(posixpath.relpath("../" + resolved[len("website/"):], output_dir), safe="/.") + suffix
             return "https://raw.githubusercontent.com/meneerkrabs/OpenTPW/main/" + quote(resolved, safe="/.") + suffix
         if not actual.exists():
             self.unavailable(target, "missing repository target")

@@ -59,6 +59,7 @@ public static class GameAudio
 	private static SoundSentence? lobbyAmbience;
 	private static SoundSentence? rain;
 	private static long staffTurn = -1;
+	private static bool staffVoiceLogged;
 	private static IReadOnlyList<AudioVoice>? placedAmbients;
 
 	public static bool Enabled { get; set; } = true;
@@ -159,6 +160,7 @@ public static class GameAudio
 		StopPlacedAmbients();
 		events?.StopChains();
 		staffTurn = -1;
+		staffVoiceLogged = false;
 	}
 
 	/// <summary>
@@ -344,7 +346,12 @@ public static class GameAudio
 
 	/// <summary>Plays the thunder one-shot at a strike's position (the original passes the top of the last bolt, height 300).</summary>
 	// [BIN:STP-PPC:0x101034C8-0x10103518 thunder submit] when the weather thing's thunder countdown (+0x44) reaches 0, cat_ambient 0x20 is submitted at the last lightning location (+0x48..+0x50)
-	public static AudioVoice? PlayThunder( Vector3 position ) => events?.PlayAt( Ambient, ThunderEvent, AudioChannel.Effects, position );
+	public static AudioVoice? PlayThunder( Vector3 position )
+	{
+		var voice = events?.PlayAt( Ambient, ThunderEvent, AudioChannel.Effects, position );
+		Log.Trace( $"Sound: thunder at ({position.X:0},{position.Y:0},{position.Z:0}) {(voice == null ? "not available" : "played")}." );
+		return voice;
+	}
 
 	/// <summary>
 	/// A ride script's <c>STARTSCREAM</c>: the band operand picks the held-chain event, the level operand (with the
@@ -400,7 +407,11 @@ public static class GameAudio
 			eventId = (uint)(ScreamGridRow( row ) + Math.Clamp( (level + scriptSpeed) / 50, 0, 3 ));
 		else
 			eventId = ScreamSingleEvent( row );
-		return eventId == 0 ? null : events.PlayAt( Kids, eventId, AudioChannel.Effects, position ?? Vector3.Zero );
+		if ( eventId == 0 )
+			return null;
+		var voice = events.PlayAt( Kids, eventId, AudioChannel.Effects, position ?? Vector3.Zero );
+		Log.Trace( $"Sound: single scream cat_kids {eventId} {(voice == null ? "not available" : "played")}." );
+		return voice;
 	}
 
 	/// <summary>The grid row base of a scream band's event (75 for band 1, 79 for 2–3, 83 for 4–7, 87 for 8+).</summary>
@@ -415,7 +426,7 @@ public static class GameAudio
 	/// a drawn sound is usually silence — the original's own chatter rate).
 	/// </summary>
 	// [BIN:STP-PPC:0x100D2CE0 staff voices] the entertainer's handler draws the world random each idle/walking turn and at (draw & 0xF) == 0 plays cat_staff (manager +16) 164 (walking) or 165 (idle) through the wrapper 0x100E6D20 at the member's position; the performance state (14) plays 135 at 0x100D2D98
-	// [BIN:TPW-EXE:0x004D73EF..0x00502B66 all five kinds] walking 160/162/164/166/168 and idle 161/163/165/167/169 (handyman, mechanic, entertainer, guard, researcher), a researching turn 138, a performance's end 135, a guard's chase 136 and catch 137 (maexah/OpenTPW docs/exe/audio.md, "The staff's voices")
+	// [BIN:STP-PPC:0x100D5EC0..0x100F0630 all five kinds] walking 160/162/164/166/168 and idle 161/163/165/167/169 (handyman, mechanic, entertainer, guard, researcher), a researching turn 138, a performance's end 135, a guard's chase 136 and catch 137; the fork's PC reading (maexah/OpenTPW docs/exe/audio.md) is a lead only
 	public static AudioVoice? PlayStaffSound( StaffType type, bool walking, Vector3 position )
 	{
 		var eventId = StaffSoundEvent( type, walking );
@@ -437,6 +448,11 @@ public static class GameAudio
 		{
 			if ( (events.Draw() & 15) != 0 )
 				continue;
+			if ( !staffVoiceLogged )
+			{
+				staffVoiceLogged = true;
+				Log.Trace( "Sound: staff voices playing (cat_staff walking and idle, 1 in 16 per member per turn)." );
+			}
 			PlayStaffSound( member.Type, member.Travelling, new Vector3( member.CellX * 10, 0, member.CellY * 10 ) );
 		}
 	}
@@ -458,7 +474,11 @@ public static class GameAudio
 	};
 
 	/// <summary>The path tool's sounds: laying (<see cref="PathLayEvent"/>), refused (<see cref="PathRefusedEvent"/>) and the link-end (<see cref="PathLinkEvent"/>).</summary>
-	public static void PlayPathToolSound( uint eventId ) => events?.Play( Ui, eventId, AudioChannel.Effects );
+	public static void PlayPathToolSound( uint eventId )
+	{
+		var voice = events?.Play( Ui, eventId, AudioChannel.Effects );
+		Log.Trace( $"Sound: path tool cat_ui {eventId} {(voice == null ? "not available" : "played")}." );
+	}
 
 	/// <summary>
 	/// The sound category an RSE <c>EVENT</c> instruction's type operand selects, or null for a type the traced switch

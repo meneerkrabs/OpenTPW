@@ -3,10 +3,13 @@
 October 11, 2026. Status: the original sound catalogues are read, a software mixer plays
 through SDL, the park plays its original music, the front end plays its original lobby
 music and ambience, control clicks, the map/research drawer, error feedback, ride-script
-sounds (RSE EVENT and REPAIREFFECT) and the crowd sentence play through the mixer, and
-the advisor speaks (which lowers music and effects while it talks). Rain, thunder, guest
-screams, staff and path-tool sounds are traced but not triggered yet (see "Triggered
-sounds"). No original data is in the repository.
+sounds (RSE EVENT and REPAIREFFECT), the crowd sentence and the advisor's speech play
+through the mixer. The park's weather plays its rain and thunder, the level's placed
+ambients (scape.omp) play with the mixer's distance law, ride screams play, the staff's
+walking and idle voices play, and the path tool's laying and refused clicks play. Still
+silent: the positioned ride loops (RSE EVENT types 1 and 2), the weather's visuals, the
+path tool's link-end and undo sounds, the visitor click and the lobby's global effects
+(see "Traced but not triggered"). No original data is in the repository.
 
 ## Sound catalogues (`cat_*SFX.map`, `cat_*BANK.map`)
 
@@ -86,40 +89,40 @@ global `cat_globallobbysfx` at 40, `0x100BC4C0` a level's `cat_locallobbymusic`/
 | Park music | `cat_music` 2 (branching sentence) | a park opens; busier sections as guests arrive | `0x100BC144`, parameter `0x101C2444` |
 | Lobby music | `cat_locallobbymusic` 1 (sentence) of the selected level | the front end's selected island | `0x10095A24` (start `0x1009598C`, registration `0x100BC4C0`) |
 | Lobby ambience | `cat_locallobbysfx` 2 (sentence) of the selected level | as above, looping | `0x10095A50` |
+| Lobby island one-shots | `cat_locallobbysfx` 3, 4, 5 on a random timer | the front end shows; the timer is OpenTPW's own (AUDIO-017) | `0x100953F8`–`0x10095450` |
 | Control click | `cat_ui` 0x1F | every activated button (control message 0x100) | `0x10137FD0` |
 | Map/research drawer | `cat_ui` 0x1C open, 0xC2 close | the map and research windows | `0x1015644C` messages 0x0b/0x10 |
 | Error feedback | `cat_ui` 0x1D | a rejected purchase or placement | `0x10139A40` (buy window callers `0x10163AFC`/`0x10163BFC`) |
-| Ride-script sounds | any event of the routed category | an RSE `EVENT type id` instruction: type 3 level `cat_rides` (falling back to the global one, AUDIO-011), 4 level `cat_ambient` (same fallback), 5 global `cat_rides`, 6 `cat_kids`, 7 `cat_staff`, 8 `cat_ambient`, 9 `cat_ui` | `0x100AE930` (switch table `0x3F278`, guard < 10 at `0x100AE938`), submitted at the object's position |
+| Path tool | `cat_ui` 101 lay, 175 refused | a committed path line; a refused commit | `0x10070DE0` (commit), `0x10073D1C` (refused, AUDIO-022) |
+| Ride-script sounds | any event of the routed category | an RSE `EVENT type id` instruction: type 3 level `cat_rides` (falling back to the global one, AUDIO-011), 4 level `cat_ambient` (same fallback), 5 global `cat_rides`, 6 `cat_kids`, 7 `cat_staff`, 8 `cat_ambient`, 9 `cat_ui` | `0x100AE930` (dispatcher, guard `bgt` 10 at `0x100AE938`), submitted at the object's position where the object has one |
+| Ride screams | `cat_kids` 71–74 held per ride (STARTSCREAM), STOPSCREAM stops it; `cat_kids` 75–109 one-shot (SINGLESCREAM) | a ride script's scream instructions; band 1 → 71, 2–3 → 72, 4–7 → 73, 8+ → 74; parameter (level + 50) / 2 | `0x100B19DC` (STARTSCREAM), `0x100B1A74` (STOPSCREAM), `0x100B1A90` (SINGLESCREAM), `0x100ACA38`, `0x100ACB7C`, `0x100ACC24`, `0x100ACE68` (flat, AUDIO-032) |
 | Repair sounds | `cat_kids` 75 (families 75–90) show; `cat_rides` 111 and 211 hide | an RSE `REPAIREFFECT 1/0` instruction | `0x100B1F78` / `0x100B1EC0`, `0x100B1F00` |
+| Rain | `cat_ambient` 0x21 (branching sentence, parameter 8 = the drops' level 0–100) | the weather's current drops: started above 0, stopped at 0 | `0x10103394` (level), `0x100BC3D4`–`0x100BC41C` (global voice) |
+| Thunder | `cat_ambient` 0x20 at the last bolt's top (x, 300, z) | a lightning strike's thunder countdown ends | `0x101034C8`–`0x10103518` |
+| Placed ambients | `cat_ambient` (global) or the level's `cat_ambient`, the effect the scape record names | the level's `scape.omp` type 1 records, started with the park; range from the record | `scape.omp` records (`PlacedObjectsFile`), distance law of the mixer (AUDIO-018) |
+| Staff voices | `cat_staff` 160–169: walking/idle per role (handyman 160/161, mechanic 162/163, entertainer 164/165, guard 166/167, researcher 168/169) | a staff member each park turn, 1 in 16 draws (AUDIO-024) | `0x100D5EAC`, `0x100D6434`, `0x100D9BAC`, `0x100D9F10`, `0x100D2DDC`, `0x100D2E44`, `0x100D4EF0`, `0x100D4E18`, `0x100F0460`, `0x100F0630` |
 | Crowd | `cat_kids` 0x5B (branching sentence, parameter 0–100) | guests within four cells of the camera; louder/bigger sections as more gather, stopped when nobody is near | count `0x101C2490` (`0x100C313C`, radius 4, cap 100), sentence `0x100BC210`/`0x100BC2E0` |
 | Advisor speech | response table: sample and LIP from the global or level speech bank | traced advisor events | `0x10006B7C` |
 
 Traced in the binary but not triggered yet:
 
-* Rain (`cat_ambient` 0x21, a branching sentence whose 0–100 parameter is the rain intensity
-  times 100, started by `0x10103C4C` when rain begins, stopped when it ends) and thunder
-  (`cat_ambient` 0x20 at the strike's position, `0x10103518`): OpenTPW has no weather
-  simulation, so there is nothing to trigger them.
-* The level's placed ambient sounds: `scape.omp` records (60 bytes each) that submit
-  `cat_ambient` events of the global or level category (`0x10068314`); the scape reader is
-  not implemented.
-* Positioned ride loops: RSE `EVENT` types 0–2 go to the 3D positioned-loop sound system
-  (`0x100AE97C`/`0x100AEA58` → `0x1009F968`, with the ride-type record lookup `0x100118018`);
-  the corpus uses them (for example `bouncy.RSE`). That system's distance attenuation is
-  not traced, so those instructions stay silent.
-* Guest screams: RSE `STARTSCREAM` plays `cat_kids` 71–74 (`0x100B1A60` → `0x100ACA38`),
-  `SINGLESCREAM` `cat_kids` 105/106/108/109 (`0x100B1B10` → `0x100ACE68`); which event a
-  scream picks from its operands is not traced, so they stay silent rather than guessing.
-* Staff sounds (`cat_staff` 135 at `0x100D2CE0` and the staff wrapper `0x100E6D20`): the
-  calling staff behaviour is not identified.
-* Path-tool sounds (`cat_ui` 101/139/175/206 at `0x10070B98` with path positions, 150–153 at
-  `0x100748A0`, 141–144 at `0x10075618`): which tool action picks which event is not traced.
-* The lobby's island ambience one-shots (`cat_locallobbysfx` 3/4/5 on a random timer,
-  `0x100953F8`–`0x10095450`) and the global lobby effects (`cat_globallobbysfx` 1 thunder
-  with the lobby lightning flash `0x1009533C`, 4 at `0x10183DA4`, 2/3 in the online globe
-  `0x100923A8`): the lobby has no lightning or globe ambience to trigger them.
-* Visitor click (`cat_kids` 129 when the visitor status panel opens, `0x1010B850`) and
-  visitor panel sounds (`cat_ui` 95 at `0x101125D8`): OpenTPW selects objects, not visitors.
+* RSE `EVENT` types 1 and 2 (positioned loops, `0x100AE97C`/`0x100AEA58` → `0x1009FD70`/`0x1009F968`):
+  the dispatcher and the key lookup are traced, the play routines are not. In the corpus type 1
+  appears on 12 literal instructions and type 2 on 62 (bouncy.wad: 9 type 2); type 0 never does.
+  They stay silent. Type 0 and the custom-bank type 10 are not routed.
+* Staff chase (`cat_staff` 136, `0x100D49F8`), catch (137, `0x100D516C`), the researching turn (138,
+  `0x100F05EC`) and a performance's end (135, `0x100D2D98`): the events are traced, but OpenTPW has no
+  chase, catch, performance or per-turn research action to hang them on.
+* The path tool's link-end sound (`cat_ui` 139, `0x100711CC`, queue mode) and its undo: the trigger
+  is inferred; no undo sound was found on the Mac (AUDIO-023). The count-classed removal sounds
+  `cat_ui` 141–144 and 150–153 (`0x10075618`, `0x100748A0`) are demolish sounds, not path-tool sounds.
+* The weather's visuals (rain drops, snow, the bolt, the forecast's warning) are not drawn (AUDIO-031).
+* The placed records of type 3 (a sound that follows the listener in a rectangle) are counted, not
+  played; a sentence-type placed effect plays its first sound once (AUDIO-020).
+* The visitor click (`cat_kids` 129 when the visitor status panel opens, `0x1010B850`) and visitor
+  panel sounds (`cat_ui` 95 at `0x101125D8`): OpenTPW selects objects, not visitors.
+* Global lobby effects (`cat_globallobbysfx` 1 thunder with the lobby lightning flash `0x1009533C`, 4 at
+  `0x10183DA4`, 2/3 in the online globe `0x100923A8`): the lobby has no lightning or globe to trigger them.
 * The advisor controller's own effects, `cat_ui` 197/0xC5 (`0x100069DC`) and
   198/0xC6 (`0x100075DC`): which advisor state plays them is not traced.
 * The slap reactions 639–641 of `cat_speech` (`0x10007068`): OpenTPW has no slap
@@ -161,6 +164,24 @@ implemented yet.
 | AUDIO-010 | The lobby sentences restart on every island selection | When the original restarts the lobby sentences (`0x1009598C`) |
 | AUDIO-011 | An RSE EVENT id missing from the level catalogue plays from the global category of the same name (`incagod.RSE`'s EVENT 3 id 43 exists only in the global `cat_rides`) | The sound library's own category fallback rule |
 | AUDIO-012 | Every activated button plays the click 0x1F, front end included | The traced 0x1F witness is the park view's control-message handler (`0x10137FD0`); the front end's own handlers |
+| AUDIO-015 | Only the level-driven rain voice is built; the weather thing's own rain voice (thing `+0x54`, `0x10103C4C`) is not | Whether the second voice is audible |
+| AUDIO-016 | A scream's speed is the default 50 (the ride VM word at `+192`); OpenTPW keeps no per-script speed | The ride VM's speed word and the RSE loader's field |
+| AUDIO-017 | The lobby island one-shots play on a uniform 5–15 s gap | The timers armed at `0x100953F8` |
+| AUDIO-018 | The positioned voice's pan is constant-power by bearing, not the original's pan law | QSound's processing |
+| AUDIO-019 | A positioned one-shot whose event has flag `0x8` loops; a flat one-shot with `0x8` does not | The flat path's flag test beside `0x0051C130` |
+| AUDIO-020 | A placed effect that is a sentence plays its first sound once | The placed sentence's player on the Mac |
+| AUDIO-021 | `scape.omp` places and the listener share the park's sound units | The Mac's placement units traced together |
+| AUDIO-022 | A refused path-tool commit plays `cat_ui` 175; the Mac site is gated and its mapping to a refusal is inferred | The tool latch `obj+36` and the refusal path |
+| AUDIO-023 | The link-end sound (`cat_ui` 139) is not played; no undo sound is traced | The link-end condition; the Backspace handler |
+| AUDIO-024 | A staff member's walking/idle voice draws once per park turn from the sound stream's top bits, not the world LCG's low four bits | The handlers' turn boundary and the world draw order |
+| AUDIO-025 | The December season row reads past the four-season table; the fork's reading is used | The Mac's row address for index 4 |
+| AUDIO-026 | The forecast applies DaysOfWarning after the roll, on day indices | The Mac's day comparison units (`now` against `+0x20`) |
+| AUDIO-027 | The first quality is rolled at park entry; drops start at 0 | The Mac's initial roll |
+| AUDIO-028 | A snow quality's drops target is 0 | The snow branch's target |
+| AUDIO-029 | Thunder with a countdown of 0 plays at the strike | The countdown test beside `0x10103438` |
+| AUDIO-030 | The weather's draws come from the park's weather stream, not the world LCG | The Mac's seed source |
+| AUDIO-031 | Weather is simulated for sound only: no drops, snow, bolt or forecast warning is drawn | The weather renderer and the forecast's handler |
+| AUDIO-032 | A ride's scream plays flat; the original places it at the ride's box middle | The box-middle mapping onto OpenTPW's ride objects |
 | AUDIO-013 | De-emphasis is a first-order bilinear-transform shelf of the published 50/15 µs and J.17 curves at the stream's rate | The original decoder's filter realization or an emphasised original stream |
 | AUDIO-014 | A failed frame CRC is counted while the frame still decodes; no shipped frame carries a CRC word | The original player's behaviour on a failed frame CRC |
 

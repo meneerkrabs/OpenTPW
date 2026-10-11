@@ -51,6 +51,10 @@ internal sealed class GameFlow : IDisposable
 	public string OptionsPath { get; set; }
 	/// <summary>When false, options are not written (smoke tests).</summary>
 	public bool PersistSettings { get; set; } = true;
+	/// <summary>Desktop release pack preparation, attached after a rendered lobby or park exists.</summary>
+	public Action<UiScreenStack>? PrepareStartupTexturePack { get; set; }
+	/// <summary>True when selecting a pack opens its download page instead of an immediate texture switch.</summary>
+	public Func<UiScreenStack, string, bool>? PrepareTexturePack { get; set; }
 	public Level? Level { get; private set; }
 	public ParkHud? Hud { get; private set; }
 	/// <summary>The level of the Theme Park Inc viewer, which has no <see cref="Hud"/> (docs/THEME-PARK-INC.md).</summary>
@@ -124,6 +128,7 @@ internal sealed class GameFlow : IDisposable
 			Menu.SelectLevel( selectLevel );
 		Camera.SetCameraMode<LobbyCameraMode>();
 		Log.Trace( $"Front end: lobby with {Lobby.IslandCount} islands ({Lobby.PartCount} draw batches)." );
+		PrepareStartupTexturePack?.Invoke( Menu.Stack );
 	}
 
 	public UiScreen CreateOptions( UiScreenStack stack, Action closed ) => OptionsScreen.Create( stack, Strings, new OptionsServices
@@ -133,6 +138,8 @@ internal sealed class GameFlow : IDisposable
 		TexturePacks = TexturePack.InstalledPacks(),
 		BeginTexturePackSwitch = name =>
 		{
+			if ( PrepareTexturePack?.Invoke( stack, name ) == true )
+				return null;
 			var diagnostics = new List<string>();
 			var textureSwitch = TexturePackSwitch.Begin( name, diagnostics );
 			foreach ( var diagnostic in diagnostics )
@@ -246,6 +253,7 @@ internal sealed class GameFlow : IDisposable
 			import.Report( dropped );
 			Log.Trace( dropped );
 		}
+		PrepareStartupTexturePack?.Invoke( Hud.Stack );
 		return level;
 	}
 
@@ -349,7 +357,8 @@ internal sealed class GameFlow : IDisposable
 		{
 			Level.UiCapturesMouse = Hud.Update( Context, input );
 			UpdateParkGlobe( Hud );
-			Level.SimulationTimeScale = Hud.Status.TimeScale;
+			// [EXT:texture-pack] A first-run download may take a long time; its modal keeps the park turn paused.
+			Level.SimulationTimeScale = Hud.Stack.Screens.Any( screen => screen.Name == "texturePackDownload" ) ? 0 : Hud.Status.TimeScale;
 			Level.Update();
 			Advisor?.Update( Hud.Paused );
 			GameAudio.Update( Level.Guests?.GetStatistics().InPark );

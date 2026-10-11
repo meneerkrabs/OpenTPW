@@ -291,7 +291,12 @@ Visitor opcodes (all operate on the guests the script holds; semantics inferred)
 `TOUR/BUMP/COAST` (ride-type controllers with their own guest handling, e.g.
 `COAST 3 VAR_LETMEOFF`), `WALKST_FLOAT`, `WALKFLOATSTAT`, `WALKFLOATSTOP` stay
 unimplemented. Riders are hidden while on a ride (`RideHandlesSprite 1`: the
-original script places them; seat attachment is not implemented).
+original script places them; seat attachment is not implemented). The maexah/OpenTPW
+lead (`docs/exe/park.md`, "The head table") says the original shows a rider as a head
+hung on a model node by `ADDHEAD` (slot n on node n + 1, the body `HUSH`ed while it is
+up), and that the Inca Totem has no `ADDHEAD` at all; the coaster and tour cars' heads
+are not drawn there. So the Totem's seating and coaster trains are not the same
+mechanism, and the head nodes' matrices are not read by the model loader yet.
 
 **Totem** (`PrototypeRide`): the bridge is wired into its effects; capacity 6,
 excitement 70, attraction value 25 from `Totem.sam`. Its entrance/exit is the

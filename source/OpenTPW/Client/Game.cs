@@ -532,7 +532,7 @@ internal static class Game
 		var upscaler = GetOption( args, "--upscaler", "the path of a realesrgan-ncnn-vulkan executable" )
 			?? throw new ArgumentException( "--build-texture-pack requires --upscaler <path of realesrgan-ncnn-vulkan> (docs/TEXTURE-PACKS.md)." );
 		var model = GetOption( args, "--upscale-model", "a Real-ESRGAN model name such as realesrgan-x4plus" ) ?? "realesrgan-x4plus";
-		var packName = GetOption( args, "--texture-pack-name", "a pack name such as enhanced or detailed" ) ?? TexturePack.DefaultName;
+		var packName = GetOption( args, "--texture-pack-name", "a pack name such as enhanced or detailed" ) ?? TexturePack.EnhancedName;
 		if ( !TexturePack.IsValidName( packName ) )
 			throw new ArgumentException( $"--texture-pack-name must be a plain directory name (letters, digits, '-', '_', '.'), not '{packName}'." );
 		var packDirectory = GetOption( args, "--texture-pack-dir", "a directory for the texture pack" ) ?? TexturePack.PackDirectory( packName );

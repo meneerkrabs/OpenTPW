@@ -1,19 +1,20 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace OpenTPW;
 
 /// <summary>
-/// Optional local texture pack: PNG replacements for original <c>.wct</c> textures, keyed by the
+/// Texture packs: PNG replacements for original <c>.wct</c> textures, keyed by the
 /// lower-case game path plus <c>.png</c> (e.g. <c>textures/levels/jungle/terrain/textures/jgr_bas1.wct.png</c>).
-/// A pack is generated on the player's machine from their own installation
-/// (<see cref="TexturePackBuilder"/>) and is never shipped. With no active pack every texture is the
-/// original; <c>OPENTPW_TEXTURE_PACK</c> (a pack's <c>textures</c> directory) overrides the setting
-/// for tests.
+/// Packs can be installed in the player's config directory or bundled under <c>content/texture-packs</c>.
+/// A local pack takes precedence over a bundled pack of the same name. <c>OPENTPW_TEXTURE_PACK</c>
+/// (a pack's <c>textures</c> directory) overrides the setting.
 /// </summary>
 // [EXT:texture-pack] Upscaled replacement textures are an OpenTPW presentation option, not original behaviour.
 public static class TexturePack
 {
-	public const string DefaultName = "enhanced";
+	public const string DefaultName = "clarity-enhanced";
+	public const string EnhancedName = "enhanced";
 	public const string ManifestFileName = "pack.json";
 	public const string TexturesDirectoryName = "textures";
 	public const int FormatVersion = 1;
@@ -24,15 +25,18 @@ public static class TexturePack
 	/// <summary>Number of textures replaced so far.</summary>
 	public static int Replaced { get; private set; }
 
-	/// <summary>The pack names the options screen labels itself, in cycle order: <c>enhanced</c> (clean) and <c>detailed</c>.</summary>
-	public static readonly string[] KnownNames = { DefaultName, "detailed" };
+	/// <summary>The pack names the options screen labels itself, in cycle order.</summary>
+	public static readonly string[] KnownNames = { DefaultName, EnhancedName, "detailed" };
 
 	/// <summary><c>&lt;config&gt;/texture-packs</c>, next to <c>display.json</c> and <c>graphics.json</c>; one directory per pack.</summary>
 	public static string PacksDirectory() =>
 		Path.Combine( Path.GetDirectoryName( DisplaySettings.GetDefaultPath() )!, "texture-packs" );
 
-	/// <summary><c>&lt;config&gt;/texture-packs/enhanced</c>.</summary>
+	/// <summary><c>&lt;config&gt;/texture-packs/clarity-enhanced</c>, for a local override of the default pack.</summary>
 	public static string DefaultPackDirectory() => PackDirectory( DefaultName );
+
+	/// <summary>Portable bundled packs next to the executable, also usable from the browser's virtual file system.</summary>
+	public static string BundledPacksDirectory() => Path.Combine( AppContext.BaseDirectory, "content", "texture-packs" );
 
 	/// <summary><c>&lt;config&gt;/texture-packs/&lt;name&gt;</c> (or under <paramref name="packsDirectory"/>).</summary>
 	public static string PackDirectory( string name, string? packsDirectory = null ) =>
@@ -42,10 +46,17 @@ public static class TexturePack
 	public static bool IsValidName( string? name ) =>
 		!string.IsNullOrEmpty( name ) && name[0] != '.' && name.All( character => char.IsAsciiLetterOrDigit( character ) || character is '-' or '_' or '.' );
 
-	/// <summary>Names of the usable packs under <paramref name="packsDirectory"/>: the known ones first, then the rest alphabetically.</summary>
-	public static IReadOnlyList<string> InstalledPacks( string? packsDirectory = null )
+	/// <summary>Usable local and bundled packs: the known ones first, then the rest alphabetically, without duplicate names.</summary>
+	public static IReadOnlyList<string> InstalledPacks( string? packsDirectory = null, string? bundledPacksDirectory = null ) =>
+		UsablePacks( packsDirectory ?? PacksDirectory() )
+			.Concat( UsablePacks( bundledPacksDirectory ?? BundledPacksDirectory() ) )
+			.Distinct( StringComparer.OrdinalIgnoreCase )
+			.OrderBy( name => Array.IndexOf( KnownNames, name ) is var index and >= 0 ? index : KnownNames.Length )
+			.ThenBy( name => name, StringComparer.OrdinalIgnoreCase )
+			.ToArray();
+
+	private static IReadOnlyList<string> UsablePacks( string packsDirectory )
 	{
-		packsDirectory ??= PacksDirectory();
 		if ( !System.IO.Directory.Exists( packsDirectory ) )
 			return Array.Empty<string>();
 		try
@@ -53,8 +64,6 @@ public static class TexturePack
 			return System.IO.Directory.EnumerateDirectories( packsDirectory )
 				.Select( directory => Path.GetFileName( directory ) )
 				.Where( name => IsValidName( name ) && Open( PackDirectory( name, packsDirectory ), new List<string>() ) != null )
-				.OrderBy( name => Array.IndexOf( KnownNames, name ) is var index and >= 0 ? index : KnownNames.Length )
-				.ThenBy( name => name, StringComparer.OrdinalIgnoreCase )
 				.ToArray();
 		}
 		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException )
@@ -72,19 +81,26 @@ public static class TexturePack
 	/// <summary>True when an enhanced choice (any non-empty pack name) is active: the shipped interface art is used.</summary>
 	public static bool Enhanced { get; private set; }
 
+	private static bool packBeforeShippedArt;
+
 	/// <summary>
-	/// The replacement PNG for a game texture path, or null when there is none: with an enhanced choice the shipped interface
-	/// art first, then the active pack.
+	/// The replacement PNG for a game texture path, or null when there is none. Clarity and an environment override
+	/// use their own interface art first, falling back to the shipped icons; older choices keep the shipped icons first.
 	/// </summary>
 	public static string? Find( string gamePath )
 	{
-		if ( Enhanced && System.IO.File.Exists( Path.Combine( ShippedDirectory, RelativeFileName( gamePath ) ) ) )
-			return Path.Combine( ShippedDirectory, RelativeFileName( gamePath ) );
-		if ( string.IsNullOrEmpty( Directory ) )
-			return null;
-		var file = Path.Combine( Directory, RelativeFileName( gamePath ) );
-		if ( !File.Exists( file ) )
-			return null;
+		var relative = RelativeFileName( gamePath );
+		var packed = string.IsNullOrEmpty( Directory ) ? null : Path.Combine( Directory, relative );
+		var shipped = Enhanced ? Path.Combine( ShippedDirectory, relative ) : null;
+		if ( packBeforeShippedArt && packed != null && File.Exists( packed ) )
+			return ReplacedFile( packed );
+		if ( shipped != null && File.Exists( shipped ) )
+			return shipped;
+		return packed != null && File.Exists( packed ) ? ReplacedFile( packed ) : null;
+	}
+
+	private static string ReplacedFile( string file )
+	{
 		if ( Replaced++ == 0 )
 			Log?.Trace( $"Texture pack: replacing original textures from {Directory}." );
 		return file;
@@ -125,21 +141,40 @@ public static class TexturePack
 		}
 	}
 
-	/// <summary>True when the pack at <paramref name="packDirectory"/> (default: the <c>enhanced</c> pack) exists and is usable.</summary>
-	public static bool IsInstalled( string? packDirectory = null ) => Open( packDirectory ?? DefaultPackDirectory(), new List<string>() ) != null;
+	/// <summary>True when a specific pack directory, or the default local/bundled pack, exists and is usable.</summary>
+	public static bool IsInstalled( string? packDirectory = null ) => packDirectory != null
+		? Open( packDirectory, new List<string>() ) != null
+		: Resolve( DefaultName, new List<string>(), PacksDirectory(), BundledPacksDirectory() ) != null;
+
+	private static (string Directory, TexturePackManifest Manifest)? Resolve( string name, ICollection<string> diagnostics, string packsDirectory, string bundledPacksDirectory )
+	{
+		foreach ( var root in new[] { packsDirectory, bundledPacksDirectory }.Distinct( StringComparer.Ordinal ) )
+		{
+			var directory = PackDirectory( name, root );
+			if ( System.IO.Directory.Exists( directory ) && Open( directory, diagnostics ) is { } manifest )
+				return (directory, manifest);
+		}
+		return null;
+	}
 
 	/// <summary>
-	/// Selects the pack named <paramref name="name"/> under <paramref name="packsDirectory"/> (default: the config directory);
-	/// an empty name means original textures. A missing or unusable pack leaves the originals active and adds a diagnostic.
-	/// An <c>OPENTPW_TEXTURE_PACK</c> override is left untouched. Textures already loaded keep their pixels until
+	/// Selects a local pack, then the bundled pack of the same name. An empty name means original textures;
+	/// a missing pack keeps the shipped interface art and original world textures. An <c>OPENTPW_TEXTURE_PACK</c>
+	/// override pins its textures directory. Textures already loaded keep their pixels until
 	/// <see cref="TexturePackSwitch"/> reloads them.
 	/// </summary>
-	public static void Activate( string? name, ICollection<string> diagnostics, string? packsDirectory = null )
+	public static void Activate( string? name, ICollection<string> diagnostics, string? packsDirectory = null, string? bundledPacksDirectory = null )
 	{
-		if ( !string.IsNullOrEmpty( Environment.GetEnvironmentVariable( "OPENTPW_TEXTURE_PACK" ) ) )
+		if ( Environment.GetEnvironmentVariable( "OPENTPW_TEXTURE_PACK" ) is { Length: > 0 } environmentOverride )
+		{
+			Directory = environmentOverride;
+			Enhanced = true;
+			packBeforeShippedArt = true;
 			return;
+		}
 		Directory = null;
-		Enhanced = !string.IsNullOrEmpty( name );
+		Enhanced = false;
+		packBeforeShippedArt = false;
 		if ( string.IsNullOrEmpty( name ) )
 			return;
 		if ( !IsValidName( name ) )
@@ -147,17 +182,20 @@ public static class TexturePack
 			diagnostics.Add( $"Texture pack name '{name}' is not a plain directory name; using the original textures." );
 			return;
 		}
-		var packDirectory = PackDirectory( name, packsDirectory );
-		// The default enhanced choice works without a local pack (shipped interface art only); other names need their pack.
-		var manifest = Open( packDirectory, name == DefaultName ? new List<string>() : diagnostics );
-		if ( manifest == null )
+		Enhanced = true;
+		packBeforeShippedArt = string.Equals( name, DefaultName, StringComparison.OrdinalIgnoreCase );
+		var resolved = Resolve( name, diagnostics, packsDirectory ?? PacksDirectory(), bundledPacksDirectory ?? BundledPacksDirectory() );
+		if ( resolved == null )
 		{
-			if ( name == DefaultName )
-				Log?.Trace( "Enhanced textures: shipped interface art; no local texture pack built (docs/TEXTURE-PACKS.md)." );
+			if ( name != EnhancedName )
+				diagnostics.Add( $"No usable texture pack '{name}'; using shipped interface art and original world textures. Install a pack or build one with --build-texture-pack." );
+			Log?.Trace( $"Texture pack '{name}': shipped interface art; no usable local or bundled pack." );
 			return;
 		}
+		var (packDirectory, manifest) = resolved.Value;
 		Directory = Path.Combine( packDirectory, TexturesDirectoryName );
-		Log?.Trace( $"Texture pack '{name}': {manifest.Textures} textures at {manifest.Scale}x ({manifest.Upscaler}, model {manifest.Model}{(manifest.PrepassModel.Length > 0 ? $", pre-pass {manifest.PrepassModel}" : "")})." );
+		var resolution = manifest.MixedScale ? "mixed scales" : $"{manifest.Scale}x";
+		Log?.Trace( $"Texture pack '{name}': {manifest.Textures} textures at {resolution} ({manifest.Upscaler}, model {manifest.Model}{(!string.IsNullOrEmpty( manifest.PrepassModel ) ? $", pre-pass {manifest.PrepassModel}" : "")})." );
 	}
 }
 
@@ -166,6 +204,9 @@ public sealed record TexturePackManifest
 {
 	public int Format { get; init; } = TexturePack.FormatVersion;
 	public int Scale { get; init; }
+	/// <summary>True for curated packs whose replacements use more than one upscale ratio; dimensions come from each PNG.</summary>
+	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+	public bool MixedScale { get; init; }
 	public string Upscaler { get; init; } = "";
 	public string Model { get; init; } = "";
 	/// <summary>Model used for interface art; empty when interface art stayed original.</summary>

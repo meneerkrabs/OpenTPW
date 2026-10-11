@@ -266,9 +266,9 @@ public sealed record GraphicsSettings
 	/// <summary>[EXT:COMPAT-GFX-VIEWDISTANCE] OpenTPW fog distance multiplier; 1 = unchanged.</summary>
 	public float ViewDistanceScale { get; init; } = 1;
 	/// <summary>
-	/// [EXT:texture-pack] Texture choice (docs/TEXTURE-PACKS.md): empty = original textures; <c>enhanced</c> (the default) = the
-	/// shipped HD interface art plus the locally built <c>enhanced</c> pack when there is one; other names (<c>detailed</c>, ...)
-	/// = the shipped art plus that pack under <c>texture-packs</c>. Stored as <c>"TexturePack"</c>.
+	/// [EXT:texture-pack] Texture choice (docs/TEXTURE-PACKS.md): empty = original textures; the default is
+	/// <c>clarity-enhanced</c>. Packs are resolved from local config, then bundled content. Missing replacements
+	/// use the shipped HD interface art or original world textures. Stored as <c>"TexturePack"</c>.
 	/// </summary>
 	[JsonPropertyName( "TexturePack" ), JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 	public string? TexturePackName { get; init; }
@@ -276,7 +276,7 @@ public sealed record GraphicsSettings
 	[JsonPropertyName( "EnhancedTextures" ), JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 	public bool? EnhancedTextures { get; init; }
 
-	public static GraphicsSettings Default { get; } = new();
+	public static GraphicsSettings Default { get; } = new() { TexturePackName = TexturePack.DefaultName };
 
 	private static readonly JsonSerializerOptions JsonOptions = new()
 	{
@@ -291,9 +291,9 @@ public sealed record GraphicsSettings
 		var result = this;
 		// Migration: a file without a "TexturePack" key (absent or null) takes the old boolean, which selected the one pack
 		// that existed then; an explicit "TexturePack" value, even "", wins over it.
-		// Enhanced is the default: only an explicit "EnhancedTextures": false of earlier versions selects the originals.
+		// Keep both legacy choices: true selected enhanced, false selected originals. A missing choice uses Clarity.
 		if ( result.TexturePackName == null )
-			result = result with { TexturePackName = result.EnhancedTextures == false ? "" : TexturePack.DefaultName };
+			result = result with { TexturePackName = result.EnhancedTextures switch { true => TexturePack.EnhancedName, false => "", null => TexturePack.DefaultName } };
 		result = result with { EnhancedTextures = null };
 		if ( result.TexturePackName!.Length > 0 && !TexturePack.IsValidName( result.TexturePackName ) )
 		{

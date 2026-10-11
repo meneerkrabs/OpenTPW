@@ -95,6 +95,7 @@ public sealed class SoundEventSystem
 	/// <summary>Samples shorter than this (≈ 10 s at 22,050 Hz) stay decoded in memory.</summary>
 	public const int CacheFrameLimit = 220500;
 	private readonly List<SoundSentence> sentences = new();
+	private readonly List<SoundChain> chains = new();
 
 	/// <summary>Starts decoded segments that were waiting for a background decode; call once per frame.</summary>
 	public void Pump()
@@ -102,6 +103,9 @@ public sealed class SoundEventSystem
 		foreach ( var sentence in sentences.ToArray() )
 			sentence.Pump();
 		sentences.RemoveAll( sentence => sentence.IsStopped );
+		foreach ( var chain in chains.ToArray() )
+			chain.Pump();
+		chains.RemoveAll( chain => chain.IsStopped );
 	}
 
 	public SoundEventSystem( AudioMixer mixer, uint seed = 1 )
@@ -200,8 +204,25 @@ public sealed class SoundEventSystem
 		var index = ChooseSample( sound.Samples, Draw(), -1, avoidRepeat: false );
 		if ( index < 0 || Decode( category, sound.Samples[index] ) is not { } audio )
 			return null;
-		// [APPROX:AUDIO-003] pitch, delay, 3D position and reverb of a sound are not applied — evidence needed: TbSoundSampleInfo pitch units and the placeholder 3D update
+		// [APPROX:AUDIO-003] pitch, delay and reverb of a sound are not applied — evidence needed: TbSoundSampleInfo pitch units and the placeholder 3D update
 		return mixer.Play( audio, channel, Volume( sound ) / 100f );
+	}
+
+	/// <summary>
+	/// Plays a one-shot event at a place: the voice carries <paramref name="position"/> and — unless a
+	/// range is given — the chosen sound's own range (the float at the sound record's +34, the far end the
+	/// original hands its mixer), and the mixer turns it down over its distance from the listener.
+	/// </summary>
+	public AudioVoice? PlayAt( SoundCategory? category, uint eventId, AudioChannel channel, Vector3 position, float? range = null )
+	{
+		var soundEvent = category?.Catalog.Find( eventId );
+		if ( category == null || soundEvent == null || soundEvent.Sounds.Count == 0 )
+			return null;
+		var sound = soundEvent.Sounds[Math.Max( 0, ChooseSound( soundEvent.Sounds, Draw() ) )];
+		var index = ChooseSample( sound.Samples, Draw(), -1, avoidRepeat: false );
+		if ( index < 0 || Decode( category, sound.Samples[index] ) is not { } audio )
+			return null;
+		return mixer.Play( audio, channel, Volume( sound ) / 100f, position, range ?? sound.Rolloff );
 	}
 
 	/// <summary>Starts a sentence event (music); null when the event is missing.</summary>
@@ -214,6 +235,18 @@ public sealed class SoundEventSystem
 		sentences.Add( sentence );
 		sentence.Start();
 		return sentence;
+	}
+
+	/// <summary>Starts a held-chain event (a scream) at a place; null when the event is missing.</summary>
+	public SoundChain? StartChain( SoundCategory? category, uint eventId, AudioChannel channel, int parameter, Vector3? position, float? range = null )
+	{
+		var soundEvent = category?.Catalog.Find( eventId );
+		if ( category == null || soundEvent == null || soundEvent.Sounds.Count == 0 )
+			return null;
+		var chain = new SoundChain( this, category, soundEvent, channel, parameter, position, range ?? soundEvent.Sounds[0].Rolloff );
+		chains.Add( chain );
+		chain.Start();
+		return chain;
 	}
 }
 

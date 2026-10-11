@@ -97,7 +97,7 @@ jobs:
     # A release tag updates the official server once its image is published: the server's deploy route
     # leaves a request in its data folder, and the host's opentpw-deploy.path runs the regular update
     # (docs/SERVER.md, "Automatic deployment"). SSH stays closed to GitHub.
-    needs: server-image
+    needs: [build, server-image]
     if: github.repository == 'meneerkrabs/OpenTPW' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions: {}

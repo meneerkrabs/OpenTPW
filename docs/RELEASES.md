@@ -3,7 +3,7 @@
 `.github/workflows/release.yml` publishes self-contained builds (no .NET install
 needed) for six runtimes on every `v*` tag, and attaches them to a GitHub
 release. Versions with a suffix, or the preview checkbox, are pre-releases. Original game files are never part of a release: start the game with
-`--game-path` pointing at an installed Theme Park World (see RUNNING.md).
+`--game-path` pointing at an installed Theme Park World (see the [running guide](RUNNING.md)).
 
 | Runtime | Archive | Graphics | Notes |
 | --- | --- | --- | --- |
@@ -42,7 +42,7 @@ tests → Run workflow**, select `main`, and enter the published stable release
 tag, such as `v0.7.5`, in **Published stable release to deploy**. The workflow
 checks that the release is published and not a preview, then starts a build on
 that exact tag. Leaving the field empty on `main` publishes only the development
-image and does not deploy the official server. See SERVER.md for the deploy
+image and does not deploy the official server. See the [server guide](SERVER.md) for the deploy
 token and host setup.
 
 To deploy the website separately, use **Actions → Website → Run workflow** on
@@ -87,7 +87,7 @@ py scripts/build-native.py --rid win-arm64 veldrid-spirv cimgui sdl2
 The OpenTPW project copies every file in `native/<rid>/` next to the executable and
 fails the build for `osx-arm64`, `win-arm64` and `linux-arm64` when a required file is
 missing. For local arm64 macOS development without a built SDL2 it still falls back
-to Homebrew's SDL2 (and SDL3 for sdl2-compat; MACOS-NATIVE.md); release builds always
+to Homebrew's SDL2 (and SDL3 for sdl2-compat; [native macOS libraries](MACOS-NATIVE.md)); release builds always
 ship the SDL2 built above.
 
 ## Running a release
@@ -102,5 +102,5 @@ ship the SDL2 built above.
 ## Qualification
 
 The workflow builds and packages; it does not run the game. GPU execution is only
-locally qualified on Apple Silicon (Metal, RUNNING.md smoke test). Windows on Arm,
+locally qualified on Apple Silicon (Metal, [running guide smoke test](RUNNING.md)). Windows on Arm,
 Windows x86 and Linux arm64 builds are untested on real hardware.

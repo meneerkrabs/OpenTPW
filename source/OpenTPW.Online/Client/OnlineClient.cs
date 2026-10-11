@@ -120,11 +120,31 @@ public sealed class OnlineClient : IDisposable
 	}
 
 	/// <summary>Finishes a two-step setup with the first code from the authenticator app and logs in.</summary>
-	public async Task<SessionToken> ConfirmEnrollmentAsync( TotpEnrollment enrollment, string code, CancellationToken cancel = default )
+	public async Task<SessionToken> ConfirmEnrollmentAsync( TotpEnrollment enrollment, string code, string? emailCode = null, CancellationToken cancel = default )
 	{
-		using var response = await SendAsync( HttpMethod.Post, ApiRoutes.AccountConfirmation, Json( new TotpConfirmation( enrollment.Name, enrollment.Ticket, code ) ), cancel, authenticated: false );
+		using var response = await SendAsync( HttpMethod.Post, ApiRoutes.AccountConfirmation,
+			Json( new TotpConfirmation( enrollment.Name, enrollment.Ticket, code, string.IsNullOrWhiteSpace( emailCode ) ? null : emailCode.Trim() ) ), cancel, authenticated: false );
 		Session = await ReadJsonAsync<SessionToken>( response, cancel );
 		return Session;
+	}
+
+	/// <summary>Sends a code to the address the new account of <paramref name="enrollment"/> will use for recovery.</summary>
+	public async Task SendEnrollmentEmailAsync( TotpEnrollment enrollment, string email, string? language = null, CancellationToken cancel = default )
+	{
+		using var response = await SendAsync( HttpMethod.Post, ApiRoutes.AccountEmail, Json( new EnrollmentEmail( enrollment.Name, enrollment.Ticket, email.Trim(), language ) ), cancel, authenticated: false );
+	}
+
+	/// <summary>Asks for a recovery code; the server answers the same whether the name or address exists.</summary>
+	public async Task RequestRecoveryAsync( string nameOrEmail, string? language = null, CancellationToken cancel = default )
+	{
+		using var response = await SendAsync( HttpMethod.Post, ApiRoutes.Recovery, Json( new RecoveryRequest( nameOrEmail.Trim(), language ) ), cancel, authenticated: false );
+	}
+
+	/// <summary>Sets a new password with the recovery code; <paramref name="resetTwoStep"/> also sets up two-step login again.</summary>
+	public async Task ConfirmRecoveryAsync( string nameOrEmail, string code, string password, bool resetTwoStep, string? language = null, CancellationToken cancel = default )
+	{
+		using var response = await SendAsync( HttpMethod.Post, ApiRoutes.RecoveryConfirmation,
+			Json( new RecoveryConfirmation( nameOrEmail.Trim(), code.Trim(), password, resetTwoStep, language ) ), cancel, authenticated: false );
 	}
 
 	/// <summary>A secret of plausible length in base32 and an otpauth URI that carries it.</summary>

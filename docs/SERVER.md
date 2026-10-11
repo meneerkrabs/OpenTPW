@@ -133,6 +133,9 @@ Settings are in `OpenTPW.Server/appsettings.json`, or environment variables name
 | `FilterDirectory` | empty | The operator's own original language folder with `swears.txt` and `alloweds.txt` for the chat word filter |
 | `AllowRegistration` | `true` | Whether new accounts can be made |
 | `RequireTotp` | `true` | New accounts must set up two-step login with an authenticator app (docs/ONLINE.md, "Two-step login"); older accounts are not affected |
+| `RequireEmail` | `false` | New accounts must confirm an e-mail address, used only for recovery (docs/ONLINE.md, "Account recovery"); needs `RequireTotp`, `ResendApiKey` and `EmailFrom` |
+| `ResendApiKey` | none | Secret API key of the Resend mail service; empty turns account e-mail off. Set it in `.env` only (`OPENTPW_RESEND_API_KEY`) |
+| `EmailFrom`, `EmailReplyTo` | none | Sender on a domain verified at Resend (the official server: `OpenTPW <noreply@email.opentpw.io>`) and the reply address named in password notices (`contact@opentpw.io`) |
 | `RequestsPerMinute`, `AuthenticationsPerMinute`, `UploadsPerHour` | 240, 10, 30 | Limits per client address |
 | `MaximumParksPerPlayer`, `MaximumVotesPerDay`, `MaximumInboxPostcards`, `MaximumChatConnections` | 5, 10, 200, 1000 | Per-player and server limits |
 | `BannedPlayers`, `MutedPlayers`, `HiddenParks` | empty | Moderation lists |
@@ -184,10 +187,34 @@ browser (CORS, GET only); the official server allows `https://opentpw.io` and
 - The page has a strict content security policy: scripts and connections only to its own
   address (WebAssembly compilation allowed), no inline scripts or styles, no framing.
 
+## Account e-mail
+
+With `ResendApiKey` and `EmailFrom` set the server sends account e-mails through Resend: a code to
+confirm a new account's address, a recovery code, and a notice when a password or two-step login
+was reset. With `RequireEmail` every new account needs a confirmed address; without it the e-mail
+routes stay available but registration does not ask for one. The official server sets, in
+`/opt/opentpw/.env` (never in the repository):
+
+```sh
+OPENTPW_RESEND_API_KEY=re_…            # from the Resend dashboard; rotate it if it was ever shared
+OPENTPW_EMAIL_FROM=OpenTPW <noreply@email.opentpw.io>
+OPENTPW_EMAIL_REPLY_TO=contact@opentpw.io
+OPENTPW_REQUIRE_EMAIL=true
+```
+
+then `docker compose up -d`. The sending domain (`email.opentpw.io`) must be verified at Resend.
+The key is read from the settings only; it is never logged or returned, and a failed send names
+only the HTTP status. Each address belongs to one account. At most three e-mails an hour go to one
+player name or one address, and the recovery route answers the same, at the same speed, whether a
+name or address exists (its e-mail is sent in the background). Accounts made before e-mail have no address and keep the operator reset
+(`totp-reset/`) as their only recovery.
+
 ## What the server keeps
 
 - **Accounts:** name, password hash (PBKDF2-SHA256 with salt), creation time, buddy list and
-  vote counters, and for two-step login the authenticator secret. The secret has to be readable
+  vote counters, the confirmed e-mail address (accounts made with e-mail; used only for recovery),
+  and for two-step login the authenticator secret. Codes sent by e-mail are kept in memory only,
+  as hashes, for at most fifteen minutes. The secret has to be readable
   to check codes, so it is stored as is in `accounts.json`; `totp-steps.json` holds the last code
   step each account used, so a code stays used after a restart. The server makes its data
   directory and the files it writes readable by itself only (0700 and 0600) and logs a warning

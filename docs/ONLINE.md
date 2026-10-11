@@ -178,14 +178,33 @@ server accepts one step of clock difference either way, and five wrong codes blo
 that account (or that setup) for fifteen minutes. Accounts made before two-step login keep logging in with their
 password alone. The secret is never stored on the player's machine.
 
-There are no recovery codes: a player who lost their phone asks the server's operator, who resets
-the account (docs/SERVER.md). The next login with the right password then shows the setup screen
+There are no recovery codes. A player who lost their phone resets two-step login by e-mail (below)
+or, for an account without an address, asks the server's operator, who resets the account
+(docs/SERVER.md). The next login with the right password then shows the setup screen
 again with a new secret.
 
 Servers with two-step login report protocol version 2. Games from before it can still log in to
 accounts without two-step login, but cannot register on such a server or log in to an account
 that has it: they need an OpenTPW version with this screen. A registration that is waiting for
 its code keeps its name: registering it again works only with the same password.
+
+Servers with account e-mail (below) report protocol version 3. On a server that requires an
+address, games from before it cannot register either; logging in to existing accounts is unchanged.
+
+## Account recovery
+
+[EXT:online-email] On a server with `RequireEmail`, the *Two-step login* screen of a new account
+also asks for an e-mail address. *Send code* mails an eight-digit code to it; the account is created
+only when *Confirm* gets both that code and the first authenticator code. One address belongs to one
+account, and it is never shown to other players.
+
+*Forgot password?* in the login dialog opens *Account recovery*: enter the player name or the
+e-mail address and press *Send code*. The server answers the same whether or not the account exists;
+if it has an address, a code arrives there (valid fifteen minutes, five tries, at most three e-mails an
+hour). The code and a new password set the password; with *Two-step login: set up again* the next
+login also shows the setup screen with a new secret, for a lost phone. Either way every session of
+the account ends and a notice goes to the address. Mails are in the game's language. Accounts made
+before e-mail have no address and still recover only through the operator.
 
 ## Verification and extension labels
 

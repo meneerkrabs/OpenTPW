@@ -142,8 +142,11 @@ class MergedGateDocs(unittest.TestCase):
         registers = re.search(r'^REGISTERS = \{(.*?)^\}', tool, re.S | re.M)
         self.assertIsNotNone(registers)
         count = len(re.findall(r'^\s+"[A-Z][A-Z0-9]*": "source/', registers.group(1), re.M))
-        words = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve']
-        self.assertIn(f'the {words[count]} configured C# registers', tool)
+        words = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen']
+        # WALK-F (review WALK-V, WV-10): the sentence is generated from len(REGISTERS), so a merge that adds a register
+        # cannot leave a stale count; the generated document carries the word.
+        self.assertIn('the {in_words(data.register_count)} configured C# registers', tool)
+        self.assertIn(f'the {words[count]} configured C# registers', read(REPO / 'docs' / 'FIDELITY-REGISTER.md'))
 
 
 if __name__ == '__main__':

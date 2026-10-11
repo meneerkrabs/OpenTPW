@@ -42,9 +42,17 @@ public sealed class OnlineFolders
 	}
 
 	/// <summary>Stores a postcard under its id; returns the path. Existing cards with the same id are kept.</summary>
-	public string Store( string folder, Postcard card )
+	public string Store( string folder, Postcard card ) => Store( folder, card, card.Id.ToString( "N" ) );
+
+	/// <summary>
+	/// Stores a postcard under <paramref name="fileId"/> (ASCII letters, digits and '-'); returns the path. An existing
+	/// identical card is kept; a different one under the same name throws.
+	/// </summary>
+	public string Store( string folder, Postcard card, string fileId )
 	{
-		var path = Path.Combine( folder, card.Id.ToString( "N" ) + Postcard.FileExtension );
+		if ( fileId.Length is 0 or > 80 || !fileId.All( c => char.IsAsciiLetterOrDigit( c ) || c == '-' ) )
+			throw new InvalidDataException( "Invalid postcard file name." );
+		var path = Path.Combine( folder, fileId + Postcard.FileExtension );
 		if ( File.Exists( path ) )
 		{
 			var existing = Postcard.Load( path );

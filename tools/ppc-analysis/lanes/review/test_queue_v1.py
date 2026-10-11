@@ -41,8 +41,11 @@ def f32(value: float) -> float:
 
 
 def queue_limit(has_queue: bool, qwtc: float, speed: int, init_speed: int, cap: int, dur: int) -> int:
-    """0xdcb74: 100 with flag 0x8, else trunc(max(QWTC*(G*CAP)/DUR, 4)) with every step rounded to single."""
-    if has_queue:
+    """0xdcb74: 100 without flag 0x8, else trunc(max(QWTC*(G*CAP)/DUR, 4)) with every step rounded to single.
+
+    Polarity corrected by ORACLE-V OV-1 (the ride build 0xdab6c sets 0x8 from Info.HasQueue; 0xdcbac takes the
+    constant when the bit is clear); the formula cases below keep their values with has_queue=True."""
+    if not has_queue:
         return 100
     if speed == 0:
         g = 1.0
@@ -90,16 +93,16 @@ def stalled(conditions: bool, head_at_front: bool) -> bool:
 
 class Models(unittest.TestCase):
     def test_hasqueue_limit_and_formula(self):
-        self.assertEqual(100, queue_limit(True, 130, 60, 60, 5, 30))  # Belly Bounce: QWTC unused
-        self.assertEqual(21, queue_limit(False, 130, 60, 60, 5, 30))  # 130*5/30 = 21.67 -> 21
-        self.assertEqual(4, queue_limit(False, 10, 60, 60, 1, 30))  # floor 4
-        self.assertEqual(4, queue_limit(False, 0, 0, 0, 0, 0))  # 0/0 = NaN -> 4
-        self.assertEqual(43, queue_limit(False, 130, 120, 60, 5, 30))  # G = 2
-        self.assertEqual(0xFFFFFFFF, queue_limit(False, 130, 60, 60, 5, 0))  # x/0 = inf saturates
+        self.assertEqual(100, queue_limit(False, 130, 60, 60, 5, 30))  # no HasQueue: QWTC unused
+        self.assertEqual(21, queue_limit(True, 130, 60, 60, 5, 30))  # Belly Bounce: 130*5/30 = 21.67 -> 21
+        self.assertEqual(4, queue_limit(True, 10, 60, 60, 1, 30))  # floor 4
+        self.assertEqual(4, queue_limit(True, 0, 0, 0, 0, 0))  # 0/0 = NaN -> 4
+        self.assertEqual(43, queue_limit(True, 130, 120, 60, 5, 30))  # G = 2
+        self.assertEqual(0xFFFFFFFF, queue_limit(True, 130, 60, 60, 5, 0))  # x/0 = inf saturates
 
     def test_single_precision_matters_only_at_the_edge(self):
         # 0.1f * 30 * 1 / 1 in single is 3.0000001 -> floor of 4 hides it; above 4 trunc follows the f32 value.
-        self.assertEqual(int(f32(f32(f32(1.4) * f32(5.0)) / f32(1.0))), queue_limit(False, 1.4, 0, 0, 5, 1))
+        self.assertEqual(int(f32(f32(f32(1.4) * f32(5.0)) / f32(1.0))), queue_limit(True, 1.4, 0, 0, 5, 1))
 
     def test_move_delay(self):
         self.assertEqual([0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 12], [move_delay(p) for p in range(11)])

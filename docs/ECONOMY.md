@@ -8,7 +8,7 @@ behaviour is unknown is marked *approximation* below and in the code documentati
 
 The Mac PowerPC build does contain the setting names and its code is readable. The ride wear, breakdown and
 repair rules are traced there and implemented, see [reverse/RIDE-WEAR.md](reverse/RIDE-WEAR.md); only the
-ride-state gate (ECON-023) and the life gauge's start value (ECON-047) remain approximations.
+ride-state gate (ECON-023) remains an approximation; the life gauge starts at 100 (`0x100DAB1C`).
 
 Code: `source/OpenTPW/Economy/` (simulation), `source/OpenTPW.Files/Formats/Save/SaveEconomyRecords.cs`
 (original save records). Tests: `ParkEconomyTests` (synthetic, no assets) and
@@ -142,39 +142,59 @@ clean/dirty toilet, vomit, guard, camera, stink bomb, fireworks), `Seasons[]`/`W
 
 ## Original save evidence (Easymode.TPWI)
 
-`SaveEconomyRecords` finds two tables in the decoded payload by structure; `OriginalEconomyImport`
-then requires loan amount/APR/term/lender metadata and challenge fields to equal settings exactly.
-Monthly repayment equality is required only for 0 % APR, using integer `amount / months`, as
-proven by this fixture. Positive-APR monthly values are preserved in the decoded records and
-reported as **unverified**, without comparing them to the runtime's annuity approximation.
+`SaveEconomyRecords` reads two things of the save's World thing list (docs/TPWS-PAYLOAD.md,
+docs/reverse/SAVE-plan.md): the bank account named by `mBankAccount` (model 16) and the
+challenge system (model 19). `OriginalEconomyImport.Verify` then requires loan
+amount/APR/term/lender metadata and challenge fields to equal settings exactly. Monthly
+repayment equality is required only for 0 % APR, using integer `amount / months`, as proven by
+this fixture. Positive-APR monthly values are preserved in the decoded records and reported as
+**unverified**, without comparing them to the runtime's annuity approximation.
 
-| Table | Offset | Layout | Cross-check |
-| --- | --- | --- | --- |
-| Bank prefix | 1,411,362 | 7 × 32-bit words: admission fee, balance, batch balance, withdrawals enabled, last balance, entered-red tick, annual profit | Typed values: 25, 87987, 0, true, 87787, 0, −12013 |
-| Loan offers | 1,411,390 | 8 × 32 bytes: available flag, i32 amount, i32 APR, months, monthly repayment, bought flag, months repaid, lender name index | Amounts, APR, terms and lenders equal `LoanInfo[0–7]`; repayments 2777, 1388, 694, 277, 750, 1000, 1666, 2166 = floor(amount / months), i.e. 0 % APR: only `Easy_Standard.sam` matches |
-| Challenges | 1,410,409 | 8 × 45 bytes: `i32 type, time, value, u16 object, u16 object2, i32 staff type, prize, follow-up, u8 check at end only`, 13 zero bytes, `u8 independent`, 2 zero bytes | Equal `Challenges[1, 15, 6, 18, 12, 7, 8, 9]` = jungle `ChallengesInThisLevel`, including the `Independent` flags (1,1,1,1,1,1,0,0) |
+| Thing data | Layout | Cross-check |
+| --- | --- | --- |
+| Bank words (after the 8-byte base) | 7 × 32-bit words: admission fee, balance, batch balance, withdrawals enabled, last balance, turn entered red, annual profit | Typed values: 25, 87987, 0, true, 87787, 0, −12013 |
+| Loan offers | 8 × 32 bytes: available flag, i32 amount, i32 APR, months, monthly repayment, bought flag, months repaid, lender name index | Amounts, APR, terms and lenders equal `LoanInfo[0–7]`; repayments 2777, 1388, 694, 277, 750, 1000, 1666, 2166 = floor(amount / months), i.e. 0 % APR: only `Easy_Standard.sam` matches |
+| Challenge slots | 20 × 45 bytes: `i32 type, time, value, u16 object, u16 object2, i32 staff type, prize, follow-up, u8 check at end only`, 13 raw bytes, `u8 independent`, 2 raw bytes; the leading slots with a nonzero type are used | Equal `Challenges[1, 15, 6, 18, 12, 7, 8, 9]` = jungle `ChallengesInThisLevel`, including the `Independent` flags (1,1,1,1,1,1,0,0) |
 
 Proven and used: the 0 % APR repayment formula, the easy balance for the jungle original level, and
-the challenge list. The placed objects and fixed items (docs/TPWS-PAYLOAD.md) are registered in the
-economy without charge.
+the challenge list.
 
-**Bank fields identified; simulation state not restored.** The Mac serializer's named fields
-and 4-byte writes independently identify the bank prefix and eight-word loan records, and the
-actual PC fixture matches that order. The old `i64 amount` combined amount with APR; the old
-record's final word belonged to the next loan's available flag. Lender name index is independent
-of record order. The typed parser handles nonzero APR and reordered lenders, while import still
-requires the original settings metadata to match. APR > 0 repayment arithmetic on PC remains
-unproven; each such saved repayment receives an `[APPROX:ECON-006]` diagnostic and is not reported
-as matched or used to restore active loans. The current runtime calculation remains the ECON-006
-approximation. A positive-APR stored value can differ from that calculation without invalidating
-otherwise matching typed data; replacing one unproved formula with the Mac formula is not part
-of validation.
+The Mac serializer's named fields and 4-byte writes independently identify the bank words and
+eight-word loan records, and the actual PC fixture matches that order. Lender name index is
+independent of record order. APR > 0 repayment arithmetic on PC remains unproven; each such saved
+repayment receives an `[APPROX:ECON-006]` diagnostic and is not reported as matched. The current
+runtime calculation remains the ECON-006 approximation. A positive-APR stored value can differ from
+that calculation without invalidating otherwise matching typed data; replacing one unproved formula
+with the Mac formula is not part of validation. The decoded balance 87,987 and annual profit
+−12,013 are consistent with 100,000 − 12,013; the spending history behind that profit is not in the
+save.
 
-The decoded balance is 87,987, last balance 87,787 and annual profit −12,013, consistent with
-100,000 − 12,013. The spending history behind that profit is still unknown. This correction
-reports the typed bank values but continues to start the simulation at `InitialCash`; it does
-not restore active loans or other unimplemented original state. The locator still uses
-plausibility limits rather than the serializer's offsets (**ECON-045**).
+### Original save import
+
+A park started from a shipped save (Instant Action, or the reference start) runs
+`OriginalEconomyImport.Apply` before its first tick, in dependency order:
+
+| Step | Source | OpenTPW target | Status |
+| --- | --- | --- | --- |
+| Turn | World `mGameTick` (755) | `Tick` = first tick of that turn; ledger month, hiring-pool timers and the first challenge offer day move with it | Traced (the turn the calendar converts); the save's calendar caches are checked against the resulting date (2 February 2000) |
+| Bank | bank words | `Balance` (ledger opening balance), `EntranceFee`, `ProfitThisYear` | Traced field identities |
+| Loans | bought loan offers | `Loans` (outstanding = monthly × months left) and taken offers | Field identities traced; outstanding balance SAVE-008 |
+| Objects | RideSystem records (also those with an unverified footprint) + attraction things | registered uncharged; `Price`, `CostOfGoods`, `Level`, `Repair`, `LifeGauge` from the matching attraction (same Info.Id and cell) | Traced fields; state enum, chance of winning, totals, histories, names, operating, quality, queue and count fields, time stamp and mesh instance not imported (SAVE-006) |
+| Staff | models 4–8 | `Staff.Members`: type, grade, training percentage, happiness, state, hire tick (rounded down to its turn) | Grade/percentage/happiness traced; state order, names, jobs, idle tick, role suffix SAVE-003 |
+| Open state | World `mParkClosed` | the park opens when guests attach unless it is set | Traced |
+
+Not imported and reported in `Evidence`: `mRandomSeed` (SAVE-001), guests (SAVE-002), the hiring
+pool (SAVE-004), challenge timing, switch bytes, Value and ActualThing (SAVE-005), research
+(SAVE-007), batch/last balance, withdrawals, turn entered red and the loan offers' Available flags
+(SAVE-008), the staff HQ's training budgets, strike words, strike levels and trained byte (SAVE-009;
+all-zero budgets equal OpenTPW's starting budgets), the opaque blocks, world state, arrivals,
+calendar session start, the advisor controller's presentation words and current record, its pending
+advice and history when no automatic advisor is attached, and the subsystem things without an
+OpenTPW counterpart (SAVE-010). Staff values
+outside OpenTPW's ranges are adjusted and each adjustment is reported (SAVE-003); an attraction
+with out-of-range values keeps the defaults and is listed. The ledger's category history starts
+empty: the save has none, and the month opens at the current balance: `mLastBalance` (87,787 in
+Easymode against 87,987) is the balance after the last debit, not a month opening (SAVE-008).
 
 The eleven saves of the second fixture set (docs/TPWS-PAYLOAD.md) corrected the challenge layout.
 Easymode's challenges have no second object, staff type or end-only check, so they could not show
@@ -190,8 +210,9 @@ The verified PC `Easymode.TPWI` SHA-256 is
 `6d89303d098900364bf5e80b236b64bd85976fb947e9e4609d088547f430b39a`.
 The layout review is documented in [PPC-review.md](reverse/PPC-review.md), with the field/call
 evidence in [PPC-economy.md](reverse/PPC-economy.md). Regression tests cover positive APR,
-permuted lenders, field/flag decoding, truncated prefix/records, ambiguous tables and settings
-mismatches; original-data tests check the typed PC fixture.
+field/flag decoding, truncated records, the challenge slot prefix, settings mismatches and the
+runtime import (`SaveWorldTests`, `OriginalSaveImportTests`); original-data tests check the typed
+PC fixture and the imported Instant Action start.
 
 ## Simulation model
 
@@ -204,8 +225,8 @@ mismatches; original-data tests check the typed PC fixture.
 | Loans | Offers, lenders, terms; 0 % APR repayment = floor(amount/months) | Annuity formula and monthly interest for APR > 0; early repayment pays the remaining balance |
 | Bankruptcy | Six month-ends in the red, warnings at 3 and 5 months (strings) | Advance stops when bankrupt |
 | Staff | Pool sizes, maxima, wages, training prices | Candidate grades, pool timing, free hiring, 100 points per grade, mechanic/handyman job durations |
-| Maintenance | Wear rates, red lines, maxima, upgrade durations, worn threshold 25 | Traced: wear every 64 turns from the ride script's running state, riders and speed; breakdown check every 8 turns; repair restores 100 but not the life gauge. Approximated: the ride-state gate (ECON-023) and the life gauge's start value (ECON-047) |
-| Research | Items, categories, groups, costs, effort, ability, thresholds, work load; traced: points every 20 turns, cumulative group opener, first open item in table order; points from researcher staff only, in both modes (Mac) | Info-id table order, the excluded researcher states, the stand-in for the Instant Action seed's researcher |
+| Maintenance | Wear rates, red lines, maxima, upgrade durations, worn threshold 25 | Traced: wear every 64 turns from the ride script's running state, riders and speed; breakdown check every 8 turns; repair restores 100 but not the life gauge. the life gauge starts at 100 (`0x100DAB1C`). Approximated: the ride-state gate (ECON-023) |
+| Research | Items, categories, groups, costs, effort, ability, thresholds, work load; traced: points every 20 turns, cumulative group opener, first open item in table order; points from researcher staff only, in both modes (Mac) | Info-id table order, the excluded researcher states |
 | Challenges | Definitions, level list, timings, prizes, follow-ups | Type semantics from comments, except the build types 28 and 30–33, traced to the handler table at `0x100CE690`; explicit accept/decline; types 14, 22, 23, 26 unmeasured (23 and 26 never pass in the binary) |
 | Golden tickets | All thresholds | Checked every 100 park turns in Full Simulation only; the profit ticket reads the year's running profit (`mProfitThisYear`, reset each calendar year); the first copy of a ticket object costs tickets, not cash (all traced) |
 | Keys/progression | Keys per theme, theme order (THEMENAMES; ascending key cost); +1 per 3 earned golden tickets; spending tickets preserves keys (manual p. 28) | Start with 1 key; keys persist when entering themes |
@@ -227,19 +248,18 @@ the original GameType, front-end exit code or main-loop state (docs/reverse/PPC-
 Instant Action rules (`ParkModeFeatures`, Mac direct GameType tests; PC equivalence not established):
 no golden-ticket checks and no challenges, no loan offers, research lab efforts cannot be changed,
 no ride upgrades. Research points come only from researchers: the Mac code has no staffless research
-path. The Instant Action seed ships with a researcher, but the staff records of `Easymode.TPWI` are not
-decoded, so it is not imported, and production OpenTPW has no hiring UI. An Instant Action start that
-imported the seed therefore researches as one grade-2 researcher while no researcher is employed
-(ECON-019, a stand-in for the seed's researcher; `ParkEconomy.SeedResearcherStandIn`). A start without a
-seed (Full Simulation, or an Instant Action theme that ships none) has no stand-in. The native front-end
-smoke run starts jungle in Instant Action from the menu and checks the seed, the absence of invented
-staff, research advancing through the stand-in over 60 days and each refused gate.
+path. The Instant Action seed ships with its staff, including a grade-2 researcher; the import takes
+them (see "Original save import"), so research runs on the seed's own researcher. A start without a
+seed (Full Simulation, or an Instant Action theme that ships none) has no staff. The native front-end
+smoke run starts jungle in Instant Action from the menu and checks the seed, its imported bank, turn
+and staff, research advancing over 60 days and each refused gate.
 
 OpenTPW's own park save stores `Mode` by name (`"FullSimulation"`/`"InstantAction"`, integers
 rejected) and `Easy` as required members; neither has a default, so older version-1 saves already
 carry both. A running park refuses a save of the other mode. The start kind is not saved: the
-reference start is not an original state, and an imported seed is already in the saved objects. The
-seed researcher's stand-in is saved as the optional `SeedResearcherStandIn` (absent: off).
+reference start is not an original state, and an imported seed is already in the saved objects and
+staff. The legacy `SeedResearcherStandIn` member of earlier version-2 saves is still accepted, ignored
+and written as `false` (the stand-in it described is gone).
 
 Original flow that OpenTPW does not reproduce (Mac, static; docs/reverse/PPC-scenarios.md, "Park
 entry"): leaving a park saves `<player>:<theme>:autosave.TPWS`, and the next entry resumes the
@@ -319,7 +339,6 @@ site, is listed in `Economy/EconomyApproximations.cs` and is logged once at star
 | ECON-015 | `Economy/ParkResearch.cs:169` | researchers on strike or picked up are the original's excluded states 3, 4 and 5 | the staff state values behind 0x100F4170 |
 | ECON-017 | `Economy/ParkResearch.cs:148` | the research table is in info-id order and the player cannot step the cursor to another item | the table fill order (FUN_100c9064) and the next/previous control |
 | ECON-018 | `Economy/ParkResearch.cs:48` | ride upgrade levels and add-on objects form the "upgrade" research category | research lab capture |
-| ECON-019 | `Economy/ParkEconomy.cs:169` | an Instant Action start that imported the seed park researches as one grade-2 researcher while none is employed, standing in for the seed's undecoded researcher; the Mac code has no staffless research path | `Easymode.TPWI` staff records |
 | ECON-020 | `Economy/ParkEconomy.cs:28` | a sale drops LitterEffect/100 litter items | capture of litter after sales |
 | ECON-021 | `Economy/ParkEconomy.cs:243` | a repair takes WorkDuration game hours (x DurationOfUpgrade for upgrades); mechanics are dispatched instantly | capture of repair duration per grade |
 | ECON-022 | `Economy/ParkEconomy.cs:261` | a handyman removes one litter item per WorkDuration game minutes, park-wide | capture of cleaning speed |
@@ -329,7 +348,7 @@ site, is listed in `Economy/EconomyApproximations.cs` and is logged once at star
 | ECON-027 | `Economy/ParkEconomy.cs:403` | the record sub-kinds 0–3 are rides, shops, sideshows and features, and every hired staff member counts | the record field at +0x4C behind sub-kind +0x7A8 and the staff byte +3 tested by FUN_100C4064 |
 | ECON-028 | `Economy/ParkEconomy.cs:491` | purchases need a balance covering the cost | capture of building with too little money |
 | ECON-030 | `Economy/ParkEconomy.cs:114` | the simulation stops once bankrupt | capture of the bankrupt state |
-| ECON-031 | `Economy/ParkEconomyRuntime.cs:33` | imported parks are opened on load (open state not decoded) | park-open flag in the save |
+| ECON-031 | `Economy/ParkEconomyRuntime.cs:43` | a park started without an original save is opened when guests attach (an imported park follows its saved mParkClosed) | the open state of a new original park |
 | ECON-034 | `Economy/ParkObjectives.cs:113` | challenge type meanings come from Challenges.sam comments (shop types by ShopType/SpecialIngredient) | challenge captures per type |
 | ECON-035 | `Economy/ParkObjectives.cs:153` | offers wait for accept/decline; follow-ups are offered right after completion; failed challenges count as finished | challenge flow captures |
 | ECON-036 | `Economy/ParkObjectives.cs:154` | type 18 needs TargetVal items built since acceptance; the binary compares TargetVal with a per-ride value from 0x100C7264 that is not identified | the fifth output of 0x10041A34 |
@@ -338,8 +357,7 @@ site, is listed in `Economy/EconomyApproximations.cs` and is logged once at star
 | ECON-040 | `Economy/ParkObjectives.cs:318` | players start with 1 golden key and keys are not consumed by entering themes | initial lobby and repeated theme-entry captures |
 | ECON-041 | `Economy/EconomyObjectCatalog.cs:93` | features-directory objects with Research.Category != 3 are fixed (non-buyable) items | buy-menu capture |
 | ECON-044 | `Economy/GuestEconomyBridge.cs:61` | guests never hold a balloon or wear a costume, so both percentages are 0; the binary gives them when a guest uses a balloon or costume shop (0x100EAAF8) | balloon lifetime (+0x214) and costume state rules |
-| ECON-045 | `Files/Formats/Save/SaveEconomyRecords.cs:111` | loan/challenge record locators use plausibility bounds (checked on 12 saves) | the serializer offsets of both tables |
-| ECON-047 | `Economy/ParkEconomyContracts.cs:178` | a newly built ride starts with life gauge 100 (Easymode.TPWI stores 100 for every placed object) | the life gauge set when a ride is built (the constructor 0x100DA874 sets 0) |
+| ECON-048 | `Economy/ParkEconomy.cs:719` | a negative path or queue cell cost (modified `Costs.*`) is booked as other income; balance and profit match the original's Spend of a negative amount | the ledger category of a negative Spend |
 
 ## Open questions
 

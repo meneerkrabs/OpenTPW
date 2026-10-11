@@ -9,12 +9,17 @@ public static class ApiRoutes
 	public const string Prefix = "/api/v1";
 	public const string Server = Prefix + "/server";
 	public const string Accounts = Prefix + "/accounts";
+	public const string AccountConfirmation = Accounts + "/confirm";
 	public const string Sessions = Prefix + "/sessions";
 	public const string Parks = Prefix + "/parks";
 	public const string Postcards = Prefix + "/postcards";
 	public const string Inbox = Postcards + "/inbox";
 	public const string Reports = Prefix + "/reports";
 	public const string News = Prefix + "/news";
+	/// <summary>Operator only: asks the host to update the server (<c>DeployToken</c>).</summary>
+	public const string Deploy = Prefix + "/admin/deploy";
+	/// <summary>The public list of parks shown on the project website, and their pictures (<c>/{id}/thumbnail</c>).</summary>
+	public const string WebsiteParks = Parks + "/website";
 	public const string Chat = global::OpenTPW.Online.Chat.ChatProtocol.Path;
 	public const string PackageMediaType = "application/vnd.opentpw.park";
 	public const string PostcardMediaType = "application/vnd.opentpw.postcard";
@@ -26,7 +31,19 @@ public sealed record ServerInfo( string Name, string Version, int ProtocolVersio
 /// <summary>The server's Game News and System News; empty text when the operator wrote none.</summary>
 public sealed record NewsInfo( string Game, string System, DateTimeOffset? UpdatedUtc );
 
-public sealed record Credentials( string Name, string Password );
+/// <summary>Name and password; <see cref="Code"/> is the authenticator code for accounts with two-step login (omitted when null, for older servers).</summary>
+public sealed record Credentials( string Name, string Password,
+	[property: System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )] string? Code = null );
+
+/// <summary>
+/// The authenticator secret for a new or reset account (RFC 6238, base32) and its <c>otpauth://</c> URI. Nothing is
+/// stored for a new account until <see cref="TotpConfirmation"/> arrives with a valid code before <see cref="ExpiresUtc"/>.
+/// <see cref="Ticket"/> proves the confirmation comes from whoever registered (or logged in with the password).
+/// </summary>
+public sealed record TotpEnrollment( string Name, string Ticket, string Secret, string Uri, DateTimeOffset ExpiresUtc );
+
+/// <summary>Finishes an enrollment with its ticket and the first code from the authenticator app.</summary>
+public sealed record TotpConfirmation( string Name, string Ticket, string Code );
 
 public sealed record SessionToken( string Name, string Token, DateTimeOffset ExpiresUtc );
 
@@ -34,6 +51,11 @@ public sealed record ParkSummary( string Id, string Name, string Description, st
 	DateTimeOffset PublishedUtc, int Visits, int Votes, bool VisitedBefore, bool VotedFor, int PlayersAtPark, bool HasThumbnail, int Bytes );
 
 public sealed record ParkList( IReadOnlyList<ParkSummary> Parks, int Total );
+
+/// <summary>A park listed on the project website: only what its author chose to make public.</summary>
+public sealed record WebsitePark( string Id, string Name, string Description, string Author, string Level, int Votes, int Visits, DateTimeOffset PublishedUtc, bool HasThumbnail );
+
+public sealed record WebsiteParkList( IReadOnlyList<WebsitePark> Parks );
 
 public sealed record CounterResult( int Visits, int Votes, int VotesLeftToday );
 
@@ -55,4 +77,14 @@ public static class ReportKinds
 	public static bool IsKnown( string? kind ) => kind is Park or Player or Postcard or Chat;
 }
 
-public sealed record ApiError( string Error );
+public sealed record ApiError( string Error,
+	[property: System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )] string? Reason = null );
+
+/// <summary>Machine-readable <see cref="ApiError.Reason"/> values.</summary>
+public static class ApiErrorReasons
+{
+	/// <summary>The account uses two-step login and the request had no code.</summary>
+	public const string TotpRequired = "totp-required";
+	/// <summary>The code was wrong, expired or already used.</summary>
+	public const string TotpInvalid = "totp-invalid";
+}

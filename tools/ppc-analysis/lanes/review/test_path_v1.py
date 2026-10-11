@@ -49,7 +49,9 @@ def can_change_cell_type(old: int, new: int, last_cell: bool) -> bool:
         return True
     if new == 4 and old == 1:
         return True
-    return new == 3 and old == 1 and last_cell
+    # Polarity corrected by ORACLE-V OV-1: the word data:0x84b2c refuses when nonzero, and the line tool 0x84ea4
+    # raises it only for the last cell, so queue over path is allowed on every cell but a line's last.
+    return new == 3 and old == 1 and not last_cell
 
 
 def affordable(balance: int, cost: int) -> bool:
@@ -94,8 +96,8 @@ class Models(unittest.TestCase):
         self.assertTrue(can_change_cell_type(0, 1, False))
         self.assertTrue(can_change_cell_type(1, 1, False))
         self.assertTrue(can_change_cell_type(3, 1, False), 'path over queue passes 0x8408c (the validator refuses it)')
-        self.assertFalse(can_change_cell_type(1, 3, False))
-        self.assertTrue(can_change_cell_type(1, 3, True), 'queue over path only with the last-cell flag')
+        self.assertTrue(can_change_cell_type(1, 3, False))
+        self.assertFalse(can_change_cell_type(1, 3, True), 'queue over path except on the last cell (OV-1)')
         self.assertFalse(can_change_cell_type(4, 4, False))
         for old in (2, 4, 5, 7, 9, 10, 11, 16, 21, 24, 30):
             self.assertFalse(can_change_cell_type(old, 1, True), old)

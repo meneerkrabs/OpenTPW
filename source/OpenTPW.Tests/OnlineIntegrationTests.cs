@@ -12,9 +12,9 @@ namespace OpenTPW.Tests;
 [TestClass]
 public class OnlineIntegrationTests
 {
-	private static OnlineFolders Folders() => new( Path.Combine( Path.GetTempPath(), "opentpw-online-" + Guid.NewGuid().ToString( "N" ) ) );
+	internal static OnlineFolders Folders() => new( Path.Combine( Path.GetTempPath(), "opentpw-online-" + Guid.NewGuid().ToString( "N" ) ) );
 
-	private static async Task PumpUntilIdle( OnlineSession session )
+	internal static async Task PumpUntilIdle( OnlineSession session )
 	{
 		var until = DateTime.UtcNow.AddSeconds( 10 );
 		while ( session.Busy > 0 && DateTime.UtcNow < until )
@@ -103,9 +103,13 @@ public class OnlineIntegrationTests
 			Assert.AreEqual( 1, folders.List( folders.Sent ).Count );
 			Assert.AreEqual( 1, (await recipient.GetInboxAsync()).Postcards.Count );
 			await recipient.SendPostcardAsync( Postcard.Create( "Bobby", new[] { "Alice" }, "Reply", "Hello", "English" ) );
+			// Two cards that reuse one card id (a sender's choice) must both arrive instead of blocking the inbox.
+			var reused = Guid.NewGuid();
+			await recipient.SendPostcardAsync( Postcard.Create( "Bobby", new[] { "Alice" }, "One", "first", "English", cardId: reused ) );
+			await recipient.SendPostcardAsync( Postcard.Create( "Bobby", new[] { "Alice" }, "Two", "second", "English", cardId: reused ) );
 			session.FetchInbox();
 			await PumpUntilIdle( session );
-			Assert.AreEqual( 1, folders.List( folders.Inbox ).Count );
+			Assert.AreEqual( 3, folders.List( folders.Inbox ).Count, session.Status );
 			Assert.AreEqual( 0, (await session.Client!.GetInboxAsync()).Postcards.Count );
 			Assert.IsFalse( File.ReadAllText( folders.SettingsFile ).Contains( "correct horse" ) );
 			session.ConnectChat();
@@ -122,6 +126,54 @@ public class OnlineIntegrationTests
 			Assert.IsTrue( session.ChatLines.Any( line => line.Contains( "hello from the game session" ) ) );
 		}
 		finally { Directory.Delete( folders.Root, true ); server.DeleteData(); }
+	}
+
+	[TestMethod]
+	public async Task ChatReconnectsToItsRoomAfterTheServerRestarts()
+	{
+		var server = await LoopbackServer.StartAsync();
+		var directory = server.Directory;
+		var url = server.Url;
+		var folders = Folders();
+		try
+		{
+			using var owner = await server.LoginAsync( "Bobby" );
+			var park = await owner.UploadParkAsync( OnlineFormatTests.Package() );
+			using var session = new OnlineSession( folders );
+			session.UseServer( url.ToString(), "Alice" );
+			session.Register( "Alice", "correct horse" );
+			await PumpUntilIdle( session );
+			session.RefreshParks( null );
+			await PumpUntilIdle( session );
+			session.ConnectChat();
+			await PumpUntilIdle( session );
+			var room = ChatProtocol.ParkRoom( park.Id );
+			session.JoinRoom( room );
+			await PumpUntil( session, () => session.CurrentRoom == room );
+
+			await server.DisposeAsync();
+			await using var restarted = await LoopbackServer.StartAsync( directory: directory, url: url );
+			await PumpUntil( session, () => session.ChatLines.Any( line => line == OnlineStrings.Get( OnlineLabel.ChatReconnected ) ), seconds: 20 );
+			Assert.IsTrue( session.IsLoggedIn, "the session survived the restart" );
+			await PumpUntil( session, () => session.Chat != null && session.CurrentRoom == room );
+		}
+		finally
+		{
+			Directory.Delete( folders.Root, true );
+			if ( Directory.Exists( directory ) )
+				Directory.Delete( directory, true );
+		}
+	}
+
+	private static async Task PumpUntil( OnlineSession session, Func<bool> done, int seconds = 10 )
+	{
+		var until = DateTime.UtcNow.AddSeconds( seconds );
+		while ( !done() && DateTime.UtcNow < until )
+		{
+			session.Pump();
+			await Task.Delay( 20 );
+		}
+		Assert.IsTrue( done(), session.Status );
 	}
 
 	[TestMethod]
@@ -171,5 +223,15 @@ public class OnlineIntegrationTests
 		foreach ( var url in new[] { "file:///tmp/server", "https://user:pass@example.test", "https://example.test/?token=a", "https://example.test/#other" } )
 			Assert.ThrowsException<ArgumentException>( () => OnlineClient.ValidateServerUrl( new Uri( url ) ) );
 		Assert.AreEqual( "https://example.test/sub/", OnlineClient.ValidateServerUrl( new Uri( "https://example.test/sub" ) ).ToString() );
+	}
+
+	[TestMethod]
+	public void PlainHttpIsOnlyForThisComputerAndTheLocalNetwork()
+	{
+		foreach ( var url in new[] { "http://localhost:8080", "http://127.0.0.1:5000", "http://[::1]:8080", "http://dev.localhost", "http://192.168.1.20",
+			"http://10.0.0.5", "http://172.20.1.1", "http://[fd00::5]", "http://[fe80::1]" } )
+			Assert.AreEqual( "http", OnlineClient.ValidateServerUrl( new Uri( url ) ).Scheme, url );
+		foreach ( var url in new[] { "http://play.opentpw.io", "http://example.test", "http://8.8.8.8", "http://172.32.0.1", "http://[2001:db8::1]", "http://localhost.evil.test", "http://nas.local" } )
+			Assert.ThrowsException<ArgumentException>( () => OnlineClient.ValidateServerUrl( new Uri( url ) ), url );
 	}
 }

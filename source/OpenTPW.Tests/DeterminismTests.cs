@@ -178,7 +178,7 @@ public class DeterminismTests
 	{
 		var park = new SyntheticPark( WorldSeed.Default );
 		park.Run( 3600 );
-		Assert.AreEqual( 0xE3498781B921C80DUL, park.Hash, $"0x{park.Hash:X16}" );
+		Assert.AreEqual( 0xB684DD70FFFF8309UL, park.Hash, $"0x{park.Hash:X16}" );
 	}
 
 	[TestMethod]
@@ -220,8 +220,9 @@ public class DeterminismTests
 	}
 
 	/// <summary>
-	/// Every saved stream is moved by drawing from it (guest ticks, a script seed, sound draws), never through
-	/// RestoreRandomState, so a restore that does nothing fails here.
+	/// Every saved stream is moved by drawing from it (guest ticks, a script seed) or, for the sound chooser,
+	/// whose draws never store their successor, by reseeding it; never through RestoreRandomState, so a
+	/// restore that does nothing fails here.
 	/// </summary>
 	[TestMethod]
 	public void LoadRestoresEveryStreamDrawnAfterTheSave()
@@ -237,11 +238,12 @@ public class DeterminismTests
 			park.Sound.Draw();
 			park.Save( path );
 			var saved = park.RandomState;
-			Assert.AreNotEqual( park.Seed.SoundStream, saved.SoundSeed, "the sound seed was drawn before the save" );
+			Assert.AreEqual( park.Seed.SoundStream, saved.SoundSeed, "sound draws do not move the chooser seed (0x100118C8 is its only store)" );
 			for ( var tick = 0; tick < 600; tick++ )
 				park.Guests.Tick( Tick );
 			park.Scripts.NextScriptSeed();
 			park.Sound.Draw();
+			park.Sound.Reseed( saved.SoundSeed + 1 );
 			var moved = park.RandomState;
 			Assert.AreNotEqual( saved.GuestRandom, moved.GuestRandom, "guest ticks drew from the guest stream" );
 			Assert.AreNotEqual( saved.ScriptRandom, moved.ScriptRandom );
@@ -380,7 +382,8 @@ public class DeterminismAssetTests
 {
 	/// <summary>
 	/// Level.SavePark/LoadPark delegate to <see cref="ParkWorldStreams"/>; this runs that path with the real
-	/// jungle park runtime and guests (Level itself needs a renderer). Every stream is moved by drawing.
+	/// jungle park runtime and guests (Level itself needs a renderer). Every stream is moved by drawing, except the
+	/// sound chooser, whose draws never store their successor (0x100118C8 is its only store), which is reseeded.
 	/// </summary>
 	[TestMethod]
 	public void ParkSaveAndLoadThroughTheLevelPathRestoreEveryStream()
@@ -416,7 +419,10 @@ public class DeterminismAssetTests
 			var economy = ParkSaveFile.Serialize( park.Economy );
 			Run( 3000 );
 			streams.Scripts.NextScriptSeed();
+			// Since ORACLE-F a draw never stores the sound seed (sound_shared 0x100118C8), so only a reseed moves it.
+			Assert.AreEqual( saved.SoundSeed, streams.CaptureRandomState().SoundSeed, "sound draws do not move the seed" );
 			streams.Sound.Draw();
+			streams.Sound.Reseed( unchecked(saved.SoundSeed + 1) );
 			var moved = streams.CaptureRandomState();
 			Assert.IsTrue( saved.GuestRandom != moved.GuestRandom && saved.ScriptRandom != moved.ScriptRandom && saved.SoundSeed != moved.SoundSeed, "every stream was drawn after the save" );
 			Assert.AreNotEqual( economy, ParkSaveFile.Serialize( park.Economy ) );

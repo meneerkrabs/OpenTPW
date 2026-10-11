@@ -344,7 +344,10 @@ public class GuestTests
 		simulation.Payments = bridge;
 		var spent = 0L;
 		simulation.MoneySpent += ( _, amount, _ ) => spent += amount;
-		Run( simulation, Array.Empty<ScriptedAttraction>(), 20 * 60 );
+		// 40 s (was 20 s): turning back at the closed booth is a lane walk of 12 cells there and back, now at the traced
+		// per-guest speed (WALK-I: from s = 0, at most 0.48 cell/s for the slowest base speed) plus the 1 s booth and 3 s bus
+		// wait; under the old 1 cell/s no guest needed more than 20 s.
+		Run( simulation, Array.Empty<ScriptedAttraction>(), 40 * 60 );
 		Assert.AreEqual( 0, simulation.Admissions, "the economy's park is closed" );
 		Assert.IsTrue( simulation.Departed > 0 || simulation.Guests.All( guest => !simulation.IsInPark( guest ) ) );
 

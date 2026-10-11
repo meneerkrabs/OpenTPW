@@ -227,7 +227,7 @@ Mac build (Totem cycle 430 ticks ≈ 14.3 s); scene-clock scaling and pause are 
   index[count], u32 count, ptr → count × (f32 x, y, z)`, one pose. The engine
   relocates it and the bind sets node bits 0x800/0x100, but no reader of the floats
   was found, so it is parsed (`ModelVertexPose`) and the stored mesh is shown
-  (RIDES-029); the floats differ from the stored positions in 19 of the 30.
+  (RIDES-041); the floats differ from the stored positions in 19 of the 30.
 
 Record bits (ANIM-plan §1): 0x1, 0x8, 0x80, 0x1000, 0x10000 and 0x20000 are
 decoded and played; 0x200/0x400 (path parameters) and 0x4000 stay in
@@ -300,9 +300,9 @@ that `Model.UpdateVertices` refreshes through the frame command list when the
 pose version changes; texture-coordinate tracks write the same parts' texture
 coordinates. Channels mix by ascending index, the highest channel writing a
 component winning (0xa7960). Node-state bit 0x10 from node lists and toggles
-hides the node's mesh (RIDES-030; the draw-path reader is not traced).
+hides the node's mesh (RIDES-042; the draw-path reader is not traced).
 Relative-animation models play their vertex tracks in set mode, because the
-default ride load path strips header flag 0x4 (RIDES-031). Not played: group-0
+default ride load path strips header flag 0x4 (RIDES-043). Not played: group-0
 bounds (no consumer traced), texture-frame tracks (RIDES-035; the slot consumer
 is not traced), the 12-byte block and path parameters. `LobbyIsland` (not instantiated by the game yet) uses the composed
 hierarchy, swaps normal axes like positions, and renders untextured materials

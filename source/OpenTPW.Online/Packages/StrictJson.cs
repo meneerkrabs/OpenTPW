@@ -74,5 +74,10 @@ public static class StrictJson
 		{
 			throw new InvalidDataException( $"{what} is malformed: {exception.Message}", exception );
 		}
+		// GetString throws this for a key that is not valid UTF-16, e.g. a lone surrogate escape.
+		catch ( InvalidOperationException exception )
+		{
+			throw new InvalidDataException( $"{what} is malformed: {exception.Message}", exception );
+		}
 	}
 }

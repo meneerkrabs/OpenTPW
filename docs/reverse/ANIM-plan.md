@@ -412,13 +412,13 @@ Implemented against §13 (code: `ModelUvAnimation`, `ModelVertexPose`, `ModelAni
 | --- | --- | --- |
 | 1 UV tracks | decoded, validated and played per instance in set mode after the vertex pass; 0xa8304 search; copy-back on clip change under the fixed-item gate | none |
 | 2 record bits | `MetadataFlags` = 0x10/0x20/0x40/0x100/0x800/0x2000/0x8000, out of `UnsupportedFlags` and `HasUndecodedPayload`; `--inspect-model` prints decoded kinds, metadata and unsupported bits per record | none |
-| 3 12-byte block | parsed (`ModelVertexPose`, count and indices checked against the mesh), stored mesh shown | RIDES-029 |
+| 3 12-byte block | parsed (`ModelVertexPose`, count and indices checked against the mesh), stored mesh shown | RIDES-041 |
 | 4 channel mix | ascending channel order, per component the highest writing channel wins (TRS, positions, UVs) | RIDES-002 retired |
 | 5 opcodes | all fourteen with the Mac arithmetic; GETANIM, FLUSHANIM_CH, WAITANIM_CH and TRIGWAITANIM_CH gained handlers (no corpus uses) | RIDES-004/006/007 retired; RIDES-033 (script speed 1.0) |
 | 6 clip end | AnimID 14 hold, GETANIM −1, deferred clip follows; deferral and flush in the channel model | RIDES-003 kept, now citing 0xa7498/0xa68ac/0xa694c |
 | 7 advisor | member naming and the AnimID 5 start traced and tested; bind pose kept because the sequence choice is not traced | ADVISOR-006 narrowed |
-| 8 relative models | vertex tracks play in set mode | RIDES-031 |
-| 9 node bit 0x10 | state from node lists (at every start and replay) and toggles; set hides the node's mesh; texture frames still not applied | RIDES-030, RIDES-035 |
+| 8 relative models | vertex tracks play in set mode | RIDES-043 |
+| 9 node bit 0x10 | state from node lists (at every start and replay) and toggles; set hides the node's mesh; texture frames still not applied | RIDES-042, RIDES-035 |
 | 10 older versions | `NotSupportedException` names the original's `DeadMesh` refusal; MD2-MODELS and README updated | none |
 | 11 out of scope | object-list route and idle restart recorded as divergences | RIDES-032, RIDES-034 |
 

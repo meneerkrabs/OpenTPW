@@ -44,14 +44,14 @@ public partial class Level
 	private void RegisterObjectWithGuests( OriginalObject item )
 	{
 		if ( Guests != null )
-			RegisterWithGuests( item.Runtime, item.AccessPoints, Guests );
+			RegisterWithGuests( item.Runtime, item.AccessPoints, Guests, item.Placement.Rotation );
 	}
 
 	/// <summary>
 	/// Registers a placed object's visitor bridge with <paramref name="guests"/> the way the build flow does
 	/// (also used by the headless M3 gate): attractions only, cells from <see cref="ResolveVisitorCells"/>.
 	/// </summary>
-	internal static bool RegisterWithGuests( OriginalObjectRuntime runtime, IEnumerable<ObjectAccessPoint> accessPoints, GuestSimulation guests )
+	internal static bool RegisterWithGuests( OriginalObjectRuntime runtime, IEnumerable<ObjectAccessPoint> accessPoints, GuestSimulation guests, int rotation = 0 )
 	{
 		if ( !runtime.IsAttraction || ResolveVisitorCells( accessPoints, guests.Grid ) is not { } cells )
 			return false;
@@ -59,6 +59,7 @@ public partial class Level
 		runtime.Visitors.ExitCell = cells.Exit;
 		runtime.Visitors.QueueFrontCell = cells.QueueFront;
 		runtime.Visitors.QueueEntranceDirection = cells.QueueEntranceDirection;
+		runtime.Visitors.Rotation = rotation;
 		runtime.Visitors.HasCells = true;
 		guests.Register( runtime.Visitors );
 		return true;
@@ -203,7 +204,8 @@ public partial class Level
 		// Bring the queue up to date before charging: a grid edit since the last recompute would otherwise pass the
 		// check here, be charged, and then be refused by TryExtend's own recompute.
 		ride.RecomputeQueue( grid );
-		var check = CheckQueueCell( grid, economy, ride, x, y, Array.Empty<(int X, int Y)>(), isBlocked );
+		// The commit's money test is SetCellType's alone (TrySpendCell below); the validator's preview test does not run on a commit (PATH-plan §3.3).
+		var check = CheckQueueCell( grid, null, ride, x, y, Array.Empty<(int X, int Y)>(), isBlocked );
 		if ( check is not (QueueBuildResult.Ok or QueueBuildResult.Refused) )
 		{
 			message = $"Cannot build a queue here: {check}.";
@@ -222,8 +224,8 @@ public partial class Level
 
 	/// <summary>
 	/// Validates (x, y) as <paramref name="ride"/>'s next queue cell after <paramref name="pending"/> (earlier cells
-	/// of the same line, taken as laid and paid for), exactly as <see cref="BuildQueueCell"/> checks before charging;
-	/// no writes. <see cref="QueueBuildResult.Refused"/> means the balance cannot pay for this cell after the pending ones.
+	/// of the same line, taken as laid), with the placement validator's money test (<see cref="ParkEconomy.CanPreviewCells"/>);
+	/// no writes. <see cref="QueueBuildResult.Refused"/> means the line's pending cost, this cell included, is greater than the balance.
 	/// </summary>
 	public QueueBuildResult CheckQueueCell( RideVisitorBridge ride, int x, int y, IReadOnlyList<(int X, int Y)> pending )
 	{
@@ -234,16 +236,16 @@ public partial class Level
 
 	/// <summary>
 	/// The queue tool's per-cell check (also used by the static <c>BuildQueueCell</c>):
-	/// <see cref="QueuePaths.CheckExtend"/> after <paramref name="pending"/>, then whether <paramref name="economy"/> (none: free)
-	/// can pay for this cell on top of the pending ones.
+	/// <see cref="QueuePaths.CheckExtend"/> after <paramref name="pending"/>, then the preview's money test against
+	/// <paramref name="economy"/> (none: no money test; the commit passes none and relies on <see cref="ParkEconomy.TrySpendCell"/>).
 	/// </summary>
 	internal static QueueBuildResult CheckQueueCell( GuestPathGrid grid, ParkEconomy? economy, RideVisitorBridge ride, int x, int y, IReadOnlyList<(int X, int Y)> pending, Func<int, int, bool> isBlocked )
 	{
 		var check = QueuePaths.CheckExtend( grid, ride, x, y, pending, isBlocked );
 		if ( check != QueueBuildResult.Ok )
 			return check;
-		// The commit spends Costs.QueueCell per cell (ParkEconomy.TrySpendCell: balance − cost ≥ 0), so this cell needs the pending cells' cost on top.
-		if ( economy != null && !economy.CanSpendCell( CellPurchase.Queue, pending.Count ) )
+		// [BIN:STP-PPC:0x10084550 placement validator] the preview refuses when the 32-bit pending line cost (the pending cells and this one) is greater than the balance; a zero sum passes
+		if ( economy != null && !economy.CanPreviewCells( CellPurchase.Queue, pending.Count + 1 ) )
 			return QueueBuildResult.Refused;
 		return QueueBuildResult.Ok;
 	}

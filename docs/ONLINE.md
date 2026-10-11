@@ -26,7 +26,7 @@ contents follow the original online screens mapped from the Mac binary in
 | News | Online news panel: Game News and System News columns (UITEXT 267/268); the original's "News from ThemeParkWorld.com" title is replaced by News | `w_big` |
 | Online Login | Online login dialog: name and password, 16 characters each, Enter moves from name to password and submits | `w_med`, `b_login`, `f_text1` fields |
 | Find Parks | Find Parks dialog and Park details (creator, visits, votes, visited/voted) | `list_findprks`, `b_vote` |
-| Publish Park | Publish Park dialog: park name and description | `w_med` |
+| Publish Park | Publish Park dialog: park name and description; OpenTPW adds the website opt-in (off by default) | `w_med` |
 | Send Postcard | Send Postcard dialog | `w_med` |
 | Unsent Postcards | Unsent Postcards (outbox) screen | `list_outbox`, `b_sendall` |
 | Inbox | (OpenTPW) | `list_outbox` |
@@ -118,8 +118,46 @@ The server hashes passwords with PBKDF2-SHA256, validates and bounds packages/ch
 frames, checks owners and postcard recipients, and limits authentication/uploads/chat.
 For remote use, provide HTTPS and configure the operator's storage and limits. The
 client validates server URLs and disables automatic HTTP redirects so a redirect cannot
-forward a login body to another service. HTTP remains available for local testing.
+forward a login body to another service. Plain `http://` is accepted only for a server on the same
+computer or the local network (`localhost` names and loopback, private, link-local and
+unique-local addresses written as numbers; a name such as `nas.local` could resolve to any
+address); any other address needs `https://`, so a password never crosses the internet
+unencrypted.
 Going offline disconnects local clients; issued tokens retain their server expiry.
+
+## Two-step login
+
+[EXT:online-two-step] The original online service had no second step; this is an OpenTPW
+addition. A server with `RequireTotp` (the default) asks every new account to set up an
+authenticator app (Google Authenticator, Microsoft Authenticator, Aegis, 1Password and others;
+RFC 6238: HMAC-SHA1, 30-second steps, six digits).
+
+1. *Register* sends name and password. The server answers `202` with a new secret (base32) and
+   its `otpauth://` URI and keeps the registration **in memory only**, for ten minutes; nothing is
+   stored and the name is not taken yet.
+2. The game shows the *Two-step login* screen: a QR code of the URI (black on white, with a
+   quiet zone, so phones can scan it on the dark dialog) and the key as text in groups of four.
+3. The player enters the first code. `POST /api/v1/accounts/confirm` sends it with a one-time
+   ticket from step 1, creates the account with the secret and logs in. Without the ticket a
+   code is refused, so seeing someone's code is not enough, and only the registering player's own
+   attempts count against the limit below. A newer registration of the same name replaces a
+   waiting one.
+
+Logging in then needs the password **and** a code: the login dialog has a third field. Without a
+code the server answers `401` with the reason `totp-required`, and the dialog moves to the code
+field and keeps the password. A code works once (each 30-second step at most once per account), the
+server accepts one step of clock difference either way, and five wrong codes block codes for
+that account (or that setup) for fifteen minutes. Accounts made before two-step login keep logging in with their
+password alone. The secret is never stored on the player's machine.
+
+There are no recovery codes: a player who lost their phone asks the server's operator, who resets
+the account (docs/SERVER.md). The next login with the right password then shows the setup screen
+again with a new secret.
+
+Servers with two-step login report protocol version 2. Games from before it can still log in to
+accounts without two-step login, but cannot register on such a server or log in to an account
+that has it: they need an OpenTPW version with this screen. A registration that is waiting for
+its code keeps its name: registering it again works only with the same password.
 
 ## Verification and extension labels
 
@@ -142,6 +180,7 @@ The package/protocol/server code owns tags 001–059. The game adapters own:
 | 064 | Chat line formatting |
 | 065 | BF4 chat overlay layout, colours and line count |
 | 066 | ImGui Online panel (developer starts only; players use the original-style screens) |
+| 067 | Publish Park's website opt-in, off by default (the server's public website list is 057) |
 | UI | Original-style online screens: window composition, places of code-positioned controls, text field art and caret, server address field, Inbox and Import screens, the News window title |
 
 ## Approximation register

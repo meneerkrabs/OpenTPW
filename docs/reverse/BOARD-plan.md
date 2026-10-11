@@ -296,7 +296,7 @@ Runtime inputs (no new constants):
 | w | 2 | `⌈d_s / (0.7·v·T)⌉ + 1`. d_s = largest distance from a slot-0 point (`GuestSimulation.QueuePositionPoint(·, 0, 114..141)`) to `GuestSimulation.StandPoint` = 13.5/255 = 0.053 cell. v = `GuestSettings.WalkSpeedCellsPerSecond` (1.0). 0.7 is the low-energy factor of `GuestSimulation.Speed` |
 | w₂ | 6 | the same formula with d_u = slot 3 → slot 0 = √((191/255)² + (27/255)²) = 0.757 cell |
 | H | 29 | H₀ + w + w₂ |
-| Qmax | 100 | `RideVisitorBridge.MaximumQueueLength` |
+| Qmax | 21 | `RideVisitorBridge.MaximumQueueLength` = min(limit, 4·cells); Belly Bounce's limit is trunc(130·5/30) = 21 (QUEUE-plan §4; this row said 100 until ORACLE-V F1 corrected the HasQueue polarity) |
 
 Assertions:
 

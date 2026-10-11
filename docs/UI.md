@@ -21,7 +21,7 @@ All counts from read-only listings of the installed English data.
 | `lobby.wad` | `lobby.txt`, `jungle/fantasy/hallow/space.txt`; `terrain/` 38 MD2 (Base heightfield + sea, four `*_isle`/`*_gate` with `M1..M3` animations, butterflies, bats, golden ticket) + 4 `.sgn` + 167 textures; `globe/` 6 MD2 (online world globe, plane, pins) + 28 textures | 3D front end |
 | `ui/cursors` | `C???.tga` 4-frame strips + Windows `.ani`/`.cur` | not drawn yet (system cursor) |
 | `Init/<400..1024>` | per-resolution splash/legal/welcome TGAs per language | not used |
-| `postcard/`, `2dmap/` | postcard art, map sprites | not used |
+| `postcard/`, `2dmap/` | postcard art, map sprites | the per-theme `2dmap.tga` is the map terrain image; sprite layers are not drawn yet |
 | `Language/<lang>/` | `UITEXT.str` (473), `UIHELPTEXT.str` (589 popup help lines), `THEMENAMES.str` (4), `OBJECT_NAMES.str`, 33 BF4 fonts | all text |
 | level `rides/<ride>.wad` | `P<name>.MD2` preview model (Rides.sam `Info.PreviewAnimType "m"`, `PreviewAnimNum 1`) | build-menu icons |
 | `Rides.sam` | `Info.WhichUIType` 0 rides, 1 shops, 2 sideshows, 3 features | build categories |
@@ -295,37 +295,85 @@ glyph in all 14 UI fonts of each language.
   `mainpanel`, `gauge` (tooltip 477), `date` display with the date (478), the
   bank balance (465; UITEXT 448 "$ " prefix, which French and German leave
   empty; digits grouped with commas — an OpenTPW choice), the `f_tagl/m/r`
-  message area (up to three recent messages, 8 s), and the `panel` arms
-  (`pan_buy`, `pan_info`) with `b_retract` (481) at its authored place.
+  message area (up to three recent messages, 8 s), and the info arm
+  (`panel`, root `pan_info`) with `b_retract` (481) at its authored place.
 - Panel buttons at the original rectangles of the Mac main HUD table (`data:0x4ab38`, controls 38-43),
   staggered along the panel's curve: `b_buy` (469), `b_info` (470), `b_money` (471), `b_resrch` (472),
-  `b_map` (473) and `b_camera` (474). Only Buy works; the others show their disabled frame (the camera
-  views are not implemented, UI-042).
+  `b_map` (473) and `b_camera` (474). Buy, Finance, Research and Map open windows; Info remains
+  disabled. The camera views are not implemented (UI-042).
 - The date text is drawn in black inside the date region (182,1061)-(383,1103) (table control 32), in the
   date font slot 3 (`DATETINY/SMALL/MED` by tier; only official Patch 2 and the Mac version ship these, the
   1999 data falls back to the Small font, which is the same file as `DATESMALL`). The bank
   balance is not on the panel: the table puts it at the top left of the screen (control 47,
-  (258,60)-(720,260), white cash font slot 1, drawn with the shipped `CASHSMALL/MED/BIG` fonts); the same table
-  also has an `i_dollar` icon left of it, a `green_up` change arrow, and golden key/ticket counters
-  (`gkey`, `gtick`) at the top right, which OpenTPW does not draw yet.
-- The Mac build has 55 such layout tables (the buy window `data:0x4cd94`, the finance/staff/info arm contents,
-  the coaster tools, the map screen, research, ride and staff windows); OpenTPW's build arm below is its own
-  layout, not the original buy window.
-- Build arm: `b_srides/b_sshop/b_sshow/b_sfeature` category buttons (521–524),
-  the category title (119–122) and three-slot pages with previous/next arrows.
-  Every buildable object in the current theme is accessible, ordered by Info.Id,
-  with a turning preview of
-  the original `P<name>.MD2` (CPU orthographic projection, 30° tilt, painter
-  sorted — not the original 3D draw), the object name and the economy catalogue
-  price; unresearched items are greyed and refused. Choosing an item starts
-  placement (message UIHELPTEXT 440). `Level.PlaceObject` checks the footprint,
-  purchases through `ParkEconomy.TryBuild`, creates the original object and links
-  its guest accounting; the HUD never charges again. Removing it through the
-  level's object collection sells it once for its economy scrap value. Tools,
-  fixed items and standalone upgrades are excluded by `ObjectCatalog.Buildable`.
-  Official bonus objects use their original names, but their separate-root
-  preview icons are omitted; items absent from the economy catalogue stay
-  unavailable in original levels.
+  (258,60)-(720,260), white cash font slot 1, drawn with the shipped `CASHSMALL/MED/BIG` fonts). Beside it the same table
+  places the `i_dollar` icon (50), the change text (48, yellow, right-aligned under the balance) with the `cashtrend`
+  model (root `green_up`, 49) shown for 4 s after a balance change (UI-047), and at the top right the golden
+  ticket (`gtick`, 53) and key (`gkey`, 52) icons with their counts (55, 54). The ticket count is the park economy's unspent
+  golden tickets; OpenTPW does not track golden keys, so that count is 0 (UI-051).
+- The Mac build has 55 such layout tables, including Buy (`data:0x4cd94`), Financial Information
+  (`data:0x49ee4`), Available/Outstanding Loans (`data:0x4a79c`), the money arm (`data:0x496c4`),
+  Research (`data:0x4c652`), the staff list (`data:0x4a1e0`), the map screen (`data:0x5265e`),
+  coaster tools and ride windows. The named
+  screens were identified by matching table drawing keys to `ui.wad` model root names.
+- Financial Information (`ParkHud.FinanceWindow.cs`) places `w_park`, `f_graph`, eight `b_ltoggle`
+  series buttons, three `b_stoggle` period buttons and the right-side controls at their Mac table
+  rectangles. The series use `ParkLedger` closed months plus its current month: bank balance,
+  park value, money in, gate/shop/sideshow takings, money out and staff costs. Money in includes
+  loan proceeds, and money out includes repayments. Bank balance and park value are exclusive
+  with each other and with the six cash-flow series, as in the original control handler.
+  The 1/3/12-year controls limit the displayed
+  months. The graph's line style, colours, scale and initial selection are OpenTPW choices
+  (UI-060). The Loans button opens the separate bank window when loans are available; the entry
+  and staff-cost detail buttons are disabled until their screens are implemented (UI-061).
+- The Loans window (`ParkHud.LoansWindow.cs`) uses the Mac `w_big`/`f_loans` table, six columns,
+  Available/Outstanding tabs, a scroll control and the four summary cells. Offers and outstanding
+  accounts come directly from `ParkEconomy`. Borrowing and repayment use its existing methods,
+  only where the game mode permits loans. Lender names come from the selected language's
+  `LOANNAMES.str`; a missing entry uses a numbered fallback (UI-062). The seven list rows and scroll travel are
+  inferred from the table's content bounds; the summary uses tracked ledger data whose scope
+  differs from the original lifetime counters (UI-063).
+- Research (`ParkHud.ResearchWindow.cs`) places `w_res`, five `res_panel` rows and effort sliders
+  in the table's visual order: rides, upgrades, shops, sideshows, features. Item names, progress
+  and effort come from `ParkResearch`; changing effort calls `ParkEconomy.SetResearchEffort` only
+  in modes that support the research panel; Instant Action shows its original unavailable message.
+  The main workload knob displays the tracked percentage
+  with inferred linear travel but cannot be changed here (UI-064). Effort-slider travel (UI-065) and the
+  fluid progress fill (UI-066) are presentation approximations. The item-navigation arrows are
+  disabled because the economy selects each category's current item and has no manual cursor API.
+- Buy window (`ParkHud.BuyWindow.cs`, Mac buy table `data:0x4cd94`): the Buy button opens the original window as a modal
+  screen over the park (it dims the park like other windows and does not pause the game). Every element sits at its authored
+  rectangle (`Anchor.Center`): `w_big` (root `window4`) with two `!frame` panels (the turning preview, and the stats
+  frame), the `f_buyitem` list frame, title text (UITEXT 119-122 per category), the item name above the preview, the
+  four category buttons `b_sride/b_sshow/b_sshop/b_sfeature` (help 140-143; the chosen one is drawn in its down frame),
+  `b_up`/`b_down` and the `b_scroller` ball on the `!slider` track, and `b_exit` (help 2, also Escape and right click).
+  `b_allstaff` (help 153) opens the staff window. The list has the three table columns: name,
+  price (the economy catalogue price) and a third column of unknown content, left empty (UI-050). Click a row to select it
+  and show its preview (the original `P<name>.MD2` or the main model, CPU projection, UI-026), name and stats; click the selected row again,
+  press Enter or double-click it to buy: the window closes and placement starts (`Level.PlaceObject` checks the footprint and
+  charges through `ParkEconomy.TryBuild` exactly once). The table has no OK button, so that is OpenTPW's choice. Unresearched
+  items are greyed and refused with the "not available" message. The wheel scrolls the list anywhere over the window; Up/Down
+  move the selection. The Name and Price header buttons sort (UI-045). The stats frame rows are the table's five label/value rows:
+  rides show Number owned (UITEXT 125), Excitement (126), Safe capacity (127), Reliability (128) and Working life (129);
+  shops 130, sideshows 131/132 and features 133 show fewer rows (UI-046). Items are the buildable objects of the theme
+  by `Info.WhichUIType`, ordered by name as the original list inserts its rows (ordinal, `0x10178768`). Items without a `P<name>.MD2` preview model (shops, among others) show their
+  main model, as the original's preview does (`0x10059F00`). Tools, fixed items and standalone upgrades are excluded (`ObjectCatalog.Buildable`); items absent
+  from the economy catalogue stay unavailable in original levels.
+- Staff window (`ParkHud.Staff.cs`, Mac table `data:0x4a1e0`): `b_allstaff` opens the `w_big` window over the buy window.
+  The authored `f_staffpic`, `f_staffinfo`, `f_balance` and `hirestaff` frames initially show applicants from
+  `ParkEconomy.Staff.Candidates`. The five role buttons filter applicants (help 154–158), the name and wage headers sort
+  them (help 159/160), and Enter or a second click on the selected row hires through `ParkEconomy.Hire` (help 161,
+  UI-083/084). The list scrolls (UI-080); candidate detail values and the text portrait are approximations (UI-081/082).
+  Control 9366 toggles to employed staff (UI-090), showing tracked state, wage, skill and happiness. An explicitly
+  labelled Dismiss button there confirms with the localized prompt before calling `ParkEconomy.Fire` (UI-092), and
+  `b_allthings` returns to Buy (help 162). The
+  nearby `data:0x4e45c` staff and visitor locate buttons use their authored positions and stay disabled until world
+  positions are available (UI-091).
+- Map window (`ParkHud.Map.cs`, Mac table `data:0x5265e`): the HUD `b_map` button opens `map_win` with its table-positioned
+  pan, zoom, object-category, layer and close controls. The shipped per-theme `levels/<theme>/2dmap.tga` supplies the
+  terrain image. Current path and queue cells and placed-object footprints are drawn above it. Category buttons filter
+  object markers; pan and zoom operate on the image and overlays (UI-085–087). The generic sandbox draws its grid
+  and heights in place of theme art (UI-089); a missing original theme image is reported. Layers without live per-cell
+  data or decoded handlers remain disabled (UI-088). Escape, right click and `b_okay` close the map.
 - Info arm for the selected original object (picked by occupied grid cell): name (OBJECT_NAMES), Excitement (the original
   default `UsageInfo.ExcitementLevel`, 70 for the Totem), Reliability, State of
   repair, Remaining life ("Not simulated yet"), open/close (`b_door`) and
@@ -419,9 +467,9 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-021 | `Hud/ParkHud.cs` | bank balance text at the Mac table rectangle as is (the original repositions it from font extents and drawable size); money grouped with "," digits | binary 0x156ef4 placement; locale number format |
 | UI-022 | `Hud/HudStubs.cs:88`, `Hud/HudStubs.cs:47`, `Hud/ParkHud.cs:126` | speed control (pause, ×1, ×2, ×4) bottom-right; faster speeds only speed up the economy clock, not rides/guests | binary: original game speed options (pause only is known) |
 | UI-023 | `Hud/HudStubs.cs:9` | test-only stub calendar (2 s/day); the game shows the economy clock (see ECON tags) | none for the game path |
-| UI-024 | `Hud/ParkHud.cs` | layout inside the build and info arms (category buttons, title, three-slot pages/arrows, unresearched items listed under their own names, which the original shows and sorts as UITEXT 137; items are ordered by name as the original list inserts them, `0x10178768`; adaptive preview size to fit translated names/prices, stat rows, door/erase buttons) | captures of the original arms |
+| UI-024 | `Hud/ParkHud.cs`, `Hud/ParkHud.BuyWindow.cs` | layout inside the info arm (stat rows, door/erase buttons); unresearched items in the buy list are listed under their own names, which the original shows and sorts as UITEXT 137 | captures of the original info arm |
 | UI-025 | `Hud/ParkHud.cs:28` | message area keeps up to 3 messages for 8 s in the f_tag frame | binary/capture of the original message system |
-| UI-026 | `Hud/ParkHud.cs:586`, `Hud/PreviewIcon.cs:14` | build icons: CPU orthographic projection of the preview model (P<name>.MD2, else the main model) with 30° tilt, 0.8 rad/s turn, painter sorting | capture of the original build menu |
+| UI-026 | `Hud/ParkHud.cs:586`, `Hud/PreviewIcon.cs:14` | build icons: CPU orthographic projection of the preview model (P<name>.MD2, else the main model) with 30° tilt, 0.8 rad/s turn, painter sorting; sign faces use the object's rendered sign textures (ObjectSigns) | capture of the original build menu |
 | UI-027 | `Hud/ParkHud.cs:481` | a park click selects the original object occupying its grid cell | binary: original picking |
 | UI-028 | `Hud/ParkHud.cs:283` | excitement shown as '<ExcitementLevel>%'; reliability, repair and life shown as not simulated | capture of the original ride info; simulation |
 | UI-029 | `Hud/ParkHud.cs:207` | b_door 'down' frames mean the ride is closed; b_erase used as the delete button | capture of the original ride panel |
@@ -438,6 +486,34 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-041 | `Client/GameFlow.cs:147` | Load Park opens a shipped park as the reference start (its own balance, Full Simulation rules) whatever Game Mode was last chosen; the original's GameType is not saved with a park but copied from the loading player's profile (`mEasyModeUser`) | player profiles and what the Mac park loader 0x11acfc reads from a park file |
 | UI-042 | `Hud/ParkHud.cs` | HUD camera button shown disabled; its camera-view action is not implemented | binary camera button handler |
 | UI-043 | `UI/Original/FontSmoothing.cs` | BF4 text drawn above 1× (HiDPI, large outputs) is magnified per glyph with Catmull-Rom and a contrast curve min(2, 0.8 × scale) instead of doubled pixels | none: the original only drew its fonts at 1×; design decision |
+| UI-044 | `Hud/ParkHud.BuyWindow.cs` | buy window list rows: ten equal rows fill the table's content region (44.4 units each); the wheel scrolls one row | capture of the original buy list |
+| UI-045 | `Hud/ParkHud.BuyWindow.cs` | a click on the Name or Price column header sorts the buy list by it (again: descending); the initial name order is the original's | the original column header handler |
+| UI-046 | `Hud/ParkHud.BuyWindow.cs` | buy window stats: excitement gauge = UsageInfo.ExcitementLevel/100, reliability gauge = 1 - Upgrades[0].WearRate/10, safe capacity = Upgrades[0].InitCapacity, working life empty; type-9 value cells drawn as plain bar gauges | capture of the original buy window and its gauge art |
+| UI-047 | `Hud/BuyListModel.cs` | the HUD cash change text stays 4 s after the last balance change and sums the changes within that time | capture of the original cash trend display |
+| UI-048 | `Hud/ParkHud.BuyWindow.cs` | buy window control 512 (beside the title) is left empty | capture of the original buy window |
+| UI-049 | `Hud/ParkHud.BuyWindow.cs` | buy window scroll ball travel: its top runs from the track's top (first row) to a ball height above the track's bottom (last row) | capture of the original scroll bar ends |
+| UI-050 | `Hud/ParkHud.BuyWindow.cs` | buy list third column (1673-1724), its header button 18 and control 491 have no known content and stay empty | capture of the original buy window |
+| UI-051 | `Hud/ParkHud.cs` | i_dollar frame 1 for a negative balance, green_up frame 1 for a decrease; golden key frame 0 and ticket count from the economy (keys are not tracked, always 0) | capture of the original cash display and key counter |
+| UI-060 | `Hud/ParkHud.FinanceWindow.cs` | finance graph line colours, scaling and default selected series use the tracked monthly ledger values | original financial graph capture and its sample/render handler |
+| UI-061 | `Hud/ParkHud.FinanceWindow.cs` | finance entry and staff-cost detail buttons are disabled until their screens are implemented | original entry and staff-cost screen tables and handlers |
+| UI-062 | `Hud/ParkHud.LoansWindow.cs` | missing loan lender-name entries use numbered fallbacks | complete or corrected `LOANNAMES.str` resource |
+| UI-063 | `Hud/ParkHud.LoansWindow.cs` | loan list has seven equal rows and inferred scrollbar travel; its summary uses the bounded monthly ledger rather than the original lifetime counters | loan-list capture, scroll handler and original lifetime finance counters |
+| UI-064 | `Hud/ParkHud.ResearchWindow.cs` | research main workload knob shows the current value with linear travel but cannot change it here | original workload slider handler and control mapping |
+| UI-065 | `Hud/ParkHud.ResearchWindow.cs` | research effort sliders use linear 0..100 travel across their authored tracks | original slider end stops and quantization handler |
+| UI-066 | `Hud/ParkHud.ResearchWindow.cs` | research progress uses a simple fill inside the fluid model cell | original fluid model progress frame handler or capture |
+| UI-080 | `Hud/ParkHud.Staff.cs` | staff list has ten equal rows in the table content area and the wheel moves one row | capture of the original staff list |
+| UI-081 | `Hud/ParkHud.Staff.cs` | applicant details use expected monthly wage and grade-derived skill | original applicant detail bindings |
+| UI-082 | `Hud/ParkHud.Staff.cs` | selected staff role and grade are text in the portrait frame until the original portrait art is resolved | original staff portrait renderer |
+| UI-083 | `Hud/ParkHud.Staff.cs` | Enter or a second click on the selected applicant hires them | original applicant list activation handler |
+| UI-084 | `Hud/ParkHud.Staff.cs` | repeated staff header presses reverse the ascending sort order | original staff header sort cycle |
+| UI-085 | `Hud/ParkHud.Map.cs` | the 512 pixel theme map places five-pixel terrain cells centrally; live overlays use that mapping | original map overlay alignment capture |
+| UI-086 | `Hud/ParkHud.Map.cs` | paths, queues and placed objects use plain coloured cells over the shipped theme map image; category buttons filter object footprints | original map layer colours and button handlers |
+| UI-087 | `Hud/ParkHud.Map.cs` | map zoom changes by half a step and a pan moves one eighth of the visible image | original map zoom and pan handlers |
+| UI-088 | `Hud/ParkHud.Map.cs` | map controls for tracks, visitors, staff and metrics stay disabled without per-cell data or decoded handlers | original map layer handlers and per-cell data |
+| UI-089 | `Hud/ParkHud.Map.cs` | the generic sandbox has no shipped theme map image; its live grid and heights form a simple terrain base | original generic-sandbox map presentation is an OpenTPW design choice |
+| UI-090 | `Hud/ParkHud.Staff.cs` | staff table control 9366 toggles between applicant and employed views | original control 9366 handler |
+| UI-091 | `Hud/ParkHud.Staff.cs` | staff and visitor locate controls remain disabled until world positions can be targeted | staff and visitor world positions and locate handlers |
+| UI-092 | `Hud/ParkHud.Staff.cs` | an explicit dismiss button below the portrait confirms with the localized prompt before calling economy Fire | original staff dismissal handler and placement |
 
 Data-backed (tagged `[DATA]`): the 2048×1536 canvas and authored rectangles of
 placed models (`ui.wad` roots/bounds), button state frames and texture order, V

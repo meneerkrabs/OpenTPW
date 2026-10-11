@@ -169,7 +169,7 @@ public class AnimationOpcodeTests
 	/// WAITANIM_CH adds its unsigned wait to the 32-bit scheduler clock without fctiwz (0xb035c): a 166 ms clip gives
 	/// 2³² − 134, so at a clock of 10 s the deadline is 134 ms in the past and the script continues next slice. The
 	/// clock is the park's shared scheduler clock, not the script's own, so a script created after 10 s of park time
-	/// continues at once too. Only a scheduler clock below 134 ms (a park that has just started, RIDES-039) leaves the
+	/// continues at once too. Only a scheduler clock below 134 ms (a park that has just started, RIDES-044) leaves the
 	/// sum unwrapped (a wait of about 49.7 days), and a sum of exactly 0 reads as "not waiting", so the next execution
 	/// triggers again. WAITANIM saturates the same clip to INT32_MAX instead.
 	/// </summary>
@@ -201,7 +201,7 @@ public class AnimationOpcodeTests
 
 		var early = Load( Idle( new Asm().I( Opcode.WAITANIM_CH, 5, 0, 3 ).I( Opcode.COPY, V( 0 ), 1 ) ), new Host { Result = _ => 166 } );
 		Run( early, 1 );
-		Assert.AreEqual( RideVMState.Waiting, early.State, "in a script world whose scheduler clock is at 16 ms the sum does not wrap (RIDES-039: the clock starts at 0 with the park)" );
+		Assert.AreEqual( RideVMState.Waiting, early.State, "in a script world whose scheduler clock is at 16 ms the sum does not wrap (RIDES-044: the clock starts at 0 with the park)" );
 		Assert.AreEqual( early.TimeMilliseconds + 4294967162d, early.WakeTimeMilliseconds, 1e-3 );
 
 		host = new Host { Result = _ => 50 };

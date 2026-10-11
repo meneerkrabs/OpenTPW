@@ -29,9 +29,8 @@ public static class RidesApproximations
 		("RIDES-025", "bonus name language fallback"),
 		("RIDES-026", "engine scale 0.2 per MD2 unit (presentation)"),
 		("RIDES-028", "non-walkable object access cells use the nearest walkable path"),
-		("RIDES-029", "12-byte vertex block (record flag 0x4000) shown as the stored mesh; no reader of its floats traced"),
-		("RIDES-030", "node-state bit 0x10 (clip node lists, toggles) hides the node's mesh"),
-		("RIDES-031", "relative-animation models play vertex and UV tracks in set mode; add mode behind ride-loader argument 0x20000 not modelled"),
+		("RIDES-030", "non-finite object texture coordinates drawn as (0, 0)"),
+		("RIDES-031", "Theme Park Inc shape symbol @ (road sign span) treated as occupied"),
 		("RIDES-032", "every placed instance takes the callback update route; the object-list route (no posing, no-reset replay) is not modelled"),
 		("RIDES-033", "script speed fixed at 1.0 (initial bias 50); native writers of the bias not modelled"),
 		("RIDES-034", "no idle restart of AnimID 5 on objects with +4 & 0x8004 clear"),
@@ -39,7 +38,11 @@ public static class RidesApproximations
 		("RIDES-036", "UV pass always runs: global option bit 0x10 and node bit 0x4000 taken as clear (setters untraced)"),
 		("RIDES-037", "TRIGWAITANIM without an object treats a literal out operand like a variable (never resumes)"),
 		("RIDES-038", "TRIGANIMSPEED speed below 0 faults; negative channel playback untraced"),
-		("RIDES-039", "scheduler clock (GETTIME, WAITANIM(_CH) deadlines) starts at 0 with the park's script world; original start value untraced")
+		("RIDES-040", "Theme Park Inc fixed scene records saved at (0, 0) use their local model origin; other transform fields are not decoded"),
+		("RIDES-041", "12-byte vertex block (record flag 0x4000) shown as the stored mesh; no reader of its floats traced"),
+		("RIDES-042", "node-state bit 0x10 (clip node lists, toggles) hides the node's mesh"),
+		("RIDES-043", "relative-animation models play vertex and UV tracks in set mode; add mode behind ride-loader argument 0x20000 not modelled"),
+		("RIDES-044", "scheduler clock (GETTIME, WAITANIM(_CH) deadlines) starts at 0 with the park's script world; original start value untraced")
 	};
 
 	private static bool logged;

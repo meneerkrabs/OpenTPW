@@ -81,7 +81,7 @@ implementation against those inputs, not equivalence to an executed PC game.
   timestamp; a script created later starts at the clock's current value. The
   WAITANIM(_CH) deadlines use the same 32-bit clock word; WAIT, SETTIMER and the
   wake times count from the script's own creation, which only shifts their base.
-  The clock starts at 0 with the park's script world (RIDES-039).
+  The clock starts at 0 with the park's script world (RIDES-044).
 - `JSR`/`RETURN` use a LIFO stack limited to the header stack size (every
   script that uses JSR declares ≥ 3); the old VM used a FIFO queue.
 - Children: `SPAWNCHILD` and `SPAWNSOUND` load a script from the parent's

@@ -160,6 +160,32 @@ ISO; extract its `*/Meshes/*/*.mtr` files to a folder outside git and set
 texture tests use `OPENTPW_TPI_PATH` (a Theme Park Inc installation or its `Data`
 folder, read in place; see FSH.md).
 
+## Theme Park Inc level viewer (experimental)
+
+```sh
+bash scripts/run.sh --game-path '/path/to/Theme Park Inc' --load-original-level arabian
+```
+
+Shows a Theme Park Inc world (`arabian`, `science` or `water`) in 3D with a free camera, without
+economy, HUD or advisor. Esc quits, P pauses the simulation. `--capture-world out.png
+--capture-frames 300` writes a screenshot. The folder must hold Theme Park Inc's `Data` folder (an
+installation, or the cabinets extracted as below); it is detected by its retail `levels/Standard.sam`
+or by `Ver.txt` beside the Theme Park Inc theme folders. Theme Park Inc data given to any other start
+(no `--load-original-level`, a Theme Park World level, `--sandbox`, `--front-end`, `--smoke-test`) is
+refused with a message that points here. The setup window and the saved game folder still reject it.
+See [THEME-PARK-INC.md](THEME-PARK-INC.md#theme-park-inc-level-viewer) for what works.
+
+Extracting the CD: the data sits in the InstallShield cabinets `data1.cab`/`data2.cab` on the retail CD.
+With [unshield](https://github.com/twogood/unshield) (`brew install unshield`):
+
+```sh
+mkdir tpinc-data && unshield -d tpinc-data x '/Volumes/THEMEPARKINC/data1.cab'
+```
+
+The files land in per-component folders; `tpinc-data/Data` is the folder the viewer needs (point
+`--game-path` at `tpinc-data`, or at the folder that holds `Data`). The language string tables are
+separate folders (`_Support_<Language>_String_Tables`) that the viewer does not use.
+
 ## Read-only Theme Park Inc texture inspection
 
 ```sh

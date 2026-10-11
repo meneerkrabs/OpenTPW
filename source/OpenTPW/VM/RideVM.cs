@@ -96,7 +96,7 @@ public sealed class RideVM
 	/// The original's GETTIME and WAITANIM(_CH) call 0x10e844 on the global r30 (loaded at 0xaf55c) and subtract no
 	/// creation timestamp.
 	/// </summary>
-	// [APPROX:RIDES-039] The scheduler clock starts at 0 when the park's script world is created and advances with the script ticks (60 Hz fixed steps); the original's scheduler clock (0x1010E844 on the global r30, 0x100AF55C) has a start value and rate that are not traced — evidence needed: the scheduler clock's value when a placed object's script starts, and whether a save stores it
+	// [APPROX:RIDES-044] The scheduler clock starts at 0 when the park's script world is created and advances with the script ticks (60 Hz fixed steps); the original's scheduler clock (0x1010E844 on the global r30, 0x100AF55C) has a start value and rate that are not traced — evidence needed: the scheduler clock's value when a placed object's script starts, and whether a save stores it
 	public double SchedulerMilliseconds => ClockOriginMilliseconds + TimeMilliseconds;
 
 	/// <summary>The scheduler clock as the original's 32-bit millisecond word (truncated, wrapping after about 49.7 days).</summary>

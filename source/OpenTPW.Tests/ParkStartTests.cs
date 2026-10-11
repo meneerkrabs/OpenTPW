@@ -96,10 +96,10 @@ public class ParkStartTests
 		var instant = ParkEconomyRuntime.ForOriginalLevel( OriginalPark.Load( "jungle", ParkStart.ReadsShippedSave( ParkStartKind.InstantAction ) ), ParkStartKind.InstantAction );
 		Assert.AreEqual( ParkGameMode.InstantAction, instant.Economy.Mode );
 		Assert.IsTrue( instant.Economy.Settings.IsEasy );
-		Assert.AreEqual( 100000, instant.Economy.Balance, "Easy_Standard.sam InitialCash" );
+		Assert.AreEqual( instant.Import!.Records.Bank.Balance, instant.Economy.Balance, "the seed's bank balance replaces Easy_Standard.sam InitialCash" );
 		Assert.AreEqual( 11, instant.Import!.ImportedObjects );
-		Assert.AreEqual( 0, instant.Economy.Staff.Members.Count, "the seed's staff are not decoded, so none are invented" );
-		Assert.IsTrue( instant.Economy.SeedResearcherStandIn, "the seed's researcher has the ECON-019 stand-in" );
+		Assert.AreEqual( instant.Import.ImportedStaff, instant.Economy.Staff.Members.Count, "the seed's staff are imported" );
+		Assert.AreEqual( 1, instant.Economy.Staff.OfType( StaffType.Researcher ).Count(), "research comes from the seed's own researcher" );
 
 		var fullPark = OriginalPark.Load( "jungle", ParkStart.ReadsShippedSave( ParkStartKind.FullSimulation ) );
 		Assert.IsNull( fullPark.Save );
@@ -113,12 +113,12 @@ public class ParkStartTests
 		var reference = ParkEconomyRuntime.ForOriginalLevel( OriginalPark.Load( "jungle" ) );
 		Assert.AreEqual( new ParkStart( ParkStartKind.OriginalSaveReference, ParkGameMode.FullSimulation, true, true ), reference.Start );
 		Assert.AreEqual( 11, reference.Import!.ImportedObjects );
-		Assert.IsFalse( reference.Economy.SeedResearcherStandIn || full.Economy.SeedResearcherStandIn, "only an Instant Action start that imported the seed gets the stand-in" );
+		Assert.AreEqual( 0, full.Economy.Staff.Members.Count, "a Full Simulation start has no staff" );
 		Assert.ThrowsException<ArgumentException>( () => ParkEconomyRuntime.ForOriginalLevel( OriginalPark.Load( "jungle" ), ParkStartKind.FullSimulation ), "a Full Simulation start never receives the shipped save" );
 
 		var hallow = ParkEconomyRuntime.ForOriginalLevel( OriginalPark.Load( "hallow" ), ParkStartKind.InstantAction );
 		Assert.AreEqual( new ParkStart( ParkStartKind.InstantAction, ParkGameMode.InstantAction, false, false ), hallow.Start, "no Easy_ layer or seed outside jungle; the missing layer is not an error" );
-		Assert.IsFalse( hallow.Economy.SeedResearcherStandIn, "no seed, no stand-in" );
+		Assert.AreEqual( (0, 0L), (hallow.Economy.Staff.Members.Count, hallow.Economy.Turn), "no seed, nothing imported" );
 	}
 
 	[TestMethod]
@@ -130,9 +130,9 @@ public class ParkStartTests
 		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( json ) ), instant.Settings, instant.Catalog );
 		Assert.AreEqual( ParkGameMode.InstantAction, restored.Mode );
 		Assert.AreEqual( ParkModeFeatures.For( ParkGameMode.InstantAction ), restored.Features, "the Instant Action gates come back with the mode" );
-		Assert.IsFalse( restored.SeedResearcherStandIn );
-		instant.SeedResearcherStandIn = true;
-		Assert.IsTrue( ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( ParkSaveFile.Serialize( instant ) ) ), instant.Settings, instant.Catalog ).SeedResearcherStandIn, "the seed researcher's stand-in is saved" );
+		StringAssert.Contains( json, "\"SeedResearcherStandIn\": false", "the legacy stand-in flag is written false" );
+		Assert.IsNotNull( ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( json.Replace( "\"SeedResearcherStandIn\": false", "\"SeedResearcherStandIn\": true" ) ) ), instant.Settings, instant.Catalog ),
+			"older saves with the legacy stand-in flag still load" );
 		void Rejects( string text ) => Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( text ) ) );
 		Rejects( json.Replace( "\"Mode\": \"InstantAction\",", "" ) );
 		Rejects( json.Replace( "\"Mode\": \"InstantAction\"", "\"Mode\": 1" ) );

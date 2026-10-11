@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 import re
 
@@ -19,6 +19,8 @@ REGISTERS = {
     "GATEM4": "source/OpenTPW/Client/M4GateApproximations.cs",
     "QUEUE": "source/OpenTPW/World/Guests/QueueApproximations.cs",
     "PATH": "source/OpenTPW/World/PathApproximations.cs",
+    "WALK": "source/OpenTPW/World/Guests/WalkApproximations.cs",
+    "SAVE": "source/OpenTPW/Economy/SaveApproximations.cs",
 }
 MARKDOWN_REGISTERS = {"ONLINE": "docs/ONLINE.md"}
 EXTENSION_SCOPE = "OpenTPW online extension"
@@ -32,6 +34,11 @@ BINARIES = ("STP-PPC", "TPI-EXE", "TPW-EXE")
 BIN_LABEL = re.compile(r"(%s):\S.*\Z" % "|".join(BINARIES))
 COMMENT = re.compile(r"^\s*//+\s?(.*)$")
 DECLARATION = re.compile(r'^\s*(?:new\s*)?\(\s*"([^"\n]+)"\s*,\s*"((?:[^"\\]|\\.)*)"')
+DOCUMENT = "docs/FIDELITY-REGISTER.md"
+RETIRED_HEADING = "## Retired and reserved IDs"
+DOC_ROW = re.compile(r"^\|\s*([A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*-\d{3})\s*\|")
+RETIRED_ENTRY = re.compile(r"^- `([^`]+)` \((.+)\)$")
+DOC_MENTION = re.compile(r"APPROX:([A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*-\d{3})\b")
 
 
 @dataclass(frozen=True)
@@ -57,6 +64,8 @@ class Inventory:
     sites: list[Site]
     declarations: dict[str, Declaration]
     errors: list[str]
+    register_count: int = len(REGISTERS)
+    retired: dict[str, str] = field(default_factory=dict)
 
     @property
     def unresolved(self) -> list[str]:
@@ -197,11 +206,58 @@ def collect(root: Path, registers: dict[str, str] | None = None,
         errors.append(f"{label}: annotation has no declaration in the configured registers")
     for label in sorted(declarations.keys() - tagged):
         errors.append(f"{label}: declaration has no source annotation")
-    return Inventory(sites, declarations, errors)
+    retired = retired_ids(root, set(registers) | set(markdown_registers), declarations, errors)
+    return Inventory(sites, declarations, errors, len(registers), retired)
+
+
+def retired_ids(root: Path, prefixes: set[str], declarations: dict[str, Declaration], errors: list[str]) -> dict[str, str]:
+    """IDs that a Markdown table row under docs keys, or docs prose cites as `APPROX:ID`, but no register declares
+    (retired, or reserved by a plan; prose mentions since REVIEW-WALK-2 WV2-2).
+
+    The list in the generated document only grows: an ID listed there may not be declared again, so a new
+    approximation cannot take a number the docs already use with another meaning (REVIEW-ORACLE-2 OV2-1)."""
+    listed: dict[str, str] = {}
+    document = root / DOCUMENT
+    if document.is_file():
+        inside = False
+        for line in document.read_text(encoding="utf-8").splitlines():
+            if line.startswith("## "):
+                inside = line == RETIRED_HEADING
+            elif inside and (match := RETIRED_ENTRY.match(line)):
+                listed[match.group(1)] = match.group(2)
+    for label in sorted(listed.keys() & declarations.keys()):
+        errors.append(f"{label}: declared, but {DOCUMENT} lists it as retired or reserved ({listed[label]}); use a free ID")
+    found: dict[str, str] = {}
+    docs = root / "docs"
+    for path in sorted(docs.rglob("*.md")) if docs.is_dir() else []:
+        relative = path.relative_to(root).as_posix()
+        if relative == DOCUMENT:
+            continue
+        for line in path.read_text(encoding="utf-8").splitlines():
+            match = DOC_ROW.match(line)
+            labels = [match.group(1)] if match else []
+            labels += [mention.group(1) for mention in DOC_MENTION.finditer(line)]
+            for label in labels:
+                if label.rsplit("-", 1)[0] in prefixes:
+                    found.setdefault(label, relative)
+    retired = dict(listed)
+    for label, where in found.items():
+        if label not in declarations:
+            retired.setdefault(label, where)
+    return dict(sorted(retired.items()))
 
 
 def escape(text: str) -> str:
     return text.replace("\\", "\\\\").replace("|", "\\|").replace("<", "&lt;").replace(">", "&gt;").replace("`", "&#96;")
+
+
+NUMBER_WORDS = ("no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve",
+                "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty")
+
+
+def in_words(count: int) -> str:
+    """A count as the document writes it: in words up to twenty, else in digits."""
+    return NUMBER_WORDS[count] if 0 <= count < len(NUMBER_WORDS) else str(count)
 
 
 def location(path: str, line: int) -> str:
@@ -219,7 +275,7 @@ def render(data: Inventory) -> str:
              f"Current inventory: **{len(data.unresolved)} unresolved unique APPROX IDs**, {counts['APPROX']} APPROX occurrences, {counts['EXT']} EXT occurrences, {counts['DATA']} DATA occurrences and {counts['BIN']} BIN occurrences.", "",
              f"Of these, {len(data.unresolved) - extension_count} IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and {extension_count} ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.", "",
              "CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.", "",
-             "Repeated source occurrences of one ID are allowed and listed separately. Duplicate register declarations, malformed/missing ID syntax, unregistered IDs and declarations without source annotations fail the check. Register declarations are read from the eleven configured C# registers (current one-entry-per-line tuple/new syntax) and the explicit three-column Approximation register table in docs/ONLINE.md; these are bounded lexical readers, not general C# or Markdown parsers. New registers must be explicitly configured. The check also compares the complete regenerated document against this file.", "",
+             f"Repeated source occurrences of one ID are allowed and listed separately. Duplicate register declarations, malformed/missing ID syntax, unregistered IDs and declarations without source annotations fail the check. Register declarations are read from the {in_words(data.register_count)} configured C# registers (current one-entry-per-line tuple/new syntax) and the explicit three-column Approximation register table in docs/ONLINE.md; these are bounded lexical readers, not general C# or Markdown parsers. New registers must be explicitly configured. The check also compares the complete regenerated document against this file.", "",
              "| Area | Unique unresolved IDs | Source occurrences |", "| --- | ---: | ---: |"]
     grouped = Counter(label.rsplit("-", 1)[0] for label in data.unresolved)
     for area, count in sorted(grouped.items()):
@@ -234,6 +290,13 @@ def render(data: Inventory) -> str:
             lines.append(f"| {label} | {escape(declaration.scope)} | {escape(declaration.description)} | {escape(declaration.evidence)} | {location(declaration.path, declaration.line)} |")
         else:
             lines.append(f"| {label} | Unknown | Missing declaration | — | — |")
+    lines += ["", RETIRED_HEADING, "",
+              "IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no register declares: retired "
+              "approximations and IDs a plan reserves. "
+              "Declaring one of them fails the check, so a new approximation cannot take a number the docs already use "
+              "with another meaning. `--write` keeps every listed ID; remove an entry by hand only when its docs agree "
+              "with the new declaration.", ""]
+    lines += [f"- `{label}` ({where})" for label, where in data.retired.items()] or ["None."]
     for kind, title in [("APPROX", "Approximation sites"), ("EXT", "Extension sites"), ("DATA", "Data provenance sites"), ("BIN", "Binary evidence sites")]:
         lines += ["", f"## {title}", "", "| Label | Location | Source comment context |", "| --- | --- | --- |"]
         for site in sorted((s for s in data.sites if s.kind == kind), key=lambda s: (s.label, s.path, s.line)):
@@ -253,7 +316,7 @@ def main() -> None:
         if data.errors:
             parser.exit(1, "\n".join(data.errors) + "\n")
         document = render(data)
-        target = args.root / "docs/FIDELITY-REGISTER.md"
+        target = args.root / DOCUMENT
         if args.check:
             if not target.is_file() or target.read_text(encoding="utf-8") != document:
                 parser.exit(1, "Fidelity register is missing or stale; run --write.\n")

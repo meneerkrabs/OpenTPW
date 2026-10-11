@@ -12,25 +12,29 @@ public sealed class UiStringTable
 	private readonly string[] helpText;
 	private readonly string[] themeNames;
 	private readonly string[] objectNames;
+	private readonly string[] lenderNames;
 
-	public UiStringTable( string language, string[] uiText, string[] helpText, string[] themeNames, string[] objectNames )
+	public UiStringTable( string language, string[] uiText, string[] helpText, string[] themeNames, string[] objectNames, string[]? lenderNames = null )
 	{
 		Language = language;
 		this.uiText = uiText;
 		this.helpText = helpText;
 		this.themeNames = themeNames;
 		this.objectNames = objectNames;
+		this.lenderNames = lenderNames ?? Array.Empty<string>();
 	}
 
 	public static UiStringTable Load( GameLanguage language ) => new( language.Name,
 		language.LoadStrings( "UITEXT.str" ).Entries, language.LoadStrings( "UIHELPTEXT.str" ).Entries,
-		language.LoadStrings( "THEMENAMES.str" ).Entries, language.LoadStrings( "OBJECT_NAMES.str" ).Entries );
+		language.LoadStrings( "THEMENAMES.str" ).Entries, language.LoadStrings( "OBJECT_NAMES.str" ).Entries,
+		language.LoadStrings( "LOANNAMES.str" ).Entries );
 
 	public string Language { get; }
 	public string this[UIStrings id] => Get( uiText, (int)id );
 	public string Help( int index ) => Get( helpText, index );
 	public string Theme( int index ) => Get( themeNames, index );
 	public string Object( int index ) => Get( objectNames, index );
+	public string Lender( int index ) => Get( lenderNames, index );
 	public string Extra( OpenTpwText key ) => SupplementaryStrings.Get( key, Language );
 
 	/// <summary>A UITEXT entry without the leading space the original uses for option values.</summary>

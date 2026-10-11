@@ -199,7 +199,7 @@ public sealed class ObjectAnimator
 	/// <summary>
 	/// True when the mesh on <paramref name="node"/> is drawn hidden: its node-state bit 0x10 is set.
 	/// </summary>
-	// [APPROX:RIDES-030] Node-state bit 0x10 set (clip node lists at start, toggle entries ≤ 0) hides the node's mesh; the draw consumer of the bit was not found (the object save persists it, the advisor lists hats and accessories, Fireworks list their Destroyed mesh) — evidence needed: the reader of node bit 0x10 in the draw path, or captures
+	// [APPROX:RIDES-042] Node-state bit 0x10 set (clip node lists at start, toggle entries ≤ 0) hides the node's mesh; the draw consumer of the bit was not found (the object save persists it, the advisor lists hats and accessories, Fireworks list their Destroyed mesh) — evidence needed: the reader of node bit 0x10 in the draw path, or captures
 	public bool IsNodeHidden( int node ) => meshByNode[node] >= 0 && nodeStateBit[node];
 
 	/// <summary>Changes whenever <see cref="IsNodeHidden"/> of some node changes.</summary>
@@ -450,7 +450,7 @@ public sealed class ObjectAnimator
 	private string? GetVertexLimitation( ModelAnimationTrack track, int duration )
 	{
 		if ( track.VertexPose != null )
-			// [APPROX:RIDES-029] The 12-byte block (record flag 0x4000) shows the stored mesh: it is parsed, but no original reader of its floats was traced (0xa3e24 only sets node bits 0x800/0x100; the sampler skips vertex animation for 0x4000 at 0xa5048), and the floats differ from the stored positions in 19 of 30 corpus records — evidence needed: a reader of record +40 floats or node bit 0x800
+			// [APPROX:RIDES-041] The 12-byte block (record flag 0x4000) shows the stored mesh: it is parsed, but no original reader of its floats was traced (0xa3e24 only sets node bits 0x800/0x100; the sampler skips vertex animation for 0x4000 at 0xa5048), and the floats differ from the stored positions in 19 of 30 corpus records — evidence needed: a reader of record +40 floats or node bit 0x800
 			return "the 12-byte block (record flag 0x4000) has no traced reader; the stored mesh is shown";
 		if ( track.VertexAnimation == null )
 			return "no vertex block";
@@ -460,7 +460,7 @@ public sealed class ObjectAnimator
 		// Header flag 0x4 (relative animation) makes the sampler add vertex keys and translations to a per-update base copy
 		// (0xa4a58/0xa4f68, 0xa7a30) and recompute face normals (0xa772c), but the ride loader clears it unless its argument
 		// has 0x20000 (0x58a3c), so on the default load path these models animate in set mode with their stored normals.
-		// [APPROX:RIDES-031] Relative-animation models (header flag 0x4) play their vertex and UV tracks in set mode, as the default ride load path strips the flag; add mode behind the ride-loader argument 0x20000 (vertex keys 0xa4a58/0xa4f68; UV keys with r5 = header & 4 at 0xa56d4, add loop 0xa8420) is not modelled — evidence needed: the ride-data source of the 0x594c8 flag word that allows 0x20000
+		// [APPROX:RIDES-043] Relative-animation models (header flag 0x4) play their vertex and UV tracks in set mode, as the default ride load path strips the flag; add mode behind the ride-loader argument 0x20000 (vertex keys 0xa4a58/0xa4f68; UV keys with r5 = header & 4 at 0xa56d4, add loop 0xa8420) is not modelled — evidence needed: the ride-data source of the 0x594c8 flag word that allows 0x20000
 		return track.VertexAnimation.GetPoseLimitation( model.Meshes[mesh].Positions.Length, duration );
 	}
 

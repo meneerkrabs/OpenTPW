@@ -22,7 +22,7 @@ derives every simulation stream from it:
 | Placed object scripts | placement ordinal XOR `ObjectScriptKey` | per-VM `System.Random(seed)` (DET-013) | `ParkObjects` |
 | Scripts without a seed (prototype ride, `Ride`) | drawn from the script world's SplitMix64 stream, start `ScriptStream` | per-VM `System.Random(seed)` (DET-013) | `RideScriptWorld` |
 | Script children (SPAWNCHILD/SPAWNSOUND) | drawn from the parent VM | per-VM `System.Random(seed)` | parent `RideVM` |
-| Sound choosers (presentation) | `SoundStream`, set by `GameAudio.EnterPark` | the original's 1664525/1013904223 LCG (DET-012) | `SoundEventSystem` |
+| Sound choosers (presentation) | `SoundStream`, set by `GameAudio.EnterPark` | the original's 1664525/1013904223 LCG; draws do not store the successor (sound_shared `0x100118C8`) | `SoundEventSystem` |
 
 The stream keys are chosen so that the default seed reproduces the seeds each
 system used before world seeds existed: guests `Level.GuestSeed`, economy 1,
@@ -96,8 +96,11 @@ load keeps the running guests and scripts (DET-016).
 `WorldStateHash.Compute(WorldStateSources)` (`Level.ComputeStateHash()` for a
 level) is FNV-1a 64 over little-endian values, with floats by bit pattern. It
 follows the field order of DET-plan §4.5, restricted to what OpenTPW has. Schema
-version 5 (version 1 also hashed the sound seed; versions 3 and 4 added the
-queue state, version 5 the cell map, see Tests):
+version 8 (version 1 also hashed the sound seed; versions 3 and 4 added the
+queue state, version 5 the cell map, version 6 the bounce slots' start time on one
+branch and the guests' walk state on another, version 7 both on one branch and
+the scheduler clock and per-script clock origins on another, version 8 all of them,
+see Tests):
 
 | DET-plan field | OpenTPW | In the hash |
 | --- | --- | --- |
@@ -117,19 +120,26 @@ queue state, version 5 the cell map, see Tests):
 | `world_state` | no world-state field | **missing** |
 | `calendar_funny_start` | `ParkCalendar.Epoch` (fixed) | yes |
 | `calendar_rate` | no clock rate | **missing** |
-| `thing_table_digest` | guests in id order (every field the tick reads, including navigation and timers), including each guest's queue fields, the queue edge detectors, then attractions with queue cells, the queue list, admission state and counters, riders, limbo and bounce lists | yes (order is id order, not the original's newest first) |
+| `thing_table_digest` | guests in id order (every field the tick reads, including navigation and timers), including each guest's walk speed and steering state and its queue fields, the queue edge detectors, then attractions with queue cells, the queue list, admission state and counters, riders, limbo and bounce lists (each bounce slot with its deadline and start) | yes (order is id order, not the original's newest first) |
 | (cell map) | `ParkCellMap` of the guest grid: every non-empty cell in row order with its type, flags, placement counter, links and queue link (paths built by the path tool included) | yes (extra, after the thing table) |
 | `script_table_digest` | the script world's scheduler clock, then every live script in id order: id, name, parent, state, PC, flags, call stack, variables, clock origin, clock, wake time, timers, WAIT4ANIM deadline, LOOPANIM and TRIGWAITANIM tokens, instruction and slice counts, seed and RNG call count; for a root object script also its animator channels (AnimID, variant, loop, speed, start, ended, tick, deferred clip) and clock | yes |
 | `economy_digest` | the park save's economy part as canonical JSON (sorted keys) | yes |
 | `input_log_cursor` | no input log | **missing** |
 
-The sound seed is saved with the park but is not part of the hash. OpenTPW's
-chooser stores every draw (DET-012), and it draws on UI clicks and whenever a
-music or speech segment starts, which follows the audio device's timing. Two
-runs with the same seed and the same simulation inputs would otherwise hash
-differently with sound on, and a muted or device-less run would hash
-differently from one with audio. The original's choosers do not advance the
-seed (DET-plan §3 D9), which is why §4.5 can list it as replay state.
+The sound seed is saved with the park but is not part of the hash. As in the
+original, a draw does not store its successor: the library init
+(`0x100118B4`, store at `0x100118C8`) is the only writer of
+`CAudioPlaceHolder::mRandomSeed`, the eight chooser and volume sites only read
+it, and no library imports the symbol. Draws therefore never move the seed, so
+UI clicks and audio-device timing cannot change the replay state (DET-plan §3
+D9, §4.5).
+
+A park started from an original save (SAVE-I, docs/ECONOMY.md "Original save
+import") sets the economy's tick, bank, loans, objects and staff before its first
+tick. All of it is in the economy digest, and the run that the pinned hash
+covers starts no original save, so the schema and the pin are unchanged. The
+save's `mRandomSeed` is not imported (SAVE-001): OpenTPW has no world LCG yet,
+so its streams still come from the world seed.
 
 Other OpenTPW state that is **not in the hash**:
 
@@ -174,14 +184,29 @@ the same seed as well.
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0xE3498781B921C80D`, schema 7; the run is unchanged (schema 6's fields still give `0x0BC982AB91BE9A28`), but the
+  (`0xB684DD70FFFF8309`, schema 8; ANIM-M merged the two schema-7 branches, so the script digest's scheduler clock and
+  clock origins and the thing table's walk state are all hashed. Before that, on two branches:
+  `0xE3498781B921C80D`, schema 7; the run is unchanged (schema 6's fields still give `0x0BC982AB91BE9A28`), but the
   script world now hashes the shared scheduler clock that GETTIME and the WAITANIM(_CH) deadlines read, and each
-  script its clock origin, the scheduler clock when it was created (docs/RSE-VM.md, RIDES-039). Before that:
+  script its clock origin, the scheduler clock when it was created (docs/RSE-VM.md, RIDES-044). Before that:
   `0x0BC982AB91BE9A28`, schema 6; the run was unchanged, but each script then hashed the animation state the
   original keeps per script (the single WAIT4ANIM deadline, the LOOPANIM token and the TRIGWAITANIM token,
   replacing the latest-clip-end field) and, for a root script whose effects own animation channels, the
-  object's channel state that GETANIM and TRIGWAITANIM read back (docs/reverse/ANIM-plan.md §8). Before that:
-  `0x98BFAE5138E2A343`, schema 5; the hashed fields are unchanged, but the original ride update gave each park-save object an exact state of repair and a life gauge (`Repair`, `LifeGauge`), which the economy digest includes. Before that: `0xC0E5705C8924E49A`, where the hashed fields were unchanged since `0x10A80C328A477CBE`, but upstream 1198a93 traced staff candidate grades to the binary and dropped the `ChanceToGetGreat` draw, so the economy stream's draws and the run changed. Before that:: the cell map digest was added when the path
+  object's channel state that GETANIM and TRIGWAITANIM read back (docs/reverse/ANIM-plan.md §8); and
+  `0x082000C95B7EB3FE`, schema 7; the hashed fields are unchanged, but WALK-F ported the traced separation force
+  (guests push each other apart), stops avoid_walls at the first pushing edge and updates the toilet term only on the
+  guest's needs phase, so the run changed. Before that: `0x733233EC7B25360E`, schema 7: WALK-I's walk state and
+  ORACLE-F's bounce slot start, merged. Before that, on
+  two branches: `0x714AAFDCEC083403`, schema 6: WALK-I added each guest's walk speed state (base
+  speed, toilet term, boost, smoothed speed, max speed and force) and its navigation state
+  (16.16 position and velocity, destination, arrived flag, waypoint index, buffer, route and
+  cursor, the walk's extra open cells, progress history and last remaining distance), and
+  removed the float waypoint; the run changed too, because guests now walk with the traced
+  steering once per park turn, draw a base speed from the guest stream and smooth their speed
+  with the original's fused multiply-add (PPC oracle F6); and `0x53E84EFBE47E1D30`, schema 6: UNBOUNCE now needs the
+  slot's start time (`0xae020`, ORACLE-V F5), so each bounce slot hashes its start as well; that fixed run itself was
+  unchanged and gave the previous pin under schema 5.
+  Before that: `0x98BFAE5138E2A343`, schema 5; the hashed fields are unchanged, but the original ride update gave each park-save object an exact state of repair and a life gauge (`Repair`, `LifeGauge`), which the economy digest includes. Before that: `0xC0E5705C8924E49A`, where the hashed fields were unchanged since `0x10A80C328A477CBE`, but upstream 1198a93 traced staff candidate grades to the binary and dropped the `ChanceToGetGreat` draw, so the economy stream's draws and the run changed. Before that:: the cell map digest was added when the path
   builder made `ParkCellMap` the source of truth for path cells. The run itself
   is unchanged (the raw guest hashes of the cross grid and the Jungle Easymode
   run are pinned across the change), but the hashed "last seen grid version"
@@ -215,7 +240,6 @@ itself needs a renderer and is not constructed by tests.
 | ID | Rule |
 | --- | --- |
 | DET-002 | explicit world seed instead of the original's time-based seeds |
-| DET-012 | sound draws store the successor seed; unmerged phase 10 says the original's choosers do not |
 | DET-013 | script RAND/FINDSCRIPTRAND use per-VM `System.Random` seeded from the park stream, not the world LCG |
 | DET-014 | guests use their own SplitMix64 stream, not the world LCG reseeded per guest id |
 | DET-015 | the economy uses its own SplitMix64 stream, not the world LCG |

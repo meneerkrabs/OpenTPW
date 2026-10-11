@@ -216,7 +216,7 @@ public class ObjectAnimatorChannelTests
 		Assert.AreEqual( "wide node 0: UV block animates 5 corners, the mesh has 4", wide.VertexLimitations.Single() );
 	}
 
-	/// <summary>Toggle entries and the clip's node list drive node-state bit 0x10, which hides the node's mesh (RIDES-030).</summary>
+	/// <summary>Toggle entries and the clip's node list drive node-state bit 0x10, which hides the node's mesh (RIDES-042).</summary>
 	[TestMethod]
 	public void NodeStateBitFollowsTogglesAndNodeLists()
 	{
@@ -256,7 +256,7 @@ public class ObjectAnimatorChannelTests
 		StringAssert.Contains( animator.VertexLimitations.Single(), "12-byte block" );
 	}
 
-	/// <summary>The default ride load path strips header flag 0x4, so relative-animation models play their vertex tracks in set mode (RIDES-031).</summary>
+	/// <summary>The default ride load path strips header flag 0x4, so relative-animation models play their vertex tracks in set mode (RIDES-043).</summary>
 	[TestMethod]
 	public void RelativeAnimationModelsPlayInSetMode()
 	{

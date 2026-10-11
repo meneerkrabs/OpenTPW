@@ -294,8 +294,20 @@ clock, which OpenTPW does not reconstruct). The bankruptcy and open/close
 producers use the economy's existing conditions; the original producers'
 thresholds and preconditions are not traced (ADVISOR-020). Read-only visits of
 shared parks (online extension) and the generic sandbox (`--sandbox`, plain
-`--smoke-test`, sandbox saves) have no automatic advisor. The pending advice and
-history are not saved with the park (ADVISOR-022).
+`--smoke-test`, sandbox saves) have no automatic advisor.
+
+A park started from an original save (Instant Action, `--load-original-level`)
+first takes the save's advisor controller (thing model 11, serializer
+`0x82e0`; docs/reverse/SAVE-plan.md): its eight pending records (`0xbc10`:
+message, score, response number and once-only override; records with the valid
+byte clear are free slots, including the uninitialized `0xCD` ones) keep their
+slots, and the 351 history entries (saved tick, variant, played byte, slap
+count, indexed by message ID) replace the controller's history. Then the level
+start raises events 10 and 0 as before. Records and non-initial history of
+messages without a bound descriptor are dropped and counted in the log line
+(Easymode: the one valid record, ParkNowOpen with score 20, and Welcome's
+history are bound and imported). OpenTPW's own park save still does not store
+the controller (ADVISOR-022).
 
 Native check (macOS arm64 Metal, October 10, 2026): `--smoke-test
 --load-original-level jungle` passed and logged `Advisor game event 0
@@ -358,7 +370,7 @@ table fit). The smoke-test thresholds are test-harness checks, not game rules.
 | ADVISOR-018 | `source/OpenTPW/Client/AutomaticAdvisor.cs:64` | The automatic advisor is drawn only while a response plays and only inside a level; leaving the level stops it | Entry/exit animation and idle visibility |
 | ADVISOR-019 | `source/OpenTPW/World/AdvisorController.cs:94` | `GeneralAdvisor.MinTimeAnyMessage` (5) and `MinTimeSameMessage` (120) are loaded but not applied | Reads of balance fields +24/+28 |
 | ADVISOR-020 | `source/OpenTPW/Client/AutomaticAdvisor.cs:76` | Events 2/3/4 come from the economy's bankruptcy (six months in the red) and park open/close transitions | The producers' threshold and preconditions (`0x100CC464`, `0x10108EE4`) |
-| ADVISOR-022 | `source/OpenTPW/Client/AutomaticAdvisor.cs:58` | Pending advice and message history are not saved or loaded with the park | Whether the original park save writes the controller's pending records (serializer `0x1000BC10`) and history, and where |
+| ADVISOR-022 | `source/OpenTPW/World/AdvisorController.cs` | OpenTPW's own park save does not store the pending advice and history; on an original save import, records and history of messages without a bound descriptor are dropped (reported) | The remaining descriptor rows and their score producers; an OpenTPW save target for the controller |
 | ADVISOR-023 | `source/OpenTPW/World/Advisor.cs` | The advisor's unprojected coordinates (centre (0.6, 0.6), y down) span the screen from −1 to 1, as clip space | The consumer of the `0x0057A750` transform output in `tp.exe`, or a capture of the original advisor |
 | ADVISOR-024 | `source/OpenTPW/World/Advisor.cs` | Outside 4:3 the width scale is 0.015 × height/width of the output (the original fixes 0.75) | None for the original (4:3 only); design decision |
 

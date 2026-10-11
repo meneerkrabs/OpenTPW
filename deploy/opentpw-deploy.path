@@ -1,0 +1,10 @@
+[Unit]
+Description=Update the OpenTPW server when a release asks for it (POST /api/v1/admin/deploy)
+
+[Path]
+# The server writes this file into its data folder; opentpw-update.service removes it first.
+PathExists=/opt/opentpw/data/.deploy-requested
+Unit=opentpw-update.service
+
+[Install]
+WantedBy=multi-user.target

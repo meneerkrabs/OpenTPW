@@ -76,6 +76,12 @@ internal static class Game
 		if ( dataDirectory == null )
 			throw new DirectoryNotFoundException( $"Theme Park World data not found in '{Settings.Default.GamePath}'. Use --game-path or OPENTPW_GAME_PATH to select a directory containing data/." );
 
+		// [EXT:tpi-viewer] Theme Park Inc data (docs/THEME-PARK-INC.md): refused for normal starts, viewable with --load-original-level.
+		var edition = GameEditions.Detect( dataDirectory );
+		GameEditions.Select( edition.Edition );
+		if ( GameEditions.IsThemeParkInc )
+			RequireThemeParkIncViewer( args, edition );
+
 		// Register game data directory
 		FileSystem = new BaseFileSystem( dataDirectory );
 		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
@@ -111,7 +117,8 @@ internal static class Game
 		var bonusSettings = SetupSettings.Load( SetupSettings.GetDefaultPath() );
 		var bonusRoot = BonusContent.ResolveRoot( GetOption( args, "--bonus-data", "the extracted official bonus content directory" ),
 			Environment.GetEnvironmentVariable( "OPENTPW_BONUS_DATA" ), bonusSettings.BonusPath, Path.GetDirectoryName( DisplaySettings.GetDefaultPath() )! );
-		if ( bonusRoot is { } bonus )
+		// [EXT:tpi-viewer] bonus objects are Theme Park World content: not offered to Theme Park Inc worlds
+		if ( bonusRoot is { } bonus && !GameEditions.IsThemeParkInc )
 		{
 			ObjectCatalog.BonusDataRoot = bonus.Path;
 			Log.Trace( $"Bonus content: {bonus.Path} ({bonus.Source})." );
@@ -282,7 +289,7 @@ internal static class Game
 		var level = visit != null
 			? flow.StartLevel( visit.Level, original: !visit.IsSandbox, developerPanels: true, visit: visit )
 			: originalLevelIndex >= 0
-			? flow.StartLevel( args[originalLevelIndex + 1], original: true, developerPanels: true )
+			? flow.StartLevel( args[originalLevelIndex + 1], original: true, developerPanels: !GameEditions.IsThemeParkInc )
 			: flow.StartLevel( "jungle", original: false, developerPanels: true );
 
 		//
@@ -556,6 +563,20 @@ internal static class Game
 		{
 			return null;
 		}
+	}
+
+	/// <summary>
+	/// Theme Park Inc is not a supported game. Its data may only be opened by the experimental level viewer:
+	/// <c>--load-original-level arabian|science|water</c> (docs/THEME-PARK-INC.md, "Theme Park Inc level viewer").
+	/// </summary>
+	// [EXT:tpi-viewer] viewing aid for Theme Park Inc worlds, not original behaviour and not Theme Park Inc support.
+	private static void RequireThemeParkIncViewer( string[] args, GameEditionReport edition )
+	{
+		if ( GameEditions.ViewerRefusal( args ) is { } refusal )
+			throw new ArgumentException( refusal );
+		var level = GetOption( args, "--load-original-level", "a Theme Park Inc world such as 'arabian'" );
+		Log.Warning( $"Theme Park Inc data detected ({(edition.Evidence == GameEditionEvidence.StandardSamHash ? "retail Standard.sam" : "folder structure")}): experimental level viewer for '{level}'. "
+			+ "This is not Theme Park Inc support: no economy, advisor or HUD, and original behaviour is not verified." );
 	}
 
 	private static string? GetOption( string[] args, string name, string description )

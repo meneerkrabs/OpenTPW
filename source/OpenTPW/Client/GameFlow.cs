@@ -51,6 +51,9 @@ internal sealed class GameFlow : IDisposable
 	public bool PersistSettings { get; set; } = true;
 	public Level? Level { get; private set; }
 	public ParkHud? Hud { get; private set; }
+	/// <summary>The level of the Theme Park Inc viewer, which has no <see cref="Hud"/> (docs/THEME-PARK-INC.md).</summary>
+	// [EXT:tpi-viewer] viewing aid, not original behaviour
+	private Level? ViewerLevel { get; set; }
 	public FrontEndMenu? Menu { get; private set; }
 	public LobbyScene? Lobby { get; private set; }
 	public UiInput? InjectedInput { get; set; }
@@ -192,6 +195,13 @@ internal sealed class GameFlow : IDisposable
 		if ( original )
 			GameAudio.EnterPark( levelName, level.Seed.SoundStream );
 		StartKind = level.Park?.Start.Kind;
+		// [EXT:tpi-viewer] Theme Park Inc worlds are viewed without economy, HUD or advisor (the camera, Esc and P only).
+		if ( GameEditions.IsThemeParkInc )
+		{
+			ViewerLevel = level;
+			Log.Trace( $"Theme Park Inc viewer: {levelName} without economy, HUD or advisor. Esc quits, P pauses." );
+			return level;
+		}
 		// Money, calendar, speed and purchases come from the park economy of original levels (Level.Park,
 		// looked up on every access so loading a park save is followed); the generic sandbox has none.
 		IHudParkStatus status = level.Park != null ? EconomyParkStatus.ForLevel( level ) : new NoEconomyStatus();
@@ -211,6 +221,12 @@ internal sealed class GameFlow : IDisposable
 			advisorUnavailable = Advisor == null;
 			Advisor?.AttachLevel( level );
 		}
+		if ( Advisor?.IsAttached != true && level.Park?.Import is { } import && level.OriginalPark?.Save?.Advisor is { } saved )
+		{
+			var dropped = $"[APPROX:SAVE-010] No automatic advisor is attached ({(advisorUnavailable ? "unavailable" : "disabled")}): the saved advisor controller's {OriginalEconomyImport.AdvisorRecords( saved )} are dropped.";
+			import.Report( dropped );
+			Log.Trace( dropped );
+		}
 		return level;
 	}
 
@@ -225,6 +241,7 @@ internal sealed class GameFlow : IDisposable
 			Level.Dispose();
 			Level = null;
 			Hud = null;
+			ViewerLevel = null;
 			StartKind = null;
 			OpenTPW.Level.Current = null!;
 		}
@@ -285,6 +302,11 @@ internal sealed class GameFlow : IDisposable
 			GameAudio.Update( Level.Guests?.GetStatistics().InPark );
 			return;
 		}
+		if ( Level != null && ViewerLevel == Level )
+		{
+			UpdateViewer( Level, input );
+			return;
+		}
 		GameAudio.EnsureStarted();
 		GameAudio.Update();
 		Camera.Update();
@@ -292,6 +314,24 @@ internal sealed class GameFlow : IDisposable
 		foreach ( var entity in Entity.All.ToArray() )
 			entity.Update();
 	}
+
+	/// <summary>The Theme Park Inc viewer's frame: Esc quits, P pauses and resumes, the camera moves as in a park.</summary>
+	private void UpdateViewer( Level level, UiInput input )
+	{
+		if ( input.Has( UiKeys.Back ) )
+		{
+			Quit();
+			return;
+		}
+		if ( input.Has( UiKeys.Pause ) )
+			viewerPaused = !viewerPaused;
+		level.UiCapturesMouse = false;
+		level.SimulationTimeScale = viewerPaused ? 0f : 1f;
+		level.Update();
+		GameAudio.Update( level.Guests?.GetStatistics().InPark );
+	}
+
+	private bool viewerPaused;
 
 	/// <summary>World pass (internal render size): the level, or the lobby sky and 3D scene.</summary>
 	public void Render()

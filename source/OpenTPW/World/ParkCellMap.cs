@@ -172,9 +172,9 @@ public sealed class ParkCellMap
 
 	/// <summary>
 	/// <c>CanChangeCellType</c> (PATH-plan §3.1), in the original order: clearing; not 4 over 4; 21 over 21;
-	/// path over queue; same type or an empty cell; 4 over path; queue over path only with the last-cell flag.
+	/// path over queue; same type or an empty cell; 4 over path; queue over path except on a line's last cell.
 	/// </summary>
-	// [BIN:STP-PPC:0x1008408C CanChangeCellType] the seven rules of PATH-plan §3.1; everything else is refused
+	// [BIN:STP-PPC:0x1008408C CanChangeCellType] the seven rules of PATH-plan §3.1; everything else is refused. Rule 7 allows queue over path while data:0x84b2c is 0; the line tool 0x10084EA4 sets that word to 1 only for a line's last cell
 	public static bool CanChangeCellType( byte old, byte type, bool lastCell )
 	{
 		if ( type == 0 )
@@ -189,6 +189,6 @@ public sealed class ParkCellMap
 			return true;
 		if ( type == 4 && old == 1 )
 			return true;
-		return type == 3 && old == 1 && lastCell;
+		return type == 3 && old == 1 && !lastCell;
 	}
 }

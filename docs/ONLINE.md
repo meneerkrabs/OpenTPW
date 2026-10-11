@@ -22,11 +22,12 @@ contents follow the original online screens mapped from the Mac binary in
 
 | Screen | Original counterpart (UI-MAP) | Original art |
 | --- | --- | --- |
-| Online World | Secondary menu, Go Online | `w_big`, `i_mail` (authored place) |
+| Online World | The online globe (Mac UI table `data:0x523f0`, globe code in the Windows v2.0 `tp.exe`): see below | `worldlob`, `f_wlobbg`, `b_findprk`, `b_bck2lob`, `b_zoom`, `b_lobup/left/right/down`, `i_sat`; `lobby.wad/globe` |
+| OpenTPW online (menu) | (OpenTPW) login, news, postcards, chat, import, account, behind a button on the globe | `w_big`, `i_mail` (authored place) |
 | News | Online news panel: Game News and System News columns (UITEXT 267/268); the original's "News from ThemeParkWorld.com" title is replaced by News | `w_big` |
 | Online Login | Online login dialog: name and password, 16 characters each, Enter moves from name to password and submits | `w_med`, `b_login`, `f_text1` fields |
 | Find Parks | Find Parks dialog and Park details (creator, visits, votes, visited/voted) | `list_findprks`, `b_vote` |
-| Publish Park | Publish Park dialog: park name and description | `w_med` |
+| Publish Park | Publish Park dialog: park name and description; OpenTPW adds the website opt-in (off by default) | `w_med` |
 | Send Postcard | Send Postcard dialog | `w_med` |
 | Unsent Postcards | Unsent Postcards (outbox) screen | `list_outbox`, `b_sendall` |
 | Inbox | (OpenTPW) | `list_outbox` |
@@ -41,6 +42,55 @@ the Mac code builds each dialog from a template it looks up at run time
 therefore use OpenTPW layouts ([EXT:ONLINE-UI]); the server address field and the
 Inbox and Import screens have no original counterpart. Visits start directly from Find
 Parks or Import file instead of needing `--visit-park` and a restart.
+
+### The online globe
+
+**Go Online** opens the online world as the original draws it: the globe from
+`lobby.wad/globe` fills the screen behind the UI (the lobby islands are hidden while it
+is open), with the original `worldlob` panel at the bottom left and five chat satellites
+around the edges. What is traced:
+
+- Layout (Mac table `data:0x523f0`): panel `worldlob` (9,620)-(510,1531) with Find Parks,
+  back to your own lobby, zoom and the four rotate arrows, help texts 424–431 and 435;
+  five `i_sat` satellites (help 423) with a small label area each.
+- Camera (`tp.exe` 0x005DC860/0x005DCFE0): the globe stands still and the camera circles
+  it at GLOBERADIUSOUT (475) or, after the zoom button, GLOBERADIUSIN (200); field of view 60, pitch limited to ±1.5 rad; arrow keys, the
+  panel arrows, the cursor at a screen edge and the right button held turn it, and the
+  turn dies away (zoomed out: step 0.15, damping 0.5; in: 0.075, 0.25). It does not spin
+  by itself, and the plane and `Lpin` models in the folder are not used by the game.
+- Cities: the server's list (`GET /api/v1/cities`, docs/SERVER.md). Each city gets a pin
+  (`Hpin`; `Bullfrog` for the city named "North Pole") standing on the globe, taller the
+  more parks it holds (0x005DC3E0); the cursor ray picks the city within 10 units of where
+  it meets a sphere of radius 116, and its name and "Parks: n" (UITEXT 461) show at the top.
+- The 24 globe textures form an equirectangular world map, so a city at latitude φ and
+  longitude L stands at atan2(x, z) = 30° − L, sin φ up the model's +Y axis.
+
+A click on a city's pin selects it and opens its lobby (below; `tp.exe` 0x005DD530 sets the
+selected city that the lobby's top-10 request reads, 0x005E23F0). The globe also shows over a
+park (Go Online from the pause menu): it replaces the park and the HUD, and closing it restores the
+park's camera.
+
+**Publish Park** starts on the globe as the original's PublishGlobe does: "Choose the city to
+publish in" (UITEXT 419) at the top, the panel's back, zoom and rotate buttons, and a click on a
+city's pin opens the name and description form for that city (Mac: the hovered city is stored and
+the Publish Park dialog opens, 0x1018CE80). A server without cities skips the globe. Not yet
+built: the satellites' player counts.
+
+### City lobby
+
+A city's lobby (Mac table `data:0x50172`) shows its ten most-voted parks as islands, in
+the same lobby as your own islands: rank *i* stands at ISLANDCAMERAPOSITION slot *i* as
+the island of the park's theme (`<theme>.txt` ISLAND), the way the original builds lobby
+islands from a theme entry at a slot counter (`tp.exe` 0x005E3210). The `citylob` panel
+holds other parks in this city (Find Parks filtered by the city, by votes), back to your
+own lobby, the online world, enter this park (download and visit) and previous/next
+island; the selected park's rank (`"%d"`, font slot 0) shows at the top and its name
+(font slot 5, yellow) at the bottom (the item detail overlay, labels 0x49D9/0x49DA,
+`0x101834A0`). The top-10 request's completion builds one island per park with a running
+slot counter (0x005E23C0 → 0x005E27B0 → 0x005E3210); that each park uses its theme's
+island is inferred from the own lobby, which builds its four islands the same way. The list comes from `GET /api/v1/parks?city=`,
+which needs a login, as the original's city server did. OpenTPW's own functions (login, news, postcards,
+chat, import, account) are behind **OpenTPW online** at the top right.
 
 The ImGui Online panel remains as a developer tool in `--sandbox` and other developer
 starts. The front-end smoke test walks the screens and captures
@@ -118,8 +168,66 @@ The server hashes passwords with PBKDF2-SHA256, validates and bounds packages/ch
 frames, checks owners and postcard recipients, and limits authentication/uploads/chat.
 For remote use, provide HTTPS and configure the operator's storage and limits. The
 client validates server URLs and disables automatic HTTP redirects so a redirect cannot
-forward a login body to another service. HTTP remains available for local testing.
+forward a login body to another service. Plain `http://` is accepted only for a server on the same
+computer or the local network (`localhost` names and loopback, private, link-local and
+unique-local addresses written as numbers; a name such as `nas.local` could resolve to any
+address); any other address needs `https://`, so a password never crosses the internet
+unencrypted.
 Going offline disconnects local clients; issued tokens retain their server expiry.
+
+## Two-step login
+
+[EXT:online-two-step] The original online service had no second step; this is an OpenTPW
+addition. A server with `RequireTotp` (the default) asks every new account to set up an
+authenticator app (Google Authenticator, Microsoft Authenticator, Aegis, 1Password and others;
+RFC 6238: HMAC-SHA1, 30-second steps, six digits).
+
+1. *Register* sends name and password. The server answers `202` with a new secret (base32) and
+   its `otpauth://` URI and keeps the registration **in memory only**, for ten minutes; nothing is
+   stored and the name is not taken yet.
+2. The game shows the *Two-step login* screen: a QR code of the URI (black on white, with a
+   quiet zone, so phones can scan it on the dark dialog) and the key as text in groups of four.
+3. The player enters the first code. `POST /api/v1/accounts/confirm` sends it with a one-time
+   ticket from step 1, creates the account with the secret and logs in. Without the ticket a
+   code is refused, so seeing someone's code is not enough, and only the registering player's own
+   attempts count against the limit below. A newer registration of the same name replaces a
+   waiting one.
+
+Logging in then needs the password **and** a code: the login dialog has a third field. Without a
+code the server answers `401` with the reason `totp-required`, and the dialog moves to the code
+field and keeps the password. A code works once (each 30-second step at most once per account), the
+server accepts one step of clock difference either way, and five wrong codes block codes for
+that account (or that setup) for fifteen minutes. Accounts made before two-step login keep logging in with their
+password alone. The secret is never stored on the player's machine.
+
+There are no recovery codes. A player who lost their phone resets two-step login by e-mail (below)
+or, for an account without an address, asks the server's operator, who resets the account
+(docs/SERVER.md). The next login with the right password then shows the setup screen
+again with a new secret.
+
+Servers with two-step login report protocol version 2. Games from before it can still log in to
+accounts without two-step login, but cannot register on such a server or log in to an account
+that has it: they need an OpenTPW version with this screen. A registration that is waiting for
+its code keeps its name: registering it again works only with the same password.
+
+Servers with account e-mail (below) report protocol version 3. On a server that requires an
+address, games from before it cannot register either; logging in to existing accounts is unchanged.
+
+## Account recovery
+
+[EXT:online-email] On a server with `RequireEmail`, the *Two-step login* screen of a new account
+also asks for an e-mail address. *Send code* mails an eight-digit code to it; the account is created
+only when *Confirm* gets both that code and the first authenticator code. One address belongs to one
+account, and it is never shown to other players.
+
+*Forgot password?* in the login dialog opens *Account recovery*: enter the player name or the
+e-mail address and press *Send code*. The server answers the same whether or not the account exists;
+if it has an address, a code arrives there (valid fifteen minutes, five tries, at most three e-mails an
+hour). The code and a new password set the password; with *Two-step login: set up again* the next
+login also shows the setup screen with a new secret, for a lost phone. Either way every session of
+the account ends and a notice goes to the address. Mails are in the game's language. Accounts made
+before e-mail have no address and still recover only through the operator. A server without account e-mail
+answers *Send code* with an error that tells the player to ask its operator.
 
 ## Verification and extension labels
 
@@ -142,6 +250,7 @@ The package/protocol/server code owns tags 001–059. The game adapters own:
 | 064 | Chat line formatting |
 | 065 | BF4 chat overlay layout, colours and line count |
 | 066 | ImGui Online panel (developer starts only; players use the original-style screens) |
+| 067 | Publish Park's website opt-in, off by default (the server's public website list is 057) |
 | UI | Original-style online screens: window composition, places of code-positioned controls, text field art and caret, server address field, Inbox and Import screens, the News window title |
 
 ## Approximation register
@@ -160,3 +269,13 @@ are not claims that the original online protocol or service has been recovered.
 | ONLINE-004 | Buddy response strings 111–113 mean online, offline and removed. | Localized variants or the original response-code table. |
 | ONLINE-005 | Chat command semantics follow command words, response strings and weachatr.dll export names; say/emote/shout reach a room, wshout/ushout all rooms; hearing has no positional effect; blackmark creates a moderation report. | Original chat server behavior, including command reach, hearing range and blackmark handling. |
 | ONLINE-006 | A visitor already inside a park must leave it before visiting another, inferred from CHAT_COMMANDS string 127. | Original park-visit transition behavior or an original chat/runtime trace. |
+| ONLINE-007 | The globe camera's rates, steps and damping are applied per tick at 30 ticks per second. | The tick length of the online world's update (`tp.exe` 0x005DC860). |
+| ONLINE-008 | The globe first faces Europe and the Atlantic from 30° north. | The original's starting yaw and pitch. |
+| ONLINE-009 | Edge and right-button steering add rate × offset × step per tick to the turn velocity. | The input branches of 0x005DC860. |
+| ONLINE-010 | The hovered city's name and park count are drawn at the top centre. | The layout of the original city labels 0x16c11/0x16c12. |
+| ONLINE-011 | `f_wlobbg` is the panel's button background in its second rectangle (33,1057,480,1505). | The table field that names the panel's background model. |
+| ONLINE-012 | Edge steering starts once the cursor has moved on the globe screen. | Whether the original steers from the first frame. |
+| ONLINE-013 | Pins are twice the decoded (s, s, p) scale and stand on the mesh surface (radius 119.7). | The scale of the original flag node's parent and a capture of the original globe. |
+| ONLINE-015 | `f_lobbutbg` is the city panel's button background in its second rectangle (67,1273,438,1484). | The table field that names it. |
+| ONLINE-017 | The publish globe reuses the Online World's panel (back, zoom, rotate) without Find Parks and the satellites, with UITEXT 419 at the top. | The publish globe's layout table. |
+| ONLINE-016 | Each city-lobby island is the island of its park's theme. | The argument mapping of `tp.exe` 0x005E27B0 (what the top-10 list entry passes to 0x005E3210). |

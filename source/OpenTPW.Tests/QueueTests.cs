@@ -122,7 +122,7 @@ public class QueueTests
 		Assert.AreEqual( 6, ride.QueueSizeInCells );
 		Assert.AreEqual( (3, 0), ride.JoinCell, "guests step onto the back cell from the path" );
 		Assert.AreEqual( 24, ride.QueueRoom );
-		Assert.AreEqual( 24, ride.MaximumQueueLength, "min(4 × cells, 100)" );
+		Assert.AreEqual( 21, ride.MaximumQueueLength, "min(4 × cells, the limit trunc(130 × 5 / 30) = 21)" );
 		Assert.IsFalse( grid.IsWalkable( 3, 3 ), "queue cells are not path cells" );
 		Assert.AreEqual( -1, grid.Distance( 3, 0, 3, 3 ) );
 
@@ -162,9 +162,120 @@ public class QueueTests
 		Assert.IsTrue( Can( 3, 1 ), "path over queue" );
 		Assert.IsTrue( Can( 0, 3 ) && Can( 3, 3 ) && Can( 1, 1 ) );
 		Assert.IsTrue( Can( 1, 4 ) );
-		Assert.IsFalse( Can( 1, 3 ), "a queue goes over a path only with its last cell" );
-		Assert.IsTrue( Can( 1, 3, last: true ) );
+		Assert.IsTrue( Can( 1, 3 ), "a queue goes over a path on every cell of a line ..." );
+		Assert.IsFalse( Can( 1, 3, last: true ), "... except its last cell (data:0x84b2c set by the line tool)" );
 		Assert.IsFalse( Can( 5, 3 ) || Can( 4, 1 ) );
+	}
+
+	[TestMethod]
+	public void TheCellMoneyTestIs32BitAndANegativeCostIsBookedAsOtherIncome()
+	{
+		// SetCellType 0x82bc8: balance − cost as a wrapping 32-bit difference, then the sign bit.
+		var low = EconomyTestData.CellCostPark( int.MinValue, 20, 1 );
+		Assert.IsTrue( low.CanSpendCell( CellPurchase.Queue ), "−2^31 − 1 wraps to 2^31 − 1" );
+		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, low.TrySpendCell( CellPurchase.Queue ) );
+		var high = EconomyTestData.CellCostPark( int.MaxValue, 20, -1 );
+		Assert.IsFalse( high.CanSpendCell( CellPurchase.Queue ), "2^31 − 1 + 1 wraps to −2^31" );
+		Assert.AreEqual( ParkEconomy.PurchaseResult.NotEnoughMoney, high.TrySpendCell( CellPurchase.Queue ) );
+		Assert.AreEqual( int.MaxValue, high.Balance );
+
+		// ECON-048: a negative cost (Costs.QueueCell -5) raises the balance and is booked as other income.
+		var negative = EconomyTestData.CellCostPark( 100, 20, -5 );
+		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, negative.TrySpendCell( CellPurchase.Queue ) );
+		Assert.AreEqual( 105, negative.Balance );
+		Assert.AreEqual( 5, negative.Ledger.CurrentTotals.GetValueOrDefault( LedgerCategory.OtherIncome ) );
+		Assert.AreEqual( 0, negative.Ledger.CurrentTotals.GetValueOrDefault( LedgerCategory.OtherCosts ) );
+	}
+
+	[TestMethod]
+	public void TheQueuePreviewUsesTheValidatorAndTheCommitOnlySetCellType()
+	{
+		// The validator 0x84550: the 32-bit pending line cost is refused when greater than the balance; zero passes.
+		Assert.IsFalse( EconomyTestData.CellCostPark( int.MinValue, 20, 1 ).CanPreviewCells( CellPurchase.Queue, 1 ) );
+		Assert.IsTrue( EconomyTestData.CellCostPark( int.MaxValue, 20, -1 ).CanPreviewCells( CellPurchase.Queue, 1 ) );
+		Assert.IsTrue( EconomyTestData.CellCostPark( -5, 20, 0 ).CanPreviewCells( CellPurchase.Queue, 4 ), "a zero sum passes in the red" );
+		var park = EconomyTestData.CellCostPark( 150, 20, 75 );
+		Assert.IsTrue( park.CanPreviewCells( CellPurchase.Queue, 2 ) );
+		Assert.IsFalse( park.CanPreviewCells( CellPurchase.Queue, 3 ), "225 > 150" );
+		Assert.IsTrue( park.CanPreviewLine( unchecked( 0x1_0000_0000L ) ), "the sum is 32-bit: 2^32 wraps to 0" );
+
+		// Balance −2^31 with cost 1: the preview refuses the cell, the commit (SetCellType's test only) lays and charges it.
+		var rig = new Rig( queueCells: 0 );
+		var low = EconomyTestData.CellCostPark( int.MinValue, 20, 1 );
+		Assert.AreEqual( QueueBuildResult.Refused, Level.CheckQueueCell( rig.Grid, low, rig.Ride, 2, 5, Array.Empty<(int X, int Y)>(), ( _, _ ) => false ) );
+		Assert.AreEqual( QueueBuildResult.Ok, Level.BuildQueueCell( rig.Grid, low, rig.Ride, 2, 5, ( _, _ ) => false, out _ ) );
+		Assert.AreEqual( 1, rig.Grid.QueueCellCount );
+		Assert.AreEqual( (long)int.MinValue - 1, low.Balance );
+		// Balance 2^31 − 1 with cost −1: the preview accepts, the commit refuses and lays nothing.
+		var other = new Rig( queueCells: 0 );
+		var high = EconomyTestData.CellCostPark( int.MaxValue, 20, -1 );
+		Assert.AreEqual( QueueBuildResult.Ok, Level.CheckQueueCell( other.Grid, high, other.Ride, 2, 5, Array.Empty<(int X, int Y)>(), ( _, _ ) => false ) );
+		Assert.AreEqual( QueueBuildResult.Refused, Level.BuildQueueCell( other.Grid, high, other.Ride, 2, 5, ( _, _ ) => false, out _ ) );
+		Assert.AreEqual( 0, other.Grid.QueueCellCount );
+		Assert.AreEqual( int.MaxValue, high.Balance );
+	}
+
+	[TestMethod]
+	public void UnbounceNeedsAPassedDeadlineInsideTheFirst200MsOfEachSecond()
+	{
+		// UNBOUNCE 0xae020 on the oracle's edge inputs: (visitor, deadline, start) slots in index order.
+		static int Take( double now, params (int Guest, double Until, double Start)[] slots ) => RideVisitorBridge.TakeUnbounced( slots.ToList(), now, force: false );
+		Assert.AreEqual( 0, Take( 31000, (7, 31000, 1000) ), "deadline < now is strict" );
+		Assert.AreEqual( 7, Take( 31001, (7, 31000, 1000) ) );
+		Assert.AreEqual( 7, Take( 31199, (7, 31000, 1000) ), "(30199 mod 1000) / 200 = 0" );
+		Assert.AreEqual( 0, Take( 31200, (7, 31000, 1000) ), "(30200 mod 1000) / 200 = 1: outside the 200 ms window" );
+		Assert.AreEqual( 0, Take( 31950, (7, 31000, 1000) ) );
+		Assert.AreEqual( 7, Take( 32000, (7, 31000, 1000) ), "the next second opens the window again" );
+		Assert.AreEqual( 5, Take( 1000, (5, 900, 1150) ), "the C remainder keeps the sign: −150 / 200 = 0" );
+		Assert.AreEqual( 0, Take( 1000, (5, 900, 1250) ), "−250 / 200 = −1" );
+		Assert.AreEqual( 9, Take( 50, (0, 0, 0), (9, 40, 49), (8, 10, 50) ), "a free slot is skipped" );
+		Assert.AreEqual( 9, Take( 1049, (9, 40, 49), (8, 10, 49) ), "index order, not deadline order" );
+		var slots = new List<(int Guest, double Until, double Start)> { (0, 0, 0), (4, 1e12, 0), (6, 1e12, 0) };
+		Assert.AreEqual( 4, RideVisitorBridge.TakeUnbounced( slots, 0, force: true ), "FORCEUNBOUNCE takes the first occupied slot" );
+	}
+
+	[TestMethod]
+	public void BounceFillsTheFirstFreeSlotOfTheScriptsTable()
+	{
+		// BOUNCE 0xadf40: the first slot with visitor 0 of the header's bounce-size table; a full table stores nothing.
+		var slots = new List<(int Guest, double Until, double Start)>();
+		Assert.IsTrue( RideVisitorBridge.TakeBounceSlot( slots, 3, 1, 5000, 0 ) );
+		Assert.IsTrue( RideVisitorBridge.TakeBounceSlot( slots, 3, 2, 9000, 100 ) );
+		Assert.IsTrue( RideVisitorBridge.TakeBounceSlot( slots, 3, 3, 5300, 300 ) );
+		Assert.IsFalse( RideVisitorBridge.TakeBounceSlot( slots, 3, 4, 9999, 400 ), "every slot is taken" );
+		Assert.AreEqual( 3, slots.Count );
+		// Slot 1 is still held; slot 0 (start 0) and slot 2 (start 300) are past their deadlines. At 6000 only slot 0
+		// is inside its window, at 6300 slot 2 is.
+		Assert.AreEqual( 1, RideVisitorBridge.TakeUnbounced( slots, 6000, force: false ) );
+		Assert.AreEqual( 3, RideVisitorBridge.TakeUnbounced( slots, 6300, force: false ) );
+		CollectionAssert.AreEqual( new[] { 0, 2 }, slots.Select( slot => slot.Guest ).ToArray(), "slot 0 stays a free hole; the free end is trimmed" );
+		Assert.IsTrue( RideVisitorBridge.TakeBounceSlot( slots, 3, 5, 12000, 7000 ) );
+		CollectionAssert.AreEqual( new[] { 5, 2 }, slots.Select( slot => slot.Guest ).ToArray(), "the new visitor takes the hole, not the end" );
+		// Release order follows the slot index: 5 (slot 0) leaves before 2 (slot 1) when both are due.
+		Assert.AreEqual( 5, RideVisitorBridge.TakeUnbounced( slots, 13000, force: false ) );
+		Assert.AreEqual( 2, RideVisitorBridge.TakeUnbounced( slots, 13100, force: false ) );
+		Assert.AreEqual( 0, slots.Count );
+		Assert.IsFalse( RideVisitorBridge.TakeBounceSlot( slots, 0, 6, 1, 0 ), "a script without bounce slots bounces nobody" );
+	}
+
+	[TestMethod]
+	public void TheBridgeHashCoversEveryFieldOfABounceSlot()
+	{
+		static ulong Hash( params (int Guest, double Until, double Start)[] slots )
+		{
+			var bridge = new RideVisitorBridge( RideId, "Hash ride", RideVisitorKind.Ride, 5, 55, 30 );
+			var field = (List<(int Guest, double Until, double Start)>)typeof( RideVisitorBridge )
+				.GetField( "bouncing", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance )!.GetValue( bridge )!;
+			field.AddRange( slots );
+			var hash = new StateHasher();
+			bridge.AddCanonicalState( hash );
+			return hash.Value;
+		}
+		var baseline = Hash( (3, 5000, 1000) );
+		Assert.AreNotEqual( baseline, Hash( (4, 5000, 1000) ), "visitor" );
+		Assert.AreNotEqual( baseline, Hash( (3, 5001, 1000) ), "deadline" );
+		Assert.AreNotEqual( baseline, Hash( (3, 5000, 1001) ), "start (the UNBOUNCE window's origin)" );
+		Assert.AreNotEqual( Hash( (0, 0, 0), (3, 5000, 1000) ), baseline, "a free slot before an occupied one" );
 	}
 
 	[TestMethod]
@@ -204,7 +315,7 @@ public class QueueTests
 		Assert.AreEqual( QueuePaths.MaximumCells, QueuePaths.TryExtend( grid, ride, Enumerable.Range( 1, 30 ).Select( y => (0, y) ) ) );
 		Assert.AreEqual( QueueBuildResult.TooLong, QueuePaths.CheckExtend( grid, ride, 0, 26 ) );
 		Assert.AreEqual( 25, ride.QueueSizeInCells );
-		Assert.AreEqual( 100, ride.MaximumQueueLength, "25 cells reach the HasQueue limit" );
+		Assert.AreEqual( 21, ride.MaximumQueueLength, "room 100, but the HasQueue limit trunc(130 × 5 / 30) = 21 decides" );
 	}
 
 	// ---- Joining ---------------------------------------------------------------------------------
@@ -212,16 +323,18 @@ public class QueueTests
 	[TestMethod]
 	public void QueueLimitFollowsTheTracedFormula()
 	{
-		static int Limit( bool hasQueue, float qwtc, int speed, int initSpeed, int capacity, int duration ) =>
+		static uint Limit( bool hasQueue, float qwtc, int speed, int initSpeed, int capacity, int duration ) =>
 			RideVisitorBridge.ComputeQueueLimit( new QueueParameters( hasQueue, false, false, qwtc, speed, initSpeed, capacity, duration ) );
-		Assert.AreEqual( 100, Limit( true, 130, 60, 60, 5, 30 ), "HasQueue rides: 100, the QueueWaitTimeConstant is unused" );
-		Assert.AreEqual( 21, Limit( false, 130, 60, 60, 5, 30 ), "trunc(130 × (1 × 5) / 30) = trunc(21.67)" );
-		Assert.AreEqual( 10, Limit( false, 130, 30, 60, 5, 30 ), "G = SPEED / InitSpeed = 0.5: trunc(10.83)" );
-		Assert.AreEqual( 20, Limit( false, 30, 0, 60, 2, 3 ), "SPEED 0 gives G = 1 (Rides.sam level 0: QWTC 30, CAP 2, DUR 3)" );
-		Assert.AreEqual( 4, Limit( false, 10, 60, 60, 1, 30 ), "floor of 4" );
-		Assert.AreEqual( 4, Limit( false, 0, 0, 0, 0, 0 ), "a NaN quotient becomes 4" );
-		Assert.AreEqual( int.MaxValue, Limit( false, 30, 0, 60, 2, 0 ), "DUR 0 divides to +infinity; the room still bounds the queue" );
-		Assert.AreEqual( 12, Limit( false, 3, 65, 90, 6, 1 ), "single precision: 3 × (65/90 × 6) / 1 = 12.999999f (13 in double)" );
+		Assert.AreEqual( 100u, Limit( false, 130, 60, 60, 5, 30 ), "no Info.HasQueue (shops, toilets, sideshows): 100, the QueueWaitTimeConstant is unused" );
+		Assert.AreEqual( 21u, Limit( true, 130, 60, 60, 5, 30 ), "Belly Bounce: trunc(130 × (1 × 5) / 30) = trunc(21.67)" );
+		Assert.AreEqual( 10u, Limit( true, 130, 30, 60, 5, 30 ), "G = SPEED / InitSpeed = 0.5: trunc(10.83)" );
+		Assert.AreEqual( 20u, Limit( true, 30, 0, 60, 2, 3 ), "SPEED 0 gives G = 1 (Rides.sam level 0: QWTC 30, CAP 2, DUR 3)" );
+		Assert.AreEqual( 4u, Limit( true, 10, 60, 60, 1, 30 ), "floor of 4" );
+		Assert.AreEqual( 4u, Limit( true, 0, 0, 0, 0, 0 ), "a NaN quotient becomes 4" );
+		Assert.AreEqual( uint.MaxValue, Limit( true, 30, 0, 60, 2, 0 ), "DUR 0 divides to +infinity, which saturates at 2^32 − 1; the room still bounds the queue" );
+		Assert.AreEqual( 3_000_000_000u, Limit( true, 3e9f, 0, 60, 1, 1 ), "the limit is unsigned: quotients up to 2^32 − 1 survive" );
+		Assert.AreEqual( 465_288_096u, Limit( true, 130, unchecked( (int)0x80000000 ), 100, 5, 30 ), "SPEED is an unsigned word: 2^31 / 100 × 5 × 130 / 30" );
+		Assert.AreEqual( 12u, Limit( true, 3, 65, 90, 6, 1 ), "single precision: 3 × (65/90 × 6) / 1 = 12.999999f (13 in double)" );
 	}
 
 	[TestMethod]
@@ -237,24 +350,24 @@ public class QueueTests
 		Assert.IsTrue( new[] { 2, 3, 4 }.All( ride.TryJoinQueue ) );
 		Assert.AreEqual( QueueJoinResult.NoRoom, ride.JoinQueue( 5, 90 ), "the room check comes before the excitement gate" );
 
-		// No HasQueue: two cells give room 8, but the QWTC limit is 4 (the floor).
-		var shop = new Rig( queueCells: 0, parameters: new QueueParameters( false, false, false, 10, 60, 60, 1, 30 ) );
+		// HasQueue with QWTC 10, CAP 1, DUR 30: two cells give room 8, but the QWTC limit is 4 (the floor).
+		var shop = new Rig( queueCells: 0, parameters: new QueueParameters( true, false, false, 10, 60, 60, 1, 30 ) );
 		shop.Grid.SetQueue( 2, 5, 2 );
 		shop.Grid.SetQueue( 2, 4, 2 );
 		shop.Ride.RecomputeQueue( shop.Grid );
-		Assert.AreEqual( (8, 4, 4), (shop.Ride.QueueRoom, shop.Ride.QueueLimit, shop.Ride.MaximumQueueLength) );
+		Assert.AreEqual( (8, 4u, 4), (shop.Ride.QueueRoom, shop.Ride.QueueLimit, shop.Ride.MaximumQueueLength) );
 		Assert.IsTrue( new[] { 1, 2, 3, 4 }.All( shop.Ride.TryJoinQueue ) );
 		Assert.AreEqual( QueueJoinResult.QueueTooLong, shop.Ride.JoinQueue( 5, 0 ) );
 
-		// HasQueue with 26 cells (laid directly on the grid): room 104, limit 100.
+		// HasQueue with QWTC 600 and 26 cells (laid directly on the grid): room 104, limit trunc(600 × 5 / 30) = 100.
 		var grid = new GuestPathGrid( 30, 30 );
 		for ( var y = 1; y <= 26; y++ )
 			grid.SetQueue( 1, y, 0 );
-		var big = new RideVisitorBridge( 4, "Big", RideVisitorKind.Ride, 5, 50, 10 ) { EntranceCell = (1, 0), QueueFrontCell = (1, 1), QueueEntranceDirection = 0, Parameters = rig.Ride.Parameters };
+		var big = new RideVisitorBridge( 4, "Big", RideVisitorKind.Ride, 5, 50, 10 ) { EntranceCell = (1, 0), QueueFrontCell = (1, 1), QueueEntranceDirection = 0, Parameters = rig.Ride.Parameters with { QueueWaitTimeConstant = 600 } };
 		big.Attach( IdleScript( UnimplementedRideScriptEffects.Instance ), () => true );
 		big.RecomputeQueue( grid );
 		Assert.AreEqual( 26, big.QueueSizeInCells );
-		Assert.AreEqual( (104, 100, 100), (big.QueueRoom, big.QueueLimit, big.MaximumQueueLength) );
+		Assert.AreEqual( (104, 100u, 100), (big.QueueRoom, big.QueueLimit, big.MaximumQueueLength) );
 		Assert.IsTrue( Enumerable.Range( 1, 100 ).All( big.TryJoinQueue ) );
 		Assert.AreEqual( QueueJoinResult.QueueTooLong, big.JoinQueue( 101, 0 ) );
 		Assert.AreEqual( 99, big.GetQueuePosition( 100 ) );
@@ -276,15 +389,54 @@ public class QueueTests
 		CollectionAssert.AreEqual( new[] { (2, 5), (2, 5), (2, 5), (2, 5), (2, 4), (2, 4) }, guests.Select( guest => guest.Cell ).ToArray() );
 		Assert.IsTrue( visited.SetEquals( new[] { (2, 5), (2, 4), (2, 3), (2, 2), (2, 1) } ), string.Join( " ", visited ) );
 		Assert.IsTrue( guests.All( guest => rig.Grid.IsQueue( guest.Cell.X, guest.Cell.Y ) ) );
-		// Depth 0/63/127/191 from the front edge (toward the ride at +Y), a small sideways offset.
-		var expectedY = new[] { 6f - 0 / 255f, 6f - 63 / 255f, 6f - 127 / 255f, 6f - 191 / 255f, 5f, 5f - 63 / 255f };
+		// Depth 0/63/127/191 from the front edge (toward the ride at +Y), a small sideways offset, in bytes of 1/256 cell
+		// (0xe68cc; WALK-I, was /255 with the guest snapped onto the point). The traced steering arrives within 0.32 cell
+		// (octile) of the slot and the arrival step still moves, so a guest stands within 0.32 cell + one step of it.
+		var expectedY = new[] { 5f + 255 / 256f, 5f + 192 / 256f, 5f + 128 / 256f, 5f + 64 / 256f, 4f + 255 / 256f, 4f + 192 / 256f };
 		for ( var index = 0; index < guests.Count; index++ )
 		{
-			Assert.AreEqual( expectedY[index], guests[index].Y, 1e-4, $"position {index}" );
-			Assert.IsTrue( Math.Abs( guests[index].X - 2.5f ) <= 14 / 255f + 1e-4f, $"lateral offset {guests[index].X}" );
+			var guest = guests[index];
+			Assert.AreEqual( expectedY[index], guest.QueueTargetY, 0f, $"position {index}" );
+			Assert.IsTrue( Math.Abs( guest.QueueTargetX - 2.5f ) <= 14 / 256f, $"lateral offset {guest.QueueTargetX}" );
+			var distance = MathF.Sqrt( (guest.X - guest.QueueTargetX) * (guest.X - guest.QueueTargetX) + (guest.Y - guest.QueueTargetY) * (guest.Y - guest.QueueTargetY) );
+			Assert.IsTrue( distance < (GuestNavigation.ArrivalRadius + guest.MaxSpeed) / (float)Fixed16.One, $"position {index} stands {distance} cell from its slot" );
 		}
 		Assert.AreEqual( 6, rig.Ride.QueueLength );
 		Assert.AreEqual( 6, rig.Simulation.GetStatistics().Queueing );
+	}
+
+	/// <summary>
+	/// Review WV-13: a guest standing on the join cell keeps the last queue cell it stood on in QueueCellIndex (here cell
+	/// 1, as after cutting a corner into a folded queue and drifting back). A redirect must start its route at the join
+	/// cell and go over the back cell; a route from the stale index skips cells that are walls for the walk, and the
+	/// guest never arrives.
+	/// </summary>
+	[TestMethod]
+	public void ARedirectFromTheJoinCellStartsBehindTheBackCell()
+	{
+		var rig = new Rig();
+		rig.HoldAdmission();
+		var guest = rig.Send();
+		rig.RunTurns( 60 );
+		Assert.AreEqual( GuestState.Queueing, guest.State );
+		Assert.AreEqual( 0, guest.QueuePosition );
+		// Put it on the join cell (2, 0) with a stale cell index and a recorded position the list no longer has.
+		var join = rig.Ride.JoinCell!.Value;
+		(guest.Navigation.X, guest.Navigation.Y) = GuestNavigation.BytePoint( join, 127, 191 );
+		(guest.Navigation.VelocityX, guest.Navigation.VelocityY) = (0, 0);
+		(guest.CellX, guest.CellY) = join;
+		guest.QueueCellIndex = 1;
+		guest.QueuePosition = 3;
+		guest.QueueMoveDelay = 0;
+		var start = rig.Simulation.ParkTurn;
+		rig.RunTurns( 2 );
+		Assert.AreEqual( GuestState.MovingUpQueue, guest.State, "the position changed: walk to slot 0" );
+		var route = guest.Navigation.Route;
+		CollectionAssert.AreEqual( new[] { join, (2, 1), (2, 2), (2, 3), (2, 4), (2, 5) }, route, string.Join( " ", route ) );
+		rig.RunTurns( 100, () => Assert.IsTrue( guest.State is GuestState.MovingUpQueue or GuestState.Queueing, $"{guest.State}" ) );
+		Assert.AreEqual( GuestState.Queueing, guest.State, "arrived at slot 0" );
+		Assert.AreEqual( (2, 5), guest.Cell );
+		Assert.IsTrue( rig.Simulation.ParkTurn - start <= 102 );
 	}
 
 	[TestMethod]
@@ -526,7 +678,8 @@ public class QueueTests
 	[TestMethod]
 	public void QueuedGuestsAreCalledWalkToTheStandPointAndBoard()
 	{
-		var rig = new Rig( takesGuests: true, capacity: 1 );
+		// QWTC 600: the limit trunc(600 × 1 / 30) = 20 lets all six guests queue (130 would give 4).
+		var rig = new Rig( takesGuests: true, capacity: 1, parameters: new QueueParameters( true, false, false, 600, 60, 60, 1, 30 ) );
 		var waits = new List<long>();
 		rig.Simulation.QueueWaitCompleted += ( _, _, turns ) => waits.Add( turns );
 		var notReady = 0;

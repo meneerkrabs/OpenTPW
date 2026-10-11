@@ -70,6 +70,14 @@ class GuardRound2(unittest.TestCase):
                       for line in read(world / name).splitlines() if self.forbidden.search(line))
         self.assertEqual(hits, [
             'Advisor.cs: private readonly AdvisorMouth mouth = new( new Random() );',
+            # The online globe's orbit camera (#25): view angles, zoom and their damping, never read by the park.
+            'GlobeCameraMode.cs: private static float pitch = 0.5f;',
+            'GlobeCameraMode.cs: private static float pitchVelocity;',
+            'GlobeCameraMode.cs: private static float radius = 475f;',
+            'GlobeCameraMode.cs: private static float yaw = 70f * MathF.PI / 180f;',
+            'GlobeCameraMode.cs: private static float yawVelocity;',
+            'GlobeCameraMode.cs: public static float RadiusIn { get; set; } = 200f;',
+            'GlobeCameraMode.cs: public static float RadiusOut { get; set; } = 475f;',
             'LobbyCameraMode.cs: public static float Radius { get; set; } = 70f;',
             'LobbyCameraMode.cs: public static float SpinSpeed { get; set; } = 0.02f;',
             'LobbyCameraMode.cs: public static float VerticalOffset { get; set; } = 20f;',
@@ -141,9 +149,12 @@ class MergedGateDocs(unittest.TestCase):
         self.assertIn('"GATE": "source/OpenTPW/Client/M3GateApproximations.cs",', tool)
         registers = re.search(r'^REGISTERS = \{(.*?)^\}', tool, re.S | re.M)
         self.assertIsNotNone(registers)
-        count = len(re.findall(r'^\s+"[A-Z]+": "source/', registers.group(1), re.M))
-        words = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve']
-        self.assertIn(f'the {words[count]} configured C# registers', tool)
+        count = len(re.findall(r'^\s+"[A-Z][A-Z0-9]*": "source/', registers.group(1), re.M))
+        words = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen']
+        # WALK-F (review WALK-V, WV-10): the sentence is generated from len(REGISTERS), so a merge that adds a register
+        # cannot leave a stale count; the generated document carries the word.
+        self.assertIn('the {in_words(data.register_count)} configured C# registers', tool)
+        self.assertIn(f'the {words[count]} configured C# registers', read(REPO / 'docs' / 'FIDELITY-REGISTER.md'))
 
 
 if __name__ == '__main__':

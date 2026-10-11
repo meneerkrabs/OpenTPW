@@ -25,6 +25,7 @@ public enum OpenTpwText
 	EffectiveSize,
 	Fallback,
 	Back,
+	LanguageAfterPark,
 	DateFormat,
 	OriginalParkReadOnly,
 	ParkSaved,
@@ -94,6 +95,13 @@ public static class SupplementaryStrings
 		[OpenTpwText.EffectiveSize] = new[] { "Internal {0} x {1}, output {2} x {3}", "Intern {0} x {1}, output {2} x {3}", "Intern {0} x {1}, uitvoer {2} x {3}", "Interne {0} x {1}, sortie {2} x {3}", "Intern {0} x {1}, Ausgabe {2} x {3}", "Intern {0} x {1}, utdata {2} x {3}" },
 		[OpenTpwText.Fallback] = new[] { "Fallback: {0}", "Reserve: {0}", "Terugval: {0}", "Repli : {0}", "Ausweichlösung: {0}", "Reserv: {0}" },
 		[OpenTpwText.Back] = new[] { "Back", "Tilbage", "Terug", "Retour", "Zurück", "Tillbaka" },
+		[OpenTpwText.LanguageAfterPark] = new[] {
+			"The new language is used when you leave the park.",
+			"Det nye sprog bruges, når du forlader parken.",
+			"De nieuwe taal wordt gebruikt zodra je het park verlaat.",
+			"La nouvelle langue sera utilisée quand vous quitterez le parc.",
+			"Die neue Sprache wird verwendet, sobald du den Park verlässt.",
+			"Det nya språket används när du lämnar parken." },
 		[OpenTpwText.DateFormat] = new[] { "Month {1}, Year {0}", "Måned {1}, år {0}", "Maand {1}, jaar {0}", "Mois {1}, année {0}", "Monat {1}, Jahr {0}", "Månad {1}, år {0}" },
 		[OpenTpwText.OriginalParkReadOnly] = new[] {
 			"Original parks are read-only and cannot be saved.",

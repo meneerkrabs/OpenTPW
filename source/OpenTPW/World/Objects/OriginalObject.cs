@@ -54,9 +54,10 @@ public class OriginalObject : Entity
 {
 	private readonly List<(ModelEntity Entity, int NodeIndex)> parts = new();
 	private readonly List<Model> models = new();
-	/// <summary>Parts of vertex-animated meshes: their model, own vertex array and the pose version it shows.</summary>
+	/// <summary>Parts of vertex- or UV-animated meshes: their model, own vertex array and the pose version it shows.</summary>
 	private readonly List<(Model Model, int MeshIndex, Vertex[] Vertices, int Version)> vertexParts = new();
 	private bool deleted;
+	private int hiddenVersion = -1;
 
 	public OriginalObject( ObjectCatalogEntry entry, ObjectPlacement placement, RideScriptWorld? world = null, int? seed = null, bool open = true )
 	{
@@ -100,6 +101,9 @@ public class OriginalObject : Entity
 		? Enumerable.Empty<ObjectAccessPoint>()
 		: ObjectFootprint.GetAccessPoints( Entry.Shape, Placement.X, Placement.Y, Placement.Rotation );
 
+	/// <summary>The rendered sign this object's model shows on its <c>sign1</c>/<c>sign2</c> faces, or null when it has none.</summary>
+	public ObjectSignImages? Sign { get; private set; }
+
 	public void Open() => Runtime.Open();
 	public void Close() => Runtime.Close();
 
@@ -122,10 +126,31 @@ public class OriginalObject : Entity
 		{
 			var slots = new Texture[16];
 			Array.Fill( slots, Texture.Missing );
+			// Runtime sign faces replace the shipped placeholders, including fixed gate faces.
+			var hasSignSlot = part.Textures.Any( ObjectSigns.IsSignSlot );
+			var gateSign = hasSignSlot && Entry.IsFixedItem && Entry.ArchiveName.Equals( "gates", StringComparison.OrdinalIgnoreCase )
+				? Level.Current?.GateSign?.Images : null;
+			var sign = hasSignSlot ? gateSign ?? (!Entry.IsFixedItem ? ObjectSigns.Get( Entry ) : null) : null;
+			var fallbackBaseSign = gateSign == null && Entry.IsFixedItem && Entry.ArchiveName.Equals( "gates", StringComparison.OrdinalIgnoreCase )
+				&& hasSignSlot
+				? new Texture( [38, 28, 18, 255], 1, 1 ) : null;
+			if ( sign != null )
+				Sign = sign;
 			for ( var index = 0; index < part.Textures.Length; index++ )
 			{
-				slots[index] = LoadTexture( Entry, part.Textures[index] );
+				var name = part.Textures[index];
+				slots[index] = sign?.TextureFor( name )
+					?? (fallbackBaseSign != null && ObjectSigns.IsSignSlot( name ) ? fallbackBaseSign : LoadTexture( Entry, name ));
 			}
+			if ( gateSign != null )
+				for ( var vertexIndex = 0; vertexIndex < part.Vertices.Length; vertexIndex++ )
+					if ( ObjectSigns.IsSignSlot( part.Textures[part.Vertices[vertexIndex].TexIndex] ) )
+					{
+						// [APPROX:COMPAT-031] orient the gate's sign lighting upward so the light stone name remains legible.
+						var vertex = part.Vertices[vertexIndex];
+						vertex.Normal = System.Numerics.Vector3.UnitZ;
+						part.Vertices[vertexIndex] = vertex;
+					}
 			var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
 			material.Set( "Color", slots );
 			var dynamic = part.MeshIndex >= 0 && vertexAnimated[part.MeshIndex];
@@ -165,9 +190,14 @@ public class OriginalObject : Entity
 	{
 		UpdateVertices();
 		var placement = Placement.ModelToEngine;
-		var nodes = Runtime.Animator.NodeTransforms;
+		var animator = Runtime.Animator;
+		var nodes = animator.NodeTransforms;
+		var hidden = animator.HiddenVersion != hiddenVersion;
+		hiddenVersion = animator.HiddenVersion;
 		foreach ( var (entity, node) in parts )
 		{
+			if ( hidden && node >= 0 )
+				entity.Hidden = animator.IsNodeHidden( node );
 			var transform = node < 0 ? placement : ObjectPlacement.SwapAxes( nodes[node] ) * placement;
 			entity.TransformOverride = transform;
 			entity.Position = new Vector3( transform.M41, transform.M42, transform.M43 );
@@ -184,6 +214,7 @@ public class OriginalObject : Entity
 			if ( animator.GetVertexVersion( mesh ) == version )
 				continue;
 			ObjectRenderParts.WritePositions( Runtime.Model.Meshes[mesh], animator.GetVertexPositions( mesh ), vertices );
+			ObjectRenderParts.WriteTexCoords( Runtime.Model.Meshes[mesh], animator.GetTexCoords( mesh ), vertices );
 			model.UpdateVertices( vertices );
 			vertexParts[index] = (model, mesh, vertices, animator.GetVertexVersion( mesh ));
 		}

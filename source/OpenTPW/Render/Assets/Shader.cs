@@ -17,6 +17,14 @@ public class Shader : Asset
 	// instance (128 per user by default), so per-Shader watchers crashed the lobby scene.
 	private static readonly Dictionary<string, FileSystemWatcher?> watchers = new();
 
+	/// <summary>
+	/// Recompile shaders when their files change: a development aid, off unless asked for with
+	/// <c>--shader-hot-reload</c> or <c>OPENTPW_SHADER_HOT_RELOAD=1</c>. On macOS starting a file watcher calls
+	/// <c>sync()</c>, which waits for every mounted file system, so one unresponsive network share kept the game from
+	/// starting.
+	/// </summary>
+	public static bool HotReload { get; set; } = Environment.GetEnvironmentVariable( "OPENTPW_SHADER_HOT_RELOAD" ) == "1";
+
 	internal Shader( string path )
 	{
 		Path = System.IO.Path.GetFullPath( path, AppContext.BaseDirectory );
@@ -29,7 +37,7 @@ public class Shader : Asset
 	private void Watch()
 	{
 		// The browser has no file watching, and its shaders are precompiled (docs/WEB.md).
-		if ( OperatingSystem.IsBrowser() )
+		if ( !HotReload || OperatingSystem.IsBrowser() )
 			return;
 		lock ( watchers )
 		{

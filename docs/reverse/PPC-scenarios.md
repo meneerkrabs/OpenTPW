@@ -1166,9 +1166,8 @@ unwired reference.
 - `ParkModeFeatures` gates golden-ticket checks, challenges, loans, research
   lab efforts and upgrades in Instant Action. Research points come only from
   researchers in both modes; there is no staffless rate. The seed ships a
-  researcher whose staff record is not decoded, so no staff member is invented;
-  an Instant Action start that imported the seed researches as one grade-2
-  researcher while none is employed (ECON-019, a stand-in for that researcher).
+  researcher, which SAVE-I imports from `Easymode.TPWI` with the other staff
+  (SAVE-003), so the former ECON-019 stand-in is removed.
 - "Full Simulation starts without the seed" is now traced for the Mac (see
   *Park entry*): it holds for a player's first park in a theme, which is the
   only start OpenTPW has. Resuming the per-theme autosave is not reproduced
@@ -1195,7 +1194,7 @@ unwired reference.
 | ECON-015 | ResearchAbility per day split by effort | per researcher work cycle, × effort share × workload/100 (workload starts at StartingWorkLoad 85, player-set ≤ 100) | partially contradicted (cycle timing open) |
 | ECON-016 | group g opens at PercentageForThisTech[g] % of group g−1 | group g opens at PercentageForThisTech[g] (same index, layout-proven) measured **cumulatively over all groups ≤ g−1**, unsigned percentage and compare, 0 % for an empty set | partially supported: threshold index matches, percentage basis differs |
 | ECON-017 | cheapest first | item choice not traced | unresolved |
-| ECON-019 | stand-in for the Instant Action seed's undecoded researcher: one grade-2 researcher while none is employed, only after the seed was imported | no staffless path; researcher staff only; the research panel is refused with the 'research is automatic' text | contradicted as a staffless rule; open as a stand-in until the `Easymode.TPWI` staff records are decoded |
+| ECON-019 | stand-in for the Instant Action seed's undecoded researcher: one grade-2 researcher while none is employed, only after the seed was imported | no staffless path; researcher staff only; the research panel is refused with the 'research is automatic' text | contradicted as a staffless rule; retired: SAVE-I decodes the `Easymode.TPWI` staff records and imports the seed's researcher |
 | UI-015 | mode asked per park entry and every entry starts a new park (declaration reworded) | mode fixed at player creation (4 slots, one byte in `save:users:<n><name>:gms.dat`); each theme resumes the player's newest save (`autosave.TPWS` on leaving); modes differ in balance overlay, first park, keys, tickets, challenges, research completion; an unreadable `gms.dat` silently yields Full Simulation with 0 keys | per-park choice, profiles and the missing resume remain approximations |
 | ECON-030 / bankruptcy | stops when bankrupt; 6 months in red | ≥ 6 thirty-day months since the balance went negative, checked at month end → world mode 4 (subject to one unresolved id gate) | count supported; "stops" consistent with mode 4 exit but the mode-4 consequences belong to the calendar/clock lane |
 | ECON-046 | upgrades need a mechanic | not traced (only the TAG text "can't upgrade during a mechanics' strike") | unresolved |

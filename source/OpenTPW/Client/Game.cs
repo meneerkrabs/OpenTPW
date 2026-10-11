@@ -9,6 +9,8 @@ internal static class Game
 	public static void Run( string[] args )
 	{
 		Log = new();
+		if ( args.Contains( "--shader-hot-reload" ) )
+			Shader.HotReload = true;
 		var fontIndex = Array.IndexOf( args, "--inspect-font" );
 		if ( fontIndex >= 0 )
 		{
@@ -76,6 +78,12 @@ internal static class Game
 		if ( dataDirectory == null )
 			throw new DirectoryNotFoundException( $"Theme Park World data not found in '{Settings.Default.GamePath}'. Use --game-path or OPENTPW_GAME_PATH to select a directory containing data/." );
 
+		// [EXT:tpi-viewer] Theme Park Inc data (docs/THEME-PARK-INC.md): refused for normal starts, viewable with --load-original-level.
+		var edition = GameEditions.Detect( dataDirectory );
+		GameEditions.Select( edition.Edition );
+		if ( GameEditions.IsThemeParkInc )
+			RequireThemeParkIncViewer( args, edition );
+
 		// Register game data directory
 		FileSystem = new BaseFileSystem( dataDirectory );
 		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
@@ -83,12 +91,17 @@ internal static class Game
 
 		//
 		// Select the text language: --language / --language-data, then OPENTPW_LANGUAGE /
-		// OPENTPW_LANGUAGE_DATA, then the Language / LanguageDataPath settings (docs/LANGUAGES.md)
+		// OPENTPW_LANGUAGE_DATA, then language.json, then the old Language / LanguageDataPath
+		// user settings (docs/LANGUAGES.md)
 		//
-		var language = GetOption( args, "--language", "a language name such as German" )
-			?? Environment.GetEnvironmentVariable( "OPENTPW_LANGUAGE" ) ?? Settings.Default.Language;
-		var languageData = GetOption( args, "--language-data", "a directory with the original CD's language data" )
-			?? Environment.GetEnvironmentVariable( "OPENTPW_LANGUAGE_DATA" ) ?? Settings.Default.LanguageDataPath;
+		var languageDiagnostics = new List<string>();
+		var languageSettings = LanguageSettings.Load( LanguageSettings.GetDefaultPath(), languageDiagnostics );
+		foreach ( var diagnostic in languageDiagnostics )
+			Log.Warning( diagnostic );
+		var language = LanguageSettings.Choose( GetOption( args, "--language", "a language name such as German" ),
+			Environment.GetEnvironmentVariable( "OPENTPW_LANGUAGE" ), languageSettings.Language, Settings.Default.Language );
+		var languageData = LanguageSettings.Choose( GetOption( args, "--language-data", "a directory with the original CD's language data" ),
+			Environment.GetEnvironmentVariable( "OPENTPW_LANGUAGE_DATA" ), languageSettings.LanguageDataPath, Settings.Default.LanguageDataPath );
 		// The CD chosen in Game files (or --cd-data) also holds the other shipped languages: without separate
 		// language data, offer those too.
 		if ( string.IsNullOrWhiteSpace( languageData ) && CdLanguageOverlay( args, dataDirectory ) is { } cdLanguages )
@@ -111,7 +124,8 @@ internal static class Game
 		var bonusSettings = SetupSettings.Load( SetupSettings.GetDefaultPath() );
 		var bonusRoot = BonusContent.ResolveRoot( GetOption( args, "--bonus-data", "the extracted official bonus content directory" ),
 			Environment.GetEnvironmentVariable( "OPENTPW_BONUS_DATA" ), bonusSettings.BonusPath, Path.GetDirectoryName( DisplaySettings.GetDefaultPath() )! );
-		if ( bonusRoot is { } bonus )
+		// [EXT:tpi-viewer] bonus objects are Theme Park World content: not offered to Theme Park Inc worlds
+		if ( bonusRoot is { } bonus && !GameEditions.IsThemeParkInc )
 		{
 			ObjectCatalog.BonusDataRoot = bonus.Path;
 			Log.Trace( $"Bonus content: {bonus.Path} ({bonus.Source})." );
@@ -127,6 +141,29 @@ internal static class Game
 				Log.Trace( $"Mesh {mesh.Name}: {mesh.Vertices.Length} vertices; {mesh.Indices.Length} indices; transform {mesh.TransformMatrix}." );
 				foreach ( var material in mesh.Materials )
 					Log.Trace( $"Material: {material.Name}" );
+			}
+			if ( model.Clip is { } clip )
+			{
+				Log.Trace( $"Animation: {clip.Duration} ticks, {clip.Tracks.Count} records, {clip.TextureFrameTracks.Count} texture-frame tracks, {clip.NodeList.Count} listed nodes." );
+				foreach ( var track in clip.Tracks )
+				{
+					var kinds = new List<string>();
+					if ( track.Position != null )
+						kinds.Add( "position" );
+					if ( track.Rotations.Count > 0 )
+						kinds.Add( "rotation" );
+					if ( track.Scales.Count > 0 )
+						kinds.Add( "scale" );
+					if ( track.VertexAnimation != null )
+						kinds.Add( "vertex groups" );
+					if ( track.VertexPose != null )
+						kinds.Add( "12-byte block (shown as stored)" );
+					if ( track.UvAnimation != null )
+						kinds.Add( "UV tracks" );
+					if ( track.NodeFlagToggles.Count > 0 )
+						kinds.Add( "node-flag toggles" );
+					Log.Trace( $"Record node {track.NodeIndex}: flags 0x{track.Flags:X} ({string.Join( ", ", kinds )}); metadata 0x{track.MetadataBits:X}; unsupported 0x{track.UnsupportedFlags:X}." );
+				}
 			}
 			return;
 		}
@@ -163,6 +200,12 @@ internal static class Game
 		if ( args.Contains( "--m3-gate" ) )
 		{
 			Environment.ExitCode = M3Gate.RunCommand( args );
+			return;
+		}
+		// Headless M4 attraction/script gate (docs/M4-GATE.md): no window, renderer or audio.
+		if ( args.Contains( "--m4-gate" ) )
+		{
+			Environment.ExitCode = M4Gate.RunCommand( args );
 			return;
 		}
 
@@ -253,7 +296,7 @@ internal static class Game
 		var level = visit != null
 			? flow.StartLevel( visit.Level, original: !visit.IsSandbox, developerPanels: true, visit: visit )
 			: originalLevelIndex >= 0
-			? flow.StartLevel( args[originalLevelIndex + 1], original: true, developerPanels: true )
+			? flow.StartLevel( args[originalLevelIndex + 1], original: true, developerPanels: !GameEditions.IsThemeParkInc )
 			: flow.StartLevel( "jungle", original: false, developerPanels: true );
 
 		//
@@ -527,6 +570,20 @@ internal static class Game
 		{
 			return null;
 		}
+	}
+
+	/// <summary>
+	/// Theme Park Inc is not a supported game. Its data may only be opened by the experimental level viewer:
+	/// <c>--load-original-level arabian|science|water</c> (docs/THEME-PARK-INC.md, "Theme Park Inc level viewer").
+	/// </summary>
+	// [EXT:tpi-viewer] viewing aid for Theme Park Inc worlds, not original behaviour and not Theme Park Inc support.
+	private static void RequireThemeParkIncViewer( string[] args, GameEditionReport edition )
+	{
+		if ( GameEditions.ViewerRefusal( args ) is { } refusal )
+			throw new ArgumentException( refusal );
+		var level = GetOption( args, "--load-original-level", "a Theme Park Inc world such as 'arabian'" );
+		Log.Warning( $"Theme Park Inc data detected ({(edition.Evidence == GameEditionEvidence.StandardSamHash ? "retail Standard.sam" : "folder structure")}): experimental level viewer for '{level}'. "
+			+ "This is not Theme Park Inc support: no economy, advisor or HUD, and original behaviour is not verified." );
 	}
 
 	private static string? GetOption( string[] args, string name, string description )

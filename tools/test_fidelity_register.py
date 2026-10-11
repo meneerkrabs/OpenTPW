@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from fidelity_register import EXTENSION_SCOPE, REGISTERS, annotations, collect, markdown_declarations, render
+from fidelity_register import EXTENSION_SCOPE, REGISTERS, Inventory, annotations, collect, in_words, markdown_declarations, render
 
 
 class FidelityRegisterTests(unittest.TestCase):
@@ -136,6 +136,56 @@ var text = "[APPROX:TEST-002] runtime string";
             result = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(result.returncode, 1)
             self.assertIn('missing or stale', result.stderr)
+
+    def test_ids_used_only_in_docs_cannot_be_declared_again(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'source').mkdir()
+            (root / 'docs/reverse').mkdir(parents=True)
+            code = root / 'source/test.cs'
+            register = root / 'source/register.cs'
+            code.write_text('// [APPROX:TEST-001] one\n')
+            register.write_text('("TEST-001", "rule"),\n')
+            (root / 'docs/reverse/TRACE.md').write_text('| ID | Verdict |\n| --- | --- |\n| TEST-001 | same rule |\n| TEST-002 | retired rule |\n| OTHER-003 | not an area |\n')
+            config = {'TEST': 'source/register.cs'}
+            data = collect(root, config)
+            self.assertEqual(data.errors, [])
+            self.assertEqual(data.retired, {'TEST-002': 'docs/reverse/TRACE.md'})
+            (root / 'docs/FIDELITY-REGISTER.md').write_text(render(data))
+            # Reusing the retired number fails, even after its doc row is gone.
+            (root / 'docs/reverse/TRACE.md').write_text('| TEST-001 | same rule |\n')
+            code.write_text('// [APPROX:TEST-001] one\n// [APPROX:TEST-002] another meaning\n')
+            register.write_text('("TEST-001", "rule"),\n("TEST-002", "another meaning"),\n')
+            errors = collect(root, config).errors
+            self.assertTrue(any(e.startswith('TEST-002: declared, but docs/FIDELITY-REGISTER.md lists it as retired') for e in errors), errors)
+            self.assertIn('TEST-002', collect(root, config).retired)
+
+    def test_ids_retired_in_docs_prose_cannot_be_declared_again(self):
+        # Review WV2-2: GATE-002..GATE-005 were retired in prose ("`[APPROX:GATE-004]` ... now retired"), not in a table.
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'source').mkdir()
+            (root / 'docs').mkdir()
+            code = root / 'source/test.cs'
+            register = root / 'source/register.cs'
+            code.write_text('// [APPROX:TEST-001] one\n')
+            register.write_text('("TEST-001", "rule"),\n')
+            (root / 'docs/GATE.md').write_text('`[APPROX:TEST-001]` stays; `[APPROX:TEST-004]` is now retired (APPROX:OTHER-005).\n')
+            config = {'TEST': 'source/register.cs'}
+            data = collect(root, config)
+            self.assertEqual(data.errors, [])
+            self.assertEqual(data.retired, {'TEST-004': 'docs/GATE.md'})
+            (root / 'docs/FIDELITY-REGISTER.md').write_text(render(data))
+            code.write_text('// [APPROX:TEST-001] one\n// [APPROX:TEST-004] another meaning\n')
+            register.write_text('("TEST-001", "rule"),\n("TEST-004", "another meaning"),\n')
+            errors = collect(root, config).errors
+            self.assertTrue(any(e.startswith('TEST-004: declared, but docs/FIDELITY-REGISTER.md lists it as retired') for e in errors), errors)
+
+    def test_register_count_sentence_follows_the_configuration(self):
+        # Review WV-10: a merge that adds a register to REGISTERS must not leave a stale count in the document.
+        self.assertIn(f'read from the {in_words(len(REGISTERS))} configured C# registers', render(Inventory([], {}, [])))
+        self.assertIn('read from the three configured C# registers', render(Inventory([], {}, [], 3)))
+        self.assertEqual(('eleven', 'twelve', '21'), (in_words(11), in_words(12), in_words(21)))
 
 
 if __name__ == '__main__':

@@ -59,6 +59,9 @@ class Discovery(Scratch):
         self.assertEqual([self.root, self.root / 'lanes/a', self.root / 'lanes/b'], suites)
         self.assertEqual(['lanes/b/deep/test_hidden.py'],
                          runner.uncovered_test_files(self.root, suites))
+        (self.root / 'oracle').mkdir()
+        (self.root / 'oracle/test_oracle.py').write_text('')
+        self.assertEqual(self.root / 'oracle', runner.python_suites(self.root)[-1])
 
     def test_parse_unittest_counts_skips_and_failures(self):
         output = ("test_x (m.T.test_x) ... skipped 'set OPENTPW_MAC_APP'\n"

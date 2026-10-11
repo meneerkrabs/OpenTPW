@@ -155,6 +155,10 @@ public partial class ModelFile : BaseFormat
 			throw new InvalidDataException( "MD2 magic is missing." );
 		VersionMajor = U32( data, 4 );
 		VersionMinor = U32( data, 8 );
+		// [BIN:STP-PPC:engine_shared 0x3fc74 MD2 loader gate] a major below 221 loads only with argument bit 0x1, which no
+		// application call site passes (0x58f00, 0x99acc/0x99ad4), so such members end as DeadMesh before any layout is read.
+		if ( VersionMajor < SupportedVersionMajor )
+			throw new NotSupportedException( $"MD2 version {VersionMajor}.{VersionMinor} is refused by the original loader too (DeadMesh: majors below {SupportedVersionMajor} need a load flag no caller passes)." );
 		if ( VersionMajor != SupportedVersionMajor || VersionMinor != SupportedVersionMinor )
 			throw new NotSupportedException( $"Unsupported MD2 version {VersionMajor}.{VersionMinor}." );
 

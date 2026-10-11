@@ -169,9 +169,14 @@ public sealed class OriginalObjectRuntime
 		return new RideVisitorBridge( attractionId, entry.DisplayName, kind, entry.InitialCapacity,
 			settings.GetInt( "UsageInfo.ExcitementLevel" ), settings.GetInt( "Info.AttractionValue" ), needs, price )
 		{
-			Parameters = CreateQueueParameters( entry )
+			Parameters = CreateQueueParameters( entry ),
+			// [DATA:<object>.sam:UsageInfo.EntryCellStandPosX/Y] the jungle Rides.sam default is (0.5, 0.5); 0xde1d8 checks the range [0, 1] (a value outside it keeps the default here)
+			EntryCellStandPos = (StandFraction( settings, "UsageInfo.EntryCellStandPosX" ), StandFraction( settings, "UsageInfo.EntryCellStandPosY" ))
 		};
 	}
+
+	private static float StandFraction( ObjectSettings settings, string key ) =>
+		settings.Has( key ) && settings.GetFloat( key ) is var value and >= 0 and <= 1 ? value : 0.5f;
 
 	/// <summary>
 	/// Queue rules from the .sam layers (docs/reverse/QUEUE-plan.md §2, §4): HasQueue, RunsContinuously, the
@@ -203,31 +208,31 @@ public sealed class OriginalObjectRuntime
 		return new RideScriptFile( stream );
 	}
 
-	/// <summary>Plays (animation, variant) on a channel; returns the clip length in milliseconds or 0 when it has no member.</summary>
-	internal int PlayAnimation( int animation, int variant, int channel, bool loop )
+	/// <summary>
+	/// Triggers (animation, variant) on a channel (0xa6cc0 with flags 0, or 1 to loop) and returns the trigger's
+	/// result: the clip length in milliseconds, or <see cref="ObjectAnimator.MissingClipMilliseconds"/> when the
+	/// object has no such member (the channel then keeps its clip).
+	/// </summary>
+	internal int TriggerAnimation( int animation, int variant, int channel, bool loop, float speed )
 	{
 		var file = Entry.ResolveAnimation( animation, variant );
 		var clip = file == null ? null : LoadClip( file.Path );
 		if ( clip == null )
 		{
 			unresolvedAnimations.Add( $"{animation}/{variant}" );
-			return 0;
+			return Animator.Trigger( channel, null, "", animation, variant, loop, speed );
 		}
-		// Scripts re-issue LOOPANIM for a loop that already runs (Bouncy every 500 ms); keep it running.
-		// [APPROX:RIDES-004] Re-issued LOOPANIM of the running loop continues instead of restarting — evidence needed: capture of the Belly Bounce idle loop
-		if ( loop && Animator.IsChannelLooping( channel, file!.Name ) )
-			return 0;
 		try
 		{
-			var seconds = Animator.Play( channel, clip, file!.Name, loop );
+			var result = Animator.Trigger( channel, clip, file!.Name, animation, variant, loop, speed );
 			AnimationsPlayed++;
-			return loop ? 0 : (int)Math.Round( seconds * 1000 );
+			return result;
 		}
 		catch ( InvalidDataException )
 		{
 			unresolvedAnimations.Add( $"{animation}/{variant}" );
 			clips[file!.Path] = null;
-			return 0;
+			return Animator.Trigger( channel, null, "", animation, variant, loop, speed );
 		}
 	}
 
@@ -251,19 +256,19 @@ public sealed class OriginalObjectRuntime
 }
 
 /// <summary>
-/// Generic effects for every original object script. Animation opcodes play the original clips through
-/// <see cref="ObjectAnimations"/>: TRIGANIM/WAITANIM/TRIGWAITANIM/TRIGANIMSPEED on the main channel (reporting the
-/// clip length for waits), LOOPANIM looping on the main channel, TRIGANIM_CH/LOOPANIM_CH on the channel given by
-/// their last operand, GETANIM_CH 1 while that channel plays, FLUSHANIM stops all channels. Visitor opcodes
-/// go to <see cref="OriginalObjectRuntime.Visitors"/>; COAST goes to the station's <see cref="CoasterRide"/>. Everything else
-/// (sounds, EVENT, objects/particles, the TOUR/BUMP controllers, park clock, screams, reverb) stays an unimplemented effect.
-/// Visitor opcodes go to the object's <see cref="RideVisitorBridge"/> (guests slice).
+/// Generic effects for every original object script. Animation opcodes drive the object's channels
+/// (<see cref="ObjectAnimator"/>) with the original's operands: the plain opcodes channel 0, the <c>_CH</c> opcodes
+/// their channel operand; triggers return the trigger's millisecond result, which <see cref="OpcodeHandlers.Animation"/>
+/// turns into the script's waits; FLUSHANIM(_CH) clears only the deferred clip; GETANIM(_CH) report the AnimID or −1.
+/// COAST goes to the station's <see cref="CoasterRide"/>. Visitor opcodes go to the object's
+/// <see cref="RideVisitorBridge"/> (guests slice). Everything else (sounds, EVENT, objects/particles, the ride-type
+/// controllers TOUR/BUMP, park clock, screams, reverb) stays an unimplemented effect.
 /// </summary>
-public sealed class OriginalObjectEffects : IRideScriptEffects
+public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQuery, IRideCanonicalEffects
 {
 	/// <summary>Channel of the plain animation opcodes: channel 0, the same record a _CH opcode addresses with channel 0.</summary>
 	// [BIN:STP-PPC:0x100A6CC0 animation trigger] the channel record is model +0x10 + channel × 0x38; TRIGANIM (0x100AFB10), WAITANIM (0x100AFC68), LOOPANIM (0x100AFD7C) and TRIGANIMSPEED (0x100B005C) pass channel 0, TRIGANIM_CH (0x100B01C4) its operand
-	public const int MainChannel = 0;
+	public const int MainChannel = OpcodeHandlers.Animation.MainChannel;
 
 	private readonly OriginalObjectRuntime ride;
 
@@ -276,20 +281,28 @@ public sealed class OriginalObjectEffects : IRideScriptEffects
 			case Opcode.TRIGANIM:
 			case Opcode.WAITANIM:
 			case Opcode.TRIGWAITANIM:
-			// [APPROX:RIDES-007] TRIGANIMSPEED plays at normal speed; its 4th operand (e.g. 4000) is ignored — evidence needed: binary semantics of TRIGANIMSPEED
+				return ride.TriggerAnimation( call.Argument( 0 ), call.Argument( 1 ), MainChannel, loop: false, RideVM.ScriptSpeed );
 			case Opcode.TRIGANIMSPEED:
-				return ride.PlayAnimation( call.Argument( 0 ), call.Argument( 1 ), MainChannel, loop: false );
+				// [BIN:STP-PPC:0x100AFFC4 TRIGANIMSPEED] the clip runs at script speed × operand / 1000 (0x100B003C–0x100B0070); the handler also keeps the operand at script +228, whose reader is not traced
+				return ride.TriggerAnimation( call.Argument( 0 ), call.Argument( 1 ), MainChannel, loop: false, RideAnimationTiming.SpeedOperand( RideVM.ScriptSpeed, call.Argument( 3 ) ) );
 			case Opcode.LOOPANIM:
-				return ride.PlayAnimation( call.Argument( 0 ), call.Argument( 1 ), MainChannel, loop: true );
+				return ride.TriggerAnimation( call.Argument( 0 ), call.Argument( 1 ), MainChannel, loop: true, RideVM.ScriptSpeed );
 			case Opcode.TRIGANIM_CH:
-				return ride.PlayAnimation( call.Argument( 0 ), call.Argument( 1 ), Math.Max( 0, call.Argument( 3 ) ), loop: false );
+			case Opcode.TRIGWAITANIM_CH:
+				return ride.TriggerAnimation( call.Argument( 0 ), call.Argument( 1 ), Channel( call, 3 ), loop: false, RideVM.ScriptSpeed );
+			case Opcode.WAITANIM_CH:
+				return ride.TriggerAnimation( call.Argument( 0 ), call.Argument( 1 ), Channel( call, 2 ), loop: false, RideVM.ScriptSpeed );
 			case Opcode.LOOPANIM_CH:
-				return ride.PlayAnimation( call.Argument( 0 ), call.Argument( 1 ), Math.Max( 0, call.Argument( 2 ) ), loop: true );
+				return ride.TriggerAnimation( call.Argument( 0 ), call.Argument( 1 ), Channel( call, 2 ), loop: true, RideVM.ScriptSpeed );
+			case Opcode.GETANIM:
+				return ride.Animator.GetAnimation( MainChannel );
 			case Opcode.GETANIM_CH:
-				// [APPROX:RIDES-006] GETANIM_CH returns 1 while the channel plays, else 0 — evidence needed: binary semantics of GETANIM_CH
-				return ride.Animator.IsChannelPlaying( call.Argument( 1 ) ) ? 1 : 0;
+				return ride.Animator.GetAnimation( Channel( call, 1 ) );
 			case Opcode.FLUSHANIM:
-				ride.Animator.StopAll();
+				ride.Animator.Flush( MainChannel );
+				return 0;
+			case Opcode.FLUSHANIM_CH:
+				ride.Animator.Flush( Channel( call, 0 ) );
 				return 0;
 		}
 		if ( call.Opcode == Opcode.COAST && ride.Coaster != null )
@@ -297,5 +310,16 @@ public sealed class OriginalObjectEffects : IRideScriptEffects
 		if ( ride.Visitors.TryPerform( call, out var visitorResult ) )
 			return visitorResult;
 		return UnimplementedRideScriptEffects.Instance.Perform( call );
+	}
+
+	public int GetAnimationId( RideVM vm, int channel ) => ride.Animator.GetAnimationId( channel );
+
+	public void AddCanonicalState( StateHasher hash ) => ride.Animator.AddCanonicalState( hash );
+
+	/// <summary>The original indexes <c>object +16 + channel × 56</c> without a check; a negative channel has no record here.</summary>
+	private static int Channel( RideEffectCall call, int operand )
+	{
+		var channel = call.Argument( operand );
+		return channel >= 0 ? channel : throw new RideScriptException( $"{call.Opcode} channel {channel} is negative" );
 	}
 }

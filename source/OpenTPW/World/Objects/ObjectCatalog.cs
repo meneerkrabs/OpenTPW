@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -185,7 +186,9 @@ public sealed class ObjectCatalog
 		("upgrades", ObjectCategory.Upgrade, "Upgrades.sam")
 	};
 
-	private static readonly Dictionary<string, ObjectCatalog> cache = new( StringComparer.OrdinalIgnoreCase );
+	// Keyed by the file system instance, not its root: entries keep the instance they were read from, and
+	// a replaced FileSystem (setup, tests) with the same root must not hand out entries of the old one.
+	private static readonly ConditionalWeakTable<BaseFileSystem, Dictionary<string, ObjectCatalog>> cache = new();
 	private static readonly Regex BonusArchive = new( @"^(?<stem>_.+)_(?<number>\d+)$", RegexOptions.CultureInvariant );
 	private static string? bonusDataRoot;
 	private static bool bonusFromEnvironment = true;
@@ -266,16 +269,19 @@ public sealed class ObjectCatalog
 	{
 		if ( string.IsNullOrWhiteSpace( theme ) || theme.IndexOfAny( new[] { '/', '\\', '.' } ) >= 0 )
 			throw new ArgumentException( "Themes are plain level directory names such as 'jungle'.", nameof( theme ) );
-		var key = $"{FileSystem.GetAbsolutePath( "/" )}|{BonusDataRoot}|{theme}|{easy}";
+		var fileSystem = FileSystem;
+		// The names come from the language's OBJECT_NAMES: a catalog loaded in another language is not reused.
+		var key = $"{BonusDataRoot}|{theme}|{easy}|{(GameLanguage.IsSelected ? GameLanguage.Current.Name : "")}";
 		lock ( cache )
 		{
-			if ( cache.TryGetValue( key, out var cached ) )
+			var catalogs = cache.GetValue( fileSystem, _ => new Dictionary<string, ObjectCatalog>( StringComparer.OrdinalIgnoreCase ) );
+			if ( catalogs.TryGetValue( key, out var cached ) )
 				return cached;
-			var entries = LoadEntries( theme, FileSystem, null, easy );
+			var entries = LoadEntries( theme, fileSystem, null, easy );
 			var bonus = OpenBonusFileSystem();
 			if ( bonus != null )
 			{
-				foreach ( var entry in LoadEntries( theme, bonus, FileSystem, easy ) )
+				foreach ( var entry in LoadEntries( theme, bonus, fileSystem, easy ) )
 				{
 					// [APPROX:RIDES-024] Bonus archives merge into the theme catalog; an Info.Id collision skips the bonus entry — evidence needed: original behaviour with dropped-in WADs
 					if ( entries.Any( existing => existing.InfoId == entry.InfoId ) )
@@ -287,7 +293,7 @@ public sealed class ObjectCatalog
 			var catalog = new ObjectCatalog( theme, entries );
 			RidesApproximations.LogOnce();
 			ObjectNames.Apply( catalog );
-			cache[key] = catalog;
+			catalogs[key] = catalog;
 			return catalog;
 		}
 	}
@@ -453,8 +459,21 @@ public static class ObjectNames
 			entry.ObjectNameIndex = index;
 			entry.ObjectNameLength = length;
 			if ( index + length <= localized.Length )
-				entry.DisplayName = string.Join( " ", localized.Skip( index ).Take( length ).Where( text => text.Length > 0 ) );
+				entry.DisplayName = Join( localized.Skip( index ).Take( length ) );
 		}
+	}
+
+	/// <summary>
+	/// The object's name from its OBJECT_NAMES entries: the texts joined by a space, empty ones dropped. A first entry that
+	/// ends in '-' is joined to the next one without the space and the dash (compound words in Danish and similar).
+	/// </summary>
+	// [BIN:STP-PPC:0x1011A08C object name builder] name = first + (" " when the second is not empty) + second; when the first ends in '-' the dash is cut and the two are concatenated
+	public static string Join( IEnumerable<string> texts )
+	{
+		var parts = texts.ToArray();
+		if ( parts.Length == 2 && parts[0].EndsWith( '-' ) )
+			return parts[0][..^1] + parts[1];
+		return string.Join( " ", parts.Where( text => text.Length > 0 ) );
 	}
 
 	/// <summary>Pure matching step, exposed for tests.</summary>
@@ -573,6 +592,34 @@ public static class BonusNames
 		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or ArgumentException or DecoderFallbackException )
 		{
 			Log?.Warning( $"Bonus object {entry.ArchivePath} name could not be read: {exception.Message}" );
+		}
+		return null;
+	}
+
+	/// <summary>The <c>SIGNA</c>/<c>SIGNB</c> lines of a bonus archive's language file (same file choice as <see cref="Read"/>), or null when both are empty.</summary>
+	// Same language-file choice as the name (RIDES-025).
+	// [APPROX:COMPAT-017] SIGNA/SIGNB taken as sign text lines 1/2 (the sign builder accepts two explicit texts; that the bonus loader passes these sections is not traced) — evidence needed: the bonus loader's call of the sign builder
+	public static (string Line1, string Line2)? ReadSignLines( ObjectCatalogEntry entry, string? language = null )
+	{
+		language ??= GameLanguage.IsSelected ? GameLanguage.Current.Name : GameLanguage.DefaultLanguage;
+		try
+		{
+			var files = entry.FileSystem.GetFiles( entry.ArchivePath ).Where( file => file.EndsWith( ".txt", StringComparison.OrdinalIgnoreCase ) ).ToArray();
+			foreach ( var wanted in new[] { language, GameLanguage.DefaultLanguage } )
+			{
+				var file = files.FirstOrDefault( candidate => string.Equals( Path.GetFileNameWithoutExtension( candidate ), wanted, StringComparison.OrdinalIgnoreCase ) );
+				if ( file == null )
+					continue;
+				var sections = Parse( entry.FileSystem.ReadAllBytes( entry.FileSystem.GetRelativePath( entry.FileSystem.GetAbsolutePath( file ) ) ) );
+				var first = sections.GetValueOrDefault( "SIGNA" ) ?? "";
+				var second = sections.GetValueOrDefault( "SIGNB" ) ?? "";
+				if ( first.Length > 0 || second.Length > 0 )
+					return (first, second);
+			}
+		}
+		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or ArgumentException or DecoderFallbackException )
+		{
+			Log?.Warning( $"Bonus object {entry.ArchivePath} sign text could not be read: {exception.Message}" );
 		}
 		return null;
 	}

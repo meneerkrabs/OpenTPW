@@ -64,22 +64,30 @@ public sealed class SignTextRenderer
 	/// </summary>
 	public (Texture Left, Texture Right, IReadOnlyList<string> Diagnostics, int TextPixelCount) RenderSign( SignFile sign, IReadOnlyList<string?> lines, (byte R, byte G, byte B, byte A) background )
 	{
+		var composed = ComposeSign( sign, lines, background );
+		return (new Texture( composed.Left, SignSurfaceComposer.HalfWidth, SignSurfaceComposer.Height ), new Texture( composed.Right, SignSurfaceComposer.HalfWidth, SignSurfaceComposer.Height ), composed.Diagnostics, composed.TextPixelCount);
+	}
+
+	/// <summary>The GPU-free part of <see cref="RenderSign"/>: the RGBA bytes of the left (<c>sign1</c>) and right (<c>sign2</c>) halves.</summary>
+	public (byte[] Left, byte[] Right, IReadOnlyList<string> Diagnostics, int TextPixelCount) ComposeSign( SignFile sign, IReadOnlyList<string?> lines, (byte R, byte G, byte B, byte A) background, SignPaint? firstPaintOverride = null )
+	{
+		// The legacy background parameter is retained for callers; the compositor chooses its registered opaque backing.
+		_ = background;
 		var diagnostics = new List<string>();
-		var canvas = SignCanvas.Compose( sign, Fonts, lines, background, diagnostics );
-		var textPixels = CountChangedPixels( canvas, background );
-		var (left, right) = SignCanvas.SplitHalves( canvas );
-		return (new Texture( left, SignCanvas.HalfWidth, SignCanvas.Height ), new Texture( right, SignCanvas.HalfWidth, SignCanvas.Height ), diagnostics, textPixels);
+		var composed = SignSurfaceComposer.Compose( sign, Fonts, lines, diagnostics, firstPaintOverride );
+		return (composed.Left, composed.Right, diagnostics, composed.TextPixelCount);
 	}
 
 	/// <summary>Reads the first <c>*.sgn</c> member of an object archive such as <c>/levels/jungle/features/gates</c>.</summary>
-	public static SignFile? LoadSignFile( string archivePath )
+	public static SignFile? LoadSignFile( string archivePath, BaseFileSystem? fileSystem = null )
 	{
-		var member = FileSystem.GetFiles( archivePath ).FirstOrDefault( file => file.EndsWith( ".sgn", StringComparison.OrdinalIgnoreCase ) );
+		fileSystem ??= FileSystem;
+		var member = fileSystem.GetFiles( archivePath ).FirstOrDefault( file => file.EndsWith( ".sgn", StringComparison.OrdinalIgnoreCase ) );
 		if ( member == null )
 			return null;
 		var path = $"{archivePath.TrimEnd( '/' )}/{Path.GetFileName( member )}";
 		// Hash-keyed in-memory data corrections (e.g. sign-font-substitution) apply only when enabled.
-		return new SignFile( CompatibilityRuntime.Correct( path, FileSystem.ReadAllBytes( path ) ) );
+		return new SignFile( CompatibilityRuntime.Correct( path, fileSystem.ReadAllBytes( path ) ) );
 	}
 
 	internal static Material CreateMaterial( params Texture[] textures )
@@ -92,14 +100,4 @@ public sealed class SignTextRenderer
 		return material;
 	}
 
-	private static int CountChangedPixels( byte[] canvas, (byte R, byte G, byte B, byte A) background )
-	{
-		var count = 0;
-		for ( var i = 0; i < canvas.Length; i += 4 )
-		{
-			if ( canvas[i] != background.R || canvas[i + 1] != background.G || canvas[i + 2] != background.B || canvas[i + 3] != background.A )
-				count++;
-		}
-		return count;
-	}
 }

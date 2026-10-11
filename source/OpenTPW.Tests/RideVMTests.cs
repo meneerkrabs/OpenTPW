@@ -388,37 +388,25 @@ public class RideVMTests
 		Assert.AreEqual( 0, vm.Variables[1] );
 	}
 
+	/// <summary>
+	/// GETTIME reads the park's shared scheduler clock and subtracts no creation timestamp (0xaf6d8 on the global r30):
+	/// a script created after a second of park time reads about 1016 ms on its first slice, not 16.
+	/// </summary>
 	[TestMethod]
-	public void AnimationDurationsFromEffectsDriveOutputsAndWaits()
+	public void GetTimeReadsTheSharedSchedulerClock()
 	{
-		var effects = new StubEffects { Result = call => call.Opcode switch { Opcode.TRIGANIM => 1000, Opcode.WAITANIM => 250, _ => 0 } };
-		var vm = Load( new Asm()
-			.I( Opcode.TRIGANIM, 5, 0, V( 0 ) )
-			.I( Opcode.WAIT4ANIM )
-			.I( Opcode.COPY, V( 1 ), 1 )
-			.I( Opcode.WAITANIM, 0, 0 )
-			.I( Opcode.COPY, V( 1 ), 2 )
-			.I( Opcode.TRIGANIM, 5, 1, 0 )
-			.I( Opcode.FLUSHANIM )
-			.I( Opcode.WAIT4ANIM )
-			.I( Opcode.COPY, V( 1 ), 3 )
-			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ), new RideVMOptions { Effects = effects } );
-		Run( vm, 1 );
-		Assert.AreEqual( 1000, vm.Variables[0] );
-		Run( vm, 58 );
-		Assert.AreEqual( 0, vm.Variables[1] );
-		Run( vm, 3 );
-		Assert.AreEqual( 1, vm.Variables[1] );
-		Run( vm, 13 );
-		Assert.AreEqual( 1, vm.Variables[1], "WAITANIM 250 ms" );
-		var ticks = 0;
-		while ( vm.Variables[1] == 1 && ticks++ < 10 )
-			Run( vm, 1 );
-		Assert.IsTrue( ticks is >= 1 and <= 3, ticks.ToString() );
-		Assert.AreEqual( 2, vm.Variables[1], "WAITANIM done; WAIT4ANIM after FLUSHANIM only yields one slice" );
-		Run( vm, 1 );
-		Assert.AreEqual( 3, vm.Variables[1], "FLUSHANIM forgets pending animation time" );
-		CollectionAssert.AreEqual( new[] { "TRIGANIM 5 0 0", "WAITANIM 0 0", "TRIGANIM 5 1 0", "FLUSHANIM" }, effects.Calls );
+		var world = new RideScriptWorld();
+		Asm Program() => new Asm().I( Opcode.GETTIME, V( 0 ) ).Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" );
+		var first = Load( Program(), new RideVMOptions { Seed = 1, World = world } );
+		Run( first, 60 );
+		Assert.AreEqual( 1000d, world.ClockMilliseconds, 1e-6 );
+		var second = Load( Program(), new RideVMOptions { Seed = 2, World = world } );
+		Assert.AreEqual( 1000d, second.ClockOriginMilliseconds, 1e-6 );
+		first.Advance( Tick );
+		second.Advance( Tick );
+		Assert.AreEqual( 1016, second.Variables[0], "the shared clock, not 16 ms since creation" );
+		Assert.AreEqual( 1000d / 60, second.TimeMilliseconds, 1e-6, "waits and timers still count from creation" );
+		Assert.AreEqual( 1000d + 1000d / 60, world.ClockMilliseconds, 1e-6, "advancing two scripts by one tick moves the clock once" );
 	}
 
 	[TestMethod]

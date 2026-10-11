@@ -1,19 +1,39 @@
-# The official OpenTPW server (docs/SERVER.md): the published image behind Caddy on ports 80 and 443.
+# The official OpenTPW server (docs/SERVER.md): the published image behind Caddy on port 443.
 # Settings come from .env beside this file (see env.example). Player data lives in ./data.
 services:
   opentpw-server:
     image: ghcr.io/meneerkrabs/opentpw-server:${OPENTPW_IMAGE_TAG:-latest}
     restart: unless-stopped
-    # Only Caddy, on this machine, can reach it.
-    ports:
-      - "127.0.0.1:8080:8080"
+    # Time to finish requests and tell chat clients to reconnect before Docker stops it.
+    stop_grace_period: 20s
+    # On the host network, listening on 127.0.0.1 only: only Caddy, on this machine, can reach it. Without
+    # Docker's port proxy in between, a restarting server refuses connections, so Caddy waits for it
+    # instead of passing on errors (docs/SERVER.md, "Deploys without interruption").
+    network_mode: host
     environment:
       OpenTPW__ServerName: ${OPENTPW_SERVER_NAME:-OpenTPW}
       OpenTPW__Message: ${OPENTPW_MESSAGE:-}
+      # opentpw.io reads the public news and website park list from the browser.
+      OpenTPW__WebsiteOrigins__0: https://opentpw.io
+      OpenTPW__WebsiteOrigins__1: https://www.opentpw.io
+      # A release asks for an update with this secret (docs/SERVER.md, "Automatic deployment").
+      OpenTPW__DeployToken: ${OPENTPW_DEPLOY_TOKEN:-}
+      # Account e-mail through Resend (docs/SERVER.md, "Account e-mail"). The key is a secret: only in .env.
+      OpenTPW__ResendApiKey: ${OPENTPW_RESEND_API_KEY:-}
+      OpenTPW__EmailFrom: ${OPENTPW_EMAIL_FROM:-}
+      OpenTPW__EmailReplyTo: ${OPENTPW_EMAIL_REPLY_TO:-}
+      OpenTPW__RequireEmail: ${OPENTPW_REQUIRE_EMAIL:-false}
+      ASPNETCORE_URLS: http://127.0.0.1:8080
       # Caddy is the only client; let the rate limits see real addresses.
       ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
     volumes:
       - ./data:/data
+    logging: &logging
+      # Bounded: Docker's default json-file log never shrinks, and error lines can hold client addresses.
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "3"
   caddy:
     image: caddy:2
     restart: unless-stopped
@@ -27,6 +47,7 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
+    logging: *logging
     depends_on:
       - opentpw-server
 volumes:

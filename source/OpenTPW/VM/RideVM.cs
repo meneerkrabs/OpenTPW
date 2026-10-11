@@ -61,7 +61,6 @@ public sealed class RideVM
 	private readonly Dictionary<Opcode, int> unimplementedEffects = new();
 	private bool yieldRequested;
 	private double timerEndMilliseconds;
-	private double animationsEndMilliseconds;
 
 	public RideScriptFile Script { get; }
 	public string SourceName { get; }
@@ -86,8 +85,22 @@ public sealed class RideVM
 	public bool InCriticalSection { get; internal set; }
 	public int CallDepth => callStack.Count;
 
-	/// <summary>Script clock: milliseconds since this VM was created (GETTIME).</summary>
+	/// <summary>Script clock: milliseconds since this VM was created (waits, timers and their deadlines).</summary>
 	public double TimeMilliseconds { get; private set; }
+
+	/// <summary>The world's scheduler clock (<see cref="RideScriptWorld.ClockMilliseconds"/>) when this VM was created.</summary>
+	public double ClockOriginMilliseconds { get; }
+
+	/// <summary>
+	/// The shared scheduler clock as this script reads it: <see cref="ClockOriginMilliseconds"/> plus the script clock.
+	/// The original's GETTIME and WAITANIM(_CH) call 0x10e844 on the global r30 (loaded at 0xaf55c) and subtract no
+	/// creation timestamp.
+	/// </summary>
+	// [APPROX:RIDES-044] The scheduler clock starts at 0 when the park's script world is created and advances with the script ticks (60 Hz fixed steps); the original's scheduler clock (0x1010E844 on the global r30, 0x100AF55C) has a start value and rate that are not traced — evidence needed: the scheduler clock's value when a placed object's script starts, and whether a save stores it
+	public double SchedulerMilliseconds => ClockOriginMilliseconds + TimeMilliseconds;
+
+	/// <summary>The scheduler clock as the original's 32-bit millisecond word (truncated, wrapping after about 49.7 days).</summary>
+	internal uint ClockMilliseconds32 => unchecked((uint)(ulong)SchedulerMilliseconds);
 	public double WakeTimeMilliseconds { get; private set; }
 	public long ExecutedInstructions { get; private set; }
 	public long SliceCount { get; private set; }
@@ -130,6 +143,7 @@ public sealed class RideVM
 		Effects = options.Effects ?? UnimplementedRideScriptEffects.Instance;
 		World = options.World ?? parent?.World ?? new RideScriptWorld();
 		seed = options.Seed ?? World.NextScriptSeed();
+		ClockOriginMilliseconds = parent?.SchedulerMilliseconds ?? World.ClockMilliseconds;
 		random = new Random( seed );
 		SliceBudget = options.SliceBudget ?? script.TimeSlice;
 		if ( SliceBudget <= 0 )
@@ -171,6 +185,7 @@ public sealed class RideVM
 		if ( !double.IsFinite( deltaSeconds ) || deltaSeconds < 0 )
 			throw new ArgumentOutOfRangeException( nameof( deltaSeconds ) );
 		TimeMilliseconds += deltaSeconds * 1000;
+		World.ObserveClock( SchedulerMilliseconds );
 		RunSlice();
 		Child?.Advance( deltaSeconds );
 		SoundChild?.Advance( deltaSeconds );
@@ -209,6 +224,7 @@ public sealed class RideVM
 			++executed;
 			++ExecutedInstructions;
 			InstructionExecuting?.Invoke( this, instruction );
+			RideOpcodeRecorder.Current?.Record( this, instruction );
 			if ( instruction.Definition == null )
 			{
 				Fault( $"opcode {RideScriptAnalysis.GetOpcodeName( instruction.RawOpcode )} at word {instruction.WordOffset} has no evidence-backed semantics" );
@@ -300,12 +316,24 @@ public sealed class RideVM
 
 	internal int TimerRemaining => (int)Math.Max( 0, Math.Ceiling( timerEndMilliseconds - TimeMilliseconds ) );
 
-	/// <summary>Records an animation that the effects layer says runs for <paramref name="durationMilliseconds"/> (for WAIT4ANIM).</summary>
-	internal void TrackAnimation( int durationMilliseconds ) => animationsEndMilliseconds = Math.Max( animationsEndMilliseconds, TimeMilliseconds + Math.Max( 0, durationMilliseconds ) );
+	/// <summary>
+	/// Script speed of the animation opcodes: <c>0.5 + bias / 100</c> from the signed bias at script +192, which
+	/// script creation sets to 50 (0xb3154/0xb318c).
+	/// </summary>
+	// [APPROX:RIDES-033] Script speed stays 1.0 (the creation bias 50); the native writers of the bias (0x100B2A34, 0x100B5B18) are not modelled — evidence needed: what those callers store and when
+	public const float ScriptSpeed = 1f;
 
-	internal void FlushAnimations() => animationsEndMilliseconds = TimeMilliseconds;
+	/// <summary>WAIT4ANIM deadline (script +164) in script-clock milliseconds; 0 = none. Each trigger overwrites it.</summary>
+	internal double Wait4AnimDeadline { get; set; }
 
-	internal double AnimationsEndMilliseconds => animationsEndMilliseconds;
+	/// <summary>LOOPANIM token (script +168): <c>anim + (sub &lt;&lt; 16)</c> of the last LOOPANIM; 0xFFFF at creation.</summary>
+	internal int LoopAnimationToken { get; set; } = RideAnimationTiming.NoLoopToken;
+
+	/// <summary>TRIGWAITANIM wait token (script +188): triggered AnimID + 1 while waiting; 0 otherwise.</summary>
+	internal int TriggerWaitToken { get; set; }
+
+	/// <summary>Makes the instruction that is executing run again next (the original's program-counter rewind).</summary>
+	internal void RepeatInstruction() => ProgramCounter--;
 
 	internal int Effect( Opcode opcode, Operand[] operands ) => Effects.Perform( new RideEffectCall( this, opcode, operands ) );
 
@@ -332,7 +360,7 @@ public sealed class RideVM
 		return World.FindRandom( name, random );
 	}
 
-	/// <summary>Script-table part of <see cref="WorldStateHash"/>: id, position, variables, clocks, deadlines and RNG.</summary>
+	/// <summary>Script-table part of <see cref="WorldStateHash"/>: id, position, variables, clocks, deadlines, animation tokens, RNG and the object animation state of a root script.</summary>
 	internal void AddCanonicalState( StateHasher hash )
 	{
 		hash.Add( ScriptId );
@@ -349,14 +377,21 @@ public sealed class RideVM
 		hash.Add( Variables.Length );
 		foreach ( var value in Variables )
 			hash.Add( value );
+		hash.Add( ClockOriginMilliseconds );
 		hash.Add( TimeMilliseconds );
 		hash.Add( WakeTimeMilliseconds );
 		hash.Add( timerEndMilliseconds );
-		hash.Add( animationsEndMilliseconds );
+		hash.Add( Wait4AnimDeadline );
+		hash.Add( LoopAnimationToken );
+		hash.Add( TriggerWaitToken );
 		hash.Add( ExecutedInstructions );
 		hash.Add( SliceCount );
 		hash.Add( seed );
 		hash.Add( randomDraws );
+		// The object state a root script's animation opcodes read back (GETANIM, TRIGWAITANIM); children share it.
+		hash.Add( Parent == null && Effects is IRideCanonicalEffects );
+		if ( Parent == null && Effects is IRideCanonicalEffects canonical )
+			canonical.AddCanonicalState( hash );
 	}
 
 	private int NextChildSeed()

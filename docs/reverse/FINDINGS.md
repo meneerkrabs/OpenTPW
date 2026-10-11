@@ -269,9 +269,9 @@ our own words.
 Research needs researchers in every type: the research point sink `0x100F0DF0`
 has one caller, reached only from the per-researcher cycle `0x100F0284` with the
 researcher's grade ability (docs/reverse/PPC-review.md, section 57).
-The Instant Action seed ships a researcher whose staff record is not decoded, so
-`ECON-019` stays an approximation as a stand-in for that researcher, not as a
-staffless rule. Not traced: what several type-2 branches in
+The Instant Action seed ships a researcher; SAVE-I decodes its staff record and
+imports it (docs/reverse/SAVE-plan.md), so the former stand-in `ECON-019` is
+gone. Not traced: what several type-2 branches in
 the finance, ticket-price and staff-training panels (`0x10150C54`, `0x1014EC48`,
 `0x10168D8C`) clear exactly.
 

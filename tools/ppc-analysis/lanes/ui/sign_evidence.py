@@ -56,6 +56,20 @@ def native_sign_reader(bin_root: Path) -> dict:
         d_form(engine, at, 36, fields)
     x_form(engine, 0x3e94c, 235, (0, 3, 0))
     x_form(engine, 0x3e958, 235, (4, 4, 0))
+    # load_wavelet's four LE floats and two LE chunk lengths are six 4-byte reads
+    # followed by SamsUtilities 32-bit byte swaps on the identified PPC engine.
+    for read_at, swap_at in [(0x3ed10, 0x3ed28), (0x3ed3c, 0x3ed54),
+                             (0x3ed68, 0x3ed80), (0x3ed94, 0x3edac),
+                             (0x3edc0, 0x3edd8), (0x3edec, 0x3ee04)]:
+        d_form(engine, read_at, 14, (4, 0, 4))
+        require(branch(engine, swap_at), 0x425c4, 'wavelet scalar byte swap')
+    for at in (0x32668, 0x332c0):
+        require(import_at(engine, branch(engine, at))['symbol'],
+                'LbZLib_MemDecompress__FPvPvPv', 'wavelet chunk decompressor')
+    # Alpha byte 0 and RGB bytes 1..3 are copied into each output pixel.
+    for at, fields in [(0x3ef40, (0, 4, 0)), (0x3ef48, (0, 4, 1)),
+                       (0x3ef50, (0, 4, 2)), (0x3ef5c, (0, 4, 3))]:
+        d_form(engine, at, 38, fields)
     # Stored effect bounds are overwritten after actual text measurement.
     for at, fields in [(0xac0d8, (0, 29, 892)), (0xac0e0, (0, 29, 896)),
                        (0xac180, (0, 29, 1000)), (0xac188, (0, 29, 1004))]:
@@ -68,6 +82,7 @@ def native_sign_reader(bin_root: Path) -> dict:
             'header_bytes': 17, 'font_bytes': 392, 'effect_bytes': 44,
             'optional_paint_bytes': 20, 'bitmap_header_bytes': 12,
             'resolved_calls': resolved, 'source_rgb_byte_offsets': [1, 2, 3],
+            'wavelet_scalars': 6, 'wavelet_chunks': 2, 'wavelet_output': 'ARGB',
             'effect_alpha': 'generated mask, not source-image alpha',
             'stored_effect_extent_origin': 'overwritten from measured text bounds',
             'limit': 'source descimation, mask shaping, layer composition and final packing are not implemented by this witness'}

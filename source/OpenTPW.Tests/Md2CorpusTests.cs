@@ -100,7 +100,8 @@ public class Md2CorpusTests
 		Assert.AreEqual( 2452, attributes );
 		Assert.AreEqual( 6549, tracks );
 		Assert.AreEqual( 3475, trsTracks );
-		Assert.AreEqual( 4082, undecodedTracks );
+		// Records with more than rigid tracks; the never-read metadata bits (0x8000 on 18 rigid records) do not count.
+		Assert.AreEqual( 4064, undecodedTracks );
 		Assert.AreEqual( 785, bezierTracks );
 		Assert.AreEqual( 431, linearTracks );
 		Assert.AreEqual( 8703, positionKeys );
@@ -108,7 +109,8 @@ public class Md2CorpusTests
 		Assert.AreEqual( 12451, easedKeys );
 		Assert.AreEqual( 2832, scaleKeys );
 		Assert.AreEqual( 0, sharedTables );
-		Assert.AreEqual( 6010956, tableBytes );
+		// Includes the texture-coordinate and 12-byte tables.
+		Assert.AreEqual( 7857488, tableBytes );
 	}
 
 	/// <summary>
@@ -296,7 +298,8 @@ public class Md2CorpusTests
 		Assert.AreEqual( 1735, sampled );
 		Assert.AreEqual( 0, keysOutside );
 		Assert.AreEqual( 713683, keysInside );
-		Assert.AreEqual( 1122, unsupported );
+		// The 12-byte block (30 records) and path parameters (0x200/0x400) only; 0x10000 is decoded and 0x2000 is metadata.
+		Assert.AreEqual( 101, unsupported );
 		Assert.AreEqual( 2536, toggleLists );
 		Assert.AreEqual( 2536, togglesWithinDuration );
 		Assert.AreEqual( 1278, clips );
@@ -304,6 +307,114 @@ public class Md2CorpusTests
 		Assert.AreEqual( 459, frameTracks );
 		Assert.AreEqual( 458, framesInRange );
 	}
+
+	/// <summary>
+	/// The record kinds read in ANIM-R (docs/reverse/ANIM-plan.md §1–§3), as relations over the corpus: every
+	/// texture-coordinate block on a paired mesh lists that mesh's corners, its tracks start at 0 and reach the clip
+	/// end, and sampling holds the last key there; every 12-byte block matches its mesh's positions; every unread bit
+	/// occurs only with its read parent; node lists mostly name nodes of the paired model.
+	/// </summary>
+	[TestMethod]
+	public void OriginalUvBlocksTwelveByteBlocksAndMetadataBitsHoldTheirInvariants()
+	{
+		var dataPath = OriginalDataPath();
+		int uvBlocks = 0, uvPaired = 0, cornerTracks = 0, twelveByte = 0, twelvePaired = 0, metadataRecords = 0, listedNodes = 0;
+		int tickZeroWithinStep = 0, tickZeroCorners = 0, listedOutside = 0;
+		var violations = new List<string>();
+		var parents = new Dictionary<uint, uint> { [0x10] = 0x8, [0x20] = 0x8, [0x40] = 0x8, [0x8000] = 0x8, [0x100] = 0x80, [0x800] = 0x600, [0x2000] = 0x1000 };
+		foreach ( var wad in Directory.EnumerateFiles( dataPath, "*", SearchOption.AllDirectories ).Where( file => file.EndsWith( ".wad", StringComparison.OrdinalIgnoreCase ) ) )
+		{
+			using var archive = new WadArchive( wad );
+			var models = new List<(string Directory, string Name, ModelFile Model)>();
+			foreach ( var (name, file) in Md2Members( archive.Root, "" ) )
+			{
+				try
+				{
+					models.Add( (Path.GetDirectoryName( name ) ?? "", Path.GetFileNameWithoutExtension( name ).ToLowerInvariant(), new ModelFile( new MemoryStream( file.GetData() ) )) );
+				}
+				catch ( NotSupportedException )
+				{
+				}
+				finally
+				{
+					file.Free();
+				}
+			}
+			foreach ( var entry in models.Where( entry => entry.Model.Kind == ModelFileKind.Animation ) )
+			{
+				var clip = entry.Model.Clip!;
+				var label = $"{Path.GetFileName( wad )}/{entry.Name}";
+				var bases = models.Where( other => other.Model.Kind == ModelFileKind.Geometry && other.Directory == entry.Directory
+					&& entry.Name.Length > other.Name.Length && entry.Name.StartsWith( other.Name, StringComparison.Ordinal ) ).ToArray();
+				var model = bases.Length > 0 ? bases.MaxBy( other => other.Name.Length ).Model : null;
+				if ( model != null )
+				{
+					// A few entries lie past the paired model (the runtime skips them; ObjectAnimator.ApplyNodeList).
+					foreach ( var node in clip.NodeList )
+					{
+						listedNodes++;
+						listedOutside += node >= model.Nodes.Count ? 1 : 0;
+					}
+				}
+				foreach ( var track in clip.Tracks )
+				{
+					if ( track.MetadataBits != 0 )
+						metadataRecords++;
+					foreach ( var (bit, parent) in parents )
+					{
+						if ( (track.Flags & bit) != 0 && (track.Flags & parent) == 0 )
+							violations.Add( $"{label}: record {track.NodeIndex} has 0x{bit:X} without 0x{parent:X}" );
+					}
+					var mesh = model != null && track.NodeIndex < model.Meshes.Count ? model.Meshes[track.NodeIndex] : null;
+					if ( track.VertexPose is { } pose )
+					{
+						twelveByte++;
+						if ( (track.Flags & ModelAnimationTrack.VertexAnimationFlag) == 0 )
+							violations.Add( $"{label}: 12-byte block without 0x1000" );
+						if ( mesh != null )
+						{
+							twelvePaired++;
+							if ( pose.GetLimitation( mesh.Positions.Length ) is { } limitation )
+								violations.Add( $"{label}: {limitation}" );
+						}
+					}
+					if ( track.UvAnimation is not { } uv )
+						continue;
+					uvBlocks++;
+					if ( mesh == null )
+						continue;
+					uvPaired++;
+					if ( uv.CornerCount != mesh.TexCoords.Length )
+					{
+						violations.Add( $"{label}: UV block has {uv.CornerCount} corners, mesh {mesh.TexCoords.Length}" );
+						continue;
+					}
+					for ( var corner = 0; corner < uv.CornerCount; corner++ )
+					{
+						cornerTracks++;
+						var (first, count) = uv.GetTrack( corner );
+						if ( uv.Ticks[first + count - 1] < clip.Duration )
+							violations.Add( $"{label}: UV corner {corner} ends before the clip" );
+						// At the last key the search holds it (count − 2, fraction 1).
+						if ( uv.FindKey( corner, uv.Ticks[first + count - 1], out var fraction ) != count - 2 || fraction != 1f )
+							violations.Add( $"{label}: UV corner {corner} does not hold its last key" );
+						var sample = uv.Sample( corner, 0 );
+						var stored = mesh.TexCoords[corner];
+						tickZeroCorners++;
+						if ( MathF.Abs( sample.X - stored.X ) <= OneStep( stored.X ) && MathF.Abs( sample.Y - stored.Y ) <= OneStep( stored.Y ) )
+							tickZeroWithinStep++;
+					}
+				}
+			}
+		}
+		Assert.AreEqual( 0, violations.Count, string.Join( Environment.NewLine, violations.Take( 20 ) ) );
+		Assert.IsTrue( uvBlocks > 0 && uvPaired > 0 && cornerTracks > 0 && twelvePaired > 0 && metadataRecords > 0 && listedNodes > 0 );
+		Assert.IsTrue( uvPaired <= uvBlocks && twelvePaired <= twelveByte && listedOutside < listedNodes );
+		// Measured, not pinned (ANIM-plan §13 leaves it open): how often a corner's tick-0 key equals the stored coordinate.
+		Console.WriteLine( $"UV blocks {uvBlocks}, paired {uvPaired}, corner tracks {cornerTracks}; tick 0 within one float step of the stored UV: {tickZeroWithinStep}/{tickZeroCorners}; 12-byte blocks {twelveByte} ({twelvePaired} paired); metadata records {metadataRecords}; node-list entries {listedNodes} ({listedOutside} outside the model)" );
+	}
+
+	private static float OneStep( float value ) => MathF.BitIncrement( MathF.Abs( value ) ) - MathF.Abs( value );
 
 	[TestMethod]
 	public void OriginalTotemAnimationSamplesMatchIndependentDecode()

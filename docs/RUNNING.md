@@ -20,9 +20,13 @@ smoke tests. Missing display or Vulkan driver ends with a named error instead of
 .NET loader exception. Game data may use any letter case (`data`, `Data`, `DATA`
 from a mounted CD, `Speech`/`speech`): paths are matched to the on-disk spelling.
 linux-arm64 is blocked: the packages ship no arm64 `libveldrid-spirv`/`libcimgui`.
-Shader hot reload shares one file watcher per shader file, because every Linux
-watcher holds an inotify instance (default limit 128 per user); if the limit is
-still reached, hot reload is disabled with a warning instead of stopping the game.
+Shader hot reload (recompiling a shader when its file changes) is a development aid
+and off by default; turn it on with `--shader-hot-reload` or
+`OPENTPW_SHADER_HOT_RELOAD=1`. It is off because starting a file watcher on macOS
+calls `sync()`, which waits for every mounted file system: one unresponsive network
+share kept the game from starting. It shares one file watcher per shader file,
+because every Linux watcher holds an inotify instance (default limit 128 per user);
+if the limit is still reached, hot reload is disabled with a warning.
 
 ```sh
 bash scripts/run.sh --game-path '/path/to/Theme Park World'
@@ -131,6 +135,18 @@ and a handyman), runs 30 simulated minutes as fast as possible and prints one pa
 invariant. Exit code: 1 when any row fails, 2 when no row fails but at least
 one is unresolved, 0 only when every row passes. M3 is accepted only at exit code 0. See [M3-GATE.md](M3-GATE.md).
 
+## Headless M4 attraction and script gate
+
+```sh
+dotnet source/OpenTPW/bin/Debug/net10.0/OpenTPW.dll --game-path '/path/to/Theme Park World' --m4-gate --report m4-gate.json
+```
+
+Classifies every catalog object of the four themes, takes each supported one through load, build, run,
+stop and delete in its own headless park (player build code, charged), checks that every opcode of the
+original scripts has a handler and a unit test, lists the effect hooks, and reports roller-coaster
+construction, the ride camera and ride assessment. Same exit codes as the M3 gate; `--theme`, `--window`
+and `--no-determinism` shorten a run. See [M4-GATE.md](M4-GATE.md).
+
 ## Read-only BF4 font inspection
 
 ```sh
@@ -147,6 +163,32 @@ ISO; extract its `*/Meshes/*/*.mtr` files to a folder outside git and set
 `OPENTPW_MTR_PATH` to it to run the MTR fixture tests (see MTR.md). Theme Park Inc
 texture tests use `OPENTPW_TPI_PATH` (a Theme Park Inc installation or its `Data`
 folder, read in place; see FSH.md).
+
+## Theme Park Inc level viewer (experimental)
+
+```sh
+bash scripts/run.sh --game-path '/path/to/Theme Park Inc' --load-original-level arabian
+```
+
+Shows a Theme Park Inc world (`arabian`, `science` or `water`) in 3D with a free camera, without
+economy, HUD or advisor. Esc quits, P pauses the simulation. `--capture-world out.png
+--capture-frames 300` writes a screenshot. The folder must hold Theme Park Inc's `Data` folder (an
+installation, or the cabinets extracted as below); it is detected by its retail `levels/Standard.sam`
+or by `Ver.txt` beside the Theme Park Inc theme folders. Theme Park Inc data given to any other start
+(no `--load-original-level`, a Theme Park World level, `--sandbox`, `--front-end`, `--smoke-test`) is
+refused with a message that points here. The setup window and the saved game folder still reject it.
+See [THEME-PARK-INC.md](THEME-PARK-INC.md#theme-park-inc-level-viewer) for what works.
+
+Extracting the CD: the data sits in the InstallShield cabinets `data1.cab`/`data2.cab` on the retail CD.
+With [unshield](https://github.com/twogood/unshield) (`brew install unshield`):
+
+```sh
+mkdir tpinc-data && unshield -d tpinc-data x '/Volumes/THEMEPARKINC/data1.cab'
+```
+
+The files land in per-component folders; `tpinc-data/Data` is the folder the viewer needs (point
+`--game-path` at `tpinc-data`, or at the folder that holds `Data`). The language string tables are
+separate folders (`_Support_<Language>_String_Tables`) that the viewer does not use.
 
 ## Read-only Theme Park Inc texture inspection
 
@@ -230,7 +272,9 @@ OPENTPW_NATIVE_SHADER_TESTS=1 OPENTPW_GAME_PATH='/path/to/Theme Park World' dotn
 
 The smoke test runs at least 150 rendered frames, places the original Totem, waits for
 its script to trigger the original `totemm1.MD2` animation, requires two
-readbacks to show changed node poses and pixels, checks close/reset, removes/replaces the ride and exercises
+readbacks to show changed node poses and pixels, requires at least three other original objects to each move
+their model nodes in at least 100 frames of the run (and, in an original level, the imported Belly Bounce to move
+between the two readbacks), checks close/reset, removes/replaces the ride and exercises
 save/load in an isolated temporary directory. It exits nonzero on failure or
 premature window closure. GPU readback checks nonblack textured terrain and
 writes `artifacts/native-smoke-park.png` and `artifacts/native-smoke-terrain.png`

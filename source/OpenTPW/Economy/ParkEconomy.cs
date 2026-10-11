@@ -57,11 +57,6 @@ public sealed class ParkEconomy : IParkEconomy
 	public IEconomyObjectCatalog Catalog { get; }
 	public ParkGameMode Mode { get; }
 	public ParkModeFeatures Features { get; }
-	/// <summary>
-	/// Set for an Instant Action start that imported the shipped seed park, which ships a researcher whose
-	/// staff record is not decoded; <see cref="DoResearch"/> stands in for it while no researcher is employed.
-	/// </summary>
-	public bool SeedResearcherStandIn { get; set; }
 	public DeterministicRandom Random { get; }
 	public ParkLedger Ledger { get; }
 	public ParkStaff Staff { get; }
@@ -176,10 +171,7 @@ public sealed class ParkEconomy : IParkEconomy
 	{
 		var employed = Staff.OfType( StaffType.Researcher ).ToList();
 		var abilities = employed.Where( ParkResearch.CanResearch ).Select( member => Settings.ResearchAbility[member.Grade] ).ToList();
-		// Research comes from researchers only (Mac 0xf0728 has no staffless path).
-		if ( employed.Count == 0 && SeedResearcherStandIn && Mode == ParkGameMode.InstantAction )
-			// [APPROX:ECON-019] stand-in for the Instant Action seed's undecoded researcher: one grade-2 researcher while none is employed — evidence needed: Easymode.TPWI staff records
-			abilities.Add( Settings.ResearchAbility[2] );
+		// Research comes from researchers only (Mac 0xf0728 has no staffless path); an imported seed park brings its own.
 		foreach ( var ability in abilities )
 		{
 			foreach ( var item in Research.AddResearcherPoints( ability ) )
@@ -683,22 +675,44 @@ public sealed class ParkEconomy : IParkEconomy
 	}
 
 	/// <summary>
-	/// Whether <see cref="TrySpendCell"/> would accept one more cell after <paramref name="pending"/> earlier cells
-	/// of the same line were spent: balance − (pending + 1) × cost ≥ 0. Previews use it to match the commit.
+	/// The commit's money test (<c>SetCellType</c>, PATH-plan §3.2): whether <see cref="TrySpendCell"/> accepts one
+	/// cell, balance − cost ≥ 0 as a wrapping 32-bit difference of the original's signed balance word.
 	/// </summary>
-	public bool CanSpendCell( CellPurchase kind, int pending ) => Balance - (pending + 1) * CellCost( kind ) >= 0;
+	// [BIN:STP-PPC:0x10082BC8 SetCellType money test] subf balance − cost in 32 bits, then the sign bit: balance −2^31 with cost 1 wraps to affordable, balance 2^31 − 1 with cost −1 to refused
+	public bool CanSpendCell( CellPurchase kind ) => unchecked( (int)Balance - (int)CellCost( kind ) ) >= 0;
+
+	/// <summary>
+	/// The preview's money test (the placement validator, PATH-plan §3.3): <paramref name="pendingLineCost"/> is the
+	/// line's cost so far with this cell included, summed in 32 bits. A zero sum passes; otherwise the line is refused
+	/// when the sum is greater than the balance (a signed compare, no subtraction). It differs from the commit's
+	/// <see cref="CanSpendCell"/> only at the 32-bit edges and for a zero sum.
+	/// </summary>
+	// [BIN:STP-PPC:0x1007BCC0 pending line cost] add (no overflow trap) of the cell price; [BIN:STP-PPC:0x10084534 placement validator] a zero pending cost skips the test; [BIN:STP-PPC:0x10084550 placement validator] cmpw pending, balance and refuse when greater
+	public bool CanPreviewLine( long pendingLineCost )
+	{
+		var pending = unchecked( (int)pendingLineCost );
+		return pending == 0 || pending <= unchecked( (int)Balance );
+	}
+
+	/// <summary><see cref="CanPreviewLine"/> for <paramref name="cells"/> cells of one kind (this cell included).</summary>
+	public bool CanPreviewCells( CellPurchase kind, int cells ) => CanPreviewLine( unchecked( cells * CellCost( kind ) ) );
 
 	/// <summary>
 	/// Charges one path or queue cell when it is written (<c>SetCellType</c>, PATH-plan §3.2): refused only
-	/// when balance − cost &lt; 0 (no bankruptcy test), then spent as other costs.
+	/// when balance − cost &lt; 0 (no bankruptcy test), then spent as other costs. A negative cost (modified
+	/// <c>Costs.*</c>) raises the balance by its amount, as the original's Spend of a negative amount does.
 	/// </summary>
 	// [BIN:STP-PPC:0x10082AC4 SetCellType] type 1 costs Costs.PathCell, type 3 Costs.QueueCell; refused when balance − cost < 0, else Spend per cell at write time
 	public PurchaseResult TrySpendCell( CellPurchase kind )
 	{
-		if ( !CanSpendCell( kind, pending: 0 ) )
+		if ( !CanSpendCell( kind ) )
 			return PurchaseResult.NotEnoughMoney;
 		var cost = CellCost( kind );
-		Post( LedgerCategory.OtherCosts, cost );
+		// [APPROX:ECON-048] a negative cell cost is booked as other income (same balance and profit as the original's Spend of a negative amount; the month category is not traced) — evidence needed: the ledger category of a negative Spend
+		if ( cost >= 0 )
+			Post( LedgerCategory.OtherCosts, cost );
+		else
+			Post( LedgerCategory.OtherIncome, -cost );
 		Raise( ParkEventKind.CellsBought, cost, 0, (int)kind, $"1 {kind} cell" );
 		return PurchaseResult.Ok;
 	}
@@ -903,6 +917,37 @@ public sealed class ParkEconomy : IParkEconomy
 		ticketItems.Clear();
 		foreach ( var item in items )
 			ticketItems.Add( item );
+	}
+
+	// ---------------------------------------------------------------- original save import
+
+	/// <summary>
+	/// Moves a park that has not run yet to an original save's park turn (<c>mGameTick</c>, the turn the calendar
+	/// converts, so the date matches the save's). The ledger month, the hiring pool's timers and the first challenge
+	/// offer day move with it.
+	/// </summary>
+	internal void StartAtOriginalTurn( long turn )
+	{
+		ArgumentOutOfRangeException.ThrowIfNegative( turn );
+		if ( Tick != 0 || objects.Count != 0 || Ledger.History.Count != 0 )
+			throw new InvalidOperationException( "Only a park that has not run can start at an original save's turn." );
+		Tick = ParkCalendar.TickOfTurn( turn );
+		Ledger.Restore( Ledger.Balance, Ledger.CurrentOpeningBalance, ParkCalendar.MonthIndex( Tick ), new Dictionary<LedgerCategory, long>(), Array.Empty<LedgerMonth>() );
+		Staff.ShiftSchedule( Tick );
+		// [APPROX:SAVE-005] the challenge system's next-offer time, current challenge, three switch bytes, Value and ActualThing are not imported; the first offer day is counted from the imported day — evidence needed: the unit of the challenge system's next event time and the meaning of its switch bytes, Value and ActualThing
+		Objectives.ShiftSchedule( ParkCalendar.DayIndex( Tick ) );
+	}
+
+	/// <summary>Takes an original save's bank account: balance, admission fee, the year's profit and the bought loans.</summary>
+	internal void ImportOriginalBank( long balance, int admissionFee, long profitThisYear, IEnumerable<LoanAccount> boughtLoans )
+	{
+		Ledger.Restore( balance, balance, Ledger.CurrentMonthIndex, new Dictionary<LedgerCategory, long>(), Array.Empty<LedgerMonth>() );
+		Ledger.RestoreProfitThisYear( profitThisYear );
+		SetEntranceFee( admissionFee );
+		loans.Clear();
+		loans.AddRange( boughtLoans );
+		takenOffers.Clear();
+		takenOffers.UnionWith( loans.Select( loan => loan.OfferIndex ) );
 	}
 
 	internal void RestoreState( long tick, GameSpeed speed, bool open, int fee, bool bankrupt, int monthsInRed, long litter, int ticketsSpent, int nextObjectId,

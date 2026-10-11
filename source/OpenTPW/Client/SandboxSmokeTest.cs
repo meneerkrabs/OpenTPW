@@ -10,8 +10,10 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 	private readonly Level level;
 	private readonly BaseFileSystem originalSaveFileSystem;
 	private readonly string temporaryDirectory = Path.Combine( Path.GetTempPath(), $"opentpw-smoke-{Guid.NewGuid():N}" );
+	// The Totem limits below are measured on the ride script's own clock (the time the script actually waits), so a
+	// slow frame rate cannot fail them; the wall-clock watchdog (MaximumSeconds) still fails a run that stops advancing.
 	private const double MaximumSecondsUntilMotion = 30;
-	private readonly System.Diagnostics.Stopwatch sinceOpened = System.Diagnostics.Stopwatch.StartNew();
+	private double startScriptMilliseconds;
 	private int frame;
 	private int motionFrame;
 	private bool completed;
@@ -22,7 +24,6 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 	private int guestCaptureFrame;
 	private byte[]? guestPixels;
 	private double motionScriptMilliseconds;
-	private readonly System.Diagnostics.Stopwatch sinceMotion = new();
 	private const double MaximumSecondsUntilRelease = 60;
 
 	public SandboxSmokeTest( Level level, OpenTPW.Hud.ParkHud? hud = null, OpenTPW.UI.Original.UiContext? hudContext = null )
@@ -38,6 +39,7 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 		Require( level.PlaceRide( rideSite ), "place original Totem" );
 		PlaceObjects();
 		level.PlacedRide!.Start();
+		startScriptMilliseconds = level.PlacedRide.Script.TimeMilliseconds;
 		Render.CaptureOutput = true;
 		// Safety net: a smoke test that stops getting frames (e.g. paused rendering) must fail, not hang.
 		watchdog = new System.Threading.Timer( _ =>
@@ -95,6 +97,7 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 	public void Update()
 	{
 		++frame;
+		TrackObjectMotion();
 		if ( !pathToolVerified && frame >= 3 )
 			VerifyHudPathTool();
 		if ( pathToolVerified && !coasterToolVerified && frame >= 4 )
@@ -108,7 +111,6 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 			{
 				motionFrame = frame;
 				motionScriptMilliseconds = level.PlacedRide.Script.TimeMilliseconds;
-				sinceMotion.Start();
 				if ( level.Guests != null && !guestsVerified )
 				{
 					var riders = level.PlacedRide.Script[RideVariables.VAR_ONRIDE];
@@ -120,7 +122,7 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 				}
 			}
 			else
-				Require( sinceOpened.Elapsed.TotalSeconds < MaximumSecondsUntilMotion, "original Totem script starts the ride motion" );
+				Require( level.PlacedRide.Script.TimeMilliseconds - startScriptMilliseconds < MaximumSecondsUntilMotion * 1000, "original Totem script starts the ride motion" );
 			return;
 		}
 		if ( level.Guests != null && !guestsVerified )
@@ -130,7 +132,7 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 			{
 				// Run the animation/close/remove checks on the next ride cycle.
 				motionFrame = 0;
-				sinceOpened.Restart();
+				startScriptMilliseconds = level.PlacedRide!.Script.TimeMilliseconds;
 			}
 			return;
 		}
@@ -213,15 +215,17 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 		Require( candidate != null, "staff pool offers a mechanic" );
 		var mechanic = economy.Hire( candidate!.Id );
 		var wage = economy.Staff.MonthlyWage( mechanic );
+		// An imported original park brings its own staff, who are paid with the new mechanic.
+		var wages = economy.Staff.TotalMonthlyWages;
 		var monthEnd = ParkCalendar.TickAtMonth( ParkCalendar.MonthIndex( economy.Tick ) + 1 );
 		economy.Advance( monthEnd - economy.Tick );
-		Require( economy.Tick == monthEnd && economy.Date.Day == 1 && economy.Balance == startBalance - wage, "month-end wages leave the bank account" );
+		Require( economy.Tick == monthEnd && economy.Date.Day == 1 && wages >= wage && economy.Balance == startBalance - wages, "month-end wages leave the bank account" );
 		var path = SaveFileSystem.GetAbsolutePath( "opentpw-park.json" );
 		var before = ParkSaveFile.Serialize( economy );
 		park.Save( path );
 		park.Load( path );
 		Require( ParkSaveFile.Serialize( park.Economy ) == before, "park save/load round trip" );
-		Log.Trace( $"Park economy smoke: {startDate} -> {park.Economy.Date}; balance ${startBalance} -> ${park.Economy.Balance} after ${wage} mechanic wages; save/load round trip identical." );
+		Log.Trace( $"Park economy smoke: {startDate} -> {park.Economy.Date}; balance ${startBalance} -> ${park.Economy.Balance} after ${wages} wages (${wage} for the new mechanic); save/load round trip identical." );
 	}
 
 	/// <summary>
@@ -235,7 +239,7 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 		{
 			if ( ride.Visitors.ReleasedTotal == 0 )
 			{
-				Require( sinceMotion.Elapsed.TotalSeconds < MaximumSecondsUntilRelease, "Totem.RSE releases its riders through VAR_LETMEOFF" );
+				Require( ride.Script.TimeMilliseconds - motionScriptMilliseconds < MaximumSecondsUntilRelease * 1000, "Totem.RSE releases its riders through VAR_LETMEOFF" );
 				return;
 			}
 			Require( level.GuestRenderer != null && level.GuestRenderer.DrawnGuests > 0, "draw guest sprites" );

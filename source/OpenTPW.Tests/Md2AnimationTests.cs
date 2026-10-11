@@ -71,6 +71,18 @@ public class Md2AnimationTests
 		return data;
 	}
 
+	/// <summary>The synthetic record with its rotation keys only (flags 0x8 | 0x10): no position or scale track.</summary>
+	internal static byte[] CreateRotationOnlyAnimation()
+	{
+		var data = CreateAnimation();
+		W32( data, Records + 4, 0x18 );
+		W32( data, Records + 16, 3 );
+		W32( data, Records + 24, 0 );
+		W32( data, Records + 32, 0 );
+		W32( data, Trailer + 12, 0 );
+		return data;
+	}
+
 	private static void WriteRotation( byte[] data, int key, ushort time, short ease, float x, float y, float z, float w )
 	{
 		var entry = RotationKeys + key * 20;

@@ -922,8 +922,9 @@ the 0xa7960 path for set-mode models; the 0xa78ec and renderer routes are open.
    bindings remain open. This is not a basis for treating a per-animator
    ticks-per-second value as the original game speed.
    The stored-mesh rule after a vertex clip is now derived (fixed items keep
-   the last pose; see "Gate inputs"), so the RIDES-030 entry proposed in
-   2760acb is withdrawn; no register change is needed for it.
+   the last pose; see "Gate inputs"), so the stored-mesh approximation entry
+   proposed in 2760acb is withdrawn; it was never registered, and no register
+   change is needed for it.
 3. **TPWS** (`SavePayloadLayout`, `TPWS-PAYLOAD.md`, importer naming): treat tags
    as trailing delimiters; rename sections by owner (RideSystem holds the placed
    objects); adopt the cell schema and world-var names; the importer's offsets

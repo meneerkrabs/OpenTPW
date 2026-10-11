@@ -71,7 +71,6 @@ public sealed class OnlineSession : IDisposable
 			Settings = new OnlineSettings( null, null );
 			Status = exception.Message;
 		}
-		Commands = new ChatCommandTable( OnlineStrings.ChatCommands );
 	}
 
 	public OnlineFolders Folders { get; }
@@ -82,18 +81,39 @@ public sealed class OnlineSession : IDisposable
 	/// address it was loaded from, which serves the API too (docs/WEB.md). Null on the desktop.
 	/// </summary>
 	public static string? SuggestedServerUrl { get; set; }
-	public ChatCommandTable Commands { get; }
+	/// <summary>The chat commands of the current language (rebuilt after a language switch).</summary>
+	public ChatCommandTable Commands
+	{
+		get
+		{
+			if ( commands == null || commandsVersion != GameLanguage.Version )
+			{
+				commands = new ChatCommandTable( OnlineStrings.ChatCommands );
+				commandsVersion = GameLanguage.Version;
+			}
+			return commands;
+		}
+	}
+	private ChatCommandTable? commands;
+	private int commandsVersion = -1;
 	public OnlineClient? Client { get; private set; }
 	public ChatConnection? Chat { get; private set; }
 	public string Status { get; private set; } = "";
 	public int Busy { get; private set; }
 	public IReadOnlyList<ParkSummary> Parks { get; private set; } = Array.Empty<ParkSummary>();
 	public IReadOnlyList<PostcardSummary> Inbox { get; private set; } = Array.Empty<PostcardSummary>();
+	/// <summary>Cities of the current server's online world; empty before fetching or when the server has none.</summary>
+	public IReadOnlyList<CityInfo> Cities { get; private set; } = Array.Empty<CityInfo>();
+
 	/// <summary>News fetched from the current server; null before fetching or when the server has none.</summary>
 	public NewsInfo? News { get; private set; }
 	public List<string> ChatLines { get; } = new();
 	public string CurrentRoom { get; private set; } = ChatProtocol.LobbyRoom;
 	public bool IsLoggedIn => Client?.Session != null;
+	/// <summary>A two-step setup waiting for its first code (after registering, or a login after an operator reset).</summary>
+	public TotpEnrollment? Enrollment { get; internal set; }
+	/// <summary>The last login asked for an authenticator code (missing or wrong).</summary>
+	public bool CodeRequested { get; private set; }
 
 	public void Pump()
 	{
@@ -169,19 +189,91 @@ public sealed class OnlineSession : IDisposable
 		Folders.SaveSettings( Settings );
 	}
 
+	/// <summary>Registers; on a server with two-step login this leaves an <see cref="Enrollment"/> to confirm with a code.</summary>
 	public void Register( string name, string password ) => WithClient( async client =>
 	{
-		await client.RegisterAsync( name, password );
-		return await LoginCore( client, name, password );
+		var enrollment = await client.RegisterAsync( name, password );
+		if ( enrollment != null )
+			return Enroll( enrollment );
+		return await LoginCore( client, name, password, null );
 	} );
 
-	public void Login( string name, string password ) => WithClient( client => LoginCore( client, name, password ) );
+	public void Login( string name, string password, string? code = null ) => WithClient( client => LoginCore( client, name, password, code ) );
 
-	private async Task<string?> LoginCore( OnlineClient client, string name, string password )
+	/// <summary>Finishes <see cref="Enrollment"/> with the first code from the authenticator app.</summary>
+	public void ConfirmEnrollment( string code, string? emailCode = null ) => WithClient( async client =>
 	{
-		var session = await client.LoginAsync( name, password );
+		var enrollment = Enrollment ?? throw new InvalidOperationException( "No two-step setup is waiting." );
+		try
+		{
+			var session = await client.ConfirmEnrollmentAsync( enrollment, code, emailCode );
+			Post( () => Enrollment = null );
+			return LoggedIn( session );
+		}
+		catch ( OnlineException exception ) when ( exception.Reason == null && exception.Status == System.Net.HttpStatusCode.BadRequest )
+		{
+			// The setup expired or was replaced: start again from the login dialog.
+			Post( () => Enrollment = null );
+			throw;
+		}
+	} );
+
+	public void CancelEnrollment() => Enrollment = null;
+
+	/// <summary>The game language, sent with requests whose answer is an e-mail.</summary>
+	private static string? MailLanguage => GameLanguage.IsSelected ? GameLanguage.Current.Name : null;
+
+	/// <summary>[EXT:online-email] Sends a code to the address of the waiting setup's new account.</summary>
+	public void SendEnrollmentEmail( string email ) => WithClient( async client =>
+	{
+		var enrollment = Enrollment ?? throw new InvalidOperationException( "No two-step setup is waiting." );
+		await client.SendEnrollmentEmailAsync( enrollment, email, MailLanguage );
+		return OnlineStrings.Get( OnlineLabel.EmailCodeSent );
+	} );
+
+	/// <summary>[EXT:online-email] Asks the server to send a recovery code for a player name or e-mail address.</summary>
+	public void RequestRecovery( string nameOrEmail ) => WithClient( async client =>
+	{
+		await client.RequestRecoveryAsync( nameOrEmail, MailLanguage );
+		return OnlineStrings.Get( OnlineLabel.RecoveryCodeSent );
+	} );
+
+	/// <summary>[EXT:online-email] Sets a new password with the recovery code; then log in as usual.</summary>
+	public void ConfirmRecovery( string nameOrEmail, string code, string password, bool resetTwoStep ) => WithClient( async client =>
+	{
+		await client.ConfirmRecoveryAsync( nameOrEmail, code, password, resetTwoStep, MailLanguage );
+		Post( () => PasswordReset = true );
+		return OnlineStrings.Get( OnlineLabel.PasswordChanged );
+	} );
+
+	/// <summary>A recovery finished: the screen returns to the login dialog.</summary>
+	public bool PasswordReset { get; internal set; }
+
+	private string? Enroll( TotpEnrollment enrollment )
+	{
+		Post( () => { Enrollment = enrollment; CodeRequested = false; } );
+		return OnlineStrings.Get( OnlineLabel.TwoStepLogin );
+	}
+
+	private async Task<string?> LoginCore( OnlineClient client, string name, string password, string? code )
+	{
+		LoginResult result;
+		try { result = await client.LoginAsync( name, password, code ); }
+		catch ( OnlineException exception ) when ( exception.Reason is ApiErrorReasons.TotpRequired or ApiErrorReasons.TotpInvalid )
+		{
+			Post( () => CodeRequested = true );
+			throw;
+		}
+		if ( result.Enrollment != null )
+			return Enroll( result.Enrollment );
+		return LoggedIn( result.Session! );
+	}
+
+	private string LoggedIn( SessionToken session )
+	{
 		Post( () =>
 		{
+			CodeRequested = false;
 			Settings = Settings with { PlayerName = session.Name };
 			Folders.SaveSettings( Settings );
 		} );
@@ -201,6 +293,9 @@ public sealed class OnlineSession : IDisposable
 		foreach ( var cleanup in discarded )
 			cleanup();
 		Busy = 0;
+		// A setup or a code request belongs to the server it came from.
+		Enrollment = null;
+		CodeRequested = false;
 		chatCancel?.Cancel();
 		chatCancel?.Dispose();
 		chatCancel = null;
@@ -211,6 +306,8 @@ public sealed class OnlineSession : IDisposable
 		Parks = Array.Empty<ParkSummary>();
 		Inbox = Array.Empty<PostcardSummary>();
 		News = null;
+		Cities = Array.Empty<CityInfo>();
+		CityParks = null;
 		CurrentRoom = ChatProtocol.LobbyRoom;
 		ChatLines.Clear();
 	}
@@ -240,6 +337,26 @@ public sealed class OnlineSession : IDisposable
 		Run( () => work( client ) );
 	}
 
+	/// <summary>Parks of the city whose lobby is open, most votes first; null while they are being fetched.</summary>
+	public IReadOnlyList<ParkSummary>? CityParks { get; private set; }
+
+	/// <summary>Fetches a city's parks for its lobby (the top ten become islands, the rest are listed).</summary>
+	public void FetchCityParks( int cityId ) => WithClient( async client =>
+	{
+		Post( () => CityParks = null );
+		var list = await client.ListParksAsync( sort: "votes", cityId: cityId );
+		Post( () => CityParks = list.Parks );
+		return list.Parks.Count == 0 ? OnlineStrings.Ui( OnlineStrings.NoSearchResults, "No search results" ) : null;
+	} );
+
+	/// <summary>Fetches the cities for the globe; no login needed. Older servers have none.</summary>
+	public void FetchCities() => WithClient( async client =>
+	{
+		var cities = await client.GetCitiesAsync();
+		Post( () => Cities = cities?.Cities ?? Array.Empty<CityInfo>() );
+		return null;
+	} );
+
 	/// <summary>Fetches Game News and System News; no login needed.</summary>
 	public void FetchNews() => WithClient( async client =>
 	{
@@ -248,16 +365,16 @@ public sealed class OnlineSession : IDisposable
 		return news == null || (news.Game.Length == 0 && news.System.Length == 0) ? OnlineStrings.Get( OnlineLabel.NoNews ) : null;
 	} );
 
-	public void RefreshParks( string? search, string sort = "recent" ) => WithClient( async client =>
+	public void RefreshParks( string? search, string sort = "recent", int? cityId = null ) => WithClient( async client =>
 	{
-		var list = await client.ListParksAsync( search, sort );
+		var list = await client.ListParksAsync( search, sort, cityId: cityId );
 		Post( () => Parks = list.Parks );
 		return list.Parks.Count == 0 ? OnlineStrings.Ui( OnlineStrings.NoSearchResults, "No search results" ) : null;
 	} );
 
-	public void Publish( ParkPackage package ) => WithClient( async client =>
+	public void Publish( ParkPackage package, bool showOnWebsite = false, int cityId = 0 ) => WithClient( async client =>
 	{
-		await client.UploadParkAsync( package );
+		await client.UploadParkAsync( package, showOnWebsite: showOnWebsite, cityId: cityId );
 		return OnlineStrings.Ui( OnlineStrings.ParkPublished, "PARK PUBLISHED" ).Replace( "\n\n", " " );
 	} );
 
@@ -303,14 +420,24 @@ public sealed class OnlineSession : IDisposable
 	public void FetchInbox() => WithClient( async client =>
 	{
 		var inbox = await client.GetInboxAsync();
+		var failed = 0;
 		foreach ( var summary in inbox.Postcards )
 		{
-			var card = await client.DownloadPostcardAsync( summary.Id );
-			Folders.Store( Folders.Inbox, card );
-			await client.DeletePostcardAsync( summary.Id );
+			// Each card is stored under its server delivery id, not the sender-chosen card id, so two cards
+			// with one card id cannot block each other; a card that fails stays on the server and the rest still arrive.
+			try
+			{
+				var card = await client.DownloadPostcardAsync( summary.Id );
+				Folders.Store( Folders.Inbox, card, $"inbox-{summary.Id}" );
+				await client.DeletePostcardAsync( summary.Id );
+			}
+			catch ( Exception exception ) when ( exception is InvalidDataException or OnlineException )
+			{
+				failed++;
+			}
 		}
 		Post( () => Inbox = inbox.Postcards );
-		return $"{OnlineStrings.Get( OnlineLabel.Inbox )}: {inbox.Postcards.Count}";
+		return $"{OnlineStrings.Get( OnlineLabel.Inbox )}: {inbox.Postcards.Count}" + (failed > 0 ? $" (!{failed})" : "");
 	} );
 
 	public void ConnectChat() => WithClient( async client =>
@@ -356,6 +483,8 @@ public sealed class OnlineSession : IDisposable
 		catch ( Exception exception ) when ( exception is System.Net.WebSockets.WebSocketException or OperationCanceledException or InvalidDataException or ObjectDisposedException )
 		{
 		}
+		// A server restart (a deploy) or a dropped connection is not the player leaving: reconnect to the same room.
+		var lost = !cancel.IsCancellationRequested && chat.CloseStatus is null or ChatProtocol.RestartingCloseStatus or (int)System.Net.WebSockets.WebSocketCloseStatus.EndpointUnavailable;
 		Post( () =>
 		{
 			chat.Dispose();
@@ -364,6 +493,55 @@ public sealed class OnlineSession : IDisposable
 				Chat = null;
 				chatCancel?.Dispose();
 				chatCancel = null;
+				if ( lost && IsLoggedIn && Client is { } client )
+					ReconnectChat( client, CurrentRoom );
+			}
+		} );
+	}
+
+	/// <summary>Waits between attempts to reconnect the chat after a server restart.</summary>
+	internal static readonly TimeSpan[] ReconnectDelays = { TimeSpan.FromSeconds( 1 ), TimeSpan.FromSeconds( 2 ), TimeSpan.FromSeconds( 4 ), TimeSpan.FromSeconds( 8 ), TimeSpan.FromSeconds( 15 ), TimeSpan.FromSeconds( 30 ) };
+
+	private void ReconnectChat( OnlineClient client, string room )
+	{
+		var startedGeneration = generation;
+		_ = Task.Run( async () =>
+		{
+			operationGeneration.Value = startedGeneration;
+			foreach ( var delay in ReconnectDelays )
+			{
+				await Task.Delay( delay );
+				if ( disposed || startedGeneration != generation || Client != client || !IsLoggedIn )
+					return;
+				ChatConnection chat;
+				try
+				{
+					chat = await client.ConnectChatAsync();
+				}
+				catch ( Exception exception ) when ( exception is OnlineException or HttpRequestException or System.Net.WebSockets.WebSocketException or IOException or InvalidDataException or TaskCanceledException )
+				{
+					continue;
+				}
+				if ( room != ChatProtocol.LobbyRoom )
+				{
+					try { await chat.JoinAsync( room ); }
+					catch ( Exception exception ) when ( exception is System.Net.WebSockets.WebSocketException or IOException ) { }
+				}
+				var cancel = new CancellationTokenSource();
+				Post( () =>
+				{
+					if ( Chat != null )
+					{
+						cancel.Dispose();
+						chat.Dispose();
+						return;
+					}
+					Chat = chat;
+					chatCancel = cancel;
+					AddChatLine( OnlineStrings.Get( OnlineLabel.ChatReconnected ) );
+					_ = Task.Run( () => ReceiveLoopAsync( chat, cancel.Token ) );
+				}, () => { cancel.Dispose(); chat.Dispose(); } );
+				return;
 			}
 		} );
 	}

@@ -142,9 +142,11 @@ public sealed class ParkObjects
 	public OriginalObject Add( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, bool open = true )
 	{
 		// [DATA:Easymode.TPWI:SYSG X/Y/rotation] [DATA:<fixed item>.MD2:park-space coordinates]
-		var placement = entry.IsFixedItem
+		// [DATA:PreBuilt/prebuilt.TPWS:SYSG X/Y/rotation] TPI fixed models use local coordinates and their saved anchor.
+		var placement = entry.IsFixedItem && !GameEditions.IsThemeParkInc
 			? new ObjectPlacement( 0, 0, 0, Grid.Origin, 0 )
-			: new ObjectPlacement( anchorX, anchorY, rotation, Grid.Origin, GetBaseHeight( entry, anchorX, anchorY, rotation ) );
+			: new ObjectPlacement( anchorX, anchorY, rotation, Grid.Origin,
+				entry.IsFixedItem ? 0 : GetBaseHeight( entry, anchorX, anchorY, rotation ) );
 		var item = new OriginalObject( entry, placement, ScriptWorld, nextSeed++ ^ scriptKey, open );
 		objects.Add( item );
 		foreach ( var (x, y, _) in item.Cells )
@@ -203,6 +205,7 @@ public sealed class ParkObjects
 			var entry = Catalog.Find( record.InfoId );
 			if ( entry == null || entry.IsTool )
 				continue;
+			// [APPROX:RIDES-040] TPI fixed scene records at (0, 0) use their local model origin; their remaining transform fields are not decoded.
 			Add( entry, record.X, record.Y, record.Rotation );
 			count++;
 		}

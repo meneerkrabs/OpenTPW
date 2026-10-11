@@ -38,10 +38,8 @@ public static class UiImages
 			(width, height, data) = (texture.Width, texture.Height, (byte[])texture.Data.Clone());
 		}
 		else
-		{
-			var image = ImageResult.FromMemory( FileSystem.ReadAllBytes( path ), ColorComponents.RedGreenBlueAlpha );
-			(width, height, data) = (image.Width, image.Height, image.Data);
-		}
+			// png, tga and (Theme Park Inc) fsh from the game data
+			(data, width, height) = Texture.DecodeImage( path );
 		if ( data.Length != width * height * 4 )
 			throw new InvalidDataException( $"UI image {path} has an unexpected size." );
 		KeyOutPink( data, width, height );

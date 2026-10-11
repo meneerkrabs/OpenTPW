@@ -4,19 +4,24 @@ October 9, 2026. Status: bounded CPU reader for the version 221.203 layout;
 geometry, texture slots and node hierarchy are verified against the whole local
 WAD corpus. Node matrices are parent-relative (corpus evidence below).
 Animation members decode into position/rotation/scale tracks, quantised vertex
-groups, node-flag toggles and texture-frame tracks, validated over all 1,278
-members; the sandbox Totem plays its original `totemm1.MD2` cycle and placed
-objects play their vertex tracks. Decoder mechanics and the 30 ticks/s clock are
-read from the Feral Mac PowerPC build (`docs/reverse/PPC-formats.md`); PC
-equivalence, the 12-byte vertex layout and other record kinds are **not
-verified/decoded**; original rendering fidelity is not verified. These are
+groups, per-corner texture-coordinate tracks, node-flag toggles, the 12-byte
+vertex block and texture-frame tracks, validated over all 1,278 members; every
+record bit is classified (decoded, path parameter, or exporter metadata that the
+original never reads). The sandbox Totem plays its original `totemm1.MD2` cycle
+and placed objects play their vertex and texture-coordinate tracks. Decoder
+mechanics and the 30 ticks/s clock are read from the Feral Mac PowerPC build
+(`docs/reverse/PPC-formats.md`, `docs/reverse/ANIM-plan.md`); the PC executable's
+equivalence is **not verified** (its code is encrypted; 275 of 293 PC WADs with
+MD2 members are byte-identical to the Mac copies), path parameters (0x200/0x400)
+are only partly traced, and original rendering fidelity is not verified. These are
 not Quake II MD2 files. No dependency or original asset is added to the repository.
 
 `ModelFile` (`source/OpenTPW.Files/Formats/Model/`) reads the whole member into a
 capped buffer (16 MiB; the largest original member is 1,377,696 bytes), validates
 every offset/count before use, leaves caller-owned streams open and supports
 short nonseekable reads. Malformed data raises `InvalidDataException`; other
-versions raise `NotSupportedException`. The unused `OpenTPW.Files.ModelFile` stub,
+versions raise `NotSupportedException`, which for majors below 221 names the
+original loader's own `DeadMesh` refusal (see "Older versions"). The unused `OpenTPW.Files.ModelFile` stub,
 which logged fixed offsets from one file, was removed. The renderer-facing API
 (`Meshes`, `Mesh.Vertices/Indices/TexCoords/Normals/TransformMatrix/Materials`,
 `MaterialData.Name/Flags`) is unchanged except that `Normals` now prefers verified
@@ -143,7 +148,7 @@ Trailer words (u32 unless split):
 | 8, 10 | first position header / rotation key (informational) | |
 | 11 | record table (64 bytes per record) | |
 | 12 | texture-frame tracks: 8 bytes `u16 slot, u16 count, ptr→count × (u16 tick, u16 frame)` | `ModelTextureFrameTrack` |
-| 14 | node list (u16 node indices, meaning unknown; 874 files) | `NodeList` |
+| 14 | node list (u16 node indices; 874 files): the clip start sets node-state bit 0x10 on each listed node whose state bit 31 is clear (0xa67d8 → 0xa65b8) | `NodeList` |
 | 15 | first easing table (informational) | |
 | 1, 7, 13, 16, 17 | zero throughout | |
 
@@ -152,8 +157,9 @@ opaque, `u32` record duration, `u16` rotation-key count, `u16` scale-key count,
 `u16` node index, `u16` opaque (non-zero only with flag 0x20000), then pointers:
 +24 position header (flag 0x1), +28 rotation keys (flags 0x08/0x10/0x20/0x40),
 +32 scale keys (flags 0x80/0x100), +36 per-frame float block (flags 0x600),
-+40 vertex-animation block (flags 0x1000–0x4000), +44 (flag 0x10000), +48 small
-u16 list (flag 0x20000), +52 easing curves; +56/+60 zero. The position,
++40 vertex-animation block (flag 0x1000, or the 12-byte block with 0x4000), +44
+texture-coordinate block (flag 0x10000), +48 small u16 list (flag 0x20000), +52
+easing curves; +56/+60 zero (the original binds record +60 to the node at run time). The position,
 rotation and scale pointers are present exactly when their flag group is set
 (all records; enforced).
 
@@ -208,12 +214,29 @@ Mac build (Totem cycle 430 ticks ≈ 14.3 s); scene-clock scaling and pause are 
   0x10, whose consumer is not traced. `SampleNodeFlag`.
 - **Texture-frame tracks** (trailer word 12): the last key with `tick ≤
   trunc(time)` selects a frame of the slot. `ModelTextureFrameTrack`.
+- **Texture-coordinate tracks** (flag 0x10000; 690 records): a 20-byte block
+  `u32 corners, ptr → corners × (u16 first, u16 count), u32 keys, ptr → u16
+  ticks, ptr → (f32 u, f32 v) keys`. Corner `i` replaces corner `i` of the node
+  mesh's texture coordinates. Key search 0xa8304 differs from the others: the
+  first key whose tick is greater than `trunc(time)` ends the segment, otherwise
+  the last key holds (fraction 1); `(1 − t)·a + t·b` with `t·b` rounded first. In
+  the 685 paired blocks of this run the corner count equals the mesh's, every
+  track has at least two keys, starts at tick 0, increases strictly and reaches the
+  clip end. `ModelUvAnimation`.
+- **12-byte block** (flag 0x4000 with 0x1000; 30 records): `ptr → u32
+  index[count], u32 count, ptr → count × (f32 x, y, z)`, one pose. The engine
+  relocates it and the bind sets node bits 0x800/0x100, but no reader of the floats
+  was found, so it is parsed (`ModelVertexPose`) and the stored mesh is shown
+  (RIDES-041); the floats differ from the stored positions in 19 of the 30.
 
-Not decoded (`ModelAnimationTrack.UnsupportedFlags`, 1,122 records): the
-12-byte vertex layout (0x4000, 30 records), per-frame float/path blocks 0x600,
-the 0x10000 block and 0x2000. The node list's role and the rotation flag bits
-are open. `HasUndecodedPayload` still marks every record with more than rigid
-tracks.
+Record bits (ANIM-plan §1): 0x1, 0x8, 0x80, 0x1000, 0x10000 and 0x20000 are
+decoded and played; 0x200/0x400 (path parameters) and 0x4000 stay in
+`ModelAnimationTrack.UnsupportedFlags`. 0x10, 0x20, 0x40, 0x8000 (always with
+0x8), 0x100 (with 0x80), 0x800 (with 0x200/0x400) and 0x2000 (with 0x1000) are
+never tested by the sampler, the bind, the engine relocation or the clip bind:
+they are exporter metadata (`ModelAnimationTrack.MetadataFlags`), neither
+unsupported nor undecoded payload. 0x2000 is not the static-group flag.
+`HasUndecodedPayload` marks every record with more than rigid tracks.
 
 Totem (`totemm1.MD2`, 3 records): `tp_cart` Bézier position (9 keys at
 0, 177, 185, 211, 214, 257, 280, 380, 430; lifts to Y ≈ 47.6 above the rest
@@ -248,8 +271,9 @@ but its loop replay past the clip end rebinds the clip (0xa7190 → 0xa67d8 →
 0xa5894), which resets it, so both agree on the normal object update. Its
 object-list update replays without a bind and is not supported
 (`docs/reverse/PPC-formats.md`, "Clip lifecycle"). Clip time follows the
-original channel clock at speed 1.0: a clip starts at a whole millisecond of the
-instance's clock, its frame is `30 × elapsed ms / 1000` in single precision, a
+original channel clock: a clip starts at a whole millisecond of the instance's
+clock, its frame is `30 × elapsed ms / 1000 × speed` in single precision (speed
+1.0, or TRIGANIMSPEED's operand / 1000), a
 frame equal to the duration shows the last key, and a looping clip replays only
 once the frame is strictly past the duration, restarting from the carry capped
 at the duration and truncated to whole milliseconds, at most once per update. So
@@ -264,8 +288,8 @@ the ride catalog loader requests, for descriptors whose word +56, by the
 also skip it is only ever stored as 0). In the catalog only the fantasy gates'
 three clips are affected. The parsed, cached `ModelFile` is never written, so instances of one
 asset keep independent poses. Unplayable tracks are listed in
-`VertexLimitations` and leave the stored mesh: the 12-byte layout (10 catalog
-clips, 23 tracks), relative-animation models, blocks that do not list every
+`VertexLimitations` and leave the stored mesh: the 12-byte block (10 catalog
+clips, 23 tracks), UV blocks whose corner count differs from the mesh, blocks that do not list every
 position exactly once, and groups that end before the clip. All 599 other
 catalog clips with vertex tracks play. `ObjectRenderParts.WritePositions` maps
 positions through the corner order into the part's own vertex array (engine
@@ -273,18 +297,24 @@ axes); stored normals are kept. The original's object update recomputes face
 normals after a vertex pass only for relative-animation models (0xa772c); two
 other recomputation routes have untraced conditions. Those parts use a fixed-size `Dynamic` vertex buffer
 that `Model.UpdateVertices` refreshes through the frame command list when the
-pose version changes. Not played yet: group-0 bounds (no consumer traced),
-node-flag toggles and texture-frame tracks (their runtime bindings to visibility
-and texture slots are not proven), and the add mode. `LobbyIsland` (not instantiated by the game yet) uses the composed
+pose version changes; texture-coordinate tracks write the same parts' texture
+coordinates. Channels mix by ascending index, the highest channel writing a
+component winning (0xa7960). Node-state bit 0x10 from node lists and toggles
+hides the node's mesh (RIDES-042; the draw-path reader is not traced).
+Relative-animation models play their vertex tracks in set mode, because the
+default ride load path strips header flag 0x4 (RIDES-043). Not played: group-0
+bounds (no consumer traced), texture-frame tracks (RIDES-035; the slot consumer
+is not traced), the 12-byte block and path parameters. `LobbyIsland` (not instantiated by the game yet) uses the composed
 hierarchy, swaps normal axes like positions, and renders untextured materials
 white instead of requesting `lobby/terrain/textures/.wct`.
 
 ## Private corpus
 
 312 local WADs, 2,118 `.MD2` members: 2,116 parse (838 geometry, 1,278
-animation). The two failures are `levels/jungle/rides/wateride.wad/wr_tunnel.md2`
-and `wr_tunnelm.md2`, version 207.201 with a 4-byte-shifted header, explicitly
-unsupported. Geometry totals: 4,914 meshes, 7,520 nodes (2,606 dummies), 210,034
+animation). The two refused members are `levels/jungle/rides/wateride.wad/wr_tunnel.md2`
+and `wr_tunnelm.md2`, version 207.201 with a 4-byte-shifted header; the loose
+`generic/dynamic/garrow.MD2` and `rarrow.MD2` are version 24.23. The original
+loader refuses all four too (below), so they are not an OpenTPW gap. Geometry totals: 4,914 meshes, 7,520 nodes (2,606 dummies), 210,034
 faces, 303,199 corners, 133,707 positions, 12,951 materials, 7,282 texture slots.
 
 Pinned fixtures; geometry SHA-256 covers per mesh name+NUL, per-corner float
@@ -312,9 +342,11 @@ position tracks, 8,703 position keys, 26,233 rotation keys, 12,451 eased, 2,832
 scale keys), play every name-paired animation (1,275; bounded count 1,237) and
 the Totem samples; they are inconclusive without `OPENTPW_GAME_PATH`, not passes.
 
-## Version 207.201
+## Older versions: 207.201 and 24.23
 
-`wr_tunnel.md2` and its animation `wr_tunnelm.md2` remain rejected. Their
+`wr_tunnel.md2`, its animation `wr_tunnelm.md2` (207.201) and the loose
+`generic/dynamic/garrow.MD2`/`rarrow.MD2` (24.23, listed in that folder's
+`qickload.txt`) are rejected, as by the original (below). Their
 header has counts at 0x34–0x4B, region pointers from 0x4C, bounds at 0x78 and a
 table of 260-byte source-path strings (`C:\WORK\Theme 2\…`) at 0xB8 before the
 texture flags; slot records do not match the 221.203 layout. With a single
@@ -341,18 +373,20 @@ the animation block pointer is word 0x98), then checks, in this order:
 | no animation block, major < 221 | `OldMesh` | loaded, warning |
 | otherwise | `Ok` | loaded |
 
-So rejecting 207.201 matches the original's default (`DeadMesh`); the original
-loads such a file only when a caller passes flag bit 1, and would then discard a
-201 animation (`DeadAnim`). Which callers pass that flag is not yet traced. The
+So rejecting 207.201 and 24.23 matches the original's default (`DeadMesh`); the
+original loads such a file only when a caller passes flag bit 1, and would then
+discard a 201 animation (`DeadAnim`). No application call site passes that bit
+(0x58f00 passes 0, 0x99acc/0x99ad4 pass 6 and 2; docs/reverse/ANIM-plan.md §6),
+so none of the four members loads in the Mac build and their layout needs no
+decoding for parity. The
 documented 207.201 fields at 0x34–0x4B and 0x4C coincide with the loader's
 count and offset fields, but that does not verify the rest of its layout.
 
 ## Remaining gates and sources
 
-Next: how scripts select clips (RSE `TRIGANIM` family), the object-list replay
-without a bind, and game-speed scaling of the scene clock;
-the 12-byte vertex layout and the other record kinds; node list; rotation flag
-bits; consumers of the toggle bit, the group-0 box and texture frames;
+Next: the object-list replay without a bind (RIDES-032), and game-speed scaling
+of the scene clock; a reader of the 12-byte block's floats; path parameters
+(0x200/0x400); consumers of node bit 0x10, the group-0 box and texture frames;
 texture/material flag bits from original captures;
 the heightfield cell-word low bits. CPU parsing and sandbox playback do not qualify original
 rendering or animation behavior.

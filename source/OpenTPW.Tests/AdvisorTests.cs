@@ -144,20 +144,52 @@ public class AdvisorTests
 		}
 	}
 
+	/// <summary>
+	/// Every record of the global and level advisor clips decodes (ANIM-plan §10: ADVISOR-006's "undecoded non-rigid
+	/// tracks" premise is stale) and plays against its model; only one level clip carries path parameters.
+	/// </summary>
 	[TestMethod]
-	public void OriginalAdvisorClipsAreNotRigidOnly()
+	public void OriginalAdvisorClipsDecodeAndPlayAgainstTheirModels()
 	{
 		using var assets = new OriginalAssets();
-		var model = new ModelFile( $"{Advisor.ArchivePath}/Advisor.MD2" );
-		for ( var index = 1; index <= 15; index++ )
+		Assert.AreEqual( "Advisorm3.MD2", Advisor.AnimationClipName( "", 3 ) );
+		Assert.AreEqual( "Advisor_FANm16.MD2", Advisor.AnimationClipName( "_FAN", 16 ) );
+		Assert.ThrowsException<ArgumentOutOfRangeException>( () => Advisor.AnimationClipName( "", 0 ) );
+		int clips = 0, withPathParameters = 0, withUv = 0;
+		foreach ( var (archive, suffix) in new[] { (Advisor.ArchivePath, ""), ("/levels/fantasy/advisor", "_FAN"), ("/levels/hallow/advisor", "_HAL"),
+			("/levels/jungle/advisor", "_JUN"), ("/levels/space/advisor", "_SPA") } )
 		{
-			var clip = new ModelFile( $"{Advisor.ArchivePath}/Advisorm{index}.MD2" ).Clip;
-			Assert.IsNotNull( clip, $"Advisorm{index}" );
-			Assert.IsTrue( clip!.Tracks.Any( track => track.HasUndecodedPayload ), $"Advisorm{index} would be playable as rigid tracks" );
+			var model = new ModelFile( $"{archive}/Advisor{suffix}.MD2" );
+			var members = FileSystem.GetFiles( archive ).Select( Path.GetFileName ).ToHashSet( StringComparer.OrdinalIgnoreCase );
+			Assert.IsTrue( members.Contains( Advisor.AnimationClipName( suffix, 1 ) ), archive );
+			for ( var index = 1; members.Contains( Advisor.AnimationClipName( suffix, index ) ); index++ )
+			{
+				var name = Advisor.AnimationClipName( suffix, index );
+				var clip = new ModelFile( $"{archive}/{name}" ).Clip!;
+				clips++;
+				var unsupported = clip.Tracks.Aggregate( 0u, ( flags, track ) => flags | track.UnsupportedFlags );
+				Assert.AreEqual( 0u, unsupported & ~ModelAnimationTrack.PathFlags, name );
+				withPathParameters += unsupported != 0 ? 1 : 0;
+				withUv += clip.Tracks.Any( track => track.UvAnimation != null ) ? 1 : 0;
+				Assert.IsTrue( clip.Tracks.All( track => track.VertexPose == null ), $"{name} has no 12-byte block" );
+				var animator = new ObjectAnimator( model );
+				animator.Play( 0, clip, name, loop: false );
+				for ( var step = 1; step <= 4; step++ )
+					animator.Advance( clip.Duration / 4.0 / animator.TicksPerSecond );
+				Assert.AreEqual( 0, animator.VertexLimitations.Count, $"{name}: {string.Join( "; ", animator.VertexLimitations )}" );
+				Assert.IsTrue( animator.NodeTransforms.All( matrix => float.IsFinite( matrix.M41 ) && float.IsFinite( matrix.M42 ) && float.IsFinite( matrix.M43 ) ), name );
+			}
 		}
-		// Advisorm13 is the only clip with tracks on the five mouth meshes (payload undecoded):
-		// the likeliest source of the original mouth-shape choice.
-		var mouths = new ModelFile( $"{Advisor.ArchivePath}/Advisorm13.MD2" ).Clip!.Tracks.Select( track => model.Nodes[track.NodeIndex].Name ).Where( name => name.StartsWith( "Mouth - " ) ).OrderBy( name => name ).ToArray();
+		Assert.IsTrue( clips >= 15 );
+		Assert.AreEqual( 1, withPathParameters, "Advisor_HALm16 is the one clip with path records" );
+		Assert.IsTrue( withUv > 0, "the level advisors carry texture-coordinate tracks" );
+
+		// The global clips' node lists set node bit 0x10 on the hats, spatula and bow tie (ADVISOR-002's hidden set).
+		var global = new ModelFile( $"{Advisor.ArchivePath}/Advisor.MD2" );
+		var listed = new ModelFile( $"{Advisor.ArchivePath}/Advisorm1.MD2" ).Clip!.NodeList.Select( node => global.Nodes[node].Name ).ToArray();
+		Assert.IsTrue( listed.Contains( "Spatula" ) && listed.Contains( "Bowler_BTie" ) && listed.All( name => !Advisor.BodyMeshes.Contains( name ) ), string.Join( ", ", listed ) );
+		// Advisorm13 is the only clip with tracks on the five mouth meshes: the likeliest source of the original mouth-shape choice.
+		var mouths = new ModelFile( $"{Advisor.ArchivePath}/Advisorm13.MD2" ).Clip!.Tracks.Select( track => global.Nodes[track.NodeIndex].Name ).Where( name => name.StartsWith( "Mouth - " ) ).OrderBy( name => name ).ToArray();
 		CollectionAssert.AreEqual( new[] { "Mouth - Aah", "Mouth - Eee", "Mouth - Normal", "Mouth - Ooh", "Mouth - Sss" }, mouths );
 	}
 

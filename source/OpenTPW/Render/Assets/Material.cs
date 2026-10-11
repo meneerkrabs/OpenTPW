@@ -124,7 +124,8 @@ public partial class Material : Asset
 		Render.ScheduleDelete( ClearBoundResources );
 	}
 
-	public void Set( string name, Texture[] texture )
+	/// <summary>Binds a texture array with one shared sampler: wrapping by default; clamped for tiles whose edges must not bleed into each other.</summary>
+	public void Set( string name, Texture[] texture, SamplerType sampler = SamplerType.AnisotropicWrap )
 	{
 		_boundTextureArrays[name] = texture;
 		for ( int i = 0; i < texture.Length; i++ )
@@ -132,7 +133,7 @@ public partial class Material : Asset
 			_boundResources[name + $"{i}"] = texture[i].NativeTexture;
 		}
 
-		_boundResources["s_" + name] = Samplers[(int)SamplerType.AnisotropicWrap];
+		_boundResources["s_" + name] = Samplers[(int)sampler];
 
 		Render.ScheduleDelete( ClearBoundResources );
 	}

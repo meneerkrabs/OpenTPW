@@ -8,10 +8,11 @@ namespace OpenTPW;
 /// bottom-right of the screen without a camera (see <see cref="ModelTransform"/>), saying one global speech clip with its mouth driven by the clip's LIP marks
 /// (see docs/LIPS.md). The model carries five co-located mouth meshes; the LIP data only
 /// distinguishes talking from silence. As in the original, silence shows "Mouth - Normal" and
-/// talking shows a mouth picked at random every 100 ms (<see cref="AdvisorMouth"/>). How it poses the
-/// head/hands (the <c>Advisorm*</c> clips carry undecoded non-rigid tracks) and which hat it shows are not
-/// known; hats, the spatula, the bow tie and the blink meshes are hidden. The model is drawn in
-/// its bind pose (see <see cref="NodeWorld"/>).
+/// talking shows a mouth picked at random every 100 ms (<see cref="AdvisorMouth"/>). The original poses
+/// the advisor with <c>Advisor&lt;level&gt;m&lt;n&gt;</c> clips (<see cref="AnimationClipName"/>), whose
+/// records all decode; which clips a sequence chooses and which hat it shows are not known, so hats, the
+/// spatula, the bow tie and the blink meshes are hidden and the model is drawn in its bind pose (see
+/// <see cref="NodeWorld"/>).
 /// </summary>
 internal sealed class Advisor : IDisposable
 {
@@ -35,7 +36,7 @@ internal sealed class Advisor : IDisposable
 	{
 		("ADVISOR-002", "hats, spatula, bow tie and blink meshes hidden"),
 		("ADVISOR-005", "light colour 0.6, shared test.shader ambient/fog"),
-		("ADVISOR-006", "bind pose; no Advisorm* clip is played"),
+		("ADVISOR-006", "bind pose; the Advisor<level>m<n> clips decode, but the sequence choice among them is not traced, so none is played"),
 		("ADVISOR-007", "MD2 triangle corner order kept as stored; front faces are clockwise once drawn unmirrored"),
 		("ADVISOR-008", "speech starts at the first rendered advisor frame"),
 		("ADVISOR-009", "--advisor-say plays global clips by number; the controller picks responses only for the five bound messages of game events 0/2/3/4"),
@@ -49,7 +50,7 @@ internal sealed class Advisor : IDisposable
 		("ADVISOR-018", "the automatic advisor is drawn only while its speech plays, only inside a level; leaving the level stops it"),
 		("ADVISOR-019", "GeneralAdvisor.MinTimeAnyMessage and GeneralAdvisor.MinTimeSameMessage are loaded but not applied"),
 		("ADVISOR-020", "game events 2/3/4 come from the park economy's Bankrupt/ParkOpened/ParkClosed events, not proven equal to the original producers"),
-		("ADVISOR-022", "the advisor's pending advice and message history are not saved or loaded with the park"),
+		("ADVISOR-022", "OpenTPW's own park save does not store the advisor's pending advice and history; an original save's records and history of messages without a bound descriptor are dropped on import"),
 		("ADVISOR-023", "the advisor's unprojected coordinates span the screen from -1 to 1"),
 		("ADVISOR-024", "outside 4:3 the advisor's width scale follows the output aspect"),
 	};
@@ -133,7 +134,7 @@ internal sealed class Advisor : IDisposable
 			{
 				var mesh = modelFile.Meshes.SingleOrDefault( candidate => candidate.Name == name )
 					?? throw new InvalidDataException( $"The original advisor model has no '{name}' mesh." );
-				// [APPROX:ADVISOR-006] Bind pose only; every Advisorm*.MD2 clip has undecoded non-rigid tracks — evidence needed: decoded vertex/visibility track payloads
+				// [APPROX:ADVISOR-006] Bind pose only: every record of the Advisor<level>m<n> clips decodes (TRS, vertex groups, UV tracks, toggles; one level clip has path parameters) and the start (AnimID 5, sub n − 1, channel 0, speed 1, clock B) is traced, but the generated/fixed sequence choice (0x63f0–0x66ec) and the node bit 0x10 consumer are not — evidence needed: the sequence builders' clip choice and the draw-path reader of node bit 0x10
 				var vertices = ConvertMesh( mesh, restTransforms[mesh.NodeIndex] );
 				if ( Mouths.Contains( name ) )
 					foreach ( var vertex in vertices )
@@ -172,10 +173,24 @@ internal sealed class Advisor : IDisposable
 	/// Model-space transform of a node from the shared MD2 hierarchy code
 	/// (<see cref="ModelAnimationPlayer.ComputeRestTransforms"/>: parent-relative, row-vector,
 	/// world = local × parent world). With the root "Position Dummy" applied the model stands
-	/// Y-up and faces −Z. The bind pose is used: every <c>Advisorm*.MD2</c> clip has tracks
-	/// with undecoded (non-rigid) payload, so none is played.
+	/// Y-up and faces −Z. The bind pose is used: the clips decode, but which one a sequence plays is
+	/// not traced (ADVISOR-006).
 	/// </summary>
 	internal static Matrix4x4 NodeWorld( ModelFile model, int nodeIndex ) => ModelAnimationPlayer.ComputeRestTransforms( model )[nodeIndex];
+
+	/// <summary>
+	/// Member an advisor animation id plays: the start helper triggers AnimID 5 (suffix <c>m</c>) with sub
+	/// <c>id − 1</c>, flags 0x10, channel 0 and speed 1.0, and the loader names member sub + 1, so id n is
+	/// <c>Advisor&lt;level&gt;m&lt;n&gt;.MD2</c> (level suffix such as <c>_FAN</c>, empty for the global advisor).
+	/// </summary>
+	// [BIN:STP-PPC:0x10029414 advisor clip start] sub = id - 1 (0x10029414), AnimID 5 (0x10029418), flags 0x10, channel 0, trigger 0x100A6CC0 (0x10029424); the presentation update continues a sequence only while the deferred slot reads 12 (0x10007634)
+	internal static string AnimationClipName( string levelSuffix, int animationId )
+	{
+		ArgumentNullException.ThrowIfNull( levelSuffix );
+		if ( animationId < 1 )
+			throw new ArgumentOutOfRangeException( nameof( animationId ), "Advisor animation ids start at 1." );
+		return $"Advisor{levelSuffix}m{animationId}.MD2";
+	}
 
 	internal static Vertex[] ConvertMesh( ModelFile.Mesh mesh, Matrix4x4 world )
 	{

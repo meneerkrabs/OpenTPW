@@ -67,7 +67,7 @@ public sealed class ModelVertexGroup
 /// u16 +4/+6/+8 and u32 +16 (not read by the sampler; kept in <see cref="UnreadFields"/>),
 /// <c>ptr groups</c> (+12), <c>vec3 offset</c> (+20), <c>vec3 scale</c> (+32).
 /// Group 0 holds two bound vertices, group 1 is static when flag 0x2 is set, and the remaining
-/// groups animate mesh positions by index. The 12-byte layout (flag 0x4000) is not decoded.
+/// groups animate mesh positions by index. The 12-byte layout (flag 0x4000) is <see cref="ModelVertexPose"/>.
 /// </summary>
 public sealed class ModelVertexAnimation
 {

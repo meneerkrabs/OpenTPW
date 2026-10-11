@@ -3,8 +3,9 @@
 Theme Park Inc (Europe, 2001; Sim Coaster in North America) is Bullfrog's follow-up
 to Theme Park World. This note records how far its data and engine match what
 OpenTPW reads, measured on October 9, 2026. It is a comparison, not a support claim:
-OpenTPW does not load Theme Park Inc. Since October 10, 2026 OpenTPW has a reader for
-its `.fsh` textures ([FSH.md](FSH.md)); nothing uses it in the game yet.
+OpenTPW does not support Theme Park Inc. Since October 10, 2026 OpenTPW has a reader for
+its `.fsh` textures ([FSH.md](FSH.md)), and since October 11, 2026 an experimental
+[level viewer](#theme-park-inc-level-viewer) that shows its worlds.
 
 ## Sources
 
@@ -41,9 +42,113 @@ TPWS container, and its balance settings grow.
 | Sound banks `.sdt` | 48 | 28 | 26/28; the 2 failures are truncated music banks, see below |
 | Textures | 8,712 `.wct` | 34 `.wct` (intro only), 7,283 `.fsh`, 2,856 `.tga`, 172 `.png` | `.wct` 34/34; `.fsh` 7,283/7,283 decode to RGBA ([FSH.md](FSH.md)) |
 | Terrain/attribute maps `.map` (`TP2M`) | 5 | 4 | 4/4; the other `.map` files are sound catalogs in both games |
-| Saves | `Easymode.TPWI` (magic 400) | `prebuilt.TPWS` (magic 500, extended header) | rejected: "version 0; expected 133" |
+| Saves | `Easymode.TPWI` (magic 400) | `prebuilt.TPWS` (magic 500, extended header) | read-only science prebuilt import; no TPI save writing |
 | Movies | QuickTime `.mov` (Mac edition) | 2 `.tgq` (`SCHl`) | 2/2 |
 | Banner companions `.mtr` | none on the Mac CD | 7 | 0/7: header words differ from the TPW variant |
+
+## Theme Park Inc level viewer
+
+`--load-original-level arabian|science|water` with Theme Park Inc data shows that world in 3D
+(`[EXT:tpi-viewer]`, a viewing aid in the sense of the [PS2 export](PS2.md), October 11, 2026). It is
+not Theme Park Inc support: there is no Theme Park Inc interface, front end, economy, rules or
+save writing, and nothing it draws has been compared with the original game. How to extract the CD
+cabinets and start it: [RUNNING.md](RUNNING.md#theme-park-inc-level-viewer-experimental).
+
+**Edition detection.** `GameEditions.Detect` (Client/Setup/GameEdition.cs) classifies a `Data`
+folder as Theme Park Inc by the retail `levels/Standard.sam` (45,695 bytes, the SHA-256 that setup's
+negative identity already used), or, for edited copies, by structure: `Ver.txt` beside at least one
+of `levels/arabian|science|water` and none of `levels/jungle|fantasy|hallow|space`. The loaders
+switch on this (`GameEditions.IsThemeParkInc`). Setup, settings and the saved game folder keep
+rejecting Theme Park Inc (hash only, as before). A folder given through `--game-path` or
+`OPENTPW_GAME_PATH`, which skips that check, is now classified at start-up: Theme Park Inc data is
+refused unless the command is `--load-original-level` with a Theme Park Inc world and none of
+`--sandbox`, `--front-end`, `--smoke-test`, `--advisor-say`, `--advisor-response`, `--setup`.
+
+**What the viewer shows.** The base terrain (`base.MD2` heightfield and meshes), the lake, the path
+layer (`pathtex` textures), the monorail (part of the terrain meshes), guests with their sprites,
+and the world's sound and music. Science also loads the sole shipped `PreBuilt/prebuilt.TPWS`: its
+paths, placed objects and fixed-item records. Arabian and water have no matching shipped prebuilt
+save and still use the default fixed items (RIDES-019). The camera is the
+park camera (pan, rotate, zoom); Esc quits and P pauses. The sandbox developer panels are off.
+
+**What it leaves out.** No economy (`ParkEconomyRuntime` is not created: Theme Park Inc's `Standard.sam`
+has other keys, e.g. no `PerGradeStaffConsts[0].BaseWage`), so no money, calendar or building; no
+HUD (the TW panels' models are not in Theme Park Inc's `ui.wad`); no advisor (its `Advisor.sam`
+differs). The viewer logs one line saying so. The save's economy, guests, ride state and untraced
+scene records are not restored. Arabian and water remain empty apart from default fixed items;
+the science save contains no Bus record, so none is inferred for that park. Several ride
+scripts report unimplemented effects in the log. Textures are not checked against the original
+game's alpha or colour handling (COMPAT-014/015).
+
+**Textures.** `Texture` now loads `.fsh` (first image of the SHPI file, `FshFile`) and stb images
+(`.tga`, `.png`) from the game data as well as from disk; decoding is GPU-free
+(`Texture.DecodeImage`). Terrain and object textures are looked up by name without extension
+(`OriginalTerrain.FindTexture`, `ObjectAssets.ResolveTexture`), so `.wct` and `.fsh` need no
+separate paths. Theme Park Inc never goes through the `.wct` texture packs. All terrain and object
+textures of the three worlds resolve and decode, except the build-tool markers `PathTex` 16 to 18
+(`baseblue`, `grnarrow`, `redarrow`, unused here) and six lake bed textures of `science` (below).
+A texture the data lacks is drawn plain white and named in one log line.
+
+**The `@` shape symbol.** `Info.Shape` rows of every Theme Park World object use `. * 2 S N E < > + W`.
+Theme Park Inc adds `@`, in exactly six objects, all road signs: `features/smrdsgn` ("`*@*`") and
+`lroadsgn` ("`*@@*`") in `arabian` and `water`, `signsm` ("`*@*`") and `signlrg` ("`*@@*`") in
+`science`. Each sign model spans its shape width x 10 units and consists of a base, two pillar meshes and a sign
+board, and the `.sam` marks the object `Info.OverwritePriority 1` ("Overwritable!") and
+`Info.IsChoosable 0`. The likely reading is a pillar cell at each end (`*`) and cells under the board (`@`),
+but the data does not prove it. The Theme Park Inc `Game.exe` is
+SafeDisc-encrypted, so this reading rests on the data only. The viewer classifies `@` as an occupied
+cell (RIDES-031), which is also the safe choice for placement. (The obstacles use further symbols
+`X`, `H`, `%`, which no catalog object uses and the viewer does not read.)
+
+**The science hole.** The first spike showed a black region of about 450 cells in `science`. The
+heightfield (`base.MD2`) leaves 1,462 cells open as holes, and in Theme Park World meshes of the same
+file fill them. In Theme Park Inc the lake is a separate model: `terrain.wad` holds `dlake.MD2`
+(`lake_surface`, `lake_bottom`; its extent equals the holes that no `base.MD2` mesh covers: 453
+cells, none left once it is drawn), `lake.MD2` (the same lake with hoardings, a tent, a plank and a
+shovel, so a building site) and the animation files `idle1`/`idle2`/`lakem1`/`lakem2`/`dlakem`. The
+viewer now draws `dlake.MD2` as the finished lake (COMPAT-019; `lake.MD2` and the animations are
+ignored). That was a loader gap. Open: six of its bed textures (`bed04`, `bed06`, `bed07`, `bed09`,
+`bed10`, `bed12`) are in no archive of the supplied data, so the lake's bank is drawn white. `arabian`
+has 29 more open cells in two mountain pits that no mesh covers (`4an_newenv.MD2`/`3an_newenv.MD2`,
+variants of the environment, do not either); they show the clear colour. The `*_newenv.MD2` files,
+`lake.MD2`, `lake01_alpha.fsh` (a separate water alpha image) and the `proc_tex` set are not used.
+
+**Other open spots.** Each world has 8 to 16 heightfield ground cells textured `trans01` (only a `.tga`, in
+`Sharetex.wad`); they draw as black quadrilaterals (visible in `water` as small black patches in the
+snowfield), most likely because the ground is drawn without blending (not confirmed). The mountain pits next to the entrance road
+show black interiors in all three worlds. Esc and P in the viewer are implemented but were not
+exercised by an automated run (all checks used `--capture-world`).
+
+**Approximations and open questions.** COMPAT-014, COMPAT-015 (palettes), COMPAT-019 (lake),
+RIDES-031 (`@`), RIDES-030 (non-finite texture coordinates in ten vertices of `science/sideshow/natnav`,
+drawn as 0, 0), RIDES-019 (default fixed items without a save), RIDES-040 (zero-coordinate fixed
+scene records). Open: how the original game transforms the zero-coordinate scene records and
+places the gate and bus in worlds without a prebuilt save; what the `*_newenv.MD2` files are for (`3ns_newenv` and `4ns_newenv` carry a heightfield and an `arrival_*` mesh set); the
+missing lake bed textures; the viewer's lighting and water transparency against the original.
+
+### Prebuilt science save
+
+The supplied retail `Data/PreBuilt` folder contains one file, `prebuilt.TPWS` (SHA-256
+`05ea01f2151757b3f4bbe7c15a1cb702af9f53b959c533c5e346d970695d882d`). Its decoded
+cell attributes equal `science/terrain/base.map` in all 16,384 cells; they differ from Arabian
+in 1,053 and water in 2,125. This is the evidence for loading it only in the science viewer.
+No original executable was run to establish a broader TPI save schema.
+
+| Field used | Observation and use |
+| --- | --- |
+| Container | Magic 500; 24 bytes inserted after magic (`01 13 00 00 00`, `Version: Beta_21` and terminator); file type at `0x61c`, version 133 at `0x620`, offline flag at `0x621`, `BILZ` at `0x625`, zlib at `0x641`. The existing bounded zlib reader applies after shifting these offsets. |
+| Decoded payload | 1,692,641 bytes; all 17 writer-order trailing delimiters occur once. The World block ends at `DLRW` offset 1,571,677. The Camera block is 48 bytes (TPW saves use 40), so it has a separate TPI layout parser. |
+| Cell grid | One 128×128 X-fastest run at offsets 7,116–1,449,038. Type 3 records are 88 bytes; 13 type 7 records add 10 bytes. `FF FF` closes each base record at +86/+87. MAP attributes remain at +46; path flag bit 0 at +13, connections +8, path texture +17, turn +21 and occupancy +12 match the TPW positions. The save yields 76 path cells. |
+| `SYSG` objects | A candidate begins with byte `1`, then an opaque `u32`, followed by little-endian `u32` Info.Id at +5, X +9, Y +13, width +17, height +21, kind +25 and index +29; rotation is `u16` at +43. The bounded signature scan finds 23 records: 9 kind 815 objects and 14 kind 865 fixed/scene records. |
+| Catalogue and placement | All nine kind 815 IDs resolve in science: eight rectangular footprints are occupied in the grid and one (`1101`, 4×5 at 42,26) has two unoccupied corner cells (42,30 and 45,30), so its footprint remains unresolved while the object is rendered at its saved anchor. Of the 14 fixed/scene records, nine IDs resolve; five zero-coordinate IDs (`1702`, `1701`, `1700`, `1750`, `1798`) have no object archive and are not rendered. One resolved record is a tool, leaving 17 objects rendered in the native viewer. |
+| Entrance | Saved `1601` Gates at (46,17), and `103` Lobby plus `104` atmdesk at (46,16), all rotation 0. TPI fixed models use local coordinates, so the viewer applies these saved anchors and rotations. There is no Bus record in this save. Eleven other fixed/scene records use (0,0); their model origin remains an approximation (RIDES-040). |
+
+The importer is read-only. It requires this observed 23-record SYSG profile so a damaged or
+different save cannot quietly produce a partial park. It uses the same exact map-attribute check
+as TPW but the TPI record widths and SYSG header are separate, leaving TPW save reading unchanged. A 300-frame native
+science capture draws the paths and park objects; it does not prove their appearance against the
+original game. Economy, ride state, guests, opaque cell data and unrecognised scene records are
+not restored.
 
 ## Ride-script VM: shared formats and opcode lineage
 
@@ -89,8 +194,10 @@ the semantics of the TPW corpus.
   remains only in `levels/wIntro`. `FshFile` decodes all of them; see [FSH.md](FSH.md).
 - **Saves.** `prebuilt.TPWS` starts with magic 500 (TPWS), like TPW saves, but then
   inserts `01 13 00 00 00` and the ASCII string `Version: Beta_21` before the
-  UTF-16 `THE SAVE GAME DATA…` banner. OpenTPW's version-133 offline layout does
-  not apply.
+  UTF-16 `THE SAVE GAME DATA…` banner. Its BILZ chunk and decoded payload retain
+  the familiar trailing delimiters, but the Camera block, cell and SYSG records have the distinct widths
+  documented [above](#prebuilt-science-save). The reader accepts this observed
+  offline profile only; it does not write TPI saves.
 - **Global save.** Theme Park Inc keeps the player's progress in a Global Master Save (`.GMS`), separate from park
   saves. `.GMI` is the same format, written for the game's internal "Refresh" snapshot. `ThemeParkIncGlobalSave`
   reads both; see [Global Master Save](#global-master-save-gms) below.
@@ -149,14 +256,13 @@ about the readers.
 
 1. ~~`.fsh` (`SHPI`, code `0x7B`) reader.~~ Done (October 10, 2026): `FshFile`
    decodes all 7,283 files and WAD members to RGBA, with `--inspect-fsh`; see
-   [FSH.md](FSH.md). Not done: using the textures in the game, and checking them
-   against the original game's rendering. Opaque `0x24` palettes are approximation
-   COMPAT-014. The next step is loading a Theme Park Inc level in the sandbox
-   (MD2 texture names resolved to `.fsh` members).
+   [FSH.md](FSH.md). The [level viewer](#theme-park-inc-level-viewer) uses them (October 11, 2026).
+   Not done: checking them against the original game's rendering. Opaque `0x24`
+   palettes are approximation COMPAT-014.
 2. Use the `.rss` evidence in the VM: name `LIMBO`'s second operand as the limbo
    duration and cite the source comments in the opcode handlers.
-3. The extended TPWS header (`Version: Beta_21`) and the new `Standard.sam` keys, if
-   Theme Park Inc support ever becomes a goal.
+3. Other TPI save profiles, untraced prebuilt fields and the new `Standard.sam` keys,
+   if Theme Park Inc support ever becomes a goal.
 
 ## Global Master Save (.GMS)
 

@@ -9,6 +9,15 @@ public partial class ModelEntity : Entity
 	/// <summary>Explicit model matrix (e.g. an MD2 node's composed hierarchy transform); overrides Position/Rotation/Scale.</summary>
 	public System.Numerics.Matrix4x4? TransformOverride { get; set; }
 
+	/// <summary>Not drawn while set (a scene that is kept loaded but not shown, or an MD2 mesh whose node-state bit 0x10 is set).</summary>
+	public bool Hidden { get; set; }
+
+	/// <summary>Light position for scenes without a level sun (e.g. the online globe).</summary>
+	public Vector3? LightPosition { get; set; }
+
+	/// <summary>Fog distance multiplier for scenes that are not the park (e.g. the online globe, which has no fog).</summary>
+	public float? ViewDistanceScale { get; set; }
+
 	public ModelEntity()
 	{
 		Spawn();
@@ -21,7 +30,7 @@ public partial class ModelEntity : Entity
 
 	protected override void OnRender()
 	{
-		if ( Model == null )
+		if ( Model == null || Hidden )
 			return;
 
 		var uniformBuffer = new ObjectUniformBuffer
@@ -29,7 +38,7 @@ public partial class ModelEntity : Entity
 			g_mModel = TransformOverride ?? ModelMatrix,
 			g_mView = Camera.ViewMatrix,
 			g_mProj = Camera.ProjMatrix,
-			g_vLightPos = Level?.SunLight?.Position ?? Vector3.Zero,
+			g_vLightPos = LightPosition ?? Level?.SunLight?.Position ?? Vector3.Zero,
 			g_vLightColor = Level?.SunLight?.Color ?? Vector3.One,
 			g_vCameraPos = Camera.Position,
 			g_flTime = Time.Now,
@@ -37,7 +46,7 @@ public partial class ModelEntity : Entity
 			_padding0 = 0,
 			_padding1 = 0,
 			// test.shader g_flViewDistanceScale: fog distance multiplier from the graphics settings (1 = unchanged).
-			_padding2 = CompatibilityRuntime.RenderQuality.ViewDistanceScale,
+			_padding2 = ViewDistanceScale ?? CompatibilityRuntime.RenderQuality.ViewDistanceScale,
 		};
 
 		Model.Material.Set( "ObjectUniformBuffer", uniformBuffer );

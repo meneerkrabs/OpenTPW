@@ -1,5 +1,7 @@
 using System.Runtime.InteropServices;
 using OpenTPW.FrontEnd;
+using OpenTPW.Online;
+using OpenTPW.Online.Api;
 using OpenTPW.Hud;
 using OpenTPW.UI.Original;
 using SixLabors.ImageSharp;
@@ -13,7 +15,7 @@ namespace OpenTPW;
 /// front-end menu render (GPU readback with BF4 text checked texel by texel), the menu is driven
 /// with injected mouse clicks and keys (next island, options open/cancel, enter park, game mode) into
 /// the original jungle level, the HUD renders with money/date text verified in readback, a Totem is
-/// bought through the catalogue build arm and charged exactly once; a second researched object is
+/// bought through the catalogue buy window and charged exactly once; a second researched object is
 /// built, opened/closed and checked for overlap refusal. The game exits to the lobby, then loads a
 /// read-only visit and checks build/open/delete/save mutation boundaries, then starts jungle again in
 /// Instant Action and checks its seed and mode gates. Options are never written and saves go to a temporary directory.
@@ -43,6 +45,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 	private BuildItem? secondItem;
 	private bool queueToolAfterSecond;
 	private int purchaseEvents;
+	private int smokeStaffId;
 
 	public FrontEndSmokeTest( GameFlow flow )
 	{
@@ -182,7 +185,34 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		Do( "online world renders", () =>
 		{
 			Require( flow.Menu!.Stack.Top?.Name == "onlineWorld", "Go Online opens the online world" );
+			Require( flow.Globe is { Visible: true } && flow.Globe.PartCount > 0 && flow.Lobby is { Visible: false }, "the online world shows the globe instead of the lobby" );
 			VerifyText( CaptureFrame( "online-world.png" ), OnlineStrings.Ui( OnlineStrings.OnlineWorld, "Online world" ), "online world title" );
+			// Offline there is no server city list; pins for a few cities exercise the flags and the picking.
+			flow.Globe.SetCities( new[]
+			{
+				new Online.Api.CityInfo( 1, GlobeScene.BullfrogCity, "", 90, 0, 3 ), new Online.Api.CityInfo( 2, "London", "", 51.5f, -0.1f, 40 ),
+				new Online.Api.CityInfo( 3, "Timbuktu", "", 16.8f, -3, 5 ), new Online.Api.CityInfo( 4, "New York", "", 40.7f, -74, 120 ),
+			} );
+		} );
+		Wait( "globe pins render", 3 );
+		Do( "globe pins", () =>
+		{
+			var london = Camera.Position.GetSystemVector3();
+			var target = GlobeScene.Centre.GetSystemVector3() + new System.Numerics.Vector3( GlobeScene.Direction( 51.5f, -0.1f ).X, GlobeScene.Direction( 51.5f, -0.1f ).Z, GlobeScene.Direction( 51.5f, -0.1f ).Y ) * GlobeScene.PickRadius;
+			Require( flow.Globe!.Pick( london, System.Numerics.Vector3.Normalize( target - london ) )?.Name == "London", "a ray from the camera to London picks London" );
+			CaptureFrame( "online-globe-cities.png" );
+			// A city lobby with three parks: their theme islands stand at the first three slots.
+			var city = new UI.CityLobbyScreen( new Online.Api.CityInfo( 2, "London", "", 51.5f, -0.1f, 3 ) );
+			Online.Api.ParkSummary Park( string id, string level ) => new( id, $"Park {id}", "", "Ann", level, "English", DateTimeOffset.UnixEpoch, 0, 0, false, false, 0, false, 0, 2 );
+			city.Parks = new[] { Park( "a", "jungle" ), Park( "b", "space" ), Park( "c", "hallow" ) };
+			flow.Menu!.Stack.Push( city );
+		} );
+		Wait( "city lobby renders", 3 );
+		Do( "city lobby", () =>
+		{
+			Require( flow.CityIslandCount == 3 && flow.Globe is { Visible: false }, "a city lobby shows its parks' theme islands instead of the globe" );
+			CaptureFrame( "online-city-lobby.png" );
+			flow.Menu!.Stack.Pop();
 			Click( flow.Menu.Stack.Top!, "login" );
 		} );
 		Wait( "login opens", 3 );
@@ -207,6 +237,20 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			("online-inbox.png", screens => screens.ShowInbox(), "inbox"),
 			("online-chat.png", screens => screens.ShowChat(), "chat"),
 			("online-import.png", screens => screens.ShowImport(), "import"),
+			// A fixed example secret; the capture is checked by decoding its QR code (docs/ONLINE.md, "Two-step login").
+			("online-two-step.png", screens =>
+			{
+				flow.Online.Enrollment = new TotpEnrollment( "Alice", "smoke-ticket", "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP",
+					Totp.Uri( "OpenTPW", "Alice", "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP" ), DateTimeOffset.UtcNow.AddMinutes( 10 ) );
+				screens.ShowEnrollment();
+			}, "twoStepSetup"),
+			("online-two-step-email.png", screens =>
+			{
+				flow.Online.Enrollment = new TotpEnrollment( "Alice", "smoke-ticket", "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP",
+					Totp.Uri( "OpenTPW", "Alice", "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP" ), DateTimeOffset.UtcNow.AddMinutes( 10 ), EmailRequired: true );
+				screens.ShowEnrollment();
+			}, "twoStepSetup"),
+			("online-recovery.png", screens => screens.ShowRecovery( "Alice" ), "recovery"),
 		};
 		foreach ( var shot in onlineShots )
 		{
@@ -216,6 +260,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			{
 				Require( flow.Menu!.Stack.Top?.Name == shot.Screen, $"{shot.Screen} opens" );
 				CaptureFrame( shot.Name );
+				flow.Online.Enrollment = null;
 				flow.Menu.Stack.Pop();
 			} );
 		}
@@ -236,6 +281,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			flow.Menu.Stack.Pop();
 		} );
 		PlanTexturePackSwitch();
+		PlanLanguageSwitch();
 		Do( "open options", () => Click( flow.Menu!.Main, "options" ) );
 		Wait( "options open", 3 );
 		Do( "options render", () =>
@@ -314,30 +360,179 @@ internal sealed class FrontEndSmokeTest : IDisposable
 						purchaseEvents++;
 					}
 			};
-			Click( flow.Hud.Screen, "buy" );
+			Click( flow.Hud.Screen, "map" );
 		} );
-		Wait( "build arm opens", 3 );
-		Do( "next build page", () => Click( flow.Hud!.Screen, "nextBuildPage" ) );
-		Wait( "next build page visible", 3 );
-		Do( "previous build page", () =>
+		Wait( "map window opens", 3 );
+		Do( "map window", () =>
 		{
-			Require( flow.Hud!.BuildPage == 1, "next page button exposes later catalogue items" );
-			Click( flow.Hud.Screen, "previousBuildPage" );
+			var hud = flow.Hud!;
+			Require( hud.MapWindowOpen && hud.Stack.Top?.Name == "map", "map button opens the original map window" );
+			CaptureFrame( "map.png" );
+			Require( Context.Batch.Draws.Any( draw => draw.Texture.ImagePath == "/levels/jungle/2dmap.tga" ), "the map uses the shipped jungle image" );
+			Click( hud.Stack.Top!, "close" );
 		} );
-		Wait( "previous build page visible", 3 );
-		Do( "show Totem page", () =>
+		Wait( "map window closes", 3 );
+		Do( "buy after map", () =>
 		{
-			Require( flow.Hud!.BuildPage == 0, "previous page button returns to the first page" );
+			Require( !flow.Hud!.MapWindowOpen && flow.Hud.Stack.Top?.Name == "hud", "map close returns to the HUD" );
+			Click( flow.Hud.Screen, "finance" );
+		} );
+		Wait( "finance window opens", 3 );
+		Do( "finance window", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.FinanceWindowOpen && hud.Stack.Top?.Name == "finance", "finance button opens the original financial graph" );
+			var capture = CaptureFrame( "finance.png" );
+			VerifyText( capture, flow.Strings[UIStrings.FinancialInformation], "Financial Information title" );
+			Click( hud.Stack.Top!, "loans" );
+		} );
+		Wait( "loans window opens", 3 );
+		Do( "loans window", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.LoansWindowOpen && hud.Stack.Top?.Name == "loans", "finance loans button opens the original bank window" );
+			var capture = CaptureFrame( "loans.png" );
+			VerifyText( capture, flow.Strings[UIStrings.GraphAvailableLoans], "Available Loans title" );
+			Click( hud.Stack.Top!, "exit" );
+		} );
+		Wait( "loans window closes", 3 );
+		Do( "finance window closes", () =>
+		{
+			var hud = flow.Hud!;
+			Require( !hud.LoansWindowOpen && hud.Stack.Top?.Name == "finance", "loans exit returns to financial information" );
+			Click( hud.Stack.Top!, "exit" );
+		} );
+		Wait( "finance window closes", 3 );
+		Do( "research window opens", () =>
+		{
+			var hud = flow.Hud!;
+			Require( !hud.FinanceWindowOpen && hud.Stack.Top == hud.Screen, "finance exit returns to the HUD" );
+			Click( hud.Screen, "research" );
+		} );
+		Wait( "research window opens", 3 );
+		Do( "research window", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.ResearchWindowOpen && hud.Stack.Top?.Name == "research", "research button opens the original research lab" );
+			var capture = CaptureFrame( "research.png" );
+			VerifyText( capture, flow.Strings[UIStrings.ResearchLab], "Research Lab title" );
+			Click( hud.Stack.Top!, "exit" );
+		} );
+		Wait( "research window closes", 3 );
+		Do( "buy window opens", () =>
+		{
+			var hud = flow.Hud!;
+			Require( !hud.ResearchWindowOpen && hud.Stack.Top == hud.Screen, "research exit returns to the HUD" );
+			Click( hud.Screen, "buy" );
+		} );
+		Wait( "buy window opens", 3 );
+		Do( "buy window", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.BuyWindowOpen && hud.Stack.Top?.Name == "buy", "buy button opens the original buy window" );
+			Require( hud.Catalog is OriginalBuildCatalog && hud.BuyItems.Count > ParkHud.BuyVisibleRows, "the original ride catalogue spans more rows than the list shows" );
+			var capture = CaptureFrame( "buy-window.png" );
+			VerifyText( capture, flow.Strings[UIStrings.BuyRide], "Buy Ride title" );
+			VerifyText( capture, flow.Strings[UIStrings.NameAttr], "Name column header" );
+			VerifyText( capture, flow.Strings[UIStrings.Price], "Price column header" );
+			Click( hud.Stack.Top!, "allStaff" );
+		} );
+		Wait( "staff window opens", 3 );
+		Do( "staff window", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.StaffWindowOpen && hud.Stack.Top?.Name == "staff", "buy window staff button opens the original staff window" );
+			Require( !hud.ShowingEmployedStaff && hud.StaffCandidates.Count > 0, "the staff window opens its applicant list" );
+			smokeStaffId = hud.SelectedCandidateId;
+			Require( smokeStaffId != 0, "an applicant is selected" );
+			var capture = CaptureFrame( "staff.png" );
+			VerifyText( capture, ((UiLabel)hud.Stack.Top!.Find( "staffName" )!).Text(), "selected applicant name" );
+			flow.InjectedInput = UiInput.Click( Context.Canvas.Map( new System.Numerics.Vector2( 1240, 441 + ParkHud.StaffRowHeight / 2 ), UiAnchor.Center ) );
+		} );
+		Wait( "staff applicant hired", 3 );
+		Do( "employed staff view", () =>
+		{
+			var hud = flow.Hud!;
+			Require( flow.Level!.Park!.Economy.Staff.Members.Any( member => member.Id == smokeStaffId ), "clicking the selected applicant hires through the staff window" );
+			Click( hud.Stack.Top!, "staffView" );
+		} );
+		Wait( "employed staff view opens", 3 );
+		Do( "dismiss smoke employee", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.ShowingEmployedStaff && hud.StaffItems.Count == flow.Level!.Park!.Economy.Staff.Members.Count, "the staff window lists employed staff" );
+			Require( hud.SelectedStaffId == smokeStaffId, "the hired smoke-test employee is selected" );
+			var capture = CaptureFrame( "staff-employed.png" );
+			VerifyText( capture, ((UiLabel)hud.Stack.Top!.Find( "staffName" )!).Text(), "selected employee name" );
+			VerifyText( capture, ((UiLabel)hud.Stack.Top.Find( "statValue3" )!).Text(), "selected employee happiness" );
+			Click( hud.Stack.Top!, "dismissStaff" );
+		} );
+		Wait( "dismissal confirmation opens", 3 );
+		Do( "confirm smoke employee dismissal", () =>
+		{
+			Require( flow.Hud!.Stack.Top?.Name == "confirmDismissStaff", "dismissal asks for confirmation" );
+			Click( flow.Hud.Stack.Top!, "choice0" );
+		} );
+		Wait( "smoke employee dismissed", 3 );
+		Do( "staff window exit", () =>
+		{
+			var hud = flow.Hud!;
+			Require( flow.Level!.Park!.Economy.Staff.Members.All( member => member.Id != smokeStaffId ), "the dismiss button removes the selected employee" );
+			Click( hud.Stack.Top!, "exit" );
+		} );
+		Wait( "staff window closes", 3 );
+		Do( "shops after staff", () =>
+		{
+			Require( !flow.Hud!.StaffWindowOpen && flow.Hud.BuyWindowOpen && flow.Hud.Stack.Top?.Name == "buy", "staff close returns to the buy window" );
+			Click( flow.Hud.Stack.Top!, "categoryShops" );
+		} );
+		Wait( "shops listed", 3 );
+		Do( "shops category", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.Category == BuildCategory.Shops && hud.BuyItems.All( item => item.Category == BuildCategory.Shops ) && hud.SelectedBuyItem != null, "the shops button lists the shops and selects the first" );
+			var capture = CaptureFrame( "buy-window-shops.png" );
+			VerifyText( capture, flow.Strings[UIStrings.BuyShop], "Buy Shop title" );
+			VerifyText( capture, hud.ItemName( hud.SelectedBuyItem! ), "selected shop name" );
+			Click( hud.Stack.Top!, "categoryRides" );
+		} );
+		Wait( "rides listed", 3 );
+		Do( "show a ride with a sign", () =>
+		{
+			var hud = flow.Hud!;
+			var aztec = hud.Catalog.GetItems( BuildCategory.Rides ).Single( item => item.Entry != null && item.Entry.ArchiveName.Equals( "tvsim", StringComparison.OrdinalIgnoreCase ) );
+			ShowItem( aztec );
+			Require( hud.SelectedBuyItem == aztec, "Aztec Mayhem is the selected item" );
+			var icon = hud.GetIcon( aztec );
+			Require( icon != null && icon.RuntimeTextureTriangleCount > 0, "the Aztec Mayhem preview draws its sign faces with the rendered sign textures, not the placeholders" );
+			var sign = ObjectSigns.Get( aztec.Entry! );
+			Require( sign != null && sign.TextPixelCount > 0 && (sign.Line1, sign.Line2) == SignCanvas.SplitAtMiddleSpace( hud.ItemName( aztec ) ), "the Aztec Mayhem sign shows its name over two lines" );
+		} );
+		Wait( "Aztec Mayhem preview renders", 3 );
+		Do( "capture the sign preview", () =>
+		{
+			CaptureFrame( "buy-window-aztec.png" );
+			flow.Hud!.SelectBuyItem( 0 );
+			Require( flow.Hud.BuyFirstRow == 0, "selecting the first row scrolls the list back" );
+		} );
+		Do( "scroll the list", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.Category == BuildCategory.Rides && hud.BuyFirstRow == 0, "the rides button returns to the rides" );
+			Click( hud.Stack.Top!, "scrollDown" );
+		} );
+		Wait( "list scrolled", 3 );
+		Do( "show Totem", () =>
+		{
+			Require( flow.Hud!.BuyFirstRow == 1, "the down button scrolls the list one row" );
 			ShowItem( TotemItem );
 		} );
-		Wait( "Totem page visible", 3 );
-		Do( "build arm", () =>
+		Wait( "Totem selected", 3 );
+		Do( "buy window with Totem", () =>
 		{
-			Require( flow.Hud!.BuildArmOpen, "buy button opens the build arm" );
-			Require( flow.Hud.Catalog is OriginalBuildCatalog && flow.Hud.BuildPageCount > 1, "the original catalogue spans build-menu pages" );
-			var capture = CaptureFrame( "build-arm.png" );
-			VerifyText( capture, flow.Strings[UIStrings.BuyRide], "Buy Ride title" );
-			VerifyText( capture, flow.Hud.ItemName( TotemItem ), "Totem build item" );
+			Require( flow.Hud!.BuyWindowOpen && flow.Hud.SelectedBuyItem == TotemItem, "the Totem is the selected item" );
+			var capture = CaptureFrame( "buy-window-totem.png" );
+			VerifyText( capture, flow.Hud.ItemName( TotemItem ), "Totem name" );
 			totemLockedAtStart = !flow.Hud.Status.IsAvailable( TotemItem );
 			ClickItem( TotemItem );
 		} );
@@ -374,7 +569,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			Require( economy.Objects.Count == objectsBeforePurchase + 1, "one purchased economy object is created" );
 			Require( flow.Level.Park.Guests!.TryGetInstance( totem!.Visitors.AttractionId, out var linked ) && economy.TryGetObject( linked, out var bought ) && bought.TotalSpent == builtCost, "guest payments link to the purchased ride" );
 			Log.Trace( $"HUD money: {economy.Balance} after buying the Totem for {builtCost}; park date {economy.Date}." );
-			Require( !flow.Hud.BuildArmOpen, "build arm closes after building" );
+			Require( !flow.Hud.BuyWindowOpen, "the buy window closes when placement starts" );
 			Require( purchaseEvents == 1 && flow.Level.PlacedRide == null, "catalogue purchase bypasses the developer prototype and HUD wallet" );
 			flow.Hud.SelectObject( totem );
 		} );
@@ -405,7 +600,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			Require( totem!.IsDeleted && soldFor > 0 && flow.Hud!.Status.Money == flow.Level!.Park!.Economy.Balance, $"deleting the ride sells it for its scrap value (got {soldFor})" );
 			Require( flow.Level!.Park!.Economy.Objects.Count == objectsBeforePurchase, "selling removes the purchased economy object" );
 			Log.Trace( $"HUD delete sold the Totem for {soldFor}; balance {flow.Level.Park.Economy.Balance}." );
-			flow.Hud!.SetBuildArm( true );
+			flow.Hud!.OpenBuyWindow();
 			secondItem = flow.Hud.Catalog.GetItems( BuildCategory.Rides ).First( item => item.InfoId != PrototypeRide.InfoId && flow.Hud.Status.IsAvailable( item ) );
 			ShowItem( secondItem );
 		} );
@@ -468,11 +663,34 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			flow.Hud.OpenPauseMenu();
 		} );
 		Wait( "pause again", 3 );
-		Do( "exit to lobby", () => Click( flow.Hud!.Stack.Top!, nameof( UIStrings.ExitToLobby ) ) );
+		// The online globe over a park: it replaces the park and the HUD, and closing it restores the park camera.
+		CameraMode? parkCamera = null;
+		Do( "online globe in the park", () =>
+		{
+			parkCamera = Camera.Mode;
+			flow.ShowOnline( flow.Hud!.Stack );
+		} );
+		Wait( "park globe renders", 3 );
+		Do( "park globe", () =>
+		{
+			Require( flow.Globe is { Visible: true } && Camera.Mode is GlobeCameraMode, "Go Online in a park shows the globe with its camera" );
+			CaptureFrame( "online-park-globe.png" );
+			flow.Hud!.Stack.Pop();
+		} );
+		Wait( "park returns", 3 );
+		var parkLanguage = PlanLanguageInPark();
+		Do( "exit to lobby", () =>
+		{
+			Require( ReferenceEquals( Camera.Mode, parkCamera ) && flow.Globe is { Visible: false }, "closing the globe restores the park's camera" );
+			Click( flow.Hud!.Stack.Top!, nameof( UIStrings.ExitToLobby ) );
+		} );
 		Wait( "lobby again", 20 );
 		Do( "back in lobby", () =>
 		{
 			Require( flow.Level == null && flow.Menu != null && flow.Lobby != null, "Exit To Lobby returns to the front end" );
+			if ( parkLanguage != null )
+				Require( string.Equals( GameLanguage.Current.Name, parkLanguage, StringComparison.OrdinalIgnoreCase ) && flow.Strings.Language == parkLanguage,
+					"a language chosen in the park applies once the park is left" );
 			Require( flow.Menu!.Selected.Level == "jungle", "lobby returns to the island of the park" );
 			CaptureFrame( "frontend-return.png" );
 			flow.StartPark( "jungle", GameMode.InstantAction );
@@ -505,6 +723,9 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			Require( level.IsReadOnlyVisit && level.Park == null, "visited parks have no writable economy" );
 			visitedCount = level.Objects.Objects.Count;
 			visitedObject = level.Objects.Objects.First( item => item.Runtime.IsAttraction && !item.Entry.IsFixedItem );
+			var signed = level.Objects.Objects.Where( item => item.Sign != null ).ToArray();
+			Require( signed.Length > 0 && signed.All( item => item.Sign!.TextPixelCount > 0 || item.Sign.Line1.Length == 0 ), "the visited park's rides show their own rendered sign text, not the SIGN1/SIGN2 placeholders" );
+			Log.Trace( $"Ride signs in the visited park: {string.Join( ", ", signed.Select( item => $"{item.Entry.ArchiveName}: {item.Sign!.Line1} / {item.Sign.Line2}" ) )}" );
 			visitedOpen = visitedObject.IsOpen;
 			hud.BeginPlacing( hud.Catalog.GetItems( BuildCategory.Rides ).First() );
 			Require( level.BuildEntry == null && !level.IsPlacing, "read-only HUD refuses direct placement requests" );
@@ -547,9 +768,9 @@ internal sealed class FrontEndSmokeTest : IDisposable
 	}
 
 	/// <summary>
-	/// The Instant Action start from the menu: Easy_ balance and the shipped jungle seed, no staff member
-	/// invented for the seed's undecoded researcher but research by its ECON-019 stand-in, and the loan,
-	/// research effort, upgrade, ticket and challenge gates (docs/ECONOMY.md, "Game modes").
+	/// The Instant Action start from the menu: Easy_ balance and the shipped jungle seed with its imported bank, turn
+	/// and staff (research comes from the seed's own researcher), and the loan, research effort, upgrade, ticket and
+	/// challenge gates (docs/ECONOMY.md, "Game modes").
 	/// </summary>
 	private void PlayInstantAction()
 	{
@@ -557,7 +778,12 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		var economy = level.Park!.Economy;
 		Require( flow.StartKind == ParkStartKind.InstantAction && economy.Mode == ParkGameMode.InstantAction && economy.Features == ParkModeFeatures.For( ParkGameMode.InstantAction ), "Instant Action button starts an Instant Action park" );
 		Require( economy.Settings.IsEasy && level.OriginalPark!.Save != null && level.Park.Import is { ImportedObjects: > 0 }, "Instant Action jungle uses the Easy_ balance and imports the Easymode seed" );
-		Require( economy.Staff.Members.Count == 0 && economy.SeedResearcherStandIn, "the seed's staff are not decoded: no staff member is invented, research uses the ECON-019 stand-in" );
+		var seed = level.OriginalPark!.Save!;
+		var bank = seed.Economy.Bank;
+		// The park has run a few frames since it started: the month's opening balance and the turn show the import.
+		Require( economy.Ledger.CurrentOpeningBalance == bank.Balance && economy.EntranceFee == bank.AdmissionFee && economy.Ledger.History.Count == 0
+			&& economy.Turn >= seed.World.Variables.GameTick, "the seed's bank balance, admission fee and park turn are imported" );
+		Require( economy.Staff.Members.Count == seed.Staff.Count && economy.Staff.OfType( StaffType.Researcher ).Any(), "the seed's staff, including its researcher, are imported" );
 		var capture = CaptureFrame( "instant-action-hud.png" );
 		VerifyText( capture, flow.Hud!.MoneyText, "Instant Action HUD bank balance" );
 		Require( !economy.AvailableLoans.Any(), "Instant Action offers no loans" );
@@ -569,12 +795,12 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		var progress = economy.Research.ProgressEntries.ToArray();
 		var start = economy.Date;
 		economy.AdvanceDays( 60 );
-		Require( economy.Research.Completed.Count > completedItems || !economy.Research.ProgressEntries.SequenceEqual( progress ), "research advances through the seed researcher's stand-in" );
+		Require( economy.Research.Completed.Count > completedItems || !economy.Research.ProgressEntries.SequenceEqual( progress ), "research advances through the seed's imported researcher" );
 		Require( economy.Objectives.GoldenTickets.Count == 0 && economy.Objectives.Current == null, "no golden-ticket checks or challenges in Instant Action" );
 		Log.Trace( $"Instant Action jungle: {level.Park.Import!.ImportedObjects} seed objects, {economy.Staff.Members.Count} staff, research advanced {start} -> {economy.Date}; loans, research effort and upgrades refused." );
 		Device.WaitForIdle();
 		completed = true;
-		Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name} at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames, lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, two distinct catalogue objects bought exactly once through the park economy, info arm, economy pause, sale, overlap refusal, open/close, Escape out of the queue tool, pause menu, exit to lobby, read-only visit build/open/delete/save guards, Instant Action return and Load Park reference start, Instant Action seed, research stand-in and gates." );
+		Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name} at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames, lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, finance/loans/research window captures and title readback, two distinct catalogue objects bought exactly once through the park economy, info arm, economy pause, sale, overlap refusal, open/close, Escape out of the queue tool, pause menu, exit to lobby, read-only visit build/open/delete/save guards, Instant Action return and Load Park reference start, Instant Action seed with imported bank, turn and staff, research and gates." );
 		GameFlow.Quit();
 	}
 
@@ -617,6 +843,120 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		}
 	}
 
+	/// <summary>
+	/// [EXT:live-language] Options → OpenTPW → language row → OK switches the language at once: the front end and the
+	/// reopened options show the other language's text, and switching back restores the first one. Skipped with one language.
+	/// </summary>
+	private void PlanLanguageSwitch()
+	{
+		var languages = GameLanguage.Choosable();
+		if ( languages.Count < 2 )
+		{
+			Log.Trace( "Front-end smoke test: language switch skipped, only one language is available." );
+			return;
+		}
+		var first = GameLanguage.Current.Name;
+		var index = languages.ToList().FindIndex( name => string.Equals( name, first, StringComparison.OrdinalIgnoreCase ) );
+		var other = languages[(index + 1) % languages.Count];
+		var firstStrings = flow.Strings;
+		foreach ( var (from, to) in new[] { (first, other), (other, first) } )
+		{
+			Do( $"language {to}: open options", () =>
+			{
+				if ( flow.Menu!.Stack.Top?.Name != "options" )
+					Click( flow.Menu.Main, "options" );
+			} );
+			Wait( $"language {to}: options open", 3 );
+			Do( $"language {to}: OpenTPW page", () => Click( flow.Menu!.Stack.Top!, "openTpw" ) );
+			Wait( $"language {to}: OpenTPW page opens", 3 );
+			// The row cycles forward: one step to the next language, the rest of the way round to come back.
+			var clicks = to == other ? 1 : languages.Count - 1;
+			for ( var click = 0; click < clicks; click++ )
+			{
+				Do( $"language {to}: cycle {click + 1}", () =>
+				{
+					var page = flow.Menu!.Stack.Top!;
+					Require( page.Name == "openTpwOptions", "the OpenTPW options page opens" );
+					var row = page.Elements.OfType<UiButton>().FirstOrDefault( element => element.Id == "language" );
+					Require( row != null, "the OpenTPW page has a language row" );
+					flow.InjectedInput = UiInput.Click( row!.ScreenRect( Context.Canvas ).Center );
+				} );
+				Wait( $"language {to}: row changes {click + 1}", 3 );
+			}
+			Do( $"language {to}: back to the original page", () => flow.InjectedInput = UiInput.Key( UiKeys.Back ) );
+			Wait( $"language {to}: original page", 3 );
+			Do( $"language {to}: accept", () =>
+			{
+				Require( flow.Menu!.Stack.Top?.Name == "options", "Back returns to the original options page" );
+				Require( GameLanguage.Current.Name == from, "the language changes only when the options are accepted" );
+				Click( flow.Menu.Stack.Top!, "ok" );
+			} );
+			Wait( $"language {to}: switched", 5 );
+			Do( $"language {to}: verify", () =>
+			{
+				Require( string.Equals( GameLanguage.Current.Name, to, StringComparison.OrdinalIgnoreCase ), $"the language is now {to}" );
+				Require( flow.Menu!.Stack.Top?.Name == "options", "the options reopen in the new language" );
+				Require( flow.Strings.Language == GameLanguage.Current.Name, "the string table follows the language" );
+				var capture = CaptureFrame( $"language-{to.ToLowerInvariant()}.png" );
+				VerifyText( capture, flow.Strings[UIStrings.GameOptions], $"Game Options title in {to}" );
+				// The tables of the two languages must differ somewhere visible, or this check would pass on a stale table.
+				var shown = new[] { UIStrings.GameOptions, UIStrings.Options, UIStrings.ExitToLobby, UIStrings.Paused };
+				if ( to == other )
+					Require( shown.Any( id => flow.Strings[id] != firstStrings[id] ), $"{first} and {to} differ in the checked labels" );
+				flow.InjectedInput = UiInput.Key( UiKeys.Back );
+			} );
+			Wait( $"language {to}: options closed", 3 );
+		}
+		Do( "language restored", () =>
+		{
+			Require( flow.Menu!.Stack.Top?.Name == "lobby", "the options close after the switch back" );
+			Require( string.Equals( GameLanguage.Current.Name, first, StringComparison.OrdinalIgnoreCase ), "the first language is back" );
+		} );
+	}
+
+	/// <summary>
+	/// [EXT:live-language] In a park the options keep the language until the park is left, and say so; returns the language
+	/// expected back in the lobby (null with one language).
+	/// </summary>
+	private string? PlanLanguageInPark()
+	{
+		var languages = GameLanguage.Choosable();
+		if ( languages.Count < 2 )
+			return null;
+		var first = GameLanguage.Current.Name;
+		var other = languages[(languages.ToList().FindIndex( name => string.Equals( name, first, StringComparison.OrdinalIgnoreCase ) ) + 1) % languages.Count];
+		Do( "park language: options", () => Click( flow.Hud!.Stack.Top!, nameof( UIStrings.Options ) ) );
+		Wait( "park language: options open", 3 );
+		Do( "park language: OpenTPW page", () => Click( flow.Hud!.Stack.Top!, "openTpw" ) );
+		Wait( "park language: OpenTPW page opens", 3 );
+		Do( "park language: cycle", () =>
+		{
+			var row = flow.Hud!.Stack.Top!.Elements.OfType<UiButton>().FirstOrDefault( element => element.Id == "language" );
+			Require( row != null, "the OpenTPW page has a language row in the park" );
+			flow.InjectedInput = UiInput.Click( row!.ScreenRect( Context.Canvas ).Center );
+		} );
+		Wait( "park language: row changes", 3 );
+		Do( "park language: back", () => flow.InjectedInput = UiInput.Key( UiKeys.Back ) );
+		Wait( "park language: original page", 3 );
+		Do( "park language: accept", () => Click( flow.Hud!.Stack.Top!, "ok" ) );
+		Wait( "park language: notice", 3 );
+		Do( "park language: notice shown", () =>
+		{
+			Require( flow.Hud!.Stack.Top?.Name == "languageAfterPark", "the options say the language follows when the park is left" );
+			Require( string.Equals( GameLanguage.Current.Name, first, StringComparison.OrdinalIgnoreCase ), "the park keeps its language" );
+			VerifyText( CaptureFrame( "language-after-park.png" ), flow.Strings.Extra( OpenTpwText.LanguageAfterPark ), "language notice" );
+			Click( flow.Hud.Stack.Top!, "choice0" );
+		} );
+		Wait( "park language: notice closed", 3 );
+		Do( "park language: pause menu", () =>
+		{
+			if ( flow.Hud!.Stack.Top?.Name != "pause" )
+				flow.Hud.OpenPauseMenu();
+		} );
+		Wait( "park language: pause menu again", 3 );
+		return other;
+	}
+
 	private void Click( UiScreen screen, string id )
 	{
 		var element = screen.Find( id );
@@ -628,15 +968,18 @@ internal sealed class FrontEndSmokeTest : IDisposable
 	{
 		var hud = flow.Hud!;
 		hud.SelectCategory( item.Category );
-		var index = hud.BuildItems.ToList().IndexOf( item );
-		hud.ChangeBuildPage( index / 3 );
+		hud.SelectBuyItem( hud.BuyItems.ToList().IndexOf( item ) );
 	}
 
+	/// <summary>Clicks the list row of <paramref name="item"/>; a click on the already selected row buys it.</summary>
 	private void ClickItem( BuildItem item )
 	{
-		var index = flow.Hud!.VisibleBuildItems.ToList().IndexOf( item );
-		Require( index >= 0, "requested catalogue item is on the visible page" );
-		Click( flow.Hud.Screen, $"item{index}" );
+		var hud = flow.Hud!;
+		Require( hud.BuyWindowOpen, "the buy window is open" );
+		hud.SelectBuyItem( hud.BuyItems.ToList().IndexOf( item ) );
+		var visible = hud.SelectedBuyIndex - hud.BuyFirstRow;
+		Require( visible >= 0 && visible < ParkHud.BuyVisibleRows, "the requested catalogue item is among the visible rows" );
+		flow.InjectedInput = UiInput.Click( Context.Canvas.Map( new System.Numerics.Vector2( 1240, 427 + (visible + 0.5f) * ParkHud.BuyRowHeight ), UiAnchor.Center ) );
 	}
 
 	private static (int X, int Y) FindObjectSite( Level level, ObjectCatalogEntry entry ) =>

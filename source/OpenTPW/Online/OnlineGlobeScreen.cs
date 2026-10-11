@@ -1,0 +1,88 @@
+using OpenTPW.Online.Api;
+using OpenTPW.UI.Original;
+using NMatrix4x4 = System.Numerics.Matrix4x4;
+using NVector2 = System.Numerics.Vector2;
+using NVector3 = System.Numerics.Vector3;
+using NVector4 = System.Numerics.Vector4;
+
+namespace OpenTPW.UI;
+
+/// <summary>
+/// The Online World screen over the 3D <see cref="GlobeScene"/>: arrow keys and the panel's arrow buttons turn the
+/// globe, a click on the globe zooms in or out, the cursor at a screen edge or the right button held steers it, and
+/// the city under the cursor is named at the top (docs/ONLINE.md).
+/// </summary>
+public sealed class OnlineGlobeScreen : UiScreen
+{
+	// [BIN:TPW-EXE:0x005DC860 globe edge scroll] the cursor within 1% of the 2048×1536 canvas edge steers the globe
+	public const float EdgeMargin = 0.01f;
+
+	private readonly Func<GlobeScene?> globe;
+	private NVector2? firstMouse;
+	private bool mouseMoved;
+
+	public OnlineGlobeScreen( Func<GlobeScene?> globe ) : base( "onlineWorld" )
+	{
+		this.globe = globe;
+		HidesBelow = true;
+	}
+
+	/// <summary>The city under the cursor this frame.</summary>
+	public CityInfo? Hovered { get; private set; }
+
+	public override bool Update( UiContext context, UiInput input )
+	{
+		var canvas = context.Canvas;
+		var overUi = input.Mouse.X >= 0 && HitTest( canvas, input.Mouse ) is not null;
+		if ( input.Has( UiKeys.Left ) ) GlobeCameraMode.Turn( -1, 0 );
+		if ( input.Has( UiKeys.Right ) ) GlobeCameraMode.Turn( 1, 0 );
+		if ( input.Has( UiKeys.Up ) ) GlobeCameraMode.Turn( 0, 1 );
+		if ( input.Has( UiKeys.Down ) ) GlobeCameraMode.Turn( 0, -1 );
+		Hovered = null;
+		if ( input.Mouse.X >= 0 && canvas.Width > 0 && canvas.Height > 0 )
+		{
+			var x = input.Mouse.X / canvas.Width;
+			var y = input.Mouse.Y / canvas.Height;
+			float Edge( float value ) => value < EdgeMargin ? -1 : value > 1 - EdgeMargin ? 1 : 0;
+			// [APPROX:ONLINE-012] edge steering starts once the cursor has moved on this screen, so a cursor resting in a corner
+			// when the screen opens does not spin the globe — evidence needed: whether the original steers from the first frame
+			firstMouse ??= input.Mouse;
+			mouseMoved |= NVector2.DistanceSquared( firstMouse.Value, input.Mouse ) > 4;
+			var steerX = mouseMoved ? Edge( x ) : 0;
+			var steerY = mouseMoved ? -Edge( y ) : 0;
+			// [BIN:TPW-EXE:0x005DC860 globe right button] holding the right button steers by the cursor's offset from the screen centre
+			if ( Input.Mouse.Right && !overUi )
+			{
+				steerX += x * 2 - 1;
+				steerY += 1 - y * 2;
+			}
+			if ( steerX != 0 || steerY != 0 )
+				GlobeCameraMode.Steer( steerX, steerY, context.Delta );
+			if ( !overUi && globe() is { } scene && Ray( input.Mouse, canvas ) is { } ray )
+				Hovered = scene.Pick( ray.Origin, ray.Direction );
+			// [BIN:TPW-EXE:0x005DD530 online globe input] a click on the globe toggles zoomed in/out
+			if ( input.LeftReleased && !overUi )
+				GlobeCameraMode.ToggleZoom();
+		}
+		// Arrow keys turn the globe instead of moving the focus; the right button steers instead of going back.
+		var forwarded = input with { Pressed = input.Pressed & ~(UiKeys.Left | UiKeys.Right | UiKeys.Up | UiKeys.Down), RightPressed = false };
+		return base.Update( context, forwarded );
+	}
+
+	/// <summary>World-space ray through a canvas pixel, from the current camera.</summary>
+	private static (NVector3 Origin, NVector3 Direction)? Ray( NVector2 mouse, UiCanvas canvas )
+	{
+		if ( !NMatrix4x4.Invert( Camera.ViewMatrix * Camera.ProjMatrix, out var inverse ) )
+			return null;
+		var ndcX = mouse.X / canvas.Width * 2 - 1;
+		var ndcY = 1 - mouse.Y / canvas.Height * 2;
+		NVector3 Unproject( float depth )
+		{
+			var point = NVector4.Transform( new NVector4( ndcX, ndcY, depth, 1 ), inverse );
+			return new NVector3( point.X, point.Y, point.Z ) / point.W;
+		}
+		var near = Unproject( 0 );
+		var far = Unproject( 1 );
+		return (near, NVector3.Normalize( far - near ));
+	}
+}

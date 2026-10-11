@@ -182,9 +182,7 @@ public sealed class SignFile
 		RequireSpan( data, position, length );
 		var payload = data.AsSpan( position, length ).ToArray();
 		position += length;
-		if ( wavelet )
-			diagnostics.Add( $"Sign bitmap at {offset}: wavelet payload is preserved; decoding is unsupported." );
-		else if ( bytesPerPixel != 4 )
+		if ( !wavelet && bytesPerPixel != 4 )
 			diagnostics.Add( $"Sign bitmap at {offset}: {bytesPerPixel}-byte pixels are preserved; color interpretation is unsupported." );
 		return new SignBitmap( (int)width, (int)height, (int)bytesPerPixel, payload ) { FileOffset = offset, IsWavelet = wavelet };
 	}

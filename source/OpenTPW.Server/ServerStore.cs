@@ -41,6 +41,8 @@ public sealed class ParkRecord
 	public bool HasThumbnail { get; set; }
 	/// <summary>The author chose to list this park on the project website (opt-in when publishing).</summary>
 	public bool ShowOnWebsite { get; set; }
+	/// <summary>City of the online world the park is published in (<see cref="CityDirectory"/>); 0 for parks from before cities.</summary>
+	public int CityId { get; set; }
 	public int Visits { get; set; }
 	public int Votes { get; set; }
 	public List<string> Visitors { get; set; } = new();
@@ -534,7 +536,7 @@ public sealed class ServerStore
 
 	// ---- parks ----
 
-	public ParkRecord Publish( AccountRecord owner, ParkPackage package, byte[] packageBytes, bool showOnWebsite = false )
+	public ParkRecord Publish( AccountRecord owner, ParkPackage package, byte[] packageBytes, bool showOnWebsite = false, int cityId = 0 )
 	{
 		lock ( gate )
 		{
@@ -545,7 +547,7 @@ public sealed class ServerStore
 				Id = NewId(), OwnerKey = owner.Key, Author = owner.Name, Name = package.Manifest.Park.Name,
 				Description = package.Manifest.Park.Description, Level = package.Manifest.Park.Level, Language = package.Manifest.Game.Language,
 				PackageId = package.Manifest.PackageId, PublishedUtc = clock(), Bytes = packageBytes.Length, HasThumbnail = package.Thumbnail != null,
-				ShowOnWebsite = showOnWebsite,
+				ShowOnWebsite = showOnWebsite, CityId = cityId,
 			};
 			AtomicFile.Write( ParkFile( park.Id, ParkPackage.FileExtension ), packageBytes );
 			if ( package.Thumbnail != null )
@@ -592,6 +594,13 @@ public sealed class ServerStore
 			return parks.Values.Where( park => park.ShowOnWebsite && !options.HiddenParks.Contains( park.Id ) )
 				.OrderByDescending( park => park.Votes ).ThenByDescending( park => park.Visits ).ThenBy( park => park.PublishedUtc ).ThenBy( park => park.Id, StringComparer.Ordinal )
 				.Take( count ).ToList();
+	}
+
+	/// <summary>Published, not hidden parks per city id.</summary>
+	public IReadOnlyDictionary<int, int> ParksPerCity()
+	{
+		lock ( gate )
+			return parks.Values.Where( park => !options.HiddenParks.Contains( park.Id ) ).GroupBy( park => park.CityId ).ToDictionary( group => group.Key, group => group.Count() );
 	}
 
 	public string ParkFile( string id, string extension ) => Path.Combine( Root, "parks", id + extension );

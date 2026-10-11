@@ -303,7 +303,7 @@ public class DeterminismTests
 	private static readonly string[] PresentationWorldFiles =
 	{
 		"Advisor.cs", "AdvisorController.cs", "AdvisorResponses.cs", "AdvisorScoreQueue.cs", "Camera.cs", "CameraMode.cs",
-		"LobbyCameraMode.cs", "ParkCameraMode.cs", "SandboxSave.cs", "Sky.cs", "Sun.cs"
+		"GlobeCameraMode.cs", "LobbyCameraMode.cs", "ParkCameraMode.cs", "SandboxSave.cs", "Sky.cs", "Sun.cs"
 	};
 
 	/// <summary>Simulation folders must not reach process-wide or unseeded randomness or the wall clock.</summary>

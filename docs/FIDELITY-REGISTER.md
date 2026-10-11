@@ -14,9 +14,9 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **239 unresolved unique APPROX IDs**, 260 APPROX occurrences, 101 EXT occurrences, 116 DATA occurrences and 181 BIN occurrences.
+Current inventory: **248 unresolved unique APPROX IDs**, 271 APPROX occurrences, 103 EXT occurrences, 120 DATA occurrences and 196 BIN occurrences.
 
-Of these, 233 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
+Of these, 235 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 13 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
 CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.
 
@@ -26,11 +26,11 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | --- | ---: | ---: |
 | ADVISOR | 19 | 20 |
 | AUDIO | 5 | 5 |
-| COMPAT | 19 | 20 |
+| COMPAT | 21 | 24 |
 | DET | 5 | 5 |
 | ECON | 33 | 33 |
 | GATE | 2 | 4 |
-| ONLINE | 6 | 6 |
+| ONLINE | 13 | 13 |
 | PATH | 14 | 15 |
 | QUEUE | 19 | 19 |
 | RIDES | 28 | 28 |
@@ -75,16 +75,18 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | COMPAT-007 | Original-fidelity area (scope unadjudicated) | Sign text | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:21` |
 | COMPAT-008 | Original-fidelity area (scope unadjudicated) | Sign text | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:22` |
 | COMPAT-009 | Original-fidelity area (scope unadjudicated) | Sign text | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:23` |
-| COMPAT-010 | Original-fidelity area (scope unadjudicated) | Graphics presets | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:27` |
-| COMPAT-011 | Original-fidelity area (scope unadjudicated) | Localization | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:28` |
-| COMPAT-012 | Original-fidelity area (scope unadjudicated) | Text input | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:29` |
-| COMPAT-013 | Original-fidelity area (scope unadjudicated) | Graphics presets | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:30` |
-| COMPAT-014 | Original-fidelity area (scope unadjudicated) | Theme Park Inc textures | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:31` |
-| COMPAT-015 | Original-fidelity area (scope unadjudicated) | Theme Park Inc textures | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:32` |
+| COMPAT-010 | Original-fidelity area (scope unadjudicated) | Graphics presets | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:29` |
+| COMPAT-011 | Original-fidelity area (scope unadjudicated) | Localization | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:30` |
+| COMPAT-012 | Original-fidelity area (scope unadjudicated) | Text input | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:31` |
+| COMPAT-013 | Original-fidelity area (scope unadjudicated) | Graphics presets | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:32` |
+| COMPAT-014 | Original-fidelity area (scope unadjudicated) | Theme Park Inc textures | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:33` |
+| COMPAT-015 | Original-fidelity area (scope unadjudicated) | Theme Park Inc textures | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:34` |
 | COMPAT-016 | Original-fidelity area (scope unadjudicated) | Sign text | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:24` |
 | COMPAT-017 | Original-fidelity area (scope unadjudicated) | Sign text | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:25` |
 | COMPAT-018 | Original-fidelity area (scope unadjudicated) | Sign text | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:26` |
-| COMPAT-019 | Original-fidelity area (scope unadjudicated) | Theme Park Inc lake | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:33` |
+| COMPAT-019 | Original-fidelity area (scope unadjudicated) | Theme Park Inc lake | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:35` |
+| COMPAT-030 | Original-fidelity area (scope unadjudicated) | Sign text | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:27` |
+| COMPAT-031 | Original-fidelity area (scope unadjudicated) | Sign text | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:28` |
 | DET-002 | Original-fidelity area (scope unadjudicated) | runs take an explicit world seed (default 0x5450574775657374) instead of the original's time(NULL)/timer seeds | See source annotation/runtime register | `source/OpenTPW/World/DeterminismApproximations.cs:11` |
 | DET-013 | Original-fidelity area (scope unadjudicated) | scripts without an explicit seed get a per-VM System.Random seeded from the park's SplitMix64 stream, not draws from the original's one world generator | See source annotation/runtime register | `source/OpenTPW/World/DeterminismApproximations.cs:12` |
 | DET-014 | Original-fidelity area (scope unadjudicated) | guests draw from their own SplitMix64 stream seeded from the world seed, not from the original's shared world LCG reseeded to each new guest's id | See source annotation/runtime register | `source/OpenTPW/World/DeterminismApproximations.cs:13` |
@@ -125,12 +127,19 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-048 | Original-fidelity area (scope unadjudicated) | a negative path or queue cell cost (modified Costs.*) is booked as other income; balance and profit match the original's Spend of a negative amount | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:44` |
 | GATE-001 | Original-fidelity area (scope unadjudicated) | an M3 in-game minute is 60 s of normal-speed simulation (3,600 fixed 60 Hz ticks), not a park-clock minute | See source annotation/runtime register | `source/OpenTPW/Client/M3GateApproximations.cs:11` |
 | GATE-006 | Original-fidelity area (scope unadjudicated) | the queue walk terms (C = 9 updates per cell with w2 = 15, the join walk J(p), each head's own remaining walk and the head-not-ready bound N x C + 2 x w2) come from enumerating OpenTPW's own port of the traced steering, including WALK-002 (corner branches), WALK-003 (separation neighbours), WALK-004 (routes) and the walkability rule (WALK-005/006); the head-not-ready bound is looser than the retired GATE-005 check, accepted by the owner on 2026-10-10 | See source annotation/runtime register | `source/OpenTPW/Client/M3GateApproximations.cs:12` |
-| ONLINE-001 | OpenTPW online extension | Word filtering uses case-insensitive substring matches in space-padded text; entry spaces act as boundaries; allowed substrings exempt matches; hit characters except spaces become asterisks. | Original word-filter code or observed original filtering behavior; the source comment says the encrypted TP.ICD implementation is unreadable. | `docs/ONLINE.md:196` |
-| ONLINE-002 | OpenTPW online extension | A leading slash introduces a chat command; other text means say. | Original chat input syntax, which is not documented in the available data. | `docs/ONLINE.md:197` |
-| ONLINE-003 | OpenTPW online extension | Response strings 102 and 110 mean failure to add an ignored player and a buddy respectively, based on nearby string blocks. | Original response-code table. | `docs/ONLINE.md:198` |
-| ONLINE-004 | OpenTPW online extension | Buddy response strings 111–113 mean online, offline and removed. | Localized variants or the original response-code table. | `docs/ONLINE.md:199` |
-| ONLINE-005 | OpenTPW online extension | Chat command semantics follow command words, response strings and weachatr.dll export names; say/emote/shout reach a room, wshout/ushout all rooms; hearing has no positional effect; blackmark creates a moderation report. | Original chat server behavior, including command reach, hearing range and blackmark handling. | `docs/ONLINE.md:200` |
-| ONLINE-006 | OpenTPW online extension | A visitor already inside a park must leave it before visiting another, inferred from CHAT_COMMANDS string 127. | Original park-visit transition behavior or an original chat/runtime trace. | `docs/ONLINE.md:201` |
+| ONLINE-001 | OpenTPW online extension | Word filtering uses case-insensitive substring matches in space-padded text; entry spaces act as boundaries; allowed substrings exempt matches; hit characters except spaces become asterisks. | Original word-filter code or observed original filtering behavior; the source comment says the encrypted TP.ICD implementation is unreadable. | `docs/ONLINE.md:224` |
+| ONLINE-002 | OpenTPW online extension | A leading slash introduces a chat command; other text means say. | Original chat input syntax, which is not documented in the available data. | `docs/ONLINE.md:225` |
+| ONLINE-003 | OpenTPW online extension | Response strings 102 and 110 mean failure to add an ignored player and a buddy respectively, based on nearby string blocks. | Original response-code table. | `docs/ONLINE.md:226` |
+| ONLINE-004 | OpenTPW online extension | Buddy response strings 111–113 mean online, offline and removed. | Localized variants or the original response-code table. | `docs/ONLINE.md:227` |
+| ONLINE-005 | OpenTPW online extension | Chat command semantics follow command words, response strings and weachatr.dll export names; say/emote/shout reach a room, wshout/ushout all rooms; hearing has no positional effect; blackmark creates a moderation report. | Original chat server behavior, including command reach, hearing range and blackmark handling. | `docs/ONLINE.md:228` |
+| ONLINE-006 | OpenTPW online extension | A visitor already inside a park must leave it before visiting another, inferred from CHAT_COMMANDS string 127. | Original park-visit transition behavior or an original chat/runtime trace. | `docs/ONLINE.md:229` |
+| ONLINE-007 | OpenTPW online extension | The globe camera's rates, steps and damping are applied per tick at 30 ticks per second. | The tick length of the online world's update (&#96;tp.exe&#96; 0x005DC860). | `docs/ONLINE.md:230` |
+| ONLINE-008 | OpenTPW online extension | The globe first faces Europe and the Atlantic from 30° north. | The original's starting yaw and pitch. | `docs/ONLINE.md:231` |
+| ONLINE-009 | OpenTPW online extension | Edge and right-button steering add rate × offset × step per tick to the turn velocity. | The input branches of 0x005DC860. | `docs/ONLINE.md:232` |
+| ONLINE-010 | OpenTPW online extension | The hovered city's name and park count are drawn at the top centre. | The layout of the original city labels 0x16c11/0x16c12. | `docs/ONLINE.md:233` |
+| ONLINE-011 | OpenTPW online extension | &#96;f_wlobbg&#96; is the panel's button background in its second rectangle (33,1057,480,1505). | The table field that names the panel's background model. | `docs/ONLINE.md:234` |
+| ONLINE-012 | OpenTPW online extension | Edge steering starts once the cursor has moved on the globe screen. | Whether the original steers from the first frame. | `docs/ONLINE.md:235` |
+| ONLINE-013 | OpenTPW online extension | Pins are twice the decoded (s, s, p) scale and stand on the mesh surface (radius 119.7). | The scale of the original flag node's parent and a capture of the original globe. | `docs/ONLINE.md:236` |
 | PATH-001 | Original-fidelity area (scope unadjudicated) | PATH-ENTER: the path tool starts from a park-view click on an empty owned cell or a path cell (no menu button); ghosts are flat cell markers | See source annotation/runtime register | `source/OpenTPW/World/PathApproximations.cs:12` |
 | PATH-002 | Original-fidelity area (scope unadjudicated) | PATH-UNDO: Backspace pops the last vertex and removes the cells that segment built, without a refund | See source annotation/runtime register | `source/OpenTPW/World/PathApproximations.cs:13` |
 | PATH-003 | Original-fidelity area (scope unadjudicated) | PATH-ENDFLAG: a segment whose last cell lands on an existing path or queue cell ends the tool | See source annotation/runtime register | `source/OpenTPW/World/PathApproximations.cs:14` |
@@ -357,15 +366,15 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | AUDIO-003 | `source/OpenTPW/Audio/SoundEvents.cs:203` | [APPROX:AUDIO-003] pitch, delay, 3D position and reverb of a sound are not applied — evidence needed: TbSoundSampleInfo pitch units and the placeholder 3D update |
 | AUDIO-004 | `source/OpenTPW/Hud/ParkHud.cs:438` | [APPROX:AUDIO-004] the 0xBD modifier (flag 0x10 from 0x1017F618) is not mapped to a key, so the view always plays 0x1F — evidence needed: the input flag behind 0x1017F618 |
 | AUDIO-005 | `source/OpenTPW/Audio/SoundEvents.cs:316` | [APPROX:AUDIO-005] the next segment is chosen (with the parameter at that moment) when the current one starts, so it can be decoded in time — evidence needed: when CPlaceHolderSentence::SoundCallback (sound_shared 0x1001A1F0) runs relative to the end of a sample |
-| COMPAT-001 | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:20` | [APPROX:COMPAT-001] Legacy 512x256 canvas; native DIB/mask and final 128x128 destinations require integration and platform pixel verification. |
+| COMPAT-001 | `source/OpenTPW.Files/Formats/Font/SignSurfaceComposer.cs:6` | [APPROX:COMPAT-001] native destination dimensions are integrated; original GPU UV orientation and lower DIB rows still require a pixel oracle. |
 | COMPAT-002 | `source/OpenTPW.Files/Formats/Font/SignTextLayout.cs:81` | [APPROX:COMPAT-002] lfWidth is applied with the Win32 rule (average character width = lfWidth) and fractional advances; the Mac GDI layer's rounding is not verified — evidence needed: long-name captures |
-| COMPAT-003 | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:27` | [APPROX:COMPAT-003] stored paint RGB is drawn opaque; alpha, modes 1/2, fills and material/mask effects are not applied — evidence needed: integration of the proved native surface/compositing path and original-platform pixel verification |
-| COMPAT-004 | `source/OpenTPW/World/Original/OriginalGateSign.cs:19` | [APPROX:COMPAT-004] flat board colour; the .sgn board image (wavelet) is read but not decoded or composed — evidence needed: the Bitmap::load_wavelet decoder and the board blit. |
-| COMPAT-005 | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:73` | [APPROX:COMPAT-005] the horizontal-scale field is not applied — evidence needed: binary use of the field. |
-| COMPAT-006 | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:72` | [APPROX:COMPAT-006] no pair kerning (GDI TextOut default) — evidence needed: binary text-output call site. |
+| COMPAT-003 | `source/OpenTPW.Files/Formats/Font/SignSurfaceComposer.cs:15` | [APPROX:COMPAT-003] OpenTPW coverage and unshaped paint masks replace native GDI, morphology and Gaussian masks; relief samples and material arithmetic follow the identified native path. |
+| COMPAT-004 | `source/OpenTPW/World/Original/OriginalGateSign.cs:89` | [APPROX:COMPAT-004] the gate board is decoded and composed; original-platform gate pixels remain unverified. |
+| COMPAT-005 | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:69` | [APPROX:COMPAT-005] the horizontal-scale field is not applied — evidence needed: binary use of the field. |
+| COMPAT-006 | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:68` | [APPROX:COMPAT-006] no pair kerning (GDI TextOut default) — evidence needed: binary text-output call site. |
 | COMPAT-006 | `source/OpenTPW.Files/Formats/Font/SignTextLayout.cs:18` | [APPROX:COMPAT-006]). Characters without a glyph |
-| COMPAT-007 | `source/OpenTPW/World/Original/OriginalGateSign.cs:45` | [APPROX:COMPAT-007] theme name as park name until a save supplies one — evidence needed: save park-name field and a capture. |
-| COMPAT-008 | `source/OpenTPW/World/Original/OriginalGateSign.cs:21` | [APPROX:COMPAT-008] depth offset for the sign faces — evidence needed: none once the full gate model draws its runtime textures. |
+| COMPAT-007 | `source/OpenTPW/World/Original/OriginalGateSign.cs:44` | [APPROX:COMPAT-007] theme name as park name until a save supplies one — evidence needed: save park-name field and a capture. |
+| COMPAT-008 | `source/OpenTPW/World/Original/OriginalGateSign.cs:18` | [APPROX:COMPAT-008] depth offset for the sign faces — evidence needed: none once the full gate model draws its runtime textures. |
 | COMPAT-009 | `source/OpenTPW.Files/Formats/Font/TrueTypeRasterizer.cs:34` | [APPROX:COMPAT-009] 16 sub-scanlines, unhinted linear coverage instead of GDI ANTIALIASED_QUALITY — evidence needed: captures of original sign text. |
 | COMPAT-010 | `source/OpenTPW/Render/Assets/Material.cs:66` | [APPROX:COMPAT-010] Veldrid sampler modes stand in for the original Direct3D filter states — evidence needed: binary render-state setup or captures. |
 | COMPAT-011 | `source/OpenTPW.Files/Public/LocalizedStringTable.cs:7` | [APPROX:COMPAT-011] the fallback order is an OpenTPW choice — evidence needed: original behaviour |
@@ -375,8 +384,12 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | COMPAT-015 | `source/OpenTPW.Files/Public/FshFile.cs:253` | [APPROX:COMPAT-015] A1R5G5B5 with bit 15 as alpha; one corpus file, every entry has bit 15 set. |
 | COMPAT-016 | `source/OpenTPW/World/Objects/ObjectSigns.cs:61` | [APPROX:COMPAT-016] the display name stands for the info record's name string: the join of the OBJECT_NAMES entries this port binds by English name (RIDES-010) and, for unbound objects, the .sam name — evidence needed: the record field that selects the entries and a capture of a shop or sideshow sign |
 | COMPAT-017 | `source/OpenTPW/World/Objects/ObjectCatalog.cs:600` | [APPROX:COMPAT-017] SIGNA/SIGNB taken as sign text lines 1/2 (the sign builder accepts two explicit texts; that the bonus loader passes these sections is not traced) — evidence needed: the bonus loader's call of the sign builder |
-| COMPAT-018 | `source/OpenTPW/World/Objects/ObjectSigns.cs:72` | [APPROX:COMPAT-018] flat board colour chosen so the stored text colours stay readable (light or the gate's dark board, whichever gives the least contrasting line more contrast); the board images (version-101 wavelet, plus two 16x128 fill images) are not decoded or composed — evidence needed: Bitmap::load_wavelet and the board blit (as COMPAT-004) and a capture of an original ride sign |
+| COMPAT-018 | `source/OpenTPW.Files/Formats/Font/SignSurfaceComposer.cs:39` | [APPROX:COMPAT-018] wavelet pixels and GPU row orientation follow the decoded native container but await independent original-platform pixel parity. |
 | COMPAT-019 | `source/OpenTPW/World/Original/OriginalPark.cs:52` | [APPROX:COMPAT-019] Theme Park Inc ships its lake as a separate model; the finished lake (dlake.MD2, not lake.MD2 with its building site) is drawn |
+| COMPAT-030 | `source/OpenTPW.Files/Formats/Font/SignSurfaceComposer.cs:27` | [APPROX:COMPAT-030] the native compositor clears to transparent; an opaque backing stands in for untraced downstream board coverage. |
+| COMPAT-031 | `source/OpenTPW/World/Objects/OriginalObject.cs:148` | [APPROX:COMPAT-031] orient the gate's sign lighting upward so the light stone name remains legible. |
+| COMPAT-031 | `source/OpenTPW/World/Original/OriginalGateSign.cs:90` | [APPROX:COMPAT-031] the stored black paint is illegible on the decoded dark stone gate; use a light stone tint until original-platform pixels are available. |
+| COMPAT-031 | `source/OpenTPW/World/Original/OriginalGateSign.cs:134` | [APPROX:COMPAT-031] the sign's lit face uses an upward normal for readable stone text. |
 | DET-002 | `source/OpenTPW/World/WorldSeed.cs:9` | [APPROX:DET-002] runs take an explicit world seed (default 0x5450574775657374) instead of the original's time(NULL)/timer seeds — evidence needed: none possible; explicit seeding is an OpenTPW replay policy |
 | DET-013 | `source/OpenTPW/VM/RideScriptWorld.cs:32` | [APPROX:DET-013] scripts without an explicit seed get a per-VM System.Random seeded from the park's SplitMix64 stream instead of the traced world-LCG draws — evidence needed: none; implementation waits for the DET-I2 port of the shared world generator (docs/reverse/DET-plan.md §4.3) |
 | DET-014 | `source/OpenTPW/World/Guests/GuestSimulation.cs:4` | [APPROX:DET-014] guests draw from their own SplitMix64 stream seeded from the world seed, not from the original's shared world LCG reseeded to each new guest's id — evidence needed: DET-I2 port of WorldRng (docs/reverse/DET-plan.md §2.3, §4.3) |
@@ -425,6 +438,13 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | ONLINE-004 | `source/OpenTPW.Online/Chat/ChatCommands.cs:42` | [APPROX:ONLINE-004] 111-113 are all "Your buddy " (English suffix strings are empty); online/offline/removed |
 | ONLINE-005 | `source/OpenTPW.Server/ChatHub.cs:24` | [APPROX:ONLINE-005] Command semantics are inferred from the command words, response strings and |
 | ONLINE-006 | `source/OpenTPW.Server/ChatHub.cs:471` | [APPROX:ONLINE-006] A visitor inside a park must leave it first (CHAT_COMMANDS 127) — evidence needed. |
+| ONLINE-007 | `source/OpenTPW/World/GlobeCameraMode.cs:11` | [APPROX:ONLINE-007] the original applies its rates, steps and damping per game tick; OpenTPW assumes 30 ticks per second — evidence needed: the tick length of the online world's update |
+| ONLINE-008 | `source/OpenTPW/World/GlobeCameraMode.cs:21` | [APPROX:ONLINE-008] the first view faces Europe and the Atlantic from 30° north — evidence needed: the original's starting yaw and pitch |
+| ONLINE-009 | `source/OpenTPW/World/GlobeCameraMode.cs:55` | [APPROX:ONLINE-009] edge and right-button steering add rate × offset × step per tick to the velocity; the original's exact edge-depth and right-button scaling are not decoded — evidence needed: the input branches of 0x005DC860 |
+| ONLINE-010 | `source/OpenTPW/Online/OnlineScreens.cs:97` | [APPROX:ONLINE-010] city name and park count drawn at the top centre — evidence needed: the original city labels' layout |
+| ONLINE-011 | `source/OpenTPW/Online/OnlineScreens.cs:68` | [APPROX:ONLINE-011] f_wlobbg as the button background in the panel's second rectangle (33,1057,480,1505), like f_lobbutbg in the island lobby — evidence needed: the table field that names the panel's background model |
+| ONLINE-012 | `source/OpenTPW/Online/OnlineGlobeScreen.cs:47` | [APPROX:ONLINE-012] edge steering starts once the cursor has moved on this screen, so a cursor resting in a corner |
+| ONLINE-013 | `source/OpenTPW/World/Lobby/GlobeScene.cs:20` | [APPROX:ONLINE-013] pins are drawn twice the decoded (s, s, p) scale and stand on the mesh surface (radius 119.7) |
 | PATH-001 | `source/OpenTPW/Hud/ParkHud.cs:506` | [APPROX:PATH-001] ghosts are flat markers at the cell centres with the line's cost beside the cursor (the original draws ghost path pieces, LayLine mode \| 0x100) — evidence needed: captures of the original path tool |
 | PATH-001 | `source/OpenTPW/World/Level.Objects.cs:122` | [APPROX:PATH-001] a left click on an empty owned cell or on a path cell enters mode 1 with that cell as the start; the click handler that calls SetMode(1) is not traced and no menu button exists — evidence needed: the caller of SetMode 0x1007B320 with mode 1 |
 | PATH-002 | `source/OpenTPW/World/ParkPathBuilder.cs:324` | [APPROX:PATH-002] Backspace undo removes the last segment's new cells and undoes its counter bumps, without a refund (only the help text 443 and the vertex stack are traced) — evidence needed: the BACKSPACE handler of the path tool |
@@ -509,19 +529,19 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | UI-006 | `source/OpenTPW/UI/Original/UiText.cs:162` | [APPROX:UI-006] all UI text/backdrop colours — evidence needed: captures of original screens |
 | UI-007 | `source/OpenTPW/UI/Original/UiWidgets.cs:73` | [APPROX:UI-007] drop shadow one text pixel down-right — evidence needed: captures of original screens |
 | UI-008 | `source/OpenTPW/UI/Original/UiWidgets.cs:434` | [APPROX:UI-008] purple_button as a mirrored end cap, upper half normal, lower half focused/pressed — evidence needed: capture of the original front-end buttons |
-| UI-010 | `source/OpenTPW/UI/Original/UiScreen.cs:246` | [APPROX:UI-010] popup help placement/backdrop — evidence needed: capture of original popup help |
-| UI-011 | `source/OpenTPW/UI/Original/UiScreen.cs:236` | [APPROX:UI-011] modal screens dim the screens below — evidence needed: captures of original dialogs |
+| UI-010 | `source/OpenTPW/UI/Original/UiScreen.cs:257` | [APPROX:UI-010] popup help placement/backdrop — evidence needed: capture of original popup help |
+| UI-011 | `source/OpenTPW/UI/Original/UiScreen.cs:247` | [APPROX:UI-011] modal screens dim the screens below — evidence needed: captures of original dialogs |
 | UI-012 | `source/OpenTPW/UI/Original/UiInput.cs:54` | [APPROX:UI-012] key map (arrows, Enter, Escape, P) — evidence needed: binary key handling / KEYBOARD.str |
-| UI-012 | `source/OpenTPW/UI/Original/UiScreen.cs:63` | [APPROX:UI-012] hover focus, activate on release, keyboard navigation, right click backs out — evidence needed: binary input handling |
+| UI-012 | `source/OpenTPW/UI/Original/UiScreen.cs:65` | [APPROX:UI-012] hover focus, activate on release, keyboard navigation, right click backs out — evidence needed: binary input handling |
 | UI-013 | `source/OpenTPW/UI/Original/UiDialogs.cs:9` | [APPROX:UI-013] dialog window sizes and inner layout — evidence needed: captures of original dialogs |
 | UI-014 | `source/OpenTPW/FrontEnd/FrontEndMenu.cs:81` | [APPROX:UI-014] island name and prev/enter/next button positions in the lobby panel — evidence needed: capture of the original lobby |
 | UI-014 | `source/OpenTPW/FrontEnd/FrontEndMenu.cs:97` | [APPROX:UI-014] logo/title placement and the right-hand Load/Options/Quit column — evidence needed: capture of the original lobby |
 | UI-015 | `source/OpenTPW/FrontEnd/FrontEndMenu.cs:127` | [APPROX:UI-015] Game Mode asked on every park entry and each entry starts a new park (no player profiles or per-theme autosave); the original asks once when a player is created and stores it in the profile — evidence needed: PC confirmation of the Mac player/autosave flow |
-| UI-016 | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:79` | [DATA:lobby.wad:&lt;theme&gt;.txt ISLAND/SKYCOLOUR/FLYINGMESH/RAINY/LIGHTNING] [APPROX:UI-016] angle = yaw, height = camera target height — evidence needed: binary/capture |
+| UI-016 | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:84` | [DATA:lobby.wad:&lt;theme&gt;.txt ISLAND/SKYCOLOUR/FLYINGMESH/RAINY/LIGHTNING] [APPROX:UI-016] angle = yaw, height = camera target height — evidence needed: binary/capture |
 | UI-017 | `source/OpenTPW/World/LobbyCameraMode.cs:25` | [APPROX:UI-017] SPINSPEED as radians per 0.1 s, FOV 60, 3/s glide — evidence needed: binary or capture of the lobby camera |
-| UI-018 | `source/OpenTPW/Client/GameFlow.cs:349` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
+| UI-018 | `source/OpenTPW/Client/GameFlow.cs:397` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
 | UI-018 | `source/OpenTPW/World/Lobby/LobbyScene.cs:14` | [APPROX:UI-018] flying meshes, rain, lightning and island/gate animations are not drawn — evidence needed: binary/capture of the lobby |
-| UI-019 | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:92` | [APPROX:UI-019] fallback position when lobby.txt lacks ISLANDCAMERAPOSITION — evidence needed: none if lobby.txt is complete |
+| UI-019 | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:97` | [APPROX:UI-019] fallback position when lobby.txt lacks ISLANDCAMERAPOSITION — evidence needed: none if lobby.txt is complete |
 | UI-021 | `source/OpenTPW/Hud/ParkHud.cs:82` | [DATA:UITEXT.str:448,449] currency prefix; [APPROX:UI-021] ","-grouped digits — evidence needed: locale number format of the original |
 | UI-021 | `source/OpenTPW/Hud/ParkHud.cs:127` | buttons start right below the date box. [APPROX:UI-021] the original resizes/repositions control 47 from the |
 | UI-022 | `source/OpenTPW/Hud/HudStubs.cs:47` | [APPROX:UI-022] without an economy only pause stops the rides; faster speeds run at normal speed |
@@ -546,7 +566,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | UI-038 | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:252` | [APPROX:UI-038] 3D card rendering, videocard and audio quality are shown fixed (disabled) — OpenTPW has no software renderer, video card or audio quality choice |
 | UI-039 | `source/OpenTPW/UI/Original/UiWidgets.cs:130` | [APPROX:UI-039] option label size: letter box about 58 % of the label rectangle height (the capture's labels are ~26 of 1536 units for 45-unit rectangles); a label whose widest value does not fit drops alone to the largest size that does — evidence needed: capture of the original option labels in several languages |
 | UI-040 | `source/OpenTPW/Client/Autorun/AutorunView.cs:163` | [APPROX:UI-040] the exact dot phase of GDI's focus rectangle brush is not known; dots are the pixels with even x + y, inverted. |
-| UI-041 | `source/OpenTPW/Client/GameFlow.cs:182` | [APPROX:UI-041] a loaded shipped park is the reference start whatever Game Mode was last chosen; the original takes the mode from the loading player's profile, not the park — evidence needed: player profiles and the Mac park loader 0x11acfc |
+| UI-041 | `source/OpenTPW/Client/GameFlow.cs:185` | [APPROX:UI-041] a loaded shipped park is the reference start whatever Game Mode was last chosen; the original takes the mode from the loading player's profile, not the park — evidence needed: player profiles and the Mac park loader 0x11acfc |
 | UI-042 | `source/OpenTPW/Hud/ParkHud.cs:148` | [APPROX:UI-042] the camera button's action (camera views) is not implemented; it is shown disabled |
 | UI-043 | `source/OpenTPW/UI/Original/FontSmoothing.cs:15` | [APPROX:UI-043] text drawn above 1× is magnified per glyph (Catmull-Rom, contrast min(2, 0.8 × factor)) instead of doubling pixels — OpenTPW choice; the original only drew its fonts at 1× |
 | UI-044 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:20` | [APPROX:UI-044] row height: the table gives the content region (444 units high), not the row pitch; ten equal rows fill it — evidence needed: capture of the original buy list |
@@ -622,14 +642,15 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | ONLINE-040 | `source/OpenTPW.Online/Api/ApiModels.cs:3` | [EXT:ONLINE-040] OpenTPW server HTTP API (JSON, camelCase via StrictJson.Options). The original |
 | ONLINE-050 | `source/OpenTPW.Server/ServerOptions.cs:5` | [EXT:ONLINE-050] All defaults are OpenTPW choices; the original service limits are unknown except |
 | ONLINE-051 | `source/OpenTPW.Server/PasswordHasher.cs:6` | &lt;summary&gt;[EXT:ONLINE-051] PBKDF2-SHA256 (BCL) with a random 16-byte salt; only the hash is stored.&lt;/summary&gt; |
-| ONLINE-052 | `source/OpenTPW.Server/ServerStore.cs:79` | [EXT:ONLINE-052] File storage: JSON indexes (accounts, parks, postcards) rewritten atomically after |
+| ONLINE-052 | `source/OpenTPW.Server/ServerStore.cs:81` | [EXT:ONLINE-052] File storage: JSON indexes (accounts, parks, postcards) rewritten atomically after |
 | ONLINE-053 | `source/OpenTPW.Server/ChatHub.cs:338` | [EXT:ONLINE-053] No avatar positions exist, so the range is acknowledged but has no effect. |
 | ONLINE-054 | `source/OpenTPW.Server/ServerProgram.cs:12` | [EXT:ONLINE-054] Self-hostable OpenTPW server (ASP.NET Core minimal APIs). See docs/SERVER.md. |
-| ONLINE-055 | `source/OpenTPW.Server/ServerStore.cs:445` | [EXT:ONLINE-055] Deletes a player and what the server holds about them (docs/SERVER.md): the |
+| ONLINE-055 | `source/OpenTPW.Server/ServerStore.cs:447` | [EXT:ONLINE-055] Deletes a player and what the server holds about them (docs/SERVER.md): the |
 | ONLINE-056 | `source/OpenTPW.Server/NewsFeed.cs:10` | [EXT:ONLINE-056] the original fetched news from EA's news server; an OpenTPW server serves the operator's text files |
 | ONLINE-057 | `source/OpenTPW.Server/ServerProgram.cs:57` | [EXT:ONLINE-057] the project website reads the public news and website park list from the browser |
-| ONLINE-057 | `source/OpenTPW.Server/ServerProgram.cs:241` | [EXT:ONLINE-057] public, for the project website: only parks whose authors opted in, at most ten, cached a minute. |
+| ONLINE-057 | `source/OpenTPW.Server/ServerProgram.cs:249` | [EXT:ONLINE-057] public, for the project website: only parks whose authors opted in, at most ten, cached a minute. |
 | ONLINE-058 | `source/OpenTPW.Server/ServerProgram.cs:223` | [EXT:ONLINE-058] a release asks the host to update: the server only leaves a file in its data folder, which the |
+| ONLINE-059 | `source/OpenTPW.Server/CityDirectory.cs:11` | [EXT:ONLINE-059] the original city list came from EA's city server and is lost: only "North Pole" (the Bullfrog |
 | ONLINE-060 | `source/OpenTPW/Online/OnlineFolders.cs:7` | [EXT:ONLINE-060] The player's online folder: exported parks, downloaded (visited) parks and the |
 | ONLINE-061 | `source/OpenTPW/Online/ParkSnapshotBuilder.cs:13` | &lt;summary&gt;[EXT:ONLINE-061] Edition label; OpenTPW cannot yet tell Theme Park World from Sim Theme Park installs.&lt;/summary&gt; |
 | ONLINE-062 | `source/OpenTPW/Online/ParkSnapshotBuilder.cs:91` | [EXT:ONLINE-062] Top-down thumbnail from the MAP grid and the snapshot (OpenTPW colours, not an original |
@@ -637,10 +658,11 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | ONLINE-064 | `source/OpenTPW/Online/OnlineSession.cs:25` | [EXT:ONLINE-064] Line layouts ("name: text", "name *emote*") are OpenTPW choices; the original chat panel layout is unknown. |
 | ONLINE-065 | `source/OpenTPW/Online/ChatOverlay.cs:7` | [EXT:ONLINE-065] Font choice, position (bottom-left), colours and line count are OpenTPW choices; |
 | ONLINE-066 | `source/OpenTPW/Online/OnlinePanel.cs:6` | &lt;summary&gt;[EXT:ONLINE-066] Opt-in ImGui panel; original online panel layout is not reproduced.&lt;/summary&gt; |
-| ONLINE-067 | `source/OpenTPW/Online/OnlineScreens.cs:362` | [EXT:ONLINE-067] off unless the player chooses it: the website list makes the park and the player name public on the web. |
-| ONLINE-UI | `source/OpenTPW/Online/OnlineScreens.cs:26` | [EXT:ONLINE-UI] native online screens; composition of the original screens and the place of code-positioned controls are OpenTPW's |
-| ONLINE-UI | `source/OpenTPW/Online/OnlineScreens.cs:73` | [EXT:ONLINE-UI] OpenTPW servers let players delete their own account (docs/SERVER.md). |
-| ONLINE-UI | `source/OpenTPW/Online/OnlineScreens.cs:173` | [EXT:ONLINE-UI] the server address is an OpenTPW field; the original service address was built in |
+| ONLINE-067 | `source/OpenTPW/Online/OnlineScreens.cs:437` | [EXT:ONLINE-067] off unless the player chooses it: the website list makes the park and the player name public on the web. |
+| ONLINE-UI | `source/OpenTPW/Online/OnlineScreens.cs:29` | [EXT:ONLINE-UI] native online screens; composition of the original screens and the place of code-positioned controls are OpenTPW's |
+| ONLINE-UI | `source/OpenTPW/Online/OnlineScreens.cs:102` | [EXT:ONLINE-UI] the login and OpenTPW's own online menu (news, postcards, chat, import, account) |
+| ONLINE-UI | `source/OpenTPW/Online/OnlineScreens.cs:148` | [EXT:ONLINE-UI] OpenTPW servers let players delete their own account (docs/SERVER.md). |
+| ONLINE-UI | `source/OpenTPW/Online/OnlineScreens.cs:248` | [EXT:ONLINE-UI] the server address is an OpenTPW field; the original service address was built in |
 | ONLINE-UI | `source/OpenTPW/UI/Original/UiTextWidgets.cs:46` | [EXT:ONLINE-UI] text field art and caret are OpenTPW's; the original field template is not decoded |
 | SERVER-WEB | `source/OpenTPW.Server/WebClient.cs:8` | [EXT:SERVER-WEB] Optionally serves the browser build of the game (docs/WEB.md) from the same |
 | SETUP | `source/OpenTPW/UI/Original/Options/GameFilesScreen.cs:10` | [EXT:SETUP] OpenTPW setting; the original installer chose one folder and never changed it in game |
@@ -649,7 +671,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | autorun | `source/OpenTPW/Client/Autorun/AutorunLauncher.cs:5` | [EXT:autorun] It needs the original &lt;c&gt;Autorun&lt;/c&gt; folder (&lt;c&gt;general.tre&lt;/c&gt; and the language archives) in the game |
 | autorun | `source/OpenTPW/Client/Autorun/AutorunScreen.cs:14` | with the operating system's viewer and Exit quits. [EXT:autorun] (docs/AUTORUN.md) |
 | autorun | `source/OpenTPW/Client/Autorun/AutorunView.cs:19` | and clicks. [EXT:autorun] OpenTPW reproduces the CD's autorun dialog as an optional start screen. |
-| autorun | `source/OpenTPW/Client/Game.cs:219` | [EXT:autorun] The CD's launcher window comes first when its Autorun folder is available (docs/AUTORUN.md). |
+| autorun | `source/OpenTPW/Client/Game.cs:221` | [EXT:autorun] The CD's launcher window comes first when its Autorun folder is available (docs/AUTORUN.md). |
 | bonus-content | `source/OpenTPW/Client/Setup/BonusContent.cs:14` | [EXT:bonus-content] Setup-managed copy of the official bonus WADs; the original game only had the CD and install folders |
 | developer-prototype | `source/OpenTPW/Economy/ParkEconomyRuntime.cs:56` | [EXT:developer-prototype] the developer prototype ride is registered uncharged (no original counterpart) |
 | developer-prototype | `source/OpenTPW/World/Level.Objects.cs:404` | [EXT:developer-prototype] Sandbox Totem blocks cells whose centres lie within its 6×8-unit model box (no original counterpart) |
@@ -659,19 +681,19 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | fit-button-text | `source/OpenTPW/UI/Original/UiTextFit.cs:10` | [EXT:fit-button-text] button labels shrink to fit; the original sized its fixed strings per language by hand |
 | interface-scale-fit | `source/OpenTPW/UI/Original/UiCanvas.cs:33` | [EXT:interface-scale-fit] Above 1×, limit forced text scales to UiScaling's reference-layout fit (HiDPI-aware via PixelDensity). |
 | language | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:490` | [EXT:language] language row (original installs had one language; OpenTPW reads CD overlays) |
-| online-two-step | `source/OpenTPW/Online/OnlineScreens.cs:181` | [EXT:online-two-step] the authenticator code is an OpenTPW field; accounts without two-step login leave it empty. |
-| online-two-step | `source/OpenTPW/Online/OnlineScreens.cs:238` | [EXT:online-two-step] Shows the authenticator secret of &lt;see cref="OnlineSession.Enrollment"/&gt; as a QR code and as |
+| online-two-step | `source/OpenTPW/Online/OnlineScreens.cs:256` | [EXT:online-two-step] the authenticator code is an OpenTPW field; accounts without two-step login leave it empty. |
+| online-two-step | `source/OpenTPW/Online/OnlineScreens.cs:313` | [EXT:online-two-step] Shows the authenticator secret of &lt;see cref="OnlineSession.Enrollment"/&gt; as a QR code and as |
 | online-two-step | `source/OpenTPW/UI/Original/UiWidgets.cs:320` | [EXT:online-two-step] A QR code (for an authenticator app's &lt;c&gt;otpauth://&lt;/c&gt; URI): black modules on a white panel with |
-| online-visit | `source/OpenTPW/Client/GameFlow.cs:216` | [EXT:online-visit] read-only visits of shared parks get no advisor (the original has no visits) |
+| online-visit | `source/OpenTPW/Client/GameFlow.cs:219` | [EXT:online-visit] read-only visits of shared parks get no advisor (the original has no visits) |
 | opentpw-page | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:381` | [EXT:opentpw-page] button to the OpenTPW page, in the free area left of the OK panel |
 | opentpw-page | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:410` | The OpenTPW page ([EXT:opentpw-page]): everything OpenTPW adds to the original options, built from the |
 | opentpw-page | `source/OpenTPW/UI/Original/UiWidgets.cs:581` | [EXT:opentpw-page] option-row arrow/value positions: OpenTPW's own row style for its page (the original page uses sliders and toggles) |
 | ps2-data | `source/OpenTPW/Client/Ps2Export.cs:13` | [EXT:ps2-data] viewing aid for the PS2 version's data, not original behaviour |
-| sandbox | `source/OpenTPW/Client/GameFlow.cs:217` | [EXT:sandbox] the generic sandbox (not an original level) gets no automatic advisor either; only original levels raise its game events |
+| sandbox | `source/OpenTPW/Client/GameFlow.cs:220` | [EXT:sandbox] the generic sandbox (not an original level) gets no automatic advisor either; only original levels raise its game events |
 | strings | `source/OpenTPW/UI/Original/SupplementaryStrings.cs:10` | [EXT:strings] OpenTPW supplementary labels (display/upscaling/language rows and OpenTPW messages), not original data |
 | test-stub | `source/OpenTPW/Hud/HudStubs.cs:133` | [EXT:test-stub] price shown when Totem.sam cannot be read (the economy catalogue price is used when a park economy runs) |
-| texture-pack | `source/OpenTPW/Client/GameFlow.cs:272` | [EXT:texture-pack] the pack switch belongs to the game loop, not to its loading screen |
-| texture-pack | `source/OpenTPW/Client/GameFlow.cs:367` | [EXT:texture-pack] a running texture switch shows its progress without blocking the game |
+| texture-pack | `source/OpenTPW/Client/GameFlow.cs:277` | [EXT:texture-pack] the pack switch belongs to the game loop, not to its loading screen |
+| texture-pack | `source/OpenTPW/Client/GameFlow.cs:415` | [EXT:texture-pack] a running texture switch shows its progress without blocking the game |
 | texture-pack | `source/OpenTPW/Compat/GraphicsSettings.cs:269` | [EXT:texture-pack] Texture choice (docs/TEXTURE-PACKS.md): empty = original textures; &lt;c&gt;enhanced&lt;/c&gt; (the default) = the |
 | texture-pack | `source/OpenTPW/FrontEnd/FrontEndSmokeTest.cs:79` | [EXT:texture-pack] Switches a throw-away pack on and off while the lobby runs: a lobby texture becomes the pack's solid |
 | texture-pack | `source/OpenTPW/Render/Assets/ImagePrepass.cs:33` | [EXT:texture-pack] Optional 1x de-artifact pre-pass for the local texture pack. |
@@ -688,11 +710,11 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | texture-pack | `source/OpenTPW/UI/Original/UiRenderer.cs:169` | [EXT:texture-pack] The texture pack changed: forgets the cached interface images (they are decoded again on first use, |
 | texture-pack | `source/OpenTPW/World/Guests/GuestRenderer.cs:53` | [EXT:texture-pack] The texture pack changed: builds the atlas textures again from the new pack (or the originals), binds |
 | texture-pack | `source/OpenTPW/World/Guests/GuestRenderer.cs:84` | [EXT:texture-pack] upscaled guest sprites from the optional local pack |
-| tpi-viewer | `source/OpenTPW/Client/Game.cs:79` | [EXT:tpi-viewer] Theme Park Inc data (docs/THEME-PARK-INC.md): refused for normal starts, viewable with --load-original-level. |
-| tpi-viewer | `source/OpenTPW/Client/Game.cs:120` | [EXT:tpi-viewer] bonus objects are Theme Park World content: not offered to Theme Park Inc worlds |
-| tpi-viewer | `source/OpenTPW/Client/Game.cs:543` | [EXT:tpi-viewer] viewing aid for Theme Park Inc worlds, not original behaviour and not Theme Park Inc support. |
+| tpi-viewer | `source/OpenTPW/Client/Game.cs:81` | [EXT:tpi-viewer] Theme Park Inc data (docs/THEME-PARK-INC.md): refused for normal starts, viewable with --load-original-level. |
+| tpi-viewer | `source/OpenTPW/Client/Game.cs:122` | [EXT:tpi-viewer] bonus objects are Theme Park World content: not offered to Theme Park Inc worlds |
+| tpi-viewer | `source/OpenTPW/Client/Game.cs:545` | [EXT:tpi-viewer] viewing aid for Theme Park Inc worlds, not original behaviour and not Theme Park Inc support. |
 | tpi-viewer | `source/OpenTPW/Client/GameFlow.cs:55` | [EXT:tpi-viewer] viewing aid, not original behaviour |
-| tpi-viewer | `source/OpenTPW/Client/GameFlow.cs:198` | [EXT:tpi-viewer] Theme Park Inc worlds are viewed without economy, HUD or advisor (the camera, Esc and P only). |
+| tpi-viewer | `source/OpenTPW/Client/GameFlow.cs:201` | [EXT:tpi-viewer] Theme Park Inc worlds are viewed without economy, HUD or advisor (the camera, Esc and P only). |
 | tpi-viewer | `source/OpenTPW/Client/Setup/GameEdition.cs:33` | [EXT:tpi-viewer] Theme Park Inc is an experimental level viewer, not a supported game. |
 | tpi-viewer | `source/OpenTPW/Render/Assets/Texture.cs:88` | [EXT:tpi-viewer] &#96;.fsh&#96; textures exist only in Theme Park Inc data. Opaque 0x24 palettes: see COMPAT-014. |
 | tpi-viewer | `source/OpenTPW/World/Level.cs:68` | [EXT:tpi-viewer] Theme Park Inc has no economy here: its balance keys differ from Theme Park World's (docs/THEME-PARK-INC.md). |
@@ -704,10 +726,10 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | Label | Location | Source comment context |
 | --- | --- | --- |
 | *.sam:TEXTURE_FILTERING 0 Point, 1 Bilinear, 2 Trilinear, 3 Anisotropic; MIPMAP | `source/OpenTPW/Compat/GraphicsSettings.cs:202` | Renderer mapping. Filtering and mipmaps follow the legend ([DATA:*.sam:TEXTURE_FILTERING 0 Point, 1 Bilinear, 2 Trilinear, 3 Anisotropic; MIPMAP]); the anisotropy degree for value 3 and the view |
-| *.sgn:LOGFONT lfHeight | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:71` | [DATA:*.sgn:LOGFONT lfHeight] em height; [DATA:*.sgn:slot offset] cell top (TA_TOP reading is inferred from the values). |
-| *.sgn:LOGFONT lfWidth | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:74` | [DATA:*.sgn:LOGFONT lfWidth] the line's width, narrowed until it fits (0x100A9F9C); centred on the canvas (the original's x = 256 - extent / 2 on its 512-wide text DC) |
-| *.sgn:slot font file / LOGFONT face | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:60` | [DATA:*.sgn:slot font file / LOGFONT face] |
-| *.sgn:slot offset | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:71` | [DATA:*.sgn:LOGFONT lfHeight] em height; [DATA:*.sgn:slot offset] cell top (TA_TOP reading is inferred from the values). |
+| *.sgn:LOGFONT lfHeight | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:67` | [DATA:*.sgn:LOGFONT lfHeight] em height; [DATA:*.sgn:slot offset] cell top (TA_TOP reading is inferred from the values). |
+| *.sgn:LOGFONT lfWidth | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:70` | [DATA:*.sgn:LOGFONT lfWidth] the line's width, narrowed until it fits (0x100A9F9C); centred on the canvas (the original's x = 256 - extent / 2 on its 512-wide text DC) |
+| *.sgn:slot font file / LOGFONT face | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:56` | [DATA:*.sgn:slot font file / LOGFONT face] |
+| *.sgn:slot offset | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:67` | [DATA:*.sgn:LOGFONT lfHeight] em height; [DATA:*.sgn:slot offset] cell top (TA_TOP reading is inferred from the values). |
 | &lt;fixed item&gt;.MD2:park-space coordinates | `source/OpenTPW/World/Objects/ParkObjects.cs:144` | [DATA:Easymode.TPWI:SYSG X/Y/rotation] [DATA:&lt;fixed item&gt;.MD2:park-space coordinates] |
 | &lt;object&gt;.sam:Info.DontApplyOffset | `source/OpenTPW/World/Objects/ObjectCatalog.cs:123` | [DATA:&lt;object&gt;.sam:Info.DontApplyOffset] |
 | &lt;object&gt;.sam:Info.HasQueue/RunsContinuously, Bumper.WhichTrackType, UsageInfo.Min/MaxCapacity, Min/MaxDuration, Upgrades[0].InitCapacity/InitDuration/InitSpeed/QueueWaitTimeConstant | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:172` | [DATA:&lt;object&gt;.sam:Info.HasQueue/RunsContinuously, Bumper.WhichTrackType, UsageInfo.Min/MaxCapacity, Min/MaxDuration, Upgrades[0].InitCapacity/InitDuration/InitSpeed/QueueWaitTimeConstant] |
@@ -729,17 +751,19 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | Language/*/*_NAMES.str | `source/OpenTPW/Hud/ParkHud.Staff.cs:201` | [DATA:Language/*/*_NAMES.str] NameIndex is the role-specific original name-table index. |
 | Language/*/CHAT_COMMANDS.str:0-42 | `source/OpenTPW.Online/Chat/ChatCommands.cs:4` | The original chat commands, in &lt;c&gt;CHAT_COMMANDS.str&lt;/c&gt; order. [DATA:Language/*/CHAT_COMMANDS.str:0-42] |
 | Language/*/TAG_SYSTEM.str:123-127 (six months in the red) | `source/OpenTPW/Economy/ParkEconomy.cs:26` | [DATA:Language/*/TAG_SYSTEM.str:123-127 (six months in the red)] |
-| Language/*/THEMENAMES.str | `source/OpenTPW/Online/OnlineStrings.cs:89` | Theme name of a level. [DATA:Language/*/THEMENAMES.str] order Lost Kingdom, Halloween World, Wonder Land, |
+| Language/*/THEMENAMES.str | `source/OpenTPW/Online/OnlineStrings.cs:91` | Theme name of a level. [DATA:Language/*/THEMENAMES.str] order Lost Kingdom, Halloween World, Wonder Land, |
 | Language/*/THEMENAMES.str:order; levels/*/global.sam:Keys.CostToEnter | `source/OpenTPW/Economy/ParkObjectives.cs:328` | [DATA:Language/*/THEMENAMES.str:order; levels/*/global.sam:Keys.CostToEnter] |
 | Language/*/UniToMB.dat | `source/OpenTPW.Files/Formats/String/BFUMReader.cs:10` | Layout verified against all six shipped languages ([DATA:Language/*/UniToMB.dat]): magic |
 | Language/English/*_NAMES.str:entry count 35 | `source/OpenTPW/Economy/ParkStaff.cs:48` | [DATA:Language/English/*_NAMES.str:entry count 35] |
-| Language/English/CHAT_COMMANDS.str:160 | `source/OpenTPW/Online/OnlineStrings.cs:61` | [DATA:Language/English/CHAT_COMMANDS.str:160] "System message: " |
+| Language/English/CHAT_COMMANDS.str:160 | `source/OpenTPW/Online/OnlineStrings.cs:63` | [DATA:Language/English/CHAT_COMMANDS.str:160] "System message: " |
 | Language/English/CHAT_COMMANDS.str:43-85 | `source/OpenTPW.Online/Chat/ChatCommands.cs:84` | &lt;summary&gt;[DATA:Language/English/CHAT_COMMANDS.str:43-85] Canonical (English) command words.&lt;/summary&gt; |
 | Language/English/CHAT_COMMANDS.str:86-175 | `source/OpenTPW.Online/Chat/ChatCommands.cs:17` | Responses as indices into &lt;c&gt;CHAT_COMMANDS.str&lt;/c&gt; ([DATA:Language/English/CHAT_COMMANDS.str:86-175]). |
-| Language/English/ERRORMSG.str | `source/OpenTPW/Online/OnlineStrings.cs:55` | [DATA:Language/English/ERRORMSG.str] |
+| Language/English/ERRORMSG.str | `source/OpenTPW/Online/OnlineStrings.cs:57` | [DATA:Language/English/ERRORMSG.str] |
 | Language/English/UITEXT.str | `source/OpenTPW/Online/OnlineStrings.cs:19` | [DATA:Language/English/UITEXT.str] (the UIStrings enum is off by one from about 206 on; these are verified). |
+| Language/English/UITEXT.str:461 | `source/OpenTPW/Online/OnlineStrings.cs:52` | [DATA:Language/English/UITEXT.str:461] "Parks: " before a city's park count (Mac 0x1ce in the 474-entry edition) |
 | Language/English/swears.txt,alloweds.txt | `source/OpenTPW.Online/Moderation/WordFilter.cs:32` | Decodes an original list. [DATA:Language/English/swears.txt,alloweds.txt] Observed encoding: |
 | Mac UI font table (docs/reverse/PPC-ui.md):slot 3 DATETINY/DATESMALL/DATEMED/DATEBIG | `source/OpenTPW/UI/Original/UiText.cs:78` | [DATA:Mac UI font table (docs/reverse/PPC-ui.md):slot 3 DATETINY/DATESMALL/DATEMED/DATEBIG] the HUD date font, one per |
+| Mac UI table data:0x523f0 | `source/OpenTPW/Online/OnlineScreens.cs:63` | [DATA:Mac UI table data:0x523f0] root 90111 worldlob (9,620,510,1531); buttons b_findprk 90115 (49,731,202,885) help 435, b_bck2lob 90112 (49,898,202,1051) help 431, b_zoom 90118 (41,1070,143,1173) help 428/429, b_lobup 90117 (182,1077,336,1231) help 426, b_lobleft 90114 (61,1201,214,1355) help 424, b_lobright 90116 (307,1201,460,1355) help 425, b_lobdown 90113 (184,1327,337,1481) help 427; i_sat 90120–90124 help 423 |
 | Mac buy table 0x4cd94:-2,511 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:200` | [DATA:Mac buy table 0x4cd94:-2,511] b_exit (help 2) closes; b_allstaff (help 153) opens the staff window. |
 | Mac buy table 0x4cd94:1,2 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:188` | [DATA:Mac buy table 0x4cd94:1,2] b_up / b_down at their rectangles |
 | Mac buy table 0x4cd94:16,17 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:185` | [DATA:Mac buy table 0x4cd94:16,17] column header buttons (name, price) without a model; the third (18) has no text and no action |
@@ -781,7 +805,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | Rides.sam:UsageInfo.ExcitementLevel | `source/OpenTPW/Hud/HudStubs.cs:150` | [DATA:Totem.sam:UsageInfo.ExcitementLevel] overrides [DATA:Rides.sam:UsageInfo.ExcitementLevel] |
 | Standard.sam:Costs.QueueCell | `source/OpenTPW/World/Level.Objects.cs:214` | [DATA:Standard.sam:Costs.QueueCell] charged per cell when written (ParkEconomy.TrySpendCell, PATH-plan §3.2) |
 | Standard.sam:FixedItemInfo lanes | `source/OpenTPW/Client/M3Gate.cs:314` | [DATA:levels/&lt;theme&gt;/terrain/base.map:InitialPath] [DATA:Standard.sam:FixedItemInfo lanes] |
-| THEMENAMES.str:entries 0..3 | `source/OpenTPW/World/Original/OriginalGateSign.cs:46` | [DATA:THEMENAMES.str:entries 0..3] Lost Kingdom, Halloween World, Wonder Land, Space Zone. |
+| THEMENAMES.str:entries 0..3 | `source/OpenTPW/World/Original/OriginalGateSign.cs:45` | [DATA:THEMENAMES.str:entries 0..3] Lost Kingdom, Halloween World, Wonder Land, Space Zone. |
 | TPWORLD.ISO and retail install | `source/OpenTPW.Files/Public/DataOverlay.cs:147` | &lt;summary&gt;[DATA:TPWORLD.ISO and retail install] global music and the four theme music banks.&lt;/summary&gt; |
 | TPWORLD.ISO and retail install:Data/Movies | `source/OpenTPW.Files/Public/DataOverlay.cs:144` | &lt;summary&gt;[DATA:TPWORLD.ISO and retail install:Data/Movies] the nine shipped movies.&lt;/summary&gt; |
 | Theme Park World Bonus Stuff/Bonus content/levels/*/*/_name_N.wad | `source/OpenTPW/Online/ParkSnapshotBuilder.cs:60` | &lt;summary&gt;[DATA:Theme Park World Bonus Stuff/Bonus content/levels/*/*/_name_N.wad] Bonus archives start with '_'.&lt;/summary&gt; |
@@ -796,13 +820,15 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | global/Speech/speechHD.SDT | `source/OpenTPW/World/Advisor.cs:20` | [DATA:global/Speech/speechHD.SDT] [DATA:global/Speech/lips.wad] |
 | global/advisor.wad:Advisor.MD2 | `source/OpenTPW/World/Advisor.cs:18` | [DATA:global/advisor.wad:Advisor.MD2] |
 | jungle Bouncy.sam + Rides.sam | `source/OpenTPW.Tests/GuestAssetTests.cs:135` | [DATA:jungle Bouncy.sam + Rides.sam] HasQueue, RunsContinuously, CAP 5, DUR 30, InitSpeed 60, QWTC 130 (QUEUE-plan §9). |
-| levels/&lt;level&gt;/global.sam:ParkName.GateObjectId | `source/OpenTPW/World/Original/OriginalGateSign.cs:64` | [DATA:levels/&lt;level&gt;/global.sam:ParkName.GateObjectId] |
+| levels/&lt;level&gt;/global.sam:ParkName.GateObjectId | `source/OpenTPW/World/Original/OriginalGateSign.cs:63` | [DATA:levels/&lt;level&gt;/global.sam:ParkName.GateObjectId] |
 | levels/&lt;theme&gt;/terrain/base.map:InitialPath | `source/OpenTPW/Client/M3Gate.cs:314` | [DATA:levels/&lt;theme&gt;/terrain/base.map:InitialPath] [DATA:Standard.sam:FixedItemInfo lanes] |
 | levels/Standard.sam:BankAccountInfo.* (layered) | `source/OpenTPW/Economy/BalanceSettings.cs:72` | [DATA:levels/Standard.sam:BankAccountInfo.* (layered)] |
 | levels/jungle/Easymode.TPWI:loan table repayments = floor(amount/months) at 0 % APR | `source/OpenTPW/Economy/ParkLedger.cs:146` | [DATA:levels/jungle/Easymode.TPWI:loan table repayments = floor(amount/months) at 0 % APR] |
 | levels/space/rides/megacost.wad/megacost.sgn:slot 1 = "EggIt Italic"/EGGII___.TTF, not in fonts.wad | `source/OpenTPW.Files/Public/DataCorrections.cs:18` | [EXT:COMPAT-FIX sign-font-substitution] [DATA:levels/space/rides/megacost.wad/megacost.sgn:slot 1 = "EggIt Italic"/EGGII___.TTF, not in fonts.wad] |
-| lobby.wad:&lt;theme&gt;.txt ISLAND/SKYCOLOUR/FLYINGMESH/RAINY/LIGHTNING | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:79` | [DATA:lobby.wad:&lt;theme&gt;.txt ISLAND/SKYCOLOUR/FLYINGMESH/RAINY/LIGHTNING] [APPROX:UI-016] angle = yaw, height = camera target height — evidence needed: binary/capture |
-| lobby.wad:&lt;theme&gt;.txt SKYCOLOUR | `source/OpenTPW/Client/GameFlow.cs:349` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
+| lobby.wad:&lt;theme&gt;.txt ISLAND/SKYCOLOUR/FLYINGMESH/RAINY/LIGHTNING | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:84` | [DATA:lobby.wad:&lt;theme&gt;.txt ISLAND/SKYCOLOUR/FLYINGMESH/RAINY/LIGHTNING] [APPROX:UI-016] angle = yaw, height = camera target height — evidence needed: binary/capture |
+| lobby.wad:&lt;theme&gt;.txt SKYCOLOUR | `source/OpenTPW/Client/GameFlow.cs:397` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
+| lobby.wad:globe/globe.MD2 + Lo_glo1–24 | `source/OpenTPW/World/Lobby/GlobeScene.cs:56` | [DATA:lobby.wad:globe/globe.MD2 + Lo_glo1–24] tile i covers column (i − 1) mod 6 and row (i − 1) div 6 of a world map; vertex UVs put column c at atan2(x, z) = 180° − 60°·c and row r between 90° − 45°·r and 45° − 45°·r latitude |
+| lobby.wad:lobby.txt GLOBERADIUSOUT/GLOBERADIUSIN | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:36` | [DATA:lobby.wad:lobby.txt GLOBERADIUSOUT/GLOBERADIUSIN] the online globe's two camera distances; defaults equal the shipped values |
 | lobby.wad:lobby.txt ISLANDFOV/SPINSPEED/SPINRADIUS/VERTICALOFFSET | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:31` | [DATA:lobby.wad:lobby.txt ISLANDFOV/SPINSPEED/SPINRADIUS/VERTICALOFFSET] defaults equal the shipped values |
 | low.sam/med.sam/high.sam | `source/OpenTPW.Tests/CompatibilityTests.cs:133` | [DATA:low.sam/med.sam/high.sam] in file order (TEXTUREQUALITY .. LOBBYOBJECTS). |
 | low.sam/med.sam/high.sam:comment legend | `source/OpenTPW/Compat/GraphicsSettings.cs:21` | ([DATA:low.sam/med.sam/high.sam:comment legend]). |
@@ -861,6 +887,8 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | STP-PPC:0x10015100 TbMapStreamer::ReadBankDataFromMap | `source/OpenTPW.Files/Formats/Sound/SoundCatalog.cs:143` | [BIN:STP-PPC:0x10015100 TbMapStreamer::ReadBankDataFromMap] 11-byte records (rewritten at load), then per bank a u32 length and the name |
 | STP-PPC:0x10016F4C advisor balance | `source/OpenTPW/World/AdvisorController.cs:85` | [BIN:STP-PPC:0x10016F4C advisor balance] MessageGroups[g] fields at +36/+40/+44 + 12g |
 | STP-PPC:0x10016F4C advisor balance | `source/OpenTPW/World/AdvisorController.cs:92` | [BIN:STP-PPC:0x10016F4C advisor balance] GeneralAdvisor.MinTimeAnyMessage +24, MinTimeSameMessage +28, MinScoreForConsideration +32 |
+| STP-PPC:0x1003339C..0x100335AC | `source/OpenTPW.Files/Formats/Image/SignWaveletDecoder.cs:120` | [BIN:STP-PPC:0x1003339C..0x100335AC] low and high coefficients occupy separate row halves. |
+| STP-PPC:0x1003F338 Bitmap::descimate | `source/OpenTPW.Files/Formats/Font/SignSurfaceComposer.cs:223` | [BIN:STP-PPC:0x1003F338 Bitmap::descimate] fixed-point buckets and integer channel averages; upsampling remains outside the proved branch. |
 | STP-PPC:0x10059F00 mesh instance flag 0x400 | `source/OpenTPW/Hud/HudStubs.cs:111` | [BIN:STP-PPC:0x10059F00 mesh instance flag 0x400] the buy-window preview (0x10162584 -&gt; 0x10139084 -&gt; 0x1005C35C) instances the p&lt;name&gt; preview mesh when it loaded and the object's main mesh otherwise, so objects without a P model show their main model |
 | STP-PPC:0x1006E228 queue link read | `source/OpenTPW/World/Guests/GuestPathGrid.cs:123` | [BIN:STP-PPC:0x1006E228 queue link read] map cell +13 holds the queue link direction; the values are 1, 4, 16 and 64 |
 | STP-PPC:0x1006F380 path preview | `source/OpenTPW/World/CellBuildTool.cs:72` | [BIN:STP-PPC:0x1006F380 path preview] in mode 1 or 3, snap the cursor and LayLine(mode \| 0x100, start, end); without a start, preview one cell |
@@ -893,8 +921,13 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | STP-PPC:0x1009B1DC movie box | `source/OpenTPW/Client/Movie/MoviePresenter.cs:44` | shown at twice their width, with non-square pixels ([BIN:STP-PPC:0x1009B1DC movie box], docs/TGQ-MOVIES.md). |
 | STP-PPC:0x100A6CC0 animation trigger | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:256` | [BIN:STP-PPC:0x100A6CC0 animation trigger] the channel record is model +0x10 + channel × 0x38; TRIGANIM (0x100AFB10), WAITANIM (0x100AFC68), LOOPANIM (0x100AFD7C) and TRIGANIMSPEED (0x100B005C) pass channel 0, TRIGANIM_CH (0x100B01C4) its operand |
 | STP-PPC:0x100A70B4 channel frame arithmetic | `source/OpenTPW/World/Objects/ObjectAnimator.cs:25` | [BIN:STP-PPC:0x100A70B4 channel frame arithmetic] the Feral Mac formula multiplies elapsed milliseconds by 30 and divides by 1000 before channel speed. |
+| STP-PPC:0x100A9F9C | `source/OpenTPW.Files/Formats/Font/SignSurfaceComposer.cs:133` | [BIN:STP-PPC:0x100A9F9C] the 512-wide text DIB is reduced to the 256-wide mask by two-stage integer averaging. |
 | STP-PPC:0x100A9F9C sign line | `source/OpenTPW.Files/Formats/Font/SignTextLayout.cs:90` | [BIN:STP-PPC:0x100A9F9C sign line] fit when the extent is below the 2x canvas width; else lo = 1, hi = lfWidth (or -lfHeight when 0), mid = (hi - 1) / 2 + 1; a fitting trial sets lo = mid, mid += (hi - mid) / 2, a wide one sets hi = mid, mid = lo + (mid - lo) / 2; stop on the first fitting trial with hi - lo &lt; 3 |
-| STP-PPC:0x100ABF14 sign compositor | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:26` | [BIN:STP-PPC:0x100ABF14 sign compositor] each line is colour-blitted with its colour block's bytes (+0x430..+0x432 for the first line, +0x444..+0x446 for the second) only when its colour mode is 1 or 2 |
+| STP-PPC:0x100AB1C8,0x100AB3B8..0x100AB444 | `source/OpenTPW.Files/Formats/Font/SignSurfaceComposer.cs:198` | [BIN:STP-PPC:0x100AB1C8,0x100AB3B8..0x100AB444] 16-pixel horizontal tiling and measured-height vertical phase. |
+| STP-PPC:0x100ABDAC Bitmap::load_wavelet | `source/OpenTPW.Files/Formats/Image/SignWaveletDecoder.cs:13` | [BIN:STP-PPC:0x100ABDAC Bitmap::load_wavelet] the engine reads four float scales, two compressed lengths and ARGB output. |
+| STP-PPC:0x100ABF14 sign compositor | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:23` | [BIN:STP-PPC:0x100ABF14 sign compositor] each line is colour-blitted with its colour block's bytes (+0x430..+0x432 for the first line, +0x444..+0x446 for the second) only when its colour mode is 1 or 2 |
+| STP-PPC:0x100AC21C..0x100AC6B0 | `source/OpenTPW.Files/Formats/Font/SignSurfaceComposer.cs:14` | [BIN:STP-PPC:0x100AC21C..0x100AC6B0] clear, optional board alphablt, style-2 paint, ordered style-1 paint/effects, split the top 128 rows. |
+| STP-PPC:0x100AC25C..0x100AC49C | `source/OpenTPW.Files/Formats/Font/SignSurfaceComposer.cs:57` | [BIN:STP-PPC:0x100AC25C..0x100AC49C] style 2 is drawn before either relief effect; |
 | STP-PPC:0x100ADF40 BOUNCE | `source/OpenTPW/World/Guests/RideVisitorBridge.cs:655` | [BIN:STP-PPC:0x100ADF40 BOUNCE] scan the +100 slots of the +40 table in index order; the first with visitor word 0 gets visitor, deadline now + 1000 × dur and start now, +108 goes up, return 1; a full table returns 0 and stores nothing; the deadline comes from one clock call (0xadfb0) and the start from a second (0xadfcc) |
 | STP-PPC:0x100AE020 UNBOUNCE | `source/OpenTPW/World/Guests/RideVisitorBridge.cs:689` | [BIN:STP-PPC:0x100AE020 UNBOUNCE] slots in index order; release needs deadline &lt; now (cmpw, 0x100AE088) and ((now − start) mod 1000) / 200 == 0 (0x100AE040..0x100AE0B0) |
 | STP-PPC:0x100B07E4 RSE RAND | `source/OpenTPW/VM/RideScriptWorld.cs:31` | [BIN:STP-PPC:0x100B07E4 RSE RAND] RAND draws from the world LCG (0x10105328 on the world at TOC −0x7580): (\|s\| &gt;&gt; 1) mod (bound + 1); FINDSCRIPTRAND (0x100B1B8C) picks match (\|s\| &gt;&gt; 1) mod count, drawing only when there is a match |
@@ -985,7 +1018,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | STP-PPC:0x10165A0C upgrade list | `source/OpenTPW/Economy/ParkEconomy.cs:629` | [BIN:STP-PPC:0x10165A0C upgrade list] game type 2 (Instant Action) lists no upgrades and shows UITEXT 27 instead |
 | STP-PPC:0x10166F1C upgrade purchase | `source/OpenTPW/Economy/ParkEconomy.cs:642` | [BIN:STP-PPC:0x10166F1C upgrade purchase] only the bank balance is checked; the upgrade is queued (0x100DF928) and waits for a mechanic, with or without mechanics on the staff |
 | STP-PPC:0x10178768 list insert | `source/OpenTPW/Hud/BuyListModel.cs:44` | [BIN:STP-PPC:0x10178768 list insert] the buy list (504, attribute 0x91 with the sorted-insert bit 0x10) inserts each row before the first row whose name is greater (wcscmp, 0x10178654); its sort word starts at 1 (column 0, the name, ascending), so equal names keep catalogue order |
-| STP-PPC:0x1018E254 sign text builder | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:114` | [BIN:STP-PPC:0x1018E254 sign text builder] with only one text, probes the UTF-16 string at len/2, then len/2-1, len/2+1, len/2-2, ... (len probes) for U+0020; the first hit splits it into the characters before it (line 1) and those after it (line 2); no hit leaves line 1 whole and line 2 empty |
+| STP-PPC:0x1018E254 sign text builder | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:110` | [BIN:STP-PPC:0x1018E254 sign text builder] with only one text, probes the UTF-16 string at len/2, then len/2-1, len/2+1, len/2-2, ... (len probes) for U+0020; the first hit splits it into the characters before it (line 1) and those after it (line 2); no hit leaves line 1 whole and line 2 empty |
 | STP-PPC:0x1018E254 sign text builder | `source/OpenTPW/World/Objects/ObjectSigns.cs:58` | [BIN:STP-PPC:0x1018E254 sign text builder] one name string is split at its middle space (SignCanvas.SplitAtMiddleSpace); a caller may instead pass the two lines (text slot 0 and 1) explicitly |
 | STP-PPC:0x1019B394 node lookup | `source/OpenTPW/World/Advisor.cs:25` | [BIN:STP-PPC:0x1019B394 node lookup] mouth nodes 1–5 (stored in order by 0x10006264) are found by case-insensitive name "mouth - normal", "aah", "eee", "ooh", "sss" through the jump table at data 0x518B4; node 1 is shown while silent |
 | STP-PPC:0x101C0F40 daily start-up movie | `source/OpenTPW/Client/Movie/IntroPlaylist.cs:6` | month modulo 8 ([BIN:STP-PPC:0x101C0F40 daily start-up movie], docs/TGQ-MOVIES.md). |
@@ -1005,3 +1038,11 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | TPW-EXE:0x00429BA0 advisor setup | `source/OpenTPW/World/Advisor.cs:79` | [BIN:TPW-EXE:0x00429BA0 advisor setup] the advisor's parallel light, (26.67, -26.67, 800) in the same screen space: |
 | TPW-EXE:0x0057A260 SetLocalMatrix | `source/OpenTPW/World/Advisor.cs:66` | [BIN:TPW-EXE:0x0057A260 SetLocalMatrix] multiplies by diag(1, -1, 1, 1), so the stored translation is (0.6, +0.6, 0.2). |
 | TPW-EXE:0x0057A750 mesh draw | `source/OpenTPW/World/Advisor.cs:67` | [BIN:TPW-EXE:0x0057A750 mesh draw] the advisor's model flag 0x200 (set by 0x0045BED0) skips the camera, projection |
+| TPW-EXE:0x005D9230 globe light | `source/OpenTPW/World/Lobby/GlobeScene.cs:149` | [BIN:TPW-EXE:0x005D9230 globe light] dim grey ambient and one white light; OpenTPW puts the light behind the camera's start |
+| TPW-EXE:0x005DC3E0 city flag | `source/OpenTPW/World/Lobby/GlobeScene.cs:25` | [BIN:TPW-EXE:0x005DC3E0 city flag] the city named "North Pole" gets the Bullfrog pin, every other city the hpin model |
+| TPW-EXE:0x005DC3E0 city flag | `source/OpenTPW/World/Lobby/GlobeScene.cs:100` | [BIN:TPW-EXE:0x005DC3E0 city flag] scale (s, s, p) with p = clamp(0.02 + 0.0005·parks, 0.02, 0.1) and s = 0.035 + 0.2·p, at the city position, oriented along its direction from the globe centre |
+| TPW-EXE:0x005DC860 globe camera update | `source/OpenTPW/World/GlobeCameraMode.cs:8` | [BIN:TPW-EXE:0x005DC860 globe camera update] position r·(cos yaw·cos pitch, sin pitch, sin yaw·cos pitch) around the globe (pole axis up), looking at its centre; pitch clamped to ±1.5; r eases towards the zoom state's radius at 0.3; velocities are multiplied by the state's damping and integrated into the angles; zoomed out (rate, step, damping) = (0.4, 0.15, 0.5), zoomed in (0.2, 0.075, 0.25); field of view 60 (0x005DCFE0) |
+| TPW-EXE:0x005DC860 globe edge scroll | `source/OpenTPW/Online/OnlineGlobeScreen.cs:17` | [BIN:TPW-EXE:0x005DC860 globe edge scroll] the cursor within 1% of the 2048×1536 canvas edge steers the globe |
+| TPW-EXE:0x005DC860 globe pick | `source/OpenTPW/World/Lobby/GlobeScene.cs:17` | [BIN:TPW-EXE:0x005DC860 globe pick] the cursor ray meets a sphere of radius 116 (r² 13456); a city within 10 units (d² &lt; 100) of that point is hovered |
+| TPW-EXE:0x005DC860 globe right button | `source/OpenTPW/Online/OnlineGlobeScreen.cs:53` | [BIN:TPW-EXE:0x005DC860 globe right button] holding the right button steers by the cursor's offset from the screen centre |
+| TPW-EXE:0x005DD530 online globe input | `source/OpenTPW/Online/OnlineGlobeScreen.cs:63` | [BIN:TPW-EXE:0x005DD530 online globe input] a click on the globe toggles zoomed in/out |

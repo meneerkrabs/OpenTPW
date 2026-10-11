@@ -8,7 +8,7 @@
   (0, +1, 0) when it is set (0x32dd8..0x32e08); the station end node (0x144) is the first case.
   CV2-3: the knot chord 0x32990 and the node tangent 0x31450 use fused and double-precision steps.
   Also: the traced parts COAST-F ported (rating pass, cost-rate fallback, COAST 4 range, tangent Y zeroing).
-- Source (this checkout): the C# side. Open findings are expected failures.
+- Source (this checkout): the C# side. The open findings were expected failures until COAST-F2 fixed them.
 - Git (OPENTPW_REVIEW_REPO, defaults to this repository; skipped when a commit is missing): the schema collisions
   of the in-flight branches and the conflict set of a trial merge onto origin/main c09c6ba.
 
@@ -135,17 +135,14 @@ class Source(unittest.TestCase):
         cls.curve = text(COASTERS / 'CoasterCurve.cs')
         cls.register = text(COASTERS / 'CoasterApproximations.cs')
 
-    @unittest.expectedFailure
     def test_cv2_1_partial_hop_is_not_floored(self):
         move = re.search(r'private void Move\( CoasterTrain train.*?\n\t}\n', self.ride, re.S).group(0)
         self.assertNotRegex(move, r'end = end < minimumFloor \? minimumFloor : end;')
 
-    @unittest.expectedFailure
     def test_cv2_2_end_node_knot_points_down(self):
         knots = re.search(r'public IReadOnlyList<CoasterKnot> BuildKnots\(.*?\n\t}\n', self.track, re.S).group(0)
         self.assertNotRegex(knots, r'CoasterNodeFlags\.Loop\) != 0 \? SVector3\.UnitY\b')
 
-    @unittest.expectedFailure
     def test_cv2_3_remaining_precision_is_registered(self):
         self.assertRegex(self.register, r'\("COAST-0\d\d", "[^"]*\b(precision|fused)\b')
 

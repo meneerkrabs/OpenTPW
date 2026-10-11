@@ -78,6 +78,7 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 
 	/// <summary>Knot chord <c>0x32990</c>: √(dx² + (0.7·dy)² + dz²).</summary>
 	// [BIN:STP-PPC:0x10032990 knot chord] chords to the neighbouring knots, height difference weighted by 0.7; 1.0 without a neighbour
+	// [APPROX:COAST-032] single-precision steps; the original takes dy = fmsubs(0.7, b.y, 0.7·a.y) with one rounding (0x10032A64), sums the squares with double fmadd and rounds the double sqrt once (frsp) — evidence needed: an isolated oracle run of 0x10032990 (it calls the sqrt import)
 	public static float Chord( SVector3 a, SVector3 b )
 	{
 		var dx = b.X - a.X;
@@ -88,6 +89,7 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 
 	/// <summary>The knot controls (<c>0x32298</c>): T = ±u·(C·chord/|u|), backward control P + T−/3, forward P + T+/3.</summary>
 	// [BIN:STP-PPC:0x10032298 knot tangents] plain knot T− = −u·C·chord−/|u|, T+ = u·C·chord+/|u|; knot +52 = P + T−/3, +76 = P + T+/3
+	// [APPROX:COAST-032] |u| is a single-precision length; the original's knot-control norms (0x100326DC..0x10032760) mix double and fused steps (compare CoasterRating.MixedLength) — evidence needed: an isolated oracle run of 0x10032298
 	public static (SVector3 Back, SVector3 Forward) KnotControls( SVector3 position, SVector3 direction, float backChord, float forwardChord, float backFactor, float forwardFactor )
 	{
 		var norm = direction.Length();
@@ -189,10 +191,11 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 		}
 		void Emit( int pair, float t, SVector3 position )
 		{
-			// [BIN:STP-PPC:0x10045320 sample before its pair] while the sample's t is below 0 its record moves to the previous knot pair and t grows by 1 (0x10045320..0x1004535C)
-			while ( t < 0 && pair > 0 )
+			// [BIN:STP-PPC:0x10045320 sample before its pair] while the sample's t is below 0 its record moves to the previous knot pair (when the +20 link is not null) and t grows by 1 regardless (0x10045320..0x1004535C)
+			while ( t < 0 )
 			{
-				pair--;
+				if ( pair > 0 )
+					pair--;
 				t += 1f;
 			}
 			var next = (pair + 1) % count;

@@ -46,7 +46,7 @@ public enum CoasterNodeFlags : uint
 	None = 0,
 	/// <summary>Auto-banking skips the node (<c>0x3360c</c> banks only when 0x4 is clear); set on the station end node.</summary>
 	NoAutoBank = 0x4,
-	/// <summary>A loop node: the next link uses the LoopPylon limits; a pylon-less loop node's knot direction is vertical.</summary>
+	/// <summary>A loop node: the next link uses the LoopPylon limits; a pylon-less loop node's knot direction is (0, −1, 0) (no node flag 0x80).</summary>
 	Loop = 0x40,
 	/// <summary>Forces the node bank to 0 (<c>0x3f584</c>); set on the station end node.</summary>
 	ZeroBank = 0x100,
@@ -589,6 +589,7 @@ public sealed class CoasterTrack
 	/// gets a level tangent (Y = 0). Node flag 0x80 (which would reverse the half difference) is never set here.
 	/// </summary>
 	// [BIN:STP-PPC:0x10031450 node tangents] straight: the half difference only on a loop pylon (pylon flag 0x4000, 0x10031A74..0x10031A7C), T+ = |b|·½(â − b̂)/SD with node flag 0x80 clear (0x10031B18; 0x80 set gives ½(b̂ − â), 0x10031A8C), else T+ = b/SD (0x10031BA4); loop pylon curve T+ = −(â + b̂)|b|C; curve T+ = −(ŝ × n̂)|b|C with n = a × b, ŝ the unit bisector; after the plain straight and the curve case a non-loop pylon with a loop-pylon neighbour gets T± Y = 0 (0x10031BE0..0x10031C54, 0x10031EAC..0x10031F20)
+	// [APPROX:COAST-032] the lengths, unit vectors and dot product are single precision with a rounding per step; the original forms the unit vectors with double fmul/fadd (0x1003182C..0x100318D8), the lengths with fmadd (0x100318F0, 0x10031918) and the dot product with fused steps ending in fmadds (0x10031958, 0x1003196C) — evidence needed: an isolated oracle run of 0x10031450 (it calls the sqrt and acos imports)
 	public static SVector3 ForwardTangent( SVector3 previous, SVector3 position, SVector3 next, float curviness, float straightDivisor, float? straightDot, bool loopPylon, bool loopNeighbour = false )
 	{
 		var a = previous - position;
@@ -646,7 +647,7 @@ public sealed class CoasterTrack
 	/// tangent; vertical on a pylon-less loop node) and, on loop pylons, the loop factor K.
 	/// </summary>
 	// [BIN:STP-PPC:0x10033630 auto-bank pass] nodes with a next node are banked in order when definition flag 0x10 is set and node flag 0x4 is clear (0x1003360C); node flag 0x100 forces bank 0 (0x1003F584); the speed estimate starts at 0 and is updated after each banked node with floor fMinSpeed
-	// [BIN:STP-PPC:0x10032DD8 knot direction] a knot without a pylon takes (0, 1, 0) when its node has flag 0x40 ((0, −1, 0) with 0x80), else the node tangent
+	// [BIN:STP-PPC:0x10032DD8 knot direction] a knot without a pylon takes (0, −1, 0) when its node has flag 0x40 and flag 0x80 is clear (0x10032DFC; the 0x144 station end node), (0, 1, 0) when both are set (never: OpenTPW sets no node flag 0x80), else the node tangent
 	public IReadOnlyList<CoasterKnot> BuildKnots( CoasterSite site )
 	{
 		var count = nodes.Count;
@@ -677,7 +678,7 @@ public sealed class CoasterTrack
 			// The tangent rule tests pylon flag 0x4000: a flume's trough pylon (0x8000) is not a loop pylon there.
 			var loopNeighbour = IsLoopPylon( before ) || IsLoopPylon( after );
 			var tangent = ForwardTangent( previous, positions[index], next, Definition.Curviness, Definition.StraightDivisor, pylon?.StraightDotThreshold, IsLoopPylon( node ), loopNeighbour );
-			var direction = node.IsPylonless && (node.Flags & CoasterNodeFlags.Loop) != 0 ? SVector3.UnitY
+			var direction = node.IsPylonless && (node.Flags & CoasterNodeFlags.Loop) != 0 ? new SVector3( 0, -1, 0 )
 				: tangent.LengthSquared() > 0 ? SVector3.Normalize( tangent ) : SVector3.UnitZ;
 			var factor = 0f;
 			if ( node.LoopPylon )

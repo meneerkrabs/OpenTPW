@@ -4,7 +4,7 @@ namespace OpenTPW;
 /// The roller coaster slice's approximation register (docs/COASTERS.md; docs/reverse/COAST-plan.md §10). Each entry
 /// is tagged <c>[APPROX:COAST-NNN]</c> at its code site. The IDs below 015 are the unknowns of the plan's §10 table that
 /// COAST-R2 left open (§10.1), COAST-015..019 the new unknowns of §10.1, and COAST-022..031 rules OpenTPW had to choose
-/// while implementing the plan. COAST-001, 002, 003, 005, 006, 009 and 010 were resolved by COAST-R2, COAST-008 by the PPC differential
+/// while implementing the plan, and COAST-032 the arithmetic precision COAST-V2 found unported. COAST-001, 002, 003, 005, 006, 009 and 010 were resolved by COAST-R2, COAST-008 by the PPC differential
 /// oracle (ORACLE.md F7: the stale term is Fz), and COAST-020 (cost rates) and COAST-021 (force term) by COAST-V; they are traced.
 /// </summary>
 public static class CoasterApproximations
@@ -31,7 +31,8 @@ public static class CoasterApproximations
 		("COAST-028", "COAST-TOOL: the coaster tool's mouse and key controls and its ghost marker are OpenTPW's; the tool refuses no pylon for money"),
 		("COAST-029", "COAST-STATION: the station node stands at '>', the end node at '<' at fInitialPylonLoftHeight"),
 		("COAST-030", "COAST-RULES: closing needs two pylons and validates the closing link and arrival turn; edits wait for an empty train; the station node's predecessor, flags 0x10000/0x20000 and object flags 0x600 are not modelled"),
-		("COAST-031", "COAST-LEDGER: track money posts as other costs and income and joins the station's total spent; the original debit's own statistics and its bank +276 gate are not modelled")
+		("COAST-031", "COAST-LEDGER: track money posts as other costs and income and joins the station's total spent; the original debit's own statistics and its bank +276 gate are not modelled"),
+		("COAST-032", "COAST-PRECISION: the knot chord, the node tangent's unit vectors, lengths and dot product, and the knot-control norms round every step in single precision instead of the original's fused and double-precision steps")
 	};
 
 	private static bool logged;

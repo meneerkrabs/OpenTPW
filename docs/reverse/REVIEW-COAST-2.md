@@ -169,3 +169,16 @@ pins after CV2-2.
 | CRLF / whitespace vs `02712e0` | `--stat` equal with and without `--ignore-cr-at-eol` (17 files, +1179/−291); `diff --check` clean |
 | `test_coast_v1` / `test_coast_v2` (with `OPENTPW_MAC_BIN`) | 20 OK / 16 OK, 3 expected failures (CV2-1, CV2-2, CV2-3) |
 | Native smokes (`-r osx-arm64`, **unmuted**, one at a time) | jungle `--load-original-level`: passed, 4338 frames, "Temple Of Gloom with 6 pylons for $797, 146 samples, excitement 38.9, sickness 5.7, 1 train(s)"; sandbox: passed, 1109 frames; `--front-end`: passed, 453 frames. Another session's jungle smoke was already running when the jungle smoke started (it was not started by this review); the sandbox and front-end smokes waited until no other smoke ran |
+
+## Resolution (COAST-F2, branch `coast-fix`)
+
+| Finding | Resolution |
+| --- | --- |
+| CV2-1 | Fixed: the partial hop ends at `min(cap, v_end)` with no floor (the floor line is gone, the `0x10040650` tag names the dead store); COAST-plan §17.2 step 4 and COASTERS.md corrected; `ADepartureFromRestDoesNotReachTheMinimumSpeedInOneFrame` fails with the floor (speed 5 after the first frame) and passes without it |
+| CV2-2 | Fixed: a pylon-less node with flag 0x40 (OpenTPW sets no node flag 0x80) gets the knot direction `(0, −1, 0)` with +0.0 in X and Z, like the original's f29; the tag, the `Loop` flag doc, `ClosingThenCompletingAppendsTheStationEndNodes` and COAST-plan §13.1/§13.4 corrected |
+| CV2-3 | Registered as COAST-032 (chord, node tangent unit vectors, lengths and dot product, knot-control norms) with a tag at each site. The car-point interpolation is ported instead: `SampleAt` uses `fmadds(cur, 1 − f, next·f)` (`0x409b0..0x409e4`) |
+| CV2-4 | Ported: `BrakingSpeedSample` returns `first − 1` when the tail's first sample has t = 0; `Emit` adds 1 to a negative t at pair 0 without moving the record, as the binary does when the +20 link is null (the loop `0x45320..0x4535c` re-tests t) |
+
+The witness `test_coast_v2` passes without expected failures. The oracle rerun on the fixed tree (the same
+scratch harness, rebuilt against `coast-fix`, new realistic inputs from 225 tracks) is bit-exact: rating step 46,206
+realistic / 6,009 distribution / 5,479 stress inputs, final 225 / 6,006 / 3,006, derivative 3,300, pylon height 2,000.

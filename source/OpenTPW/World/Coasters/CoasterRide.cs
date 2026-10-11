@@ -185,7 +185,7 @@ public sealed class CoasterRide
 
 	/// <summary>
 	/// The sample whose rated speed sets the braking start: the tail node's sample coordinate (node <c>+252</c>, the
-	/// index of the last sample before its knot) minus one.
+	/// index of the last sample before or on its knot) minus one.
 	/// </summary>
 	// [BIN:STP-PPC:0x10040070 braking sample] v_last = sample[(tail node +252) − 1].speed with the tail = controller +88 (the station end node); node +252 = trunc of the sampler's coordinate (last sample index + distance since it / spacing) when the walk reaches the node (0x10045790, 0x100457A0), i.e. the last sample before the node's knot
 	public static int BrakingSpeedSample( IReadOnlyList<CoasterSample> samples, int tailSection )
@@ -201,8 +201,9 @@ public sealed class CoasterRide
 		}
 		if ( first < 0 )
 			return samples.Count - 1;
-		// The first sample of the tail's pair lies past its knot, so the coordinate truncates to the sample before it.
-		return Math.Max( first - 2, 0 );
+		// The first sample of the tail's pair normally lies past its knot, so the coordinate truncates to the sample before
+		// it; a sample exactly on the knot (t = 0) is itself the truncated coordinate (COAST-V2 CV2-4).
+		return Math.Max( samples[first].T == 0 ? first - 1 : first - 2, 0 );
 	}
 
 	/// <summary>Controller <c>+308</c> = max((n − 1) − v/spacing, 0) in samples, v the rated speed of <see cref="BrakingSpeedSample"/>.</summary>
@@ -265,7 +266,8 @@ public sealed class CoasterRide
 
 	internal void RaiseTrackChanged() => TrackChanged?.Invoke( this );
 
-	/// <summary>The sample at a position in samples, its position interpolated linearly to the next sample.</summary>
+	/// <summary>The sample at a position in samples, its position interpolated linearly to the next sample (fused, <c>0x409b0</c>).</summary>
+	// [BIN:STP-PPC:0x100409B0 car point] a car point between two samples is fmadds(cur, 1 − f, next·f) per component (0x100409B0..0x100409E4)
 	public CoasterSample SampleAt( float position )
 	{
 		if ( samples.Length == 0 )
@@ -279,7 +281,9 @@ public sealed class CoasterRide
 		var a = samples[index];
 		var b = samples[(index + 1) % count];
 		var result = a;
-		result.Position = a.Position + (b.Position - a.Position) * fraction;
+		var rest = 1f - fraction;
+		result.Position = new System.Numerics.Vector3( MathF.FusedMultiplyAdd( a.Position.X, rest, b.Position.X * fraction ),
+			MathF.FusedMultiplyAdd( a.Position.Y, rest, b.Position.Y * fraction ), MathF.FusedMultiplyAdd( a.Position.Z, rest, b.Position.Z * fraction ) );
 		return result;
 	}
 
@@ -467,7 +471,7 @@ public sealed class CoasterRide
 	/// <see cref="BrakingStart"/>) or friction, the winch or minimum floor, the cap; the hop takes d/((v + v′)/2) seconds;
 	/// the last hop of the budget is partial; after each hop the speed decays below 2.0 and stops below 0.01.
 	/// </summary>
-	// [BIN:STP-PPC:0x10040650 coaster tick] hops of half a sample: per car the winch test reads the section of the sample at trunc(s + ½) (0x1004098C, 0x10040A0C), the average car speed, braking when a car is past ctl+308 (strictly) or friction on the flag-8 sample of the reference car's +64 position, which is written only after the frame's hops (0x10041094), so it is fixed per frame; max(·, W) when any car is on a winch section else max(·, M), min(·, ctl+52); τ = d/((v + v')/2) from the reference car's distance to its half-sample point (0x1004316C); a full hop if τ < budget, else α = budget/τ, v_end = (1 − α)v + αv', s += ½·((v + v_end)/2·budget/d), v = min(max(v_end, M), cap) (0x10040D78..0x10040DC8); after every hop v ×= 0.95 below 2.0 and v = 0 below 0.01; s wraps by fmod
+	// [BIN:STP-PPC:0x10040650 coaster tick] hops of half a sample: per car the winch test reads the section of the sample at trunc(s + ½) (0x1004098C, 0x10040A0C), the average car speed, braking when a car is past ctl+308 (strictly) or friction on the flag-8 sample of the reference car's +64 position, which is written only after the frame's hops (0x10041094), so it is fixed per frame; max(·, W) when any car is on a winch section else max(·, M), min(·, ctl+52); τ = d/((v + v')/2) from the reference car's distance to its half-sample point (0x1004316C); a full hop if τ < budget, else α = budget/τ, v_end = (1 − α)v + αv', s += ½·((v + v_end)/2·budget/d), v = min(cap, v_end) with no floor: 0x10040D98 stores max(v_end, M), but 0x10040D9C..0x10040DC8 reload the unfloored v_end and overwrite that store; after every hop v ×= 0.95 below 2.0 and v = 0 below 0.01; s wraps by fmod
 	private void Move( CoasterTrain train, float budget )
 	{
 		var count = samples.Length;
@@ -510,7 +514,6 @@ public sealed class CoasterRide
 				var end = MathF.FusedMultiplyAdd( 1f - fraction, speed, fraction * next );
 				var travelled = distance > 0 ? (speed + end) * 0.5f * budget / distance : 0f;
 				position = MathF.FusedMultiplyAdd( Hop, travelled, position );
-				end = end < minimumFloor ? minimumFloor : end;
 				speed = SpeedCap < end ? SpeedCap : end;
 				done = true;
 			}

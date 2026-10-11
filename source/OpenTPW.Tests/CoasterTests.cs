@@ -468,7 +468,7 @@ public class CoasterTests
 		Assert.AreEqual( 1, ends.Length, "the loader always sets 0x20: one end node even without bVisibleEndPylon" );
 		Assert.AreEqual( (Return.X, Return.Y), (ends[0].X, ends[0].Y) );
 		Assert.AreEqual( (CoasterNodeFlags)0x144, ends[0].Flags & ~CoasterNodeFlags.Winch, "0x37e34: flags 0x144" );
-		Assert.AreEqual( SVector3.UnitY, builder.Track.BuildKnots( builder.Site )[^1].Direction, "a pylon-less loop node's knot runs vertically" );
+		Assert.AreEqual( new SVector3( 0, -1, 0 ), builder.Track.BuildKnots( builder.Site )[^1].Direction, "the 0x144 end node (0x40 set, 0x80 clear) points its knot down (0x32DFC)" );
 		Assert.IsFalse( builder.Ride.World.HasPylon( Return.X, Return.Y ), "the end node is no pylon" );
 		var settings = PcSettings();
 		settings["sCoasterType.bVisibleEndPylon"] = "1";
@@ -607,13 +607,15 @@ public class CoasterTests
 		Assert.IsFalse( samples[2].Flags.HasFlag( CoasterSampleFlags.Friction ), "the next segment falls: cleared" );
 	}
 
-	/// <summary>The braking speed is sample (tail +252) − 1: two before the first sample of the station end node's pair.</summary>
+	/// <summary>The braking speed is sample (tail +252) − 1: two before the first sample of the station end node's pair, one before it when that sample is on the knot.</summary>
 	[TestMethod]
 	public void BrakingSpeedSampleIsTheOneBeforeTheTailCoordinate()
 	{
-		var samples = Enumerable.Range( 0, 10 ).Select( index => new CoasterSample { Section = index < 7 ? 0 : 1 } ).ToArray();
+		var samples = Enumerable.Range( 0, 10 ).Select( index => new CoasterSample { Section = index < 7 ? 0 : 1, T = 0.25f } ).ToArray();
 		Assert.AreEqual( 5, CoasterRide.BrakingSpeedSample( samples, 1 ) );
 		Assert.AreEqual( 9, CoasterRide.BrakingSpeedSample( samples, 2 ), "no such section: the last sample" );
+		samples[7].T = 0;
+		Assert.AreEqual( 6, CoasterRide.BrakingSpeedSample( samples, 1 ), "a sample on the knot truncates to itself (COAST-V2 CV2-4)" );
 	}
 
 	// ---- Build → run → board → stop → delete --------------------------------------------------------------
@@ -720,6 +722,28 @@ public class CoasterTests
 			ride.Advance( Tick );
 			Assert.IsTrue( ride.Trains.Count( train => train.State is CoasterTrainState.Boarding or CoasterTrainState.Unloading ) <= 1 );
 		}
+	}
+
+	/// <summary>
+	/// The partial hop has no speed floor (COAST-V2 CV2-1): <c>0x40D98</c> stores max(v_end, M), but <c>0x40D9C..0x40DC8</c>
+	/// overwrite it with min(cap, v_end) from the unfloored v_end, so a train leaving at speed 0 builds up speed over
+	/// several frames instead of reaching fMinSpeed in one.
+	/// </summary>
+	[TestMethod]
+	public void ADepartureFromRestDoesNotReachTheMinimumSpeedInOneFrame()
+	{
+		var (builder, _) = NewCoaster();
+		BuildCircuit( builder );
+		Assert.AreEqual( CoasterPlaceResult.Ok, CloseAndComplete( builder ) );
+		var ride = builder.Ride;
+		ride.Command( 8, 0 );
+		ride.Command( 5, 0 );
+		var train = ride.Trains[0];
+		for ( var tick = 0; tick < 120 * 60 && !(train.State == CoasterTrainState.Running && train.Position > 0); tick++ )
+			ride.Advance( Tick );
+		Assert.AreEqual( CoasterTrainState.Running, train.State );
+		var minimum = ride.Definition.MinSpeed * ride.PowerFactor;
+		Assert.IsTrue( train.Speed > 0 && train.Speed < minimum / 2, $"first running frame: speed {train.Speed}, M {minimum}" );
 	}
 
 	[TestMethod]

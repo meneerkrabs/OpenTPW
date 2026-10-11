@@ -594,7 +594,8 @@ end nodes). Each node owns **knots** through node `+144 → {count, A[], B[]}` (
   and the second-rail knot `B +64 = A +64 + 2 · tag axis(+16)`. The tag table builder and the tag
   data in the pylon meshes are not traced (COAST-015).
 - `B[]` is a second rail that gives the roll (13.7). On pylon-less nodes,
-  `B = A + (−sin a, 0, −cos a)` with `a` = node +224, and `(0, 1, 0)` on loop nodes (flag 0x40).
+  `B = A + (−sin a, 0, −cos a)` with `a` = node +224, and on loop nodes (flag 0x40) `(0, −1, 0)` with node flag 0x80 clear (the 0x144 station end
+  node) or `(0, 1, 0)` with 0x80 set (`0x32dd8..0x32e08`; COAST-V2 CV2-2).
   The resulting roll on non-loop pylon-less nodes is not bounded (COAST-017).
 
 ### 13.2 Node position (`0x33398`)
@@ -640,7 +641,8 @@ because 13.4 rescales every knot.
 For each knot (both rails), `0x32990` computes the chords to the previous and next knot,
 crossing node boundaries, as `√(dx² + (0.7·dy)² + dz²)` (constant 0.7 at `0x32a34`). Without a
 neighbour the chord is 1.0. The direction `u` is the mesh tag axis (+32..+40) on a pylon,
-`(0, 1, 0)` on a loop node (`(0, −1, 0)` with flag 0x80), and otherwise the normalised node `T+`.
+`(0, −1, 0)` on a loop node with flag 0x80 clear (`0x32dfc`; the 0x144 station end node), `(0, 1, 0)` on
+a loop node with 0x80 set (COAST-V2 CV2-2), and otherwise the normalised node `T+`.
 Then (`0x32298`):
 
 - **Plain knot:** `T− = −u·C·chord−/|u|`, `T+ = u·C·chord+/|u|`.
@@ -832,7 +834,9 @@ controller +44. The new speed is the car average. Then:
    to its half-sample point (`0x4316c`). If `τ <` the remaining budget: `v = v'`, the budget
    drops by τ, `s += ½`, and the train is re-queued. Otherwise, with `α = budget/τ`:
    `v_end = (1 − α)v + αv'`, `s = s_saved + ½·((v + v_end)/2·budget/d)`,
-   `v = min(max(v_end, M), cap)` (`0x40d78..0x40dc8`), and the train leaves the queue.
+   `v = min(cap, v_end)` with **no** floor, and the train leaves the queue. (`0x40d98` stores
+   `max(v_end, M)`, but `0x40d9c..0x40dc8` reload the unfloored `v_end` from `276(r1)` and overwrite that
+   store; COAST-V2 CV2-1.)
 5. After every hop: `v ×= 0.95` if `v < 2.0`, and `v = 0` if `v < 0.01`. Then the train extents
    (+32/+36) are updated, `0x40574` runs, and `s` wraps by `fmod(s, n)`.
 

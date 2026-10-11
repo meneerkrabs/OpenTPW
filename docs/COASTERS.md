@@ -107,8 +107,8 @@ station braking (`x⁴` toward the winch floor past `ctl+308`) or friction (on t
 sample the train stood on at the start of the step), the floor (winch speed when
 a car's half-sample point is on a chain-lift section, else the minimum speed,
 both times the power factor) and the cap. A hop takes `d / ((v + v')/2)`
-seconds, and the last hop of a step is partial; its end speed is floored at the
-minimum speed and capped. Below speed 2 the speed decays by 0.95 per hop,
+seconds, and the last hop of a step is partial; its end speed is capped but not
+floored, so a train leaving the station at rest builds up speed over several frames. Below speed 2 the speed decays by 0.95 per hop,
 and below 0.01 it is 0. The hops run on OpenTPW's fixed 60 Hz simulation step
 instead of the original's per-frame elapsed time, which keeps runs reproducible
 (COAST-022). Trains leave the station at the release headway
@@ -157,10 +157,12 @@ rating, trains and riders. The park save does not hold coasters yet (COAST-025).
 
 ## Approximation register
 
-`CoasterApproximations` lists every `[APPROX:COAST-NNN]` tag: twenty-one open
+`CoasterApproximations` lists every `[APPROX:COAST-NNN]` tag: twenty-two open
 IDs. The IDs below 15 are the unknowns of COAST-plan §10 that are still open.
 COAST-015..019 are the new unknowns of §10.1. COAST-022..031 are rules OpenTPW
-chose while implementing the plan. COAST-020 (cost rates) and COAST-021 (force
+chose while implementing the plan. COAST-032 is the single-precision arithmetic
+of the knot chord, the node tangent and the knot-control norms, where the
+original uses fused and double-precision steps. COAST-020 (cost rates) and COAST-021 (force
 term) were resolved by the COAST-V review and are traced now. The generated
 table is in [FIDELITY-REGISTER.md](FIDELITY-REGISTER.md).
 

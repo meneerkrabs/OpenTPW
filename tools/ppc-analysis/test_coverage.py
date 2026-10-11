@@ -29,5 +29,19 @@ class CoverageTests(unittest.TestCase):
         self.assertEqual(len(coverage.clean("x" * 10 + "abc" * 40, limit=20)), 20)
 
 
+class RepositoryTextTests(unittest.TestCase):
+    def test_the_generated_map_is_not_counted_as_a_citation(self):
+        import subprocess, tempfile
+        with tempfile.TemporaryDirectory() as repo:
+            subprocess.run(["git", "init", "-q", repo], check=True)
+            os.makedirs(os.path.join(repo, "docs", "reverse"))
+            with open(os.path.join(repo, "docs", "a.md"), "w") as f:
+                f.write("cites 0x100BB4FC\n")
+            with open(os.path.join(repo, coverage.OUTPUT), "w") as f:
+                f.write("| `0x10063DD0` | uncited |\n")
+            subprocess.run(["git", "-C", repo, "add", "-A"], check=True)
+            self.assertEqual(coverage.cited_addresses(coverage.repository_text(repo)), {0x100BB4FC})
+
+
 if __name__ == "__main__":
     unittest.main()

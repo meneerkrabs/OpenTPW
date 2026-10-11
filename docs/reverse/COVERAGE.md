@@ -10,9 +10,9 @@ often covered through their callers.
 
 | | Count | Cited | Share |
 | --- | ---: | ---: | ---: |
-| Functions in SimThemePark | 6725 | 708 | 10.5 % |
-| Code bytes in those functions | 2014896 | 640620 | 31.8 % |
-| RTTI classes (names in the repository) | 194 | 42 | |
+| Functions in SimThemePark | 6725 | 710 | 10.6 % |
+| Code bytes in those functions | 2014896 | 649756 | 32.2 % |
+| RTTI classes (names in the repository) | 194 | 44 | |
 
 ## Classes
 
@@ -211,7 +211,6 @@ Largest first. Strings are the first short debug strings the function references
 | --- | ---: | --- | --- |
 | `0x100866B8` | 9444 |  | Thing has been allocated in ThingArray index 0 - shouldn't … |
 | `0x1011E418` | 9080 |  | data:Language: · Error: Unable to open text resource at %s · Error: Unable to set language to %s |
-| `0x10063DD0` | 8368 |  | FLY: Failed to trigger a flying car anim (%ld) |
 | `0x1001B74C` | 7932 |  | Thing has been allocated in ThingArray index 0 - shouldn't … · Close Chunk %d bytes unread · #####Read_DataFromChunk - ReadFailed#### |
 | `0x101AAF78` | 7324 |  | goto ftp download failed · Pos for teleport - x: %d, y:%d · Pos before unhide - x: %d, y:%d |
 | `0x10025FC0` | 6352 |  | Thing has been allocated in ThingArray index 0 - shouldn't … · Duplicate track section - IGNORED! · Out of Collision Objects |
@@ -524,7 +523,6 @@ Largest first. Strings are the first short debug strings the function references
 | `0x1005C89C` | 768 |  |  |
 | `0x10073DF8` | 768 |  | Thing has been allocated in ThingArray index 0 - shouldn't … |
 | `0x1014920C` | 768 |  |  |
-| `0x101B8808` | 768 |  | ONLINE CHATELLITES: connection failed! |
 | `0x10080750` | 764 |  | Writing Hoardings Balance file · #ThemeParkWorld - Hoardings.sam · #DO NOT EDIT BY HAND |
 | `0x100CD408` | 764 |  | mDirection · mFlags · mMeshInstance |
 | `0x100A04D8` | 760 |  |  |

@@ -61,7 +61,9 @@ def clean(text: str, limit: int = 60) -> str | None:
 
 
 def repository_text(repo: str) -> str:
-    out = subprocess.run(["git", "-C", repo, "grep", "-h", "-I", "-e", "0x", "--", "source", "docs", "tools"],
+    # The generated map itself lists uncited addresses; counting them would mark everything cited.
+    out = subprocess.run(["git", "-C", repo, "grep", "-h", "-I", "-e", "0x", "--", "source", "docs", "tools",
+                          ":!" + OUTPUT],
                          capture_output=True, text=True, check=True).stdout
     return out
 

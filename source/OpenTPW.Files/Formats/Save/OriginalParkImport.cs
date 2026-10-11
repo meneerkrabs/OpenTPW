@@ -94,4 +94,59 @@ public sealed class OriginalParkImport
 		}
 		return new OriginalParkImport( map, layout, cells, paths.AsReadOnly(), placed.AsReadOnly(), fixedItems.AsReadOnly(), unresolved.AsReadOnly() );
 	}
+
+	/// <summary>
+	/// Imports the observed Theme Park Inc prebuilt-save profile. Cell records are 88/98 bytes and
+	/// SYSG object headers have an extra u32 before Info.Id. Objects without a fully occupied,
+	/// verified footprint remain in <see cref="UnresolvedObjects"/> with their saved coordinates.
+	/// </summary>
+	public static OriginalParkImport ImportThemeParkInc( ReadOnlyMemory<byte> payload, MapFile map )
+	{
+		ArgumentNullException.ThrowIfNull( map );
+		var layout = SavePayloadLayout.Parse( payload.Span );
+		var cells = SaveCellGrid.ParseThemeParkInc( payload, layout.PrefixLength, map.CellCountX, map.CellCountY );
+		var paths = new List<(int X, int Y)>();
+		for ( var y = 0; y < map.CellCountY; y++ )
+		{
+			for ( var x = 0; x < map.CellCountX; x++ )
+			{
+				var cell = cells[x, y];
+				if ( cell.Attributes != map.GetCellAt( x, y ) )
+					throw new InvalidDataException( $"Theme Park Inc save cell ({x}, {y}) attributes differ from the level map; the save belongs to another map." );
+				if ( cell.IsPath )
+					paths.Add( (x, y) );
+			}
+		}
+
+		var placed = new List<ImportedParkObject>();
+		var fixedItems = new List<SaveObject>();
+		var unresolved = new List<SaveObject>();
+		var records = ThemeParkIncSaveObjectList.Parse( payload.Span, layout, map.CellCountX, map.CellCountY );
+		// [DATA:PreBuilt/prebuilt.TPWS:SYSG] Fail closed if the only supported prebuilt profile was only partly scanned.
+		if ( records.Count != 23 || records.Count( record => record.IsFixedItem ) != 14 )
+			throw new InvalidDataException( "Unsupported Theme Park Inc prebuilt SYSG object profile." );
+		foreach ( var record in records )
+		{
+			if ( record.IsFixedItem )
+			{
+				fixedItems.Add( record );
+				continue;
+			}
+			if ( !record.TryGetFootprint( out var minX, out var minY, out var maxX, out var maxY )
+				|| minX < 0 || minY < 0 || maxX >= map.CellCountX || maxY >= map.CellCountY )
+			{
+				unresolved.Add( record );
+				continue;
+			}
+			var occupied = true;
+			for ( var y = minY; y <= maxY; y++ )
+				for ( var x = minX; x <= maxX; x++ )
+					occupied &= cells[x, y].IsOccupied;
+			if ( occupied )
+				placed.Add( new ImportedParkObject( record, minX, minY, maxX, maxY ) );
+			else
+				unresolved.Add( record );
+		}
+		return new OriginalParkImport( map, layout, cells, paths.AsReadOnly(), placed.AsReadOnly(), fixedItems.AsReadOnly(), unresolved.AsReadOnly() );
+	}
 }

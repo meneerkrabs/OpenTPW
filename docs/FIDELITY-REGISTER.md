@@ -14,9 +14,9 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **199 unresolved unique APPROX IDs**, 215 APPROX occurrences, 101 EXT occurrences, 90 DATA occurrences and 155 BIN occurrences.
+Current inventory: **200 unresolved unique APPROX IDs**, 216 APPROX occurrences, 101 EXT occurrences, 95 DATA occurrences and 155 BIN occurrences.
 
-Of these, 193 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
+Of these, 194 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
 CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.
 
@@ -33,7 +33,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ONLINE | 6 | 6 |
 | PATH | 14 | 15 |
 | QUEUE | 19 | 19 |
-| RIDES | 27 | 27 |
+| RIDES | 28 | 28 |
 | UI | 48 | 60 |
 
 ## Approximation declarations
@@ -191,6 +191,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | RIDES-028 | Original-fidelity area (scope unadjudicated) | non-walkable object access cells use the nearest walkable path | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:35` |
 | RIDES-029 | Original-fidelity area (scope unadjudicated) | Theme Park Inc shape symbol @ (road sign span) treated as occupied | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:36` |
 | RIDES-030 | Original-fidelity area (scope unadjudicated) | non-finite object texture coordinates drawn as (0, 0) | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:37` |
+| RIDES-040 | Original-fidelity area (scope unadjudicated) | Theme Park Inc fixed scene records saved at (0, 0) use their local model origin; other transform fields are not decoded | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:38` |
 | UI-001 | Original-fidelity area (scope unadjudicated) | non-4:3 outputs keep each element at its authored distance from the nearest edge (anchors) | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:12` |
 | UI-002 | Original-fidelity area (scope unadjudicated) | BF4 font size tier (SMALL/MED/BIG) chosen by logical scale thresholds 0.36 and 0.6 | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:13` |
 | UI-003 | Original-fidelity area (scope unadjudicated) | button/arm state frames drawn at the root node pose; child translations ignored | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:14` |
@@ -384,12 +385,12 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | RIDES-011 | `source/OpenTPW/World/Objects/ObjectShape.cs:74` | [APPROX:RIDES-011] Meanings of N/E (exit), &lt;/&gt; (station ends), + (upgrade cells), W (occupied) are inferred; 2, S, *, . are verified in Easymode — evidence needed: saves/captures with these rides |
 | RIDES-012 | `source/OpenTPW/World/Objects/ObjectShape.cs:140` | [APPROX:RIDES-012] Access cells open across the first/last row before the first/last column (verified only for first/last-row cells) — evidence needed: saves with side entrances |
 | RIDES-013 | `source/OpenTPW/World/Objects/ObjectShape.cs:105` | [APPROX:RIDES-013] Rotation 180 and non-square rotated footprints follow the rigid rotation verified for 0/90/270 squares — evidence needed: a save with such objects |
-| RIDES-014 | `source/OpenTPW/World/Objects/ParkObjects.cs:160` | [APPROX:RIDES-014] Object base height = mean ground height of its footprint cells (.hmp ground deformation not decoded) — evidence needed: .hmp format, captures on slopes |
-| RIDES-015 | `source/OpenTPW/World/Objects/ParkObjects.cs:197` | [APPROX:RIDES-015] Imported objects start open (saved ride state not decoded); built objects open too — evidence needed: TPWS ride-state fields, original build behaviour |
+| RIDES-014 | `source/OpenTPW/World/Objects/ParkObjects.cs:162` | [APPROX:RIDES-014] Object base height = mean ground height of its footprint cells (.hmp ground deformation not decoded) — evidence needed: .hmp format, captures on slopes |
+| RIDES-015 | `source/OpenTPW/World/Objects/ParkObjects.cs:199` | [APPROX:RIDES-015] Imported objects start open (saved ride state not decoded); built objects open too — evidence needed: TPWS ride-state fields, original build behaviour |
 | RIDES-016 | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:44` | [DATA:&lt;object&gt;.sam:Upgrades[0].InitDuration] [APPROX:RIDES-016] written raw; unit per Info.DurationUnit unverified — evidence needed: binary conversion of InitDuration |
 | RIDES-017 | `source/OpenTPW/World/Objects/ObjectCatalog.cs:127` | [APPROX:RIDES-017] Buildable = WhichUIType 0–3, not fixed/tool/upgrade (DATA:Info.WhichUIType comment "4 = Not to be shown in UI") — evidence needed: original build-menu contents |
 | RIDES-018 | `source/OpenTPW/World/Objects/ParkObjects.cs:110` | [APPROX:RIDES-018] Build rules = footprint inside grid + MAP/save terrain rules + no overlap; no slope, path or land rule; Level.PlaceObject enforces economy purchases — evidence needed: original build checks (binary/captures) |
-| RIDES-019 | `source/OpenTPW/World/Objects/ParkObjects.cs:216` | [APPROX:RIDES-019] Levels without a save get Gates, Lights and Bus (the fixed items Easymode records) — evidence needed: original fixed-item spawning per level |
+| RIDES-019 | `source/OpenTPW/World/Objects/ParkObjects.cs:219` | [APPROX:RIDES-019] Levels without a save get Gates, Lights and Bus (the fixed items Easymode records) — evidence needed: original fixed-item spawning per level |
 | RIDES-021 | `source/OpenTPW/World/Level.Objects.cs:317` | [APPROX:RIDES-021] Built footprint is centred on the clicked cell; the cursor ray hits the Z = 0 plane — evidence needed: original build cursor behaviour |
 | RIDES-022 | `source/OpenTPW/World/Objects/ObjectAssets.cs:123` | [APPROX:RIDES-022] Texture search: archive textures, gtexture, theme sharetex (stexture/ssharete low-detail sets unused) — evidence needed: binary texture lookup order |
 | RIDES-023 | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:115` | [APPROX:RIDES-023] A completed cycle = VAR_RUNNING 1 → 0 — evidence needed: original ride-cycle/income accounting |
@@ -399,6 +400,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | RIDES-028 | `source/OpenTPW/World/Level.Objects.cs:276` | [APPROX:RIDES-028] A non-walkable outside cell (queue area) is replaced by the nearest walkable path cell — evidence needed: original queue-path building/joining rules |
 | RIDES-029 | `source/OpenTPW/World/Objects/ObjectShape.cs:80` | [APPROX:RIDES-029] '@' occurs only in the Theme Park Inc road signs ("*@*", "*@@*": a sign board between two pillar cells); treated as occupied — evidence needed: TPI placement of a sign over a path |
 | RIDES-030 | `source/OpenTPW/World/Objects/ObjectAssets.cs:71` | [APPROX:RIDES-030] Non-finite texture coordinates (10 vertices of the Theme Park Inc natnav "subtank") are drawn as (0, 0) — evidence needed: how the original renderer treats them |
+| RIDES-040 | `source/OpenTPW/World/Objects/ParkObjects.cs:208` | [APPROX:RIDES-040] TPI fixed scene records at (0, 0) use their local model origin; their remaining transform fields are not decoded. |
 | UI-001 | `source/OpenTPW/UI/Original/UiCanvas.cs:47` | [APPROX:UI-001] anchors keep the authored distance to the nearest edge on non-4:3 outputs — evidence needed: original widescreen behaviour / design decision |
 | UI-002 | `source/OpenTPW/UI/Original/UiCanvas.cs:43` | [APPROX:UI-002] font tier thresholds 0.36 / 0.6 of logical scale — evidence needed: binary font selection per screen mode |
 | UI-002 | `source/OpenTPW/UI/Original/UiText.cs:57` | [APPROX:UI-002] which shipped font serves which role per tier — evidence needed: binary font use / captures |
@@ -618,6 +620,11 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | Mac main HUD table 0x4ab38:32,47 | `source/OpenTPW/Hud/ParkHud.cs:125` | [DATA:Mac main HUD table 0x4ab38:32,47] date text region (182,1061,383,1103) in black (font slot 3); the cash text |
 | Mac main HUD table 0x4ab38:38-43 | `source/OpenTPW/Hud/ParkHud.cs:142` | [DATA:Mac main HUD table 0x4ab38:38-43] original button rectangles: staggered along the panel's curve, plus the camera button |
 | Mac main HUD table 0x4ab38:50,48,49,51-55 | `source/OpenTPW/Hud/ParkHud.cs:132` | [DATA:Mac main HUD table 0x4ab38:50,48,49,51-55] cash extras: i_dollar left of the balance, the change text (yellow) with green_up, golden key and ticket counters |
+| PreBuilt/prebuilt.TPWS:SYSG | `source/OpenTPW.Files/Formats/Save/OriginalParkImport.cs:125` | [DATA:PreBuilt/prebuilt.TPWS:SYSG] Fail closed if the only supported prebuilt profile was only partly scanned. |
+| PreBuilt/prebuilt.TPWS:SYSG | `source/OpenTPW/World/Original/OriginalPark.cs:73` | [DATA:PreBuilt/prebuilt.TPWS:SYSG] Five science scene records have no archive and use the sentinel cell (0, 0). |
+| PreBuilt/prebuilt.TPWS:SYSG X/Y/rotation | `source/OpenTPW/World/Objects/ParkObjects.cs:145` | [DATA:PreBuilt/prebuilt.TPWS:SYSG X/Y/rotation] TPI fixed models use local coordinates and their saved anchor. |
+| PreBuilt/prebuilt.TPWS:cell grid | `source/OpenTPW/World/Original/OriginalPark.cs:57` | [DATA:PreBuilt/prebuilt.TPWS:cell grid] The sole shipped Theme Park Inc prebuilt save matches science/base.map in every cell. |
+| PreBuilt/prebuilt.TPWS:extended header | `source/OpenTPW.Files/Formats/Save/SaveReader.cs:101` | [DATA:PreBuilt/prebuilt.TPWS:extended header] The observed TPWS profile inserts these 24 bytes after magic. |
 | Rides.sam:Info.WhichUIType | `source/OpenTPW/Hud/HudStubs.cs:153` | [DATA:Rides.sam:Info.WhichUIType] |
 | Rides.sam:UsageInfo.ExcitementLevel | `source/OpenTPW/Hud/HudStubs.cs:150` | [DATA:Totem.sam:UsageInfo.ExcitementLevel] overrides [DATA:Rides.sam:UsageInfo.ExcitementLevel] |
 | Standard.sam:Costs.QueueCell | `source/OpenTPW/World/Level.Objects.cs:212` | [DATA:Standard.sam:Costs.QueueCell] charged per cell when written (ParkEconomy.TrySpendCell, PATH-plan §3.2) |
@@ -789,7 +796,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | STP-PPC:0x10125B7C options defaults | `source/OpenTPW/UI/Original/Options/GameOptions.cs:51` | [BIN:STP-PPC:0x10125B7C options defaults] RMBScrollOn = 0: push scrolling |
 | STP-PPC:0x10128B60 profile key count | `source/OpenTPW/Economy/ParkObjectives.cs:321` | [BIN:STP-PPC:0x10128B60 profile key count] keys = mExtraKeys + (earned global, per-theme and secret tickets) / 3, truncated; spent tickets are not subtracted |
 | STP-PPC:0x10129308 options serializer | `source/OpenTPW/Client/AutomaticAdvisor.cs:110` | [BIN:STP-PPC:0x10129308 options serializer] the object at TOC −0x763C is the options object; its +0x34 is saved as "AdvisorOn" (0x1012653C) |
-| STP-PPC:0x10137600 player save setup | `source/OpenTPW/World/Original/OriginalPark.cs:59` | [BIN:STP-PPC:0x10137600 player save setup] the level's easymode park is copied into a player's saves only for Instant Action players (0x1013741C passes the mode flag) |
+| STP-PPC:0x10137600 player save setup | `source/OpenTPW/World/Original/OriginalPark.cs:64` | [BIN:STP-PPC:0x10137600 player save setup] the level's easymode park is copied into a player's saves only for Instant Action players (0x1013741C passes the mode flag) |
 | STP-PPC:0x1013781C player selection | `source/OpenTPW/Client/AutomaticAdvisor.cs:50` | [BIN:STP-PPC:0x1013781C player selection] game type 2 = Instant Action, 0 otherwise (offline) |
 | STP-PPC:0x10137FD0 park view input | `source/OpenTPW/Hud/ParkHud.cs:437` | [BIN:STP-PPC:0x10137FD0 park view input] a button message in the park view plays cat_ui event 0x1F (0xBD when modifier flag 0x10 is set) |
 | STP-PPC:0x10139C64 park-view hover | `source/OpenTPW/World/CellBuildTool.cs:136` | [BIN:STP-PPC:0x10139C64 park-view hover] the cell under the cursor picks the help line: empty (0x85258) 441, type 1 442, type 3 444; inside the tools 443 and 445 |

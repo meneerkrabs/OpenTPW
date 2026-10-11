@@ -206,6 +206,26 @@ public class ThemeParkIncViewerTests
 	}
 
 	[TestMethod]
+	public void ScienceViewerImportsTheShippedPrebuiltPark()
+	{
+		UseTpiData();
+		var science = OriginalPark.Load( "science" );
+		Assert.IsNotNull( science.Save );
+		Assert.AreEqual( 76, science.Save.PathCells.Count );
+		Assert.AreEqual( 8, science.Save.PlacedObjects.Count );
+		Assert.AreEqual( 1, science.Save.UnresolvedObjects.Count );
+		var catalog = ObjectCatalog.Load( "science" );
+		var records = science.Save.PlacedObjects.Select( item => item.Record )
+			.Concat( science.Save.UnresolvedObjects ).Concat( science.Save.FixedItems ).ToArray();
+		Assert.AreEqual( 18, records.Count( item => catalog.Find( item.InfoId ) != null ) );
+		Assert.AreEqual( 17, records.Count( item => catalog.Find( item.InfoId ) is { IsTool: false } ) );
+		Assert.IsTrue( records.Any( item => catalog.Find( item.InfoId )?.SettingsName == "Gates" ) );
+		Assert.IsTrue( records.Any( item => item.Rotation == 90 ) );
+		Assert.IsNull( OriginalPark.Load( "arabian" ).Save );
+		Assert.IsNull( OriginalPark.Load( "water" ).Save );
+	}
+
+	[TestMethod]
 	public void TheCpuPartsOfBothWorldsBuildWithoutAnEconomy()
 	{
 		UseTpiData();

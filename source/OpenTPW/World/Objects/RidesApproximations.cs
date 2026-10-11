@@ -34,7 +34,8 @@ public static class RidesApproximations
 		("RIDES-026", "engine scale 0.2 per MD2 unit (presentation)"),
 		("RIDES-028", "non-walkable object access cells use the nearest walkable path"),
 		("RIDES-029", "Theme Park Inc shape symbol @ (road sign span) treated as occupied"),
-		("RIDES-030", "non-finite object texture coordinates drawn as (0, 0)")
+		("RIDES-030", "non-finite object texture coordinates drawn as (0, 0)"),
+		("RIDES-040", "Theme Park Inc fixed scene records saved at (0, 0) use their local model origin; other transform fields are not decoded")
 	};
 
 	private static bool logged;

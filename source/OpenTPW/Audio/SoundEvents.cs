@@ -91,13 +91,17 @@ public sealed class SoundEventSystem
 {
 	private readonly AudioMixer mixer;
 	private readonly Dictionary<(SoundCategory, int, uint), Mp2Audio?> decoded = new();
+	private readonly LinkedList<(SoundCategory, int, uint)> longDecodedOrder = new();
+	private long retainedSentenceBytes;
 	private uint seed;
 	/// <summary>Samples shorter than this (≈ 10 s at 22,050 Hz) stay decoded in memory.</summary>
 	public const int CacheFrameLimit = 220500;
+	internal const int LongCacheByteLimit = 8 * 1024 * 1024;
+	internal long RetainedSentenceBytes { get { lock ( decoded ) return retainedSentenceBytes; } }
 	private readonly List<SoundSentence> sentences = new();
 	private readonly List<SoundChain> chains = new();
 
-	/// <summary>Starts decoded segments that were waiting for a background decode; call once per frame.</summary>
+	/// <summary>Starts decoded segments that were waiting for an asynchronous decode; call once per frame.</summary>
 	public void Pump()
 	{
 		foreach ( var sentence in sentences.ToArray() )
@@ -187,15 +191,59 @@ public sealed class SoundEventSystem
 		return range == 0 ? low : (int)(low + unchecked(seed * 0x19660D + 0x3C6EF35F) % (uint)range);
 	}
 
-	/// <summary>Decodes a sample (thread safe; short samples are cached, long ones such as music segments are not).</summary>
-	internal Mp2Audio? Decode( SoundCategory category, SoundSample sample )
+	private bool TryDecoded( SoundCategory category, SoundSample sample, out Mp2Audio? audio )
 	{
 		var key = (category, (int)sample.BankNumber, sample.SampleNumber);
 		lock ( decoded )
 		{
-			if ( decoded.TryGetValue( key, out var cached ) )
-				return cached;
+			if ( !decoded.TryGetValue( key, out audio ) )
+				return false;
+			if ( longDecodedOrder.Find( key ) is { } entry )
+			{
+				longDecodedOrder.Remove( entry );
+				longDecodedOrder.AddLast( entry );
+			}
+			return true;
 		}
+	}
+
+	internal Mp2Audio? RememberDecoded( SoundCategory category, SoundSample sample, Mp2Audio? audio, bool retainLong )
+	{
+		var key = (category, (int)sample.BankNumber, sample.SampleNumber);
+		lock ( decoded )
+		{
+			if ( decoded.TryGetValue( key, out var existing ) )
+				return existing;
+			if ( audio == null || audio.SampleFrames < CacheFrameLimit )
+				decoded[key] = audio;
+			else if ( retainLong )
+			{
+				var bytes = audio.Samples.LongLength * sizeof( short );
+				if ( bytes > LongCacheByteLimit )
+					return audio;
+				while ( retainedSentenceBytes + bytes > LongCacheByteLimit )
+				{
+					var oldest = longDecodedOrder.First!;
+					retainedSentenceBytes -= decoded[oldest.Value]!.Samples.LongLength * sizeof( short );
+					decoded.Remove( oldest.Value );
+					longDecodedOrder.RemoveFirst();
+				}
+				decoded[key] = audio;
+				longDecodedOrder.AddLast( key );
+				retainedSentenceBytes += bytes;
+			}
+		}
+		return audio;
+	}
+
+	/// <summary>Decodes a sample (thread safe); long sentence samples share an additional bounded PCM cache.</summary>
+	internal Mp2Audio? Decode( SoundCategory category, SoundSample sample )
+		=> Decode( category, sample, retainLong: false );
+
+	private Mp2Audio? Decode( SoundCategory category, SoundSample sample, bool retainLong )
+	{
+		if ( TryDecoded( category, sample, out var cached ) )
+			return cached;
 		Mp2Audio? audio = null;
 		var mpeg = category.GetBank( sample.BankNumber )?.GetMpeg( sample.SampleNumber );
 		if ( mpeg != null )
@@ -209,12 +257,34 @@ public sealed class SoundEventSystem
 				Log.Trace( $"Sound {category.Name} bank {sample.BankNumber} sample {sample.SampleNumber}: {exception.Message}" );
 			}
 		}
-		if ( audio == null || audio.SampleFrames < CacheFrameLimit )
+		return RememberDecoded( category, sample, audio, retainLong );
+	}
+
+	internal Task<Mp2Audio?> DecodeSentenceAsync( SoundCategory category, SoundSample sample, bool? cooperative = null, Func<Task>? yieldBatch = null )
+	{
+		if ( TryDecoded( category, sample, out var cached ) )
+			return Task.FromResult( cached );
+		return (cooperative ?? OperatingSystem.IsBrowser())
+			? DecodeCooperatively( category, sample, yieldBatch )
+			: Task.Run( () => Decode( category, sample, retainLong: true ) );
+	}
+
+	private async Task<Mp2Audio?> DecodeCooperatively( SoundCategory category, SoundSample sample, Func<Task>? yieldBatch )
+	{
+		Mp2Audio? audio = null;
+		var mpeg = category.GetBank( sample.BankNumber )?.GetMpeg( sample.SampleNumber );
+		if ( mpeg != null )
 		{
-			lock ( decoded )
-				decoded[key] = audio;
+			try
+			{
+				audio = await Mp2Decoder.DecodeCooperativelyAsync( mpeg, yieldBatch: yieldBatch );
+			}
+			catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException )
+			{
+				Log.Trace( $"Sound {category.Name} bank {sample.BankNumber} sample {sample.SampleNumber}: {exception.Message}" );
+			}
 		}
-		return audio;
+		return RememberDecoded( category, sample, audio, retainLong: true );
 	}
 
 	/// <summary>Plays a one-shot event (or the first sample of a sentence event, once). Returns the voice, or null when nothing plays.</summary>
@@ -303,8 +373,8 @@ public sealed class SoundEventSystem
 /// <summary>
 /// A playing sentence: plays one sample of the current sound, then the next sample — of the same sound
 /// for a plain sentence, of the sound a matching link leads to for a branching sentence — on the frame
-/// the previous one ends. The next sample is chosen and decoded in the background while the current one
-/// plays, so long music segments never stall a frame.
+/// the previous one ends. The next sample is chosen and decoded ahead while the current one plays:
+/// native hosts decode in a background task, and browser hosts yield between bounded MPEG frame batches.
 /// </summary>
 public sealed class SoundSentence
 {
@@ -380,8 +450,11 @@ public sealed class SoundSentence
 	{
 		var samples = soundEvent.Sounds[sound].Samples;
 		var sample = SoundEventSystem.ChooseSample( samples, sampleDraw(), sound == soundIndex ? lastSample : -1, avoidRepeat: sound == soundIndex && lastSample >= 0 );
-		next = sample < 0 ? null : Task.Run( () => (sound, sample, system.Decode( category, samples[sample] )) );
+		next = sample < 0 ? null : DecodeNext( sound, sample );
 	}
+
+	private async Task<(int Sound, int Sample, Mp2Audio? Audio)> DecodeNext( int sound, int sample ) =>
+		(sound, sample, await system.DecodeSentenceAsync( category, soundEvent.Sounds[sound].Samples[sample] ));
 
 	/// <summary>The sound that follows the current one, or -1 for a branching sentence with no link for the parameter.</summary>
 	private int Successor() => soundEvent.Player == SoundEventPlayer.BranchingSentence

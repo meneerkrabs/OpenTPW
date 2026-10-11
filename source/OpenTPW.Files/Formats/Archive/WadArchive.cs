@@ -128,7 +128,6 @@ public sealed class WadArchive : IArchive
 			 * 12 - null
 			 */
 
-			GC.Collect();
 			// Save the current position so that we can go back to it later
 			var initialPos = memoryStream.Position;
 

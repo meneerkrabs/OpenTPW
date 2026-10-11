@@ -228,7 +228,7 @@ public sealed class CoasterRenderer : Entity
 		} );
 		commandList.SetVertexBuffer( 0, vertexBuffer );
 		commandList.SetPipeline( material.Pipeline );
-		material.CreateEphemeralResourceSet( out var resourceSets );
+		var resourceSets = material.GetResourceSets();
 		for ( uint index = 0; index < resourceSets.Length; ++index )
 			commandList.SetGraphicsResourceSet( index, resourceSets[index] );
 		commandList.Draw( (uint)built.Count );
@@ -238,6 +238,7 @@ public sealed class CoasterRenderer : Entity
 	protected override void OnDelete()
 	{
 		deleted = true;
+		material?.ClearResourceSets();
 		var buffer = vertexBuffer;
 		vertexBuffer = null;
 		if ( buffer != null )

@@ -13,6 +13,8 @@ public partial class Renderer : IDisplaySettings
 {
 	private long _lastFrame;
 	public CommandList CommandList = null!;
+	/// <summary>Uniform updates join this command list only between its Begin and End.</summary>
+	internal bool IsFrameRecording { get; private set; }
 
 	public Window Window;
 	public ImGuiRenderer imGuiRenderer;
@@ -454,6 +456,7 @@ public partial class Renderer : IDisplaySettings
 		}
 
 		CommandList.Begin();
+		IsFrameRecording = true;
 	}
 
 	private void PostRender()
@@ -483,6 +486,7 @@ public partial class Renderer : IDisplaySettings
 		Editor.Instance?.Render( CommandList );
 
 		CommandList.End();
+		IsFrameRecording = false;
 
 		Device.SubmitCommands( CommandList );
 		Device.SwapBuffers();
@@ -538,12 +542,18 @@ public partial class Renderer : IDisplaySettings
 		else
 			imGuiRenderer.Update( Math.Clamp( deltaTime, 0.001f, 0.1f ), inputSnapshot );
 
-		PreRender();
-		PreUpdate?.Invoke();
-
-		OnUpdate?.Invoke();
-
-		PostRender();
+		try
+		{
+			PreRender();
+			PreUpdate?.Invoke();
+			OnUpdate?.Invoke();
+			PostRender();
+		}
+		finally
+		{
+			// A failing update/draw must not send subsequent uploads to an abandoned frame.
+			IsFrameRecording = false;
+		}
 		PostUpdate?.Invoke();
 
 		ProcessDeletionQueue();
@@ -632,4 +642,17 @@ public partial class Renderer : IDisplaySettings
 
 		ScheduleDelete( commandList.Dispose );
 	}
+
+	/// <summary>Records per-draw uniforms in order, retaining immediate upload outside a frame.</summary>
+	internal void UpdateUniform<T>( DeviceBuffer buffer, T value ) where T : unmanaged
+	{
+		if ( IsFrameRecording )
+			CommandList.UpdateBuffer( buffer, 0, ref value );
+		else
+			SubmitUniform( buffer, value );
+	}
+
+	// Keep the rare immediate-upload closure out of the per-draw allocation path.
+	private void SubmitUniform<T>( DeviceBuffer buffer, T value ) where T : unmanaged =>
+		ImmediateSubmit( commands => commands.UpdateBuffer( buffer, 0, value ) );
 }

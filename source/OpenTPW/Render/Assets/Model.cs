@@ -13,6 +13,7 @@ public class Model : Asset
 
 	private uint indexCount;
 	private ModelVertexBuffer vertices = null!;
+	private bool released;
 
 	public Model( Vertex[] vertices, uint[] indices, Material material ) : this( vertices, indices, material, false )
 	{
@@ -76,7 +77,7 @@ public class Model : Asset
 		commandList.SetVertexBuffer( 0, VertexBuffer );
 		commandList.SetPipeline( Material.Pipeline );
 
-		Material.CreateEphemeralResourceSet( out var resourceSets );
+		var resourceSets = Material.GetResourceSets();
 
 		for ( uint i = 0; i < resourceSets.Length; ++i )
 			commandList.SetGraphicsResourceSet( i, resourceSets[i] );
@@ -97,6 +98,21 @@ public class Model : Asset
 		{
 			commandList.Draw( vertices.Count );
 		}
+	}
+
+	/// <summary>Retires this model and its binding cache without taking ownership of a shared material.</summary>
+	internal void ReleaseBuffers()
+	{
+		if ( released )
+			return;
+		released = true;
+		All.Remove( this );
+		Material.ClearResourceSets();
+		Render.ScheduleDelete( () =>
+		{
+			VertexBuffer.Dispose();
+			IndexBuffer?.Dispose();
+		} );
 	}
 }
 

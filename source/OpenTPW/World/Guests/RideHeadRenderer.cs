@@ -167,7 +167,7 @@ public sealed class RideHeadRenderer : Entity
 		} );
 		commandList.SetVertexBuffer( 0, vertexBuffer );
 		commandList.SetPipeline( material.Pipeline );
-		material.CreateEphemeralResourceSet( out var resourceSets );
+		var resourceSets = material.GetResourceSets();
 		for ( uint index = 0; index < resourceSets.Length; ++index )
 			commandList.SetGraphicsResourceSet( index, resourceSets[index] );
 		commandList.Draw( (uint)count );

@@ -363,12 +363,7 @@ public sealed class OriginalTerrain : Entity
 
 	private static void ScheduleDispose( Model model )
 	{
-		Asset.All.Remove( model );
-		global::Global.Render.ScheduleDelete( () =>
-		{
-			model.VertexBuffer.Dispose();
-			model.IndexBuffer?.Dispose();
-		} );
+		model.ReleaseBuffers();
 	}
 
 	protected override void OnDelete()

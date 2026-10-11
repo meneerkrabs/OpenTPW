@@ -20,7 +20,7 @@ namespace OpenTPW;
 /// read-only visit and checks build/open/delete/save mutation boundaries, then starts jungle again in
 /// Instant Action and checks its seed and mode gates. Options are never written and saves go to a temporary directory.
 /// </summary>
-internal sealed class FrontEndSmokeTest : IDisposable
+internal sealed partial class FrontEndSmokeTest : IDisposable
 {
 	private const int MaximumFrames = 3000;
 	private readonly GameFlow flow;
@@ -231,6 +231,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 	private void Plan()
 	{
 		Wait( "lobby settles", 30 );
+		PlanMaterialRendering();
 		Do( "lobby renders", () =>
 		{
 			Require( flow.Lobby != null && flow.Lobby.IslandCount == 4 && flow.Lobby.PartCount > 4, "lobby scene has four islands and terrain" );

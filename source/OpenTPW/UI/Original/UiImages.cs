@@ -9,7 +9,7 @@ namespace OpenTPW.UI.Original;
 /// </summary>
 public static class UiImages
 {
-	private static readonly Dictionary<string, string[]> listings = new( StringComparer.OrdinalIgnoreCase );
+	private static readonly Dictionary<string, Dictionary<string, string>> listings = new( StringComparer.OrdinalIgnoreCase );
 
 	/// <summary>Prefix of an image path on the host file system (local art overrides) rather than in the game data.</summary>
 	public const string HostPrefix = "file:";
@@ -152,13 +152,17 @@ public static class UiImages
 	/// </summary>
 	public static string? Resolve( string name, string directory = "/ui/textures" )
 	{
-		if ( !listings.TryGetValue( directory, out var files ) )
+		if ( !listings.TryGetValue( directory, out var pathsByStem ) )
 		{
+			string[] files;
 			try { files = FileSystem.GetFiles( directory ); }
 			catch ( Exception exception ) when ( exception is DirectoryNotFoundException or FileNotFoundException or InvalidOperationException ) { files = Array.Empty<string>(); }
-			listings[directory] = files;
+			pathsByStem = new Dictionary<string, string>( files.Length, StringComparer.OrdinalIgnoreCase );
+			foreach ( var file in files )
+				pathsByStem.TryAdd( Path.GetFileNameWithoutExtension( file ), file );
+			listings[directory] = pathsByStem;
 		}
-		var stem = Path.GetFileNameWithoutExtension( name.TrimEnd( '\0' ) );
-		return files.FirstOrDefault( file => string.Equals( Path.GetFileNameWithoutExtension( file ), stem, StringComparison.OrdinalIgnoreCase ) );
+		var stem = Path.GetFileNameWithoutExtension( name.AsSpan( 0, name.Length ).TrimEnd( '\0' ) );
+		return pathsByStem.GetAlternateLookup<ReadOnlySpan<char>>().TryGetValue( stem, out var path ) ? path : null;
 	}
 }

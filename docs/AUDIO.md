@@ -88,8 +88,13 @@ guests in the park halved and capped at 100, then capped at 89, and to 0 in worl
 state 4 (`0x101C2444`, using `0x100C2344`). So the music moves to a busier section for
 every 30 guests.
 
-OpenTPW decodes the next segment in the background while the current one plays and
-starts it on the frame the current one ends. A Layer II segment decodes in about 84 ms.
+OpenTPW chooses the next segment while the current one plays and starts it on the
+frame the current one ends. Native builds decode on a background task. The browser
+processes four MPEG frames per batch and yields through a timer between batches,
+keeping drawing and input responsive. Long sentence PCM can be retained in an 8 MiB
+LRU cache; the existing short-sample cache is separate. Synchronous and cooperative
+PCM are identical. A native Layer II segment decoded in about 84 ms in the earlier
+measurement; browser cost is higher. See [browser performance](BROWSER-PERFORMANCE.md).
 
 ## Mixer and volumes
 

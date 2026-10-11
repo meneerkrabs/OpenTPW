@@ -198,3 +198,8 @@ so the browser got its own Veldrid instead.
 
 The first spike (same day) ran only the file readers in the browser: map, terrain, a ride
 model and a texture parsed unchanged in about 430 ms, from a 2.4 MB download.
+
+## Performance
+
+See [browser performance](BROWSER-PERFORMANCE.md) for measured CPU/frame costs,
+render binding reuse, cooperative audio decoding and remaining park-load stalls.

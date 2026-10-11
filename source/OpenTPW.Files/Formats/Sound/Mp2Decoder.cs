@@ -101,46 +101,73 @@ public static partial class Mp2Decoder
 	{
 		if ( data.Length > MaximumInputBytes )
 			throw new InvalidDataException( "MP2 stream exceeds the input byte limit." );
-		var output = new List<short>();
-		var synthesis = new[] { new Synthesis(), new Synthesis() };
-		var offset = 0;
-		var frames = 0;
-		var crcChecks = 0;
-		var crcFailures = 0;
-		int sampleRate = 0, channels = 0, layer = 0, emphasis = 0;
-		DeEmphasis? deEmphasis = null;
-		while ( data.Length - offset >= 4 )
+		var state = new DecodeState();
+		state.Process( data, int.MaxValue );
+		return state.Finish( data.Length );
+	}
+
+	/// <summary>Decodes the same PCM in bounded frame batches, yielding to a task between batches for threadless browser hosts.</summary>
+	/// <param name="yieldBatch">Optional scheduler hook; the default uses a timer task so browser rendering and input can run.</param>
+	public static async Task<Mp2Audio> DecodeCooperativelyAsync( ReadOnlyMemory<byte> data, int framesPerBatch = 4, Func<Task>? yieldBatch = null )
+	{
+		if ( data.Length > MaximumInputBytes )
+			throw new InvalidDataException( "MP2 stream exceeds the input byte limit." );
+		if ( framesPerBatch is < 1 or > 8 )
+			throw new ArgumentOutOfRangeException( nameof( framesPerBatch ) );
+		var state = new DecodeState();
+		while ( state.Process( data.Span, framesPerBatch ) )
+			await (yieldBatch?.Invoke() ?? Task.Delay( 1 ));
+		return state.Finish( data.Length );
+	}
+
+	private sealed class DecodeState
+	{
+		private readonly List<short> output = new();
+		private readonly Synthesis[] synthesis = { new(), new() };
+		private int offset, frames, crcChecks, crcFailures, sampleRate, channels, layer, emphasis;
+		private DeEmphasis? deEmphasis;
+
+		/// <summary>Processes at most the requested number of complete MPEG frames; true when another batch may remain.</summary>
+		public bool Process( ReadOnlySpan<byte> data, int frameBudget )
 		{
-			var header = Header.Parse( data[offset..] );
-			if ( frames == 0 )
+			for ( var batchFrame = 0; batchFrame < frameBudget && data.Length - offset >= 4; batchFrame++ )
 			{
-				(sampleRate, channels, layer, emphasis) = (header.SampleRate, header.Channels, header.Layer, header.Emphasis);
-				if ( emphasis != 0 )
-					deEmphasis = new DeEmphasis( emphasis, sampleRate );
+				var header = Header.Parse( data[offset..] );
+				if ( frames == 0 )
+				{
+					(sampleRate, channels, layer, emphasis) = (header.SampleRate, header.Channels, header.Layer, header.Emphasis);
+					if ( emphasis != 0 )
+						deEmphasis = new DeEmphasis( emphasis, sampleRate );
+				}
+				else if ( header.SampleRate != sampleRate || header.Channels != channels || header.Layer != layer || header.Emphasis != emphasis )
+					throw new NotSupportedException( $"MP2 frame {frames} changes sample rate, channel count, layer or emphasis." );
+				if ( header.FrameBytes > data.Length - offset )
+					return false;
+				if ( header.Crc )
+				{
+					crcChecks++;
+					// [APPROX:AUDIO-014] A CRC mismatch is counted and the frame still decodes; ISO/IEC 11172-3 2.4.3.1 only
+					// recommends concealment (muting or repeating), and no shipped TPW frame carries a CRC word — evidence
+					// needed: the original player's behaviour on a failed frame CRC
+					if ( !VerifyCrc( data.Slice( offset, header.FrameBytes ), header ) )
+						crcFailures++;
+				}
+				if ( header.Layer == 1 )
+					DecodeLayerOneFrame( header, data.Slice( offset, header.FrameBytes ), synthesis, output, deEmphasis );
+				else
+					DecodeFrame( header, data.Slice( offset, header.FrameBytes ), synthesis, output, deEmphasis );
+				offset += header.FrameBytes;
+				frames++;
 			}
-			else if ( header.SampleRate != sampleRate || header.Channels != channels || header.Layer != layer || header.Emphasis != emphasis )
-				throw new NotSupportedException( $"MP2 frame {frames} changes sample rate, channel count, layer or emphasis." );
-			if ( header.FrameBytes > data.Length - offset )
-				break;
-			if ( header.Crc )
-			{
-				crcChecks++;
-				// [APPROX:AUDIO-014] A CRC mismatch is counted and the frame still decodes; ISO/IEC 11172-3 2.4.3.1 only
-				// recommends concealment (muting or repeating), and no shipped TPW frame carries a CRC word — evidence
-				// needed: the original player's behaviour on a failed frame CRC
-				if ( !VerifyCrc( data.Slice( offset, header.FrameBytes ), header ) )
-					crcFailures++;
-			}
-			if ( header.Layer == 1 )
-				DecodeLayerOneFrame( header, data.Slice( offset, header.FrameBytes ), synthesis, output, deEmphasis );
-			else
-				DecodeFrame( header, data.Slice( offset, header.FrameBytes ), synthesis, output, deEmphasis );
-			offset += header.FrameBytes;
-			frames++;
+			return data.Length - offset >= 4;
 		}
-		if ( frames == 0 )
-			throw new InvalidDataException( "MP2 stream contains no complete frame." );
-		return new Mp2Audio( sampleRate, channels, output.ToArray(), frames, data.Length - offset, crcChecks, crcFailures, emphasis );
+
+		public Mp2Audio Finish( int inputLength )
+		{
+			if ( frames == 0 )
+				throw new InvalidDataException( "MP2 stream contains no complete frame." );
+			return new Mp2Audio( sampleRate, channels, output.ToArray(), frames, inputLength - offset, crcChecks, crcFailures, emphasis );
+		}
 	}
 
 	/// <summary>

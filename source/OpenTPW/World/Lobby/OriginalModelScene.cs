@@ -138,12 +138,7 @@ public abstract class OriginalModelScene : Entity
 
 	private static void Free( Model model )
 	{
-		Asset.All.Remove( model );
-		global::Global.Render.ScheduleDelete( () =>
-		{
-			model.VertexBuffer.Dispose();
-			model.IndexBuffer?.Dispose();
-		} );
+		model.ReleaseBuffers();
 	}
 
 	protected override void OnDelete()

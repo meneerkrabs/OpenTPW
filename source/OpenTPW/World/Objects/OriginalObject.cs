@@ -229,12 +229,7 @@ public class OriginalObject : Entity
 		parts.Clear();
 		foreach ( var model in models )
 		{
-			Asset.All.Remove( model );
-			global::Global.Render.ScheduleDelete( () =>
-			{
-				model.VertexBuffer.Dispose();
-				model.IndexBuffer?.Dispose();
-			} );
+			model.ReleaseBuffers();
 		}
 		models.Clear();
 		vertexParts.Clear();

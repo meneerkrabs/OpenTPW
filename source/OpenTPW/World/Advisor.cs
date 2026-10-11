@@ -483,13 +483,7 @@ internal sealed class Advisor : IDisposable
 		DisposeImageTarget();
 		foreach ( var part in parts )
 		{
-			Asset.All.Remove( part.Model );
-			var model = part.Model;
-			global::Global.Render.ScheduleDelete( () =>
-			{
-				model.VertexBuffer.Dispose();
-				model.IndexBuffer?.Dispose();
-			} );
+			part.Model.ReleaseBuffers();
 		}
 		parts.Clear();
 	}

@@ -147,11 +147,6 @@ public sealed class OriginalGateSign : Entity
 	protected override void OnDelete()
 	{
 		part.Delete();
-		Asset.All.Remove( model );
-		global::Global.Render.ScheduleDelete( () =>
-		{
-			model.VertexBuffer.Dispose();
-			model.IndexBuffer?.Dispose();
-		} );
+		model.ReleaseBuffers();
 	}
 }

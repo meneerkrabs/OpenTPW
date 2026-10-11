@@ -9,6 +9,8 @@ internal static class Game
 	public static void Run( string[] args )
 	{
 		Log = new();
+		if ( args.Contains( "--shader-hot-reload" ) )
+			Shader.HotReload = true;
 		var fontIndex = Array.IndexOf( args, "--inspect-font" );
 		if ( fontIndex >= 0 )
 		{
@@ -89,12 +91,17 @@ internal static class Game
 
 		//
 		// Select the text language: --language / --language-data, then OPENTPW_LANGUAGE /
-		// OPENTPW_LANGUAGE_DATA, then the Language / LanguageDataPath settings (docs/LANGUAGES.md)
+		// OPENTPW_LANGUAGE_DATA, then language.json, then the old Language / LanguageDataPath
+		// user settings (docs/LANGUAGES.md)
 		//
-		var language = GetOption( args, "--language", "a language name such as German" )
-			?? Environment.GetEnvironmentVariable( "OPENTPW_LANGUAGE" ) ?? Settings.Default.Language;
-		var languageData = GetOption( args, "--language-data", "a directory with the original CD's language data" )
-			?? Environment.GetEnvironmentVariable( "OPENTPW_LANGUAGE_DATA" ) ?? Settings.Default.LanguageDataPath;
+		var languageDiagnostics = new List<string>();
+		var languageSettings = LanguageSettings.Load( LanguageSettings.GetDefaultPath(), languageDiagnostics );
+		foreach ( var diagnostic in languageDiagnostics )
+			Log.Warning( diagnostic );
+		var language = LanguageSettings.Choose( GetOption( args, "--language", "a language name such as German" ),
+			Environment.GetEnvironmentVariable( "OPENTPW_LANGUAGE" ), languageSettings.Language, Settings.Default.Language );
+		var languageData = LanguageSettings.Choose( GetOption( args, "--language-data", "a directory with the original CD's language data" ),
+			Environment.GetEnvironmentVariable( "OPENTPW_LANGUAGE_DATA" ), languageSettings.LanguageDataPath, Settings.Default.LanguageDataPath );
 		// The CD chosen in Game files (or --cd-data) also holds the other shipped languages: without separate
 		// language data, offer those too.
 		if ( string.IsNullOrWhiteSpace( languageData ) && CdLanguageOverlay( args, dataDirectory ) is { } cdLanguages )

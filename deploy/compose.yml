@@ -18,6 +18,11 @@ services:
       OpenTPW__WebsiteOrigins__1: https://www.opentpw.io
       # A release asks for an update with this secret (docs/SERVER.md, "Automatic deployment").
       OpenTPW__DeployToken: ${OPENTPW_DEPLOY_TOKEN:-}
+      # Account e-mail through Resend (docs/SERVER.md, "Account e-mail"). The key is a secret: only in .env.
+      OpenTPW__ResendApiKey: ${OPENTPW_RESEND_API_KEY:-}
+      OpenTPW__EmailFrom: ${OPENTPW_EMAIL_FROM:-}
+      OpenTPW__EmailReplyTo: ${OPENTPW_EMAIL_REPLY_TO:-}
+      OpenTPW__RequireEmail: ${OPENTPW_REQUIRE_EMAIL:-false}
       ASPNETCORE_URLS: http://127.0.0.1:8080
       # Caddy is the only client; let the rate limits see real addresses.
       ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"

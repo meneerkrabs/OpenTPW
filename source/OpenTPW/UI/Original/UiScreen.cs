@@ -29,6 +29,8 @@ public class UiScreen
 	public Action? Removed { get; set; }
 	/// <summary>Whether a modal screen dims and blocks what is below it.</summary>
 	public bool Modal { get; init; } = true;
+	/// <summary>A full screen of its own (the online globe): the screens below are not drawn or dimmed.</summary>
+	public bool HidesBelow { get; init; }
 	/// <summary>True once a stack removed this screen; it then ignores the rest of the frame's input (a click that closed it must not also act as Back on whatever it opened).</summary>
 	public bool IsRemoved { get; internal set; }
 
@@ -231,10 +233,19 @@ public sealed class UiScreenStack
 
 	public void Draw( UiContext context )
 	{
-		for ( var index = 0; index < screens.Count; index++ )
+		var first = 0;
+		for ( var index = screens.Count - 1; index > 0; index-- )
+		{
+			if ( screens[index].HidesBelow )
+			{
+				first = index;
+				break;
+			}
+		}
+		for ( var index = first; index < screens.Count; index++ )
 		{
 			// [APPROX:UI-011] modal screens dim the screens below — evidence needed: captures of original dialogs
-			if ( screens[index].Modal && index > 0 )
+			if ( screens[index].Modal && index > first )
 				context.Batch.AddRectangle( new UiRect( 0, 0, context.Canvas.Width, context.Canvas.Height ), UiColors.Backdrop );
 			screens[index].Draw( context );
 		}

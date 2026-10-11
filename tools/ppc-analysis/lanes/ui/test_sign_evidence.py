@@ -38,6 +38,7 @@ class NativeSignTests(unittest.TestCase):
         report = native_sign_reader(Path(os.environ['UI_EVIDENCE_BIN_ROOT']))
         self.assertEqual((report['header_bytes'], report['font_bytes'], report['effect_bytes']), (17, 392, 44))
         self.assertEqual(report['source_rgb_byte_offsets'], [1, 2, 3])
+        self.assertEqual((report['wavelet_scalars'], report['wavelet_chunks'], report['wavelet_output']), (6, 2, 'ARGB'))
         self.assertIn('generated mask', report['effect_alpha'])
 
     def test_all84_records_and_four_mac_records(self):

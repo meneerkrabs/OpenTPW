@@ -4,12 +4,22 @@ namespace OpenTPW;
 
 public static class Localization
 {
-	private static readonly LocalizedStringTable UIStrings;
+	private static LocalizedStringTable? uiStrings;
+	private static int loadedVersion = -1;
 
-	static Localization()
+	/// <summary>UITEXT of the current language, reloaded after a language change.</summary>
+	private static LocalizedStringTable UIStrings
 	{
-		// Missing or untranslated entries fall back to English, then to the UIStrings name (docs/COMPATIBILITY.md).
-		UIStrings = LocalizedStringTable.Load( GameLanguage.Current, GameLanguage.TryResolveEnglish( GameLanguage.Current ), "UITEXT.str" );
+		get
+		{
+			if ( uiStrings == null || loadedVersion != GameLanguage.Version )
+			{
+				// Missing or untranslated entries fall back to English, then to the UIStrings name (docs/COMPATIBILITY.md).
+				uiStrings = LocalizedStringTable.Load( GameLanguage.Current, GameLanguage.TryResolveEnglish( GameLanguage.Current ), "UITEXT.str" );
+				loadedVersion = GameLanguage.Version;
+			}
+			return uiStrings;
+		}
 	}
 
 	/// <summary>A UITEXT entry with the missing-string fallback; never throws for unknown indices.</summary>

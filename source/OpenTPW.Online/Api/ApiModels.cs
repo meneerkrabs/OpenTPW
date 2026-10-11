@@ -10,12 +10,17 @@ public static class ApiRoutes
 	public const string Server = Prefix + "/server";
 	public const string Accounts = Prefix + "/accounts";
 	public const string AccountConfirmation = Accounts + "/confirm";
+	public const string AccountEmail = Accounts + "/email";
+	public const string Recovery = Accounts + "/recover";
+	public const string RecoveryConfirmation = Recovery + "/confirm";
 	public const string Sessions = Prefix + "/sessions";
 	public const string Parks = Prefix + "/parks";
 	public const string Postcards = Prefix + "/postcards";
 	public const string Inbox = Postcards + "/inbox";
 	public const string Reports = Prefix + "/reports";
 	public const string News = Prefix + "/news";
+	/// <summary>The online world's cities (the globe's flags), public.</summary>
+	public const string Cities = Prefix + "/cities";
 	/// <summary>Operator only: asks the host to update the server (<c>DeployToken</c>).</summary>
 	public const string Deploy = Prefix + "/admin/deploy";
 	/// <summary>The public list of parks shown on the project website, and their pictures (<c>/{id}/thumbnail</c>).</summary>
@@ -27,6 +32,11 @@ public static class ApiRoutes
 
 public sealed record ServerInfo( string Name, string Version, int ProtocolVersion, string? Message, bool RegistrationOpen, bool WordFilterLoaded,
 	int MaximumParkBytes, int MaximumPostcardBytes, int MaximumParksPerPlayer, int MaximumVotesPerDay );
+
+/// <summary>A city of the online world: a flag on the globe at its latitude and longitude, with its number of parks.</summary>
+public sealed record CityInfo( int Id, string Name, string Description, float Latitude, float Longitude, int Parks );
+
+public sealed record CityList( IReadOnlyList<CityInfo> Cities );
 
 /// <summary>The server's Game News and System News; empty text when the operator wrote none.</summary>
 public sealed record NewsInfo( string Game, string System, DateTimeOffset? UpdatedUtc );
@@ -40,15 +50,26 @@ public sealed record Credentials( string Name, string Password,
 /// stored for a new account until <see cref="TotpConfirmation"/> arrives with a valid code before <see cref="ExpiresUtc"/>.
 /// <see cref="Ticket"/> proves the confirmation comes from whoever registered (or logged in with the password).
 /// </summary>
-public sealed record TotpEnrollment( string Name, string Ticket, string Secret, string Uri, DateTimeOffset ExpiresUtc );
+public sealed record TotpEnrollment( string Name, string Ticket, string Secret, string Uri, DateTimeOffset ExpiresUtc,
+	[property: System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )] bool? EmailRequired = null );
 
 /// <summary>Finishes an enrollment with its ticket and the first code from the authenticator app.</summary>
-public sealed record TotpConfirmation( string Name, string Ticket, string Code );
+public sealed record TotpConfirmation( string Name, string Ticket, string Code,
+	[property: System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )] string? EmailCode = null );
+
+/// <summary>Sends a code to the address a new account will use for recovery.</summary>
+public sealed record EnrollmentEmail( string Name, string Ticket, string Email, [property: System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )] string? Language = null );
+
+/// <summary>Asks for a recovery code for a player name or e-mail address; the answer is the same whether it exists or not.</summary>
+public sealed record RecoveryRequest( string NameOrEmail, [property: System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )] string? Language = null );
+
+/// <summary>A new password with the recovery code; <see cref="ResetTwoStep"/> also sets up two-step login again.</summary>
+public sealed record RecoveryConfirmation( string NameOrEmail, string Code, string Password, bool ResetTwoStep, [property: System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )] string? Language = null );
 
 public sealed record SessionToken( string Name, string Token, DateTimeOffset ExpiresUtc );
 
 public sealed record ParkSummary( string Id, string Name, string Description, string Author, string Level, string Language,
-	DateTimeOffset PublishedUtc, int Visits, int Votes, bool VisitedBefore, bool VotedFor, int PlayersAtPark, bool HasThumbnail, int Bytes );
+	DateTimeOffset PublishedUtc, int Visits, int Votes, bool VisitedBefore, bool VotedFor, int PlayersAtPark, bool HasThumbnail, int Bytes, int CityId = 0 );
 
 public sealed record ParkList( IReadOnlyList<ParkSummary> Parks, int Total );
 
@@ -87,4 +108,8 @@ public static class ApiErrorReasons
 	public const string TotpRequired = "totp-required";
 	/// <summary>The code was wrong, expired or already used.</summary>
 	public const string TotpInvalid = "totp-invalid";
+	/// <summary>The server needs a confirmed e-mail address for a new account.</summary>
+	public const string EmailRequired = "email-required";
+	/// <summary>The code from the e-mail was wrong or no longer valid.</summary>
+	public const string EmailCodeInvalid = "email-code-invalid";
 }

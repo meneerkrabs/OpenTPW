@@ -76,6 +76,19 @@ public sealed class OnlineClient : IDisposable
 
 	public Task<ServerInfo> GetServerInfoAsync( CancellationToken cancel = default ) => GetJsonAsync<ServerInfo>( ApiRoutes.Server, cancel );
 
+	/// <summary>The online world's cities, or null from a server without cities (older OpenTPW servers).</summary>
+	public async Task<CityList?> GetCitiesAsync( CancellationToken cancel = default )
+	{
+		try
+		{
+			return await GetJsonAsync<CityList>( ApiRoutes.Cities, cancel );
+		}
+		catch ( OnlineException exception ) when ( exception.Status == HttpStatusCode.NotFound )
+		{
+			return null;
+		}
+	}
+
 	/// <summary>The server's news, or null from a server without news (older OpenTPW servers).</summary>
 	public async Task<NewsInfo?> GetNewsAsync( CancellationToken cancel = default )
 	{
@@ -107,11 +120,31 @@ public sealed class OnlineClient : IDisposable
 	}
 
 	/// <summary>Finishes a two-step setup with the first code from the authenticator app and logs in.</summary>
-	public async Task<SessionToken> ConfirmEnrollmentAsync( TotpEnrollment enrollment, string code, CancellationToken cancel = default )
+	public async Task<SessionToken> ConfirmEnrollmentAsync( TotpEnrollment enrollment, string code, string? emailCode = null, CancellationToken cancel = default )
 	{
-		using var response = await SendAsync( HttpMethod.Post, ApiRoutes.AccountConfirmation, Json( new TotpConfirmation( enrollment.Name, enrollment.Ticket, code ) ), cancel, authenticated: false );
+		using var response = await SendAsync( HttpMethod.Post, ApiRoutes.AccountConfirmation,
+			Json( new TotpConfirmation( enrollment.Name, enrollment.Ticket, code, string.IsNullOrWhiteSpace( emailCode ) ? null : emailCode.Trim() ) ), cancel, authenticated: false );
 		Session = await ReadJsonAsync<SessionToken>( response, cancel );
 		return Session;
+	}
+
+	/// <summary>Sends a code to the address the new account of <paramref name="enrollment"/> will use for recovery.</summary>
+	public async Task SendEnrollmentEmailAsync( TotpEnrollment enrollment, string email, string? language = null, CancellationToken cancel = default )
+	{
+		using var response = await SendAsync( HttpMethod.Post, ApiRoutes.AccountEmail, Json( new EnrollmentEmail( enrollment.Name, enrollment.Ticket, email.Trim(), language ) ), cancel, authenticated: false );
+	}
+
+	/// <summary>Asks for a recovery code; the server answers the same whether the name or address exists.</summary>
+	public async Task RequestRecoveryAsync( string nameOrEmail, string? language = null, CancellationToken cancel = default )
+	{
+		using var response = await SendAsync( HttpMethod.Post, ApiRoutes.Recovery, Json( new RecoveryRequest( nameOrEmail.Trim(), language ) ), cancel, authenticated: false );
+	}
+
+	/// <summary>Sets a new password with the recovery code; <paramref name="resetTwoStep"/> also sets up two-step login again.</summary>
+	public async Task ConfirmRecoveryAsync( string nameOrEmail, string code, string password, bool resetTwoStep, string? language = null, CancellationToken cancel = default )
+	{
+		using var response = await SendAsync( HttpMethod.Post, ApiRoutes.RecoveryConfirmation,
+			Json( new RecoveryConfirmation( nameOrEmail.Trim(), code.Trim(), password, resetTwoStep, language ) ), cancel, authenticated: false );
 	}
 
 	/// <summary>A secret of plausible length in base32 and an otpauth URI that carries it.</summary>
@@ -141,22 +174,26 @@ public sealed class OnlineClient : IDisposable
 		Session = null;
 	}
 
-	public Task<ParkList> ListParksAsync( string? search = null, string sort = "recent", string? author = null, CancellationToken cancel = default )
+	/// <param name="cityId">Only parks published in this city (the city lobby).</param>
+	public Task<ParkList> ListParksAsync( string? search = null, string sort = "recent", string? author = null, CancellationToken cancel = default, int? cityId = null )
 	{
 		var query = $"?sort={Uri.EscapeDataString( sort )}";
 		if ( !string.IsNullOrEmpty( search ) )
 			query += $"&search={Uri.EscapeDataString( search )}";
 		if ( !string.IsNullOrEmpty( author ) )
 			query += $"&author={Uri.EscapeDataString( author )}";
+		if ( cityId is { } city )
+			query += $"&city={city.ToString( System.Globalization.CultureInfo.InvariantCulture )}";
 		return RequireListAsync( GetJsonAsync<ParkList>( ApiRoutes.Parks + query, cancel ), list => list.Parks, "park list" );
 	}
 
 	/// <param name="showOnWebsite">Lists the park on the project website (opt-in; the server's public website park list).</param>
-	public async Task<ParkSummary> UploadParkAsync( ParkPackage package, CancellationToken cancel = default, bool showOnWebsite = false )
+	/// <param name="cityId">City of the online world to publish in (0: none).</param>
+	public async Task<ParkSummary> UploadParkAsync( ParkPackage package, CancellationToken cancel = default, bool showOnWebsite = false, int cityId = 0 )
 	{
 		var content = new ByteArrayContent( package.ToBytes() );
 		content.Headers.ContentType = new MediaTypeHeaderValue( ApiRoutes.PackageMediaType );
-		using var response = await SendAsync( HttpMethod.Post, showOnWebsite ? ApiRoutes.Parks + "?website=true" : ApiRoutes.Parks, content, cancel );
+		using var response = await SendAsync( HttpMethod.Post, ApiRoutes.Parks + Query( ("website", showOnWebsite ? "true" : null), ("city", cityId > 0 ? cityId.ToString( System.Globalization.CultureInfo.InvariantCulture ) : null) ), content, cancel );
 		return await ReadJsonAsync<ParkSummary>( response, cancel );
 	}
 
@@ -266,6 +303,12 @@ public sealed class OnlineClient : IDisposable
 		var content = new ByteArrayContent( StrictJson.Serialize( value ) );
 		content.Headers.ContentType = new MediaTypeHeaderValue( "application/json" );
 		return content;
+	}
+
+	private static string Query( params (string Name, string? Value)[] parameters )
+	{
+		var present = parameters.Where( parameter => parameter.Value != null ).Select( parameter => $"{parameter.Name}={Uri.EscapeDataString( parameter.Value! )}" ).ToArray();
+		return present.Length == 0 ? "" : "?" + string.Join( "&", present );
 	}
 
 	private async Task<T> GetJsonAsync<T>( string route, CancellationToken cancel ) where T : class

@@ -1,8 +1,8 @@
 namespace OpenTPW;
 
 /// <summary>
-/// Composes the text of an original sign into an RGBA canvas that maps onto the model's two sign
-/// textures. Evidence (docs/COMPATIBILITY.md): sign models carry texture slots <c>sign1</c> (left
+/// Legacy text-only RGBA canvas retained for direct callers and tests. Production ride and gate
+/// signs use <see cref="SignSurfaceComposer"/>. Evidence (docs/COMPATIBILITY.md): sign models carry texture slots <c>sign1</c> (left
 /// half) and <c>sign2</c> (right half) whose shared textures are "SIGN1"/"SIGN2" placeholders, so
 /// the game generates them at runtime; each <c>.sgn</c> has two text slots (two lines) whose
 /// LOGFONT em heights (jungle gate: 144 and 119 pixels) and vertical offsets (-25 and 97)
@@ -10,21 +10,17 @@ namespace OpenTPW;
 /// entries ("Temple"/"Of Gloom", "Sun"/"God"), matching the two slots. Which entry pair belongs to which
 /// object is superseded: the original derives the two lines from the object's single name by splitting it at the
 /// space nearest the middle (<see cref="SplitAtMiddleSpace"/>), which gives "Temple"/"Of Gloom" and "Sun"/"God".
-/// Approximations, labelled: the canvas is 512x256 (two 256x256 halves; native final destinations
-/// are 128x128, with distinct text/mask surfaces), lines are centred horizontally and narrowed to fit the width by the original's LOGFONT width bisection, the line colour is the
-/// RGB of its colour block (traced) drawn opaque, the background is a caller-supplied colour (the
-/// .sgn fill bitmaps and board image are read but not composed), and the horizontal-scale field is not applied.
+/// This legacy helper uses a 512x256 canvas, opaque stored paint RGB and a caller-supplied flat
+/// background; its output is not the native surface path.
 /// </summary>
 public static class SignCanvas
 {
-	// [APPROX:COMPAT-001] Legacy 512x256 canvas; native DIB/mask and final 128x128 destinations require integration and platform pixel verification.
 	public const int Width = 512;
 	public const int Height = 256;
 	public const int HalfWidth = Width / 2;
 
 	/// <summary>A line's text colour: the red, green and blue bytes of its colour block, or null when its colour mode is 0 and the line is not drawn.</summary>
 	// [BIN:STP-PPC:0x100ABF14 sign compositor] each line is colour-blitted with its colour block's bytes (+0x430..+0x432 for the first line, +0x444..+0x446 for the second) only when its colour mode is 1 or 2
-	// [APPROX:COMPAT-003] stored paint RGB is drawn opaque; alpha, modes 1/2, fills and material/mask effects are not applied — evidence needed: integration of the proved native surface/compositing path and original-platform pixel verification
 	public static (byte R, byte G, byte B)? SlotColor( SignFile sign, int index ) =>
 		index >= 0 && index < sign.ColourBlocks.Count && sign.ColourModes[index] is 1 or 2 && sign.ColourBlocks[index] is { } block ? (block.R, block.G, block.B) : null;
 

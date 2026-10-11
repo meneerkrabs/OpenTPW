@@ -26,6 +26,13 @@ public enum InputButton
 	ClosePark,
 
 	/// <summary>
+	/// Ride It (E)
+	/// Rides the selected ride in the first-person ride view; pressed again, or with Escape or a right click, leaves it.
+	/// </summary>
+	[DefaultKey( Key.E )]
+	RideView,
+
+	/// <summary>
 	/// Toggle Help Bar (Ctrl + H)
 	/// Turns the help bar on or off.
 	/// </summary>

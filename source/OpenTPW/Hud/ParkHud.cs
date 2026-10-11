@@ -242,6 +242,8 @@ public sealed partial class ParkHud
 				level.ExitCoasterTool();
 			else if ( level.CellTool.IsActive )
 				level.CellTool.Cancel();
+			else if ( level.RideView != null )
+				level.ExitRideView();
 			else
 				OpenPauseMenu();
 		};
@@ -452,6 +454,16 @@ public sealed partial class ParkHud
 		if ( !paused && input.Has( UiKeys.Pause ) )
 			Status.Speed = Status.Speed == GameSpeed.Paused ? GameSpeed.Normal : GameSpeed.Paused;
 
+		// Ride It (E) rides the selected ride; a right click (RMB cancel on) or E again leaves the ride view.
+		// [APPROX:UI-093] the key stands in for the ride window's "Ride it!" button (gui_CameraFlags 4), whose art is not in the repository
+		if ( !Input.TextEntryActive )
+		{
+			if ( level.RideView != null && (Input.Pressed( InputButton.RideView ) || (input.RightPressed && GameOptions.Current.RmbCancel)) )
+				level.ExitRideView();
+			else if ( level.RideView == null && Input.Pressed( InputButton.RideView ) && selectedObject is { IsDeleted: false } rideObject )
+				level.EnterRideView( rideObject );
+		}
+
 		// The park door's keyboard shortcuts, named by the door button's help rows (UIHELPTEXT 193/194: Ctrl-O/Ctrl-C).
 		// [DATA:UIHELPTEXT 193 "Left-click to open the park (Ctrl-O)", 194 "Left-click to close the park (Ctrl-C)"]
 		// [EXT:maexah/OpenTPW park-engine.md] the original's shortcut table row 9 maps Ctrl-C to the close-park handler (PC 0x0040c410)
@@ -480,7 +492,8 @@ public sealed partial class ParkHud
 		if ( !overUi && !consumed && input.LeftPressed )
 			GameAudio.PlayUi( ParkViewClickEvent );
 
-		var inPark = !overUi && !consumed && level.TryGetGridCell( input.Mouse, new NVector2( context.Canvas.Width, context.Canvas.Height ), out cursorX, out cursorY );
+		// The ride view is a view of one ride: the park's clicks and tools wait until it is left.
+		var inPark = !overUi && !consumed && level.RideView == null && level.TryGetGridCell( input.Mouse, new NVector2( context.Canvas.Width, context.Canvas.Height ), out cursorX, out cursorY );
 		if ( !inPark )
 			cursorX = cursorY = -1;
 		var toolClick = UpdateCoasterTool( input, inPark, paused ) || UpdateCellTool( context, input, inPark, paused );

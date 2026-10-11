@@ -466,6 +466,7 @@ W_max = ⌈Qmax/CAP⌉ × (DUR + 1 s + τ) (QUEUE-plan §9):
 | QUEUE-018 | A broken attraction refuses joins as if closed | Ride `+408` and the state-6/10 handling of a broken ride |
 | QUEUE-019 | A broken attraction skips admission (`VAR_BROKEN ≠ 0` read as ride `+408 ≠ 0`) | Ride `+408` state names and writers |
 | QUEUE-020 | BOUNCE takes one script-clock reading for the deadline's base and the slot's start; the original calls its millisecond clock twice (`0xadfb0`, `0xadfcc`), so its start can lie 1 ms later | None for the reading; OpenTPW's stepped script clock cannot tick between the two calls |
+| QUEUE-021 | A left click on a queue cell (help 444, "Left-click to edit this queue") starts the queue tool at that ride's back cell; the click handler is not traced | None: `Level.EditQueueAt` follows the help text and `EnterQueueTool` |
 
 Not modelled: the track-type exits of step 6 (`0x45eac`, ride `+40`), ride
 state `+408` (beyond the QUEUE-019 reading), the price check at the stand

@@ -516,9 +516,17 @@ public sealed partial class ParkHud
 			context.HoverHelp = strings.Help( help );
 		if ( !tool.IsActive )
 		{
+			if ( !inPark || !input.LeftPressed || level.IsReadOnlyVisit || level.Objects.FindAt( cursorX, cursorY ) != null )
+				return false;
+			// A left click on a queue cell edits that ride's queue (help 444): the queue tool starts at its back cell.
+			if ( tool.HoverHelpId( level.Paths, cursorX, cursorY ) is 444 && level.EditQueueAt( cursorX, cursorY ) )
+			{
+				PostMessage( strings.Help( 445 ) );
+				tool.Hover( (cursorX, cursorY) );
+				return toolPress = true;
+			}
 			// A left click on an empty owned cell or on a path cell starts the path tool there (help 441/442).
-			if ( !inPark || !input.LeftPressed || level.IsReadOnlyVisit || level.Objects.FindAt( cursorX, cursorY ) != null
-				|| tool.HoverHelpId( level.Paths, cursorX, cursorY ) is not (441 or 442) || !level.EnterPathTool( cursorX, cursorY ) )
+			if ( tool.HoverHelpId( level.Paths, cursorX, cursorY ) is not (441 or 442) || !level.EnterPathTool( cursorX, cursorY ) )
 				return false;
 			PostMessage( strings.Help( 443 ) );
 			tool.Hover( (cursorX, cursorY) );

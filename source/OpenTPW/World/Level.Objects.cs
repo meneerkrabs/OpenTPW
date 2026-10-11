@@ -148,6 +148,28 @@ public partial class Level
 	}
 
 	/// <summary>
+	/// Starts the queue tool on the queue that holds (x, y): the original's hover for a queue cell reads
+	/// "Left-click to edit this queue" (help 444), and the tool then starts at that queue's back cell
+	/// (<see cref="EnterQueueTool"/>). False when the cell is not a queue cell of a HasQueue ride.
+	/// </summary>
+	// [DATA:UIHELPTEXT 444 "Left-click to edit this queue", 445 "Left-click to build the queue, click again to stop building / Click onto path to connect the queue to it"] [BIN:STP-PPC:0x139c64 park-view hover] queue cell → hover state 3 (PATH-plan §4.1)
+	// [APPROX:QUEUE-021] the left click on a queue cell is the help's documented action; the click handler that calls SetMode(3) for an existing queue is not traced — evidence needed: the caller of SetMode 0x1007B320 on a queue cell
+	public bool EditQueueAt( int x, int y )
+	{
+		if ( IsReadOnlyVisit || Guests == null || QueueRideAt( Guests.Grid, Guests.Attractions, x, y ) is not { } ride )
+			return false;
+		return EnterQueueTool( ride );
+	}
+
+	/// <summary>The HasQueue ride whose queue holds (x, y) (the owner of a queue cell), or null.</summary>
+	internal static RideVisitorBridge? QueueRideAt( GuestPathGrid grid, IEnumerable<IRideVisitorBridge> attractions, int x, int y )
+	{
+		if ( !grid.IsQueue( x, y ) )
+			return null;
+		return attractions.OfType<RideVisitorBridge>().FirstOrDefault( item => item.HasQueue && item.QueueCells.Contains( (x, y) ) );
+	}
+
+	/// <summary>
 	/// Lays the snapped straight path from <paramref name="from"/> toward <paramref name="to"/> (headless API; the
 	/// path tool commits through the same builder). Read-only visits and the generic sandbox lay nothing.
 	/// </summary>
@@ -258,7 +280,7 @@ public partial class Level
 	{
 		if ( IsReadOnlyVisit || Guests == null )
 			return 0;
-		var ride = Guests.Grid.IsQueue( x, y ) ? Guests.Attractions.OfType<RideVisitorBridge>().FirstOrDefault( item => item.QueueCells.Contains( (x, y) ) ) : null;
+		var ride = QueueRideAt( Guests.Grid, Guests.Attractions, x, y );
 		if ( ride == null )
 			return 0;
 		var removed = QueuePaths.RemoveFrom( Guests.Grid, ride, x, y );

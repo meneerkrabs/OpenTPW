@@ -48,17 +48,22 @@ leaves the station at its `>` cell. That is the station node.
   started, block a pylon. Paths, queues, scenery and rides do not. Another
   coaster's pylon does (the stacking test).
 - **Money.** Placing a pylon charges `trunc(cost)` at once through
-  `ParkEconomy`. The cost is `fCostPerUnit + fCostPer2DLength × length/10 +
-  fCostPerHeight × height/10`. Moving a pylon refunds `trunc` of its old cost and
-  charges `ceil` of the new one, together with the next pylon's cost on a
-  complete track. A drop on the same cell is free. The height change works the
-  same way. Deleting pylons refunds nothing, and there is no undo stack
-  (Backspace deletes the last pylon without a refund).
+  `ParkEconomy`, even when the balance cannot cover it (the original reads the
+  balance and ignores it). The cost is `fCostPerUnit + fCostPer2DLength ×
+  length/10 + fCostPerHeight × height/10`; a loop or trough pylon pays the
+  StdPylon length and height rates unless it stands on another loop or trough
+  pylon. Moving a pylon refunds `trunc` of its old cost and charges `ceil` of the
+  new one, both **without** `fCostPerUnit`, together with the next pylon's cost
+  on a complete track. A drop on the same cell is free. The height change works
+  the same way. Deleting pylons or the whole track refunds nothing, and there is
+  no undo stack (Backspace deletes the last pylon without a refund). Track money
+  is posted as other costs and income (COAST-031).
 - **Closing and completing.** A click on a station end cell closes the circuit
-  without adding a node. A second click, or Enter, completes it: the station end
-  node(s) are appended (one with `bVisibleEndPylon`, otherwise two), the curve is
-  fitted, the track is rated and the trains are placed. Completion moves no
-  money. It is refused while a pylon is marked invalid.
+  without adding a node. A second click, or Enter, completes it: one station end
+  node with node flags `0x144` is appended (the loader always sets definition bit
+  `0x20`, so `bVisibleEndPylon` selects nothing), the curve is fitted, the track
+  is rated and the trains are placed. Completion moves no money. It is refused
+  while a pylon is marked invalid (COAST-016: `0x37ef0` itself does not test it).
 
 Headless API (tests, the M3/M4 gates):
 
@@ -89,7 +94,7 @@ commands reach the station's `CoasterRide`:
 | `COAST 2` | the free seats of the train at the station (0 when closed, broken or not runnable) |
 | `COAST 1` | seats the guest the admission called (`VAR_LETMEON`) in a random car (`CoasterRng`) |
 | `COAST 3` | lets one rider off into `VAR_LETMEOFF` |
-| `COAST 4` | ride mode 16, 32 (broken) or 64; mode 64 sets the power factor to 0 |
+| `COAST 4` | argument 0, 1 or 2 selects ride mode 16, 64 (the breakdown) or 32; mode 64 sets the power factor to 0, so moving trains coast to a stop |
 
 Guests queue and are admitted by the same machinery as other rides
 (`RideVisitorBridge`). Track type 3 skips the capacity test. A coaster that is
@@ -98,10 +103,12 @@ excitement is `trunc(0.5·E + 50)`, where `E` is the coaster's excitement rating
 
 Trains move in hops of half a sample (`0x40650`). Each hop averages the cars'
 speed after the height change to the point half a sample ahead. It then applies
-station braking (`x⁴` toward the winch floor after `ctl+308`) or friction, the
-floor (winch speed on chain-lift sections, else the minimum speed, both times
-the power factor) and the cap. A hop takes `d / ((v + v')/2)` seconds, and the
-last hop of a step is partial. Below speed 2 the speed decays by 0.95 per hop,
+station braking (`x⁴` toward the winch floor past `ctl+308`) or friction (on the
+sample the train stood on at the start of the step), the floor (winch speed when
+a car's half-sample point is on a chain-lift section, else the minimum speed,
+both times the power factor) and the cap. A hop takes `d / ((v + v')/2)`
+seconds, and the last hop of a step is partial; its end speed is floored at the
+minimum speed and capped. Below speed 2 the speed decays by 0.95 per hop,
 and below 0.01 it is 0. The hops run on OpenTPW's fixed 60 Hz simulation step
 instead of the original's per-frame elapsed time, which keeps runs reproducible
 (COAST-022). Trains leave the station at the release headway
@@ -111,10 +118,15 @@ instead of the original's per-frame elapsed time, which keeps runs reproducible
 
 The rating pass runs once when the track is completed. It starts at the winch
 speed and marks every section whose speed sits on the winch floor as a chain
-lift. The step and the final are single precision. The step's discomfort term
-uses Fz when the inverted arm does not apply, and the final counts the sections
-with both flags `0x40` and `0x80`. Both are bit-exact against the original
-routine in the PPC differential oracle (ORACLE.md F7, F8).
+lift. Each sample's force is `a·(v/10)` with
+`a = −((p₋ − p) + (p₊ − p))/spacing`, so a dip gives a negative Fy. The first
+sample gets the winch speed and no force, the last copies the one before it.
+The step and the final are single precision, with the original's fused decay
+and final sum. The step's discomfort term uses Fz when the inverted arm does not
+apply, and the final counts the sections with both node flags `0x40` and `0x80`;
+node flag `0x80` is never set in OpenTPW, so that count is 0. Both are bit-exact
+against the original routines in the PPC differential oracle (ORACLE.md F7, F8;
+REVIEW-COAST.md).
 `CoasterRating.Step`, `CoasterRating.Restore` and `CoasterRating.FinalFor` are
 the seams for the oracle hooks `coaster_rating_step` and `coaster_rating_final`.
 
@@ -145,10 +157,12 @@ rating, trains and riders. The park save does not hold coasters yet (COAST-025).
 
 ## Approximation register
 
-`CoasterApproximations` lists every `[APPROX:COAST-NNN]` tag. The IDs below 15
-are the unknowns of COAST-plan §10 that are still open. COAST-015..019 are the
-new unknowns of §10.1. COAST-020..029 are rules OpenTPW chose while implementing
-the plan. The generated table is in [FIDELITY-REGISTER.md](FIDELITY-REGISTER.md).
+`CoasterApproximations` lists every `[APPROX:COAST-NNN]` tag: twenty-one open
+IDs. The IDs below 15 are the unknowns of COAST-plan §10 that are still open.
+COAST-015..019 are the new unknowns of §10.1. COAST-022..031 are rules OpenTPW
+chose while implementing the plan. COAST-020 (cost rates) and COAST-021 (force
+term) were resolved by the COAST-V review and are traced now. The generated
+table is in [FIDELITY-REGISTER.md](FIDELITY-REGISTER.md).
 
 The track is drawn as a flat-coloured box-section tube along the samples, not
 with the original cross sections and pylon meshes (COAST-026). The ride camera

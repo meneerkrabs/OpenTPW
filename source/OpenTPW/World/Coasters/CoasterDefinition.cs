@@ -135,7 +135,7 @@ public sealed class CoasterDefinition
 	public bool IsTrough => (Flags & TroughFlag) != 0;
 	public bool AutoBanks => (Flags & AutoBankFlag) != 0;
 	public bool IsSuspended => (Flags & SuspendedFlag) != 0;
-	/// <summary><c>bVisibleEndPylon</c>: completion appends one station end node instead of two.</summary>
+	/// <summary><c>bVisibleEndPylon</c> as loaded. It selects nothing: the loader always sets 0x20 (in 0xA0), so completion always appends one end node.</summary>
 	public bool VisibleEndPylon { get; private set; }
 
 	/// <summary>The pylon control of a loop (true) or standard (false) pylon.</summary>
@@ -188,7 +188,8 @@ public sealed class CoasterDefinition
 			MaxAngleAtMaxDistance = 174 * DegreesToRadians,
 			MaxRotationDeviance = 90 * DegreesToRadians,
 			MaxLoopRotationDeviance = 90 * DegreesToRadians,
-			MaxLoopHeightDifference = 25 * 10 * DegreesToRadians,
+			// [BIN:STP-PPC:0x1002D5D4 loop pylon default] fMaxLoopHeightDifference (+172) defaults to the raw 25.0 (0x1002D5D8); only a coaster.sam value is scaled by 10·π/180 (0x1002FA60)
+			MaxLoopHeightDifference = 25,
 			MinHeight = 10,
 			MaxHeight = 10,
 			MaxStackedPylons = 1,

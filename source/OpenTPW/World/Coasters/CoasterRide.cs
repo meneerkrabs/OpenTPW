@@ -103,12 +103,13 @@ public sealed class CoasterRide
 	public bool Initialised { get; private set; }
 	/// <summary><c>COAST 5</c>: the ride is closed (no boarding, no departures).</summary>
 	public bool Closed { get; private set; } = true;
-	/// <summary><c>COAST 4</c> argument (0, 1, 2), mapped to the ride modes 16, 32 and 64.</summary>
+	/// <summary><c>COAST 4</c> argument (0, 1, 2), mapped to the ride modes 16, 64 and 32 (1 is the breakdown: mode 64, no power).</summary>
 	public int BreakdownState { get; private set; }
-	public int ControllerStateFlag => BreakdownState switch { 0 => 16, 1 => 32, 2 => 64, _ => 0 };
-	public bool IsBroken => BreakdownState == 1;
+	// [BIN:STP-PPC:0x1003DDFC coaster state] COAST 4: argument 1 → mode 64 (0x1003DE18 → 0x1003DE50), 2 → mode 32 (0x1003DE44), 0 → mode 16 (0x1003DE38), 3 and above change nothing; each calls 0x10038250
+	public int ControllerStateFlag => BreakdownState switch { 0 => 16, 1 => 64, 2 => 32, _ => 0 };
+	public bool IsBroken => ControllerStateFlag == 64;
 	/// <summary>Controller <c>+44</c>: the power factor P, 0 in mode 64 (both speed floors vanish) and 1 otherwise.</summary>
-	// [BIN:STP-PPC:0x10038250 ride mode] changing the mode from 16 or 32 to 64 sets the power factor (+44) to 0; back to 16 or 32 sets it to 1
+	// [BIN:STP-PPC:0x10038250 ride mode] changing the mode from 16 or 32 to 64 sets the power factor (+44) to 0; back to 16 or 32 sets it to 1 and flags every train 0x80
 	public float PowerFactor => ControllerStateFlag == 64 ? 0f : 1f;
 	/// <summary>Controller <c>+48</c>: the speed setting.</summary>
 	public int SpeedSetting { get; private set; } = DefaultSpeedSetting;
@@ -177,13 +178,34 @@ public sealed class CoasterRide
 		// Controller +264: the sections with both node flags 0x40 and 0x80 (CoasterRating.FinalFor; ORACLE F8).
 		var counted = CoasterRating.FinalFor( 0, 0, 0, 0, nodes.Select( node => (uint)node.Flags ), 0, 0, 0, 0 ).Sections;
 		Rating = result with { CountedSections = counted };
-		var lastNodeSample = Array.FindIndex( samples, sample => sample.Section == nodes.Count - 1 );
-		BrakingStart = BrakingStartFor( samples.Length, samples[lastNodeSample < 0 ? samples.Length - 1 : lastNodeSample].Speed, Spacing );
+		BrakingStart = BrakingStartFor( samples.Length, samples[BrakingSpeedSample( samples, nodes.Count - 1 )].Speed, Spacing );
 		PlaceTrains( result.Trains );
 		TrackChanged?.Invoke( this );
 	}
 
-	/// <summary>Controller <c>+308</c> = max((n − 1) − v/spacing, 0) in samples, v the rated speed at the last node's sample.</summary>
+	/// <summary>
+	/// The sample whose rated speed sets the braking start: the tail node's sample coordinate (node <c>+252</c>, the
+	/// index of the last sample before its knot) minus one.
+	/// </summary>
+	// [BIN:STP-PPC:0x10040070 braking sample] v_last = sample[(tail node +252) − 1].speed with the tail = controller +88 (the station end node); node +252 = trunc of the sampler's coordinate (last sample index + distance since it / spacing) when the walk reaches the node (0x10045790, 0x100457A0), i.e. the last sample before the node's knot
+	public static int BrakingSpeedSample( IReadOnlyList<CoasterSample> samples, int tailSection )
+	{
+		var first = -1;
+		for ( var index = 0; index < samples.Count; index++ )
+		{
+			if ( samples[index].Section == tailSection )
+			{
+				first = index;
+				break;
+			}
+		}
+		if ( first < 0 )
+			return samples.Count - 1;
+		// The first sample of the tail's pair lies past its knot, so the coordinate truncates to the sample before it.
+		return Math.Max( first - 2, 0 );
+	}
+
+	/// <summary>Controller <c>+308</c> = max((n − 1) − v/spacing, 0) in samples, v the rated speed of <see cref="BrakingSpeedSample"/>.</summary>
 	// [BIN:STP-PPC:0x10040070 braking start] controller +308 = max((n − 1) − v_last / 3.0, 0) samples
 	public static float BrakingStartFor( int sampleCount, float speedBeforeEnd, float spacing ) =>
 		MathF.Max( (sampleCount - 1) - speedBeforeEnd / spacing, 0f );
@@ -287,8 +309,9 @@ public sealed class CoasterRide
 				// [BIN:STP-PPC:0x1003DD5C coaster departure] COAST 3 extracts one departing visitor (0 when none)
 				return TakeLeavingRider();
 			case 4:
-				// [BIN:STP-PPC:0x1003DDFC coaster state] COAST 4 maps states 0, 1, 2 to the ride modes 16, 32, 64
-				BreakdownState = parameter;
+				// [BIN:STP-PPC:0x1003DDFC coaster state] COAST 4 maps states 0, 1, 2 to the ride modes 16, 64, 32; other values change nothing
+				if ( parameter is >= 0 and <= 2 )
+					BreakdownState = parameter;
 				return 0;
 			case 5:
 				// [BIN:STP-PPC:0x1003DEC8 coaster close] COAST 5 closes (nonzero) or opens the controller
@@ -296,7 +319,7 @@ public sealed class CoasterRide
 				return 0;
 			case 6:
 				// [BIN:STP-PPC:0x1003DF24 coaster capacity] COAST 6 takes MAX with the global value, then MIN with the definition and train bounds
-				// [APPROX:COAST-023] a train seats COAST 6's capacity (at least 1; uiMaxCars × 4 before the script sets it), split evenly over its cars; the speed setting stays 60 (COAST 8's script speed is not modelled); a train departs at speed 0 when the release headway has passed since the last departure and it is full or has boarded for 5 s; an arriving train waits before the station while another train uses it; running trains do not collide — evidence needed: 0x1003DF24's bounds, the script speed of 0x1003DE68, the dispatch branches of tick 0x10040650 and the seat socket count per car
+				// [APPROX:COAST-023] a train seats COAST 6's capacity (at least 1; uiMaxCars × 4 before the script sets it), split evenly over its cars; the speed setting stays 60 (COAST 8's script speed, read from script +192 by 0x1003DE68, is not modelled); a train departs at speed 0 when the release headway has passed since the last departure and it is full or has boarded for 5 s; an arriving train waits before the station while another train uses it; running trains do not collide — evidence needed: 0x1003DF24's bounds, the script speed of 0x1003DE68, the dispatch branches of tick 0x10040650 and the seat socket count per car
 				SeatsPerTrain = Math.Max( 1, parameter );
 				return 0;
 			default:
@@ -369,7 +392,7 @@ public sealed class CoasterRide
 	/// One fixed simulation step: station work (unloading, boarding, dispatch at the release headway), then each running
 	/// train's half-sample hops (<c>0x40650</c>) within the step's time budget.
 	/// </summary>
-	// [APPROX:COAST-022] the hops run on OpenTPW's fixed 60 Hz simulation step instead of the elapsed milliseconds of the cached animation clock per frame (0x100A3E08, controller +288), trains are processed in list order instead of a queue by remaining budget, cars are 7 world units apart (car +56 not read), and station braking is tested on the front car only (train flag 0x40 is not modelled) — evidence needed: DET-I2's substep clock, the car offsets from asCarTypes and the train flag 0x40 writers
+	// [APPROX:COAST-022] the hops run on OpenTPW's fixed 60 Hz simulation step instead of the elapsed milliseconds of the cached animation clock per frame (0x100A3E08, controller +288), trains are processed in list order instead of a queue by remaining budget, cars are 7 world units apart (car +56 not read), the front car is the reference car (train +44) and the braking car (train +8), station braking is tested on the front car only (train flag 0x40 is not modelled), the winch floor is never halved (0x100408E4 halves it for trains with flags 0x80 and 0x20; 0x80 is set on leaving mode 64 by 0x10038250, 0x20 after seat allocation at 0x1003E9CC and cleared at 0x1003E7E4, and neither train flag is modelled), every car counts as active (car flag bit 0 is not modelled; the sum skips inactive cars, the average divides by all), the half-sample point wraps to sample 0 instead of reading the duplicated slot n, and a zero-length hop at zero speed counts as partial (the original's NaN hop time takes the full branch) — evidence needed: DET-I2's substep clock, the car offsets from asCarTypes, the train flag 0x20/0x40/0x80 lifecycle in 0x1003E138..0x1003E9E8 and 0x10038250, and car flag bit 0
 	public void Advance( double deltaSeconds )
 	{
 		if ( !(deltaSeconds > 0) )
@@ -407,7 +430,7 @@ public sealed class CoasterRide
 		}
 	}
 
-	// [APPROX:COAST-012] closing (COAST 5) and a breakdown (COAST 4 state 1) stop boarding and departures while moving trains finish their lap to the station; what a breakdown does to moving trains is not traced (mode 64, COAST 4 state 2, is traced: power factor 0) — evidence needed: the breakdown branch of the coaster tick 0x10040650
+	// [APPROX:COAST-012] closing (COAST 5) stops boarding and departures while moving trains finish their lap to the station, and COAST 5 always takes effect (the original changes state only under controller +8 & 4 to close and & 0xA to open); a breakdown (COAST 4 argument 1, mode 64) also stops boarding and departures, and its power factor 0 is traced, so moving trains coast to a stop; mode 32 (argument 2) has no modelled effect — evidence needed: the close/open branches of 0x1003DEC8 and the controller +8 writers, the station side of mode 64 and what mode 32 changes in 0x10038250 and the tick 0x10040650
 	private bool CanDispatch( CoasterTrain train )
 	{
 		if ( !Initialised || Closed || IsBroken || PowerFactor == 0 )
@@ -444,7 +467,7 @@ public sealed class CoasterRide
 	/// <see cref="BrakingStart"/>) or friction, the winch or minimum floor, the cap; the hop takes d/((v + v′)/2) seconds;
 	/// the last hop of the budget is partial; after each hop the speed decays below 2.0 and stops below 0.01.
 	/// </summary>
-	// [BIN:STP-PPC:0x10040650 coaster tick] hops of half a sample: average car speed, braking past ctl+308 or friction on flag-8 samples, max(·, W) when any car is on a winch section else max(·, M), min(·, ctl+52); τ = d/((v + v')/2) from the reference car's distance to its half-sample point (0x1004316C); a full hop if τ < budget, else α = budget/τ, v_end = (1 − α)v + αv', s += ½·((v + v_end)/2·budget/d); after every hop v ×= 0.95 below 2.0 and v = 0 below 0.01; s wraps by fmod
+	// [BIN:STP-PPC:0x10040650 coaster tick] hops of half a sample: per car the winch test reads the section of the sample at trunc(s + ½) (0x1004098C, 0x10040A0C), the average car speed, braking when a car is past ctl+308 (strictly) or friction on the flag-8 sample of the reference car's +64 position, which is written only after the frame's hops (0x10041094), so it is fixed per frame; max(·, W) when any car is on a winch section else max(·, M), min(·, ctl+52); τ = d/((v + v')/2) from the reference car's distance to its half-sample point (0x1004316C); a full hop if τ < budget, else α = budget/τ, v_end = (1 − α)v + αv', s += ½·((v + v_end)/2·budget/d), v = min(max(v_end, M), cap) (0x10040D78..0x10040DC8); after every hop v ×= 0.95 below 2.0 and v = 0 below 0.01; s wraps by fmod
 	private void Move( CoasterTrain train, float budget )
 	{
 		var count = samples.Length;
@@ -453,6 +476,7 @@ public sealed class CoasterRide
 		var minimumFloor = Definition.MinSpeed * PowerFactor;
 		var position = train.Position;
 		var speed = train.Speed;
+		var friction = (SampleAt( position ).Flags & CoasterSampleFlags.Friction) != 0;
 		while ( true )
 		{
 			var sum = 0f;
@@ -460,14 +484,14 @@ public sealed class CoasterRide
 			for ( var car = 0; car < cars; car++ )
 			{
 				var at = position - car * CarSpacing / Spacing;
-				var winch = winchSections.Contains( SampleAt( at ).Section );
+				var winch = winchSections.Contains( SampleAt( at + Hop ).Section );
 				anyWinch |= winch;
 				sum += CarSpeed( Definition, speed, SampleAt( at ).Position.Y, SampleAt( at + Hop ).Position.Y, winch ? winchFloor : minimumFloor );
 			}
 			var next = sum / cars;
-			if ( position >= BrakingStart && BrakingStart < count )
+			if ( position > BrakingStart && BrakingStart < count )
 				next = BrakeBlend( next, winchFloor, position, BrakingStart, count );
-			else if ( (SampleAt( position ).Flags & CoasterSampleFlags.Friction) != 0 )
+			else if ( friction )
 				next *= Definition.FrictionMultiplier;
 			next = MathF.Max( next, anyWinch ? winchFloor : minimumFloor );
 			next = MathF.Min( next, SpeedCap );
@@ -486,7 +510,8 @@ public sealed class CoasterRide
 				var end = MathF.FusedMultiplyAdd( 1f - fraction, speed, fraction * next );
 				var travelled = distance > 0 ? (speed + end) * 0.5f * budget / distance : 0f;
 				position = MathF.FusedMultiplyAdd( Hop, travelled, position );
-				speed = MathF.Min( end, SpeedCap );
+				end = end < minimumFloor ? minimumFloor : end;
+				speed = SpeedCap < end ? SpeedCap : end;
 				done = true;
 			}
 			if ( speed < DecayBelow )

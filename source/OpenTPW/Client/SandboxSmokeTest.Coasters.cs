@@ -96,7 +96,10 @@ internal sealed partial class SandboxSmokeTest
 		Require( train.State != CoasterTrainState.Boarding || train.Position != smokeTrainStart, $"a coaster train left the station (state {train.State}, position {train.Position:F1})" );
 		Require( level.CoasterTrianglesDrawn > 0, "the coaster track is drawn" );
 		CaptureFrame( "original-coaster.png" );
+		var economy = level.Park?.Economy;
+		var balance = economy?.Balance ?? 0;
 		Require( level.DeleteCoasterTrack( smokeStation ) && !ride.IsOperational, "delete the coaster track" );
+		Require( (economy?.Balance ?? 0) == balance, "deleting the track refunds nothing" );
 		level.Objects.Remove( smokeStation );
 		Require( !level.Coasters.Contains( ride ), "removing the station removes its coaster" );
 		smokeStation = null;

@@ -10,8 +10,8 @@
   CV-16: the rating force is (neighbour - current) summed, over the spacing, times -g.
   CV-6: the straight case of 0x31450 takes the half-difference tangent only on loop pylons (0x4000).
   Also: the module's money calls, the guest excitement trunc(fmadds(E, 0.5, 50)), the LoopPylon +172 default.
-- Source (this checkout): the C# side of each finding. The findings that are open at 02712e0 are expected
-  failures; when a fix lands the test reports an unexpected success and must be flipped to a plain test.
+- Source (this checkout): the C# side of each finding. The findings were open at 02712e0 as expected failures;
+  COAST-F fixed all eight and flipped them to plain tests.
 - Git (OPENTPW_REVIEW_REPO, defaults to this repository; skipped when a commit is missing): the CRLF state of
   SandboxSmokeTest.cs and the schema-6 pin collision with ANIM-I b84bf58.
 
@@ -151,40 +151,32 @@ class Source(unittest.TestCase):
     def test_guest_excitement_formula(self):
         self.assertIn('(int)MathF.FusedMultiplyAdd( excitement, 0.5f, 50f )', text(COASTERS / 'CoasterRating.cs'))
 
-    @unittest.expectedFailure
     def test_cv1_moves_and_the_slider_do_not_charge_the_unit(self):
         settle = re.search(r'private void Settle\(.*?\n\t}\n', self.builder, re.S).group(0)
         self.assertRegex(settle, r'chargeUnit:\s*false|NodeCost\( \w+, false \)')
 
-    @unittest.expectedFailure
     def test_cv2_coast4_mapping(self):
         self.assertRegex(self.ride, r'1 => 64, 2 => 32')
 
-    @unittest.expectedFailure
     def test_cv3_completion_appends_one_end_node(self):
         complete = re.search(r'internal CoasterPlaceResult Complete\(\).*?\n\t}\n', self.track, re.S).group(0)
         self.assertNotIn('VisibleEndPylon', complete)
 
-    @unittest.expectedFailure
     def test_cv4_placing_is_not_refused_for_money_without_a_register_id(self):
         place = re.search(r'public CoasterPlaceResult Place\(.*?\n\t}\n', self.builder, re.S).group(0)
         self.assertTrue('force: true' in place or 'APPROX:COAST-' in place)
 
-    @unittest.expectedFailure
     def test_cv6_straight_case_on_loop_pylons(self):
         self.assertIn('if ( straightDot != null && loopPylon )', self.track)
 
-    @unittest.expectedFailure
     def test_cv13_determinism_doc_cites_the_registered_ids(self):
         # The generator is COAST-027 and the save gap COAST-025; DETERMINISM.md cites COAST-024 and COAST-022.
         self.assertNotRegex(self.determinism, r'folded to 32 bits \(COAST-024\)|generator are not saved either \(COAST-022\)')
 
-    @unittest.expectedFailure
     def test_cv14_loop_pylon_max_loop_height_default(self):
         # The default at 0x2d5d4 is the raw 25.0; only the loader scales a SAM value by 10 x pi/180.
         self.assertNotIn('MaxLoopHeightDifference = 25 * 10 * DegreesToRadians', self.definition)
 
-    @unittest.expectedFailure
     def test_cv16_force_sign(self):
         self.assertNotIn('(samples[index - 1].Position + next - 2 * sample.Position) / spacing', text(COASTERS / 'CoasterRating.cs'))
 

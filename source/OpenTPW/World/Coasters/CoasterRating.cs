@@ -105,10 +105,13 @@ public sealed class CoasterRating
 			discomfort = force.Z;
 		discomfort = d.XGForceUncomfortable * fx + discomfort;
 		var delta = MathF.Max( excite - discomfort, 0f );
-		Sickness = Decay * Sickness + sickness;
-		Excitement = Decay * Excitement + delta;
-		PeakSickness = MathF.Max( PeakSickness, Sickness );
-		PeakExcitement = MathF.Max( PeakExcitement, Excitement );
+		// [BIN:STP-PPC:0x100417BC rating decay] S = fmadds(S, 0.5, dS) and E = fmadds(E, 0.5, dE) (0x100417BC, 0x100417CC); the peaks are fcmpo selects that keep the old peak on NaN
+		Sickness = MathF.FusedMultiplyAdd( Sickness, Decay, sickness );
+		Excitement = MathF.FusedMultiplyAdd( Excitement, Decay, delta );
+		if ( PeakSickness < Sickness )
+			PeakSickness = Sickness;
+		if ( PeakExcitement < Excitement )
+			PeakExcitement = Excitement;
 		flags &= ~StepFlagMask;
 		if ( index > 2 )
 		{
@@ -147,17 +150,22 @@ public sealed class CoasterRating
 	/// The final routine <c>0x41900</c> on given accumulators: the clamped ratings, the count of sections whose flags
 	/// have both 0x40 and 0x80 set, the length +168 × +172 and the maxima (oracle seam).
 	/// </summary>
-	// [BIN:STP-PPC:0x10041900 rating final] sickness = S + peakS, excitement = 0.5 × E + 1.7 × peakE, each clamped to [0, 100] (data 0x3d160..0x3d16c); +264 counts the sections with both flags 0x40 and 0x80 set (0x100419CC..0x100419EC, ORACLE F8); +268 = +168 × +172; +272 max Y; +276 max speed
+	// [BIN:STP-PPC:0x10041900 rating final] sickness = S + peakS, excitement = fmadds(0.5, E, 1.7 × peakE) (0x10041944), each clamped to [0, 100] (data 0x3d160..0x3d16c); +264 counts the sections with both flags 0x40 and 0x80 set (0x100419CC..0x100419EC, ORACLE F8); +268 = +168 × +172; +272 max Y; +276 max speed
 	public static CoasterRatingFinal FinalFor( float sickness, float excitement, float peakSickness, float peakExcitement, IEnumerable<uint> sectionFlags,
 		float sampleCount, float spacing, float maxHeight, float maxSpeed )
 	{
 		var rawSickness = sickness + peakSickness;
-		var rawExcitement = Decay * excitement + PeakExcitementWeight * peakExcitement;
+		var rawExcitement = MathF.FusedMultiplyAdd( Decay, excitement, PeakExcitementWeight * peakExcitement );
 		var sections = sectionFlags.Count( flags => (flags & 0xC0) == 0xC0 );
 		return new CoasterRatingFinal( Clamp( rawSickness ), Clamp( rawExcitement ), sections, sampleCount * spacing, maxHeight, maxSpeed );
 	}
 
-	private static float Clamp( float value ) => value > Maximum ? Maximum : value < 0 ? 0 : value;
+	// [BIN:STP-PPC:0x10041950 rating clamp] v = v < 100 ? v : 100, then v = 0 < v ? v : 0 (fcmpo selects on data 0x3d160..0x3d16c): NaN gives 100 and −0 gives +0
+	private static float Clamp( float value )
+	{
+		value = value < Maximum ? value : Maximum;
+		return 0f < value ? value : 0f;
+	}
 
 	/// <summary>The guests' excitement of a coaster ride: trunc(½E + 50), E in [0, 100].</summary>
 	// [BIN:STP-PPC:0x100DFF70 ride excitement] track type 3: 0 without a coaster controller (0x100B5E24), else trunc(fmadds(E, 0.5, 50)) with E the controller's excitement (getter 0x10041A14)
@@ -166,12 +174,12 @@ public sealed class CoasterRating
 	/// <summary>
 	/// The train count after a rating pass: min(uiMaxTrains, max(1, trunc(lap / (uiTrainReleaseRate / 1000)))).
 	/// </summary>
-	// [BIN:STP-PPC:0x10040470 train count] lap seconds / (uiTrainReleaseRate (+748) / 1000) truncated, at least 1 (data 0x3d144), at most uiMaxTrains (+744)
+	// [BIN:STP-PPC:0x10040470 train count] lap seconds / (uiTrainReleaseRate (+748) / 1000) truncated by fctiwz (NaN and below the range give 0x80000000, above it 0x7FFFFFFF), at least 1 (data 0x3d144, signed), at most uiMaxTrains (+744)
 	public static int TrainCount( float lapSeconds, int releaseRateMilliseconds, int maxTrains )
 	{
 		var headway = (float)releaseRateMilliseconds / 1000f;
 		var computed = lapSeconds / headway;
-		var trains = float.IsFinite( computed ) && computed < int.MaxValue ? (int)computed : int.MaxValue;
+		var trains = float.IsNaN( computed ) || computed <= -2147483648f ? int.MinValue : computed >= 2147483648f ? int.MaxValue : (int)computed;
 		return Math.Min( maxTrains, Math.Max( 1, trains ) );
 	}
 
@@ -194,10 +202,11 @@ public sealed class CoasterRating
 
 	/// <summary>
 	/// The rating pass <c>0x3fc18</c> over samples 1..n−2: trough friction flags, force terms, the speed step with
-	/// winch marking, the rating step, maxima and the lap time; then the suspended swing, the final rating and the train count.
-	/// Writes each sample's speed, force, flags and (suspended coasters, after the pass) roll; returns the winch sections.
+	/// winch marking, the rating step, maxima and the lap time; then the end samples, the suspended swing, the final
+	/// rating and the train count. Writes each sample's speed, force, flags and (suspended coasters, after the pass)
+	/// roll; returns the winch sections.
 	/// </summary>
-	// [BIN:STP-PPC:0x1003FC18 rating pass] start speed fWinchSpeed (+68); samples 1..n−2; trough coasters (flag 0x100) set sample flag 8 where the next segment climbs more than 0.01745; force a·v/10 into sample +32..+40; speed into +28; the rating step reads the roll +24; lap += spacing / v; then the suspended swing (flag 0x8), final (max Y, max speed) and the train count
+	// [BIN:STP-PPC:0x1003FC18 rating pass] start speed fWinchSpeed (+68), max speed and max height 0.0 (-13460(r2), 0x1003FCB8/BC); samples 1..n−2; trough coasters (flag 0x100) set sample flag 8 where the next segment climbs more than 0.01745 and clear it elsewhere (0x1003FDA4..0x1003FDC8); force a·(v/10) into sample +32..+40; speed into +28; the rating step reads the roll +24; lap += spacing / v; afterwards sample 0 gets speed fWinchSpeed and force 0, sample n−1 the speed and force of sample n−2 (0x1004001C..0x1004006C); then the suspended swing (flag 0x8), final (max Y, max speed) and the train count
 	public static (CoasterRatingResult Result, HashSet<int> WinchSections) RatePass( CoasterDefinition definition, CoasterSample[] samples, float spacing, float cap )
 	{
 		var rating = new CoasterRating( definition );
@@ -205,47 +214,63 @@ public sealed class CoasterRating
 		var speed = definition.WinchSpeed;
 		var lap = 0f;
 		var maxSpeed = 0f;
-		var maxHeight = float.MinValue;
+		var maxHeight = 0f;
 		var count = samples.Length;
 		// [BIN:STP-PPC:0x1003FCC8 trough slope] the climb threshold 0.01745 (-13516(r2)) on the normalised next-segment Y
 		const float TroughClimb = 0.01745f;
-		// [BIN:STP-PPC:0x1003FCCC force scale] the force term is a × v / 10 (-13520(r2))
+		// [BIN:STP-PPC:0x1003FCCC force scale] the force term is a × (v / 10) (-13520(r2), 0x1003FF60)
 		const float ForceDivisor = 10f;
+		// [BIN:STP-PPC:0x1003FE04 force sign] a = ((p(i−1) − p(i)) + (p(i+1) − p(i))) / spacing × −g per axis, g = 1.0 (data 0x3d140); fGravityX/Y/Z and fForceMultiplier take no part
+		const float Gravity = 1f;
 		for ( var index = 1; index < count - 1; index++ )
 		{
 			ref var sample = ref samples[index];
+			var previous = samples[index - 1].Position;
 			var next = samples[index + 1].Position;
+			var ahead = next - sample.Position;
+			var behind = previous - sample.Position;
 			if ( definition.IsTrough )
 			{
-				var segment = next - sample.Position;
-				if ( segment.LengthSquared() > 0 && SVector3.Normalize( segment ).Y > TroughClimb )
+				if ( ahead.Y / MixedLength( ahead ) > TroughClimb )
 					sample.Flags |= CoasterSampleFlags.Friction;
+				else
+					sample.Flags &= ~CoasterSampleFlags.Friction;
 			}
-			// [APPROX:COAST-021] the force term a = (d_prev + d_next) / spacing × (−g) reads d_prev = p_i − p_(i−1) and d_next = p_i − p_(i+1) (so a dip pushes riders into their seats, +Y), with g = 1.0 (data 0x3d140); fGravityX/Y/Z and fForceMultiplier take no part — evidence needed: the operands of the difference vectors in 0x1003FC18
-			var a = (samples[index - 1].Position + next - 2 * sample.Position) / spacing;
+			var a = new SVector3( (behind.X + ahead.X) / spacing * -Gravity, (behind.Y + ahead.Y) / spacing * -Gravity, (behind.Z + ahead.Z) / spacing * -Gravity );
 			var (value, onFloor) = NextSpeed( definition, speed, sample.Position.Y, next.Y, (sample.Flags & CoasterSampleFlags.Friction) != 0, cap );
 			speed = value;
 			if ( onFloor )
 				winch.Add( sample.Section );
 			sample.Speed = speed;
-			sample.Force = a * speed / ForceDivisor;
+			var scale = speed / ForceDivisor;
+			sample.Force = new SVector3( a.X * scale, a.Y * scale, a.Z * scale );
 			sample.Flags = rating.Step( index, speed, sample.Bank, sample.Force, sample.Flags );
-			maxSpeed = MathF.Max( maxSpeed, speed );
-			maxHeight = MathF.Max( maxHeight, sample.Position.Y );
+			if ( maxSpeed < speed )
+				maxSpeed = speed;
+			if ( maxHeight < sample.Position.Y )
+				maxHeight = sample.Position.Y;
 			lap += spacing / speed;
 		}
 		if ( count > 0 )
 		{
-			// The pass skips the first and last sample; give them their neighbours' speed for the motion.
-			samples[0].Speed = samples[Math.Min( 1, count - 1 )].Speed;
-			samples[^1].Speed = samples[Math.Max( 0, count - 2 )].Speed;
+			samples[0].Speed = definition.WinchSpeed;
+			samples[0].Force = SVector3.Zero;
+		}
+		if ( count > 1 )
+		{
+			samples[^1].Speed = samples[^2].Speed;
+			samples[^1].Force = samples[^2].Force;
 		}
 		if ( definition.IsSuspended )
 			Swing( definition, samples );
 		var (sickness, excitement) = rating.Final();
 		var trains = TrainCount( lap, definition.TrainReleaseRate, definition.MaxTrains );
-		return (new CoasterRatingResult( sickness, excitement, 0, count * spacing, maxHeight == float.MinValue ? 0 : maxHeight, maxSpeed, lap, trains ), winch);
+		return (new CoasterRatingResult( sickness, excitement, 0, count * spacing, maxHeight, maxSpeed, lap, trains ), winch);
 	}
+
+	/// <summary>A vector length the way the coaster code takes it: x² in double, y² and z² single, summed in double, sqrt, rounded to single.</summary>
+	// [BIN:STP-PPC:0x1003FD5C vector length] fmul x·x (double), fmuls y·y and z·z, fadd, fadd, sqrt, frsp
+	public static float MixedLength( SVector3 v ) => (float)Math.Sqrt( ((double)v.X * v.X + (v.Y * v.Y)) + (v.Z * v.Z) );
 
 	/// <summary>The suspended cars' swing: each sample's roll from its lateral force.</summary>
 	// [APPROX:COAST-018] the suspended swing (definition flag 0x8, 0x100400D8..0x10040438: force plus gravity in the sample frame, an atan2 target approached at rate min(|F + g|·fForceMultiplier, 1), faded over the braking zone) is replaced by roll = lateral force × fForceMultiplier, clamped to ±π/2 — evidence needed: a restatement of 0x100400D8..0x10040438

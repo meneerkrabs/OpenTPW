@@ -182,7 +182,7 @@ medium for the descriptive controller role:
 | COAST 8 | Creates/looks up controller via `0x3dafc`, stores script+224, applies script speed through `0x3de68`. Parameter is consumed but ignored. |
 | COAST 1 | Resolves visitor input, calls `0x3dbc0`. Passenger queues and available slots live in the coaster controller. |
 | COAST 2 / 3 | Calls `0x3dd14` / `0x3dd5c`, writes accumulator and optional variable output. 2 queries remaining queue admission room; 3 extracts a departing visitor. |
-| COAST 4 | Resolves input and calls `0x3ddfc`, which translates states 0,1,2 into controller flags 16,32,64. |
+| COAST 4 | Resolves input and calls `0x3ddfc`, which translates states 0,1,2 into controller flags 16,64,32 (`0x3de0c..0x3de54`; 3 and above and negative values change nothing). |
 | COAST 5 | Resolves input and calls close/open controller routine `0x3dec8`; conditions depend on existing flags. |
 | COAST 6 | Resolves capacity input and calls `0x3df24`: MAX with the global value, then MIN with definition/train upper bounds before updating. |
 | COAST 7 | Consumes but ignores parameter; no controller call or branch-accumulator store. |

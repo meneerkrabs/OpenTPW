@@ -22,7 +22,7 @@ derives every simulation stream from it:
 | Placed object scripts | placement ordinal XOR `ObjectScriptKey` | per-VM `System.Random(seed)` (DET-013) | `ParkObjects` |
 | Scripts without a seed (prototype ride, `Ride`) | drawn from the script world's SplitMix64 stream, start `ScriptStream` | per-VM `System.Random(seed)` (DET-013) | `RideScriptWorld` |
 | Script children (SPAWNCHILD/SPAWNSOUND) | drawn from the parent VM | per-VM `System.Random(seed)` | parent `RideVM` |
-| Coaster boarding (`CoasterRng`) | `ScriptStream` XOR a fixed key, folded to 32 bits (COAST-024) | the original's 214013/2531011 LCG (`CoasterRandom`) | `RideScriptWorld.Coasters` |
+| Coaster boarding (`CoasterRng`) | `ScriptStream` XOR a fixed key, folded to 32 bits (COAST-027) | the original's 214013/2531011 LCG (`CoasterRandom`) | `RideScriptWorld.Coasters` |
 | Sound choosers (presentation) | `SoundStream`, set by `GameAudio.EnterPark` | the original's 1664525/1013904223 LCG (DET-012) | `SoundEventSystem` |
 
 The stream keys are chosen so that the default seed reproduces the seeds each
@@ -91,7 +91,7 @@ state and needs no renderer, so tests run the same save, load and hash code. Sav
 (older files and economy-only callers) still load, but those streams are not
 restored. The save does not hold guests, queues or object script state, so a
 load keeps the running guests and scripts (DET-016). Coaster tracks, trains and
-the coaster generator are not saved either (COAST-022).
+the coaster generator are not saved either (COAST-025).
 
 ## Canonical state hash
 
@@ -110,7 +110,7 @@ queue state, version 5 the cell map, version 6 the coasters, see Tests):
 | `manager_pass_counter` | no RSE manager pass; per-VM `SliceCount` is in the script digest | **missing** |
 | `park_turn` | `ParkEconomy.Turn` | yes |
 | `world_rng_state` | economy, guest and script-world stream states | substitute (three streams) |
-| `coaster_rng_state` | `CoasterWorld.Random` (the original's `s·214013 + 2531011` LCG, started from the world seed, COAST-024) | yes (after the script digest, with the coasters) |
+| `coaster_rng_state` | `CoasterWorld.Random` (the original's `s·214013 + 2531011` LCG, started from the world seed, COAST-027) | yes (after the script digest, with the coasters) |
 | `clib_rng_state` | no C-library generator | **missing** |
 | `sound_seed` | `SoundEventSystem.Seed` | **not hashed** (saved; see below) |
 | `scale` | `ParkEconomy.Speed` | yes |

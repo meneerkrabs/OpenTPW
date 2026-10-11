@@ -38,9 +38,9 @@ public struct CoasterSample
 
 /// <summary>
 /// One knot of the track (COAST-plan §13.1): its position, the unit direction its tangents run along, its roll, the
-/// node (section) it belongs to and, on loop pylons, the factor of the side toward a loop neighbour.
+/// node (section) it belongs to, on loop pylons the factor K, and whether the next node carries node flag 0x40.
 /// </summary>
-public readonly record struct CoasterKnot( SVector3 Position, SVector3 Direction, float Roll, int Section, bool LoopPylon = false, float LoopSideFactor = 0 );
+public readonly record struct CoasterKnot( SVector3 Position, SVector3 Direction, float Roll, int Section, bool LoopPylon = false, float LoopSideFactor = 0, bool NextIsLoopNode = false );
 
 /// <summary>Samples of a closed track and their spacing in world units.</summary>
 public sealed record CoasterSampling( CoasterSample[] Samples, float Spacing )
@@ -132,12 +132,28 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 	public static SVector3 Bezier( SVector3 p0, SVector3 p1, SVector3 p2, SVector3 p3, float t ) => new(
 		BezierComponent( p0.X, p1.X, p2.X, p3.X, t ), BezierComponent( p0.Y, p1.Y, p2.Y, p3.Y, t ), BezierComponent( p0.Z, p1.Z, p2.Z, p3.Z, t ) );
 
-	/// <summary>The Bézier derivative (<c>0x41c0c</c>).</summary>
-	public static SVector3 Derivative( SVector3 p0, SVector3 p1, SVector3 p2, SVector3 p3, float t )
+	/// <summary>One axis of the Bézier derivative <c>0x41c0c</c> in its power-form operation order.</summary>
+	// [BIN:STP-PPC:0x10041C0C segment derivative] Q'(t) = c1 + fmadds(t, t·(3·c3), t·(2·c2)) with c1 = 3P1 − 3P0, c2 = 3P0 − 6P1 + 3P2, c3 = −P0 + 3P1 − 3P2 + P3 built by the same fused steps as 0x10041B00 (2.0 at −13340(r2))
+	public static float DerivativeComponent( float p0, float p1, float p2, float p3, float t )
 	{
-		var u = 1f - t;
-		return 3f * u * u * (p1 - p0) + 6f * u * t * (p2 - p1) + 3f * t * t * (p3 - p2);
+		var c1 = 3f * p1;
+		var c2 = -6f * p1;
+		var c3 = MathF.FusedMultiplyAdd( -1f, p0, c1 );
+		c2 = MathF.FusedMultiplyAdd( 3f, p0, c2 );
+		c1 = MathF.FusedMultiplyAdd( -3f, p0, c1 );
+		c3 = MathF.FusedMultiplyAdd( -3f, p2, c3 );
+		c2 = MathF.FusedMultiplyAdd( 3f, p2, c2 );
+		c3 = p3 + c3;
+		c2 = 2f * c2;
+		c3 = 3f * c3;
+		c2 = t * c2;
+		c3 = t * c3;
+		return c1 + MathF.FusedMultiplyAdd( t, c3, c2 );
 	}
+
+	/// <summary>The Bézier derivative (<c>0x41c0c</c>).</summary>
+	public static SVector3 Derivative( SVector3 p0, SVector3 p1, SVector3 p2, SVector3 p3, float t ) => new(
+		DerivativeComponent( p0.X, p1.X, p2.X, p3.X, t ), DerivativeComponent( p0.Y, p1.Y, p2.Y, p3.Y, t ), DerivativeComponent( p0.Z, p1.Z, p2.Z, p3.Z, t ) );
 
 	/// <summary>Yaw = atan2(T.x, T.z); T turned by −yaw (table trigonometry), pitch = atan2(−T.y, T.z′) (<c>0x41e24</c>).</summary>
 	// [BIN:STP-PPC:0x10041E24 sample yaw and pitch] yaw = atan2(T.x, T.z) of the derivative; T rotated by −yaw with the sine table; pitch = atan2(−T.y', T.z')
@@ -160,9 +176,9 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 			var knot = knots[index];
 			var previous = knots[(index - 1 + count) % count];
 			var next = knots[(index + 1) % count];
-			// A loop pylon's side toward another loop pylon uses K, toward plain track 1.7; plain knots use fCurviness.
-			var backFactor = knot.LoopPylon ? previous.LoopPylon ? knot.LoopSideFactor : LoopExitTangent : curviness;
-			var forwardFactor = knot.LoopPylon ? next.LoopPylon ? knot.LoopSideFactor : LoopExitTangent : curviness;
+			// [BIN:STP-PPC:0x100326DC loop knot sides] with node flag 0x80 clear a loop pylon's back side always uses K and its forward side K when the next node has flag 0x40, else 1.7 (0x80 set mirrors this, 0x10032600..0x100326D8); plain knots use fCurviness
+			var backFactor = knot.LoopPylon ? knot.LoopSideFactor : curviness;
+			var forwardFactor = knot.LoopPylon ? knot.NextIsLoopNode ? knot.LoopSideFactor : LoopExitTangent : curviness;
 			controls[index] = KnotControls( knot.Position, knot.Direction, Chord( previous.Position, knot.Position ), Chord( knot.Position, next.Position ), backFactor, forwardFactor );
 		}
 		var samples = new List<CoasterSample>();
@@ -173,6 +189,12 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 		}
 		void Emit( int pair, float t, SVector3 position )
 		{
+			// [BIN:STP-PPC:0x10045320 sample before its pair] while the sample's t is below 0 its record moves to the previous knot pair and t grows by 1 (0x10045320..0x1004535C)
+			while ( t < 0 && pair > 0 )
+			{
+				pair--;
+				t += 1f;
+			}
 			var next = (pair + 1) % count;
 			var tangent = Derivative( knots[pair].Position, controls[pair].Forward, controls[next].Back, knots[next].Position, Math.Clamp( t, 0f, 1f ) );
 			var (yaw, pitch) = Orientation( tangent );
@@ -191,7 +213,7 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 		}
 
 		// [BIN:STP-PPC:0x10044FF4 sampler] from t = 0 (sample 0 = the first knot) walk t in steps of 0.05, sum the chord lengths, place a sample on the current chord where the sum reaches 3.0 (fraction (3 − sum before)/d), restart the sum and realign t to the next multiple of 0.05
-		// [APPROX:COAST-019] the closing pair (last knot back to the first) is walked like every other pair to its end; the original stops after the first sample on it (t may pass 1) and may duplicate the last sample — evidence needed: the closing-pair branch 0x10044EA4 and the count fix-up 0x10045858..0x10045918 run on a real track
+		// [APPROX:COAST-019] the closing pair (last knot back to the first) is walked like every other pair to its end; the original stops after the first sample on it (t may pass 1) and duplicates the last sample into slot n; OpenTPW instead merges a last sample closer than half the spacing to the first into the wrap — evidence needed: the closing-pair branch 0x10044EA4 and the count fix-up 0x10045858..0x10045918 run on a real track
 		var pair = 0;
 		var previousPoint = Point( 0, 0 );
 		var tPrevious = 0f;

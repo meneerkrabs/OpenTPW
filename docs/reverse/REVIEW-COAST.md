@@ -336,3 +336,30 @@ refund or a rider. Suggest asserting the balance is unchanged across `DeleteCoas
 | COAST-027 RNG | yes | fine; DETERMINISM.md cites it as 024 (CV-13) |
 | COAST-028 tool | yes | fine; could absorb CV-4/CV-7 |
 | COAST-029 station | yes, but contradicts its own evidence | not defensible: CV-3 |
+
+## Resolution (COAST-F, branch `coast-fix`)
+
+| Finding | Resolution |
+| --- | --- |
+| CV-1 | Fixed: `Settle` asks `NodeCost(index, chargeUnit: false)`; `MovesAndTheHeightSliderDoNotChargeTheUnit` pins the ledger lines |
+| CV-2 | Fixed: `1 => 64, 2 => 32`, other values change nothing; plan §5.3/§9.7/§17.4, PPC-rides and COAST-012 corrected |
+| CV-3 | Fixed: one end node with flags 0x144 always; a pylon-less loop node's knot is vertical; COAST-029 narrowed to the placement |
+| CV-4 | Fixed: the place debit is forced; the tool layer's untraced affordability test is named under COAST-028 |
+| CV-5 | Ported: half-sample winch test, per-frame friction sample, strict braking test, partial-hop floor at M (found while porting, `0x40d78..0x40dc8`), braking sample `(tail +252) − 1`; named in COAST-022: winch-floor halving (train flags 0x80 + 0x20 not modelled), inactive cars, reference/braking car |
+| CV-6 | Fixed: half difference only on loop pylons, `\|b\|·½(â − b̂)/SD` with 0x80 clear; Y zeroing for a non-loop pylon next to a loop pylon; plan §13.3 corrected |
+| CV-7 | Registered as COAST-030 |
+| CV-8 | COAST-016 text now says `0x37ef0` tests neither |
+| CV-9 | Node flags 0x4/0x100 gate auto-bank; the station node's flags are tagged COAST-015; plan §13.8 corrected |
+| CV-10 | Ported: knot sides and the sample record before its pair; COAST-019 names the half-spacing merge |
+| CV-11 | Ported: fused pylon height, window limits, derivative, cost length and trough normalisation; the tangent and chord norms stay single precision |
+| CV-12 | Fixed: default 25 |
+| CV-13 | Fixed: COAST-027 and COAST-025 |
+| CV-14 | `PylonsAt` excludes station end nodes; the F8 count is documented as 0; the ledger is COAST-031; COAST 5's condition is in COAST-012 |
+| CV-15 | Left for the integration merge (schema 7) |
+| CV-16 | Fixed: sign, `a·(v/10)`, 0.0 maxima, end samples, trough flag clear; COAST-021 retired. COAST-020 was decoded too and is ported |
+
+Oracle after the fix (oracle-fix interpreter, scratch console on `coast-fix`): step 13,622 inputs
+(7,613 from the rating passes of 39 built tracks, 6,009 from the oracle distribution, 609
+subnormal/NaN stress) and final 6,651 inputs, all bit-exact. The step now decays with `fmadds`
+and keeps the old peak on NaN, and the final sums with `fmadds` and clamps like `0x41950`
+(NaN → 100, −0 → +0).

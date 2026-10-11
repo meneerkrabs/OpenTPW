@@ -225,8 +225,12 @@ cost = [CostPerUnit if the unit is charged]
 ```
 
 Height is `h0 + t·(h1 − h0)` (`0x369bc`). Distances are world units (÷ 10.0, constant
-`-13300(r2)`). When the node's pylon is a loop or trough pylon (`0xC000`), the length and height
-rates fall back to the StdPylon under the conditions at `0x4b294..0x4b2d4`. Results are
+`-13300(r2)`). The unit term is the node's own pylon's and is added only when the caller passes
+`r4 = 1`: the place path does (`0x37864`); pick-up, drop and the height slider pass 0 (COAST-V
+CV-1). When the node's pylon is a loop or trough pylon (`0xC000`), the length and height rates
+fall back to the StdPylon when no pylon stands below it or the one below has no `0xC000`
+(`0x4b294..0x4b2b4`); a loop pylon (`0x4000`) also falls back when the previous node lacks flag
+0x80 (`0x4b2b8..0x4b2d4`). The 2D length is `sqrt(fmadd(dx, dx, dz·dz))` in double. Results are
 rounded **up** by `0x41aa4` (`modf`; any fraction adds 1). `0x483ac` adds
 `ceil(new) − ceil(old)` to the build-cost accumulator `data:0x84ac4` via `0x7bcb8`. A negative
 delta takes a separate arm that adds `−0x0EEEEEEE` as well; its meaning is unresolved. PC
@@ -266,9 +270,10 @@ Boarding, departure and capacity follow the COAST controller (PPC-rides: command
 admission ring, `min(min(max(request, global), definition), train)`, random car choice with
 `CoasterRng`). Guests queue as in QUEUE-plan, but track type 3 bypasses the generic capacity
 test. Open/close is COAST 5 (`0x3dec8`), and COAST 4 maps states 0, 1, 2 to controller flags
-16, 32, 64. Stopping a running coaster lets trains finish to the station (medium; not traced).
-Breakdowns use the generic wear path (RIDE-WEAR). What a broken-down coaster does to its moving
-trains is unresolved.
+16, **64, 32** (`0x3de0c..0x3de54`; COAST-V CV-2 corrected the earlier 16, 32, 64). Stopping a
+running coaster lets trains finish to the station (medium; not traced). Breakdowns use the
+generic wear path (RIDE-WEAR). A scripted breakdown (COAST 4 1) is mode 64: the power factor
+drops to 0 and moving trains coast to a stop (17.4).
 
 ### 5.4 Riders on board (high)
 
@@ -292,14 +297,17 @@ Runs over samples `i = 1 .. n−2` after the geometry is rebuilt:
 
 1. Start speed `v = fWinchSpeed`; `t_lap = 0`.
 2. On trough coasters (definition flag `0x100`), sample flag 8 is set where the next segment
-   climbs more than `0.01745` (unit Y of the normalised direction).
-3. `a = (d_prev + d_next) / spacing · (−g)`, with `g = data:0x3d140` (1.0 in the image).
+   climbs more than `0.01745` (unit Y of the normalised direction) and cleared elsewhere.
+3. `a = ((p_(i−1) − p_i) + (p_(i+1) − p_i)) / spacing · (−g)`, with `g = data:0x3d140` (1.0 in
+   the image): both differences are neighbour − current (`0x3fcf0`, `0x3fcf8`; COAST-V CV-16).
 4. `v = max(mod·(PerHeight·(y_i − y_next)) + v, winch)` (`mod` uphill +40 / downhill +44),
    `× friction` on flag-8 samples, `max(·, winch)` again. If `v == winch`, the section gets
    flag `0x800` (**chain lift**). Then `v = min(v, ctl+52)`.
-5. Sample `+28 = v`; `+32..+40 = a · v / 10`.
+5. Sample `+28 = v`; `+32..+40 = a · (v / 10)` (`0x3ff60`).
 6. Rating step (6.3) with `(i, v, bank = sample+24, F = sample+32)`.
-7. Track the maximum speed and the maximum sample Y; `t_lap += spacing / v`.
+7. Track the maximum speed and the maximum sample Y (both start at 0.0); `t_lap += spacing / v`.
+   After the loop sample 0 gets `v = fWinchSpeed` and force 0, and sample `n−1` the speed and
+   force of sample `n−2` (`0x4001c..0x4006c`).
 8. After the loop: auto-banking (when definition flag `0x8` is set; medium), then final (6.4)
    with `(max Y, max speed)`, then the train count (5.1).
 
@@ -445,13 +453,13 @@ Evidence in sections 12–18. Each delta names the item it replaces.
 5. **Closure and completion (replaces COAST-005).** Placing a pylon on the cell that holds the
    open start node of the chain closes the circuit: no node is added, the two end nodes are
    linked, and "circuit open" clears. Sampling then wraps from the last knot to the first knot of
-   the second node. Completion appends the station end node(s), one with `bVisibleEndPylon` and
-   two otherwise, at the station mesh tags, then rebuilds and rates. A coaster runs only when
+   the second node. Completion appends one station end node with flags 0x144 at the station mesh
+   tags (the loader always sets definition bit 0x20; section 15), then rebuilds and rates. A coaster runs only when
    complete and closed.
 6. **Money (replaces COAST-006).** When money is on: placing a pylon charges `trunc(cost)` at
    once, with fCostPerUnit included. Moving a node, or releasing the height slider, refunds
-   `trunc` of the float cost stored at pick-up and charges `ceil` of the new cost, for the node
-   and, on a complete track, the next node. Nothing changes hands if the node returns to its own
+   `trunc` of the float cost stored at pick-up and charges `ceil` of the new cost, both without
+   fCostPerUnit, for the node and, on a complete track, the next node. Nothing changes hands if the node returns to its own
    cell. Cancelling a drag restores the node at no cost. Deleting pylons refunds nothing. The
    build-cost display is `Σ ceil(new) − ceil(old)`; the coaster code never debits it (16).
    There is no undo stack.
@@ -464,7 +472,7 @@ Evidence in sections 12–18. Each delta names the item it replaces.
    point. The last hop of a frame is partial and interpolates the speed. After every hop,
    `v ×= 0.95` if `v < 2`, and `v = 0` if `v < 0.01`. Station braking (17.3), for trains without
    flag 0x40, blends toward the floor with `x⁴`.
-8. **Stop (part of COAST-012).** Switching the ride to mode 64 (COAST 4 argument 2) sets `P = 0`.
+8. **Stop (part of COAST-012).** Switching the ride to mode 64 (COAST 4 argument 1) sets `P = 0`.
    Both floors vanish and the trains coast and decay to a stop. Leaving mode 64 sets `P = 1`.
 9. **Speed setting.** `ctl+52 = MaxAtMin·(1 − s/100) + MaxAtMax·(s/100)`, default `s = 60`
    (110 with the code defaults).
@@ -607,8 +615,9 @@ With `a = prev − P`, `b = next − P`, unit `â`, `b̂`, `C = fCurviness` (def
   flag 0x80000 drops the previous link and 0x40000 the next. Flag **0x100000** makes the next
   node the **second node of the track** (`0x314e0`); this is the closed circuit.
 - **Straight.** The straight case applies when `â·b̂ <` the pylon's `fPylonStraightDotThreshold`
-  (+176; StdPylon −0.999, LoopPylon −0.8), or `< −0.999` without a pylon. On a non-loop pylon,
-  `T− = |a|·½(â − b̂)/SD` and `T+ = |b|·½(b̂ − â)/SD`; flag 0x80 reverses both. Otherwise
+  (+176; StdPylon −0.999, LoopPylon −0.8), or `< −0.999` without a pylon. On a **loop** pylon
+  (pylon flag 0x4000, `0x31a74..0x31a7c`; COAST-V CV-6 corrected "non-loop"),
+  `T− = |a|·½(b̂ − â)/SD` and `T+ = |b|·½(â − b̂)/SD`; flag 0x80 reverses both. Otherwise
   `T− = a/SD`, `T+ = b/SD`.
 - **Folded back** (`â·b̂ > 0.999`): the same straight branch.
 - **Curve.** On a loop pylon (flag 0x4000), `T− = (â + b̂)·|a|·C` and `T+ = −(â + b̂)·|b|·C`: the
@@ -616,8 +625,9 @@ With `a = prev − P`, `b = next − P`, unit `â`, `b̂`, `C = fCurviness` (def
   and `t = ŝ × n̂` (in-plane, perpendicular to the bisector), giving `T− = t·|a|·C` and
   `T+ = −t·|b|·C`. On suspended coasters (definition 0x8), a loop node with `n.y < 0` gets flag
   0x10000000 (inverted).
-- **Loop pylon next to another loop pylon** (straight and end branches): the tangent Y components
-  are zeroed.
+- **Non-loop pylon next to a loop pylon** (after the plain straight case `0x31be0..0x31c54` and
+  after the curve case `0x31eac..0x31f20`): the tangent Y components are zeroed. Nodes without a
+  pylon keep them (COAST-V CV-6 corrected "loop next to loop").
 
 Stored: node +40 = `T−`, +52 = `T+`, +64 = `P + T−/3`, +88 = `P + T+/3`. Node +148 is the
 **signed XZ turn angle** `±acos(clamp(â_xz·b̂_xz))`, negative when `â.z·b̂.x − â.x·b̂.z < 0`.
@@ -637,8 +647,9 @@ Then (`0x32298`):
 - **Loop-pylon knot:** `K = (C(1 − x²) + 2.1x²)(1 − w) + 2.1w`. Here `x = clamp(|h·r|, 0, 1)` for
   the unit horizontal direction `h` to the next node (the previous one on flag-0x80 nodes) and the
   yaw axis `r = (sin y, ·, cos y)` of the rotate parameter. `w = (1 + cos 2πu)/2` with
-  `u = clamp(2·fmod(loopRotate, 0.5), 0, 1)` (node +248). `K` scales the side toward a loop
-  neighbour. A side toward a plain neighbour, or with no neighbour, uses **1.7**.
+  `u = clamp(2·fmod(loopRotate, 0.5), 0, 1)` (node +248). With node flag 0x80 clear the back side
+  always uses `K`, and the forward side uses `K` when the next node has flag 0x40, else **1.7**;
+  flag 0x80 mirrors this (`0x32600..0x327dc`; COAST-V CV-10).
 - Controls: knot +52 = `P + T−/3`, +76 = `P + T+/3`.
 
 So every segment is a cubic Hermite curve whose tangent length is `fCurviness` (1.25 by default)
@@ -660,6 +671,8 @@ fmadds order of the witness `bezier()`. `0x41c0c` is its derivative.
   chord lengths `|Q(t) − previous|` are summed. When the sum reaches 3.0, the sample is placed
   **on the current chord** at fraction `a = (3 − sum_before)/d`, and `t_s = t_prev(1 − a) + t·a`.
   The sum restarts from the sample, and the next `t` is the next multiple of 0.05 after `t_s`.
+  While `t_s < 0` the sample record moves to the previous knot pair with `t_s + 1`
+  (`0x45320..0x4535c`); the cursor stays.
   The polyline length between two samples is exactly 3.0 (witness test).
 - Sample record: +4..+12 position, +16 yaw, +20 pitch, +24 roll (13.7), +44/+48 the A and B
   knots, +52 `t`. Rating flags and speed are added by `0x3fc18`. The capacity estimate is
@@ -683,7 +696,8 @@ fmadds order of the witness `bezier()`. `0x41c0c` is its derivative.
 ### 13.8 Banking
 
 - **Auto-bank** (`0x3f548`, from `0x33630`): when definition flag **0x10** is set, node flag 0x4 is
-  set and the node has a next node,
+  **clear** (`0x3360c`; COAST-V CV-9) and the node has a next node; node flag 0x100 forces bank 0
+  (`0x3f584`),
   `bank = v·(±π − θ) / def(+16) / (|prev − P| + |next − P|)`, with `+π` when `θ ≥ 0` and 0 when
   `θ = 0`. Definition +16 defaults to **4.0** (`0x2d2d0`). No code reads settings offset 15060,
   so `fAutoBankDivisor` is dead (scan `any_15060`). The speed `v` is a running estimate over the
@@ -752,9 +766,12 @@ The build tick (`0x47e4c`) calls the validator on the cursor cell. On failure it
   adjacent (track +96 = track +88), clears controller +60 bit 1, and calls the state change
   `0x38250(…, 2)` and `0x369d0`. Otherwise a node is created (`0x35fdc`).
 - **Complete** (`0x37ef0`): sets controller +60 bit 0 and appends the station end node(s)
-  (`0x37cc8`). That is one node with `bVisibleEndPylon` (definition 0x20), otherwise two, at the
-  station mesh tag positions, pylon-less. Of two, the first gets node flags 0x144 (loop flag 0x40
-  included), so its second rail is vertical. It then sets track
+  (`0x37cc8`) at the station mesh tag positions, pylon-less. Definition bit 0x20 set gives one
+  node with flags 0x144 (`0x37e34`), clear gives two with flags 4 (`0x37e3c`). The loader always
+  ORs 0xA0 (`0x301f4`) and nothing clears 0x20, so the original **always** appends one end node
+  with flags 0x144, whatever `bVisibleEndPylon` says (COAST-V CV-3). The loop flag 0x40 makes its
+  knot direction and second rail vertical (13.1, 13.4). `0x37ef0` tests neither the 0x4000 marks
+  nor the closure (COAST-V CV-8). It then sets track
   flags 1 and 0x1000 (rebuild, re-rate, recount trains). The build click calls it when the
   generic cell action 129 (`0x84ea4`) returns 0 for the clicked cell, and adds a pylon otherwise
   (`0x73a3c..0x73a9c`). What action 129 tests is in the tool engine `0x80c50` and is unresolved
@@ -772,12 +789,12 @@ UI meaning is unresolved). Where `cost()` appears below, it is `0x4b168` (sectio
 
 | Action | Code | Money |
 | --- | --- | --- |
-| Place a pylon (UI) | `0x37888..0x378c0` | debit `trunc(cost(node, unit charged))` at once (`0x1c3fbc` truncates, negative → 0) |
+| Place a pylon (UI) | `0x37888..0x378c0` | debit `trunc(cost(node, unit charged))` at once (`0x1c3fbc` truncates, negative → 0); the balance is read (`0x378a0`) and ignored, so the debit is unconditional |
 | Cursor preview while dragging | `0x483ac` | accumulator `0x84ac4 += ceil(new) − ceil(old)`, used for the cost display and the affordability check of the tool (`0x6f664`); a negative delta is added as `delta − 0x0EEEEEEE` (meaning unresolved) |
 | Pick up a node | `0x4a1fc` | stores `cost(node)` and `cost(next)` as floats (`0x4a404`, `0x4a420`) |
-| Drop on another cell | `0x4a43c` | credit `trunc(stored node)` [+ `trunc(stored next)`], debit `ceil(cost(node))` [+ `ceil(cost(next))`]; the bracketed terms only on a complete track |
+| Drop on another cell | `0x4a43c` | credit `trunc(stored node)` [+ `trunc(stored next)`], debit `ceil(cost(node))` [+ `ceil(cost(next))`]; the bracketed terms only on a complete track; every cost here without the unit (`r4 = 0`) |
 | Drop on the same cell | `0x4a5a8..0x4a5bc` | nothing |
-| Release the height slider | `0x45fc4` | credit `trunc(stored)`, debit `ceil(new cost)` |
+| Release the height slider | `0x45fc4` | credit `trunc(stored)`, debit `ceil(new cost)`, both without the unit |
 | Cancel a drag | `0x4a7e4` | node restored at the pick-up cell, no money |
 | Delete pylons / reopen | `0x47170`, `0x492d8`, `0x37e8c` | **none**: the module's credit calls are exactly the four above (scan `module_credit_calls`), and the delete blocks call no money routine |
 
@@ -800,18 +817,22 @@ queue ordered by their remaining budget.
 For the queue head, per car: the point half a sample ahead is evaluated. The car's candidate is
 `v_c = max(mod·(PerHeight·(y(s) − y(s + ½))) + v, floor)`, with `mod` uphill or downhill by the
 two heights. The floor is `W = fWinchSpeed·P` (halved for trains flagged 0x80 and 0x20) when the
-sample's section has winch flag 0x800, otherwise `M = fMinSpeed·P`. `P` is the power factor at
+sample's section has winch flag 0x800, otherwise `M = fMinSpeed·P`. The winch test reads the
+section of the sample at `trunc(s + ½)` (`0x4098c`, `0x40a0c`). Cars with car flag bit 0 clear
+are skipped in the sum, but the average divides by all cars. `P` is the power factor at
 controller +44. The new speed is the car average. Then:
 
-1. Braking (17.3) if any car is past `ctl+308` and the train does **not** have flag 0x40. Otherwise friction:
-   `×fFrictionMultiplier` on a flag-8 sample.
+1. Braking (17.3) if any car is strictly past `ctl+308` and the train does **not** have flag 0x40.
+   Otherwise friction: `×fFrictionMultiplier` when the sample at the reference car's +64 position
+   has flag 8. Car +64 is written only after the frame's hops (`0x41094`), so this sample is fixed
+   for the frame.
 2. `max(·, W)` if any car was on a winch section (train flag 8), else `max(·, M)`.
 3. `min(·, ctl+52)`.
 4. Hop time `τ = d / ((v + v')/2)`, where `d` is the distance from the reference car (train +44)
    to its half-sample point (`0x4316c`). If `τ <` the remaining budget: `v = v'`, the budget
    drops by τ, `s += ½`, and the train is re-queued. Otherwise, with `α = budget/τ`:
-   `v_end = (1 − α)v + αv'`, `s = s_saved + ½·((v + v_end)/2·budget/d)`, `v = min(v_end, cap)`,
-   and the train leaves the queue.
+   `v_end = (1 − α)v + αv'`, `s = s_saved + ½·((v + v_end)/2·budget/d)`,
+   `v = min(max(v_end, M), cap)` (`0x40d78..0x40dc8`), and the train leaves the queue.
 5. After every hop: `v ×= 0.95` if `v < 2.0`, and `v = 0` if `v < 0.01`. Then the train extents
    (+32/+36) are updated, `0x40574` runs, and `s` wraps by `fmod(s, n)`.
 
@@ -821,17 +842,21 @@ enters only through the hop count.
 ### 17.3 Station braking
 
 `ctl+308 = max((n − 1) − v_last/3.0, 0)` samples (`0x40070..0x400d4`), where `v_last` is the rated
-speed at the last node's sample (about one second of travel before the end). For a train without
+speed of sample `(tail +252) − 1` (about one second of travel before the end). The tail is
+controller +88 (the station end node), and node +252 is the truncated sampler coordinate when the
+walk reaches the node (`0x45790`, `0x457a0`): the last sample before its knot (medium). For a train without
 flag 0x40, `x = (front − ctl+308)/(n − ctl+308)`, with `x = 1` outside `[0, 1]`, and
 `v = v(1 − x⁴) + W·x⁴`. A train's flag 0x40 clears while it is between `ctl+252` and `ctl+308`. Leaving mode 64 clears it on every train.
 
 ### 17.4 Power factor and stopping (`0x38250`)
 
 Changing the ride mode from 16 or 32 to **64** sets `P = 0`. Changing from 64 to 16 or 32 sets
-`P = 1` and flags every train 0x80. The state step 1 → 2 in mode 64 also sets `P = 1`. COAST 4
-maps its arguments 0/1/2 to modes 16/32/64 (PPC-rides). With `P = 0` both floors are 0, so trains
-lose speed uphill, decay by 0.95 per hop below 2.0, and stop below 0.01. What a breakdown does to
-moving trains is not traced (COAST-012).
+`P = 1`, flags every train 0x80 and clears train flag 0x40. The state step 1 → 2 in mode 64 also
+sets `P = 1`. COAST 4 maps its arguments 0/1/2 to modes **16/64/32** (`0x3de0c..0x3de54`; COAST-V
+CV-2), so a scripted breakdown (argument 1) removes the power. With `P = 0` both floors are 0, so
+trains lose speed uphill, decay by 0.95 per hop below 2.0, and stop below 0.01. The winch floor
+`W` is halved for trains with flags 0x80 **and** 0x20 (`0x408e4`); 0x20 is set after the seat
+allocation (`0x3e9cc`) and cleared at `0x3e7e4`.
 
 ### 17.5 Speed setting
 
@@ -865,3 +890,19 @@ car +72..+80, or capture the camera matrix during an original ride view. COAST-0
   the accumulator and resets it per placement (`0x6f628`/`0x6f640`). Whether coaster deltas can
   leak into that charge is not bounded.
 - 10, COAST-001: the old default spacing of 1 world unit is wrong; the spacing is 3.0.
+
+## 20. Corrections from COAST-V (REVIEW-COAST.md)
+
+COAST-F corrected the sections above in place where the review refuted them: the COAST 4 mapping
+(5.3, 9.7 item 8, 17.4), the rating force sign and the pass's end samples (6.2), the cost unit and
+rate fallback (4.4), the straight tangent case and the Y zeroing (13.3), the auto-bank gate
+(13.8), the station end node (15), and the motion details (17.2, 17.3). Further readings:
+
+- The loop-pylon knot sides (`0x326dc..0x327dc`): with node flag 0x80 clear the back side always
+  uses `K`, and the forward side uses `K` when the next node has flag 0x40, else 1.7 (13.4).
+- A sample whose `t` falls below 0 moves its record to the previous knot pair with `t + 1`
+  (`0x45320..0x4535c`); the cursor stays (13.6).
+- `0x369c8` is `fmadds(t, h1 − h0, h0)`, the turn window limits are `fmadds(A, 1 − t, B·t)`
+  (`0x36fb4/b8`, `0x36fe4/e8`) and the derivative `0x41c0c` is
+  `c1 + fmadds(t, t·(3·c3), t·(2·c2))` with the Bézier's fused coefficients.
+- The LoopPylon `fMaxLoopHeightDifference` default is the raw 25.0 (`0x2d5d4`).

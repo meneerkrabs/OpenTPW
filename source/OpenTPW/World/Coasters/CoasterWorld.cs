@@ -51,14 +51,14 @@ public sealed class CoasterWorld
 
 	internal void Remove( CoasterRide ride ) => rides.Remove( ride );
 
-	/// <summary>Every pylon (not station node) standing on (x, y), with its coaster.</summary>
+	/// <summary>Every pylon (not a pylon-less station or station end node) standing on (x, y), with its coaster.</summary>
 	public IEnumerable<(CoasterRide? Ride, CoasterNode Node)> PylonsAt( int x, int y )
 	{
 		foreach ( var ride in rides )
 		{
 			foreach ( var node in ride.Track.Nodes )
 			{
-				if ( !node.IsStation && node.X == x && node.Y == y )
+				if ( !node.IsPylonless && node.X == x && node.Y == y )
 					yield return (ride, node);
 			}
 		}

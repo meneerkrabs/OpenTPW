@@ -179,15 +179,18 @@ A park started from a shipped save (Instant Action, or the reference start) runs
 | Turn | World `mGameTick` (755) | `Tick` = first tick of that turn; ledger month, hiring-pool timers and the first challenge offer day move with it | Traced (the turn the calendar converts); the save's calendar caches are checked against the resulting date (2 February 2000) |
 | Bank | bank words | `Balance` (ledger opening balance), `EntranceFee`, `ProfitThisYear` | Traced field identities |
 | Loans | bought loan offers | `Loans` (outstanding = monthly × months left) and taken offers | Field identities traced; outstanding balance SAVE-008 |
-| Objects | RideSystem records + attraction things | registered uncharged; `Price`, `CostOfGoods`, `Level`, `Repair`, `LifeGauge` from the matching attraction (same Info.Id and cell) | Traced fields; state enum, chance of winning, totals and histories not imported (SAVE-006) |
-| Staff | models 4–8 | `Staff.Members`: type, grade, training percentage, happiness, state, hire tick | Grade/percentage/happiness traced; state order, names, jobs SAVE-003 |
+| Objects | RideSystem records (also those with an unverified footprint) + attraction things | registered uncharged; `Price`, `CostOfGoods`, `Level`, `Repair`, `LifeGauge` from the matching attraction (same Info.Id and cell) | Traced fields; state enum, chance of winning, totals, histories, names, operating, quality, queue and count fields, time stamp and mesh instance not imported (SAVE-006) |
+| Staff | models 4–8 | `Staff.Members`: type, grade, training percentage, happiness, state, hire tick (rounded down to its turn) | Grade/percentage/happiness traced; state order, names, jobs, idle tick, role suffix SAVE-003 |
 | Open state | World `mParkClosed` | the park opens when guests attach unless it is set | Traced |
 
 Not imported and reported in `Evidence`: `mRandomSeed` (SAVE-001), guests (SAVE-002), the hiring
-pool (SAVE-004), challenge timing (SAVE-005), research (SAVE-007), batch/last balance, withdrawals
-and turn entered red (SAVE-008), training budgets unless all zero (SAVE-009), the opaque blocks,
-world state, arrivals, calendar session start, the advisor controller's presentation words and
-current record and the subsystem things without an OpenTPW counterpart (SAVE-010). Staff values
+pool (SAVE-004), challenge timing, switch bytes, Value and ActualThing (SAVE-005), research
+(SAVE-007), batch/last balance, withdrawals, turn entered red and the loan offers' Available flags
+(SAVE-008), the staff HQ's training budgets, strike words, strike levels and trained byte (SAVE-009;
+all-zero budgets equal OpenTPW's starting budgets), the opaque blocks, world state, arrivals,
+calendar session start, the advisor controller's presentation words and current record, its pending
+advice and history when no automatic advisor is attached, and the subsystem things without an
+OpenTPW counterpart (SAVE-010). Staff values
 outside OpenTPW's ranges are adjusted and each adjustment is reported (SAVE-003); an attraction
 with out-of-range values keeps the defaults and is listed. The ledger's category history starts
 empty: the save has none, and the month opens at the current balance: `mLastBalance` (87,787 in

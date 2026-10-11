@@ -51,10 +51,13 @@ public readonly record struct SavePayloadBlock( SaveBlock Block, string Tag, int
 /// ends exactly at that width, like the original loader; the empty Coasters block ends after its 16 bytes. The World
 /// block is checked by its thing chain (<see cref="SaveWorld"/>).</item>
 /// <item>The other blocks' widths are not traced, so their delimiter may be any later occurrence of its four bytes.
-/// The payload must split into the blocks in exactly one way under these rules: delimiter bytes inside an earlier or
-/// later block's data are accepted, but a split that stays ambiguous (the bytes of a block's own delimiter inside
-/// that block, with every later delimiter still in order) is rejected, which the count-based original loader would
-/// accept (SAVE-011), as is a payload with more than <see cref="MaximumDelimiterOccurrences"/> copies of one delimiter.</item>
+/// The payload must split into the blocks in exactly one way under these rules. A copy of a block's delimiter bytes
+/// is harmless only where it cannot end that block: inside an earlier block, or where taking it as the block's end
+/// leaves no valid split of the rest (a later delimiter missing or out of order, or a traced width broken). A copy
+/// inside the block itself or any later block that forms a second valid split is rejected, even though the count-based
+/// original loader would accept the save (SAVE-011): for example a block's own delimiter bytes inside it with every later
+/// delimiter still in order, or AdvisorScoring's bytes anywhere in the trailing UI block. A payload with more than
+/// <see cref="MaximumDelimiterOccurrences"/> copies of one delimiter is rejected too.</item>
 /// <item>UI is everything after the AdvisorScoring delimiter.</item>
 /// </list>
 /// </summary>

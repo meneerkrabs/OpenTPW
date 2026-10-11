@@ -211,6 +211,12 @@ internal sealed class GameFlow : IDisposable
 			advisorUnavailable = Advisor == null;
 			Advisor?.AttachLevel( level );
 		}
+		if ( Advisor?.IsAttached != true && level.Park?.Import is { } import && level.OriginalPark?.Save?.Advisor is { } saved )
+		{
+			var dropped = $"[APPROX:SAVE-010] No automatic advisor is attached ({(advisorUnavailable ? "unavailable" : "disabled")}): the saved advisor controller's {OriginalEconomyImport.AdvisorRecords( saved )} are dropped.";
+			import.Report( dropped );
+			Log.Trace( dropped );
+		}
 		return level;
 	}
 

@@ -47,19 +47,23 @@ public class OriginalSaveImportTests
 		return body;
 	}
 
-	private static byte[] RideSystemRecord( int infoId, int x, int y, int kind, int index )
+	private static byte[] RideSystemRecord( int infoId, int x, int y, int kind, int index, int width = 1, int height = 1, int rotation = 0 )
 	{
 		var record = new byte[60];
 		record[0] = 1;
-		var values = new[] { infoId, x, y, 1, 1, kind, index };
+		var values = new[] { infoId, x, y, width, height, kind, index };
 		for ( var field = 0; field < values.Length; field++ )
 			BinaryPrimitives.WriteInt32LittleEndian( record.AsSpan( 1 + field * 4 ), values[field] );
+		BinaryPrimitives.WriteUInt16LittleEndian( record.AsSpan( 1 + 38 ), (ushort)rotation );
 		return record;
 	}
 
-	/// <summary>A 3×3 park: Belly Bounce at (1, 1), the gates as a fixed item, a researcher, bank and challenges from <paramref name="settings"/>.</summary>
+	/// <summary>
+	/// A 3×3 park: Belly Bounce at (1, 1), the gates as a fixed item, a researcher, bank and challenges from <paramref name="settings"/>.
+	/// <paramref name="unverifiedFootprint"/> records Belly Bounce as 2×1 turned 90°, a footprint without a verified rule.
+	/// </summary>
 	private static OriginalParkImport Park( BalanceSettings settings, byte[]? bank = null, uint parkClosed = 0, IEnumerable<(uint, uint, byte[])>? extraThings = null,
-		byte[]? researcher = null, byte[]? bellyBounce = null )
+		byte[]? researcher = null, byte[]? bellyBounce = null, byte[]? staffHq = null, bool unverifiedFootprint = false )
 	{
 		var map = OriginalParkImportTests.CreateMap( 3, 3, ( _, _ ) => 0 );
 		var things = SaveTestPayloads.ParkThings();
@@ -69,10 +73,12 @@ public class OriginalSaveImportTests
 			things[1] = (12, (uint)SaveThingModel.Attraction, bellyBounce);
 		things[2] = (10, (uint)SaveThingModel.ChallengeSystem, Challenges( settings ));
 		things[4] = (8, (uint)SaveThingModel.Bank, bank ?? Bank( settings ));
+		if ( staffHq != null )
+			things[^1] = (1, (uint)SaveThingModel.StaffHq, staffHq);
 		things.Insert( 2, (11, (uint)SaveThingModel.Attraction, SaveTestPayloads.Attraction( new SaveTestPayloads.AttractionFields { PositionX = 128, PositionY = 128, Angle = 0, InfoId = 1601, Price = 0, Level = 0, Repair = 100, LifeGauge = 100 } )) );
 		things.InsertRange( 0, extraThings ?? Array.Empty<(uint, uint, byte[])>() );
 		var grid = SaveTestPayloads.Grid( map, ( x, y ) => OriginalParkImportTests.CreateCellRecord( 0, occupied: (x, y) == (1, 1) ) );
-		var rideSystem = RideSystemRecord( 1601, 0, 0, SaveObject.FixedItemKind, 1 ).Concat( RideSystemRecord( 1100, 1, 1, SaveObject.PlacedObjectKind, 2 ) ).ToArray();
+		var rideSystem = RideSystemRecord( 1601, 0, 0, SaveObject.FixedItemKind, 1 ).Concat( RideSystemRecord( 1100, 1, 1, SaveObject.PlacedObjectKind, 2, width: unverifiedFootprint ? 2 : 1, rotation: unverifiedFootprint ? 90 : 0 ) ).ToArray();
 		var payload = SaveTestPayloads.Payload( SaveTestPayloads.World( SaveTestPayloads.ParkVariables( parkClosed: parkClosed ), grid, SaveTestPayloads.Things( things ) ), rideSystem );
 		return OriginalParkImport.Import( payload, map );
 	}
@@ -136,7 +142,28 @@ public class OriginalSaveImportTests
 		var advisor = Line( "[APPROX:SAVE-010] Advisor controller values not imported:" );
 		foreach ( var value in new[] { "time signature ", "sound ", "raw words 0x", "current record (", "mRequestedLastTutorial 0x", "mMessagePlaying " } )
 			StringAssert.Contains( advisor, value );
-		StringAssert.Contains( Line( "[APPROX:SAVE-008]" ), "last balance (mLastBalance" );
+		StringAssert.Contains( Line( "[APPROX:SAVE-008] Not imported:" ), "last balance (mLastBalance" );
+		StringAssert.Contains( Line( "[APPROX:SAVE-008] Loan offers' Available flags not imported:" ), "OpenTPW offers " );
+		var challenges = Line( "[APPROX:SAVE-005]" );
+		foreach ( var value in new[] { "current challenge ", "next event time ", "switch bytes ", "Value ", "ActualThing " } )
+			StringAssert.Contains( challenges, value );
+		var attractions = import.Evidence.Where( line => line.StartsWith( "[APPROX:SAVE-006] Attraction thing ", StringComparison.Ordinal ) ).ToArray();
+		Assert.AreNotEqual( 0, attractions.Length );
+		foreach ( var line in attractions )
+		{
+			foreach ( var value in new[] { "state ", "chance of winning ", "third gauge ", "total costs ", "total takings ", "name \"", "operating capacity ", "duration ", "speed ",
+				"quality of goods ", "queue size ", "customers ", "walk-aways ", "time stamp ", "mesh instance " } )
+				StringAssert.Contains( line, value );
+		}
+		foreach ( var line in import.Evidence.Where( line => line.StartsWith( "[APPROX:SAVE-003] ", StringComparison.Ordinal ) && line.Contains( " values not imported:" ) ) )
+		{
+			foreach ( var value in new[] { "idle tick ", "role bytes ", "role next ID " } )
+				StringAssert.Contains( line, value );
+		}
+		var hq = Line( "[APPROX:SAVE-009]" );
+		foreach ( var value in new[] { "training budgets ", "force strike ", "picked up ", "strike levels ", "trained " } )
+			StringAssert.Contains( hq, value );
+		StringAssert.Contains( Line( "[APPROX:SAVE-010] Saved advisor pending advice" ), "imported only when the automatic advisor attaches" );
 	}
 
 	[TestMethod]
@@ -144,21 +171,65 @@ public class OriginalSaveImportTests
 	{
 		var settings = Settings();
 		var economy = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
-		var save = Park( settings, researcher: SaveTestPayloads.Staff( SaveThingModel.Researcher, happiness: 150, state: 9, percentage: 100 ),
+		var save = Park( settings, researcher: SaveTestPayloads.Staff( SaveThingModel.Researcher, happiness: 150, state: 9, percentage: 100, hired: 125_935_884_000_000_000 + 5 * OriginalEconomyImport.TimeStampUnitsPerSecond ),
 			bellyBounce: SaveTestPayloads.Attraction( new SaveTestPayloads.AttractionFields { PositionX = 1 * 256 + 128, PositionY = 1 * 256 + 128, Angle = 0, Price = 30, Level = 0, Repair = 80, LifeGauge = 90, CostOfGoods = -4 } ) );
 		var import = OriginalEconomyImport.Apply( economy, save );
 
 		var researcher = economy.Staff.Members.Single();
 		Assert.AreEqual( (100, 99, StaffState.Idle), (researcher.Happiness, researcher.TrainingPoints, researcher.State), "clamped to the traced happiness range and OpenTPW's 0-99 points" );
 		var adjusted = import.Evidence.Where( line => line.StartsWith( "[APPROX:SAVE-003] Adjusted on import:", StringComparison.Ordinal ) ).ToArray();
-		Assert.AreEqual( 3, adjusted.Length );
+		Assert.AreEqual( 4, adjusted.Length );
 		Assert.IsTrue( adjusted.Any( line => line.Contains( "happiness 150 imported as 100" ) ) );
 		Assert.IsTrue( adjusted.Any( line => line.Contains( "grade percentage 100 imported as 99" ) ) );
 		Assert.IsTrue( adjusted.Any( line => line.Contains( "state 9 has no STAFFSTATES entry" ) ) );
+		Assert.IsTrue( adjusted.Any( line => line.Contains( "lies 5 park seconds into turn 648" ) ) );
+		Assert.AreEqual( ParkCalendar.TickOfTurn( 648 ), researcher.HiredTick, "the hire time is rounded down to its turn" );
 
 		var bouncy = economy.Objects.Single( item => item.InfoId == 1100 );
 		Assert.AreEqual( 100.0, bouncy.Repair, "an attraction with a negative cost of goods keeps OpenTPW's defaults (saved repair 80)" );
 		Assert.IsTrue( import.Evidence.Any( line => line.Contains( "kept at their defaults" ) && line.Contains( "cost of goods -4" ) ) );
+	}
+
+	[TestMethod]
+	public void ImportsTheEconomyValuesOfObjectsWithAnUnverifiedFootprint()
+	{
+		var settings = Settings();
+		var save = Park( settings, unverifiedFootprint: true );
+		Assert.AreEqual( (0, 1), (save.PlacedObjects.Count, save.UnresolvedObjects.Count) );
+		var economy = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
+		var import = OriginalEconomyImport.Apply( economy, save );
+		Assert.AreEqual( (1, 1), (import.ImportedObjects, import.ImportedFixedItems) );
+		var bouncy = economy.Objects.Single( item => item.InfoId == 1100 );
+		Assert.AreEqual( (30, 12, 0, 80.0, 90.0), (bouncy.Price, bouncy.CostOfGoods, bouncy.Level, bouncy.Repair, bouncy.LifeGauge) );
+		Assert.IsTrue( bouncy.Imported );
+		StringAssert.Contains( import.Evidence.Single( line => line.StartsWith( "Registered ", StringComparison.Ordinal ) ), "1 with an unverified footprint: 1100 at (1, 1) 2x1 turned 90" );
+	}
+
+	[TestMethod]
+	public void ReportsStaffHqValuesAndLaterImportSteps()
+	{
+		var settings = Settings();
+		var hq = SaveTestPayloads.Fixed( SaveThingModel.StaffHq );
+		BinaryPrimitives.WriteUInt32LittleEndian( hq.AsSpan( SaveThingBase.Bytes ), 1 );
+		BinaryPrimitives.WriteInt32LittleEndian( hq.AsSpan( SaveThingBase.Bytes + 4 + 2 + SaveStaffHq.Roles * 12 + 4 ), 250 );
+		hq[^1] = 1;
+		var economy = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
+		var import = OriginalEconomyImport.Apply( economy, Park( settings, staffHq: hq ) );
+		var line = import.Evidence.Single( line => line.StartsWith( "[APPROX:SAVE-009]", StringComparison.Ordinal ) );
+		StringAssert.Contains( line, "training budgets 0, 250, 0, 0, 0 (different from OpenTPW's starting budgets of 0, which are kept" );
+		StringAssert.Contains( line, "force strike 1, picked up 0" );
+		StringAssert.Contains( line, "trained 1." );
+		Assert.IsTrue( Enum.GetValues<StaffType>().All( type => economy.Staff.GetTrainingBudget( type ) == 0 ) );
+
+		var zero = OriginalEconomyImport.Apply( new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 ), Park( settings ) );
+		StringAssert.Contains( zero.Evidence.Single( line => line.StartsWith( "[APPROX:SAVE-009]", StringComparison.Ordinal ) ), "all 0, which equals OpenTPW's starting budgets" );
+		var available = zero.Evidence.Single( line => line.StartsWith( "[APPROX:SAVE-008] Loan offers' Available flags", StringComparison.Ordinal ) );
+		StringAssert.Contains( available, "the save marks no offer available (0:0, 1:0" );
+		StringAssert.Contains( available, "OpenTPW offers 0, 1, 2, 3, 4, 5, 6, 7." );
+
+		var count = zero.Evidence.Count;
+		zero.Report( "advisor outcome" );
+		Assert.AreEqual( (count + 1, "advisor outcome"), (zero.Evidence.Count, zero.Evidence[^1]) );
 	}
 
 	[TestMethod]

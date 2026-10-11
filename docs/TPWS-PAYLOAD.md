@@ -106,10 +106,16 @@ the TrackRides block, `KOLC`'s word is VanillaTime, `RYLF` holds RSSE, `SAOC`'s
   and an empty Coasters block is exactly its 16-byte count and globals (the
   World block is checked by its thing list, below). The other delimiters may be
   any later copy of their four bytes, and the payload must split in exactly one
-  way: delimiter bytes inside other blocks' data are accepted, a missing or
-  out-of-order delimiter, a broken width or an ambiguous split throws, and so
-  does a payload holding one delimiter's bytes more than 256 times. The
-  count-based original loader accepts the ambiguous cases (SAVE-011);
+  way. A copy of a block's delimiter bytes is harmless only inside an earlier
+  block or where taking it as that block's end leaves no valid split of the
+  rest (a later delimiter missing or out of order, or a traced width broken).
+  A copy inside the block itself or any later block that forms a second valid
+  split throws, for example the block's own delimiter bytes inside it with
+  every later delimiter still in order, or the AdvisorScoring (`ADSC`) bytes
+  anywhere in the trailing UI block. A missing or out-of-order delimiter, a
+  broken width and a payload holding one delimiter's bytes more than 256 times
+  throw as well. The count-based original loader accepts the ambiguous cases
+  (SAVE-011);
 - reports the 19 blocks (offset, length, delimiter offset); UI is everything
   after the AdvisorScoring delimiter. No partial result on error.
 
@@ -302,21 +308,27 @@ A park started from the save (Instant Action, or the reference start) then runs
 `OriginalEconomyImport.Apply` (docs/ECONOMY.md, "Original save import") and the
 automatic advisor takes the saved controller (docs/LIPS.md). Imported: park turn
 and date, bank balance, admission fee, annual profit and bought loans, each
-object's price, cost of goods, upgrade level, state of repair and life gauge,
-staff (type, grade, training percentage, happiness, state, hire time), the park
+object's price, cost of goods, upgrade level, state of repair and life gauge
+(also for objects whose footprint is unverified), staff (type, grade, training percentage, happiness, state, hire time), the park
 open flag, and the advisor's pending advice and history of bound messages. Every
 value read but not imported is reported with its SAVE approximation (SAVE-001 to
 SAVE-010 in docs/FIDELITY-REGISTER.md): the world generator state, guests, staff
-names/jobs/positions, the hiring pool, challenge timing, ride state enums and
-totals, research, unmapped bank words, training budgets, the world state,
+names/jobs/positions/energy/idle ticks/role suffixes, the hiring pool, the
+challenge system's timing, switch bytes, Value and ActualThing, each
+attraction's state, chance of winning, third gauge, totals, name lines,
+operating capacity/duration/speed, quality of goods, queue size, customer and
+walk-away counts, time stamp and mesh instance ID, research, unmapped bank
+words and the loan offers' Available flags, the staff HQ's training budgets,
+strike words, strike levels and trained byte, the world state,
 arrival variables and bytes, the calendar session start, the advisor
 controller's presentation words and current record, the weather, park analyser,
 tag system, mechanic HQ and UI receiver things and the opaque blocks. Staff
 values outside OpenTPW's ranges (happiness outside the traced 0–100, a 100 %
 training percentage, a state without a STAFFSTATES entry, a hire time outside
-the calendar) are adjusted and each adjustment is reported; an attraction whose
+the calendar or inside a park turn, which is rounded down to the turn) are adjusted and each adjustment is reported; an attraction whose
 values are out of range (including a negative cost of goods) keeps OpenTPW's
-defaults and is listed.
+defaults and is listed. The saved advisor's pending advice and history are
+dropped, with an evidence line, when no automatic advisor is attached.
 Path styles, queues, extension data and object models are not imported.
 
 ## Tests

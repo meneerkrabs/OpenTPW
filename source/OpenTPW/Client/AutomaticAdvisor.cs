@@ -44,6 +44,9 @@ internal sealed class AutomaticAdvisor : IDisposable
 		}
 	}
 
+	/// <summary>A level is attached (between <see cref="AttachLevel"/> and <see cref="DetachLevel"/>).</summary>
+	public bool IsAttached => level != null;
+
 	private uint AdvisorClock => clock.Milliseconds;
 	// [BIN:STP-PPC:0x10121098 history setter] history saves the world's mGameTick (+0x1DA70C), which the park economy counts as park turns
 	private uint GameTick => level?.Park is { } running ? unchecked((uint)running.Economy.Turn) : 0;
@@ -61,8 +64,12 @@ internal sealed class AutomaticAdvisor : IDisposable
 		if ( park != null )
 			park.EventRaised += OnParkEvent;
 		// A park started from an original save takes its saved controller first; the main loop's events follow.
-		if ( started.Park?.Import != null && started.OriginalPark?.Save?.Advisor is { } saved )
-			Log.Trace( Controller.ImportOriginal( saved ) );
+		if ( started.Park?.Import is { } import && started.OriginalPark?.Save?.Advisor is { } saved )
+		{
+			var report = Controller.ImportOriginal( saved );
+			import.Report( report );
+			Log.Trace( report );
+		}
 		// [BIN:STP-PPC:0x101C2108 main loop] CMsgEvent 10 (history reset of variant, played flag and slaps) followed by CMsgEvent 0 at 0x101C2174
 		Raise( AdvisorGameEvent.ResetForEasyMode );
 		Raise( AdvisorGameEvent.LevelStarted );

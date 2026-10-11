@@ -884,7 +884,7 @@ public sealed class ParkEconomy : IParkEconomy
 		Tick = ParkCalendar.TickOfTurn( turn );
 		Ledger.Restore( Ledger.Balance, Ledger.CurrentOpeningBalance, ParkCalendar.MonthIndex( Tick ), new Dictionary<LedgerCategory, long>(), Array.Empty<LedgerMonth>() );
 		Staff.ShiftSchedule( Tick );
-		// [APPROX:SAVE-005] the challenge system's next-offer time and current challenge are not imported; the first offer day is counted from the imported day — evidence needed: the unit of the challenge system's next event time
+		// [APPROX:SAVE-005] the challenge system's next-offer time, current challenge, three switch bytes, Value and ActualThing are not imported; the first offer day is counted from the imported day — evidence needed: the unit of the challenge system's next event time and the meaning of its switch bytes, Value and ActualThing
 		Objectives.ShiftSchedule( ParkCalendar.DayIndex( Tick ) );
 	}
 

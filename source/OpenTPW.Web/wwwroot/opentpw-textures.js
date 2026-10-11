@@ -128,6 +128,8 @@ export function createTextureDownloads({ distribution, writeFile, enabled = () =
 		if (!bytes) {
 			let failed;
 			for (const url of new Set([file.url, file.fallbackUrl])) {
+				// An Original choice also stops a provider retry or a request still waiting on cache access.
+				if (!enabled()) return false;
 				try {
 					const response = await fetcher(url, { credentials: 'omit', referrerPolicy: 'no-referrer', mode: 'cors', signal: AbortSignal.timeout(30000) });
 					bytes = await verify(response, file);

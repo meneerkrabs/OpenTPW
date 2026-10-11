@@ -98,6 +98,39 @@ public sealed class BrowserTexturePackTests
 	}
 
 	[TestMethod]
+	public void OriginalStartupChoiceRequestsNothingUntilUserEnablesClarity()
+	{
+		var root = Path.Combine( Path.GetTempPath(), "opentpw-web-original-" + Guid.NewGuid().ToString( "N" ) );
+		var previous = TexturePack.RequestMissing;
+		try
+		{
+			var pack = Path.Combine( root, TexturePack.DefaultName );
+			Directory.CreateDirectory( Path.Combine( pack, "textures" ) );
+			File.WriteAllText( Path.Combine( pack, "pack.json" ), "{\"Format\":1}" );
+			var diagnostics = new List<string>();
+			// The runtime's default and a persisted explicit Original both resolve to an empty pack name.
+			var original = GraphicsSettings.FromJson( "{\"TexturePack\":\"\"}", diagnostics );
+			var settings = new GraphicsSettingsService( _ => null, original, null, () => CompatibilityFlags.Original );
+			var requests = new List<string>();
+			TexturePack.RequestMissing = requests.Add;
+			TexturePack.Activate( settings.Current.TexturePackName, diagnostics, root, root );
+			TexturePack.Find( "/ui/textures/b_buy.wct" );
+			TexturePack.Find( "/levels/jungle/terrain/textures/grass.wct" );
+			Assert.AreEqual( 0, requests.Count, "an installed Clarity manifest must not opt Original into downloads" );
+			settings.Apply( settings.Current with { TexturePackName = TexturePack.DefaultName } );
+			TexturePack.Activate( settings.Current.TexturePackName, diagnostics, root, root );
+			TexturePack.Find( "/ui/textures/b_buy.wct" );
+			CollectionAssert.AreEqual( new[] { "textures/ui/textures/b_buy.wct.png" }, requests );
+		}
+		finally
+		{
+			TexturePack.RequestMissing = previous;
+			TexturePack.Activate( "", new List<string>() );
+			Directory.Delete( root, true );
+		}
+	}
+
+	[TestMethod]
 	public void FileAvailabilityAnnouncesOnlyTheSuppliedBatchAndIgnoresEmptyBatch()
 	{
 		var received = new List<string>();

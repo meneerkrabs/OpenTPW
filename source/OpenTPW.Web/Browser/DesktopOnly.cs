@@ -8,7 +8,7 @@ namespace ImGuiNET
 	public sealed class ImGuiIOPtr
 	{
 		public bool WantCaptureMouse => false;
-		public bool WantCaptureKeyboard => false;
+		public bool WantCaptureKeyboard { get; set; }
 		public bool WantTextInput => false;
 		public System.Numerics.Vector2 DisplayFramebufferScale { get; set; }
 	}

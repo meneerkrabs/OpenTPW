@@ -74,11 +74,11 @@ public static class TexturePack
 
 	/// <summary>
 	/// HD interface art shipped with OpenTPW (<c>content/hero-art/textures</c>, same layout as a pack's textures; docs/TEXTURE-PACKS.md):
-	/// AI-redrawn HUD and menu icons, used whenever an enhanced choice is active, with or without a locally built pack.
+	/// AI-redrawn HUD and menu icons, used when Enhanced HUD/icons is enabled, independently of the world pack.
 	/// </summary>
 	public static string ShippedDirectory { get; set; } = Path.Combine( AppContext.BaseDirectory, "content", "hero-art", "textures" );
 
-	/// <summary>True when an enhanced choice (any non-empty pack name) is active: the shipped interface art is used.</summary>
+	/// <summary>True when an enhanced world choice (any non-empty valid pack name) is active.</summary>
 	public static bool Enhanced { get; private set; }
 
 	/// <summary>True when the selected pack is Clarity (an explicit Original choice leaves this false).</summary>
@@ -86,20 +86,26 @@ public static class TexturePack
 
 	/// <summary>Optional asynchronous host request for a missing Clarity PNG, relative to its pack directory.</summary>
 	public static Action<string>? RequestMissing { get; set; }
+	/// <summary>Independent interface choice: shipped HD icons can be used with original world textures.</summary>
+	public static bool EnhancedInterface { get; private set; } = true;
 
 	private static bool packBeforeShippedArt;
 
 	/// <summary>
 	/// The replacement PNG for a game texture path, or null when there is none. Clarity and an environment override
 	/// use their own interface art first, falling back to the shipped icons; older choices keep the shipped icons first.
+	/// With Original HUD/icons, <c>ui/</c> paths use neither pack replacements nor shipped icons.
 	/// </summary>
 	public static string? Find( string gamePath )
 	{
 		var relative = RelativeFileName( gamePath );
+		var interfaceTexture = relative.StartsWith( "ui/", StringComparison.Ordinal );
+		if ( interfaceTexture && !EnhancedInterface )
+			return null;
 		var packed = string.IsNullOrEmpty( Directory ) ? null : Path.Combine( Directory, relative );
-		var shipped = Enhanced ? Path.Combine( ShippedDirectory, relative ) : null;
 		if ( IsDefaultActive && (packed == null || !File.Exists( packed )) )
 			RequestMissing?.Invoke( TexturesDirectoryName + "/" + relative );
+		var shipped = interfaceTexture && EnhancedInterface ? Path.Combine( ShippedDirectory, relative ) : null;
 		if ( packBeforeShippedArt && packed != null && File.Exists( packed ) )
 			return ReplacedFile( packed );
 		if ( shipped != null && File.Exists( shipped ) )
@@ -166,14 +172,16 @@ public static class TexturePack
 	}
 
 	/// <summary>
-	/// Selects a local pack, then the bundled pack of the same name. An empty name means original textures;
-	/// a missing pack keeps the shipped interface art and original world textures. An <c>OPENTPW_TEXTURE_PACK</c>
+	/// Selects a local pack, then the bundled pack of the same name. An empty name means original world textures;
+	/// <paramref name="enhancedInterface"/> independently selects bundled HD icons. A missing pack keeps original
+	/// world textures. An <c>OPENTPW_TEXTURE_PACK</c>
 	/// override pins its textures directory. Textures already loaded keep their pixels until
 	/// <see cref="TexturePackSwitch"/> reloads them.
 	/// </summary>
-	public static void Activate( string? name, ICollection<string> diagnostics, string? packsDirectory = null, string? bundledPacksDirectory = null )
+	public static void Activate( string? name, ICollection<string> diagnostics, string? packsDirectory = null, string? bundledPacksDirectory = null, bool enhancedInterface = true )
 	{
 		IsDefaultActive = false;
+		EnhancedInterface = enhancedInterface;
 		if ( Environment.GetEnvironmentVariable( "OPENTPW_TEXTURE_PACK" ) is { Length: > 0 } environmentOverride )
 		{
 			Directory = environmentOverride;
@@ -197,9 +205,10 @@ public static class TexturePack
 		var resolved = Resolve( name, diagnostics, packsDirectory ?? PacksDirectory(), bundledPacksDirectory ?? BundledPacksDirectory() );
 		if ( resolved == null )
 		{
+			var fallback = EnhancedInterface ? "shipped interface art and original world textures" : "original textures";
 			if ( name != EnhancedName )
-				diagnostics.Add( $"No usable texture pack '{name}'; using shipped interface art and original world textures. Install a pack or build one with --build-texture-pack." );
-			Log?.Trace( $"Texture pack '{name}': shipped interface art; no usable local or bundled pack." );
+				diagnostics.Add( $"No usable texture pack '{name}'; using {fallback}. Install a pack or build one with --build-texture-pack." );
+			Log?.Trace( $"Texture pack '{name}': {fallback}; no usable local or bundled pack." );
 			return;
 		}
 		var (packDirectory, manifest) = resolved.Value;

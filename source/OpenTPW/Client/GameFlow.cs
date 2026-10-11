@@ -143,6 +143,14 @@ internal sealed class GameFlow : IDisposable
 				Log.Warning( $"Texture pack: {diagnostic}" );
 			return textureSwitch;
 		},
+		BeginInterfaceSwitch = enhanced =>
+		{
+			var diagnostics = new List<string>();
+			var textureSwitch = TexturePackSwitch.Begin( IGraphicsSettings.Instance?.Current.TexturePackName, diagnostics, enhancedInterface: enhanced );
+			foreach ( var diagnostic in diagnostics )
+				Log.Warning( $"Interface art: {diagnostic}" );
+			return textureSwitch;
+		},
 		Options = GameOptions.Current,
 		Languages = GameLanguage.Choosable(),
 		// A choice still waiting for the park to be left is what the row shows, so it can also be taken back.

@@ -17,6 +17,7 @@ using OpenTPW.UI.Original;
 namespace OpenTPW.Tests;
 
 [TestClass]
+[DoNotParallelize]
 public class TexturePackDownloadTests
 {
 	private const string Prefix = "content/texture-packs/clarity-enhanced/";
@@ -205,6 +206,21 @@ public class TexturePackDownloadTests
 		public override ValueTask<int> ReadAsync( Memory<byte> buffer, CancellationToken cancellationToken = default ) => base.ReadAsync( buffer[..Math.Min( buffer.Length, 17 )], cancellationToken );
 	}
 
+	private sealed class WaitingStream : Stream
+	{
+		public override bool CanRead => true;
+		public override bool CanSeek => false;
+		public override bool CanWrite => false;
+		public override long Length => throw new NotSupportedException();
+		public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+		public override void Flush() { }
+		public override int Read( byte[] buffer, int offset, int count ) => throw new NotSupportedException();
+		public override async ValueTask<int> ReadAsync( Memory<byte> buffer, CancellationToken cancellationToken = default ) { await Task.Delay( Timeout.Infinite, cancellationToken ); return 0; }
+		public override long Seek( long offset, SeekOrigin origin ) => throw new NotSupportedException();
+		public override void SetLength( long value ) => throw new NotSupportedException();
+		public override void Write( byte[] buffer, int offset, int count ) => throw new NotSupportedException();
+	}
+
 	[TestMethod]
 	public async Task CancellationRetainsOnlyPartialDownloadAndTheNextAttemptResumes()
 	{
@@ -277,22 +293,143 @@ public class TexturePackDownloadTests
 	[TestMethod]
 	public async Task DownloadScreenCanCancelImmediatelyAndSelectOfflineTextures()
 	{
-		foreach ( var (button, expected) in new[] { ("original", ""), ("hd", TexturePack.EnhancedName) } )
+		foreach ( var (button, expectedInterface) in new[] { ("original", (bool?)null), ("hd", (bool?)true) } )
 		{
 			var stack = new UiScreenStack();
 			var started = new TaskCompletionSource<CancellationToken>( TaskCreationOptions.RunContinuationsAsynchronously );
 			string? selected = null;
+			bool? interfaceChoice = null;
 			var screen = TexturePackDownloadScreen.Create( stack, Strings(), async ( progress, token ) =>
 			{
 				started.SetResult( token );
 				await Task.Delay( Timeout.Infinite, token );
-			}, choice => selected = choice );
+			}, (choice, enhancedInterface) => { selected = choice; interfaceChoice = enhancedInterface; } );
 			stack.Push( screen );
 			var cancellation = await started.Task.WaitAsync( TimeSpan.FromSeconds( 2 ) );
 			screen.Find( button )!.Activate();
-			Assert.AreEqual( expected, selected );
+			Assert.AreEqual( "", selected );
+			Assert.AreEqual( expectedInterface, interfaceChoice );
 			Assert.IsTrue( cancellation.IsCancellationRequested );
 			Assert.IsNull( stack.Top );
+		}
+	}
+
+	[TestMethod]
+	public async Task CompletionFrameCannotReplaceClarityWithFocusedOrClickedOriginal()
+	{
+		foreach ( var keyboard in new[] { true, false } )
+		{
+			var stack = new UiScreenStack();
+			var selected = new List<(string Pack, bool? Interface)>();
+			Task? installation = null;
+			var screen = TexturePackDownloadScreen.Create( stack, Strings(), (_, _) => Task.CompletedTask,
+				(pack, enhancedInterface) => selected.Add( (pack, enhancedInterface) ), task => installation = task );
+			stack.Push( screen );
+			await installation!.WaitAsync( TimeSpan.FromSeconds( 2 ) );
+			var context = new UiContext( Strings(), null!, new UiModels( name => throw new FileNotFoundException( name ) ) );
+			var input = keyboard ? UiInput.Key( UiKeys.Accept ) : UiInput.Click( screen.Find( "original" )!.ScreenRect( context.Canvas ).Center );
+			Assert.IsTrue( screen.Update( context, input ) );
+			Assert.AreEqual( 1, selected.Count );
+			Assert.AreEqual( (TexturePack.DefaultName, (bool?)null), selected.Single() );
+			Assert.IsTrue( screen.IsRemoved );
+			Assert.IsNull( stack.Top );
+			// A stale event from this frame must not cancel an already disposed token source either.
+			Assert.IsTrue( screen.Update( context, input ) );
+			screen.Find( "original" )!.Activate();
+			Assert.AreEqual( 1, selected.Count );
+		}
+	}
+
+	[TestMethod]
+	public void RemovalDuringUpdatingConsumesTheFrameBeforeAnyFocusedOrClickedAction()
+	{
+		foreach ( var keyboard in new[] { true, false } )
+		{
+			var stack = new UiScreenStack();
+			var screen = new UiScreen( "completed" );
+			var clicked = 0;
+			var button = screen.Add( new UiButton { Id = "cancel", Bounds = new UiRect( 100, 100, 300, 100 ), Clicked = () => clicked++ } );
+			screen.Focus( button );
+			stack.Push( screen );
+			screen.Updating = _ => stack.Pop();
+			var context = new UiContext( Strings(), null!, new UiModels( name => throw new FileNotFoundException( name ) ) );
+			var input = keyboard ? UiInput.Key( UiKeys.Accept ) : UiInput.Click( button.ScreenRect( context.Canvas ).Center );
+			Assert.IsTrue( screen.Update( context, input ) );
+			Assert.AreEqual( 0, clicked );
+			Assert.IsTrue( screen.IsRemoved );
+		}
+	}
+
+	[TestMethod]
+	public async Task HdCancelChoosesOriginalWorldAndEnablesInterfaceWithoutActivatingLegacyEnhancedPack()
+	{
+		var root = TemporaryDirectory();
+		var previousDirectory = TexturePack.Directory;
+		var previousHero = TexturePack.ShippedDirectory;
+		var previousInterface = TexturePack.EnhancedInterface;
+		try
+		{
+			var packs = Path.Combine( root, "packs" );
+			var legacy = Path.Combine( packs, TexturePack.EnhancedName );
+			var legacyPng = Path.Combine( legacy, PngPath );
+			Directory.CreateDirectory( Path.GetDirectoryName( legacyPng )! );
+			File.WriteAllBytes( legacyPng, Png );
+			File.WriteAllBytes( Path.Combine( legacy, "pack.json" ), Manifest );
+			var heroPng = Path.Combine( root, "hero", "ui", "textures", "icon.wct.png" );
+			Directory.CreateDirectory( Path.GetDirectoryName( heroPng )! );
+			File.WriteAllBytes( heroPng, Png );
+			TexturePack.ShippedDirectory = Path.Combine( root, "hero" );
+			Assert.IsTrue( TexturePack.InstalledPacks( packs, root ).Contains( TexturePack.EnhancedName ) );
+			var distribution = Distribution( ValidZip() );
+			TaskCompletionSource? requested = null;
+			using var handler = new Handler( (_, _) =>
+			{
+				requested!.TrySetResult();
+				var response = new HttpResponseMessage( HttpStatusCode.OK ) { Content = new StreamContent( new WaitingStream() ) };
+				response.Content.Headers.ContentLength = distribution.Archives[0].Size;
+				return response;
+			} );
+			using var client = new HttpClient( handler );
+			foreach ( var (button, initialInterface, expectedInterface) in new[] { ("hd", false, true), ("original", false, false), ("original", true, true) } )
+			{
+				var graphics = new GraphicsSettingsService( _ => null, new GraphicsSettings { TexturePackName = TexturePack.DefaultName, EnhancedInterface = initialInterface }, null, () => CompatibilityFlags.Original );
+				TexturePack.Activate( TexturePack.DefaultName, new List<string>(), packs, root, enhancedInterface: initialInterface );
+				var started = new TaskCompletionSource<CancellationToken>( TaskCreationOptions.RunContinuationsAsynchronously );
+				requested = new TaskCompletionSource( TaskCreationOptions.RunContinuationsAsynchronously );
+				Task? installation = null;
+				var stack = new UiScreenStack();
+				var screen = TexturePackDownloadScreen.Create( stack, Strings(), async (_, token) =>
+				{
+					started.SetResult( token );
+					await new TexturePackDownload( client ).InstallAsync( distribution, packs, cancellation: token );
+				}, (name, enhancedInterface) =>
+				{
+					graphics.Apply( graphics.Current with { TexturePackName = name, EnhancedInterface = enhancedInterface ?? graphics.Current.EnhancedInterface } );
+					TexturePack.Activate( name, new List<string>(), packs, root, enhancedInterface: graphics.Current.EnhancedInterface == true );
+				}, task => installation = task );
+				stack.Push( screen );
+				var cancellation = await started.Task.WaitAsync( TimeSpan.FromSeconds( 2 ) );
+				await requested.Task.WaitAsync( TimeSpan.FromSeconds( 2 ) );
+				var callsBeforeFallback = handler.Calls;
+				screen.Find( button )!.Activate();
+				try { await installation!.WaitAsync( TimeSpan.FromSeconds( 2 ) ); Assert.Fail( "The fallback must cancel the pending download." ); }
+				catch ( OperationCanceledException ) { }
+				Assert.AreEqual( "", graphics.Current.TexturePackName );
+				Assert.AreEqual( expectedInterface, graphics.Current.EnhancedInterface );
+				Assert.AreEqual( expectedInterface, TexturePack.EnhancedInterface );
+				Assert.IsNull( TexturePack.Directory, "the installed legacy enhanced world pack must not become active" );
+				Assert.IsNull( TexturePack.Find( "levels/jungle/grass.wct" ) );
+				Assert.AreEqual( expectedInterface ? heroPng : null, TexturePack.Find( "ui/textures/icon.wct" ) );
+				Assert.IsTrue( cancellation.IsCancellationRequested );
+				Assert.AreEqual( callsBeforeFallback, handler.Calls, "the fallback must not make any additional HTTP request" );
+			}
+		}
+		finally
+		{
+			TexturePack.Activate( "", new List<string>(), enhancedInterface: previousInterface );
+			TexturePack.Directory = previousDirectory;
+			TexturePack.ShippedDirectory = previousHero;
+			Directory.Delete( root, recursive: true );
 		}
 	}
 
@@ -307,7 +444,7 @@ public class TexturePackDownloadTests
 		{
 			if ( Interlocked.Increment( ref calls ) == 1 ) throw new IOException( "offline" );
 			return finished.Task;
-		}, choice => selected = choice );
+		}, (choice, _) => selected = choice );
 		stack.Push( screen );
 		await PumpUntil( screen, () => screen.Find( "retry" )!.Visible );
 		Assert.IsNull( selected );
@@ -330,7 +467,7 @@ public class TexturePackDownloadTests
 		{
 			started.SetResult( token );
 			await Task.Delay( Timeout.Infinite, token );
-		}, choice => Assert.Fail( "Closing the game cannot implicitly choose a texture profile." ) );
+		}, (choice, _) => Assert.Fail( "Closing the game cannot implicitly choose a texture profile." ) );
 		stack.Push( screen );
 		var cancellation = await started.Task.WaitAsync( TimeSpan.FromSeconds( 2 ) );
 		stack.Clear();
@@ -364,7 +501,7 @@ public class TexturePackDownloadTests
 						{
 							using var response = await client.GetAsync( "https://example.test/explicit-only", token );
 							response.EnsureSuccessStatusCode();
-						}, _ => { } ) );
+						}, (_, _) => { } ) );
 						return null;
 					}
 				};

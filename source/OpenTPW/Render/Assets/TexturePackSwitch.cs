@@ -79,15 +79,16 @@ public sealed class TexturePackSwitch : ITexturePackSwitch
 	public bool Finished { get; private set; }
 
 	/// <summary>
-	/// Activates <paramref name="name"/> (empty for the originals) and starts reloading. Null when nothing can change:
-	/// an <c>OPENTPW_TEXTURE_PACK</c> override pins the pack.
+	/// Activates <paramref name="name"/> (empty for original world textures) and starts reloading, preserving the
+	/// interface choice unless explicitly supplied. An environment override pins world choices; an explicit
+	/// interface change can still reload local HUD/icons without changing that pinned world pack.
 	/// </summary>
-	public static TexturePackSwitch? Begin( string? name, ICollection<string> diagnostics, string? packsDirectory = null, TimeSpan? budget = null )
+	public static TexturePackSwitch? Begin( string? name, ICollection<string> diagnostics, string? packsDirectory = null, TimeSpan? budget = null, bool? enhancedInterface = null )
 	{
-		if ( !string.IsNullOrEmpty( Environment.GetEnvironmentVariable( "OPENTPW_TEXTURE_PACK" ) ) )
+		if ( enhancedInterface == null && !string.IsNullOrEmpty( Environment.GetEnvironmentVariable( "OPENTPW_TEXTURE_PACK" ) ) )
 			return null;
 		Current?.Cancel();
-		TexturePack.Activate( name, diagnostics, packsDirectory );
+		TexturePack.Activate( name, diagnostics, packsDirectory, enhancedInterface: enhancedInterface ?? TexturePack.EnhancedInterface );
 		return Current = new TexturePackSwitch( Texture.ReloadTargets(), budget ?? TimeSpan.FromMilliseconds( 8 ), Texture.DecodeWct );
 	}
 

@@ -17,6 +17,8 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS web
 WORKDIR /src
 COPY content/shaders/ content/shaders/
 COPY content/data/ content/data/
+COPY content/hero-art/ content/hero-art/
+COPY content/texture-packs/clarity-enhanced/ content/texture-packs/clarity-enhanced/
 COPY source/ source/
 RUN dotnet publish source/OpenTPW.Web/OpenTPW.Web.csproj -c Release -o /web --nologo
 

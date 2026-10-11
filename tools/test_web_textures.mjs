@@ -120,6 +120,30 @@ test('only the pinned jsDelivr repository tag and exact indexed path can be a pr
 		assert.throws(() => validateDistribution({ ...distribution, files: [{ ...file, url }] }), String(url));
 });
 
+test('published percent-encoded ride-button names match their exact key without encoded path aliases', () => {
+	const path = 'textures/ui/textures/b_rideit!.wct.png', distribution = withPrimary(index([path]));
+	const file = distribution.files[0], prefix = file.url.slice(0, -path.length);
+	file.url = prefix + path.replace('!', '%21');
+	assert.equal(validateDistribution(distribution).get(path).url, file.url);
+	for (const url of [
+		prefix + path.replace('/', '%2f'), prefix + path.replace('/', '%2F'),
+		prefix + path.replace('/', '%5c'), prefix + path.replace('textures/ui/', 'textures/%2e/ui/'),
+		prefix + path.replace('textures/ui/', 'textures/junk/%2e%2e/ui/'),
+		prefix + path.replace('.wct', '%2ewct'), prefix + path.replace('!', '%2521'),
+		prefix + path.replace('!', '%2'), prefix + path.replace('!', '%21') + '?x=1',
+		prefix + path.replace('!', '%21') + '#fragment',
+	])
+		assert.throws(() => validateDistribution({ ...distribution, files: [{ ...file, url }] }), url);
+});
+
+test('the entire packaged publication descriptor is accepted by browser validation', async () => {
+	const distribution = JSON.parse(await readFile(new URL('../content/texture-packs/clarity-enhanced/distribution.json', import.meta.url), 'utf8'));
+	const files = validateDistribution(distribution);
+	assert.equal(files.size, distribution.files.filter(file => file.path !== 'pack.json').length);
+	for (const file of distribution.files.filter(file => file.path.includes('!')))
+		assert.equal(files.get(file.path).url, file.url);
+});
+
 test('a verified primary CDN download avoids the Cloudflare fallback', async () => {
 	const distribution = withPrimary(index()), path = distribution.files[0].path, urls = [], storage = cache();
 	let writes = 0;

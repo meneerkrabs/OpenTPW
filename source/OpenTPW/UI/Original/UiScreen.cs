@@ -65,7 +65,11 @@ public class UiScreen
 	// [APPROX:UI-012] hover focus, activate on release, keyboard navigation, right click backs out — evidence needed: binary input handling
 	public virtual bool Update( UiContext context, UiInput input )
 	{
+		if ( IsRemoved )
+			return true;
 		Updating?.Invoke( context );
+		if ( IsRemoved )
+			return true;
 		var canvas = context.Canvas;
 		var hit = HitTest( canvas, input.Mouse );
 		context.HoverHelp = hit?.Help;

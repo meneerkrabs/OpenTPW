@@ -266,17 +266,20 @@ public sealed record GraphicsSettings
 	/// <summary>[EXT:COMPAT-GFX-VIEWDISTANCE] OpenTPW fog distance multiplier; 1 = unchanged.</summary>
 	public float ViewDistanceScale { get; init; } = 1;
 	/// <summary>
-	/// [EXT:texture-pack] Texture choice (docs/TEXTURE-PACKS.md): empty = original textures; the default is
-	/// <c>clarity-enhanced</c>. Packs are resolved from local config, then bundled content. Missing replacements
+	/// [EXT:texture-pack] Texture choice (docs/TEXTURE-PACKS.md): empty = original textures (the startup default);
+	/// <c>clarity-enhanced</c> is the Enhanced option. Packs are resolved from local config, then bundled content. Missing replacements
 	/// use the shipped HD interface art or original world textures. Stored as <c>"TexturePack"</c>.
 	/// </summary>
 	[JsonPropertyName( "TexturePack" ), JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 	public string? TexturePackName { get; init; }
+	/// <summary>Independent HD HUD/icons choice; fresh settings use shipped interface art without downloading a world pack.</summary>
+	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+	public bool? EnhancedInterface { get; init; }
 	/// <summary>Legacy boolean of earlier versions: <c>true</c> reads as <c>"enhanced"</c> (<see cref="Validate"/>); never written.</summary>
 	[JsonPropertyName( "EnhancedTextures" ), JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 	public bool? EnhancedTextures { get; init; }
 
-	public static GraphicsSettings Default { get; } = new() { TexturePackName = TexturePack.DefaultName };
+	public static GraphicsSettings Default { get; } = new() { TexturePackName = "", EnhancedInterface = true };
 
 	private static readonly JsonSerializerOptions JsonOptions = new()
 	{
@@ -289,11 +292,18 @@ public sealed record GraphicsSettings
 	public GraphicsSettings Validate( ICollection<string> diagnostics )
 	{
 		var result = this;
+		// Earlier Original choices disabled every replacement, including the interface. Preserve that explicit intent;
+		// files with no texture choice are fresh defaults. An explicit independent interface choice always wins.
+		if ( result.EnhancedInterface == null )
+		{
+			var previousOriginal = result.TexturePackName == "" || (result.TexturePackName == null && result.EnhancedTextures == false);
+			result = result with { EnhancedInterface = !previousOriginal };
+		}
 		// Migration: a file without a "TexturePack" key (absent or null) takes the old boolean, which selected the one pack
 		// that existed then; an explicit "TexturePack" value, even "", wins over it.
-		// Keep both legacy choices: true selected enhanced, false selected originals. A missing choice uses Clarity.
+		// Keep both legacy choices: true selected enhanced, false selected originals. A missing choice stays Original.
 		if ( result.TexturePackName == null )
-			result = result with { TexturePackName = result.EnhancedTextures switch { true => TexturePack.EnhancedName, false => "", null => TexturePack.DefaultName } };
+			result = result with { TexturePackName = result.EnhancedTextures == true ? TexturePack.EnhancedName : "" };
 		result = result with { EnhancedTextures = null };
 		if ( result.TexturePackName!.Length > 0 && !TexturePack.IsValidName( result.TexturePackName ) )
 		{

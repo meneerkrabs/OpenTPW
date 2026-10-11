@@ -11,7 +11,7 @@ public static class TexturePackDownloadScreen
 		string.Equals( name, TexturePack.DefaultName, StringComparison.OrdinalIgnoreCase ) && !installed && string.IsNullOrEmpty( environmentOverride );
 
 	/// <summary>Shows only when this release includes a download index and no local or bundled pack already satisfies it.</summary>
-	public static bool TryShow( UiScreenStack stack, UiStringTable strings, string name, Action<string> apply )
+	public static bool TryShow( UiScreenStack stack, UiStringTable strings, string name, Action<string, bool?> apply )
 	{
 		if ( !NeedsDownload( name, TexturePack.IsInstalled(), Environment.GetEnvironmentVariable( "OPENTPW_TEXTURE_PACK" ) ) )
 			return false;
@@ -28,7 +28,7 @@ public static class TexturePackDownloadScreen
 
 	/// <summary>The task seam also lets UI tests exercise retry/cancel without a window or network.</summary>
 	internal static UiScreen Create( UiScreenStack stack, UiStringTable strings,
-		Func<Action<TexturePackDownloadProgress>, CancellationToken, Task> install, Action<string> apply )
+		Func<Action<TexturePackDownloadProgress>, CancellationToken, Task> install, Action<string, bool?> apply, Action<Task>? observeInstall = null )
 	{
 		var screen = new UiScreen( "texturePackDownload" );
 		CancellationTokenSource? cancel = null;
@@ -41,7 +41,7 @@ public static class TexturePackDownloadScreen
 
 		void Start()
 		{
-			if ( task is { IsCompleted: false } ) return;
+			if ( screen.IsRemoved || task is { IsCompleted: false } ) return;
 			cancel?.Dispose();
 			cancel = new CancellationTokenSource();
 			var token = cancel.Token;
@@ -50,12 +50,14 @@ public static class TexturePackDownloadScreen
 			Volatile.Write( ref latest, null );
 			// Descriptor parsing, hashing, downloading and extraction all run away from the render thread.
 			task = Task.Run( () => install( progress => Volatile.Write( ref latest, progress ), token ), token );
+			observeInstall?.Invoke( task );
 		}
 
-		void Close( string choice )
+		void Close( string choice, bool? enhancedInterface = null )
 		{
+			if ( screen.IsRemoved ) return;
 			cancel?.Cancel();
-			apply( choice );
+			apply( choice, enhancedInterface );
 			if ( stack.Top == screen ) stack.Pop();
 		}
 
@@ -85,7 +87,7 @@ public static class TexturePackDownloadScreen
 		} );
 		retry = screen.Add( new UiButton { Id = "retry", Text = () => Text( OpenTpwText.TextureDownloadRetry ), Clicked = Start, Visible = false, Bounds = new UiRect( 550, 920, 948, 130 ), Anchor = UiAnchor.Center } );
 		screen.Add( new UiButton { Id = "original", Text = () => Text( OpenTpwText.TextureDownloadOriginal ), Clicked = () => Close( "" ), Bounds = new UiRect( 390, 1110, 1268, 130 ), Anchor = UiAnchor.Center } );
-		screen.Add( new UiButton { Id = "hd", Text = () => Text( OpenTpwText.TextureDownloadHd ), Clicked = () => Close( TexturePack.EnhancedName ), Bounds = new UiRect( 390, 1270, 1268, 130 ), Anchor = UiAnchor.Center } );
+		screen.Add( new UiButton { Id = "hd", Text = () => Text( OpenTpwText.TextureDownloadHd ), Clicked = () => Close( "", enhancedInterface: true ), Bounds = new UiRect( 390, 1270, 1268, 130 ), Anchor = UiAnchor.Center } );
 		screen.DrawOverlay = context =>
 		{
 			var progress = Volatile.Read( ref latest );

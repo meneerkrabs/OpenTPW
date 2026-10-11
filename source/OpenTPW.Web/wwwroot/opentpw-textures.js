@@ -10,7 +10,14 @@ function trustedPrimaryUrl(file) {
 	let url;
 	try { url = new URL(file.url); } catch { throw new Error('The Clarity texture index contains an invalid download URL.'); }
 	const prefix = url.pathname.match(/^\/gh\/meneerkrabs\/OpenTPW-Texture-Packs@clarity-20261011-\d{3}\//)?.[0];
-	if (url.origin !== 'https://cdn.jsdelivr.net' || !prefix || url.pathname !== prefix + file.path
+	const encodedPath = prefix ? url.pathname.slice(prefix.length) : '';
+	let decodedPath;
+	try { decodedPath = decodeURIComponent(encodedPath); } catch { throw new Error('The Clarity texture index contains an invalid encoded path.'); }
+	// The published index percent-encodes '!' in the two ride-button filenames. Accept the exact
+	// decoded key and its canonical segment encoding; encoded separators or path aliases stay invalid.
+	const canonicalPath = file.path.split('/').map(part => encodeURIComponent(part).replace(/!/g, '%21')).join('/');
+	if (url.origin !== 'https://cdn.jsdelivr.net' || !prefix || decodedPath !== file.path
+		|| /%(?:2f|5c)/i.test(encodedPath) || (encodedPath !== file.path && encodedPath !== canonicalPath)
 		|| file.url !== url.origin + url.pathname)
 		throw new Error('The Clarity texture index contains an untrusted download URL.');
 	return file.url;

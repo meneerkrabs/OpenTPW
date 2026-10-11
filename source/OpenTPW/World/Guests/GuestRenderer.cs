@@ -31,6 +31,9 @@ public sealed class GuestRenderer : Entity
 	/// <summary>Guests drawn in the last frame.</summary>
 	public int DrawnGuests { get; private set; }
 
+	/// <summary>The atlas textures, material and independently owned shader used by native lifecycle checks.</summary>
+	internal IReadOnlyList<Asset> OwnedAssets => textures.Cast<Asset>().Concat( material == null ? Array.Empty<Asset>() : new Asset[] { material, material.Shader } ).ToArray();
+
 	public GuestRenderer( GuestSimulation simulation, ModelHeightfield field, IReadOnlyList<GuestSpriteAtlas> atlases )
 	{
 		this.simulation = simulation;
@@ -235,6 +238,19 @@ public sealed class GuestRenderer : Entity
 		deleted = true;
 		TexturePackSwitch.PackChanged -= ReloadAtlases;
 		TexturePackSwitch.FilesAvailable -= ReloadAtlases;
+		var ownedTextures = textures.ToArray();
+		textures.Clear();
+		foreach ( var texture in ownedTextures )
+			Asset.All.Remove( texture );
+		material?.ReleaseOwnedResources();
+		global::Global.Render.ScheduleDelete( () =>
+		{
+			foreach ( var texture in ownedTextures )
+			{
+				texture.NativeTextureView.Dispose();
+				texture.NativeTexture.Dispose();
+			}
+		} );
 		var buffer = vertexBuffer;
 		vertexBuffer = null;
 		if ( buffer != null )

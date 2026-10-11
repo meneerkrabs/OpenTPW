@@ -41,6 +41,8 @@ public enum OpenTpwText
 	NotEnoughMoney,
 	NotAvailable,
 	EnhancedTextures,
+	EnhancedInterface,
+	EnhancedInterfaceHelp,
 	TexturePackMissing,
 	TexturePackOriginal,
 	TexturePackClarity,
@@ -136,20 +138,30 @@ public static class SupplementaryStrings
 		[OpenTpwText.LayQueue] = new[] { "Lay the queue from the entrance; press Back when done.", "Læg køen fra indgangen; tryk på Tilbage, når du er færdig.", "Leg de wachtrij vanaf de ingang; druk op Terug als je klaar bent.", "Posez la file depuis l'entrée ; appuyez sur Retour pour terminer.", "Lege die Warteschlange ab dem Eingang; drücke Zurück, wenn du fertig bist.", "Lägg kön från ingången; tryck på Tillbaka när du är klar." },
 		[OpenTpwText.NotEnoughMoney] = new[] { "Not enough money", "Ikke penge nok", "Niet genoeg geld", "Pas assez d'argent", "Nicht genug Geld", "Inte tillräckligt med pengar" },
 		[OpenTpwText.EnhancedTextures] = new[] { "Enhanced textures:", "Forbedrede teksturer:", "Verbeterde textures:", "Textures améliorées :", "Verbesserte Texturen:", "Förbättrade texturer:" },
+		[OpenTpwText.EnhancedInterface] = new[] { "HUD and icons:", "HUD og ikoner:", "HUD en pictogrammen:", "HUD et icônes :", "HUD und Symbole:", "HUD och ikoner:" },
+		[OpenTpwText.EnhancedInterfaceHelp] = new[]
+		{
+			"Enhanced uses the HD HUD and menu icons included with OpenTPW. Original uses the game's own interface. This choice is separate from world textures.",
+			"Forbedret bruger HD-HUD og menuikoner, der følger med OpenTPW. Oprindelig bruger spillets egen brugerflade. Dette valg er uafhængigt af verdensteksturer.",
+			"Verbeterd gebruikt de HD-HUD en menupictogrammen die bij OpenTPW zitten. Origineel gebruikt de eigen interface van het spel. Deze keuze staat los van de wereldtextures.",
+			"Amélioré utilise le HUD HD et les icônes de menu inclus avec OpenTPW. D'origine utilise l'interface du jeu. Ce choix est indépendant des textures du monde.",
+			"Erweitert nutzt das HD-HUD und die mit OpenTPW gelieferten Menüsymbole. Ursprünglich nutzt die Oberfläche des Spiels. Diese Auswahl ist unabhängig von den Welttexturen.",
+			"Förbättrad använder HD-HUD och menyikoner som följer med OpenTPW. Ursprunglig använder spelets eget gränssnitt. Detta val är separat från världens texturer."
+		},
 		[OpenTpwText.TexturePackMissing] = new[] { "No pack built", "Ingen pakke bygget", "Geen pakket gebouwd", "Aucun pack créé", "Kein Paket erstellt", "Inget paket byggt" },
 		[OpenTpwText.TexturePackOriginal] = new[] { "Original", "Oprindelig", "Origineel", "D'origine", "Ursprünglich", "Ursprunglig" },
-		[OpenTpwText.TexturePackClarity] = new[] { "Clarity Enhanced", "Clarity Forbedret", "Clarity Verbeterd", "Clarity Amélioré", "Clarity Verbessert", "Clarity Förbättrad" },
-		[OpenTpwText.TexturePackClean] = new[] { "Enhanced", "Forbedret", "Verbeterd", "Amélioré", "Verbessert", "Förbättrad" },
+		[OpenTpwText.TexturePackClarity] = new[] { "Enhanced (Clarity)", "Forbedret (Clarity)", "Verbeterd (Clarity)", "Amélioré (Clarity)", "Verbessert (Clarity)", "Förbättrad (Clarity)" },
+		[OpenTpwText.TexturePackClean] = new[] { "Enhanced (legacy)", "Forbedret (tidligere)", "Verbeterd (eerder)", "Amélioré (ancien)", "Verbessert (bisherig)", "Förbättrad (tidigare)" },
 		[OpenTpwText.TexturePackDetailed] = new[] { "Detailed", "Detaljeret", "Gedetailleerd", "Détaillé", "Detailliert", "Detaljerad" },
 		[OpenTpwText.LoadingTextures] = new[] { "Updating textures in the background... {0} / {1}", "Opdaterer teksturer i baggrunden... {0} / {1}", "Textures worden op de achtergrond bijgewerkt... {0} / {1}", "Mise à jour des textures en arrière-plan... {0} / {1}", "Texturen werden im Hintergrund aktualisiert... {0} / {1}", "Uppdaterar texturer i bakgrunden... {0} / {1}" },
 		[OpenTpwText.TexturePackHelp] = new[]
 		{
-			"Original: the game's own textures. Clarity: the default texture pack. Enhanced: the earlier enhanced choice. Keep playing while textures update in the background.",
-			"Oprindelig: spillets egne teksturer. Clarity: standardpakken. Forbedret: det tidligere forbedrede valg. Spil videre, mens teksturerne opdateres i baggrunden.",
-			"Origineel: de eigen textures van het spel. Clarity: het standaardpakket. Verbeterd: de eerdere verbeterde keuze. Speel verder terwijl de textures op de achtergrond worden bijgewerkt.",
-			"D'origine : les textures du jeu. Clarity : le pack par défaut. Amélioré : le choix amélioré précédent. Continuez à jouer pendant la mise à jour en arrière-plan.",
-			"Ursprünglich: die Texturen des Spiels. Clarity: das Standardpaket. Verbessert: die bisherige verbesserte Auswahl. Weiterspielen, während die Texturen im Hintergrund aktualisiert werden.",
-			"Ursprunglig: spelets egna texturer. Clarity: standardpaketet. Förbättrad: det tidigare förbättrade valet. Spela vidare medan texturerna uppdateras i bakgrunden."
+			"Original: the game's own textures, selected by default. Enhanced (Clarity): the Clarity texture pack. Enhanced (legacy): the earlier choice. Keep playing while textures update in the background.",
+			"Oprindelig: spillets egne teksturer, valgt som standard. Forbedret (Clarity): Clarity-pakken. Forbedret (tidligere): det tidligere valg. Spil videre, mens teksturerne opdateres i baggrunden.",
+			"Origineel: de eigen textures van het spel, standaard geselecteerd. Verbeterd (Clarity): het Clarity-pakket. Verbeterd (eerder): de eerdere keuze. Speel verder terwijl de textures op de achtergrond worden bijgewerkt.",
+			"D'origine : les textures du jeu, choisies par défaut. Amélioré (Clarity) : le pack Clarity. Amélioré (ancien) : le choix précédent. Continuez à jouer pendant la mise à jour en arrière-plan.",
+			"Ursprünglich: die Texturen des Spiels, standardmäßig ausgewählt. Verbessert (Clarity): das Clarity-Paket. Verbessert (bisherig): die bisherige Auswahl. Weiterspielen, während die Texturen im Hintergrund aktualisiert werden.",
+			"Ursprunglig: spelets egna texturer, valda som standard. Förbättrad (Clarity): Clarity-paketet. Förbättrad (tidigare): det tidigare valet. Spela vidare medan texturerna uppdateras i bakgrunden."
 		},
 		[OpenTpwText.TextureDownloadTitle] = new[] { "Clarity Enhanced", "Clarity Forbedret", "Clarity Verbeterd", "Clarity Amélioré", "Clarity Verbessert", "Clarity Förbättrad" },
 		[OpenTpwText.TextureDownloadHelp] = new[] {

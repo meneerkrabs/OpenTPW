@@ -255,12 +255,12 @@ internal static class Game
 		// Startup never requests it, including a saved Clarity choice whose files are absent; smoke/captures stay offline.
 		if ( !smoke && capturePath == null && !GameEditions.IsThemeParkInc )
 		{
-			void ApplyPack( string name )
+			void ApplyPack( string name, bool? enhancedInterface )
 			{
 				if ( IGraphicsSettings.Instance is { } graphics )
-					graphics.Apply( graphics.Current with { TexturePackName = name } );
+					graphics.Apply( graphics.Current with { TexturePackName = name, EnhancedInterface = enhancedInterface ?? graphics.Current.EnhancedInterface } );
 				var diagnostics = new List<string>();
-				TexturePackSwitch.Begin( name, diagnostics );
+				TexturePackSwitch.Begin( name, diagnostics, enhancedInterface: enhancedInterface ?? IGraphicsSettings.Instance?.Current.EnhancedInterface );
 				foreach ( var diagnostic in diagnostics ) Log.Warning( $"Texture pack: {diagnostic}" );
 			}
 			flow.PrepareTexturePack = ( stack, name ) => OpenTPW.UI.Original.TexturePackDownloadScreen.TryShow( stack, flow.Strings, name, ApplyPack );

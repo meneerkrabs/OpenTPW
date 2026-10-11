@@ -51,6 +51,8 @@ public static class OnlineStrings
 	public const int SystemNews = 268;
 	// [DATA:Language/English/UITEXT.str:461] "Parks: " before a city's park count (Mac 0x1ce in the 474-entry edition)
 	public const int CityParks = 461;
+	// [DATA:Language/English/UITEXT.str:419] "Choose the city to publish in"
+	public const int ChooseCityToPublish = 419;
 	public const int OnlineWorld = 422;
 	public const int VisitedParks = 423;
 	public const int OutboxWaiting = 472;

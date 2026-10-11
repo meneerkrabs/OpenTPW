@@ -126,21 +126,26 @@ mid shift and the quarter-LSB bias were chosen by search; constant precision
 (9–12 bits) barely matters. The quarter-LSB bias is unexplained: the oracle
 rounds slightly downward relative to round-half-up in every variant tried.
 
-All 9,412 frames (this decoder vs the oracle):
+All 9,412 frames (this decoder vs the oracle), re-measured on the merged
+`main` for this revision. Identical samples count Y, Cb and Cr together. Per-frame
+PSNR uses all three planes with peak 255; the mean and worst are taken over the
+frames that differ (516 frames match exactly and are excluded from the PSNR
+columns). Max abs diff is over all samples:
 
 | File | Identical samples | Mean PSNR | Worst frame | Max abs diff |
 | --- | ---: | ---: | ---: | ---: |
-| `bf` | 94.6 % | 60.70 dB | 57.98 dB | 4 |
+| `bf` | 94.6 % | 60.93 dB | 57.98 dB | 4 |
 | `bub` | 88.2 % | 57.30 dB | 55.69 dB | 4 |
-| `buc` | 87.0 % | 56.90 dB | 54.53 dB | 4 |
-| `grav` | 87.2 % | 57.00 dB | 55.02 dB | 4 |
-| `jug` | 83.9 % | 55.95 dB | 54.53 dB | 4 |
-| `mir` | 90.9 % | 58.47 dB | 56.04 dB | 4 |
-| `plan` | 90.4 % | 58.22 dB | 56.49 dB | 4 |
-| `roc` | 90.0 % | 58.06 dB | 56.13 dB | 4 |
-| `roll` | 87.7 % | 57.13 dB | 54.70 dB | 4 |
+| `buc` | 87.0 % | 56.92 dB | 54.53 dB | 4 |
+| `grav` | 87.2 % | 56.98 dB | 55.02 dB | 4 |
+| `jug` | 83.9 % | 56.06 dB | 54.53 dB | 4 |
+| `mir` | 90.9 % | 58.53 dB | 56.04 dB | 4 |
+| `plan` | 90.4 % | 58.17 dB | 56.49 dB | 4 |
+| `roc` | 90.0 % | 58.02 dB | 56.13 dB | 4 |
+| `roll` | 87.7 % | 57.17 dB | 54.70 dB | 4 |
 
-(Previous float decoder over `bf`, `bub`, `mir`, `plan`, `roll`: 79–85 %
+The mean PSNR differs from the earlier table by up to 0.1 dB; the decoder is
+unchanged. (Previous float decoder over `bf`, `bub`, `mir`, `plan`, `roll`: 79–85 %
 identical, 54.6–56.2 dB, max difference 5.) **Still not bit-exact.** Evidence
 of the remaining gap: for blocks with one AC coefficient the oracle output is a
 deterministic function of the level, so the residual is IDCT rounding, not
@@ -159,6 +164,69 @@ of `bf`/`plan`): luma clips at both ends (Y = 0: 0.46 %/0.87 %, Y = 255:
 0.43 %/0.73 %) and 1.1 %/2.2 % of luma is below 16, which limited-range video
 would not show. Chroma stays within 16–240 for > 99.9 % of samples. The
 original player's conversion is still **not verified** against captures.
+
+### Original IDCT: static analysis of a no-CD PC build (not verified)
+
+Lead: the MIT-licensed fork `aluzed/OpenTPW-decomp` (`docs/tickets/T-021`,
+`docs/07-ghidra-render.md`) reports a float AAN IDCT in the PC executable. This
+section checks that claim with static reads only (`llvm-objdump`, byte reads, no
+execution) on a no-CD `tp.exe` (3,734,528 bytes, SHA-256
+`85eef533…e2c232`, PE32 image base `0x400000`, data sections present in the
+section table). Its code is complete, but **all its data sections (`.rdata`,
+`.data`, `dseg`, `uva_data`, `idct_dat`) are zero in the file**, so the tables the
+code reads are filled at run time or not stored. The local `TP.ICD` is the
+SafeDisc-protected game image; its code is encrypted (entropy ≈ 7.98) and its
+data sections are keyed. The local `tp.exe` is a 285 KB loader stub.
+
+Verified in the code (addresses are the no-CD image's virtual addresses):
+
+- **Block dispatch** (`0x676e40`, luma blocks): each block is either a DC-only
+  block, filled with one value by `0x677140`, or sent to the two-pass 8×8
+  driver `0x67832e`. The DC fill is a broadcast, not the IDCT; the fork's
+  `FUN_00677140` name points at the dispatch helper, not at the transform.
+- **Driver** (`0x67832e`): eight row passes of kernel `0x6780c1`, writing a
+  9-dword-stride temporary at `0xfbc02c`, then eight column passes of kernel
+  `0x678224` writing the block with a 64-byte row stride (`0xfbc000` holds that
+  stride).
+- **Kernel** (`0x6780c1`, identical arithmetic in `0x678224` with a different
+  store order): integer inputs converted with `fild`; x87 `fmuls`/`fadds` with
+  constants at `0xfbc018`–`0xfbc028`; one 32-bit `imul` against `0xfbc018`
+  (a Q32 `1/(2√2)` multiplier, high dword kept); a zero-AC fast path that copies
+  the DC to all eight outputs.
+- **Open point in the kernel**: its scratch stores are `fstpl` (`dd /3`, 64-bit
+  doubles) to `0xfbc008` and `0xfbc010`, and the code then reads the **low
+  dword** of those slots as integers (`movl`). I could not reconcile that with
+  an AAN butterfly from the disassembly alone; it needs a Ghidra cross-check or a
+  runtime capture, neither of which this review had.
+- **Matrix builders**: `0x671000` (integer path, divides by 100 and 7 by magic
+  multiply) and `0x6710c0` (float path, `(C − q)·K` with `C`, `K` at `.rdata`
+  offsets `0x705eb8`/`0x705ec0`/`0x705ec4`) both write `DAT_00fb7820`
+  (`uva_data+0x820`, 64 dwords). Their tables at `0x705c88`/`0x705d88` are zero
+  in the dump.
+
+Not verified, and why:
+
+- **Constant values** at `idct_dat` (`0xfbc018`–`0xfbc028`): no code path in the
+  dump writes them, and in `TP.ICD` the `IDCT_DAT` section is keyed with an
+  8-byte repeat (`5036c7da30c36fd6`) over zero plaintext. A per-dword XOR or
+  subtraction with that key does not produce the expected constants. In `TP.ICD`
+  `.rdata` (plaintext) the four float32 values `1.30656302`, `0.54119611`,
+  `0.38268343` and `0.70710677` sit at file offset `0x2FAD6C`; they match the
+  AAN factors `√2·cos(π/8)`, `√2·cos(3π/8)`, `sin(π/8)` and `1/√2`, but nothing
+  in the dump references that block, so their use is unconfirmed.
+- **Fork differences**: the fork's `0xfbc028` value `0.35058594` is not in
+  `TP.ICD`. The `1/(2√2)` Q32 value is not in plaintext either.
+- **Matrix contents**: the MPEG-1 default intra matrix is plaintext in `TP.ICD`
+  `.rdata` at `0x2FB230`, but the builder's table base (`0x705c88`) lines up with
+  that matrix only at index 22 under section-relative mapping. That mapping is
+  unresolved, so the quantiser-to-matrix arithmetic is not pinned.
+- **Final rounding and clamp** after the second pass: not read yet.
+
+Also measured and rejected: the integer AAN variant from an earlier draft
+(`tp.exe` addresses it cited are inside `TP.ICD` `.data`, not code) gives 79.4 %
+identical on `bf` and 71.5 % on `plan` (max difference 13 and 15). The committed
+decoder stays. Without the constants and matrix values, no block can be pinned
+to the original's arithmetic, so no synthetic original-arithmetic test was added.
 
 ### Pinned hashes (SHA-256)
 
@@ -346,7 +414,10 @@ tests never play it; `--mute` silences it.
 
 ## Remaining gates
 
-Bit-exact IDCT (only if original-player captures prove it matters), colour
+Bit-exact IDCT: the original's kernel is located (see "Original IDCT") but its
+constants, matrix values and final clamp are not recoverable from the local
+data, so the FFmpeg-fitted integer AAN stays. Closing it needs the decrypted
+`IDCT_DAT`/`UVA_DATA` contents or a runtime capture (not done here), colour
 matrix/range against original-player captures, what the original does after
 the last frame (`plan.tgq` audio tail), whether the PC build uses the same
 logo-plus-day-trailer sequence and `.tgq` names (PC executable not analysed),

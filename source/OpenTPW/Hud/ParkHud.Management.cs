@@ -9,7 +9,7 @@ public sealed partial class ParkHud
 	public bool EntryPriceWindowOpen => entryPriceScreen != null && Stack.Screens.Contains( entryPriceScreen );
 	public bool StaffCostsWindowOpen => staffCostsScreen != null && Stack.Screens.Contains( staffCostsScreen );
 
-	// [EXT:management-details] These detail layouts reuse original widgets and translated labels;
+	// [APPROX:UI-061] detail layouts and unit adjustment controls reuse original widgets; original detail-screen handlers remain unqualified
 	// their arrangement and one-pound adjustment increments are OpenTPW presentation choices.
 	public void OpenEntryPriceWindow()
 	{

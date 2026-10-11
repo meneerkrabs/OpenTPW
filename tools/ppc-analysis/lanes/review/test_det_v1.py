@@ -320,7 +320,9 @@ class CSharpSourceGuard(unittest.TestCase):
             self.assertIsNone(self.forbidden.search(line), line)
 
     def test_scope(self):
-        self.assertEqual(self.folders, '"VM", "Economy", Path.Combine( "World", "Guests" ), Path.Combine( "World", "Objects" )')
+        # COAST-I added World/Coasters (the coaster simulation) to the scanned folders.
+        self.assertEqual(self.folders, '"VM", "Economy", Path.Combine( "World", "Guests" ), Path.Combine( "World", "Objects" ), '
+                         'Path.Combine( "World", "Coasters" )')
         # Top-level World files are scanned unless listed as presentation; Level*.cs partials are scanned.
         for name in ('Level.cs', 'Level.Objects.cs', 'Ride.cs', 'PrototypeRide.cs', 'FixedStepClock.cs'):
             self.assertNotIn(name, self.presentation)

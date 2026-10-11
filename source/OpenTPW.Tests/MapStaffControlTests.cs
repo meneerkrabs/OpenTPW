@@ -73,4 +73,31 @@ public class MapStaffControlTests
 		Assert.AreEqual( ParkMapMetrics.ExcitementColor( 0 ), ParkMapMetrics.ExcitementColor( -5 ) );
 		Assert.AreEqual( ParkMapMetrics.ExcitementColor( 100 ), ParkMapMetrics.ExcitementColor( 105 ) );
 	}
+	[TestMethod]
+	public void TrackToggleAndEmptyGeometryStayIndependent()
+	{
+		var hud = (ParkHud)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject( typeof( ParkHud ) );
+		Assert.IsFalse( hud.MapTracks );
+		hud.ToggleMapTracks();
+		Assert.IsTrue( hud.MapTracks );
+		Assert.AreEqual( 0, ParkMapTracks.SampleCells( System.Array.Empty<System.Numerics.Vector3>(), 10, 10 ).Count() );
+		hud.ToggleMapTracks();
+		Assert.IsFalse( hud.MapTracks );
+	}
+
+	[TestMethod]
+	public void TrackProjectionUsesOriginalGroundAxesAndRejectsOutsideSamples()
+	{
+		var cells = ParkMapTracks.SampleCells( new[] { new System.Numerics.Vector3( 25, 999, 39 ),
+			new System.Numerics.Vector3( 29, -999, 31 ), new System.Numerics.Vector3( -1, 0, 3 ),
+			new System.Numerics.Vector3( 100, 0, 3 ), new System.Numerics.Vector3( 3, 0, 100 ) }, 10, 10 ).ToArray();
+		Assert.AreEqual( 1, cells.Length );
+		Assert.AreEqual( (2, 3), cells[0] );
+		var chain = ParkMapTracks.NodeCells( new[] { (1, 2), (4, 2), (10, 2), (6, 4) }, 10, 10 ).ToArray();
+		CollectionAssert.Contains( chain, (2, 2) );
+		CollectionAssert.Contains( chain, (3, 2) );
+		CollectionAssert.Contains( chain, (6, 4) );
+		Assert.IsFalse( chain.Any( cell => cell.X >= 10 || cell.Y >= 10 ) );
+		Assert.IsFalse( chain.Contains( (5, 3) ) );
+	}
 }

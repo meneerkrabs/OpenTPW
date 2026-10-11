@@ -372,8 +372,8 @@ glyph in all 14 UI fonts of each language.
   pan, zoom, object-category, layer and close controls. The shipped per-theme `levels/<theme>/2dmap.tga` supplies the
   terrain image. Current path and queue cells and placed-object footprints are drawn above it. Category buttons filter
   object markers; pan and zoom operate on the image and overlays (UI-085–087). The generic sandbox draws its grid
-  and heights in place of theme art (UI-089); a missing original theme image is reported. Layers without live per-cell
-  data or decoded handlers remain disabled (UI-088). Escape, right click and `b_okay` close the map.
+  and heights in place of theme art (UI-089); a missing original theme image is reported. Track, visitor, staff and metric
+  layer buttons draw live coaster cells, actor positions and observations (provisional host overlays). Escape, right click and `b_okay` close the map.
 - Info arm for the selected original object (picked by occupied grid cell): name (OBJECT_NAMES), Excitement (the original
   default `UsageInfo.ExcitementLevel`, 70 for the Totem), Reliability, State of
   repair, Remaining life ("Not simulated yet"), open/close (`b_door`) and
@@ -509,7 +509,6 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-085 | `Hud/ParkHud.Map.cs` | the 512 pixel theme map places five-pixel terrain cells centrally; live overlays use that mapping | original map overlay alignment capture |
 | UI-086 | `Hud/ParkHud.Map.cs` | paths, queues and placed objects use plain coloured cells over the shipped theme map image; category buttons filter object footprints | original map layer colours and button handlers |
 | UI-087 | `Hud/ParkHud.Map.cs` | map zoom changes by half a step and a pan moves one eighth of the visible image | original map zoom and pan handlers |
-| UI-088 | `Hud/ParkHud.Map.cs` | map controls for tracks, visitors, staff and metrics stay disabled without per-cell data or decoded handlers | original map layer handlers and per-cell data |
 | UI-089 | `Hud/ParkHud.Map.cs` | the generic sandbox has no shipped theme map image; its live grid and heights form a simple terrain base | original generic-sandbox map presentation is an OpenTPW design choice |
 | UI-090 | `Hud/ParkHud.Staff.cs` | staff table control 9366 toggles between applicant and employed views | original control 9366 handler |
 | UI-091 | `Hud/ParkHud.Staff.cs` | staff and visitor locate controls remain disabled until world positions can be targeted | staff and visitor world positions and locate handlers |

@@ -238,7 +238,9 @@ public sealed partial class ParkHud
 		// [APPROX:PATH-011] Escape/Back inside the path or queue tool ends the tool without writing; only a Back outside it opens the pause menu (PATH-plan §9.4 cancel; the original's key handler for the tool is not traced, UI-012) — evidence needed: the original's Escape handling in tool modes 1 and 3
 		hud.Back = () =>
 		{
-			if ( level.CellTool.IsActive )
+			if ( level.IsCoasterToolActive )
+				level.ExitCoasterTool();
+			else if ( level.CellTool.IsActive )
 				level.CellTool.Cancel();
 			else
 				OpenPauseMenu();
@@ -306,6 +308,11 @@ public sealed partial class ParkHud
 		pendingItem = null;
 		level.IsPlacing = false;
 		level.BuildEntry = null;
+		if ( item.Runtime.Coaster != null && level.EnterCoasterTool( item ) )
+		{
+			PostMessage( CoasterToolHelp );
+			return;
+		}
 		// [BIN:STP-PPC:0x1007497C ride placement] a placed HasQueue ride (type record +64) enters tool mode 3, the queue tool (PATH-plan §8); park clicks lay its queue until Back
 		if ( item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells && level.EnterQueueTool( item.Visitors ) )
 			PostMessage( strings.Extra( OpenTpwText.LayQueue ) );
@@ -457,9 +464,9 @@ public sealed partial class ParkHud
 		var inPark = !overUi && !consumed && level.TryGetGridCell( input.Mouse, new NVector2( context.Canvas.Width, context.Canvas.Height ), out cursorX, out cursorY );
 		if ( !inPark )
 			cursorX = cursorY = -1;
-		var toolClick = UpdateCellTool( context, input, inPark, paused );
+		var toolClick = UpdateCoasterTool( input, inPark, paused ) || UpdateCellTool( context, input, inPark, paused );
 		// [APPROX:UI-027] Select by occupied grid cell; original cursor picking is not verified.
-		if ( inPark && level.BuildEntry == null && !level.IsPlacing && !level.CellTool.IsActive && input.LeftReleased && !toolPress )
+		if ( inPark && level.BuildEntry == null && !level.IsPlacing && !level.CellTool.IsActive && !level.IsCoasterToolActive && input.LeftReleased && !toolPress )
 			SelectObject( level.Objects.FindAt( cursorX, cursorY ) );
 		if ( input.LeftReleased )
 			toolPress = false;
@@ -484,7 +491,7 @@ public sealed partial class ParkHud
 		var tool = level.CellTool;
 		// [APPROX:PATH-013] while the pause menu is open the tool takes no clicks: this returns before the commit, and Update reports the pointer as captured (overUi), so Level's park click skips it too; the economy's speed pause does not stop the tool, which keeps its ghost — evidence needed: the original park view's input handling while paused
 		// The remove tool owns the park click while it is on (Level.RemoveAt clears paths and queues too).
-		if ( paused || level.BuildEntry != null || level.IsPlacing || level.IsRemovingObjects )
+		if ( paused || level.BuildEntry != null || level.IsPlacing || level.IsRemovingObjects || level.IsCoasterToolActive )
 			return false;
 		if ( inPark && tool.HoverHelpId( level.Paths, cursorX, cursorY ) is int help )
 			context.HoverHelp = strings.Help( help );
@@ -515,6 +522,78 @@ public sealed partial class ParkHud
 		if ( result is { Completed: false } )
 			PostMessage( strings.Extra( result.StoppedBy == CellBuildResult.NotEnoughMoney ? OpenTpwText.NotEnoughMoney : OpenTpwText.CannotBuildHere ) );
 		return toolPress = true;
+	}
+
+	/// <summary>The coaster tool's help line (OpenTPW text; the original's track-tool help is not identified).</summary>
+	public const string CoasterToolHelp = "Track: click to place pylons, wheel for height, Tab for loop pylons, Backspace removes the last pylon; click a station end to close the circuit and again (or Enter) to complete.";
+	/// <summary>Height change per mouse-wheel notch in the coaster tool (world units).</summary>
+	public const float CoasterHeightStep = 10f;
+	/// <summary>The cell under the cursor in the coaster tool, its check and the cost a pylon there would add.</summary>
+	public (int X, int Y, CoasterPlaceResult Result, long Cost)? CoasterGhost { get; private set; }
+
+	/// <summary>
+	/// The coaster tool's HUD side: the ghost pylon under the cursor, wheel height, Tab loop mode, Backspace removes the
+	/// last pylon, Enter closes and completes, right click leaves; park clicks place pylons, close and complete on a station end.
+	/// </summary>
+	// [APPROX:COAST-028] the coaster tool's controls (click to place, wheel for the next pylon's height in steps of 10, Tab for loop pylons, Backspace to delete the last pylon without refund, a click on a station end cell to close and again or Enter to complete, right click or Escape to leave) and its flat ghost marker are OpenTPW's; the original drag, height/rotate/bank sliders (0x10045FC4, 0x10046508, 0x10046718) and keys are not reproduced — evidence needed: the input handling of the coaster build mode around 0x100483AC and 0x1004A1FC
+	private bool UpdateCoasterTool( UiInput input, bool inPark, bool paused )
+	{
+		CoasterGhost = null;
+		if ( paused || !level.IsCoasterToolActive || level.CoasterTool is not { } builder )
+			return false;
+		if ( input.Wheel != 0 )
+			builder.Height = Math.Clamp( builder.Height + MathF.Sign( input.Wheel ) * CoasterHeightStep, 0, 1000 );
+		if ( input.Has( UiKeys.Tab ) && builder.Ride.Definition.HasLoopPylon )
+			builder.LoopMode = !builder.LoopMode;
+		for ( var index = 0; index < input.Backspaces; index++ )
+			builder.RemoveLast();
+		if ( input.Has( UiKeys.Accept ) && !input.Has( UiKeys.Space ) )
+		{
+			if ( !builder.Track.IsClosed )
+				builder.Close();
+			ReportCoasterResult( level.CompleteCoaster() );
+			return true;
+		}
+		if ( input.RightPressed && inPark )
+		{
+			level.ExitCoasterTool();
+			return true;
+		}
+		if ( !inPark )
+			return false;
+		var onStation = builder.Track.IsChainStart( cursorX, cursorY );
+		var check = !onStation ? builder.Check( cursorX, cursorY )
+			: builder.Track.IsClosed ? builder.CheckComplete() : builder.Track.CheckClosure();
+		CoasterGhost = (cursorX, cursorY, check, onStation ? 0 : CoasterTrack.Truncate( builder.PreviewCost( cursorX, cursorY ) ));
+		if ( !input.LeftPressed )
+			return false;
+		ReportCoasterResult( level.CoasterClick( cursorX, cursorY ) );
+		return toolPress = true;
+	}
+
+	private void ReportCoasterResult( CoasterPlaceResult result )
+	{
+		if ( result == CoasterPlaceResult.Ok )
+			return;
+		PostMessage( strings.Extra( result == CoasterPlaceResult.NotEnoughMoney ? OpenTpwText.NotEnoughMoney : OpenTpwText.CannotBuildHere ) );
+	}
+
+	/// <summary>The coaster tool's ghost: a green or red marker on the cursor cell and the cost beside it.</summary>
+	private void DrawCoasterGhost( UiContext context )
+	{
+		if ( CoasterGhost is not { } ghost || !level.IsCoasterToolActive )
+			return;
+		var viewport = new NVector2( context.Canvas.Width, context.Canvas.Height );
+		if ( !level.TryProjectCell( ghost.X, ghost.Y, viewport, out var centre ) )
+			return;
+		var size = 14 * context.Canvas.TextScale;
+		var colour = ghost.Result == CoasterPlaceResult.Ok ? new RgbaByte( 80, 220, 80, 190 ) : new RgbaByte( 230, 40, 40, 190 );
+		context.Batch.AddRectangle( new UiRect( centre.X - size / 2, centre.Y - size / 2, size, size ), colour );
+		if ( Status.HasEconomy && ghost.Cost > 0 )
+		{
+			var text = string.Format( System.Globalization.CultureInfo.InvariantCulture, "{0}{1:#,0}", strings[UIStrings.Dollar], ghost.Cost ).Replace( "  ", " " );
+			context.DrawText( context.Fonts.Small, text, new UiRect( centre.X + size, centre.Y - size * 2, 300 * context.Canvas.TextScale, size * 4 ), ghost.Result == CoasterPlaceResult.Ok ? UiColors.Value : UiColors.Highlight, UiAlign.Left );
+		}
 	}
 
 	/// <summary>Ghost markers for the tool's preview line: green cells it would build, grey existing cells, red where it stops; then the line's cost.</summary>
@@ -586,6 +665,7 @@ public sealed partial class ParkHud
 		else
 			hud.DrawOverlay = DrawMessages;
 		DrawCellToolGhost( context );
+		DrawCoasterGhost( context );
 		Stack.Draw( context );
 	}
 

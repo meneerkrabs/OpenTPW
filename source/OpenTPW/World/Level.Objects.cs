@@ -383,11 +383,13 @@ public partial class Level
 	{
 		if ( IsReadOnlyVisit )
 			return;
-		if ( (BuildEntry == null && !IsRemovingObjects && !CellTool.IsActive) || !TryGetGridCell( mousePosition, viewportSize, out var x, out var y ) )
+		if ( (BuildEntry == null && !IsRemovingObjects && !CellTool.IsActive && !IsCoasterToolActive) || !TryGetGridCell( mousePosition, viewportSize, out var x, out var y ) )
 			return;
 		// The remove tool comes first, so a path or queue cell under it is removed rather than built on (ParkHud stands aside for it too).
 		if ( IsRemovingObjects )
 			RemoveAt( x, y );
+		else if ( IsCoasterToolActive && BuildEntry == null )
+			CoasterClick( x, y );
 		else if ( CellTool.IsActive && BuildEntry == null )
 			CellTool.Click( (x, y) );
 		else

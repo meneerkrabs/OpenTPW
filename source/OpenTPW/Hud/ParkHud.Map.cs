@@ -14,6 +14,9 @@ public sealed partial class ParkHud
 	private readonly HashSet<StaffType> mapStaff = new();
 	public bool MapStaffRole( StaffType type ) => mapStaff.Contains( type );
 	public void ToggleMapStaff( StaffType type ) { if ( !mapStaff.Remove( type ) ) mapStaff.Add( type ); }
+	private bool mapTracks;
+	public bool MapTracks => mapTracks;
+	public void ToggleMapTracks() => mapTracks = !mapTracks;
 	private bool mapVisitors;
 	private bool mapHappiness;
 	private bool mapSatisfaction;
@@ -97,8 +100,8 @@ public sealed partial class ParkHud
 		CategoryButton( "shops", "b_sshop", BuildCategory.Shops, 269, Rect( 303, 1409, 406, 1512 ) );
 		CategoryButton( "features", "b_sfeature", BuildCategory.Features, 273, Rect( 423, 1409, 525, 1512 ) );
 		// [DATA:Mac map table 0x5265e:2441,2435,2444-2447,2455-2457] track, actor and metric controls.
-		// [APPROX:UI-088] controls for unavailable live layers remain visible but disabled.
-		Disabled( "tracks", "b_strack", 275, Rect( 542, 1409, 644, 1512 ) );
+		// [PROVISIONAL:MAP] Layer toggles render available live geometry and observations; an empty collection leaves the base map visible.
+		MetricLayer( "tracks", "b_strack", 275, Rect( 542, 1409, 644, 1512 ), ToggleMapTracks, () => mapTracks );
 		Layer( "visitors", "b_svisit", 277, Rect( 1390, 1409, 1493, 1512 ), ToggleMapVisitors, () => mapVisitors );
 		StaffLayer( "handymen", "b_shandy", 279, Rect( 1883, 443, 1985, 546 ), StaffType.Handyman );
 		StaffLayer( "mechanics", "b_smech", 281, Rect( 1883, 592, 1985, 694 ), StaffType.Mechanic );
@@ -132,10 +135,7 @@ public sealed partial class ParkHud
 			Id = id, Model = model, Help = strings.Help( help ), Bounds = rect, Anchor = UiAnchor.Center,
 			Clicked = action, Selected = selected, Enabled = level.Guests != null
 		} );
-		void Disabled( string id, string model, int help, UiRect rect ) => screen.Add( new UiButton
-		{
-			Id = id, Model = model, Help = strings.Help( help ), Bounds = rect, Anchor = UiAnchor.Center, Enabled = false
-		} );
+
 	}
 
 	private string MapMetricLegend()
@@ -230,6 +230,13 @@ public sealed partial class ParkHud
 				(owner.mapCategory == null || item.Entry.WhichUIType == (int)owner.mapCategory) ) )
 				foreach ( var cell in item.Cells )
 					Mark( cell.X, cell.Y, new RgbaByte( 207, 67, 198, 235 ) );
+			// [PROVISIONAL:MAP] Host overlay projects actual COAST samples (original x/z ground plane) onto map cells; unfinished tracks show the authored node chain.
+			if ( owner.mapTracks )
+				foreach ( var coaster in owner.level.Coasters )
+					foreach ( var cell in coaster.Samples.Count > 0
+						? ParkMapTracks.SampleCells( coaster.Samples.Select( sample => sample.Position ), width, height )
+						: ParkMapTracks.NodeCells( coaster.Track.Nodes.Select( node => (node.X, node.Y) ), width, height ) )
+						Mark( cell.X, cell.Y, new RgbaByte( 65, 220, 235, 240 ) );
 			// [PROVISIONAL:MAP] Attraction ratings use registered bridge data, never visitor preference or a synthetic scalar.
 			if ( owner.mapExcitement )
 				foreach ( var item in owner.level.Objects.Objects.Where( item => !item.IsDeleted && owner.level.Guests?.Attractions.Contains( item.Visitors ) == true ) )
@@ -301,4 +308,30 @@ internal static class ParkMapMetrics
 			.GroupBy( guest => ((int)MathF.Floor( guest.X ), (int)MathF.Floor( guest.Y )) )
 			.Select( group => (group.Key.Item1, group.Key.Item2, group.Count( guest => guest.Thought == GuestThought.Pleased ), group.Count( guest => guest.Thought == GuestThought.Dissatisfied )) );
 	public static RgbaByte ExcitementColor( int rating ) => ParkMapGuestLayers.HappinessColor( rating );
+}
+
+internal static class ParkMapTracks
+{
+	public static IEnumerable<(int X, int Y)> SampleCells( IEnumerable<System.Numerics.Vector3> samples, int width, int height ) =>
+		samples.Where( sample => float.IsFinite( sample.X ) && float.IsFinite( sample.Z ) && sample.X >= 0 && sample.Z >= 0 && sample.X < width * CoasterTrack.CellUnits && sample.Z < height * CoasterTrack.CellUnits )
+			.Select( sample => ((int)MathF.Floor( sample.X / CoasterTrack.CellUnits ), (int)MathF.Floor( sample.Z / CoasterTrack.CellUnits )) ).Distinct();
+
+	public static IEnumerable<(int X, int Y)> NodeCells( IEnumerable<(int X, int Y)> nodes, int width, int height )
+	{
+		var result = new HashSet<(int X, int Y)>();
+		(int X, int Y)? previous = null;
+		foreach ( var node in nodes )
+		{
+			if ( node.X < 0 || node.Y < 0 || node.X >= width || node.Y >= height ) { previous = null; continue; }
+			result.Add( node );
+			if ( previous is { } from )
+			{
+				var steps = Math.Max( Math.Abs( node.X - from.X ), Math.Abs( node.Y - from.Y ) );
+				for ( var step = 1; step < steps; step++ )
+					result.Add( ((int)MathF.Round( from.X + (node.X - from.X) * (step / (float)steps) ), (int)MathF.Round( from.Y + (node.Y - from.Y) * (step / (float)steps) )) );
+			}
+			previous = node;
+		}
+		return result;
+	}
 }

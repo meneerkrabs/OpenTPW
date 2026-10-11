@@ -19,6 +19,7 @@ REGISTERS = {
     "GATEM4": "source/OpenTPW/Client/M4GateApproximations.cs",
     "QUEUE": "source/OpenTPW/World/Guests/QueueApproximations.cs",
     "PATH": "source/OpenTPW/World/PathApproximations.cs",
+    "COAST": "source/OpenTPW/World/Coasters/CoasterApproximations.cs",
     "WALK": "source/OpenTPW/World/Guests/WalkApproximations.cs",
     "SAVE": "source/OpenTPW/Economy/SaveApproximations.cs",
 }

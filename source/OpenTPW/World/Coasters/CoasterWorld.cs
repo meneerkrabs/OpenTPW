@@ -1,0 +1,78 @@
+namespace OpenTPW;
+
+/// <summary>
+/// The coaster boarding generator <c>CoasterRng</c> (DET-plan §2): one per world, <c>s = s·214013 + 2531011</c>,
+/// output <c>s &gt;&gt; 16</c> (logical).
+/// </summary>
+public sealed class CoasterRandom
+{
+	public CoasterRandom( uint state ) => State = state;
+
+	public uint State { get; private set; }
+
+	// [BIN:STP-PPC:data:622280 coaster boarding RNG] the state at app global data 622280 (TOC 0xcc0) steps s = s × 214013 + 2531011 and draws s >> 16 (logical); it is seeded by one C-library rand() at 0x10054BF4 (DET-plan §2)
+	public int Next()
+	{
+		State = unchecked(State * 214013u + 2531011u);
+		return (int)(State >> 16);
+	}
+
+	internal void Restore( uint state ) => State = state;
+}
+
+/// <summary>
+/// The coasters of one park: their controllers in creation order, the shared <see cref="CoasterRandom"/>, and the
+/// pylon lookup the placement validator's stacking test reads across coasters. Owned by the park's
+/// <see cref="RideScriptWorld"/>, so every object runtime of the park reaches it.
+/// </summary>
+// [APPROX:COAST-025] the park save holds no coaster tracks, trains, ratings or generator state (like the objects and scripts, DET-016); the original saves them between EMAK and SAOC — evidence needed: an OpenTPW save of placed objects (the SAVE lane) that the coaster fields of COAST-plan §9.6 can join
+public sealed class CoasterWorld
+{
+	/// <summary>Key XORed into the script stream seed for the coaster generator's start state.</summary>
+	private const ulong StreamKey = 0x434F_4153_5452_4E47; // "COASTRNG"
+	private readonly List<CoasterRide> rides = new();
+
+	/// <param name="seed">The park's script stream seed (<see cref="WorldSeed.ScriptStream"/>).</param>
+	// [APPROX:COAST-027] the coaster generator starts from the world seed (folded script stream seed) instead of the original's one C-library rand() draw at world init — evidence needed: none possible for a replay seed; DET-I2 ports ClibRng
+	public CoasterWorld( ulong seed = 0 )
+	{
+		var folded = seed ^ StreamKey;
+		Random = new CoasterRandom( (uint)(folded ^ (folded >> 32)) );
+	}
+
+	public CoasterRandom Random { get; }
+	public IReadOnlyList<CoasterRide> Rides => rides;
+
+	internal void Add( CoasterRide ride )
+	{
+		if ( !rides.Contains( ride ) )
+			rides.Add( ride );
+	}
+
+	internal void Remove( CoasterRide ride ) => rides.Remove( ride );
+
+	/// <summary>Every pylon (not a pylon-less station or station end node) standing on (x, y), with its coaster.</summary>
+	public IEnumerable<(CoasterRide? Ride, CoasterNode Node)> PylonsAt( int x, int y )
+	{
+		foreach ( var ride in rides )
+		{
+			foreach ( var node in ride.Track.Nodes )
+			{
+				if ( !node.IsPylonless && node.X == x && node.Y == y )
+					yield return (ride, node);
+			}
+		}
+	}
+
+	/// <summary>Whether any coaster has a pylon on (x, y) (paths, queues and objects keep off pylon cells).</summary>
+	public bool HasPylon( int x, int y ) => PylonsAt( x, y ).Any();
+
+	/// <summary>Coaster part of <see cref="WorldStateHash"/>: the generator, then every coaster in creation order.</summary>
+	internal void AddCanonicalState( StateHasher hash )
+	{
+		hash.Add( (long)Random.State );
+		hash.Add( rides.Count );
+		foreach ( var ride in rides )
+			ride.AddCanonicalState( hash );
+	}
+}

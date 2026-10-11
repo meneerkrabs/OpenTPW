@@ -127,6 +127,7 @@ public partial class Level : IDisposable
 				+ (save == null ? "; no original save." : $"; Easymode import: {save.PathCells.Count} path cells, {save.PlacedObjects.Count} placed objects, {save.FixedItems.Count} fixed items.") );
 		}
 		SetupObjects();
+		SetupCoasters();
 		Camera.SetCameraMode<ParkCameraMode>();
 		if ( OriginalPark != null )
 		{

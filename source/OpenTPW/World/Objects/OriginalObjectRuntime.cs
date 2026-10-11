@@ -22,6 +22,11 @@ public sealed class OriginalObjectRuntime
 		Entry = entry;
 		world ??= new RideScriptWorld();
 		Visitors = CreateVisitorBridge( entry, world.AllocateAttractionId() );
+		if ( CoasterDefinition.IsCoaster( entry.Settings ) )
+		{
+			Coaster = new CoasterRide( CoasterDefinition.FromSettings( entry.Settings ), world.Coasters, entry.DisplayName );
+			Visitors.ExcitementSource = () => Coaster.GuestExcitement;
+		}
 		Model = ObjectAssets.LoadModel( entry.FileSystem, entry.ModelPath );
 		if ( Model.Kind != ModelFileKind.Geometry )
 			throw new InvalidDataException( $"{entry.ModelPath} is not a geometry model." );
@@ -44,11 +49,14 @@ public sealed class OriginalObjectRuntime
 			// [DATA:<object>.sam:Upgrades[0].InitDuration] [APPROX:RIDES-016] written raw; unit per Info.DurationUnit unverified — evidence needed: binary conversion of InitDuration
 			SetVariable( nameof( RideVariables.VAR_DURATION ), entry.Upgrades.FirstOrDefault( level => level.Level == 0 )?.GetInt( "InitDuration" ) ?? 0 );
 			SetVariable( nameof( RideVariables.VAR_RIDECLOSED ), open ? 0 : 1 );
-			Visitors.Attach( Script, () => !stopped && IsOpen );
+			// [APPROX:COAST-024] guests do not join or board a coaster whose track is not complete (the station counts as closed to them); the callers of the completion predicates 0x10045DA4/0x10045EAC in the guest and queue code are not traced — evidence needed: what 0x100DC834, 0x100DE654 and 0x100ED244 do with 0x10045EAC
+			Visitors.Attach( Script, () => !stopped && IsOpen && (Coaster?.IsOperational ?? true) );
 		}
 	}
 
 	public ObjectCatalogEntry Entry { get; }
+	/// <summary>The coaster controller of a coaster station (<c>Bumper.WhichTrackType 3</c>), else null.</summary>
+	public CoasterRide? Coaster { get; }
 	public ModelFile Model { get; }
 	public ObjectAnimator Animator { get; }
 	/// <summary>The object's original script, or null for the few objects without one.</summary>
@@ -110,6 +118,7 @@ public sealed class OriginalObjectRuntime
 			return;
 		Visitors.HostStep();
 		Script?.Advance( deltaSeconds );
+		Coaster?.Advance( deltaSeconds );
 		Animator.Advance( deltaSeconds );
 		var running = GetVariable( RideVariables.VAR_RUNNING ) != 0;
 		// [APPROX:RIDES-023] A completed cycle = VAR_RUNNING 1 → 0 — evidence needed: original ride-cycle/income accounting
@@ -122,6 +131,11 @@ public sealed class OriginalObjectRuntime
 	{
 		stopped = true;
 		Visitors.ReleaseAll();
+		if ( Coaster != null )
+		{
+			Coaster.ClearTrains();
+			Coaster.World.Remove( Coaster );
+		}
 		Script?.Stop();
 		Animator.StopAll();
 	}
@@ -246,9 +260,9 @@ public sealed class OriginalObjectRuntime
 /// (<see cref="ObjectAnimator"/>) with the original's operands: the plain opcodes channel 0, the <c>_CH</c> opcodes
 /// their channel operand; triggers return the trigger's millisecond result, which <see cref="OpcodeHandlers.Animation"/>
 /// turns into the script's waits; FLUSHANIM(_CH) clears only the deferred clip; GETANIM(_CH) report the AnimID or −1.
-/// Visitor opcodes go to the object's <see cref="RideVisitorBridge"/> (guests slice). Everything else (sounds,
-/// EVENT, objects/particles, ride-type controllers TOUR/BUMP/COAST, park clock, screams, reverb) stays an
-/// unimplemented effect.
+/// COAST goes to the station's <see cref="CoasterRide"/>. Visitor opcodes go to the object's
+/// <see cref="RideVisitorBridge"/> (guests slice). Everything else (sounds, EVENT, objects/particles, the ride-type
+/// controllers TOUR/BUMP, park clock, screams, reverb) stays an unimplemented effect.
 /// </summary>
 public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQuery, IRideCanonicalEffects
 {
@@ -291,6 +305,8 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 				ride.Animator.Flush( Channel( call, 0 ) );
 				return 0;
 		}
+		if ( call.Opcode == Opcode.COAST && ride.Coaster != null )
+			return ride.Coaster.Perform( call );
 		if ( ride.Visitors.TryPerform( call, out var visitorResult ) )
 			return visitorResult;
 		return UnimplementedRideScriptEffects.Instance.Perform( call );

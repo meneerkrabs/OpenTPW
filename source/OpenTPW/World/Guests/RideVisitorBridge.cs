@@ -44,6 +44,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	private long lastAdmissionTurn = long.MinValue;
 	private long calledTurn = -1;
 	private Func<bool> isOpen = () => true;
+	private readonly int excitementLevel;
 
 	public RideVisitorBridge( int attractionId, string name, RideVisitorKind kind, int capacity, int excitementLevel, int attractionValue,
 		GuestNeeds satisfies = GuestNeeds.None, int price = 0 )
@@ -54,7 +55,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		Name = name;
 		Kind = kind;
 		Capacity = Math.Max( 1, capacity );
-		ExcitementLevel = excitementLevel;
+		this.excitementLevel = excitementLevel;
 		AttractionValue = attractionValue;
 		Satisfies = satisfies;
 		Price = price;
@@ -64,7 +65,9 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public string Name { get; }
 	public RideVisitorKind Kind { get; }
 	public int Capacity { get; }
-	public int ExcitementLevel { get; }
+	public int ExcitementLevel => ExcitementSource?.Invoke() ?? excitementLevel;
+	/// <summary>Replaces the .sam excitement with a live value (a coaster's rating, <c>0xdff70</c>), or null.</summary>
+	public Func<int>? ExcitementSource { get; set; }
 	public int AttractionValue { get; }
 	public GuestNeeds Satisfies { get; }
 	public int Price { get; }

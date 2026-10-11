@@ -1,5 +1,6 @@
 namespace OpenTPW.Hud;
 
+// [APPROX:UI-091] actual actor locators use host ID cycling and ground camera focus; original locate flow remains unqualified
 public sealed partial class ParkHud
 {
 	private int lastLocatedVisitorId;

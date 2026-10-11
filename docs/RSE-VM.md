@@ -388,8 +388,8 @@ handler attributes diverge.
 | 53 | `TOUR` | 76 | hooked | Mac-static command roles: mutators preserve flags; supported queries set flags/output; required-variable gates skip invalid calls |
 | 54 | `BUMP` | 199 | hooked | Mac-static command roles: mutators preserve flags; queries set flags/output; duration commands set flags from original input |
 | 55 | `COAST` | 144 | hooked | Mac-static: commands 1/4/5/6/8 preserve flags; 2/3 set flags and optional output; 7 is a no-op |
-| 56 | `ADDHEAD` | 31 | hooked | docs (`visitor`) |
-| 57 | `DELHEAD` | 31 | hooked | docs (`visitor`) |
+| 56 | `ADDHEAD` | 31 | hooked | STP-PPC 0xb0e9c: the ride's head table (`RideHeadSpace`): a free random slot takes the visitor, its head drawn by `RideHeadRenderer` ([GUESTS.md](GUESTS.md), "Riders' heads") |
+| 57 | `DELHEAD` | 31 | hooked | STP-PPC 0xb0f90: frees every slot holding the visitor and takes its head down |
 | 58 | `LIMBO` | 24 | hooked | docs (`visitor unknown`) |
 | 59 | `UNLIMBO` | 24 | hooked | docs say input; corpus output + flags (`UNLIMBO VAR_LETMEOFF; BRANCH_Z`) |
 | 60 | `FORCEUNLIMBO` | 23 | hooked | docs say input; corpus output + flags (`FORCEUNLIMBO VAR_LETMEOFF; BRANCH_NZ loop`) |

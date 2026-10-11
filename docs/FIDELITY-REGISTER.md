@@ -14,9 +14,9 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **288 unresolved unique APPROX IDs**, 326 APPROX occurrences, 120 EXT occurrences, 130 DATA occurrences and 327 BIN occurrences.
+Current inventory: **290 unresolved unique APPROX IDs**, 328 APPROX occurrences, 120 EXT occurrences, 130 DATA occurrences and 327 BIN occurrences.
 
-Of these, 272 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 16 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
+Of these, 274 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 16 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
 CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.
 
@@ -25,7 +25,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | Area | Unique unresolved IDs | Source occurrences |
 | --- | ---: | ---: |
 | ADVISOR | 19 | 20 |
-| AUDIO | 12 | 17 |
+| AUDIO | 14 | 19 |
 | COAST | 22 | 31 |
 | COMPAT | 21 | 24 |
 | DET | 5 | 5 |
@@ -75,6 +75,8 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | AUDIO-010 | Original-fidelity area (scope unadjudicated) | the lobby sentences start with the level of the currently selected island and restart when the selection changes; when the original restarts them is not traced | See source annotation/runtime register | `source/OpenTPW/Audio/AudioApproximations.cs:17` |
 | AUDIO-011 | Original-fidelity area (scope unadjudicated) | an RSE EVENT id missing from the level catalogue plays from the global category of the same name (incagod.RSE's EVENT 3 id 43 exists only in the global cat_rides); the sound library's own fallback rule is not traced | See source annotation/runtime register | `source/OpenTPW/Audio/AudioApproximations.cs:18` |
 | AUDIO-012 | Original-fidelity area (scope unadjudicated) | every activated button plays the click 0x1F, front end included; the traced witness is the park view's control-message handler (0x10137FD0) | See source annotation/runtime register | `source/OpenTPW/Audio/AudioApproximations.cs:19` |
+| AUDIO-013 | Original-fidelity area (scope unadjudicated) | de-emphasis is a first-order bilinear-transform shelf of the published 50/15 µs and J.17 curves at the stream's rate | See source annotation/runtime register | `source/OpenTPW/Audio/AudioApproximations.cs:20` |
+| AUDIO-014 | Original-fidelity area (scope unadjudicated) | a failed frame CRC is counted while the frame still decodes; no shipped frame carries a CRC word | See source annotation/runtime register | `source/OpenTPW/Audio/AudioApproximations.cs:21` |
 | COAST-004 | Original-fidelity area (scope unadjudicated) | COAST-COLLIDE: the track does not collide with terrain or scenery | See source annotation/runtime register | `source/OpenTPW/World/Coasters/CoasterApproximations.cs:14` |
 | COAST-007 | Original-fidelity area (scope unadjudicated) | COAST-WAIVER: the distance waiver for flagged nodes is not applied | See source annotation/runtime register | `source/OpenTPW/World/Coasters/CoasterApproximations.cs:15` |
 | COAST-011 | Original-fidelity area (scope unadjudicated) | COAST-CAMERA: the ride view is the front car's pose; no camera mode uses it yet | See source annotation/runtime register | `source/OpenTPW/World/Coasters/CoasterApproximations.cs:16` |
@@ -408,7 +410,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | ADVISOR-012 | `source/OpenTPW/Audio/AudioMixer.cs:65` | [APPROX:ADVISOR-012] Mono samples are duplicated to both channels — evidence needed: original output channel layout/panning |
 | ADVISOR-012 | `source/OpenTPW/Client/SpeechAudioPlayer.cs:77` | [APPROX:ADVISOR-012] Mono speech duplicated to both channels — evidence needed: original speech output channel layout/panning |
 | ADVISOR-013 | `source/OpenTPW.Files/Public/LipSyncTimeline.cs:54` | [APPROX:ADVISOR-013] talking from time 0 (inferred from decoded audio, 31 dB talking/silent contrast) — evidence needed: the talking flag's value when speech starts |
-| ADVISOR-014 | `source/OpenTPW.Files/Formats/Sound/Mp2Decoder.cs:49` | [APPROX:ADVISOR-014] Values read from the locally installed ffmpeg's data table; checked against the standard's |
+| ADVISOR-014 | `source/OpenTPW.Files/Formats/Sound/Mp2Decoder.cs:51` | [APPROX:ADVISOR-014] Values read from the locally installed ffmpeg's data table; checked against the standard's |
 | ADVISOR-016 | `source/OpenTPW/Client/AutomaticAdvisor.cs:141` | [APPROX:ADVISOR-016] Returned span = speech length + 200 + 300 (the animation budget from audio length) + 1000; the original returns sequence + ending-clip duration + 1000 — evidence needed: decoded advisor sequence and ending-clip durations |
 | ADVISOR-017 | `source/OpenTPW/Client/AutomaticAdvisor.cs:13` | [APPROX:ADVISOR-017] the clock starts at 0 when the automatic advisor is created (the original adds an offset word, +0x18 of its clock, whose writer is not traced), is sampled once per frame and stands still while the pause menu is open (the original's other pause callers are not mapped) — evidence needed: the clock offset writer and the screens that call 0x10110518 |
 | ADVISOR-018 | `source/OpenTPW/Client/AutomaticAdvisor.cs:78` | [APPROX:ADVISOR-018] The advisor is only drawn while a response plays and only inside a level; leaving the level stops its speech — evidence needed: the advisor's entry/exit animation and idle visibility |
@@ -434,6 +436,8 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | AUDIO-011 | `source/OpenTPW.Tests/AudioTriggerTests.cs:266` | [APPROX:AUDIO-011] a level category falls back to the global one of the same name (incagod.RSE's EVENT 3 id 43 is only in the global cat_rides) |
 | AUDIO-011 | `source/OpenTPW/Audio/GameAudio.cs:247` | [APPROX:AUDIO-011] the level-to-global category fallback mirrors the bank fallback (AUDIO-002); the sound library's own fallback rule is not traced |
 | AUDIO-012 | `source/OpenTPW/UI/Original/UiWidgets.cs:424` | [APPROX:AUDIO-012] every activated button plays it, front end included; the traced witness is the park view's handler |
+| AUDIO-013 | `source/OpenTPW.Files/Formats/Sound/Mp2Decoder.cs:319` | [APPROX:AUDIO-013] the standards specify only the analogue de-emphasis characteristic; this realization is the |
+| AUDIO-014 | `source/OpenTPW.Files/Formats/Sound/Mp2Decoder.cs:128` | [APPROX:AUDIO-014] A CRC mismatch is counted and the frame still decodes; ISO/IEC 11172-3 2.4.3.1 only |
 | COAST-004 | `source/OpenTPW/World/Coasters/CoasterTrack.cs:254` | [APPROX:COAST-004] the track is not tested against terrain or scenery (asTrackCollisionPoints, fCollisionPossibleRadius) — evidence needed: the track collision routine and its callers |
 | COAST-007 | `source/OpenTPW/World/Coasters/CoasterTrack.cs:208` | [APPROX:COAST-007] the distance waiver (previous descriptor flag 2 with an ordinal other than 2) is not applied — evidence needed: the purpose of the waiver at 0x10036BA4 and which nodes carry descriptor flag 2 with ordinal ≠ 2 |
 | COAST-011 | `source/OpenTPW/World/Coasters/CoasterRide.cs:148` | [APPROX:COAST-011] the ride view is the front car's sample pose; no camera mode uses it yet and Info.FirstPersonSprites, FIRSTPERSONVIEWDISTANCE and COASTERSMOOTHNESS are not read; no camera code calls the coaster module — evidence needed: the camera methods 0x10093D08/0x10094474 for a follow mode fed by car +72..+80, or a capture of the original ride view |
@@ -975,7 +979,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | options table 0x4b0dc:120020 | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:175` | [DATA:options table 0x4b0dc:120020] title text rectangle |
 | options table 0x4b0dc:120031,OK,Cancel | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:389` | [DATA:options table 0x4b0dc:120031,OK,Cancel] bottom-right panel with the OK and Cancel buttons |
 | sound.sam:SoundInfo.DUCKINGLEVEL | `source/OpenTPW/Audio/GameAudio.cs:94` | [DATA:sound.sam:SoundInfo.DUCKINGLEVEL] the percentage music and effects keep while speech plays (38 in the shipped file) |
-| speechHD.SDT/MusicHD.sdt:all Layer II frames fit this table to ≤23 spare bits | `source/OpenTPW.Files/Formats/Sound/Mp2Decoder.cs:38` | [DATA:speechHD.SDT/MusicHD.sdt:all Layer II frames fit this table to ≤23 spare bits] |
+| speechHD.SDT/MusicHD.sdt:all Layer II frames fit this table to ≤23 spare bits | `source/OpenTPW.Files/Formats/Sound/Mp2Decoder.cs:40` | [DATA:speechHD.SDT/MusicHD.sdt:all Layer II frames fit this table to ≤23 spare bits] |
 | speechHD.SDT:entry word 0 = header size (40) | `source/OpenTPW/World/Advisor.cs:251` | [DATA:speechHD.SDT:entry word 0 = header size (40)] |
 | theme-park-world_win_manual_europe_en_ii5.pdf:PDF-page-15/printed-page-28; SHA256=c96eb25f3dc13f7f0824bbf03f9bbeb3bb94e9f4756d4d8dfa09ac71732b0668 | `source/OpenTPW/Economy/ParkObjectives.cs:323` | [DATA:theme-park-world_win_manual_europe_en_ii5.pdf:PDF-page-15/printed-page-28; SHA256=c96eb25f3dc13f7f0824bbf03f9bbeb3bb94e9f4756d4d8dfa09ac71732b0668] |
 | ui.wad:button UVs v 0.42..1 vs art in the top 58% | `source/OpenTPW/UI/Original/UiModel.cs:131` | [DATA:ui.wad:button UVs v 0.42..1 vs art in the top 58%] V flipped as in the 3D shaders |

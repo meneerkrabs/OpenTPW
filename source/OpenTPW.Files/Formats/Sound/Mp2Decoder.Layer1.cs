@@ -23,7 +23,7 @@ public static partial class Mp2Decoder
 	}
 
 	private static void DecodeLayerOneFrame( Header header, ReadOnlySpan<byte> frame,
-		Synthesis[] synthesis, List<short> output )
+		Synthesis[] synthesis, List<short> output, DeEmphasis? deEmphasis )
 	{
 		var bits = new Bits( frame, header.Crc ? 48 : 32 );
 		var channels = header.Channels;
@@ -69,7 +69,7 @@ public static partial class Mp2Decoder
 						samples[32 + subband] = centered * factors[1, subband];
 				}
 			}
-			AppendSynthesisSlot( samples, channels, 32, synthesis, output );
+			AppendSynthesisSlot( samples, channels, 32, synthesis, output, deEmphasis );
 		}
 		if ( output.Count - frameStart != LayerOneSamplesPerFrame * channels )
 			throw new InvalidOperationException( "Layer I frame produced an unexpected sample count." );

@@ -1,4 +1,4 @@
-# Execution status — October 9, 2026
+# Execution status — October 11, 2026
 
 This is a development prototype, not the complete offline game. The full plan
 and final acceptance remain unchanged. The user approved publishing the plan,
@@ -627,3 +627,82 @@ research batch was included in this merge.
 - Open: the other 346 descriptors and computed score producers, the original
   producers' conditions for events 2/3/4, the pause-aware advisor clock, the
   animation/deferred speech start, and listening/visual checks of the result.
+
+## Browser build, official server and website (October 10, 2026)
+
+- **Browser:** `OpenTPW.Web` runs the shared game code on WebAssembly with a
+  source-compatible WebGL2 replacement for Veldrid (docs/WEB.md). Theme folders
+  load when a park first needs them, sound plays through WebAudio, and saves,
+  online files and settings persist in IndexedDB. The player's game files stay in
+  the browser and are never uploaded. Checked in the browser pane: lobby
+  ~119 fps, park ~97 fps without and ~69 fps with audio; an options change
+  survived a reload.
+- **Server:** the OpenTPW server also serves the browser game (Brotli, cache
+  headers, CSP) and ships as `ghcr.io/meneerkrabs/opentpw-server`. The official
+  instance at play.opentpw.io runs on Hetzner behind Caddy, HTTPS only, with
+  fail2ban and SSH keys from an allow-list. It updates nightly, and at once when
+  a release tag asks it to: the deploy route only leaves a file that the host's
+  `opentpw-deploy.path` turns into the regular update (docs/SERVER.md).
+- **Website:** opentpw.io (Cloudflare Pages, `website/`), with downloads,
+  screenshots, privacy and community rules. It shows the server's news and the
+  most-voted parks whose builders opted in to the website list.
+- **Releases:** v0.4.0 and v0.5.0 were tagged from this work; v0.5.1–v0.6.1 were
+  tagged later.
+
+## Fidelity fixes from the binaries (October 10, 2026)
+
+- **Advisor:** the advisor is drawn without the camera in the bottom right of the
+  screen, as the decrypted Windows v2.0 `tp.exe` draws it: translation
+  (0.6, −0.6, 0.2), root scale (0.015 × 0.75, 0.001, 0.015), model flag 0x200
+  skips the camera and projection. ADVISOR-003/004 are retired, and ADVISOR-023/024
+  cover the screen-space reading and non-4:3 outputs. The owner's decision to
+  analyse the decrypted `tp.exe` statically is in COMPLETION-PLAN.md, with the
+  new BIN prefix `TPW-EXE`.
+- **Text:** BF4 text drawn above 1× (HiDPI, 1440p and up) is magnified per glyph
+  instead of pixel-doubled (UI-043); 1× stays pixel-exact.
+- **Editions:** official Patch 2 data (PATCH-2.md) is supported next to the 1999
+  data. The HUD date uses the DATE fonts when present, and the corpus tests
+  accept both editions. A game folder copied from the CD finds its banners and
+  offers all of its languages; Polish is left out because its character table
+  is not decoded.
+- **Startup:** shader hot reload is opt-in (`--shader-hot-reload`). On macOS a
+  file watcher calls `sync()`, and a hung SMB share kept the game from starting.
+
+## Online world (October 10–11, 2026)
+
+The original online service ran in the game, not the browser (research
+summary: manuals, reviews and archived pages; Platinum Tickets were real and
+were earned from visits to published parks). What OpenTPW rebuilds:
+
+- **News:** the server serves the operator's Game News and System News
+  (`news/*.txt`, `GET /api/v1/news`). The Online World menu shows them under the
+  original column titles.
+- **Globe:** Go Online opens the original online world from
+  `lobby.wad/globe`: the `worldlob` panel and five chat satellites
+  (Mac table `data:0x523f0`), and the globe camera of `tp.exe` 0x005DC860
+  (orbit, zoom 475/200, damped turning, no self-spin). The 24 globe textures
+  form a world map, so cities sit at their real positions.
+- **Cities:** the server's cities are public (`GET /api/v1/cities`,
+  operator-editable `cities.json`). The defaults hold "North Pole" (the Bullfrog
+  pin) and the four known original cities. Pins grow with a city's park count,
+  and the cursor names the city.
+- **City lobby:** a click on a pin opens the city's lobby (Mac table
+  `data:0x50172`), with its ten most-voted parks as their theme islands at the
+  lobby's island slots. The panel lists other parks, returns to the globe or
+  your own lobby, and enters a park. The rank and name labels follow the item
+  detail overlay.
+- **Publishing:** Publish Park starts on the globe to choose the city
+  (UITEXT 419). The globe also works over a park and restores the park camera
+  afterwards. The opt-in website list is chosen in the same form.
+- **Approximations:** ONLINE-007–017, listed in ONLINE.md (tick rate, start
+  view, steering scale, label places, panel backgrounds, pin scale, island theme
+  per park, publish globe layout).
+- **Verification:**
+  - The full test suite passes: 1,129 passed / 287 skipped / 0 failed without assets.
+  - The macOS Metal front-end smoke test passes at 2560×1440, UI scale 2. It checks the globe replacing the lobby, the pins, picking London, a city lobby with three islands, and the globe over a park with the park camera restored.
+- **Open:**
+  - player counts for the chat satellites;
+  - avatars and positional chat in visited parks;
+  - Platinum Tickets and a ride shop;
+  - the city lobby's own islands when opened from a park;
+  - the original layout of the publish globe.

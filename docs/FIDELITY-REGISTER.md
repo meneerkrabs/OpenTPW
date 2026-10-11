@@ -14,9 +14,9 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **282 unresolved unique APPROX IDs**, 315 APPROX occurrences, 124 EXT occurrences, 132 DATA occurrences and 301 BIN occurrences.
+Current inventory: **283 unresolved unique APPROX IDs**, 316 APPROX occurrences, 124 EXT occurrences, 132 DATA occurrences and 301 BIN occurrences.
 
-Of these, 265 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 17 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
+Of these, 265 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 18 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
 CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.
 
@@ -32,7 +32,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON | 33 | 34 |
 | GATE | 2 | 4 |
 | GATEM4 | 2 | 2 |
-| ONLINE | 17 | 17 |
+| ONLINE | 18 | 18 |
 | PATH | 14 | 15 |
 | QUEUE | 19 | 19 |
 | RIDES | 35 | 35 |
@@ -169,7 +169,8 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ONLINE-015 | OpenTPW online extension | &#96;f_lobbutbg&#96; is the city panel's button background in its second rectangle (67,1273,438,1484). | The table field that names it. | `docs/ONLINE.md:320` |
 | ONLINE-016 | OpenTPW online extension | Each city-lobby island is the island of its park's theme. | The argument mapping of &#96;tp.exe&#96; 0x005E27B0 (what the top-10 list entry passes to 0x005E3210). | `docs/ONLINE.md:322` |
 | ONLINE-017 | OpenTPW online extension | The publish globe reuses the Online World's panel (back, zoom, rotate) without Find Parks and the satellites, with UITEXT 419 at the top. | The publish globe's layout table. | `docs/ONLINE.md:321` |
-| ONLINE-018 | OpenTPW online extension | The ride camera's view: the eye half a car above the front car's sample (coaster) or on the prototype's carriage height, looking along the track's direction or the entry heading, entered from the visit's object panel and left with Escape, a right click or the button. Riding itself is evidenced (manual "Ride any ride", visitors rode published parks, the Mac &#96;CMMFirstPersonTarget&#96;/&#96;CMMCoaster&#96; camera-mode classes exist); the view details are OpenTPW's. | The first-person target and coaster camera modes of the Mac binary (their Update bodies), and the original's ride entry and exit input. | `docs/ONLINE.md:323` |
+| ONLINE-073 | OpenTPW online extension | The ride camera's view: the eye half a car above the front car's sample (coaster) or on the prototype's carriage height, looking along the track's direction or the entry heading, entered from the visit's object panel and left with Escape, a right click or the button. Riding itself is evidenced (manual "Ride any ride", visitors rode published parks, the Mac &#96;CMMFirstPersonTarget&#96;/&#96;CMMCoaster&#96; camera-mode classes exist); the view details are OpenTPW's. | The first-person target and coaster camera modes of the Mac binary (their Update bodies), and the original's ride entry and exit input. | `docs/ONLINE.md:323` |
+| ONLINE-076 | OpenTPW online extension | An owner's visits to their own park never count, and one visitor counts at most once per UTC day per park | The original service's guard against repeated or self visits (every visit earned Platinum Tickets, FAQ S2) | `docs/ONLINE.md:324` |
 | PATH-001 | Original-fidelity area (scope unadjudicated) | PATH-ENTER: the path tool starts from a park-view click on an empty owned cell or a path cell (no menu button); ghosts are flat cell markers | See source annotation/runtime register | `source/OpenTPW/World/PathApproximations.cs:12` |
 | PATH-002 | Original-fidelity area (scope unadjudicated) | PATH-UNDO: Backspace pops the last vertex and removes the cells that segment built, without a refund | See source annotation/runtime register | `source/OpenTPW/World/PathApproximations.cs:13` |
 | PATH-003 | Original-fidelity area (scope unadjudicated) | PATH-ENDFLAG: a segment whose last cell lands on an existing path or queue cell ends the tool | See source annotation/runtime register | `source/OpenTPW/World/PathApproximations.cs:14` |
@@ -532,7 +533,8 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | ONLINE-015 | `source/OpenTPW/Online/OnlineScreens.cs:156` | [APPROX:ONLINE-015] f_lobbutbg as the button background in the panel's second rectangle (67,1273,438,1484), as in the island lobby — evidence needed: the table field that names it |
 | ONLINE-016 | `source/OpenTPW/Client/GameFlow.cs:536` | [APPROX:ONLINE-016] each park stands as its theme's island (as the own lobby builds its four) — evidence needed: what 0x005E27B0 passes to 0x005E3210 per entry |
 | ONLINE-017 | `source/OpenTPW/Online/OnlineScreens.cs:581` | [APPROX:ONLINE-017] the publish globe reuses the Online World's panel (back, zoom, rotate) without Find Parks and the satellites, with UITEXT 419 at the top — evidence needed: the publish globe's layout table |
-| ONLINE-018 | `source/OpenTPW/World/RideCameraMode.cs:12` | [APPROX:ONLINE-018] the view itself is an approximation: the eye sits half a car above the front car's sample |
+| ONLINE-073 | `source/OpenTPW/World/RideCameraMode.cs:12` | [APPROX:ONLINE-073] the view itself is an approximation: the eye sits half a car above the front car's sample |
+| ONLINE-076 | `source/OpenTPW.Server/ServerStore.cs:834` | [APPROX:ONLINE-076] every visit earned the owner Platinum Tickets (FAQ, S2), but the original's guard against |
 | PATH-001 | `source/OpenTPW/Hud/ParkHud.cs:658` | [APPROX:PATH-001] ghosts are flat markers at the cell centres with the line's cost beside the cursor (the original draws ghost path pieces, LayLine mode \| 0x100) — evidence needed: captures of the original path tool |
 | PATH-001 | `source/OpenTPW/World/Level.Objects.cs:135` | [APPROX:PATH-001] a left click on an empty owned cell or on a path cell enters mode 1 with that cell as the start; the click handler that calls SetMode(1) is not traced and no menu button exists — evidence needed: the caller of SetMode 0x1007B320 with mode 1 |
 | PATH-002 | `source/OpenTPW/World/ParkPathBuilder.cs:324` | [APPROX:PATH-002] Backspace undo removes the last segment's new cells and undoes its counter bumps, without a refund (only the help text 443 and the vertex stack are traced) — evidence needed: the BACKSPACE handler of the path tool |
@@ -736,10 +738,10 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | ONLINE-040 | `source/OpenTPW.Online/Api/ApiModels.cs:3` | [EXT:ONLINE-040] OpenTPW server HTTP API (JSON, camelCase via StrictJson.Options). The original |
 | ONLINE-050 | `source/OpenTPW.Server/ServerOptions.cs:5` | [EXT:ONLINE-050] All defaults are OpenTPW choices; the original service limits are unknown except |
 | ONLINE-051 | `source/OpenTPW.Server/PasswordHasher.cs:6` | &lt;summary&gt;[EXT:ONLINE-051] PBKDF2-SHA256 (BCL) with a random 16-byte salt; only the hash is stored.&lt;/summary&gt; |
-| ONLINE-052 | `source/OpenTPW.Server/ServerStore.cs:83` | [EXT:ONLINE-052] File storage: JSON indexes (accounts, parks, postcards) rewritten atomically after |
+| ONLINE-052 | `source/OpenTPW.Server/ServerStore.cs:85` | [EXT:ONLINE-052] File storage: JSON indexes (accounts, parks, postcards) rewritten atomically after |
 | ONLINE-053 | `source/OpenTPW.Server/ChatHub.cs:340` | [EXT:ONLINE-053] No avatar positions exist, so the range is acknowledged but has no effect. |
 | ONLINE-054 | `source/OpenTPW.Server/ServerProgram.cs:12` | [EXT:ONLINE-054] Self-hostable OpenTPW server (ASP.NET Core minimal APIs). See docs/SERVER.md. |
-| ONLINE-055 | `source/OpenTPW.Server/ServerStore.cs:645` | [EXT:ONLINE-055] Deletes a player and what the server holds about them (docs/SERVER.md): the |
+| ONLINE-055 | `source/OpenTPW.Server/ServerStore.cs:647` | [EXT:ONLINE-055] Deletes a player and what the server holds about them (docs/SERVER.md): the |
 | ONLINE-056 | `source/OpenTPW.Server/NewsFeed.cs:10` | [EXT:ONLINE-056] the original fetched news from EA's news server; an OpenTPW server serves the operator's text files |
 | ONLINE-057 | `source/OpenTPW.Server/ServerProgram.cs:58` | [EXT:ONLINE-057] the project website reads the public news and website park list from the browser |
 | ONLINE-057 | `source/OpenTPW.Server/ServerProgram.cs:254` | [EXT:ONLINE-057] public, for the project website: only parks whose authors opted in, at most ten, cached a minute. |
@@ -755,8 +757,8 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | ONLINE-067 | `source/OpenTPW/Online/OnlineScreens.cs:623` | [EXT:ONLINE-067] off unless the player chooses it: the website list makes the park and the player name public on the web. |
 | ONLINE-068 | `source/OpenTPW.Online/Packages/MinimalParkPayload.cs:218` | [EXT:ONLINE-068] The layout digest of this payload's version 2 members: FNV-1a 64 over the cells in |
 | ONLINE-069 | `source/OpenTPW/Hud/ParkHud.cs:238` | [EXT:ONLINE-069] a read-only visit can ride the inspected ride (the original's visitors could ride the |
-| ONLINE-070 | `source/OpenTPW/Hud/ParkHud.InfoWindow.cs:24` | [EXT:ONLINE-070] the published park's figures are shown in the park information window of a visit. |
-| ONLINE-071 | `source/OpenTPW.Server/ServerStore.cs:831` | [EXT:ONLINE-071] the visit counter counts accepted visit reports; a ticket award hooked here sees one call per visit. |
+| ONLINE-074 | `source/OpenTPW/Hud/ParkHud.InfoWindow.cs:24` | [EXT:ONLINE-074] the published park's figures are shown in the park information window of a visit. |
+| ONLINE-075 | `source/OpenTPW.Server/ServerStore.cs:833` | [EXT:ONLINE-075] the visit counter counts accepted visit reports; a ticket award hooked here sees one call per visit. |
 | ONLINE-UI | `source/OpenTPW/Online/OnlineScreens.cs:29` | [EXT:ONLINE-UI] native online screens; composition of the original screens and the place of code-positioned controls are OpenTPW's |
 | ONLINE-UI | `source/OpenTPW/Online/OnlineScreens.cs:89` | [EXT:ONLINE-UI] the login and OpenTPW's own online menu (news, postcards, chat, import, account) |
 | ONLINE-UI | `source/OpenTPW/Online/OnlineScreens.cs:175` | [EXT:ONLINE-UI] the city's name and the fetch status while no park is shown |

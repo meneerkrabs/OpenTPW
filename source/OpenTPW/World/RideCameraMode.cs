@@ -9,7 +9,7 @@ namespace OpenTPW;
 /// the ride where its motion is traced: a player-built coaster, from its front car along the sampled track, and
 /// the prototype Totem, on its carriage's modelled height.
 /// </summary>
-// [APPROX:ONLINE-018] the view itself is an approximation: the eye sits half a car above the front car's sample
+// [APPROX:ONLINE-073] the view itself is an approximation: the eye sits half a car above the front car's sample
 // (coaster) or on the carriage node's height above the ride's anchor (prototype), the look direction follows the
 // track's sampled direction or the entry camera's heading, and riding starts from a read-only visit's object
 // panel — the original's seat position, first-person heading, entry click and exit key are not traced (the

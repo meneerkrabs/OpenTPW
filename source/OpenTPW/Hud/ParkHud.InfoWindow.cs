@@ -21,7 +21,7 @@ public sealed partial class ParkHud
 		UiDialogs.AddWindow( screen, window, "w_med", () => strings[UIStrings.ParkInformation] );
 		// A read-only visit never runs the owner's economy: the window shows the statistics the owner published
 		// (the original's visitor saw the park as saved; docs/reverse/ONLINE-VISIT.md), never simulated values.
-		// [EXT:ONLINE-070] the published park's figures are shown in the park information window of a visit.
+		// [EXT:ONLINE-074] the published park's figures are shown in the park information window of a visit.
 		var published = level.PublishedParkStats;
 		var rows = published is { } stats
 			? new (UIStrings Label, Func<string> Value)[]

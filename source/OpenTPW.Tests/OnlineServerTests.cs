@@ -184,9 +184,10 @@ public class OnlineServerTests
 			CollectionAssert.AreEqual( package.Thumbnail, await visitor.DownloadThumbnailAsync( published.Id ) );
 
 			Assert.AreEqual( 1, (await visitor.RecordVisitAsync( published.Id )).Visits );
-			// Each visit report counts one visit (the client sends one per visit; every visit earned the owner
-			// Platinum Tickets in the original, so the count must be per visit, not once per visitor).
-			Assert.AreEqual( 2, (await visitor.RecordVisitAsync( published.Id )).Visits );
+			// Every visit earned the owner Platinum Tickets in the original, but re-entering the same day and visiting
+			// one's own park do not count again (ONLINE-076), so tickets cannot be farmed.
+			Assert.AreEqual( 1, (await visitor.RecordVisitAsync( published.Id )).Visits );
+			Assert.AreEqual( 1, (await owner.RecordVisitAsync( published.Id )).Visits );
 			var vote = await visitor.VoteAsync( published.Id );
 			Assert.AreEqual( (1, 9), (vote.Votes, vote.VotesLeftToday) );
 			Assert.AreEqual( HttpStatusCode.Conflict, (await Fails( () => visitor.VoteAsync( published.Id ) )).Status );
@@ -423,6 +424,31 @@ public class OnlineServerTests
 		finally
 		{
 			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
+	public void AVisitorCountsOncePerDayAndOwnersNever()
+	{
+		var directory = Path.Combine( Path.GetTempPath(), $"opentpw-visits-{Guid.NewGuid():N}" );
+		try
+		{
+			var now = DateTimeOffset.UtcNow;
+			var store = new ServerStore( new ServerOptions { DataDirectory = directory, PasswordIterations = 1000 }, () => now );
+			var owner = store.Register( "Owner", "correct horse" );
+			var visitor = store.Register( "Visitor", "correct horse" );
+			var package = OnlineFormatTests.Package( "Counted" );
+			var park = store.Publish( owner, package, package.ToBytes() );
+			Assert.AreEqual( 0, store.Visit( owner, park.Id ).Visits, "an owner's own visit does not count" );
+			Assert.AreEqual( 1, store.Visit( visitor, park.Id ).Visits );
+			Assert.AreEqual( 1, store.Visit( visitor, park.Id ).Visits, "the same visitor counts once per day" );
+			now = now.AddDays( 1 );
+			Assert.AreEqual( 2, store.Visit( visitor, park.Id ).Visits, "the next day counts again" );
+		}
+		finally
+		{
+			if ( Directory.Exists( directory ) )
+				Directory.Delete( directory, true );
 		}
 	}
 

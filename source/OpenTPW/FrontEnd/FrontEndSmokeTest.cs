@@ -45,6 +45,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 	private BuildItem? secondItem;
 	private bool queueToolAfterSecond;
 	private int purchaseEvents;
+	private int smokeStaffId;
 
 	public FrontEndSmokeTest( GameFlow flow )
 	{
@@ -324,7 +325,70 @@ internal sealed class FrontEndSmokeTest : IDisposable
 						purchaseEvents++;
 					}
 			};
-			Click( flow.Hud.Screen, "buy" );
+			Click( flow.Hud.Screen, "map" );
+		} );
+		Wait( "map window opens", 3 );
+		Do( "map window", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.MapWindowOpen && hud.Stack.Top?.Name == "map", "map button opens the original map window" );
+			CaptureFrame( "map.png" );
+			Require( Context.Batch.Draws.Any( draw => draw.Texture.ImagePath == "/levels/jungle/2dmap.tga" ), "the map uses the shipped jungle image" );
+			Click( hud.Stack.Top!, "close" );
+		} );
+		Wait( "map window closes", 3 );
+		Do( "buy after map", () =>
+		{
+			Require( !flow.Hud!.MapWindowOpen && flow.Hud.Stack.Top?.Name == "hud", "map close returns to the HUD" );
+			Click( flow.Hud.Screen, "finance" );
+		} );
+		Wait( "finance window opens", 3 );
+		Do( "finance window", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.FinanceWindowOpen && hud.Stack.Top?.Name == "finance", "finance button opens the original financial graph" );
+			var capture = CaptureFrame( "finance.png" );
+			VerifyText( capture, flow.Strings[UIStrings.FinancialInformation], "Financial Information title" );
+			Click( hud.Stack.Top!, "loans" );
+		} );
+		Wait( "loans window opens", 3 );
+		Do( "loans window", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.LoansWindowOpen && hud.Stack.Top?.Name == "loans", "finance loans button opens the original bank window" );
+			var capture = CaptureFrame( "loans.png" );
+			VerifyText( capture, flow.Strings[UIStrings.GraphAvailableLoans], "Available Loans title" );
+			Click( hud.Stack.Top!, "exit" );
+		} );
+		Wait( "loans window closes", 3 );
+		Do( "finance window closes", () =>
+		{
+			var hud = flow.Hud!;
+			Require( !hud.LoansWindowOpen && hud.Stack.Top?.Name == "finance", "loans exit returns to financial information" );
+			Click( hud.Stack.Top!, "exit" );
+		} );
+		Wait( "finance window closes", 3 );
+		Do( "research window opens", () =>
+		{
+			var hud = flow.Hud!;
+			Require( !hud.FinanceWindowOpen && hud.Stack.Top == hud.Screen, "finance exit returns to the HUD" );
+			Click( hud.Screen, "research" );
+		} );
+		Wait( "research window opens", 3 );
+		Do( "research window", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.ResearchWindowOpen && hud.Stack.Top?.Name == "research", "research button opens the original research lab" );
+			var capture = CaptureFrame( "research.png" );
+			VerifyText( capture, flow.Strings[UIStrings.ResearchLab], "Research Lab title" );
+			Click( hud.Stack.Top!, "exit" );
+		} );
+		Wait( "research window closes", 3 );
+		Do( "buy window opens", () =>
+		{
+			var hud = flow.Hud!;
+			Require( !hud.ResearchWindowOpen && hud.Stack.Top == hud.Screen, "research exit returns to the HUD" );
+			Click( hud.Screen, "buy" );
 		} );
 		Wait( "buy window opens", 3 );
 		Do( "buy window", () =>
@@ -336,7 +400,56 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			VerifyText( capture, flow.Strings[UIStrings.BuyRide], "Buy Ride title" );
 			VerifyText( capture, flow.Strings[UIStrings.NameAttr], "Name column header" );
 			VerifyText( capture, flow.Strings[UIStrings.Price], "Price column header" );
-			Click( hud.Stack.Top!, "categoryShops" );
+			Click( hud.Stack.Top!, "allStaff" );
+		} );
+		Wait( "staff window opens", 3 );
+		Do( "staff window", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.StaffWindowOpen && hud.Stack.Top?.Name == "staff", "buy window staff button opens the original staff window" );
+			Require( !hud.ShowingEmployedStaff && hud.StaffCandidates.Count > 0, "the staff window opens its applicant list" );
+			smokeStaffId = hud.SelectedCandidateId;
+			Require( smokeStaffId != 0, "an applicant is selected" );
+			var capture = CaptureFrame( "staff.png" );
+			VerifyText( capture, ((UiLabel)hud.Stack.Top!.Find( "staffName" )!).Text(), "selected applicant name" );
+			flow.InjectedInput = UiInput.Click( Context.Canvas.Map( new System.Numerics.Vector2( 1240, 441 + ParkHud.StaffRowHeight / 2 ), UiAnchor.Center ) );
+		} );
+		Wait( "staff applicant hired", 3 );
+		Do( "employed staff view", () =>
+		{
+			var hud = flow.Hud!;
+			Require( flow.Level!.Park!.Economy.Staff.Members.Any( member => member.Id == smokeStaffId ), "clicking the selected applicant hires through the staff window" );
+			Click( hud.Stack.Top!, "staffView" );
+		} );
+		Wait( "employed staff view opens", 3 );
+		Do( "dismiss smoke employee", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.ShowingEmployedStaff && hud.StaffItems.Count == flow.Level!.Park!.Economy.Staff.Members.Count, "the staff window lists employed staff" );
+			Require( hud.SelectedStaffId == smokeStaffId, "the hired smoke-test employee is selected" );
+			var capture = CaptureFrame( "staff-employed.png" );
+			VerifyText( capture, ((UiLabel)hud.Stack.Top!.Find( "staffName" )!).Text(), "selected employee name" );
+			VerifyText( capture, ((UiLabel)hud.Stack.Top.Find( "statValue3" )!).Text(), "selected employee happiness" );
+			Click( hud.Stack.Top!, "dismissStaff" );
+		} );
+		Wait( "dismissal confirmation opens", 3 );
+		Do( "confirm smoke employee dismissal", () =>
+		{
+			Require( flow.Hud!.Stack.Top?.Name == "confirmDismissStaff", "dismissal asks for confirmation" );
+			Click( flow.Hud.Stack.Top!, "choice0" );
+		} );
+		Wait( "smoke employee dismissed", 3 );
+		Do( "staff window exit", () =>
+		{
+			var hud = flow.Hud!;
+			Require( flow.Level!.Park!.Economy.Staff.Members.All( member => member.Id != smokeStaffId ), "the dismiss button removes the selected employee" );
+			Click( hud.Stack.Top!, "exit" );
+		} );
+		Wait( "staff window closes", 3 );
+		Do( "shops after staff", () =>
+		{
+			Require( !flow.Hud!.StaffWindowOpen && flow.Hud.BuyWindowOpen && flow.Hud.Stack.Top?.Name == "buy", "staff close returns to the buy window" );
+			Click( flow.Hud.Stack.Top!, "categoryShops" );
 		} );
 		Wait( "shops listed", 3 );
 		Do( "shops category", () =>
@@ -597,9 +710,9 @@ internal sealed class FrontEndSmokeTest : IDisposable
 	}
 
 	/// <summary>
-	/// The Instant Action start from the menu: Easy_ balance and the shipped jungle seed, no staff member
-	/// invented for the seed's undecoded researcher but research by its ECON-019 stand-in, and the loan,
-	/// research effort, upgrade, ticket and challenge gates (docs/ECONOMY.md, "Game modes").
+	/// The Instant Action start from the menu: Easy_ balance and the shipped jungle seed with its imported bank, turn
+	/// and staff (research comes from the seed's own researcher), and the loan, research effort, upgrade, ticket and
+	/// challenge gates (docs/ECONOMY.md, "Game modes").
 	/// </summary>
 	private void PlayInstantAction()
 	{
@@ -607,7 +720,12 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		var economy = level.Park!.Economy;
 		Require( flow.StartKind == ParkStartKind.InstantAction && economy.Mode == ParkGameMode.InstantAction && economy.Features == ParkModeFeatures.For( ParkGameMode.InstantAction ), "Instant Action button starts an Instant Action park" );
 		Require( economy.Settings.IsEasy && level.OriginalPark!.Save != null && level.Park.Import is { ImportedObjects: > 0 }, "Instant Action jungle uses the Easy_ balance and imports the Easymode seed" );
-		Require( economy.Staff.Members.Count == 0 && economy.SeedResearcherStandIn, "the seed's staff are not decoded: no staff member is invented, research uses the ECON-019 stand-in" );
+		var seed = level.OriginalPark!.Save!;
+		var bank = seed.Economy.Bank;
+		// The park has run a few frames since it started: the month's opening balance and the turn show the import.
+		Require( economy.Ledger.CurrentOpeningBalance == bank.Balance && economy.EntranceFee == bank.AdmissionFee && economy.Ledger.History.Count == 0
+			&& economy.Turn >= seed.World.Variables.GameTick, "the seed's bank balance, admission fee and park turn are imported" );
+		Require( economy.Staff.Members.Count == seed.Staff.Count && economy.Staff.OfType( StaffType.Researcher ).Any(), "the seed's staff, including its researcher, are imported" );
 		var capture = CaptureFrame( "instant-action-hud.png" );
 		VerifyText( capture, flow.Hud!.MoneyText, "Instant Action HUD bank balance" );
 		Require( !economy.AvailableLoans.Any(), "Instant Action offers no loans" );
@@ -619,12 +737,12 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		var progress = economy.Research.ProgressEntries.ToArray();
 		var start = economy.Date;
 		economy.AdvanceDays( 60 );
-		Require( economy.Research.Completed.Count > completedItems || !economy.Research.ProgressEntries.SequenceEqual( progress ), "research advances through the seed researcher's stand-in" );
+		Require( economy.Research.Completed.Count > completedItems || !economy.Research.ProgressEntries.SequenceEqual( progress ), "research advances through the seed's imported researcher" );
 		Require( economy.Objectives.GoldenTickets.Count == 0 && economy.Objectives.Current == null, "no golden-ticket checks or challenges in Instant Action" );
 		Log.Trace( $"Instant Action jungle: {level.Park.Import!.ImportedObjects} seed objects, {economy.Staff.Members.Count} staff, research advanced {start} -> {economy.Date}; loans, research effort and upgrades refused." );
 		Device.WaitForIdle();
 		completed = true;
-		Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name} at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames, lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, two distinct catalogue objects bought exactly once through the park economy, info arm, economy pause, sale, overlap refusal, open/close, Escape out of the queue tool, pause menu, exit to lobby, read-only visit build/open/delete/save guards, Instant Action return and Load Park reference start, Instant Action seed, research stand-in and gates." );
+		Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name} at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames, lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, finance/loans/research window captures and title readback, two distinct catalogue objects bought exactly once through the park economy, info arm, economy pause, sale, overlap refusal, open/close, Escape out of the queue tool, pause menu, exit to lobby, read-only visit build/open/delete/save guards, Instant Action return and Load Park reference start, Instant Action seed with imported bank, turn and staff, research and gates." );
 		GameFlow.Quit();
 	}
 

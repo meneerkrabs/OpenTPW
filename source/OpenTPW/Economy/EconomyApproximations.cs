@@ -23,7 +23,6 @@ public static class EconomyApproximations
 		("ECON-015", "researchers on strike or picked up are the original's excluded states 3, 4 and 5", "the staff state values behind 0x100F4170"),
 		("ECON-017", "the research table is in info-id order and the player cannot step the cursor to another item", "the table fill order (FUN_100c9064) and the next/previous control"),
 		("ECON-018", "ride upgrade levels and add-on objects form the \"upgrade\" research category", "research lab capture"),
-		("ECON-019", "an Instant Action start that imported the seed park researches as one grade-2 researcher while none is employed, standing in for the seed's undecoded researcher; the Mac code has no staffless research path", "Easymode.TPWI staff records"),
 		("ECON-020", "a sale drops LitterEffect/100 litter items", "capture of litter after sales"),
 		("ECON-021", "a repair takes WorkDuration game hours (x DurationOfUpgrade for upgrades); mechanics are dispatched instantly", "capture of repair duration per grade"),
 		("ECON-022", "a handyman removes one litter item per WorkDuration game minutes, park-wide", "capture of cleaning speed"),
@@ -33,7 +32,7 @@ public static class EconomyApproximations
 		("ECON-027", "the record sub-kinds 0–3 are rides, shops, sideshows and features, and every hired staff member counts", "the record field at +0x4C behind sub-kind +0x7A8 and the staff byte +3 tested by FUN_100C4064"),
 		("ECON-028", "purchases need a balance covering the cost", "capture of building with too little money"),
 		("ECON-030", "the simulation stops once bankrupt", "capture of the bankrupt state"),
-		("ECON-031", "imported parks are opened on load (open state not decoded)", "park-open flag in the save"),
+		("ECON-031", "a park started without an original save is opened when guests attach (an imported park follows its saved mParkClosed)", "the open state of a new original park"),
 		("ECON-034", "challenge type meanings come from Challenges.sam comments (shop types by ShopType/SpecialIngredient)", "challenge captures per type"),
 		("ECON-035", "offers wait for accept/decline; follow-ups are offered right after completion; failed challenges count as finished", "challenge flow captures"),
 		("ECON-036", "type 18 needs TargetVal items built since acceptance; the binary compares TargetVal with a per-ride value from 0x100C7264 that is not identified", "the fifth output of 0x10041A34"),
@@ -42,7 +41,6 @@ public static class EconomyApproximations
 		("ECON-040", "players start with 1 golden key and keys are not consumed by entering themes", "initial lobby and repeated theme-entry captures"),
 		("ECON-041", "features-directory objects with Research.Category != 3 are fixed (non-buyable) items", "buy-menu capture"),
 		("ECON-044", "guests never hold a balloon or wear a costume, so both percentages are 0; the binary gives them when a guest uses a balloon or costume shop (0x100EAAF8)", "balloon lifetime (+0x214) and costume state rules"),
-		("ECON-045", "loan/challenge record locators use plausibility bounds (checked on 12 saves)", "the serializer offsets of both tables"),
 	};
 
 	private static bool logged;

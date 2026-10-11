@@ -20,8 +20,8 @@ public sealed class HudHost
 /// <summary>
 /// The in-game HUD in the original style (docs/UI.md): the green main panel (mainpanel.MD2) with the
 /// date display, happiness gauge and bank balance at their authored places; the panel buttons
-/// (buy/build, information, finance, research, map) with their original tooltips; the original buy window
-/// (<c>w_big</c>, Mac buy table 0x4cd94, see <c>ParkHud.BuyWindow.cs</c>); the information arm
+/// (buy/build, information, finance, research, map) with their original tooltips; the original buy, staff and map windows
+/// (Mac tables 0x4cd94, 0x4a1e0 and 0x5265e); the information arm
 /// ("pan_info") for the selected original object; the cash extras (dollar icon, change text, golden keys and tickets);
 /// the message area (f_tagl/m/r) and the pause menu. Positions of code-placed buttons inside the info arm and the
 /// speed control are OpenTPW approximations.
@@ -75,8 +75,8 @@ public sealed partial class ParkHud
 	public const uint ParkViewClickEvent = 0x1F;
 
 	public OriginalObject? SelectedObject => selectedObject;
-	/// <summary>True while a menu (pause menu and what it opens) is on top of the HUD; the buy window does not pause.</summary>
-	public bool Paused => Stack.Screens.Any( screen => screen != hud && screen != buyScreen );
+	/// <summary>True while a menu is on top of the HUD; the buy and staff windows do not pause.</summary>
+	public bool Paused => Stack.Screens.Any( screen => screen != hud && screen != buyScreen && screen != staffScreen );
 	public IReadOnlyList<string> Messages => messages.Select( message => message.Text ).ToArray();
 
 	// [DATA:UITEXT.str:448,449] currency prefix; [APPROX:UI-021] ","-grouped digits — evidence needed: locale number format of the original
@@ -142,9 +142,9 @@ public sealed partial class ParkHud
 		// [DATA:Mac main HUD table 0x4ab38:38-43] original button rectangles: staggered along the panel's curve, plus the camera button
 		PanelButton( "buy", "b_buy", Rect( 170, 1122, 288, 1240 ), 469, level.IsReadOnlyVisit ? null : OpenBuyWindow );
 		PanelButton( "info", "b_info", Rect( 287, 1133, 405, 1252 ), 470, null );
-		PanelButton( "finance", "b_money", Rect( 156, 1241, 274, 1360 ), 471, null );
-		PanelButton( "research", "b_resrch", Rect( 274, 1254, 392, 1372 ), 472, null );
-		PanelButton( "map", "b_map", Rect( 81, 1340, 200, 1458 ), 473, null );
+		PanelButton( "finance", "b_money", Rect( 156, 1241, 274, 1360 ), 471, OpenFinanceWindow );
+		PanelButton( "research", "b_resrch", Rect( 274, 1254, 392, 1372 ), 472, OpenResearchWindow );
+		PanelButton( "map", "b_map", Rect( 81, 1340, 200, 1458 ), 473, OpenMapWindow );
 		// [APPROX:UI-042] the camera button's action (camera views) is not implemented; it is shown disabled
 		PanelButton( "camera", "b_camera", Rect( 202, 1355, 320, 1474 ), null, null );
 

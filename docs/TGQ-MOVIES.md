@@ -126,21 +126,26 @@ mid shift and the quarter-LSB bias were chosen by search; constant precision
 (9–12 bits) barely matters. The quarter-LSB bias is unexplained: the oracle
 rounds slightly downward relative to round-half-up in every variant tried.
 
-All 9,412 frames (this decoder vs the oracle):
+All 9,412 frames (this decoder vs the oracle), re-measured on the merged
+`main` for this revision. Identical samples count Y, Cb and Cr together. Per-frame
+PSNR uses all three planes with peak 255; the mean and worst are taken over the
+frames that differ (516 frames match exactly and are excluded from the PSNR
+columns). Max abs diff is over all samples:
 
 | File | Identical samples | Mean PSNR | Worst frame | Max abs diff |
 | --- | ---: | ---: | ---: | ---: |
-| `bf` | 94.6 % | 60.70 dB | 57.98 dB | 4 |
+| `bf` | 94.6 % | 60.93 dB | 57.98 dB | 4 |
 | `bub` | 88.2 % | 57.30 dB | 55.69 dB | 4 |
-| `buc` | 87.0 % | 56.90 dB | 54.53 dB | 4 |
-| `grav` | 87.2 % | 57.00 dB | 55.02 dB | 4 |
-| `jug` | 83.9 % | 55.95 dB | 54.53 dB | 4 |
-| `mir` | 90.9 % | 58.47 dB | 56.04 dB | 4 |
-| `plan` | 90.4 % | 58.22 dB | 56.49 dB | 4 |
-| `roc` | 90.0 % | 58.06 dB | 56.13 dB | 4 |
-| `roll` | 87.7 % | 57.13 dB | 54.70 dB | 4 |
+| `buc` | 87.0 % | 56.92 dB | 54.53 dB | 4 |
+| `grav` | 87.2 % | 56.98 dB | 55.02 dB | 4 |
+| `jug` | 83.9 % | 56.06 dB | 54.53 dB | 4 |
+| `mir` | 90.9 % | 58.53 dB | 56.04 dB | 4 |
+| `plan` | 90.4 % | 58.17 dB | 56.49 dB | 4 |
+| `roc` | 90.0 % | 58.02 dB | 56.13 dB | 4 |
+| `roll` | 87.7 % | 57.17 dB | 54.70 dB | 4 |
 
-(Previous float decoder over `bf`, `bub`, `mir`, `plan`, `roll`: 79–85 %
+The mean PSNR differs from the earlier table by up to 0.1 dB; the decoder is
+unchanged. (Previous float decoder over `bf`, `bub`, `mir`, `plan`, `roll`: 79–85 %
 identical, 54.6–56.2 dB, max difference 5.) **Still not bit-exact.** Evidence
 of the remaining gap: for blocks with one AC coefficient the oracle output is a
 deterministic function of the level, so the residual is IDCT rounding, not
@@ -159,6 +164,103 @@ of `bf`/`plan`): luma clips at both ends (Y = 0: 0.46 %/0.87 %, Y = 255:
 0.43 %/0.73 %) and 1.1 %/2.2 % of luma is below 16, which limited-range video
 would not show. Chroma stays within 16–240 for > 99.9 % of samples. The
 original player's conversion is still **not verified** against captures.
+
+### Original TQI decoder: static analysis of the PC executable
+
+Static reads only (`llvm-objdump`, byte reads, no execution) of the decrypted
+Sim Theme Park World v2.0 no-CD `tp.exe` that COMPLETION-PLAN.md allows for
+analysis (3,734,528 bytes, SHA-256 `5472f97b5eb28f58…`, image base `0x400000`).
+Its code **and** its initialised data are present. (An earlier review in this
+document read a damaged extraction, SHA-256 `85eef533…`, whose data sections
+were empty; its conclusions that the constants are zero or encrypted, and that
+`0x67832e` is the movie IDCT, are withdrawn.)
+
+The executable links EA's movie library: the chunk dispatcher at `0x66e5f0`
+handles `MADe`, `TGVf`, `TGVk`, `TGQp`, `pIQT`, `UV2f` and more (`pIQT` is
+frame type 4). Two separate 8×8 transforms exist:
+
+- `0x67832e` (data in section `idct_dat`, block decode `0x677c00` with an 8-bit
+  DC and table `0xfbd54c` built at `0x676bc0`) belongs to another EA codec,
+  **not TQI**. It shares the flowgraph below but rounds with the
+  `1.5·2⁵²` trick (`0xfbc028` = 6755399441055744.0).
+- **TQI** has its own copy in section `cseg` with data in `tqia_dat`.
+
+Verified TQI arithmetic:
+
+| Step | Address | What it does |
+| --- | --- | --- |
+| Block decode | `0x6f61e8` | VLC run/level decode (tables in `tqia_dat`, zigzag at `0xfbf0e4`); every coefficient, the DC included (after prediction), is `level × M[pos]` with a plain 32-bit `imul`; `M` is 64 dwords at `0xfac690` |
+| Pass 1 (rows) | `0x6f6510` | AAN butterfly, see below; if all seven AC inputs are zero, the DC is copied unchanged to all eight outputs; writes a 9-dword-stride temporary |
+| Pass 2 (columns) | `0x6f6670` | the same butterfly without the zero shortcut; **no shift between the passes** |
+| Driver | `0x6f6770` | per macroblock: decode, eight row passes, eight column passes into an integer macroblock buffer (`0xfacab0`, 256-byte rows) |
+| Output | `0x6f6db4` | each sample is `(v + 0x8000) >> 16` (round half up), used as an index into colour tables (`0xfae930`, `0xfaf930`, `0xfb0930`) that produce 16-bit RGB directly; the player never stores 8-bit YUV |
+
+The butterfly (inputs `x0`…`x7`, all 32-bit integers):
+
+- even part: `t10 = x0 + x4`, `t11 = x0 − x4`, `t13 = x2 + x6`,
+  `r = 2·hi32((x2 − x6) · 0x5A82799A)` (Q31 √2/2, `imul`, high dword doubled),
+  `e = t13 + r`; outputs combine `t10 ± e` and `t11 ± r`;
+- odd part: `z13 = x3 + x5`, `z10 = x5 − x3`, `z11 = x1 + x7`, `z12 = x1 − x7`,
+  `t7 = z11 + z13`, `t11o = 2·hi32((z11 − z13) · 0x5A82799A)`;
+  in x87: `z5 = (z10 + z12) · 0.3826834f`, `a = z10 · 0.5411961f + z5`,
+  `b = z12 · 1.3065630f − z5` (the `fsubrp` at `0x6f6586` encodes Intel
+  `FSUBP ST(2),ST(0)`: `ST(2) − ST(0)`), both converted with `fistp` in the current
+  rounding mode; then `p = round(a) + t11o`, `q = t11o + round(b)`,
+  `w = round(b) + t7`;
+- outputs (index order of the row stores): `0: (t10+e)+w`, `7: (t10+e)−w`,
+  `1: q+(t11+r)`, `6: (t11+r)−q`, `2: (t11−r)+p`, `5: (t11−r)−p`,
+  `3: (t10−e)+round(a)`, `4: (t10−e)−round(a)`.
+
+Constants (`tqia_dat`, identical in `idct_dat`): `0xfbf038` = `0x5A82799A`,
+`0xfbf03c` = 0.5411961, `0xfbf040` = 1.3065630, `0xfbf044` = 0.3826834.
+
+Still open, so the decoder is not changed yet:
+
+- **The TQI matrix builder**: no instruction writes `0xfac690` by absolute
+  address, so the code that fills `M` from the frame's quantiser was not found.
+  The sibling codec's builder (`0x676bc0`) computes
+  `M[k] = round_half_up(S[k] · ((W[k] · q) << 12) / 2¹⁶)` with the AAN prescale
+  `S` (×8192, at `0xfbc24c`), the MPEG-1 intra matrix `W` (`.rdata` `0x706fb8`) and
+  `M[0]` from `W[0] = 8` without `q`; whether TQI uses the same rule and scale is
+  unverified.
+- **x87 precision control**: the odd-part products are rounded according to the
+  FPU's precision setting at movie time (Direct3D often selects 24-bit); which
+  setting the movie player runs with is not established.
+- **Colour tables**: their builders are not read.
+
+Measured against FFmpeg: FFmpeg's TQI path approximates this transform with
+integer constants, so a faithful port is expected to differ slightly from it;
+the FFmpeg table above is a closeness measure, not the bit-exactness gate.
+
+### Mac route: no TQI decoder in the Mac build (verified, negative)
+
+The Mac build was checked as the candidate source of the original TQI
+arithmetic, because its code is readable. It is not one. Static reads only:
+the player is `0x1009B1DC` (552 bytes; its callers `0x101C0DF0` and
+`0x101C0F40` are confirmed by call references).
+
+- The player calls only QuickTime movie glue: `NewMovieFromFile` and
+  `OpenMovieFile` (glue at `0x101C6534`–`0x101C6564`), `GetGWorldDevice`,
+  `SetMovieGWorld`, `SetMovieBox`, `PrerollMovie`, `SetMovieVolume`,
+  `MoviesTask` and `StartMovie`. Its whole movie import surface is the
+  `QuickTimeLib` set (`OpenMovieFile` … `IsMovieDone`).
+- Neither `SimThemePark.data` nor the 15 shared libraries contain `TQI`, `pIQT`
+  or an EA codec string. The only IDCT in the libraries is IJG `libjpeg`'s,
+  which is unrelated to movies.
+- The Mac movies are not the `.tgq` files. The HFS volume `mac-feral/hfs.img`
+  (`Theme Park Data/data/Movies`) holds the nine `.mov` files with the same
+  names, plus `bfj.mov` and `BFj2.mov`. Their QuickTime `moov` atoms (raw in
+  `bf.mov` and `bfj.mov`, zlib-compressed `cmov` in the rest) declare `SVQ1` (Sorenson Video 1)
+  video and `ima4` audio. The `Extras` trailer is `SVQ1` with `twos` audio.
+  Sorenson decoding is Apple's QuickTime component, which is not in the game
+  data.
+- So the Mac player decodes re-encoded Sorenson video through QuickTime, never
+  an EA TQI bitstream. Nothing in the Mac build can supply the `.tgq` IDCT,
+  and no Mac arithmetic was ported. The decoder and the table above are
+  unchanged.
+
+The volume was read with a scratch HFS catalogue walker outside the repository
+(the image does not mount with `hdiutil`). Nothing from it is committed.
 
 ### Pinned hashes (SHA-256)
 
@@ -346,7 +448,12 @@ tests never play it; `--mute` silences it.
 
 ## Remaining gates
 
-Bit-exact IDCT (only if original-player captures prove it matters), colour
+Bit-exact IDCT: the original's kernel is located (see "Original IDCT") but its
+constants, matrix values and final clamp are not recoverable from the local
+data, so the FFmpeg-fitted integer AAN stays. The Mac build is not a source
+(see "Mac route"; its movies are Sorenson Video). Closing it needs the
+decrypted `IDCT_DAT`/`UVA_DATA` contents or a runtime capture of the PC
+executable (not done here), colour
 matrix/range against original-player captures, what the original does after
 the last frame (`plan.tgq` audio tail), whether the PC build uses the same
 logo-plus-day-trailer sequence and `.tgq` names (PC executable not analysed),

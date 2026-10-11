@@ -81,8 +81,9 @@ What works today, with your own original game data:
   park and the front-end lobby play their original music, rides, the crowd and the interface play
   their original sounds, and all nine movies play ([audio](docs/AUDIO.md),
   [lip sync](docs/LIPS.md), [movies](docs/TGQ-MOVIES.md)).
-- **Online again:** accounts, park sharing, visiting, voting, postcards and chat, on the official
-  server or one you host yourself ([online](docs/ONLINE.md), [server](docs/SERVER.md)).
+- **Online again:** accounts, park sharing, visiting, voting, postcards and chat parks, on the
+  official server or one you host yourself ([online](docs/ONLINE.md),
+  [server](docs/SERVER.md)).
 - **Modern systems:** native builds for Windows, macOS and Linux; any resolution and aspect ratio
   with a HiDPI-aware interface scale; button labels fitted per language; compatibility fixes from
   the community ([compatibility](docs/COMPATIBILITY.md)).
@@ -118,7 +119,7 @@ certifies every variant or original-runtime parity.
 | Fonts ([.BF4](https://opentpw.gu3.me/formats/bf4.html)) | ✅ | All 33 fonts in each of six verified languages decode (four-bit, RLE, monochrome); original text layout/appearance remains unverified ([fonts](docs/BF4-FONTS.md), [UI](docs/UI.md)). |
 | Lip Sync ([.LIP](https://opentpw.gu3.me/formats/lips.html)) | ✅ | Mark lists parse; signed conversion, talking toggles, loaded-LIP start state and random mouth selection are traced to the Mac binary. The advisor speaks by itself for the traced game events (park start, Instant Action, bankruptcy; open/close queue but score below the minimum) with the original mouth choice; its clock is the frame clock and does not pause (ADVISOR-017), and animation/pose remain open ([lip sync](docs/LIPS.md), [binary trace](docs/reverse/APPROX-TRACE.md)). |
 | Banner mesh companions ([.MTR](https://opentpw.gu3.me/formats/mtr.html)) | ⚠️ | Selected topology and matrices decode; original runtime purpose remains unknown ([companions](docs/MTR.md)). |
-| Video ([.TQI/.TGQ](https://opentpw.gu3.me/formats/tqi.html)) | ⚠️ | All nine movies decode and stream via `--play-movie`; audio is bit-exact, video remains close but not bit-exact ([movies](docs/TGQ-MOVIES.md)). |
+| Video ([.TQI/.TGQ](https://opentpw.gu3.me/formats/tqi.html)) | ⚠️ | All nine movies decode and stream via `--play-movie`; audio is bit-exact, video remains close but not bit-exact (84–95 % identical samples against FFmpeg; the original PC transform and output rounding are traced, its quantiser-matrix builder and FPU precision are still open, and the Mac build holds no TQI decoder (its movies are Sorenson Video), see [movies](docs/TGQ-MOVIES.md)). |
 | Theme Park Inc textures (.FSH, EA `SHPI`) | ⚠️ | All 7,283 Theme Park Inc `.fsh` files/WAD members decode to RGBA (`--inspect-fsh`) and the experimental level viewer draws them; Theme Park Inc is not playable, and opaque 24-bit palettes are an approximation ([FSH](docs/FSH.md)). |
 | Theme Park Inc level viewer (`[EXT:tpi-viewer]`) | ⚠️ | `--load-original-level arabian\|science\|water` with Theme Park Inc data shows that world (terrain, lake, paths, gate, monorail, bus, guests, sound) with a camera only: no HUD, economy or advisor, and nothing is verified against the original game ([viewer](docs/THEME-PARK-INC.md#theme-park-inc-level-viewer)). |
 
@@ -139,8 +140,9 @@ game files never go into this repository.
 1. **Theme Park World**: the complete original offline game. This is the primary goal; it is in
    progress and not yet complete ([completion plan](docs/COMPLETION-PLAN.md)).
 2. **Online play as in the original game**: sharing, visiting and voting on parks, postcards and
-   chat. The original servers are gone and their protocol is not reconstructed, so OpenTPW provides
-   its own opt-in, self-hostable service ([online](docs/ONLINE.md)).
+   chat parks with live presence, movement and the original chat commands. The original servers are
+   gone and their protocol is not reconstructed, so OpenTPW provides its own opt-in, self-hostable
+   service ([online](docs/ONLINE.md), [what the original had](docs/reverse/ONLINE-FEATURES.md)).
 3. **Theme Park Inc / Sim Coaster**: a separate, later goal. Both games share most file formats and
    closely related ride-script formats ([comparison](docs/THEME-PARK-INC.md)), but Theme Park Inc
    is not playable yet; an experimental level viewer shows its worlds.

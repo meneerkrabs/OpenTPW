@@ -27,6 +27,82 @@ public class OnlineIntegrationTests
 	}
 
 	[TestMethod]
+	public async Task SessionWalksAChatParkAndReportsBuddyEntries()
+	{
+		await using var server = await LoopbackServer.StartAsync( options => options.ChatBurst = 50 );
+		try
+		{
+			// Two full sessions against one server: the movement of one player reaches the other, and a buddy
+			// is told which park their buddy entered.
+			var ann = new OnlineSession( Folders() );
+			var bob = new OnlineSession( Folders() );
+			ann.UseServer( server.Url.ToString(), "Ann" );
+			bob.UseServer( server.Url.ToString(), "Bob" );
+			ann.Register( "Ann", "correct horse" );
+			await PumpUntilIdle( ann );
+			bob.Register( "Bob", "correct horse" );
+			await PumpUntilIdle( bob );
+			ann.ConnectChat();
+			await PumpUntilIdle( ann );
+			bob.ConnectChat();
+			await PumpUntilIdle( bob );
+			Assert.IsTrue( ann.IsLoggedIn && bob.IsLoggedIn, $"{ann.Status} / {bob.Status}" );
+
+			var satellite = ChatProtocol.SatelliteRoom( 1 );
+			ann.JoinRoom( satellite );
+			bob.JoinRoom( satellite );
+			await PumpUntilIdle( ann );
+			await PumpUntilIdle( bob );
+			// A player's first movement asks the park where everyone stands; afterwards every step is relayed.
+			bob.MoveTo( 0.5f, 0.5f );
+			await PumpUntilIdle( bob );
+			ann.MoveTo( 0.3f, 0.7f );
+			await PumpUntilIdle( ann );
+			Assert.IsTrue( await Until( bob, () => bob.RoomPositions.TryGetValue( "Ann", out var place ) && place == (0.3f, 0.7f) ),
+				"Bob never saw Ann's relayed position." );
+			// The roster of the chat park names both players.
+			Assert.IsTrue( await Until( bob, () => bob.RoomPlayers.Contains( "Ann" ) && bob.RoomPlayers.Contains( "Bob" ) ) );
+
+			ann.SendChatLine( "/buddy Bob" );
+			await PumpUntilIdle( ann );
+			bob.JoinRoom( ChatProtocol.SatelliteRoom( 2 ) );
+			await PumpUntilIdle( bob );
+			Assert.IsTrue( await Until( ann, () => ann.ChatLines.Any( line => line.Contains( "has entered" ) ) ),
+				"Ann was not told that her buddy entered a park: " + string.Join( " | ", ann.ChatLines ) );
+
+			ann.Dispose();
+			bob.Dispose();
+		}
+		finally
+		{
+			server.DeleteData();
+		}
+	}
+
+	/// <summary>Pumps <paramref name="session"/> until <paramref name="condition"/> holds, or ten seconds pass.</summary>
+	private static async Task<bool> Until( OnlineSession session, Func<bool> condition )
+	{
+		var until = DateTime.UtcNow.AddSeconds( 10 );
+		while ( DateTime.UtcNow < until )
+		{
+			session.Pump();
+			if ( condition() )
+				return true;
+			await Task.Delay( 10 );
+		}
+		return condition();
+	}
+
+	[TestMethod]
+	public void ChatLinesFormatBuddyEntriesAndPositions()
+	{
+		// A buddy entry (APPROX:ONLINE-024) reads as one line naming the buddy and the park.
+		var entered = ChatFormatter.Format( new ChatEvent( ChatEventKind.System, Text: "buddy-enters", Args: new[] { "Ann", "The Fairground" } ),
+			null, _ => "Online World", OnlineStrings.Get );
+		Assert.AreEqual( "Your buddy Ann has entered The Fairground", entered );
+	}
+
+	[TestMethod]
 	public void LocalFoldersKeepPostcardsAndReportUnreadableFiles()
 	{
 		var folders = Folders();

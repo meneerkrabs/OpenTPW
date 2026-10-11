@@ -16,6 +16,8 @@ public static class ChatSystemKeys
 	public const string ServerMessage = "server-message";
 	public const string RateLimited = "rate-limited";
 	public const string BuddyList = "buddy-list";
+	/// <summary>A buddy of the receiver entered a park; arguments: the buddy's name, the park (with its city).</summary>
+	public const string BuddyEnters = "buddy-enters";
 }
 
 /// <summary>
@@ -33,14 +35,18 @@ public sealed class ChatHub
 	private readonly ServerStore store;
 	private readonly ServerOptions options;
 	private readonly WordFilter filter;
+	private readonly ChatParkDirectory chatParks;
+	private readonly CityDirectory cities;
 	private readonly ConcurrentDictionary<string, ChatSession> sessions = new();
 	private volatile bool restarting;
 
-	public ChatHub( ServerStore store, ServerOptions options, WordFilter filter )
+	public ChatHub( ServerStore store, ServerOptions options, WordFilter filter, ChatParkDirectory chatParks, CityDirectory cities )
 	{
 		this.store = store;
 		this.options = options;
 		this.filter = filter;
+		this.chatParks = chatParks;
+		this.cities = cities;
 	}
 
 	public int PlayersIn( string room ) => sessions.Values.Count( session => session.Room == room );
@@ -60,12 +66,29 @@ public sealed class ChatHub
 				QueueLimit = 0,
 				AutoReplenishment = true,
 			} );
+			MovementLimiter = new TokenBucketRateLimiter( new TokenBucketRateLimiterOptions
+			{
+				// [EXT:ONLINE-072] walking sends a position whenever the player moves, so the movement bucket is
+				// sized for a walk, not a message: a burst of turns, then a position every few frames.
+				TokenLimit = options.MovementBurst,
+				TokensPerPeriod = options.MovementsPerSecond,
+				ReplenishmentPeriod = TimeSpan.FromSeconds( 1 ),
+				QueueLimit = 0,
+				AutoReplenishment = true,
+			} );
 		}
 
 		public AccountRecord Account { get; }
 		public string Name => Account.Name;
 		public string Key => Account.Key;
 		public volatile string Room = ChatProtocol.LobbyRoom;
+		/// <summary>The avatar's position in a chat park, both axes 0-1; null until it has moved.</summary>
+		public (float X, float Y)? Position;
+		/// <summary>
+		/// Set with the first movement this connection sends: only clients that walk receive movement, so older
+		/// game versions (v0.7.x, which have no chat-park view) never get frames they would draw as empty lines.
+		/// </summary>
+		public bool ReceivesMovement;
 		public string? LastToldTo;
 		public string? LastToldBy;
 		public bool Earmuffs;
@@ -74,6 +97,7 @@ public sealed class ChatHub
 		public readonly ConcurrentDictionary<string, byte> Ignored = new();
 		public readonly Channel<ChatEvent> Outbox = Channel.CreateBounded<ChatEvent>( new BoundedChannelOptions( 256 ) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true } );
 		public TokenBucketRateLimiter Limiter { get; }
+		public TokenBucketRateLimiter MovementLimiter { get; }
 		/// <summary>Cancelled to end the connection from the server side (account deleted).</summary>
 		public readonly CancellationTokenSource Closed = new();
 	}
@@ -109,6 +133,7 @@ public sealed class ChatHub
 		if ( sessions.Count >= options.MaximumChatConnections || !sessions.TryAdd( account.Key, session ) )
 		{
 			session.Limiter.Dispose();
+			session.MovementLimiter.Dispose();
 			session.Closed.Dispose();
 			var notice = sessions.ContainsKey( account.Key ) ? ChatNotice.NameAlreadyOnline : ChatNotice.ParkFull;
 			await socket.SendAsync( StrictJson.Serialize( ChatEvent.ForNotice( notice, account.Name ) ), WebSocketMessageType.Text, true, cancel );
@@ -134,9 +159,13 @@ public sealed class ChatHub
 		finally
 		{
 			sessions.TryRemove( new KeyValuePair<string, ChatSession>( account.Key, session ) );
+			// The park the player left gets its roster without them, so the people list shows the parting.
+			foreach ( var other in sessions.Values.Where( other => other.Room == session.Room ) )
+				Send( other, RoomEvent( session.Room ) );
 			session.Outbox.Writer.TryComplete();
 			try { await writer; } catch ( Exception exception ) when ( exception is WebSocketException or OperationCanceledException ) { }
 			session.Limiter.Dispose();
+			session.MovementLimiter.Dispose();
 			session.Closed.Dispose();
 			if ( socket.State == WebSocketState.Open )
 			{
@@ -199,10 +228,13 @@ public sealed class ChatHub
 				}
 				continue;
 			}
-			using var lease = session.Limiter.AttemptAcquire();
+			using var lease = (request.Type == ChatRequest.MoveType ? session.MovementLimiter : session.Limiter).AttemptAcquire();
 			if ( !lease.IsAcquired )
 			{
-				Send( session, new ChatEvent( ChatEventKind.System, Text: ChatSystemKeys.RateLimited ) );
+				// Walking positions are dropped silently: the next one carries the player's place, and a reply
+				// for every dropped step would outshout the chat itself.
+				if ( request.Type != ChatRequest.MoveType )
+					Send( session, new ChatEvent( ChatEventKind.System, Text: ChatSystemKeys.RateLimited ) );
 				continue;
 			}
 			Handle( session, request );
@@ -214,17 +246,83 @@ public sealed class ChatHub
 		if ( request.Type == ChatRequest.JoinType )
 		{
 			var room = request.Room!;
-			if ( room != ChatProtocol.LobbyRoom && store.FindPark( room[ChatProtocol.ParkRoomPrefix.Length..] ) == null )
+			if ( ChatProtocol.SatelliteIndexOf( room ) is { } satellite )
+			{
+				// A chat park of the online world's globe (docs/SERVER.md): a standing room, not a published park.
+				if ( chatParks.Find( satellite ) == null )
+				{
+					Send( session, ChatEvent.ForNotice( ChatNotice.NoPark ) );
+					return;
+				}
+			}
+			else if ( room != ChatProtocol.LobbyRoom && store.FindPark( room[ChatProtocol.ParkRoomPrefix.Length..] ) == null )
 			{
 				Send( session, ChatEvent.ForNotice( ChatNotice.NoPark ) );
 				return;
 			}
-			session.Room = room;
-			Send( session, RoomEvent( room ) );
+			EnterRoom( session, room );
+			return;
+		}
+		if ( request.Type == ChatRequest.MoveType )
+		{
+			// Walking exists only inside a park (a satellite chat park or a published park's room). The lobby holds
+			// every connected player, so relaying movement there would multiply each step by the whole server.
+			if ( session.Room == ChatProtocol.LobbyRoom )
+				return;
+			// The server relays the player's movement to everyone in the chat park (manual p. 68: players walk
+			// and teleport around a park they are in together). The first movement also marks this connection as
+			// one that draws movement, and the answer to it carries where everyone else already stands — so a
+			// joiner sees the park's players at their places, and an older client (v0.7.x) never receives a frame
+			// it would draw as an empty line.
+			var position = (request.X!.Value, request.Y!.Value);
+			var first = !session.ReceivesMovement;
+			session.Position = position;
+			session.ReceivesMovement = true;
+			var moved = new ChatEvent( ChatEventKind.Move, session.Name, session.Room, X: position.Item1, Y: position.Item2 );
+			foreach ( var other in sessions.Values.Where( other => other.Room == session.Room && other != session && other.ReceivesMovement ) )
+				Deliver( other, moved );
+			if ( first )
+				foreach ( var other in sessions.Values.Where( other => other.Room == session.Room && other != session && other.Position != null ) )
+					Send( session, new ChatEvent( ChatEventKind.Move, other.Name, session.Room, X: other.Position!.Value.X, Y: other.Position!.Value.Y ) );
 			return;
 		}
 		ChatCommands.TryParseCanonical( request.Command!, out var command );
 		Execute( session, command, request.Argument ?? "" );
+	}
+
+	/// <summary>
+	/// Places <paramref name="session"/> in <paramref name="room"/>: the joiner sees the room's roster and where
+	/// everyone stands, everyone else sees the new roster (the original's "see players join and the list of players
+	/// in the session"), and the joiner's online buddies are told which park they entered.
+	/// </summary>
+	private void EnterRoom( ChatSession session, string room )
+	{
+		var left = session.Room;
+		session.Room = room;
+		session.Position = null;
+		Send( session, RoomEvent( room ) );
+		foreach ( var other in sessions.Values.Where( other => other.Room == room && other != session ) )
+			Send( other, RoomEvent( room ) );
+		// The park the player walked out of gets its roster without them, as when they disconnect.
+		if ( left != room )
+			foreach ( var other in sessions.Values.Where( other => other.Room == left ) )
+				Send( other, RoomEvent( left ) );
+		NotifyBuddiesOfEntry( session );
+	}
+
+	/// <summary>
+	/// Tells the player's online buddies that they entered a park (docs/reverse/ONLINE-SOURCES.md S5), wherever those
+	/// buddies are — "another park or the park you are in" in the original's words.
+	/// </summary>
+	// [APPROX:ONLINE-024] the original notification's string is not recovered; CHAT_COMMANDS 111-113 ("Your buddy ")
+	// have empty English suffixes, so the client shows OpenTPW's own sentence for this system key
+	private void NotifyBuddiesOfEntry( ChatSession session )
+	{
+		var room = RoomName( session.Room );
+		if ( room.Length == 0 )
+			return;
+		foreach ( var other in sessions.Values.Where( other => other != session && store.BuddyNames( other.Account ).Contains( session.Name ) ) )
+			Send( other, new ChatEvent( ChatEventKind.System, Text: ChatSystemKeys.BuddyEnters, Args: new[] { session.Name, room } ) );
 	}
 
 	private ChatEvent RoomEvent( string room ) => RosterEvent( room,
@@ -427,7 +525,8 @@ public sealed class ChatHub
 				break;
 			case ChatCommand.Page:
 			{
-				var (name, _) = ChatCommands.SplitName( argument );
+				// A page carries its message: "Dan pages you: Hello" (manual p. 70, S5).
+				var (name, text) = ChatCommands.SplitName( argument );
 				if ( name == null )
 				{
 					Send( session, ChatEvent.ForNotice( ChatNotice.NeedName ) );
@@ -439,8 +538,8 @@ public sealed class ChatHub
 					Send( session, ChatEvent.ForNotice( ChatNotice.NoSuchPlayer, name ) );
 					break;
 				}
-				Deliver( target, new ChatEvent( ChatEventKind.Page, from, session.Room ) );
-				Send( session, ChatEvent.ForNotice( ChatNotice.YouPage, target.Name ) );
+				Deliver( target, new ChatEvent( ChatEventKind.Page, from, session.Room, Text: text ) );
+				Send( session, ChatEvent.ForNotice( ChatNotice.YouPage, target.Name, Filtered( session, text ) ) );
 				break;
 			}
 			case ChatCommand.Locate:
@@ -474,9 +573,8 @@ public sealed class ChatHub
 					Send( session, ChatEvent.ForNotice( ChatNotice.LeaveParkToGoTo, target.Name ) );
 				else
 				{
-					session.Room = target.Room;
 					Send( session, ChatEvent.ForNotice( ChatNotice.YouGoTo, target.Name ) );
-					Send( session, RoomEvent( session.Room ) );
+					EnterRoom( session, target.Room );
 				}
 				break;
 			}
@@ -517,7 +615,14 @@ public sealed class ChatHub
 	{
 		if ( room == ChatProtocol.LobbyRoom )
 			return "";
-		return store.FindPark( room[ChatProtocol.ParkRoomPrefix.Length..] )?.Name ?? "";
+		if ( ChatProtocol.SatelliteIndexOf( room ) is { } satellite )
+			return chatParks.Find( satellite )?.Name ?? "";
+		var park = store.FindPark( room[ChatProtocol.ParkRoomPrefix.Length..] );
+		if ( park == null )
+			return "";
+		// "Dan is currently in Halloween World in San Francisco" (manual p. 70): the park and its city.
+		var city = park.CityId != 0 ? cities.Find( park.CityId )?.Name : null;
+		return city == null ? park.Name : $"{park.Name} in {city}";
 	}
 
 	private void Tell( ChatSession session, string name, string text, bool emote )

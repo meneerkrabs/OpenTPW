@@ -228,6 +228,8 @@ class Analysis:
                 if code[tb + 3] & 0x80:
                     p += 4
                 if code[tb + 2] & 0x08:
+                    if p + 4 > len(code):
+                        continue
                     cnt = struct.unpack_from(">I", code, p)[0]
                     p += 4 + 4 * cnt
                 if p + 2 <= len(code) and 0 < tb_off < 0x100000 and tb_off % 4 == 0 and o - tb_off >= 0:

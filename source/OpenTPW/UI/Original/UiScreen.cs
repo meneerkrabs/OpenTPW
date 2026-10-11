@@ -216,6 +216,20 @@ public sealed class UiScreenStack
 		Push( screen );
 	}
 
+	/// <summary>Removes every screen <paramref name="match"/> accepts, top-down: re-opening a details dialog replaces it.</summary>
+	public void RemoveWhere( Predicate<UiScreen> match )
+	{
+		for ( var index = screens.Count - 1; index >= 0; index-- )
+		{
+			if ( !match( screens[index] ) )
+				continue;
+			var removed = screens[index];
+			screens.RemoveAt( index );
+			removed.IsRemoved = true;
+			removed.Removed?.Invoke();
+		}
+	}
+
 	public void Clear()
 	{
 		var removed = screens.ToArray();

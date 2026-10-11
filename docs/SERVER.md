@@ -137,7 +137,9 @@ Settings are in `OpenTPW.Server/appsettings.json`, or environment variables name
 | `ResendApiKey` | none | Secret API key of the Resend mail service; empty turns account e-mail off. Set it in `.env` only (`OPENTPW_RESEND_API_KEY`) |
 | `EmailFrom`, `EmailReplyTo` | none | Sender on a domain verified at Resend (the official server: `OpenTPW <noreply@email.opentpw.io>`) and the reply address named in password notices (`contact@opentpw.io`) |
 | `RequestsPerMinute`, `AuthenticationsPerMinute`, `UploadsPerHour` | 240, 10, 30 | Limits per client address |
-| `MaximumParksPerPlayer`, `MaximumVotesPerDay`, `MaximumInboxPostcards`, `MaximumChatConnections` | 5, 10, 200, 1000 | Per-player and server limits |
+| `MaximumParksPerPlayer`, `MaximumVotesPerDay`, `MaximumInboxPostcards`, `MaximumChatConnections` | 10, 10, 200, 1000 | Per-player and server limits; ten parks on show at once is the original's limit (its FAQ) |
+| `ChatBurst`, `ChatMessagesPerSecond` | 8, 1 | Chat message bucket per connection |
+| `MovementBurst`, `MovementsPerSecond` | 30, 10 | Walking-position bucket per connection (chat parks; positions sent in the lobby are ignored) |
 | `BannedPlayers`, `MutedPlayers`, `HiddenParks` | empty | Moderation lists |
 
 Behind a proxy, set `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true` so the limits see the real
@@ -164,6 +166,41 @@ cities known from the original (Hong Kong, Ulaanbaatar, Timbuktu, San Francisco)
 others; replace it with `cities.json` in the data directory, an array of
 `{"id", "name", "description", "latitude", "longitude"}`. It is re-read when the file
 changes; invalid entries are left out.
+
+## Chat parks
+
+The globe's five chat satellites are the server's chat parks: standing chat rooms with live
+presence — everyone in one sees the others and their positions, which the server relays with a
+separate rate limit. `GET /api/v1/chat-parks` (public) lists them with their player counts. The
+operator renames them with `chatparks.json` in the data directory, an array of
+`{"id", "name"}` (ids 1-5, names at most 32 characters); it is re-read when the file changes and
+invalid entries fall back to the defaults. Parks published by players keep their own chat rooms
+(`park:<id>`) with the same behaviour.
+
+Publishing a park masks swear words in its **name** with the server's word filter — the original
+showed them as asterisks — while a filtered **description** is refused outright. The publish limit
+answer uses the original's wording (the limit itself is `MaximumParksPerPlayer`).
+
+## The original website's pages
+
+The original service's website showed a per-player park page, the top-10 parks and players, the
+richest players (Platinum Tickets) and a player search. The server serves the same information as
+public, privacy-respecting endpoints: without a login they include **only parks whose authors
+chose the website list**, so nobody appears who did not opt in. Platinum Tickets are one per
+recorded visit of a park (the original awarded them per visit, voting or not).
+
+| Endpoint | The original page |
+| --- | --- |
+| `GET /api/v1/players/{name}` | "My Theme Park": the player's parks with visitors, votes, publish date, current rank and highest rank, and their Platinum Tickets |
+| `GET /api/v1/charts/parks` | Top 10 parks: rank, park name, player |
+| `GET /api/v1/charts/players` | Top 10 players by votes |
+| `GET /api/v1/charts/richest` | Richest players by Platinum Tickets |
+| `GET /api/v1/players?search=` | Player search by name; at most 50 results, `more` when the search was too broad. Without a login only players who show a park on the website are found; logged in, every player |
+
+All are GET-only and share the website CORS policy (`WebsiteOrigins`). The game uses the player
+page for Find Parks' Platinum Tickets display; a logged-in player page lists every published park
+of that player, like the park list. Player names are searched by substring; OpenTPW accounts have
+one name, so the original's first-name/last-name search has no equivalent.
 
 ## The website's top parks
 

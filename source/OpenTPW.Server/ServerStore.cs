@@ -47,6 +47,11 @@ public sealed class ParkRecord
 	public int CityId { get; set; }
 	public int Visits { get; set; }
 	public int Votes { get; set; }
+	/// <summary>
+	/// The park's best place in the votes chart (1 is the top; 0 before it ever placed). The original's "My Theme
+	/// Park" page showed each park's current rank and highest rank (docs/reverse/ONLINE-SOURCES.md S1).
+	/// </summary>
+	public int HighestRank { get; set; }
 	public List<string> Visitors { get; set; } = new();
 	/// <summary>Player key → UTC day (yyyy-MM-dd) of that player's last vote for this park.</summary>
 	public Dictionary<string, string> LastVoteDay { get; set; } = new();
@@ -740,7 +745,8 @@ public sealed class ServerStore
 		lock ( gate )
 		{
 			if ( parks.Values.Count( park => park.OwnerKey == owner.Key ) >= options.MaximumParksPerPlayer )
-				throw new StoreException( 409, "You cannot publish any more parks; un-publish one first." );
+				// [DATA:Language/English/UITEXT.str:221] the original's limit message (the limit itself: FAQ, S2)
+				throw new StoreException( 409, "You cannot publish any more parks, you have reached your personal limit.\nPlease un-publish one or more parks before publishing your new park." );
 			var park = new ParkRecord
 			{
 				Id = NewId(), OwnerKey = owner.Key, Author = owner.Name, Name = package.Manifest.Park.Name,
@@ -815,6 +821,7 @@ public sealed class ServerStore
 			if ( park.OwnerKey != owner.Key )
 				throw new StoreException( 403, "Only the creator can un-publish a park." );
 			parks.Remove( id );
+			RefreshRanks();
 			Save( "parks.json", parks.Values.ToList() );
 			File.Delete( ParkFile( id, ParkPackage.FileExtension ) );
 			File.Delete( ParkFile( id, ".png" ) );
@@ -857,6 +864,7 @@ public sealed class ServerStore
 			voter.VotesToday++;
 			park.LastVoteDay[voter.Key] = Today;
 			park.Votes++;
+			RefreshRanks();
 			Save( "parks.json", parks.Values.ToList() );
 			Save( "accounts.json", accounts.Values.ToList() );
 			return new CounterResult( park.Visits, park.Votes, VotesLeft( voter ) );
@@ -869,6 +877,107 @@ public sealed class ServerStore
 		{
 			return new ParkSummary( park.Id, park.Name, park.Description, park.Author, park.Level, park.Language, park.PublishedUtc, park.Visits, park.Votes,
 				viewer != null && park.Visitors.Contains( viewer.Key ), viewer != null && park.LastVoteDay.ContainsKey( viewer.Key ), playersAtPark, park.HasThumbnail, park.Bytes, park.CityId );
+		}
+	}
+
+	// ---- the original website's lists (docs/reverse/ONLINE-SOURCES.md S1) ----
+
+	/// <summary>The chart order of the original's top-parks list: by votes (S2), then visits, then the earlier published.</summary>
+	private static IEnumerable<ParkRecord> ChartOrder( IEnumerable<ParkRecord> parks ) =>
+		parks.OrderByDescending( park => park.Votes ).ThenByDescending( park => park.Visits ).ThenBy( park => park.PublishedUtc ).ThenBy( park => park.Id, StringComparer.Ordinal );
+
+	/// <summary>
+	/// Call inside the lock after a vote or an un-publish — the changes that move the votes chart: recomputes every
+	/// published park's place in it and remembers each park's best place ("highest rank", S1). A park that has just
+	/// been passed does not lose its recorded best place, and a park's current place is always computed fresh for its
+	/// page, so a publish needs no refresh.
+	/// </summary>
+	private void RefreshRanks()
+	{
+		var rank = 0;
+		foreach ( var park in ChartOrder( parks.Values.Where( park => !options.HiddenParks.Contains( park.Id ) ) ) )
+		{
+			rank++;
+			if ( park.HighestRank == 0 || rank < park.HighestRank )
+				park.HighestRank = rank;
+		}
+	}
+
+	/// <summary>A player's Platinum Tickets: one per recorded visit of their published parks (manual p. 62: a visit earns the owner Platinum Tickets, voting or not).</summary>
+	public int PlatinumTickets( string ownerKey )
+	{
+		lock ( gate )
+			return parks.Values.Where( park => park.OwnerKey == ownerKey ).Sum( park => park.Visits );
+	}
+
+	/// <summary>
+	/// One player's published parks with their current and highest chart place — the original website's per-player
+	/// "My Theme Park" page (S1: park name, visitors, votes, publish date, rank, highest rank). Without
+	/// <paramref name="viewer"/> (a public request) only the parks their author chose to show on the website are
+	/// listed, like the server's other public lists.
+	/// </summary>
+	public (string Name, int PlatinumTickets, IReadOnlyList<(ParkRecord Park, int Rank)> Parks) PlayerParks( string name, AccountRecord? viewer )
+	{
+		lock ( gate )
+		{
+			var key = OnlineText.NormalizeName( name );
+			var ranks = ChartOrder( parks.Values.Where( park => !options.HiddenParks.Contains( park.Id ) ) )
+				.Select( ( park, index ) => (park, Rank: index + 1) )
+				.ToDictionary( entry => entry.park.Id, entry => entry.Rank );
+			var own = this.parks.Values
+				.Where( park => park.OwnerKey == key && !options.HiddenParks.Contains( park.Id ) && (viewer != null || park.ShowOnWebsite) )
+				.OrderBy( park => park.PublishedUtc ).Select( park => (park, ranks.GetValueOrDefault( park.Id )) ).ToList();
+			var author = own.Count > 0 ? own[0].park.Author : key;
+			// A public page counts the Platinum Tickets of the parks it can list, so the total hides the rest.
+			var platinum = viewer == null ? own.Sum( entry => entry.park.Visits ) : PlatinumTickets( key );
+			return (author, platinum, own);
+		}
+	}
+
+	/// <summary>The top parks of the public chart (S1: rank, park name, player): only parks their authors show on the website.</summary>
+	public IReadOnlyList<(int Rank, string Name, string Player)> TopParks( int count )
+	{
+		lock ( gate )
+			return ChartOrder( parks.Values.Where( park => park.ShowOnWebsite && !options.HiddenParks.Contains( park.Id ) ) )
+				.Take( count ).Select( ( park, index ) => (index + 1, park.Name, park.Author) ).ToList();
+	}
+
+	/// <summary>
+	/// The public player charts (S1: Top 10 players by their parks' votes; Richest players by Platinum Tickets). A
+	/// player appears with only the parks they show on the website, so the chart is public without exposing anyone who
+	/// did not opt in.
+	/// </summary>
+	public IReadOnlyList<(string Name, int Score)> PlayerChart( int count, bool byPlatinum )
+	{
+		lock ( gate )
+		{
+			var players = parks.Values.Where( park => park.ShowOnWebsite && !options.HiddenParks.Contains( park.Id ) )
+				.GroupBy( park => park.Author, StringComparer.OrdinalIgnoreCase )
+				.Select( group => (Name: group.Key, Score: byPlatinum ? group.Sum( park => park.Visits ) : group.Sum( park => park.Votes )) )
+				.OrderByDescending( entry => entry.Score ).ThenBy( entry => entry.Name, StringComparer.OrdinalIgnoreCase )
+				.Take( count ).ToList();
+			return players;
+		}
+	}
+
+	/// <summary>
+	/// Player search by name (S1: the website searched by user name, first name or last name; OpenTPW accounts have
+	/// one player name, so first and last names do not exist). At most 50 names; <c>more</c> reports that the search
+	/// was too broad, as the original asked for more detail.
+	/// </summary>
+	// Without a login the search finds only players who show a park on the website, like the charts, so the public
+	// endpoint cannot list every account name; a logged-in player searches all players.
+	public (IReadOnlyList<string> Names, bool More) SearchPlayers( string search, AccountRecord? viewer )
+	{
+		const int maximum = 50;
+		lock ( gate )
+		{
+			var shown = viewer != null ? null : parks.Values.Where( park => park.ShowOnWebsite && !options.HiddenParks.Contains( park.Id ) )
+				.Select( park => park.OwnerKey ).ToHashSet();
+			var names = accounts.Values
+				.Where( account => (shown == null || shown.Contains( account.Key )) && account.Name.Contains( search, StringComparison.OrdinalIgnoreCase ) )
+				.OrderBy( account => account.Name, StringComparer.OrdinalIgnoreCase ).Select( account => account.Name ).ToList();
+			return (names.Take( maximum ).ToList(), names.Count > maximum);
 		}
 	}
 

@@ -10,8 +10,8 @@ often covered through their callers.
 
 | | Count | Cited | Share |
 | --- | ---: | ---: | ---: |
-| Functions in SimThemePark | 6725 | 709 | 10.5 % |
-| Code bytes in those functions | 2014896 | 648988 | 32.2 % |
+| Functions in SimThemePark | 6725 | 712 | 10.6 % |
+| Code bytes in those functions | 2014896 | 649804 | 32.3 % |
 | RTTI classes (names in the repository) | 194 | 44 | |
 
 ## Classes
@@ -523,7 +523,6 @@ Largest first. Strings are the first short debug strings the function references
 | `0x1005C89C` | 768 |  |  |
 | `0x10073DF8` | 768 |  | Thing has been allocated in ThingArray index 0 - shouldn't … |
 | `0x1014920C` | 768 |  |  |
-| `0x101B8808` | 768 |  | ONLINE CHATELLITES: connection failed! |
 | `0x10080750` | 764 |  | Writing Hoardings Balance file · #ThemeParkWorld - Hoardings.sam · #DO NOT EDIT BY HAND |
 | `0x100CD408` | 764 |  | mDirection · mFlags · mMeshInstance |
 | `0x100A04D8` | 760 |  |  |

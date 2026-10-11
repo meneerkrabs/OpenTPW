@@ -106,6 +106,8 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 			VerifyHudPathTool();
 		if ( pathToolVerified && !coasterToolVerified && frame >= 4 )
 			VerifyHudCoasterTool();
+		if ( coasterToolVerified && !queueToolVerified && frame >= 5 )
+			VerifyHudQueueTool();
 		if ( !sharedCoasterExported && level.OriginalPark != null && smokeStation?.Runtime.Coaster is { IsOperational: true } )
 			ExportSharedCoasterFixture();
 		UpdateCoasterPhase();

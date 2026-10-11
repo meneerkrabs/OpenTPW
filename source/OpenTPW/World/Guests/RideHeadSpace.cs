@@ -103,6 +103,9 @@ public sealed class RideHeadSpace
 		return slot;
 	}
 
+	/// <summary>Clears host-owned presentation slots when the ride releases its riders or is torn down.</summary>
+	internal void Clear() => Array.Clear( visitors );
+
 	/// <summary>DELHEAD: every slot holding the visitor is freed. Returns whether any was.</summary>
 	public bool Remove( int visitor )
 	{

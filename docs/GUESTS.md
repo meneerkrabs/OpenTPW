@@ -490,30 +490,32 @@ A ride whose script runs `ADDHEAD` shows each rider as a head hung on the model.
 Traced from the Feral Mac binary (`SimThemePark`, PowerPC):
 
 - `ADDHEAD` is `0x100B0E9C` and `DELHEAD` `0x100B0F90`, read from the RSE opcode table (`0x2F58` → `0x3F2A4`, 106 entries, [RSE-VM.md](RSE-VM.md)). `ADDHEAD` takes the script's head table (script +48, null: nothing) of length +76, draws a random slot until one holds 0 (none free: nothing), stores the visitor and hangs the head of head id slot + 1. `DELHEAD` zeroes every slot holding the visitor and takes its head down. [BIN:STP-PPC:0x100B0E9C] [BIN:STP-PPC:0x100B0F90]
-- A head id is the value of a dummy attribute record of the model whose type has flag `0x80`: `0x1019B298(model, mask, id)` returns the index of the record with that value and flag, or -1; `0x1019B56C` hangs the head on that record (record flag `0x2`, a sprite handle). The table length is the run of ids from 1, as the PC executable sizes it (its `FUN_0044b220(thing, 0x80, id)` takes the ids upwards until -1; the MIT fork's docs, `maexah/OpenTPW` `docs/exe/park.md`, "The head table"). [BIN:STP-PPC:0x1019B298] [BIN:STP-PPC:0x1019B56C]
+- A head id is the value of a dummy attribute record of the model whose type has flag `0x80`: `0x1019B298(model, mask, id)` returns the index of the record with that value and flag, or -1; `0x1019B56C` hangs the head on that record (record flag `0x2`, a sprite handle). The table length is the run of ids from 1, following the MIT fork's reported PC sizing rule (its `FUN_0044b220(thing, 0x80, id)` takes the ids upwards until -1; the MIT fork's docs, `maexah/OpenTPW` `docs/exe/park.md`, "The head table"). [BIN:STP-PPC:0x1019B298] [BIN:STP-PPC:0x1019B56C]
 - The table of a car type is sized by the same records: `0x100303A8` counts the flagged records (`0x1019B354`), prints "Car type %s can receive %d heads" and fills its node table (`0x1019B300`). [BIN:STP-PPC:0x100303A8] [BIN:STP-PPC:0x1019B354]
 - The head art is `esprites/Generic/Kidsheads` (the kid set's string `kidsheads` is loaded at `0x10069A70`). [BIN:STP-PPC:0x10069A70]
 
-Corpus facts (`RideHeadsCorpusTests`): 31 scripts run `ADDHEAD`/`DELHEAD` in four themes (fantasy 8, hallow 9, jungle 6, space 8).
+Corpus facts (`RideHeadsCorpusTests`): all 308 associated scripts in the four-theme catalog are inspected (262 roots and 46 child/sound scripts); only the roots contain head commands. 31 scripts run `ADDHEAD`/`DELHEAD` in four themes (fantasy 8, hallow 9, jungle 6, space 8).
 Jungle head runs: Sun God 32, Crazy Ape 16, Mumbo 5, Rocky Racers 8, Tom Tom Twister 40, Eruption 16; the ferry 1, Inca Totem 13 and
 Aztec Mayhem 27 carry runs without `ADDHEAD`. Tubes Of Zob runs `ADDHEAD` but its model has no head id 1, so its table is null.
 Coaster and tour car models with head records: `CrocCar` 6, `ape` 2 (coaster3), `cart` 6 (minecart), `Bird` 9 and `Balloon` 9 (tourride).
 
-OpenTPW (`RideHeadSpace`, `RideHeadRenderer`): each ride keeps its head table; `ADDHEAD` and `DELHEAD` update it through
-`RideVisitorBridge`; the renderer draws every rider on the ride (state Using) whose head is up as a kid head sprite
+The PC sizing rule and reported measurements above are fork leads, not an independent decode of the current packed `tp.exe`. The Mac handlers were independently read; the record-to-node link and script-table allocation remain untraced.
+
+OpenTPW (`RideHeadSpace`, `RideHeadRenderer`): each attraction keeps a shared head table; `ADDHEAD` and `DELHEAD` update it through
+`RideVisitorBridge`; the renderer draws a rider only when its state is Using, its attraction id matches that ride, and its head is up as a kid head sprite
 (the rider's kid set, `GuestSpriteAtlas.LoadKidHeads`, TPC banks) at the position of the model node named after the head id
-(`headNN`, `HeadN`, `Kid_NN`, `spriteposition NN`). The rider's body is not drawn on the ride. The original-level smoke test
-requires at least one frame with a head drawn on an ADDHEAD ride (`Ride heads: drawn in N frames` in the log).
+(`headNN`, `HeadN`, `Kid_NN`, `spriteposition NN`). The rider's body is not drawn on the ride. Normal guest release removes its old slots; forced teardown clears every slot, including orphaned ids. This is host-owned presentation cleanup, not a traced original destructor rule.
+
+The original-level smoke test requires submitted head quads and separately compares visible/hidden GPU captures on one identified, naturally boarded animating ride. Simulation, animation, camera and shader time are frozen; repeated visible frames and repeated hidden frames must each be byte-identical, and toggling only that attraction's head renderer must change pixels. A native jungle run identified Crazy Ape, attraction 17, visitor 16, node 20, with 10 moving frames before freeze: one submitted quad changed 2,478 pixels. The captures show the rider head at the left seat below the Ape's left arm. This establishes visible OpenTPW head geometry, not original visual equivalence.
 
 Approximations ([HEADS register](FIDELITY-REGISTER.md)): the slot draw uses a per-ride generator (HEADS-001); the head's node is
 the node named after its id, because the original's link from a head record to its node is not traced, and Flower Power,
 Phantom, Eruption, Hover Bot Havoc and Rock 'n Roll name no node for some ids (HEADS-002); the record = attribute and
-table-length correspondences are read from the Mac lookup code and the PC rule (HEADS-003). Heads use the stand frame of the
-kid's set with the kid's direction (heads are 7 directions in the data; the 5-direction selection is reused).
+table-length correspondences use the Mac lookup code and the fork-reported PC rule (HEADS-003). Presentation reuses the pre-boarding guest heading, body five-direction selector, stand frame 0 and body pixel scale for the seven-direction head art; the seat node contributes translation only (HEADS-004). Root and resolved child/sound VMs share the attraction table, whereas the Mac handler reads the calling script's table; child allocation/binding is untraced, though no associated child/sound script in this shipped corpus uses a head command (HEADS-005).
 
-Not done: heads of riders on coaster and tour cars. The cars carry head records (above) and the PC executable keeps them as
+Not done in OpenTPW: heads of riders on coaster and tour cars. The cars carry head records (above) and the PC executable keeps them as
 records with a handle and no head table (maexah `saves.md`, "A head on a node"); the Mac code that places a car's rider is not
-traced yet. Rides without `ADDHEAD` keep hidden riders. Visual check: not done (smoke readback counts only).
+traced yet. Root scripts without `ADDHEAD` do not enable this renderer; this does not establish that the original cannot show heads through vehicle/controller paths. Native head atlas reload and repeated park entry/exit checks cover Asset.All removal and scheduled GPU texture/material/shader disposal.
 
 ## Tests and evidence
 

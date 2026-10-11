@@ -174,6 +174,8 @@ Supported admission/query values still come exclusively from the effect
 implementation. It does not create visitors, vehicles, capacities, queues,
 or success responses. Original controller systems remain unimplemented.
 
+The head table binding is qualified separately: the Mac ADDHEAD/DELHEAD handler reads the calling script table. OpenTPW shares an attraction table with resolved child/sound VMs (HEADS-005); none of the 46 associated child/sound scripts in the shipped four-theme catalog uses a head opcode. See the full inventory and pixel proof in GUESTS.md.
+
 ## Corpus run (`RideVMCorpusTests`)
 
 Roots are the 263 scripts not started by another script; 44 are children (28
@@ -388,8 +390,8 @@ handler attributes diverge.
 | 53 | `TOUR` | 76 | hooked | Mac-static command roles: mutators preserve flags; supported queries set flags/output; required-variable gates skip invalid calls |
 | 54 | `BUMP` | 199 | hooked | Mac-static command roles: mutators preserve flags; queries set flags/output; duration commands set flags from original input |
 | 55 | `COAST` | 144 | hooked | Mac-static: commands 1/4/5/6/8 preserve flags; 2/3 set flags and optional output; 7 is a no-op |
-| 56 | `ADDHEAD` | 31 | hooked | STP-PPC 0xb0e9c: the ride's head table (`RideHeadSpace`): a free random slot takes the visitor, its head drawn by `RideHeadRenderer` ([GUESTS.md](GUESTS.md), "Riders' heads") |
-| 57 | `DELHEAD` | 31 | hooked | STP-PPC 0xb0f90: frees every slot holding the visitor and takes its head down |
+| 56 | `ADDHEAD` | 31 | hooked | docs (`visitor`) |
+| 57 | `DELHEAD` | 31 | hooked | docs (`visitor`) |
 | 58 | `LIMBO` | 24 | hooked | docs (`visitor unknown`) |
 | 59 | `UNLIMBO` | 24 | hooked | docs say input; corpus output + flags (`UNLIMBO VAR_LETMEOFF; BRANCH_Z`) |
 | 60 | `FORCEUNLIMBO` | 23 | hooked | docs say input; corpus output + flags (`FORCEUNLIMBO VAR_LETMEOFF; BRANCH_NZ loop`) |

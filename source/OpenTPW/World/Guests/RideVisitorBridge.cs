@@ -69,6 +69,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// <summary>Replaces the .sam excitement with a live value (a coaster's rating, <c>0xdff70</c>), or null.</summary>
 	public Func<int>? ExcitementSource { get; set; }
 	/// <summary>The ride's head table for ADDHEAD/DELHEAD, null when its model has no head records (see <see cref="RideHeadSpace"/>).</summary>
+	// [APPROX:HEADS-005] root and resolved child/sound scripts share the attraction head table; the Mac opcode reads the calling script +48/+76, but allocation/binding for child scripts is not traced
 	public RideHeadSpace? Heads { get; set; }
 	public int AttractionValue { get; }
 	public GuestNeeds Satisfies { get; }
@@ -538,6 +539,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	{
 		if ( !onRide.Remove( guest ) )
 			return;
+		// Host cleanup: do not leave a presentation slot on the previous ride after release.
+		Heads?.Remove( guest );
 		hopped.Remove( guest );
 		limbo.RemoveAll( entry => entry.Guest == guest );
 		for ( var index = 0; index < bouncing.Count; index++ )
@@ -550,6 +553,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// <summary>Releases every held guest and turns the queue away (ride removed or script stopped).</summary>
 	public void ReleaseAll()
 	{
+		// Host teardown, not a claim about the original script destructor: clear even orphaned head ids.
+		Heads?.Clear();
 		if ( called != 0 )
 		{
 			var guest = called;

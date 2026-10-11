@@ -8,7 +8,7 @@ namespace OpenTPW;
 /// <summary>
 /// Draws the head of every rider whose ride has a head up (ADDHEAD, <see cref="RideHeadSpace"/>) as a camera-facing quad of
 /// the kid's head sprite, hung at the position of the head's model node. A rider on a ride is otherwise not drawn
-/// (<see cref="GuestRenderer"/> skips guests in the Using state), so the head is what the original shows of them.
+/// (<see cref="GuestRenderer"/> skips guests in the Using state), so this renderer supplies their head presentation.
 /// </summary>
 public sealed class RideHeadRenderer : Entity
 {
@@ -24,8 +24,15 @@ public sealed class RideHeadRenderer : Entity
 	private bool deleted;
 
 	public bool Visible { get; set; } = true;
-	/// <summary>Heads drawn in the last frame.</summary>
+	/// <summary>Head quads submitted in the last frame; this count alone does not prove visible pixels.</summary>
 	public int DrawnHeads { get; private set; }
+
+	/// <summary>Restricts the native smoke readback to one identified attraction.</summary>
+	internal int? OnlyAttraction { get; set; }
+	internal IReadOnlyList<Asset> OwnedAssets => textures.Cast<Asset>().Concat( material == null ? Array.Empty<Asset>() : new Asset[] { material, material.Shader } ).ToArray();
+
+	/// <summary>A stale slot from another attraction must never draw this rider.</summary>
+	internal static bool CanDraw( Guest? guest, int attractionId ) => guest is { State: GuestState.Using } && guest.AttractionId == attractionId;
 
 	public RideHeadRenderer( GuestSimulation simulation, IReadOnlyList<GuestSpriteAtlas> atlases, ParkObjects objects )
 	{
@@ -85,14 +92,15 @@ public sealed class RideHeadRenderer : Entity
 		foreach ( var ride in objects.Objects )
 		{
 			var heads = ride.Visitors.Heads;
-			if ( heads == null || ride.IsDeleted )
+			if ( heads == null || ride.IsDeleted || OnlyAttraction is int attraction && attraction != ride.Visitors.AttractionId )
 				continue;
 			foreach ( var (visitor, node) in heads.Hung() )
 			{
 				var guest = simulation.Find( visitor );
-				if ( guest == null || guest.State != GuestState.Using )
+				if ( !CanDraw( guest, ride.Visitors.AttractionId ) )
 					continue;
-				var atlasIndex = guest.Type % atlases.Count;
+				// [APPROX:HEADS-004] pre-boarding guest heading, the body five-direction selector and stand frame 0 present the seven-direction head art; node translation omits seat orientation and world size uses the body pixel scale, none traced as original head presentation
+				var atlasIndex = guest!.Type % Math.Min( 8, atlases.Count );
 				var atlas = atlases[atlasIndex];
 				var heading = new SVector2( guest.HeadingX, guest.HeadingY );
 				var (direction, mirror) = GuestSpriteAtlas.SelectDirection( SVector2.Dot( heading, rightFlat ), SVector2.Dot( heading, forwardFlat ) );
@@ -158,6 +166,19 @@ public sealed class RideHeadRenderer : Entity
 	{
 		deleted = true;
 		TexturePackSwitch.PackChanged -= ReloadAtlases;
+		var ownedTextures = textures.ToArray();
+		textures.Clear();
+		foreach ( var texture in ownedTextures )
+			Asset.All.Remove( texture );
+		material?.ReleaseOwnedResources();
+		global::Global.Render.ScheduleDelete( () =>
+		{
+			foreach ( var texture in ownedTextures )
+			{
+				texture.NativeTextureView.Dispose();
+				texture.NativeTexture.Dispose();
+			}
+		} );
 		var buffer = vertexBuffer;
 		vertexBuffer = null;
 		if ( buffer != null )

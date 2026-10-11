@@ -1,5 +1,7 @@
 using System;
 using System.Linq;
+using System.IO;
+using static OpenTPW.Tests.RideVMTests;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace OpenTPW.Tests;
@@ -69,4 +71,74 @@ public class RideHeadSpaceTests
 		for ( var visitor = 1; visitor <= 4; visitor++ )
 			Assert.AreEqual( first.Add( visitor ), second.Add( visitor ) );
 	}
+	[TestMethod]
+	public void ReleasedRiderBoardsAnotherRideWithoutKeepingAnOldHead()
+	{
+		var grid = new GuestPathGrid( 3, 3 );
+		grid.SetPath( 1, 1, true );
+		var simulation = new GuestSimulation( grid, GuestTests.CreateSettings(), 1 ) { ArrivalsEnabled = false };
+		var guest = simulation.SpawnInPark( 1, 1 );
+		(RideVisitorBridge Bridge, RideVM Script) Ride( int attraction )
+		{
+			var bridge = new RideVisitorBridge( attraction, $"Ride {attraction}", RideVisitorKind.Ride, 2, 25, 30 )
+			{
+				Heads = RideHeadSpace.Of( new[] { 4, 5 }, 1 ), EntranceCell = (1, 1), ExitCell = (1, 1), HasCells = true
+			};
+			var bytes = new Asm().I( Opcode.HUSH, guest.Id ).I( Opcode.ADDHEAD, guest.Id )
+				.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ).Build( GuestTests.ShopVariables );
+			var script = new RideVM( new RideScriptFile( new MemoryStream( bytes ) ), new RideVMOptions
+			{
+				Effects = new VisitorRideScriptEffects( bridge, UnimplementedRideScriptEffects.Instance ), Seed = 1
+			} );
+			bridge.Attach( script, () => true );
+			simulation.Register( bridge );
+			return (bridge, script);
+		}
+		var a = Ride( 1 );
+		var b = Ride( 2 );
+		a.Script.Advance( Tick );
+		Assert.IsTrue( RideHeadRenderer.CanDraw( guest, a.Bridge.AttractionId ) );
+		Assert.AreEqual( 1, a.Bridge.Heads!.Hung().Count() );
+		// An orphaned table entry is also host-owned and must not survive forced teardown.
+		a.Bridge.Heads.Add( 99 );
+		a.Script.Stop();
+		a.Bridge.HostStep();
+		Assert.IsFalse( a.Bridge.Heads.Hung().Any() );
+		Assert.IsTrue( Enumerable.Range( 0, a.Bridge.Heads.Count ).All( slot => a.Bridge.Heads.VisitorAt( slot ) == 0 ) );
+		b.Script.Advance( Tick );
+		Assert.IsTrue( RideHeadRenderer.CanDraw( guest, b.Bridge.AttractionId ) );
+		Assert.IsFalse( RideHeadRenderer.CanDraw( guest, a.Bridge.AttractionId ), "a Using rider on B never draws at A" );
+		Assert.AreEqual( 1, b.Bridge.Heads!.Hung().Count() );
+		Assert.IsTrue( a.Bridge.Heads.Add( guest.Id ) >= 0, "forced release leaves no full old table" );
+		Assert.IsFalse( RideHeadRenderer.CanDraw( guest, a.Bridge.AttractionId ), "the attraction guard also rejects an accidentally stale slot" );
+	}
+
+	[TestMethod]
+	public void NormalReleaseRemovesAHeadWithoutWaitingForDelhead()
+	{
+		var bridge = new RideVisitorBridge( 1, "Ride", RideVisitorKind.Ride, 1, 25, 30 ) { Heads = RideHeadSpace.Of( new[] { 4 }, 1 ) };
+		var script = new RideVM( new RideScriptFile( new MemoryStream( new Asm()
+			.I( Opcode.HUSH, 7 ).I( Opcode.ADDHEAD, 7 ).I( Opcode.COPY, V( Array.IndexOf( GuestTests.ShopVariables, nameof( RideVariables.VAR_LETMEOFF ) ) ), 7 )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ).Build( GuestTests.ShopVariables ) ) ),
+			new RideVMOptions { Effects = new VisitorRideScriptEffects( bridge, UnimplementedRideScriptEffects.Instance ), Seed = 1 } );
+		bridge.Attach( script, () => true );
+		script.Advance( Tick );
+		Assert.AreEqual( 1, bridge.Heads.Hung().Count() );
+		bridge.HostStep();
+		Assert.AreEqual( 1, bridge.ReleasedTotal );
+		Assert.IsFalse( bridge.Heads.Hung().Any() );
+		Assert.AreEqual( 0, bridge.Heads.Add( 8 ), "the slot is reusable" );
+	}
+
+	[TestMethod]
+	public void OnlyAUsingGuestOnTheMatchingAttractionIsDrawable()
+	{
+		Assert.IsFalse( RideHeadRenderer.CanDraw( null, 1 ) );
+		var guest = new Guest( 1, 0 ) { AttractionId = 1, State = GuestState.WalkingAround };
+		Assert.IsFalse( RideHeadRenderer.CanDraw( guest, 1 ) );
+		guest.State = GuestState.Using;
+		Assert.IsTrue( RideHeadRenderer.CanDraw( guest, 1 ) );
+		Assert.IsFalse( RideHeadRenderer.CanDraw( guest, 2 ) );
+	}
+
 }

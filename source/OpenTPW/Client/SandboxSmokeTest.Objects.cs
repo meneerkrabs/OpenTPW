@@ -97,7 +97,7 @@ internal sealed partial class SandboxSmokeTest
 	private int rideHeadFrames;
 	private int maximumDrawnRideHeads;
 
-	/// <summary>Counts the frames in which the head renderer drew a rider's head on a ride that runs ADDHEAD.</summary>
+	/// <summary>Counts frames in which the head renderer submitted a rider head quad on a ride that runs ADDHEAD.</summary>
 	private void TrackRideHeads()
 	{
 		if ( level.RideHeadRenderer == null )
@@ -108,11 +108,12 @@ internal sealed partial class SandboxSmokeTest
 		maximumDrawnRideHeads = Math.Max( maximumDrawnRideHeads, drawn );
 	}
 
-	/// <summary>An original level must draw a rider's head on some ride that places heads (the Jungle rides of the import, which guests board).</summary>
+	/// <summary>An original level must submit a rider head quad on some ride that places heads (the Jungle rides of the import, which guests board).</summary>
 	private void VerifyRideHeads()
 	{
-		Require( rideHeadFrames > 0, "draw a rider's head on a ride that uses ADDHEAD" );
-		Log.Trace( $"Ride heads: drawn in {rideHeadFrames} frames, at most {maximumDrawnRideHeads} at once on rides that run ADDHEAD." );
+		Require( rideHeadFrames > 0, "submit a rider head quad on a ride that uses ADDHEAD" );
+		Require( rideHeadPixelsVerified, "complete the isolated rider-head GPU pixel comparison" );
+		Log.Trace( $"Ride heads: quads submitted in {rideHeadFrames} frames, at most {maximumDrawnRideHeads} at once on rides that run ADDHEAD." );
 	}
 
 	private void SnapshotObjects()

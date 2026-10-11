@@ -67,12 +67,12 @@ public class RideHeadsCorpusTests
 	}
 
 	/// <summary>
-	/// The jungle head counts measured in the PC executable (docs/exe/park.md, "The head table": Sun God 32, Crazy Ape 16,
+	/// The jungle head counts reported for the PC executable by the MIT fork (docs/exe/park.md, "The head table": Sun God 32, Crazy Ape 16,
 	/// Mumbo 5, Rocky Racers 8, Tom Tom Twister 40, Eruption 16) and the three jungle scripts without ADDHEAD that carry a run
 	/// (ferry 1, Inca Totem 13, Aztec Mayhem 27).
 	/// </summary>
 	[TestMethod]
-	public void JungleHeadRunsMatchTheExecutableMeasurements()
+	public void JungleHeadRunsMatchTheForkReportedMeasurements()
 	{
 		var runs = Scripted().Where( x => x.Theme == "jungle" && x.Space != null )
 			.ToDictionary( x => x.Entry.DisplayName, x => (x.Adds, x.Space!.Count) );
@@ -151,4 +151,40 @@ public class RideHeadsCorpusTests
 		CollectionAssert.AreEqual( new[] { "coaster1.wad/CrocCar.MD2=6", "coaster3.wad/ape.MD2=2", "minecart.wad/cart.MD2=6", "tourride.wad/Bird.MD2=9", "tourride.wad/Balloon.MD2=9" }, withRecords );
 		Assert.IsTrue( found.Count >= 50 );
 	}
+	public TestContext TestContext { get; set; } = null!;
+
+	/// <summary>Inspect every associated RSE, including sound and resolved child scripts, rather than only entry.ScriptPath.</summary>
+	[TestMethod]
+	public void AssociatedChildAndSoundScriptsAreIncludedInHeadCommandInventory()
+	{
+		var counts = new List<string>();
+		var roots = 0;
+		var children = 0;
+		foreach ( var theme in Themes )
+		{
+			var catalog = ObjectCatalog.Load( theme );
+			foreach ( var entry in catalog.Entries.Where( entry => entry.Scripts.Count > 0 ).OrderBy( entry => entry.InfoId ) )
+			{
+				if ( entry.ScriptPath != null )
+					Assert.IsTrue( entry.Scripts.Contains( entry.ScriptPath ), $"{theme}/{entry.DisplayName}: associated scripts contain the root" );
+				foreach ( var path in entry.Scripts.Distinct( StringComparer.OrdinalIgnoreCase ) )
+				{
+					using var stream = entry.FileSystem.OpenRead( path );
+					var script = new RideScriptFile( stream );
+					var adds = script.Instructions.Count( instruction => instruction.Opcode == (ushort)Opcode.ADDHEAD );
+					var dels = script.Instructions.Count( instruction => instruction.Opcode == (ushort)Opcode.DELHEAD );
+					var root = string.Equals( path, entry.ScriptPath, StringComparison.OrdinalIgnoreCase );
+					if ( root ) roots++; else children++;
+					if ( adds != 0 || dels != 0 )
+						counts.Add( $"{theme}/{entry.DisplayName}/{Path.GetFileName( path )}: {(root ? "root" : "associated")} ADDHEAD={adds} DELHEAD={dels}" );
+				}
+			}
+		}
+		Assert.AreEqual( 262, roots, "all associated root scripts in the four-theme catalog" );
+		Assert.AreEqual( 46, children, "all associated sound/child scripts, including scripts without a root" );
+		TestContext.WriteLine( $"Head inventory: {roots} roots, {children} associated scripts; {counts.Count} scripts with head commands.\n{string.Join( "\n", counts )}" );
+		Assert.AreEqual( 31, counts.Count, "the broader shipped corpus has the same 31 head-command roots" );
+		Assert.IsTrue( counts.All( count => count.EndsWith( "root ADDHEAD=1 DELHEAD=1", StringComparison.Ordinal ) ), "none of the 46 associated child/sound scripts contains a head command" );
+	}
+
 }

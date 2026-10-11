@@ -3,8 +3,10 @@
 Builds on the v1/v2/v3 harness (same fault hooks, plus the ones below). Each new rule of the queue row gets a fault
 that only that rule can catch, and the boundary of the head bound W(0) = H + R + 1 is bracketed:
 
-- ``hold-stand-walk``: the first guest of the ride in OpenTPW's Boarding (state 13) from tick 18,000 is pinned at its
-  position for 30 turns: walk-stall on w = 20 (v3 ``hold-move-up`` covers w2 only).
+- ``hold-stand-walk``: the first guest of the ride in OpenTPW's Boarding (state 13) from tick 18,000 is pinned for 30
+  turns at the centre of the queue's front cell, one cell back from the stand point: walk-stall on w = 20 (v3
+  ``hold-move-up`` covers w2 only). WALK-F2 (REVIEW-ORACLE-2 OV2-5): in the 6-cell layout a guest enters state 13
+  about 0.01 cells from its stand point, so pinning it where it stands no longer delays its arrival.
 - ``freeze-slots-160`` / ``freeze-slots-190``: on the first turn from tick 18,000 that a boarding fills the last of the
   CAP slots, every slot is set to free exactly 160 / 190 turns later. The new head cannot be called before then, so it
   waits about that long as head: 160 stays under W(0) = 178 (PASS), 190 exceeds it (FAIL through the head check alone).
@@ -78,19 +80,20 @@ HOOKS_V4 = [
      '\t\tvar now = ride.Runtime.Script!.TimeMilliseconds;\n'
      '\t\tif ( Mutation == "hold-stand-walk" && tick >= 18000 )\n\t\t{\n'
      '\t\t\tif ( heldStandWalker == 0 && guests.Guests.FirstOrDefault( guest => guest.AttractionId == visitors.AttractionId && guest.State == GuestState.Boarding ) is { } walker )\n'
-     '\t\t\t\t(heldStandWalker, heldStandTurn, heldStandX, heldStandY) = (walker.Id, guests.ParkTurn, walker.Navigation.X, walker.Navigation.Y);\n'
+     '\t\t\t\t(heldStandWalker, heldStandTurn, heldStandX, heldStandY) = (walker.Id, guests.ParkTurn, visitors.QueueCells[0].X * Fixed16.One + Fixed16.One / 2, visitors.QueueCells[0].Y * Fixed16.One + Fixed16.One / 2);\n'
      '\t\t\tif ( heldStandWalker != 0 && guests.ParkTurn < heldStandTurn + 30 && guests.Find( heldStandWalker ) is { State: GuestState.Boarding } held )\n'
      '\t\t\t\t(held.Navigation.X, held.Navigation.Y, held.Navigation.VelocityX, held.Navigation.VelocityY) = (heldStandX, heldStandY, 0, 0);\n'
      '\t\t}\n'
      '\t\tif ( Mutation is "freeze-slots-160" or "freeze-slots-190" && tick >= 18000 && !slotsFrozen )\n\t\t{\n'
      '\t\t\tvar capacity = ride.Runtime.GetVariable( RideVariables.VAR_CAPACITY );\n'
-     '\t\t\tif ( slots.Count == capacity && previousSlotCount == capacity - 1 )\n\t\t\t{\n'
+     '\t\t\tvar occupied = slots.Count( slot => slot.Guest != 0 );\n'
+     '\t\t\tif ( occupied == capacity && previousSlotCount == capacity - 1 )\n\t\t\t{\n'
      '\t\t\t\tvar turns = Mutation == "freeze-slots-160" ? 160 : 190;\n'
      '\t\t\t\tfor ( var index = 0; index < slots.Count; index++ )\n'
      '\t\t\t\t\tslots[index] = slots[index] with { Until = now + turns * (double)ParkCalendar.TurnMilliseconds };\n'
      '\t\t\t\tslotsFrozen = true;\n'
      '\t\t\t}\n'
-     '\t\t\tpreviousSlotCount = slots.Count;\n'
+     '\t\t\tpreviousSlotCount = occupied;\n'
      '\t\t}\n'
      '\t\tif ( Mutation.StartsWith( "never-release-early" ) )\n'
      '\t\t\tfor ( var index = 0; index < slots.Count; index++ )\n'

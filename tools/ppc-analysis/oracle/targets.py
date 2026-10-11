@@ -404,7 +404,7 @@ def unbounce_plan(x: dict) -> dict:
 
 def unbounce_request(x: dict) -> dict:
     return {'fn': 'unbounce', 'now': x['now'],
-            'slots': [[visitor, deadline, start] for visitor, deadline, start in x['slots'] if visitor]}
+            'slots': [[visitor, deadline, start] for visitor, deadline, start in x['slots']]}
 
 
 def unbounce_inputs(rng: random.Random, n: int) -> list:
@@ -423,6 +423,59 @@ def unbounce_inputs(rng: random.Random, n: int) -> list:
              {'now': 50, 'slots': [(0, 0, 0), (9, 40, 49), (8, 10, 50)]}, {'now': 0, 'slots': [(5, -1, -200)]},
              # start > now: the C remainder keeps the sign, so elapsed −150 is inside the window and −250 is not.
              {'now': 1000, 'slots': [(5, 900, 1150)]}, {'now': 1000, 'slots': [(5, 900, 1250)]}]
+    return edges + [make() for _ in range(n)]
+
+
+# ============================================================================== (d2) BOARD: BOUNCE 0xadf40
+def bounce_binary(sb: Sandbox, x: dict, log) -> dict:
+    BOUNCE.now = x['now']
+    slots = x['slots']
+    table = sb.alloc(16 * max(1, len(slots)))
+    for index, (visitor, deadline, start) in enumerate(slots):
+        sb.write(table + 16 * index, 'I', visitor)
+        sb.write(table + 16 * index + 8, 'i', deadline)
+        sb.write(table + 16 * index + 12, 'i', start)
+    occupied = sum(1 for visitor, _, _ in slots if visitor)
+    script = sb.struct(128, {40: ('I', table), 100: ('i', len(slots)), 108: ('h', occupied), 112: ('i', 0)})
+    r = sb.call(0xADF40, {3: script, 4: x['visitor'], 5: x['dur']})
+    after = [[sb.read(table + 16 * index, 'I'), sb.read(table + 16 * index + 8, 'i'), sb.read(table + 16 * index + 12, 'i')]
+             for index in range(len(slots))]
+    return {'ok': r.r3, 'count': sb.read(script + 108, 'h'), 'slots': after}
+
+
+def bounce_plan(x: dict) -> dict:
+    """BOARD-plan §5: the first free slot (visitor 0) gets visitor, deadline now + 1000·dur and start now; a full
+    table stores nothing and returns 0."""
+    slots = [list(slot) for slot in x['slots']]
+    occupied = sum(1 for visitor, _, _ in slots if visitor)
+    for slot in slots:
+        if not slot[0]:
+            slot[:] = [x['visitor'], s32(x['now'] + 1000 * x['dur']), x['now']]
+            return {'ok': 1, 'count': occupied + 1, 'slots': slots}
+    return {'ok': 0, 'count': occupied, 'slots': slots}
+
+
+def bounce_request(x: dict) -> dict:
+    return {'fn': 'bounce', 'now': x['now'], 'visitor': x['visitor'], 'dur': x['dur'],
+            'slots': [[visitor, deadline, start] for visitor, deadline, start in x['slots']]}
+
+
+def bounce_inputs(rng: random.Random, n: int) -> list:
+    def make():
+        now = rng.randrange(0, 10_000_000)
+        slots = []
+        for _ in range(rng.randrange(0, 9)):
+            if rng.random() < 0.4:
+                slots.append((0, 0, 0))
+            else:
+                start = now - rng.randrange(0, 70_000)
+                slots.append((rng.randrange(1, 0x10000), start + 1000 * rng.randrange(1, 61), start))
+        return {'now': now, 'visitor': rng.randrange(1, 0x10000), 'dur': rng.randrange(1, 61), 'slots': slots}
+    edges = [{'now': 500, 'visitor': 9, 'dur': 30, 'slots': []},
+             {'now': 500, 'visitor': 9, 'dur': 30, 'slots': [(4, 900, 100), (0, 0, 0), (5, 900, 100)]},
+             {'now': 500, 'visitor': 9, 'dur': 30, 'slots': [(4, 900, 100), (5, 900, 100), (0, 0, 0)]},
+             {'now': 500, 'visitor': 9, 'dur': 30, 'slots': [(4, 900, 100), (5, 900, 100), (6, 900, 100)]},
+             {'now': 500, 'visitor': 9, 'dur': 30, 'slots': [(0, 0, 0), (0, 0, 0)]}]
     return edges + [make() for _ in range(n)]
 
 
@@ -692,6 +745,11 @@ SET_CELL = Target('path-set-cell-type', 'SetCellType pricing 0x82ac4', 'PATH-pla
 UNBOUNCE = Target('board-unbounce', 'UNBOUNCE release 0xae020', 'BOARD-plan §5', 0xAE020, [(0xAE020, 0xAE114)],
                   unbounce_stubs, unbounce_binary, unbounce_plan, unbounce_inputs,
                   csharp=('unbounce', unbounce_request, lambda x, r: r))
+BOUNCE = Target('board-bounce', 'BOUNCE slot 0xadf40', 'BOARD-plan §5', 0xADF40, [(0xADF40, 0xAE020)],
+                unbounce_stubs, bounce_binary, bounce_plan, bounce_inputs,
+                csharp=('bounce', bounce_request, lambda x, r: r),
+                notes=['The slot word +4 (index + script +112) is not compared; the C# bridge has no such field.',
+                       'Domain: now + 1000 x dur stays inside 32 bits (the bridge keeps double times).'])
 SPEED_SETTER = Target('walk-speed-setter', 'Guest speed setter 0xffe38', 'WALK-plan §1', 0xFFE38, [(0xFFE38, 0xFFEB0)],
                       lambda t: {}, speed_setter_binary, speed_setter_plan, speed_setter_inputs,
                       csharp=('guest_speed_limits', speed_setter_request, lambda s, r: r),
@@ -710,5 +768,5 @@ COAST_FINAL = Target('coast-rating-final', 'Coaster rating final 0x41900', 'COAS
                      coast_final_inputs, equal=coast_equal, alternatives={'plan-both-flags': coast_final_both_flags},
                      notes=['C# hook: bridge function "coaster_rating_final" (COAST-I).'])
 
-TARGETS = [LCG, RAND, QUEUE, CAN_CHANGE_TARGET, SET_CELL, UNBOUNCE, SPEED_SETTER, SMOOTHING, COAST_STEP, COAST_FINAL]
+TARGETS = [LCG, RAND, QUEUE, CAN_CHANGE_TARGET, SET_CELL, UNBOUNCE, BOUNCE, SPEED_SETTER, SMOOTHING, COAST_STEP, COAST_FINAL]
 DOMAINS = {SET_CELL.key: set_cell_domain}

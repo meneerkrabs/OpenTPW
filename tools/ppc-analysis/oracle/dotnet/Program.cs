@@ -16,6 +16,7 @@ var functions = new Dictionary<string, Func<JsonObject, JsonNode?>>
 	["can_change_cell_type"] = CanChangeCellType,
 	["set_cell_type"] = SetCellType,
 	["unbounce"] = Unbounce,
+	["bounce"] = Bounce,
 	["guest_speed_limits"] = GuestSpeedLimits,
 	["guest_speed_smoothing"] = GuestSpeedSmoothing,
 };
@@ -81,14 +82,31 @@ static JsonNode? SetCellType( JsonObject a )
 
 static JsonObject Outcome( bool ok, long charged, bool bumped ) => new() { ["ok"] = ok, ["charged"] = charged, ["bumped"] = bumped };
 
-// RideVisitorBridge.TakeUnbounced (the UNBOUNCE scan) through reflection: it is private and static on main.
+// RideVisitorBridge.TakeUnbounced (the UNBOUNCE scan) through reflection: it is internal and static. The slot
+// table arrives whole, free slots (visitor 0) included; "remaining" counts the occupied slots (+108).
 static JsonNode? Unbounce( JsonObject a )
 {
 	var method = typeof( RideVisitorBridge ).GetMethod( "TakeUnbounced", BindingFlags.NonPublic | BindingFlags.Static )
 		?? throw new MissingMethodException( "RideVisitorBridge.TakeUnbounced" );
 	var slots = a["slots"]!.AsArray().Select( slot => ((int)slot![0]!, (double)(int)slot[1]!, (double)(int)slot[2]!) ).ToList();
 	var guest = (int)method.Invoke( null, new object[] { slots, (double)(int)a["now"]!, false } )!;
-	return new JsonObject { ["guest"] = guest, ["remaining"] = slots.Count };
+	return new JsonObject { ["guest"] = guest, ["remaining"] = slots.Count( slot => slot.Item1 != 0 ) };
+}
+
+// RideVisitorBridge.TakeBounceSlot (the BOUNCE slot search) through reflection on the whole table; the deadline is
+// computed as the bridge's BOUNCE case does (now + dur × 1000 ms). The result lists the table padded to its size.
+static JsonNode? Bounce( JsonObject a )
+{
+	var method = typeof( RideVisitorBridge ).GetMethod( "TakeBounceSlot", BindingFlags.NonPublic | BindingFlags.Static )
+		?? throw new MissingMethodException( "RideVisitorBridge.TakeBounceSlot" );
+	var slots = a["slots"]!.AsArray().Select( slot => ((int)slot![0]!, (double)(int)slot[1]!, (double)(int)slot[2]!) ).ToList();
+	var capacity = slots.Count;
+	var now = (double)(int)a["now"]!;
+	var ok = (bool)method.Invoke( null, new object[] { slots, capacity, (int)a["visitor"]!, now + (int)a["dur"]! * 1000.0, now } )!;
+	while ( slots.Count < capacity )
+		slots.Add( default );
+	var table = new JsonArray( slots.Select( slot => (JsonNode)new JsonArray( slot.Item1, (long)slot.Item2, (long)slot.Item3 ) ).ToArray() );
+	return new JsonObject { ["ok"] = ok ? 1 : 0, ["count"] = slots.Count( slot => slot.Item1 != 0 ), ["slots"] = table };
 }
 
 // GuestSpeed.Caps (0xffe38): max speed +28 and max force +24 for a smoothed speed s, passed as IEEE single bits.

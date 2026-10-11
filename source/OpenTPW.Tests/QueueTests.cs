@@ -168,6 +168,117 @@ public class QueueTests
 	}
 
 	[TestMethod]
+	public void TheCellMoneyTestIs32BitAndANegativeCostIsBookedAsOtherIncome()
+	{
+		// SetCellType 0x82bc8: balance − cost as a wrapping 32-bit difference, then the sign bit.
+		var low = EconomyTestData.CellCostPark( int.MinValue, 20, 1 );
+		Assert.IsTrue( low.CanSpendCell( CellPurchase.Queue ), "−2^31 − 1 wraps to 2^31 − 1" );
+		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, low.TrySpendCell( CellPurchase.Queue ) );
+		var high = EconomyTestData.CellCostPark( int.MaxValue, 20, -1 );
+		Assert.IsFalse( high.CanSpendCell( CellPurchase.Queue ), "2^31 − 1 + 1 wraps to −2^31" );
+		Assert.AreEqual( ParkEconomy.PurchaseResult.NotEnoughMoney, high.TrySpendCell( CellPurchase.Queue ) );
+		Assert.AreEqual( int.MaxValue, high.Balance );
+
+		// ECON-048: a negative cost (Costs.QueueCell -5) raises the balance and is booked as other income.
+		var negative = EconomyTestData.CellCostPark( 100, 20, -5 );
+		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, negative.TrySpendCell( CellPurchase.Queue ) );
+		Assert.AreEqual( 105, negative.Balance );
+		Assert.AreEqual( 5, negative.Ledger.CurrentTotals.GetValueOrDefault( LedgerCategory.OtherIncome ) );
+		Assert.AreEqual( 0, negative.Ledger.CurrentTotals.GetValueOrDefault( LedgerCategory.OtherCosts ) );
+	}
+
+	[TestMethod]
+	public void TheQueuePreviewUsesTheValidatorAndTheCommitOnlySetCellType()
+	{
+		// The validator 0x84550: the 32-bit pending line cost is refused when greater than the balance; zero passes.
+		Assert.IsFalse( EconomyTestData.CellCostPark( int.MinValue, 20, 1 ).CanPreviewCells( CellPurchase.Queue, 1 ) );
+		Assert.IsTrue( EconomyTestData.CellCostPark( int.MaxValue, 20, -1 ).CanPreviewCells( CellPurchase.Queue, 1 ) );
+		Assert.IsTrue( EconomyTestData.CellCostPark( -5, 20, 0 ).CanPreviewCells( CellPurchase.Queue, 4 ), "a zero sum passes in the red" );
+		var park = EconomyTestData.CellCostPark( 150, 20, 75 );
+		Assert.IsTrue( park.CanPreviewCells( CellPurchase.Queue, 2 ) );
+		Assert.IsFalse( park.CanPreviewCells( CellPurchase.Queue, 3 ), "225 > 150" );
+		Assert.IsTrue( park.CanPreviewLine( unchecked( 0x1_0000_0000L ) ), "the sum is 32-bit: 2^32 wraps to 0" );
+
+		// Balance −2^31 with cost 1: the preview refuses the cell, the commit (SetCellType's test only) lays and charges it.
+		var rig = new Rig( queueCells: 0 );
+		var low = EconomyTestData.CellCostPark( int.MinValue, 20, 1 );
+		Assert.AreEqual( QueueBuildResult.Refused, Level.CheckQueueCell( rig.Grid, low, rig.Ride, 2, 5, Array.Empty<(int X, int Y)>(), ( _, _ ) => false ) );
+		Assert.AreEqual( QueueBuildResult.Ok, Level.BuildQueueCell( rig.Grid, low, rig.Ride, 2, 5, ( _, _ ) => false, out _ ) );
+		Assert.AreEqual( 1, rig.Grid.QueueCellCount );
+		Assert.AreEqual( (long)int.MinValue - 1, low.Balance );
+		// Balance 2^31 − 1 with cost −1: the preview accepts, the commit refuses and lays nothing.
+		var other = new Rig( queueCells: 0 );
+		var high = EconomyTestData.CellCostPark( int.MaxValue, 20, -1 );
+		Assert.AreEqual( QueueBuildResult.Ok, Level.CheckQueueCell( other.Grid, high, other.Ride, 2, 5, Array.Empty<(int X, int Y)>(), ( _, _ ) => false ) );
+		Assert.AreEqual( QueueBuildResult.Refused, Level.BuildQueueCell( other.Grid, high, other.Ride, 2, 5, ( _, _ ) => false, out _ ) );
+		Assert.AreEqual( 0, other.Grid.QueueCellCount );
+		Assert.AreEqual( int.MaxValue, high.Balance );
+	}
+
+	[TestMethod]
+	public void UnbounceNeedsAPassedDeadlineInsideTheFirst200MsOfEachSecond()
+	{
+		// UNBOUNCE 0xae020 on the oracle's edge inputs: (visitor, deadline, start) slots in index order.
+		static int Take( double now, params (int Guest, double Until, double Start)[] slots ) => RideVisitorBridge.TakeUnbounced( slots.ToList(), now, force: false );
+		Assert.AreEqual( 0, Take( 31000, (7, 31000, 1000) ), "deadline < now is strict" );
+		Assert.AreEqual( 7, Take( 31001, (7, 31000, 1000) ) );
+		Assert.AreEqual( 7, Take( 31199, (7, 31000, 1000) ), "(30199 mod 1000) / 200 = 0" );
+		Assert.AreEqual( 0, Take( 31200, (7, 31000, 1000) ), "(30200 mod 1000) / 200 = 1: outside the 200 ms window" );
+		Assert.AreEqual( 0, Take( 31950, (7, 31000, 1000) ) );
+		Assert.AreEqual( 7, Take( 32000, (7, 31000, 1000) ), "the next second opens the window again" );
+		Assert.AreEqual( 5, Take( 1000, (5, 900, 1150) ), "the C remainder keeps the sign: −150 / 200 = 0" );
+		Assert.AreEqual( 0, Take( 1000, (5, 900, 1250) ), "−250 / 200 = −1" );
+		Assert.AreEqual( 9, Take( 50, (0, 0, 0), (9, 40, 49), (8, 10, 50) ), "a free slot is skipped" );
+		Assert.AreEqual( 9, Take( 1049, (9, 40, 49), (8, 10, 49) ), "index order, not deadline order" );
+		var slots = new List<(int Guest, double Until, double Start)> { (0, 0, 0), (4, 1e12, 0), (6, 1e12, 0) };
+		Assert.AreEqual( 4, RideVisitorBridge.TakeUnbounced( slots, 0, force: true ), "FORCEUNBOUNCE takes the first occupied slot" );
+	}
+
+	[TestMethod]
+	public void BounceFillsTheFirstFreeSlotOfTheScriptsTable()
+	{
+		// BOUNCE 0xadf40: the first slot with visitor 0 of the header's bounce-size table; a full table stores nothing.
+		var slots = new List<(int Guest, double Until, double Start)>();
+		Assert.IsTrue( RideVisitorBridge.TakeBounceSlot( slots, 3, 1, 5000, 0 ) );
+		Assert.IsTrue( RideVisitorBridge.TakeBounceSlot( slots, 3, 2, 9000, 100 ) );
+		Assert.IsTrue( RideVisitorBridge.TakeBounceSlot( slots, 3, 3, 5300, 300 ) );
+		Assert.IsFalse( RideVisitorBridge.TakeBounceSlot( slots, 3, 4, 9999, 400 ), "every slot is taken" );
+		Assert.AreEqual( 3, slots.Count );
+		// Slot 1 is still held; slot 0 (start 0) and slot 2 (start 300) are past their deadlines. At 6000 only slot 0
+		// is inside its window, at 6300 slot 2 is.
+		Assert.AreEqual( 1, RideVisitorBridge.TakeUnbounced( slots, 6000, force: false ) );
+		Assert.AreEqual( 3, RideVisitorBridge.TakeUnbounced( slots, 6300, force: false ) );
+		CollectionAssert.AreEqual( new[] { 0, 2 }, slots.Select( slot => slot.Guest ).ToArray(), "slot 0 stays a free hole; the free end is trimmed" );
+		Assert.IsTrue( RideVisitorBridge.TakeBounceSlot( slots, 3, 5, 12000, 7000 ) );
+		CollectionAssert.AreEqual( new[] { 5, 2 }, slots.Select( slot => slot.Guest ).ToArray(), "the new visitor takes the hole, not the end" );
+		// Release order follows the slot index: 5 (slot 0) leaves before 2 (slot 1) when both are due.
+		Assert.AreEqual( 5, RideVisitorBridge.TakeUnbounced( slots, 13000, force: false ) );
+		Assert.AreEqual( 2, RideVisitorBridge.TakeUnbounced( slots, 13100, force: false ) );
+		Assert.AreEqual( 0, slots.Count );
+		Assert.IsFalse( RideVisitorBridge.TakeBounceSlot( slots, 0, 6, 1, 0 ), "a script without bounce slots bounces nobody" );
+	}
+
+	[TestMethod]
+	public void TheBridgeHashCoversEveryFieldOfABounceSlot()
+	{
+		static ulong Hash( params (int Guest, double Until, double Start)[] slots )
+		{
+			var bridge = new RideVisitorBridge( RideId, "Hash ride", RideVisitorKind.Ride, 5, 55, 30 );
+			var field = (List<(int Guest, double Until, double Start)>)typeof( RideVisitorBridge )
+				.GetField( "bouncing", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance )!.GetValue( bridge )!;
+			field.AddRange( slots );
+			var hash = new StateHasher();
+			bridge.AddCanonicalState( hash );
+			return hash.Value;
+		}
+		var baseline = Hash( (3, 5000, 1000) );
+		Assert.AreNotEqual( baseline, Hash( (4, 5000, 1000) ), "visitor" );
+		Assert.AreNotEqual( baseline, Hash( (3, 5001, 1000) ), "deadline" );
+		Assert.AreNotEqual( baseline, Hash( (3, 5000, 1001) ), "start (the UNBOUNCE window's origin)" );
+		Assert.AreNotEqual( Hash( (0, 0, 0), (3, 5000, 1000) ), baseline, "a free slot before an occupied one" );
+	}
+
+	[TestMethod]
 	public void QueueCellsAreChargedPerCellAndRefundedAtTheRideScrapPercentage()
 	{
 		var economy = EconomyTestData.Park( initialCash: 100 );

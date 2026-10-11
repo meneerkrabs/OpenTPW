@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 import re
 
@@ -32,6 +32,10 @@ BINARIES = ("STP-PPC", "TPI-EXE", "TPW-EXE")
 BIN_LABEL = re.compile(r"(%s):\S.*\Z" % "|".join(BINARIES))
 COMMENT = re.compile(r"^\s*//+\s?(.*)$")
 DECLARATION = re.compile(r'^\s*(?:new\s*)?\(\s*"([^"\n]+)"\s*,\s*"((?:[^"\\]|\\.)*)"')
+DOCUMENT = "docs/FIDELITY-REGISTER.md"
+RETIRED_HEADING = "## Retired and reserved IDs"
+DOC_ROW = re.compile(r"^\|\s*([A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*-\d{3})\s*\|")
+RETIRED_ENTRY = re.compile(r"^- `([^`]+)` \((.+)\)$")
 
 
 @dataclass(frozen=True)
@@ -58,6 +62,7 @@ class Inventory:
     declarations: dict[str, Declaration]
     errors: list[str]
     register_count: int = len(REGISTERS)
+    retired: dict[str, str] = field(default_factory=dict)
 
     @property
     def unresolved(self) -> list[str]:
@@ -198,7 +203,41 @@ def collect(root: Path, registers: dict[str, str] | None = None,
         errors.append(f"{label}: annotation has no declaration in the configured registers")
     for label in sorted(declarations.keys() - tagged):
         errors.append(f"{label}: declaration has no source annotation")
-    return Inventory(sites, declarations, errors, len(registers))
+    retired = retired_ids(root, set(registers) | set(markdown_registers), declarations, errors)
+    return Inventory(sites, declarations, errors, len(registers), retired)
+
+
+def retired_ids(root: Path, prefixes: set[str], declarations: dict[str, Declaration], errors: list[str]) -> dict[str, str]:
+    """IDs that a Markdown table row under docs keys but no register declares (retired, or reserved by a plan).
+
+    The list in the generated document only grows: an ID listed there may not be declared again, so a new
+    approximation cannot take a number the docs already use with another meaning (REVIEW-ORACLE-2 OV2-1)."""
+    listed: dict[str, str] = {}
+    document = root / DOCUMENT
+    if document.is_file():
+        inside = False
+        for line in document.read_text(encoding="utf-8").splitlines():
+            if line.startswith("## "):
+                inside = line == RETIRED_HEADING
+            elif inside and (match := RETIRED_ENTRY.match(line)):
+                listed[match.group(1)] = match.group(2)
+    for label in sorted(listed.keys() & declarations.keys()):
+        errors.append(f"{label}: declared, but {DOCUMENT} lists it as retired or reserved ({listed[label]}); use a free ID")
+    found: dict[str, str] = {}
+    docs = root / "docs"
+    for path in sorted(docs.rglob("*.md")) if docs.is_dir() else []:
+        relative = path.relative_to(root).as_posix()
+        if relative == DOCUMENT:
+            continue
+        for line in path.read_text(encoding="utf-8").splitlines():
+            match = DOC_ROW.match(line)
+            if match and match.group(1).rsplit("-", 1)[0] in prefixes:
+                found.setdefault(match.group(1), relative)
+    retired = dict(listed)
+    for label, where in found.items():
+        if label not in declarations:
+            retired.setdefault(label, where)
+    return dict(sorted(retired.items()))
 
 
 def escape(text: str) -> str:
@@ -244,6 +283,12 @@ def render(data: Inventory) -> str:
             lines.append(f"| {label} | {escape(declaration.scope)} | {escape(declaration.description)} | {escape(declaration.evidence)} | {location(declaration.path, declaration.line)} |")
         else:
             lines.append(f"| {label} | Unknown | Missing declaration | — | — |")
+    lines += ["", RETIRED_HEADING, "",
+              "IDs that a table row in docs keys but no register declares: retired approximations and IDs a plan reserves. "
+              "Declaring one of them fails the check, so a new approximation cannot take a number the docs already use "
+              "with another meaning. `--write` keeps every listed ID; remove an entry by hand only when its docs agree "
+              "with the new declaration.", ""]
+    lines += [f"- `{label}` ({where})" for label, where in data.retired.items()] or ["None."]
     for kind, title in [("APPROX", "Approximation sites"), ("EXT", "Extension sites"), ("DATA", "Data provenance sites"), ("BIN", "Binary evidence sites")]:
         lines += ["", f"## {title}", "", "| Label | Location | Source comment context |", "| --- | --- | --- |"]
         for site in sorted((s for s in data.sites if s.kind == kind), key=lambda s: (s.label, s.path, s.line)):
@@ -263,7 +308,7 @@ def main() -> None:
         if data.errors:
             parser.exit(1, "\n".join(data.errors) + "\n")
         document = render(data)
-        target = args.root / "docs/FIDELITY-REGISTER.md"
+        target = args.root / DOCUMENT
         if args.check:
             if not target.is_file() or target.read_text(encoding="utf-8") != document:
                 parser.exit(1, "Fidelity register is missing or stale; run --write.\n")

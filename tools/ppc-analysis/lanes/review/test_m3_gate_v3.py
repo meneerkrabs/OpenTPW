@@ -123,7 +123,7 @@ HOOKS_V3 = [
      '\t\tif ( Mutation is "hold-slots-longer" or "hold-slots-much-longer" or "never-release" && ride != null && tick >= 18000 )\n\t\t{\n'
      '\t\t\tvar slots = (List<(int Guest, double Until, double Start)>)typeof( RideVisitorBridge ).GetField( "bouncing", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance )!.GetValue( ride.Runtime.Visitors )!;\n'
      '\t\t\tfor ( var index = 0; index < slots.Count; index++ )\n'
-     '\t\t\t\tif ( extendedSlots.Add( slots[index].Guest ) )\n'
+     '\t\t\t\tif ( slots[index].Guest != 0 && extendedSlots.Add( slots[index].Guest ) )\n'
      '\t\t\t\t\tslots[index] = slots[index] with { Until = slots[index].Until + (Mutation == "hold-slots-longer" ? 30_000 : Mutation == "hold-slots-much-longer" ? 120_000 : 1e12) };\n'
      '\t\t}\n'
      '\t\tif ( Mutation is "head-delayed-60-turns" or "head-delayed-170-turns" && ride != null && tick >= 18000 && ride.Runtime.Visitors.Queue.Count > 0 )\n\t\t{\n'
@@ -176,13 +176,14 @@ class StaticRound3(unittest.TestCase):
         helper = v1.method_body(new, 'internal static QueueBuildResult BuildQueueCell(')
         if 'QueuePaths.CheckExtend(' not in helper:
             # GATE-V4: after the merge with PATH-FIX (PATH-V2's recipe) the check goes through the static CheckQueueCell,
-            # which runs QueuePaths.CheckExtend and then the money check; a Refused check is reported as "not enough
-            # money" before anything is charged.
+            # which runs QueuePaths.CheckExtend and then the preview's money check; a Refused check is reported as "not
+            # enough money" before anything is charged. WALK-F2 (REVIEW-ORACLE-2 OV2-3): the preview's money check is the
+            # validator's (CanPreviewCells) and the commit passes no economy to it, so only TrySpendCell's test decides.
             check = v1.method_body(new, 'internal static QueueBuildResult CheckQueueCell(')
-            self.assertLess(check.find('QueuePaths.CheckExtend('), check.find('CanSpendCell( CellPurchase.Queue'))
+            self.assertLess(check.find('QueuePaths.CheckExtend('), check.find('CanPreviewCells( CellPurchase.Queue'))
             self.assertGreaterEqual(check.find('QueuePaths.CheckExtend('), 0)
             self.assertIn('check == QueueBuildResult.Refused || (economy != null && economy.TrySpendCell( CellPurchase.Queue )', helper)
-            steps = ['ride.RecomputeQueue( grid );', 'CheckQueueCell( grid, economy, ride, x, y, ', 'TrySpendCell( CellPurchase.Queue )', 'QueuePaths.TryExtend(']
+            steps = ['ride.RecomputeQueue( grid );', 'CheckQueueCell( grid, null, ride, x, y, ', 'TrySpendCell( CellPurchase.Queue )', 'QueuePaths.TryExtend(']
         positions = [helper.find(step) for step in steps]
         self.assertTrue(all(p >= 0 for p in positions), dict(zip(steps, positions)))
         self.assertEqual(sorted(positions), positions)

@@ -45,6 +45,9 @@ EXPECTED = {
     ('board-unbounce', 'plan'): AGREE,
     # F5 (fixed): C# releases at deadline < now (strict) inside the 200 ms window of 0xae020, as BOARD-plan §5 states.
     ('board-unbounce', 'csharp'): AGREE,
+    # OV2-6 (WALK-F2, REVIEW-ORACLE-2): BOUNCE fills the first free slot of the header's table; a full table stores nothing.
+    ('board-bounce', 'plan'): AGREE,
+    ('board-bounce', 'csharp'): AGREE,
     ('walk-speed-setter', 'plan'): AGREE,
     ('walk-speed-setter', 'csharp'): AGREE,
     ('walk-smoothing', 'csharp'): AGREE,
@@ -141,10 +144,12 @@ class Oracle(unittest.TestCase):
             self.check(key)
 
     def test_board(self):
-        self.check(('board-unbounce', 'plan'))
+        for key in (('board-unbounce', 'plan'), ('board-bounce', 'plan')):
+            self.check(key)
 
     def test_board_csharp(self):
-        self.check(('board-unbounce', 'csharp'))
+        for key in (('board-unbounce', 'csharp'), ('board-bounce', 'csharp')):
+            self.check(key)
 
     def test_walk(self):
         for key in (('walk-speed-setter', 'plan'), ('walk-smoothing', 'plan'), ('walk-smoothing', 'plan-fused')):
@@ -198,9 +203,11 @@ class CSharpMutation(unittest.TestCase):
         ('path-can-change', 'csharp', 'source/OpenTPW/World/ParkCellMap.cs',
          'return type == 3 && old == 1 && !lastCell;', 'return type == 3 && old == 1 && lastCell;'),
         ('path-set-cell-type', 'csharp', 'source/OpenTPW/Economy/ParkEconomy.cs',
-         'unchecked( (int)Balance - (int)((pending + 1) * CellCost( kind )) ) >= 0', 'Balance - (pending + 1) * CellCost( kind ) >= 0'),
+         'unchecked( (int)Balance - (int)CellCost( kind ) ) >= 0', 'Balance - CellCost( kind ) >= 0'),
         ('board-unbounce', 'csharp', 'source/OpenTPW/World/Guests/RideVisitorBridge.cs',
          'elapsed % 1000 / 200 == 0', 'elapsed % 1000 / 250 == 0'),
+        ('board-bounce', 'csharp', 'source/OpenTPW/World/Guests/RideVisitorBridge.cs',
+         'if ( slots[index].Guest == 0 )', 'if ( false )'),
         ('walk-smoothing', 'csharp', 'source/OpenTPW/World/Guests/GuestNavigation.cs',
          'MathF.FusedMultiplyAdd( 3f, previous, (baseSpeed + bonus + boost) / (float)Divisor ) * 0.25f',
          '(3f * previous + (baseSpeed + bonus + boost) / (float)Divisor) * 0.25f'),

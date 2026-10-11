@@ -122,6 +122,7 @@ Mutation checks (`test_oracle.py`):
 | `path-can-change` | `0x8408c` | none | 2548 (full 32×32×2 grid + 500) | **agree** (F3 fixed in PATH-plan §3.1 rule 7) | **agree** (F3 fixed) |
 | `path-set-cell-type` | `0x82ac4`, `0x8408c`, cost getters `0x7bc58/0x7bc70`, balance `0xcbf48` | `0x859b4` ClearCell, `0x108424` game→bank, `0xd7dc8/0xd7ddc` map bookkeeping, `0xcbfdc` Spend (records the amount), queue-edited path `0xd8d20/0xb678/0xdd57c` (logged) | 511 | **agree** (F4: 32-bit money test in PATH-plan §3.2) | **agree** (F4 fixed) |
 | `board-unbounce` | `0xae020` | `0x10e844` clock (returns the chosen `now`) | 508 (incl. two with start > now) | **agree** (BOARD-plan §5) | **agree** (F5 fixed: `TakeUnbounced`) |
+| `board-bounce` | `0xadf40` | `0x10e844` clock (returns the chosen `now`) | 505 (incl. a full table and holes) | **agree** (BOARD-plan §5) | **agree** (OV2-6 fixed: `TakeBounceSlot`) |
 | `walk-speed-setter` | `0xffe38` | none | 518 | **agree** (WALK-plan §1, incl. NaN/±inf/huge) | **agree** (`GuestSpeed.Caps`, wired in WALK-F) |
 | `walk-smoothing` | `0xe6b28` + `0xffe38` | `0xffd4c`, `0xd2394` (later movement updates, no value used) | 507 | **F6**: 99 differ (98 in the last bit of `s`, 2 in the boost wrap, one input both). Fused reading: 2 (wrap) | **agree** (`GuestSpeed.Update`: fused multiply-add and the u16 product, F6 fixed in WALK-I; wired in WALK-F) |
 | `coast-rating-step` | `0x415b4` | none | 509 | **F7**: 440 differ with the stale term = 0. **Agree** 509/509 with the stale term = Fz. Previous force and bank are 0 in every input (OV-7, F7) | COAST-I not on main (hook `coaster_rating_step`) |
@@ -198,7 +199,11 @@ refuses (balance 2³¹ − 1, cost −1 overflows to negative). All 509 other in
 
 **Fixed in ORACLE-F:** PATH-plan §3.2 states the 32-bit difference, `ParkEconomy.CanSpendCell`
 computes it in 32 bits, and `TrySpendCell` spends a negative cost (booked as other income,
-`APPROX:ECON-046`) instead of throwing. Before → after: plan 2 → 0, C# 2 → 0.
+`APPROX:ECON-048`, numbered ECON-046 until REVIEW-ORACLE-2 OV2-1) instead of throwing. Before → after: plan 2 → 0, C# 2 → 0.
+**WALK-F2 (REVIEW-ORACLE-2 OV2-2, OV2-3):** the path writer now refuses through the same 32-bit
+`CanSpendCell` (it kept a 64-bit test), and the path and queue previews use the validator's own
+test (`0x84550`: a 32-bit pending line cost, skipped at 0, refused when greater than the
+balance, `ParkEconomy.CanPreviewLine`). A commit runs only SetCellType's test.
 
 **F5, UNBOUNCE (BOARD-plan §5, not on main).** C# `TakeExpired` releases the first bouncing
 guest with `Until <= now`. The original (`0xae020`) releases the first occupied slot with
@@ -209,6 +214,10 @@ take the plan as written. **Fixed in ORACLE-F:** each bounce slot keeps its star
 `RideVisitorBridge.TakeUnbounced` releases the first slot with `deadline < now` inside the 200 ms
 window (32-bit whole-millisecond times, C remainder); FORCEUNBOUNCE still takes the first slot.
 Before → after: C# 326 → 0 (now on 508 inputs, two of them with start > now).
+**WALK-F2 (REVIEW-ORACLE-2 OV2-6):** BOUNCE (`0xadf40`) fills the first free slot of the
+header's bounce-size table and stores nothing when the table is full; UNBOUNCE clears a slot in
+place, so the bridge keeps the original's slot order. The C# bridge now receives the whole slot
+table, free slots included.
 
 **F6, speed smoothing precision (WALK-plan §4).** Two differences:
 

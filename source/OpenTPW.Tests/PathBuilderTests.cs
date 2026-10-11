@@ -36,9 +36,9 @@ public class PathBuilderTests
 		public readonly ParkEconomy? Economy;
 		public readonly ParkPathBuilder Builder;
 
-		public Rig( bool economy = true, int cash = 50000 )
+		public Rig( bool economy = true, int cash = 50000, ParkEconomy? park = null )
 		{
-			Economy = economy ? EconomyTestData.Park( initialCash: cash ) : null;
+			Economy = park ?? (economy ? EconomyTestData.Park( initialCash: cash ) : null);
 			Builder = new ParkPathBuilder( Grid.Cells, Grid, Economy, Terrain, ( x, y ) => Objects.Contains( (x, y) ) );
 		}
 
@@ -133,6 +133,42 @@ public class PathBuilderTests
 		Assert.AreEqual( ParkCellType.Empty, rig.Cells.TypeAt( 2, 0 ) );
 		Assert.AreEqual( CellBuildResult.NotEnoughMoney, rig.Builder.CheckCell( 5, 5 ) );
 		Assert.AreEqual( CellBuildResult.Existing, rig.Builder.CheckCell( 0, 0 ), "an existing path needs no money" );
+	}
+
+	[TestMethod]
+	public void TheWriteUsesSetCellTypes32BitMoneyTest()
+	{
+		// 0x82bc8: balance − cost wraps in 32 bits. Balance −2^31 with cost 1 is affordable (64-bit arithmetic refuses it)…
+		var low = new Rig( park: EconomyTestData.CellCostPark( int.MinValue, 1, 75 ) );
+		var result = low.Builder.BuildSegment( (1, 1), (1, 1) );
+		CollectionAssert.AreEqual( new[] { (1, 1) }, result.Built.ToArray(), "balance −2^31, cost 1: −2^31 − 1 wraps to 2^31 − 1" );
+		Assert.AreEqual( (long)int.MinValue - 1, low.Economy!.Balance );
+		// …and balance 2^31 − 1 with cost −1 is refused: no cell, no charge (64-bit arithmetic accepts it).
+		var high = new Rig( park: EconomyTestData.CellCostPark( int.MaxValue, -1, 75 ) );
+		result = high.Builder.BuildSegment( (1, 1), (1, 1) );
+		Assert.AreEqual( 0, result.Built.Count );
+		Assert.AreEqual( CellBuildResult.NotEnoughMoney, result.StoppedBy );
+		Assert.AreEqual( ParkCellType.Empty, high.Cells.TypeAt( 1, 1 ) );
+		Assert.AreEqual( int.MaxValue, high.Economy!.Balance );
+	}
+
+	[TestMethod]
+	public void ThePreviewUsesTheValidatorsPendingCostTest()
+	{
+		// 0x84550: the 32-bit pending line cost (this cell included) is refused when greater than the balance; a zero sum passes.
+		Assert.AreEqual( CellBuildResult.NotEnoughMoney, new Rig( park: EconomyTestData.CellCostPark( int.MinValue, 1, 75 ) ).Builder.Preview( (1, 1), (1, 1) ).StoppedBy,
+			"pending 1 > balance −2^31 (the commit accepts this cell)" );
+		Assert.AreEqual( CellBuildResult.Ok, new Rig( park: EconomyTestData.CellCostPark( int.MaxValue, -1, 75 ) ).Builder.Preview( (1, 1), (1, 1) ).StoppedBy,
+			"pending −1 ≤ balance (the commit refuses this cell)" );
+		var free = new Rig( park: EconomyTestData.CellCostPark( -5, 0, 75 ) );
+		Assert.AreEqual( 4, free.Builder.Preview( (1, 1), (4, 1) ).Built.Count, "a zero pending cost skips the test, even in the red" );
+		Assert.AreEqual( CellBuildResult.Ok, free.Builder.CheckCell( 6, 6 ) );
+		// Off the edges both tests agree: balance 50 pays two cells of 20, not three.
+		var rig = new Rig( park: EconomyTestData.CellCostPark( 50, 20, 75 ) );
+		var ghost = rig.Builder.Preview( (1, 1), (4, 1) );
+		Assert.AreEqual( 2, ghost.Built.Count );
+		Assert.AreEqual( (3, 1), ghost.StoppedAt );
+		CollectionAssert.AreEqual( ghost.Built.ToArray(), rig.Builder.BuildSegment( (1, 1), (4, 1) ).Built.ToArray() );
 	}
 
 	// ---- Cost ---------------------------------------------------------------------------------------
@@ -574,7 +610,7 @@ public class PathBuilderTests
 	private static QueueLineWriter QueueWriter( GuestPathGrid grid, RideVisitorBridge ride, Func<int, int, bool>? blocked = null, ParkEconomy? economy = null ) =>
 		new( grid, ride,
 			( x, y, pending ) => QueuePaths.CheckExtend( grid, ride, x, y, pending, blocked ) is var check && check != QueueBuildResult.Ok ? check
-				: economy != null && !economy.CanSpendCell( CellPurchase.Queue, pending.Count ) ? QueueBuildResult.Refused : QueueBuildResult.Ok,
+				: economy != null && !economy.CanPreviewCells( CellPurchase.Queue, pending.Count + 1 ) ? QueueBuildResult.Refused : QueueBuildResult.Ok,
 			( x, y ) =>
 			{
 				ride.RecomputeQueue( grid );

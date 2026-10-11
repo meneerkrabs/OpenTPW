@@ -137,6 +137,29 @@ var text = "[APPROX:TEST-002] runtime string";
             self.assertEqual(result.returncode, 1)
             self.assertIn('missing or stale', result.stderr)
 
+    def test_ids_used_only_in_docs_cannot_be_declared_again(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'source').mkdir()
+            (root / 'docs/reverse').mkdir(parents=True)
+            code = root / 'source/test.cs'
+            register = root / 'source/register.cs'
+            code.write_text('// [APPROX:TEST-001] one\n')
+            register.write_text('("TEST-001", "rule"),\n')
+            (root / 'docs/reverse/TRACE.md').write_text('| ID | Verdict |\n| --- | --- |\n| TEST-001 | same rule |\n| TEST-002 | retired rule |\n| OTHER-003 | not an area |\n')
+            config = {'TEST': 'source/register.cs'}
+            data = collect(root, config)
+            self.assertEqual(data.errors, [])
+            self.assertEqual(data.retired, {'TEST-002': 'docs/reverse/TRACE.md'})
+            (root / 'docs/FIDELITY-REGISTER.md').write_text(render(data))
+            # Reusing the retired number fails, even after its doc row is gone.
+            (root / 'docs/reverse/TRACE.md').write_text('| TEST-001 | same rule |\n')
+            code.write_text('// [APPROX:TEST-001] one\n// [APPROX:TEST-002] another meaning\n')
+            register.write_text('("TEST-001", "rule"),\n("TEST-002", "another meaning"),\n')
+            errors = collect(root, config).errors
+            self.assertTrue(any(e.startswith('TEST-002: declared, but docs/FIDELITY-REGISTER.md lists it as retired') for e in errors), errors)
+            self.assertIn('TEST-002', collect(root, config).retired)
+
     def test_register_count_sentence_follows_the_configuration(self):
         # Review WV-10: a merge that adds a register to REGISTERS must not leave a stale count in the document.
         self.assertIn(f'read from the {in_words(len(REGISTERS))} configured C# registers', render(Inventory([], {}, [])))

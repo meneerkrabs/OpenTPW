@@ -14,7 +14,7 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **205 unresolved unique APPROX IDs**, 222 APPROX occurrences, 90 EXT occurrences, 91 DATA occurrences and 166 BIN occurrences.
+Current inventory: **205 unresolved unique APPROX IDs**, 222 APPROX occurrences, 90 EXT occurrences, 91 DATA occurrences and 172 BIN occurrences.
 
 Of these, 199 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
@@ -122,7 +122,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-041 | Original-fidelity area (scope unadjudicated) | features-directory objects with Research.Category != 3 are fixed (non-buyable) items | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:43` |
 | ECON-044 | Original-fidelity area (scope unadjudicated) | guests never hold a balloon or wear a costume, so both percentages are 0; the binary gives them when a guest uses a balloon or costume shop (0x100EAAF8) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:44` |
 | ECON-045 | Original-fidelity area (scope unadjudicated) | loan/challenge record locators use plausibility bounds (checked on 12 saves) | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:45` |
-| ECON-046 | Original-fidelity area (scope unadjudicated) | a negative path or queue cell cost (modified Costs.*) is booked as other income; balance and profit match the original's Spend of a negative amount | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:46` |
+| ECON-048 | Original-fidelity area (scope unadjudicated) | a negative path or queue cell cost (modified Costs.*) is booked as other income; balance and profit match the original's Spend of a negative amount | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:46` |
 | GATE-001 | Original-fidelity area (scope unadjudicated) | an M3 in-game minute is 60 s of normal-speed simulation (3,600 fixed 60 Hz ticks), not a park-clock minute | See source annotation/runtime register | `source/OpenTPW/Client/M3GateApproximations.cs:11` |
 | GATE-006 | Original-fidelity area (scope unadjudicated) | the queue walk terms (C = 9 updates per cell with w2 = 15, the join walk J(p), each head's own remaining walk and the head-not-ready bound N x C + 2 x w2) come from enumerating OpenTPW's own port of the traced steering, including WALK-002 (corner branches), WALK-003 (separation neighbours), WALK-004 (routes) and the walkability rule (WALK-005/006); the head-not-ready bound is looser than the retired GATE-005 check, accepted by the owner on 2026-10-10 | See source annotation/runtime register | `source/OpenTPW/Client/M3GateApproximations.cs:12` |
 | ONLINE-001 | OpenTPW online extension | Word filtering uses case-insensitive substring matches in space-padded text; entry spaces act as boundaries; allowed substrings exempt matches; hit characters except spaces become asterisks. | Original word-filter code or observed original filtering behavior; the source comment says the encrypted TP.ICD implementation is unreadable. | `docs/ONLINE.md:158` |
@@ -247,6 +247,45 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | WALK-009 | Original-fidelity area (scope unadjudicated) | the progress history compares raw remaining distances and skips the first step after route setup, not progress = ONE - FixDiv(remaining, +160) against +172 | See source annotation/runtime register | `source/OpenTPW/World/Guests/WalkApproximations.cs:21` |
 | WALK-010 | Original-fidelity area (scope unadjudicated) | the needs phase that gates the toilet speed term compares the park turn with OpenTPW's guest id, not the original thing id | See source annotation/runtime register | `source/OpenTPW/World/Guests/WalkApproximations.cs:22` |
 
+## Retired and reserved IDs
+
+IDs that a table row in docs keys but no register declares: retired approximations and IDs a plan reserves. Declaring one of them fails the check, so a new approximation cannot take a number the docs already use with another meaning. `--write` keeps every listed ID; remove an entry by hand only when its docs agree with the new declaration.
+
+- `ADVISOR-001` (docs/reverse/APPROX-TRACE.md)
+- `ADVISOR-003` (docs/reverse/APPROX-TRACE.md)
+- `ADVISOR-004` (docs/reverse/APPROX-TRACE.md)
+- `DET-001` (docs/reverse/DET-plan.md)
+- `DET-003` (docs/reverse/DET-plan.md)
+- `DET-004` (docs/reverse/DET-plan.md)
+- `DET-005` (docs/reverse/DET-plan.md)
+- `DET-006` (docs/reverse/DET-plan.md)
+- `DET-007` (docs/reverse/DET-plan.md)
+- `DET-008` (docs/reverse/DET-plan.md)
+- `DET-009` (docs/reverse/DET-plan.md)
+- `DET-010` (docs/reverse/DET-plan.md)
+- `DET-011` (docs/reverse/DET-plan.md)
+- `DET-012` (docs/reverse/DET-plan.md)
+- `ECON-003` (docs/reverse/APPROX-TRACE.md)
+- `ECON-009` (docs/reverse/APPROX-TRACE.md)
+- `ECON-011` (docs/reverse/APPROX-TRACE.md)
+- `ECON-016` (docs/reverse/APPROX-TRACE.md)
+- `ECON-024` (docs/reverse/APPROX-TRACE.md)
+- `ECON-029` (docs/reverse/APPROX-TRACE.md)
+- `ECON-032` (docs/reverse/APPROX-TRACE.md)
+- `ECON-033` (docs/reverse/APPROX-TRACE.md)
+- `ECON-037` (docs/reverse/APPROX-TRACE.md)
+- `ECON-042` (docs/reverse/APPROX-TRACE.md)
+- `ECON-043` (docs/reverse/APPROX-TRACE.md)
+- `ECON-046` (docs/reverse/APPROX-TRACE.md)
+- `ECON-047` (docs/reverse/RIDE-WEAR.md)
+- `RIDES-005` (docs/reverse/APPROX-TRACE.md)
+- `RIDES-020` (docs/reverse/APPROX-TRACE.md)
+- `RIDES-027` (docs/reverse/APPROX-TRACE.md)
+- `RIDES-029` (docs/reverse/APPROX-TRACE.md)
+- `UI-009` (docs/reverse/APPROX-TRACE.md)
+- `UI-020` (docs/reverse/APPROX-TRACE.md)
+- `UI-033` (docs/reverse/APPROX-TRACE.md)
+
 ## Approximation sites
 
 | Label | Location | Source comment context |
@@ -334,7 +373,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-041 | `source/OpenTPW/Economy/EconomyObjectCatalog.cs:98` | [APPROX:ECON-041] features-directory objects with Research.Category != 3 are fixed (non-buyable) items — evidence needed: buy-menu capture |
 | ECON-044 | `source/OpenTPW/Economy/GuestEconomyBridge.cs:80` | [APPROX:ECON-044] guests never hold a balloon or wear a costume, so both percentages are 0; the binary gives them when a guest uses a balloon or costume shop (0x100EAAF8) — evidence needed: balloon lifetime (+0x214) and costume state rules |
 | ECON-045 | `source/OpenTPW.Files/Formats/Save/SaveEconomyRecords.cs:111` | [APPROX:ECON-045] loan/challenge record locators use plausibility bounds (checked on 12 saves) — evidence needed: the serializer offsets of both tables |
-| ECON-046 | `source/OpenTPW/Economy/ParkEconomy.cs:704` | [APPROX:ECON-046] a negative cell cost is booked as other income (same balance and profit as the original's Spend of a negative amount; the month category is not traced) — evidence needed: the ledger category of a negative Spend |
+| ECON-048 | `source/OpenTPW/Economy/ParkEconomy.cs:719` | [APPROX:ECON-048] a negative cell cost is booked as other income (same balance and profit as the original's Spend of a negative amount; the month category is not traced) — evidence needed: the ledger category of a negative Spend |
 | GATE-001 | `source/OpenTPW/Client/M3Gate.cs:118` | [APPROX:GATE-001] an M3 in-game minute is 60 s of normal-speed simulation (3,600 fixed 60 Hz ticks), not a park-clock minute (one 248 ms park turn already advances the park clock 3,750 s) — evidence needed: the original's notion of elapsed play time for the M3 gate |
 | GATE-006 | `source/OpenTPW/Client/M3Gate.cs:1208` | [APPROX:GATE-006] the walk term N x C + 2 x w2 rests on C = 9 from a bounded enumeration of OpenTPW's own port of the traced steering (WALK-002..WALK-009), not on a proof for the original; it is looser than the retired GATE-005 check (owner decision 2026-10-10) — evidence needed: the corner branches, edge flags and route search of the original traced, then C re-derived |
 | GATE-006 | `source/OpenTPW/Client/M3Gate.cs:1319` | [APPROX:GATE-006] C = 9 comes from enumerating OpenTPW's port, including WALK-002 (corner branches), WALK-003 (separation neighbours, at most the max force against the walk in the enumeration), WALK-004 (routes) and the walkability rule WALK-005/006; it bounds OpenTPW's walk, and the original's only as far as those match — evidence needed: those parts traced, then C re-derived |
@@ -347,15 +386,15 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ONLINE-006 | `source/OpenTPW.Server/ChatHub.cs:423` | [APPROX:ONLINE-006] A visitor inside a park must leave it first (CHAT_COMMANDS 127) — evidence needed. |
 | PATH-001 | `source/OpenTPW/Hud/ParkHud.cs:506` | [APPROX:PATH-001] ghosts are flat markers at the cell centres with the line's cost beside the cursor (the original draws ghost path pieces, LayLine mode \| 0x100) — evidence needed: captures of the original path tool |
 | PATH-001 | `source/OpenTPW/World/Level.Objects.cs:122` | [APPROX:PATH-001] a left click on an empty owned cell or on a path cell enters mode 1 with that cell as the start; the click handler that calls SetMode(1) is not traced and no menu button exists — evidence needed: the caller of SetMode 0x1007B320 with mode 1 |
-| PATH-002 | `source/OpenTPW/World/ParkPathBuilder.cs:322` | [APPROX:PATH-002] Backspace undo removes the last segment's new cells and undoes its counter bumps, without a refund (only the help text 443 and the vertex stack are traced) — evidence needed: the BACKSPACE handler of the path tool |
+| PATH-002 | `source/OpenTPW/World/ParkPathBuilder.cs:324` | [APPROX:PATH-002] Backspace undo removes the last segment's new cells and undoes its counter bumps, without a refund (only the help text 443 and the vertex stack are traced) — evidence needed: the BACKSPACE handler of the path tool |
 | PATH-003 | `source/OpenTPW/World/CellBuildTool.cs:109` | [APPROX:PATH-003] a line whose last cell was already a path or queue cell ends the tool (SetCell raises data:0x84b34 there; its consumer is not traced, the help text 443 says such a click completes the path) — evidence needed: the reader of data 0x84b34 |
-| PATH-004 | `source/OpenTPW/World/ParkPathBuilder.cs:261` | [APPROX:PATH-004] a new path cell links to every cardinal path neighbour on both sides (the link writer 0x82d6c and its neighbour tables are not traced; every Easymode path neighbour is linked, 78 of 78 cells) — evidence needed: 0x10082D6C and the run-time neighbour tables data 0xec52c.. |
-| PATH-005 | `source/OpenTPW/World/ParkPathBuilder.cs:284` | [APPROX:PATH-005] the player's remove route forces removal (a = b = 0) and is the only route besides undo — evidence needed: the bulldozer's call into 0x100859B4 and its a, b arguments |
-| PATH-006 | `source/OpenTPW/World/ParkPathBuilder.cs:164` | [APPROX:PATH-006] no slope or height test (none on the traced type-1 route); the object terrain rule applies, and the save's own path cells count as buildable — evidence needed: captures of the original laying paths on hills |
+| PATH-004 | `source/OpenTPW/World/ParkPathBuilder.cs:263` | [APPROX:PATH-004] a new path cell links to every cardinal path neighbour on both sides (the link writer 0x82d6c and its neighbour tables are not traced; every Easymode path neighbour is linked, 78 of 78 cells) — evidence needed: 0x10082D6C and the run-time neighbour tables data 0xec52c.. |
+| PATH-005 | `source/OpenTPW/World/ParkPathBuilder.cs:286` | [APPROX:PATH-005] the player's remove route forces removal (a = b = 0) and is the only route besides undo — evidence needed: the bulldozer's call into 0x100859B4 and its a, b arguments |
+| PATH-006 | `source/OpenTPW/World/ParkPathBuilder.cs:165` | [APPROX:PATH-006] no slope or height test (none on the traced type-1 route); the object terrain rule applies, and the save's own path cells count as buildable — evidence needed: captures of the original laying paths on hills |
 | PATH-007 | `source/OpenTPW/World/ParkCellMap.cs:57` | [APPROX:PATH-007] no cell gets flag 0x40 (Unowned): the original sets it on every non-InitialPath cell and Buy Land clears it, but the starting park's owned land is not decoded from the save or MAP, so every in-bounds cell counts as owned — evidence needed: the save/MAP ownership bits and which of the 24 clear sites (0x84aa4(cell, 0x40)) mark the starting park |
-| PATH-008 | `source/OpenTPW/World/ParkPathBuilder.cs:159` | [APPROX:PATH-008] path over a queue end (validator code 8) is refused like every other queue cell — evidence needed: the consumer of the validator's return code 8 |
+| PATH-008 | `source/OpenTPW/World/ParkPathBuilder.cs:160` | [APPROX:PATH-008] path over a queue end (validator code 8) is refused like every other queue cell — evidence needed: the consumer of the validator's return code 8 |
 | PATH-009 | `source/OpenTPW/World/ParkPathBuilder.cs:86` | [APPROX:PATH-009] free building is taken as "no park economy"; the free-build byte data:0x7de2d is a short-lived park-view flag (set by the hover routine in tool mode 4 at 0x6f5f4 and by the click handler at 0x71330 and in mode 59 at 0x71cb8, cleared at 0x70ca4, 0x71c94, 0x722ec), not a sandbox switch — evidence needed: what tool modes 4 and 59 are, other writers of data 0x7de2d, and game+36 |
-| PATH-010 | `source/OpenTPW/World/ParkPathBuilder.cs:255` | [APPROX:PATH-010] path spending is posted to OtherCosts (the original adds Spend to total costs, game+0x1f5a0; its ledger row is not identified) — evidence needed: the finance screen row that shows path spending |
+| PATH-010 | `source/OpenTPW/World/ParkPathBuilder.cs:257` | [APPROX:PATH-010] path spending is posted to OtherCosts (the original adds Spend to total costs, game+0x1f5a0; its ledger row is not identified) — evidence needed: the finance screen row that shows path spending |
 | PATH-011 | `source/OpenTPW/Hud/ParkHud.cs:238` | [APPROX:PATH-011] Escape/Back inside the path or queue tool ends the tool without writing; only a Back outside it opens the pause menu (PATH-plan §9.4 cancel; the original's key handler for the tool is not traced, UI-012) — evidence needed: the original's Escape handling in tool modes 1 and 3 |
 | PATH-012 | `source/OpenTPW/World/CellBuildTool.cs:108` | [APPROX:PATH-012] a line refused part-way ends the tool (the flag read at 0x7123c is the result of the ghost-clear LayLine(0x81) at 0x71164, not of the commit LayLine at 0x710c0, so ending on the commit's refusal is not traced) — evidence needed: what LayLine(0x81) returns after a refused commit |
 | PATH-013 | `source/OpenTPW/Hud/ParkHud.cs:470` | [APPROX:PATH-013] while the pause menu is open the tool takes no clicks: this returns before the commit, and Update reports the pointer as captured (overUi), so Level's park click skips it too; the economy's speed pause does not stop the tool, which keeps its ghost — evidence needed: the original park view's input handling while paused |
@@ -370,7 +409,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | QUEUE-009 | `source/OpenTPW/World/Guests/GuestSimulation.cs:1150` | [APPROX:QUEUE-009] the facing change's sign comes from the same draw (0 → +400, 1 → −400 of 2048) — evidence needed: the sign selection after the 1-in-10 facing test at the end of 0x100ED244 |
 | QUEUE-010 | `source/OpenTPW/World/Guests/GuestSimulation.cs:1168` | [APPROX:QUEUE-010] a guest leaving a queue is placed on the queue's join path cell at once; the original walk out of the queue is not traced — evidence needed: the state-6 transition after a queue exit |
 | QUEUE-011 | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:174` | [APPROX:QUEUE-011] objects are treated as upgrade level 0 for QueueWaitTimeConstant/InitSpeed (OpenTPW does not apply upgrade levels to the ride record) — evidence needed: none (an OpenTPW gap: upgrades are not modelled on objects) |
-| QUEUE-012 | `source/OpenTPW/World/Level.Objects.cs:273` | [APPROX:QUEUE-012] queue cells need terrain the object build rule allows and no object footprint — evidence needed: the queue tool's placement validity in 0x10070B98..0x1008C7C0 |
+| QUEUE-012 | `source/OpenTPW/World/Level.Objects.cs:274` | [APPROX:QUEUE-012] queue cells need terrain the object build rule allows and no object footprint — evidence needed: the queue tool's placement validity in 0x10070B98..0x1008C7C0 |
 | QUEUE-013 | `source/OpenTPW/World/Guests/QueuePaths.cs:29` | [APPROX:QUEUE-013] maximum queue length 25 cells (100 positions); no length limit was found in the traced build code besides the 1000-step walk guard, and a HasQueue ride's limit is its QueueWaitTimeConstant formula (Belly Bounce 21), so the cap only shortens queues of rides whose limit exceeds 100 — evidence needed: the queue tool in 0x10070B98..0x1008C7C0 |
 | QUEUE-014 | `source/OpenTPW/World/Guests/QueuePaths.cs:33` | [APPROX:QUEUE-014] a queue is laid cell by cell from the entrance's outside cell; each cell must touch the current back cell, must not be a path or queue cell, and is linked toward that back cell — evidence needed: the queue tool's placement rules (UI-031, 0x10070B98..0x1008C7C0) |
 | QUEUE-015 | `source/OpenTPW/World/Guests/QueuePaths.cs:94` | [APPROX:QUEUE-015] removing a queue cell also removes every cell behind it (each one is refunded by the caller); the player's bulldozer route into ClearCell 0x859b4 is not traced — evidence needed: the remove tool's call into 0x100859B4 |
@@ -396,13 +435,13 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | RIDES-017 | `source/OpenTPW/World/Objects/ObjectCatalog.cs:127` | [APPROX:RIDES-017] Buildable = WhichUIType 0–3, not fixed/tool/upgrade (DATA:Info.WhichUIType comment "4 = Not to be shown in UI") — evidence needed: original build-menu contents |
 | RIDES-018 | `source/OpenTPW/World/Objects/ParkObjects.cs:110` | [APPROX:RIDES-018] Build rules = footprint inside grid + MAP/save terrain rules + no overlap; no slope, path or land rule; Level.PlaceObject enforces economy purchases — evidence needed: original build checks (binary/captures) |
 | RIDES-019 | `source/OpenTPW/World/Objects/ParkObjects.cs:216` | [APPROX:RIDES-019] Levels without a save get Gates, Lights and Bus (the fixed items Easymode records) — evidence needed: original fixed-item spawning per level |
-| RIDES-021 | `source/OpenTPW/World/Level.Objects.cs:318` | [APPROX:RIDES-021] Built footprint is centred on the clicked cell; the cursor ray hits the Z = 0 plane — evidence needed: original build cursor behaviour |
+| RIDES-021 | `source/OpenTPW/World/Level.Objects.cs:319` | [APPROX:RIDES-021] Built footprint is centred on the clicked cell; the cursor ray hits the Z = 0 plane — evidence needed: original build cursor behaviour |
 | RIDES-022 | `source/OpenTPW/World/Objects/ObjectAssets.cs:119` | [APPROX:RIDES-022] Texture search: archive textures, gtexture, theme sharetex (stexture/ssharete low-detail sets unused) — evidence needed: binary texture lookup order |
 | RIDES-023 | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:115` | [APPROX:RIDES-023] A completed cycle = VAR_RUNNING 1 → 0 — evidence needed: original ride-cycle/income accounting |
 | RIDES-024 | `source/OpenTPW/World/Objects/ObjectCatalog.cs:280` | [APPROX:RIDES-024] Bonus archives merge into the theme catalog; an Info.Id collision skips the bonus entry — evidence needed: original behaviour with dropped-in WADs |
 | RIDES-025 | `source/OpenTPW/World/Objects/ObjectCatalog.cs:568` | [APPROX:RIDES-025] Bonus name: selected language file, then English, then .sam Info.Name — evidence needed: original lookup of bonus name files |
 | RIDES-026 | `source/OpenTPW/World/Objects/OriginalObject.cs:12` | [APPROX:RIDES-026] Engine units: 1 MD2 unit = 0.2 (presentation scale shared with the terrain; no game rule) — evidence needed: none (engine convention) |
-| RIDES-028 | `source/OpenTPW/World/Level.Objects.cs:277` | [APPROX:RIDES-028] A non-walkable outside cell (queue area) is replaced by the nearest walkable path cell — evidence needed: original queue-path building/joining rules |
+| RIDES-028 | `source/OpenTPW/World/Level.Objects.cs:278` | [APPROX:RIDES-028] A non-walkable outside cell (queue area) is replaced by the nearest walkable path cell — evidence needed: original queue-path building/joining rules |
 | UI-001 | `source/OpenTPW/UI/Original/UiCanvas.cs:47` | [APPROX:UI-001] anchors keep the authored distance to the nearest edge on non-4:3 outputs — evidence needed: original widescreen behaviour / design decision |
 | UI-002 | `source/OpenTPW/UI/Original/UiCanvas.cs:43` | [APPROX:UI-002] font tier thresholds 0.36 / 0.6 of logical scale — evidence needed: binary font selection per screen mode |
 | UI-002 | `source/OpenTPW/UI/Original/UiText.cs:57` | [APPROX:UI-002] which shipped font serves which role per tier — evidence needed: binary font use / captures |
@@ -533,8 +572,8 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | autorun | `source/OpenTPW/Client/Game.cs:212` | [EXT:autorun] The CD's launcher window comes first when its Autorun folder is available (docs/AUTORUN.md). |
 | bonus-content | `source/OpenTPW/Client/Setup/BonusContent.cs:14` | [EXT:bonus-content] Setup-managed copy of the official bonus WADs; the original game only had the CD and install folders |
 | developer-prototype | `source/OpenTPW/Economy/ParkEconomyRuntime.cs:53` | [EXT:developer-prototype] the developer prototype ride is registered uncharged (no original counterpart) |
-| developer-prototype | `source/OpenTPW/World/Level.Objects.cs:403` | [EXT:developer-prototype] Sandbox Totem blocks cells whose centres lie within its 6×8-unit model box (no original counterpart) |
-| developer-prototype | `source/OpenTPW/World/Level.Objects.cs:484` | [EXT:developer-prototype] When the economy refuses the Totem (e.g. Research.Group 4 not yet researched), the developer prototype is registered uncharged (no original counterpart) |
+| developer-prototype | `source/OpenTPW/World/Level.Objects.cs:404` | [EXT:developer-prototype] Sandbox Totem blocks cells whose centres lie within its 6×8-unit model box (no original counterpart) |
+| developer-prototype | `source/OpenTPW/World/Level.Objects.cs:485` | [EXT:developer-prototype] When the economy refuses the Totem (e.g. Research.Group 4 not yet researched), the developer prototype is registered uncharged (no original counterpart) |
 | developer-prototype | `source/OpenTPW/World/PrototypeRide.cs:13` | [EXT:developer-prototype] Sandbox Totem bounds check uses a 5-unit radius around its centre (no original counterpart) |
 | display | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:439` | [EXT:display] window mode, upscaling, render scale and interface scale rows are OpenTPW extensions |
 | fit-button-text | `source/OpenTPW/UI/Original/UiTextFit.cs:10` | [EXT:fit-button-text] button labels shrink to fit; the original sized its fixed strings per language by hand |
@@ -624,7 +663,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | Mac main HUD table 0x4ab38:50,48,49,51-55 | `source/OpenTPW/Hud/ParkHud.cs:132` | [DATA:Mac main HUD table 0x4ab38:50,48,49,51-55] cash extras: i_dollar left of the balance, the change text (yellow) with green_up, golden key and ticket counters |
 | Rides.sam:Info.WhichUIType | `source/OpenTPW/Hud/HudStubs.cs:153` | [DATA:Rides.sam:Info.WhichUIType] |
 | Rides.sam:UsageInfo.ExcitementLevel | `source/OpenTPW/Hud/HudStubs.cs:150` | [DATA:Totem.sam:UsageInfo.ExcitementLevel] overrides [DATA:Rides.sam:UsageInfo.ExcitementLevel] |
-| Standard.sam:Costs.QueueCell | `source/OpenTPW/World/Level.Objects.cs:213` | [DATA:Standard.sam:Costs.QueueCell] charged per cell when written (ParkEconomy.TrySpendCell, PATH-plan §3.2) |
+| Standard.sam:Costs.QueueCell | `source/OpenTPW/World/Level.Objects.cs:214` | [DATA:Standard.sam:Costs.QueueCell] charged per cell when written (ParkEconomy.TrySpendCell, PATH-plan §3.2) |
 | Standard.sam:FixedItemInfo lanes | `source/OpenTPW/Client/M3Gate.cs:314` | [DATA:levels/&lt;theme&gt;/terrain/base.map:InitialPath] [DATA:Standard.sam:FixedItemInfo lanes] |
 | THEMENAMES.str:entries 0..3 | `source/OpenTPW/World/Original/OriginalGateSign.cs:46` | [DATA:THEMENAMES.str:entries 0..3] Lost Kingdom, Halloween World, Wonder Land, Space Zone. |
 | TPWORLD.ISO and retail install | `source/OpenTPW.Files/Public/DataOverlay.cs:147` | &lt;summary&gt;[DATA:TPWORLD.ISO and retail install] global music and the four theme music banks.&lt;/summary&gt; |
@@ -713,28 +752,34 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | STP-PPC:0x1007497C ride placement | `source/OpenTPW/Hud/ParkHud.cs:309` | [BIN:STP-PPC:0x1007497C ride placement] a placed HasQueue ride (type record +64) enters tool mode 3, the queue tool (PATH-plan §8); park clicks lay its queue until Back |
 | STP-PPC:0x1007497C ride placement | `source/OpenTPW/World/Level.Objects.cs:138` | [BIN:STP-PPC:0x1007497C ride placement] a placed HasQueue ride enters tool mode 3, the queue tool (PATH-plan §8); it shares LayLine, the vertex stack and the preview/commit code with the path tool |
 | STP-PPC:0x1007B320 SetMode | `source/OpenTPW/World/CellBuildTool.cs:55` | [BIN:STP-PPC:0x1007B320 SetMode] tool mode 1 = path, 3 = queue; the drag writes the cell type equal to the mode |
+| STP-PPC:0x1007BCC0 pending line cost | `source/OpenTPW/Economy/ParkEconomy.cs:698` | [BIN:STP-PPC:0x1007BCC0 pending line cost] add (no overflow trap) of the cell price; [BIN:STP-PPC:0x10084534 placement validator] a zero pending cost skips the test; [BIN:STP-PPC:0x10084550 placement validator] cmpw pending, balance and refuse when greater |
 | STP-PPC:0x1007BCF4 vertex push | `source/OpenTPW/World/CellBuildTool.cs:32` | [BIN:STP-PPC:0x1007BCF4 vertex push] the path/queue vertex stack holds up to 1024 points |
-| STP-PPC:0x10082AC4 SetCellType | `source/OpenTPW/Economy/ParkEconomy.cs:698` | [BIN:STP-PPC:0x10082AC4 SetCellType] type 1 costs Costs.PathCell, type 3 Costs.QueueCell; refused when balance − cost &lt; 0, else Spend per cell at write time |
+| STP-PPC:0x10082AC4 SetCellType | `source/OpenTPW/Economy/ParkEconomy.cs:713` | [BIN:STP-PPC:0x10082AC4 SetCellType] type 1 costs Costs.PathCell, type 3 Costs.QueueCell; refused when balance − cost &lt; 0, else Spend per cell at write time |
 | STP-PPC:0x10082AC4 SetCellType | `source/OpenTPW/World/ParkPathBuilder.cs:85` | [BIN:STP-PPC:0x10082AC4 SetCellType] type 1 is priced with the path cost global (Costs.PathCell, balance +1472, loaded by 0x1010F29C) |
-| STP-PPC:0x10082AC4 SetCellType | `source/OpenTPW/World/ParkPathBuilder.cs:168` | [BIN:STP-PPC:0x10082AC4 SetCellType] money test while game+36 == 0: refused when balance − cost &lt; 0 (no bankruptcy test); the validator 0x10084550 tests the pending line cost the same way |
-| STP-PPC:0x10082AC4 SetCellType | `source/OpenTPW/World/ParkPathBuilder.cs:243` | [BIN:STP-PPC:0x10082AC4 SetCellType] the same nonzero type again: the signed placement counter (+32) goes up by one, no charge |
-| STP-PPC:0x10082AC4 SetCellType | `source/OpenTPW/World/ParkPathBuilder.cs:247` | [BIN:STP-PPC:0x10082AC4 SetCellType] store the type at +8 and update the map, then Spend (0x100CBFDC) the path cost |
-| STP-PPC:0x10082BC8 SetCellType money test | `source/OpenTPW/Economy/ParkEconomy.cs:690` | [BIN:STP-PPC:0x10082BC8 SetCellType money test] subf balance − cost in 32 bits, then the sign bit: balance −2^31 with cost 1 wraps to affordable, balance 2^31 − 1 with cost −1 to refused |
+| STP-PPC:0x10082AC4 SetCellType | `source/OpenTPW/World/ParkPathBuilder.cs:244` | [BIN:STP-PPC:0x10082AC4 SetCellType] the same nonzero type again: the signed placement counter (+32) goes up by one, no charge |
+| STP-PPC:0x10082AC4 SetCellType | `source/OpenTPW/World/ParkPathBuilder.cs:248` | [BIN:STP-PPC:0x10082AC4 SetCellType] store the type at +8 and update the map, then Spend (0x100CBFDC) the path cost |
+| STP-PPC:0x10082BC8 SetCellType money test | `source/OpenTPW/Economy/ParkEconomy.cs:689` | [BIN:STP-PPC:0x10082BC8 SetCellType money test] subf balance − cost in 32 bits, then the sign bit: balance −2^31 with cost 1 wraps to affordable, balance 2^31 − 1 with cost −1 to refused |
+| STP-PPC:0x10082BC8 SetCellType money test | `source/OpenTPW/World/ParkPathBuilder.cs:252` | [BIN:STP-PPC:0x10082BC8 SetCellType money test] the 32-bit balance − cost test before the store (ParkEconomy.CanSpendCell, the test TrySpendCell repeats) |
 | STP-PPC:0x1008408C CanChangeCellType | `source/OpenTPW/World/ParkCellMap.cs:177` | [BIN:STP-PPC:0x1008408C CanChangeCellType] the seven rules of PATH-plan §3.1; everything else is refused. Rule 7 allows queue over path while data:0x84b2c is 0; the line tool 0x10084EA4 sets that word to 1 only for a line's last cell |
-| STP-PPC:0x1008432C placement validator | `source/OpenTPW/World/ParkPathBuilder.cs:147` | [BIN:STP-PPC:0x1008432C placement validator] a cell with flag 0x40 (not owned; set by map initialisation 0x10085538 on every non-InitialPath cell) is refused |
-| STP-PPC:0x10084864 placement validator | `source/OpenTPW/World/ParkPathBuilder.cs:153` | [BIN:STP-PPC:0x10084864 placement validator] path over path returns 0 (allowed); SetCellType 0x10082AC4 then only bumps the placement counter |
-| STP-PPC:0x100849A4 placement validator | `source/OpenTPW/World/ParkPathBuilder.cs:158` | [BIN:STP-PPC:0x100849A4 placement validator] path over a queue cell: code 8 for a queue end (one link, linked neighbour also a queue), else refused |
+| STP-PPC:0x1008432C placement validator | `source/OpenTPW/World/ParkPathBuilder.cs:148` | [BIN:STP-PPC:0x1008432C placement validator] a cell with flag 0x40 (not owned; set by map initialisation 0x10085538 on every non-InitialPath cell) is refused |
+| STP-PPC:0x10084534 placement validator | `source/OpenTPW/Economy/ParkEconomy.cs:698` | [BIN:STP-PPC:0x1007BCC0 pending line cost] add (no overflow trap) of the cell price; [BIN:STP-PPC:0x10084534 placement validator] a zero pending cost skips the test; [BIN:STP-PPC:0x10084550 placement validator] cmpw pending, balance and refuse when greater |
+| STP-PPC:0x10084550 placement validator | `source/OpenTPW/Economy/ParkEconomy.cs:698` | [BIN:STP-PPC:0x1007BCC0 pending line cost] add (no overflow trap) of the cell price; [BIN:STP-PPC:0x10084534 placement validator] a zero pending cost skips the test; [BIN:STP-PPC:0x10084550 placement validator] cmpw pending, balance and refuse when greater |
+| STP-PPC:0x10084550 placement validator | `source/OpenTPW/World/Level.Objects.cs:247` | [BIN:STP-PPC:0x10084550 placement validator] the preview refuses when the 32-bit pending line cost (the pending cells and this one) is greater than the balance; a zero sum passes |
+| STP-PPC:0x10084550 placement validator | `source/OpenTPW/World/ParkPathBuilder.cs:169` | [BIN:STP-PPC:0x10084550 placement validator] money test while game+36 == 0: the 32-bit pending line cost (this cell included) is refused when greater than the balance, a zero sum passes; the commit only runs SetCellType's test (WritePath) |
+| STP-PPC:0x10084864 placement validator | `source/OpenTPW/World/ParkPathBuilder.cs:154` | [BIN:STP-PPC:0x10084864 placement validator] path over path returns 0 (allowed); SetCellType 0x10082AC4 then only bumps the placement counter |
+| STP-PPC:0x100849A4 placement validator | `source/OpenTPW/World/ParkPathBuilder.cs:159` | [BIN:STP-PPC:0x100849A4 placement validator] path over a queue cell: code 8 for a queue end (one link, linked neighbour also a queue), else refused |
 | STP-PPC:0x10084EA4 LayLine | `source/OpenTPW/World/ParkPathBuilder.cs:104` | [BIN:STP-PPC:0x10084EA4 LayLine] \|x1 − x0\| &gt; \|y1 − y0\| walks X along row y0, else Y along column x0; the other end coordinate is ignored |
-| STP-PPC:0x10084EA4 LayLine | `source/OpenTPW/World/ParkPathBuilder.cs:184` | [BIN:STP-PPC:0x10084EA4 LayLine] the first refused cell stops the walk; cells already written stay written and charged; LayLine itself never spends |
+| STP-PPC:0x10084EA4 LayLine | `source/OpenTPW/World/ParkPathBuilder.cs:185` | [BIN:STP-PPC:0x10084EA4 LayLine] the first refused cell stops the walk; cells already written stay written and charged; LayLine itself never spends |
 | STP-PPC:0x10085538 map initialisation | `source/OpenTPW/World/ParkCellMap.cs:56` | [BIN:STP-PPC:0x10085538 map initialisation] MAP attribute bit 0x08 (InitialPath) makes the cell type 1 with flag 0x20 (NOMODIFY) |
-| STP-PPC:0x100859B4 ClearCell | `source/OpenTPW/World/ParkPathBuilder.cs:283` | [BIN:STP-PPC:0x100859B4 ClearCell] path case: NOMODIFY keeps the cell unless it has no neighbours ("Removing path cell with no neighbours but NOMODIFY set"); a = b = 0 sets the counter to −1; each cardinal link is cleared on both sides; no Earn (no refund) |
-| STP-PPC:0x10085DCC ClearCell queue refund | `source/OpenTPW/Economy/ParkEconomy.cs:717` | [BIN:STP-PPC:0x10085DCC ClearCell queue refund] Earn(QueueCost × 0xe2424(ride) / 100), 0xe2424 = the ride's age-based scrap percentage |
+| STP-PPC:0x100859B4 ClearCell | `source/OpenTPW/World/ParkPathBuilder.cs:285` | [BIN:STP-PPC:0x100859B4 ClearCell] path case: NOMODIFY keeps the cell unless it has no neighbours ("Removing path cell with no neighbours but NOMODIFY set"); a = b = 0 sets the counter to −1; each cardinal link is cleared on both sides; no Earn (no refund) |
+| STP-PPC:0x10085DCC ClearCell queue refund | `source/OpenTPW/Economy/ParkEconomy.cs:732` | [BIN:STP-PPC:0x10085DCC ClearCell queue refund] Earn(QueueCost × 0xe2424(ride) / 100), 0xe2424 = the ride's age-based scrap percentage |
 | STP-PPC:0x1009B1DC movie box | `source/OpenTPW/Client/Movie/MoviePresenter.cs:44` | shown at twice their width, with non-square pixels ([BIN:STP-PPC:0x1009B1DC movie box], docs/TGQ-MOVIES.md). |
 | STP-PPC:0x100A6CC0 animation trigger | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:256` | [BIN:STP-PPC:0x100A6CC0 animation trigger] the channel record is model +0x10 + channel × 0x38; TRIGANIM (0x100AFB10), WAITANIM (0x100AFC68), LOOPANIM (0x100AFD7C) and TRIGANIMSPEED (0x100B005C) pass channel 0, TRIGANIM_CH (0x100B01C4) its operand |
 | STP-PPC:0x100A70B4 channel frame arithmetic | `source/OpenTPW/World/Objects/ObjectAnimator.cs:25` | [BIN:STP-PPC:0x100A70B4 channel frame arithmetic] the Feral Mac formula multiplies elapsed milliseconds by 30 and divides by 1000 before channel speed. |
 | STP-PPC:0x100A9F9C sign line | `source/OpenTPW.Files/Formats/Font/SignTextLayout.cs:90` | [BIN:STP-PPC:0x100A9F9C sign line] fit when the extent is below the 2x canvas width; else lo = 1, hi = lfWidth (or -lfHeight when 0), mid = (hi - 1) / 2 + 1; a fitting trial sets lo = mid, mid += (hi - mid) / 2, a wide one sets hi = mid, mid = lo + (mid - lo) / 2; stop on the first fitting trial with hi - lo &lt; 3 |
 | STP-PPC:0x100ABF14 sign compositor | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:26` | [BIN:STP-PPC:0x100ABF14 sign compositor] each line is colour-blitted with its colour block's bytes (+0x430..+0x432 for the first line, +0x444..+0x446 for the second) only when its colour mode is 1 or 2 |
-| STP-PPC:0x100AE020 UNBOUNCE | `source/OpenTPW/World/Guests/RideVisitorBridge.cs:653` | [BIN:STP-PPC:0x100AE020 UNBOUNCE] slots in index order; release needs deadline &lt; now (cmpw, 0x100AE088) and ((now − start) mod 1000) / 200 == 0 (0x100AE040..0x100AE0B0) |
+| STP-PPC:0x100ADF40 BOUNCE | `source/OpenTPW/World/Guests/RideVisitorBridge.cs:655` | [BIN:STP-PPC:0x100ADF40 BOUNCE] scan the +100 slots of the +40 table in index order; the first with visitor word 0 gets visitor, deadline now + 1000 × dur and start now, +108 goes up, return 1; a full table returns 0 and stores nothing |
+| STP-PPC:0x100AE020 UNBOUNCE | `source/OpenTPW/World/Guests/RideVisitorBridge.cs:688` | [BIN:STP-PPC:0x100AE020 UNBOUNCE] slots in index order; release needs deadline &lt; now (cmpw, 0x100AE088) and ((now − start) mod 1000) / 200 == 0 (0x100AE040..0x100AE0B0) |
 | STP-PPC:0x100B07E4 RSE RAND | `source/OpenTPW/VM/RideScriptWorld.cs:31` | [BIN:STP-PPC:0x100B07E4 RSE RAND] RAND draws from the world LCG (0x10105328 on the world at TOC −0x7580): (\|s\| &gt;&gt; 1) mod (bound + 1); FINDSCRIPTRAND (0x100B1B8C) picks match (\|s\| &gt;&gt; 1) mod count, drawing only when there is a match |
 | STP-PPC:0x100B5BE0 ride script variable | `source/OpenTPW/Economy/GuestEconomyBridge.cs:33` | [BIN:STP-PPC:0x100B5BE0 ride script variable] the wear step reads script variables 9 (VAR_RUNNING), 5 (VAR_ONRIDE), 2 and 3 and the script's speed (+0xC0, 0x100B5B40); 0x100B57D4 writes 4 (VAR_BREAKSTAT) and 8 (VAR_WORN) |
 | STP-PPC:0x100BB18C sound service | `source/OpenTPW/Audio/AudioMixer.cs:180` | [BIN:STP-PPC:0x100BB18C sound service] while speech plays (and speech is on with a volume above 0) music and the second user volume are set to volume × SoundInfo.DUCKINGLEVEL / 100 |

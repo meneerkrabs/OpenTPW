@@ -36,7 +36,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	private readonly Queue<int> walkingOff = new();     // WALKOFF done, waiting for WALKGET
 	private readonly HashSet<int> hopped = new();
 	private readonly List<(int Guest, double Until)> limbo = new();
-	private readonly List<(int Guest, double Until, double Start)> bouncing = new(); // BOUNCE slots: visitor, deadline, start
+	private readonly List<(int Guest, double Until, double Start)> bouncing = new(); // BOUNCE slot table in index order: visitor (0 = free), deadline, start; trailing free slots are trimmed
 	private readonly List<(int X, int Y)> queueCells = new();
 	private RideVM? vm;
 	private int called;       // ride +104: the pending visitor
@@ -535,7 +535,9 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			return;
 		hopped.Remove( guest );
 		limbo.RemoveAll( entry => entry.Guest == guest );
-		bouncing.RemoveAll( entry => entry.Guest == guest );
+		for ( var index = 0; index < bouncing.Count; index++ )
+			if ( bouncing[index].Guest == guest )
+				FreeBounceSlot( bouncing, index );
 		ReleasedTotal++;
 		Host?.OnVisitorReleased( this, guest );
 	}
@@ -620,7 +622,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 				MarkBoarded( guest );
 				var seconds = call.Argument( 1 ) > 0 ? call.Argument( 1 ) : DefaultBounceSeconds;
 				if ( onRide.Contains( guest ) && !bouncing.Any( entry => entry.Guest == guest ) )
-					bouncing.Add( (guest, now + seconds * 1000.0, now) );
+					TakeBounceSlot( bouncing, call.VM.Script.BounceSize, guest, now + seconds * 1000.0, now );
 				return true;
 			}
 			case Opcode.UNBOUNCE:
@@ -634,7 +636,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 				return true;
 			}
 			case Opcode.BOUNCING:
-				result = bouncing.Count;
+				result = bouncing.Count( entry => entry.Guest != 0 );
 				return true;
 			case Opcode.ADDHEAD:
 			case Opcode.DELHEAD:
@@ -646,21 +648,56 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	}
 
 	/// <summary>
-	/// UNBOUNCE (<c>0xae020</c>, BOARD-plan §5): the first slot whose deadline has passed (deadline &lt; now, strict)
-	/// inside the first 200 ms of each second since the guest bounced, trunc(((now − start) mod 1000) / 200) == 0
-	/// with a C remainder and 32-bit times in whole milliseconds. FORCEUNBOUNCE takes the first slot.
+	/// BOUNCE (<c>0xadf40</c>, BOARD-plan §5): the first free slot (visitor 0) of the script's table of
+	/// <paramref name="capacity"/> slots (the header bounce size) gets the visitor, its deadline and its start.
+	/// With every slot taken nothing is stored and the visitor is not bouncing.
+	/// </summary>
+	// [BIN:STP-PPC:0x100ADF40 BOUNCE] scan the +100 slots of the +40 table in index order; the first with visitor word 0 gets visitor, deadline now + 1000 × dur and start now, +108 goes up, return 1; a full table returns 0 and stores nothing
+	internal static bool TakeBounceSlot( List<(int Guest, double Until, double Start)> slots, int capacity, int guest, double until, double now )
+	{
+		for ( var index = 0; index < capacity; index++ )
+		{
+			if ( index == slots.Count )
+			{
+				slots.Add( (guest, until, now) );
+				return true;
+			}
+			if ( slots[index].Guest == 0 )
+			{
+				slots[index] = (guest, until, now);
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/// <summary>Clears slot <paramref name="index"/>; free slots at the end of the table are dropped, so a table without holes keeps its length.</summary>
+	private static void FreeBounceSlot( List<(int Guest, double Until, double Start)> slots, int index )
+	{
+		slots[index] = default;
+		while ( slots.Count > 0 && slots[^1].Guest == 0 )
+			slots.RemoveAt( slots.Count - 1 );
+	}
+
+	/// <summary>
+	/// UNBOUNCE (<c>0xae020</c>, BOARD-plan §5): the first occupied slot whose deadline has passed (deadline &lt; now,
+	/// strict) inside the first 200 ms of each second since the guest bounced, trunc(((now − start) mod 1000) / 200) == 0
+	/// with a C remainder and 32-bit times in whole milliseconds. FORCEUNBOUNCE takes the first occupied slot. The slot
+	/// is cleared in place, so a later BOUNCE fills it first.
 	/// </summary>
 	// [BIN:STP-PPC:0x100AE020 UNBOUNCE] slots in index order; release needs deadline < now (cmpw, 0x100AE088) and ((now − start) mod 1000) / 200 == 0 (0x100AE040..0x100AE0B0)
-	private static int TakeUnbounced( List<(int Guest, double Until, double Start)> list, double now, bool force )
+	internal static int TakeUnbounced( List<(int Guest, double Until, double Start)> list, double now, bool force )
 	{
 		var clock = (long)Math.Floor( now );
 		for ( var index = 0; index < list.Count; index++ )
 		{
 			var (guest, until, start) = list[index];
+			if ( guest == 0 )
+				continue;
 			var elapsed = unchecked( (int)(clock - (long)Math.Floor( start )) );
 			if ( force || ((long)Math.Floor( until ) < clock && elapsed % 1000 / 200 == 0) )
 			{
-				list.RemoveAt( index );
+				FreeBounceSlot( list, index );
 				return guest;
 			}
 		}

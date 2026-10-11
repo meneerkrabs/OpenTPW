@@ -965,13 +965,17 @@ public sealed class ServerStore
 	/// one player name, so first and last names do not exist). At most 50 names; <c>more</c> reports that the search
 	/// was too broad, as the original asked for more detail.
 	/// </summary>
-	public (IReadOnlyList<string> Names, bool More) SearchPlayers( string search )
+	// Without a login the search finds only players who show a park on the website, like the charts, so the public
+	// endpoint cannot list every account name; a logged-in player searches all players.
+	public (IReadOnlyList<string> Names, bool More) SearchPlayers( string search, AccountRecord? viewer )
 	{
 		const int maximum = 50;
 		lock ( gate )
 		{
+			var shown = viewer != null ? null : parks.Values.Where( park => park.ShowOnWebsite && !options.HiddenParks.Contains( park.Id ) )
+				.Select( park => park.OwnerKey ).ToHashSet();
 			var names = accounts.Values
-				.Where( account => account.Name.Contains( search, StringComparison.OrdinalIgnoreCase ) )
+				.Where( account => (shown == null || shown.Contains( account.Key )) && account.Name.Contains( search, StringComparison.OrdinalIgnoreCase ) )
 				.OrderBy( account => account.Name, StringComparer.OrdinalIgnoreCase ).Select( account => account.Name ).ToList();
 			return (names.Take( maximum ).ToList(), names.Count > maximum);
 		}

@@ -265,6 +265,10 @@ public sealed class ChatHub
 		}
 		if ( request.Type == ChatRequest.MoveType )
 		{
+			// Walking exists only inside a park (a satellite chat park or a published park's room). The lobby holds
+			// every connected player, so relaying movement there would multiply each step by the whole server.
+			if ( session.Room == ChatProtocol.LobbyRoom )
+				return;
 			// The server relays the player's movement to everyone in the chat park (manual p. 68: players walk
 			// and teleport around a park they are in together). The first movement also marks this connection as
 			// one that draws movement, and the answer to it carries where everyone else already stands — so a
@@ -293,11 +297,16 @@ public sealed class ChatHub
 	/// </summary>
 	private void EnterRoom( ChatSession session, string room )
 	{
+		var left = session.Room;
 		session.Room = room;
 		session.Position = null;
 		Send( session, RoomEvent( room ) );
 		foreach ( var other in sessions.Values.Where( other => other.Room == room && other != session ) )
 			Send( other, RoomEvent( room ) );
+		// The park the player walked out of gets its roster without them, as when they disconnect.
+		if ( left != room )
+			foreach ( var other in sessions.Values.Where( other => other.Room == left ) )
+				Send( other, RoomEvent( left ) );
 		NotifyBuddiesOfEntry( session );
 	}
 

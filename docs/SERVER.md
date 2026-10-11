@@ -139,7 +139,7 @@ Settings are in `OpenTPW.Server/appsettings.json`, or environment variables name
 | `RequestsPerMinute`, `AuthenticationsPerMinute`, `UploadsPerHour` | 240, 10, 30 | Limits per client address |
 | `MaximumParksPerPlayer`, `MaximumVotesPerDay`, `MaximumInboxPostcards`, `MaximumChatConnections` | 10, 10, 200, 1000 | Per-player and server limits; ten parks on show at once is the original's limit (its FAQ) |
 | `ChatBurst`, `ChatMessagesPerSecond` | 8, 1 | Chat message bucket per connection |
-| `MovementBurst`, `MovementsPerSecond` | 30, 10 | Walking-position bucket per connection (chat parks) |
+| `MovementBurst`, `MovementsPerSecond` | 30, 10 | Walking-position bucket per connection (chat parks; positions sent in the lobby are ignored) |
 | `BannedPlayers`, `MutedPlayers`, `HiddenParks` | empty | Moderation lists |
 
 Behind a proxy, set `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true` so the limits see the real
@@ -195,7 +195,7 @@ recorded visit of a park (the original awarded them per visit, voting or not).
 | `GET /api/v1/charts/parks` | Top 10 parks: rank, park name, player |
 | `GET /api/v1/charts/players` | Top 10 players by votes |
 | `GET /api/v1/charts/richest` | Richest players by Platinum Tickets |
-| `GET /api/v1/players?search=` | Player search by name; at most 50 results, `more` when the search was too broad |
+| `GET /api/v1/players?search=` | Player search by name; at most 50 results, `more` when the search was too broad. Without a login only players who show a park on the website are found; logged in, every player |
 
 All are GET-only and share the website CORS policy (`WebsiteOrigins`). The game uses the player
 page for Find Parks' Platinum Tickets display; a logged-in player page lists every published park

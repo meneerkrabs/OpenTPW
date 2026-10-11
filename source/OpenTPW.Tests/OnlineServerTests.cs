@@ -888,13 +888,17 @@ public class OnlineServerTests
 			await bobClient.UnpublishParkAsync( popular.Id );
 			Assert.AreEqual( 1, (await publicClient.GetPlayerProfileAsync( "Ann" )).Parks[0].Rank );
 
-			// Player search by name (S1): at most fifty results, more asks for detail.
+			// Player search by name (S1): at most fifty results, more asks for detail. Without a login only players
+			// who show a park on the website are found, so the public search cannot list every account.
 			for ( var index = 0; index < 51; index++ )
 				await publicClient.RegisterAsync( $"Crowd {index:D2}", "crowd password" );
-			var search = await publicClient.SearchPlayersAsync( "Crowd" );
+			var anonymous = await new OnlineClient( server.Url ).SearchPlayersAsync( "Crowd" );
+			Assert.AreEqual( 0, anonymous.Names.Count );
+			CollectionAssert.AreEqual( new[] { "Ann" }, (await new OnlineClient( server.Url ).SearchPlayersAsync( "Ann" )).Names.ToArray() );
+			var search = await annClient.SearchPlayersAsync( "Crowd" );
 			Assert.AreEqual( 50, search.Names.Count );
 			Assert.IsTrue( search.More );
-			var narrow = await publicClient.SearchPlayersAsync( "Crowd 49" );
+			var narrow = await annClient.SearchPlayersAsync( "Crowd 49" );
 			Assert.AreEqual( 1, narrow.Names.Count );
 			Assert.IsFalse( narrow.More );
 		}
@@ -902,6 +906,24 @@ public class OnlineServerTests
 		{
 			server.DeleteData();
 		}
+	}
+
+	[TestMethod]
+	public async Task MovementIsNotRelayedInTheLobby()
+	{
+		await using var server = await LoopbackServer.StartAsync( options => options.ChatBurst = 50 );
+		using var annClient = await server.LoginAsync( "Ann" );
+		using var bobClient = await server.LoginAsync( "Bob" );
+		await using var ann = await annClient.ConnectChatAsync();
+		await NextAsync( ann, item => item.Kind == ChatEventKind.Room );
+		await using var bob = await bobClient.ConnectChatAsync();
+		await NextAsync( bob, item => item.Kind == ChatEventKind.Room );
+		await bob.MoveAsync( 0.5f, 0.5f );
+		await ann.MoveAsync( 0.25f, 0.75f );
+		// A chat line sent after the moves arrives with no movement before it.
+		await ann.SendAsync( ChatCommand.Say, "after" );
+		var next = await NextAsync( bob, item => item.Kind is ChatEventKind.Move or ChatEventKind.Say );
+		Assert.AreEqual( (ChatEventKind.Say, "after"), (next.Kind, next.Text) );
 	}
 
 	[TestMethod]
@@ -968,6 +990,8 @@ public class OnlineServerTests
 			await NextAsync( bob, IsNotice( ChatNotice.YouMakeBuddy ) );
 			await ann.JoinAsync( ChatProtocol.SatelliteRoom( 2 ) );
 			await NextAsync( ann, item => item.Kind == ChatEventKind.Room && item.Room == ChatProtocol.SatelliteRoom( 2 ) );
+			// The park Ann walked out of gets its roster without her.
+			Assert.AreEqual( "Bob", string.Join( ",", (await NextAsync( bob, item => item.Kind == ChatEventKind.Room && item.Room == satellite && item.Args is { Count: 1 } )).Args! ) );
 			var entered = await NextAsync( bob, item => item.Kind == ChatEventKind.System && item.Text == ChatSystemKeys.BuddyEnters );
 			Assert.AreEqual( "Ann", entered.Args![0] );
 			// The chat parks' default names (docs/SERVER.md): the notification names the park itself.

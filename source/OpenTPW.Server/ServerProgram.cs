@@ -276,12 +276,19 @@ public static class ServerProgram
 			.Select( ( entry, index ) => new ChartPlayerEntry( index + 1, entry.Name, entry.Score ) ).ToList() ) ) ).RequireCors( WebsitePolicy );
 		app.MapGet( ApiRoutes.ChartRichest, () => Ok( new ChartPlayerList( store.PlayerChart( 10, byPlatinum: true )
 			.Select( ( entry, index ) => new ChartPlayerEntry( index + 1, entry.Name, entry.Score ) ).ToList() ) ) ).RequireCors( WebsitePolicy );
-		app.MapGet( ApiRoutes.Players, ( string? search ) =>
+		app.MapGet( ApiRoutes.Players, ( HttpContext context, string? search ) =>
 		{
 			if ( string.IsNullOrWhiteSpace( search ) || search.Length > OnlineText.MaximumNameLength )
 				return Ok( new PlayerSearchResult( Array.Empty<string>(), More: false ) );
-			var (names, more) = store.SearchPlayers( search.Trim() );
-			return Ok( new PlayerSearchResult( names, more ) );
+			try
+			{
+				var (names, more) = store.SearchPlayers( search.Trim(), store.Authenticate( Token( context ) ) );
+				return Ok( new PlayerSearchResult( names, more ) );
+			}
+			catch ( StoreException exception )
+			{
+				return Error( exception.Status, exception.Message );
+			}
 		} ).RequireCors( WebsitePolicy );
 		// The page is public, but a logged-in reader sees every published park of the player, not only the website ones.
 		app.MapGet( ApiRoutes.Players + "/{name}", ( HttpContext context, string name ) =>

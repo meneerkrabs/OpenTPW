@@ -9,6 +9,7 @@ namespace ImGuiNET
 	{
 		public bool WantCaptureMouse => false;
 		public bool WantCaptureKeyboard => false;
+		public bool WantTextInput => false;
 		public System.Numerics.Vector2 DisplayFramebufferScale { get; set; }
 	}
 

@@ -755,10 +755,9 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			erase.Clicked!();
 			Require( visitedObject!.IsOpen == visitedOpen && !visitedObject.IsDeleted && flow.Level!.Objects.Objects.Count == visitedCount, "read-only callbacks neither change nor remove objects" );
 			hud.OpenPauseMenu();
-			var save = (UiButton)hud.Stack.Top!.Find( nameof( UIStrings.Save ) )!;
-			Require( !save.Enabled, "visit save control is disabled" );
-			save.Clicked!();
-			Require( hud.Messages.Contains( OnlineStrings.Get( OnlineLabel.ReadOnlyVisit ) ) && !Directory.EnumerateFiles( temporaryDirectory, "*.json", SearchOption.AllDirectories ).Any(), "read-only save callback refuses writes" );
+			// The online game type's pause menu (STP-PPC 0x10197D90) offers no Save or Load during a visit.
+			Require( hud.Stack.Top!.Find( nameof( UIStrings.Save ) ) == null && hud.Stack.Top.Find( nameof( UIStrings.Load ) ) == null, "the visit pause menu has no save or load" );
+			Require( !Directory.EnumerateFiles( temporaryDirectory, "*.json", SearchOption.AllDirectories ).Any(), "a visit writes no save" );
 			CaptureFrame( "read-only-visit.png" );
 			Click( hud.Stack.Top!, nameof( UIStrings.ExitToLobby ) );
 		} );

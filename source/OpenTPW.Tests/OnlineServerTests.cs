@@ -967,6 +967,13 @@ public class OnlineServerTests
 			// The chat parks' default names (docs/SERVER.md): the notification names the park itself.
 			StringAssert.Contains( entered.Args[1], "Fairground", $"satellite 2 name was {entered.Args[1]}" );
 
+			// A page carries its message to any park: "Dan pages you: Hello" (manual p. 70, S5).
+			await bob.SendAsync( ChatCommand.Page, "Ann Hello" );
+			var paged = await NextAsync( ann, item => item.Kind == ChatEventKind.Page );
+			Assert.AreEqual( ("Bob", "Hello"), (paged.From, paged.Text) );
+			var youPage = await NextAsync( bob, IsNotice( ChatNotice.YouPage ) );
+			Assert.AreEqual( ("Ann", "Hello"), (youPage.Args![0], youPage.Args[1]) );
+
 			// Locate names the park and its city: "Halloween World in San Francisco" (manual p. 70).
 			var park = await ownerClient.UploadParkAsync( OnlineFormatTests.Package( "Halloween World" ), cityId: 5 );
 			await using var owner = await ownerClient.ConnectChatAsync();

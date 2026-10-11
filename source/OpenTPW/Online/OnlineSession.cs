@@ -32,7 +32,7 @@ public static class ChatFormatter
 			ChatEventKind.WorldShout => $"{item.From} [{Word( item.Command ?? "wshout" )}]: {item.Text}",
 			ChatEventKind.Emote when item.Text != null => $"{item.From} {item.Text}",
 			ChatEventKind.Emote => $"{item.From} *{Word( item.Command )}*",
-			ChatEventKind.Page => $"{item.From} [{Word( "page" )}]",
+			ChatEventKind.Page => item.Text is { Length: > 0 } text ? $"{item.From} [{Word( "page" )}]: {text}" : $"{item.From} [{Word( "page" )}]",
 			ChatEventKind.Notice when item.Notice == (int)ChatNotice.Commands =>
 				Notice( item.Notice.Value, null ) + " " + string.Join( ", ", (item.Args ?? Array.Empty<string>()).Select( Word ) ),
 			ChatEventKind.Notice when item.Notice == (int)ChatNotice.ThePark && item.Args is { Count: 2 } args =>

@@ -7,9 +7,12 @@ until the player selects a server and an action in the online screens.
 
 The online screens support the server's Game News and System News, account registration/login, park export/publish/search/download,
 voting, read-only visits, local postcard composition, sending the outbox, fetching the
-inbox, and chat. Chat commands use the selected original `CHAT_COMMANDS.str` words;
-original text is used where verified and supplementary labels cover the six supported
-languages. Chat lines use the local `GAME8AA.bf4` font.
+inbox, and chat — including the globe's five **chat parks**, standing rooms with live
+presence: everyone in a chat park sees who is there and where they stand, and the server
+relays each player's movement. Chat commands use the selected original `CHAT_COMMANDS.str`
+words; original text is used where verified and supplementary labels cover the six supported
+languages. Chat lines use the local `GAME8AA.bf4` font. What the original service had and
+where each piece stands is inventoried in [reverse/ONLINE-FEATURES.md](reverse/ONLINE-FEATURES.md).
 
 ## Screens
 
@@ -24,14 +27,16 @@ contents follow the original online screens mapped from the Mac binary in
 | --- | --- | --- |
 | Online World | The online globe (Mac UI table `data:0x523f0`, globe code in the Windows v2.0 `tp.exe`): see below | `worldlob`, `f_wlobbg`, `b_findprk`, `b_bck2lob`, `b_zoom`, `b_lobup/left/right/down`, `i_sat`; `lobby.wad/globe` |
 | OpenTPW online (menu) | (OpenTPW) login, news, postcards, chat, import, account, behind a button on the globe | `w_big`, `i_mail` (authored place) |
-| News | Online news panel: Game News and System News columns (UITEXT 267/268); the original's "News from ThemeParkWorld.com" title is replaced by News | `w_big` |
-| Online Login | Online login dialog: name and password, 16 characters each, Enter moves from name to password and submits | `w_med`, `b_login`, `f_text1` fields |
-| Find Parks | Find Parks dialog and Park details (creator, visits, votes, visited/voted) | `list_findprks`, `b_vote` |
-| Publish Park | Publish Park dialog: park name and description; OpenTPW adds the website opt-in (off by default) | `w_med` |
+| News | Online news panel, titled "News from ThemeParkWorld.com" (UITEXT 266) with Game News and System News tabs | `w_big` |
+| Online Login | Online login dialog in its original composition (Mac table `data:0x505f4`): name and password, 16 characters each, labels inside the fields | `w_med`, `b_login`, `f_text1` fields |
+| Find Parks | Find Parks in its original composition (Mac table `data:0x50f84`): six columns Name/Theme/City/Position/Visits/Votes, search by player name | `list_findprks`, `b_vote` |
+| Park details | The original details dialog (Mac table `data:0x51150`): eight label rows, description, enter-park and the owner's un-publish | `w_big` |
+| Other Parks | The city's outside-the-top-10 chart (Mac table `data:0x5137e`, "Other Parks In …", UITEXT 446) | `w_big`, `list_findprks` |
+| Publish Park | Publish Park form (Mac table `data:0x514de`); OpenTPW adds the website opt-in (off by default) | `w_med` |
 | Send Postcard | Send Postcard dialog | `w_med` |
-| Unsent Postcards | Unsent Postcards (outbox) screen | `list_outbox`, `b_sendall` |
+| Unsent Postcards | Unsent Postcards (outbox) screen in its original composition (Mac table `data:0x508bc`): Title/Date/Send/Delete columns and the mark buttons | `list_outbox`, `b_sendall` |
 | Inbox | (OpenTPW) | `list_outbox` |
-| Chat | Chat screen | `list_msgs` |
+| Chat | The original chat overlay (Mac table `data:0x50b2c`): people-in-park list with tabs, action bar, message list, text entry — and the chat park view | `list_msgs`, `f_text1` |
 | Import file | (OpenTPW) | `w_med` |
 
 The original files place several of these models on screen (`f_profile`, `b_login`,
@@ -73,8 +78,21 @@ park's camera.
 **Publish Park** starts on the globe as the original's PublishGlobe does: "Choose the city to
 publish in" (UITEXT 419) at the top, the panel's back, zoom and rotate buttons, and a click on a
 city's pin opens the name and description form for that city (Mac: the hovered city is stored and
-the Publish Park dialog opens, 0x1018CE80). A server without cities skips the globe. Not yet
-built: the satellites' player counts.
+the Publish Park dialog opens, 0x1018CE80). A server without cities skips the globe.
+
+### Chat parks (the satellites)
+
+The five satellites are chat parks: standing chat rooms the server names (docs/SERVER.md), each
+showing how many players are in it — the original wrote each room's player count into its
+satellite control (STP-PPC 0x1b8808), and the manual says "The number displayed next to each
+satellite is the number of people currently in this chat park". A click enters the park. In a chat
+park the players are present together and **move around**: the chat screen shows the park from
+above with a marker per player, a click walks the player's marker there, and the server relays
+each position to everyone in the park. The original's three-dimensional chat-park scene is not
+decoded, so the overhead view is an approximation ([APPROX:ONLINE-019](#approximation-register));
+the movement itself — one position per walk step, relayed to the room, rate-limited separately
+from chat — follows the manual ("Left click to walk to destination"). Any published park's chat
+room works the same way: joining a park's chat from its details dialog or the city lobby.
 
 ### City lobby
 
@@ -91,6 +109,21 @@ slot counter (0x005E23C0 → 0x005E27B0 → 0x005E3210); that each park uses its
 island is inferred from the own lobby, which builds its four islands the same way. The list comes from `GET /api/v1/parks?city=`,
 which needs a login, as the original's city server did. OpenTPW's own functions (login, news, postcards,
 chat, import, account) are behind **OpenTPW online** at the top right.
+
+### The chat overlay
+
+Chat is the original overlay (Mac table `data:0x50b2c`): the people-in-park list at the left with
+its two tabs — the players in this park and the online buddies — the manual's player buttons under
+it (buddy, ignore, blackmark, on a selected name), the action bar across the top (vote, earmuffs,
+postcards, goto, page, locate), the message list and the text entry at the bottom, all at their
+authored places. Which action each original button carried is not decoded
+([APPROX:ONLINE-021](#approximation-register)); the assignment covers every action the manual
+names. The commands themselves are typed or clicked: `/say`, `/tell`, `/shout`, `/emote`
+("Dan is bouncing up and down"), `/earmuffs`, `/buddy`, `/ignore`, `/mark`, `/page` ("Dan pages
+you: Hello"), `/locate` ("Dan is currently in Halloween World in San Francisco" — the park and its
+city), `/goto`, `/afk`, `/vote` and the mood emotes, in the selected language's words. A player's
+online buddies are told when they enter a park
+([APPROX:ONLINE-024](#approximation-register)).
 
 The ImGui Online panel remains as a developer tool in `--sandbox` and other developer
 starts. The front-end smoke test walks the screens and captures
@@ -251,6 +284,9 @@ The package/protocol/server code owns tags 001–059. The game adapters own:
 | 065 | BF4 chat overlay layout, colours and line count |
 | 066 | ImGui Online panel (developer starts only; players use the original-style screens) |
 | 067 | Publish Park's website opt-in, off by default (the server's public website list is 057) |
+| 070 | Platinum Tickets shown from the player's own server page: one per recorded visit of their parks |
+| 071 | The five chat parks' default names; the original's room list is not recovered |
+| 072 | Walking in a chat park sends one position per step under its own rate limit (`MovementBurst`/`MovementsPerSecond`) |
 | UI | Original-style online screens: window composition, places of code-positioned controls, text field art and caret, server address field, Inbox and Import screens, the News window title |
 
 ## Approximation register
@@ -280,5 +316,9 @@ are not claims that the original online protocol or service has been recovered.
 | ONLINE-017 | The publish globe reuses the Online World's panel (back, zoom, rotate) without Find Parks and the satellites, with UITEXT 419 at the top. | The publish globe's layout table. |
 | ONLINE-016 | Each city-lobby island is the island of its park's theme. | The argument mapping of `tp.exe` 0x005E27B0 (what the top-10 list entry passes to 0x005E3210). |
 | ONLINE-018 | Each satellite's player count is drawn at its bottom-right corner. | The original wrote the count into the satellite control itself (STP-PPC 0x1b96d8), whose text placement is not decoded. |
+| ONLINE-019 | A chat park is shown as a flat overhead view in which each player is a marker that the server's relayed movement moves; the player walks their own marker by clicking (one walk speed; the original's double-click teleport is not separated). | The original chat park's three-dimensional scene, avatar model and animation (manual pp. 63-68) are not decoded. |
+| ONLINE-021 | The chat overlay's action buttons are assigned in the order vote, earmuffs, postcards, goto, page, locate (top bar) and buddy, ignore, blackmark (left column). | Which action each original button control (Mac UI tables `data:0x50b2c`/`data:0x50d1a`) carried; the manual names the actions but not their buttons. |
 | ONLINE-020 | The park details' eighth label row shows the players currently in the park's chat room (UITEXT 273). | The original's last row showed the Instant action mode flag (UITEXT 282), which the package format does not record. |
 | ONLINE-022 | The postcard photo attached by Send Postcard is the park's generated map thumbnail, and no park reference is attached. | The original attached a camcorder snapshot of the visited park (manual pp. 51/67); its content and encoding are not decoded. |
+| ONLINE-023 | Park names are masked with the word filter when published, and the stored masked name is what everyone sees. | The original showed swear words in park names as asterisks (online FAQ, docs/reverse/ONLINE-SOURCES.md S2); whether it filtered at entry or at display, and its word list, are not recovered (the list is the operator's `swears.txt`, ONLINE-001). |
+| ONLINE-024 | A buddy entering a park is reported as "Your buddy X has entered Y" from OpenTPW's own text. | The original notification's string; CHAT_COMMANDS 111-113 ("Your buddy ") have empty English suffixes and no enter-the-park variant is recovered. |

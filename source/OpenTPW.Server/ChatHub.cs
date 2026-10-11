@@ -506,7 +506,8 @@ public sealed class ChatHub
 				break;
 			case ChatCommand.Page:
 			{
-				var (name, _) = ChatCommands.SplitName( argument );
+				// A page carries its message: "Dan pages you: Hello" (manual p. 70, S5).
+				var (name, text) = ChatCommands.SplitName( argument );
 				if ( name == null )
 				{
 					Send( session, ChatEvent.ForNotice( ChatNotice.NeedName ) );
@@ -518,8 +519,8 @@ public sealed class ChatHub
 					Send( session, ChatEvent.ForNotice( ChatNotice.NoSuchPlayer, name ) );
 					break;
 				}
-				Deliver( target, new ChatEvent( ChatEventKind.Page, from, session.Room ) );
-				Send( session, ChatEvent.ForNotice( ChatNotice.YouPage, target.Name ) );
+				Deliver( target, new ChatEvent( ChatEventKind.Page, from, session.Room, Text: text ) );
+				Send( session, ChatEvent.ForNotice( ChatNotice.YouPage, target.Name, Filtered( session, text ) ) );
 				break;
 			}
 			case ChatCommand.Locate:

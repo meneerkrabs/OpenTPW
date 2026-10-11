@@ -250,6 +250,11 @@ public sealed class OnlineScreens
 		}
 		// The original mail icon (i_mail) at its authored place while postcards wait in the inbox.
 		screen.Add( new UiModelImage { Id = "mail", Model = "i_mail", Bounds = Authored( "i_mail", new UiRect( 1500, 1180, 120, 110 ) ), Anchor = UiAnchor.BottomRight } );
+		// [DATA:Language/English/UITEXT.str:472] the original reminded the player of unsent postcards before going online
+		screen.Add( new UiLabel { Id = "waiting", Wrap = true, Font = fonts => fonts.Small, Align = UiAlign.Center,
+			Bounds = new UiRect( window.X + 120, window.Bottom - 290, window.Width - 240, 100 ), Anchor = UiAnchor.Center,
+			Text = () => Session.Folders.List( Session.Folders.Outbox ).Any( entry => entry.Card != null )
+				? OnlineStrings.Ui( OnlineStrings.OutboxWaiting, "You have postcards in your outbox, waiting to be sent." ) : "" } );
 		screen.Updating += _ => screen.Find( "mail" )!.Visible = Session.Inbox.Count > 0;
 		AddStatus( screen, window );
 		AddBack( screen, window );

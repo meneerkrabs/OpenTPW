@@ -79,8 +79,9 @@ What works today, with your own original game data:
 - **Advisor, music and movies:** the advisor speaks for the traced game events with lip sync, the
   park plays its original music, and all nine movies play ([audio](docs/AUDIO.md),
   [lip sync](docs/LIPS.md), [movies](docs/TGQ-MOVIES.md)).
-- **Online again:** accounts, park sharing, visiting, voting, postcards and chat, on the official
-  server or one you host yourself ([online](docs/ONLINE.md), [server](docs/SERVER.md)).
+- **Online again:** accounts, park sharing, visiting, voting, postcards and chat parks, on the
+  official server or one you host yourself ([online](docs/ONLINE.md),
+  [server](docs/SERVER.md)).
 - **Modern systems:** native builds for Windows, macOS and Linux; any resolution and aspect ratio
   with a HiDPI-aware interface scale; button labels fitted per language; compatibility fixes from
   the community ([compatibility](docs/COMPATIBILITY.md)).
@@ -135,8 +136,9 @@ game files never go into this repository.
 1. **Theme Park World**: the complete original offline game. This is the primary goal; it is in
    progress and not yet complete ([completion plan](docs/COMPLETION-PLAN.md)).
 2. **Online play as in the original game**: sharing, visiting and voting on parks, postcards and
-   chat. The original servers are gone and their protocol is not reconstructed, so OpenTPW provides
-   its own opt-in, self-hostable service ([online](docs/ONLINE.md)).
+   chat parks with live presence, movement and the original chat commands. The original servers are
+   gone and their protocol is not reconstructed, so OpenTPW provides its own opt-in, self-hostable
+   service ([online](docs/ONLINE.md), [what the original had](docs/reverse/ONLINE-FEATURES.md)).
 3. **Theme Park Inc / Sim Coaster**: a separate, later goal. Both games share most file formats and
    closely related ride-script formats ([comparison](docs/THEME-PARK-INC.md)), but Theme Park Inc
    is not playable yet; an experimental level viewer shows its worlds.

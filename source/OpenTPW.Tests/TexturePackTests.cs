@@ -205,11 +205,11 @@ public class TexturePackTests
 	}
 
 	[TestMethod]
-	public void FreshSettingsUseClarityAndExplicitChoicesSurviveMigration()
+	public void FreshSettingsUseOriginalAndExplicitChoicesSurviveMigration()
 	{
 		var diagnostics = new List<string>();
-		Assert.AreEqual( "clarity-enhanced", GraphicsSettings.Default.TexturePackName );
-		Assert.AreEqual( "clarity-enhanced", GraphicsSettings.Load( Path.Combine( Path.GetTempPath(), Guid.NewGuid().ToString( "N" ), "absent.json" ), diagnostics ).TexturePackName );
+		Assert.AreEqual( "", GraphicsSettings.Default.TexturePackName );
+		Assert.AreEqual( "", GraphicsSettings.Load( Path.Combine( Path.GetTempPath(), Guid.NewGuid().ToString( "N" ), "absent.json" ), diagnostics ).TexturePackName );
 		foreach ( var choice in new[] { "", "enhanced", "detailed", "mine", "clarity-enhanced" } )
 		{
 			var settings = GraphicsSettings.FromJson( $"{{\"TexturePack\":\"{choice}\",\"EnhancedTextures\":false}}", diagnostics );
@@ -219,6 +219,31 @@ public class TexturePackTests
 		var manifest = System.Text.Json.JsonSerializer.Deserialize<TexturePackManifest>( "{\"Format\":1,\"Scale\":4,\"MixedScale\":true,\"RefinedWorldScale\":8}" );
 		Assert.IsTrue( manifest!.MixedScale, "mixed-size packs do not claim every replacement is 4x" );
 		Assert.AreEqual( 0, diagnostics.Count );
+	}
+
+	[TestMethod]
+	public void FreshOptionsKeepOriginalAndDoNotRequestAPackSwitch()
+	{
+		var graphics = new GraphicsSettingsService( _ => null, GraphicsSettings.Default, null, () => CompatibilityFlags.Original );
+		var requested = new List<string>();
+		var stack = new UiScreenStack();
+		var screen = OptionsScreen.Create( stack, OriginalUiTests.FakeStrings(), new OptionsServices
+		{
+			Display = new StubDisplaySettings( DisplaySettings.Default ), Options = new GameOptions(),
+			Languages = new[] { "English" }, CurrentLanguage = "English", Graphics = graphics,
+			TexturePacks = new[] { TexturePack.DefaultName },
+			BeginTexturePackSwitch = name => { requested.Add( name ); return null; }
+		}, () => { } );
+		stack.Push( screen );
+		screen.Find( "openTpw" )!.Activate();
+		Assert.AreEqual( "Enhanced textures: Original", ((UiLabel)stack.Top!.Find( "enhancedTexturesLabel" )!).Text() );
+		stack.Pop();
+		screen.Find( "ok" )!.Activate();
+		Assert.AreEqual( "", graphics.Current.TexturePackName );
+		Assert.AreEqual( 0, requested.Count, "opening and accepting fresh options does not request enhanced content" );
+		TexturePack.Activate( graphics.Current.TexturePackName, new List<string>() );
+		Assert.IsNull( TexturePack.Directory );
+		Assert.IsFalse( TexturePack.Enhanced, "Original does not select a pack or shipped enhanced icons" );
 	}
 
 	[TestMethod]
@@ -509,10 +534,10 @@ public class TexturePackTests
 		var diagnostics = new List<string>();
 		Assert.AreEqual( "enhanced", GraphicsSettings.FromJson( "{\"EnhancedTextures\": true}", diagnostics ).TexturePackName, "old true = the enhanced pack" );
 		Assert.AreEqual( "", GraphicsSettings.FromJson( "{\"EnhancedTextures\": false}", diagnostics ).TexturePackName );
-		Assert.AreEqual( "clarity-enhanced", GraphicsSettings.FromJson( "{}", diagnostics ).TexturePackName, "Clarity by default" );
+		Assert.AreEqual( "", GraphicsSettings.FromJson( "{}", diagnostics ).TexturePackName, "Original by default" );
 		Assert.AreEqual( "detailed", GraphicsSettings.FromJson( "{\"TexturePack\": \"detailed\"}", diagnostics ).TexturePackName );
 		Assert.AreEqual( "detailed", GraphicsSettings.FromJson( "{\"TexturePack\": \"detailed\", \"EnhancedTextures\": true}", diagnostics ).TexturePackName, "the new key wins" );
-		Assert.AreEqual( "clarity-enhanced", GraphicsSettings.FromJson( "{\"TexturePack\": null}", diagnostics ).TexturePackName, "null is no choice: the default" );
+		Assert.AreEqual( "", GraphicsSettings.FromJson( "{\"TexturePack\": null}", diagnostics ).TexturePackName, "null is no choice: Original" );
 		Assert.AreEqual( "", GraphicsSettings.FromJson( "{\"TexturePack\": \"\", \"EnhancedTextures\": true}", diagnostics ).TexturePackName, "an explicit empty TexturePack wins over the old boolean" );
 		Assert.AreEqual( 0, diagnostics.Count );
 		Assert.AreEqual( "", GraphicsSettings.FromJson( "{\"TexturePack\": \"../x\"}", diagnostics ).TexturePackName );
@@ -576,9 +601,9 @@ public class TexturePackTests
 		var (row, value) = Row( stack, screen );
 		Assert.AreEqual( " Original", value() );
 		row.Activate();
-		Assert.AreEqual( " Clarity Enhanced", value(), "the default choice is always offered" );
+		Assert.AreEqual( " Enhanced (Clarity)", value(), "the preferred enhanced choice is always offered" );
 		row.Activate();
-		Assert.AreEqual( " Enhanced", value(), "the earlier choice stays available without a local pack" );
+		Assert.AreEqual( " Enhanced (legacy)", value(), "the earlier choice stays available without a local pack" );
 		row.Activate();
 		Assert.AreEqual( " Original", value() );
 
@@ -594,7 +619,7 @@ public class TexturePackTests
 			row.Activate();
 			seen.Add( value() );
 		}
-		CollectionAssert.AreEqual( new[] { " Clarity Enhanced", " Enhanced", " Detailed", " mine", " Original" }, seen, "Original, Clarity, Enhanced, Detailed, custom packs, back to Original" );
+		CollectionAssert.AreEqual( new[] { " Enhanced (Clarity)", " Enhanced (legacy)", " Detailed", " mine", " Original" }, seen, "Original, Clarity, Enhanced, Detailed, custom packs, back to Original" );
 		row.Activate();
 		row.Activate();
 		row.Activate();

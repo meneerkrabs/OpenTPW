@@ -1,8 +1,10 @@
 # Texture packs (Clarity, Enhanced and Original)
 
-October 11, 2026. Status: **OpenTPW extension (`[EXT:texture-pack]`), Clarity selected by default.**
-The options offer **Original** (the game's own textures), **Clarity** (`clarity-enhanced`, the default),
-**Enhanced** (the previous choice), and other installed packs. An explicit saved choice is preserved.
+October 11, 2026. Status: **OpenTPW extension (`[EXT:texture-pack]`), Original selected by default.**
+The options offer **Original** (the game's own textures), **Enhanced (Clarity)** (`clarity-enhanced`),
+**Enhanced (legacy)** (the previous `enhanced` choice), and other installed packs. An explicit saved
+choice is preserved. A fresh installation starts with Original and does not download an enhanced
+pack at startup. Downloading enhanced content requires explicitly selecting Enhanced in the options.
 Clarity uses its own replacements, including interface art; a missing replacement falls back to the
 shipped HD interface icons or the original world texture. Original reproduces the original look unchanged.
 
@@ -141,20 +143,25 @@ runtime pack support does not grant rights to the original assets or the models 
    it warns when the models differ). All of these act per pack name. The game lists packs under the
    config directory and bundled content; a pack built elsewhere is used with `OPENTPW_TEXTURE_PACK=<dir>/textures`, which pins
    the pack and overrides the setting.
-3. Choose **Game Options -> OpenTPW -> Enhanced textures** (Original, Clarity, Enhanced, then Detailed and any other
+3. Choose **Game Options -> OpenTPW -> Enhanced textures** (Original, Enhanced (Clarity), Enhanced (legacy), then Detailed and any other
    installed pack) and press OK. The textures are swapped in the running game behind a loading bar; no
-   restart is needed. Enhanced is always offered: without a local `enhanced` pack it means the shipped
+   restart is needed. Enhanced (legacy) is always offered: without a local `enhanced` pack it means the shipped
    interface art only.
 
 ### Setting and migration
 
-`graphics.json` stores the choice as `"TexturePack": "<name>"`; `""` is the original textures,
-`"clarity-enhanced"` is Clarity (the default when the key is missing or null), `"enhanced"` is the
-earlier Enhanced choice, `"detailed"` is Detailed, and other names select the corresponding local or
+`graphics.json` stores the choice as `"TexturePack": "<name>"`. `""` is Original (the default when the
+key is missing or null), `"clarity-enhanced"` is Enhanced (Clarity), `"enhanced"` is the earlier
+Enhanced choice, `"detailed"` is Detailed, and other names select the corresponding local or
 bundled pack. Files from earlier
 versions with `"EnhancedTextures": true` are read as `"TexturePack": "enhanced"`, `false` as Original;
 the old key is dropped the next time the settings are saved. Smoke tests always run on the originals. If both keys exist the new one
 wins. Names must be plain directory names (letters, digits, `-`, `_`, `.`).
+
+`TexturePack.DefaultName` names the preferred Enhanced pack (`clarity-enhanced`); it is not the
+startup graphics choice. Reading settings, finding installed packs, and activating local files do
+not download content. Downloads belong to the explicit options action; a saved enhanced choice
+can use already-installed replacements on subsequent starts without requesting a startup download.
 
 ### Pre-pass
 

@@ -268,7 +268,9 @@ OPENTPW_NATIVE_SHADER_TESTS=1 OPENTPW_GAME_PATH='/path/to/Theme Park World' dotn
 
 The smoke test runs at least 150 rendered frames, places the original Totem, waits for
 its script to trigger the original `totemm1.MD2` animation, requires two
-readbacks to show changed node poses and pixels, checks close/reset, removes/replaces the ride and exercises
+readbacks to show changed node poses and pixels, requires at least three other original objects to each move
+their model nodes in at least 100 frames of the run (and, in an original level, the imported Belly Bounce to move
+between the two readbacks), checks close/reset, removes/replaces the ride and exercises
 save/load in an isolated temporary directory. It exits nonzero on failure or
 premature window closure. GPU readback checks nonblack textured terrain and
 writes `artifacts/native-smoke-park.png` and `artifacts/native-smoke-terrain.png`

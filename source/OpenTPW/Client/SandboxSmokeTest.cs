@@ -97,6 +97,7 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 	public void Update()
 	{
 		++frame;
+		TrackObjectMotion();
 		if ( !pathToolVerified && frame >= 3 )
 			VerifyHudPathTool();
 		if ( motionFrame == 0 )

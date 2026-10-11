@@ -37,8 +37,11 @@ public class ThemeParkIncSaveImportTests
 		{
 			using var reader = new SaveReader( path );
 			var payload = reader.ReadFile();
-			var layout = SavePayloadLayout.Parse( payload );
-			var grid = SaveCellGrid.ParseThemeParkInc( payload, layout.PrefixLength, map.CellCountX, map.CellCountY );
+			var layout = SavePayloadLayout.ParseThemeParkInc( payload );
+			Assert.AreEqual( 48, layout[SaveBlock.Camera].Length, path );
+			Assert.ThrowsException<InvalidDataException>( () => SavePayloadLayout.Parse( payload ), path );
+			var worldBlock = layout[SaveBlock.World];
+			var grid = SaveCellGrid.ParseThemeParkInc( payload, worldBlock.Offset, worldBlock.End, map.CellCountX, map.CellCountY );
 			var differences = from y in Enumerable.Range( 0, map.CellCountY ) from x in Enumerable.Range( 0, map.CellCountX )
 				where grid[x, y].Attributes != map.GetCellAt( x, y )
 				select (x, y, Save: grid[x, y].Attributes, Map: map.GetCellAt( x, y ));
@@ -73,10 +76,10 @@ public class ThemeParkIncSaveImportTests
 			payload[offset + 86] = 0xFF;
 			payload[offset + 87] = 0xFF;
 		}
-		var grid = SaveCellGrid.ParseThemeParkInc( payload, payload.Length, 3, 1 );
+		var grid = SaveCellGrid.ParseThemeParkInc( payload, 8, payload.Length, 3, 1 );
 		Assert.AreEqual( 8, grid.StartOffset );
 		Assert.AreEqual( payload.Length, grid.EndOffset );
-		Assert.ThrowsException<InvalidDataException>( () => SaveCellGrid.ParseThemeParkInc( payload, payload.Length - 1, 3, 1 ) );
+		Assert.ThrowsException<InvalidDataException>( () => SaveCellGrid.ParseThemeParkInc( payload, 8, payload.Length - 1, 3, 1 ) );
 		Assert.ThrowsException<InvalidDataException>( () => SaveCellGrid.Parse( payload, payload.Length, 3, 1 ) );
 	}
 

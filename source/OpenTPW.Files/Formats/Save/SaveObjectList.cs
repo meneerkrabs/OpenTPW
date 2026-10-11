@@ -3,7 +3,8 @@ using System.Buffers.Binary;
 namespace OpenTPW;
 
 /// <summary>
-/// A placed-object record from the save's <c>SYSG</c> section (see docs/TPWS-PAYLOAD.md):
+/// A placed-object record from the save's RideSystem block (writer 0x5ae70, the bytes before the <c>RSYS</c>
+/// delimiter; docs/TPWS-PAYLOAD.md calls them "SYSG" records after the preceding GameSystem delimiter):
 /// <c>u8 1</c>, then little-endian <c>u32</c> Info.Id, X, Y, width, height, kind and index, and a
 /// <c>u16</c> rotation in degrees 38 bytes after the Info.Id. The rest of each record (variable
 /// length) is not decoded. <see cref="InfoId"/> matches the <c>Info.Id</c> of the object's
@@ -45,14 +46,14 @@ public readonly record struct SaveObject( int Offset, int InfoId, int X, int Y, 
 }
 
 /// <summary>
-/// Signature scan of the <c>SYSG</c> section for <see cref="SaveObject"/> records. A candidate
+/// Signature scan of the RideSystem block for <see cref="SaveObject"/> scene-mesh instance records (their
+/// variable-length tails are not decoded, so the block has no framed walk yet). A candidate
 /// must have the leading byte 1, coordinates inside the grid, a 1–16 cell footprint, a known kind
 /// (815 or 865), a rotation of 0/90/180/270 and an index greater than the previous record's.
 /// Callers should cross-check footprints against <see cref="SaveCellGrid"/> occupancy.
 /// </summary>
 public static class SaveObjectList
 {
-	public const string SectionTag = "SYSG";
 	public const int RecordHeaderBytes = 41;
 	public const int MaximumFootprint = 16;
 
@@ -61,8 +62,8 @@ public static class SaveObjectList
 		ArgumentNullException.ThrowIfNull( layout );
 		if ( layout.PayloadLength != payload.Length )
 			throw new ArgumentException( "Layout does not describe this payload.", nameof( layout ) );
-		var section = layout.Sections.Single( candidate => candidate.Tag == SectionTag );
-		var data = payload.Slice( section.Offset + SavePayloadLayout.MarkerBytes, section.Length - SavePayloadLayout.MarkerBytes );
+		var section = layout[SaveBlock.RideSystem];
+		var data = payload.Slice( section.Offset, section.Length );
 		var result = new List<SaveObject>();
 		var lastIndex = 0;
 		for ( var offset = 0; offset <= data.Length - RecordHeaderBytes; offset++ )
@@ -82,7 +83,7 @@ public static class SaveObjectList
 				|| (kind != SaveObject.FixedItemKind && kind != SaveObject.PlacedObjectKind)
 				|| index <= (uint)lastIndex || index > ushort.MaxValue || rotation % 90 != 0 || rotation >= 360 )
 				continue;
-			result.Add( new SaveObject( section.Offset + SavePayloadLayout.MarkerBytes + offset, (int)id, (int)x, (int)y,
+			result.Add( new SaveObject( section.Offset + offset, (int)id, (int)x, (int)y,
 				(int)width, (int)height, (int)kind, (int)index, rotation ) );
 			lastIndex = (int)index;
 			offset += RecordHeaderBytes - 1;

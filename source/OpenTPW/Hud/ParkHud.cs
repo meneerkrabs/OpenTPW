@@ -142,8 +142,8 @@ public sealed partial class ParkHud
 		// [DATA:Mac main HUD table 0x4ab38:38-43] original button rectangles: staggered along the panel's curve, plus the camera button
 		PanelButton( "buy", "b_buy", Rect( 170, 1122, 288, 1240 ), 469, level.IsReadOnlyVisit ? null : OpenBuyWindow );
 		PanelButton( "info", "b_info", Rect( 287, 1133, 405, 1252 ), 470, null );
-		PanelButton( "finance", "b_money", Rect( 156, 1241, 274, 1360 ), 471, null );
-		PanelButton( "research", "b_resrch", Rect( 274, 1254, 392, 1372 ), 472, null );
+		PanelButton( "finance", "b_money", Rect( 156, 1241, 274, 1360 ), 471, OpenFinanceWindow );
+		PanelButton( "research", "b_resrch", Rect( 274, 1254, 392, 1372 ), 472, OpenResearchWindow );
 		PanelButton( "map", "b_map", Rect( 81, 1340, 200, 1458 ), 473, null );
 		// [APPROX:UI-042] the camera button's action (camera views) is not implemented; it is shown disabled
 		PanelButton( "camera", "b_camera", Rect( 202, 1355, 320, 1474 ), null, null );

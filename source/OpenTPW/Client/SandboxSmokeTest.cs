@@ -210,15 +210,17 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 		Require( candidate != null, "staff pool offers a mechanic" );
 		var mechanic = economy.Hire( candidate!.Id );
 		var wage = economy.Staff.MonthlyWage( mechanic );
+		// An imported original park brings its own staff, who are paid with the new mechanic.
+		var wages = economy.Staff.TotalMonthlyWages;
 		var monthEnd = ParkCalendar.TickAtMonth( ParkCalendar.MonthIndex( economy.Tick ) + 1 );
 		economy.Advance( monthEnd - economy.Tick );
-		Require( economy.Tick == monthEnd && economy.Date.Day == 1 && economy.Balance == startBalance - wage, "month-end wages leave the bank account" );
+		Require( economy.Tick == monthEnd && economy.Date.Day == 1 && wages >= wage && economy.Balance == startBalance - wages, "month-end wages leave the bank account" );
 		var path = SaveFileSystem.GetAbsolutePath( "opentpw-park.json" );
 		var before = ParkSaveFile.Serialize( economy );
 		park.Save( path );
 		park.Load( path );
 		Require( ParkSaveFile.Serialize( park.Economy ) == before, "park save/load round trip" );
-		Log.Trace( $"Park economy smoke: {startDate} -> {park.Economy.Date}; balance ${startBalance} -> ${park.Economy.Balance} after ${wage} mechanic wages; save/load round trip identical." );
+		Log.Trace( $"Park economy smoke: {startDate} -> {park.Economy.Date}; balance ${startBalance} -> ${park.Economy.Balance} after ${wages} wages (${wage} for the new mechanic); save/load round trip identical." );
 	}
 
 	/// <summary>

@@ -16,8 +16,8 @@ public static class ThemeParkIncSaveObjectList
 		ArgumentNullException.ThrowIfNull( layout );
 		if ( layout.PayloadLength != payload.Length )
 			throw new ArgumentException( "Layout does not describe this payload.", nameof( layout ) );
-		var section = layout.Sections.Single( candidate => candidate.Tag == SaveObjectList.SectionTag );
-		var data = payload.Slice( section.Offset + SavePayloadLayout.MarkerBytes, section.Length - SavePayloadLayout.MarkerBytes );
+		var section = layout[SaveBlock.RideSystem];
+		var data = payload.Slice( section.Offset, section.Length );
 		var result = new List<SaveObject>();
 		var lastIndex = 0;
 		for ( var offset = 0; offset <= data.Length - RecordHeaderBytes; offset++ )
@@ -37,7 +37,7 @@ public static class ThemeParkIncSaveObjectList
 				|| (kind != SaveObject.FixedItemKind && kind != SaveObject.PlacedObjectKind)
 				|| index <= (uint)lastIndex || index > ushort.MaxValue || rotation % 90 != 0 || rotation >= 360 )
 				continue;
-			result.Add( new SaveObject( section.Offset + SavePayloadLayout.MarkerBytes + offset, (int)id, (int)x, (int)y,
+			result.Add( new SaveObject( section.Offset + offset, (int)id, (int)x, (int)y,
 				(int)width, (int)height, (int)kind, (int)index, rotation ) );
 			lastIndex = (int)index;
 			offset += RecordHeaderBytes - 1;

@@ -299,8 +299,8 @@ glyph in all 14 UI fonts of each language.
   (`panel`, root `pan_info`) with `b_retract` (481) at its authored place.
 - Panel buttons at the original rectangles of the Mac main HUD table (`data:0x4ab38`, controls 38-43),
   staggered along the panel's curve: `b_buy` (469), `b_info` (470), `b_money` (471), `b_resrch` (472),
-  `b_map` (473) and `b_camera` (474). Only Buy works; the others show their disabled frame (the camera
-  views are not implemented, UI-042).
+  `b_map` (473) and `b_camera` (474). Buy, Finance and Research open windows; Info and Map remain
+  disabled. The camera views are not implemented (UI-042).
 - The date text is drawn in black inside the date region (182,1061)-(383,1103) (table control 32), in the
   date font slot 3 (`DATETINY/SMALL/MED` by tier; only official Patch 2 and the Mac version ship these, the
   1999 data falls back to the Small font, which is the same file as `DATESMALL`). The bank
@@ -310,8 +310,35 @@ glyph in all 14 UI fonts of each language.
   model (root `green_up`, 49) shown for 4 s after a balance change (UI-047), and at the top right the golden
   ticket (`gtick`, 53) and key (`gkey`, 52) icons with their counts (55, 54). The ticket count is the park economy's unspent
   golden tickets; OpenTPW does not track golden keys, so that count is 0 (UI-051).
-- The Mac build has 55 such layout tables (the buy window `data:0x4cd94`, the finance/staff/info arm contents,
-  the coaster tools, the map screen, research, ride and staff windows); only the buy window is built so far.
+- The Mac build has 55 such layout tables, including Buy (`data:0x4cd94`), Financial Information
+  (`data:0x49ee4`), Available/Outstanding Loans (`data:0x4a79c`), the money arm (`data:0x496c4`),
+  Research (`data:0x4c652`), coaster tools, the map screen, ride and staff windows. The named
+  screens were identified by matching table drawing keys to `ui.wad` model root names.
+- Financial Information (`ParkHud.FinanceWindow.cs`) places `w_park`, `f_graph`, eight `b_ltoggle`
+  series buttons, three `b_stoggle` period buttons and the right-side controls at their Mac table
+  rectangles. The series use `ParkLedger` closed months plus its current month: bank balance,
+  park value, money in, gate/shop/sideshow takings, money out and staff costs. Money in includes
+  loan proceeds, and money out includes repayments. Bank balance and park value are exclusive
+  with each other and with the six cash-flow series, as in the original control handler.
+  The 1/3/12-year controls limit the displayed
+  months. The graph's line style, colours, scale and initial selection are OpenTPW choices
+  (UI-060). The Loans button opens the separate bank window when loans are available; the entry
+  and staff-cost detail buttons are disabled until their screens are implemented (UI-061).
+- The Loans window (`ParkHud.LoansWindow.cs`) uses the Mac `w_big`/`f_loans` table, six columns,
+  Available/Outstanding tabs, a scroll control and the four summary cells. Offers and outstanding
+  accounts come directly from `ParkEconomy`. Borrowing and repayment use its existing methods,
+  only where the game mode permits loans. Lender names come from the selected language's
+  `LOANNAMES.str`; a missing entry uses a numbered fallback (UI-062). The seven list rows and scroll travel are
+  inferred from the table's content bounds; the summary uses tracked ledger data whose scope
+  differs from the original lifetime counters (UI-063).
+- Research (`ParkHud.ResearchWindow.cs`) places `w_res`, five `res_panel` rows and effort sliders
+  in the table's visual order: rides, upgrades, shops, sideshows, features. Item names, progress
+  and effort come from `ParkResearch`; changing effort calls `ParkEconomy.SetResearchEffort` only
+  in modes that support the research panel; Instant Action shows its original unavailable message.
+  The main workload knob displays the tracked percentage
+  with inferred linear travel but cannot be changed here (UI-064). Effort-slider travel (UI-065) and the
+  fluid progress fill (UI-066) are presentation approximations. The item-navigation arrows are
+  disabled because the economy selects each category's current item and has no manual cursor API.
 - Buy window (`ParkHud.BuyWindow.cs`, Mac buy table `data:0x4cd94`): the Buy button opens the original window as a modal
   screen over the park (it dims the park like other windows and does not pause the game). Every element sits at its authored
   rectangle (`Anchor.Center`): `w_big` (root `window4`) with two `!frame` panels (the turning preview, and the stats
@@ -450,6 +477,13 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-049 | `Hud/ParkHud.BuyWindow.cs` | buy window scroll ball travel: its top runs from the track's top (first row) to a ball height above the track's bottom (last row) | capture of the original scroll bar ends |
 | UI-050 | `Hud/ParkHud.BuyWindow.cs` | buy list third column (1673-1724), its header button 18 and control 491 have no known content and stay empty | capture of the original buy window |
 | UI-051 | `Hud/ParkHud.cs` | i_dollar frame 1 for a negative balance, green_up frame 1 for a decrease; golden key frame 0 and ticket count from the economy (keys are not tracked, always 0) | capture of the original cash display and key counter |
+| UI-060 | `Hud/ParkHud.FinanceWindow.cs` | finance graph line colours, scaling and default selected series use the tracked monthly ledger values | original financial graph capture and its sample/render handler |
+| UI-061 | `Hud/ParkHud.FinanceWindow.cs` | finance entry and staff-cost detail buttons are disabled until their screens are implemented | original entry and staff-cost screen tables and handlers |
+| UI-062 | `Hud/ParkHud.LoansWindow.cs` | missing loan lender-name entries use numbered fallbacks | complete or corrected `LOANNAMES.str` resource |
+| UI-063 | `Hud/ParkHud.LoansWindow.cs` | loan list has seven equal rows and inferred scrollbar travel; its summary uses the bounded monthly ledger rather than the original lifetime counters | loan-list capture, scroll handler and original lifetime finance counters |
+| UI-064 | `Hud/ParkHud.ResearchWindow.cs` | research main workload knob shows the current value with linear travel but cannot change it here | original workload slider handler and control mapping |
+| UI-065 | `Hud/ParkHud.ResearchWindow.cs` | research effort sliders use linear 0..100 travel across their authored tracks | original slider end stops and quantization handler |
+| UI-066 | `Hud/ParkHud.ResearchWindow.cs` | research progress uses a simple fill inside the fluid model cell | original fluid model progress frame handler or capture |
 
 Data-backed (tagged `[DATA]`): the 2048×1536 canvas and authored rectangles of
 placed models (`ui.wad` roots/bounds), button state frames and texture order, V

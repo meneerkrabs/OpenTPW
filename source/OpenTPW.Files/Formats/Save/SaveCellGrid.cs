@@ -18,7 +18,7 @@ public enum SavePathConnections : byte
 }
 
 /// <summary>
-/// One per-cell record of the save's untagged prefix (see docs/TPWS-PAYLOAD.md). Only the fields
+/// One per-cell record of the save's World block map (see docs/TPWS-PAYLOAD.md). Only the fields
 /// below are interpreted; <see cref="Record"/> keeps every byte, including the optional 10-byte
 /// extension, for later work.
 /// </summary>
@@ -73,15 +73,15 @@ public readonly struct SaveCell
 }
 
 /// <summary>
-/// The per-cell grid inside the untagged prefix of a decoded TPWI/TPWS payload. Each record is
+/// The per-cell grid (map writer 0xd6c90) inside the World block of a decoded TPWI/TPWS payload. Each record is
 /// 84 bytes: a type byte (3 or 7 observed), opaque fields, the MAP attribute byte at +46 and the
 /// bytes FF FF at +82; type bit 0x04 appends a 10-byte extension. Records are stored X-fastest.
-/// The header before the grid is not decoded, so the grid start is located structurally: exactly
+/// The control manager and macro-AI widths before the grid are not pinned, so the grid start is located structurally: exactly
 /// one offset in the search range must begin a run of exactly <c>countX * countY</c> valid records.
 /// </summary>
 public sealed class SaveCellGrid
 {
-	/// <summary>Search window cap (the Easymode prefix is 1,495,462 bytes); bounds the run table to 64 MiB.</summary>
+	/// <summary>Search window cap (the Easymode World block is 1,494,283 bytes); bounds the run table to 64 MiB.</summary>
 	public const int MaximumSearchBytes = 16 * 1024 * 1024;
 
 	private readonly SaveCell[] cells;
@@ -110,27 +110,31 @@ public sealed class SaveCellGrid
 		}
 	}
 
+	/// <summary>Parses the grid within the first <paramref name="searchLength"/> bytes of <paramref name="payload"/>.</summary>
+	public static SaveCellGrid Parse( ReadOnlyMemory<byte> payload, int searchLength, int countX, int countY ) =>
+		Parse( payload, 0, searchLength, countX, countY );
+
 	/// <summary>
-	/// Parses the grid from <paramref name="payload"/> within its first <paramref name="searchLength"/>
-	/// bytes (normally <see cref="SavePayloadLayout.PrefixLength"/>). Throws when no run or more
-	/// than one run of exactly the required record count exists.
+	/// Parses the grid from <paramref name="payload"/> within [<paramref name="searchStart"/>, <paramref name="searchEnd"/>)
+	/// (for a save, the World block after its variables). Throws when no run or more than one run of exactly
+	/// the required record count exists. Offsets stay payload offsets.
 	/// </summary>
-	public static SaveCellGrid Parse( ReadOnlyMemory<byte> payload, int searchLength, int countX, int countY )
-		=> Parse( payload, searchLength, countX, countY, SaveCell.RecordBytes );
+	public static SaveCellGrid Parse( ReadOnlyMemory<byte> payload, int searchStart, int searchEnd, int countX, int countY )
+		=> Parse( payload, searchStart, searchEnd, countX, countY, SaveCell.RecordBytes );
 
 	/// <summary>Parses the observed Theme Park Inc profile: 88-byte cells, a ten-byte type-7 extension, and FF FF at +86.</summary>
-	public static SaveCellGrid ParseThemeParkInc( ReadOnlyMemory<byte> payload, int searchLength, int countX, int countY )
-		=> Parse( payload, searchLength, countX, countY, SaveCell.ThemeParkIncRecordBytes );
+	public static SaveCellGrid ParseThemeParkInc( ReadOnlyMemory<byte> payload, int searchStart, int searchEnd, int countX, int countY )
+		=> Parse( payload, searchStart, searchEnd, countX, countY, SaveCell.ThemeParkIncRecordBytes );
 
-	private static SaveCellGrid Parse( ReadOnlyMemory<byte> payload, int searchLength, int countX, int countY, int recordBytes )
+	private static SaveCellGrid Parse( ReadOnlyMemory<byte> payload, int searchStart, int searchEnd, int countX, int countY, int recordBytes )
 	{
 		if ( countX <= 0 || countY <= 0 || countX > MapFile.MaximumDimension || countY > MapFile.MaximumDimension || (long)countX * countY > MapFile.MaximumCells )
 			throw new ArgumentOutOfRangeException( nameof( countX ), "Grid dimensions must match a valid MAP." );
-		if ( searchLength < 0 || searchLength > payload.Length )
-			throw new ArgumentOutOfRangeException( nameof( searchLength ) );
-		if ( searchLength > MaximumSearchBytes )
+		if ( searchStart < 0 || searchEnd < searchStart || searchEnd > payload.Length )
+			throw new ArgumentOutOfRangeException( nameof( searchEnd ) );
+		if ( searchEnd - searchStart > MaximumSearchBytes )
 			throw new InvalidDataException( $"Save cell grid search exceeds the {MaximumSearchBytes}-byte limit." );
-		var data = payload.Span[..searchLength];
+		var data = payload.Span[searchStart..searchEnd];
 		var required = countX * countY;
 
 		// run[s] = number of consecutive valid records starting at s (capped at required + 1).
@@ -155,10 +159,11 @@ public sealed class SaveCellGrid
 			throw new InvalidDataException( "Save payload contains no cell grid matching the map size." );
 
 		var result = new SaveCell[required];
+		start += searchStart;
 		var position = start;
 		for ( var index = 0; index < required; index++ )
 		{
-			var length = RecordLength( data, position, recordBytes );
+			var length = RecordLength( data, position - searchStart, recordBytes );
 			result[index] = new SaveCell( payload.Slice( position, length ), recordBytes );
 			position += length;
 		}

@@ -137,7 +137,7 @@ No original executable was run to establish a broader TPI save schema.
 | Field used | Observation and use |
 | --- | --- |
 | Container | Magic 500; 24 bytes inserted after magic (`01 13 00 00 00`, `Version: Beta_21` and terminator); file type at `0x61c`, version 133 at `0x620`, offline flag at `0x621`, `BILZ` at `0x625`, zlib at `0x641`. The existing bounded zlib reader applies after shifting these offsets. |
-| Decoded payload | 1,692,641 bytes; all 17 TPW section markers occur once, in the observed order. The untagged prefix ends at `DLRW` offset 1,571,677. |
+| Decoded payload | 1,692,641 bytes; all 17 writer-order trailing delimiters occur once. The World block ends at `DLRW` offset 1,571,677. The Camera block is 48 bytes (TPW saves use 40), so it has a separate TPI layout parser. |
 | Cell grid | One 128×128 X-fastest run at offsets 7,116–1,449,038. Type 3 records are 88 bytes; 13 type 7 records add 10 bytes. `FF FF` closes each base record at +86/+87. MAP attributes remain at +46; path flag bit 0 at +13, connections +8, path texture +17, turn +21 and occupancy +12 match the TPW positions. The save yields 76 path cells. |
 | `SYSG` objects | A candidate begins with byte `1`, then an opaque `u32`, followed by little-endian `u32` Info.Id at +5, X +9, Y +13, width +17, height +21, kind +25 and index +29; rotation is `u16` at +43. The bounded signature scan finds 23 records: 9 kind 815 objects and 14 kind 865 fixed/scene records. |
 | Catalogue and placement | All nine kind 815 IDs resolve in science: eight rectangular footprints are occupied in the grid and one (`1101`, 4×5 at 42,26) has two unoccupied corner cells (42,30 and 45,30), so its footprint remains unresolved while the object is rendered at its saved anchor. Of the 14 fixed/scene records, nine IDs resolve; five zero-coordinate IDs (`1702`, `1701`, `1700`, `1750`, `1798`) have no object archive and are not rendered. One resolved record is a tool, leaving 17 objects rendered in the native viewer. |
@@ -195,7 +195,7 @@ the semantics of the TPW corpus.
 - **Saves.** `prebuilt.TPWS` starts with magic 500 (TPWS), like TPW saves, but then
   inserts `01 13 00 00 00` and the ASCII string `Version: Beta_21` before the
   UTF-16 `THE SAVE GAME DATA…` banner. Its BILZ chunk and decoded payload retain
-  the familiar markers, but the cell and SYSG records have the distinct widths
+  the familiar trailing delimiters, but the Camera block, cell and SYSG records have the distinct widths
   documented [above](#prebuilt-science-save). The reader accepts this observed
   offline profile only; it does not write TPI saves.
 - **Global save.** Theme Park Inc keeps the player's progress in a Global Master Save (`.GMS`), separate from park

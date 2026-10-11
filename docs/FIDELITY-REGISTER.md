@@ -14,9 +14,9 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **287 unresolved unique APPROX IDs**, 325 APPROX occurrences, 120 EXT occurrences, 130 DATA occurrences and 327 BIN occurrences.
+Current inventory: **288 unresolved unique APPROX IDs**, 326 APPROX occurrences, 120 EXT occurrences, 130 DATA occurrences and 327 BIN occurrences.
 
-Of these, 271 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 16 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
+Of these, 272 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 16 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
 CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.
 
@@ -25,7 +25,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | Area | Unique unresolved IDs | Source occurrences |
 | --- | ---: | ---: |
 | ADVISOR | 19 | 20 |
-| AUDIO | 11 | 16 |
+| AUDIO | 12 | 17 |
 | COAST | 22 | 31 |
 | COMPAT | 21 | 24 |
 | DET | 5 | 5 |
@@ -74,6 +74,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | AUDIO-009 | Original-fidelity area (scope unadjudicated) | a rejected placement ('Cannot build') plays the buy window's error feedback 0x1D; only the buy window's and dialogs' error paths are traced | See source annotation/runtime register | `source/OpenTPW/Audio/AudioApproximations.cs:16` |
 | AUDIO-010 | Original-fidelity area (scope unadjudicated) | the lobby sentences start with the level of the currently selected island and restart when the selection changes; when the original restarts them is not traced | See source annotation/runtime register | `source/OpenTPW/Audio/AudioApproximations.cs:17` |
 | AUDIO-011 | Original-fidelity area (scope unadjudicated) | an RSE EVENT id missing from the level catalogue plays from the global category of the same name (incagod.RSE's EVENT 3 id 43 exists only in the global cat_rides); the sound library's own fallback rule is not traced | See source annotation/runtime register | `source/OpenTPW/Audio/AudioApproximations.cs:18` |
+| AUDIO-012 | Original-fidelity area (scope unadjudicated) | every activated button plays the click 0x1F, front end included; the traced witness is the park view's control-message handler (0x10137FD0) | See source annotation/runtime register | `source/OpenTPW/Audio/AudioApproximations.cs:19` |
 | COAST-004 | Original-fidelity area (scope unadjudicated) | COAST-COLLIDE: the track does not collide with terrain or scenery | See source annotation/runtime register | `source/OpenTPW/World/Coasters/CoasterApproximations.cs:14` |
 | COAST-007 | Original-fidelity area (scope unadjudicated) | COAST-WAIVER: the distance waiver for flagged nodes is not applied | See source annotation/runtime register | `source/OpenTPW/World/Coasters/CoasterApproximations.cs:15` |
 | COAST-011 | Original-fidelity area (scope unadjudicated) | COAST-CAMERA: the ride view is the front car's pose; no camera mode uses it yet | See source annotation/runtime register | `source/OpenTPW/World/Coasters/CoasterApproximations.cs:16` |
@@ -432,6 +433,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | AUDIO-010 | `source/OpenTPW/Client/GameFlow.cs:116` | [APPROX:AUDIO-010] the sentences restart on every island selection; when the original switches them is not traced |
 | AUDIO-011 | `source/OpenTPW.Tests/AudioTriggerTests.cs:266` | [APPROX:AUDIO-011] a level category falls back to the global one of the same name (incagod.RSE's EVENT 3 id 43 is only in the global cat_rides) |
 | AUDIO-011 | `source/OpenTPW/Audio/GameAudio.cs:241` | [APPROX:AUDIO-011] the level-to-global category fallback mirrors the bank fallback (AUDIO-002); the sound library's own fallback rule is not traced |
+| AUDIO-012 | `source/OpenTPW/UI/Original/UiWidgets.cs:424` | [APPROX:AUDIO-012] every activated button plays it, front end included; the traced witness is the park view's handler |
 | COAST-004 | `source/OpenTPW/World/Coasters/CoasterTrack.cs:254` | [APPROX:COAST-004] the track is not tested against terrain or scenery (asTrackCollisionPoints, fCollisionPossibleRadius) — evidence needed: the track collision routine and its callers |
 | COAST-007 | `source/OpenTPW/World/Coasters/CoasterTrack.cs:208` | [APPROX:COAST-007] the distance waiver (previous descriptor flag 2 with an ordinal other than 2) is not applied — evidence needed: the purpose of the waiver at 0x10036BA4 and which nodes carry descriptor flag 2 with ordinal ≠ 2 |
 | COAST-011 | `source/OpenTPW/World/Coasters/CoasterRide.cs:148` | [APPROX:COAST-011] the ride view is the front car's sample pose; no camera mode uses it yet and Info.FirstPersonSprites, FIRSTPERSONVIEWDISTANCE and COASTERSMOOTHNESS are not read; no camera code calls the coaster module — evidence needed: the camera methods 0x10093D08/0x10094474 for a follow mode fed by car +72..+80, or a capture of the original ride view |
@@ -638,7 +640,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | UI-005 | `source/OpenTPW/UI/Original/UiImages.cs:102` | [APPROX:UI-005] pink key + neighbour colour bleed for linear filtering — evidence needed: capture of UI edges at other resolutions |
 | UI-006 | `source/OpenTPW/UI/Original/UiText.cs:162` | [APPROX:UI-006] all UI text/backdrop colours — evidence needed: captures of original screens |
 | UI-007 | `source/OpenTPW/UI/Original/UiWidgets.cs:73` | [APPROX:UI-007] drop shadow one text pixel down-right — evidence needed: captures of original screens |
-| UI-008 | `source/OpenTPW/UI/Original/UiWidgets.cs:438` | [APPROX:UI-008] purple_button as a mirrored end cap, upper half normal, lower half focused/pressed — evidence needed: capture of the original front-end buttons |
+| UI-008 | `source/OpenTPW/UI/Original/UiWidgets.cs:439` | [APPROX:UI-008] purple_button as a mirrored end cap, upper half normal, lower half focused/pressed — evidence needed: capture of the original front-end buttons |
 | UI-010 | `source/OpenTPW/UI/Original/UiScreen.cs:257` | [APPROX:UI-010] popup help placement/backdrop — evidence needed: capture of original popup help |
 | UI-011 | `source/OpenTPW/UI/Original/UiScreen.cs:247` | [APPROX:UI-011] modal screens dim the screens below — evidence needed: captures of original dialogs |
 | UI-012 | `source/OpenTPW/UI/Original/UiInput.cs:54` | [APPROX:UI-012] key map (arrows, Enter, Escape, P) — evidence needed: binary key handling / KEYBOARD.str |
@@ -671,7 +673,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | UI-032 | `source/OpenTPW/UI/Original/UiWidgets.cs:285` | [APPROX:UI-032] small-font fallback and greedy wrap for long labels — evidence needed: captures of translated original screens |
 | UI-034 | `source/OpenTPW/UI/Original/UiImages.cs:68` | [APPROX:UI-034] a fully opaque texture on a transparent (flag 0x2) slot keys out black with a soft edge — evidence needed: the original's render state for flagged slots |
 | UI-035 | `source/OpenTPW/Client/Movie/IntroPlaylist.cs:34` | Input already held when the sequence begins is ignored until released [APPROX:UI-035], so launching the game |
-| UI-036 | `source/OpenTPW/UI/Original/UiWidgets.cs:507` | [APPROX:UI-036] linear knob travel over the track, value index 0..Steps-1 from the knob's centre — evidence needed: capture of the original slider ends / binary slider code |
+| UI-036 | `source/OpenTPW/UI/Original/UiWidgets.cs:508` | [APPROX:UI-036] linear knob travel over the track, value index 0..Steps-1 from the knob's centre — evidence needed: capture of the original slider ends / binary slider code |
 | UI-037 | `source/OpenTPW/UI/Original/UiText.cs:171` | [APPROX:UI-037] option bar label colour (16,16,48) read off a capture by eye — evidence needed: exact pixel colour from a capture or the font palette |
 | UI-038 | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:257` | [APPROX:UI-038] 3D card rendering, videocard and audio quality are shown fixed (disabled) — OpenTPW has no software renderer, video card or audio quality choice |
 | UI-039 | `source/OpenTPW/UI/Original/UiWidgets.cs:130` | [APPROX:UI-039] option label size: letter box about 58 % of the label rectangle height (the capture's labels are ~26 of 1536 units for 45-unit rectangles); a label whose widest value does not fit drops alone to the largest size that does — evidence needed: capture of the original option labels in several languages |
@@ -812,7 +814,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | online-visit | `source/OpenTPW/Client/GameFlow.cs:235` | [EXT:online-visit] read-only visits of shared parks get no advisor (the original has no visits) |
 | opentpw-page | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:393` | [EXT:opentpw-page] button to the OpenTPW page, in the free area left of the OK panel |
 | opentpw-page | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:422` | The OpenTPW page ([EXT:opentpw-page]): everything OpenTPW adds to the original options, built from the |
-| opentpw-page | `source/OpenTPW/UI/Original/UiWidgets.cs:585` | [EXT:opentpw-page] option-row arrow/value positions: OpenTPW's own row style for its page (the original page uses sliders and toggles) |
+| opentpw-page | `source/OpenTPW/UI/Original/UiWidgets.cs:586` | [EXT:opentpw-page] option-row arrow/value positions: OpenTPW's own row style for its page (the original page uses sliders and toggles) |
 | park-summary | `source/OpenTPW/Hud/ParkHud.InfoWindow.cs:14` | [EXT:park-summary] functional host summary; original information-screen layout remains unqualified |
 | ps2-data | `source/OpenTPW/Client/Ps2Export.cs:13` | [EXT:ps2-data] viewing aid for the PS2 version's data, not original behaviour |
 | sandbox | `source/OpenTPW/Client/GameFlow.cs:236` | [EXT:sandbox] the generic sandbox (not an original level) gets no automatic advisor either; only original levels raise its game events |

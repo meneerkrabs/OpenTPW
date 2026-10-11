@@ -158,6 +158,7 @@ implemented yet.
 | AUDIO-009 | A rejected placement ("Cannot build") plays the error feedback 0x1D | The original build-tool rejection path beside the traced buy-window callers of `0x10139A40` |
 | AUDIO-010 | The lobby sentences restart on every island selection | When the original restarts the lobby sentences (`0x1009598C`) |
 | AUDIO-011 | An RSE EVENT id missing from the level catalogue plays from the global category of the same name (`incagod.RSE`'s EVENT 3 id 43 exists only in the global `cat_rides`) | The sound library's own category fallback rule |
+| AUDIO-012 | Every activated button plays the click 0x1F, front end included | The traced 0x1F witness is the park view's control-message handler (`0x10137FD0`); the front end's own handlers |
 
 The option volumes keep their 0–10 steps (UI-030); the original stores percentages whose
 defaults are `DefaultVolume.*` in `sound.sam` (effects 75, music 60, speech 75, movie 100).

@@ -189,17 +189,23 @@ public static class GameAudio
 		var parameter = Math.Clamp( guestsNearCamera, 0, MaximumCrowdParameter );
 		if ( parameter > 0 )
 		{
-			crowd ??= events.StartSentence( Kids, CrowdEvent, AudioChannel.Effects );
+			if ( crowd == null )
+			{
+				crowd = events.StartSentence( Kids, CrowdEvent, AudioChannel.Effects );
+				if ( crowd != null )
+					Log.Trace( $"Sound: crowd sentence started ({guestsNearCamera} guests within {GameFlow.CrowdRadiusCells} cells of the camera)." );
+			}
 			if ( crowd != null )
 			{
 				crowd.Parameter = parameter;
 				crowd.Resume();
 			}
 		}
-		else
+		else if ( crowd != null )
 		{
-			crowd?.Stop();
+			crowd.Stop();
 			crowd = null;
+			Log.Trace( "Sound: crowd sentence stopped (nobody near the camera)." );
 		}
 	}
 

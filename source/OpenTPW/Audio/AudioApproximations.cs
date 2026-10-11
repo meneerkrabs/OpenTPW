@@ -16,6 +16,7 @@ public static class AudioApproximations
 		("AUDIO-009", "a rejected placement ('Cannot build') plays the buy window's error feedback 0x1D; only the buy window's and dialogs' error paths are traced"),
 		("AUDIO-010", "the lobby sentences start with the level of the currently selected island and restart when the selection changes; when the original restarts them is not traced"),
 		("AUDIO-011", "an RSE EVENT id missing from the level catalogue plays from the global category of the same name (incagod.RSE's EVENT 3 id 43 exists only in the global cat_rides); the sound library's own fallback rule is not traced"),
+		("AUDIO-012", "every activated button plays the click 0x1F, front end included; the traced witness is the park view's control-message handler (0x10137FD0)"),
 	};
 
 	private static bool logged;

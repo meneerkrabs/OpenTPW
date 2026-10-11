@@ -37,8 +37,10 @@ internal sealed class GameFlow : IDisposable
 		global::Global.Render.OnOverlayRender += RenderOverlay;
 	}
 
-	public UiStringTable Strings { get; }
-	public UiContext Context { get; }
+	public UiStringTable Strings { get; private set; }
+	public UiContext Context { get; private set; }
+	/// <summary>A language chosen in the options, applied after the frame (front end) or when the park is left.</summary>
+	private string? pendingLanguage;
 	public OnlineFolders? OnlineFolders { get; set; }
 	/// <summary>Automatic advice in original-level parks (off with <c>--no-advisor</c> and for <c>--advisor-say</c>/<c>--advisor-response</c>).</summary>
 	public bool AutomaticAdvisorEnabled { get; set; } = true;
@@ -93,6 +95,7 @@ internal sealed class GameFlow : IDisposable
 	public void ShowFrontEnd( string? selectLevel = null )
 	{
 		TearDown();
+		ApplyPendingLanguage();
 		lobbyDefinition ??= LobbyDefinition.Load();
 		Lobby = new LobbyScene( lobbyDefinition );
 		LobbyCameraMode.Radius = lobbyDefinition.SpinRadius;
@@ -131,6 +134,11 @@ internal sealed class GameFlow : IDisposable
 		Options = GameOptions.Current,
 		Languages = GameLanguage.Choosable(),
 		CurrentLanguage = GameLanguage.Current.Name,
+		ApplyLanguage = language =>
+		{
+			pendingLanguage = language;
+			return Level == null;
+		},
 		SaveOptions = () => { if ( PersistSettings ) GameOptions.Current.Save( OptionsPath ); },
 		SaveLanguage = language =>
 		{
@@ -315,6 +323,36 @@ internal sealed class GameFlow : IDisposable
 		Menu?.Stack.Update( Context, input );
 		foreach ( var entity in Entity.All.ToArray() )
 			entity.Update();
+		// After the frame's input, so the options screen that asked for it is not torn down while it runs.
+		if ( pendingLanguage != null && Level == null && Menu != null )
+		{
+			var selected = Menu.Selected.Level;
+			ShowFrontEnd( selected );
+			Menu?.ShowOptions();
+		}
+	}
+
+	/// <summary>
+	/// [EXT:live-language] Switches to <see cref="pendingLanguage"/>: the language, the string table and the fonts. Caches of
+	/// language data follow <see cref="GameLanguage.Version"/>; screens are rebuilt by the caller.
+	/// </summary>
+	private void ApplyPendingLanguage()
+	{
+		var name = pendingLanguage;
+		pendingLanguage = null;
+		if ( name == null || string.Equals( name, GameLanguage.Current.Name, StringComparison.OrdinalIgnoreCase ) )
+			return;
+		try
+		{
+			var language = GameLanguage.Select( name );
+			Strings = UiStringTable.Load( language );
+			Context = new UiContext( Strings, UiFonts.Load( language ), Context.Models );
+			Log.Trace( $"Language: {language}" );
+		}
+		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or ArgumentException )
+		{
+			Log.Warning( $"Language {name} could not be loaded ({exception.Message}); keeping {GameLanguage.Current.Name}." );
+		}
 	}
 
 	/// <summary>The Theme Park Inc viewer's frame: Esc quits, P pauses and resumes, the camera moves as in a park.</summary>

@@ -63,9 +63,17 @@ public static class OnlineStrings
 
 	private static StringFile? uiText, errors, chat, themes;
 	private static bool loadFailed;
+	private static int loadedVersion = -1;
 
 	private static string[]? Table( ref StringFile? cache, string name )
 	{
+		// A language change drops every table (and a failure of the previous language).
+		if ( loadedVersion != GameLanguage.Version )
+		{
+			uiText = errors = chat = themes = null;
+			loadFailed = false;
+			loadedVersion = GameLanguage.Version;
+		}
 		if ( cache == null && !loadFailed && GameLanguage.IsSelected )
 		{
 			try { cache = GameLanguage.Current.LoadStrings( name ); }

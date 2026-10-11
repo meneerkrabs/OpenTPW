@@ -18,6 +18,7 @@ internal sealed class ChatOverlay : IDisposable
 	private readonly OnlineSession session;
 	private TextRenderer? renderer;
 	private FontAtlas? font;
+	private int fontVersion = -1;
 	private readonly TextBatch batch = new();
 	private string lastText = "";
 	private TextLayoutResult? layout;
@@ -29,7 +30,11 @@ internal sealed class ChatOverlay : IDisposable
 	{
 		if ( session.ChatLines.Count == 0 )
 			return;
-		font ??= new FontAtlas( GameLanguage.Current.LoadFont( "GAME8AA.bf4" ) );
+		if ( font == null || fontVersion != GameLanguage.Version )
+		{
+			font = new FontAtlas( GameLanguage.Current.LoadFont( "GAME8AA.bf4" ) );
+			fontVersion = GameLanguage.Version;
+		}
 		renderer ??= new TextRenderer( Render.OutputDescription );
 		var text = string.Join( "\n", session.ChatLines.Skip( Math.Max( 0, session.ChatLines.Count - VisibleLines ) ) );
 		var framebuffer = Render.OverlayFramebuffer;

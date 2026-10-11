@@ -38,7 +38,8 @@ bash scripts/run.sh --game-path '/path/to/Theme Park World' --language German --
 |---|---|---|
 | Command line | `--language <name>` | `--language-data <dir>` |
 | Environment | `OPENTPW_LANGUAGE` | `OPENTPW_LANGUAGE_DATA` |
-| Settings (`App.config` / user config) | `Language` | `LanguageDataPath` |
+| `language.json` in the OpenTPW config folder (beside `display.json`), written by Options | `Language` | `LanguageDataPath` |
+| Old .NET user settings (read only when `language.json` has no choice) | `Language` | `LanguageDataPath` |
 
 Names are case-insensitive (`german` → German). Without a name: an overlay that
 holds exactly one language selects it; otherwise English if `Data/Language/English`
@@ -85,6 +86,19 @@ mkdir -p /tmp/tpw-languages
 
 About 110 MB. Only data files are extracted; the CD's installers are not needed
 and must not be run.
+
+## Switching languages
+
+[EXT:live-language] Options → OpenTPW → *Language* switches when the options are accepted, without a
+restart. In the front end the language, its string tables and its fonts are loaded at once, the
+lobby and the menu are rebuilt, and the options open again in the new language. In a park the
+choice waits: the options say it is used when the park is left, and leaving the park applies it.
+Caches of language data (UITEXT through `Localization`, the online strings, the chat font, object
+names in the object catalogue) follow `GameLanguage.Version` and reload after a switch; an advisor
+line already playing finishes in the old language. The choice is saved in `language.json`, so it
+also survives a new release unpacked in another folder (the old user settings file lived in a
+folder that depends on the program's location). The front-end smoke test switches to the second
+available language and back, and switches inside a park, checking the captured text each time.
 
 ## What uses the selected language
 
@@ -136,7 +150,7 @@ and its readback matches the CPU composite (max difference 0 on Metal).
 ## Not done
 
 - Original-style screens use the strings (UI.md); their layout remains an approximation. Supplementary labels come from the OpenTPW translated table.
-- No live language switch; Options stores the choice for the next startup.
+- The language switches live in the front end; inside a park it waits until the park is left (see "Switching languages").
 - The `--advisor-say` speech/lip-sync slice works; automatic gameplay triggers and banner rendering remain unimplemented.
 - `UniToMB.dat` is read and round-trip tested in all six languages (COMPATIBILITY.md); text-input UI integration remains incomplete.
 - Only the CD in `TPWORLD.ISO` was examined; other editions/patches are unverified.

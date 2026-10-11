@@ -30,7 +30,25 @@ public sealed class GameLanguage
 	public static GameLanguage Current
 	{
 		get => current ??= Resolve( FileSystem.GetAbsolutePath( "/" ), null, null );
-		set => current = value;
+		set
+		{
+			current = value;
+			Version++;
+		}
+	}
+
+	/// <summary>
+	/// Counts language changes. Caches of language data remember the version they loaded and reload when it differs, so a
+	/// language chosen in the options applies without a restart (docs/LANGUAGES.md, "Switching languages").
+	/// </summary>
+	public static int Version { get; private set; }
+
+	/// <summary>Switches <see cref="Current"/> to <paramref name="name"/> from the same data and overlay folders.</summary>
+	public static GameLanguage Select( string name )
+	{
+		var language = Resolve( Current.BaseDataDirectory, name, Current.OverlayDataDirectory ?? AvailableOverlay );
+		Current = language;
+		return language;
 	}
 
 	/// <summary>Whether a language has been selected or resolved.</summary>

@@ -266,7 +266,8 @@ public sealed class ObjectCatalog
 	{
 		if ( string.IsNullOrWhiteSpace( theme ) || theme.IndexOfAny( new[] { '/', '\\', '.' } ) >= 0 )
 			throw new ArgumentException( "Themes are plain level directory names such as 'jungle'.", nameof( theme ) );
-		var key = $"{FileSystem.GetAbsolutePath( "/" )}|{BonusDataRoot}|{theme}|{easy}";
+		// The names come from the language's OBJECT_NAMES: a catalog loaded in another language is not reused.
+		var key = $"{FileSystem.GetAbsolutePath( "/" )}|{BonusDataRoot}|{theme}|{easy}|{(GameLanguage.IsSelected ? GameLanguage.Current.Name : "")}";
 		lock ( cache )
 		{
 			if ( cache.TryGetValue( key, out var cached ) )

@@ -43,3 +43,38 @@ public class LanguageSettingsTests
 		Assert.IsNull( LanguageSettings.Choose( null, null, null, "" ) );
 	}
 }
+
+[TestClass]
+[DoNotParallelize]
+public class LanguageSwitchTests
+{
+	/// <summary>Switching the current language bumps <see cref="GameLanguage.Version"/> and reloads the UITEXT cache (needs two installed languages).</summary>
+	[TestMethod]
+	public void SelectingAnotherLanguageReloadsTheStrings()
+	{
+		var data = OriginalParkImportTests.OriginalDataPath();
+		var overlay = System.IO.Path.GetDirectoryName( data );
+		var languages = GameLanguage.Readable( data, overlay );
+		if ( languages.Count < 2 )
+			Assert.Inconclusive( "Needs a game folder with a second language (a CD-copied folder)." );
+		var previous = GameLanguage.IsSelected ? GameLanguage.Current : null;
+		var previousOverlay = GameLanguage.AvailableOverlay;
+		try
+		{
+			GameLanguage.AvailableOverlay = overlay;
+			GameLanguage.Current = GameLanguage.Resolve( data, languages[0], overlay );
+			var first = Localization.Get( UIStrings.GameOptions );
+			var version = GameLanguage.Version;
+			var selected = GameLanguage.Select( languages[1] );
+			Assert.AreEqual( languages[1], selected.Name );
+			Assert.AreEqual( version + 1, GameLanguage.Version );
+			Assert.AreEqual( OpenTPW.UI.Original.UiStringTable.Load( selected )[UIStrings.GameOptions], Localization.Get( UIStrings.GameOptions ), "Localization follows the switch" );
+			Assert.AreNotEqual( first, Localization.Get( UIStrings.GameOptions ), $"{languages[0]} and {languages[1]} name Game Options differently" );
+		}
+		finally
+		{
+			GameLanguage.AvailableOverlay = previousOverlay;
+			GameLanguage.Current = previous ?? GameLanguage.Resolve( data, null, null );
+		}
+	}
+}

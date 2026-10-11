@@ -157,15 +157,19 @@ public sealed class OnlineScreens
 			() => { if ( screen.SelectedPark is { } park ) Guard( () => Session.Download( park, path => Inspect( path, start: true ) ) ); } );
 		PanelButton( "previousIsland", "b_lobleft", 95, 1299, 249, 1453, 343, () => screen.Step( -1 ) );
 		PanelButton( "nextIsland", "b_lobright", 260, 1299, 413, 1453, 344, () => screen.Step( 1 ) );
-		// [BIN:STP-PPC:0x101834A0 item detail overlay] the selected item's name in label 0x49D9 (font 5) and its index + 1 in label 0x49DA; both hidden without a selection
-		// [APPROX:ONLINE-016] the rank is drawn as a plain number with the city's name; the original's format string is not read — evidence needed: the format string used by 0x101834A0
-		screen.Add( new UiLabel { Id = "rank", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center, Bounds = new UiRect( 844, 118, 360, 135 ), Anchor = UiAnchor.Top,
-			Text = () => screen.SelectedPark != null ? $"{screen.Selected + 1}" : city.Name } );
-		screen.Add( new UiLabel { Id = "parkName", Font = fonts => fonts.Title, Color = UiColors.Text, Align = UiAlign.Center, Bounds = new UiRect( 477, 1282, 1094, 175 ), Anchor = UiAnchor.Bottom,
-			Text = () => screen.SelectedPark?.Name ?? (localStatus.Length > 0 ? localStatus : Session.Status) } );
+		// [BIN:STP-PPC:0x101834A0 item detail overlay] label 0x49D9: the selected item's name, font slot 5, colour (252,232,7); label 0x49DA: "%d" of its index + 1, font slot 0; both hidden without a selection
+		var name = screen.Add( new UiLabel { Id = "parkName", Font = fonts => fonts.Title, Color = new Veldrid.RgbaByte( 252, 232, 7, 255 ), Align = UiAlign.Center,
+			Bounds = new UiRect( 477, 1282, 1094, 175 ), Anchor = UiAnchor.Bottom, Text = () => screen.SelectedPark?.Name ?? "" } );
+		var rank = screen.Add( new UiLabel { Id = "rank", Font = fonts => fonts.Menu, Color = UiColors.Text, Align = UiAlign.Center, Bounds = new UiRect( 844, 118, 360, 135 ), Anchor = UiAnchor.Top,
+			Text = () => (screen.Selected + 1).ToString( System.Globalization.CultureInfo.InvariantCulture ) } );
+		// [EXT:ONLINE-UI] the city's name and the fetch status while no park is shown
+		var status = screen.Add( new UiLabel { Id = "cityStatus", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center, Bounds = new UiRect( 524, 118, 1000, 135 ), Anchor = UiAnchor.Top,
+			Text = () => $"{city.Name}\n{(localStatus.Length > 0 ? localStatus : Session.Status)}" } );
 		screen.Updating += _ =>
 		{
 			enter.Enabled = screen.SelectedPark != null && Session.Busy == 0 && host.Visit != null;
+			name.Visible = rank.Visible = screen.SelectedPark != null;
+			status.Visible = screen.SelectedPark == null;
 			if ( Session.CityParks is { } parks && !ReferenceEquals( parks, screen.Parks ) )
 			{
 				screen.Parks = parks;

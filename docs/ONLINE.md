@@ -54,8 +54,7 @@ around the edges. What is traced:
   back to your own lobby, zoom and the four rotate arrows, help texts 424–431 and 435;
   five `i_sat` satellites (help 423) with a small label area each.
 - Camera (`tp.exe` 0x005DC860/0x005DCFE0): the globe stands still and the camera circles
-  it at GLOBERADIUSOUT (475) or, after a click on the globe or the zoom button,
-  GLOBERADIUSIN (200); field of view 60, pitch limited to ±1.5 rad; arrow keys, the
+  it at GLOBERADIUSOUT (475) or, after the zoom button, GLOBERADIUSIN (200); field of view 60, pitch limited to ±1.5 rad; arrow keys, the
   panel arrows, the cursor at a screen edge and the right button held turn it, and the
   turn dies away (zoomed out: step 0.15, damping 0.5; in: 0.075, 0.25). It does not spin
   by itself, and the plane and `Lpin` models in the folder are not used by the game.
@@ -66,7 +65,8 @@ around the edges. What is traced:
 - The 24 globe textures form an equirectangular world map, so a city at latitude φ and
   longitude L stands at atan2(x, z) = 30° − L, sin φ up the model's +Y axis.
 
-A click on a city's pin opens its lobby (below). Not yet built: choosing a city when
+A click on a city's pin selects it and opens its lobby (below; `tp.exe` 0x005DD530 sets the
+selected city that the lobby's top-10 request reads, 0x005E23F0). Not yet built: choosing a city when
 publishing, and the satellites' player counts.
 
 ### City lobby
@@ -77,8 +77,11 @@ the island of the park's theme (`<theme>.txt` ISLAND), the way the original buil
 islands from a theme entry at a slot counter (`tp.exe` 0x005E3210). The `citylob` panel
 holds other parks in this city (Find Parks filtered by the city, by votes), back to your
 own lobby, the online world, enter this park (download and visit) and previous/next
-island; the selected park's rank shows at the top and its name at the bottom (the item
-detail overlay, labels 0x49D9/0x49DA). The list comes from `GET /api/v1/parks?city=`,
+island; the selected park's rank (`"%d"`, font slot 0) shows at the top and its name
+(font slot 5, yellow) at the bottom (the item detail overlay, labels 0x49D9/0x49DA,
+`0x101834A0`). The top-10 request's completion builds one island per park with a running
+slot counter (0x005E23C0 → 0x005E27B0 → 0x005E3210); that each park uses its theme's
+island is inferred from the own lobby, which builds its four islands the same way. The list comes from `GET /api/v1/parks?city=`,
 which needs a login, as the original's city server did. OpenTPW's own functions (login, news, postcards,
 chat, import, account) are behind **OpenTPW online** at the top right.
 
@@ -246,6 +249,5 @@ are not claims that the original online protocol or service has been recovered.
 | ONLINE-011 | `f_wlobbg` is the panel's button background in its second rectangle (33,1057,480,1505). | The table field that names the panel's background model. |
 | ONLINE-012 | Edge steering starts once the cursor has moved on the globe screen. | Whether the original steers from the first frame. |
 | ONLINE-013 | Pins are twice the decoded (s, s, p) scale and stand on the mesh surface (radius 119.7). | The scale of the original flag node's parent and a capture of the original globe. |
-| ONLINE-014 | A click on a city's pin enters its lobby; elsewhere on the globe a click zooms. | The consumer of the selected city (`tp.exe` DAT_00f82888). |
 | ONLINE-015 | `f_lobbutbg` is the city panel's button background in its second rectangle (67,1273,438,1484). | The table field that names it. |
-| ONLINE-016 | The rank is a plain number (the city's name while no park is selected). | The format string used by 0x101834A0. |
+| ONLINE-016 | Each city-lobby island is the island of its park's theme. | The argument mapping of `tp.exe` 0x005E27B0 (what the top-10 list entry passes to 0x005E3210). |

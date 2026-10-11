@@ -420,7 +420,9 @@ internal sealed class GameFlow : IDisposable
 			cityScene?.Delete();
 			cityScene = null;
 			cityKey = key;
-			// Each park stands as its theme's island; a park of an unknown theme leaves its slot empty.
+			// [BIN:TPW-EXE:0x005E27B0 city islands] the top-10 completion builds one lobby island per list entry with a running slot counter
+			// [APPROX:ONLINE-016] each park stands as its theme's island (as the own lobby builds its four) — evidence needed: what 0x005E27B0 passes to 0x005E3210 per entry
+			// A park of an unknown theme leaves its slot empty.
 			var themes = islands.Select( park => Lobby!.Definition.Islands.FirstOrDefault( island => string.Equals( island.Level, park.Level, StringComparison.OrdinalIgnoreCase ) ) ).ToList();
 			try
 			{

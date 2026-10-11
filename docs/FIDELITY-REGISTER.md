@@ -14,9 +14,9 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **251 unresolved unique APPROX IDs**, 274 APPROX occurrences, 103 EXT occurrences, 121 DATA occurrences and 198 BIN occurrences.
+Current inventory: **250 unresolved unique APPROX IDs**, 273 APPROX occurrences, 104 EXT occurrences, 121 DATA occurrences and 199 BIN occurrences.
 
-Of these, 235 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 16 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
+Of these, 235 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 15 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
 CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.
 
@@ -30,7 +30,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | DET | 5 | 5 |
 | ECON | 33 | 33 |
 | GATE | 2 | 4 |
-| ONLINE | 16 | 16 |
+| ONLINE | 15 | 15 |
 | PATH | 14 | 15 |
 | QUEUE | 19 | 19 |
 | RIDES | 28 | 28 |
@@ -127,22 +127,21 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ECON-048 | Original-fidelity area (scope unadjudicated) | a negative path or queue cell cost (modified Costs.*) is booked as other income; balance and profit match the original's Spend of a negative amount | See source annotation/runtime register | `source/OpenTPW/Economy/EconomyApproximations.cs:44` |
 | GATE-001 | Original-fidelity area (scope unadjudicated) | an M3 in-game minute is 60 s of normal-speed simulation (3,600 fixed 60 Hz ticks), not a park-clock minute | See source annotation/runtime register | `source/OpenTPW/Client/M3GateApproximations.cs:11` |
 | GATE-006 | Original-fidelity area (scope unadjudicated) | the queue walk terms (C = 9 updates per cell with w2 = 15, the join walk J(p), each head's own remaining walk and the head-not-ready bound N x C + 2 x w2) come from enumerating OpenTPW's own port of the traced steering, including WALK-002 (corner branches), WALK-003 (separation neighbours), WALK-004 (routes) and the walkability rule (WALK-005/006); the head-not-ready bound is looser than the retired GATE-005 check, accepted by the owner on 2026-10-10 | See source annotation/runtime register | `source/OpenTPW/Client/M3GateApproximations.cs:12` |
-| ONLINE-001 | OpenTPW online extension | Word filtering uses case-insensitive substring matches in space-padded text; entry spaces act as boundaries; allowed substrings exempt matches; hit characters except spaces become asterisks. | Original word-filter code or observed original filtering behavior; the source comment says the encrypted TP.ICD implementation is unreadable. | `docs/ONLINE.md:236` |
-| ONLINE-002 | OpenTPW online extension | A leading slash introduces a chat command; other text means say. | Original chat input syntax, which is not documented in the available data. | `docs/ONLINE.md:237` |
-| ONLINE-003 | OpenTPW online extension | Response strings 102 and 110 mean failure to add an ignored player and a buddy respectively, based on nearby string blocks. | Original response-code table. | `docs/ONLINE.md:238` |
-| ONLINE-004 | OpenTPW online extension | Buddy response strings 111–113 mean online, offline and removed. | Localized variants or the original response-code table. | `docs/ONLINE.md:239` |
-| ONLINE-005 | OpenTPW online extension | Chat command semantics follow command words, response strings and weachatr.dll export names; say/emote/shout reach a room, wshout/ushout all rooms; hearing has no positional effect; blackmark creates a moderation report. | Original chat server behavior, including command reach, hearing range and blackmark handling. | `docs/ONLINE.md:240` |
-| ONLINE-006 | OpenTPW online extension | A visitor already inside a park must leave it before visiting another, inferred from CHAT_COMMANDS string 127. | Original park-visit transition behavior or an original chat/runtime trace. | `docs/ONLINE.md:241` |
-| ONLINE-007 | OpenTPW online extension | The globe camera's rates, steps and damping are applied per tick at 30 ticks per second. | The tick length of the online world's update (&#96;tp.exe&#96; 0x005DC860). | `docs/ONLINE.md:242` |
-| ONLINE-008 | OpenTPW online extension | The globe first faces Europe and the Atlantic from 30° north. | The original's starting yaw and pitch. | `docs/ONLINE.md:243` |
-| ONLINE-009 | OpenTPW online extension | Edge and right-button steering add rate × offset × step per tick to the turn velocity. | The input branches of 0x005DC860. | `docs/ONLINE.md:244` |
-| ONLINE-010 | OpenTPW online extension | The hovered city's name and park count are drawn at the top centre. | The layout of the original city labels 0x16c11/0x16c12. | `docs/ONLINE.md:245` |
-| ONLINE-011 | OpenTPW online extension | &#96;f_wlobbg&#96; is the panel's button background in its second rectangle (33,1057,480,1505). | The table field that names the panel's background model. | `docs/ONLINE.md:246` |
-| ONLINE-012 | OpenTPW online extension | Edge steering starts once the cursor has moved on the globe screen. | Whether the original steers from the first frame. | `docs/ONLINE.md:247` |
-| ONLINE-013 | OpenTPW online extension | Pins are twice the decoded (s, s, p) scale and stand on the mesh surface (radius 119.7). | The scale of the original flag node's parent and a capture of the original globe. | `docs/ONLINE.md:248` |
-| ONLINE-014 | OpenTPW online extension | A click on a city's pin enters its lobby; elsewhere on the globe a click zooms. | The consumer of the selected city (&#96;tp.exe&#96; DAT_00f82888). | `docs/ONLINE.md:249` |
-| ONLINE-015 | OpenTPW online extension | &#96;f_lobbutbg&#96; is the city panel's button background in its second rectangle (67,1273,438,1484). | The table field that names it. | `docs/ONLINE.md:250` |
-| ONLINE-016 | OpenTPW online extension | The rank is a plain number (the city's name while no park is selected). | The format string used by 0x101834A0. | `docs/ONLINE.md:251` |
+| ONLINE-001 | OpenTPW online extension | Word filtering uses case-insensitive substring matches in space-padded text; entry spaces act as boundaries; allowed substrings exempt matches; hit characters except spaces become asterisks. | Original word-filter code or observed original filtering behavior; the source comment says the encrypted TP.ICD implementation is unreadable. | `docs/ONLINE.md:239` |
+| ONLINE-002 | OpenTPW online extension | A leading slash introduces a chat command; other text means say. | Original chat input syntax, which is not documented in the available data. | `docs/ONLINE.md:240` |
+| ONLINE-003 | OpenTPW online extension | Response strings 102 and 110 mean failure to add an ignored player and a buddy respectively, based on nearby string blocks. | Original response-code table. | `docs/ONLINE.md:241` |
+| ONLINE-004 | OpenTPW online extension | Buddy response strings 111–113 mean online, offline and removed. | Localized variants or the original response-code table. | `docs/ONLINE.md:242` |
+| ONLINE-005 | OpenTPW online extension | Chat command semantics follow command words, response strings and weachatr.dll export names; say/emote/shout reach a room, wshout/ushout all rooms; hearing has no positional effect; blackmark creates a moderation report. | Original chat server behavior, including command reach, hearing range and blackmark handling. | `docs/ONLINE.md:243` |
+| ONLINE-006 | OpenTPW online extension | A visitor already inside a park must leave it before visiting another, inferred from CHAT_COMMANDS string 127. | Original park-visit transition behavior or an original chat/runtime trace. | `docs/ONLINE.md:244` |
+| ONLINE-007 | OpenTPW online extension | The globe camera's rates, steps and damping are applied per tick at 30 ticks per second. | The tick length of the online world's update (&#96;tp.exe&#96; 0x005DC860). | `docs/ONLINE.md:245` |
+| ONLINE-008 | OpenTPW online extension | The globe first faces Europe and the Atlantic from 30° north. | The original's starting yaw and pitch. | `docs/ONLINE.md:246` |
+| ONLINE-009 | OpenTPW online extension | Edge and right-button steering add rate × offset × step per tick to the turn velocity. | The input branches of 0x005DC860. | `docs/ONLINE.md:247` |
+| ONLINE-010 | OpenTPW online extension | The hovered city's name and park count are drawn at the top centre. | The layout of the original city labels 0x16c11/0x16c12. | `docs/ONLINE.md:248` |
+| ONLINE-011 | OpenTPW online extension | &#96;f_wlobbg&#96; is the panel's button background in its second rectangle (33,1057,480,1505). | The table field that names the panel's background model. | `docs/ONLINE.md:249` |
+| ONLINE-012 | OpenTPW online extension | Edge steering starts once the cursor has moved on the globe screen. | Whether the original steers from the first frame. | `docs/ONLINE.md:250` |
+| ONLINE-013 | OpenTPW online extension | Pins are twice the decoded (s, s, p) scale and stand on the mesh surface (radius 119.7). | The scale of the original flag node's parent and a capture of the original globe. | `docs/ONLINE.md:251` |
+| ONLINE-015 | OpenTPW online extension | &#96;f_lobbutbg&#96; is the city panel's button background in its second rectangle (67,1273,438,1484). | The table field that names it. | `docs/ONLINE.md:252` |
+| ONLINE-016 | OpenTPW online extension | Each city-lobby island is the island of its park's theme. | The argument mapping of &#96;tp.exe&#96; 0x005E27B0 (what the top-10 list entry passes to 0x005E3210). | `docs/ONLINE.md:253` |
 | PATH-001 | Original-fidelity area (scope unadjudicated) | PATH-ENTER: the path tool starts from a park-view click on an empty owned cell or a path cell (no menu button); ghosts are flat cell markers | See source annotation/runtime register | `source/OpenTPW/World/PathApproximations.cs:12` |
 | PATH-002 | Original-fidelity area (scope unadjudicated) | PATH-UNDO: Backspace pops the last vertex and removes the cells that segment built, without a refund | See source annotation/runtime register | `source/OpenTPW/World/PathApproximations.cs:13` |
 | PATH-003 | Original-fidelity area (scope unadjudicated) | PATH-ENDFLAG: a segment whose last cell lands on an existing path or queue cell ends the tool | See source annotation/runtime register | `source/OpenTPW/World/PathApproximations.cs:14` |
@@ -448,9 +447,8 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | ONLINE-011 | `source/OpenTPW/Online/OnlineScreens.cs:69` | [APPROX:ONLINE-011] f_wlobbg as the button background in the panel's second rectangle (33,1057,480,1505), like f_lobbutbg in the island lobby — evidence needed: the table field that names the panel's background model |
 | ONLINE-012 | `source/OpenTPW/Online/OnlineGlobeScreen.cs:50` | [APPROX:ONLINE-012] edge steering starts once the cursor has moved on this screen, so a cursor resting in a corner |
 | ONLINE-013 | `source/OpenTPW/World/Lobby/GlobeScene.cs:20` | [APPROX:ONLINE-013] pins are drawn twice the decoded (s, s, p) scale and stand on the mesh surface (radius 119.7) |
-| ONLINE-014 | `source/OpenTPW/Online/OnlineGlobeScreen.cs:67` | [APPROX:ONLINE-014] a click on a city's pin enters its lobby (UIHELPTEXT 430 "enter this city's lobby"); the original's handler for it is not traced — evidence needed: the consumer of the selected city (tp.exe DAT_00f82888) |
 | ONLINE-015 | `source/OpenTPW/Online/OnlineScreens.cs:146` | [APPROX:ONLINE-015] f_lobbutbg as the button background in the panel's second rectangle (67,1273,438,1484), as in the island lobby — evidence needed: the table field that names it |
-| ONLINE-016 | `source/OpenTPW/Online/OnlineScreens.cs:161` | [APPROX:ONLINE-016] the rank is drawn as a plain number with the city's name; the original's format string is not read — evidence needed: the format string used by 0x101834A0 |
+| ONLINE-016 | `source/OpenTPW/Client/GameFlow.cs:424` | [APPROX:ONLINE-016] each park stands as its theme's island (as the own lobby builds its four) — evidence needed: what 0x005E27B0 passes to 0x005E3210 per entry |
 | PATH-001 | `source/OpenTPW/Hud/ParkHud.cs:506` | [APPROX:PATH-001] ghosts are flat markers at the cell centres with the line's cost beside the cursor (the original draws ghost path pieces, LayLine mode \| 0x100) — evidence needed: captures of the original path tool |
 | PATH-001 | `source/OpenTPW/World/Level.Objects.cs:122` | [APPROX:PATH-001] a left click on an empty owned cell or on a path cell enters mode 1 with that cell as the start; the click handler that calls SetMode(1) is not traced and no menu button exists — evidence needed: the caller of SetMode 0x1007B320 with mode 1 |
 | PATH-002 | `source/OpenTPW/World/ParkPathBuilder.cs:324` | [APPROX:PATH-002] Backspace undo removes the last segment's new cells and undoes its counter bumps, without a refund (only the help text 443 and the vertex stack are traced) — evidence needed: the BACKSPACE handler of the path tool |
@@ -545,7 +543,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | UI-015 | `source/OpenTPW/FrontEnd/FrontEndMenu.cs:127` | [APPROX:UI-015] Game Mode asked on every park entry and each entry starts a new park (no player profiles or per-theme autosave); the original asks once when a player is created and stores it in the profile — evidence needed: PC confirmation of the Mac player/autosave flow |
 | UI-016 | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:84` | [DATA:lobby.wad:&lt;theme&gt;.txt ISLAND/SKYCOLOUR/FLYINGMESH/RAINY/LIGHTNING] [APPROX:UI-016] angle = yaw, height = camera target height — evidence needed: binary/capture |
 | UI-017 | `source/OpenTPW/World/LobbyCameraMode.cs:25` | [APPROX:UI-017] SPINSPEED as radians per 0.1 s, FOV 60, 3/s glide — evidence needed: binary or capture of the lobby camera |
-| UI-018 | `source/OpenTPW/Client/GameFlow.cs:456` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
+| UI-018 | `source/OpenTPW/Client/GameFlow.cs:458` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
 | UI-018 | `source/OpenTPW/World/Lobby/LobbyScene.cs:14` | [APPROX:UI-018] flying meshes, rain, lightning and island/gate animations are not drawn — evidence needed: binary/capture of the lobby |
 | UI-019 | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:100` | [APPROX:UI-019] fallback position when lobby.txt lacks ISLANDCAMERAPOSITION — evidence needed: none if lobby.txt is complete |
 | UI-021 | `source/OpenTPW/Hud/ParkHud.cs:82` | [DATA:UITEXT.str:448,449] currency prefix; [APPROX:UI-021] ","-grouped digits — evidence needed: locale number format of the original |
@@ -664,11 +662,12 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | ONLINE-064 | `source/OpenTPW/Online/OnlineSession.cs:25` | [EXT:ONLINE-064] Line layouts ("name: text", "name *emote*") are OpenTPW choices; the original chat panel layout is unknown. |
 | ONLINE-065 | `source/OpenTPW/Online/ChatOverlay.cs:7` | [EXT:ONLINE-065] Font choice, position (bottom-left), colours and line count are OpenTPW choices; |
 | ONLINE-066 | `source/OpenTPW/Online/OnlinePanel.cs:6` | &lt;summary&gt;[EXT:ONLINE-066] Opt-in ImGui panel; original online panel layout is not reproduced.&lt;/summary&gt; |
-| ONLINE-067 | `source/OpenTPW/Online/OnlineScreens.cs:496` | [EXT:ONLINE-067] off unless the player chooses it: the website list makes the park and the player name public on the web. |
+| ONLINE-067 | `source/OpenTPW/Online/OnlineScreens.cs:500` | [EXT:ONLINE-067] off unless the player chooses it: the website list makes the park and the player name public on the web. |
 | ONLINE-UI | `source/OpenTPW/Online/OnlineScreens.cs:29` | [EXT:ONLINE-UI] native online screens; composition of the original screens and the place of code-positioned controls are OpenTPW's |
 | ONLINE-UI | `source/OpenTPW/Online/OnlineScreens.cs:103` | [EXT:ONLINE-UI] the login and OpenTPW's own online menu (news, postcards, chat, import, account) |
-| ONLINE-UI | `source/OpenTPW/Online/OnlineScreens.cs:201` | [EXT:ONLINE-UI] OpenTPW servers let players delete their own account (docs/SERVER.md). |
-| ONLINE-UI | `source/OpenTPW/Online/OnlineScreens.cs:301` | [EXT:ONLINE-UI] the server address is an OpenTPW field; the original service address was built in |
+| ONLINE-UI | `source/OpenTPW/Online/OnlineScreens.cs:165` | [EXT:ONLINE-UI] the city's name and the fetch status while no park is shown |
+| ONLINE-UI | `source/OpenTPW/Online/OnlineScreens.cs:205` | [EXT:ONLINE-UI] OpenTPW servers let players delete their own account (docs/SERVER.md). |
+| ONLINE-UI | `source/OpenTPW/Online/OnlineScreens.cs:305` | [EXT:ONLINE-UI] the server address is an OpenTPW field; the original service address was built in |
 | ONLINE-UI | `source/OpenTPW/UI/Original/UiTextWidgets.cs:46` | [EXT:ONLINE-UI] text field art and caret are OpenTPW's; the original field template is not decoded |
 | SERVER-WEB | `source/OpenTPW.Server/WebClient.cs:8` | [EXT:SERVER-WEB] Optionally serves the browser build of the game (docs/WEB.md) from the same |
 | SETUP | `source/OpenTPW/UI/Original/Options/GameFilesScreen.cs:10` | [EXT:SETUP] OpenTPW setting; the original installer chose one folder and never changed it in game |
@@ -687,8 +686,8 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | fit-button-text | `source/OpenTPW/UI/Original/UiTextFit.cs:10` | [EXT:fit-button-text] button labels shrink to fit; the original sized its fixed strings per language by hand |
 | interface-scale-fit | `source/OpenTPW/UI/Original/UiCanvas.cs:33` | [EXT:interface-scale-fit] Above 1×, limit forced text scales to UiScaling's reference-layout fit (HiDPI-aware via PixelDensity). |
 | language | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:490` | [EXT:language] language row (original installs had one language; OpenTPW reads CD overlays) |
-| online-two-step | `source/OpenTPW/Online/OnlineScreens.cs:309` | [EXT:online-two-step] the authenticator code is an OpenTPW field; accounts without two-step login leave it empty. |
-| online-two-step | `source/OpenTPW/Online/OnlineScreens.cs:366` | [EXT:online-two-step] Shows the authenticator secret of &lt;see cref="OnlineSession.Enrollment"/&gt; as a QR code and as |
+| online-two-step | `source/OpenTPW/Online/OnlineScreens.cs:313` | [EXT:online-two-step] the authenticator code is an OpenTPW field; accounts without two-step login leave it empty. |
+| online-two-step | `source/OpenTPW/Online/OnlineScreens.cs:370` | [EXT:online-two-step] Shows the authenticator secret of &lt;see cref="OnlineSession.Enrollment"/&gt; as a QR code and as |
 | online-two-step | `source/OpenTPW/UI/Original/UiWidgets.cs:320` | [EXT:online-two-step] A QR code (for an authenticator app's &lt;c&gt;otpauth://&lt;/c&gt; URI): black modules on a white panel with |
 | online-visit | `source/OpenTPW/Client/GameFlow.cs:219` | [EXT:online-visit] read-only visits of shared parks get no advisor (the original has no visits) |
 | opentpw-page | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:381` | [EXT:opentpw-page] button to the OpenTPW page, in the free area left of the OK panel |
@@ -699,7 +698,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | strings | `source/OpenTPW/UI/Original/SupplementaryStrings.cs:10` | [EXT:strings] OpenTPW supplementary labels (display/upscaling/language rows and OpenTPW messages), not original data |
 | test-stub | `source/OpenTPW/Hud/HudStubs.cs:133` | [EXT:test-stub] price shown when Totem.sam cannot be read (the economy catalogue price is used when a park economy runs) |
 | texture-pack | `source/OpenTPW/Client/GameFlow.cs:280` | [EXT:texture-pack] the pack switch belongs to the game loop, not to its loading screen |
-| texture-pack | `source/OpenTPW/Client/GameFlow.cs:474` | [EXT:texture-pack] a running texture switch shows its progress without blocking the game |
+| texture-pack | `source/OpenTPW/Client/GameFlow.cs:476` | [EXT:texture-pack] a running texture switch shows its progress without blocking the game |
 | texture-pack | `source/OpenTPW/Compat/GraphicsSettings.cs:269` | [EXT:texture-pack] Texture choice (docs/TEXTURE-PACKS.md): empty = original textures; &lt;c&gt;enhanced&lt;/c&gt; (the default) = the |
 | texture-pack | `source/OpenTPW/FrontEnd/FrontEndSmokeTest.cs:79` | [EXT:texture-pack] Switches a throw-away pack on and off while the lobby runs: a lobby texture becomes the pack's solid |
 | texture-pack | `source/OpenTPW/Render/Assets/ImagePrepass.cs:33` | [EXT:texture-pack] Optional 1x de-artifact pre-pass for the local texture pack. |
@@ -833,7 +832,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | levels/jungle/Easymode.TPWI:loan table repayments = floor(amount/months) at 0 % APR | `source/OpenTPW/Economy/ParkLedger.cs:146` | [DATA:levels/jungle/Easymode.TPWI:loan table repayments = floor(amount/months) at 0 % APR] |
 | levels/space/rides/megacost.wad/megacost.sgn:slot 1 = "EggIt Italic"/EGGII___.TTF, not in fonts.wad | `source/OpenTPW.Files/Public/DataCorrections.cs:18` | [EXT:COMPAT-FIX sign-font-substitution] [DATA:levels/space/rides/megacost.wad/megacost.sgn:slot 1 = "EggIt Italic"/EGGII___.TTF, not in fonts.wad] |
 | lobby.wad:&lt;theme&gt;.txt ISLAND/SKYCOLOUR/FLYINGMESH/RAINY/LIGHTNING | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:84` | [DATA:lobby.wad:&lt;theme&gt;.txt ISLAND/SKYCOLOUR/FLYINGMESH/RAINY/LIGHTNING] [APPROX:UI-016] angle = yaw, height = camera target height — evidence needed: binary/capture |
-| lobby.wad:&lt;theme&gt;.txt SKYCOLOUR | `source/OpenTPW/Client/GameFlow.cs:456` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
+| lobby.wad:&lt;theme&gt;.txt SKYCOLOUR | `source/OpenTPW/Client/GameFlow.cs:458` | [DATA:lobby.wad:&lt;theme&gt;.txt SKYCOLOUR] [APPROX:UI-018] drawn as a flat backdrop — evidence needed: capture of the lobby sky |
 | lobby.wad:globe/globe.MD2 + Lo_glo1–24 | `source/OpenTPW/World/Lobby/GlobeScene.cs:56` | [DATA:lobby.wad:globe/globe.MD2 + Lo_glo1–24] tile i covers column (i − 1) mod 6 and row (i − 1) div 6 of a world map; vertex UVs put column c at atan2(x, z) = 180° − 60°·c and row r between 90° − 45°·r and 45° − 45°·r latitude |
 | lobby.wad:lobby.txt GLOBERADIUSOUT/GLOBERADIUSIN | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:36` | [DATA:lobby.wad:lobby.txt GLOBERADIUSOUT/GLOBERADIUSIN] the online globe's two camera distances; defaults equal the shipped values |
 | lobby.wad:lobby.txt ISLANDFOV/SPINSPEED/SPINRADIUS/VERTICALOFFSET | `source/OpenTPW/FrontEnd/LobbyDefinition.cs:31` | [DATA:lobby.wad:lobby.txt ISLANDFOV/SPINSPEED/SPINRADIUS/VERTICALOFFSET] defaults equal the shipped values |
@@ -1025,7 +1024,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | STP-PPC:0x10165A0C upgrade list | `source/OpenTPW/Economy/ParkEconomy.cs:629` | [BIN:STP-PPC:0x10165A0C upgrade list] game type 2 (Instant Action) lists no upgrades and shows UITEXT 27 instead |
 | STP-PPC:0x10166F1C upgrade purchase | `source/OpenTPW/Economy/ParkEconomy.cs:642` | [BIN:STP-PPC:0x10166F1C upgrade purchase] only the bank balance is checked; the upgrade is queued (0x100DF928) and waits for a mechanic, with or without mechanics on the staff |
 | STP-PPC:0x10178768 list insert | `source/OpenTPW/Hud/BuyListModel.cs:44` | [BIN:STP-PPC:0x10178768 list insert] the buy list (504, attribute 0x91 with the sorted-insert bit 0x10) inserts each row before the first row whose name is greater (wcscmp, 0x10178654); its sort word starts at 1 (column 0, the name, ascending), so equal names keep catalogue order |
-| STP-PPC:0x101834A0 item detail overlay | `source/OpenTPW/Online/OnlineScreens.cs:160` | [BIN:STP-PPC:0x101834A0 item detail overlay] the selected item's name in label 0x49D9 (font 5) and its index + 1 in label 0x49DA; both hidden without a selection |
+| STP-PPC:0x101834A0 item detail overlay | `source/OpenTPW/Online/OnlineScreens.cs:160` | [BIN:STP-PPC:0x101834A0 item detail overlay] label 0x49D9: the selected item's name, font slot 5, colour (252,232,7); label 0x49DA: "%d" of its index + 1, font slot 0; both hidden without a selection |
 | STP-PPC:0x1018E254 sign text builder | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:110` | [BIN:STP-PPC:0x1018E254 sign text builder] with only one text, probes the UTF-16 string at len/2, then len/2-1, len/2+1, len/2-2, ... (len probes) for U+0020; the first hit splits it into the characters before it (line 1) and those after it (line 2); no hit leaves line 1 whole and line 2 empty |
 | STP-PPC:0x1018E254 sign text builder | `source/OpenTPW/World/Objects/ObjectSigns.cs:58` | [BIN:STP-PPC:0x1018E254 sign text builder] one name string is split at its middle space (SignCanvas.SplitAtMiddleSpace); a caller may instead pass the two lines (text slot 0 and 1) explicitly |
 | STP-PPC:0x1019B394 node lookup | `source/OpenTPW/World/Advisor.cs:25` | [BIN:STP-PPC:0x1019B394 node lookup] mouth nodes 1–5 (stored in order by 0x10006264) are found by case-insensitive name "mouth - normal", "aah", "eee", "ooh", "sss" through the jump table at data 0x518B4; node 1 is shown while silent |
@@ -1053,5 +1052,6 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | TPW-EXE:0x005DC860 globe edge scroll | `source/OpenTPW/Online/OnlineGlobeScreen.cs:17` | [BIN:TPW-EXE:0x005DC860 globe edge scroll] the cursor within 1% of the 2048×1536 canvas edge steers the globe |
 | TPW-EXE:0x005DC860 globe pick | `source/OpenTPW/World/Lobby/GlobeScene.cs:17` | [BIN:TPW-EXE:0x005DC860 globe pick] the cursor ray meets a sphere of radius 116 (r² 13456); a city within 10 units (d² &lt; 100) of that point is hovered |
 | TPW-EXE:0x005DC860 globe right button | `source/OpenTPW/Online/OnlineGlobeScreen.cs:56` | [BIN:TPW-EXE:0x005DC860 globe right button] holding the right button steers by the cursor's offset from the screen centre |
-| TPW-EXE:0x005DD530 online globe input | `source/OpenTPW/Online/OnlineGlobeScreen.cs:66` | [BIN:TPW-EXE:0x005DD530 online globe input] a click on the globe toggles zoomed in/out |
+| TPW-EXE:0x005DD530 online globe input | `source/OpenTPW/Online/OnlineGlobeScreen.cs:66` | [BIN:TPW-EXE:0x005DD530 online globe input] a click (event 0x10005) on a hovered pin selects that city (DAT_00f82888) and switches to its lobby, whose top-10 request reads it (0x005E23F0); zooming is the zoom button (event 0x10006, param 2) |
+| TPW-EXE:0x005E27B0 city islands | `source/OpenTPW/Client/GameFlow.cs:423` | [BIN:TPW-EXE:0x005E27B0 city islands] the top-10 completion builds one lobby island per list entry with a running slot counter |
 | TPW-EXE:0x005E3210 lobby island | `source/OpenTPW/World/Lobby/LobbyScene.cs:25` | [BIN:TPW-EXE:0x005E3210 lobby island] islands are built from a theme's ISLAND entry at the caller's slot counter, at that slot's ISLANDCAMERAPOSITION and the ISLAND height and angle |

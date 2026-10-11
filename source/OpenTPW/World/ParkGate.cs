@@ -8,10 +8,12 @@ namespace OpenTPW;
 /// <para>
 /// The original's door routine is the Feral Mac function at <c>0x108ee4</c> (the maexah fork's PC
 /// <c>FUN_00519ef0</c>): with the requested state in its first argument it writes the world's
-/// <c>mParkClosed</c> (Mac <c>world+0x1DA730</c>, the field the getter <c>0x1091ac</c> reads), then
+/// <c>mParkClosed</c> (decoded from the Mac routine: the word at <c>world+0x1DA710</c>; the fork names PC
+/// <c>+0x1da710</c>), then
 /// commands the gate's script, then walks the park's thing chain and closes or opens every thing a
 /// guest may be offered (thing <c>+0x2E</c> bit 4; the walk calls <c>0xde704</c> to close and
-/// <c>0xde7e4</c> to open). Closing commands the gate only when the gate reports itself open and the
+/// <c>0xde7e4</c> to open). [BIN:STP-PPC:0x108ee4 door routine: prologue, second-argument split, world field
+/// load <c>addis 0x1E0000</c> + <c>-0x58F0</c>] Closing commands the gate only when the gate reports itself open and the
 /// guest census <c>0xc3684</c> answers zero; opening always writes the open command.
 /// </para>
 /// <para>

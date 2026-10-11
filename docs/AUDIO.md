@@ -109,8 +109,8 @@ implemented yet.
 | AUDIO-003 | Pitch, delay, 3D position and reverb of a sound are not applied | `TbSoundSampleInfo` pitch units and the placeholder 3D update |
 | AUDIO-004 | The park view's 0xBD click modifier is not mapped to a key | The input flag behind `0x1017F618` |
 | AUDIO-005 | A sentence's next segment is chosen when the current one starts | When `CPlaceHolderSentence::SoundCallback` (`0x1001A1F0`) runs relative to the end of a sample |
-| AUDIO-006 | De-emphasis is a first-order bilinear-transform shelf of the published 50/15 µs and J.17 curves at the stream's rate | The original decoder's filter realization or an emphasised original stream |
-| AUDIO-007 | A failed frame CRC is counted while the frame still decodes; no shipped frame carries a CRC word | The original player's behaviour on a failed frame CRC |
+| AUDIO-013 | De-emphasis is a first-order bilinear-transform shelf of the published 50/15 µs and J.17 curves at the stream's rate | The original decoder's filter realization or an emphasised original stream |
+| AUDIO-014 | A failed frame CRC is counted while the frame still decodes; no shipped frame carries a CRC word | The original player's behaviour on a failed frame CRC |
 
 The option volumes keep their 0–10 steps (UI-030); the original stores percentages whose
 defaults are `DefaultVolume.*` in `sound.sam` (effects 75, music 60, speech 75, movie 100).

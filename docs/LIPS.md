@@ -209,7 +209,7 @@ construction — the external anchors are the catalogue check value, the Layer I
 rows and the four MPEG-1 rows, not the Layer II tests. A mismatch is counted
 (`Mp2Audio.CrcChecks`/`CrcFailures`) and the frame still decodes: 2.4.3.1 only
 *recommends* concealment (muting or repetition), and no shipped frame carries a
-CRC word at all, so the policy cannot regress the corpus (AUDIO-007).
+CRC word at all, so the policy cannot regress the corpus (AUDIO-014).
 
 **De-emphasis**: emphasis '01' (50/15 µs) and '11' (CCITT J.17) decode through a
 first-order shelving filter after synthesis, per channel, at the stream's sample
@@ -218,7 +218,7 @@ pre-emphasis (zero 15 µs, pole 50 µs; high-frequency shelf 15/50 = −10.46 dB
 J.17 inverts the published insertion-loss curve
 10·log₁₀((75+(ω/3000)²)/(1+(ω/3000)²)) dB (zero 1/(3000·√75) s, pole 1/3000 s;
 −18.75 dB shelf at high frequencies after the round trip's absolute pad cancels),
-both realized at unity DC gain via the bilinear transform (AUDIO-006; the
+both realized at unity DC gain via the bilinear transform (AUDIO-013; the
 standards give only the analogue characteristic, not a digital realization).
 
 **Corpus inventory** (every SDT entry of the available editions, frames walked
@@ -439,6 +439,6 @@ sequence choice among the decoded `Advisor<level>m<n>` clips for idle/talk poses
 and device latency still need verification. Layer I
 codec support is implemented; automatic sound events are not wired by that change.
 The codec's CRC mismatch policy and de-emphasis realization are documented
-approximations (AUDIO-006/007): no shipped frame exercises either path, so the
+approximations (AUDIO-013/014): no shipped frame exercises either path, so the
 original player's concealment behaviour and filter realization remain unknown.
 Capture comparison remains necessary before claiming original fidelity.

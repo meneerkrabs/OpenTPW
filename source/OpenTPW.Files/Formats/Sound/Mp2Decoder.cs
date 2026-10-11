@@ -125,7 +125,7 @@ public static partial class Mp2Decoder
 			if ( header.Crc )
 			{
 				crcChecks++;
-				// [APPROX:AUDIO-007] A CRC mismatch is counted and the frame still decodes; ISO/IEC 11172-3 2.4.3.1 only
+				// [APPROX:AUDIO-014] A CRC mismatch is counted and the frame still decodes; ISO/IEC 11172-3 2.4.3.1 only
 				// recommends concealment (muting or repeating), and no shipped TPW frame carries a CRC word — evidence
 				// needed: the original player's behaviour on a failed frame CRC
 				if ( !VerifyCrc( data.Slice( offset, header.FrameBytes ), header ) )
@@ -316,7 +316,7 @@ public static partial class Mp2Decoder
 	/// frequencies). The network's absolute 18.75 dB pad cancels in the encoder/decoder
 	/// round trip, so both curves are realized at unity gain at DC.
 	/// </summary>
-	// [APPROX:AUDIO-006] the standards specify only the analogue de-emphasis characteristic; this realization is the
+	// [APPROX:AUDIO-013] the standards specify only the analogue de-emphasis characteristic; this realization is the
 	// bilinear transform of the first-order shelf at the stream's sample rate, J.17 normalized to unity DC gain —
 	// evidence needed: the original decoder's filter realization or an emphasised original stream
 	private sealed class DeEmphasis

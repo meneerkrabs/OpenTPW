@@ -41,7 +41,10 @@ internal sealed class FrameStats
 		Log.Trace( $"Frame stats: {count / seconds:F1} fps, frame avg {average:F2} ms, p99 {p99:F2} ms, max {max:F2} ms; " +
 			$"CPU {cpuSeconds / seconds:F2} cores ({cpuSeconds * 1000 / count:F2} ms per frame); " +
 			$"allocated {(allocated - allocatedAtStart) / seconds / 1e6:F1} MB/s ({(allocated - allocatedAtStart) / 1024.0 / count:F0} KB per frame); " +
-			$"GC gen0/1/2 {GC.CollectionCount( 0 ) - gen0AtStart}/{GC.CollectionCount( 1 ) - gen1AtStart}/{GC.CollectionCount( 2 ) - gen2AtStart}." );
+			$"GC gen0/1/2 {GC.CollectionCount( 0 ) - gen0AtStart}/{GC.CollectionCount( 1 ) - gen1AtStart}/{GC.CollectionCount( 2 ) - gen2AtStart}; " +
+			$"model parts per frame {(double)ModelEntity.DrawnParts / count:F0} drawn, {(double)ModelEntity.CulledParts / count:F0} outside the view." );
+		ModelEntity.DrawnParts = 0;
+		ModelEntity.CulledParts = 0;
 
 		frameMilliseconds.Clear();
 		windowStart = now;

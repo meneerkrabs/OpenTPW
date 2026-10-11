@@ -13,5 +13,7 @@ public class Sky : ModelEntity
 
 		Model = Primitives.Cube.GenerateModel( material );
 		Scale = new Vector3( -10000f );
+		// The camera is always inside the sky box, so testing it against the view would never skip the draw.
+		Cullable = false;
 	}
 }

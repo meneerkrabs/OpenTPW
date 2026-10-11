@@ -15,6 +15,9 @@ public class Model : Asset
 	private ModelVertexBuffer vertices = null!;
 	private bool released;
 
+	/// <summary>Model-space bounds of the vertex positions (null without vertices); used to skip draws outside the view.</summary>
+	public (System.Numerics.Vector3 Min, System.Numerics.Vector3 Max)? Bounds { get; private set; }
+
 	public Model( Vertex[] vertices, uint[] indices, Material material ) : this( vertices, indices, material, false )
 	{
 	}
@@ -46,6 +49,22 @@ public class Model : Asset
 	private void SetupMesh( Vertex[] vertices, bool dynamicVertices = false )
 	{
 		this.vertices = new ModelVertexBuffer( Device, vertices, dynamicVertices );
+		Bounds = BoundsOf( vertices );
+	}
+
+	private static (System.Numerics.Vector3, System.Numerics.Vector3)? BoundsOf( Vertex[] vertices )
+	{
+		if ( vertices.Length == 0 )
+			return null;
+		var min = new System.Numerics.Vector3( float.PositiveInfinity );
+		var max = new System.Numerics.Vector3( float.NegativeInfinity );
+		foreach ( var vertex in vertices )
+		{
+			var position = vertex.Position.GetSystemVector3();
+			min = System.Numerics.Vector3.Min( min, position );
+			max = System.Numerics.Vector3.Max( max, position );
+		}
+		return (min, max);
 	}
 
 	private void SetupMesh( Vertex[] vertices, uint[] indices, bool dynamicVertices )
@@ -67,7 +86,11 @@ public class Model : Asset
 	/// vertex count and is read when the model is drawn (the frame's command list copies it), so the
 	/// caller may keep reusing it.
 	/// </summary>
-	public void UpdateVertices( Vertex[] vertices ) => this.vertices.Set( vertices );
+	public void UpdateVertices( Vertex[] vertices )
+	{
+		this.vertices.Set( vertices );
+		Bounds = BoundsOf( vertices );
+	}
 
 	internal void Draw()
 	{

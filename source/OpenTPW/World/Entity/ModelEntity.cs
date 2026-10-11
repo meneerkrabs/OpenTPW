@@ -18,6 +18,12 @@ public partial class ModelEntity : Entity
 	/// <summary>Fog distance multiplier for scenes that are not the park (e.g. the online globe, which has no fog).</summary>
 	public float? ViewDistanceScale { get; set; }
 
+	/// <summary>Skips the draw while the model's bounds lie wholly outside the view (off for the sky box around the camera).</summary>
+	public bool Cullable { get; set; } = true;
+
+	/// <summary>Model parts drawn and skipped as outside the view since the counters were last read (<c>--frame-stats</c>).</summary>
+	internal static int DrawnParts, CulledParts;
+
 	public ModelEntity()
 	{
 		Spawn();
@@ -33,9 +39,17 @@ public partial class ModelEntity : Entity
 		if ( Model == null || Hidden )
 			return;
 
+		var model = TransformOverride ?? ModelMatrix;
+		if ( Cullable && Model.Bounds is { } bounds && Frustum.IsOutside( bounds.Min, bounds.Max, model * Camera.ViewMatrix * Camera.ProjMatrix ) )
+		{
+			CulledParts++;
+			return;
+		}
+		DrawnParts++;
+
 		var uniformBuffer = new ObjectUniformBuffer
 		{
-			g_mModel = TransformOverride ?? ModelMatrix,
+			g_mModel = model,
 			g_mView = Camera.ViewMatrix,
 			g_mProj = Camera.ProjMatrix,
 			g_vLightPos = LightPosition ?? Level?.SunLight?.Position ?? Vector3.Zero,

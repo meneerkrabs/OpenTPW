@@ -70,7 +70,7 @@ class GuardRound2(unittest.TestCase):
                       for line in read(world / name).splitlines() if self.forbidden.search(line))
         self.assertEqual(hits, [
             'Advisor.cs: private readonly AdvisorMouth mouth = new( new Random() );',
-            # Online-globe camera state (4d671cf): driven only by the globe screen's buttons and keys.
+            # The online globe's orbit camera (#25): view angles, zoom and their damping, never read by the park.
             'GlobeCameraMode.cs: private static float pitch = 0.5f;',
             'GlobeCameraMode.cs: private static float pitchVelocity;',
             'GlobeCameraMode.cs: private static float radius = 475f;',

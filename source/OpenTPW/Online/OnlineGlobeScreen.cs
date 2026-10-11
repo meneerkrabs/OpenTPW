@@ -21,7 +21,7 @@ public sealed class OnlineGlobeScreen : UiScreen
 	private NVector2? firstMouse;
 	private bool mouseMoved;
 
-	public OnlineGlobeScreen( Func<GlobeScene?> globe ) : base( "onlineWorld" )
+	public OnlineGlobeScreen( Func<GlobeScene?> globe, string name = "onlineWorld" ) : base( name )
 	{
 		this.globe = globe;
 		HidesBelow = true;
@@ -29,6 +29,9 @@ public sealed class OnlineGlobeScreen : UiScreen
 
 	/// <summary>The city under the cursor this frame.</summary>
 	public CityInfo? Hovered { get; private set; }
+
+	/// <summary>A click on a city's pin: enter its lobby.</summary>
+	public Action<CityInfo>? CityClicked { get; set; }
 
 	public override bool Update( UiContext context, UiInput input )
 	{
@@ -60,13 +63,15 @@ public sealed class OnlineGlobeScreen : UiScreen
 				GlobeCameraMode.Steer( steerX, steerY, context.Delta );
 			if ( !overUi && globe() is { } scene && Ray( input.Mouse, canvas ) is { } ray )
 				Hovered = scene.Pick( ray.Origin, ray.Direction );
-			// [BIN:TPW-EXE:0x005DD530 online globe input] a click on the globe toggles zoomed in/out
-			if ( input.LeftReleased && !overUi )
-				GlobeCameraMode.ToggleZoom();
+			// [BIN:TPW-EXE:0x005DD530 online globe input] a click (event 0x10005) on a hovered pin selects that city (DAT_00f82888) and switches to its lobby, whose top-10 request reads it (0x005E23F0); zooming is the zoom button (event 0x10006, param 2)
+			if ( input.LeftReleased && !overUi && Hovered is { } city )
+				CityClicked?.Invoke( city );
 		}
 		// Arrow keys turn the globe instead of moving the focus; the right button steers instead of going back.
 		var forwarded = input with { Pressed = input.Pressed & ~(UiKeys.Left | UiKeys.Right | UiKeys.Up | UiKeys.Down), RightPressed = false };
-		return base.Update( context, forwarded );
+		base.Update( context, forwarded );
+		// The globe covers the whole screen: nothing below (a park) gets the input.
+		return true;
 	}
 
 	/// <summary>World-space ray through a canvas pixel, from the current camera.</summary>

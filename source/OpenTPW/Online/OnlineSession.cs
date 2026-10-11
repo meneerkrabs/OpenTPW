@@ -188,12 +188,12 @@ public sealed class OnlineSession : IDisposable
 	public void Login( string name, string password, string? code = null ) => WithClient( client => LoginCore( client, name, password, code ) );
 
 	/// <summary>Finishes <see cref="Enrollment"/> with the first code from the authenticator app.</summary>
-	public void ConfirmEnrollment( string code ) => WithClient( async client =>
+	public void ConfirmEnrollment( string code, string? emailCode = null ) => WithClient( async client =>
 	{
 		var enrollment = Enrollment ?? throw new InvalidOperationException( "No two-step setup is waiting." );
 		try
 		{
-			var session = await client.ConfirmEnrollmentAsync( enrollment, code );
+			var session = await client.ConfirmEnrollmentAsync( enrollment, code, emailCode );
 			Post( () => Enrollment = null );
 			return LoggedIn( session );
 		}
@@ -206,6 +206,35 @@ public sealed class OnlineSession : IDisposable
 	} );
 
 	public void CancelEnrollment() => Enrollment = null;
+
+	/// <summary>The game language, sent with requests whose answer is an e-mail.</summary>
+	private static string? MailLanguage => GameLanguage.IsSelected ? GameLanguage.Current.Name : null;
+
+	/// <summary>[EXT:online-email] Sends a code to the address of the waiting setup's new account.</summary>
+	public void SendEnrollmentEmail( string email ) => WithClient( async client =>
+	{
+		var enrollment = Enrollment ?? throw new InvalidOperationException( "No two-step setup is waiting." );
+		await client.SendEnrollmentEmailAsync( enrollment, email, MailLanguage );
+		return OnlineStrings.Get( OnlineLabel.EmailCodeSent );
+	} );
+
+	/// <summary>[EXT:online-email] Asks the server to send a recovery code for a player name or e-mail address.</summary>
+	public void RequestRecovery( string nameOrEmail ) => WithClient( async client =>
+	{
+		await client.RequestRecoveryAsync( nameOrEmail, MailLanguage );
+		return OnlineStrings.Get( OnlineLabel.RecoveryCodeSent );
+	} );
+
+	/// <summary>[EXT:online-email] Sets a new password with the recovery code; then log in as usual.</summary>
+	public void ConfirmRecovery( string nameOrEmail, string code, string password, bool resetTwoStep ) => WithClient( async client =>
+	{
+		await client.ConfirmRecoveryAsync( nameOrEmail, code, password, resetTwoStep, MailLanguage );
+		Post( () => PasswordReset = true );
+		return OnlineStrings.Get( OnlineLabel.PasswordChanged );
+	} );
+
+	/// <summary>A recovery finished: the screen returns to the login dialog.</summary>
+	public bool PasswordReset { get; internal set; }
 
 	private string? Enroll( TotpEnrollment enrollment )
 	{
@@ -265,6 +294,7 @@ public sealed class OnlineSession : IDisposable
 		Inbox = Array.Empty<PostcardSummary>();
 		News = null;
 		Cities = Array.Empty<CityInfo>();
+		CityParks = null;
 		CurrentRoom = ChatProtocol.LobbyRoom;
 		ChatLines.Clear();
 	}
@@ -294,6 +324,18 @@ public sealed class OnlineSession : IDisposable
 		Run( () => work( client ) );
 	}
 
+	/// <summary>Parks of the city whose lobby is open, most votes first; null while they are being fetched.</summary>
+	public IReadOnlyList<ParkSummary>? CityParks { get; private set; }
+
+	/// <summary>Fetches a city's parks for its lobby (the top ten become islands, the rest are listed).</summary>
+	public void FetchCityParks( int cityId ) => WithClient( async client =>
+	{
+		Post( () => CityParks = null );
+		var list = await client.ListParksAsync( sort: "votes", cityId: cityId );
+		Post( () => CityParks = list.Parks );
+		return list.Parks.Count == 0 ? OnlineStrings.Ui( OnlineStrings.NoSearchResults, "No search results" ) : null;
+	} );
+
 	/// <summary>Fetches the cities for the globe; no login needed. Older servers have none.</summary>
 	public void FetchCities() => WithClient( async client =>
 	{
@@ -310,16 +352,16 @@ public sealed class OnlineSession : IDisposable
 		return news == null || (news.Game.Length == 0 && news.System.Length == 0) ? OnlineStrings.Get( OnlineLabel.NoNews ) : null;
 	} );
 
-	public void RefreshParks( string? search, string sort = "recent" ) => WithClient( async client =>
+	public void RefreshParks( string? search, string sort = "recent", int? cityId = null ) => WithClient( async client =>
 	{
-		var list = await client.ListParksAsync( search, sort );
+		var list = await client.ListParksAsync( search, sort, cityId: cityId );
 		Post( () => Parks = list.Parks );
 		return list.Parks.Count == 0 ? OnlineStrings.Ui( OnlineStrings.NoSearchResults, "No search results" ) : null;
 	} );
 
-	public void Publish( ParkPackage package, bool showOnWebsite = false ) => WithClient( async client =>
+	public void Publish( ParkPackage package, bool showOnWebsite = false, int cityId = 0 ) => WithClient( async client =>
 	{
-		await client.UploadParkAsync( package, showOnWebsite: showOnWebsite );
+		await client.UploadParkAsync( package, showOnWebsite: showOnWebsite, cityId: cityId );
 		return OnlineStrings.Ui( OnlineStrings.ParkPublished, "PARK PUBLISHED" ).Replace( "\n\n", " " );
 	} );
 

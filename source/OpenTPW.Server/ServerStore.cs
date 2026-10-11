@@ -24,6 +24,8 @@ public sealed class AccountRecord
 	public DateTimeOffset? TotpResetUtc { get; set; }
 	/// <summary>The last reset request applied (file name, time and size), so a copy left behind is never applied twice.</summary>
 	public string? TotpResetRequest { get; set; }
+	/// <summary>Confirmed e-mail address for account recovery (one account per address); null for older accounts.</summary>
+	public string? Email { get; set; }
 }
 
 public sealed class ParkRecord
@@ -110,7 +112,31 @@ public sealed class ServerStore
 		DateTimeOffset Expires, bool NewAccount )
 	{
 		public List<DateTimeOffset> Failures { get; } = new();
+		/// <summary>The address a code was sent to, the code's hash and its wrong attempts.</summary>
+		public string? Email { get; set; }
+		public string? EmailCodeHash { get; set; }
+		public int EmailFailures { get; set; }
 	}
+
+	/// <summary>A recovery code waiting for its use (memory only), by account key.</summary>
+	private sealed class RecoveryCode
+	{
+		public required string CodeHash { get; init; }
+		public required DateTimeOffset Expires { get; init; }
+		public int Failures { get; set; }
+	}
+
+	private readonly Dictionary<string, RecoveryCode> recoveryCodes = new();
+	/// <summary>
+	/// Recent account e-mails per player name and per address, for <see cref="MaximumEmailsPerHour"/>. Kept apart from the
+	/// setups, so registering again does not reset the count, and per address, so nobody can flood someone else's inbox.
+	/// </summary>
+	private readonly Dictionary<string, List<DateTimeOffset>> emailSends = new();
+
+	public static readonly TimeSpan EmailCodeLifetime = TimeSpan.FromMinutes( 15 );
+	public const int MaximumEmailsPerHour = 3;
+	public const int MaximumEmailCodeFailures = 5;
+	public const int MaximumEmailLength = 254;
 
 	public const int MaximumPendingEnrollments = 1000;
 	public static readonly TimeSpan EnrollmentLifetime = TimeSpan.FromMinutes( 10 );
@@ -225,15 +251,24 @@ public sealed class ServerStore
 
 	public LoginOutcome Login( string name, string password, string? code = null )
 	{
-		var account = FindAccount( name ?? "" );
+		AccountRecord? account;
+		string? salt, hash;
+		lock ( gate )
+		{
+			account = accounts.GetValueOrDefault( OnlineText.NormalizeName( name ?? "" ) );
+			(salt, hash) = (account?.Salt, account?.Hash);
+		}
 		// Hash anyway for unknown names so timing does not reveal which names exist.
-		var valid = PasswordHasher.Verify( password ?? "", account?.Salt ?? "AAAAAAAAAAAAAAAAAAAAAA==", account?.Hash ?? "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", account?.Iterations ?? options.PasswordIterations );
+		var valid = PasswordHasher.Verify( password ?? "", salt ?? "AAAAAAAAAAAAAAAAAAAAAA==", hash ?? "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", account?.Iterations ?? options.PasswordIterations );
 		if ( account == null || !valid )
 			throw new StoreException( 401, "Invalid username or password." );
 		if ( IsBanned( account.Name ) )
 			throw new StoreException( 403, "This player is banned from this server." );
 		lock ( gate )
 		{
+			// The password was checked outside the lock: a recovery or deletion in between makes it stale.
+			if ( !ReferenceEquals( accounts.GetValueOrDefault( account.Key ), account ) || account.Salt != salt || account.Hash != hash )
+				throw new StoreException( 401, "Invalid username or password." );
 			ApplyTotpReset( account );
 			if ( account.TotpEnroll )
 				return new LoginOutcome( null, Enroll( account.Name, account.Key, account.Salt, account.Hash, account.Iterations, newAccount: false ) );
@@ -279,7 +314,7 @@ public sealed class ServerStore
 	/// Finishes a registration or a reset enrollment with its ticket and the first authenticator code; returns a session.
 	/// A wrong ticket counts as no setup at all, so only whoever started the setup can confirm it or use up its attempts.
 	/// </summary>
-	public SessionToken ConfirmEnrollment( string name, string ticket, string code )
+	public SessionToken ConfirmEnrollment( string name, string ticket, string code, string? emailCode = null )
 	{
 		var key = OnlineText.NormalizeName( name ?? "" );
 		var ticketHash = PasswordHasher.HashToken( ticket ?? "" );
@@ -289,12 +324,17 @@ public sealed class ServerStore
 			if ( !enrollments.TryGetValue( key, out var pending )
 				|| !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals( System.Text.Encoding.ASCII.GetBytes( pending.TicketHash ), System.Text.Encoding.ASCII.GetBytes( ticketHash ) ) )
 				throw new StoreException( 400, "No two-step setup is waiting for this name; register or log in again." );
+			// A new account on a server that requires e-mail needs the code sent to its address first.
+			if ( pending.NewAccount && (options.RequireEmail || pending.Email != null) )
+				VerifyEmailCode( pending, emailCode );
 			VerifyCode( key, pending.Secret, code, pending.Failures );
 			AccountRecord account;
 			if ( pending.NewAccount )
 			{
 				CheckRegistration( key );
-				account = new AccountRecord { Name = pending.Name, Key = key, Salt = pending.Salt, Hash = pending.Hash, Iterations = pending.Iterations, CreatedUtc = clock() };
+				if ( pending.Email != null && FindByEmail( pending.Email ) != null )
+					throw new StoreException( 409, "This e-mail address already belongs to an account." );
+				account = new AccountRecord { Name = pending.Name, Key = key, Salt = pending.Salt, Hash = pending.Hash, Iterations = pending.Iterations, CreatedUtc = clock(), Email = pending.Email };
 				accounts.Add( key, account );
 			}
 			else if ( !accounts.TryGetValue( key, out account! ) || account.Salt != pending.Salt || !account.TotpEnroll )
@@ -310,6 +350,164 @@ public sealed class ServerStore
 		}
 	}
 
+	/// <summary>
+	/// Stores <paramref name="email"/> on a waiting setup and returns the e-mail with its new code (the caller sends it
+	/// outside the lock). Needs the setup's ticket; at most <see cref="MaximumEmailsPerHour"/> codes per setup.
+	/// </summary>
+	public EmailMessage PrepareEnrollmentEmail( string name, string ticket, string email, string? language )
+	{
+		var key = OnlineText.NormalizeName( name ?? "" );
+		var address = NormalizeEmail( email ) ?? throw new StoreException( 400, "Enter a valid e-mail address." );
+		var ticketHash = PasswordHasher.HashToken( ticket ?? "" );
+		lock ( gate )
+		{
+			PruneEnrollments();
+			if ( !enrollments.TryGetValue( key, out var pending ) || !pending.NewAccount
+				|| !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals( System.Text.Encoding.ASCII.GetBytes( pending.TicketHash ), System.Text.Encoding.ASCII.GetBytes( ticketHash ) ) )
+				throw new StoreException( 400, "No two-step setup is waiting for this name; register or log in again." );
+			if ( FindByEmail( address ) != null )
+				throw new StoreException( 409, "This e-mail address already belongs to an account." );
+			var now = clock();
+			if ( !CountEmail( now, key, address ) )
+				throw new StoreException( 429, "Too many e-mails; try again later." );
+			var code = NewEmailCode();
+			// The setup lives at least as long as the code the e-mail promises.
+			if ( pending.Expires < now + EmailCodeLifetime )
+				enrollments[key] = pending = pending with { Expires = now + EmailCodeLifetime };
+			pending.Email = address;
+			pending.EmailCodeHash = PasswordHasher.HashToken( code );
+			pending.EmailFailures = 0;
+			return EmailTexts.Compose( EmailKind.VerifyAddress, language, address, code, pending.Name, options.EmailReplyTo ?? "" );
+		}
+	}
+
+	/// <summary>Call inside the lock.</summary>
+	private static void VerifyEmailCode( PendingEnrollment pending, string? emailCode )
+	{
+		if ( pending.Email == null || pending.EmailCodeHash == null )
+			throw new StoreException( 400, "Enter your e-mail address and the code sent to it.", ApiErrorReasons.EmailRequired );
+		if ( pending.EmailFailures >= MaximumEmailCodeFailures )
+			throw new StoreException( 429, "Too many wrong codes; send a new code.", ApiErrorReasons.EmailCodeInvalid );
+		if ( string.IsNullOrWhiteSpace( emailCode ) || !SameHash( pending.EmailCodeHash, PasswordHasher.HashToken( emailCode.Trim() ) ) )
+		{
+			pending.EmailFailures++;
+			throw new StoreException( 401, "The code from the e-mail is wrong.", ApiErrorReasons.EmailCodeInvalid );
+		}
+	}
+
+	/// <summary>
+	/// Starts a recovery for the account named <paramref name="nameOrEmail"/> (a player name or its e-mail address). Returns
+	/// the e-mail to send, or null when there is nothing to send (no such account, no address, too many e-mails); the
+	/// caller answers the same either way, so the answer does not tell which names or addresses exist.
+	/// </summary>
+	public EmailMessage? PrepareRecovery( string nameOrEmail, string? language )
+	{
+		lock ( gate )
+		{
+			var account = FindByNameOrEmail( nameOrEmail );
+			if ( account?.Email == null || IsBanned( account.Name ) )
+				return null;
+			var now = clock();
+			if ( !CountEmail( now, account.Key, account.Email ) )
+				return null;
+			var code = NewEmailCode();
+			recoveryCodes[account.Key] = new RecoveryCode { CodeHash = PasswordHasher.HashToken( code ), Expires = now + EmailCodeLifetime };
+			return EmailTexts.Compose( EmailKind.Recovery, language, account.Email, code, account.Name, options.EmailReplyTo ?? "" );
+		}
+	}
+
+	/// <summary>
+	/// Finishes a recovery: a fresh code from the e-mail sets a new password, and with <paramref name="resetTwoStep"/> the next
+	/// login sets up two-step login again. Every session ends. Returns the account (whose chat the caller disconnects) and
+	/// the notice e-mail to send.
+	/// </summary>
+	public (AccountRecord Account, EmailMessage Notice) ConfirmRecovery( string nameOrEmail, string code, string newPassword, bool resetTwoStep, string? language )
+	{
+		if ( !PasswordHasher.IsAcceptable( newPassword ) )
+			throw new StoreException( 400, $"Passwords must be {PasswordHasher.MinimumLength}-{PasswordHasher.MaximumLength} characters." );
+		var (salt, hash) = PasswordHasher.Hash( newPassword, options.PasswordIterations );
+		lock ( gate )
+		{
+			var account = FindByNameOrEmail( nameOrEmail );
+			if ( account == null || !recoveryCodes.TryGetValue( account.Key, out var recovery ) || recovery.Expires <= clock() )
+				throw new StoreException( 400, "This code is wrong or no longer valid; ask for a new one.", ApiErrorReasons.EmailCodeInvalid );
+			if ( string.IsNullOrWhiteSpace( code ) || !SameHash( recovery.CodeHash, PasswordHasher.HashToken( code.Trim() ) ) )
+			{
+				// A few wrong guesses use the code up.
+				if ( ++recovery.Failures >= MaximumEmailCodeFailures )
+					recoveryCodes.Remove( account.Key );
+				throw new StoreException( 400, "This code is wrong or no longer valid; ask for a new one.", ApiErrorReasons.EmailCodeInvalid );
+			}
+			recoveryCodes.Remove( account.Key );
+			account.Salt = salt;
+			account.Hash = hash;
+			account.Iterations = options.PasswordIterations;
+			if ( resetTwoStep && account.TotpSecret != null )
+			{
+				account.TotpSecret = null;
+				account.TotpEnroll = true;
+				lastCodeSteps.Remove( account.Key );
+				Save( "totp-steps.json", lastCodeSteps );
+			}
+			codeFailures.Remove( account.Key );
+			enrollments.Remove( account.Key );
+			foreach ( var session in sessions.Where( pair => pair.Value.Key == account.Key ).Select( pair => pair.Key ).ToList() )
+				sessions.Remove( session );
+			SaveSessions();
+			Save( "accounts.json", accounts.Values.ToList() );
+			var kind = resetTwoStep && account.TotpEnroll ? EmailKind.PasswordAndTwoStepChanged : EmailKind.PasswordChanged;
+			return (account, EmailTexts.Compose( kind, language, account.Email!, account.Name, account.Name, options.EmailReplyTo ?? "" ));
+		}
+	}
+
+	/// <summary>
+	/// Call inside the lock. Counts one e-mail for the player name <paramref name="key"/> and for <paramref name="address"/>;
+	/// false (and nothing counted) when either already had <see cref="MaximumEmailsPerHour"/> in the last hour.
+	/// </summary>
+	private bool CountEmail( DateTimeOffset now, string key, string address )
+	{
+		foreach ( var stale in emailSends.Where( pair => pair.Value.All( time => time <= now - TimeSpan.FromHours( 1 ) ) ).Select( pair => pair.Key ).ToList() )
+			emailSends.Remove( stale );
+		var lists = new[] { "name:" + key, "address:" + address }
+			.Select( entry => emailSends.TryGetValue( entry, out var list ) ? list : emailSends[entry] = new List<DateTimeOffset>() ).ToList();
+		foreach ( var list in lists )
+			list.RemoveAll( time => time <= now - TimeSpan.FromHours( 1 ) );
+		if ( lists.Any( list => list.Count >= MaximumEmailsPerHour ) )
+			return false;
+		foreach ( var list in lists )
+			list.Add( now );
+		return true;
+	}
+
+	/// <summary>Call inside the lock.</summary>
+	private AccountRecord? FindByNameOrEmail( string? nameOrEmail )
+	{
+		var text = (nameOrEmail ?? "").Trim();
+		if ( text.Contains( '@' ) )
+			return NormalizeEmail( text ) is { } address ? FindByEmail( address ) : null;
+		return accounts.GetValueOrDefault( OnlineText.NormalizeName( text ) );
+	}
+
+	/// <summary>Call inside the lock.</summary>
+	private AccountRecord? FindByEmail( string address ) =>
+		accounts.Values.FirstOrDefault( account => string.Equals( account.Email, address, StringComparison.Ordinal ) );
+
+	/// <summary>A trimmed, lower-case address with one '@', a dot in the domain and no spaces or control characters; else null.</summary>
+	public static string? NormalizeEmail( string? email )
+	{
+		var text = (email ?? "").Trim().ToLowerInvariant();
+		var at = text.IndexOf( '@' );
+		if ( text.Length is 0 or > MaximumEmailLength || at <= 0 || at != text.LastIndexOf( '@' ) || at == text.Length - 1
+			|| !text[(at + 1)..].Contains( '.' ) || text.EndsWith( '.' ) || text.Any( c => char.IsWhiteSpace( c ) || char.IsControl( c ) || c is '<' or '>' or ',' or ';' or '"' ) )
+			return null;
+		return text;
+	}
+
+	private static string NewEmailCode() => System.Security.Cryptography.RandomNumberGenerator.GetInt32( 0, 100_000_000 ).ToString( "D8", System.Globalization.CultureInfo.InvariantCulture );
+
+	private static bool SameHash( string a, string b ) =>
+		System.Security.Cryptography.CryptographicOperations.FixedTimeEquals( System.Text.Encoding.ASCII.GetBytes( a ), System.Text.Encoding.ASCII.GetBytes( b ) );
+
 	/// <summary>Call inside the lock.</summary>
 	private TotpEnrollment Enroll( string name, string key, string salt, string hash, int iterations, bool newAccount )
 	{
@@ -322,7 +520,7 @@ public sealed class ServerStore
 		// A newer setup for the same name replaces the older one.
 		enrollments[key] = new PendingEnrollment( name, key, salt, hash, iterations, secret, ticketHash, expires, newAccount );
 		var base32 = Totp.ToBase32( secret );
-		return new TotpEnrollment( name, ticket, base32, Totp.Uri( options.ServerName, name, base32 ), expires );
+		return new TotpEnrollment( name, ticket, base32, Totp.Uri( options.ServerName, name, base32 ), expires, newAccount && options.RequireEmail ? true : null );
 	}
 
 	private void PruneEnrollments()
@@ -459,6 +657,7 @@ public sealed class ServerStore
 			if ( !accounts.Remove( account.Key ) )
 				throw new StoreException( 404, "There is no such player." );
 			enrollments.Remove( account.Key );
+			recoveryCodes.Remove( account.Key );
 			if ( lastCodeSteps.Remove( account.Key ) )
 				Save( "totp-steps.json", lastCodeSteps );
 			codeFailures.Remove( account.Key );
@@ -564,13 +763,15 @@ public sealed class ServerStore
 			return parks.TryGetValue( id, out var park ) && !options.HiddenParks.Contains( id ) ? park : null;
 	}
 
-	public IReadOnlyList<ParkRecord> ListParks( string? search, string? author, string sort )
+	public IReadOnlyList<ParkRecord> ListParks( string? search, string? author, string sort, int? cityId = null )
 	{
 		lock ( gate )
 		{
 			IEnumerable<ParkRecord> query = parks.Values.Where( park => !options.HiddenParks.Contains( park.Id ) );
 			if ( !string.IsNullOrWhiteSpace( search ) )
 				query = query.Where( park => park.Name.Contains( search, StringComparison.OrdinalIgnoreCase ) );
+			if ( cityId is { } city )
+				query = query.Where( park => park.CityId == city );
 			if ( !string.IsNullOrWhiteSpace( author ) )
 				query = query.Where( park => OnlineText.NormalizeName( park.Author ) == OnlineText.NormalizeName( author ) );
 			query = sort switch
@@ -667,7 +868,7 @@ public sealed class ServerStore
 		lock ( gate )
 		{
 			return new ParkSummary( park.Id, park.Name, park.Description, park.Author, park.Level, park.Language, park.PublishedUtc, park.Visits, park.Votes,
-				viewer != null && park.Visitors.Contains( viewer.Key ), viewer != null && park.LastVoteDay.ContainsKey( viewer.Key ), playersAtPark, park.HasThumbnail, park.Bytes );
+				viewer != null && park.Visitors.Contains( viewer.Key ), viewer != null && park.LastVoteDay.ContainsKey( viewer.Key ), playersAtPark, park.HasThumbnail, park.Bytes, park.CityId );
 		}
 	}
 

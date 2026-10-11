@@ -36,7 +36,7 @@ internal sealed class LoopbackServer : IAsyncDisposable
 	public string Directory { get; }
 	public Uri Url { get; }
 
-	public static async Task<LoopbackServer> StartAsync( Action<ServerOptions>? configure = null, string? directory = null, Uri? url = null )
+	public static async Task<LoopbackServer> StartAsync( Action<ServerOptions>? configure = null, string? directory = null, Uri? url = null, IEmailSender? emailSender = null )
 	{
 		directory ??= Path.Combine( Path.GetTempPath(), $"opentpw-server-{Guid.NewGuid():N}" );
 		var app = ServerProgram.Build( new[] { "--urls", url?.GetLeftPart( UriPartial.Authority ) ?? "http://127.0.0.1:0", "--Logging:LogLevel:Default", "Warning" }, options =>
@@ -46,7 +46,7 @@ internal sealed class LoopbackServer : IAsyncDisposable
 			// Most tests are about other features; TwoStepLoginTests turns two-step login on.
 			options.RequireTotp = false;
 			configure?.Invoke( options );
-		} );
+		}, emailSender );
 		await app.StartAsync();
 		var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First();
 		return new LoopbackServer( app, directory, new Uri( address ) );
@@ -98,7 +98,7 @@ public class OnlineServerTests
 		{
 			using var client = new OnlineClient( server.Url );
 			var info = await client.GetServerInfoAsync();
-			Assert.AreEqual( 2, info.ProtocolVersion );
+			Assert.AreEqual( 3, info.ProtocolVersion );
 			Assert.IsFalse( info.WordFilterLoaded );
 			await client.RegisterAsync( "Alice", "correct horse" );
 			Assert.AreEqual( HttpStatusCode.Conflict, (await Fails( () => client.RegisterAsync( "ALICE", "another one" ) )).Status );
@@ -455,6 +455,10 @@ public class OnlineServerTests
 			var timbuktu = defaults.Single( city => city.Name == "Timbuktu" ).Id;
 			await ann.UploadParkAsync( OnlineFormatTests.Package( "Sand Castle" ), cityId: timbuktu );
 			Assert.AreEqual( 1, (await anonymous.GetCitiesAsync())!.Cities.Single( city => city.Id == timbuktu ).Parks );
+			await ann.UploadParkAsync( OnlineFormatTests.Package( "Elsewhere" ) );
+			var inCity = await ann.ListParksAsync( sort: "votes", cityId: timbuktu );
+			CollectionAssert.AreEqual( new[] { "Sand Castle" }, inCity.Parks.Select( park => park.Name ).ToArray(), "the city lobby lists only that city's parks" );
+			Assert.AreEqual( timbuktu, inCity.Parks[0].CityId );
 			Assert.AreEqual( HttpStatusCode.BadRequest, (await Fails( () => ann.UploadParkAsync( OnlineFormatTests.Package( "Nowhere" ), cityId: 999 ) )).Status );
 
 			File.WriteAllText( Path.Combine( server.Directory, "cities.json" ),

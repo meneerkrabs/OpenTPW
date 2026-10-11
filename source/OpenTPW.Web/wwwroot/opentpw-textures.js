@@ -3,7 +3,18 @@
 export const textureBaseUrl = 'https://opentpw-textures.pages.dev/clarity-enhanced/20261011/';
 const maximumFileBytes = 25 * 1024 * 1024;
 const maximumPixels = 16 * 1024 * 1024;
-const safePath = /^textures\/[a-z0-9_.\/-]+\.png$/;
+const safePath = /^textures\/[a-z0-9_!.\/-]+\.png$/;
+
+function trustedPrimaryUrl(file) {
+	if (file.url === undefined) return textureBaseUrl + file.path;
+	let url;
+	try { url = new URL(file.url); } catch { throw new Error('The Clarity texture index contains an invalid download URL.'); }
+	const prefix = url.pathname.match(/^\/gh\/meneerkrabs\/OpenTPW-Texture-Packs@clarity-20261011-\d{3}\//)?.[0];
+	if (url.origin !== 'https://cdn.jsdelivr.net' || !prefix || url.pathname !== prefix + file.path
+		|| file.url !== url.origin + url.pathname)
+		throw new Error('The Clarity texture index contains an untrusted download URL.');
+	return file.url;
+}
 
 export function validateDistribution(distribution) {
 	if (distribution?.format !== 1 || distribution.name !== 'clarity-enhanced' || distribution.version !== '20261011'
@@ -19,7 +30,9 @@ export function validateDistribution(distribution) {
 		if (file.path !== 'pack.json' && (!Number.isSafeInteger(file.width) || !Number.isSafeInteger(file.height)
 			|| file.width <= 0 || file.height <= 0 || file.width > 8192 || file.height > 8192 || file.width * file.height > maximumPixels))
 			throw new Error('The Clarity texture index contains invalid dimensions.');
-		files.set(file.path, { ...file, url: textureBaseUrl + file.path });
+		files.set(file.path, { ...file, url: trustedPrimaryUrl(file), fallbackUrl: textureBaseUrl + file.path,
+			// CacheStorage keys are URLs, but this identity depends only on the verified content digest.
+			cacheUrl: `https://opentpw.io/texture-cache/sha256/${file.sha256}` });
 	}
 	files.delete('pack.json');
 	return files;
@@ -105,18 +118,25 @@ export function createTextureDownloads({ distribution, writeFile, enabled = () =
 		const store = await cache;
 		let bytes;
 		try {
-			const cached = await store?.match(file.url);
+			const cached = await store?.match(file.cacheUrl);
 			if (cached)
 				bytes = await verify(cached, file);
 		} catch {
 			// A damaged or inaccessible cache must not prevent a fresh verified download.
-			await store?.delete(file.url).catch(() => {});
+			await store?.delete(file.cacheUrl).catch(() => {});
 		}
 		if (!bytes) {
-			const response = await fetcher(file.url, { credentials: 'omit', referrerPolicy: 'no-referrer', mode: 'cors', signal: AbortSignal.timeout(30000) });
-			bytes = await verify(response, file);
+			let failed;
+			for (const url of new Set([file.url, file.fallbackUrl])) {
+				try {
+					const response = await fetcher(url, { credentials: 'omit', referrerPolicy: 'no-referrer', mode: 'cors', signal: AbortSignal.timeout(30000) });
+					bytes = await verify(response, file);
+					break;
+				} catch (error) { failed = error; }
+			}
+			if (!bytes) throw failed;
 			try {
-				await store?.put(file.url, new Response(bytes, { headers: { 'content-type': 'image/png' } }));
+				await store?.put(file.cacheUrl, new Response(bytes, { headers: { 'content-type': 'image/png' } }));
 			} catch { /* Private mode or a full cache leaves the downloaded texture usable. */ }
 		}
 		if (!enabled()) return false;

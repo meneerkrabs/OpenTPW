@@ -166,7 +166,7 @@ public static partial class Program
 	{
 		if ( !TexturePack.IsDefaultActive || !TextureDownloadCapacity( contents.Length ) || !relativePath.StartsWith( "textures/", StringComparison.Ordinal )
 			|| !relativePath.EndsWith( ".png", StringComparison.Ordinal ) || relativePath.Length > 1024
-			|| !relativePath.All( character => char.IsAsciiLetterOrDigit( character ) || character is '/' or '-' or '_' or '.' )
+			|| !relativePath.All( character => char.IsAsciiLetterOrDigit( character ) || character is '/' or '-' or '_' or '.' or '!' )
 			|| relativePath.Split( '/' ).Any( part => part.Length == 0 || part is "." or ".." ) )
 			return false;
 		if ( contents.Length < 33 || !contents.AsSpan( 0, 8 ).SequenceEqual( new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 } ) )

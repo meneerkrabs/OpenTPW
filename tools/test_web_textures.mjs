@@ -42,9 +42,9 @@ const digest = bytes => webcrypto.subtle.digest('SHA-256', bytes);
 const quiet = () => {};
 
 test('packaged index accepts WCT and guest atlas PNGs plus a manifest, with a fixed origin', () => {
-	const distribution = index(['textures/ui/button.wct.png', 'textures/esprites/generic/kids/andy.atlas.png']);
+	const distribution = index(['textures/ui/button.wct.png', 'textures/esprites/generic/kids/andy.atlas.png', 'textures/ui/textures/b_rideit!.wct.png']);
 	distribution.files.push({ path: 'pack.json', size: 10, sha256: 'a'.repeat(64) });
-	assert.equal(validateDistribution(distribution).size, 2);
+	assert.equal(validateDistribution(distribution).size, 3);
 	for (const replacement of ['http://opentpw-textures.pages.dev/clarity-enhanced/20261011/', 'https://example.com/', textureBaseUrl + '../'])
 		assert.throws(() => validateDistribution({ ...distribution, textureBaseUrl: replacement }));
 });
@@ -96,9 +96,91 @@ test('verified browser cache survives a visit and a damaged cache is fetched aga
 	assert.equal(fetches, 1);
 	assert.equal(writes, 2);
 	const damaged = bytes.slice(); damaged[30]++;
-	storage.entries.set(textureBaseUrl + path, new Response(damaged));
+	storage.entries.set(validateDistribution(distribution).get(path).cacheUrl, new Response(damaged));
 	assert.equal(await makeClient().request(path), true);
 	assert.equal(fetches, 2);
+});
+
+function withPrimary(distribution, shard = '001') {
+	for (const file of distribution.files)
+		file.url = `https://cdn.jsdelivr.net/gh/meneerkrabs/OpenTPW-Texture-Packs@clarity-20261011-${shard}/${file.path}`;
+	return distribution;
+}
+
+test('only the pinned jsDelivr repository tag and exact indexed path can be a primary URL', () => {
+	const distribution = withPrimary(index()), file = distribution.files[0], good = file.url;
+	assert.equal(validateDistribution(distribution).get(file.path).url, good);
+	for (const url of [
+		good.replace('https:', 'http:'), good.replace('cdn.jsdelivr.net', 'evil.example'),
+		good.replace('meneerkrabs/', 'someone/'), good.replace('OpenTPW-Texture-Packs', 'Other-Pack'),
+		good.replace('@clarity-20261011-001/', '@main/'), good.replace('20261011', '20261012'),
+		good.replace('-001/', '-1/'), good.replace('grass.wct.png', 'other.wct.png'),
+		good + '?x=1', good + '#fragment', good.replace('https://', 'https://user@'), null,
+	])
+		assert.throws(() => validateDistribution({ ...distribution, files: [{ ...file, url }] }), String(url));
+});
+
+test('a verified primary CDN download avoids the Cloudflare fallback', async () => {
+	const distribution = withPrimary(index()), path = distribution.files[0].path, urls = [], storage = cache();
+	let writes = 0;
+	const client = createTextureDownloads({ distribution, digest, cacheStorage: storage, warning: quiet,
+		writeFile: () => writes++, fetcher: async url => { urls.push(url); return new Response(png()); },
+	});
+	assert.equal(await client.request(path), true);
+	assert.deepEqual(urls, [distribution.files[0].url]);
+	assert.equal(writes, 1);
+	assert.equal(storage.entries.size, 1);
+	assert.ok([...storage.entries.keys()][0].endsWith(distribution.files[0].sha256));
+});
+
+test('a 403, network failure, timeout or integrity failure on jsDelivr uses verified Cloudflare bytes', async () => {
+	for (const failure of ['403', 'network', 'timeout', 'integrity']) {
+		const distribution = withPrimary(index()), path = distribution.files[0].path, urls = [];
+		let writes = 0, warnings = 0;
+		const client = createTextureDownloads({ distribution, digest, cacheStorage: null, warning: () => warnings++,
+			writeFile: () => writes++, fetcher: async url => {
+				urls.push(url);
+				if (url === textureBaseUrl + path) return new Response(png());
+				if (failure === '403') return new Response('', { status: 403 });
+				if (failure === 'network') throw new TypeError('Failed to fetch');
+				if (failure === 'timeout') throw new DOMException('Timed out', 'TimeoutError');
+				const damaged = png(); damaged[30]++;
+				return new Response(damaged);
+			},
+		});
+		assert.equal(await client.request(path), true, failure);
+		assert.deepEqual(urls, [distribution.files[0].url, textureBaseUrl + path], failure);
+		assert.equal(writes, 1, failure);
+		assert.equal(warnings, 0, failure);
+	}
+});
+
+test('content-addressed cache reuses fallback bytes across provider changes and changed shard tags', async () => {
+	const distribution = index(), path = distribution.files[0].path, storage = cache();
+	let fetches = 0, writes = 0;
+	const makeClient = candidate => createTextureDownloads({ distribution: candidate, digest, cacheStorage: storage,
+		warning: quiet, writeFile: () => writes++, fetcher: async () => { fetches++; return new Response(png()); },
+	});
+	assert.equal(await makeClient(distribution).request(path), true);
+	assert.equal(await makeClient(withPrimary(index(), '001')).request(path), true);
+	assert.equal(await makeClient(withPrimary(index(), '002')).request(path), true);
+	assert.equal(fetches, 1);
+	assert.equal(writes, 3);
+	assert.equal(storage.entries.size, 1);
+});
+
+test('both failed providers leave the original playable without repeating requests', async () => {
+	const distribution = withPrimary(index()), path = distribution.files[0].path, urls = [], storage = cache();
+	let writes = 0, warnings = 0;
+	const client = createTextureDownloads({ distribution, digest, cacheStorage: storage, warning: () => warnings++,
+		writeFile: () => writes++, fetcher: async url => { urls.push(url); return new Response('', { status: 403 }); },
+	});
+	assert.equal(await client.request(path), false);
+	assert.equal(await client.request(path), false);
+	assert.deepEqual(urls, [distribution.files[0].url, textureBaseUrl + path]);
+	assert.equal(writes, 0);
+	assert.equal(warnings, 1);
+	assert.equal(storage.entries.size, 0);
 });
 
 test('failed integrity checks fall back once and never write or cache unverified bytes', async () => {

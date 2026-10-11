@@ -10,6 +10,7 @@ public enum OnlineLabel
 	EmailAddress, SendCode, EmailCode, EmailCodeSent, ForgotPassword, AccountRecovery, NameOrEmail, NewPassword,
 	KeepTwoStep, ResetTwoStep, RecoveryCodeSent, PasswordChanged, Unpublish, PlatinumTickets, MarkAllSend, MarkAllDelete, UnmarkAll,
 	BuddyEnters, Earmuffs, GotoPlayer, PagePlayer, LocateBuddy, AddBuddy, IgnorePlayer, Blackmark, BuddyList, WalkHint,
+	Ride, LeaveRide, PublishedOn, PublishedStatsNote,
 }
 
 /// <summary>
@@ -215,6 +216,8 @@ public static class OnlineStrings
 			[OnlineLabel.LocateBuddy] = "Find buddy's park", [OnlineLabel.AddBuddy] = "Buddy", [OnlineLabel.IgnorePlayer] = "Ignore",
 			[OnlineLabel.Blackmark] = "Blackmark", [OnlineLabel.BuddyList] = "Buddy list", [OnlineLabel.WalkHint] = "Click in the park to walk there",
 			[OnlineLabel.MarkAllSend] = "Mark all for sending", [OnlineLabel.MarkAllDelete] = "Mark all for deletion", [OnlineLabel.UnmarkAll] = "Unmark all",
+			[OnlineLabel.Ride] = "Ride", [OnlineLabel.LeaveRide] = "Leave ride",
+			[OnlineLabel.PublishedOn] = "Published: ", [OnlineLabel.PublishedStatsNote] = "The owner's published figures; nothing runs here.",
 		},
 		["Danish"] = new Dictionary<OnlineLabel, string>
 		{
@@ -253,6 +256,8 @@ public static class OnlineStrings
 			[OnlineLabel.LocateBuddy] = "Find vens park", [OnlineLabel.AddBuddy] = "Ven", [OnlineLabel.IgnorePlayer] = "Ignorér",
 			[OnlineLabel.Blackmark] = "Sort mærke", [OnlineLabel.BuddyList] = "Venneliste", [OnlineLabel.WalkHint] = "Klik i parken for at gå derhen",
 			[OnlineLabel.MarkAllSend] = "Markér alle til afsendelse", [OnlineLabel.MarkAllDelete] = "Markér alle til sletning", [OnlineLabel.UnmarkAll] = "Fjern alle markeringer",
+			[OnlineLabel.Ride] = "Tur", [OnlineLabel.LeaveRide] = "Stå af",
+			[OnlineLabel.PublishedOn] = "Udgivet: ", [OnlineLabel.PublishedStatsNote] = "Ejerens udgivne tal; intet kører her.",
 		},
 		["Dutch"] = new Dictionary<OnlineLabel, string>
 		{
@@ -291,6 +296,8 @@ public static class OnlineStrings
 			[OnlineLabel.LocateBuddy] = "Park van vriend zoeken", [OnlineLabel.AddBuddy] = "Vriend", [OnlineLabel.IgnorePlayer] = "Negeren",
 			[OnlineLabel.Blackmark] = "Zwarte markering", [OnlineLabel.BuddyList] = "Vriendenlijst", [OnlineLabel.WalkHint] = "Klik in het park om daar te lopen",
 			[OnlineLabel.MarkAllSend] = "Alles markeren om te verzenden", [OnlineLabel.MarkAllDelete] = "Alles markeren om te verwijderen", [OnlineLabel.UnmarkAll] = "Markeringen wissen",
+			[OnlineLabel.Ride] = "Rit", [OnlineLabel.LeaveRide] = "Stap uit",
+			[OnlineLabel.PublishedOn] = "Gepubliceerd: ", [OnlineLabel.PublishedStatsNote] = "De door de eigenaar gepubliceerde cijfers; hier draait niets.",
 		},
 		["French"] = new Dictionary<OnlineLabel, string>
 		{
@@ -329,6 +336,8 @@ public static class OnlineStrings
 			[OnlineLabel.LocateBuddy] = "Trouver le parc de l'ami", [OnlineLabel.AddBuddy] = "Ami", [OnlineLabel.IgnorePlayer] = "Ignorer",
 			[OnlineLabel.Blackmark] = "Marque noire", [OnlineLabel.BuddyList] = "Liste d'amis", [OnlineLabel.WalkHint] = "Cliquez dans le parc pour y marcher",
 			[OnlineLabel.MarkAllSend] = "Tout marquer pour envoi", [OnlineLabel.MarkAllDelete] = "Tout marquer pour suppression", [OnlineLabel.UnmarkAll] = "Tout démarquer",
+			[OnlineLabel.Ride] = "Tour", [OnlineLabel.LeaveRide] = "Descendre",
+			[OnlineLabel.PublishedOn] = "Publié : ", [OnlineLabel.PublishedStatsNote] = "Les chiffres publiés par le propriétaire ; rien ne tourne ici.",
 		},
 		["German"] = new Dictionary<OnlineLabel, string>
 		{
@@ -367,6 +376,8 @@ public static class OnlineStrings
 			[OnlineLabel.LocateBuddy] = "Park des Buddys finden", [OnlineLabel.AddBuddy] = "Buddy", [OnlineLabel.IgnorePlayer] = "Ignorieren",
 			[OnlineLabel.Blackmark] = "Schwarzes Mark", [OnlineLabel.BuddyList] = "Buddy-Liste", [OnlineLabel.WalkHint] = "Im Park klicken, um dorthin zu gehen",
 			[OnlineLabel.MarkAllSend] = "Alle zum Senden markieren", [OnlineLabel.MarkAllDelete] = "Alle zum Löschen markieren", [OnlineLabel.UnmarkAll] = "Alle Markierungen aufheben",
+			[OnlineLabel.Ride] = "Fahrt", [OnlineLabel.LeaveRide] = "Aussteigen",
+			[OnlineLabel.PublishedOn] = "Veröffentlicht: ", [OnlineLabel.PublishedStatsNote] = "Die vom Besitzer veröffentlichten Zahlen; hier läuft nichts.",
 		},
 		["Swedish"] = new Dictionary<OnlineLabel, string>
 		{
@@ -405,6 +416,8 @@ public static class OnlineStrings
 			[OnlineLabel.LocateBuddy] = "Hitta kompis park", [OnlineLabel.AddBuddy] = "Kompis", [OnlineLabel.IgnorePlayer] = "Ignorera",
 			[OnlineLabel.Blackmark] = "Svart märke", [OnlineLabel.BuddyList] = "Kompislista", [OnlineLabel.WalkHint] = "Klicka i parken för att gå dit",
 			[OnlineLabel.MarkAllSend] = "Markera alla för att skicka", [OnlineLabel.MarkAllDelete] = "Markera alla för att radera", [OnlineLabel.UnmarkAll] = "Avmarkera alla",
+			[OnlineLabel.Ride] = "Tur", [OnlineLabel.LeaveRide] = "Stig av",
+			[OnlineLabel.PublishedOn] = "Publicerad: ", [OnlineLabel.PublishedStatsNote] = "Ägarens publicerade siffror; ingenting körs här.",
 		},
 	};
 }

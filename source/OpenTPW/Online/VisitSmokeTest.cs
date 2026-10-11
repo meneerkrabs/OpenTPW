@@ -12,6 +12,10 @@ internal sealed class VisitSmokeTest : IDisposable
 	{
 		this.level = level;
 		Require( level.IsReadOnlyVisit && level.Park == null, "shared visit has no economy" );
+		// A version 2 package must have rebuilt the owner's exact layout (digest check; docs/ONLINE.md).
+		// A package that publishes no digest (validation allows it) cannot be checked, only reported.
+		if ( level.Visit!.Payload.HasBuiltLayout && level.Visit.Payload.LayoutDigest != null )
+			Require( SharedParkLayout.DigestOf( level ) == level.Visit.Payload.LayoutDigest, "the visit rebuilt the published layout (digest)" );
 		var originalObjects = level.Objects.Objects.ToArray();
 		var originalRide = level.PlacedRide;
 		var entry = level.Objects.Catalog.Buildable.FirstOrDefault();
@@ -42,9 +46,35 @@ internal sealed class VisitSmokeTest : IDisposable
 		var capture = SandboxSmokeTest.CaptureFrame( "online-visit.png" );
 		Require( capture.Width > 0 && capture.Height > 0, "visit renders a real framebuffer" );
 		completed = true;
-		Log.Trace( $"Read-only visit smoke passed: {frame} frames, {level.Objects.Objects.Count} immutable local objects, no economy, build/remove/save/load/export rejected, GPU capture {capture.Width}x{capture.Height}." );
+		Log.Trace( $"Read-only visit smoke passed: {frame} frames, {level.Objects.Objects.Count} immutable local objects"
+			+ (level.Visit!.Payload.HasBuiltLayout && level.Visit.Payload.LayoutDigest != null ? $", layout digest {level.Visit.Payload.LayoutDigest} verified" : "")
+			+ RideStep()
+			+ $", no economy, build/remove/save/load/export rejected, GPU capture {capture.Width}x{capture.Height}." );
 		Render.Window.SdlWindow.Close();
 	}
+
+	/// <summary>The visitor rides a published ride where one is rideable: the camera tracks it, the park is untouched.</summary>
+	private string RideStep()
+	{
+		var rideable = level.Objects.Objects.FirstOrDefault( RideCameraMode.CanRide ) ?? level.PlacedRide;
+		if ( rideable == null )
+			return ", no rideable ride in this park";
+		var objectsBefore = level.Objects.Objects.Count;
+		var previous = Camera.Mode;
+		var camera = new RideCameraMode( rideable, previous.Rotation.Forward );
+		Camera.Mode = camera;
+		camera.Update();
+		var boarded = camera.Position;
+		for ( var step = 0; step < 30; step++ )
+			camera.Update();
+		var ridden = camera.Position;
+		Camera.Mode = previous;
+		Require( !ReferenceEquals( Camera.Mode, camera ), "the ride camera returns to the park view" );
+		Require( level.Objects.Objects.Count == objectsBefore && level.Park == null, "riding changed nothing in the park" );
+		return $", rode {EntryName( rideable )} (camera {boarded.X:F1},{boarded.Y:F1},{boarded.Z:F1} → {ridden.X:F1},{ridden.Y:F1},{ridden.Z:F1})";
+	}
+
+	private static string EntryName( OriginalObject ride ) => ride.Entry.DisplayName;
 
 	private static void Reject( Action action, string step )
 	{

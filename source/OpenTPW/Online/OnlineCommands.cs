@@ -18,7 +18,8 @@ public static class OnlineCommands
 			var path = ValidateOutputPath( export, gameDirectory );
 			var level = Option( args, "--load-original-level" );
 			var park = level == null ? null : OriginalPark.Load( level );
-			var snapshot = park == null ? ParkSnapshotBuilder.FromSandbox( "jungle", null ) : ParkSnapshotBuilder.FromOriginal( park, null );
+			// An original level exports its complete built layout (payload version 2); without one, the empty sandbox.
+			var snapshot = park == null ? ParkSnapshotBuilder.FromSandbox( "jungle", null ) : ParkSnapshotBuilder.FromOriginalLevel( park );
 			var package = ParkSharing.CreatePackage( snapshot, "OpenTPW " + snapshot.Level, "Offline startup snapshot", "OpenTPW", park?.Map );
 			package.Save( path );
 			report( "Exported park: " + path );

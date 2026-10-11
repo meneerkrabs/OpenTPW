@@ -21,8 +21,21 @@ public partial class Level
 		Objects = new ParkObjects( ObjectCatalog.Load( theme, easy ), grid, Seed ) { IsReserved = ( x, y ) => IsReservedByPrototype( x, y ) || Guests?.Grid.IsQueue( x, y ) == true || Guests?.Grid.IsWalkable( x, y ) == true };
 		if ( OriginalPark == null )
 			return;
-		var count = OriginalPark.Save != null ? Objects.ImportOriginal( OriginalPark.Save ) : Objects.AddDefaultFixedItems();
-		Log.Trace( $"Original {theme} objects: {count} placed with their original models and scripts ({Objects.Catalog.Entries.Count} catalog entries)." );
+		int count;
+		string? skipped = null;
+		if ( visitLayout != null )
+		{
+			// A version 2 visit places exactly the owner's objects, at their published anchors and open state.
+			var (placed, missing) = SharedParkLayout.PlaceObjects( Objects, visitLayout.Objects );
+			visitedObjects = placed;
+			count = placed.Count( item => item != null );
+			if ( missing.Count > 0 )
+				skipped = string.Join( ", ", missing );
+		}
+		else
+			count = OriginalPark.Save != null ? Objects.ImportOriginal( OriginalPark.Save ) : Objects.AddDefaultFixedItems();
+		Log.Trace( $"Original {theme} objects: {count} placed with their original models and scripts ({Objects.Catalog.Entries.Count} catalog entries)"
+			+ (skipped == null ? "" : $"; skipped (not in the local catalog): {skipped}") + "." );
 	}
 
 	/// <summary>Every placed object that guests may choose becomes a live attraction; new and removed objects follow.</summary>

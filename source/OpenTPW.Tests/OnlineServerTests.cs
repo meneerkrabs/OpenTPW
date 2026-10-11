@@ -126,6 +126,41 @@ public class OnlineServerTests
 	}
 
 	[TestMethod]
+	public async Task ServerAcceptsBothParkPackageVersions()
+	{
+		await using var server = await LoopbackServer.StartAsync();
+		try
+		{
+			using var owner = await server.LoginAsync( "Owner" );
+			// A version 2 package (the built layout) publishes, lists and downloads as itself…
+			var v2 = await owner.UploadParkAsync( SharedParkTests.LayoutPackage() );
+			var downloaded = await owner.DownloadParkAsync( v2.Id );
+			Assert.AreEqual( 2, downloaded.Manifest.FormatVersion );
+			Assert.IsTrue( MinimalParkPayload.FromSnapshot( downloaded.ToSnapshot() ).HasBuiltLayout );
+			// …and a version 1 package from an OpenTPW 0.7 client is still accepted and served unchanged.
+			var v1 = await owner.UploadParkAsync( SharedParkTests.V1Package() );
+			Assert.AreEqual( 1, (await owner.DownloadParkAsync( v1.Id )).Manifest.FormatVersion );
+			Assert.AreEqual( 2, (await owner.ListParksAsync()).Total );
+			// A container-valid package whose payload is not a park payload is refused at publish: clients
+			// check on visit, but no client could enter this park.
+			var garbage = Encoding.UTF8.GetBytes( "{\"level\":\"jungle\",\"source\":\"other\"}" );
+			var manifest = SharedParkTests.LayoutPackage().Manifest with
+			{
+				Payload = SharedParkTests.LayoutPackage().Manifest.Payload with { Length = garbage.Length, Sha256 = ParkPackage.Hash( garbage ) }
+			};
+			var hostile = ParkPackage.Read( OnlineFormatTests.Zip(
+				(ParkPackage.ManifestEntry, StrictJson.Serialize( manifest )),
+				(ParkPackage.PayloadEntry, garbage) ) );
+			Assert.AreEqual( HttpStatusCode.BadRequest, (await Fails( () => owner.UploadParkAsync( hostile ) )).Status );
+			Assert.AreEqual( 2, (await owner.ListParksAsync()).Total );
+		}
+		finally
+		{
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
 	public async Task ParksUploadListDownloadVisitAndVote()
 	{
 		await using var server = await LoopbackServer.StartAsync( options => options.MaximumParksPerPlayer = 2 );
@@ -149,7 +184,10 @@ public class OnlineServerTests
 			CollectionAssert.AreEqual( package.Thumbnail, await visitor.DownloadThumbnailAsync( published.Id ) );
 
 			Assert.AreEqual( 1, (await visitor.RecordVisitAsync( published.Id )).Visits );
+			// Every visit earned the owner Platinum Tickets in the original, but re-entering the same day and visiting
+			// one's own park do not count again (ONLINE-076), so tickets cannot be farmed.
 			Assert.AreEqual( 1, (await visitor.RecordVisitAsync( published.Id )).Visits );
+			Assert.AreEqual( 1, (await owner.RecordVisitAsync( published.Id )).Visits );
 			var vote = await visitor.VoteAsync( published.Id );
 			Assert.AreEqual( (1, 9), (vote.Votes, vote.VotesLeftToday) );
 			Assert.AreEqual( HttpStatusCode.Conflict, (await Fails( () => visitor.VoteAsync( published.Id ) )).Status );
@@ -386,6 +424,31 @@ public class OnlineServerTests
 		finally
 		{
 			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
+	public void AVisitorCountsOncePerDayAndOwnersNever()
+	{
+		var directory = Path.Combine( Path.GetTempPath(), $"opentpw-visits-{Guid.NewGuid():N}" );
+		try
+		{
+			var now = DateTimeOffset.UtcNow;
+			var store = new ServerStore( new ServerOptions { DataDirectory = directory, PasswordIterations = 1000 }, () => now );
+			var owner = store.Register( "Owner", "correct horse" );
+			var visitor = store.Register( "Visitor", "correct horse" );
+			var package = OnlineFormatTests.Package( "Counted" );
+			var park = store.Publish( owner, package, package.ToBytes() );
+			Assert.AreEqual( 0, store.Visit( owner, park.Id ).Visits, "an owner's own visit does not count" );
+			Assert.AreEqual( 1, store.Visit( visitor, park.Id ).Visits );
+			Assert.AreEqual( 1, store.Visit( visitor, park.Id ).Visits, "the same visitor counts once per day" );
+			now = now.AddDays( 1 );
+			Assert.AreEqual( 2, store.Visit( visitor, park.Id ).Visits, "the next day counts again" );
+		}
+		finally
+		{
+			if ( Directory.Exists( directory ) )
+				Directory.Delete( directory, true );
 		}
 	}
 

@@ -12,7 +12,7 @@ often covered through their callers.
 | --- | ---: | ---: | ---: |
 | Functions in SimThemePark | 6725 | 712 | 10.6 % |
 | Code bytes in those functions | 2014896 | 649804 | 32.3 % |
-| RTTI classes (names in the repository) | 194 | 44 | |
+| RTTI classes (names in the repository) | 194 | 50 | |
 
 ## Classes
 
@@ -74,13 +74,13 @@ Virtual methods come from the classes' virtual tables; generic container and `st
 | `CLight` | 4 | 0 | no |
 | `CLightParallel` | 1 | 0 | no |
 | `CLightPoint` | 1 | 0 | no |
-| `CMMCoaster` | 12 | 0 | no |
-| `CMMDefault` | 7 | 0 | no |
-| `CMMFirstPersonTarget` | 12 | 0 | no |
-| `CMMOnline` | 12 | 0 | no |
+| `CMMCoaster` | 12 | 0 | yes |
+| `CMMDefault` | 7 | 0 | yes |
+| `CMMFirstPersonTarget` | 12 | 0 | yes |
+| `CMMOnline` | 12 | 0 | yes |
 | `CMMPathDraw` | 9 | 0 | no |
-| `CMMPickUpStaff` | 12 | 0 | no |
-| `CMMPlaceStaff` | 9 | 0 | no |
+| `CMMPickUpStaff` | 12 | 0 | yes |
+| `CMMPlaceStaff` | 9 | 0 | yes |
 | `CMainBalance` | 2 | 0 | yes |
 | `CMapChunkHandler` | 2 | 0 | yes |
 | `CMapLinkBase` | 1 | 0 | no |

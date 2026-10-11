@@ -54,7 +54,7 @@ public class OnlineFormatTests
 		Assert.IsNull( payload.Economy );
 	}
 
-	private static byte[] Zip( params (string Name, byte[] Data)[] entries )
+	internal static byte[] Zip( params (string Name, byte[] Data)[] entries )
 	{
 		using var output = new MemoryStream();
 		using ( var archive = new ZipArchive( output, ZipArchiveMode.Create, true ) )
@@ -132,7 +132,7 @@ public class OnlineFormatTests
 	public void RejectsHostileManifests()
 	{
 		var json = Encoding.UTF8.GetString( StrictJson.Serialize( Package().Manifest ) );
-		AssertRejected( WithManifest( json.Replace( "\"formatVersion\":1", "\"formatVersion\":2" ) ), "version 2" );
+		AssertRejected( WithManifest( json.Replace( "\"formatVersion\":2", "\"formatVersion\":3" ) ), "version 3" );
 		AssertRejected( WithManifest( json.Replace( "\"format\":\"opentpw.park\"", "\"format\":\"other\"" ) ), "not an OpenTPW park" );
 		AssertRejected( WithManifest( json.Replace( "{\"format\"", "{\"extra\":1,\"format\"" ) ), "malformed" );
 		AssertRejected( WithManifest( json.Replace( "{\"format\":\"opentpw.park\"", "{\"format\":\"opentpw.park\",\"format\":\"opentpw.park\"" ) ), "more than once" );
@@ -176,8 +176,12 @@ public class OnlineFormatTests
 		Assert.ThrowsException<InvalidDataException>( () => (good with { PrototypeRide = new PrototypeRideState( float.NaN, 0, false ) }).ToBytes() );
 		var withEconomy = Encoding.UTF8.GetString( good.ToBytes() ).Replace( "\"economy\":null", "\"economy\":{\"cash\":1}" );
 		Assert.ThrowsException<InvalidDataException>( () => MinimalParkPayload.FromBytes( Encoding.UTF8.GetBytes( withEconomy ) ) );
-		var snapshot = good.ToSnapshot( Array.Empty<RequiredContent>() ) with { PayloadVersion = 2 };
+		var snapshot = good.ToSnapshot( Array.Empty<RequiredContent>() ) with { PayloadVersion = 3 };
 		Assert.ThrowsException<InvalidDataException>( () => MinimalParkPayload.FromSnapshot( snapshot ) );
+		// A version 1 document must not use version 2 members.
+		var stated = good with { Objects = new[] { new ParkObjectRecord( 1, 1, 1, 1, 1, 0, false, Open: true ) } };
+		var version1 = new ParkSnapshot( MinimalParkPayload.Format, 1, stated.Level, StrictJson.Serialize( stated ), Array.Empty<RequiredContent>(), Array.Empty<string>() );
+		Assert.ThrowsException<InvalidDataException>( () => MinimalParkPayload.FromSnapshot( version1 ) );
 	}
 
 	[TestMethod]

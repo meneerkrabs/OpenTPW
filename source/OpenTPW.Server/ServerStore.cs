@@ -55,6 +55,8 @@ public sealed class ParkRecord
 	public List<string> Visitors { get; set; } = new();
 	/// <summary>Player key → UTC day (yyyy-MM-dd) of that player's last vote for this park.</summary>
 	public Dictionary<string, string> LastVoteDay { get; set; } = new();
+	/// <summary>Player key → UTC day (yyyy-MM-dd) of that player's last counted visit to this park.</summary>
+	public Dictionary<string, string> LastVisitDay { get; set; } = new();
 }
 
 /// <summary>A login session: the SHA-256 hash of its token (never the token), the account and the expiry.</summary>
@@ -828,14 +830,27 @@ public sealed class ServerStore
 		}
 	}
 
+	/// <summary>
+	/// One visit report: counts one visit for the park. The client sends exactly one report per visit (it
+	/// downloads the park and enters it), like the original client, which sent its MarkParkVisited message once
+	/// per park entry — every visit is what earned the owner Platinum Tickets, voted or not
+	/// (docs/reverse/ONLINE-VISIT.md). <see cref="ParkRecord.Visitors"/> stays the distinct-visitor list the
+	/// park summaries mark "visited before" with.
+	/// </summary>
+	// [EXT:ONLINE-075] the visit counter counts accepted visit reports; a ticket award hooked here sees one call per visit.
+	// [APPROX:ONLINE-076] every visit earned the owner Platinum Tickets (FAQ, S2), but the original's guard against
+	// repeated or self visits is not recovered: an owner's visits to their own park never count, and one visitor counts
+	// at most once per UTC day per park, so tickets cannot be farmed by re-entering a park.
 	public CounterResult Visit( AccountRecord visitor, string id )
 	{
 		lock ( gate )
 		{
 			var park = FindPark( id ) ?? throw new StoreException( 404, "Park ID is invalid." );
-			if ( !park.Visitors.Contains( visitor.Key ) )
+			if ( park.OwnerKey != visitor.Key && !(park.LastVisitDay.TryGetValue( visitor.Key, out var day ) && day == Today) )
 			{
-				park.Visitors.Add( visitor.Key );
+				if ( !park.Visitors.Contains( visitor.Key ) )
+					park.Visitors.Add( visitor.Key );
+				park.LastVisitDay[visitor.Key] = Today;
 				park.Visits++;
 				Save( "parks.json", parks.Values.ToList() );
 			}

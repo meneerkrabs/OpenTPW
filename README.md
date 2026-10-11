@@ -82,7 +82,9 @@ What works today, with your own original game data:
   their original sounds, and all nine movies play ([audio](docs/AUDIO.md),
   [lip sync](docs/LIPS.md), [movies](docs/TGQ-MOVIES.md)).
 - **Online again:** accounts, park sharing, visiting, voting, postcards and chat parks, on the
-  official server or one you host yourself ([online](docs/ONLINE.md),
+  official server or one you host yourself. A shared park is the park as its owner built it (paths,
+  queues, objects, player-built coasters and published statistics), and a visit walks it read-only,
+  rides its rides and votes, as the original's visits did ([online](docs/ONLINE.md),
   [server](docs/SERVER.md)).
 - **Modern systems:** native builds for Windows, macOS and Linux; any resolution and aspect ratio
   with a HiDPI-aware interface scale; button labels fitted per language; compatibility fixes from

@@ -424,6 +424,9 @@ public static class ServerProgram
 		{
 			var bytes = await ReadBodyAsync( context.Request, ParkPackage.MaximumPackageBytes );
 			var package = ParkPackage.Read( bytes );
+			// The payload is validated as a park payload too (format, version, sizes, digest over its layout):
+			// clients check on visit, but a publish is the last place to refuse a package no client could enter.
+			MinimalParkPayload.FromSnapshot( package.ToSnapshot() );
 			// [APPROX:ONLINE-023] the original showed swear words in park names as asterisks (FAQ, S2), so the name is
 			// masked, not refused; the description keeps the refusal (an OpenTPW moderation choice).
 			package = package with { Manifest = package.Manifest with { Park = package.Manifest.Park with { Name = filter.Apply( package.Manifest.Park.Name ) } } };

@@ -34,7 +34,9 @@ public sealed record ParkPackage( ParkManifest Manifest, byte[] Payload, byte[]?
 {
 	public const string FileExtension = ".tpwpark";
 	public const string FormatName = "opentpw.park";
-	public const int CurrentFormatVersion = 1;
+	/// <summary>Version 2: the payload may carry the complete built park (payload version 2). Readers still accept version 1.</summary>
+	public const int CurrentFormatVersion = 2;
+	public const int FirstSupportedFormatVersion = 1;
 	public const string ManifestEntry = "manifest.json";
 	public const string PayloadEntry = "payload.bin";
 	public const string ThumbnailEntry = "thumbnail.png";
@@ -136,8 +138,8 @@ public sealed record ParkPackage( ParkManifest Manifest, byte[] Payload, byte[]?
 		var m = Manifest ?? throw new InvalidDataException( "Park manifest is missing." );
 		if ( m.Format != FormatName )
 			throw new InvalidDataException( "File is not an OpenTPW park package." );
-		if ( m.FormatVersion != CurrentFormatVersion )
-			throw new InvalidDataException( $"Park package version {m.FormatVersion} is not supported (this build reads version {CurrentFormatVersion})." );
+		if ( m.FormatVersion is < FirstSupportedFormatVersion or > CurrentFormatVersion )
+			throw new InvalidDataException( $"Park package version {m.FormatVersion} is not supported (this build reads versions {FirstSupportedFormatVersion} to {CurrentFormatVersion})." );
 		if ( m.PackageId == Guid.Empty )
 			throw new InvalidDataException( "Park package id is missing." );
 		if ( m.Park == null || m.Game == null || m.Payload == null || m.RequiredContent == null || m.Requires == null || m.Flags == null )
@@ -174,7 +176,7 @@ public sealed record ParkPackage( ParkManifest Manifest, byte[] Payload, byte[]?
 				throw new InvalidDataException( $"Park needs the feature '{requirement}', which this OpenTPW version does not support." );
 		}
 		if ( !m.Flags.Contains( CompatibilityFlags.ReadOnlyVisit ) )
-			throw new InvalidDataException( "Version 1 park packages must be marked for read-only visits." );
+			throw new InvalidDataException( "Park packages must be marked for read-only visits." );
 		if ( m.Payload.Format == null || !FormatPattern.IsMatch( m.Payload.Format ) || m.Payload.Version < 1 )
 			throw new InvalidDataException( "Park payload format is invalid." );
 		if ( Payload == null || m.Payload.Length != Payload.Length || m.Payload.Sha256 != Hash( Payload ) )

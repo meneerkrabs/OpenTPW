@@ -176,6 +176,6 @@ public sealed class ParkGate
 	/// Whether a closed attraction may be opened again — the original's <c>FUN_004df290</c>: not broken down,
 	/// condemned or waiting for an upgrade, no mechanic called, and the back of its queue still connected to a path.
 	/// </summary>
-	// [APPROX:GATE-002] only the broken-down guard (VAR_BROKEN) is modelled; the upgrade/condemned states and the back-of-queue link test (PC FUN_004de4a0) are not — evidence needed: those ride states in the original
+	// [APPROX:ECON-049] only the broken-down guard (VAR_BROKEN) is modelled; the upgrade/condemned states and the back-of-queue link test (PC FUN_004de4a0) are not — evidence needed: those ride states in the original
 	private static bool MayOpen( OriginalObjectRuntime item ) => item.GetVariableByName( nameof( RideVariables.VAR_BROKEN ) ) == 0;
 }

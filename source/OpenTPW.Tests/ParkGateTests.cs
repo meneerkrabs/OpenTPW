@@ -72,22 +72,25 @@ public class ParkGateTests
 	{
 		UseOriginalData();
 		var (gate, gates, totem, economy) = Park();
+		economy.OpenPark();
 		gate.InitializeFromParkState();
 		// A park that starts open commands its gate open; the ride starts open (placed open).
 		Assert.AreEqual( 1, gates.GetVariableByName( ParkGate.CommandVariable ) );
 		Assert.IsTrue( totem.IsOpen );
 
-		// Closing with nobody inside: the gate is commanded shut and every attraction closes.
+		// Closing with nobody inside: the gate is commanded shut and every attraction closes. The gate script
+		// reports itself open (VAR_STATUS 1) while it stands open; the script does not run in this test.
+		gates.SetVariable( ParkGate.StatusVariable, ParkGate.GateIsOpen );
 		economy.OpenPark();
 		economy.ClosePark();
 		gate.DoorMoved( closed: true );
-		Assert.AreEqual( 0, totem.GetVariableByName( ParkGate.CommandVariable ), "empty park: gate commanded shut" );
+		Assert.AreEqual( 0, gates.GetVariableByName( ParkGate.CommandVariable ), "empty park: gate commanded shut" );
 		Assert.IsFalse( totem.IsOpen, "the door closes the rides" );
 
 		// Opening: the gate is commanded open and the ride opens again.
 		economy.OpenPark();
 		gate.DoorMoved( closed: false );
-		Assert.AreEqual( 1, totem.GetVariableByName( ParkGate.CommandVariable ) );
+		Assert.AreEqual( 1, gates.GetVariableByName( ParkGate.CommandVariable ) );
 		Assert.IsTrue( totem.IsOpen );
 	}
 
@@ -99,11 +102,11 @@ public class ParkGateTests
 		var (simulation, grid) = InsideGuests();
 		var gateObject = GateObject();
 		var populated = new ParkGate( economy, () => gateObject, () => new[] { totem }, simulation );
+		economy.OpenPark();
 		populated.InitializeFromParkState();
 		var inside = simulation.SpawnInPark( 2, 0 );
-		totem.SetVariable( ParkGate.StatusVariable, ParkGate.GateIsOpen );
+		gateObject.SetVariable( ParkGate.StatusVariable, ParkGate.GateIsOpen );
 
-		economy.OpenPark();
 		economy.ClosePark();
 		populated.DoorMoved( closed: true );
 		Assert.AreEqual( 1, gateObject.GetVariableByName( ParkGate.CommandVariable ), "a guest inside holds the gate open" );
@@ -131,7 +134,8 @@ public class ParkGateTests
 		var (simulation, grid) = InsideGuests();
 		var gateObject = GateObject();
 		grid.Cells.SetType( 40, 40, (byte)2 ); // water: a cell the census does not count
-		totem.SetVariable( ParkGate.StatusVariable, ParkGate.GateIsOpen );
+		gateObject.SetVariable( ParkGate.StatusVariable, ParkGate.GateIsOpen );
+		gateObject.SetVariable( ParkGate.CommandVariable, 1 );
 		economy.OpenPark();
 		economy.ClosePark();
 
@@ -196,6 +200,9 @@ public class ParkGateTests
 		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
 		initialized = true;
 	}
+
+	[TestInitialize]
+	public void Initialize() => Log = new(); // the door traces through the static logger, which tests set up themselves
 
 	[TestCleanup]
 	public void Cleanup()

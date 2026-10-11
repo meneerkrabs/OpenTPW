@@ -151,6 +151,17 @@ served; a missing file is empty news). They are served publicly at `GET /api/v1/
 before logging in, and re-read only when a file changes. On the official server the files are
 in `/opt/opentpw/data/news/`, which the nightly backup already covers.
 
+## Cities
+
+The online world's globe shows the server's cities (`GET /api/v1/cities`, public): id,
+name (at most 16 characters), description (128), latitude, longitude and the number of
+parks published there. Parks are published into a city (`POST /api/v1/parks?city=<id>`).
+The default list holds "North Pole" (the Bullfrog pin, for approved parks), the four
+cities known from the original (Hong Kong, Ulaanbaatar, Timbuktu, San Francisco) and some
+others; replace it with `cities.json` in the data directory, an array of
+`{"id", "name", "description", "latitude", "longitude"}`. It is re-read when the file
+changes; invalid entries are left out.
+
 ## The website's top parks
 
 When publishing, a player can choose **Also on the OpenTPW website** (off by default). Only

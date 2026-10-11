@@ -89,6 +89,9 @@ public sealed class OnlineSession : IDisposable
 	public int Busy { get; private set; }
 	public IReadOnlyList<ParkSummary> Parks { get; private set; } = Array.Empty<ParkSummary>();
 	public IReadOnlyList<PostcardSummary> Inbox { get; private set; } = Array.Empty<PostcardSummary>();
+	/// <summary>Cities of the current server's online world; empty before fetching or when the server has none.</summary>
+	public IReadOnlyList<CityInfo> Cities { get; private set; } = Array.Empty<CityInfo>();
+
 	/// <summary>News fetched from the current server; null before fetching or when the server has none.</summary>
 	public NewsInfo? News { get; private set; }
 	public List<string> ChatLines { get; } = new();
@@ -261,6 +264,7 @@ public sealed class OnlineSession : IDisposable
 		Parks = Array.Empty<ParkSummary>();
 		Inbox = Array.Empty<PostcardSummary>();
 		News = null;
+		Cities = Array.Empty<CityInfo>();
 		CurrentRoom = ChatProtocol.LobbyRoom;
 		ChatLines.Clear();
 	}
@@ -289,6 +293,14 @@ public sealed class OnlineSession : IDisposable
 		var client = Require();
 		Run( () => work( client ) );
 	}
+
+	/// <summary>Fetches the cities for the globe; no login needed. Older servers have none.</summary>
+	public void FetchCities() => WithClient( async client =>
+	{
+		var cities = await client.GetCitiesAsync();
+		Post( () => Cities = cities?.Cities ?? Array.Empty<CityInfo>() );
+		return null;
+	} );
 
 	/// <summary>Fetches Game News and System News; no login needed.</summary>
 	public void FetchNews() => WithClient( async client =>

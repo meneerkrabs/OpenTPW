@@ -136,8 +136,10 @@ internal sealed class GameFlow : IDisposable
 		{
 			if ( !PersistSettings )
 				return;
-			Settings.Default.Language = language;
-			Settings.Default.Save();
+			// language.json beside display.json, so the choice survives a new release unpacked elsewhere.
+			var path = LanguageSettings.GetDefaultPath();
+			var saved = LanguageSettings.Load( path, new List<string>() );
+			(saved with { Language = language }).Save( path );
 		},
 	}, closed );
 

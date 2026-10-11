@@ -10,6 +10,8 @@ public static class AudioApproximations
 		("AUDIO-003", "pitch, delay, 3D position and reverb of a sound are not applied"),
 		("AUDIO-004", "the park view's 0xBD click modifier is not mapped to a key"),
 		("AUDIO-005", "a sentence's next segment is chosen when the current one starts"),
+		("AUDIO-006", "de-emphasis is a first-order bilinear-transform shelf of the published 50/15 µs and J.17 curves at the stream's rate"),
+		("AUDIO-007", "a failed frame CRC is counted while the frame still decodes; no shipped frame carries a CRC word"),
 	};
 
 	private static bool logged;

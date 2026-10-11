@@ -3,7 +3,8 @@ namespace OpenTPW;
 /// <summary>
 /// Decoded PCM from <see cref="Mp2Decoder"/>: interleaved signed 16-bit samples.
 /// </summary>
-public sealed record Mp2Audio( int SampleRate, int Channels, short[] Samples, int FrameCount, int TrailingBytes )
+public sealed record Mp2Audio( int SampleRate, int Channels, short[] Samples, int FrameCount, int TrailingBytes,
+	int CrcChecks = 0, int CrcFailures = 0, int Emphasis = 0 )
 {
 	public int SampleFrames => Samples.Length / Channels;
 	public double DurationSeconds => (double)SampleFrames / SampleRate;
@@ -14,8 +15,9 @@ public sealed record Mp2Audio( int SampleRate, int Channels, short[] Samples, in
 /// and MPEG-2 (LSF) Layer II, using the shared 32-band polyphase synthesis filterbank.
 /// Layer I accepts mono, stereo, dual-channel and intensity joint stereo. Layer II
 /// accepts the mono/stereo modes already verified against the TPW corpus. MPEG-1
-/// Layer II, free format, Layer III and MPEG-2.5 are rejected. CRC is skipped rather
-/// than verified; Layer I emphasis other than none is unsupported. See docs/LIPS.md.
+/// Layer II, free format, Layer III and MPEG-2.5 are rejected. CRC check words are
+/// verified when present (mismatches are counted, not concealed); a nonzero emphasis
+/// indication is applied as a de-emphasis filter after synthesis. See docs/LIPS.md.
 /// </summary>
 public static partial class Mp2Decoder
 {
@@ -103,26 +105,72 @@ public static partial class Mp2Decoder
 		var synthesis = new[] { new Synthesis(), new Synthesis() };
 		var offset = 0;
 		var frames = 0;
-		int sampleRate = 0, channels = 0, layer = 0;
+		var crcChecks = 0;
+		var crcFailures = 0;
+		int sampleRate = 0, channels = 0, layer = 0, emphasis = 0;
+		DeEmphasis? deEmphasis = null;
 		while ( data.Length - offset >= 4 )
 		{
 			var header = Header.Parse( data[offset..] );
 			if ( frames == 0 )
-				(sampleRate, channels, layer) = (header.SampleRate, header.Channels, header.Layer);
-			else if ( header.SampleRate != sampleRate || header.Channels != channels || header.Layer != layer )
-				throw new NotSupportedException( $"MP2 frame {frames} changes sample rate, channel count or layer." );
+			{
+				(sampleRate, channels, layer, emphasis) = (header.SampleRate, header.Channels, header.Layer, header.Emphasis);
+				if ( emphasis != 0 )
+					deEmphasis = new DeEmphasis( emphasis, sampleRate );
+			}
+			else if ( header.SampleRate != sampleRate || header.Channels != channels || header.Layer != layer || header.Emphasis != emphasis )
+				throw new NotSupportedException( $"MP2 frame {frames} changes sample rate, channel count, layer or emphasis." );
 			if ( header.FrameBytes > data.Length - offset )
 				break;
+			if ( header.Crc )
+			{
+				crcChecks++;
+				// [APPROX:AUDIO-007] A CRC mismatch is counted and the frame still decodes; ISO/IEC 11172-3 2.4.3.1 only
+				// recommends concealment (muting or repeating), and no shipped TPW frame carries a CRC word — evidence
+				// needed: the original player's behaviour on a failed frame CRC
+				if ( !VerifyCrc( data.Slice( offset, header.FrameBytes ), header.ProtectedBits ) )
+					crcFailures++;
+			}
 			if ( header.Layer == 1 )
-				DecodeLayerOneFrame( header, data.Slice( offset, header.FrameBytes ), synthesis, output );
+				DecodeLayerOneFrame( header, data.Slice( offset, header.FrameBytes ), synthesis, output, deEmphasis );
 			else
-				DecodeFrame( header, data.Slice( offset, header.FrameBytes ), synthesis, output );
+				DecodeFrame( header, data.Slice( offset, header.FrameBytes ), synthesis, output, deEmphasis );
 			offset += header.FrameBytes;
 			frames++;
 		}
 		if ( frames == 0 )
 			throw new InvalidDataException( "MP2 stream contains no complete frame." );
-		return new Mp2Audio( sampleRate, channels, output.ToArray(), frames, data.Length - offset );
+		return new Mp2Audio( sampleRate, channels, output.ToArray(), frames, data.Length - offset, crcChecks, crcFailures, emphasis );
+	}
+
+	/// <summary>
+	/// ISO/IEC 11172-3 2.4.3.1: CRC-16 with G(x) = x¹⁶ + x¹⁵ + x² + 1, all-ones start,
+	/// over header bits 16-31 (bit_rate_index through emphasis) and the first
+	/// <paramref name="protectedBits"/> audio_data bits after the check word. The counts
+	/// are fixed per layer and mode by Annex B Table 3-B.5: Layer I 128 (single channel)
+	/// or 256 (other modes) allocation bits. The Layer II count is the allocation table's
+	/// nbal bits plus its maximum scfsi bits; the only supported table, MPEG-2 LSF
+	/// (13818-3 Table B.1, sblimit 30, 75 nbal bits per channel), gives 135/270. That LSF
+	/// row is not published: 13818-3 2.4.2.4 defers Layers I and II to ISO/IEC 11172-3,
+	/// whose table lists only the MPEG-1 allocation tables B.2a-d.
+	/// </summary>
+	private static bool VerifyCrc( ReadOnlySpan<byte> frame, int protectedBits )
+	{
+		if ( 48 + protectedBits > frame.Length * 8 )
+			throw new InvalidDataException( "MP2 frame is too short for its CRC-protected bits." );
+		var crc = 0xFFFF;
+		StepCrc( ref crc, frame, 16, 16 );
+		StepCrc( ref crc, frame, 48, protectedBits );
+		return crc == (frame[4] << 8 | frame[5]);
+	}
+
+	private static void StepCrc( ref int crc, ReadOnlySpan<byte> frame, int start, int count )
+	{
+		for ( var index = start; index < start + count; index++ )
+		{
+			crc ^= ((frame[index >> 3] >> (7 - (index & 7))) & 1) << 15;
+			crc = (crc & 0x8000) != 0 ? (crc << 1 ^ 0x8005) & 0xFFFF : crc << 1 & 0xFFFF;
+		}
 	}
 
 	/// <summary>
@@ -149,7 +197,8 @@ public static partial class Mp2Decoder
 		}
 	}
 
-	private readonly record struct Header( bool Crc, int SampleRate, int Mode, int ModeExtension, int Layer, int FrameBytes )
+	private readonly record struct Header( bool Crc, int SampleRate, int Mode, int ModeExtension, int Layer, int FrameBytes,
+		int Emphasis, int ProtectedBits )
 	{
 		public int Channels => Mode == 3 ? 1 : 2;
 
@@ -182,15 +231,18 @@ public static partial class Mp2Decoder
 			if ( mode == 1 && layer == 2 )
 				throw new NotSupportedException( "Joint-stereo MPEG audio is not supported." );
 			var padding = (int)(word >> 9) & 1;
-			if ( layer == 3 && (word & 3) == 2 )
-				throw new InvalidDataException( "Layer I frame uses reserved emphasis." );
-			if ( layer == 3 && (word & 3) != 0 )
-				throw new NotSupportedException( "Layer I de-emphasis is not supported." );
+			var emphasis = (int)word & 3;
+			if ( emphasis == 2 )
+				throw new InvalidDataException( "MPEG frame header uses reserved emphasis." );
 			var frameBytes = layer == 3
 				? (12 * bitrate * 1000 / sampleRate + padding) * 4
 				: 144 * bitrate * 1000 / sampleRate + padding;
+			// ISO/IEC 11172-3 Annex B Table 3-B.5 protected audio_data bits: Layer I 128/256
+			// allocation bits; Layer II allocation plus maximum scfsi bits (the LSF table
+			// gives 75 + 2 × 30 per channel; see VerifyCrc for the derivation and source gap).
+			var protectedBits = (layer == 3 ? 128 : 135) * (mode == 3 ? 1 : 2);
 			return new Header( (word & 0x10000) == 0, sampleRate, mode, (int)(word >> 4) & 3,
-				layer == 3 ? 1 : 2, frameBytes );
+				layer == 3 ? 1 : 2, frameBytes, emphasis, protectedBits );
 		}
 	}
 
@@ -250,7 +302,55 @@ public static partial class Mp2Decoder
 		}
 	}
 
-	private static void DecodeFrame( Header header, ReadOnlySpan<byte> frame, Synthesis[] synthesis, List<short> output )
+	/// <summary>
+	/// First-order shelving de-emphasis applied per channel to the synthesis output.
+	/// Emphasis '01' (50/15 µs) inverts the broadcast pre-emphasis whose time constants
+	/// are 50 µs (pole) and 15 µs (zero); emphasis '11' (CCITT J.17) inverts the published
+	/// J.17 curve, insertion loss 10·log₁₀((75+(ω/3000)²)/(1+(ω/3000)²)) dB, a shelf with
+	/// pole time constant 1/3000 s and zero time constant 1/(3000·√75) s (18.75 dB at high
+	/// frequencies). The network's absolute 18.75 dB pad cancels in the encoder/decoder
+	/// round trip, so both curves are realized at unity gain at DC.
+	/// </summary>
+	// [APPROX:AUDIO-006] the standards specify only the analogue de-emphasis characteristic; this realization is the
+	// bilinear transform of the first-order shelf at the stream's sample rate, J.17 normalized to unity DC gain —
+	// evidence needed: the original decoder's filter realization or an emphasised original stream
+	private sealed class DeEmphasis
+	{
+		private readonly double b0, b1, a1;
+		private readonly double[] previousInput = new double[2];
+		private readonly double[] previousOutput = new double[2];
+
+		public DeEmphasis( int emphasis, int sampleRate )
+		{
+			var zero = emphasis == 1 ? 15e-6 : 1.0 / (3000 * Math.Sqrt( 75 ));
+			var pole = emphasis == 1 ? 50e-6 : 1.0 / 3000;
+			// Bilinear transform of (1 + s·zero)/(1 + s·pole) with s = 2·rate·(1-z⁻¹)/(1+z⁻¹).
+			var highZero = 2.0 * sampleRate * zero;
+			var highPole = 2.0 * sampleRate * pole;
+			b0 = (1 + highZero) / (1 + highPole);
+			b1 = (1 - highZero) / (1 + highPole);
+			a1 = (1 - highPole) / (1 + highPole);
+		}
+
+		public void Run( int channel, Span<float> pcm )
+		{
+			var previousInput = this.previousInput[channel];
+			var previousOutput = this.previousOutput[channel];
+			for ( var index = 0; index < pcm.Length; index++ )
+			{
+				var input = (double)pcm[index];
+				var output = b0 * input + b1 * previousInput - a1 * previousOutput;
+				previousInput = input;
+				previousOutput = output;
+				pcm[index] = (float)output;
+			}
+			this.previousInput[channel] = previousInput;
+			this.previousOutput[channel] = previousOutput;
+		}
+	}
+
+	private static void DecodeFrame( Header header, ReadOnlySpan<byte> frame, Synthesis[] synthesis, List<short> output,
+		DeEmphasis? deEmphasis )
 	{
 		var bits = new Bits( frame, header.Crc ? 48 : 32 );
 		var channels = header.Channels;
@@ -326,14 +426,14 @@ public static partial class Mp2Decoder
 				}
 			}
 			for ( var index = 0; index < 3; index++ )
-				AppendSynthesisSlot( samples[(index * 32)..], channels, 3 * 32, synthesis, output );
+				AppendSynthesisSlot( samples[(index * 32)..], channels, 3 * 32, synthesis, output, deEmphasis );
 		}
 		if ( output.Count - frameStart != SamplesPerFrame * channels )
 			throw new InvalidOperationException( "MP2 frame produced an unexpected sample count." );
 	}
 
 	private static void AppendSynthesisSlot( ReadOnlySpan<float> samples, int channels, int channelStride,
-		Synthesis[] synthesis, List<short> output )
+		Synthesis[] synthesis, List<short> output, DeEmphasis? deEmphasis )
 	{
 		Span<float> pcm = stackalloc float[32];
 		var slotStart = output.Count;
@@ -342,6 +442,8 @@ public static partial class Mp2Decoder
 		for ( var channel = 0; channel < channels; channel++ )
 		{
 			synthesis[channel].Run( samples.Slice( channel * channelStride, 32 ), pcm );
+			if ( deEmphasis != null )
+				deEmphasis.Run( channel, pcm );
 			for ( var sample = 0; sample < 32; sample++ )
 				output[slotStart + sample * channels + channel] = (short)Math.Clamp(
 					MathF.Round( pcm[sample] * 32768f ), short.MinValue, short.MaxValue );

@@ -177,7 +177,8 @@ public static partial class OpcodeHandlers
 			if ( vm.TriggerWaitToken != 0 )
 			{
 				// [APPROX:RIDES-037] Without an object TRIGWAITANIM(_CH) compares its token with the out operand's code word + 1; OpenTPW treats a literal out operand like a variable (never equal), as the in-memory word of a literal is not traced — evidence needed: the RSE loader's literal operand encoding
-				var matched = vm.Effects is IRideAnimationQuery query && query.GetAnimationId( vm, channel ) + 1 == vm.TriggerWaitToken;
+				var matched = vm.Effects is IRideAnimationQuery query && query.TryGetAnimationId( vm, channel, out var animationId )
+					&& animationId + 1 == vm.TriggerWaitToken;
 				if ( !matched )
 				{
 					vm.RepeatInstruction();

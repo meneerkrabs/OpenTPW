@@ -53,7 +53,7 @@ public sealed record WorldStateSources
 public static class WorldStateHash
 {
 	/// <summary>Bumped whenever the hashed fields or their order change.</summary>
-	public const int SchemaVersion = 6;
+	public const int SchemaVersion = 7;
 
 	public static ulong Compute( WorldStateSources sources )
 	{
@@ -90,6 +90,7 @@ public static class WorldStateHash
 		if ( sources.Scripts != null )
 		{
 			hash.Add( sources.Scripts.NextAttractionId );
+			hash.Add( sources.Scripts.ClockMilliseconds );
 			hash.Add( sources.Scripts.Scripts.Count );
 			foreach ( var script in sources.Scripts.Scripts.OrderBy( script => script.ScriptId ) )
 				script.AddCanonicalState( hash );

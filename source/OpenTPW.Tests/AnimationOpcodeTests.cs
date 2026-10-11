@@ -38,8 +38,8 @@ public class AnimationOpcodeTests
 		}
 	}
 
-	private static RideVM Load( Asm asm, IRideScriptEffects? effects = null ) =>
-		new( new RideScriptFile( new MemoryStream( asm.Build( Vars ) ) ), new RideVMOptions { Seed = 1, Effects = effects } );
+	private static RideVM Load( Asm asm, IRideScriptEffects? effects = null, RideScriptWorld? world = null ) =>
+		new( new RideScriptFile( new MemoryStream( asm.Build( Vars ) ) ), new RideVMOptions { Seed = 1, Effects = effects, World = world } );
 
 	private static void Run( RideVM vm, int ticks )
 	{
@@ -166,10 +166,12 @@ public class AnimationOpcodeTests
 	}
 
 	/// <summary>
-	/// WAITANIM_CH adds its unsigned wait to the 32-bit clock without fctiwz (0xb035c): a 166 ms clip gives
-	/// 2³² − 134, so at a clock of 10 s the deadline is 134 ms in the past and the script continues next slice. Only a
-	/// clock below 134 ms leaves the sum unwrapped (a wait of about 49.7 days), and a sum of exactly 0 reads as "not
-	/// waiting", so the next execution triggers again. WAITANIM saturates the same clip to INT32_MAX instead.
+	/// WAITANIM_CH adds its unsigned wait to the 32-bit scheduler clock without fctiwz (0xb035c): a 166 ms clip gives
+	/// 2³² − 134, so at a clock of 10 s the deadline is 134 ms in the past and the script continues next slice. The
+	/// clock is the park's shared scheduler clock, not the script's own, so a script created after 10 s of park time
+	/// continues at once too. Only a scheduler clock below 134 ms (a park that has just started, RIDES-039) leaves the
+	/// sum unwrapped (a wait of about 49.7 days), and a sum of exactly 0 reads as "not waiting", so the next execution
+	/// triggers again. WAITANIM saturates the same clip to INT32_MAX instead.
 	/// </summary>
 	[TestMethod]
 	public void WaitAnimChannelWrapsAShortClipIntoThePast()
@@ -189,9 +191,17 @@ public class AnimationOpcodeTests
 		Assert.AreEqual( 1, vm.Variables[0], "the next slice finds the deadline passed and continues" );
 		CollectionAssert.AreEqual( new[] { "WAITANIM_CH 5 0 3" }, host.Calls, "one trigger" );
 
+		var late = Load( Idle( new Asm().I( Opcode.WAITANIM_CH, 5, 0, 3 ).I( Opcode.COPY, V( 0 ), 1 ) ), new Host { Result = _ => 166 }, vm.World );
+		Assert.AreEqual( 0d, late.TimeMilliseconds );
+		Assert.AreEqual( vm.SchedulerMilliseconds, late.ClockOriginMilliseconds, "a later script starts at the shared clock" );
+		late.Advance( Tick );
+		Assert.AreEqual( RideVMState.Running, late.State, "on the scheduler clock the sum wraps for a script created late as well" );
+		late.Advance( Tick );
+		Assert.AreEqual( 1, late.Variables[0] );
+
 		var early = Load( Idle( new Asm().I( Opcode.WAITANIM_CH, 5, 0, 3 ).I( Opcode.COPY, V( 0 ), 1 ) ), new Host { Result = _ => 166 } );
 		Run( early, 1 );
-		Assert.AreEqual( RideVMState.Waiting, early.State, "at 16 ms the sum does not wrap" );
+		Assert.AreEqual( RideVMState.Waiting, early.State, "in a script world whose scheduler clock is at 16 ms the sum does not wrap (RIDES-039: the clock starts at 0 with the park)" );
 		Assert.AreEqual( early.TimeMilliseconds + 4294967162d, early.WakeTimeMilliseconds, 1e-3 );
 
 		host = new Host { Result = _ => 50 };
@@ -248,6 +258,34 @@ public class AnimationOpcodeTests
 			Run( resetVm, 1 );
 			Assert.AreEqual( RideAnimationTiming.NoLoopToken, resetVm.LoopAnimationToken, reset.ToString() );
 		}
+	}
+
+	/// <summary>
+	/// A visitor-wrapped host still has its object: <see cref="VisitorRideScriptEffects"/> forwards the AnimID query, so
+	/// TRIGWAITANIM resumes once the inner host's channel shows the AnimID. Wrapped around effects without channels the
+	/// script has no object for the query either, and the wait never ends, as without the wrapper.
+	/// </summary>
+	[TestMethod]
+	public void TrigWaitAnimResumesThroughTheVisitorWrapper()
+	{
+		var host = new Host();
+		host.AnimationIds[0] = ObjectAnimator.NoAnimation;
+		var bridge = new RideVisitorBridge( 5, "Wrapped", RideVisitorKind.Shop, 2, 0, 10 );
+		var vm = Load( Idle( new Asm().I( Opcode.TRIGWAITANIM, 6, 0, V( 0 ) ).I( Opcode.COPY, V( 1 ), 1 ) ), new VisitorRideScriptEffects( bridge, host ) );
+		Run( vm, 2 );
+		Assert.AreEqual( 0, vm.Variables[1] );
+		Assert.AreEqual( 2, host.Queries, "the wrapper forwards the query" );
+		host.AnimationIds[0] = 6;
+		Run( vm, 1 );
+		Assert.AreEqual( 1, vm.Variables[1], "the inner host's channel shows AnimID 6" );
+		Assert.AreEqual( 0, vm.TriggerWaitToken );
+
+		var bare = Load( Idle( new Asm().I( Opcode.TRIGWAITANIM, 6, 0, V( 0 ) ).I( Opcode.COPY, V( 1 ), 1 ) ),
+			new VisitorRideScriptEffects( new RideVisitorBridge( 6, "Bare", RideVisitorKind.Shop, 2, 0, 10 ), UnimplementedRideScriptEffects.Instance ) );
+		Run( bare, 120 );
+		Assert.AreEqual( 0, bare.Variables[1], "no object behind the wrapper: the wait never ends (RIDES-037)" );
+		Assert.AreEqual( 300, bare.Variables[0], "no object: ret 0 gives 300" );
+		Assert.AreEqual( 7, bare.TriggerWaitToken );
 	}
 
 	/// <summary>

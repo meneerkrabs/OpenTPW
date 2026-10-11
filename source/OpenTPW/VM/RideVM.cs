@@ -85,11 +85,22 @@ public sealed class RideVM
 	public bool InCriticalSection { get; internal set; }
 	public int CallDepth => callStack.Count;
 
-	/// <summary>Script clock: milliseconds since this VM was created (GETTIME).</summary>
+	/// <summary>Script clock: milliseconds since this VM was created (waits, timers and their deadlines).</summary>
 	public double TimeMilliseconds { get; private set; }
 
-	/// <summary>The script clock as the original's 32-bit millisecond word (truncated, wrapping after about 49.7 days).</summary>
-	internal uint ClockMilliseconds32 => unchecked((uint)(ulong)TimeMilliseconds);
+	/// <summary>The world's scheduler clock (<see cref="RideScriptWorld.ClockMilliseconds"/>) when this VM was created.</summary>
+	public double ClockOriginMilliseconds { get; }
+
+	/// <summary>
+	/// The shared scheduler clock as this script reads it: <see cref="ClockOriginMilliseconds"/> plus the script clock.
+	/// The original's GETTIME and WAITANIM(_CH) call 0x10e844 on the global r30 (loaded at 0xaf55c) and subtract no
+	/// creation timestamp.
+	/// </summary>
+	// [APPROX:RIDES-039] The scheduler clock starts at 0 when the park's script world is created and advances with the script ticks (60 Hz fixed steps); the original's scheduler clock (0x1010E844 on the global r30, 0x100AF55C) has a start value and rate that are not traced — evidence needed: the scheduler clock's value when a placed object's script starts, and whether a save stores it
+	public double SchedulerMilliseconds => ClockOriginMilliseconds + TimeMilliseconds;
+
+	/// <summary>The scheduler clock as the original's 32-bit millisecond word (truncated, wrapping after about 49.7 days).</summary>
+	internal uint ClockMilliseconds32 => unchecked((uint)(ulong)SchedulerMilliseconds);
 	public double WakeTimeMilliseconds { get; private set; }
 	public long ExecutedInstructions { get; private set; }
 	public long SliceCount { get; private set; }
@@ -132,6 +143,7 @@ public sealed class RideVM
 		Effects = options.Effects ?? UnimplementedRideScriptEffects.Instance;
 		World = options.World ?? parent?.World ?? new RideScriptWorld();
 		seed = options.Seed ?? World.NextScriptSeed();
+		ClockOriginMilliseconds = parent?.SchedulerMilliseconds ?? World.ClockMilliseconds;
 		random = new Random( seed );
 		SliceBudget = options.SliceBudget ?? script.TimeSlice;
 		if ( SliceBudget <= 0 )
@@ -173,6 +185,7 @@ public sealed class RideVM
 		if ( !double.IsFinite( deltaSeconds ) || deltaSeconds < 0 )
 			throw new ArgumentOutOfRangeException( nameof( deltaSeconds ) );
 		TimeMilliseconds += deltaSeconds * 1000;
+		World.ObserveClock( SchedulerMilliseconds );
 		RunSlice();
 		Child?.Advance( deltaSeconds );
 		SoundChild?.Advance( deltaSeconds );
@@ -364,6 +377,7 @@ public sealed class RideVM
 		hash.Add( Variables.Length );
 		foreach ( var value in Variables )
 			hash.Add( value );
+		hash.Add( ClockOriginMilliseconds );
 		hash.Add( TimeMilliseconds );
 		hash.Add( WakeTimeMilliseconds );
 		hash.Add( timerEndMilliseconds );

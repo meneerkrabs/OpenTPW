@@ -325,6 +325,20 @@ public class RideVMCorpusTests
 			Assert.AreEqual( 5, runtime.AnimationsPlayed, "WAITANIM 0, three TRIGANIM_CH and TRIGANIM 5 all found their clips" );
 			Assert.AreEqual( 0, runtime.UnresolvedAnimations.Count );
 			CollectionAssert.AreEquivalent( new[] { Opcode.ADDOBJ, Opcode.EVENT, Opcode.KILLOBJ, Opcode.SETREVERB, Opcode.SINGLESCREAM }, vm.UnimplementedEffects.Keys.ToArray() );
+
+			// Closed, the same object plays its opening clip and then idles in its ENDSLICE loop: VAR_RUNNING stays 0.
+			var closed = new OriginalObjectRuntime( entry, seed: 1234, open: true );
+			closed.SetVariable( nameof( RideVariables.VAR_RIDECLOSED ), 1 );
+			closed.SetVariable( nameof( RideVariables.VAR_CAPACITY ), 6 );
+			var closedTrace = TraceHooked( closed.Script! );
+			for ( var tick = 0; tick < 30 * FixedStepClock.TicksPerSecond; ++tick )
+			{
+				closed.Simulate( RideVMTests.Tick );
+				Assert.AreEqual( 0, closed.Script![RideVariables.VAR_RUNNING], "a closed Totem never runs" );
+			}
+			Assert.AreEqual( "16 WAITANIM 0 0\n", closedTrace.ToString(), "a closed Totem idles in its ENDSLICE loop" );
+			Assert.AreEqual( RideVMState.Running, closed.Script!.State, "past the opening clip's wait, idling" );
+			Assert.IsFalse( closed.IsOpen );
 		}
 		finally
 		{

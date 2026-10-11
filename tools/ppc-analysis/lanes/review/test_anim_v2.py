@@ -12,11 +12,11 @@
   3. The compare word of TRIGWAITANIM without an object: the third operand's raw code word stored at
      576(r1) (0xafdcc), which the null branch (0xafdec) leaves in place for the compare (0xafe0c-0xafe18);
      variables carry the 0xC0 tag (0xae6ec), literals are sign-extended low halves.
-- Always (no binaries): the reference arithmetic of the u32 deadline, and source checks for the open findings
-  of this review, which are expected failures until fixed:
-  AW-1 the per-VM script clock (ClockMilliseconds32) stands in for the shared scheduler clock unregistered;
-  AW-2 VisitorRideScriptEffects hides IRideAnimationQuery, so a visitor-wrapped object host never resumes
-  TRIGWAITANIM; AW-3 the closed-Totem idle assertion was dropped from the corpus tests.
+- Always (no binaries): the reference arithmetic of the u32 deadline, and source checks for the findings of
+  this review (expected failures until ANIM-F2 fixed them):
+  AW-1 the scheduler clock is ported and its remaining approximation (start value) is registered;
+  AW-2 VisitorRideScriptEffects forwards IRideAnimationQuery, so a visitor-wrapped object host resumes
+  TRIGWAITANIM; AW-3 the closed-Totem idle assertion is back on the hosted object.
 
 Nothing is executed from the original. Nothing here says anything about the PC build.
 """
@@ -219,7 +219,6 @@ class Source(unittest.TestCase):
         self.assertIn('[APPROX:RIDES-037]', animation)
         self.assertIn('[APPROX:RIDES-038]', animation)
 
-    @unittest.expectedFailure
     def test_aw1_script_clock_versus_scheduler_clock_is_registered(self):
         # The original's waits and GETTIME read the shared scheduler clock (0x10e844 on the global r30); OpenTPW's
         # clock starts at VM creation. ANIM-F's u32 deadline makes the clock value observable (a WAITANIM_CH on a
@@ -230,14 +229,12 @@ class Source(unittest.TestCase):
         self.assertTrue(any('scheduler' in tag or '0x10e844' in tag.lower() or '0x1010e844' in tag.lower()
                             for tag in tags), tags)
 
-    @unittest.expectedFailure
     def test_aw2_visitor_wrapper_forwards_the_animation_query(self):
         bridge = self.read('source/OpenTPW/World/Guests/RideVisitorBridge.cs')
         declaration = re.search(r'public sealed class VisitorRideScriptEffects\([^)]*\)\s*:\s*([^\n{]+)', bridge)
         self.assertIsNotNone(declaration)
         self.assertIn('IRideAnimationQuery', declaration.group(1))
 
-    @unittest.expectedFailure
     def test_aw3_closed_totem_idle_is_still_pinned(self):
         # TotemScriptTraceIsPinned also ran a closed Totem (VAR_RIDECLOSED = 1: idles in its ENDSLICE loop after
         # WAITANIM, VAR_RUNNING stays 0); ANIM-F removed it without a hosted replacement.

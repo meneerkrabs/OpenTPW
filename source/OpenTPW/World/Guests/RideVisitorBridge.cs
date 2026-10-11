@@ -649,8 +649,22 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	}
 }
 
-/// <summary>Routes visitor opcodes to a <see cref="RideVisitorBridge"/> and everything else to <paramref name="inner"/>.</summary>
-public sealed class VisitorRideScriptEffects( RideVisitorBridge bridge, IRideScriptEffects inner ) : IRideScriptEffects
+/// <summary>
+/// Routes visitor opcodes to a <see cref="RideVisitorBridge"/> and everything else to <paramref name="inner"/>, including
+/// TRIGWAITANIM's AnimID query: the script has an object exactly when <paramref name="inner"/> answers it.
+/// </summary>
+public sealed class VisitorRideScriptEffects( RideVisitorBridge bridge, IRideScriptEffects inner ) : IRideScriptEffects, IRideAnimationQuery
 {
 	public int Perform( RideEffectCall call ) => bridge.TryPerform( call, out var result ) ? result : inner.Perform( call );
+
+	public int GetAnimationId( RideVM vm, int channel ) =>
+		((IRideAnimationQuery)this).TryGetAnimationId( vm, channel, out var animationId ) ? animationId : ObjectAnimator.NoAnimation;
+
+	bool IRideAnimationQuery.TryGetAnimationId( RideVM vm, int channel, out int animationId )
+	{
+		if ( inner is IRideAnimationQuery query )
+			return query.TryGetAnimationId( vm, channel, out animationId );
+		animationId = ObjectAnimator.NoAnimation;
+		return false;
+	}
 }

@@ -388,6 +388,27 @@ public class RideVMTests
 		Assert.AreEqual( 0, vm.Variables[1] );
 	}
 
+	/// <summary>
+	/// GETTIME reads the park's shared scheduler clock and subtracts no creation timestamp (0xaf6d8 on the global r30):
+	/// a script created after a second of park time reads about 1016 ms on its first slice, not 16.
+	/// </summary>
+	[TestMethod]
+	public void GetTimeReadsTheSharedSchedulerClock()
+	{
+		var world = new RideScriptWorld();
+		Asm Program() => new Asm().I( Opcode.GETTIME, V( 0 ) ).Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" );
+		var first = Load( Program(), new RideVMOptions { Seed = 1, World = world } );
+		Run( first, 60 );
+		Assert.AreEqual( 1000d, world.ClockMilliseconds, 1e-6 );
+		var second = Load( Program(), new RideVMOptions { Seed = 2, World = world } );
+		Assert.AreEqual( 1000d, second.ClockOriginMilliseconds, 1e-6 );
+		first.Advance( Tick );
+		second.Advance( Tick );
+		Assert.AreEqual( 1016, second.Variables[0], "the shared clock, not 16 ms since creation" );
+		Assert.AreEqual( 1000d / 60, second.TimeMilliseconds, 1e-6, "waits and timers still count from creation" );
+		Assert.AreEqual( 1000d + 1000d / 60, world.ClockMilliseconds, 1e-6, "advancing two scripts by one tick moves the clock once" );
+	}
+
 	[TestMethod]
 	public void DefaultEffectsAreRecordedAsUnimplementedAndReturnZero()
 	{

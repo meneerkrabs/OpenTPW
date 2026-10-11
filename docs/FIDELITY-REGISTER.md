@@ -14,9 +14,9 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **194 unresolved unique APPROX IDs**, 214 APPROX occurrences, 86 EXT occurrences, 81 DATA occurrences and 155 BIN occurrences.
+Current inventory: **195 unresolved unique APPROX IDs**, 215 APPROX occurrences, 86 EXT occurrences, 81 DATA occurrences and 155 BIN occurrences.
 
-Of these, 188 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
+Of these, 189 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
 CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.
 
@@ -34,7 +34,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ONLINE | 6 | 6 |
 | PATH | 13 | 14 |
 | QUEUE | 19 | 19 |
-| RIDES | 31 | 31 |
+| RIDES | 32 | 32 |
 | UI | 40 | 55 |
 
 ## Approximation declarations
@@ -195,6 +195,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | RIDES-036 | Original-fidelity area (scope unadjudicated) | UV pass always runs: global option bit 0x10 and node bit 0x4000 taken as clear (setters untraced) | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:39` |
 | RIDES-037 | Original-fidelity area (scope unadjudicated) | TRIGWAITANIM without an object treats a literal out operand like a variable (never resumes) | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:40` |
 | RIDES-038 | Original-fidelity area (scope unadjudicated) | TRIGANIMSPEED speed below 0 faults; negative channel playback untraced | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:41` |
+| RIDES-039 | Original-fidelity area (scope unadjudicated) | scheduler clock (GETTIME, WAITANIM(_CH) deadlines) starts at 0 with the park's script world; original start value untraced | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:42` |
 | UI-001 | Original-fidelity area (scope unadjudicated) | non-4:3 outputs keep each element at its authored distance from the nearest edge (anchors) | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:12` |
 | UI-002 | Original-fidelity area (scope unadjudicated) | BF4 font size tier (SMALL/MED/BIG) chosen by logical scale thresholds 0.36 and 0.6 | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:13` |
 | UI-003 | Original-fidelity area (scope unadjudicated) | button/arm state frames drawn at the root node pose; child translations ignored | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:14` |
@@ -283,7 +284,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | COMPAT-015 | `source/OpenTPW.Files/Public/FshFile.cs:253` | [APPROX:COMPAT-015] A1R5G5B5 with bit 15 as alpha; one corpus file, every entry has bit 15 set. |
 | DET-002 | `source/OpenTPW/World/WorldSeed.cs:9` | [APPROX:DET-002] runs take an explicit world seed (default 0x5450574775657374) instead of the original's time(NULL)/timer seeds — evidence needed: none possible; explicit seeding is an OpenTPW replay policy |
 | DET-012 | `source/OpenTPW/Audio/SoundEvents.cs:122` | [APPROX:DET-012] every draw stores its successor as the new seed; unmerged advisor phase 10 reads the bundle's choosers as never storing it — evidence needed: that phase merged and re-pinned on main (docs/reverse/DET-plan.md §3 D9) |
-| DET-013 | `source/OpenTPW/VM/RideScriptWorld.cs:31` | [APPROX:DET-013] scripts without an explicit seed get a per-VM System.Random seeded from the park's SplitMix64 stream, not draws from the original's one world generator — evidence needed: DET-I2 (RSE RAND/FINDSCRIPTRAND on the world LCG, docs/reverse/DET-plan.md §4.3) |
+| DET-013 | `source/OpenTPW/VM/RideScriptWorld.cs:39` | [APPROX:DET-013] scripts without an explicit seed get a per-VM System.Random seeded from the park's SplitMix64 stream, not draws from the original's one world generator — evidence needed: DET-I2 (RSE RAND/FINDSCRIPTRAND on the world LCG, docs/reverse/DET-plan.md §4.3) |
 | DET-014 | `source/OpenTPW/World/Guests/GuestSimulation.cs:4` | [APPROX:DET-014] guests draw from their own SplitMix64 stream seeded from the world seed, not from the original's shared world LCG reseeded to each new guest's id — evidence needed: DET-I2 port of WorldRng (docs/reverse/DET-plan.md §2.3, §4.3) |
 | DET-015 | `source/OpenTPW/Economy/ParkCalendar.cs:96` | [APPROX:DET-015] the economy draws from its own SplitMix64 stream seeded from the world seed, not from the original's shared world LCG (staff candidates 0xf5b64, staff gates) — evidence needed: DET-I2 port of WorldRng (docs/reverse/DET-plan.md §2.3, §4.3) |
 | DET-016 | `source/OpenTPW/Economy/ParkSaveFile.cs:63` | [APPROX:DET-016] the park save persists the economy and every random stream, but not guests, queues or object script state; a load keeps the running guests and scripts — evidence needed: an OpenTPW save of the thing and script tables (docs/reverse/DET-plan.md §4.4) |
@@ -393,12 +394,13 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | RIDES-030 | `source/OpenTPW/World/Objects/ObjectAnimator.cs:202` | [APPROX:RIDES-030] Node-state bit 0x10 set (clip node lists at start, toggle entries ≤ 0) hides the node's mesh; the draw consumer of the bit was not found (the object save persists it, the advisor lists hats and accessories, Fireworks list their Destroyed mesh) — evidence needed: the reader of node bit 0x10 in the draw path, or captures |
 | RIDES-031 | `source/OpenTPW/World/Objects/ObjectAnimator.cs:463` | [APPROX:RIDES-031] Relative-animation models (header flag 0x4) play their vertex and UV tracks in set mode, as the default ride load path strips the flag; add mode behind the ride-loader argument 0x20000 (vertex keys 0xa4a58/0xa4f68; UV keys with r5 = header & 4 at 0xa56d4, add loop 0xa8420) is not modelled — evidence needed: the ride-data source of the 0x594c8 flag word that allows 0x20000 |
 | RIDES-032 | `source/OpenTPW/World/Objects/ObjectAnimator.cs:26` | [APPROX:RIDES-032] Every instance takes the placement callback route (0xa7960 with r4 = 1) on every update; the object-list route (0x4d354, r4 = 0: clocks advance without posing unless object flag 0x00400000, loops replay without a bind and keep their vertex cursors) is not modelled — evidence needed: the engine's condition for calling the render-record callback installed at 0x5a3bc, and the setter of object flag 0x00400000 |
-| RIDES-033 | `source/OpenTPW/VM/RideVM.cs:310` | [APPROX:RIDES-033] Script speed stays 1.0 (the creation bias 50); the native writers of the bias (0x100B2A34, 0x100B5B18) are not modelled — evidence needed: what those callers store and when |
+| RIDES-033 | `source/OpenTPW/VM/RideVM.cs:323` | [APPROX:RIDES-033] Script speed stays 1.0 (the creation bias 50); the native writers of the bias (0x100B2A34, 0x100B5B18) are not modelled — evidence needed: what those callers store and when |
 | RIDES-034 | `source/OpenTPW/World/Objects/ObjectAnimator.cs:27` | [APPROX:RIDES-034] No idle restart: the original object update re-triggers AnimID 5, sub 0 on channel 0 while channel 0 has ended for objects whose +4 & 0x8004 is clear (0xa798c–0xa79c8) — evidence needed: which placed objects keep +4 & 0x8004 clear (placement-flag sources) |
 | RIDES-035 | `source/OpenTPW/World/Objects/ObjectAnimator.cs:28` | [APPROX:RIDES-035] MD2 texture-frame tracks (trailer word 12) are decoded but not applied; the clip update 0xa56f8 applies them when trailer bit 0x2 is set and global option bit 0x8 is clear (its only store writes 0), but the consumer of the selected frame slot is not traced — evidence needed: the reader of the texture slot's current frame in the draw path |
 | RIDES-036 | `source/OpenTPW/World/Objects/ObjectAnimator.cs:371` | [APPROX:RIDES-036] The UV pass always runs: global option +16396 bit 0x10 and node bit 0x4000 are taken as clear, as their setters are not traced (ANIM-plan §14) — evidence needed: the writers of option bit 0x10 and node bit 0x4000 |
 | RIDES-037 | `source/OpenTPW/VM/Handlers/Animation.cs:179` | [APPROX:RIDES-037] Without an object TRIGWAITANIM(_CH) compares its token with the out operand's code word + 1; OpenTPW treats a literal out operand like a variable (never equal), as the in-memory word of a literal is not traced — evidence needed: the RSE loader's literal operand encoding |
 | RIDES-038 | `source/OpenTPW/VM/Handlers/Animation.cs:61` | [APPROX:RIDES-038] A TRIGANIMSPEED speed operand below 0 faults the script: the original defines it (signed divw gives a deadline before now, the channel gets a negative speed), but how the channel frame 0xa6484 and the clip-end test 0xa7190 behave with a negative speed is not traced — evidence needed: the channel update with a negative speed |
+| RIDES-039 | `source/OpenTPW/VM/RideVM.cs:99` | [APPROX:RIDES-039] The scheduler clock starts at 0 when the park's script world is created and advances with the script ticks (60 Hz fixed steps); the original's scheduler clock (0x1010E844 on the global r30, 0x100AF55C) has a start value and rate that are not traced — evidence needed: the scheduler clock's value when a placed object's script starts, and whether a save stores it |
 | UI-001 | `source/OpenTPW/UI/Original/UiCanvas.cs:47` | [APPROX:UI-001] anchors keep the authored distance to the nearest edge on non-4:3 outputs — evidence needed: original widescreen behaviour / design decision |
 | UI-002 | `source/OpenTPW/UI/Original/UiCanvas.cs:43` | [APPROX:UI-002] font tier thresholds 0.36 / 0.6 of logical scale — evidence needed: binary font selection per screen mode |
 | UI-002 | `source/OpenTPW/UI/Original/UiText.cs:57` | [APPROX:UI-002] which shipped font serves which role per tier — evidence needed: binary font use / captures |

@@ -25,6 +25,14 @@ public sealed class RideScriptWorld
 
 	internal int AllocateAttractionId() => nextAttractionId++;
 
+	/// <summary>
+	/// The shared scheduler clock in milliseconds: the latest time any of this park's scripts has been advanced to.
+	/// Every script reads it (GETTIME, WAITANIM(_CH) deadlines); a script created later starts at its current value.
+	/// </summary>
+	public double ClockMilliseconds { get; private set; }
+
+	internal void ObserveClock( double milliseconds ) => ClockMilliseconds = Math.Max( ClockMilliseconds, milliseconds );
+
 	internal void RestoreRandomState( ulong state ) => RandomState = state;
 
 	/// <summary>Seed for a script created without one.</summary>

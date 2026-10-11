@@ -119,7 +119,7 @@ queue state, version 5 the cell map, see Tests):
 | `calendar_rate` | no clock rate | **missing** |
 | `thing_table_digest` | guests in id order (every field the tick reads, including navigation and timers), including each guest's queue fields, the queue edge detectors, then attractions with queue cells, the queue list, admission state and counters, riders, limbo and bounce lists | yes (order is id order, not the original's newest first) |
 | (cell map) | `ParkCellMap` of the guest grid: every non-empty cell in row order with its type, flags, placement counter, links and queue link (paths built by the path tool included) | yes (extra, after the thing table) |
-| `script_table_digest` | every live script in id order: id, name, parent, state, PC, flags, call stack, variables, clock, wake time, timers, WAIT4ANIM deadline, LOOPANIM and TRIGWAITANIM tokens, instruction and slice counts, seed and RNG call count; for a root object script also its animator channels (AnimID, variant, loop, speed, start, ended, tick, deferred clip) and clock | yes |
+| `script_table_digest` | the script world's scheduler clock, then every live script in id order: id, name, parent, state, PC, flags, call stack, variables, clock origin, clock, wake time, timers, WAIT4ANIM deadline, LOOPANIM and TRIGWAITANIM tokens, instruction and slice counts, seed and RNG call count; for a root object script also its animator channels (AnimID, variant, loop, speed, start, ended, tick, deferred clip) and clock | yes |
 | `economy_digest` | the park save's economy part as canonical JSON (sorted keys) | yes |
 | `input_log_cursor` | no input log | **missing** |
 
@@ -174,7 +174,10 @@ the same seed as well.
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0x0BC982AB91BE9A28`, schema 6; the run is unchanged, but each script now hashes the animation state the
+  (`0xE3498781B921C80D`, schema 7; the run is unchanged (schema 6's fields still give `0x0BC982AB91BE9A28`), but the
+  script world now hashes the shared scheduler clock that GETTIME and the WAITANIM(_CH) deadlines read, and each
+  script its clock origin, the scheduler clock when it was created (docs/RSE-VM.md, RIDES-039). Before that:
+  `0x0BC982AB91BE9A28`, schema 6; the run was unchanged, but each script then hashed the animation state the
   original keeps per script (the single WAIT4ANIM deadline, the LOOPANIM token and the TRIGWAITANIM token,
   replacing the latest-clip-end field) and, for a root script whose effects own animation channels, the
   object's channel state that GETANIM and TRIGWAITANIM read back (docs/reverse/ANIM-plan.md §8). Before that:

@@ -38,7 +38,8 @@ public static class RidesApproximations
 		("RIDES-035", "MD2 texture-frame tracks not applied"),
 		("RIDES-036", "UV pass always runs: global option bit 0x10 and node bit 0x4000 taken as clear (setters untraced)"),
 		("RIDES-037", "TRIGWAITANIM without an object treats a literal out operand like a variable (never resumes)"),
-		("RIDES-038", "TRIGANIMSPEED speed below 0 faults; negative channel playback untraced")
+		("RIDES-038", "TRIGANIMSPEED speed below 0 faults; negative channel playback untraced"),
+		("RIDES-039", "scheduler clock (GETTIME, WAITANIM(_CH) deadlines) starts at 0 with the park's script world; original start value untraced")
 	};
 
 	private static bool logged;

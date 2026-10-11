@@ -48,6 +48,13 @@ public interface IRideScriptEffects
 public interface IRideAnimationQuery
 {
 	int GetAnimationId( RideVM vm, int channel );
+
+	/// <summary>The AnimID, or false when this host has no object to ask (a wrapper around effects without channels).</summary>
+	bool TryGetAnimationId( RideVM vm, int channel, out int animationId )
+	{
+		animationId = GetAnimationId( vm, channel );
+		return true;
+	}
 }
 
 /// <summary>Implemented by effects whose state later script steps read back; hashed with the root script.</summary>

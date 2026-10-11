@@ -326,6 +326,7 @@ Original-data values are tagged `// [DATA:<file>:<field>]`.
 | RIDES-036 | World/Objects/ObjectAnimator.cs | The UV pass always runs: global option +16396 bit 0x10 and node bit 0x4000 (gate 0xa5698–0xa56b8) taken as clear | The writers of option bit 0x10 and node bit 0x4000 |
 | RIDES-037 | VM/Handlers/Animation.cs | TRIGWAITANIM(_CH) without an object never resumes; for a literal out operand this assumes its in-memory code word, like a variable's (tag 0xC0), never equals the token | The RSE loader's in-memory literal operand encoding |
 | RIDES-038 | VM/Handlers/Animation.cs | TRIGANIMSPEED with a speed operand below 0 faults (0 is undefined `divw`) | The channel update with a negative speed (0xa6484, 0xa7190) |
+| RIDES-039 | VM/RideVM.cs | The shared scheduler clock that GETTIME and the WAITANIM(_CH) deadlines read starts at 0 when the park's script world is created and advances with the script ticks | The original scheduler clock's (0x10e844 on the global r30) value when a placed object's script starts, and whether a save stores it |
 
 Imported objects share their economy instance with the guest payment bridge;
 shop/sideshow payments and ride-use statistics use that instance. Open/closed

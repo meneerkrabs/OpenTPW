@@ -75,8 +75,13 @@ implementation against those inputs, not equivalence to an executed PC game.
 - Time unit is the millisecond (**inferred**: `WAIT 500…5300` around ride
   animations, `GETTIME; ADD VAR_STARTNOW 10000` passenger time-outs, animation
   durations fed into `WAIT`). Waits resume on the first tick at or after the
-  wake time, so they are quantised to 1/60 s. `GETTIME` is milliseconds since
-  the VM was created.
+  wake time, so they are quantised to 1/60 s. `GETTIME` reads the park's shared
+  scheduler clock (`RideScriptWorld.ClockMilliseconds`), as the original reads
+  `0x10e844` on the global r30 (0xaf55c, 0xaf6d8) without subtracting a creation
+  timestamp; a script created later starts at the clock's current value. The
+  WAITANIM(_CH) deadlines use the same 32-bit clock word; WAIT, SETTIMER and the
+  wake times count from the script's own creation, which only shifts their base.
+  The clock starts at 0 with the park's script world (RIDES-039).
 - `JSR`/`RETURN` use a LIFO stack limited to the header stack size (every
   script that uses JSR declares ≥ 3); the old VM used a FIFO queue.
 - Children: `SPAWNCHILD` and `SPAWNSOUND` load a script from the parent's
@@ -331,7 +336,7 @@ handler attributes diverge.
 | 4 | `SETLV` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
 | 5 | `SUB` | 74 | implemented | docs (sets flags); corpus: operand order is `SUB dest a b` → dest = a − b |
 | 6 | `ENDSLICE` | 396 | implemented | name; corpus: sits in idle loops (`ENDSLICE; TEST VAR_RIDECLOSED; BRANCH_NZ`), so it yields until the next slice; flags survive it |
-| 7 | `GETTIME` | 172 | implemented | docs (time the ride has been alive); milliseconds since the VM started |
+| 7 | `GETTIME` | 172 | implemented | STP-PPC 0xaf6d8: the shared scheduler clock's 32-bit millisecond word, stored unchanged (no creation timestamp subtracted) |
 | 8 | `ADDOBJ` | 644 | hooked | docs (`type parameter id slot`) |
 | 9 | `ADDOBJ_EXT` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
 | 10 | `KILLOBJ` | 235 | hooked | docs (`slot`); does not touch flags (`ADD VAR_COUNT 0xFFFF; KILLOBJ 200; BRANCH_PV`) |

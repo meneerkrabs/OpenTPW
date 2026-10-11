@@ -20,8 +20,8 @@ public static partial class OpcodeHandlers
 		[OpcodeHandler( Opcode.WAIT, RideOpcodeStatus.Implemented, "docs; milliseconds (inferred); flags survive it (`WAIT 300; BRANCH_NZ`)" )]
 		public static void Wait( RideVM vm, Operand time ) => vm.WaitFor( time.Value );
 
-		[OpcodeHandler( Opcode.GETTIME, RideOpcodeStatus.Implemented, "docs (time the ride has been alive); milliseconds since the VM started" )]
-		public static void GetTime( RideVM vm, Operand dest ) => dest.Value = (int)System.Math.Floor( vm.TimeMilliseconds );
+		[OpcodeHandler( Opcode.GETTIME, RideOpcodeStatus.Implemented, "STP-PPC 0xaf6d8: the shared scheduler clock's 32-bit millisecond word, stored unchanged (no creation timestamp subtracted)" )]
+		public static void GetTime( RideVM vm, Operand dest ) => dest.Value = unchecked((int)vm.ClockMilliseconds32);
 
 		[OpcodeHandler( Opcode.SETTIMER, RideOpcodeStatus.Implemented, "corpus: `SETTIMER 10000 … GETTIMER x; BRANCH_Z start` replaces the GETTIME time-out idiom; countdown in ms" )]
 		public static void SetTimer( RideVM vm, Operand time ) => vm.SetTimer( time.Value );

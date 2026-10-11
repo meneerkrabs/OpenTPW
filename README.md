@@ -77,6 +77,11 @@ What works today, with your own original game data:
 - **Guests, economy and staff:** guests arrive, walk the paths and use rides, shops, sideshows and
   toilets; money, loans, wages, research, objectives, golden tickets and keys run on the original
   settings files ([guests](docs/GUESTS.md), [economy](docs/ECONOMY.md)).
+- **Park door and rides:** the park door (the entry-price screen's door button, Ctrl-O and Ctrl-C) opens
+  and closes the park: admissions stop at the booth, the rides close, and the entrance gate shuts once
+  the park is empty ([park door](docs/GATES.md)). A placed queue cell can be clicked to extend its ride's
+  queue, and the selected ride can be ridden in a first-person view (E; Escape or a right click leaves
+  it). Riders are still hidden on rides: seat attachment is not implemented ([guests](docs/GUESTS.md)).
 - **Advisor, music and movies:** the advisor speaks for the traced game events with lip sync, the
   park and the front-end lobby play their original music, rides, the crowd and the interface play
   their original sounds, and all nine movies play ([audio](docs/AUDIO.md),

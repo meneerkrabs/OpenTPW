@@ -513,6 +513,9 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-090 | `Hud/ParkHud.Staff.cs` | staff table control 9366 toggles between applicant and employed views | original control 9366 handler |
 | UI-091 | `Hud/ParkHud.Staff.cs` | staff and visitor locate controls remain disabled until world positions can be targeted | staff and visitor world positions and locate handlers |
 | UI-092 | `Hud/ParkHud.Staff.cs` | an explicit dismiss button below the portrait confirms with the localized prompt before calling economy Fire | original staff dismissal handler and placement |
+| UI-093 | `Hud/ParkHud.cs`, `World/Level.RideView.cs` | the ride view is entered with the E key on the selected ride, not the ride window's "Ride it!" button | the ride window's Ride it button art and layout, and the Ride it handler (maexah/OpenTPW hud.md, FUN_004e15b0) |
+| UI-094 | `World/RideCameraMode.cs` | the ride view's eye sits on the first train's front car (coaster) or the carriage's height (prototype); the walk, sway and field of view are not reproduced | CMMFirstPersonTarget (Mac 0x1006CF44) and CMMCoaster Update bodies |
+| UI-095 | `World/Level.RideView.cs` | leaving the ride view restores the park camera it was entered from; the walking first-person view is not implemented | the first-person walk's camera state (gui_CameraFlags 0x400) and the exit handler FUN_0042a190 |
 
 Data-backed (tagged `[DATA]`): the 2048×1536 canvas and authored rectangles of
 placed models (`ui.wad` roots/bounds), button state frames and texture order, V

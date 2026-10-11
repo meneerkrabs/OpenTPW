@@ -61,7 +61,9 @@ pause menu (PATH-011). While the pause menu is open the tool takes no clicks;
 the speed pause does not stop it (PATH-013).
 
 In the park view the hover help is 441 over an empty owned cell, 442 over a
-path and 444 over a queue; inside the tools it is 443 and 445. A left click on
+path and 444 over a queue; inside the tools it is 443 and 445. A left click on a
+queue cell (444, "Left-click to edit this queue") starts the queue tool for the
+HasQueue ride that owns it, at that queue's back cell (QUEUE-021). A left click on
 an empty owned cell or a path cell starts the path tool (PATH-001; there is no
 menu button). After a HasQueue ride is placed, the queue tool starts at the
 entrance's outside cell and lays QUEUE-I's queue cells through the same tool.

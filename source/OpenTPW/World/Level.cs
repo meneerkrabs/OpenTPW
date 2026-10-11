@@ -23,6 +23,12 @@ public partial class Level : IDisposable
 	/// <summary>The park's weather, created on the first simulation step of a park; null without a park economy.</summary>
 	public ParkWeather? Weather { get; private set; }
 
+	/// <summary>
+	/// The park door of an original level: the entrance gate's script and the open/close walk over the
+	/// attractions. Null for the sandbox and read-only visits.
+	/// </summary>
+	public ParkGate? Gate { get; private set; }
+
 	/// <summary>Park name on the gate sign of an imported original level (TrueType sign text demo).</summary>
 	public OriginalGateSign? GateSign { get; private set; }
 	private bool wasMouseDown;
@@ -198,6 +204,7 @@ public partial class Level : IDisposable
 			ConnectObjectsToGuests();
 			ConnectObjectsToEconomy();
 			SetupStaff();
+			SetupParkGate();
 		}
 	}
 
@@ -211,6 +218,26 @@ public partial class Level : IDisposable
 		var sprites = GuestSpriteAtlas.LoadKids();
 		GuestRenderer = new GuestRenderer( Guests, park.Heightfield, sprites );
 		Log.Trace( $"Guests: {grid.WalkableCount} walkable path cells, {sprites.Count} original kid sprite sets, {Guests.Settings.Types.Count} .sam peep types." );
+	}
+
+	/// <summary>
+	/// Wires the park door (docs/GATES.md): the economy's open/close events command the entrance gate's script
+	/// and close or open the attractions, and the gate's deferred-close retry runs with the economy tick.
+	/// </summary>
+	private void SetupParkGate()
+	{
+		if ( Park == null )
+			return;
+		Gate = ParkGate.ForLevel( Park.Economy, Objects, Guests, () => Park.Economy.Staff.Members, () => PlacedRide?.Runtime );
+		// A park that starts open commands its gate open once at setup, the way the original's gate lookup
+		// writes the command from mParkClosed (Mac 0x104500 writes the gate handle and the closed flag together);
+		// the initial OpenPark of AttachGuests raises its event before this wiring, so it commands nothing.
+		Gate.InitializeFromParkState();
+		Park.Economy.EventRaised += item =>
+		{
+			if ( item.Kind is ParkEventKind.ParkOpened or ParkEventKind.ParkClosed )
+				Gate.DoorMoved( item.Kind == ParkEventKind.ParkClosed );
+		};
 	}
 
 	/// <summary>Walkable path cell next to (or nearest to) a footprint; the prototype Totem has no catalog entrance cell yet.</summary>
@@ -317,6 +344,8 @@ public partial class Level : IDisposable
 	public void Update()
 	{
 		StaffWorld?.Synchronize();
+		if ( RideView?.Ride.IsDeleted == true )
+			ExitRideView();
 		Camera.Update();
 		if ( ShowDeveloperPanels )
 			parkLayout.Draw();
@@ -325,14 +354,8 @@ public partial class Level : IDisposable
 			onlinePanel ??= new OnlinePanel( this, onlineFolders );
 			onlinePanel.Draw();
 		}
-		if ( IsPlacing && !wasMouseDown && Input.Mouse.Left && !UiCapturesMouse && !ImGuiNET.ImGui.GetIO().WantCaptureMouse )
-		{
-			if ( TryGetPlacementPosition( Input.Mouse.Position, new Vector2( Screen.Size.X, Screen.Size.Y ), out var position ) )
-				PlaceRide( position );
-		}
-		else if ( !wasMouseDown && Input.Mouse.Left && !UiCapturesMouse && !ImGuiNET.ImGui.GetIO().WantCaptureMouse )
-			HandleObjectClick( Input.Mouse.Position, new Vector2( Screen.Size.X, Screen.Size.Y ) );
-		wasMouseDown = Input.Mouse.Left;
+		UpdateWorldInput( Input.Mouse.Left, UiCapturesMouse || ImGuiNET.ImGui.GetIO().WantCaptureMouse,
+			Input.Mouse.Position, new Vector2( Screen.Size.X, Screen.Size.Y ) );
 		if ( OriginalTerrain != null && Guests != null && Guests.Grid.Cells.Version != renderedCellVersion )
 		{
 			renderedCellVersion = Guests.Grid.Cells.Version;
@@ -350,10 +373,38 @@ public partial class Level : IDisposable
 				Weather ??= new ParkWeather( Park.Economy.Settings.Standard, Seed.WeatherStream, Guests.Grid.Cells.Width, Guests.Grid.Cells.Height );
 				Weather.AdvanceTo( Park.Economy.Tick );
 			}
+			// The deferred gate-close retry runs after the thing sweep, as the original's world sweep does (Mac 0x10536c).
+			Gate?.Tick();
 			StaffWorld?.Tick( deltaTime );
 		} );
 		foreach ( var entity in Entity.All.ToArray() )
 			entity.Update();
+		// Riding follows the frame just simulated; park-camera input is consumed only by the earlier update.
+		if ( RideView != null && ReferenceEquals( Camera.Mode, RideView ) )
+			Camera.Update();
+	}
+
+	internal enum WorldClickAction { None, PlacePrototype, UseTool }
+
+	/// <summary>World input stays suspended in the ride view, including tools armed through the HUD.</summary>
+	internal static WorldClickAction WorldClick( bool riding, bool leftDown, bool previousLeftDown, bool mouseCaptured, bool placing ) =>
+		riding || !leftDown || previousLeftDown || mouseCaptured ? WorldClickAction.None
+			: placing ? WorldClickAction.PlacePrototype : WorldClickAction.UseTool;
+
+	internal void UpdateWorldInput( bool leftDown, bool mouseCaptured, Vector2 mousePosition, Vector2 viewportSize )
+	{
+		switch ( WorldClick( RideView != null, leftDown, wasMouseDown, mouseCaptured, IsPlacing ) )
+		{
+			case WorldClickAction.PlacePrototype:
+				if ( TryGetPlacementPosition( mousePosition, viewportSize, out var position ) )
+					PlaceRide( position );
+				break;
+			case WorldClickAction.UseTool:
+				HandleObjectClick( mousePosition, viewportSize );
+				break;
+		}
+		// Track the button in both cameras: a held click must not build when the player leaves a ride.
+		wasMouseDown = leftDown;
 	}
 
 	public bool PlaceRide( Vector3 position )
@@ -392,6 +443,8 @@ public partial class Level : IDisposable
 	{
 		if ( IsReadOnlyVisit )
 			return;
+		if ( ReferenceEquals( RideView?.Ride, PlacedRide ) && RideView != null )
+			ExitRideView();
 		PlacedRide?.Delete();
 		if ( PlacedRide != null )
 		{
@@ -455,6 +508,7 @@ public partial class Level : IDisposable
 
 	public void Dispose()
 	{
+		ExitRideView();
 		onlinePanel?.Dispose();
 		DetachOverlay();
 		TextOverlay?.Dispose();

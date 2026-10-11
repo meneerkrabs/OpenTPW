@@ -114,7 +114,7 @@ online is also implied by the display setting `FIRSTPERSONVIEWDISTANCE` (options
 and by the online park being a normal park load (the `online_Standard` level with the downloaded save,
 whose rides run their scripts). The Update bodies of the two ride-camera classes are not decoded; the
 seat position, view direction and entry/exit input stay approximations in OpenTPW
-([APPROX:ONLINE-073]).
+([APPROX:UI-094], with entry and restoration qualified by UI-093 and UI-095).
 
 ## What the visit did *not* include
 

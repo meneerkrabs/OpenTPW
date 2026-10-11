@@ -41,8 +41,6 @@ public sealed partial class ParkHud
 	private string lastLevelMessage = "";
 	private BuildItem? pendingItem;
 	private OriginalObject? selectedObject;
-	/// <summary>The park view to return to after the ride camera (the visitor's view when boarding).</summary>
-	private CameraMode? previousMode;
 	private CashChangeTracker cashTracker;
 	private object? cashSource;
 	private readonly List<UiElement> economyElements = new();
@@ -375,8 +373,8 @@ public sealed partial class ParkHud
 		return true;
 	}
 
-	/// <summary>True while the visitor rides a ride of the shared park (the ride camera is active).</summary>
-	public bool IsRiding => Camera.Mode is RideCameraMode;
+	/// <summary>True while this level owns an active ride view.</summary>
+	public bool IsRiding => level.RideView != null;
 
 	/// <summary>
 	/// Boards a placed ride of the visited park: the camera becomes the ride's view, keeping the heading the visitor
@@ -385,21 +383,13 @@ public sealed partial class ParkHud
 	/// </summary>
 	public void StartRide( OriginalObject? item )
 	{
-		if ( !level.IsReadOnlyVisit || item is not { IsDeleted: false } candidate || !RideCameraMode.CanRide( candidate ) || IsRiding )
+		if ( !level.IsReadOnlyVisit || item is not { IsDeleted: false } candidate || !level.EnterRideView( candidate ) )
 			return;
-		previousMode = Camera.Mode;
-		Camera.Mode = new RideCameraMode( candidate, previousMode.Rotation.Forward );
 		PostMessage( OnlineStrings.Get( OnlineLabel.Ride ) + ": " + EntryName( candidate.Entry ) );
 	}
 
 	/// <summary>Leaves the ride: the park view returns where it was.</summary>
-	public void StopRide()
-	{
-		if ( !IsRiding )
-			return;
-		Camera.Mode = previousMode ?? new ParkCameraMode();
-		previousMode = null;
-	}
+	public void StopRide() => level.ExitRideView();
 
 	public void OpenPauseMenu()
 	{
@@ -471,15 +461,24 @@ public sealed partial class ParkHud
 		ClosePauseMenu();
 	}
 
+	/// <summary>Park shortcuts wait while a pause/menu, text field or keyboard-capturing developer UI owns input.</summary>
+	internal static bool ParkShortcutsAllowed( bool paused, bool overlayOpen, bool textEntry, bool keyboardCaptured ) =>
+		!paused && !overlayOpen && !textEntry && !keyboardCaptured;
+
+	/// <summary>A right-click exit belongs to the park view only when neither UI owns the pointer.</summary>
+	internal static bool RideRightClickAllowed( bool shortcutsAllowed, bool overUi, bool consumed, bool mouseCaptured ) =>
+		shortcutsAllowed && !overUi && !consumed && !mouseCaptured;
+
 	/// <summary>
 	/// One frame: HUD input first (so clicks on the HUD never reach the park), then park selection,
 	/// purchase bookkeeping and messages. Returns true when the pointer is over the UI.
 	/// </summary>
 	public bool Update( UiContext context, UiInput input )
 	{
+		var ridingAtStart = IsRiding;
 		foreach ( var element in infoElements )
 			element.Visible = InfoArmOpen && selectedObject is { IsDeleted: false }
-				// Riding is the visit's action; the own park's first-person ride camera is the park-play slice's.
+				// The visit button uses the same ride camera as the park's keyboard shortcut.
 				&& (element.Id != "rideView" || level.IsReadOnlyVisit);
 		if ( selectedObject is not { IsDeleted: false } && InfoArmOpen )
 			InfoArmOpen = false;
@@ -503,6 +502,31 @@ public sealed partial class ParkHud
 		if ( !paused && input.Has( UiKeys.Pause ) )
 			Status.Speed = Status.Speed == GameSpeed.Paused ? GameSpeed.Normal : GameSpeed.Paused;
 
+		var io = ImGuiNET.ImGui.GetIO();
+		var shortcutsAllowed = ParkShortcutsAllowed( paused, Stack.Screens.Count > 1, Input.TextEntryActive, io.WantCaptureKeyboard || io.WantTextInput );
+
+		// Ride It (E) rides the selected ride; a right click (RMB cancel on) or E again leaves the ride view.
+		// [APPROX:UI-093] the key stands in for the ride window's "Ride it!" button (gui_CameraFlags 4), whose art is not in the repository
+		if ( shortcutsAllowed )
+		{
+			if ( IsRiding && (Input.Pressed( InputButton.RideView ) || (input.RightPressed && GameOptions.Current.RmbCancel
+				&& RideRightClickAllowed( shortcutsAllowed, overUi, consumed, io.WantCaptureMouse ))) )
+				level.ExitRideView();
+			else if ( !IsRiding && Input.Pressed( InputButton.RideView ) && selectedObject is { IsDeleted: false } rideObject )
+				level.EnterRideView( rideObject );
+		}
+
+		// The park door's keyboard shortcuts, named by the door button's help rows (UIHELPTEXT 193/194: Ctrl-O/Ctrl-C).
+		// [DATA:UIHELPTEXT 193 "Left-click to open the park (Ctrl-O)", 194 "Left-click to close the park (Ctrl-C)"]
+		// [EXT:maexah/OpenTPW park-engine.md] the original's shortcut table row 9 maps Ctrl-C to the close-park handler (PC 0x0040c410)
+		if ( shortcutsAllowed && FinanceEconomy is { } doorEconomy && !level.IsReadOnlyVisit )
+		{
+			if ( Input.Pressed( InputButton.OpenPark ) && !doorEconomy.IsParkOpen )
+				doorEconomy.OpenPark();
+			if ( Input.Pressed( InputButton.ClosePark ) && doorEconomy.IsParkOpen )
+				doorEconomy.ClosePark();
+		}
+
 		if ( level.LastActionMessage != lastLevelMessage )
 		{
 			lastLevelMessage = level.LastActionMessage;
@@ -520,17 +544,13 @@ public sealed partial class ParkHud
 		if ( !overUi && !consumed && input.LeftPressed )
 			GameAudio.PlayUi( ParkViewClickEvent );
 
-		var inPark = !overUi && !consumed && level.TryGetGridCell( input.Mouse, new NVector2( context.Canvas.Width, context.Canvas.Height ), out cursorX, out cursorY );
+		// The ride view is a view of one ride: the park's clicks and tools wait until it is left.
+		var rideOwnsInput = ridingAtStart || IsRiding;
+		var inPark = !overUi && !consumed && !rideOwnsInput && level.TryGetGridCell( input.Mouse, new NVector2( context.Canvas.Width, context.Canvas.Height ), out cursorX, out cursorY );
 		if ( !inPark )
 			cursorX = cursorY = -1;
-		var toolClick = UpdateCoasterTool( input, inPark, paused ) || UpdateCellTool( context, input, inPark, paused );
-		// While riding, park clicks and the right button leave the ride instead of reaching the park.
-		if ( IsRiding && !overUi && !consumed && (input.RightPressed || input.LeftPressed) )
-		{
-			if ( input.RightPressed && GameOptions.Current.RmbCancel )
-				StopRide();
-			toolClick = true;
-		}
+		// Also consume the exit frame: leaving a ride must not activate an armed tool on that same click.
+		var toolClick = rideOwnsInput || UpdateCoasterTool( input, inPark, paused ) || UpdateCellTool( context, input, inPark, paused );
 		// [APPROX:UI-027] Select by occupied grid cell; original cursor picking is not verified.
 		if ( inPark && level.BuildEntry == null && !level.IsPlacing && !level.CellTool.IsActive && !level.IsCoasterToolActive && input.LeftReleased && !toolPress )
 			SelectObject( level.Objects.FindAt( cursorX, cursorY ) );
@@ -563,9 +583,17 @@ public sealed partial class ParkHud
 			context.HoverHelp = strings.Help( help );
 		if ( !tool.IsActive )
 		{
+			if ( !inPark || !input.LeftPressed || level.IsReadOnlyVisit || level.Objects.FindAt( cursorX, cursorY ) != null )
+				return false;
+			// A left click on a queue cell edits that ride's queue (help 444): the queue tool starts at its back cell.
+			if ( tool.HoverHelpId( level.Paths, cursorX, cursorY ) is 444 && level.EditQueueAt( cursorX, cursorY ) )
+			{
+				PostMessage( strings.Help( 445 ) );
+				tool.Hover( (cursorX, cursorY) );
+				return toolPress = true;
+			}
 			// A left click on an empty owned cell or on a path cell starts the path tool there (help 441/442).
-			if ( !inPark || !input.LeftPressed || level.IsReadOnlyVisit || level.Objects.FindAt( cursorX, cursorY ) != null
-				|| tool.HoverHelpId( level.Paths, cursorX, cursorY ) is not (441 or 442) || !level.EnterPathTool( cursorX, cursorY ) )
+			if ( tool.HoverHelpId( level.Paths, cursorX, cursorY ) is not (441 or 442) || !level.EnterPathTool( cursorX, cursorY ) )
 				return false;
 			PostMessage( strings.Help( 443 ) );
 			tool.Hover( (cursorX, cursorY) );

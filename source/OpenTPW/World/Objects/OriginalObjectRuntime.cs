@@ -103,6 +103,13 @@ public sealed class OriginalObjectRuntime
 		return index < 0 ? 0 : Script!.Variables[index];
 	}
 
+	/// <summary>Any script variable by its declared name (e.g. the gate's <c>VAR_STATUS</c>); 0 when the script has none.</summary>
+	public int GetVariableByName( string name )
+	{
+		var index = Script?.GetVariableIndex( name ) ?? -1;
+		return index < 0 ? 0 : Script!.Variables[index];
+	}
+
 	/// <summary>Writes a script variable by name (host inputs such as VAR_LETMEON); false when the script has none.</summary>
 	public bool SetVariable( string name, int value )
 	{

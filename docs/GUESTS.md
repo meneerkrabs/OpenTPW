@@ -291,7 +291,12 @@ Visitor opcodes (all operate on the guests the script holds; semantics inferred)
 `TOUR/BUMP/COAST` (ride-type controllers with their own guest handling, e.g.
 `COAST 3 VAR_LETMEOFF`), `WALKST_FLOAT`, `WALKFLOATSTAT`, `WALKFLOATSTOP` stay
 unimplemented. Riders are hidden while on a ride (`RideHandlesSprite 1`: the
-original script places them; seat attachment is not implemented).
+original script places them; seat attachment is not implemented). The maexah/OpenTPW
+lead (`docs/exe/park.md`, "The head table") says the original shows a rider as a head
+hung on a model node by `ADDHEAD` (slot n on node n + 1, the body `HUSH`ed while it is
+up), and that the Inca Totem has no `ADDHEAD` at all; the coaster and tour cars' heads
+are not drawn there. So the Totem's seating and coaster trains are not the same
+mechanism, and the head nodes' matrices are not read by the model loader yet.
 
 **Totem** (`PrototypeRide`): the bridge is wired into its effects; capacity 6,
 excitement 70, attraction value 25 from `Totem.sam`. Its entrance/exit is the
@@ -466,6 +471,7 @@ W_max = ⌈Qmax/CAP⌉ × (DUR + 1 s + τ) (QUEUE-plan §9):
 | QUEUE-018 | A broken attraction refuses joins as if closed | Ride `+408` and the state-6/10 handling of a broken ride |
 | QUEUE-019 | A broken attraction skips admission (`VAR_BROKEN ≠ 0` read as ride `+408 ≠ 0`) | Ride `+408` state names and writers |
 | QUEUE-020 | BOUNCE takes one script-clock reading for the deadline's base and the slot's start; the original calls its millisecond clock twice (`0xadfb0`, `0xadfcc`), so its start can lie 1 ms later | None for the reading; OpenTPW's stepped script clock cannot tick between the two calls |
+| QUEUE-021 | A left click on a queue cell (help 444, "Left-click to edit this queue") starts the queue tool at that ride's back cell; the click handler is not traced | None: `Level.EditQueueAt` follows the help text and `EnterQueueTool` |
 
 Not modelled: the track-type exits of step 6 (`0x45eac`, ride `+40`), ride
 state `+408` (beyond the QUEUE-019 reading), the price check at the stand

@@ -42,6 +42,8 @@ public static class EconomyApproximations
 		("ECON-041", "features-directory objects with Research.Category != 3 are fixed (non-buyable) items", "buy-menu capture"),
 		("ECON-044", "guests never hold a balloon or wear a costume, so both percentages are 0; the binary gives them when a guest uses a balloon or costume shop (0x100EAAF8)", "balloon lifetime (+0x214) and costume state rules"),
 		("ECON-048", "a negative path or queue cell cost (modified Costs.*) is booked as other income; balance and profit match the original's Spend of a negative amount", "the ledger category of a negative Spend"),
+		("ECON-049", "the door's reopen guard (FUN_004df290) checks only VAR_BROKEN; the upgrade and condemned states and the back-of-queue path test (FUN_004de4a0) are not modelled", "the ride states that block reopening and the queue back-link test"),
+		("ECON-050", "the gate census reads the imported guest grid, which preserves paths but not every original outside, approach or footprint cell type; unpreserved cells remain type 0 and can be counted as park ground", "original cell-type provenance in the guest-grid import"),
 	};
 
 	private static bool logged;

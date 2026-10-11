@@ -1,30 +1,27 @@
 namespace OpenTPW;
 
 /// <summary>
-/// The ride camera: the view from a placed ride, as a read-only visitor of a shared park rides it. The original
-/// had ride cameras — the Mac binary's camera-mode classes <c>CMMFirstPersonTarget</c> and <c>CMMCoaster</c>
-/// (vtables data:0x3d758 and data:0x3d7a4, beside <c>CMMDefault</c> data:0x3d8f8 and the online park's
-/// <c>CMMOnline</c> data:0x3d7f0) — and its manual lists "Ride any ride and watch any sideshow" among the
-/// features; visitors of a published park could ride its rides (docs/reverse/ONLINE-VISIT.md). OpenTPW offers
-/// the ride where its motion is traced: a player-built coaster, from its front car along the sampled track, and
-/// the prototype Totem, on its carriage's modelled height.
+/// The ride camera: the first-person view from a placed ride, reusable by the park (the player rides it with
+/// <see cref="Level.EnterRideView"/>) and by read-only visits of a shared park. The original had ride cameras:
+/// the Mac binary's camera-mode classes <c>CMMFirstPersonTarget</c> (Mac <c>0x1006CF44</c>, 3,312 bytes, its
+/// body starts by reading a thing's position into a cell index) and <c>CMMCoaster</c> (vtables data:0x3d758 and
+/// data:0x3d7a4). The "Ride it!" entry and the exits are the maexah/OpenTPW lead (docs/exe/hud.md); OpenTPW
+/// offers the ride where its motion is traced: a coaster, from its first train's front car along the sampled
+/// track, and the prototype Totem, on its carriage's modelled height.
 /// </summary>
-// [APPROX:ONLINE-073] the view itself is an approximation: the eye sits half a car above the front car's sample
-// (coaster) or on the carriage node's height above the ride's anchor (prototype), the look direction follows the
-// track's sampled direction or the entry camera's heading, and riding starts from a read-only visit's object
-// panel — the original's seat position, first-person heading, entry click and exit key are not traced (the
-// camera-mode classes' Update bodies are not decoded) — evidence needed: the first-person target and coaster
-// camera modes of the Mac binary, and the original's ride entry and exit input.
-// The park-play slice builds the general first-person ride camera as a reusable CameraMode; this class is the
-// visit's seam for it — Frame/CoasterFrame/PrototypeFrame/CanRide are pure and shared, and the visit should
-// board through that camera when it lands instead of growing a second view here.
+// [APPROX:UI-094] the view itself is an approximation: the eye sits half a car above the first train's front car
+// sample (coaster) or on the carriage node's height above the ride's anchor (prototype), the look direction follows
+// the track's sampled direction or the entry camera's heading, and the walk, the sway and the camera-mode Update
+// bodies are not decoded — evidence needed: the Update of CMMFirstPersonTarget (Mac 0x1006CF44) and CMMCoaster,
+// and the seat position the ride's script gives the rider.
+// Riding a coaster follows the first train only; the other trains are not chosen by the player.
 public sealed class RideCameraMode : CameraMode
 {
 	/// <summary>Engine units above the front car's sample the eye sits at (half of the drawn car height, CoasterRenderer).</summary>
 	public const float CoasterSeatHeight = 1.5f;
 	/// <summary>Engine units above the prototype ride's anchor the eye sits at.</summary>
 	public const float PrototypeSeatHeight = 2f;
-	/// <summary>The field of view of the park view; the original's first-person field of view is not traced.</summary>
+	/// <summary>The field of view of the ride view; the original's first-person field of view is not traced (UI-094).</summary>
 	public const float ViewFieldOfView = 55f;
 
 	private readonly OriginalObject ride;

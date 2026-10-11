@@ -193,10 +193,9 @@ the archived official pages):
   prototype ride; the camera rides the front car along the published track (or the
   Totem's carriage motion). Escape, a right click or the button leaves the ride.
   Flat rides have no traced seat motion in OpenTPW yet and cannot be ridden here.
-  The visit's ride camera (`RideCameraMode`) is the seam for the park-play slice's
-  general first-person ride camera — a reusable `CameraMode` whose frame maths this
-  class already shares — and boarding in a visit should go through that camera when
-  it lands, rather than a second view growing here.
+  Visits and editable parks use the same `Level.EnterRideView` / `ExitRideView`
+  state and `RideCameraMode`; the visit's object-panel button enters that view.
+  The original seat and mode details remain qualified by UI-093–095.
 - **Inspect**: an object's panel shows its published state of repair (never simulated
   values), and the park information window shows the park's **published statistics**
   read-only — rating, value, balance, visitors and the published in-game date — with a
@@ -363,5 +362,11 @@ are not claims that the original online protocol or service has been recovered.
 | ONLINE-022 | The postcard photo attached by Send Postcard is the park's generated map thumbnail, and no park reference is attached. | The original attached a camcorder snapshot of the visited park (manual pp. 51/67); its content and encoding are not decoded. |
 | ONLINE-023 | Park names are masked with the word filter when published, and the stored masked name is what everyone sees. | The original showed swear words in park names as asterisks (online FAQ, docs/reverse/ONLINE-SOURCES.md S2); whether it filtered at entry or at display, and its word list, are not recovered (the list is the operator's `swears.txt`, ONLINE-001). |
 | ONLINE-024 | A buddy entering a park is reported as "Your buddy X has entered Y" from OpenTPW's own text. | The original notification's string; CHAT_COMMANDS 111-113 ("Your buddy ") have empty English suffixes and no enter-the-park variant is recovered. |
-| ONLINE-073 | The ride camera's view: the eye half a car above the front car's sample (coaster) or on the prototype's carriage height, looking along the track's direction or the entry heading, entered from the visit's object panel and left with Escape, a right click or the button. Riding itself is evidenced (manual "Ride any ride", visitors rode published parks, the Mac `CMMFirstPersonTarget`/`CMMCoaster` camera-mode classes exist); the view details are OpenTPW's. | The first-person target and coaster camera modes of the Mac binary (their Update bodies), and the original's ride entry and exit input. |
 | ONLINE-076 | An owner's visits to their own park never count, and one visitor counts at most once per UTC day per park | The original service's guard against repeated or self visits (every visit earned Platinum Tickets, FAQ S2) |
+
+## Retired ride-camera entry
+
+`APPROX:ONLINE-073` is retired: the separate visit-camera view now uses the shared
+camera approximation UI-094, with UI-093 and UI-095 covering entry and restoration.
+The original view details remain unresolved; sharing the implementation does not
+establish original runtime parity.

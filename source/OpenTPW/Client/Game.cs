@@ -314,7 +314,7 @@ internal static class Game
 			Render.OnRender += advisor.Render;
 		if ( visit != null && smoke )
 		{
-			using var visitSmokeTest = new VisitSmokeTest( level );
+			using var visitSmokeTest = new VisitSmokeTest( level, flow.Hud );
 			Render.PostUpdate += visitSmokeTest.Update;
 			Render.Run();
 			visitSmokeTest.VerifyCompleted();

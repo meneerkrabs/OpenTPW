@@ -17,6 +17,7 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 	private int frame;
 	private int motionFrame;
 	private bool completed;
+	private bool sharedCoasterExported;
 	private byte[]? earlyPixels;
 	private System.Numerics.Matrix4x4[]? earlyPose;
 	private float earlyTick;
@@ -102,6 +103,8 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 			VerifyHudPathTool();
 		if ( pathToolVerified && !coasterToolVerified && frame >= 4 )
 			VerifyHudCoasterTool();
+		if ( !sharedCoasterExported && level.OriginalPark != null && smokeStation?.Runtime.Coaster is { IsOperational: true } )
+			ExportSharedCoasterFixture();
 		UpdateCoasterPhase();
 		if ( motionFrame == 0 )
 		{
@@ -154,6 +157,7 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 			VerifyPicking();
 			VerifyText( CaptureOutputFrame( level.OriginalPark == null ? "output.png" : "original-output.png" ) );
 			VerifyObjectsAnimate();
+			VerifyRideViewAndDoor();
 			if ( level.OriginalPark == null )
 				level.SaveSandbox();
 			level.PlacedRide!.Stop();
@@ -193,6 +197,21 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 				: $"Native original-level smoke test passed: {frame} frames, {level.OriginalPark.LevelName} terrain/import, MAP/save build rules, original ride and RSE script, guests boarding/riding/released by Totem.RSE, a HUD-built coaster, guest sprite readback, animation readback, close, remove, BF4 text, park economy and GPU readback; {displaySummary}." );
 			Render.Window.SdlWindow.Close();
 		}
+	}
+
+	/// <summary>Captures the actual HUD-built coaster before teardown for a separate fresh-world visit smoke.</summary>
+	private void ExportSharedCoasterFixture()
+	{
+		var output = Path.GetFullPath( "artifacts/native-smoke-shared-coaster.tpwpark" );
+		Directory.CreateDirectory( Path.GetDirectoryName( output )! );
+		var package = ParkSharing.ExportLevel( level, "Native coaster visit fixture", "OpenTPW smoke test" );
+		package.Save( output );
+		var payload = OpenTPW.Online.Packages.MinimalParkPayload.FromSnapshot(
+			OpenTPW.Online.Packages.ParkPackage.Load( output ).ToSnapshot() );
+		Require( payload.HasBuiltLayout && payload.Coasters?.Any( coaster => coaster.Complete ) == true,
+			"the exported visit fixture includes the actual completed HUD-built coaster" );
+		sharedCoasterExported = true;
+		Log.Trace( $"Shared coaster smoke fixture exported: {output}, digest {payload.LayoutDigest}." );
 	}
 
 	/// <summary>Checks the park clock/money on the fixed clock, a month-end wage payment and a park save round trip.</summary>
@@ -520,6 +539,101 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 		Require( Render.ResolveColorTexture.Width == RenderScaling.ScaleDimension( output.X, percent ) && Render.ResolveColorTexture.Height == RenderScaling.ScaleDimension( output.Y, percent ), $"world target follows {percent}%" );
 		Require( Device.MainSwapchain.Framebuffer.Width == output.X && Render.OutputCaptureTexture!.Width == output.X, "output stays at the drawable size" );
 		Require( Render.OwnedTargetResourceCount == originalResourceCount, "owned GPU targets do not grow" );
+	}
+
+	/// <summary>
+	/// The first-person ride view (Level.EnterRideView) rides the Totem and returns to the park camera, and on an
+	/// original park the door (ParkGate, via the economy's open and close) refuses admissions while closed.
+	/// </summary>
+	private void VerifyRideViewAndDoor()
+	{
+		var parkCamera = Camera.Mode;
+		VerifyParkShortcutGuards();
+		Require( level.EnterRideView( level.PlacedRide! ) && Camera.Mode is RideCameraMode, "ride the Totem in the first-person ride view" );
+		Require( !level.EnterRideView( level.PlacedRide! ), "a second ride view is refused while one is open" );
+		VerifyArmedToolsInRideView();
+		Camera.Update();
+		level.ExitRideView();
+		Require( ReferenceEquals( Camera.Mode, parkCamera ) && level.RideView == null, "leaving the ride view restores the park camera" );
+		if ( level.Park is not { } park || level.Gate == null )
+			return;
+		park.Economy.OpenPark();
+		Require( level.Gate.Gate?.GetVariableByName( ParkGate.CommandVariable ) == 1, "opening the park commands the gate open" );
+		// A refused admission books nothing, so the admissions counter still matches the economy's own ledger.
+		park.Economy.ClosePark();
+		Require( !park.Economy.TryAdmitVisitor( long.MaxValue, out _ ), "a closed park refuses admissions at the booth" );
+		Require( !level.PlacedRide!.IsOpen && !level.PlacedRide.Visitors.IsOpen, "closing the park also closes the separately owned Totem and stops its admissions" );
+		park.Economy.OpenPark();
+		Require( level.PlacedRide!.IsOpen, "reopening the park reopens the Totem" );
+	}
+
+	/// <summary>Exercise the Level world-input path with both pending placement and removal while the ride camera owns the world.</summary>
+	private void VerifyArmedToolsInRideView()
+	{
+		var viewport = new Vector2( Screen.Size.X, Screen.Size.Y );
+		var removable = level.Objects.Objects.First( item => !item.Entry.IsFixedItem );
+		var cell = removable.Cells.First();
+		Require( level.TryProjectCell( cell.X, cell.Y, viewport, out var mouse ), "project a removable object for the ride-view click guard" );
+		Require( level.TryGetGridCell( mouse, viewport, out var x, out var y ) && x == cell.X && y == cell.Y, "the test click would hit the removable object in the park camera" );
+		var oldPlacing = level.IsPlacing;
+		var oldRemoving = level.IsRemovingObjects;
+		var oldEntry = level.BuildEntry;
+		var oldCount = level.Objects.Objects.Count;
+		level.IsPlacing = true;
+		level.UpdateWorldInput( false, false, mouse, viewport );
+		level.UpdateWorldInput( true, false, mouse, viewport );
+		Require( level.IsPlacing && level.PlacedRide != null, "a pending prototype tool stays suspended while riding" );
+		level.IsPlacing = false;
+		level.BuildEntry = null;
+		level.IsRemovingObjects = true;
+		level.UpdateWorldInput( false, false, mouse, viewport );
+		level.UpdateWorldInput( true, false, mouse, viewport );
+		Require( !removable.IsDeleted && level.Objects.Objects.Count == oldCount, "a fresh uncaptured left click cannot remove an object while riding" );
+		level.UpdateWorldInput( false, false, mouse, viewport );
+		level.IsPlacing = oldPlacing;
+		level.IsRemovingObjects = oldRemoving;
+		level.BuildEntry = oldEntry;
+		Log.Trace( "Ride view: armed prototype and remove tools ignore world clicks." );
+	}
+
+	/// <summary>Actual HUD shortcut dispatch leaves the ride and park state unchanged behind a modal or ImGui keyboard capture.</summary>
+	private void VerifyParkShortcutGuards()
+	{
+		if ( hud == null || hudContext == null )
+			return;
+		var previousKeys = Input.KeysDown;
+		var previousLastKeys = Input.LastKeysDown;
+		var io = ImGuiNET.ImGui.GetIO();
+		var previousCapture = io.WantCaptureKeyboard;
+		var previousSelection = hud.SelectedObject;
+		var previousInfoArm = hud.InfoArmOpen;
+		hud.SelectObject( level.PlacedRide );
+		level.Park?.Economy.OpenPark();
+		try
+		{
+			Input.KeysDown = new() { InputButton.RideView, InputButton.ClosePark };
+			Input.LastKeysDown = new();
+			var modal = new OpenTPW.UI.Original.UiScreen( "park-shortcut-guard" ) { Modal = true };
+			hud.Stack.Push( modal );
+			try
+			{
+				hud.Update( hudContext, OpenTPW.UI.Original.UiInput.Idle( new System.Numerics.Vector2( -1, -1 ) ) );
+				Require( level.RideView == null && (level.Park?.Economy.IsParkOpen ?? true), "modal HUD blocks Ride It and close-park shortcuts" );
+			}
+			finally { hud.Stack.Pop(); }
+			io.WantCaptureKeyboard = true;
+			hud.Update( hudContext, OpenTPW.UI.Original.UiInput.Idle( new System.Numerics.Vector2( -1, -1 ) ) );
+			Require( level.RideView == null && (level.Park?.Economy.IsParkOpen ?? true), "ImGui keyboard capture blocks Ride It and close-park shortcuts" );
+			Log.Trace( "Park shortcuts: modal and ImGui keyboard capture suppress ride and door actions." );
+		}
+		finally
+		{
+			Input.KeysDown = previousKeys;
+			Input.LastKeysDown = previousLastKeys;
+			io.WantCaptureKeyboard = previousCapture;
+			hud.SelectObject( previousSelection );
+			hud.SetInfoArm( previousInfoArm );
+		}
 	}
 
 	private static bool Throws( Action action )

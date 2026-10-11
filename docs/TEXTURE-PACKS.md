@@ -1,9 +1,39 @@
-# Enhanced textures (shipped HD interface art and optional local texture packs)
+# Texture packs (Clarity, Enhanced and Original)
 
-October 10, 2026. Status: **OpenTPW extension (`[EXT:texture-pack]`), Enhanced by default.**
-The options offer **Original** (the game's own textures, exactly as shipped) and **Enhanced** (the
-default): the HD interface art that ships with OpenTPW, plus a locally built AI texture pack when there
-is one. Original reproduces the original look unchanged.
+October 11, 2026. Status: **OpenTPW extension (`[EXT:texture-pack]`), Clarity selected by default.**
+The options offer **Original** (the game's own textures), **Clarity** (`clarity-enhanced`, the default),
+**Enhanced** (the previous choice), and other installed packs. An explicit saved choice is preserved.
+Clarity uses its own replacements, including interface art; a missing replacement falls back to the
+shipped HD interface icons or the original world texture. Original reproduces the original look unchanged.
+
+## Clarity and bundled packs
+
+The Clarity pack's October 11 manifest lists 4,245 replacements, including 453 interface textures.
+It records a Real-ESRGAN base with self-hosted Clarity detail (`juggernaut_reborn` and
+`control_v11f1e_sd15_tile`), followed by palette correction. It uses mixed sizes: the base is 4×,
+refined world textures 8×, and refined sprite atlases 4×. OpenTPW reads each PNG's actual dimensions;
+the manifest's `Scale: 4` does not mean every image is 4×. The pack also records nine movies; movie
+replacement is separate from the texture loader described here.
+
+For a named pack, OpenTPW checks these locations in order:
+
+1. `<config>/texture-packs/<name>` — a player's local override.
+2. `<program>/content/texture-packs/<name>` — portable content included by release packaging.
+
+Each pack needs a supported `pack.json` and a `textures` directory. An invalid local manifest is
+reported and a valid bundle of the same name is tried. The options list usable packs from both
+locations once, with Clarity, Enhanced and Detailed first. If Clarity is unavailable, the game reports
+the missing pack and continues with the shipped interface art and original world textures.
+
+Desktop publishing already copies `content/**/*`, so a pack staged in the second location travels
+with the executable and works offline. This runtime support does not fetch packs or include their
+binary content by itself. The web build must separately supply the same files to its virtual file
+system; desktop content copying does not automatically bundle the pack in the browser.
+
+Clarity's interface replacements take precedence over shipped hero art. Enhanced and other older
+choices retain their existing priority: shipped hero icons, then the selected pack. An explicit
+`OPENTPW_TEXTURE_PACK=<pack>/textures` override pins that directory and takes precedence over both
+the saved choice and shipped icons.
 
 ## Shipped interface art
 
@@ -12,7 +42,8 @@ becomes 512×512) for the HUD, lobby and options buttons: buy, info, money, rese
 categories (rides, shops, shows, features), door, enter-park, erase, OK, exit, retract, the
 arrows and the slider ball, with their pressed, highlighted and disabled states, and the golden ticket
 and golden key counters at the top right. With Enhanced they
-replace the original interface art before any local pack is consulted (`TexturePack.Find`).
+replace the original interface art before its pack is consulted (`TexturePack.Find`). With Clarity
+they provide fallback icons wherever that pack has no replacement.
 
 Provenance: on October 10, 2026 each base icon was cut out of the original texture at its alpha mask,
 enlarged, and redrawn by Google Gemini's image model in the Gemini web app with a fixed prompt per icon
@@ -44,9 +75,9 @@ becomes 512×512).
 
 ## Variants
 
-OpenTPW knows two world-texture variants. Each is a separate pack, a directory under
-`<config>/texture-packs/` (on macOS `~/Library/Application Support/OpenTPW/texture-packs`), and you
-can build either or both and switch between them in the options.
+Besides Clarity, the local builder offers two world-texture variants. Each is a separate pack under
+`<config>/texture-packs/`, beside `graphics.json`; `OPENTPW_CONFIG_DIR` can override the config
+directory. You can build either or both and switch between them in the options.
 
 The original `.wct` textures are lossy (wavelet) compressed, so they carry blocking and ringing
 artifacts that a 4x upscaler happily magnifies. Both variants therefore first run a 1x
@@ -55,7 +86,7 @@ jungle textures at native resolution:
 
 | Pack name | Options label | Pipeline | Look |
 | --- | --- | --- | --- |
-| `enhanced` (default) | Enhanced | 1x DeJPG, then Real-ESRGAN `realesrgan-x4plus` | Crisp edges, keeps the original cartoony CG style |
+| `enhanced` (builder default) | Enhanced | 1x DeJPG, then Real-ESRGAN `realesrgan-x4plus` | Crisp edges, keeps the original cartoony CG style |
 | `detailed` | Detailed | 1x DeJPG, then `ultrasharp-4x` (4x-UltraSharp) | Most detail, some grain |
 
 Interface art always uses `realesrgan-x4plus-anime` without the pre-pass. Guest sprite atlases use
@@ -78,8 +109,10 @@ You supply the models; OpenTPW ships and downloads none of them.
 
 ## Building a pack
 
-The pack is built on the player's machine from their own installation. It is a derived
-work of the original assets, so it is **never shipped, committed or uploaded**.
+The local builder makes a pack on the player's machine from their own installation. Its default
+name remains `enhanced`, so a normal build does not overwrite the curated Clarity choice. Building
+does not upload the resulting pack. Distribution of pack images is a separate project-owner decision;
+runtime pack support does not grant rights to the original assets or the models used to create them.
 
 1. Get `realesrgan-ncnn-vulkan` for your platform (the macOS build is universal and runs on Apple
    silicon through MoltenVK). Unpack it with its `models` folder next to the executable. For the
@@ -105,10 +138,10 @@ work of the original assets, so it is **never shipped, committed or uploaded**.
    `realesrgan-x4plus-anime`), `--texture-pack-no-interface`, `--texture-pack-interface-only`,
    `--texture-pack-sprites-only` (with `--texture-pack-interface-only` both) and
    `--texture-pack-merge` (keep that pack's existing textures and add or replace the ones built now;
-   it warns when the models differ). All of these act per pack name. The game only lists packs under the
-   config directory; a pack built elsewhere is used with `OPENTPW_TEXTURE_PACK=<dir>/textures`, which pins
+   it warns when the models differ). All of these act per pack name. The game lists packs under the
+   config directory and bundled content; a pack built elsewhere is used with `OPENTPW_TEXTURE_PACK=<dir>/textures`, which pins
    the pack and overrides the setting.
-3. Choose **Game Options -> OpenTPW -> Enhanced textures** (Original, Enhanced, then Detailed and any other
+3. Choose **Game Options -> OpenTPW -> Enhanced textures** (Original, Clarity, Enhanced, then Detailed and any other
    installed pack) and press OK. The textures are swapped in the running game behind a loading bar; no
    restart is needed. Enhanced is always offered: without a local `enhanced` pack it means the shipped
    interface art only.
@@ -116,8 +149,9 @@ work of the original assets, so it is **never shipped, committed or uploaded**.
 ### Setting and migration
 
 `graphics.json` stores the choice as `"TexturePack": "<name>"`; `""` is the original textures,
-`"enhanced"` (the default, also when the key is missing or null) is Enhanced, `"detailed"` Detailed, any
-other name is a pack directory of that name (with the shipped interface art). Files from earlier
+`"clarity-enhanced"` is Clarity (the default when the key is missing or null), `"enhanced"` is the
+earlier Enhanced choice, `"detailed"` is Detailed, and other names select the corresponding local or
+bundled pack. Files from earlier
 versions with `"EnhancedTextures": true` are read as `"TexturePack": "enhanced"`, `false` as Original;
 the old key is dropped the next time the settings are saved. Smoke tests always run on the originals. If both keys exist the new one
 wins. Names must be plain directory names (letters, digits, `-`, `_`, `.`).

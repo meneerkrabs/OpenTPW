@@ -165,68 +165,72 @@ of `bf`/`plan`): luma clips at both ends (Y = 0: 0.46 %/0.87 %, Y = 255:
 would not show. Chroma stays within 16–240 for > 99.9 % of samples. The
 original player's conversion is still **not verified** against captures.
 
-### Original IDCT: static analysis of a no-CD PC build (not verified)
+### Original TQI decoder: static analysis of the PC executable
 
-Lead: the MIT-licensed fork `aluzed/OpenTPW-decomp` (`docs/tickets/T-021`,
-`docs/07-ghidra-render.md`) reports a float AAN IDCT in the PC executable. This
-section checks that claim with static reads only (`llvm-objdump`, byte reads, no
-execution) on a no-CD `tp.exe` (3,734,528 bytes, SHA-256
-`85eef533…e2c232`, PE32 image base `0x400000`, data sections present in the
-section table). Its code is complete, but **all its data sections (`.rdata`,
-`.data`, `dseg`, `uva_data`, `idct_dat`) are zero in the file**, so the tables the
-code reads are filled at run time or not stored. The local `TP.ICD` is the
-SafeDisc-protected game image; its code is encrypted (entropy ≈ 7.98) and its
-data sections are keyed. The local `tp.exe` is a 285 KB loader stub.
+Static reads only (`llvm-objdump`, byte reads, no execution) of the decrypted
+Sim Theme Park World v2.0 no-CD `tp.exe` that COMPLETION-PLAN.md allows for
+analysis (3,734,528 bytes, SHA-256 `5472f97b5eb28f58…`, image base `0x400000`).
+Its code **and** its initialised data are present. (An earlier review in this
+document read a damaged extraction, SHA-256 `85eef533…`, whose data sections
+were empty; its conclusions that the constants are zero or encrypted, and that
+`0x67832e` is the movie IDCT, are withdrawn.)
 
-Verified in the code (addresses are the no-CD image's virtual addresses):
+The executable links EA's movie library: the chunk dispatcher at `0x66e5f0`
+handles `MADe`, `TGVf`, `TGVk`, `TGQp`, `pIQT`, `UV2f` and more (`pIQT` is
+frame type 4). Two separate 8×8 transforms exist:
 
-- **Block dispatch** (`0x676e40`, luma blocks): each block is either a DC-only
-  block, filled with one value by `0x677140`, or sent to the two-pass 8×8
-  driver `0x67832e`. The DC fill is a broadcast, not the IDCT; the fork's
-  `FUN_00677140` name points at the dispatch helper, not at the transform.
-- **Driver** (`0x67832e`): eight row passes of kernel `0x6780c1`, writing a
-  9-dword-stride temporary at `0xfbc02c`, then eight column passes of kernel
-  `0x678224` writing the block with a 64-byte row stride (`0xfbc000` holds that
-  stride).
-- **Kernel** (`0x6780c1`, identical arithmetic in `0x678224` with a different
-  store order): integer inputs converted with `fild`; x87 `fmuls`/`fadds` with
-  constants at `0xfbc018`–`0xfbc028`; one 32-bit `imul` against `0xfbc018`
-  (a Q32 `1/(2√2)` multiplier, high dword kept); a zero-AC fast path that copies
-  the DC to all eight outputs.
-- **Open point in the kernel**: its scratch stores are `fstpl` (`dd /3`, 64-bit
-  doubles) to `0xfbc008` and `0xfbc010`, and the code then reads the **low
-  dword** of those slots as integers (`movl`). I could not reconcile that with
-  an AAN butterfly from the disassembly alone; it needs a Ghidra cross-check or a
-  runtime capture, neither of which this review had.
-- **Matrix builders**: `0x671000` (integer path, divides by 100 and 7 by magic
-  multiply) and `0x6710c0` (float path, `(C − q)·K` with `C`, `K` at `.rdata`
-  offsets `0x705eb8`/`0x705ec0`/`0x705ec4`) both write `DAT_00fb7820`
-  (`uva_data+0x820`, 64 dwords). Their tables at `0x705c88`/`0x705d88` are zero
-  in the dump.
+- `0x67832e` (data in section `idct_dat`, block decode `0x677c00` with an 8-bit
+  DC and table `0xfbd54c` built at `0x676bc0`) belongs to another EA codec,
+  **not TQI**. It shares the flowgraph below but rounds with the
+  `1.5·2⁵²` trick (`0xfbc028` = 6755399441055744.0).
+- **TQI** has its own copy in section `cseg` with data in `tqia_dat`.
 
-Not verified, and why:
+Verified TQI arithmetic:
 
-- **Constant values** at `idct_dat` (`0xfbc018`–`0xfbc028`): no code path in the
-  dump writes them, and in `TP.ICD` the `IDCT_DAT` section is keyed with an
-  8-byte repeat (`5036c7da30c36fd6`) over zero plaintext. A per-dword XOR or
-  subtraction with that key does not produce the expected constants. In `TP.ICD`
-  `.rdata` (plaintext) the four float32 values `1.30656302`, `0.54119611`,
-  `0.38268343` and `0.70710677` sit at file offset `0x2FAD6C`; they match the
-  AAN factors `√2·cos(π/8)`, `√2·cos(3π/8)`, `sin(π/8)` and `1/√2`, but nothing
-  in the dump references that block, so their use is unconfirmed.
-- **Fork differences**: the fork's `0xfbc028` value `0.35058594` is not in
-  `TP.ICD`. The `1/(2√2)` Q32 value is not in plaintext either.
-- **Matrix contents**: the MPEG-1 default intra matrix is plaintext in `TP.ICD`
-  `.rdata` at `0x2FB230`, but the builder's table base (`0x705c88`) lines up with
-  that matrix only at index 22 under section-relative mapping. That mapping is
-  unresolved, so the quantiser-to-matrix arithmetic is not pinned.
-- **Final rounding and clamp** after the second pass: not read yet.
+| Step | Address | What it does |
+| --- | --- | --- |
+| Block decode | `0x6f61e8` | VLC run/level decode (tables in `tqia_dat`, zigzag at `0xfbf0e4`); every coefficient, the DC included (after prediction), is `level × M[pos]` with a plain 32-bit `imul`; `M` is 64 dwords at `0xfac690` |
+| Pass 1 (rows) | `0x6f6510` | AAN butterfly, see below; if all seven AC inputs are zero, the DC is copied unchanged to all eight outputs; writes a 9-dword-stride temporary |
+| Pass 2 (columns) | `0x6f6670` | the same butterfly without the zero shortcut; **no shift between the passes** |
+| Driver | `0x6f6770` | per macroblock: decode, eight row passes, eight column passes into an integer macroblock buffer (`0xfacab0`, 256-byte rows) |
+| Output | `0x6f6db4` | each sample is `(v + 0x8000) >> 16` (round half up), used as an index into colour tables (`0xfae930`, `0xfaf930`, `0xfb0930`) that produce 16-bit RGB directly; the player never stores 8-bit YUV |
 
-Also measured and rejected: the integer AAN variant from an earlier draft
-(`tp.exe` addresses it cited are inside `TP.ICD` `.data`, not code) gives 79.4 %
-identical on `bf` and 71.5 % on `plan` (max difference 13 and 15). The committed
-decoder stays. Without the constants and matrix values, no block can be pinned
-to the original's arithmetic, so no synthetic original-arithmetic test was added.
+The butterfly (inputs `x0`…`x7`, all 32-bit integers):
+
+- even part: `t10 = x0 + x4`, `t11 = x0 − x4`, `t13 = x2 + x6`,
+  `r = 2·hi32((x2 − x6) · 0x5A82799A)` (Q31 √2/2, `imul`, high dword doubled),
+  `e = t13 + r`; outputs combine `t10 ± e` and `t11 ± r`;
+- odd part: `z13 = x3 + x5`, `z10 = x5 − x3`, `z11 = x1 + x7`, `z12 = x1 − x7`,
+  `t7 = z11 + z13`, `t11o = 2·hi32((z11 − z13) · 0x5A82799A)`;
+  in x87: `z5 = (z10 + z12) · 0.3826834f`, `a = z10 · 0.5411961f + z5`,
+  `b = z12 · 1.3065630f − z5` (the `fsubrp` at `0x6f6586` encodes Intel
+  `FSUBP ST(2),ST(0)`: `ST(2) − ST(0)`), both converted with `fistp` in the current
+  rounding mode; then `p = round(a) + t11o`, `q = t11o + round(b)`,
+  `w = round(b) + t7`;
+- outputs (index order of the row stores): `0: (t10+e)+w`, `7: (t10+e)−w`,
+  `1: q+(t11+r)`, `6: (t11+r)−q`, `2: (t11−r)+p`, `5: (t11−r)−p`,
+  `3: (t10−e)+round(a)`, `4: (t10−e)−round(a)`.
+
+Constants (`tqia_dat`, identical in `idct_dat`): `0xfbf038` = `0x5A82799A`,
+`0xfbf03c` = 0.5411961, `0xfbf040` = 1.3065630, `0xfbf044` = 0.3826834.
+
+Still open, so the decoder is not changed yet:
+
+- **The TQI matrix builder**: no instruction writes `0xfac690` by absolute
+  address, so the code that fills `M` from the frame's quantiser was not found.
+  The sibling codec's builder (`0x676bc0`) computes
+  `M[k] = round_half_up(S[k] · ((W[k] · q) << 12) / 2¹⁶)` with the AAN prescale
+  `S` (×8192, at `0xfbc24c`), the MPEG-1 intra matrix `W` (`.rdata` `0x706fb8`) and
+  `M[0]` from `W[0] = 8` without `q`; whether TQI uses the same rule and scale is
+  unverified.
+- **x87 precision control**: the odd-part products are rounded according to the
+  FPU's precision setting at movie time (Direct3D often selects 24-bit); which
+  setting the movie player runs with is not established.
+- **Colour tables**: their builders are not read.
+
+Measured against FFmpeg: FFmpeg's TQI path approximates this transform with
+integer constants, so a faithful port is expected to differ slightly from it;
+the FFmpeg table above is a closeness measure, not the bit-exactness gate.
 
 ### Mac route: no TQI decoder in the Mac build (verified, negative)
 

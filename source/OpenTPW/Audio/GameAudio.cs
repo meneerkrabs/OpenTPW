@@ -43,11 +43,14 @@ public static class GameAudio
 	public const uint ThunderEvent = 0x20;
 	/// <summary>The rain sentence's parameter id (<c>0x100BC388</c> sets parameter 8 of the global rain voice to the drop-percentage level, as the music uses 4 and the crowd 7).</summary>
 	public const int RainParameterId = 8;
-	/// <summary>The path tool's laying click (<c>tp.exe</c> <c>0x005271B7</c>: a green click plays <c>cat_ui</c> 101; a red click 175 and the tool is put away).</summary>
+	/// <summary>The path tool's laying click: a committed line plays <c>cat_ui</c> 101 (Mac <c>0x10070DE0</c> in the commit pass <c>0x10070B98</c>, gated by the tool mode and its latch).</summary>
+	// [BIN:STP-PPC:0x10070DE0 path lay click] cat_ui 101 under tool mode 1 or 3 with the latch clear; the PC doc's 0x005271B7 is a lead (packed PC exe)
 	public const uint PathLayEvent = 101;
-	/// <summary>The path tool's refused click (<c>tp.exe</c> <c>0x00524A63</c>–<c>0x00524ACD</c>: a red preview plays <c>cat_ui</c> 175 and lays nothing).</summary>
+	/// <summary>The path tool's refused click: <c>cat_ui</c> 175 (Mac <c>0x10073D1C</c>, reached behind the latch and a byte test; the mapping to a refusal is inferred from the fork).</summary>
+	// [BIN:STP-PPC:0x10073D1C refused click] cat_ui 175 behind the latch test; [APPROX:AUDIO-022] whether it is the refusal of a commit or a preview is not fully read
 	public const uint PathRefusedEvent = 175;
-	/// <summary>The path tool's link-end sound (<c>tp.exe</c> <c>0x0052F200</c>: leaving the tool on a link plays <c>cat_ui</c> 139).</summary>
+	/// <summary>The path tool's link-end sound (cat_ui 139, Mac <c>0x100711CC</c> in queue mode): not wired, its trigger is inferred.</summary>
+	// [BIN:STP-PPC:0x100711CC queue link end] cat_ui 139 in queue mode after the passes; [APPROX:AUDIO-023] not wired — the link-end condition is inferred, not traced
 	public const uint PathLinkEvent = 139;
 	private static SoundEventSystem? events;
 	private static SoundSentence? music;
@@ -55,6 +58,7 @@ public static class GameAudio
 	private static SoundSentence? lobbyMusic;
 	private static SoundSentence? lobbyAmbience;
 	private static SoundSentence? rain;
+	private static long staffTurn = -1;
 	private static IReadOnlyList<AudioVoice>? placedAmbients;
 
 	public static bool Enabled { get; set; } = true;
@@ -153,6 +157,7 @@ public static class GameAudio
 		SetCrowd( 0 );
 		SetRain( 0 );
 		StopPlacedAmbients();
+		staffTurn = -1;
 	}
 
 	/// <summary>
@@ -411,6 +416,25 @@ public static class GameAudio
 	{
 		var eventId = StaffSoundEvent( type, walking );
 		return eventId == null ? null : events?.PlayAt( Staff, eventId.Value, AudioChannel.Effects, position );
+	}
+
+	/// <summary>
+	/// The staff voices of one park turn: each member draws once, and a draw whose low four bits are clear plays its
+	/// walking or idle voice at its cell (sound units: a cell is ten). Runs once per turn; the draw is the sound stream's.
+	/// </summary>
+	// [BIN:STP-PPC:0x100D2CE0 staff voices] the entertainer handler draws the world random at each walking/idle turn and plays at (draw & 0xF) == 0 — the gate is traced for all roles (0x100D5EAC, 0x100D6434, 0x100D9BAC, 0x100D9F10, 0x100D2DDC, 0x100D2E44, 0x100D4EF0, 0x100D4E18, 0x100F0460, 0x100F0630)
+	// [APPROX:AUDIO-024] the turn is the park turn; the draw is the sound stream's top 16 bits, not the world LCG's low four bits the Mac tests; a member's walking turn is its travelling flag — evidence needed: the handlers' turn boundary and the world draw order
+	public static void UpdateStaffVoices( IReadOnlyList<StaffWorldSnapshot> staff, long turn )
+	{
+		if ( events == null || turn == staffTurn )
+			return;
+		staffTurn = turn;
+		foreach ( var member in staff )
+		{
+			if ( (events.Draw() & 15) != 0 )
+				continue;
+			PlayStaffSound( member.Type, member.Travelling, new Vector3( member.CellX * 10, 0, member.CellY * 10 ) );
+		}
 	}
 
 	/// <summary>The cat_staff event of a role's walking or idle turn, or null when none is traced.</summary>

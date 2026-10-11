@@ -527,8 +527,14 @@ public sealed partial class ParkHud
 			return false;
 		// The commit click; Level skips it because the HUD reports the pointer as captured this frame.
 		var result = tool.Click( (cursorX, cursorY) );
+		// [BIN:STP-PPC:0x10070DE0 path lay click] a committed path line plays cat_ui 101 (the tool's commit site, gated by its mode); [APPROX:AUDIO-022] a refused commit plays cat_ui 175
+		if ( result is { Completed: true } )
+			GameAudio.PlayPathToolSound( GameAudio.PathLayEvent );
 		if ( result is { Completed: false } )
+		{
+			GameAudio.PlayPathToolSound( GameAudio.PathRefusedEvent );
 			PostMessage( strings.Extra( result.StoppedBy == CellBuildResult.NotEnoughMoney ? OpenTpwText.NotEnoughMoney : OpenTpwText.CannotBuildHere ) );
+		}
 		return toolPress = true;
 	}
 

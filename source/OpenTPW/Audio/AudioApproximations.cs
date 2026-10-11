@@ -26,6 +26,8 @@ public static class AudioApproximations
 		("AUDIO-019", "a positioned one-shot whose event has flag 0x8 loops its sample; a flat one-shot with 0x8 is not looped"),
 		("AUDIO-020", "a placed scape.omp effect that is a sentence plays its first sound once rather than as the original's placed sentence"),
 		("AUDIO-021", "scape.omp places and the listener share the park's sound units; the Mac's placement units are not traced in one place"),
+		("AUDIO-022", "a refused path-tool commit plays cat_ui 175; the Mac site is gated by the tool latch and its mapping to a refusal is inferred, not fully traced"),
+		("AUDIO-023", "the path tool's link-end sound (cat_ui 139) is not played; its trigger is inferred and no undo sound is traced"),
 	};
 
 	private static bool logged;

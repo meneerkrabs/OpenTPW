@@ -354,6 +354,7 @@ internal sealed class GameFlow : IDisposable
 			Advisor?.Update( Hud.Paused );
 			GameAudio.Update( Level.Guests?.GetStatistics().InPark );
 			GameAudio.SetCrowd( GuestsNearCamera( Level ) );
+			GameAudio.UpdateStaffVoices( Level.StaffWorld?.Snapshots ?? Array.Empty<StaffWorldSnapshot>(), Level.Park?.Economy.Turn ?? -1 );
 			return;
 		}
 		if ( Level != null && ViewerLevel == Level )

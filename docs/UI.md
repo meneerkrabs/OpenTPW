@@ -21,7 +21,7 @@ All counts from read-only listings of the installed English data.
 | `lobby.wad` | `lobby.txt`, `jungle/fantasy/hallow/space.txt`; `terrain/` 38 MD2 (Base heightfield + sea, four `*_isle`/`*_gate` with `M1..M3` animations, butterflies, bats, golden ticket) + 4 `.sgn` + 167 textures; `globe/` 6 MD2 (online world globe, plane, pins) + 28 textures | 3D front end |
 | `ui/cursors` | `C???.tga` 4-frame strips + Windows `.ani`/`.cur` | not drawn yet (system cursor) |
 | `Init/<400..1024>` | per-resolution splash/legal/welcome TGAs per language | not used |
-| `postcard/`, `2dmap/` | postcard art, map sprites | not used |
+| `postcard/`, `2dmap/` | postcard art, map sprites | the per-theme `2dmap.tga` is the map terrain image; sprite layers are not drawn yet |
 | `Language/<lang>/` | `UITEXT.str` (473), `UIHELPTEXT.str` (589 popup help lines), `THEMENAMES.str` (4), `OBJECT_NAMES.str`, 33 BF4 fonts | all text |
 | level `rides/<ride>.wad` | `P<name>.MD2` preview model (Rides.sam `Info.PreviewAnimType "m"`, `PreviewAnimNum 1`) | build-menu icons |
 | `Rides.sam` | `Info.WhichUIType` 0 rides, 1 shops, 2 sideshows, 3 features | build categories |
@@ -299,7 +299,7 @@ glyph in all 14 UI fonts of each language.
   (`panel`, root `pan_info`) with `b_retract` (481) at its authored place.
 - Panel buttons at the original rectangles of the Mac main HUD table (`data:0x4ab38`, controls 38-43),
   staggered along the panel's curve: `b_buy` (469), `b_info` (470), `b_money` (471), `b_resrch` (472),
-  `b_map` (473) and `b_camera` (474). Only Buy works; the others show their disabled frame (the camera
+  `b_map` (473) and `b_camera` (474). Buy and Map work; the other buttons show their disabled frame (the camera
   views are not implemented, UI-042).
 - The date text is drawn in black inside the date region (182,1061)-(383,1103) (table control 32), in the
   date font slot 3 (`DATETINY/SMALL/MED` by tier; only official Patch 2 and the Mac version ship these, the
@@ -310,15 +310,15 @@ glyph in all 14 UI fonts of each language.
   model (root `green_up`, 49) shown for 4 s after a balance change (UI-047), and at the top right the golden
   ticket (`gtick`, 53) and key (`gkey`, 52) icons with their counts (55, 54). The ticket count is the park economy's unspent
   golden tickets; OpenTPW does not track golden keys, so that count is 0 (UI-051).
-- The Mac build has 55 such layout tables (the buy window `data:0x4cd94`, the finance/staff/info arm contents,
-  the coaster tools, the map screen, research, ride and staff windows); only the buy window is built so far.
+- The Mac build has 55 such layout tables (the buy window `data:0x4cd94`, the staff list `data:0x4a1e0`,
+  the map screen `data:0x5265e`, finance/info arm contents, coaster tools, research and ride windows).
 - Buy window (`ParkHud.BuyWindow.cs`, Mac buy table `data:0x4cd94`): the Buy button opens the original window as a modal
   screen over the park (it dims the park like other windows and does not pause the game). Every element sits at its authored
   rectangle (`Anchor.Center`): `w_big` (root `window4`) with two `!frame` panels (the turning preview, and the stats
   frame), the `f_buyitem` list frame, title text (UITEXT 119-122 per category), the item name above the preview, the
   four category buttons `b_sride/b_sshow/b_sshop/b_sfeature` (help 140-143; the chosen one is drawn in its down frame),
   `b_up`/`b_down` and the `b_scroller` ball on the `!slider` track, and `b_exit` (help 2, also Escape and right click).
-  `b_allstaff` (help 153) is shown disabled: there is no staff screen yet. The list has the three table columns: name,
+  `b_allstaff` (help 153) opens the staff window. The list has the three table columns: name,
   price (the economy catalogue price) and a third column of unknown content, left empty (UI-050). Click a row to select it
   and show its preview (the original `P<name>.MD2` or the main model, CPU projection, UI-026), name and stats; click the selected row again,
   press Enter or double-click it to buy: the window closes and placement starts (`Level.PlaceObject` checks the footprint and
@@ -330,6 +330,22 @@ glyph in all 14 UI fonts of each language.
   by `Info.WhichUIType`, ordered by name as the original list inserts its rows (ordinal, `0x10178768`). Items without a `P<name>.MD2` preview model (shops, among others) show their
   main model, as the original's preview does (`0x10059F00`). Tools, fixed items and standalone upgrades are excluded (`ObjectCatalog.Buildable`); items absent
   from the economy catalogue stay unavailable in original levels.
+- Staff window (`ParkHud.Staff.cs`, Mac table `data:0x4a1e0`): `b_allstaff` opens the `w_big` window over the buy window.
+  The authored `f_staffpic`, `f_staffinfo`, `f_balance` and `hirestaff` frames initially show applicants from
+  `ParkEconomy.Staff.Candidates`. The five role buttons filter applicants (help 154–158), the name and wage headers sort
+  them (help 159/160), and Enter or a second click on the selected row hires through `ParkEconomy.Hire` (help 161,
+  UI-083/084). The list scrolls (UI-080); candidate detail values and the text portrait are approximations (UI-081/082).
+  Control 9366 toggles to employed staff (UI-090), showing tracked state, wage, skill and happiness. An explicitly
+  labelled Dismiss button there confirms with the localized prompt before calling `ParkEconomy.Fire` (UI-092), and
+  `b_allthings` returns to Buy (help 162). The
+  nearby `data:0x4e45c` staff and visitor locate buttons use their authored positions and stay disabled until world
+  positions are available (UI-091).
+- Map window (`ParkHud.Map.cs`, Mac table `data:0x5265e`): the HUD `b_map` button opens `map_win` with its table-positioned
+  pan, zoom, object-category, layer and close controls. The shipped per-theme `levels/<theme>/2dmap.tga` supplies the
+  terrain image. Current path and queue cells and placed-object footprints are drawn above it. Category buttons filter
+  object markers; pan and zoom operate on the image and overlays (UI-085–087). The generic sandbox draws its grid
+  and heights in place of theme art (UI-089); a missing original theme image is reported. Layers without live per-cell
+  data or decoded handlers remain disabled (UI-088). Escape, right click and `b_okay` close the map.
 - Info arm for the selected original object (picked by occupied grid cell): name (OBJECT_NAMES), Excitement (the original
   default `UsageInfo.ExcitementLevel`, 70 for the Totem), Reliability, State of
   repair, Remaining life ("Not simulated yet"), open/close (`b_door`) and
@@ -450,6 +466,19 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-049 | `Hud/ParkHud.BuyWindow.cs` | buy window scroll ball travel: its top runs from the track's top (first row) to a ball height above the track's bottom (last row) | capture of the original scroll bar ends |
 | UI-050 | `Hud/ParkHud.BuyWindow.cs` | buy list third column (1673-1724), its header button 18 and control 491 have no known content and stay empty | capture of the original buy window |
 | UI-051 | `Hud/ParkHud.cs` | i_dollar frame 1 for a negative balance, green_up frame 1 for a decrease; golden key frame 0 and ticket count from the economy (keys are not tracked, always 0) | capture of the original cash display and key counter |
+| UI-080 | `Hud/ParkHud.Staff.cs` | staff list has ten equal rows in the table content area and the wheel moves one row | capture of the original staff list |
+| UI-081 | `Hud/ParkHud.Staff.cs` | applicant details use expected monthly wage and grade-derived skill | original applicant detail bindings |
+| UI-082 | `Hud/ParkHud.Staff.cs` | selected staff role and grade are text in the portrait frame until the original portrait art is resolved | original staff portrait renderer |
+| UI-083 | `Hud/ParkHud.Staff.cs` | Enter or a second click on the selected applicant hires them | original applicant list activation handler |
+| UI-084 | `Hud/ParkHud.Staff.cs` | repeated staff header presses reverse the ascending sort order | original staff header sort cycle |
+| UI-085 | `Hud/ParkHud.Map.cs` | the 512 pixel theme map places five-pixel terrain cells centrally; live overlays use that mapping | original map overlay alignment capture |
+| UI-086 | `Hud/ParkHud.Map.cs` | paths, queues and placed objects use plain coloured cells over the shipped theme map image; category buttons filter object footprints | original map layer colours and button handlers |
+| UI-087 | `Hud/ParkHud.Map.cs` | map zoom changes by half a step and a pan moves one eighth of the visible image | original map zoom and pan handlers |
+| UI-088 | `Hud/ParkHud.Map.cs` | map controls for tracks, visitors, staff and metrics stay disabled without per-cell data or decoded handlers | original map layer handlers and per-cell data |
+| UI-089 | `Hud/ParkHud.Map.cs` | the generic sandbox has no shipped theme map image; its live grid and heights form a simple terrain base | original generic-sandbox map presentation is an OpenTPW design choice |
+| UI-090 | `Hud/ParkHud.Staff.cs` | staff table control 9366 toggles between applicant and employed views | original control 9366 handler |
+| UI-091 | `Hud/ParkHud.Staff.cs` | staff and visitor locate controls remain disabled until world positions can be targeted | staff and visitor world positions and locate handlers |
+| UI-092 | `Hud/ParkHud.Staff.cs` | an explicit dismiss button below the portrait confirms with the localized prompt before calling economy Fire | original staff dismissal handler and placement |
 
 Data-backed (tagged `[DATA]`): the 2048×1536 canvas and authored rectangles of
 placed models (`ui.wad` roots/bounds), button state frames and texture order, V

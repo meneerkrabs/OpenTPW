@@ -14,9 +14,9 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **199 unresolved unique APPROX IDs**, 215 APPROX occurrences, 101 EXT occurrences, 90 DATA occurrences and 155 BIN occurrences.
+Current inventory: **212 unresolved unique APPROX IDs**, 231 APPROX occurrences, 101 EXT occurrences, 101 DATA occurrences and 155 BIN occurrences.
 
-Of these, 193 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
+Of these, 206 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
 CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.
 
@@ -34,7 +34,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | PATH | 14 | 15 |
 | QUEUE | 19 | 19 |
 | RIDES | 27 | 27 |
-| UI | 48 | 60 |
+| UI | 61 | 76 |
 
 ## Approximation declarations
 
@@ -239,6 +239,19 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-049 | Original-fidelity area (scope unadjudicated) | buy window scroll ball travel: its top runs from the track's top (first row) to a ball height above the track's bottom (last row) | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:57` |
 | UI-050 | Original-fidelity area (scope unadjudicated) | buy list third column (1673-1724), its header button 18 and control 491 have no known content and stay empty | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:58` |
 | UI-051 | Original-fidelity area (scope unadjudicated) | i_dollar frame 1 for a negative balance, green_up frame 1 for a decrease; golden key frame 0 and ticket count from the economy (keys are not tracked, always 0) | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:59` |
+| UI-080 | Original-fidelity area (scope unadjudicated) | staff list has ten equal rows in the table content area and the wheel moves one row | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:60` |
+| UI-081 | Original-fidelity area (scope unadjudicated) | applicant details use expected monthly wage and grade-derived skill | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:61` |
+| UI-082 | Original-fidelity area (scope unadjudicated) | selected staff role and grade are text in the portrait frame until the original portrait art is resolved | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:62` |
+| UI-083 | Original-fidelity area (scope unadjudicated) | Enter or a second click on the selected applicant hires them | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:63` |
+| UI-084 | Original-fidelity area (scope unadjudicated) | repeated staff header presses reverse the ascending sort order | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:64` |
+| UI-085 | Original-fidelity area (scope unadjudicated) | the 512 pixel theme map places five-pixel terrain cells centrally; live overlays use that mapping | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:65` |
+| UI-086 | Original-fidelity area (scope unadjudicated) | paths, queues and placed objects use plain coloured cells over the shipped theme map image; category buttons filter object footprints | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:66` |
+| UI-087 | Original-fidelity area (scope unadjudicated) | map zoom changes by half a step and a pan moves one eighth of the visible image | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:67` |
+| UI-088 | Original-fidelity area (scope unadjudicated) | map controls for tracks, visitors, staff and metrics stay disabled without per-cell data or decoded handlers | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:68` |
+| UI-089 | Original-fidelity area (scope unadjudicated) | the generic sandbox has no shipped theme map image; its live grid and heights form a simple terrain base | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:69` |
+| UI-090 | Original-fidelity area (scope unadjudicated) | staff table control 9366 toggles between applicant and employed views | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:70` |
+| UI-091 | Original-fidelity area (scope unadjudicated) | staff and visitor locate controls remain disabled until world positions can be targeted | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:71` |
+| UI-092 | Original-fidelity area (scope unadjudicated) | an explicit dismiss button below the portrait confirms with the localized prompt before calling economy Fire | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:72` |
 
 ## Approximation sites
 
@@ -459,6 +472,22 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-049 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:304` | [APPROX:UI-049] ball travel: top at the track top for the first row, a ball height above the track bottom for the last — evidence needed: capture of the original scroll bar ends |
 | UI-050 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:35` | [APPROX:UI-050] the third column (1673,1724) has no known content and stays empty; the unnamed controls 491 and 512 are not drawn — evidence needed: capture of the original buy window |
 | UI-051 | `source/OpenTPW/Hud/ParkHud.cs:133` | [APPROX:UI-051] i_dollar frame 1 for a negative balance and green_up frame 1 for a decrease: the two-frame models' state meaning is guessed from their art — evidence needed: capture of the original cash display |
+| UI-080 | `source/OpenTPW/Hud/ParkHud.Staff.cs:42` | [APPROX:UI-080] ten equal staff rows fill the table's 470-unit content area; wheel movement is one row — evidence needed: original staff-list capture. |
+| UI-081 | `source/OpenTPW/Hud/ParkHud.Staff.cs:244` | [APPROX:UI-081] Applicant summary fields use the economy's expected monthly wage and grade-derived skill; the original candidate detail binding is not decoded. |
+| UI-082 | `source/OpenTPW/Hud/ParkHud.Staff.cs:286` | [APPROX:UI-082] The staff portrait content has no resolved per-role art; show the selected role and grade as text in f_staffpic. |
+| UI-083 | `source/OpenTPW/Hud/ParkHud.Staff.cs:381` | [APPROX:UI-083] Help 161 identifies hiring the selected applicant; Enter or a second row click activates it. |
+| UI-084 | `source/OpenTPW/Hud/ParkHud.Staff.cs:422` | [APPROX:UI-084] Repeated header presses reverse the ascending order; the original sort cycle is not decoded. |
+| UI-085 | `source/OpenTPW/Hud/ParkHud.Map.cs:134` | [APPROX:UI-085] the shipped 512px theme image places 5px terrain cells centrally; compare with original map overlays. |
+| UI-086 | `source/OpenTPW/Hud/ParkHud.Map.cs:79` | [APPROX:UI-086] clicking a category filters placed-object footprints to that type; clicking it again restores all types. |
+| UI-086 | `source/OpenTPW/Hud/ParkHud.Map.cs:154` | [APPROX:UI-086] live paths/queues and placed-object footprints use plain coloured cells over the original map art. |
+| UI-087 | `source/OpenTPW/Hud/ParkHud.Map.cs:47` | [APPROX:UI-087] the table has zoom buttons but no decoded zoom factor; half steps keep the visible area usable. |
+| UI-087 | `source/OpenTPW/Hud/ParkHud.Map.cs:53` | [APPROX:UI-087] one map pan moves 1/8 of the currently visible image. |
+| UI-088 | `source/OpenTPW/Hud/ParkHud.Map.cs:85` | [APPROX:UI-088] controls for unavailable live layers remain visible but disabled. |
+| UI-089 | `source/OpenTPW/Hud/ParkHud.Map.cs:157` | [APPROX:UI-089] the generic sandbox has no 2dmap.tga; use its live grid and height as a simple terrain base. |
+| UI-090 | `source/OpenTPW/Hud/ParkHud.Staff.cs:109` | [APPROX:UI-090] Control 9366 has no decoded handler; its authored rectangle toggles the applicant and employee views — evidence needed: original control 9366 handler. |
+| UI-090 | `source/OpenTPW/Hud/ParkHud.Staff.cs:320` | [APPROX:UI-090] The unhandled title-side control 9366 toggles the employee view and original applicant view. |
+| UI-091 | `source/OpenTPW/Hud/ParkHud.Staff.cs:332` | [APPROX:UI-091] Locate controls are disabled until employees and visitors have world positions to target. |
+| UI-092 | `source/OpenTPW/Hud/ParkHud.Staff.cs:324` | [APPROX:UI-092] The economy supports Fire, but the decoded table has no proven dismissal handler; this explicit button and confirmation occupy the free area below the portrait. |
 
 ## Extension sites
 
@@ -540,7 +569,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | texture-pack | `source/OpenTPW/Client/GameFlow.cs:266` | [EXT:texture-pack] the pack switch belongs to the game loop, not to its loading screen |
 | texture-pack | `source/OpenTPW/Client/GameFlow.cs:361` | [EXT:texture-pack] a running texture switch shows its progress without blocking the game |
 | texture-pack | `source/OpenTPW/Compat/GraphicsSettings.cs:269` | [EXT:texture-pack] Texture choice (docs/TEXTURE-PACKS.md): empty = original textures; &lt;c&gt;enhanced&lt;/c&gt; (the default) = the |
-| texture-pack | `source/OpenTPW/FrontEnd/FrontEndSmokeTest.cs:78` | [EXT:texture-pack] Switches a throw-away pack on and off while the lobby runs: a lobby texture becomes the pack's solid |
+| texture-pack | `source/OpenTPW/FrontEnd/FrontEndSmokeTest.cs:79` | [EXT:texture-pack] Switches a throw-away pack on and off while the lobby runs: a lobby texture becomes the pack's solid |
 | texture-pack | `source/OpenTPW/Render/Assets/ImagePrepass.cs:33` | [EXT:texture-pack] Optional 1x de-artifact pre-pass for the local texture pack. |
 | texture-pack | `source/OpenTPW/Render/Assets/Material.cs:26` | [EXT:texture-pack] Textures can swap their GPU texture in place (a texture pack switch); the binding follows the Texture object. |
 | texture-pack | `source/OpenTPW/Render/Assets/Texture.cs:19` | [EXT:texture-pack] Textures made from a game &#96;.wct&#96; remember their source so a pack switch can reload them in place. |
@@ -592,6 +621,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | CHAT_COMMANDS.str:134-151 | `source/OpenTPW.Online/Chat/ChatCommands.cs:117` | ([DATA:CHAT_COMMANDS.str:134-151] — 18 responses for the 19 mood commands; Think has none). |
 | CHAT_COMMANDS.str:43-85 | `source/OpenTPW.Online/Chat/ChatCommands.cs:5` | holds the localized command words (German "sage", "erzähle", ...) and [DATA:CHAT_COMMANDS.str:43-85] |
 | Easymode.TPWI:SYSG X/Y/rotation | `source/OpenTPW/World/Objects/ParkObjects.cs:144` | [DATA:Easymode.TPWI:SYSG X/Y/rotation] [DATA:&lt;fixed item&gt;.MD2:park-space coordinates] |
+| Language/*/*_NAMES.str | `source/OpenTPW/Hud/ParkHud.Staff.cs:201` | [DATA:Language/*/*_NAMES.str] NameIndex is the role-specific original name-table index. |
 | Language/*/CHAT_COMMANDS.str:0-42 | `source/OpenTPW.Online/Chat/ChatCommands.cs:4` | The original chat commands, in &lt;c&gt;CHAT_COMMANDS.str&lt;/c&gt; order. [DATA:Language/*/CHAT_COMMANDS.str:0-42] |
 | Language/*/TAG_SYSTEM.str:123-127 (six months in the red) | `source/OpenTPW/Economy/ParkEconomy.cs:26` | [DATA:Language/*/TAG_SYSTEM.str:123-127 (six months in the red)] |
 | Language/*/THEMENAMES.str | `source/OpenTPW/Online/OnlineStrings.cs:89` | Theme name of a level. [DATA:Language/*/THEMENAMES.str] order Lost Kingdom, Halloween World, Wonder Land, |
@@ -605,7 +635,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | Language/English/UITEXT.str | `source/OpenTPW/Online/OnlineStrings.cs:19` | [DATA:Language/English/UITEXT.str] (the UIStrings enum is off by one from about 206 on; these are verified). |
 | Language/English/swears.txt,alloweds.txt | `source/OpenTPW.Online/Moderation/WordFilter.cs:32` | Decodes an original list. [DATA:Language/English/swears.txt,alloweds.txt] Observed encoding: |
 | Mac UI font table (docs/reverse/PPC-ui.md):slot 3 DATETINY/DATESMALL/DATEMED/DATEBIG | `source/OpenTPW/UI/Original/UiText.cs:74` | [DATA:Mac UI font table (docs/reverse/PPC-ui.md):slot 3 DATETINY/DATESMALL/DATEMED/DATEBIG] the HUD date font, one per |
-| Mac buy table 0x4cd94:-2,511 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:200` | [DATA:Mac buy table 0x4cd94:-2,511] b_exit (help 2) closes; b_allstaff (help 153) opens the staff list, which OpenTPW does not have yet |
+| Mac buy table 0x4cd94:-2,511 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:200` | [DATA:Mac buy table 0x4cd94:-2,511] b_exit (help 2) closes; b_allstaff (help 153) opens the staff window. |
 | Mac buy table 0x4cd94:1,2 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:188` | [DATA:Mac buy table 0x4cd94:1,2] b_up / b_down at their rectangles |
 | Mac buy table 0x4cd94:16,17 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:185` | [DATA:Mac buy table 0x4cd94:16,17] column header buttons (name, price) without a model; the third (18) has no text and no action |
 | Mac buy table 0x4cd94:489,490,493,504 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:150` | [DATA:Mac buy table 0x4cd94:489,490,493,504] w_big root window4, two !frame panels and the f_buyitem list frame at their authored rectangles |
@@ -618,6 +648,16 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | Mac main HUD table 0x4ab38:32,47 | `source/OpenTPW/Hud/ParkHud.cs:125` | [DATA:Mac main HUD table 0x4ab38:32,47] date text region (182,1061,383,1103) in black (font slot 3); the cash text |
 | Mac main HUD table 0x4ab38:38-43 | `source/OpenTPW/Hud/ParkHud.cs:142` | [DATA:Mac main HUD table 0x4ab38:38-43] original button rectangles: staggered along the panel's curve, plus the camera button |
 | Mac main HUD table 0x4ab38:50,48,49,51-55 | `source/OpenTPW/Hud/ParkHud.cs:132` | [DATA:Mac main HUD table 0x4ab38:50,48,49,51-55] cash extras: i_dollar left of the balance, the change text (yellow) with green_up, golden key and ticket counters |
+| Mac map table 0x5265e:-1 | `source/OpenTPW/Hud/ParkHud.Map.cs:95` | [DATA:Mac map table 0x5265e:-1] b_okay closes the map (help 1). |
+| Mac map table 0x5265e:2432,2450,2448,2449,2453 | `source/OpenTPW/Hud/ParkHud.Map.cs:65` | [DATA:Mac map table 0x5265e:2432,2450,2448,2449,2453] root, map content and three lower panels. |
+| Mac map table 0x5265e:2433,2436-2438,2440,2442 | `source/OpenTPW/Hud/ParkHud.Map.cs:71` | [DATA:Mac map table 0x5265e:2433,2436-2438,2440,2442] pan and zoom controls at table rectangles. |
+| Mac map table 0x5265e:2434,2439,2451,2452 | `source/OpenTPW/Hud/ParkHud.Map.cs:78` | [DATA:Mac map table 0x5265e:2434,2439,2451,2452] object-category map buttons. |
+| Mac map table 0x5265e:2441,2435,2444-2447,2455-2457 | `source/OpenTPW/Hud/ParkHud.Map.cs:84` | [DATA:Mac map table 0x5265e:2441,2435,2444-2447,2455-2457] these layers have no per-cell location or metric data yet. |
+| Mac staff table 0x4a1e0:16,17 | `source/OpenTPW/Hud/ParkHud.Staff.cs:308` | [DATA:Mac staff table 0x4a1e0:16,17] Help 159/160 sorts the name/wage columns. |
+| Mac staff table 0x4a1e0:9343,9345,9348,9349,9358 | `source/OpenTPW/Hud/ParkHud.Staff.cs:272` | [DATA:Mac staff table 0x4a1e0:9343,9345,9348,9349,9358] Resolved ui.wad root model hashes. |
+| Mac staff table 0x4a1e0:9360-9364 | `source/OpenTPW/Hud/ParkHud.Staff.cs:300` | [DATA:Mac staff table 0x4a1e0:9360-9364] Five buttons with help 154-158 select applicants by role. |
+| Mac staff table 0x4a1e0:9365 | `source/OpenTPW/Hud/ParkHud.Staff.cs:317` | [DATA:Mac staff table 0x4a1e0:9365] b_allthings returns to the buy window. |
+| Mac staff-button table 0x4e45c:2397-2404 | `source/OpenTPW/Hud/ParkHud.Staff.cs:329` | [DATA:Mac staff-button table 0x4e45c:2397-2404] Locate-role and locate-visitor buttons at the authored HUD rectangles. |
 | Rides.sam:Info.WhichUIType | `source/OpenTPW/Hud/HudStubs.cs:153` | [DATA:Rides.sam:Info.WhichUIType] |
 | Rides.sam:UsageInfo.ExcitementLevel | `source/OpenTPW/Hud/HudStubs.cs:150` | [DATA:Totem.sam:UsageInfo.ExcitementLevel] overrides [DATA:Rides.sam:UsageInfo.ExcitementLevel] |
 | Standard.sam:Costs.QueueCell | `source/OpenTPW/World/Level.Objects.cs:212` | [DATA:Standard.sam:Costs.QueueCell] charged per cell when written (ParkEconomy.TrySpendCell, PATH-plan §3.2) |

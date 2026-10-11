@@ -43,7 +43,9 @@ public sealed record EconomyObjectInfo(
 	int AttractionValue,
 	string ArchivePath,
 	int MaxSpeed = 0,
-	int MaxCapacity = 0 )
+	int MaxCapacity = 0,
+	int NewAttractionDecayTime = 0,
+	IReadOnlyList<int>? NewBonus = null )
 {
 	public long PurchaseCost => Upgrades.Count > 0 ? Upgrades[0].CostOfUpgrade : 0;
 	public bool IsBuyable => Kind is ParkObjectKind.Ride or ParkObjectKind.Shop or ParkObjectKind.Sideshow or ParkObjectKind.Feature or ParkObjectKind.Upgrade;
@@ -120,7 +122,9 @@ public sealed class EconomyObjectCatalog : IEconomyObjectCatalog
 			settings.GetInt( "UsageInfo.ShopType", 0, optional: true ), settings.GetInt( "UsageInfo.SpecialIngredient", 0, optional: true ),
 			settings.GetInt( "UsageInfo.GoldenTicketCost", 0, optional: true ), settings.GetInt( "AddOn.UpgradesId", 0, optional: true ),
 			settings.GetInt( "UsageInfo.LitterEffect", 0, optional: true ), settings.GetInt( "Info.AttractionValue", 0, optional: true ), archivePath,
-			settings.GetInt( "UsageInfo.MaxSpeed", 0, optional: true ), settings.GetInt( "UsageInfo.MaxCapacity", 0, optional: true ) );
+			settings.GetInt( "UsageInfo.MaxSpeed", 0, optional: true ), settings.GetInt( "UsageInfo.MaxCapacity", 0, optional: true ),
+			settings.GetInt( "Info.NewAttractionDecayTime", 0, optional: true ),
+			Enumerable.Range( 0, 3 ).Select( index => settings.GetInt( $"Attraction[{index}].NewBonus", 0, optional: true ) ).ToArray() );
 	}
 
 	/// <summary>

@@ -216,6 +216,8 @@ public class GuestAssetTests
 	public void JungleParkRunIsDeterministic()
 	{
 		var (grid, settings) = LoadJungle();
+		// Groups every 15 timer units rather than the shipped 150 (about 2.5 minutes), so the two-minute run admits guests.
+		settings.ArrivalTimeBetween = 15;
 		ulong Run( ulong seed )
 		{
 			var simulation = new GuestSimulation( grid, settings, seed );

@@ -35,6 +35,10 @@ public sealed class ParkEconomyRuntime
 	{
 		Guests = new GuestEconomyBridge( () => Economy, guests );
 		guests.Payments = Guests;
+		// The arrival rule reads the park's turn, attraction points and bankruptcy (world mode 4).
+		guests.ArrivalClock = () => Economy.Turn;
+		guests.ParkPoints = () => Economy.ParkPoints();
+		guests.ArrivalsHalted = () => Economy.IsBankrupt;
 		Economy.GuestStatistics = Guests;
 		Economy.RideOperations = Guests;
 		if ( Import is { ParkClosed: true } )

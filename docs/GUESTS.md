@@ -86,7 +86,7 @@ is not applied (difficulty selection does not exist yet). Used values:
 | `PeepInfo.RideVomitDivisor`, `VomitCapacity` | Nausea += excitement / divisor; at capacity "Feeling sick" |
 | `PeepInfo.ToiletDesparate` | Toilet level that hurts happiness |
 | `PeepInfo.DecisionVar{Dist,Queue,Excitement,Thirst,Hunger,Toilet,Illness}Weight` | Attraction score weights |
-| `Arrival.MinPeople`, `TimeBetweenArrivals`, `FixedRate` | Bus arrivals (units: see approximations) |
+| `Arrival.MinPeople`, `TimeBetweenArrivals`, `NewParkBonus`, `PointsPerVisitor` | Arrival groups ([Arrivals](#arrivals); `FixedRate` is not read by the arrival code) |
 | `BankAccountInfo.InitialAdmissionFee` | Admission paid at the ticket booth (standalone only; with the park economy attached its entrance fee applies, see Money below) |
 | `FixedItemInfo.{BusStop,CrossingBSSide,CrossingParkSide,TicketBooth,Entrance}{A,B}Pos{X,Y}` | Arrival/leaving lanes A and B (the entrance cells are the first InitialPath cells, docs/MAP.md) |
 
@@ -123,6 +123,24 @@ the state machine below. No executable constants were recovered from the
 Windows `TP.ICD` string search. Separate static evidence from the identified
 Feral Mac PowerPC application is recorded in [PPC-guests](reverse/PPC-guests.md).
 
+## Arrivals
+
+Traced from the Mac binary (`0x100CB2AC`, `0x100CB4E8`, `0x100C24C0`; Ghidra, static). A group of guests
+arrives when no group is being dropped off and more than `Arrival.TimeBetweenArrivals` timer units have
+passed since the last group emptied. A unit is four park turns (`(turn >> 2)`, about one second), so the
+shipped 150 is about two and a half minutes. The timer starts unset, so a park loaded at a later turn (an
+original save) gets its first group at once, while a new park waits one interval.
+
+The group size is `(int)(1.2 × (park points + NewParkBonus)) / PointsPerVisitor` (`PointsPerVisitor` below 2
+divides by 1), at least `MinPeople`, cut so that the guests in the park plus the group stay within 1,500;
+a bankrupt park gets none. With the shipped 20 and 6 a new park gets 4 guests per group.
+
+Park points are summed over the placed rides and sideshows: each adds its `Info.AttractionValue` plus the
+`Attraction[n].NewBonus` of its age bracket (n = age in game days / `Info.NewAttractionDecayTime`, no
+bonus from the fourth bracket on), divided by the number of objects of the same type, so copies of one
+type count once. The jungle `Rides.sam` gives 20 and a 60-day decay; Belly Bounce has 25 and bonuses
+10/7/4. Open points are ARRIVAL-001..003 (`ArrivalApproximations`).
+
 ## Simulation
 
 All on the 60 Hz `FixedStepClock` in `Level.Update`, guests first, then the
@@ -153,7 +171,7 @@ home (21) → removed.
 
 | Item | OpenTPW choice |
 | --- | --- |
-| Arrival units | `TimeBetweenArrivals` read as tenths of a second (150 → a bus every 15 s) carrying `max(MinPeople, FixedRate)` guests, spawned 0.4 s apart, lanes A/B alternating; cap 1,000 guests |
+| Arrival step-off | A group's guests appear 0.4 s apart, lanes A/B alternating, instead of at a bus's stops (ARRIVAL-001); OpenTPW also caps the simulation at 1,000 guests |
 | Needs | hunger +0.35/s, thirst +0.45/s, toilet +0.3/s, energy −0.15/s walking / +1/s resting or riding, nausea −0.2/s; thoughts from level 70 |
 | Starting happiness | 60 of 100 |
 | Decision | every 3 s: leave if ExitLevel ≤ 0 or happiness ≤ 10; else score = AttractionValue − DistWeight·distance − QueueWeight·queue + ExcitementWeight·(25 − |preferred − excitement|) + need terms (weight · need / 4) − IllnessWeight·nausea / 4 − AttractionValue if just ridden + random 0–9; best positive score wins, otherwise wander (random link, no U-turn) |

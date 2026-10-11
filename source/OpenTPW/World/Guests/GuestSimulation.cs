@@ -62,7 +62,9 @@ public sealed class GuestSimulation : IRideVisitorHost
 	private readonly List<IRideVisitorBridge> attractions = new();
 	private GuestRandom random;
 	private int nextId = 1;
-	private float arrivalTimer;
+	// The arrival timer's start turn (0 until the first group: the original's timer starts unset) and the group being dropped off.
+	private long arrivalTimerStart;
+	private bool deliveringArrivals;
 	private float spawnTimer;
 	private int pendingArrivals;
 	private int laneToggle;
@@ -99,6 +101,16 @@ public sealed class GuestSimulation : IRideVisitorHost
 	public long ParkTurn => ParkCalendar.Turn( TickCount );
 	public double TimeSeconds { get; private set; }
 	public bool ArrivalsEnabled { get; set; } = true;
+	/// <summary>The park turn the arrival timer reads: the economy's when attached, else <see cref="ParkTurn"/>.</summary>
+	public Func<long>? ArrivalClock { get; set; }
+	/// <summary>The park's attraction points for the arrival rule (the economy's attractions); 0 without one.</summary>
+	public Func<int>? ParkPoints { get; set; }
+	/// <summary>True while no group arrives (a bankrupt park).</summary>
+	public Func<bool>? ArrivalsHalted { get; set; }
+	/// <summary>The original's limit on guests in the park when a group's size is set.</summary>
+	// [BIN:STP-PPC:0x100CB4E8 arrival group] a group is cut so the guests already counted plus the group stay at most 1500 (0x5DC)
+	// [APPROX:ARRIVAL-002] the 500-guest limit of the original's other mode (*0x101EC8F8 == 1) and its 0.8 factor condition are not reproduced — evidence needed: what sets 0x101EC8F8 and the +0x30 word of 0x101083C8's object
+	public const int ArrivalParkLimit = 1500;
 	/// <summary>Where guests pay (the park economy). Null: the standalone <see cref="GuestSettings.AdmissionFee"/> and attraction prices apply and no money is booked anywhere.</summary>
 	public IGuestPayments? Payments { get; set; }
 	/// <summary>Entrance fee: the economy's when <see cref="Payments"/> is set, else <see cref="GuestSettings.AdmissionFee"/>.</summary>
@@ -270,24 +282,55 @@ public sealed class GuestSimulation : IRideVisitorHost
 		}
 	}
 
+	/// <summary>
+	/// The original's arrivals: when more than <see cref="GuestSettings.ArrivalTimeBetween"/> timer units (four park turns each)
+	/// have passed since the last group was dropped off, a new group of <see cref="ArrivalGroupSize"/> guests arrives; its guests
+	/// step off one by one, and the timer restarts once the group is empty.
+	/// </summary>
+	// [BIN:STP-PPC:0x100CB2AC arrival update] if no group is active and 0x101210F8's (turn >> 2) − (start >> 2) exceeds Arrival.TimeBetweenArrivals (settings +0x2D4), the group size is set and the group starts; at each stop one guest is created and the count falls; at 0 the timer restarts (0x10121098)
+	// [APPROX:ARRIVAL-001] guests step off every 0.4 s instead of at the original bus's stops (bus sizes 1/2/3 for groups under 36, under 61, larger) — evidence needed: the arrival vehicle's stop cycle (0x10109784 states)
 	private void UpdateArrivals( float deltaSeconds )
 	{
 		if ( !ArrivalsEnabled )
 			return;
-		arrivalTimer -= deltaSeconds;
-		if ( arrivalTimer <= 0 )
+		var turn = ArrivalClock?.Invoke() ?? ParkTurn;
+		if ( !deliveringArrivals && (turn >> 2) - (arrivalTimerStart >> 2) > Settings.ArrivalTimeBetween )
 		{
-			arrivalTimer += Settings.ArrivalTimeBetween * Settings.ArrivalTimeUnitSeconds;
-			pendingArrivals += Math.Max( Settings.ArrivalMinPeople, Settings.ArrivalFixedRate );
+			pendingArrivals = ArrivalGroupSize();
+			deliveringArrivals = true;
 		}
+		if ( !deliveringArrivals )
+			return;
 		spawnTimer -= deltaSeconds;
-		if ( pendingArrivals > 0 && spawnTimer <= 0 )
+		if ( spawnTimer > 0 )
+			return;
+		if ( pendingArrivals < 1 )
 		{
-			spawnTimer = SpawnSpacingSeconds;
-			pendingArrivals--;
-			if ( guests.Count < Settings.MaximumGuests )
-				SpawnArrival();
+			deliveringArrivals = false;
+			arrivalTimerStart = turn;
+			return;
 		}
+		spawnTimer = SpawnSpacingSeconds;
+		pendingArrivals--;
+		if ( guests.Count < Settings.MaximumGuests )
+			SpawnArrival();
+	}
+
+	/// <summary>
+	/// Guests in the next group: 1.2 × (park points + Arrival.NewParkBonus) / Arrival.PointsPerVisitor, at least
+	/// Arrival.MinPeople, and none while the park is bankrupt; cut to the park limit.
+	/// </summary>
+	// [BIN:STP-PPC:0x100CB4E8 arrival group] 0 in world mode 4 (bankrupt); else (int)(1.2f × (points 0x100C24C0 + NewParkBonus +0x2DC)) / PointsPerVisitor (+0x2E0, 1 when below 2), raised to MinPeople (+0x2D0), then cut so the counted guests (0x100C1FB4) plus the group stay within 1500
+	public int ArrivalGroupSize()
+	{
+		if ( ArrivalsHalted?.Invoke() == true )
+			return 0;
+		var perVisitor = Settings.ArrivalPointsPerVisitor < 2 ? 1 : Settings.ArrivalPointsPerVisitor;
+		var count = (int)(1.2f * (float)((ParkPoints?.Invoke() ?? 0) + Settings.ArrivalNewParkBonus)) / perVisitor;
+		count = Math.Max( count, Settings.ArrivalMinPeople );
+		if ( guests.Count + count > ArrivalParkLimit )
+			count = ArrivalParkLimit - guests.Count;
+		return count;
 	}
 
 	public bool IsInPark( Guest guest ) => InPark( guest );
@@ -1356,7 +1399,8 @@ public sealed class GuestSimulation : IRideVisitorHost
 		hash.Add( nextId );
 		hash.Add( Admissions );
 		hash.Add( Departed );
-		hash.Add( arrivalTimer );
+		hash.Add( arrivalTimerStart );
+		hash.Add( deliveringArrivals );
 		hash.Add( spawnTimer );
 		hash.Add( pendingArrivals );
 		hash.Add( laneToggle );

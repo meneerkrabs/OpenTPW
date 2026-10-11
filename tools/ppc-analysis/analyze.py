@@ -230,7 +230,7 @@ class Analysis:
                 if code[tb + 2] & 0x08:
                     cnt = struct.unpack_from(">I", code, p)[0]
                     p += 4 + 4 * cnt
-                if 0 < tb_off < 0x100000 and tb_off % 4 == 0 and o - tb_off >= 0:
+                if p + 2 <= len(code) and 0 < tb_off < 0x100000 and tb_off % 4 == 0 and o - tb_off >= 0:
                     ln = struct.unpack_from(">H", code, p)[0]
                     nm = code[p + 2:p + 2 + ln]
                     if 0 < ln < 512 and all(32 <= b < 127 for b in nm):

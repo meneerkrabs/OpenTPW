@@ -417,8 +417,13 @@ public sealed class UiButton : UiElement
 
 	public override void Activate()
 	{
-		if ( Enabled )
-			Clicked?.Invoke();
+		if ( !Enabled )
+			return;
+		// [BIN:STP-PPC:0x10137FD0 park view input] a control's 0x100 (activated) message plays cat_ui event 0x1F (0xBD when the control's flag word 0x1017F618 has a bit set outside 24-26)
+		// [APPROX:AUDIO-004] the 0xBD variant is not mapped to any OpenTPW control — evidence needed: the meaning of the flag bits in control+0x44
+		// [APPROX:AUDIO-012] every activated button plays it, front end included; the traced witness is the park view's handler
+		GameAudio.PlayUi( GameAudio.ClickEvent );
+		Clicked?.Invoke();
 	}
 
 	public override void Draw( UiContext context, bool focused, bool pressed )

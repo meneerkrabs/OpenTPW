@@ -18,6 +18,7 @@ public readonly record struct WorldSeed( ulong Value )
 	private const ulong EconomyKey = DefaultValue ^ 1;
 	private const ulong ScriptKey = DefaultValue;
 	private const ulong SoundKey = DefaultValue ^ 0x534F_554E_4453_4545;
+	private const ulong WeatherKey = DefaultValue ^ 0x5745_4154_4845_5221;
 
 	public static WorldSeed Default => new( DefaultValue );
 
@@ -32,6 +33,9 @@ public readonly record struct WorldSeed( ulong Value )
 
 	/// <summary>XORed into the placement ordinal to give each placed object's script seed (0 for the default seed).</summary>
 	public int ObjectScriptKey => (int)(ScriptStream ^ (ScriptStream >> 32));
+
+	/// <summary>Seed of the park's weather draws (kept apart from the economy's stream so the weather adds no economy draws).</summary>
+	public ulong WeatherStream => Value ^ WeatherKey;
 
 	/// <summary>Seed of the sound event chooser for this park (presentation only).</summary>
 	public uint SoundStream => (uint)((Value ^ SoundKey) ^ ((Value ^ SoundKey) >> 32));

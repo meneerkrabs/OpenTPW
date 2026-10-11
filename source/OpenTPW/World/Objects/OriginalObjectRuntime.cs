@@ -14,6 +14,7 @@ public sealed class OriginalObjectRuntime
 	private readonly SortedSet<string> unresolvedAnimations = new( StringComparer.Ordinal );
 	private bool wasRunning;
 	private bool stopped;
+	private readonly OriginalObjectEffects effects;
 
 	/// <param name="world">The park's script world; it also allocates the attraction id. Null: a world of its own.</param>
 	public OriginalObjectRuntime( ObjectCatalogEntry entry, RideScriptWorld? world = null, int? seed = null, bool open = true )
@@ -32,12 +33,13 @@ public sealed class OriginalObjectRuntime
 			throw new InvalidDataException( $"{entry.ModelPath} is not a geometry model." );
 		// Fixed items keep their last vertex pose when a clip ends (ObjectAnimator.UpdateVertices).
 		Animator = new ObjectAnimator( Model, keepsPoseOnClipChange: entry.IsFixedItem );
+		effects = new OriginalObjectEffects( this );
 		if ( entry.ScriptPath != null )
 		{
 			using var stream = entry.FileSystem.OpenRead( entry.ScriptPath );
 			Script = new RideVM( stream, new RideVMOptions
 			{
-				Effects = new OriginalObjectEffects( this ),
+				Effects = effects,
 				World = world,
 				Seed = seed,
 				SourceName = entry.ScriptPath,
@@ -130,6 +132,7 @@ public sealed class OriginalObjectRuntime
 	public void Stop()
 	{
 		stopped = true;
+		effects.StopSounds();
 		Visitors.ReleaseAll();
 		if ( Coaster != null )
 		{
@@ -272,8 +275,20 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 	public const int MainChannel = OpcodeHandlers.Animation.MainChannel;
 
 	private readonly OriginalObjectRuntime ride;
+	/// <summary>The ride script's held scream (the original's handle, refused while one is held).</summary>
+	private SoundChain? screamChain;
+	private readonly List<SoundChain> ownedScreams = new();
 
 	public OriginalObjectEffects( OriginalObjectRuntime ride ) => this.ride = ride;
+
+	/// <summary>Stops this runtime's chains, including handles lost by a refused STARTSCREAM, when the object is removed.</summary>
+	internal void StopSounds()
+	{
+		foreach ( var chain in ownedScreams )
+			chain.Stop();
+		ownedScreams.Clear();
+		screamChain = null;
+	}
 
 	public int Perform( RideEffectCall call )
 	{
@@ -311,6 +326,26 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 		if ( ride.Visitors.TryPerform( call, out var visitorResult ) )
 			return visitorResult;
 		// Sound effects play, but their non-audio parts (reverb, 3D position) remain unimplemented effects.
+		// [BIN:STP-PPC:0x100B19DC STARTSCREAM] the scream is held by the ride's script (the handle at the VM's +208); STOPSCREAM stops the handle, SINGLESCREAM is a one-shot with no handle
+		if ( call.Opcode == Opcode.STARTSCREAM )
+		{
+			screamChain = GameAudio.StartScream( () => screamChain, call.Argument( 0 ), call.Argument( 1 ), null );
+			ownedScreams.RemoveAll( chain => chain.IsStopped );
+			if ( screamChain != null )
+				ownedScreams.Add( screamChain );
+			return UnimplementedRideScriptEffects.Instance.Perform( call );
+		}
+		if ( call.Opcode == Opcode.STOPSCREAM )
+		{
+			screamChain?.Stop();
+			screamChain = null;
+			return UnimplementedRideScriptEffects.Instance.Perform( call );
+		}
+		if ( call.Opcode == Opcode.SINGLESCREAM )
+		{
+			GameAudio.SingleScream( call.Argument( 0 ), (short)call.Argument( 1 ), null );
+			return UnimplementedRideScriptEffects.Instance.Perform( call );
+		}
 		if ( call.Opcode == Opcode.EVENT )
 		{
 			// [BIN:STP-PPC:0x100AE930 RSE EVENT effect switch] the type operand selects the sound category (3 level rides, 4 level ambient, 5 global rides, 6 global kids, 7 global staff, 8 global ambient, 9 global UI) and the id operand the event, submitted at the object's position

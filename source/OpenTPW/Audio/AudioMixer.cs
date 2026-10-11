@@ -12,6 +12,9 @@ public enum AudioChannel
 /// One sound in the mixer: 16-bit PCM (mono or stereo) at its own sample rate, resampled linearly to the
 /// output rate. <see cref="Completed"/> runs on the mixing thread of control (the main thread) when the
 /// last frame has been mixed; a sentence player uses it to start the next segment without a gap.
+/// A voice given a <see cref="Position"/> (in the original's sound units: cell edges are 10) and a
+/// <see cref="Range"/> is turned down by the distance law against the mixer's listener and panned by its
+/// bearing; a voice without a position plays flat on both channels.
 /// </summary>
 public sealed class AudioVoice
 {
@@ -41,6 +44,12 @@ public sealed class AudioVoice
 	public bool IsFinished { get; private set; }
 	/// <summary>The output frame (mixer timeline) at which this voice's first frame was mixed, or -1 before that.</summary>
 	public long StartOutputFrame { get; internal set; } = -1;
+	/// <summary>The voice's place in the original's sound units, or null for a flat (unpositioned) voice.</summary>
+	public Vector3? Position { get; internal set; }
+	/// <summary>The distance at which the voice is no longer heard (0: no range, always full gain).</summary>
+	public float Range { get; internal set; }
+	/// <summary>True when the sample wraps to its start and the voice lives on until stopped (an event flagged 0x8 loops its sample).</summary>
+	public bool Loops { get; internal set; }
 	public event Action<AudioVoice>? Completed;
 
 	public void Stop() => IsFinished = true;
@@ -49,8 +58,21 @@ public sealed class AudioVoice
 	internal int MixInto( Span<float> mix, int frames, float gain )
 	{
 		var total = gain * Gain;
+		var leftScale = 1f;
+		var rightScale = 1f;
+		if ( Position is { } place && Range > 0 )
+		{
+			var (distanceGain, pan) = AudioListener.Placement( place, Range );
+			// [APPROX:AUDIO-019] inaudible positioned voices advance silently; loops remain available when the listener returns, without recreating the event
+			// [APPROX:AUDIO-018] constant-power pan by the source's bearing against the listener — the original's pan law (QSound's processing) is not read
+			var angle = (pan + 1) * MathF.PI / 4;
+			leftScale = distanceGain * MathF.Cos( angle );
+			rightScale = distanceGain * MathF.Sin( angle );
+		}
 		for ( var frame = 0; frame < frames; frame++ )
 		{
+			if ( Loops && Frames > 0 && position >= Frames )
+				position %= Frames;
 			var index = (int)position;
 			if ( IsFinished || index >= Frames )
 			{
@@ -58,7 +80,7 @@ public sealed class AudioVoice
 				return frame;
 			}
 			var fraction = (float)(position - index);
-			var next = Math.Min( index + 1, Frames - 1 );
+			var next = Loops ? (index + 1) % Frames : Math.Min( index + 1, Frames - 1 );
 			float left, right;
 			if ( channels == 1 )
 			{
@@ -70,11 +92,11 @@ public sealed class AudioVoice
 				left = samples[2 * index] + (samples[2 * next] - samples[2 * index]) * fraction;
 				right = samples[2 * index + 1] + (samples[2 * next + 1] - samples[2 * index + 1]) * fraction;
 			}
-			mix[2 * frame] += left * total;
-			mix[2 * frame + 1] += right * total;
+			mix[2 * frame] += left * total * leftScale;
+			mix[2 * frame + 1] += right * total * rightScale;
 			position += step;
 		}
-		if ( position >= Frames )
+		if ( position >= Frames && !Loops )
 			IsFinished = true;
 		return frames;
 	}
@@ -148,9 +170,29 @@ public sealed class AudioMixer : IDisposable
 		return voice;
 	}
 
+	/// <summary>
+	/// Plays a positioned voice: the gain follows the distance law against the listener over the range
+	/// (see <see cref="AudioListener.RangeGain"/>), the pan the source's bearing. A null position or a
+	/// zero range plays flat. The distance and pan laws are host approximations.
+	/// </summary>
+	public AudioVoice Play( Mp2Audio audio, AudioChannel channel, float gain, Vector3? position, float range )
+	{
+		if ( position is { } place )
+			AudioListener.ValidatePosition( place, nameof( position ) );
+		if ( !float.IsFinite( range ) || range < 0 )
+			throw new ArgumentOutOfRangeException( nameof( range ) );
+		var voice = Play( audio, channel, gain );
+		voice.Position = position;
+		voice.Range = range;
+		return voice;
+	}
+
 	/// <summary>Seconds of <paramref name="voice"/> the listener has heard (0 before it starts).</summary>
 	public double PlayedSeconds( AudioVoice voice ) =>
 		voice.StartOutputFrame < 0 ? 0 : Math.Max( 0, PlayedFrames - voice.StartOutputFrame ) / (double)OutputRate;
+
+	/// <summary>Output frames in <paramref name="seconds"/> of mixer time.</summary>
+	public long SecondsToFrames( double seconds ) => (long)Math.Round( seconds * OutputRate );
 
 	/// <summary>Mixes enough audio to keep the device queue at the target; call once per frame.</summary>
 	public void Pump()

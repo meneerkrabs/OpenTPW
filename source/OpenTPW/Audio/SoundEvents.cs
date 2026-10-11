@@ -95,6 +95,7 @@ public sealed class SoundEventSystem
 	/// <summary>Samples shorter than this (≈ 10 s at 22,050 Hz) stay decoded in memory.</summary>
 	public const int CacheFrameLimit = 220500;
 	private readonly List<SoundSentence> sentences = new();
+	private readonly List<SoundChain> chains = new();
 
 	/// <summary>Starts decoded segments that were waiting for a background decode; call once per frame.</summary>
 	public void Pump()
@@ -102,6 +103,9 @@ public sealed class SoundEventSystem
 		foreach ( var sentence in sentences.ToArray() )
 			sentence.Pump();
 		sentences.RemoveAll( sentence => sentence.IsStopped );
+		foreach ( var chain in chains.ToArray() )
+			chain.Pump();
+		chains.RemoveAll( chain => chain.IsStopped );
 	}
 
 	public SoundEventSystem( AudioMixer mixer, uint seed = 1 )
@@ -200,8 +204,30 @@ public sealed class SoundEventSystem
 		var index = ChooseSample( sound.Samples, Draw(), -1, avoidRepeat: false );
 		if ( index < 0 || Decode( category, sound.Samples[index] ) is not { } audio )
 			return null;
-		// [APPROX:AUDIO-003] pitch, delay, 3D position and reverb of a sound are not applied — evidence needed: TbSoundSampleInfo pitch units and the placeholder 3D update
+		// [APPROX:AUDIO-003] pitch, delay and reverb of a sound are not applied — evidence needed: TbSoundSampleInfo pitch units and the placeholder 3D update
 		return mixer.Play( audio, channel, Volume( sound ) / 100f );
+	}
+
+	/// <summary>
+	/// Plays a one-shot event at a place: the voice carries <paramref name="position"/> and — unless a
+	/// range is given — the chosen sound's own range (the float at the sound record's +34, the far end the
+	/// original hands its mixer), and the mixer turns it down over its distance from the listener.
+	/// </summary>
+	public AudioVoice? PlayAt( SoundCategory? category, uint eventId, AudioChannel channel, Vector3 position, float? range = null )
+	{
+		var soundEvent = category?.Catalog.Find( eventId );
+		if ( category == null || soundEvent == null || soundEvent.Sounds.Count == 0 )
+			return null;
+		var sound = soundEvent.Sounds[Math.Max( 0, ChooseSound( soundEvent.Sounds, Draw() ) )];
+		var index = ChooseSample( sound.Samples, Draw(), -1, avoidRepeat: false );
+		if ( index < 0 || Decode( category, sound.Samples[index] ) is not { } audio )
+			return null;
+		// [DATA:global/sound/cat_ambientSFX.map] events 7 and 8 (the waterfall and river) are one-shots (no 0x4) flagged 0x8
+		// [LEAD:maexah/OpenTPW docs/exe/audio.md "A voice's range" table: bit 0x8 loops the sample, the voice lives on] PC addresses unverifiable (packed exe)
+		// [APPROX:AUDIO-019] the loop is applied to positioned one-shots only; a flat one-shot with 0x8 still plays once — evidence needed: the Mac flat path's flag test beside 0x0051C130
+		var voice = mixer.Play( audio, channel, Volume( sound ) / 100f, position, range ?? sound.Rolloff );
+		voice.Loops = (soundEvent.Flags & 0x8) != 0;
+		return voice;
 	}
 
 	/// <summary>Starts a sentence event (music); null when the event is missing.</summary>
@@ -214,6 +240,26 @@ public sealed class SoundEventSystem
 		sentences.Add( sentence );
 		sentence.Start();
 		return sentence;
+	}
+
+	/// <summary>Stops every held chain still running (a park ends with its screams).</summary>
+	public void StopChains()
+	{
+		foreach ( var chain in chains )
+			chain.Stop();
+		chains.Clear();
+	}
+
+	/// <summary>Starts a held-chain event (a scream) at a place; null when the event is missing.</summary>
+	public SoundChain? StartChain( SoundCategory? category, uint eventId, AudioChannel channel, int parameter, Vector3? position, float? range = null )
+	{
+		var soundEvent = category?.Catalog.Find( eventId );
+		if ( category == null || soundEvent == null || soundEvent.Sounds.Count == 0 )
+			return null;
+		var chain = new SoundChain( this, category, soundEvent, channel, parameter, position, range ?? soundEvent.Sounds[0].Rolloff );
+		chains.Add( chain );
+		chain.Start();
+		return chain;
 	}
 }
 

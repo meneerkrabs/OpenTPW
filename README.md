@@ -71,8 +71,9 @@ What works today, with your own original game data:
 - **Languages:** English, Danish, Dutch, French, German and Swedish, and every European language on
   your CD once you choose its folder ([languages](docs/LANGUAGES.md)).
 - **Parks:** the four worlds with their original terrain; all 274 original objects can be built
-  and run their original ride scripts and animations, and the official bonus objects can be added
-  ([objects](docs/OBJECTS.md), [ride scripts](docs/RSE-VM.md)).
+  and run their original ride scripts and animations, and the official bonus objects can be added;
+  players build their own roller coasters ([objects](docs/OBJECTS.md), [ride scripts](docs/RSE-VM.md),
+  [coasters](docs/COASTERS.md)).
 - **Guests, economy and staff:** guests arrive, walk the paths and use rides, shops, sideshows and
   toilets; money, loans, wages, research, objectives, golden tickets and keys run on the original
   settings files ([guests](docs/GUESTS.md), [economy](docs/ECONOMY.md)).
@@ -90,7 +91,7 @@ What works today, with your own original game data:
   builds on your own computer from your own copy with AI upscaling ([texture packs](docs/TEXTURE-PACKS.md)).
 - **Extras:** viewing and exporting the PlayStation 2 disc data (`--export-ps2`, [PS2](docs/PS2.md)).
 
-Not done yet: roller coaster construction, part of the ride, the remaining ambient, guest, staff
+Not done yet: go-kart and water ride tracks, part of the ride, the remaining ambient, guest, staff
 and path-tool sounds, and the exact original rules in places where OpenTPW still uses a documented
 approximation. The
 [completion plan](docs/COMPLETION-PLAN.md), [feature matrix](docs/FEATURE-MATRIX.md) and

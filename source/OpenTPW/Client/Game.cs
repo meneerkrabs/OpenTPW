@@ -266,7 +266,14 @@ internal static class Game
 		if ( capturePath != null )
 		{
 			var frames = GetOption( args, "--capture-frames", "a frame count" ) is { } text && int.TryParse( text, out var parsed ) && parsed > 0 ? parsed : 240;
-			Render.PostUpdate += new WorldCapture( capturePath, frames ).Update;
+			var poseText = GetOption( args, "--capture-camera", "x,y,height,yaw for the capture camera" );
+			var pose = WorldCapture.ParsePose( poseText );
+			if ( poseText != null && pose == null )
+				throw new ArgumentException( "--capture-camera expects x,y,height,yaw, for example 10,-5,30,-135." );
+			var sequenceText = GetOption( args, "--capture-sequence", "count,interval for a numbered capture sequence" );
+			var sequence = sequenceText?.Split( ',' ) is [var countText, var intervalText] && int.TryParse( countText, out var count ) && int.TryParse( intervalText, out var interval ) && count > 0 && interval > 0
+				? (Count: count, Interval: interval) : sequenceText == null ? (Count: 1, Interval: 1) : throw new ArgumentException( "--capture-sequence expects count,interval, for example 120,2." );
+			Render.PostUpdate += new WorldCapture( capturePath, frames, args.Contains( "--capture-interface" ), pose, sequence.Count, sequence.Interval ).Update;
 		}
 		if ( startsFrontEnd )
 		{

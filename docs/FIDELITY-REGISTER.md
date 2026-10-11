@@ -795,8 +795,8 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | language | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:502` | [EXT:language] language row (original installs had one language; OpenTPW reads CD overlays) |
 | language-settings | `source/OpenTPW/Client/LanguageSettings.cs:10` | [EXT:language-settings] where the choice is stored is an OpenTPW matter; the original read its language from the install |
 | live-language | `source/OpenTPW/Client/GameFlow.cs:382` | [EXT:live-language] Switches to &lt;see cref="pendingLanguage"/&gt;: the language, the string table and the fonts. Caches of |
-| live-language | `source/OpenTPW/FrontEnd/FrontEndSmokeTest.cs:847` | [EXT:live-language] Options → OpenTPW → language row → OK switches the language at once: the front end and the |
-| live-language | `source/OpenTPW/FrontEnd/FrontEndSmokeTest.cs:918` | [EXT:live-language] In a park the options keep the language until the park is left, and say so; returns the language |
+| live-language | `source/OpenTPW/FrontEnd/FrontEndSmokeTest.cs:854` | [EXT:live-language] Options → OpenTPW → language row → OK switches the language at once: the front end and the |
+| live-language | `source/OpenTPW/FrontEnd/FrontEndSmokeTest.cs:925` | [EXT:live-language] In a park the options keep the language until the park is left, and say so; returns the language |
 | live-language | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:343` | [EXT:live-language] the original read its language once; OpenTPW switches in the front end, and after the park |
 | online-email | `source/OpenTPW.Server/EmailSender.cs:19` | [EXT:online-email] Sends through the Resend API (&lt;c&gt;POST https://api.resend.com/emails&lt;/c&gt;). The API key comes from the |
 | online-email | `source/OpenTPW.Server/EmailTexts.cs:7` | [EXT:online-email] Account e-mails in the six languages of the game (the player's game language, else English). |
@@ -840,14 +840,14 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | texture-pack | `source/OpenTPW/World/Guests/GuestRenderer.cs:84` | [EXT:texture-pack] upscaled guest sprites from the optional local pack |
 | tpi-viewer | `source/OpenTPW/Client/Game.cs:81` | [EXT:tpi-viewer] Theme Park Inc data (docs/THEME-PARK-INC.md): refused for normal starts, viewable with --load-original-level. |
 | tpi-viewer | `source/OpenTPW/Client/Game.cs:127` | [EXT:tpi-viewer] bonus objects are Theme Park World content: not offered to Theme Park Inc worlds |
-| tpi-viewer | `source/OpenTPW/Client/Game.cs:579` | [EXT:tpi-viewer] viewing aid for Theme Park Inc worlds, not original behaviour and not Theme Park Inc support. |
+| tpi-viewer | `source/OpenTPW/Client/Game.cs:586` | [EXT:tpi-viewer] viewing aid for Theme Park Inc worlds, not original behaviour and not Theme Park Inc support. |
 | tpi-viewer | `source/OpenTPW/Client/GameFlow.cs:57` | [EXT:tpi-viewer] viewing aid, not original behaviour |
 | tpi-viewer | `source/OpenTPW/Client/GameFlow.cs:217` | [EXT:tpi-viewer] Theme Park Inc worlds are viewed without economy, HUD or advisor (the camera, Esc and P only). |
 | tpi-viewer | `source/OpenTPW/Client/Setup/GameEdition.cs:33` | [EXT:tpi-viewer] Theme Park Inc is an experimental level viewer, not a supported game. |
 | tpi-viewer | `source/OpenTPW/Render/Assets/Texture.cs:88` | [EXT:tpi-viewer] &#96;.fsh&#96; textures exist only in Theme Park Inc data. Opaque 0x24 palettes: see COMPAT-014. |
 | tpi-viewer | `source/OpenTPW/World/Level.cs:68` | [EXT:tpi-viewer] Theme Park Inc has no economy here: its balance keys differ from Theme Park World's (docs/THEME-PARK-INC.md). |
 | upscaling | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:47` | [EXT:upscaling] render-scale steps (presets 77/67/59/50 from the display slice plus 5% steps) |
-| world-capture | `source/OpenTPW/Client/WorldCapture.cs:13` | [EXT:world-capture] developer/screenshot command, not original behaviour |
+| world-capture | `source/OpenTPW/Client/WorldCapture.cs:16` | [EXT:world-capture] developer/screenshot command, not original behaviour |
 
 ## Data provenance sites
 
@@ -1162,7 +1162,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | STP-PPC:0x100ADF40 BOUNCE | `source/OpenTPW/World/Guests/RideVisitorBridge.cs:658` | [BIN:STP-PPC:0x100ADF40 BOUNCE] scan the +100 slots of the +40 table in index order; the first with visitor word 0 gets visitor, deadline now + 1000 × dur and start now, +108 goes up, return 1; a full table returns 0 and stores nothing; the deadline comes from one clock call (0xadfb0) and the start from a second (0xadfcc) |
 | STP-PPC:0x100AE020 UNBOUNCE | `source/OpenTPW/World/Guests/RideVisitorBridge.cs:692` | [BIN:STP-PPC:0x100AE020 UNBOUNCE] slots in index order; release needs deadline &lt; now (cmpw, 0x100AE088) and ((now − start) mod 1000) / 200 == 0 (0x100AE040..0x100AE0B0) |
 | STP-PPC:0x100AE930 RSE EVENT effect switch | `source/OpenTPW.Tests/AudioTriggerTests.cs:25` | [BIN:STP-PPC:0x100AE930 RSE EVENT effect switch] seven traced routes; the sound-manager offsets are the level/global category slots of 0x100BC6F0/0x100BC864 |
-| STP-PPC:0x100AE930 RSE EVENT effect switch | `source/OpenTPW.Tests/AudioTriggerTests.cs:211` | [BIN:STP-PPC:0x100AE930 RSE EVENT effect switch] the traced types are 3-9; the corpus only uses those |
+| STP-PPC:0x100AE930 RSE EVENT effect switch | `source/OpenTPW.Tests/AudioTriggerTests.cs:211` | [BIN:STP-PPC:0x100AE930 RSE EVENT effect switch] the switch guards type &lt; 10 (0x100AE938) |
 | STP-PPC:0x100AE930 RSE EVENT effect switch | `source/OpenTPW/Audio/GameAudio.cs:217` | [BIN:STP-PPC:0x100AE930 RSE EVENT effect switch] each type loads its category handle from the sound-manager offset and submits the id operand as the event at the object's position |
 | STP-PPC:0x100AE930 RSE EVENT effect switch | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:316` | [BIN:STP-PPC:0x100AE930 RSE EVENT effect switch] the type operand selects the sound category (3 level rides, 4 level ambient, 5 global rides, 6 global kids, 7 global staff, 8 global ambient, 9 global UI) and the id operand the event, submitted at the object's position |
 | STP-PPC:0x100AFB1C no object | `source/OpenTPW/VM/Handlers/Animation.cs:124` | [BIN:STP-PPC:0x100AFB1C no object] TRIGANIM, WAITANIM (0x100AFC74), TRIGWAITANIM (0x100AFE88), TRIGANIMSPEED (0x100B0078), TRIGANIM_CH (0x100B01D4), WAITANIM_CH (0x100B032C) and TRIGWAITANIM_CH (0x100B0510) skip the trigger and use 0 when script +200 is null |

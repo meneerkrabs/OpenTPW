@@ -33,6 +33,14 @@ public class ParkCameraMode : CameraMode
 		UpdateTransform();
 	}
 
+	/// <summary>Places the camera at a fixed pose (screenshots): ground target, height and yaw in degrees.</summary>
+	public void SetPose( Vector3 target, float height, float yaw )
+	{
+		Height = float.IsFinite( height ) ? Math.Clamp( height, 12, MaximumHeight ) : Height;
+		Yaw = float.IsFinite( yaw ) ? yaw % 360 : Yaw;
+		Focus( target );
+	}
+
 	public ParkCameraView CycleView()
 	{
 		View = (ParkCameraView)(((int)View + 1) % 3);

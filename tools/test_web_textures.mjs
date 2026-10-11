@@ -183,6 +183,61 @@ test('both failed providers leave the original playable without repeating reques
 	assert.equal(storage.entries.size, 0);
 });
 
+test('preparing the packaged index while Original is selected never downloads a PNG', async () => {
+	let fetches = 0;
+	const distribution = withPrimary(index());
+	const client = createTextureDownloads({ distribution, digest, cacheStorage: null, warning: quiet,
+		enabled: () => false, fetcher: async () => { fetches++; return new Response(png()); },
+		writeFile: () => assert.fail('Original texture received a replacement'),
+	});
+	await new Promise(resolve => setImmediate(resolve));
+	assert.equal(fetches, 0, 'constructing the client must not preload the pack');
+	assert.equal(await client.request(distribution.files[0].path), false);
+	assert.equal(fetches, 0);
+});
+
+test('switching to Original discards queued downloads while at most three active requests finish', async () => {
+	const paths = Array.from({ length: 12 }, (_, number) => `textures/levels/jungle/${number}.wct.png`);
+	const distribution = withPrimary(index(paths));
+	let enabled = true, fetches = 0, writes = 0;
+	const complete = [];
+	const client = createTextureDownloads({ distribution, digest, cacheStorage: null, warning: quiet,
+		enabled: () => enabled, writeFile: () => writes++,
+		fetcher: () => { fetches++; return new Promise(resolve => complete.push(resolve)); },
+	});
+	const requests = paths.map(path => client.request(path));
+	await new Promise(resolve => setImmediate(resolve));
+	assert.equal(fetches, 3);
+	enabled = false;
+	for (const resolve of complete) resolve(new Response(png()));
+	assert.deepEqual(await Promise.all(requests), paths.map(() => false));
+	assert.equal(fetches, 3, 'queued PNGs must not begin downloading after Original is selected');
+	assert.equal(writes, 0);
+});
+
+test('Original selection prevents a pending CDN fallback and permits a later explicit Enhanced request', async () => {
+	const distribution = withPrimary(index()), path = distribution.files[0].path;
+	let enabled = true, complete;
+	const urls = [];
+	const client = createTextureDownloads({ distribution, digest, cacheStorage: null, warning: quiet,
+		enabled: () => enabled, writeFile: () => true,
+		fetcher: url => {
+			urls.push(url);
+			return urls.length === 1 ? new Promise(resolve => complete = resolve) : Promise.resolve(new Response(png()));
+		},
+	});
+	const active = client.request(path);
+	await new Promise(resolve => setImmediate(resolve));
+	enabled = false;
+	complete(new Response('', { status: 403 }));
+	assert.equal(await active, false);
+	await new Promise(resolve => setImmediate(resolve));
+	assert.deepEqual(urls, [distribution.files[0].url], 'a new fallback fetch needs Enhanced to remain selected');
+	enabled = true;
+	assert.equal(await client.request(path), true);
+	assert.equal(urls.length, 2);
+});
+
 test('failed integrity checks fall back once and never write or cache unverified bytes', async () => {
 	const distribution = index(), bytes = png(), path = distribution.files[0].path, storage = cache();
 	bytes[30]++;

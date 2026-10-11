@@ -159,7 +159,7 @@ Not verified (agent reports, recorded as leads):
 
 Verified since: the object serializer `0x100daf04` writes the three floats as whole numbers 0–255, and
 `SaveAttractionList` decodes them from original saves (see
-[TPWS-PAYLOAD.md](../TPWS-PAYLOAD.md#attraction-records-thing-list-in-the-prefix-tail)). In Easymode all three are 100.
+[TPWS-PAYLOAD.md](../TPWS-PAYLOAD.md#attraction-records-thing-model-3)). In Easymode all three are 100.
 
 ## Ride statistics are the ride script's variables
 

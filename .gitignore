@@ -7,6 +7,8 @@
 /native/
 /artifacts/
 /imgui.ini
+# Static documentation is generated from the repository during website deployment.
+/website/docs/
 # Server secrets (deploy/env.example is the template) and generated cloud-init user data
 .env
 /user-data.yml

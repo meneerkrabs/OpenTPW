@@ -19,7 +19,9 @@ and `xvfb-run -a bash scripts/run.sh …` provides a virtual display for headles
 smoke tests. Missing display or Vulkan driver ends with a named error instead of a
 .NET loader exception. Game data may use any letter case (`data`, `Data`, `DATA`
 from a mounted CD, `Speech`/`speech`): paths are matched to the on-disk spelling.
-linux-arm64 is blocked: the packages ship no arm64 `libveldrid-spirv`/`libcimgui`.
+Linux ARM64 release packages include built `libveldrid-spirv` and `libcimgui`.
+For development on ARM64, build these native libraries first as described in
+[release builds](RELEASES.md#native-libraries); SDL2 and Vulkan remain system dependencies.
 Shader hot reload (recompiling a shader when its file changes) is a development aid
 and off by default; turn it on with `--shader-hot-reload` or
 `OPENTPW_SHADER_HOT_RELOAD=1`. It is off because starting a file watcher on macOS
@@ -258,9 +260,10 @@ bash scripts/run.sh --game-path '/path/to/Theme Park World' --fullscreen --upsca
 
 Alt+Enter or F11 toggles fullscreen at runtime; the ImGui park panel has a Display
 section with the same options and the diagnostics (method, requested/effective scale,
-internal and output size, fallback reason). Settings live in `~/.config/OpenTPW/display.json`
-(`%APPDATA%\OpenTPW\display.json` on Windows; override the directory with
-`OPENTPW_CONFIG_DIR`), never in saves. Malformed command-line values are errors; an invalid
+internal and output size, fallback reason). Settings live in `display.json` under
+`~/Library/Application Support/OpenTPW` on macOS, `~/.config/OpenTPW` on Linux
+(`$XDG_CONFIG_HOME/OpenTPW` when set), or `%APPDATA%\OpenTPW` on Windows. Override
+the directory with `OPENTPW_CONFIG_DIR`. These settings are never in saves. Malformed command-line values are errors; an invalid
 settings file falls back to defaults with a warning. Only the 3D world is scaled: BF4 text,
 ImGui and movies render at output size, and 4x MSAA stays on independently. The Options
 screen can use the `OpenTPW.IDisplaySettings` API (including a keep-or-revert timeout).

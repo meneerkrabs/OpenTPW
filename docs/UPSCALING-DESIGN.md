@@ -13,8 +13,10 @@ Implemented (M6-U1):
 - `DisplaySettings` (`source/OpenTPW/Client/Display/`): window size (logical units),
   `Windowed`/`Borderless`/`Exclusive`, `Native`/`Linear`/`Nearest`, render scale
   (presets 77/67/59/50, custom 50–100) and UI scale. JSON in
-  `~/.config/OpenTPW/display.json` (Windows `%APPDATA%\OpenTPW`, or
-  `OPENTPW_CONFIG_DIR`); never in saves. Missing fields = Native defaults; invalid
+  `display.json` under `~/Library/Application Support/OpenTPW` on macOS,
+  `~/.config/OpenTPW` on Linux (`$XDG_CONFIG_HOME/OpenTPW` when set), or
+  `%APPDATA%\OpenTPW` on Windows. `OPENTPW_CONFIG_DIR` overrides the directory;
+  settings are never in saves. Missing fields = Native defaults; invalid
   values fall back with diagnostics; unknown method names are not silently mapped to a
   different algorithm.
 - `RenderScaling.Compute`: internal size = rounding of output × scale per dimension,

@@ -93,8 +93,9 @@ the same for any start.
 ## Stored settings
 
 `setup.json` sits beside `display.json` in the user configuration directory
-(`OPENTPW_CONFIG_DIR`, else `~/.config/OpenTPW` on macOS/Linux and `%APPDATA%\OpenTPW`
-on Windows):
+(`OPENTPW_CONFIG_DIR`, else `~/Library/Application Support/OpenTPW` on macOS,
+`~/.config/OpenTPW` on Linux, and `%APPDATA%\OpenTPW` on Windows; Linux also honours
+`XDG_CONFIG_HOME`):
 
 ```json
 {

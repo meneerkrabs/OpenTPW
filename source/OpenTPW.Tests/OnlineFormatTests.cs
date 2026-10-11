@@ -306,6 +306,23 @@ public class OnlineFormatTests
 	}
 
 	[TestMethod]
+	public void MovementPositionsAreBoundedAndStrict()
+	{
+		var move = ChatRequest.Parse( StrictJson.Serialize( ChatRequest.ForMove( 0.25f, 1f ) ) );
+		Assert.AreEqual( (ChatRequest.MoveType, 0.25f, 1f), (move.Type, move.X, move.Y) );
+		// Positions outside the park, non-finite numbers, or fields from other request types are refused.
+		Assert.ThrowsException<InvalidDataException>( () => ChatRequest.Parse( Encoding.UTF8.GetBytes( "{\"type\":\"move\",\"x\":-0.1,\"y\":0.5}" ) ) );
+		Assert.ThrowsException<InvalidDataException>( () => ChatRequest.Parse( Encoding.UTF8.GetBytes( "{\"type\":\"move\",\"x\":0.5,\"y\":1.5}" ) ) );
+		Assert.ThrowsException<InvalidDataException>( () => ChatRequest.Parse( Encoding.UTF8.GetBytes( "{\"type\":\"move\",\"x\":null,\"y\":0.5}" ) ) );
+		Assert.ThrowsException<InvalidDataException>( () => ChatRequest.Parse( Encoding.UTF8.GetBytes( "{\"type\":\"move\",\"x\":0.5,\"y\":0.5,\"room\":\"lobby\"}" ) ) );
+		// A movement event carries a player, a room and both position axes.
+		var moved = ChatEvent.Parse( StrictJson.Serialize( new ChatEvent( ChatEventKind.Move, "Ann", ChatProtocol.SatelliteRoom( 1 ), X: 0.75f, Y: 0.25f ) ) );
+		Assert.AreEqual( (ChatEventKind.Move, "Ann", 0.75f, 0.25f), (moved.Kind, moved.From, moved.X, moved.Y) );
+		Assert.ThrowsException<InvalidDataException>( () => ChatEvent.Parse( Encoding.UTF8.GetBytes( "{\"kind\":5,\"from\":\"Ann\",\"room\":\"satellite:1\",\"x\":2,\"y\":0.5}" ) ) );
+		Assert.ThrowsException<InvalidDataException>( () => ChatEvent.Parse( Encoding.UTF8.GetBytes( "{\"kind\":5,\"from\":null,\"room\":\"satellite:1\",\"x\":0.5,\"y\":0.5}" ) ) );
+	}
+
+	[TestMethod]
 	public void OriginalChatCommandStringsMatchTheProtocolNames()
 	{
 		var path = Path.Combine( OriginalParkImportTests.OriginalDataPath(), "Language", "English" );

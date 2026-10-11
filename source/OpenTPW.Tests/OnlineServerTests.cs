@@ -776,4 +776,211 @@ public class OnlineServerTests
 			server.DeleteData();
 		}
 	}
+
+	[TestMethod]
+	public async Task TenParksAreTheDefaultPublishLimit()
+	{
+		await using var server = await LoopbackServer.StartAsync();
+		try
+		{
+			using var owner = await server.LoginAsync( "Owner" );
+			// The original allowed ten parks on show at once (online FAQ, docs/reverse/ONLINE-SOURCES.md S2).
+			Assert.AreEqual( 10, (await owner.GetServerInfoAsync()).MaximumParksPerPlayer );
+			for ( var index = 1; index <= 10; index++ )
+				await owner.UploadParkAsync( OnlineFormatTests.Package( $"Park {index}" ) );
+			var refused = await Fails( () => owner.UploadParkAsync( OnlineFormatTests.Package( "Eleventh" ) ) );
+			Assert.AreEqual( HttpStatusCode.Conflict, refused.Status );
+			// The original's message (UITEXT 221): the personal limit is reached, un-publish first.
+			StringAssert.Contains( refused.Message, "personal limit" );
+			var first = (await owner.ListParksAsync( sort: "name" )).Parks.Single( park => park.Name == "Park 1" );
+			await owner.UnpublishParkAsync( first.Id );
+			await owner.UploadParkAsync( OnlineFormatTests.Package( "Eleventh" ) );
+			Assert.AreEqual( 10, (await owner.ListParksAsync()).Total );
+		}
+		finally
+		{
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
+	public async Task ParkNamesAreMaskedWhereDescriptionsAreRefused()
+	{
+		var filterDirectory = Path.Combine( Path.GetTempPath(), $"opentpw-filter-{Guid.NewGuid():N}" );
+		Directory.CreateDirectory( filterDirectory );
+		File.WriteAllBytes( Path.Combine( filterDirectory, WordFilter.SwearsFileName ), WordFilter.EncodeList( new[] { "darn" } ) );
+		File.WriteAllBytes( Path.Combine( filterDirectory, WordFilter.AllowedsFileName ), WordFilter.EncodeList( new[] { "darning" } ) );
+		await using var server = await LoopbackServer.StartAsync( options => options.FilterDirectory = filterDirectory );
+		try
+		{
+			using var owner = await server.LoginAsync( "Owner" );
+			// The original showed swear words in park names as asterisks (FAQ, S2): the name is masked, not refused.
+			var masked = await owner.UploadParkAsync( OnlineFormatTests.Package( "Darn Park" ) );
+			Assert.AreEqual( "**** Park", masked.Name );
+			Assert.AreEqual( "**** Park", (await owner.ListParksAsync()).Parks.Single().Name );
+			// An allowed word inside the name survives.
+			Assert.AreEqual( "Darning Park", (await owner.UploadParkAsync( OnlineFormatTests.Package( "Darning Park" ) )).Name );
+			// Descriptions keep the refusal: an OpenTPW moderation choice, not the original's.
+			var swearing = OnlineFormatTests.Package( "Fine Park" );
+			Assert.AreEqual( HttpStatusCode.BadRequest, (await Fails( () => owner.UploadParkAsync( swearing with { Manifest = swearing.Manifest with { Park = swearing.Manifest.Park with { Description = "what a darn park" } } } ) )).Status );
+		}
+		finally
+		{
+			server.DeleteData();
+			Directory.Delete( filterDirectory, true );
+		}
+	}
+
+	[TestMethod]
+	public async Task WebsiteChartsAndPlayerPagesMirrorTheOriginalLists()
+	{
+		// The search part registers fifty-one players from one address, above the usual authentication limit.
+		await using var server = await LoopbackServer.StartAsync( options =>
+		{
+			options.AuthenticationsPerMinute = 200;
+			options.RequestsPerMinute = 600;
+		} );
+		try
+		{
+			using var annClient = await server.LoginAsync( "Ann" );
+			using var bobClient = await server.LoginAsync( "Bob" );
+			using var carolClient = await server.LoginAsync( "Carol" );
+			var shown = await annClient.UploadParkAsync( OnlineFormatTests.Package( "Shown" ), showOnWebsite: true );
+			await annClient.UploadParkAsync( OnlineFormatTests.Package( "Private" ) );
+			var popular = await bobClient.UploadParkAsync( OnlineFormatTests.Package( "Popular" ), showOnWebsite: true );
+			// A visit earns the park's owner Platinum Tickets whether or not the visitor votes (S2).
+			await carolClient.RecordVisitAsync( shown.Id );
+			await carolClient.VoteAsync( popular.Id );
+
+			using var publicClient = new OnlineClient( server.Url );
+			// Top 10 parks (S1: rank, park name, player) of the parks their authors show on the website.
+			var parks = await publicClient.GetChartParksAsync();
+			Assert.AreEqual( 2, parks.Parks.Count );
+			Assert.AreEqual( (1, "Popular", "Bob"), (parks.Parks[0].Rank, parks.Parks[0].Name, parks.Parks[0].Player) );
+			Assert.AreEqual( (2, "Shown", "Ann"), (parks.Parks[1].Rank, parks.Parks[1].Name, parks.Parks[1].Player) );
+			// Top 10 players and the richest players (S1); only players with website parks appear.
+			var players = await publicClient.GetChartPlayersAsync( richest: false );
+			Assert.AreEqual( ("Bob", "Ann"), (players.Players[0].Player, players.Players[1].Player) );
+			var richest = await publicClient.GetChartPlayersAsync( richest: true );
+			Assert.AreEqual( ("Ann", 1), (richest.Players[0].Player, richest.Players[0].Score) );
+			Assert.AreEqual( "Bob", richest.Players[1].Player );
+			// The player page (S1: park name, visitors, votes, publish date, rank, highest rank) is public for the
+			// website parks only; the Platinum Tickets of a public page count only those parks.
+			var publicPage = await publicClient.GetPlayerProfileAsync( "Ann" );
+			Assert.AreEqual( ("Ann", 1), (publicPage.Name, publicPage.PlatinumTickets) );
+			Assert.AreEqual( 1, publicPage.Parks.Count );
+			Assert.AreEqual( ("Shown", 1, 0, 2, 2),
+				(publicPage.Parks[0].Name, publicPage.Parks[0].Visits, publicPage.Parks[0].Votes, publicPage.Parks[0].Rank, publicPage.Parks[0].HighestRank) );
+			// Logged in, the page lists every published park of the player, with all their Platinum Tickets.
+			var ownPage = await annClient.GetPlayerProfileAsync( "Ann" );
+			Assert.AreEqual( 2, ownPage.Parks.Count );
+			Assert.AreEqual( 1, ownPage.PlatinumTickets );
+			// A vote re-orders the chart and the ranks follow; each park remembers its best place (Popular held
+			// rank 1 until this vote passed it).
+			await carolClient.VoteAsync( shown.Id );
+			var afterVote = await publicClient.GetPlayerProfileAsync( "Ann" );
+			Assert.AreEqual( 1, afterVote.Parks[0].Rank );
+			Assert.AreEqual( 1, afterVote.Parks[0].HighestRank );
+			var ownAfterVote = await bobClient.GetPlayerProfileAsync( "Bob" );
+			Assert.AreEqual( 2, ownAfterVote.Parks[0].Rank );
+			Assert.AreEqual( 1, ownAfterVote.Parks[0].HighestRank );
+			// Taking the leader out lifts the rest and their best places follow.
+			await bobClient.UnpublishParkAsync( popular.Id );
+			Assert.AreEqual( 1, (await publicClient.GetPlayerProfileAsync( "Ann" )).Parks[0].Rank );
+
+			// Player search by name (S1): at most fifty results, more asks for detail.
+			for ( var index = 0; index < 51; index++ )
+				await publicClient.RegisterAsync( $"Crowd {index:D2}", "crowd password" );
+			var search = await publicClient.SearchPlayersAsync( "Crowd" );
+			Assert.AreEqual( 50, search.Names.Count );
+			Assert.IsTrue( search.More );
+			var narrow = await publicClient.SearchPlayersAsync( "Crowd 49" );
+			Assert.AreEqual( 1, narrow.Names.Count );
+			Assert.IsFalse( narrow.More );
+		}
+		finally
+		{
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
+	public async Task ChatParksRelayMovementPresenceAndBuddyEntries()
+	{
+		await using var server = await LoopbackServer.StartAsync( options =>
+		{
+			options.ChatBurst = 50;
+			options.MovementBurst = 3;
+			options.MovementsPerSecond = 2;
+		} );
+		try
+		{
+			using var annClient = await server.LoginAsync( "Ann" );
+			using var bobClient = await server.LoginAsync( "Bob" );
+			using var ownerClient = await server.LoginAsync( "Owner" );
+			await using var ann = await annClient.ConnectChatAsync();
+			await NextAsync( ann, item => item.Kind == ChatEventKind.Room );
+			await using var bob = await bobClient.ConnectChatAsync();
+			await NextAsync( bob, item => item.Kind == ChatEventKind.Room );
+
+			// A chat park of the globe's satellites: the joiner sees everyone, everyone sees the joiner.
+			var satellite = ChatProtocol.SatelliteRoom( 1 );
+			await ann.JoinAsync( satellite );
+			Assert.AreEqual( "Ann", string.Join( ",", (await NextAsync( ann, item => item.Kind == ChatEventKind.Room && item.Room == satellite )).Args! ) );
+			await bob.JoinAsync( satellite );
+			Assert.AreEqual( "Ann,Bob", string.Join( ",", (await NextAsync( bob, item => item.Kind == ChatEventKind.Room && item.Room == satellite )).Args! ) );
+			Assert.AreEqual( "Ann,Bob", string.Join( ",", (await NextAsync( ann, item => item.Kind == ChatEventKind.Room && item.Room == satellite )).Args! ) );
+			// The player count of the satellite list includes them.
+			using var counter = new OnlineClient( server.Url );
+			Assert.AreEqual( 2, (await counter.GetChatParksAsync())!.ChatParks.Single( park => park.Id == 1 ).Players );
+
+			// Walking is relayed to everyone in the park, and a joiner is told where everyone stands.
+			await ann.MoveAsync( 0.25f, 0.75f );
+			var annMoved = await NextAsync( bob, item => item.Kind == ChatEventKind.Move );
+			Assert.AreEqual( ("Ann", satellite, 0.25f, 0.75f), (annMoved.From, annMoved.Room, annMoved.X, annMoved.Y) );
+			using var carolClient = await server.LoginAsync( "Carol" );
+			await using var carol = await carolClient.ConnectChatAsync();
+			await NextAsync( carol, item => item.Kind == ChatEventKind.Room );
+			await carol.JoinAsync( satellite );
+			await NextAsync( carol, item => item.Kind == ChatEventKind.Room && item.Room == satellite );
+			var carolSeesAnn = await NextAsync( carol, item => item.Kind == ChatEventKind.Move );
+			Assert.AreEqual( ("Ann", 0.25f, 0.75f), (carolSeesAnn.From, carolSeesAnn.X, carolSeesAnn.Y) );
+
+			// A flood of positions is dropped, not answered and not punished: the connection stays and chat flows.
+			for ( var index = 0; index < 8; index++ )
+				await bob.MoveAsync( index / 8f, 0.5f );
+			await Task.Delay( 200 );
+			await bob.SendAsync( ChatCommand.Say, "still here" );
+			Assert.AreEqual( "still here", (await NextAsync( ann, item => item.Kind == ChatEventKind.Say )).Text );
+
+			// A parting player leaves the roster of the park for everyone who stays.
+			await carol.DisposeAsync();
+			Assert.AreEqual( "Ann,Bob", string.Join( ",", (await NextAsync( bob, item => item.Kind == ChatEventKind.Room && item.Room == satellite && item.Args is { Count: 2 } )).Args! ) );
+
+			// Buddies are told which park their buddy entered (S5).
+			await bob.SendAsync( ChatCommand.Buddy, "Ann" );
+			await NextAsync( bob, IsNotice( ChatNotice.YouMakeBuddy ) );
+			await ann.JoinAsync( ChatProtocol.SatelliteRoom( 2 ) );
+			await NextAsync( ann, item => item.Kind == ChatEventKind.Room && item.Room == ChatProtocol.SatelliteRoom( 2 ) );
+			var entered = await NextAsync( bob, item => item.Kind == ChatEventKind.System && item.Text == ChatSystemKeys.BuddyEnters );
+			Assert.AreEqual( "Ann", entered.Args![0] );
+			// The chat parks' default names (docs/SERVER.md): the notification names the park itself.
+			StringAssert.Contains( entered.Args[1], "Fairground", $"satellite 2 name was {entered.Args[1]}" );
+
+			// Locate names the park and its city: "Halloween World in San Francisco" (manual p. 70).
+			var park = await ownerClient.UploadParkAsync( OnlineFormatTests.Package( "Halloween World" ), cityId: 5 );
+			await using var owner = await ownerClient.ConnectChatAsync();
+			await NextAsync( owner, item => item.Kind == ChatEventKind.Room );
+			await owner.JoinAsync( ChatProtocol.ParkRoom( park.Id ) );
+			await NextAsync( owner, item => item.Kind == ChatEventKind.Room && item.Room == ChatProtocol.ParkRoom( park.Id ) );
+			await bob.SendAsync( ChatCommand.Locate, "Owner" );
+			var located = await NextAsync( bob, IsNotice( ChatNotice.ThePark ) );
+			Assert.AreEqual( "Halloween World in San Francisco", located.Args![1] );
+		}
+		finally
+		{
+			server.DeleteData();
+		}
+	}
+
 }

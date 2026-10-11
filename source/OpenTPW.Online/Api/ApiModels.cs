@@ -23,6 +23,12 @@ public static class ApiRoutes
 	public const string Cities = Prefix + "/cities";
 	/// <summary>The online world's chat parks (the globe's five satellites), with their player counts; public.</summary>
 	public const string ChatParks = Prefix + "/chat-parks";
+	/// <summary>The players of the online world: search by name, and each player's own park page; public.</summary>
+	public const string Players = Prefix + "/players";
+	/// <summary>The public charts of the original website's pages: top parks, top players, richest players.</summary>
+	public const string ChartParks = Prefix + "/charts/parks";
+	public const string ChartPlayers = Prefix + "/charts/players";
+	public const string ChartRichest = Prefix + "/charts/richest";
 	/// <summary>Operator only: asks the host to update the server (<c>DeployToken</c>).</summary>
 	public const string Deploy = Prefix + "/admin/deploy";
 	/// <summary>The public list of parks shown on the project website, and their pictures (<c>/{id}/thumbnail</c>).</summary>
@@ -82,6 +88,28 @@ public sealed record ParkSummary( string Id, string Name, string Description, st
 	DateTimeOffset PublishedUtc, int Visits, int Votes, bool VisitedBefore, bool VotedFor, int PlayersAtPark, bool HasThumbnail, int Bytes, int CityId = 0 );
 
 public sealed record ParkList( IReadOnlyList<ParkSummary> Parks, int Total );
+
+/// <summary>One park of a player's own page: the original website's "My Theme Park" columns (ONLINE-SOURCES.md S1).</summary>
+public sealed record PlayerPark( string Name, int Visits, int Votes, DateTimeOffset PublishedUtc, int Rank, int HighestRank );
+
+/// <summary>
+/// A player's published parks with their chart places and the player's Platinum Tickets (S1/S2). Without a login
+/// only parks the author chose to show on the website are listed.
+/// </summary>
+public sealed record PlayerProfile( string Name, int PlatinumTickets, IReadOnlyList<PlayerPark> Parks );
+
+/// <summary>The public top-parks chart (S1: rank, park name, player), of the parks their authors show on the website.</summary>
+public sealed record ChartParkEntry( int Rank, string Name, string Player );
+
+public sealed record ChartParkList( IReadOnlyList<ChartParkEntry> Parks );
+
+/// <summary>The public player charts: Top 10 players (by votes) and Richest players (Platinum Tickets, S1).</summary>
+public sealed record ChartPlayerEntry( int Rank, string Player, int Score );
+
+public sealed record ChartPlayerList( IReadOnlyList<ChartPlayerEntry> Players );
+
+/// <summary>Public player search by name (S1); OpenTPW accounts have one player name, so first/last names do not exist.</summary>
+public sealed record PlayerSearchResult( IReadOnlyList<string> Names, bool More );
 
 /// <summary>A park listed on the project website: only what its author chose to make public.</summary>
 public sealed record WebsitePark( string Id, string Name, string Description, string Author, string Level, int Votes, int Visits, DateTimeOffset PublishedUtc, bool HasThumbnail );

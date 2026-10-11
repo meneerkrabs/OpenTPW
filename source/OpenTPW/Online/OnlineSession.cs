@@ -41,6 +41,9 @@ public static class ChatFormatter
 			ChatEventKind.Notice => Notice( item.Notice ?? 0, item.Args ),
 			ChatEventKind.System when item.Text == "rate-limited" => label( OnlineLabel.RateLimited ),
 			ChatEventKind.System when item.Text == "buddy-list" => label( OnlineLabel.NoBuddies ),
+			// [APPROX:ONLINE-024] the original notification's string is not recovered; the wording is OpenTPW's own
+			ChatEventKind.System when item.Text == "buddy-enters" && item.Args is { Count: 2 } enters =>
+				string.Format( label( OnlineLabel.BuddyEnters ), enters[0], enters[1] ),
 			ChatEventKind.System when item.Text == "server-message" => Notice( OnlineStrings.SystemMessage, item.Args ),
 			ChatEventKind.System => item.Text ?? "",
 			ChatEventKind.Room => $"{roomName( item.Room ?? "" )}: {string.Join( ", ", item.Args ?? Array.Empty<string>() )}",
@@ -116,6 +119,23 @@ public sealed class OnlineSession : IDisposable
 	public string CurrentRoom { get; private set; } = ChatProtocol.LobbyRoom;
 	/// <summary>The players in the current room, from the room's roster events ("who" in the original chat).</summary>
 	public IReadOnlyList<string> RoomPlayers { get; private set; } = Array.Empty<string>();
+	/// <summary>
+	/// Where each player in the current chat park stands (both axes 0-1 within the park), from the server's relayed
+	/// movement; the player's own position is set by <see cref="MoveTo"/>. Empty in a room nobody moved in.
+	/// </summary>
+	public IReadOnlyDictionary<string, (float X, float Y)> RoomPositions => positions;
+	private readonly Dictionary<string, (float X, float Y)> positions = new( StringComparer.OrdinalIgnoreCase );
+	/// <summary>
+	/// The logged-in player's own page (published parks, ranks, Platinum Tickets) or null before
+	/// <see cref="FetchProfile"/> ran.
+	/// </summary>
+	public PlayerProfile? Profile { get; private set; }
+	/// <summary>
+	/// The buddies of the last <c>/buddy</c> answer and whether each was online then (the manual's buddy list: "Lists
+	/// your park buddies who are currently online"); empty before the first answer.
+	/// </summary>
+	public IReadOnlyList<(string Name, bool Online)> Buddies => buddies;
+	private readonly List<(string Name, bool Online)> buddies = new();
 	public bool IsLoggedIn => Client?.Session != null;
 	/// <summary>A two-step setup waiting for its first code (after registering, or a login after an operator reset).</summary>
 	public TotpEnrollment? Enrollment { get; internal set; }
@@ -318,6 +338,8 @@ public sealed class OnlineSession : IDisposable
 		CityParks = null;
 		CurrentRoom = ChatProtocol.LobbyRoom;
 		RoomPlayers = Array.Empty<string>();
+		positions.Clear();
+		Profile = null;
 		ChatLines.Clear();
 	}
 
@@ -517,12 +539,24 @@ public sealed class OnlineSession : IDisposable
 				{
 					if ( Chat != chat )
 						return;
-						if ( item.Kind == ChatEventKind.Room && item.Room != null )
+					if ( item.Kind == ChatEventKind.Room && item.Room != null )
 					{
 						CurrentRoom = item.Room;
 						RoomPlayers = item.Args ?? Array.Empty<string>();
+						foreach ( var left in positions.Keys.Where( name => !RoomPlayers.Contains( name ) ).ToList() )
+							positions.Remove( left );
 					}
-					AddChatLine( line );
+					else if ( item.Kind == ChatEventKind.Move && item.From != null )
+						positions[item.From] = (item.X ?? 0, item.Y ?? 0);
+					else if ( item.Kind == ChatEventKind.Notice && item.Notice is (int)ChatNotice.YourBuddyOnline or (int)ChatNotice.YourBuddyOffline
+						&& item.Args is { Count: >= 1 } args )
+					{
+						// A /buddy answer: remember it for the chat overlay's buddy tab.
+						buddies.RemoveAll( entry => entry.Name.Equals( args[0], StringComparison.OrdinalIgnoreCase ) );
+						buddies.Add( (args[0], item.Notice == (int)ChatNotice.YourBuddyOnline) );
+					}
+					if ( item.Kind != ChatEventKind.Move )
+						AddChatLine( line );
 				} );
 			}
 		}
@@ -592,6 +626,9 @@ public sealed class OnlineSession : IDisposable
 		} );
 	}
 
+	/// <summary>The name of the room the player is in: the Online World, a chat park or a published park.</summary>
+	public string CurrentRoomName => RoomName( CurrentRoom );
+
 	private string RoomName( string room ) => room == ChatProtocol.LobbyRoom || room.Length == 0
 		? OnlineStrings.Ui( OnlineStrings.OnlineWorld, "Online World" )
 		: ChatParks.FirstOrDefault( park => ChatProtocol.SatelliteRoom( park.Id ) == room )?.Name
@@ -634,6 +671,40 @@ public sealed class OnlineSession : IDisposable
 				return null;
 			} );
 	}
+
+	/// <summary>
+	/// Walks the player's avatar to a place in the chat park (manual p. 68: "Left click to walk to destination;
+	/// Double click to teleport"): the server relays the position to everyone in the park. The player's own place is
+	/// recorded at once, so the view moves even before the server answers.
+	/// </summary>
+	public void MoveTo( float x, float y )
+	{
+		var chat = Chat;
+		if ( chat == null )
+			return;
+		var name = Settings.PlayerName;
+		if ( name != null )
+			positions[name] = (x, y);
+		Run( async () =>
+		{
+			await chat.MoveAsync( x, y );
+			return null;
+		} );
+	}
+
+	/// <summary>Asks the server for the buddy list (the original's <c>/buddy</c> answer lists each buddy as online or offline).</summary>
+	public void AskBuddies() => SendChatLine( "/" + ChatCommands.CanonicalName( ChatCommand.Buddy ) );
+
+	/// <summary>Fetches the logged-in player's own page: their parks, their ranks and their Platinum Tickets.</summary>
+	public void FetchProfile() => WithClient( async client =>
+	{
+		var name = Settings.PlayerName;
+		if ( name == null )
+			return null;
+		var profile = await client.GetPlayerProfileAsync( name );
+		Post( () => Profile = profile );
+		return null;
+	} );
 
 	public void Dispose()
 	{

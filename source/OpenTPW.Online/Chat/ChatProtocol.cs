@@ -62,14 +62,18 @@ public sealed record ChatAuthentication( string Type, string Token )
 	}
 }
 
-/// <summary>Client to server: <c>command</c> (canonical command + argument) or <c>join</c> (room).</summary>
-public sealed record ChatRequest( string Type, string? Command, string? Argument, string? Room )
+/// <summary>Client to server: <c>command</c> (canonical command + argument), <c>join</c> (room) or <c>move</c> (position).</summary>
+public sealed record ChatRequest( string Type, string? Command, string? Argument, string? Room,
+	float? X = null, float? Y = null )
 {
 	public const string CommandType = "command";
 	public const string JoinType = "join";
+	/// <summary>Moving the player's avatar in a chat park: a position in the park, both axes 0 to 1.</summary>
+	public const string MoveType = "move";
 
 	public static ChatRequest ForCommand( ChatCommand command, string argument ) => new( CommandType, ChatCommands.CanonicalName( command ), argument, null );
 	public static ChatRequest ForJoin( string room ) => new( JoinType, null, null, room );
+	public static ChatRequest ForMove( float x, float y ) => new( MoveType, null, null, null, x, y );
 
 	public static ChatRequest Parse( ReadOnlySpan<byte> utf8 )
 	{
@@ -85,10 +89,18 @@ public sealed record ChatRequest( string Type, string? Command, string? Argument
 			if ( !ChatProtocol.IsValidRoom( request.Room ) || request.Command != null || request.Argument != null )
 				throw new InvalidDataException( "Invalid chat room." );
 		}
+		else if ( request.Type == MoveType )
+		{
+			if ( !IsPosition( request.X ) || !IsPosition( request.Y ) || request.Command != null || request.Argument != null || request.Room != null )
+				throw new InvalidDataException( "Invalid chat position." );
+		}
 		else
 			throw new InvalidDataException( "Unknown chat request type." );
 		return request;
 	}
+
+	/// <summary>A finite position on one axis of a chat park (0 to 1).</summary>
+	internal static bool IsPosition( float? value ) => value is { } position && float.IsFinite( position ) && position is >= 0f and <= 1f;
 }
 
 public enum ChatEventKind
@@ -111,6 +123,8 @@ public enum ChatEventKind
 	System,
 	/// <summary>Room membership: <see cref="ChatEvent.Room"/> joined, <see cref="ChatEvent.Args"/> players.</summary>
 	Room,
+	/// <summary>A player moved in a chat park: <see cref="ChatEvent.From"/>, <see cref="ChatEvent.Room"/>, X and Y.</summary>
+	Move,
 }
 
 /// <summary>Server to client event.</summary>
@@ -121,14 +135,17 @@ public sealed record ChatEvent(
 	string? Text = null,
 	string? Command = null,
 	int? Notice = null,
-	IReadOnlyList<string>? Args = null )
+	IReadOnlyList<string>? Args = null,
+	float? X = null,
+	float? Y = null )
 {
 	public static ChatEvent ForNotice( ChatNotice notice, params string[] args ) => new( ChatEventKind.Notice, Notice: (int)notice, Args: args );
 
 	public static ChatEvent Parse( ReadOnlySpan<byte> utf8 )
 	{
 		var value = StrictJson.Deserialize<ChatEvent>( utf8, "Chat event" );
-		if ( value.Notice is < 0 or > 1000 || value.Args?.Count > ChatProtocol.MaximumArguments || value.Args?.Any( arg => arg == null ) == true )
+		if ( value.Notice is < 0 or > 1000 || value.Args?.Count > ChatProtocol.MaximumArguments || value.Args?.Any( arg => arg == null ) == true
+			|| (value.Kind == ChatEventKind.Move && (!ChatRequest.IsPosition( value.X ) || !ChatRequest.IsPosition( value.Y ) || value.From == null)) )
 			throw new InvalidDataException( "Chat event is out of range." );
 		return value;
 	}

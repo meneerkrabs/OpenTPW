@@ -576,12 +576,11 @@ public sealed class OnlineScreens
 		list.RowActivated = index => { if ( Selected() is { } park ) ShowParkDetails( park, index ); };
 		list.SelectionChanged = _ => { if ( Selected() is { } park ) ShowParkDetails( park, list.Selected ); };
 		// [EXT:ONLINE-070] the original's Platinum Tickets, won when others visit the player's published parks
-		// (manual p. 62); OpenTPW counts one per visit of the player's own parks in the current list.
+		// (manual p. 62): the server awards one per recorded visit, whatever list is open here.
 		screen.Add( new UiLabel { Id = "platinum", Font = fonts => fonts.Label, Color = UiColors.Value, Align = UiAlign.Right,
 			Bounds = new UiRect( 1300, 74, 560, 70 ), Anchor = UiAnchor.Center,
-			Text = () => Session.Settings.PlayerName == null ? "" : $"{OnlineStrings.Get( OnlineLabel.PlatinumTickets )}: " +
-				Session.Parks.Where( park => string.Equals( park.Author, Session.Settings.PlayerName, StringComparison.OrdinalIgnoreCase ) ).Sum( park => park.Visits )
-					.ToString( System.Globalization.CultureInfo.InvariantCulture ) } );
+			Text = () => Session.Profile is { } profile ? $"{OnlineStrings.Get( OnlineLabel.PlatinumTickets )}: " +
+				profile.PlatinumTickets.ToString( System.Globalization.CultureInfo.InvariantCulture ) : "" } );
 		AddCloseButton( screen, 1808, 820 );
 		AddStatus( screen, window );
 		screen.Back = stack.Pop;
@@ -589,6 +588,8 @@ public sealed class OnlineScreens
 			Refresh();
 		else if ( Session.IsLoggedIn )
 			Guard( () => Session.RefreshParks( null ) );
+		if ( Session.IsLoggedIn && Session.Profile == null )
+			Guard( Session.FetchProfile );
 		screen.Focus( search );
 		Push( screen );
 	}
@@ -1003,45 +1004,90 @@ public sealed class OnlineScreens
 		Push( screen );
 	}
 
-	// ---- Chat (f_chat with the list_msgs message list) ----------------------------------------
+	// ---- Chat (the original chat overlay, Mac UI table data:0x50b2c) ---------------------------
 
 	/// <summary>
-	/// Chat over the message list (list_msgs). The original chat lived as an overlay over the park with the
-	/// people-in-park list on the left and the text line at the bottom (Mac UI table data:0x50b2c, ids 0xc3123/0xc3128);
-	/// OpenTPW shows it as a dialog with the room's players beside the messages ([EXT:ONLINE-065]).
+	/// The chat overlay in its original composition (Mac UI table data:0x50b2c): the people-in-park list at the left
+	/// (61,30)-(539,1333) with its two tabs — the people in this park and the online buddies (799014/799015 at
+	/// (129,28)-(232,130) and (244,28)-(347,130)) — three player buttons under it (799018/799017/799016 at
+	/// (29/187/346,1357)-(183/341/500,1511)), the message list (799019) at (543,1150)-(2005,1426) and the text entry
+	/// (799020) at (561,1441)-(1979,1486). The park itself fills the area above the messages: the players' relayed
+	/// positions in the chat park view. The top action bar (data:0x50d1a, six buttons at their authored places)
+	/// carries the manual's chat actions.
 	/// </summary>
+	// [APPROX:ONLINE-021] which action each original button carried is not decoded: the bar is vote, earmuffs,
+	// postcards, goto, page, locate; the list buttons are buddy, ignore, blackmark (manual pp. 67-70 names them all)
 	public void ShowChat()
 	{
 		if ( Session.Chat == null && Session.IsLoggedIn )
 			Guard( Session.ConnectChat );
 		var screen = new UiScreen( "chat" );
-		var window = UiDialogs.CenteredWindow( 1800, 1400 );
-		UiDialogs.AddWindow( screen, window, "w_big", () => OnlineStrings.Get( OnlineLabel.Chat ) );
-		screen.Add( new UiScrollList
+		// The park view over which the original drew its chat overlay; [APPROX:ONLINE-019] the original chat park was
+		// a three-dimensional park, whose scene is not decoded.
+		var view = screen.Add( new UiChatParkView( Session ) { Id = "park", Bounds = new UiRect( 543, 30, 1462, 1120 ), Anchor = UiAnchor.TopLeft } );
+		// The two tabs of the people panel: the park's players and the online buddies.
+		var buddies = false;
+		screen.Add( new UiButton { Id = "peopleTab", Text = () => OnlineStrings.Ui( OnlineStrings.PlayersAtThePark, "Players at the park" ),
+			Clicked = () => buddies = false, Bounds = new UiRect( 129, 28, 103, 102 ), Anchor = UiAnchor.TopLeft } );
+		screen.Add( new UiButton { Id = "buddyTab", Text = () => OnlineStrings.Get( OnlineLabel.BuddyList ),
+			Clicked = () => { buddies = true; Guard( Session.AskBuddies ); }, Bounds = new UiRect( 244, 28, 103, 102 ), Anchor = UiAnchor.TopLeft } );
+		var people = screen.Add( new UiScrollList
+		{
+			Id = "people",
+			Bounds = new UiRect( 61, 135, 478, 1198 ),
+			Anchor = UiAnchor.TopLeft,
+			RowHeight = 52,
+			Rows = () => buddies
+				? Session.Buddies.Select( buddy => buddy.Name ).ToArray()
+				: Session.RoomPlayers.Where( name => !name.StartsWith( "+", StringComparison.Ordinal ) ).ToArray(),
+		} );
+		people.Selected = -1;
+		string? Selected() => people.Selected >= 0 && people.Selected < people.Rows().Count ? people.Rows()[people.Selected] : null;
+		void Command( string command, string argument )
+		{
+			var name = Selected();
+			if ( name == null )
+				return;
+			Guard( () => Session.SendChatLine( $"/{command} {name}" ) );
+		}
+		// The three player buttons under the people list: the manual's right-click actions on a name.
+		screen.Add( new UiButton { Id = "buddy", Text = () => OnlineStrings.Get( OnlineLabel.AddBuddy ), Clicked = () => Command( "buddy", "" ),
+			Bounds = new UiRect( 29, 1357, 154, 154 ), Anchor = UiAnchor.TopLeft } );
+		screen.Add( new UiButton { Id = "ignore", Text = () => OnlineStrings.Get( OnlineLabel.IgnorePlayer ), Clicked = () => Command( "ignore", "" ),
+			Bounds = new UiRect( 187, 1357, 154, 154 ), Anchor = UiAnchor.TopLeft } );
+		screen.Add( new UiButton { Id = "blackmark", Text = () => OnlineStrings.Get( OnlineLabel.Blackmark ), Clicked = () => Command( "mark", "" ),
+			Bounds = new UiRect( 346, 1357, 154, 154 ), Anchor = UiAnchor.TopLeft } );
+		// The action bar across the top (data:0x50d1a): vote (a park, never a chat satellite — the manual's note),
+		// earmuffs, postcards, and the three buddy commands of the manual's buddy panel.
+		screen.Add( new UiButton { Id = "vote", Model = "b_vote", Text = () => OnlineStrings.Get( OnlineLabel.Vote ),
+			Clicked = () => Guard( () => Session.SendChatLine( "/vote" ) ), Bounds = new UiRect( 29, 22, 154, 154 ), Anchor = UiAnchor.TopLeft } );
+		var earmuffs = screen.Add( new UiButton { Id = "earmuffs", Text = () => OnlineStrings.Get( OnlineLabel.Earmuffs ),
+			Clicked = () => Guard( () => Session.SendChatLine( "/earmuffs" ) ), Bounds = new UiRect( 199, 22, 154, 154 ), Anchor = UiAnchor.TopLeft } );
+		screen.Add( new UiButton { Id = "postcards", Text = () => OnlineStrings.Ui( OnlineStrings.SendPostcard, "Send postcard" ), Clicked = ShowSendPostcard,
+			Bounds = new UiRect( 369, 22, 154, 154 ), Anchor = UiAnchor.TopLeft } );
+		screen.Add( new UiButton { Id = "goto", Text = () => OnlineStrings.Get( OnlineLabel.GotoPlayer ), Clicked = () => Command( "goto", "" ),
+			Bounds = new UiRect( 538, 22, 154, 154 ), Anchor = UiAnchor.TopLeft } );
+		screen.Add( new UiButton { Id = "page", Text = () => OnlineStrings.Get( OnlineLabel.PagePlayer ), Clicked = () => Command( "page", "" ),
+			Bounds = new UiRect( 708, 22, 154, 154 ), Anchor = UiAnchor.TopLeft } );
+		screen.Add( new UiButton { Id = "locate", Text = () => OnlineStrings.Get( OnlineLabel.LocateBuddy ), Clicked = () => Command( "locate", "" ),
+			Bounds = new UiRect( 978, 22, 154, 154 ), Anchor = UiAnchor.TopLeft } );
+		// The room's name over the park view, where the original showed the park it sat on.
+		screen.Add( new UiLabel { Id = "room", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center,
+			Bounds = new UiRect( 543, 1050, 1462, 90 ), Anchor = UiAnchor.TopLeft, Text = () => Session.CurrentRoomName } );
+		var messages = screen.Add( new UiScrollList
 		{
 			Id = "messages",
 			Model = "list_msgs",
-			Bounds = new UiRect( window.X + 100, window.Y + 170, window.Width - 700, 780 ),
-			Anchor = UiAnchor.Center,
+			Bounds = new UiRect( 543, 1150, 1462, 276 ),
+			Anchor = UiAnchor.TopLeft,
 			RowHeight = 40,
 			FollowEnd = true,
 			Rows = () => Session.ChatLines,
 		} );
-		// The players in the current room (the original's people-in-park list, UITEXT 273 "Players at the park");
-		// the roster arrives with each room event.
-		screen.Add( new UiLabel { Id = "playersTitle", Font = fonts => fonts.Label, Color = UiColors.Title,
-			Bounds = new UiRect( window.Right - 540, window.Y + 170, 440, 70 ), Anchor = UiAnchor.Center,
-			Text = () => $"{OnlineStrings.Ui( OnlineStrings.PlayersAtThePark, "Players at the park" )} ({Session.RoomPlayers.Count})" } );
-		var players = screen.Add( new UiScrollList
-		{
-			Id = "players",
-			Bounds = new UiRect( window.Right - 540, window.Y + 250, 440, 620 ),
-			Anchor = UiAnchor.Center,
-			RowHeight = 52,
-			Rows = () => Session.RoomPlayers.Where( name => !name.StartsWith( "+", StringComparison.Ordinal ) ).ToArray(),
-		} );
-		players.Selected = -1;
-		var line = AddField( screen, "line", () => "", window.X + 100, window.Y + 1000, window.Width - 760, 400 );
+		messages.Selected = -1;
+		// The original text entry (799020) at its authored place.
+		var line = screen.Add( new UiTextField { Id = "line", MaximumLength = Online.Chat.ChatCommands.MaximumLineLength, Model = "f_text1",
+			Bounds = new UiRect( 561, 1441, 1418, 45 ), Anchor = UiAnchor.TopLeft } );
 		void Send()
 		{
 			if ( line.Text.Trim().Length == 0 )
@@ -1050,16 +1096,19 @@ public sealed class OnlineScreens
 			line.Text = "";
 		}
 		line.Submitted = Send;
-		var send = screen.Add( new UiButton { Id = "send", Text = () => OnlineStrings.Ui( OnlineStrings.Send, "Send" ), Clicked = Send,
-			Bounds = new UiRect( window.Right - 600, window.Y + 1060, 380, 104 ), Anchor = UiAnchor.Center } );
-		screen.Updating += _ => send.Enabled = line.Enabled = Session.Chat != null;
-		AddStatus( screen, window );
-		AddBack( screen, window );
-		screen.Focus( line );
+		screen.Add( new UiButton { Id = "send", Text = () => OnlineStrings.Ui( OnlineStrings.Send, "Send" ), Clicked = Send,
+			Bounds = new UiRect( 1990, 1425, 400, 90 ), Anchor = UiAnchor.TopLeft } );
+		screen.Updating += context =>
+		{
+			view.Enabled = earmuffs.Enabled = line.Enabled = Session.Chat != null;
+			view.Walk( context.Delta );
+		};
+		screen.Back = stack.Pop;
 		Push( screen );
+		screen.Focus( line );
 	}
 
-	// ---- Import a local park file ---------------------------------------------------------------
+// ---- Import a local park file ---------------------------------------------------------------
 
 	public void ShowImport()
 	{

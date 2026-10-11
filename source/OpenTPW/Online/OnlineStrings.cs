@@ -9,6 +9,7 @@ public enum OnlineLabel
 	TwoStepLogin, TwoStepInstructions, AuthenticatorCode, Confirm, OnlineMenu,
 	EmailAddress, SendCode, EmailCode, EmailCodeSent, ForgotPassword, AccountRecovery, NameOrEmail, NewPassword,
 	KeepTwoStep, ResetTwoStep, RecoveryCodeSent, PasswordChanged, Unpublish, PlatinumTickets, MarkAllSend, MarkAllDelete, UnmarkAll,
+	BuddyEnters, Earmuffs, GotoPlayer, PagePlayer, LocateBuddy, AddBuddy, IgnorePlayer, Blackmark, BuddyList, WalkHint,
 }
 
 /// <summary>
@@ -209,6 +210,10 @@ public static class OnlineStrings
 			[OnlineLabel.RecoveryCodeSent] = "If this account has an e-mail address, a code has been sent to it.",
 			[OnlineLabel.PasswordChanged] = "Your password has been changed. Log in with the new password.",
 			[OnlineLabel.Unpublish] = "Unpublish", [OnlineLabel.PlatinumTickets] = "Platinum tickets",
+			[OnlineLabel.BuddyEnters] = "Your buddy {0} has entered {1}",
+			[OnlineLabel.Earmuffs] = "Earmuffs", [OnlineLabel.GotoPlayer] = "Go to player", [OnlineLabel.PagePlayer] = "Page player",
+			[OnlineLabel.LocateBuddy] = "Find buddy's park", [OnlineLabel.AddBuddy] = "Buddy", [OnlineLabel.IgnorePlayer] = "Ignore",
+			[OnlineLabel.Blackmark] = "Blackmark", [OnlineLabel.BuddyList] = "Buddy list", [OnlineLabel.WalkHint] = "Click in the park to walk there",
 			[OnlineLabel.MarkAllSend] = "Mark all for sending", [OnlineLabel.MarkAllDelete] = "Mark all for deletion", [OnlineLabel.UnmarkAll] = "Unmark all",
 		},
 		["Danish"] = new Dictionary<OnlineLabel, string>
@@ -243,6 +248,10 @@ public static class OnlineStrings
 			[OnlineLabel.RecoveryCodeSent] = "Har kontoen en e-mailadresse, er der sendt en kode til den.",
 			[OnlineLabel.PasswordChanged] = "Din adgangskode er ændret. Log ind med den nye adgangskode.",
 			[OnlineLabel.Unpublish] = "Fjern offentliggørelse", [OnlineLabel.PlatinumTickets] = "Platinbilletter",
+			[OnlineLabel.BuddyEnters] = "Din ven {0} er gået ind i {1}",
+			[OnlineLabel.Earmuffs] = "Øreklapper", [OnlineLabel.GotoPlayer] = "Gå til spiller", [OnlineLabel.PagePlayer] = "Kald på spiller",
+			[OnlineLabel.LocateBuddy] = "Find vens park", [OnlineLabel.AddBuddy] = "Ven", [OnlineLabel.IgnorePlayer] = "Ignorér",
+			[OnlineLabel.Blackmark] = "Sort mærke", [OnlineLabel.BuddyList] = "Venneliste", [OnlineLabel.WalkHint] = "Klik i parken for at gå derhen",
 			[OnlineLabel.MarkAllSend] = "Markér alle til afsendelse", [OnlineLabel.MarkAllDelete] = "Markér alle til sletning", [OnlineLabel.UnmarkAll] = "Fjern alle markeringer",
 		},
 		["Dutch"] = new Dictionary<OnlineLabel, string>
@@ -277,6 +286,10 @@ public static class OnlineStrings
 			[OnlineLabel.RecoveryCodeSent] = "Als dit account een e-mailadres heeft, is daar een code naartoe gestuurd.",
 			[OnlineLabel.PasswordChanged] = "Je wachtwoord is gewijzigd. Log in met het nieuwe wachtwoord.",
 			[OnlineLabel.Unpublish] = "Publicatie ongedaan maken", [OnlineLabel.PlatinumTickets] = "Platinkaartjes",
+			[OnlineLabel.BuddyEnters] = "Je vriend {0} is {1} binnengegaan",
+			[OnlineLabel.Earmuffs] = "Oorwarmers", [OnlineLabel.GotoPlayer] = "Naar speler gaan", [OnlineLabel.PagePlayer] = "Speler oproepen",
+			[OnlineLabel.LocateBuddy] = "Park van vriend zoeken", [OnlineLabel.AddBuddy] = "Vriend", [OnlineLabel.IgnorePlayer] = "Negeren",
+			[OnlineLabel.Blackmark] = "Zwarte markering", [OnlineLabel.BuddyList] = "Vriendenlijst", [OnlineLabel.WalkHint] = "Klik in het park om daar te lopen",
 			[OnlineLabel.MarkAllSend] = "Alles markeren om te verzenden", [OnlineLabel.MarkAllDelete] = "Alles markeren om te verwijderen", [OnlineLabel.UnmarkAll] = "Markeringen wissen",
 		},
 		["French"] = new Dictionary<OnlineLabel, string>
@@ -311,6 +324,10 @@ public static class OnlineStrings
 			[OnlineLabel.RecoveryCodeSent] = "Si ce compte a une adresse e-mail, un code y a été envoyé.",
 			[OnlineLabel.PasswordChanged] = "Votre mot de passe a été modifié. Connectez-vous avec le nouveau mot de passe.",
 			[OnlineLabel.Unpublish] = "Dépublier", [OnlineLabel.PlatinumTickets] = "Tickets de platine",
+			[OnlineLabel.BuddyEnters] = "Votre ami {0} est entré dans {1}",
+			[OnlineLabel.Earmuffs] = "Casque anti-bruit", [OnlineLabel.GotoPlayer] = "Aller au joueur", [OnlineLabel.PagePlayer] = "Appeler le joueur",
+			[OnlineLabel.LocateBuddy] = "Trouver le parc de l'ami", [OnlineLabel.AddBuddy] = "Ami", [OnlineLabel.IgnorePlayer] = "Ignorer",
+			[OnlineLabel.Blackmark] = "Marque noire", [OnlineLabel.BuddyList] = "Liste d'amis", [OnlineLabel.WalkHint] = "Cliquez dans le parc pour y marcher",
 			[OnlineLabel.MarkAllSend] = "Tout marquer pour envoi", [OnlineLabel.MarkAllDelete] = "Tout marquer pour suppression", [OnlineLabel.UnmarkAll] = "Tout démarquer",
 		},
 		["German"] = new Dictionary<OnlineLabel, string>
@@ -345,6 +362,10 @@ public static class OnlineStrings
 			[OnlineLabel.RecoveryCodeSent] = "Wenn dieses Konto eine E-Mail-Adresse hat, wurde ein Code dorthin gesendet.",
 			[OnlineLabel.PasswordChanged] = "Dein Passwort wurde geändert. Melde dich mit dem neuen Passwort an.",
 			[OnlineLabel.Unpublish] = "Veröffentlichung aufheben", [OnlineLabel.PlatinumTickets] = "Platin-Tickets",
+			[OnlineLabel.BuddyEnters] = "Dein Buddy {0} hat {1} betreten",
+			[OnlineLabel.Earmuffs] = "Ohrenschützer", [OnlineLabel.GotoPlayer] = "Zum Spieler gehen", [OnlineLabel.PagePlayer] = "Spieler anpingen",
+			[OnlineLabel.LocateBuddy] = "Park des Buddys finden", [OnlineLabel.AddBuddy] = "Buddy", [OnlineLabel.IgnorePlayer] = "Ignorieren",
+			[OnlineLabel.Blackmark] = "Schwarzes Mark", [OnlineLabel.BuddyList] = "Buddy-Liste", [OnlineLabel.WalkHint] = "Im Park klicken, um dorthin zu gehen",
 			[OnlineLabel.MarkAllSend] = "Alle zum Senden markieren", [OnlineLabel.MarkAllDelete] = "Alle zum Löschen markieren", [OnlineLabel.UnmarkAll] = "Alle Markierungen aufheben",
 		},
 		["Swedish"] = new Dictionary<OnlineLabel, string>
@@ -379,6 +400,10 @@ public static class OnlineStrings
 			[OnlineLabel.RecoveryCodeSent] = "Om kontot har en e-postadress har en kod skickats dit.",
 			[OnlineLabel.PasswordChanged] = "Ditt lösenord har ändrats. Logga in med det nya lösenordet.",
 			[OnlineLabel.Unpublish] = "Avpublicera", [OnlineLabel.PlatinumTickets] = "Platinbiljetter",
+			[OnlineLabel.BuddyEnters] = "Din kompis {0} har gått in i {1}",
+			[OnlineLabel.Earmuffs] = "Öronmuffar", [OnlineLabel.GotoPlayer] = "Gå till spelare", [OnlineLabel.PagePlayer] = "Pinga spelare",
+			[OnlineLabel.LocateBuddy] = "Hitta kompis park", [OnlineLabel.AddBuddy] = "Kompis", [OnlineLabel.IgnorePlayer] = "Ignorera",
+			[OnlineLabel.Blackmark] = "Svart märke", [OnlineLabel.BuddyList] = "Kompislista", [OnlineLabel.WalkHint] = "Klicka i parken för att gå dit",
 			[OnlineLabel.MarkAllSend] = "Markera alla för att skicka", [OnlineLabel.MarkAllDelete] = "Markera alla för att radera", [OnlineLabel.UnmarkAll] = "Avmarkera alla",
 		},
 	};

@@ -121,15 +121,15 @@ class SnapshotRepository:
         marker = path / OWNER_FILE
         if path.is_symlink():
             raise ValueError("Snapshot repository must not be a symlink")
+        for ancestor in path.parents:
+            if (ancestor / ".git").exists() or (ancestor / OWNER_FILE).exists():
+                raise ValueError("Snapshot repository must be outside existing Git repositories")
         if path.exists():
             if not marker.is_file() or json.loads(marker.read_text()) != ownership:
                 raise ValueError("Refusing an unowned repository or changed publication manifest/options")
             if self.git("rev-parse", "--is-bare-repository").strip() != "true":
                 raise ValueError("Only the publisher's bare repository may be reused")
         else:
-            for ancestor in path.parents:
-                if (ancestor / ".git").exists() or (ancestor / OWNER_FILE).exists():
-                    raise ValueError("Snapshot repository must be outside existing Git repositories")
             path.parent.mkdir(parents=True, exist_ok=True)
             subprocess.run(["git", "init", "--bare", "--object-format=sha1", "--initial-branch=main", str(path)],
                            env=self.env, check=True, capture_output=True)
@@ -236,6 +236,9 @@ def prepare(source, distribution, git_dir, mapping_path, version, repository=DEF
         raise ValueError("Texture source and distribution manifest must exist")
     if git_dir.is_symlink() or git_dir.resolve().is_relative_to(source):
         raise ValueError("Bare repository must be separate from the texture source")
+    # Check the real ancestry: a symlink to checkout/assets otherwise hides
+    # checkout/.git from lexical Path.parents and can import gigabytes there.
+    git_dir = git_dir.resolve()
     inventory, manifest_hash = load_inventory(source, distribution)
     snapshots = partition(inventory, max_bytes, representative)
     prefix = "clarity-" + version
@@ -244,6 +247,7 @@ def prepare(source, distribution, git_dir, mapping_path, version, repository=DEF
                  "maxSnapshotBytes": max_bytes, "representative": representative, "commitDate": date}
     if mapping_path.is_symlink() or mapping_path.resolve().is_relative_to(source) or mapping_path.resolve() == distribution or mapping_path.resolve().is_relative_to(git_dir.resolve()):
         raise ValueError("Mapping output must be separate from source files and the bare repository")
+    mapping_path = mapping_path.resolve()
     previously_prepared = 0
     if mapping_path.exists():
         previous = json.loads(mapping_path.read_text())

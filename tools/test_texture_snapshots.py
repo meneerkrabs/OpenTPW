@@ -127,6 +127,26 @@ class TextureSnapshotTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "separate from the texture source"):
             publisher.prepare(self.source, self.distribution, self.source / "nested.git", self.mapping, "20261011", max_bytes=self.cap)
 
+    def test_symlink_parent_cannot_hide_engine_checkout(self):
+        checkout = self.root / "engine"
+        subprocess.run(["git", "init", "-q", str(checkout)], check=True)
+        assets = checkout / "assets"
+        assets.mkdir()
+        alias = self.root / "asset-alias"
+        alias.symlink_to(assets, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "outside existing Git"):
+            publisher.prepare(self.source, self.distribution, alias / "textures.git", self.mapping, "20261011", max_bytes=self.cap)
+        self.assertFalse((assets / "textures.git").exists())
+
+    def test_moved_owned_repository_still_cannot_be_inside_engine(self):
+        self.prepare()
+        checkout = self.root / "engine"
+        subprocess.run(["git", "init", "-q", str(checkout)], check=True)
+        moved = checkout / "textures.git"
+        self.git_dir.rename(moved)
+        with self.assertRaisesRegex(ValueError, "outside existing Git"):
+            publisher.prepare(self.source, self.distribution, moved, self.mapping, "20261011", max_bytes=self.cap)
+
     def test_extra_files_traversal_and_symlinks_are_rejected(self):
         extra = self.source / "raw-original.md2"
         extra.write_bytes(b"must not publish")

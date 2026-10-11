@@ -154,6 +154,7 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 			VerifyPicking();
 			VerifyText( CaptureOutputFrame( level.OriginalPark == null ? "output.png" : "original-output.png" ) );
 			VerifyObjectsAnimate();
+			VerifyRideViewAndDoor();
 			if ( level.OriginalPark == null )
 				level.SaveSandbox();
 			level.PlacedRide!.Stop();
@@ -520,6 +521,28 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 		Require( Render.ResolveColorTexture.Width == RenderScaling.ScaleDimension( output.X, percent ) && Render.ResolveColorTexture.Height == RenderScaling.ScaleDimension( output.Y, percent ), $"world target follows {percent}%" );
 		Require( Device.MainSwapchain.Framebuffer.Width == output.X && Render.OutputCaptureTexture!.Width == output.X, "output stays at the drawable size" );
 		Require( Render.OwnedTargetResourceCount == originalResourceCount, "owned GPU targets do not grow" );
+	}
+
+	/// <summary>
+	/// The first-person ride view (Level.EnterRideView) rides the Totem and returns to the park camera, and on an
+	/// original park the door (ParkGate, via the economy's open and close) refuses admissions while closed.
+	/// </summary>
+	private void VerifyRideViewAndDoor()
+	{
+		var parkCamera = Camera.Mode;
+		Require( level.EnterRideView( level.PlacedRide! ) && Camera.Mode is RideCameraMode, "ride the Totem in the first-person ride view" );
+		Require( !level.EnterRideView( level.PlacedRide! ), "a second ride view is refused while one is open" );
+		Camera.Update();
+		level.ExitRideView();
+		Require( ReferenceEquals( Camera.Mode, parkCamera ) && level.RideView == null, "leaving the ride view restores the park camera" );
+		if ( level.Park is not { } park || level.Gate == null )
+			return;
+		park.Economy.OpenPark();
+		Require( level.Gate.Gate?.GetVariableByName( ParkGate.CommandVariable ) == 1, "opening the park commands the gate open" );
+		// A refused admission books nothing, so the admissions counter still matches the economy's own ledger.
+		park.Economy.ClosePark();
+		Require( !park.Economy.TryAdmitVisitor( long.MaxValue, out _ ), "a closed park refuses admissions at the booth" );
+		park.Economy.OpenPark();
 	}
 
 	private static bool Throws( Action action )

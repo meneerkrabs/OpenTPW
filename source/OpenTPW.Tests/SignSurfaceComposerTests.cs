@@ -60,11 +60,36 @@ public class SignSurfaceComposerTests
 			Assert.AreEqual( result.Left.Length, result.Right.Length, path );
 			Assert.IsTrue( result.Left.Where( (value, index) => index % 4 == 3 ).Any( value => value != 0 )
 				|| result.Right.Where( (value, index) => index % 4 == 3 ).Any( value => value != 0 ), path );
+			Assert.AreEqual( 0, OpaqueKeyMagenta( result.Left ) + OpaqueKeyMagenta( result.Right ), $"opaque colour-key texels in {path}" );
 			if ( sign.ExtraImage == null ) continue;
 			var theme = path.StartsWith( "lobby.wad/", StringComparison.Ordinal ) ? "lobby" : path.Split( '/' )[1];
 			extraByTheme[theme] = extraByTheme.GetValueOrDefault( theme ) + 1;
 		}
 		Assert.AreEqual( 23, extraByTheme.Values.Sum() );
 		CollectionAssert.AreEquivalent( new[] { "fantasy", "hallow", "jungle", "space", "lobby" }, extraByTheme.Keys.ToArray() );
+	}
+
+	[TestMethod]
+	public void BellyBounceHasNoBoardImageAndKeepsTransparentSpaceAroundItsText()
+	{
+		var data = StringTableTests.OriginalDataDirectory();
+		using var stream = File.OpenRead( Path.Combine( data, "fonts.wad" ) );
+		var fonts = SignFontLibrary.Load( stream );
+		var (_, bytes) = SignFileTests.OriginalSignMembers( data ).Single( member => member.Path == "levels/jungle/rides/bouncy.wad/bouncy.sgn" );
+		var sign = new SignFile( bytes );
+		Assert.IsNull( sign.ExtraImage, "the shipped Belly Bounce sign has no board image" );
+		var result = SignSurfaceComposer.Compose( sign, fonts, new[] { "Belly", "Bounce" }, new List<string>() );
+		Assert.IsTrue( result.TextPixelCount > 0 );
+		Assert.IsTrue( result.Left.Where( (value, index) => index % 4 == 3 ).Any( value => value == 0 ) );
+		Assert.IsTrue( result.Right.Where( (value, index) => index % 4 == 3 ).Any( value => value == 0 ) );
+	}
+
+	private static int OpaqueKeyMagenta( byte[] rgba )
+	{
+		var count = 0;
+		for ( var i = 0; i < rgba.Length; i += 4 )
+			if ( rgba[i] == 255 && rgba[i + 1] == 0 && rgba[i + 2] == 255 && rgba[i + 3] == 255 )
+				count++;
+		return count;
 	}
 }

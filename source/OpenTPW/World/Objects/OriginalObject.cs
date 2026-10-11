@@ -125,14 +125,19 @@ public class OriginalObject : Entity
 		{
 			var slots = new Texture[16];
 			Array.Fill( slots, Texture.Missing );
-			// The sign1/sign2 slots show the object's name instead of the shipped placeholders. Fixed items keep them:
-			// the park gate's sign carries the park name, which OriginalGateSign draws over its faces.
+			// Runtime sign faces replace the shipped placeholders. Fixed gate signs are drawn by
+			// OriginalGateSign; their base faces must not show through its transparent board pixels.
 			var sign = !Entry.IsFixedItem && part.Textures.Any( ObjectSigns.IsSignSlot ) ? ObjectSigns.Get( Entry ) : null;
+			var transparentBaseSign = Entry.IsFixedItem && Entry.ArchiveName.Equals( "gates", StringComparison.OrdinalIgnoreCase )
+				&& part.Textures.Any( ObjectSigns.IsSignSlot )
+				? new Texture( [0, 0, 0, 0], 1, 1 ) : null;
 			if ( sign != null )
 				Sign = sign;
 			for ( var index = 0; index < part.Textures.Length; index++ )
 			{
-				slots[index] = sign?.TextureFor( part.Textures[index] ) ?? LoadTexture( Entry, part.Textures[index] );
+				var name = part.Textures[index];
+				slots[index] = sign?.TextureFor( name )
+					?? (transparentBaseSign != null && ObjectSigns.IsSignSlot( name ) ? transparentBaseSign : LoadTexture( Entry, name ));
 			}
 			var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
 			material.Set( "Color", slots );

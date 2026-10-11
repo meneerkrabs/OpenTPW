@@ -347,6 +347,11 @@ Run on October 11, 2026 against the local original data, on main (c6c19ea) with 
 ORACLE-F and WALK-F, in two separate processes: the same table and exit code **0** both times, and the JSON reports
 are identical apart from `wallSeconds`.
 
+This baseline predates the traced arrival rule (docs/GUESTS.md, "Arrivals"). With it, guests come in groups sized by
+the park about every 2.5 minutes, and the same 30-minute run gives exit code **0** with 105 guests arrived and admitted,
+100 using the ride, 98 the shop and 94 the toilet, and 88 leaving; the guest-driven figures below (admissions, waits,
+takings, litter) are therefore those of the older, busier park.
+
 | Row | Verdict | Evidence |
 | --- | --- | --- |
 | build.entrance | PASS | 10 InitialPath cells, lanes A/B valid, Bus/Gates/Lights, fee $20 |

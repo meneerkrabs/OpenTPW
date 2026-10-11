@@ -294,6 +294,9 @@ public sealed class GuestSimulation : IRideVisitorHost
 		if ( !ArrivalsEnabled )
 			return;
 		var turn = ArrivalClock?.Invoke() ?? ParkTurn;
+		// A save loaded from an earlier turn replaces the clock: the timer starts unset again, as in a freshly started park.
+		if ( turn < arrivalTimerStart )
+			arrivalTimerStart = 0;
 		if ( !deliveringArrivals && (turn >> 2) - (arrivalTimerStart >> 2) > Settings.ArrivalTimeBetween )
 		{
 			pendingArrivals = ArrivalGroupSize();
@@ -329,7 +332,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 		var count = (int)(1.2f * (float)((ParkPoints?.Invoke() ?? 0) + Settings.ArrivalNewParkBonus)) / perVisitor;
 		count = Math.Max( count, Settings.ArrivalMinPeople );
 		if ( guests.Count + count > ArrivalParkLimit )
-			count = ArrivalParkLimit - guests.Count;
+			count = Math.Max( 0, ArrivalParkLimit - guests.Count );
 		return count;
 	}
 

@@ -98,11 +98,12 @@ the coaster generator are not saved either (COAST-025).
 `WorldStateHash.Compute(WorldStateSources)` (`Level.ComputeStateHash()` for a
 level) is FNV-1a 64 over little-endian values, with floats by bit pattern. It
 follows the field order of DET-plan §4.5, restricted to what OpenTPW has. Schema
-version 9 (version 1 also hashed the sound seed; versions 3 and 4 added the
+version 10 (version 1 also hashed the sound seed; versions 3 and 4 added the
 queue state, version 5 the cell map, version 6 the bounce slots' start time on one
 branch, the guests' walk state on another and the coasters on a third, version 7
 the first two on one branch and the scheduler clock and per-script clock origins
-on another, version 8 all of those but the coasters, version 9 everything, see Tests):
+on another, version 8 all of those but the coasters, version 9 everything, version 10 the guest
+arrival timer's start turn and group flag instead of its countdown, see Tests):
 
 | DET-plan field | OpenTPW | In the hash |
 | --- | --- | --- |
@@ -187,7 +188,9 @@ the same seed as well.
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0x3FD757BA59B3524D`, schema 9; COAST-M merged the coasters into schema 8: the coaster digest
+  (`0xF21F9E6EC3DBEB23`, schema 10: the traced arrival rule (docs/GUESTS.md, "Arrivals") hashes the arrival
+  timer's start turn and group flag instead of a countdown, and its groups change the run. Before that:
+  `0x3FD757BA59B3524D`, schema 9; COAST-M merged the coasters into schema 8: the coaster digest
   (see the table) follows the script digest. The synthetic park has no coaster, so the digest holds only the coaster
   generator's start state and a count of 0; with schema 8's fields the run still gives `0xB684DD70FFFF8309`. Before
   that, on two branches:

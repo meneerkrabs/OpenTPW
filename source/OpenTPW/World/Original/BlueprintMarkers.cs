@@ -78,6 +78,15 @@ public sealed class BlueprintMarkers : ModelEntity
 
 	public void Clear() => Show( [] );
 
+	/// <summary>Leaving the park releases the marker model and the markers' own material (the textures are shared game textures).</summary>
+	protected override void OnDelete()
+	{
+		Model?.ReleaseBuffers();
+		Model = null;
+		shown = [];
+		material.ReleaseOwnedResources();
+	}
+
 	/// <summary>
 	/// The marker height of a cell: the original passes 0 for plain ground and the terrain height rounded up to a
 	/// multiple of 10 next to rides and track; OpenTPW rounds the cell's corner height up for every cell.

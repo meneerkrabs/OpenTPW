@@ -594,6 +594,13 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			};
 			Click( flow.Hud!.Screen, "deleteRide" );
 		} );
+		Wait( "delete confirmation opens", 3 );
+		Do( "confirm ride deletion", () =>
+		{
+			// Game Options' Confirmations is on by default, so the delete button asks first.
+			Require( flow.Hud!.Stack.Top?.Name == "confirmDelete", "deleting a ride asks for confirmation" );
+			Click( flow.Hud.Stack.Top!, "choice0" );
+		} );
 		Wait( "ride sold", 3 );
 		Do( "ride deleted", () =>
 		{

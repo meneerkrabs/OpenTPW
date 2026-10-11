@@ -77,7 +77,8 @@ What works today, with your own original game data:
   toilets; money, loans, wages, research, objectives, golden tickets and keys run on the original
   settings files ([guests](docs/GUESTS.md), [economy](docs/ECONOMY.md)).
 - **Advisor, music and movies:** the advisor speaks for the traced game events with lip sync, the
-  park plays its original music, and all nine movies play ([audio](docs/AUDIO.md),
+  park and the front-end lobby play their original music, rides, the crowd and the interface play
+  their original sounds, and all nine movies play ([audio](docs/AUDIO.md),
   [lip sync](docs/LIPS.md), [movies](docs/TGQ-MOVIES.md)).
 - **Online again:** accounts, park sharing, visiting, voting, postcards and chat, on the official
   server or one you host yourself ([online](docs/ONLINE.md), [server](docs/SERVER.md)).
@@ -89,8 +90,9 @@ What works today, with your own original game data:
   builds on your own computer from your own copy with AI upscaling ([texture packs](docs/TEXTURE-PACKS.md)).
 - **Extras:** viewing and exporting the PlayStation 2 disc data (`--export-ps2`, [PS2](docs/PS2.md)).
 
-Not done yet: roller coaster construction, part of the ride, ambient and interface sounds, and the
-exact original rules in places where OpenTPW still uses a documented approximation. The
+Not done yet: roller coaster construction, part of the ride, the remaining ambient, guest, staff
+and path-tool sounds, and the exact original rules in places where OpenTPW still uses a documented
+approximation. The
 [completion plan](docs/COMPLETION-PLAN.md), [feature matrix](docs/FEATURE-MATRIX.md) and
 [progress](docs/PROGRESS.md) track what remains.
 
@@ -105,7 +107,7 @@ certifies every variant or original-runtime parity.
 |---|---|---|
 | Textures ([.WCT](https://opentpw.gu3.me/formats/wct.html)) | ✅ | Decoder loads the selected game's textures; other editions are unverified. |
 | Settings ([.SAM](https://opentpw.gu3.me/formats/sam.html)) | ✅ | Parser reads the selected game's settings; gameplay interpretation remains approximate. |
-| Sounds ([.SDT](https://opentpw.gu3.me/formats/sdt.html), .MP2) | ⚠️ | SDT containers, MPEG-1/2 Layer I effects and MPEG-2 Layer II speech/music decode (≤1 LSB vs independent reference on selected corpora); the `cat_*SFX.map`/`cat_*BANK.map` sound catalogues are read and the park plays its original music (busier sections as guests arrive), the park view click and the advisor through one mixer; ambient, ride and most UI sounds are not triggered yet, and CRC verification and de-emphasis remain incomplete ([sound](docs/AUDIO.md), [audio evidence](docs/LIPS.md)). |
+| Sounds ([.SDT](https://opentpw.gu3.me/formats/sdt.html), .MP2) | ⚠️ | SDT containers, MPEG-1/2 Layer I effects and MPEG-2 Layer II speech/music decode (≤1 LSB vs independent reference on selected corpora); the `cat_*SFX.map`/`cat_*BANK.map` sound catalogues are read and the game plays its original park music (busier sections as guests arrive), lobby music and ambience, UI clicks, drawer and error feedback, ride-script sounds (RSE `EVENT`/`REPAIREFFECT`), the crowd by the camera and the advisor through one mixer; rain/thunder, placed ambient, guest, staff and path-tool sounds are traced but not triggered yet, and CRC verification and de-emphasis remain incomplete ([sound](docs/AUDIO.md), [audio evidence](docs/LIPS.md)). |
 | Strings ([.BFMU](https://opentpw.gu3.me/formats/bfmu.html), [.BFST](https://opentpw.gu3.me/formats/bfst.html), [.BFUM](https://opentpw.gu3.me/formats/bfum.html)) | ✅ | 21 string tables per language decode and character tables round-trip in six verified languages; other codepages/editions are unverified ([languages](docs/LANGUAGES.md)). |
 | Models ([.MD2](https://opentpw.gu3.me/formats/m3d2.html)) | ⚠️ | 2,116/2,118 WAD members parse; the two others (207.201) and the two loose 24.23 arrows are refused by the original loader too. Animation members decode into position/rotation/scale tracks, quantised vertex groups, per-corner texture-coordinate tracks, node-flag toggles, the 12-byte block and texture-frame tracks (all 1,278 checked; unread record bits are exporter metadata); placed objects and the Totem play them. The 12-byte block is shown as the stored mesh (no original reader traced), path parameters and texture frames are not applied, PC executable equivalence is unverified, and rendering fidelity is unverified ([models](docs/MD2-MODELS.md)). |
 | Map Data ([.MAP](https://opentpw.gu3.me/formats/map.html)) | ⚠️ | All five TP2M terrain grids parse; grid mapping and five cell bits verified. Remaining flags/header values are opaque; the sound-catalog MAPs are a separate, decoded format ([maps](docs/MAP.md), [sound](docs/AUDIO.md)). |

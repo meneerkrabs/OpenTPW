@@ -27,12 +27,14 @@ public sealed class GuestSpriteAtlas
 	/// <summary>RGBA8, row-major.</summary>
 	public byte[] Pixels { get; }
 	/// <summary>Key of this atlas in the optional texture pack (docs/TEXTURE-PACKS.md); not a file in the game data.</summary>
-	public string PackKey => $"esprites/generic/kids/{Name.ToLowerInvariant()}.atlas";
+	public string PackKey { get; }
 
-	public GuestSpriteAtlas( string name, SpriteBankFile bank, SpriteAnimationFile animations )
+	/// <param name="packFolder">Folder of the set under <c>esprites/Generic</c> for the texture pack key (<c>kids</c> or <c>kidsheads</c>).</param>
+	public GuestSpriteAtlas( string name, SpriteBankFile bank, SpriteAnimationFile animations, string packFolder = "kids" )
 	{
 		Name = name;
 		Animations = animations;
+		PackKey = $"esprites/generic/{packFolder}/{name.ToLowerInvariant()}.atlas";
 		Frames = new GuestAtlasFrame[bank.Frames.Count];
 		var x = Padding;
 		var y = Padding;
@@ -88,9 +90,17 @@ public sealed class GuestSpriteAtlas
 	}
 
 	/// <summary>Loads every kid set under <c>esprites/Generic/Kids</c> (sorted by name), or none when absent.</summary>
-	public static List<GuestSpriteAtlas> LoadKids()
+	public static List<GuestSpriteAtlas> LoadKids() => LoadSets( "/esprites/Generic/Kids", ".FPC", "kids" );
+
+	/// <summary>
+	/// Loads every head set under <c>esprites/Generic/Kidsheads</c>: each <c>SPR_xx.ESP</c> with its <c>SPR_xx.TPC</c> bank
+	/// (the heads ship no <c>.FPC</c>), or none when absent. A rider's head is drawn from the set of its kid type.
+	/// </summary>
+	// [DATA:esprites.wad/Generic/Kidsheads/SPR_xx.ESP+TPC] heads are 8 frames × 7 directions (docs/GUESTS.md); the 5-direction selection of kid sets is reused
+	public static List<GuestSpriteAtlas> LoadKidHeads() => LoadSets( "/esprites/Generic/Kidsheads", ".TPC", "kidsheads" );
+
+	private static List<GuestSpriteAtlas> LoadSets( string directory, string bankExtension, string packFolder )
 	{
-		const string directory = "/esprites/Generic/Kids";
 		var sets = new List<GuestSpriteAtlas>();
 		string[] files;
 		try
@@ -104,12 +114,12 @@ public sealed class GuestSpriteAtlas
 		foreach ( var esp in files.Where( file => file.EndsWith( ".ESP", StringComparison.OrdinalIgnoreCase ) ).OrderBy( file => file, StringComparer.OrdinalIgnoreCase ) )
 		{
 			var stem = Path.GetFileNameWithoutExtension( esp );
-			var bank = files.FirstOrDefault( file => string.Equals( file, stem + ".FPC", StringComparison.OrdinalIgnoreCase ) );
+			var bank = files.FirstOrDefault( file => string.Equals( file, stem + bankExtension, StringComparison.OrdinalIgnoreCase ) );
 			if ( bank == null )
 				continue;
 			using var espStream = FileSystem.OpenRead( $"{directory}/{esp}" );
 			using var bankStream = FileSystem.OpenRead( $"{directory}/{bank}" );
-			sets.Add( new GuestSpriteAtlas( stem, new SpriteBankFile( bankStream ), new SpriteAnimationFile( espStream ) ) );
+			sets.Add( new GuestSpriteAtlas( stem, new SpriteBankFile( bankStream ), new SpriteAnimationFile( espStream ), packFolder ) );
 		}
 		return sets;
 	}

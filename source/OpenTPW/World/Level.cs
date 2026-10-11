@@ -35,6 +35,8 @@ public partial class Level : IDisposable
 	/// <summary>Park visitors (imported original levels only; docs/GUESTS.md).</summary>
 	public GuestSimulation? Guests { get; private set; }
 	public GuestRenderer? GuestRenderer { get; private set; }
+	/// <summary>Heads of riders on rides that have ADDHEAD (docs/GUESTS.md, "Riders' heads").</summary>
+	public RideHeadRenderer? RideHeadRenderer { get; private set; }
 	/// <summary>The default world seed (<see cref="WorldSeed.DefaultValue"/>); with it the guest stream keeps its old seed.</summary>
 	public const ulong GuestSeed = WorldSeed.DefaultValue;
 	/// <summary>The one seed every simulation random stream of this level derives from (docs/DETERMINISM.md).</summary>
@@ -154,6 +156,7 @@ public partial class Level : IDisposable
 		Guests = new GuestSimulation( grid, GuestSettings.Load( park.LevelName ), Seed.GuestStream );
 		var sprites = GuestSpriteAtlas.LoadKids();
 		GuestRenderer = new GuestRenderer( Guests, park.Heightfield, sprites );
+		RideHeadRenderer = new RideHeadRenderer( Guests, GuestSpriteAtlas.LoadKidHeads(), Objects );
 		Log.Trace( $"Guests: {grid.WalkableCount} walkable path cells, {sprites.Count} original kid sprite sets, {Guests.Settings.Types.Count} .sam peep types." );
 	}
 

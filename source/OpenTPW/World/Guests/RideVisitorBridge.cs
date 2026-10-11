@@ -68,6 +68,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public int ExcitementLevel => ExcitementSource?.Invoke() ?? excitementLevel;
 	/// <summary>Replaces the .sam excitement with a live value (a coaster's rating, <c>0xdff70</c>), or null.</summary>
 	public Func<int>? ExcitementSource { get; set; }
+	/// <summary>The ride's head table for ADDHEAD/DELHEAD, null when its model has no head records (see <see cref="RideHeadSpace"/>).</summary>
+	public RideHeadSpace? Heads { get; set; }
 	public int AttractionValue { get; }
 	public GuestNeeds Satisfies { get; }
 	public int Price { get; }
@@ -642,8 +644,12 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 				result = bouncing.Count( entry => entry.Guest != 0 );
 				return true;
 			case Opcode.ADDHEAD:
+				// [BIN:STP-PPC:0x100B0E9C ADDHEAD] no register write; the head is drawn by RideHeadRenderer from the table
+				Heads?.Add( call.Argument( 0 ) );
+				return true;
 			case Opcode.DELHEAD:
-				// Head sprites (Info.DoHeadProcessing) are cosmetic; on-ride guests are not drawn yet.
+				// [BIN:STP-PPC:0x100B0F90 DELHEAD] no register write
+				Heads?.Remove( call.Argument( 0 ) );
 				return true;
 			default:
 				return false;

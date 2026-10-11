@@ -31,6 +31,20 @@ until all archives and `SHA256SUMS.txt` are uploaded. Retrying the same commit a
 version repairs an incomplete release; a complete published release is left
 unchanged. Original game data is never included.
 
+A normal manual release then starts **Cross-platform build and CPU tests** on
+that exact published tag. Its server image is published and the official server
+is asked to update after the image check passes. Preview releases do not start
+this deployment. Explicit dispatch is required because a tag created with the
+workflow's `GITHUB_TOKEN` does not trigger another push workflow.
+
+To retry a server deployment, open **Actions → Cross-platform build and CPU
+tests → Run workflow**, select `main`, and enter the published stable release
+tag, such as `v0.7.5`, in **Published stable release to deploy**. The workflow
+checks that the release is published and not a preview, then starts a build on
+that exact tag. Leaving the field empty on `main` publishes only the development
+image and does not deploy the official server. See SERVER.md for the deploy
+token and host setup.
+
 To deploy the website separately, use **Actions → Website → Run workflow** on
 `main`. A normal (non-preview) release updates the existing latest-download links
 without requiring a website code change.

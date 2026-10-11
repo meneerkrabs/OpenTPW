@@ -125,6 +125,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -140,3 +141,11 @@ jobs:
           RELEASE_VERSION: ${{ needs.configure.outputs.version }}
           RELEASE_PRERELEASE: ${{ needs.configure.outputs.prerelease }}
         run: bash scripts/publish-release.sh release
+      # A tag created by GITHUB_TOKEN does not trigger push workflows. Dispatch the exact
+      # published tag explicitly; ordinary tag pushes already have their own image/deploy run.
+      - name: Build and deploy the published server release
+        if: github.event_name == 'workflow_dispatch' && needs.configure.outputs.prerelease == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ needs.configure.outputs.version }}
+        run: gh workflow run build.yml --repo "$GITHUB_REPOSITORY" --ref "$RELEASE_VERSION"

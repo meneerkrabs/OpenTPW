@@ -66,8 +66,17 @@ update the firewall rule, or use Hetzner's web console to get in.
 
 ### Automatic deployment
 
-A `v*` tag updates the official server minutes after its image is published, without waiting
-for the night. The `deploy` job of `.github/workflows/build.yml` runs after the image job and
+A pushed `v*` tag updates the official server minutes after its image is published, without
+waiting for the night. A normal release started through **Actions → Release builds → Run
+workflow** explicitly starts the same build on its published tag; tags created with
+`GITHUB_TOKEN` do not trigger push workflows themselves. Preview releases started there do
+not request deployment. To retry manually, use **Actions → Cross-platform build and CPU tests
+→ Run workflow**, select `main`, and enter the published stable tag in **Published stable release
+to deploy**. The workflow verifies that it is published and not a preview before starting a
+build on that exact tag. Leaving the field empty on `main` builds the development image
+without updating the official server.
+
+The `deploy` job of `.github/workflows/build.yml` runs after the image job and
 sends `POST /api/v1/admin/deploy` with the repository secret `OPENTPW_DEPLOY_TOKEN`. The server
 answers 202 only for that token (compared in constant time, rate limited like logins; the route
 does not exist without `DeployToken`) and does nothing but write `.deploy-requested` into its

@@ -2,10 +2,42 @@ name: Cross-platform build and CPU tests
 on:
   push:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Published stable release to deploy (for example v0.7.5); leave empty for a normal build'
+        required: false
+        default: ''
+        type: string
 permissions:
   contents: read
 jobs:
+  dispatch-release:
+    # The browser's Run workflow selector lists branches. Forward the entered release
+    # to its immutable tag instead of deploying the selected branch's current sources.
+    if: github.event_name == 'workflow_dispatch' && inputs.release_tag != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Validate and build the published release tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo 'Enter a published stable release such as v0.7.5.' >&2
+            exit 1
+          fi
+          state=$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease --jq 'if .isDraft or .isPrerelease then "preview" else "published" end')
+          if [ "$state" != published ]; then
+            echo 'The selected release must be published and not a preview.' >&2
+            exit 1
+          fi
+          gh workflow run build.yml --repo "$GITHUB_REPOSITORY" --ref "$RELEASE_TAG"
   build:
+    if: inputs.release_tag == ''
     strategy:
       fail-fast: false
       matrix:
@@ -33,6 +65,7 @@ jobs:
     # It is also the only place CI compiles the browser build (OpenTPW.Web is not in the solution).
     # Pushes from main and release tags publish it to ghcr.io (docs/SERVER.md); the official server
     # follows the latest release.
+    if: inputs.release_tag == ''
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -48,7 +81,7 @@ jobs:
           curl -fsS -H 'Accept-Encoding: br' -o /dev/null -w '%{content_type} %header{content-encoding}\n' http://127.0.0.1:8080/_framework/dotnet.js
           docker logs opentpw
       - name: Publish to GitHub Container Registry
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         env:
           REF: ${{ github.ref }}
           REF_NAME: ${{ github.ref_name }}
@@ -65,7 +98,7 @@ jobs:
     # leaves a request in its data folder, and the host's opentpw-deploy.path runs the regular update
     # (docs/SERVER.md, "Automatic deployment"). SSH stays closed to GitHub.
     needs: server-image
-    if: github.repository == 'meneerkrabs/OpenTPW' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    if: github.repository == 'meneerkrabs/OpenTPW' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions: {}
     steps:

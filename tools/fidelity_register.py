@@ -36,6 +36,7 @@ DOCUMENT = "docs/FIDELITY-REGISTER.md"
 RETIRED_HEADING = "## Retired and reserved IDs"
 DOC_ROW = re.compile(r"^\|\s*([A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*-\d{3})\s*\|")
 RETIRED_ENTRY = re.compile(r"^- `([^`]+)` \((.+)\)$")
+DOC_MENTION = re.compile(r"APPROX:([A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*-\d{3})\b")
 
 
 @dataclass(frozen=True)
@@ -208,7 +209,8 @@ def collect(root: Path, registers: dict[str, str] | None = None,
 
 
 def retired_ids(root: Path, prefixes: set[str], declarations: dict[str, Declaration], errors: list[str]) -> dict[str, str]:
-    """IDs that a Markdown table row under docs keys but no register declares (retired, or reserved by a plan).
+    """IDs that a Markdown table row under docs keys, or docs prose cites as `APPROX:ID`, but no register declares
+    (retired, or reserved by a plan; prose mentions since REVIEW-WALK-2 WV2-2).
 
     The list in the generated document only grows: an ID listed there may not be declared again, so a new
     approximation cannot take a number the docs already use with another meaning (REVIEW-ORACLE-2 OV2-1)."""
@@ -231,8 +233,11 @@ def retired_ids(root: Path, prefixes: set[str], declarations: dict[str, Declarat
             continue
         for line in path.read_text(encoding="utf-8").splitlines():
             match = DOC_ROW.match(line)
-            if match and match.group(1).rsplit("-", 1)[0] in prefixes:
-                found.setdefault(match.group(1), relative)
+            labels = [match.group(1)] if match else []
+            labels += [mention.group(1) for mention in DOC_MENTION.finditer(line)]
+            for label in labels:
+                if label.rsplit("-", 1)[0] in prefixes:
+                    found.setdefault(label, relative)
     retired = dict(listed)
     for label, where in found.items():
         if label not in declarations:
@@ -284,7 +289,8 @@ def render(data: Inventory) -> str:
         else:
             lines.append(f"| {label} | Unknown | Missing declaration | — | — |")
     lines += ["", RETIRED_HEADING, "",
-              "IDs that a table row in docs keys but no register declares: retired approximations and IDs a plan reserves. "
+              "IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no register declares: retired "
+              "approximations and IDs a plan reserves. "
               "Declaring one of them fails the check, so a new approximation cannot take a number the docs already use "
               "with another meaning. `--write` keeps every listed ID; remove an entry by hand only when its docs agree "
               "with the new declaration.", ""]

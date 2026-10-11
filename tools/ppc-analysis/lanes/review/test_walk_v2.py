@@ -3,7 +3,8 @@
 - Static (git objects of 2079e79, no binary): the merged head-not-ready bound and each head's own limit, the GATE-006
   register entry and its tags, the young-head deferral, the separation port, avoid_walls' first pushing edge, the
   toilet term's phase and byte compare, the schema 7 and gate hash pins, ECON-048, the commit and preview money
-  tests and BOUNCE's first free slot. Open findings are expected failures (WV2-1 .. WV2-4).
+  tests and BOUNCE's first free slot. The findings WV2-1 .. WV2-5 were closed at the merge onto main (WALK-M); their
+  witnesses read the working tree.
 - Binary-gated (OPENTPW_MAC_BIN or OPENTPW_PPC_BIN_ROOT = the Feral bin directory): decoded fields of the neighbour
   query 0x10087c, the separation caller 0xfd778 and its static initialiser 0x1002f4, avoid_walls' edge exits, the
   toilet compare and BOUNCE's slot scan, and the separation callback 0xfd5f4 run in OpenTPW's own PPC interpreter
@@ -36,6 +37,11 @@ RADIUS = 13107
 def show(path: str, commit: str = SUBJECT) -> str:
     return subprocess.run(['git', '-C', str(REPO), 'show', f'{commit}:{path}'], capture_output=True, text=True,
                           check=True).stdout.lstrip('﻿')
+
+
+def current(path: str) -> str:
+    """The working tree: the findings were closed after SUBJECT, at the merge onto main (WALK-M)."""
+    return (REPO / path).read_text(encoding='utf-8').lstrip('\ufeff')
 
 
 def has_commit(commit: str) -> bool:
@@ -215,43 +221,49 @@ class OracleFindings(unittest.TestCase):
         self.assertIn('if ( slots[index].Guest == 0 )', body)
         self.assertIn('TakeBounceSlot( bouncing, call.VM.Script.BounceSize, ', bridge)
 
-    @unittest.expectedFailure
     def test_bounce_start_reads_the_clock_again(self):
-        """WV2-4: 0xadf40 calls the clock 0x10e844 twice, the deadline from the first call and the start from the
-        second; the port takes one `now` for both and neither the BIN label nor a register says so."""
-        bridge = show('source/OpenTPW/World/Guests/RideVisitorBridge.cs')
+        """WV2-4 (closed): 0xadf40 calls the clock 0x10e844 twice, the deadline from the first call and the start from
+        the second; the port takes one `now` for both. The BIN label says so and QUEUE-020 registers it."""
+        bridge = current('source/OpenTPW/World/Guests/RideVisitorBridge.cs')
         label = bridge[bridge.index('[BIN:STP-PPC:0x100ADF40 BOUNCE]'):]
         self.assertRegex(label[:label.index('\n')], r'(second|two|twice).*clock|clock.*(second|twice)')
+        self.assertIn('[APPROX:QUEUE-020]', label[:label.index('TakeBounceSlot')])
+        self.assertIn('("QUEUE-020", ', current('source/OpenTPW/World/Guests/QueueApproximations.cs'))
 
 
 @unittest.skipUnless(has_commit(SUBJECT), f'{SUBJECT} not in this repository')
 class RegisterFindings(unittest.TestCase):
-    @unittest.expectedFailure
     def test_prose_retired_gate_ids_are_protected(self):
-        """WV2-2: the retired-ID guard reads docs table rows only; GATE-004 and GATE-005, retired in M3-GATE.md prose,
-        can be declared again with another meaning and --check passes."""
-        retired = show('docs/FIDELITY-REGISTER.md')
+        """WV2-2 (closed): the retired-ID guard read docs table rows only; it now also reads `APPROX:ID` mentions in
+        docs prose, so GATE-002..GATE-005 cannot be declared again with another meaning."""
+        retired = current('docs/FIDELITY-REGISTER.md')
         retired = retired[retired.index('## Retired and reserved IDs'):]
-        self.assertIn('`GATE-005`', retired)
-        self.assertIn('`GATE-004`', retired)
+        for label in ('GATE-002', 'GATE-003', 'GATE-004', 'GATE-005'):
+            self.assertIn(f'`{label}`', retired)
 
-    @unittest.expectedFailure
     def test_walk_003_says_which_thing_types_are_left_out(self):
-        """WV2-3: 0x10087c keeps thing types 1, 4-8 and 18; OpenTPW's neighbours are guests only, which WALK-003's
-        register line does not say."""
-        entry = next(line for line in show('source/OpenTPW/World/Guests/WalkApproximations.cs').splitlines() if '"WALK-003"' in line)
+        """WV2-3 (closed): 0x10087c keeps thing types 1, 4-8 and 18; OpenTPW's neighbours are guests only, which
+        WALK-003's register line now says."""
+        entry = next(line for line in current('source/OpenTPW/World/Guests/WalkApproximations.cs').splitlines() if '"WALK-003"' in line)
         self.assertRegex(entry, r'4.{0,3}8|18')
+
+    def test_oracle_seams_name_both_bounce_helpers(self):
+        """WV2-5 (closed): ORACLE.md's seam list called TakeUnbounced private and left out TakeBounceSlot."""
+        oracle = current('docs/reverse/ORACLE.md')
+        seams = oracle[oracle.index('The C# comparisons use these seams'):]
+        seams = seams[:seams.index('\n\n', seams.index('- '))]
+        self.assertIn('TakeBounceSlot', seams)
+        self.assertNotIn('private', seams)
 
 
 @unittest.skipUnless(has_commit(SUBJECT) and has_commit(MAIN), f'{SUBJECT} or {MAIN} not in this repository')
 class MergeOntoMain(unittest.TestCase):
-    @unittest.expectedFailure
     def test_rides_029_is_free_on_main(self):
-        """WV2-1: fork main declares RIDES-029 for the Theme Park Inc '@' shape symbol (6820470), an ID APPROX-TRACE.md
-        already uses for the retired Totem prototype; walk-fix's retired-ID guard lists it, so the merged tree fails
-        fidelity_register --check until main's entry is renumbered (RIDES-031 is free)."""
-        self.assertIn('- `RIDES-029` (docs/reverse/APPROX-TRACE.md)', show('docs/FIDELITY-REGISTER.md'))
-        self.assertNotIn('("RIDES-029"', show('source/OpenTPW/World/Objects/RidesApproximations.cs', MAIN))
+        """WV2-1 (closed at the merge, WALK-M): fork main declared RIDES-029 for the Theme Park Inc '@' shape symbol
+        (6820470), an ID APPROX-TRACE.md already uses for the retired Totem prototype; the merge renumbers it."""
+        self.assertIn('("RIDES-029"', show('source/OpenTPW/World/Objects/RidesApproximations.cs', MAIN))
+        self.assertIn('- `RIDES-029` (docs/reverse/APPROX-TRACE.md)', current('docs/FIDELITY-REGISTER.md'))
+        self.assertNotIn('("RIDES-029"', current('source/OpenTPW/World/Objects/RidesApproximations.cs'))
 
 
 def _root():

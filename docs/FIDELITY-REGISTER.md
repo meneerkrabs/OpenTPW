@@ -14,9 +14,9 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **205 unresolved unique APPROX IDs**, 222 APPROX occurrences, 90 EXT occurrences, 91 DATA occurrences and 172 BIN occurrences.
+Current inventory: **206 unresolved unique APPROX IDs**, 223 APPROX occurrences, 90 EXT occurrences, 91 DATA occurrences and 172 BIN occurrences.
 
-Of these, 199 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
+Of these, 200 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
 CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.
 
@@ -32,7 +32,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | GATE | 2 | 4 |
 | ONLINE | 6 | 6 |
 | PATH | 14 | 15 |
-| QUEUE | 18 | 18 |
+| QUEUE | 19 | 19 |
 | RIDES | 25 | 25 |
 | UI | 48 | 60 |
 | WALK | 10 | 10 |
@@ -163,6 +163,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | QUEUE-017 | Original-fidelity area (scope unadjudicated) | guests do not choose a broken attraction (VAR_BROKEN ≠ 0) | See source annotation/runtime register | `source/OpenTPW/World/Guests/QueueApproximations.cs:27` |
 | QUEUE-018 | Original-fidelity area (scope unadjudicated) | a broken attraction refuses joins as if closed | See source annotation/runtime register | `source/OpenTPW/World/Guests/QueueApproximations.cs:28` |
 | QUEUE-019 | Original-fidelity area (scope unadjudicated) | a broken attraction skips admission (VAR_BROKEN ≠ 0 read as ride +408 ≠ 0) | See source annotation/runtime register | `source/OpenTPW/World/Guests/QueueApproximations.cs:29` |
+| QUEUE-020 | Original-fidelity area (scope unadjudicated) | BOUNCE stores one script-clock reading as both the deadline's base and the slot's start; the original reads its millisecond clock 0x10e844 twice, so its start can lie 1 ms after the deadline's base | See source annotation/runtime register | `source/OpenTPW/World/Guests/QueueApproximations.cs:30` |
 | RIDES-001 | Original-fidelity area (scope unadjudicated) | Mac channel rate 30 is proved; Windows rate and native scaled/unscaled clock selection remain unverified | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:11` |
 | RIDES-002 | Original-fidelity area (scope unadjudicated) | most recently started channel wins a node | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:12` |
 | RIDES-003 | Original-fidelity area (scope unadjudicated) | finished clips hold their last pose | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:13` |
@@ -238,7 +239,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-051 | Original-fidelity area (scope unadjudicated) | i_dollar frame 1 for a negative balance, green_up frame 1 for a decrease; golden key frame 0 and ticket count from the economy (keys are not tracked, always 0) | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:59` |
 | WALK-001 | Original-fidelity area (scope unadjudicated) | nothing raises the speed boost +196; only its traced decay runs | See source annotation/runtime register | `source/OpenTPW/World/Guests/WalkApproximations.cs:13` |
 | WALK-002 | Original-fidelity area (scope unadjudicated) | avoid_walls models only its edge branch (the first pushing edge of +x, -x, +y, -y); the diagonal-corner branches tried when no edge pushes are left out | See source annotation/runtime register | `source/OpenTPW/World/Guests/WalkApproximations.cs:14` |
-| WALK-003 | Original-fidelity area (scope unadjudicated) | separation's neighbours are the guests outside rides and shops at their navigation position, in OpenTPW's list order within a cell, not the original's thing positions +4/+6 and per-cell thing lists | See source annotation/runtime register | `source/OpenTPW/World/Guests/WalkApproximations.cs:15` |
+| WALK-003 | Original-fidelity area (scope unadjudicated) | separation's neighbours are the guests outside rides and shops at their navigation position, in OpenTPW's list order within a cell, not the original's thing positions +4/+6 and per-cell thing lists; the original's query 0x10087c also keeps thing types 4–8 and 18, which are not neighbours in OpenTPW | See source annotation/runtime register | `source/OpenTPW/World/Guests/WalkApproximations.cs:15` |
 | WALK-004 | Original-fidelity area (scope unadjudicated) | routes are OpenTPW's cell sequences, refilled five waypoints at a time; the stuck reroute prepends the current cell to the rest | See source annotation/runtime register | `source/OpenTPW/World/Guests/WalkApproximations.cs:16` |
 | WALK-005 | Original-fidelity area (scope unadjudicated) | a cell is walkable when it is on the current walk (route and extra open cells); the original's edge flags with the +180 mask and its commit callback are not modelled | See source annotation/runtime register | `source/OpenTPW/World/Guests/WalkApproximations.cs:17` |
 | WALK-006 | Original-fidelity area (scope unadjudicated) | a queue walk may also enter the queue cell ahead of its destination and the one behind its start, and no other cell off its route | See source annotation/runtime register | `source/OpenTPW/World/Guests/WalkApproximations.cs:18` |
@@ -249,7 +250,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 
 ## Retired and reserved IDs
 
-IDs that a table row in docs keys but no register declares: retired approximations and IDs a plan reserves. Declaring one of them fails the check, so a new approximation cannot take a number the docs already use with another meaning. `--write` keeps every listed ID; remove an entry by hand only when its docs agree with the new declaration.
+IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no register declares: retired approximations and IDs a plan reserves. Declaring one of them fails the check, so a new approximation cannot take a number the docs already use with another meaning. `--write` keeps every listed ID; remove an entry by hand only when its docs agree with the new declaration.
 
 - `ADVISOR-001` (docs/reverse/APPROX-TRACE.md)
 - `ADVISOR-003` (docs/reverse/APPROX-TRACE.md)
@@ -278,6 +279,11 @@ IDs that a table row in docs keys but no register declares: retired approximatio
 - `ECON-043` (docs/reverse/APPROX-TRACE.md)
 - `ECON-046` (docs/reverse/APPROX-TRACE.md)
 - `ECON-047` (docs/reverse/RIDE-WEAR.md)
+- `GATE-002` (docs/reverse/PATH-plan.md)
+- `GATE-003` (docs/reverse/BOARD-plan.md)
+- `GATE-004` (docs/M3-GATE.md)
+- `GATE-005` (docs/M3-GATE.md)
+- `QUEUE-007` (docs/reverse/BOARD-plan.md)
 - `RIDES-005` (docs/reverse/APPROX-TRACE.md)
 - `RIDES-020` (docs/reverse/APPROX-TRACE.md)
 - `RIDES-027` (docs/reverse/APPROX-TRACE.md)
@@ -417,6 +423,7 @@ IDs that a table row in docs keys but no register declares: retired approximatio
 | QUEUE-017 | `source/OpenTPW/World/Guests/GuestSimulation.cs:725` | [APPROX:QUEUE-017] guests do not choose a broken attraction (VAR_BROKEN ≠ 0); the original attraction choice is not traced for broken rides — evidence needed: the state-6 attraction choice and its test of the ride +408 state |
 | QUEUE-018 | `source/OpenTPW/World/Guests/RideVisitorBridge.cs:324` | [APPROX:QUEUE-018] a broken ride (VAR_BROKEN ≠ 0) refuses joins as if closed; the state-10 join checks of 0xeccb0 are traced without a breakdown test, and how a broken ride keeps guests out of state 10 is not — evidence needed: the ride +408 state and the state-6/state-10 handling of a broken ride |
 | QUEUE-019 | `source/OpenTPW/World/Guests/RideVisitorBridge.cs:471` | [APPROX:QUEUE-019] admission is skipped while VAR_BROKEN ≠ 0: the ride update calls 0xe1864 → 0xe1404 only when ride +408 == 0, and a breakdown is read as +408 ≠ 0 — evidence needed: the ride +408 state names and their writers |
+| QUEUE-020 | `source/OpenTPW/World/Guests/RideVisitorBridge.cs:656` | [APPROX:QUEUE-020] one script-clock reading stands for both of BOUNCE's clock calls: OpenTPW's clock does not advance inside an opcode, the original's can tick between the two calls and put the start 1 ms after the deadline's base, which moves UNBOUNCE's 200 ms window by 1 ms — evidence needed: none for the reading (0xadfb0, 0xadfcc); a stepped clock cannot reproduce the tick |
 | RIDES-001 | `source/OpenTPW/World/Objects/ObjectAnimator.cs:26` | [APPROX:RIDES-001] Mac channel rate 30 is proved; Windows rate and selection/binding of the native scaled or unscaled channel clock remain unverified. |
 | RIDES-002 | `source/OpenTPW/World/Objects/ObjectAnimator.cs:262` | [APPROX:RIDES-002] When several channels animate a node, the most recently started clip wins — evidence needed: original channel mixing (binary or capture of a multi-channel sideshow/Totem) |
 | RIDES-003 | `source/OpenTPW/World/Objects/ObjectAnimator.cs:204` | [APPROX:RIDES-003] A finished non-looping clip holds its last pose until replaced/flushed — evidence needed: capture after a TRIGANIM clip ends |
@@ -504,7 +511,7 @@ IDs that a table row in docs keys but no register declares: retired approximatio
 | UI-051 | `source/OpenTPW/Hud/ParkHud.cs:133` | [APPROX:UI-051] i_dollar frame 1 for a negative balance and green_up frame 1 for a decrease: the two-frame models' state meaning is guessed from their art — evidence needed: capture of the original cash display |
 | WALK-001 | `source/OpenTPW/World/Guests/GuestSimulation.cs:321` | [APPROX:WALK-001] nothing raises the boost +196: the event-dependent increments of 0xeb0f4 are not traced, so it stays 0 and only its decay runs — evidence needed: the callers of 0xeb0f4 and their amounts |
 | WALK-002 | `source/OpenTPW/World/Guests/GuestNavigation.cs:262` | [APPROX:WALK-002] only the edge branch of avoid_walls is modelled; its four diagonal-corner branches (0xfdfe4..0xfe5e0 via 0xfc9e0), tried when no edge pushes, are not — evidence needed: 0xfc9e0 and the corner branches |
-| WALK-003 | `source/OpenTPW/World/Guests/GuestSimulation.cs:458` | [APPROX:WALK-003] separation's neighbours are the guests outside rides and shops at their 16.16 navigation position (the thing's own 1/256-cell position +4/+6 is not traced); within a cell they come in OpenTPW's list order, rebuilt every park turn with movers appended, not the original's per-cell thing list (+764, +10) — evidence needed: the writers of thing +4/+6 and of the cell lists |
+| WALK-003 | `source/OpenTPW/World/Guests/GuestSimulation.cs:458` | [APPROX:WALK-003] separation's neighbours are the guests outside rides and shops at their 16.16 navigation position (the thing's own 1/256-cell position +4/+6 is not traced); within a cell they come in OpenTPW's list order, rebuilt every park turn with movers appended, not the original's per-cell thing list (+764, +10); the original's query also keeps thing types 4–8 and 18, which never push in OpenTPW — evidence needed: the writers of thing +4/+6 and of the cell lists, and what thing types 4–8 and 18 are |
 | WALK-004 | `source/OpenTPW/World/Guests/GuestNavigation.cs:182` | [APPROX:WALK-004] routes are OpenTPW's cell sequences (one path cell per destination, the queue cells in order) refilled five at a time and rerouted by prepending the current cell to the rest of the route; the original's search 0x101c64 and its refill are not traced beyond the route-store points — evidence needed: 0x101c64 and the +164/+168 bookkeeping |
 | WALK-005 | `source/OpenTPW/World/Guests/GuestSimulation.cs:451` | [APPROX:WALK-005] a cell is walkable when it is on the current walk (its route cells and the walk's extra open cells), so path cells beside the route are walls; the original tests the cell's edge flags against the guest's +180 mask (0xd768c) and commits the step through a transition call (0xfee3c..0xfee58) — evidence needed: the edge flags 0xd768c reads, the +180 mask per guest state and the commit callback |
 | WALK-006 | `source/OpenTPW/World/Guests/GuestSimulation.cs:923` | [APPROX:WALK-006] a queue walk may also enter the queue cell ahead of its destination and the one behind its start (the entrance and the join cell at the ends), and no other cell off its route; this stands in for the original's edge flags along the queue — evidence needed: the queue cells' edge flags and the +180 mask in states 12 and 13 |
@@ -778,8 +785,8 @@ IDs that a table row in docs keys but no register declares: retired approximatio
 | STP-PPC:0x100A70B4 channel frame arithmetic | `source/OpenTPW/World/Objects/ObjectAnimator.cs:25` | [BIN:STP-PPC:0x100A70B4 channel frame arithmetic] the Feral Mac formula multiplies elapsed milliseconds by 30 and divides by 1000 before channel speed. |
 | STP-PPC:0x100A9F9C sign line | `source/OpenTPW.Files/Formats/Font/SignTextLayout.cs:90` | [BIN:STP-PPC:0x100A9F9C sign line] fit when the extent is below the 2x canvas width; else lo = 1, hi = lfWidth (or -lfHeight when 0), mid = (hi - 1) / 2 + 1; a fitting trial sets lo = mid, mid += (hi - mid) / 2, a wide one sets hi = mid, mid = lo + (mid - lo) / 2; stop on the first fitting trial with hi - lo &lt; 3 |
 | STP-PPC:0x100ABF14 sign compositor | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:26` | [BIN:STP-PPC:0x100ABF14 sign compositor] each line is colour-blitted with its colour block's bytes (+0x430..+0x432 for the first line, +0x444..+0x446 for the second) only when its colour mode is 1 or 2 |
-| STP-PPC:0x100ADF40 BOUNCE | `source/OpenTPW/World/Guests/RideVisitorBridge.cs:655` | [BIN:STP-PPC:0x100ADF40 BOUNCE] scan the +100 slots of the +40 table in index order; the first with visitor word 0 gets visitor, deadline now + 1000 × dur and start now, +108 goes up, return 1; a full table returns 0 and stores nothing |
-| STP-PPC:0x100AE020 UNBOUNCE | `source/OpenTPW/World/Guests/RideVisitorBridge.cs:688` | [BIN:STP-PPC:0x100AE020 UNBOUNCE] slots in index order; release needs deadline &lt; now (cmpw, 0x100AE088) and ((now − start) mod 1000) / 200 == 0 (0x100AE040..0x100AE0B0) |
+| STP-PPC:0x100ADF40 BOUNCE | `source/OpenTPW/World/Guests/RideVisitorBridge.cs:655` | [BIN:STP-PPC:0x100ADF40 BOUNCE] scan the +100 slots of the +40 table in index order; the first with visitor word 0 gets visitor, deadline now + 1000 × dur and start now, +108 goes up, return 1; a full table returns 0 and stores nothing; the deadline comes from one clock call (0xadfb0) and the start from a second (0xadfcc) |
+| STP-PPC:0x100AE020 UNBOUNCE | `source/OpenTPW/World/Guests/RideVisitorBridge.cs:689` | [BIN:STP-PPC:0x100AE020 UNBOUNCE] slots in index order; release needs deadline &lt; now (cmpw, 0x100AE088) and ((now − start) mod 1000) / 200 == 0 (0x100AE040..0x100AE0B0) |
 | STP-PPC:0x100B07E4 RSE RAND | `source/OpenTPW/VM/RideScriptWorld.cs:31` | [BIN:STP-PPC:0x100B07E4 RSE RAND] RAND draws from the world LCG (0x10105328 on the world at TOC −0x7580): (\|s\| &gt;&gt; 1) mod (bound + 1); FINDSCRIPTRAND (0x100B1B8C) picks match (\|s\| &gt;&gt; 1) mod count, drawing only when there is a match |
 | STP-PPC:0x100B5BE0 ride script variable | `source/OpenTPW/Economy/GuestEconomyBridge.cs:33` | [BIN:STP-PPC:0x100B5BE0 ride script variable] the wear step reads script variables 9 (VAR_RUNNING), 5 (VAR_ONRIDE), 2 and 3 and the script's speed (+0xC0, 0x100B5B40); 0x100B57D4 writes 4 (VAR_BREAKSTAT) and 8 (VAR_WORN) |
 | STP-PPC:0x100BB18C sound service | `source/OpenTPW/Audio/AudioMixer.cs:180` | [BIN:STP-PPC:0x100BB18C sound service] while speech plays (and speech is on with a volume above 0) music and the second user volume are set to volume × SoundInfo.DUCKINGLEVEL / 100 |

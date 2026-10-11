@@ -652,7 +652,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// <paramref name="capacity"/> slots (the header bounce size) gets the visitor, its deadline and its start.
 	/// With every slot taken nothing is stored and the visitor is not bouncing.
 	/// </summary>
-	// [BIN:STP-PPC:0x100ADF40 BOUNCE] scan the +100 slots of the +40 table in index order; the first with visitor word 0 gets visitor, deadline now + 1000 × dur and start now, +108 goes up, return 1; a full table returns 0 and stores nothing
+	// [BIN:STP-PPC:0x100ADF40 BOUNCE] scan the +100 slots of the +40 table in index order; the first with visitor word 0 gets visitor, deadline now + 1000 × dur and start now, +108 goes up, return 1; a full table returns 0 and stores nothing; the deadline comes from one clock call (0xadfb0) and the start from a second (0xadfcc)
+	// [APPROX:QUEUE-020] one script-clock reading stands for both of BOUNCE's clock calls: OpenTPW's clock does not advance inside an opcode, the original's can tick between the two calls and put the start 1 ms after the deadline's base, which moves UNBOUNCE's 200 ms window by 1 ms — evidence needed: none for the reading (0xadfb0, 0xadfcc); a stepped clock cannot reproduce the tick
 	internal static bool TakeBounceSlot( List<(int Guest, double Until, double Start)> slots, int capacity, int guest, double until, double now )
 	{
 		for ( var index = 0; index < capacity; index++ )

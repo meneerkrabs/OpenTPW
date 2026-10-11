@@ -223,3 +223,15 @@ are the guests outside rides and shops …") does not say that other things neve
 | `fidelity_register.py --check` | complete, 205 IDs; `test_fidelity_register` 10 OK |
 | CRLF | `git diff --stat` equals `--ignore-cr-at-eol --stat` against `7380ab4` and `8a72a2c` |
 | `git diff --check` (blank-at-eol, blank-at-eof, space-before-tab, cr-at-eol) | clean against both |
+
+## Closed at the merge onto main (WALK-M)
+
+- WV2-1: main's Theme Park Inc `@` shape entry is renumbered from RIDES-029 to the first free RIDES ID (see the merge
+  commit).
+- WV2-2: `fidelity_register.py` also lists IDs that docs prose cites as `APPROX:ID` and no register declares;
+  GATE-002..GATE-005 and the closed QUEUE-007 are now protected.
+- WV2-3: WALK-003 (register line, code tag and GUESTS.md) says that thing types 4–8 and 18 are not neighbours.
+- WV2-4: the BOUNCE BIN label names both clock calls, and QUEUE-020 registers the single script-clock reading.
+- WV2-5: ORACLE.md's seam list names `TakeUnbounced` and `TakeBounceSlot` as internal.
+
+The witnesses in `test_walk_v2.py` are no longer expected failures; they read the working tree.

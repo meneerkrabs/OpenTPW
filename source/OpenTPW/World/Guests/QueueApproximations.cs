@@ -26,6 +26,7 @@ public static class QueueApproximations
 		("QUEUE-016", "rides evaluate admission and queued guests run state 11 once per park turn"),
 		("QUEUE-017", "guests do not choose a broken attraction (VAR_BROKEN ≠ 0)"),
 		("QUEUE-018", "a broken attraction refuses joins as if closed"),
-		("QUEUE-019", "a broken attraction skips admission (VAR_BROKEN ≠ 0 read as ride +408 ≠ 0)")
+		("QUEUE-019", "a broken attraction skips admission (VAR_BROKEN ≠ 0 read as ride +408 ≠ 0)"),
+		("QUEUE-020", "BOUNCE stores one script-clock reading as both the deadline's base and the slot's start; the original reads its millisecond clock 0x10e844 twice, so its start can lie 1 ms after the deadline's base")
 	};
 }

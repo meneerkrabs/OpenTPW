@@ -160,6 +160,27 @@ var text = "[APPROX:TEST-002] runtime string";
             self.assertTrue(any(e.startswith('TEST-002: declared, but docs/FIDELITY-REGISTER.md lists it as retired') for e in errors), errors)
             self.assertIn('TEST-002', collect(root, config).retired)
 
+    def test_ids_retired_in_docs_prose_cannot_be_declared_again(self):
+        # Review WV2-2: GATE-002..GATE-005 were retired in prose ("`[APPROX:GATE-004]` ... now retired"), not in a table.
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'source').mkdir()
+            (root / 'docs').mkdir()
+            code = root / 'source/test.cs'
+            register = root / 'source/register.cs'
+            code.write_text('// [APPROX:TEST-001] one\n')
+            register.write_text('("TEST-001", "rule"),\n')
+            (root / 'docs/GATE.md').write_text('`[APPROX:TEST-001]` stays; `[APPROX:TEST-004]` is now retired (APPROX:OTHER-005).\n')
+            config = {'TEST': 'source/register.cs'}
+            data = collect(root, config)
+            self.assertEqual(data.errors, [])
+            self.assertEqual(data.retired, {'TEST-004': 'docs/GATE.md'})
+            (root / 'docs/FIDELITY-REGISTER.md').write_text(render(data))
+            code.write_text('// [APPROX:TEST-001] one\n// [APPROX:TEST-004] another meaning\n')
+            register.write_text('("TEST-001", "rule"),\n("TEST-004", "another meaning"),\n')
+            errors = collect(root, config).errors
+            self.assertTrue(any(e.startswith('TEST-004: declared, but docs/FIDELITY-REGISTER.md lists it as retired') for e in errors), errors)
+
     def test_register_count_sentence_follows_the_configuration(self):
         # Review WV-10: a merge that adds a register to REGISTERS must not leave a stale count in the document.
         self.assertIn(f'read from the {in_words(len(REGISTERS))} configured C# registers', render(Inventory([], {}, [])))

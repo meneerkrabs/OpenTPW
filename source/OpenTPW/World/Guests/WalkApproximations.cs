@@ -12,7 +12,7 @@ public static class WalkApproximations
 	{
 		("WALK-001", "nothing raises the speed boost +196; only its traced decay runs"),
 		("WALK-002", "avoid_walls models only its edge branch (the first pushing edge of +x, -x, +y, -y); the diagonal-corner branches tried when no edge pushes are left out"),
-		("WALK-003", "separation's neighbours are the guests outside rides and shops at their navigation position, in OpenTPW's list order within a cell, not the original's thing positions +4/+6 and per-cell thing lists"),
+		("WALK-003", "separation's neighbours are the guests outside rides and shops at their navigation position, in OpenTPW's list order within a cell, not the original's thing positions +4/+6 and per-cell thing lists; the original's query 0x10087c also keeps thing types 4–8 and 18, which are not neighbours in OpenTPW"),
 		("WALK-004", "routes are OpenTPW's cell sequences, refilled five waypoints at a time; the stuck reroute prepends the current cell to the rest"),
 		("WALK-005", "a cell is walkable when it is on the current walk (route and extra open cells); the original's edge flags with the +180 mask and its commit callback are not modelled"),
 		("WALK-006", "a queue walk may also enter the queue cell ahead of its destination and the one behind its start, and no other cell off its route"),

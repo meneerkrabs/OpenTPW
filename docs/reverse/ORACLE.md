@@ -134,7 +134,8 @@ The C# comparisons use these seams:
 - `ParkCellMap.CanChangeCellType`.
 - `ParkEconomy.TrySpendCell` in `ParkPathBuilder.Validate` order: refuse, then the same type
   bumps, then the money test. Settings come from `EconomyTestData`.
-- `RideVisitorBridge.TakeUnbounced`, called by reflection because it is private on main.
+- `RideVisitorBridge.TakeUnbounced` and `RideVisitorBridge.TakeBounceSlot`, called by reflection because they are
+  internal.
 - `GuestSpeed.Caps` and `GuestSpeed.Update` (`guest_speed_limits`, `guest_speed_smoothing`), with s passed and
   returned as single bits. `CSharpMutation` flips the fused multiply-add to a plain one and the floor 655 to 654.
 

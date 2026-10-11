@@ -1,5 +1,6 @@
 """Portable texture distribution tests using tiny, synthetic PNG/MP4 fixtures."""
 import hashlib
+import copy
 import importlib.util
 import json
 from pathlib import Path
@@ -248,6 +249,159 @@ class TexturePackPackagingTests(unittest.TestCase):
                        {"max_archive_bytes": 2 ** 31}):
             with self.subTest(kwargs=kwargs), self.assertRaises(pack.PackError):
                 self.package(**kwargs)
+
+
+class SnapshotReindexTests(unittest.TestCase):
+    write = TexturePackPackagingTests.write
+    write_manifest = TexturePackPackagingTests.write_manifest
+    package = TexturePackPackagingTests.package
+    tearDown = TexturePackPackagingTests.tearDown
+
+    def setUp(self):
+        TexturePackPackagingTests.setUp(self)
+        self.index = self.package()
+        self.original_bytes = (self.output / "distribution.json").read_bytes()
+        self.map_path = self.root / "snapshots.json"
+        tag = "clarity-20261011-001"
+        commit = "1" * 40
+        self.pngs = [record for record in self.index["files"] if record["path"].endswith(".png")]
+        self.mapping = {
+            "format": 1, "complete": True, "repository": pack.SNAPSHOT_REPOSITORY,
+            "distributionSha256": hashlib.sha256(self.original_bytes).hexdigest(),
+            "snapshotPrefix": "clarity-20261011", "maxSnapshotBytes": 1024 * 1024,
+            "snapshotCount": 1, "totalFiles": len(self.pngs),
+            "totalSize": sum(record["size"] for record in self.pngs),
+            "snapshots": [{"tag": tag, "commit": commit, "files": len(self.pngs),
+                           "size": sum(record["size"] for record in self.pngs)}],
+            "files": [{**{key: record[key] for key in ("path", "size", "sha256")},
+                       "tag": tag, "commit": commit,
+                       "url": f"https://cdn.jsdelivr.net/gh/{pack.SNAPSHOT_REPOSITORY}@{tag}/{record['path']}"}
+                      for record in self.pngs],
+        }
+
+    def reindex(self, mapping=None):
+        self.map_path.write_text(json.dumps(self.mapping if mapping is None else mapping))
+        return pack.reindex_snapshots(self.output, self.map_path)
+
+    def assert_unchanged(self):
+        self.assertEqual((self.output / "distribution.json").read_bytes(), self.original_bytes)
+        self.assertEqual((self.output / "pages/clarity-enhanced/20261011/distribution.json").read_bytes(),
+                         self.original_bytes)
+        self.assertFalse((self.output / "distribution.pre-cdn.json").exists())
+
+    def test_reindex_binds_exact_pngs_preserves_media_and_updates_both_index_pins(self):
+        archive_bytes = {record["name"]: (self.output / record["name"]).read_bytes()
+                         for record in self.index["archives"]}
+        rewritten = self.reindex()
+        self.assertEqual(rewritten["archives"], self.index["archives"])
+        self.assertEqual(rewritten["movies"], self.index["movies"])
+        self.assertEqual(rewritten["packManifest"], self.index["packManifest"])
+        self.assertEqual(rewritten["textureBaseUrl"], self.index["textureBaseUrl"])
+        for original, updated in zip(self.index["files"], rewritten["files"]):
+            if original["path"].endswith(".png"):
+                self.assertEqual({key: value for key, value in updated.items() if key != "url"}, original)
+                self.assertEqual(updated["url"], next(record["url"] for record in self.mapping["files"]
+                                                      if record["path"] == original["path"]))
+            else:
+                self.assertEqual(updated, original)
+                self.assertNotIn("url", updated)
+        for filename, data in archive_bytes.items():
+            self.assertEqual((self.output / filename).read_bytes(), data)
+        rewritten_bytes = (self.output / "distribution.json").read_bytes()
+        digest = hashlib.sha256(rewritten_bytes).hexdigest()
+        self.assertEqual((self.output / "distribution.pre-cdn.json").read_bytes(), self.original_bytes)
+        self.assertEqual((self.output / "pages/clarity-enhanced/20261011/distribution.json").read_bytes(),
+                         rewritten_bytes)
+        self.assertEqual((self.output / "distribution.sha256").read_text(), digest + "  distribution.json\n")
+        self.assertIn(digest + "  distribution.json", (self.output / "SHA256SUMS.txt").read_text())
+
+    def test_reindex_rejects_incomplete_wrong_repository_or_unbound_maps_before_writes(self):
+        for field, value in (("complete", False), ("complete", 1), ("repository", "attacker/repo"),
+                             ("distributionSha256", "0" * 64), ("snapshotPrefix", "another-prefix"),
+                             ("format", True)):
+            with self.subTest(field=field):
+                mapping = {**self.mapping, field: value}
+                with self.assertRaises(pack.PackError):
+                    self.reindex(mapping)
+                self.assert_unchanged()
+
+    def test_reindex_rejects_missing_extra_duplicate_and_changed_asset_records(self):
+        variants = []
+        for operation in ("missing", "extra", "duplicate", "size", "sha256", "commit", "path"):
+            mapping = copy.deepcopy(self.mapping)
+            if operation == "missing":
+                mapping["files"].pop()
+            elif operation == "extra":
+                mapping["files"].append({**mapping["files"][0], "path": "textures/ui/extra.wct.png"})
+            elif operation == "duplicate":
+                mapping["files"].append(mapping["files"][0])
+            elif operation == "size":
+                mapping["files"][0]["size"] += 1
+            elif operation == "sha256":
+                mapping["files"][0]["sha256"] = "0" * 64
+            elif operation == "commit":
+                mapping["files"][0]["commit"] = "2" * 40
+            else:
+                mapping["files"][0]["path"] = "../escape.png"
+            variants.append((operation, mapping))
+        for operation, mapping in variants:
+            with self.subTest(operation=operation), self.assertRaises(pack.PackError):
+                self.reindex(mapping)
+            self.assert_unchanged()
+
+    def test_reindex_rejects_untrusted_cdn_hosts_tags_paths_and_queries(self):
+        original = self.mapping["files"][0]["url"]
+        urls = [original.replace("cdn.jsdelivr.net", "cdn.jsdelivr.net.attacker.invalid"),
+                original.replace("https://", "http://"), original + "?token=secret",
+                original.replace("clarity-20261011-001", "main"),
+                original.replace("/textures/", "/unrelated/"),
+                original.replace(pack.SNAPSHOT_REPOSITORY, "attacker/repo")]
+        for url in urls:
+            with self.subTest(url=url):
+                mapping = copy.deepcopy(self.mapping)
+                mapping["files"][0]["url"] = url
+                with self.assertRaisesRegex(pack.PackError, "Untrusted snapshot URL"):
+                    self.reindex(mapping)
+                self.assert_unchanged()
+
+    def test_reindex_rejects_snapshot_sequence_and_count_or_size_mismatches(self):
+        variants = []
+        for field in ("totalFiles", "totalSize", "snapshotCount"):
+            mapping = copy.deepcopy(self.mapping)
+            mapping[field] += 1
+            variants.append(mapping)
+        for field in ("size", "files"):
+            mapping = copy.deepcopy(self.mapping)
+            mapping["snapshots"][0][field] += 1
+            variants.append(mapping)
+        mapping = copy.deepcopy(self.mapping)
+        mapping["snapshots"][0]["tag"] = "clarity-20261011-002"
+        variants.append(mapping)
+        for mapping in variants:
+            with self.subTest(mapping=mapping), self.assertRaises(pack.PackError):
+                self.reindex(mapping)
+            self.assert_unchanged()
+
+    def test_reindex_hashes_the_actual_static_file_bytes_before_any_writes(self):
+        page = self.output / "pages/clarity-enhanced/20261011" / self.pngs[0]["path"]
+        content = bytearray(page.read_bytes())
+        content[-1] ^= 1
+        page.write_bytes(content)
+        with self.assertRaisesRegex(pack.PackError, "no longer matches"):
+            self.reindex()
+        self.assert_unchanged()
+
+    def test_reindex_refuses_an_inconsistent_static_index_or_old_backup(self):
+        page_index = self.output / "pages/clarity-enhanced/20261011/distribution.json"
+        page_index.write_bytes(b"{}")
+        with self.assertRaisesRegex(pack.PackError, "indexes differ"):
+            self.reindex()
+        self.assertEqual((self.output / "distribution.json").read_bytes(), self.original_bytes)
+        page_index.write_bytes(self.original_bytes)
+        (self.output / "distribution.pre-cdn.json").write_bytes(b"another backup")
+        with self.assertRaisesRegex(pack.PackError, "backup already exists"):
+            self.reindex()
+        self.assertEqual((self.output / "distribution.json").read_bytes(), self.original_bytes)
 
 
 if __name__ == "__main__":

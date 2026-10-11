@@ -48,6 +48,9 @@ public sealed partial class ParkHud
 		mapScreen ??= CreateMapScreen();
 		Stack.Push( mapScreen );
 		mapScreen.Focus( mapScreen.Find( "close" ) );
+		// [BIN:STP-PPC:0x1015644C drawer message 0x0b] opening the map/research drawer plays cat_ui event 0x1C
+		// [APPROX:AUDIO-007] the sound plays when the map window opens; the original slides a drawer out of the main panel
+		GameAudio.PlayUi( GameAudio.DrawerOpenEvent );
 	}
 
 	public void CloseMapWindow()
@@ -58,6 +61,9 @@ public sealed partial class ParkHud
 			Stack.Pop();
 		if ( Stack.Top == mapScreen )
 			Stack.Pop();
+		// [BIN:STP-PPC:0x1015644C drawer message 0x10] finishing the drawer's collapse plays cat_ui event 0xC2 (through the play-by-id helper 0x101383F8 at 0x101568DC)
+		// [APPROX:AUDIO-007] the sound plays when the map window closes; the original slides a drawer back into the main panel
+		GameAudio.PlayUi( GameAudio.DrawerCloseEvent );
 	}
 
 	public void ZoomMap( int direction )

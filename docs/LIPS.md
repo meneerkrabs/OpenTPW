@@ -120,8 +120,10 @@ Verification: all 965 corpus Layer II streams that ffmpeg also decodes (speech a
 stereo music; same-name duplicates and 1-frame clips ffmpeg rejects excluded) decode to the same length as ffmpeg's `mp2` decoder with a maximum difference of
 **1 LSB** (≈81 dB SNR on speech). Layer II still rejects MPEG-1 and joint stereo;
 Layer I accepts MPEG-1/2 mono, stereo, dual-channel and intensity joint stereo.
-Free format, Layer III and MPEG-2.5 remain unsupported. CRC words are skipped,
-not checked; Layer I nonzero de-emphasis is unsupported. Undefined scalefactor
+Free format, Layer III and MPEG-2.5 remain unsupported. CRC check words are
+verified when protection_bit is 0 (mismatches are counted, not concealed); a
+nonzero emphasis indication decodes through a de-emphasis shelf (see the
+follow-up below). Undefined scalefactor
 63, forbidden Layer I allocation 15 and reserved header values are rejected. `MP2File.FrameData` slices the
 entry at its header-size word; `SoundFile` now reads the validated 40-byte
 packed container fields and aligns `SoundData` to that declared offset.
@@ -174,8 +176,8 @@ events, bank/category scheduling, audio-device output or a game clock.
 
 Compatibility boundary: the original Mac factor table has zero in undefined
 scalefactor column 63; this strict decoder rejects that input. No such index
-occurs in the 3,253,907 parsed private Layer I scalefactors. CRC verification and
-de-emphasis remain separate codec work; original runtime/device equivalence is
+occurs in the 3,253,907 parsed private Layer I scalefactors. CRC verification
+and de-emphasis are implemented below; original runtime/device equivalence is
 not claimed by independent PCM agreement.
 
 The parallel .NET 10 branch independently added Layer I coverage, including a
@@ -186,6 +188,59 @@ within 1 LSB over 63,043,584 samples; that report belongs to the earlier
 implementation. The selected merged implementation retains the combined factor
 arithmetic pinned to all 882 original Mac factors and the separately recorded
 56,410,752-sample corpus comparison above.
+
+### CRC verification and de-emphasis (follow-up)
+
+October 11, 2026. Both remaining codec gaps are closed from the standards'
+published text (the same [ISO text copy](https://previewnorm.com/iec/ISO%20IEC%2011172-3-1993%20PDF.pdf)
+as the Layer I work; no external decoder implementation source was consulted).
+
+**CRC** (ISO/IEC 11172-3 2.4.1.4/2.4.3.1; ISO/IEC 13818-3 2.4.2.4 defers Layers I
+and II to it): CRC-16 with G(x) = x¹⁶+x¹⁵+x²+1, all-ones start, MSB first, over
+header bits 16–31 (bit_rate_index through emphasis) and the first protected bits
+of audio_data. The protected count is fixed by Annex B Table 3-B.5: Layer I 128
+(single channel) or 256 (other modes) allocation bits; Layer II the allocation
+table's Σnbal plus 2×sblimit maximum scfsi bits — the MPEG-1 rows confirm the
+rule (B.2a 88+54=142, B.2b 94+60=154, B.2c 26+16=42, B.2d 38+24=62), and the only
+supported Layer II table, LSF Table B.1 (13818-3: sblimit 30, Σnbal 75), gives
+135/270. No table publishes the LSF row itself; the derivation applies the
+verified MPEG-1 rule, and the generated Layer II frames are self-consistent by
+construction — the external anchors are the catalogue check value, the Layer I
+rows and the four MPEG-1 rows, not the Layer II tests. A mismatch is counted
+(`Mp2Audio.CrcChecks`/`CrcFailures`) and the frame still decodes: 2.4.3.1 only
+*recommends* concealment (muting or repetition), and no shipped frame carries a
+CRC word at all, so the policy cannot regress the corpus (AUDIO-014).
+
+**De-emphasis**: emphasis '01' (50/15 µs) and '11' (CCITT J.17) decode through a
+first-order shelving filter after synthesis, per channel, at the stream's sample
+rate; '10' is reserved and rejected. 50/15 µs inverts the broadcast
+pre-emphasis (zero 15 µs, pole 50 µs; high-frequency shelf 15/50 = −10.46 dB);
+J.17 inverts the published insertion-loss curve
+10·log₁₀((75+(ω/3000)²)/(1+(ω/3000)²)) dB (zero 1/(3000·√75) s, pole 1/3000 s;
+−18.75 dB shelf at high frequencies after the round trip's absolute pad cancels),
+both realized at unity DC gain via the bilinear transform (AUDIO-013; the
+standards give only the analogue characteristic, not a digital realization).
+
+**Corpus inventory** (every SDT entry of the available editions, frames walked
+with the decoder's header rules; `OriginalCorpusCarriesNoCrcWordAndNoEmphasis`,
+skips without `OPENTPW_GAME_PATH`):
+
+| Edition root | Banks | MPEG frames | protection_bit = 0 | CRC failures | emphasis ≠ 00 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `theme-park-world` (PC 1999) | 47 | 416,072 | 0 | — | 0 |
+| `theme-park-world-patch2` | 47 | 416,072 | 0 | — | 0 |
+| `theme-park-world-nl` (Dutch speech/music) | 5 | 89,476 | 0 | — | 0 |
+| `mac-feral` (HFS data forks) | 47 | 417,681 | 0 | — | 0 |
+| `theme-park-world-bonus` | 0 | — | — | — | — |
+
+1,339,301 frames in total, every one with protection_bit = 1 and emphasis '00';
+no non-MPEG entries. The Mac banks were read read-only with `hfsutils`
+(`hcopy -r` of the data forks; the HFS image stayed unchanged and was unmounted
+afterwards). Emphasis and CRC are therefore exercised only by the generated
+tests (`Mp2ErrorProtectionTests`: the CRC-16/MPEG-2 catalogue check value, valid
+and corrupted words per layer, shelf coefficients against the published curves,
+per-channel filtering, mid-stream emphasis change rejection, and the corpus
+inventory).
 
 ## Advisor runtime slice
 
@@ -333,7 +388,9 @@ simulated audio output, plus 3 private tests: model orientation/co-located mouth
 `Advisor*m*` clip decoding and playing against its model, and loading `sp_001` through the game file system).
 Private tests are inconclusive without `OPENTPW_GAME_PATH`. `Layer1DecoderTests`
 adds 27 generated cases and two private checks (`z_error` reference values and
-all 32 global UI-bank entries). Before remote integration, the combined Layer I/Layer II/LIP filter passed
+all 32 global UI-bank entries). `Mp2ErrorProtectionTests` adds the CRC and
+de-emphasis cases of the follow-up above (11 generated + 1 corpus inventory).
+Before remote integration, the combined Layer I/Layer II/LIP filter passed
 49 cases without skips. The merge retains those tests, the parallel branch
 codec tests and the fourteen compressed-entry metadata cases; current
 verification totals are recorded in [PROGRESS.md](PROGRESS.md).
@@ -378,7 +435,10 @@ table fit). The smoke-test thresholds are test-harness checks, not game rules.
 
 Original-runtime observation of the mouth shape choice while talking, the
 remaining advisor triggers and score producers, placement/animation and A/V latency. The
-sequence choice among the decoded `Advisor<level>m<n>` clips for idle/talk poses and mouth shapes. Original sound-bank/category scheduling,
-codec CRC/de-emphasis behavior and device latency still need verification. Layer I
+sequence choice among the decoded `Advisor<level>m<n>` clips for idle/talk poses and mouth shapes. Original sound-bank/category scheduling
+and device latency still need verification. Layer I
 codec support is implemented; automatic sound events are not wired by that change.
+The codec's CRC mismatch policy and de-emphasis realization are documented
+approximations (AUDIO-013/014): no shipped frame exercises either path, so the
+original player's concealment behaviour and filter realization remain unknown.
 Capture comparison remains necessary before claiming original fidelity.

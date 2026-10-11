@@ -268,8 +268,9 @@ public sealed class OriginalObjectRuntime
 /// their channel operand; triggers return the trigger's millisecond result, which <see cref="OpcodeHandlers.Animation"/>
 /// turns into the script's waits; FLUSHANIM(_CH) clears only the deferred clip; GETANIM(_CH) report the AnimID or −1.
 /// COAST goes to the station's <see cref="CoasterRide"/>. Visitor opcodes go to the object's
-/// <see cref="RideVisitorBridge"/> (guests slice). Everything else (sounds, EVENT, objects/particles, the ride-type
-/// controllers TOUR/BUMP, park clock, screams, reverb) stays an unimplemented effect.
+/// <see cref="RideVisitorBridge"/> (guests slice). EVENT and REPAIREFFECT play their original sounds (their other
+/// effects stay unimplemented). Everything else (objects/particles, the ride-type controllers TOUR/BUMP, park clock,
+/// screams, reverb) stays an unimplemented effect.
 /// </summary>
 public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQuery, IRideCanonicalEffects
 {
@@ -316,6 +317,19 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 			return ride.Coaster.Perform( call );
 		if ( ride.Visitors.TryPerform( call, out var visitorResult ) )
 			return visitorResult;
+		// Sound effects play, but their non-audio parts (reverb, 3D position) remain unimplemented effects.
+		if ( call.Opcode == Opcode.EVENT )
+		{
+			// [BIN:STP-PPC:0x100AE930 RSE EVENT effect switch] the type operand selects the sound category (3 level rides, 4 level ambient, 5 global rides, 6 global kids, 7 global staff, 8 global ambient, 9 global UI) and the id operand the event, submitted at the object's position
+			GameAudio.PlayRseEvent( call.Argument( 0 ), unchecked((uint)call.Argument( 2 )) );
+			return UnimplementedRideScriptEffects.Instance.Perform( call );
+		}
+		if ( call.Opcode == Opcode.REPAIREFFECT )
+		{
+			// [BIN:STP-PPC:0x100B1E34 REPAIREFFECT] showing (value 1) starts a cat_kids repair sound (0x100ACC24, event 75 for the traced call); hiding (value 0) plays cat_rides 111 and 211 (0x100B1EC0/0x100B1F00) at the object's position
+			GameAudio.PlayRepairEffect( call.Argument( 0 ) );
+			return UnimplementedRideScriptEffects.Instance.Perform( call );
+		}
 		return UnimplementedRideScriptEffects.Instance.Perform( call );
 	}
 

@@ -419,7 +419,9 @@ public class TexturePackDownloadTests
 				Assert.AreEqual( expectedInterface, TexturePack.EnhancedInterface );
 				Assert.IsNull( TexturePack.Directory, "the installed legacy enhanced world pack must not become active" );
 				Assert.IsNull( TexturePack.Find( "levels/jungle/grass.wct" ) );
-				Assert.AreEqual( expectedInterface ? heroPng : null, TexturePack.Find( "ui/textures/icon.wct" ) );
+				var interfacePng = TexturePack.Find( "ui/textures/icon.wct" );
+				Assert.AreEqual( expectedInterface ? Path.GetFullPath( heroPng ) : null, interfacePng == null ? null : Path.GetFullPath( interfacePng ) );
+				if ( interfacePng != null ) Assert.IsTrue( File.Exists( Path.GetFullPath( interfacePng ) ) );
 				Assert.IsTrue( cancellation.IsCancellationRequested );
 				Assert.AreEqual( callsBeforeFallback, handler.Calls, "the fallback must not make any additional HTTP request" );
 			}

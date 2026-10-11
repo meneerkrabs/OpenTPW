@@ -73,6 +73,17 @@ public partial class Renderer : IDisplaySettings
 	/// <summary>Set by <c>--frame-stats</c>.</summary>
 	internal FrameStats? FrameStats;
 
+	/// <summary>
+	/// Frames the CPU may record while the GPU still reads earlier ones. Data the CPU writes straight into GPU
+	/// memory during a frame (interface vertices) keeps one copy per slot; <see cref="FrameNumber"/> moves to the
+	/// next slot only once the GPU has finished the frame that used it last.
+	/// </summary>
+	public const int FramesInFlight = 3;
+	/// <summary>The frame being recorded; it counts up after each submission.</summary>
+	public long FrameNumber { get; private set; }
+	public static int SlotOf( long frameNumber ) => (int)(frameNumber % FramesInFlight);
+	private Fence[] frameFences = null!;
+
 	private Pipeline _blitPipeline = null!;
 	private ResourceSet? _blitResourceSet;
 	private ResourceLayout _blitResourceLayout = null!;
@@ -108,6 +119,8 @@ public partial class Renderer : IDisplaySettings
 		new Editor( imGuiRenderer, Device );
 
 		CommandList = Device.ResourceFactory.CreateCommandList();
+		// Slots not used yet start signaled; the first frame's own fence is reset like every later one.
+		frameFences = Enumerable.Range( 0, FramesInFlight ).Select( slot => Device.ResourceFactory.CreateFence( signaled: slot != 0 ) ).ToArray();
 		_lastFrame = Stopwatch.GetTimestamp();
 	}
 
@@ -493,9 +506,20 @@ public partial class Renderer : IDisplaySettings
 		CommandList.End();
 		IsFrameRecording = false;
 
-		Device.SubmitCommands( CommandList );
+		var fence = frameFences[SlotOf( FrameNumber )];
+		Device.SubmitCommands( CommandList, fence );
 		Device.SwapBuffers();
 		FrameStats?.FrameEnded();
+		AdvanceFrame();
+	}
+
+	/// <summary>Moves to the next frame slot, waiting until the GPU no longer reads the frame that used it before.</summary>
+	private void AdvanceFrame()
+	{
+		FrameNumber++;
+		var fence = frameFences[SlotOf( FrameNumber )];
+		Device.WaitForFence( fence );
+		Device.ResetFence( fence );
 	}
 
 	private void Compose( Framebuffer target )

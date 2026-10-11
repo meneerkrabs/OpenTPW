@@ -10,6 +10,14 @@ public class VeldridException : Exception
 }
 
 public interface BindableResource { }
+
+/// <summary>WebGL runs every submission before the call returns, so a fence only records that it was submitted.</summary>
+public sealed class Fence : IDisposable
+{
+	internal Fence( bool signaled ) => Signaled = signaled;
+	public bool Signaled { get; internal set; }
+	public void Dispose() { }
+}
 public interface MappableResource { }
 
 /// <summary>A WebGL object behind an integer handle.</summary>

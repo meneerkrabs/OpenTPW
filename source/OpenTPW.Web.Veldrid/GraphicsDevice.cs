@@ -44,6 +44,17 @@ public class GraphicsDevice : IDisposable
 
 	public void SubmitCommands( CommandList commandList ) => commandList.Execute();
 
+	/// <summary>The commands run before this returns, so the fence is signaled at once.</summary>
+	public void SubmitCommands( CommandList commandList, Fence fence )
+	{
+		commandList.Execute();
+		fence.Signaled = true;
+	}
+
+	/// <summary>Fences are signaled by the time anything could wait for them (see <see cref="SubmitCommands(CommandList, Fence)"/>).</summary>
+	public void WaitForFence( Fence fence ) { }
+	public void ResetFence( Fence fence ) => fence.Signaled = false;
+
 	public void SwapBuffers()
 	{
 		var framebuffer = MainSwapchain.Framebuffer;
@@ -146,4 +157,5 @@ public class ResourceFactory
 	public Pipeline CreateGraphicsPipeline( GraphicsPipelineDescription description ) => new( description );
 	public Pipeline CreateGraphicsPipeline( ref GraphicsPipelineDescription description ) => new( description );
 	public CommandList CreateCommandList() => new();
+	public Fence CreateFence( bool signaled ) => new( signaled );
 }

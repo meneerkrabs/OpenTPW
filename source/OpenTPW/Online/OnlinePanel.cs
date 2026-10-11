@@ -9,7 +9,7 @@ internal sealed class OnlinePanel : IDisposable
 	private readonly Level level;
 	private readonly OnlineSession session;
 	private readonly ChatOverlay overlay;
-	private string server = "", name = "", password = "", code = "", parkName = "My park", search = "", importPath = "", chatLine = "";
+	private string server = "", name = "", password = "", code = "", email = "", emailCode = "", parkName = "My park", search = "", importPath = "", chatLine = "";
 	private string recipients = "", title = "", message = "", localStatus = "";
 	private ParkVisitInfo? inspected;
 
@@ -74,9 +74,16 @@ internal sealed class OnlinePanel : IDisposable
 			// Two-step setup: the key to type into an authenticator app (the game's own screen also shows a QR code).
 			ImGui.TextWrapped( OnlineStrings.Get( OnlineLabel.TwoStepInstructions ) );
 			ImGui.TextUnformatted( OpenTPW.Online.Totp.Grouped( enrollment.Secret ) );
+			if ( enrollment.EmailRequired == true )
+			{
+				ImGui.InputText( OnlineStrings.Get( OnlineLabel.EmailAddress ), ref email, 254 );
+				if ( ImGui.Button( OnlineStrings.Get( OnlineLabel.SendCode ) ) )
+					session.SendEnrollmentEmail( email );
+				ImGui.InputText( OnlineStrings.Get( OnlineLabel.EmailCode ), ref emailCode, 8 );
+			}
 			if ( ImGui.Button( OnlineStrings.Get( OnlineLabel.Confirm ) ) )
 			{
-				session.ConfirmEnrollment( code.Trim() );
+				session.ConfirmEnrollment( code.Trim(), emailCode.Trim() );
 				code = "";
 			}
 		}

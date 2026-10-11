@@ -350,6 +350,10 @@ public sealed class OnlineScreens
 			Bounds = new UiRect( window.X + 120, buttonY, 400, 110 ), Anchor = UiAnchor.Center } );
 		screen.Add( new UiButton { Id = "register", Text = () => OnlineStrings.Get( OnlineLabel.Register ), Clicked = () => Submit( register: true ),
 			Bounds = new UiRect( window.X + 560, buttonY, 400, 110 ), Anchor = UiAnchor.Center } );
+		// [EXT:online-email] recovery by e-mail; the server answers the same whether the account exists
+		screen.Add( new UiButton { Id = "forgot", Text = () => OnlineStrings.Get( OnlineLabel.ForgotPassword ),
+			Clicked = () => Guard( () => { Session.UseServer( server.Text.Trim(), name.Text.Trim() ); ShowRecovery( name.Text.Trim() ); } ),
+			Bounds = new UiRect( window.X + 580, window.Y + 735, 400, 90 ), Anchor = UiAnchor.Center } );
 		// Closes itself once the login succeeded; opens the two-step setup when the server sends one; moves to the code
 		// field when the server asks for a code.
 		var codeRequested = false;
@@ -398,15 +402,28 @@ public sealed class OnlineScreens
 		// The key in the label font and the plain text colour: it is typed over by hand when scanning is not possible.
 		screen.Add( new UiLabel { Id = "key", Wrap = true, Text = () => Totp.Grouped( enrollment.Secret ),
 			Bounds = new UiRect( right, window.Y + 420, rightWidth, 200 ), Anchor = UiAnchor.Center } );
-		var code = AddField( screen, "code", () => OnlineStrings.Get( OnlineLabel.AuthenticatorCode ), right, window.Y + 650, 420, Totp.Digits );
+		// The authenticator code under the QR code; on servers that require e-mail, the address and its code on the right.
+		var code = AddField( screen, "code", () => OnlineStrings.Get( OnlineLabel.AuthenticatorCode ), x, window.Y + 960, 420, Totp.Digits );
+		UiTextField? email = null, emailCode = null;
+		if ( enrollment.EmailRequired == true )
+		{
+			// [EXT:online-email] the recovery address of the new account, confirmed with a code before the account exists
+			email = AddField( screen, "email", () => OnlineStrings.Get( OnlineLabel.EmailAddress ), right, window.Y + 590, rightWidth, 254 );
+			screen.Add( new UiButton { Id = "sendCode", Text = () => OnlineStrings.Get( OnlineLabel.SendCode ),
+				Clicked = () => Guard( () => Session.SendEnrollmentEmail( email.Text.Trim() ) ),
+				Bounds = new UiRect( right, window.Y + 750, 360, 90 ), Anchor = UiAnchor.Center } );
+			emailCode = AddField( screen, "emailCode", () => OnlineStrings.Get( OnlineLabel.EmailCode ), right, window.Y + 845, 360, 8 );
+			email.Submitted = () => Guard( () => Session.SendEnrollmentEmail( email.Text.Trim() ) );
+			emailCode.Submitted = () => screen.Focus( code );
+		}
 		void Confirm()
 		{
-			Guard( () => Session.ConfirmEnrollment( code.Text.Trim() ) );
+			Guard( () => Session.ConfirmEnrollment( code.Text.Trim(), emailCode?.Text.Trim() ) );
 			code.Text = "";
 		}
 		code.Submitted = Confirm;
 		screen.Add( new UiButton { Id = "confirm", Text = () => OnlineStrings.Get( OnlineLabel.Confirm ), Clicked = Confirm,
-			Bounds = new UiRect( right, window.Y + 860, 400, 110 ), Anchor = UiAnchor.Center } );
+			Bounds = new UiRect( right, window.Y + 1000, 400, 110 ), Anchor = UiAnchor.Center } );
 		void Cancel()
 		{
 			Session.CancelEnrollment();
@@ -422,7 +439,52 @@ public sealed class OnlineScreens
 		screen.Add( new UiButton { Id = "back", Model = "b_listpark", Text = () => strings.Extra( OpenTpwText.Back ), Clicked = Cancel,
 			Bounds = new UiRect( window.Right - 540, window.Bottom - 175, 320, 110 ), Anchor = UiAnchor.Center } );
 		screen.Back = Cancel;
-		screen.Focus( code );
+		screen.Focus( (UiElement?)email ?? code );
+		Push( screen );
+	}
+
+	// ---- Account recovery (OpenTPW) -----------------------------------------------------------
+
+	/// <summary>
+	/// [EXT:online-email] Recovery by e-mail: a code sent to the account's address sets a new password, and on request sets up
+	/// two-step login again. Then the player logs in as usual from the login dialog.
+	/// </summary>
+	public void ShowRecovery( string nameOrEmail = "" )
+	{
+		var screen = new UiScreen( "recovery" );
+		var window = UiDialogs.CenteredWindow( 1150, 1300 );
+		UiDialogs.AddWindow( screen, window, "w_med", () => OnlineStrings.Get( OnlineLabel.AccountRecovery ) );
+		var x = window.X + 120;
+		var width = window.Width - 340;
+		var who = AddField( screen, "nameOrEmail", () => OnlineStrings.Get( OnlineLabel.NameOrEmail ), x, window.Y + 160, width, 254 );
+		who.Text = nameOrEmail;
+		screen.Add( new UiButton { Id = "sendCode", Text = () => OnlineStrings.Get( OnlineLabel.SendCode ),
+			Clicked = () => Guard( () => Session.RequestRecovery( who.Text.Trim() ) ), Bounds = new UiRect( x, window.Y + 320, 400, 90 ), Anchor = UiAnchor.Center } );
+		var code = AddField( screen, "code", () => OnlineStrings.Get( OnlineLabel.EmailCode ), x, window.Y + 440, 360, 8 );
+		var password = AddField( screen, "password", () => OnlineStrings.Get( OnlineLabel.NewPassword ), x, window.Y + 610, width, 16 );
+		password.Password = true;
+		var resetTwoStep = false;
+		screen.Add( new UiButton { Id = "twoStep", Text = () => OnlineStrings.Get( resetTwoStep ? OnlineLabel.ResetTwoStep : OnlineLabel.KeepTwoStep ),
+			Clicked = () => resetTwoStep = !resetTwoStep, Bounds = new UiRect( x, window.Y + 790, width, 90 ), Anchor = UiAnchor.Center } );
+		void Confirm() => Guard( () => Session.ConfirmRecovery( who.Text.Trim(), code.Text.Trim(), password.Text, resetTwoStep ) );
+		who.Submitted = () => Guard( () => Session.RequestRecovery( who.Text.Trim() ) );
+		code.Submitted = () => screen.Focus( password );
+		password.Submitted = Confirm;
+		screen.Add( new UiButton { Id = "confirm", Text = () => OnlineStrings.Get( OnlineLabel.Confirm ), Clicked = Confirm,
+			Bounds = new UiRect( x, window.Y + 930, 400, 110 ), Anchor = UiAnchor.Center } );
+		screen.Updating += _ =>
+		{
+			// Done: back to the login dialog, which shows the result in its status line.
+			if ( stack.Top == screen && Session.PasswordReset )
+			{
+				Session.PasswordReset = false;
+				password.Text = "";
+				stack.Pop();
+			}
+		};
+		AddStatus( screen, window );
+		AddBack( screen, window );
+		screen.Focus( who.Text.Length == 0 ? who : code );
 		Push( screen );
 	}
 

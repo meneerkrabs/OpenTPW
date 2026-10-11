@@ -16,7 +16,7 @@ public static class ServerProgram
 {
 	public const string Version = "1.0";
 	/// <summary>2: registration may answer 202 with a two-step setup (docs/ONLINE.md, "Two-step login").</summary>
-	public const int ProtocolVersion = 2;
+	public const int ProtocolVersion = 3;
 	private const string WebsitePolicy = "website";
 	/// <summary>File in the data folder that asks the host to update the server (deploy/opentpw-deploy.path).</summary>
 	public const string DeployRequestFile = ".deploy-requested";
@@ -31,7 +31,8 @@ public static class ServerProgram
 		return 0;
 	}
 
-	public static WebApplication Build( string[] args, Action<ServerOptions>? configure = null )
+	/// <param name="emailSender">Replaces the Resend sender (tests); null uses <see cref="ServerOptions.ResendApiKey"/> when set.</param>
+	public static WebApplication Build( string[] args, Action<ServerOptions>? configure = null, IEmailSender? emailSender = null )
 	{
 		var builder = WebApplication.CreateBuilder( new WebApplicationOptions { Args = args, ContentRootPath = AppContext.BaseDirectory } );
 		var options = new ServerOptions();
@@ -84,7 +85,10 @@ public static class ServerProgram
 		app.UseWebSockets( new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds( 30 ) } );
 		app.UseCors();
 		app.UseRateLimiter();
-		Map( app, options, store, hub, filter );
+		// [EXT:online-email] account e-mails go through Resend when a key is set; without one, e-mail is off
+		emailSender ??= string.IsNullOrWhiteSpace( options.ResendApiKey ) || string.IsNullOrWhiteSpace( options.EmailFrom )
+			? null : new ResendEmailSender( options.ResendApiKey, options.EmailFrom, options.EmailReplyTo );
+		Map( app, options, store, hub, filter, emailSender );
 		app.Lifetime.ApplicationStopping.Register( hub.Restarting );
 		return app;
 	}
@@ -122,7 +126,7 @@ public static class ServerProgram
 	}
 
 	/// <summary>Reads a <see cref="ChatAuthentication"/> first frame; null when it is missing, late, too large or wrong.</summary>
-	private static async Task<AccountRecord?> AuthenticateFirstFrameAsync( System.Net.WebSockets.WebSocket socket, ServerStore store, CancellationToken aborted )
+	private static async Task<(AccountRecord? User, string? Token)> AuthenticateFirstFrameAsync( System.Net.WebSockets.WebSocket socket, ServerStore store, CancellationToken aborted )
 	{
 		using var timeout = CancellationTokenSource.CreateLinkedTokenSource( aborted );
 		timeout.CancelAfter( ChatAuthentication.Timeout );
@@ -134,18 +138,19 @@ public static class ServerProgram
 			{
 				var result = await socket.ReceiveAsync( buffer.AsMemory( length ), timeout.Token );
 				if ( result.MessageType != System.Net.WebSockets.WebSocketMessageType.Text )
-					return null;
+					return (null, null);
 				length += result.Count;
 				if ( result.EndOfMessage )
 					break;
 				if ( length == buffer.Length )
-					return null;
+					return (null, null);
 			}
-			return store.Authenticate( ChatAuthentication.ParseToken( buffer.AsSpan( 0, length ) ) );
+			var token = ChatAuthentication.ParseToken( buffer.AsSpan( 0, length ) );
+			return (store.Authenticate( token ), token);
 		}
 		catch ( Exception exception ) when ( exception is OperationCanceledException or System.Net.WebSockets.WebSocketException or InvalidDataException or System.Text.Json.JsonException )
 		{
-			return null;
+			return (null, null);
 		}
 	}
 
@@ -214,7 +219,7 @@ public static class ServerProgram
 			throw new StoreException( StatusCodes.Status400BadRequest, $"{what} contains words blocked by this server's filter." );
 	}
 
-	private static void Map( WebApplication app, ServerOptions options, ServerStore store, ChatHub hub, WordFilter filter )
+	private static void Map( WebApplication app, ServerOptions options, ServerStore store, ChatHub hub, WordFilter filter, IEmailSender? emailSender )
 	{
 		app.MapGet( ApiRoutes.Server, () => Ok( new ServerInfo( options.ServerName, Version, ProtocolVersion, options.Message, options.AllowRegistration, !filter.IsEmpty,
 			ParkPackage.MaximumPackageBytes, Postcard.MaximumCardBytes, options.MaximumParksPerPlayer, options.MaximumVotesPerDay ) ) );
@@ -273,7 +278,56 @@ public static class ServerProgram
 		app.MapPost( ApiRoutes.AccountConfirmation, Handler( context => Guarded( context, store, false, async _ =>
 		{
 			var confirmation = await ReadJsonAsync<TotpConfirmation>( context.Request );
-			return Ok( store.ConfirmEnrollment( confirmation.Name ?? "", confirmation.Ticket ?? "", confirmation.Code ?? "" ), StatusCodes.Status201Created );
+			return Ok( store.ConfirmEnrollment( confirmation.Name ?? "", confirmation.Ticket ?? "", confirmation.Code ?? "", confirmation.EmailCode ), StatusCodes.Status201Created );
+		} ) ) ).RequireRateLimiting( "auth" );
+
+		// [EXT:online-email] the address of a new account, confirmed with a code; then recovery by e-mail.
+		// E-mails are sent after the store has committed and outside its lock.
+		app.MapPost( ApiRoutes.AccountEmail, Handler( context => Guarded( context, store, false, async _ =>
+		{
+			if ( emailSender == null )
+				return Error( StatusCodes.Status404NotFound, "This server does not send e-mail." );
+			var request = await ReadJsonAsync<EnrollmentEmail>( context.Request );
+			var message = store.PrepareEnrollmentEmail( request.Name ?? "", request.Ticket ?? "", request.Email ?? "", request.Language );
+			try { await emailSender.SendAsync( message, context.RequestAborted ); }
+			catch ( EmailException exception )
+			{
+				app.Logger.LogWarning( "Account e-mail not sent: {Reason}", exception.Message );
+				return Error( StatusCodes.Status502BadGateway, "The e-mail could not be sent; try again later." );
+			}
+			return Results.Accepted();
+		} ) ) ).RequireRateLimiting( "auth" );
+
+		app.MapPost( ApiRoutes.Recovery, Handler( context => Guarded( context, store, false, async _ =>
+		{
+			// Without mail there is no recovery: that tells about the server, not about any account.
+			if ( emailSender == null )
+				return Error( StatusCodes.Status404NotFound, "This server does not send e-mail; ask its operator." );
+			var request = await ReadJsonAsync<RecoveryRequest>( context.Request );
+			// The same answer whether the name or address exists, has an address, or hit the e-mail limit.
+			// The e-mail goes out in the background, so the answer takes as long either way.
+			if ( store.PrepareRecovery( request.NameOrEmail ?? "", request.Language ) is { } message )
+			{
+				var sending = Task.Run( async () =>
+				{
+					try { await emailSender.SendAsync( message, CancellationToken.None ); }
+					catch ( EmailException exception ) { app.Logger.LogWarning( "Recovery e-mail not sent: {Reason}", exception.Message ); }
+				} );
+			}
+			return Results.Accepted();
+		} ) ) ).RequireRateLimiting( "auth" );
+
+		app.MapPost( ApiRoutes.RecoveryConfirmation, Handler( context => Guarded( context, store, false, async _ =>
+		{
+			var request = await ReadJsonAsync<RecoveryConfirmation>( context.Request );
+			var (account, notice) = store.ConfirmRecovery( request.NameOrEmail ?? "", request.Code ?? "", request.Password ?? "", request.ResetTwoStep, request.Language );
+			hub.Disconnect( account.Key );
+			if ( emailSender != null )
+			{
+				try { await emailSender.SendAsync( notice, context.RequestAborted ); }
+				catch ( EmailException exception ) { app.Logger.LogWarning( "Password notice not sent: {Reason}", exception.Message ); }
+			}
+			return Results.NoContent();
 		} ) ) ).RequireRateLimiting( "auth" );
 
 		// Deleting an account asks for the password again, not just a session token.
@@ -425,7 +479,8 @@ public static class ServerProgram
 			try
 			{
 				using var socket = await context.WebSockets.AcceptWebSocketAsync();
-				user ??= await AuthenticateFirstFrameAsync( socket, store, context.RequestAborted );
+				if ( user == null )
+					(user, token) = await AuthenticateFirstFrameAsync( socket, store, context.RequestAborted );
 				if ( waiting )
 				{
 					waiting = false;
@@ -436,7 +491,9 @@ public static class ServerProgram
 					await ChatHub.CloseAsync( socket, System.Net.WebSockets.WebSocketCloseStatus.PolicyViolation, "unauthorized" );
 					return;
 				}
-				await hub.RunAsync( socket, user, context.RequestAborted );
+				// Checked again once the connection is in the hub: a recovery or deletion that ended the session meanwhile
+				// found no connection to close.
+				await hub.RunAsync( socket, user, context.RequestAborted, () => store.Authenticate( token ) != null );
 			}
 			finally
 			{

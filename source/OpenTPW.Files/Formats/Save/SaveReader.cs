@@ -13,6 +13,8 @@ public class SaveReader : BaseFormat, IDisposable
 	public const int MaximumDecodedBytes = 64 * 1024 * 1024;
 	private const int ChunkOffset = 0x60d;
 	private const int PayloadOffset = ChunkOffset + 28;
+	private const int ExtendedHeaderLength = 24;
+	private static ReadOnlySpan<byte> ExtendedHeader => "\x01\x13\0\0\0Version: Beta_21\r\n\0"u8;
 	private byte[] container = Array.Empty<byte>();
 	private readonly int maximumContainerBytes;
 	private readonly int maximumDecodedBytes;
@@ -72,27 +74,42 @@ public class SaveReader : BaseFormat, IDisposable
 		var magic = BinaryPrimitives.ReadUInt32LittleEndian( container );
 		if ( magic != 500 && magic != 400 )
 			throw new InvalidDataException( $"Unsupported save container magic 0x{magic:X8}." );
-		var version = container[0x608];
+		var headerShift = GetHeaderShift( magic );
+		if ( container.Length < PayloadOffset + headerShift + 6 )
+			throw new InvalidDataException( "Save container is truncated before its zlib payload." );
+		var chunkOffset = ChunkOffset + headerShift;
+		var version = container[0x608 + headerShift];
 		if ( version != 133 )
 			throw new InvalidDataException( $"Unsupported save container version {version}; expected 133." );
-		if ( container[0x609] != 0 )
+		if ( container[0x609 + headerShift] != 0 )
 			throw new NotSupportedException( "Online save containers are not supported." );
-		if ( !container.AsSpan( ChunkOffset, 4 ).SequenceEqual( "BILZ"u8 ) )
-			throw new InvalidDataException( $"Missing BILZ chunk at offset 0x{ChunkOffset:X}." );
-		var decodedLength = BinaryPrimitives.ReadUInt32LittleEndian( container.AsSpan( ChunkOffset + 4 ) );
-		var chunkLength = BinaryPrimitives.ReadUInt32LittleEndian( container.AsSpan( ChunkOffset + 8 ) );
+		if ( !container.AsSpan( chunkOffset, 4 ).SequenceEqual( "BILZ"u8 ) )
+			throw new InvalidDataException( $"Missing BILZ chunk at offset 0x{chunkOffset:X}." );
+		var decodedLength = BinaryPrimitives.ReadUInt32LittleEndian( container.AsSpan( chunkOffset + 4 ) );
+		var chunkLength = BinaryPrimitives.ReadUInt32LittleEndian( container.AsSpan( chunkOffset + 8 ) );
 		if ( decodedLength > maximumDecodedBytes )
 			throw new InvalidDataException( $"Declared save payload exceeds the {maximumDecodedBytes}-byte decoded limit." );
-		if ( chunkLength != container.Length - ChunkOffset )
+		if ( chunkLength != container.Length - chunkOffset )
 			throw new InvalidDataException( "BILZ chunk length does not match the remaining container bytes." );
-		return new SaveContainerInfo( magic, BinaryPrimitives.ReadUInt32LittleEndian( container.AsSpan( 0x604 ) ), version, (int)decodedLength, (int)chunkLength );
+		return new SaveContainerInfo( magic, BinaryPrimitives.ReadUInt32LittleEndian( container.AsSpan( 0x604 + headerShift ) ), version, (int)decodedLength, (int)chunkLength );
+	}
+
+	private int GetHeaderShift( uint magic )
+	{
+		if ( magic != 500 || container[4] != 1 )
+			return 0;
+		// [DATA:PreBuilt/prebuilt.TPWS:extended header] The observed TPWS profile inserts these 24 bytes after magic.
+		if ( !container.AsSpan( 4, ExtendedHeaderLength ).SequenceEqual( ExtendedHeader ) )
+			throw new InvalidDataException( "Unsupported extended TPWS header profile." );
+		return ExtendedHeaderLength;
 	}
 
 	public byte[] ReadFile()
 	{
 		var header = Inspect();
+		var payloadOffset = PayloadOffset + GetHeaderShift( header.Magic );
 		var inflater = new Inflater();
-		inflater.SetInput( container, PayloadOffset, container.Length - PayloadOffset );
+		inflater.SetInput( container, payloadOffset, container.Length - payloadOffset );
 		using var output = new MemoryStream();
 		var readBuffer = new byte[8192];
 		try

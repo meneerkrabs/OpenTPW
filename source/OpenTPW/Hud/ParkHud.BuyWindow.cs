@@ -197,9 +197,9 @@ public sealed partial class ParkHud
 				Selected = () => buy.Category == category.Category, Bounds = category.Rect, Anchor = UiAnchor.Center
 			} );
 		}
-		// [DATA:Mac buy table 0x4cd94:-2,511] b_exit (help 2) closes; b_allstaff (help 153) opens the staff list, which OpenTPW does not have yet
+		// [DATA:Mac buy table 0x4cd94:-2,511] b_exit (help 2) closes; b_allstaff (help 153) opens the staff window.
 		screen.Add( new UiButton { Id = "exit", Model = "b_exit", Help = strings.Help( 2 ), Clicked = CloseBuyWindow, Bounds = Rect( 1889, 818, 1972, 901 ), Anchor = UiAnchor.Center } );
-		screen.Add( new UiButton { Id = "allStaff", Model = "b_allstaff", Help = strings.Help( 153 ), Enabled = false, Bounds = Rect( 1866, 583, 1968, 686 ), Anchor = UiAnchor.Center } );
+		screen.Add( new UiButton { Id = "allStaff", Model = "b_allstaff", Help = strings.Help( 153 ), Clicked = OpenStaffWindow, Bounds = Rect( 1866, 583, 1968, 686 ), Anchor = UiAnchor.Center } );
 		screen.Back = CloseBuyWindow;
 		return screen;
 	}

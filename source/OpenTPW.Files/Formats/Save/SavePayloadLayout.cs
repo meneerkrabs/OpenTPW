@@ -162,6 +162,44 @@ public sealed class SavePayloadLayout
 		return new SavePayloadLayout( payload.Length, published != 0, result );
 	}
 
+	/// <summary>
+	/// Splits the observed Theme Park Inc prebuilt payload by its unique writer-order delimiters.
+	/// Its Camera block is 48 bytes, so the Theme Park World fixed-width parser does not apply.
+	/// </summary>
+	public static SavePayloadLayout ParseThemeParkInc( ReadOnlySpan<byte> payload )
+	{
+		if ( payload.Length > MaximumPayloadBytes )
+			throw new InvalidDataException( $"Save payload exceeds the {MaximumPayloadBytes}-byte limit." );
+		if ( payload.Length < ActionRecordingHeaderBytes )
+			throw new InvalidDataException( "Theme Park Inc save is truncated inside the action recording header." );
+		var published = BinaryPrimitives.ReadUInt32LittleEndian( payload );
+		if ( published > 1 )
+			throw new InvalidDataException( "Theme Park Inc save has a non-boolean published-park flag." );
+		var recording = BinaryPrimitives.ReadUInt32LittleEndian( payload[4..] );
+		if ( recording > (uint)(payload.Length - ActionRecordingHeaderBytes) )
+			throw new InvalidDataException( "Theme Park Inc action recording extends past the payload." );
+		var position = ActionRecordingHeaderBytes + (int)recording;
+		var blocks = new SavePayloadBlock[Delimiters.Count + 2];
+		blocks[0] = new SavePayloadBlock( SaveBlock.ActionRecording, "", 0, position, -1 );
+		Span<byte> stored = stackalloc byte[DelimiterBytes];
+		foreach ( var (block, tag) in Delimiters )
+		{
+			Stored( tag, stored );
+			var relativeEnd = payload[position..].IndexOf( stored );
+			if ( relativeEnd < 0 )
+				throw new InvalidDataException( $"Theme Park Inc save is missing the {tag} delimiter." );
+			var end = position + relativeEnd;
+			if ( payload[(end + DelimiterBytes)..].IndexOf( stored ) >= 0 )
+				throw new InvalidDataException( $"Theme Park Inc save has more than one {tag} delimiter candidate." );
+			if ( block == SaveBlock.Camera && relativeEnd != 48 )
+				throw new InvalidDataException( $"Theme Park Inc Camera block is {relativeEnd} bytes; the observed prebuilt profile has 48." );
+			blocks[(int)block] = new SavePayloadBlock( block, tag, position, relativeEnd, end );
+			position = end + DelimiterBytes;
+		}
+		blocks[^1] = new SavePayloadBlock( SaveBlock.UI, "", position, payload.Length - position, -1 );
+		return new SavePayloadLayout( payload.Length, published != 0, blocks );
+	}
+
 	/// <summary>Whether a block of <paramref name="length"/> bytes at <paramref name="offset"/> meets its traced width rules.</summary>
 	private static string? WidthError( ReadOnlySpan<byte> payload, SaveBlock block, int offset, int length )
 	{

@@ -14,9 +14,9 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **225 unresolved unique APPROX IDs**, 243 APPROX occurrences, 101 EXT occurrences, 100 DATA occurrences and 181 BIN occurrences.
+Current inventory: **239 unresolved unique APPROX IDs**, 260 APPROX occurrences, 101 EXT occurrences, 116 DATA occurrences and 181 BIN occurrences.
 
-Of these, 219 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
+Of these, 233 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
 CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.
 
@@ -33,9 +33,9 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | ONLINE | 6 | 6 |
 | PATH | 14 | 15 |
 | QUEUE | 19 | 19 |
-| RIDES | 27 | 27 |
+| RIDES | 28 | 28 |
 | SAVE | 11 | 11 |
-| UI | 55 | 68 |
+| UI | 68 | 84 |
 | WALK | 10 | 10 |
 
 ## Approximation declarations
@@ -191,6 +191,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | RIDES-028 | Original-fidelity area (scope unadjudicated) | non-walkable object access cells use the nearest walkable path | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:35` |
 | RIDES-030 | Original-fidelity area (scope unadjudicated) | non-finite object texture coordinates drawn as (0, 0) | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:36` |
 | RIDES-031 | Original-fidelity area (scope unadjudicated) | Theme Park Inc shape symbol @ (road sign span) treated as occupied | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:37` |
+| RIDES-040 | Original-fidelity area (scope unadjudicated) | Theme Park Inc fixed scene records saved at (0, 0) use their local model origin; other transform fields are not decoded | See source annotation/runtime register | `source/OpenTPW/World/Objects/RidesApproximations.cs:38` |
 | SAVE-001 | Original-fidelity area (scope unadjudicated) | the save's world generator state (mRandomSeed) is reported but not imported: OpenTPW's economy, guest and script streams keep their world-seed derivation | See source annotation/runtime register | `source/OpenTPW/Economy/SaveApproximations.cs:12` |
 | SAVE-002 | Original-fidelity area (scope unadjudicated) | the saved guests (model 1) are not imported; OpenTPW's guest simulation starts with its own arrivals | See source annotation/runtime register | `source/OpenTPW/Economy/SaveApproximations.cs:13` |
 | SAVE-003 | Original-fidelity area (scope unadjudicated) | saved staff are imported with their state enum read in STAFFSTATES.str order, their inline name replaced by name index 0, their hire time stamp rounded down to its park turn and no job, patrol region, rest area, energy, idle tick, role suffix or position | See source annotation/runtime register | `source/OpenTPW/Economy/SaveApproximations.cs:14` |
@@ -257,6 +258,19 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | UI-064 | Original-fidelity area (scope unadjudicated) | research main workload knob shows the current value with linear travel but cannot change it here | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:64` |
 | UI-065 | Original-fidelity area (scope unadjudicated) | research effort sliders use linear 0..100 travel across their authored tracks | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:65` |
 | UI-066 | Original-fidelity area (scope unadjudicated) | research progress uses a simple fill inside the fluid model cell | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:66` |
+| UI-080 | Original-fidelity area (scope unadjudicated) | staff list has ten equal rows in the table content area and the wheel moves one row | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:67` |
+| UI-081 | Original-fidelity area (scope unadjudicated) | applicant details use expected monthly wage and grade-derived skill | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:68` |
+| UI-082 | Original-fidelity area (scope unadjudicated) | selected staff role and grade are text in the portrait frame until the original portrait art is resolved | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:69` |
+| UI-083 | Original-fidelity area (scope unadjudicated) | Enter or a second click on the selected applicant hires them | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:70` |
+| UI-084 | Original-fidelity area (scope unadjudicated) | repeated staff header presses reverse the ascending sort order | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:71` |
+| UI-085 | Original-fidelity area (scope unadjudicated) | the 512 pixel theme map places five-pixel terrain cells centrally; live overlays use that mapping | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:72` |
+| UI-086 | Original-fidelity area (scope unadjudicated) | paths, queues and placed objects use plain coloured cells over the shipped theme map image; category buttons filter object footprints | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:73` |
+| UI-087 | Original-fidelity area (scope unadjudicated) | map zoom changes by half a step and a pan moves one eighth of the visible image | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:74` |
+| UI-088 | Original-fidelity area (scope unadjudicated) | map controls for tracks, visitors, staff and metrics stay disabled without per-cell data or decoded handlers | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:75` |
+| UI-089 | Original-fidelity area (scope unadjudicated) | the generic sandbox has no shipped theme map image; its live grid and heights form a simple terrain base | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:76` |
+| UI-090 | Original-fidelity area (scope unadjudicated) | staff table control 9366 toggles between applicant and employed views | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:77` |
+| UI-091 | Original-fidelity area (scope unadjudicated) | staff and visitor locate controls remain disabled until world positions can be targeted | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:78` |
+| UI-092 | Original-fidelity area (scope unadjudicated) | an explicit dismiss button below the portrait confirms with the localized prompt before calling economy Fire | See source annotation/runtime register | `source/OpenTPW/UI/Original/UiApproximations.cs:79` |
 | WALK-001 | Original-fidelity area (scope unadjudicated) | nothing raises the speed boost +196; only its traced decay runs | See source annotation/runtime register | `source/OpenTPW/World/Guests/WalkApproximations.cs:13` |
 | WALK-002 | Original-fidelity area (scope unadjudicated) | avoid_walls models only its edge branch (the first pushing edge of +x, -x, +y, -y); the diagonal-corner branches tried when no edge pushes are left out | See source annotation/runtime register | `source/OpenTPW/World/Guests/WalkApproximations.cs:14` |
 | WALK-003 | Original-fidelity area (scope unadjudicated) | separation's neighbours are the guests outside rides and shops at their navigation position, in OpenTPW's list order within a cell, not the original's thing positions +4/+6 and per-cell thing lists; the original's query 0x10087c also keeps thing types 4–8 and 18, which are not neighbours in OpenTPW | See source annotation/runtime register | `source/OpenTPW/World/Guests/WalkApproximations.cs:15` |
@@ -457,12 +471,12 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | RIDES-011 | `source/OpenTPW/World/Objects/ObjectShape.cs:74` | [APPROX:RIDES-011] Meanings of N/E (exit), &lt;/&gt; (station ends), + (upgrade cells), W (occupied) are inferred; 2, S, *, . are verified in Easymode — evidence needed: saves/captures with these rides |
 | RIDES-012 | `source/OpenTPW/World/Objects/ObjectShape.cs:140` | [APPROX:RIDES-012] Access cells open across the first/last row before the first/last column (verified only for first/last-row cells) — evidence needed: saves with side entrances |
 | RIDES-013 | `source/OpenTPW/World/Objects/ObjectShape.cs:105` | [APPROX:RIDES-013] Rotation 180 and non-square rotated footprints follow the rigid rotation verified for 0/90/270 squares — evidence needed: a save with such objects |
-| RIDES-014 | `source/OpenTPW/World/Objects/ParkObjects.cs:160` | [APPROX:RIDES-014] Object base height = mean ground height of its footprint cells (.hmp ground deformation not decoded) — evidence needed: .hmp format, captures on slopes |
-| RIDES-015 | `source/OpenTPW/World/Objects/ParkObjects.cs:197` | [APPROX:RIDES-015] Imported objects start open (saved ride state not decoded); built objects open too — evidence needed: TPWS ride-state fields, original build behaviour |
+| RIDES-014 | `source/OpenTPW/World/Objects/ParkObjects.cs:162` | [APPROX:RIDES-014] Object base height = mean ground height of its footprint cells (.hmp ground deformation not decoded) — evidence needed: .hmp format, captures on slopes |
+| RIDES-015 | `source/OpenTPW/World/Objects/ParkObjects.cs:199` | [APPROX:RIDES-015] Imported objects start open (saved ride state not decoded); built objects open too — evidence needed: TPWS ride-state fields, original build behaviour |
 | RIDES-016 | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:44` | [DATA:&lt;object&gt;.sam:Upgrades[0].InitDuration] [APPROX:RIDES-016] written raw; unit per Info.DurationUnit unverified — evidence needed: binary conversion of InitDuration |
 | RIDES-017 | `source/OpenTPW/World/Objects/ObjectCatalog.cs:127` | [APPROX:RIDES-017] Buildable = WhichUIType 0–3, not fixed/tool/upgrade (DATA:Info.WhichUIType comment "4 = Not to be shown in UI") — evidence needed: original build-menu contents |
 | RIDES-018 | `source/OpenTPW/World/Objects/ParkObjects.cs:110` | [APPROX:RIDES-018] Build rules = footprint inside grid + MAP/save terrain rules + no overlap; no slope, path or land rule; Level.PlaceObject enforces economy purchases — evidence needed: original build checks (binary/captures) |
-| RIDES-019 | `source/OpenTPW/World/Objects/ParkObjects.cs:216` | [APPROX:RIDES-019] Levels without a save get Gates, Lights and Bus (the fixed items Easymode records) — evidence needed: original fixed-item spawning per level |
+| RIDES-019 | `source/OpenTPW/World/Objects/ParkObjects.cs:219` | [APPROX:RIDES-019] Levels without a save get Gates, Lights and Bus (the fixed items Easymode records) — evidence needed: original fixed-item spawning per level |
 | RIDES-021 | `source/OpenTPW/World/Level.Objects.cs:319` | [APPROX:RIDES-021] Built footprint is centred on the clicked cell; the cursor ray hits the Z = 0 plane — evidence needed: original build cursor behaviour |
 | RIDES-022 | `source/OpenTPW/World/Objects/ObjectAssets.cs:123` | [APPROX:RIDES-022] Texture search: archive textures, gtexture, theme sharetex (stexture/ssharete low-detail sets unused) — evidence needed: binary texture lookup order |
 | RIDES-023 | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:115` | [APPROX:RIDES-023] A completed cycle = VAR_RUNNING 1 → 0 — evidence needed: original ride-cycle/income accounting |
@@ -472,6 +486,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | RIDES-028 | `source/OpenTPW/World/Level.Objects.cs:278` | [APPROX:RIDES-028] A non-walkable outside cell (queue area) is replaced by the nearest walkable path cell — evidence needed: original queue-path building/joining rules |
 | RIDES-030 | `source/OpenTPW/World/Objects/ObjectAssets.cs:71` | [APPROX:RIDES-030] Non-finite texture coordinates (10 vertices of the Theme Park Inc natnav "subtank") are drawn as (0, 0) — evidence needed: how the original renderer treats them |
 | RIDES-031 | `source/OpenTPW/World/Objects/ObjectShape.cs:80` | [APPROX:RIDES-031] '@' occurs only in the Theme Park Inc road signs ("*@*", "*@@*": a sign board between two pillar cells); treated as occupied — evidence needed: TPI placement of a sign over a path |
+| RIDES-040 | `source/OpenTPW/World/Objects/ParkObjects.cs:208` | [APPROX:RIDES-040] TPI fixed scene records at (0, 0) use their local model origin; their remaining transform fields are not decoded. |
 | SAVE-001 | `source/OpenTPW/Economy/OriginalEconomyImport.cs:93` | [APPROX:SAVE-001] the save's world generator state (mRandomSeed) is reported but not imported: OpenTPW's economy, guest and script streams keep their world-seed derivation — evidence needed: DET-I2 port of the world LCG (DET-005 limits the restore to this one field) |
 | SAVE-002 | `source/OpenTPW/Economy/OriginalEconomyImport.cs:277` | [APPROX:SAVE-002] the saved guests (model 1) are not imported; OpenTPW's guest simulation starts with its own arrivals — evidence needed: decoded person/guest fields and an OpenTPW guest save target |
 | SAVE-003 | `source/OpenTPW/Economy/OriginalEconomyImport.cs:238` | [APPROX:SAVE-003] saved staff are imported with their state enum read in STAFFSTATES.str order, their inline name replaced by name index 0, their hire time stamp rounded down to its park turn and no job, patrol region, rest area, energy, idle tick, role suffix or position — evidence needed: the staff state values and an inline-name field in OpenTPW's staff record |
@@ -551,6 +566,22 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | UI-064 | `source/OpenTPW/Hud/ParkHud.ResearchWindow.cs:98` | [APPROX:UI-064] The table supplies the workload knob's initial rectangle and travel inset. |
 | UI-065 | `source/OpenTPW/Hud/ParkHud.ResearchWindow.cs:122` | [APPROX:UI-065] Linear 0..100 effort travel across the table's slider rectangle. The knob's |
 | UI-066 | `source/OpenTPW/Hud/ParkHud.ResearchWindow.cs:154` | [APPROX:UI-066] Draw a simple fill within the fluid cell; the model's original progress frames are untraced. |
+| UI-080 | `source/OpenTPW/Hud/ParkHud.Staff.cs:42` | [APPROX:UI-080] ten equal staff rows fill the table's 470-unit content area; wheel movement is one row — evidence needed: original staff-list capture. |
+| UI-081 | `source/OpenTPW/Hud/ParkHud.Staff.cs:244` | [APPROX:UI-081] Applicant summary fields use the economy's expected monthly wage and grade-derived skill; the original candidate detail binding is not decoded. |
+| UI-082 | `source/OpenTPW/Hud/ParkHud.Staff.cs:286` | [APPROX:UI-082] The staff portrait content has no resolved per-role art; show the selected role and grade as text in f_staffpic. |
+| UI-083 | `source/OpenTPW/Hud/ParkHud.Staff.cs:381` | [APPROX:UI-083] Help 161 identifies hiring the selected applicant; Enter or a second row click activates it. |
+| UI-084 | `source/OpenTPW/Hud/ParkHud.Staff.cs:422` | [APPROX:UI-084] Repeated header presses reverse the ascending order; the original sort cycle is not decoded. |
+| UI-085 | `source/OpenTPW/Hud/ParkHud.Map.cs:134` | [APPROX:UI-085] the shipped 512px theme image places 5px terrain cells centrally; compare with original map overlays. |
+| UI-086 | `source/OpenTPW/Hud/ParkHud.Map.cs:79` | [APPROX:UI-086] clicking a category filters placed-object footprints to that type; clicking it again restores all types. |
+| UI-086 | `source/OpenTPW/Hud/ParkHud.Map.cs:154` | [APPROX:UI-086] live paths/queues and placed-object footprints use plain coloured cells over the original map art. |
+| UI-087 | `source/OpenTPW/Hud/ParkHud.Map.cs:47` | [APPROX:UI-087] the table has zoom buttons but no decoded zoom factor; half steps keep the visible area usable. |
+| UI-087 | `source/OpenTPW/Hud/ParkHud.Map.cs:53` | [APPROX:UI-087] one map pan moves 1/8 of the currently visible image. |
+| UI-088 | `source/OpenTPW/Hud/ParkHud.Map.cs:85` | [APPROX:UI-088] controls for unavailable live layers remain visible but disabled. |
+| UI-089 | `source/OpenTPW/Hud/ParkHud.Map.cs:157` | [APPROX:UI-089] the generic sandbox has no 2dmap.tga; use its live grid and height as a simple terrain base. |
+| UI-090 | `source/OpenTPW/Hud/ParkHud.Staff.cs:109` | [APPROX:UI-090] Control 9366 has no decoded handler; its authored rectangle toggles the applicant and employee views — evidence needed: original control 9366 handler. |
+| UI-090 | `source/OpenTPW/Hud/ParkHud.Staff.cs:320` | [APPROX:UI-090] The unhandled title-side control 9366 toggles the employee view and original applicant view. |
+| UI-091 | `source/OpenTPW/Hud/ParkHud.Staff.cs:332` | [APPROX:UI-091] Locate controls are disabled until employees and visitors have world positions to target. |
+| UI-092 | `source/OpenTPW/Hud/ParkHud.Staff.cs:324` | [APPROX:UI-092] The economy supports Fire, but the decoded table has no proven dismissal handler; this explicit button and confirmation occupy the free area below the portrait. |
 | WALK-001 | `source/OpenTPW/World/Guests/GuestSimulation.cs:321` | [APPROX:WALK-001] nothing raises the boost +196: the event-dependent increments of 0xeb0f4 are not traced, so it stays 0 and only its decay runs — evidence needed: the callers of 0xeb0f4 and their amounts |
 | WALK-002 | `source/OpenTPW/World/Guests/GuestNavigation.cs:262` | [APPROX:WALK-002] only the edge branch of avoid_walls is modelled; its four diagonal-corner branches (0xfdfe4..0xfe5e0 via 0xfc9e0), tried when no edge pushes, are not — evidence needed: 0xfc9e0 and the corner branches |
 | WALK-003 | `source/OpenTPW/World/Guests/GuestSimulation.cs:458` | [APPROX:WALK-003] separation's neighbours are the guests outside rides and shops at their 16.16 navigation position (the thing's own 1/256-cell position +4/+6 is not traced); within a cell they come in OpenTPW's list order, rebuilt every park turn with movers appended, not the original's per-cell thing list (+764, +10); the original's query also keeps thing types 4–8 and 18, which never push in OpenTPW — evidence needed: the writers of thing +4/+6 and of the cell lists, and what thing types 4–8 and 18 are |
@@ -642,7 +673,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | texture-pack | `source/OpenTPW/Client/GameFlow.cs:272` | [EXT:texture-pack] the pack switch belongs to the game loop, not to its loading screen |
 | texture-pack | `source/OpenTPW/Client/GameFlow.cs:367` | [EXT:texture-pack] a running texture switch shows its progress without blocking the game |
 | texture-pack | `source/OpenTPW/Compat/GraphicsSettings.cs:269` | [EXT:texture-pack] Texture choice (docs/TEXTURE-PACKS.md): empty = original textures; &lt;c&gt;enhanced&lt;/c&gt; (the default) = the |
-| texture-pack | `source/OpenTPW/FrontEnd/FrontEndSmokeTest.cs:78` | [EXT:texture-pack] Switches a throw-away pack on and off while the lobby runs: a lobby texture becomes the pack's solid |
+| texture-pack | `source/OpenTPW/FrontEnd/FrontEndSmokeTest.cs:79` | [EXT:texture-pack] Switches a throw-away pack on and off while the lobby runs: a lobby texture becomes the pack's solid |
 | texture-pack | `source/OpenTPW/Render/Assets/ImagePrepass.cs:33` | [EXT:texture-pack] Optional 1x de-artifact pre-pass for the local texture pack. |
 | texture-pack | `source/OpenTPW/Render/Assets/Material.cs:26` | [EXT:texture-pack] Textures can swap their GPU texture in place (a texture pack switch); the binding follows the Texture object. |
 | texture-pack | `source/OpenTPW/Render/Assets/Texture.cs:19` | [EXT:texture-pack] Textures made from a game &#96;.wct&#96; remember their source so a pack switch can reload them in place. |
@@ -695,6 +726,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | CHAT_COMMANDS.str:134-151 | `source/OpenTPW.Online/Chat/ChatCommands.cs:117` | ([DATA:CHAT_COMMANDS.str:134-151] — 18 responses for the 19 mood commands; Think has none). |
 | CHAT_COMMANDS.str:43-85 | `source/OpenTPW.Online/Chat/ChatCommands.cs:5` | holds the localized command words (German "sage", "erzähle", ...) and [DATA:CHAT_COMMANDS.str:43-85] |
 | Easymode.TPWI:SYSG X/Y/rotation | `source/OpenTPW/World/Objects/ParkObjects.cs:144` | [DATA:Easymode.TPWI:SYSG X/Y/rotation] [DATA:&lt;fixed item&gt;.MD2:park-space coordinates] |
+| Language/*/*_NAMES.str | `source/OpenTPW/Hud/ParkHud.Staff.cs:201` | [DATA:Language/*/*_NAMES.str] NameIndex is the role-specific original name-table index. |
 | Language/*/CHAT_COMMANDS.str:0-42 | `source/OpenTPW.Online/Chat/ChatCommands.cs:4` | The original chat commands, in &lt;c&gt;CHAT_COMMANDS.str&lt;/c&gt; order. [DATA:Language/*/CHAT_COMMANDS.str:0-42] |
 | Language/*/TAG_SYSTEM.str:123-127 (six months in the red) | `source/OpenTPW/Economy/ParkEconomy.cs:26` | [DATA:Language/*/TAG_SYSTEM.str:123-127 (six months in the red)] |
 | Language/*/THEMENAMES.str | `source/OpenTPW/Online/OnlineStrings.cs:89` | Theme name of a level. [DATA:Language/*/THEMENAMES.str] order Lost Kingdom, Halloween World, Wonder Land, |
@@ -708,7 +740,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | Language/English/UITEXT.str | `source/OpenTPW/Online/OnlineStrings.cs:19` | [DATA:Language/English/UITEXT.str] (the UIStrings enum is off by one from about 206 on; these are verified). |
 | Language/English/swears.txt,alloweds.txt | `source/OpenTPW.Online/Moderation/WordFilter.cs:32` | Decodes an original list. [DATA:Language/English/swears.txt,alloweds.txt] Observed encoding: |
 | Mac UI font table (docs/reverse/PPC-ui.md):slot 3 DATETINY/DATESMALL/DATEMED/DATEBIG | `source/OpenTPW/UI/Original/UiText.cs:78` | [DATA:Mac UI font table (docs/reverse/PPC-ui.md):slot 3 DATETINY/DATESMALL/DATEMED/DATEBIG] the HUD date font, one per |
-| Mac buy table 0x4cd94:-2,511 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:200` | [DATA:Mac buy table 0x4cd94:-2,511] b_exit (help 2) closes; b_allstaff (help 153) opens the staff list, which OpenTPW does not have yet |
+| Mac buy table 0x4cd94:-2,511 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:200` | [DATA:Mac buy table 0x4cd94:-2,511] b_exit (help 2) closes; b_allstaff (help 153) opens the staff window. |
 | Mac buy table 0x4cd94:1,2 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:188` | [DATA:Mac buy table 0x4cd94:1,2] b_up / b_down at their rectangles |
 | Mac buy table 0x4cd94:16,17 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:185` | [DATA:Mac buy table 0x4cd94:16,17] column header buttons (name, price) without a model; the third (18) has no text and no action |
 | Mac buy table 0x4cd94:489,490,493,504 | `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:150` | [DATA:Mac buy table 0x4cd94:489,490,493,504] w_big root window4, two !frame panels and the f_buyitem list frame at their authored rectangles |
@@ -726,10 +758,25 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | Mac main HUD table 0x4ab38:32,47 | `source/OpenTPW/Hud/ParkHud.cs:125` | [DATA:Mac main HUD table 0x4ab38:32,47] date text region (182,1061,383,1103) in black (font slot 3); the cash text |
 | Mac main HUD table 0x4ab38:38-43 | `source/OpenTPW/Hud/ParkHud.cs:142` | [DATA:Mac main HUD table 0x4ab38:38-43] original button rectangles: staggered along the panel's curve, plus the camera button |
 | Mac main HUD table 0x4ab38:50,48,49,51-55 | `source/OpenTPW/Hud/ParkHud.cs:132` | [DATA:Mac main HUD table 0x4ab38:50,48,49,51-55] cash extras: i_dollar left of the balance, the change text (yellow) with green_up, golden key and ticket counters |
+| Mac map table 0x5265e:-1 | `source/OpenTPW/Hud/ParkHud.Map.cs:95` | [DATA:Mac map table 0x5265e:-1] b_okay closes the map (help 1). |
+| Mac map table 0x5265e:2432,2450,2448,2449,2453 | `source/OpenTPW/Hud/ParkHud.Map.cs:65` | [DATA:Mac map table 0x5265e:2432,2450,2448,2449,2453] root, map content and three lower panels. |
+| Mac map table 0x5265e:2433,2436-2438,2440,2442 | `source/OpenTPW/Hud/ParkHud.Map.cs:71` | [DATA:Mac map table 0x5265e:2433,2436-2438,2440,2442] pan and zoom controls at table rectangles. |
+| Mac map table 0x5265e:2434,2439,2451,2452 | `source/OpenTPW/Hud/ParkHud.Map.cs:78` | [DATA:Mac map table 0x5265e:2434,2439,2451,2452] object-category map buttons. |
+| Mac map table 0x5265e:2441,2435,2444-2447,2455-2457 | `source/OpenTPW/Hud/ParkHud.Map.cs:84` | [DATA:Mac map table 0x5265e:2441,2435,2444-2447,2455-2457] these layers have no per-cell location or metric data yet. |
 | Mac research table 0x4c652 | `source/OpenTPW/Hud/ParkHud.ResearchWindow.cs:10` | [DATA:Mac research table 0x4c652] Visual row order differs from ResearchCategories[n] order. |
 | Mac research table 0x4c652 | `source/OpenTPW/Hud/ParkHud.ResearchWindow.cs:93` | [DATA:Mac research table 0x4c652] Root, title, five panels and the main workload track. |
 | Mac research table 0x4c652 | `source/OpenTPW/Hud/ParkHud.ResearchWindow.cs:110` | [DATA:Mac research table 0x4c652] The next/previous controls are present but ParkResearch.Current |
 | Mac research table 0x4c652:-1 | `source/OpenTPW/Hud/ParkHud.ResearchWindow.cs:130` | [DATA:Mac research table 0x4c652:-1] b_okay exits; help 1. |
+| Mac staff table 0x4a1e0:16,17 | `source/OpenTPW/Hud/ParkHud.Staff.cs:308` | [DATA:Mac staff table 0x4a1e0:16,17] Help 159/160 sorts the name/wage columns. |
+| Mac staff table 0x4a1e0:9343,9345,9348,9349,9358 | `source/OpenTPW/Hud/ParkHud.Staff.cs:272` | [DATA:Mac staff table 0x4a1e0:9343,9345,9348,9349,9358] Resolved ui.wad root model hashes. |
+| Mac staff table 0x4a1e0:9360-9364 | `source/OpenTPW/Hud/ParkHud.Staff.cs:300` | [DATA:Mac staff table 0x4a1e0:9360-9364] Five buttons with help 154-158 select applicants by role. |
+| Mac staff table 0x4a1e0:9365 | `source/OpenTPW/Hud/ParkHud.Staff.cs:317` | [DATA:Mac staff table 0x4a1e0:9365] b_allthings returns to the buy window. |
+| Mac staff-button table 0x4e45c:2397-2404 | `source/OpenTPW/Hud/ParkHud.Staff.cs:329` | [DATA:Mac staff-button table 0x4e45c:2397-2404] Locate-role and locate-visitor buttons at the authored HUD rectangles. |
+| PreBuilt/prebuilt.TPWS:SYSG | `source/OpenTPW.Files/Formats/Save/OriginalParkImport.cs:190` | [DATA:PreBuilt/prebuilt.TPWS:SYSG] Fail closed if the only supported prebuilt profile was only partly scanned. |
+| PreBuilt/prebuilt.TPWS:SYSG | `source/OpenTPW/World/Original/OriginalPark.cs:73` | [DATA:PreBuilt/prebuilt.TPWS:SYSG] Five science scene records have no archive and use the sentinel cell (0, 0). |
+| PreBuilt/prebuilt.TPWS:SYSG X/Y/rotation | `source/OpenTPW/World/Objects/ParkObjects.cs:145` | [DATA:PreBuilt/prebuilt.TPWS:SYSG X/Y/rotation] TPI fixed models use local coordinates and their saved anchor. |
+| PreBuilt/prebuilt.TPWS:cell grid | `source/OpenTPW/World/Original/OriginalPark.cs:57` | [DATA:PreBuilt/prebuilt.TPWS:cell grid] The sole shipped Theme Park Inc prebuilt save matches science/base.map in every cell. |
+| PreBuilt/prebuilt.TPWS:extended header | `source/OpenTPW.Files/Formats/Save/SaveReader.cs:101` | [DATA:PreBuilt/prebuilt.TPWS:extended header] The observed TPWS profile inserts these 24 bytes after magic. |
 | Rides.sam:Info.WhichUIType | `source/OpenTPW/Hud/HudStubs.cs:153` | [DATA:Rides.sam:Info.WhichUIType] |
 | Rides.sam:UsageInfo.ExcitementLevel | `source/OpenTPW/Hud/HudStubs.cs:150` | [DATA:Totem.sam:UsageInfo.ExcitementLevel] overrides [DATA:Rides.sam:UsageInfo.ExcitementLevel] |
 | Standard.sam:Costs.QueueCell | `source/OpenTPW/World/Level.Objects.cs:214` | [DATA:Standard.sam:Costs.QueueCell] charged per cell when written (ParkEconomy.TrySpendCell, PATH-plan §3.2) |
@@ -926,7 +973,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | STP-PPC:0x10125B7C options defaults | `source/OpenTPW/UI/Original/Options/GameOptions.cs:51` | [BIN:STP-PPC:0x10125B7C options defaults] RMBScrollOn = 0: push scrolling |
 | STP-PPC:0x10128B60 profile key count | `source/OpenTPW/Economy/ParkObjectives.cs:324` | [BIN:STP-PPC:0x10128B60 profile key count] keys = mExtraKeys + (earned global, per-theme and secret tickets) / 3, truncated; spent tickets are not subtracted |
 | STP-PPC:0x10129308 options serializer | `source/OpenTPW/Client/AutomaticAdvisor.cs:119` | [BIN:STP-PPC:0x10129308 options serializer] the object at TOC −0x763C is the options object; its +0x34 is saved as "AdvisorOn" (0x1012653C) |
-| STP-PPC:0x10137600 player save setup | `source/OpenTPW/World/Original/OriginalPark.cs:59` | [BIN:STP-PPC:0x10137600 player save setup] the level's easymode park is copied into a player's saves only for Instant Action players (0x1013741C passes the mode flag) |
+| STP-PPC:0x10137600 player save setup | `source/OpenTPW/World/Original/OriginalPark.cs:64` | [BIN:STP-PPC:0x10137600 player save setup] the level's easymode park is copied into a player's saves only for Instant Action players (0x1013741C passes the mode flag) |
 | STP-PPC:0x1013781C player selection | `source/OpenTPW/Client/AutomaticAdvisor.cs:53` | [BIN:STP-PPC:0x1013781C player selection] game type 2 = Instant Action, 0 otherwise (offline) |
 | STP-PPC:0x10137FD0 park view input | `source/OpenTPW/Hud/ParkHud.cs:437` | [BIN:STP-PPC:0x10137FD0 park view input] a button message in the park view plays cat_ui event 0x1F (0xBD when modifier flag 0x10 is set) |
 | STP-PPC:0x10139C64 park-view hover | `source/OpenTPW/World/CellBuildTool.cs:136` | [BIN:STP-PPC:0x10139C64 park-view hover] the cell under the cursor picks the help line: empty (0x85258) 441, type 1 442, type 3 444; inside the tools 443 and 445 |

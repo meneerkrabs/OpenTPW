@@ -26,21 +26,26 @@ public readonly struct SaveCell
 {
 	public const int RecordBytes = 84;
 	public const int ExtensionBytes = 10;
+	public const int ThemeParkIncRecordBytes = 88;
 	public const int AttributeOffset = 46;
 	public const int PathConnectionsOffset = 8;
 	public const int OccupancyOffset = 12;
 	public const int PathFlagsOffset = 13;
 	public const int PathTextureOffset = 17;
 	public const int PathRotationOffset = 21;
+	private readonly int baseRecordBytes;
 
-	public SaveCell( ReadOnlyMemory<byte> record )
+	public SaveCell( ReadOnlyMemory<byte> record ) : this( record, RecordBytes ) { }
+
+	internal SaveCell( ReadOnlyMemory<byte> record, int baseRecordBytes )
 	{
-		if ( record.Length != RecordBytes && record.Length != RecordBytes + ExtensionBytes )
-			throw new ArgumentException( "A save cell record is 84 or 94 bytes.", nameof( record ) );
+		if ( record.Length != baseRecordBytes && record.Length != baseRecordBytes + ExtensionBytes )
+			throw new ArgumentException( "A save cell record has an invalid length.", nameof( record ) );
 		Record = record;
+		this.baseRecordBytes = baseRecordBytes;
 	}
 
-	/// <summary>Raw record bytes (84, or 94 when <see cref="HasExtension"/>).</summary>
+	/// <summary>Raw record bytes (84/94 for TPW, or 88/98 for Theme Park Inc).</summary>
 	public ReadOnlyMemory<byte> Record { get; }
 
 	/// <summary>Identical to the level MAP cell at the same game coordinate (16,384 of 16,384 in Easymode).</summary>
@@ -64,7 +69,7 @@ public readonly struct SaveCell
 	public bool IsOccupied => Record.Span[OccupancyOffset] != 0;
 
 	/// <summary>Type byte bit 0x04: a 10-byte extension follows the record. Its content is not interpreted.</summary>
-	public bool HasExtension => Record.Length == RecordBytes + ExtensionBytes;
+	public bool HasExtension => Record.Length == baseRecordBytes + ExtensionBytes;
 }
 
 /// <summary>
@@ -115,6 +120,13 @@ public sealed class SaveCellGrid
 	/// the required record count exists. Offsets stay payload offsets.
 	/// </summary>
 	public static SaveCellGrid Parse( ReadOnlyMemory<byte> payload, int searchStart, int searchEnd, int countX, int countY )
+		=> Parse( payload, searchStart, searchEnd, countX, countY, SaveCell.RecordBytes );
+
+	/// <summary>Parses the observed Theme Park Inc profile: 88-byte cells, a ten-byte type-7 extension, and FF FF at +86.</summary>
+	public static SaveCellGrid ParseThemeParkInc( ReadOnlyMemory<byte> payload, int searchStart, int searchEnd, int countX, int countY )
+		=> Parse( payload, searchStart, searchEnd, countX, countY, SaveCell.ThemeParkIncRecordBytes );
+
+	private static SaveCellGrid Parse( ReadOnlyMemory<byte> payload, int searchStart, int searchEnd, int countX, int countY, int recordBytes )
 	{
 		if ( countX <= 0 || countY <= 0 || countX > MapFile.MaximumDimension || countY > MapFile.MaximumDimension || (long)countX * countY > MapFile.MaximumCells )
 			throw new ArgumentOutOfRangeException( nameof( countX ), "Grid dimensions must match a valid MAP." );
@@ -129,7 +141,7 @@ public sealed class SaveCellGrid
 		var run = new int[data.Length + 1];
 		for ( var offset = data.Length - 1; offset >= 0; offset-- )
 		{
-			var length = RecordLength( data, offset );
+			var length = RecordLength( data, offset, recordBytes );
 			if ( length > 0 )
 				run[offset] = Math.Min( required + 1, 1 + run[offset + length] );
 		}
@@ -151,23 +163,23 @@ public sealed class SaveCellGrid
 		var position = start;
 		for ( var index = 0; index < required; index++ )
 		{
-			var length = RecordLength( data, position - searchStart );
-			result[index] = new SaveCell( payload.Slice( position, length ) );
+			var length = RecordLength( data, position - searchStart, recordBytes );
+			result[index] = new SaveCell( payload.Slice( position, length ), recordBytes );
 			position += length;
 		}
 		return new SaveCellGrid( countX, countY, start, position, result );
 	}
 
-	private static int RecordLength( ReadOnlySpan<byte> data, int offset )
+	private static int RecordLength( ReadOnlySpan<byte> data, int offset, int recordBytes )
 	{
-		if ( data.Length - offset < SaveCell.RecordBytes )
+		if ( data.Length - offset < recordBytes )
 			return 0;
 		var type = data[offset];
 		if ( type != 3 && type != 7 )
 			return 0;
-		if ( data[offset + 82] != 0xFF || data[offset + 83] != 0xFF )
+		if ( data[offset + recordBytes - 2] != 0xFF || data[offset + recordBytes - 1] != 0xFF )
 			return 0;
-		var length = (type & 4) != 0 ? SaveCell.RecordBytes + SaveCell.ExtensionBytes : SaveCell.RecordBytes;
+		var length = (type & 4) != 0 ? recordBytes + SaveCell.ExtensionBytes : recordBytes;
 		return length <= data.Length - offset ? length : 0;
 	}
 }

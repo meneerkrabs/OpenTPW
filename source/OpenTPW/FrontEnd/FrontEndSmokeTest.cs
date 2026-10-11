@@ -45,6 +45,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 	private BuildItem? secondItem;
 	private bool queueToolAfterSecond;
 	private int purchaseEvents;
+	private int smokeStaffId;
 
 	public FrontEndSmokeTest( GameFlow flow )
 	{
@@ -324,6 +325,21 @@ internal sealed class FrontEndSmokeTest : IDisposable
 						purchaseEvents++;
 					}
 			};
+			Click( flow.Hud.Screen, "map" );
+		} );
+		Wait( "map window opens", 3 );
+		Do( "map window", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.MapWindowOpen && hud.Stack.Top?.Name == "map", "map button opens the original map window" );
+			CaptureFrame( "map.png" );
+			Require( Context.Batch.Draws.Any( draw => draw.Texture.ImagePath == "/levels/jungle/2dmap.tga" ), "the map uses the shipped jungle image" );
+			Click( hud.Stack.Top!, "close" );
+		} );
+		Wait( "map window closes", 3 );
+		Do( "buy after map", () =>
+		{
+			Require( !flow.Hud!.MapWindowOpen && flow.Hud.Stack.Top?.Name == "hud", "map close returns to the HUD" );
 			Click( flow.Hud.Screen, "finance" );
 		} );
 		Wait( "finance window opens", 3 );
@@ -384,7 +400,56 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			VerifyText( capture, flow.Strings[UIStrings.BuyRide], "Buy Ride title" );
 			VerifyText( capture, flow.Strings[UIStrings.NameAttr], "Name column header" );
 			VerifyText( capture, flow.Strings[UIStrings.Price], "Price column header" );
-			Click( hud.Stack.Top!, "categoryShops" );
+			Click( hud.Stack.Top!, "allStaff" );
+		} );
+		Wait( "staff window opens", 3 );
+		Do( "staff window", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.StaffWindowOpen && hud.Stack.Top?.Name == "staff", "buy window staff button opens the original staff window" );
+			Require( !hud.ShowingEmployedStaff && hud.StaffCandidates.Count > 0, "the staff window opens its applicant list" );
+			smokeStaffId = hud.SelectedCandidateId;
+			Require( smokeStaffId != 0, "an applicant is selected" );
+			var capture = CaptureFrame( "staff.png" );
+			VerifyText( capture, ((UiLabel)hud.Stack.Top!.Find( "staffName" )!).Text(), "selected applicant name" );
+			flow.InjectedInput = UiInput.Click( Context.Canvas.Map( new System.Numerics.Vector2( 1240, 441 + ParkHud.StaffRowHeight / 2 ), UiAnchor.Center ) );
+		} );
+		Wait( "staff applicant hired", 3 );
+		Do( "employed staff view", () =>
+		{
+			var hud = flow.Hud!;
+			Require( flow.Level!.Park!.Economy.Staff.Members.Any( member => member.Id == smokeStaffId ), "clicking the selected applicant hires through the staff window" );
+			Click( hud.Stack.Top!, "staffView" );
+		} );
+		Wait( "employed staff view opens", 3 );
+		Do( "dismiss smoke employee", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.ShowingEmployedStaff && hud.StaffItems.Count == flow.Level!.Park!.Economy.Staff.Members.Count, "the staff window lists employed staff" );
+			Require( hud.SelectedStaffId == smokeStaffId, "the hired smoke-test employee is selected" );
+			var capture = CaptureFrame( "staff-employed.png" );
+			VerifyText( capture, ((UiLabel)hud.Stack.Top!.Find( "staffName" )!).Text(), "selected employee name" );
+			VerifyText( capture, ((UiLabel)hud.Stack.Top.Find( "statValue3" )!).Text(), "selected employee happiness" );
+			Click( hud.Stack.Top!, "dismissStaff" );
+		} );
+		Wait( "dismissal confirmation opens", 3 );
+		Do( "confirm smoke employee dismissal", () =>
+		{
+			Require( flow.Hud!.Stack.Top?.Name == "confirmDismissStaff", "dismissal asks for confirmation" );
+			Click( flow.Hud.Stack.Top!, "choice0" );
+		} );
+		Wait( "smoke employee dismissed", 3 );
+		Do( "staff window exit", () =>
+		{
+			var hud = flow.Hud!;
+			Require( flow.Level!.Park!.Economy.Staff.Members.All( member => member.Id != smokeStaffId ), "the dismiss button removes the selected employee" );
+			Click( hud.Stack.Top!, "exit" );
+		} );
+		Wait( "staff window closes", 3 );
+		Do( "shops after staff", () =>
+		{
+			Require( !flow.Hud!.StaffWindowOpen && flow.Hud.BuyWindowOpen && flow.Hud.Stack.Top?.Name == "buy", "staff close returns to the buy window" );
+			Click( flow.Hud.Stack.Top!, "categoryShops" );
 		} );
 		Wait( "shops listed", 3 );
 		Do( "shops category", () =>

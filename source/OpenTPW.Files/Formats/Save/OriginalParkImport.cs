@@ -4,19 +4,27 @@ namespace OpenTPW;
 public readonly record struct ImportedParkObject( SaveObject Record, int MinX, int MinY, int MaxX, int MaxY );
 
 /// <summary>
-/// Read-only park state built from a decoded original save payload and its level MAP. Only
-/// fields with cross-format evidence are imported (docs/TPWS-PAYLOAD.md): path cells, placed
-/// object records with verified footprints, and fixed items (reported, not footprinted).
-/// Money, time, guests, staff, ride state and terrain edits are not imported.
+/// Read-only park state built from a decoded original save payload and its level MAP
+/// (docs/reverse/SAVE-plan.md §8.1): the writer-order block split, the World block (variables, calendar, cell
+/// map and the closed thing list) and the typed things later import steps use. Path cells, placed object records
+/// with verified footprints and fixed items are cross-checked against the map. Nothing is written back.
 /// </summary>
 public sealed class OriginalParkImport
 {
-	private OriginalParkImport( MapFile map, SavePayloadLayout layout, SaveCellGrid cells, IReadOnlyList<(int X, int Y)> pathCells,
-		IReadOnlyList<ImportedParkObject> placedObjects, IReadOnlyList<SaveObject> fixedItems, IReadOnlyList<SaveObject> unresolvedObjects )
+	private OriginalParkImport( MapFile map, SavePayloadLayout layout, SaveWorld world, IReadOnlyList<(int X, int Y)> pathCells,
+		IReadOnlyList<ImportedParkObject> placedObjects, IReadOnlyList<SaveObject> fixedItems, IReadOnlyList<SaveObject> unresolvedObjects,
+		IReadOnlyList<SaveAttraction> attractions, SaveEconomyRecords economy, IReadOnlyList<SaveStaff> staff, SaveStaffHq? staffHq,
+		SaveAdvisorController? advisor, SaveResearchLab? researchLab )
 	{
 		Map = map;
 		Layout = layout;
-		Cells = cells;
+		World = world;
+		Attractions = attractions;
+		Economy = economy;
+		Staff = staff;
+		StaffHq = staffHq;
+		Advisor = advisor;
+		ResearchLab = researchLab;
 		PathCells = pathCells;
 		PlacedObjects = placedObjects;
 		FixedItems = fixedItems;
@@ -25,7 +33,17 @@ public sealed class OriginalParkImport
 
 	public MapFile Map { get; }
 	public SavePayloadLayout Layout { get; }
-	public SaveCellGrid Cells { get; }
+	public SaveWorld World { get; }
+	public SaveCellGrid Cells => World.Cells;
+	/// <summary>Model-3 things in list order (rides, shops, sideshows, features and fixed items).</summary>
+	public IReadOnlyList<SaveAttraction> Attractions { get; }
+	public SaveEconomyRecords Economy { get; }
+	/// <summary>Staff things (models 4–8) in list order.</summary>
+	public IReadOnlyList<SaveStaff> Staff { get; }
+	public SaveStaffHq? StaffHq { get; }
+	public SaveAdvisorController? Advisor { get; }
+	public SaveResearchLab? ResearchLab { get; }
+	public int GuestCount => World.OfModel( SaveThingModel.Guest ).Count();
 	public IReadOnlyList<(int X, int Y)> PathCells { get; }
 	public IReadOnlyList<ImportedParkObject> PlacedObjects { get; }
 	public IReadOnlyList<SaveObject> FixedItems { get; }
@@ -43,15 +61,35 @@ public sealed class OriginalParkImport
 	}
 
 	/// <summary>
+	/// The attraction thing of a RideSystem record: same Info.Id, and for placed objects the same cell
+	/// (fixed items store 128, 128 and are matched by Info.Id alone). Null when none or more than one matches.
+	/// </summary>
+	public SaveAttraction? FindAttraction( SaveObject record )
+	{
+		SaveAttraction? found = null;
+		foreach ( var attraction in Attractions )
+		{
+			if ( attraction.InfoId != record.InfoId || (!record.IsFixedItem && (attraction.CellX != record.X || attraction.CellY != record.Y)) )
+				continue;
+			if ( found != null )
+				return null;
+			found = attraction;
+		}
+		return found;
+	}
+
+	/// <summary>
 	/// Imports <paramref name="payload"/> against <paramref name="map"/>. Throws
-	/// <see cref="InvalidDataException"/> when the save's cell attributes differ from the map
-	/// (wrong level) or a placed object's footprint is outside the grid or not marked occupied.
+	/// <see cref="InvalidDataException"/> when the payload does not split into its blocks, the thing list does not
+	/// close at the World delimiter, the save's cell attributes differ from the map (wrong level) or a placed object's
+	/// footprint is outside the grid or not marked occupied.
 	/// </summary>
 	public static OriginalParkImport Import( ReadOnlyMemory<byte> payload, MapFile map )
 	{
 		ArgumentNullException.ThrowIfNull( map );
 		var layout = SavePayloadLayout.Parse( payload.Span );
-		var cells = SaveCellGrid.Parse( payload, layout.PrefixLength, map.CellCountX, map.CellCountY );
+		var world = SaveWorld.Parse( payload, layout, map.CellCountX, map.CellCountY );
+		var cells = world.Cells;
 		var paths = new List<(int X, int Y)>();
 		for ( var y = 0; y < map.CellCountY; y++ )
 		{
@@ -92,6 +130,13 @@ public sealed class OriginalParkImport
 			}
 			placed.Add( new ImportedParkObject( record, minX, minY, maxX, maxY ) );
 		}
-		return new OriginalParkImport( map, layout, cells, paths.AsReadOnly(), placed.AsReadOnly(), fixedItems.AsReadOnly(), unresolved.AsReadOnly() );
+		var span = payload.Span;
+		var staff = world.Things.Where( thing => thing.Model is >= SaveThingModel.Mechanic and <= SaveThingModel.Researcher ).ToList()
+			.Select( thing => SaveStaff.Read( payload.Span, thing ) ).ToList();
+		var hq = world.Variables.StaffHq == 0 ? null : SaveStaffHq.Read( span, world.Find( world.Variables.StaffHq )!.Value );
+		var advisor = world.OfModel( SaveThingModel.AdvisorController ).Any() ? SaveAdvisorController.Read( span, world.Single( SaveThingModel.AdvisorController ) ) : null;
+		var lab = world.Variables.ResearchLab == 0 ? null : SaveResearchLab.Read( span, world.Find( world.Variables.ResearchLab )!.Value );
+		return new OriginalParkImport( map, layout, world, paths.AsReadOnly(), placed.AsReadOnly(), fixedItems.AsReadOnly(), unresolved.AsReadOnly(),
+			SaveAttractionList.Parse( span, world ), SaveEconomyRecords.Parse( span, world ), staff.AsReadOnly(), hq, advisor, lab );
 	}
 }

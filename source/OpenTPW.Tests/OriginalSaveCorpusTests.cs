@@ -45,7 +45,7 @@ public class OriginalSaveCorpusTests
 			Assert.AreEqual( (500u, (byte)133), (container.Magic, container.Version), name );
 			var payload = reader.ReadFile();
 			var layout = SavePayloadLayout.Parse( payload );
-			Assert.IsTrue( layout.MatchesObservedEasymodeOrder, name );
+			Assert.AreEqual( 19, layout.Blocks.Count, name );
 
 			if ( !maps.TryGetValue( theme, out var map ) )
 				maps[theme] = map = new MapFile( new MemoryStream( OriginalParkImportTests.ReadArchiveMember( $"levels/{theme}/terrain.wad", "base.map" ) ) );
@@ -56,7 +56,8 @@ public class OriginalSaveCorpusTests
 					if ( map.GetFlagsAt( x, y ).HasFlag( MapCellFlags.InitialPath ) )
 						Assert.IsTrue( park.Cells[x, y].IsPath, $"{name}: initial path ({x}, {y})" );
 
-			var attractions = SaveAttractionList.Parse( payload, layout );
+			var attractions = park.Attractions;
+			Assert.AreEqual( park.World.Block.End, park.World.Things[^1].End, $"{name}: the thing list closes at the World delimiter" );
 			// A park save keeps one attraction record per saved object (as in Easymode); the initial INTS saves keep none.
 			var expected = Path.GetExtension( path ).Equals( ".INTS", StringComparison.OrdinalIgnoreCase ) ? Array.Empty<int>()
 				: park.PlacedObjects.Select( item => item.Record.InfoId ).Concat( park.FixedItems.Select( item => item.InfoId ) ).ToArray();
@@ -64,9 +65,9 @@ public class OriginalSaveCorpusTests
 			CollectionAssert.AreEquivalent( expected, attractions.Select( ride => ride.InfoId ).ToArray(), name );
 
 			var economy = new ParkEconomy( BalanceSettings.Load( theme, easy: false ), EconomyObjectCatalog.Load( theme, easy: false ), ParkGameMode.FullSimulation, 1 );
-			var imported = OriginalEconomyImport.Apply( economy, SaveEconomyRecords.Parse( payload ),
-				park.PlacedObjects.Select( item => item.Record.InfoId ), park.FixedItems.Select( item => item.InfoId ) );
-			Assert.AreEqual( economy.Settings.ChallengesInThisLevel.Count, imported.Records.Challenges.Count, name );
+			var evidence = new List<string>();
+			OriginalEconomyImport.Verify( economy.Settings, park.Economy, evidence );
+			Assert.AreEqual( economy.Settings.ChallengesInThisLevel.Count, park.Economy.Challenges.Count, name );
 		}
 	}
 

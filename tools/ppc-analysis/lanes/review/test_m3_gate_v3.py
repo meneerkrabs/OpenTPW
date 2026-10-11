@@ -132,8 +132,12 @@ HOOKS_V3 = [
      '\t\t\t{\n\t\t\t\tdelayed.InQueueInterlude = true;\n\t\t\t\tdelayed.InterludeTurn = guests.ParkTurn;\n\t\t\t}\n'
      '\t\t}\n'
      # WALK gate: hold-move-up freezes the first guest that moves up to slot 0 inside the front cell (from tick 18,000)
-     # at its position for 30 turns: over w2 = 15, under the 178-turn head and 194-turn head-not-ready bounds.
+     # at its position for 30 turns: over w2 = 15, under the 178-turn head and 194-turn head-not-ready bounds. ANIM-M: a
+     # held guest that the ride calls before the 30 turns end (it leaves MovingUpQueue) is let go and the next one is held;
+     # with ANIM's opcode timing the first candidate after tick 18,000 is called in its first turn, before any stall.
      '\t\tif ( Mutation == "hold-move-up" && ride != null && tick >= 18000 )\n\t\t{\n'
+     '\t\t\tif ( heldWalker != 0 && guests.ParkTurn < heldWalkerTurn + 30 && guests.Find( heldWalker ) is not { State: GuestState.MovingUpQueue } )\n'
+     '\t\t\t\theldWalker = 0;\n'
      '\t\t\tif ( heldWalker == 0 && guests.Guests.FirstOrDefault( guest => guest.AttractionId == ride.Runtime.Visitors.AttractionId && guest.State == GuestState.MovingUpQueue && guest.QueuePosition == 0 && guest.QueueCellIndex == 0 ) is { } walker )\n'
      '\t\t\t\t(heldWalker, heldWalkerTurn, heldX, heldY) = (walker.Id, guests.ParkTurn, walker.Navigation.X, walker.Navigation.Y);\n'
      '\t\t\tif ( heldWalker != 0 && guests.ParkTurn < heldWalkerTurn + 30 && guests.Find( heldWalker ) is { State: GuestState.MovingUpQueue } held )\n'

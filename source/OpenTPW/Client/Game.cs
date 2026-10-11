@@ -251,6 +251,27 @@ internal static class Game
 		using var flow = new GameFlow { OnlineFolders = onlineFolders, AutomaticAdvisorEnabled = !args.Contains( "--no-advisor" ) && !args.Contains( "--advisor-say" ) && !args.Contains( "--advisor-response" ) };
 		var capturePath = GetOption( args, "--capture-world", "a .png file for the world-only screenshot" );
 		var smoke = args.Contains( "--smoke-test" );
+		// [EXT:texture-pack] Release archives carry a pinned Clarity index. Downloads begin after a window and
+		// original-style UI exist, with progress, retry and offline Original/HD choices; smoke/captures stay offline.
+		if ( !smoke && capturePath == null && !GameEditions.IsThemeParkInc )
+		{
+			void ApplyPack( string name )
+			{
+				if ( IGraphicsSettings.Instance is { } graphics )
+					graphics.Apply( graphics.Current with { TexturePackName = name } );
+				var diagnostics = new List<string>();
+				TexturePackSwitch.Begin( name, diagnostics );
+				foreach ( var diagnostic in diagnostics ) Log.Warning( $"Texture pack: {diagnostic}" );
+			}
+			flow.PrepareTexturePack = ( stack, name ) => OpenTPW.UI.Original.TexturePackDownloadScreen.TryShow( stack, flow.Strings, name, ApplyPack );
+			var prepared = false;
+			flow.PrepareStartupTexturePack = stack =>
+			{
+				if ( prepared ) return;
+				prepared = true;
+				flow.PrepareTexturePack( stack, IGraphicsSettings.Instance?.Current.TexturePackName ?? "" );
+			};
+		}
 		var startsFrontEnd = visit == null && originalLevelIndex < 0 && !args.Contains( "--advisor-say" ) && !args.Contains( "--advisor-response" ) && !args.Contains( "--sandbox" ) && (!smoke || args.Contains( "--front-end" ));
 		// [EXT:autorun] The CD's launcher window comes first when its Autorun folder is available (docs/AUTORUN.md).
 		var autorun = startsFrontEnd && capturePath == null ? CreateAutorun( args, bonusSettings, dataDirectory ) : null;

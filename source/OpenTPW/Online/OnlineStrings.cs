@@ -8,7 +8,7 @@ public enum OnlineLabel
 	DeleteAccount, DeleteAccountWarning, AccountDeleted, News, NoNews, ShownOnWebsite, NotShownOnWebsite, ChatReconnected,
 	TwoStepLogin, TwoStepInstructions, AuthenticatorCode, Confirm, OnlineMenu,
 	EmailAddress, SendCode, EmailCode, EmailCodeSent, ForgotPassword, AccountRecovery, NameOrEmail, NewPassword,
-	KeepTwoStep, ResetTwoStep, RecoveryCodeSent, PasswordChanged,
+	KeepTwoStep, ResetTwoStep, RecoveryCodeSent, PasswordChanged, Unpublish, PlatinumTickets, MarkAllSend, MarkAllDelete, UnmarkAll,
 }
 
 /// <summary>
@@ -43,14 +43,49 @@ public static class OnlineStrings
 	public const int SearchName = 305;
 	public const int NoSearchResults = 306;
 	public const int UnsentPostcards = 308;
+	public const int Title = 309;
+	public const int DateLabel = 310;
 	public const int Send = 311;
 	public const int Delete = 312;
 	public const int SendingOutbox = 313;
 	public const int ParkPublished = 405;
 	public const int MissingRides = 410;
 	public const int GettingGameNews = 245;
+	// [DATA:Language/English/UITEXT.str:243-257] the original's online progress messages; 252 is the chat satellites'
+	public const int Connecting = 231;
+	public const int GettingServerDetails = 244;
+	public const int GettingSystemNews = 246;
+	public const int GettingCityList = 248;
+	public const int GettingTop10ParkList = 249;
+	public const int GettingAllParkList = 250;
+	public const int GettingPlayersParkList = 251;
+	public const int GettingChatSatelliteList = 252;
+	// [DATA:Language/English/UITEXT.str:266] the original news panel's title (Mac id 267 in the 474-entry edition)
+	public const int NewsFromThemeParkWorld = 266;
 	public const int GameNews = 267;
 	public const int SystemNews = 268;
+	public const int ParkDetails = 269;
+	public const int ThemeLabel = 271;
+	public const int ChartPosition = 272;
+	public const int PlayersAtThePark = 273;
+	public const int Email = 275;
+	public const int DatePublished = 276;
+	public const int InstantActionMode = 282;
+	public const int NoneSupplied = 283;
+	public const int ChatParkDetails = 284;
+	// [DATA:Language/English/UITEXT.str:292-297] the List Parks chart's title and column headers
+	public const int ListParksName = 293;
+	public const int ListParksTheme = 294;
+	public const int ListParksPosition = 295;
+	public const int ListParksVisits = 296;
+	public const int ListParksVotes = 297;
+	public const int Name = 299;
+	public const int City = 301;
+	public const int Position = 302;
+	public const int Visits = 303;
+	public const int Votes = 304;
+	// [DATA:Language/English/UITEXT.str:446] "Other Parks In " before the city name (Mac 0x1bf)
+	public const int OtherParksIn = 446;
 	// [DATA:Language/English/UITEXT.str:461] "Parks: " before a city's park count (Mac 0x1ce in the 474-entry edition)
 	public const int CityParks = 461;
 	// [DATA:Language/English/UITEXT.str:419] "Choose the city to publish in"
@@ -173,6 +208,8 @@ public static class OnlineStrings
 			[OnlineLabel.ResetTwoStep] = "Two-step login: set up again",
 			[OnlineLabel.RecoveryCodeSent] = "If this account has an e-mail address, a code has been sent to it.",
 			[OnlineLabel.PasswordChanged] = "Your password has been changed. Log in with the new password.",
+			[OnlineLabel.Unpublish] = "Unpublish", [OnlineLabel.PlatinumTickets] = "Platinum tickets",
+			[OnlineLabel.MarkAllSend] = "Mark all for sending", [OnlineLabel.MarkAllDelete] = "Mark all for deletion", [OnlineLabel.UnmarkAll] = "Unmark all",
 		},
 		["Danish"] = new Dictionary<OnlineLabel, string>
 		{
@@ -205,6 +242,8 @@ public static class OnlineStrings
 			[OnlineLabel.ResetTwoStep] = "Totrinslogin: opsæt igen",
 			[OnlineLabel.RecoveryCodeSent] = "Har kontoen en e-mailadresse, er der sendt en kode til den.",
 			[OnlineLabel.PasswordChanged] = "Din adgangskode er ændret. Log ind med den nye adgangskode.",
+			[OnlineLabel.Unpublish] = "Fjern offentliggørelse", [OnlineLabel.PlatinumTickets] = "Platinbilletter",
+			[OnlineLabel.MarkAllSend] = "Markér alle til afsendelse", [OnlineLabel.MarkAllDelete] = "Markér alle til sletning", [OnlineLabel.UnmarkAll] = "Fjern alle markeringer",
 		},
 		["Dutch"] = new Dictionary<OnlineLabel, string>
 		{
@@ -237,6 +276,8 @@ public static class OnlineStrings
 			[OnlineLabel.ResetTwoStep] = "Inloggen in twee stappen: opnieuw instellen",
 			[OnlineLabel.RecoveryCodeSent] = "Als dit account een e-mailadres heeft, is daar een code naartoe gestuurd.",
 			[OnlineLabel.PasswordChanged] = "Je wachtwoord is gewijzigd. Log in met het nieuwe wachtwoord.",
+			[OnlineLabel.Unpublish] = "Publicatie ongedaan maken", [OnlineLabel.PlatinumTickets] = "Platinkaartjes",
+			[OnlineLabel.MarkAllSend] = "Alles markeren om te verzenden", [OnlineLabel.MarkAllDelete] = "Alles markeren om te verwijderen", [OnlineLabel.UnmarkAll] = "Markeringen wissen",
 		},
 		["French"] = new Dictionary<OnlineLabel, string>
 		{
@@ -269,6 +310,8 @@ public static class OnlineStrings
 			[OnlineLabel.ResetTwoStep] = "Connexion en deux étapes : reconfigurer",
 			[OnlineLabel.RecoveryCodeSent] = "Si ce compte a une adresse e-mail, un code y a été envoyé.",
 			[OnlineLabel.PasswordChanged] = "Votre mot de passe a été modifié. Connectez-vous avec le nouveau mot de passe.",
+			[OnlineLabel.Unpublish] = "Dépublier", [OnlineLabel.PlatinumTickets] = "Tickets de platine",
+			[OnlineLabel.MarkAllSend] = "Tout marquer pour envoi", [OnlineLabel.MarkAllDelete] = "Tout marquer pour suppression", [OnlineLabel.UnmarkAll] = "Tout démarquer",
 		},
 		["German"] = new Dictionary<OnlineLabel, string>
 		{
@@ -301,6 +344,8 @@ public static class OnlineStrings
 			[OnlineLabel.ResetTwoStep] = "Zweistufige Anmeldung: neu einrichten",
 			[OnlineLabel.RecoveryCodeSent] = "Wenn dieses Konto eine E-Mail-Adresse hat, wurde ein Code dorthin gesendet.",
 			[OnlineLabel.PasswordChanged] = "Dein Passwort wurde geändert. Melde dich mit dem neuen Passwort an.",
+			[OnlineLabel.Unpublish] = "Veröffentlichung aufheben", [OnlineLabel.PlatinumTickets] = "Platin-Tickets",
+			[OnlineLabel.MarkAllSend] = "Alle zum Senden markieren", [OnlineLabel.MarkAllDelete] = "Alle zum Löschen markieren", [OnlineLabel.UnmarkAll] = "Alle Markierungen aufheben",
 		},
 		["Swedish"] = new Dictionary<OnlineLabel, string>
 		{
@@ -333,6 +378,8 @@ public static class OnlineStrings
 			[OnlineLabel.ResetTwoStep] = "Tvåstegsinloggning: ställ in igen",
 			[OnlineLabel.RecoveryCodeSent] = "Om kontot har en e-postadress har en kod skickats dit.",
 			[OnlineLabel.PasswordChanged] = "Ditt lösenord har ändrats. Logga in med det nya lösenordet.",
+			[OnlineLabel.Unpublish] = "Avpublicera", [OnlineLabel.PlatinumTickets] = "Platinbiljetter",
+			[OnlineLabel.MarkAllSend] = "Markera alla för att skicka", [OnlineLabel.MarkAllDelete] = "Markera alla för att radera", [OnlineLabel.UnmarkAll] = "Avmarkera alla",
 		},
 	};
 }

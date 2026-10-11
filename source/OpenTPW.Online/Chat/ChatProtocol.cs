@@ -14,13 +14,29 @@ public static class ChatProtocol
 	public const int MaximumArguments = 256;
 	public const string LobbyRoom = "lobby";
 	public const string ParkRoomPrefix = "park:";
+	/// <summary>Rooms of the online world's chat satellites ("chat parks").</summary>
+	public const string SatelliteRoomPrefix = "satellite:";
+	// [BIN:STP-PPC:0x1b8808 chatellite connector] the online world's globe holds five chat satellites (Mac layout
+	// table data:0x523f0, controls 90120-90124); each shows the player count of one chat park's room
+	public const int SatelliteRoomCount = 5;
 	/// <summary>WebSocket close status "Service Restart": the server is being updated; clients reconnect.</summary>
 	public const int RestartingCloseStatus = 1012;
 
 	public static string ParkRoom( string parkId ) => ParkRoomPrefix + parkId;
 
+	/// <summary>The room of chat satellite <paramref name="index"/> (1-<see cref="SatelliteRoomCount"/>).</summary>
+	public static string SatelliteRoom( int index ) =>
+		SatelliteRoomPrefix + index.ToString( System.Globalization.CultureInfo.InvariantCulture );
+
+	/// <summary>The satellite a room belongs to (1-<see cref="SatelliteRoomCount"/>), or null.</summary>
+	public static int? SatelliteIndexOf( string? room ) =>
+		room != null && int.TryParse( room.Length > SatelliteRoomPrefix.Length ? room[SatelliteRoomPrefix.Length..] : null,
+			System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var index )
+		&& index >= 1 && index <= SatelliteRoomCount ? index : null;
+
 	public static bool IsValidRoom( string? room ) => room == LobbyRoom
-		|| room != null && room.StartsWith( ParkRoomPrefix, StringComparison.Ordinal ) && room.Length is > 5 and <= 69 && room[5..].All( char.IsAsciiLetterOrDigit );
+		|| room != null && room.StartsWith( ParkRoomPrefix, StringComparison.Ordinal ) && room.Length is > 5 and <= 69 && room[5..].All( char.IsAsciiLetterOrDigit )
+		|| SatelliteIndexOf( room ) != null;
 }
 
 /// <summary>

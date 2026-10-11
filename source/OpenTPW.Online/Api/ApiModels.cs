@@ -21,6 +21,8 @@ public static class ApiRoutes
 	public const string News = Prefix + "/news";
 	/// <summary>The online world's cities (the globe's flags), public.</summary>
 	public const string Cities = Prefix + "/cities";
+	/// <summary>The online world's chat parks (the globe's five satellites), with their player counts; public.</summary>
+	public const string ChatParks = Prefix + "/chat-parks";
 	/// <summary>Operator only: asks the host to update the server (<c>DeployToken</c>).</summary>
 	public const string Deploy = Prefix + "/admin/deploy";
 	/// <summary>The public list of parks shown on the project website, and their pictures (<c>/{id}/thumbnail</c>).</summary>
@@ -37,6 +39,14 @@ public sealed record ServerInfo( string Name, string Version, int ProtocolVersio
 public sealed record CityInfo( int Id, string Name, string Description, float Latitude, float Longitude, int Parks );
 
 public sealed record CityList( IReadOnlyList<CityInfo> Cities );
+
+/// <summary>
+/// A chat park of the online world: a standing chat room drawn as one of the globe's five satellites, with the
+/// number of players currently in it (the original's RoomInfo query; docs/reverse/ONLINE-FEATURES.md).
+/// </summary>
+public sealed record ChatParkInfo( int Id, string Name, int Players );
+
+public sealed record ChatParkList( IReadOnlyList<ChatParkInfo> ChatParks );
 
 /// <summary>The server's Game News and System News; empty text when the operator wrote none.</summary>
 public sealed record NewsInfo( string Game, string System, DateTimeOffset? UpdatedUtc );

@@ -13,8 +13,11 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import sys
 
-import analyze
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+import analyze  # noqa: E402
 
 APP_SHA = '04809cd4ccee5433c7fb0b7c93d32f6a7aa629c1849181c0b7906415e5e295f5'
 ONLINE_SHA = '05c21d2eda5fa4b800859a874ab986433adae2e303de230476329df6c019b2cb'
@@ -81,6 +84,7 @@ def satellite_immediates(app):
 def inspect(bin_root: Path):
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'ui'))
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from corpus import layout_table
 

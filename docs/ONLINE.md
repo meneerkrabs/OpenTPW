@@ -279,3 +279,6 @@ are not claims that the original online protocol or service has been recovered.
 | ONLINE-015 | `f_lobbutbg` is the city panel's button background in its second rectangle (67,1273,438,1484). | The table field that names it. |
 | ONLINE-017 | The publish globe reuses the Online World's panel (back, zoom, rotate) without Find Parks and the satellites, with UITEXT 419 at the top. | The publish globe's layout table. |
 | ONLINE-016 | Each city-lobby island is the island of its park's theme. | The argument mapping of `tp.exe` 0x005E27B0 (what the top-10 list entry passes to 0x005E3210). |
+| ONLINE-018 | Each satellite's player count is drawn at its bottom-right corner. | The original wrote the count into the satellite control itself (STP-PPC 0x1b96d8), whose text placement is not decoded. |
+| ONLINE-020 | The park details' eighth label row shows the players currently in the park's chat room (UITEXT 273). | The original's last row showed the Instant action mode flag (UITEXT 282), which the package format does not record. |
+| ONLINE-022 | The postcard photo attached by Send Postcard is the park's generated map thumbnail, and no park reference is attached. | The original attached a camcorder snapshot of the visited park (manual pp. 51/67); its content and encoding are not decoded. |

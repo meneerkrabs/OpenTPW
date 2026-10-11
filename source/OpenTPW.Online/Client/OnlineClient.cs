@@ -89,6 +89,19 @@ public sealed class OnlineClient : IDisposable
 		}
 	}
 
+	/// <summary>The online world's chat parks with their player counts, or null from a server without them.</summary>
+	public async Task<ChatParkList?> GetChatParksAsync( CancellationToken cancel = default )
+	{
+		try
+		{
+			return await GetJsonAsync<ChatParkList>( ApiRoutes.ChatParks, cancel );
+		}
+		catch ( OnlineException exception ) when ( exception.Status == HttpStatusCode.NotFound )
+		{
+			return null;
+		}
+	}
+
 	/// <summary>The server's news, or null from a server without news (older OpenTPW servers).</summary>
 	public async Task<NewsInfo?> GetNewsAsync( CancellationToken cancel = default )
 	{

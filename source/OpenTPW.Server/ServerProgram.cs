@@ -50,9 +50,11 @@ public static class ServerProgram
 
 		var filter = string.IsNullOrWhiteSpace( options.FilterDirectory ) ? WordFilter.Empty : WordFilter.LoadDirectory( options.FilterDirectory );
 		var store = new ServerStore( options );
-		var hub = new ChatHub( store, options, filter );
+		var chatParks = new ChatParkDirectory( options.DataDirectory );
+		var hub = new ChatHub( store, options, filter, chatParks );
 		builder.Services.AddSingleton( options );
 		builder.Services.AddSingleton( store );
+		builder.Services.AddSingleton( chatParks );
 		builder.Services.AddSingleton( filter );
 		builder.Services.AddSingleton( hub );
 		// [EXT:ONLINE-057] the project website reads the public news and website park list from the browser
@@ -88,7 +90,7 @@ public static class ServerProgram
 		// [EXT:online-email] account e-mails go through Resend when a key is set; without one, e-mail is off
 		emailSender ??= string.IsNullOrWhiteSpace( options.ResendApiKey ) || string.IsNullOrWhiteSpace( options.EmailFrom )
 			? null : new ResendEmailSender( options.ResendApiKey, options.EmailFrom, options.EmailReplyTo );
-		Map( app, options, store, hub, filter, emailSender );
+		Map( app, options, store, hub, chatParks, filter, emailSender );
 		app.Lifetime.ApplicationStopping.Register( hub.Restarting );
 		return app;
 	}
@@ -219,7 +221,7 @@ public static class ServerProgram
 			throw new StoreException( StatusCodes.Status400BadRequest, $"{what} contains words blocked by this server's filter." );
 	}
 
-	private static void Map( WebApplication app, ServerOptions options, ServerStore store, ChatHub hub, WordFilter filter, IEmailSender? emailSender )
+	private static void Map( WebApplication app, ServerOptions options, ServerStore store, ChatHub hub, ChatParkDirectory chatParks, WordFilter filter, IEmailSender? emailSender )
 	{
 		app.MapGet( ApiRoutes.Server, () => Ok( new ServerInfo( options.ServerName, Version, ProtocolVersion, options.Message, options.AllowRegistration, !filter.IsEmpty,
 			ParkPackage.MaximumPackageBytes, Postcard.MaximumCardBytes, options.MaximumParksPerPlayer, options.MaximumVotesPerDay ) ) );
@@ -247,6 +249,9 @@ public static class ServerProgram
 			return Ok( new CityList( cities.Read().Select( city => new CityInfo( city.Id, city.Name, city.Description, city.Latitude, city.Longitude,
 				counts.GetValueOrDefault( city.Id ) ) ).ToList() ) );
 		} );
+
+		// The globe's five chat satellites: each chat park's room and the players in it (docs/SERVER.md).
+		app.MapGet( ApiRoutes.ChatParks, () => Ok( new ChatParkList( chatParks.WithPlayers( hub.PlayersIn ) ) ) );
 
 		var news = new NewsFeed( options.DataDirectory );
 		app.MapGet( ApiRoutes.News, () => Ok( news.Read() ) ).RequireCors( WebsitePolicy );

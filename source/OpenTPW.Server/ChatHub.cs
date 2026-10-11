@@ -33,14 +33,16 @@ public sealed class ChatHub
 	private readonly ServerStore store;
 	private readonly ServerOptions options;
 	private readonly WordFilter filter;
+	private readonly ChatParkDirectory? chatParks;
 	private readonly ConcurrentDictionary<string, ChatSession> sessions = new();
 	private volatile bool restarting;
 
-	public ChatHub( ServerStore store, ServerOptions options, WordFilter filter )
+	public ChatHub( ServerStore store, ServerOptions options, WordFilter filter, ChatParkDirectory? chatParks = null )
 	{
 		this.store = store;
 		this.options = options;
 		this.filter = filter;
+		this.chatParks = chatParks;
 	}
 
 	public int PlayersIn( string room ) => sessions.Values.Count( session => session.Room == room );
@@ -214,7 +216,16 @@ public sealed class ChatHub
 		if ( request.Type == ChatRequest.JoinType )
 		{
 			var room = request.Room!;
-			if ( room != ChatProtocol.LobbyRoom && store.FindPark( room[ChatProtocol.ParkRoomPrefix.Length..] ) == null )
+			if ( ChatProtocol.SatelliteIndexOf( room ) is { } satellite )
+			{
+				// A chat park of the online world's globe (docs/SERVER.md): a standing room, not a published park.
+				if ( chatParks?.Find( satellite ) == null )
+				{
+					Send( session, ChatEvent.ForNotice( ChatNotice.NoPark ) );
+					return;
+				}
+			}
+			else if ( room != ChatProtocol.LobbyRoom && store.FindPark( room[ChatProtocol.ParkRoomPrefix.Length..] ) == null )
 			{
 				Send( session, ChatEvent.ForNotice( ChatNotice.NoPark ) );
 				return;
@@ -517,6 +528,8 @@ public sealed class ChatHub
 	{
 		if ( room == ChatProtocol.LobbyRoom )
 			return "";
+		if ( ChatProtocol.SatelliteIndexOf( room ) is { } satellite )
+			return chatParks?.Find( satellite )?.Name ?? "";
 		return store.FindPark( room[ChatProtocol.ParkRoomPrefix.Length..] )?.Name ?? "";
 	}
 

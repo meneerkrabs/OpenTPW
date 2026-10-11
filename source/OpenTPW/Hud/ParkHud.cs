@@ -551,6 +551,7 @@ public sealed partial class ParkHud
 			cursorX = cursorY = -1;
 		// Also consume the exit frame: leaving a ride must not activate an armed tool on that same click.
 		var toolClick = rideOwnsInput || UpdateCoasterTool( input, inPark, paused ) || UpdateCellTool( context, input, inPark, paused );
+		UpdateBlueprint( inPark && !rideOwnsInput );
 		// [APPROX:UI-027] Select by occupied grid cell; original cursor picking is not verified.
 		if ( inPark && level.BuildEntry == null && !level.IsPlacing && !level.CellTool.IsActive && !level.IsCoasterToolActive && input.LeftReleased && !toolPress )
 			SelectObject( level.Objects.FindAt( cursorX, cursorY ) );
@@ -696,25 +697,47 @@ public sealed partial class ParkHud
 		}
 	}
 
-	/// <summary>Ghost markers for the tool's preview line: green cells it would build, grey existing cells, red where it stops; then the line's cost.</summary>
-	// [APPROX:PATH-001] ghosts are flat markers at the cell centres with the line's cost beside the cursor (the original draws ghost path pieces, LayLine mode | 0x100) — evidence needed: captures of the original path tool
+	/// <summary>
+	/// The build tools' ghosts as the original's blueprint markers: the path or queue tool's preview line, or the
+	/// footprint of the object being placed under the cursor (<see cref="BlueprintMarkers"/>).
+	/// </summary>
+	// [BIN:STP-PPC:0x100866B8 SetCell ghost] LayLine(mode | 0x100) gives each previewed cell a BlueprintMesh face: blue (0) when the chooser 0x100895D8 accepts it, red (1) when it refuses it (money included)
+	// [BIN:STP-PPC:0x10080C50 cell ghost] the same blue or red faces for the cells of other build modes, checked by 0x10084154
+	// [APPROX:BLUEPRINT-003] a line marks every cell up to the refused one, existing cells blue; a footprint is blue when the build rule and the purchase allow it, red otherwise — evidence needed: the chooser's result for existing path cells and the footprint caller 0x10075618
+	private void UpdateBlueprint( bool inPark )
+	{
+		if ( level.Blueprint is not { } blueprint )
+			return;
+		var cells = new List<(int X, int Y, BlueprintMarker Marker)>();
+		if ( level.CellTool.IsActive && level.CellTool.Ghost is { } ghost )
+		{
+			foreach ( var cell in ghost.Line )
+			{
+				var refused = cell == ghost.StoppedAt;
+				cells.Add( (cell.X, cell.Y, refused ? BlueprintMarker.Refused : BlueprintMarker.Allowed) );
+				if ( refused )
+					break;
+			}
+		}
+		else if ( inPark && level.BuildEntry is { } entry && cursorX >= 0 )
+		{
+			var rotation = level.BuildRotation;
+			var anchor = Level.GetCentredAnchor( entry, cursorX, cursorY, rotation );
+			var allowed = level.CheckObject( entry, cursorX, cursorY, rotation ) == OriginalPlacementResult.Allowed
+				&& (level.Park == null || level.Park.Economy.CheckBuild( entry.InfoId ) == ParkEconomy.PurchaseResult.Ok);
+			foreach ( var (x, y, _) in ObjectFootprint.GetCells( entry.Shape, anchor.X, anchor.Y, rotation ) )
+				cells.Add( (x, y, allowed ? BlueprintMarker.Allowed : BlueprintMarker.Refused) );
+		}
+		blueprint.Show( cells );
+	}
+
+	/// <summary>The cost of the tool's preview line beside its end (the markers themselves are <see cref="BlueprintMarkers"/>).</summary>
 	private void DrawCellToolGhost( UiContext context )
 	{
 		if ( level.CellTool.Ghost is not { } ghost || !level.CellTool.IsActive )
 			return;
 		var viewport = new NVector2( context.Canvas.Width, context.Canvas.Height );
 		var size = 10 * context.Canvas.TextScale;
-		var built = ghost.Built.ToHashSet();
-		var existing = ghost.Existing.ToHashSet();
-		foreach ( var cell in ghost.Line )
-		{
-			if ( !level.TryProjectCell( cell.X, cell.Y, viewport, out var centre ) )
-				continue;
-			var colour = cell == ghost.StoppedAt ? new RgbaByte( 230, 40, 40, 200 )
-				: built.Contains( cell ) ? new RgbaByte( 80, 220, 80, 170 )
-				: existing.Contains( cell ) ? new RgbaByte( 200, 200, 200, 140 ) : new RgbaByte( 120, 120, 120, 90 );
-			context.Batch.AddRectangle( new UiRect( centre.X - size / 2, centre.Y - size / 2, size, size ), colour );
-		}
 		if ( Status.HasEconomy && ghost.Charged > 0 && level.TryProjectCell( ghost.SnappedEnd.X, ghost.SnappedEnd.Y, viewport, out var end ) )
 		{
 			var text = string.Format( System.Globalization.CultureInfo.InvariantCulture, "{0}{1:#,0}", strings[UIStrings.Dollar], ghost.Charged ).Replace( "  ", " " );

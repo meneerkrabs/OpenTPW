@@ -18,6 +18,8 @@ public partial class Level : IDisposable
 	/// <summary>Imported original level data; null for the generic sandbox.</summary>
 	public OriginalPark? OriginalPark { get; private set; }
 	public OriginalTerrain? OriginalTerrain { get; private set; }
+	/// <summary>The build tools' blueprint markers (original levels only).</summary>
+	public BlueprintMarkers? Blueprint { get; private set; }
 	/// <summary>Park management simulation (money, clock, staff, research); original levels only for now.</summary>
 	public ParkEconomyRuntime? Park { get; private set; }
 	/// <summary>The park's weather, created on the first simulation step of a park; null without a park economy.</summary>
@@ -163,6 +165,7 @@ public partial class Level : IDisposable
 		else
 		{
 			OriginalTerrain = new OriginalTerrain( OriginalPark );
+			Blueprint = new BlueprintMarkers( OriginalPark.Heightfield );
 			try { GateSign = OriginalGateSign.TryCreate( OriginalPark, Global ); }
 			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or KeyNotFoundException )
 			{

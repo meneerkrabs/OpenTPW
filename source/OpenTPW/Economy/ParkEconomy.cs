@@ -534,23 +534,11 @@ public sealed class ParkEconomy : IParkEconomy
 	public PurchaseResult TryBuild( int infoId, out ParkObjectState? built )
 	{
 		built = null;
-		if ( IsBankrupt )
-			return PurchaseResult.Bankrupt;
-		if ( !Catalog.TryGet( infoId, out var info ) )
-			return PurchaseResult.UnknownObject;
-		if ( !info.IsBuyable )
-			return PurchaseResult.NotBuyable;
-		if ( !Research.IsAvailable( infoId ) )
-			return PurchaseResult.NotResearched;
-		if ( info.Kind == ParkObjectKind.Upgrade && !objects.Values.Any( item => item.InfoId == info.AddOnTargetId ) )
-			return PurchaseResult.MissingTargetRide;
-		// [BIN:STP-PPC:0x100DA874 object purchase] an object with a GoldenTicketCost (+0xC4) above 0 that the park has not yet bought with tickets costs that many tickets (0x100D3000; allowed when cost <= earned - spent) and no cash; it joins the owned set, and later copies and ticket-free objects take the cash path
-		var payWithTickets = Settings.CanSpendTickets && info.GoldenTicketCost > 0 && !ticketItems.Contains( infoId );
-		if ( payWithTickets && info.GoldenTicketCost > GoldenTicketsAvailable )
-			return PurchaseResult.NotEnoughGoldenTickets;
-		// [APPROX:ECON-028] purchases need a balance covering the cost — evidence needed: capture of building with too little money
-		if ( !payWithTickets && info.PurchaseCost > Balance )
-			return PurchaseResult.NotEnoughMoney;
+		var check = CheckBuild( infoId );
+		if ( check != PurchaseResult.Ok )
+			return check;
+		Catalog.TryGet( infoId, out var info );
+		var payWithTickets = PaysWithTickets( info );
 		var cost = payWithTickets ? 0 : info.PurchaseCost;
 		if ( payWithTickets )
 		{
@@ -562,6 +550,57 @@ public sealed class ParkEconomy : IParkEconomy
 		built.TotalSpent = cost;
 		Raise( ParkEventKind.ObjectBuilt, cost, built.Id, infoId, info.Name );
 		return PurchaseResult.Ok;
+	}
+
+	/// <summary>The purchase rules of <see cref="TryBuild"/> without buying (the build tool's ghost uses it).</summary>
+	public PurchaseResult CheckBuild( int infoId )
+	{
+		if ( IsBankrupt )
+			return PurchaseResult.Bankrupt;
+		if ( !Catalog.TryGet( infoId, out var info ) )
+			return PurchaseResult.UnknownObject;
+		if ( !info.IsBuyable )
+			return PurchaseResult.NotBuyable;
+		if ( !Research.IsAvailable( infoId ) )
+			return PurchaseResult.NotResearched;
+		if ( info.Kind == ParkObjectKind.Upgrade && !objects.Values.Any( item => item.InfoId == info.AddOnTargetId ) )
+			return PurchaseResult.MissingTargetRide;
+		var payWithTickets = PaysWithTickets( info );
+		if ( payWithTickets && info.GoldenTicketCost > GoldenTicketsAvailable )
+			return PurchaseResult.NotEnoughGoldenTickets;
+		// [APPROX:ECON-028] purchases need a balance covering the cost — evidence needed: capture of building with too little money
+		if ( !payWithTickets && info.PurchaseCost > Balance )
+			return PurchaseResult.NotEnoughMoney;
+		return PurchaseResult.Ok;
+	}
+
+	// [BIN:STP-PPC:0x100DA874 object purchase] an object with a GoldenTicketCost (+0xC4) above 0 that the park has not yet bought with tickets costs that many tickets (0x100D3000; allowed when cost <= earned - spent) and no cash; it joins the owned set, and later copies and ticket-free objects take the cash path
+	private bool PaysWithTickets( EconomyObjectInfo info ) =>
+		Settings.CanSpendTickets && info.GoldenTicketCost > 0 && !ticketItems.Contains( info.InfoId );
+
+	/// <summary>
+	/// The park's attraction points for the arrival rule: per ride or sideshow, its Info.AttractionValue plus the
+	/// Attraction[n].NewBonus of its age bracket (n = age in days / Info.NewAttractionDecayTime, none from the fourth
+	/// bracket on), divided by the number of objects of the same type, so copies of one type count once.
+	/// </summary>
+	// [BIN:STP-PPC:0x100C24C0 park points] sum over placed things whose type kind (+0x7A8) is 0 or 2: (type +0x268[age / +0x5C] + type +0x58) / count of that type (0x100C5828), age in days (64-bit time / 864,000,000,000 at 0x101C4100), no bonus for a bracket outside 0..2
+	// [APPROX:ARRIVAL-003] kind 0 or 2 is read as Info.WhichUIType ride or sideshow; the age is counted from the build turn on the park calendar, and the original's second age source (type +0x9C, 0x100DC520) and its open-state test (0x100DC834) are not reproduced — evidence needed: the type record's +0x7A8 and +0x9C fields and 0x100DC834
+	public int ParkPoints()
+	{
+		var counts = new Dictionary<int, int>();
+		foreach ( var item in objects.Values )
+			counts[item.InfoId] = counts.GetValueOrDefault( item.InfoId ) + 1;
+		var points = 0;
+		foreach ( var item in objects.Values )
+		{
+			if ( !Catalog.TryGet( item.InfoId, out var info ) || info.Kind is not (ParkObjectKind.Ride or ParkObjectKind.Sideshow) )
+				continue;
+			var ageDays = Math.Max( 0, Turn - ParkCalendar.Turn( item.BuiltTick ) ) * ParkCalendar.SecondsPerTurn / 86400;
+			var bracket = info.NewAttractionDecayTime > 0 ? ageDays / info.NewAttractionDecayTime : 0;
+			var bonus = info.NewBonus is { } bonuses && bracket < Math.Min( 3, bonuses.Count ) ? bonuses[(int)bracket] : 0;
+			points += (bonus + info.AttractionValue) / counts[item.InfoId];
+		}
+		return points;
 	}
 
 	/// <summary>Registers an object that already exists (imported original save, fixed item) without charging.</summary>

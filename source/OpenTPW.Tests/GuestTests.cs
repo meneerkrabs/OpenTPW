@@ -151,8 +151,8 @@ public class GuestTests
 		Types = new() { new GuestType( 70, 300, 30 ), new GuestType( 40, 600, 40 ) },
 		ArrivalLaneA = new[] { (0, 0), (2, 0), (2, 2), (2, 4), (0, 5) },
 		ArrivalLaneB = new[] { (19, 0), (17, 0), (17, 2), (17, 4), (19, 5) },
-		ArrivalTimeBetween = 50,
-		ArrivalFixedRate = 4,
+		// A group every five timer units (about 5 s); with no park points the group is 1.2 × NewParkBonus 20 / 6 = 4 guests.
+		ArrivalTimeBetween = 5,
 		AdmissionFee = 20
 	};
 
@@ -459,6 +459,56 @@ public class GuestTests
 		}
 		Assert.IsNull( simulation.Find( guest.Id ) );
 		Assert.IsTrue( states.Contains( GuestState.LeavingPark ) && states.Contains( GuestState.CrossingRoadHome ) && states.Contains( GuestState.WaitingToGoHome ) );
+	}
+
+	[TestMethod]
+	public void ArrivalGroupsFollowTheOriginalRule()
+	{
+		// 0x100CB4E8: (int)(1.2f × (points + NewParkBonus)) / PointsPerVisitor, at least MinPeople, none while bankrupt.
+		var settings = CreateSettings();
+		var points = 0;
+		var bankrupt = false;
+		var simulation = new GuestSimulation( CreateCross(), settings, 1 ) { ParkPoints = () => points, ArrivalsHalted = () => bankrupt };
+		Assert.AreEqual( 4, simulation.ArrivalGroupSize(), "a new park: 1.2 × 20 / 6" );
+		points = 35;
+		Assert.AreEqual( 11, simulation.ArrivalGroupSize(), "Belly Bounce's 25 + 10 new bonus: 1.2 × 55 / 6" );
+		settings.ArrivalPointsPerVisitor = 1;
+		Assert.AreEqual( 66, simulation.ArrivalGroupSize(), "PointsPerVisitor below 2 divides by 1" );
+		settings.ArrivalPointsPerVisitor = 6;
+		points = -20;
+		settings.ArrivalMinPeople = 3;
+		Assert.AreEqual( 3, simulation.ArrivalGroupSize(), "raised to MinPeople" );
+		bankrupt = true;
+		Assert.AreEqual( 0, simulation.ArrivalGroupSize(), "no group in world mode 4" );
+	}
+
+	[TestMethod]
+	public void ArrivalTimerCountsFourTurnUnitsAndRestartsAfterTheGroup()
+	{
+		// 0x100CB2AC: a group starts once (turn >> 2) − (start >> 2) exceeds TimeBetweenArrivals; the timer restarts when it is empty.
+		var settings = CreateSettings();
+		settings.ArrivalTimeBetween = 10;
+		var turn = 0L;
+		var simulation = new GuestSimulation( CreateCross(), settings, 1 ) { ArrivalClock = () => turn };
+		void Step( long toTurn )
+		{
+			while ( turn < toTurn )
+			{
+				turn++;
+				for ( var tick = 0; tick < 15; tick++ )
+					simulation.Tick( Tick );
+			}
+		}
+		Step( 43 );
+		Assert.AreEqual( 0, simulation.Guests.Count, "43 turns are 10 timer units: not more than TimeBetweenArrivals" );
+		Step( 44 );
+		Step( 60 );
+		Assert.AreEqual( 4, simulation.Guests.Count, "11 units start a group of four, dropped off one by one" );
+		// The fourth guest steps off about 1.2 s (five turns) after the first; the timer restarts at the next step-off (turn 51 or 52).
+		Step( 88 );
+		Assert.AreEqual( 4, simulation.Guests.Count, "the timer restarted when the group was empty, not when it started" );
+		Step( 110 );
+		Assert.AreEqual( 8, simulation.Guests.Count, "the next group arrives 11 units after the restart" );
 	}
 
 	[TestMethod]

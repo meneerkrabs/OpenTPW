@@ -202,7 +202,9 @@ public class M3GateAssetTests
 	[TestMethod]
 	public void ShortJungleGateRunReportsEveryInvariant()
 	{
-		var report = M3Gate.Run( new M3GateOptions { Minutes = 3 } );
+		// A group after every timer unit (about a second) instead of the shipped 150 (about 2.5 minutes), so guests arrive from
+		// the start and the earliest have used the ride, shop and toilet and left within three minutes.
+		var report = M3Gate.Run( new M3GateOptions { Minutes = 3, ArrivalTimeBetween = 1 } );
 		var expected = new[] { "build.entrance", "build.paths", "build.attraction", "build.shop", "build.toilet", "build.queue", "build.staff",
 			"time.monotonic", "economy.income-and-expenses", "economy.ledger-consistent", "guests.flow", "queues.no-stuck-queue",
 			"paths.no-unreachable-goal", "rides.scripts-run", "staff.work", "determinism.same-seed" };

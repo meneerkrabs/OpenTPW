@@ -330,7 +330,8 @@ public class PathBuilderTests
 	/// speed instead of 1 cell/s) and draw their base speed from the guest stream, so two fewer guests reach the booth in
 	/// 120 s and the hash changes. WALK-F re-pinned it again: guests now push each other apart with the traced separation
 	/// force, which slows the bunched arrivals at the booth (90 → 88 admissions), and the toilet term follows the needs
-	/// phase. The cell map is still the only path source; the run is the same with or without it.
+	/// phase. The cell map is still the only path source; the run is the same with or without it. The traced arrival rule
+	/// re-pinned it: groups of four arrive five timer units after the last group emptied (88 → 60 admissions).
 	/// </summary>
 	[TestMethod]
 	public void OwnershipFlipKeepsGuestPathingIdentical()
@@ -338,8 +339,8 @@ public class PathBuilderTests
 		var simulation = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), 5 );
 		for ( var tick = 0; tick < 120 * 60; tick++ )
 			simulation.Tick( Tick );
-		Assert.AreEqual( 88, simulation.Admissions, $"{simulation.Admissions}" );
-		Assert.AreEqual( 0xAF0D5A40EDF8FEBBUL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
+		Assert.AreEqual( 60, simulation.Admissions, $"{simulation.Admissions}" );
+		Assert.AreEqual( 0xDD3F3945BB5AB36CUL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
 	}
 
 	[TestMethod]

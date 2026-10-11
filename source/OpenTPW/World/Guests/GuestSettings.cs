@@ -34,18 +34,19 @@ public sealed class GuestSettings
 	public int OkRide { get; set; } = 5;
 	// sam: PeepTypes (8 types ship; up to 20 allowed by the file comment)
 	public List<GuestType> Types { get; set; } = new() { new( 50, 500, 40 ) };
-	// sam: Arrival / BankAccountInfo
+	// sam: Arrival / BankAccountInfo. The arrival code (0x100CB2AC, 0x100CB4E8) reads MinPeople, TimeBetweenArrivals,
+	// NewParkBonus and PointsPerVisitor; it does not read Arrival.FixedRate.
 	public int ArrivalMinPeople { get; set; } = 1;
+	/// <summary>Arrival.TimeBetweenArrivals in timer units of four park turns (about one second).</summary>
 	public int ArrivalTimeBetween { get; set; } = 150;
-	public int ArrivalFixedRate { get; set; } = 15;
+	public int ArrivalNewParkBonus { get; set; } = 20;
+	public int ArrivalPointsPerVisitor { get; set; } = 6;
 	public int AdmissionFee { get; set; } = 20;
 	// sam: FixedItemInfo (cells); null when the balance file has none
 	public (int X, int Y)[]? ArrivalLaneA { get; set; }
 	public (int X, int Y)[]? ArrivalLaneB { get; set; }
 
 	// approximation: no original source (the walk speed is per guest and traced: GuestSpeed, docs/reverse/WALK-plan.md)
-	/// <summary>Arrival.TimeBetweenArrivals is read as tenths of a second (unverified unit).</summary>
-	public float ArrivalTimeUnitSeconds { get; set; } = 0.1f;
 	public float HungerPerSecond { get; set; } = 0.35f;
 	public float ThirstPerSecond { get; set; } = 0.45f;
 	public float ToiletPerSecond { get; set; } = 0.3f;
@@ -109,7 +110,8 @@ public sealed class GuestSettings
 		settings.OkRide = Get( "PeepInfo.OKRide", settings.OkRide );
 		settings.ArrivalMinPeople = Get( "Arrival.MinPeople", settings.ArrivalMinPeople );
 		settings.ArrivalTimeBetween = Math.Max( 1, Get( "Arrival.TimeBetweenArrivals", settings.ArrivalTimeBetween ) );
-		settings.ArrivalFixedRate = Get( "Arrival.FixedRate", settings.ArrivalFixedRate );
+		settings.ArrivalNewParkBonus = Get( "Arrival.NewParkBonus", settings.ArrivalNewParkBonus );
+		settings.ArrivalPointsPerVisitor = Get( "Arrival.PointsPerVisitor", settings.ArrivalPointsPerVisitor );
 		settings.AdmissionFee = Get( "BankAccountInfo.InitialAdmissionFee", settings.AdmissionFee );
 
 		var types = new List<GuestType>();

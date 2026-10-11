@@ -50,7 +50,8 @@ neighbours the flag is dropped and the cell is removed (PATH-005).
 `CellBuildTool` is shared by the path tool (mode 1) and the queue tool
 (mode 3). `SnapEnd` keeps the dominant axis (a tie keeps X); `LayLine` walks
 one axis and ignores the other end coordinate. A hover previews the snapped
-line (the ghost, no writes); a click pushes the end onto the 1024-entry vertex
+line (the ghost, no writes), drawn as the original's blue blueprint markers with the refused cell in red
+([blueprint markers](reverse/BLUEPRINT.md)); a click pushes the end onto the 1024-entry vertex
 stack and commits the line. A click back on the start ends the tool; once a
 line exists it lays nothing, as in the original. The tool also ends when a cell
 is refused (PATH-012) or when the line ends on an existing path or queue cell
@@ -74,7 +75,8 @@ path and queue cells are drawn as described in [Path textures](#path-textures).
 
 Each theme's texture table (`Jungle.tct` etc., in `terrain.wad`) lists 22 `PathTex` entries. Entries 0–15
 are the path shapes (14 repeats 13), 19 and 20 are second versions of the straight (2) and the edge (10), and
-16–18 and 21 are tool markers. Paths are drawn as a blended layer over the ground, so the textures'
+16–18 and 21 name tool markers (`baseblue`, `grnarrow`, `redarrow`, `dark`) that no archive ships; the
+original draws its build ghosts from `Data/generic/dynamic/textures` instead ([blueprint markers](reverse/BLUEPRINT.md)). Paths are drawn as a blended layer over the ground, so the textures'
 transparent borders show the grass. Before this, every path cell replaced the ground with entry 0 (`squ`, a
 lone square), which left a dark outline around each cell.
 
@@ -123,7 +125,7 @@ and `Level.RemovePathCell(x, y)` wrap it with the read-only visit check.
 
 | ID | Plan name | Interim behaviour |
 | --- | --- | --- |
-| PATH-001 | PATH-ENTER | click on an empty owned cell or a path starts the tool; flat ghost markers |
+| PATH-001 | PATH-ENTER | click on an empty owned cell or a path starts the tool |
 | PATH-002 | PATH-UNDO | Backspace pops the last segment, no refund |
 | PATH-003 | PATH-ENDFLAG | a line ending on a path or queue cell ends the tool |
 | PATH-004 | PATH-CONNECT | link every cardinal path neighbour, both sides |

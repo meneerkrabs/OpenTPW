@@ -26,6 +26,8 @@ public sealed record M3GateOptions
 	public double Minutes { get; init; } = 30;
 	/// <summary>Runs the scenario a second time with the same seed and compares state hashes.</summary>
 	public bool DeterminismProbe { get; init; } = true;
+	/// <summary>Arrival.TimeBetweenArrivals in timer units for this run; null keeps the theme's (150, about 2.5 minutes).</summary>
+	public int? ArrivalTimeBetween { get; init; }
 }
 
 public sealed record M3GateReport( M3GateOptions Options, JsonObject TimeMapping, IReadOnlyList<M3GateRow> Rows, double WallSeconds )
@@ -291,7 +293,10 @@ internal sealed class M3GateRun
 		catalog = ObjectCatalog.Load( options.Level, economy.Settings.IsEasy );
 		buildGrid = new OriginalParkGrid( park );
 		grid = GuestPathGrid.FromOriginal( park.Map, null );
-		guests = new GuestSimulation( grid, GuestSettings.Load( options.Level ), options.Seed );
+		var guestSettings = GuestSettings.Load( options.Level );
+		if ( options.ArrivalTimeBetween is int interval )
+			guestSettings.ArrivalTimeBetween = interval;
+		guests = new GuestSimulation( grid, guestSettings, options.Seed );
 		var openingBalance = economy.Balance;
 		BuildEntrance();
 		runtime.AttachGuests( guests );

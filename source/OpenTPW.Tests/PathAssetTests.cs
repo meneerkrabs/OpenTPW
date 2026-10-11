@@ -32,7 +32,9 @@ public class PathAssetTests
 	/// 108 admissions, 0x17B0E01EDEB2D4FB). WALK-I re-pinned it: guests walk the arrival lanes at the traced per-guest
 	/// speed from s = 0 (about 0.8 cell/s at the mean base speed instead of 1 cell/s) and draw a base speed from the guest
 	/// stream, so fewer reach the ticket booth within 120 s and the hash changes. WALK-F re-pinned the hash again (the traced
-	/// separation force and the toilet term's needs phase move the guests); the admissions stay 103.
+	/// separation force and the toilet term's needs phase move the guests); the admissions stay 103. The traced arrival rule
+	/// re-pinned it once more: groups of 1.2 × (points + 20) / 6 guests arrive after the last group emptied, here every
+	/// 15 timer units instead of the shipped 150, so 24 guests are admitted in 120 s.
 	/// </summary>
 	[TestMethod]
 	public void OwnershipFlipKeepsTheJungleGuestRunIdentical()
@@ -40,11 +42,13 @@ public class PathAssetTests
 		var park = OriginalPark.Load( "jungle" );
 		if ( park.Save == null )
 			Assert.Inconclusive( "The Jungle Easymode.TPWI save is missing." );
-		var simulation = new GuestSimulation( GuestPathGrid.FromOriginal( park.Map, park.Save ), GuestSettings.Load( "jungle" ), 1 );
+		var settings = GuestSettings.Load( "jungle" );
+		settings.ArrivalTimeBetween = 15;
+		var simulation = new GuestSimulation( GuestPathGrid.FromOriginal( park.Map, park.Save ), settings, 1 );
 		for ( var tick = 0; tick < 120 * 60; tick++ )
 			simulation.Tick( Tick );
-		Assert.AreEqual( 103, simulation.Admissions );
-		Assert.AreEqual( 0x6CCFE34009D490AEUL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
+		Assert.AreEqual( 24, simulation.Admissions );
+		Assert.AreEqual( 0x1031C6F4ED3CEF20UL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
 	}
 
 	[TestMethod]

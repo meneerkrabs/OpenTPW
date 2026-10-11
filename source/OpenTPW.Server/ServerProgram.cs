@@ -235,6 +235,14 @@ public static class ServerProgram
 			} ).RequireRateLimiting( "auth" );
 		}
 
+		var cities = new CityDirectory( options.DataDirectory );
+		app.MapGet( ApiRoutes.Cities, () =>
+		{
+			var counts = store.ParksPerCity();
+			return Ok( new CityList( cities.Read().Select( city => new CityInfo( city.Id, city.Name, city.Description, city.Latitude, city.Longitude,
+				counts.GetValueOrDefault( city.Id ) ) ).ToList() ) );
+		} );
+
 		var news = new NewsFeed( options.DataDirectory );
 		app.MapGet( ApiRoutes.News, () => Ok( news.Read() ) ).RequireCors( WebsitePolicy );
 
@@ -308,7 +316,10 @@ public static class ServerProgram
 			var package = ParkPackage.Read( bytes );
 			RequireClean( filter, package.Manifest.Park.Name, "Park name" );
 			RequireClean( filter, package.Manifest.Park.Description, "Park description" );
-			var park = store.Publish( user!, package, bytes, context.Request.Query["website"] == "true" );
+			var city = int.TryParse( context.Request.Query["city"], out var cityId ) ? cityId : 0;
+			if ( city != 0 && cities.Find( city ) == null )
+				throw new StoreException( StatusCodes.Status400BadRequest, "Unknown city." );
+			var park = store.Publish( user!, package, bytes, context.Request.Query["website"] == "true", city );
 			return Ok( store.Summarize( park, user, 0 ), StatusCodes.Status201Created );
 		} ) ) ).RequireRateLimiting( "upload" );
 

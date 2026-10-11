@@ -56,6 +56,9 @@ internal sealed class GameFlow : IDisposable
 	private Level? ViewerLevel { get; set; }
 	public FrontEndMenu? Menu { get; private set; }
 	public LobbyScene? Lobby { get; private set; }
+	/// <summary>The online world's globe, created when the Online World first opens in the lobby.</summary>
+	public GlobeScene? Globe { get; private set; }
+	private IReadOnlyList<Online.Api.CityInfo>? shownCities;
 	public UiInput? InjectedInput { get; set; }
 	/// <summary>How the current original level started; null in the front end and the generic sandbox.</summary>
 	public ParkStartKind? StartKind { get; private set; }
@@ -248,6 +251,8 @@ internal sealed class GameFlow : IDisposable
 		foreach ( var entity in Entity.All.ToArray() )
 			entity.Delete();
 		Lobby = null;
+		Globe = null;
+		shownCities = null;
 		Menu = null;
 	}
 
@@ -309,6 +314,7 @@ internal sealed class GameFlow : IDisposable
 		}
 		GameAudio.EnsureStarted();
 		GameAudio.Update();
+		UpdateGlobeView();
 		Camera.Update();
 		Menu?.Stack.Update( Context, input );
 		foreach ( var entity in Entity.All.ToArray() )
@@ -332,6 +338,48 @@ internal sealed class GameFlow : IDisposable
 	}
 
 	private bool viewerPaused;
+
+	/// <summary>
+	/// While the Online World is open in the lobby, the 3D background is the online globe instead of the islands
+	/// (docs/ONLINE.md); closing it brings the lobby and its camera back.
+	/// </summary>
+	private void UpdateGlobeView()
+	{
+		var wanted = Lobby != null && Menu?.Stack.Screens.Any( screen => screen.Name == "onlineWorld" ) == true;
+		// The server's cities, whenever the session fetched a new list.
+		if ( wanted && Globe != null && onlineSession != null && !ReferenceEquals( onlineSession.Cities, shownCities ) )
+		{
+			shownCities = onlineSession.Cities;
+			Globe.SetCities( shownCities );
+		}
+		if ( wanted == (Globe?.Visible == true) )
+			return;
+		if ( wanted )
+		{
+			try
+			{
+				Globe ??= new GlobeScene();
+			}
+			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or InvalidOperationException )
+			{
+				Log.Warning( $"Online globe unavailable: {exception.Message}" );
+				return;
+			}
+			Globe.Visible = true;
+			Lobby!.Visible = false;
+			GlobeCameraMode.RadiusOut = Lobby.Definition.GlobeRadiusOut;
+			GlobeCameraMode.RadiusIn = Lobby.Definition.GlobeRadiusIn;
+			GlobeCameraMode.Reset();
+			Camera.SetCameraMode<GlobeCameraMode>();
+		}
+		else
+		{
+			Globe!.Visible = false;
+			if ( Lobby != null )
+				Lobby.Visible = true;
+			Camera.SetCameraMode<LobbyCameraMode>();
+		}
+	}
 
 	/// <summary>World pass (internal render size): the level, or the lobby sky and 3D scene.</summary>
 	public void Render()
@@ -399,6 +447,7 @@ internal sealed class GameFlow : IDisposable
 		Session = Online,
 		Level = () => Level,
 		Visit = visit => QueueLevel( visit.Level, () => StartLevel( visit.Level, original: !visit.IsSandbox, developerPanels: false, visit: visit ) ),
+		Globe = () => Level == null ? Globe : null,
 	} ).ShowWorld();
 
 	public void Dispose()

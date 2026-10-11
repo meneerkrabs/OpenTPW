@@ -20,24 +20,24 @@ def synthetic_fields_container():
 
 
 class QueueLimitTests(unittest.TestCase):
-    def test_has_queue_objects_get_the_fixed_limit_100(self):
-        self.assertEqual(q.queue_limit(True, 130.0, 60, 60, 5, 30), 100)
-        self.assertEqual(q.queue_limit(True, 0.0, 0, 0, 0, 0), 100)
+    def test_objects_without_queue_get_the_fixed_limit_100(self):
+        self.assertEqual(q.queue_limit(False, 130.0, 60, 60, 5, 30), 100)
+        self.assertEqual(q.queue_limit(False, 0.0, 0, 0, 0, 0), 100)
 
-    def test_wait_time_constant_formula_for_objects_without_queue(self):
-        # 130 * (1.0 * 5) / 30 = 21.67 -> 21; SPEED 0 uses the factor 1.0.
-        self.assertEqual(q.queue_limit(False, 130.0, 60, 60, 5, 30), 21)
-        self.assertEqual(q.queue_limit(False, 130.0, 0, 60, 5, 30), 21)
+    def test_wait_time_constant_formula_for_has_queue_rides(self):
+        # Belly Bounce: 130 * (1.0 * 5) / 30 = 21.67 -> 21; SPEED 0 uses the factor 1.0.
+        self.assertEqual(q.queue_limit(True, 130.0, 60, 60, 5, 30), 21)
+        self.assertEqual(q.queue_limit(True, 130.0, 0, 60, 5, 30), 21)
         # Faster than InitSpeed lengthens the limit: 130 * (90/60 * 5) / 30 = 32.5 -> 32.
-        self.assertEqual(q.queue_limit(False, 130.0, 90, 60, 5, 30), 32)
+        self.assertEqual(q.queue_limit(True, 130.0, 90, 60, 5, 30), 32)
 
     def test_limit_floor_is_four(self):
-        self.assertEqual(q.queue_limit(False, 3.0, 0, 60, 1, 10), 4)
-        self.assertEqual(q.queue_limit(False, 0.0, 0, 60, 5, 30), 4)
+        self.assertEqual(q.queue_limit(True, 3.0, 0, 60, 1, 10), 4)
+        self.assertEqual(q.queue_limit(True, 0.0, 0, 60, 5, 30), 4)
 
     def test_zero_duration_quotient(self):
-        self.assertEqual(q.queue_limit(False, 0.0, 0, 60, 5, 0), 4)  # NaN fails > 4.0
-        self.assertEqual(q.queue_limit(False, 130.0, 0, 60, 5, 0), 0xffffffff)
+        self.assertEqual(q.queue_limit(True, 0.0, 0, 60, 5, 0), 4)  # NaN fails > 4.0
+        self.assertEqual(q.queue_limit(True, 130.0, 0, 60, 5, 0), 0xffffffff)
 
     def test_join_needs_physical_room_and_limit(self):
         self.assertTrue(q.may_join(19, 5, 100))
@@ -213,7 +213,7 @@ class PcDataTests(unittest.TestCase):
         self.assertEqual(bouncy['queue_wait_time_constant'], 130.0)
         limit = q.queue_limit(bouncy['has_queue'], bouncy['queue_wait_time_constant'], bouncy['init_speed'],
                               bouncy['init_speed'], bouncy['capacity'], bouncy['duration'])
-        self.assertEqual(limit, 100)
+        self.assertEqual(limit, 21)
         self.assertEqual(q.bounce_wait_bound(q.max_queue_length(5, limit) - 1, bouncy['capacity'],
                                              bouncy['duration']), 124)
 

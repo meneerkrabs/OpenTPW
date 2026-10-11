@@ -185,8 +185,23 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		Do( "online world renders", () =>
 		{
 			Require( flow.Menu!.Stack.Top?.Name == "onlineWorld", "Go Online opens the online world" );
+			Require( flow.Globe is { Visible: true } && flow.Globe.PartCount > 0 && flow.Lobby is { Visible: false }, "the online world shows the globe instead of the lobby" );
 			VerifyText( CaptureFrame( "online-world.png" ), OnlineStrings.Ui( OnlineStrings.OnlineWorld, "Online world" ), "online world title" );
-			Click( flow.Menu.Stack.Top!, "login" );
+			// Offline there is no server city list; pins for a few cities exercise the flags and the picking.
+			flow.Globe.SetCities( new[]
+			{
+				new Online.Api.CityInfo( 1, GlobeScene.BullfrogCity, "", 90, 0, 3 ), new Online.Api.CityInfo( 2, "London", "", 51.5f, -0.1f, 40 ),
+				new Online.Api.CityInfo( 3, "Timbuktu", "", 16.8f, -3, 5 ), new Online.Api.CityInfo( 4, "New York", "", 40.7f, -74, 120 ),
+			} );
+		} );
+		Wait( "globe pins render", 3 );
+		Do( "globe pins", () =>
+		{
+			var london = Camera.Position.GetSystemVector3();
+			var target = GlobeScene.Centre.GetSystemVector3() + new System.Numerics.Vector3( GlobeScene.Direction( 51.5f, -0.1f ).X, GlobeScene.Direction( 51.5f, -0.1f ).Z, GlobeScene.Direction( 51.5f, -0.1f ).Y ) * GlobeScene.PickRadius;
+			Require( flow.Globe!.Pick( london, System.Numerics.Vector3.Normalize( target - london ) )?.Name == "London", "a ray from the camera to London picks London" );
+			CaptureFrame( "online-globe-cities.png" );
+			Click( flow.Menu!.Stack.Top!, "login" );
 		} );
 		Wait( "login opens", 3 );
 		Do( "login typing", () =>

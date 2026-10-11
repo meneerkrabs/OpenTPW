@@ -3,8 +3,10 @@
 Builds on the v1/v2/v3 harness (same fault hooks, plus the ones below). Each new rule of the queue row gets a fault
 that only that rule can catch, and the boundary of the head bound W(0) = H + R + 1 is bracketed:
 
-- ``hold-stand-walk``: the first guest of the ride in OpenTPW's Boarding (state 13) from tick 18,000 is pinned at its
-  position for 30 turns: walk-stall on w = 20 (v3 ``hold-move-up`` covers w2 only).
+- ``hold-stand-walk``: the first guest of the ride in OpenTPW's Boarding (state 13) from tick 18,000 is pinned for 30
+  turns at the centre of the queue's front cell, one cell back from the stand point: walk-stall on w = 20 (v3
+  ``hold-move-up`` covers w2 only). WALK-F2 (REVIEW-ORACLE-2 OV2-5): in the 6-cell layout a guest enters state 13
+  about 0.01 cells from its stand point, so pinning it where it stands no longer delays its arrival.
 - ``freeze-slots-160`` / ``freeze-slots-190``: on the first turn from tick 18,000 that a boarding fills the last of the
   CAP slots, every slot is set to free exactly 160 / 190 turns later. The new head cannot be called before then, so it
   waits about that long as head: 160 stays under W(0) = 178 (PASS), 190 exceeds it (FAIL through the head check alone).
@@ -62,42 +64,43 @@ HOOKS_V4 = [
      '\t\t\t\tAdd( bridge.Queue.Count );\n'
      '\t\t\t\tforeach ( var id in bridge.Queue )\n\t\t\t\t\tAdd( id );\n'
      '\t\t\t\tAdd( bridge.CalledGuest );\n'
-     '\t\t\t\tvar slots = (List<(int Guest, double Until)>)typeof( RideVisitorBridge ).GetField( "bouncing", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance )!.GetValue( bridge )!;\n'
-     '\t\t\t\tforeach ( var (slotGuest, until) in slots )\n\t\t\t\t{\n\t\t\t\t\tAdd( slotGuest );\n\t\t\t\t\tAdd( BitConverter.DoubleToInt64Bits( until ) );\n\t\t\t\t}\n'
+     '\t\t\t\tvar slots = (List<(int Guest, double Until, double Start)>)typeof( RideVisitorBridge ).GetField( "bouncing", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance )!.GetValue( bridge )!;\n'
+     '\t\t\t\tforeach ( var (slotGuest, until, _) in slots )\n\t\t\t\t{\n\t\t\t\t\tAdd( slotGuest );\n\t\t\t\t\tAdd( BitConverter.DoubleToInt64Bits( until ) );\n\t\t\t\t}\n'
      '\t\t\t}\n'
      '\t\t}\n'
      '\t\treturn hash;\n\t}\n\n\tprivate void AddRow('),
     ('\tprivate string AttractionName( int id )',
-     '\tprivate int heldStandWalker;\n\tprivate long heldStandTurn;\n\tprivate float heldStandX, heldStandY;\n'
+     '\tprivate int heldStandWalker;\n\tprivate long heldStandTurn;\n\tprivate int heldStandX, heldStandY;\n'
      '\tprivate bool slotsFrozen;\n\tprivate int previousSlotCount = -1;\n'
      '\tprivate void MutateV4( long tick )\n\t{\n'
      '\t\tvar ride = placed.FirstOrDefault( item => item.Role == "attraction" );\n'
      '\t\tif ( ride == null )\n\t\t\treturn;\n'
      '\t\tvar visitors = ride.Runtime.Visitors;\n'
-     '\t\tvar slots = (List<(int Guest, double Until)>)typeof( RideVisitorBridge ).GetField( "bouncing", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance )!.GetValue( visitors )!;\n'
+     '\t\tvar slots = (List<(int Guest, double Until, double Start)>)typeof( RideVisitorBridge ).GetField( "bouncing", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance )!.GetValue( visitors )!;\n'
      '\t\tvar now = ride.Runtime.Script!.TimeMilliseconds;\n'
      '\t\tif ( Mutation == "hold-stand-walk" && tick >= 18000 )\n\t\t{\n'
      '\t\t\tif ( heldStandWalker == 0 && guests.Guests.FirstOrDefault( guest => guest.AttractionId == visitors.AttractionId && guest.State == GuestState.Boarding ) is { } walker )\n'
-     '\t\t\t\t(heldStandWalker, heldStandTurn, heldStandX, heldStandY) = (walker.Id, guests.ParkTurn, walker.X, walker.Y);\n'
+     '\t\t\t\t(heldStandWalker, heldStandTurn, heldStandX, heldStandY) = (walker.Id, guests.ParkTurn, visitors.QueueCells[0].X * Fixed16.One + Fixed16.One / 2, visitors.QueueCells[0].Y * Fixed16.One + Fixed16.One / 2);\n'
      '\t\t\tif ( heldStandWalker != 0 && guests.ParkTurn < heldStandTurn + 30 && guests.Find( heldStandWalker ) is { State: GuestState.Boarding } held )\n'
-     '\t\t\t\t(held.X, held.Y) = (heldStandX, heldStandY);\n'
+     '\t\t\t\t(held.Navigation.X, held.Navigation.Y, held.Navigation.VelocityX, held.Navigation.VelocityY) = (heldStandX, heldStandY, 0, 0);\n'
      '\t\t}\n'
      '\t\tif ( Mutation is "freeze-slots-160" or "freeze-slots-190" && tick >= 18000 && !slotsFrozen )\n\t\t{\n'
      '\t\t\tvar capacity = ride.Runtime.GetVariable( RideVariables.VAR_CAPACITY );\n'
-     '\t\t\tif ( slots.Count == capacity && previousSlotCount == capacity - 1 )\n\t\t\t{\n'
+     '\t\t\tvar occupied = slots.Count( slot => slot.Guest != 0 );\n'
+     '\t\t\tif ( occupied == capacity && previousSlotCount == capacity - 1 )\n\t\t\t{\n'
      '\t\t\t\tvar turns = Mutation == "freeze-slots-160" ? 160 : 190;\n'
      '\t\t\t\tfor ( var index = 0; index < slots.Count; index++ )\n'
-     '\t\t\t\t\tslots[index] = (slots[index].Guest, now + turns * (double)ParkCalendar.TurnMilliseconds);\n'
+     '\t\t\t\t\tslots[index] = slots[index] with { Until = now + turns * (double)ParkCalendar.TurnMilliseconds };\n'
      '\t\t\t\tslotsFrozen = true;\n'
      '\t\t\t}\n'
-     '\t\t\tpreviousSlotCount = slots.Count;\n'
+     '\t\t\tpreviousSlotCount = occupied;\n'
      '\t\t}\n'
      '\t\tif ( Mutation.StartsWith( "never-release-early" ) )\n'
      '\t\t\tfor ( var index = 0; index < slots.Count; index++ )\n'
-     '\t\t\t\tslots[index] = (slots[index].Guest, 1e12);\n'
+     '\t\t\t\tslots[index] = slots[index] with { Until = 1e12 };\n'
      '\t\tif ( Mutation.StartsWith( "release-at-1000" ) )\n'
      '\t\t\tfor ( var index = 0; index < slots.Count; index++ )\n'
-     '\t\t\t\tslots[index] = (slots[index].Guest, guests.ParkTurn < 1000 ? 1e12 : slots[index].Until >= 1e11 ? now : slots[index].Until);\n'
+     '\t\t\t\tslots[index] = slots[index] with { Until = guests.ParkTurn < 1000 ? 1e12 : slots[index].Until >= 1e11 ? now : slots[index].Until };\n'
      '\t\tif ( Mutation.EndsWith( "diverge-second-run-cellmap" ) && SecondRun && tick == 2000 )\n'
      '\t\t\tgrid.Cells.SetPlacementCount( 0, 0, (short)(grid.Cells.PlacementCountAt( 0, 0 ) + 1) );\n'
      '\t\tif ( Mutation == "diverge-second-run-energy" && SecondRun && tick == 2000 && guests.Guests.Count > 0 )\n'
@@ -151,22 +154,36 @@ class Arithmetic(unittest.TestCase):
         self.assertEqual(529, bounce_hold_turns(31))
 
     def test_head_not_ready_bound_uses_the_opentpw_walk_speed(self):
-        # HeadNotReadyBound: min(2 max(1, N) + 2, N + 4) cells at WalkSpeedCellsPerSecond 1.0 x 0.7, plus 3 + 22 + 1.
+        # At review: min(2 max(1, N) + 2, N + 4) cells at WalkSpeedCellsPerSecond 1.0 x 0.7, plus 3 + 22 + 1.
         def bound(cells_n, speed=1.0):
             cells = min(2 * max(1, cells_n) + 2, cells_n + 4)
             return math.ceil(cells / (speed * 0.7) * 1000 / 248) + 3 + 22 + 1
         self.assertEqual((194, 50), (bound(25), bound(1)))
         # At the traced floor (WALK-plan section 4: 0.12 cell per turn at s = 0.6, i.e. 0.484 cell/s) it would be larger:
-        # the 194 turns are OpenTPW timing, not an original-derived bound.
+        # the 194 turns were OpenTPW timing, not an original-derived bound (GATE-004).
         self.assertGreater(bound(25, speed=0.12 / 0.248 / 0.7), 194)
+
+    def test_head_not_ready_bound_after_walk_i(self):
+        # WALK-I (WALK-plan section 15) replaced the walk term: two queue walks over N cells, N x C + 2 x w2 with the
+        # enumerated per-cell term C = 9 and w2 = 15, plus the same 3 + 22 + 1. The traced floor is inside C: one cell at
+        # 0.118 cell per update takes 8.47 updates.
+        def bound(cells_n):
+            return max(1, cells_n) * 9 + 2 * 15 + 3 + 22 + 1
+        self.assertEqual((281, 65), (bound(25), bound(1)))
+        self.assertEqual(9, math.ceil(65536 / int(0.59 * 0.2 * 65536)))
 
 
 @unittest.skipUnless(v1.has_commit(SUBJECT), f'{SUBJECT} not in this repository')
 class StaticRound4(unittest.TestCase):
     def test_head_not_ready_bound_reads_the_opentpw_walk_speed(self):
+        # Round 4 pinned the walk speed read (GATE-004); WALK-I retired it for the traced per-cell term, so this now pins
+        # that the bound no longer reads an OpenTPW walk speed and uses QueueCellWalkTurns and w2.
         gate = v1.show(v1.GATE, SUBJECT)
-        self.assertIn('HeadNotReadyBound( item.Runtime.Visitors.QueueSizeInCells, guests.Settings.WalkSpeedCellsPerSecond )', gate)
-        self.assertIn('const float TiredWalkFactor = 0.7f;', gate)
+        self.assertIn('HeadNotReadyBound( item.Runtime.Visitors.QueueSizeInCells )', gate)
+        self.assertNotIn('WalkSpeedCellsPerSecond', gate)
+        self.assertNotIn('TiredWalkFactor', gate)
+        self.assertIn('var walkTurns = cells * QueueCellWalkTurns + 2 * MoveUpWalkTurns;', gate)
+        self.assertIn('internal const long QueueCellWalkTurns = 9;', gate)
 
     def test_walk_scope_failure_leaves_waits_unjudged(self):
         gate = v1.show(v1.GATE, SUBJECT)

@@ -33,6 +33,9 @@ public sealed class LobbyDefinition
 	public float SpinSpeed { get; private set; } = 0.02f;
 	public float SpinRadius { get; private set; } = 70;
 	public float VerticalOffset { get; private set; } = 20;
+	// [DATA:lobby.wad:lobby.txt GLOBERADIUSOUT/GLOBERADIUSIN] the online globe's two camera distances; defaults equal the shipped values
+	public float GlobeRadiusOut { get; private set; } = 475;
+	public float GlobeRadiusIn { get; private set; } = 200;
 	public Dictionary<int, (float X, float Z)> IslandPositions { get; } = new();
 	public List<LobbyIslandInfo> Islands { get; } = new();
 
@@ -58,6 +61,8 @@ public sealed class LobbyDefinition
 				case "SPINSPEED": SpinSpeed = Number( arguments, 0 ); break;
 				case "SPINRADIUS": SpinRadius = Number( arguments, 0 ); break;
 				case "VERTICALOFFSET": VerticalOffset = Number( arguments, 0 ); break;
+				case "GLOBERADIUSOUT": GlobeRadiusOut = Number( arguments, 0 ); break;
+				case "GLOBERADIUSIN": GlobeRadiusIn = Number( arguments, 0 ); break;
 				case "ISLANDCAMERAPOSITION" when arguments.Count >= 3:
 					IslandPositions[(int)Number( arguments, 0 )] = (Number( arguments, 1 ), Number( arguments, 2 ));
 					break;

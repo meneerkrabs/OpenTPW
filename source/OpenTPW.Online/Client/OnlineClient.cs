@@ -76,6 +76,19 @@ public sealed class OnlineClient : IDisposable
 
 	public Task<ServerInfo> GetServerInfoAsync( CancellationToken cancel = default ) => GetJsonAsync<ServerInfo>( ApiRoutes.Server, cancel );
 
+	/// <summary>The online world's cities, or null from a server without cities (older OpenTPW servers).</summary>
+	public async Task<CityList?> GetCitiesAsync( CancellationToken cancel = default )
+	{
+		try
+		{
+			return await GetJsonAsync<CityList>( ApiRoutes.Cities, cancel );
+		}
+		catch ( OnlineException exception ) when ( exception.Status == HttpStatusCode.NotFound )
+		{
+			return null;
+		}
+	}
+
 	/// <summary>The server's news, or null from a server without news (older OpenTPW servers).</summary>
 	public async Task<NewsInfo?> GetNewsAsync( CancellationToken cancel = default )
 	{
@@ -152,11 +165,12 @@ public sealed class OnlineClient : IDisposable
 	}
 
 	/// <param name="showOnWebsite">Lists the park on the project website (opt-in; the server's public website park list).</param>
-	public async Task<ParkSummary> UploadParkAsync( ParkPackage package, CancellationToken cancel = default, bool showOnWebsite = false )
+	/// <param name="cityId">City of the online world to publish in (0: none).</param>
+	public async Task<ParkSummary> UploadParkAsync( ParkPackage package, CancellationToken cancel = default, bool showOnWebsite = false, int cityId = 0 )
 	{
 		var content = new ByteArrayContent( package.ToBytes() );
 		content.Headers.ContentType = new MediaTypeHeaderValue( ApiRoutes.PackageMediaType );
-		using var response = await SendAsync( HttpMethod.Post, showOnWebsite ? ApiRoutes.Parks + "?website=true" : ApiRoutes.Parks, content, cancel );
+		using var response = await SendAsync( HttpMethod.Post, ApiRoutes.Parks + Query( ("website", showOnWebsite ? "true" : null), ("city", cityId > 0 ? cityId.ToString( System.Globalization.CultureInfo.InvariantCulture ) : null) ), content, cancel );
 		return await ReadJsonAsync<ParkSummary>( response, cancel );
 	}
 
@@ -266,6 +280,12 @@ public sealed class OnlineClient : IDisposable
 		var content = new ByteArrayContent( StrictJson.Serialize( value ) );
 		content.Headers.ContentType = new MediaTypeHeaderValue( "application/json" );
 		return content;
+	}
+
+	private static string Query( params (string Name, string? Value)[] parameters )
+	{
+		var present = parameters.Where( parameter => parameter.Value != null ).Select( parameter => $"{parameter.Name}={Uri.EscapeDataString( parameter.Value! )}" ).ToArray();
+		return present.Length == 0 ? "" : "?" + string.Join( "&", present );
 	}
 
 	private async Task<T> GetJsonAsync<T>( string route, CancellationToken cancel ) where T : class

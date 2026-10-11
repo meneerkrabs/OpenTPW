@@ -68,6 +68,14 @@ public sealed class GuestSimulation : IRideVisitorHost
 	private int laneToggle;
 	private int seenGridVersion = -1;
 	private readonly Dictionary<int, int> seenQueueEdits = new();
+	/// <summary>True on the tick that starts a park turn: guests update their speed and take one steering step.</summary>
+	private bool turnStarted;
+	private GuestNavigation? stepping;
+	private readonly Func<int, int, bool> isOpenForStep;
+	private readonly Func<GuestNavigation, (int X, int Y)> separationForStep;
+	/// <summary>The guests standing in each cell, for separation's neighbour query; rebuilt at the start of every park turn.</summary>
+	private readonly Dictionary<(int X, int Y), List<Guest>> occupants = new();
+	private readonly List<GuestNavigation> neighbours = new();
 
 	public GuestSimulation( GuestPathGrid grid, GuestSettings settings, ulong seed )
 	{
@@ -75,6 +83,8 @@ public sealed class GuestSimulation : IRideVisitorHost
 		Settings = settings;
 		Seed = seed;
 		random = new GuestRandom( seed );
+		isOpenForStep = IsOpenForStep;
+		separationForStep = SeparationForStep;
 	}
 
 	public GuestPathGrid Grid { get; }
@@ -150,6 +160,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 		guest.OffsetX = (random.NextFloat() - 0.5f) * 0.5f;
 		guest.OffsetY = (random.NextFloat() - 0.5f) * 0.5f;
 		guest.DecisionTimer = random.NextFloat() * Settings.DecisionIntervalSeconds;
+		guest.BaseSpeed = GuestSpeed.BaseSpeeds[random.Next( GuestSpeed.BaseSpeeds.Length )];
 		guests.Add( guest );
 		byId.Add( guest.Id, guest );
 		return guest;
@@ -168,8 +179,8 @@ public sealed class GuestSimulation : IRideVisitorHost
 		guest.Lane = lane;
 		guest.LaneIndex = 1;
 		guest.LaneReversed = false;
-		guest.X = lane[0].X + 0.5f + guest.OffsetX;
-		guest.Y = lane[0].Y + 0.5f + guest.OffsetY;
+		guest.Navigation.OffGrid = true;
+		Place( guest, lane[0] );
 		guest.State = GuestState.CrossingRoad;
 		SetLaneWaypoint( guest );
 		return guest;
@@ -216,9 +227,24 @@ public sealed class GuestSimulation : IRideVisitorHost
 		guest.CellY = y;
 		guest.PreviousCellX = -1;
 		guest.PreviousCellY = -1;
-		guest.X = x + 0.5f + guest.OffsetX;
-		guest.Y = y + 0.5f + guest.OffsetY;
+		guest.Navigation.OffGrid = false;
+		Place( guest, (x, y) );
+	}
+
+	/// <summary>The guest's sub-cell destination bytes inside a cell: its random offset around the centre, in 1/256 of a cell.</summary>
+	private static (int X, int Y) OffsetBytes( Guest guest ) => ((int)((0.5f + guest.OffsetX) * 256), (int)((0.5f + guest.OffsetY) * 256));
+
+	/// <summary>Puts the guest at its offset point in <paramref name="cell"/> without a walk; the velocity is kept.</summary>
+	private void Place( Guest guest, (int X, int Y) cell )
+	{
+		var navigation = guest.Navigation;
+		var (bx, by) = OffsetBytes( guest );
+		(navigation.X, navigation.Y) = GuestNavigation.BytePoint( cell, bx, by );
+		navigation.SetDestination( navigation.X, navigation.Y, [] );
 		guest.HasWaypoint = false;
+		(guest.StepFromX, guest.StepFromY, guest.StepFromDistance, guest.StepTick) = (guest.X, guest.Y, guest.DistanceWalked, TickCount);
+		UpdatePresentation( guest );
+		Occupy( guest );
 	}
 
 	public void Tick( float deltaSeconds )
@@ -227,8 +253,11 @@ public sealed class GuestSimulation : IRideVisitorHost
 			throw new ArgumentOutOfRangeException( nameof( deltaSeconds ) );
 		TickCount++;
 		TimeSeconds += deltaSeconds;
+		turnStarted = ParkCalendar.Turn( TickCount ) != ParkCalendar.Turn( TickCount - 1 );
 		SyncQueues();
 		UpdateArrivals( deltaSeconds );
+		if ( turnStarted )
+			RebuildOccupants();
 		for ( var index = 0; index < guests.Count; index++ )
 			UpdateGuest( guests[index], deltaSeconds );
 		for ( var index = guests.Count - 1; index >= 0; index-- )
@@ -268,9 +297,44 @@ public sealed class GuestSimulation : IRideVisitorHost
 
 	private void UpdateGuest( Guest guest, float dt )
 	{
-		guest.IsMoving = false;
+		if ( turnStarted )
+			UpdateSpeed( guest );
 		if ( InPark( guest ) )
 			UpdateNeeds( guest, dt );
+		// The needs block runs only on the guest's phase (0xeed24..0xeed40: park turn & 3 == thing id & 3), and its toilet
+		// term compares the truncated toilet's low byte unsigned (0xef0bc..0xef0e8).
+		// [APPROX:WALK-010] the needs phase compares the park turn with OpenTPW's guest id, not the original's 16-bit thing id (0xfa9a4), which numbers every thing — evidence needed: the thing id allocator and its order
+		if ( turnStarted && (ParkTurn & 3) == (guest.Id & 3) )
+			guest.ToiletBonus = ((int)guest.Toilet & 0xff) > GuestSpeed.ToiletBonusLevel ? GuestSpeed.ToiletBonus : 0;
+		UpdateState( guest, dt );
+		if ( !guest.HasWaypoint && guest.State is not GuestState.Boarding )
+			guest.IsMoving = false;
+		UpdatePresentation( guest );
+	}
+
+	/// <summary>
+	/// The per-update speed (<c>0xe6b28</c>, called at <c>0xeed0c</c> before the needs and the state handler): smooth s,
+	/// set the caps (<c>0xffe38</c>) and decay the boost. The toilet term +194 is rewritten after it, in the needs block.
+	/// </summary>
+	private static void UpdateSpeed( Guest guest )
+	{
+		// [APPROX:WALK-001] nothing raises the boost +196: the event-dependent increments of 0xeb0f4 are not traced, so it stays 0 and only its decay runs — evidence needed: the callers of 0xeb0f4 and their amounts
+		(guest.SmoothedSpeed, guest.Boost, guest.MaxSpeed, guest.MaxForce) = GuestSpeed.Update( guest.SmoothedSpeed, guest.BaseSpeed, guest.ToiletBonus, guest.Boost );
+	}
+
+	/// <summary>Presentation only: the drawn position moves from the position before the last step to the current one over a park turn.</summary>
+	private void UpdatePresentation( Guest guest )
+	{
+		var t = Math.Clamp( (TickCount - guest.StepTick) / TicksPerTurn, 0f, 1f );
+		guest.DrawX = guest.StepFromX + (guest.X - guest.StepFromX) * t;
+		guest.DrawY = guest.StepFromY + (guest.Y - guest.StepFromY) * t;
+		guest.DrawDistanceWalked = guest.StepFromDistance + (guest.DistanceWalked - guest.StepFromDistance) * t;
+	}
+
+	private const float TicksPerTurn = ParkCalendar.TicksPerSecond * ParkCalendar.TurnMilliseconds / 1000f;
+
+	private void UpdateState( Guest guest, float dt )
+	{
 		switch ( guest.State )
 		{
 			case GuestState.CrossingRoad:
@@ -344,56 +408,137 @@ public sealed class GuestSimulation : IRideVisitorHost
 		}
 	}
 
-	private float Speed( Guest guest ) => Settings.WalkSpeedCellsPerSecond * (guest.Energy < 20 ? 0.7f : 1f);
-
-	/// <summary>Moves towards the waypoint; true when reached.</summary>
-	private bool Move( Guest guest, float dt )
+	/// <summary>
+	/// The walk step (<c>0xe6454</c>): one steering step on the tick that starts a park turn. True when the guest has
+	/// arrived at its destination (tested on the position at the start of the step); the destination is then done.
+	/// </summary>
+	private bool Move( Guest guest )
 	{
-		var dx = guest.WaypointX - guest.X;
-		var dy = guest.WaypointY - guest.Y;
-		var distance = MathF.Sqrt( dx * dx + dy * dy );
-		var step = Speed( guest ) * dt;
-		if ( distance <= step || distance < 1e-4f )
-		{
-			guest.X = guest.WaypointX;
-			guest.Y = guest.WaypointY;
-			guest.DistanceWalked += distance;
-			guest.IsMoving = distance > 1e-4f;
-			guest.HasWaypoint = false;
-			return true;
-		}
-		guest.HeadingX = dx / distance;
-		guest.HeadingY = dy / distance;
-		guest.X += guest.HeadingX * step;
-		guest.Y += guest.HeadingY * step;
-		guest.DistanceWalked += step;
-		guest.IsMoving = true;
-		return false;
+		if ( !turnStarted )
+			return false;
+		if ( !Step( guest ) )
+			return false;
+		guest.HasWaypoint = false;
+		return true;
 	}
 
+	private bool Step( Guest guest )
+	{
+		var navigation = guest.Navigation;
+		var (x, y, distance) = (guest.X, guest.Y, guest.DistanceWalked);
+		stepping = navigation;
+		var arrived = navigation.Step( guest.MaxSpeed, guest.MaxForce, isOpenForStep, separationForStep );
+		stepping = null;
+		Occupy( guest );
+		(guest.StepFromX, guest.StepFromY, guest.StepFromDistance, guest.StepTick) = (x, y, distance, TickCount);
+		var dx = guest.X - x;
+		var dy = guest.Y - y;
+		var step = MathF.Sqrt( dx * dx + dy * dy );
+		guest.IsMoving = step > 0;
+		if ( step > 0 )
+		{
+			guest.HeadingX = dx / step;
+			guest.HeadingY = dy / step;
+			guest.DistanceWalked += step;
+		}
+		return arrived;
+	}
+
+	/// <summary>
+	/// A cell is walkable for the stepping guest (the <c>+180</c> mask) when it is on its current walk: the route cells
+	/// and, for a queue walk, the queue's next cells ahead of the destination and behind the start.
+	/// </summary>
+	// [APPROX:WALK-005] a cell is walkable when it is on the current walk (its route cells and the walk's extra open cells), so path cells beside the route are walls; the original tests the cell's edge flags against the guest's +180 mask (0xd768c) and commits the step through a transition call (0xfee3c..0xfee58) — evidence needed: the edge flags 0xd768c reads, the +180 mask per guest state and the commit callback
+	private bool IsOpenForStep( int x, int y ) => stepping!.IsOnWalk( x, y );
+
+	/// <summary>
+	/// separation's neighbours for the stepping guest (<c>0x10087c</c>): the guests standing in the 3 × 3 cells around its
+	/// cell, rows from the top and each row from the left, cells outside the map skipped (<c>0xd70d8</c>).
+	/// </summary>
+	// [APPROX:WALK-003] separation's neighbours are the guests outside rides and shops at their 16.16 navigation position (the thing's own 1/256-cell position +4/+6 is not traced); within a cell they come in OpenTPW's list order, rebuilt every park turn with movers appended, not the original's per-cell thing list (+764, +10); the original's query also keeps thing types 4–8 and 18, which never push in OpenTPW — evidence needed: the writers of thing +4/+6 and of the cell lists, and what thing types 4–8 and 18 are
+	private (int X, int Y) SeparationForStep( GuestNavigation self )
+	{
+		neighbours.Clear();
+		var (cellX, cellY) = self.Cell;
+		for ( var y = cellY - 1; y <= cellY + 1; y++ )
+		{
+			for ( var x = cellX - 1; x <= cellX + 1; x++ )
+			{
+				if ( x < 0 || y < 0 || x >= Grid.CountX || y >= Grid.CountY || !occupants.TryGetValue( (x, y), out var list ) )
+					continue;
+				foreach ( var other in list )
+				{
+					if ( other.State is not (GuestState.Using or GuestState.Gone) )
+						neighbours.Add( other.Navigation );
+				}
+			}
+		}
+		return GuestNavigation.Separation( self, neighbours );
+	}
+
+	/// <summary>Files every guest under its cell, in list order.</summary>
+	private void RebuildOccupants()
+	{
+		foreach ( var list in occupants.Values )
+			list.Clear();
+		foreach ( var guest in guests )
+		{
+			guest.OccupiedCell = null;
+			Occupy( guest );
+		}
+	}
+
+	/// <summary>Moves a guest to the end of its current cell's list when it changed cell.</summary>
+	private void Occupy( Guest guest )
+	{
+		var cell = guest.Navigation.Cell;
+		if ( guest.OccupiedCell == cell )
+			return;
+		if ( guest.OccupiedCell is { } previous && occupants.TryGetValue( previous, out var old ) )
+			old.Remove( guest );
+		if ( !occupants.TryGetValue( cell, out var list ) )
+			occupants[cell] = list = new List<Guest>();
+		list.Add( guest );
+		guest.OccupiedCell = cell;
+	}
+
+	/// <summary>Starts a walk to <paramref name="target"/> along <paramref name="cells"/>; the route starts at the guest's own cell.</summary>
+	private static void SetDestination( Guest guest, (int X, int Y) target, List<(int X, int Y)> cells, List<(int X, int Y)>? alsoOpen = null )
+	{
+		var navigation = guest.Navigation;
+		var route = new List<(int X, int Y)>( cells.Count + 1 ) { navigation.Cell };
+		foreach ( var cell in cells )
+		{
+			if ( route[^1] != cell )
+				route.Add( cell );
+		}
+		navigation.SetDestination( target.X, target.Y, route, alsoOpen );
+		guest.HasWaypoint = true;
+	}
+
+	/// <summary>The next path cell: a destination at the guest's offset point in it, routed through the current cell.</summary>
 	private void SetCellWaypoint( Guest guest, int x, int y )
 	{
+		var current = (guest.CellX, guest.CellY);
 		guest.PreviousCellX = guest.CellX;
 		guest.PreviousCellY = guest.CellY;
 		guest.CellX = x;
 		guest.CellY = y;
-		guest.WaypointX = x + 0.5f + guest.OffsetX;
-		guest.WaypointY = y + 0.5f + guest.OffsetY;
-		guest.HasWaypoint = true;
+		var (bx, by) = OffsetBytes( guest );
+		SetDestination( guest, GuestNavigation.BytePoint( (x, y), bx, by ), [current, (x, y)] );
 	}
 
 	private void SetLaneWaypoint( Guest guest )
 	{
 		var cell = guest.Lane![guest.LaneIndex];
-		guest.WaypointX = cell.X + 0.5f + guest.OffsetX;
-		guest.WaypointY = cell.Y + 0.5f + guest.OffsetY;
-		guest.HasWaypoint = true;
+		var (bx, by) = OffsetBytes( guest );
+		SetDestination( guest, GuestNavigation.BytePoint( cell, bx, by ), [cell] );
 	}
 
 	// Arrival lane: [bus stop, crossing (bus side), crossing (park side), ticket booth, entrance].
 	private void UpdateLane( Guest guest, float dt )
 	{
-		if ( !Move( guest, dt ) )
+		if ( !Move( guest ) )
 			return;
 		var lane = guest.Lane!;
 		if ( !guest.LaneReversed )
@@ -455,6 +600,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 	private void StartLeavingLane( Guest guest, (int X, int Y)[] lane, int fromIndex )
 	{
 		guest.OnGrid = false;
+		guest.Navigation.OffGrid = true;
 		guest.Lane = lane;
 		guest.LaneReversed = true;
 		guest.LaneIndex = Math.Max( 0, fromIndex - 1 );
@@ -465,7 +611,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 	private void UpdateWalking( Guest guest, float dt )
 	{
 		guest.DecisionTimer -= dt;
-		if ( guest.HasWaypoint && !Move( guest, dt ) )
+		if ( guest.HasWaypoint && !Move( guest ) )
 			return;
 		if ( guest.DecisionTimer <= 0 )
 		{
@@ -605,7 +751,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 
 	private void UpdateGoingToRide( Guest guest, float dt )
 	{
-		if ( guest.HasWaypoint && !Move( guest, dt ) )
+		if ( guest.HasWaypoint && !Move( guest ) )
 			return;
 		var attraction = FindAttraction( guest.AttractionId );
 		if ( attraction == null || !attraction.IsOpen )
@@ -725,7 +871,6 @@ public sealed class GuestSimulation : IRideVisitorHost
 		guest.QueueJoinTurn = ParkTurn;
 		guest.QueueCalled = false;
 		guest.InQueueInterlude = false;
-		guest.HasWaypoint = false;
 		// On a one-cell queue whose front is the path cell itself the guest already stands on the back cell.
 		guest.QueueCellIndex = cells[^1] == (guest.CellX, guest.CellY) ? cells.Count - 1 : cells.Count;
 		MoveToQueuePosition( guest, attraction );
@@ -741,12 +886,60 @@ public sealed class GuestSimulation : IRideVisitorHost
 			return;
 		}
 		guest.QueuePosition = position;
-		var (index, x, y) = QueuePositionPoint( attraction, position, NextLateral() );
-		guest.QueueTargetIndex = index;
-		guest.QueueTargetX = x;
-		guest.QueueTargetY = y;
-		guest.HasWaypoint = false;
+		var (index, x, y) = QueueSlotPoint( attraction, position, NextLateral() );
+		SetQueueDestination( guest, attraction, index, (x, y), toEntrance: false );
 		guest.State = GuestState.MovingUpQueue;
+	}
+
+	/// <summary>
+	/// A queue walk (states 12 and 13): from the guest's cell along the queue cells to cell <paramref name="index"/>,
+	/// then into the ride's entrance cell for the stand point (<paramref name="toEntrance"/>).
+	/// </summary>
+	private static void SetQueueDestination( Guest guest, IRideVisitorBridge attraction, int index, (int X, int Y) target, bool toEntrance )
+	{
+		var cells = attraction.QueueCells;
+		var route = new List<(int X, int Y)>();
+		// The walk starts at the guest's own cell: a queue cell by its index, the join cell behind the back cell, the entrance
+		// cell ahead of the front cell. QueueCellIndex is only the last queue cell the guest stood on, so a guest that cut
+		// into a queue cell and drifted back onto the join cell would get a route whose first hop skips cells (review WV-13).
+		var current = guest.Navigation.Cell;
+		var from = IndexOfCell( cells, current.X, current.Y );
+		if ( from < 0 && attraction.JoinCell == current )
+			from = cells.Count;
+		else if ( from < 0 && EntranceCellOf( attraction ) == current )
+			from = 0;
+		else if ( from < 0 )
+			from = Math.Min( guest.QueueCellIndex, cells.Count );
+		index = Math.Min( index, cells.Count - 1 );
+		for ( var cell = Math.Min( from, cells.Count - 1 ); cell > index; cell-- )
+			route.Add( cells[cell] );
+		for ( var cell = Math.Max( from, 0 ); cell < index; cell++ )
+			route.Add( cells[cell] );
+		route.Add( cells[index] );
+		if ( toEntrance )
+			route.Add( EntranceCellOf( attraction ) );
+		// The queue goes on beyond both ends of the walk: the cell ahead of the destination (the entrance cell ahead of
+		// the front cell) and the cell behind the start (the join cell behind the back cell) are walkable too.
+		// [APPROX:WALK-006] a queue walk may also enter the queue cell ahead of its destination and the one behind its start (the entrance and the join cell at the ends), and no other cell off its route; this stands in for the original's edge flags along the queue — evidence needed: the queue cells' edge flags and the +180 mask in states 12 and 13
+		(int X, int Y)? ahead = toEntrance ? null : index > 0 ? cells[index - 1] : EntranceCellOf( attraction );
+		var behind = from + 1 < cells.Count ? cells[from + 1] : attraction.JoinCell;
+		var alsoOpen = new List<(int X, int Y)>( 2 );
+		if ( ahead is { } a )
+			alsoOpen.Add( a );
+		if ( behind is { } b )
+			alsoOpen.Add( b );
+		guest.QueueTargetIndex = index;
+		guest.QueueTargetX = target.X / (float)Fixed16.One;
+		guest.QueueTargetY = target.Y / (float)Fixed16.One;
+		SetDestination( guest, target, route, alsoOpen );
+	}
+
+	/// <summary>The ride's entrance cell: the front queue cell's neighbour towards the ride.</summary>
+	private static (int X, int Y) EntranceCellOf( IRideVisitorBridge attraction )
+	{
+		var front = attraction.QueueCells[0];
+		var (dx, dy) = GuestPathGrid.Directions[attraction.DirectionTowardsFront( 0 )];
+		return (front.X + dx, front.Y + dy);
 	}
 
 	// [BIN:STP-PPC:0x100DDCC4 queue lateral byte] the sideways byte is rand mod 28 + 114 (114..141) from the shared RNG 0x105328; OpenTPW draws it from the simulation's seeded GuestRandom
@@ -755,17 +948,29 @@ public sealed class GuestSimulation : IRideVisitorHost
 	/// <summary>
 	/// Queue cell and point of a position (<c>0xddcc4</c>): follow the queue four positions per cell, then the
 	/// depth byte trunc(255 × 0.25 × remaining) (0, 63, 127, 191) along the cell from its front edge and the
-	/// sideways byte <paramref name="lateral"/> (114..141) across it.
+	/// sideways byte <paramref name="lateral"/> (114..141) across it, each byte / 256 of a cell (<c>0xe68cc</c>).
 	/// </summary>
 	// [APPROX:QUEUE-006] depth runs from the cell's edge toward its predecessor and the lateral byte across it, and the fourth position (depth 191 > 128) stays in its cell; the original sub-cell axis per link and the 0xdde74 branch are not traced — evidence needed: 0x100DDE74 and the axis selection after it
 	public (int CellIndex, float X, float Y) QueuePositionPoint( IRideVisitorBridge attraction, int position, byte lateral )
 	{
+		var (index, x, y) = QueueSlotPoint( attraction, position, lateral );
+		return (index, x / (float)Fixed16.One, y / (float)Fixed16.One);
+	}
+
+	/// <summary><see cref="QueuePositionPoint"/> in 16.16 cells.</summary>
+	public static (int CellIndex, int X, int Y) QueueSlotPoint( IRideVisitorBridge attraction, int position, byte lateral )
+	{
 		var (index, depth) = QueueSlot( position, attraction.QueueSizeInCells );
 		var cell = attraction.QueueCells[Math.Min( index, attraction.QueueCells.Count - 1 )];
 		var (dx, dy) = GuestPathGrid.Directions[attraction.DirectionTowardsFront( index )];
-		var along = 0.5f - depth / 255f;
-		var across = lateral / 255f - 0.5f;
-		return (index, cell.X + 0.5f + dx * along - dy * across, cell.Y + 0.5f + dy * along + dx * across);
+		// The byte along the axis towards the front counts from the front edge; the lateral byte runs along (−dy, dx).
+		int bx, by;
+		if ( dx != 0 )
+			(bx, by) = (dx > 0 ? 255 - depth : depth, dx > 0 ? lateral : 255 - lateral);
+		else
+			(bx, by) = (dy < 0 ? lateral : 255 - lateral, dy > 0 ? 255 - depth : depth);
+		var (x, y) = GuestNavigation.BytePoint( cell, bx, by );
+		return (index, x, y);
 	}
 
 	/// <summary>The queue cell index and depth byte of a 0-based position in a queue of <paramref name="cells"/> cells.</summary>
@@ -782,16 +987,33 @@ public sealed class GuestSimulation : IRideVisitorHost
 		return (index, (int)(255f * (0.25f * remaining)));
 	}
 
-	/// <summary>The stand point where a called guest offers itself: the front cell's edge toward the ride entrance.</summary>
-	// [APPROX:QUEUE-007] the entry stand point (0xde1d8) is the front cell's edge toward the ride; UsageInfo.EntryCellStandPos is not used — evidence needed: 0x100DE1D8
-	public static (float X, float Y) StandPoint( IRideVisitorBridge attraction )
+	/// <summary>
+	/// The stand point where a called guest offers itself (<c>0xde1d8</c>): in the ride's entrance cell, at the bytes
+	/// trunc(255 × <c>UsageInfo.EntryCellStandPos</c>) after rotating it with the object (0/90/180/270); (0.5, 0.5)
+	/// gives (127, 127), the entrance cell's centre less 1/256.
+	/// </summary>
+	// [BIN:STP-PPC:0x100DE1D8 entry stand point] host +50 entry cell; (x, y) rotated by host +16: 90 → (y, 1 − x), 180 → (1 − x, 1 − y), 270 → (1 − y, x); × 255.0 (data 0x54c0), truncated to bytes (0xde500..0xde528)
+	public static (int X, int Y) StandPoint( IRideVisitorBridge attraction )
 	{
-		var cell = attraction.QueueCells[0];
-		var (dx, dy) = GuestPathGrid.Directions[attraction.DirectionTowardsFront( 0 )];
-		return (cell.X + 0.5f + dx * 0.5f, cell.Y + 0.5f + dy * 0.5f);
+		var (bx, by) = StandBytes( attraction.EntryCellStandPos, attraction.Rotation );
+		return GuestNavigation.BytePoint( EntranceCellOf( attraction ), bx, by );
 	}
 
-	/// <summary>States 12 (walking to a queue position) and 13 (walking to the stand point): cell by cell along the queue.</summary>
+	/// <summary>The stand point's bytes for a stand position and an object rotation in degrees.</summary>
+	public static (int X, int Y) StandBytes( (float X, float Y) position, int rotation )
+	{
+		var (x, y) = position;
+		var (fx, fy) = (((rotation % 360) + 360) % 360) switch
+		{
+			90 => (y, 1 - x),
+			180 => (1 - x, 1 - y),
+			270 => (1 - y, x),
+			_ => (x, y)
+		};
+		return ((int)(255.0 * fx), (int)(255.0 * fy));
+	}
+
+	/// <summary>States 12 (walking to a queue position) and 13 (walking to the stand point): one walk along the queue cells.</summary>
 	private void UpdateQueueWalk( Guest guest, float dt )
 	{
 		var attraction = FindAttraction( guest.AttractionId );
@@ -800,33 +1022,33 @@ public sealed class GuestSimulation : IRideVisitorHost
 			ReturnOrphanToPath( guest );
 			return;
 		}
-		if ( guest.HasWaypoint && !Move( guest, dt ) )
-			return;
-		var cells = attraction.QueueCells;
-		if ( guest.QueueCellIndex > guest.QueueTargetIndex && guest.QueueCellIndex > 0 )
+		if ( guest.HasWaypoint )
 		{
-			guest.QueueCellIndex = Math.Min( guest.QueueCellIndex, cells.Count ) - 1;
-			var cell = cells[guest.QueueCellIndex];
-			guest.PreviousCellX = guest.CellX;
-			guest.PreviousCellY = guest.CellY;
-			guest.CellX = cell.X;
-			guest.CellY = cell.Y;
-			guest.WaypointX = cell.X + 0.5f;
-			guest.WaypointY = cell.Y + 0.5f;
-			guest.HasWaypoint = true;
-			return;
+			var arrived = Move( guest );
+			TrackQueueCell( guest, attraction );
+			if ( !arrived )
+				return;
 		}
-		if ( guest.X != guest.QueueTargetX || guest.Y != guest.QueueTargetY )
-		{
-			guest.WaypointX = guest.QueueTargetX;
-			guest.WaypointY = guest.QueueTargetY;
-			guest.HasWaypoint = true;
-			return;
-		}
+		else if ( turnStarted )
+			Step( guest ); // state 13 keeps stepping (braking) until the ride takes the guest's offer
 		if ( guest.State == GuestState.MovingUpQueue )
 			EnterStanding( guest );
 		else if ( attraction.PresentForBoarding( guest.Id ) )
 			guest.State = GuestState.WaitingToBoard;
+	}
+
+	/// <summary>The cell the walking guest stands on, and its queue index when it is a queue cell.</summary>
+	private static void TrackQueueCell( Guest guest, IRideVisitorBridge attraction )
+	{
+		var cell = guest.Navigation.Cell;
+		if ( cell == (guest.CellX, guest.CellY) )
+			return;
+		guest.PreviousCellX = guest.CellX;
+		guest.PreviousCellY = guest.CellY;
+		(guest.CellX, guest.CellY) = cell;
+		var index = IndexOfCell( attraction.QueueCells, cell.X, cell.Y );
+		if ( index >= 0 )
+			guest.QueueCellIndex = index;
 	}
 
 	private void EnterStanding( Guest guest )
@@ -863,11 +1085,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 		if ( guest.QueuePosition == 0 && guest.QueueCalled && attraction.CalledGuest == guest.Id )
 		{
 			guest.QueueCalled = false;
-			var (x, y) = StandPoint( attraction );
-			guest.QueueTargetIndex = 0;
-			guest.QueueTargetX = x;
-			guest.QueueTargetY = y;
-			guest.HasWaypoint = false;
+			SetQueueDestination( guest, attraction, 0, StandPoint( attraction ), toEntrance: true );
 			guest.State = GuestState.Boarding;
 			return;
 		}
@@ -974,7 +1192,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 
 	private void UpdateLeaving( Guest guest, float dt )
 	{
-		if ( guest.HasWaypoint && !Move( guest, dt ) )
+		if ( guest.HasWaypoint && !Move( guest ) )
 			return;
 		var lanes = new[] { ValidLane( Settings.ArrivalLaneA ), ValidLane( Settings.ArrivalLaneB ) };
 		(int X, int Y)[]? bestLane = null;
@@ -1175,9 +1393,14 @@ public sealed class GuestSimulation : IRideVisitorHost
 			hash.Add( guest.OnGrid );
 			hash.Add( guest.OffsetX );
 			hash.Add( guest.OffsetY );
-			hash.Add( guest.WaypointX );
-			hash.Add( guest.WaypointY );
 			hash.Add( guest.HasWaypoint );
+			hash.Add( guest.BaseSpeed );
+			hash.Add( guest.ToiletBonus );
+			hash.Add( (int)guest.Boost );
+			hash.Add( guest.SmoothedSpeed );
+			hash.Add( guest.MaxSpeed );
+			hash.Add( guest.MaxForce );
+			guest.Navigation.AddCanonicalState( hash );
 			hash.Add( guest.Lane?.Length ?? -1 );
 			foreach ( var (x, y) in guest.Lane ?? [] )
 				hash.Add( x * 4096L + y );

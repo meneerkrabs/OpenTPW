@@ -94,6 +94,27 @@ internal sealed partial class SandboxSmokeTest
 		Require( level.PlaceObject( first.Entry, cell.X, cell.Y, 0 ) == null, "reject overlapping footprints" );
 	}
 
+	private int rideHeadFrames;
+	private int maximumDrawnRideHeads;
+
+	/// <summary>Counts the frames in which the head renderer drew a rider's head on a ride that runs ADDHEAD.</summary>
+	private void TrackRideHeads()
+	{
+		if ( level.RideHeadRenderer == null )
+			return;
+		var drawn = level.RideHeadRenderer.DrawnHeads;
+		if ( drawn > 0 )
+			rideHeadFrames++;
+		maximumDrawnRideHeads = Math.Max( maximumDrawnRideHeads, drawn );
+	}
+
+	/// <summary>An original level must draw a rider's head on some ride that places heads (the Jungle rides of the import, which guests board).</summary>
+	private void VerifyRideHeads()
+	{
+		Require( rideHeadFrames > 0, "draw a rider's head on a ride that uses ADDHEAD" );
+		Log.Trace( $"Ride heads: drawn in {rideHeadFrames} frames, at most {maximumDrawnRideHeads} at once on rides that run ADDHEAD." );
+	}
+
 	private void SnapshotObjects()
 	{
 		foreach ( var item in level.Objects.Objects )

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -110,5 +111,44 @@ public class RideHeadsCorpusTests
 		var zob = Scripted().Single( x => x.Entry.DisplayName == "Tubes Of Zob" );
 		Assert.IsTrue( zob.Adds > 0 );
 		Assert.IsNull( zob.Space );
+	}
+
+	/// <summary>The head sets (<c>esprites/Generic/Kidsheads</c>) load from their TPC banks, one per kid type, with frames.</summary>
+	[TestMethod]
+	public void HeadSpriteSetsLoadFromTheirTpcBanks()
+	{
+		var heads = GuestSpriteAtlas.LoadKidHeads();
+		var kids = GuestSpriteAtlas.LoadKids();
+		Assert.AreEqual( kids.Count, heads.Count );
+		Assert.IsTrue( heads.All( atlas => atlas.Frames.Length > 0 && atlas.PackKey.StartsWith( "esprites/generic/kidsheads/", StringComparison.Ordinal ) ) );
+		Assert.IsTrue( heads.All( atlas => atlas.FramesPerDirection( GuestSpriteAtlas.StandSlot ) >= 1 ) );
+	}
+
+	/// <summary>
+	/// Coaster and tour car models (their WADs in the jungle and hallow rides folders) and their head records. The Mac car
+	/// setup (0x100303A8) counts the head records of a car type and prints "Car type %s can receive %d heads"; the car
+	/// heads are not placed by a ride script (docs/exe/park.md: the cars are records with a handle and no head table).
+	/// </summary>
+	[TestMethod]
+	public void CarModelsCarryHeadRecordsOrNot()
+	{
+		var dataPath = OriginalParkImportTests.OriginalDataPath();
+		var wads = new[] { "coaster1.wad", "coaster3.wad", "minecart.wad", "tourride.wad" }
+			.SelectMany( name => new[] { "jungle", "hallow" }.Select( theme => Path.Combine( dataPath, "levels", theme, "rides", name ) ) )
+			.Where( File.Exists ).ToArray();
+		var found = new List<string>();
+		foreach ( var wad in wads )
+		{
+			using var archive = new WadArchive( wad );
+			foreach ( var member in archive.Root.Children.OfType<ArchiveFile>().Where( x => x.Name!.EndsWith( ".MD2", StringComparison.OrdinalIgnoreCase ) ) )
+			{
+				var model = new ModelFile( new MemoryStream( member.GetData() ) );
+				var records = model.DummyAttributes.Count( attribute => (attribute.Type & RideHeadSpace.HeadFlag) != 0 );
+				found.Add( $"{Path.GetFileName( wad )}/{member.Name}={records}" );
+			}
+		}
+		var withRecords = found.Where( entry => !entry.EndsWith( "=0", StringComparison.Ordinal ) ).ToArray();
+		CollectionAssert.AreEqual( new[] { "coaster1.wad/CrocCar.MD2=6", "coaster3.wad/ape.MD2=2", "minecart.wad/cart.MD2=6", "tourride.wad/Bird.MD2=9", "tourride.wad/Balloon.MD2=9" }, withRecords );
+		Assert.IsTrue( found.Count >= 50 );
 	}
 }

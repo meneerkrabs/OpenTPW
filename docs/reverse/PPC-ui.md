@@ -709,9 +709,16 @@ two **16×128×4** source images, 8192 bytes each. These serialized images are n
 the generated text masks. There are 23 flagged extra images, all version 101,
 256×128×4. The version-100 extra-image call at `0xabd94` uses raw `load`; version
 101 at `0xabdac` uses `load_wavelet__6BitmapFPvP8CWavelet`, engine `0x3e97c`.
-The new parser records its descriptor and preserves the remaining payload as
-opaque; it does not certify its internal length, decode it, or classify arbitrary
-trailing bytes inside that unsupported container. The actual four Mac lobby
+The parser records its descriptor and preserves the payload. A later binary trace
+of engine `0x3e97c..0x3efa8` established the version-101 envelope: four little-endian
+float scales, two little-endian chunk lengths, then RGB and alpha BILZ chunks.
+Both chunks use the signed coefficient byte format with `-128` introducing a
+little-endian i16, as in the existing `.wct` decoder. `SignWaveletDecoder` checks
+the complete envelope and decodes the 23 shipped extra images to ARGB; four belong
+to the lobby and the other 19 span all four themes. `native_sign_reader` pins the
+six swapped reads at engine `0x3ed10..0x3ee04`, both BILZ decompressor imports at
+`0x32668/0x332c0`, and the ARGB output stores at `0x3ef40..0x3ef5c` against the
+identified binary hashes. The actual four Mac lobby
 signs use identical metadata/bytes to the pinned PC lobby corpus. Mac lobby
 SHA-256 remains `b9afda6264961021aecaca882adf9ce25aa6973f48111415176ed45afd2c9ee7`.
 
@@ -953,22 +960,23 @@ logic/tool commit and final clipping/pixels. No approximation ID is closed.
 
 ## Current sign renderer correction plan
 
-`SignTextRenderer.RenderSign -> SignCanvas.Compose -> SignCanvas.SlotColor`
-uses the corrected stored paint RGB API as an opaque presentation policy for
-supported styles 1/2, and Compose diagnoses the remaining COMPAT-003 limitation.
-The former lighting-coefficients-as-RGB tint is removed; native material
-coefficients are independent metadata and never used as a tint. No original
-final shaded text RGB or guessed white fallback is claimed. Font rasterization,
-canvas dimensions, background and gameplay shader ownership remain unchanged.
+`SignTextRenderer.RenderSign -> SignSurfaceComposer.Compose` now uses the native
+two 128×128 destinations. It clears to transparent, decodes and alpha-blits the
+optional board, draws style-2 paints, then draws style-1 paints and material
+effects in header-flag order. Both style-2 masks share paint 0; style 0 still
+receives its material effect. Paint uses the native alpha scaling and integer
+blend. The effect samples the 16-pixel material strip with canvas-origin
+horizontal tiling and measured-height vertical phase, then applies the shared
+lighting coefficients. The old flat-board contrast selection is removed.
 
-The next production step requires native mask shaping/normal construction,
-source-image descimation and wavelet image decoding, plus paint/effect layer
-composition and final split/pack (including the 16-bit consumer). Keep glyph
-coverage separate from surface color: native white TextOut establishes a mask,
-not final white material. Once those prerequisites have independent fixtures,
-replace the opaque presentation policy with the proven surface pipeline. Mac QuickDraw spacing
-and coverage still require an original-platform oracle; current OpenTPW pixels
-cannot supply that evidence. No COMPAT approximation ID is closed by this parser.
+`SignTextLayout` still supplies OpenTPW glyph coverage. Downsampled masks do not
+implement native nonzero morphology, Gaussian shaping or paint-offset behavior;
+the source strip's vertical resampling and float rounding need native pixel
+fixtures. The final RGBA rows remain top-down for the current GPU texture API;
+the original Mac copy loop reverses rows before its GPU upload, whose UV
+consumer is not yet proved. Gate signs use their decoded `.sgn` board through
+the same compositor, with gate-specific pixel parity still open. These
+boundaries remain under COMPAT-001/003/004/018.
 
 ## Every UI approximation: result and concrete remaining dependency
 
@@ -1017,10 +1025,10 @@ Relevant compatibility IDs:
 
 | ID | Result and remaining dependency |
 | --- | --- |
-| COMPAT-001 | Partial replacement: two 128×128 destinations, larger masks/DIBs and dimension-preserving channel swizzle established; geometry UV orientation and full compositing still require integration. |
+| COMPAT-001 | Partial replacement: two 128×128 ride destinations and 512-wide text raster are integrated; original lower DIB rows and GPU UV orientation remain open. |
 | COMPAT-002 | Partial replacement: OS-measured centering and LOGFONT-width search, no evidenced eight-texel margin; trace empty/overlong/multi-line text and final texture coordinates. |
-| COMPAT-003 | Former lighting-as-RGB mapping is removed. Stored paint RGB remains an opaque presentation policy with a diagnostic; final shaded text RGB is unverified. Native style/material/source RGB/mask alpha metadata is pinned. Integrate source descimation, normal construction and final layer composition, then verify original-platform pixels. |
-| COMPAT-004 | Partial: production parser exposes original effect/paint/raw image metadata and preserves unsupported wavelet payload. Decode the wavelet background and implement layer ordering/integer blend/packing; verify output before replacing the flat board. |
+| COMPAT-003 | Ride paints, material strips, coefficients and integer layer blending are integrated. OpenTPW text coverage, unshaped masks, source-height resampling and float rounding still need native fixtures and original-platform pixels. |
+| COMPAT-004 | Gate and ride boards decode and alpha-blit. Compare gate-specific board/text placement with original-platform pixels. |
 | COMPAT-005 | Open: SGN scale integer is read separately from LOGFONT width; width-search proof does not assign the 85..141 field a unit or prove it is ignored. Trace its consumers. |
 | COMPAT-006 | Partial: identified Mac sign call reaches QuickDraw StdText/StdTxMeas; no Windows GDI pair-kerning conclusion follows. Inspect backend/font settings or obtain original-platform glyph-spacing oracle. |
 | COMPAT-007 | Open: trace saved park name and resource/object-name selection into both sign text inputs. |

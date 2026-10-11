@@ -174,7 +174,7 @@ public class SignFileTests
 		CollectionAssert.AreEqual( extra.AsSpan( data.Length ).ToArray(), sign.BoardWavelet, "the compatible wavelet view retains descriptor and payload" );
 		Assert.IsNull( SignCanvas.SlotColor( sign, 0 ), "unknown style metadata must not become a supported tint" );
 		Assert.IsTrue( sign.Diagnostics.Any( message => message.Contains( "style 7" ) ) );
-		Assert.IsTrue( sign.Diagnostics.Any( message => message.Contains( "wavelet" ) ) );
+		Assert.IsFalse( sign.Diagnostics.Any( message => message.Contains( "wavelet" ) ), "a valid wavelet board is supported and needs no warning" );
 	}
 
 	[TestMethod]

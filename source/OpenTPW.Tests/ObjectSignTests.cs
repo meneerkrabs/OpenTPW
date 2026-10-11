@@ -119,25 +119,23 @@ public class ObjectSignCorpusTests
 					failures.Add( $"{theme}/{entry.ArchiveName}: no sign images" );
 				else if ( images.TextPixelCount == 0 )
 					silent.Add( $"{theme}/{entry.ArchiveName}" );
-				else if ( images.Left.Length != SignCanvas.HalfWidth * SignCanvas.Height * 4 || images.Right.Length != images.Left.Length )
+				else if ( images.Left.Length != SignSurfaceComposer.HalfWidth * SignSurfaceComposer.Height * 4 || images.Right.Length != images.Left.Length )
 					failures.Add( $"{theme}/{entry.ArchiveName}: wrong texture size" );
 			}
 		}
 		Assert.IsTrue( withFaces > 10, $"expected many objects with sign faces, found {withFaces}" );
 		CollectionAssert.AreEqual( Array.Empty<string>(), failures, string.Join( "\n", failures ) );
-		// The three signs whose both text slots have colour mode 0 draw no text (the native compositor paints only modes 1 and 2); they show the board colour.
-		CollectionAssert.AreEquivalent( new[] { "hallow/c_scat", "fantasy/jelly", "space/zob" }, silent );
+		CollectionAssert.AreEqual( Array.Empty<string>(), silent, "material effects are composed even when a paint style is zero" );
 	}
 
 	[TestMethod]
 	public void SignTexturesAreNotThePlaceholder()
 	{
-		// The shipped sign1.wct/sign2.wct placeholders are opaque magenta; a composed sign is the board colour plus text.
+		// The shipped sign1.wct/sign2.wct placeholders are opaque magenta; a composed sign carries material text.
 		var totem = ObjectCatalog.Load( "jungle" ).Entries.Single( entry => entry.ArchiveName.Equals( "totem", StringComparison.OrdinalIgnoreCase ) );
 		var images = ObjectSigns.Get( totem )!;
 		Assert.AreEqual( 0, MagentaPixels( images.Left ) + MagentaPixels( images.Right ) );
-		var board = ObjectSigns.LightBoard; // the Totem's text is black
-		Assert.AreEqual( (board.R, board.G, board.B, board.A), (images.Left[0], images.Left[1], images.Left[2], images.Left[3]) );
+		Assert.AreEqual( SignSurfaceComposer.HalfWidth * SignSurfaceComposer.Height * 4, images.Left.Length );
 		Assert.AreSame( images, ObjectSigns.Get( totem ), "one composition per archive and text" );
 	}
 
@@ -167,7 +165,7 @@ public class ObjectSignCorpusTests
 			foreach ( var entry in entries.Where( entry => entry.Trim().Length > 0 ) )
 			{
 				var (first, second) = SignCanvas.SplitAtMiddleSpace( entry.Trim() );
-				var composed = SignTextRenderer.Shared.ComposeSign( sign, new[] { first, second }, OriginalGateSign.Background );
+					var composed = SignTextRenderer.Shared.ComposeSign( sign, new[] { first, second }, default );
 				composedAny = true;
 				withoutGlyphs.AddRange( composed.Diagnostics.Where( diagnostic => diagnostic.Contains( "no glyph" ) ).Select( diagnostic => $"{name} \"{entry}\": {diagnostic}" ) );
 			}
@@ -181,7 +179,7 @@ public class ObjectSignCorpusTests
 	public void CharactersOutsideTheFontAreReportedNotThrown()
 	{
 		var sign = SignTextRenderer.LoadSignFile( "/levels/jungle/rides/totem" )!;
-		var composed = SignTextRenderer.Shared.ComposeSign( sign, new[] { "\u4e2dmega", "R\u00eede" }, OriginalGateSign.Background );
+		var composed = SignTextRenderer.Shared.ComposeSign( sign, new[] { "\u4e2dmega", "R\u00eede" }, default );
 		Assert.IsTrue( composed.Diagnostics.Any( diagnostic => diagnostic.Contains( "U+4E2D" ) ) );
 		Assert.IsTrue( composed.TextPixelCount > 0 );
 	}

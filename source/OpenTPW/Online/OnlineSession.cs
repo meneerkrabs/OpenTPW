@@ -543,8 +543,9 @@ public sealed class OnlineSession : IDisposable
 					{
 						CurrentRoom = item.Room;
 						RoomPlayers = item.Args ?? Array.Empty<string>();
-						foreach ( var left in positions.Keys.Where( name => !RoomPlayers.Contains( name ) ).ToList() )
-							positions.Remove( left );
+						// The new room's places arrive with the player's first movement there; the old room's
+						// places mean nothing in it.
+						positions.Clear();
 					}
 					else if ( item.Kind == ChatEventKind.Move && item.From != null )
 						positions[item.From] = (item.X ?? 0, item.Y ?? 0);

@@ -84,6 +84,11 @@ public sealed class ChatHub
 		public volatile string Room = ChatProtocol.LobbyRoom;
 		/// <summary>The avatar's position in a chat park, both axes 0-1; null until it has moved.</summary>
 		public (float X, float Y)? Position;
+		/// <summary>
+		/// Set with the first movement this connection sends: only clients that walk receive movement, so older
+		/// game versions (v0.7.x, which have no chat-park view) never get frames they would draw as empty lines.
+		/// </summary>
+		public bool ReceivesMovement;
 		public string? LastToldTo;
 		public string? LastToldBy;
 		public bool Earmuffs;
@@ -261,12 +266,20 @@ public sealed class ChatHub
 		if ( request.Type == ChatRequest.MoveType )
 		{
 			// The server relays the player's movement to everyone in the chat park (manual p. 68: players walk
-			// and teleport around a park they are in together).
+			// and teleport around a park they are in together). The first movement also marks this connection as
+			// one that draws movement, and the answer to it carries where everyone else already stands — so a
+			// joiner sees the park's players at their places, and an older client (v0.7.x) never receives a frame
+			// it would draw as an empty line.
 			var position = (request.X!.Value, request.Y!.Value);
+			var first = !session.ReceivesMovement;
 			session.Position = position;
+			session.ReceivesMovement = true;
 			var moved = new ChatEvent( ChatEventKind.Move, session.Name, session.Room, X: position.Item1, Y: position.Item2 );
-			foreach ( var other in sessions.Values.Where( other => other.Room == session.Room && other != session ) )
+			foreach ( var other in sessions.Values.Where( other => other.Room == session.Room && other != session && other.ReceivesMovement ) )
 				Deliver( other, moved );
+			if ( first )
+				foreach ( var other in sessions.Values.Where( other => other.Room == session.Room && other != session && other.Position != null ) )
+					Send( session, new ChatEvent( ChatEventKind.Move, other.Name, session.Room, X: other.Position!.Value.X, Y: other.Position!.Value.Y ) );
 			return;
 		}
 		ChatCommands.TryParseCanonical( request.Command!, out var command );
@@ -283,9 +296,6 @@ public sealed class ChatHub
 		session.Room = room;
 		session.Position = null;
 		Send( session, RoomEvent( room ) );
-		// Where everyone already in the park stands (the original's players-present-together chat parks).
-		foreach ( var other in sessions.Values.Where( other => other.Room == room && other != session && other.Position != null ) )
-			Send( session, new ChatEvent( ChatEventKind.Move, other.Name, room, X: other.Position!.Value.X, Y: other.Position!.Value.Y ) );
 		foreach ( var other in sessions.Values.Where( other => other.Room == room && other != session ) )
 			Send( other, RoomEvent( room ) );
 		NotifyBuddiesOfEntry( session );

@@ -934,17 +934,23 @@ public class OnlineServerTests
 			using var counter = new OnlineClient( server.Url );
 			Assert.AreEqual( 2, (await counter.GetChatParksAsync())!.ChatParks.Single( park => park.Id == 1 ).Players );
 
-			// Walking is relayed to everyone in the park, and a joiner is told where everyone stands.
+			// Walking is relayed to everyone in the park; a client's first movement also asks for the places of
+			// everyone already there, without ever sending movement to an older client that never walked.
+			await bob.MoveAsync( 0.5f, 0.5f );
 			await ann.MoveAsync( 0.25f, 0.75f );
-			var annMoved = await NextAsync( bob, item => item.Kind == ChatEventKind.Move );
+			var annMoved = await NextAsync( bob, item => item.Kind == ChatEventKind.Move && item.From == "Ann" );
 			Assert.AreEqual( ("Ann", satellite, 0.25f, 0.75f), (annMoved.From, annMoved.Room, annMoved.X, annMoved.Y) );
 			using var carolClient = await server.LoginAsync( "Carol" );
 			await using var carol = await carolClient.ConnectChatAsync();
 			await NextAsync( carol, item => item.Kind == ChatEventKind.Room );
 			await carol.JoinAsync( satellite );
 			await NextAsync( carol, item => item.Kind == ChatEventKind.Room && item.Room == satellite );
-			var carolSeesAnn = await NextAsync( carol, item => item.Kind == ChatEventKind.Move );
-			Assert.AreEqual( ("Ann", 0.25f, 0.75f), (carolSeesAnn.From, carolSeesAnn.X, carolSeesAnn.Y) );
+			await carol.MoveAsync( 0.75f, 0.25f );
+			var carolSeesAnn = await NextAsync( carol, item => item.Kind == ChatEventKind.Move && item.From == "Ann" );
+			Assert.AreEqual( (0.25f, 0.75f), (carolSeesAnn.X, carolSeesAnn.Y) );
+			// Carol's first movement reached the park's other players as well.
+			var carolMoved = await NextAsync( bob, item => item.Kind == ChatEventKind.Move && item.From == "Carol" );
+			Assert.AreEqual( (0.75f, 0.25f), (carolMoved.X, carolMoved.Y) );
 
 			// A flood of positions is dropped, not answered and not punished: the connection stays and chat flows.
 			for ( var index = 0; index < 8; index++ )

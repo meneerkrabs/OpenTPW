@@ -53,6 +53,9 @@ public class OnlineIntegrationTests
 			bob.JoinRoom( satellite );
 			await PumpUntilIdle( ann );
 			await PumpUntilIdle( bob );
+			// A player's first movement asks the park where everyone stands; afterwards every step is relayed.
+			bob.MoveTo( 0.5f, 0.5f );
+			await PumpUntilIdle( bob );
 			ann.MoveTo( 0.3f, 0.7f );
 			await PumpUntilIdle( ann );
 			Assert.IsTrue( await Until( bob, () => bob.RoomPositions.TryGetValue( "Ann", out var place ) && place == (0.3f, 0.7f) ),

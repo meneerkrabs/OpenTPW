@@ -11,16 +11,29 @@ namespace OpenTPW.Tests;
 public class LanguageTests
 {
 	private string root = "";
+	private GameLanguage? previousLanguage;
+	private string? previousOverlay;
 
 	[TestInitialize]
 	public void CreateRoot()
 	{
 		root = Path.Combine( Path.GetTempPath(), $"opentpw-language-{Guid.NewGuid():N}" );
 		Directory.CreateDirectory( root );
+		previousLanguage = GameLanguage.IsSelected ? GameLanguage.Current : null;
+		previousOverlay = GameLanguage.AvailableOverlay;
 	}
 
+	/// <summary>
+	/// Restores the static language selection (null means unselected) so no language rooted in the deleted
+	/// temporary folder outlives the test; later tests such as the online ones would otherwise load from it.
+	/// </summary>
 	[TestCleanup]
-	public void DeleteRoot() => Directory.Delete( root, true );
+	public void DeleteRoot()
+	{
+		GameLanguage.Current = previousLanguage!;
+		GameLanguage.AvailableOverlay = previousOverlay;
+		Directory.Delete( root, true );
+	}
 
 	private string CreateLanguage( string dataDirectory, string folder, string characters = "abc" )
 	{
@@ -104,22 +117,12 @@ public class LanguageTests
 		CreateLanguage( Path.Combine( "cd", "Danish", "data" ), "danish", "xyz" );
 		CreateLanguage( Path.Combine( "cd", "German", "data" ), "German", "zyx" );
 		var overlay = Path.Combine( root, "cd" );
-		var previous = (GameLanguage.IsSelected ? GameLanguage.Current : null, GameLanguage.AvailableOverlay);
-		try
-		{
-			GameLanguage.Current = GameLanguage.Resolve( Path.Combine( root, "Data" ), null, overlay );
-			Assert.IsNull( GameLanguage.Current.OverlayDataDirectory, "English comes from the installation" );
-			GameLanguage.AvailableOverlay = overlay;
-			CollectionAssert.AreEqual( new[] { "English", "Danish", "German" }, GameLanguage.Choosable().ToArray(), "the CD's languages stay on offer" );
-			GameLanguage.AvailableOverlay = null;
-			CollectionAssert.AreEqual( new[] { "English" }, GameLanguage.Choosable().ToArray() );
-		}
-		finally
-		{
-			if ( previous.Item1 != null )
-				GameLanguage.Current = previous.Item1;
-			GameLanguage.AvailableOverlay = previous.AvailableOverlay;
-		}
+		GameLanguage.Current = GameLanguage.Resolve( Path.Combine( root, "Data" ), null, overlay );
+		Assert.IsNull( GameLanguage.Current.OverlayDataDirectory, "English comes from the installation" );
+		GameLanguage.AvailableOverlay = overlay;
+		CollectionAssert.AreEqual( new[] { "English", "Danish", "German" }, GameLanguage.Choosable().ToArray(), "the CD's languages stay on offer" );
+		GameLanguage.AvailableOverlay = null;
+		CollectionAssert.AreEqual( new[] { "English" }, GameLanguage.Choosable().ToArray() );
 	}
 
 	[TestMethod]
@@ -175,7 +178,6 @@ public class LanguageTests
 	{
 		CreateLanguage( "Data", "French" );
 		var originalFileSystem = FileSystem;
-		var original = GameLanguage.IsSelected ? GameLanguage.Current : null;
 		try
 		{
 			FileSystem = new BaseFileSystem( Path.Combine( root, "Data" ) );
@@ -185,7 +187,44 @@ public class LanguageTests
 		finally
 		{
 			FileSystem = originalFileSystem;
-			GameLanguage.Current = original!;
+		}
+	}
+
+	[TestMethod]
+	public void OnlineStringsFallBackWithoutTablesAndFollowTheSelectedLanguage()
+	{
+		var previousLog = Log;
+		try
+		{
+			// The test host never sets the global logger, so the fallback path must not need it.
+			Log = null!;
+			GameLanguage.Current = null!;
+			Assert.IsNull( OnlineStrings.ChatCommands, "no language selected means no table" );
+			Assert.AreEqual( "fallback", OnlineStrings.Error( OnlineStrings.ErrorConnect, "fallback" ) );
+
+			var englishDirectory = CreateLanguage( "Data", "English" );
+			var english = GameLanguage.Resolve( Path.Combine( root, "Data" ), null, null );
+			GameLanguage.Current = english;
+			Assert.IsNull( OnlineStrings.ChatCommands, "the language has no CHAT_COMMANDS.str" );
+			Assert.AreEqual( "[160]", OnlineStrings.ChatNotice( OnlineStrings.SystemMessage, null ) );
+			Assert.AreEqual( "abc", OnlineStrings.Ui( 0, "fallback" ), "a missing table does not hide the others" );
+
+			var germanDirectory = CreateLanguage( "Other", "German", "xyz" );
+			File.WriteAllBytes( Path.Combine( germanDirectory, "CHAT_COMMANDS.str" ), StringTableTests.CreateStringTable( new byte[] { 3, 2, 1 } ) );
+			GameLanguage.Current = GameLanguage.Resolve( Path.Combine( root, "Other" ), null, null );
+			Assert.AreEqual( "xyz", OnlineStrings.Ui( 0, "fallback" ), "selecting another language drops the cached tables" );
+			Assert.AreEqual( "zyx", OnlineStrings.ChatCommands?[0] );
+
+			// A language whose folder is gone, as left behind by a test that deleted its temporary data.
+			Directory.Delete( englishDirectory, true );
+			GameLanguage.Current = english;
+			Assert.IsNull( OnlineStrings.ChatCommands );
+			Assert.AreEqual( "fallback", OnlineStrings.Ui( 0, "fallback" ) );
+			Assert.AreEqual( "fallback", OnlineStrings.Error( OnlineStrings.ErrorConnect, "fallback" ) );
+		}
+		finally
+		{
+			Log = previousLog;
 		}
 	}
 

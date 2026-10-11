@@ -68,7 +68,7 @@ public static class OnlineStrings
 	public const int SystemMessage = 160;
 
 	private static StringFile? uiText, errors, chat, themes;
-	private static bool loadFailed;
+	private static readonly HashSet<string> unavailable = new();
 	private static int loadedVersion = -1;
 
 	private static readonly object tablesLock = new();
@@ -81,22 +81,28 @@ public static class OnlineStrings
 			return TableLocked( ref cache, name );
 	}
 
+	/// <summary>
+	/// A table of the selected language; null (so callers use their fallbacks) when no language is selected or it lacks
+	/// the file. A missing file is remembered per file and language, so the other tables still load.
+	/// </summary>
 	private static string[]? TableLocked( ref StringFile? cache, string name )
 	{
-		// A language change drops every table (and a failure of the previous language).
+		// A language change drops every table (and the files the previous language lacked).
 		if ( loadedVersion != GameLanguage.Version )
 		{
 			uiText = errors = chat = themes = null;
-			loadFailed = false;
+			unavailable.Clear();
 			loadedVersion = GameLanguage.Version;
 		}
-		if ( cache == null && !loadFailed && GameLanguage.IsSelected )
+		if ( !GameLanguage.IsSelected )
+			return null;
+		if ( cache == null && !unavailable.Contains( name ) )
 		{
 			try { cache = GameLanguage.Current.LoadStrings( name ); }
-			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or FileNotFoundException )
+			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or UnauthorizedAccessException )
 			{
-				loadFailed = true;
-				Log.Warning( $"Online strings: {name} unavailable ({exception.Message})." );
+				unavailable.Add( name );
+				Log?.Warning( $"Online strings: {name} unavailable ({exception.Message})." );
 			}
 		}
 		return cache?.Entries;

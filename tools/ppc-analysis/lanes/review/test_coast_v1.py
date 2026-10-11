@@ -180,10 +180,6 @@ class Source(unittest.TestCase):
     def test_cv16_force_sign(self):
         self.assertNotIn('(samples[index - 1].Position + next - 2 * sample.Position) / spacing', text(COASTERS / 'CoasterRating.cs'))
 
-    def test_schema_6_pin(self):
-        self.assertIn('public const int SchemaVersion = 6;', text(REPO / 'source' / 'OpenTPW' / 'World' / 'WorldStateHash.cs'))
-        self.assertIn('0x5E1198F70F3F2B55UL', text(REPO / 'source' / 'OpenTPW.Tests' / 'DeterminismTests.cs'))
-
 
 class Git(unittest.TestCase):
     def setUp(self):
@@ -200,6 +196,11 @@ class Git(unittest.TestCase):
         added = [l for l in git('diff', BASE, IMPL, '--', path).stdout.split(b'\n') if l.startswith(b'+') and not l.startswith(b'+++')]
         self.assertEqual(5, len(added))
         self.assertTrue(all(l.endswith(b'\r') for l in added))
+
+    def test_schema_6_pin(self):
+        # COAST-I's own pin; COAST-M later merged the coasters into schema 9 (docs/DETERMINISM.md).
+        self.assertIn('public const int SchemaVersion = 6;', show(IMPL, 'source/OpenTPW/World/WorldStateHash.cs'))
+        self.assertIn('0x5E1198F70F3F2B55UL', show(IMPL, 'source/OpenTPW.Tests/DeterminismTests.cs'))
 
     def test_anim_i_reuses_schema_6_with_another_pin(self):
         git('cat-file', '-e', ANIM + '^{commit}')

@@ -65,7 +65,17 @@ public static class OnlineStrings
 	private static bool loadFailed;
 	private static int loadedVersion = -1;
 
+	private static readonly object tablesLock = new();
+
+	// Read from the game thread and the chat receiver: one lock, so a reset after a language switch cannot be overwritten
+	// by a load of the previous language.
 	private static string[]? Table( ref StringFile? cache, string name )
+	{
+		lock ( tablesLock )
+			return TableLocked( ref cache, name );
+	}
+
+	private static string[]? TableLocked( ref StringFile? cache, string name )
 	{
 		// A language change drops every table (and a failure of the previous language).
 		if ( loadedVersion != GameLanguage.Version )

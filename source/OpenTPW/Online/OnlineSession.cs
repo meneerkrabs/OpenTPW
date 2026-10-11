@@ -71,7 +71,6 @@ public sealed class OnlineSession : IDisposable
 			Settings = new OnlineSettings( null, null );
 			Status = exception.Message;
 		}
-		Commands = new ChatCommandTable( OnlineStrings.ChatCommands );
 	}
 
 	public OnlineFolders Folders { get; }
@@ -82,7 +81,21 @@ public sealed class OnlineSession : IDisposable
 	/// address it was loaded from, which serves the API too (docs/WEB.md). Null on the desktop.
 	/// </summary>
 	public static string? SuggestedServerUrl { get; set; }
-	public ChatCommandTable Commands { get; }
+	/// <summary>The chat commands of the current language (rebuilt after a language switch).</summary>
+	public ChatCommandTable Commands
+	{
+		get
+		{
+			if ( commands == null || commandsVersion != GameLanguage.Version )
+			{
+				commands = new ChatCommandTable( OnlineStrings.ChatCommands );
+				commandsVersion = GameLanguage.Version;
+			}
+			return commands;
+		}
+	}
+	private ChatCommandTable? commands;
+	private int commandsVersion = -1;
 	public OnlineClient? Client { get; private set; }
 	public ChatConnection? Chat { get; private set; }
 	public string Status { get; private set; } = "";

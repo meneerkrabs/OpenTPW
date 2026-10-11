@@ -65,7 +65,9 @@ public class LanguageSwitchTests
 			GameLanguage.Current = GameLanguage.Resolve( data, languages[0], overlay );
 			var first = Localization.Get( UIStrings.GameOptions );
 			var version = GameLanguage.Version;
-			var selected = GameLanguage.Select( languages[1] );
+			var selected = GameLanguage.ResolveSwitch( languages[1] );
+			Assert.AreEqual( version, GameLanguage.Version, "resolving does not switch yet" );
+			GameLanguage.Current = selected;
 			Assert.AreEqual( languages[1], selected.Name );
 			Assert.AreEqual( version + 1, GameLanguage.Version );
 			Assert.AreEqual( OpenTPW.UI.Original.UiStringTable.Load( selected )[UIStrings.GameOptions], Localization.Get( UIStrings.GameOptions ), "Localization follows the switch" );

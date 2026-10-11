@@ -95,7 +95,6 @@ internal sealed class GameFlow : IDisposable
 	public void ShowFrontEnd( string? selectLevel = null )
 	{
 		TearDown();
-		ApplyPendingLanguage();
 		lobbyDefinition ??= LobbyDefinition.Load();
 		Lobby = new LobbyScene( lobbyDefinition );
 		LobbyCameraMode.Radius = lobbyDefinition.SpinRadius;
@@ -133,10 +132,11 @@ internal sealed class GameFlow : IDisposable
 		},
 		Options = GameOptions.Current,
 		Languages = GameLanguage.Choosable(),
-		CurrentLanguage = GameLanguage.Current.Name,
+		// A choice still waiting for the park to be left is what the row shows, so it can also be taken back.
+		CurrentLanguage = pendingLanguage ?? GameLanguage.Current.Name,
 		ApplyLanguage = language =>
 		{
-			pendingLanguage = language;
+			pendingLanguage = string.Equals( language, GameLanguage.Current.Name, StringComparison.OrdinalIgnoreCase ) ? null : language;
 			return Level == null;
 		},
 		SaveOptions = () => { if ( PersistSettings ) GameOptions.Current.Save( OptionsPath ); },
@@ -259,6 +259,8 @@ internal sealed class GameFlow : IDisposable
 			entity.Delete();
 		Lobby = null;
 		Menu = null;
+		// Leaving a park (to the lobby or straight into another park) applies a language chosen inside it.
+		ApplyPendingLanguage();
 	}
 
 	public static void Quit() => global::Global.Render.Window.SdlWindow.Close();
@@ -323,8 +325,9 @@ internal sealed class GameFlow : IDisposable
 		Menu?.Stack.Update( Context, input );
 		foreach ( var entity in Entity.All.ToArray() )
 			entity.Update();
-		// After the frame's input, so the options screen that asked for it is not torn down while it runs.
-		if ( pendingLanguage != null && Level == null && Menu != null )
+		// After the frame's input and once every dialog is closed (a display change may still wait for confirmation), so the
+		// options screen that asked for it is not torn down while it runs.
+		if ( pendingLanguage != null && Level == null && Menu != null && Menu.Stack.Top == Menu.Main )
 		{
 			var selected = Menu.Selected.Level;
 			ShowFrontEnd( selected );
@@ -344,9 +347,13 @@ internal sealed class GameFlow : IDisposable
 			return;
 		try
 		{
-			var language = GameLanguage.Select( name );
-			Strings = UiStringTable.Load( language );
-			Context = new UiContext( Strings, UiFonts.Load( language ), Context.Models );
+			// Everything is loaded before anything changes, so a language that fails to load leaves the old one whole.
+			var language = GameLanguage.ResolveSwitch( name );
+			var strings = UiStringTable.Load( language );
+			var fonts = UiFonts.Load( language );
+			GameLanguage.Current = language;
+			Strings = strings;
+			Context = new UiContext( strings, fonts, Context.Models );
 			Log.Trace( $"Language: {language}" );
 		}
 		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or ArgumentException )

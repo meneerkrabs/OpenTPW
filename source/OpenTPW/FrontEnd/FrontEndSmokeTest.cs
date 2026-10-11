@@ -816,15 +816,20 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			Wait( $"language {to}: options open", 3 );
 			Do( $"language {to}: OpenTPW page", () => Click( flow.Menu!.Stack.Top!, "openTpw" ) );
 			Wait( $"language {to}: OpenTPW page opens", 3 );
-			Do( $"language {to}: cycle", () =>
+			// The row cycles forward: one step to the next language, the rest of the way round to come back.
+			var clicks = to == other ? 1 : languages.Count - 1;
+			for ( var click = 0; click < clicks; click++ )
 			{
-				var page = flow.Menu!.Stack.Top!;
-				Require( page.Name == "openTpwOptions", "the OpenTPW options page opens" );
-				var row = page.Elements.OfType<UiButton>().FirstOrDefault( element => element.Id == "language" );
-				Require( row != null, "the OpenTPW page has a language row" );
-				flow.InjectedInput = UiInput.Click( row!.ScreenRect( Context.Canvas ).Center );
-			} );
-			Wait( $"language {to}: row changes", 3 );
+				Do( $"language {to}: cycle {click + 1}", () =>
+				{
+					var page = flow.Menu!.Stack.Top!;
+					Require( page.Name == "openTpwOptions", "the OpenTPW options page opens" );
+					var row = page.Elements.OfType<UiButton>().FirstOrDefault( element => element.Id == "language" );
+					Require( row != null, "the OpenTPW page has a language row" );
+					flow.InjectedInput = UiInput.Click( row!.ScreenRect( Context.Canvas ).Center );
+				} );
+				Wait( $"language {to}: row changes {click + 1}", 3 );
+			}
 			Do( $"language {to}: back to the original page", () => flow.InjectedInput = UiInput.Key( UiKeys.Back ) );
 			Wait( $"language {to}: original page", 3 );
 			Do( $"language {to}: accept", () =>

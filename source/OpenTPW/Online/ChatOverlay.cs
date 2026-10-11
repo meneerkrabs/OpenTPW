@@ -34,6 +34,7 @@ internal sealed class ChatOverlay : IDisposable
 		{
 			font = new FontAtlas( GameLanguage.Current.LoadFont( "GAME8AA.bf4" ) );
 			fontVersion = GameLanguage.Version;
+			layout = null;
 		}
 		renderer ??= new TextRenderer( Render.OutputDescription );
 		var text = string.Join( "\n", session.ChatLines.Skip( Math.Max( 0, session.ChatLines.Count - VisibleLines ) ) );

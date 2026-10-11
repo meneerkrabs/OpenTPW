@@ -90,9 +90,12 @@ and must not be run.
 ## Switching languages
 
 [EXT:live-language] Options → OpenTPW → *Language* switches when the options are accepted, without a
-restart. In the front end the language, its string tables and its fonts are loaded at once, the
-lobby and the menu are rebuilt, and the options open again in the new language. In a park the
-choice waits: the options say it is used when the park is left, and leaving the park applies it.
+restart. In the front end the language, its string tables and its fonts are loaded once every
+dialog is closed (a display change may still wait for confirmation), the lobby and the menu are
+rebuilt, and the options open again in the new language; a language that fails to load leaves the
+old one in place. In a park the choice waits: the options say it is used when the park is left,
+leaving the park (to the lobby or into another park) applies it, and choosing the current language
+again takes it back. The full CD overlay stays available, so every CD language remains in the list.
 Caches of language data (UITEXT through `Localization`, the online strings, the chat font, object
 names in the object catalogue) follow `GameLanguage.Version` and reload after a switch; an advisor
 line already playing finishes in the old language. The choice is saved in `language.json`, so it

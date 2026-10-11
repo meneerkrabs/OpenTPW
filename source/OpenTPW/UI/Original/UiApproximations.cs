@@ -64,6 +64,19 @@ public static class UiApproximations
 		("UI-064", "research main workload knob shows the current value with linear travel but cannot change it here", "original workload slider handler and control mapping"),
 		("UI-065", "research effort sliders use linear 0..100 travel across their authored tracks", "original slider end stops and quantization handler"),
 		("UI-066", "research progress uses a simple fill inside the fluid model cell", "original fluid model progress frame handler or capture"),
+		("UI-080", "staff list has ten equal rows in the table content area and the wheel moves one row", "capture of the original staff list"),
+		("UI-081", "applicant details use expected monthly wage and grade-derived skill", "original applicant detail bindings"),
+		("UI-082", "selected staff role and grade are text in the portrait frame until the original portrait art is resolved", "original staff portrait renderer"),
+		("UI-083", "Enter or a second click on the selected applicant hires them", "original applicant list activation handler"),
+		("UI-084", "repeated staff header presses reverse the ascending sort order", "original staff header sort cycle"),
+		("UI-085", "the 512 pixel theme map places five-pixel terrain cells centrally; live overlays use that mapping", "original map overlay alignment capture"),
+		("UI-086", "paths, queues and placed objects use plain coloured cells over the shipped theme map image; category buttons filter object footprints", "original map layer colours and button handlers"),
+		("UI-087", "map zoom changes by half a step and a pan moves one eighth of the visible image", "original map zoom and pan handlers"),
+		("UI-088", "map controls for tracks, visitors, staff and metrics stay disabled without per-cell data or decoded handlers", "original map layer handlers and per-cell data"),
+		("UI-089", "the generic sandbox has no shipped theme map image; its live grid and heights form a simple terrain base", "original generic-sandbox map presentation is an OpenTPW design choice"),
+		("UI-090", "staff table control 9366 toggles between applicant and employed views", "original control 9366 handler"),
+		("UI-091", "staff and visitor locate controls remain disabled until world positions can be targeted", "staff and visitor world positions and locate handlers"),
+		("UI-092", "an explicit dismiss button below the portrait confirms with the localized prompt before calling economy Fire", "original staff dismissal handler and placement"),
 	};
 
 	private static bool logged;

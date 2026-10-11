@@ -76,11 +76,17 @@ Allowed when, in this order:
 4. `new == 1` and `old == 3` (path over queue);
 5. `new == old`, or `old == 0` (empty cell);
 6. `new == 4` and `old == 1`;
-7. `new == 3` and `old == 1` **only while the last-cell flag** (`data:0x84b2c`) is set.
+7. `new == 3` and `old == 1` **only while the last-cell flag** (`data:0x84b2c`) is **clear**
+   (`lwz` of the word, `cmpwi 0`, `bne` → refuse).
 
 Everything else is refused. So a **path cell can only go on an empty cell, an existing path cell
-or a queue cell**, and a queue may overwrite a path only with its last cell (the "click onto path
-to connect the queue" end).
+or a queue cell**, and a queue may overwrite a path on **every cell of a line except the last**:
+`LayLine` raises the flag only for a line's end cell (section 5).
+
+Correction (ORACLE-V, `docs/reverse/ORACLE.md` F3, `REVIEW-ORACLE.md` OV-1): rule 7 first read
+"only while the last-cell flag is set". The oracle ran `0x8408c` over the full type grid and the
+writer `0x84ea4` on four drags: the word is 0 for every intermediate cell and 1 for the end
+cell, and a nonzero word refuses.
 
 ### 3.2 `SetCellType` `0x82ac4(cell, type)`
 
@@ -96,8 +102,10 @@ to connect the queue" end).
    `APPROX:PATH-FREE`.
 4. Path over queue (`new 1`, `old 3`) is remembered for step 7. Queue over path runs
    `ClearCell(cell, 0, 0)` first, with the conversion flag `data:0x84adc` raised.
-5. **Money test** only while `game+36 == 0`: `affordable = balance − cost ≥ 0` (signed, balance
-   is bank `+12`, `0xcbf48`). Types 1 and 3 are refused when not affordable. There is no
+5. **Money test** only while `game+36 == 0`: `affordable = balance − cost ≥ 0` (signed 32-bit
+   difference, `subf` then the sign bit at `0x82bc8..0x82bdc`; balance is bank `+12`, `0xcbf48`).
+   The difference wraps: balance −2³¹ with cost 1 is affordable, balance 2³¹ − 1 with cost −1
+   is not (ORACLE-V F4). A negative cost that passes is spent like any other. Types 1 and 3 are refused when not affordable. There is no
    bankruptcy test here.
 6. Store the type at `+8`, then update the map (`0xd7dc8/0xd7ddc` on `game+728`).
 7. A queue cell turned into path calls `QueueEdited` (`0xdd57c`) on the ride found through the
@@ -279,8 +287,10 @@ staff and loans, so it is consistent.
   (`SetMode(3)` at `0x7497c`). This matches UI-031 "the queue tool follows ride placement".
 - Queue and path share `SetCell`, `LayLine`, the validator, `CanChangeCellType`, the cost
   globals, the vertex stack and the preview/commit code. Only the mode (1 or 3) differs.
-- A queue's last cell may overwrite a path (section 3.1, rule 7). That is how a queue connects
-  to a path ("Click onto path to connect the queue to it"). Overwriting a queue with path is
+- A queue may overwrite a path on every cell of a line except the last (section 3.1, rule 7).
+  A queue line that ends on a path therefore leaves that end cell a path, and `SetCell` raises
+  `data:0x84b34` for it (section 5, "completing on a path"). That fits the help text "Click onto
+  path to connect the queue to it". Overwriting a queue with path is
   allowed, and the ride gets `QueueEdited`.
 
 ## 9. PATH-I implementation spec
@@ -321,7 +331,7 @@ the touched cells only, and the version bump re-plans guests as today.
    (`APPROX:PATH-CODE8`: PATH-I refuses until traced).
 5. `IParkGrid.CheckTerrain(x, y)` must be `Allowed` (water/blocked/entrance area). This is the
    existing terrain rule, kept as `APPROX:PATH-SLOPE` (no slope test).
-6. Money: §3.2 step 5 (`balance − cost ≥ 0` per cell), skipped when the economy is off (the
+6. Money: §3.2 step 5 (`balance − cost ≥ 0` per cell, 32-bit), skipped when the economy is off (the
    sandbox, the equivalent of `game+36`).
 
 ### 9.3 Cost and refund
@@ -406,7 +416,7 @@ own spine set (removes divergence D2').
 | `ParkCellMap` (type, flags, counter, links, queue link) | PATH-I creates; QUEUE-I adds `QueueLink` and type 9 | one map, no second grid |
 | `CanChangeCellType`, `SetCellType` (cost by type) | PATH-I | rules 4 and 7 already cover queue ↔ path |
 | `LayLine`, `SnapEnd`, vertex stack, preview/commit | PATH-I (`CellBuildTool`) | the mode decides the type written |
-| last-cell flag | PATH-I | lets a queue's end overwrite a path |
+| last-cell flag | PATH-I | keeps a queue line's end cell from overwriting a path |
 | link byte, back-of-queue, `QueueEdited`, queue refund | QUEUE-I | called from `SetCellType` / `Remove` hooks |
 | HasQueue ride placed → mode 3 | QUEUE-I | `Level.PlaceObject` calls `CellBuildTool.Enter(Queue, entranceFront)` |
 

@@ -39,6 +39,12 @@ the head from the turn it became head (p = 0). The baseline passes (exit 0). Slo
 (``head-delayed-170-turns``), fail the row through the wait bound alone. Slots held about 2R and heads held 60 turns
 stay within the loose bound and pass (pinned).
 
+WALK-F (review WALK-V, WV-1) ported the position hooks to the 16.16 ``Navigation.X/Y`` (velocity zeroed) and the slot
+hooks to ORACLE-F's (guest, deadline, start) BOUNCE slots, and moved the pins that moved: the merged head bound is
+110 / 65 / 65 turns ([APPROX:GATE-006]); rule (a) holds each head to its own remaining walk + 26, so ``head-held-250-turns``,
+``head-delayed-170-turns`` and ``head-delayed-60-turns`` fail it; ``hold-slots-longer`` fails the head's wait bound by one
+turn since WALK-I; ``cut-exit-transient`` fails paths.no-unreachable-goal on ORACLE-F's layout.
+
 Static tests read ``OPENTPW_M3_SUBJECT`` (default ``HEAD``). Mutation tests run only with ``OPENTPW_M3_MUTATE=1``
 and ``OPENTPW_GAME_PATH``. Nothing here says anything about how the original game behaves.
 """
@@ -86,7 +92,7 @@ HOOKS_V3 = [
      '\t\treturn new SegmentResult( end, Array.Empty<(int X, int Y)>(), 0, CellBuildResult.Ok, false ) { Start = start };\n\t}\n'
      '\tprivate long stallTurn = -1;\n'
      '\tprivate long heldFromTurn = -1;\n'
-     '\tprivate int heldWalker;\n\tprivate long heldWalkerTurn;\n\tprivate float heldX, heldY;\n'
+     '\tprivate int heldWalker;\n\tprivate long heldWalkerTurn;\n\tprivate int heldX, heldY;\n'
      '\tprivate readonly HashSet<int> extendedSlots = new();\n\tprivate int delayedHead;\n\tprivate long delayedSince;\n'
      '\tprivate void MutateV3( long tick )\n\t{\n'
      '\t\tvar ride = placed.FirstOrDefault( item => item.Role == "attraction" );\n'
@@ -115,10 +121,10 @@ HOOKS_V3 = [
      # head in an interlude for its first 60 / 170 turns as head (more than H = 29 per boarding, below the 194-turn head
      # bound of rule (a), so only the wait bound can catch it).
      '\t\tif ( Mutation is "hold-slots-longer" or "hold-slots-much-longer" or "never-release" && ride != null && tick >= 18000 )\n\t\t{\n'
-     '\t\t\tvar slots = (List<(int Guest, double Until)>)typeof( RideVisitorBridge ).GetField( "bouncing", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance )!.GetValue( ride.Runtime.Visitors )!;\n'
+     '\t\t\tvar slots = (List<(int Guest, double Until, double Start)>)typeof( RideVisitorBridge ).GetField( "bouncing", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance )!.GetValue( ride.Runtime.Visitors )!;\n'
      '\t\t\tfor ( var index = 0; index < slots.Count; index++ )\n'
-     '\t\t\t\tif ( extendedSlots.Add( slots[index].Guest ) )\n'
-     '\t\t\t\t\tslots[index] = (slots[index].Guest, slots[index].Until + (Mutation == "hold-slots-longer" ? 30_000 : Mutation == "hold-slots-much-longer" ? 120_000 : 1e12));\n'
+     '\t\t\t\tif ( slots[index].Guest != 0 && extendedSlots.Add( slots[index].Guest ) )\n'
+     '\t\t\t\t\tslots[index] = slots[index] with { Until = slots[index].Until + (Mutation == "hold-slots-longer" ? 30_000 : Mutation == "hold-slots-much-longer" ? 120_000 : 1e12) };\n'
      '\t\t}\n'
      '\t\tif ( Mutation is "head-delayed-60-turns" or "head-delayed-170-turns" && ride != null && tick >= 18000 && ride.Runtime.Visitors.Queue.Count > 0 )\n\t\t{\n'
      '\t\t\tif ( ride.Runtime.Visitors.Queue[0] != delayedHead )\n\t\t\t\t(delayedHead, delayedSince) = (ride.Runtime.Visitors.Queue[0], guests.ParkTurn);\n'
@@ -129,9 +135,9 @@ HOOKS_V3 = [
      # at its position for 30 turns: over w2 = 15, under the 178-turn head and 194-turn head-not-ready bounds.
      '\t\tif ( Mutation == "hold-move-up" && ride != null && tick >= 18000 )\n\t\t{\n'
      '\t\t\tif ( heldWalker == 0 && guests.Guests.FirstOrDefault( guest => guest.AttractionId == ride.Runtime.Visitors.AttractionId && guest.State == GuestState.MovingUpQueue && guest.QueuePosition == 0 && guest.QueueCellIndex == 0 ) is { } walker )\n'
-     '\t\t\t\t(heldWalker, heldWalkerTurn, heldX, heldY) = (walker.Id, guests.ParkTurn, walker.X, walker.Y);\n'
+     '\t\t\t\t(heldWalker, heldWalkerTurn, heldX, heldY) = (walker.Id, guests.ParkTurn, walker.Navigation.X, walker.Navigation.Y);\n'
      '\t\t\tif ( heldWalker != 0 && guests.ParkTurn < heldWalkerTurn + 30 && guests.Find( heldWalker ) is { State: GuestState.MovingUpQueue } held )\n'
-     '\t\t\t\t(held.X, held.Y) = (heldX, heldY);\n'
+     '\t\t\t\t(held.Navigation.X, held.Navigation.Y, held.Navigation.VelocityX, held.Navigation.VelocityY) = (heldX, heldY, 0, 0);\n'
      '\t\t}\n'
      # GATE-FIX2 (S3): cut the first path cell of the segment (between the park entrance and the queue's join cell) at
      # tick 1,000: the ride's entrance and exit cells stay reachable, its join cell does not.
@@ -170,13 +176,14 @@ class StaticRound3(unittest.TestCase):
         helper = v1.method_body(new, 'internal static QueueBuildResult BuildQueueCell(')
         if 'QueuePaths.CheckExtend(' not in helper:
             # GATE-V4: after the merge with PATH-FIX (PATH-V2's recipe) the check goes through the static CheckQueueCell,
-            # which runs QueuePaths.CheckExtend and then the money check; a Refused check is reported as "not enough
-            # money" before anything is charged.
+            # which runs QueuePaths.CheckExtend and then the preview's money check; a Refused check is reported as "not
+            # enough money" before anything is charged. WALK-F2 (REVIEW-ORACLE-2 OV2-3): the preview's money check is the
+            # validator's (CanPreviewCells) and the commit passes no economy to it, so only TrySpendCell's test decides.
             check = v1.method_body(new, 'internal static QueueBuildResult CheckQueueCell(')
-            self.assertLess(check.find('QueuePaths.CheckExtend('), check.find('CanSpendCell( CellPurchase.Queue'))
+            self.assertLess(check.find('QueuePaths.CheckExtend('), check.find('CanPreviewCells( CellPurchase.Queue'))
             self.assertGreaterEqual(check.find('QueuePaths.CheckExtend('), 0)
             self.assertIn('check == QueueBuildResult.Refused || (economy != null && economy.TrySpendCell( CellPurchase.Queue )', helper)
-            steps = ['ride.RecomputeQueue( grid );', 'CheckQueueCell( grid, economy, ride, x, y, ', 'TrySpendCell( CellPurchase.Queue )', 'QueuePaths.TryExtend(']
+            steps = ['ride.RecomputeQueue( grid );', 'CheckQueueCell( grid, null, ride, x, y, ', 'TrySpendCell( CellPurchase.Queue )', 'QueuePaths.TryExtend(']
         positions = [helper.find(step) for step in steps]
         self.assertTrue(all(p >= 0 for p in positions), dict(zip(steps, positions)))
         self.assertEqual(sorted(positions), positions)
@@ -268,7 +275,11 @@ class MutationsRound3(v1.Mutations):
         self.assertEqual(bound['hostLatencyTurns'] + bound['standWalkTurns'] + bound['moveUpWalkTurns'], bound['latencyTurns'])
         self.assertEqual(4 * bound['durationSeconds'] + 1, bound['holdTurns'])
         cap, h, r = bound['capacity'], bound['latencyTurns'], bound['holdTurns']
-        self.assertEqual(bound['qmax'] * h + ((bound['qmax'] - 1) // cap + 1) * r + 1, bound['wMaxTurns'])
+        # WALK-I added the join walk J(Qmax - 1) = (N - cell of p) x C + w2 to W_max (stale here until WALK-F ported this
+        # suite, review WV-1): 24 at p = 20 of the 6-cell queue.
+        join = int(bound['joinWalkTurnsAtHeadAndQmax'].split(' / ')[1])
+        self.assertEqual(24, join)
+        self.assertEqual(join + bound['qmax'] * h + ((bound['qmax'] - 1) // cap + 1) * r + 1, bound['wMaxTurns'])
         self.assertAlmostEqual(cap * h + r + 1 - (bound['durationSeconds'] + 1) * 1000 / 248, bound['tauMaxTurns'], places=3)
         for role in ('shop', 'toilet'):
             self.assertFalse(stuck[role]['waitBound']['judged'])
@@ -368,18 +379,22 @@ class MutationsRound3(v1.Mutations):
                 self.assertEqual({'queues.no-stuck-queue'}, {key for key, value in rows.items() if value['verdict'] == 'fail'} - baseline)
 
     def test_head_bound_is_n_plus_four_cells(self):
-        # GATE-FIX2 (S1): the head only walks forward, so the walk term is min(2N + 2, N + 4) cells: 194 turns for 25
-        # cells (was 326), 50 for one-cell queues. A head held for 250 turns was UNRESOLVED under 326 and now fails.
+        # GATE-FIX2 (S1) made the walk term min(2N + 2, N + 4) cells at OpenTPW's speed (194 turns for 25 cells, 50 for one
+        # cell). WALK-I derived it from the traced steering, N x 9 + 2 x 15 (281 / 65), ORACLE-F cut Belly Bounce's queue
+        # to 6 cells, and the merge gives 6 x 9 + 30 + 26 = 110 / 65 / 65 ([APPROX:GATE-006], looser than 84 / 50 / 50 by
+        # owner decision). WALK-F (review WV-3) holds each head to its own remaining walk + 26 where that is smaller, so
+        # the head held 250 turns at position 0 fails rule (a) after 26 turns instead of passing it (259 <= 281 at WALK-I).
         baseline = self.rows('')['queues.no-stuck-queue']['evidence']
-        self.assertEqual((194, 50, 50), (baseline['attraction']['headNotReadyBoundTurns'], baseline['shop']['headNotReadyBoundTurns'],
+        self.assertEqual((110, 65, 65), (baseline['attraction']['headNotReadyBoundTurns'], baseline['shop']['headNotReadyBoundTurns'],
                                          baseline['toilet']['headNotReadyBoundTurns']))
-        self.assertIn('walk 29 cells', baseline['attraction']['headNotReadyBound'])
+        self.assertIn('6 x C 9 + 2 x w2 15 = 84 turns', baseline['attraction']['headNotReadyBound'])
+        self.assertIn('[APPROX:GATE-006]', baseline['attraction']['headNotReadyBound'])
         row = self.rows('head-held-250-turns')['queues.no-stuck-queue']
         attraction = row['evidence']['attraction']
         self.assertEqual('fail', row['verdict'], row)
         self.assertGreater(attraction['headNotReadyViolations'], 0)
+        self.assertIn('from its own walk', row['evidence']['firstViolation'])
         self.assertGreater(attraction['headNotReadyMaxTurns'], 194)
-        self.assertLessEqual(attraction['headNotReadyMaxTurns'], 326)
 
     def test_slots_held_far_longer_than_r_fail_the_wait_bound(self):
         # BOARD gate: BOUNCE slots held 120 s past their deadline (about 5R), or never released. Heads stand ready at the
@@ -399,13 +414,14 @@ class MutationsRound3(v1.Mutations):
 
     def test_head_delayed_beyond_h_fails_the_wait_bound(self):
         # BOARD gate: each new head is held 170 turns before it can be called: beyond W(0) = H + R + 1 = 178 turns once its
-        # boarding follows, below the 194-turn head bound of rule (a).
+        # boarding follows. Before WALK-F only the wait bound caught it (below the 194-turn head bound of rule (a)); now
+        # rule (a)'s own-walk limit (26 turns for a head at position 0, review WV-3) catches it first.
         row = self.rows('head-delayed-170-turns')['queues.no-stuck-queue']
         attraction = row['evidence']['attraction']
         self.assertEqual('fail', row['verdict'], row)
-        self.assertIn('after becoming head > bound', row['evidence']['firstViolation'])
-        self.assertEqual(0, attraction['headNotReadyViolations'])
-        self.assertLessEqual(attraction['headNotReadyMaxTurns'], attraction['headNotReadyBoundTurns'])
+        self.assertIn('from its own walk', row['evidence']['firstViolation'])
+        self.assertGreater(attraction['headNotReadyViolations'], 0)
+        self.assertGreater(attraction['waitBound']['waitsAboveBound'], 0)
 
     def test_move_up_held_beyond_w2_fails_walk_stall(self):
         # WALK gate (WALK-plan section 12.4): the traced steering finishes the move-up to slot 0 within w2 = 15 updates.
@@ -424,15 +440,19 @@ class MutationsRound3(v1.Mutations):
         self.assertLessEqual(baseline['standWalkMaxTurns'], baseline['standWalkTurns'])
 
     def test_slowdowns_within_the_loose_bound_pass(self):
-        # Pinned as observed: the BOARD-plan bound is loose by design (it assumes every boarding pays a full H and every
-        # CAP-th a full R). Slots held about 2R (+30 s) or heads held 60 turns slow the ride (fewer boardings than the
-        # baseline) but no head waits beyond H + R + 1 and no guest beyond W(p), so the row still passes.
-        baseline = self.rows('')['queues.no-stuck-queue']['evidence']['attraction']
-        for mutation in ('hold-slots-longer', 'head-delayed-60-turns'):
-            with self.subTest(mutation=mutation):
-                row = self.rows(mutation)['queues.no-stuck-queue']
-                self.assertEqual('pass', row['verdict'], row)
-                self.assertLess(row['evidence']['attraction']['completedWaits'], baseline['completedWaits'])
+        # Pinned as observed. The BOARD-plan bound is loose by design (it assumes every boarding pays a full H and every
+        # CAP-th a full R), and slots held about 2R (+30 s) or heads held 60 turns passed until WALK-I. Since WALK-I the
+        # called guest walks into the entrance cell, and slots held 2R fail the head's wait bound by one turn (179 > 178,
+        # review WALK-V WV-1). Since WALK-F rule (a) holds a head standing at position 0 to 26 turns (review WV-3), so heads
+        # held 60 turns fail too. Both are stricter, not looser.
+        row = self.rows('hold-slots-longer')['queues.no-stuck-queue']
+        self.assertEqual('fail', row['verdict'], row)
+        self.assertIn('179 turns after becoming head > bound 178', row['evidence']['firstViolation'])
+        self.assertEqual(0, row['evidence']['attraction']['headNotReadyViolations'])
+        row = self.rows('head-delayed-60-turns')['queues.no-stuck-queue']
+        self.assertEqual('fail', row['verdict'], row)
+        self.assertIn('from its own walk', row['evidence']['firstViolation'])
+        self.assertEqual(0, row['evidence']['attraction']['waitBound']['waitsAboveBound'])
 
     def test_end_of_run_reachability_includes_the_join_cell(self):
         # GATE-FIX2 (S3): cutting the segment's first cell leaves Belly Bounce's entrance and exit cells reachable but not
@@ -464,10 +484,14 @@ class MutationsRound3(v1.Mutations):
 
     def test_transient_exit_cut(self):
         rows = self.rows('cut-exit-transient')
-        # Not measured (round 3, N2): the ride's exit cell is no guest's walking target, so cutting it for 600 ticks fails
-        # no row; exit reachability is checked only at the end of the run (after the repair). Pinned as observed.
+        # Round 3, N2: the exit cell was no guest's walking target, so cutting it for 600 ticks failed no row. Since
+        # ORACLE-F's 6-cell queue the layout puts the exit at (48,21), a path cell guests walk over: guests standing there
+        # when it is cut head for a target they cannot reach and the per-tick check fails (also on the merge b10710e,
+        # before WALK-F). Exit reachability at the end of the run (after the repair) is still clean.
         baseline = {key for key, value in self.rows('').items() if value['verdict'] == 'fail'}
-        self.assertEqual(baseline, {key for key, value in rows.items() if value['verdict'] == 'fail'})
+        self.assertEqual(baseline | {'paths.no-unreachable-goal'}, {key for key, value in rows.items() if value['verdict'] == 'fail'})
+        self.assertEqual(36001, rows['paths.no-unreachable-goal']['firstViolationTick'])
+        self.assertIn('at (48,21)', rows['paths.no-unreachable-goal']['evidence']['firstViolation'])
         self.assertEqual('none', rows['paths.no-unreachable-goal']['evidence']['unreachableAttractions'])
 
 

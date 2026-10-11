@@ -97,7 +97,7 @@ board, and the `.sam` marks the object `Info.OverwritePriority 1` ("Overwritable
 `Info.IsChoosable 0`. The likely reading is a pillar cell at each end (`*`) and cells under the board (`@`),
 but the data does not prove it. The Theme Park Inc `Game.exe` is
 SafeDisc-encrypted, so this reading rests on the data only. The viewer classifies `@` as an occupied
-cell (RIDES-029), which is also the safe choice for placement. (The obstacles use further symbols
+cell (RIDES-031), which is also the safe choice for placement. (The obstacles use further symbols
 `X`, `H`, `%`, which no catalog object uses and the viewer does not read.)
 
 **The science hole.** The first spike showed a black region of about 450 cells in `science`. The
@@ -120,7 +120,7 @@ show black interiors in all three worlds. Esc and P in the viewer are implemente
 exercised by an automated run (all checks used `--capture-world`).
 
 **Approximations and open questions.** COMPAT-014, COMPAT-015 (palettes), COMPAT-019 (lake),
-RIDES-029 (`@`), RIDES-030 (non-finite texture coordinates in ten vertices of `science/sideshow/natnav`,
+RIDES-031 (`@`), RIDES-030 (non-finite texture coordinates in ten vertices of `science/sideshow/natnav`,
 drawn as 0, 0), RIDES-019 (default fixed items without a save), RIDES-040 (zero-coordinate fixed
 scene records). Open: how the original game transforms the zero-coordinate scene records and
 places the gate and bus in worlds without a prebuilt save; what the `*_newenv.MD2` files are for (`3ns_newenv` and `4ns_newenv` carry a heightfield and an `arrival_*` mesh set); the

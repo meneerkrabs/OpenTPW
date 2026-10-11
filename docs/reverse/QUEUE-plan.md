@@ -24,7 +24,7 @@ enumerated sites. All results are static. Nothing original was executed.
 | --- | --- | --- |
 | PPC-guests, queue states | Jump table data `0x41314`. State 10 `0xeccb0` (heading to the ride / joining), 11 `0xed244` (standing in the queue), 12 `0xe6454` (walking to a queue position, returns to 11) | Kept. Joining, standing, admission and leave paths are now traced (sections 4 to 6) |
 | PPC-guests | Queue destination `0xee604 → 0xdd144`, then `0xddc2c → 0xddcc4` and `0xe6864`. Four positions per queue cell, following a prior-cell link | Kept. The link byte, the cell type and the per-cell slot arithmetic are now identified (section 3) |
-| PPC-guests | Queue acceptance `0xdcb74` reads `+436` (`QueueWaitTimeConstant`) and is "not a universal `4*capacity`" | **Completed**: full formula, HasQueue override 100, physical room `4 × cells` (section 4) |
+| PPC-guests | Queue acceptance `0xdcb74` reads `+436` (`QueueWaitTimeConstant`) and is "not a universal `4*capacity`" | **Completed**: full formula for HasQueue rides, 100 for objects without HasQueue, physical room `4 × cells` (section 4; polarity corrected after ORACLE-V, see there) |
 | PPC-guests | Timeout compare `+508 + 100` at `0xed670`, then a boredom leave | **Refined**: the branch cannot be reached in game (section 5.3). It is not a usable bound |
 | PPC-guests, score | Queue match `100 − q·100 / (4·max(f60,1))` with object `+60` | `+60` is now identified as the **queue size in cells** (`mQueueSizeInCells`). The score's denominator is the physical queue room |
 | PPC-rides RIDES-016 | `VAR_DURATION` written raw from `InitDuration`. Unit unknown | **Partially resolved**: the native code writes the raw value too, clamped to `[MinDuration, MaxDuration]`. `BOUNCE` treats it as seconds of the scheduler clock (section 7) |
@@ -151,24 +151,33 @@ These checks run when the guest stands on the back-of-queue cell (`0xdd3f4`):
 2. **Excitement gate**: if `0xe02ec(ride,1)` is set and
    `|0xe9a84(guest,ride)| ≥ 45`, the guest leaves with "ride is not exciting
    enough!" or "ride is too exciting!".
-3. **Limit** `0xdcb74`: the queue is full when `count ≥ limit`. Then "queue is
-   too long!", thoughts 21/16, state 6. The limit is:
-   - HasQueue (`+46 & 0x8`): **100**.
-   - Otherwise: `trunc(max(QWTC × (G × CAP) / DUR, 4.0))`, single precision,
-     where `G = SPEED / Upgrades[L].InitSpeed` (1.0 when SPEED is 0) and QWTC
-     is `Upgrades[L].QueueWaitTimeConstant`. A NaN quotient becomes 4.
+3. **Limit** `0xdcb74`: the queue is full when `count ≥ limit` (unsigned). Then
+   "queue is too long!", thoughts 21/16, state 6. The limit is a u32:
+   - Without HasQueue (`+46 & 0x8` clear): **100**.
+   - HasQueue (`+46 & 0x8` set): `trunc(max(QWTC × (G × CAP) / DUR, 4.0))`,
+     single precision, where `G = SPEED / Upgrades[L].InitSpeed` (1.0 when
+     SPEED is 0), SPEED is the unsigned word at `+84` and QWTC is
+     `Upgrades[L].QueueWaitTimeConstant`. A NaN quotient becomes 4. The
+     quotient converts to unsigned (`0x1c3fbc`) and saturates at 2³² − 1. When
+     QWTC ≤ 0 the formula path asserts "No queue constant entered in SAM file".
+
+   Correction (ORACLE-V, `docs/reverse/ORACLE.md` F1/F2, `REVIEW-ORACLE.md`
+   OV-1): this section first said "HasQueue: 100". The branch at `0xdcbac`
+   takes the constant when the bit is **clear**, and the ride build
+   (`0xda874` stores `+46 = 0`, then `0xdab6c..0xdacbc` ORs one bit per type
+   record boolean) sets `0x8` from record `+64`, `Info.HasQueue`. So the
+   formula belongs to HasQueue rides.
 4. Join: `+524` = happiness, append to the list, then `0xee604`. It stores the
    position in `+497`, computes the slot and sets the destination, entering
    state 12. If the destination fails: "Couldn't get to my place in the queue,
    leaving!", the guest is removed, state 6.
 
-So the maximum queue length is **`min(100, 4 × cells)` for HasQueue rides**
-and `min(4 × cells, L)` otherwise. With one front cell and `L ≥ 4` that is 4,
-which matches the virtual-queue assertion. For HasQueue rides the
-`QueueWaitTimeConstant` formula is never used. QWTC only shapes queues of
-objects without a queue path (shops, toilets, sideshows), and the floor of 4
-plus the one-cell room make even that 4 in practice (bounded: no-HasQueue
-object with more than one cell not traced).
+So the maximum queue length is **`min(4 × cells, L)` for HasQueue rides**, with
+`L` the QWTC formula (Belly Bounce: `trunc(130 × 5 / 30) = 21`, so 6 cells
+hold the whole queue), and `min(4 × cells, 100)` for objects without HasQueue.
+Those use the one-cell virtual queue, so their room of 4 decides, which matches
+the virtual-queue assertion (bounded: a no-HasQueue object with more than one
+cell is not traced).
 
 ## 5. Standing in the queue (state 11, `0xed244`) (high)
 
@@ -306,13 +315,13 @@ OpenTPW differences:
   `BOUNCE VAR_LETMEON VAR_DURATION` (Belly Bounce), **DUR is seconds of the
   scheduler clock**.
 - **UNBOUNCE** (`0xae020`): releases a slot once `deadline < now` and
-  `(now − start) mod 1000 < 200`, that is, within 1 s after the deadline when
-  polled.
+  `trunc(((now − start) mod 1000) / 200) == 0` (BOARD-plan §5), that is,
+  within 1 s after the deadline when polled.
 - Other consumers convert differently (BUMP13 ×30, TOUR8 ×1000, PPC-rides).
   Seconds are proved only for BOUNCE.
 - `QueueWaitTimeConstant` is dimensionally "DUR units × riders per CAP", since
   `L = QWTC × CAP / DUR`. That reads as a designed queue wait in DUR units. It
-  only applies to objects without HasQueue.
+  applies to HasQueue rides (section 4).
 
 ## 8. QUEUE-I implementation spec
 
@@ -334,7 +343,7 @@ All items carry the confidence of the section that proves them.
    - The placement-validity rules, cost and maximum length are unresolved:
      keep them as `APPROX:QUEUE-BUILD`.
 3. **Join** (state 10 at the back cell): room `count < 4·cells`, the
-   excitement gate 45, then the limit (100 for HasQueue, the QWTC formula
+   excitement gate 45, then the limit (the QWTC formula for HasQueue, 100
    otherwise), then append and walk (state 12).
 4. **Standing** (state 11): section 5.2 exactly. That includes the move delay
    `trunc(1.2f·pos)`, the gap ≤ 2 rule, the 30-turn needs window and the
@@ -379,20 +388,20 @@ and over a queue of at most `Qmax` guests,
 
 - `CAP = clamp(InitCapacity)` and `DUR = clamp(InitDuration)` come from the
   data.
-- `Qmax = min(100, 4 × cells)` (HasQueue). Until QUEUE-I lands it is the
-  current virtual 20.
+- `Qmax = min(L, 4 × cells)` (HasQueue, `L` the QWTC limit of section 4).
+  Until QUEUE-I lands it is the current virtual 20.
 - `τ` is the boarding latency per slot turnover: call → walk to the stand
   point → state 13 → script consumption, plus the ≤ 2-turn move delay. It is
   **not derived** (walk speed and RSE loop latency are open) and must be an
   explicit `APPROX:QUEUE-TAU` parameter reported with the result.
 
 Belly Bounce (1100, jungle): DurationUnit 1, HasQueue (default layer),
-CAP = 5, DUR = 30, InitSpeed 60, QWTC 130 (unused, because HasQueue gives
-limit 100), RunsContinuously 1 (Bouncy.sam), so the RUNNING gate in section 6
-is bypassed and admission runs whenever ONRIDE < 5.
+CAP = 5, DUR = 30, InitSpeed 60, QWTC 130 (limit `trunc(130 × 5 / 30) = 21`),
+RunsContinuously 1 (Bouncy.sam), so the RUNNING gate in section 6 is bypassed
+and admission runs whenever ONRIDE < 5.
 
 - With the current virtual queue of 20: `W_max = 4 × (31 + τ) = 124 s + 4τ`.
-- With QUEUE-I and N cells: `⌈min(100, 4N)/5⌉ × (31 + τ)`.
+- With QUEUE-I and N cells: `⌈min(21, 4N)/5⌉ × (31 + τ)`.
 
 The gate's measured 149.95 s against 124 s implies τ ≈ 6.5 s per turnover
 under the current OpenTPW model. Report it as a measured τ, not a pass/fail
@@ -441,7 +450,7 @@ The lane is `tools/ppc-analysis/lanes/queue/`: `queue_evidence.py` and
   - the limit floor;
   - the move-delay factor;
   - positions per cell;
-  - the HasQueue limit;
+  - the constant limit 100;
   - the boredom window;
   - the schema offset;
   - release granularity;

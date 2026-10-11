@@ -139,7 +139,8 @@ public sealed class ParkPathBuilder : ICellLineWriter
 	/// </summary>
 	public CellBuildResult Validate( int x, int y, ParkCellType type, bool lastCell ) => Validate( x, y, type, lastCell, pending: 0 );
 
-	private CellBuildResult Validate( int x, int y, ParkCellType type, bool lastCell, long pending )
+	/// <param name="pending">The preview's line cost before this cell; null for a commit, whose money test is <c>SetCellType</c>'s in <see cref="WritePath"/>.</param>
+	private CellBuildResult Validate( int x, int y, ParkCellType type, bool lastCell, long? pending )
 	{
 		// The original's LayLine skips (does not stop at) cells outside its 128 × 128 array (0xd70d8); snapped tool ends are grid cells, so only the headless API can reach this (REVIEW-PATH N1).
 		if ( !Cells.InBounds( x, y ) || x >= Terrain.Width || y >= Terrain.Height )
@@ -165,8 +166,8 @@ public sealed class ParkPathBuilder : ICellLineWriter
 		var terrain = Terrain.CheckTerrain( x, y );
 		if ( terrain is not (OriginalPlacementResult.Allowed or OriginalPlacementResult.Path) )
 			return terrain == OriginalPlacementResult.OutsideTerrain ? CellBuildResult.OutsideTerrain : CellBuildResult.Terrain;
-		// [BIN:STP-PPC:0x10082AC4 SetCellType] money test while game+36 == 0: refused when balance − cost < 0 (no bankruptcy test); the validator 0x10084550 tests the pending line cost the same way
-		if ( Economy is { } park && park.Balance - (pending + CellCost) < 0 )
+		// [BIN:STP-PPC:0x10084550 placement validator] money test while game+36 == 0: the 32-bit pending line cost (this cell included) is refused when greater than the balance, a zero sum passes; the commit only runs SetCellType's test (WritePath)
+		if ( pending is { } before && Economy is { } park && !park.CanPreviewLine( before + CellCost ) )
 			return CellBuildResult.NotEnoughMoney;
 		return CellBuildResult.Ok;
 	}
@@ -207,7 +208,7 @@ public sealed class ParkPathBuilder : ICellLineWriter
 		{
 			var (x, y) = line[index];
 			// The end cell is written with the last-cell flag (data 0x84b2c) raised.
-			var check = Validate( x, y, ParkCellType.Path, lastCell: index == line.Count - 1, pending: write ? 0 : charged );
+			var check = Validate( x, y, ParkCellType.Path, lastCell: index == line.Count - 1, pending: write ? null : charged );
 			if ( check == CellBuildResult.Existing )
 			{
 				existing.Add( (x, y) );
@@ -248,7 +249,8 @@ public sealed class ParkPathBuilder : ICellLineWriter
 	private bool WritePath( int x, int y )
 	{
 		var park = Economy;
-		if ( park != null && park.Balance - park.CellCost( CellPurchase.Path ) < 0 )
+		// [BIN:STP-PPC:0x10082BC8 SetCellType money test] the 32-bit balance − cost test before the store (ParkEconomy.CanSpendCell, the test TrySpendCell repeats)
+		if ( park != null && !park.CanSpendCell( CellPurchase.Path ) )
 			return false;
 		Cells.SetType( x, y, ParkCellType.Path );
 		Link( x, y );

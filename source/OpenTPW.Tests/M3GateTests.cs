@@ -49,20 +49,111 @@ public class M3GateTests
 		StringAssert.Contains( summary[3], "first violation tick 7" );
 	}
 
-	/// <summary>The queue row's head bound follows the state-11/12 rules: walk min(2N + 2, N + 4) cells at 0.7 x walk speed, the gap-2 move-up wait, two interludes and one update.</summary>
+	/// <summary>
+	/// The queue row's head bound follows the state-11/12 rules: two queue walks over N cells (N × C + 2 × w₂, WALK-I's
+	/// per-cell term), the gap-2 move-up wait, two interludes and one update.
+	/// </summary>
 	[TestMethod]
 	public void HeadNotReadyBoundFollowsTheQueueRules()
 	{
-		// 25 cells: the head only walks forward, so N + 4 = 29 cells / 0.7 cells/s = 41.43 s = 167.05 turns of 248 ms -> 168;
-		// + trunc(1.2 x 2) + 1 = 3; + 2 x 11; + 1 (review GATE-V3 S1; 2N + 2 = 52 cells gave 326).
-		Assert.AreEqual( 194L, M3GateRun.HeadNotReadyBound( 25, 1.0f ).Turns );
-		StringAssert.Contains( M3GateRun.HeadNotReadyBound( 25, 1.0f ).Derivation, "walk 29 cells" );
-		// One cell: 2N + 2 = 4 is below N + 4 = 5; 4 / 0.7 = 5.71 s = 23.04 turns -> 24; + 3 + 22 + 1.
-		Assert.AreEqual( 50L, M3GateRun.HeadNotReadyBound( 1, 1.0f ).Turns );
-		Assert.AreEqual( 50L, M3GateRun.HeadNotReadyBound( 0, 1.0f ).Turns );
-		// A faster walk only shortens the walk term: 29 / 1.4 = 20.71 s = 83.53 turns -> 84.
-		Assert.AreEqual( 84L + 26, M3GateRun.HeadNotReadyBound( 25, 2.0f ).Turns );
-		StringAssert.Contains( M3GateRun.HeadNotReadyBound( 25, 1.0f ).Derivation, "2 interludes x 11" );
+		// WALK-I replaced the old walk term (N + 4 cells at OpenTPW's former 1 cell/s x 0.7, 194 turns for 25 cells and 50 for
+		// one cell, GATE-004) with the traced steering's: 25 x 9 + 2 x 15 = 255; + trunc(1.2 x 2) + 1 = 3; + 2 x 11; + 1.
+		Assert.AreEqual( 281L, M3GateRun.HeadNotReadyBound( 25 ).Turns );
+		StringAssert.Contains( M3GateRun.HeadNotReadyBound( 25 ).Derivation, "25 x C 9 + 2 x w2 15 = 255 turns" );
+		// One cell (shops, toilets): 9 + 30 = 39; + 3 + 22 + 1. An empty queue counts as one cell.
+		Assert.AreEqual( 65L, M3GateRun.HeadNotReadyBound( 1 ).Turns );
+		Assert.AreEqual( 65L, M3GateRun.HeadNotReadyBound( 0 ).Turns );
+		StringAssert.Contains( M3GateRun.HeadNotReadyBound( 25 ).Derivation, "2 interludes x 11" );
+	}
+
+	/// <summary>The join walk and the head's own walk (WALK-I): one queue walk over k cells takes at most k × 9 + 15 updates.</summary>
+	[TestMethod]
+	public void QueueWalkTermsFollowTheEnumeratedPerCellTerm()
+	{
+		Assert.AreEqual( 9L, M3GateRun.QueueCellWalkTurns );
+		Assert.AreEqual( 15L, M3GateRun.QueueWalkTurns( 0 ) );
+		Assert.AreEqual( 24L, M3GateRun.QueueWalkTurns( 1 ) );
+		// Joining a 25-cell queue: position 0 is in the front cell, 25 crossings from the join cell; position 50 in cell 12
+		// (13 crossings); position 99 in the back cell (1 crossing).
+		Assert.AreEqual( 240L, M3GateRun.JoinWalkTurns( 0, 25 ) );
+		Assert.AreEqual( 132L, M3GateRun.JoinWalkTurns( 50, 25 ) );
+		Assert.AreEqual( 24L, M3GateRun.JoinWalkTurns( 99, 25 ) );
+		Assert.AreEqual( 24L, M3GateRun.JoinWalkTurns( 3, 1 ) );
+		// W(p) with the join walk (GATE-005 closed): 240 + 178 = 418 at the head, 132 + 4,188 at p = 50, 24 + 8,021 at 99.
+		Assert.AreEqual( 418L, M3GateRun.BoardingWaitBound( 0, 5, 56, 121, M3GateRun.JoinWalkTurns( 0, 25 ) ) );
+		Assert.AreEqual( 4320L, M3GateRun.BoardingWaitBound( 50, 5, 56, 121, M3GateRun.JoinWalkTurns( 50, 25 ) ) );
+		Assert.AreEqual( 8045L, M3GateRun.BoardingWaitBound( 99, 5, 56, 121, M3GateRun.JoinWalkTurns( 99, 25 ) ) );
+	}
+
+	/// <summary>A five-cell queue up the column x = 2: front (2, 5) before the entrance cell (2, 6), back (2, 1), join cell (2, 0).</summary>
+	private static RideVisitorBridge FiveCellQueue()
+	{
+		var grid = new GuestPathGrid( 12, 12 );
+		for ( var x = 0; x < 10; x++ )
+			grid.SetPath( x, 0, true );
+		var ride = new RideVisitorBridge( 1, "Queue ride", RideVisitorKind.Ride, 5, 55, 30, GuestNeeds.None )
+		{
+			EntranceCell = (2, 0),
+			ExitCell = (2, 0),
+			QueueFrontCell = (2, 5),
+			QueueEntranceDirection = 2,
+			Parameters = new QueueParameters( true, false, false, 130, 60, 60, 5, 30 )
+		};
+		Assert.AreEqual( 5, QueuePaths.TryExtend( grid, ride, Enumerable.Range( 0, 5 ).Select( index => (2, 5 - index) ) ) );
+		Assert.AreEqual( ((int, int)?)(2, 0), ride.JoinCell );
+		return ride;
+	}
+
+	private static Guest HeadAt( (int X, int Y) cell, GuestState state, int position )
+	{
+		var head = new Guest( 1, 0 ) { State = state, QueuePosition = position };
+		(head.Navigation.X, head.Navigation.Y) = GuestNavigation.Centre( cell );
+		return head;
+	}
+
+	/// <summary>
+	/// The head's own remaining walk (review WV-3, WV-12): counted on its walks, each k × 9 + 15 from its own start, never on
+	/// <see cref="Guest.QueueCellIndex"/>; rule (a) holds a head to it plus 26 where that is below the queue bound.
+	/// </summary>
+	[TestMethod]
+	public void HeadRemainingWalkCountsTheWalksThemselves()
+	{
+		var ride = FiveCellQueue();
+		Assert.AreEqual( 26L, M3GateRun.HeadWaitTurns, "move-up wait 3 + 2 interludes x 11 + 1" );
+		Assert.AreEqual( 5 * 9 + 30 + 26L, M3GateRun.HeadNotReadyBound( 5 ).Turns );
+		// Standing at position 0: no walk left, so a head held there (an interlude that never ends) fails after 26 turns.
+		var head = HeadAt( (2, 5), GuestState.Queueing, 0 );
+		head.InQueueInterlude = true;
+		Assert.AreEqual( 0L, M3GateRun.HeadRemainingWalkTurns( head, ride ) );
+		Assert.AreEqual( 0L, M3GateRun.HeadWalkTurns( head, ride ) );
+		Assert.AreEqual( 26L, M3GateRun.HeadNotReadyLimit( head, ride, M3GateRun.HeadNotReadyBound( 5 ).Turns ) );
+		// Standing at an older position: the move-up from its own cell, i x 9 + 15 (H already holds one w2).
+		head = HeadAt( (2, 5), GuestState.Queueing, 2 );
+		Assert.AreEqual( 15L, M3GateRun.HeadRemainingWalkTurns( head, ride ) );
+		Assert.AreEqual( 0L, M3GateRun.HeadWalkTurns( head, ride ) );
+		head = HeadAt( (2, 3), GuestState.Queueing, 9 );
+		Assert.AreEqual( 33L, M3GateRun.HeadRemainingWalkTurns( head, ride ) );
+		Assert.AreEqual( 18L, M3GateRun.HeadWalkTurns( head, ride ) );
+		// Walking from the join cell to position 0: the whole walk, 5 crossings.
+		head = HeadAt( (2, 0), GuestState.MovingUpQueue, 0 );
+		head.Navigation.SetDestination( 0, 0, [(2, 0), (2, 1), (2, 2), (2, 3), (2, 4), (2, 5)] );
+		Assert.AreEqual( 60L, M3GateRun.HeadRemainingWalkTurns( head, ride ) );
+		// A guest that stepped across a fold has a small QueueCellIndex while its walk is long: the walk is charged (WV-12).
+		head.QueueCellIndex = 0;
+		(head.Navigation.X, head.Navigation.Y) = GuestNavigation.Centre( (2, 4) );
+		Assert.AreEqual( 60L, M3GateRun.HeadRemainingWalkTurns( head, ride ) );
+		Assert.AreEqual( 45L, M3GateRun.HeadWalkTurns( head, ride ) );
+		// Walking to a later position: that walk, then one more from the farthest cell it may be on (the join cell, 5).
+		head = HeadAt( (2, 0), GuestState.MovingUpQueue, 6 );
+		head.Navigation.SetDestination( 0, 0, [(2, 0), (2, 1), (2, 2), (2, 3), (2, 4)] );
+		Assert.AreEqual( 4 * 9 + 15 + 5 * 9 + 15L, M3GateRun.HeadRemainingWalkTurns( head, ride ) );
+		Assert.AreEqual( M3GateRun.HeadNotReadyBound( 5 ).Turns, M3GateRun.HeadNotReadyLimit( head, ride, M3GateRun.HeadNotReadyBound( 5 ).Turns ), "never above the queue bound" );
+		// Called: H holds the stand walk; rule (a) keeps the queue bound.
+		head.State = GuestState.Boarding;
+		Assert.AreEqual( -1L, M3GateRun.HeadRemainingWalkTurns( head, ride ) );
+		Assert.AreEqual( 0L, M3GateRun.HeadWalkTurns( head, ride ) );
+		Assert.AreEqual( 101L, M3GateRun.HeadNotReadyLimit( head, ride, 101 ) );
+		Assert.AreEqual( 101L, M3GateRun.HeadNotReadyLimit( null, ride, 101 ) );
 	}
 
 	/// <summary>The BOUNCE boarding bound (docs/reverse/BOARD-plan.md §7, §8; WALK-plan §9 walk terms) from its traced rules: P, R, H₀, w, w₂ and W(p).</summary>
@@ -128,12 +219,13 @@ public class M3GateAssetTests
 		Assert.AreEqual( 0, (int)paths.Evidence["strayPathCells"]! );
 		// Every row passes (the queue row on the traced boarding bound, BOARD-plan and WALK-plan): exit 0.
 		Assert.AreEqual( 0, report.ExitCode, report.ToSummary() );
-		// The queue is laid through the queue tool's code, charged per cell, and walked: 25 cells for the 100-guest limit.
+		// The queue is laid through the queue tool's code, charged per cell, and walked: 6 cells for Belly Bounce's limit
+		// trunc(130 × 5 / 30) = 21 (QUEUE-plan §4).
 		var queue = report["build.queue"];
 		Assert.AreEqual( M3GateVerdict.Pass, queue.Verdict, report.ToSummary() );
-		Assert.AreEqual( 25, (int)queue.Evidence["cellsLaid"]! );
-		Assert.AreEqual( 25L * 75, (long)queue.Evidence["charged"]! );
-		Assert.AreEqual( 100, (int)queue.Evidence["maximumQueueLength"]! );
+		Assert.AreEqual( 6, (int)queue.Evidence["cellsLaid"]! );
+		Assert.AreEqual( 6L * 75, (long)queue.Evidence["charged"]! );
+		Assert.AreEqual( 21, (int)queue.Evidence["maximumQueueLength"]! );
 		Assert.IsTrue( (int)queue.Evidence["boardedFromQueueCells"]! > 0, report.ToSummary() );
 		// No progress violation and no wait beyond W(p) with H = 56, R = 121; at least one wait judged, so the row passes.
 		var stuck = report["queues.no-stuck-queue"];

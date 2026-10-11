@@ -28,7 +28,11 @@ public class PathAssetTests
 
 	/// <summary>
 	/// The Easymode park's guest run has the same raw hash as before the cell map became the source of truth
-	/// (recorded on 025d410 + the research commit, before the flip; GuestAssetTests.JungleParkRunIsDeterministic's run).
+	/// (recorded on 025d410 + the research commit, before the flip; GuestAssetTests.JungleParkRunIsDeterministic's run:
+	/// 108 admissions, 0x17B0E01EDEB2D4FB). WALK-I re-pinned it: guests walk the arrival lanes at the traced per-guest
+	/// speed from s = 0 (about 0.8 cell/s at the mean base speed instead of 1 cell/s) and draw a base speed from the guest
+	/// stream, so fewer reach the ticket booth within 120 s and the hash changes. WALK-F re-pinned the hash again (the traced
+	/// separation force and the toilet term's needs phase move the guests); the admissions stay 103.
 	/// </summary>
 	[TestMethod]
 	public void OwnershipFlipKeepsTheJungleGuestRunIdentical()
@@ -39,8 +43,8 @@ public class PathAssetTests
 		var simulation = new GuestSimulation( GuestPathGrid.FromOriginal( park.Map, park.Save ), GuestSettings.Load( "jungle" ), 1 );
 		for ( var tick = 0; tick < 120 * 60; tick++ )
 			simulation.Tick( Tick );
-		Assert.AreEqual( 108, simulation.Admissions );
-		Assert.AreEqual( 0x17B0E01EDEB2D4FBUL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
+		Assert.AreEqual( 103, simulation.Admissions );
+		Assert.AreEqual( 0x6CCFE34009D490AEUL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
 	}
 
 	[TestMethod]

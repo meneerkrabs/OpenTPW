@@ -19,6 +19,13 @@ public static class AudioApproximations
 		("AUDIO-012", "every activated button plays the click 0x1F, front end included; the traced witness is the park view's control-message handler (0x10137FD0)"),
 		("AUDIO-013", "de-emphasis is a first-order bilinear-transform shelf of the published 50/15 µs and J.17 curves at the stream's rate"),
 		("AUDIO-014", "a failed frame CRC is counted while the frame still decodes; no shipped frame carries a CRC word"),
+		("AUDIO-015", "only the level-driven rain voice is built; the weather thing's own rain voice (thing +0x54) is not, and whether the original's second voice is audible is not established"),
+		("AUDIO-016", "a scream's speed is the loader's default 50; the RSE loader's speed field beside RideVM's timing is not traced"),
+		("AUDIO-017", "the lobby island one-shots (cat_locallobbysfx 3, 4, 5) are timed by a uniform 5-15 s gap; the original's timer distribution is not traced"),
+		("AUDIO-018", "the constant-power pan of a positioned voice follows the source's bearing; the original's pan law (QSound's processing) is not read"),
+		("AUDIO-019", "a positioned one-shot whose event has flag 0x8 loops its sample; a flat one-shot with 0x8 is not looped"),
+		("AUDIO-020", "a placed scape.omp effect that is a sentence plays its first sound once rather than as the original's placed sentence"),
+		("AUDIO-021", "scape.omp places and the listener share the park's sound units; the Mac's placement units are not traced in one place"),
 	};
 
 	private static bool logged;

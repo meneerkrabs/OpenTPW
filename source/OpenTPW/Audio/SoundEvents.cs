@@ -222,7 +222,12 @@ public sealed class SoundEventSystem
 		var index = ChooseSample( sound.Samples, Draw(), -1, avoidRepeat: false );
 		if ( index < 0 || Decode( category, sound.Samples[index] ) is not { } audio )
 			return null;
-		return mixer.Play( audio, channel, Volume( sound ) / 100f, position, range ?? sound.Rolloff );
+		// [DATA:global/sound/cat_ambientSFX.map] events 7 and 8 (the waterfall and river) are one-shots (no 0x4) flagged 0x8
+		// [LEAD:maexah/OpenTPW docs/exe/audio.md "A voice's range" table: bit 0x8 loops the sample, the voice lives on] PC addresses unverifiable (packed exe)
+		// [APPROX:AUDIO-019] the loop is applied to positioned one-shots only; a flat one-shot with 0x8 still plays once — evidence needed: the Mac flat path's flag test beside 0x0051C130
+		var voice = mixer.Play( audio, channel, Volume( sound ) / 100f, position, range ?? sound.Rolloff );
+		voice.Loops = (soundEvent.Flags & 0x8) != 0;
+		return voice;
 	}
 
 	/// <summary>Starts a sentence event (music); null when the event is missing.</summary>

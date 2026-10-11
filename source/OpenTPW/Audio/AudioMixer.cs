@@ -48,6 +48,8 @@ public sealed class AudioVoice
 	public Vector3? Position { get; internal set; }
 	/// <summary>The distance at which the voice is no longer heard (0: no range, always full gain).</summary>
 	public float Range { get; internal set; }
+	/// <summary>True when the sample wraps to its start and the voice lives on until stopped (an event flagged 0x8 loops its sample).</summary>
+	public bool Loops { get; internal set; }
 	public event Action<AudioVoice>? Completed;
 
 	public void Stop() => IsFinished = true;
@@ -67,13 +69,15 @@ public sealed class AudioVoice
 				IsFinished = true;
 				return frames;
 			}
-			// [APPROX:AUDIO-014] constant-power pan by the source's bearing against the listener — the original's pan law (QSound's processing) is not read
+			// [APPROX:AUDIO-018] constant-power pan by the source's bearing against the listener — the original's pan law (QSound's processing) is not read
 			var angle = (pan + 1) * MathF.PI / 2;
 			leftScale = distanceGain * MathF.Cos( angle );
 			rightScale = distanceGain * MathF.Sin( angle );
 		}
 		for ( var frame = 0; frame < frames; frame++ )
 		{
+			if ( Loops && position >= Frames )
+				position -= Frames;
 			var index = (int)position;
 			if ( IsFinished || index >= Frames )
 			{
@@ -81,7 +85,7 @@ public sealed class AudioVoice
 				return frame;
 			}
 			var fraction = (float)(position - index);
-			var next = Math.Min( index + 1, Frames - 1 );
+			var next = Loops ? (index + 1) % Frames : Math.Min( index + 1, Frames - 1 );
 			float left, right;
 			if ( channels == 1 )
 			{
@@ -97,7 +101,7 @@ public sealed class AudioVoice
 			mix[2 * frame + 1] += right * total * rightScale;
 			position += step;
 		}
-		if ( position >= Frames )
+		if ( position >= Frames && !Loops )
 			IsFinished = true;
 		return frames;
 	}

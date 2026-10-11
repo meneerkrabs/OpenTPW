@@ -138,6 +138,7 @@ public static class GameAudio
 		LevelAmbient = SoundCategory.TryLoad( FileSystem, $"/levels/{level}/Sound", "cat_ambient" );
 		LevelRides = SoundCategory.TryLoad( FileSystem, $"/levels/{level}/Sound", "cat_rides" );
 		music = events!.StartSentence( LevelMusic, ParkMusicEvent, AudioChannel.Music );
+		StartPlacedAmbients( level );
 		Log.Trace( $"Sound: {level} music {(music == null ? "not available" : $"{music.Event.Sounds.Count} sections")}, {LevelRides?.Catalog.Events.Count ?? 0} level ride events, {LevelAmbient?.Catalog.Events.Count ?? 0} level ambient events." );
 	}
 
@@ -152,6 +153,44 @@ public static class GameAudio
 		SetCrowd( 0 );
 		SetRain( 0 );
 		StopPlacedAmbients();
+	}
+
+	/// <summary>
+	/// Starts the land's own ambient sounds: the type 1 records of the level's <c>scape.omp</c>, each an effect of the
+	/// global <c>cat_ambient</c> (word 1 nought) or of the level's own category, played at its place with its range
+	/// so the mixer's distance law turns it down. Type 3 records (a sound that follows the listener inside a rectangle)
+	/// are counted, not played.
+	/// </summary>
+	// [DATA:levels/*/scape.omp] type 1 records: word 1 the category (nought: global cat_ambient), word 2 the effect, words 3-5 the place, word 6 the range (x2/1024)
+	// [LEAD:maexah/OpenTPW docs/exe/park.md "The land's own sounds" and World/Park/ParkPlacedObjects.cs] the hand-off to FUN_0051c130 with the place and range; PC addresses unverifiable (packed exe)
+	// [APPROX:AUDIO-021] the record's place is in park units and the listener's place in the same sound units — evidence needed: the Mac listener and placement units traced together
+	// [APPROX:AUDIO-020] a placed effect that is a sentence (not a one-shot) plays its first sound once — evidence needed: the placed sentence's player on the Mac
+	public static void StartPlacedAmbients( string level )
+	{
+		StopPlacedAmbients();
+		var path = $"/levels/{level}/scape.omp";
+		if ( events == null || !FileSystem.FileExists( path ) )
+			return;
+		var file = new PlacedObjectsFile( FileSystem.ReadAllBytes( path ) );
+		var voices = new List<AudioVoice>();
+		var type3 = 0;
+		foreach ( var record in file.Records )
+		{
+			if ( record.Type == PlacedObjectsFile.RectangleSoundType )
+			{
+				type3++;
+				continue;
+			}
+			if ( record.Type != PlacedObjectsFile.RangedSoundType )
+				continue;
+			var category = record.Category == 0 ? Ambient : LevelAmbient;
+			var (x, height, z) = record.SoundPlace;
+			var voice = events.PlayAt( category, (uint)record.Sound, AudioChannel.Effects, new Vector3( x, height, z ), record.Range > 0 ? record.Range : null );
+			if ( voice != null )
+				voices.Add( voice );
+		}
+		placedAmbients = voices;
+		Log.Trace( $"Sound: {level} placed ambients {voices.Count} started, {type3} rectangle sounds not played (scape.omp type 3)." );
 	}
 
 	/// <summary>Stops the land's own ambient voices (the level's <c>scape.omp</c> records).</summary>

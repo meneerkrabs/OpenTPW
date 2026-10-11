@@ -120,6 +120,8 @@ Traced in the binary but not triggered yet:
   `0x100923A8`): the lobby has no lightning or globe ambience to trigger them.
 * Visitor click (`cat_kids` 129 when the visitor status panel opens, `0x1010B850`) and
   visitor panel sounds (`cat_ui` 95 at `0x101125D8`): OpenTPW selects objects, not visitors.
+* The advisor controller's own effects, `cat_ui` 197/0xC5 (`0x100069DC`) and
+  198/0xC6 (`0x100075DC`): which advisor state plays them is not traced.
 * The slap reactions 639–641 of `cat_speech` (`0x10007068`): OpenTPW has no slap
   interaction.
 * `cat_ui` 0xBD: a control whose flag word (read at `0x1017F618`) has a bit set outside

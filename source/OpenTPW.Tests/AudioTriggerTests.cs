@@ -204,11 +204,11 @@ public class AudioTriggerTests
 	}
 
 	/// <summary>
-	/// Every literal EVENT instruction of every object script of the four levels routes to a traced category, and the
-	/// level types' (3 rides, 4 ambient) literal ids exist in that level's catalogue — so the sounds the scripts ask
-	/// for are the sounds the routing plays.
+	/// Every literal EVENT instruction of every object script of the four levels stays inside the dispatcher's
+	/// switch, and the routed types' (3-9) literal ids resolve in the level or the global catalogue — so the sounds
+	/// the scripts ask for are the sounds the routing plays (types 0-2 take the untraced 3D-loop path).
 	/// </summary>
-	// [BIN:STP-PPC:0x100AE930 RSE EVENT effect switch] the traced types are 3-9; the corpus only uses those
+	// [BIN:STP-PPC:0x100AE930 RSE EVENT effect switch] the switch guards type < 10 (0x100AE938)
 	[TestMethod]
 	[DoNotParallelize]
 	public void OriginalObjectScriptsUseOnlyRoutedRseEventTypes()

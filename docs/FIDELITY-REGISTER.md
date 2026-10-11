@@ -550,7 +550,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | ONLINE-003 | `source/OpenTPW.Online/Chat/ChatCommands.cs:34` | [APPROX:ONLINE-003] 102/110 are both "Could not add "; assigned to ignore/buddy by their position next to |
 | ONLINE-004 | `source/OpenTPW.Online/Chat/ChatCommands.cs:42` | [APPROX:ONLINE-004] 111-113 are all "Your buddy " (English suffix strings are empty); online/offline/removed |
 | ONLINE-005 | `source/OpenTPW.Server/ChatHub.cs:26` | [APPROX:ONLINE-005] Command semantics are inferred from the command words, response strings and |
-| ONLINE-006 | `source/OpenTPW.Server/ChatHub.cs:563` | [APPROX:ONLINE-006] A visitor inside a park must leave it first (CHAT_COMMANDS 127) — evidence needed. |
+| ONLINE-006 | `source/OpenTPW.Server/ChatHub.cs:572` | [APPROX:ONLINE-006] A visitor inside a park must leave it first (CHAT_COMMANDS 127) — evidence needed. |
 | ONLINE-007 | `source/OpenTPW/World/GlobeCameraMode.cs:11` | [APPROX:ONLINE-007] the original applies its rates, steps and damping per game tick; OpenTPW assumes 30 ticks per second — evidence needed: the tick length of the online world's update |
 | ONLINE-008 | `source/OpenTPW/World/GlobeCameraMode.cs:21` | [APPROX:ONLINE-008] the first view faces Europe and the Atlantic from 30° north — evidence needed: the original's starting yaw and pitch |
 | ONLINE-009 | `source/OpenTPW/World/GlobeCameraMode.cs:55` | [APPROX:ONLINE-009] edge and right-button steering add rate × offset × step per tick to the velocity; the original's exact edge-depth and right-button scaling are not decoded — evidence needed: the input branches of 0x005DC860 |
@@ -567,8 +567,8 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | ONLINE-020 | `source/OpenTPW/Online/OnlineScreens.cs:635` | [APPROX:ONLINE-020] the original's last row showed the Instant action mode flag, which the package does |
 | ONLINE-021 | `source/OpenTPW/Online/OnlineScreens.cs:1023` | [APPROX:ONLINE-021] which action each original button carried is not decoded: the bar is vote, earmuffs, |
 | ONLINE-022 | `source/OpenTPW/Online/OnlineScreens.cs:825` | park's map view. [APPROX:ONLINE-022] the camcorder snapshot is not reproduced, and no park reference is |
-| ONLINE-023 | `source/OpenTPW.Server/ServerProgram.cs:420` | [APPROX:ONLINE-023] the original showed swear words in park names as asterisks (FAQ, S2), so the name is |
-| ONLINE-024 | `source/OpenTPW.Server/ChatHub.cs:308` | [APPROX:ONLINE-024] the original notification's string is not recovered; CHAT_COMMANDS 111-113 ("Your buddy ") |
+| ONLINE-023 | `source/OpenTPW.Server/ServerProgram.cs:427` | [APPROX:ONLINE-023] the original showed swear words in park names as asterisks (FAQ, S2), so the name is |
+| ONLINE-024 | `source/OpenTPW.Server/ChatHub.cs:317` | [APPROX:ONLINE-024] the original notification's string is not recovered; CHAT_COMMANDS 111-113 ("Your buddy ") |
 | ONLINE-024 | `source/OpenTPW/Online/OnlineSession.cs:44` | [APPROX:ONLINE-024] the original notification's string is not recovered; the wording is OpenTPW's own |
 | PATH-001 | `source/OpenTPW/Hud/ParkHud.cs:608` | [APPROX:PATH-001] ghosts are flat markers at the cell centres with the line's cost beside the cursor (the original draws ghost path pieces, LayLine mode \| 0x100) — evidence needed: captures of the original path tool |
 | PATH-001 | `source/OpenTPW/World/Level.Objects.cs:122` | [APPROX:PATH-001] a left click on an empty owned cell or on a path cell enters mode 1 with that cell as the start; the click handler that calls SetMode(1) is not traced and no menu button exists — evidence needed: the caller of SetMode 0x1007B320 with mode 1 |
@@ -775,12 +775,12 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | ONLINE-050 | `source/OpenTPW.Server/ServerOptions.cs:50` | publish was told to un-publish one first). [EXT:ONLINE-050] an operator may lower it. |
 | ONLINE-051 | `source/OpenTPW.Server/PasswordHasher.cs:6` | &lt;summary&gt;[EXT:ONLINE-051] PBKDF2-SHA256 (BCL) with a random 16-byte salt; only the hash is stored.&lt;/summary&gt; |
 | ONLINE-052 | `source/OpenTPW.Server/ServerStore.cs:88` | [EXT:ONLINE-052] File storage: JSON indexes (accounts, parks, postcards) rewritten atomically after |
-| ONLINE-053 | `source/OpenTPW.Server/ChatHub.cs:429` | [EXT:ONLINE-053] No avatar positions exist, so the range is acknowledged but has no effect. |
+| ONLINE-053 | `source/OpenTPW.Server/ChatHub.cs:438` | [EXT:ONLINE-053] No avatar positions exist, so the range is acknowledged but has no effect. |
 | ONLINE-054 | `source/OpenTPW.Server/ServerProgram.cs:12` | [EXT:ONLINE-054] Self-hostable OpenTPW server (ASP.NET Core minimal APIs). See docs/SERVER.md. |
 | ONLINE-055 | `source/OpenTPW.Server/ServerStore.cs:650` | [EXT:ONLINE-055] Deletes a player and what the server holds about them (docs/SERVER.md): the |
 | ONLINE-056 | `source/OpenTPW.Server/NewsFeed.cs:10` | [EXT:ONLINE-056] the original fetched news from EA's news server; an OpenTPW server serves the operator's text files |
 | ONLINE-057 | `source/OpenTPW.Server/ServerProgram.cs:62` | [EXT:ONLINE-057] the project website reads the public news and website park list from the browser |
-| ONLINE-057 | `source/OpenTPW.Server/ServerProgram.cs:303` | [EXT:ONLINE-057] public, for the project website: only parks whose authors opted in, at most ten, cached a minute. |
+| ONLINE-057 | `source/OpenTPW.Server/ServerProgram.cs:310` | [EXT:ONLINE-057] public, for the project website: only parks whose authors opted in, at most ten, cached a minute. |
 | ONLINE-058 | `source/OpenTPW.Server/ServerProgram.cs:246` | [EXT:ONLINE-058] a release asks the host to update: the server only leaves a file in its data folder, which the |
 | ONLINE-059 | `source/OpenTPW.Server/CityDirectory.cs:11` | [EXT:ONLINE-059] the original city list came from EA's city server and is lost: only "North Pole" (the Bullfrog |
 | ONLINE-060 | `source/OpenTPW/Online/OnlineFolders.cs:7` | [EXT:ONLINE-060] The player's online folder: exported parks, downloaded (visited) parks and the |
@@ -826,7 +826,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | online-email | `source/OpenTPW.Server/EmailSender.cs:19` | [EXT:online-email] Sends through the Resend API (&lt;c&gt;POST https://api.resend.com/emails&lt;/c&gt;). The API key comes from the |
 | online-email | `source/OpenTPW.Server/EmailTexts.cs:7` | [EXT:online-email] Account e-mails in the six languages of the game (the player's game language, else English). |
 | online-email | `source/OpenTPW.Server/ServerProgram.cs:92` | [EXT:online-email] account e-mails go through Resend when a key is set; without one, e-mail is off |
-| online-email | `source/OpenTPW.Server/ServerProgram.cs:333` | [EXT:online-email] the address of a new account, confirmed with a code; then recovery by e-mail. |
+| online-email | `source/OpenTPW.Server/ServerProgram.cs:340` | [EXT:online-email] the address of a new account, confirmed with a code; then recovery by e-mail. |
 | online-email | `source/OpenTPW/Online/OnlineScreens.cs:397` | [EXT:online-email] recovery by e-mail; the server answers the same whether the account exists |
 | online-email | `source/OpenTPW/Online/OnlineScreens.cs:454` | [EXT:online-email] the recovery address of the new account, confirmed with a code before the account exists |
 | online-email | `source/OpenTPW/Online/OnlineScreens.cs:493` | [EXT:online-email] Recovery by e-mail: a code sent to the account's address sets a new password, and on request sets up |

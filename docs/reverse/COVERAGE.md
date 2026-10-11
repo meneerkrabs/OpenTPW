@@ -10,8 +10,8 @@ often covered through their callers.
 
 | | Count | Cited | Share |
 | --- | ---: | ---: | ---: |
-| Functions in SimThemePark | 6725 | 710 | 10.6 % |
-| Code bytes in those functions | 2014896 | 649756 | 32.2 % |
+| Functions in SimThemePark | 6725 | 712 | 10.6 % |
+| Code bytes in those functions | 2014896 | 649804 | 32.3 % |
 | RTTI classes (names in the repository) | 194 | 44 | |
 
 ## Classes

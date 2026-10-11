@@ -12,6 +12,9 @@ public static class Camera
 
 	private static CameraMode CameraMode = new();
 
+	/// <summary>The active camera mode, e.g. to restore a park's camera after the online globe.</summary>
+	public static CameraMode Mode { get => CameraMode; set => CameraMode = value; }
+
 	private static void CalcViewProjMatrix()
 	{
 		if ( CameraMode == null )

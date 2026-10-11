@@ -201,7 +201,19 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			var target = GlobeScene.Centre.GetSystemVector3() + new System.Numerics.Vector3( GlobeScene.Direction( 51.5f, -0.1f ).X, GlobeScene.Direction( 51.5f, -0.1f ).Z, GlobeScene.Direction( 51.5f, -0.1f ).Y ) * GlobeScene.PickRadius;
 			Require( flow.Globe!.Pick( london, System.Numerics.Vector3.Normalize( target - london ) )?.Name == "London", "a ray from the camera to London picks London" );
 			CaptureFrame( "online-globe-cities.png" );
-			Click( flow.Menu!.Stack.Top!, "login" );
+			// A city lobby with three parks: their theme islands stand at the first three slots.
+			var city = new UI.CityLobbyScreen( new Online.Api.CityInfo( 2, "London", "", 51.5f, -0.1f, 3 ) );
+			Online.Api.ParkSummary Park( string id, string level ) => new( id, $"Park {id}", "", "Ann", level, "English", DateTimeOffset.UnixEpoch, 0, 0, false, false, 0, false, 0, 2 );
+			city.Parks = new[] { Park( "a", "jungle" ), Park( "b", "space" ), Park( "c", "hallow" ) };
+			flow.Menu!.Stack.Push( city );
+		} );
+		Wait( "city lobby renders", 3 );
+		Do( "city lobby", () =>
+		{
+			Require( flow.CityIslandCount == 3 && flow.Globe is { Visible: false }, "a city lobby shows its parks' theme islands instead of the globe" );
+			CaptureFrame( "online-city-lobby.png" );
+			flow.Menu!.Stack.Pop();
+			Click( flow.Menu.Stack.Top!, "login" );
 		} );
 		Wait( "login opens", 3 );
 		Do( "login typing", () =>
@@ -650,7 +662,26 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			flow.Hud.OpenPauseMenu();
 		} );
 		Wait( "pause again", 3 );
-		Do( "exit to lobby", () => Click( flow.Hud!.Stack.Top!, nameof( UIStrings.ExitToLobby ) ) );
+		// The online globe over a park: it replaces the park and the HUD, and closing it restores the park camera.
+		CameraMode? parkCamera = null;
+		Do( "online globe in the park", () =>
+		{
+			parkCamera = Camera.Mode;
+			flow.ShowOnline( flow.Hud!.Stack );
+		} );
+		Wait( "park globe renders", 3 );
+		Do( "park globe", () =>
+		{
+			Require( flow.Globe is { Visible: true } && Camera.Mode is GlobeCameraMode, "Go Online in a park shows the globe with its camera" );
+			CaptureFrame( "online-park-globe.png" );
+			flow.Hud!.Stack.Pop();
+		} );
+		Wait( "park returns", 3 );
+		Do( "exit to lobby", () =>
+		{
+			Require( ReferenceEquals( Camera.Mode, parkCamera ) && flow.Globe is { Visible: false }, "closing the globe restores the park's camera" );
+			Click( flow.Hud!.Stack.Top!, nameof( UIStrings.ExitToLobby ) );
+		} );
 		Wait( "lobby again", 20 );
 		Do( "back in lobby", () =>
 		{

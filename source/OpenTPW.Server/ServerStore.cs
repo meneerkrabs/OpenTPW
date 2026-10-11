@@ -763,13 +763,15 @@ public sealed class ServerStore
 			return parks.TryGetValue( id, out var park ) && !options.HiddenParks.Contains( id ) ? park : null;
 	}
 
-	public IReadOnlyList<ParkRecord> ListParks( string? search, string? author, string sort )
+	public IReadOnlyList<ParkRecord> ListParks( string? search, string? author, string sort, int? cityId = null )
 	{
 		lock ( gate )
 		{
 			IEnumerable<ParkRecord> query = parks.Values.Where( park => !options.HiddenParks.Contains( park.Id ) );
 			if ( !string.IsNullOrWhiteSpace( search ) )
 				query = query.Where( park => park.Name.Contains( search, StringComparison.OrdinalIgnoreCase ) );
+			if ( cityId is { } city )
+				query = query.Where( park => park.CityId == city );
 			if ( !string.IsNullOrWhiteSpace( author ) )
 				query = query.Where( park => OnlineText.NormalizeName( park.Author ) == OnlineText.NormalizeName( author ) );
 			query = sort switch
@@ -866,7 +868,7 @@ public sealed class ServerStore
 		lock ( gate )
 		{
 			return new ParkSummary( park.Id, park.Name, park.Description, park.Author, park.Level, park.Language, park.PublishedUtc, park.Visits, park.Votes,
-				viewer != null && park.Visitors.Contains( viewer.Key ), viewer != null && park.LastVoteDay.ContainsKey( viewer.Key ), playersAtPark, park.HasThumbnail, park.Bytes );
+				viewer != null && park.Visitors.Contains( viewer.Key ), viewer != null && park.LastVoteDay.ContainsKey( viewer.Key ), playersAtPark, park.HasThumbnail, park.Bytes, park.CityId );
 		}
 	}
 

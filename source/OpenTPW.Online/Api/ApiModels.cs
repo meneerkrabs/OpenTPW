@@ -69,7 +69,7 @@ public sealed record RecoveryConfirmation( string NameOrEmail, string Code, stri
 public sealed record SessionToken( string Name, string Token, DateTimeOffset ExpiresUtc );
 
 public sealed record ParkSummary( string Id, string Name, string Description, string Author, string Level, string Language,
-	DateTimeOffset PublishedUtc, int Visits, int Votes, bool VisitedBefore, bool VotedFor, int PlayersAtPark, bool HasThumbnail, int Bytes );
+	DateTimeOffset PublishedUtc, int Visits, int Votes, bool VisitedBefore, bool VotedFor, int PlayersAtPark, bool HasThumbnail, int Bytes, int CityId = 0 );
 
 public sealed record ParkList( IReadOnlyList<ParkSummary> Parks, int Total );
 

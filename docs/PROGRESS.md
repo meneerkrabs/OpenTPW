@@ -706,3 +706,37 @@ were earned from visits to published parks). What OpenTPW rebuilds:
   - Platinum Tickets and a ride shop;
   - the city lobby's own islands when opened from a park;
   - the original layout of the publish globe.
+
+## Render performance, build markers and arrivals (October 11, 2026)
+
+- **Render performance (v0.7.8):** interface draws and their vertex lists are
+  reused from frame to frame, interface vertices are written into fenced frame
+  slots instead of through the command list, and model parts wholly outside
+  the view are skipped. `--no-vsync` and `--frame-stats` measure frames, CPU and
+  allocations. With the browser-build changes merged first, a jungle park at
+  120 Hz on Apple silicon uses about 0.35 cores instead of 0.85 and allocates
+  about 4 MB/s instead of 67 MB/s; the frame rate and GPU time are unchanged.
+- **Blueprint markers:** the path and queue tool's preview line and the
+  footprint of an object being placed are drawn as the original's blue (or red)
+  BlueprintMesh boxes from `Data/generic/dynamic/textures`, traced from the Mac
+  binary (docs/reverse/BLUEPRINT.md). They replace the interface squares of
+  PATH-001; BLUEPRINT-001..003 remain open, including the entrance/exit and
+  track symbols.
+- **Queue tool through the HUD:** the jungle smoke test now buys a HasQueue
+  ride, places it with a park click and lays its queue out of the entrance. The
+  route already worked; without visible markers it was hard to see that the
+  queue tool had started.
+- **Arrivals:** guests arrive in groups as in the Mac binary: a group every
+  `TimeBetweenArrivals` units of four park turns (about 2.5 minutes for the
+  shipped 150) after the last one emptied, sized
+  `1.2 × (park points + NewParkBonus) / PointsPerVisitor` with park points from
+  the rides' and sideshows' AttractionValue and age bonus (docs/GUESTS.md,
+  "Arrivals"). A 30-minute M3 run now admits 105 guests instead of 1,800.
+  ARRIVAL-001..003 remain open.
+- **Verification (macOS arm64, Metal, original data):** the full test suite
+  passes (1,686 passed, 91 skipped); the M3 gate passes 16/16 over 30 minutes;
+  the M4 gate's rows are unchanged from main (15 pass, 10 fail, 2 unresolved);
+  the front-end and jungle smoke tests pass, the jungle one with the new HUD
+  queue and marker checks (its Totem pick check fails intermittently, which was
+  also seen on an earlier build without these changes); the native Metal shader
+  tests pass; the browser project builds. Direct3D 11, Vulkan and WebGL were not run.

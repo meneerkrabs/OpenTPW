@@ -228,6 +228,36 @@ identical on `bf` and 71.5 % on `plan` (max difference 13 and 15). The committed
 decoder stays. Without the constants and matrix values, no block can be pinned
 to the original's arithmetic, so no synthetic original-arithmetic test was added.
 
+### Mac route: no TQI decoder in the Mac build (verified, negative)
+
+The Mac build was checked as the candidate source of the original TQI
+arithmetic, because its code is readable. It is not one. Static reads only:
+the player is `0x1009B1DC` (552 bytes; its callers `0x101C0DF0` and
+`0x101C0F40` are confirmed by call references).
+
+- The player calls only QuickTime movie glue: `NewMovieFromFile` and
+  `OpenMovieFile` (glue at `0x101C6534`–`0x101C6564`), `GetGWorldDevice`,
+  `SetMovieGWorld`, `SetMovieBox`, `PrerollMovie`, `SetMovieVolume`,
+  `MoviesTask` and `StartMovie`. Its whole movie import surface is the
+  `QuickTimeLib` set (`OpenMovieFile` … `IsMovieDone`).
+- Neither `SimThemePark.data` nor the 15 shared libraries contain `TQI`, `pIQT`
+  or an EA codec string. The only IDCT in the libraries is IJG `libjpeg`'s,
+  which is unrelated to movies.
+- The Mac movies are not the `.tgq` files. The HFS volume `mac-feral/hfs.img`
+  (`Theme Park Data/data/Movies`) holds the nine `.mov` files with the same
+  names, plus `bfj.mov` and `BFj2.mov`. Their QuickTime `moov` atoms (raw in
+  `bf.mov` and `bfj.mov`, zlib-compressed `cmov` in the rest) declare `SVQ1` (Sorenson Video 1)
+  video and `ima4` audio. The `Extras` trailer is `SVQ1` with `twos` audio.
+  Sorenson decoding is Apple's QuickTime component, which is not in the game
+  data.
+- So the Mac player decodes re-encoded Sorenson video through QuickTime, never
+  an EA TQI bitstream. Nothing in the Mac build can supply the `.tgq` IDCT,
+  and no Mac arithmetic was ported. The decoder and the table above are
+  unchanged.
+
+The volume was read with a scratch HFS catalogue walker outside the repository
+(the image does not mount with `hdiutil`). Nothing from it is committed.
+
 ### Pinned hashes (SHA-256)
 
 Files:
@@ -416,8 +446,10 @@ tests never play it; `--mute` silences it.
 
 Bit-exact IDCT: the original's kernel is located (see "Original IDCT") but its
 constants, matrix values and final clamp are not recoverable from the local
-data, so the FFmpeg-fitted integer AAN stays. Closing it needs the decrypted
-`IDCT_DAT`/`UVA_DATA` contents or a runtime capture (not done here), colour
+data, so the FFmpeg-fitted integer AAN stays. The Mac build is not a source
+(see "Mac route"; its movies are Sorenson Video). Closing it needs the
+decrypted `IDCT_DAT`/`UVA_DATA` contents or a runtime capture of the PC
+executable (not done here), colour
 matrix/range against original-player captures, what the original does after
 the last frame (`plan.tgq` audio tail), whether the PC build uses the same
 logo-plus-day-trailer sequence and `.tgq` names (PC executable not analysed),

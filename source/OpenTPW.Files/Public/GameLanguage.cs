@@ -30,8 +30,25 @@ public sealed class GameLanguage
 	public static GameLanguage Current
 	{
 		get => current ??= Resolve( FileSystem.GetAbsolutePath( "/" ), null, null );
-		set => current = value;
+		set
+		{
+			current = value;
+			Version++;
+		}
 	}
+
+	/// <summary>
+	/// Counts language changes. Caches of language data remember the version they loaded and reload when it differs, so a
+	/// language chosen in the options applies without a restart (docs/LANGUAGES.md, "Switching languages").
+	/// </summary>
+	public static int Version { get; private set; }
+
+	/// <summary>
+	/// Resolves <paramref name="name"/> from the same data folder and the full language overlay (all CD languages), without
+	/// making it current: the caller loads its strings and fonts first and sets <see cref="Current"/> only when that worked.
+	/// </summary>
+	public static GameLanguage ResolveSwitch( string name ) =>
+		Resolve( Current.BaseDataDirectory, name, AvailableOverlay ?? Current.OverlayDataDirectory );
 
 	/// <summary>Whether a language has been selected or resolved.</summary>
 	public static bool IsSelected => current != null;
@@ -44,7 +61,7 @@ public sealed class GameLanguage
 	public static string? AvailableOverlay { get; set; }
 
 	/// <summary>Languages the player can choose: the installation's plus those in <see cref="AvailableOverlay"/>.</summary>
-	public static IReadOnlyList<string> Choosable() => Readable( Current.BaseDataDirectory, Current.OverlayDataDirectory ?? AvailableOverlay );
+	public static IReadOnlyList<string> Choosable() => Readable( Current.BaseDataDirectory, AvailableOverlay ?? Current.OverlayDataDirectory );
 
 	/// <summary>
 	/// The languages of <see cref="FindLanguages"/> whose character table OpenTPW can read; the Polish CD's table uses

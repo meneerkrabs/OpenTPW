@@ -13,6 +13,11 @@ public sealed class OptionsServices
 	public Action SaveOptions { get; init; } = () => { };
 	/// <summary>Persists the language for the next start.</summary>
 	public Action<string> SaveLanguage { get; init; } = _ => { };
+	/// <summary>
+	/// Switches to the language without a restart; returns false when it waits until the player leaves the park. Unset:
+	/// the language changes at the next start.
+	/// </summary>
+	public Func<string, bool>? ApplyLanguage { get; init; }
 	/// <summary>Time to confirm a window size/mode change before it is reverted.</summary>
 	public TimeSpan ConfirmTimeout { get; init; } = TimeSpan.FromSeconds( 15 );
 	/// <summary>Graphics settings (enhanced textures row); null hides the row.</summary>
@@ -335,8 +340,13 @@ public static class OptionsScreen
 		{
 			services.SaveOptions();
 			var languageChanged = !string.Equals( state.Language, services.CurrentLanguage, StringComparison.OrdinalIgnoreCase );
+			// [EXT:live-language] the original read its language once; OpenTPW switches in the front end, and after the park
+			bool? languageNow = null;
 			if ( languageChanged )
+			{
 				services.SaveLanguage( state.Language );
+				languageNow = services.ApplyLanguage?.Invoke( state.Language );
+			}
 			var texturesChanged = graphics != null && state.TexturePack != graphics.Current.TexturePackName;
 			var presetChanged = graphics != null && steps.Count > 0 && state.Preset != graphics.Current.Preset;
 			var graphicsRestart = false;
@@ -358,8 +368,10 @@ public static class OptionsScreen
 					services.BeginTexturePackSwitch?.Invoke( state.TexturePack );
 					texturesChanged = false;
 				}
-				if ( languageChanged || graphicsRestart )
+				if ( graphicsRestart || (languageChanged && languageNow == null) )
 					stack.Push( UiDialogs.Message( "restart", () => strings[UIStrings.RestartGame], (() => strings.Extra( OpenTpwText.Back ), () => { stack.Pop(); closed(); }) ) );
+				else if ( languageNow == false )
+					stack.Push( UiDialogs.Message( "languageAfterPark", () => strings.Extra( OpenTpwText.LanguageAfterPark ), (() => strings.Extra( OpenTpwText.Back ), () => { stack.Pop(); closed(); }) ) );
 				else
 					closed();
 			}

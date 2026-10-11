@@ -281,6 +281,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			flow.Menu.Stack.Pop();
 		} );
 		PlanTexturePackSwitch();
+		PlanLanguageSwitch();
 		Do( "open options", () => Click( flow.Menu!.Main, "options" ) );
 		Wait( "options open", 3 );
 		Do( "options render", () =>
@@ -677,6 +678,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			flow.Hud!.Stack.Pop();
 		} );
 		Wait( "park returns", 3 );
+		var parkLanguage = PlanLanguageInPark();
 		Do( "exit to lobby", () =>
 		{
 			Require( ReferenceEquals( Camera.Mode, parkCamera ) && flow.Globe is { Visible: false }, "closing the globe restores the park's camera" );
@@ -686,6 +688,9 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		Do( "back in lobby", () =>
 		{
 			Require( flow.Level == null && flow.Menu != null && flow.Lobby != null, "Exit To Lobby returns to the front end" );
+			if ( parkLanguage != null )
+				Require( string.Equals( GameLanguage.Current.Name, parkLanguage, StringComparison.OrdinalIgnoreCase ) && flow.Strings.Language == parkLanguage,
+					"a language chosen in the park applies once the park is left" );
 			Require( flow.Menu!.Selected.Level == "jungle", "lobby returns to the island of the park" );
 			CaptureFrame( "frontend-return.png" );
 			flow.StartPark( "jungle", GameMode.InstantAction );
@@ -836,6 +841,120 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			if ( flow.InjectedInput != null )
 				break;
 		}
+	}
+
+	/// <summary>
+	/// [EXT:live-language] Options → OpenTPW → language row → OK switches the language at once: the front end and the
+	/// reopened options show the other language's text, and switching back restores the first one. Skipped with one language.
+	/// </summary>
+	private void PlanLanguageSwitch()
+	{
+		var languages = GameLanguage.Choosable();
+		if ( languages.Count < 2 )
+		{
+			Log.Trace( "Front-end smoke test: language switch skipped, only one language is available." );
+			return;
+		}
+		var first = GameLanguage.Current.Name;
+		var index = languages.ToList().FindIndex( name => string.Equals( name, first, StringComparison.OrdinalIgnoreCase ) );
+		var other = languages[(index + 1) % languages.Count];
+		var firstStrings = flow.Strings;
+		foreach ( var (from, to) in new[] { (first, other), (other, first) } )
+		{
+			Do( $"language {to}: open options", () =>
+			{
+				if ( flow.Menu!.Stack.Top?.Name != "options" )
+					Click( flow.Menu.Main, "options" );
+			} );
+			Wait( $"language {to}: options open", 3 );
+			Do( $"language {to}: OpenTPW page", () => Click( flow.Menu!.Stack.Top!, "openTpw" ) );
+			Wait( $"language {to}: OpenTPW page opens", 3 );
+			// The row cycles forward: one step to the next language, the rest of the way round to come back.
+			var clicks = to == other ? 1 : languages.Count - 1;
+			for ( var click = 0; click < clicks; click++ )
+			{
+				Do( $"language {to}: cycle {click + 1}", () =>
+				{
+					var page = flow.Menu!.Stack.Top!;
+					Require( page.Name == "openTpwOptions", "the OpenTPW options page opens" );
+					var row = page.Elements.OfType<UiButton>().FirstOrDefault( element => element.Id == "language" );
+					Require( row != null, "the OpenTPW page has a language row" );
+					flow.InjectedInput = UiInput.Click( row!.ScreenRect( Context.Canvas ).Center );
+				} );
+				Wait( $"language {to}: row changes {click + 1}", 3 );
+			}
+			Do( $"language {to}: back to the original page", () => flow.InjectedInput = UiInput.Key( UiKeys.Back ) );
+			Wait( $"language {to}: original page", 3 );
+			Do( $"language {to}: accept", () =>
+			{
+				Require( flow.Menu!.Stack.Top?.Name == "options", "Back returns to the original options page" );
+				Require( GameLanguage.Current.Name == from, "the language changes only when the options are accepted" );
+				Click( flow.Menu.Stack.Top!, "ok" );
+			} );
+			Wait( $"language {to}: switched", 5 );
+			Do( $"language {to}: verify", () =>
+			{
+				Require( string.Equals( GameLanguage.Current.Name, to, StringComparison.OrdinalIgnoreCase ), $"the language is now {to}" );
+				Require( flow.Menu!.Stack.Top?.Name == "options", "the options reopen in the new language" );
+				Require( flow.Strings.Language == GameLanguage.Current.Name, "the string table follows the language" );
+				var capture = CaptureFrame( $"language-{to.ToLowerInvariant()}.png" );
+				VerifyText( capture, flow.Strings[UIStrings.GameOptions], $"Game Options title in {to}" );
+				// The tables of the two languages must differ somewhere visible, or this check would pass on a stale table.
+				var shown = new[] { UIStrings.GameOptions, UIStrings.Options, UIStrings.ExitToLobby, UIStrings.Paused };
+				if ( to == other )
+					Require( shown.Any( id => flow.Strings[id] != firstStrings[id] ), $"{first} and {to} differ in the checked labels" );
+				flow.InjectedInput = UiInput.Key( UiKeys.Back );
+			} );
+			Wait( $"language {to}: options closed", 3 );
+		}
+		Do( "language restored", () =>
+		{
+			Require( flow.Menu!.Stack.Top?.Name == "lobby", "the options close after the switch back" );
+			Require( string.Equals( GameLanguage.Current.Name, first, StringComparison.OrdinalIgnoreCase ), "the first language is back" );
+		} );
+	}
+
+	/// <summary>
+	/// [EXT:live-language] In a park the options keep the language until the park is left, and say so; returns the language
+	/// expected back in the lobby (null with one language).
+	/// </summary>
+	private string? PlanLanguageInPark()
+	{
+		var languages = GameLanguage.Choosable();
+		if ( languages.Count < 2 )
+			return null;
+		var first = GameLanguage.Current.Name;
+		var other = languages[(languages.ToList().FindIndex( name => string.Equals( name, first, StringComparison.OrdinalIgnoreCase ) ) + 1) % languages.Count];
+		Do( "park language: options", () => Click( flow.Hud!.Stack.Top!, nameof( UIStrings.Options ) ) );
+		Wait( "park language: options open", 3 );
+		Do( "park language: OpenTPW page", () => Click( flow.Hud!.Stack.Top!, "openTpw" ) );
+		Wait( "park language: OpenTPW page opens", 3 );
+		Do( "park language: cycle", () =>
+		{
+			var row = flow.Hud!.Stack.Top!.Elements.OfType<UiButton>().FirstOrDefault( element => element.Id == "language" );
+			Require( row != null, "the OpenTPW page has a language row in the park" );
+			flow.InjectedInput = UiInput.Click( row!.ScreenRect( Context.Canvas ).Center );
+		} );
+		Wait( "park language: row changes", 3 );
+		Do( "park language: back", () => flow.InjectedInput = UiInput.Key( UiKeys.Back ) );
+		Wait( "park language: original page", 3 );
+		Do( "park language: accept", () => Click( flow.Hud!.Stack.Top!, "ok" ) );
+		Wait( "park language: notice", 3 );
+		Do( "park language: notice shown", () =>
+		{
+			Require( flow.Hud!.Stack.Top?.Name == "languageAfterPark", "the options say the language follows when the park is left" );
+			Require( string.Equals( GameLanguage.Current.Name, first, StringComparison.OrdinalIgnoreCase ), "the park keeps its language" );
+			VerifyText( CaptureFrame( "language-after-park.png" ), flow.Strings.Extra( OpenTpwText.LanguageAfterPark ), "language notice" );
+			Click( flow.Hud.Stack.Top!, "choice0" );
+		} );
+		Wait( "park language: notice closed", 3 );
+		Do( "park language: pause menu", () =>
+		{
+			if ( flow.Hud!.Stack.Top?.Name != "pause" )
+				flow.Hud.OpenPauseMenu();
+		} );
+		Wait( "park language: pause menu again", 3 );
+		return other;
 	}
 
 	private void Click( UiScreen screen, string id )

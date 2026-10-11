@@ -68,6 +68,11 @@ public partial class Renderer : IDisplaySettings
 	private Framebuffer? outputCaptureFramebuffer;
 	private uint maximumTextureSize;
 
+	/// <summary>False with <c>--no-vsync</c>: frames are presented as fast as they are made (for measurements).</summary>
+	internal static bool SyncToVerticalBlank = true;
+	/// <summary>Set by <c>--frame-stats</c>.</summary>
+	internal FrameStats? FrameStats;
+
 	private Pipeline _blitPipeline = null!;
 	private ResourceSet? _blitResourceSet;
 	private ResourceLayout _blitResourceLayout = null!;
@@ -490,6 +495,7 @@ public partial class Renderer : IDisplaySettings
 
 		Device.SubmitCommands( CommandList );
 		Device.SwapBuffers();
+		FrameStats?.FrameEnded();
 	}
 
 	private void Compose( Framebuffer target )
@@ -586,7 +592,7 @@ public partial class Renderer : IDisplaySettings
 			PreferDepthRangeZeroToOne = true,
 			SwapchainDepthFormat = null,
 			SwapchainSrgbFormat = false,
-			SyncToVerticalBlank = true,
+			SyncToVerticalBlank = SyncToVerticalBlank,
 			HasMainSwapchain = true
 		};
 

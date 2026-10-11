@@ -22,7 +22,10 @@ internal static class DisplayStartup
 			Log.Trace( $"Display settings saved to {path}." );
 		}
 		Log.Trace( $"Display settings: {settings.Describe()}." );
+		Renderer.SyncToVerticalBlank = !args.Contains( "--no-vsync" );
 		var renderer = new Renderer( settings, smokeTest ? null : path );
+		if ( args.Contains( "--frame-stats" ) )
+			renderer.FrameStats = new FrameStats();
 		renderer.DisplayDiagnostics.InsertRange( 0, diagnostics );
 		return renderer;
 	}

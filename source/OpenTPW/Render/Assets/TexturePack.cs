@@ -81,6 +81,12 @@ public static class TexturePack
 	/// <summary>True when an enhanced choice (any non-empty pack name) is active: the shipped interface art is used.</summary>
 	public static bool Enhanced { get; private set; }
 
+	/// <summary>True when the selected pack is Clarity (an explicit Original choice leaves this false).</summary>
+	public static bool IsDefaultActive { get; private set; }
+
+	/// <summary>Optional asynchronous host request for a missing Clarity PNG, relative to its pack directory.</summary>
+	public static Action<string>? RequestMissing { get; set; }
+
 	private static bool packBeforeShippedArt;
 
 	/// <summary>
@@ -92,6 +98,8 @@ public static class TexturePack
 		var relative = RelativeFileName( gamePath );
 		var packed = string.IsNullOrEmpty( Directory ) ? null : Path.Combine( Directory, relative );
 		var shipped = Enhanced ? Path.Combine( ShippedDirectory, relative ) : null;
+		if ( IsDefaultActive && (packed == null || !File.Exists( packed )) )
+			RequestMissing?.Invoke( TexturesDirectoryName + "/" + relative );
 		if ( packBeforeShippedArt && packed != null && File.Exists( packed ) )
 			return ReplacedFile( packed );
 		if ( shipped != null && File.Exists( shipped ) )
@@ -165,6 +173,7 @@ public static class TexturePack
 	/// </summary>
 	public static void Activate( string? name, ICollection<string> diagnostics, string? packsDirectory = null, string? bundledPacksDirectory = null )
 	{
+		IsDefaultActive = false;
 		if ( Environment.GetEnvironmentVariable( "OPENTPW_TEXTURE_PACK" ) is { Length: > 0 } environmentOverride )
 		{
 			Directory = environmentOverride;
@@ -184,6 +193,7 @@ public static class TexturePack
 		}
 		Enhanced = true;
 		packBeforeShippedArt = string.Equals( name, DefaultName, StringComparison.OrdinalIgnoreCase );
+		IsDefaultActive = packBeforeShippedArt;
 		var resolved = Resolve( name, diagnostics, packsDirectory ?? PacksDirectory(), bundledPacksDirectory ?? BundledPacksDirectory() );
 		if ( resolved == null )
 		{

@@ -35,6 +35,7 @@ internal sealed class UiRenderer : IDisposable
 		shader = ShaderCompiler.CompileShader( Path.GetFullPath( "content/shaders/ui-batch.shader", AppContext.BaseDirectory ) );
 		resourceLayout = Device.ResourceFactory.CreateResourceLayout( shader.Reflection.ResourceLayouts.Single() );
 		TexturePackSwitch.PackChanged += ReloadImages;
+		TexturePackSwitch.FilesAvailable += ReloadImages;
 		pipeline = Device.ResourceFactory.CreateGraphicsPipeline( new GraphicsPipelineDescription(
 			BlendStateDescription.SingleAlphaBlend,
 			DepthStencilStateDescription.Disabled,
@@ -171,10 +172,19 @@ internal sealed class UiRenderer : IDisposable
 	/// </summary>
 	private void ReloadImages()
 	{
-		var old = textures.Where( entry => entry.Key is string ).ToList();
+		ReloadImages( null );
+	}
+
+	/// <summary>Invalidates only UI images in a newly available download batch.</summary>
+	private void ReloadImages( IReadOnlyList<string>? paths )
+	{
+		var keys = paths?.Select( TexturePack.RelativeFileName ).ToHashSet( StringComparer.Ordinal );
+		bool Matches( string path ) => keys == null || keys.Contains( TexturePack.RelativeFileName(
+			path.EndsWith( UiImages.BlackKeySuffix, StringComparison.Ordinal ) ? path[..^UiImages.BlackKeySuffix.Length] : path ) );
+		var old = textures.Where( entry => entry.Key is string path && Matches( path ) ).ToList();
 		foreach ( var entry in old )
 			textures.Remove( entry.Key );
-		failedImages.Clear();
+		failedImages.RemoveWhere( Matches );
 		Render.ScheduleDelete( () =>
 		{
 			foreach ( var (_, (texture, set)) in old )
@@ -188,6 +198,7 @@ internal sealed class UiRenderer : IDisposable
 	public void Dispose()
 	{
 		TexturePackSwitch.PackChanged -= ReloadImages;
+		TexturePackSwitch.FilesAvailable -= ReloadImages;
 		foreach ( var set in renderedSets.Values )
 			set.Dispose();
 		renderedSets.Clear();

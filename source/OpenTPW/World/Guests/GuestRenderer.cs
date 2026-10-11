@@ -47,6 +47,7 @@ public sealed class GuestRenderer : Entity
 		material = new Material<ObjectUniformBuffer>( "content/shaders/sprite.shader" );
 		material.Set( "Color", slots );
 		TexturePackSwitch.PackChanged += ReloadAtlases;
+		TexturePackSwitch.FilesAvailable += ReloadAtlases;
 	}
 
 	/// <summary>
@@ -55,12 +56,25 @@ public sealed class GuestRenderer : Entity
 	/// </summary>
 	private void ReloadAtlases()
 	{
+		ReloadAtlases( null );
+	}
+
+	/// <summary>Rebuilds matching atlas slots after a lazy download; unrelated guest sprites keep their GPU texture.</summary>
+	private void ReloadAtlases( IReadOnlyList<string>? paths )
+	{
 		if ( deleted || material == null || textures.Count == 0 )
 			return;
-		var old = textures.ToList();
-		textures.Clear();
-		foreach ( var atlas in atlases.Take( 8 ) )
-			textures.Add( LoadAtlas( atlas ) );
+		var keys = paths?.Select( TexturePack.RelativeFileName ).ToHashSet( StringComparer.Ordinal );
+		var old = new List<Texture>();
+		for ( var index = 0; index < textures.Count; index++ )
+		{
+			if ( keys != null && !keys.Contains( TexturePack.RelativeFileName( atlases[index].PackKey ) ) )
+				continue;
+			old.Add( textures[index] );
+			textures[index] = LoadAtlas( atlases[index] );
+		}
+		if ( old.Count == 0 )
+			return;
 		var slots = new Texture[8];
 		for ( var index = 0; index < slots.Length; index++ )
 			slots[index] = textures[Math.Min( index, textures.Count - 1 )];
@@ -220,6 +234,7 @@ public sealed class GuestRenderer : Entity
 	{
 		deleted = true;
 		TexturePackSwitch.PackChanged -= ReloadAtlases;
+		TexturePackSwitch.FilesAvailable -= ReloadAtlases;
 		var buffer = vertexBuffer;
 		vertexBuffer = null;
 		if ( buffer != null )

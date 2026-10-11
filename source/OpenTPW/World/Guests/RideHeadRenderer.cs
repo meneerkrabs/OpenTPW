@@ -50,17 +50,28 @@ public sealed class RideHeadRenderer : Entity
 		material = new Material<ObjectUniformBuffer>( "content/shaders/sprite.shader" );
 		material.Set( "Color", slots );
 		TexturePackSwitch.PackChanged += ReloadAtlases;
+		TexturePackSwitch.FilesAvailable += ReloadAtlases;
 	}
 
 	/// <summary>The texture pack changed: the head atlases are built again, as <see cref="GuestRenderer"/> does for the kid sets.</summary>
-	private void ReloadAtlases()
+	private void ReloadAtlases() => ReloadAtlases( null );
+
+	/// <summary>Refreshes only head atlases supplied by a lazy texture download.</summary>
+	private void ReloadAtlases( IReadOnlyList<string>? paths )
 	{
 		if ( deleted || material == null || textures.Count == 0 )
 			return;
-		var old = textures.ToList();
-		textures.Clear();
-		foreach ( var atlas in atlases.Take( 8 ) )
-			textures.Add( GuestRenderer.LoadAtlas( atlas ) );
+		var keys = paths?.Select( TexturePack.RelativeFileName ).ToHashSet( StringComparer.Ordinal );
+		var old = new List<Texture>();
+		for ( var index = 0; index < textures.Count; index++ )
+		{
+			if ( keys != null && !keys.Contains( TexturePack.RelativeFileName( atlases[index].PackKey ) ) )
+				continue;
+			old.Add( textures[index] );
+			textures[index] = GuestRenderer.LoadAtlas( atlases[index] );
+		}
+		if ( old.Count == 0 )
+			return;
 		var slots = new Texture[8];
 		for ( var index = 0; index < slots.Length; index++ )
 			slots[index] = textures[Math.Min( index, textures.Count - 1 )];
@@ -166,6 +177,7 @@ public sealed class RideHeadRenderer : Entity
 	{
 		deleted = true;
 		TexturePackSwitch.PackChanged -= ReloadAtlases;
+		TexturePackSwitch.FilesAvailable -= ReloadAtlases;
 		var ownedTextures = textures.ToArray();
 		textures.Clear();
 		foreach ( var texture in ownedTextures )

@@ -30,6 +30,16 @@ public sealed class TexturePackSwitch : ITexturePackSwitch
 	/// <summary>Raised on the render thread once all textures are swapped; holders of their own GPU copies (UI images, guest sprite atlases) reload here.</summary>
 	public static event Action? PackChanged;
 
+	/// <summary>Specific replacement game paths became available; GPU holders invalidate only their matching images.</summary>
+	public static event Action<IReadOnlyList<string>>? FilesAvailable;
+
+	/// <summary>Announces a batch of downloaded replacements on the render thread, without reloading the whole pack.</summary>
+	public static void NotifyFilesAvailable( IReadOnlyList<string> paths )
+	{
+		if ( paths.Count > 0 )
+			FilesAvailable?.Invoke( paths );
+	}
+
 	private readonly List<(string Path, TextureFlags Flags)> targets;
 	private readonly BlockingCollection<Loaded> queue = new( 12 );
 	private readonly CancellationTokenSource cancel = new();
@@ -83,16 +93,36 @@ public sealed class TexturePackSwitch : ITexturePackSwitch
 
 	private readonly Func<string, (byte[] Data, int Width, int Height)> decode;
 	private readonly Action<string, TextureFlags, byte[], int, int> apply;
+	private readonly bool decodeOnRenderThread;
 
 	/// <summary>Test seam: a switch over explicit targets with its own decoder and swap.</summary>
 	internal TexturePackSwitch( List<(string Path, TextureFlags Flags)> targets, TimeSpan budget,
-		Func<string, (byte[] Data, int Width, int Height)> decode, Action<string, TextureFlags, byte[], int, int>? apply = null )
+		Func<string, (byte[] Data, int Width, int Height)> decode, Action<string, TextureFlags, byte[], int, int>? apply = null,
+		bool? decodeOnRenderThread = null )
 	{
 		this.targets = targets;
 		this.budget = budget;
 		this.decode = decode;
 		this.apply = apply ?? Texture.Reload;
-		Task.Factory.StartNew( Decode, TaskCreationOptions.LongRunning );
+		// The browser build has no worker threads. Decode one target at a time inside the same pump budget,
+		// without blocking on the desktop's bounded producer queue.
+		this.decodeOnRenderThread = decodeOnRenderThread ?? OperatingSystem.IsBrowser();
+		if ( !this.decodeOnRenderThread )
+			Task.Factory.StartNew( Decode, TaskCreationOptions.LongRunning );
+	}
+
+	private Loaded DecodeTarget( string path, TextureFlags flags )
+	{
+		try
+		{
+			var (data, width, height) = decode( path );
+			return new Loaded( path, flags, data, width, height );
+		}
+		catch ( Exception exception ) when ( exception is not OutOfMemoryException )
+		{
+			Log?.Warning( $"Texture pack switch: {path} could not be decoded ({exception.Message}); keeping its current pixels." );
+			return new Loaded( path, flags, null, 0, 0 );
+		}
 	}
 
 	private void Decode()
@@ -100,20 +130,7 @@ public sealed class TexturePackSwitch : ITexturePackSwitch
 		try
 		{
 			foreach ( var (path, flags) in targets )
-			{
-				Loaded loaded;
-				try
-				{
-					var (data, width, height) = decode( path );
-					loaded = new Loaded( path, flags, data, width, height );
-				}
-				catch ( Exception exception ) when ( exception is not OutOfMemoryException )
-				{
-					Log?.Warning( $"Texture pack switch: {path} could not be decoded ({exception.Message}); keeping its current pixels." );
-					loaded = new Loaded( path, flags, null, 0, 0 );
-				}
-				queue.Add( loaded, cancel.Token );
-			}
+				queue.Add( DecodeTarget( path, flags ), cancel.Token );
 		}
 		catch ( OperationCanceledException )
 		{
@@ -127,7 +144,10 @@ public sealed class TexturePackSwitch : ITexturePackSwitch
 		var started = System.Diagnostics.Stopwatch.GetTimestamp();
 		while ( done < targets.Count && System.Diagnostics.Stopwatch.GetElapsedTime( started ) < budget )
 		{
-			if ( !queue.TryTake( out var loaded ) )
+			Loaded loaded;
+			if ( decodeOnRenderThread )
+				loaded = DecodeTarget( targets[done].Path, targets[done].Flags );
+			else if ( !queue.TryTake( out loaded! ) )
 				break;
 			if ( loaded.Data != null )
 			{

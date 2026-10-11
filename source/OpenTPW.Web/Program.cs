@@ -1,4 +1,6 @@
 using System.Runtime.InteropServices.JavaScript;
+using System.Buffers.Binary;
+using System.Text.Json;
 
 namespace OpenTPW;
 
@@ -14,6 +16,14 @@ public static partial class Program
 	private static GameFlow? flow;
 	private static readonly HashSet<string> loadedLevels = new( StringComparer.OrdinalIgnoreCase );
 	private static readonly HashSet<string> requestedLevels = new( StringComparer.OrdinalIgnoreCase );
+	private const string ClarityPackRoot = "/config/texture-packs/clarity-enhanced";
+	private const int MaximumTextureBytes = 25 * 1024 * 1024;
+	private const long TextureCacheBytes = 128 * 1024 * 1024;
+	private readonly record struct DownloadedTexture( string RelativePath, string GamePath, int Size );
+	private static readonly Queue<DownloadedTexture> textureDownloads = new();
+	private static readonly Queue<(string Path, int Size)> textureCache = new();
+	private static long textureCacheSize;
+	private static long pendingTextureBytes;
 
 	/// <summary>Folders the page keeps in the browser's storage between visits (main.js): saves and options, online files, settings.</summary>
 	private static readonly string[] PersistentFolders = { "/save", "/online", "/config" };
@@ -76,12 +86,9 @@ public static partial class Program
 		SaveFileSystem = new BaseFileSystem( "/save" );
 		CacheFileSystem = new BaseFileSystem( "/cache" );
 
-		// The desktop picks the texture choice from graphics.json; the browser has no settings file and uses
-		// the default Enhanced choice, which without a locally built pack means the shipped interface art.
-		var diagnostics = new List<string>();
-		TexturePack.Activate( TexturePack.DefaultName, diagnostics );
-		foreach ( var diagnostic in diagnostics )
-			Log.Warning( diagnostic );
+		// Use the same persisted graphics choice as the desktop, including an explicit Original choice.
+		TexturePack.RequestMissing = Page.RequestTexture;
+		CompatibilityStartup.Initialize( Array.Empty<string>(), dataDirectory );
 
 		// Sound plays through WebAudio (Browser/WebAudioOutput.cs); movies are not in the browser yet.
 		GameAudio.Enabled = true;
@@ -107,7 +114,7 @@ public static partial class Program
 	[JSExport]
 	public static void RestoreFile( string path, byte[] contents )
 	{
-		if ( !PersistentFolders.Any( folder => path.StartsWith( folder + "/", StringComparison.Ordinal ) ) )
+		if ( IsTextureCache( path ) || !PersistentFolders.Any( folder => path.StartsWith( folder + "/", StringComparison.Ordinal ) ) )
 			return;
 		Directory.CreateDirectory( Path.GetDirectoryName( path )! );
 		File.WriteAllBytes( path, contents );
@@ -118,11 +125,96 @@ public static partial class Program
 	public static string[] PersistentFiles() => PersistentFolders
 		.Where( Directory.Exists )
 		.SelectMany( folder => Directory.EnumerateFiles( folder, "*", SearchOption.AllDirectories ) )
+		.Where( path => !IsTextureCache( path ) )
 		.Select( path => $"{path}\t{File.GetLastWriteTimeUtc( path ).Ticks}:{new FileInfo( path ).Length}" )
 		.ToArray();
 
 	[JSExport]
 	public static byte[] ReadFile( string path ) => File.ReadAllBytes( path );
+
+	private static bool IsTextureCache( string path ) => path.StartsWith( ClarityPackRoot + "/textures/", StringComparison.Ordinal );
+
+	/// <summary>The small Clarity index shipped with this build; the browser never trusts a mutable remote index.</summary>
+	[JSExport]
+	public static string ClarityDistribution()
+	{
+		using var stream = typeof( Program ).Assembly.GetManifestResourceStream( "content/texture-packs/clarity-enhanced/distribution.json" );
+		return stream == null ? "" : new StreamReader( stream ).ReadToEnd();
+	}
+
+	/// <summary>Installs the packaged manifest before startup; PNGs are fetched on demand.</summary>
+	[JSExport]
+	public static void InstallClarity( string manifestJson )
+	{
+		var manifest = JsonSerializer.Deserialize<TexturePackManifest>( manifestJson );
+		if ( manifest?.Format != TexturePack.FormatVersion )
+			throw new InvalidDataException( "Unsupported Clarity texture pack." );
+		Directory.CreateDirectory( ClarityPackRoot + "/textures" );
+		File.WriteAllText( ClarityPackRoot + "/pack.json", manifestJson );
+	}
+
+	[JSExport]
+	public static bool ClarityEnabled() => TexturePack.IsDefaultActive;
+
+	/// <summary>Back pressure for downloads awaiting their render frame, in addition to the page's concurrency bound.</summary>
+	[JSExport]
+	public static bool TextureDownloadCapacity( int bytes ) => bytes > 0 && bytes <= MaximumTextureBytes && pendingTextureBytes + bytes <= 32 * 1024 * 1024;
+
+	/// <summary>Stores one verified PNG and queues its GPU refresh; downloaded PNGs never enter save/options storage.</summary>
+	[JSExport]
+	public static bool AddTextureFile( string relativePath, byte[] contents )
+	{
+		if ( !TexturePack.IsDefaultActive || !TextureDownloadCapacity( contents.Length ) || !relativePath.StartsWith( "textures/", StringComparison.Ordinal )
+			|| !relativePath.EndsWith( ".png", StringComparison.Ordinal ) || relativePath.Length > 1024
+			|| !relativePath.All( character => char.IsAsciiLetterOrDigit( character ) || character is '/' or '-' or '_' or '.' or '!' )
+			|| relativePath.Split( '/' ).Any( part => part.Length == 0 || part is "." or ".." ) )
+			return false;
+		if ( contents.Length < 33 || !contents.AsSpan( 0, 8 ).SequenceEqual( new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 } ) )
+			return false;
+		var width = BinaryPrimitives.ReadUInt32BigEndian( contents.AsSpan( 16, 4 ) );
+		var height = BinaryPrimitives.ReadUInt32BigEndian( contents.AsSpan( 20, 4 ) );
+		if ( width == 0 || height == 0 || width > 8192 || height > 8192 || (long)width * height > 16 * 1024 * 1024 )
+			return false;
+		var path = ClarityPackRoot + "/" + relativePath;
+		Directory.CreateDirectory( Path.GetDirectoryName( path )! );
+		File.WriteAllBytes( path, contents );
+		textureDownloads.Enqueue( new DownloadedTexture( relativePath, relativePath["textures/".Length..^".png".Length], contents.Length ) );
+		pendingTextureBytes += contents.Length;
+		return true;
+	}
+
+	/// <summary>One PNG refresh per frame. The temporary file working set stays bounded across visits to different parks.</summary>
+	private static void RefreshDownloadedTexture()
+	{
+		if ( !textureDownloads.TryDequeue( out var downloaded ) )
+			return;
+		pendingTextureBytes -= downloaded.Size;
+		var path = ClarityPackRoot + "/" + downloaded.RelativePath;
+		try
+		{
+			if ( TexturePack.IsDefaultActive )
+			{
+				var key = TexturePack.RelativeFileName( downloaded.GamePath );
+				foreach ( var target in Texture.ReloadTargets().Where( target => TexturePack.RelativeFileName( target.Path ) == key ) )
+				{
+					var (data, width, height) = Texture.DecodeWct( target.Path );
+					Texture.Reload( target.Path, target.Flags, data, width, height );
+				}
+				TexturePackSwitch.NotifyFilesAvailable( new[] { downloaded.GamePath } );
+			}
+		}
+		catch ( Exception exception ) when ( exception is not OutOfMemoryException )
+		{
+			Log.Warning( $"Clarity replacement {downloaded.GamePath} could not be refreshed: {exception.Message}" );
+		}
+		textureCache.Enqueue( (path, downloaded.Size) );
+		textureCacheSize += downloaded.Size;
+		while ( textureCacheSize > TextureCacheBytes && textureCache.TryDequeue( out var old ) )
+		{
+			File.Delete( old.Path );
+			textureCacheSize -= old.Size;
+		}
+	}
 
 	/// <summary>The page has copied a level's folder (or given up; the level then reports what is missing).</summary>
 	[JSExport]
@@ -144,5 +236,11 @@ public static partial class Program
 
 	/// <summary>One frame; false once the game has quit.</summary>
 	[JSExport]
-	public static bool Frame() => renderer?.Frame() ?? false;
+	public static bool Frame()
+	{
+		if ( renderer == null )
+			return false;
+		RefreshDownloadedTexture();
+		return renderer.Frame();
+	}
 }

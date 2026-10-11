@@ -49,6 +49,8 @@
 		<EmbeddedResource Include="../../content/data/**/*" LogicalName="content/data/%(RecursiveDir)%(Filename)%(Extension)" />
 		<!-- The HD interface art (docs/TEXTURE-PACKS.md), about 6 MB of PNGs, for the default Enhanced look. -->
 		<EmbeddedResource Include="../../content/hero-art/**/*" LogicalName="content/hero-art/%(RecursiveDir)%(Filename)%(Extension)" />
+		<!-- The pinned index is small; PNGs arrive on demand from the texture CDN. -->
+		<EmbeddedResource Include="../../content/texture-packs/clarity-enhanced/distribution.json" LogicalName="content/texture-packs/clarity-enhanced/distribution.json" Condition="Exists('../../content/texture-packs/clarity-enhanced/distribution.json')" />
 	</ItemGroup>
 
 	<!-- The file system creates archive handlers by reflection; keep the game whole when trimming. -->

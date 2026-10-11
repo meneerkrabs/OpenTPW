@@ -2,13 +2,14 @@ import { dotnet } from './_framework/dotnet.js';
 import * as webgl from './opentpw-gl.js';
 import * as audio from './opentpw-audio.js';
 import * as storage from './opentpw-storage.js';
+import { createTextureDownloads } from './opentpw-textures.js';
 
 // The game in the browser (docs/WEB.md): the player's own files go into the runtime's memory, then
 // the front end runs in the canvas, one Program.Frame per animation frame.
 const status = document.getElementById('status');
 const { setModuleImports, getAssemblyExports, getConfig, runMain } = await dotnet.create();
 setModuleImports('opentpw-gl', webgl);
-setModuleImports('opentpw-page', { requestLevel });
+setModuleImports('opentpw-page', { requestLevel, requestTexture });
 setModuleImports('opentpw-audio', audio);
 const program = (await getAssemblyExports(getConfig().mainAssemblyName)).OpenTPW.Program;
 // runMain keeps the runtime alive after Main returns, so the exports stay callable.
@@ -21,6 +22,28 @@ const notCopied = /\/data\/(movies|init)\/|\.(sf2|mpg)$/i;
 // music). Their saved park (Easymode.TPWI) comes at once, for the Load list.
 const deferred = /^\/data\/levels\/[^/]+\/(?!easymode\.tpwi$)/i;
 let levelSources = [];
+let textureDownloads;
+let gameRunning = false;
+let parkLoadingText = '';
+let textureLoading = false;
+
+function updateLoading() {
+	const loading = document.getElementById('loading');
+	loading.hidden = !parkLoadingText && !textureLoading;
+	loading.textContent = parkLoadingText || 'Enhancing textures…';
+}
+
+// Called from TexturePack.Find. Requests are deduplicated and bounded; the original draws while
+// a replacement downloads, then the next render frame refreshes only that image.
+function requestTexture(path) {
+	textureDownloads?.request(path);
+}
+
+async function writeTexture(path, bytes) {
+	while (gameRunning && program.ClarityEnabled() && !program.TextureDownloadCapacity(bytes.length))
+		await new Promise(requestAnimationFrame);
+	return gameRunning && program.ClarityEnabled() && program.AddTextureFile(path, bytes);
+}
 
 async function copyFiles(sources, progress) {
 	let bytes = 0;
@@ -47,15 +70,15 @@ async function copy(sources) {
 
 // Called by the game (GameFlow.LevelDataReady) when a park in a theme not copied yet is started.
 function requestLevel(level) {
-	const loading = document.getElementById('loading');
 	const prefix = `data/levels/${level.toLowerCase()}/`;
 	const files = levelSources.filter(([relative]) => relative.toLowerCase().startsWith(prefix));
-	loading.hidden = false;
-	loading.textContent = 'Loading the park…';
-	copyFiles(files, text => loading.textContent = `Loading the park: ${text}`)
+	parkLoadingText = 'Loading the park…';
+	updateLoading();
+	copyFiles(files, text => { parkLoadingText = `Loading the park: ${text}`; updateLoading(); })
 		.catch(error => console.error(`Copying ${level} failed`, error))
 		.finally(() => {
-			loading.hidden = true;
+			parkLoadingText = '';
+			updateLoading();
 			program.LevelLoaded(level);
 		});
 }
@@ -80,9 +103,20 @@ async function start() {
 	} catch (error) {
 		console.warn('Saved games could not be read from this browser', error);
 	}
+	try {
+		const distribution = JSON.parse(program.ClarityDistribution());
+		textureDownloads = createTextureDownloads({
+			distribution, writeFile: writeTexture, enabled: () => gameRunning && program.ClarityEnabled(),
+			changed: state => { textureLoading = state.active + state.queued > 0; updateLoading(); },
+		});
+		program.InstallClarity(JSON.stringify(distribution.packManifest));
+	} catch (error) {
+		console.warn('Clarity could not be prepared; the game will use its original world textures', error);
+	}
 	await new Promise(requestAnimationFrame);
 	try {
 		document.getElementById('setup').hidden = true;
+		gameRunning = true;
 		program.Start(location.origin);
 		// Keep saves and settings: every few seconds, and when the page is hidden or closed.
 		const keep = () => storage.sync(program).catch(error => console.warn('Saving to this browser failed', error));
@@ -95,6 +129,7 @@ async function start() {
 			try {
 				running = program.Frame();
 			} catch (error) {
+				gameRunning = false;
 				// Stop instead of freezing silently, and say why.
 				document.getElementById('setup').hidden = false;
 				status.textContent = `The game stopped: ${error.message}`;
@@ -103,9 +138,12 @@ async function start() {
 			}
 			if (running)
 				requestAnimationFrame(frame);
+			else
+				gameRunning = false;
 		};
 		requestAnimationFrame(frame);
 	} catch (error) {
+		gameRunning = false;
 		document.getElementById('setup').hidden = false;
 		status.textContent = `Could not start: ${error.message}`;
 		throw error;

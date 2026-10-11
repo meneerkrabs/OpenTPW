@@ -13,7 +13,7 @@ public static class SignSurfaceComposer
 	/// <summary>Composes ARGB sign layers, then returns top-down RGBA for the two model textures.</summary>
 	// [BIN:STP-PPC:0x100AC21C..0x100AC6B0] clear, optional board alphablt, style-2 paint, ordered style-1 paint/effects, split the top 128 rows.
 	// [APPROX:COMPAT-003] OpenTPW coverage and unshaped paint masks replace native GDI, morphology and Gaussian masks; relief samples and material arithmetic follow the identified native path.
-	public static (byte[] Left, byte[] Right, int TextPixelCount) Compose( SignFile sign, SignFontLibrary fonts, IReadOnlyList<string?> lines, ICollection<string> diagnostics )
+	public static (byte[] Left, byte[] Right, int TextPixelCount) Compose( SignFile sign, SignFontLibrary fonts, IReadOnlyList<string?> lines, ICollection<string> diagnostics, SignPaint? firstPaintOverride = null )
 	{
 		ArgumentNullException.ThrowIfNull( sign );
 		ArgumentNullException.ThrowIfNull( fonts );
@@ -24,7 +24,16 @@ public static class SignSurfaceComposer
 		foreach ( var diagnostic in sign.Diagnostics )
 			diagnostics.Add( diagnostic );
 
+		// [APPROX:COMPAT-030] the native compositor clears to transparent; an opaque backing stands in for untraced downstream board coverage.
 		var surface = new byte[Width * Height * 4];
+		var backing = BackingColor( sign );
+		for ( var at = 0; at < surface.Length; at += 4 )
+		{
+			surface[at] = 255;
+			surface[at + 1] = backing.R;
+			surface[at + 2] = backing.G;
+			surface[at + 3] = backing.B;
+		}
 		if ( sign.ExtraImage is { } board )
 		{
 			// [APPROX:COMPAT-018] wavelet pixels and GPU row orientation follow the decoded native container but await independent original-platform pixel parity.
@@ -52,20 +61,20 @@ public static class SignSurfaceComposer
 			var combined = new byte[Width * Height];
 			for ( var i = 0; i < combined.Length; i++ )
 				combined[i] = Math.Max( masks[0][i], masks[1][i] );
-			Paint( surface, combined, sign.Paints[0] );
+			Paint( surface, combined, firstPaintOverride ?? sign.Paints[0] );
 		}
 		else
 		{
 			for ( var slot = 0; slot < masks.Length; slot++ )
 				if ( sign.Effects[slot].Style == 2 )
-					Paint( surface, masks[slot], sign.Paints[slot] );
+					Paint( surface, masks[slot], slot == 0 ? firstPaintOverride ?? sign.Paints[slot] : sign.Paints[slot] );
 		}
 
 		for ( var step = 0; step < masks.Length; step++ )
 		{
 			var slot = sign.HeaderFlag == 0 ? step : masks.Length - step - 1;
 			if ( sign.Effects[slot].Style == 1 )
-				Paint( surface, masks[slot], sign.Paints[slot] );
+				Paint( surface, masks[slot], slot == 0 ? firstPaintOverride ?? sign.Paints[slot] : sign.Paints[slot] );
 			Effect( surface, masks[slot], sign.SourceImages[slot], sign.Effects[slot], diagnostics );
 		}
 
@@ -83,6 +92,21 @@ public static class SignSurfaceComposer
 			half[destination + 3] = surface[source];
 		}
 		return (left, right, textPixels);
+	}
+
+	private static (byte R, byte G, byte B) BackingColor( SignFile sign )
+	{
+		const byte darkR = 38, darkG = 28, darkB = 18;
+		const byte lightR = 214, lightG = 190, lightB = 140;
+		static double Luma( byte r, byte g, byte b ) => 0.299 * r + 0.587 * g + 0.114 * b;
+		var textLumas = Enumerable.Range( 0, sign.Slots.Count )
+			.Select( index => SignCanvas.SlotColor( sign, index ) )
+			.Where( colour => colour != null )
+			.Select( colour => Luma( colour!.Value.R, colour.Value.G, colour.Value.B ) ).ToArray();
+		if ( textLumas.Length == 0 ) return (darkR, darkG, darkB);
+		var darkContrast = textLumas.Min( luma => Math.Abs( luma - Luma( darkR, darkG, darkB ) ) );
+		var lightContrast = textLumas.Min( luma => Math.Abs( luma - Luma( lightR, lightG, lightB ) ) );
+		return lightContrast > darkContrast ? (lightR, lightG, lightB) : (darkR, darkG, darkB);
 	}
 
 	private static byte[] RenderMask( SignFile sign, SignFontLibrary fonts, IReadOnlyList<string?> lines, int index, ICollection<string> diagnostics )

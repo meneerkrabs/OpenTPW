@@ -21,10 +21,11 @@ public sealed class OriginalGateSign : Entity
 	private readonly ModelEntity part;
 	private readonly Model model;
 
-	private OriginalGateSign( Model model, string parkName, int textPixels, SignTextSlot slot, string archivePath )
+	private OriginalGateSign( Model model, ObjectSignImages images, string parkName, int textPixels, SignTextSlot slot, string archivePath )
 	{
 		this.model = model;
 		part = new ModelEntity { Model = model, Name = "gate sign" };
+		Images = images;
 		ParkName = parkName;
 		TextPixelCount = textPixels;
 		Slot = slot;
@@ -32,6 +33,7 @@ public sealed class OriginalGateSign : Entity
 	}
 
 	public string ParkName { get; }
+	public ObjectSignImages Images { get; }
 	public int TextPixelCount { get; }
 	public SignTextSlot Slot { get; }
 	public string ArchivePath { get; }
@@ -85,13 +87,16 @@ public sealed class OriginalGateSign : Entity
 		}
 		parkName ??= DefaultParkName( park.LevelName );
 		// [APPROX:COMPAT-004] the gate board is decoded and composed; original-platform gate pixels remain unverified.
-		var (left, right, diagnostics, textPixels) = SignTextRenderer.Shared.RenderSign( sign, new[] { parkName }, default );
+		// [APPROX:COMPAT-031] the stored black paint is illegible on the decoded dark stone gate; use a light stone tint until original-platform pixels are available.
+		var readablePaint = sign.Paints[0] is { } paint ? paint with { R = 230, G = 210, B = 170, A = 255 } : null;
+		var (left, right, diagnostics, textPixels) = SignTextRenderer.Shared.ComposeSign( sign, new[] { parkName }, default, readablePaint );
 		foreach ( var diagnostic in diagnostics )
 			Log.Warning( $"Gate sign: {diagnostic}" );
-		var model = new Model( vertices.ToArray(), indices.ToArray(), SignTextRenderer.CreateMaterial( left, right ) );
+		var images = new ObjectSignImages( parkName, "", left, right, textPixels, diagnostics );
+		var model = new Model( vertices.ToArray(), indices.ToArray(), SignTextRenderer.CreateMaterial( images.LeftTexture, images.RightTexture ) );
 		var slot = sign.Slots[0];
 		Log.Trace( $"Gate sign: \"{parkName}\" in {slot.FontFileName} ('{slot.FaceName}', {slot.EmHeightPixels}px em) on {indices.Count / 3} sign faces of {gate.ArchivePath}/{modelMember}." );
-		return new OriginalGateSign( model, parkName, textPixels, slot, gate.ArchivePath );
+		return new OriginalGateSign( model, images, parkName, textPixels, slot, gate.ArchivePath );
 	}
 
 	private static void AppendSignFaces( OriginalPark park, ModelFile model, ModelFile.Mesh mesh, List<Vertex> vertices, List<uint> indices )
@@ -126,7 +131,8 @@ public sealed class OriginalGateSign : Entity
 					vertices.Add( new Vertex
 					{
 						Position = engine,
-						Normal = normal.LengthSquared() > 0 ? new System.Numerics.Vector3( normal.X, normal.Z, normal.Y ) : System.Numerics.Vector3.UnitZ,
+						// [APPROX:COMPAT-031] the sign's lit face uses an upward normal for readable stone text.
+						Normal = System.Numerics.Vector3.UnitZ,
 						TexCoords = mesh.TexCoords[corner],
 						TexIndex = slotOfMaterial[material],
 						MatFlags = 0

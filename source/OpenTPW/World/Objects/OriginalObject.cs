@@ -125,20 +125,31 @@ public class OriginalObject : Entity
 		{
 			var slots = new Texture[16];
 			Array.Fill( slots, Texture.Missing );
-			// Runtime sign faces replace the shipped placeholders. Fixed gate signs are drawn by
-			// OriginalGateSign; their base faces must not show through its transparent board pixels.
-			var sign = !Entry.IsFixedItem && part.Textures.Any( ObjectSigns.IsSignSlot ) ? ObjectSigns.Get( Entry ) : null;
-			var transparentBaseSign = Entry.IsFixedItem && Entry.ArchiveName.Equals( "gates", StringComparison.OrdinalIgnoreCase )
-				&& part.Textures.Any( ObjectSigns.IsSignSlot )
-				? new Texture( [0, 0, 0, 0], 1, 1 ) : null;
+			// Runtime sign faces replace the shipped placeholders, including fixed gate faces.
+			var hasSignSlot = part.Textures.Any( ObjectSigns.IsSignSlot );
+			var gateSign = hasSignSlot && Entry.IsFixedItem && Entry.ArchiveName.Equals( "gates", StringComparison.OrdinalIgnoreCase )
+				? Level.Current?.GateSign?.Images : null;
+			var sign = hasSignSlot ? gateSign ?? (!Entry.IsFixedItem ? ObjectSigns.Get( Entry ) : null) : null;
+			var fallbackBaseSign = gateSign == null && Entry.IsFixedItem && Entry.ArchiveName.Equals( "gates", StringComparison.OrdinalIgnoreCase )
+				&& hasSignSlot
+				? new Texture( [38, 28, 18, 255], 1, 1 ) : null;
 			if ( sign != null )
 				Sign = sign;
 			for ( var index = 0; index < part.Textures.Length; index++ )
 			{
 				var name = part.Textures[index];
 				slots[index] = sign?.TextureFor( name )
-					?? (transparentBaseSign != null && ObjectSigns.IsSignSlot( name ) ? transparentBaseSign : LoadTexture( Entry, name ));
+					?? (fallbackBaseSign != null && ObjectSigns.IsSignSlot( name ) ? fallbackBaseSign : LoadTexture( Entry, name ));
 			}
+			if ( gateSign != null )
+				for ( var vertexIndex = 0; vertexIndex < part.Vertices.Length; vertexIndex++ )
+					if ( ObjectSigns.IsSignSlot( part.Textures[part.Vertices[vertexIndex].TexIndex] ) )
+					{
+						// [APPROX:COMPAT-031] orient the gate's sign lighting upward so the light stone name remains legible.
+						var vertex = part.Vertices[vertexIndex];
+						vertex.Normal = System.Numerics.Vector3.UnitZ;
+						part.Vertices[vertexIndex] = vertex;
+					}
 			var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
 			material.Set( "Color", slots );
 			var dynamic = part.MeshIndex >= 0 && vertexAnimated[part.MeshIndex];

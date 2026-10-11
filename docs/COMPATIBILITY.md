@@ -63,6 +63,14 @@ Formats and evidence:
   with hash-keyed corrections; raw effect words remain available. Use
   `Effects`, `Paints` and `SourceImages` for native metadata. See
   [the native sign evidence](reverse/PPC-ui.md#native-sign-records-and-surface-inputs).
+  The wavelet fourth channel is native alpha; the two 16x128 images supply relief
+  text RGB, with coverage taken from the generated glyph mask. An absent extra image
+  (for example Belly Bounce) therefore does not establish an invisible original board.
+  OpenTPW puts an opaque contrast-selected backing under each face (COMPAT-030) while
+  the downstream source of original board coverage remains untraced.
+  The gate's stored paint is black over a dark decoded stone board; OpenTPW uses
+  light stone text and upward-facing sign normals there for legibility (COMPAT-031),
+  pending original-platform pixels.
 - Sign models have texture slots `sign1` (left half) and `sign2` (right half); the shared
   `sign1.wct`/`sign2.wct` are 128x128 placeholders reading "SIGN1"/"SIGN2", i.e. the game
   renders these textures at runtime. The binary imports `CreateFontIndirectA`,
@@ -83,8 +91,8 @@ Formats and evidence:
   archives only contain the second form.
 - `ObjectSigns` (`World/Objects`) composes the sign per archive and text (cached): the object
   renderer (`OriginalObject`) binds the rendered halves to the `sign1`/`sign2` slots, and
-  the buy-window preview (`PreviewIcon`) draws the same textures. Fixed items (the gate)
-  keep the placeholders; `OriginalGateSign` draws the park name over them. The name is the
+  the buy-window preview (`PreviewIcon`) draws the same textures. The gate binds its
+  composed park-name halves to the fixed model and its raised sign faces. The name is the
   current language's display name (approximation COMPAT-016); characters outside a font's
   cmap are drawn as .notdef with a diagnostic. The native compositor still layers the
   material effects for the three signs (`hallow/c_scat`, `fantasy/jelly`, `space/zob`)
@@ -224,6 +232,8 @@ against loose files: `OPENTPW_TPWFNT_PATH=<tpwfnt folder>`.
 | COMPAT-016 | Sign text | Ride sign text = the object's display name (OBJECT_NAMES entries bound by English name, else the .sam name), split at the middle space | record field selecting the name entries; capture of a shop/sideshow sign |
 | COMPAT-017 | Sign text | Bonus objects' SIGNA/SIGNB are sign lines 1/2 | bonus loader's call of the sign builder |
 | COMPAT-018 | Sign text | Ride boards are decoded and alpha-blitted; exact wavelet pixels, GPU row orientation and original-platform appearance are not yet certified | native bitmap pixel oracle and ride-sign capture |
+| COMPAT-030 | Sign text | Opaque dark or cream backing under every sign face; native compositor clears transparent, but downstream board coverage is untraced | original sign material/render path and original-platform gate and ride captures |
+| COMPAT-031 | Sign text | Light stone gate-name paint and upward-facing sign normals make the decoded dark stone board legible; stored paint is black | original-platform gate text pixels and later color or lighting treatment |
 | COMPAT-010 | Graphics | TEXTUREFILTERING 0/1/2 → Veldrid point / linear+point-mip / linear+linear-mip; MIPMAP 0 → mip 0 only | binary render states or captures per detail level |
 | COMPAT-011 | Localization | Missing string → English → internal name | original behaviour for missing strings |
 | COMPAT-012 | Text input | Unrepresentable characters → `?` | binary text-input handling |

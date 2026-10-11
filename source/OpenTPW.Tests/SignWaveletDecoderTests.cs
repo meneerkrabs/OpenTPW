@@ -1,6 +1,7 @@
 using System;
 using System.Buffers.Binary;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -9,6 +10,41 @@ namespace OpenTPW.Tests;
 [TestClass]
 public class SignWaveletDecoderTests
 {
+	[TestMethod]
+	public void PlanarCoefficientHalvesReconstructUniformAlpha()
+	{
+		var alpha = new byte[8 * 8];
+		for ( var row = 0; row < 4; row++ )
+		for ( var column = 0; column < 4; column++ )
+			alpha[row * 8 + column] = 100;
+		var color = new byte[8 * 8 + 4 * 4 * 2];
+		var colorChunk = Bilz( color );
+		var alphaChunk = Bilz( alpha );
+		var payload = new byte[24 + colorChunk.Length + alphaChunk.Length];
+		for ( var i = 0; i < 4; i++ ) BinaryPrimitives.WriteSingleLittleEndian( payload.AsSpan( i * 4 ), 1 );
+		BinaryPrimitives.WriteUInt32LittleEndian( payload.AsSpan( 16 ), (uint)colorChunk.Length );
+		BinaryPrimitives.WriteUInt32LittleEndian( payload.AsSpan( 20 ), (uint)alphaChunk.Length );
+		colorChunk.CopyTo( payload, 24 );
+		alphaChunk.CopyTo( payload, 24 + colorChunk.Length );
+
+		var pixels = SignWaveletDecoder.Decode( new SignBitmap( 8, 8, 4, payload ) { IsWavelet = true } );
+		for ( var at = 0; at < pixels.Length; at += 4 )
+			Assert.AreEqual( 50, pixels[at], $"alpha at pixel {at / 4}" );
+	}
+
+	private static byte[] Bilz( byte[] uncompressed )
+	{
+		using var compressed = new MemoryStream();
+		using ( var zlib = new ZLibStream( compressed, CompressionLevel.Optimal, leaveOpen: true ) )
+			zlib.Write( uncompressed );
+		var chunk = new byte[28 + compressed.Length];
+		"BILZ"u8.CopyTo( chunk );
+		BinaryPrimitives.WriteUInt32LittleEndian( chunk.AsSpan( 4 ), (uint)uncompressed.Length );
+		BinaryPrimitives.WriteUInt32LittleEndian( chunk.AsSpan( 8 ), (uint)chunk.Length );
+		compressed.ToArray().CopyTo( chunk, 28 );
+		return chunk;
+	}
+
 	[TestMethod]
 	public void EveryOriginalExtraImageDecodesToNonemptyArgb()
 	{
@@ -29,6 +65,18 @@ public class SignWaveletDecoderTests
 			Assert.IsTrue( pixels.Where( (_, index ) => index % 4 == 0 ).Any( value => value != 0 ), path );
 			Assert.IsTrue( pixels.Where( (_, index ) => index % 4 != 0 ).Distinct().Count() > 1, path );
 		}
+	}
+
+	[TestMethod]
+	public void JungleGateBoardDecodesWithCoverageAcrossBothFaces()
+	{
+		var (_, bytes) = SignFileTests.OriginalSignMembers( StringTableTests.OriginalDataDirectory() )
+			.Single( member => member.Path == "levels/jungle/features/gates.wad/gates.sgn" );
+		var board = new SignFile( bytes ).ExtraImage!;
+		var pixels = SignWaveletDecoder.Decode( board );
+		for ( var x = 0; x < board.Width; x++ )
+		for ( var y = 0; y < board.Height; y++ )
+			Assert.IsTrue( pixels[(y * board.Width + x) * 4] >= 250, $"gate board alpha at ({x},{y})" );
 	}
 
 	[TestMethod]

@@ -14,9 +14,9 @@ python3 tools/fidelity_register.py --check
 python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v
 ```
 
-Current inventory: **199 unresolved unique APPROX IDs**, 215 APPROX occurrences, 101 EXT occurrences, 90 DATA occurrences and 161 BIN occurrences.
+Current inventory: **201 unresolved unique APPROX IDs**, 219 APPROX occurrences, 101 EXT occurrences, 90 DATA occurrences and 162 BIN occurrences.
 
-Of these, 193 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
+Of these, 195 IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and 6 ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.
 
 CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.
 
@@ -26,7 +26,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | --- | ---: | ---: |
 | ADVISOR | 19 | 20 |
 | AUDIO | 5 | 5 |
-| COMPAT | 19 | 20 |
+| COMPAT | 21 | 24 |
 | DET | 5 | 5 |
 | ECON | 34 | 34 |
 | GATE | 3 | 4 |
@@ -73,16 +73,18 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | COMPAT-007 | Original-fidelity area (scope unadjudicated) | Sign text | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:21` |
 | COMPAT-008 | Original-fidelity area (scope unadjudicated) | Sign text | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:22` |
 | COMPAT-009 | Original-fidelity area (scope unadjudicated) | Sign text | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:23` |
-| COMPAT-010 | Original-fidelity area (scope unadjudicated) | Graphics presets | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:27` |
-| COMPAT-011 | Original-fidelity area (scope unadjudicated) | Localization | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:28` |
-| COMPAT-012 | Original-fidelity area (scope unadjudicated) | Text input | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:29` |
-| COMPAT-013 | Original-fidelity area (scope unadjudicated) | Graphics presets | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:30` |
-| COMPAT-014 | Original-fidelity area (scope unadjudicated) | Theme Park Inc textures | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:31` |
-| COMPAT-015 | Original-fidelity area (scope unadjudicated) | Theme Park Inc textures | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:32` |
+| COMPAT-010 | Original-fidelity area (scope unadjudicated) | Graphics presets | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:29` |
+| COMPAT-011 | Original-fidelity area (scope unadjudicated) | Localization | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:30` |
+| COMPAT-012 | Original-fidelity area (scope unadjudicated) | Text input | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:31` |
+| COMPAT-013 | Original-fidelity area (scope unadjudicated) | Graphics presets | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:32` |
+| COMPAT-014 | Original-fidelity area (scope unadjudicated) | Theme Park Inc textures | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:33` |
+| COMPAT-015 | Original-fidelity area (scope unadjudicated) | Theme Park Inc textures | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:34` |
 | COMPAT-016 | Original-fidelity area (scope unadjudicated) | Sign text | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:24` |
 | COMPAT-017 | Original-fidelity area (scope unadjudicated) | Sign text | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:25` |
 | COMPAT-018 | Original-fidelity area (scope unadjudicated) | Sign text | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:26` |
-| COMPAT-019 | Original-fidelity area (scope unadjudicated) | Theme Park Inc lake | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:33` |
+| COMPAT-019 | Original-fidelity area (scope unadjudicated) | Theme Park Inc lake | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:35` |
+| COMPAT-030 | Original-fidelity area (scope unadjudicated) | Sign text | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:27` |
+| COMPAT-031 | Original-fidelity area (scope unadjudicated) | Sign text | See source annotation/runtime register | `source/OpenTPW.Files/Public/ApproximationRegister.cs:28` |
 | DET-002 | Original-fidelity area (scope unadjudicated) | runs take an explicit world seed (default 0x5450574775657374) instead of the original's time(NULL)/timer seeds | See source annotation/runtime register | `source/OpenTPW/World/DeterminismApproximations.cs:11` |
 | DET-013 | Original-fidelity area (scope unadjudicated) | scripts without an explicit seed get a per-VM System.Random seeded from the park's SplitMix64 stream, not draws from the original's one world generator | See source annotation/runtime register | `source/OpenTPW/World/DeterminismApproximations.cs:12` |
 | DET-014 | Original-fidelity area (scope unadjudicated) | guests draw from their own SplitMix64 stream seeded from the world seed, not from the original's shared world LCG reseeded to each new guest's id | See source annotation/runtime register | `source/OpenTPW/World/DeterminismApproximations.cs:13` |
@@ -272,11 +274,11 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | COMPAT-001 | `source/OpenTPW.Files/Formats/Font/SignSurfaceComposer.cs:6` | [APPROX:COMPAT-001] native destination dimensions are integrated; original GPU UV orientation and lower DIB rows still require a pixel oracle. |
 | COMPAT-002 | `source/OpenTPW.Files/Formats/Font/SignTextLayout.cs:81` | [APPROX:COMPAT-002] lfWidth is applied with the Win32 rule (average character width = lfWidth) and fractional advances; the Mac GDI layer's rounding is not verified — evidence needed: long-name captures |
 | COMPAT-003 | `source/OpenTPW.Files/Formats/Font/SignSurfaceComposer.cs:15` | [APPROX:COMPAT-003] OpenTPW coverage and unshaped paint masks replace native GDI, morphology and Gaussian masks; relief samples and material arithmetic follow the identified native path. |
-| COMPAT-004 | `source/OpenTPW/World/Original/OriginalGateSign.cs:87` | [APPROX:COMPAT-004] the gate board is decoded and composed; original-platform gate pixels remain unverified. |
+| COMPAT-004 | `source/OpenTPW/World/Original/OriginalGateSign.cs:89` | [APPROX:COMPAT-004] the gate board is decoded and composed; original-platform gate pixels remain unverified. |
 | COMPAT-005 | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:69` | [APPROX:COMPAT-005] the horizontal-scale field is not applied — evidence needed: binary use of the field. |
 | COMPAT-006 | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:68` | [APPROX:COMPAT-006] no pair kerning (GDI TextOut default) — evidence needed: binary text-output call site. |
 | COMPAT-006 | `source/OpenTPW.Files/Formats/Font/SignTextLayout.cs:18` | [APPROX:COMPAT-006]). Characters without a glyph |
-| COMPAT-007 | `source/OpenTPW/World/Original/OriginalGateSign.cs:42` | [APPROX:COMPAT-007] theme name as park name until a save supplies one — evidence needed: save park-name field and a capture. |
+| COMPAT-007 | `source/OpenTPW/World/Original/OriginalGateSign.cs:44` | [APPROX:COMPAT-007] theme name as park name until a save supplies one — evidence needed: save park-name field and a capture. |
 | COMPAT-008 | `source/OpenTPW/World/Original/OriginalGateSign.cs:18` | [APPROX:COMPAT-008] depth offset for the sign faces — evidence needed: none once the full gate model draws its runtime textures. |
 | COMPAT-009 | `source/OpenTPW.Files/Formats/Font/TrueTypeRasterizer.cs:34` | [APPROX:COMPAT-009] 16 sub-scanlines, unhinted linear coverage instead of GDI ANTIALIASED_QUALITY — evidence needed: captures of original sign text. |
 | COMPAT-010 | `source/OpenTPW/Render/Assets/Material.cs:66` | [APPROX:COMPAT-010] Veldrid sampler modes stand in for the original Direct3D filter states — evidence needed: binary render-state setup or captures. |
@@ -287,8 +289,12 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | COMPAT-015 | `source/OpenTPW.Files/Public/FshFile.cs:253` | [APPROX:COMPAT-015] A1R5G5B5 with bit 15 as alpha; one corpus file, every entry has bit 15 set. |
 | COMPAT-016 | `source/OpenTPW/World/Objects/ObjectSigns.cs:61` | [APPROX:COMPAT-016] the display name stands for the info record's name string: the join of the OBJECT_NAMES entries this port binds by English name (RIDES-010) and, for unbound objects, the .sam name — evidence needed: the record field that selects the entries and a capture of a shop or sideshow sign |
 | COMPAT-017 | `source/OpenTPW/World/Objects/ObjectCatalog.cs:595` | [APPROX:COMPAT-017] SIGNA/SIGNB taken as sign text lines 1/2 (the sign builder accepts two explicit texts; that the bonus loader passes these sections is not traced) — evidence needed: the bonus loader's call of the sign builder |
-| COMPAT-018 | `source/OpenTPW.Files/Formats/Font/SignSurfaceComposer.cs:30` | [APPROX:COMPAT-018] wavelet pixels and GPU row orientation follow the decoded native container but await independent original-platform pixel parity. |
+| COMPAT-018 | `source/OpenTPW.Files/Formats/Font/SignSurfaceComposer.cs:39` | [APPROX:COMPAT-018] wavelet pixels and GPU row orientation follow the decoded native container but await independent original-platform pixel parity. |
 | COMPAT-019 | `source/OpenTPW/World/Original/OriginalPark.cs:52` | [APPROX:COMPAT-019] Theme Park Inc ships its lake as a separate model; the finished lake (dlake.MD2, not lake.MD2 with its building site) is drawn |
+| COMPAT-030 | `source/OpenTPW.Files/Formats/Font/SignSurfaceComposer.cs:27` | [APPROX:COMPAT-030] the native compositor clears to transparent; an opaque backing stands in for untraced downstream board coverage. |
+| COMPAT-031 | `source/OpenTPW/World/Objects/OriginalObject.cs:148` | [APPROX:COMPAT-031] orient the gate's sign lighting upward so the light stone name remains legible. |
+| COMPAT-031 | `source/OpenTPW/World/Original/OriginalGateSign.cs:90` | [APPROX:COMPAT-031] the stored black paint is illegible on the decoded dark stone gate; use a light stone tint until original-platform pixels are available. |
+| COMPAT-031 | `source/OpenTPW/World/Original/OriginalGateSign.cs:134` | [APPROX:COMPAT-031] the sign's lit face uses an upward normal for readable stone text. |
 | DET-002 | `source/OpenTPW/World/WorldSeed.cs:9` | [APPROX:DET-002] runs take an explicit world seed (default 0x5450574775657374) instead of the original's time(NULL)/timer seeds — evidence needed: none possible; explicit seeding is an OpenTPW replay policy |
 | DET-013 | `source/OpenTPW/VM/RideScriptWorld.cs:32` | [APPROX:DET-013] scripts without an explicit seed get a per-VM System.Random seeded from the park's SplitMix64 stream instead of the traced world-LCG draws — evidence needed: none; implementation waits for the DET-I2 port of the shared world generator (docs/reverse/DET-plan.md §4.3) |
 | DET-014 | `source/OpenTPW/World/Guests/GuestSimulation.cs:4` | [APPROX:DET-014] guests draw from their own SplitMix64 stream seeded from the world seed, not from the original's shared world LCG reseeded to each new guest's id — evidence needed: DET-I2 port of WorldRng (docs/reverse/DET-plan.md §2.3, §4.3) |
@@ -622,7 +628,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | Rides.sam:UsageInfo.ExcitementLevel | `source/OpenTPW/Hud/HudStubs.cs:150` | [DATA:Totem.sam:UsageInfo.ExcitementLevel] overrides [DATA:Rides.sam:UsageInfo.ExcitementLevel] |
 | Standard.sam:Costs.QueueCell | `source/OpenTPW/World/Level.Objects.cs:212` | [DATA:Standard.sam:Costs.QueueCell] charged per cell when written (ParkEconomy.TrySpendCell, PATH-plan §3.2) |
 | Standard.sam:FixedItemInfo lanes | `source/OpenTPW/Client/M3Gate.cs:314` | [DATA:levels/&lt;theme&gt;/terrain/base.map:InitialPath] [DATA:Standard.sam:FixedItemInfo lanes] |
-| THEMENAMES.str:entries 0..3 | `source/OpenTPW/World/Original/OriginalGateSign.cs:43` | [DATA:THEMENAMES.str:entries 0..3] Lost Kingdom, Halloween World, Wonder Land, Space Zone. |
+| THEMENAMES.str:entries 0..3 | `source/OpenTPW/World/Original/OriginalGateSign.cs:45` | [DATA:THEMENAMES.str:entries 0..3] Lost Kingdom, Halloween World, Wonder Land, Space Zone. |
 | TPWORLD.ISO and retail install | `source/OpenTPW.Files/Public/DataOverlay.cs:147` | &lt;summary&gt;[DATA:TPWORLD.ISO and retail install] global music and the four theme music banks.&lt;/summary&gt; |
 | TPWORLD.ISO and retail install:Data/Movies | `source/OpenTPW.Files/Public/DataOverlay.cs:144` | &lt;summary&gt;[DATA:TPWORLD.ISO and retail install:Data/Movies] the nine shipped movies.&lt;/summary&gt; |
 | Theme Park World Bonus Stuff/Bonus content/levels/*/*/_name_N.wad | `source/OpenTPW/Online/ParkSnapshotBuilder.cs:60` | &lt;summary&gt;[DATA:Theme Park World Bonus Stuff/Bonus content/levels/*/*/_name_N.wad] Bonus archives start with '_'.&lt;/summary&gt; |
@@ -637,7 +643,7 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | global/Speech/speechHD.SDT | `source/OpenTPW/World/Advisor.cs:20` | [DATA:global/Speech/speechHD.SDT] [DATA:global/Speech/lips.wad] |
 | global/advisor.wad:Advisor.MD2 | `source/OpenTPW/World/Advisor.cs:18` | [DATA:global/advisor.wad:Advisor.MD2] |
 | jungle Bouncy.sam + Rides.sam | `source/OpenTPW.Tests/GuestAssetTests.cs:129` | [DATA:jungle Bouncy.sam + Rides.sam] HasQueue, RunsContinuously, CAP 5, DUR 30, InitSpeed 60, QWTC 130 (QUEUE-plan §9). |
-| levels/&lt;level&gt;/global.sam:ParkName.GateObjectId | `source/OpenTPW/World/Original/OriginalGateSign.cs:61` | [DATA:levels/&lt;level&gt;/global.sam:ParkName.GateObjectId] |
+| levels/&lt;level&gt;/global.sam:ParkName.GateObjectId | `source/OpenTPW/World/Original/OriginalGateSign.cs:63` | [DATA:levels/&lt;level&gt;/global.sam:ParkName.GateObjectId] |
 | levels/&lt;theme&gt;/terrain/base.map:InitialPath | `source/OpenTPW/Client/M3Gate.cs:314` | [DATA:levels/&lt;theme&gt;/terrain/base.map:InitialPath] [DATA:Standard.sam:FixedItemInfo lanes] |
 | levels/Standard.sam:BankAccountInfo.* (layered) | `source/OpenTPW/Economy/BalanceSettings.cs:72` | [DATA:levels/Standard.sam:BankAccountInfo.* (layered)] |
 | levels/jungle/Easymode.TPWI:loan table repayments = floor(amount/months) at 0 % APR | `source/OpenTPW/Economy/ParkLedger.cs:146` | [DATA:levels/jungle/Easymode.TPWI:loan table repayments = floor(amount/months) at 0 % APR] |
@@ -701,7 +707,8 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | STP-PPC:0x10015100 TbMapStreamer::ReadBankDataFromMap | `source/OpenTPW.Files/Formats/Sound/SoundCatalog.cs:143` | [BIN:STP-PPC:0x10015100 TbMapStreamer::ReadBankDataFromMap] 11-byte records (rewritten at load), then per bank a u32 length and the name |
 | STP-PPC:0x10016F4C advisor balance | `source/OpenTPW/World/AdvisorController.cs:85` | [BIN:STP-PPC:0x10016F4C advisor balance] MessageGroups[g] fields at +36/+40/+44 + 12g |
 | STP-PPC:0x10016F4C advisor balance | `source/OpenTPW/World/AdvisorController.cs:92` | [BIN:STP-PPC:0x10016F4C advisor balance] GeneralAdvisor.MinTimeAnyMessage +24, MinTimeSameMessage +28, MinScoreForConsideration +32 |
-| STP-PPC:0x1003F338 Bitmap::descimate | `source/OpenTPW.Files/Formats/Font/SignSurfaceComposer.cs:199` | [BIN:STP-PPC:0x1003F338 Bitmap::descimate] fixed-point buckets and integer channel averages; upsampling remains outside the proved branch. |
+| STP-PPC:0x1003339C..0x100335AC | `source/OpenTPW.Files/Formats/Image/SignWaveletDecoder.cs:120` | [BIN:STP-PPC:0x1003339C..0x100335AC] low and high coefficients occupy separate row halves. |
+| STP-PPC:0x1003F338 Bitmap::descimate | `source/OpenTPW.Files/Formats/Font/SignSurfaceComposer.cs:223` | [BIN:STP-PPC:0x1003F338 Bitmap::descimate] fixed-point buckets and integer channel averages; upsampling remains outside the proved branch. |
 | STP-PPC:0x10059F00 mesh instance flag 0x400 | `source/OpenTPW/Hud/HudStubs.cs:111` | [BIN:STP-PPC:0x10059F00 mesh instance flag 0x400] the buy-window preview (0x10162584 -&gt; 0x10139084 -&gt; 0x1005C35C) instances the p&lt;name&gt; preview mesh when it loaded and the object's main mesh otherwise, so objects without a P model show their main model |
 | STP-PPC:0x1006E228 queue link read | `source/OpenTPW/World/Guests/GuestPathGrid.cs:123` | [BIN:STP-PPC:0x1006E228 queue link read] map cell +13 holds the queue link direction; the values are 1, 4, 16 and 64 |
 | STP-PPC:0x1006F380 path preview | `source/OpenTPW/World/CellBuildTool.cs:72` | [BIN:STP-PPC:0x1006F380 path preview] in mode 1 or 3, snap the cursor and LayLine(mode \| 0x100, start, end); without a start, preview one cell |
@@ -728,13 +735,13 @@ Repeated source occurrences of one ID are allowed and listed separately. Duplica
 | STP-PPC:0x1009B1DC movie box | `source/OpenTPW/Client/Movie/MoviePresenter.cs:44` | shown at twice their width, with non-square pixels ([BIN:STP-PPC:0x1009B1DC movie box], docs/TGQ-MOVIES.md). |
 | STP-PPC:0x100A6CC0 animation trigger | `source/OpenTPW/World/Objects/OriginalObjectRuntime.cs:251` | [BIN:STP-PPC:0x100A6CC0 animation trigger] the channel record is model +0x10 + channel × 0x38; TRIGANIM (0x100AFB10), WAITANIM (0x100AFC68), LOOPANIM (0x100AFD7C) and TRIGANIMSPEED (0x100B005C) pass channel 0, TRIGANIM_CH (0x100B01C4) its operand |
 | STP-PPC:0x100A70B4 channel frame arithmetic | `source/OpenTPW/World/Objects/ObjectAnimator.cs:25` | [BIN:STP-PPC:0x100A70B4 channel frame arithmetic] the Feral Mac formula multiplies elapsed milliseconds by 30 and divides by 1000 before channel speed. |
-| STP-PPC:0x100A9F9C | `source/OpenTPW.Files/Formats/Font/SignSurfaceComposer.cs:109` | [BIN:STP-PPC:0x100A9F9C] the 512-wide text DIB is reduced to the 256-wide mask by two-stage integer averaging. |
+| STP-PPC:0x100A9F9C | `source/OpenTPW.Files/Formats/Font/SignSurfaceComposer.cs:133` | [BIN:STP-PPC:0x100A9F9C] the 512-wide text DIB is reduced to the 256-wide mask by two-stage integer averaging. |
 | STP-PPC:0x100A9F9C sign line | `source/OpenTPW.Files/Formats/Font/SignTextLayout.cs:90` | [BIN:STP-PPC:0x100A9F9C sign line] fit when the extent is below the 2x canvas width; else lo = 1, hi = lfWidth (or -lfHeight when 0), mid = (hi - 1) / 2 + 1; a fitting trial sets lo = mid, mid += (hi - mid) / 2, a wide one sets hi = mid, mid = lo + (mid - lo) / 2; stop on the first fitting trial with hi - lo &lt; 3 |
-| STP-PPC:0x100AB1C8,0x100AB3B8..0x100AB444 | `source/OpenTPW.Files/Formats/Font/SignSurfaceComposer.cs:174` | [BIN:STP-PPC:0x100AB1C8,0x100AB3B8..0x100AB444] 16-pixel horizontal tiling and measured-height vertical phase. |
+| STP-PPC:0x100AB1C8,0x100AB3B8..0x100AB444 | `source/OpenTPW.Files/Formats/Font/SignSurfaceComposer.cs:198` | [BIN:STP-PPC:0x100AB1C8,0x100AB3B8..0x100AB444] 16-pixel horizontal tiling and measured-height vertical phase. |
 | STP-PPC:0x100ABDAC Bitmap::load_wavelet | `source/OpenTPW.Files/Formats/Image/SignWaveletDecoder.cs:13` | [BIN:STP-PPC:0x100ABDAC Bitmap::load_wavelet] the engine reads four float scales, two compressed lengths and ARGB output. |
 | STP-PPC:0x100ABF14 sign compositor | `source/OpenTPW.Files/Formats/Font/SignCanvas.cs:23` | [BIN:STP-PPC:0x100ABF14 sign compositor] each line is colour-blitted with its colour block's bytes (+0x430..+0x432 for the first line, +0x444..+0x446 for the second) only when its colour mode is 1 or 2 |
 | STP-PPC:0x100AC21C..0x100AC6B0 | `source/OpenTPW.Files/Formats/Font/SignSurfaceComposer.cs:14` | [BIN:STP-PPC:0x100AC21C..0x100AC6B0] clear, optional board alphablt, style-2 paint, ordered style-1 paint/effects, split the top 128 rows. |
-| STP-PPC:0x100AC25C..0x100AC49C | `source/OpenTPW.Files/Formats/Font/SignSurfaceComposer.cs:48` | [BIN:STP-PPC:0x100AC25C..0x100AC49C] style 2 is drawn before either relief effect; |
+| STP-PPC:0x100AC25C..0x100AC49C | `source/OpenTPW.Files/Formats/Font/SignSurfaceComposer.cs:57` | [BIN:STP-PPC:0x100AC25C..0x100AC49C] style 2 is drawn before either relief effect; |
 | STP-PPC:0x100B07E4 RSE RAND | `source/OpenTPW/VM/RideScriptWorld.cs:31` | [BIN:STP-PPC:0x100B07E4 RSE RAND] RAND draws from the world LCG (0x10105328 on the world at TOC −0x7580): (\|s\| &gt;&gt; 1) mod (bound + 1); FINDSCRIPTRAND (0x100B1B8C) picks match (\|s\| &gt;&gt; 1) mod count, drawing only when there is a match |
 | STP-PPC:0x100B5BE0 ride script variable | `source/OpenTPW/Economy/GuestEconomyBridge.cs:33` | [BIN:STP-PPC:0x100B5BE0 ride script variable] the wear step reads script variables 9 (VAR_RUNNING), 5 (VAR_ONRIDE), 2 and 3 and the script's speed (+0xC0, 0x100B5B40); 0x100B57D4 writes 4 (VAR_BREAKSTAT) and 8 (VAR_WORN) |
 | STP-PPC:0x100BB18C sound service | `source/OpenTPW/Audio/AudioMixer.cs:180` | [BIN:STP-PPC:0x100BB18C sound service] while speech plays (and speech is on with a volume above 0) music and the second user volume are set to volume × SoundInfo.DUCKINGLEVEL / 100 |

@@ -43,7 +43,7 @@ public class SignSurfaceComposerTests
 	}
 
 	[TestMethod]
-	public void ShippedSignsComposeAtNativeSizeWithNonemptyMaterialOrBoard()
+	public void ShippedSignsComposeOpaqueFacesWithoutKeyMagenta()
 	{
 		var data = StringTableTests.OriginalDataDirectory();
 		using var stream = File.OpenRead( Path.Combine( data, "fonts.wad" ) );
@@ -58,8 +58,8 @@ public class SignSurfaceComposerTests
 			var result = SignSurfaceComposer.Compose( sign, fonts, new[] { "Sign", "Board" }, diagnostics );
 			Assert.AreEqual( SignSurfaceComposer.HalfWidth * SignSurfaceComposer.Height * 4, result.Left.Length, path );
 			Assert.AreEqual( result.Left.Length, result.Right.Length, path );
-			Assert.IsTrue( result.Left.Where( (value, index) => index % 4 == 3 ).Any( value => value != 0 )
-				|| result.Right.Where( (value, index) => index % 4 == 3 ).Any( value => value != 0 ), path );
+			Assert.IsTrue( result.Left.Where( (value, index) => index % 4 == 3 ).All( value => value == 255 ), $"transparent sign1 texel in {path}" );
+			Assert.IsTrue( result.Right.Where( (value, index) => index % 4 == 3 ).All( value => value == 255 ), $"transparent sign2 texel in {path}" );
 			Assert.AreEqual( 0, OpaqueKeyMagenta( result.Left ) + OpaqueKeyMagenta( result.Right ), $"opaque colour-key texels in {path}" );
 			if ( sign.ExtraImage == null ) continue;
 			var theme = path.StartsWith( "lobby.wad/", StringComparison.Ordinal ) ? "lobby" : path.Split( '/' )[1];
@@ -70,7 +70,7 @@ public class SignSurfaceComposerTests
 	}
 
 	[TestMethod]
-	public void BellyBounceHasNoBoardImageAndKeepsTransparentSpaceAroundItsText()
+	public void BellyBounceHasNoExtraImageAndGetsAnOpaqueBacking()
 	{
 		var data = StringTableTests.OriginalDataDirectory();
 		using var stream = File.OpenRead( Path.Combine( data, "fonts.wad" ) );
@@ -80,8 +80,29 @@ public class SignSurfaceComposerTests
 		Assert.IsNull( sign.ExtraImage, "the shipped Belly Bounce sign has no board image" );
 		var result = SignSurfaceComposer.Compose( sign, fonts, new[] { "Belly", "Bounce" }, new List<string>() );
 		Assert.IsTrue( result.TextPixelCount > 0 );
-		Assert.IsTrue( result.Left.Where( (value, index) => index % 4 == 3 ).Any( value => value == 0 ) );
-		Assert.IsTrue( result.Right.Where( (value, index) => index % 4 == 3 ).Any( value => value == 0 ) );
+		Assert.IsTrue( result.Left.Where( (value, index) => index % 4 == 3 ).All( value => value == 255 ) );
+		Assert.IsTrue( result.Right.Where( (value, index) => index % 4 == 3 ).All( value => value == 255 ) );
+	}
+
+	[TestMethod]
+	public void JungleGateLightPaintMakesNameVisibleOnDecodedBoard()
+	{
+		var data = StringTableTests.OriginalDataDirectory();
+		using var stream = File.OpenRead( Path.Combine( data, "fonts.wad" ) );
+		var fonts = SignFontLibrary.Load( stream );
+		var (_, bytes) = SignFileTests.OriginalSignMembers( data ).Single( member => member.Path == "levels/jungle/features/gates.wad/gates.sgn" );
+		var sign = new SignFile( bytes );
+		var nativePaint = sign.Paints[0]!;
+		var dark = SignSurfaceComposer.Compose( sign, fonts, new[] { "Lost Kingdom" }, new List<string>() );
+		var light = SignSurfaceComposer.Compose( sign, fonts, new[] { "Lost Kingdom" }, new List<string>(),
+			nativePaint with { R = 230, G = 210, B = 170, A = 255 } );
+		Assert.IsTrue( light.TextPixelCount > 0 );
+		var brighter = 0;
+		for ( var i = 0; i < light.Left.Length; i += 4 )
+			if ( light.Left[i] > dark.Left[i] + 40 && light.Left[i + 1] > dark.Left[i + 1] + 40 ) brighter++;
+		for ( var i = 0; i < light.Right.Length; i += 4 )
+			if ( light.Right[i] > dark.Right[i] + 40 && light.Right[i + 1] > dark.Right[i + 1] + 40 ) brighter++;
+		Assert.IsTrue( brighter > 100, $"only {brighter} gate-name pixels gained contrast" );
 	}
 
 	private static int OpaqueKeyMagenta( byte[] rgba )

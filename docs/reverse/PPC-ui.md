@@ -722,6 +722,25 @@ identified binary hashes. The actual four Mac lobby
 signs use identical metadata/bytes to the pinned PC lobby corpus. Mac lobby
 SHA-256 remains `b9afda6264961021aecaca882adf9ce25aa6973f48111415176ed45afd2c9ee7`.
 
+The engine's inverse rows read low and high coefficients from separate half-rows:
+alpha at `0x333a0..0x333ac`, luma at `0x32744..0x32778`, and chroma at
+`0x32a34..0x32a74`. Adjacent output words are written after each inverse pair;
+the column inverse reads smooth and wavelet coefficients from separate half-height
+planes. Interleaving the row input instead decoded the jungle gate's right face
+with 16,256 zero-alpha pixels of 16,384. With planar input, both gate halves have
+full coverage (alpha 254 or 255 at every pixel). The fourth decoded channel is
+actual alpha: `load_wavelet` stores it at ARGB byte 0 (`0x3ef34..0x3ef40`),
+without inversion or a forced opaque value.
+
+The source strips are text material, not fallback board fills: `0xab1c0..0xab1c8`
+passes each strip to `Bitmap::descimate`; `0xab43c..0xab444` samples RGB at bytes
+1..3, while `0xab540/0xab54c` copies the generated glyph mask into output alpha.
+The compositor clears the destination with four zero bytes (`0xac21c..0xac230`)
+and alpha-blits the extra bitmap only if its flag is set (`0xac238..0xac254`).
+Thus Belly Bounce's absent extra image proves no extra image in that record, not
+an invisible board in the original game. The later source of opaque board coverage
+has not been identified; OpenTPW's backing is registered as COMPAT-030.
+
 Relief helper `0xab128` calls `Bitmap::descimate` at `0xab1c8`, resolved to engine
 `0x3f338`, to transform the source image into a temporary bitmap whose height is
 the measured text extent. It samples source bytes 1/2/3 at `0xab43c..0xab444`.

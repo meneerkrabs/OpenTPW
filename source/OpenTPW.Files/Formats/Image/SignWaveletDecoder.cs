@@ -117,8 +117,9 @@ public static class SignWaveletDecoder
 		{
 			var previous = index == 0 ? size / 2 - 1 : index - 1;
 			var offset = row * size;
-			InversePair( source[offset + previous * 2], source[offset + previous * 2 + 1],
-				source[offset + index * 2], source[offset + index * 2 + 1], coefficients,
+			// [BIN:STP-PPC:0x1003339C..0x100335AC] low and high coefficients occupy separate row halves.
+			InversePair( source[offset + previous], source[offset + previous + size / 2],
+				source[offset + index], source[offset + index + size / 2], coefficients,
 				out destination[offset + index * 2], out destination[offset + index * 2 + 1] );
 		}
 	}

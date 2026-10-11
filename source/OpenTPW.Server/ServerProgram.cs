@@ -368,6 +368,9 @@ public static class ServerProgram
 		{
 			var bytes = await ReadBodyAsync( context.Request, ParkPackage.MaximumPackageBytes );
 			var package = ParkPackage.Read( bytes );
+			// The payload is validated as a park payload too (format, version, sizes, digest over its layout):
+			// clients check on visit, but a publish is the last place to refuse a package no client could enter.
+			MinimalParkPayload.FromSnapshot( package.ToSnapshot() );
 			RequireClean( filter, package.Manifest.Park.Name, "Park name" );
 			RequireClean( filter, package.Manifest.Park.Description, "Park description" );
 			var city = int.TryParse( context.Request.Query["city"], out var cityId ) ? cityId : 0;

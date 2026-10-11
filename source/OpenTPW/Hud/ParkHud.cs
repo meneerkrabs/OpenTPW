@@ -475,7 +475,9 @@ public sealed partial class ParkHud
 	public bool Update( UiContext context, UiInput input )
 	{
 		foreach ( var element in infoElements )
-			element.Visible = InfoArmOpen && selectedObject is { IsDeleted: false };
+			element.Visible = InfoArmOpen && selectedObject is { IsDeleted: false }
+				// Riding is the visit's action; the own park's first-person ride camera is the park-play slice's.
+				&& (element.Id != "rideView" || level.IsReadOnlyVisit);
 		if ( selectedObject is not { IsDeleted: false } && InfoArmOpen )
 			InfoArmOpen = false;
 

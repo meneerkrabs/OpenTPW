@@ -16,6 +16,10 @@ public class RideCameraTests
 {
 	private const float Tick = 1f / FixedStepClock.TicksPerSecond;
 
+	/// <summary>A headlessly built coaster and the pieces a shared-park round trip needs to rebuild it elsewhere.</summary>
+	internal sealed record BuiltCoaster( OriginalObjectRuntime Station, CoasterBuilder Builder, CoasterRide Ride,
+		int AnchorX, int AnchorY, OriginalParkGrid Grid, RideScriptWorld Scripts );
+
 	[TestInitialize]
 	public void Init()
 	{
@@ -30,7 +34,7 @@ public class RideCameraTests
 	}
 
 	/// <summary>A completed coaster on the Jungle level, built headlessly as the coaster asset test builds it.</summary>
-	private static (OriginalObjectRuntime Station, CoasterRide Ride) BuildCoaster()
+	internal static BuiltCoaster BuildCoaster()
 	{
 		var park = OriginalPark.Load( "jungle", readShippedSave: false );
 		var terrain = new OriginalParkGrid( park );
@@ -51,13 +55,15 @@ public class RideCameraTests
 		foreach ( var (dx, dy) in CoasterTests.Circuit )
 			builder.Place( depart.X + dx, depart.Y + dy );
 		Assert.AreEqual( CoasterPlaceResult.Ok, CoasterTests.CloseAndComplete( builder ) );
-		return (station, station.Coaster!);
+		return new BuiltCoaster( station, builder, station.Coaster!, anchor.X, anchor.Y, terrain, scripts );
 	}
 
 	[TestMethod]
 	public void TheCameraRidesTheFrontCarAlongTheTrack()
 	{
-		var (station, ride) = BuildCoaster();
+		var built = BuildCoaster();
+		var station = built.Station;
+		var ride = built.Ride;
 
 		// Only a coaster with a completed track can be ridden; a shop's runtime cannot.
 		Assert.IsTrue( RideCameraMode.CanRide( station ) );

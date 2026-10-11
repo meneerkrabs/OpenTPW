@@ -141,6 +141,18 @@ public class OnlineServerTests
 			var v1 = await owner.UploadParkAsync( SharedParkTests.V1Package() );
 			Assert.AreEqual( 1, (await owner.DownloadParkAsync( v1.Id )).Manifest.FormatVersion );
 			Assert.AreEqual( 2, (await owner.ListParksAsync()).Total );
+			// A container-valid package whose payload is not a park payload is refused at publish: clients
+			// check on visit, but no client could enter this park.
+			var garbage = Encoding.UTF8.GetBytes( "{\"level\":\"jungle\",\"source\":\"other\"}" );
+			var manifest = SharedParkTests.LayoutPackage().Manifest with
+			{
+				Payload = SharedParkTests.LayoutPackage().Manifest.Payload with { Length = garbage.Length, Sha256 = ParkPackage.Hash( garbage ) }
+			};
+			var hostile = ParkPackage.Read( OnlineFormatTests.Zip(
+				(ParkPackage.ManifestEntry, StrictJson.Serialize( manifest )),
+				(ParkPackage.PayloadEntry, garbage) ) );
+			Assert.AreEqual( HttpStatusCode.BadRequest, (await Fails( () => owner.UploadParkAsync( hostile ) )).Status );
+			Assert.AreEqual( 2, (await owner.ListParksAsync()).Total );
 		}
 		finally
 		{

@@ -160,6 +160,10 @@ the archived official pages):
   prototype ride; the camera rides the front car along the published track (or the
   Totem's carriage motion). Escape, a right click or the button leaves the ride.
   Flat rides have no traced seat motion in OpenTPW yet and cannot be ridden here.
+  The visit's ride camera (`RideCameraMode`) is the seam for the park-play slice's
+  general first-person ride camera — a reusable `CameraMode` whose frame maths this
+  class already shares — and boarding in a visit should go through that camera when
+  it lands, rather than a second view growing here.
 - **Inspect**: an object's panel shows its published state of repair (never simulated
   values), and the park information window shows the park's **published statistics**
   read-only — rating, value, balance, visitors and the published in-game date — with a

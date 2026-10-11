@@ -83,20 +83,30 @@ public static class SharedParkLayout
 		var coasters = new List<CoasterTrackRecord>();
 		for ( var index = 0; index < level.Objects.Objects.Count; index++ )
 		{
-			var station = level.Objects.Objects[index];
-			if ( level.GetCoasterBuilder( station ) is not { } builder || builder.Track.Nodes.Count <= 1 )
+			if ( level.GetCoasterBuilder( level.Objects.Objects[index] ) is not { } builder )
 				continue;
-			var nodes = builder.Track.Nodes.Where( node => !node.IsPylonless )
-				.Select( node => new CoasterNodeRecord( node.X, node.Y, node.Height, node.LoopPylon ) ).ToList();
-			coasters.Add( new CoasterTrackRecord( index, nodes, builder.Track.IsClosed, builder.Track.IsComplete ) );
+			if ( CaptureCoaster( index, builder ) is { } record )
+				coasters.Add( record );
 		}
 		return coasters;
+	}
+
+	/// <summary>One track's record (its pylons and circuit state), or null for a station without a shaped track.</summary>
+	internal static CoasterTrackRecord? CaptureCoaster( int station, CoasterBuilder builder )
+	{
+		ArgumentNullException.ThrowIfNull( builder );
+		if ( builder.Track.Nodes.Count <= 1 )
+			return null;
+		var nodes = builder.Track.Nodes.Where( node => !node.IsPylonless )
+			.Select( node => new CoasterNodeRecord( node.X, node.Y, node.Height, node.LoopPylon ) ).ToList();
+		return new CoasterTrackRecord( station, nodes, builder.Track.IsClosed, builder.Track.IsComplete );
 	}
 
 	/// <summary>
 	/// Places every payload object without build rules (the owner validated them when building), at its published anchor,
 	/// rotation and open state. Returns one entry per record — the placed object, or null when the local catalog lacks it
-	/// (missing content; reported) — so payload indices (a coaster's station) stay aligned.
+	/// or its footprint lies outside the level map (reported, like the original import rejects such records) — so payload
+	/// indices (a coaster's station) stay aligned.
 	/// </summary>
 	public static (IReadOnlyList<OriginalObject?> Placed, IReadOnlyList<string> Skipped) PlaceObjects( ParkObjects objects, IReadOnlyList<ParkObjectRecord> records )
 	{
@@ -113,6 +123,13 @@ public static class SharedParkLayout
 				skipped.Add( $"object {record.InfoId}" );
 				continue;
 			}
+			if ( ObjectFootprint.GetCells( entry.Shape, record.X, record.Y, record.Rotation )
+				.Any( cell => cell.X < 0 || cell.Y < 0 || cell.X >= objects.Grid.Width || cell.Y >= objects.Grid.Height ) )
+			{
+				placed.Add( null );
+				skipped.Add( $"object {record.InfoId} at ({record.X}, {record.Y}) outside the level map" );
+				continue;
+			}
 			placed.Add( objects.Add( entry, record.X, record.Y, record.Rotation, record.Open ?? true ) );
 		}
 		return (placed, skipped);
@@ -127,9 +144,14 @@ public static class SharedParkLayout
 	{
 		ArgumentNullException.ThrowIfNull( level );
 		ArgumentNullException.ThrowIfNull( station );
+		return level.GetCoasterBuilder( station ) is { } builder && RestoreCoaster( builder, nodes, closed, complete );
+	}
+
+	/// <summary>The headless core of the restore (the visit's Level path calls it with the station's builder).</summary>
+	internal static bool RestoreCoaster( CoasterBuilder builder, IReadOnlyList<CoasterNodeRecord> nodes, bool closed, bool complete )
+	{
+		ArgumentNullException.ThrowIfNull( builder );
 		ArgumentNullException.ThrowIfNull( nodes );
-		if ( level.GetCoasterBuilder( station ) is not { } builder )
-			return false;
 		foreach ( var node in nodes )
 			builder.Track.Append( builder.Ride.World, builder.Ride, node.X, node.Y, node.Height, node.LoopPylon );
 		if ( closed && !builder.Track.Close() )

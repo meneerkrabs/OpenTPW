@@ -14,7 +14,10 @@ namespace OpenTPW;
 // track's sampled direction or the entry camera's heading, and riding starts from a read-only visit's object
 // panel — the original's seat position, first-person heading, entry click and exit key are not traced (the
 // camera-mode classes' Update bodies are not decoded) — evidence needed: the first-person target and coaster
-// camera modes of the Mac binary, and the original's ride entry and exit input
+// camera modes of the Mac binary, and the original's ride entry and exit input.
+// The park-play slice builds the general first-person ride camera as a reusable CameraMode; this class is the
+// visit's seam for it — Frame/CoasterFrame/PrototypeFrame/CanRide are pure and shared, and the visit should
+// board through that camera when it lands instead of growing a second view here.
 public sealed class RideCameraMode : CameraMode
 {
 	/// <summary>Engine units above the front car's sample the eye sits at (half of the drawn car height, CoasterRenderer).</summary>

@@ -86,7 +86,8 @@ public partial class Level : IDisposable
 	/// <summary>
 	/// Applies a version 2 shared layout: coaster tracks onto their stations, then a digest check that what this
 	/// visit built is the park the owner published (docs/ONLINE.md "Local files and visits"). Cells and objects are
-	/// applied inside <see cref="SetupEntities"/> so guests and bridges see them from the start.
+	/// applied inside <see cref="SetupEntities"/> so guests and bridges see them from the start. A package that
+	/// publishes no digest cannot be checked and says so instead of reporting a mismatch.
 	/// </summary>
 	private void ApplyVisitedLayout()
 	{
@@ -100,11 +101,25 @@ public partial class Level : IDisposable
 					skipped.Add( $"coaster at object {coaster.Station}" );
 			}
 		}
-		var digest = SharedParkLayout.DigestOf( this );
-		if ( digest != visitLayout.LayoutDigest )
-			Log.Warning( $"Shared park layout check failed: built {digest}, published {visitLayout.LayoutDigest}; the visit may differ from the owner's park." );
+		if ( visitLayout.LayoutDigest == null )
+			Log.Warning( "This shared park publishes no layout digest; the built layout cannot be verified against the owner's park." );
 		else
-			Log.Trace( $"Shared park layout applied and verified (digest {digest}: {visitLayout.Cells?.Count ?? 0} cells, {visitLayout.Objects.Count} objects, {visitLayout.Coasters?.Count ?? 0} coasters)." );
+		{
+			var digest = SharedParkLayout.DigestOf( this );
+			if ( digest != visitLayout.LayoutDigest )
+			{
+				// One first difference of each kind, so a mismatch names a likely cause and not only a hash.
+				var builtCells = SharedParkLayout.CaptureCells( Guests?.Grid.Cells ?? new ParkCellMap( 1, 1 ) );
+				var publishedCells = visitLayout.Cells ?? Array.Empty<OpenTPW.Online.Packages.ParkCellRecord>();
+				var cellDifference = builtCells.Zip( publishedCells ).FirstOrDefault( pair => pair.First != pair.Second );
+				var objectDifference = SharedParkLayout.CaptureObjects( this ).Zip( visitLayout.Objects ).FirstOrDefault( pair => pair.First != pair.Second );
+				Log.Warning( $"Shared park layout check failed: built {digest}, published {visitLayout.LayoutDigest}; the visit may differ from the owner's park."
+					+ (cellDifference.Equals( default ) ? "" : $" First cell difference: built {cellDifference.First}, published {cellDifference.Second}.")
+					+ (objectDifference.Equals( default ) ? "" : $" First object difference: built {objectDifference.First}, published {objectDifference.Second}.") );
+			}
+			else
+				Log.Trace( $"Shared park layout applied and verified (digest {digest}: {visitLayout.Cells?.Count ?? 0} cells, {visitLayout.Objects.Count} objects, {visitLayout.Coasters?.Count ?? 0} coasters)." );
+		}
 		foreach ( var item in skipped )
 			Log.Warning( $"Shared park {item} could not be rebuilt and is not shown." );
 	}

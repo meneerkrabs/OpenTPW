@@ -69,10 +69,10 @@ Entering a published park (Online Park Info's "Click to enter this park"; Online
    at 0x1131AB0 (and identically on the follow-up path at 0x1131E10) — once per park entry, before the
    park loads. This is the message by which the server learned of the visit that earned the owner
    Platinum Tickets (official FAQ, ONLINE-SOURCES.md S2).
-4. Loads the park with the online level names (sub_110474C): `data:levels:online_Standard.sam` built
-   from `data:levels:online_` + `Standard.sam`, with the same Easy/Standard pair as the own park, and
-   switches to chat mode (manual p. 65: "Once you've entered the park, you will automatically switch to
-   Chat Mode").
+4. Loads the park with the online level name (sub_110474C): the literals `data:levels:online_Standard.sam`
+   and `online_Standard.sam` (0x1DF597) beside the own park's `data:levels:Standard.sam` — only the Standard
+   variant is present as an online literal; no `online_Easy` string exists in this build — and switches to
+   chat mode (manual p. 65: "Once you've entered the park, you will automatically switch to Chat Mode").
 
 Inside the visited park (trace strings and classes):
 

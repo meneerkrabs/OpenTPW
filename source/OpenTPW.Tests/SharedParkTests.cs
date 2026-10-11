@@ -192,10 +192,97 @@ public class SharedParkTests
 			// Shipped objects round-trip: every imported object record is placed at its saved anchor…
 			Assert.AreEqual( park.Save.PlacedObjects.Count + park.Save.UnresolvedObjects.Count + park.Save.FixedItems.Count, payload.Objects.Count );
 			// …except fixed items, which a level places at the origin (their models are authored in park
-			// space): the payload must describe what a visit can rebuild, or its digest check fails.
+			// space; Theme Park Inc's would keep their saved anchor, ParkObjects.Add): the payload must
+			// describe what a visit can rebuild, or its digest check fails.
 			foreach ( var fixedItem in payload.Objects.Where( item => item.Fixed ) )
 				Assert.AreEqual( (0, 0, 0), (fixedItem.X, fixedItem.Y, fixedItem.Rotation), $"fixed item {fixedItem.InfoId} is recorded where a level places it" );
+			// The placement round trip a visit performs: placing the payload's records through the level's
+			// own ParkObjects lands every object where its record says (the fixed-item rule above), so the
+			// digest the visit recomputes from the placements equals the published one.
+			var objects = new ParkObjects( ObjectCatalog.Load( "jungle", easy: false ), new OriginalParkGrid( park ) );
+			var (placed, skipped) = SharedParkLayout.PlaceObjects( objects, payload.Objects );
+			Assert.AreEqual( 0, skipped.Count, string.Join( ", ", skipped ) );
+			for ( var index = 0; index < payload.Objects.Count; index++ )
+			{
+				var record = payload.Objects[index];
+				Assert.IsNotNull( placed[index], $"object {record.InfoId} placed" );
+				Assert.AreEqual( (record.Fixed ? (0, 0, 0) : (record.X, record.Y, record.Rotation)),
+					(placed[index]!.Placement.X, placed[index]!.Placement.Y, placed[index]!.Placement.Rotation),
+					$"object {record.InfoId} is placed where its record says" );
+			}
 		}
 		finally { OpenTPW.Common.GlobalNamespace.FileSystem = previous; Directory.Delete( root, true ); }
+	}
+
+	[TestMethod]
+	public void VisitPlacementRejectsObjectsOutsideTheLevelMap()
+	{
+		var data = OriginalParkImportTests.OriginalDataPath();
+		var previous = OpenTPW.Common.GlobalNamespace.FileSystem;
+		var fileSystem = new BaseFileSystem( data );
+		fileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
+		OpenTPW.Common.GlobalNamespace.FileSystem = fileSystem;
+		try
+		{
+			var grid = new SandboxParkGrid();
+			var objects = new ParkObjects( ObjectCatalog.Load( "jungle" ), grid );
+			var buildable = objects.Catalog.Buildable.First( entry => entry.Shape.Width > 1 || entry.Shape.Height > 1 );
+			// A payload record may name any cell up to 1023; the level's own map is smaller, and a footprint that
+			// leaves it is skipped and reported rather than placed (as the original import rejects such records).
+			var (placed, skipped) = SharedParkLayout.PlaceObjects( objects, new[]
+			{
+				new ParkObjectRecord( buildable.InfoId, grid.Width - 1, grid.Height - 1, buildable.Shape.Width, buildable.Shape.Height, 0, false ),
+				new ParkObjectRecord( buildable.InfoId, 0, 0, buildable.Shape.Width, buildable.Shape.Height, 0, false ),
+			} );
+			Assert.IsNull( placed[0] );
+			Assert.IsNotNull( placed[1] );
+			Assert.AreEqual( 1, skipped.Count );
+			StringAssert.Contains( skipped[0], "outside the level map" );
+		}
+		finally { OpenTPW.Common.GlobalNamespace.FileSystem = previous; }
+	}
+
+	[TestMethod]
+	public void V2WithoutDigestIsAcceptedButUnverifiable()
+	{
+		// Validation allows a version 2 payload without a layout digest; the visit then reports that it cannot
+		// verify the layout instead of failing a check against nothing (Level.ApplyVisitedLayout, VisitSmokeTest).
+		var payload = Sealed() with { LayoutDigest = null };
+		var read = MinimalParkPayload.FromBytes( StrictJson.Serialize( payload ) );
+		Assert.IsTrue( read.HasBuiltLayout );
+		Assert.IsNull( read.LayoutDigest );
+	}
+
+	[TestMethod]
+	public void PublishedCoasterTrackRoundTripsIntoAFreshStation()
+	{
+		var data = OriginalParkImportTests.OriginalDataPath();
+		var previous = OpenTPW.Common.GlobalNamespace.FileSystem;
+		var fileSystem = new BaseFileSystem( data );
+		fileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
+		OpenTPW.Common.GlobalNamespace.FileSystem = fileSystem;
+		try
+		{
+			// The owner's build: a completed circuit on the Jungle level, captured as a payload record.
+			var built = RideCameraTests.BuildCoaster();
+			var captured = SharedParkLayout.CaptureCoaster( 0, built.Builder );
+			Assert.IsNotNull( captured );
+			Assert.IsTrue( captured.Closed && captured.Complete, "the owner's circuit is closed and complete" );
+
+			// The visit's rebuild: a fresh station of the same script world (as PlaceObjects places it), no
+			// economy, with the published pylons appended onto its builder (RestoreCoaster's Level path).
+			var station = new OriginalObjectRuntime( built.Station.Entry, built.Scripts, seed: 6, open: true );
+			var builder = new CoasterBuilder( station.Coaster!, CoasterSite.FromGrid( built.Grid ) );
+			var (depart, back) = CoasterBuilder.StationEnds( station.Entry.Shape, built.AnchorX, built.AnchorY, 0 )!.Value;
+			builder.SetStation( depart, back );
+			Assert.IsTrue( SharedParkLayout.RestoreCoaster( builder, captured.Nodes, captured.Closed, captured.Complete ) );
+			Assert.AreEqual( captured, SharedParkLayout.CaptureCoaster( 0, builder ),
+				"the rebuilt track is the published one (the layout digest's coaster part)" );
+
+			// And what the visit's Ride action needs of it: the restored track runs, with trains to ride.
+			Assert.IsTrue( station.Coaster!.IsOperational, "the restored track is operational" );
+			Assert.IsTrue( station.Coaster.Trains.Count > 0, "the restored track has trains" );
+		}
+		finally { OpenTPW.Common.GlobalNamespace.FileSystem = previous; }
 	}
 }

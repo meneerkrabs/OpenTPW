@@ -13,7 +13,8 @@ internal sealed class VisitSmokeTest : IDisposable
 		this.level = level;
 		Require( level.IsReadOnlyVisit && level.Park == null, "shared visit has no economy" );
 		// A version 2 package must have rebuilt the owner's exact layout (digest check; docs/ONLINE.md).
-		if ( level.Visit!.Payload.HasBuiltLayout )
+		// A package that publishes no digest (validation allows it) cannot be checked, only reported.
+		if ( level.Visit!.Payload.HasBuiltLayout && level.Visit.Payload.LayoutDigest != null )
 			Require( SharedParkLayout.DigestOf( level ) == level.Visit.Payload.LayoutDigest, "the visit rebuilt the published layout (digest)" );
 		var originalObjects = level.Objects.Objects.ToArray();
 		var originalRide = level.PlacedRide;
@@ -46,7 +47,7 @@ internal sealed class VisitSmokeTest : IDisposable
 		Require( capture.Width > 0 && capture.Height > 0, "visit renders a real framebuffer" );
 		completed = true;
 		Log.Trace( $"Read-only visit smoke passed: {frame} frames, {level.Objects.Objects.Count} immutable local objects"
-			+ (level.Visit!.Payload.HasBuiltLayout ? $", layout digest {level.Visit.Payload.LayoutDigest} verified" : "")
+			+ (level.Visit!.Payload.HasBuiltLayout && level.Visit.Payload.LayoutDigest != null ? $", layout digest {level.Visit.Payload.LayoutDigest} verified" : "")
 			+ RideStep()
 			+ $", no economy, build/remove/save/load/export rejected, GPU capture {capture.Width}x{capture.Height}." );
 		Render.Window.SdlWindow.Close();

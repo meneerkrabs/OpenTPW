@@ -91,7 +91,8 @@ public static class PathTiles
 	/// <summary>
 	/// The tile of path cell (<paramref name="x"/>, <paramref name="y"/>). A cell that was a path in the original save,
 	/// with the same path neighbours, keeps the saved texture and turn: the saved neighbour bits also count ride
-	/// entrances, which the cell map does not keep. Other cells follow <see cref="Choose"/>.
+	/// entrances, which the cell map does not keep. Other cells, and a saved turn other than 0/90/180/270, follow
+	/// <see cref="Choose"/> (reported under SAVE-010).
 	/// </summary>
 	public static PathTile ForCell( int x, int y, int countX, int countY, Func<int, int, bool> isPath, SaveCellGrid? saved )
 	{

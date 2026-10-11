@@ -289,6 +289,9 @@ public sealed class ParkObjectives
 		return won;
 	}
 
+	/// <summary>Moves the next offer day by <paramref name="days"/> (a new park started at a later day).</summary>
+	internal void ShiftSchedule( long days ) => NextOfferDay += days;
+
 	internal void Restore( long nextOfferDay, int nextListPosition, ActiveChallenge? current, IReadOnlyDictionary<int, int> restoredDeclines, IEnumerable<int> restoredFinished, IEnumerable<GoldenTicketKind> restoredTickets )
 	{
 		if ( current != null && !settings.Challenges.ContainsKey( current.DefinitionIndex ) )

@@ -77,6 +77,27 @@ internal sealed class AdvisorScoreQueue
 	public bool HasDescriptor( int messageId ) => descriptors.ContainsKey( messageId );
 
 	/// <summary>
+	/// Replaces the pending records and history with a loaded controller's. <paramref name="pending"/> has one entry
+	/// per slot (null = free); every message must have a descriptor.
+	/// </summary>
+	public void Restore( IReadOnlyList<AdvisorPendingAdvice?> pending, IReadOnlyDictionary<int, AdvisorMessageHistory> restoredHistory )
+	{
+		ArgumentNullException.ThrowIfNull( pending );
+		ArgumentNullException.ThrowIfNull( restoredHistory );
+		if ( pending.Count != Capacity )
+			throw new ArgumentException( $"Supply all {Capacity} pending slots.", nameof( pending ) );
+		if ( pending.Any( item => item != null && !descriptors.ContainsKey( item.MessageId ) ) || restoredHistory.Keys.Any( id => !descriptors.ContainsKey( id ) ) )
+			throw new ArgumentException( "Restored advice and history need an explicitly supplied descriptor." );
+		if ( playbackAttempt.HasValue )
+			throw new InvalidOperationException( "Finish the outstanding playback attempt first." );
+		for ( var index = 0; index < Capacity; index++ )
+			slots[index] = pending[index];
+		history.Clear();
+		foreach ( var (id, value) in restoredHistory )
+			history[id] = value;
+	}
+
+	/// <summary>
 	/// Game event 10 (<c>RESET_FOR_EASY_MODE</c>): every history record resets its variant, played flag
 	/// and slap count but keeps its saved game tick, so the repeat delay still runs. Pending records stay.
 	/// </summary>

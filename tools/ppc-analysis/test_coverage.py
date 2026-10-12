@@ -37,10 +37,37 @@ class RepositoryTextTests(unittest.TestCase):
             os.makedirs(os.path.join(repo, "docs", "reverse"))
             with open(os.path.join(repo, "docs", "a.md"), "w") as f:
                 f.write("cites 0x100BB4FC\n")
-            with open(os.path.join(repo, coverage.OUTPUT), "w") as f:
-                f.write("| `0x10063DD0` | uncited |\n")
+            for generated in coverage.GENERATED:
+                with open(os.path.join(repo, generated), "w") as f:
+                    f.write("| `0x10063DD0` | uncited |\n")
             subprocess.run(["git", "-C", repo, "add", "-A"], check=True)
             self.assertEqual(coverage.cited_addresses(coverage.repository_text(repo)), {0x100BB4FC})
+            self.assertEqual(coverage.citations_by_file(repo), {"docs/a.md": ({0x100BB4FC}, set())})
+
+    def test_short_offsets_are_read_in_research_notes_only(self):
+        import subprocess, tempfile
+        with tempfile.TemporaryDirectory() as repo:
+            subprocess.run(["git", "init", "-q", repo], check=True)
+            os.makedirs(os.path.join(repo, "docs", "reverse"))
+            with open(os.path.join(repo, "docs", "reverse", "PATH-plan.md"), "w") as f:
+                f.write("LayLine `0x84ea4`, flag data:0x84b2c, field +0x2d8\n")
+            with open(os.path.join(repo, "docs", "b.md"), "w") as f:
+                f.write("not code: 0x84ea4\n")
+            subprocess.run(["git", "-C", repo, "add", "-A"], check=True)
+            self.assertEqual(coverage.citations_by_file(repo),
+                             {"docs/reverse/PATH-plan.md": (set(), {coverage.MAC_BASE + 0x84EA4})}, "b.md has no full address")
+
+
+class ShortOffsetTests(unittest.TestCase):
+    def test_short_offsets_skip_data_and_structure_offsets(self):
+        text = "`0x84ea4` and 0x1c22c4; data:0x84b04, +0x2d8, TOC -0x6dd0, 0x7fffff, 0x12345678"
+        self.assertEqual(coverage.short_offsets(text), {coverage.MAC_BASE + 0x84EA4, coverage.MAC_BASE + 0x1C22C4})
+
+    def test_a_short_offset_counts_only_at_a_function_start(self):
+        # Synthetic ranges past the end of the code section, so this file cites no real function.
+        starts, ends = [0x10F84EA4, 0x10F85200], [0x10F85174, 0x10F85300]
+        self.assertEqual(coverage.resolve((set(), {0x10F84EA4, 0x10F85210}), starts, ends), {0})
+        self.assertEqual(coverage.resolve(({0x10F85210}, set()), starts, ends), {1})
 
 
 if __name__ == "__main__":

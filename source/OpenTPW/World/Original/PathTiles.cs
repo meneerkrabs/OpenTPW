@@ -134,9 +134,9 @@ public static class PathTiles
 		// [APPROX:PATH-015] QueueTex square/end/straight/corner and rotation are derived from the decoded que4/que3/que1/que2 artwork and queue links; the original tile-selection routine is not traced — evidence needed: original queue terrain texture selection and rotation
 		for ( var quarter = 0; quarter < 4; quarter++ )
 		{
-			if ( mask == 0x10 ) return new PathTile( 1, quarter * 90 );
+			if ( mask == 0x01 ) return new PathTile( 1, quarter * 90 );
 			if ( mask == 0x11 ) return new PathTile( 2, quarter * 90 );
-			if ( mask == 0x14 ) return new PathTile( 3, quarter * 90 );
+			if ( mask == 0x05 ) return new PathTile( 3, quarter * 90 );
 			mask = Turn( Turn( Turn( (byte)mask ) ) );
 		}
 		return new PathTile( 0, 0 );

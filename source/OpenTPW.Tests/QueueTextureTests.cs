@@ -26,9 +26,9 @@ public class QueueTextureTests
 		grid.SetPath( 3, 3, true );
 		PathTile Tile( int x, int y ) => PathTiles.ForQueueCell( x, y, 8, 8, grid.IsQueue, grid.GetQueueLink, grid.IsWalkable );
 		Assert.AreEqual( new PathTile( 2, 0 ), Tile( 2, 2 ), "front continues toward the entrance and its successor" );
-		Assert.AreEqual( new PathTile( 3, 270 ), Tile( 2, 3 ), "back turns from its predecessor toward the ordinary path" );
+		Assert.AreEqual( new PathTile( 3, 0 ), Tile( 2, 3 ), "back turns from its predecessor toward the ordinary path" );
 		grid.ClearQueue( 2, 3 );
-		Assert.AreEqual( new PathTile( 1, 180 ), Tile( 2, 2 ), "removal restores an end pointing toward the entrance" );
+		Assert.AreEqual( new PathTile( 1, 0 ), Tile( 2, 2 ), "removal restores an end pointing toward the entrance" );
 	}
 
 	[TestMethod]
@@ -42,7 +42,7 @@ public class QueueTextureTests
 			var (dx, dy) = GuestPathGrid.Directions[side];
 			grid.SetQueue( 2 + dx, 2 + dy, side );
 			var tile = PathTiles.ForQueueCell( 2, 2, 5, 5, grid.IsQueue, grid.GetQueueLink, grid.IsWalkable );
-			Assert.AreEqual( new PathTile( 1, ((direction + 2) & 3) * 90 ), tile, "unrelated adjacent queue does not add a corner" );
+			Assert.AreEqual( new PathTile( 1, direction * 90 ), tile, "unrelated adjacent queue does not add a corner" );
 		}
 	}
 
@@ -57,6 +57,67 @@ public class QueueTextureTests
 		};
 		Assert.AreEqual( "/levels/jungle/queue/textures/jpa_que1.wct", OriginalTerrain.FindTexture( "/levels/jungle/queue", "jungle", "jpa_que1", "textures", Files ) );
 		Assert.IsNull( OriginalTerrain.FindTexture( "/levels/jungle/terrain", "jungle", "jpa_que1", "pathtex", Files ) );
+	}
+
+	[DataTestMethod]
+	[DataRow( "jungle" )]
+	[DataRow( "hallow" )]
+	[DataRow( "fantasy" )]
+	[DataRow( "space" )]
+	public void OriginalQueueTilesOpenTowardTheirActualLinks( string theme )
+	{
+		var path = Path.Combine( OriginalParkImportTests.OriginalDataPath(), "levels", theme, "queue.wad" );
+		if ( !File.Exists( path ) ) Assert.Inconclusive( "Original game data is not installed." );
+		using var archive = new WadArchive( path );
+		var textures = new[] { "jpa_que3", "jpa_que1", "jpa_que2" }.Select( name =>
+			new TextureFile( new MemoryStream( archive.GetFile( "textures/" + name + ".wct" ).GetData() ) ).Data ).ToArray();
+		for ( var shape = 1; shape <= 3; shape++ )
+			for ( var direction = 0; direction < 4; direction++ )
+			{
+				var grid = new GuestPathGrid( 7, 7 );
+				grid.SetQueue( 3, 3, direction );
+				var expected = GuestPathGrid.LinkValue( direction );
+				if ( shape != 1 )
+				{
+					var successor = (direction + (shape == 2 ? 2 : 1)) & 3;
+					var (dx, dy) = GuestPathGrid.Directions[successor];
+					grid.SetQueue( 3 + dx, 3 + dy, (successor + 2) & 3 );
+					expected |= GuestPathGrid.LinkValue( successor );
+				}
+				var tile = PathTiles.ForQueueCell( 3, 3, 7, 7, grid.IsQueue, grid.GetQueueLink, grid.IsWalkable );
+				Assert.AreEqual( shape, tile.TextureIndex );
+				// Fantasy's straight includes fully opaque grass: its alpha cannot identify the two openings.
+				if ( theme == "fantasy" && shape == 2 )
+				{
+					Assert.IsTrue( textures[shape - 1].Data.Where( (value, index) => index % 4 == 3 ).All( alpha => alpha == 255 ) );
+					Assert.AreEqual( (direction & 1) * 90, tile.Rotation );
+					continue;
+				}
+				Assert.AreEqual( expected, ArtworkOpenSides( textures[shape - 1], tile.Rotation ), $"{theme}: shape {shape}, direction {direction}" );
+			}
+	}
+
+	private static byte ArtworkOpenSides( TextureData image, int rotation )
+	{
+		byte mask = 0;
+		for ( var side = 0; side < 4; side++ )
+		{
+			var alphaSum = 0;
+			for ( var sample = 0; sample < 32; sample++ )
+			{
+				var t = 1f / 3 + sample / 31f / 3;
+				var (x, y) = side switch { 0 => (t, 0f), 1 => (1f, t), 2 => (t, 1f), _ => (0f, t) };
+				var uv = PathTiles.TextureCoordinates( x, y, rotation );
+				// The terrain shader flips V. Sample the decoded original border exactly as the renderer does.
+				var px = (int)MathF.Round( uv.U * (image.Width - 1) );
+				var py = (int)MathF.Round( (1 - uv.V) * (image.Height - 1) );
+				alphaSum += image.Data[(py * image.Width + px) * 4 + 3];
+			}
+			var mean = alphaSum / 32f;
+			Assert.IsTrue( mean <= 96 || mean >= 192, "Original tile border must clearly be closed or open." );
+			if ( mean >= 192 ) mask |= GuestPathGrid.LinkValue( side );
+		}
+		return mask;
 	}
 
 	[DataTestMethod]

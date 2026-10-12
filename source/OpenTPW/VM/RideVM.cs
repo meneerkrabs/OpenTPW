@@ -53,8 +53,10 @@ public sealed class RideVM
 
 	private readonly Instruction[] instructions;
 	private readonly Stack<int> callStack = new();
-	private readonly Random random;
-	// System.Random's state cannot be read, so the canonical hash takes the seed plus the number of RNG calls.
+	// An owned seeded .NET-compatible generator whose full state the park-resume snapshot can store; its draws
+	// are exactly a seeded System.Random's (ScriptRandomTests proves it). The canonical hash still takes the seed
+	// plus the number of RNG calls, unchanged.
+	private readonly ScriptRandom random;
 	private readonly int seed;
 	private long randomDraws;
 	private readonly RideVMOptions options;
@@ -65,7 +67,11 @@ public sealed class RideVM
 	public RideScriptFile Script { get; }
 	public string SourceName { get; }
 	public string ScriptName { get; internal set; } = "Unnamed";
-	public int ScriptId { get; }
+	public int ScriptId { get; internal set; }
+	/// <summary>The constructor options (effects, world, resolver, seed) — children copy them when spawned and the restore reads them.</summary>
+	internal RideVMOptions Options => options;
+	/// <summary>The constructor seed (explicit or drawn from the world stream); hashed by the canonical state.</summary>
+	internal int Seed => seed;
 	public RideScriptWorld World { get; }
 	public IRideScriptEffects Effects { get; }
 	public RideVM? Parent { get; }
@@ -88,8 +94,8 @@ public sealed class RideVM
 	/// <summary>Script clock: milliseconds since this VM was created (waits, timers and their deadlines).</summary>
 	public double TimeMilliseconds { get; private set; }
 
-	/// <summary>The world's scheduler clock (<see cref="RideScriptWorld.ClockMilliseconds"/>) when this VM was created.</summary>
-	public double ClockOriginMilliseconds { get; }
+	/// <summary>The world's scheduler clock (<see cref="RideScriptWorld.ClockMilliseconds"/>) when this VM was created. The snapshot restore re-applies the saved origin.</summary>
+	public double ClockOriginMilliseconds { get; internal set; }
 
 	/// <summary>
 	/// The shared scheduler clock as this script reads it: <see cref="ClockOriginMilliseconds"/> plus the script clock.
@@ -133,7 +139,8 @@ public sealed class RideVM
 	{
 	}
 
-	private RideVM( RideScriptFile script, RideVMOptions options, RideVM? parent )
+	/// <summary>Called by the public constructors, by <see cref="SpawnChild"/> and by the snapshot restore (which passes an explicit parent).</summary>
+	internal RideVM( RideScriptFile script, RideVMOptions options, RideVM? parent )
 	{
 		ArgumentNullException.ThrowIfNull( script );
 		Script = script;
@@ -144,7 +151,7 @@ public sealed class RideVM
 		World = options.World ?? parent?.World ?? new RideScriptWorld();
 		seed = options.Seed ?? World.NextScriptSeed();
 		ClockOriginMilliseconds = parent?.SchedulerMilliseconds ?? World.ClockMilliseconds;
-		random = new Random( seed );
+		random = new ScriptRandom( seed );
 		SliceBudget = options.SliceBudget ?? script.TimeSlice;
 		if ( SliceBudget <= 0 )
 			throw new InvalidDataException( $"RSE slice budget {SliceBudget} is not positive." );
@@ -267,6 +274,129 @@ public sealed class RideVM
 		World.Unregister( this );
 		if ( State != RideVMState.Faulted )
 			State = RideVMState.Halted;
+	}
+
+	// ---- Park-resume snapshot (docs in RideVMSnapshot) ----
+
+	/// <summary>
+	/// Explicit state of this script alone (no world counters, no children state): identity, instruction state,
+	/// clocks, counters and the full RNG state. <see cref="RideScriptWorld.CaptureSnapshot"/> adds the graph links.
+	/// </summary>
+	public RideVMSnapshot CaptureSnapshot()
+	{
+		string? fileName = null;
+		if ( Parent != null )
+		{
+			var prefix = Parent.SourceName + " > ";
+			if ( !SourceName.StartsWith( prefix, StringComparison.Ordinal ) )
+				throw new InvalidDataException( $"child script source '{SourceName}' does not extend its parent's '{Parent.SourceName}'." );
+			fileName = SourceName[prefix.Length..];
+		}
+		return new RideVMSnapshot
+		{
+			ScriptId = ScriptId,
+			ParentScriptId = Parent?.ScriptId ?? 0,
+			ChildScriptId = Child?.ScriptId ?? 0,
+			SoundChildScriptId = SoundChild?.ScriptId ?? 0,
+			ScriptFileName = fileName,
+			SourceName = SourceName,
+			ScriptName = ScriptName,
+			ScriptIdentityHash = RideScriptIdentity.Hash( Script ),
+			Seed = seed,
+			RandomState = random.CaptureState(),
+			RandomDraws = randomDraws,
+			State = State,
+			FaultMessage = FaultMessage,
+			ProgramCounter = ProgramCounter,
+			CallStack = callStack.Reverse().ToArray(),
+			Variables = (int[])Variables.Clone(),
+			Flags = Flags,
+			SliceBudget = SliceBudget,
+			InCriticalSection = InCriticalSection,
+			YieldRequested = yieldRequested,
+			TimeMilliseconds = TimeMilliseconds,
+			ClockOriginMilliseconds = ClockOriginMilliseconds,
+			WakeTimeMilliseconds = WakeTimeMilliseconds,
+			TimerEndMilliseconds = timerEndMilliseconds,
+			Wait4AnimDeadline = Wait4AnimDeadline,
+			LoopAnimationToken = LoopAnimationToken,
+			TriggerWaitToken = TriggerWaitToken,
+			ExecutedInstructions = ExecutedInstructions,
+			SliceCount = SliceCount,
+			UnimplementedEffects = new Dictionary<Opcode, int>( unimplementedEffects )
+		};
+	}
+
+	/// <summary>
+	/// Applies a snapshot to this VM. Validates everything the resolved script can check (variable count, stack
+	/// bounds, program-counter range, slice budget) and throws <see cref="InvalidDataException"/> — leaving this VM
+	/// unchanged — on the first violation. Only <see cref="RideScriptWorld.RestoreSnapshot"/> calls this; it rebinds
+	/// ids and links around it.
+	/// </summary>
+	internal void RestoreSnapshot( RideVMSnapshot snapshot )
+	{
+		ArgumentNullException.ThrowIfNull( snapshot );
+		if ( snapshot.Variables.Length != Variables.Length )
+			throw new InvalidDataException( $"script '{ScriptName}' ({SourceName}) has {Variables.Length} variables, the snapshot stores {snapshot.Variables.Length}." );
+		if ( snapshot.CallStack.Length > Script.StackSize )
+			throw new InvalidDataException( $"script '{ScriptName}' declares stack size {Script.StackSize}, the snapshot stores {snapshot.CallStack.Length} return addresses." );
+		foreach ( var address in snapshot.CallStack )
+			if ( address < 0 || address > instructions.Length )
+				throw new InvalidDataException( $"script '{ScriptName}' return address {address} is outside [0, {instructions.Length}]." );
+		if ( snapshot.ProgramCounter < -10000 || snapshot.ProgramCounter > instructions.Length )
+			throw new InvalidDataException( $"script '{ScriptName}' program counter {snapshot.ProgramCounter} is outside [-10000, {instructions.Length}]." );
+		if ( snapshot.ProgramCounter < 0 && snapshot.State != RideVMState.Faulted )
+			throw new InvalidDataException( $"script '{ScriptName}' is {snapshot.State} with the faulted-only program counter {snapshot.ProgramCounter}." );
+		if ( snapshot.SliceBudget != SliceBudget )
+			throw new InvalidDataException( $"script '{ScriptName}' runs a slice budget of {SliceBudget}, the snapshot stores {snapshot.SliceBudget}." );
+
+		ScriptName = snapshot.ScriptName;
+		State = snapshot.State;
+		FaultMessage = snapshot.FaultMessage;
+		ProgramCounter = snapshot.ProgramCounter;
+		callStack.Clear();
+		for ( var index = snapshot.CallStack.Length - 1; index >= 0; index-- )
+			callStack.Push( snapshot.CallStack[index] );
+		Array.Copy( snapshot.Variables, Variables, Variables.Length );
+		Flags = snapshot.Flags;
+		InCriticalSection = snapshot.InCriticalSection;
+		yieldRequested = snapshot.YieldRequested;
+		TimeMilliseconds = snapshot.TimeMilliseconds;
+		ClockOriginMilliseconds = snapshot.ClockOriginMilliseconds;
+		WakeTimeMilliseconds = snapshot.WakeTimeMilliseconds;
+		timerEndMilliseconds = snapshot.TimerEndMilliseconds;
+		Wait4AnimDeadline = snapshot.Wait4AnimDeadline;
+		LoopAnimationToken = snapshot.LoopAnimationToken;
+		TriggerWaitToken = snapshot.TriggerWaitToken;
+		ExecutedInstructions = snapshot.ExecutedInstructions;
+		SliceCount = snapshot.SliceCount;
+		unimplementedEffects.Clear();
+		foreach ( var (opcode, count) in snapshot.UnimplementedEffects )
+			unimplementedEffects[opcode] = count;
+		randomDraws = snapshot.RandomDraws;
+		random.RestoreState( snapshot.RandomState );
+	}
+
+	/// <summary>Adopts a restored script id (the world rebinds the registration around it).</summary>
+	internal void AdoptScriptId( int id ) => ScriptId = id;
+
+	/// <summary>
+	/// Re-applies a fault to a stopped script: a stopped runtime's VM is unregistered, so the world snapshot does
+	/// not carry its state and the restore replays only the fault the runtime snapshot saved.
+	/// </summary>
+	internal void RestoreStoppedFault( string message )
+	{
+		State = RideVMState.Faulted;
+		FaultMessage = message;
+	}
+
+	/// <summary>Links a restored child into this script's child or sound-child slot (validation happened on the snapshot).</summary>
+	internal void AdoptChild( RideVM child, bool sound )
+	{
+		if ( sound )
+			SoundChild = child;
+		else
+			Child = child;
 	}
 
 	// ---- Helpers for handlers ----

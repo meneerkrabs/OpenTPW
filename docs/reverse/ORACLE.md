@@ -114,7 +114,9 @@ Mutation checks (`test_oracle.py`):
   counts-test, the loan instalment `… / months → … / months + 1` and the loan credit booked as other income instead of
   `LoanReceived` and the sign of the join excitement refusal swapped (`queue-join-gate`), the working energy rate `0.025f → 0.026f` (`staff-vitals`), the rest test `>` to `>=` (`staff-rest-seek`), the grievance `< 15` to
   `<= 15` (`staff-strike-grievance`), the age gate `< 24` to `<= 24` (`staff-strike-month`), the seconds per park turn 3750 → 3751
-  (`calendar-date`), the day detection `!=` → `>` (`calendar-update`, which misses 31 → 1), the ticket remainder 0 → 1 (`golden-ticket-cadence`) and the fixed tick 1/60 → 1/54 s (`park-turn-cadence-frames`). A no-op "mutation" fails the
+  (`calendar-date`), the day detection `!=` → `>` (`calendar-update`, which misses 31 → 1), the ticket remainder 0 → 1 (`golden-ticket-cadence`), the fixed tick 1/60 → 1/54 s (`park-turn-cadence-frames`), the score's distance divisor `450 → 449`, its new-ride test `<= → <`,
+  the ride outcome's good band `< 15 → <= 15`, the choice's tie parity swapped, the needs growth mask `15 → 7`, the full-need penalty `== 100 → >= 100`,
+  the thirst and hunger start modulus `50 → 49`, the use effect of hunger read from the thirst word and the exit counter compared `<= 0` instead of `== 0`. A no-op "mutation" fails the
   test.
 
 ## 4. Targets, stubs and results (seed `oracle-v1`, 500 random + boundaries)
@@ -146,7 +148,7 @@ Mutation checks (`test_oracle.py`):
 | `queue-ride-update` | `0xe0a8c` (the ride update: dispatch on the ride state `+408`, the head-guest step of states 1, 2 and 4) | the calls it makes are recorded, not run: `0xe1864` admission, `0xdcebc` remove from queue (ride and the u16 head id in the high half of r4 checked), `0xee804` dismiss, `0xeda04` force aboard, `0xe1758` script release; plus `0xb5758`/`0xb5be0` (VAR_LETMEON), `0xb678` assertion (logged when the condition is 0), `0xfa9a4` and `0x5fbcc` | 510 | **F15**: **agree** 510/510 (states 0..6 and −1, heads that wait or were taken, state 14 or not; `test_queue_ride_update_reading_is_sharp`) | no hook (CSHARP_PENDING): C# has the VAR_BROKEN reading only (`RideVisitorBridge.DismissHead`, `QueueTests`) |
 | `queue-join-difference` | `0xe9a84`, `0xdfe34`, `0xeb7e4` (guest preference), `0xe02ec` (excitement), `0xdff70` (its formulas), `0xe1f70`/`0xe1f78`/`0xe2364` (sideshow words), `0xe2fe4` (track type 3), `0x41a14` (coaster getter, controller table built) | `0x118018` type record (registry and type id checked), `0xb5e24` script controller (script `+32` checked), `0x1ea40` pieces behind ride `+36` (the `+36` word and four distinct outputs checked), import `sqrt` (IEEE double square root, argument checked non-negative). The settings word `+164 + 12 · type` is written in the data block | 524 | **F16** (fixed in C#): 387 differ from the old claim ("ride minus preferred", `plan-static`). The plan now says the routine reading: **agree** 524/524 | `RideVisitorBridge.JoinDifference` through `queue_join_difference`: **agree** except 46 inputs that have a thing behind ride `+36` (QUEUE-004; with the thing removed from the inputs **agree** 524/524) |
 | `queue-join-gate` | the fragment `0xecd6c..0xecdb0` / `0xeced0..0xecf34` of the state-10 handler `0xeccb0` (the `0xe9a84` call, `0xe02ec(ride, 1)`, the 45 test and the refusal) plus the callees above | the callees' stubs, plus `0x5fbcc` log (the message text is read from memory), `0xfb7b4` reason and `0xfb54c` thought (guest `+48` object, id and thought checked) | 524 | **F16** (fixed in C#): 155 differ in outcome from the old claim (`plan-static`). The plan now says the routine reading: **agree** 524/524 (outcome and difference) | `RideVisitorBridge.ExcitementRefusal` and `JoinDifference` through `queue_join_gate`: **agree** except 61 inputs with a thing behind ride `+36` (the same cause) |
-| `shop-sale-litter` | the fragment `0xeabb8..0xeae44` of the sale routine `0xeaaf8` (type record getter `0xdc320`, the five need-meter updates with their 0..100 clamps and the "litter gone up" log) | `0x118018` type record (synthetic, registry and type id checked), `0xe6d20` (drink or food message, logged), `0x5fbcc` debug log (arguments logged, format prefix checked) | 526 | **F18**: 213 differ from the old rule (store + LitterEffect, no floor, no ceiling), every one a sum outside 0..100. **Agree** 526/526 with the routine reading (`test_shop_sale_litter_reading_is_sharp`) | `ParkEconomy.TryBuy` through `shop_sale_litter` (delta of `LitterScaled`): the same 213 (C# has no guest meter, so its delta is added to the oracle's meter) |
+| `shop-sale-litter` | the fragment `0xeabb8..0xeae44` of the sale routine `0xeaaf8` (type record getter `0xdc320`, the five need-meter updates with their 0..100 clamps and the "litter gone up" log) | `0x118018` type record (synthetic, registry and type id checked), `0xe6d20` (drink or food message, logged), `0x5fbcc` debug log (arguments logged, format prefix checked) | 526 | **F18**: 213 differ from the old rule (store + LitterEffect, no floor, no ceiling), every one a sum outside 0..100. **Agree** 526/526 with the routine reading (`test_shop_sale_litter_reading_is_sharp`) | `ParkEconomy.TryBuy` through `shop_sale_litter` (delta of `LitterScaled`): the same 213 (C# has no guest meter, so its delta is added to the oracle's meter); `UseEffects.Apply` through `shop_sale_meters` (the four guest meters): **agree** 526/526 |
 | `guest-litter-trigger` | the first lines of the litter test in the guest update (`0xebd20..0xebd3c`) | none | 521 | no plan side. **Agree** 521/521 with the routine reading: the meter truncated, taken as a byte, `>= 90` | no hook (CSHARP_PENDING): OpenTPW has no guest litter meter |
 | `staff-training-split` | `0xfc1c4` (the month-end training split), the list walkers `0x10507c` / `0x1050a4` / `0xfa9a4`, `0xf3588` (train one member), `0x108424` / `0x1082b4` (bank and park things of the game) and the debit `0xcbfdc` with its statistics | `0xb678` assertion (a zero condition fails the run) and the debug print `0x5fbcc` (logged) | 507 | **F17**: 358 differ from the former rule (the plan). **Agree** 507/507 with the routine reading | `ParkStaff.Train` through `staff_training`: **agree** (358 differed before the fix) |
 | `ride-repair-duration` | `0xd9c0c` (the mechanic's repair-state entry), `0xdfe0c`/`0xdfe88`/`0xdfe90` (ride state 1, maintenance word `+96`, state 2), `0xd2290` (sub-state setter) | `0xfa9a4` thing id, `0xdfb94` the ride's mechanic id, `0xe6454` arrival state (chosen), `0xdc320` type record (the word at `+508 + 64 · level` chosen), `0xd99ac` release (recorded), `0xb678` assertion and `0x5fbcc` log (recorded); the balance block word `+1004 + 8 · grade` is `WorkDuration` | 529 jobs | **F19** (fixed in C#): 396 differ from the old claim (a flat `WorkDuration`, `plan`; the same without the upgrade factor, `flat-repair`, differs on 352). The routine reading **agrees** 529/529 | `ParkEconomy.RepairTimer` through `repair_timer`: **agree** 529/529 |
@@ -167,6 +169,12 @@ Mutation checks (`test_oracle.py`):
 | `golden-ticket-cadence` | `0xd67f0` (the world's park-turn update) and `0xd2f1c` (the ticket dispatcher), including the unsigned remainder by 100 and the game type word (the lazy object marked constructed) | the bank update `0xcb278`, the staff pool `0xf6e24`, the calendar update `0xe3f0c` and the three ticket checks `0xd31d0` / `0xd34c0` / `0xd35b4`, each logged with its object argument checked | 507 scripts of turn updates (every multiple of 100 and its neighbours, the top of the 32-bit range, game type words 0, 1, 2, 3, -1 and random) | **F31**: **agree** (a check on every 100th turn, unsigned, for game type 0 only: 3 checks after the calendar update). The order differed in C# (checks first, 148 scripts) and a signed remainder differs on 5 | `ParkEconomy.RunsGoldenTicketCheck` through `golden_check_turns`: **agree** |
 | `park-turn-cadence-frames` | as `park-turn-cadence` | as `park-turn-cadence` | 506 frame loops with every gap within 150 ms of scaled time, at scales 0.25 to 4 (OpenTPW's x4 included) | **F32**: as `park-turn-cadence` (53 differ by 1 ms); routine reading **agrees** 506/506 | `FixedStepClock` fed with each frame's time × the scale, and `ParkCalendar.Turn` of its tick count, through `park_turns`: **agree** as a window (never ahead of the original, at most one turn behind at every frame) |
 | `clock-speed-scale` | the three speed-key release callbacks `0x11315c` / `0x113184` / `0x1131ac`, the clamping setters `0x127c88` / `0x127c48`, the direct setter `0x127c40`, and the scheduler clock read `0x10e844` (→ `0x11a588` → `0x10ed54` → `0x117d74` → `0x127cd0`, `0x1c3fbc`) | the library clock `LbTime_GetClock` (the chosen raw millisecond) | 509 scripts of key presses and clock reads (start scales 0, 0.1, 0.25, 0.8, 1, 2, 3, 4 and random; a wrapping raw counter) | **F32**: the keys step the scale by 1.25 within 0.25..2.0 and the clock adds gap × scale: routine reading **agrees** 509/509; the plan's exact scaled time differs by 1 ms (1 script) | no hook: OpenTPW has four buttons, not three stepping keys (CSHARP_PENDING); the scale's path into OpenTPW is `park-turn-cadence-frames` |
+| `attraction-score` | `0xe9164` (the whole attraction score), the excitement callees as in F16 (`0xe02ec`, `0xdff70`, `0xeb7e4` and theirs), `0xd7310` (cell record), `0xdc320` (type record getter), `0xfa9a4` (id getter); the weights are written into the settings block (`+80..+88`, `+112..+136`) | `0xdd3f4` back-of-queue cell and `0xdd118` queue count (chosen), `0xdc520` own age in days (chosen), `0x1083c8` weather thing (`+48` chosen), `0x118018` type record, `0xb678` assertion (a zero condition fails the run), `0x5fbcc` log. The synthetic map holds the cell record `+8` word | 593 | **F24**: 592 differ from the former additive rule (`plan`). **Agree** 593/593 with the routine reading (`test_attraction_score_reading_is_sharp`: 17 variants) | `AttractionScore.TryCompute` through `attraction_score` (excitement from a real `RideVisitorBridge`): **agree** 593/593 |
+| `ride-outcome` | `0xea318` (what a use does to happiness and illness) and the excitement callees as above | the same | 561 | **F24**: 498 differ from the former `ApplyVisit`. **Agree** 561/561 with the routine reading (4 variants) | `RideOutcome.Apply` through `ride_outcome`: **agree** 561/561 |
+| `attraction-choice` | `0xe8ff4` (the choice loop over the thing list) | `0xdd3f4` back cell, `0xe9164` score, `0xdc834` counts-test, `0xe67c8` reachability (all chosen, calls logged), `0xb678` | 515 | **F24**: 99 differ from the former `ChooseAttraction`. **Agree** 515/515 with the routine reading, call order included (4 variants) | `AttractionChoice.Pick` through `attraction_choice`: **agree** 515/515 |
+| `guest-needs-turn` | the whole needs function `0xeece4` (one guest, one park turn), `0xfa9a4` (id getter), `0xd7310` (cell record), `0xefd84` (queue-state predicate), `0xea2b8` (history decay), `0x105328` (world generator) | `0xe6b28` speed update, `0xe6c6c` cell predicate (chosen), `0xe8c58` thought, `0xeb544` bubble clear, `0xfb508` thought object update (all logged), `0xb678` assertion (a zero condition fails the run). The synthetic map holds the three cell words | 529 | **F25**: 529 differ from the former per-second rates (`plan`). **Agree** 529/529 with the routine reading, stub call order included (`test_guest_needs_readings_are_sharp`: 9 variants) | `NeedsUpdate.Apply` and `NeedsUpdate.DecayHistory` through `needs_turn`: **agree** 529/529 |
+| `guest-constructor` | the guest constructor `0xe7644` from its entry to `0xe7958`, `0x105328` (eight world draws), `0xfa9a4` | `0xe4810` person constructor and `0x1c4a34` array initialiser glue (logged; the glue saves the caller's TOC at `20(r1)` as the real one does) | 517 | **F25**: 517 differ from the former rule (happiness 60, needs 0). **Agree** 517/517 with the routine reading (3 variants); ExitLevelVar 0 is `UNDEFINED` | `GuestStart.FromDraws` through `guest_start` on the same eight draws: **agree** 517/517 on the compared values |
+| `guest-exit-test` | the fragment `0xebdfc..0xebe30` / `0xebef0` of the state-6 handler `0xebbd0` (happiness byte, exit counter, closing word), `0x1091ac` (the closing word getter) | none | 513 | **F26**: 181 differ from the former test (`ExitLevel <= 0 \|\| Happiness <= 10`). **Agree** 513/513 with the routine reading (4 variants) | `GuestLifecycle.ShouldLeave` through `guest_leaves`: **agree** 513/513 |
 
 The C# comparisons use these seams:
 
@@ -215,6 +223,16 @@ The C# comparisons use these seams:
 - `ParkEconomy.RepairTimer` (`repair_timer`) with the work duration, the gauge as single bits and, for a ride in state 2, the upgrade duration, as
   `DispatchMechanics` sends them for a job.
 
+- `AttractionScore.TryCompute` (`attraction_score`), `RideOutcome.Apply` (`ride_outcome`) and `AttractionChoice.Pick` (`attraction_choice`): the
+  score's excitement words (live excitement, whether the type's `ExcitementLevel` byte is nonzero) come from a real `RideVisitorBridge` built as for
+  the join targets (the thing behind ride `+36` is not sent and is 0 in these inputs); the other words come from the request (cells, queue, needs,
+  weights, age, weather, histories). A zero weight sum gives `UNDEFINED` (the original's `divwu` by zero), a vomit divisor of 0 the exception
+  that the bridge reports. The choice hook logs the scores, counts-tests and reachability tests that ran.
+- `NeedsUpdate.Apply` with `NeedsUpdate.DecayHistory` (`needs_turn`), `GuestStart.FromDraws` (`guest_start`) and `UseEffects.Apply` (`shop_sale_meters`, a second C# side of
+  `shop-sale-litter`): the needs hook passes the three cell words the original reads (OpenTPW passes 0) and compares the meters, the exit counter, the toilet speed term and the temporary history
+  (C# has no thought, bubble or world generator); the start hook feeds the eight world draws that the Python side computes with `det_model` and compares happiness, money, the three needs, illness, litter, the
+  exit counter and the type (not the prankery byte or the creation turn); the effects hook compares the four meters (the litter meter stays in the park's store).
+- `GuestLifecycle.ShouldLeave` (`guest_leaves`) on the happiness meter (single bits), the exit counter and the closing word.
 - `ParkStaff.Train` (`staff_training`) on a fresh `ParkStaff` over the synthetic `Standard.sam`, with each role's five
   `PoundsPerTrainingPoint` values replaced by the input's, members added with the internal `AddImported` (reflection) at the input's
   grade and points, and the five budgets set. The members' grade and points and the amount `Train` returns are compared; the
@@ -1210,6 +1228,153 @@ The fixed clock accepts 16 ticks (267 ms of scaled time) per frame, so x4 keeps 
 carries a backlog of 2000 ms, ECON-001). The determinism hash did not change (its fixtures advance the economy four ticks a step themselves, as the
 old Fastest did); `ParkSaveFile` keeps storing the speed, and an old save at x2 now runs everything at x2. ECON-004 and UI-022 stay open with narrower texts:
 the keys' physical names, whether the shipped game shows a speed control, and the x4 and the 1.25 steps that OpenTPW does not follow.
+
+**F24, the attraction choice (GUESTS.md "Decision", `GuestSimulation.ScoreAttraction` / `ChooseAttraction` / `ApplyVisit`; fixed in C#).**
+Three targets execute the guest's decision and what a use does: `attraction-score` runs the whole score `0xe9164` (with the excitement callees of F16
+executed too), `ride-outcome` the use outcome `0xea318`, `attraction-choice` the choice loop `0xe8ff4`. In each the routine reading agrees on every input,
+every part of it is needed (`test_attraction_score_reading_is_sharp`: 17 variants, `test_ride_outcome_and_choice_readings_are_sharp`: 8), and C#
+(`AttractionScore`, `RideOutcome`, `AttractionChoice`) agrees after the change (before it had no seam: the additive formula was inline).
+
+*The weights and where they come from.* The settings block (data `0x54860`, TOC -30084) holds the `PeepInfo.*` values as words, four bytes per key in
+the order of the keys in the file's schema (60-byte records from data `0x34d4c`: `ExitLevel`, `ExitLevelVar`, `StartingCashVarPc`, the three happiness
+changes, `PerfectRide`, `GoodRide`, `OKRide`, `RideVomitDivisor`, `ToiletDesparate`, `VomitCapacity`, the five entry-fee keys, `DecisionVariable1..8`, the seven
+`DecisionVar*Weight` keys, the four `OpinionFor*`, `PrankeryLikelihood`, `StinkbombLikelihood`), starting at word `+12`: position `p` (1 for `ExitLevel`) is word
+`8 + 4 p`. The loader's store itself (a generic reader that walks the schema records) is not traced; the binding rests on the order and on independent readers that
+agree with it: the guest constructor reads `+12` and `+16` (`ExitLevel`, `ExitLevelVar`), `+20` (`StartingCashVarPc`) and `+156` (`PrankeryLikelihood`: the byte `+448` becomes
+100 when a draw modulo 100 is below it), the happiness routine `0xeb6f4` reads `+24 / +28 / +32` (Small, Medium, Big), the outcome `0xea318` reads `+36 / +40 / +44`
+(Perfect, Good, OK) and `+48` (`RideVomitDivisor`), and the score reads `+80 / +84 / +88` as three decision variables, the very ones the `.sam` describes (days a ride is new,
+the new-ride multiplier, the indoor-in-rain multiplier), and `+112..+136` as the seven weights in the key order distance, queue, excitement, thirst, hunger, toilet, illness.
+The shipped values are 1, 1, 1, 2, 2, 2, 2 and 7, 5, 5 in every theme (`GuestAssetTests.ShippedDataFeedsTheAttractionScoreInsideItsTables`).
+
+*The score.* In order: the guest's last used attraction, when it still exists and is of the same type (`+14`) as the candidate, scores the candidate 0 (`0xe92d4..0xe931c`). The seven
+matches are
+(1) distance `100 - min(100, 100 (dx² + dy²) / 450)` for the squared displacement of the guest's cell and the candidate's back-of-queue cell (`0xdd3f4`), divided (unsigned) by the signed
+cell record word `+8` at that cell when it is nonzero (the environment grid has component 4 there; C# has none, GUEST-001);
+(2) queue `100 - 100 count / (4 max(cells, 1))` in unsigned 32 bits, only when the squared distance is at most 8 (else the match and its weight are 0), **not clamped**: a queue above four per cell wraps, and the
+whole sum wraps with it (count 9 in 1 cell gives -125 as a word);
+(3) excitement `2 (50 - min(50, |preferred - live excitement|))` over the bytes of `0xeb7e4` and `0xe02ec(ride, 0)`, its weight counted only when the low byte of the type's `ExcitementLevel` (`0xe02ec(ride, 1)`) is nonzero;
+(4, 5) thirst and hunger `trunc(sqrt(effect / 10) need²)` for the need (`+420`, `+424`) and the type's `ThirstEffect` / `HungerEffect` (`+324`, `+328`, low byte) in tens: the original indexes an 11 × 11 byte
+table (data `0x41222`, TOC -27104) and the table is exactly this formula on all 121 entries (`test_attraction_score_tables`), so C# computes it and stores no table (need 50 / effect 50 gives 17, 100 / 100 gives 100);
+(6, 7) toilet and illness `curve[(byte(meter) + 4) / 5]` with the 21-byte curve at data `0x4129b` (nine zeros, then 1, 2, 5, 10, 20, 30, 40, 50, 60, 75, 90, 100), only for a relief object (thing `+46` bit 0); the curve has no formula and is
+written into `AttractionScore` as 21 gameplay constants (the one table of original bytes in this slice: say so if it should instead be read from the user's game).
+The matches are combined as `sum(weight · match) / sum(all seven weights)` (`divwu`, so a zero sum is undefined): **all** weights count, also those of needs the guest does not have, so a perfect ride for a guest
+without needs scores `300 / 11 = 27`, not 100. Then, in this order: an age (`0xdc520`, days) up to `DecisionVariable1` multiplies by `DecisionVariable2` (a new ride); drops falling (weather `+48 > 0`) and an indoor type
+(`+276`, `UsageInfo.ISIndoors`) multiply by `DecisionVariable3`; a golden-ticket cost (`+196 > 0`) multiplies by `1 + (cost + 1) / 10` (double precision); otherwise a nonzero `+440` (the first upgrade's cost,
+`Upgrades[0].CostOfUpgrade`: the type record's words follow the schema order too, four bytes per key from `+16` with the block-marker records taking none, which gives the known `+316` `ExcitementLevel`, `+324..+340` the five effects, `+424` `InitSpeed`, `+436` `QueueWaitTimeConstant`, and `+196`, `+276`, `+440` as `GoldenTicketCost`, `ISIndoors` and the key after `QueueWaitTimeConstant`) above 3000 multiplies by `1 + q / 10` with `q = cost / 3000f` (single precision; 23 of the 129
+shipped choosable objects exceed it, 9 have a golden-ticket cost, 43 are indoors); finally signed divisions by 5, 4, 3, 2 for the first match in the four used-history slots (guest `+480..+486`) and for each match in the four temporary-history
+slots (`+488..+494`). Used history is pushed when a use ends (`0xe9fd4`, `0xea268`), the temporary history when a guest turns away from a join (queue too long `0xece18`, the two excitement refusals `0xecf3c`, `0xea290`), and a
+0 shifts into every guest's temporary history on every park turn that is a multiple of 20 (`0xef21c`, `0xea2b8`; not phase-gated), so a refusal is forgotten after 80 turns (about 20 s). The used slot 0 never divides an existing
+attraction (it scores 0 through the type test), so the effective used divisors are 4, 3 and 2.
+
+*The choice.* `0xe8ff4` (called from the state-6 handler `0xebbd0` at `0xec4c0` when a three-way draw (a value modulo 3, not traced to its source) is 0 and the park turn exceeds the guest's `+508` by more than 30) walks the thing list from
+game `+0x1da746`; a thing with `+46` bit 0x4 (`Info.IsChoosable`) and a back-of-queue cell is scored; a score below 10 (unsigned) is ignored; one that beats the best so far (signed, starting at 0) or ties it on an odd world turn
+(game `+0x1da70c` bit 0) becomes the target if it passes the counts-test `0xdc834` (F10) and the reachability test `0xe67c8`. There is no random bonus and no "positive only" rule; an unsuccessful decision lowers happiness by
+`PeepInfo.SmallHappinessChange` (`0xeb6f4(guest, 0)`) and starts an idle interlude (`0xe8b74(guest, 4)`, state 8), and the guest tries again after 30 more turns. A **minor decision** (`0xe9b2c`) rescores the cells within two cells
+of the target attraction's back cell for attractions of class 3 and may switch the target; it is not traced further.
+
+*The outcome (`0xea318`).* Nothing happens when the live excitement byte is 0 (shops, relief objects). Otherwise the difference `|preferred - excitement|` (bytes) gives `PerfectRide` below 5, `GoodRide` below 15, `OKRide` below 40 and nothing at 40
+or above (strict compares; **no penalty branch**), added to happiness and clamped to 0..100, and the illness gains `trunc(excitement / RideVomitDivisor) · trunc((100 - byte(trunc(hunger))) / 20)` (signed, clamped to 0..100): 35 for excitement 70 at hunger 0,
+7 at hunger 80, 0 from hunger 81. The former C# had inclusive bands (a difference of 5, 15 or 40 counted one band better), a penalty of `SmallHappinessChange` beyond 40, no hunger factor, an illness meter that decayed and was reset with a
+Medium happiness loss at `VomitCapacity`, and read the static `ExcitementLevel`. (`0xea318` is called from the shop and use routine `0xeaaf8`, after the F18 effects fragment's start.)
+
+*What changes for a player.* A ride next to a guest who prefers its excitement scores 27 (the former rule gave, for an `Info.AttractionValue` of 40, 65 plus a random 0..9; first counterexample, plan 65 against 27);
+bought less than 8 days ago it scores 135, an attraction of the type the guest just used 0, one it used one, two or three rides before the last a quarter, a third or a half, and one it was turned away from a fifth for about 20 s. A ride 3 columns away (9 squares) loses its queue weight and scores
+19 instead of 27; at a squared distance of 8 a queue of 6 in 3 cells gives 22. A guest riding at excitement 70 with a preference of 65 gains `GoodRide` (the former rule gave `PerfectRide`) and a bored or scared guest no longer loses
+happiness from the ride itself (a refused join still costs `SmallHappinessChange` in C#: GUEST-004).
+
+*Pins.* `attraction-score` 593 inputs (592 differ from the plan; first counterexample: the shipped weights, a perfect ride, original 27 against 65), `ride-outcome` 561 (498; original `{happiness 75, illness 30}` against `{75, 6}`),
+`attraction-choice` 515 (99; the score 9 is not a candidate in the original). Mutation checks: `450 → 449`, `<= → <` of the new-ride test, the good band `<= 15` and the swapped tie parity are caught.
+
+*Not changed / open.* The decision cadence (C# decides every 3 s; the original every 30+ turns in state 6 behind a draw modulo 3, with the idle interlude and the happiness loss of an empty decision), the minor decision, the
+thing-list order and the counts-test `0xdc834` conditions (ARRIVAL-003, GUEST-002), the environment grid and its component 4 (GUEST-001), price eligibility (GUEST-003), the shop and toilet effects on the meters (GUEST-005, F18) and the thought
+selection `0xe8c58` (single needs above 99, both hunger and thirst above 90, happiness above 99 or below 10 and a litter ratio: thresholds still 70 in C#) stay approximations. The Windows tp.exe was not compared.
+
+**F25, the guests' needs and starting values (GUESTS.md "Needs", `NeedsUpdate`, `GuestStart`, `UseEffects`; fixed in C#).** The lead for this finding was another fork's static
+notes on the Windows tp.exe ("Q85": the constructor stores 50.0 in happiness, a draw modulo 50 in thirst and hunger, a draw modulo 30 in toilet, 0 in illness and litter, and a prankery byte
+`100 + id % 3`); they are credited as the lead and nothing was taken from them. The Mac routines are executed here: `guest-needs-turn` runs the whole needs function `0xeece4` over one guest and one
+park turn, `guest-constructor` runs the constructor `0xe7644` up to the prankery byte (`0xe7958`). The routine readings agree on every input, every part is needed
+(`test_guest_needs_readings_are_sharp`: 9 variants of the needs function, 3 of the constructor), and C# agrees after the change (before it had no seam).
+
+*The needs function (`0xeece4`, called for every guest in every state each park turn, before its state handler).* After the speed update `0xe6b28`, **everything below runs only when
+the low two bits of the world turn (game `+0x1da70c`) equal those of the guest's 16-bit thing id** (`0xeed24..0xeed40`; the rest of the function, the queue-link check and the history
+decay, is outside the gate):
+
+1. the exit counter `+444` loses 1 (a signed word, no floor);
+2. three signed 16-bit words of the guest's cell (`0xd7310`: map `+0x1b1104`, ten bytes per cell, id `1 + x + (y << 7)`) are added to happiness (`+412`, word `+0`), illness (`+432`, `+2`) and hunger (`+424`, `+4`), each
+   result clamped to 0..100 in single precision. They are written by the region effects (entertainers, vomit, toilets, guards: PPC-guests, Phase 2); OpenTPW has none (GUEST-006);
+3. on a turn that is also a multiple of 16 (`0xeeebc`), toilet gains 1.0, then hunger 2.0, then thirst 2.0 (floats at TOC -10812 and -10828), clamped. A multiple of 16 has its low two bits 0, so only a guest
+   whose id is a multiple of four ever gets this: **three in four guests have no periodic growth at all** (the needs of phase 1..3 guests change only through the cell words and what they use). A
+   guest of phase 0 gains 2 hunger and thirst every 16 turns (3.97 s, 0.5 per second) and 1 toilet;
+4. each of illness, hunger, thirst and toilet (in that order) whose truncated low byte is **exactly** 100 costs 1.0 happiness (TOC -10832), clamped;
+5. the toilet speed term `+194` becomes 25 when the toilet byte is above 80, else 0 (`TOC -27224`, `0xef0bc..0xef0e8`);
+6. outside the states 16 and 17, when the cell predicate `0xe6c6c` holds, one draw of the world generator modulo 10 may pick a thought (`0xe8c58`) and the thought countdown `+532` runs (`0xeb544` clears the bubble
+   at 0); `0xfb508` updates the thought object. Not modelled (GUEST-006).
+
+The tail of every call runs `0xefd84` (the guest is in the queue states 11..14, or in state 8 coming from one), asserts the queue links `+552/+554` clear otherwise, and calls `0xea2b8`, which on a turn that is a
+multiple of 20 shifts a 0 into the temporary history (F24).
+
+*The unit of the exit counter.* One count per needs phase is one per four park turns, 4 × 248 ms = **0.992 s**, whatever the guest: the `.sam` comment "starting value for the ExitLevel counter, in SECONDS" is
+right, the counter ticks in every state (also while queueing, riding or leaving), and `test_guest_exit_counter_counts_one_per_four_park_turns` executes 400 consecutive turns (it loses exactly 100). OpenTPW's
+former exit timer counted real seconds, only while walking, and paused while riding.
+
+*The constructor (`0xe7644`).* It takes eight draws from the world generator `0x105328` (the absolute value of the state, `det-world-lcg`) in this order and every meter starts as follows (readings agree on
+517/517, `guest-constructor`):
+
+| Draw | Use |
+| --- | --- |
+| 1 | the exit counter: `PeepInfo.ExitLevel` (word `+12`) plus the signed remainder of the draw by `2 · ExitLevelVar` (`+16`) minus `ExitLevelVar`: 60..179 for 120 ± 60 |
+| 2 | the type: the draw modulo the number of `PeepTypes` rows (`+404`), stored in the byte `+496` |
+| 3 | the cash `StartingCash · (100 + r − StartingCashVarPc) / 100` with `r` the draw modulo `2 · StartingCashVarPc + 1` (`+20`), at least 0 |
+| 4, 5 | thirst and hunger: the draw modulo 50 (unsigned), as floats |
+| 6 | toilet: the draw modulo 30 |
+| 7 | dropped |
+| 8 | the prankery byte `+448`: `100 + id % 3` when the draw modulo 100 is below `PrankeryLikelihood` (`+156`), else 0 (GUEST-007) |
+
+Happiness (`+412`) is **50.0** (TOC -10864), illness and litter 0, the creation turn is stored at `+468`. A zero `ExitLevelVar` or type count would divide by zero (the oracle reports `UNDEFINED`; C# adds nothing for a zero variation).
+OpenTPW draws these words from its own guest stream (DET-014), not the world generator: the distribution is the same, the stream is not.
+
+*Use effects (the guest side of F18).* The four meter updates of the sale routine (thirst and hunger minus the type's effect, illness and happiness plus it, each clamped) are now applied to the guest
+(`UseEffects`), after the outcome of F24; `shop-sale-litter` compares them 526/526. A shop that used to empty a need now lowers it by its effect: a guest at hunger 80 visiting a shop with a hunger effect of 50 goes to 30, not to 0.
+
+*What changes for a player.* New guests arrive with thirst and hunger of 0..49, toilet 0..29, happiness 50 (not 60) and 60..179 counts of exit counter (the former timer: 120 ± 60 real seconds, paused while riding); the
+counter loses one per second in every state. Needs no longer grow for every guest at a fixed rate (hunger +0.35/s, thirst +0.45/s, toilet +0.3/s): a quarter of the guests gain 0.5, 0.5 and 0.25 per second and
+the rest nothing, so within a typical stay of about two minutes most guests never get hungry (a phase-0 guest that starts at 25 reaches 75 after 100 s); a guest whose need sits at exactly 100 loses a happiness point per second
+for each such need. A thirsty guest at 90 who reaches a drinks shop with a thirst effect of 100 is emptied; illness no longer decays by itself (the former -0.2 per second) and no longer resets at 100 with a happiness
+penalty. First counterexamples: `guest-needs-turn`, id 4 on turn 0, needs 10 and counter 120: original thirst 12, hunger 12, toilet 11, counter 119, the former rule thirst 10.11 and counter 119.752;
+`guest-constructor`, world state 0: type 2, money 528, thirst 12, hunger 47, toilet 4, counter 109 and happiness 50, against type 7, money 522, needs 0, counter 122 and happiness 60.
+
+*Not changed / open.* The environment words of the cells (GUEST-006), the thought pick and its thresholds (GUEST-009: the original's `0xe8c58` takes hunger and thirst both above 90, a single need above 99 or happiness above 99
+or below 10), the prankery byte (GUEST-007), the energy meter (OpenTPW only, GUEST-008), the guest's thing id against OpenTPW's guest id for the phase (WALK-010), the litter meter and the toilet branch of the use routine
+(GUEST-005). The Windows executables were not compared (the x86 oracle was not run for this finding).
+
+**F26, the guest lifecycle constants (GUESTS.md "Decision", `GuestLifecycle`, `GuestSimulation.StartLeaving`; fixed in C#).** Three of OpenTPW's unsourced numbers are settled by the Mac
+binary: the starting happiness, the leaving test and the unit of the exit counter. `guest-exit-test` executes the leaving test of the state-6 handler `0xebbd0` (fragment `0xebdfc`, with the
+closing getter `0x1091ac`); the starting happiness and the counter's unit come from the constructor and needs targets of F25 (`guest-constructor`, `guest-needs-turn`,
+`test_guest_exit_counter_counts_one_per_four_park_turns`). The routine reading agrees on all 513 inputs and every part is needed (`test_guest_exit_test_reading_is_sharp`: 4 variants).
+
+- **Starting happiness is 50.0** (the float at TOC -10864, stored at `+412` by the constructor `0xe7644`, F25), not OpenTPW's 60.
+- **The exit counter** `+444` (`mExitLevel`, saved as such at `0xe8048`) is set by the constructor to `ExitLevel + (draw mod 2 · ExitLevelVar) - ExitLevelVar` (60..179 with the shipped 120 ± 60), loses 1 on every needs phase of the
+  guest (every fourth park turn: 4 × 248 ms = **0.992 s**, so "SECONDS" in the `.sam` comment is right), in every state, and runs negative after 0. Its only other writers are the constructor and the zeroing at three entries
+  of state 18 (`0xecacc`, `0xecbbc`, `0xecc3c`: the ticket booth and the unhappy exits); nothing adds to it, so **a ride does not extend a visit** (the former C# added the happiness gain, an invention).
+- **The leaving test** (state 6 only, `0xebdfc..0xebe30`): the guest leaves when the happiness meter truncated and taken as a byte is 0 (happiness below 1: **not "at most 10"**), **or the counter is exactly 0** (`cmpwi 0; beq`:
+  the counter passes 0 once, for four park turns, and a guest that is in another state then, queueing or riding for example, keeps a negative counter and never leaves by it), **or the park is closed**
+  (`0x1091ac` reads game `+0x1da710`, the world variable `mParkClosed`; `0x108ef8` sets it). It then loses `BigHappinessChange` (`0xeb6f4(guest, 2)`) and goes to state 18. The state-18 handler `0xedc98` lets a
+  guest whose counter is above 0, happiness byte nonzero, park open and cell predicate true turn back to state 6.
+  Other leaving routes (the ticket booth when the fee cannot be paid, the unhappy exits of states 4 and others, the queue handler of F16/F15) are separate and unchanged.
+- Observation for the happiness meter: nothing in this routine tests "at most 10". Ten is the queue handler's idle/leave threshold (`0xed58c`, "below 10 leaves"), which OpenTPW already has as `LeaveHappiness`.
+
+*What changes for a player.* Guests no longer leave because their happiness fell to 10 or 5 or 3: they carry on until it is below 1, and a guest that is unhappy but under its counter wanders (it still loses happiness to the
+needs penalties and to an empty decision). A guest leaves at the moment its counter reads 0 if it is walking around then; one that is in a queue or on a ride at that moment never leaves by the counter (about half of a guest's
+time in the former model). Closing the park (the economy's open/closed switch) now sends every guest that is walking around home, each losing `BigHappinessChange`. Riding no longer extends a visit. First counterexample:
+happiness 1.0 and a counter of 120: the original stays, the former rule leaves (`happiness <= 10`); 181 of 513 inputs differ.
+
+*Not changed / open.* OpenTPW has no state 6 or 7 separately: the test runs on every park turn for guests that are walking around or doing nothing (GUEST-010), which is more often than the original's dwell in state 6;
+the state-18 recall is implemented (the leaving handler's opening test, `0xedc98`: counter above 0, happiness byte nonzero, park open — back to deciding, so a closed-park dismissal unwinds when the park reopens), but its cell
+predicate `0xe6c6c` (the guest's cell record through `0x10a9b0` and `0x85190..0x851d0`) is untraced, so OpenTPW approximates it by the state boundary: only a guest still walking the paths to the exit recalls, and the road ends
+it — the booth refusal enters on a lane and is exempt, like the original's zeroed counter `0xecacc` (GUEST-012);
+what the original does with queued or riding guests at `mParkClosed` is not traced — OpenTPW also pulls guests out of queues and drops `GoingToRide` reservations on closure, or a closed park would strand every guest
+whose ride holds admission (no queue state reads the closing word, and a queued guest's happiness rarely sinks below the queue's leave level); guests on a ride finish it (GUEST-011);
+the decision cadence (F24); the happiness a guest on a lane or at the booth carries; and the reading that a negative counter never leaves is an observation of the instruction (`beq`), not of a played game.
 
 ## 6. Adding a target or a C# hook
 

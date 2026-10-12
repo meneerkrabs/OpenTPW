@@ -80,7 +80,7 @@ is not applied (difficulty selection does not exist yet). Used values:
 | --- | --- |
 | `PeepTypes[n].PreferredExcitement.StartingCash.BoredomThreshold` (8 types) | Per-guest type; type index also picks the kid sprite set (`type mod 8`; which set belongs to which type is **not known**) |
 | `PeepInfo.StartingCashVarPc` | ± variance of starting cash |
-| `PeepInfo.ExitLevel` / `ExitLevelVar` ("starting value for the ExitLevel counter, in SECONDS") | Countdown in park seconds; at 0 the guest heads home |
+| `PeepInfo.ExitLevel` / `ExitLevelVar` ("starting value for the ExitLevel counter, in SECONDS") | The exit counter's start: ExitLevel plus a draw within ±ExitLevelVar; it counts down once per needs phase (4 park turns, 0.992 s) in every state |
 | `PeepInfo.PerfectRide/GoodRide/OKRide` (±5/±15/±40 of preferred excitement) | Happiness change after a ride vs. `UsageInfo.ExcitementLevel` |
 | `PeepInfo.Small/Medium/BigHappinessChange` | Penalties (needs, boredom, full queue, sickness) |
 | `PeepInfo.RideVomitDivisor`, `VomitCapacity` | Nausea += excitement / divisor; at capacity "Feeling sick" |
@@ -91,8 +91,7 @@ is not applied (difficulty selection does not exist yet). Used values:
 | `FixedItemInfo.{BusStop,CrossingBSSide,CrossingParkSide,TicketBooth,Entrance}{A,B}Pos{X,Y}` | Arrival/leaving lanes A and B (the entrance cells are the first InitialPath cells, docs/MAP.md) |
 
 Not used yet: `ExcitementToCostDivisor`, `MinimumEntryFee`, price multipliers and
-`OpinionFor*` (entry-fee opinion; economy slice), `DecisionVariable1–3` (new/indoor
-rides), `PrankeryLikelihood`, `StinkbombLikelihood`, `RegionFX`, `NewParkBonus`,
+`OpinionFor*` (entry-fee opinion; economy slice), `DecisionVariable4–8`, `PrankeryLikelihood`, `StinkbombLikelihood`, `RegionFX`, `NewParkBonus`,
 `PointsPerVisitor`. `GameOptions.NUMKIDS` in `low/med/high.sam` ("0->4, 1->6,
 2->8, 3->MAX") is probably a guest-count or sprite-set limit; its meaning is not
 established and it is not used.
@@ -194,14 +193,62 @@ home (21) → removed.
 | Item | OpenTPW choice |
 | --- | --- |
 | Arrival step-off | A group's guests appear 0.4 s apart, lanes A/B alternating, instead of at a bus's stops (ARRIVAL-001); OpenTPW also caps the simulation at 1,000 guests |
-| Needs | hunger +0.35/s, thirst +0.45/s, toilet +0.3/s, energy −0.15/s walking / +1/s resting or riding, nausea −0.2/s; thoughts from level 70 |
-| Starting happiness | 60 of 100 |
-| Decision | every 3 s: leave if ExitLevel ≤ 0 or happiness ≤ 10; else score = AttractionValue − DistWeight·distance − QueueWeight·queue + ExcitementWeight·(25 − |preferred − excitement|) + need terms (weight · need / 4) − IllnessWeight·nausea / 4 − AttractionValue if just ridden + random 0–9; best positive score wins, otherwise wander (random link, no U-turn) |
+| Needs | traced ([below](#needs-and-starting-values)); energy −0.15/s walking / +1/s resting or riding is OpenTPW's own meter (GUEST-008); thoughts from level 70 (GUEST-009) |
+| Starting happiness | 50 of 100 (traced, [below](#needs-and-starting-values)) |
+| Decision | every 3 s (cadence approximated): the original's score (oracle F24, [below](#attraction-choice)) picks the best attraction of at least 10, otherwise wander (random link, no U-turn). Leaving is tested every park turn instead ([below](#lifecycle)) |
 | Boredom | `BoredomThreshold` read as seconds since the last ride |
-| Ride outcome | ExitLevel += positive happiness change |
+| Ride outcome | the original's bands and illness gain (oracle F24); a ride does not extend the exit counter |
 | Queues | traced; see [Queues](#queues) and its `QUEUE-NNN` register |
 | Walking | traced; see [Walking](#walking) and its `WALK-NNN` register |
 | No exit lane | guests vanish (original ejection not modelled) |
+
+### Attraction choice
+
+Traced from the Mac binary and executed in the PowerPC oracle (finding F24, [ORACLE.md](reverse/ORACLE.md)); implemented in `AttractionScore`,
+`AttractionChoice` and `RideOutcome`. A guest scores every attraction as seven **matches** (0..100 each) normalised by the sum of **all** seven
+`PeepInfo.DecisionVar*Weight` values, so a perfect ride for a guest without needs scores 27, not 100:
+
+| Match | Rule |
+| --- | --- |
+| Distance | `100 − min(100, 100 · (dx² + dy²) / 450)`, squared cell displacement to the attraction's back-of-queue cell (divided by an environment word that OpenTPW lacks, GUEST-001) |
+| Queue | `100 − 100 · guests / (4 · queue cells)`, only within a squared distance of 8, **unclamped** (a queue above four per cell wraps) |
+| Excitement | `2 · (50 − min(50, abs(preferred − live excitement)))`; its weight counts only when the type's `ExcitementLevel` byte is nonzero |
+| Thirst, hunger | `trunc(sqrt(effect / 10) · need²)` with the shop's `ThirstEffect` / `HungerEffect` and the need in tens (the original's 11 × 11 table is this formula) |
+| Toilet, illness | a 21-entry curve (9 zeros, 1, 2, 5, 10, 20, 30, 40, 50, 60, 75, 90, 100 at `(meter + 4) / 5`), only for relief objects |
+
+Then the score is multiplied by `DecisionVariable2` (5) for a ride at most `DecisionVariable1` (7) days old, by `DecisionVariable3` (5) for an indoor
+ride while drops fall, by `1 + (cost + 1) / 10` for a ride with a golden-ticket cost, else by `1 + cost / 30000` when its first upgrade costs more than 3000, and
+divided by 5, 4, 3, 2 for each match in the guest's used history (the first match only) and temporary history (every match). The used history takes an attraction when a use ends; an
+attraction of the type used last scores 0 outright, so the divisors that matter are 4, 3 and 2. The temporary history takes an attraction the guest was turned away from (queue too long, too
+boring, too exciting) and forgets it after 80 park turns (a 0 is shifted in every 20 turns). The guest chooses the highest score of at least 10 (ties go to the later attraction on odd park turns), among open, unbroken
+attractions it can reach; there is no random bonus. A use gives happiness `PerfectRide` below 5 from the preferred excitement, `GoodRide` below 15, `OKRide` below 40 and nothing beyond (no penalty) and raises illness by
+`excitement / RideVomitDivisor · ((100 − hunger) / 20)`, so a hungry guest (81 and up) is not made sick.
+Open: the decision cadence and the "nothing found" happiness loss, the minor decision, the environment grid, price eligibility, shop and toilet effects on the meters, thought thresholds (`GUEST-001..005`).
+
+### Needs and starting values
+
+Traced from the Mac binary and executed in the PowerPC oracle (finding F25, [ORACLE.md](reverse/ORACLE.md)); implemented in `GuestStart`, `NeedsUpdate` and `UseEffects`. A new guest starts with
+happiness **50**, thirst and hunger a random 0..49, toilet 0..29, illness and litter 0, an exit counter of `ExitLevel` plus a draw within ±`ExitLevelVar` (60..179 with the shipped 120 ± 60) and cash
+`StartingCash` ± `StartingCashVarPc` percent of a random type's. Every park turn each guest goes through the needs function; **it does something only on the guest's phase**, when the low two bits of the park turn equal those of
+its thing id (OpenTPW: its guest id, WALK-010):
+
+- the exit counter loses 1 (so one count is 4 park turns = 0.992 s, in every state, and it runs negative after 0);
+- the cell's environment words move happiness, illness and hunger (not modelled: 0, GUEST-006);
+- on a turn that is also a multiple of 16, toilet +1, hunger +2 and thirst +2 (all clamped to 0..100). A multiple of 16 has its low two bits 0, so **only a guest whose id is a multiple of four ever grows**;
+  three in four guests keep the needs they started with unless they use something;
+- each of illness, hunger, thirst and toilet at a truncated byte of exactly 100 costs 1 happiness;
+- the toilet speed term is 25 while the toilet byte is above 80.
+
+Using an attraction then applies its own effects after the outcome of [Attraction choice](#attraction-choice): thirst and hunger fall by the type's `ThirstEffect` / `HungerEffect`, illness and happiness rise by
+`VomitEffect` / `HappinessEffect` (clamped); a toilet sets the toilet meter to 0 (GUEST-005). Illness has no decay of its own. A guest at hunger 80 at a shop with a hunger effect of 50 goes to 30.
+Open: the thought selection (hunger and thirst above 90, a single need above 99, happiness above 99 or below 10; GUEST-009), the pranksters (GUEST-007), the draws (OpenTPW's own stream, DET-014).
+
+### Lifecycle
+
+Traced and executed (finding F26, [ORACLE.md](reverse/ORACLE.md)); implemented in `GuestLifecycle`. A guest starts at happiness **50** with the exit counter described under [Needs](#needs-and-starting-values), which loses one per
+needs phase (4 park turns, 0.992 s) in every state. A guest that is walking around or doing nothing (the original's state 6) **leaves when its happiness is below 1, when its exit counter is exactly 0, or when the park is closed**, and
+loses `BigHappinessChange` (25) as it goes home; the test is evaluated every park turn (GUEST-010). The counter compares for equality, so a guest that is queueing or riding in the four turns it reads 0 never leaves by it;
+rides do not add to it. There is no "happiness at most 10" rule.
 
 ### Walking
 

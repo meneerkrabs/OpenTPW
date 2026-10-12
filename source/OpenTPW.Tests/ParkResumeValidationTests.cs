@@ -154,6 +154,30 @@ public class ParkResumeValidationTests
 	}
 
 	[TestMethod]
+	public void ShapeValidationStillAcceptsSchemaOneGuestSavesAndChecksTheNewFields()
+	{
+		var snapshot = ParkResumeSaveFileTests.Envelope();
+		// The shape schema 1 wrote: no histories, the exit value still the old seconds as a fraction.
+		var schemaOne = snapshot with { Guests = snapshot.Guests with
+		{
+			SchemaVersion = 1,
+			Guests = snapshot.Guests.Guests.Select( guest => guest with { UsedHistory = null, TemporaryHistory = null, ExitLevel = 30.5 } ).ToArray()
+		} };
+		ParkResumeSaveFile.ValidateShape( schemaOne ); // a schema-1 envelope is accepted
+		// Schema 2 must carry the histories (and a whole counter: the fraction was schema 1's alone).
+		Rejects( schemaOne with { Guests = schemaOne.Guests with { SchemaVersion = 2, Guests = schemaOne.Guests.Guests.Select( guest => guest with { ExitLevel = 30 } ).ToArray() } }, "has no UsedHistory" );
+
+		Rejects( snapshot with { Guests = snapshot.Guests with { Guests = snapshot.Guests.Guests.Select( guest => guest with { UsedHistory = null } ).ToArray() } },
+			"has no UsedHistory" );
+		Rejects( snapshot with { Guests = snapshot.Guests with { Guests = snapshot.Guests.Guests.Select( guest => guest with { TemporaryHistory = new[] { 1, 2, 3, -1 } } ).ToArray() } },
+			"TemporaryHistory is not 4 non-negative attraction ids" );
+		Rejects( snapshot with { Guests = snapshot.Guests with { Guests = snapshot.Guests.Guests.Select( guest => guest with { ExitLevel = 1e300 } ).ToArray() } },
+			"does not fit the truncated counter" );
+		Rejects( snapshot with { Guests = snapshot.Guests with { Guests = snapshot.Guests.Guests.Select( guest => guest with { ExitLevel = 30.5 } ).ToArray() } },
+			"is not a whole number of decisions" );
+	}
+
+	[TestMethod]
 	public void ShapeValidationChecksOptionalParts()
 	{
 		var snapshot = ParkResumeSaveFileTests.Envelope();

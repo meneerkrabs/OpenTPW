@@ -287,6 +287,56 @@ EXPECTED = {
                                                 'gaps': [33] * 95}),
     ('park-turn-cadence-frames', 'routine-reading'): AGREE,
     ('park-turn-cadence-frames', 'csharp'): AGREE,
+    # F24 (fixed in C#): 0xe9164 scores an attraction as seven matches (distance, queue, excitement, thirst, hunger, toilet, illness) combined as
+    # sum(weight * match) / sum(ALL seven weights) in unsigned 32-bit arithmetic, then scales by DecisionVariable2 for a new ride, by
+    # DecisionVariable3 for an indoor ride in rain and by the golden-ticket or upgrade-cost factor, and divides by 5, 4, 3, 2 for the
+    # used and temporary history. The former additive rule differs on every input but a few that the clamp happens to equal.
+    ('attraction-score', 'plan'): (592, {'w': [1, 1, 1, 2, 2, 2, 2], 'dv': [7, 5, 5], 'mod': 0, 'golden': 0, 'cost0': 0, 'indoors': 0, 'drops': 0,
+                                         'age': 100, 'used': [0, 0, 0, 0], 'temp': [0, 0, 0, 0], 'hist_thing': 'none', 'teffect': 0, 'heffect': 0,
+                                         'thirst': 0.0, 'hunger': 0.0, 'toilet': 0.0, 'ill': 0.0, 'qcells': 3, 'qcount': 0, 'gx': 10, 'gy': 10,
+                                         'rx': 10, 'ry': 10, 'level': 60, 'kind': 0, 'flags': 4, 'thing36': 0, 'track': 0, 'pref': 60,
+                                         'pieces': [0, 0, 0, 0], 'init_speed': 100, 'speed': 100, 'init_dur': 30, 'dur': 30, 'rlevel': 0, 'idx': 0,
+                                         'gauge': 100.0, 'goods': 60, 'price': 35, 'win': 50, 'ctrl': 0, 'coaster_e': 40.0, 'rid': 7, 'value': 40}),
+    ('attraction-score', 'routine-reading'): AGREE,
+    ('attraction-score', 'csharp'): AGREE,
+    # F24: 0xea318 does nothing for an attraction whose live excitement byte is 0, else adds PerfectRide (difference below 5), GoodRide
+    # (below 15) or OKRide (below 40) to happiness (no penalty beyond) and trunc(excitement / divisor) * trunc((100 - byte(hunger)) / 20) to
+    # illness, both clamped to 0..100.
+    ('ride-outcome', 'plan'): (498, {'idx': 0, 'pref': 60, 'kind': 0, 'level': 60, 'track': 0, 'flags': 4, 'gauge': 100.0, 'rlevel': 0,
+                                     'init_speed': 100, 'speed': 100, 'init_dur': 30, 'dur': 30, 'thing36': 0, 'pieces': [0, 0, 0, 0], 'goods': 60,
+                                     'price': 35, 'win': 50, 'ctrl': 0, 'coaster_e': 40.0, 'happy': 50.0, 'hunger': 0.0, 'ill': 0.0,
+                                     'perfect': 25, 'good': 15, 'ok': 5, 'divisor': 10}),
+    ('ride-outcome', 'routine-reading'): AGREE,
+    ('ride-outcome', 'csharp'): AGREE,
+    # F24: 0xe8ff4 scores every choosable thing with a back-of-queue cell, ignores a score below 10 (unsigned), keeps the best (signed) and takes
+    # an equal one on an odd world turn, if the counts-test and the reachability test pass. No random bonus, no positive-only threshold.
+    ('attraction-choice', 'plan'): (99, {'turn': 0, 'things': [{'flags': 4, 'cell': 10, 'score': 9, 'counts': 1, 'reach': 1}]}),
+    ('attraction-choice', 'routine-reading'): AGREE,
+    ('attraction-choice', 'csharp'): AGREE,
+    # F25 (fixed in C#): 0xeece4 is gated on the guest's phase (turn & 3 == thing id & 3) as a whole: the exit counter loses 1, the three words of the
+    # guest's cell go to happiness, illness and hunger, on a multiple of 16 toilet gains 1 and hunger and thirst 2, a need at a byte of exactly 100 costs
+    # happiness 1, and the toilet speed term follows the toilet byte; every turn that is a multiple of 20 shifts a 0 into the temporary history. The former
+    # per-second rates (hunger +0.35, thirst +0.45, toilet +0.3, nausea decay) differ on every input.
+    ('guest-needs-turn', 'plan'): (529, {'turn': 0, 'id': 4, 'gx': 10, 'gy': 10, 'happy': 50.0, 'thirst': 10.0, 'hunger': 10.0, 'toilet': 10.0,
+                                         'ill': 0.0, 'exit': 120, 'cells': [0, 0, 0], 'bonus': 0, 'state': 6, 'prev': 6, 'predicate': 0,
+                                         'countdown': 0, 'rng': 1, 'temp': [0, 0, 0, 0]}),
+    ('guest-needs-turn', 'routine-reading'): AGREE,
+    ('guest-needs-turn', 'csharp'): AGREE,
+    # F25: 0xe7644 starts a guest at happiness 50, thirst and hunger a draw modulo 50, toilet a draw modulo 30, illness and litter 0, the exit counter
+    # ExitLevel + draw % (2 ExitLevelVar) - ExitLevelVar and the cash StartingCash * (100 + draw % (2 StartingCashVarPc + 1) - StartingCashVarPc) / 100,
+    # from eight world draws in a fixed order. The former rule (happiness 60, all needs 0) differs on every input.
+    ('guest-constructor', 'plan'): (517, {'rng': 0, 'turn': 3438955804, 'id': 53913, 'exit': 120, 'exit_var': 42, 'cash_pc': 15, 'prank': 0,
+                                          'types': [[80, 300, 40], [65, 500, 30], [50, 600, 40], [35, 700, 35], [65, 750, 30], [80, 600, 40],
+                                                    [45, 400, 30], [80, 500, 40]]}),
+    ('guest-constructor', 'routine-reading'): AGREE,
+    ('guest-constructor', 'csharp'): AGREE,
+    # F18 (guest side, fixed in C#): UseEffects applies the four meter updates of the sale routine; the litter meter stays in the park's store.
+    ('shop-sale-litter', 'csharp-guest-meters'): AGREE,
+    # F26 (fixed in C#): the state-6 handler leaves when the truncated happiness byte is 0 (below 1, not "at most 10"), when the exit counter is exactly
+    # 0 (not "at most 0": a guest that passes 0 outside state 6 never leaves by it) or when the park is closed (game +0x1da710, mParkClosed).
+    ('guest-exit-test', 'plan'): (181, {'happy': 1.0, 'exit': 120, 'closing': 0}),
+    ('guest-exit-test', 'routine-reading'): AGREE,
+    ('guest-exit-test', 'csharp'): AGREE,
 }
 CSHARP_PENDING = {'det-world-lcg', 'det-rse-rand', 'coast-rating-step',
                   'coast-rating-final', 'arrival-update', 'park-points-counts-test', 'loan-month',
@@ -298,6 +348,26 @@ class Identity(unittest.TestCase):
     def test_unidentified_container_is_rejected(self):
         with self.assertRaises(IdentityError):
             Image(b'Joy!peffpwpc' + bytes(64))
+
+
+class SaleComparison(unittest.TestCase):
+    """The shop-sale C# comparison must not pass vacuously: an answer of no meters, or fewer than the four the hook
+    documents, compares nothing and would agree with any plan."""
+
+    def test_a_full_answer_decodes_and_agrees(self):
+        original = {'meters': {'thirst': 40.0, 'hunger': 30.0, 'vomit': 10.0, 'happy': 50.0, 'litter': 60.0}}
+        answer = targets.sale_meters_result({'meters': {}}, [targets.bits(40.0), targets.bits(30.0), targets.bits(10.0), targets.bits(50.0)])
+        self.assertEqual({40.0, 30.0, 10.0, 50.0}, set(answer['meters'].values()))
+        self.assertTrue(targets.sale_equal(original, answer))
+
+    def test_an_empty_or_short_answer_is_a_mismatch(self):
+        original = {'meters': {'thirst': 40.0, 'hunger': 30.0, 'vomit': 10.0, 'happy': 50.0, 'litter': 60.0}}
+        for answer in ([], [targets.bits(40.0)], [targets.bits(40.0)] * 5):
+            with self.subTest(count=len(answer)):
+                decoded = targets.sale_meters_result({'meters': {}}, answer)
+                self.assertIn('error', decoded)
+                self.assertFalse(targets.sale_equal(original, decoded), 'a malformed answer is never equal')
+        self.assertFalse(targets.sale_equal(original, {'meters': {}}), 'an empty comparison map compares nothing')
 
 
 class UndefinedResults(unittest.TestCase):
@@ -1469,6 +1539,122 @@ class Oracle(unittest.TestCase):
         overridden = targets.run_binary(target, sandbox, {**base, 'flags': (True, True), 'gaps': [248]})['calls']
         self.assertEqual(overridden[0]['turns'], 1)
 
+    def test_attraction_choice(self):
+        for key in (('attraction-score', 'plan'), ('attraction-score', 'routine-reading'), ('ride-outcome', 'plan'),
+                    ('ride-outcome', 'routine-reading'), ('attraction-choice', 'plan'), ('attraction-choice', 'routine-reading')):
+            self.check(key)
+
+    def test_attraction_choice_csharp(self):
+        for key in (('attraction-score', 'csharp'), ('ride-outcome', 'csharp'), ('attraction-choice', 'csharp')):
+            self.check(key)
+
+    def test_attraction_score_reading_is_sharp(self):
+        # Every part of the score matters: dropping or changing any of these brings mismatches back. The first run is the routine reading itself.
+        import dataclasses
+        variants = {
+            'active-weights-only': dict(active_only=True), 'distance-divisor-400': dict(distance_divisor=400),
+            'distance-divisor-500': dict(distance_divisor=500), 'no-cell-modifier': dict(no_modifier=True),
+            'queue-always': dict(always_queue=True), 'queue-clamped': dict(clamp_queue=True),
+            'excitement-weight-ungated': dict(ungated_excitement=True), 'relief-ungated': dict(always_relief=True),
+            'no-new-ride': dict(no_new=True), 'no-indoor-rain': dict(no_rain=True), 'no-golden-ticket': dict(no_golden=True),
+            'no-upgrade-cost': dict(no_expensive=True), 'no-used-history': dict(no_used=True), 'used-all-matches': dict(used_all=True),
+            'no-temporary-history': dict(no_temp=True), 'temporary-first-match': dict(temp_first=True), 'no-same-type-exit': dict(no_type_exit=True),
+        }
+        for name, variant in variants.items():
+            mutated = dataclasses.replace(targets.targets_guests.SCORE_TARGET, plan=lambda x, v=variant: targets.targets_guests.score_reading(x, **v),
+                                          alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, name)
+
+    def test_ride_outcome_and_choice_readings_are_sharp(self):
+        import dataclasses
+        g = targets.targets_guests
+        for name, variant in {'ungated': dict(ungated=True), 'inclusive-bands': dict(inclusive=True), 'penalty': dict(penalty=True),
+                              'linear-hunger': dict(linear_hunger=True)}.items():
+            mutated = dataclasses.replace(g.OUTCOME_TARGET, plan=lambda x, v=variant: g.outcome_reading(x, **v), alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, f'outcome {name}')
+        for name, variant in {'threshold-0': dict(threshold=0), 'threshold-11': dict(threshold=11), 'ties-never': dict(ties='never'),
+                              'ties-always': dict(ties='always')}.items():
+            mutated = dataclasses.replace(g.CHOICE_TARGET, plan=lambda x, v=variant: g.choice_reading(x, **v), alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, f'choice {name}')
+
+    def test_attraction_score_tables(self):
+        # The thirst/hunger table is exactly trunc(n^2 * sqrt(e / 10)) for need and effect in tens (what AttractionScore.NeedMatch computes),
+        # the toilet/illness curve starts with nine zeros and ends at 100; the table bytes themselves are read here, never stored.
+        import math
+        blob = targets.targets_guests.score_tables()['blob']
+        for effect in range(11):
+            for need in range(11):
+                self.assertEqual(blob[effect * 11 + need], int(need * need * math.sqrt(effect / 10)), (effect, need))
+        curve = blob[0x4129B - 0x41222:0x4129B - 0x41222 + 21]
+        self.assertEqual(list(curve), [0] * 9 + [1, 2, 5, 10, 20, 30, 40, 50, 60, 75, 90, 100])
+
+    def test_guest_needs(self):
+        for key in (('guest-needs-turn', 'plan'), ('guest-needs-turn', 'routine-reading'), ('guest-constructor', 'plan'),
+                    ('guest-constructor', 'routine-reading')):
+            self.check(key)
+
+    def test_guest_needs_csharp(self):
+        for key in (('guest-needs-turn', 'csharp'), ('guest-constructor', 'csharp'), ('shop-sale-litter', 'csharp-guest-meters')):
+            self.check(key)
+
+    def test_guest_needs_readings_are_sharp(self):
+        import dataclasses
+        g = targets.targets_guests
+        for name, variant in {'every-turn': dict(every_turn=True), 'no-exit-count': dict(no_exit=True), 'growth-every-8': dict(growth_mask=7),
+                              'growth-every-32': dict(growth_mask=31), 'hunger-step-1': dict(hunger_step=1.0), 'hunger-step-3': dict(hunger_step=3.0),
+                              'no-full-penalty': dict(no_penalty=True), 'penalty-from-100': dict(penalty_at_least=True),
+                              'no-history-decay': dict(no_decay=True)}.items():
+            mutated = dataclasses.replace(g.NEEDS_TARGET, plan=lambda x, v=variant: g.needs_reading(x, **v), alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, f'needs {name}')
+        for name, variant in {'happiness-60': dict(happy60=True), 'thirst-modulus-40': dict(thirst_modulus=40),
+                              'toilet-modulus-50': dict(toilet50=True)}.items():
+            mutated = dataclasses.replace(g.CTOR_TARGET, plan=lambda x, v=variant: g.ctor_reading(x, **v), alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, f'constructor {name}')
+
+    def test_guest_exit_counter_counts_one_per_four_park_turns(self):
+        # F25/F26 unit of the exit counter, executed over 400 consecutive park turns: it loses exactly one per needs phase, that is one per four turns
+        # (0.992 s at 248 ms a turn, the .sam's "seconds"), whatever the id; hunger and thirst rise only for a guest whose id is a multiple of four.
+        g = targets.targets_guests
+        target = g.NEEDS_TARGET
+        sandbox = target.sandbox(self.image)
+        for ident in (4, 5, 6, 7, 8, 10001):
+            x = {'turn': 1000, 'id': ident, 'gx': 10, 'gy': 10, 'happy': 50.0, 'thirst': 0.0, 'hunger': 0.0, 'toilet': 0.0, 'ill': 0.0, 'exit': 120,
+                 'cells': [0, 0, 0], 'bonus': 0, 'state': 6, 'prev': 6, 'predicate': 0, 'countdown': 0, 'rng': 1, 'temp': [0, 0, 0, 0]}
+            for turn in range(1000, 1400):
+                result = targets.run_binary(target, sandbox, {**x, 'turn': turn})
+                x.update({k: result[k] for k in ('happy', 'thirst', 'hunger', 'toilet', 'ill', 'exit', 'bonus', 'temp')})
+            self.assertEqual(x['exit'], 120 - 100, ident)
+            growth = 50.0 if ident % 4 == 0 else 0.0   # 25 turns that are multiples of 16 in 1000..1399, each +2
+            self.assertEqual((x['hunger'], x['thirst'], x['toilet']), (growth, growth, growth / 2), ident)
+
+    def test_guest_constructor_division_by_zero_is_undefined(self):
+        # ExitLevelVar 0 would make the first divw divide by zero: the architecture leaves it undefined, the oracle reports UNDEFINED.
+        g = targets.targets_guests
+        x = {'rng': 5, 'turn': 0, 'id': 4, 'exit': 120, 'exit_var': 0, 'cash_pc': 15, 'prank': 5, 'types': [[80, 300, 40]]}
+        self.assertEqual(targets.run_binary(g.CTOR_TARGET, g.CTOR_TARGET.sandbox(self.image), x), targets.UNDEFINED)
+        self.assertEqual(g.ctor_reading(x), targets.UNDEFINED)
+
+    def test_guest_exit_test(self):
+        for key in (('guest-exit-test', 'plan'), ('guest-exit-test', 'routine-reading')):
+            self.check(key)
+
+    def test_guest_exit_test_csharp(self):
+        self.check(('guest-exit-test', 'csharp'))
+
+    def test_guest_exit_test_reading_is_sharp(self):
+        import dataclasses
+        g = targets.targets_guests
+        for name, variant in {'happiness-at-most-10': dict(threshold=10), 'counter-at-most-0': dict(at_most=True), 'no-closing': dict(no_closing=True),
+                              'no-byte': dict(no_byte=True)}.items():
+            mutated = dataclasses.replace(g.EXIT_TARGET, plan=lambda x, v=variant: g.exit_reading(x, **v), alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, f'exit {name}')
+
     def test_unstubbed_call_aborts_the_run(self):
         sandbox = Sandbox(self.image, targets.QUEUE.allowed, {})
         sandbox.reset()
@@ -1555,6 +1741,24 @@ class CSharpMutation(unittest.TestCase):
          'age / (30 * ParkCalendar.SecondsPerDay) == 0 && item.TimesUsed <= 1'),
         ('object-scrap-value', 'csharp', 'source/OpenTPW/Economy/ParkEconomy.cs',
          'return year is 1 or 2 ? Row( (int)year ) : Row( 3 );', 'return year is 1 or 2 ? Row( (int)year ) : Row( 2 );'),
+        ('attraction-score', 'csharp', 'source/OpenTPW/World/Guests/AttractionScore.cs',
+         'public const int DistanceDivisor = 450;', 'public const int DistanceDivisor = 449;'),
+        ('attraction-score', 'csharp', 'source/OpenTPW/World/Guests/AttractionScore.cs',
+         'if ( input.AgeDays <= variables.NewRideDays )', 'if ( input.AgeDays < variables.NewRideDays )'),
+        ('ride-outcome', 'csharp', 'source/OpenTPW/World/Guests/RideOutcome.cs',
+         'else if ( difference < 15 )', 'else if ( difference <= 15 )'),
+        ('attraction-choice', 'csharp', 'source/OpenTPW/World/Guests/AttractionChoice.cs',
+         '(worldTurn & 1) == 0', '(worldTurn & 1) != 0'),
+        ('guest-needs-turn', 'csharp', 'source/OpenTPW/World/Guests/NeedsUpdate.cs',
+         'public const int GrowthMask = 15;', 'public const int GrowthMask = 7;'),
+        ('guest-needs-turn', 'csharp', 'source/OpenTPW/World/Guests/NeedsUpdate.cs',
+         'if ( MeterMath.Byte( need ) == 100 )', 'if ( MeterMath.Byte( need ) >= 100 )'),
+        ('guest-constructor', 'csharp', 'source/OpenTPW/World/Guests/GuestStart.cs',
+         'public const uint ThirstHungerModulus = 50;', 'public const uint ThirstHungerModulus = 49;'),
+        ('shop-sale-litter', 'csharp-guest-meters', 'source/OpenTPW/World/Guests/UseEffects.cs',
+         'Hunger = MeterMath.Add( meters.Hunger, -(float)hungerEffect ),', 'Hunger = MeterMath.Add( meters.Hunger, -(float)thirstEffect ),'),
+        ('guest-exit-test', 'csharp', 'source/OpenTPW/World/Guests/GuestLifecycle.cs',
+         'MeterMath.Byte( happiness ) == 0 || exitLevel == 0 || parkClosed', 'MeterMath.Byte( happiness ) == 0 || exitLevel <= 0 || parkClosed'),
         ('loan-take', 'csharp', 'source/OpenTPW/Economy/ParkEconomy.cs',
          'Post( LedgerCategory.LoanReceived, offer.Amount );', 'Post( LedgerCategory.OtherIncome, offer.Amount );'),
         ('staff-vitals', 'csharp', 'source/OpenTPW/Economy/StaffVitals.cs',

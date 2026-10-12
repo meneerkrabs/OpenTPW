@@ -543,6 +543,8 @@ public partial class Level
 				// The join gate reads the live sideshow words (0xdff70) and the wear gauge ride +64 (0xdfe34); both live in the economy.
 				item.Visitors.Sideshow = new SideshowTerms( state.CostOfGoods, state.Price, state.ChanceOfLosingPercent );
 				item.Visitors.WearGauge = state.Repair;
+				// the attraction score's "new ride" test reads the object's own age in days (0xdc520)
+				item.Visitors.AgeDays = Park.Economy.ObjectAgeDays( state );
 			}
 		}
 	}

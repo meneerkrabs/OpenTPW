@@ -749,6 +749,13 @@ public sealed class ParkEconomy : IParkEconomy
 	}
 
 	/// <summary>
+	/// Whole park days since the object was built (the original's own age, <c>0xdc520</c>: the clock's timestamp minus the one stored at the thing's purchase,
+	/// divided by one day in 100 ns units). The attraction score treats a ride up to <c>PeepInfo.DecisionVariable1</c> days old as new.
+	/// </summary>
+	// [BIN:STP-PPC:0x100DC520 own age] TbTimeStamp::operator- of the clock (+672) and thing +20, over 864,000,000,000; the park points stub of the oracle uses the same day scale (ORACLE.md F10)
+	public uint ObjectAgeDays( ParkObjectState item ) => (uint)(Math.Max( 0, Turn - ParkCalendar.Turn( item.BuiltTick ) ) * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerDay);
+
+	/// <summary>
 	/// The part of the original's park points counts-test (0x100DC834) that OpenTPW has state for: the type is choosable, and the
 	/// object is neither broken down (in the economy or by its script) nor closed. The test's world conditions are listed at <see cref="ParkPoints"/>.
 	/// </summary>

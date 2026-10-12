@@ -34,7 +34,8 @@ public class PathAssetTests
 	/// stream, so fewer reach the ticket booth within 120 s and the hash changes. WALK-F re-pinned the hash again (the traced
 	/// separation force and the toilet term's needs phase move the guests); the admissions stay 103. The traced arrival rule
 	/// re-pinned it once more: groups of 1.2 × (points + 20) / 6 guests arrive after the last group emptied, here every
-	/// 15 timer units instead of the shipped 150, so 24 guests are admitted in 120 s.
+	/// 15 timer units instead of the shipped 150, so 24 guests are admitted in 120 s. The traced needs and starting values (ORACLE.md F25) re-pinned it: a guest's
+	/// exit counter now runs from the first turn and its needs start drawn, so one guest fewer (23) has been admitted by then. The traced leaving test (F26) changed the hash again (the admissions stay 23).
 	/// </summary>
 	[TestMethod]
 	public void OwnershipFlipKeepsTheJungleGuestRunIdentical()
@@ -47,8 +48,8 @@ public class PathAssetTests
 		var simulation = new GuestSimulation( GuestPathGrid.FromOriginal( park.Map, park.Save ), settings, 1 );
 		for ( var tick = 0; tick < 120 * 60; tick++ )
 			simulation.Tick( Tick );
-		Assert.AreEqual( 24, simulation.Admissions );
-		Assert.AreEqual( 0x1031C6F4ED3CEF20UL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
+		Assert.AreEqual( 23, simulation.Admissions );
+		Assert.AreEqual( 0x84590936A6DA1138UL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
 	}
 
 	[TestMethod]

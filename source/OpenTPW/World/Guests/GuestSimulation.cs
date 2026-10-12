@@ -20,6 +20,9 @@ public struct GuestRandom
 	public int Next( int maximumExclusive ) => maximumExclusive <= 0 ? 0 : (int)(NextULong() % (ulong)maximumExclusive);
 	public int Next( int minimum, int maximumInclusive ) => minimum + Next( maximumInclusive - minimum + 1 );
 	public float NextFloat() => (NextULong() >> 40) / (float)(1UL << 24);
+
+	/// <summary>A word in [0, 2³¹): the range of the original's world generator, which returns the absolute value of its state (<c>0x105328</c>), for formulas that take a draw modulo something.</summary>
+	public uint NextWord() => (uint)(NextULong() >> 33);
 }
 
 /// <summary>Counts for overlays, logs and tests.</summary>
@@ -180,13 +183,16 @@ public sealed class GuestSimulation : IRideVisitorHost
 
 	private Guest Create()
 	{
-		var type = random.Next( Math.Max( 1, Settings.Types.Count ) );
-		var guest = new Guest( nextId++, type );
-		var peep = Settings.Types[Math.Min( type, Settings.Types.Count - 1 )];
-		var variance = peep.StartingCash * Settings.StartingCashVarPercent / 100;
-		guest.Money = Math.Max( 0, peep.StartingCash + random.Next( -variance, variance ) );
-		guest.Happiness = Settings.StartingHappiness;
-		guest.ExitLevel = Settings.ExitLevelSeconds + random.Next( -Settings.ExitLevelVarSeconds, Settings.ExitLevelVarSeconds );
+		// [BIN:STP-PPC:0x100E7644 guest constructor] the starting values come from GuestStart (ORACLE.md F25): eight draws in the constructor's order
+		var start = GuestStart.FromDraws( Settings.Types, Settings.ExitLevelSeconds, Settings.ExitLevelVarSeconds, Settings.StartingCashVarPercent, () => random.NextWord() );
+		var guest = new Guest( nextId++, start.Type );
+		guest.Money = start.Money;
+		guest.Happiness = start.Happiness;
+		guest.Thirst = start.Thirst;
+		guest.Hunger = start.Hunger;
+		guest.Toilet = start.Toilet;
+		guest.Nausea = start.Illness;
+		guest.ExitLevel = start.ExitLevel;
 		guest.OffsetX = (random.NextFloat() - 0.5f) * 0.5f;
 		guest.OffsetY = (random.NextFloat() - 0.5f) * 0.5f;
 		guest.DecisionTimer = random.NextFloat() * Settings.DecisionIntervalSeconds;
@@ -367,17 +373,61 @@ public sealed class GuestSimulation : IRideVisitorHost
 	{
 		if ( turnStarted )
 			UpdateSpeed( guest );
+		if ( turnStarted )
+		{
+			UpdateNeedsTurn( guest );
+			// [APPROX:GUEST-010] the leaving test belongs to the original's state 6 (standing at a cell, deciding); OpenTPW has no separate state 6 and tests every guest that is walking around or doing nothing, on every park turn — evidence needed: how long a guest dwells in the original's states 6 and 7
+			if ( guest.State is GuestState.WalkingAround or GuestState.DoingNothing && GuestLifecycle.ShouldLeave( guest.Happiness, guest.ExitLevel, Payments?.ParkClosed ?? false ) )
+				StartLeaving( guest );
+			// The closure clause only, for the states the state-6 test never sees: a closed park also pulls guests out of queues and drops reservations, or it
+			// would strand every guest whose ride holds admission (no queue state reads the closing word, and a queued guest's happiness rarely sinks below the
+			// queue's leave level). Guests on a ride finish it and are sent home by the test above once they walk again.
+			// [APPROX:GUEST-011] what the original does with queued guests at mParkClosed is not traced — evidence needed: a closing-word read in the state-11 handler 0xed244 or the ride update 0xe0aec
+			if ( Payments?.ParkClosed == true )
+			{
+				if ( guest.State is GuestState.Queueing or GuestState.MovingUpQueue or GuestState.WaitingToBoard or GuestState.Boarding && FindAttraction( guest.AttractionId ) is { } closed )
+				{
+					LeaveQueue( guest, closed, GuestThought.None );
+					StartLeaving( guest );
+				}
+				else if ( guest.State == GuestState.GoingToRide )
+				{
+					guest.AttractionId = 0;
+					StartLeaving( guest );
+				}
+			}
+			// The state-18 recall (0xedc98): the leaving handler's opening test sends a guest whose counter is above 0, happiness byte nonzero and park
+			// open back to deciding, so a closed-park dismissal unwinds when the park reopens. The three leaving causes all fail it in the same turn.
+			// [APPROX:GUEST-012] the original also demands the guest's cell pass 0xe6c6c (its cell record through 0x10a9b0 and 0x85190..0x851d0) — evidence needed: which cells qualify; OpenTPW approximates the predicate by the state boundary: only a guest still walking the paths to the exit (no lane yet) recalls, and the recall ends at the road (CrossingRoadHome or a lane), the stage before leaving. The booth refusal also enters LeavingPark on a lane and is exempt, like the original's zeroed counter (0xecacc)
+			if ( guest.State == GuestState.LeavingPark && guest.Lane == null && GuestLifecycle.ShouldRecall( guest.Happiness, guest.ExitLevel, Payments?.ParkClosed ?? false ) )
+			{
+				guest.State = GuestState.WalkingAround;
+				guest.DecisionTimer = Settings.DecisionIntervalSeconds;
+			}
+		}
 		if ( InPark( guest ) )
 			UpdateNeeds( guest, dt );
-		// The needs block runs only on the guest's phase (0xeed24..0xeed40: park turn & 3 == thing id & 3), and its toilet
-		// term compares the truncated toilet's low byte unsigned (0xef0bc..0xef0e8).
-		// [APPROX:WALK-010] the needs phase compares the park turn with OpenTPW's guest id, not the original's 16-bit thing id (0xfa9a4), which numbers every thing — evidence needed: the thing id allocator and its order
-		if ( turnStarted && (ParkTurn & 3) == (guest.Id & 3) )
-			guest.ToiletBonus = ((int)guest.Toilet & 0xff) > GuestSpeed.ToiletBonusLevel ? GuestSpeed.ToiletBonus : 0;
 		UpdateState( guest, dt );
 		if ( !guest.HasWaypoint && guest.State is not GuestState.Boarding )
 			guest.IsMoving = false;
 		UpdatePresentation( guest );
+	}
+
+	/// <summary>
+	/// The needs function of one park turn (<c>0xeece4</c>, called for every guest in every state before its state handler; ORACLE.md F25, <see cref="NeedsUpdate"/>):
+	/// on the guest's phase the exit counter loses 1 and the needs grow or cost happiness, the toilet speed term follows the toilet byte, and every 20th turn a 0
+	/// enters the temporary history.
+	/// </summary>
+	// [APPROX:GUEST-006] the environment record of the guest's cell (words at +0, +2, +4: happiness, illness, hunger, written by entertainers, toilets, vomit and guards through 0xd73a0) is not modelled, so those words are 0; neither are the thought pick (a draw modulo 10) and the thought countdown that follow the needs in the same function — evidence needed: the region effect grid (PPC-guests, Phase 2) and the thought selection 0xe8c58
+	private void UpdateNeedsTurn( Guest guest )
+	{
+		var turn = (uint)ParkTurn;
+		var result = NeedsUpdate.Apply( new GuestMeters( guest.Happiness, guest.Thirst, guest.Hunger, guest.Toilet, guest.Nausea ), guest.ExitLevel, turn, guest.Id );
+		(guest.Happiness, guest.Thirst, guest.Hunger, guest.Toilet, guest.Nausea) = result.Meters;
+		guest.ExitLevel = result.ExitLevel;
+		if ( result.ToiletSpeedTerm is { } term )
+			guest.ToiletBonus = term;
+		NeedsUpdate.DecayHistory( guest.TemporaryHistory, turn );
 	}
 
 	/// <summary>
@@ -457,23 +507,16 @@ public sealed class GuestSimulation : IRideVisitorHost
 		}
 	}
 
+	// [APPROX:GUEST-008] OpenTPW's energy meter (drained while walking, restored while resting) has no original counterpart: the original has no energy field and nothing reads this one; its rates are invented — evidence needed: none (a field the original lacks)
 	private void UpdateNeeds( Guest guest, float dt )
 	{
 		var riding = guest.State == GuestState.Using;
-		guest.Hunger = Math.Min( 150, guest.Hunger + Settings.HungerPerSecond * dt );
-		guest.Thirst = Math.Min( 150, guest.Thirst + Settings.ThirstPerSecond * dt );
-		guest.Toilet = Math.Min( 150, guest.Toilet + Settings.ToiletPerSecond * dt );
-		guest.Nausea = Math.Max( 0, guest.Nausea - Settings.NauseaDecayPerSecond * dt );
 		if ( riding || guest.State is GuestState.Queueing or GuestState.WaitingToBoard or GuestState.DoingNothing )
 			guest.Energy = Math.Min( 100, guest.Energy + Settings.EnergyRecoveryPerSecond * dt );
 		else
 			guest.Energy = Math.Max( 0, guest.Energy - Settings.EnergyDrainPerSecond * dt );
 		if ( !riding )
-		{
 			guest.SecondsSinceRide += dt;
-			if ( guest.State != GuestState.LeavingPark )
-				guest.ExitLevel -= dt;
-		}
 	}
 
 	/// <summary>
@@ -685,11 +728,6 @@ public sealed class GuestSimulation : IRideVisitorHost
 		{
 			guest.DecisionTimer = Settings.DecisionIntervalSeconds;
 			UpdateMood( guest );
-			if ( ShouldLeave( guest ) )
-			{
-				guest.State = GuestState.LeavingPark;
-				return;
-			}
 			var choice = ChooseAttraction( guest );
 			if ( choice != null )
 			{
@@ -726,13 +764,10 @@ public sealed class GuestSimulation : IRideVisitorHost
 		SetCellWaypoint( guest, guest.CellX + GuestPathGrid.Directions[chosen].DX, guest.CellY + GuestPathGrid.Directions[chosen].DY );
 	}
 
+	// [APPROX:GUEST-009] the thought thresholds (a need from NeedThoughtLevel 70, toilet scaled by ToiletDesparate) and the boredom loss of SmallHappinessChange per decision after BoredomThreshold seconds have no original source; the original's thoughts (0xe8c58: hunger and thirst both above 90, a single need above 99, happiness above 99 or below 10, litter) come from a draw each needs phase and its happiness costs are the exact-100 penalties of the needs update (NeedsUpdate) — evidence needed: the thought selection and the boredom rule behind PeepTypes BoredomThreshold
 	private void UpdateMood( Guest guest )
 	{
 		var small = Settings.SmallHappinessChange;
-		if ( guest.Hunger >= 100 || guest.Thirst >= 100 )
-			guest.Happiness -= small;
-		if ( guest.Toilet >= Settings.ToiletDesperate )
-			guest.Happiness -= small;
 		var type = Settings.Types[Math.Min( guest.Type, Settings.Types.Count - 1 )];
 		var bored = guest.SecondsSinceRide > type.BoredomThreshold;
 		if ( bored )
@@ -753,60 +788,58 @@ public sealed class GuestSimulation : IRideVisitorHost
 			: GuestThought.Unhappy;
 	}
 
-	private bool ShouldLeave( Guest guest ) => guest.ExitLevel <= 0 || guest.Happiness <= 10;
-
 	/// <summary>
-	/// Attraction score with the .sam PeepInfo.DecisionVar* weights. How the original combines them is unknown;
-	/// the terms and scales below are an approximation (docs/GUESTS.md).
+	/// A guest heads home (<c>0xebe30</c>): it loses <c>PeepInfo.BigHappinessChange</c> (<c>0xeb6f4</c> with selector 2) and goes to state 18.
 	/// </summary>
-	public int ScoreAttraction( Guest guest, IRideVisitorBridge attraction, int distance )
+	// [BIN:STP-PPC:0x100EBE30 leaving] 0xeb6f4(guest, 2) subtracts the settings word +32 from happiness (clamped), then 0xef700(guest, 18)
+	private void StartLeaving( Guest guest )
 	{
-		var type = Settings.Types[Math.Min( guest.Type, Settings.Types.Count - 1 )];
-		var score = attraction.AttractionValue
-			- Settings.DecisionDistanceWeight * distance
-			- Settings.DecisionQueueWeight * attraction.QueueLength;
-		if ( attraction.Kind == RideVisitorKind.Ride || attraction.Kind == RideVisitorKind.Sideshow )
-			score += Settings.DecisionExcitementWeight * (25 - Math.Abs( type.PreferredExcitement - attraction.ExcitementLevel ));
-		if ( attraction.Satisfies.HasFlag( GuestNeeds.Hunger ) )
-			score += (int)(Settings.DecisionHungerWeight * guest.Hunger / 4);
-		if ( attraction.Satisfies.HasFlag( GuestNeeds.Thirst ) )
-			score += (int)(Settings.DecisionThirstWeight * guest.Thirst / 4);
-		if ( attraction.Satisfies.HasFlag( GuestNeeds.Toilet ) )
-			score += (int)(Settings.DecisionToiletWeight * guest.Toilet / 4);
-		if ( attraction.Kind == RideVisitorKind.Ride )
-			score -= (int)(Settings.DecisionIllnessWeight * guest.Nausea / 4);
-		if ( attraction.AttractionId == guest.LastAttractionId && guest.SecondsSinceRide < type.BoredomThreshold )
-			score -= attraction.AttractionValue;
-		if ( attraction.Price > guest.Money )
-			score = int.MinValue;
-		return score;
+		guest.Happiness = MeterMath.Add( guest.Happiness, -Settings.BigHappinessChange );
+		guest.State = GuestState.LeavingPark;
 	}
 
+	/// <summary>
+	/// The original's attraction score (<c>0xe9164</c>, docs/reverse/ORACLE.md F24): distance, queue, excitement, thirst, hunger, toilet and illness
+	/// matches normalised by the sum of all seven weights, scaled for new rides, indoor rides in rain and costly rides, and divided down by the
+	/// guest's history (see <see cref="AttractionScore"/>). Unsigned, like the original; 0 for an attraction without a back-of-queue cell.
+	/// </summary>
+	// [BIN:STP-PPC:0x100E9164 attraction score] executed by the PowerPC oracle (attraction-score, 578 inputs; C# agrees)
+	// [APPROX:GUEST-001] the environment record's component 4 at the attraction's cell (0xe9388, a divisor of the distance match) is not modelled: OpenTPW has no region effects (entertainers, vomit, guards), so it is 0 — evidence needed: the effect grid (PPC-guests, Phase 2) and what writes component 4
+	// [APPROX:GUEST-002] the attraction's back-of-queue cell (0xdd3f4) is the bridge's last queue cell and its queue count the guests in OpenTPW's queue list; a back cell that is not connected to a path (no join cell) is scored 0; the type's own thing-array order, tie rule on equal scores and the thing behind ride +36 follow the join gate's approximations (QUEUE-004)
+	public uint ScoreAttraction( Guest guest, IRideVisitorBridge attraction )
+	{
+		if ( attraction.JoinCell == null )
+			return 0;
+		var type = Settings.Types[Math.Min( guest.Type, Settings.Types.Count - 1 )];
+		var sameType = guest.UsedHistory[0] != 0 && FindAttraction( guest.UsedHistory[0] ) is { } last && last.TypeId == attraction.TypeId;
+		var back = attraction.QueueCells[^1];
+		var input = new AttractionScoreInput( guest.CellX, guest.CellY, back.X, back.Y, 0, attraction.QueueLength, attraction.QueueSizeInCells,
+			type.PreferredExcitement, attraction.LiveExcitement, (attraction.StaticExcitementLevel & 0xFF) != 0, guest.Thirst, guest.Hunger, guest.Toilet, guest.Nausea,
+			attraction.ThirstEffect, attraction.HungerEffect, attraction.ProvidesRelief, attraction.AgeDays, WeatherDropsFalling?.Invoke() ?? false, attraction.IsIndoors,
+			attraction.GoldenTicketCost, attraction.UpgradeCost, attraction.AttractionId, sameType, guest.UsedHistory, guest.TemporaryHistory );
+		return AttractionScore.Compute( input, Settings.DecisionWeights, Settings.DecisionVariables );
+	}
+
+	/// <summary>
+	/// The major decision (<c>0xe8ff4</c>): every attraction in list order is scored; a score of 10 or more that beats the best so far, or ties it on an
+	/// odd park turn, wins if the attraction is open and not broken and the guest can reach it. There is no random bonus.
+	/// </summary>
+	// [BIN:STP-PPC:0x100E8FF4 choice loop] executed by the PowerPC oracle (attraction-choice); the tie rule reads the world turn's bit 0 (game +0x1da70c)
+	// [APPROX:QUEUE-017] guests do not choose a broken attraction (VAR_BROKEN ≠ 0); the original's counts-test 0xdc834 also tests the ride state, the open word, the queue room and the coaster controller (ARRIVAL-003)
+	// [APPROX:GUEST-003] a guest only chooses an attraction it can afford (price ≤ money); the original's price eligibility is not traced (PPC-guests) — evidence needed: the callers of 0xe9164's candidates and the shop price test
 	private IRideVisitorBridge? ChooseAttraction( Guest guest )
 	{
-		IRideVisitorBridge? best = null;
-		var bestScore = 0;
-		foreach ( var attraction in attractions )
+		IEnumerable<AttractionChoice.Candidate> Candidates()
 		{
-			if ( !attraction.IsOpen || attraction.JoinCell is not { } join )
-				continue;
-			// [APPROX:QUEUE-017] guests do not choose a broken attraction (VAR_BROKEN ≠ 0); the original attraction choice is not traced for broken rides — evidence needed: the state-6 attraction choice and its test of the ride +408 state
-			if ( attraction.IsBroken )
-				continue;
-			var distance = Grid.Distance( guest.CellX, guest.CellY, join.X, join.Y );
-			if ( distance < 0 )
-				continue;
-			var score = ScoreAttraction( guest, attraction, distance );
-			if ( score == int.MinValue )
-				continue;
-			score += random.Next( 10 );
-			if ( score > bestScore )
+			foreach ( var attraction in attractions )
 			{
-				bestScore = score;
-				best = attraction;
+				var canJoin = attraction.JoinCell != null && attraction.Price <= guest.Money;
+				yield return new AttractionChoice.Candidate( attraction.AttractionId, true, canJoin, canJoin ? ScoreAttraction( guest, attraction ) : 0,
+					() => attraction.IsOpen && !attraction.IsBroken && attraction.JoinCell is { } join && Grid.Distance( guest.CellX, guest.CellY, join.X, join.Y ) >= 0 );
 			}
 		}
-		return best;
+		var id = AttractionChoice.Pick( Candidates(), ParkTurn );
+		return id == 0 ? null : FindAttraction( id );
 	}
 
 	private IRideVisitorBridge? FindAttraction( int id )
@@ -853,6 +886,10 @@ public sealed class GuestSimulation : IRideVisitorHost
 			};
 			if ( result is QueueJoinResult.NoRoom or QueueJoinResult.QueueTooLong )
 				guest.Happiness = Math.Max( 0, guest.Happiness - Settings.SmallHappinessChange );
+			// [BIN:STP-PPC:0x100ECE18 refusal history] the queue-too-long path (0xece18) and both excitement refusals (0xecf3c) push the target's id into the temporary history (0xea290) before clearing the target
+			// [APPROX:GUEST-004] a full queue room (NoRoom, count ≥ 4 × queue cells) is treated like the original's queue-too-long refusal for the thought and the happiness loss, but pushes no history: its original path (0xdc988 then the dismissal 0xee804) pushes none — evidence needed: where a guest meets a physically full queue in state 10
+			if ( result is QueueJoinResult.QueueTooLong or QueueJoinResult.NotExcitingEnough or QueueJoinResult.TooExciting )
+				PushHistory( guest.TemporaryHistory, attraction.AttractionId );
 			guest.LastAttractionId = attraction.AttractionId;
 			guest.AttractionId = 0;
 			guest.State = GuestState.WalkingAround;
@@ -1360,6 +1397,8 @@ public sealed class GuestSimulation : IRideVisitorHost
 		guest.SecondsSinceRide = 0;
 		guest.RidesTaken++;
 		Payments?.VisitFinished( ride );
+		// [BIN:STP-PPC:0x100E9FD4 used history] the end of a use (0xe9fa4) pushes the attraction's id into the used history (0xea268) before the outcome
+		PushHistory( guest.UsedHistory, ride.AttractionId );
 		ApplyVisit( guest, ride );
 	}
 
@@ -1387,35 +1426,42 @@ public sealed class GuestSimulation : IRideVisitorHost
 	}
 
 	/// <summary>
-	/// Ride outcome from the .sam PeepInfo.PerfectRide/GoodRide/OKRide bands (±5/±15/±40 of the preferred
-	/// excitement) and RideVomitDivisor/VomitCapacity; shops reset the needs they satisfy.
+	/// What a use does to the guest (<c>0xea318</c>, docs/reverse/ORACLE.md F24, <see cref="RideOutcome"/>): the happiness gain from the .sam
+	/// PerfectRide, GoodRide and OKRide values by the difference between the guest's preferred and the attraction's live excitement, and the
+	/// illness rise by excitement / RideVomitDivisor times the stomach factor, which does nothing for an attraction whose live excitement is 0 (shops); then the
+	/// type's own effects (<see cref="UseEffects"/>): thirst and hunger fall, illness and happiness rise. A relief object still sets the toilet meter to 0.
 	/// </summary>
+	// [BIN:STP-PPC:0x100EA318 ride outcome] executed by the PowerPC oracle (ride-outcome, 561 inputs; C# agrees)
+	// [APPROX:GUEST-005] a relief object sets the toilet meter to 0 and the litter effect stays in the park's store (ECON-020); the original's toilet branch (0xeb2b0, 0xeb2e0 clears the toilet, 0xeb32c clears illness above 90), the ingredient and appearance effects and the guest litter meter are not modelled — evidence needed: the toilet branch and what the litter meter feeds
 	private void ApplyVisit( Guest guest, IRideVisitorBridge ride )
 	{
-		// The outcome routine 0xeaaf8 (its sole caller 0xe9ff8 runs when a guest leaves the object) switches on the type's special ingredient: Sugar raises the speed boost.
-		guest.Boost = GuestSpeed.RaiseBoost( guest.Boost, ride.SpecialIngredient, ride.IngredientAmount );
-		if ( ride.Satisfies.HasFlag( GuestNeeds.Hunger ) ) guest.Hunger = 0;
-		if ( ride.Satisfies.HasFlag( GuestNeeds.Thirst ) ) guest.Thirst = 0;
-		if ( ride.Satisfies.HasFlag( GuestNeeds.Toilet ) ) guest.Toilet = 0;
-		if ( ride.Kind is RideVisitorKind.Ride or RideVisitorKind.Sideshow )
+		var type = Settings.Types[Math.Min( guest.Type, Settings.Types.Count - 1 )];
+		var before = guest.Happiness;
+		(guest.Happiness, guest.Nausea) = RideOutcome.Apply( guest.Happiness, guest.Hunger, guest.Nausea, type.PreferredExcitement, ride.LiveExcitement,
+			Settings.PerfectRide, Settings.GoodRide, Settings.OkRide, Settings.RideVomitDivisor );
+		if ( (ride.LiveExcitement & 0xFF) != 0 )
 		{
-			var type = Settings.Types[Math.Min( guest.Type, Settings.Types.Count - 1 )];
-			var difference = Math.Abs( type.PreferredExcitement - ride.ExcitementLevel );
-			var change = difference <= 5 ? Settings.PerfectRide
-				: difference <= 15 ? Settings.GoodRide
-				: difference <= 40 ? Settings.OkRide
-				: -Settings.SmallHappinessChange;
-			guest.Happiness = Math.Clamp( guest.Happiness + change, 0, 100 );
-			guest.ExitLevel += Math.Max( 0, change );
+			var change = guest.Happiness - before;
 			guest.Thought = change > 0 ? GuestThought.Pleased : GuestThought.Dissatisfied;
-			guest.Nausea += ride.ExcitementLevel / (float)Settings.RideVomitDivisor;
-			if ( guest.Nausea >= Settings.VomitCapacity )
-			{
-				guest.Nausea = 0;
-				guest.Thought = GuestThought.FeelingSick;
-				guest.Happiness = Math.Max( 0, guest.Happiness - Settings.MediumHappinessChange );
-			}
 		}
+		// the type's own effects follow the outcome in the original's use routine (0xeaaf8: 0xea318, then the effects fragment 0xeabb8)
+		var effects = UseEffects.Apply( new GuestMeters( guest.Happiness, guest.Thirst, guest.Hunger, guest.Toilet, guest.Nausea ),
+			ride.ThirstEffect, ride.HungerEffect, ride.VomitEffect, ride.HappinessEffect );
+		(guest.Happiness, guest.Thirst, guest.Hunger, _, guest.Nausea) = effects;
+		// then 0xeaaf8 switches on the type's special ingredient (0xeaf44; its sole caller 0xe9ff8 runs when a guest leaves the object): Sugar raises the speed boost
+		guest.Boost = GuestSpeed.RaiseBoost( guest.Boost, ride.SpecialIngredient, ride.IngredientAmount );
+		if ( ride.Satisfies.HasFlag( GuestNeeds.Toilet ) )
+			guest.Toilet = 0;
+	}
+
+	/// <summary>
+	/// Shifts an id into a four-slot history, newest first (<c>0xea268</c> for the used history, <c>0xea290</c> for the temporary one): the oldest entry falls out.
+	/// </summary>
+	private static void PushHistory( int[] history, int id )
+	{
+		for ( var slot = history.Length - 1; slot > 0; slot-- )
+			history[slot] = history[slot - 1];
+		history[0] = id;
 	}
 
 	public GuestStatistics GetStatistics()
@@ -1524,6 +1570,8 @@ public sealed class GuestSimulation : IRideVisitorHost
 			Thought = guest.Thought,
 			AttractionId = guest.AttractionId,
 			LastAttractionId = guest.LastAttractionId,
+			UsedHistory = (int[])guest.UsedHistory.Clone(),
+			TemporaryHistory = (int[])guest.TemporaryHistory.Clone(),
 			QueuePosition = guest.QueuePosition,
 			QueueJoinTurn = guest.QueueJoinTurn,
 			LastQueueWaitTurns = guest.LastQueueWaitTurns,
@@ -1607,8 +1655,8 @@ public sealed class GuestSimulation : IRideVisitorHost
 				Error( $"Guest {id} {name} is not finite." );
 		}
 
-		if ( snapshot.SchemaVersion != GuestSimulationSnapshot.CurrentSchemaVersion )
-			Error( $"Guest snapshot schema version {snapshot.SchemaVersion} is not supported; this build reads {GuestSimulationSnapshot.CurrentSchemaVersion}." );
+		if ( !GuestSimulationSnapshot.AcceptedSchemaVersions.Contains( snapshot.SchemaVersion ) )
+			Error( $"Guest snapshot schema version {snapshot.SchemaVersion} is not supported; this build reads {string.Join( ", ", GuestSimulationSnapshot.AcceptedSchemaVersions )}." );
 		if ( snapshot.TickCount < 0 )
 			Error( $"TickCount {snapshot.TickCount} is negative." );
 		if ( !double.IsFinite( snapshot.TimeSeconds ) || snapshot.TimeSeconds < 0 )
@@ -1752,14 +1800,33 @@ public sealed class GuestSimulation : IRideVisitorHost
 				Error( $"Guest {guest.Id} thought {(int)guest.Thought} is not a guest thought." );
 			if ( (uint)guest.Type >= (uint)typeCount )
 				Error( $"Guest {guest.Id} type {guest.Type} is not one of the park's {typeCount} guest types." );
-			Bounded( guest.Id, guest.Hunger, nameof( guest.Hunger ), 0, 150 );
-			Bounded( guest.Id, guest.Thirst, nameof( guest.Thirst ), 0, 150 );
-			Bounded( guest.Id, guest.Toilet, nameof( guest.Toilet ), 0, 150 );
+			// Schema 1 grew hunger, thirst and toilet to the old model's 150 cap; the meter model (schema 2 on) holds 0..100.
+			var needCeiling = snapshot.SchemaVersion == 1 ? 150 : 100;
+			Bounded( guest.Id, guest.Hunger, nameof( guest.Hunger ), 0, needCeiling );
+			Bounded( guest.Id, guest.Thirst, nameof( guest.Thirst ), 0, needCeiling );
+			Bounded( guest.Id, guest.Toilet, nameof( guest.Toilet ), 0, needCeiling );
 			Bounded( guest.Id, guest.Energy, nameof( guest.Energy ), 0, 100 );
 			Bounded( guest.Id, guest.Happiness, nameof( guest.Happiness ), 0, 100 );
-			Bounded( guest.Id, guest.Nausea, nameof( guest.Nausea ), 0, 1000 );
+			Bounded( guest.Id, guest.Nausea, nameof( guest.Nausea ), 0, 100 );
 			Bounded( guest.Id, guest.QueueJoinHappiness, nameof( guest.QueueJoinHappiness ), 0, 100 );
 			Bounded( guest.Id, guest.SecondsSinceRide, nameof( guest.SecondsSinceRide ), 0, 1_000_000 );
+			// Schema 1 predates the histories (they start empty); from schema 2 on they must be whole.
+			foreach ( var (name, history) in new[] { (nameof( guest.UsedHistory ), guest.UsedHistory), (nameof( guest.TemporaryHistory ), guest.TemporaryHistory) } )
+			{
+				if ( history == null )
+				{
+					if ( snapshot.SchemaVersion != 1 )
+						Error( $"Guest {guest.Id} has no {name}." );
+				}
+				else if ( history.Length != Guest.HistorySlots || history.Any( id => id < 0 ) )
+					Error( $"Guest {guest.Id} {name} is not {Guest.HistorySlots} non-negative attraction ids." );
+			}
+			// Schema 1 stores the former seconds-based exit value as a fraction; the truncated counter must stay a counter
+			// (the live decrement has no floor, so negative counts are legitimate). Schema 2 counters are whole by construction.
+			if ( !double.IsFinite( guest.ExitLevel ) || Math.Truncate( guest.ExitLevel ) is < int.MinValue or > int.MaxValue )
+				Error( $"Guest {guest.Id} exit counter {guest.ExitLevel} does not fit the truncated counter." );
+			else if ( snapshot.SchemaVersion != 1 && Math.Truncate( guest.ExitLevel ) != guest.ExitLevel )
+				Error( $"Guest {guest.Id} exit counter {guest.ExitLevel} is not a whole number of decisions." );
 			if ( guest.Money < 0 )
 				Error( $"Guest {guest.Id} Money {guest.Money} is negative." );
 			if ( guest.RidesTaken < 0 )
@@ -1777,7 +1844,6 @@ public sealed class GuestSimulation : IRideVisitorHost
 			Finite( guest.Id, guest.StepFromX, nameof( guest.StepFromX ) );
 			Finite( guest.Id, guest.StepFromY, nameof( guest.StepFromY ) );
 			Finite( guest.Id, guest.StepFromDistance, nameof( guest.StepFromDistance ) );
-			Finite( guest.Id, guest.ExitLevel, nameof( guest.ExitLevel ) );
 			Finite( guest.Id, guest.OffsetX, nameof( guest.OffsetX ) );
 			Finite( guest.Id, guest.OffsetY, nameof( guest.OffsetY ) );
 			Finite( guest.Id, guest.QueueTargetX, nameof( guest.QueueTargetX ) );
@@ -1962,7 +2028,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 		foreach ( var guestSnapshot in snapshot.Guests )
 		{
 			var guest = new Guest( guestSnapshot.Id, guestSnapshot.Type );
-			ApplyGuestSnapshot( guest, guestSnapshot );
+			ApplyGuestSnapshot( guest, guestSnapshot, snapshot.SchemaVersion );
 			restored.Add( guest );
 			restoredById.Add( guest.Id, guest );
 		}
@@ -1997,7 +2063,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 	}
 
 	/// <summary>Copies a validated guest snapshot into a fresh <see cref="Guest"/> (route, lane and buffer arrays are copied again).</summary>
-	private static void ApplyGuestSnapshot( Guest guest, GuestSnapshot snapshot )
+	private static void ApplyGuestSnapshot( Guest guest, GuestSnapshot snapshot, int schemaVersion )
 	{
 		guest.State = snapshot.State;
 		guest.HeadingX = snapshot.HeadingX;
@@ -2011,19 +2077,23 @@ public sealed class GuestSimulation : IRideVisitorHost
 		guest.StepFromY = snapshot.StepFromY;
 		guest.StepFromDistance = snapshot.StepFromDistance;
 		guest.StepTick = snapshot.StepTick;
-		guest.Hunger = snapshot.Hunger;
-		guest.Thirst = snapshot.Thirst;
-		guest.Toilet = snapshot.Toilet;
+		// Schema 1's meters grew to the old model's 150 cap; the counter model tops out at 100, so that migration clamps.
+		guest.Hunger = schemaVersion == 1 ? Math.Min( 100, snapshot.Hunger ) : snapshot.Hunger;
+		guest.Thirst = schemaVersion == 1 ? Math.Min( 100, snapshot.Thirst ) : snapshot.Thirst;
+		guest.Toilet = schemaVersion == 1 ? Math.Min( 100, snapshot.Toilet ) : snapshot.Toilet;
 		guest.Energy = snapshot.Energy;
 		guest.Nausea = snapshot.Nausea;
 		guest.Happiness = snapshot.Happiness;
 		guest.Money = snapshot.Money;
-		guest.ExitLevel = snapshot.ExitLevel;
+		// Schema 1 stored the former seconds-based value as a fraction; truncating toward zero keeps it a counter (one per 0.992 s).
+		guest.ExitLevel = (int)Math.Truncate( snapshot.ExitLevel );
 		guest.SecondsSinceRide = snapshot.SecondsSinceRide;
 		guest.RidesTaken = snapshot.RidesTaken;
 		guest.Thought = snapshot.Thought;
 		guest.AttractionId = snapshot.AttractionId;
 		guest.LastAttractionId = snapshot.LastAttractionId;
+		snapshot.UsedHistory?.CopyTo( guest.UsedHistory, 0 );
+		snapshot.TemporaryHistory?.CopyTo( guest.TemporaryHistory, 0 );
 		guest.QueuePosition = snapshot.QueuePosition;
 		guest.QueueJoinTurn = snapshot.QueueJoinTurn;
 		guest.LastQueueWaitTurns = snapshot.LastQueueWaitTurns;
@@ -2119,6 +2189,10 @@ public sealed class GuestSimulation : IRideVisitorHost
 			hash.Add( (int)guest.Thought );
 			hash.Add( guest.AttractionId );
 			hash.Add( guest.LastAttractionId );
+			foreach ( var id in guest.UsedHistory )
+				hash.Add( id );
+			foreach ( var id in guest.TemporaryHistory )
+				hash.Add( id );
 			hash.Add( guest.CellX );
 			hash.Add( guest.CellY );
 			hash.Add( guest.PreviousCellX );
@@ -2204,7 +2278,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 			AddFloat( guest.Energy );
 			AddFloat( guest.Nausea );
 			AddFloat( guest.Happiness );
-			AddFloat( guest.ExitLevel );
+			Add( guest.ExitLevel );
 			Add( guest.Money );
 			Add( guest.AttractionId );
 			Add( (int)guest.Thought );

@@ -15,16 +15,16 @@ weight (how much a player notices it, `areas.json`) times its researched and unc
 | Source | Functions | KB |
 | --- | ---: | ---: |
 | override | 13 | 56 |
-| repository | 1306 | 660 |
-| class | 753 | 102 |
+| repository | 1328 | 681 |
+| class | 692 | 94 |
 | library | 563 | 13 |
-| strings | 257 | 147 |
-| index | 217 | 94 |
-| imports | 142 | 48 |
-| propagated | 2532 | 550 |
-| unknown | 940 | 152 |
+| strings | 248 | 135 |
+| index | 216 | 94 |
+| imports | 143 | 48 |
+| propagated | 2485 | 540 |
+| unknown | 1035 | 161 |
 
-6723 functions, 1823 KB. Functions cited from files of more than one area: 398.
+6723 functions, 1823 KB. Functions cited from files of more than one area: 408.
 
 Left out as data read as code: `0x101C7CAC` (34652 bytes), `0x101D0408` (113320 bytes).
 
@@ -34,27 +34,27 @@ Kilobytes of code per status. Open approximations are fidelity-register IDs whos
 
 | Area | Weight | Functions | KB | Built | Researched | Uncited | Open approximations | Gap |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| interface | 4 | 995 | 254 | 12 | 138 | 105 | 70 | 971 |
-| render & assets | 3 | 775 | 211 | 11 | 61 | 139 | 21 | 600 |
-| paths & construction | 5 | 285 | 150 | 71 | 28 | 51 | 37 | 393 |
-| economy & research | 4 | 378 | 117 | 25 | 62 | 30 | 35 | 368 |
-| coasters | 4 | 306 | 139 | 56 | 25 | 58 | 22 | 333 |
-| rides & scripts | 5 | 199 | 92 | 27 | 29 | 36 | 35 | 328 |
-| guests | 5 | 240 | 78 | 13 | 34 | 31 | 15 | 324 |
-| scenarios & progression | 3 | 350 | 104 | 14 | 51 | 39 | 0 | 271 |
-| simulation core | 2 | 278 | 96 | 13 | 39 | 45 | 5 | 167 |
-| online | 1 | 536 | 143 | 8 | 7 | 127 | 24 | 135 |
-| audio & video | 3 | 220 | 66 | 26 | 9 | 32 | 36 | 123 |
-| save & load | 2 | 128 | 65 | 9 | 39 | 16 | 11 | 110 |
-| lobby & front end | 2 | 236 | 33 | 0 | 1 | 33 | 0 | 67 |
-| staff | 4 | 64 | 15 | 0 | 1 | 14 | 0 | 59 |
-| text & language | 2 | 96 | 32 | 4 | 0 | 28 | 0 | 55 |
-| advisor & park events | 3 | 158 | 33 | 16 | 4 | 14 | 19 | 53 |
-| platform | 1 | 517 | 41 | 0 | 0 | 41 | 0 | 41 |
-| camera | 3 | 22 | 1 | 0 | 0 | 1 | 0 | 3 |
-| (unknown) | 0 | 940 | 152 | 0 | 0 | 151 | 7 | 0 |
+| interface | 4 | 1045 | 280 | 23 | 149 | 109 | 70 | 1031 |
+| render & assets | 3 | 762 | 204 | 8 | 60 | 135 | 21 | 587 |
+| paths & construction | 5 | 279 | 151 | 71 | 28 | 52 | 37 | 399 |
+| economy & research | 4 | 375 | 116 | 25 | 62 | 30 | 35 | 366 |
+| coasters | 4 | 325 | 144 | 54 | 25 | 64 | 22 | 357 |
+| guests | 5 | 240 | 78 | 13 | 34 | 31 | 18 | 324 |
+| rides & scripts | 5 | 191 | 82 | 21 | 29 | 32 | 35 | 305 |
+| scenarios & progression | 3 | 358 | 108 | 15 | 52 | 41 | 0 | 279 |
+| simulation core | 2 | 282 | 96 | 13 | 39 | 44 | 5 | 166 |
+| online | 1 | 534 | 146 | 10 | 15 | 121 | 24 | 136 |
+| save & load | 2 | 123 | 63 | 9 | 39 | 15 | 11 | 108 |
+| audio & video | 3 | 218 | 61 | 26 | 9 | 27 | 36 | 105 |
+| lobby & front end | 2 | 238 | 33 | 0 | 1 | 32 | 0 | 65 |
+| staff | 4 | 58 | 14 | 0 | 1 | 13 | 0 | 55 |
+| text & language | 2 | 89 | 30 | 2 | 9 | 18 | 0 | 55 |
+| advisor & park events | 3 | 155 | 32 | 15 | 4 | 13 | 19 | 51 |
+| platform | 1 | 395 | 25 | 0 | 0 | 25 | 0 | 25 |
+| camera | 3 | 21 | 1 | 0 | 0 | 1 | 0 | 3 |
+| (unknown) | 0 | 1035 | 161 | 0 | 0 | 161 | 4 | 0 |
 
-Open approximations without an area (test gates and unmapped prefixes): 7.
+Open approximations without an area (test gates and unmapped prefixes): 4.
 
 ## Shared libraries
 
@@ -95,7 +95,7 @@ function name appears as a word in `source/`, `docs/` or `tools/`.
 | `CoolRect` | 6 | 0 |
 | `CoolRegion` | 5 | 0 |
 | `FeatureStatusPanel` | 17 | 6 |
-| `InterfaceBFCursor` | 8 | 2 |
+| `InterfaceBFCursor` | 8 | 3 |
 | `InterfaceBar` | 12 | 1 |
 | `InterfaceButton` | 11 | 2 |
 | `InterfaceCashAndGTickTextObject` | 2 | 0 |
@@ -132,7 +132,7 @@ function name appears as a word in `source/`, `docs/` or `tools/`.
 | `InterfaceVisitorNumTextObject` | 3 | 0 |
 | `InterfaceVisitorTimeTextObject` | 8 | 0 |
 | `InterfaceWindow` | 10 | 2 |
-| `RideStatusPanel` | 12 | 3 |
+| `RideStatusPanel` | 12 | 4 |
 | `ShopStatusPanel` | 12 | 4 |
 | `ShowStatusPanel` | 12 | 4 |
 | `StaffRoomStatusPanel` | 12 | 3 |
@@ -157,7 +157,7 @@ Largest uncited functions:
 | `0x10196E50` | 996 | propagated |  |
 | `0x10199EE0` | 940 | strings | Cursor Failed on ReadHeader · Failed on Load |
 | `0x1013ED18` | 812 | class |  |
-| `0x1013E46C` | 800 | propagated |  |
+| `0x1019269C` | 808 | propagated | deque::push_back length error · cdeque::push_back length error · !std::exception!!std::logic_error!!std::length_error!! |
 | `0x10187680` | 800 | propagated |  |
 | `0x10198AC8` | 800 | propagated |  |
 
@@ -170,16 +170,16 @@ Largest researched, not built:
 | `0x10194F58` | 2940 | index |  |
 | `0x10150C54` | 2576 | index |  |
 | `0x101BAA60` | 2384 | index |  |
+| `0x101724F4` | 2204 | repository |  |
+| `0x10156BAC` | 2184 | repository | meter.wct |
 | `0x1016AF08` | 1732 | class | ridestatbar.wct · happygrad.wct |
 | `0x10157DB0` | 1668 | index |  |
 | `0x1010AA5C` | 1640 | class | happygrad.wct |
+| `0x101643B4` | 1636 | repository | ridestatbar.wct · hilight |
+| `0x10097BAC` | 1608 | repository | ISLANDFOV( · SPINSPEED( · SPINRADIUS( |
 | `0x101B9C54` | 1584 | index |  |
 | `0x1014552C` | 1560 | index |  |
 | `0x10167714` | 1536 | class | ridestatbar.wct · happygrad.wct |
-| `0x1017A5FC` | 1524 | repository |  |
-| `0x10164F00` | 1464 | class | ridestatbar.wct |
-| `0x1015EF24` | 1340 | index | hilight |
-| `0x101960C8` | 1340 | index |  |
 
 
 ## render & assets
@@ -195,6 +195,7 @@ Largest researched, not built:
 | `CTPSharedTextureResource` | 1 | 0 |
 | `CTPSpriteResource` | 1 | 0 |
 | `CTPTextureResource` | 1 | 0 |
+| `TbTList<CIndividualChunkHandler *, CIndividualChunkHandler *>` | 1 | 0 |
 
 Largest uncited functions:
 
@@ -232,9 +233,9 @@ Largest researched, not built:
 | `0x100A4F68` | 1936 | repository |  |
 | `0x1019A65C` | 1688 | repository |  |
 | `0x1014BA4C` | 1644 | strings | ridestatbar.wct · hilight · happygrad.wct |
-| `0x101643B4` | 1636 | strings | ridestatbar.wct · hilight |
 | `0x100A5D88` | 1552 | repository |  |
 | `0x100A4A58` | 1296 | repository |  |
+| `0x100594C8` | 1156 | repository | .hmp · Ridename texture generator: Could not find local path |
 
 
 ## paths & construction
@@ -254,6 +255,7 @@ Largest uncited functions:
 | `0x1007AA08` | 1848 | propagated |  |
 | `0x1007C440` | 1812 | propagated |  |
 | `0x1007A354` | 1716 | propagated |  |
+| `0x1008A7C4` | 1636 | propagated |  |
 | `0x10088E68` | 1392 | propagated |  |
 | `0x1007419C` | 1208 | propagated |  |
 | `0x10079638` | 1168 | propagated |  |
@@ -261,7 +263,6 @@ Largest uncited functions:
 | `0x10079220` | 1048 | propagated |  |
 | `0x10084AB4` | 1008 | propagated |  |
 | `0x1007CEE4` | 940 | propagated |  |
-| `0x1006EFDC` | 932 | propagated |  |
 
 Largest researched, not built:
 
@@ -297,21 +298,21 @@ Largest uncited functions:
 
 | Address | Bytes | Label source | Strings |
 | --- | ---: | --- | --- |
-| `0x1008A7C4` | 1636 | propagated |  |
+| `0x10018458` | 1460 | propagated | Missing TABLE_END · InitialiseBalanceValues internal failure |
 | `0x1011710C` | 1380 | propagated |  |
 | `0x100DA548` | 784 | propagated | mNextObject · Don't know how to handle message type %d |
 | `0x10052AA8` | 752 | propagated |  |
 | `0x1013C778` | 716 | strings | !cbut · CNor.tga · Cbus.tga |
 | `0x10007C7C` | 708 | propagated |  |
-| `0x10088B9C` | 700 | propagated |  |
 | `0x100F55B0` | 692 | propagated | mType · mName · mPayGrade |
-| `0x1008B610` | 680 | propagated |  |
 | `0x100F1F54` | 548 | strings | mNumProjects · mObjId · mCat |
 | `0x10018084` | 540 | propagated | Missing TABLE_END · Balance file array index too high |
 | `0x10017358` | 512 | propagated | Missing TABLE_END · Too many fields have been specified |
+| `0x1001EA40` | 488 | propagated |  |
 | `0x100D0334` | 452 | propagated |  |
+| `0x10180EEC` | 436 | propagated |  |
 | `0x1005271C` | 432 | propagated |  |
-| `0x100FAF9C` | 408 | propagated |  |
+| `0x100D42B8` | 380 | propagated |  |
 
 Largest researched, not built:
 
@@ -345,12 +346,12 @@ Largest uncited functions:
 | Address | Bytes | Label source | Strings |
 | --- | ---: | --- | --- |
 | `0x10025FC0` | 6352 | override | Duplicate track section - IGNORED! · Out of Collision Objects · Out of Buoys |
+| `0x1005D93C` | 3520 | propagated |  |
 | `0x1002D9C4` | 3280 | propagated |  |
 | `0x1003ABF4` | 3104 | propagated |  |
 | `0x1002E694` | 2556 | propagated |  |
 | `0x1003C980` | 2064 | propagated |  |
 | `0x10042AA0` | 1740 | propagated |  |
-| `0x10018458` | 1460 | propagated | Missing TABLE_END · InitialiseBalanceValues internal failure |
 | `0x10033B48` | 1328 | propagated |  |
 | `0x100561D8` | 1172 | propagated |  |
 | `0x10049D74` | 1160 | propagated |  |
@@ -381,6 +382,58 @@ Largest researched, not built:
 | `0x1004967C` | 660 | repository |  |
 
 
+## guests
+
+| Class | Virtual methods | Cited |
+| --- | ---: | ---: |
+| `Arrival` | 1 | 0 |
+| `Avoid_Obstacle` | 1 | 0 |
+| `Avoid_Walls` | 1 | 1 |
+| `Follow_Path` | 1 | 1 |
+| `Repel_Obstacle` | 1 | 0 |
+| `Separation` | 1 | 1 |
+
+Largest uncited functions:
+
+| Address | Bytes | Label source | Strings |
+| --- | ---: | --- | --- |
+| `0x100E508C` | 2960 | strings | mAccurateDestX · *** I'm inside my patrol area but can't get anywhere else w… · Peep can't SetRandomDest anywhere |
+| `0x100AD0BC` | 1324 | propagated |  |
+| `0x10100AD4` | 1224 | strings | A peep has enquired as to the possibility of walking off th… |
+| `0x100E9B2C` | 1080 | propagated | Minor Decision: OID=%d, @=(%d, %d), sc=%d |
+| `0x100AD5E8` | 992 | strings | RSSE: WALK: Very odd ! Just found a zero peepid in walk tab… |
+| `0x100CF084` | 936 | propagated |  |
+| `0x1010988C` | 748 | propagated | World Struture |
+| `0x100E9FA4` | 708 | strings | Person %d: Happiness changed by %d since using object %d |
+| `0x100EDF20` | 676 | propagated |  |
+| `0x100ADCC0` | 640 | strings | RSSE: WALK: Tried to release a peep who is not here. |
+| `0x1004E3BC` | 584 | propagated |  |
+| `0x100AC7F0` | 584 | propagated | RSSE: Invalid Node ID |
+| `0x100EC8BC` | 576 | propagated |  |
+| `0x100AD9C8` | 556 | strings | RSSE: Bad walknode in %s · RSSE: Bad head node in %s · RSSE: Bad walk node in %s |
+| `0x100FB54C` | 552 | propagated | mActionHistIndex · Not a known thought! |
+
+Largest researched, not built:
+
+| Address | Bytes | Label source | Strings |
+| --- | ---: | --- | --- |
+| `0x10101C64` | 3272 | repository | Step in which direction? |
+| `0x10069A70` | 2716 | repository | kids · kidsheads · handymen |
+| `0x100FDC70` | 2452 | repository |  |
+| `0x100E9164` | 2336 | repository | Calculating option score for object with no BOQ · Person %d: COS on %ls %d: · - dist (inc. nearby fireworks): %d |
+| `0x10101434` | 2024 | repository |  |
+| `0x100D768C` | 1536 | repository | The save game takes advantage of the region effect grid bei… |
+| `0x100E7644` | 1400 | repository |  |
+| `0x100E5EE0` | 1396 | repository |  |
+| `0x100FF224` | 1300 | repository |  |
+| `0x100EF240` | 1216 | repository | Big problem...no way this should happen · Person not correctly removed from queue · Got stuck walking around outside park - this shouldn't happ… |
+| `0x100FE628` | 1120 | repository | force · The ground changed under this peep, tried to renav, can't r… · A peep became stuck and renavigated. <<<<< SO CHECK IT OUT,… |
+| `0x100D8548` | 792 | strings | mLitter · Littering cell %d, %d · Dodgy litter type |
+| `0x100E8C58` | 792 | repository |  |
+| `0x100B584C` | 676 | repository | RSSE: System not initialised · Bad ScriptID |
+| `0x100EA318` | 652 | repository |  |
+
+
 ## rides & scripts
 
 | Class | Virtual methods | Cited |
@@ -393,7 +446,6 @@ Largest uncited functions:
 | Address | Bytes | Label source | Strings |
 | --- | ---: | --- | --- |
 | `0x10077BF8` | 3696 | strings | Found upgrade... modify? |
-| `0x1005D93C` | 3520 | propagated |  |
 | `0x1001EFEC` | 2760 | strings | Set ride performance to %d |
 | `0x10017904` | 1920 | strings | Missing TABLE_END · Missing map description · Missing map description initial marker |
 | `0x1018D9D8` | 1756 | strings | Ride %s has an invalid base, blending will not work |
@@ -407,6 +459,7 @@ Largest uncited functions:
 | `0x100E3124` | 536 | strings | Can only build objects at upgrade level 0 at the moment · mCurrentEntry · mNumEntries |
 | `0x100E34FC` | 536 | strings | Can only build objects at upgrade level 0 at the moment · mCurrentEntry · mNumEntries |
 | `0x1005AC68` | 520 | strings | interesting AnimTimeControl %d/%d to ride instance %s · Flags : %d · AnimID : %d |
+| `0x1005A734` | 440 | strings | Cannot find a ride to destroy at slot %d - returning |
 
 Largest researched, not built:
 
@@ -429,58 +482,6 @@ Largest researched, not built:
 | `0x1001E150` | 568 | repository | Ride broken |
 
 
-## guests
-
-| Class | Virtual methods | Cited |
-| --- | ---: | ---: |
-| `Arrival` | 1 | 0 |
-| `Avoid_Obstacle` | 1 | 0 |
-| `Avoid_Walls` | 1 | 1 |
-| `Follow_Path` | 1 | 1 |
-| `Repel_Obstacle` | 1 | 0 |
-| `Separation` | 1 | 1 |
-
-Largest uncited functions:
-
-| Address | Bytes | Label source | Strings |
-| --- | ---: | --- | --- |
-| `0x100E508C` | 2960 | strings | mAccurateDestX · *** I'm inside my patrol area but can't get anywhere else w… · Peep can't SetRandomDest anywhere |
-| `0x100AD0BC` | 1324 | propagated |  |
-| `0x10100AD4` | 1224 | strings | A peep has enquired as to the possibility of walking off th… |
-| `0x100E9B2C` | 1080 | propagated | Minor Decision: OID=%d, @=(%d, %d), sc=%d |
-| `0x100AD5E8` | 992 | strings | RSSE: WALK: Very odd ! Just found a zero peepid in walk tab… |
-| `0x100CF084` | 936 | propagated |  |
-| `0x100D8548` | 792 | strings | mLitter · Littering cell %d, %d · Dodgy litter type |
-| `0x1010988C` | 748 | propagated | World Struture |
-| `0x100E9FA4` | 708 | strings | Person %d: Happiness changed by %d since using object %d |
-| `0x100EDF20` | 676 | propagated |  |
-| `0x100ADCC0` | 640 | strings | RSSE: WALK: Tried to release a peep who is not here. |
-| `0x1004E3BC` | 584 | propagated |  |
-| `0x100AC7F0` | 584 | propagated | RSSE: Invalid Node ID |
-| `0x100EC8BC` | 576 | propagated |  |
-| `0x100AD9C8` | 556 | strings | RSSE: Bad walknode in %s · RSSE: Bad head node in %s · RSSE: Bad walk node in %s |
-
-Largest researched, not built:
-
-| Address | Bytes | Label source | Strings |
-| --- | ---: | --- | --- |
-| `0x10101C64` | 3272 | repository | Step in which direction? |
-| `0x10069A70` | 2716 | repository | kids · kidsheads · handymen |
-| `0x100FDC70` | 2452 | repository |  |
-| `0x100E9164` | 2336 | repository | Calculating option score for object with no BOQ · Person %d: COS on %ls %d: · - dist (inc. nearby fireworks): %d |
-| `0x10101434` | 2024 | repository |  |
-| `0x100D768C` | 1536 | repository | The save game takes advantage of the region effect grid bei… |
-| `0x100E7644` | 1400 | repository |  |
-| `0x100E5EE0` | 1396 | repository |  |
-| `0x100FF224` | 1300 | repository |  |
-| `0x100EF240` | 1216 | repository | Big problem...no way this should happen · Person not correctly removed from queue · Got stuck walking around outside park - this shouldn't happ… |
-| `0x100FE628` | 1120 | repository | force · The ground changed under this peep, tried to renav, can't r… · A peep became stuck and renavigated. <<<<< SO CHECK IT OUT,… |
-| `0x100E8C58` | 792 | repository |  |
-| `0x100B584C` | 676 | repository | RSSE: System not initialised · Bad ScriptID |
-| `0x100EA318` | 652 | repository |  |
-| `0x101002F4` | 612 | repository | force · seek · arrival |
-
-
 ## scenarios & progression
 
 | Class | Virtual methods | Cited |
@@ -495,13 +496,13 @@ Largest uncited functions:
 | `0x1019E3B8` | 1544 | propagated | !std::exception!!std::ios_base::failure!! · nobody@nowhere.net · :outbox |
 | `0x101A14FC` | 1332 | propagated | !std::exception!!std::ios_base::failure!! · nobody@nowhere.net · ios_base failure in clear |
 | `0x100CE1E4` | 1196 | strings | mType · mTargetTime · mTargetVal |
+| `0x10002148` | 1168 | propagated | !std::exception!!std::logic_error!!std::out_of_range!! · development data · basic_string::replace pos out of range |
 | `0x101A5A24` | 1156 | propagated | !std::exception!!std::ios_base::failure!! · ios_base failure in clear |
 | `0x101A0A6C` | 1124 | propagated | !std::exception!!std::ios_base::failure!! · nobody@nowhere.net · :addrbook.dat |
 | `0x100D6868` | 1064 | propagated |  |
 | `0x100BFDC4` | 1012 | propagated |  |
-| `0x101A0F14` | 952 | propagated | nobody@nowhere.net · ios_base failure in clear · !std::exception!!std::ios_base::failure!! |
 | `0x10118F98` | 912 | propagated |  |
-| `0x1019EBAC` | 896 | propagated | !std::exception!!std::ios_base::failure!! · nobody@nowhere.net · :outbox.dat |
+| `0x10022BFC` | 884 | propagated |  |
 | `0x101A3230` | 840 | propagated | nobody@nowhere.net · ios_base failure in clear · !std::exception!!std::ios_base::failure!! |
 | `0x101A0764` | 776 | propagated | !std::exception!!std::ios_base::failure!! · nobody@nowhere.net · :addrbook.dat |
 | `0x100FC4F0` | 716 | propagated |  |
@@ -514,19 +515,19 @@ Largest researched, not built:
 | --- | ---: | --- | --- |
 | `0x101BF60C` | 2616 | repository | TPWorld · TPWMutex · data:levels |
 | `0x10161910` | 2376 | repository | effortguage.wct · bluebar.wct |
-| `0x10156BAC` | 2184 | repository | meter.wct |
 | `0x1011ACFC` | 1916 | repository | Cannot have header-only save · Cannot have a header-only load but supply no header pointer · Couldn't open file %s |
 | `0x1011A5F4` | 1800 | repository | Cannot have header-only save · Failed to open %s · Write to %s failed |
 | `0x101813D0` | 1756 | repository |  |
+| `0x10020A94` | 1428 | repository | GoKart Race Over |
 | `0x1015C828` | 1296 | repository |  |
 | `0x1015C31C` | 1292 | repository |  |
 | `0x101369E4` | 1288 | repository |  |
 | `0x1009FD70` | 1192 | repository |  |
 | `0x10184028` | 1000 | repository |  |
 | `0x101A51E8` | 940 | propagated | !std::exception!!std::ios_base::failure!! · ios_base failure in clear |
+| `0x10002894` | 892 | repository |  |
 | `0x10155B7C` | 828 | repository |  |
 | `0x1013D708` | 784 | repository |  |
-| `0x10198E50` | 784 | repository |  |
 
 
 ## simulation core
@@ -544,7 +545,6 @@ Largest uncited functions:
 | `0x1009BA44` | 1988 | propagated |  |
 | `0x10062D1C` | 1908 | propagated |  |
 | `0x1010FACC` | 1488 | propagated |  |
-| `0x10020A94` | 1428 | propagated | GoKart Race Over |
 | `0x10023664` | 1348 | propagated |  |
 | `0x10110AE8` | 1236 | propagated |  |
 | `0x100357A4` | 1136 | propagated |  |
@@ -553,8 +553,9 @@ Largest uncited functions:
 | `0x10023248` | 1052 | propagated |  |
 | `0x1009E4E4` | 1032 | propagated |  |
 | `0x1009EF70` | 996 | propagated |  |
-| `0x10022BFC` | 884 | propagated |  |
 | `0x100AF08C` | 816 | propagated | RSSE: Unknown object type |
+| `0x10035368` | 744 | propagated |  |
+| `0x100207E8` | 684 | propagated | CRUNCH · TOOT! |
 
 Largest researched, not built:
 
@@ -619,7 +620,6 @@ Largest uncited functions:
 | `0x101AE290` | 6156 | override | goto ftp download failed · You can't ignore yourself · You can't blackmark yourself |
 | `0x100F95FC` | 4232 | strings | TAG SYSTEM says: Postcard sent |
 | `0x1012E17C` | 2252 | strings | ONLINE LOGIN: About to connect · ONLINE CITY: City data downloaded ok |
-| `0x10131370` | 1988 | strings | ONLINE LOGIN: About to connect · ONLINE FTPDOWNLOAD: About to connect · anonymous |
 | `0x1019DA40` | 1768 | strings | <html> <head> <title>Theme Park World (TM) Virtual Postcard… · nobody@nowhere.net · --_BF_TPW_mpmbndry.%08x |
 | `0x1019EF2C` | 1664 | propagated | !std::exception!!std::ios_base::failure!! · nobody@nowhere.net · :%08x.dat |
 | `0x101AA9D0` | 1448 | strings | goto ftp download failed · ONLINE CHAT: Created a player, let's join a park. |
@@ -628,79 +628,29 @@ Largest uncited functions:
 | `0x1019F5AC` | 1288 | propagated | !std::exception!!std::ios_base::failure!! · nobody@nowhere.net · :%08x.dat |
 | `0x101A48A8` | 1228 | imports | LIST %s · RETR %s |
 | `0x101949AC` | 1220 | propagated | !std::exception!!std::logic_error!!std::length_error!! · hilight · basic_string::replace pos out of range |
-| `0x10002148` | 1168 | propagated | !std::exception!!std::logic_error!!std::out_of_range!! · development data · basic_string::replace pos out of range |
 | `0x1015E644` | 1104 | strings | postcard.jpg · ftp.ea-europe.com |
+| `0x1019FC84` | 1084 | propagated | nobody@nowhere.net |
+| `0x101B15C0` | 1084 | strings | goto ftp download failed · :ignore.dat · ios_base failure in clear |
 
 Largest researched, not built:
 
 | Address | Bytes | Label source | Strings |
 | --- | ---: | --- | --- |
-| `0x101B9068` | 1364 | repository |  |
+| `0x1000A228` | 5200 | repository | mSoundId |
+| `0x10131370` | 1988 | repository | ONLINE LOGIN: About to connect · ONLINE FTPDOWNLOAD: About to connect · anonymous |
 | `0x1018AB84` | 908 | repository | WL / MW : Stop the search and display whatever has been got… · hilight |
 | `0x10184B48` | 816 | repository | hilight |
 | `0x10186A84` | 784 | repository | ftp.ea-europe.com · hilight |
 | `0x10189E64` | 760 | repository | hilight |
 | `0x1018539C` | 680 | repository |  |
+| `0x10146228` | 656 | propagated |  |
+| `0x10130620` | 584 | repository | ONLINE LOGIN: About to connect · ONLINE UPLOAD: Uploading · ONLINE UPLOAD: requesting now... |
+| `0x10008E50` | 440 | repository |  |
 | `0x101860F4` | 440 | strings | ftp.ea-europe.com |
 | `0x10182E00` | 416 | repository | progress.wct |
 | `0x101846A8` | 416 | repository |  |
 | `0x10183274` | 400 | repository |  |
 | `0x101B96D8` | 288 | repository |  |
-| `0x101B97F8` | 100 | repository |  |
-| `0x101B8B08` | 56 | repository |  |
-
-
-## audio & video
-
-| Class | Virtual methods | Cited |
-| --- | ---: | ---: |
-| `CSoundBalance` | 2 | 0 |
-| `CTPFMVResource` | 3 | 0 |
-| `CTPLanguageResource` | 3 | 0 |
-| `CTPSoundResource` | 1 | 0 |
-| `CTPTerrainResource` | 3 | 0 |
-| `CTPUIResource` | 3 | 0 |
-| `TbAudioEvent` | 4 | 0 |
-
-Largest uncited functions:
-
-| Address | Bytes | Label source | Strings |
-| --- | ---: | --- | --- |
-| `0x1000A228` | 5200 | strings | mSoundId |
-| `0x1009D39C` | 2540 | propagated |  |
-| `0x10121BAC` | 952 | propagated |  |
-| `0x1007C0DC` | 868 | propagated |  |
-| `0x100BA728` | 868 | strings | SOUND: Tried to initialise sound system twice ! |
-| `0x100A04D8` | 760 | propagated |  |
-| `0x1002A158` | 724 | propagated |  |
-| `0x1008E9AC` | 664 | propagated |  |
-| `0x1012C7FC` | 656 | propagated |  |
-| `0x100BAC78` | 620 | propagated |  |
-| `0x1015621C` | 560 | propagated |  |
-| `0x101035D4` | 512 | propagated |  |
-| `0x1014E3DC` | 468 | propagated |  |
-| `0x100A02EC` | 432 | propagated |  |
-| `0x1004C930` | 416 | propagated |  |
-
-Largest researched, not built:
-
-| Address | Bytes | Label source | Strings |
-| --- | ---: | --- | --- |
-| `0x1004CE40` | 1088 | repository |  |
-| `0x1000680C` | 880 | repository |  |
-| `0x100D4F9C` | 760 | repository | Name of guard out of bounds · Guard: kid was NULL or timestamp expired · Guard: Cannot get to perp's position |
-| `0x101C0B28` | 712 | repository | data:init: · *** Compiled %s at %s %dl *** · Nov 6 2000 |
-| `0x100923A8` | 628 | repository | data:lobby:globe · globe |
-| `0x100002DC` | 608 | repository | development data · save:config.tcf |
-| `0x10112430` | 532 | repository |  |
-| `0x10000EE4` | 460 | propagated |  |
-| `0x1004BFE4` | 420 | repository |  |
-| `0x10000D54` | 400 | repository |  |
-| `0x101C0DF0` | 336 | repository | data:init: · Data:Movies:bf.mov |
-| `0x100036B0` | 304 | repository |  |
-| `0x1004CAD0` | 300 | repository |  |
-| `0x100066EC` | 288 | propagated |  |
-| `0x100D4994` | 256 | repository | Name of guard out of bounds · Guard %d: Too tired to chase kids · Could not get to kid to prosecute him |
 
 
 ## save & load
@@ -726,9 +676,9 @@ Largest uncited functions:
 | `0x10019C58` | 508 | propagated |  |
 | `0x10039DAC` | 492 | propagated |  |
 | `0x100679F4` | 480 | propagated |  |
-| `0x1000CD80` | 448 | propagated |  |
 | `0x100F2524` | 404 | propagated | mNumProjects · effort · output |
 | `0x101468BC` | 400 | propagated |  |
+| `0x100B81E0` | 360 | propagated |  |
 
 Largest researched, not built:
 
@@ -749,6 +699,60 @@ Largest researched, not built:
 | `0x100B83E4` | 792 | repository |  |
 | `0x1002CEAC` | 748 | repository |  |
 | `0x100CF42C` | 724 | repository | mType · mCurrentChallenge · mNextChallengeEventTime |
+
+
+## audio & video
+
+| Class | Virtual methods | Cited |
+| --- | ---: | ---: |
+| `CSoundBalance` | 2 | 0 |
+| `CTPFMVResource` | 3 | 0 |
+| `CTPLanguageResource` | 3 | 0 |
+| `CTPSoundResource` | 1 | 0 |
+| `CTPTerrainResource` | 3 | 0 |
+| `CTPUIResource` | 3 | 0 |
+| `TbAudioEvent` | 4 | 0 |
+| `TbTList<TbDynamicStringTemplate<wchar_t> *, TbDynamicStringTemplate<wchar_t> *>` | 1 | 0 |
+
+Largest uncited functions:
+
+| Address | Bytes | Label source | Strings |
+| --- | ---: | --- | --- |
+| `0x1009D39C` | 2540 | propagated |  |
+| `0x10121BAC` | 952 | propagated |  |
+| `0x1007C0DC` | 868 | propagated |  |
+| `0x100BA728` | 868 | strings | SOUND: Tried to initialise sound system twice ! |
+| `0x100A04D8` | 760 | propagated |  |
+| `0x1002A158` | 724 | propagated |  |
+| `0x1012C7FC` | 656 | propagated |  |
+| `0x1007BE6C` | 624 | propagated |  |
+| `0x100BAC78` | 620 | propagated |  |
+| `0x1015621C` | 560 | propagated |  |
+| `0x101035D4` | 512 | propagated |  |
+| `0x1014E3DC` | 468 | propagated |  |
+| `0x1012F71C` | 456 | propagated |  |
+| `0x1004C930` | 416 | propagated |  |
+| `0x10121A1C` | 400 | propagated |  |
+
+Largest researched, not built:
+
+| Address | Bytes | Label source | Strings |
+| --- | ---: | --- | --- |
+| `0x1004CE40` | 1088 | repository |  |
+| `0x1000680C` | 880 | repository |  |
+| `0x100D4F9C` | 760 | repository | Name of guard out of bounds · Guard: kid was NULL or timestamp expired · Guard: Cannot get to perp's position |
+| `0x101C0B28` | 712 | repository | data:init: · *** Compiled %s at %s %dl *** · Nov 6 2000 |
+| `0x100923A8` | 628 | repository | data:lobby:globe · globe |
+| `0x100002DC` | 608 | repository | development data · save:config.tcf |
+| `0x10112430` | 532 | repository |  |
+| `0x10000EE4` | 460 | propagated |  |
+| `0x1004BFE4` | 420 | repository |  |
+| `0x10000D54` | 400 | repository |  |
+| `0x101C0DF0` | 336 | repository | data:init: · Data:Movies:bf.mov |
+| `0x100036B0` | 304 | repository |  |
+| `0x1004CAD0` | 300 | repository |  |
+| `0x100066EC` | 288 | propagated |  |
+| `0x100D4994` | 256 | repository | Name of guard out of bounds · Guard %d: Too tired to chase kids · Could not get to kid to prosecute him |
 
 
 ## lobby & front end
@@ -776,17 +780,18 @@ Largest researched, not built:
 | `CLBScreenComponentPublishGlobe` | 19 | 1 |
 | `CLBScreenComponentThemeIslands` | 19 | 5 |
 | `CLBScreenSystem` | 8 | 0 |
+| `TbTList<AdvisorResponse *, AdvisorResponse *>` | 1 | 0 |
 
 Largest uncited functions:
 
 | Address | Bytes | Label source | Strings |
 | --- | ---: | --- | --- |
 | `0x10091B0C` | 1880 | class |  |
-| `0x10097BAC` | 1608 | strings | ISLANDFOV( · SPINSPEED( · SPINRADIUS( |
 | `0x1012EDF8` | 1284 | propagated |  |
 | `0x10090540` | 836 | propagated |  |
 | `0x10090174` | 820 | propagated |  |
 | `0x100960DC` | 668 | class |  |
+| `0x1008E9AC` | 664 | propagated |  |
 | `0x10096D1C` | 588 | class |  |
 | `0x1008E2F8` | 548 | propagated |  |
 | `0x10091600` | 540 | strings | data:lobby:globe · bullfrog · hpin |
@@ -852,7 +857,6 @@ Largest uncited functions:
 
 | Address | Bytes | Label source | Strings |
 | --- | ---: | --- | --- |
-| `0x1011E418` | 9080 | override | data:Language: · Error: Unable to open text resource at %s · Error: Unable to set language to %s |
 | `0x10111BE8` | 1336 | imports |  |
 | `0x101207D8` | 972 | imports |  |
 | `0x10120BD8` | 884 | strings | Error: Unable to open text resource at %s · English · French |
@@ -867,6 +871,13 @@ Largest uncited functions:
 | `0x101C3D3C` | 640 | strings | English · French · German |
 | `0x1000112C` | 588 | imports | development data · cd missing · Quit |
 | `0x10153798` | 456 | imports |  |
+| `0x101535EC` | 428 | imports |  |
+
+Largest researched, not built:
+
+| Address | Bytes | Label source | Strings |
+| --- | ---: | --- | --- |
+| `0x1011E418` | 9080 | override | data:Language: · Error: Unable to open text resource at %s · Error: Unable to set language to %s |
 
 
 ## advisor & park events
@@ -906,7 +917,6 @@ Largest uncited functions:
 | `0x1000E4EC` | 724 | strings | data:advisor:advisor.sam · Not found: %d |
 | `0x10009EA8` | 648 | strings | mSoundId · CAdvisor::HandleStaffInfo() doesn't know about the staff ty… |
 | `0x1000E128` | 556 | strings | data:advisor:advisor.sam · Not found: %d |
-| `0x100063F0` | 516 | strings | Advisor anim sequence of %d |
 | `0x1000D280` | 488 | strings | data:advisor:advisor.sam · Not found: %d |
 | `0x1000D0B4` | 460 | strings | data:advisor:advisor.sam · Not found: %d |
 | `0x100C6248` | 436 | propagated | mMapSquaresPerCell |
@@ -918,6 +928,7 @@ Largest uncited functions:
 | `0x100C5C94` | 400 | propagated | mMapSquaresPerCell |
 | `0x1000DC44` | 388 | strings | data:advisor:advisor.sam · Not found: %d |
 | `0x1000DDC8` | 388 | strings | data:advisor:advisor.sam · Not found: %d |
+| `0x101241C8` | 372 | propagated |  |
 
 Largest researched, not built:
 
@@ -944,54 +955,6 @@ Largest researched, not built:
 
 | Class | Virtual methods | Cited |
 | --- | ---: | ---: |
-| `TbPtrList<AdvisorResponse>` | 1 | 0 |
-| `TbPtrList<CFSOnlineCity>` | 1 | 0 |
-| `TbPtrList<CFSOnlinePark>` | 1 | 0 |
-| `TbPtrList<CFSOnlineRide>` | 1 | 0 |
-| `TbPtrList<CFSOnlineServer>` | 1 | 0 |
-| `TbPtrList<CFSOnlineTheme>` | 1 | 0 |
-| `TbPtrList<CIndividualChunkHandler>` | 1 | 0 |
-| `TbPtrList<CLBFlyingMeshGroup>` | 1 | 0 |
-| `TbPtrList<CLBFlyingMeshInstance>` | 1 | 0 |
-| `TbPtrList<CLBGlobe>` | 1 | 0 |
-| `TbPtrList<CLBGlobeCityFlag>` | 1 | 0 |
-| `TbPtrList<CLBIsland>` | 1 | 0 |
-| `TbPtrList<CLBLobbySystem>` | 1 | 0 |
-| `TbPtrList<CLBMeshInstance>` | 1 | 0 |
-| `TbPtrList<CLBMeshType>` | 1 | 0 |
-| `TbPtrList<CLBScreenComponent>` | 1 | 0 |
-| `TbPtrList<CTPBaseResource>` | 1 | 0 |
-| `TbPtrList<CTPItemResource>` | 1 | 0 |
-| `TbPtrList<CUI2DMapSprite>` | 1 | 0 |
-| `TbPtrList<TFSLoadSaveSaveFileDetails>` | 1 | 0 |
-| `TbPtrList<TbDynamicStringTemplate<char>>` | 1 | 0 |
-| `TbPtrList<TbDynamicStringTemplate<wchar_t>>` | 1 | 0 |
-| `TbPtrList<bfl::FileSystem::CFileStorage>` | 1 | 0 |
-| `TbTList<AdvisorResponse *, AdvisorResponse *>` | 1 | 0 |
-| `TbTList<CFSOnlineCity *, CFSOnlineCity *>` | 1 | 0 |
-| `TbTList<CFSOnlinePark *, CFSOnlinePark *>` | 1 | 0 |
-| `TbTList<CFSOnlineRide *, CFSOnlineRide *>` | 1 | 0 |
-| `TbTList<CFSOnlineServer *, CFSOnlineServer *>` | 1 | 0 |
-| `TbTList<CFSOnlineTheme *, CFSOnlineTheme *>` | 1 | 0 |
-| `TbTList<CIndividualChunkHandler *, CIndividualChunkHandler *>` | 1 | 0 |
-| `TbTList<CLBFlyingMeshGroup *, CLBFlyingMeshGroup *>` | 1 | 0 |
-| `TbTList<CLBFlyingMeshInstance *, CLBFlyingMeshInstance *>` | 1 | 0 |
-| `TbTList<CLBGlobe *, CLBGlobe *>` | 1 | 0 |
-| `TbTList<CLBGlobeCityFlag *, CLBGlobeCityFlag *>` | 1 | 0 |
-| `TbTList<CLBIsland *, CLBIsland *>` | 1 | 0 |
-| `TbTList<CLBLobbySystem *, CLBLobbySystem *>` | 1 | 0 |
-| `TbTList<CLBMeshInstance *, CLBMeshInstance *>` | 1 | 0 |
-| `TbTList<CLBMeshType *, CLBMeshType *>` | 1 | 0 |
-| `TbTList<CLBScreenComponent *, CLBScreenComponent *>` | 1 | 0 |
-| `TbTList<CTPBaseResource *, CTPBaseResource *>` | 1 | 0 |
-| `TbTList<CTPItemResource *, CTPItemResource *>` | 1 | 0 |
-| `TbTList<CUI2DMapSprite *, CUI2DMapSprite *>` | 1 | 0 |
-| `TbTList<TFSLoadSaveSaveFileDetails *, TFSLoadSaveSaveFileDetails *>` | 1 | 0 |
-| `TbTList<TbDynamicStringTemplate<char> *, TbDynamicStringTemplate<char> *>` | 1 | 0 |
-| `TbTList<TbDynamicStringTemplate<wchar_t> *, TbDynamicStringTemplate<wchar_t> *>` | 1 | 0 |
-| `TbTList<bfl::FileSystem::CFileStorage *, bfl::FileSystem::CFileStorage *>` | 1 | 0 |
-| `TbTList<tag_IDX_TYPE<IDXTYPEUniqueNameThingId, unsigned short>, tag_IDX_TYPE<IDXTYPEUniqueNameThingId, unsigned short>>` | 1 | 0 |
-| `ThemeParkWorld` | 12 | 2 |
 | `ThemeParkWorld::CdDialog` | 2 | 0 |
 | `bfl::FileSystem::CDiscFileStorage` | 1 | 0 |
 | `bfl::FileSystem::CMemFile` | 3 | 0 |
@@ -1023,26 +986,25 @@ Largest uncited functions:
 | Address | Bytes | Label source | Strings |
 | --- | ---: | --- | --- |
 | `0x101B3704` | 1552 | class |  |
-| `0x1010F67C` | 1104 | propagated | QuickSave Loaded · splash · Theme Park:Theme Park Data:data:splash |
 | `0x101B32B8` | 1004 | class |  |
 | `0x10060BB8` | 948 | class |  |
 | `0x100625EC` | 932 | propagated | tpw.log · vector::insert length error · !std::exception!!std::ios_base::failure!! |
-| `0x1004B740` | 908 | propagated |  |
+| `0x10001CE4` | 880 | propagated | development data · basic_string::length error. Resizing out of range · !std::exception!!std::logic_error!!std::out_of_range!! |
 | `0x100608A8` | 696 | class |  |
-| `0x101718EC` | 604 | propagated |  |
 | `0x10061A2C` | 512 | propagated | tpw.log · string constructor: n > max_size · !std::exception!!std::ios_base::failure!! |
 | `0x101B30F8` | 448 | class |  |
-| `0x10000714` | 440 | class |  |
 | `0x100606F0` | 440 | class |  |
-| `0x10000574` | 412 | class | development data · Theme Park:Theme Park Data: |
 | `0x10061C90` | 404 | propagated | tpw.log · basic_string::append results in string > max_size · !std::exception!!std::ios_base::failure!! |
-| `0x101B7E20` | 396 | propagated |  |
+| `0x10061370` | 344 | propagated |  |
+| `0x1005FC44` | 340 | class |  |
+| `0x1019EA58` | 340 | class |  |
+| `0x101B0A8C` | 340 | class |  |
+| `0x101B1090` | 340 | class |  |
 
 Largest researched, not built:
 
 | Address | Bytes | Label source | Strings |
 | --- | ---: | --- | --- |
-| `0x10000C6C` | 232 | class |  |
 | `0x101C4524` | 24 | library |  |
 | `0x101C4E9C` | 24 | library |  |
 | `0x101C4EB4` | 24 | library |  |
@@ -1072,15 +1034,63 @@ Largest uncited functions:
 | `0x1006BF6C` | 52 | class | Assigning CMMDefault |
 | `0x1006DC38` | 40 | class |  |
 | `0x1018F3C0` | 36 | propagated |  |
-| `0x1008527C` | 28 | propagated |  |
 | `0x1006DDB0` | 8 | class |  |
 | `0x1006DFA8` | 8 | class |  |
 | `0x1006B988` | 4 | class |  |
 | `0x1006B98C` | 4 | class |  |
 | `0x1006B994` | 4 | class |  |
+| `0x1006BA70` | 4 | class |  |
 
 
 ## (unknown)
+
+| Class | Virtual methods | Cited |
+| --- | ---: | ---: |
+| `TbPtrList<AdvisorResponse>` | 1 | 0 |
+| `TbPtrList<CFSOnlineCity>` | 1 | 0 |
+| `TbPtrList<CFSOnlinePark>` | 1 | 0 |
+| `TbPtrList<CFSOnlineRide>` | 1 | 0 |
+| `TbPtrList<CFSOnlineServer>` | 1 | 0 |
+| `TbPtrList<CFSOnlineTheme>` | 1 | 0 |
+| `TbPtrList<CIndividualChunkHandler>` | 1 | 0 |
+| `TbPtrList<CLBFlyingMeshGroup>` | 1 | 0 |
+| `TbPtrList<CLBFlyingMeshInstance>` | 1 | 0 |
+| `TbPtrList<CLBGlobe>` | 1 | 0 |
+| `TbPtrList<CLBGlobeCityFlag>` | 1 | 0 |
+| `TbPtrList<CLBIsland>` | 1 | 0 |
+| `TbPtrList<CLBLobbySystem>` | 1 | 0 |
+| `TbPtrList<CLBMeshInstance>` | 1 | 0 |
+| `TbPtrList<CLBMeshType>` | 1 | 0 |
+| `TbPtrList<CLBScreenComponent>` | 1 | 0 |
+| `TbPtrList<CTPBaseResource>` | 1 | 0 |
+| `TbPtrList<CTPItemResource>` | 1 | 0 |
+| `TbPtrList<CUI2DMapSprite>` | 1 | 0 |
+| `TbPtrList<TFSLoadSaveSaveFileDetails>` | 1 | 0 |
+| `TbPtrList<TbDynamicStringTemplate<char>>` | 1 | 0 |
+| `TbPtrList<TbDynamicStringTemplate<wchar_t>>` | 1 | 0 |
+| `TbPtrList<bfl::FileSystem::CFileStorage>` | 1 | 0 |
+| `TbTList<CFSOnlineCity *, CFSOnlineCity *>` | 1 | 0 |
+| `TbTList<CFSOnlinePark *, CFSOnlinePark *>` | 1 | 0 |
+| `TbTList<CFSOnlineRide *, CFSOnlineRide *>` | 1 | 0 |
+| `TbTList<CFSOnlineServer *, CFSOnlineServer *>` | 1 | 0 |
+| `TbTList<CFSOnlineTheme *, CFSOnlineTheme *>` | 1 | 0 |
+| `TbTList<CLBFlyingMeshGroup *, CLBFlyingMeshGroup *>` | 1 | 0 |
+| `TbTList<CLBFlyingMeshInstance *, CLBFlyingMeshInstance *>` | 1 | 0 |
+| `TbTList<CLBGlobe *, CLBGlobe *>` | 1 | 0 |
+| `TbTList<CLBGlobeCityFlag *, CLBGlobeCityFlag *>` | 1 | 0 |
+| `TbTList<CLBIsland *, CLBIsland *>` | 1 | 0 |
+| `TbTList<CLBLobbySystem *, CLBLobbySystem *>` | 1 | 0 |
+| `TbTList<CLBMeshInstance *, CLBMeshInstance *>` | 1 | 0 |
+| `TbTList<CLBMeshType *, CLBMeshType *>` | 1 | 0 |
+| `TbTList<CLBScreenComponent *, CLBScreenComponent *>` | 1 | 0 |
+| `TbTList<CTPBaseResource *, CTPBaseResource *>` | 1 | 0 |
+| `TbTList<CTPItemResource *, CTPItemResource *>` | 1 | 0 |
+| `TbTList<CUI2DMapSprite *, CUI2DMapSprite *>` | 1 | 0 |
+| `TbTList<TFSLoadSaveSaveFileDetails *, TFSLoadSaveSaveFileDetails *>` | 1 | 0 |
+| `TbTList<TbDynamicStringTemplate<char> *, TbDynamicStringTemplate<char> *>` | 1 | 0 |
+| `TbTList<bfl::FileSystem::CFileStorage *, bfl::FileSystem::CFileStorage *>` | 1 | 0 |
+| `TbTList<tag_IDX_TYPE<IDXTYPEUniqueNameThingId, unsigned short>, tag_IDX_TYPE<IDXTYPEUniqueNameThingId, unsigned short>>` | 1 | 0 |
+| `ThemeParkWorld` | 12 | 2 |
 
 Largest uncited functions:
 
@@ -1091,8 +1101,8 @@ Largest uncited functions:
 | `0x1015A628` | 2292 | unknown |  |
 | `0x100BD9B4` | 2268 | unknown |  |
 | `0x10174FEC` | 2212 | unknown |  |
-| `0x101724F4` | 2204 | unknown |  |
 | `0x101758D4` | 1532 | unknown |  |
+| `0x1010F67C` | 1104 | unknown | QuickSave Loaded · splash · Theme Park:Theme Park Data:data:splash |
 | `0x1006A80C` | 1056 | unknown |  |
 | `0x100B9410` | 1036 | unknown | PK_GOTO · UNTIL without REPEAT |
 | `0x101998E8` | 1024 | unknown |  |
@@ -1100,7 +1110,7 @@ Largest uncited functions:
 | `0x1007F26C` | 972 | unknown | Writing Hoardings Balance file |
 | `0x1007F638` | 972 | unknown | Writing Hoardings Balance file · Writing Complete Hoardings Balance file |
 | `0x100BCF98` | 952 | unknown |  |
-| `0x100B8EB0` | 904 | unknown | PK_GOTO · Too many nested IF's · Bad test code in IF statement |
+| `0x1004B740` | 908 | unknown |  |
 
 Largest researched, not built:
 

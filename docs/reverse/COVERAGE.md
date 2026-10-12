@@ -11,9 +11,9 @@ often covered through their callers.
 
 | | Count | Cited | Share |
 | --- | ---: | ---: | ---: |
-| Functions in SimThemePark | 6725 | 1618 | 24.1 % |
-| Code bytes in those functions | 2014896 | 1001104 | 49.7 % |
-| RTTI classes (names in the repository) | 194 | 50 | |
+| Functions in SimThemePark | 6725 | 1638 | 24.4 % |
+| Code bytes in those functions | 2014896 | 1028904 | 51.1 % |
+| RTTI classes (names in the repository) | 194 | 51 | |
 
 ## Classes
 
@@ -145,7 +145,7 @@ Virtual methods come from the classes' virtual tables; generic container and `st
 | `IME::CIME` | 1 | 0 | no |
 | `IPBase` | 1 | 0 | no |
 | `IPSystem` | 1 | 0 | no |
-| `InterfaceBFCursor` | 8 | 2 | yes |
+| `InterfaceBFCursor` | 8 | 3 | yes |
 | `InterfaceBar` | 12 | 1 | no |
 | `InterfaceButton` | 11 | 2 | yes |
 | `InterfaceCashAndGTickTextObject` | 2 | 0 | no |
@@ -184,8 +184,8 @@ Virtual methods come from the classes' virtual tables; generic container and `st
 | `InterfaceWindow` | 10 | 2 | yes |
 | `LbTimeClockTickFunction` | 1 | 1 | yes |
 | `Repel_Obstacle` | 1 | 0 | no |
-| `RideStatusPanel` | 12 | 3 | yes |
-| `SamsUtilities::URectangleMac` | 0 | 0 | no |
+| `RideStatusPanel` | 12 | 4 | yes |
+| `SamsUtilities::URectangleMac` | 0 | 0 | yes |
 | `Seek` | 1 | 1 | yes |
 | `Separation` | 1 | 1 | yes |
 | `ShopStatusPanel` | 12 | 4 | no |
@@ -210,12 +210,10 @@ Largest first. Strings are the first short debug strings the function references
 
 | Address | Bytes | Name | Strings |
 | --- | ---: | --- | --- |
-| `0x1011E418` | 9080 |  | data:Language: · Error: Unable to open text resource at %s · Error: Unable to set language to %s |
 | `0x101AAF78` | 7324 |  | goto ftp download failed · Pos for teleport - x: %d, y:%d · Pos before unhide - x: %d, y:%d |
 | `0x10025FC0` | 6352 |  | Thing has been allocated in ThingArray index 0 - shouldn't … · Duplicate track section - IGNORED! · Out of Collision Objects |
 | `0x101AE290` | 6156 |  | goto ftp download failed · You can't ignore yourself · You can't blackmark yourself |
 | `0x1002B5F8` | 5528 |  |  |
-| `0x1000A228` | 5200 |  | mSoundId |
 | `0x100F95FC` | 4232 |  | TAG SYSTEM says: Postcard sent |
 | `0x10051164` | 4228 |  | data:levels:%s:MiscMesh:textures · Hoardings |
 | `0x10077BF8` | 3696 |  | Thing has been allocated in ThingArray index 0 - shouldn't … · Found upgrade... modify? |
@@ -239,12 +237,10 @@ Largest first. Strings are the first short debug strings the function references
 | `0x100BD9B4` | 2268 |  |  |
 | `0x1012E17C` | 2252 |  | ONLINE LOGIN: About to connect · ONLINE CITY: City data downloaded ok |
 | `0x10174FEC` | 2212 |  |  |
-| `0x101724F4` | 2204 |  |  |
 | `0x100286FC` | 2076 |  | PathTex |
 | `0x1003C980` | 2064 |  |  |
 | `0x101BA284` | 2012 |  |  |
 | `0x1009BA44` | 1988 |  |  |
-| `0x10131370` | 1988 |  | ONLINE LOGIN: About to connect · ONLINE FTPDOWNLOAD: About to connect · anonymous |
 | `0x10078A68` | 1976 |  |  |
 | `0x1002ABF0` | 1940 |  |  |
 | `0x10017904` | 1920 |  | Missing TABLE_END · Missing map description · Missing map description initial marker |
@@ -265,14 +261,12 @@ Largest first. Strings are the first short debug strings the function references
 | `0x1014950C` | 1656 |  | Thing has been allocated in ThingArray index 0 - shouldn't … · ridestatbar.wct |
 | `0x100A9858` | 1644 |  |  |
 | `0x1008A7C4` | 1636 |  |  |
-| `0x10097BAC` | 1608 |  | ISLANDFOV( · SPINSPEED( · SPINRADIUS( |
 | `0x101B3704` | 1552 | `std::basic_filebuf<wchar_t, std::char_traits<wchar_t>>::vf9` |  |
 | `0x1019E3B8` | 1544 |  | !std::exception!!std::ios_base::failure!! · nobody@nowhere.net · :outbox |
 | `0x101758D4` | 1532 |  |  |
 | `0x1010FACC` | 1488 |  |  |
 | `0x10018458` | 1460 |  | Missing TABLE_END · InitialiseBalanceValues internal failure |
 | `0x101AA9D0` | 1448 |  | goto ftp download failed · ONLINE CHAT: Created a player, let's join a park. |
-| `0x10020A94` | 1428 |  | Thing has been allocated in ThingArray index 0 - shouldn't … · GoKart Race Over |
 | `0x1009E8EC` | 1404 |  | PTCL: Awooga Awooga! Illegal Sprite code |
 | `0x10088E68` | 1392 |  |  |
 | `0x1011710C` | 1380 |  |  |
@@ -371,7 +365,6 @@ Largest first. Strings are the first short debug strings the function references
 | `0x100B8EB0` | 904 |  | PK_GOTO · Too many nested IF's · Bad test code in IF statement |
 | `0x1015FC9C` | 900 |  | basic_string::length error. Resizing out of range · !std::exception!!std::logic_error!!std::length_error!! |
 | `0x1019EBAC` | 896 |  | !std::exception!!std::ios_base::failure!! · nobody@nowhere.net · :outbox.dat |
-| `0x10002894` | 892 |  |  |
 | `0x1008AE28` | 888 |  |  |
 | `0x101B8B40` | 888 |  |  |
 | `0x10022BFC` | 884 |  |  |
@@ -403,7 +396,6 @@ Largest first. Strings are the first short debug strings the function references
 | `0x101BC814` | 808 |  |  |
 | `0x100078C8` | 804 |  |  |
 | `0x1003C660` | 800 |  |  |
-| `0x1013E46C` | 800 |  |  |
 | `0x10187680` | 800 |  |  |
 | `0x1019131C` | 800 |  |  |
 | `0x10198AC8` | 800 |  |  |
@@ -411,7 +403,6 @@ Largest first. Strings are the first short debug strings the function references
 | `0x101B7FAC` | 800 |  | goto ftp download failed · cdeque::assign length error · !std::exception!!std::logic_error!!std::length_error!! |
 | `0x1018B158` | 796 |  |  |
 | `0x1019163C` | 796 |  | deque::push_back length error · cdeque::assign length error · !std::exception!!std::logic_error!!std::length_error!! |
-| `0x100D8548` | 792 |  | mLitter · Littering cell %d, %d · Dodgy litter type |
 | `0x1015F984` | 792 |  | string copy constructor: pos > str len · !std::exception!!std::logic_error!!std::out_of_range!! |
 | `0x10141068` | 788 |  |  |
 | `0x10197668` | 788 |  |  |

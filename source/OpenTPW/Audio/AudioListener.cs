@@ -32,6 +32,15 @@ public static class AudioListener
 	/// <summary>The listener's ground heading, normalised; sources to its right pan right.</summary>
 	public static Vector3 Forward { get; private set; } = new( 0, 0, 1 );
 
+	/// <summary>Reinstates an already captured listener exactly when a scene transaction rolls back.</summary>
+	internal static void RestoreCaptured( Vector3 position, Vector3 forward )
+	{
+		ValidatePosition( position, nameof( position ) );
+		ValidatePosition( forward, nameof( forward ) );
+		Position = position;
+		Forward = forward;
+	}
+
 	public static void Update( Vector3 position, Vector3 forward )
 	{
 		ValidatePosition( position, nameof( position ) );

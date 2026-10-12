@@ -16,6 +16,8 @@ public sealed class EntityConstructionScopeTests
 	private CameraMode previousCamera = null!;
 	private float previousExtent;
 	private Vector3 previousTarget;
+	private Vector3 previousListenerPosition;
+	private Vector3 previousListenerForward;
 
 	[TestInitialize]
 	public void Initialize()
@@ -25,11 +27,14 @@ public sealed class EntityConstructionScopeTests
 		previousCamera = Camera.Mode;
 		previousExtent = ParkCameraMode.TargetExtent;
 		previousTarget = ParkCameraMode.InitialTarget;
+		previousListenerPosition = AudioListener.Position;
+		previousListenerForward = AudioListener.Forward;
 		Entity.All = new();
 		Level.Current = null!;
 		Camera.Mode = new CameraMode();
 		ParkCameraMode.TargetExtent = 50;
 		ParkCameraMode.InitialTarget = new Vector3( 1, 2, 0 );
+		AudioListener.Update( new Vector3( 17, 18, 19 ), new Vector3( 0.3f, 0, 0.7f ) );
 	}
 
 	[TestCleanup]
@@ -40,6 +45,7 @@ public sealed class EntityConstructionScopeTests
 		Camera.Mode = previousCamera;
 		ParkCameraMode.TargetExtent = previousExtent;
 		ParkCameraMode.InitialTarget = previousTarget;
+		AudioListener.RestoreCaptured( previousListenerPosition, previousListenerForward );
 	}
 
 	private sealed class OwnedEntity( bool failDelete = false ) : Entity
@@ -141,5 +147,33 @@ public sealed class EntityConstructionScopeTests
 		var list = Entity.All;
 		Assert.ThrowsException<InvalidOperationException>( () => new EntityConstructionScope() );
 		Assert.AreSame( list, Entity.All );
+	}
+
+	[TestMethod]
+	public void StagingAParkCameraKeepsLiveAudioUntilActivation()
+	{
+		var livePosition = AudioListener.Position;
+		var liveForward = AudioListener.Forward;
+		using var transaction = new EntityConstructionScope();
+		var camera = new ParkCameraMode();
+		camera.SetPose( new Vector3( 3, 4, 0 ), 42, 65 );
+		Camera.Mode = camera;
+		Assert.AreEqual( livePosition, AudioListener.Position,
+			"native audio continues mixing while the candidate's assets are loaded" );
+		Assert.AreEqual( liveForward, AudioListener.Forward );
+		transaction.Detach();
+		transaction.Activate();
+		Assert.AreNotEqual( livePosition, AudioListener.Position, "activation installs the candidate listener" );
+	}
+
+	[TestMethod]
+	public void RollbackRestoresTheExactAudioListenerEvenWhileAnErrorDialogPausesCameraUpdates()
+	{
+		var livePosition = AudioListener.Position;
+		var liveForward = AudioListener.Forward;
+		using ( var transaction = new EntityConstructionScope() )
+			AudioListener.Update( new Vector3( 29, 30, 31 ), new Vector3( 0.7f, 0, 0.3f ) );
+		Assert.AreEqual( livePosition, AudioListener.Position );
+		Assert.AreEqual( liveForward, AudioListener.Forward );
 	}
 }

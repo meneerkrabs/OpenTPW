@@ -305,7 +305,8 @@ public static class ParkSaveFile
 		return data;
 	}
 
-	private static void Validate( Data data )
+	/// <summary>Validates a parsed economy save in place. Internal: the world-save envelope validates its embedded economy through these same rules.</summary>
+	internal static void Validate( Data data )
 	{
 		void Require( bool condition, string message )
 		{

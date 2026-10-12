@@ -125,11 +125,13 @@ public sealed class RideScriptWorld
 	/// (<see cref="OriginalObjectRuntime.RestoreSnapshot"/> unregisters stopped scripts), then this.
 	///
 	/// Pass 0 resolves and verifies every script identity (hash, seed, source name, variable count) through the
-	/// candidates' own resolvers before anything changes. Pass 1 constructs the child VMs under their parents with
-	/// their saved seeds (the world's seed stream is never drawn), releases the constructor-temporary
-	/// registrations, applies the saved state and rebinds the saved ids. Pass 2 links the child and sound-child
-	/// references. Pass 3 restores the world counters. Any violation throws before or during a pass and aborts the
-	/// restore — discard this candidate world and its runtimes then; never resume into a live park.
+	/// resolver its parent hands down — a spawned child inherits its parent's resolver, so the chain closes for
+	/// any nesting depth — before anything changes. Pass 1 constructs the child VMs top-down (parents before
+	/// children; id order is not assumed to be topology) with their saved seeds (the world's seed stream is never
+	/// drawn), releases the constructor-temporary registrations, applies the saved state and rebinds the saved
+	/// ids. Pass 2 links the child and sound-child references. Pass 3 restores the world counters. Any violation
+	/// throws before or during a pass and aborts the restore — discard this candidate world and its runtimes
+	/// then; never resume into a live park.
 	/// </summary>
 	public void RestoreSnapshot( RideScriptWorldSnapshot snapshot, IReadOnlyDictionary<int, RideVM> rootScripts )
 	{
@@ -148,9 +150,12 @@ public sealed class RideScriptWorld
 		if ( unknown.Length > 0 )
 			throw new InvalidDataException( $"candidate root script id(s) {string.Join( ", ", unknown )} are not snapshot roots." );
 
-		// Pass 0 — verify the roots, then resolve every child file through the candidates' own resolvers.
+		// Pass 0 — verify the roots, then resolve every child file through the resolver its parent hands
+		// down (a spawned child inherits its parent's resolver, so each resolved child can resolve its own
+		// children: the work-list closes for any nesting depth of child and sound-child chains).
 		var nodes = new Dictionary<int, RideVM>();
 		var files = new Dictionary<int, RideScriptFile>();
+		var resolvers = new Dictionary<int, Func<string, RideScriptFile>?>();
 		foreach ( var id in rootIds.OrderBy( id => id ) )
 		{
 			var candidate = rootScripts[id];
@@ -159,6 +164,7 @@ public sealed class RideScriptWorld
 				throw new InvalidDataException( $"root script {id} candidate was constructed against another world." );
 			VerifyCandidate( candidate, saved );
 			nodes[id] = candidate;
+			resolvers[id] = candidate.Options.ResolveScript;
 		}
 		var pending = snapshot.Scripts.Where( script => script.ParentScriptId != 0 ).ToList();
 		while ( pending.Count > 0 )
@@ -166,11 +172,10 @@ public sealed class RideScriptWorld
 			var progressed = false;
 			foreach ( var saved in pending.ToArray() )
 			{
-				if ( !nodes.ContainsKey( saved.ParentScriptId ) )
-					continue;
-				var parent = nodes[saved.ParentScriptId];
-				var resolve = parent.Options.ResolveScript
-					?? throw new InvalidDataException( $"script {saved.ScriptId}: parent {parent.ScriptId} has no script resolver to load '{saved.ScriptFileName}'." );
+				if ( !resolvers.TryGetValue( saved.ParentScriptId, out var resolve ) )
+					continue; // the parent is itself a pending child; a later sweep has it resolved
+				if ( resolve == null )
+					throw new InvalidDataException( $"script {saved.ScriptId}: parent {saved.ParentScriptId} has no script resolver to load '{saved.ScriptFileName}'." );
 				var file = resolve( saved.ScriptFileName! )
 					?? throw new InvalidDataException( $"script {saved.ScriptId}: child script '{saved.ScriptFileName}' was not found by the parent's resolver." );
 				if ( RideScriptIdentity.Hash( file ) != saved.ScriptIdentityHash )
@@ -178,6 +183,7 @@ public sealed class RideScriptWorld
 				if ( file.VariableCount != saved.Variables.Length )
 					throw new InvalidDataException( $"script {saved.ScriptId}: resolved child '{saved.ScriptFileName}' has {file.VariableCount} variables, the snapshot stores {saved.Variables.Length}." );
 				files[saved.ScriptId] = file;
+				resolvers[saved.ScriptId] = resolve;
 				pending.Remove( saved );
 				progressed = true;
 			}
@@ -185,23 +191,34 @@ public sealed class RideScriptWorld
 				throw new InvalidDataException( $"child scripts {string.Join( ", ", pending.Select( script => script.ScriptId ) )} were not reached through their parents." );
 		}
 
-		// Pass 1 — construct the children top-down (their seeds are explicit, so the stream is not drawn),
+		// Pass 1 — construct the children top-down (a parent node exists before its children are built; id
+		// order is not assumed to be topology), with each child's seed explicit so the stream is never drawn;
 		// then release the temporary registrations and rebind every saved id.
-		foreach ( var saved in snapshot.Scripts.Where( script => script.ParentScriptId != 0 ).OrderBy( script => script.ScriptId ) )
+		var construct = snapshot.Scripts.Where( script => script.ParentScriptId != 0 ).ToList();
+		while ( construct.Count > 0 )
 		{
-			var parent = nodes[saved.ParentScriptId];
-			var childOptions = new RideVMOptions
+			var progressed = false;
+			foreach ( var saved in construct.ToArray() )
 			{
-				Effects = parent.Options.Effects,
-				World = this,
-				ResolveScript = parent.Options.ResolveScript,
-				Seed = saved.Seed,
-				SourceName = $"{parent.SourceName} > {saved.ScriptFileName}"
-			};
-			var child = new RideVM( files[saved.ScriptId], childOptions, parent );
-			if ( child.SourceName != saved.SourceName )
-				throw new InvalidDataException( $"script {saved.ScriptId}: constructed source '{child.SourceName}' does not match the snapshot's '{saved.SourceName}'." );
-			nodes[saved.ScriptId] = child;
+				if ( !nodes.TryGetValue( saved.ParentScriptId, out var parent ) )
+					continue; // the parent is itself a child still waiting for its construction turn
+				var childOptions = new RideVMOptions
+				{
+					Effects = parent.Options.Effects,
+					World = this,
+					ResolveScript = parent.Options.ResolveScript,
+					Seed = saved.Seed,
+					SourceName = $"{parent.SourceName} > {saved.ScriptFileName}"
+				};
+				var child = new RideVM( files[saved.ScriptId], childOptions, parent );
+				if ( child.SourceName != saved.SourceName )
+					throw new InvalidDataException( $"script {saved.ScriptId}: constructed source '{child.SourceName}' does not match the snapshot's '{saved.SourceName}'." );
+				nodes[saved.ScriptId] = child;
+				construct.Remove( saved );
+				progressed = true;
+			}
+			if ( !progressed )
+				throw new InvalidDataException( $"child scripts {string.Join( ", ", construct.Select( script => script.ScriptId ) )} have no constructed parent." );
 		}
 		foreach ( var vm in nodes.Values )
 			UnregisterById( vm.ScriptId );
@@ -212,13 +229,21 @@ public sealed class RideScriptWorld
 			RegisterWithId( vm, saved.ScriptId );
 		}
 
-		// Pass 2 — the child and sound-child links.
+		// Pass 2 — the child and sound-child links (validation proved them consistent both ways).
 		foreach ( var saved in snapshot.Scripts )
 		{
 			if ( saved.ChildScriptId != 0 )
-				nodes[saved.ScriptId].AdoptChild( nodes[saved.ChildScriptId], sound: false );
+			{
+				if ( !nodes.TryGetValue( saved.ChildScriptId, out var child ) )
+					throw new InvalidDataException( $"script {saved.ScriptId} links child {saved.ChildScriptId}, which the restore did not construct." );
+				nodes[saved.ScriptId].AdoptChild( child, sound: false );
+			}
 			if ( saved.SoundChildScriptId != 0 )
-				nodes[saved.ScriptId].AdoptChild( nodes[saved.SoundChildScriptId], sound: true );
+			{
+				if ( !nodes.TryGetValue( saved.SoundChildScriptId, out var soundChild ) )
+					throw new InvalidDataException( $"script {saved.ScriptId} links sound child {saved.SoundChildScriptId}, which the restore did not construct." );
+				nodes[saved.ScriptId].AdoptChild( soundChild, sound: true );
+			}
 		}
 
 		// Pass 3 — the world counters, then the post-condition: exactly the saved scripts stay registered.

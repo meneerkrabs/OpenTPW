@@ -22,6 +22,8 @@ public sealed record ScriptRandomState
 	/// <summary>Pure structural validation; throws <see cref="InvalidDataException"/> on any violation.</summary>
 	public void Validate()
 	{
+		if ( Table == null )
+			throw new InvalidDataException( "RNG state carries no table." );
 		if ( Table.Length != TableWords )
 			throw new InvalidDataException( $"RNG state has {Table.Length} table words, expected {TableWords}." );
 		for ( var index = 0; index < Table.Length; ++index )

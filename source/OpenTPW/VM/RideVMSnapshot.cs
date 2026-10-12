@@ -128,6 +128,8 @@ public sealed record RideVMSnapshot
 	{
 		if ( SchemaVersion != CurrentSchemaVersion )
 			throw new InvalidDataException( $"RideVM snapshot schema version {SchemaVersion} is not {CurrentSchemaVersion}." );
+		if ( CallStack == null || Variables == null || RandomState == null || UnimplementedEffects == null )
+			throw new InvalidDataException( $"Script {ScriptId} snapshot carries a null array (call stack, variables, RNG state or effect record)." );
 		if ( ScriptId < 1 )
 			throw new InvalidDataException( $"Script id {ScriptId} is not positive." );
 		if ( ParentScriptId < 0 )
@@ -228,13 +230,18 @@ public sealed record RideScriptWorldSnapshot
 	{
 		if ( SchemaVersion != CurrentSchemaVersion )
 			throw new InvalidDataException( $"RideScriptWorld snapshot schema version {SchemaVersion} is not {CurrentSchemaVersion}." );
+		if ( Scripts == null )
+			throw new InvalidDataException( "The world snapshot carries no script array." );
 		if ( !double.IsFinite( ClockMilliseconds ) || ClockMilliseconds < 0 )
 			throw new InvalidDataException( $"World clock {ClockMilliseconds} is not finite and non-negative." );
 		if ( NextScriptId < 1 || NextAttractionId < 1 )
 			throw new InvalidDataException( $"World allocators ({NextScriptId}, {NextAttractionId}) are not positive." );
 		var byId = new Dictionary<int, RideVMSnapshot>();
-		foreach ( var script in Scripts )
+		for ( var index = 0; index < Scripts.Count; index++ )
 		{
+			var script = Scripts[index];
+			if ( script == null )
+				throw new InvalidDataException( $"The world snapshot's script entry {index} is null." );
 			script.ValidateSnapshot();
 			if ( !byId.TryAdd( script.ScriptId, script ) )
 				throw new InvalidDataException( $"Script id {script.ScriptId} appears twice." );
@@ -273,5 +280,11 @@ public sealed record RideScriptWorldSnapshot
 					stack.Push( node.SoundChildScriptId );
 			}
 		}
+		// Links must agree both ways: a linked child names its linker as parent, so a root can never be
+		// adopted as someone's child and a child link cannot point at another script's child.
+		foreach ( var script in Scripts )
+			foreach ( var (link, kind) in new[] { (script.ChildScriptId, "child"), (script.SoundChildScriptId, "sound child") } )
+				if ( link != 0 && byId[link].ParentScriptId != script.ScriptId )
+					throw new InvalidDataException( $"Script {script.ScriptId} links {kind} {link}, whose parent is {byId[link].ParentScriptId}, not {script.ScriptId}." );
 	}
 }

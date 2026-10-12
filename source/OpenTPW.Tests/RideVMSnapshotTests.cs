@@ -255,6 +255,214 @@ public class RideVMSnapshotTests
 		Assert.AreEqual( RideVMState.Faulted, candidate.State, "a restored fault stays put" );
 	}
 
+	// ---- Deep graphs: child and sound-child chains of any nesting depth ----
+
+	[TestMethod]
+	public void ThreeLevelChildAndSoundGraphRestoresAndContinues()
+	{
+		var grandchild = new RideVMTests.Asm()
+			.I( Opcode.NAME, RideVMTests.S( 0 ) )
+			.I( Opcode.WAIT, 400 )
+			.I( Opcode.COPY, RideVMTests.V( 0 ), 7 )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" )
+			.Build( new[] { "G0", "G1" }, "Grand" );
+		var sound = new RideVMTests.Asm()
+			.I( Opcode.NAME, RideVMTests.S( 0 ) )
+			.I( Opcode.COPY, RideVMTests.V( 0 ), 44 )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" )
+			.Build( new[] { "S0" }, "Sound" );
+		// Strings: "Child" at 0, "grand.rse" at 6 — the child spawns the grandchild as its SOUND child.
+		var child = new RideVMTests.Asm()
+			.I( Opcode.NAME, RideVMTests.S( 0 ) )
+			.I( Opcode.SPAWNSOUND, RideVMTests.S( 6 ) )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" )
+			.Build( new[] { "C0" }, "Child", "grand.rse" );
+		// Strings: "Parent" at 0, "child.rse" at 7, "sound.rse" at 17.
+		byte[] Parent() => new RideVMTests.Asm()
+			.I( Opcode.NAME, RideVMTests.S( 0 ) )
+			.I( Opcode.SPAWNSOUND, RideVMTests.S( 17 ) )
+			.I( Opcode.SPAWNCHILD, RideVMTests.S( 7 ) )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" )
+			.Build( new[] { "P0", "P1", "P2", "P3" }, "Parent", "child.rse", "sound.rse" );
+		RideScriptFile? Resolve( string name ) => name switch
+		{
+			"child.rse" => new RideScriptFile( new MemoryStream( child ) ),
+			"grand.rse" => new RideScriptFile( new MemoryStream( grandchild ) ),
+			"sound.rse" => new RideScriptFile( new MemoryStream( sound ) ),
+			_ => null
+		};
+
+		var world = new RideScriptWorld();
+		var root = CreateRoot( Parent(), world, seed: 42, "parent.rse", Resolve );
+		AdvanceWorld( world, 12 );
+		Assert.AreEqual( RideVMState.Waiting, root.Child!.SoundChild!.State, "captured with the grandchild mid-wait" );
+		var snapshot = world.CaptureSnapshot();
+		var rootId = root.ScriptId;
+
+		var restored = new RideScriptWorld();
+		var candidate = CreateRoot( Parent(), restored, seed: 42, "parent.rse", Resolve );
+		restored.RestoreSnapshot( snapshot, new Dictionary<int, RideVM> { [rootId] = candidate } );
+
+		Assert.AreEqual( 4, restored.Scripts.Count );
+		Assert.AreEqual( root.Child.ScriptId, candidate.Child!.ScriptId );
+		Assert.AreEqual( root.SoundChild!.ScriptId, candidate.SoundChild!.ScriptId );
+		Assert.AreEqual( root.Child.SoundChild.ScriptId, candidate.Child.SoundChild!.ScriptId, "the grandchild keeps its saved id" );
+		Assert.AreEqual( candidate.Child, candidate.Child.SoundChild.Parent, "the grandchild hangs under the restored child" );
+		Assert.AreEqual( "Grand", candidate.Child.SoundChild.ScriptName );
+		Assert.AreEqual( root.Child.SoundChild.SourceName, candidate.Child.SoundChild.SourceName );
+		Assert.AreEqual( Hash( root ), Hash( candidate ) );
+		Assert.AreEqual( Hash( root.Child ), Hash( candidate.Child ) );
+		Assert.AreEqual( Hash( root.SoundChild ), Hash( candidate.SoundChild ) );
+		Assert.AreEqual( Hash( root.Child.SoundChild ), Hash( candidate.Child.SoundChild ) );
+
+		for ( var tick = 0; tick < 80; tick++ )
+		{
+			root.Advance( Tick );
+			candidate.Advance( Tick );
+			Assert.AreEqual( Hash( root ), Hash( candidate ), $"root diverged at tick {tick}" );
+			Assert.AreEqual( Hash( root.Child ), Hash( candidate.Child ), $"child diverged at tick {tick}" );
+			Assert.AreEqual( Hash( root.SoundChild ), Hash( candidate.SoundChild ), $"sound child diverged at tick {tick}" );
+			Assert.AreEqual( Hash( root.Child.SoundChild ), Hash( candidate.Child.SoundChild ), $"grandchild diverged at tick {tick}" );
+			Assert.AreEqual( world.ClockMilliseconds, restored.ClockMilliseconds );
+		}
+		Assert.AreEqual( 7, candidate.Child.SoundChild.Variables[0], "the grandchild's wait completed on the restored side too" );
+		Assert.AreEqual( 44, candidate.SoundChild.Variables[0] );
+	}
+
+	[TestMethod]
+	public void DeepRestoreRejectsAGrandchildThatResolvesToDifferentBytes()
+	{
+		var grandchild = new RideVMTests.Asm()
+			.I( Opcode.WAIT, 1000 )
+			.I( Opcode.COPY, RideVMTests.V( 0 ), 7 )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" )
+			.Build( new[] { "G0" } );
+		var other = new RideVMTests.Asm()
+			.I( Opcode.WAIT, 1000 )
+			.I( Opcode.COPY, RideVMTests.V( 0 ), 8 )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" )
+			.Build( new[] { "G0" } );
+		// Strings: "Child" at 0, "grand.rse" at 6.
+		var child = new RideVMTests.Asm()
+			.I( Opcode.SPAWNCHILD, RideVMTests.S( 6 ) )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" )
+			.Build( new[] { "C0" }, "Child", "grand.rse" );
+		// Strings: "Parent" at 0, "child.rse" at 7.
+		byte[] Parent() => new RideVMTests.Asm()
+			.I( Opcode.SPAWNCHILD, RideVMTests.S( 7 ) )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" )
+			.Build( new[] { "P0" }, "Parent", "child.rse" );
+		RideScriptFile? ResolveOriginal( string name ) => name switch
+		{
+			"child.rse" => new RideScriptFile( new MemoryStream( child ) ),
+			"grand.rse" => new RideScriptFile( new MemoryStream( grandchild ) ),
+			_ => null
+		};
+		RideScriptFile? ResolveOther( string name ) => name switch
+		{
+			"child.rse" => new RideScriptFile( new MemoryStream( child ) ),
+			"grand.rse" => new RideScriptFile( new MemoryStream( other ) ),
+			_ => null
+		};
+
+		var world = new RideScriptWorld();
+		var root = CreateRoot( Parent(), world, seed: 42, "parent.rse", ResolveOriginal );
+		AdvanceWorld( world, 3 );
+		Assert.AreEqual( RideVMState.Waiting, root.Child!.Child!.State );
+		var snapshot = world.CaptureSnapshot();
+
+		var restored = new RideScriptWorld();
+		var candidate = CreateRoot( Parent(), restored, seed: 42, "parent.rse", ResolveOther );
+		var exception = Assert.ThrowsException<InvalidDataException>( () => restored.RestoreSnapshot( snapshot, new Dictionary<int, RideVM> { [root.ScriptId] = candidate } ) );
+		StringAssert.Contains( exception.Message, "does not match the saved script identity" );
+		Assert.AreEqual( 1, restored.Scripts.Count, "the failed preflight constructed nothing" );
+		candidate.Advance( Tick );
+		Assert.AreEqual( RideVMState.Running, candidate.State, "the rejected candidate still runs" );
+	}
+
+	[TestMethod]
+	public void DeepRestoreRejectsAGrandchildMissingFromTheResolver()
+	{
+		var grandchild = new RideVMTests.Asm()
+			.I( Opcode.WAIT, 1000 )
+			.I( Opcode.COPY, RideVMTests.V( 0 ), 7 )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" )
+			.Build( new[] { "G0" } );
+		// Strings: "Child" at 0, "grand.rse" at 6.
+		var child = new RideVMTests.Asm()
+			.I( Opcode.SPAWNCHILD, RideVMTests.S( 6 ) )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" )
+			.Build( new[] { "C0" }, "Child", "grand.rse" );
+		// Strings: "Parent" at 0, "child.rse" at 7.
+		byte[] Parent() => new RideVMTests.Asm()
+			.I( Opcode.SPAWNCHILD, RideVMTests.S( 7 ) )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" )
+			.Build( new[] { "P0" }, "Parent", "child.rse" );
+		RideScriptFile? Resolve( string name ) => name switch
+		{
+			"child.rse" => new RideScriptFile( new MemoryStream( child ) ),
+			"grand.rse" => new RideScriptFile( new MemoryStream( grandchild ) ),
+			_ => null
+		};
+		RideScriptFile? ResolveWithoutGrandchild( string name ) => name switch
+		{
+			"child.rse" => new RideScriptFile( new MemoryStream( child ) ),
+			_ => null
+		};
+
+		var world = new RideScriptWorld();
+		var root = CreateRoot( Parent(), world, seed: 42, "parent.rse", Resolve );
+		AdvanceWorld( world, 3 );
+		var snapshot = world.CaptureSnapshot();
+
+		var restored = new RideScriptWorld();
+		var candidate = CreateRoot( Parent(), restored, seed: 42, "parent.rse", ResolveWithoutGrandchild );
+		var exception = Assert.ThrowsException<InvalidDataException>( () => restored.RestoreSnapshot( snapshot, new Dictionary<int, RideVM> { [root.ScriptId] = candidate } ) );
+		StringAssert.Contains( exception.Message, "was not found by the parent's resolver" );
+		Assert.AreEqual( 1, restored.Scripts.Count, "the failed preflight constructed nothing" );
+	}
+
+	[TestMethod]
+	public void DeepRestoreRejectsATamperedGrandchildSourceName()
+	{
+		var grandchild = new RideVMTests.Asm()
+			.I( Opcode.WAIT, 1000 )
+			.I( Opcode.COPY, RideVMTests.V( 0 ), 7 )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" )
+			.Build( new[] { "G0" } );
+		// Strings: "Child" at 0, "grand.rse" at 6.
+		var child = new RideVMTests.Asm()
+			.I( Opcode.SPAWNCHILD, RideVMTests.S( 6 ) )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" )
+			.Build( new[] { "C0" }, "Child", "grand.rse" );
+		// Strings: "Parent" at 0, "child.rse" at 7.
+		byte[] Parent() => new RideVMTests.Asm()
+			.I( Opcode.SPAWNCHILD, RideVMTests.S( 7 ) )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" )
+			.Build( new[] { "P0" }, "Parent", "child.rse" );
+		RideScriptFile? Resolve( string name ) => name switch
+		{
+			"child.rse" => new RideScriptFile( new MemoryStream( child ) ),
+			"grand.rse" => new RideScriptFile( new MemoryStream( grandchild ) ),
+			_ => null
+		};
+
+		var world = new RideScriptWorld();
+		var root = CreateRoot( Parent(), world, seed: 42, "parent.rse", Resolve );
+		AdvanceWorld( world, 3 );
+		var snapshot = world.CaptureSnapshot();
+		var grandId = root.Child!.Child!.ScriptId;
+		var tampered = snapshot with
+		{
+			Scripts = snapshot.Scripts.Select( script => script.ScriptId == grandId ? script with { SourceName = "parent.rse > child.rse > elsewhere.rse" } : script ).ToArray()
+		};
+
+		var restored = new RideScriptWorld();
+		var candidate = CreateRoot( Parent(), restored, seed: 42, "parent.rse", Resolve );
+		var exception = Assert.ThrowsException<InvalidDataException>( () => restored.RestoreSnapshot( tampered, new Dictionary<int, RideVM> { [root.ScriptId] = candidate } ) );
+		StringAssert.Contains( exception.Message, "constructed source" );
+	}
+
 	// ---- Rejections ----
 
 	[TestMethod]
@@ -322,6 +530,87 @@ public class RideVMSnapshotTests
 		StringAssert.Contains( Throws( snapshot with { NextScriptId = 3, Scripts = new[] { cycleFirst, cycleSecond } } ).Message, "cycle" );
 		var childEqualsSound = script with { ChildScriptId = 2, SoundChildScriptId = 2 };
 		StringAssert.Contains( Throws( snapshot with { NextScriptId = 3, Scripts = new[] { childEqualsSound, cycleSecond with { ChildScriptId = 0 } } } ).Message, "same child and sound child" );
+	}
+
+	[TestMethod]
+	public void CorruptDeepGraphsFailBothWayLinkValidationBeforeAnyRestore()
+	{
+		var grandchild = new RideVMTests.Asm()
+			.I( Opcode.WAIT, 1000 )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" )
+			.Build( new[] { "G0" } );
+		// Strings: "Child" at 0, "grand.rse" at 6.
+		var child = new RideVMTests.Asm()
+			.I( Opcode.SPAWNCHILD, RideVMTests.S( 6 ) )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" )
+			.Build( new[] { "C0" }, "Child", "grand.rse" );
+		// Strings: "Parent" at 0, "child.rse" at 7.
+		byte[] Parent() => new RideVMTests.Asm()
+			.I( Opcode.SPAWNCHILD, RideVMTests.S( 7 ) )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" )
+			.Build( new[] { "P0" }, "Parent", "child.rse" );
+		var kid = new RideVMTests.Asm()
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" )
+			.Build( new[] { "K0" } );
+		// Strings: "Root4" at 0, "kid.rse" at 6.
+		byte[] SecondRoot() => new RideVMTests.Asm()
+			.I( Opcode.SPAWNCHILD, RideVMTests.S( 6 ) )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" )
+			.Build( new[] { "R0" }, "Root4", "kid.rse" );
+		RideScriptFile? Resolve( string name ) => name switch
+		{
+			"child.rse" => new RideScriptFile( new MemoryStream( child ) ),
+			"grand.rse" => new RideScriptFile( new MemoryStream( grandchild ) ),
+			"kid.rse" => new RideScriptFile( new MemoryStream( kid ) ),
+			_ => null
+		};
+
+		var world = new RideScriptWorld();
+		var root = CreateRoot( Parent(), world, seed: 42, "parent.rse", Resolve );
+		CreateRoot( SecondRoot(), world, seed: 43, "second.rse", Resolve );
+		AdvanceWorld( world, 3 );
+		var snapshot = world.CaptureSnapshot();
+		snapshot.ValidateSnapshot();
+		var childId = root.Child!.ScriptId;
+		var grandId = root.Child.Child.ScriptId;
+		var otherRootId = world.Scripts.Single( vm => vm.SourceName == "second.rse" ).ScriptId;
+		var otherKidId = world.Scripts.Single( vm => vm.SourceName == "second.rse > kid.rse" ).ScriptId;
+
+		// A grandchild re-parented to the root level is no longer the child's child: the child's link
+		// now aims at a script that does not name it as parent.
+		var adopted = snapshot with { Scripts = snapshot.Scripts.Select( script => script.ScriptId == grandId ? script with { ParentScriptId = 0, ScriptFileName = null } : script ).ToArray() };
+		// A child link aimed at another script's child.
+		var crossLinked = snapshot with { Scripts = snapshot.Scripts.Select( script => script.ScriptId == grandId ? script with { ChildScriptId = otherKidId } : script ).ToArray() };
+		static InvalidDataException Throws( RideScriptWorldSnapshot corrupt ) => Assert.ThrowsException<InvalidDataException>( corrupt.ValidateSnapshot );
+		StringAssert.Contains( Throws( adopted ).Message, $"links child {grandId}, whose parent is 0" );
+		StringAssert.Contains( Throws( crossLinked ).Message, $"whose parent is {otherRootId}" );
+
+		// The restore refuses the same corruption during validation, before any candidate is examined.
+		var restored = new RideScriptWorld();
+		var candidate = CreateRoot( Parent(), restored, seed: 42, "parent.rse", Resolve );
+		var exception = Assert.ThrowsException<InvalidDataException>( () => restored.RestoreSnapshot( adopted, new Dictionary<int, RideVM> { [root.ScriptId] = candidate } ) );
+		StringAssert.Contains( exception.Message, "whose parent is" );
+	}
+
+	[TestMethod]
+	public void NullArraysFailValidationInsteadOfThrowingReferenceExceptions()
+	{
+		byte[] Idle() => new RideVMTests.Asm().Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ).Build( new[] { "V0", "V1" } );
+		var world = new RideScriptWorld();
+		CreateRoot( Idle(), world, seed: 1, "idle.rse", null );
+		AdvanceWorld( world, 2 );
+		var snapshot = world.CaptureSnapshot();
+		var script = snapshot.Scripts.Single();
+
+		static InvalidDataException Throws( RideScriptWorldSnapshot corrupt ) => Assert.ThrowsException<InvalidDataException>( corrupt.ValidateSnapshot );
+		StringAssert.Contains( Throws( snapshot with { Scripts = null! } ).Message, "no script array" );
+		StringAssert.Contains( Throws( snapshot with { Scripts = new RideVMSnapshot[] { null! } } ).Message, "entry 0 is null" );
+		static InvalidDataException ThrowsScript( RideVMSnapshot corrupt ) => Assert.ThrowsException<InvalidDataException>( corrupt.ValidateSnapshot );
+		StringAssert.Contains( ThrowsScript( script with { CallStack = null! } ).Message, "null array" );
+		StringAssert.Contains( ThrowsScript( script with { Variables = null! } ).Message, "null array" );
+		StringAssert.Contains( ThrowsScript( script with { RandomState = null! } ).Message, "null array" );
+		StringAssert.Contains( ThrowsScript( script with { UnimplementedEffects = null! } ).Message, "null array" );
+		StringAssert.Contains( ThrowsScript( script with { RandomState = script.RandomState with { Table = null! } } ).Message, "no table" );
 	}
 
 	[TestMethod]

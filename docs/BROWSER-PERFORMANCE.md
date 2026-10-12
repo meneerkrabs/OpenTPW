@@ -53,6 +53,23 @@ frames remain around 4–6 ms. Device and runtime differences affect these timin
 The complete original texture corpus retains identical pixels: 8,412 successful
 RGBA hashes and the same four malformed-file errors, plus 31 synthetic cases.
 
+The follow-up on 13 October reduced the same first menu frame from about 165 ms
+in deployed v0.7.13 to 94 ms in the local candidate. Bundled HUD PNGs are decoded at
+build time and stored as compressed, exact RGBA; sign rasterization scans an ordered
+active-edge window without changing coverage. The existing park-file copy wait also
+prepares only shared buy-menu image resources, with a 6 ms budget checked between
+images. One indivisible image can exceed the remaining budget. Previews and signs
+still load on request. All 55 bundled images and all 75 signed previews retain
+their original pixel hashes.
+
+Preparation uses the normal image cache and invalidation. A transition with no file
+wait keeps the usual lazy loading fallback, so this timing is not a guarantee for
+every first-open situation. It caches menu art earlier, including button states,
+even if the menu is never opened. The compressed image representation adds about
+1.7 MB to the Web module; desktop builds retain PNGs. In the measured wait, no extra
+frame exceeded 20 ms apart from the existing initial scene construction. The
+remaining first-preview work is still visible; this does not claim a 16 ms cold frame.
+
 ## Changes
 
 - Model uniforms are recorded in draw order in the existing frame command list.

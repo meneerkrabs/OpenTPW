@@ -37,7 +37,7 @@ files, not symbolic links: ASP.NET reports a link's own size.
 
 | Check | Result |
 | --- | --- |
-| Download, Brotli-compressed | about 10 MB: 4.5 MB for the runtime and game, plus the 5.8 MB of HD interface art (PNG, already compressed) |
+| Published framework payload, Brotli-compressed | about 12.4 MB across the compressed framework files; the build includes 7.7 MB of compressed, predecoded HD interface art |
 | Game files copied at start | everything in `Data` except movies, start-up pictures and the theme folders below `levels` (with the speech and global sound banks) |
 | Game files copied when a park starts | its theme folder, 122 files and 39 MB for the Lost Kingdom, most of it music |
 | MP2 decoding in the interpreter | 60 to 130 times faster than real time; a 17.5 s music segment takes about 280 ms, a short stutter on the page's only thread |
@@ -60,8 +60,19 @@ files, not symbolic links: ASP.NET reports a link's own size.
 
   The desktop code itself only skips two things in the browser: watching shader files and
   colouring console output. The browser has no `graphics.json`, so it uses the default Enhanced
-  texture choice: the HD interface art from `content/hero-art`, embedded like the shaders
+  texture choice: the HD interface art from `content/hero-art`, prepared at build time and embedded
   (docs/TEXTURE-PACKS.md); a locally built texture pack does not exist there.
+
+  `tools/hero-art` decodes the 55 bundled PNGs with the same StbImageSharp version used by
+  the game. The Web build embeds zlib-compressed RGBA instead of those PNGs, avoiding PNG
+  decode on the first menu frame. Pixel bytes, including colors behind transparent pixels,
+  stay identical. Desktop builds and player texture packs continue to use PNGs. The generator
+  runs on each build, rewrites only changed outputs and removes stale outputs under `obj`.
+
+  The internal `OPRG` file holds magic, version, codec, width, height and compressed payload
+  length in a 20-byte header, followed by zlib data. The loader checks the outer length,
+  bounded dimensions and exact inflated RGBA length. It does not require a canonical zlib
+  representation. UI pink and black keying still happen after loading, as on the PNG path.
 
 - **`source/OpenTPW.Web.Veldrid`** implements the Veldrid API the game uses over WebGL2. The
   description structs and enums have Veldrid's names, fields and values (the enums are

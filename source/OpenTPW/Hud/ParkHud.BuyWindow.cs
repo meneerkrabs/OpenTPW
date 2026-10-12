@@ -50,6 +50,30 @@ public sealed partial class ParkHud
 	private const UIStrings RideOwned = (UIStrings)125, RideExcitement = (UIStrings)126, RideCapacity = (UIStrings)127, RideReliability = (UIStrings)128, RideLife = (UIStrings)129;
 	private const UIStrings ShopOwned = (UIStrings)130, SideshowOwned = (UIStrings)131, SideshowExcitement = (UIStrings)132, FeatureOwned = (UIStrings)133;
 
+	private const string BuyWindowModel = "w_big";
+	private const string BuyPanelModel = "!frame";
+	private const string BuyListFrameModel = "f_buyitem";
+	private const string BuyScrollTrackModel = "!slider";
+	private const string BuyUpModel = "b_up";
+	private const string BuyDownModel = "b_down";
+	private const string BuyScrollKnobModel = "b_scroller";
+	private const string BuyExitModel = "b_exit";
+	private const string BuyStaffModel = "b_allstaff";
+
+	internal static IEnumerable<string> BuyWindowImagePaths( UiContext context )
+	{
+		var single = new[] { 0 };
+		var buttons = new[] { UiButton.NormalFrame, UiButton.DisabledFrame, UiButton.HighlightFrame, UiButton.DownFrame };
+		var models = new[] { BuyWindowModel, BuyPanelModel, BuyListFrameModel, BuyScrollTrackModel }
+			.Select( model => (Model: model, Frames: single) )
+			.Concat( new[] { BuyUpModel, BuyDownModel, BuyScrollKnobModel, BuyExitModel, BuyStaffModel }
+				.Concat( BuyCategories.Select( category => category.Model ) ).Select( model => (Model: model, Frames: buttons) ) );
+		return models.SelectMany( entry => context.Models.Get( entry.Model ) is { } model
+			? entry.Frames.SelectMany( frame => model.GetFrame( frame ).Parts ) : Enumerable.Empty<UiModelPart>() )
+			.Select( context.TextureFor ).Select( texture => texture.ImagePath ).Where( path => path != null )
+			.Cast<string>().Distinct( StringComparer.Ordinal );
+	}
+
 	private UiScreen? buyScreen;
 	private BuyListModel buy = null!;
 
@@ -148,10 +172,10 @@ public sealed partial class ParkHud
 		var screen = new BuyScreen( this );
 		void Model( string id, string model, UiRect rect ) => screen.Add( new UiModelImage { Id = id, Model = model, Bounds = rect, Anchor = UiAnchor.Center } );
 		// [DATA:Mac buy table 0x4cd94:489,490,493,504] w_big root window4, two !frame panels and the f_buyitem list frame at their authored rectangles
-		Model( "window", "w_big", Rect( 186, 30, 2018, 1007 ) );
-		Model( "previewFrame", "!frame", Rect( 408, 179, 822, 593 ) );
-		Model( "statsFrame", "!frame", Rect( 259, 621, 971, 902 ) );
-		Model( "listFrame", "f_buyitem", Rect( 1009, 179, 1813, 902 ) );
+		Model( "window", BuyWindowModel, Rect( 186, 30, 2018, 1007 ) );
+		Model( "previewFrame", BuyPanelModel, Rect( 408, 179, 822, 593 ) );
+		Model( "statsFrame", BuyPanelModel, Rect( 259, 621, 971, 902 ) );
+		Model( "listFrame", BuyListFrameModel, Rect( 1009, 179, 1813, 902 ) );
 
 		// [DATA:Mac buy table 0x4cd94:510] title text; the category's UITEXT 119-122 (control 512 beside it is unnamed and stays empty, [APPROX:UI-048])
 		screen.Add( new UiLabel
@@ -186,8 +210,8 @@ public sealed partial class ParkHud
 		screen.Add( new BuyHeader( this, BuySortColumn.Name, () => strings[UIStrings.NameAttr] ) { Id = "headerName", Bounds = Rect( 1032, 317, 1454, 422 ), Anchor = UiAnchor.Center } );
 		screen.Add( new BuyHeader( this, BuySortColumn.Price, () => strings[UIStrings.Price] ) { Id = "headerPrice", Bounds = Rect( 1458, 317, 1664, 422 ), Anchor = UiAnchor.Center } );
 		// [DATA:Mac buy table 0x4cd94:1,2] b_up / b_down at their rectangles
-		screen.Add( new UiButton { Id = "scrollUp", Model = "b_up", Clicked = () => ScrollBuyList( -1 ), Bounds = Rect( 1742, 318, 1803, 378 ), Anchor = UiAnchor.Center } );
-		screen.Add( new UiButton { Id = "scrollDown", Model = "b_down", Clicked = () => ScrollBuyList( 1 ), Bounds = Rect( 1742, 809, 1803, 869 ), Anchor = UiAnchor.Center } );
+		screen.Add( new UiButton { Id = "scrollUp", Model = BuyUpModel, Clicked = () => ScrollBuyList( -1 ), Bounds = Rect( 1742, 318, 1803, 378 ), Anchor = UiAnchor.Center } );
+		screen.Add( new UiButton { Id = "scrollDown", Model = BuyDownModel, Clicked = () => ScrollBuyList( 1 ), Bounds = Rect( 1742, 809, 1803, 869 ), Anchor = UiAnchor.Center } );
 		foreach ( var entry in BuyCategories )
 		{
 			var category = entry;
@@ -198,8 +222,8 @@ public sealed partial class ParkHud
 			} );
 		}
 		// [DATA:Mac buy table 0x4cd94:-2,511] b_exit (help 2) closes; b_allstaff (help 153) opens the staff window.
-		screen.Add( new UiButton { Id = "exit", Model = "b_exit", Help = strings.Help( 2 ), Clicked = CloseBuyWindow, Bounds = Rect( 1889, 818, 1972, 901 ), Anchor = UiAnchor.Center } );
-		screen.Add( new UiButton { Id = "allStaff", Model = "b_allstaff", Help = strings.Help( 153 ), Clicked = OpenStaffWindow, Bounds = Rect( 1866, 583, 1968, 686 ), Anchor = UiAnchor.Center } );
+		screen.Add( new UiButton { Id = "exit", Model = BuyExitModel, Help = strings.Help( 2 ), Clicked = CloseBuyWindow, Bounds = Rect( 1889, 818, 1972, 901 ), Anchor = UiAnchor.Center } );
+		screen.Add( new UiButton { Id = "allStaff", Model = BuyStaffModel, Help = strings.Help( 153 ), Clicked = OpenStaffWindow, Bounds = Rect( 1866, 583, 1968, 686 ), Anchor = UiAnchor.Center } );
 		screen.Back = CloseBuyWindow;
 		return screen;
 	}
@@ -323,8 +347,8 @@ public sealed partial class ParkHud
 
 		public override void Draw( UiContext context, bool focused, bool pressed )
 		{
-			context.DrawModel( "!slider", 0, context.Canvas.Map( BuyScrollTrack, Anchor ) );
-			context.DrawModel( "b_scroller", owner.BuyMaxFirstRow == 0 ? UiButton.DisabledFrame : pressed ? UiButton.DownFrame : focused ? UiButton.HighlightFrame : UiButton.NormalFrame, context.Canvas.Map( KnobRect(), Anchor ) );
+			context.DrawModel( BuyScrollTrackModel, 0, context.Canvas.Map( BuyScrollTrack, Anchor ) );
+			context.DrawModel( BuyScrollKnobModel, owner.BuyMaxFirstRow == 0 ? UiButton.DisabledFrame : pressed ? UiButton.DownFrame : focused ? UiButton.HighlightFrame : UiButton.NormalFrame, context.Canvas.Map( KnobRect(), Anchor ) );
 		}
 	}
 

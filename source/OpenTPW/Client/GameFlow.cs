@@ -18,6 +18,8 @@ internal sealed partial class GameFlow : IDisposable
 	private readonly UiBatch backgroundBatch = new();
 	private Action? pending;
 	private string? pendingLevel;
+	private bool prepareBuyWindowArt;
+	private UiImagePreparation? buyWindowPreparation;
 	private LobbyDefinition? lobbyDefinition;
 	private (int Requested, int Fitted)? reportedUiScale;
 	private OnlineSession? onlineSession;
@@ -71,13 +73,17 @@ internal sealed partial class GameFlow : IDisposable
 
 	public void Queue( Action transition )
 	{
+		prepareBuyWindowArt = false;
+		buyWindowPreparation = null;
 		pending = transition;
 		pendingLevel = null;
 	}
 
 	/// <summary>Queues a transition into <paramref name="level"/>; it waits until <see cref="LevelDataReady"/> says the level's files are there.</summary>
-	public void QueueLevel( string level, Action transition )
+	public void QueueLevel( string level, Action transition, bool prepareBuyWindow = false )
 	{
+		prepareBuyWindowArt = prepareBuyWindow;
+		buyWindowPreparation = null;
 		pending = transition;
 		pendingLevel = level;
 	}
@@ -126,8 +132,8 @@ internal sealed partial class GameFlow : IDisposable
 		LobbyCameraMode.SpinSpeed = lobbyDefinition.SpinSpeed;
 		Menu = new FrontEndMenu( Strings, lobbyDefinition.Islands, new FrontEndActions
 		{
-			StartPark = ( island, mode ) => QueueLevel( island.Level, () => StartPark( island.Level, mode ) ),
-			Load = entry => QueueLevel( entry.Level, () => LoadPark( entry ) ),
+			StartPark = ( island, mode ) => QueueLevel( island.Level, () => StartPark( island.Level, mode ), prepareBuyWindow: true ),
+			Load = entry => QueueLevel( entry.Level, () => LoadPark( entry ), prepareBuyWindow: true ),
 			Quit = Quit,
 			CreateOptions = CreateOptions,
 			IslandSelected = island =>
@@ -309,7 +315,7 @@ internal sealed partial class GameFlow : IDisposable
 			Quit = Quit,
 			SavePark = SaveCurrentPark,
 			CreateOptions = CreateOptions,
-			CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, Strings, FindLoadEntries(), entry => QueueLevel( entry.Level, () => LoadPark( entry ) ) ),
+			CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, Strings, FindLoadEntries(), entry => QueueLevel( entry.Level, () => LoadPark( entry ), prepareBuyWindow: true ) ),
 			GoOnline = ShowOnline,
 		} );
 
@@ -389,13 +395,28 @@ internal sealed partial class GameFlow : IDisposable
 		TexturePackSwitch.PumpCurrent();
 		// A park waits for a language chosen just before it (its speech files may still be coming) and is then entered in it:
 		// the transition's tear-down applies the choice before the park is built.
-		if ( pending != null && (pendingLevel == null || (SettlePendingLanguage() && LevelDataReady?.Invoke( pendingLevel ) != false)) )
+		if ( pending != null )
 		{
-			var transition = pending;
-			pending = null;
-			pendingLevel = null;
-			transition();
-			Transitioned?.Invoke();
+			var ready = pendingLevel == null || (SettlePendingLanguage() && LevelDataReady?.Invoke( pendingLevel ) != false);
+			if ( ready )
+			{
+				var transition = pending;
+				pending = null;
+				pendingLevel = null;
+				prepareBuyWindowArt = false;
+				buyWindowPreparation = null;
+				transition();
+				Transitioned?.Invoke();
+			}
+			else if ( prepareBuyWindowArt && TexturePackSwitch.Current == null )
+			{
+				// Global UI files are ready while the browser copies theme files. Prepare only
+				// buy-window art here; previews and signs still load only when requested.
+				buyWindowPreparation ??= new UiImagePreparation( ParkHud.BuyWindowImagePaths( Context ) );
+				var start = System.Diagnostics.Stopwatch.GetTimestamp();
+				buyWindowPreparation.Pump( overlayRenderer.PrepareImage,
+					() => System.Diagnostics.Stopwatch.GetElapsedTime( start ).TotalMilliseconds, 6 );
+			}
 		}
 		Context.Canvas = CurrentCanvas();
 		Context.Time = Time.Now;

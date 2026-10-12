@@ -101,6 +101,8 @@ internal sealed class UiRenderer : IDisposable
 	private static DeviceBuffer CreateBuffer( uint bytes ) =>
 		Device.ResourceFactory.CreateBuffer( new BufferDescription( Math.Max( bytes * 2, 16384u ), BufferUsage.VertexBuffer | BufferUsage.Dynamic ) );
 
+	internal void PrepareImage( string path ) => GetResourceSet( UiTexture.Image( path ) );
+
 	private ResourceSet? GetResourceSet( UiTexture texture )
 	{
 		if ( texture.Rendered is { } rendered )

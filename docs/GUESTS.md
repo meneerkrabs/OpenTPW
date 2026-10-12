@@ -131,12 +131,16 @@ passed since the last group emptied. A unit is four park turns (`(turn >> 2)`, a
 shipped 150 is about two and a half minutes. The timer starts unset, so a park loaded at a later turn (an
 original save) gets its first group at once, while a new park waits one interval.
 
-The group size is `(int)(1.2 × (park points + NewParkBonus)) / PointsPerVisitor` (`PointsPerVisitor` below 2
+The group size is `(int)(0.8 × (park points + NewParkBonus)) / PointsPerVisitor` (`PointsPerVisitor` below 2
 divides by 1), at least `MinPeople`, cut so that the guests in the park plus the group stay within 1,500;
-a bankrupt park gets none. With the shipped 20 and 6 a new park gets 4 guests per group. The PowerPC oracle
-ran this routine (docs/reverse/ORACLE.md, F9). It confirms the rule and adds three details. The factor is
-0.8 instead of 1.2 while the `+48` word of the thing at game `+0x1da734` is positive (ARRIVAL-002). Online
-parks (GameType 1) are cut at 500 instead of 1,500. A group cut with more guests than the limit becomes
+a bankrupt park gets none. With the shipped 20 and 6 a new park gets 2 guests per group. The PowerPC oracle
+ran this routine (docs/reverse/ORACLE.md, F9). It adds three details to the first reading. The factor is
+0.8, not 1.2, while the `+48` word of the thing at game `+0x1da734` is positive. That thing is the Traffic Lights
+fixed item (`mTrafficLights`), and the word is its `mTopLeft` cell id, which is 1 for a fixed item, so every park with
+its lights uses 0.8 (the saved Easymode Lights record holds 1; 1.2 is only the branch for a missing lights thing).
+OpenTPW uses 0.8 while the level has its Traffic Lights (`GuestSimulation.TrafficLightsPlaced`) and 1.2 without them
+(a bare simulation). Online
+parks (GameType 1) are cut at 500 instead of 1,500 (ARRIVAL-002, no OpenTPW counterpart). A group cut with more guests than the limit becomes
 negative; OpenTPW stops at 0 (ARRIVAL-004). Executing the update routine `0xcb2ac` over repeated calls (F11)
 shows that this changes nothing in behaviour: a group at or below 0 creates no guest and, at the next stop of
 the arrival vehicle, restarts the timer and clears the active byte exactly as an empty group does, so nothing

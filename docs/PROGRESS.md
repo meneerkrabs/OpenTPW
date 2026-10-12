@@ -134,7 +134,7 @@ preview; original runtime fidelity and the complete offline scope remain open.
   (F9) and the park points `0xc24c0` (F10), see [ORACLE.md](reverse/ORACLE.md).
   Both differ from GUESTS.md and the C# rule; the routine readings agree on every
   input. `GuestSimulation.ArrivalGroupSize` is compared through the C# bridge
-  (the same 125 differences); C# behavior is unchanged and the differences are
+  (now 55 differences, see the next bullet) and the differences are
   tracked as ARRIVAL-002..004. `ParkEconomy.ParkPoints` now follows F10's track
   type rule: an untracked type is aged from its first purchase and divided by
   its copies, every copy of a kart, water ride or coaster counts in full. Only
@@ -147,6 +147,17 @@ preview; original runtime fidelity and the complete offline scope remain open.
   (`IsChoosable`, `IsBrokenDown`, `IsOpen`): the park points bridge input's open
   flag is passed as `IsOpen` and C# agrees on 507/507. ARRIVAL-003 stays open for
   the conditions that need world state (entrance, queue room, coaster riders).
+- ARRIVAL-002 (factor) is resolved. The `+48` word of the thing at game
+  `+0x1da734` is the Traffic Lights fixed item's `mTopLeft` cell id: the world
+  setup `0x10474c` finds the item by the name `lights` and stores its thing id
+  there, which the world-variable writer saves as `mTrafficLights`; the object
+  serializer pairs `+48` with `mTopLeft`; the saved Easymode Lights record holds 1.
+  The word is therefore positive in every park with its lights, and the original
+  always uses 0.8, not 1.2. `GuestSimulation.ArrivalGroupSize` now takes
+  `TrafficLightsPlaced` (set from the placed fixed items); a new park gets 2
+  guests per group instead of 4. The oracle's C# pin drops from 125 to 55
+  differences, all from the online 500 cut (no OpenTPW counterpart, still
+  ARRIVAL-002) and the missing floor (ARRIVAL-004). Open-item count unchanged.
 - The oracle also executed the arrival update `0xcb2ac` over scripts of repeated
   calls (F11, ARRIVAL-004). A negative group (1700 guests: -200) behaves like an
   empty one: no guest, timer restart and cleared active byte at the next stop,
@@ -758,7 +769,8 @@ were earned from visits to published parks). What OpenTPW rebuilds:
 - **Arrivals:** guests arrive in groups as in the Mac binary: a group every
   `TimeBetweenArrivals` units of four park turns (about 2.5 minutes for the
   shipped 150) after the last one emptied, sized
-  `1.2 × (park points + NewParkBonus) / PointsPerVisitor` with park points from
+  `0.8 × (park points + NewParkBonus) / PointsPerVisitor` (1.2 before the Traffic
+  Lights finding, ARRIVAL-002) with park points from
   the rides' and sideshows' AttractionValue and age bonus (docs/GUESTS.md,
   "Arrivals"). A 30-minute M3 run now admits 105 guests instead of 1,800.
   ARRIVAL-001..003 remain open.

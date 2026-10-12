@@ -583,7 +583,7 @@ What this does to the queue (executed, `queue-ride-update`, F15 fixed in C#):
   (`0xee804`: "Person %d: dismissed from queue on ride %d", reason 6, no thought, happiness down by `PeepInfo.MediumHappinessChange` through
   `0xeb6f4` selector 1, the byte at settings `+28`, target id cleared, state 6).
   So **a broken ride's queue drains head first, one guest per ride update (park turn)**; the guests behind keep their places (state 11
-  does not move them up while the ride is in state 1, and has no exit for it) and wait. The dismissed guests and the rest are not sent
+  does not move them up while the ride is in state 1, and has no exit for it) and wait (`0xed4b0` calls `0xdfe0c`, true only in state 1, and skips the walk to the new position; C# holds them while `IsBroken`). The dismissed guests and the rest are not sent
   away "feeling sick". `SetState(1)` (`0xe0ec4`, "Object %d: Closing...") runs the same head step once, zeroes the pending visitor `+104`,
   sets script variable 6 (VAR_RIDECLOSED) to 1 and clears the open word `+100`; the `SetState(0)` callers write them back (`0xdad24` at build,
   `0xde8e4`, `0xdf4d4`, `0xdf90c`, `0xdfb08`; which one a repair uses is not traced).

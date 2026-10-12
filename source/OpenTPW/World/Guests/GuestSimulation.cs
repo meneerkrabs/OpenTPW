@@ -1174,17 +1174,27 @@ public sealed class GuestSimulation : IRideVisitorHost
 			return;
 		}
 		// 5. Moving up: wait out the delay while the gap is at most 2, else walk to the new position.
+		// While the ride is in state 1 (broken) 0xed4b0 (0xdfe0c) skips the walk and goes straight to the needs window (0xed58c), so the
+		// guests keep their physical places as the head is dismissed.
+		// [BIN:STP-PPC:0x100ED4B0 broken ride holds the queue] only state 1 holds; state 4 (condemned, life gauge 0) is not told apart from it here (QUEUE-019)
+		var held = false;
 		if ( position != guest.QueuePosition )
 		{
 			var gap = guest.QueuePosition - position;
 			if ( guest.QueueMoveDelay != 0 && gap is >= 0 and <= MoveUpWaitGap )
+			{
 				guest.QueueMoveDelay--;
-			else
+				return;
+			}
+			if ( !attraction.IsBroken )
+			{
 				MoveToQueuePosition( guest, attraction );
-			return;
+				return;
+			}
+			held = true;
 		}
 		// 6. Beyond the limit.
-		if ( guest.QueuePosition > attraction.QueueLimit )
+		if ( !held && guest.QueuePosition > attraction.QueueLimit )
 		{
 			LeaveQueue( guest, attraction, GuestThought.QueueTooLong );
 			return;

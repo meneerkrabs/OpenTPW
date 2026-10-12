@@ -822,6 +822,11 @@ def arrival_full(x: dict) -> int:
     return count
 
 
+def arrival_csharp_request(x: dict) -> dict:
+    return {'fn': 'arrival_group', **{k: x[k] for k in ('world_mode', 'guests', 'points', 'bonus', 'per_visitor',
+                                                         'min_people')}}
+
+
 def arrival_inputs(rng: random.Random, n: int) -> list:
     def make(**kw):
         x = {'world_mode': rng.choice([0, 1, 2, 3, 4, 5]), 'guests': rng.choice([0, rng.randrange(0, 1600)]),
@@ -893,7 +898,9 @@ COAST_FINAL = Target('coast-rating-final', 'Coaster rating final 0x41900', 'COAS
 ARRIVAL = Target('arrival-group', 'Arrival group size 0xcb4e8', 'GUESTS.md "Arrivals"', 0xCB4E8,
                  [(0xCB4E8, 0xCB698)], arrival_stubs, arrival_binary, arrival_plan, arrival_inputs,
                  alternatives={'routine-reading': arrival_full},
-                 notes=['C# hook: bridge function "arrival_group" (GuestSimulation.ArrivalGroupSize) is not wired yet.',
+                 csharp=('arrival_group', arrival_csharp_request, lambda x, r: r),
+                 notes=['C# hook: bridge function "arrival_group" (GuestSimulation.ArrivalGroupSize); the thing +48 word '
+                        'and the mode word are not passed (no C# counterpart).',
                         'Stubs: 0x1082b4 park, 0xc1fb4 counted guests, 0xc24c0 points, 0x1083c8 factor object, '
                         '0x5fbcc debug log; the mode object is marked constructed so 0x12bb64 does not run.'])
 

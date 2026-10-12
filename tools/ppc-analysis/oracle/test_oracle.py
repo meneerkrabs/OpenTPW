@@ -68,9 +68,11 @@ EXPECTED = {
     ('arrival-group', 'plan'): (125, {'world_mode': 0, 'guests': 0, 'points': 0, 'bonus': 20, 'per_visitor': 6,
                                       'min_people': 1, 'obj48': 1, 'limit_mode': 0}),
     ('arrival-group', 'routine-reading'): AGREE,
+    ('arrival-group', 'csharp'): (125, {'world_mode': 0, 'guests': 0, 'points': 0, 'bonus': 20, 'per_visitor': 6,
+                                        'min_people': 1, 'obj48': 1, 'limit_mode': 0}),
 }
 CSHARP_PENDING = {'det-world-lcg', 'det-rse-rand', 'coast-rating-step',
-                  'coast-rating-final', 'arrival-group'}
+                  'coast-rating-final'}
 
 
 class Identity(unittest.TestCase):
@@ -173,6 +175,9 @@ class Oracle(unittest.TestCase):
     def test_arrival(self):
         for key in (('arrival-group', 'plan'), ('arrival-group', 'routine-reading')):
             self.check(key)
+
+    def test_arrival_csharp(self):
+        self.check(('arrival-group', 'csharp'))
 
     def test_arrival_reading_is_sharp(self):
         # Each part of the routine reading matters: dropping the 0.8 factor, the 500 cut or the unsigned/no-floor cut

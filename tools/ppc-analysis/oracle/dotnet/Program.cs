@@ -19,6 +19,7 @@ var functions = new Dictionary<string, Func<JsonObject, JsonNode?>>
 	["bounce"] = Bounce,
 	["guest_speed_limits"] = GuestSpeedLimits,
 	["guest_speed_smoothing"] = GuestSpeedSmoothing,
+	["arrival_group"] = ArrivalGroup,
 };
 
 using var input = new StreamReader( Console.OpenStandardInput() );
@@ -122,4 +123,24 @@ static JsonNode? GuestSpeedSmoothing( JsonObject a )
 	var (s, boost, speed, force) = GuestSpeed.Update( BitConverter.Int32BitsToSingle( (int)(uint)a["s_bits"]! ), (int)a["base"]!,
 		(int)a["bonus"]!, (ushort)(int)a["boost"]! );
 	return new JsonObject { ["s_bits"] = (uint)BitConverter.SingleToInt32Bits( s ), ["boost"] = (int)boost, ["force"] = force, ["speed"] = speed };
+}
+
+// GuestSimulation.ArrivalGroupSize (0xcb4e8) on a fresh simulation. World mode 4 halts arrivals; the counted guests fill
+// the guest list (a field) through reflection (only its count is read). The thing +48 word and the GameType mode word
+// have no C# counterpart (ARRIVAL-002, F9), so they are not passed.
+static JsonNode? ArrivalGroup( JsonObject a )
+{
+	var settings = new GuestSettings
+	{
+		ArrivalMinPeople = (int)a["min_people"]!,
+		ArrivalNewParkBonus = (int)a["bonus"]!,
+		ArrivalPointsPerVisitor = (int)a["per_visitor"]!,
+	};
+	var points = (int)a["points"]!;
+	var halted = (int)a["world_mode"]! == 4;
+	var simulation = new GuestSimulation( new GuestPathGrid( 1, 1 ), settings, 1 ) { ParkPoints = () => points, ArrivalsHalted = () => halted };
+	var field = typeof( GuestSimulation ).GetField( "guests", BindingFlags.NonPublic | BindingFlags.Instance )
+		?? throw new MissingFieldException( "GuestSimulation.guests" );
+	((List<Guest>)field.GetValue( simulation )!).AddRange( Enumerable.Repeat<Guest>( null!, (int)a["guests"]! ) );
+	return JsonValue.Create( simulation.ArrivalGroupSize() );
 }

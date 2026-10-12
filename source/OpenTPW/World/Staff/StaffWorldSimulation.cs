@@ -125,6 +125,7 @@ public sealed class StaffWorldSimulation
 		var ids = new HashSet<int>();
 		foreach ( var actor in snapshot.Actors )
 		{
+			Require( actor is not null, "an actor record is missing" );
 			Require( ids.Add( actor.Id ), $"duplicate actor {actor.Id}" );
 			Require( actor.CellX.HasValue == actor.CellY.HasValue, $"actor {actor.Id} has one position component only" );
 			if ( actor.CellX is { } x && actor.CellY is { } y )

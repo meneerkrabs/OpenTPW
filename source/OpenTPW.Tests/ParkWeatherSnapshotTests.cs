@@ -19,7 +19,7 @@ public class ParkWeatherSnapshotTests
 	private static SamSettings Keys( string text ) => new( new[] { SamDocument.Parse( text, "test" ) } );
 
 	/// <summary>The jungle's weather bands with the shipped cycle (rain 0..40, lightning 0..15, no snow, 600 drops).</summary>
-	private static SamSettings Jungle() => Keys(
+	internal static SamSettings Jungle() => Keys(
 		"WeatherEffects.QualityForSnowLow\t-1\n" +
 		"WeatherEffects.QualityForSnowHigh\t-1\n" +
 		"WeatherEffects.QualityForRainLow\t0\n" +

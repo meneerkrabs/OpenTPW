@@ -110,7 +110,7 @@ public class RuntimeSnapshotTests
 
 	// ---------------------------------------------------------------- staff world actors
 
-	private static GuestPathGrid Paths()
+	internal static GuestPathGrid Paths()
 	{
 		var grid = new GuestPathGrid( 5, 3 );
 		for ( var x = 0; x < 5; x++ )
@@ -118,7 +118,7 @@ public class RuntimeSnapshotTests
 		return grid;
 	}
 
-	private static StaffWorldSimulation World( ParkEconomy park, GuestPathGrid grid ) =>
+	internal static StaffWorldSimulation World( ParkEconomy park, GuestPathGrid grid ) =>
 		new( grid, () => park.Staff.Members, id => id == 100 ? (4, 1) : null, (0, 1) );
 
 	[TestMethod]
@@ -191,6 +191,7 @@ public class RuntimeSnapshotTests
 		{
 			good with { Actors = new StaffWorldSimulation.StaffActorSnapshot[] { new( id + 100, 1.5f, 1.5f, 0 ) } },
 			good with { Actors = new StaffWorldSimulation.StaffActorSnapshot[] { new( id, 1.5f, 1.5f, 0 ), new( id, 2.5f, 1.5f, 0 ) } },
+			good with { Actors = new StaffWorldSimulation.StaffActorSnapshot[] { null! } },
 			good with { Actors = Array.Empty<StaffWorldSimulation.StaffActorSnapshot>() },
 			good with { Actors = new StaffWorldSimulation.StaffActorSnapshot[] { new( id, 5f, 1.5f, 0 ) } },
 			good with { Actors = new StaffWorldSimulation.StaffActorSnapshot[] { new( id, -0.5f, 1.5f, 0 ) } },

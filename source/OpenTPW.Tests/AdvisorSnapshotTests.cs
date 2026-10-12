@@ -37,7 +37,7 @@ public class AdvisorSnapshotTests
 		PrebuiltPark.Score	700
 		""";
 
-	private static AdvisorBalance Balance() => AdvisorBalance.Parse( Encoding.ASCII.GetBytes( Settings ), "test.sam" );
+	internal static AdvisorBalance Balance() => AdvisorBalance.Parse( Encoding.ASCII.GetBytes( Settings ), "test.sam" );
 
 	[TestMethod]
 	public void RestoredControllerContinuesPendingAdviceHistoryAndReservation()
@@ -96,6 +96,8 @@ public class AdvisorSnapshotTests
 				Replace( good.Queue.Slots.ToArray(), 0, new AdvisorPendingAdviceSnapshot( 42, 100, -1, false ) ), good.Queue.History, 0, 0 ) },
 			good with { Queue = new AdvisorQueueSnapshot(
 				good.Queue.Slots, good.Queue.History.Concat( new[] { KeyValuePair.Create( 42, new AdvisorHistorySnapshot( 0, -1, false, 0 ) ) } ).ToDictionary(), 0, 0 ) },
+			good with { Queue = new AdvisorQueueSnapshot(
+				good.Queue.Slots, new Dictionary<int, AdvisorHistorySnapshot> { [0] = null! }, 0, 0 ) },
 			good with { Queue = new AdvisorQueueSnapshot(
 				Replace( good.Queue.Slots.ToArray(), 0, new AdvisorPendingAdviceSnapshot( 0, 100, -2, false ) ), good.Queue.History, 0, 0 ) }
 		} )
@@ -160,11 +162,40 @@ public class AdvisorSnapshotTests
 	}
 
 	[TestMethod]
-	public void AutomaticAdvisorSnapshotsReportActiveSpeechInsteadOfDroppingIt()
+	public void RestoredClockKeepsTheSavedValueWhilePausedAndWrapsOnResume()
 	{
-		var advisor = new AutomaticAdvisor( new AdvisorController( Balance() ), () => 0L );
-		Assert.IsFalse( advisor.IsSpeechActive, "no presentation exists, so nothing is being spoken" );
-		var snapshot = advisor.CaptureSnapshot();
+		long milliseconds = 3_000;
+		var destination = new AutomaticAdvisor( new AdvisorController( Balance() ), () => milliseconds );
+		destination.Update( gamePaused: true ); // freezes the destination clock at its own 3000
+		var saved = new AutomaticAdvisor( new AdvisorController( Balance() ), () => 900_000L ).CaptureSnapshot()
+			with { AdvisorClockMilliseconds = uint.MaxValue - 40 };
+
+		destination.RestoreSnapshot( saved );
+		Assert.AreEqual( saved.AdvisorClockMilliseconds, destination.CaptureSnapshot().AdvisorClockMilliseconds,
+			"the saved value replaces the frozen destination value" );
+		milliseconds = 3_500;
+		Assert.AreEqual( saved.AdvisorClockMilliseconds, destination.CaptureSnapshot().AdvisorClockMilliseconds,
+			"still paused: the restored clock stands still" );
+		destination.Update( gamePaused: false );
+		Assert.AreEqual( saved.AdvisorClockMilliseconds, destination.CaptureSnapshot().AdvisorClockMilliseconds,
+			"the paused time before the resume does not count" );
+		milliseconds = 3_623;
+		Assert.AreEqual( unchecked(saved.AdvisorClockMilliseconds + 123u), destination.CaptureSnapshot().AdvisorClockMilliseconds,
+			"the resumed clock continues and wraps as an unchecked 32-bit value" );
+	}
+
+	[TestMethod]
+	public void ActiveSpeechIsRefusedInsteadOfFlagged()
+	{
+		// The presentation's speech has no snapshot seam, so the tests substitute a controllable speech state.
+		var speaking = new AutomaticAdvisor( new AdvisorController( Balance() ), () => 0L, speechActive: () => true );
+		Assert.IsTrue( speaking.IsSpeechActive );
+		Assert.ThrowsException<InvalidOperationException>( () => speaking.CaptureSnapshot(),
+			"a save is refused while a response is being spoken, not flagged and silently silenced" );
+
+		var idle = new AutomaticAdvisor( new AdvisorController( Balance() ), () => 0L, speechActive: () => false );
+		Assert.IsFalse( idle.IsSpeechActive );
+		var snapshot = idle.CaptureSnapshot();
 		Assert.IsFalse( snapshot.SpeechWasActive );
 		var restored = new AutomaticAdvisor( new AdvisorController( Balance() ), () => 0L );
 		restored.RestoreSnapshot( snapshot );

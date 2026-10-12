@@ -132,7 +132,8 @@ internal sealed class AdvisorScoreQueue
 
 	/// <summary>
 	/// Checks a snapshot against this queue's descriptors without touching it: all eight slots, bound
-	/// message IDs, variant overrides of −1 (none) or a request, history only for bound messages, and
+	/// message IDs, variant overrides of −1 (none) or a request, history records present and only for
+	/// bound messages, and
 	/// non-negative stored variants.
 	/// </summary>
 	public void ValidateSnapshot( AdvisorQueueSnapshot snapshot )
@@ -154,6 +155,7 @@ internal sealed class AdvisorScoreQueue
 			}
 		foreach ( var (id, entry) in snapshot.History )
 		{
+			Require( entry is not null, $"history message {id}'s record is missing" );
 			Require( descriptors.ContainsKey( id ), $"history message {id} has no bound descriptor" );
 			Require( entry.PreviousVariant >= -1, $"history message {id}'s previous variant is below none" );
 		}

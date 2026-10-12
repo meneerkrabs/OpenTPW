@@ -386,7 +386,7 @@ charged `Costs.QueueCell` (75) when it is written, refused only when
 balance − cost < 0 (`ParkEconomy.TrySpendCell`, `SetCellType` `0x82ac4`).
 `QueuePaths.RemoveFrom` / `Level.RemoveQueueCell` remove a cell and every cell
 behind it; each removed cell refunds `Costs.QueueCell` × the ride's scrap
-percentage / 100 (`ParkEconomy.RefundQueueCell`, `ClearCell` `0x85dcc`). After a HasQueue ride is
+percentage / 100 (`ParkEconomy.RefundQueueCell`, `ClearCell` `0x85dcc`; 100 for a ride nobody used in its first 30 days, ORACLE.md F21). After a HasQueue ride is
 built from the HUD, park clicks lay its queue until Back (UI-031). Queue cells
 also block object placement. New queue cells are not drawn on the terrain yet.
 

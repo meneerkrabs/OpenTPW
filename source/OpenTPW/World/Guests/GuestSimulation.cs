@@ -1359,6 +1359,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 		guest.LastAttractionId = ride.AttractionId;
 		guest.SecondsSinceRide = 0;
 		guest.RidesTaken++;
+		Payments?.VisitFinished( ride );
 		ApplyVisit( guest, ride );
 	}
 

@@ -14,4 +14,6 @@ public interface IGuestPayments
 	bool TryPayAdmission( long guestMoney, out int feePaid );
 	/// <summary>Charges a shop or sideshow visit (0 for rides, which only count the use).</summary>
 	bool TryPayVisit( IRideVisitorBridge attraction, long guestMoney, out int pricePaid );
+	/// <summary>A guest has left the attraction (the original's use counter, +412, rises on release).</summary>
+	void VisitFinished( IRideVisitorBridge attraction ) { }
 }

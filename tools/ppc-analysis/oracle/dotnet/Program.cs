@@ -22,6 +22,7 @@ var functions = new Dictionary<string, Func<JsonObject, JsonNode?>>
 	["guest_ingredient_boost"] = GuestIngredientBoost,
 	["arrival_group"] = ArrivalGroup,
 	["park_points"] = ParkPoints,
+	["object_scrap_value"] = ObjectScrapValue,
 	["loan_offers"] = LoanOffers,
 	["loan_term"] = LoanTerm,
 	["loan_take"] = LoanTake,
@@ -200,6 +201,26 @@ static JsonNode? ParkPoints( JsonObject a )
 	}
 	tick.Invoke( park, new object[] { ParkCalendar.TickOfTurn( (long)(int)a["now"]! ) } );
 	return JsonValue.Create( park.ParkPoints() );
+}
+
+// ParkEconomy.ScrapValue (the sale refund 0xe25e8, ORACLE F21) for one synthetic object type whose upgrade levels carry the
+// input's costs (Upgrades[n].CostOfUpgrade) and percentages (Upgrades[n].ScrapValueYear1..4). The economy clock is a read-only
+// property, so its setter is reached through reflection: the object is registered on the first tick of its build turn, then the
+// economy is put on the first tick of turn "now". The input's use count (thing +412) is ParkObjectState.TimesUsed.
+static JsonNode? ObjectScrapValue( JsonObject a )
+{
+	var costs = a["cost"]!.AsArray().Select( cost => (long)cost! ).ToArray();
+	var levels = a["pct"]!.AsArray().Select( ( row, level ) => new UpgradeLevelInfo( level, costs[level], 0, 0, 0, row!.AsArray().Select( value => (int)value! ).ToArray() ) ).ToArray();
+	var info = new EconomyObjectInfo( 0x101, "Type 257", ParkObjectKind.Ride, ResearchCategory.Ride, 0, levels, null, null, null, 0, 0, 0, 0, 0, 0, "synthetic.wad" );
+	var park = new ParkEconomy( EconomyTestData.Settings(), new EconomyObjectCatalog( new[] { info } ), ParkGameMode.FullSimulation, 1 );
+	var tick = typeof( ParkEconomy ).GetProperty( "Tick" )!.GetSetMethod( nonPublic: true )
+		?? throw new MissingMethodException( "ParkEconomy.Tick setter" );
+	tick.Invoke( park, new object[] { ParkCalendar.TickOfTurn( (long)a["built"]! ) } );
+	var item = park.RegisterExisting( 0x101 );
+	item.Level = (int)a["level"]!;
+	item.TimesUsed = (long)a["used"]!;
+	tick.Invoke( park, new object[] { ParkCalendar.TickOfTurn( (long)a["now"]! ) } );
+	return JsonValue.Create( park.ScrapValue( item ) );
 }
 
 // LoanMath.MonthlyRepayment (the monthly instalment at loan setup 0xcb7a8, ORACLE F12) for each [amount, APR, months] offer;

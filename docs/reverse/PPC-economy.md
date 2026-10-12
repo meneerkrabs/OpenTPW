@@ -300,7 +300,7 @@ catalogue `+392/+396/+400/+404 + 64×upgrade` for age-year buckets
 uses the age bucket's percentage. This is a separate quote from analyzer
 park valuation, which sums costs through the current upgrade and includes
 weighted map infrastructure. The initial-period predicate and elapsed-day
-divisors should be retained in any Mac-backed implementation.
+divisors should be retained in any Mac-backed implementation. This getter is executed in the oracle (target `object-scrap-value`, ORACLE.md F21) and `ParkEconomy.ScrapValue` follows it.
 
 ## Approximation disposition and next addresses
 

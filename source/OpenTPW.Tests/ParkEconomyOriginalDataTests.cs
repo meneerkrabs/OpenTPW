@@ -82,6 +82,39 @@ public class ParkEconomyOriginalDataTests
 	}
 
 	[TestMethod]
+	public void ShippedScrapRowsGiveTheOriginalsRefunds()
+	{
+		// ORACLE.md F21: the refund is Upgrades[0].CostOfUpgrade times the current level's ScrapValueYearN percentage, or the whole
+		// base price for an unused object in its first 30 days, on every shipped object.
+		UseOriginalData();
+		var checkedObjects = 0;
+		var upgraded = 0;
+		var noFullRefund = new System.Collections.Generic.List<string>();
+		foreach ( var theme in Themes )
+		{
+			var park = ParkEconomy.CreateForTheme( theme, easy: false );
+			foreach ( var info in park.Catalog.Objects.Where( info => info.IsBuyable ) )
+			{
+				Assert.IsTrue( info.Upgrades.All( level => level.ScrapValuePercentByYear.Count == 4 ), $"{theme} {info.Name}: four scrap years per level" );
+				var item = park.RegisterExisting( info.InfoId );
+				var firstYear = info.Upgrades[0].ScrapValuePercentByYear[0];
+				if ( firstYear <= 0 )
+					noFullRefund.Add( $"{theme} {info.Name}" );
+				Assert.AreEqual( firstYear > 0 ? info.PurchaseCost : info.PurchaseCost * firstYear / 100, park.ScrapValue( item ), $"{theme} {info.Name}: unused and new" );
+				park.RecordRideUse( item.Id ); park.RecordUseFinished( item.Id );
+				Assert.AreEqual( info.PurchaseCost * firstYear / 100, park.ScrapValue( item ), $"{theme} {info.Name}: used, year 1" );
+				item.Level = info.Upgrades.Count - 1;
+				Assert.AreEqual( info.PurchaseCost * info.Upgrades[^1].ScrapValuePercentByYear[0] / 100, park.ScrapValue( item ), $"{theme} {info.Name}: top level, year 1" );
+				checkedObjects++;
+				if ( info.Upgrades.Count > 1 )
+					upgraded++;
+			}
+		}
+		Console.WriteLine( $"Scrap refunds checked on {checkedObjects} shipped objects, {upgraded} with upgrade levels; no first-30-days refund (level 0 year 1 is 0) for: {string.Join( ", ", noFullRefund )}." );
+		Assert.IsTrue( checkedObjects > 100 );
+	}
+
+	[TestMethod]
 	public void EveryThemeCanResearchEverythingAndChallengesResolve()
 	{
 		UseOriginalData();

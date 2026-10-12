@@ -394,15 +394,109 @@ public class ParkEconomyTests
 		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, park.TryBuyCells( CellPurchase.Path, 10 ) );
 		Assert.AreEqual( 300, park.Balance );
 		Assert.AreEqual( ParkEconomy.PurchaseResult.NotEnoughMoney, park.TryBuyCells( CellPurchase.Land, 4 ) );
-		Assert.AreEqual( 250, park.ScrapValue( ride! ) );
+		Assert.AreEqual( 500, park.ScrapValue( ride! ), "nobody used it in its first 30 days: the whole base price" );
+		park.RecordRideUse( ride!.Id ); park.RecordUseFinished( ride!.Id );
+		Assert.AreEqual( 250, park.ScrapValue( ride ) );
 		park.AdvanceDays( 365 );
-		Assert.AreEqual( 150, park.ScrapValue( ride! ) );
+		Assert.AreEqual( 150, park.ScrapValue( ride ) );
 		var gates = park.RegisterExisting( 1601 );
 		Assert.IsTrue( gates.Imported );
 		var balance = park.Balance;
 		Assert.AreEqual( 150, park.Sell( ride!.Id ) );
 		Assert.AreEqual( balance + 150, park.Balance );
 		Assert.IsFalse( park.TryGetObject( ride.Id, out _ ) );
+	}
+
+	/// <summary>A ride with the jungle Rides.sam rows: cost 1000 / 1000 / 2000 and a better scrap row per upgrade level.</summary>
+	private static ParkEconomy ScrapPark( int firstYearOfBase = 50 ) => new( EconomyTestData.Settings(), new EconomyObjectCatalog( new[]
+	{
+		new EconomyObjectInfo( 1100, "Belly Bounce", ParkObjectKind.Ride, ResearchCategory.Ride, 0, new[]
+		{
+			new UpgradeLevelInfo( 0, 1000, 0, 5, 0, new[] { firstYearOfBase, 30, 20, 10 } ),
+			new UpgradeLevelInfo( 1, 1000, 250, 3, 2, new[] { 60, 40, 30, 15 } ),
+			new UpgradeLevelInfo( 2, 2000, 300, 2, 4, new[] { 65, 45, 35, 20 } )
+		}, null, null, null, 0, 0, 0, 0, 0, 25, "rides/bouncy.wad", 100, 5 )
+	} ), ParkGameMode.FullSimulation, 7 );
+
+	[TestMethod]
+	public void ScrapValueIsTheBasePriceTimesTheCurrentLevelsAgePercentage()
+	{
+		// ORACLE.md F21 (0xE25E8 / 0xE2424): Upgrades[0].CostOfUpgrade only, whatever was spent on upgrades, and the row of the
+		// current level. A ride at level 2 that guests have used, in years 1, 2, 3 and from year 4 on.
+		var park = ScrapPark();
+		var ride = park.RegisterExisting( 1100 );
+		ride.Level = 2;
+		ride.TotalSpent = 4000;
+		park.RecordRideUse( ride.Id ); park.RecordUseFinished( ride.Id );
+		Assert.AreEqual( 650, park.ScrapValue( ride ), "65 % of the base price 1000, not of the 4000 spent" );
+		park.AdvanceDays( 365 );
+		Assert.AreEqual( 450, park.ScrapValue( ride ) );
+		park.AdvanceDays( 365 );
+		Assert.AreEqual( 350, park.ScrapValue( ride ), "a two-year-old upgraded ride: 35 % of 1000 (the old rule gave 4000 x 35 % = 1400)" );
+		park.AdvanceDays( 365 );
+		Assert.AreEqual( 200, park.ScrapValue( ride ) );
+		park.AdvanceDays( 365 * 5 );
+		Assert.AreEqual( 200, park.ScrapValue( ride ), "year 4 onwards uses year 4" );
+		ride.Level = 0;
+		Assert.AreEqual( 100, park.ScrapValue( ride ) );
+	}
+
+	[TestMethod]
+	public void AnObjectNobodyUsedIsRefundedInFullForItsFirstThirtyDays()
+	{
+		var park = ScrapPark();
+		var ride = park.RegisterExisting( 1100 );
+		ride.Level = 2;
+		Assert.AreEqual( 1000, park.ScrapValue( ride ), "unused and new: 100 % of the base price whatever the level" );
+		// A turn is 3750 s: 30 days are 691.2 turns.
+		EconomyTestData.AdvanceToTurn( park, 691 );
+		Assert.AreEqual( 1000, park.ScrapValue( ride ), "29.99 days" );
+		EconomyTestData.AdvanceToTurn( park, 692 );
+		Assert.AreEqual( 650, park.ScrapValue( ride ), "30.01 days: the level 2 row, year 1" );
+	}
+
+	[TestMethod]
+	public void TheUseCountsWhenTheGuestLeavesAndTheProductWrapsLikeTheOriginal()
+	{
+		var park = ScrapPark();
+		var ride = park.RegisterExisting( 1100 );
+		park.RecordRideUse( ride.Id );
+		Assert.AreEqual( 1000, park.ScrapValue( ride ), "a guest aboard: the use word +412 rises on release, so it still counts as unused" );
+		park.RecordUseFinished( ride.Id );
+		Assert.AreEqual( 500, park.ScrapValue( ride ) );
+
+		var big = new ParkEconomy( EconomyTestData.Settings(), new EconomyObjectCatalog( new[]
+		{
+			new EconomyObjectInfo( 1100, "Big", ParkObjectKind.Ride, ResearchCategory.Ride, 0, new[] { new UpgradeLevelInfo( 0, 50_000_000, 0, 0, 0, new[] { 50, 30, 20, 10 } ) }, null, null, null, 0, 0, 0, 0, 0, 0, "x.wad" )
+		} ), ParkGameMode.FullSimulation, 7 );
+		Assert.AreEqual( 7_050_327, big.ScrapValue( big.RegisterExisting( 1100 ) ), "50,000,000 x 100 wraps to 32 bits before the unsigned division by 100" );
+	}
+
+	[TestMethod]
+	public void AnImportedUsedOrOldObjectNeverGetsTheUnusedRefund()
+	{
+		var park = ScrapPark();
+		EconomyTestData.AdvanceToTurn( park, 5000 );
+		var used = park.RegisterExisting( 1100, builtTick: ParkCalendar.TickOfTurn( 4990 ), timesUsed: 3 );
+		Assert.AreEqual( 500, park.ScrapValue( used ), "customers in the save: the ordinary year-1 row" );
+		var old = park.RegisterExisting( 1100, builtTick: ParkCalendar.TickOfTurn( 1 ), timesUsed: 0 );
+		Assert.AreEqual( ParkCalendar.TickOfTurn( 1 ), old.BuiltTick );
+		Assert.AreEqual( 500, park.ScrapValue( old ), "unused but older than 30 days" );
+		Assert.AreEqual( 1000, park.ScrapValue( park.RegisterExisting( 1100 ) ), "a new object without saved history is new and unused" );
+	}
+
+	[TestMethod]
+	public void TheFirstThirtyDaysRefundNeedsNoUseAndAPositiveBaseFirstYearPercentage()
+	{
+		var park = ScrapPark();
+		var ride = park.RegisterExisting( 1100 );
+		park.RecordRideUse( ride.Id ); park.RecordUseFinished( ride.Id );
+		Assert.AreEqual( 500, park.ScrapValue( ride ), "a use ends the full refund" );
+		var shop = ScrapPark( firstYearOfBase: 0 );
+		var unused = shop.RegisterExisting( 1100 );
+		Assert.AreEqual( 0, shop.ScrapValue( unused ), "the base level's first-year percentage is 0, so there is no 100 %" );
+		unused.Level = 1;
+		Assert.AreEqual( 600, shop.ScrapValue( unused ), "the test reads level 0's row, so level 1 gets its own first-year 60 %" );
 	}
 
 	[TestMethod]

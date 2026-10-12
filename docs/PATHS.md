@@ -103,7 +103,7 @@ binary), so the rule is derived from the data.
 the same path neighbours. The saved bits also count ride entrances, which the cell map does not keep.
 Other path cells, such as built ones or the neighbours of built ones, follow the rule from their path
 neighbours. For straights and edges, a hash of the cell picks between the two versions (PATH-014). Queue
-cells still use entry 0; the theme's `QueueTex` list is not used yet.
+cells use the separate `QueueTex` list and textures from the theme's `queue.wad`, rather than a normal path tile. Square, end, straight and corner artwork follows the queue's predecessor/successor links; independent queues that merely touch do not visually merge. The back cell connects to its walking-path join. These visual shape/rotation choices are derived from the decoded artwork and existing queue links, not a traced original rendering routine (PATH-015).
 
 ## Headless API
 

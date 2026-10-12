@@ -728,6 +728,12 @@ research batch was included in this merge.
   the browser and are never uploaded. Checked in the browser pane: lobby
   ~119 fps, park ~97 fps without and ~69 fps with audio; an options change
   survived a reload.
+- **Browser languages:** the Language toggle now lists the CD's other languages
+  (the page copies `<Lang>/data/Language` and `<Lang>/Meshes`, 1 to 3 MB each,
+  and the chosen language's advisor speech, 28 MB, when it is chosen; the advisor's
+  level speech (the Welcome line) now follows the language on the desktop too) and the saved choice in `/config/language.json` is used
+  at start, through the `LanguageStartup` code the desktop shares. Checked in
+  the browser: English to Nederlands to Italian, Dutch menu, Dutch Welcome speech bank in use, still Dutch after a reload.
 - **Server:** the OpenTPW server also serves the browser game (Brotli, cache
   headers, CSP) and ships as `ghcr.io/meneerkrabs/opentpw-server`. The official
   instance at play.opentpw.io runs on Hetzner behind Caddy, HTTPS only, with

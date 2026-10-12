@@ -9,7 +9,7 @@ import { createTextureDownloads } from './opentpw-textures.js';
 const status = document.getElementById('status');
 const { setModuleImports, getAssemblyExports, getConfig, runMain } = await dotnet.create();
 setModuleImports('opentpw-gl', webgl);
-setModuleImports('opentpw-page', { requestLevel, requestTexture });
+setModuleImports('opentpw-page', { requestLevel, requestLanguage, requestTexture });
 setModuleImports('opentpw-audio', audio);
 const program = (await getAssemblyExports(getConfig().mainAssemblyName)).OpenTPW.Program;
 // runMain keeps the runtime alive after Main returns, so the exports stay callable.
@@ -22,6 +22,8 @@ const notCopied = /\/data\/(movies|init)\/|\.(sf2|mpg)$/i;
 // music). Their saved park (Easymode.TPWI) comes at once, for the Load list.
 const deferred = /^\/data\/levels\/[^/]+\/(?!easymode\.tpwi$)/i;
 let levelSources = [];
+let speechSources = new Map();
+let languageLoadingText = '';
 let textureDownloads;
 let gameRunning = false;
 let parkLoadingText = '';
@@ -29,8 +31,8 @@ let textureLoading = false;
 
 function updateLoading() {
 	const loading = document.getElementById('loading');
-	loading.hidden = !parkLoadingText && !textureLoading;
-	loading.textContent = parkLoadingText || 'Enhancing textures…';
+	loading.hidden = !parkLoadingText && !languageLoadingText && !textureLoading;
+	loading.textContent = parkLoadingText || languageLoadingText || 'Enhancing textures…';
 }
 
 // Called from TexturePack.Find. Requests are deduplicated and bounded; the original draws while
@@ -45,21 +47,50 @@ async function writeTexture(path, bytes) {
 	return gameRunning && program.ClarityEnabled() && program.AddTextureFile(path, bytes);
 }
 
-async function copyFiles(sources, progress) {
+async function copyFiles(sources, progress, copied) {
 	let bytes = 0;
 	for (const [index, [relative, read]] of sources.entries()) {
 		const contents = new Uint8Array(await read());
 		program.AddFile(relative, contents);
+		copied?.(relative);
 		bytes += contents.length;
 		if (index % 20 === 0 || index === sources.length - 1)
 			progress(`${index + 1} of ${sources.length} files (${(bytes / 1048576).toFixed(0)} MB)`);
 	}
 }
 
+// The CD keeps the other languages beside Data: <Lang>/data/Language/<Lang> (text, fonts) and <Lang>/Meshes/<Lang>
+// (banners), about 2 to 3 MB per language, copied at once so the language can be listed and switched. The advisor's
+// speech of a language (<Lang>/data/global/speech/speechHD.SDT, about 27 MB, and lips.WAD, plus each level's speech folder, about 0.6 MB) is copied when that language
+// is chosen (requestLanguage), both files together. A folder counts as a language by that structure, not by name, so
+// every CD folder that holds its own text is offered.
+function languageFolders(sources) {
+	const found = new Set();
+	for (const [relative] of sources) {
+		const match = /^([^/]+)\/data\/language\/([^/]+)\//i.exec(relative);
+		if (match && match[1].toLowerCase() === match[2].toLowerCase() && match[1].toLowerCase() !== 'data')
+			found.add(match[1].toLowerCase());
+	}
+	return found;
+}
+
 // Each source is [path below the game folder, () => Promise<ArrayBuffer>].
 async function copy(sources) {
-	sources = sources.filter(([relative]) => /^data\//i.test(relative) && !notCopied.test(`/${relative}`));
-	if (!sources.length) {
+	const languages = languageFolders(sources);
+	const wanted = relative => {
+		if (/^data\//i.test(relative))
+			return !notCopied.test(`/${relative}`);
+		const match = /^([^/]+)\/(data\/language|meshes)\//i.exec(relative);
+		return match != null && languages.has(match[1].toLowerCase());
+	};
+	speechSources = new Map();
+	for (const source of sources) {
+		const match = /^([^/]+)\/data\/(global\/speech\/(speechHD\.SDT|lips\.wad)|levels\/[^/]+\/speech\/.+)$/i.exec(source[0]);
+		if (match && languages.has(match[1].toLowerCase()))
+			speechSources.set(match[1].toLowerCase(), [...(speechSources.get(match[1].toLowerCase()) ?? []), source]);
+	}
+	sources = sources.filter(([relative]) => wanted(relative));
+	if (!sources.some(([relative]) => /^data\//i.test(relative))) {
 		status.textContent = 'No Data folder in that folder.';
 		return;
 	}
@@ -83,6 +114,56 @@ function requestLevel(level) {
 		});
 }
 
+// Copies a language's speech files, bank and lip marks together. A file counts as copied only once it is in memory, so a
+// retry after a failure copies just what is missing; the language is reported loaded only when every file is in.
+const copiedSpeech = new Set();
+async function copySpeech(language, progress) {
+	const files = (speechSources.get(language.toLowerCase()) ?? []).filter(([relative]) => !copiedSpeech.has(relative));
+	await copyFiles(files, progress, relative => copiedSpeech.add(relative));
+}
+
+// Called by the game (GameFlow.LanguageDataReady) when a language is chosen. The game switches the text and the advisor's voice
+// only when this reports the language loaded; on a failure it keeps the current language (and says so), and choosing the
+// language again calls this again.
+function requestLanguage(language) {
+	languageLoadingText = 'Loading the language…';
+	updateLoading();
+	copySpeech(language, text => { languageLoadingText = `Loading the language: ${text}`; updateLoading(); })
+		.then(() => {
+			languageLoadingText = '';
+			updateLoading();
+			program.LanguageLoaded(language);
+		}, error => {
+			console.error(`Copying the ${language} speech failed`, error);
+			program.LanguageFailed(language);
+			languageLoadingText = `Could not load the ${language} speech (${error.message}); keeping the current language. Choose it again to retry.`;
+			updateLoading();
+			setTimeout(() => { if (languageLoadingText.startsWith('Could not')) { languageLoadingText = ''; updateLoading(); } }, 10000);
+		});
+}
+
+// The saved language (language.json, restored from the browser's storage) is copied before the game starts, so the front end
+// never runs in a language whose speech is missing; when that fails the game starts in the default language.
+async function loadSavedLanguage() {
+	let language;
+	try {
+		language = JSON.parse(new TextDecoder().decode(program.ReadFile('/config/language.json'))).Language;
+	} catch {
+		return;
+	}
+	if (!language)
+		return;
+	try {
+		await copySpeech(language, text => status.textContent = `Loading the ${language} speech: ${text}…`);
+		program.LanguageLoaded(language);
+	} catch (error) {
+		console.error(`Copying the ${language} speech failed`, error);
+		program.LanguageFailed(language);
+		status.textContent = `Could not load the ${language} speech (${error.message}); starting in the default language.`;
+		await new Promise(resolve => setTimeout(resolve, 1500));
+	}
+}
+
 // Drop the chosen folder's own name: "theme park/Data/ui.wad" becomes "Data/ui.wad".
 document.getElementById('folder').addEventListener('change', event => copy([...event.target.files].map(file =>
 	[file.webkitRelativePath.split('/').slice(1).join('/'), () => file.arrayBuffer()])));
@@ -93,7 +174,12 @@ const served = new URLSearchParams(location.search).get('data');
 if (served) {
 	const base = served.endsWith('/') ? served : `${served}/`;
 	const list = (await (await fetch(`${base}files.txt`)).text()).split('\n').filter(Boolean).map(line => line.split('\t'));
-	copy(list.map(([relative, url]) => [relative, async () => (await fetch(url ?? base + relative.split('/').map(encodeURIComponent).join('/'))).arrayBuffer()]));
+	copy(list.map(([relative, url]) => [relative, async () => {
+		const response = await fetch(url ?? base + relative.split('/').map(encodeURIComponent).join('/'));
+		if (!response.ok)
+			throw new Error(`${relative}: HTTP ${response.status}`);
+		return response.arrayBuffer();
+	}]));
 }
 
 async function start() {
@@ -103,6 +189,7 @@ async function start() {
 	} catch (error) {
 		console.warn('Saved games could not be read from this browser', error);
 	}
+	await loadSavedLanguage();
 	try {
 		const distribution = JSON.parse(program.ClarityDistribution());
 		textureDownloads = createTextureDownloads({

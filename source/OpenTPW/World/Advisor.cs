@@ -267,9 +267,12 @@ internal sealed class Advisor : IDisposable
 		if ( response.Local && level == null )
 			throw new InvalidOperationException( $"Advisor response {response.Id} uses the level speech bank but no level is loaded." );
 		var root = response.Local ? $"/levels/{level}/Speech" : "/global/Speech";
+		// The chosen language's own bank and lips (overlay first, else the installation), for the level's speech as well as the global one:
+		// the Welcome line (response 1) comes from the level bank, which every language of the CD ships (docs/LANGUAGES.md).
+		var languageRoot = language == null ? null : root.TrimStart( '/' );
 		byte[] bankBytes;
 		string source;
-		if ( language != null && !response.Local && language.ResolveDataFile( "global/Speech/speechHD.SDT" ) is { } languageBank )
+		if ( languageRoot != null && language!.ResolveDataFile( $"{languageRoot}/speechHD.SDT" ) is { } languageBank )
 		{
 			bankBytes = File.ReadAllBytes( languageBank );
 			source = $"{language.Name}: {languageBank}";
@@ -286,10 +289,11 @@ internal sealed class Advisor : IDisposable
 		{
 			var lipName = $"sp_{response.Lip:000}.LIP";
 			byte[] lip;
-			var wadPath = language != null && !response.Local ? language.ResolveDataFile( "global/Speech/lips.wad" ) : null;
-			if ( wadPath == null && !fileSystem.FileExists( $"{root}/lips/{lipName}" ) && fileSystem.FileExists( $"{root}/lips.wad" ) )
+			var wadPath = languageRoot != null ? language!.ResolveDataFile( $"{languageRoot}/lips.wad" ) : null;
+			var loosePath = languageRoot != null ? language!.ResolveDataFile( $"{languageRoot}/lips/{lipName}" ) : null;
+			if ( wadPath == null && loosePath == null && !fileSystem.FileExists( $"{root}/lips/{lipName}" ) && fileSystem.FileExists( $"{root}/lips.wad" ) )
 				wadPath = fileSystem.GetAbsolutePath( $"{root}/lips.wad" );
-			if ( wadPath is { } lipsPath )
+			if ( loosePath == null && wadPath is { } lipsPath )
 			{
 				using var lips = new WadArchive( lipsPath );
 				var member = lips.GetFiles( "" ).FirstOrDefault( file => string.Equals( file, lipName, StringComparison.OrdinalIgnoreCase ) )
@@ -297,7 +301,7 @@ internal sealed class Advisor : IDisposable
 				lip = lips.GetFile( member ).GetData();
 			}
 			else
-				lip = fileSystem.ReadAllBytes( $"{root}/lips/{lipName}" );
+				lip = loosePath != null ? File.ReadAllBytes( loosePath ) : fileSystem.ReadAllBytes( $"{root}/lips/{lipName}" );
 			marks = new LipSyncFile( new MemoryStream( lip ) ).Marks;
 		}
 		return (Mp2Decoder.Decode( mpeg ), new LipSyncTimeline( marks ), source);

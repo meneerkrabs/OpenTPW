@@ -93,6 +93,44 @@ copy that theme's folder and shows *Loading the park* while the lobby keeps runn
 desktop `LevelDataReady` is null and parks start at once. Each theme's saved park
 (`Easymode.TPWI`) is copied at start, so the Load list is complete.
 
+### Languages
+
+A game folder copied from the CD keeps the other languages beside `Data`
+(`Dutch/data/Language/Dutch`, `Dutch/Meshes/Dutch`, likewise Italian, Polish). For every
+top-level folder that holds its own `data/Language/<same name>` (detected by structure, not a
+fixed list) the page copies those two trees at once: about 1 to 3 MB per language, so the
+Options -> OpenTPW -> Language toggle can list and switch them. Polish is not offered because
+its character table is not decoded (docs/LANGUAGES.md).
+
+The advisor's voice is copied when the language is chosen, like a theme folder: the language's
+`data/global/speech` (`speechHD.SDT`, 27.5 MB on the real Dutch folder, and `lips.WAD`) and each
+level's `speech` folder (0.6 MB), all together so bank and lip marks never mismatch.
+`GameFlow.LanguageDataReady` (the counterpart of `LevelDataReady`) asks the page through
+`Page.RequestLanguage`; the page shows *Loading the language* and calls `Program.LanguageLoaded`.
+A switch in the options waits for it (the choice stays pending, the text changes together with
+the voice), a park does not start before the current language's speech is in, and a saved
+language is requested at start-up. The cost of one language is that download (the local copy of
+27.5 MB plus a short-lived second copy while it is written, about 56 MB more JavaScript heap at
+the peak in Chrome), kept in memory for the visit. The installed language needs no request.
+
+A language counts as loaded only when every one of its files is in memory. When a read or a
+write fails (a file the page cannot read, a 404 in the `?data=` test mode), the page logs the
+error, shows *Could not load the language speech* for ten seconds and reports
+`Program.LanguageFailed`; the language stays unready. Text and speech must stay consistent, so
+the game does not apply the switch: the pending choice is dropped with a warning (the options
+row shows the current language again) and the current language, text and voice, stays. Nothing
+waits forever, and a park queued meanwhile starts at once. Choosing the language again copies
+again, and only the files that are still missing (the page remembers what it wrote). A pending
+choice also holds a park that is started right after it (the park waits for the speech, then the
+transition applies the language before the park is built), so the park is entered in the chosen
+language. A saved language whose speech cannot be copied at start-up is not used: the game
+starts in the default language (the saved choice stays in `language.json`, so the next visit
+tries again).
+
+At start the game reads the saved choice from `/config/language.json` (kept in browser storage
+like the other settings), offers the CD languages with `LanguageStartup` (the code the desktop
+uses) and, when the saved language is no longer in the folder, warns and uses the default.
+
 ### Sound
 
 `Browser/WebAudioOutput.cs` answers to the desktop's `SdlMovieAudioOutput` name, so the game's

@@ -62,6 +62,15 @@ A game folder copied from the CD rather than installed (with `Data` beside the C
 whose `MBToUni.dat` OpenTPW can read are offered: the Polish CD's table has a different layout
 (a header word 1 and 329 characters, probably two-byte codes) that is not decoded, so Polish
 is left out. Italian (Benelux/Italian CD) loads but is not among the verified languages.
+Desktop and browser choose their start-up language with the same code (`LanguageStartup`); the
+browser reads `/config/language.json`, falls back to the default with a warning when the saved
+language is missing, and copies the CD languages' text and banners, and the chosen language's speech
+(docs/WEB.md, "Languages").
+
+The advisor takes both its global speech bank and `lips.wad` and the level's own `speech/speechHD.SDT`
+(the Welcome line, response 1, is a level response) and `lips` from the current language, overlay first,
+each time a line is said. Nothing is cached, so a live switch changes the voice at the next line, on the
+desktop as in the browser. Until this was found the level bank was always the installed language's.
 
 Two editions of `UITEXT.str` exist. The installed game examined here has 473 entries; the European
 CD's languages (its English included) and the Mac version have 474, with an extra message at entry

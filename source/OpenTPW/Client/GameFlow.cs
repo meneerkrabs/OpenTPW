@@ -90,6 +90,25 @@ internal sealed partial class GameFlow : IDisposable
 	public static Func<string, bool>? LevelDataReady { get; set; }
 
 	/// <summary>
+	/// Whether the speech files of a language can be read now. The browser copies them from the player's files when the
+	/// language is first chosen and answers false until they are in; a language switch waits for it, so the advisor
+	/// changes its voice together with the text. Null on the desktop.
+	/// </summary>
+	public static Func<string, bool>? LanguageDataReady { get; set; }
+
+	/// <summary>
+	/// Whether copying a language's speech files failed (browser). The choice is then dropped with a warning and the current
+	/// language stays; the flag is cleared when the language is requested again. Null on the desktop.
+	/// </summary>
+	public static Func<string, bool>? LanguageDataFailed { get; set; }
+
+	/// <summary>A language was picked in the options: the browser starts (or, after a failure, restarts) copying its speech files.</summary>
+	public static Action<string>? LanguageChosen { get; set; }
+
+	private bool SettlePendingLanguage() =>
+		PendingLanguage.Settle( ref pendingLanguage, GameLanguage.Current.Name, LanguageDataReady, LanguageDataFailed, Log.Warning );
+
+	/// <summary>
 	/// Records the keys and buttons held right now as already seen, so a press that skipped the start-up movies
 	/// (Space also activates a menu button) does not act on the front end's first frame.
 	/// </summary>
@@ -158,6 +177,8 @@ internal sealed partial class GameFlow : IDisposable
 		ApplyLanguage = language =>
 		{
 			pendingLanguage = string.Equals( language, GameLanguage.Current.Name, StringComparison.OrdinalIgnoreCase ) ? null : language;
+			// Starts the browser's copy of the language's speech while the options are still open.
+			if ( pendingLanguage != null ) LanguageChosen?.Invoke( pendingLanguage );
 			return Level == null;
 		},
 		SaveOptions = () => { if ( PersistSettings ) GameOptions.Current.Save( OptionsPath ); },
@@ -366,7 +387,9 @@ internal sealed partial class GameFlow : IDisposable
 	{
 		// [EXT:texture-pack] the pack switch belongs to the game loop, not to its loading screen
 		TexturePackSwitch.PumpCurrent();
-		if ( pending != null && (pendingLevel == null || LevelDataReady?.Invoke( pendingLevel ) != false) )
+		// A park waits for a language chosen just before it (its speech files may still be coming) and is then entered in it:
+		// the transition's tear-down applies the choice before the park is built.
+		if ( pending != null && (pendingLevel == null || (SettlePendingLanguage() && LevelDataReady?.Invoke( pendingLevel ) != false)) )
 		{
 			var transition = pending;
 			pending = null;
@@ -418,7 +441,7 @@ internal sealed partial class GameFlow : IDisposable
 			entity.Update();
 		// After the frame's input and once every dialog is closed (a display change may still wait for confirmation), so the
 		// options screen that asked for it is not torn down while it runs.
-		if ( pendingLanguage != null && Level == null && Menu != null && Menu.Stack.Top == Menu.Main )
+		if ( pendingLanguage != null && Level == null && Menu != null && Menu.Stack.Top == Menu.Main && SettlePendingLanguage() && pendingLanguage != null )
 		{
 			var selected = Menu.Selected.Level;
 			ShowFrontEnd( selected );
@@ -432,6 +455,9 @@ internal sealed partial class GameFlow : IDisposable
 	/// </summary>
 	private void ApplyPendingLanguage()
 	{
+		// The speech files are not in yet (browser): keep the choice, the frame update applies it once they are.
+		if ( !SettlePendingLanguage() )
+			return;
 		var name = pendingLanguage;
 		pendingLanguage = null;
 		if ( name == null || string.Equals( name, GameLanguage.Current.Name, StringComparison.OrdinalIgnoreCase ) )

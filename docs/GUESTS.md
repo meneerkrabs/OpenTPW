@@ -137,7 +137,10 @@ a bankrupt park gets none. With the shipped 20 and 6 a new park gets 4 guests pe
 ran this routine (docs/reverse/ORACLE.md, F9). It confirms the rule and adds three details. The factor is
 0.8 instead of 1.2 while the `+48` word of the thing at game `+0x1da734` is positive (ARRIVAL-002). Online
 parks (GameType 1) are cut at 500 instead of 1,500. A group cut with more guests than the limit becomes
-negative; OpenTPW stops at 0 (ARRIVAL-004).
+negative; OpenTPW stops at 0 (ARRIVAL-004). Executing the update routine `0xcb2ac` over repeated calls (F11)
+shows that this changes nothing in behaviour: a group at or below 0 creates no guest and, at the next stop of
+the arrival vehicle, restarts the timer and clears the active byte exactly as an empty group does, so nothing
+holds. Only the stored group word and one vehicle step for an exactly empty group differ (effect not traced).
 
 Park points are summed over the placed rides and sideshows: each adds its `Info.AttractionValue` plus the
 `Attraction[n].NewBonus` of its age bracket (n = age in game days / `Info.NewAttractionDecayTime`, no

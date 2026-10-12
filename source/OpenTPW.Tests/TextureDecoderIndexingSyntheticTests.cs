@@ -18,9 +18,9 @@ namespace OpenTPW.Tests;
 public class TextureDecoderIndexingSyntheticTests
 {
 	/// <summary>Byte-for-byte twin of the corpus generator used to record the pinned hashes.</summary>
-	private readonly record struct SynthCase( string Name, byte Flags, byte Alpha, byte Bpp, byte Ver, short W, short H, short Qy, short Qcb, short Qcr, short Qa, int ColorLen, int AlphaLen );
+	internal readonly record struct SynthCase( string Name, byte Flags, byte Alpha, byte Bpp, byte Ver, short W, short H, short Qy, short Qcb, short Qcr, short Qa, int ColorLen, int AlphaLen );
 
-	private static readonly SynthCase[] SynthCases =
+	internal static readonly SynthCase[] SynthCases =
 	{
 		new( "tiny-half", 0x00, 0, 0, 0, 1, 1, 0, 0, 0, 0, 8320, 4224 ),
 		new( "tiny-half-alpha", 0x00, 1, 0, 0, 1, 1, 0, 0, 0, 0, 8320, 4224 ),
@@ -305,7 +305,8 @@ public class TextureDecoderIndexingSyntheticTests
 		return ms.ToArray();
 	}
 
-	private static byte[] BuildWct( byte flags, byte hasAlpha, byte bpp, byte version, short width, short height,
+	// Internal so the scratch-allocation tests can build the same synthetic corpus.
+	internal static byte[] BuildWct( byte flags, byte hasAlpha, byte bpp, byte version, short width, short height,
 		short qy, short qcb, short qcr, short qa, int colorLen, int alphaLen, uint colorSeed, uint alphaSeed )
 	{
 		var color = WrapBilz( BuildChannelPayload( colorLen, colorSeed ) );

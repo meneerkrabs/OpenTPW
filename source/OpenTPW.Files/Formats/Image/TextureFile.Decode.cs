@@ -34,8 +34,9 @@ partial class TextureFile
 
 	// One inverse D4 step over a row's scale/wavelet pairs. The previous pair
 	// wraps around to the last one. Source pairs sit at stride 2, except that
-	// half-scale data halves the source index; output pairs always sit at
-	// stride 2, so half-scale output neighbours overlap by one sample.
+	// half-scale data halves the source index; output pairs sit at stride 2
+	// for full-scale data and stride 1 for half-scale, so half-scale output
+	// neighbours overlap by one sample.
 	void D4InverseTransformRows( ref List<float> pSrc, ref List<float> pDest, int offset, int size, D4Coefficients coefs, bool isHalfScale )
 	{
 		for ( int i = 0; i < size; i++ )

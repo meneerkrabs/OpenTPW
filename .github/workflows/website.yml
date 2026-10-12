@@ -5,12 +5,13 @@ name: Website
 on:
   push:
     branches: [main]
-    paths: ['website/**', 'docs/**', 'README.md', 'LICENSE.md', 'tools/**/*.md', 'tools/site_docs.py', 'tools/test_site_docs.py', 'tools/check_site.py', 'tools/test_check_site.py', '.github/workflows/website.yml']
+    paths: ['website/**', 'docs/**', 'README.md', 'LICENSE.md', 'tools/**/*.md', 'tools/site_docs.py', 'tools/test_site_docs.py', 'tools/site_status.py', 'tools/site_status_curated.json', 'tools/test_site_status.py', 'tools/check_site.py', 'tools/test_check_site.py', '.github/workflows/website.yml']
   pull_request:
-    paths: ['website/**', 'docs/**', 'README.md', 'LICENSE.md', 'tools/**/*.md', 'tools/site_docs.py', 'tools/test_site_docs.py', 'tools/check_site.py', 'tools/test_check_site.py', '.github/workflows/website.yml']
+    paths: ['website/**', 'docs/**', 'README.md', 'LICENSE.md', 'tools/**/*.md', 'tools/site_docs.py', 'tools/test_site_docs.py', 'tools/site_status.py', 'tools/site_status_curated.json', 'tools/test_site_status.py', 'tools/check_site.py', 'tools/test_check_site.py', '.github/workflows/website.yml']
   workflow_dispatch:
 permissions:
   contents: read
+  pull-requests: read
 concurrency:
   group: website-${{ github.ref }}
   cancel-in-progress: true
@@ -26,8 +27,17 @@ jobs:
         run: |
           python3 -I -B tools/test_site_docs.py
           python3 -I -B tools/test_check_site.py
+          python3 -I -B tools/test_site_status.py
           python3 -I -B tools/site_docs.py
-          python3 -I -B tools/check_site.py
+      - name: Generate the live status page
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The latest merged pull requests; without them (forks, API trouble) the generator reads the git history.
+          gh api "repos/${{ github.repository }}/pulls?state=closed&base=main&sort=updated&direction=desc&per_page=50" > "$RUNNER_TEMP/pulls.json" || echo "::notice::GitHub API unavailable; recent progress comes from git history."
+          python3 -I -B tools/site_status.py --pulls-json "$RUNNER_TEMP/pulls.json"
+      - name: Check links and anchors
+        run: python3 -I -B tools/check_site.py
   deploy:
     needs: validate
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
@@ -48,8 +58,12 @@ jobs:
           python-version: '3.12'
       - name: Build the static documentation
         if: steps.token.outputs.present == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           python3 -I -B tools/site_docs.py
+          gh api "repos/${{ github.repository }}/pulls?state=closed&base=main&sort=updated&direction=desc&per_page=50" > "$RUNNER_TEMP/pulls.json" || echo "::notice::GitHub API unavailable; recent progress comes from git history."
+          python3 -I -B tools/site_status.py --pulls-json "$RUNNER_TEMP/pulls.json"
           python3 -I -B tools/check_site.py
       - if: steps.token.outputs.present == 'true'
         uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4.1.3

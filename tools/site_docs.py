@@ -623,6 +623,7 @@ def page(title: str, body: str, depth: int, source: str | None) -> str:
 <link rel="icon" href="{up}../favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="{up}../style.css">
 <link rel="stylesheet" href="{up}../docs.css">
+<script src="{up}../a11y.js"></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>

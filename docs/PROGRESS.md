@@ -1,4 +1,4 @@
-# Execution status — October 11, 2026
+# Execution status — October 12, 2026
 
 This is a development prototype, not the complete offline game. The full plan
 and final acceptance remain unchanged. The user approved publishing the plan,
@@ -859,3 +859,20 @@ were earned from visits to published parks). What OpenTPW rebuilds:
   queue and marker checks (its Totem pick check fails intermittently, which was
   also seen on an earlier build without these changes); the native Metal shader
   tests pass; the browser project builds. Direct3D 11, Vulkan and WebGL were not run.
+
+## Website: live status and reading options (October 12, 2026)
+
+- **Live status:** `tools/site_status.py` reads the fidelity register, the oracle
+  findings (F/X, with how many are marked fixed in C#), the feature matrix, the
+  README format table, the merged pull requests (GitHub API in the website
+  workflow, `git log --first-parent` as fallback) and the commit, and writes
+  `website/docs/status.html` and `status.json`; the front page shows a summary
+  from the JSON. The front page's "You can / You cannot yet" block comes from
+  `tools/site_status_curated.json`, checked against the feature matrix and the docs.
+- **Reading options:** Atkinson Hyperlegible and OpenDyslexic (SIL OFL, vendored
+  under `website/fonts/`), high-contrast and calm colours, and a reduce-motion
+  switch that also follows the system setting; stored in localStorage only
+  (`website/a11y.js`).
+- Verification: `tools/test_site_status.py` (synthetic repository, no network),
+  `site_docs.py`, `site_status.py` and `check_site.py`; checked in a browser in
+  default, high-contrast and calm/OpenDyslexic modes. The Cloudflare deploy was not run.

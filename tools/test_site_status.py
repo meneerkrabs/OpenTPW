@@ -30,7 +30,17 @@ Of these, 9 IDs belong to the existing original-fidelity areas (x), and 3 ONLINE
 
 ORACLE = """# Oracle
 
-| `loan-offers` | **F12**: **agree** (fixed in C#; 497 differed) |
+## 4. Targets, stubs and results
+
+| Target | Routine (allowed code) | Stubs | Inputs | vs plan | vs C# on main |
+| --- | --- | --- | --- | --- | --- |
+| `a-target` | `0x1` | none | 5 | **agree** | **agree** (F1 fixed) |
+| `b-target` | `0x2` | none | 5 | **agree** | `X.Y` through `y`: **agree** except 4 inputs (cause) |
+| `c-target` | `0x3` | none | 5 | **F9**: 49 differ | **F9**: 49 differ, the same inputs |
+| `d-target` | `0x4` | none | 5 | **agree** | no C# hook (CSHARP_PENDING) |
+| `e-target` | `0x5` | none | 5 | **agree** | no port on main (hook `x`) |
+
+## 5. Findings
 
 **F1, queue limit polarity (QUEUE-plan §4, `Foo.Bar`).** Text that mentions fixed in C# later on the same line.
 
@@ -100,10 +110,15 @@ class Parsing(unittest.TestCase):
         ids = {i["id"]: i for i in o["findings"]}
         self.assertEqual(list(ids), ["F1", "F2", "F12", "X1", "X3"])
         self.assertEqual(ids["F12"]["title"], "loan instalment")
-        self.assertTrue(ids["F12"]["fixed_in_csharp"])
-        self.assertFalse(ids["F1"]["fixed_in_csharp"], "a later mention in the paragraph is not the heading's marker")
         self.assertEqual(ids["X3"]["title"], "arrival group size")
-        self.assertEqual((o["f_count"], o["x_count"], o["fixed_in_csharp"]), (3, 2, 1))
+        self.assertEqual((o["f_count"], o["x_count"]), (3, 2))
+
+    def test_csharp_agreement_rule(self):
+        o = site_status.parse_oracle(ORACLE)
+        self.assertEqual({t["target"]: t["csharp"] for t in o["targets"]},
+                         {"a-target": "agree", "b-target": "partial", "c-target": "differs", "d-target": "no-port", "e-target": "no-port"})
+        self.assertEqual((o["csharp_agrees"], o["target_count"]), (1, 5))
+        self.assertEqual(site_status.csharp_status("**Agree** 5/5"), "agree")
 
     def test_matrix_and_formats(self):
         m = site_status.parse_matrix(MATRIX)
@@ -184,7 +199,7 @@ class Repository(unittest.TestCase):
         self.assertIn('<a href="docs/ECONOMY.html">Details</a>', index)
         data = json.loads((self.repo / "website/docs/status.json").read_text(encoding="utf-8"))
         self.assertEqual(data["fidelity"]["total"], 12)
-        self.assertEqual(data["oracle"]["fixed_in_csharp"], 1)
+        self.assertEqual(data["oracle"]["csharp_agrees"], 1)
         page = (self.repo / "website/docs/status.html").read_text(encoding="utf-8")
         self.assertIn("Generated from commit", page)
         self.assertIn("loan instalment", page)

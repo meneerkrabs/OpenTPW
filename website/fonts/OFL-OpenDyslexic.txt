@@ -27,7 +27,7 @@ requirement for fonts to remain under this license does not apply
 to any document created using the fonts or their derivatives.
 
 DEFINITIONS
-"Font Software" refers to the set of files released by the Copyright
+"Font Software" refers to the set of files released by the Copyrigh
 Holder(s) under this license and clearly marked as such. This may
 include source files, build scripts and documentation.
 
@@ -48,7 +48,7 @@ writer or other person who contributed to the Font Software.
 PERMISSION & CONDITIONS
 Permission is hereby granted, free of charge, to any person obtaining
 a copy of the Font Software, to use, study, copy, merge, embed, modify,
-redistribute, and sell modified and unmodified copies of the Font
+redistribute, and sell modified and unmodified copies of the Fon
 Software, subject to the following conditions:
 
 1) Neither the Font Software nor any of its individual components,
@@ -61,12 +61,12 @@ included either as stand-alone text files, human-readable headers or
 in the appropriate machine-readable metadata fields within text or
 binary files as long as those fields can be easily viewed by the user.
 
-3) No Modified Version of the Font Software may use the Reserved Font
+3) No Modified Version of the Font Software may use the Reserved Fon
 Name(s) unless explicit written permission is granted by the corresponding
 Copyright Holder. This restriction only applies to the primary font name as
 presented to the users.
 
-4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Fon
 Software shall not be used to promote, endorse or advertise any
 Modified Version, except to acknowledge the contribution(s) of the
 Copyright Holder(s) and the Author(s) or with their explicit written

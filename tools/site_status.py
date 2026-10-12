@@ -10,6 +10,10 @@ website/index.html between the site-status markers; without --no-front-check the
 is out of date and --write-front rewrites it. Merged pull requests come from --pulls-json (the output
 of `gh api repos/OWNER/REPO/pulls?state=closed`), otherwise from `git log --first-parent`. The output
 depends only on the repository, that file and the commit, so it is reproducible.
+
+Oracle figures: findings are the bold "**F<n>, title**" paragraphs and "Finding X<n>" headings of
+docs/reverse/ORACLE.md. C# agreement is counted per section 4 target, not per finding: a target counts
+as "agree" when its "vs C# on main" cell reports **agree** without an "except" clause (see csharp_status).
 """
 
 from __future__ import annotations
@@ -58,6 +62,20 @@ def parse_register(text: str) -> dict:
     return {"total": int(total.group(1)), "original": int(split.group(1)), "online": int(split.group(2)), "areas": areas}
 
 
+def csharp_status(cell: str) -> str:
+    """Classify the "vs C# on main" cell of an ORACLE.md section 4 target row.
+
+    agree: the cell reports **agree** for the C# port (the whole target matches the original routine);
+    partial: **agree** except for named inputs; no-port: no C# hook or port exists yet; differs: C# is
+    compared and still differs from the original."""
+    text = cell.lower()
+    if "**agree**" in text:
+        return "partial" if " except " in text else "agree"
+    if re.search(r"\bno (c# )?(hook|port)\b|not on main|^hook\b", text):
+        return "no-port"
+    return "differs"
+
+
 def parse_oracle(text: str) -> dict:
     found: dict[str, str] = {}
     for line in text.splitlines():
@@ -65,14 +83,17 @@ def parse_oracle(text: str) -> dict:
         if m and m.group(1) not in found:
             title = plain(re.split(r"\s+\(|[:;]", m.group(2).strip().rstrip("."))[0]).rstrip(".")
             found[m.group(1)] = title
-    fixed = set(re.findall(r"\b([FX]\d+)\*{0,2}\)?,? ?\(?(?:[^()*\n]{0,20}\b)?fixed in C#", text))
-    fixed |= {k for line in text.splitlines() for k in re.findall(r"^\*\*([FX]\d+),[^*]*fixed in C#[^*]*\*\*", line)}
-    items = [{"id": k, "title": v, "fixed_in_csharp": k in fixed}
-             for k, v in sorted(found.items(), key=lambda kv: (kv[0][0], int(kv[0][1:])))]
+    items = [{"id": k, "title": v} for k, v in sorted(found.items(), key=lambda kv: (kv[0][0], int(kv[0][1:])))]
+    section = re.search(r"^## 4\..*?(?=^## )", text, re.S | re.M)
+    targets = []
+    for row in table_rows(section.group(0).splitlines() if section else [], "| Target | Routine"):
+        if len(row) == 6:
+            targets.append({"target": plain(row[0]), "csharp": csharp_status(row[5])})
+    counts = {k: sum(t["csharp"] == k for t in targets) for k in ("agree", "partial", "differs", "no-port")}
     return {"findings": items,
             "f_count": sum(i["id"][0] == "F" for i in items),
             "x_count": sum(i["id"][0] == "X" for i in items),
-            "fixed_in_csharp": sum(i["fixed_in_csharp"] for i in items)}
+            "targets": targets, "target_count": len(targets), "csharp_agrees": counts["agree"], "csharp": counts}
 
 
 MATRIX_COLUMNS = ["area", "gate", "implementation", "macos", "windows", "linux", "original_vm", "evidence"]
@@ -258,12 +279,14 @@ def render_page(status: dict) -> str:
     source = "the GitHub API (merged pull requests)" if r["source"] == "github" else "the first-parent history of the checked-out branch"
     tiles = "".join([
         stat(f["total"], "open fidelity items", f"{f['original']} in the original areas, {f['online']} online"),
-        stat(o["f_count"] + o["x_count"], "executed oracle findings", f"{o['f_count']} F, {o['x_count']} X; {o['fixed_in_csharp']} fixed in C#"),
+        stat(o["f_count"] + o["x_count"], "executed oracle findings", f"{o['f_count']} F, {o['x_count']} X; C# agrees with the original in {o['csharp_agrees']} of {o['target_count']} executed targets"),
         stat(fm["decoded"], "formats fully decoded", f"{fm['partial']} more partly"),
         stat(len(m["rows"]), "feature areas tracked", ", ".join(f"{n} {k}" for k, n in m["counts"].items())),
     ])
     areas = table(["Area", "Open IDs", "Source occurrences"], [[a["area"], a["ids"], a["occurrences"]] for a in f["areas"]])
-    findings = table(["Finding", "Title", "Fixed in C#"], [[i["id"], i["title"], "yes" if i["fixed_in_csharp"] else ""] for i in o["findings"]])
+    findings = table(["Finding", "Title"], [[i["id"], i["title"]] for i in o["findings"]])
+    labels = {"agree": "agrees", "partial": "agrees except named inputs", "differs": "differs", "no-port": "no C# port or hook yet"}
+    targets = table(["Executed target", "C# on main"], [[t["target"], labels[t["csharp"]]] for t in o["targets"]])
     matrix = table(["Area", "Gate", "Implementation", "macOS", "Windows", "Linux", "Original VM"],
                    [[x["area"], x["gate"], x["implementation"], x["macos"], x["windows"], x["linux"], x["original_vm"]] for x in m["rows"]])
     formats = table(["Format", "Status", "Note"], [[x["format"], x["status"], x["note"][:160] + ("..." if len(x["note"]) > 160 else "")] for x in fm["rows"]])
@@ -281,8 +304,10 @@ def render_page(status: dict) -> str:
 <p>{f["total"]} unresolved APPROX IDs: {f["original"]} in the original-fidelity areas and {f["online"]} inside the online extension. Source: <a href="FIDELITY-REGISTER.html">fidelity register</a>, generated from tagged code sites.</p>
 {areas}
 <h2 id="oracle">Executed oracle findings</h2>
-<p>Rules traced in the original binaries and executed against OpenTPW: {o["f_count"]} Mac PowerPC findings (F) and {o["x_count"]} cross-binary findings (X); {o["fixed_in_csharp"]} are marked fixed in C#. Source: <a href="reverse/ORACLE.html">oracle notes</a>.</p>
+<p>Rules traced in the original binaries and executed against OpenTPW: {o["f_count"]} Mac PowerPC findings (F) and {o["x_count"]} cross-binary findings (X). Source: <a href="reverse/ORACLE.html">oracle notes</a>.</p>
 {findings}
+<p>Targets where C# agrees with the original: <strong>{o["csharp_agrees"]} of {o["target_count"]}</strong> ({o["csharp"]["partial"]} more agree except for named inputs, {o["csharp"]["differs"]} differ, {o["csharp"]["no-port"]} have no C# port or hook yet). A target is one routine of the original run against the C# code, from the target table of the oracle notes.</p>
+{targets}
 <h2 id="features">Feature status by area</h2>
 <p>Source: <a href="FEATURE-MATRIX.html">feature matrix</a>. Implemented or self-tested does not mean original fidelity; unassessed means no evidence yet either way.</p>
 {matrix}

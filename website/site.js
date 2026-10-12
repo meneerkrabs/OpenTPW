@@ -66,7 +66,7 @@ if (live) {
 		const tiles = element('div', 'stats');
 		tiles.append(
 			tile(fidelity.total, 'open fidelity items', `${fidelity.original} in the original areas, ${fidelity.online} online`),
-			tile(oracle.f_count + oracle.x_count, 'executed oracle findings', `${oracle.fixed_in_csharp} fixed in C#`),
+			tile(oracle.f_count + oracle.x_count, 'executed oracle findings', `C# agrees with the original in ${oracle.csharp_agrees} of ${oracle.target_count} executed targets`),
 			tile(formats.decoded, 'formats fully decoded', `${formats.partial} more partly`),
 			tile(recent.items.length ? recent.items[0].date : '-', 'latest merged change', recent.items.length ? recent.items[0].title : ''));
 		const list = element('ul', 'doc-list');

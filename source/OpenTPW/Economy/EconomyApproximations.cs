@@ -9,9 +9,9 @@ public static class EconomyApproximations
 {
 	public static readonly IReadOnlyList<(string Id, string Assumption, string EvidenceNeeded)> All = new[]
 	{
-		("ECON-001", "OpenTPW's fixed 60 Hz clock is sampled into 248 ms turns (14.88 ticks per turn), without the original's catch-up cap and scheduler phases", "runtime turn timing under load and speed changes"),
+		("ECON-001", "OpenTPW's fixed 60 Hz clock is sampled into 248 ms park turns (4.03 a second at normal speed, the rate the original's scheduler executes at its default clock scale 1.0 over a millisecond clock), without the original's 31 ms substeps, its limit of three park turns per call and its drop of a backlog above 2000 ms (ORACLE F30)", "the clock route a real run selects (the library's millisecond clock is a microsecond API on every route read, none executed) and the original's behaviour under load"),
 		("ECON-002", "the Mac OS date conversion (LongSecondsToDate, reached through 0x101C5C4C) uses the default Gregorian calendar", "the script system of an original run"),
-		("ECON-004", "Fast x2 and Fastest x4 speeds (only pause is evidenced)", "original speed controls, if any"),
+		("ECON-004", "Fast x2 and Fastest x4 are OpenTPW's buttons: the original steps its clock scale by 1.25 within 0.25..2 (x4 exceeds its maximum) with key actions whose physical keys are unnamed", "the key tokens' names and whether the shipped game shows a speed control"),
 		("ECON-005", "challenge prizes and scrap sales are other income; build, upgrade, goods, prizes, land are other costs; profit leaves out loans received", "the per-category ledger routines of other income and other costs (a loan received is money in and not profit: executed, ORACLE F14)"),
 		("ECON-007", "repaid loan offers reopen without the original credit-eligibility gate", "implement the traced credit predicate and qualify its cross-edition behavior"),
 		("ECON-008", "100 training points per grade (from Online_Standard.sam comments \"costs 1000 to get up to grade 1\")", "capture of a training run"),

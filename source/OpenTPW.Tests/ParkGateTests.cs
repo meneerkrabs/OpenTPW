@@ -202,7 +202,8 @@ public class ParkGateTests
 		gates.SetVariable( ParkGate.CommandVariable, 1 );
 		while ( economy.Turn < ParkGate.RetryPeriodTurns )
 		{
-			economy.AdvanceFixedTick();
+			// A faster game gets several fixed ticks per frame; the gate sees only the state after each step.
+			economy.Advance( (int)speed );
 			gate.Tick();
 			if ( economy.Turn < ParkGate.RetryPeriodTurns )
 				Assert.AreEqual( 1, gates.GetVariableByName( ParkGate.CommandVariable ), $"speed {speed}, turn {economy.Turn}: no early retry" );

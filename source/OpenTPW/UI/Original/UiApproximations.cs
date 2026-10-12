@@ -28,7 +28,7 @@ public static class UiApproximations
 		("UI-018", "lobby sky drawn as a flat SKYCOLOUR backdrop; flying meshes, rain, lightning, animations not drawn", "binary/capture of the lobby"),
 		("UI-019", "fallback island position (400 + index × 200, 400) when lobby.txt has none", "none needed if lobby.txt is complete"),
 		("UI-021", "bank balance text at the Mac table rectangle as is (the original repositions it from font extents and drawable size); money grouped with ',' digits", "binary 0x156ef4 placement; locale number format"),
-		("UI-022", "speed control (pause, ×1, ×2, ×4) bottom-right; faster speeds only speed up the economy clock, not rides/guests", "binary: original game speed options (pause only is known)"),
+		("UI-022", "speed control (pause, ×1, ×2, ×4) bottom-right: four buttons that set the clock scale of the whole simulation; the original steps its scale by 1.25 within 0.25..2 with key actions (ORACLE F32) and no speed control was found in its UI", "the key tokens' names and whether the shipped game shows a speed control (UITEXT 426 'Speed :' has no code reference)"),
 		("UI-023", "test-only stub calendar (2 s/day); the game shows the economy clock (see ECON tags)", "none for the game path"),
 		("UI-024", "layout inside the build and info arms (category buttons, title, three-slot pages/arrows, unresearched items listed and sorted under their own names where the original uses UITEXT 137, adaptive preview size to fit translated names/prices, stat rows, door/erase buttons)", "captures of the original arms"),
 		("UI-025", "message area keeps up to 3 messages for 8 s in the f_tag frame", "binary/capture of the original message system"),

@@ -258,7 +258,7 @@ public sealed class ParkObjectives
 			+ (IsSupportedType( definition.Type ) ? "" : " [progress not measurable yet]");
 	}
 
-	/// <summary>Monthly golden ticket check; returns newly won tickets.</summary>
+	/// <summary>Golden ticket check (every 100 park turns in Full Simulation, <see cref="ParkEconomy.RunsGoldenTicketCheck"/>); returns newly won tickets.</summary>
 	public IReadOnlyList<GoldenTicketKind> CheckGoldenTickets( ParkCounters counters, IParkGuestStatistics guests, ParkResearch research, long profitThisYear, IReadOnlyList<long> monthlyAdmissions )
 	{
 		var won = new List<GoldenTicketKind>();

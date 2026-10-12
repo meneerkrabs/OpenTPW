@@ -113,7 +113,8 @@ Mutation checks (`test_oracle.py`):
   test in 64 bits (2), the UNBOUNCE window `/ 200 → / 250` (39), `IsOpen` dropped from the park points
   counts-test, the loan instalment `… / months → … / months + 1` and the loan credit booked as other income instead of
   `LoanReceived` and the sign of the join excitement refusal swapped (`queue-join-gate`), the working energy rate `0.025f → 0.026f` (`staff-vitals`), the rest test `>` to `>=` (`staff-rest-seek`), the grievance `< 15` to
-  `<= 15` (`staff-strike-grievance`) and the age gate `< 24` to `<= 24` (`staff-strike-month`). A no-op "mutation" fails the
+  `<= 15` (`staff-strike-grievance`), the age gate `< 24` to `<= 24` (`staff-strike-month`), the seconds per park turn 3750 → 3751
+  (`calendar-date`), the day detection `!=` → `>` (`calendar-update`, which misses 31 → 1), the ticket remainder 0 → 1 (`golden-ticket-cadence`) and the fixed tick 1/60 → 1/54 s (`park-turn-cadence-frames`). A no-op "mutation" fails the
   test.
 
 ## 4. Targets, stubs and results (seed `oracle-v1`, 500 random + boundaries)
@@ -159,6 +160,13 @@ Mutation checks (`test_oracle.py`):
 | `profit-ticket-hint` | `0x13fdc` (the advisor's "near the profit ticket" hint), `0xccfa8`, `0x128d6c` / `0x12a438` | `0x108424` (game checked; synthetic bank) | 621 | no plan side. **Agree** 621/621 with the routine reading | none: OpenTPW has no advisor hints (`CSHARP_PENDING`) |
 | `local-tickets` | all six arms of `0xd31d0`, `0x128d6c` / `0x12a438` (earned flags) | `0xc3b7c`, `0xc3684`, `0xc19e4` (float), `0xc5510`, `0xc3b88` (month count checked), `0xe4628` / `0x1c4100` (the age in months), `0x1082b4`, `0x108424`, award `0xd3664` (logged) | 541 | **F23**: 458 differ from the former rule (every `>=`, average truncated). **Agree** 541/541 with the routine reading | `ParkObjectives.CheckGoldenTickets` through `local_tickets`: **agree** |
 | `global-tickets` | `0xd34c0` (four statistics against `+1900`, `+1904`, `+1908`, `+1916`) | `0x1082b4`, `0xc73bc`, `0xc6cec`, `0xc710c`, `0xc8cc0`, award `0xd3748` (logged) | 515 | no plan side. **Agree** 515/515 with the routine reading | `CheckGoldenTickets` through `global_tickets`: **agree** |
+| `calendar-date` | `0xe4394` (the world turn → date), `0x10a9a4` (game pointer), `0x1c4100` (signed 64-bit divide), the import glue | the bullfrog time-stamp API by import name: `operator+` (64-bit add of the time difference) and `GetTime` (Python proleptic-Gregorian decomposition, the Mac OS default calendar; null pointers skipped) | 652 (every month boundary of 2000-2003, the leap days of 2000, 2004 and 2400, the missing one of 2100, random turns to 6 × 10^7) | **F30**: **agree** (start + floor(turn × 15000 / 4) s); rates other than 15000 floor the seconds, not round (`test_calendar_rate_floors_the_seconds`) | `ParkCalendar.DateAtTurn` through `calendar_date`: **agree** |
+| `calendar-update` | `0xe3f0c` (the calendar update), `0xe4394`, the message constructors `0x116488` / `0x1164a4` / `0x1164c0` | the time-stamp API as above, the dispatcher `0x11688c` (the message type is read from its vtable), the day notification `0x18f4cc` and the month hooks `0x15bbd8` / `0x151698` / `0x155234` (logged with their arguments) | 579 scripts of 1-24 turns from a synchronised calendar | **F30**: **agree** (messages, their order day → month → year, and the stored month / day / year); routine reading agrees | `ParkEconomy.Advance` events and `ParkCalendar.FieldsAtTurn` through `calendar_update`: **agree** |
+| `calendar-first-update` | the constructor `0xe3c90` with `0xe4348` (start 2000-01-01), then `0xe3f0c` | as `calendar-update`, plus `GetLocalTime` (a fixed host time) and `SetTime` | 503 scripts from a constructed calendar | **F30**: 503 differ (the stored day is -1, the year 0, the month 0: the first update posts a day and a year message, and a month message outside January). Routine reading **agrees** 503/503 | no hook: OpenTPW starts synchronised (CSHARP_PENDING) |
+| `park-turn-cadence` | the world callback's catch-up fragment `0x1c22b0..0x1c24d0` (the registers its prologue loads from the TOC run first), the scheduler clock `0x10e844` → `0x11a588` → `0x10ed54` → `0x117d74` → `0x127cd0`, `0x1c3fbc` (float → u32), the mode wrapper `0x10565c` | the library clock `LbTime_GetClock` (the chosen raw millisecond), the script passes `0xb2838` / `0x9f748` / `0x20688`, the even-substep passes `0x63dd0` / `0xb7ac0`, the park turn `0x10536c` (counted), `0xb5da4`, `0x1aa614` and the six calls of the every-32nd-substep body (all logged) | 508 scripts of raw-clock gaps | **F30**: 57 differ by 1 ms (the clock accumulates gap × scale with one fused multiply-add in binary64 and truncates: ten 16 ms gaps at scale 0.8 give 127, not 128). Routine reading **agrees** 508/508 | no hook: OpenTPW samples turns from a 60 Hz clock (CSHARP_PENDING) |
+| `golden-ticket-cadence` | `0xd67f0` (the world's park-turn update) and `0xd2f1c` (the ticket dispatcher), including the unsigned remainder by 100 and the game type word (the lazy object marked constructed) | the bank update `0xcb278`, the staff pool `0xf6e24`, the calendar update `0xe3f0c` and the three ticket checks `0xd31d0` / `0xd34c0` / `0xd35b4`, each logged with its object argument checked | 507 scripts of turn updates (every multiple of 100 and its neighbours, the top of the 32-bit range, game type words 0, 1, 2, 3, -1 and random) | **F31**: **agree** (a check on every 100th turn, unsigned, for game type 0 only: 3 checks after the calendar update). The order differed in C# (checks first, 148 scripts) and a signed remainder differs on 5 | `ParkEconomy.RunsGoldenTicketCheck` through `golden_check_turns`: **agree** |
+| `park-turn-cadence-frames` | as `park-turn-cadence` | as `park-turn-cadence` | 506 frame loops with every gap within 150 ms of scaled time, at scales 0.25 to 4 (OpenTPW's x4 included) | **F32**: as `park-turn-cadence` (53 differ by 1 ms); routine reading **agrees** 506/506 | `FixedStepClock` fed with each frame's time × the scale, and `ParkCalendar.Turn` of its tick count, through `park_turns`: **agree** as a window (never ahead of the original, at most one turn behind at every frame) |
+| `clock-speed-scale` | the three speed-key release callbacks `0x11315c` / `0x113184` / `0x1131ac`, the clamping setters `0x127c88` / `0x127c48`, the direct setter `0x127c40`, and the scheduler clock read `0x10e844` (→ `0x11a588` → `0x10ed54` → `0x117d74` → `0x127cd0`, `0x1c3fbc`) | the library clock `LbTime_GetClock` (the chosen raw millisecond) | 509 scripts of key presses and clock reads (start scales 0, 0.1, 0.25, 0.8, 1, 2, 3, 4 and random; a wrapping raw counter) | **F32**: the keys step the scale by 1.25 within 0.25..2.0 and the clock adds gap × scale: routine reading **agrees** 509/509; the plan's exact scaled time differs by 1 ms (1 script) | no hook: OpenTPW has four buttons, not three stepping keys (CSHARP_PENDING); the scale's path into OpenTPW is `park-turn-cadence-frames` |
 
 The C# comparisons use these seams:
 
@@ -216,6 +224,21 @@ The C# comparisons use these seams:
   `StaffVitals.SeekRest` (`staff_rest_seek`) with the world draw passed in. `StaffStrikeBoard.Grievance` (`staff_grievance`) and
   `ConsiderMonth` (`staff_strike_month`, one call per month end on a board restored with the input's levels, flags and turns).
   The handymen's analyser sums (`0xc21f4`, `0xc2264`) are passed for the grievance; `ParkEconomy` never supplies them.
+
+- `ParkCalendar.DateAtTurn` (`calendar_date`): the date of a park turn at the default clock rate 15000 and the 2000-01-01 start. The
+  calendar's other rates are compared with the plan only (`test_calendar_rate_floors_the_seconds`). `ParkEconomy.Advance`
+  (`calendar_update`): a park started at the turn before the first step through the internal `StartAtOriginalTurn` (reflection) and
+  advanced turn by turn; the `DayEnded`, `MonthEnded` and `YearEnded` events of each turn, in order, are compared with the messages
+  `0xe3f0c` posts, and `ParkCalendar.FieldsAtTurn` with the stored fields.
+
+- `ParkEconomy.RunsGoldenTicketCheck` (`golden_check_turns`): the predicate `AdvanceTurn` asks per turn; the game type word 0 is Full
+  Simulation, any other word Instant Action (no tickets on either side). The order inside the turn is the plan reading
+  `plan-tickets-before-calendar` against the executed order and is covered by `ParkEconomyTests`.
+
+- `FixedStepClock` and `ParkCalendar.Turn` (`park_turns`): each frame's elapsed milliseconds times the speed scale go to
+  `FixedStepClock.Advance` exactly as `Level.Update` feeds it (`Time.Delta × SimulationTimeScale`), and the turns so far are read after each frame.
+  The oracle's loop runs a turn when the scaled time passes 248 j − 31 ms, OpenTPW at the first 60 Hz tick of 248 j ms, so the comparison is a
+  window: the C# count is never ahead and at most one turn behind at every frame (`cadence_frames_equal`).
 
 The pricing domain is the free byte clear, `game+36 == 0` and bank `+276 ≠ 0`. Old 1 → new 3
 belongs to `path-can-change`.
@@ -1065,6 +1088,128 @@ Not changed or not established, kept in the ECON-014 register entry:
   empty. The Mac Easy Guide's FAQ says strikes were removed; the routines are present and reachable.
 - The world state `0x1091b8` that a member needs to walk out is not modelled (members go on strike at once), and the world draw of the rest-area hit
   comes from the economy's own stream (DET-015).
+
+**F30, the park calendar and the cadence of park turns (ECON-001, ECON-002, ECON-003, UI-023; `ParkCalendar`, `ParkEconomy.AdvanceTurn`; C# gains a
+calendar API, its behaviour is unchanged).** The static trace called the ECON-001 claim contradicted: the calendar is not driven by a fixed
+tick count per day, it converts the world turn (game `+0x1da70c`) with the clock rate at calendar `+28`. `ParkCalendar` already did that
+(turn × 15000 / 4 = 3750 s from 2000-01-01, 248 ms turns, `[BIN:STP-PPC:0x100E4394]`); what had not been executed was the conversion, the
+change detection and the real-time rate of the turn counter. Four targets now run them.
+
+1. **`0xe4394`, the conversion** (`calendar-date`). A 64-bit product turn × rate (both `u32`: `mulhwu` / `mullw` pairs), a signed 64-bit divide by 4
+   (`0x1c4100`), a multiplication by 10^7 and an addition to the start time stamp (`operator+` of the bullfrog `TbTimeStamp`, the 100 ns unit
+   since 1601) give the new time stamp, which `GetTime` decomposes through the operating system's calendar (`LongSecondsToDate`, proleptic
+   Gregorian) into year, month, day, hour, minute and second. Executed with those two library calls stubbed by import name (Python civil
+   arithmetic) the routine agrees with `2000-01-01 + floor(turn × 15000 / 4) s` on all 652 inputs (every month boundary of 2000-2003, the leap days of 2000,
+   2004 and 2400, the missing one of 2100, random turns to 6 × 10^7), and C# `ParkCalendar.DateAtTurn` agrees too. With another saved
+   rate the division floors (5 turns at rate 3 are 3 s, not 4). Turn 24 is the first of 2 January (23.04 turns make a day), turn 715 the
+   first of February, turn 8,433 the first of 2001 (00:22:30; the leap year has 8,432.64 turns).
+2. **`0xe3f0c`, the update** (`calendar-update`, `calendar-first-update`). Once per park turn (`0xd67f0`, which runs the bank update `0xcb278`, the staff pool
+   `0xf6e24`, this update and then the golden-ticket check) it decomposes the date of the current turn and compares the day (1-based), the month (0-based) and the
+   year with the fields stored at `+20`, `+16` and `+24`. Each difference posts one message: a day message (type 11) followed by a notification
+   call `0x18f4cc` with the date's second, minute, hour, day, month and year − 1900, a month message (type 12) followed by three hooks that take the
+   new month (1-based), a year message (type 13). The order is day, month, year. The dispatcher `0x11688c` delivers a message to every registered
+   thing at once (a loop over the subscribers calling `0xfab68`; read, not executed), so the bank's year handler and the monthly loan and training handlers run
+   inside the update, before the golden-ticket check of the same turn (F31). Then the three fields are stored. At most one message of each
+   kind comes however many days have passed; a turn is 3750 s, so one day at the most does. The executed update agrees with the rule C#
+   implements (`ParkEconomy.AdvanceTurn`, now through `ParkCalendar.Update`) on 579 scripts, and the C# events (`DayEnded`, `MonthEnded`,
+   `YearEnded` of `ParkEconomy.Advance`) agree with the messages on every turn, including 31 January → 1 February, the leap day, the end of
+   2100's February and the year change (all three at turn 8,433). The one difference is the start: the constructor `0xe3c90` stores
+   month 0, day -1 and year 0, so the **first update of a new calendar posts a day and a year message** (and a month message outside
+   January) whatever the date, 503 of 503 constructed inputs. A loaded save keeps the calendar's stored fields, so only a new park shows it, and
+   its effect there is a day message and a year message at the first turn; the bank's year handler resets a profit that is 0 anyway. OpenTPW starts
+   synchronised and does not post them (the text of ECON-001 says so); what the day listeners would do with a first message is unknown.
+3. **`0x1c22b0..0x1c24d0`, how real time becomes park turns** (`park-turn-cadence`). The world callback keeps a scheduled time and samples the scheduler clock
+   `0x10e844` (executed down to the library clock `LbTime_GetClock`, a millisecond counter). The scheduler adds each raw gap times its scale
+   (`+24`, 1.0 from the constructor `0x127c08`) to a binary64 accumulator with one fused multiply-add and truncates it (`0x127cd0`,
+   `0x1c3fbc`). The loop then drops a backlog above 2000 ms (`previous = now − 2000`) and, while `now > previous`, advances `previous` by 31,
+   counts a substep and runs its body: a script pass, on every second substep two more passes, on every eighth substep **the park turn** (at most 3
+   in one call; the surplus phases are skipped, not queued) and on every 32nd a slow body; with application flag 8 clear and gameplay flag 1 set
+   the bodies are skipped. Executed over 508 scripts the loop agrees with that reading (the 57 differences with the plan are the 1 ms of
+   the fused rounding at non-dyadic scales). In real time, with frames of 16, 17 or 33 ms alike (`test_park_turns_per_real_second_by_scale`):
+
+   | Clock scale | Park turns per real second | A game day (23.04 turns) | A 30-day month | A 365.25-day year |
+   | --- | --- | --- | --- | --- |
+   | 0.25 (the lowest) | 1.00 | 23 s | 11.5 min | 140 min |
+   | 1.0 (the default) | 4.03 | 5.7 s | 2.9 min | 34.8 min |
+   | 1.25 / 1.5625 / 1.953125 | 5.04 / 6.30 / 7.87 | 4.6 / 3.7 / 2.9 s | 2.3 / 1.8 / 1.5 min | 28 / 22 / 18 min |
+   | 2.0 (the highest) | 8.06 | 2.9 s | 1.4 min | 17.4 min |
+
+   A gap of 2000 ms or more (or a stall of 5000 ms, 3000 of which are dropped first) runs 65 substeps and 3 park turns and ends 15 ms ahead, so a
+   frame rate below about 4 a second loses park time. The turn arrives when the scaled time passes 248 j − 31 ms (the substep ceiling), up to 31
+   ms before OpenTPW's 60 Hz sampling reaches 248 j ms; the average rate is the same.
+
+**What bounds the rate.** The rate is exact only if the library clock is wall-clock milliseconds. `LbTime_GetClock` is `UTimer::GetAbsolute() / 1000`
+(`SamsUtilities::UMicroseconds`); the route that call takes (a function pointer, a flag-selected hardware route with the constants 60.15 and
+60,000,000, or the Toolbox `Microseconds`) is chosen at run time and none of them is executed, so the real-time rate stays bounded (turn =
+248 ms of the library clock × the scale), not measured. The scale starts at 1.0 and the only writers of `+24` are the clock constructor and the three speed
+callbacks (F32). The 100,000 µs interval of the application's own timer is an allocator guard, not a game rate (PPC-clock.md).
+
+**C# and players.** `ParkCalendar` gains `DateAtTurn`, `FieldsAtTurn` and `Update` (the original's comparison of the stored month, day and
+year) and `ParkEconomy.AdvanceTurn` raises its day, month and year events through them. Nothing changes for a player: at normal speed a game day
+is 5.7 s (it was before), January is 177 s and the leap year 2000 34.9 minutes; the oracle now shows these figures are the original's and that
+the day, month and year events fall on the same turns. ECON-001 stays an `[APPROX]` with its text narrowed to what is left: the 60 Hz sampling,
+the catch-up limits of the loop above, the substep phases and the clock route. ECON-002 stays (the OS calendar is a Python stand-in for
+`LongSecondsToDate`, the default Gregorian calendar). Not changed: by the listing the original keeps running the calendar when the park is bankrupt (the turn update
+skips only the thing loop at world mode 4, `0x1053a8`; read, not executed), where OpenTPW stops (ECON-030).
+
+**F31, when the golden tickets are checked (ECON-033, `ParkEconomy.RunsGoldenTicketCheck`, `0xd67f0`, `0xd2f1c`; the cadence was right, the order inside the turn is fixed).**
+The static trace called "checked at month end" contradicted: the tickets are checked each time the world turn is a multiple of 100, in game
+type 0 only. `ParkEconomy` already did that (`[BIN:STP-PPC:0x100D67F0]`); `golden-ticket-cadence` now executes it. `0xd67f0` is the park-turn
+update of the world object (called once per turn from `0x10536c`). It runs the bank update `0xcb278` (world `+708`), the staff pool `0xf6e24`,
+the calendar update `0xe3f0c` (world `+672`, F30) and then tests the world turn (game `+0x1da70c`, unsigned): the remainder by 100 is
+`turn − 100 × (turn / 100)` with the quotient from a multiply-high by `0x51eb851f` and a shift by 5, so 2^32 − 96 is a multiple and a signed
+remainder is wrong at the top of the range. A multiple of 100 calls the dispatcher `0xd2f1c` (world `+704`), which constructs the game type
+object lazily (`0x12bb64`) and runs the three checks `0xd31d0`, `0xd34c0` and `0xd35b4` (read as the local, global and secret conditions; here stubs that
+are logged) only while that object's word 0 is 0. Executed over 507 scripts the plan (a check on every 100th turn in Full Simulation, as C#) agrees on every call,
+and so does C# (`ParkEconomy.RunsGoldenTicketCheck`, 0 mismatches); the game type words 1, 2, 3 and -1 run no check (OpenTPW has two modes: word 0 is
+Full Simulation, any other word has no tickets). A check every 100 turns is 4.34 game days apart (the 4.34 of PPC-scenarios), 24.8 s of real time at
+the default clock scale; tickets are not month-end events.
+
+**Fixed in C#:** the calls inside one turn run in the other order. The original runs the calendar update first, and the dispatcher delivers its
+day, month and year messages to their listeners at once (F30), so the checks see the closed month's admissions and the year's profit after the
+year message reset it. `ParkEconomy.AdvanceTurn` ran the check first. Example (`TheGoldenTicketCheckSeesTheStateAfterTheCalendarUpdateOfItsTurn`):
+turn 648,000 is the first turn of 2077 and a multiple of 100; with a year's profit of 20,000 (the jungle's `ProfitYear` is 15,000) the old order
+awarded the profit ticket from the old year's profit, the original and the new order find none. At any other multiple of 100 nothing differs;
+a month or year change that is also a multiple of 100 is rare (1 in 100). The determinism hash did not change. The oracle pins the old order as
+`plan-tickets-before-calendar` (148 of 507 scripts differ).
+
+**F32, the speed scale and what it scales (ECON-004, UI-022; `GameSpeed`, `GameSpeedScale`, `ParkEconomy.AdvanceFixedTick`, `Level.Update`).**
+OpenTPW's speed buttons sped up the economy clock only ("faster speeds only speed up the economy clock, not rides/guests", UI-022), a design
+choice with no evidence. The original has **one clock scale**, and it multiplies everything that runs on the scheduler.
+
+1. **The keys** (`clock-speed-scale`). The game input group has three speed records, ids 6, 7 and 8 (tokens `0x6d00`, `0x6b00`, `0x6a00`; their physical names are
+   not qualified). Their release callbacks `0x11315c`, `0x113184` and `0x1131ac` act on the scheduler object behind TOC -30168: divide its scale (`+24`) by
+   1.25, multiply it by 1.25, and store 1.0 (through the direct setter `0x127c40`). The first two clamp the result to 0.25..2.0, so from 1.0 the
+   scales are 1.25, 1.5625, 1.953125, 2.0 and, downwards, 0.8, 0.64, 0.512, 0.4096, 0.32768, 0.262144, 0.25; a scale above 2.0 (only a direct store gives
+   one) steps back to 2.0 on the next key, and each callback returns 1. The constructor `0x127c08` (one caller) stores 1.0. These four routines are the only callers of the scale setters
+   (a scan of the branch-and-link sites; a direct store to `+24` by other code, such as a clock restore, is not excluded). Executed over 509 scripts the reading agrees. There is no x4.
+2. **What the scale scales** (`clock-speed-scale`, `test_scaled_clock_callers`). The scheduler clock `0x10e844` returns the sum of every raw millisecond gap
+   times the scale at that read (a fused multiply-add into a binary64 accumulator, truncated to a `u32`; a scale change applies to the whole gap since the previous read:
+   1000 raw ms at 1.0, then a faster key, then 1000 raw ms give 1000 and 2250). It has 60 call sites: the world callback (the substeps and
+   so the park turns, F30), the RSE interpreter (GETTIME `0xaf6d8`, WAIT `0xb0674`, WAITABS `0xb0764`, SETTIMER `0xb1fec`, GETTIMER `0xb200c`), the
+   board bounce code (`0xad350..0xae600`) and the animation updater `0xa6f70` (`0xa6fa0`). Only 11 sites read the unscaled clock `0x10e864`, among them the
+   advisor's speech chain and the animation channels flagged `0x40` (`0xa6fd8`). Ride scripts, guests (through the park turn and the animations) and
+   the economy therefore all run at the scale; the UI and the advisor's lip-sync do not. "The economy only" is contradicted.
+3. **No speed control in the UI.** `UITEXT 426 "Speed :"` has no code reference, and the only speed strings are debug text (PPC-ui.md); no button or menu entry that
+   calls the key callbacks was found. The three keys exist, so the scale is a real original feature, but OpenTPW's pause / x1 / x2 / x4 buttons are its own,
+   and x4 exceeds the original's maximum of 2.0 (the clock itself does not clamp; only the keys do).
+
+**Changed in C#.** A speed is now the clock scale of the whole simulation. `GameSpeedScale.Of` maps pause, x1, x2 and x4 to 0, 1, 2 and 4, the HUD's `TimeScale`
+carries it (also for a level without an economy), `Level.Update` feeds the fixed clock `Time.Delta × scale` (as before), and the economy runs one tick per
+fixed tick (`AdvanceFixedTick` used to run `Speed` ticks, so at x2 the economy's turn ran twice as fast as the guests' own turn and the rides). Before → after
+for a player at x2: the park clock and the economy ran at x2 (a day 2.9 s) while guests walked and rides cycled at x1; now guests, rides, scripts and the
+economy all run at x2 and stay on one park turn. Real time per game period (23.04 turns a day, 4.03 turns a second at x1):
+
+| Speed | Park turns a second | A day | A 30-day month | A 365.25-day year |
+| --- | --- | --- | --- | --- |
+| x1 | 4.03 | 5.7 s | 171 s | 34.8 min |
+| x2 (the original's maximum scale 2.0) | 8.06 | 2.9 s | 86 s | 17.4 min |
+| x4 (OpenTPW only) | 16.1 | 1.4 s | 43 s | 8.7 min |
+
+The fixed clock accepts 16 ticks (267 ms of scaled time) per frame, so x4 keeps up down to 15 frames a second; below that it loses time (the original
+carries a backlog of 2000 ms, ECON-001). The determinism hash did not change (its fixtures advance the economy four ticks a step themselves, as the
+old Fastest did); `ParkSaveFile` keeps storing the speed, and an old save at x2 now runs everything at x2. ECON-004 and UI-022 stay open with narrower texts:
+the keys' physical names, whether the shipped game shows a speed control, and the x4 and the 1.25 steps that OpenTPW does not follow.
 
 ## 6. Adding a target or a C# hook
 

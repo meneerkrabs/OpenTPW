@@ -97,6 +97,14 @@ normalization. These are static scheduling intervals, not a guaranteed measured
 frame rate. Pause, scale, forced stepping, mode branches and catch-up limits
 matter; the OpenTPW 60 Hz scheduler is not established by this binary.
 
+**Executed (ORACLE.md F30).** The catch-up loop `0x1c22b0..0x1c24d0` now runs in the PowerPC oracle (`park-turn-cadence`, 508 scripts,
+the scheduler clock `0x10e844` executed down to the stubbed library clock): 31 ms substeps, a park turn on every eighth, three at most per
+call, a backlog above 2000 ms dropped, scaled time = raw milliseconds × the scale (1.0 by default, one fused multiply-add per read). At the
+default scale that is 4.03 park turns, or 5.7 s of a 23.04-turn game day, per real second whatever the frame length (8.06 / 2.9 s at the
+highest scale 2.0, 1.0 / 23 s at the lowest 0.25). The rate rests on the library clock being wall-clock milliseconds; its route is chosen at
+run time and is not executed, so it is bounded, not measured. The calendar conversion `0xe4394` and the update `0xe3f0c` ran too
+(`calendar-date`, `calendar-update`, `calendar-first-update`).
+
 The economy lane's calendar conversion reads that park turn at `0xe43dc` and
 computes `turn * mFunnySecsPerRealSec / 4`, then converts seconds to 100 ns
 units. Its constructor supplies `15000` for the multiplier. Consequently the

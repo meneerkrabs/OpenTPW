@@ -15,11 +15,13 @@ Stubs are listed per target with the reason they are safe; any other call aborts
 """
 from __future__ import annotations
 
+import datetime
 import math
 import random
 import struct
 import sys
 from dataclasses import dataclass, field
+from fractions import Fraction
 from pathlib import Path
 from typing import Callable
 
@@ -3847,6 +3849,619 @@ def month_inputs(rng: random.Random, n: int) -> list:
     return edges + [make() for _ in range(n)]
 
 
+# ============================================================================== (m) CLOCK: the park calendar 0xe4394 / 0xe3f0c (F30)
+# The calendar object (0xe3c90): +0 the start time stamp (a TbTimeStamp, hi word first, 100 ns units since 1601), +8 the host time of the
+# session, +16 the month and +20 the day and +24 the year of the last update, +28 the clock rate (15000). 0xe4394 turns the world turn
+# (game +0x1da70c, a u32) into the date: start + floor(turn x rate / 4) x 10^7 through the time-stamp API; 0xe3f0c compares the date's
+# fields with the stored ones, posts one day / month / year message for each that changed and stores the new fields.
+# The time-stamp API (operator+, GetTime, SetTime and the host clock of the bullfrog library) is the operating system's calendar
+# (LongSecondsToDate / LongDateToSeconds, proleptic Gregorian); its imports are stubbed with Python's civil arithmetic, so what is
+# executed is the application's own conversion and comparison code.
+CAL_DATE, CAL_UPDATE, CAL_CONSTRUCTOR = 0xE4394, 0xE3F0C, 0xE3C90
+CAL_TURN = 0x1E0000 - 22772          # game + 0x1da70c
+CAL_GAME_POINTER = -30124            # TOC slot -> data word holding the game pointer (0x10a9a4)
+CAL_DISPATCHER = -30100              # TOC slot -> data word holding the message dispatcher (created lazily when null)
+CAL_MESSAGES = {'day': -27152, 'month': -27156, 'year': -27160}   # TOC slots holding each message's vtable pointer (the constructors 0x116488 / 0x1164a4 / 0x1164c0)
+CAL_GLUE = [(0x1C5C34, 0x1C5C64), (0x1C5E2C, 0x1C5E44), (0x1C6DD4, 0x1C6DEC)]   # import glue: operator+, GetTime, SetTime, GetLocalTime
+CAL_IMPORTS = ('__pl__11TbTimeStampCFRC10TbTimeDiff', 'GetTime__11TbTimeStampCFPiPiPiPiPiPiPiPi',
+               'SetTime__11TbTimeStampFiiiiiii', 'GetLocalTime__10NS_MacDozeFPQ210NS_MacDoze11_SYSTEMTIME')
+CAL_FILETIME_EPOCH = datetime.datetime(1601, 1, 1)
+CAL_EPOCH = datetime.datetime(2000, 1, 1)
+CAL_RATE = 15000
+CAL_SECONDS_PER_TURN = CAL_RATE // 4   # 3750
+CAL_STATE = type('CalendarState', (), {})()
+
+
+def filetime(moment: datetime.datetime) -> int:
+    delta = moment - CAL_FILETIME_EPOCH
+    return (delta.days * 86400 + delta.seconds) * 10 ** 7
+
+
+def civil(stamp: int) -> datetime.datetime:
+    seconds = stamp // 10 ** 7
+    if seconds >= 9000 * 365 * 86400:
+        raise AssertionError('time stamp outside the civil range of the stub')
+    return CAL_FILETIME_EPOCH + datetime.timedelta(seconds=seconds)
+
+
+def calendar_stubs(target: Target) -> dict:
+    state = CAL_STATE
+
+    def add(m: Machine) -> None:                       # TbTimeStamp::operator+(r3 result, r4 this, r5 &TbTimeDiff)
+        m.memory.w64(m.gpr[3], m.memory.u64(m.gpr[4]) + m.memory.u64(m.gpr[5]))
+
+    def get_time(m: Machine) -> None:                  # TbTimeStamp::GetTime(r4 this; year r5, month r6, day r7, weekday r8, hour r9, minute r10, second [sp+56], ms [sp+60]); null pointers are skipped
+        pointers = [m.gpr[r] for r in range(5, 11)] + [m.memory.u32(m.gpr[1] + 56), m.memory.u32(m.gpr[1] + 60)]
+        if not any(pointers):
+            return
+        moment = civil(m.memory.u64(m.gpr[4]))
+        weekday = (moment.weekday() + 1) % 7 + 1      # LongDateRec: 1 = Sunday
+        fields = [moment.year, moment.month, moment.day, weekday, moment.hour, moment.minute, moment.second, 0]
+        for pointer, value in zip(pointers, fields):
+            if pointer:
+                m.memory.w32(pointer, value)
+
+    def set_time(m: Machine) -> None:                  # TbTimeStamp::SetTime(r4 this; year, month, day, hour, minute, second in r5..r10, ms [sp+56])
+        moment = datetime.datetime(m.gpr[5], m.gpr[6], m.gpr[7], m.gpr[8], m.gpr[9], m.gpr[10])
+        m.memory.w64(m.gpr[4], filetime(moment) + m.memory.u32(m.gpr[1] + 56) * 10 ** 4)
+
+    def host_time(m: Machine) -> None:                 # GetLocalTime(r3 SYSTEMTIME): the fixed host time 2000-01-01 00:00:00
+        for offset, value in enumerate([2000, 1, 6, 1, 0, 0, 0, 0]):
+            m.memory.w16(m.gpr[3] + 2 * offset, value)
+
+    def post(m: Machine) -> None:                      # (dispatcher, message): the message type is told by its vtable
+        vtable = m.memory.u32(m.gpr[4])
+        kinds = [kind for kind, slot in CAL_MESSAGES.items() if m.memory.u32(state.toc + slot) == vtable]
+        if len(kinds) != 1 or m.gpr[3] != state.dispatcher:
+            raise AssertionError('0x11688c called with an unknown message or without the dispatcher')
+        target.log.append(('post', kinds[0]))
+
+    def notify(m: Machine) -> None:                    # 0x18f4cc after the day message: the date's second, minute, hour, day, month - 1, year - 1900 (r10, the weekday, is the stub's own)
+        target.log.append(('notify', [s32(m.gpr[r]) for r in range(4, 10)]))
+
+    def hook(address: int):
+        def stub(m: Machine) -> None:
+            target.log.append(('hook', address, s32(m.gpr[3])))
+        return stub
+
+    stubs = {CAL_IMPORTS[0]: add, CAL_IMPORTS[1]: get_time, CAL_IMPORTS[2]: set_time, CAL_IMPORTS[3]: host_time,
+             0x11688C: post, 0x18F4CC: notify}
+    for address in (0x15BBD8, 0x151698, 0x155234):
+        stubs[address] = hook(address)
+    return stubs
+
+
+CAL_ALLOWED = [(0x10A9A4, 0x10A9B0), (0x1C4100, 0x1C4230), (0x116488, 0x1164DC)] + CAL_GLUE
+
+
+def calendar_setup(sb: Sandbox) -> int:
+    state = CAL_STATE
+    state.toc = sb.image.toc
+    state.game = sb.alloc(CAL_TURN + 8)
+    sb.write(toc_pointer(sb, CAL_GAME_POINTER), 'I', state.game)
+    state.dispatcher = sb.struct(16)
+    sb.write(toc_pointer(sb, CAL_DISPATCHER), 'I', state.dispatcher)
+    return sb.struct(64)
+
+
+def calendar_date_binary(sb: Sandbox, x: dict, log) -> dict:
+    """0xe4394 on a calendar with the given rate at the given turn: the resulting time stamp and the date it decomposes
+    into (year, month, day, hour, minute, second)."""
+    calendar = calendar_setup(sb)
+    sb.write(CAL_STATE.game + CAL_TURN, 'I', x['turn'])
+    sb.write(calendar, 'Q', filetime(CAL_EPOCH))
+    sb.write(calendar + 28, 'I', x['rate'])
+    out, fields = sb.struct(8), sb.struct(40)
+    sb.write(STACK_BASE + STACK_SIZE - 0x100 + 56, 'I', fields + 24)   # the ninth argument: where the seconds go
+    # year, month, day, weekday, hour, minute, second, in the order of the argument registers r5..r10 and the stack word
+    if x.get('stamp_only'):    # beyond the civil range of the stub: only the time stamp is computed (null date pointers, which GetTime skips)
+        sb.write(STACK_BASE + STACK_SIZE - 0x100 + 56, 'I', 0)
+        sb.call(CAL_DATE, {3: out, 4: calendar})
+        return {'stamp': sb.read(out, 'Q')}
+    sb.call(CAL_DATE, {3: out, 4: calendar, 5: fields, 6: fields + 4, 7: fields + 8, 8: fields + 12, 9: fields + 16,
+                       10: fields + 20})
+    year, month, day, weekday, hour, minute, sec = (sb.read(fields + 4 * i, 'I') for i in range(7))
+    return {'stamp': sb.read(out, 'Q'), 'date': [year, month, day, hour, minute, sec]}
+
+
+def calendar_date_plan(x: dict) -> dict:
+    """ParkCalendar: the date is 2000-01-01 + floor(turn x rate / 4) seconds."""
+    seconds = x['turn'] * x['rate'] // 4
+    stamp = (filetime(CAL_EPOCH) + seconds * 10 ** 7) & (2 ** 64 - 1)   # a 64-bit word: the largest turns wrap
+    if x.get('stamp_only'):
+        return {'stamp': stamp}
+    moment = CAL_EPOCH + datetime.timedelta(seconds=seconds)
+    return {'stamp': stamp, 'date': [moment.year, moment.month, moment.day, moment.hour, moment.minute, moment.second]}
+
+
+def calendar_date_rounded(x: dict) -> dict:
+    """Sharpness reading: the seconds rounded to nearest instead of floored."""
+    seconds = round(x['turn'] * x['rate'] / 4)
+    moment = CAL_EPOCH + datetime.timedelta(seconds=seconds)
+    return {'stamp': filetime(CAL_EPOCH) + seconds * 10 ** 7,
+            'date': [moment.year, moment.month, moment.day, moment.hour, moment.minute, moment.second]}
+
+
+def calendar_boundary_turns() -> list[int]:
+    """Turns on both sides of every month boundary of 2000-2002, the leap days of 2000, 2004 and 2400, the missing one of 2100
+    and the first days of January 2000."""
+    turns = []
+    for year, month in [(2000 + i // 12, i % 12 + 1) for i in range(40)] + [(2004, 2), (2004, 3), (2100, 2), (2100, 3),
+                                                                           (2400, 2), (2400, 3), (2101, 1), (6000, 1)]:
+        boundary = (datetime.datetime(year, month, 1) - CAL_EPOCH).total_seconds()
+        turns += [int(boundary // CAL_SECONDS_PER_TURN) + d for d in (-1, 0, 1)]
+    for day in range(1, 4):
+        boundary = (datetime.datetime(2000, 1, 1) + datetime.timedelta(days=day) - CAL_EPOCH).total_seconds()
+        turns += [int(boundary // CAL_SECONDS_PER_TURN) + d for d in (-1, 0, 1)]
+    return sorted({max(0, t) for t in turns})
+
+
+CAL_ODD_RATES = [{'turn': t, 'rate': r} for t, r in [(5, 3), (7, 1), (1, 3), (1000, 7), (86401, 4), (3, 15001), (2 ** 24, 15000),
+                                                      (2 ** 32 - 1, 15000), (2 ** 31, 1), (1, 2 ** 31)]]   # a saved rate other than 15000; the product stays 64 bits
+for _x in CAL_ODD_RATES:
+    _x['stamp_only'] = _x['turn'] * _x['rate'] // 4 >= 7000 * 365 * 86400
+
+
+def calendar_date_inputs(rng: random.Random, n: int) -> list:
+    boundaries = [{'turn': t, 'rate': CAL_RATE} for t in calendar_boundary_turns()]
+    randoms = [{'turn': rng.choice([rng.randrange(0, 40000), rng.randrange(0, 2 ** 22), rng.randrange(0, 6 * 10 ** 7)]), 'rate': CAL_RATE}
+               for _ in range(n)]
+    return boundaries + randoms
+
+
+def calendar_date_csharp_request(x: dict) -> dict:
+    return {'fn': 'calendar_date', 'turn': x['turn']}
+
+
+def calendar_date_csharp_result(x: dict, r: dict) -> dict:
+    return {'date': r['date']}
+
+
+def calendar_subset_equal(original: dict, other: dict) -> bool:
+    """The other side is compared on the keys it provides."""
+    return all(original[key] == value for key, value in other.items())
+
+
+def calendar_update_binary(sb: Sandbox, x: dict, log) -> dict:
+    """A calendar updated once per step. With state 'fresh' the calendar is constructed by 0xe3c90 (executed: month 0,
+    day -1, year 0) and updated from there; with 'synced' it was already updated at the turn before the first step.
+    Per step: the messages and calls in order, and the stored (month, day, year) afterwards."""
+    calendar = calendar_setup(sb)
+    if x['state'] == 'fresh':
+        sb.call(CAL_CONSTRUCTOR, {3: calendar})
+        if sb.read(calendar + 28, 'I') != CAL_RATE:
+            raise AssertionError('the constructor did not store the clock rate')
+    else:
+        sb.write(calendar + 28, 'I', CAL_RATE)
+        sb.write(calendar, 'Q', filetime(CAL_EPOCH))
+        sb.write(CAL_STATE.game + CAL_TURN, 'I', max(0, x['start'] - 1))
+        sb.call(CAL_UPDATE, {3: calendar})
+        log.clear()
+    steps, states = [], []
+    for step in range(x['count']):
+        sb.write(CAL_STATE.game + CAL_TURN, 'I', x['start'] + step)
+        mark = len(log)
+        sb.call(CAL_UPDATE, {3: calendar})
+        steps.append([list(entry) for entry in log[mark:]])
+        states.append([sb.read(calendar + 16, 'i'), sb.read(calendar + 20, 'i'), sb.read(calendar + 24, 'i')])
+    return {'steps': steps, 'kinds': [[e[1] for e in step if e[0] == 'post'] for step in steps], 'state': states}
+
+
+def calendar_at(turn: int) -> datetime.datetime:
+    return CAL_EPOCH + datetime.timedelta(seconds=turn * CAL_SECONDS_PER_TURN)
+
+
+def calendar_events(moment: datetime.datetime, changes: tuple) -> list:
+    """The calls of one update: a day message then the notification with the date, a month message and its three hooks
+    (the new month, 1-based), a year message."""
+    events = []
+    day, month, year = changes
+    if day:
+        events += [['post', 'day'], ['notify', [moment.second, moment.minute, moment.hour, moment.day, moment.month - 1,
+                                                moment.year - 1900]]]
+    if month:
+        events += [['post', 'month']] + [['hook', a, moment.month] for a in (0x15BBD8, 0x151698, 0x155234)]
+    if year:
+        events += [['post', 'year']]
+    return events
+
+
+def calendar_update_plan(x: dict, init: tuple | None = None, hooks: bool = True) -> dict:
+    """ParkEconomy.AdvanceTurn (the rule C# implements): each of the day, the month and the year has its message when
+    the date's field differs from the one at the previous turn. `init` is the stored (month, day, year) a fresh
+    calendar starts from instead: the original's constructor stores (0, -1, 0), so its first update posts a day and a
+    year message whatever the date. `hooks` False drops the three month hooks (a sharpness variant)."""
+    steps, states = [], []
+    if init is not None and x['state'] == 'fresh':
+        month_stored, day_stored, year_stored = init
+    else:
+        before = calendar_at(max(0, x['start'] - 1))
+        month_stored, day_stored, year_stored = before.month - 1, before.day, before.year
+    for step in range(x['count']):
+        moment = calendar_at(x['start'] + step)
+        changes = (moment.day != day_stored, moment.month - 1 != month_stored, moment.year != year_stored)
+        events = calendar_events(moment, changes)
+        steps.append(events if hooks else [e for e in events if e[0] != 'hook'])
+        month_stored, day_stored, year_stored = moment.month - 1, moment.day, moment.year
+        states.append([month_stored, day_stored, year_stored])
+    return {'steps': steps, 'kinds': [[e[1] for e in step if e[0] == 'post'] for step in steps], 'state': states}
+
+
+def calendar_update_reading(x: dict) -> dict:
+    return calendar_update_plan(x, init=(0, -1, 0))
+
+
+def calendar_update_inputs(rng: random.Random, n: int) -> list:
+    """Updates from a calendar that was already synchronised at the turn before the first step."""
+    boundaries = calendar_boundary_turns()
+
+    def make(start: int, count: int) -> dict:
+        return {'start': max(0, start), 'count': count, 'state': 'synced'}
+    edges = [make(0, 40), make(1, 30), make(23, 5)]
+    for turn in boundaries[:: max(1, len(boundaries) // 60)]:
+        edges.append(make(turn - 2, 6))
+    randoms = [make(rng.choice([rng.randrange(0, 3000), rng.randrange(0, 100000), rng.choice(boundaries) - rng.randrange(0, 30)]),
+                    rng.randrange(1, 25)) for _ in range(n)]
+    return edges + randoms
+
+
+def calendar_first_inputs(rng: random.Random, n: int) -> list:
+    """Updates from a calendar the constructor 0xe3c90 just made (day -1, year 0, month 0)."""
+    boundaries = calendar_boundary_turns()
+    edges = [{'start': 0, 'count': 40, 'state': 'fresh'}, {'start': 1, 'count': 40, 'state': 'fresh'},
+             {'start': 8433, 'count': 30, 'state': 'fresh'}]
+    randoms = [{'start': rng.choice([0, 1, rng.randrange(0, 3000), rng.choice(boundaries) - rng.randrange(0, 30)]),
+                'count': rng.randrange(1, 25), 'state': 'fresh'} for _ in range(n)]
+    return [dict(x, start=max(0, x['start'])) for x in edges + randoms]
+
+
+# ============================================================================== (n) CLOCK: park turns per real time, 0x1c22b4 (F30, F32)
+# The catch-up loop of the world callback 0x1c1208 (the fragment 0x1c22b0..0x1c24d0, entered with the registers its prologue loads from
+# the TOC: executed up to 0x1c1274). Each call samples the scheduler clock 0x10e844 (executed down to the library clock: the import
+# LbTime_GetClock, milliseconds, is stubbed with the chosen raw reading), drops a backlog above 2000 ms, and then, while now > previous,
+# advances previous by 31, counts a substep and runs the substep body: a script pass, on the even substeps the two per-two-substeps
+# passes, on every eighth the park turn (at most 3 per call), on every 32nd the slow body. The scheduler clock multiplies the raw
+# millisecond delta by its scale (object +24, 1.0 from the constructor 0x127c08) before it accumulates it (0x127cd0).
+CADENCE_SCHEDULER = -30168        # TOC slot -> the scheduler (static object): +12 raw millisecond of the last read, +16 the accumulated double, +24 the scale
+CADENCE_NOW, CADENCE_PREVIOUS, CADENCE_COUNTER, CADENCE_PARK_WORK = -26080, -24124, -24132, -24108   # TOC slots -> data words
+CADENCE_FLAG8, CADENCE_FLAG1, CADENCE_MODE, CADENCE_GUARD = -30264, -29140, -30136, -30132          # application flags (& 8), gameplay flags (& 1), game type word, its constructed byte
+CADENCE_GAME, CADENCE_GAME_CHAIN, CADENCE_ONLINE_OBJECT = -30080, -30076, -28548
+CADENCE_PROLOGUE, CADENCE_LOOP, CADENCE_END = 0x1C1274, 0x1C22B0, 0x1C24D0
+CADENCE_ALLOWED = [(0x1C1208, 0x1C1274), (0x1C22B0, 0x1C24D4), (0x10E844, 0x10E864), (0x11A588, 0x11A5BC), (0x10ED54, 0x10EDA0),
+                   (0x117D74, 0x117DC8), (0x127CD0, 0x127D3C), (0x1C3FBC, 0x1C400C), (0x1C4D64, 0x1C4D7C), (0x10565C, 0x1056CC)]
+CADENCE_STATE = type('CadenceState', (), {})()
+
+
+def cadence_stubs(target: Target) -> dict:
+    state = CADENCE_STATE
+
+    def clock(m: Machine) -> None:        # LbTime_GetClock: the raw millisecond counter
+        m.gpr[3] = state.raw & MASK32
+
+    def record(name: str, value: int = 0):
+        def stub(m: Machine) -> None:
+            target.log.append((name,))
+            m.gpr[3] = value
+        return stub
+
+    stubs = {'LbTime_GetClock__Fv': clock, 0xB2838: record('script'), 0x9F748: record('pre-script'), 0x20688: record('pre-script'),
+             0x63DD0: record('even'), 0xB7AC0: record('even'), 0x10536C: record('turn'), 0xB5DA4: record('after-turn'),
+             0x1AA614: record('online'), 0x1082B4: record('slow'), 0xC2344: record('slow'), 0xBC1D4: record('slow'),
+             0xC313C: record('slow'), 0xBC210: record('slow'), 0x63D20: record('slow')}
+    return stubs
+
+
+def cadence_binary(sb: Sandbox, x: dict, log) -> dict:
+    """One world callback 0x1c22b4..0x1c24d0 per frame: the raw clock advances by each gap, the scheduler scales it. Per
+    call: the scheduler millisecond, the substeps (script passes), the park turns and the other passes run, and the state after."""
+    state = CADENCE_STATE
+    scheduler = toc_pointer(sb, CADENCE_SCHEDULER)
+    sb.write(scheduler + 12, 'I', x['raw0'])
+    sb.write(scheduler + 16, 'd', 0.0)
+    sb.write(scheduler + 24, 'd', x['scale'])
+    for offset in (32, 36, 40, 44, 48, 56, 60):
+        sb.write(scheduler + offset, 'I', 0)
+    word = lambda slot: toc_pointer(sb, slot)
+    sb.write(word(CADENCE_FLAG8), 'I', 8 if x['flags'][0] else 0)
+    sb.write(word(CADENCE_FLAG1), 'I', 1 if x['flags'][1] else 0)
+    sb.write(word(CADENCE_MODE), 'I', x['mode'])
+    sb.write(word(CADENCE_GUARD), 'B', 1)                           # constructed: 0x12bb64 must not run
+    game = sb.alloc(0x1E0000 + 4096)
+    sb.write(word(CADENCE_GAME), 'I', game)
+    chain = sb.struct(8)
+    sb.write(toc_pointer(sb, CADENCE_GAME_CHAIN), 'I', chain)
+    sb.write(chain, 'I', chain + 4)
+    sb.write(chain + 4, 'I', game)
+    sb.write(word(CADENCE_ONLINE_OBJECT), 'I', sb.struct(16))
+    sb.write(word(CADENCE_PREVIOUS), 'I', 0)
+    sb.write(word(CADENCE_COUNTER), 'I', x['counter0'])
+    sb.call(0x1C1208, stop=CADENCE_PROLOGUE)                      # the prologue: r13..r31 from the TOC
+    machine = sb.machine
+    state.raw = x['raw0']
+    calls = []
+    for gap in x['gaps']:
+        state.raw = (state.raw + gap) & MASK32
+        sb.write(word(CADENCE_PARK_WORK), 'I', 0)                 # reset at the tail of the callback (0x1c27a4)
+        mark = len(log)
+        machine.executed = 0
+        machine.call(sb.image.code(CADENCE_LOOP), stop=frozenset({sb.image.code(CADENCE_END)}))
+        names = [entry[0] for entry in log[mark:]]
+        calls.append({'now': s32(sb.read(word(CADENCE_NOW), 'I')), 'previous': s32(sb.read(word(CADENCE_PREVIOUS), 'I')),
+                      'counter': sb.read(word(CADENCE_COUNTER), 'I'), 'scripts': names.count('script'),
+                      'turns': names.count('turn'), 'even': names.count('even') // 2})
+    return {'calls': calls, 'turns': cadence_cumulative(calls)}
+
+
+def cadence_cumulative(calls: list) -> list:
+    total, out = 0, []
+    for call in calls:
+        total += call['turns']
+        out.append(total)
+    return out
+
+
+def cadence_model(x: dict, step: int = 31, per_turn: int = 8, cap: int = 3, drop: int = 2000, fused: bool = True,
+                  per_even: int = 2) -> dict:
+    """The loop as read from the listing. The scheduler clock is the accumulated double of 0x127cd0: each raw millisecond
+    gap times the scale is added with one fused multiply-add (a single rounding), and the sum is truncated to a u32 by
+    0x1c3fbc. `fused` False keeps the sum exact (the scaled time as real arithmetic would have it)."""
+    acc, raw, previous, counter = (0.0 if fused else Fraction(0)), x['raw0'], 0, x['counter0']
+    calls = []
+    for gap in x['gaps']:
+        new = (raw + gap) & MASK32
+        delta = Fraction((new - raw) & MASK32) * Fraction(x['scale'])
+        acc = float(delta + Fraction(acc)) if fused else acc + delta
+        raw = new
+        now = min(int(acc), MASK32)            # float -> unsigned: truncated, saturating
+        now_s = s32(now)
+        if s32((now - previous) & MASK32) > drop:
+            previous = (now - drop) & MASK32
+        scripts = turns = even = park = 0
+        while s32(now_s - s32(previous)) > 0:
+            previous = (previous + step) & MASK32
+            counter = (counter + 1) & MASK32
+            if x['flags'][0] or not x['flags'][1]:
+                scripts += 1
+                if counter % per_even == 0:
+                    even += 1
+                if counter % per_turn == 0 and park < cap:
+                    park += 1
+                    turns += 1
+        calls.append({'now': now_s, 'previous': s32(previous), 'counter': counter, 'scripts': scripts, 'turns': turns,
+                      'even': even})
+    return {'calls': calls, 'turns': cadence_cumulative(calls)}
+
+
+def cadence_plan(x: dict) -> dict:
+    """PPC-clock.md: 31 ms substeps, a park turn on every eighth, at most 3 per call, a backlog of more than 2000 ms
+    dropped, all of the clock scaled by the scale (the scaled time kept exact)."""
+    return cadence_model(x, fused=False)
+
+
+def cadence_reading(x: dict) -> dict:
+    return cadence_model(x)
+
+
+def cadence_inputs(rng: random.Random, n: int) -> list:
+    def make(**kw) -> dict:
+        frames = rng.choice([[16] * 64, [17] * 64, [33] * 40, [rng.randrange(1, 70) for _ in range(rng.randrange(20, 80))],
+                             [rng.choice([1, 8, 16, 100, 400, 1500, 2500, 5000]) for _ in range(rng.randrange(5, 25))]])
+        x = {'scale': rng.choice([1.0, 1.0, 2.0, 0.25, 1.25, 1.5625, 0.8, rng.uniform(0.25, 2.0)]), 'mode': rng.choice([0, 0, 2, 1]),
+             'flags': rng.choice([(False, False)] * 4 + [(True, False), (False, True), (True, True)]),
+             'raw0': rng.choice([0, 1000, rng.randrange(0, 2 ** 32)]), 'counter0': rng.choice([0, 0, 7, rng.randrange(0, 40)]),
+             'gaps': frames}
+        x.update(kw)
+        return x
+    edges = [make(scale=1.0, mode=0, flags=(False, False), raw0=0, counter0=0, gaps=[248] * 5),
+             make(scale=1.0, mode=0, flags=(False, False), raw0=0, counter0=0, gaps=[2000, 2000]),
+             make(scale=1.0, mode=0, flags=(False, False), raw0=0, counter0=0, gaps=[5000]),
+             make(scale=1.0, mode=2, flags=(False, False), raw0=0, counter0=0, gaps=[1] * 3 + [30] * 3),
+             make(scale=2.0, mode=0, flags=(False, False), raw0=0, counter0=0, gaps=[16] * 100),
+             make(scale=1.0, mode=0, flags=(False, True), raw0=0, counter0=0, gaps=[100] * 4),
+             make(scale=1.0, mode=0, flags=(True, True), raw0=0, counter0=0, gaps=[100] * 4),
+             make(scale=1.0, mode=0, flags=(False, False), raw0=4294967000, counter0=0, gaps=[100] * 6)]
+    return edges + [make() for _ in range(n)]
+
+
+# ============================================================================== (o) CLOCK: when the golden tickets are checked, 0xd67f0 / 0xd2f1c (F31)
+# 0xd67f0 is the park-turn update of the world object (called once per park turn from 0x10536c): the bank update 0xcb278 (world +708), the
+# staff pool 0xf6e24, the calendar update 0xe3f0c (world +672), then, when the world turn (game +0x1da70c, unsigned) is a multiple of 100,
+# the ticket dispatcher 0xd2f1c (world +704), which runs the three ticket checks 0xd31d0, 0xd34c0 and 0xd35b4 only while the game type
+# word (the object behind TOC -30136, constructed lazily by 0x12bb64) is 0. The checks themselves are stubbed: only whether and when
+# they are called is compared.
+GOLDEN_UPDATE, GOLDEN_DISPATCH = 0xD67F0, 0xD2F1C
+GOLDEN_CHAIN = -30076                # TOC slot -> data word -> pointer -> game pointer (0xd6820..0xd6830)
+GOLDEN_ALLOWED = [(0xD67F0, 0xD6868), (0xD2F1C, 0xD2F9C)]
+GOLDEN_STATE = type('GoldenState', (), {})()
+
+
+def golden_stubs(target: Target) -> dict:
+    state = GOLDEN_STATE
+
+    def stub(name: str, offset: int):
+        def run(m: Machine) -> None:
+            if m.gpr[3] != state.world + offset:
+                raise AssertionError(f'{name} called with a wrong object')
+            target.log.append(name)
+        return run
+
+    return {0xCB278: stub('bank', 708), 0xF6E24: lambda m: target.log.append('pool'), 0xE3F0C: stub('calendar', 672),
+            0xD31D0: stub('ticket-1', 704), 0xD34C0: stub('ticket-2', 704), 0xD35B4: stub('ticket-3', 704)}
+
+
+def golden_binary(sb: Sandbox, x: dict, log) -> dict:
+    """The world update once per turn of the script, for the given game type word. Per call, the stubbed calls in order."""
+    state = GOLDEN_STATE
+    state.world = sb.struct(1024)
+    game = sb.alloc(0x1E0000 + 4096)
+    holder = sb.struct(4, {0: ('I', game)})
+    sb.write(toc_pointer(sb, GOLDEN_CHAIN), 'I', holder)
+    sb.write(toc_pointer(sb, CADENCE_MODE), 'I', x['mode'] & MASK32)
+    sb.write(toc_pointer(sb, CADENCE_GUARD), 'B', 1)             # constructed: 0x12bb64 must not run
+    calls = []
+    for turn in x['turns']:
+        sb.write(game + CAL_TURN, 'I', turn)
+        mark = len(log)
+        sb.call(GOLDEN_UPDATE, {3: state.world})
+        calls.append(list(log[mark:]))
+    return {'calls': calls, 'tickets': ['ticket-1' in call for call in calls]}
+
+
+def golden_plan(x: dict) -> dict:
+    """ParkEconomy.AdvanceTurn as it was: the check runs when the turn is a multiple of 100 (unsigned) in Full Simulation (game type 0)."""
+    return golden_result(x, lambda turn: turn % 100 == 0 and x['mode'] == 0)
+
+
+def golden_result(x: dict, runs, calendar_first: bool = True) -> dict:
+    calls = [['bank', 'pool'] + (['calendar'] if calendar_first else []) + (['ticket-1', 'ticket-2', 'ticket-3'] if runs(turn) else [])
+             + ([] if calendar_first else ['calendar']) for turn in x['turns']]
+    return {'calls': calls, 'tickets': [runs(turn) for turn in x['turns']]}
+
+
+def golden_every(period: int):
+    return lambda x: golden_result(x, lambda turn: turn % period == 0 and x['mode'] == 0)
+
+
+def golden_any_mode(x: dict) -> dict:
+    return golden_result(x, lambda turn: turn % 100 == 0)
+
+
+def golden_signed(x: dict) -> dict:
+    """Sharpness reading: a signed remainder instead of the unsigned one at the top of the 32-bit range."""
+    return golden_result(x, lambda turn: (turn - (1 << 32 if turn >> 31 else 0)) % 100 == 0 and x['mode'] == 0)
+
+
+def golden_calendar_after(x: dict) -> dict:
+    """The order of the calls in the other direction: the ticket check before the calendar update (the order OpenTPW had)."""
+    return golden_result(x, lambda turn: turn % 100 == 0 and x['mode'] == 0, calendar_first=False)
+
+
+def golden_inputs(rng: random.Random, n: int) -> list:
+    tops = [2 ** 32 - 96, 2 ** 32 - 100, 2 ** 32 - 1, 2 ** 31 - 48, 2 ** 31 + 52, 2 ** 31]   # 2^32 - 96 and 2^31 - 48 are multiples of 100 (unsigned)
+    edges = [{'mode': 0, 'turns': [0, 1, 99, 100, 101, 199, 200, 201, 300]}, {'mode': 2, 'turns': [100, 200, 300]},
+             {'mode': 1, 'turns': [100, 200]}, {'mode': 0, 'turns': tops},
+             {'mode': 0, 'turns': list(range(1, 405))}, {'mode': 3, 'turns': [100]}, {'mode': -1, 'turns': [100, 200]}]
+    randoms = []
+    for _ in range(n):
+        base = rng.choice([0, rng.randrange(0, 5000), rng.randrange(0, 2 ** 32 - 300), 2 ** 32 - 150, 2 ** 31 - 50])
+        count = rng.randrange(1, 12)
+        turns = [(base + i) % 2 ** 32 for i in range(count)] if rng.random() < 0.6 else [rng.choice([rng.randrange(0, 2 ** 32), rng.randrange(0, 3000) * 100]) for _ in range(count)]
+        randoms.append({'mode': rng.choice([0, 0, 0, 0, 1, 2, 3, rng.randrange(-5, 40)]), 'turns': turns})
+    return edges + randoms
+
+
+def cadence_frames_inputs(rng: random.Random, n: int) -> list:
+    """Frame loops of an interactive game: gaps of at most 150 ms of scaled time (OpenTPW's fixed clock accepts 16 ticks, 267 ms, per
+    frame), at the scales the speed keys reach and OpenTPW's x4."""
+    def make(scale: float, frame: int | None = None, frames: int | None = None) -> dict:
+        limit = max(1, int(150 / scale))
+        count = frames or rng.randrange(30, 120)
+        gaps = [frame] * count if frame else [rng.randrange(1, limit + 1) for _ in range(count)]
+        return {'scale': scale, 'mode': 0, 'flags': [False, False], 'raw0': rng.choice([0, rng.randrange(0, 2 ** 32)]), 'counter0': 0,
+                'gaps': gaps}
+    scales = [1.0, 1.0, 2.0, 4.0, 0.25, 1.25, 1.5625, 1.953125, 0.8, 0.64]
+    edges = [make(1.0, 16, 400), make(2.0, 16, 400), make(4.0, 16, 400), make(0.25, 16, 400), make(1.0, 17, 400), make(1.0, 33, 200)]
+    randoms = [make(rng.choice(scales + [rng.uniform(0.25, 4.0)]), rng.choice([None, None, 8, 16, 17, 20, 33])) for _ in range(n)]
+    for x in randoms:
+        x['gaps'] = [min(gap, max(1, int(150 / x['scale']))) for gap in x['gaps']]
+    return edges + randoms
+
+
+def cadence_frames_equal(original: dict, other: dict) -> bool:
+    """The plan and the routine reading are compared in full. OpenTPW's fixed 60 Hz clock turns a frame's elapsed time into ticks
+    and ticks into park turns: its turn count is never ahead of the original's and at most one turn behind it at every frame."""
+    if 'calls' in other:
+        return all(original[key] == value for key, value in other.items())
+    return len(original['turns']) == len(other['turns']) and all(0 <= o - c <= 1 for o, c in zip(original['turns'], other['turns']))
+
+
+# ============================================================================== (p) CLOCK: the speed scale and what it scales, 0x11315c / 0x113184 / 0x1131ac and 0x10e844 (F32)
+# The game input group has three speed records (ids 6, 7 and 8, tokens 0x6d00, 0x6b00 and 0x6a00): their release callbacks divide the
+# scheduler clock's scale by 1.25 (0x11315c), multiply it by 1.25 (0x113184) and store 1.0 (0x1131ac), through the object behind TOC -30168,
+# clamping to 0.25..2.0 (0x127c88 / 0x127c48). The same object is the scheduler clock 0x10e844 that the park turns (F30), the script
+# manager (WAIT, GETTIME) and the animation channels (0xa6f70) read. The ops of an input are key presses and clock reads in order.
+SPEED_KEYS = {'slower': 0x11315C, 'faster': 0x113184, 'reset': 0x1131AC}
+SPEED_ALLOWED = [(0x11315C, 0x1131D8), (0x127C40, 0x127CC8), (0x10E844, 0x10E864), (0x11A588, 0x11A5BC), (0x10ED54, 0x10EDA0),
+                 (0x117D74, 0x117DC8), (0x127CD0, 0x127D3C), (0x1C3FBC, 0x1C400C), (0x1C4D64, 0x1C4D7C)]
+
+
+def speed_stubs(target: Target) -> dict:
+    state = CADENCE_STATE
+
+    def clock(m: Machine) -> None:        # LbTime_GetClock: the raw millisecond counter
+        m.gpr[3] = state.raw & MASK32
+    return {'LbTime_GetClock__Fv': clock}
+
+
+def speed_binary(sb: Sandbox, x: dict, log) -> dict:
+    """Per op: a key press gives the scale after it (the callback returns 1), a read the scheduler millisecond (0x10e844)."""
+    state = CADENCE_STATE
+    scheduler = toc_pointer(sb, CADENCE_SCHEDULER)
+    sb.write(scheduler + 12, 'I', x['raw0'])
+    sb.write(scheduler + 16, 'd', 0.0)
+    sb.write(scheduler + 24, 'd', x['scale'])
+    for offset in (32, 36, 40, 44, 48, 56, 60):
+        sb.write(scheduler + offset, 'I', 0)
+    state.raw = x['raw0']
+    scales, reads = [], []
+    for op in x['ops']:
+        if isinstance(op, int):
+            state.raw = (state.raw + op) & MASK32
+            reads.append(s32(sb.call(0x10E844, {3: scheduler}).r3))
+        else:
+            r3 = sb.call(SPEED_KEYS[op]).r3
+            scales.append((op, sb.read(scheduler + 24, 'd'), r3))
+    return {'scales': scales, 'reads': reads}
+
+
+def speed_step(scale: float, op: str) -> float:
+    if op == 'reset':
+        return 1.0
+    scaled = scale * 1.25 if op == 'faster' else scale / 1.25
+    return 0.25 if scaled < 0.25 else 2.0 if scaled > 2.0 else scaled
+
+
+def speed_model(x: dict, step=speed_step, fused: bool = True) -> dict:
+    """The keys as read (x or / 1.25, clamped to 0.25..2.0, reset to 1.0) and the clock as the accumulated double of 0x127cd0."""
+    scale, acc, raw = x['scale'], 0.0 if fused else Fraction(0), x['raw0']
+    scales, reads = [], []
+    for op in x['ops']:
+        if isinstance(op, int):
+            new = (raw + op) & MASK32
+            delta = Fraction((new - raw) & MASK32) * Fraction(scale)
+            acc = float(delta + Fraction(acc)) if fused else acc + delta
+            raw = new
+            reads.append(s32(min(int(acc), MASK32)))
+        else:
+            scale = step(scale, op)
+            scales.append((op, scale, 1))
+    return {'scales': scales, 'reads': reads}
+
+
+def speed_plan(x: dict) -> dict:
+    """PPC-clock.md: the scale steps by 1.25 within 0.25..2.0 and multiplies the scheduler time (exact arithmetic)."""
+    return speed_model(x, fused=False)
+
+
+def speed_reading(x: dict) -> dict:
+    return speed_model(x)
+
+
+def speed_inputs(rng: random.Random, n: int) -> list:
+    def make(**kw) -> dict:
+        ops = [rng.choice(['slower', 'faster', 'faster', 'reset', rng.choice([1, 16, 17, 33, 100, 1000])]) for _ in range(rng.randrange(3, 30))]
+        x = {'scale': rng.choice([1.0, 1.0, 0.25, 2.0, 0.8, 1.25, rng.uniform(0.25, 2.0), 3.0, 4.0, 0.1, 0.0]),
+             'raw0': rng.choice([0, rng.randrange(0, 2 ** 32)]), 'ops': ops}
+        x.update(kw)
+        return x
+    edges = [make(scale=1.0, ops=['faster'] * 6 + ['slower'] * 12 + ['reset', 'faster']),
+             make(scale=1.0, ops=[100, 'faster', 100, 'faster', 100, 'faster', 100, 'reset', 100]),
+             make(scale=2.0, ops=['faster', 'faster', 'slower']), make(scale=0.25, ops=['slower', 'faster']),
+             make(scale=3.0, ops=['slower']), make(scale=0.1, ops=['faster', 'faster', 'faster']), make(scale=4.0, ops=[1000, 'faster', 1000]),
+             make(scale=1.0, raw0=4294967000, ops=[100, 100, 100]), make(scale=0.8, raw0=0, ops=[16] * 10)]
+    return edges + [make() for _ in range(n)]
+
+
 # ============================================================================== registry
 LCG =Target('det-world-lcg', 'World LCG step 0x105328', 'DET-plan §2.3 / det_model.world_next', 0x105328,
              [(0x105328, 0x10536C)], lambda t: {}, lcg_binary, lcg_plan, lcg_inputs,
@@ -4478,6 +5093,82 @@ GLOBAL_TICKETS_TARGET = Target('global-tickets', 'The global golden tickets (0xd
                                       'Executed: 0xd34c0 (four statistics against +1900, +1904, +1908, +1916, signed >); the earned test lives inside the '
                                       'award 0xd3748 (stubbed, index logged). The secret camera ticket 0xd35b4 and the never-awarded all-land ticket are not run.'])
 
+CALENDAR_DATE = Target('calendar-date', 'Calendar conversion 0xe4394 (world turn -> date)', 'ECONOMY.md / ParkCalendar (F30)', CAL_DATE,
+                       [(0xE4394, 0xE44A8)] + CAL_ALLOWED, calendar_stubs, calendar_date_binary, calendar_date_plan,
+                       calendar_date_inputs, equal=calendar_subset_equal,
+                       csharp=('calendar_date', calendar_date_csharp_request, calendar_date_csharp_result),
+                       notes=['C# hook: bridge function "calendar_date" (ParkCalendar.DateAtTurn, the date of a park turn; only the default rate '
+                              '15000 and the 2000-01-01 start are bridged, other rates are compared with the plan only).',
+                              'Executed: 0xe4394 (the 64-bit turn x rate product, the signed 64-bit divide by 4 at 0x1c4100, the multiplication by '
+                              '10^7), 0x10a9a4 (game pointer) and the import glue. Stubs: the bullfrog time-stamp API (operator+, GetTime) by '
+                              'import name, as Python civil arithmetic (proleptic Gregorian, the Mac OS default calendar).'])
+
+CALENDAR_UPDATE_TARGET = Target('calendar-update', 'Calendar update 0xe3f0c (day, month and year messages)', 'ECONOMY.md / ParkEconomy.AdvanceTurn (F30)',
+                                CAL_UPDATE, [(0xE3F0C, 0xE41CC), (0xE4394, 0xE44A8)] + CAL_ALLOWED,
+                                calendar_stubs, calendar_update_binary, calendar_update_plan, calendar_update_inputs,
+                                equal=calendar_subset_equal, alternatives={'routine-reading': calendar_update_reading},
+                                csharp=('calendar_update', lambda x: {'fn': 'calendar_update', 'start': x['start'], 'count': x['count']},
+                                        lambda x, r: r),
+                                notes=['C# hook: bridge function "calendar_update" (a ParkEconomy started at the turn before the first step, advanced '
+                                       'turn by turn through ParkEconomy.Advance: the DayEnded / MonthEnded / YearEnded events per turn are compared with '
+                                       'the messages, and ParkCalendar.FieldsAtTurn with the stored fields).',
+                                       'Executed: 0xe3f0c, the conversion 0xe4394, the message constructors 0x116488 / 0x1164a4 / 0x1164c0. '
+                                       'Stubs: the time-stamp API (operator+, GetTime) by import name, the dispatcher 0x11688c (the message type '
+                                       'is read from its vtable), the day notification 0x18f4cc and the three month hooks 0x15bbd8 / 0x151698 / 0x155234 (logged).',
+                                       'The calendar is synchronised: one update at the turn before the first step has run (the original saves its stored fields).'])
+
+CALENDAR_FIRST_TARGET = Target('calendar-first-update', 'First calendar update after construction (0xe3c90, then 0xe3f0c)',
+                               'ECONOMY.md / ParkEconomy.AdvanceTurn (F30)', CAL_UPDATE,
+                               [(0xE3F0C, 0xE41CC), (0xE3C90, 0xE3D30), (0xE4348, 0xE4394), (0xE4394, 0xE44A8)] + CAL_ALLOWED,
+                               calendar_stubs, calendar_update_binary, calendar_update_plan, calendar_first_inputs,
+                               equal=calendar_subset_equal, alternatives={'routine-reading': calendar_update_reading},
+                               notes=['No C# hook: OpenTPW starts its calendar synchronised with the first turn (APPROX:ECON-001 text), so a constructed '
+                                      'calendar has no counterpart. The plan is the synchronised rule.',
+                                      'Executed: the constructor 0xe3c90 (month 0, day -1, year 0, rate 15000) with the start initializer 0xe4348, and '
+                                      '0xe3f0c; stubs as calendar-update plus the host clock GetLocalTime and SetTime.'])
+
+CADENCE_TARGET = Target('park-turn-cadence', 'World callback catch-up loop 0x1c22b0 (substeps and park turns per real time)',
+                        'PPC-clock.md / ECON-001 (F30, F32)', CADENCE_LOOP, CADENCE_ALLOWED, cadence_stubs, cadence_binary,
+                        cadence_plan, cadence_inputs, equal=calendar_subset_equal, alternatives={'routine-reading': cadence_reading},
+                        notes=['No C# hook: OpenTPW samples park turns from a 60 Hz fixed clock (FixedStepClock, ParkCalendar.Turn); '
+                               'CSHARP_PENDING.'])
+
+GOLDEN_TARGET = Target('golden-ticket-cadence', 'World turn update 0xd67f0 (the golden-ticket check cadence, dispatcher 0xd2f1c)',
+                       'ECONOMY.md / ParkEconomy.AdvanceTurn (F31)', GOLDEN_UPDATE, GOLDEN_ALLOWED, golden_stubs, golden_binary,
+                       golden_plan, golden_inputs, equal=calendar_subset_equal,
+                       alternatives={'plan-signed': golden_signed, 'plan-tickets-before-calendar': golden_calendar_after},
+                       csharp=('golden_check_turns', lambda x: {'fn': 'golden_check_turns', 'mode': x['mode'], 'turns': x['turns']},
+                               lambda x, r: r),
+                       notes=['C# hook: bridge function "golden_check_turns" (ParkEconomy.RunsGoldenTicketCheck, the predicate AdvanceTurn uses; only '
+                              'game types 0 (Full Simulation) and 2 (Instant Action) are bridged, every other word runs no check on both sides). '
+                              'The order of the calls inside one turn (calendar update first) is the oracle\'s plan-tickets-before-calendar reading, covered '
+                              'on the C# side by ParkEconomyTests.',
+                              'Executed: 0xd67f0 and 0xd2f1c, including the unsigned remainder by 100 (a multiply-high), the lazy game type '
+                              'object (marked constructed) and its word. Stubs: the bank update 0xcb278, the staff pool 0xf6e24, the calendar update '
+                              '0xe3f0c and the three ticket checks 0xd31d0 / 0xd34c0 / 0xd35b4, each logged and its object argument checked.'])
+
+CADENCE_FRAMES_TARGET = Target('park-turn-cadence-frames', 'Park turns per frame at game speeds (0x1c22b0, frames of at most 150 ms)',
+                               'PPC-clock.md / ECON-001, ECON-004 (F30, F32)', CADENCE_LOOP, CADENCE_ALLOWED, cadence_stubs,
+                               cadence_binary, cadence_plan, cadence_frames_inputs, equal=cadence_frames_equal,
+                               alternatives={'routine-reading': cadence_reading},
+                               csharp=('park_turns', lambda x: {'fn': 'park_turns', 'scale': x['scale'], 'gaps': x['gaps']}, lambda x, r: r),
+                               notes=['C# hook: bridge function "park_turns" (FixedStepClock fed with each frame\'s elapsed time times the speed scale, '
+                                      'exactly as Level.Update feeds it, and ParkCalendar.Turn of its tick count). Compared as a window: OpenTPW\'s turn '
+                                      'count is never ahead of the original\'s and at most one turn behind at every frame (the original runs a turn when '
+                                      'the scaled time passes 248 j - 31 ms, OpenTPW at the first 60 Hz tick of 248 j ms).',
+                                      'Same routine and stubs as park-turn-cadence; the inputs keep each frame within what the fixed clock accepts '
+                                      '(a longer frame is dropped above 16 ticks, ECON-001).'])
+
+SPEED_TARGET = Target('clock-speed-scale', 'Speed keys 0x11315c / 0x113184 / 0x1131ac and the scheduler clock 0x10e844 (what the scale scales)',
+                      'PPC-clock.md / ECON-004, UI-022 (F32)', 0x10E844, SPEED_ALLOWED, speed_stubs, speed_binary, speed_plan,
+                      speed_inputs, equal=calendar_subset_equal, alternatives={'routine-reading': speed_reading},
+                      notes=['No C# hook: OpenTPW has four speed buttons (pause, x1, x2, x4), not the original\'s three stepping keys '
+                             '(CSHARP_PENDING); its path from the speed to the simulation is covered by park-turn-cadence-frames.',
+                             'Executed: the three key release callbacks, the clamping scale setters 0x127c48 / 0x127c88 and the direct setter 0x127c40, '
+                             'and the scheduler clock read 0x10e844 down to the stubbed library clock LbTime_GetClock (the chosen raw millisecond).'])
+
 TARGETS = [LCG, RAND, QUEUE, CAN_CHANGE_TARGET, SET_CELL, UNBOUNCE, BOUNCE, SPEED_SETTER, SMOOTHING, BOOST, COAST_STEP, COAST_FINAL,
-           ARRIVAL, ARRIVAL_UPDATE, POINTS, COUNTS, LOAN_OFFERS, LOAN_MONTH, LOAN_TERM, LOAN_TAKE, LOAN_PAYOFF, FAILURE, JOIN_DIFFERENCE_TARGET, JOIN_GATE, RIDE_UPDATE_TARGET, ECON_SALE, ECON_TRIGGER, TRAIN_TARGET, REPAIR_TIMER, REPAIR_ARRIVAL_TARGET, SCRAP, VITALS, SEEK, GRIEVANCE, STRIKE_MONTH, PROFIT_TARGET, HINT_TARGET, LOCAL_TICKETS_TARGET, GLOBAL_TICKETS_TARGET]
+           ARRIVAL, ARRIVAL_UPDATE, POINTS, COUNTS, LOAN_OFFERS, LOAN_MONTH, LOAN_TERM, LOAN_TAKE, LOAN_PAYOFF, FAILURE, JOIN_DIFFERENCE_TARGET, JOIN_GATE, RIDE_UPDATE_TARGET, ECON_SALE, ECON_TRIGGER, TRAIN_TARGET, REPAIR_TIMER, REPAIR_ARRIVAL_TARGET, SCRAP, VITALS, SEEK, GRIEVANCE, STRIKE_MONTH, PROFIT_TARGET, HINT_TARGET, LOCAL_TICKETS_TARGET, GLOBAL_TICKETS_TARGET,
+           CALENDAR_DATE, CALENDAR_UPDATE_TARGET, CALENDAR_FIRST_TARGET, CADENCE_TARGET, GOLDEN_TARGET,
+           CADENCE_FRAMES_TARGET, SPEED_TARGET]
 DOMAINS = {SET_CELL.key: set_cell_domain, SCRAP.key: scrap_domain}

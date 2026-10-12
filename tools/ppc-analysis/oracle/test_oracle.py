@@ -8,6 +8,8 @@ fixes it and updates the table and ORACLE.md together. Gates only get stricter.
 """
 from __future__ import annotations
 
+import dataclasses
+import datetime
 import os
 import random
 import shutil
@@ -247,10 +249,49 @@ EXPECTED = {
     ('local-tickets', 'csharp'): AGREE,
     ('global-tickets', 'routine-reading'): AGREE,
     ('global-tickets', 'csharp'): AGREE,
+    # F30 (ECON-001, ECON-002, executed): 0xe4394 turns the world turn into 2000-01-01 + floor(turn x rate / 4) seconds (the rate is the
+    # calendar's +28 word, 15000: 3750 s a turn) through the OS calendar, and 0xe3f0c posts a day, a month and a year message when the
+    # date's day, month (0-based) and year differ from the fields stored at the last update. ParkCalendar.DateAtTurn and the
+    # day / month / year events of ParkEconomy.Advance do the same: agree on every turn near the month, leap-day and year boundaries.
+    ('calendar-date', 'plan'): AGREE,
+    ('calendar-date', 'csharp'): AGREE,
+    ('calendar-update', 'plan'): AGREE,
+    ('calendar-update', 'routine-reading'): AGREE,
+    ('calendar-update', 'csharp'): AGREE,
+    # F30: the only difference is the start. The constructor 0xe3c90 stores month 0, day -1 and year 0, so the first update of a new
+    # calendar posts a day and a year message (and a month message outside January) whatever the date; C# starts synchronised.
+    ('calendar-first-update', 'plan'): (503, {'start': 0, 'count': 40, 'state': 'fresh'}),
+    ('calendar-first-update', 'routine-reading'): AGREE,
+    # F30: the catch-up loop 0x1c22b0 executed down to the clock: 31 ms substeps, a park turn on every eighth, 3 at most per call, a
+    # backlog above 2000 ms dropped. The 57 differences are 1 ms: the scheduler clock adds each gap times the scale with a fused
+    # multiply-add in binary64 and truncates (16 x 0.8 summed ten times is 127.99999999999999, the plan's exact 128).
+    ('park-turn-cadence', 'plan'): (57, {'scale': 0.8, 'mode': 2, 'flags': [False, False], 'raw0': 2677538059, 'counter0': 0,
+                                         'gaps': [16] * 64}),
+    ('park-turn-cadence', 'routine-reading'): AGREE,
+    # F31 (ECON-033, executed): the world update 0xd67f0 runs the bank, the staff pool and the calendar update, then (turn % 100 == 0, unsigned)
+    # the ticket dispatcher 0xd2f1c, which runs its three checks only while the game type word is 0. ParkEconomy.RunsGoldenTicketCheck agrees; the
+    # order was the other way round in C# (ticket check, then calendar): 148 scripts differ in the call order, 5 differ with a signed remainder.
+    ('golden-ticket-cadence', 'plan'): AGREE,
+    ('golden-ticket-cadence', 'plan-signed'): (5, {'mode': 0, 'turns': [4294967200, 4294967196, 4294967295, 2147483600, 2147483700,
+                                                                          2147483648]}),
+    ('golden-ticket-cadence', 'plan-tickets-before-calendar'): (148, {'mode': 0, 'turns': [0, 1, 99, 100, 101, 199, 200, 201, 300]}),
+    ('golden-ticket-cadence', 'csharp'): AGREE,
+    # F32 (ECON-004, UI-022, executed): the speed keys' release callbacks 0x11315c / 0x113184 / 0x1131ac divide the scheduler clock's scale by
+    # 1.25, multiply it by 1.25 and store 1.0, clamped to 0.25..2.0 (any scale above 2.0 steps down to it), and the scheduler clock 0x10e844 that
+    # park turns, scripts and animation read adds each raw gap times the scale. The plan's exact scaled time differs from the executed clock by
+    # 1 ms once (ten 16 ms reads at 0.8: 127, not 128). C#: OpenTPW's fixed clock fed with each frame's time times the scale reaches the turn
+    # count of the executed loop to within one turn (never ahead of it, at most one behind) at every frame of 506 loops at scales 0.25 to 4.
+    ('clock-speed-scale', 'plan'): (1, {'scale': 0.8, 'raw0': 0, 'ops': [16] * 10}),
+    ('clock-speed-scale', 'routine-reading'): AGREE,
+    ('park-turn-cadence-frames', 'plan'): (53, {'scale': 0.8, 'mode': 0, 'flags': [False, False], 'raw0': 0, 'counter0': 0,
+                                                'gaps': [33] * 95}),
+    ('park-turn-cadence-frames', 'routine-reading'): AGREE,
+    ('park-turn-cadence-frames', 'csharp'): AGREE,
 }
 CSHARP_PENDING = {'det-world-lcg', 'det-rse-rand', 'coast-rating-step',
                   'coast-rating-final', 'arrival-update', 'park-points-counts-test', 'loan-month',
-                  'queue-ride-update', 'guest-litter-trigger', 'ride-repair-arrival', 'profit-ticket-hint'}
+                  'queue-ride-update', 'guest-litter-trigger', 'ride-repair-arrival', 'profit-ticket-hint',
+                  'calendar-first-update', 'park-turn-cadence', 'clock-speed-scale'}
 
 
 class Identity(unittest.TestCase):
@@ -1200,6 +1241,234 @@ class Oracle(unittest.TestCase):
         rest = targets.run_binary(target, sandbox, {**base, 'op': 'rest', 'grade': 0, 'energy': f32(99.9), 'happiness': 50.0})
         self.assertEqual((rest['finished'], rest['events']), (1, [('release', True), ('next-6', True)]))
 
+    # ---------------------------------------------------------------- F30: the park calendar and the cadence of park turns
+
+    def test_calendar(self):
+        for key in (('calendar-date', 'plan'), ('calendar-update', 'plan'), ('calendar-update', 'routine-reading'),
+                    ('calendar-first-update', 'plan'), ('calendar-first-update', 'routine-reading')):
+            self.check(key)
+
+    def test_calendar_csharp(self):
+        self.check(('calendar-date', 'csharp'))
+        self.check(('calendar-update', 'csharp'))
+
+    def test_calendar_dates(self):
+        # The date is the 2000-01-01 start plus floor(turn x 15000 / 4) seconds: a day change at turn 24 (86,400 s lie in turn 23.04),
+        # 2000 is a leap year (29 February exists), 2100 is not, and the leap year has 8,433 turns before the first turn of 2001.
+        target = targets.CALENDAR_DATE
+        sandbox = target.sandbox(self.image)
+        date = lambda turn: targets.run_binary(target, sandbox, {'turn': turn, 'rate': 15000})['date']
+        self.assertEqual([date(0), date(23), date(24)], [[2000, 1, 1, 0, 0, 0], [2000, 1, 1, 23, 57, 30], [2000, 1, 2, 1, 0, 0]])
+        self.assertEqual([date(8432), date(8433)], [[2000, 12, 31, 23, 20, 0], [2001, 1, 1, 0, 22, 30]])
+
+        def last_before_march(year: int) -> list:
+            seconds = (datetime.datetime(year, 3, 1) - targets.CAL_EPOCH).total_seconds()
+            turn = -(-int(seconds) // 3750)
+            return [date(turn - 1)[:3], date(turn)[:3]]
+        self.assertEqual(last_before_march(2000), [[2000, 2, 29], [2000, 3, 1]])
+        self.assertEqual(last_before_march(2004), [[2004, 2, 29], [2004, 3, 1]])
+        self.assertEqual(last_before_march(2100), [[2100, 2, 28], [2100, 3, 1]])
+        self.assertEqual(last_before_march(2400), [[2400, 2, 29], [2400, 3, 1]])
+
+    def test_calendar_rate_floors_the_seconds(self):
+        # A saved clock rate other than 15000: the product turn x rate is a 64-bit word and the division by 4 floors (5 turns at
+        # rate 3 are 3 seconds, not 4); the largest turn and rate products stay in 64 bits. The reading with rounded seconds differs.
+        target = targets.CALENDAR_DATE
+        sandbox = target.sandbox(self.image)
+        rounded = 0
+        for x in targets.CAL_ODD_RATES:
+            original = targets.run_binary(target, sandbox, x)
+            self.assertEqual(original, targets.calendar_date_plan(x), x)
+            if not x['stamp_only'] and original != targets.calendar_date_rounded(x):
+                rounded += 1
+        self.assertGreater(rounded, 0)
+        self.assertEqual(targets.run_binary(target, sandbox, {'turn': 5, 'rate': 3})['date'][5], 3)
+
+    def test_calendar_update_reading_is_sharp(self):
+        # The constructed calendar's first update is what the stored fields (0, -1, 0) say: a changed initial month, day or year, or
+        # dropping the month hooks, makes the reading disagree with the executed routine.
+        variants = {
+            'month-minus-one': lambda x: targets.calendar_update_plan(x, init=(-1, -1, 0)),
+            'day-one': lambda x: targets.calendar_update_plan(x, init=(0, 1, 0)),
+            'year-2000': lambda x: targets.calendar_update_plan(x, init=(0, -1, 2000)),
+            'no-hooks': lambda x: targets.calendar_update_plan(x, init=(0, -1, 0), hooks=False),
+            'synchronised': lambda x: targets.calendar_update_plan(x),
+        }
+        for name, reading in variants.items():
+            mutated = dataclasses.replace(targets.CALENDAR_FIRST_TARGET, plan=reading, alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, 80, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, name)
+
+    def test_calendar_first_update_examples(self):
+        # The first update of a new calendar at the first park turn (3,750 s: 01:02:30 on 1 January 2000) posts a day and a year message
+        # and no month message; the date given with the day message is second, minute, hour, day, month - 1 and year - 1900.
+        target = targets.CALENDAR_FIRST_TARGET
+        sandbox = target.sandbox(self.image)
+        first = targets.run_binary(target, sandbox, {'start': 1, 'count': 2, 'state': 'fresh'})
+        self.assertEqual(first['steps'], [[['post', 'day'], ['notify', [30, 2, 1, 1, 0, 100]], ['post', 'year']], []])
+        self.assertEqual(first['state'], [[0, 1, 2000], [0, 1, 2000]])
+        # Started in February (turn 715 is 00:47:30 on 1 February) all three messages come, in the order day, month (with its three
+        # hooks, the new month 2), year.
+        february = targets.run_binary(target, sandbox, {'start': 715, 'count': 1, 'state': 'fresh'})
+        self.assertEqual(february['steps'][0], [['post', 'day'], ['notify', [30, 47, 0, 1, 1, 100]], ['post', 'month'],
+                                                ['hook', 0x15BBD8, 2], ['hook', 0x151698, 2], ['hook', 0x155234, 2], ['post', 'year']])
+        # Synchronised (the state of a loaded or running calendar), nothing is posted on a turn with the same date.
+        synced = targets.run_binary(targets.CALENDAR_UPDATE_TARGET, targets.CALENDAR_UPDATE_TARGET.sandbox(self.image),
+                                    {'start': 1, 'count': 2, 'state': 'synced'})
+        self.assertEqual(synced['kinds'], [[], []])
+
+    def test_calendar_update_at_the_boundaries(self):
+        # One message of each kind per boundary, on the first turn whose date has the new field: 31 January -> 1 February is turn 715,
+        # the first turn of 2001 turn 8,433 where all three come; a 28-day February of 2100 does not skip to a 29th.
+        target = targets.CALENDAR_UPDATE_TARGET
+        sandbox = target.sandbox(self.image)
+        run = lambda start, count: targets.run_binary(target, sandbox, {'start': start, 'count': count, 'state': 'synced'})['kinds']
+        self.assertEqual(run(714, 2), [[], ['day', 'month']])
+        self.assertEqual(run(8432, 3), [[], ['day', 'month', 'year'], []])
+        march_2100 = -(-int((datetime.datetime(2100, 3, 1) - targets.CAL_EPOCH).total_seconds()) // 3750)
+        self.assertEqual(run(march_2100 - 1, 2), [[], ['day', 'month']])
+
+    def test_park_turn_cadence(self):
+        self.check(('park-turn-cadence', 'plan'))
+        self.check(('park-turn-cadence', 'routine-reading'))
+
+    def test_park_turn_cadence_reading_is_sharp(self):
+        variants = {
+            'substep-30': lambda x: targets.cadence_model(x, step=30),
+            'substep-32': lambda x: targets.cadence_model(x, step=32),
+            'turn-every-7': lambda x: targets.cadence_model(x, per_turn=7),
+            'turn-every-16': lambda x: targets.cadence_model(x, per_turn=16),
+            'turn-cap-2': lambda x: targets.cadence_model(x, cap=2),
+            'turn-cap-4': lambda x: targets.cadence_model(x, cap=4),
+            'backlog-1500': lambda x: targets.cadence_model(x, drop=1500),
+            'backlog-2500': lambda x: targets.cadence_model(x, drop=2500),
+            'even-every-3': lambda x: targets.cadence_model(x, per_even=3),
+        }
+        for name, reading in variants.items():
+            mutated = dataclasses.replace(targets.CADENCE_TARGET, plan=reading, alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, 120, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, name)
+
+    def test_park_turns_per_real_second_by_scale(self):
+        # The clock multiplies the real milliseconds by its scale (1.0 from the constructor; the speed keys step it by 1.25 within 0.25..2):
+        # 100 s of real time in frames of any length is 403 turns (4.03 a second, a game day of 5.7 s) at the default scale, and the
+        # scale shows in the turn rate; the substeps are 31 ms of scaled time each.
+        target = targets.CADENCE_TARGET
+        sandbox = target.sandbox(self.image)
+        expected = {1.0: 403, 2.0: 806, 0.25: 100, 1.25: 504, 1.5625: 630, 1.953125: 787, 0.8: 322}
+        for scale, turns in expected.items():
+            for frame in (16, 17, 33):
+                for mode in (0, 1, 2):
+                    x = {'scale': scale, 'mode': mode, 'flags': (False, False), 'raw0': 0, 'counter0': 0, 'gaps': [frame] * (100000 // frame)}
+                    calls = targets.run_binary(target, sandbox, x)['calls']
+                    self.assertEqual(sum(call['turns'] for call in calls), turns, (scale, frame, mode))
+        self.assertAlmostEqual(23.04 / (403 / 100), 5.717, places=2)
+
+    def test_golden_ticket_cadence(self):
+        for side in ('plan', 'plan-signed', 'plan-tickets-before-calendar'):
+            self.check(('golden-ticket-cadence', side))
+
+    def test_golden_ticket_cadence_csharp(self):
+        self.check(('golden-ticket-cadence', 'csharp'))
+
+    def test_golden_ticket_cadence_reading_is_sharp(self):
+        variants = {
+            'every-50': targets.golden_every(50),
+            'every-99': targets.golden_every(99),
+            'every-200': targets.golden_every(200),
+            'any-game-type': targets.golden_any_mode,
+        }
+        for name, reading in variants.items():
+            mutated = dataclasses.replace(targets.GOLDEN_TARGET, plan=reading, alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, 120, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, name)
+
+    def test_golden_ticket_examples(self):
+        # Turn 100 of a Full Simulation world (game type 0) runs the bank, the staff pool, the calendar update and the three ticket checks, in
+        # that order; turn 99 and game types 1, 2 and 3 run no check. The remainder is unsigned: 2^32 - 96 is a multiple of 100, -96 is not.
+        target = targets.GOLDEN_TARGET
+        sandbox = target.sandbox(self.image)
+        run = lambda mode, turns: targets.run_binary(target, sandbox, {'mode': mode, 'turns': turns})['calls']
+        everything = ['bank', 'pool', 'calendar', 'ticket-1', 'ticket-2', 'ticket-3']
+        self.assertEqual(run(0, [99, 100, 101]), [['bank', 'pool', 'calendar'], everything, ['bank', 'pool', 'calendar']])
+        for mode in (1, 2, 3, -1):
+            self.assertEqual(run(mode, [100]), [['bank', 'pool', 'calendar']], mode)
+        self.assertEqual(run(0, [2 ** 32 - 96, 2 ** 32 - 100]), [everything, ['bank', 'pool', 'calendar']])
+        # About 4.3 game days apart: 100 turns x 3750 s = 4.34 days, 24.8 s of real time at the default clock scale.
+        self.assertAlmostEqual(100 * 3750 / 86400, 4.34, places=2)
+        self.assertAlmostEqual(100 * 0.248, 24.8)
+
+    def test_speed_keys_step_the_scale_by_1_25_within_0_25_and_2(self):
+        target = targets.SPEED_TARGET
+        sandbox = target.sandbox(self.image)
+        run = lambda scale, ops: [(op, value, r3) for op, value, r3 in
+                                  targets.run_binary(target, sandbox, {'scale': scale, 'raw0': 0, 'ops': ops})['scales']]
+        self.assertEqual([value for _, value, _ in run(1.0, ['faster'] * 6)], [1.25, 1.5625, 1.953125, 2.0, 2.0, 2.0])
+        self.assertEqual([round(value, 6) for _, value, _ in run(2.0, ['slower'] * 12)],
+                         [1.6, 1.28, 1.024, 0.8192, 0.65536, 0.524288, 0.41943, 0.335544, 0.268435, 0.25, 0.25, 0.25])
+        self.assertEqual([value for _, value, _ in run(0.25, ['reset', 'faster'])], [1.0, 1.25])
+        # Every key callback returns 1 (handled) and the clamp applies to a scale outside the range too: the direct setter 0x127c40 stores
+        # any value, and the next step brings it back inside.
+        self.assertEqual({r3 for _, _, r3 in run(1.0, ['faster', 'slower', 'reset'])}, {1})
+        self.assertEqual(run(4.0, ['faster'])[0][1], 2.0)
+        self.assertEqual(run(3.0, ['slower'])[0][1], 2.0)
+        self.assertEqual(run(0.1, ['faster'])[0][1], 0.25)
+
+    def test_speed_scale_multiplies_the_scheduler_clock(self):
+        # The scheduler adds each raw gap times the scale that is current at the read: a scale change applies to the whole gap since the previous
+        # read. At scale 1 a second is 1000 ms; after one faster key 1000 raw ms are 1250; at the highest scale 2000.
+        target = targets.SPEED_TARGET
+        sandbox = target.sandbox(self.image)
+        run = lambda scale, ops: targets.run_binary(target, sandbox, {'scale': scale, 'raw0': 0, 'ops': ops})['reads']
+        self.assertEqual(run(1.0, [1000, 'faster', 1000, 'faster', 1000, 'faster', 1000, 'faster', 1000]), [1000, 2250, 3812, 5765, 7765])
+        self.assertEqual(run(2.0, [1000, 1000]), [2000, 4000])
+        self.assertEqual(run(0.25, [1000, 1000]), [250, 500])
+        self.assertEqual(run(4.0, [1000, 'faster', 1000]), [4000, 6000], "a scale above 2.0 (the direct setter) runs until a key steps it down")
+        # A raw counter that wraps: the gap is an unsigned 32-bit difference.
+        self.assertEqual(targets.run_binary(target, sandbox, {'scale': 1.0, 'raw0': 4294967000, 'ops': [100, 100, 100]})['reads'], [100, 200, 300])
+
+    def test_scaled_clock_callers(self):
+        # The consumers of the scaled clock 0x10e844 and of the unscaled 0x10e864, as call sites in the code section (a static scan of the
+        # branch-and-link instructions; nothing is executed): the scale reaches the world callback, the RSE interpreter (GETTIME 0xaf6d8, WAIT
+        # 0xb0674, WAITABS 0xb0764, SETTIMER 0xb1fec, GETTIMER 0xb200c), the board bounce code and the animation updater 0xa6f70, which
+        # samples both clocks and picks one per channel (flag 0x40). 60 call sites read the scaled clock and 11 the unscaled one.
+        image = self.image
+        words = [image.memory.u32(image.code(pc)) for pc in range(0, 0x1EBEB0, 4)]
+        calls = {0x10E844: [], 0x10E864: []}
+        for index, word in enumerate(words):
+            if word >> 26 == 18 and word & 3 == 1:       # bl, relative
+                offset = word & 0x03FFFFFC
+                offset -= 0x04000000 if offset & 0x02000000 else 0
+                if index * 4 + offset in calls:
+                    calls[index * 4 + offset].append(index * 4)
+        self.assertEqual((len(calls[0x10E844]), len(calls[0x10E864])), (60, 11))
+        for site in (0xA6FA0, 0xAF6D8, 0xB0674, 0xB0764, 0xB1FEC, 0xB200C, 0xAE03C, 0xAD350, 0x1C22B4, 0x1C1274):
+            self.assertIn(site, calls[0x10E844], hex(site))
+        self.assertIn(0xA6FD8, calls[0x10E864])
+
+    def test_park_turn_cadence_frames(self):
+        for side in ('plan', 'routine-reading'):
+            self.check(('park-turn-cadence-frames', side))
+
+    def test_park_turn_cadence_frames_csharp(self):
+        self.check(('park-turn-cadence-frames', 'csharp'))
+
+    def test_park_turn_cadence_backlog_and_flags(self):
+        # A gap of 2000 ms or more (or a stall of 5000 ms: 3000 ms are dropped first) runs 65 substeps and 3 park turns and ends 15 ms
+        # ahead; the rest of the backlog is lost. Flag 8 clear and flag 1 set (the world's exclusion) skips the substep bodies.
+        target = targets.CADENCE_TARGET
+        sandbox = target.sandbox(self.image)
+        base = {'scale': 1.0, 'mode': 0, 'flags': (False, False), 'raw0': 0, 'counter0': 0}
+        for gap in (2000, 5000):
+            [call] = targets.run_binary(target, sandbox, {**base, 'gaps': [gap]})['calls']
+            self.assertEqual((call['scripts'], call['turns'], call['previous'] - call['now']), (65, 3, 15), gap)
+        [call] = targets.run_binary(target, sandbox, {**base, 'gaps': [248]})['calls']
+        self.assertEqual((call['scripts'], call['turns'], call['previous'], call['counter']), (8, 1, 248, 8))
+        excluded = targets.run_binary(target, sandbox, {**base, 'flags': (False, True), 'gaps': [248] * 3})['calls']
+        self.assertEqual([(call['scripts'], call['turns'], call['counter']) for call in excluded], [(0, 0, 8), (0, 0, 16), (0, 0, 24)])
+        overridden = targets.run_binary(target, sandbox, {**base, 'flags': (True, True), 'gaps': [248]})['calls']
+        self.assertEqual(overridden[0]['turns'], 1)
+
     def test_unstubbed_call_aborts_the_run(self):
         sandbox = Sandbox(self.image, targets.QUEUE.allowed, {})
         sandbox.reset()
@@ -1296,6 +1565,15 @@ class CSharpMutation(unittest.TestCase):
          'return sum / (uint)members.Count < GrievanceBelow;', 'return sum / (uint)members.Count <= GrievanceBelow;'),
         ('staff-strike-month', 'csharp', 'source/OpenTPW/Economy/StaffStrikes.cs',
          '< EscalationUnits )', '<= EscalationUnits )'),
+        ('calendar-date', 'csharp', 'source/OpenTPW/Economy/ParkCalendar.cs',
+         'Epoch.AddSeconds( turn * SecondsPerTurn )', 'Epoch.AddSeconds( turn * (SecondsPerTurn + 1) )'),
+        ('calendar-update', 'csharp', 'source/OpenTPW/Economy/ParkCalendar.cs',
+         'if ( now.Day != stored.Day )', 'if ( now.Day > stored.Day )'),
+        ('park-turn-cadence-frames', 'csharp', 'source/OpenTPW/World/FixedStepClock.cs',
+         'public const double TickDuration = 1d / TicksPerSecond;', 'public const double TickDuration = 1d / (TicksPerSecond - 6);'),
+        ('golden-ticket-cadence', 'csharp', 'source/OpenTPW/Economy/ParkEconomy.cs',
+         'turn % GoldenTicketCheckInterval == 0 && ParkModeFeatures.For( mode ).GoldenTickets',
+         'turn % GoldenTicketCheckInterval == 1 && ParkModeFeatures.For( mode ).GoldenTickets'),
     ]
 
     def test_mutations_are_detected(self):

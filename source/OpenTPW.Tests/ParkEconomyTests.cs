@@ -76,9 +76,11 @@ public class ParkEconomyTests
 		park.Speed = GameSpeed.Paused;
 		park.AdvanceFixedTick();
 		Assert.AreEqual( 0, park.Tick );
+		// A faster speed is the clock scale of the whole simulation (Level scales the elapsed time), not extra economy ticks per fixed tick.
 		park.Speed = GameSpeed.Fastest;
 		park.AdvanceFixedTick();
-		Assert.AreEqual( 4, park.Tick );
+		Assert.AreEqual( 1, park.Tick );
+		Assert.AreEqual( (0f, 1f, 2f, 4f), (GameSpeedScale.Of( GameSpeed.Paused ), GameSpeedScale.Of( GameSpeed.Normal ), GameSpeedScale.Of( GameSpeed.Fast ), GameSpeedScale.Of( GameSpeed.Fastest )) );
 		Assert.ThrowsException<ArgumentOutOfRangeException>( () => park.Advance( -1 ) );
 	}
 
@@ -932,6 +934,46 @@ public class ParkEconomyTests
 		Assert.IsTrue( TicketWon( GoldenTicketKind.WaterLength, record: ParkRecordKind.WaterLength, recordValue: 51 ) );
 		Assert.IsFalse( TicketWon( GoldenTicketKind.BigPark, record: ParkRecordKind.CellsOwned, recordValue: 3000 ) );
 		Assert.IsTrue( TicketWon( GoldenTicketKind.BigPark, record: ParkRecordKind.CellsOwned, recordValue: 3001 ) );
+	}
+
+	[DataTestMethod]
+	[DataRow( 0L, ParkGameMode.FullSimulation, true )]
+	[DataRow( 1L, ParkGameMode.FullSimulation, false )]
+	[DataRow( 99L, ParkGameMode.FullSimulation, false )]
+	[DataRow( 100L, ParkGameMode.FullSimulation, true )]
+	[DataRow( 101L, ParkGameMode.FullSimulation, false )]
+	[DataRow( 8433L, ParkGameMode.FullSimulation, false )]
+	[DataRow( 648000L, ParkGameMode.FullSimulation, true )]
+	[DataRow( 100L, ParkGameMode.InstantAction, false )]
+	[DataRow( 0L, ParkGameMode.InstantAction, false )]
+	public void TheGoldenTicketCheckRunsEvery100thTurnInFullSimulation( long turn, ParkGameMode mode, bool runs )
+	{
+		// [BIN:STP-PPC:0x100D67F0 world update] turn % 100 == 0 (unsigned) calls the dispatcher 0x100D2F1C, which checks only for game type 0; about 4.3 park days (25 s at normal speed) apart (oracle F31)
+		Assert.AreEqual( runs, ParkEconomy.RunsGoldenTicketCheck( turn, mode ) );
+	}
+
+	[TestMethod]
+	public void TheGoldenTicketCheckSeesTheStateAfterTheCalendarUpdateOfItsTurn()
+	{
+		// The world update runs the calendar update (and with it the bank's year reset, a message handled at once) before the ticket check.
+		// Turn 648,000 is the first turn of 2077 and a multiple of 100: the year's profit of 20,000 (above the jungle's 15,000) was reset
+		// by the year message, so the check of that turn finds none; the check at turn 100 of a running year finds it.
+		ParkEconomy Prepared( long startTurn )
+		{
+			var park = EconomyTestData.Park( initialCash: 100_000_000 );
+			park.StartAtOriginalTurn( startTurn );
+			park.ImportOriginalBank( 100_000_000, 10, 20000, Array.Empty<LoanAccount>() );
+			return park;
+		}
+		var running = Prepared( 99 );
+		running.Advance( ParkCalendar.TickOfTurn( 100 ) - running.Tick );
+		CollectionAssert.AreEqual( new[] { GoldenTicketKind.ProfitYear }, running.Objectives.GoldenTickets.ToArray(), "a check in the middle of a year sees the profit" );
+
+		var yearChange = Prepared( 647_999 );
+		yearChange.Advance( ParkCalendar.TickOfTurn( 648_000 ) - yearChange.Tick );
+		Assert.AreEqual( 648_000, yearChange.Turn );
+		Assert.AreEqual( 0, yearChange.Ledger.ProfitThisYear, "the year message reset the profit" );
+		Assert.AreEqual( 0, yearChange.Objectives.GoldenTickets.Count, "the ticket check of the year's first turn runs after the reset" );
 	}
 
 	[TestMethod]

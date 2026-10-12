@@ -665,7 +665,7 @@ public class OriginalUiTests
 		Assert.AreEqual( GameSpeed.Paused, first.Speed );
 		Assert.AreEqual( 0f, status.TimeScale );
 		status.Speed = GameSpeed.Fastest;
-		Assert.AreEqual( 1f, status.TimeScale, "the economy speeds up its own clock; rides keep normal speed" );
+		Assert.AreEqual( 4f, status.TimeScale, "the speed is the clock scale of the whole simulation: rides and guests run at it too" );
 		first.AdvanceDays( 31 );
 		Assert.AreEqual( first.Date, status.Date );
 		var item = new BuildItem( "shop", 1203, BuildCategory.Shops, 0, 999, null, Array.Empty<string>() );
@@ -693,7 +693,7 @@ public class OriginalUiTests
 		Assert.IsFalse( status.HasEconomy );
 		Assert.IsNull( status.PriceOf( new BuildItem( "x", 1, BuildCategory.Rides, 0, 5, null, Array.Empty<string>() ) ) );
 		status.Speed = GameSpeed.Fast;
-		Assert.AreEqual( 1f, status.TimeScale );
+		Assert.AreEqual( 2f, status.TimeScale, "the rides of a level without a park economy run at the chosen speed too" );
 		status.Speed = GameSpeed.Paused;
 		Assert.AreEqual( 0f, status.TimeScale );
 	}

@@ -158,7 +158,9 @@ internal sealed partial class ParkResumeSmokeTest
 
 	internal static SmokeEvidence ReadEvidence( string path )
 	{
-		var evidence = JsonSerializer.Deserialize<SmokeEvidence>( File.ReadAllBytes( path ), evidenceOptions )
+		using var stream = File.OpenRead( path );
+		if ( stream.Length > MaximumEvidenceBytes ) throw new InvalidDataException( "Park-resume smoke evidence exceeds the size limit." );
+		var evidence = JsonSerializer.Deserialize<SmokeEvidence>( stream, evidenceOptions )
 			?? throw new InvalidDataException( $"The park-resume smoke evidence '{Path.GetFileName( path )}' is null." );
 		return evidence;
 	}

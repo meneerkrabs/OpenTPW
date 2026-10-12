@@ -32,11 +32,11 @@ saves. Loading resumes the saved park exactly: the same objects at the same cell
 guests in the same queues and rides with their routes and timers, the same money, loans, research,
 staff and prices, the same weather and clock, and the park open or closed as it was saved — the
 gameplay mode and start kind (Full Simulation, Instant Action, reference) come back with it, so an
-Instant Action park resumes under the easy balance and a closed park stays closed.
+Instant Action park resumes under its saved balance layer and a closed park stays closed.
 
 A save that does not validate is refused with its reason (a dialog in the UI), and the park or lobby
 you were in stays untouched — a rejected load never half-applies. Corrupt files, unknown or missing
-members, unsupported versions, another theme or balance layer, and changed game assets are all
+members, unsupported versions, inconsistent theme or balance values, and changed game assets are all
 refused this way before anything is replaced.
 
 ## What the save holds
@@ -115,12 +115,14 @@ embedded by value, so both formats' validators run on every load.
   with edited queues, two identical shops at different prices, a toilet, a demolished object leaving
   an id hole, two staff and fourteen guests), saves it through the pause menu's own save handler and
   continues the live park. The restore phase — a cold second process — requires the save's bytes to
-  survive, rejects six corrupted candidates (late guest/queue/attraction references, a doctored
-  asset manifest, an unsupported version, claimed active advisor speech) with the live park intact
+  survive, rejects seven corrupted candidates (guest/queue/attraction references, a doctored
+  asset manifest, a runtime script-identity mismatch, an unsupported version and a malformed menu
+  entry) with the live park intact
   each time, then resumes and compares every typed section hash and the composite world hash against
   the capture run at each checkpoint, finishing with post-load economy checks (admission booked
   once, a sale credited once with its links removed, a new placement, wages charged once, payment
-  bindings one-to-one). The evidence directory holds hashes and counters only, never asset bytes.
+  bindings one-to-one). The evidence JSON holds hashes and counters; the directory also contains
+  the own-format save and screenshot readbacks, without original game files.
   These are controlled, accelerated fixtures that validate persistence of current OpenTPW behaviour,
   not original-game fidelity.
 

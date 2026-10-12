@@ -189,6 +189,7 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 		if ( !string.Equals( Path.GetFullPath( written ), savePath, StringComparison.Ordinal ) )
 			File.Copy( written, savePath, overwrite: true );
 		var bytes = File.ReadAllBytes( savePath );
+		savedUtc = ParkResumeSaveFile.Load( savePath ).SavedUtc.UtcDateTime.ToString( "O", System.Globalization.CultureInfo.InvariantCulture );
 		Require( bytes.SequenceEqual( ParkResumeSaveFile.Serialize( ParkResumeSaveFile.Load( savePath ) ) ),
 			"the saved file round-trips byte-identically through the own codec" );
 		Log.Trace( $"Park-resume capture: saved {bytes.Length} bytes ({boundarySample.Counters.Objects} objects, {boundarySample.Counters.Guests} guests, "
@@ -288,6 +289,17 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 		var key = manifest.Keys.First();
 		manifest[key] = manifest[key][..^1] + (manifest[key][^1] == '0' ? '1' : '0');
 		Probe( baseline, "asset-fingerprint", good with { AssetHashes = manifest }, viaMenu: false );
+		// The shape and manifest still agree; failure occurs after a candidate's real GPU objects exist.
+		var wrongScriptIdentities = good with
+		{
+			Scripts = good.Scripts with
+			{
+				Scripts = good.Scripts.Scripts.Select( script => script with { ScriptIdentityHash = 1 } ).ToArray()
+			},
+			Runtimes = good.Runtimes.Select( runtime => runtime.State.HasScript
+				? runtime with { State = runtime.State with { ScriptIdentityHash = 1 } } : runtime ).ToArray()
+		};
+		Probe( baseline, "runtime-script-identity", wrongScriptIdentities, viaMenu: false );
 		// An unsupported future version, through the actual menu entry: a failure dialog, never a crash or a swap.
 		Probe( baseline, "unsupported-version", good with { Version = ParkResumeSaveFile.CurrentVersion + 5 }, viaMenu: true );
 		// The load menu's own listing: a malformed save file is skipped with a warning, a good one is listed.
@@ -382,11 +394,13 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 	}
 
 	/// <summary>The identity a failed candidate must preserve: entity count, camera mode type, audio listener pose, owned GPU targets.</summary>
-	private readonly record struct LiveIdentity( int Entities, string CameraMode, float Lx, float Ly, float Lz, float Fx, float Fy, float Fz, int OwnedTargets );
+	private readonly record struct LiveIdentity( int Entities, string CameraMode, float Lx, float Ly, float Lz, float Fx, float Fy, float Fz,
+		int OwnedTargets, int Materials, int Shaders );
 
 	private LiveIdentity LiveParkIdentity() => new( Entity.All.Count, Camera.Mode.GetType().Name,
 		AudioListener.Position.X, AudioListener.Position.Y, AudioListener.Position.Z,
-		AudioListener.Forward.X, AudioListener.Forward.Y, AudioListener.Forward.Z, Render.OwnedTargetResourceCount );
+		AudioListener.Forward.X, AudioListener.Forward.Y, AudioListener.Forward.Z, Render.OwnedTargetResourceCount,
+		Asset.All.OfType<Material>().Count(), Asset.All.OfType<Shader>().Count() );
 
 	private void VerifyPostLoad()
 	{
@@ -481,7 +495,6 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 			verifiedAssets = first.AssetHashes;
 		}
 		var snapshot = level.CaptureResumeSnapshot( Advisor, "park-resume smoke", verifiedAssets );
-		savedUtc = snapshot.SavedUtc.UtcDateTime.ToString( "O", System.Globalization.CultureInfo.InvariantCulture );
 		var sections = new Dictionary<string, string>
 		{
 			["economy"] = SectionSha256( snapshot.Economy ),
@@ -604,6 +617,7 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 			Phase = restoring ? "restore" : "capture",
 			Theme = themeText,
 			StartKind = startKindText,
+			Seed = level.Seed.ToString(),
 			SavedUtc = savedUtc,
 			ManifestSha256 = CanonicalManifestSha256( verifiedAssets ),
 			Save = new SmokeSaveFile { Name = Path.GetFileName( savePath ), ByteCount = bytes.Length, Sha256 = Sha256Hex( bytes ) },

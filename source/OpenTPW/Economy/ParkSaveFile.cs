@@ -55,7 +55,7 @@ public static class ParkSaveFile
 		public required long DroppedAdmissions { get; init; }
 		public required LedgerData Ledger { get; init; }
 		public required List<ObjectData> Objects { get; init; }
-		public required List<LoanAccount> Loans { get; init; }
+		public required List<LoanData> Loans { get; init; }
 		public required List<int> TakenLoanOffers { get; init; }
 		public required List<long> MonthlyAdmissions { get; init; }
 		public required StaffData Staff { get; init; }
@@ -119,6 +119,27 @@ public static class ParkSaveFile
 		public required bool IsBrokenDown { get; init; }
 		public required int MechanicId { get; init; }
 		public required long[] Statistics { get; init; }
+	}
+
+	/// <summary>
+	/// A bought loan as saved. A loan is its instalment and the months left; the amount still owed is derived as
+	/// M × the months left (the original keeps no declining balance, ORACLE F13). <see cref="RemainingBalance"/> is that
+	/// derived amount, written for readers and otherwise ignored: saves written while loans accrued interest on a balance
+	/// (also version 2) hold the old balance there, which is dropped because their months left already say how far the
+	/// loan is repaid; their stored instalment stays the loan's instalment.
+	/// </summary>
+	public sealed class LoanData
+	{
+		public required int OfferIndex { get; init; }
+		public required int LenderNameIndex { get; init; }
+		public required long OriginalAmount { get; init; }
+		public required int AprPercent { get; init; }
+		public required int Months { get; init; }
+		public required long MonthlyRepayment { get; init; }
+		public required int MonthsRemaining { get; init; }
+		public long? RemainingBalance { get; init; }
+
+		public LoanAccount ToAccount() => new( OfferIndex, LenderNameIndex, OriginalAmount, AprPercent, Months, MonthlyRepayment, Months - MonthsRemaining );
 	}
 
 	public sealed class StaffData
@@ -233,7 +254,17 @@ public static class ParkSaveFile
 				MechanicId = item.MechanicId,
 				Statistics = new[] { item.CustomersThisMonth, item.CustomersLastMonth, item.TakingsThisMonth, item.TakingsLastMonth, item.CostsThisMonth, item.CostsLastMonth, item.WinnersThisMonth, item.WinnersLastMonth, item.TotalProfit }
 			} ).ToList(),
-			Loans = park.Loans.ToList(),
+			Loans = park.Loans.Select( loan => new LoanData
+			{
+				OfferIndex = loan.OfferIndex,
+				LenderNameIndex = loan.LenderNameIndex,
+				OriginalAmount = loan.OriginalAmount,
+				AprPercent = loan.AprPercent,
+				Months = loan.Months,
+				MonthlyRepayment = loan.MonthlyRepayment,
+				MonthsRemaining = loan.MonthsRemaining,
+				RemainingBalance = loan.RemainingBalance
+			} ).ToList(),
 			TakenLoanOffers = park.TakenOffers.OrderBy( index => index ).ToList(),
 			MonthlyAdmissions = park.MonthlyAdmissions.ToList(),
 			Staff = new StaffData
@@ -340,7 +371,7 @@ public static class ParkSaveFile
 		Require( data.Staff.TrainingBudgets.Count == BalanceSettings.StaffTypeCount && data.Staff.TrainingBudgets.All( value => value >= 0 ), "training budgets" );
 		Require( (data.Research.Workload == null || data.Research.Workload is >= 0 and <= 100) && (data.Research.Current == null || data.Research.Current.All( entry => entry.Length == 3 && Enum.IsDefined( (ResearchCategory)entry[0] ) )) && data.Research.Effort.Count == 5 && data.Research.Completed.All( key => key.Length == 2 ) && data.Research.Progress.All( entry => entry.Length == 3 && entry[2] >= 0 ), "research" );
 		foreach ( var loan in data.Loans )
-			Require( loan.MonthsRemaining > 0 && loan.RemainingBalance >= 0 && data.TakenLoanOffers.Contains( loan.OfferIndex ), $"loan {loan.OfferIndex}" );
+			Require( loan.MonthsRemaining > 0 && loan.MonthsRemaining <= loan.Months && loan.MonthlyRepayment >= 0 && (loan.RemainingBalance is null or >= 0) && data.TakenLoanOffers.Contains( loan.OfferIndex ), $"loan {loan.OfferIndex}" );
 	}
 
 	/// <summary>Rebuilds a park from saved data and the original settings/catalogue of the saved theme.</summary>
@@ -384,7 +415,7 @@ public static class ParkSaveFile
 				WinnersLastMonth = item.Statistics[7],
 				TotalProfit = item.Statistics[8]
 			} ),
-			data.Loans, data.TakenLoanOffers, data.MonthlyAdmissions );
+			data.Loans.Select( loan => loan.ToAccount() ).ToList(), data.TakenLoanOffers, data.MonthlyAdmissions );
 		park.Staff.Restore( data.Staff.Members.Select( member => new StaffMember
 		{
 			Id = member.Id,

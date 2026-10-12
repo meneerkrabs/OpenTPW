@@ -173,6 +173,21 @@ preview; original runtime fidelity and the complete offline scope remain open.
   and the MPEG-1 clip `tp_riderepaired` (stored without a `.mp2` suffix) matches
   the pinned ffmpeg reference within 1 LSB. No decoder change: `Mp2Decoder`
   already covers MPEG-1/2 Layer I.
+- Loans follow the original (ORACLE F12-F14, ECON-006 resolved). The monthly
+  instalment is trunc(P x pow(1 + APR/100, N/24) / N) for every APR, paid flat for
+  N months with no interest on a balance and no final remainder; the total
+  payable is M x N and an early repayment pays M x the months left (100,000 at
+  20 % over 36 months: 3,651 a month, 131,436 in all, instead of 3,716 and
+  133,795). At 0 % APR the loan repays 99,972, as in the original. `LoanAccount`
+  stores the months repaid; saves with the old remaining balance load with their
+  months left. Original-save import checks the stored instalment for every APR and keeps it when it differs.
+  The loan oracle targets now agree with C# (505/505 offers, 503/503 terms). The
+  withdrawals flag is assumed on (new ECON-051).
+  Early repayment also charges the year profit the whole-term share (oracle
+  target `loan-payoff`), the year-profit word wraps as a signed 32-bit value on
+  every update, and a saved instalment that differs from this host's pow is kept
+  and reported instead of rejected. The 0 % APR share (about 119 million a month
+  in jungle Easy mode) is original behaviour and stays.
 - [Fidelity register](FIDELITY-REGISTER.md): **315 original fidelity items** plus
   **24 online extension** IDs (339 total) remain open. CI checks explicit tags and
   register consistency; it finds no unmarked logic and proves no parity.

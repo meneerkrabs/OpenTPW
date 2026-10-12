@@ -18,23 +18,73 @@ if (button) {
 	}
 }
 
-// The gameplay clip plays only while it is on screen, and not at all when the visitor prefers reduced motion
-// (then it shows its controls and poster instead).
+// The gameplay clip plays only while it is on screen, and not at all when reduced motion is on (the system
+// setting, or the "Reduce motion" reading option in a11y.js); then it shows its controls and poster instead.
 const clip = document.getElementById('clip');
 if (clip) {
-	const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
-	if (reduced.matches || !('IntersectionObserver' in window))
+	const reduced = () => document.documentElement.dataset.motion === 'reduce' || window.matchMedia('(prefers-reduced-motion: reduce)').matches && document.documentElement.dataset.motion !== 'full';
+	let onScreen = false;
+	const update = () => {
+		if (reduced()) {
+			clip.pause();
+			clip.controls = true;
+		} else if (onScreen) {
+			clip.controls = false;
+			clip.play().catch(() => { clip.controls = true; });
+		} else
+			clip.pause();
+	};
+	if (!('IntersectionObserver' in window))
 		clip.controls = true;
 	else {
 		new IntersectionObserver(entries => {
-			for (const entry of entries) {
-				if (entry.isIntersecting)
-					clip.play().catch(() => { clip.controls = true; });
-				else
-					clip.pause();
-			}
+			for (const entry of entries)
+				onScreen = entry.isIntersecting;
+			update();
 		}, { threshold: 0.4 }).observe(clip);
+		window.addEventListener('opentpw:motion', update);
 	}
+	if (reduced())
+		clip.controls = true;
+}
+
+// The live status figures, generated from the repository when the site is built (tools/site_status.py).
+// If docs/status.json is missing, the fallback text and link in the page stay.
+const live = document.getElementById('live-status');
+if (live) {
+	fetch('docs/status.json', { credentials: 'omit', cache: 'no-cache' }).then(response => {
+		if (!response.ok)
+			throw new Error(String(response.status));
+		return response.json();
+	}).then(status => {
+		const tile = (value, label, note) => {
+			const box = element('div', 'stat');
+			box.append(element('span', 'stat-num', String(value)), element('span', 'stat-label', label), element('span', 'stat-note', note));
+			return box;
+		};
+		const { fidelity, oracle, formats, recent, commit } = status;
+		const tiles = element('div', 'stats');
+		tiles.append(
+			tile(fidelity.total, 'open fidelity items', `${fidelity.original} in the original areas, ${fidelity.online} online`),
+			tile(oracle.f_count + oracle.x_count, 'executed oracle findings', `${oracle.fixed_in_csharp} fixed in C#`),
+			tile(formats.decoded, 'formats fully decoded', `${formats.partial} more partly`),
+			tile(recent.items.length ? recent.items[0].date : '-', 'latest merged change', recent.items.length ? recent.items[0].title : ''));
+		const list = element('ul', 'doc-list');
+		for (const item of recent.items.slice(0, 5)) {
+			const entry = element('li');
+			const link = element('a', '', item.title);
+			if (/^https:\/\/github\.com\//.test(item.url))
+				link.href = item.url;
+			entry.append(link, element('span', 'doc-file', `${item.number ? '#' + item.number + ' · ' : ''}${item.date}`));
+			list.append(entry);
+		}
+		const more = element('p', 'fine');
+		more.append('Generated from commit ', element('code', '', commit.short), ` on ${commit.date.slice(0, 10)}. `);
+		const all = element('a', '', 'Full status page');
+		all.href = 'docs/status.html';
+		more.append(all);
+		live.replaceChildren(element('h3', '', 'Live from the repository'), tiles, element('h4', '', 'Recent progress'), list, more);
+	}).catch(() => {});
 }
 
 // News and the website park list from the official server. Only public data is read, without cookies or

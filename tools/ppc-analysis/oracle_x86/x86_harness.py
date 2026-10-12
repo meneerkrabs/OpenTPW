@@ -297,6 +297,14 @@ class Sandbox:
         """Stack argument `index` (0-based) while a stub runs."""
         return self.read((self.uc.reg_read(x86.UC_X86_REG_ESP) + 4 + 4 * index) & MASK32, 'I')
 
+    def reg(self, name: str) -> int:
+        """A register while a stub runs (`ecx` is `this` of a thiscall)."""
+        return self.uc.reg_read(_uc_reg(name)) & MASK32
+
+    def set_fpcw(self, value: int) -> None:
+        """Override the x87 control word after reset() (0x37F: 64-bit, 0x27F: 53-bit, 0x7F: 24-bit significand)."""
+        self.uc.reg_write(x86.UC_X86_REG_FPCW, value)
+
     def reset(self) -> None:
         self._restore()
         self._heap = HEAP_BASE

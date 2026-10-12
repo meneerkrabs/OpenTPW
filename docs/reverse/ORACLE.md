@@ -752,13 +752,16 @@ image, which a relocated load skips and counts in `Image.skipped_relocations`). 
 - **Stubs.** A stub is `fn(sandbox) -> (eax, bytes the callee pops)`; it replaces the routine and
   acts as its `ret`. `sandbox.arg(i)` reads its stack arguments.
 
-### 7.3 First target and pins
+### 7.3 Targets and pins
 
 | Target | Routine (allowed code) | Stubs | Inputs | vs plan | vs routine reading |
 | --- | --- | --- | --- | --- | --- |
 | `tpw-exe-world-rng` | tp.exe `0x516330`..`0x516365` (thiscall, `ecx` = object; state at `+0x1da708`) | none | 508 (500 random + 8 boundaries) | **X1**: 507 differ from the Mac model `det_model.world_next` (first input 0: original returns 1694899337 and stores 2600067959, the plan 1013904223 for both) | **agree** 508/508 |
-
 | `tpi-exe-world-rng` | TPI `Game.exe` `0x6493e0`..`0x649415` (thiscall, `ecx` = object; state at `+0x1eab3c`) | none | 508 | **X2**: 507 differ from the Mac model (first input 0: the same pair as tp.exe, 1694899337 returned, 2600067959 stored) | **agree** 508/508 with the TPW PC reading |
+| `tpw-exe-arrival-group` | tp.exe `0x4cf5b0`..`0x4cf71d` and the float-to-int helper `0x67a830` (thiscall, `ecx` unused; the Mac `0xcb4e8`) | `0x519510` game to park (sentinel, checked), `0x4c7fa0` counted guests (argument 20 checked), `0x4c8240` park points (chosen), `0x519590` thing lookup (synthetic thing, dword `+0x30` chosen), `0x5da3c0` print (logged); the GameType object is marked constructed | 733 (the Mac target's 515, 12 edges, 100 wide-range, 100 precision, 6 more), x87 control word `0x27F` | **X3**: 54 differ, all x87 arithmetic (8 products beyond 31 bits, 46 totals of 1.7 million and up); inside the reachable range **agree** | **agree** 733/733 (53-bit reading) |
+| `tpw-exe-loan-offers` | tp.exe `0x4cf7c0`..`0x4cf8c6` (bank constructor, the 8-offer loop; the Mac `0xcb7a8`) plus the runtime's own `pow` (`0x67c5d0`, `0x686170`) and `0x67a830`, executed | `0x50afe0` base constructor (header only, arguments checked) | 506 offer sets (the Mac target's 505 plus one out-of-range set) | **X4**: 505/506 **agree** with the Mac plan, records and bank words included; the one set holds a zero term and a result above 32 bits | **agree** 506/506 (x87 reading, `math.pow` for the power) |
+| `tpw-exe-loan-term`, `tpw-exe-loan-month` | tp.exe `0x4d0385`..`0x4d04d9` (the loan loop of the monthly handler `0x4d0370`; the Mac `0xcc21c`) | `0x519510` game to park (sentinel, checked), `0x5da3c0` print (logged by message) | 503 whole terms, 506 random bank states | **X5**: **agree** 503/503 with the Mac plan | **agree** 503/503 and 506/506, events in the same order |
+| `tpw-exe-park-points` | tp.exe `0x4c8240`, park record search `0x4d3d10`/`0x4d3d80`, `0x4f88b0` (turns to 100 ns), the 64-bit divide and multiply helpers (the Mac `0xc24c0`) | `0x412e90` type record (registry checked), `0x5da3c0` assertion (a zero condition fails the run), `0x4dd920` counts-test (chosen flag), `0x4dd670` own age (signed timestamp difference in days) | 507 | **X6**: **agree** 507/507 | (the plan is the Mac routine reading) |
 
 The routine reading (own words): multiply the state by 1664525 and add 1013904223 (mod 2^32),
 rotate the result right by 13 bits, store that, and return its signed absolute value (the
@@ -869,5 +872,134 @@ To add a target: read the routine with a disassembler in a scratch directory (ne
 checkout), note every call and the code range, then add `binary`, `plan`, `inputs`, `allowed` and
 `stubs` (each stub justified) to `x86_targets.py`, and pin the result in
 `test_x86_oracle.EXPECTED` and in 7.3 here. Recommended next targets: the tp.exe counterparts of
-the Mac targets already pinned (`arrival-group`, loans, park points), where a PC-vs-Mac divergence
-would matter most.
+the other pinned Mac targets (`loan-payoff` and `loan-take`, the counts-test, `arrival-update`, the
+queue and ride predicates), and a dynamic check of the x87 control word at the time the bank is built
+(X4).
+
+### 7.6 Findings X3 to X6: the Mac-derived rules in tp.exe
+
+Question: does the Windows TPW v2.0 `tp.exe` implement the rules OpenTPW follows from the Mac
+PowerPC oracle (F9, F10, F12, F13)? Method for each: find the counterpart by constants, object offsets,
+call structure and message texts (static, Capstone in a scratch directory, terminal only), then
+execute it with the stubs of the Mac target and compare with the Mac reading that C# follows
+(`oracle/targets.py` is imported, not copied: its plans, readings and input generators). All four
+counterparts exist and have the Mac's structure. The tp.exe addresses below are virtual addresses at the
+preferred base `0x400000`; no bytes or disassembly are stored here.
+
+The x87 control word matters (X3, X4). The sandbox runs these targets with `0x27F`, a 53-bit
+significand with round to nearest: that is the word the runtime's own `pow` tests for (it switches to
+a safe word only when the current one differs), the Windows process default, and the imports show
+DirectDraw only and no Direct3D, which is what usually lowers it. Whether the word really is `0x27F` when
+the bank is built was not established dynamically (the executable was not run as a program). The
+emulator's own default (`0x37F`, 64 bits) and `0x7F` (24 bits) are run in the tests to show what would change.
+
+**X3, arrival group size (Mac `0xcb4e8`, F9): tp.exe `0x4cf5b0`; same rules, x87 arithmetic.**
+Identification (high confidence): the same early exit for world mode 4 (game `+0x1da738`), the
+same three settings words at the same offsets of the settings block (MinPeople, NewParkBonus,
+PointsPerVisitor: `0x785310`, `0x78531c`, `0x785320`, which are the Mac's `+720`, `+732`, `+736`),
+the counted guests (argument 20) and the park points called in the same order, a thing looked up
+from a game-object handle whose word at `+0x30` (the Mac's `+48`) picks the factor (positive:
+the single-precision constant 0.8, at `0x700368`; otherwise 1.2, at `0x700364`), the
+GameType word at `0xfb3b7c` equal to 1 for the 500 cut and the 1500 cut otherwise (both unsigned
+compares and no floor), and the two "capping the number of people" log lines (online, offline) plus a
+"number of people" line. The handle is at game `+0x1da724`; the Mac's is at `+0x1da734`, and the
+gates handle sits at `+0x1da722` against the Mac's `+0x1da732` (the world setup stores them in order
+just before the bank constructor, as on the Mac).
+
+Executed result: all of F9 holds. The factor test, the 500/1500 cuts, the unsigned compares and
+the missing floor agree with the Mac reading `arrival_full`, so C# follows the Windows build too
+(except the floor at 0, which is the same departure as for the Mac). 54 of 733 inputs differ from the
+Mac model, all from the arithmetic, none from the rules:
+
+- 8 inputs have a product beyond 31 bits (for example points 2147483392 with the 1.2 factor and a
+  divisor of 1, a total no park can have): the PC keeps only the low 32 bits of the 64-bit integer
+  `fistp` stores and divides that signed word (here negative, so the group becomes MinPeople), where
+  the Mac's `fctiwz` saturates and the 1500 cut follows.
+- 46 inputs have a total of 1,747,629 or more with factor 1.2 (5,242,881 or more with 0.8): the PC
+  multiplies the exact integer by the single-precision factor in the wider x87 register and truncates, the
+  Mac first rounds the sum to single and then rounds the product to single. Example, total 1,747,629,
+  factor 1.2: the PC product 2,097,154.88 truncates to 2,097,154, the Mac's rounds to 2,097,155. This is a
+  difference that comes from precision alone. It shows only when the group is under the 1500 cut (a
+  large divisor, MinPeople 0 and so on), so no real park, whose points are tens to thousands, reaches it.
+  The 53-bit and 64-bit words give the same groups on every input here; 24 bits (single) rounds the
+  product like the Mac but not the sum, and differs from 53 bits on 43 inputs.
+
+Consequence: current C# (`GuestSimulation.ArrivalGroupSize`) is right for the Windows build within
+any reachable range. Nothing to change.
+
+**X4, loan offer instalment (Mac `0xcb7a8`, F12): tp.exe `0x4cf7c0`; same formula.**
+Identification (high confidence): the bank constructor, found through the settings words (initial
+cash at `0x7851d8` = settings `+408`, offers from `0x7851e0` = `+416`, 16 bytes each), eight records
+of 32 bytes from the object's `+0x14` with the Mac's layout (available, P, APR, N, instalment,
+bought, months repaid, lender; available when P is at most 10000), the same bank words set after
+the loop, the base constructor called first, and a bank built in the world setup right after the
+lights handle. The monthly instalment is trunc(P × pow(1 + APR/100, N/24) / N); the shipped offers
+give 3651, 1825, 912, 365, 922, 1282, 2320, 2749 at every control word.
+
+`pow` is not an import here: it is the executable's own x87 routine (`0x67c5d0`, with `0x686170`): it
+computes y·log2(x) with `fyl2x`, then 2^x with `f2xm1` and `fscale`. It is executed on the
+emulator's x87 (no stub), so Unicorn's `fyl2x`/`f2xm1` stand for the hardware's and are not
+guaranteed to match it in the last bit of the extended result. The reading with Python's `math.pow`
+gives the same instalment on all 506 sets, so such a difference changes M only where P × pow / N
+lies that close to an integer.
+
+Differences from the Mac in how the expression is built, none visible at 53 bits: the PC computes
+APR × 0.01 + 1 (multiply by the constant 0.01, subtract -1.0) where the Mac divides by 100, and
+N × (1/12 as a double) × 0.5 where the Mac divides by 12; the power's two arguments are stored as
+doubles for the call; the amount is read unsigned; the quotient is truncated by `fistp` and the low
+word kept, where the Mac converts to unsigned with saturation. Executed: 505 of 506 offer sets
+agree with the Mac plan (`LoanMath.MonthlyRepayment`), records and bank words included. The remaining
+set is out of range: a zero term gives 0 on the PC (the Mac routine saturates to 2^32 − 1, the plan
+throws) and 0xFFFFFFFF at 40 % over one month gives the low word 60,638,121 (the Mac saturates). No
+shipped offer has either.
+
+Precision finding: the instalment depends on the control word where P × pow / N is an exact
+integer. 18000 at 20 % over 24 months is exactly 900 (pow(1.2, 1)): 900 at `0x27F` and on the Mac's
+doubles, 899 at the 64-bit `0x37F` (13 of 506 offer sets change by 1 between the two words, 2 sets at 24
+bits). The shipped offers do not. C# keeps the Mac's binary64 result, which equals the Windows build only if
+the control word is `0x27F` when the bank is built (see above).
+
+**X5, monthly loan step (Mac `0xcc21c`, F13): tp.exe `0x4d0370`; identical.**
+Identification (high confidence): the bank's message dispatcher (`0x4d02d0`) calls it for message code 12,
+as on the Mac; the handler flushes the batch (assertion below one million, then balance, the park's money-in
+word `+0x1fc90` and the year profit `+0x124`) and runs the eight-record loop at `0x4d03de`. The bank fields
+are at the Mac's offsets (balance `+0xc`, batch `+0x10`, withdrawals `+0x114`, last balance `+0x11c`,
+turn entered red `+0x120`, year profit `+0x124`, records from `+0x14`), as are the park words, the turn word
+at game `+0x1da70c` and the four message kinds (instalment line, paid-off line, the two assertions), in the
+same order. The routine's entry pushes an exception frame through the thread information block, which the
+sandbox does not have, so the run starts just after it (`0x4d0385`) and ends at the loop's end (`0x4d04d9`);
+the tail, a bank in the red for a month, is not run.
+
+Executed: the stored instalment M is deducted exactly N times and nothing else, the year profit gains
+M − floor((M × N − P) / N) in 32-bit unsigned arithmetic (an unsigned divide, skipped for a
+zero term), and the loan clears when the months repaid reach N. 503 of 503 whole terms agree
+with the Mac plan, and 503/503 and 506/506 (whole terms and random bank states) with the Mac
+routine reading including its events; dropping any one of the six parts brings mismatches
+back (`test_loan_step_reading_is_sharp`). Example: 100,000 over 36 months at 20 %: 36 deductions of 3651
+and the year profit falling by 873 a month. C# (`LoanMath.Pay`) is right for the Windows build.
+
+**X6, park points (Mac `0xc24c0`, F10): tp.exe `0x4c8240`; identical.**
+Identification (high confidence): it is the routine the arrival group calls for the points, in the same
+place as the Mac's. It walks the thing list from game `+0x1da746` (the Mac's offset) through the
+20-byte thing array at `0x7cfb90`; reads the type record by id from the registry at `0x7890a0` (value
+at `+0x58`, decay at `+0x5c`, bonus brackets at `+0x268`, the track-type word at `+0x9c`: all the Mac's
+offsets; only the kind word moved, to `+0x4ac`); counts only kinds 0 and 2 and things that pass the
+counts-test (`0x4dd920`, called where the Mac calls `0xdc834`); reads the park record (game
+`+0x1d943c`, 32-byte records, copies at `+0x18`, first purchase at `+0x1c`: the Mac's `+24`
+and `+28`); and ages a type with track-type word 0 from the first purchase through `0x4f88b0` (the turn
+difference times the clock rate at game `+0x2bc`, divided by 4, times 10,000,000, divided by the
+day length 864,000,000,000, a constant that appears in both ageing paths), any other type from the thing's
+own timestamp (`0x4dd670`) with a divisor of 1. The bracket is age / decay (signed) in 0 to 2, and the sum
+adds (value + bracket bonus) / copies (signed). Executed: `0x4c8240`, the park record search, the turn
+conversion and the 64-bit helpers; stubbed: the type registry, the counts-test (chosen flag), the own age
+(signed timestamp difference, as on the Mac) and the assertion print. 507 of 507 inputs agree with the Mac
+reading (`points_full`), which C# follows; the three Mac rules (track-type branch, first-purchase age,
+counts-test) each change the result when dropped (`test_points_reading_is_sharp`). The counts-test
+`0x4dd920` and the own age `0x4dd670` were not run: they are the counterparts of the Mac's stubbed
+`0xdc834` and `0xdc520` by call position only.
+
+Summary: the four rules are the same on the Windows build as on the Mac. The only differences found
+are x87 arithmetic: a wrap beyond range and a precision effect that shows only for totals no park reaches
+(X3), and a last-bit dependence on the control word for exactly-integer instalments (X4). No C# change
+is needed. Not examined: loan payoff and take (`0xccc78`, `0xcc904`), the counts-test, the arrival update
+loop, and which control word is live when the bank is built.

@@ -45,6 +45,31 @@ EXPECTED = {
     # X2: the TPI Game.exe 0x6493e0 is the same step as tp.exe 0x516330 (rotation included) at state slot +0x1eab3c.
     ('tpi-exe-world-rng', 'plan'): (507, 0),
     ('tpi-exe-world-rng', 'tpw-pc-reading'): AGREE,
+    # X3 (arrival group size 0x4cf5b0 vs the Mac 0xcb4e8, F9): the same rules; 54 of 733 inputs differ, all in the x87
+    # arithmetic. 8 are totals whose product is beyond 31 bits (fistp keeps the low word, the Mac saturates); 46 are totals
+    # of 1.7 million and up (the x87 truncates the exact product, the Mac rounds it to single first). First: the wrap.
+    ('tpw-exe-arrival-group', 'plan'): (54, {'world_mode': 0, 'guests': 0, 'points': 2147483647, 'bonus': 20,
+                                              'per_visitor': 6, 'min_people': 1, 'obj48': 0, 'limit_mode': 0}),
+    ('tpw-exe-arrival-group', 'routine-reading'): AGREE,
+    # X4 (loan offer instalment 0x4cf7c0 vs the Mac 0xcb7a8, F12): the same formula; 505 of 506 offer sets agree with the
+    # Mac plan, records and bank words included. The one set holds the out-of-range offers: a zero term (the Mac plan
+    # throws, the Mac routine saturates to 2^32-1, the PC gives 0) and a result above 32 bits (the PC keeps the low word).
+    ('tpw-exe-loan-offers', 'plan'): (1, {'cash': 0, 'offers': [(100000, 20, 0, 0), (0, 20, 0, 1), (4000000000, 20, 36, 2),
+                                                                  (4294967295, 0, 1, 3), (4294967295, 40, 120, 4),
+                                                                  (4294967295, 40, 1, 5), (1, 0, 1, 6),
+                                                                  (3000000000, 1, 2, 7)]}),
+    ('tpw-exe-loan-offers', 'mac-reading'): (1, {'cash': 0, 'offers': [(100000, 20, 0, 0), (0, 20, 0, 1),
+                                                                         (4000000000, 20, 36, 2), (4294967295, 0, 1, 3),
+                                                                         (4294967295, 40, 120, 4), (4294967295, 40, 1, 5),
+                                                                         (1, 0, 1, 6), (3000000000, 1, 2, 7)]}),
+    ('tpw-exe-loan-offers', 'routine-reading'): AGREE,
+    # X5 (loan monthly step 0x4d0370 vs the Mac 0xcc21c, F13): identical, 503 whole terms and 506 random bank states,
+    # assertions and log messages in the same order.
+    ('tpw-exe-loan-term', 'plan'): AGREE,
+    ('tpw-exe-loan-term', 'routine-reading'): AGREE,
+    ('tpw-exe-loan-month', 'routine-reading'): AGREE,
+    # X6 (park points 0x4c8240 vs the Mac 0xc24c0, F10): identical on 507 inputs.
+    ('tpw-exe-park-points', 'plan'): AGREE,
 }
 
 BASE = 0x400000
@@ -306,6 +331,190 @@ class Oracle(unittest.TestCase):
         obj = sandbox.object(targets.WORLD_OBJECT_SIZE)
         with self.assertRaises(UnknownCall):
             sandbox.call(targets.TPW_RNG_STEP, this=obj)
+
+    # ------------------------------------------------------------------ X3: arrival group size
+    def run_target(self, target, x, **kwargs):
+        sandbox = target.sandbox(self.image)
+        sandbox.reset()
+        target.log.clear()
+        return target.binary(sandbox, x, target.log, **kwargs)
+
+    def test_arrival_differences_are_the_x87_arithmetic_only(self):
+        """Every mismatch with the Mac plan is either a product beyond 31 bits (fistp keeps the low word, fctiwz saturates)
+        or a total of 1.7 million and up (exact product truncated, against a product rounded to single first)."""
+        target = targets.ARRIVAL_TARGET
+        wrap, rounding, smallest = 0, 0, {}
+        sandbox = target.sandbox(self.image)
+        for x in target.inputs(__import__('x86_harness').seeded('oracle-v1:' + target.key), DEFAULT_COUNT):
+            if targets.run_binary(target, sandbox, x) == targets.arrival_plan(x):
+                continue
+            total, factor = targets.s32(x['points'] + x['bonus']), 0.8 if x['obj48'] > 0 else 1.2
+            if abs(total * factor) >= 2 ** 31:
+                wrap += 1
+            else:
+                rounding += 1
+                smallest[x['obj48'] > 0] = min(smallest.get(x['obj48'] > 0, total), total)
+        self.assertEqual((wrap, rounding), (8, 46))
+        self.assertGreaterEqual(smallest[False], 1747629)
+        self.assertGreaterEqual(smallest[True], 5242881)
+
+    def test_arrival_first_rounding_difference(self):
+        """Total 1747629 with the 1.2 factor: the exact product truncates to 2097154, the Mac's single-precision product
+        rounds up to 2097155. A divisor of 2097155 and MinPeople 0 make the group 0 on the PC and 1 on the Mac."""
+        shipped = dict(world_mode=0, guests=0, points=0, bonus=0, per_visitor=6, min_people=0, obj48=0, limit_mode=0)
+        target = targets.ARRIVAL_TARGET
+        for points, divisor, mac_group in ((1747629, 2097155, 1), (1747628, 2097155, 0)):
+            x = {**shipped, 'points': points, 'per_visitor': divisor}
+            self.assertEqual((self.run_target(target, x), targets.arrival_plan(x)), (0, mac_group))
+        x = {**shipped, 'points': 5242881, 'obj48': 1, 'per_visitor': 4194305}
+        self.assertEqual((self.run_target(target, x), targets.arrival_plan(x)), (0, 1))
+
+    def test_arrival_follows_the_control_word(self):
+        """The result depends on the x87 precision control: each setting agrees with the reading at that precision, 53 and
+        64 bits give the same groups on these inputs, and 24 bits (single) agree with the Mac's rounding of the product."""
+        target = targets.ARRIVAL_TARGET
+        inputs = target.inputs(__import__('x86_harness').seeded('oracle-v1:' + target.key), DEFAULT_COUNT)
+        sandbox = target.sandbox(self.image)
+        counts = {}
+        for control, precision in ((0x27F, 53), (0x37F, 64), (0x7F, 24)):
+            wrong = 0
+            for x in inputs:
+                sandbox.reset()
+                target.log.clear()
+                wrong += targets.arrival_binary(sandbox, x, target.log, fpcw=control) != targets.arrival_reading(x, precision)
+            counts[control] = wrong
+        self.assertEqual(counts, {0x27F: 0, 0x37F: 0, 0x7F: 0})
+        self.assertGreater(sum(targets.arrival_reading(x, 24) != targets.arrival_reading(x, 53) for x in inputs), 0)
+
+    def test_arrival_agrees_with_the_mac_in_the_reachable_range(self):
+        """Park points beyond a million are out of reach; below that the PC and the Mac group sizes are identical."""
+        target = targets.ARRIVAL_TARGET
+        sandbox = target.sandbox(self.image)
+        inputs = [x for x in target.inputs(__import__('x86_harness').seeded('oracle-v1:' + target.key), DEFAULT_COUNT)
+                  if -1_000_000 < x['points'] + x['bonus'] < 1_000_000]
+        self.assertGreater(len(inputs), 500)
+        self.assertEqual([x for x in inputs if targets.run_binary(target, sandbox, x) != targets.arrival_plan(x)], [])
+
+    def test_arrival_reading_is_sharp(self):
+        """The factor test, the online cut and the divisor floor each matter."""
+        def swapped(x):
+            return targets.arrival_reading({**x, 'obj48': 1 - (1 if x['obj48'] > 0 else 0)})
+
+        def no_online_cut(x):
+            return targets.arrival_reading({**x, 'limit_mode': 0 if x['limit_mode'] == 1 else x['limit_mode']})
+
+        def no_divisor_floor(x):
+            return targets.arrival_reading({**x, 'per_visitor': x['per_visitor'] if x['per_visitor'] else 1})
+        for name, mutated in (('factor', swapped), ('online cut', no_online_cut)):
+            comparison = compare(targets.ARRIVAL_TARGET, self.image, 100, plan=mutated)[0]
+            self.assertGreater(comparison.mismatches, 0, name)
+        shipped = dict(world_mode=0, guests=0, points=0, bonus=20, per_visitor=1, min_people=1, obj48=1, limit_mode=0)
+        self.assertEqual(self.run_target(targets.ARRIVAL_TARGET, shipped), 16)           # 0.8 * 20
+        self.assertEqual(self.run_target(targets.ARRIVAL_TARGET, {**shipped, 'obj48': 0}), 24)   # 1.2 * 20
+        self.assertEqual(self.run_target(targets.ARRIVAL_TARGET, {**shipped, 'per_visitor': -9}), 16)
+
+    # ------------------------------------------------------------------ X4: loan offers
+    def test_loan_offers_shipped_instalments_at_every_control_word(self):
+        target = targets.LOAN_OFFERS_TARGET
+        shipped = {'cash': 100000, 'offers': targets.mac().SHIPPED_LOANS}
+        for control in (0x27F, 0x37F, 0x7F):
+            result = self.run_target(target, shipped, fpcw=control)
+            self.assertEqual(result['monthly'], targets.mac().SHIPPED_MONTHLY, hex(control))
+
+    def test_loan_offers_depend_on_the_control_word_where_the_instalment_is_an_integer(self):
+        """18000 over 24 months at 20 % is exactly 900: pow(1.2, 1) in 53 bits (the Mac's doubles) truncates to 900, in the
+        64-bit extended default of the emulator to 899 (13 of 506 offer sets differ between the two)."""
+        target = targets.LOAN_OFFERS_TARGET
+        x = {'cash': 0, 'offers': [(18000, 20, 24, 0)] * 8}
+        self.assertEqual(self.run_target(target, x)['monthly'][0], 900)
+        self.assertEqual(self.run_target(target, x, fpcw=0x37F)['monthly'][0], 899)
+        inputs = target.inputs(__import__('x86_harness').seeded('oracle-v1:' + target.key), DEFAULT_COUNT)
+        different = 0
+        for x in inputs:
+            a = self.run_target(target, x)['monthly']
+            b = self.run_target(target, x, fpcw=0x37F)['monthly']
+            different += a != b
+        self.assertEqual(different, 13)
+
+    def test_loan_pow_is_executed(self):
+        """The power function is the executable's own x87 routine (no import and no stub)."""
+        target = targets.LOAN_OFFERS_TARGET
+        self.assertTrue(any(lo <= 0x67C5D0 < hi for lo, hi in target.allowed))
+        self.assertEqual(set(target.stubs(target)), {targets.LOAN_BASE_CTOR})
+
+    def test_loan_offers_out_of_range_cases(self):
+        """A zero term gives 0 (the Mac saturates to 2^32-1), 0xFFFFFFFF at 40 % over one month keeps the low word of a
+        result above 32 bits (the Mac saturates)."""
+        target = targets.LOAN_OFFERS_TARGET
+        x = {'cash': 0, 'offers': [(100000, 20, 0, 0), (0, 20, 0, 1), (0xFFFFFFFF, 40, 1, 2), (0xFFFFFFFF, 0, 1, 3)] +
+             [(1, 0, 1, 4)] * 4}
+        original = self.run_target(target, x)['monthly'][:4]
+        self.assertEqual(original, [0, 0, 60638121, 0xFFFFFFFF])
+        self.assertEqual(targets.mac().loan_offers_reading(x)['monthly'][:4], [0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF])
+
+    def test_loan_offers_reading_is_sharp(self):
+        def exponent_in_years(x):
+            result = targets.loan_offers_reading(x)
+            result['monthly'] = [targets.mac().loan_monthly_reading(a, r, n, exponent=1.0) for a, r, n, _ in x['offers']]
+            return result
+
+        def annuity(x):
+            result = targets.loan_offers_reading(x)
+            result['monthly'] = [targets.mac().loan_annuity_plan(a, r, n) for a, r, n, _ in x['offers']]
+            return result
+        for mutated in (exponent_in_years, annuity):
+            comparison = compare(targets.LOAN_OFFERS_TARGET, self.image, 50, plan=mutated)[0]
+            self.assertGreater(comparison.mismatches, 0)
+
+    # ------------------------------------------------------------------ X5: loan monthly step
+    def test_loan_step_reading_is_sharp(self):
+        """Dropping any one part of the reading brings mismatches back."""
+        for part in ('share', 'withdraw-flag', 'red', 'clear', 'batch', 'profit-debit'):
+            comparison = compare(targets.LOAN_MONTH_TARGET, self.image, 100,
+                                 plan=lambda x, part=part: targets.mac().loan_step_reading(x, drop=part))[0]
+            self.assertGreater(comparison.mismatches, 0, part)
+
+    def test_loan_term_deducts_the_instalment_exactly_n_times(self):
+        """100,000 over 36 months at 20 % (M = 3651): 36 deductions of 3651 and the year profit falling by 873 a month."""
+        target = targets.LOAN_TERM_TARGET
+        loan = {'amount': 100000, 'apr': 20, 'months': 36, 'monthly': 3651, 'bought': 1, 'repaid': 0}
+        idle = targets.mac().LOAN_IDLE
+        x = {'bal': 1000000, 'batch': 0, 'wd': 1, 'last': 1000000, 'red': 0, 'profit': 0, 'loans': [loan] + [idle] * 7,
+             'turns': [800 * k for k in range(38)]}
+        result = self.run_target(target, x)
+        self.assertEqual(result['balance'][35], 1000000 - 36 * 3651)
+        self.assertEqual(result['balance'][37], 1000000 - 36 * 3651)
+        self.assertEqual(result['profit'][0], -873)
+        self.assertEqual(result['profit'][35], -36 * 873)
+        self.assertEqual((result['active'][34], result['active'][35]), (1, 0))
+
+    # ------------------------------------------------------------------ X6: park points
+    def test_points_reading_is_sharp(self):
+        """Each of the three Mac rules matters: the track-type branch, the first-purchase age and the counts-test."""
+        def flipped(x):
+            return targets.mac().points_full({**x, 'types': [{**k, 'f9c': 0 if k['f9c'] else 1} for k in x['types']]})
+
+        def every_thing_counts(x):
+            return targets.mac().points_full({**x, 'things': [{**t, 'open': True} for t in x['things']]})
+
+        def own_age_always(x):
+            return targets.mac().points_full({**x, 'types': [{**k, 'f9c': 1} for k in x['types']]})
+        for name, mutated in (('track type', flipped), ('counts-test', every_thing_counts), ('first purchase', own_age_always)):
+            comparison = compare(targets.POINTS_TARGET, self.image, 100, plan=mutated)[0]
+            self.assertGreater(comparison.mismatches, 0, name)
+
+    def test_points_copies_age_from_the_first_purchase(self):
+        """Two copies of an untracked ride bought three days apart: both age from the first purchase and share the value
+        (25 + 30 each, divided by 2 copies), as on the Mac; with the track-type word set each copy ages on its own."""
+        day = 86400 * 4 // 15000 + 1
+        ride = dict(id=0x101, kind=0, f9c=0, value=25, decay=2, bonus=[30, 20, 10], first=1)
+        copies = [{'type': 0x101, 'open': True, 'built': 1}, {'type': 0x101, 'open': True, 'built': 1 + 3 * day}]
+        x = {'now': 1 + 3 * day, 'scale': 15000, 'types': [ride], 'things': copies}
+        target = targets.POINTS_TARGET
+        self.assertEqual(self.run_target(target, x), targets.mac().points_full(x))
+        tracked = {**x, 'types': [{**ride, 'f9c': 1}]}
+        self.assertEqual(self.run_target(target, tracked), targets.mac().points_full(tracked))
+        self.assertNotEqual(self.run_target(target, x), self.run_target(target, tracked))
 
     def test_original_hash_refuses_a_modified_copy(self):
         raw = bytearray(TPW.read_bytes())

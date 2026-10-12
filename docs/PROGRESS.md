@@ -215,6 +215,13 @@ preview; original runtime fidelity and the complete offline scope remain open.
   included (executed, 508 inputs; agrees with the TPW PC reading, differs from the
   Mac plan in 507). The TPI image's 16 out-of-range relocation entries no longer
   break a relocated load.
+- The x86 oracle now executes the `tp.exe` counterparts of the four Mac-derived rules
+  (ORACLE.md 7.6, findings X3 to X6): arrival group size `0x4cf5b0`, loan offers
+  `0x4cf7c0`, the monthly loan step `0x4d0370` and park points `0x4c8240` implement the
+  same rules as the Mac, so C# needs no change. The only differences are x87 arithmetic: an
+  integer wrap and a single-vs-extended rounding at totals no park reaches, and a last-bit
+  dependence of exactly-integer instalments on the x87 control word (which the code expects to
+  be `0x27F`). The runtime's own `pow` is executed, not stubbed.
 - [Fidelity register](FIDELITY-REGISTER.md): **316 original fidelity items** plus
   **24 online extension** IDs (340 total) remain open. CI checks explicit tags and
   register consistency; it finds no unmarked logic and proves no parity.

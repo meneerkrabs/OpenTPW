@@ -584,7 +584,8 @@ public sealed class ParkEconomy : IParkEconomy
 	/// bracket on), divided by the number of objects of the same type, so copies of one type count once.
 	/// </summary>
 	// [BIN:STP-PPC:0x100C24C0 park points] sum over placed things whose type kind (+0x7A8) is 0 or 2: (type +0x268[age / +0x5C] + type +0x58) / count of that type (0x100C5828), age in days (64-bit time / 864,000,000,000 at 0x101C4100), no bonus for a bracket outside 0..2
-	// [APPROX:ARRIVAL-003] kind 0 or 2 is read as Info.WhichUIType ride or sideshow; the age is counted from the build turn on the park calendar, and the original's second age source (type +0x9C, 0x100DC520) and its open-state test (0x100DC834) are not reproduced — evidence needed: the type record's +0x7A8 and +0x9C fields and 0x100DC834
+	// [BIN:STP-PPC:0x100C24C0 park points] executed by the PowerPC oracle (docs/reverse/ORACLE.md F10): only things passing 0x100DC834 count; a type whose +0x9C word is 0 is aged from its park record's +28 (0x100D1BE8; written by 0x100DA874 at a purchase while it is still 0, so the first purchase after turn 0) and divided by the record's +24 copy count (0x100C5828); any other type is aged from the thing's own purchase time (0x100DC520) and divided by 1
+	// [APPROX:ARRIVAL-003] kind 0 or 2 is read as Info.WhichUIType ride or sideshow; every object is aged from its own build turn and divided by its type's count, so the 0x100DC834 test, the first-purchase age and the undivided copies of +0x9C types (oracle F10) are not reproduced — evidence needed: what type +0x9C, thing +40 and the other 0x100DC834 tests stand for
 	public int ParkPoints()
 	{
 		var counts = new Dictionary<int, int>();

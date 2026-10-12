@@ -143,7 +143,11 @@ Park points are summed over the placed rides and sideshows: each adds its `Info.
 `Attraction[n].NewBonus` of its age bracket (n = age in game days / `Info.NewAttractionDecayTime`, no
 bonus from the fourth bracket on), divided by the number of objects of the same type, so copies of one
 type count once. The jungle `Rides.sam` gives 20 and a 60-day decay; Belly Bounce has 25 and bonuses
-10/7/4. Open points are ARRIVAL-001..004 (`ArrivalApproximations`).
+10/7/4. The PowerPC oracle ran the points routine as well (docs/reverse/ORACLE.md, F10). Only things that
+pass the test at `0xdc834` count. A type whose record word `+0x9C` is 0 is aged from the first purchase of
+that type after turn 0, so all its copies share one age, and is divided by its count. Any other type is aged
+per copy and every copy counts in full. OpenTPW ages every object from its own build and always divides
+(ARRIVAL-003). Open points are ARRIVAL-001..004 (`ArrivalApproximations`).
 
 ## Simulation
 

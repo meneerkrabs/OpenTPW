@@ -128,6 +128,7 @@ Mutation checks (`test_oracle.py`):
 | `coast-rating-step` | `0x415b4` | none | 509 | **F7**: 440 differ with the stale term = 0. **Agree** 509/509 with the stale term = Fz. Previous force and bank are 0 in every input (OV-7, F7) | COAST-I not on main (hook `coaster_rating_step`) |
 | `coast-rating-final` | `0x41900` | none | 506 | **F8**: 280 differ. **Agree** 506/506 with the corrected count | hook `coaster_rating_final` |
 | `arrival-group` | `0xcb4e8` | `0x1082b4` game → park (sentinel, checked), `0xc1fb4` counted guests (chosen count; argument 20 checked), `0xc24c0` park points (chosen), `0x1083c8` thing lookup (synthetic thing, `+48` chosen), `0x5fbcc` debug print (logged). The GameType object is marked constructed, so its constructor `0x12bb64` must not run | 515 | **F9**: 125 differ from GUESTS.md. **Agree** 515/515 with the routine reading | **F9**: 125 differ, the same inputs as the plan (`arrival_group`: `GuestSimulation.ArrivalGroupSize`) |
+| `park-points` | `0xc24c0`, `0xc5828` (type count), `0xd1be8`/`0xd1c88` (park record search), `0xe4750` (turns → 100 ns units), `0x10a9a4` (game pointer), `0x1c4100` (64-bit divide) | `0x118018` type record (synthetic, registry checked), `0xb678` assert (a zero condition fails the run), `0xdc834` counts-test (chosen flag), `0xdc520` own age (signed timestamp difference in days). The park record table is built: `+24` the listed copies, `+28` by the `0xda874` write rule. Clock rate 15000; no build after the current turn | 507 | **F10**: 214 differ from GUESTS.md. **Agree** 507/507 with the routine reading | hook `park_points` not wired (`ParkEconomy.ParkPoints`) |
 
 The C# comparisons use these seams:
 
@@ -297,6 +298,36 @@ First counterexample: shipped values (NewParkBonus 20, PointsPerVisitor 6, MinPe
 `+48` = 1. The original gives 2 (0.8 × 20 / 6) and the plan gives 4. Integer and float steps agree with the plan
 wherever the three points above do not apply: the int → double → `fsubs` conversion is `(float)(points + bonus)` with a
 32-bit wrapping sum, `fmuls` rounds to single, `fctiwz` truncates and saturates, and `divw` truncates toward zero.
+
+**F10, park points (GUESTS.md "Arrivals", `ParkEconomy.ParkPoints`).** GUESTS.md and C# sum, over every ride and
+sideshow, `(NewBonus[age / decay] + AttractionValue) / copies of that type`, with each object aged from its own build.
+Executed, `0xc24c0` differs in three places. A reading with all three agrees on 507/507 inputs, and dropping any one
+of them brings mismatches back (`test_points_reading_is_sharp`).
+
+- **Counts-test.** Only things for which `0xdc834` returns nonzero count. It tests thing `+46` bit 0x4, then
+  `0xdfe0c`, `0xdff18`, `0xdfe20`, `0xdd3f4` (against a u16 behind TOC −19648), `0xdc988` and `0xe2fe4`/`0x45eac`,
+  and finally rejects a thing whose type `+0x9C` is 1 or 2 while thing `+40` is 0 (`0xdc918..0xdc964`). What these
+  stand for is not traced (ARRIVAL-003).
+- **Age per type.** When type `+0x9C` (156) is 0, the age comes from the park's per-type record (`0xd1be8` on the
+  table at game `+0x1d943c`, 32-byte entries keyed by type id). The object purchase routine `0xda874` writes the
+  current turn (game `+0x1da70c`) to its `+28` only while `+28` is still 0 (`0xdadec..0xdae14`). Purchases at turn 0
+  therefore leave it unset, and the first purchase at a later turn fixes it. All copies of the type share that age, so
+  a copy bought later gets no fresh bonus. The purchase also raises `+24`, the removal path lowers it
+  (`0xdbfcc..0xdbfdc`), and `0xc5828` returns it as the divisor. Statically, no removal path writes `+28`; it is
+  zeroed when the table is reset (`0xd1d1c`) and restored by the save loader (`0xd1e8c`). `0xe4750` turns the
+  difference into 100 ns units: `(now − turn)` as an unsigned word times clock `+28` (15000), divided by 4, times
+  10^7. `0xc24c0` divides that by 864,000,000,000 (one day) with the signed 64-bit helper `0x1c4100` and keeps the low
+  word.
+- **Copies of other types.** When type `+0x9C` is nonzero, the age is the thing's own (`0xdc520`: the clock's
+  timestamp minus the one stored at thing `+20` at purchase, `TbTimeStamp::operator-`) and the divisor is 1. Every copy
+  then counts in full, so these copies do not count once.
+
+First counterexample: one ride type (AttractionValue 25, decay 2 days, bonuses 30/20/10, `+0x9C` 0) with copies
+bought at turns 1 and 73 (three park days apart), evaluated at turn 73. The original ages both from turn 1 (bracket 1:
+(20 + 25) / 2 twice, 44); the plan ages the second copy as new (22 + 27 = 49). The inputs use the clock rate 15000 and
+never place a build after the current turn; the unsigned turn difference in `0xe4750` would age such a build by
+years, where C# clamps to 0, but no purchase can produce it. The stub for `0xdc520` uses the same day scale with a
+signed difference; the routine itself is not executed.
 
 ## 6. Adding a target or a C# hook
 

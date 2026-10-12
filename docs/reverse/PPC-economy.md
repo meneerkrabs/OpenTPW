@@ -246,6 +246,7 @@ remaining-life value reduces `+68` by five on the relevant transition and
 requests breakdown. This corroborates the manual's separate wear/lifetime
 and reliability warnings without identifying every display label.
 
+(Executed since, ORACLE.md F19: the timer formulas below are confirmed on the routine itself; the DurationOfUpgrade word is `Upgrades[level + 1]`.)
 Mechanic arrival `0xd9c0c` computes upgrade duration as grade work field
 `× DurationOfUpgrade` (`0xd9d48–0xd9d74`), or ordinary repair countdown as
 `floor(work_field × (100 - trunc(repair_state))/100)`

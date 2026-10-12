@@ -22,7 +22,7 @@ public static class EconomyApproximations
 		("ECON-017", "the research table is in info-id order and the player cannot step the cursor to another item", "the table fill order (FUN_100c9064) and the next/previous control"),
 		("ECON-018", "ride upgrade levels and add-on objects form the \"upgrade\" research category", "research lab capture"),
 		("ECON-020", "a sale adds LitterEffect/100 litter items to a park-wide store; the original adds LitterEffect to the buying guest's 0..100 litter meter, which drops one litter event at 90 (ORACLE F18)", "a guest litter meter with the drop-at-90 and bin rules, and the park's litter count"),
-		("ECON-021", "a repair takes WorkDuration game hours (x DurationOfUpgrade for upgrades); mechanics are dispatched instantly", "capture of repair duration per grade"),
+		("ECON-021", "the mechanic starts at once (the original first walks to the ride, 0xe6454) and the timer counts one park turn per staff update (dispatcher cadence read statically)", "capture of a repair from arrival to completion"),
 		("ECON-022", "a handyman removes one litter item per WorkDuration game minutes, park-wide", "capture of cleaning speed"),
 		("ECON-023", "the ride update's state gates (ride states 1, 3 and 4 at +0x198, +0x64 == 0, +0x2e bit 0) map only to \"a mechanic is at work\"", "the names of those ride states and flags"),
 		("ECON-025", "scrap value basis = catalogue cost of all levels up to the current one; a scrap year is 365 park-clock days", "capture of scrap value"),

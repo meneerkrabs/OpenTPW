@@ -135,13 +135,21 @@ public sealed class ParkEconomy : IParkEconomy
 
 	/// <summary>Ride scripts' running state, riders and speed for the wear step; none by default (nothing wears).</summary>
 	public IRideOperations RideOperations { get; set; } = NoRideOperations.Instance;
-	/// <summary>Staff job time is kept in tenths of a park-clock hour.</summary>
-	public const int BusyTicksPerHour = 10;
+	// A mechanic's BusyTicks is the number of park turns (staff updates) until its job completes.
 
 	public long Turn => ParkCalendar.Turn( Tick );
 
 	private void AdvanceTurn( long previousTurn, long turn )
 	{
+		// [BIN:STP-PPC:0x100D9E04 repair state] each staff update counts a mechanic's job timer down by one; the update that finds it zero completes the repair
+		foreach ( var member in Staff.Members )
+		{
+			if ( member.BusyTicks == 0 )
+				continue;
+			member.BusyTicks--;
+			if ( member.BusyTicks == 0 )
+				FinishJob( member );
+		}
 		// [BIN:STP-PPC:0x100F0284 researcher update] each researcher not in an excluded state does research when the turn counter is a multiple of 20
 		if ( turn % ParkResearch.TurnsPerResearch == 0 )
 			DoResearch();
@@ -197,14 +205,6 @@ public sealed class ParkEconomy : IParkEconomy
 	private void UpdateHour()
 	{
 		Staff.UpdatePool( Random, Tick );
-		foreach ( var member in Staff.Members )
-		{
-			if ( member.BusyTicks == 0 )
-				continue;
-			member.BusyTicks = Math.Max( 0, member.BusyTicks - BusyTicksPerHour );
-			if ( member.BusyTicks == 0 )
-				FinishJob( member );
-		}
 		DispatchMechanics();
 		CleanLitter();
 	}
@@ -292,9 +292,27 @@ public sealed class ParkEconomy : IParkEconomy
 	}
 
 	/// <summary>
+	/// The mechanic's job timer (arrival routine <c>0xd9c0c</c>, ORACLE.md F19), in park turns. An upgrade takes
+	/// <c>WorkDuration × Upgrades[level + 1].DurationOfUpgrade</c> (<paramref name="upgradeDuration"/>; 32-bit product, no minimum), any
+	/// other job <c>WorkDuration × (100 − state of repair) / 100</c>, with the state of repair the low byte of the truncated gauge
+	/// and a signed 32-bit division by 100 that truncates toward zero. A ride at 100 % repair needs no time.
+	/// </summary>
+	// [BIN:STP-PPC:0x100D9C0C mechanic arrival] upgrade (ride state 2): WorkDuration[grade] (+1004 + 8 × grade) × the type record word at +508 + 64 × level (Upgrades[level + 1].DurationOfUpgrade); otherwise WorkDuration × (100 − (fctiwz(+64) & 0xFF)) / 100 through mullw and the 1/100 multiply-high; stored at mechanic +528 as an unsigned word
+	public static long RepairTimer( int workDuration, double stateOfRepair, int? upgradeDuration )
+	{
+		unchecked
+		{
+			if ( upgradeDuration is { } duration )
+				return (uint)(workDuration * duration);
+			// The gauge is a single-precision float (ride +64): round to float before truncating, as lfs then fctiwz does.
+			return (uint)(workDuration * (100 - (QueueJoinRules.Truncate( (float)stateOfRepair ) & 0xFF)) / 100);
+		}
+	}
+
+	/// <summary>
 	/// Assigns free mechanics: broken rides first, then paid upgrades, then worn rides. A job takes
-	/// <c>MechanicConstsPerGrade[grade].WorkDuration</c> game hours (× <c>DurationOfUpgrade</c> for
-	/// upgrades) — the unit is an <b>approximation</b>.
+	/// <see cref="RepairTimer"/> park turns (one more for the update that completes it); the walk to the ride is
+	/// not modelled (<b>approximation</b>).
 	/// </summary>
 	private void DispatchMechanics()
 	{
@@ -309,11 +327,11 @@ public sealed class ParkEconomy : IParkEconomy
 				break;
 			var job = jobs[0];
 			jobs.RemoveAt( 0 );
-			// [APPROX:ECON-021] a repair takes WorkDuration game hours (x DurationOfUpgrade for upgrades); mechanics are dispatched instantly — evidence needed: capture of repair duration per grade
-			var hours = (long)role.WorkDuration[mechanic.Grade];
-			if ( job.PendingLevel > job.Level && Catalog.TryGet( job.InfoId, out var info ) && job.PendingLevel < info.Upgrades.Count )
-				hours *= Math.Max( 1, info.Upgrades[job.PendingLevel].DurationOfUpgrade );
-			mechanic.BusyTicks = Math.Max( 1, hours ) * BusyTicksPerHour;
+			// [APPROX:ECON-021] the mechanic starts at once (the original first walks to the ride, 0xe6454) and the timer counts one park turn per staff update (dispatcher cadence read statically) — evidence needed: capture of a repair from arrival to completion
+			int? upgradeDuration = job.PendingLevel > job.Level && Catalog.TryGet( job.InfoId, out var info ) && job.PendingLevel < info.Upgrades.Count
+				? info.Upgrades[job.PendingLevel].DurationOfUpgrade : null;
+			// The repair handler (0xd9e04) decrements a nonzero timer and completes on the update that finds it zero: timer + 1 updates.
+			mechanic.BusyTicks = RepairTimer( role.WorkDuration[mechanic.Grade], job.Repair, upgradeDuration ) + 1;
 			mechanic.AssignedInstanceId = job.Id;
 			mechanic.State = StaffState.Working;
 			job.MechanicId = mechanic.Id;

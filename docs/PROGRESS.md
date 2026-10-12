@@ -185,6 +185,10 @@ preview; original runtime fidelity and the complete offline scope remain open.
   makes 1/2, 1/4, 1/9 and 0 litter item per sale (a burger shop: 0.5, as before), within 11 % of OpenTPW's `LitterEffect/100`. C# is
   unchanged (it has no guest litter meter; ECON-020 stays `[APPROX]` with the sharper text); the oracle pins the 213 inputs where the
   old rule leaves the 0..100 range.
+- The oracle executed the mechanic's arrival routine `0xd9c0c` (F19 in [ORACLE.md](reverse/ORACLE.md), ECON-021) and C# follows it:
+  a repair takes `WorkDuration x (100 - state of repair) / 100` park turns (a grade-0 mechanic on a ride at 40 %: 48, not a flat 80 hours;
+  the ride's level does not matter) and an upgrade `WorkDuration x DurationOfUpgrade` of the level it installs, without a minimum. Mechanic job
+  time now counts park turns (saved as `BusyTurns`; older saves' `BusyTicks` convert from tenths of an hour, rounded up). The walk to the ride stays an approximation (ECON-021).
 - Dependency audit is clean: ImageSharp is replaced by an in-tree PNG writer
   (`PngWriter`, `RgbaResampler`), Zio is 0.22.2, and Newtonsoft.Json is pinned to
   13.0.4 (it came in transitively through Veldrid's NativeLibraryLoader).

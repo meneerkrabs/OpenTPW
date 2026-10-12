@@ -30,6 +30,7 @@ var functions = new Dictionary<string, Func<JsonObject, JsonNode?>>
 	["queue_join_gate"] = QueueJoinGate,
 	["shop_sale_litter"] = ShopSaleLitter,
 	["staff_training"] = StaffTraining,
+	["repair_timer"] = RepairTimer,
 };
 
 using var input = new StreamReader( Console.OpenStandardInput() );
@@ -357,4 +358,12 @@ static JsonNode? StaffTraining( JsonObject a )
 	var spent = staff.Train();
 	return new JsonObject { ["spent"] = spent,
 		["staff"] = new JsonArray( members.Select( member => (JsonNode)new JsonArray( member.Grade, member.TrainingPoints ) ).ToArray() ) };
+}
+
+// 0xd9c0c: ParkEconomy.RepairTimer. The upgrade duration is sent only for a ride in state 2, as DispatchMechanics sends it for a pending upgrade.
+static JsonNode? RepairTimer( JsonObject a )
+{
+	var gauge = BitConverter.Int32BitsToSingle( (int)(uint)a["gauge_bits"]! );
+	int? upgrade = a["upgrade"] is null ? null : (int)a["upgrade"]!;
+	return JsonValue.Create( ParkEconomy.RepairTimer( (int)a["work"]!, gauge, upgrade ) );
 }

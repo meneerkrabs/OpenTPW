@@ -440,7 +440,14 @@ public class ParkEconomyTests
 		park.Advance( ParkCalendar.TicksForHours( 2 ) );
 		Assert.AreEqual( mechanic.Id, ride.MechanicId );
 		var life = ride.LifeGauge;
-		park.Advance( ParkCalendar.TicksForHours( park.Settings[StaffType.Mechanic].WorkDuration[mechanic.Grade] + 1 ) );
+		// ORACLE F19: the repair of a ride at zero repair takes WorkDuration park turns (100 % of it) and one update more to complete it.
+		var work = park.Settings[StaffType.Mechanic].WorkDuration[mechanic.Grade];
+		var startTurn = park.Turn;
+		Assert.IsTrue( mechanic.BusyTicks is > 0 && mechanic.BusyTicks <= work + 1 && mechanic.BusyTicks > work + 1 - 3, "dispatched within the last turns" );
+		var remaining = mechanic.BusyTicks;
+		EconomyTestData.AdvanceToTurn( park, startTurn + remaining - 1 );
+		Assert.IsTrue( ride.IsBrokenDown, "still being repaired one turn before the timer ends" );
+		EconomyTestData.AdvanceToTurn( park, startTurn + remaining );
 		Assert.IsFalse( ride.IsBrokenDown );
 		Assert.AreEqual( 100, ride.Repair );
 		Assert.AreEqual( life, ride.LifeGauge, "a repair does not restore the life gauge, and a ride under repair does not wear" );
@@ -461,6 +468,30 @@ public class ParkEconomyTests
 		Assert.IsNotNull( researcher );
 		var instant = EconomyTestData.Park( mode: ParkGameMode.InstantAction );
 		Assert.AreEqual( ParkEconomy.PurchaseResult.NotAvailableInInstantAction, instant.TryBuyUpgrade( instant.RegisterExisting( 1100 ).Id ) );
+	}
+
+	[TestMethod]
+	public void RepairTimerScalesWithTheMissingRepairAndMultipliesUpgrades()
+	{
+		// ORACLE F19 (0xd9c0c): WorkDuration x (100 - truncated state of repair) / 100, or WorkDuration x DurationOfUpgrade for an upgrade.
+		Assert.AreEqual( 48, ParkEconomy.RepairTimer( 80, 40.0, null ), "a ride at 40 % repair, grade 0" );
+		Assert.AreEqual( 48, ParkEconomy.RepairTimer( 80, 40.9, null ), "the gauge is truncated" );
+		Assert.AreEqual( 80, ParkEconomy.RepairTimer( 80, 0.0, null ) );
+		Assert.AreEqual( 0, ParkEconomy.RepairTimer( 80, 100.0, null ), "a fully repaired ride needs no time" );
+		Assert.AreEqual( 12, ParkEconomy.RepairTimer( 20, 40.0, null ), "grade 4" );
+		Assert.AreEqual( 0, ParkEconomy.RepairTimer( 80, 99.0, null ), "0.8 rounds down" );
+		Assert.AreEqual( 160, ParkEconomy.RepairTimer( 80, 40.0, 2 ), "an upgrade ignores the state of repair" );
+		Assert.AreEqual( 0, ParkEconomy.RepairTimer( 80, 40.0, 0 ), "no minimum of one" );
+		Assert.AreEqual( 320, ParkEconomy.RepairTimer( 80, 40.0, 4 ) );
+		Assert.AreEqual( 0L, ParkEconomy.RepairTimer( 80, 101.0, null ), "-0.8 truncates toward zero" );
+		Assert.AreEqual( 4294967216L, ParkEconomy.RepairTimer( 80, 200.0, null ), "above 100 the factor goes negative and the unsigned word wraps (-80)" );
+	}
+
+	[TestMethod]
+	public void RepairTimerIsTheLowByteOfTheTruncatedGauge()
+	{
+		Assert.AreEqual( 80L, ParkEconomy.RepairTimer( 80, 256.0, null ), "256 wraps to a zero byte: a full repair is due" );
+		Assert.AreEqual( 80L, ParkEconomy.RepairTimer( 80, -256.0, null ), "-256 is the word 0xFFFFFF00" );
 	}
 
 	[TestMethod]
@@ -979,6 +1010,28 @@ public class ParkEconomyTests
 		Assert.IsTrue( fromOlder.TryGetObject( ride.Id, out var old ) );
 		Assert.AreEqual( (42.0, 100.0), (old.Repair, old.LifeGauge), "older saves use StateOfRepair and a full life gauge" );
 		Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( json.Replace( "\"Repair\": 42.625", "\"Repair\": 50.5" ) ) ) );
+	}
+
+	[TestMethod]
+	public void SavesWithTheOldJobTimeFieldAreConvertedToTurns()
+	{
+		// ORACLE F19: mechanic job time is counted in park turns (BusyTurns). An older save has BusyTicks in tenths of a park hour
+		// (360 park seconds each); a turn is 3750 park seconds, so the old value converts rounded up.
+		var park = EconomyTestData.Park();
+		var mechanic = EconomyTestData.HireBest( park, StaffType.Mechanic );
+		mechanic.BusyTicks = 7;
+		var text = ParkSaveFile.Serialize( park );
+		Assert.IsTrue( text.Contains( "\"BusyTurns\": 7" ) && !text.Contains( "\"BusyTicks\"" ), "new saves write BusyTurns only" );
+		Assert.AreEqual( 7L, ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( text ) ), park.Settings, park.Catalog ).Staff.Members.Single( member => member.Id == mechanic.Id ).BusyTicks );
+
+		long Loaded( string field ) => ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( text.Replace( "\"BusyTurns\": 7", field ) ) ), park.Settings, park.Catalog )
+			.Staff.Members.Single( member => member.Id == mechanic.Id ).BusyTicks;
+		Assert.AreEqual( 0L, Loaded( "\"BusyTicks\": 0" ), "no job" );
+		Assert.AreEqual( 1L, Loaded( "\"BusyTicks\": 10" ), "one park hour left is one turn" );
+		Assert.AreEqual( 77L, Loaded( "\"BusyTicks\": 800" ), "800 tenths = 80 h = 76.8 turns, rounded up" );
+		Assert.AreEqual( 1L, Loaded( "\"BusyTicks\": 1" ), "a started job never rounds down to none" );
+		Assert.ThrowsException<InvalidDataException>( () => Loaded( "\"BusyTicks\": -1" ) );
+		Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( text.Replace( "\"BusyTurns\": 7", "\"BusyTurns\": 7, \"BusyTicks\": 7" ) ) ) );
 	}
 
 	[TestMethod]

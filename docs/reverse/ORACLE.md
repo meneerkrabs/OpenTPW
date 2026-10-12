@@ -146,6 +146,8 @@ Mutation checks (`test_oracle.py`):
 | `shop-sale-litter` | the fragment `0xeabb8..0xeae44` of the sale routine `0xeaaf8` (type record getter `0xdc320`, the five need-meter updates with their 0..100 clamps and the "litter gone up" log) | `0x118018` type record (synthetic, registry and type id checked), `0xe6d20` (drink or food message, logged), `0x5fbcc` debug log (arguments logged, format prefix checked) | 526 | **F18**: 213 differ from the old rule (store + LitterEffect, no floor, no ceiling), every one a sum outside 0..100. **Agree** 526/526 with the routine reading (`test_shop_sale_litter_reading_is_sharp`) | `ParkEconomy.TryBuy` through `shop_sale_litter` (delta of `LitterScaled`): the same 213 (C# has no guest meter, so its delta is added to the oracle's meter) |
 | `guest-litter-trigger` | the first lines of the litter test in the guest update (`0xebd20..0xebd3c`) | none | 521 | no plan side. **Agree** 521/521 with the routine reading: the meter truncated, taken as a byte, `>= 90` | no hook (CSHARP_PENDING): OpenTPW has no guest litter meter |
 | `staff-training-split` | `0xfc1c4` (the month-end training split), the list walkers `0x10507c` / `0x1050a4` / `0xfa9a4`, `0xf3588` (train one member), `0x108424` / `0x1082b4` (bank and park things of the game) and the debit `0xcbfdc` with its statistics | `0xb678` assertion (a zero condition fails the run) and the debug print `0x5fbcc` (logged) | 507 | **F17**: 358 differ from the former rule (the plan). **Agree** 507/507 with the routine reading | `ParkStaff.Train` through `staff_training`: **agree** (358 differed before the fix) |
+| `ride-repair-duration` | `0xd9c0c` (the mechanic's repair-state entry), `0xdfe0c`/`0xdfe88`/`0xdfe90` (ride state 1, maintenance word `+96`, state 2), `0xd2290` (sub-state setter) | `0xfa9a4` thing id, `0xdfb94` the ride's mechanic id, `0xe6454` arrival state (chosen), `0xdc320` type record (the word at `+508 + 64 · level` chosen), `0xd99ac` release (recorded), `0xb678` assertion and `0x5fbcc` log (recorded); the balance block word `+1004 + 8 · grade` is `WorkDuration` | 529 jobs | **F19** (fixed in C#): 396 differ from the old claim (a flat `WorkDuration`, `plan`; the same without the upgrade factor, `flat-repair`, differs on 352). The routine reading **agrees** 529/529 | `ParkEconomy.RepairTimer` through `repair_timer`: **agree** 529/529 |
+| `ride-repair-arrival` | the same | the same | 515 | **F19**: the flow (another mechanic on the ride: log and release; still walking: let go; no broken, upgrade or maintenance state: log and release; else timer, state 13, sub-state 18) **agrees** 515/515 | no hook (CSHARP_PENDING): OpenTPW starts a mechanic at once and has no walk or release |
 
 The C# comparisons use these seams:
 
@@ -183,6 +185,8 @@ The C# comparisons use these seams:
   instalment M given (the original's, as C# now computes it); the real `EndMonth` is covered by
   `ParkEconomyTests`. `ParkEconomy.TryRepayLoan` (`loan_payoff`) on an imported bank with one bought loan; `ParkEconomy.TakeLoan` (`loan_take`) on an economy with the one offer (a second take refused for
   an offer already bought); the changes of balance, year profit and the month's money-in total are compared.
+- `ParkEconomy.RepairTimer` (`repair_timer`) with the work duration, the gauge as single bits and, for a ride in state 2, the upgrade duration, as
+  `DispatchMechanics` sends them for a job.
 
 - `ParkStaff.Train` (`staff_training`) on a fresh `ParkStaff` over the synthetic `Standard.sam`, with each role's five
   `PoundsPerTrainingPoint` values replaced by the input's, members added with the internal `AddImported` (reflection) at the input's
@@ -778,6 +782,37 @@ the old rule for every shipped value, so ECON-020 stays an `[APPROX]` with the s
 per-guest meter, its clamp and the 90 threshold are not modelled. The `shop-sale-litter` plan and C# sides keep their 213 mismatches
 (first counterexample: meter 60, effect 50: original 100, old rule 110) until the guest meter lands, and every one is a sum outside 0..100
 (`test_shop_sale_litter_rule_differs_only_where_the_meter_clamps`).
+**F19, the mechanic's job timer (ECON-021, `ParkEconomy.RepairTimer`, `0xd9c0c`; fixed in C#).** The arrival routine of the mechanic state
+machine (dispatch `0xd991c` on mechanic `+412`; the generic update `0xfa9b0` runs it for every live thing each turn, PPC-review §6) was executed
+with its callees stubbed (`ride-repair-duration`, `ride-repair-arrival`, 529 and 515 inputs). The mechanic's `+532` names the ride; the ride's
+mechanic id (`0xdfb94`) must be the mechanic's own, else it logs and releases. With `0xe6454` (arrival, not executed) returning 0 it starts when the ride
+is broken (`+408 == 1`, `0xdfe0c`), being upgraded (`+408 == 2`, `0xdfe90`) or has the maintenance word `+96` set (`0xdfe88`), writes the sub-state 18
+(`0xd2290`), the timer into the mechanic's `+528` and state 13 into `+412`:
+
+- *Upgrade (ride state 2):* `WorkDuration[grade] × word at +508 + 64 × level` of the ride's type record (balance `+1004 + 8 × grade` is
+  `MechanicConstsPerGrade[grade].WorkDuration`). The ride's `+76` is still the old level (`0xdef2c` adds one on completion), and the type record's `+444`
+  is `Upgrades[0].DurationOfUpgrade` (PPC-economy), so `+508 + 64 × level` is `Upgrades[level + 1].DurationOfUpgrade`: the duration of the level being installed.
+  A 32-bit product, stored as an unsigned word, with no minimum (a duration of 0 gives timer 0).
+- *Any other job (broken, or the maintenance word):* `WorkDuration × (100 − (fctiwz(+64) & 0xFF)) / 100`: the state of repair truncated and taken as a
+  byte (the same byte as F15), a 32-bit `mullw` and the signed multiply-high division by 100 (truncating toward zero). A ride at 100 % needs no time;
+  above 100 the factor goes negative and the word wraps (not reachable: wear clamps to 0..100).
+- *The ride's own upgrade level does not matter for a repair.* The static reading "plus an upgrade factor at `+0x1FC`" belongs to the upgrade job only.
+- *Counting.* The repair-state handler `0xd9e04` calls the working update (`0xf459c`), then decrements a nonzero timer once per call. At zero it
+  calls the full repair `0xdef2c` (`+64` to 100, level + 1 in state 2), clears the mechanic's target and releases it; in ride state 1 it first
+  reads the script's `VAR_BROKEN` (`0xdfea4`/`0xdfed4`) and logs when that is not above zero. Not executed here and not seen in this routine: a wait for
+  a fix animation (PPC-economy says so). One call per park turn (the dispatcher cadence, static) makes the
+  unit **park turns**: timer + 1 updates until completion. The old claim was game hours.
+
+First counterexample (the plan, C# before): a grade-0 mechanic (`WorkDuration` 80, the Jungle data) on a ride at 40 % repair. The original's timer is 48;
+the old claim said 80 hours. At 0 % the two agree in number (80; hours and turns differ by 4 %: a turn is 62.5 park minutes), at 100 % the original needs
+no time at all, and the ride's level changes nothing (a fully upgraded ride at 40 % is also 48). The shipped upgrade durations 0 / 2 / 4 give a timer of
+`WorkDuration × 2` for level 0 to 1 and `WorkDuration × 4` for level 1 to 2 (160 and 320 at grade 0; the old rule had the same factors, and took
+`max(1, ·)`). Per grade (80, 60, 40, 30, 20) a repair at 40 % takes 48, 36, 24, 18, 12 turns. Not changed in C#: the walk to the ride (state 2 of
+`0xe6454`) (ECON-021 stays an approximation) and the choice of job. A
+saved job is written as `BusyTurns`; an older save with only `BusyTicks` (tenths of a park hour, 360 park seconds each) is converted at 3750 park seconds per turn, rounded up (800 becomes 77), by `ParkSaveFile.BusyTurnsOf` (save version unchanged).
+
+The reading is sharp (`test_repair_duration_reading_is_sharp`): the flat claim differs on 352 inputs, dropping the byte on 17, the division by 100 on 353, the
+upgrade branch on state 1 on 246.
 
 ## 6. Adding a target or a C# hook
 

@@ -209,6 +209,22 @@ public class ParkEconomyOriginalDataTests
 		CollectionAssert.AreEqual( new[] { "/levels/Standard.sam", "/levels/space/Standard.sam" }, space.Standard.Sources.ToArray() );
 	}
 
+	[TestMethod]
+	public void RepairTimersFollowTheShippedMechanicAndUpgradeData()
+	{
+		UseOriginalData();
+		var catalog = EconomyObjectCatalog.Load( "jungle", easy: false );
+		var work = BalanceSettings.Load( "jungle", easy: false )[StaffType.Mechanic].WorkDuration;
+		var durations = catalog[1100].Upgrades.Select( level => level.DurationOfUpgrade ).ToArray();
+		CollectionAssert.AreEqual( new[] { 80, 60, 40, 30, 20 }, work.ToArray() );
+		CollectionAssert.AreEqual( new[] { 0, 2, 4 }, durations, "Upgrades[level + 1].DurationOfUpgrade of the Belly Bounce" );
+		// ORACLE F19: a ride at 40 % repair needs 60 % of the grade's WorkDuration in park turns, whatever its level; an upgrade needs
+		// WorkDuration x the DurationOfUpgrade of the level it installs.
+		CollectionAssert.AreEqual( new long[] { 48, 36, 24, 18, 12 }, work.Select( duration => ParkEconomy.RepairTimer( duration, 40.0, null ) ).ToArray() );
+		CollectionAssert.AreEqual( new long[] { 160, 120, 80, 60, 40 }, work.Select( duration => ParkEconomy.RepairTimer( duration, 40.0, durations[1] ) ).ToArray() );
+		CollectionAssert.AreEqual( new long[] { 320, 240, 160, 120, 80 }, work.Select( duration => ParkEconomy.RepairTimer( duration, 40.0, durations[2] ) ).ToArray() );
+	}
+
 	private void UseOriginalData()
 	{
 		var dataPath = OriginalParkImportTests.OriginalDataPath();

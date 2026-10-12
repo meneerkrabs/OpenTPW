@@ -161,7 +161,12 @@ public static class ParkSaveFile
 		public required long HiredTick { get; init; }
 		public required int Happiness { get; init; }
 		public required StaffState State { get; init; }
-		public required long BusyTicks { get; init; }
+		/// <summary>Park turns until the job completes (ORACLE.md F19). Written by this version.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public long? BusyTurns { get; init; }
+		/// <summary>The job time of earlier saves, in tenths of a park hour; read only when <see cref="BusyTurns"/> is absent and converted by <see cref="BusyTurnsOf"/>. Never written.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public long? BusyTicks { get; init; }
 		public required int AssignedInstanceId { get; init; }
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public float? CellX { get; init; }
@@ -279,7 +284,7 @@ public static class ParkSaveFile
 					HiredTick = member.HiredTick,
 					Happiness = member.Happiness,
 					State = member.State,
-					BusyTicks = member.BusyTicks,
+					BusyTurns = member.BusyTicks,
 					AssignedInstanceId = member.AssignedInstanceId,
 					CellX = member.CellX,
 					CellY = member.CellY,
@@ -336,6 +341,13 @@ public static class ParkSaveFile
 		return data;
 	}
 
+	/// <summary>
+	/// A staff member's job time in park turns. A save that has only the old field (tenths of a park hour, 360 park seconds each) is converted
+	/// at 3750 park seconds per turn, rounded up, so a job in progress never ends early and never lasts about ten times too long.
+	/// </summary>
+	internal static long BusyTurnsOf( StaffMemberData member ) =>
+		member.BusyTurns ?? ((Math.Clamp( member.BusyTicks!.Value, -1_000_000_000_000, 1_000_000_000_000 ) * 360 + ParkCalendar.SecondsPerTurn - 1) / ParkCalendar.SecondsPerTurn );
+
 	/// <summary>Validates a parsed economy save in place. Internal: the world-save envelope validates its embedded economy through these same rules.</summary>
 	internal static void Validate( Data data )
 	{
@@ -363,7 +375,7 @@ public static class ParkSaveFile
 		{
 			Require( member.Id > 0 && member.Id < data.Staff.NextId && staffIds.Add( member.Id ), $"staff id {member.Id}" );
 			Require( Enum.IsDefined( member.Type ) && member.Grade is >= 0 and < BalanceSettings.GradeCount && member.TrainingPoints is >= 0 and < ParkStaff.TrainingPointsPerGrade, $"staff {member.Id}" );
-			Require( member.BusyTicks >= 0 && (member.AssignedInstanceId == 0 || ids.Contains( member.AssignedInstanceId )), $"staff {member.Id} job" );
+			Require( (member.BusyTurns is null) != (member.BusyTicks is null) && (member.BusyTurns ?? member.BusyTicks!.Value) >= 0 && (member.AssignedInstanceId == 0 || ids.Contains( member.AssignedInstanceId )), $"staff {member.Id} job" );
 			Require( member.CellX.HasValue == member.CellY.HasValue && (!member.CellX.HasValue || (float.IsFinite( member.CellX.Value ) && float.IsFinite( member.CellY!.Value ))) && double.IsFinite( member.TravelSeconds ) && member.TravelSeconds >= 0 && member.TravelSeconds < StaffWorldSimulation.SecondsPerCell, $"staff {member.Id} position" );
 		}
 		foreach ( var candidate in data.Staff.Candidates )
@@ -426,7 +438,7 @@ public static class ParkSaveFile
 			HiredTick = member.HiredTick,
 			Happiness = member.Happiness,
 			State = member.State,
-			BusyTicks = member.BusyTicks,
+			BusyTicks = BusyTurnsOf( member ),
 			AssignedInstanceId = member.AssignedInstanceId,
 			CellX = member.CellX,
 			CellY = member.CellY,

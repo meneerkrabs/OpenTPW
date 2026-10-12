@@ -30,23 +30,17 @@ internal static class LZSS
 
 				outputBuffer.BaseStream.Seek( initialPosition - offset, SeekOrigin.Begin );
 
-				var window = new byte[offset];
-				for ( int i = 0; i < offset; ++i )
+				// A short copy needs only this prefix; long copies repeat the whole window.
+				var window = new byte[Math.Min( offset, length )];
+				for ( int i = 0; i < window.Length; ++i )
 				{
 					window[i] = (byte)outputBuffer.BaseStream.ReadByte();
-				}
-
-				// Resize window to fit length
-				var buffer = new byte[length];
-				for ( int i = 0; i < length; ++i )
-				{
-					buffer[i] = window[i % offset];
 				}
 
 				outputBuffer.BaseStream.Seek( initialPosition, SeekOrigin.Begin );
 
 				for ( int i = 0; i < length; ++i )
-					outputBuffer.Write( buffer[i] );
+					outputBuffer.Write( window[i % offset] );
 			}
 		}
 

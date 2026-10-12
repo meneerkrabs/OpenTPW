@@ -4,7 +4,7 @@ public partial class Level
 {
 	/// <summary>Captures a writable fixed-ride park between simulation ticks, including its direct instance links.</summary>
 	internal ParkResumeSnapshot CaptureResumeSnapshot( AutomaticAdvisor? advisor, string displayName,
-		IReadOnlyDictionary<string, string>? verifiedAssets = null )
+		IReadOnlyDictionary<string, string>? verifiedAssets = null, DateTimeOffset? savedUtc = null )
 	{
 		if ( IsReadOnlyVisit || GameEditions.IsThemeParkInc || OriginalPark == null || Park == null || Guests == null )
 			throw new InvalidOperationException( "Only a writable Theme Park World park can be saved here." );
@@ -26,7 +26,7 @@ public partial class Level
 			StartKind = Park.Start.Kind,
 			Seed = Seed.Value,
 			DisplayName = displayName,
-			SavedUtc = DateTimeOffset.UtcNow,
+			SavedUtc = savedUtc ?? DateTimeOffset.UnixEpoch,
 			Economy = ParkSaveFile.Capture( Park.Economy, random ),
 			Layout = ParkLayoutSnapshot.CaptureSnapshot( Guests.Grid.Cells, Objects ),
 			Guests = Guests.CaptureSnapshot(),

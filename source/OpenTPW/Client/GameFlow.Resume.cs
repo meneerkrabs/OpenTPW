@@ -12,7 +12,8 @@ internal sealed partial class GameFlow
 			level.SaveSandbox();
 			return;
 		}
-		var snapshot = level.CaptureResumeSnapshot( Advisor?.IsAttached == true ? Advisor : null, level.LevelName );
+		var snapshot = level.CaptureResumeSnapshot( Advisor?.IsAttached == true ? Advisor : null, level.LevelName,
+			savedUtc: DateTimeOffset.UtcNow );
 		ParkResumeSaveFile.Save( SaveFileSystem.GetAbsolutePath( $"opentpw-{level.LevelName}-world.json" ), snapshot );
 		Log.Trace( $"Saved {level.LevelName} park: {snapshot.Layout.Objects.Count} objects, {snapshot.Guests.Guests.Length} guests." );
 	}

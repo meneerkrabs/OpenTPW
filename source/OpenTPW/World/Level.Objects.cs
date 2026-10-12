@@ -540,6 +540,9 @@ public partial class Level
 				state.IsOpen = item.IsOpen;
 				// VAR_BROKEN (script variable 7) is what the original's ride update reads to set ride state 1 or 4 (0xe1864), which the park points counts-test rejects.
 				state.ScriptBroken = item.Runtime.GetVariable( RideVariables.VAR_BROKEN ) != 0;
+				// The join gate reads the live sideshow words (0xdff70) and the wear gauge ride +64 (0xdfe34); both live in the economy.
+				item.Visitors.Sideshow = new SideshowTerms( state.CostOfGoods, state.Price, state.ChanceOfLosingPercent );
+				item.Visitors.WearGauge = state.Repair;
 			}
 		}
 	}

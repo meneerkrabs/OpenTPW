@@ -156,6 +156,9 @@ These checks run when the guest stands on the back-of-queue cell (`0xdd3f4`):
    *live* excitement (`0xe02ec(ride,0)`: sideshow formula, speed and duration
    ratios, coaster `0.5 E + 50`), or 100 when `0xdfe34` holds. A negative value
    is "not exciting enough" (thought 12), otherwise "too exciting" (thought 15).
+   Implemented in C# (`QueueJoinRules`, `RideVisitorBridge.ExcitementRefusal`) except for the
+   excitement of a ride with a thing behind ride `+36` (QUEUE-004); the oracle pins the C#
+   side to the original on every input without such a thing.
 3. **Limit** `0xdcb74`: the queue is full when `count ≥ limit` (unsigned). Then
    "queue is too long!", thoughts 21/16, state 6. The limit is a u32:
    - Without HasQueue (`+46 & 0x8` clear): **100**.
@@ -198,7 +201,8 @@ cell is not traced).
    loaded"). If the path is lost, the guest is removed and leaves.
 2. Diagnostic only ("admitted … not first in queue").
 3. `0xdfe34(ride)` set → thought 14, leave. Executed (ORACLE.md F15): `0xdfe34` is
-   a relief object (toilet) whose wear gauge `+64` is below 25, not `VAR_BROKEN`.
+   a relief object (toilet) whose wear gauge `+64` is below 25, not `VAR_BROKEN`. A broken
+   ride has no such exit; what it does to its queue is in section 6 (broken rides).
 4. Position lookup fails → "Problem with a queue", leave.
 5. **Moving up**: if the list position differs from `+497`:
    - When `+500 ≠ 0` and `0 ≤ +497 − pos ≤ 2`, decrement `+500` and stay.
@@ -299,6 +303,31 @@ consumed it (`0xe05c8`), then the guest is removed from the list and enters
 state 16. The track-type bypass is not needed for BOUNCE rides (Belly Bounce has
 track type 0).
 
+**Broken rides** (ORACLE.md F15, `queue-ride-update`, executed). The ride update `0xe0a8c`
+dispatches on the ride state `+408`: state 0 runs the admission above (`0xe1864`, which first runs
+`0xe1404` and then reads script variable 7; non-zero calls `SetState(1)`, or `SetState(4)`,
+condemned, when the life gauge `+68` truncates to a zero byte); state 3 does nothing; states 1, 2
+and 4 run the head-guest step below; anything else asserts. The head-guest step runs on every
+update while the ride stays in the state, then releases the script's rider (`0xe1758`):
+
+- If the head is not the guest in VAR_LETMEON (the script took it) and it waits in state 14, it is
+  forced aboard (`0xeda04`, "script admitted person ... forcing him onto ride").
+- Otherwise a non-empty queue loses its head: `0xdcebc` unlinks it (clearing VAR_LETMEON when it
+  names it) and `0xee804` dismisses it: "Person %d: dismissed from queue on ride %d", reason 6 (no
+  thought), happiness down by `PeepInfo.MediumHappinessChange` (`0xeb6f4`, selector 1, the byte at
+  settings `+28`), target id cleared, state 6.
+
+So a broken ride's queue drains head first at one guest per ride update, i.e. per park turn
+(QUEUE-016); the guests behind keep their positions, state 11 neither moves them up (step 5 is
+blocked in state 1) nor sends them away (step 3 is the toilet predicate). `SetState(1)` itself
+(`0xe0ec4`) runs the same head step once, logs "Closing...", zeroes the pending visitor `+104`,
+sets script variable 6 (VAR_RIDECLOSED) to 1 and clears the open word `+100`; the `SetState(0)`
+callers that reopen the ride (`0xdad24`, `0xde8e4`, `0xdf4d4`, `0xdf90c`, `0xdfb08`) write
+variable 6 back to 0 and `+100` to 1. Which of them a repair uses is not traced.
+
+C# reads the breakdown from `VAR_BROKEN ≠ 0` at once and dismisses the head each park turn
+(`RideVisitorBridge.DismissHead`, QUEUE-019); it does not write VAR_RIDECLOSED or the open word.
+
 OpenTPW differences:
 
 - OpenTPW offers `queue[0]` when LETMEON is 0, without the ONRIDE < CAPACITY
@@ -349,7 +378,7 @@ All items carry the confidence of the section that proves them.
    - The placement-validity rules, cost and maximum length are unresolved:
      keep them as `APPROX:QUEUE-BUILD`.
 3. **Join** (state 10 at the back cell): room `count < 4·cells`, the
-   excitement gate 45, then the limit (the QWTC formula for HasQueue, 100
+   excitement gate (section 4: the level byte, the live excitement, the clamped difference, 45), then the limit (the QWTC formula for HasQueue, 100
    otherwise), then append and walk (state 12).
 4. **Standing** (state 11): section 5.2 exactly. That includes the move delay
    `trunc(1.2f·pos)`, the gap ≤ 2 rule, the 30-turn needs window and the
@@ -428,9 +457,9 @@ still checkable.
 - Fourth-slot placement (`0xdde74`) and the exact sub-cell axis per link.
 - `τ` boarding latency: navigation speed (PPC-guests unresolved), state 13/14
   timing, and the RSE loop between LETMEON and BOUNCE.
-- Ride `+408` state names, `+100`, and the `0xee8f8` re-evaluation exits.
-  (`0xdfe34` and the `0xe02ec` excitement-gate predicate are executed, ORACLE.md
-  F15/F16.)
+- Ride `+408` state names beyond 0 (open), 1 (broken), 3 and 4 (condemned), what writes state 2,
+  `+100`, and the `0xee8f8` re-evaluation exits. (`0xdfe34`, the `0xe02ec` excitement-gate predicate
+  and the dispatch of the ride update on the state are executed, ORACLE.md F15/F16.)
 - Cycle times for non-BOUNCE controllers. The DurationUnit semantics beyond
   "no conversion at the host write".
 - Exact cadence: whether every live guest and ride is updated every park turn

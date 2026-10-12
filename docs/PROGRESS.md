@@ -172,6 +172,14 @@ preview; original runtime fidelity and the complete offline scope remain open.
   formula, speed and duration ratios, coaster `0.5 E + 50`) over bytes, clamped to ±50; C# compares the static
   level (155 of 524 oracle inputs differ). `RideVisitorBridge.ExcitementRefusal` is now the gate on its own
   (behaviour unchanged), compared through the C# bridge; QUEUE-004/008/019 comments say what execution showed.
+- The queue's two executed findings are now C# (F15, F16 in [ORACLE.md](reverse/ORACLE.md)). The join gate tests a guest
+  only when the low byte of the object's `ExcitementLevel` is nonzero and compares the live excitement over bytes, clamped
+  to ±50 (a sideshow's goods, price and win chance, the speed and duration ratios, a coaster's rating): a default sideshow
+  with a prize 25 above its price and a win chance of 50 scores 40 and takes a guest preferring 80, a level-100 ride at a
+  tenth of its speed scores 75 and takes one preferring 50. A broken ride no longer sends its queue away "feeling sick"
+  (that exit is a worn-out toilet, `0xdfe34`); the ride update (`0xe0a8c`, executed in the oracle) dismisses its head guest
+  each park turn instead, the rest waiting. The oracle compares the C# side on `queue-failure-predicate`,
+  `queue-join-difference` and `queue-join-gate`; only a ride with a thing behind ride `+36` differs (QUEUE-004).
 - Dependency audit is clean: ImageSharp is replaced by an in-tree PNG writer
   (`PngWriter`, `RgbaResampler`), Zio is 0.22.2, and Newtonsoft.Json is pinned to
   13.0.4 (it came in transitively through Veldrid's NativeLibraryLoader).
@@ -207,8 +215,8 @@ preview; original runtime fidelity and the complete offline scope remain open.
   included (executed, 508 inputs; agrees with the TPW PC reading, differs from the
   Mac plan in 507). The TPI image's 16 out-of-range relocation entries no longer
   break a relocated load.
-- [Fidelity register](FIDELITY-REGISTER.md): **315 original fidelity items** plus
-  **24 online extension** IDs (339 total) remain open. CI checks explicit tags and
+- [Fidelity register](FIDELITY-REGISTER.md): **316 original fidelity items** plus
+  **24 online extension** IDs (340 total) remain open. CI checks explicit tags and
   register consistency; it finds no unmarked logic and proves no parity.
   Windows/Linux GPU/input/audio, original captures, coaster controllers, missing
   script effects, and further scenario acceptance remain release blockers.

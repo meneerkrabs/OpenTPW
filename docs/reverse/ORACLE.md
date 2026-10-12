@@ -139,9 +139,10 @@ Mutation checks (`test_oracle.py`):
 | `loan-term` | the same fragment, run once a month over a whole term (withdrawals enabled, no batch) | the same | 503 terms | **F13**: **agree** 503/503 with the plan (fixed in C#; 483 differed from the former interest-on-balance arithmetic), the routine reading too | `LoanMath.Pay`, `ParkLedger.Post`, `ChargeLoanInterest` through `loan_term`: **agree** 503/503 (483 differed before; the year-profit word wraps at 32 bits on both sides) |
 | `loan-payoff` | `0xccc78` (early repayment) | the same | 506 | **F13**: **agree** (payoff M × months left, year profit charged q × N, 32-bit wrap), routine reading too | `ParkEconomy.TryRepayLoan` through `loan_payoff`: **agree** |
 | `loan-take` | `0xcc904` | the same | 505 | **F14**: **agree** (money in, balance, no profit, bought flag), routine reading too | `ParkEconomy.TakeLoan` through `loan_take`: **agree** |
-| `queue-failure-predicate` | `0xdfe34` alone | none | 521 | **F15**: 310 differ (QUEUE-008 reads VAR_BROKEN ≠ 0; the routine reads ride `+46` bit `0x1` and the float `+64`). **Agree** 521/521 with the routine reading | no hook: `RideVisitorBridge.IsBroken` needs a live `RideVM` (CSHARP_PENDING); the plan side is that claim |
-| `queue-join-difference` | `0xe9a84`, `0xdfe34`, `0xeb7e4` (guest preference), `0xe02ec` (excitement), `0xdff70` (its formulas), `0xe1f70`/`0xe1f78`/`0xe2364` (sideshow words), `0xe2fe4` (track type 3), `0x41a14` (coaster getter, controller table built) | `0x118018` type record (registry and type id checked), `0xb5e24` script controller (script `+32` checked), `0x1ea40` pieces behind ride `+36` (the `+36` word and four distinct outputs checked), import `sqrt` (IEEE double square root, argument checked non-negative). The settings word `+164 + 12 · type` is written in the data block | 524 | **F16**: 387 differ from the claimed "ride minus preferred" (clamp ±50, the relief case 100, live excitement). **Agree** 524/524 with the routine reading | no hook (CSHARP_PENDING): C# has no clamped difference |
-| `queue-join-gate` | the fragment `0xecd6c..0xecdb0` / `0xeced0..0xecf34` of the state-10 handler `0xeccb0` (the `0xe9a84` call, `0xe02ec(ride, 1)`, the 45 test and the refusal) plus the callees above | the callees' stubs, plus `0x5fbcc` log (the message text is read from memory), `0xfb7b4` reason and `0xfb54c` thought (guest `+48` object, id and thought checked) | 524 | **F16**: 155 differ in outcome. **Agree** 524/524 with the routine reading (outcome and difference) | **F16**: 155 differ, the same inputs as the plan (`RideVisitorBridge.ExcitementRefusal`) |
+| `queue-failure-predicate` | `0xdfe34` alone | none | 521 | **F15** (fixed in C#): 310 differ from the old claim (QUEUE-008 read VAR_BROKEN ≠ 0; the routine reads ride `+46` bit `0x1` and the float `+64`). The plan now says the routine reading: **agree** 521/521 | `RideVisitorBridge.ReliefWornOut` through `queue_failure`: **agree** 521/521 |
+| `queue-ride-update` | `0xe0a8c` (the ride update: dispatch on the ride state `+408`, the head-guest step of states 1, 2 and 4) | the calls it makes are recorded, not run: `0xe1864` admission, `0xdcebc` remove from queue (ride and the u16 head id in the high half of r4 checked), `0xee804` dismiss, `0xeda04` force aboard, `0xe1758` script release; plus `0xb5758`/`0xb5be0` (VAR_LETMEON), `0xb678` assertion (logged when the condition is 0), `0xfa9a4` and `0x5fbcc` | 510 | **F15**: **agree** 510/510 (states 0..6 and −1, heads that wait or were taken, state 14 or not; `test_queue_ride_update_reading_is_sharp`) | no hook (CSHARP_PENDING): C# has the VAR_BROKEN reading only (`RideVisitorBridge.DismissHead`, `QueueTests`) |
+| `queue-join-difference` | `0xe9a84`, `0xdfe34`, `0xeb7e4` (guest preference), `0xe02ec` (excitement), `0xdff70` (its formulas), `0xe1f70`/`0xe1f78`/`0xe2364` (sideshow words), `0xe2fe4` (track type 3), `0x41a14` (coaster getter, controller table built) | `0x118018` type record (registry and type id checked), `0xb5e24` script controller (script `+32` checked), `0x1ea40` pieces behind ride `+36` (the `+36` word and four distinct outputs checked), import `sqrt` (IEEE double square root, argument checked non-negative). The settings word `+164 + 12 · type` is written in the data block | 524 | **F16** (fixed in C#): 387 differ from the old claim ("ride minus preferred", `plan-static`). The plan now says the routine reading: **agree** 524/524 | `RideVisitorBridge.JoinDifference` through `queue_join_difference`: **agree** except 46 inputs that have a thing behind ride `+36` (QUEUE-004; with the thing removed from the inputs **agree** 524/524) |
+| `queue-join-gate` | the fragment `0xecd6c..0xecdb0` / `0xeced0..0xecf34` of the state-10 handler `0xeccb0` (the `0xe9a84` call, `0xe02ec(ride, 1)`, the 45 test and the refusal) plus the callees above | the callees' stubs, plus `0x5fbcc` log (the message text is read from memory), `0xfb7b4` reason and `0xfb54c` thought (guest `+48` object, id and thought checked) | 524 | **F16** (fixed in C#): 155 differ in outcome from the old claim (`plan-static`). The plan now says the routine reading: **agree** 524/524 (outcome and difference) | `RideVisitorBridge.ExcitementRefusal` and `JoinDifference` through `queue_join_gate`: **agree** except 61 inputs with a thing behind ride `+36` (the same cause) |
 
 The C# comparisons use these seams:
 
@@ -165,11 +166,13 @@ The C# comparisons use these seams:
   covers how purchases set it). The open flag (the
   chosen `0xdc834` counts-test result) is passed as the object's open state (`IsOpen`); the test's other conditions have no
   C# state and are not in the inputs.
-- `RideVisitorBridge.ExcitementRefusal` (`queue_join_gate`, internal static, called by reflection): the gate of `JoinQueue` on
-  its own. The bridge builds the difference as `GuestSimulation.UpdateGoingToRide` does, preferred excitement minus the ride's
-  `ExcitementLevel`: the type's `.sam` value (`UsageInfo.ExcitementLevel`, type `+316`), or `CoasterRating.GuestExcitement` for a
-  coaster whose controller exists (0 before). The type's `+1960` word (`Info.WhichUIType`) 0 maps to `Ride`, 2 to `Sideshow`,
-  anything else to `Facility`.
+- `RideVisitorBridge.ReliefWornOut`, `JoinDifference` and `ExcitementRefusal` (`queue_failure`, `queue_join_difference`,
+  `queue_join_gate`) on a real bridge built from the input: the type's `+316` level word, the speed word and duration byte with
+  their design values (`QueueParameters`), the sideshow goods, price and win byte (`SideshowTerms`, the win byte is 100 minus the
+  chance of losing), track type 3 as the coaster source (`CoasterRating.GuestExcitement`, 0 before the controller exists) and the
+  relief flag with the wear gauge as a single. The type's `+1960` word (`Info.WhichUIType`) 2 maps to `Sideshow`, anything else
+  to `Ride`. The thing behind ride `+36` is not sent: C# has none (QUEUE-004), so the inputs with one are the remainder.
+  `test_queue_join_csharp_remainder` pins that every remaining mismatch is such an input.
 
 - `LoanMath.MonthlyRepayment` (`loan_offers`) for each offer of an input; `LoanMath.Pay`, `ParkLedger.Post` and
   `ParkLedger.ChargeLoanInterest` (`loan_term`) run month by month exactly as `ParkEconomy.EndMonth` does, with the
@@ -566,24 +569,38 @@ and dropping the flag, the byte wrap or the limit brings mismatches back (`test_
 matters only outside the gauge's range (wear clamps to 0..100): 256.0 wraps to 0 and counts as failed, −1.0 wraps to 255, NaN
 counts as failed.
 
-What this does to the queue (static, not executed):
+What this does to the queue (executed, `queue-ride-update`, F15 fixed in C#):
 
 - *Guest state 11, step 3 (`0xed424`).* The original's exit "0xdfe34 set, thought 14 (feeling sick), leave" fires for a worn-out
   toilet only. For any other ride it never fires, so a broken ride (script `VAR_BROKEN ≠ 0`) does not send its queue away through
-  this exit. C# does (QUEUE-008, state-11 step 3): its queue empties through an exit the original does not have for rides.
-  What else empties the original's queue is below.
-- *Other callers.* `0xd6618`, `0xdc104`, `0xdf5d0`, `0xe9aa4` and `0xed424`. The first three sit in ride and toilet update code
+  this exit. C# did (QUEUE-008, state-11 step 3): its queue emptied through an exit the original does not have for rides.
+- *What empties the queue instead: the ride update `0xe0a8c`.* It dispatches on the ride state `+408` (executed alone with its callees
+  recorded, 510 inputs, agreeing with the reading): state 0 runs the admission `0xe1864`, which after `0xe1404` reads script variable 7
+  and calls `SetState(1)` (or `SetState(4)`, condemned, when the truncated life gauge `+68` is a zero byte); state 3 does nothing; states
+  1, 2 and 4 run the head-guest step on every update and then release the script's rider (`0xe1758`); any other state asserts.
+  The head-guest step: a head that is not the guest in VAR_LETMEON (the script took it) and waits in state 14 is forced aboard
+  (`0xeda04`); otherwise a non-empty queue loses its head (`0xdcebc`, clearing VAR_LETMEON when it names it) and the guest is dismissed
+  (`0xee804`: "Person %d: dismissed from queue on ride %d", reason 6, no thought, happiness down by `PeepInfo.MediumHappinessChange` through
+  `0xeb6f4` selector 1, the byte at settings `+28`, target id cleared, state 6).
+  So **a broken ride's queue drains head first, one guest per ride update (park turn)**; the guests behind keep their places (state 11
+  does not move them up while the ride is in state 1, and has no exit for it) and wait. The dismissed guests and the rest are not sent
+  away "feeling sick". `SetState(1)` (`0xe0ec4`, "Object %d: Closing...") runs the same head step once, zeroes the pending visitor `+104`,
+  sets script variable 6 (VAR_RIDECLOSED) to 1 and clears the open word `+100`; the `SetState(0)` callers write them back (`0xdad24` at build,
+  `0xde8e4`, `0xdf4d4`, `0xdf90c`, `0xdfb08`; which one a repair uses is not traced).
+  Not executed: the dismissed guest's walk afterwards (state 6, QUEUE-010 in C#), what the callers of `SetState(0)` and `SetState(2)` are.
+- *Other callers of `0xdfe34`.* `0xd6618`, `0xdc104`, `0xdf5d0`, `0xe9aa4` and `0xed424`. The first three sit in ride and toilet update code
   next to the maintenance flag (`0xdfe88`) and the relief test (`0xdc0f4`); not traced further.
-- *What a breakdown does instead.* `SetState(1)` (`0xe0c3c`, the `BROKEN_DOWN` block `0xe0ec4..0xe10dc`) logs "Closing...",
-  clears the open word `+100`, zeroes the pending visitor `+104`, sets script variable 6 to 1 and handles only the head guest of
-  the queue (`0xdcebc`/`0xee804`, or `0xeda04` when that guest is in state 14). State 11 then refuses to move guests up while
-  `0xdfe0c` (state 1) holds. Whether the rest of the queue leaves because the ride is closed is not traced, so C#'s emptying
-  queue may still be right in effect and wrong in cause and thought. QUEUE-018's treatment of a broken ride as closed fits the
-  cleared open word.
 - *Admission (QUEUE-019).* `0xdfe34` has no part in it. `0xe1864` runs the admission `0xe1404` first and then reads script
   variable 7 itself (`cmpwi r3,0`, so `≠ 0`): the breakdown turn still admits. The script predicate the original does have is
   `0xdfed4`: it returns `VAR_BROKEN > 0` (signed; the `eqv/subfc/addze` idiom), and its only caller is the repair-state code at
   `0xd9e80`.
+
+**Fixed in C#.** The queue state-11 exit is `RideVisitorBridge.ReliefWornOut` (`QueueJoinRules.ReliefFailed`: the relief flag and the wear
+gauge as a single, truncated, low byte below 25), and a broken ride dismisses its head each park turn (`RideVisitorBridge.DismissHead`,
+`GuestSimulation` `OnVisitorDismissed`: medium happiness loss, no thought). OpenTPW wears only rides, so a toilet's gauge never falls and
+the exit does not fire in practice (QUEUE-008); the reading of a breakdown from `VAR_BROKEN` at once (QUEUE-019) and that the C# ride
+does not write VAR_RIDECLOSED or the open word stay approximations. Before → after: the old
+claim (`IsBroken`) differed from the original on 310 of 521 inputs; `ReliefWornOut` agrees on all 521.
 
 **F16, the join excitement gate (QUEUE-004, `RideVisitorBridge.JoinQueue`).** `queue-join-difference` runs `0xe9a84` with
 `0xe02ec` and `0xdff70` and their callees, `queue-join-gate` runs the state-10 fragment around the gate. The routine reading
@@ -632,12 +649,23 @@ level), so only the live values matter in practice. Not shown: what `+36` and it
 inputs move during play (the price and the win chance can be edited), and the other callers of `0xe02ec` and
 `0xeb7e4` (`0xe9438`, `0xe9478`, `0xea348`, `0xea4e0`: the attraction score code, PPC-guests, not traced).
 
-C# was changed only by extracting the gate into `RideVisitorBridge.ExcitementRefusal` (the behaviour is unchanged, QueueTests
-pins it) and by sharpening the QUEUE-004, QUEUE-008 and QUEUE-019 comments. Recommendation, not done because each needs state
-C# does not have or a decision about the queue after a breakdown: (a) give sideshows and rides their live excitement
-(`ExcitementSource` already exists for coasters), (b) gate on the `ExcitementLevel` byte, and (c) replace the broken-ride exit by
-the original's ride-closed handling once `SetState(1)`'s effect on the queue is traced, keeping `0xdfe34` for toilets
-(whose wear gauge C# does not simulate).
+**Fixed in C#** (before → after: `queue-join-gate` C# 155 → 61 mismatches, all with a ride `+36` thing; `queue-join-difference` C# had no
+seam, now 46 of 524, all with such a thing). `QueueJoinRules` holds the relief predicate, the sideshow, scaled and difference formulas
+(single precision where the original is single, `fctiwz` saturation with NaN as `0x80000000`) and the level-byte gate;
+`RideVisitorBridge` feeds them from the object's data and live state: the speed word and duration byte against `InitSpeed` and the raw
+`InitDuration` (`QueueParameters.InitDuration`: a ride whose `InitDuration` lies outside `MinDuration..MaxDuration` has a duration ratio
+other than 1; four shipped rides have such data and score 1.25 × their level: Brain Buster 40 → 50, Zero G 65 → 81, Bumper Bugs 70 → 87 and
+Jelly Bounce 40 → 50, `InitDuration` 3 under `MinDuration` 10 or 15; `GuestAssetTests.ShippedObjectsScoreTheirLiveJoinExcitement`), the live goods, price and win chance of a
+sideshow (mirrored from the economy each tick by `Level.SyncObjectEconomy`) and the coaster's `ExcitementSource`.
+`GuestSimulation` passes the guest's preferred excitement instead of a difference. Examples from `QueueJoinTests`: a sideshow with the
+default level 30, a prize 25 above its price and a win chance of 50 scores 40, so a guest preferring 80 joins (it turned away bored in
+C# before: 80 − 30 = 50); a ride of level 100 at a tenth of its design speed scores 75, so a guest preferring 50 joins (it turned away
+scared before: 50 − 100 = −50). With the shipped data rides run at their design speed and duration (level 40..95 as live value, but for Brain Buster), so the visible
+changes are the sideshows (live 27 for the jungle Arcade, 33 for the Halloween Arcade and 37 for the space Arcade against their levels
+30), the clamp and those four rides. The remainder: the excitement of a ride with a thing behind ride `+36` (60 % of the level plus up to 40 from the
+three counts of `0x1ea40`) is not modelled (QUEUE-004), because OpenTPW has no such thing and what the counts are is not traced.
+Not changed: the attraction score (`ScoreAttraction`) and the ride outcome (`ApplyVisit`) still use the static `ExcitementLevel`;
+their callers `0xe9438`, `0xe9478`, `0xea348` and `0xea4e0` of `0xe02ec` and `0xeb7e4` are not traced (PPC-guests).
 
 ## 6. Adding a target or a C# hook
 

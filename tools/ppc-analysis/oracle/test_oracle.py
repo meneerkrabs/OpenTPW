@@ -119,36 +119,48 @@ EXPECTED = {
     ('loan-payoff', 'plan'): AGREE,
     ('loan-payoff', 'routine-reading'): AGREE,
     ('loan-payoff', 'csharp'): AGREE,
-    # F15: 0xdfe34 never reads the script. It is "relief object (ride +46 bit 0x1, type UsageInfo.ProvidesRelief) whose gauge +64,
-    # truncated to a byte, is below 25". QUEUE-008's reading, VAR_BROKEN != 0, differs wherever a broken ride is no relief object
-    # (and the reverse); the routine reading agrees on all inputs.
-    ('queue-failure-predicate', 'plan'): (310, {'flags': 0, 'gauge': 100.0, 'broken': 1}),
+    # F15 (fixed in C#): 0xdfe34 never reads the script. It is "relief object (ride +46 bit 0x1, type UsageInfo.ProvidesRelief) whose
+    # gauge +64, truncated to a byte, is below 25". QUEUE-008's old reading, VAR_BROKEN != 0, differs wherever a broken ride is no
+    # relief object (and the reverse); the plan now says the routine reading, and RideVisitorBridge.ReliefWornOut does the same.
+    ('queue-failure-predicate', 'plan'): AGREE,
+    ('queue-failure-predicate', 'plan-var-broken'): (310, {'flags': 0, 'gauge': 100.0, 'broken': 1}),
     ('queue-failure-predicate', 'routine-reading'): AGREE,
-    # F16: 0xe9a84 is 100 while 0xdfe34 holds, else clamp(excitement byte - preferred byte, -50, 50) with the excitement of
-    # 0xe02ec(ride, 0): sideshows 20 + trunc(0.8 * win * sqrt(clamp(goods - price, 0, 100)) / 10), coasters trunc(0.5 E + 50),
+    ('queue-failure-predicate', 'csharp'): AGREE,
+    # F15 (executed, fixed in C#): the ride update 0xe0a8c in the broken (1), closing (2) and condemned (4) states removes the head guest
+    # from the queue and dismisses it, every park turn, unless the script already took it and it waits in state 14 (forced aboard).
+    ('queue-ride-update', 'plan'): AGREE,
+    # F16 (fixed in C#): 0xe9a84 is 100 while 0xdfe34 holds, else clamp(excitement byte - preferred byte, -50, 50) with the excitement
+    # of 0xe02ec(ride, 0): sideshows 20 + trunc(0.8 * win * sqrt(clamp(goods - price, 0, 100)) / 10), coasters trunc(0.5 E + 50),
     # other types ExcitementLevel scaled by the speed and duration ratios (clamped to 0.75..1.25) and, with a thing behind +36,
-    # 60 % of it plus up to 40. The plan's static "ride minus preferred" differs on most inputs (clamp, relief, dynamic values).
-    ('queue-join-difference', 'plan'): (387, {'idx': 0, 'pref': 80, 'kind': 2, 'level': 30, 'track': 0, 'flags': 0, 'gauge': 100.0, 'rlevel': 0,
-                                                 'init_speed': 100, 'speed': 100, 'init_dur': 30, 'dur': 30, 'thing36': 0,
-                                                 'pieces': [0, 0, 0, 0], 'goods': 60, 'price': 35, 'win': 50, 'ctrl': 0,
-                                                 'coaster_e': 40.0}),
+    # 60 % of it plus up to 40. The old plan's static "ride minus preferred" differs on most inputs ("plan-static").
+    # C# agrees except where a ride has a thing behind +36 (QUEUE-004: OpenTPW has none; test_queue_join_csharp_remainder).
+    ('queue-join-difference', 'plan'): AGREE,
+    ('queue-join-difference', 'plan-static'): (387, {'idx': 0, 'pref': 80, 'kind': 2, 'level': 30, 'track': 0, 'flags': 0, 'gauge': 100.0, 'rlevel': 0,
+                                      'init_speed': 100, 'speed': 100, 'init_dur': 30, 'dur': 30, 'thing36': 0,
+                                      'pieces': [0, 0, 0, 0], 'goods': 60, 'price': 35, 'win': 50, 'ctrl': 0,
+                                      'coaster_e': 40.0}),
     ('queue-join-difference', 'routine-reading'): AGREE,
-    # F16: the gate applies when the low byte of the type's UsageInfo.ExcitementLevel is nonzero (0xe02ec(ride, 1)), not by kind;
-    # QUEUE-plan and C# gate rides and sideshows on the static level. The outcome (pass, thought 12 or 15 with its message) differs
-    # on 155 of 524 inputs, the same inputs in the plan and in C# (RideVisitorBridge.ExcitementRefusal).
-    ('queue-join-gate', 'plan'): (155, {'idx': 0, 'pref': 80, 'kind': 2, 'level': 30, 'track': 0, 'flags': 0, 'gauge': 100.0, 'rlevel': 0,
-                                                 'init_speed': 100, 'speed': 100, 'init_dur': 30, 'dur': 30, 'thing36': 0,
-                                                 'pieces': [0, 0, 0, 0], 'goods': 60, 'price': 35, 'win': 50, 'ctrl': 0,
-                                                 'coaster_e': 40.0}),
+    ('queue-join-difference', 'csharp'): (46, {'idx': 0, 'pref': 80, 'kind': 0, 'level': 90, 'track': 0, 'flags': 0, 'gauge': 100.0, 'rlevel': 0,
+                                      'init_speed': 100, 'speed': 100, 'init_dur': 30, 'dur': 30, 'thing36': 5,
+                                      'pieces': [3, 2, 1, 7], 'goods': 60, 'price': 35, 'win': 50, 'ctrl': 0,
+                                      'coaster_e': 40.0}),
+    # F16: the gate applies when the low byte of the type's UsageInfo.ExcitementLevel is nonzero (0xe02ec(ride, 1)), not by kind.
+    # The old plan and C# gated rides and sideshows on the static level: the outcome (pass, thought 12 or 15 with its message)
+    # differed on 155 of 524 inputs ("plan-static"). C# follows the original now, except for the +36 thing as above.
+    ('queue-join-gate', 'plan'): AGREE,
+    ('queue-join-gate', 'plan-static'): (155, {'idx': 0, 'pref': 80, 'kind': 2, 'level': 30, 'track': 0, 'flags': 0, 'gauge': 100.0, 'rlevel': 0,
+                                      'init_speed': 100, 'speed': 100, 'init_dur': 30, 'dur': 30, 'thing36': 0,
+                                      'pieces': [0, 0, 0, 0], 'goods': 60, 'price': 35, 'win': 50, 'ctrl': 0,
+                                      'coaster_e': 40.0}),
     ('queue-join-gate', 'routine-reading'): AGREE,
-    ('queue-join-gate', 'csharp'): (155, {'idx': 0, 'pref': 80, 'kind': 2, 'level': 30, 'track': 0, 'flags': 0, 'gauge': 100.0, 'rlevel': 0,
-                                                 'init_speed': 100, 'speed': 100, 'init_dur': 30, 'dur': 30, 'thing36': 0,
-                                                 'pieces': [0, 0, 0, 0], 'goods': 60, 'price': 35, 'win': 50, 'ctrl': 0,
-                                                 'coaster_e': 40.0}),
+    ('queue-join-gate', 'csharp'): (61, {'idx': 0, 'pref': 80, 'kind': 0, 'level': 90, 'track': 0, 'flags': 0, 'gauge': 100.0, 'rlevel': 0,
+                                      'init_speed': 100, 'speed': 100, 'init_dur': 30, 'dur': 30, 'thing36': 5,
+                                      'pieces': [3, 2, 1, 7], 'goods': 60, 'price': 35, 'win': 50, 'ctrl': 0,
+                                      'coaster_e': 40.0}),
 }
 CSHARP_PENDING = {'det-world-lcg', 'det-rse-rand', 'coast-rating-step',
                   'coast-rating-final', 'arrival-update', 'park-points-counts-test', 'loan-month',
-                  'queue-failure-predicate', 'queue-join-difference'}
+                  'queue-ride-update'}
 
 
 class Identity(unittest.TestCase):
@@ -494,8 +506,31 @@ class Oracle(unittest.TestCase):
             [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
             self.assertGreater(comparison.mismatches, 0, name)
     def test_queue_failure(self):
-        for key in (('queue-failure-predicate', 'plan'), ('queue-failure-predicate', 'routine-reading')):
+        for key in (('queue-failure-predicate', 'plan'), ('queue-failure-predicate', 'routine-reading'),
+                    ('queue-failure-predicate', 'plan-var-broken')):
             self.check(key)
+
+    def test_queue_failure_csharp(self):
+        self.check(('queue-failure-predicate', 'csharp'))
+
+    def test_queue_ride_update(self):
+        self.check(('queue-ride-update', 'plan'))
+
+    def test_queue_ride_update_reading_is_sharp(self):
+        # Each part matters: the states that hand the head on (1, 2 and 4), the state-14 forcing, the script's variable, the release.
+        import dataclasses
+        read = targets.ride_update_plan
+        variants = {
+            'state-1-only': lambda x: read({**x, 'state': 0 if x['state'] in (2, 4) else x['state']}),
+            'forcing': lambda x: read({**x, 'head_state': 11}),
+            'taken': lambda x: read({**x, 'letmeon': 0}),
+            'no-release': lambda x: [e for e in read(x) if e[0] != 'release'],
+            'always-dismiss': lambda x: read({**x, 'letmeon': x['head']}),
+        }
+        for name, reading in variants.items():
+            mutated = dataclasses.replace(targets.RIDE_UPDATE_TARGET, plan=reading, alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, name)
 
     def test_queue_failure_reading_is_sharp(self):
         # Every part of the reading matters: the relief flag, the byte wrap of the truncated gauge and the limit of 25.
@@ -513,11 +548,32 @@ class Oracle(unittest.TestCase):
 
     def test_queue_join(self):
         for key in (('queue-join-difference', 'plan'), ('queue-join-difference', 'routine-reading'),
-                    ('queue-join-gate', 'plan'), ('queue-join-gate', 'routine-reading')):
+                    ('queue-join-difference', 'plan-static'), ('queue-join-gate', 'plan'),
+                    ('queue-join-gate', 'routine-reading'), ('queue-join-gate', 'plan-static')):
             self.check(key)
 
     def test_queue_join_csharp(self):
-        self.check(('queue-join-gate', 'csharp'))
+        for key in (('queue-join-difference', 'csharp'), ('queue-join-gate', 'csharp')):
+            self.check(key)
+
+    def test_queue_join_csharp_remainder(self):
+        # QUEUE-004: C# has no thing behind ride +36. Every input where it differs from the original is an ordinary ride (not a
+        # sideshow, coaster or relief object) with a data level and such a thing, and with that thing removed C# agrees on all inputs.
+        import dataclasses
+        if self.bridge is None:
+            self.skipTest('no .NET 10 SDK')
+        for target in (targets.JOIN_DIFFERENCE_TARGET, targets.JOIN_GATE):
+            [comparison] = [c for c in compare(target, self.image, DEFAULT_COUNT, keep=10**6, bridge=self.bridge)
+                            if c.side == 'csharp']
+            self.assertGreater(comparison.mismatches, 0, target.key)
+            for example in comparison.examples:
+                x = example['input']
+                self.assertTrue(x['thing36'] != 0 and x['kind'] != 2 and x['track'] != 3 and s32(x['level']) != 0
+                                and not targets.failure_reading(x), f'{target.key}: unexplained {example}')
+            original_inputs = target.inputs
+            without = dataclasses.replace(target, inputs=lambda rng, n: [{**x, 'thing36': 0} for x in original_inputs(rng, n)])
+            [comparison] = [c for c in compare(without, self.image, DEFAULT_COUNT, bridge=self.bridge) if c.side == 'csharp']
+            self.assertEqual(comparison.mismatches, 0, f'{target.key}: first counterexample {comparison.first}')
 
     def test_queue_join_reading_is_sharp(self):
         # Every part of the reading matters, for the gate (outcome and difference) and the difference alone.
@@ -632,9 +688,15 @@ class CSharpMutation(unittest.TestCase):
          '(3f * previous + (baseSpeed + bonus + boost) / (float)Divisor) * 0.25f'),
         ('walk-speed-setter', 'csharp', 'source/OpenTPW/World/Guests/GuestNavigation.cs',
          'public const int Floor = 655;', 'public const int Floor = 654;'),
-        ('queue-join-gate', 'csharp', 'source/OpenTPW/World/Guests/RideVisitorBridge.cs',
-         'return excitementDifference > 0 ? QueueJoinResult.NotExcitingEnough : QueueJoinResult.TooExciting;',
-         'return excitementDifference < 0 ? QueueJoinResult.NotExcitingEnough : QueueJoinResult.TooExciting;'),
+        ('queue-join-gate', 'csharp', 'source/OpenTPW/World/Guests/QueueJoinRules.cs',
+         'return difference < 0 ? QueueJoinResult.NotExcitingEnough : QueueJoinResult.TooExciting;',
+         'return difference > 0 ? QueueJoinResult.NotExcitingEnough : QueueJoinResult.TooExciting;'),
+        ('queue-failure-predicate', 'csharp', 'source/OpenTPW/World/Guests/QueueJoinRules.cs',
+         '(Truncate( wearGauge ) & 0xFF) < WornGauge', '(Truncate( wearGauge ) & 0xFF) <= WornGauge'),
+        ('queue-join-difference', 'csharp', 'source/OpenTPW/World/Guests/QueueJoinRules.cs',
+         'ratio > 1.25f ? 1.25f : ratio', 'ratio > 1.5f ? 1.5f : ratio'),
+        ('queue-join-difference', 'csharp', 'source/OpenTPW/World/Guests/QueueJoinRules.cs',
+         'Math.Clamp( terms.CostOfGoods - terms.PricePerUse, 0, 100 )', 'Math.Clamp( terms.CostOfGoods - terms.PricePerUse, 0, 99 )'),
         ('park-points', 'csharp', 'source/OpenTPW/Economy/ParkEconomy.cs',
          '!item.ScriptBroken && item.IsOpen;', '!item.ScriptBroken;'),
         ('loan-offers', 'csharp', 'source/OpenTPW/Economy/ParkLedger.cs',

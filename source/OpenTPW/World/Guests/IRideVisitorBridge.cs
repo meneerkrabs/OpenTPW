@@ -50,8 +50,11 @@ public readonly record struct AdmissionCheck( long Turn, bool ConditionsHold, in
 /// Queue rules of one object from its .sam layers (docs/reverse/QUEUE-plan.md §2): <c>Info.HasQueue</c>,
 /// <c>Info.RunsContinuously</c>, the capacity-test bypass (<c>Bumper.WhichTrackType</c> 2 or 3) and the inputs of
 /// the queue limit: <c>Upgrades[L].QueueWaitTimeConstant</c>, SPEED and <c>Upgrades[L].InitSpeed</c>, CAP and DUR.
+/// The join excitement (<see cref="QueueJoinRules"/>) also divides DUR by the raw <c>Upgrades[L].InitDuration</c>,
+/// which differs from DUR when the data lies outside <c>UsageInfo.MinDuration..MaxDuration</c>.
 /// </summary>
-public sealed record QueueParameters( bool HasQueue, bool RunsContinuously, bool SkipsCapacityTest, float QueueWaitTimeConstant, int Speed, int InitSpeed, int Capacity, int Duration )
+/// <param name="InitDuration">The raw <c>Upgrades[L].InitDuration</c>; null reads as <paramref name="Duration"/> (the ratio is 1).</param>
+public sealed record QueueParameters( bool HasQueue, bool RunsContinuously, bool SkipsCapacityTest, float QueueWaitTimeConstant, int Speed, int InitSpeed, int Capacity, int Duration, int? InitDuration = null )
 {
 	/// <summary>A queue-less object without data: the limit is the floor of 4.</summary>
 	public static readonly QueueParameters Default = new( false, false, false, 0, 0, 0, 0, 0 );
@@ -71,6 +74,11 @@ public interface IRideVisitorHost
 	void OnVisitorReleased( IRideVisitorBridge ride, int guestId );
 	/// <summary>The guest left the queue without riding (ride closed or removed).</summary>
 	void OnVisitorTurnedAway( IRideVisitorBridge ride, int guestId );
+	/// <summary>
+	/// The broken ride dismissed its head guest (<c>0xee804</c> from the ride update, ride states 1 and 4): the guest loses
+	/// happiness and wanders off. Hosts that do not model that treat it as <see cref="OnVisitorTurnedAway"/>.
+	/// </summary>
+	void OnVisitorDismissed( IRideVisitorBridge ride, int guestId ) => OnVisitorTurnedAway( ride, guestId );
 	/// <summary>The park turn (<see cref="ParkCalendar.Turn"/>); attractions evaluate admission once per turn. −1: every step.</summary>
 	long ParkTurn => -1;
 	/// <summary>True when called guests walk to the stand point and present themselves (<see cref="RideVisitorBridge.PresentForBoarding"/>).</summary>
@@ -116,8 +124,10 @@ public interface IRideVisitorBridge
 	uint QueueLimit { get; }
 	bool HasQueue { get; }
 	bool ProvidesRelief { get; }
-	/// <summary>The ride reports a failure; queueing guests leave.</summary>
+	/// <summary>The ride script reports a breakdown (<c>VAR_BROKEN</c>, the original's ride state 1 or 4): its queue is dismissed head first and nobody joins.</summary>
 	bool IsBroken { get; }
+	/// <summary>The original's ride-failure predicate <c>0xdfe34</c>: a relief object whose wear gauge is below 25. Queueing guests leave "feeling sick".</summary>
+	bool ReliefWornOut { get; }
 	/// <summary>The ride script's <c>VAR_RUNNING</c> is non-zero.</summary>
 	bool IsRunning { get; }
 	/// <summary>The ride script's <c>VAR_ONRIDE</c>.</summary>
@@ -136,7 +146,11 @@ public interface IRideVisitorBridge
 	IRideVisitorHost? Host { get; set; }
 
 	bool TryJoinQueue( int guestId );
-	QueueJoinResult JoinQueue( int guestId, int excitementDifference );
+	/// <summary>
+	/// Joins the back of the queue. <paramref name="preferredExcitement"/> is the guest's preferred excitement for the
+	/// excitement gate (<see cref="QueueJoinRules"/>); null skips the gate.
+	/// </summary>
+	QueueJoinResult JoinQueue( int guestId, int? preferredExcitement = null );
 	/// <summary>0-based position in the queue, or −1.</summary>
 	int GetQueuePosition( int guestId );
 	bool LeaveQueue( int guestId );

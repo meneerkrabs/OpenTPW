@@ -2015,9 +2015,20 @@ def failure_binary(sb: Sandbox, x: dict, log) -> int:
     return sb.call(FAILURE_PREDICATE, {3: thing}).r3
 
 
-def failure_plan(x: dict) -> int:
-    """QUEUE-008 / GUESTS.md: the ride-failure exit is VAR_BROKEN != 0 (a script variable the routine never reads)."""
+def failure_plan_var_broken(x: dict) -> int:
+    """The claim before F15 (QUEUE-008 / GUESTS.md "Breakdown"): the ride-failure exit is VAR_BROKEN != 0, a script variable the
+    routine never reads."""
     return int(x['broken'] != 0)
+
+
+def failure_plan(x: dict) -> int:
+    """The corrected plan (QUEUE-008, docs/reverse/QUEUE-plan.md 5.2 step 3): a relief object whose wear gauge is below 25.
+    The same as the routine reading (the 'broken' input is the script variable the routine cannot see)."""
+    return failure_reading(x)
+
+
+def failure_request(x: dict) -> dict:
+    return {'fn': 'queue_failure', 'relief': bool(x['flags'] & 1), 'gauge_bits': bits(x['gauge'])}
 
 
 def failure_reading(x: dict) -> int:
@@ -2150,16 +2161,16 @@ def join_static_excitement(x: dict) -> int:
     return x['level']
 
 
-def join_plan(x: dict) -> dict:
-    """What GUESTS.md / QUEUE-plan 4 and C# claim: rides and sideshows refuse when |preferred - ExcitementLevel| >= 45; a
-    preference above the ride's excitement is bored (thought 12), below is scared (thought 15)."""
+def join_plan_static(x: dict) -> dict:
+    """What GUESTS.md / QUEUE-plan 4 and C# claimed before F16: rides and sideshows refuse when |preferred - ExcitementLevel| >= 45;
+    a preference above the ride's excitement is bored (thought 12), below is scared (thought 15)."""
     difference = x['pref'] - join_static_excitement(x)
     if join_is_ride(x) and abs(difference) >= 45:
         return {'outcome': 'bored' if difference > 0 else 'scared', 'difference': None}
     return {'outcome': 'pass', 'difference': None}
 
 
-def join_plan_difference(x: dict) -> int:
+def join_plan_static_difference(x: dict) -> int:
     """The same claim for 0xe9a84's value, in its sign (ride minus preferred), unclamped and without the relief case."""
     return join_static_excitement(x) - x['pref']
 
@@ -2212,6 +2223,26 @@ def join_gate_reading(x: dict) -> dict:
     return {'outcome': 'pass', 'difference': difference}
 
 
+def join_plan(x: dict) -> dict:
+    """The corrected plan (QUEUE-plan 4): the routine reading, which GUESTS.md and RideVisitorBridge now follow."""
+    return join_gate_reading(x)
+
+
+def join_plan_difference(x: dict) -> int:
+    return join_difference_reading(x)
+
+
+def join_request(fn: str):
+    """The C# hook's inputs: the data of the object (kind, level, track type and controller, speed and duration words, sideshow
+    goods, price and win byte, relief flag and gauge) and the guest's preference. The thing behind ride +36 is not sent: C# has none."""
+    def request(x: dict) -> dict:
+        return {'fn': fn, 'kind': x['kind'], 'level': s32(x['level']), 'track': x['track'], 'ctrl': x['ctrl'] != 0,
+                'e_bits': bits(x['coaster_e']), 'speed': s32(x['speed']), 'init_speed': s32(x['init_speed']), 'dur': x['dur'],
+                'init_dur': s32(x['init_dur']), 'goods': s32(x['goods']), 'price': s32(x['price']), 'win': x['win'] & 0xFF,
+                'relief': bool(x['flags'] & 1), 'gauge_bits': bits(x['gauge']), 'pref': s32(x['pref'])}
+    return request
+
+
 def join_gate_equal(original: dict, other: dict) -> bool:
     return original['outcome'] == other['outcome'] and (other['difference'] is None or original['difference'] == other['difference'])
 
@@ -2254,9 +2285,101 @@ def join_inputs(rng: random.Random, n: int) -> list:
     return edges + [make() for _ in range(n)]
 
 
-def join_gate_request(x: dict) -> dict:
-    return {'fn': 'queue_join_gate', 'kind': x['kind'], 'pref': x['pref'], 'level': s32(x['level']), 'coaster': x['track'] == 3,
-            'ctrl': x['ctrl'] != 0, 'e_bits': bits(x['coaster_e'])}
+
+
+# ============================================================================== (k) QUEUE: ride update 0xe0a8c (F15)
+RIDE_UPDATE = 0xE0A8C            # (ride): dispatch on the ride state +408
+RIDE_UPDATE_CALLS = {0xE1864: 'admit', 0xEDA04: 'force', 0xDCEBC: 'remove', 0xEE804: 'dismiss', 0xE1758: 'release'}
+SCRIPT_OBJECT, SCRIPT_VARIABLE = 0xB5758, 0xB5BE0   # (script +32) -> variable accessor; (accessor, index) -> value
+THING_ID_OF = 0xFA9A4            # (out, thing): writes the thing's id for a log line; no effect on the result
+NO_THING = -19732                # TOC slot -> u16 "no thing" id compared with the head of the queue
+RIDE_UPDATE_STATE = type('RideUpdateState', (), {})()
+
+
+def ride_update_stubs(target: Target) -> dict:
+    state = RIDE_UPDATE_STATE
+
+    def accessor(m: Machine) -> None:
+        if m.gpr[3] != state.script:
+            raise AssertionError('0xb5758 called without the ride script (+32)')
+        m.gpr[3] = state.script
+
+    def variable(m: Machine) -> None:
+        if m.gpr[3] != state.script or m.gpr[4] != 0:
+            raise AssertionError('0xb5be0 called for something other than variable 0 (VAR_LETMEON)')
+        m.gpr[3] = state.x['letmeon'] & MASK32
+
+    def assertion(m: Machine) -> None:
+        if m.gpr[3] & 0xFF == 0:
+            target.log.append(('assert',))
+
+    def thing_id(m: Machine) -> None:
+        m.memory.w16(m.gpr[3], 0x1234)
+
+    def record(name):
+        def stub(m: Machine) -> None:
+            if name == 'remove':
+                target.log.append((name, m.gpr[3] == state.ride, m.gpr[4] >> 16))  # the u16 id travels in the high half
+            elif name == 'dismiss' or name == 'force':
+                target.log.append((name, m.gpr[3] == state.guest))
+            else:
+                target.log.append((name, m.gpr[3] == state.ride))
+        return stub
+
+    stubs = {SCRIPT_OBJECT: accessor, SCRIPT_VARIABLE: variable, ASSERT: assertion, THING_ID_OF: thing_id, DEBUG_LOG: lambda m: None}
+    stubs.update({address: record(name) for address, name in RIDE_UPDATE_CALLS.items()})
+    return stubs
+
+
+def ride_update_binary(sb: Sandbox, x: dict, log) -> list:
+    st = RIDE_UPDATE_STATE
+    st.x = x
+    if sb.read(toc_pointer(sb, NO_THING), 'H') != 0:
+        raise AssertionError('the "no thing" id is not zero')
+    st.script = sb.alloc(64)
+    st.guest = sb.struct(1024, {544: ('I', x['head_state'] & MASK32)})
+    st.ride = sb.struct(512, {32: ('I', st.script), 56: ('H', x['head']), 408: ('I', x['state'] & MASK32)})
+    if x['head']:
+        sb.write(toc_pointer(sb, POINTS_THINGS) + 20 * x['head'], 'I', st.guest)
+    sb.call(RIDE_UPDATE, {3: st.ride})
+    return list(log)
+
+
+def ride_update_plan(x: dict) -> list:
+    """The ride update as read: state 0 runs the admission, 3 does nothing, 1, 2 and 4 (broken, closing, condemned) hand the head
+    guest on, and any other state asserts. A head the script already took (VAR_LETMEON no longer names it) and that waits in state 14
+    is forced aboard; otherwise a head guest is removed from the queue and dismissed; then the script's release is handled."""
+    state = x['state']
+    if state == 3:
+        return []
+    if state == 0:
+        return [('admit', True)]
+    if state not in (1, 2, 4):
+        return [('assert',)]
+    head, calls = x['head'], []
+    if head != 0 and head != x['letmeon'] and x['head_state'] == 14:
+        calls.append(('force', True))
+    elif head != 0:
+        calls += [('remove', True, head), ('dismiss', True)]
+    return calls + [('release', True)]
+
+
+def ride_update_inputs(rng: random.Random, n: int) -> list:
+    def make(**kw) -> dict:
+        head = rng.choice([0, rng.randrange(1, 200)])
+        x = {'state': rng.choice([0, 1, 1, 2, 3, 4, 4, 5, 6, -1, 7]), 'head': head,
+             'letmeon': rng.choice([0, head, head, rng.randrange(1, 300)]) if head else 0,
+             'head_state': rng.choice([14, 14, 11, 13, 6, 16])}
+        x.update(kw)
+        return x
+    edges = [make(state=1, head=5, letmeon=5, head_state=14),      # broken, the head still waits for the script: dismissed
+             make(state=1, head=5, letmeon=0, head_state=14),      # broken, the script took the head: forced aboard
+             make(state=1, head=5, letmeon=0, head_state=11),      # broken, the head stands in the queue: dismissed
+             make(state=4, head=9, letmeon=0, head_state=11),      # condemned: the same
+             make(state=2, head=9, letmeon=3, head_state=11), make(state=1, head=0, letmeon=0, head_state=11),
+             make(state=0, head=5, letmeon=0, head_state=11), make(state=3, head=5, letmeon=5, head_state=14),
+             make(state=5, head=5, letmeon=0, head_state=11), make(state=-1, head=0, letmeon=0, head_state=11)]
+    return edges + [make() for _ in range(n)]
 
 
 # ============================================================================== registry
@@ -2369,30 +2492,49 @@ LOAN_OFFERS = Target('loan-offers', 'Loan offer setup 0xcb7a8', 'ECONOMY.md / Pa
 
 FAILURE = Target('queue-failure-predicate', 'Ride-failure predicate 0xdfe34', 'QUEUE-008 / GUESTS.md "Queue"', 0xDFE34,
                  [(0xDFE34, 0xDFE88)], lambda t: {}, failure_binary, failure_plan, failure_inputs,
-                 alternatives={'routine-reading': failure_reading},
-                 notes=['No C# hook: the C# claim is RideVisitorBridge.IsBroken (VAR_BROKEN != 0), which needs a live RideVM; the '
-                        '"plan" side is that claim. CSHARP_PENDING.',
+                 alternatives={'routine-reading': failure_reading, 'plan-var-broken': failure_plan_var_broken},
+                 csharp=('queue_failure', failure_request, lambda x, r: r),
+                 notes=['C# hook: bridge function "queue_failure" (RideVisitorBridge.ReliefWornOut on a real bridge: the relief flag and '
+                        'the wear gauge as a single).',
                         'Executed alone (no stubs): the routine reads ride +46 bit 0x1 and the float +64; it never reads the script.',
-                        'The input "broken" is the script variable the plan reads; the routine cannot see it.'])
+                        'The input "broken" is the script variable the pre-F15 claim ("plan-var-broken") reads; the routine cannot see it.'])
 
 JOIN_DIFFERENCE_TARGET = Target('queue-join-difference', 'Join excitement difference 0xe9a84', 'QUEUE-004 / QUEUE-plan 4',
                                 0xE9A84, JOIN_ALLOWED, join_stubs, join_difference_binary, join_plan_difference, join_inputs,
-                                alternatives={'routine-reading': join_difference_reading},
-                                notes=['No C# hook: C# has no clamped difference; the "plan" side is the claimed ride minus preferred '
-                                       'excitement, unclamped, without the relief case. CSHARP_PENDING.',
+                                alternatives={'routine-reading': join_difference_reading, 'plan-static': join_plan_static_difference},
+                                csharp=('queue_join_difference', join_request('queue_join_difference'), lambda x, r: r),
+                                notes=['C# hook: bridge function "queue_join_difference" (RideVisitorBridge.JoinDifference on a real bridge). '
+                                       'The thing behind ride +36 is not sent: C# has no such thing, so the inputs with one and a ride '
+                                       'excitement from the data differ (ORACLE.md F16, QUEUE-004).',
+                                       '"plan-static" is the claim before F16: ride minus preferred excitement, unclamped, without the '
+                                       'relief case.',
                                        'Executed: 0xe9a84, 0xdfe34, 0xeb7e4, 0xe02ec, 0xdff70, 0xe1f70, 0xe1f78, 0xe2364, '
                                        '0xe2fe4 and the controller getter 0x41a14. Stubs: 0x118018 type record, 0xb5e24 script '
                                        'controller, 0x1ea40 pieces behind ride +36, the import sqrt.'])
 
 JOIN_GATE = Target('queue-join-gate', 'Join excitement gate (state 10, 0xeccb0 from 0xecd6c)', 'QUEUE-004 / QUEUE-plan 4',
                    JOIN_FRAGMENT, JOIN_ALLOWED + [(0xECD6C, 0xECDB4), (0xECED0, 0xECF38)], join_stubs, join_gate_binary,
-                   join_plan, join_inputs, equal=join_gate_equal, alternatives={'routine-reading': join_gate_reading},
-                   csharp=('queue_join_gate', join_gate_request, lambda x, r: {'outcome': r.get('outcome', str(r)), 'difference': None}),
-                   notes=['C# hook: bridge function "queue_join_gate" (RideVisitorBridge.ExcitementRefusal by reflection).',
+                   join_plan, join_inputs, equal=join_gate_equal,
+                   alternatives={'routine-reading': join_gate_reading, 'plan-static': join_plan_static},
+                   csharp=('queue_join_gate', join_request('queue_join_gate'), lambda x, r: r),
+                   notes=['C# hook: bridge function "queue_join_gate" (RideVisitorBridge.ExcitementRefusal and JoinDifference on a real '
+                          'bridge; outcome and difference are compared). No thing behind ride +36, as queue-join-difference.',
                           'Fragment of the state-10 handler: the 0xe9a84 call, the 0xe02ec(ride, 1) predicate and the 45 test, '
                           'stopping at 0xecdb0 (joined) or after the refusal thought call 0xecf34. Stubs as queue-join-difference '
-                          'plus 0x5fbcc log (the message text is read), 0xfb7b4 reason and 0xfb54c thought (arguments checked).'])
+                          'plus 0x5fbcc log (the message text is read), 0xfb7b4 reason and 0xfb54c thought (arguments checked).',
+                          '"plan-static" is the claim before F16: rides and sideshows refuse on |preferred - static level| >= 45.'])
+
+RIDE_UPDATE_TARGET = Target('queue-ride-update', 'Ride update 0xe0a8c (what a broken ride does to its queue)',
+                            'QUEUE-008, QUEUE-019 / QUEUE-plan 5.2 step 3 and 6', RIDE_UPDATE, [(RIDE_UPDATE, 0xE0C3C)],
+                            ride_update_stubs, ride_update_binary, ride_update_plan, ride_update_inputs,
+                            notes=['No C# hook: the C# bridge has only the VAR_BROKEN reading (states 1 and 4), not the ride states 2, 3 '
+                                   'and the others; RideVisitorBridge.DismissHead is that reading (QueueTests). CSHARP_PENDING.',
+                                   'Executed: the dispatch of 0xe0a8c on the ride state +408 and the head-guest decision of its states 1, 2 and 4. '
+                                   'Stubs record the calls instead of running them: 0xe1864 admission, 0xdcebc remove from queue, 0xee804 dismiss, '
+                                   '0xeda04 force aboard, 0xe1758 script release; plus 0xb5758 / 0xb5be0 (VAR_LETMEON), 0xb678 assertion, '
+                                   '0xfa9a4 and the log 0x5fbcc.',
+                                   'Domain: an empty queue has no VAR_LETMEON guest (the original would index ThingArray[0]).'])
 
 TARGETS = [LCG, RAND, QUEUE, CAN_CHANGE_TARGET, SET_CELL, UNBOUNCE, BOUNCE, SPEED_SETTER, SMOOTHING, COAST_STEP, COAST_FINAL,
-           ARRIVAL, ARRIVAL_UPDATE, POINTS, COUNTS, LOAN_OFFERS, LOAN_MONTH, LOAN_TERM, LOAN_TAKE, LOAN_PAYOFF, FAILURE, JOIN_DIFFERENCE_TARGET, JOIN_GATE]
+           ARRIVAL, ARRIVAL_UPDATE, POINTS, COUNTS, LOAN_OFFERS, LOAN_MONTH, LOAN_TERM, LOAN_TAKE, LOAN_PAYOFF, FAILURE, JOIN_DIFFERENCE_TARGET, JOIN_GATE, RIDE_UPDATE_TARGET]
 DOMAINS = {SET_CELL.key: set_cell_domain}

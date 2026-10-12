@@ -338,17 +338,22 @@ public class QueueTests
 	}
 
 	[TestMethod]
-	public void TheExcitementRefusalGatesRidesAndSideshowsAtFortyFive()
+	public void TheExcitementRefusalGatesOnTheLevelByteAtFortyFive()
 	{
-		// The original's 0xe9a84 difference is ride minus preferred; the helper takes preferred minus ride (QUEUE-004, ORACLE.md F16).
-		foreach ( var kind in new[] { RideVisitorKind.Ride, RideVisitorKind.Sideshow } )
+		// The original's 0xe9a84 difference is the ride minus the guest's preference (QUEUE-004, ORACLE.md F16): below it is "not exciting enough" (thought 12, Bored), above "too exciting" (thought 15, Scared).
+		Assert.IsNull( QueueJoinRules.Refusal( 60, 44 ), "|44| passes" );
+		Assert.IsNull( QueueJoinRules.Refusal( 60, -44 ) );
+		Assert.AreEqual( QueueJoinResult.NotExcitingEnough, QueueJoinRules.Refusal( 60, -45 ), "the ride is 45 below the preference" );
+		Assert.AreEqual( QueueJoinResult.TooExciting, QueueJoinRules.Refusal( 60, 45 ), "45 above" );
+		Assert.IsNull( QueueJoinRules.Refusal( 0, 90 ), "an ExcitementLevel of 0 is not gated" );
+		Assert.IsNull( QueueJoinRules.Refusal( 256, 90 ), "only the low byte of the word counts" );
+		Assert.AreEqual( QueueJoinResult.TooExciting, QueueJoinRules.Refusal( 1, 100 ), "the relief difference 100 is too exciting" );
+		// The gate follows the data, not the kind: a shop with a level is gated, a ride without one is not.
+		foreach ( var (kind, level, gated) in new[] { (RideVisitorKind.Shop, 60, true), (RideVisitorKind.Facility, 60, true), (RideVisitorKind.Ride, 60, true), (RideVisitorKind.Ride, 0, false), (RideVisitorKind.Sideshow, 0, false) } )
 		{
-			Assert.IsNull( RideVisitorBridge.ExcitementRefusal( kind, 44 ), "|44| passes" );
-			Assert.IsNull( RideVisitorBridge.ExcitementRefusal( kind, -44 ) );
-			Assert.AreEqual( QueueJoinResult.NotExcitingEnough, RideVisitorBridge.ExcitementRefusal( kind, 45 ), "the ride is 45 below the preference: thought 12 (Bored)" );
-			Assert.AreEqual( QueueJoinResult.TooExciting, RideVisitorBridge.ExcitementRefusal( kind, -45 ), "45 above: thought 15 (Scared)" );
+			var bridge = new RideVisitorBridge( 1, "Gate", kind, 1, level, 10 ) { Parameters = new QueueParameters( true, false, false, 130, 60, 60, 1, 30 ) };
+			Assert.AreEqual( gated, bridge.ExcitementRefusal( 0 ) is not null, $"{kind} with level {level}, a guest preferring 0" );
 		}
-		Assert.IsNull( RideVisitorBridge.ExcitementRefusal( RideVisitorKind.Facility, 90 ), "facilities are not gated" );
 	}
 
 	[TestMethod]
@@ -357,12 +362,13 @@ public class QueueTests
 		// One queue cell: room 4.
 		var rig = new Rig( queueCells: 1 );
 		var ride = rig.Ride;
-		Assert.AreEqual( QueueJoinResult.NotExcitingEnough, ride.JoinQueue( 1, 45 ), "|difference| ≥ 45, ride below the guest's preference" );
-		Assert.AreEqual( QueueJoinResult.TooExciting, ride.JoinQueue( 1, -45 ) );
-		Assert.AreEqual( QueueJoinResult.Joined, ride.JoinQueue( 1, 44 ) );
-		Assert.AreEqual( QueueJoinResult.AlreadyQueued, ride.JoinQueue( 1, 0 ) );
+		// The rig's ride has excitement 55 at its design speed and duration; the join takes the guest's preferred excitement.
+		Assert.AreEqual( QueueJoinResult.NotExcitingEnough, ride.JoinQueue( 1, 100 ), "|difference| ≥ 45, ride below the guest's preference" );
+		Assert.AreEqual( QueueJoinResult.TooExciting, ride.JoinQueue( 1, 10 ) );
+		Assert.AreEqual( QueueJoinResult.Joined, ride.JoinQueue( 1, 99 ) );
+		Assert.AreEqual( QueueJoinResult.AlreadyQueued, ride.JoinQueue( 1 ) );
 		Assert.IsTrue( new[] { 2, 3, 4 }.All( ride.TryJoinQueue ) );
-		Assert.AreEqual( QueueJoinResult.NoRoom, ride.JoinQueue( 5, 90 ), "the room check comes before the excitement gate" );
+		Assert.AreEqual( QueueJoinResult.NoRoom, ride.JoinQueue( 5, 100 ), "the room check comes before the excitement gate" );
 
 		// HasQueue with QWTC 10, CAP 1, DUR 30: two cells give room 8, but the QWTC limit is 4 (the floor).
 		var shop = new Rig( queueCells: 0, parameters: new QueueParameters( true, false, false, 10, 60, 60, 1, 30 ) );
@@ -371,7 +377,7 @@ public class QueueTests
 		shop.Ride.RecomputeQueue( shop.Grid );
 		Assert.AreEqual( (8, 4u, 4), (shop.Ride.QueueRoom, shop.Ride.QueueLimit, shop.Ride.MaximumQueueLength) );
 		Assert.IsTrue( new[] { 1, 2, 3, 4 }.All( shop.Ride.TryJoinQueue ) );
-		Assert.AreEqual( QueueJoinResult.QueueTooLong, shop.Ride.JoinQueue( 5, 0 ) );
+		Assert.AreEqual( QueueJoinResult.QueueTooLong, shop.Ride.JoinQueue( 5 ) );
 
 		// HasQueue with QWTC 600 and 26 cells (laid directly on the grid): room 104, limit trunc(600 × 5 / 30) = 100.
 		var grid = new GuestPathGrid( 30, 30 );
@@ -383,7 +389,7 @@ public class QueueTests
 		Assert.AreEqual( 26, big.QueueSizeInCells );
 		Assert.AreEqual( (104, 100u, 100), (big.QueueRoom, big.QueueLimit, big.MaximumQueueLength) );
 		Assert.IsTrue( Enumerable.Range( 1, 100 ).All( big.TryJoinQueue ) );
-		Assert.AreEqual( QueueJoinResult.QueueTooLong, big.JoinQueue( 101, 0 ) );
+		Assert.AreEqual( QueueJoinResult.QueueTooLong, big.JoinQueue( 101 ) );
 		Assert.AreEqual( 99, big.GetQueuePosition( 100 ) );
 	}
 
@@ -561,7 +567,7 @@ public class QueueTests
 	}
 
 	[TestMethod]
-	public void RideFailureAndQueueEditsSendGuestsAway()
+	public void QueueEditsSendGuestsAway()
 	{
 		var rig = new Rig();
 		rig.HoldAdmission();
@@ -576,10 +582,77 @@ public class QueueTests
 		Assert.AreEqual( 8, rig.Ride.QueueLength );
 		Assert.IsNull( rig.Ride.JoinCell, "the shortened queue no longer touches the path" );
 
+	}
+
+	[TestMethod]
+	public void ABrokenRideDismissesItsQueueHeadFirstOneGuestPerTurn()
+	{
+		// ORACLE.md F15: the ride update of a broken ride (states 1 and 4, 0xe0aec) removes the head guest (0xdcebc) and sends it away
+		// (0xee804) on every turn; 0xdfe34 is a toilet's wear gauge and plays no part. No thought is set, happiness drops by the medium change.
+		var rig = new Rig();
+		rig.HoldAdmission();
+		var guests = Enumerable.Range( 0, 6 ).Select( _ => rig.Send() ).ToList();
+		rig.RunTurns( 120 );
+		Assert.IsTrue( guests.All( guest => guest.State == GuestState.Queueing ) );
+		var before = guests.Select( guest => (guest.Happiness, guest.Thought) ).ToList();
+		var medium = rig.Simulation.Settings.MediumHappinessChange;
+
+		rig.Script[RideVariables.VAR_BROKEN] = 1;
+		for ( var gone = 1; gone <= guests.Count; gone++ )
+		{
+			rig.RunTurns( 1 );
+			Assert.AreEqual( guests.Count - gone, rig.Ride.QueueLength, $"{gone} turns after the breakdown" );
+			Assert.IsTrue( guests.Take( gone ).All( guest => !guest.IsInQueue ), "the head leaves first" );
+			Assert.IsTrue( guests.Skip( gone ).All( guest => guest.IsInQueue ), "the others keep their place and wait" );
+		}
+		Assert.AreEqual( guests.Count, rig.Ride.Dismissed );
+		for ( var index = 0; index < guests.Count; index++ )
+		{
+			Assert.AreEqual( GuestState.WalkingAround, guests[index].State );
+			Assert.AreEqual( before[index].Thought, guests[index].Thought, "dismissal sets no thought, in particular not 'feeling sick'" );
+			Assert.AreEqual( before[index].Happiness - medium, guests[index].Happiness, 0.01f, "0xeb6f4 with selector 1 (PeepInfo.MediumHappinessChange)" );
+		}
+	}
+
+	[TestMethod]
+	public void ARepairedRideKeepsItsQueue()
+	{
+		var rig = new Rig();
+		rig.HoldAdmission();
+		var guests = Enumerable.Range( 0, 6 ).Select( _ => rig.Send() ).ToList();
+		rig.RunTurns( 120 );
 		rig.Script[RideVariables.VAR_BROKEN] = 1;
 		rig.RunTurns( 2 );
-		Assert.IsTrue( guests.All( guest => !guest.IsInQueue ), "a ride failure empties the queue" );
-		Assert.AreEqual( 0, rig.Ride.QueueLength );
+		rig.Script[RideVariables.VAR_BROKEN] = 0;
+		rig.RunTurns( 20 );
+		var dismissed = rig.Ride.Dismissed;
+		Assert.IsTrue( dismissed >= 1, "the breakdown dismissed the head" );
+		Assert.IsTrue( rig.Ride.QueueLength >= guests.Count - dismissed, "the guests that were not dismissed stayed" );
+		Assert.IsTrue( guests.Skip( dismissed ).All( guest => guest.IsInQueue ) );
+	}
+
+	[TestMethod]
+	public void OnlyAWornOutReliefObjectSendsItsQueueAwayFeelingSick()
+	{
+		// ORACLE.md F15: 0xdfe34 is "UsageInfo.ProvidesRelief and the wear gauge (state of repair), as a byte, is below 25"; state 11 step 3 turns it into thought 14.
+		foreach ( var (relief, gauge, leaves) in new[] { (true, 100.0, false), (true, 25.0, false), (true, 24.999, true), (true, 0.0, true), (false, 0.0, false) } )
+		{
+			var rig = new Rig( satisfies: relief ? GuestNeeds.Toilet : GuestNeeds.None );
+			rig.HoldAdmission();
+			var guest = rig.Send();
+			rig.RunTurns( 60 );
+			Assert.IsTrue( guest.IsInQueue );
+			rig.Ride.WearGauge = gauge;
+			var thought = GuestThought.None;
+			rig.RunTurns( 5, () =>
+			{
+				if ( thought == GuestThought.None && guest.State == GuestState.WalkingAround )
+					thought = guest.Thought;
+			} );
+			Assert.AreEqual( leaves, !guest.IsInQueue, $"relief {relief}, gauge {gauge}" );
+			if ( leaves )
+				Assert.AreEqual( GuestThought.FeelingSick, thought );
+		}
 	}
 
 	// ---- Admission -------------------------------------------------------------------------------
@@ -766,11 +839,14 @@ public class QueueTests
 		ride.AdmissionChecked += ( _, _ ) => checks++;
 		NextTurn( ride, host );
 		Assert.AreEqual( (0, 0), (checks, ride.CalledGuest), "no admission evaluation while broken" );
+		CollectionAssert.AreEqual( new[] { "away 1" }, host.Events, "the ready head is dismissed instead (F15)" );
 		// Joining: a broken ride refuses like a closed one (APPROX:QUEUE-018).
-		Assert.AreEqual( QueueJoinResult.Closed, ride.JoinQueue( 2, 0 ) );
+		Assert.AreEqual( QueueJoinResult.Closed, ride.JoinQueue( 2 ) );
 		script[RideVariables.VAR_BROKEN] = 0;
+		Assert.IsTrue( ride.TryJoinQueue( 1 ) );
+		host.AtFront.Add( 1 );
 		Assert.AreEqual( 1, NextTurn( ride, host ).CalledGuest, "repaired: the head is called again" );
-		Assert.AreEqual( QueueJoinResult.Joined, ride.JoinQueue( 2, 0 ) );
+		Assert.AreEqual( QueueJoinResult.Joined, ride.JoinQueue( 2 ) );
 
 		// Choosing: walking guests skip a broken attraction (APPROX:QUEUE-017).
 		foreach ( var broken in new[] { false, true } )

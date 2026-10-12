@@ -263,7 +263,7 @@ public class GuestTests
 		// A queue-less shop without a queue path: one front cell gives room for 4 (count < 4 × cells), the data limit is the floor of 4.
 		Assert.AreEqual( 4, shop.Bridge.MaximumQueueLength );
 		Assert.IsTrue( new[] { 1, 2, 3, 4 }.All( shop.Bridge.TryJoinQueue ) );
-		Assert.AreEqual( QueueJoinResult.NoRoom, shop.Bridge.JoinQueue( 5, 0 ), "queue full" );
+		Assert.AreEqual( QueueJoinResult.NoRoom, shop.Bridge.JoinQueue( 5 ), "queue full" );
 		shop.Step(); // calls 1, script takes it
 		shop.Step();
 		shop.Open = false;

@@ -28,7 +28,9 @@ public partial class Level
 			return;
 		int count;
 		string? skipped = null;
-		if ( visitLayout != null )
+		if ( resumeState != null )
+			count = ParkLayoutSnapshot.RestoreObjects( resumeState.Layout, Objects ).Count;
+		else if ( visitLayout != null )
 		{
 			// A version 2 visit places exactly the owner's objects, at their published anchors and open state.
 			var (placed, missing) = SharedParkLayout.PlaceObjects( Objects, visitLayout.Objects );
@@ -477,16 +479,29 @@ public partial class Level
 	{
 		if ( Park == null )
 			return;
-		var free = Park.Economy.Objects.Where( state => state.Imported ).OrderBy( state => state.Id ).ToList();
-		foreach ( var item in Objects.Objects )
+		if ( resumeState != null )
 		{
-			var state = free.FirstOrDefault( candidate => candidate.InfoId == item.Entry.InfoId );
-			if ( state == null && Park.Economy.Catalog.TryGet( item.Entry.InfoId, out _ ) )
-				state = Park.Economy.RegisterExisting( item.Entry.InfoId );
-			if ( state == null )
-				continue;
-			free.Remove( state );
-			LinkEconomy( item, state.Id );
+			var items = Objects.Objects.ToDictionary( item => item.Visitors.AttractionId );
+			foreach ( var binding in resumeState.EconomyBindings )
+			{
+				if ( !items.TryGetValue( binding.AttractionId, out var item )
+					|| !Park.Economy.TryGetObject( binding.InstanceId, out var state ) || state.InfoId != item.Entry.InfoId )
+					throw new InvalidDataException( "A saved attraction does not match its economy instance." );
+				LinkEconomy( item, binding.InstanceId );
+			}
+		}
+		else
+		{
+			var free = Park.Economy.Objects.Where( state => state.Imported ).OrderBy( state => state.Id ).ToList();
+			foreach ( var item in Objects.Objects )
+			{
+				var state = free.FirstOrDefault( candidate => candidate.InfoId == item.Entry.InfoId );
+				if ( state == null && Park.Economy.Catalog.TryGet( item.Entry.InfoId, out _ ) )
+					state = Park.Economy.RegisterExisting( item.Entry.InfoId );
+				if ( state == null ) continue;
+				free.Remove( state );
+				LinkEconomy( item, state.Id );
+			}
 		}
 		Objects.ObjectRemoved += item =>
 		{

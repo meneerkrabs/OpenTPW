@@ -11,7 +11,7 @@ public enum GameMode { InstantAction, FullSimulation }
 
 /// <summary>A park that can be loaded from the Load Park screen.</summary>
 /// <param name="Sandbox">True for the OpenTPW sandbox save (jungle sandbox), false for an original read-only park.</param>
-public sealed record ParkLoadEntry( string Level, int ThemeNameIndex, bool Sandbox );
+public sealed record ParkLoadEntry( string Level, int ThemeNameIndex, bool Sandbox, string? OwnSavePath = null, string? DisplayName = null );
 
 /// <summary>What the front-end screens ask of the game.</summary>
 public sealed class FrontEndActions
@@ -178,8 +178,8 @@ public sealed class FrontEndMenu
 			var entry = entries[index];
 			screen.Add( new UiListItem
 			{
-				Id = entry.Sandbox ? "load:sandbox" : $"load:{entry.Level}",
-				Text = () => entry.Sandbox ? strings.Extra( OpenTpwText.SandboxParkEntry )
+				Id = entry.OwnSavePath != null ? $"load:own:{entry.Level}" : entry.Sandbox ? "load:sandbox" : $"load:{entry.Level}",
+				Text = () => entry.OwnSavePath != null ? entry.DisplayName ?? entry.Level : entry.Sandbox ? strings.Extra( OpenTpwText.SandboxParkEntry )
 					: string.Format( strings.Extra( OpenTpwText.OriginalParkEntry ), entry.ThemeNameIndex >= 0 ? strings.Theme( entry.ThemeNameIndex ) : entry.Level ),
 				Help = strings.Help( 318 ),
 				Clicked = () => load( entry ),

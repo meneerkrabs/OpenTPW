@@ -28,7 +28,9 @@ internal static class ParkResumeSaveFile
 	public static byte[] Serialize( ParkResumeSnapshot snapshot )
 	{
 		ValidateShape( snapshot );
-		return ParkResumeJson.Serialize( snapshot );
+		var bytes = ParkResumeJson.Serialize( snapshot );
+		if ( bytes.Length > MaximumFileSize ) throw new InvalidDataException( "World save exceeds the size limit." );
+		return bytes;
 	}
 
 	/// <summary>
@@ -131,6 +133,11 @@ internal static class ParkResumeSaveFile
 				$"{entry.DisplayName} is a coaster station; coaster state is not part of the park-resume slice" );
 		}
 		var instancesById = snapshot.Economy.Objects.ToDictionary( item => item.Id );
+		var bindingsByAttraction = snapshot.EconomyBindings.ToDictionary( binding => binding.AttractionId );
+		foreach ( var record in snapshot.Layout.Objects )
+			if ( economyCatalog.TryGet( record.InfoId, out _ ) )
+				Require( bindingsByAttraction.ContainsKey( record.AttractionId ),
+					$"placed attraction {record.AttractionId} is missing its economy binding" );
 		foreach ( var binding in snapshot.EconomyBindings )
 		{
 			var instance = instancesById[binding.InstanceId];

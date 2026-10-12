@@ -64,31 +64,43 @@ public partial class Level : IDisposable
 	private readonly OpenTPW.Online.Packages.MinimalParkPayload? visitLayout;
 	/// <summary>The visit's placed objects, one entry per payload record (null where content was missing); coaster stations are looked up here.</summary>
 	private IReadOnlyList<OriginalObject?>? visitedObjects;
+	private ParkResumeSnapshot? resumeState;
 	// Developer tools only (--sandbox); players use the original-style online screens (OnlineScreens).
 	private OnlinePanel? onlinePanel;
 	private OnlineFolders onlineFolders = null!;
 
 	/// <param name="start">How a writable original level starts; ignored for the sandbox and for read-only visits (which load the shipped save and run no economy).</param>
 	public Level( string levelName, bool loadOriginalLevel = false, ParkVisitInfo? visit = null, OnlineFolders? onlineFolders = null, ParkStartKind start = ParkStartKind.OriginalSaveReference, WorldSeed? seed = null )
+		: this( levelName, loadOriginalLevel, visit, onlineFolders, start, seed, null, null ) { }
+
+	internal Level( ParkResumeSnapshot snapshot, ParkEconomy economy, OnlineFolders? onlineFolders = null )
+		: this( snapshot.Theme, true, null, onlineFolders, snapshot.StartKind, new WorldSeed( snapshot.Seed ), snapshot, economy ) { }
+
+	private Level( string levelName, bool loadOriginalLevel, ParkVisitInfo? visit, OnlineFolders? onlineFolders,
+		ParkStartKind start, WorldSeed? seed, ParkResumeSnapshot? resume, ParkEconomy? resumedEconomy )
 	{
 		if ( visit != null && visit.Level != levelName )
 			throw new ArgumentException( "The visit level must match the loaded level.", nameof( visit ) );
 		LevelName = levelName;
 		Seed = seed ?? WorldSeed.Default;
 		Visit = visit;
+		resumeState = resume;
 		visitLayout = visit != null && visit.Payload.HasBuiltLayout && !visit.IsSandbox ? visit.Payload : null;
 		Global = new SettingsFile( $"/levels/{levelName}/global.sam" );
 		Current = this;
 		if ( visit != null ? !visit.IsSandbox : loadOriginalLevel )
 		{
-			OriginalPark = OriginalPark.Load( levelName, readShippedSave: IsReadOnlyVisit || ParkStart.ReadsShippedSave( start ) );
+			OriginalPark = OriginalPark.Load( levelName, readShippedSave: resume == null && (IsReadOnlyVisit || ParkStart.ReadsShippedSave( start )) );
 			// [EXT:tpi-viewer] Theme Park Inc has no economy here: its balance keys differ from Theme Park World's (docs/THEME-PARK-INC.md).
 			if ( !IsReadOnlyVisit && !GameEditions.IsThemeParkInc )
-				Park = ParkEconomyRuntime.ForOriginalLevel( OriginalPark, start, Seed );
+				Park = resume == null ? ParkEconomyRuntime.ForOriginalLevel( OriginalPark, start, Seed )
+					: ParkEconomyRuntime.ForResume( resumedEconomy ?? throw new InvalidDataException( "The resumed economy is missing." ), start );
 		}
 
 		SetupEntities();
+		if ( resume != null ) RestoreResumeSimulation( resume );
 		SetupHud( onlineFolders );
+		resumeState = null;
 		if ( visitLayout != null )
 			ApplyVisitedLayout();
 		if ( visit?.Payload.PrototypeRide is { } ride )
@@ -202,10 +214,11 @@ public partial class Level : IDisposable
 				var cells = Guests.Grid.Cells;
 				OriginalTerrain.PathSource = ( x, y ) => cells.TypeAt( x, y ) == ParkCellType.Path;
 				OriginalTerrain.QueueSource = ( x, y ) => cells.TypeAt( x, y ) == ParkCellType.Queue;
+				if ( resumeState != null ) OriginalTerrain.RefreshPaths();
 				renderedCellVersion = cells.Version;
 			}
 			if ( Park != null && Guests != null )
-				Park.AttachGuests( Guests );
+				Park.AttachGuests( Guests, openParkOnAttach: resumeState == null );
 			ConnectObjectsToGuests();
 			ConnectObjectsToEconomy();
 			SetupStaff();
@@ -216,7 +229,8 @@ public partial class Level : IDisposable
 	private void SetupGuests( OriginalPark park )
 	{
 		// A version 2 visit walks the shared park's own cell map (the owner's built paths and queues), not the shipped import.
-		var grid = visitLayout?.Cells != null
+		var grid = resumeState != null ? new GuestPathGrid( ParkLayoutSnapshot.RestoreCellMap( resumeState.Layout ) )
+			: visitLayout?.Cells != null
 			? new GuestPathGrid( SharedParkLayout.BuildCellMap( park.Map.CellCountX, park.Map.CellCountY, visitLayout.Cells ) )
 			: GuestPathGrid.FromOriginal( park.Map, park.Save );
 		Guests = new GuestSimulation( grid, GuestSettings.Load( park.LevelName ), Seed.GuestStream );
@@ -367,22 +381,7 @@ public partial class Level : IDisposable
 			renderedCellVersion = Guests.Grid.Cells.Version;
 			OriginalTerrain.RefreshPaths();
 		}
-		simulationClock.Advance( Time.Delta * SimulationTimeScale, deltaTime =>
-		{
-			SyncObjectEconomy();
-			Guests?.Tick( deltaTime );
-			PlacedRide?.Simulate( deltaTime );
-			Objects.Simulate( deltaTime );
-			Park?.FixedTick();
-			if ( Park != null && Guests != null )
-			{
-				Weather ??= new ParkWeather( Park.Economy.Settings.Standard, Seed.WeatherStream, Guests.Grid.Cells.Width, Guests.Grid.Cells.Height );
-				Weather.AdvanceTo( Park.Economy.Tick );
-			}
-			// The deferred gate-close retry runs after the thing sweep, as the original's world sweep does (Mac 0x10536c).
-			Gate?.Tick();
-			StaffWorld?.Tick( deltaTime );
-		} );
+		AdvanceSimulation( Time.Delta * SimulationTimeScale );
 		foreach ( var entity in Entity.All.ToArray() )
 			entity.Update();
 		// Riding follows the frame just simulated; park-camera input is consumed only by the earlier update.

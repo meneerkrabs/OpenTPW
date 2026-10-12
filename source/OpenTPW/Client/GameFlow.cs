@@ -10,7 +10,7 @@ namespace OpenTPW;
 /// HUD, and owns the UI renderer, UI strings/fonts and options. Transitions are queued and run at
 /// the start of the next update so no entity list is modified while it is iterated.
 /// </summary>
-internal sealed class GameFlow : IDisposable
+internal sealed partial class GameFlow : IDisposable
 {
 	private readonly UiRenderer backgroundRenderer;
 	private readonly UiRenderer overlayRenderer;
@@ -175,6 +175,20 @@ internal sealed class GameFlow : IDisposable
 	public IReadOnlyList<ParkLoadEntry> FindLoadEntries()
 	{
 		var entries = new List<ParkLoadEntry>();
+		foreach ( var theme in ObjectCatalog.Themes )
+		{
+			var path = SaveFileSystem.GetAbsolutePath( $"opentpw-{theme}-world.json" );
+			if ( !File.Exists( path ) ) continue;
+			try
+			{
+				var saved = ParkResumeSaveFile.Load( path );
+				entries.Add( new ParkLoadEntry( saved.Theme, -1, false, path, saved.DisplayName ) );
+			}
+			catch ( Exception error ) when ( error is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or ArgumentException )
+			{
+				Log.Warning( $"Saved park {Path.GetFileName( path )} cannot be listed: {error.Message}" );
+			}
+		}
 		if ( File.Exists( SaveFileSystem.GetAbsolutePath( "opentpw-sandbox.json" ) ) )
 			entries.Add( new ParkLoadEntry( "jungle", 0, true ) );
 		foreach ( var island in (lobbyDefinition ??= LobbyDefinition.Load()).Islands )
@@ -204,6 +218,19 @@ internal sealed class GameFlow : IDisposable
 
 	public void LoadPark( ParkLoadEntry entry )
 	{
+		if ( entry.OwnSavePath != null )
+		{
+			try { ResumePark( ParkResumeSaveFile.Load( entry.OwnSavePath ) ); }
+			catch ( Exception error ) when ( error is IOException or UnauthorizedAccessException or System.Text.Json.JsonException
+				or ArgumentException or InvalidOperationException or NotSupportedException )
+			{
+				Log.Warning( $"Park load failed: {error.Message}" );
+				var stack = Hud?.Stack ?? Menu?.Stack;
+				stack?.Push( UiDialogs.Message( "loadFailed", () => error.Message,
+					(() => Strings.Extra( OpenTpwText.Back ), () => stack.Pop()) ) );
+			}
+			return;
+		}
 		if ( entry.Sandbox )
 		{
 			StartLevel( "jungle", original: false, developerPanels: false );
@@ -236,14 +263,7 @@ internal sealed class GameFlow : IDisposable
 		// Money, calendar, speed and purchases come from the park economy of original levels (Level.Park,
 		// looked up on every access so loading a park save is followed); the generic sandbox has none.
 		IHudParkStatus status = level.Park != null ? EconomyParkStatus.ForLevel( level ) : new NoEconomyStatus();
-		Hud = new ParkHud( level, Strings, status, new OriginalBuildCatalog( level.Objects.Catalog ), new HudHost
-		{
-			ExitToLobby = () => Queue( () => ShowFrontEnd( levelName ) ),
-			Quit = Quit,
-			CreateOptions = CreateOptions,
-			CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, Strings, FindLoadEntries(), entry => QueueLevel( entry.Level, () => LoadPark( entry ) ) ),
-			GoOnline = ShowOnline,
-		} );
+		Hud = CreateParkHud( level, status );
 		// [EXT:online-visit] read-only visits of shared parks get no advisor (the original has no visits)
 		// [EXT:sandbox] the generic sandbox (not an original level) gets no automatic advisor either; only original levels raise its game events
 		if ( AutomaticAdvisorEnabled && original && visit == null && !advisorUnavailable )
@@ -260,6 +280,17 @@ internal sealed class GameFlow : IDisposable
 		}
 		return level;
 	}
+
+	private ParkHud CreateParkHud( Level level, IHudParkStatus status ) =>
+		new( level, Strings, status, new OriginalBuildCatalog( level.Objects.Catalog ), new HudHost
+		{
+			ExitToLobby = () => Queue( () => ShowFrontEnd( level.LevelName ) ),
+			Quit = Quit,
+			SavePark = SaveCurrentPark,
+			CreateOptions = CreateOptions,
+			CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, Strings, FindLoadEntries(), entry => QueueLevel( entry.Level, () => LoadPark( entry ) ) ),
+			GoOnline = ShowOnline,
+		} );
 
 	/// <summary>
 	/// Guests whose cell is within four cells of the camera's ground target — the crowd sentence's parameter
@@ -285,7 +316,7 @@ internal sealed class GameFlow : IDisposable
 	/// <summary>The crowd count's radius in cells (<c>0x101C2490</c> passes 4 to the guest counter).</summary>
 	public const int CrowdRadiusCells = 4;
 
-	private void TearDown()
+	private void TearDown( bool applyPendingLanguage = true )
 	{
 		Hud?.Stack.Clear();
 		Menu?.Stack.Clear();
@@ -312,7 +343,7 @@ internal sealed class GameFlow : IDisposable
 		backdrop = Backdrop.Lobby;
 		Menu = null;
 		// Leaving a park (to the lobby or straight into another park) applies a language chosen inside it.
-		ApplyPendingLanguage();
+		if ( applyPendingLanguage ) ApplyPendingLanguage();
 	}
 
 	public static void Quit() => global::Global.Render.Window.SdlWindow.Close();

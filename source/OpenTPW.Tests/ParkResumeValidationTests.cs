@@ -370,6 +370,7 @@ public class ParkResumeCatalogValidationTests
 		void Rejects( ParkResumeSnapshot corrupted, string message ) =>
 			StringAssert.Contains( Assert.ThrowsException<InvalidDataException>(
 				() => ParkResumeSaveFile.ValidateSnapshot( corrupted, fixture.Catalog, fixture.Settings, fixture.EconomyCatalog, fixture.Manifest ) ).Message, message );
+		Rejects( snapshot with { EconomyBindings = snapshot.EconomyBindings.Skip( 1 ).ToArray() }, "missing its economy binding" );
 		// A binding to an instance of another Info.Id is refused even though a matching-Info.Id instance exists:
 		// the association is the saved direct mapping, never re-derived by first Info.Id match.
 		Rejects( snapshot with { EconomyBindings = new List<ParkResumeEconomyBinding> { new( 1, fixture.SideshowInstanceId ), new( 2, fixture.SideshowInstanceId ) } },

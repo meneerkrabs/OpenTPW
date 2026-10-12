@@ -5058,6 +5058,158 @@ BREAKDOWN_TARGET = Target('ride-breakdown-update', 'Breakdown check of the ride 
                                  '"plan-before" is the rule before F27: ParkEconomy.UpdateRides.'])
 
 
+# ============================================================================== (n) STAFF: the wage and the dismissal charge (F28)
+# What the original charges for a staff member. The wage of 0xf46bc is the same for both routines: the thing's class byte +2 (4 mechanic, 5 handyman,
+# 6 entertainer, 7 guard, 8 researcher) selects the PerTypeStaffConsts.PayMultiplier (balance +832 + 4 * index, in the StaffType order handyman,
+# mechanic, entertainer, guard, researcher) and the grade (thing +484) the PerGradeStaffConsts.BaseWage (+748 + 16 * grade); the wage is their 32-bit product.
+# The monthly handler 0xf3364 (bank message 12, reached by the thing's message handler 0xf2b5c) debits it with the bank's Spend 0xcbfdc and adds it to the
+# park statistic +0x1f7f0. The dismissal routine 0xf33ec (UI-MAP "the dismissal routine 0x100f33ec") does the same once more when a staff member is dismissed
+# (its tail from 0xf3518); no routine of the hire path debits the bank (the test `test_hiring_has_no_debit_in_the_binary`).
+WAGE_MONTH = 0xF3364             # (staff thing): the monthly wage, bank message 12
+DISMISS_FRAGMENT, DISMISS_STOP = 0xF3518, 0xF3568   # the charge of the dismissal routine 0xf33ec, up to its effect call 0xe66b0
+WAGE_BASE_WAGE, WAGE_PAY_MULTIPLIER = 748, 832      # balance +748 + 16 * grade, +832 + 4 * type index
+WAGE_STAT = 0x20000 - 2064       # park +0x1f7f0: the staff wages statistic, raised by the wage
+WAGE_ALLOWED = [(WAGE_MONTH, 0xF33EC), (0xF46BC, 0xF4780), (0x108424, 0x108480), (0x1082B4, 0x108310), (0xCBFDC, 0xCC084)]
+DISMISS_ALLOWED = [(DISMISS_FRAGMENT, 0xF356C), (0xF46BC, 0xF4780), (0x108424, 0x108480), (0x1082B4, 0x108310), (0xCBFDC, 0xCC084)]
+WAGE_STATE = type('WageState', (), {})()
+
+
+def wage_stubs(target: Target) -> dict:
+    def assertion(m: Machine) -> None:
+        target.log.append(('assert', m.gpr[3] & 0xFF))
+    return {ASSERT: assertion}
+
+
+def wage_setup(sb: Sandbox, x: dict):
+    """A game with a bank thing and a park thing (as train_binary), the settings tables of the wage and one staff thing."""
+    game = sb.alloc(0x1E0000)
+    for slot in TRAIN_GAME_SLOTS:
+        sb.write(toc_pointer(sb, slot), 'I', game)
+    things = toc_pointer(sb, POINTS_THINGS)
+    bank = sb.struct(512, {12: ('i', x['balance']), 276: ('i', 1 if x['active'] else 0)})
+    park = sb.struct(ARRIVAL_PARK_SIZE)
+    sb.write(things + 20 * TRAIN_BANK_ID, 'I', bank)
+    sb.write(things + 20 * TRAIN_PARK_ID, 'I', park)
+    sb.write(game + 0x1E0000 - 22746, 'H', TRAIN_BANK_ID)
+    sb.write(game + 0x1E0000 - 22752, 'H', TRAIN_PARK_ID)
+    sb.write(game + 0x1E0000 - 22772, 'I', 1)
+    settings = toc_pointer(sb, TRAIN_SETTINGS)
+    for grade, wage in enumerate(x['base_wages']):
+        sb.write(settings + WAGE_BASE_WAGE + 16 * grade, 'i', wage)
+    for role, multiplier in enumerate(x['multipliers']):
+        sb.write(settings + WAGE_PAY_MULTIPLIER + 4 * role, 'i', multiplier)
+    staff = sb.struct(536, {0: ('H', TRAIN_FIRST_STAFF_ID), 2: ('B', TRAIN_ROLE_CLASS[x['role']]), 484: ('i', x['grade'])})
+    return game, bank, park, staff
+
+
+def wage_result(sb: Sandbox, x: dict, bank: int, park: int, log) -> dict:
+    if any(entry[0] == 'assert' and entry[1] == 0 for entry in log):
+        raise AssertionError('an assertion failed while charging a wage')
+    return {'balance': sb.read(bank + 12, 'i') - x['balance'], 'profit': -sb.read(bank + 292, 'i'),
+            'month': sb.read(park + 0x20000 - 2656, 'i'), 'wages': sb.read(park + WAGE_STAT, 'i')}
+
+
+def wage_month_binary(sb: Sandbox, x: dict, log) -> dict:
+    game, bank, park, staff = wage_setup(sb, x)
+    sb.call(WAGE_MONTH, {3: staff})
+    return wage_result(sb, x, bank, park, log)
+
+
+def dismiss_binary(sb: Sandbox, x: dict, log) -> dict:
+    game, bank, park, staff = wage_setup(sb, x)
+    sb.call(DISMISS_FRAGMENT, {29: toc_pointer(sb, TRAIN_GAME_SLOTS[0]), 31: staff}, stop=DISMISS_STOP)   # r29: the game variable, r31: the staff thing
+    return wage_result(sb, x, bank, park, log)
+
+
+def wage_value(x: dict, wrong_type: bool = False, wrong_grade: bool = False) -> int:
+    """0xf46bc: PayMultiplier[type index] * BaseWage[grade], a 32-bit product."""
+    role = (x['role'] + 1) % 5 if wrong_type else x['role']
+    grade = (x['grade'] + 1) % 5 if wrong_grade else x['grade']
+    return s32(x['multipliers'][role] * x['base_wages'][grade])
+
+
+def wage_reading(x: dict, **variant) -> dict:
+    """The charge as read: the bank balance and the year profit fall by the wage and the two park statistics rise by it, when the bank's flag +276 is set;
+    with the flag clear 0xcbfdc does nothing, but the wages statistic (+0x1f7f0) is raised either way."""
+    wage = wage_value(x, **variant)
+    if not x['active']:
+        return {'balance': 0, 'profit': 0, 'month': 0, 'wages': wage}
+    return {'balance': -wage, 'profit': wage, 'month': wage, 'wages': wage}
+
+
+def wage_month_plan(x: dict) -> dict:
+    """ECONOMY.md and ParkStaff (ECON-043): the monthly wage is BaseWage[grade] x PayMultiplier[type] and is paid at the month's end: the balance and the
+    year profit fall by it and it is booked as a staff cost (the month's costs and the staff total)."""
+    return wage_reading(x)
+
+
+def dismiss_free(x: dict) -> dict:
+    """The rule before F28 (ParkEconomy.Fire): a dismissal is free."""
+    return {'balance': 0, 'profit': 0, 'month': 0, 'wages': 0}
+
+
+def dismiss_plan(x: dict) -> dict:
+    """The corrected plan (ECONOMY.md, ECON-012): the routine reading, the wage is charged once more when a staff member is dismissed."""
+    return wage_reading(x)
+
+
+def wage_request(function: str):
+    def request(x: dict) -> dict:
+        return {'fn': function, 'role': x['role'], 'grade': x['grade'], 'multipliers': x['multipliers'], 'base_wages': x['base_wages'],
+                'balance': x['balance'], 'active': x['active']}
+    return request
+
+
+def wage_csharp_result(x: dict, answer: dict) -> dict:
+    """The bank flag has no C# counterpart (ECON-051): an inactive bank is not compared, and C# books no park statistics (None)."""
+    if not x['active']:
+        return {'balance': None, 'profit': None, 'month': None, 'wages': None}
+    return {'balance': answer['balance'], 'profit': answer['profit'], 'month': None, 'wages': None}
+
+
+def wage_equal(original: dict, other: dict) -> bool:
+    return all(value is None or original[key] == value for key, value in other.items())
+
+
+def wage_inputs(rng: random.Random, n: int) -> list:
+    def make(**kw) -> dict:
+        x = {'role': rng.randrange(5), 'grade': rng.choice([0, 1, 2, 3, 4, rng.randrange(5)]),
+             'multipliers': [rng.choice([1, 2, 3, 5, 7, rng.randrange(0, 40)]) for _ in range(5)],
+             'base_wages': [rng.choice([50, 100, 200, 400, 800, rng.randrange(0, 5000)]) for _ in range(5)],
+             'balance': rng.choice([1_000_000, 50_000, 0, 123, -5000, rng.randrange(-10 ** 6, 10 ** 6)]), 'active': rng.random() < 0.9}
+        x.update(kw)
+        return x
+    base = dict(role=0, grade=0, multipliers=[2, 3, 4, 5, 6], base_wages=[500, 600, 700, 800, 900], balance=1_000_000, active=True)
+    edges = [make(**base),                                          # a grade-0 handyman: 2 x 500
+             make(**{**base, 'role': 1, 'grade': 2}), make(**{**base, 'role': 4, 'grade': 4}), make(**{**base, 'role': 3, 'grade': 1}),
+             make(**{**base, 'role': 2, 'grade': 3}),
+             make(**{**base, 'active': False}),                     # the debit does nothing; the wages statistic still rises
+             make(**{**base, 'balance': 100}),                      # more than the balance: the balance goes negative (no check)
+             make(**{**base, 'balance': 0}),
+             make(**{**base, 'multipliers': [0] * 5}), make(**{**base, 'base_wages': [0] * 5}),
+             make(**{**base, 'multipliers': [65536] * 5, 'base_wages': [65536] * 5})]   # the 32-bit product wraps to 0
+    return edges + [make() for _ in range(n)]
+
+
+WAGE_MONTH_TARGET = Target('staff-wage-month', 'Monthly staff wage 0xf3364 (bank message 12)', 'ECONOMY.md / ECON-043',
+                           WAGE_MONTH, WAGE_ALLOWED, wage_stubs, wage_month_binary, wage_month_plan, wage_inputs, equal=wage_equal,
+                           alternatives={'routine-reading': wage_reading},
+                           csharp=('staff_wage_month', wage_request('staff_wage_month'), wage_csharp_result),
+                           notes=['C# hook: bridge function "staff_wage_month" (ParkEconomy.EndMonth on a one-employee park: the balance and the year profit; the '
+                                  'park statistics have no C# counterpart and the bank flag is not compared, ECON-051).',
+                                  'Executed: 0xf3364, the wage 0xf46bc, the game lookups 0x108424 / 0x1082b4 and the bank debit 0xcbfdc with its statistics. '
+                                  'Stub: the assertion 0xb678 (a zero condition fails the run).',
+                                  'Domain: grades 0..4 (the tables have five entries).'])
+DISMISS_TARGET = Target('staff-dismiss-charge', 'Dismissal charge (tail of 0xf33ec from 0xf3518)', 'ECONOMY.md / ECON-012, UI-MAP dismissal',
+                        DISMISS_FRAGMENT, DISMISS_ALLOWED, wage_stubs, dismiss_binary, dismiss_plan, wage_inputs, equal=wage_equal,
+                        alternatives={'plan-free': dismiss_free, 'routine-reading': wage_reading},
+                        csharp=('staff_dismiss', wage_request('staff_dismiss'), wage_csharp_result),
+                        notes=['C# hook: bridge function "staff_dismiss" (ParkEconomy.Fire on a one-employee park: the balance and the year profit).',
+                               'Executed: the fragment 0xf3518..0xf3568 of the dismissal routine (the wage 0xf46bc, the bank debit 0xcbfdc, the wages statistic '
+                               '+0x1f7f0); the run ends before the effect call 0xe66b0 and the removal of the thing 0xfad64. The first part of 0xf33ec (the '
+                               'commands it queues) is not executed. "plan-free" is the rule before F28: dismissing is free.'])
+
+
 # ============================================================================== registry
 LCG =Target('det-world-lcg', 'World LCG step 0x105328', 'DET-plan §2.3 / det_model.world_next', 0x105328,
              [(0x105328, 0x10536C)], lambda t: {}, lcg_binary, lcg_plan, lcg_inputs,
@@ -5765,7 +5917,7 @@ SPEED_TARGET = Target('clock-speed-scale', 'Speed keys 0x11315c / 0x113184 / 0x1
 
 TARGETS = [LCG, RAND, QUEUE, CAN_CHANGE_TARGET, SET_CELL, UNBOUNCE, BOUNCE, SPEED_SETTER, SMOOTHING, BOOST, COAST_STEP, COAST_FINAL,
            ARRIVAL, ARRIVAL_UPDATE, POINTS, COUNTS, LOAN_OFFERS, LOAN_MONTH, LOAN_TERM, LOAN_TAKE, LOAN_PAYOFF, FAILURE, JOIN_DIFFERENCE_TARGET, JOIN_GATE, RIDE_UPDATE_TARGET, ECON_SALE, ECON_TRIGGER, TRAIN_TARGET,
-           MAY_OPEN_TARGET, SET_STATE_TARGET, REPAIR_TARGET, BREAKDOWN_TARGET, REPAIR_TIMER, REPAIR_ARRIVAL_TARGET, SCRAP, VITALS, SEEK, GRIEVANCE, STRIKE_MONTH, PROFIT_TARGET, HINT_TARGET, LOCAL_TICKETS_TARGET, GLOBAL_TICKETS_TARGET,
+           MAY_OPEN_TARGET, SET_STATE_TARGET, REPAIR_TARGET, BREAKDOWN_TARGET, WAGE_MONTH_TARGET, DISMISS_TARGET, REPAIR_TIMER, REPAIR_ARRIVAL_TARGET, SCRAP, VITALS, SEEK, GRIEVANCE, STRIKE_MONTH, PROFIT_TARGET, HINT_TARGET, LOCAL_TICKETS_TARGET, GLOBAL_TICKETS_TARGET,
            CALENDAR_DATE, CALENDAR_UPDATE_TARGET, CALENDAR_FIRST_TARGET, CADENCE_TARGET, GOLDEN_TARGET,
            CADENCE_FRAMES_TARGET, SPEED_TARGET]
 DOMAINS = {SET_CELL.key: set_cell_domain, SCRAP.key: scrap_domain}

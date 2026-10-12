@@ -364,6 +364,17 @@ EXPECTED = {
     ('ride-breakdown-update', 'plan-before'): (280, {'state': 1, 'open': 1, 'tick': 64, 'flags': 4, 'life': 100.0, 'repair': 0.0, 'breakstat': 0}),
     ('ride-breakdown-update', 'routine-reading'): AGREE,
     ('ride-breakdown-update', 'csharp'): AGREE,
+    # F28 (ECON-012, ECON-043): the monthly wage handler 0xf3364 debits PayMultiplier[role] x BaseWage[grade] (a 32-bit product) and raises the staff
+    # wages statistic, as ParkStaff / EndMonth already did. The dismissal routine 0xf33ec charges the same wage once more (fixed in C#: Fire was free,
+    # 506 of 511 inputs differ). Hiring has no charge (the static tests below).
+    ('staff-wage-month', 'plan'): AGREE,
+    ('staff-wage-month', 'routine-reading'): AGREE,
+    ('staff-wage-month', 'csharp'): AGREE,
+    ('staff-dismiss-charge', 'plan'): AGREE,
+    ('staff-dismiss-charge', 'plan-free'): (506, {'role': 0, 'grade': 0, 'multipliers': [2, 3, 4, 5, 6], 'base_wages': [500, 600, 700, 800, 900],
+                                                  'balance': 1000000, 'active': True}),
+    ('staff-dismiss-charge', 'routine-reading'): AGREE,
+    ('staff-dismiss-charge', 'csharp'): AGREE,
 }
 CSHARP_PENDING = {'det-world-lcg', 'det-rse-rand', 'coast-rating-step',
                   'coast-rating-final', 'arrival-update', 'park-points-counts-test', 'loan-month',
@@ -764,6 +775,114 @@ class Oracle(unittest.TestCase):
     def test_repair_constant_is_one_hundred(self):
         # ECON-024: the "fixed constant from the data pool" a repair writes into the wear gauge is the float at TOC -11016, 100.0.
         self.assertEqual(self.image.memory.u32(self.image.toc + targets.RIDE_GAUGE_SLOT), targets.bits(100.0))
+
+    # ------------------------------------------------------------------------- F28: what a staff member costs
+    def test_staff_charges(self):
+        for key in (('staff-wage-month', 'plan'), ('staff-wage-month', 'routine-reading'), ('staff-dismiss-charge', 'plan'),
+                    ('staff-dismiss-charge', 'plan-free'), ('staff-dismiss-charge', 'routine-reading')):
+            self.check(key)
+
+    def test_staff_charges_csharp(self):
+        for key in (('staff-wage-month', 'csharp'), ('staff-dismiss-charge', 'csharp')):
+            self.check(key)
+
+    def test_staff_charge_reading_is_sharp(self):
+        # The wage is the pay multiplier of the role times the base wage of the grade (not the other way round, not a neighbour), the debit is
+        # the whole wage, and the wages statistic is raised even where the bank's flag stops the debit.
+        import dataclasses
+        variants = [(targets.WAGE_MONTH_TARGET, 'wrong-type', lambda x: targets.wage_reading(x, wrong_type=True)),
+                    (targets.WAGE_MONTH_TARGET, 'wrong-grade', lambda x: targets.wage_reading(x, wrong_grade=True)),
+                    (targets.WAGE_MONTH_TARGET, 'half-wage', lambda x: {**targets.wage_reading(x), 'balance': targets.wage_reading(x)['balance'] // 2}),
+                    (targets.WAGE_MONTH_TARGET, 'inactive-no-statistic', lambda x: {**targets.wage_reading(x), 'wages': 0 if not x['active'] else targets.wage_reading(x)['wages']}),
+                    (targets.DISMISS_TARGET, 'free', targets.dismiss_free),
+                    (targets.DISMISS_TARGET, 'wrong-grade', lambda x: targets.wage_reading(x, wrong_grade=True))]
+        for target, name, reading in variants:
+            mutated = dataclasses.replace(target, plan=reading, alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, f'{target.key}: {name}')
+
+    def test_dismissal_example(self):
+        # A grade-2 mechanic (pay multiplier 3, base wage 700 for grade 2) dismissed from a park with 1,000,000: 2,100 leave the balance, the year profit
+        # and the staff statistics. Hiring the same mechanic cost nothing (test_hiring_has_no_debit_in_the_binary).
+        target = targets.DISMISS_TARGET
+        sandbox = target.sandbox(self.image)
+        x = {'role': 1, 'grade': 2, 'multipliers': [2, 3, 4, 5, 6], 'base_wages': [500, 600, 700, 800, 900], 'balance': 1_000_000, 'active': True}
+        self.assertEqual(targets.run_binary(target, sandbox, x), {'balance': -2100, 'profit': 2100, 'month': 2100, 'wages': 2100})
+        self.assertEqual(targets.run_binary(target, sandbox, {**x, 'active': False}), {'balance': 0, 'profit': 0, 'month': 0, 'wages': 2100})
+
+    @staticmethod
+    def code_words(image):
+        import struct
+        data = image.container.code.data
+        return struct.unpack('>%dI' % (len(data) // 4), data[:len(data) // 4 * 4])
+
+    @staticmethod
+    def direct_callers(words, target):
+        """Offsets of the bl / b instructions that reach the code offset `target` directly."""
+        callers = []
+        for index, word in enumerate(words):
+            if word >> 26 == 18:
+                displacement = word & 0x03FFFFFC
+                displacement -= 0x04000000 if displacement & 0x02000000 else 0
+                if (displacement if word & 2 else 4 * index + displacement) == target:
+                    callers.append(4 * index)
+        return callers
+
+    BANK_DEBIT, BANK_CREDIT, BANK_OF_GAME = 0xCBFDC, 0xCBF50, 0x108424
+    STAFF_CODE = [(0xD2000, 0xDA800), (0xEFF00, 0xF7800)]    # the five staff roles' update code and the staff manager (the object code starts at 0xda874)
+
+    def test_bank_debit_callers_are_pinned(self):
+        # ECON-012: every direct caller of the bank's Spend and credit routines. Three lie in the staff code: the monthly wage (0xf3364), the dismissal
+        # (0xf33ec) and the month-end training (0xf3588). None lies in the hire path (the next test).
+        words = self.code_words(self.image)
+        debits = self.direct_callers(words, self.BANK_DEBIT)
+        credits = self.direct_callers(words, self.BANK_CREDIT)
+        self.assertEqual(debits, [0x378C0, 0x462C0, 0x4A674, 0x4A6D8, 0x72BC8, 0x749D4, 0x74B28, 0x82CEC, 0x82D2C, 0x88E18, 0xDAD0C, 0xDF1C0, 0xE1EA8,
+                                  0xF33A0, 0xF3534, 0xF35D4])
+        self.assertEqual(credits, [0x462AC, 0x4A644, 0x4A660, 0x4A6C4, 0x85DF8, 0x85F00, 0x8BF44, 0xD06C8, 0xD0A28, 0xDC070, 0xE1B8C, 0x113294, 0x113CD8])
+        in_staff = [pc for pc in debits + credits if any(low <= pc < high for low, high in self.STAFF_CODE)]
+        self.assertEqual(in_staff, [0xF33A0, 0xF3534, 0xF35D4])
+
+    def test_hiring_has_no_debit_in_the_binary(self):
+        # ECON-012 (APPROX-TRACE round 3, "refuted -> not_found"): the hire path is the UI handler of the hire button (0x151d5c -> 0xf61d0, which
+        # queues a command for the candidate), the command's constructor 0x6bfa0, its executor 0x6c034 and completion 0x6c1f4, the pool removal 0xf6b58, the
+        # thing factory 0xb882c and the staff constructors 0xf2914 / 0xf2980. None of them calls the bank's Spend, credit or lookup routine: hiring is free in
+        # the Mac binary. (The staff things' own update code reaches the bank only through the wage, dismissal and training routines above.)
+        words = self.code_words(self.image)
+        hire_path = [(0xF61D0, 0xF6548), (0x6BFA0, 0x6BFDC), (0x6C034, 0x6C278), (0xF6B58, 0xF6BC8), (0xB882C, 0xB8974), (0xF2914, 0xF2B3C)]
+        for routine in (self.BANK_DEBIT, self.BANK_CREDIT, self.BANK_OF_GAME):
+            for pc in self.direct_callers(words, routine):
+                self.assertFalse(any(low <= pc < high for low, high in hire_path), f'{pc:#x} calls {routine:#x} inside the hire path')
+        # The scan sees what it should: the dismissal routine (0xf33ec..0xf3590) does call the bank.
+        self.assertTrue(any(0xF33EC <= pc < 0xF3590 for pc in self.direct_callers(words, self.BANK_DEBIT)))
+
+    def test_hire_fee_keys_are_never_read(self):
+        # StaffPoolInfo.BaseCostPerStaff (balance +700) and CostPerQualityLevel (+704) are never loaded from the settings object (the TOC slot -30084
+        # holds its address). Positive control: the pool timing words +708 and +712 are (ECON-010).
+        words = self.code_words(self.image)
+        loads: dict[int, list[int]] = {}
+        tracked: set[int] = set()
+        load_ops = {32, 34, 40, 42, 48, 50}
+        for index, word in enumerate(words):
+            op, rd, ra = word >> 26, (word >> 21) & 31, (word >> 16) & 31
+            if word == 0x7C0802A6:      # mfspr r0,8: a function prologue
+                tracked.clear()
+                continue
+            displacement = word & 0xFFFF
+            displacement -= 0x10000 if displacement & 0x8000 else 0
+            if op == 32 and ra == 2 and displacement == -30084:
+                tracked.add(rd)
+                continue
+            if op in load_ops and ra in tracked and ra != 1:
+                loads.setdefault(displacement, []).append(4 * index)
+            if op in (14, 15, 32, 34, 40, 42, 48, 50, 12, 13, 8, 7) and rd in tracked and op not in (48, 50):
+                tracked.discard(rd)
+            elif op == 31 and ((word >> 1) & 0x3FF) == 444 and ra in tracked:
+                tracked.discard(ra)
+            elif op == 21 and ra in tracked:
+                tracked.discard(ra)
+        self.assertTrue(loads.get(708) and loads.get(712), 'the scan must find the pool timing words')
+        self.assertEqual((loads.get(700), loads.get(704)), (None, None))
 
     def test_loans(self):
         for key in (('loan-offers', 'plan'), ('loan-offers', 'routine-reading'), ('loan-month', 'routine-reading'),
@@ -1885,6 +2004,11 @@ class CSharpMutation(unittest.TestCase):
          'return after > 100f ? 100f : after < 0f ? 0f : after;', 'return after > 100f ? 100f : after;'),
         ('ride-repair', 'csharp', 'source/OpenTPW/Economy/RideStateRules.cs',
          'public const float FullGauge = 100f;', 'public const float FullGauge = 99f;'),
+        ('staff-dismiss-charge', 'csharp', 'source/OpenTPW/Economy/ParkEconomy.cs',
+         'Post( LedgerCategory.StaffCosts, wage );', 'Post( LedgerCategory.StaffCosts, wage + 1 );'),
+        ('staff-wage-month', 'csharp', 'source/OpenTPW/Economy/BalanceSettings.cs',
+         'unchecked( BaseWage[Math.Clamp( grade, 0, GradeCount - 1 )] * this[type].PayMultiplier )',
+         '(long)BaseWage[Math.Clamp( grade, 0, GradeCount - 1 )] * this[type].PayMultiplier'),
     ]
 
     def test_mutations_are_detected(self):

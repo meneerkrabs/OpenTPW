@@ -1016,12 +1016,20 @@ public sealed class ParkEconomy : IParkEconomy
 		return member;
 	}
 
+	/// <summary>
+	/// Dismisses an employee. The original charges one more monthly wage for it (ORACLE.md F28): hiring costs nothing, dismissing costs the
+	/// wage the employee would have been paid at the month's end.
+	/// </summary>
+	// [BIN:STP-PPC:0x100F33EC dismissal] the dismissal routine (the UI's dismiss button, UI-MAP) debits the wage 0xf46bc with Spend 0xcbfdc, as the monthly handler 0xf3364 does, and adds it to the staff wages statistic +0x1F7F0; the bank has no affordability check
 	public void Fire( int staffId )
 	{
 		var member = Staff.Fire( staffId );
 		if ( objects.TryGetValue( member.AssignedInstanceId, out var item ) )
 			item.MechanicId = 0;
-		Raise( ParkEventKind.StaffFired, 0, member.Id, (int)member.Type );
+		var wage = Staff.MonthlyWage( member );
+		if ( wage > 0 )
+			Post( LedgerCategory.StaffCosts, wage );
+		Raise( ParkEventKind.StaffFired, wage, member.Id, (int)member.Type );
 	}
 
 	public void SetTrainingBudget( StaffType type, long monthlyBudget ) => Staff.SetTrainingBudget( type, monthlyBudget );

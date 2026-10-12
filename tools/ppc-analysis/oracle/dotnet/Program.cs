@@ -54,6 +54,8 @@ var functions = new Dictionary<string, Func<JsonObject, JsonNode?>>
 	["ride_may_open"] = RideMayOpen,
 	["ride_repair"] = RideRepairOutcome,
 	["ride_breakdown_update"] = RideBreakdownUpdate,
+	["staff_wage_month"] = StaffWageMonth,
+	["staff_dismiss"] = StaffDismiss,
 };
 
 using var input = new StreamReader( Console.OpenStandardInput() );
@@ -716,6 +718,48 @@ static JsonNode? ShopSaleMeters( JsonObject a )
 // The leaving test of the state-6 handler (0xebdfc, ORACLE F26): GuestLifecycle.ShouldLeave on the happiness meter, the exit counter and the park-closed word.
 static JsonNode? GuestLeaves( JsonObject a ) =>
 	JsonValue.Create( GuestLifecycle.ShouldLeave( BitConverter.Int32BitsToSingle( (int)(uint)a["happy_bits"]! ), (int)a["exit"]!, (int)a["closing"]! != 0 ) );
+
+
+// A park with one employee of the input's role and grade, the five PerGradeStaffConsts.BaseWage and PerTypeStaffConsts.PayMultiplier words of
+// the input in the synthetic Standard.sam (the employee is added the way an original save adds one: AddImported is internal, reflection).
+static (ParkEconomy Park, StaffMember Member) WagePark( JsonObject a )
+{
+	var text = EconomyTestData.StandardText();
+	for ( var index = 0; index < 5; index++ )
+	{
+		text = System.Text.RegularExpressions.Regex.Replace( text, $@"^PerGradeStaffConsts\[{index}\]\.BaseWage\t\d+",
+			$"PerGradeStaffConsts[{index}].BaseWage\t{(int)a["base_wages"]![index]!}", System.Text.RegularExpressions.RegexOptions.Multiline );
+		text = System.Text.RegularExpressions.Regex.Replace( text, $@"^PerTypeStaffConsts\[{index}\]\.PayMultiplier\t\d+",
+			$"PerTypeStaffConsts[{index}].PayMultiplier\t{(int)a["multipliers"]![index]!}", System.Text.RegularExpressions.RegexOptions.Multiline );
+	}
+	var settings = new BalanceSettings( new SamSettings( new[] { SamDocument.Parse( text, "Standard.sam" ) } ), null, null, "jungle", false );
+	var park = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
+	var add = typeof( ParkStaff ).GetMethod( "AddImported", BindingFlags.NonPublic | BindingFlags.Instance )
+		?? throw new MissingMethodException( "ParkStaff.AddImported" );
+	var member = (StaffMember)add.Invoke( park.Staff, new object[] { (StaffType)(int)a["role"]!, (int)a["grade"]!, 0, 100, StaffState.Idle, 0L } )!;
+	return (park, member);
+}
+
+// The month-end wage (0xf3364, ORACLE F28): ParkEconomy.EndMonth (private: reflection) on a one-employee park. Returns the change of the
+// balance and what was charged to the year profit.
+static JsonNode? StaffWageMonth( JsonObject a )
+{
+	var (park, _) = WagePark( a );
+	var before = park.Balance;
+	var profit = park.Ledger.ProfitThisYear;
+	typeof( ParkEconomy ).GetMethod( "EndMonth", BindingFlags.NonPublic | BindingFlags.Instance )!.Invoke( park, new object[] { 1L } );
+	return new JsonObject { ["balance"] = park.Balance - before, ["profit"] = profit - park.Ledger.ProfitThisYear };
+}
+
+// The dismissal charge (tail of 0xf33ec, ORACLE F28): ParkEconomy.Fire on a one-employee park.
+static JsonNode? StaffDismiss( JsonObject a )
+{
+	var (park, member) = WagePark( a );
+	var before = park.Balance;
+	var profit = park.Ledger.ProfitThisYear;
+	park.Fire( member.Id );
+	return new JsonObject { ["balance"] = park.Balance - before, ["profit"] = profit - park.Ledger.ProfitThisYear };
+}
 
 // 0xde654 (ORACLE F27): RideOpening.MayOpen, the guard of ParkGate.MayOpen, for the ride's state word, the maintenance flag, the back of the
 // queue (a chosen word on both sides) and the track type with the coaster's circuit.

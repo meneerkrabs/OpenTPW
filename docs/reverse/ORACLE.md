@@ -111,7 +111,7 @@ Mutation checks (`test_oracle.py`):
   `CanChangeCellType` rule `old == 21 → old == 20` (2), rule 7 back to `lastCell` (2), the money
   test in 64 bits (2), the UNBOUNCE window `/ 200 → / 250` (39), `IsOpen` dropped from the park points
   counts-test, the loan instalment `… / months → … / months + 1` and the loan credit booked as other income instead of
-  `LoanReceived`. A no-op "mutation" fails the
+  `LoanReceived` and the sign of the join excitement refusal swapped (`queue-join-gate`). A no-op "mutation" fails the
   test.
 
 ## 4. Targets, stubs and results (seed `oracle-v1`, 500 random + boundaries)
@@ -138,6 +138,9 @@ Mutation checks (`test_oracle.py`):
 | `loan-term` | the same fragment, run once a month over a whole term (withdrawals enabled, no batch) | the same | 503 terms | **F13**: **agree** 503/503 with the plan (fixed in C#; 483 differed from the former interest-on-balance arithmetic), the routine reading too | `LoanMath.Pay`, `ParkLedger.Post`, `ChargeLoanInterest` through `loan_term`: **agree** 503/503 (483 differed before; the year-profit word wraps at 32 bits on both sides) |
 | `loan-payoff` | `0xccc78` (early repayment) | the same | 506 | **F13**: **agree** (payoff M × months left, year profit charged q × N, 32-bit wrap), routine reading too | `ParkEconomy.TryRepayLoan` through `loan_payoff`: **agree** |
 | `loan-take` | `0xcc904` | the same | 505 | **F14**: **agree** (money in, balance, no profit, bought flag), routine reading too | `ParkEconomy.TakeLoan` through `loan_take`: **agree** |
+| `queue-failure-predicate` | `0xdfe34` alone | none | 521 | **F15**: 310 differ (QUEUE-008 reads VAR_BROKEN ≠ 0; the routine reads ride `+46` bit `0x1` and the float `+64`). **Agree** 521/521 with the routine reading | no hook: `RideVisitorBridge.IsBroken` needs a live `RideVM` (CSHARP_PENDING); the plan side is that claim |
+| `queue-join-difference` | `0xe9a84`, `0xdfe34`, `0xeb7e4` (guest preference), `0xe02ec` (excitement), `0xdff70` (its formulas), `0xe1f70`/`0xe1f78`/`0xe2364` (sideshow words), `0xe2fe4` (track type 3), `0x41a14` (coaster getter, controller table built) | `0x118018` type record (registry and type id checked), `0xb5e24` script controller (script `+32` checked), `0x1ea40` pieces behind ride `+36` (the `+36` word and four distinct outputs checked), import `sqrt` (IEEE double square root, argument checked non-negative). The settings word `+164 + 12 · type` is written in the data block | 524 | **F16**: 387 differ from the claimed "ride minus preferred" (clamp ±50, the relief case 100, live excitement). **Agree** 524/524 with the routine reading | no hook (CSHARP_PENDING): C# has no clamped difference |
+| `queue-join-gate` | the fragment `0xecd6c..0xecdb0` / `0xeced0..0xecf34` of the state-10 handler `0xeccb0` (the `0xe9a84` call, `0xe02ec(ride, 1)`, the 45 test and the refusal) plus the callees above | the callees' stubs, plus `0x5fbcc` log (the message text is read from memory), `0xfb7b4` reason and `0xfb54c` thought (guest `+48` object, id and thought checked) | 524 | **F16**: 155 differ in outcome. **Agree** 524/524 with the routine reading (outcome and difference) | **F16**: 155 differ, the same inputs as the plan (`RideVisitorBridge.ExcitementRefusal`) |
 
 The C# comparisons use these seams:
 
@@ -161,6 +164,11 @@ The C# comparisons use these seams:
   covers how purchases set it). The open flag (the
   chosen `0xdc834` counts-test result) is passed as the object's open state (`IsOpen`); the test's other conditions have no
   C# state and are not in the inputs.
+- `RideVisitorBridge.ExcitementRefusal` (`queue_join_gate`, internal static, called by reflection): the gate of `JoinQueue` on
+  its own. The bridge builds the difference as `GuestSimulation.UpdateGoingToRide` does, preferred excitement minus the ride's
+  `ExcitementLevel`: the type's `.sam` value (`UsageInfo.ExcitementLevel`, type `+316`), or `CoasterRating.GuestExcitement` for a
+  coaster whose controller exists (0 before). The type's `+1960` word (`Info.WhichUIType`) 0 maps to `Ride`, 2 to `Sideshow`,
+  anything else to `Facility`.
 
 - `LoanMath.MonthlyRepayment` (`loan_offers`) for each offer of an input; `LoanMath.Pay`, `ParkLedger.Post` and
   `ParkLedger.ChargeLoanInterest` (`loan_term`) run month by month exactly as `ParkEconomy.EndMonth` does, with the
@@ -540,6 +548,95 @@ agrees on 505/505 (including the assertion at 1,000,000). The remaining ECON-005
 build and upgrade costs as other income or costs) is not a loan matter and stays open. One difference in kind:
 `LedgerMonth.Profit` (monthly) charges whole instalments, where the original's year-profit word `+292` takes only the
 interest share; `ProfitThisYear` is the original's field and follows it.
+**F15, the ride-failure predicate 0xdfe34 (QUEUE-008, GUESTS.md "Breakdown").** Executed alone with no stubs
+(`queue-failure-predicate`, 521 inputs). The routine never reads the script. It loads the ride's `+46` half-word and tests bit
+`0x1`. When that is set it truncates the float `+64` with `fctiwz`, takes the low byte as an unsigned value and returns 1 when
+that is below 25.0 (TOC −11108). What the two fields are:
+
+- `+46` bit `0x1` is `UsageInfo.ProvidesRelief`: the ride build ORs it in from type `+244` (`0xdab6c..0xdab84`, REVIEW-ORACLE
+  OV-1). It is the toilet flag.
+- `+64` is the wear gauge. The constructor stores 100 (`0xdab1c`), full repair writes 100 (`0xdef78`) and wear subtracts from it
+  (PPC-economy ECON-021..024).
+
+So `0xdfe34` means "a relief object whose wear gauge fell below 25". QUEUE-008 (and GUESTS.md "Breakdown") read it as
+`VAR_BROKEN ≠ 0`: 310 of 521 inputs differ. First counterexample: a ride with `VAR_BROKEN` set and a full gauge, where the
+original gives 0 and the plan 1. The routine reading (relief bit, byte of the truncated gauge, below 25) agrees on 521/521,
+and dropping the flag, the byte wrap or the limit brings mismatches back (`test_queue_failure_reading_is_sharp`). The byte wrap
+matters only outside the gauge's range (wear clamps to 0..100): 256.0 wraps to 0 and counts as failed, −1.0 wraps to 255, NaN
+counts as failed.
+
+What this does to the queue (static, not executed):
+
+- *Guest state 11, step 3 (`0xed424`).* The original's exit "0xdfe34 set, thought 14 (feeling sick), leave" fires for a worn-out
+  toilet only. For any other ride it never fires, so a broken ride (script `VAR_BROKEN ≠ 0`) does not send its queue away through
+  this exit. C# does (QUEUE-008, state-11 step 3): its queue empties through an exit the original does not have for rides.
+  What else empties the original's queue is below.
+- *Other callers.* `0xd6618`, `0xdc104`, `0xdf5d0`, `0xe9aa4` and `0xed424`. The first three sit in ride and toilet update code
+  next to the maintenance flag (`0xdfe88`) and the relief test (`0xdc0f4`); not traced further.
+- *What a breakdown does instead.* `SetState(1)` (`0xe0c3c`, the `BROKEN_DOWN` block `0xe0ec4..0xe10dc`) logs "Closing...",
+  clears the open word `+100`, zeroes the pending visitor `+104`, sets script variable 6 to 1 and handles only the head guest of
+  the queue (`0xdcebc`/`0xee804`, or `0xeda04` when that guest is in state 14). State 11 then refuses to move guests up while
+  `0xdfe0c` (state 1) holds. Whether the rest of the queue leaves because the ride is closed is not traced, so C#'s emptying
+  queue may still be right in effect and wrong in cause and thought. QUEUE-018's treatment of a broken ride as closed fits the
+  cleared open word.
+- *Admission (QUEUE-019).* `0xdfe34` has no part in it. `0xe1864` runs the admission `0xe1404` first and then reads script
+  variable 7 itself (`cmpwi r3,0`, so `≠ 0`): the breakdown turn still admits. The script predicate the original does have is
+  `0xdfed4`: it returns `VAR_BROKEN > 0` (signed; the `eqv/subfc/addze` idiom), and its only caller is the repair-state code at
+  `0xd9e80`.
+
+**F16, the join excitement gate (QUEUE-004, `RideVisitorBridge.JoinQueue`).** `queue-join-difference` runs `0xe9a84` with
+`0xe02ec` and `0xdff70` and their callees, `queue-join-gate` runs the state-10 fragment around the gate. The routine reading
+agrees on 524/524 for each, and every part of it is needed (`test_queue_join_reading_is_sharp`: 14 variants of the gate, 10 of
+the difference). What the original does, in order:
+
+1. `0xeb7e4`: the guest's preferred excitement is the low byte of the settings word at `+164 + 12 · type`, with the type the
+   byte at guest `+496` (the `PeepTypes[n].PreferredExcitement` column; the other two words are cash and boredom).
+2. `0xdfe34(ride)` (F15). When it holds the difference is 100 and nothing else is computed.
+3. Otherwise the ride's excitement is `0xe02ec(ride, 0)`, taken as a byte. The difference is `clamp(excitement − preferred, −50,
+   50)`, with both operands bytes.
+4. The gate is **not** by kind. `0xe02ec(ride, 1)` returns the low byte of the type's `UsageInfo.ExcitementLevel` (type `+316`),
+   and the guest is tested only when that is nonzero: `|difference| ≥ 45` (signed compare `cmpwi 45`, `bc 4,0`) refuses. A
+   negative difference (the ride is below the preference) logs "ride is not exciting enough!", reason 5 and thought 12
+   (bored). Otherwise "ride is too exciting!", reason 4 and thought 15 (scared). The stubs read the message texts, and the
+   thoughts match C#'s `Bored` and `Scared` with the sign flipped (the original subtracts the preference from the ride, C#
+   the ride from the preference).
+
+The excitement `0xe02ec(ride, 0)` is returned as 0 when the type's `+316` word is 0. Otherwise `0xdff70` computes it by type
+(`+1960`, `Info.WhichUIType`):
+
+| Case | Excitement |
+| --- | --- |
+| Sideshow (`+1960 == 2`) | `20 + trunc(0.8f · (win · sqrt(clamp(goods − price, 0, 100)) / 10))` with `goods = +388` (copied from `UsageInfo.InitCostOfGoods` at build, `0xdab38`), `price = +400` (`InitPricePerUse`) and `win` the byte `+396` (100 − `InitChanceOfLoosing`). The single-precision `0.8f` is TOC −11112 |
+| Track type 3 (a coaster) | no controller (`0xb5e24` is 0): 0. Otherwise `trunc(0.5 · E + 50)` (fused single) with `E` the float at controller `+260` (`0x41a14` reads `+260`, not `+256`), as COAST-plan 6.1 says |
+| Everything else | `base · clamp(speed / InitSpeed, 0.75, 1.25) · clamp(duration / InitDuration, 0.75, 1.25)`, in single precision, truncated. Speed is the word `+84` over `Upgrades.InitSpeed` of the ride's level `+76`, duration is the byte `+88` over `Upgrades.InitDuration`. `base` is the type's `ExcitementLevel` word, or, when the word `+36` (the handle passed to the ride build `0xda874`) is nonzero, `trunc(level · 60 / 100)` plus `clamp(3 · p3 + 2 · p1 + p2, 0, 40)` over three counts of `0x1ea40` (what they count is not traced), clamped to 0..100. A zero duration divides to infinity and clamps to 1.25; 0 / 0 is NaN, which truncates to `0x80000000`, a zero byte |
+
+The plan (QUEUE-plan 4, C#) uses the type's static level for everything but coasters and gates rides and sideshows by kind.
+That differs in outcome on 155 of the 524 inputs, the same ones in C# through `RideVisitorBridge.ExcitementRefusal`:
+
+| Cause | Inputs |
+| --- | --- |
+| sideshow formula | 54 |
+| a ride or sideshow whose `ExcitementLevel` byte is 0 is not gated | 32 |
+| a shop or feature with an `ExcitementLevel` byte is gated | 32 |
+| a ride off its design speed or duration, or with a `+36` thing | 22 |
+| relief object with a gauge below 25 (difference 100) | 15 |
+
+The counts depend on the inputs, which are synthetic: they show which rules differ, not how often. Examples a player would
+notice (both in `test_queue_join_refusal_trace` or the edges): a sideshow with the `SideShow.sam` default level 30, a prize
+25 above its price and a win chance of 50 gives excitement `20 + trunc(0.8 · 50 · 5 / 10) = 40`. A guest preferring 80 joins
+in the original (difference −40) and turns away bored in C# (80 − 30 = 50). A ride of level 100 running at a tenth of its
+design speed scores `100 · 0.75 = 75`, so a guest preferring 50 joins in the original (25) and turns away scared in C#
+(−50). With the shipped data the kind and the byte rule coincide (`Rides.sam` defaults 60 and `SideShow.sam` 30; shops have no
+level), so only the live values matter in practice. Not shown: what `+36` and its three counts are, how often the live
+inputs move during play (the price and the win chance can be edited), and the other callers of `0xe02ec` and
+`0xeb7e4` (`0xe9438`, `0xe9478`, `0xea348`, `0xea4e0`: the attraction score code, PPC-guests, not traced).
+
+C# was changed only by extracting the gate into `RideVisitorBridge.ExcitementRefusal` (the behaviour is unchanged, QueueTests
+pins it) and by sharpening the QUEUE-004, QUEUE-008 and QUEUE-019 comments. Recommendation, not done because each needs state
+C# does not have or a decision about the queue after a breakdown: (a) give sideshows and rides their live excitement
+(`ExcitementSource` already exists for coasters), (b) gate on the `ExcitementLevel` byte, and (c) replace the broken-ride exit by
+the original's ride-closed handling once `SetState(1)`'s effect on the queue is traced, keeping `0xdfe34` for toilets
+(whose wear gauge C# does not simulate).
 
 ## 6. Adding a target or a C# hook
 

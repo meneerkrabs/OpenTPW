@@ -150,7 +150,12 @@ These checks run when the guest stands on the back-of-queue cell (`0xdd3f4`):
    `count < 4 × (+60)`. Otherwise thought 21 and the guest wanders (state 6).
 2. **Excitement gate**: if `0xe02ec(ride,1)` is set and
    `|0xe9a84(guest,ride)| ≥ 45`, the guest leaves with "ride is not exciting
-   enough!" or "ride is too exciting!".
+   enough!" or "ride is too exciting!". Executed (ORACLE.md F16): `0xe02ec(ride,1)`
+   is the low byte of the type's `UsageInfo.ExcitementLevel` (not a kind test),
+   and `0xe9a84` is `clamp(excitement − preferred, −50, 50)` over bytes with a
+   *live* excitement (`0xe02ec(ride,0)`: sideshow formula, speed and duration
+   ratios, coaster `0.5 E + 50`), or 100 when `0xdfe34` holds. A negative value
+   is "not exciting enough" (thought 12), otherwise "too exciting" (thought 15).
 3. **Limit** `0xdcb74`: the queue is full when `count ≥ limit` (unsigned). Then
    "queue is too long!", thoughts 21/16, state 6. The limit is a u32:
    - Without HasQueue (`+46 & 0x8` clear): **100**.
@@ -192,7 +197,8 @@ cell is not traced).
    the entry stand point (`0xde1d8`), and the guest enters **state 13** ("being
    loaded"). If the path is lost, the guest is removed and leaves.
 2. Diagnostic only ("admitted … not first in queue").
-3. `0xdfe34(ride)` set → thought 14, leave.
+3. `0xdfe34(ride)` set → thought 14, leave. Executed (ORACLE.md F15): `0xdfe34` is
+   a relief object (toilet) whose wear gauge `+64` is below 25, not `VAR_BROKEN`.
 4. Position lookup fails → "Problem with a queue", leave.
 5. **Moving up**: if the list position differs from `+497`:
    - When `+500 ≠ 0` and `0 ≤ +497 − pos ≤ 2`, decrement `+500` and stay.
@@ -422,8 +428,9 @@ still checkable.
 - Fourth-slot placement (`0xdde74`) and the exact sub-cell axis per link.
 - `τ` boarding latency: navigation speed (PPC-guests unresolved), state 13/14
   timing, and the RSE loop between LETMEON and BOUNCE.
-- Ride `+408` state names, `+100`, `0xdfe34` (relief-object condition), the
-  `0xe02ec` excitement-gate predicate, and the `0xee8f8` re-evaluation exits.
+- Ride `+408` state names, `+100`, and the `0xee8f8` re-evaluation exits.
+  (`0xdfe34` and the `0xe02ec` excitement-gate predicate are executed, ORACLE.md
+  F15/F16.)
 - Cycle times for non-BOUNCE controllers. The DurationUnit semantics beyond
   "no conversion at the host write".
 - Exact cadence: whether every live guest and ride is updated every park turn

@@ -738,7 +738,7 @@ static (ParkEconomy Park, StaffMember Member) WagePark( JsonObject a )
 	var park = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
 	var add = typeof( ParkStaff ).GetMethod( "AddImported", BindingFlags.NonPublic | BindingFlags.Instance )
 		?? throw new MissingMethodException( "ParkStaff.AddImported" );
-	var member = (StaffMember)add.Invoke( park.Staff, new object[] { (StaffType)(int)a["role"]!, (int)a["grade"]!, 0, 100, StaffState.Idle, 0L } )!;
+	var member = (StaffMember)add.Invoke( park.Staff, new object[] { (StaffType)(int)a["role"]!, (int)a["grade"]!, 0, 100f, StaffState.Idle, 0L, 100f } )!;
 	return (park, member);
 }
 
@@ -786,8 +786,8 @@ static JsonNode? ParkRating( JsonObject a )
 		?? throw new MissingMethodException( "ParkStaff.AddImported" );
 	for ( var role = 0; role < 5; role++ )
 		for ( var count = 0; count < (int)a["staff"]![role]!; count++ )
-			add.Invoke( park.Staff, new object[] { (StaffType)role, 0, 0, 100, StaffState.Idle, 0L } );
-	park.GuestStatistics = new FixedGuestStatistics( (int)a["in_park"]! );
+			add.Invoke( park.Staff, new object[] { (StaffType)role, 0, 0, 100f, StaffState.Idle, 0L, 100f } );
+	park.GuestStatistics = new FixedGuestStatistics( (int)a["in_park"]!, 0 );
 	return JsonValue.Create( park.ParkRating );
 }
 
@@ -843,21 +843,12 @@ static JsonNode? RideBreakdownUpdate( JsonObject a )
 			calls.Add( "worn" );
 	}
 	return new JsonObject { ["calls"] = calls, ["life_bits"] = (uint)BitConverter.SingleToInt32Bits( after ) };
+}
 
 sealed class FixedGuestStatistics( int people, float average ) : IParkGuestStatistics
 {
 	public int PeopleInPark => people;
 	public float AverageHappiness => average;
-	public int CountHappierThan( int happiness ) => 0;
-	public int KidsWithBalloonsPercent => 0;
-	public int KidsWithCostumesPercent => 0;
-}
-
-// The guests of the park rating bridge: a fixed number in the park, nobody else counted.
-sealed class FixedGuestStatistics( int inPark ) : IParkGuestStatistics
-{
-	public int PeopleInPark => inPark;
-	public int AverageHappiness => 0;
 	public int CountHappierThan( int happiness ) => 0;
 	public int KidsWithBalloonsPercent => 0;
 	public int KidsWithCostumesPercent => 0;

@@ -1038,8 +1038,9 @@ optional field, an older save restoring it as this and last month's customers, a
 takes the saved customer count as its use count and the saved attraction time stamp as its build time (`OriginalEconomyImport`), so an
 imported used or old object never gets the unused refund; that the save's customer count is `+412` and its time stamp `+20` is read from
 the serializer order and the `0xdad90` store, not captured (SAVE-006 says so). `RefundQueueCell` uses the same percentage, so queue cells of a new, unused ride are refunded in
-full, as the original does. Two things stay as they were and are approximations: **the park value** (ECON-026) keeps summing the old
-rule (catalogue costs through the level × the percentage), because the original's valuation is a different quote (PPC-economy.md); and
+full, as the original does. Two things stay as they were and are approximations: **the park value** (ECON-026) kept summing the old
+rule (catalogue costs through the level × the percentage), because the original's valuation is a different quote (PPC-economy.md; since F29 the park value follows the
+original's `0xc1d4c` instead); and
 **the Windows build**: this is the Mac routine, and the tp.exe counterpart was not executed (ECON-025's text now says so), as is the
 mapping of `+412` to a use counter (a read of the stores and of the one increment, not a captured sale). The stubs are the type
 record and the stamp conversion (the same assumption as `park-points`); the age of a thing bought after the current turn (a negative

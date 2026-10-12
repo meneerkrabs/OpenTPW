@@ -310,7 +310,7 @@ public sealed class ParkEconomy : IParkEconomy
 		foreach ( var item in objects.Values.Where( item => item.Kind == ParkObjectKind.Ride ).ToList() )
 		{
 			// [BIN:STP-PPC:0x100E077C ride update] a ride in state 1 or 4 (broken down, condemned), a closed ride (open word +0x64 = 0, which state 2 clears too) and a ride on a turn that is not a multiple of 8 are not updated; a mechanic at work on a ride that is open and not broken (a repair of a worn ride) does not stop the update
-			// [APPROX:ECON-023] the wear step and the breakdown check do not know relief objects (toilets are not simulated, +0x2E bit 0), and the ride's state is derived from the economy (breakdown flag, pending upgrade) and the script's VAR_BROKEN instead of a state word — evidence needed: the callers that set state 2 for an upgrade and what feeds toilets' wear
+			// [APPROX:ECON-023] the wear step and the breakdown check do not know relief objects (toilets are not simulated, +0x2E bit 0), and the ride's state is derived from the economy (breakdown flag, pending upgrade) and the script's VAR_BROKEN instead of a state word; a breakdown that only the script reports (VAR_BROKEN) gets no mechanic, because the economy does not write VAR_BREAKSTAT and the job could not wait for the script as 0xd9e04 does — evidence needed: the callers that set state 2 for an upgrade, what feeds toilets' wear and the script side of VAR_BREAKSTAT
 			var state = ObjectState( item );
 			if ( !RideBreakdownRules.RunsWear( state, item.IsOpen && state != RideObjectStates.Upgrading, turn ) )
 				continue;
@@ -380,7 +380,8 @@ public sealed class ParkEconomy : IParkEconomy
 		}
 		member.AssignedInstanceId = 0;
 		item.MechanicId = 0;
-		if ( item.PendingLevel > item.Level )
+		// 0xdef2c installs the upgrade only for a ride in state 2; a broken ride with a purchased upgrade is repaired first
+		if ( ObjectState( item ) == RideObjectStates.Upgrading )
 		{
 			item.Level = item.PendingLevel;
 			item.PendingLevel = 0;
@@ -420,8 +421,8 @@ public sealed class ParkEconomy : IParkEconomy
 	/// </summary>
 	private void DispatchMechanics()
 	{
-		var jobs = objects.Values.Where( item => item.MechanicId == 0 && (item.IsBrokenDown || item.PendingLevel > item.Level || (item.Kind == ParkObjectKind.Ride && item.StateOfRepair < WornStateOfRepair)) )
-			.OrderBy( item => item.IsBrokenDown ? 0 : item.PendingLevel > item.Level ? 1 : 2 ).ThenBy( item => item.StateOfRepair ).ThenBy( item => item.Id ).ToList();
+		var jobs = objects.Values.Where( item => item.MechanicId == 0 && JobRank( item ) >= 0 )
+			.OrderBy( JobRank ).ThenBy( item => item.StateOfRepair ).ThenBy( item => item.Id ).ToList();
 		if ( jobs.Count == 0 )
 			return;
 		var role = Settings[StaffType.Mechanic];
@@ -432,7 +433,7 @@ public sealed class ParkEconomy : IParkEconomy
 			var job = jobs[0];
 			jobs.RemoveAt( 0 );
 			// [APPROX:ECON-021] the mechanic starts at once (the original first walks to the ride, 0xe6454) and the timer counts one park turn per staff update (dispatcher cadence read statically) — evidence needed: capture of a repair from arrival to completion
-			int? upgradeDuration = job.PendingLevel > job.Level && Catalog.TryGet( job.InfoId, out var info ) && job.PendingLevel < info.Upgrades.Count
+			int? upgradeDuration = ObjectState( job ) == RideObjectStates.Upgrading && Catalog.TryGet( job.InfoId, out var info ) && job.PendingLevel < info.Upgrades.Count
 				? info.Upgrades[job.PendingLevel].DurationOfUpgrade : null;
 			// The repair handler (0xd9e04) decrements a nonzero timer and completes on the update that finds it zero: timer + 1 updates.
 			mechanic.BusyTicks = RepairTimer( role.WorkDuration[mechanic.Grade], job.Repair, upgradeDuration ) + 1;
@@ -441,6 +442,19 @@ public sealed class ParkEconomy : IParkEconomy
 			job.MechanicId = mechanic.Id;
 		}
 	}
+
+	/// <summary>
+	/// The mechanic's job for an object, as a dispatch rank (lower first), or -1 for none: an object the economy has broken down, then a purchased
+	/// upgrade, then a worn ride (OpenTPW's own threshold, Advisor.sam). A condemned ride (life gauge 0) is no job.
+	/// </summary>
+	// [BIN:STP-PPC:0x100D9C0C mechanic arrival] the timer starts only for a ride in state 1 (broken down) or 2 (upgrading) or with the maintenance word +96; any other ride, a condemned one (state 4) included, logs and releases the mechanic (ORACLE F19)
+	private static int JobRank( ParkObjectState item ) => ObjectState( item ) switch
+	{
+		RideObjectStates.BrokenDown when item.IsBrokenDown => 0,
+		RideObjectStates.Upgrading => 1,
+		RideObjectStates.Idle when item.Kind == ParkObjectKind.Ride && item.StateOfRepair < WornStateOfRepair => 2,
+		_ => -1,
+	};
 
 	/// <summary>Each free handyman removes one litter item per <c>HandymanConstsPerGrade[grade].WorkDuration</c> game minutes (<b>approximation</b>).</summary>
 	private void CleanLitter()

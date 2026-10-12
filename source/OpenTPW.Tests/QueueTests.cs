@@ -26,7 +26,7 @@ public class QueueTests
 	/// Path row y = 0 (x 0..9). The ride's entrance cell is (2, 6); its outside cell (2, 5) is the queue's
 	/// front, and the queue runs up the column x = 2 to the back cell (2, 1), which touches the path at (2, 0).
 	/// </summary>
-	private sealed class Rig
+	internal sealed class Rig
 	{
 		public readonly GuestPathGrid Grid = new( 12, 12 );
 		public readonly RideVisitorBridge Ride;
@@ -444,7 +444,7 @@ public class QueueTests
 	/// <summary>The leaving test only reads the closing word for guests that decide (state 6); the closure clause also
 	/// pulls queued guests out and drops reservations, or a closed park strands everyone whose ride holds admission
 	/// (APPROX:GUEST-011).</summary>
-	private sealed class ClosedPayments : IGuestPayments
+	internal sealed class ClosedPayments : IGuestPayments
 	{
 		public bool Closed;
 		public int AdmissionFee => 0;
@@ -478,6 +478,37 @@ public class QueueTests
 		rig.RunTurns( 1 );
 		Assert.IsTrue( walker.State is GuestState.LeavingPark or GuestState.CrossingRoadHome or GuestState.WaitingToGoHome or GuestState.Gone, $"{walker.State}" );
 		Assert.AreEqual( 0, walker.AttractionId, "the reservation is dropped" );
+	}
+
+	/// <summary>
+	/// The closure clause also covers the fourth queue state: a guest that was called and walks to the stand point
+	/// (Boarding) is pulled out with the rest — it is still in the queue list, so leaving it behind would strand it
+	/// at a ride that no longer takes anyone.
+	/// </summary>
+	[TestMethod]
+	public void ClosingTheParkAlsoPullsAGuestCalledToBoardOutOfItsQueue()
+	{
+		// QWTC 600 with one guest per take: the first guest is called early and walks to the stand point (Boarding)
+		// over several turns, so the closing turn catches it mid-walk, before the script can take it.
+		var rig = new Rig( takesGuests: true, capacity: 1, parameters: new QueueParameters( true, false, false, 600, 60, 60, 1, 30 ) );
+		var guests = Enumerable.Range( 0, 2 ).Select( _ => rig.Send() ).ToList();
+		Guest? boarding = null;
+		var deadline = rig.Simulation.ParkTurn + 400;
+		while ( boarding == null && rig.Simulation.ParkTurn < deadline )
+		{
+			rig.Step();
+			boarding = guests.FirstOrDefault( guest => guest.State == GuestState.Boarding );
+		}
+		Assert.IsNotNull( boarding, "a called guest was on its way to the stand point" );
+		Assert.AreEqual( 0, rig.Ride.GetQueuePosition( boarding.Id ), "the boarding guest is still held in the queue list" );
+
+		var payments = new ClosedPayments();
+		rig.Simulation.Payments = payments;
+		payments.Closed = true;
+		rig.RunTurns( 1 );
+		Assert.IsTrue( boarding.State is GuestState.LeavingPark or GuestState.CrossingRoadHome or GuestState.WaitingToGoHome or GuestState.Gone, $"{boarding.State}" );
+		Assert.AreEqual( -1, rig.Ride.GetQueuePosition( boarding.Id ), "the closed park dropped it from the queue" );
+		Assert.AreNotEqual( boarding.Id, rig.Ride.CalledGuest, "the call was withdrawn" );
 	}
 
 	/// <summary>

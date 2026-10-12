@@ -1369,6 +1369,9 @@ time in the former model). Closing the park (the economy's open/closed switch) n
 happiness 1.0 and a counter of 120: the original stays, the former rule leaves (`happiness <= 10`); 181 of 513 inputs differ.
 
 *Not changed / open.* OpenTPW has no state 6 or 7 separately: the test runs on every park turn for guests that are walking around or doing nothing (GUEST-010), which is more often than the original's dwell in state 6;
+the state-18 recall is implemented (the leaving handler's opening test, `0xedc98`: counter above 0, happiness byte nonzero, park open — back to deciding, so a closed-park dismissal unwinds when the park reopens), but its cell
+predicate `0xe6c6c` (the guest's cell record through `0x10a9b0` and `0x85190..0x851d0`) is untraced, so OpenTPW approximates it by the state boundary: only a guest still walking the paths to the exit recalls, and the road ends
+it — the booth refusal enters on a lane and is exempt, like the original's zeroed counter `0xecacc` (GUEST-012);
 what the original does with queued or riding guests at `mParkClosed` is not traced — OpenTPW also pulls guests out of queues and drops `GoingToRide` reservations on closure, or a closed park would strand every guest
 whose ride holds admission (no queue state reads the closing word, and a queued guest's happiness rarely sinks below the queue's leave level); guests on a ride finish it (GUEST-011);
 the decision cadence (F24); the happiness a guest on a lane or at the booth carries; and the reading that a negative counter never leaves is an observation of the instruction (`beq`), not of a played game.

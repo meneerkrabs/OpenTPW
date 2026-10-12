@@ -126,7 +126,9 @@ public class GuestSnapshotJsonContinuationTests
 	/// <summary>
 	/// Saves written before the histories and the integer exit counter (schema 1) still restore: the histories are
 	/// absent from the file and start empty, the seconds-based exit value is truncated toward zero into the counter,
-	/// and a current save (schema 2) that lost a history or carries a non-finite exit value is rejected instead.
+	/// and a need grown past the old model's 150 cap migrates by clamping to the counter model's 100 ceiling. A
+	/// current save (schema 2) that lost a history, carries a non-finite or fractional exit value, or a need past
+	/// its cap, is rejected instead.
 	/// </summary>
 	[TestMethod]
 	public void ASchemaOneSnapshotWithoutHistoriesStillRestoresWithTheFractionalExitValue()
@@ -137,11 +139,12 @@ public class GuestSnapshotJsonContinuationTests
 		Assert.AreEqual( GuestSimulationSnapshot.CurrentSchemaVersion, snapshot.SchemaVersion );
 		Assert.IsTrue( snapshot.Guests.Any( guest => guest.UsedHistory is { Length: Guest.HistorySlots } ), "the current schema writes the histories" );
 
-		// Downgrade to exactly what schema 1 wrote: no histories in the file, the exit value still the old seconds as a fraction.
+		// Downgrade to exactly what schema 1 wrote: no histories in the file, the exit value still the old seconds as a fraction,
+		// and the old model's needs grown past the counter model's 100 ceiling (it capped them at 150).
 		var schemaOne = snapshot with
 		{
 			SchemaVersion = 1,
-			Guests = snapshot.Guests.Select( guest => guest with { UsedHistory = null, TemporaryHistory = null, ExitLevel = 37.8 } ).ToArray()
+			Guests = snapshot.Guests.Select( guest => guest with { UsedHistory = null, TemporaryHistory = null, ExitLevel = 37.8, Hunger = 140f, Thirst = 125.5f, Toilet = 101f } ).ToArray()
 		};
 		var loaded = ParkResumeJson.Deserialize<GuestSimulationSnapshot>( ParkResumeJson.Serialize( schemaOne ) );
 		Assert.IsNull( loaded.Guests[0].UsedHistory, "the codec keeps the histories absent" );
@@ -152,6 +155,9 @@ public class GuestSnapshotJsonContinuationTests
 		foreach ( var guest in loaded.Guests )
 		{
 			Assert.AreEqual( 37, restored[guest.Id].ExitLevel, $"guest {guest.Id}: the seconds fraction truncates toward zero into the counter" );
+			Assert.AreEqual( 100f, restored[guest.Id].Hunger, $"guest {guest.Id}: a schema-1 need past the ceiling migrates by clamping" );
+			Assert.AreEqual( 100f, restored[guest.Id].Thirst, $"guest {guest.Id}: a schema-1 need past the ceiling migrates by clamping" );
+			Assert.AreEqual( 100f, restored[guest.Id].Toilet, $"guest {guest.Id}: a schema-1 need past the ceiling migrates by clamping" );
 			CollectionAssert.AreEqual( new int[Guest.HistorySlots], restored[guest.Id].UsedHistory, $"guest {guest.Id}: the used history starts empty" );
 			CollectionAssert.AreEqual( new int[Guest.HistorySlots], restored[guest.Id].TemporaryHistory, $"guest {guest.Id}: the temporary history starts empty" );
 		}
@@ -159,15 +165,17 @@ public class GuestSnapshotJsonContinuationTests
 		// A current save must be whole: losing a history or corrupting the exit value is rejected without touching the target.
 		// (The corruptions land on the deserialized DTO — NaN never survives JSON, so the codec is out of the loop here.)
 		var fromFile = ParkResumeJson.Deserialize<GuestSimulationSnapshot>( ParkResumeJson.Serialize( snapshot ) );
-		void Rejects( Func<GuestSimulationSnapshot, GuestSimulationSnapshot> corrupt, string message )
+		void Rejects( GuestSimulationSnapshot file, Func<GuestSnapshot, GuestSnapshot> corrupt, string message )
 		{
 			var fresh = new GuestSnapshotTests.Rig();
-			var exception = Assert.ThrowsException<InvalidDataException>( () => fresh.Simulation.RestoreSnapshot( corrupt( fromFile ) ) );
+			var exception = Assert.ThrowsException<InvalidDataException>( () => fresh.Simulation.RestoreSnapshot( file with { Guests = file.Guests.Select( corrupt ).ToArray() } ) );
 			StringAssert.Contains( exception.Message, message );
 		}
-		Rejects( file => file with { Guests = file.Guests.Select( guest => guest with { UsedHistory = null } ).ToArray() }, "has no UsedHistory" );
-		Rejects( file => file with { Guests = file.Guests.Select( guest => guest with { TemporaryHistory = new[] { 1 } } ).ToArray() }, "TemporaryHistory" );
-		Rejects( file => file with { Guests = file.Guests.Select( guest => guest with { ExitLevel = double.NaN } ).ToArray() }, "does not fit" );
+		Rejects( fromFile, guest => guest with { UsedHistory = null }, "has no UsedHistory" );
+		Rejects( fromFile, guest => guest with { TemporaryHistory = new[] { 1 } }, "TemporaryHistory" );
+		Rejects( fromFile, guest => guest with { ExitLevel = double.NaN }, "does not fit" );
+		Rejects( fromFile, guest => guest with { ExitLevel = 37.8 }, "is not a whole number of decisions" );
+		Rejects( schemaOne, guest => guest with { Hunger = 150.5f }, "outside [0, 150]" );
 	}
 
 	/// <summary>

@@ -385,7 +385,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 			// [APPROX:GUEST-011] what the original does with queued guests at mParkClosed is not traced — evidence needed: a closing-word read in the state-11 handler 0xed244 or the ride update 0xe0aec
 			if ( Payments?.ParkClosed == true )
 			{
-				if ( guest.State is GuestState.Queueing or GuestState.MovingUpQueue or GuestState.WaitingToBoard && FindAttraction( guest.AttractionId ) is { } closed )
+				if ( guest.State is GuestState.Queueing or GuestState.MovingUpQueue or GuestState.WaitingToBoard or GuestState.Boarding && FindAttraction( guest.AttractionId ) is { } closed )
 				{
 					LeaveQueue( guest, closed, GuestThought.None );
 					StartLeaving( guest );
@@ -395,6 +395,14 @@ public sealed class GuestSimulation : IRideVisitorHost
 					guest.AttractionId = 0;
 					StartLeaving( guest );
 				}
+			}
+			// The state-18 recall (0xedc98): the leaving handler's opening test sends a guest whose counter is above 0, happiness byte nonzero and park
+			// open back to deciding, so a closed-park dismissal unwinds when the park reopens. The three leaving causes all fail it in the same turn.
+			// [APPROX:GUEST-012] the original also demands the guest's cell pass 0xe6c6c (its cell record through 0x10a9b0 and 0x85190..0x851d0) — evidence needed: which cells qualify; OpenTPW approximates the predicate by the state boundary: only a guest still walking the paths to the exit (no lane yet) recalls, and the recall ends at the road (CrossingRoadHome or a lane), the stage before leaving. The booth refusal also enters LeavingPark on a lane and is exempt, like the original's zeroed counter (0xecacc)
+			if ( guest.State == GuestState.LeavingPark && guest.Lane == null && GuestLifecycle.ShouldRecall( guest.Happiness, guest.ExitLevel, Payments?.ParkClosed ?? false ) )
+			{
+				guest.State = GuestState.WalkingAround;
+				guest.DecisionTimer = Settings.DecisionIntervalSeconds;
 			}
 		}
 		if ( InPark( guest ) )
@@ -1792,9 +1800,11 @@ public sealed class GuestSimulation : IRideVisitorHost
 				Error( $"Guest {guest.Id} thought {(int)guest.Thought} is not a guest thought." );
 			if ( (uint)guest.Type >= (uint)typeCount )
 				Error( $"Guest {guest.Id} type {guest.Type} is not one of the park's {typeCount} guest types." );
-			Bounded( guest.Id, guest.Hunger, nameof( guest.Hunger ), 0, 100 );
-			Bounded( guest.Id, guest.Thirst, nameof( guest.Thirst ), 0, 100 );
-			Bounded( guest.Id, guest.Toilet, nameof( guest.Toilet ), 0, 100 );
+			// Schema 1 grew hunger, thirst and toilet to the old model's 150 cap; the meter model (schema 2 on) holds 0..100.
+			var needCeiling = snapshot.SchemaVersion == 1 ? 150 : 100;
+			Bounded( guest.Id, guest.Hunger, nameof( guest.Hunger ), 0, needCeiling );
+			Bounded( guest.Id, guest.Thirst, nameof( guest.Thirst ), 0, needCeiling );
+			Bounded( guest.Id, guest.Toilet, nameof( guest.Toilet ), 0, needCeiling );
 			Bounded( guest.Id, guest.Energy, nameof( guest.Energy ), 0, 100 );
 			Bounded( guest.Id, guest.Happiness, nameof( guest.Happiness ), 0, 100 );
 			Bounded( guest.Id, guest.Nausea, nameof( guest.Nausea ), 0, 100 );
@@ -1812,9 +1822,11 @@ public sealed class GuestSimulation : IRideVisitorHost
 					Error( $"Guest {guest.Id} {name} is not {Guest.HistorySlots} non-negative attraction ids." );
 			}
 			// Schema 1 stores the former seconds-based exit value as a fraction; the truncated counter must stay a counter
-			// (the live decrement has no floor, so negative counts are legitimate).
+			// (the live decrement has no floor, so negative counts are legitimate). Schema 2 counters are whole by construction.
 			if ( !double.IsFinite( guest.ExitLevel ) || Math.Truncate( guest.ExitLevel ) is < int.MinValue or > int.MaxValue )
 				Error( $"Guest {guest.Id} exit counter {guest.ExitLevel} does not fit the truncated counter." );
+			else if ( snapshot.SchemaVersion != 1 && Math.Truncate( guest.ExitLevel ) != guest.ExitLevel )
+				Error( $"Guest {guest.Id} exit counter {guest.ExitLevel} is not a whole number of decisions." );
 			if ( guest.Money < 0 )
 				Error( $"Guest {guest.Id} Money {guest.Money} is negative." );
 			if ( guest.RidesTaken < 0 )
@@ -2016,7 +2028,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 		foreach ( var guestSnapshot in snapshot.Guests )
 		{
 			var guest = new Guest( guestSnapshot.Id, guestSnapshot.Type );
-			ApplyGuestSnapshot( guest, guestSnapshot );
+			ApplyGuestSnapshot( guest, guestSnapshot, snapshot.SchemaVersion );
 			restored.Add( guest );
 			restoredById.Add( guest.Id, guest );
 		}
@@ -2051,7 +2063,7 @@ public sealed class GuestSimulation : IRideVisitorHost
 	}
 
 	/// <summary>Copies a validated guest snapshot into a fresh <see cref="Guest"/> (route, lane and buffer arrays are copied again).</summary>
-	private static void ApplyGuestSnapshot( Guest guest, GuestSnapshot snapshot )
+	private static void ApplyGuestSnapshot( Guest guest, GuestSnapshot snapshot, int schemaVersion )
 	{
 		guest.State = snapshot.State;
 		guest.HeadingX = snapshot.HeadingX;
@@ -2065,9 +2077,10 @@ public sealed class GuestSimulation : IRideVisitorHost
 		guest.StepFromY = snapshot.StepFromY;
 		guest.StepFromDistance = snapshot.StepFromDistance;
 		guest.StepTick = snapshot.StepTick;
-		guest.Hunger = snapshot.Hunger;
-		guest.Thirst = snapshot.Thirst;
-		guest.Toilet = snapshot.Toilet;
+		// Schema 1's meters grew to the old model's 150 cap; the counter model tops out at 100, so that migration clamps.
+		guest.Hunger = schemaVersion == 1 ? Math.Min( 100, snapshot.Hunger ) : snapshot.Hunger;
+		guest.Thirst = schemaVersion == 1 ? Math.Min( 100, snapshot.Thirst ) : snapshot.Thirst;
+		guest.Toilet = schemaVersion == 1 ? Math.Min( 100, snapshot.Toilet ) : snapshot.Toilet;
 		guest.Energy = snapshot.Energy;
 		guest.Nausea = snapshot.Nausea;
 		guest.Happiness = snapshot.Happiness;

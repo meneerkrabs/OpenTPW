@@ -568,6 +568,59 @@ public class GuestTests
 	}
 
 	[TestMethod]
+	public void TheStateEighteenRecallWantsAPositiveCounterANonzeroHappinessByteAndAnOpenPark()
+	{
+		Assert.IsTrue( GuestLifecycle.ShouldRecall( 50f, 100, false ) );
+		Assert.IsTrue( GuestLifecycle.ShouldRecall( 1f, 1, false ), "the happiness byte of exactly 1 is nonzero" );
+		Assert.IsFalse( GuestLifecycle.ShouldRecall( 0.99f, 100, false ), "the byte of 0.99 is 0" );
+		Assert.IsFalse( GuestLifecycle.ShouldRecall( 50f, 0, false ), "the counter must be above 0, not equal" );
+		Assert.IsFalse( GuestLifecycle.ShouldRecall( 50f, -1, false ), "a counter run negative stays leaving" );
+		Assert.IsFalse( GuestLifecycle.ShouldRecall( 50f, 100, true ), "a closed park keeps everyone on the way home" );
+	}
+
+	/// <summary>
+	/// The state-18 recall (0xedc98) unwinds a closed-park dismissal: a guest whose counter is still positive and whose
+	/// happiness byte is nonzero turns back to deciding the turn after the park reopens. A guest that left on an empty
+	/// counter or below happiness 1 is past recalling and stays on its way home.
+	/// </summary>
+	[TestMethod]
+	public void ReopeningTheParkRecallsALeavingGuestWhoseCounterAndHappinessStillHold()
+	{
+		// The dismissal: a walking guest with a fresh counter and healthy happiness is sent home by the closing word alone.
+		var rig = new QueueTests.Rig();
+		var guest = rig.Simulation.SpawnInPark( 5, 0 );
+		guest.Happiness = 50f;
+		guest.ExitLevel = 100;
+		var payments = new QueueTests.ClosedPayments();
+		rig.Simulation.Payments = payments;
+		payments.Closed = true;
+		for ( var steps = 0; steps < 200 && guest.State != GuestState.LeavingPark; steps++ )
+			rig.Step();
+		Assert.AreEqual( GuestState.LeavingPark, guest.State, "the closed park sent the guest home" );
+		Assert.AreEqual( 25f, guest.Happiness, 0.0001f, "the dismissal lost the big happiness change and the byte stays nonzero" );
+
+		// The recall: the same guest, one turn after the park reopens, walks around again.
+		payments.Closed = false;
+		rig.RunTurns( 1 );
+		Assert.AreEqual( GuestState.WalkingAround, guest.State, "the recall returns the guest to deciding" );
+
+		// Past recalling: a guest that left when its counter read 0 keeps a counter at or below 0 (it loses one per needs
+		// phase in every state) and is never recalled, and a guest below happiness 1 has a zero happiness byte for good.
+		var counterRig = new QueueTests.Rig();
+		var counterGuest = counterRig.Simulation.SpawnInPark( 5, 0 );
+		counterGuest.Happiness = 50f;
+		counterGuest.ExitLevel = 0;
+		counterRig.RunTurns( 3 );
+		Assert.AreNotEqual( GuestState.WalkingAround, counterGuest.State, "the empty counter leaves for good" );
+		var sadRig = new QueueTests.Rig();
+		var sadGuest = sadRig.Simulation.SpawnInPark( 5, 0 );
+		sadGuest.Happiness = 0.5f;
+		sadGuest.ExitLevel = 100;
+		sadRig.RunTurns( 3 );
+		Assert.AreNotEqual( GuestState.WalkingAround, sadGuest.State, "a happiness byte of zero leaves for good" );
+	}
+
+	[TestMethod]
 	public void AGuestLeavesWhenItsCounterReadsZeroAndLosesTheBigHappinessChangeOnTheWay()
 	{
 		var settings = CreateSettings();

@@ -2581,6 +2581,10 @@ def sale_reading(x: dict, signs: dict | None = None, unclamped: tuple = (), slot
 
 
 def sale_equal(original: dict, other: dict) -> bool:
+    if 'error' in other:
+        return False  # a marker the decoders attach to malformed answers (a wrong meter count); never equal
+    if not other['meters']:
+        return False  # an empty comparison map would pass vacuously (a hook answer of no meters compares nothing)
     if not all(same_float(original['meters'][name], value) for name, value in other['meters'].items()):
         return False
     return 'log' not in other or original['log'] == other['log']
@@ -2590,6 +2594,15 @@ def sale_plan(x: dict) -> dict:
     """The rule before F18 (ECONOMY.md, ParkEconomy.TryBuy): a sale adds LitterEffect, in 1/100 litter items, to the litter store. In
     the guest's meter units that is before + effect, with no floor and no ceiling."""
     return {'meters': {'litter': f32(x['meters']['litter'] + f32(float(s32(x['effects'][4]))))}}
+
+
+def sale_meters_result(x: dict, r) -> dict:
+    """The four guest meters of the shop_sale_meters answer. Any other count is a mismatch: a short answer would compare fewer meters and an empty
+    one none, and both would pass sale_equal vacuously."""
+    names = ('thirst', 'hunger', 'vomit', 'happy')
+    if len(r) != len(names):
+        return {'meters': {}, 'error': f'{len(r)} meters, expected {len(names)}'}
+    return {'meters': {n: from_bits(b) for n, b in zip(names, r)}}
 
 
 def sale_csharp_request(x: dict) -> dict:
@@ -2641,7 +2654,7 @@ ECON_SALE = Target('shop-sale-litter', 'Shop sale effects on the guest (fragment
                    csharp=('shop_sale_litter', sale_csharp_request, sale_csharp_result),
                    csharp_variants={'csharp-guest-meters': (lambda x: {'fn': 'shop_sale_meters', 'effects': [s32(e) for e in x['effects']],
                                                                        'meters': [bits(x['meters'][n]) for n in ('thirst', 'hunger', 'vomit', 'happy')]},
-                                                            lambda x, r: {'meters': {n: from_bits(b) for n, b in zip(('thirst', 'hunger', 'vomit', 'happy'), r)}})},
+                                                            sale_meters_result)},
                    notes=['C# hook: bridge function "shop_sale_litter" (ParkEconomy.TryBuy on a one-shop economy; the delta of LitterScaled). C# keeps '
                           'a park-wide store, not a guest meter, so the guest\'s meter before the sale is carried over: after = before + delta.',
                           'Executed: the type record getter 0xdc320 and the fragment 0xeabb8..0xeae44 (thirst, hunger, vomit, happiness and litter '

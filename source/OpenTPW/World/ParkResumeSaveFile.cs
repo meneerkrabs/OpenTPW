@@ -475,6 +475,8 @@ internal static class ParkResumeSaveFile
 			Require( guest.Type >= 0, $"guest {guest.Id} type {guest.Type} is negative" );
 			Require( double.IsFinite( guest.ExitLevel ) && Math.Truncate( guest.ExitLevel ) is >= int.MinValue and <= int.MaxValue,
 				$"guest {guest.Id} exit counter {guest.ExitLevel} does not fit the truncated counter" );
+			Require( guests.SchemaVersion == 1 || Math.Truncate( guest.ExitLevel ) == guest.ExitLevel,
+				$"guest {guest.Id} exit counter {guest.ExitLevel} is not a whole number of decisions" );
 			// Schema 2 writes the histories; schema 1 has none (they start empty). When present they must be whole and non-negative.
 			foreach ( var (name, history) in new[] { (nameof( guest.UsedHistory ), guest.UsedHistory), (nameof( guest.TemporaryHistory ), guest.TemporaryHistory) } )
 			{

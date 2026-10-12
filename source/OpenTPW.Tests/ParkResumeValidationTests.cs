@@ -164,7 +164,8 @@ public class ParkResumeValidationTests
 			Guests = snapshot.Guests.Guests.Select( guest => guest with { UsedHistory = null, TemporaryHistory = null, ExitLevel = 30.5 } ).ToArray()
 		} };
 		ParkResumeSaveFile.ValidateShape( schemaOne ); // a schema-1 envelope is accepted
-		Rejects( schemaOne with { Guests = schemaOne.Guests with { SchemaVersion = 2 } }, "has no UsedHistory" ); // schema 2 must carry them
+		// Schema 2 must carry the histories (and a whole counter: the fraction was schema 1's alone).
+		Rejects( schemaOne with { Guests = schemaOne.Guests with { SchemaVersion = 2, Guests = schemaOne.Guests.Guests.Select( guest => guest with { ExitLevel = 30 } ).ToArray() } }, "has no UsedHistory" );
 
 		Rejects( snapshot with { Guests = snapshot.Guests with { Guests = snapshot.Guests.Guests.Select( guest => guest with { UsedHistory = null } ).ToArray() } },
 			"has no UsedHistory" );
@@ -172,6 +173,8 @@ public class ParkResumeValidationTests
 			"TemporaryHistory is not 4 non-negative attraction ids" );
 		Rejects( snapshot with { Guests = snapshot.Guests with { Guests = snapshot.Guests.Guests.Select( guest => guest with { ExitLevel = 1e300 } ).ToArray() } },
 			"does not fit the truncated counter" );
+		Rejects( snapshot with { Guests = snapshot.Guests with { Guests = snapshot.Guests.Guests.Select( guest => guest with { ExitLevel = 30.5 } ).ToArray() } },
+			"is not a whole number of decisions" );
 	}
 
 	[TestMethod]

@@ -350,6 +350,26 @@ class Identity(unittest.TestCase):
             Image(b'Joy!peffpwpc' + bytes(64))
 
 
+class SaleComparison(unittest.TestCase):
+    """The shop-sale C# comparison must not pass vacuously: an answer of no meters, or fewer than the four the hook
+    documents, compares nothing and would agree with any plan."""
+
+    def test_a_full_answer_decodes_and_agrees(self):
+        original = {'meters': {'thirst': 40.0, 'hunger': 30.0, 'vomit': 10.0, 'happy': 50.0, 'litter': 60.0}}
+        answer = targets.sale_meters_result({'meters': {}}, [targets.bits(40.0), targets.bits(30.0), targets.bits(10.0), targets.bits(50.0)])
+        self.assertEqual({40.0, 30.0, 10.0, 50.0}, set(answer['meters'].values()))
+        self.assertTrue(targets.sale_equal(original, answer))
+
+    def test_an_empty_or_short_answer_is_a_mismatch(self):
+        original = {'meters': {'thirst': 40.0, 'hunger': 30.0, 'vomit': 10.0, 'happy': 50.0, 'litter': 60.0}}
+        for answer in ([], [targets.bits(40.0)], [targets.bits(40.0)] * 5):
+            with self.subTest(count=len(answer)):
+                decoded = targets.sale_meters_result({'meters': {}}, answer)
+                self.assertIn('error', decoded)
+                self.assertFalse(targets.sale_equal(original, decoded), 'a malformed answer is never equal')
+        self.assertFalse(targets.sale_equal(original, {'meters': {}}), 'an empty comparison map compares nothing')
+
+
 class UndefinedResults(unittest.TestCase):
     def test_only_architecturally_undefined_results_become_a_value(self):
         """Undefined (divw by zero, INT_MIN / -1) compares as UNDEFINED; any other Unsupported aborts the run."""

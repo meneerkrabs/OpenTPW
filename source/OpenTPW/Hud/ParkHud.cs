@@ -810,7 +810,7 @@ public sealed partial class ParkHud
 			return icon;
 		try
 		{
-			icon = item.PreviewModel == null ? null : new PreviewIcon( new ModelFile( item.PreviewModel ),
+			icon = item.PreviewModel == null ? null : new PreviewIcon( ObjectAssets.LoadModel( item.PreviewModel ),
 				name => item.TextureDirectories.Select( directory => UiImages.Resolve( name, directory ) ).FirstOrDefault( path => path != null ),
 				SignTexture( item ) );
 		}

@@ -30,6 +30,8 @@ public sealed class PreviewIcon
 				continue;
 			var world = OriginalTerrain.GetWorldMatrix( model, mesh.NodeIndex );
 			var points = mesh.Vertices.Select( vertex => NVector3.Transform( vertex.Position.GetSystemVector3(), world ) ).ToArray();
+			var textures = new UiTexture?[mesh.Materials.Length];
+			var resolved = new bool[mesh.Materials.Length];
 			foreach ( var point in points )
 			{
 				min = NVector3.Min( min, point );
@@ -40,9 +42,15 @@ public sealed class PreviewIcon
 				int a = (int)mesh.Indices[index], b = (int)mesh.Indices[index + 1], c = (int)mesh.Indices[index + 2];
 				if ( a >= points.Length || b >= points.Length || c >= points.Length )
 					continue;
-				var material = mesh.Materials[(int)Math.Min( mesh.Vertices[a].TextureIndex, (uint)mesh.Materials.Length - 1 )];
-				var texture = material.TextureIndex < 0 ? null : resolveRuntimeTexture?.Invoke( material.Name ) ?? (resolveTexture( material.Name ) is { } path ? UiTexture.Image( path ) : null);
-				triangles.Add( (points[a], points[b], points[c], Uv( mesh, a ), Uv( mesh, b ), Uv( mesh, c ), texture) );
+				var materialIndex = (int)Math.Min( mesh.Vertices[a].TextureIndex, (uint)mesh.Materials.Length - 1 );
+				if ( !resolved[materialIndex] )
+				{
+					var material = mesh.Materials[materialIndex];
+					textures[materialIndex] = material.TextureIndex < 0 ? null : resolveRuntimeTexture?.Invoke( material.Name )
+						?? (resolveTexture( material.Name ) is { } path ? UiTexture.Image( path ) : null);
+					resolved[materialIndex] = true;
+				}
+				triangles.Add( (points[a], points[b], points[c], Uv( mesh, a ), Uv( mesh, b ), Uv( mesh, c ), textures[materialIndex]) );
 			}
 		}
 		if ( triangles.Count == 0 )

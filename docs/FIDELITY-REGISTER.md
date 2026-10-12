@@ -918,8 +918,8 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | language | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:514` | [EXT:language] language row (original installs had one language; OpenTPW reads CD overlays) |
 | language-settings | `source/OpenTPW/Client/LanguageSettings.cs:10` | [EXT:language-settings] where the choice is stored is an OpenTPW matter; the original read its language from the install |
 | live-language | `source/OpenTPW/Client/GameFlow.cs:399` | [EXT:live-language] Switches to &lt;see cref="pendingLanguage"/&gt;: the language, the string table and the fonts. Caches of |
-| live-language | `source/OpenTPW/FrontEnd/FrontEndSmokeTest.cs:947` | [EXT:live-language] Options → OpenTPW → language row → OK switches the language at once: the front end and the |
-| live-language | `source/OpenTPW/FrontEnd/FrontEndSmokeTest.cs:1018` | [EXT:live-language] In a park the options keep the language until the park is left, and say so; returns the language |
+| live-language | `source/OpenTPW/FrontEnd/FrontEndSmokeTest.cs:945` | [EXT:live-language] Options → OpenTPW → language row → OK switches the language at once: the front end and the |
+| live-language | `source/OpenTPW/FrontEnd/FrontEndSmokeTest.cs:1016` | [EXT:live-language] In a park the options keep the language until the park is left, and say so; returns the language |
 | live-language | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:349` | [EXT:live-language] the original read its language once; OpenTPW switches in the front end, and after the park |
 | maexah/OpenTPW ParkEntryPriceScreen.cs (PC 0x00498d33, 0x00498fc3) | `source/OpenTPW/Hud/ParkHud.Management.cs:92` | the door routine with the switch's new state. [EXT:maexah/OpenTPW ParkEntryPriceScreen.cs (PC 0x00498d33, 0x00498fc3)] |
 | maexah/OpenTPW park-engine.md | `source/OpenTPW/Hud/ParkHud.cs:521` | [EXT:maexah/OpenTPW park-engine.md] the original's shortcut table row 9 maps Ctrl-C to the close-park handler (PC 0x0040c410) |
@@ -951,7 +951,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | texture-pack | `source/OpenTPW/Client/GameFlow.cs:364` | [EXT:texture-pack] A first-run download may take a long time; its modal keeps the park turn paused. |
 | texture-pack | `source/OpenTPW/Client/GameFlow.cs:637` | [EXT:texture-pack] a running texture switch shows its progress without blocking the game |
 | texture-pack | `source/OpenTPW/Compat/GraphicsSettings.cs:269` | [EXT:texture-pack] Texture choice (docs/TEXTURE-PACKS.md): empty = original textures (the startup default); |
-| texture-pack | `source/OpenTPW/FrontEnd/FrontEndSmokeTest.cs:149` | [EXT:texture-pack] Switches a throw-away pack on and off while the lobby runs: a lobby texture becomes the pack's solid |
+| texture-pack | `source/OpenTPW/FrontEnd/FrontEndSmokeTest.cs:147` | [EXT:texture-pack] Switches a throw-away pack on and off while the lobby runs: a lobby texture becomes the pack's solid |
 | texture-pack | `source/OpenTPW/Render/Assets/ImagePrepass.cs:33` | [EXT:texture-pack] Optional 1x de-artifact pre-pass for the local texture pack. |
 | texture-pack | `source/OpenTPW/Render/Assets/Material.cs:25` | [EXT:texture-pack] Textures can swap their GPU texture in place (a texture pack switch); the binding follows the Texture object. |
 | texture-pack | `source/OpenTPW/Render/Assets/Texture.cs:19` | [EXT:texture-pack] Textures made from a game &#96;.wct&#96; remember their source so a pack switch can reload them in place. |
@@ -977,7 +977,7 @@ IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no re
 | tpi-viewer | `source/OpenTPW/Render/Assets/Texture.cs:88` | [EXT:tpi-viewer] &#96;.fsh&#96; textures exist only in Theme Park Inc data. Opaque 0x24 palettes: see COMPAT-014. |
 | tpi-viewer | `source/OpenTPW/World/Level.cs:85` | [EXT:tpi-viewer] Theme Park Inc has no economy here: its balance keys differ from Theme Park World's (docs/THEME-PARK-INC.md). |
 | upscaling | `source/OpenTPW/UI/Original/Options/OptionsScreen.cs:49` | [EXT:upscaling] render-scale steps (presets 77/67/59/50 from the display slice plus 5% steps) |
-| world-capture | `source/OpenTPW/Client/WorldCapture.cs:16` | [EXT:world-capture] developer/screenshot command, not original behaviour |
+| world-capture | `source/OpenTPW/Client/WorldCapture.cs:14` | [EXT:world-capture] developer/screenshot command, not original behaviour |
 
 ## Data provenance sites
 

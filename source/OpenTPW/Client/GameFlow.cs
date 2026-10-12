@@ -184,7 +184,7 @@ internal sealed partial class GameFlow : IDisposable
 				var saved = ParkResumeSaveFile.Load( path );
 				entries.Add( new ParkLoadEntry( saved.Theme, -1, false, path, saved.DisplayName ) );
 			}
-			catch ( Exception error ) when ( error is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or ArgumentException )
+			catch ( Exception error ) when ( error is IOException or InvalidDataException or UnauthorizedAccessException or System.Text.Json.JsonException or ArgumentException )
 			{
 				Log.Warning( $"Saved park {Path.GetFileName( path )} cannot be listed: {error.Message}" );
 			}
@@ -221,7 +221,7 @@ internal sealed partial class GameFlow : IDisposable
 		if ( entry.OwnSavePath != null )
 		{
 			try { ResumePark( ParkResumeSaveFile.Load( entry.OwnSavePath ) ); }
-			catch ( Exception error ) when ( error is IOException or UnauthorizedAccessException or System.Text.Json.JsonException
+			catch ( Exception error ) when ( error is IOException or InvalidDataException or UnauthorizedAccessException or System.Text.Json.JsonException
 				or ArgumentException or InvalidOperationException or NotSupportedException )
 			{
 				Log.Warning( $"Park load failed: {error.Message}" );

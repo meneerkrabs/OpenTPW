@@ -91,6 +91,8 @@ public partial class Level : IDisposable
 		if ( visit != null ? !visit.IsSandbox : loadOriginalLevel )
 		{
 			OriginalPark = OriginalPark.Load( levelName, readShippedSave: resume == null && (IsReadOnlyVisit || ParkStart.ReadsShippedSave( start )) );
+			if ( resume != null && (resume.Layout.Cells.Width != OriginalPark.Map.CellCountX || resume.Layout.Cells.Height != OriginalPark.Map.CellCountY) )
+				throw new InvalidDataException( "The saved cell map dimensions do not match the original terrain." );
 			// [EXT:tpi-viewer] Theme Park Inc has no economy here: its balance keys differ from Theme Park World's (docs/THEME-PARK-INC.md).
 			if ( !IsReadOnlyVisit && !GameEditions.IsThemeParkInc )
 				Park = resume == null ? ParkEconomyRuntime.ForOriginalLevel( OriginalPark, start, Seed )

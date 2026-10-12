@@ -457,7 +457,7 @@ public sealed partial class ParkHud
 			else level.SaveSandbox();
 			PostMessage( strings.Extra( OpenTpwText.ParkSaved ) );
 		}
-		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException or InvalidOperationException or NotSupportedException )
+		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or UnauthorizedAccessException or InvalidOperationException or NotSupportedException )
 		{
 			PostMessage( string.Format( strings.Extra( OpenTpwText.SaveFailed ), exception.Message ) );
 		}

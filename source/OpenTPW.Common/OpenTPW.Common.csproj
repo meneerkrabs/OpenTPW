@@ -8,10 +8,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Veldrid -> NativeLibraryLoader -> Microsoft.Extensions.DependencyModel 2.0.3 pulls Newtonsoft.Json 9.0.1
+         (GHSA-5crp-9r3c-p9vr). Pin a patched version here; it flows to every project that references Common. -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="Veldrid" Version="4.9.0" />
     <PackageReference Include="Veldrid.SDL2" Version="4.8.0" />
     <PackageReference Include="Veldrid.StartupUtilities" Version="4.8.0" />
-    <PackageReference Include="Zio" Version="0.17.0" />
+    <PackageReference Include="Zio" Version="0.22.2" />
   </ItemGroup>
 
 </Project>

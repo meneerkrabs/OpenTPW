@@ -1,8 +1,5 @@
 ﻿using ImGuiNET;
 using OpenTPW.ModKit;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
-using SixLabors.ImageSharp.Processing;
 using System.Reflection;
 using Veldrid;
 
@@ -135,18 +132,9 @@ public partial class Editor
 			var textureFile = new TextureFile( path );
 			var t = textureFile.Data;
 
-			var pixelData = new Rgba32[t.Width * t.Height];
-
-			for ( int i = 0; i < t.Width * t.Height; ++i )
-			{
-				var tInd = i * 4;
-				pixelData[i] = new Rgba32( t.Data[tInd], t.Data[tInd + 1], t.Data[tInd + 2], t.Data[tInd + 3] );
-			}
-
-			using var img = Image.LoadPixelData<Rgba32>( pixelData, t.Width, t.Height );
+			var thumbnail = RgbaResampler.Resize( t.Data.AsSpan( 0, t.Width * t.Height * 4 ), t.Width, t.Height, 16, 16 );
 			using var writeStream = CacheFileSystem.OpenWrite( thumbnailPath );
-			img.Mutate( x => x.Resize( 16, 16 ) );
-			img.SaveAsPng( writeStream );
+			PngWriter.Write( writeStream, thumbnail, 16, 16 );
 
 			Log.Info( $"Cached to {thumbnailPath}" );
 		} );

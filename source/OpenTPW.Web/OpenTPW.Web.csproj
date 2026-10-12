@@ -37,9 +37,8 @@
 		<ProjectReference Include="../OpenTPW.Web.Veldrid/OpenTPW.Web.Veldrid.csproj" />
 		<ProjectReference Include="../OpenTPW.Online/OpenTPW.Online.csproj" />
 		<PackageReference Include="SharpZipLib" Version="1.4.2" />
-		<PackageReference Include="Zio" Version="0.17.0" />
+		<PackageReference Include="Zio" Version="0.22.2" />
 		<PackageReference Include="StbImageSharp" Version="2.27.8" />
-		<PackageReference Include="SixLabors.ImageSharp" Version="3.1.6" />
 		<PackageReference Include="System.Configuration.ConfigurationManager" Version="6.0.0" />
 	</ItemGroup>
 

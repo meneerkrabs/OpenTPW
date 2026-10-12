@@ -4,8 +4,6 @@ using OpenTPW.Online;
 using OpenTPW.Online.Api;
 using OpenTPW.Hud;
 using OpenTPW.UI.Original;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
 using Veldrid;
 
 namespace OpenTPW;
@@ -174,8 +172,8 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			var solid = new byte[96 * 96 * 4];
 			for ( var index = 0; index < solid.Length; index += 4 )
 				(solid[index], solid[index + 1], solid[index + 2], solid[index + 3]) = (0x0C, 0xC8, 0x22, 0xFF);
-			using ( var image = Image.LoadPixelData<Rgba32>( solid, 96, 96 ) )
-				image.SaveAsPng( file );
+			using ( var stream = File.Create( file ) )
+				PngWriter.Write( stream, solid, 96, 96 );
 			File.WriteAllText( Path.Combine( pack, TexturePack.ManifestFileName ), System.Text.Json.JsonSerializer.Serialize( new TexturePackManifest { Scale = 1 } ) );
 			var diagnostics = new List<string>();
 			textureSwitch = TexturePackSwitch.Begin( "smoke", diagnostics, packs );
@@ -1157,10 +1155,9 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			for ( var pixel = 0; pixel < pixels.Length && colors.Count <= 32; pixel += 4 )
 				colors.Add( BitConverter.ToUInt32( pixels, pixel ) );
 			Require( colors.Count > 32, $"{name} has image detail" );
-			using var image = Image.LoadPixelData<Bgra32>( pixels, (int)source.Width, (int)source.Height );
 			var directory = Path.GetFullPath( "artifacts" );
 			Directory.CreateDirectory( directory );
-			image.SaveAsPng( Path.Combine( directory, $"native-smoke-{GameLanguage.Current.Name.ToLowerInvariant()}-{name}" ) );
+			PngWriter.SaveBgra( Path.Combine( directory, $"native-smoke-{GameLanguage.Current.Name.ToLowerInvariant()}-{name}" ), pixels, (int)source.Width, (int)source.Height );
 			return (pixels, (int)source.Width, (int)source.Height);
 		}
 		finally

@@ -147,19 +147,17 @@ preview; original runtime fidelity and the complete offline scope remain open.
   (`IsChoosable`, `IsBrokenDown`, `IsOpen`): the park points bridge input's open
   flag is passed as `IsOpen` and C# agrees on 507/507. ARRIVAL-003 stays open for
   the conditions that need world state (entrance, queue room, coaster riders).
-- ARRIVAL-002 (factor) is resolved. The `+48` word of the thing at game
-  `+0x1da734` is the Traffic Lights fixed item's `mTopLeft` cell id: the world
-  setup `0x10474c` finds the item by the name `lights` and stores its thing id
-  there, which the world-variable writer saves as `mTrafficLights`; the object
-  serializer pairs `+48` with `mTopLeft`; the saved Easymode Lights record holds 1.
-  The word is therefore positive in every park with its lights, and the original
-  always uses 0.8, not 1.2. `GuestSimulation.ArrivalGroupSize` now takes
-  `TrafficLightsPlaced` (set from the placed fixed items); a new park gets 2
-  guests per group instead of 4. A non-sandbox online visit now cuts groups to
-  500 − guests as the original does for GameType 1 (`OnlineVisit`; that a visit
-  is GameType 1 stays an assumption under ARRIVAL-002). The oracle's C# pin
-  drops from 125 to 49 differences, all from the missing floor (ARRIVAL-004).
-  Open-item count unchanged.
+- ARRIVAL-002 (factor) is resolved, and the earlier lights finding is corrected.
+  `0x1083c8` reads the thing index at game `+0x1da724` (`mWeather`), not `+0x1da734`
+  (`mTrafficLights`; the offset had been miscalculated in the first reading). The
+  `+48` word of that weather object is `mCurrentDrops`, so the arrival factor is
+  0.8 while rain or snow drops are falling and 1.2 otherwise; the Traffic Lights
+  play no part. `GuestSimulation.ArrivalGroupSize` takes `WeatherDropsFalling`
+  (`ParkWeather.CurrentDrops > 0`, set by `Level`); `TrafficLightsPlaced` and
+  `ObjectCatalogEntry.IsTrafficLights` are gone. `ParkWeather` now ramps snow
+  drops too (AUDIO-028 closed). The oracle pin is unchanged (49 differences, all
+  the missing floor, ARRIVAL-004). A non-sandbox online visit still cuts groups to
+  500 - guests (`OnlineVisit`; GameType 1 stays an assumption under ARRIVAL-002).
 - The oracle also executed the arrival update `0xcb2ac` over scripts of repeated
   calls (F11, ARRIVAL-004). A negative group (1700 guests: -200) behaves like an
   empty one: no guest, timer restart and cleared active byte at the next stop,
@@ -236,8 +234,8 @@ preview; original runtime fidelity and the complete offline scope remain open.
   the integer divide became a floating one (80 points + 20 over 25 gives 3, not 4), and a mode word of 3 gives no
   group. The note also records that tp.exe's arrival routine reads the `mWeather` handle, not Traffic Lights.
 - The oracle now executes the Mac month-end staff training `0xfc1c4` (finding F17, ECON-013): each role's budget is divided by all of the role's staff (the base counts are zero), every member below the top grade is charged the whole share and gets min(share / price, 100) points, and points above 99 carry into the next grade. `ParkStaff.Train` now does the same (358 of 507 oracle inputs differed): a budget of 1,000 for 3 handymen (grades 0, 0, 4) trains the two at 333 each instead of 500, and a share below the price is still spent. ECON-013 is retired.
-- [Fidelity register](FIDELITY-REGISTER.md): **316 original fidelity items** plus
-  **24 online extension** IDs (340 total) remain open. CI checks explicit tags and
+- [Fidelity register](FIDELITY-REGISTER.md): **315 original fidelity items** plus
+  **24 online extension** IDs (339 total) remain open. CI checks explicit tags and
   register consistency; it finds no unmarked logic and proves no parity.
   Windows/Linux GPU/input/audio, original captures, coaster controllers, missing
   script effects, and further scenario acceptance remain release blockers.
@@ -840,8 +838,8 @@ were earned from visits to published parks). What OpenTPW rebuilds:
 - **Arrivals:** guests arrive in groups as in the Mac binary: a group every
   `TimeBetweenArrivals` units of four park turns (about 2.5 minutes for the
   shipped 150) after the last one emptied, sized
-  `0.8 × (park points + NewParkBonus) / PointsPerVisitor` (1.2 before the Traffic
-  Lights finding, ARRIVAL-002) with park points from
+  `1.2 × (park points + NewParkBonus) / PointsPerVisitor` (0.8 while rain or snow
+  is falling, ARRIVAL-002) with park points from
   the rides' and sideshows' AttractionValue and age bonus (docs/GUESTS.md,
   "Arrivals"). A 30-minute M3 run now admits 105 guests instead of 1,800.
   ARRIVAL-001..003 remain open.

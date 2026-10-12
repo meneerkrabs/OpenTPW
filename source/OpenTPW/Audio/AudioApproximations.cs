@@ -32,7 +32,6 @@ public static class AudioApproximations
 		("AUDIO-025", "the December season row reads past the four-season table; this follows the fork's reading (Avg 4, Tolerance DaysOfWarning, Chance DaysBetweenChanges)"),
 		("AUDIO-026", "a forecast applies on its day index DaysOfWarning after the roll, and the roll is taken on the first turn of its day; the Mac's day comparison units are not traced"),
 		("AUDIO-027", "the first quality is rolled at park entry from the entry day's season and the drops start at 0; the Mac's initial roll is not traced"),
-		("AUDIO-028", "a snow quality's drops target is 0 (no rain voice); the snow branch's target is not traced"),
 		("AUDIO-029", "thunder whose countdown computes to 0 plays at the strike; the Mac's countdown test beside 0x10103438 is not fully traced"),
 		("AUDIO-030", "the weather's random draws come from the park's weather stream, not the Mac's world LCG; the seed source is not traced"),
 		("AUDIO-032", "a ride's scream plays flat: the original places it at the ride's box middle, which OpenTPW's ride objects do not map to yet"),

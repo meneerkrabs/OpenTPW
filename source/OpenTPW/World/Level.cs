@@ -224,7 +224,7 @@ public partial class Level : IDisposable
 				Park.AttachGuests( Guests, openParkOnAttach: resumeState == null );
 			ConnectObjectsToGuests();
 			if ( Guests != null )
-				Guests.TrafficLightsPlaced = () => Objects.Objects.Any( item => item.Entry.IsTrafficLights );
+				Guests.WeatherDropsFalling = () => Weather is { CurrentDrops: > 0 };
 			ConnectObjectsToEconomy();
 			SetupStaff();
 			SetupParkGate();

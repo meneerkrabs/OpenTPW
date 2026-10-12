@@ -258,7 +258,6 @@ internal sealed class M4GateRun
 		foreach ( var entry in catalog.Entries.Where( entry => entry.IsFixedItem && entry.SettingsName is "Gates" or "Lights" or "Bus" ) )
 			scene.FixedItems.Add( new OriginalObjectRuntime( entry, scene.World, scene.NextSeed(), open: true ) );
 		runtime.AttachGuests( scene.Guests );
-		scene.Guests.TrafficLightsPlaced = () => scene.FixedItems.Any( item => item.Entry.IsTrafficLights );
 		foreach ( var item in scene.FixedItems.Where( item => scene.Economy.Catalog.TryGet( item.Entry.InfoId, out _ ) ) )
 		{
 			var state = scene.Economy.RegisterExisting( item.Entry.InfoId );

@@ -729,7 +729,7 @@ ARRIVAL_WORLD_MODE = 0x1E0000 - 22728  # game + 0x1da738: 4 = bankrupt (no group
 PARK_OF_GAME = 0x1082B4        # (game) -> park; stubbed with a sentinel, checked
 COUNTED_GUESTS = 0xC1FB4       # (park, 20) -> guests counted against the limit; stubbed: the chosen count
 PARK_POINTS = 0xC24C0          # (park) -> attraction points; stubbed: the chosen points
-FACTOR_OBJECT = 0x1083C8       # (game) -> object whose +48 word picks the factor; stubbed with a synthetic object
+FACTOR_OBJECT = 0x1083C8       # (game) -> the weather thing (game +0x1da724) whose +48 word, mCurrentDrops, picks the factor; stubbed with a synthetic object
 ARRIVAL_STATE = type('ArrivalState', (), {})()  # set per input by arrival_binary, read by the stubs
 DEBUG_LOG = 0x5FBCC            # (level, format, ...) debug print; logged, no effect on the result
 
@@ -801,8 +801,8 @@ def arrival_core(x: dict, factor: float) -> int:
 
 def arrival_plan(x: dict) -> int:
     """GUESTS.md "Arrivals" and GuestSimulation.ArrivalGroupSize: none while bankrupt; (int)(factor × (points +
-    NewParkBonus)) / PointsPerVisitor (1 below 2) with factor 0.8 while the Traffic Lights thing's +48 word is positive
-    (the lights are placed) and 1.2 otherwise, at least MinPeople, cut so guests + group stay within 1500, or 500 for an
+    NewParkBonus)) / PointsPerVisitor (1 below 2) with factor 0.8 while the weather thing's +48 word (mCurrentDrops) is
+    positive (drops are falling) and 1.2 otherwise, at least MinPeople, cut so guests + group stay within 1500, or 500 for an
     online visit (GameType word 1), never below 0."""
     if x['world_mode'] == 4:
         return 0
@@ -2812,7 +2812,7 @@ ARRIVAL = Target('arrival-group', 'Arrival group size 0xcb4e8', 'GUESTS.md "Arri
                  alternatives={'routine-reading': arrival_full},
                  csharp=('arrival_group', arrival_csharp_request, lambda x, r: r),
                  notes=['C# hook: bridge function "arrival_group" (GuestSimulation.ArrivalGroupSize); the thing +48 word is '
-                        'passed as the Traffic Lights placed flag (word > 0) and GameType word 1 as OnlineVisit (500 cut).',
+                        'passed as the weather-drops-falling flag (mCurrentDrops > 0) and GameType word 1 as OnlineVisit (500 cut).',
                         'Stubs: 0x1082b4 park, 0xc1fb4 counted guests, 0xc24c0 points, 0x1083c8 factor object, '
                         '0x5fbcc debug log; the mode object is marked constructed so 0x12bb64 does not run.'])
 

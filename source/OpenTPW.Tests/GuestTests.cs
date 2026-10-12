@@ -483,27 +483,47 @@ public class GuestTests
 	}
 
 	[TestMethod]
-	public void ArrivalGroupsUseTheTrafficLightsFactor()
+	public void ArrivalGroupsUseTheWeatherDropsFactor()
 	{
-		// 0x100CB564..0x100CB594: the +48 word (mTopLeft, cell id 1 for a fixed item) of the Traffic Lights thing is positive, so the factor is 0.8f.
+		// 0x100CB564..0x100CB594: the +48 word (mCurrentDrops) of the weather thing at game +0x1DA724 is positive while drops fall, so the factor is 0.8f; otherwise 1.2f.
 		var settings = CreateSettings();
 		var points = 0;
-		var lights = true;
-		var simulation = new GuestSimulation( CreateCross(), settings, 1 ) { ParkPoints = () => points, TrafficLightsPlaced = () => lights };
-		Assert.AreEqual( 2, simulation.ArrivalGroupSize(), "a new park: (int)(0.8f × 20) / 6" );
+		var drops = true;
+		var simulation = new GuestSimulation( CreateCross(), settings, 1 ) { ParkPoints = () => points, WeatherDropsFalling = () => drops };
+		Assert.AreEqual( 2, simulation.ArrivalGroupSize(), "a new park in rain: (int)(0.8f × 20) / 6" );
 		points = 35;
 		Assert.AreEqual( 7, simulation.ArrivalGroupSize(), "Belly Bounce's 25 + 10 new bonus: (int)(0.8f × 55) / 6" );
 		settings.ArrivalMinPeople = 5;
 		points = 0;
 		Assert.AreEqual( 5, simulation.ArrivalGroupSize(), "raised to MinPeople" );
 		settings.ArrivalMinPeople = 1;
-		lights = false;
-		Assert.AreEqual( 4, simulation.ArrivalGroupSize(), "without the lights the factor is 1.2f" );
-		simulation.TrafficLightsPlaced = null;
-		Assert.AreEqual( 4, simulation.ArrivalGroupSize(), "no lights hook: 1.2f" );
-		simulation.TrafficLightsPlaced = () => true;
-		var bankrupt = new GuestSimulation( CreateCross(), settings, 1 ) { TrafficLightsPlaced = () => true, ArrivalsHalted = () => true };
+		drops = false;
+		Assert.AreEqual( 4, simulation.ArrivalGroupSize(), "no drops falling: the factor is 1.2f" );
+		simulation.WeatherDropsFalling = null;
+		Assert.AreEqual( 4, simulation.ArrivalGroupSize(), "no weather hook: 1.2f" );
+		var bankrupt = new GuestSimulation( CreateCross(), settings, 1 ) { WeatherDropsFalling = () => true, ArrivalsHalted = () => true };
 		Assert.AreEqual( 0, bankrupt.ArrivalGroupSize(), "world mode 4 still gives none" );
+	}
+
+	[TestMethod]
+	public void ArrivalFactorFollowsTheParkWeatherDrops()
+	{
+		// Level wires WeatherDropsFalling as ParkWeather.CurrentDrops > 0: dry weather gives 1.2f, a ramped-up rain 0.8f.
+		var settings = CreateSettings();
+		var keys = new SamSettings( new[] { SamDocument.Parse( "WeatherEffects.QualityForRainLow\t0\nWeatherEffects.QualityForRainHigh\t40\nWeatherEffects.MaxRaindrops\t600\nWeather.SpeedOfChange\t20\n", "test" ) } );
+		var weather = new ParkWeather( keys, 1, 10, 10 );
+		var simulation = new GuestSimulation( CreateCross(), settings, 1 ) { WeatherDropsFalling = () => weather is { CurrentDrops: > 0 } };
+		Assert.AreEqual( 4, simulation.ArrivalGroupSize(), "before any weather: no drops" );
+		weather.ApplyQuality( 1 );
+		Assert.AreEqual( 4, simulation.ArrivalGroupSize(), "a rain quality with the drops still at 0: 1.2f" );
+		weather.Step( 0 );
+		Assert.AreEqual( 20, weather.CurrentDrops );
+		Assert.AreEqual( 2, simulation.ArrivalGroupSize(), "drops falling: 0.8f" );
+		weather.ApplyQuality( 78 );
+		for ( var turn = 0; turn < 40; turn++ )
+			weather.Step( 0 );
+		Assert.AreEqual( 0, weather.CurrentDrops, "dry weather ramps the drops back to 0" );
+		Assert.AreEqual( 4, simulation.ArrivalGroupSize(), "dry again: 1.2f" );
 	}
 
 	[TestMethod]

@@ -300,7 +300,6 @@ internal sealed class M3GateRun
 		var openingBalance = economy.Balance;
 		BuildEntrance();
 		runtime.AttachGuests( guests );
-		guests.TrafficLightsPlaced = () => fixedItems.Any( item => item.Entry.IsTrafficLights );
 		ConnectFixedItemsToEconomy();
 		BuildPaths();
 		PlaceObject( "attraction", entry => entry.Category == ObjectCategory.Ride && entry.HasQueue );

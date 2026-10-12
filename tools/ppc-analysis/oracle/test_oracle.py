@@ -64,7 +64,7 @@ EXPECTED = {
                                            'max_y': 0.7295945286750793, 'max_speed': 20.78131103515625,
                                            'sections': [5678, 64, 10262, 128, 64]}),
     ('coast-rating-final', 'plan-both-flags'): AGREE,
-    # F9: 0xcb4e8 uses the factor 0.8 while the 0x1083c8 thing's +48 word is positive (the Traffic Lights' mTopLeft: GUESTS.md
+    # F9: 0xcb4e8 uses the factor 0.8 while the 0x1083c8 thing's +48 word is positive (the weather thing's mCurrentDrops: GUESTS.md
     # and C# take that), cuts to 500 − guests in limit mode 1 (online; C#: OnlineVisit, ARRIVAL-002), and both cuts compare
     # guests + group unsigned without a floor at 0 (GUESTS.md and C# floor at 0, ARRIVAL-004). 49 of the 515 inputs remain:
     # 36 in limit mode 1 and 12 in the other modes where the group is cut below 0 (guests above the limit), plus 1 where a

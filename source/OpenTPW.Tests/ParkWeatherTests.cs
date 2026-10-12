@@ -33,6 +33,25 @@ public class ParkWeatherTests
 		"Weather.SpeedOfChange\t20\n" );
 
 	[TestMethod]
+	public void SnowHasDropsToo()
+	{
+		// 0x103a90..0x103afc: the snow band computes its drops target like the rain band, from its own range; the ramp sends the
+		// drop-based level in any band (0x103394..0x1033a4).
+		var keys = Keys( "WeatherEffects.QualityForSnowLow\t60\nWeatherEffects.QualityForSnowHigh\t100\nWeatherEffects.QualityForRainLow\t-1\nWeatherEffects.QualityForRainHigh\t-1\n" +
+			"WeatherEffects.MaxRaindrops\t600\nWeather.SpeedOfChange\t20\n" );
+		var weather = new ParkWeather( keys, 1, 10, 10 );
+		weather.ApplyQuality( 70 );
+		Assert.IsTrue( weather.Snow && !weather.Rain );
+		Assert.AreEqual( 450, weather.TargetDrops, "intensity 25: (100 − 25) × 600 / 100" );
+		weather.Step( 0 );
+		Assert.AreEqual( 20, weather.CurrentDrops, "snow drops ramp like rain's (the word the arrival factor reads)" );
+		Assert.AreEqual( 20 * 100 / 600, weather.RainLevel, "the level follows the drops in any band" );
+		weather.ApplyQuality( 30 );
+		Assert.IsFalse( weather.Snow || weather.Rain );
+		Assert.AreEqual( 0, weather.TargetDrops );
+	}
+
+	[TestMethod]
 	public void TheConverterSetsTheRainTargetFromTheQualityBand()
 	{
 		var weather = new ParkWeather( Jungle(), 1, 10, 10 );

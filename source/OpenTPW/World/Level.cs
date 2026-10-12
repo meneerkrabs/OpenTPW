@@ -216,6 +216,7 @@ public partial class Level : IDisposable
 				var cells = Guests.Grid.Cells;
 				OriginalTerrain.PathSource = ( x, y ) => cells.TypeAt( x, y ) == ParkCellType.Path;
 				OriginalTerrain.QueueSource = ( x, y ) => cells.TypeAt( x, y ) == ParkCellType.Queue;
+				OriginalTerrain.QueueLinkSource = cells.QueueLinkAt;
 				if ( resumeState != null ) OriginalTerrain.RefreshPaths();
 				renderedCellVersion = cells.Version;
 			}

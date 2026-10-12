@@ -285,71 +285,47 @@ public class GuestSnapshotValidationReviewTests
 		target.AssertIntact( "extreme bounds" );
 	}
 
-	// ---- Known-red regressions: malformed nulls crash validation instead of being rejected -------
-	// The three probes below assert the contract the save/load milestone needs (explicit rejection, target
-	// untouched) for null file entries that deserialise into reference-typed snapshot parts. Today the
-	// validation dereferences them and dies with NullReferenceException, so these tests are RED until the guest
-	// owner guards the nulls; they are kept strong on purpose (root's R2 instruction) and are local-only.
+	// ---- Null file entries in reference-typed snapshot parts: explicit rejection, target untouched -------
+	// The three probes below pin the guest owner's null guards (root's R2 fix): a JSON null that deserialises
+	// into a reference-typed snapshot part is named as a validation error — never a NullReferenceException —
+	// and the refused restore leaves the lived-in target bit-identical.
 
-	/// <summary>KNOWN RED: a null attraction entry in the file crashes <see cref="GuestSimulation.ValidateSnapshot"/>
-	/// with NullReferenceException (it reads <c>Attractions[i].AttractionId</c> before any null check) instead of
-	/// reporting the broken attraction. Desired: explicit error, refused restore, target intact.</summary>
+	/// <summary>A null attraction entry in the file is an explicit validation error naming the broken attraction,
+	/// and the restore refuses it.</summary>
 	[TestMethod]
-	public void NullAttractionEntryIsRejectedExplicitly_KnownRedUntilGuestOwnerGuardsNulls()
+	public void NullAttractionEntryFromTheFileIsRejectedExplicitly()
 	{
 		var target = new Target();
 		var snapshot = ValidSnapshot( target );
 		var withNullAttraction = WithJsonEdit( snapshot, root => root["Attractions"]![0] = null );
-		try
-		{
-			var validation = target.Rig.Simulation.ValidateSnapshot( withNullAttraction );
-			Assert.IsFalse( validation.IsValid, "a null attraction entry must not validate" );
-		}
-		catch ( NullReferenceException )
-		{
-			Assert.Fail( "KNOWN RED: validating a null Attractions[i] entry crashes with NullReferenceException; it must report the broken attraction instead (guest-owner fix pending)." );
-		}
+		var validation = target.Rig.Simulation.ValidateSnapshot( withNullAttraction );
+		Assert.IsFalse( validation.IsValid, "a null attraction entry must not validate" );
 		Rejects( target, withNullAttraction, "null attraction entry" );
 	}
 
-	/// <summary>KNOWN RED: a file whose Guests array is null crashes validation with NullReferenceException (it
-	/// reads <c>snapshot.Guests.Length</c>). Desired: explicit error, refused restore, target intact.</summary>
+	/// <summary>A file whose Guests array is null is an explicit validation error naming the missing guest list,
+	/// and the restore refuses it.</summary>
 	[TestMethod]
-	public void NullGuestsArrayIsRejectedExplicitly_KnownRedUntilGuestOwnerGuardsNulls()
+	public void NullGuestsArrayFromTheFileIsRejectedExplicitly()
 	{
 		var target = new Target();
 		var snapshot = ValidSnapshot( target );
 		var withNullGuests = WithJsonEdit( snapshot, root => root[nameof( GuestSimulationSnapshot.Guests )] = null );
-		try
-		{
-			var validation = target.Rig.Simulation.ValidateSnapshot( withNullGuests );
-			Assert.IsFalse( validation.IsValid, "a null guest list must not validate" );
-		}
-		catch ( NullReferenceException )
-		{
-			Assert.Fail( "KNOWN RED: validating a null Guests array crashes with NullReferenceException; it must report the missing guest list instead (guest-owner fix pending)." );
-		}
+		var validation = target.Rig.Simulation.ValidateSnapshot( withNullGuests );
+		Assert.IsFalse( validation.IsValid, "a null guest list must not validate" );
 		Rejects( target, withNullGuests, "null guest list" );
 	}
 
-	/// <summary>KNOWN RED: a guest whose Navigation object is null crashes the per-guest structure validation with
-	/// NullReferenceException (it reads <c>guest.Navigation.X</c>). Desired: explicit error, refused restore, target
-	/// intact.</summary>
+	/// <summary>A guest whose Navigation object is null is an explicit validation error naming the guest, and the
+	/// restore refuses it.</summary>
 	[TestMethod]
-	public void NullNavigationIsRejectedExplicitly_KnownRedUntilGuestOwnerGuardsNulls()
+	public void NullNavigationFromTheFileIsRejectedExplicitly()
 	{
 		var target = new Target();
 		var snapshot = ValidSnapshot( target );
 		var withNullNavigation = WithJsonEdit( snapshot, root => root["Guests"]![0]![nameof( GuestSnapshot.Navigation )] = null );
-		try
-		{
-			var validation = target.Rig.Simulation.ValidateSnapshot( withNullNavigation );
-			Assert.IsFalse( validation.IsValid, "a guest without navigation must not validate" );
-		}
-		catch ( NullReferenceException )
-		{
-			Assert.Fail( "KNOWN RED: validating a guest with a null Navigation crashes with NullReferenceException; it must report the missing navigation instead (guest-owner fix pending)." );
-		}
+		var validation = target.Rig.Simulation.ValidateSnapshot( withNullNavigation );
+		Assert.IsFalse( validation.IsValid, "a guest without navigation must not validate" );
 		Rejects( target, withNullNavigation, "null navigation" );
 	}
 

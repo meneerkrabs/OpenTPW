@@ -204,14 +204,35 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 
 	/// <summary>
 	/// Bridge-local snapshot checks that need no park context: positive and unique guest ids, the called guest in the
-	/// queue, rider subsets, finite timers and bounded counters. Whether the referenced guests exist — and each is
-	/// queued or aboard at exactly one attraction — is validated by <see cref="GuestSimulation.ValidateSnapshot"/>.
+	/// queue, rider subsets, finite timers and bounded counters. A list the file lost (a JSON null) is named as a
+	/// problem instead of crashing. Whether the referenced guests exist — and each is queued or aboard at exactly one
+	/// attraction — is validated by <see cref="GuestSimulation.ValidateSnapshot"/>.
 	/// </summary>
 	public static IReadOnlyList<string> ValidateSnapshot( RideVisitorBridgeSnapshot snapshot )
 	{
 		ArgumentNullException.ThrowIfNull( snapshot );
 		var errors = new List<string>();
 		void Error( string message ) => errors.Add( message );
+		// Name every list a corrupt file nulled out before anything dereferences them; a snapshot without its
+		// tables cannot be checked structurally.
+		var listsMissing = false;
+		void Require<T>( T[]? list, string name )
+		{
+			if ( list == null )
+			{
+				Error( $"the {name} is missing." );
+				listsMissing = true;
+			}
+		}
+		Require( snapshot.Queue, "queue list" );
+		Require( snapshot.OnRide, "rider list" );
+		Require( snapshot.WalkingOff, "walking-off list" );
+		Require( snapshot.Hopped, "hopped set" );
+		Require( snapshot.Limbo, "limbo table" );
+		Require( snapshot.Bounce, "bounce table" );
+		Require( snapshot.QueueCells, "queue cell list" );
+		if ( listsMissing )
+			return errors;
 		var riders = new HashSet<int>( snapshot.OnRide );
 		if ( riders.Count != snapshot.OnRide.Length )
 			Error( "the rider list repeats a guest." );

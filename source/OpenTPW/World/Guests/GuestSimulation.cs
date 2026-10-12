@@ -1533,8 +1533,9 @@ public sealed class GuestSimulation : IRideVisitorHost
 	/// <summary>
 	/// Pure validation of a guest snapshot against this park: schema, bounded numbers, guest and attraction identity,
 	/// state-specific structure (arrival lanes, grid position, queue and rider membership) and the cross-references
-	/// between guests and attraction queues. Nothing is mutated; every problem found is returned, so a caller can
-	/// reject a save without touching the live world.
+	/// between guests and attraction queues. Reference-typed parts a corrupt file may null out — the core lists, an
+	/// attraction entry, a guest's navigation or route — are named as errors instead of crashing. Nothing is
+	/// mutated; every problem found is returned, so a caller can reject a save without touching the live world.
 	/// </summary>
 	public GuestSnapshotValidation ValidateSnapshot( GuestSimulationSnapshot? snapshot )
 	{
@@ -1574,6 +1575,23 @@ public sealed class GuestSimulation : IRideVisitorHost
 			Error( $"PendingArrivals {snapshot.PendingArrivals} is negative." );
 		if ( snapshot.LaneToggle < 0 )
 			Error( $"LaneToggle {snapshot.LaneToggle} is negative." );
+		// A file that lost one of its core lists (a JSON null) cannot be cross-checked; the hole is named and
+		// validation stops before anything dereferences it, exactly like a wholly missing snapshot.
+		if ( snapshot.Guests == null )
+		{
+			Error( "Guests is missing; a guest snapshot needs its guest list." );
+			return new GuestSnapshotValidation( errors );
+		}
+		if ( snapshot.Attractions == null )
+		{
+			Error( "Attractions is missing; a guest snapshot needs its attraction list." );
+			return new GuestSnapshotValidation( errors );
+		}
+		if ( snapshot.SeenQueueEdits == null )
+		{
+			Error( "SeenQueueEdits is missing; a guest snapshot needs one counter per attraction." );
+			return new GuestSnapshotValidation( errors );
+		}
 
 		// Attractions: the snapshot must describe exactly the registered set.
 		var registeredIds = new HashSet<int>();
@@ -1587,8 +1605,14 @@ public sealed class GuestSimulation : IRideVisitorHost
 		var snapshotIds = new HashSet<int>();
 		for ( var index = 0; index < snapshot.Attractions.Length; index++ )
 		{
-			if ( !snapshotIds.Add( snapshot.Attractions[index].AttractionId ) )
-				Error( $"Attractions[{index}] repeats attraction {snapshot.Attractions[index].AttractionId}." );
+			var attractionSnapshot = snapshot.Attractions[index];
+			if ( attractionSnapshot == null )
+			{
+				Error( $"Attractions[{index}] is missing." );
+				continue;
+			}
+			if ( !snapshotIds.Add( attractionSnapshot.AttractionId ) )
+				Error( $"Attractions[{index}] repeats attraction {attractionSnapshot.AttractionId}." );
 		}
 		foreach ( var attractionId in registeredIds )
 			if ( !snapshotIds.Contains( attractionId ) )
@@ -1617,28 +1641,34 @@ public sealed class GuestSimulation : IRideVisitorHost
 		for ( var index = 0; index < snapshot.Attractions.Length; index++ )
 		{
 			var attractionSnapshot = snapshot.Attractions[index];
+			if ( attractionSnapshot == null )
+				continue; // already reported above: Attractions[index] is missing
 			foreach ( var problem in RideVisitorBridge.ValidateSnapshot( attractionSnapshot ) )
 				Error( $"Attractions[{index}] (attraction {attractionSnapshot.AttractionId}): {problem}" );
-			foreach ( var guestId in attractionSnapshot.Queue )
-			{
-				if ( queuedIn.TryGetValue( guestId, out var otherAttraction ) )
-					Error( $"Guest {guestId} is queued at attractions {otherAttraction} and {attractionSnapshot.AttractionId}." );
-				else
-					queuedIn[guestId] = attractionSnapshot.AttractionId;
-			}
-			foreach ( var guestId in attractionSnapshot.OnRide )
-			{
-				if ( aboardOf.TryGetValue( guestId, out var otherAttraction ) )
-					Error( $"Guest {guestId} is aboard attractions {otherAttraction} and {attractionSnapshot.AttractionId}." );
-				else
-					aboardOf[guestId] = attractionSnapshot.AttractionId;
-			}
-			for ( var cell = 0; cell < attractionSnapshot.QueueCells.Length; cell++ )
-			{
-				var (x, y) = attractionSnapshot.QueueCells[cell];
-				if ( !Grid.InBounds( x, y ) )
-					Error( $"Attraction {attractionSnapshot.AttractionId} queue cell {cell} ({x}, {y}) is outside the map." );
-			}
+			// A list the file lost is already named by the bridge validation; the membership cross-checks skip it.
+			if ( attractionSnapshot.Queue != null )
+				foreach ( var guestId in attractionSnapshot.Queue )
+				{
+					if ( queuedIn.TryGetValue( guestId, out var otherAttraction ) )
+						Error( $"Guest {guestId} is queued at attractions {otherAttraction} and {attractionSnapshot.AttractionId}." );
+					else
+						queuedIn[guestId] = attractionSnapshot.AttractionId;
+				}
+			if ( attractionSnapshot.OnRide != null )
+				foreach ( var guestId in attractionSnapshot.OnRide )
+				{
+					if ( aboardOf.TryGetValue( guestId, out var otherAttraction ) )
+						Error( $"Guest {guestId} is aboard attractions {otherAttraction} and {attractionSnapshot.AttractionId}." );
+					else
+						aboardOf[guestId] = attractionSnapshot.AttractionId;
+				}
+			if ( attractionSnapshot.QueueCells != null )
+				for ( var cell = 0; cell < attractionSnapshot.QueueCells.Length; cell++ )
+				{
+					var (x, y) = attractionSnapshot.QueueCells[cell];
+					if ( !Grid.InBounds( x, y ) )
+						Error( $"Attraction {attractionSnapshot.AttractionId} queue cell {cell} ({x}, {y}) is outside the map." );
+				}
 			if ( attractionSnapshot.JoinCell is { } join && !Grid.InBounds( join.X, join.Y ) )
 				Error( $"Attraction {attractionSnapshot.AttractionId} join cell ({join.X}, {join.Y}) is outside the map." );
 		}
@@ -1704,7 +1734,10 @@ public sealed class GuestSimulation : IRideVisitorHost
 			Finite( guest.Id, guest.QueueTargetY, nameof( guest.QueueTargetY ) );
 			Finite( guest.Id, guest.StateTimer, nameof( guest.StateTimer ) );
 			Finite( guest.Id, guest.DecisionTimer, nameof( guest.DecisionTimer ) );
-			ValidateGuestStructure( guest, Error );
+			if ( guest.Navigation == null )
+				Error( $"Guests[{index}] (guest {guest.Id}) has no navigation snapshot." );
+			else
+				ValidateGuestStructure( guest, Error );
 		}
 
 		// State cross-references: queue and rider membership both ways.
@@ -1813,15 +1846,26 @@ public sealed class GuestSimulation : IRideVisitorHost
 			error( $"Guest {guest.Id} navigation target ({navigation.TargetX >> 16}, {navigation.TargetY >> 16}) is outside the map." );
 		if ( Math.Abs( navigation.VelocityX ) > GuestSpeed.VelocityBound || Math.Abs( navigation.VelocityY ) > GuestSpeed.VelocityBound )
 			error( $"Guest {guest.Id} navigation velocity ({navigation.VelocityX}, {navigation.VelocityY}) exceeds the speed cap." );
-		if ( navigation.Cursor < 0 || navigation.Cursor > navigation.Route.Length )
-			error( $"Guest {guest.Id} navigation cursor {navigation.Cursor} is outside its {navigation.Route.Length}-cell route." );
+		if ( navigation.Route == null )
+			error( $"Guest {guest.Id} has no route." );
 		else
 		{
-			var buffered = Math.Min( GuestNavigation.BufferedWaypoints, navigation.Route.Length - navigation.Cursor );
-			if ( navigation.Count != buffered )
-				error( $"Guest {guest.Id} buffers {navigation.Count} waypoints, but its route from cursor {navigation.Cursor} gives {buffered}." );
-			if ( navigation.Count == 0 ? navigation.Index != 0 : (uint)navigation.Index >= (uint)navigation.Count )
-				error( $"Guest {guest.Id} waypoint index {navigation.Index} is outside its {navigation.Count} buffered waypoints." );
+			if ( navigation.Cursor < 0 || navigation.Cursor > navigation.Route.Length )
+				error( $"Guest {guest.Id} navigation cursor {navigation.Cursor} is outside its {navigation.Route.Length}-cell route." );
+			else
+			{
+				var buffered = Math.Min( GuestNavigation.BufferedWaypoints, navigation.Route.Length - navigation.Cursor );
+				if ( navigation.Count != buffered )
+					error( $"Guest {guest.Id} buffers {navigation.Count} waypoints, but its route from cursor {navigation.Cursor} gives {buffered}." );
+				if ( navigation.Count == 0 ? navigation.Index != 0 : (uint)navigation.Index >= (uint)navigation.Count )
+					error( $"Guest {guest.Id} waypoint index {navigation.Index} is outside its {navigation.Count} buffered waypoints." );
+			}
+			for ( var cell = 0; cell < navigation.Route.Length; cell++ )
+			{
+				var (x, y) = navigation.Route[cell];
+				if ( !Grid.InBounds( x, y ) )
+					error( $"Guest {guest.Id} route cell {cell} ({x}, {y}) is outside the map." );
+			}
 		}
 		if ( navigation.History is < 0 or > 0x7fff )
 			error( $"Guest {guest.Id} progress history {navigation.History} is outside its 15-bit window." );
@@ -1829,18 +1873,15 @@ public sealed class GuestSimulation : IRideVisitorHost
 			error( $"Guest {guest.Id} previous remaining distance {navigation.PreviousRemaining} is negative." );
 		if ( navigation.Reroutes < 0 || navigation.WalkCrossings < 0 )
 			error( $"Guest {guest.Id} navigation counters ({navigation.Reroutes} reroutes, {navigation.WalkCrossings} crossings) are negative." );
-		for ( var cell = 0; cell < navigation.Route.Length; cell++ )
-		{
-			var (x, y) = navigation.Route[cell];
-			if ( !Grid.InBounds( x, y ) )
-				error( $"Guest {guest.Id} route cell {cell} ({x}, {y}) is outside the map." );
-		}
-		for ( var cell = 0; cell < navigation.AlsoOpen.Length; cell++ )
-		{
-			var (x, y) = navigation.AlsoOpen[cell];
-			if ( !Grid.InBounds( x, y ) )
-				error( $"Guest {guest.Id} extra open cell {cell} ({x}, {y}) is outside the map." );
-		}
+		if ( navigation.AlsoOpen == null )
+			error( $"Guest {guest.Id} has no extra-open-cell list." );
+		else
+			for ( var cell = 0; cell < navigation.AlsoOpen.Length; cell++ )
+			{
+				var (x, y) = navigation.AlsoOpen[cell];
+				if ( !Grid.InBounds( x, y ) )
+					error( $"Guest {guest.Id} extra open cell {cell} ({x}, {y}) is outside the map." );
+			}
 		if ( guest.BaseSpeed is < 60 or > 140 )
 			error( $"Guest {guest.Id} base speed {guest.BaseSpeed} is not one of the walk speeds." );
 		if ( guest.MaxSpeed is < GuestSpeed.Floor or > GuestSpeed.VelocityBound )

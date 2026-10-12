@@ -89,10 +89,12 @@ class PeImage:
         """The flat in-memory image (size_of_image bytes), sections copied, nothing relocated or trapped."""
         image = bytearray(page_up(self.size_of_image))
         first = self.sections[0].rva
-        image[:first] = self.raw[:first]
+        head = min(first, len(self.raw))   # a slice assignment of fewer bytes would shrink the buffer
+        image[:head] = self.raw[:head]
         for section in self.sections:
             count = min(section.raw_size, section.virtual_size or section.raw_size)
-            image[section.rva:section.rva + count] = self.raw[section.raw_offset:section.raw_offset + count]
+            chunk = self.raw[section.raw_offset:section.raw_offset + count]
+            image[section.rva:section.rva + len(chunk)] = chunk
         return image
 
     def relocations(self) -> list[int]:

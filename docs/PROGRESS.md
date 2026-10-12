@@ -202,6 +202,11 @@ preview; original runtime fidelity and the complete offline scope remain open.
   setter, tick and inline copies) but stores the successor rotated right by 13, so
   the PC and Mac streams differ (finding X1: 507 of 508 inputs). OpenTPW has no
   world LCG yet and DET-plan follows the Mac; nothing in the game changed.
+  Finding X2: the Theme Park Inc `Game.exe` (no-CD, SHA-256 `77ea0c41...`) has the
+  same step at `0x6493e0` with the state slot moved to `+0x1eab3c`, rotation
+  included (executed, 508 inputs; agrees with the TPW PC reading, differs from the
+  Mac plan in 507). The TPI image's 16 out-of-range relocation entries no longer
+  break a relocated load.
 - [Fidelity register](FIDELITY-REGISTER.md): **315 original fidelity items** plus
   **24 online extension** IDs (339 total) remain open. CI checks explicit tags and
   register consistency; it finds no unmarked logic and proves no parity.

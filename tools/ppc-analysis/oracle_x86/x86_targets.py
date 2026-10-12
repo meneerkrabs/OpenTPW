@@ -58,6 +58,8 @@ def run_binary(target: Target, sandbox: Sandbox, x):
 WORLD_RNG = 0x1DA708   # object + 0x1da708: the RNG state; +0x1da70c is the tick counter (the Mac world's layout)
 WORLD_OBJECT_SIZE = 0x400000   # the state sits ~2 MB in; the sandbox needs the whole object mapped
 TPW_RNG_STEP = 0x516330        # thiscall, ecx = object; returns |new state|
+TPI_WORLD_RNG = 0x1EAB3C       # TPI Game.exe: the state moved (+0x1eab40 is the tick counter)
+TPI_RNG_STEP = 0x6493E0        # thiscall, ecx = object; returns |new state|; code ends with the `ret` at 0x649414
 
 
 def mask(value: int) -> int:
@@ -72,6 +74,12 @@ def world_rng_binary(sb: Sandbox, state: int, log) -> tuple[int, int]:
     obj = sb.object(WORLD_OBJECT_SIZE, {WORLD_RNG: ('I', state)})
     result = sb.call(TPW_RNG_STEP, this=obj)
     return result.eax, sb.read(obj + WORLD_RNG, 'I')
+
+
+def tpi_world_rng_binary(sb: Sandbox, state: int, log) -> tuple[int, int]:
+    obj = sb.object(WORLD_OBJECT_SIZE, {TPI_WORLD_RNG: ('I', state)})
+    result = sb.call(TPI_RNG_STEP, this=obj)
+    return result.eax, sb.read(obj + TPI_WORLD_RNG, 'I')
 
 
 def world_rng_plan(state: int) -> tuple[int, int]:
@@ -104,4 +112,11 @@ WORLD_RNG_TARGET = Target(
     notes=['Same logical generator as the Mac 0x105328 (ORACLE.md, x86 section): same object offset and constants, '
            'but the PC stores the successor rotated right by 13, so the stream differs.'])
 
-TARGETS = [WORLD_RNG_TARGET]
+TPI_WORLD_RNG_TARGET = Target(
+    'tpi-exe-world-rng', 'tpi', 'Game.exe world RNG step 0x6493e0', 'DET-plan §2.3 / det_model.world_next',
+    TPI_RNG_STEP, [(TPI_RNG_STEP, 0x649415)], lambda t: {}, tpi_world_rng_binary, world_rng_plan, world_rng_inputs,
+    alternatives={'tpw-pc-reading': world_rng_routine_reading},
+    notes=['Same step as the tp.exe 0x516330 (LCG, ror 13, stored, signed abs) at a moved state slot (+0x1eab3c): '
+           'the TPI reading is the TPW PC reading, not the Mac plan.'])
+
+TARGETS = [WORLD_RNG_TARGET, TPI_WORLD_RNG_TARGET]

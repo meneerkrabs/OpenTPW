@@ -82,11 +82,21 @@ public class Shader : Asset
 			if ( watchers.TryGetValue( Path, out var watcher ) && watcher != null )
 				watcher.Changed -= OnWatcherChanged;
 		var program = ShaderProgram;
-		Render.ScheduleDelete( () =>
-		{
+		// The constructor registers before compiling, so a shader whose file was missing or whose
+		// compilation threw owns no native objects to retire.
+		if ( program[0] == null && program[1] == null )
+			return;
+		// Without a renderer the shader was never submitted to a frame, so its objects are freed at
+		// once instead of after the last drawn frame.
+		if ( Render is { } renderer )
+			renderer.ScheduleDelete( () =>
+			{
+				foreach ( var shader in program )
+					shader.Dispose();
+			} );
+		else
 			foreach ( var shader in program )
 				shader.Dispose();
-		} );
 	}
 
 	public static bool IsFileReady( string path )

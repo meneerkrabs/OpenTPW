@@ -16,11 +16,11 @@ namespace OpenTPW.Tests;
 [TestClass]
 public class GuestSnapshotTests
 {
-	private const float Tick = 1f / FixedStepClock.TicksPerSecond;
+	internal const float Tick = 1f / FixedStepClock.TicksPerSecond;
 
 	/// <summary>A script that only yields; the tests drive the visitor protocol through its variables, which stands
 	/// in for the script slice until its own snapshot restores them.</summary>
-	private static RideVM IdleScript( IRideScriptEffects effects ) => new( new RideScriptFile( new MemoryStream(
+	internal static RideVM IdleScript( IRideScriptEffects effects ) => new( new RideScriptFile( new MemoryStream(
 		new Asm().Label( "loop" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "loop" ).Build( GuestTests.ShopVariables ) ) ), new RideVMOptions { Effects = effects, Seed = 1 } );
 
 	/// <summary>
@@ -30,13 +30,15 @@ public class GuestSnapshotTests
 	/// exactly the inputs of the uninterrupted one. The arrival timing, admission fee and guest cap are accelerated
 	/// test-harness settings (root's R1 note): they shape only this fixture, not the production rules.
 	/// </summary>
-	private sealed class Rig
+	internal sealed class Rig
 	{
 		public readonly GuestPathGrid Grid = new( 20, 10 );
 		public readonly List<(RideVisitorBridge Bridge, RideVM Script)> Rides = new();
 		public readonly GuestSimulation Simulation;
 
-		public Rig()
+		/// <param name="rideScript">The script every ride runs; the idle script drives the visitor protocol
+		/// through its variables. A limbo/bounce protocol rides the same harness (park-resume tests).</param>
+		public Rig( Func<IRideScriptEffects, RideVM>? rideScript = null )
 		{
 			for ( var x = 0; x < 20; x++ )
 				Grid.SetPath( x, 0, true );
@@ -51,11 +53,11 @@ public class GuestSnapshotTests
 			settings.ExitLevelVarSeconds = 15;
 			settings.MaximumGuests = 150;
 			Simulation = new GuestSimulation( Grid, settings, 7 );
-			AddRide( 1, "Snake ride", (2, 5), 5, (2, 0) );
-			AddRide( 2, "Wasp ride", (17, 5), 5, (17, 0) );
+			AddRide( rideScript ?? IdleScript, 1, "Snake ride", (2, 5), 5, (2, 0) );
+			AddRide( rideScript ?? IdleScript, 2, "Wasp ride", (17, 5), 5, (17, 0) );
 		}
 
-		private void AddRide( int attractionId, string name, (int X, int Y) front, int queueCells, (int X, int Y) entrance )
+		private void AddRide( Func<IRideScriptEffects, RideVM> scriptFactory, int attractionId, string name, (int X, int Y) front, int queueCells, (int X, int Y) entrance )
 		{
 			var bridge = new RideVisitorBridge( attractionId, name, RideVisitorKind.Ride, 5, 55, 30 )
 			{
@@ -65,7 +67,7 @@ public class GuestSnapshotTests
 				QueueEntranceDirection = 2, // +Y, toward the ride beyond the front cell
 				Parameters = new QueueParameters( true, false, false, 130, 60, 60, 5, 30 )
 			};
-			var script = IdleScript( new VisitorRideScriptEffects( bridge, UnimplementedRideScriptEffects.Instance ) );
+			var script = scriptFactory( new VisitorRideScriptEffects( bridge, UnimplementedRideScriptEffects.Instance ) );
 			bridge.Attach( script, () => true );
 			Assert.AreEqual( queueCells, QueuePaths.TryExtend( Grid, bridge, Enumerable.Range( 0, queueCells ).Select( index => (front.X, front.Y - index) ) ) );
 			Simulation.Register( bridge );
@@ -89,7 +91,7 @@ public class GuestSnapshotTests
 	/// rider every 150th, so riders accumulate and the rides hold guests most of the time. It reads only state a
 	/// restored park shares, so both worlds get identical inputs.
 	/// </summary>
-	private static void Drive( Rig rig, long tick )
+	internal static void Drive( Rig rig, long tick )
 	{
 		foreach ( var (bridge, script) in rig.Rides )
 		{
@@ -105,7 +107,7 @@ public class GuestSnapshotTests
 	}
 
 	/// <summary>The canonical guest-system hash (guests, RNG-adjacent counters, queues and bridges).</summary>
-	private static ulong CanonicalHash( Rig rig )
+	internal static ulong CanonicalHash( Rig rig )
 	{
 		var hash = new StateHasher();
 		rig.Simulation.AddCanonicalState( hash );
@@ -114,7 +116,7 @@ public class GuestSnapshotTests
 
 	/// <summary>True when the park holds guests in every situation a snapshot must carry: standing and riding,
 	/// arriving along a lane and heading home along one.</summary>
-	private static bool RichMoment( Rig park )
+	internal static bool RichMoment( Rig park )
 	{
 		var states = park.Simulation.Guests.Select( guest => guest.State ).ToHashSet();
 		return states.Contains( GuestState.Queueing )
@@ -125,7 +127,7 @@ public class GuestSnapshotTests
 	}
 
 	/// <summary>Runs the park with its driver until <paramref name="until"/> holds or the tick budget is spent.</summary>
-	private static long RunUntil( Rig park, Func<Rig, bool> until, long tick, long maximumTick )
+	internal static long RunUntil( Rig park, Func<Rig, bool> until, long tick, long maximumTick )
 	{
 		while ( tick < maximumTick && !until( park ) )
 		{

@@ -153,10 +153,10 @@ from its own build and counts in full. The jungle `Rides.sam` gives 20 and a 60-
 choosable (`Info.IsChoosable`), the ride is neither broken down nor condemned and is open, its entrance connects
 to a cell, its queue holds fewer guests than four per queue cell, a coaster carries no riders, and a kart or water
 ride has its track word (set when the ride is built). OpenTPW applies the first three (`IsChoosable`,
-`IsBrokenDown`, `IsOpen`), so a closed or broken ride gives no points, while its copies still count in the
+`IsBrokenDown` or the script's VAR_BROKEN, `IsOpen`), so a closed or broken ride gives no points, while its copies still count in the
 divisor of an untracked type; the entrance, queue room and coaster conditions have no state in the economy
 (ARRIVAL-003). Objects imported from an original save or placed as fixed items set the first
-purchase to the current turn (ARRIVAL-005). Open points are ARRIVAL-001..005 (`ArrivalApproximations`). Open points are ARRIVAL-001..004 (`ArrivalApproximations`).
+purchase to the current turn (ARRIVAL-005). Open points are ARRIVAL-001..005 (`ArrivalApproximations`).
 
 ## Simulation
 

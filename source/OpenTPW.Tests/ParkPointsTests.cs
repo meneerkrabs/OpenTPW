@@ -129,6 +129,20 @@ public class ParkPointsTests
 	}
 
 	[TestMethod]
+	public void ARideWhoseScriptReportsBrokenDoesNotCount()
+	{
+		var park = Park();
+		EconomyTestData.AdvanceToTurn( park, 1 );
+		var ride = park.RegisterExisting( Tracked );
+		// VAR_BROKEN (script variable 7) makes the original's ride update set state 1 or 4 (0x100E1864), whatever the economy's own breakdown flag says.
+		ride.ScriptBroken = true;
+		Assert.IsFalse( ride.IsBrokenDown );
+		Assert.AreEqual( 0, park.ParkPoints() );
+		ride.ScriptBroken = false;
+		Assert.AreEqual( 30 + 25, park.ParkPoints() );
+	}
+
+	[TestMethod]
 	public void ATypeThatGuestsCannotChooseDoesNotCount()
 	{
 		var park = Park();

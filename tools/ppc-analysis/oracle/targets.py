@@ -1344,11 +1344,11 @@ def counts_subset(x: dict) -> dict:
     condemned (state 1 or 4) and open (+100). The entrance cell, the queue room, the coaster and the track word have no
     C# state, so every input counts as if they held."""
     return {'counts': int(bool(x['flags'] & 0x4) and s32(x['state']) not in (1, 4) and s32(x['open']) != 0),
-            'calls': []}
+            'calls': None}  # no call trace: C# has no stubbed callees
 
 
 def counts_equal(original: dict, other: dict) -> bool:
-    return original['counts'] == other['counts'] and (other['calls'] == original['calls'] or not other['calls'])
+    return original['counts'] == other['counts'] and (other['calls'] is None or other['calls'] == original['calls'])
 
 
 def counts_inputs(rng: random.Random, n: int) -> list:

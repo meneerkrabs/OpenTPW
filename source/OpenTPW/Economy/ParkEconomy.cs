@@ -141,6 +141,7 @@ public sealed class ParkEconomy : IParkEconomy
 
 	private void AdvanceTurn( long previousTurn, long turn )
 	{
+		UpdateStaffVitals();
 		// [BIN:STP-PPC:0x100D9E04 repair state] each staff update counts a mechanic's job timer down by one; the update that finds it zero completes the repair
 		foreach ( var member in Staff.Members )
 		{
@@ -148,7 +149,10 @@ public sealed class ParkEconomy : IParkEconomy
 				continue;
 			member.BusyTicks--;
 			if ( member.BusyTicks == 0 )
+			{
 				FinishJob( member );
+				StrikeOrRest( member, HasRestArea );
+			}
 		}
 		// [BIN:STP-PPC:0x100F0284 researcher update] each researcher not in an excluded state does research when the turn counter is a multiple of 20
 		if ( turn % ParkResearch.TurnsPerResearch == 0 )
@@ -173,6 +177,87 @@ public sealed class ParkEconomy : IParkEconomy
 			EndMonth( (now.Year - ParkCalendar.Epoch.Year) * ParkCalendar.MonthsPerYear + now.Month - 1 );
 		if ( now.Year != before.Year )
 			Ledger.StartYear();
+	}
+
+	/// <summary>
+	/// Staff vitals, once per park turn (ECON-014, docs/reverse/ORACLE.md F22). A member on strike waits for its role's strike to end; a resting
+	/// one regains energy and happiness until the energy byte reaches 100; a working one (a mechanic on a job) loses the working rate; a free one
+	/// goes on strike when its role does, otherwise a walking one loses the moving rate and, with the energy at the rest level, goes to rest
+	/// (when a rest area exists) or loses happiness one turn in sixteen (when none does).
+	/// </summary>
+	// [APPROX:ECON-014] staff vitals and strikes follow the traced routines but not the staff state machine: walking members drain every turn, working means a job in progress, resting needs no walk, idle members are not told apart and the rest search runs every turn; the handymen's analyser statistics, the forced-strike word, the game-type gate and the clock epoch of the 24-unit age test (the park clock counted from its start here) are not modelled — evidence needed: the staff state machine, the analyser statistics 0x100C21F4/0x100C2264 and the time stamp epoch behind 0x100E4628
+	private void UpdateStaffVitals()
+	{
+		if ( Staff.Members.Count == 0 )
+			return;
+		var restArea = HasRestArea;
+		foreach ( var member in Staff.Members )
+		{
+			switch ( member.State )
+			{
+				case StaffState.PickedUp:
+					continue;
+				case StaffState.OnStrike:
+					// [BIN:STP-PPC:0x100F3F64 strike turn] a striking member that sees the park closed and without guests (0x100C3684) ends its role's strike (0x100F40E8 / 0x100F8BD0); once the role's flag is clear it walks back to work
+					if ( !IsParkOpen && guestStatistics.PeopleInPark == 0 )
+						Staff.Strikes.End( member.Type );
+					if ( !Staff.Strikes.IsActive( member.Type ) )
+						member.State = StaffState.Patrolling;
+					continue;
+				case StaffState.Resting:
+					// [BIN:STP-PPC:0x100F4D00 rest release] the original frees the member's rest-area association (+516) when the rest ends; what it does when the rest thing is removed during the rest is not traced, so OpenTPW ends the rest at once when no rest area is left
+					if ( !restArea )
+					{
+						member.State = StaffState.Patrolling;
+						continue;
+					}
+					if ( StaffVitals.Rest( member, Settings.RecuperationRate[member.Grade], Settings.HappinessRecuperationRate[member.Grade] ) )
+						member.State = StaffState.Patrolling;
+					continue;
+			}
+			if ( member.BusyTicks > 0 )
+			{
+				StaffVitals.Work( member );
+				continue;
+			}
+			if ( member.State == StaffState.Patrolling && !Staff.Strikes.IsActive( member.Type ) )
+				StaffVitals.Walk( member );
+			StrikeOrRest( member, restArea );
+		}
+	}
+
+	/// <summary>Whether any placed object is a rest area for staff (<c>UsageInfo.ChillsYouOut</c>, in the shipped data the Staff Room).</summary>
+	private bool HasRestArea => objects.Values.Any( item => Catalog.TryGet( item.InfoId, out var info ) && info.ChillsYouOut );
+
+	/// <summary>
+	/// What a free member does next (0x100F4900): a member of a striking role walks out, otherwise a tired one goes to rest when a rest area
+	/// exists. True when its state changed. Runs every turn for free members and once when a job ends, before the next job is dispatched
+	/// (the original's working member finishes its job first, then reaches this decision).
+	/// </summary>
+	// [BIN:STP-PPC:0x100F4900 strike or rest] a free member of a striking role walks to the strike area (raw state 4); the original also needs the world state 0x1091B8 to be 1, which is not modelled
+	// [APPROX:DET-015] the world draw of the no-rest-area happiness hit (0x100F4AD4 takes it from the shared world LCG 0x105328, which OpenTPW has not ported) comes from the economy's own stream
+	private bool StrikeOrRest( StaffMember member, bool restArea )
+	{
+		if ( Staff.Strikes.IsActive( member.Type ) )
+		{
+			member.State = StaffState.OnStrike;
+			return true;
+		}
+		if ( !StaffVitals.SeekRest( member, Settings.RestLevel, Settings.HappyHitCosNoRestArea, restArea, () => (uint)Random.NextUInt64() ) )
+			return false;
+		member.State = StaffState.Resting;
+		return true;
+	}
+
+	/// <summary>The staff manager's month-end consideration of each role's strike (ECON-014): <see cref="StaffStrikeBoard.ConsiderMonth"/> with the park's state.</summary>
+	// Approximation (ECON-014, registered at UpdateStaffVitals): the forced-strike debug word is never set, the handymen's analyser statistics are not supplied (so their litter grievance never applies), OpenTPW's stamp counts the park clock from its start, and the game-type gating of the caller is not traced (strikes are considered in every mode)
+	private void ConsiderStrikes()
+	{
+		var stamp = ParkCalendar.Seconds( Tick ) * StaffStrikeBoard.StampUnitsPerSecond;
+		var messages = Staff.Strikes.ConsiderMonth( Turn, forced: false, IsParkOpen, guestStatistics.PeopleInPark, stamp,
+			role => Staff.OfType( role ).Select( member => new StaffVital( member.Energy, member.Happiness ) ).ToList() );
+		foreach ( var message in messages )
+			Raise( ParkEventKind.StaffStrikeMessage, (int)message.Kind, 0, (int)message.Role, $"TAG_SYSTEM {message.TagSystemIndex}" );
 	}
 
 	private void DoResearch()
@@ -321,7 +406,7 @@ public sealed class ParkEconomy : IParkEconomy
 		if ( jobs.Count == 0 )
 			return;
 		var role = Settings[StaffType.Mechanic];
-		foreach ( var mechanic in Staff.OfType( StaffType.Mechanic ).Where( member => member.IsAvailable ).OrderBy( member => member.Id ) )
+		foreach ( var mechanic in Staff.OfType( StaffType.Mechanic ).Where( member => member.IsAvailable && !Staff.Strikes.IsActive( member.Type ) && !(HasRestArea && StaffVitals.Byte( member.Energy ) <= Settings.RestLevel) ).OrderBy( member => member.Id ) )
 		{
 			if ( jobs.Count == 0 )
 				break;
@@ -377,6 +462,7 @@ public sealed class ParkEconomy : IParkEconomy
 			Post( LedgerCategory.StaffCosts, training );
 			Raise( ParkEventKind.TrainingPaid, training );
 		}
+		ConsiderStrikes();
 		// [BIN:STP-PPC:0x100CC21C loan instalment] each bought loan, in offer-index order, pays exactly M and counts one more month repaid; it ends after N months (ORACLE F13)
 		// [APPROX:ECON-051] the bank's withdrawals flag (+276) has no counterpart: loan instalments are always deducted from the balance (the original, with the flag off, skips the deduction and keeps the profit bookkeeping) — evidence needed: the writer of the flag and when the original clears it
 		foreach ( var loan in loans.OrderBy( item => item.OfferIndex ).ToList() )

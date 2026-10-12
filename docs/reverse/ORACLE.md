@@ -112,7 +112,8 @@ Mutation checks (`test_oracle.py`):
   `CanChangeCellType` rule `old == 21 → old == 20` (2), rule 7 back to `lastCell` (2), the money
   test in 64 bits (2), the UNBOUNCE window `/ 200 → / 250` (39), `IsOpen` dropped from the park points
   counts-test, the loan instalment `… / months → … / months + 1` and the loan credit booked as other income instead of
-  `LoanReceived` and the sign of the join excitement refusal swapped (`queue-join-gate`). A no-op "mutation" fails the
+  `LoanReceived` and the sign of the join excitement refusal swapped (`queue-join-gate`), the working energy rate `0.025f → 0.026f` (`staff-vitals`), the rest test `>` to `>=` (`staff-rest-seek`), the grievance `< 15` to
+  `<= 15` (`staff-strike-grievance`) and the age gate `< 24` to `<= 24` (`staff-strike-month`). A no-op "mutation" fails the
   test.
 
 ## 4. Targets, stubs and results (seed `oracle-v1`, 500 random + boundaries)
@@ -150,6 +151,10 @@ Mutation checks (`test_oracle.py`):
 | `ride-repair-duration` | `0xd9c0c` (the mechanic's repair-state entry), `0xdfe0c`/`0xdfe88`/`0xdfe90` (ride state 1, maintenance word `+96`, state 2), `0xd2290` (sub-state setter) | `0xfa9a4` thing id, `0xdfb94` the ride's mechanic id, `0xe6454` arrival state (chosen), `0xdc320` type record (the word at `+508 + 64 · level` chosen), `0xd99ac` release (recorded), `0xb678` assertion and `0x5fbcc` log (recorded); the balance block word `+1004 + 8 · grade` is `WorkDuration` | 529 jobs | **F19** (fixed in C#): 396 differ from the old claim (a flat `WorkDuration`, `plan`; the same without the upgrade factor, `flat-repair`, differs on 352). The routine reading **agrees** 529/529 | `ParkEconomy.RepairTimer` through `repair_timer`: **agree** 529/529 |
 | `ride-repair-arrival` | the same | the same | 515 | **F19**: the flow (another mechanic on the ride: log and release; still walking: let go; no broken, upgrade or maintenance state: log and release; else timer, state 13, sub-state 18) **agrees** 515/515 | no hook (CSHARP_PENDING): OpenTPW starts a mechanic at once and has no walk or release |
 | `object-scrap-value` | `0xe25e8` (the scrap value getter), `0xe2424` (the age percentage), `0x10a9a4` (game pointer), `0x1c4100` (64-bit divide) | `0x118018` type record (synthetic: percentages at `+392 + 64 · level + 4 · year`, costs at `+440 + 64 · level`; registry checked), `0xe4394` the clock stamp (turn × 15000 / 4 × 10^7 as 100 ns units, the value `0xdad90` stores to thing `+20`) and the glue `0x1c5c64` (the signed 64-bit stamp subtraction, as at `0xdc520`). Thing: type `+14`, stamp `+20`, level byte `+76`, use word `+412`. No thing bought after the current turn | 572 | **F21** (fixed in C#): the old rule (catalogue costs summed through the level, no 100 %) differs on 280. The routine reading **agrees** 572/572 | `ParkEconomy.ScrapValue` through `object_scrap_value`: **agree** 572/572 (the use count passed as `ParkObjectState.TimesUsed`) |
+| `staff-vitals` | `0xf44c0` (moving step), `0xf459c` (working step), `0xf3d8c` (rest step), `0xf448c` (energy byte below `RestLevel`) | `0xf4d00` (frees the rest area), the role actions `0xd99ac`, `0xd5a3c`, `0xd2b04`, `0xd4b74`, `0xf0380` (logged), `0xb678`. The settings block (`RestLevel`, the grade's recuperation rates) is written in the data section | 526 | **F22**: 427 differ from the old claim (happiness fixed at 100, no energy, no rest). **Agree** 526/526 with the routine reading | `StaffVitals.Walk`, `Work`, `Rest`, `IsBelowRestLevel` through `staff_vitals`: **agree** 526/526 |
+| `staff-rest-seek` | the tail of `0xf4900` (`0xf4a60..0xf4c04`) and the world LCG `0x105328` | `0xfb54c` thought, `0xf4c18` navigation (a rest area found or not), `0xf311c` state change, `0x5fbcc` log | 509 | **F22**: 81 differ from the old claim. **Agree** 509/509 with the routine reading (energy byte against `RestLevel`, the thoughts, the one-in-sixteen happiness hit with the world draw) | `StaffVitals.SeekRest` through `staff_rest_seek` (the world draw is passed in): **agree** 509/509 |
+| `staff-strike-grievance` | `0xf8410` | `0x1082b4` game -> park, the two analyser sums `0xc21f4` / `0xc2264` (chosen words, arguments checked), `0xb678`, `0x5fbcc`. One chain of staff per role, decoys in the other roles | 515 | **F22**: 313 differ from the old claim (no strikes). **Agree** 515/515 with the routine reading | `StaffStrikeBoard.Grievance` through `staff_grievance`: **agree** 515/515 |
+| `staff-strike-month` | `0xf7e18` (the month-end consideration), `0xf7fe0` (the escalation), `0xf8410`, `0xf8bc0` / `0xf8bd0` (active flag), `0x1091ac` (park closed word), `0x1c4100` (64-bit divide) | `0xfc1c4` training, `0xc1fb4` guests in the park (chosen), `0xe4628` clock stamp (chosen), `0x116590` / `0x11688c` message construction and posting (logged as role and kind), the grievance stubs. One run replays 1 to 6 month ends in one sandbox | 513 scripts | **F22**: 442 differ from the old claim (no strikes). **Agree** 513/513 with the routine reading (levels, flags, turns considered, messages and every debug line) | `StaffStrikeBoard.ConsiderMonth` through `staff_strike_month`: **agree** 513/513 |
 
 The C# comparisons use these seams:
 
@@ -198,6 +203,11 @@ The C# comparisons use these seams:
   `PoundsPerTrainingPoint` values replaced by the input's, members added with the internal `AddImported` (reflection) at the input's
   grade and points, and the five budgets set. The members' grade and points and the amount `Train` returns are compared; the
   bridge sends only real staff (the original's list may carry other things, which neither side touches).
+- `StaffVitals.Walk`, `Work`, `Rest` and `IsBelowRestLevel` (`staff_vitals`) on a staff member with the chosen grade, energy and
+  happiness; the rates and the rest level come from the settings in the original and are passed as the settings' singles.
+  `StaffVitals.SeekRest` (`staff_rest_seek`) with the world draw passed in. `StaffStrikeBoard.Grievance` (`staff_grievance`) and
+  `ConsiderMonth` (`staff_strike_month`, one call per month end on a board restored with the input's levels, flags and turns).
+  The handymen's analyser sums (`0xc21f4`, `0xc2264`) are passed for the grievance; `ParkEconomy` never supplies them.
 
 The pricing domain is the free byte clear, `game+36 == 0` and bank `+276 ≠ 0`. Old 1 → new 3
 belongs to `path-can-change`.
@@ -913,6 +923,88 @@ rule (catalogue costs through the level × the percentage), because the original
 mapping of `+412` to a use counter (a read of the stores and of the one increment, not a captured sale). The stubs are the type
 record and the stamp conversion (the same assumption as `park-points`); the age of a thing bought after the current turn (a negative
 quotient picks the fourth year in the original, the first in C#) cannot occur in a park and is outside the inputs.
+
+**F22, staff vitals, rest and strikes (ECON-014, `StaffVitals`, `StaffStrikeBoard`).** The register said "staff start at happiness 100 and it
+never changes (no strikes)". The four oracle targets above execute the routines that refute it. First a correction of what the routines are:
+`0xf29fc` is the staff constructor (both vitals start at the single 100.0; it also adds the member to its role's chain), not a strike test.
+The strike test is `0xf8410`; the staff happiness step is spread over `0xf44c0`, `0xf459c`, `0xf3d8c` and `0xf4900`; the strike levels live in
+`0xf7e18` / `0xf7fe0`. Each reading agrees with the routine on every input (`test_staff_*_reading_is_sharp` holds the variants that do not),
+and the old claim differs on 427 of 526, 81 of 509, 313 of 515 and 442 of 513 inputs.
+
+What a staff member does (all singles, clamped to 0..100; energy is `+504`, happiness `+500`):
+
+| Step | Routine | Rule |
+| --- | --- | --- |
+| Walking | `0xf44c0` | energy -= `f32(0.012 x (6 - grade))`, happiness -= `f32(0.005 x (6 - grade))` (binary64 products rounded to single) |
+| Working | `0xf459c` | energy -= `0.025f x (6 - grade)` (single product), happiness -= `f32(0.01 x (6 - grade))` |
+| Resting | `0xf3d8c` | energy += `PerGradeStaffConsts[g].RecuperationRate` (0.2, 0.3, 0.4, 0.5, 0.75), happiness += `HappinessRecuperationRate` (1, 2, 2, 3, 3); the rest ends when the truncated energy byte is 100 (the rest area is freed and the role's next action runs) |
+| Tired | `0xf4900` tail | energy byte (the truncated low byte) at most `RestLevel` (1, signed compare): seek a rest area (thought 20) and, with one found, rest. With none, a world draw with `(draw & 15) == 0` takes `HappyHitCosNoRestArea` (2) off the happiness, one turn in sixteen. Above the level: no change (only walking-speed tiers and the thoughts 18 and 19) |
+| Rest area | `0xf47a0` | any object whose `UsageInfo.ChillsYouOut` is set (type `+252`, thing `+46` bit `0x2`): in the shipped data the Staff Room of each theme only (jungle 1411, fantasy 4401, hallow 2408, space 3405). The nearest one by squared distance |
+
+Training (`0xf3588`, static reading): a promotion (the training percentage reaching 100) sets the happiness to 100.0 (`0xf36e4`); energy is untouched.
+
+The vitals only fall while a member walks (raw state 1 with a navigation in progress: `0xd2e20`, `0xf0530`) or works (raw state 14, researchers 15).
+An idle member (raw state 0) does not drain. A grade 0 member walking from 100 reaches the rest level after 100 / 0.072 = 1389 turns (about 60 game
+days of 23.04 turns), a grade 4 member after 4167; working halves that. A rest from nothing takes 500 turns at grade 0, 133 at grade 4.
+
+The strike test `0xf8410(manager, role)` returns 1 at once when the manager's forced word (`+100`) is nonzero (`li r3,1`, any value). Otherwise,
+handymen first test the ratio of two analyser sums `0xc2264(park, 1) / 0xc21f4(park, 1)` (single precision) against `0.2f` (a quotient above it,
+infinite included, NaN not). Then the role's staff chain (first index at `game + 0x1da73c..` per role: 0 `-22724`, 1 `-22722`, 2 `-22720`, 3
+`-22716`, 4 `-22718`; next at staff `+524`) is walked twice, energies (`+504`, debug text "fatigue") then happinesses (`+500`, "unhappiness"):
+the truncated low bytes are summed unsigned, and **more than three members whose floor average is below 15** (14 or less) have a grievance. A role
+outside 0..4 asserts and gives 0. Values over 255 or below 0 wrap through the byte (256.0 counts as 0, -1.0 as 255).
+
+The month routine `0xf7e18` (the staff manager's end-of-month message) trains first, then, unless the forced word is set, is skipped (debug "park
+is closed") while the park is closed (`game + 0x1da710` nonzero) **or** `0xc1fb4(park, 5)` counts a guest standing on a park cell (the guests of
+`PeopleInPark`: the cell test `0xe6c6c`). Then each role with staff that was not already considered in this turn (`+44`) is marked, and:
+an active strike (`+40`) is only ended; otherwise the escalation `0xf7fe0` runs: the clock stamp (`0xe4628`, 100 ns units) divided by
+25.92e12 (30 days, signed 64-bit divide `0x1c4100`) must be at least 24 in its signed low word, then the strike test decides.
+
+| Level (`+36`) | Grievance | No grievance |
+| --- | --- | --- |
+| 0 | level 1, warning (kind 0) | nothing |
+| 1 | level 2, strike flag set, kind 2 | "called off" (kind 3), level 0 |
+| 2, 3 | level + 1, strike flag set, kind 2 | level 0, flag cleared |
+| 4 | stays 4, strike flag set, kind 2 | level 0, flag cleared |
+
+The five kinds are the five groups of `TAG_SYSTEM.str` 38..62 (warning, reminder, strike, called off, over; five roles each: mechanics, cleaners, guards,
+entertainers, scientists); the routine sends kinds 0, 2 and 3 only. A strike therefore lasts to the next month end, where it is ended without a
+new one: a role with a standing grievance is warned at one month end, strikes at the next and then at every second month end. After a month
+of contented staff the level returns to 0.
+
+What a strike does to a member (static reading, not executed): the strike flag makes a free member that reaches `0xf4900` (idle, or after a job)
+set `+392`, pick a random cell of the strike area (`FixedItemInfo.StrikeAreaStartX/Y`, `SizeX/Y`: 40, 9, 6 x 1), walk there and enter raw state 4 (broad
+state "On strike") when navigation succeeds, and only while the world state `0x1091b8` is 1. A member in raw state 4 (`0xf3f64`, per turn) ends its
+role's strike when the park is closed with no guest in it (`0xc3684`), and walks back to work once the role's flag is clear. A working member finishes its job
+first. UITEXT 370, 376 and 382 ("UPGRADE: Mechanics are on strike!", "CLEANING: Cleaners ...", "REPAIR: Mechanics ...") and TAG_SYSTEM 152 are the object
+status texts selected by `0x138b0c..0x138c40` through `0xf8bc0`.
+
+Fixed in C# (before -> after: no energy and a happiness of 100 forever, no rest, no strike, to the table above). A hired member walks
+(Patrolling) or works (a mechanic on a job) and loses energy and happiness every park turn; at the rest level it goes to rest when a Staff Room is
+built and loses happiness one turn in sixteen when none is (`StaffVitals.SeekRest`); a resting member is not dispatched. At every month end
+`StaffStrikeBoard.ConsiderMonth` runs with the park's state, raises a `StaffStrikeMessage` event (role, kind, the `TAG_SYSTEM` index) and a striking
+role's free members go on strike (`OnStrike`: no dispatch, no research) until the next month end. Saves carry `Energy`, a float `Happiness` and the
+strike board; older saves load as rested staff without strikes; imported staff keep their saved energy and happiness.
+The decision of `0xf4900` runs for a free member each turn and once when a job ends, before the next job is dispatched, which skips members on strike, resting or tired with a rest area (static reading: the original's working member finishes its job and then reaches `0xf4900`). Selling the last Staff Room ends a rest at once (the original's rest-area association `+516` is freed by `0xf4d00` when the rest ends; what it does when the rest thing vanishes is not traced). The HUD message area shows the `TAG_SYSTEM` text of each message.
+
+Example a player notices: 4 grade 0 mechanics in a park with no Staff Room: after about 1400 turns of walking they are at energy 0, lose 2
+happiness about one turn in sixteen, and once the park is 24 thirty-day months old and a month end finds it open and empty of guests, the mechanics are
+warned (TAG_SYSTEM 38), strike at the next month end (48) and no ride is repaired until the following one. With a Staff Room they rest 500 turns at
+a time instead and never reach a grievance (OpenTPW before: happiness 100 forever, no strike).
+
+Not changed or not established, kept in the ECON-014 register entry:
+
+- The staff state machine: OpenTPW's Patrolling stands for every walking state (the moving drain applies each turn), Working for a job in progress and Resting
+  for a member at the room, without the walk to it; idle members are not told apart, the rest search runs every turn (the original at idle and arrival), and the
+  thoughts and the walking-speed tiers of `0xf4900` have no counterpart.
+- The handymen's analyser statistics (`0xc21f4`, `0xc2264`: a sum over 1024 history records each; "Clean your park up"): not supplied, so the litter
+  grievance never applies. The forced-strike word (a debug flag) is never set. The game-type gate of the caller is not traced.
+- The clock stamp `0xe4628` goes through imports (`0x1c5c34`, `0x1c5c4c`, `0x1c5c64`); whether it counts from an absolute epoch before 2000 (then the test
+  "at least 24 units" is always true) or from the park's start is not established. OpenTPW takes the latter: a strike needs a park of 24 thirty-day months.
+- The second gate (a guest on a park cell skips the month) makes the strike path rare in a busy park: it runs on a month end at which the park is open and
+  empty. The Mac Easy Guide's FAQ says strikes were removed; the routines are present and reachable.
+- The world state `0x1091b8` that a member needs to walk out is not modelled (members go on strike at once), and the world draw of the rest-area hit
+  comes from the economy's own stream (DET-015).
 
 ## 6. Adding a target or a C# hook
 

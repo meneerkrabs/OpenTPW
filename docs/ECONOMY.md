@@ -81,14 +81,28 @@ Role order everywhere: handyman/cleaner, mechanic, entertainer, guard, researche
 | `HandymanConstsPerGrade[g].WorkDuration`, `.DetectionRange` | 40…5; 2–5 | Cleaning speed; litter detection range | WorkDuration approx (game minutes per litter item); range exposed only |
 | `Entertainer/GuardConstsPerGrade` (`WorkDuration`, `HappinessEffectOnCell`, `ActivationDistance`) | | Entertaining/pursuit | unused (guests slice) |
 | `ResearcherConstsPerGrade[g].WorkDuration` | 10–50 | "How long the researcher researches for" | unused |
-| `PerGradeStaffConsts[g].IdleDuration`, `RecuperationRate`, `HappinessRecuperationRate`; `AllStaffConstants.*` | | Rest/happiness | unused (no staff behaviour yet) |
+| `PerGradeStaffConsts[g].RecuperationRate`, `.HappinessRecuperationRate` | 0.2/0.3/0.4/0.5/0.75; 1/2/2/3/3 | Energy and happiness a resting member regains per park turn | traced and executed (ORACLE.md F22): `StaffVitals.Rest` |
+| `AllStaffConstants.RestLevel`, `.HappyHitCosNoRestArea` | 1; 2 | A member whose truncated energy byte is at most `RestLevel` seeks a rest area (a Staff Room); with none it loses `HappyHitCosNoRestArea` happiness on one turn in sixteen | traced and executed (F22): `StaffVitals.SeekRest` |
+| `PerGradeStaffConsts[g].IdleDuration` | 40/30/20/10/5 | Idle turns before a member acts | unused (no per-job staff state machine) |
 | `Upgrades[n].WearRate` | 0–5 "out of 10" (easy lower) | Ride wear | traced: scales the wear step every 64 turns (RIDE-WEAR.md) |
 | `Upgrades[n].RedLineSpeed`, `Upgrades[n].RedLineCapacity`, `UsageInfo.MaxSpeed`, `UsageInfo.MaxCapacity` | Speed and capacity limits | Ride wear | traced: the speed and rider terms of the wear step |
 | `Upgrades[n].DurationOfUpgrade` | 0/2/4 | "time taken for mechanic to carry out the upgrade — in conjunction with mechanic's WorkDuration" | multiplies WorkDuration for the upgrade to level n, no minimum (executed, ORACLE F19) |
 | Advisor `StaffHireMechanics1.PoorerStateThan` | 25 | Worn-ride threshold | data (mechanic dispatch below 25) |
 
 Staff states use `STAFFSTATES.str` order (Idle, Patrolling, Working, Resting, On strike, Picked up).
-Strikes, happiness and patrol areas are not simulated.
+Patrol areas are not simulated.
+
+**Vitals and strikes (ECON-014, traced and executed in the oracle, ORACLE.md F22).** Every member has an energy and a happiness (singles, 0..100,
+both starting at 100). Each park turn a walking member (Patrolling) loses `0.012 x (6 - grade)` energy and `0.005 x (6 - grade)` happiness, a
+working one (a mechanic on a job) `0.025 x (6 - grade)` and `0.01 x (6 - grade)`, a resting one regains the grade's recuperation rates; idle and struck
+members do not change. At the rest level a member goes to rest when a Staff Room is built (the one object with `UsageInfo.ChillsYouOut`; it is not dispatched
+while resting, nor does a researcher research) and until its energy byte is back at 100; with no Staff Room it loses 2 happiness about once in 16 turns.
+At each month end, when the park is open and no guest stands in it, each role with staff is considered: an active strike ends; otherwise, once the park
+clock is 24 thirty-day months old (the original's stamp epoch is not traced), a role of more than three members whose truncated energies, or happinesses, average
+below 15 has a grievance and its level climbs: 1 is a warning (`TAG_SYSTEM` 38-42), 2, 3 and 4 are strikes (48-52) that last until the next month end (free members go
+on strike: no repairs, no cleaning, no research), and no grievance calls it off (53-57). `ParkEvent` kind `StaffStrikeMessage` carries role, kind and the
+text index, and the HUD message area shows the `TAG_SYSTEM` text. A working mechanic finishes its job first; when it ends, the strike or rest decision runs before the next repair is dispatched, and dispatch skips members on strike, resting or tired with a rest area. Selling the last Staff Room ends a rest at once (what the original does with the vanished rest thing is not traced). The handymen's litter-statistics grievance, the forced-strike debug word and the walk to the room or the strike area are not
+modelled.
 
 ### Research
 
@@ -178,7 +192,7 @@ A park started from a shipped save (Instant Action, or the reference start) runs
 | Bank | bank words | `Balance` (ledger opening balance), `EntranceFee`, `ProfitThisYear` | Traced field identities |
 | Loans | bought loan offers | `Loans` (months repaid and instalment; outstanding = monthly × months left, as in the original) and taken offers | Field identities traced; outstanding balance SAVE-008 |
 | Objects | RideSystem records (also those with an unverified footprint) + attraction things | registered uncharged; `Price`, `CostOfGoods`, `Level`, `Repair`, `LifeGauge` from the matching attraction (same Info.Id and cell) | Traced fields; state enum, chance of winning, totals, histories, names, operating, quality, queue and walk-away fields and mesh instance not imported; customer count and time stamp are the use count and build time of the scrap rule (SAVE-006) |
-| Staff | models 4–8 | `Staff.Members`: type, grade, training percentage, happiness, state, hire tick (rounded down to its turn) | Grade/percentage/happiness traced; state order, names, jobs, idle tick, role suffix SAVE-003 |
+| Staff | models 4–8 | `Staff.Members`: type, grade, training percentage, happiness, energy, state, hire tick (rounded down to its turn) | Grade/percentage/happiness/energy traced; state order, names, jobs, idle tick, role suffix SAVE-003 |
 | Open state | World `mParkClosed` | the park opens when guests attach unless it is set | Traced |
 
 Not imported and reported in `Evidence`: `mRandomSeed` (SAVE-001), guests (SAVE-002), the hiring
@@ -222,7 +236,7 @@ PC fixture and the imported Instant Action start.
 | Construction | Purchase, upgrade and cell costs; research gate; golden-ticket cost | Scrap value follows the Mac routine (base price × the current level's age percentage, 100 % for an unused object in its first 30 days, F21); park value = catalogue costs up to the current level × the age percentage (not the sale refund) |
 | Loans | Offers, lenders, terms; instalment M = trunc(P x pow(1 + APR/100, N/24) / N) (F12); M paid flat for N months with no interest on a balance and no final remainder (F13); total payable M x N; early repayment M x months left, charged to the year profit as the whole-term share q x N (`0xccc78`, executed in the oracle); the year-profit word is 32-bit and wraps. **0 % APR (jungle Easy mode):** M = floor(P/N), so M x N < P and the unsigned share (M x N - P) / N is about 119 million a month; the original does this, and OpenTPW follows it on purpose (the year profit swings by that much and wraps) | The bank's withdrawals flag is assumed on (ECON-051) |
 | Bankruptcy | Six month-ends in the red, warnings at 3 and 5 months (strings) | Advance stops when bankrupt |
-| Staff | Pool sizes, maxima, wages, training prices | Candidate grades, pool timing, free hiring, 100 points per grade, handyman job durations, the mechanic's walk to the ride |
+| Staff | Pool sizes, maxima, wages, training prices; traced and executed: energy and happiness per turn, rest at the Staff Room, the strike test and levels (F22) | Candidate grades, pool timing, free hiring, 100 points per grade, mechanic/handyman job durations, the mechanic's walk to the ride; the staff state machine behind the vitals (ECON-014) |
 | Maintenance | Wear rates, red lines, maxima, upgrade durations, worn threshold 25 | Traced: wear every 64 turns from the ride script's running state, riders and speed; breakdown check every 8 turns; a repair takes WorkDuration x (100 - state of repair) / 100 park turns, an upgrade WorkDuration x DurationOfUpgrade (executed, ORACLE F19); repair restores 100 but not the life gauge. the life gauge starts at 100 (`0x100DAB1C`). Approximated: the ride-state gate (ECON-023) |
 | Research | Items, categories, groups, costs, effort, ability, thresholds, work load; traced: points every 20 turns, cumulative group opener, first open item in table order; points from researcher staff only, in both modes (Mac) | Info-id table order, the excluded researcher states |
 | Challenges | Definitions, level list, timings, prizes, follow-ups | Type semantics from comments, except the build types 28 and 30–33, traced to the handler table at `0x100CE690`; explicit accept/decline; types 14, 22, 23, 26 unmeasured (23 and 26 never pass in the binary) |
@@ -335,7 +349,7 @@ site, is listed in `Economy/EconomyApproximations.cs` and is logged once at star
 | ECON-008 | `Economy/ParkStaff.cs:50` | 100 training points per grade (from Online_Standard.sam comments "costs 1000 to get up to grade 1") | capture of a training run |
 | ECON-010 | `Economy/ParkStaff.cs:64` | TimeBetweenStaffUpdates/StaffTimeoutTime are seconds at normal speed | capture of pool refresh timing |
 | ECON-012 | `Economy/ParkStaff.cs:152` | hiring is free; BaseCostPerStaff/CostPerQualityLevel unused | capture of the balance before/after hiring |
-| ECON-014 | `Economy/ParkStaff.cs:24` | staff start at happiness 100 and it never changes (no strikes) | staff happiness rules (binary/captures) |
+| ECON-014 | `Economy/ParkEconomy.cs:177` | staff vitals and strikes follow the traced routines but not the staff state machine: walking members drain every turn, working means a job in progress, resting needs no walk, idle members are not told apart and the rest search runs every turn; the handymen's analyser statistics, the forced-strike word, the game-type gate and the clock epoch of the 24-unit age test (the park clock counted from its start here) are not modelled | the staff state machine, the analyser statistics 0x100C21F4/0x100C2264 and the time stamp epoch behind 0x100E4628 |
 | ECON-015 | `Economy/ParkResearch.cs:169` | researchers on strike or picked up are the original's excluded states 3, 4 and 5 | the staff state values behind 0x100F4170 |
 | ECON-017 | `Economy/ParkResearch.cs:148` | the research table is in info-id order and the player cannot step the cursor to another item | the table fill order (FUN_100c9064) and the next/previous control |
 | ECON-018 | `Economy/ParkResearch.cs:48` | ride upgrade levels and add-on objects form the "upgrade" research category | research lab capture |

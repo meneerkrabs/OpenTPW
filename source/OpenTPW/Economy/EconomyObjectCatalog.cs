@@ -47,7 +47,8 @@ public sealed record EconomyObjectInfo(
 	int NewAttractionDecayTime = 0,
 	IReadOnlyList<int>? NewBonus = null,
 	int TrackType = 0,
-	bool IsChoosable = true )
+	bool IsChoosable = true,
+	bool ChillsYouOut = false )
 {
 	public long PurchaseCost => Upgrades.Count > 0 ? Upgrades[0].CostOfUpgrade : 0;
 	public bool IsBuyable => Kind is ParkObjectKind.Ride or ParkObjectKind.Shop or ParkObjectKind.Sideshow or ParkObjectKind.Feature or ParkObjectKind.Upgrade;
@@ -131,7 +132,9 @@ public sealed class EconomyObjectCatalog : IEconomyObjectCatalog
 			settings.GetInt( "Bumper.WhichTrackType", 0, optional: true ),
 			// [BIN:STP-PPC:0x100DABDC object constructor] type record +0x3C (Info.IsChoosable) nonzero sets thing +46 bit 0x4 (0x100DABDC..0x100DABF0), the first test of the park points counts-test 0x100DC834; the category files (Rides.sam, SideShow.sam, Shops.sam) declare it 1
 			// An object file that declares neither the key nor a category default is read as choosable (the shipped category files always declare it).
-			settings.GetInt( "Info.IsChoosable", 1, optional: true ) != 0 );
+			settings.GetInt( "Info.IsChoosable", 1, optional: true ) != 0,
+			// [BIN:STP-PPC:0x100DABD0 object constructor] type record +0xFC (UsageInfo.ChillsYouOut) nonzero sets thing +46 bit 0x2, the only test of the rest-area search 0x100F47A0 (ORACLE.md F22): any such object is a rest area for staff
+			settings.GetInt( "UsageInfo.ChillsYouOut", 0, optional: true ) != 0 );
 	}
 
 	/// <summary>

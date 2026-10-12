@@ -44,7 +44,12 @@ public enum ParkEventKind
 	ChallengeCompleted,
 	ChallengeFailed,
 	GoldenTicketWon,
-	CoasterTrackBuilt
+	CoasterTrackBuilt,
+	/// <summary>
+	/// A staff strike message (ECON-014): <see cref="ParkEvent.InfoId"/> the role (<see cref="StaffType"/>), <see cref="ParkEvent.Amount"/> the
+	/// <see cref="StrikeMessageKind"/>, <see cref="ParkEvent.Detail"/> "TAG_SYSTEM n" with the index of the message text.
+	/// </summary>
+	StaffStrikeMessage
 }
 
 /// <summary>

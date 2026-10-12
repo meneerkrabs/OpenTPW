@@ -83,20 +83,18 @@ EXPECTED = {
                                                'min_people': 2, 'obj48': 1, 'limit_mode': 0, 'preset': None, 'interval': 2,
                                                'timer0': 0, 'steps': [[40, 2, 0], [44, 2, 0], [48, 2, 1], [400, 2, 1],
                                                                       [404, 2, 0], [900, 2, 0]]}),
-    # F10: 0xc24c0 counts only things passing 0xdc834; a type with +0x9C == 0 is aged from its first purchase and divided
-    # by its count, any other type is aged per thing and every copy counts in full (GUESTS.md and C# age every thing
-    # from its own build and always divide).
-    ('park-points', 'plan'): (214, {'now': 73, 'scale': 15000,
+    # F10 (partly fixed): a type whose +0x9C word (Bumper.WhichTrackType) is 0 is aged from its first purchase and divided
+    # by its count, any other type is aged per copy and counts in full, in GUESTS.md and C# too. Open: 0xc24c0 counts only
+    # things passing 0xdc834 (ARRIVAL-003).
+    ('park-points', 'plan'): (121, {'now': 1, 'scale': 15000,
                                     'types': [{'id': 257, 'kind': 0, 'f9c': 0, 'value': 25, 'decay': 2,
                                                'bonus': [30, 20, 10], 'first': 1}],
-                                    'things': [{'type': 257, 'open': True, 'built': 1},
-                                               {'type': 257, 'open': True, 'built': 73}]}),
+                                    'things': [{'type': 257, 'open': False, 'built': 1}]}),
     ('park-points', 'routine-reading'): AGREE,
-    ('park-points', 'csharp'): (214, {'now': 73, 'scale': 15000,
+    ('park-points', 'csharp'): (121, {'now': 1, 'scale': 15000,
                                       'types': [{'id': 257, 'kind': 0, 'f9c': 0, 'value': 25, 'decay': 2,
                                                  'bonus': [30, 20, 10], 'first': 1}],
-                                      'things': [{'type': 257, 'open': True, 'built': 1},
-                                                 {'type': 257, 'open': True, 'built': 73}]}),
+                                      'things': [{'type': 257, 'open': False, 'built': 1}]}),
 }
 CSHARP_PENDING = {'det-world-lcg', 'det-rse-rand', 'coast-rating-step',
                   'coast-rating-final', 'arrival-update'}

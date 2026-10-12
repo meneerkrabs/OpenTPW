@@ -581,11 +581,13 @@ public sealed class ParkEconomy : IParkEconomy
 	/// <summary>
 	/// The park's attraction points for the arrival rule: per ride or sideshow, its Info.AttractionValue plus the
 	/// Attraction[n].NewBonus of its age bracket (n = age in days / Info.NewAttractionDecayTime, none from the fourth
-	/// bracket on), divided by the number of objects of the same type, so copies of one type count once.
+	/// bracket on). A type without a track (Bumper.WhichTrackType 0) is aged from its first purchase and divided by its
+	/// number of objects, so its copies count once; every copy of a tracked type (karts, water rides, coasters) is aged
+	/// from its own build and counts in full.
 	/// </summary>
-	// [BIN:STP-PPC:0x100C24C0 park points] sum over placed things whose type kind (+0x7A8) is 0 or 2: (type +0x268[age / +0x5C] + type +0x58) / count of that type (0x100C5828), age in days (64-bit time / 864,000,000,000 at 0x101C4100), no bonus for a bracket outside 0..2
-	// [BIN:STP-PPC:0x100C24C0 park points] executed by the PowerPC oracle (docs/reverse/ORACLE.md F10): only things passing 0x100DC834 count; a type whose +0x9C word is 0 is aged from its park record's +28 (0x100D1BE8; written by 0x100DA874 at a purchase while it is still 0, so the first purchase after turn 0) and divided by the record's +24 copy count (0x100C5828); any other type is aged from the thing's own purchase time (0x100DC520) and divided by 1
-	// [APPROX:ARRIVAL-003] kind 0 or 2 is read as Info.WhichUIType ride or sideshow; every object is aged from its own build turn and divided by its type's count, so the 0x100DC834 test, the first-purchase age and the undivided copies of +0x9C types (oracle F10) are not reproduced — evidence needed: what type +0x9C, thing +40 and the other 0x100DC834 tests stand for
+	// [BIN:STP-PPC:0x100C24C0 park points] sum over placed things whose type kind (+0x7A8) is 0 or 2: (type +0x268[age / +0x5C] + type +0x58) / divisor, age in days (64-bit time / 864,000,000,000 at 0x101C4100), no bonus for a bracket outside 0..2
+	// [BIN:STP-PPC:0x100C24C0 park points] executed by the PowerPC oracle (docs/reverse/ORACLE.md F10): a type whose +0x9C word (Bumper.WhichTrackType) is 0 is aged from its park record's +28 (0x100D1BE8; written by 0x100DA874 at a purchase while it is still 0, so the first purchase after turn 0) and divided by the record's +24 copy count (0x100C5828); any other type is aged from the thing's own purchase time (0x100DC520) and divided by 1
+	// [APPROX:ARRIVAL-003] kind 0 or 2 is read as Info.WhichUIType ride or sideshow, and every object counts: the original's counts-test 0x100DC834 (thing +46 bit 0x4, ride state, coaster riders and editing, a built kart or water track at thing +40, and further untraced tests) is not reproduced — evidence needed: the type record key behind +46 bit 0x4 and the routines 0x100DFF18, 0x100DFE20, 0x100DC988 and 0x100DD3F4
 	public int ParkPoints()
 	{
 		var counts = new Dictionary<int, int>();
@@ -596,10 +598,12 @@ public sealed class ParkEconomy : IParkEconomy
 		{
 			if ( !Catalog.TryGet( item.InfoId, out var info ) || info.Kind is not (ParkObjectKind.Ride or ParkObjectKind.Sideshow) )
 				continue;
-			var ageDays = Math.Max( 0, Turn - ParkCalendar.Turn( item.BuiltTick ) ) * ParkCalendar.SecondsPerTurn / 86400;
+			var tracked = info.TrackType != 0;
+			var since = tracked ? ParkCalendar.Turn( item.BuiltTick ) : Counters[ParkCounters.FirstPurchaseTurn( item.InfoId )];
+			var ageDays = Math.Max( 0, Turn - since ) * ParkCalendar.SecondsPerTurn / 86400;
 			var bracket = info.NewAttractionDecayTime > 0 ? ageDays / info.NewAttractionDecayTime : 0;
 			var bonus = info.NewBonus is { } bonuses && bracket < Math.Min( 3, bonuses.Count ) ? bonuses[(int)bracket] : 0;
-			points += (bonus + info.AttractionValue) / counts[item.InfoId];
+			points += (bonus + info.AttractionValue) / (tracked ? 1 : counts[item.InfoId]);
 		}
 		return points;
 	}
@@ -627,6 +631,10 @@ public sealed class ParkEconomy : IParkEconomy
 		};
 		objects.Add( item.Id, item );
 		Counters.Add( ParkCounters.Built( info.InfoId ), 1 );
+		// [BIN:STP-PPC:0x100DA874 object purchase] the type's park record +28 takes the current turn while it is still 0 (0x100DADEC..0x100DAE14); selling does not clear it
+		// [APPROX:ARRIVAL-005] an object imported from an original save or placed as a fixed item also sets the first-purchase turn to the current turn; the original restores park record +28 from the save (0x100D1E8C) — evidence needed: park record +28 in an original save
+		if ( Counters[ParkCounters.FirstPurchaseTurn( info.InfoId )] == 0 )
+			Counters.Max( ParkCounters.FirstPurchaseTurn( info.InfoId ), Turn );
 		return item;
 	}
 

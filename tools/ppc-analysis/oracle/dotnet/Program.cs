@@ -147,11 +147,13 @@ static JsonNode? ArrivalGroup( JsonObject a )
 }
 
 // ParkEconomy.ParkPoints (0xc24c0) on an economy built from the input: one synthetic object type per input type (kind 0 -> Ride,
-// 2 -> Sideshow, any other kind -> Shop, the C# reading ARRIVAL-003; AttractionValue, NewAttractionDecayTime and NewBonus from the
-// input), one RegisterExisting object per thing. The economy clock is a read-only property, so its setter is reached through
-// reflection to put each object's BuiltTick on the first tick of its build turn and the economy on the first tick of turn "now"
-// (ParkCalendar.Turn of those ticks is the input turn). The original's open flag, type +0x9C word and park record +28 first-purchase
-// turn have no C# counterpart (ARRIVAL-003, F10), so they are not passed.
+// 2 -> Sideshow, any other kind -> Shop, the C# reading ARRIVAL-003; AttractionValue, NewAttractionDecayTime, NewBonus and
+// Bumper.WhichTrackType (type +0x9C) from the input), one RegisterExisting object per thing. The economy clock is a read-only
+// property, so its setter is reached through reflection to put each object's BuiltTick on the first tick of its build turn and the
+// economy on the first tick of turn "now". The type's first-purchase turn (park record +28) is then set to the input's value, as a
+// loaded save restores its counters after its objects: it can stem from a sold copy or be unset (0) with later copies standing;
+// ParkPointsTests covers how purchases set it. The original's counts-test (0xdc834, the input's open flag) has no C# counterpart
+// (ARRIVAL-003, F10), so it is not passed.
 static JsonNode? ParkPoints( JsonObject a )
 {
 	var infos = a["types"]!.AsArray().Select( type =>
@@ -159,7 +161,7 @@ static JsonNode? ParkPoints( JsonObject a )
 		var kind = (int)type!["kind"]! switch { 0 => ParkObjectKind.Ride, 2 => ParkObjectKind.Sideshow, _ => ParkObjectKind.Shop };
 		return new EconomyObjectInfo( (int)type["id"]!, $"Type {(int)type["id"]!}", kind, ResearchCategory.Ride, 0,
 			new[] { new UpgradeLevelInfo( 0, 0, 0, 0, 0, new[] { 0 } ) }, null, null, null, 0, 0, 0, 0, 0, (int)type["value"]!, "synthetic.wad",
-			0, 0, (int)type["decay"]!, type["bonus"]!.AsArray().Select( bonus => (int)bonus! ).ToArray() );
+			0, 0, (int)type["decay"]!, type["bonus"]!.AsArray().Select( bonus => (int)bonus! ).ToArray(), (int)type["track_type"]! );
 	} ).ToList();
 	var park = new ParkEconomy( EconomyTestData.Settings(), new EconomyObjectCatalog( infos ), ParkGameMode.FullSimulation, 1 );
 	var tick = typeof( ParkEconomy ).GetProperty( "Tick" )!.GetSetMethod( nonPublic: true )
@@ -168,6 +170,11 @@ static JsonNode? ParkPoints( JsonObject a )
 	{
 		tick.Invoke( park, new object[] { ParkCalendar.TickOfTurn( (long)(int)thing!["built"]! ) } );
 		park.RegisterExisting( (int)thing["type"]! );
+	}
+	foreach ( var type in a["types"]!.AsArray() )
+	{
+		var key = ParkCounters.FirstPurchaseTurn( (int)type!["id"]! );
+		park.Counters.Add( key, (long)(uint)(int)type["first"]! - park.Counters[key] );
 	}
 	tick.Invoke( park, new object[] { ParkCalendar.TickOfTurn( (long)(int)a["now"]! ) } );
 	return JsonValue.Create( park.ParkPoints() );

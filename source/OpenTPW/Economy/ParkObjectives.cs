@@ -25,6 +25,8 @@ public sealed class ParkCounters
 	public static string Sold( int shopType, int ingredient ) => $"sold:{shopType}:{ingredient}";
 	public static string RideUses( int infoId ) => $"rideuse:{infoId}";
 	public static string Built( int infoId ) => $"built:{infoId}";
+	/// <summary>The park turn of the type's first purchase after turn 0 (park record +28 of the original); 0 while unset.</summary>
+	public static string FirstPurchaseTurn( int infoId ) => $"firstturn:{infoId}";
 	public static string Record( ParkRecordKind kind, int infoId ) => $"record:{kind}:{infoId}";
 	public static string Researched( ResearchCategory category ) => $"researched:{category}";
 	public const string Admissions = "admissions";

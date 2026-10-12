@@ -45,7 +45,8 @@ public sealed record EconomyObjectInfo(
 	int MaxSpeed = 0,
 	int MaxCapacity = 0,
 	int NewAttractionDecayTime = 0,
-	IReadOnlyList<int>? NewBonus = null )
+	IReadOnlyList<int>? NewBonus = null,
+	int TrackType = 0 )
 {
 	public long PurchaseCost => Upgrades.Count > 0 ? Upgrades[0].CostOfUpgrade : 0;
 	public bool IsBuyable => Kind is ParkObjectKind.Ride or ParkObjectKind.Shop or ParkObjectKind.Sideshow or ParkObjectKind.Feature or ParkObjectKind.Upgrade;
@@ -124,7 +125,9 @@ public sealed class EconomyObjectCatalog : IEconomyObjectCatalog
 			settings.GetInt( "UsageInfo.LitterEffect", 0, optional: true ), settings.GetInt( "Info.AttractionValue", 0, optional: true ), archivePath,
 			settings.GetInt( "UsageInfo.MaxSpeed", 0, optional: true ), settings.GetInt( "UsageInfo.MaxCapacity", 0, optional: true ),
 			settings.GetInt( "Info.NewAttractionDecayTime", 0, optional: true ),
-			Enumerable.Range( 0, 3 ).Select( index => settings.GetInt( $"Attraction[{index}].NewBonus", 0, optional: true ) ).ToArray() );
+			Enumerable.Range( 0, 3 ).Select( index => settings.GetInt( $"Attraction[{index}].NewBonus", 0, optional: true ) ).ToArray(),
+			// [DATA:<object>.sam:Bumper.WhichTrackType] type record +0x9C (0xe2fe4 tests it against 3, the coaster value): 0 none, 1 car, 2 water track
+			settings.GetInt( "Bumper.WhichTrackType", 0, optional: true ) );
 	}
 
 	/// <summary>

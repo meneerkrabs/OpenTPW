@@ -2,17 +2,20 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace OpenTPW.Tests;
 
 /// <summary>
 /// Layout snapshots (save/load milestone): the deep cell-map capture/restore with raw bytes and the exact version,
-/// and pure validation of the object records against the real Jungle catalog — the Easymode layout as the honest
-/// accept case, duplicate rides with distinct rotations, and corrupt records, identities and seeds as rejects.
-/// Synthetic cell tests need no game data; catalog tests skip without OPENTPW_GAME_PATH. Restoring objects for real
-/// constructs OriginalObjects (GPU resources), so that path is the integration gate's to exercise; these tests cover
-/// everything up to and including the pre-placement checks of RestoreObjects.
+/// pure validation of the object records against the real Jungle catalog — the Easymode layout as the honest
+/// accept case, duplicate rides with distinct rotations, and corrupt, missing or exhausted records as rejects —
+/// a JSON round-trip of the DTOs, the pristine-candidate requirement of the restore, and the explicit-id CPU
+/// factory (<see cref="OriginalObjectRuntime.CreateForRestore"/>) that keeps saved attraction ids without
+/// replaying dead ones. Synthetic cell tests need no game data; catalog tests skip without OPENTPW_GAME_PATH.
+/// Restoring objects for real constructs OriginalObjects (GPU resources), so that path is the integration gate's
+/// to exercise; these tests cover everything up to and including the pre-placement checks of RestoreObjects.
 /// </summary>
 [TestClass]
 [DoNotParallelize]
@@ -265,6 +268,27 @@ public class ParkLayoutSnapshotTests
 		Rejects( holes with { Objects = survivors.Select( ( record, index ) => record with { CreationSeed = new[] { 3, 3, 6 }[index] ^ key } ).ToList() }, "share one placement ordinal" );
 	}
 
+	// --- missing records and exhausted allocators are rejected before anything is placed ---
+
+	[TestMethod]
+	public void ValidationRejectsMissingRecordsAndExhaustedAllocators()
+	{
+		var (park, catalog, grid) = Jungle();
+		var snapshot = EasymodeLayout( park, catalog, grid );
+		void Rejects( ParkLayoutSnapshot.Data data, string message ) =>
+			StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => ParkLayoutSnapshot.ValidateSnapshot( data, catalog ) ).Message, message );
+		Rejects( snapshot with { Cells = null! }, "no cell map" );
+		Rejects( snapshot with { Objects = null! }, "no object list" );
+		Rejects( snapshot with { Cells = snapshot.Cells with { Cells = null! } }, "no cell records" );
+		Rejects( snapshot with { Cells = snapshot.Cells with { Cells = [.. snapshot.Cells.Cells, null!] } }, $"cell record {snapshot.Cells.Cells.Count} is missing" );
+		Rejects( snapshot with { Objects = [.. snapshot.Objects, null!] }, $"object record {snapshot.Objects.Count} is missing" );
+		Rejects( snapshot with { NextSeed = int.MaxValue }, "placement-seed allocator is exhausted" );
+		Rejects( snapshot with { NextAttractionId = int.MaxValue }, "attraction-id allocator is exhausted" );
+		// The same corruption is rejected by the restore path before a single cell is written.
+		var missingRecord = snapshot with { Cells = snapshot.Cells with { Cells = [.. snapshot.Cells.Cells, null!] } };
+		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => ParkLayoutSnapshot.RestoreCellMap( missingRecord ) ).Message, "is missing" );
+	}
+
 	// --- RestoreObjects pre-placement checks (the placement itself needs GPU; the integration gate covers it) ---
 
 	[TestMethod]
@@ -285,6 +309,31 @@ public class ParkLayoutSnapshotTests
 	}
 
 	[TestMethod]
+	public void RestoreObjectsRejectsACandidateWhoseScriptWorldAlreadyAllocated()
+	{
+		var (park, catalog, grid) = Jungle();
+		var empty = ParkLayoutSnapshot.CaptureSnapshot( new ParkCellMap( 4, 4 ), new ParkObjects( catalog, grid, WorldSeed.Default ) );
+
+		// What default fixed items leave behind after Clear(): objects gone, the allocators still advanced.
+		var cleared = new ParkObjects( catalog, grid, WorldSeed.Default );
+		cleared.ScriptWorld.AllocateAttractionId();
+		var frontier = Assert.ThrowsException<InvalidDataException>( () => ParkLayoutSnapshot.RestoreObjects( empty, cleared ) ).Message;
+		StringAssert.Contains( frontier, "next attraction id is already 2" );
+		StringAssert.Contains( frontier, "clearing them afterwards leaves the allocators advanced" );
+		Assert.AreEqual( 0, cleared.Objects.Count, "the rejection places nothing" );
+		Assert.AreEqual( 2, cleared.ScriptWorld.NextAttractionId, "the rejection advances nothing" );
+
+		// A script registered without an attraction allocation is refused just the same.
+		var scripted = new ParkObjects( catalog, grid, WorldSeed.Default );
+		var scriptedEntry = catalog.Entries.First( entry => entry.ScriptPath != null );
+		using ( var stream = scriptedEntry.FileSystem.OpenRead( scriptedEntry.ScriptPath! ) )
+			_ = new RideVM( stream, new RideVMOptions { World = scripted.ScriptWorld, Seed = 1, SourceName = scriptedEntry.ScriptPath } );
+		StringAssert.Contains(
+			Assert.ThrowsException<InvalidDataException>( () => ParkLayoutSnapshot.RestoreObjects( empty, scripted ) ).Message,
+			$"already holds {scripted.ScriptWorld.Scripts.Count}" );
+	}
+
+	[TestMethod]
 	public void RestoreObjectsContinuesTheAllocatorsOfTheSavedPark()
 	{
 		var (park, catalog, grid) = Jungle();
@@ -294,5 +343,74 @@ public class ParkLayoutSnapshotTests
 		Assert.AreEqual( 0, ParkLayoutSnapshot.RestoreObjects( empty with { NextSeed = 7, NextAttractionId = 9 }, candidate ).Count );
 		Assert.AreEqual( 7, candidate.NextPlacementSeed, "the next placement draws the saved next seed, not 1" );
 		Assert.AreEqual( 9, candidate.ScriptWorld.NextAttractionId, "ids of removed objects stay burned: a guest or economy link to 9 keeps meaning id 9" );
+
+		// A frontier far above the survivors (a park that removed a near-billion objects) is adopted, not replayed:
+		// constant-time restore — this returns immediately where a dead-id burn loop would never finish.
+		var sparse = new ParkObjects( catalog, grid, WorldSeed.Default );
+		Assert.AreEqual( 0, ParkLayoutSnapshot.RestoreObjects( empty with { NextSeed = 7, NextAttractionId = 1_000_000_000 }, sparse ).Count );
+		Assert.AreEqual( 1_000_000_000, sparse.ScriptWorld.NextAttractionId );
+		Assert.AreEqual( 1_000_000_000, sparse.ScriptWorld.AllocateAttractionId(), "allocation continues from the adopted frontier" );
+	}
+
+	// --- the DTOs are JSON data: a serialize/deserialize round-trip keeps them valid and exact ---
+
+	[TestMethod]
+	public void SnapshotRoundTripsThroughJsonAndStillValidatesAndRestores()
+	{
+		var (park, catalog, grid) = Jungle();
+		var snapshot = EasymodeLayout( park, catalog, grid );
+
+		var revived = JsonSerializer.Deserialize<ParkLayoutSnapshot.Data>( JsonSerializer.Serialize( snapshot ) )!;
+		Assert.AreEqual( (snapshot.Cells.Width, snapshot.Cells.Height, snapshot.Cells.Version), (revived.Cells.Width, revived.Cells.Height, revived.Cells.Version) );
+		Assert.AreEqual( snapshot.Cells.Cells.Count, revived.Cells.Cells.Count );
+		for ( var index = 0; index < snapshot.Cells.Cells.Count; index++ )
+			Assert.AreEqual( snapshot.Cells.Cells[index], revived.Cells.Cells[index], $"cell record {index}" );
+		Assert.AreEqual( snapshot.Objects.Count, revived.Objects.Count );
+		for ( var index = 0; index < snapshot.Objects.Count; index++ )
+			Assert.AreEqual( snapshot.Objects[index], revived.Objects[index], $"object record {index}" );
+		Assert.AreEqual( (snapshot.NextSeed, snapshot.NextAttractionId, snapshot.ObjectScriptKey), (revived.NextSeed, revived.NextAttractionId, revived.ObjectScriptKey) );
+
+		ParkLayoutSnapshot.ValidateSnapshot( revived, catalog );
+		var fromJson = ParkLayoutSnapshot.RestoreCellMap( revived );
+		var fromLive = ParkLayoutSnapshot.RestoreCellMap( snapshot );
+		Assert.AreEqual( fromLive.Version, fromJson.Version );
+		for ( var y = 0; y < fromLive.Height; y++ )
+			for ( var x = 0; x < fromLive.Width; x++ )
+				Assert.AreEqual(
+					(fromLive.RawTypeAt( x, y ), fromLive.FlagsAt( x, y ), fromLive.PlacementCountAt( x, y ), fromLive.LinksAt( x, y ), fromLive.QueueLinkAt( x, y )),
+					(fromJson.RawTypeAt( x, y ), fromJson.FlagsAt( x, y ), fromJson.PlacementCountAt( x, y ), fromJson.LinksAt( x, y ), fromJson.QueueLinkAt( x, y )),
+					$"cell ({x}, {y})" );
+
+		// The required members are load-bearing: JSON without them is rejected, not defaulted to a valid park.
+		Assert.ThrowsException<JsonException>( () => JsonSerializer.Deserialize<ParkLayoutSnapshot.Data>( "{}" ) );
+	}
+
+	// --- the explicit-id CPU factory: saved attraction ids without allocation or dead-id replay ---
+
+	[TestMethod]
+	public void ExplicitIdRuntimeFactoryPreservesSavedAttractionIdsWithoutDrawingTheStream()
+	{
+		var (park, catalog, grid) = Jungle();
+		var world = new RideScriptWorld( WorldSeed.Default.ScriptStream );
+		var entry = catalog.Get( 1110 );
+		var streamState = world.RandomState;
+
+		var first = OriginalObjectRuntime.CreateForRestore( entry, world, seed: 11, open: false, attractionId: 7 );
+		Assert.AreEqual( 7, first.AttractionId );
+		Assert.AreEqual( 7, first.Visitors.AttractionId );
+		Assert.AreEqual( 8, world.NextAttractionId, "the frontier adopts the saved id (the hole below it is skipped)" );
+		Assert.IsFalse( first.IsOpen, "the saved open flag reaches the script's VAR_RIDECLOSED" );
+
+		// Explicit ids never rewind the frontier — the layout's strictly-increasing validation is what keeps ids
+		// unique — and construction with an explicit seed never draws the world's seed stream.
+		var second = OriginalObjectRuntime.CreateForRestore( entry, world, seed: 12, open: true, attractionId: 3 );
+		Assert.AreEqual( 3, second.AttractionId );
+		Assert.AreEqual( 8, world.NextAttractionId );
+		Assert.AreEqual( streamState, world.RandomState, "no hidden draws: the saved park's seed stream continues where it was captured" );
+
+		// A later normal allocation continues from the adopted frontier, holes included.
+		var normal = new OriginalObjectRuntime( entry, world, seed: 13 );
+		Assert.AreEqual( 8, normal.AttractionId );
+		Assert.AreEqual( 9, world.NextAttractionId );
 	}
 }

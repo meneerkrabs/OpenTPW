@@ -6,21 +6,26 @@ namespace OpenTPW;
 /// placed objects of a <see cref="ParkObjects"/> in iteration order with catalog key and archive, effective anchor,
 /// rotation, open state, explicit creation seed, attraction id and base height — plus the placement-seed allocator
 /// and the world seed's object-script key. DTOs are plain deep copies (no live object graphs, no runtime internals);
-/// capture only reads, validation is pure, and restoration writes into fresh candidates (a new cell map; an empty
-/// <see cref="ParkObjects"/>) through the same placement path as the game's own import, so it never charges, never
-/// duplicates fixed items and fires <see cref="ParkObjects.ObjectPlaced"/> exactly once per object.
+/// capture only reads, validation is pure, and restoration writes into fresh candidates (a new cell map; an unused
+/// <see cref="ParkObjects"/> whose script world never allocated) through the same placement path as the game's own
+/// import, so it never charges, never duplicates fixed items and fires <see cref="ParkObjects.ObjectPlaced"/> exactly
+/// once per object.
 /// </summary>
 /// <remarks>
 /// Caller ordering (the envelope/integration lane owns the transaction): validate the complete snapshot, restore the
 /// cell map first (the guests' walk grid derives from it), then restore the objects into the fresh candidate level's
-/// empty <see cref="ParkObjects"/> (clear any default fixed items first), then let the guest/VM/runtime lanes restore
-/// their state into the returned objects (list index and <c>AttractionId</c> are the stable references), and only
-/// then commit the new level and retire the old one. A failed restore throws <see cref="InvalidDataException"/> and
-/// leaves the candidate empty; the live park is never touched here. Prices, repair and other economy state are the
-/// economy snapshot's truth: the envelope stores its attraction-to-instance associations directly and re-links them by
-/// the restored <c>AttractionId</c> (first-match by <c>InfoId</c> would swap duplicates — the Easymode park alone has
-/// three small toilets and two bins) — nothing in this module charges or sells.
-/// </summary>
+/// <see cref="ParkObjects"/> — which must be an unused park whose script world never allocated (build it without the
+/// shipped/imported/default objects; clearing those after construction is not enough, because their construction has
+/// already advanced the script world's id allocators, and <see cref="RestoreObjects"/> rejects such a target before
+/// placing anything), then let the guest/VM/runtime lanes restore their state into the returned objects (list index
+/// and <c>AttractionId</c> are the stable references; the VM world restore runs after the objects exist and re-sets
+/// the world counters), and only then commit the new level and retire the old one. A failed restore throws
+/// <see cref="InvalidDataException"/> and leaves the candidate empty; the live park is never touched here. Prices,
+/// repair and other economy state are the economy snapshot's truth: the envelope stores its attraction-to-instance
+/// associations directly and re-links them by the restored <c>AttractionId</c> (first-match by <c>InfoId</c> would
+/// swap duplicates — the Easymode park alone has three small toilets and two bins) — nothing in this module charges
+/// or sells.
+/// </remarks>
 public static class ParkLayoutSnapshot
 {
 	/// <summary>The layout of one park: its cell map, its placed objects in iteration order, and the seed and id allocators.</summary>
@@ -77,7 +82,10 @@ public static class ParkLayoutSnapshot
 	{
 		/// <summary>Catalog key (<c>Info.Id</c>) of the placed object.</summary>
 		public required int InfoId { get; init; }
-		/// <summary>Data-root-relative archive path of the catalog entry — the asset fingerprint the saved InfoId must still resolve to.</summary>
+		/// <summary>
+		/// Data-root-relative archive path of the catalog entry — identity metadata: the saved InfoId must still resolve
+		/// to this archive. It is not a content fingerprint; the save envelope owns content digests.
+		/// </summary>
 		public required string Archive { get; init; }
 		public required int X { get; init; }
 		public required int Y { get; init; }
@@ -149,11 +157,12 @@ public static class ParkLayoutSnapshot
 	}
 
 	/// <summary>
-	/// Pure validation against a catalog: dimensions and bounds, duplicate or illegal cell records, catalog keys and
-	/// asset fingerprints, rotations, footprint overlaps, duplicate fixed items, and that every seed and attraction id
-	/// is one the saved allocator could have produced. Footprint bounds use the cell map's dimensions (an object grid
-	/// is never larger); <see cref="RestoreObjects"/> re-checks against the actual target grid. Throws
-	/// <see cref="InvalidDataException"/> naming the first inconsistency.
+	/// Pure validation against a catalog: completeness (no missing cell map, object list or records), dimensions and
+	/// bounds, duplicate or illegal cell records, catalog keys and archive identity, rotations, footprint overlaps,
+	/// duplicate fixed items, and that every seed and attraction id is one the saved allocator could have produced —
+	/// with both allocators far enough from <see cref="int.MaxValue"/> that restoring them cannot overflow. Footprint
+	/// bounds use the cell map's dimensions (an object grid is never larger); <see cref="RestoreObjects"/> re-checks
+	/// against the actual target grid. Throws <see cref="InvalidDataException"/> naming the first inconsistency.
 	/// </summary>
 	public static void ValidateSnapshot( Data snapshot, ObjectCatalog catalog )
 	{
@@ -164,17 +173,23 @@ public static class ParkLayoutSnapshot
 			if ( !condition )
 				throw new InvalidDataException( $"Layout snapshot is inconsistent: {message}." );
 		}
-		Require( snapshot.Cells != null && snapshot.Objects != null, "the snapshot is incomplete" );
+		Require( snapshot.Cells != null, "the snapshot has no cell map" );
+		Require( snapshot.Objects != null, "the snapshot has no object list" );
+		var cellMap = snapshot.Cells!;
+		var objects = snapshot.Objects!;
 		ValidateCells( snapshot );
 		Require( snapshot.NextSeed >= 1, "next seed is before the first placement" );
+		Require( snapshot.NextSeed < int.MaxValue, "the placement-seed allocator is exhausted" );
 		Require( snapshot.NextAttractionId >= 1, "the attraction-id allocator is before the first allocation" );
+		Require( snapshot.NextAttractionId < int.MaxValue, "the attraction-id allocator is exhausted" );
 		var seeds = new HashSet<int>();
 		var footprints = new HashSet<(int, int)>();
 		var fixedItems = new HashSet<int>();
-		for ( var index = 0; index < snapshot.Objects!.Count; index++ )
+		for ( var index = 0; index < objects.Count; index++ )
 		{
-			var record = snapshot.Objects[index];
-			var entry = catalog.Find( record.InfoId );
+			var record = objects[index];
+			Require( record != null, $"object record {index} is missing" );
+			var entry = catalog.Find( record!.InfoId );
 			Require( entry != null, $"object {index} has unknown Info.Id {record.InfoId}" );
 			Require( !entry!.IsTool, $"object {index} ({entry.DisplayName}) is a tool, not a placed object" );
 			Require( string.Equals( entry.ArchivePath, record.Archive, StringComparison.OrdinalIgnoreCase ), $"object {index} resolved to {entry.ArchivePath}, not the saved {record.Archive}" );
@@ -188,15 +203,15 @@ public static class ParkLayoutSnapshot
 			}
 			foreach ( var (x, y, _) in ObjectFootprint.GetCells( entry.Shape, record.X, record.Y, record.Rotation ) )
 			{
-				Require( x >= 0 && y >= 0 && x < snapshot.Cells.Width && y < snapshot.Cells.Height,
+				Require( x >= 0 && y >= 0 && x < cellMap.Width && y < cellMap.Height,
 					$"object {index} ({entry.DisplayName}) reaches outside the cell map at ({x}, {y})" );
 				Require( footprints.Add( (x, y) ), $"objects overlap at ({x}, {y})" );
 			}
 		}
 		var previousAttraction = 0;
-		for ( var index = 0; index < snapshot.Objects!.Count; index++ )
+		for ( var index = 0; index < objects.Count; index++ )
 		{
-			var record = snapshot.Objects[index];
+			var record = objects[index]!;
 			var ordinal = record.CreationSeed ^ snapshot.ObjectScriptKey;
 			Require( ordinal >= 1 && ordinal < snapshot.NextSeed,
 				$"object {index}'s creation seed is not the {snapshot.ObjectScriptKey}-keyed ordinal of a placement before {snapshot.NextSeed}" );
@@ -219,11 +234,14 @@ public static class ParkLayoutSnapshot
 		}
 		Require( cells.Width > 0 && cells.Height > 0 && cells.Width <= 1024 && cells.Height <= 1024, $"cell map is {cells.Width}×{cells.Height}" );
 		Require( cells.Version >= 0, "cell map version is negative" );
-		Require( cells.Cells.Count <= (long)cells.Width * cells.Height, "more cell records than cells" );
+		Require( cells.Cells != null, "the cell map has no cell records" );
+		Require( cells.Cells!.Count <= (long)cells.Width * cells.Height, "more cell records than cells" );
 		var seen = new HashSet<(int, int)>();
-		foreach ( var cell in cells.Cells )
+		for ( var index = 0; index < cells.Cells.Count; index++ )
 		{
-			Require( cell.X >= 0 && cell.Y >= 0 && cell.X < cells.Width && cell.Y < cells.Height, $"cell ({cell.X}, {cell.Y}) is outside the map" );
+			var cell = cells.Cells[index];
+			Require( cell != null, $"cell record {index} is missing" );
+			Require( cell!.X >= 0 && cell.Y >= 0 && cell.X < cells.Width && cell.Y < cells.Height, $"cell ({cell.X}, {cell.Y}) is outside the map" );
 			Require( seen.Add( (cell.X, cell.Y) ), $"cell ({cell.X}, {cell.Y}) is recorded twice" );
 			Require( cell.QueueLink is 0 or 1 or 4 or 16 or 64, $"cell ({cell.X}, {cell.Y}) has queue link {cell.QueueLink}" );
 			Require( cell.QueueLink == 0 || cell.Type == (byte)ParkCellType.Queue, $"cell ({cell.X}, {cell.Y}) has a queue link but type {cell.Type}" );
@@ -251,17 +269,19 @@ public static class ParkLayoutSnapshot
 	}
 
 	/// <summary>
-	/// Places every snapshot object into the candidate <paramref name="target"/> — which must be empty (clear default
-	/// fixed items first) and built with the saved park's world seed, which the script-key check proves. Each object
-	/// goes through the import placement path with its own saved seed and its saved attraction id, so nothing is
-	/// charged, <see cref="ParkObjects.ObjectPlaced"/> fires exactly once, and removed objects' identity holes are
-	/// reproduced: before each placement the script world's allocator is advanced past the dead ids the record skips
-	/// (allocation order is the only thing that ever produced these ids, and the restored object must land on its saved
-	/// id — survivors are never renumbered), then the allocator is left at the saved next id. Every object's effective
-	/// placement, base height and attraction id is checked against the record, so a diverging catalog, edition or
-	/// terrain fails the load. On failure anything already placed is removed again (its GPU resources disposed) and the
-	/// exception propagates; the live level is not touched. A list entry's index equals its snapshot index, and its
-	/// <c>Visitors.AttractionId</c> equals the record's — the keys the guest, VM and economy restores join by.
+	/// Places every snapshot object into the candidate <paramref name="target"/> — which must be an unused park (no
+	/// objects, and a script world that never allocated: build the resume candidate without the shipped/imported/
+	/// default objects, because clearing those afterwards leaves the allocators advanced and is rejected here before
+	/// anything is placed) and built with the saved park's world seed, which the script-key check proves. Each object
+	/// goes through the import placement path with its own saved seed and its saved attraction id — the runtime adopts
+	/// the id, so nothing is charged, <see cref="ParkObjects.ObjectPlaced"/> fires exactly once, and removed objects'
+	/// identity holes are reproduced in constant time (dead ids are skipped by the frontier, never replayed — the
+	/// saved next id is adopted at the end, so a park that removed thousands of objects restores no slower than one
+	/// that removed none; survivors are never renumbered). Every object's effective placement, base height and
+	/// attraction id is checked against the record, so a diverging catalog, edition or terrain fails the load. On
+	/// failure anything already placed is removed again (its GPU resources disposed) and the exception propagates; the
+	/// live level is not touched. A list entry's index equals its snapshot index, and its <c>Visitors.AttractionId</c>
+	/// equals the record's — the keys the guest, VM and economy restores join by.
 	/// </summary>
 	public static IReadOnlyList<OriginalObject> RestoreObjects( Data snapshot, ParkObjects target )
 	{
@@ -269,7 +289,14 @@ public static class ParkLayoutSnapshot
 		ArgumentNullException.ThrowIfNull( target );
 		ValidateSnapshot( snapshot, target.Catalog );
 		if ( target.Objects.Count != 0 )
-			throw new InvalidDataException( "Layout objects restore into an empty ParkObjects (the fresh candidate level); this one already placed objects." );
+			throw new InvalidDataException( "Layout objects restore into an unused ParkObjects (the fresh candidate level); this one already placed objects." );
+		if ( target.NextAttractionId != 1 )
+			throw new InvalidDataException(
+				$"Layout objects restore into a candidate whose script world never allocated; this one's next attraction id is already {target.NextAttractionId}. " +
+				"Build the resume candidate without its shipped/imported/default objects — clearing them afterwards leaves the allocators advanced." );
+		if ( target.ScriptWorld.Scripts.Count != 0 )
+			throw new InvalidDataException(
+				$"Layout objects restore into a candidate whose script world holds no scripts; this one already holds {target.ScriptWorld.Scripts.Count}." );
 		if ( snapshot.ObjectScriptKey != target.ObjectScriptKey )
 			throw new InvalidDataException( $"Layout snapshot was saved with object-script key {snapshot.ObjectScriptKey}, but this park's is {target.ObjectScriptKey} (another world seed)." );
 		for ( var index = 0; index < snapshot.Objects.Count; index++ )
@@ -289,10 +316,9 @@ public static class ParkLayoutSnapshot
 			{
 				var record = snapshot.Objects[index];
 				var entry = target.Catalog.Find( record.InfoId )!;
-				// Burn the ids of removed objects so the next allocation is this record's saved id.
-				while ( target.NextAttractionId < record.AttractionId )
-					target.ScriptWorld.AllocateAttractionId();
-				var item = target.AddRestored( entry, record.X, record.Y, record.Rotation, record.Open, record.CreationSeed );
+				// The runtime adopts the record's saved attraction id; validation has already proven the ids increase
+				// with placement order, so no id is taken twice and no dead id is ever replayed.
+				var item = target.AddRestored( entry, record.X, record.Y, record.Rotation, record.Open, record.CreationSeed, record.AttractionId );
 				var placement = item.Placement;
 				if ( placement.X != record.X || placement.Y != record.Y || placement.Rotation != record.Rotation )
 					throw new InvalidDataException(
@@ -302,11 +328,11 @@ public static class ParkLayoutSnapshot
 						$"object {index} ({entry.DisplayName}) stands at base height {placement.BaseHeight}, not the saved {record.BaseHeight}: the terrain under it changed." );
 				if ( item.Visitors.AttractionId != record.AttractionId )
 					throw new InvalidDataException(
-						$"object {index} ({entry.DisplayName}) got attraction id {item.Visitors.AttractionId}, not the saved {record.AttractionId}: the saved ids no longer reproduce the park's allocation." );
+						$"object {index} ({entry.DisplayName}) got attraction id {item.Visitors.AttractionId}, not the saved {record.AttractionId}: the restore path stopped preserving ids." );
 				placed.Add( item );
 			}
-			while ( target.NextAttractionId < snapshot.NextAttractionId )
-				target.ScriptWorld.AllocateAttractionId();
+			// Ids the park burned after its last surviving object: adopt the saved frontier, no per-id work.
+			target.RestoreAttractionIdAllocator( snapshot.NextAttractionId );
 			if ( target.NextAttractionId != snapshot.NextAttractionId )
 				throw new InvalidDataException( $"Restored attraction-id allocator is at {target.NextAttractionId}, not the saved {snapshot.NextAttractionId}." );
 		}

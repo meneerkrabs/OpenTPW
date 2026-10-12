@@ -144,12 +144,14 @@ public sealed class ParkObjects
 
 	/// <summary>
 	/// Places a saved object back (<see cref="ParkLayoutSnapshot"/> restore): the placement rules of <see cref="Add"/>
-	/// with the record's own creation seed instead of the allocator's next value. Like Add it applies no build rules
-	/// and charges nothing; the allocator itself is restored separately with <see cref="RestoreSeedAllocator"/> so
-	/// objects placed after the load continue the saved seed sequence.
+	/// with the record's own creation seed instead of the allocator's next value, and its saved attraction id instead
+	/// of a fresh allocation — the object's runtime adopts the id, so guests, scripts and the economy stay linked to
+	/// the exact identity they were saved with, in constant time (ids of removed objects are never replayed). Like
+	/// Add it applies no build rules and charges nothing; the seed allocator itself is restored separately with
+	/// <see cref="RestoreSeedAllocator"/> so objects placed after the load continue the saved seed sequence.
 	/// </summary>
-	internal OriginalObject AddRestored( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, bool open, int seed ) =>
-		Register( new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation ), ScriptWorld, seed, open ) );
+	internal OriginalObject AddRestored( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, bool open, int seed, int attractionId ) =>
+		Register( new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation ), ScriptWorld, seed, open, attractionId ) );
 
 	// [DATA:Easymode.TPWI:SYSG X/Y/rotation] [DATA:<fixed item>.MD2:park-space coordinates]
 	// [DATA:PreBuilt/prebuilt.TPWS:SYSG X/Y/rotation] TPI fixed models use local coordinates and their saved anchor.
@@ -181,6 +183,18 @@ public sealed class ParkObjects
 
 	/// <summary>Restores the placement-seed allocator of a saved park (validation checked every saved seed against it).</summary>
 	internal void RestoreSeedAllocator( int value ) => nextSeed = value >= 1 ? value : throw new ArgumentOutOfRangeException( nameof( value ) );
+
+	/// <summary>
+	/// Restores the script world's attraction-id frontier to a saved park's next id in constant time: the frontier
+	/// adopts it, so the ids of objects the park removed are skipped without replaying their allocation. Requires a
+	/// value the allocator could still allocate from (a fresh world starts at 1).
+	/// </summary>
+	internal void RestoreAttractionIdAllocator( int value )
+	{
+		if ( value < 1 || value >= int.MaxValue )
+			throw new ArgumentOutOfRangeException( nameof( value ) );
+		ScriptWorld.AdoptAttractionId( value - 1 );
+	}
 
 	/// <summary>
 	/// Base height: the mean ground height under the footprint. Rides flatten their ground in the original

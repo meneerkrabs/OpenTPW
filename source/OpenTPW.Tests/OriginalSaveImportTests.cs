@@ -125,7 +125,10 @@ public class OriginalSaveImportTests
 		Assert.AreEqual( (1, 1), (import.ImportedObjects, import.ImportedFixedItems) );
 		var bouncy = economy.Objects.Single( item => item.InfoId == 1100 );
 		Assert.AreEqual( (30, 12, 0, 80.0, 90.0), (bouncy.Price, bouncy.CostOfGoods, bouncy.Level, bouncy.Repair, bouncy.LifeGauge) );
-		Assert.AreEqual( economy.Tick, bouncy.BuiltTick );
+		var attraction = save.Attractions.Single( item => item.InfoId == 1100 );
+		var stamp = attraction.Timestamp;
+		Assert.AreEqual( ParkCalendar.TickAtSeconds( (long)(new DateTime( stamp.Year, stamp.Month, stamp.Day, stamp.Hour, stamp.Minute, stamp.Second ) - ParkCalendar.Epoch).TotalSeconds ), bouncy.BuiltTick, "the saved time stamp is the build time" );
+		Assert.AreEqual( attraction.CustomerCount, (uint)bouncy.TimesUsed, "the saved customer count is the use count: an imported used object never refunds the unused 100 %" );
 
 		var researcher = economy.Staff.Members.Single();
 		Assert.AreEqual( (StaffType.Researcher, 2, 0, 97, StaffState.Patrolling), (researcher.Type, researcher.Grade, researcher.TrainingPoints, researcher.Happiness, researcher.State) );

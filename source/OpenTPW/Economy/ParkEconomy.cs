@@ -441,33 +441,58 @@ public sealed class ParkEconomy : IParkEconomy
 	// ---------------------------------------------------------------- park values
 
 	/// <summary>
-	/// Scrap value: the purchase and upgrade costs up to the current level times
-	/// <c>Upgrades[level].ScrapValueYearN</c> percent for the object's age (year 4 onwards uses year 4).
-	/// Basing it on catalogue costs rather than money paid is an <b>approximation</b>.
+	/// Scrap value, the refund when an object is sold (the sale 0xDBFA8 credits the getter 0xE25E8, which the scrap value
+	/// panels also show): the base purchase price <c>Upgrades[0].CostOfUpgrade</c> (catalogue +440; upgrade costs are not added)
+	/// times <see cref="ScrapPercent"/>, divided by 100 (ORACLE.md F21).
 	/// </summary>
+	// [BIN:STP-PPC:0x100E25E8 scrap value] Upgrades[0].CostOfUpgrade × the percentage 0xE2424, unsigned division by 100
 	public long ScrapValue( ParkObjectState item )
 	{
 		if ( !Catalog.TryGet( item.InfoId, out var info ) || info.Upgrades.Count == 0 )
 			return 0;
-		var level = Math.Min( item.Level, info.Upgrades.Count - 1 );
-		// [APPROX:ECON-025] scrap value basis = catalogue cost of all levels up to the current one; a scrap year is 365 park-clock days — evidence needed: capture of scrap value
-		var basis = info.Upgrades.Take( level + 1 ).Sum( upgrade => upgrade.CostOfUpgrade );
-		return basis * ScrapPercent( item ) / 100;
+		// the 32-bit multiply wraps and the division is unsigned (cost 50,000,000 at 100 % refunds 7,050,327)
+		return unchecked( (uint)((int)info.Upgrades[0].CostOfUpgrade * ScrapPercent( item )) ) / 100;
 	}
 
-	/// <summary>The object's age-based scrap percentage, <c>Upgrades[level].ScrapValueYearN</c> (year 4 onwards uses year 4).</summary>
+	/// <summary>
+	/// The object's scrap percentage (0xE2424): the age is the park clock since the build, in 365-day years (0, 1, 2, anything
+	/// else uses year 4), read from the current level's row <c>Upgrades[level].ScrapValueYearN</c>. An object nobody has used
+	/// (<see cref="ParkObjectState.TimesUsed"/> 0) in its first 30 days is refunded 100 percent, when the base level's year-1
+	/// percentage is above 0.
+	/// </summary>
+	// [BIN:STP-PPC:0x100E2424 scrap percentage] age = clock stamp − thing +20 as signed 100 ns units; quotient by 365 days (exactly) 0 → year 1, 1, 2, else (also negative) year 4; in year 1, quotient by 30 days 0 and thing +412 = 0 and record +392 > 0 give 100; the row is record +392 + 64 × level
 	public int ScrapPercent( ParkObjectState item )
+	{
+		// [APPROX:ECON-025] the scrap rule is the Mac build's (0xE25E8 / 0xE2424: base cost x the age percentage, 100 for an unused object in its first 30 days); the Windows build's counterpart is not executed, and the object use counter (thing +412) is ParkObjectState.TimesUsed — evidence needed: the tp.exe counterpart of 0xE25E8 run in the x86 oracle, or a capture of a sale
+		if ( !Catalog.TryGet( item.InfoId, out var info ) || info.Upgrades.Count == 0 )
+			return 0;
+		var level = Math.Min( item.Level, info.Upgrades.Count - 1 );
+		var age = ParkCalendar.Seconds( Tick ) - ParkCalendar.Seconds( item.BuiltTick );
+		var year = age / (365 * ParkCalendar.SecondsPerDay);
+		int Row( int index ) => info.Upgrades[level].ScrapValuePercentByYear.Count > index ? info.Upgrades[level].ScrapValuePercentByYear[index] : 0;
+		if ( year == 0 )
+		{
+			if ( age / (30 * ParkCalendar.SecondsPerDay) == 0 && item.TimesUsed == 0 && info.Upgrades[0].ScrapValuePercentByYear.FirstOrDefault() > 0 )
+				return 100;
+			return Row( 0 );
+		}
+		return year is 1 or 2 ? Row( (int)year ) : Row( 3 );
+	}
+
+	/// <summary>
+	/// Park value (UITEXT 163): the sum over all objects of the catalogue costs up to the current level times the level's age
+	/// percentage, which was the scrap value before ORACLE.md F21 — an <b>approximation</b>.
+	/// </summary>
+	// [APPROX:ECON-026] park value = sum of catalogue costs up to the current level times the age percentage (the scrap rule before ORACLE F21), not the sale refund — evidence needed: capture of the park value screen
+	public long ParkValue => objects.Values.Sum( item =>
 	{
 		if ( !Catalog.TryGet( item.InfoId, out var info ) || info.Upgrades.Count == 0 )
 			return 0;
 		var level = Math.Min( item.Level, info.Upgrades.Count - 1 );
 		var year = (int)Math.Min( 3, (ParkCalendar.Seconds( Tick ) - ParkCalendar.Seconds( item.BuiltTick )) / (365 * ParkCalendar.SecondsPerDay) );
-		return info.Upgrades[level].ScrapValuePercentByYear.Count > year ? info.Upgrades[level].ScrapValuePercentByYear[year] : 0;
-	}
-
-	/// <summary>Park value (UITEXT 163): the sum of all scrap values — an <b>approximation</b>.</summary>
-	// [APPROX:ECON-026] park value = sum of scrap values — evidence needed: capture of the park value screen
-	public long ParkValue => objects.Values.Sum( ScrapValue );
+		var percent = info.Upgrades[level].ScrapValuePercentByYear.Count > year ? info.Upgrades[level].ScrapValuePercentByYear[year] : 0;
+		return info.Upgrades.Take( level + 1 ).Sum( upgrade => upgrade.CostOfUpgrade ) * percent / 100;
+	} );
 
 	public int LitterItems => (int)(LitterScaled / LitterScale);
 
@@ -637,22 +662,25 @@ public sealed class ParkEconomy : IParkEconomy
 	public static bool CountsForParkPoints( ParkObjectState item, EconomyObjectInfo info ) => info.IsChoosable && !item.IsBrokenDown && !item.ScriptBroken && item.IsOpen;
 
 	/// <summary>Registers an object that already exists (imported original save, fixed item) without charging.</summary>
-	public ParkObjectState RegisterExisting( int infoId )
+	/// <param name="builtTick">When the object was built, for an object from an original save (default: now).</param>
+	/// <param name="timesUsed">Guests that used it before, for an object from an original save: a used object never refunds the unused 100 %.</param>
+	public ParkObjectState RegisterExisting( int infoId, long? builtTick = null, long timesUsed = 0 )
 	{
 		if ( !Catalog.TryGet( infoId, out var info ) )
 			throw new InvalidDataException( $"Info.Id {infoId} is not in the {Settings.Theme} object catalogue." );
-		return AddObject( info, imported: true );
+		return AddObject( info, imported: true, builtTick, timesUsed );
 	}
 
-	private ParkObjectState AddObject( EconomyObjectInfo info, bool imported )
+	private ParkObjectState AddObject( EconomyObjectInfo info, bool imported, long? builtTick = null, long timesUsed = 0 )
 	{
 		var item = new ParkObjectState
 		{
 			Id = NextObjectId++,
 			InfoId = info.InfoId,
 			Kind = info.Kind,
-			BuiltTick = Tick,
+			BuiltTick = Math.Clamp( builtTick ?? Tick, 0, Tick ),
 			Imported = imported,
+			TimesUsed = timesUsed,
 			Price = info.PricePerUse ?? 0,
 			CostOfGoods = info.CostOfGoods ?? 0,
 			ChanceOfLosingPercent = info.ChanceOfLosingPercent ?? 0
@@ -973,6 +1001,16 @@ public sealed class ParkEconomy : IParkEconomy
 			return;
 		item.CustomersThisMonth++;
 		Counters.Add( ParkCounters.RideUses( item.InfoId ), 1 );
+	}
+
+	/// <summary>
+	/// A guest has left the object: raises <see cref="ParkObjectState.TimesUsed"/>, the original's word +412, which the
+	/// release path increments (0xEAA00 → 0xE1B44), not the boarding. Until the first guest leaves the object counts as unused.
+	/// </summary>
+	public void RecordUseFinished( int instanceId )
+	{
+		if ( objects.TryGetValue( instanceId, out var item ) )
+			item.TimesUsed++;
 	}
 
 	public void ReportRecord( ParkRecordKind kind, int instanceId, long value )

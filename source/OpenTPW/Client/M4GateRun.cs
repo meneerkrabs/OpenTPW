@@ -715,6 +715,8 @@ internal sealed class M4GateRun
 		var balance = economy.Balance;
 		var otherIncome = economy.Ledger.CurrentTotals.GetValueOrDefault( LedgerCategory.OtherIncome );
 		var builtTick = economy.TryGetObject( placement.Instance, out var record ) ? record.BuiltTick : -1;
+		var levelBefore = record?.Level ?? 0;
+		var usesBefore = record?.TimesUsed ?? 0;
 		var machines = Tree( runtime.Script ).ToList();
 		var id = runtime.Visitors.AttractionId;
 		long? credit;
@@ -730,14 +732,16 @@ internal sealed class M4GateRun
 			credit = Level.SellRemovedObject( scene.Runtime, id, placement.Instance );
 		}
 		scene.EconomyLinks.RemoveAll( link => link.Runtime == runtime );
-		// [DATA:<object>.sam:Upgrades[0].CostOfUpgrade, ScrapValueYear1..4] [APPROX:ECON-025] scrap = catalogue cost × ScrapValueYearN % for the object's age (365 park-clock days a year)
+		// [DATA:<object>.sam:Upgrades[0].CostOfUpgrade, Upgrades[n].ScrapValueYear1..4] [BIN:STP-PPC:0x100E25E8 scrap value] scrap = Upgrades[0].CostOfUpgrade × the level's ScrapValueYearN % for the age (365 park-clock days a year), or 100 % for an object nobody used in its first 30 days
 		var age = builtTick < 0 ? 0 : ParkCalendar.Seconds( economy.Tick ) - ParkCalendar.Seconds( builtTick );
 		var year = (int)Math.Min( 3L, age / (365L * ParkCalendar.SecondsPerDay) );
-		var percent = entry.Upgrades.FirstOrDefault( level => level.Level == 0 )?.GetInt( $"ScrapValueYear{year + 1}" ) ?? 0;
+		int PercentOf( int upgrade, int index ) => entry.Upgrades.FirstOrDefault( level => level.Level == upgrade )?.GetInt( $"ScrapValueYear{index + 1}" ) ?? 0;
+		var unusedAtStart = year == 0 && age / (30L * ParkCalendar.SecondsPerDay) == 0 && usesBefore == 0 && PercentOf( 0, 0 ) > 0;
+		var percent = unusedAtStart ? 100 : PercentOf( levelBefore, year );
 		var expected = (long)entry.BuildCost * percent / 100;
 		var problems = new List<string>();
 		if ( credit != expected )
-			problems.Add( $"credited {credit?.ToString() ?? "nothing"}, expected {expected} = {entry.BuildCost} x ScrapValueYear{year + 1} {percent}%" );
+			problems.Add( $"credited {credit?.ToString() ?? "nothing"}, expected {expected} = {entry.BuildCost} x {(unusedAtStart ? "the unused first-30-days refund" : $"ScrapValueYear{year + 1} of level {levelBefore}")} {percent}%" );
 		if ( economy.Balance - balance != (credit ?? 0) || economy.Ledger.CurrentTotals.GetValueOrDefault( LedgerCategory.OtherIncome ) - otherIncome != (credit ?? 0) )
 			problems.Add( $"balance rose {economy.Balance - balance} and OtherIncome {economy.Ledger.CurrentTotals.GetValueOrDefault( LedgerCategory.OtherIncome ) - otherIncome}, not the credit" );
 		if ( economy.TryGetObject( placement.Instance, out _ ) )

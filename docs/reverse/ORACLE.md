@@ -149,6 +149,7 @@ Mutation checks (`test_oracle.py`):
 | `staff-training-split` | `0xfc1c4` (the month-end training split), the list walkers `0x10507c` / `0x1050a4` / `0xfa9a4`, `0xf3588` (train one member), `0x108424` / `0x1082b4` (bank and park things of the game) and the debit `0xcbfdc` with its statistics | `0xb678` assertion (a zero condition fails the run) and the debug print `0x5fbcc` (logged) | 507 | **F17**: 358 differ from the former rule (the plan). **Agree** 507/507 with the routine reading | `ParkStaff.Train` through `staff_training`: **agree** (358 differed before the fix) |
 | `ride-repair-duration` | `0xd9c0c` (the mechanic's repair-state entry), `0xdfe0c`/`0xdfe88`/`0xdfe90` (ride state 1, maintenance word `+96`, state 2), `0xd2290` (sub-state setter) | `0xfa9a4` thing id, `0xdfb94` the ride's mechanic id, `0xe6454` arrival state (chosen), `0xdc320` type record (the word at `+508 + 64 · level` chosen), `0xd99ac` release (recorded), `0xb678` assertion and `0x5fbcc` log (recorded); the balance block word `+1004 + 8 · grade` is `WorkDuration` | 529 jobs | **F19** (fixed in C#): 396 differ from the old claim (a flat `WorkDuration`, `plan`; the same without the upgrade factor, `flat-repair`, differs on 352). The routine reading **agrees** 529/529 | `ParkEconomy.RepairTimer` through `repair_timer`: **agree** 529/529 |
 | `ride-repair-arrival` | the same | the same | 515 | **F19**: the flow (another mechanic on the ride: log and release; still walking: let go; no broken, upgrade or maintenance state: log and release; else timer, state 13, sub-state 18) **agrees** 515/515 | no hook (CSHARP_PENDING): OpenTPW starts a mechanic at once and has no walk or release |
+| `object-scrap-value` | `0xe25e8` (the scrap value getter), `0xe2424` (the age percentage), `0x10a9a4` (game pointer), `0x1c4100` (64-bit divide) | `0x118018` type record (synthetic: percentages at `+392 + 64 · level + 4 · year`, costs at `+440 + 64 · level`; registry checked), `0xe4394` the clock stamp (turn × 15000 / 4 × 10^7 as 100 ns units, the value `0xdad90` stores to thing `+20`) and the glue `0x1c5c64` (the signed 64-bit stamp subtraction, as at `0xdc520`). Thing: type `+14`, stamp `+20`, level byte `+76`, use word `+412`. No thing bought after the current turn | 572 | **F21** (fixed in C#): the old rule (catalogue costs summed through the level, no 100 %) differs on 280. The routine reading **agrees** 572/572 | `ParkEconomy.ScrapValue` through `object_scrap_value`: **agree** 572/572 (the use count passed as `ParkObjectState.TimesUsed`) |
 
 The C# comparisons use these seams:
 
@@ -181,6 +182,9 @@ The C# comparisons use these seams:
   relief flag with the wear gauge as a single. The type's `+1960` word (`Info.WhichUIType`) 2 maps to `Sideshow`, anything else
   to `Ride`. The thing behind ride `+36` is not sent: C# has none (QUEUE-004), so the inputs with one are the remainder.
   `test_queue_join_csharp_remainder` pins that every remaining mismatch is such an input.
+- `ParkEconomy.ScrapValue` (`object_scrap_value`) on an economy with one synthetic ride type whose three upgrade levels carry the
+  input's `CostOfUpgrade` and `ScrapValueYear1..4`; reflection puts the build tick and the final tick on the first tick of the input
+  turns, as for `park_points`, and the thing `+412` word is passed as `ParkObjectState.TimesUsed`.
 
 - `LoanMath.MonthlyRepayment` (`loan_offers`) for each offer of an input; `LoanMath.Pay`, `ParkLedger.Post` and
   `ParkLedger.ChargeLoanInterest` (`loan_term`) run month by month exactly as `ParkEconomy.EndMonth` does, with the
@@ -861,6 +865,54 @@ change toilet and thirst in the original but not in OpenTPW (the visit still res
 object; `RideVisitorBridge.SpecialIngredient` comes from `UsageInfo.SpecialIngredient` through `OriginalObjectRuntime.CreateVisitorBridge`, the amount is the build default
 50 (`[APPROX:WALK-001]` keeps the missing shop screen and save field). `walk-boost` C# 521/521; the factor 6 -> 5 mutation is detected. The determinism hash does not change: its
 scenes have no Sugar shop.
+
+**F21, the sale refund (ECON-025, `ParkEconomy.ScrapValue`; fixed in C#).** The sale `0xdbfa8` calls the getter `0xe25e8` at `0xdc05c`
+and credits the result with `0xcbf50` (`0xdc070`); the same getter fills the "Scrap value" lines of the object panels
+(`0x14c624`, `0x14f968`, `0x14fc64`, `0x165764`, `0x167f74`, `0x16b884`, `0x16c758`, `0x16e9f8`, `0x16ec60`) and `0xe2424` also prices
+the queue-cell refund (callers `0x85dcc`, `0x85ed4`, `0x8bf20`, `0x74940`). They were found by scanning the whole code section for
+`bl` to the two entries, after PPC-economy.md had read the sale statically; `object-scrap-value` now executes the getter. It agrees with
+the routine reading on 572 of 572 inputs, and each part of the reading is needed (`test_scrap_reading_is_sharp`: eight variants). What
+the original does:
+
+1. **Basis.** `Upgrades[0].CostOfUpgrade` only (type record `+440`, read without the level offset: the other levels' costs sit at
+   `+440 + 64 · level` and are never read). The money paid for upgrades does not enter. The refund is `cost × percentage`, a 32-bit
+   `mullw`, divided by 100 as an unsigned word (`mulhwu` with `0x51EB851F`, then `srwi 5`): the product wraps at 32 bits, so a
+   cost of 50,000,000 at 100 % refunds 7,050,327 (inputs with such costs are in the target; C# wraps the same way).
+2. **Age.** The clock's stamp minus the thing's `+20` (the stamp `0xdad90` stores at the purchase), a signed 64-bit difference in 100 ns
+   units. It is divided with the signed divide `0x1c4100` by exactly 365 days (`(73425 << 32) + 0x78C6C000` = 315,360,000,000,000), and
+   only the low word of the quotient is compared: 0 is the first year, 1 and 2 the second and third, anything else (3 and up, and a
+   negative quotient) the fourth. Years are therefore 365 days of park clock, 8409.6 turns of 3750 s; the boundaries are exact to the
+   turn (turn 8409 is year 1, turn 8410 year 2).
+3. **Row.** The percentage is `Upgrades[level].ScrapValueYearN`, the thing's current level byte (`+76`) selecting the row at record
+   `+392 + 64 · level + 4 · column`. The base level's row is not used for an upgraded ride.
+4. **First 30 days.** In the first year, a thing whose word `+412` is 0 and whose age divided by exactly 30 days
+   (`(6034 << 32) + 0xF8648000` = 25,920,000,000,000) has the low word 0 is refunded **100 %**, provided the type record's `+392`
+   (level 0's year-1 percentage, read without the level offset) is above 0. After 30 days, or after the first use, the ordinary row
+   applies. The word `+412` is a lifetime use counter: the constructor clears it (`0xda960`), and the use-finished handler raises it
+   together with the history record at `+420` when a guest **leaves** (the release path `0xeaa00` calls `0xe1b44` for rides, shops and
+   sideshows; the boarding does not count, so while the first guest is aboard the object still counts as unused); no ride-side store resets it
+   (its staff-state stores in `0xd2cbc`, `0xd9b20`, `0xf03d8` and others use the same offset for another object class).
+
+Before → after in C# (the old rule: catalogue costs of all levels up to the current one × the current level's percentage, no 100 %): a
+Belly Bounce (costs 500 / 400 / 500, the jungle `Rides.sam` rows 50 / 30 / 20 / 10, 60 / 40 / 30 / 15, 65 / 45 / 35 / 20) at level 2 that
+guests used, sold when two years old, refunds 500 × 35 % = **175**; the old rule gave 1400 × 35 % = 490. A ride or shop sold within 30 days
+of its purchase before any guest used it refunds its whole price (500 for the Belly Bounce; the old rule gave 250); once used, 250. On the
+shipped data that is every buyable object but two: the Halloween Firework Show and the Space Laser Show have a level 0 year-1 percentage of 0 and
+refund nothing from the first day (`ShippedScrapRowsGiveTheOriginalsRefunds`: 242 objects over the four themes, 76 with upgrade levels).
+
+**Fixed in C#.** `ParkEconomy.ScrapValue` is `Upgrades[0].CostOfUpgrade × ScrapPercent / 100`; `ScrapPercent` is the whole of `0xe2424`
+(the current level's row, exact 365-day years, year 4 from the third year on, the 100 % case). `ParkObjectState.TimesUsed` is the new
+lifetime counter (raised by `RecordUseFinished`, which `GuestSimulation` calls when a guest is released, not on boarding; saved as an
+optional field, an older save restoring it as this and last month's customers, a lower bound). An object imported from an original save
+takes the saved customer count as its use count and the saved attraction time stamp as its build time (`OriginalEconomyImport`), so an
+imported used or old object never gets the unused refund; that the save's customer count is `+412` and its time stamp `+20` is read from
+the serializer order and the `0xdad90` store, not captured (SAVE-006 says so). `RefundQueueCell` uses the same percentage, so queue cells of a new, unused ride are refunded in
+full, as the original does. Two things stay as they were and are approximations: **the park value** (ECON-026) keeps summing the old
+rule (catalogue costs through the level × the percentage), because the original's valuation is a different quote (PPC-economy.md); and
+**the Windows build**: this is the Mac routine, and the tp.exe counterpart was not executed (ECON-025's text now says so), as is the
+mapping of `+412` to a use counter (a read of the stores and of the one increment, not a captured sale). The stubs are the type
+record and the stamp conversion (the same assumption as `park-points`); the age of a thing bought after the current turn (a negative
+quotient picks the fourth year in the original, the first in C#) cannot occur in a park and is outside the inputs.
 
 ## 6. Adding a target or a C# hook
 

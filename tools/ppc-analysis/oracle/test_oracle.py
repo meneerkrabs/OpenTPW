@@ -199,6 +199,14 @@ EXPECTED = {
     # F19 (executed flow): a mechanic whose ride names another mechanic, or that is still walking (0xe6454 == 2), releases itself; a job
     # needs ride state 1 or 2 or the maintenance word +96; it writes the sub-state 18, the state 13 and the timer.
     ('ride-repair-arrival', 'plan'): AGREE,
+    # F21 (fixed in C#): the sale credits 0xe25e8 = Upgrades[0].CostOfUpgrade (record +440, no upgrade costs) x the percentage 0xe2424
+    # / 100; the percentage reads the CURRENT level's row (+392 + 64 x level) by age in exact 365 day years (0, 1, 2, anything else the
+    # fourth) and is 100 for a thing nobody used (+412 == 0) in its first 30 days while level 0's first percentage is positive. The old
+    # rule (catalogue costs summed through the level, no 100) differs on 280 of 572 inputs.
+    ('object-scrap-value', 'plan'): (280, {'now': 1000, 'built': 1000, 'level': 0, 'used': 0, 'cost': [10000, 8000, 12000],
+                                           'pct': [[50, 30, 20, 10], [45, 25, 15, 8], [40, 20, 10, 5]]}),
+    ('object-scrap-value', 'routine-reading'): AGREE,
+    ('object-scrap-value', 'csharp'): AGREE,
 }
 CSHARP_PENDING = {'det-world-lcg', 'det-rse-rand', 'coast-rating-step',
                   'coast-rating-final', 'arrival-update', 'park-points-counts-test', 'loan-month',
@@ -469,6 +477,43 @@ class Oracle(unittest.TestCase):
         self.assertEqual(inactive['staff'], active['staff'])
         self.assertEqual(inactive['spent'], 0)
         self.assertEqual(inactive['booked'], 600)
+    def test_scrap_value(self):
+        for key in (('object-scrap-value', 'plan'), ('object-scrap-value', 'routine-reading'), ('object-scrap-value', 'csharp')):
+            self.check(key)
+
+    def test_scrap_reading_is_sharp(self):
+        # Every part of the routine reading matters: the 100 for an unused new thing, its use test and 30 day length, the current
+        # level's row, the base cost alone and the 365 day year each bring mismatches back when changed.
+        import dataclasses
+        variants = {
+            'no-initial-refund': lambda x: targets.scrap_reading(x, initial=False),
+            'use-ignored': lambda x: targets.scrap_reading(x, used_test=False),
+            'month-of-31-days': lambda x: targets.scrap_reading(x, start_ticks=31 * targets.DAY_TICKS),
+            'month-of-29-days': lambda x: targets.scrap_reading(x, start_ticks=29 * targets.DAY_TICKS),
+            'level-0-row': lambda x: targets.scrap_reading(x, level_row=False),
+            'summed-costs': lambda x: targets.scrap_reading(x, base_cost=False),
+            'year-of-366-days': lambda x: targets.scrap_reading(x, year_ticks=366 * targets.DAY_TICKS),
+            'year-of-364-days': lambda x: targets.scrap_reading(x, year_ticks=364 * targets.DAY_TICKS),
+        }
+        for name, reading in variants.items():
+            mutated = dataclasses.replace(targets.SCRAP, plan=reading, alternatives={})
+            [comparison] = [c for c in compare(mutated, self.image, DEFAULT_COUNT, csharp=False) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, name)
+
+    def test_scrap_value_of_a_two_year_old_upgraded_ride(self):
+        # Jungle Rides.sam rows (50/30/20/10, 60/40/30/15, 65/45/35/20) with the Belly Bounce costs 500 / 400 / 500: a used ride at
+        # level 2 after two years. The routine refunds 500 x 35 % = 175, the old rule gave 1400 x 35 % = 490.
+        two_years = 2 * 365 * 86400 * 4 // 15000 + 3  # turns of 3750 s, just past 730 days
+        x = {'now': 2999 + two_years, 'built': 2999, 'level': 2, 'used': 12, 'cost': [500, 400, 500],
+             'pct': [[50, 30, 20, 10], [60, 40, 30, 15], [65, 45, 35, 20]]}
+        self.assertEqual(targets.run_binary(targets.SCRAP, targets.SCRAP.sandbox(self.image), x), 175)
+        self.assertEqual(targets.scrap_plan(x), 490)
+        # Unused and new, whatever the level: the whole base price.
+        y = {**x, 'now': x['built'] + 10, 'used': 0}
+        self.assertEqual(targets.run_binary(targets.SCRAP, targets.SCRAP.sandbox(self.image), y), 500)
+        # The 32-bit product wraps before the unsigned division by 100.
+        big = {**y, 'cost': [50_000_000, 1, 1]}
+        self.assertEqual(targets.run_binary(targets.SCRAP, targets.SCRAP.sandbox(self.image), big), 7_050_327)
 
     def test_loans(self):
         for key in (('loan-offers', 'plan'), ('loan-offers', 'routine-reading'), ('loan-month', 'routine-reading'),
@@ -943,6 +988,20 @@ class CSharpMutation(unittest.TestCase):
          'Ledger.ChargeLoanInterest( 0 );'),
         ('staff-training-split', 'csharp', 'source/OpenTPW/Economy/ParkStaff.cs',
          'spent += share;', 'spent += share / 2;'),
+        ('object-scrap-value', 'csharp', 'source/OpenTPW/Economy/ParkEconomy.cs',
+         'return unchecked( (uint)((int)info.Upgrades[0].CostOfUpgrade * ScrapPercent( item )) ) / 100;',
+         'return info.Upgrades.Take( Math.Min( item.Level, info.Upgrades.Count - 1 ) + 1 ).Sum( upgrade => upgrade.CostOfUpgrade ) * ScrapPercent( item ) / 100;'),
+        ('object-scrap-value', 'csharp', 'source/OpenTPW/Economy/ParkEconomy.cs',
+         'return unchecked( (uint)((int)info.Upgrades[0].CostOfUpgrade * ScrapPercent( item )) ) / 100;',
+         'return info.Upgrades[0].CostOfUpgrade * ScrapPercent( item ) / 100;'),
+        ('object-scrap-value', 'csharp', 'source/OpenTPW/Economy/ParkEconomy.cs',
+         'age / (30 * ParkCalendar.SecondsPerDay) == 0 && item.TimesUsed == 0',
+         'age / (31 * ParkCalendar.SecondsPerDay) == 0 && item.TimesUsed == 0'),
+        ('object-scrap-value', 'csharp', 'source/OpenTPW/Economy/ParkEconomy.cs',
+         'age / (30 * ParkCalendar.SecondsPerDay) == 0 && item.TimesUsed == 0',
+         'age / (30 * ParkCalendar.SecondsPerDay) == 0 && item.TimesUsed <= 1'),
+        ('object-scrap-value', 'csharp', 'source/OpenTPW/Economy/ParkEconomy.cs',
+         'return year is 1 or 2 ? Row( (int)year ) : Row( 3 );', 'return year is 1 or 2 ? Row( (int)year ) : Row( 2 );'),
         ('loan-take', 'csharp', 'source/OpenTPW/Economy/ParkEconomy.cs',
          'Post( LedgerCategory.LoanReceived, offer.Amount );', 'Post( LedgerCategory.OtherIncome, offer.Amount );'),
     ]

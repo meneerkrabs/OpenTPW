@@ -183,6 +183,12 @@ public sealed class ParkObjectState
 	public bool ScriptBroken { get; set; }
 	/// <summary>Employee repairing or upgrading the object, 0 when none.</summary>
 	public int MechanicId { get; set; }
+	/// <summary>
+	/// Guests who have used the object since it was built, never reset: the original's object word +412, which the
+	/// use-finished handler raises (0xEAA00 calls 0xE1B44) and only the object constructor clears. The scrap value's
+	/// first-30-days refund requires it to be 0 (<see cref="ParkEconomy.ScrapPercent"/>, ORACLE.md F21).
+	/// </summary>
+	public long TimesUsed { get; set; }
 	public long CustomersThisMonth { get; set; }
 	public long CustomersLastMonth { get; set; }
 	public long TakingsThisMonth { get; set; }

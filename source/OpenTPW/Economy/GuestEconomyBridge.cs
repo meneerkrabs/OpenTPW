@@ -69,6 +69,12 @@ public sealed class GuestEconomyBridge : IGuestPayments, IParkGuestStatistics, I
 		}
 	}
 
+	public void VisitFinished( IRideVisitorBridge attraction )
+	{
+		if ( instances.TryGetValue( attraction.AttractionId, out var instance ) )
+			Economy().RecordUseFinished( instance );
+	}
+
 	public int PeopleInPark => Guests.GetStatistics().InPark;
 
 	public int AverageHappiness => (int)Guests.GetStatistics().AverageHappiness;

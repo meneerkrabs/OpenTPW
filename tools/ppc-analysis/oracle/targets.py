@@ -3064,6 +3064,139 @@ REPAIR_ARRIVAL_TARGET = Target('ride-repair-arrival', 'Mechanic arrival 0xd9c0c 
                                       'recorded calls.'] + REPAIR_NOTES)
 
 
+# ============================================================================== (l) ECON: object scrap value 0xe25e8
+SCRAP_VALUE = 0xE25E8                  # (thing) -> the sale refund; called by the sale 0xdbfa8 (0xdc05c) and by the UI panels
+SCRAP_CLOCK_STAMP = 0xE4394            # (out, clock, 0 x 6): the clock's current TbTimeStamp, written big-endian (high, low)
+SCRAP_STAMP_DIFFERENCE = 0x1C5C64      # import glue: TbTimeStamp::operator- (out, a, b), as at 0xdc520
+SCRAP_YEAR_TICKS = 365 * DAY_TICKS     # the divisor at 0xe2494..0xe24ac: (73425 << 32) + 0x78C6C000 = 365 days of 100 ns units
+SCRAP_START_TICKS = 30 * DAY_TICKS     # the divisor at 0xe24d8..0xe24e8: (6034 << 32) + 0xF8648000 = 30 days
+SCRAP_STATE = type('ScrapState', (), {})()
+
+
+def scrap_stamp(turn: int, scale: int = CLOCK_RATE) -> int:
+    """0xe4394 (stored to a purchased thing's +20 at 0xdad90..0xdadd4): the clock's turn as 100 ns units, signed 64-bit."""
+    return s64(div64(((turn & MASK32) * (scale & MASK32)), 4) * 10_000_000)
+
+
+def scrap_stubs(target: Target) -> dict:
+    state = SCRAP_STATE
+
+    def lookup(m: Machine) -> None:
+        if m.gpr[3] != state.registry:
+            raise AssertionError('0x118018 called without the type registry')
+        m.gpr[3] = state.record
+
+    def now(m: Machine) -> None:
+        stamp = scrap_stamp(state.x['now']) & ((1 << 64) - 1)
+        m.memory.w32(m.gpr[3], stamp >> 32)
+        m.memory.w32(m.gpr[3] + 4, stamp & MASK32)
+
+    def difference(m: Machine) -> None:
+        def stamp(address: int) -> int:
+            return m.memory.u32(address) << 32 | m.memory.u32(address + 4)
+        result = (stamp(m.gpr[4]) - stamp(m.gpr[5])) & ((1 << 64) - 1)
+        m.memory.w32(m.gpr[3], result >> 32)
+        m.memory.w32(m.gpr[3] + 4, result & MASK32)
+
+    return {TYPE_RECORD_LOOKUP: lookup, SCRAP_CLOCK_STAMP: now, SCRAP_STAMP_DIFFERENCE: difference}
+
+
+def scrap_binary(sb: Sandbox, x: dict, log) -> int:
+    state = SCRAP_STATE
+    state.x = x
+    game = sb.alloc(0x1E0000)
+    sb.write(toc_pointer(sb, ARRIVAL_GAME_POINTER), 'I', game)
+    state.registry = toc_pointer(sb, POINTS_REGISTRY)
+    fields = {440 + 64 * level: ('i', cost) for level, cost in enumerate(x['cost'])}
+    for level, row in enumerate(x['pct']):
+        fields.update({392 + 64 * level + 4 * year: ('i', value) for year, value in enumerate(row)})
+    state.record = sb.struct(2048, fields)
+    built = scrap_stamp(x['built']) & ((1 << 64) - 1)
+    thing = sb.struct(512, {14: ('H', 0x101), 20: ('I', built >> 32), 24: ('I', built & MASK32), 76: ('B', x['level']),
+                            412: ('I', x['used'] & MASK32)})
+    return sb.call(SCRAP_VALUE, {3: thing}).r3
+
+
+def scrap_age(x: dict) -> int:
+    """The signed 100 ns difference of the clock's stamp and the thing's +20."""
+    return s64(scrap_stamp(x['now']) - scrap_stamp(x['built']))
+
+
+def scrap_plan(x: dict) -> int:
+    """The rule C# followed before F21 (ECON-025): the catalogue cost of every level up to the current one times
+    Upgrades[level].ScrapValueYearN percent, N the age in 365 day years (year 4 onwards uses year 4)."""
+    level = x['level']
+    year = min(3, max(0, scrap_age(x) // SCRAP_YEAR_TICKS))
+    return sum(x['cost'][:level + 1]) * x['pct'][level][year] // 100
+
+
+def scrap_reading(x: dict, initial: bool = True, level_row: bool = True, base_cost: bool = True,
+                  year_ticks: int = SCRAP_YEAR_TICKS, start_ticks: int = SCRAP_START_TICKS, used_test: bool = True) -> int:
+    """The routine as read from 0xe2424..0xe2640. Age = clock stamp - thing +20, a signed 64-bit difference; the low word of
+    its quotient by 365 days picks the column (0 first year, 1, 2, anything else the fourth). In the first year, a thing
+    that has never been used (+412 == 0) and is within its first 30 days (the low word of the quotient by 30 days is 0)
+    refunds 100 when the type record's first percentage (+392, level 0's row) is positive. Otherwise the percentage is
+    Upgrades[level].ScrapValueYearN (record +392 + 64 x level + 4 x column); the refund is Upgrades[0].CostOfUpgrade
+    (record +440, no level) x percentage, divided by 100 as an unsigned word."""
+    age = scrap_age(x)
+    row = x['pct'][x['level'] if level_row else 0]
+    year = s32(div64(age, year_ticks))
+    if year == 0 and initial and s32(div64(age, start_ticks)) == 0 and (x['used'] == 0 or not used_test) and x['pct'][0][0] > 0:
+        percent = 100
+    else:
+        percent = row[year] if 0 <= year <= 2 else row[3]
+    cost = x['cost'][0] if base_cost else sum(x['cost'][:x['level'] + 1])
+    return ((percent * cost & MASK32) * 0x51EB851F >> 32) >> 5
+
+
+def scrap_csharp_request(x: dict) -> dict:
+    return {'fn': 'object_scrap_value', 'now': x['now'], 'built': x['built'], 'level': x['level'], 'used': x['used'],
+            'cost': x['cost'], 'pct': x['pct']}
+
+
+def scrap_inputs(rng: random.Random, n: int) -> list:
+    def turns(days: float) -> int:
+        return int(days * 86400 * 4 / CLOCK_RATE)  # whole turns (3750 s each) at or just below a number of park days
+
+    def make(**kw) -> dict:
+        built = rng.choice([0, rng.randrange(0, 50000), rng.randrange(0, 5000)])
+        age = rng.choice([0, rng.randrange(0, turns(40)), rng.randrange(0, turns(400)), rng.randrange(0, turns(1500)),
+                          rng.randrange(0, turns(5000)), turns(30) + rng.randrange(-2, 3), turns(365) + rng.randrange(-2, 3),
+                          turns(730) + rng.randrange(-2, 3), turns(1095) + rng.randrange(-2, 3)])
+        x = {'now': built + age, 'built': built, 'level': rng.choice([0, 0, 1, 2]),
+             'used': rng.choice([0, 0, 1, rng.randrange(0, 5000)]),
+             'cost': [rng.choice([0, 1000, 5000, 12345, rng.randrange(1, 300000)]) for _ in range(3)],
+             'pct': [[rng.choice([0, 10, 20, 30, 50, rng.randrange(0, 101)]) for _ in range(4)] for _ in range(3)]}
+        x.update(kw)
+        return x
+
+    shipped = dict(cost=[10000, 8000, 12000], pct=[[50, 30, 20, 10], [45, 25, 15, 8], [40, 20, 10, 5]])
+    edges = []
+    for level in (0, 1, 2):
+        for used in (0, 3):
+            # Straight after the purchase and either side of the 30 day mark (turn 691.2) and of the 1, 2 and 3 year marks
+            # (turns 8409.6, 16819.2, 25228.8).
+            for age in (0, 1, 691, 692, 8409, 8410, 16819, 16820, 25228, 25229, 50000):
+                edges.append(make(now=1000 + age, built=1000, level=level, used=used, **shipped))
+    # A first-year percentage of 0 in level 0's row never refunds the 100; the level's own row is not what decides it.
+    edges.append(make(now=1010, built=1000, level=0, used=0, cost=[10000, 8000, 12000], pct=[[0, 30, 20, 10]] * 3))
+    edges.append(make(now=1010, built=1000, level=2, used=0, cost=[10000, 8000, 12000],
+                      pct=[[50, 30, 20, 10], [45, 25, 15, 8], [0, 0, 0, 0]]))
+    edges.append(make(now=1010, built=1000, level=2, used=0, cost=[10000, 8000, 12000],
+                      pct=[[0, 30, 20, 10], [45, 25, 15, 8], [40, 20, 10, 5]]))
+    # A product beyond 32 bits wraps before the unsigned division: 50,000,000 at 100 % refunds 7,050,327 (and 5e7 x 50 % is 2.5e9, above 2^31).
+    edges.append(make(now=1000, built=1000, level=0, used=0, cost=[50_000_000, 1, 1], pct=shipped['pct']))
+    edges.append(make(now=1000, built=1000, level=0, used=5, cost=[50_000_000, 1, 1], pct=shipped['pct']))
+    edges.append(make(now=1000, built=1000, level=0, used=0, cost=[2_147_483_647, 1, 1], pct=shipped['pct']))
+    return edges + [make() for _ in range(n)]
+
+
+def scrap_domain(x: dict) -> bool:
+    """A park never holds a thing bought after the current turn (the original would pick the fourth column for a negative
+    quotient, C# the first). Costs up to 2^31 - 1 are allowed: the product wraps to 32 bits on both sides."""
+    return x['built'] <= x['now']
+
+
 # ============================================================================== registry
 LCG =Target('det-world-lcg', 'World LCG step 0x105328', 'DET-plan §2.3 / det_model.world_next', 0x105328,
              [(0x105328, 0x10536C)], lambda t: {}, lcg_binary, lcg_plan, lcg_inputs,
@@ -3245,6 +3378,18 @@ TRAIN_TARGET = Target('staff-training-split', 'Staff training split 0xfc1c4', 'E
                              'the bank (equal to the profit, month and training statistics, which are checked inside the run).',
                              'Domain: prices of at least 1 (divw by zero is undefined); budgets from 0 to 2^28 (the sum of the debits stays inside 32 bits); an active bank.'])
 
+SCRAP = Target('object-scrap-value', 'Object scrap value 0xe25e8 (the sale refund, percentage 0xe2424)', 'ECONOMY.md / ParkEconomy.ScrapValue (F21, ECON-025)',
+               0xE25E8, [(0xE2424, 0xE2650), (0x10A9A4, 0x10A9B0), (0x1C4100, 0x1C4230)], scrap_stubs, scrap_binary, scrap_plan,
+               scrap_inputs, alternatives={'routine-reading': scrap_reading},
+               csharp=('object_scrap_value', scrap_csharp_request, lambda x, r: r),
+               notes=['C# hook: bridge function "object_scrap_value" (ParkEconomy.ScrapValue): the type record rows go in as '
+                      'Upgrades[level].CostOfUpgrade / ScrapValueYear1..4 and the thing +412 word as the use count.',
+                      'Executed: 0xe25e8, 0xe2424 (percentage), 0x10a9a4 (game pointer), 0x1c4100 (64-bit divide). Stubs: 0x118018 '
+                      'type record (a synthetic one: +392 + 64 x level + 4 x year percentages, +440 + 64 x level costs), 0xe4394 '
+                      'clock stamp (turn x 15000 / 4 x 10^7, the stamp 0xdad90 stores to thing +20) and the glue 0x1c5c64 '
+                      '(TbTimeStamp subtraction, as at 0xdc520).',
+                      'Domain: no thing bought after the current turn.'])
+
 TARGETS = [LCG, RAND, QUEUE, CAN_CHANGE_TARGET, SET_CELL, UNBOUNCE, BOUNCE, SPEED_SETTER, SMOOTHING, BOOST, COAST_STEP, COAST_FINAL,
-           ARRIVAL, ARRIVAL_UPDATE, POINTS, COUNTS, LOAN_OFFERS, LOAN_MONTH, LOAN_TERM, LOAN_TAKE, LOAN_PAYOFF, FAILURE, JOIN_DIFFERENCE_TARGET, JOIN_GATE, RIDE_UPDATE_TARGET, ECON_SALE, ECON_TRIGGER, TRAIN_TARGET, REPAIR_TIMER, REPAIR_ARRIVAL_TARGET]
-DOMAINS = {SET_CELL.key: set_cell_domain}
+           ARRIVAL, ARRIVAL_UPDATE, POINTS, COUNTS, LOAN_OFFERS, LOAN_MONTH, LOAN_TERM, LOAN_TAKE, LOAN_PAYOFF, FAILURE, JOIN_DIFFERENCE_TARGET, JOIN_GATE, RIDE_UPDATE_TARGET, ECON_SALE, ECON_TRIGGER, TRAIN_TARGET, REPAIR_TIMER, REPAIR_ARRIVAL_TARGET, SCRAP]
+DOMAINS = {SET_CELL.key: set_cell_domain, SCRAP.key: scrap_domain}

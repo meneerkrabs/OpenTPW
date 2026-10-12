@@ -47,11 +47,12 @@ async function writeTexture(path, bytes) {
 	return gameRunning && program.ClarityEnabled() && program.AddTextureFile(path, bytes);
 }
 
-async function copyFiles(sources, progress) {
+async function copyFiles(sources, progress, copied) {
 	let bytes = 0;
 	for (const [index, [relative, read]] of sources.entries()) {
 		const contents = new Uint8Array(await read());
 		program.AddFile(relative, contents);
+		copied?.(relative);
 		bytes += contents.length;
 		if (index % 20 === 0 || index === sources.length - 1)
 			progress(`${index + 1} of ${sources.length} files (${(bytes / 1048576).toFixed(0)} MB)`);
@@ -113,19 +114,54 @@ function requestLevel(level) {
 		});
 }
 
-// Called by the game (GameFlow.LanguageDataReady) when a language is chosen: copies its speech bank and lip marks
-// together, then tells the game, which switches the advisor's voice only once both are in.
+// Copies a language's speech files, bank and lip marks together. A file counts as copied only once it is in memory, so a
+// retry after a failure copies just what is missing; the language is reported loaded only when every file is in.
+const copiedSpeech = new Set();
+async function copySpeech(language, progress) {
+	const files = (speechSources.get(language.toLowerCase()) ?? []).filter(([relative]) => !copiedSpeech.has(relative));
+	await copyFiles(files, progress, relative => copiedSpeech.add(relative));
+}
+
+// Called by the game (GameFlow.LanguageDataReady) when a language is chosen. The game switches the text and the advisor's voice
+// only when this reports the language loaded; on a failure it keeps the current language (and says so), and choosing the
+// language again calls this again.
 function requestLanguage(language) {
-	const files = speechSources.get(language.toLowerCase()) ?? [];
 	languageLoadingText = 'Loading the language…';
 	updateLoading();
-	copyFiles(files, text => { languageLoadingText = `Loading the language: ${text}`; updateLoading(); })
-		.catch(error => console.error(`Copying the ${language} speech failed`, error))
-		.finally(() => {
+	copySpeech(language, text => { languageLoadingText = `Loading the language: ${text}`; updateLoading(); })
+		.then(() => {
 			languageLoadingText = '';
 			updateLoading();
 			program.LanguageLoaded(language);
+		}, error => {
+			console.error(`Copying the ${language} speech failed`, error);
+			program.LanguageFailed(language);
+			languageLoadingText = `Could not load the ${language} speech (${error.message}); keeping the current language. Choose it again to retry.`;
+			updateLoading();
+			setTimeout(() => { if (languageLoadingText.startsWith('Could not')) { languageLoadingText = ''; updateLoading(); } }, 10000);
 		});
+}
+
+// The saved language (language.json, restored from the browser's storage) is copied before the game starts, so the front end
+// never runs in a language whose speech is missing; when that fails the game starts in the default language.
+async function loadSavedLanguage() {
+	let language;
+	try {
+		language = JSON.parse(new TextDecoder().decode(program.ReadFile('/config/language.json'))).Language;
+	} catch {
+		return;
+	}
+	if (!language)
+		return;
+	try {
+		await copySpeech(language, text => status.textContent = `Loading the ${language} speech: ${text}…`);
+		program.LanguageLoaded(language);
+	} catch (error) {
+		console.error(`Copying the ${language} speech failed`, error);
+		program.LanguageFailed(language);
+		status.textContent = `Could not load the ${language} speech (${error.message}); starting in the default language.`;
+		await new Promise(resolve => setTimeout(resolve, 1500));
+	}
 }
 
 // Drop the chosen folder's own name: "theme park/Data/ui.wad" becomes "Data/ui.wad".
@@ -138,7 +174,12 @@ const served = new URLSearchParams(location.search).get('data');
 if (served) {
 	const base = served.endsWith('/') ? served : `${served}/`;
 	const list = (await (await fetch(`${base}files.txt`)).text()).split('\n').filter(Boolean).map(line => line.split('\t'));
-	copy(list.map(([relative, url]) => [relative, async () => (await fetch(url ?? base + relative.split('/').map(encodeURIComponent).join('/'))).arrayBuffer()]));
+	copy(list.map(([relative, url]) => [relative, async () => {
+		const response = await fetch(url ?? base + relative.split('/').map(encodeURIComponent).join('/'));
+		if (!response.ok)
+			throw new Error(`${relative}: HTTP ${response.status}`);
+		return response.arrayBuffer();
+	}]));
 }
 
 async function start() {
@@ -148,6 +189,7 @@ async function start() {
 	} catch (error) {
 		console.warn('Saved games could not be read from this browser', error);
 	}
+	await loadSavedLanguage();
 	try {
 		const distribution = JSON.parse(program.ClarityDistribution());
 		textureDownloads = createTextureDownloads({

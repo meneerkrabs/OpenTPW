@@ -18,6 +18,7 @@ public static partial class Program
 	private static readonly HashSet<string> requestedLevels = new( StringComparer.OrdinalIgnoreCase );
 	private static readonly HashSet<string> loadedLanguages = new( StringComparer.OrdinalIgnoreCase );
 	private static readonly HashSet<string> requestedLanguages = new( StringComparer.OrdinalIgnoreCase );
+	private static readonly HashSet<string> failedLanguages = new( StringComparer.OrdinalIgnoreCase );
 	private static string[] installedLanguages = Array.Empty<string>();
 	private const string ClarityPackRoot = "/config/texture-packs/clarity-enhanced";
 	private const int MaximumTextureBytes = 25 * 1024 * 1024;
@@ -82,7 +83,14 @@ public static partial class Program
 		var saved = LanguageSettings.Load( LanguageSettings.GetDefaultPath(), languageDiagnostics );
 		foreach ( var diagnostic in languageDiagnostics )
 			Log.Warning( diagnostic );
-		LanguageStartup.Apply( dataDirectory, saved.Language, null, GameRoot, true, Log.Warning );
+		// The page copies a saved language's speech before it starts; when that failed the default is used (text and speech together).
+		var savedLanguage = saved.Language;
+		if ( savedLanguage != null && failedLanguages.Contains( savedLanguage ) )
+		{
+			Log.Warning( $"The speech files of the saved language {savedLanguage} could not be copied; using the default language. Reload to try again." );
+			savedLanguage = null;
+		}
+		LanguageStartup.Apply( dataDirectory, savedLanguage, null, GameRoot, true, Log.Warning );
 		installedLanguages = GameLanguage.FindLanguages( dataDirectory, null ).ToArray();
 		Directory.CreateDirectory( "/save" );
 		Directory.CreateDirectory( "/cache" );
@@ -102,6 +110,13 @@ public static partial class Program
 		// A language other than the installed one needs its speech files (about 27 MB) beside the text; they are copied when the
 		// language is chosen, at once for a saved choice, and a park or a switch waits for them so the advisor never mixes voices.
 		GameFlow.LanguageDataReady = LanguageDataReady;
+		GameFlow.LanguageDataFailed = language => failedLanguages.Contains( language );
+		// Choosing a language again after a failed copy tries again.
+		GameFlow.LanguageChosen = language =>
+		{
+			failedLanguages.Remove( language );
+			LanguageDataReady( language );
+		};
 		GameFlow.LevelDataReady = level =>
 		{
 			if ( !LanguageDataReady( GameLanguage.Current.Name ) )
@@ -230,14 +245,29 @@ public static partial class Program
 	{
 		if ( installedLanguages.Contains( language, StringComparer.OrdinalIgnoreCase ) || loadedLanguages.Contains( language ) )
 			return true;
-		if ( requestedLanguages.Add( language ) )
+		if ( !failedLanguages.Contains( language ) && requestedLanguages.Add( language ) )
 			Page.RequestLanguage( language );
 		return false;
 	}
 
-	/// <summary>The page has copied a language's speech files (or given up; the advisor then falls back to the installed speech).</summary>
+	/// <summary>The page has copied all of a language's speech files.</summary>
 	[JSExport]
-	public static void LanguageLoaded( string language ) => loadedLanguages.Add( language );
+	public static void LanguageLoaded( string language )
+	{
+		failedLanguages.Remove( language );
+		loadedLanguages.Add( language );
+	}
+
+	/// <summary>
+	/// The page could not copy a language's speech files completely. The language stays unready, so GameFlow drops a pending choice
+	/// of it with a warning (<see cref="PendingLanguage"/>); choosing it again copies again (the page skips files already in).
+	/// </summary>
+	[JSExport]
+	public static void LanguageFailed( string language )
+	{
+		failedLanguages.Add( language );
+		requestedLanguages.Remove( language );
+	}
 
 	/// <summary>The page has copied a level's folder (or given up; the level then reports what is missing).</summary>
 	[JSExport]
